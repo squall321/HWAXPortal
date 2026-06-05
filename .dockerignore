@@ -1,0 +1,14 @@
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.vite
+**/.ruff_cache
+**/.pytest_cache
+backend/secrets
+**/.env
+**/.env.local
+.git
+.bkit
+.koo-llm-sessions
+.playwright-mcp

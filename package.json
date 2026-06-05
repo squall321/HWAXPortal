@@ -1,0 +1,20 @@
+{
+  "name": "hwax-portal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HWAX Portal — SSO hub federating multiple systems (hwax.sec.samsung.net)",
+  "scripts": {
+    "restart": "./restart.sh",
+    "stop": "./restart.sh stop",
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "cd backend && .venv/bin/python -m uvicorn app.main:app --reload --port 8723",
+    "dev:web": "pnpm --dir frontend dev",
+    "build:web": "pnpm --dir frontend build",
+    "lint": "concurrently -n ruff,eslint \"npm:lint:api\" \"npm:lint:web\"",
+    "lint:api": "cd backend && .venv/bin/ruff check app",
+    "lint:web": "pnpm --dir frontend lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

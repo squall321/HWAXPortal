@@ -1,0 +1,24 @@
+# Optional. The portal runs fine as a single image (see Dockerfile) or natively (pnpm dev).
+# This compose file is the "clone and run the prod image" convenience + a home for the
+# stateful backing services we defer until prod scale (Redis).
+
+services:
+  portal:
+    build: .
+    image: hwax-portal:latest
+    ports:
+      - "8723:8723"
+    env_file:
+      - .env.real        # ⚠️ set a real SESSION_SECRET in here first (see .env.real)
+    # Persist auto-generated keys + the jti store across restarts (single-instance demo).
+    volumes:
+      - portal-secrets:/app/backend/secrets
+    restart: unless-stopped
+
+  # Deferred until multi-instance prod — the TokenStore interface swaps to this.
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+
+volumes:
+  portal-secrets:

@@ -1,0 +1,33 @@
+[project]
+name = "hwax-portal-backend"
+version = "0.1.0"
+description = "HWAX Portal backend — SAML broker (SP toward AD, JWT issuer toward downstream), system catalog, mail"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.121",
+    "uvicorn[standard]>=0.38",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.12",
+    "python-multipart>=0.0.18",   # SAML ACS POST form parsing
+    "PyJWT[crypto]>=2.10",        # RS256 + PyJWKClient (downstream verifies via JWKS)
+    "cryptography>=44",           # RSA key material backing PyJWT
+    "python3-saml>=1.16",         # upstream SP (config/metadata-driven)
+    "PyYAML>=6.0",                # systems.yaml catalog registry
+    "aiosmtplib>=3.0",            # SMTP mail backend
+    "httpx>=0.28",                # Microsoft Graph mail backend
+    "email-validator>=2.0",       # EmailStr validation on /mail/send
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    // Emit the compiled config into a temp dir so it never shadows vite.config.ts.
+    // (Vite resolves vite.config.js BEFORE vite.config.ts; a stray emit would win.)
+    "outDir": "node_modules/.tmp/tsnode",
+    "tsBuildInfoFile": "node_modules/.tmp/tsnode/.tsbuildinfo"
+  },
+  "include": ["vite.config.ts"]
+}

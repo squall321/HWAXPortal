@@ -1,0 +1,120 @@
+:root {
+  --bg: #0f1115;
+  --fg: #e6e8eb;
+  --muted: #9aa0a6;
+  --accent: #1428a0; /* Samsung blue */
+  --card: #1a1d24;
+  --border: #2a2f3a;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.app-shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.page {
+  width: 100%;
+}
+
+.container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+button {
+  font: inherit;
+  color: inherit; /* never fall back to the UA default (black) on dark cards */
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 0.55rem 1.1rem;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--fg);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.1);
+}
+.btn-secondary:hover {
+  background: var(--border);
+}
+
+/* System catalog tiles */
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.tile {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  text-align: left;
+  padding: 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition:
+    border-color 0.15s,
+    transform 0.05s;
+}
+.tile:hover {
+  border-color: var(--accent);
+}
+.tile:active {
+  transform: translateY(1px);
+}
+
+.tile-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.tile-name {
+  font-weight: 600;
+  color: var(--fg);
+}
+.tile-desc {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+.tile-meta {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.tile-tag {
+  font-size: 0.7rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+.tile-tag-type {
+  color: var(--accent);
+  border-color: var(--accent);
+}

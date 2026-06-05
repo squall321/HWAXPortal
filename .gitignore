@@ -1,0 +1,46 @@
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets & runtime state (NEVER commit)
+backend/secrets/
+*.sqlite
+*.sqlite3
+*.db
+
+# Env files (commit only .env.example)
+.env
+.env.local
+.env.*.local
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# bkit / harness artifacts
+.bkit/
+.koo-llm-sessions/
+
+# Tooling artifacts (screenshots, logs, playwright)
+.playwright-mcp/
+restart.log
+hwax-hero*.png
+
+# Apptainer images / generated infra state
+*.sif
+infra/data/
+infra/nginx/hwax.conf
+
+# Local Claude Code settings
+.claude/

@@ -1,0 +1,74 @@
+# HWAX Portal — platform catalog.
+# This file IS the catalog: edit + PR = change history + audit log (git diff).
+# Reload at runtime via POST /systems/reload (admin) — no restart needed.
+#
+# Links are not wired yet (status: coming_soon) — these tiles render on the hero page but
+# do not launch. When a platform's route is ready: set status: available, integration_type,
+# url (and audience for jwt-handoff). See docs/architecture.md for the launch flow.
+
+systems:
+  - id: heax-hub
+    name: HEAX Hub
+    tagline: AI 자동화 툴 & 에이전트 포탈
+    description: >-
+      Hardware Engineering AI Transformation Hub. 검증된 AI 자동화 툴과 자율 에이전트를
+      한 곳에서 신청·실행하고, 반복적인 엔지니어링 업무를 자동화하는 팀의 AI 관문입니다.
+    accent: violet
+    category: AI Platform
+    status: coming_soon
+    sort_order: 10
+
+  - id: ai-data-hub
+    name: AI Data Hub
+    tagline: 데이터 계층화 · 온톨로지 · API 프록시
+    description: >-
+      흩어진 사내 데이터를 계층화·DB화하여 온톨로지로 연결하고, 분산된 사내 시스템 API를
+      단일 프록시로 통합 제공하는 AI 데이터 기반 인프라입니다.
+    accent: cyan
+    category: Data
+    status: coming_soon
+    sort_order: 20
+
+  - id: mx-white-paper
+    name: MX White Paper
+    tagline: AI 보조 사내 업무 백서 플랫폼
+    description: >-
+      축적된 업무 지식과 노하우를 AI가 정리·작성하는 사내 백서 플랫폼. 흩어진 경험을
+      검색 가능한 지식 자산으로 전환해 팀의 집단 지능을 끌어올립니다.
+    accent: amber
+    category: Knowledge
+    status: coming_soon
+    sort_order: 30
+
+  - id: report-archive
+    name: Report Archive
+    tagline: AI 보조 보고 자료 작성 플랫폼
+    description: >-
+      데이터에서 인사이트, 그리고 발표 자료까지 — AI가 보고서 작성을 보조하는 자료
+      아카이브. 일관된 템플릿으로 빠르게 만들고, 과거 보고 이력을 자산화합니다.
+    accent: emerald
+    category: Reporting
+    status: coming_soon
+    sort_order: 40
+
+  - id: smart-twin-cluster
+    name: Smart Twin Cluster
+    tagline: 시뮬레이션 자동화 & AI 분석
+    description: >-
+      대규모 시뮬레이션을 자동 오케스트레이션하고 결과를 AI로 분석하는 디지털 트윈
+      클러스터. 해석 설정부터 인사이트 도출까지 엔지니어링 워크플로우를 가속합니다.
+    accent: sky
+    category: Simulation
+    status: coming_soon
+    sort_order: 50
+
+  - id: spdm
+    name: SPDM
+    tagline: Simulation Process & Data Management
+    description: >-
+      시뮬레이션 프로세스와 데이터를 통합 관리하는 플랫폼. 해석 모델·이력·결과를
+      추적하고 표준화된 워크플로우로 협업해 재현성과 신뢰성을 확보합니다.
+    accent: rose
+    category: Management
+    status: coming_soon
+    sort_order: 60

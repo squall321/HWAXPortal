@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="http://localhost:5283/auth/mock-idp">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <KeyDescriptor use="signing">
+      <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+        <X509Data>
+          <X509Certificate>MIICvDCCAaSgAwIBAgIULcZV/mX6/7W+r/0/KkFpeeJzAz0wDQYJKoZIhvcNAQELBQAwGDEWMBQGA1UEAwwNaHdheC1tb2NrLWlkcDAeFw0yNDAxMDEwMDAwMDBaFw0zMzEyMjkwMDAwMDBaMBgxFjAUBgNVBAMMDWh3YXgtbW9jay1pZHAwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCI0M5bjDSzWK0zZKB5648l2BPIaoYGlkQdMY42Nbzrj/6H+RJpw6WY0G5IR+wHnDnJfW/+0dhYixi9JxCu57zdaxypFYFesiTP0ilYsRmf4ClNgChUHHJtz8yLO5wbvrRHxJSzRUmIqeJYyaJ+fbe8+IiOLuDAnQYzmrkcQlgvccMn252PuMIYptbvgCUFmDluI55Q6hxenlu3DtZlTViAt62fhEp0hYMH/Oj9LWY25BV6yR9BaKA5xbGntLdPHPZekffmyZuoTwA1M70qCjmaiLJz+pAgiCk2QJ73Gez0WiZe/1oWAREsTW+E0V3CmQErn/WIDD+ozQuoDnxSe13dAgMBAAEwDQYJKoZIhvcNAQELBQADggEBAIWJiN7J2p6F24ZfIDKsX1H03JUBnnYgTXN076Ob6mFpa7NxHfjNfakslRQYb0/05fyh2+dJgZZEWapKR39AqaMH04bRfXkR3bRjXwrTaYtOSuTejB4cQnDv/s8pZkV0NMAEzWYr5h6mU2FjI1cXI6tf91Z4xGnTaf/y5Ha7V6sNJQn+xUX0o1JW26yFcl4joybmED/YjhIU48QvCKsAEAU4hfcXAIWcyKbLagWRbFa2mtog9THyW0CdH7KvtDGIgo3z2fiu6eijUQojtGcMwGGe9UIOpFLX4WfFr7evUfh2N2Us2Jp/t5GMQWzgs3jQENUICxl9bX4ett98jU8crHY=</X509Certificate>
+        </X509Data>
+      </KeyInfo>
+    </KeyDescriptor>
+    <NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</NameIDFormat>
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="http://localhost:5283/auth/mock-idp/sso"/>
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="http://localhost:5283/auth/mock-idp/sso"/>
+  </IDPSSODescriptor>
+</EntityDescriptor>
