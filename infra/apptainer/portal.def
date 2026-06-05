@@ -1,0 +1,36 @@
+Bootstrap: docker
+From: python:3.13-slim
+
+# HWAX Portal backend — single-origin (serves the host-built SPA at frontend/dist via
+# SERVE_FRONTEND). The SPA is built on the HOST before start (start.sh runs `pnpm build`),
+# so this image stays lean: just python + the libxmlsec runtime for python3-saml.
+# The repo is bind-mounted at /workspace; the app code lives there, deps live in the image.
+
+%labels
+    Maintainer  squall321@gmail.com
+    Component   hwax-portal
+    Version     0.1.0
+
+%files
+    backend/requirements.txt /opt/requirements.txt
+
+%post
+    set -eux
+    apt-get update
+    # runtime shared libs for the xmlsec / lxml wheels (python3-saml)
+    apt-get install -y --no-install-recommends libxml2 libxmlsec1-openssl ca-certificates
+    rm -rf /var/lib/apt/lists/*
+    pip install --no-cache-dir -r /opt/requirements.txt
+
+%environment
+    export PYTHONUNBUFFERED=1
+
+%startscript
+    cd /workspace/backend
+    exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8723}"
+
+%help
+    HWAX Portal backend container.
+    Build:  ./infra/scripts/build.sh        (or apptainer build infra/apptainer/portal.sif infra/apptainer/portal.def)
+    Run:    ./infra/scripts/start.sh        (binds <repo>:/workspace, host network)
+    Serves the SPA from /workspace/frontend/dist (build it on the host first) + the API.

@@ -79,6 +79,30 @@ backend/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8723
 See [`.env.real`](.env.real) for every knob and [`docs/GO-LIVE.md`](docs/GO-LIVE.md) for the
 mock→real-AD switch (drop in the AD metadata, flip one env var).
 
+## Run as Apptainer instances (shared servers / prod)
+
+For the team's standard rootless setup — the portal + an nginx that **path-routes one domain**
+to the portal and to each linked service — use `infra/` (mirrors the MXWhitePaper pattern):
+
+```bash
+cp infra/.env.example infra/.env     # set HTTP_PORT, PUBLIC_BASE_URL, SESSION_SECRET, AUTH_PROVIDER…
+./infra/scripts/start.sh             # build images → build SPA → gen nginx conf → start hwax_portal + hwax_nginx
+./infra/scripts/status.sh            # instances + healthchecks + active routes
+./infra/scripts/restart.sh           # after editing routes.env / infra/.env
+./infra/scripts/stop.sh
+```
+
+- Two rootless Apptainer instances: **`hwax_portal`** (single uvicorn: SPA + API) and **`hwax_nginx`**.
+  Instance names are `hwax_*`, so they coexist with other services (`mxwp_*`, …) on one host.
+- **Path routing**: `hwax.sec.samsung.net/` → portal; `…/<system-id>/` → that system. nginx upstreams
+  are **generated from `backend/config/routes.env`** — a destination URL may be `localhost`, another
+  server's **IP**, or a domain, so services spread across machines all route through the one origin.
+- nginx listens on `HTTP_PORT` (default 8088 — rootless can't bind <1024); front it with the server's
+  real `:80/:443` (corp LB / system reverse proxy). The linked services start independently (their own projects).
+
+`restart.sh` at the repo root is the **native dev** loop (venv + pnpm); `infra/scripts/*` is the
+**Apptainer** path. See `docs/architecture.md` and `docs/GO-LIVE.md`.
+
 ## Wiring a linked system (routing)
 
 Each platform tile's **destination** is set in a dead-simple file —

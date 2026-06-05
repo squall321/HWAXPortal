@@ -1,0 +1,7 @@
+# Built images
+*.sif
+# Runtime state / logs / generated config
+data/
+nginx/hwax.conf
+# Infra env (commit only .env.example)
+.env

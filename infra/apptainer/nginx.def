@@ -1,0 +1,25 @@
+Bootstrap: docker
+From: nginx:alpine
+
+# HWAX nginx — path-routes one origin to the portal and to each linked service.
+# Serves the generated /workspace/infra/nginx/hwax.conf (produced from routes.env by
+# gen-nginx-conf.sh). Rootless-friendly: the conf writes pid/logs/temp under /tmp
+# (apptainer mounts a writable /tmp), so no writable /var is needed.
+
+%labels
+    Maintainer  squall321@gmail.com
+    Component   hwax-nginx
+    Version     0.1.0
+
+%post
+    set -eux
+    mkdir -p /workspace
+
+%startscript
+    exec nginx -c /workspace/infra/nginx/hwax.conf -g 'daemon off;'
+
+%help
+    HWAX nginx container.
+    Build:  ./infra/scripts/build.sh
+    Run:    ./infra/scripts/start.sh   (generates hwax.conf from routes.env, then starts)
+    Routing: / → portal; /<system-id>/ → that system's URL (localhost / IP / domain).
