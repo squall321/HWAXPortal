@@ -30,6 +30,14 @@ INST_NGINX=hwax_nginx
 : "${PORTAL_PORT:=8723}"
 : "${PUBLIC_BASE_URL:=http://localhost:${HTTP_PORT}}"
 : "${ROUTES_PATH:=config/routes.env}"
+
+# apptainer: prefer a locally-extracted binary (no-sudo install via bootstrap.sh),
+# else fall back to whatever is on PATH. Pick the newest bin-*/ if several exist.
+if [ -z "${APPTAINER:-}" ]; then
+  for _c in "$APPT_DIR"/bin-*/usr/bin/apptainer; do
+    [ -x "$_c" ] && APPTAINER="$_c"
+  done
+fi
 : "${APPTAINER:=apptainer}"
 
 require_apptainer() {

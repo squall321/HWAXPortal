@@ -2,6 +2,9 @@
 # Start the HWAX stack: portal + nginx as Apptainer instances (host network, rootless).
 # Order: build images → build SPA (host) → generate nginx conf → portal → nginx.
 set -euo pipefail
+# Ensure apptainer exists (no-op if present; downloads/extracts it no-sudo otherwise).
+# Runs BEFORE _common.sh so the freshly-extracted binary is picked up.
+"$(dirname "$0")/bootstrap.sh"
 . "$(dirname "$0")/_common.sh"
 require_apptainer
 

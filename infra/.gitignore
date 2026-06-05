@@ -1,5 +1,11 @@
 # Built images
 *.sif
+# Extracted (no-sudo) apptainer binary
+apptainer/bin-*/
+# Offline bundle blobs (keep packages/README.md only)
+packages/deb/
+packages/sif/
+packages/*.deb
 # Runtime state / logs / generated config
 data/
 nginx/hwax.conf

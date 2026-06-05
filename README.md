@@ -103,6 +103,33 @@ cp infra/.env.example infra/.env     # set HTTP_PORT, PUBLIC_BASE_URL, SESSION_S
 `restart.sh` at the repo root is the **native dev** loop (venv + pnpm); `infra/scripts/*` is the
 **Apptainer** path. See `docs/architecture.md` and `docs/GO-LIVE.md`.
 
+### Online vs offline install
+
+`start.sh` first runs `bootstrap.sh`, which **installs apptainer with no sudo** by extracting the
+`.deb` into `infra/apptainer/bin-<ver>/` (auto-picked up by the scripts). No host node/pnpm/pip is
+needed — the SPA ships pre-built and every Python dep is baked into `portal.sif`.
+
+```bash
+# ONLINE server — apptainer + images download/build automatically:
+./infra/scripts/start.sh
+
+# Build an offline bundle on an online machine:
+./infra/scripts/build.sh && pnpm --dir frontend build
+./infra/scripts/download-packages.sh        # → infra/packages/{deb,sif} + frontend/dist
+tar -czf hwax-offline-bundle.tar.gz infra/packages frontend/dist
+
+# AIR-GAPPED 24.04 server (no internet, no sudo):
+tar -xzf hwax-offline-bundle.tar.gz -C <repo> && cd <repo>
+./infra/scripts/bootstrap.sh --offline      # extract apptainer locally (no sudo)
+cp infra/packages/sif/*.sif infra/apptainer/
+cp infra/.env.example infra/.env            # set SESSION_SECRET / ports / PUBLIC_BASE_URL
+./infra/scripts/start.sh                    # build + SPA skip → boots
+```
+
+The extracted apptainer runs rootless via user namespaces (Ubuntu 24.04 default = on); if a host
+disables them, `sudo dpkg -i infra/packages/deb/apptainer_*.deb` is the one-command fallback. See
+`infra/packages/README.md`.
+
 ## Wiring a linked system (routing)
 
 Each platform tile's **destination** is set in a dead-simple file —
