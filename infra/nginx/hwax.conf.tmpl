@@ -36,6 +36,7 @@ http {
     proxy_set_header Upgrade           $http_upgrade;
     proxy_set_header Connection        $connection_upgrade;
 
+    # Plain HTTP (health / LAN). When TLS is on, the HTTPS server below is the main entry.
     server {
         listen {{HTTP_PORT}};
         server_name _;
@@ -50,4 +51,5 @@ http {
             proxy_pass http://127.0.0.1:{{PORTAL_PORT}};
         }
     }
+{{TLS_SERVER}}
 }

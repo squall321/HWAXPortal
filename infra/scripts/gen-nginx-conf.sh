@@ -34,11 +34,42 @@ if [ -f "$ROUTES_FILE" ]; then
   done < "$ROUTES_FILE"
 fi
 
-# Assemble: template up to {{LOCATIONS}} + generated blocks + template after, then sub ports.
-{
-  sed '/{{LOCATIONS}}/,$d' "$TMPL"
-  printf '%s' "$locations"
-  sed '1,/{{LOCATIONS}}/d' "$TMPL"
-} | sed -e "s/{{HTTP_PORT}}/${HTTP_PORT}/g" -e "s/{{PORTAL_PORT}}/${PORTAL_PORT}/g" > "$OUT"
+# Build the optional TLS server block (same locations + the cert, when ENABLE_TLS=true).
+# Cert/key are under the repo, which is bind-mounted at /workspace inside the nginx container.
+tls_server=""
+if [ "${ENABLE_TLS:-false}" = "true" ]; then
+  CERT_C="/workspace/${TLS_CERT_PATH:-infra/tls/hwax.crt}"
+  KEY_C="/workspace/${TLS_KEY_PATH:-infra/tls/hwax.key}"
+  tls_server="$(cat <<EOF
 
-echo "✓ generated $OUT  (routes file: backend/${ROUTES_PATH}, ${count} system route(s))"
+    # HTTPS — main entry. Self-signed until the corp cert is dropped in at the same paths.
+    server {
+        listen {{HTTPS_PORT}} ssl;
+        server_name {{TLS_SERVER_NAME}};
+        ssl_certificate     ${CERT_C};
+        ssl_certificate_key ${KEY_C};
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_session_cache shared:SSL:4m;
+
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+${locations}        location / {
+            proxy_pass http://127.0.0.1:{{PORTAL_PORT}};
+        }
+    }
+EOF
+)"
+fi
+
+# Assemble: inject {{LOCATIONS}} (HTTP server) → inject {{TLS_SERVER}} → substitute the tokens.
+TMP1="$(mktemp)"; trap 'rm -f "$TMP1"' EXIT
+{ sed '/{{LOCATIONS}}/,$d' "$TMPL"; printf '%s' "$locations"; sed '1,/{{LOCATIONS}}/d' "$TMPL"; } > "$TMP1"
+{ sed '/{{TLS_SERVER}}/,$d' "$TMP1"; printf '%s' "$tls_server"; sed '1,/{{TLS_SERVER}}/d' "$TMP1"; } \
+  | sed -e "s/{{HTTP_PORT}}/${HTTP_PORT}/g" \
+        -e "s/{{PORTAL_PORT}}/${PORTAL_PORT}/g" \
+        -e "s/{{HTTPS_PORT}}/${HTTPS_PORT:-443}/g" \
+        -e "s/{{TLS_SERVER_NAME}}/${TLS_SERVER_NAME:-_}/g" > "$OUT"
+
+tls_note=""; [ "${ENABLE_TLS:-false}" = "true" ] && tls_note=" + TLS :${HTTPS_PORT:-443}"
+echo "✓ generated $OUT  (routes file: backend/${ROUTES_PATH}, ${count} system route(s)${tls_note})"

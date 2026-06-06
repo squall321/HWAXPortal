@@ -68,16 +68,28 @@ for _ in $(seq 1 30); do
 done
 [ "$ok" = 1 ] || echo "  ⚠ portal not ready in 30s — check: $APPTAINER instance list / logs $INST_PORTAL"
 
-# 4. nginx (path-routing)
+# 4. nginx (path-routing). When TLS is on: ensure the cert exists and that :HTTPS_PORT is
+#    bindable rootless (else print the one-time sudo hint instead of a cryptic nginx failure).
+if [ "${ENABLE_TLS:-false}" = "true" ]; then
+  [ -f "$REPO_ROOT/${TLS_CERT_PATH:-infra/tls/hwax.crt}" ] || "$(dirname "$0")/gen-tls-cert.sh"
+  hp="${HTTPS_PORT:-443}"
+  ups="$(cat /proc/sys/net/ipv4/ip_unprivileged_port_start 2>/dev/null || echo 1024)"
+  if [ "$hp" -lt "$ups" ]; then
+    echo "  ⚠ rootless can't bind :$hp yet (unprivileged ports start at $ups)."
+    echo "    Run ONCE:  sudo ./infra/scripts/grant-net-bind.sh $hp   then re-run start.sh"
+  fi
+fi
+
 if instance_running "$INST_NGINX"; then
   echo "✓ $INST_NGINX already running"
 else
-  echo "→ start $INST_NGINX (:$HTTP_PORT)"
+  echo "→ start $INST_NGINX (:$HTTP_PORT${ENABLE_TLS:+, TLS :${HTTPS_PORT:-443}})"
   "$APPTAINER" instance start --bind "$REPO_ROOT:/workspace" "$NGINX_SIF" "$INST_NGINX"
 fi
 
 echo
 echo "✓ HWAX up"
 echo "  portal (direct) : http://127.0.0.1:${PORTAL_PORT}"
-echo "  via nginx       : http://127.0.0.1:${HTTP_PORT}   (public: ${PUBLIC_BASE_URL})"
+echo "  via nginx       : http://127.0.0.1:${HTTP_PORT}"
+[ "${ENABLE_TLS:-false}" = "true" ] && echo "  TLS (https)     : https://127.0.0.1:${HTTPS_PORT:-443}   (public: ${PUBLIC_BASE_URL})"
 echo "  routes          : edit backend/${ROUTES_PATH} → ./infra/scripts/restart.sh"

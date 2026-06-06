@@ -103,6 +103,25 @@ cp infra/.env.example infra/.env     # set HTTP_PORT, PUBLIC_BASE_URL, SESSION_S
 `restart.sh` at the repo root is the **native dev** loop (venv + pnpm); `infra/scripts/*` is the
 **Apptainer** path. See `docs/architecture.md` and `docs/GO-LIVE.md`.
 
+### HTTPS / TLS (:443)
+
+The portal nginx can terminate TLS itself. In `infra/.env` set `ENABLE_TLS=true`,
+`TLS_SERVER_NAME=hwax.sec.samsung.net`, `PUBLIC_BASE_URL=https://hwax.sec.samsung.net`,
+`COOKIE_SECURE=true`, then:
+
+```bash
+./infra/scripts/gen-tls-cert.sh           # self-signed cert → infra/tls/ (no sudo)
+sudo ./infra/scripts/grant-net-bind.sh    # ONE-TIME: let rootless nginx bind :443
+./infra/scripts/restart.sh                # nginx now serves https on :443 (+ plain :HTTP_PORT)
+```
+
+- **Self-signed** → browsers warn until you drop the **corp-issued cert** in at `infra/tls/hwax.crt`
+  + `infra/tls/hwax.key` (or point `TLS_CERT_PATH`/`TLS_KEY_PATH` elsewhere) and `restart.sh` — a
+  config-only swap. The cert + key are **gitignored** (never committed).
+- `:443` is rootless-bound via `grant-net-bind.sh` (one `sudo sysctl ip_unprivileged_port_start`).
+  No sudo available? Run TLS on a high port instead (`HTTPS_PORT=8443` → `https://hwax.sec.samsung.net:8443`),
+  exactly like the other services. The plain `:HTTP_PORT` listener stays up for health/LAN either way.
+
 ### Online vs offline install
 
 `start.sh` first runs `bootstrap.sh`, which **installs apptainer with no sudo** by extracting the

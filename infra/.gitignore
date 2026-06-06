@@ -9,6 +9,8 @@ packages/deb/
 packages/sif/
 packages/*.deb
 packages/*.zip
+# TLS cert + key (self-signed or corp — never commit)
+tls/
 # Runtime state / logs / generated config
 data/
 nginx/hwax.conf
