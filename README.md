@@ -130,6 +130,30 @@ The extracted apptainer runs rootless via user namespaces (Ubuntu 24.04 default 
 disables them, `sudo dpkg -i infra/packages/deb/apptainer_*.deb` is the one-command fallback. See
 `infra/packages/README.md`.
 
+### Move images between servers via Google Drive (recommended)
+
+Docker Hub rate-limits anonymous pulls (`TOOMANYREQUESTS`), so don't build on every server. Build
+the `.sif` **once** where Docker Hub is reachable, push to Drive, and pull everywhere else (rclone):
+
+```bash
+# one-time per machine: configure the Drive remote, then wire it in
+rclone config                                              # type: drive  (skip if remote exists)
+./infra/scripts/setup-drive-sync.sh --remote=ApptainerImages:HWAXPortal/images
+
+# build host (can reach Docker Hub):
+./infra/scripts/build.sh && pnpm --dir frontend build
+./infra/scripts/images-to-drive.sh                         # → portal.sif + nginx.sif + dist → Drive
+
+# any other server (rate-limited / air-gapped-ish):
+./infra/scripts/setup-drive-sync.sh --remote=ApptainerImages:HWAXPortal/images
+./infra/scripts/images-from-drive.sh                       # downloads + sha256-verifies into infra/apptainer/
+./infra/scripts/start.sh                                   # build SKIPS (images staged) → boots
+```
+
+Images are checksummed (`SHA256SUMS`, verified on pull) and versioned (`images-<ts>/` + `latest/`,
+keep last `HWAX_DRIVE_RETAIN`). The rclone token lives in `~/.config/rclone/rclone.conf` (machine-local,
+never in the repo). The fully-offline `download-packages.sh` + scp bundle remains the no-Drive fallback.
+
 ## Wiring a linked system (routing)
 
 Each platform tile's **destination** is set in a dead-simple file —

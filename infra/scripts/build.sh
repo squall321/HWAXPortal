@@ -43,7 +43,10 @@ build_def() {
   fi
 
   echo "✗ build failed for $(basename "$sif")."
-  echo "  If the registry is blocked, pre-stage the .sif (scp from another host) into $APPT_DIR/."
+  echo "  Docker Hub blocked or rate-limited (TOOMANYREQUESTS)? Don't build here — fetch the"
+  echo "  pre-built images instead (built once on a machine that can reach Docker Hub):"
+  echo "    ./infra/scripts/images-from-drive.sh      # via Google Drive (rclone), or"
+  echo "    scp <host>:.../infra/apptainer/*.sif $APPT_DIR/   # manual copy"
   exit 1
 }
 
