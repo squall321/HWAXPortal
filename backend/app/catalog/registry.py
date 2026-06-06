@@ -42,15 +42,22 @@ class CatalogRegistry:
         return routes
 
     def _apply_route(self, s: LinkedSystem, routes: dict[str, str]) -> None:
-        """Resolve a destination URL (env var > routes file > yaml) and flip the tile live."""
-        url = os.environ.get(_env_key(s.id)) or routes.get(s.id) or s.url
+        """Resolve a destination URL (env var > routes file > yaml) and flip the tile live.
+
+        The mode is whatever systems.yaml declares (proxy / external-url / handoff) — we only
+        fill in the destination + availability. A routes.env entry is a nginx proxy target by
+        convention, so if the yaml left it at the bare default, treat it as `proxy`.
+        """
+        from_route = os.environ.get(_env_key(s.id)) or routes.get(s.id)
+        url = from_route or s.url
         if url:
             s.url = url
             s.status = "available"  # a destination exists → tile is clickable
-            # Default routing = open the URL (new tab). Keep an explicit handoff type if the
-            # yaml set one (jwt/saml); otherwise treat it as a plain external link.
-            if s.integration_type not in ("jwt-handoff", "saml-handoff"):
-                s.integration_type = "external-url"
+            # If the destination came from routes.env and yaml didn't pick a non-default mode,
+            # it's a path-proxy target (the new-tab-to-localhost trap is why we don't default to
+            # external-url here).
+            if from_route and s.integration_type == "external-url":
+                s.integration_type = "proxy"
 
     def reload(self) -> int:
         raw = yaml.safe_load(self._catalog_path.read_text(encoding="utf-8")) or {}

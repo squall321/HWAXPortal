@@ -11,7 +11,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-IntegrationType = Literal["external-url", "jwt-handoff", "saml-handoff"]
+# external-url : tile opens the URL directly (new tab) — for services with their own real address.
+# proxy        : tile opens <portal>/<id>/ — nginx reverse-proxies to the routes.env destination,
+#                passing the /<id>/ prefix (the service must serve under that base path).
+IntegrationType = Literal["external-url", "proxy", "jwt-handoff", "saml-handoff"]
 HandoffMode = Literal["redirect", "auto_post"]
 Status = Literal["available", "coming_soon"]
 # Signature gradient theme per platform (frontend maps these to colors).

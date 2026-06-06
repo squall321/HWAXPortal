@@ -2,9 +2,14 @@
 # This file IS the catalog: edit + PR = change history + audit log (git diff).
 # Reload at runtime via POST /systems/reload (admin) — no restart needed.
 #
-# Links are not wired yet (status: coming_soon) — these tiles render on the hero page but
-# do not launch. When a platform's route is ready: set status: available, integration_type,
-# url (and audience for jwt-handoff). See docs/architecture.md for the launch flow.
+# integration_type:
+#   proxy        : tile opens <portal>/<id>/ ; nginx reverse-proxies to the routes.env target
+#                  (same server localhost, or another IP). The /<id>/ prefix is PASSED THROUGH,
+#                  so the service must serve under that base path (e.g. Vite `base:'/<id>/'`).
+#                  Enable + set the target in backend/config/routes.env.
+#   external-url : tile opens `url` directly (new tab) — for services with their own real address
+#                  (own domain or externally-exposed port). No nginx proxy, no base-path needed.
+# Proxy tiles go live when routes.env has their target; external-url tiles go live from `url` here.
 
 systems:
   - id: heax-hub
@@ -16,6 +21,7 @@ systems:
     accent: violet
     category: AI Platform
     status: coming_soon
+    integration_type: proxy
     sort_order: 10
 
   - id: ai-data-hub
@@ -27,6 +33,7 @@ systems:
     accent: cyan
     category: Data
     status: coming_soon
+    integration_type: proxy
     sort_order: 20
 
   - id: mx-white-paper
@@ -38,6 +45,7 @@ systems:
     accent: amber
     category: Knowledge
     status: coming_soon
+    integration_type: proxy
     sort_order: 30
 
   - id: report-archive
@@ -49,6 +57,7 @@ systems:
     accent: emerald
     category: Reporting
     status: coming_soon
+    integration_type: proxy
     sort_order: 40
 
   - id: smart-twin-cluster
@@ -59,7 +68,9 @@ systems:
       클러스터. 해석 설정부터 인사이트 도출까지 엔지니어링 워크플로우를 가속합니다.
     accent: sky
     category: Simulation
-    status: coming_soon
+    status: available
+    integration_type: external-url
+    url: https://stcx.sec.samsung.net
     sort_order: 50
 
   - id: spdm
@@ -70,5 +81,7 @@ systems:
       추적하고 표준화된 워크플로우로 협업해 재현성과 신뢰성을 확보합니다.
     accent: rose
     category: Management
-    status: coming_soon
+    status: available
+    integration_type: external-url
+    url: https://spdm.sec.samsung.net
     sort_order: 60

@@ -27,7 +27,8 @@ def _to_read(s: LinkedSystem) -> SystemRead:
         category=s.category,
         status=s.status,
         integration_type=s.integration_type,
-        # Only external-url tiles expose a direct URL; handoffs go via /systems/{id}/launch.
+        # external-url → expose the URL (tile opens it directly). proxy → hide it (the SPA opens
+        # the same-origin /<id>/ path; nginx proxies internally). handoffs → /systems/{id}/launch.
         url=s.url if s.integration_type == "external-url" else None,
     )
 

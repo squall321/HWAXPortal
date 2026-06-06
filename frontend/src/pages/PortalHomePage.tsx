@@ -26,11 +26,17 @@ export default function PortalHomePage() {
       window.setTimeout(() => setToast(null), 2200);
       return;
     }
-    if (s.integration_type === 'external-url' && s.url) {
-      window.open(s.url, '_blank', 'noopener');
-    } else {
-      navigate(`/launch/${s.id}`);
+    if (s.integration_type === 'jwt-handoff' || s.integration_type === 'saml-handoff') {
+      navigate(`/launch/${s.id}`); // token handoff (Phase 4)
+      return;
     }
+    if (s.integration_type === 'external-url' && s.url) {
+      window.open(s.url, '_blank', 'noopener'); // service has its own address (own domain/port)
+      return;
+    }
+    // proxy (default): same portal origin via nginx's /<id>/ reverse proxy — never exposes the
+    // internal localhost/IP to the user's browser; the portal domain + /<id>/ always reaches it.
+    window.open(`/${s.id}/`, '_blank', 'noopener');
   };
 
   return (
