@@ -136,19 +136,24 @@ Docker Hub rate-limits anonymous pulls (`TOOMANYREQUESTS`), so don't build on ev
 the `.sif` **once** where Docker Hub is reachable, push to Drive, and pull everywhere else (rclone):
 
 ```bash
-# one-time per machine: configure the Drive remote, then wire it in
-rclone config                                              # type: drive  (skip if remote exists)
-./infra/scripts/setup-drive-sync.sh --remote=ApptainerImages:HWAXPortal/images
-
 # build host (can reach Docker Hub):
 ./infra/scripts/build.sh && pnpm --dir frontend build
+./infra/scripts/setup-drive-sync.sh                        # installs rclone (no sudo) + registers remote
 ./infra/scripts/images-to-drive.sh                         # → portal.sif + nginx.sif + dist → Drive
 
-# any other server (rate-limited / air-gapped-ish):
-./infra/scripts/setup-drive-sync.sh --remote=ApptainerImages:HWAXPortal/images
+# any other server (rate-limited / air-gapped-ish): no sudo, no Docker Hub
+./infra/scripts/bootstrap-rclone.sh                        # rclone → infra/bin/rclone (no sudo)
+./infra/scripts/setup-drive-sync.sh                        # register ApptainerImages: — three ways:
+#   interactive  : paste the JSON from `rclone authorize "drive" <id> <secret>` (run on a browser PC)
+#   --token-file=token.json   : same, from a file
+#   --rclone-conf=rclone.conf : drop in a conf you scp'd from the build host
 ./infra/scripts/images-from-drive.sh                       # downloads + sha256-verifies into infra/apptainer/
 ./infra/scripts/start.sh                                   # build SKIPS (images staged) → boots
 ```
+
+`bootstrap-rclone.sh` installs rclone as a single no-sudo binary (`infra/bin/rclone`, auto-resolved by
+the scripts) — online download or offline from the bundle. `setup-drive-sync.sh` registers the Drive
+remote server-side (the one-time Google login still happens on a browser machine — that's OAuth).
 
 Images are checksummed (`SHA256SUMS`, verified on pull) and versioned (`images-<ts>/` + `latest/`,
 keep last `HWAX_DRIVE_RETAIN`). The rclone token lives in `~/.config/rclone/rclone.conf` (machine-local,

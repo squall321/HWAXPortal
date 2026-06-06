@@ -5,10 +5,11 @@
 # Needs in infra/.env:  HWAX_DRIVE_REMOTE=ApptainerImages:HWAXPortal/images
 # After this:  ./infra/scripts/start.sh   (build will "skip — exists")
 set -euo pipefail
+"$(dirname "$0")/bootstrap-rclone.sh"   # ensure rclone (no-op if present; installs no-sudo otherwise)
 . "$(dirname "$0")/_common.sh"
 
-command -v rclone >/dev/null 2>&1 \
-  || { echo "✗ rclone not installed (apt-get install rclone — or https://rclone.org/install/)"; exit 1; }
+"$RCLONE" version >/dev/null 2>&1 \
+  || { echo "✗ rclone unavailable — run ./infra/scripts/bootstrap-rclone.sh"; exit 1; }
 REMOTE="${HWAX_DRIVE_REMOTE:-}"
 [ -n "$REMOTE" ] \
   || { echo "✗ HWAX_DRIVE_REMOTE not set in infra/.env (e.g. ApptainerImages:HWAXPortal/images)"; exit 1; }
@@ -16,8 +17,8 @@ REMOTE="${REMOTE%/}"
 
 # Source = latest/ if it has the images, else the newest images-<TS>/ dir.
 SRC="$REMOTE/latest"
-if ! rclone lsf "$SRC/" 2>/dev/null | grep -q '^portal\.sif$'; then
-  NEWEST="$(rclone lsf --dirs-only "$REMOTE/" 2>/dev/null \
+if ! "$RCLONE" lsf "$SRC/" 2>/dev/null | grep -q '^portal\.sif$'; then
+  NEWEST="$("$RCLONE" lsf --dirs-only "$REMOTE/" 2>/dev/null \
     | sed 's#/$##' | grep -E '^images-' | sort | tail -n 1 || true)"
   [ -n "$NEWEST" ] \
     || { echo "✗ no images on $REMOTE (no latest/ or images-*/). Push from a build host first:"; \
@@ -27,7 +28,7 @@ fi
 echo "→ source: $SRC"
 
 STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
-rclone copy --progress "$SRC/" "$STAGE/"
+"$RCLONE" copy --progress "$SRC/" "$STAGE/"
 
 # Verify integrity before staging.
 if [ -f "$STAGE/SHA256SUMS" ]; then

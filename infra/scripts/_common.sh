@@ -40,6 +40,12 @@ if [ -z "${APPTAINER:-}" ]; then
 fi
 : "${APPTAINER:=apptainer}"
 
+# rclone: prefer the no-sudo local binary (bootstrap-rclone.sh), else PATH.
+if [ -z "${RCLONE:-}" ]; then
+  [ -x "$REPO_ROOT/infra/bin/rclone" ] && RCLONE="$REPO_ROOT/infra/bin/rclone"
+fi
+: "${RCLONE:=rclone}"
+
 require_apptainer() {
   command -v "$APPTAINER" >/dev/null 2>&1 || {
     echo "✗ '$APPTAINER' not found in PATH"; exit 1;

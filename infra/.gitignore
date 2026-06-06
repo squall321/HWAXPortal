@@ -2,10 +2,13 @@
 *.sif
 # Extracted (no-sudo) apptainer binary
 apptainer/bin-*/
+# No-sudo rclone binary
+bin/
 # Offline bundle blobs (keep packages/README.md only)
 packages/deb/
 packages/sif/
 packages/*.deb
+packages/*.zip
 # Runtime state / logs / generated config
 data/
 nginx/hwax.conf

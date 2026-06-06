@@ -36,6 +36,18 @@ else
   echo "  ✓ $(basename "$deb")"
 fi
 
+echo "▶ rclone (${ARCH}) — for Drive image sync"
+rz="$PKG_DIR/rclone-current-linux-${ARCH}.zip"
+rurl="https://downloads.rclone.org/rclone-current-linux-${ARCH}.zip"
+if [ -f "$rz" ] && [ "$(stat -c%s "$rz" 2>/dev/null || echo 0)" -ge 1000000 ]; then
+  echo "  ✓ already cached: $rz"
+else
+  if ! curl -fL --retry 2 --connect-timeout 15 -o "$rz" "$rurl"; then
+    [ -n "$FALLBACK_PROXY" ] && HTTPS_PROXY="$FALLBACK_PROXY" curl -fL --retry 2 -o "$rz" "$rurl"
+  fi
+  echo "  ✓ $(basename "$rz")"
+fi
+
 if [ "$SKIP_SIF" -eq 0 ]; then
   echo "▶ pre-built images (.sif)"
   if ls infra/apptainer/*.sif >/dev/null 2>&1; then

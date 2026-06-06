@@ -6,10 +6,11 @@
 # Run on a machine that HAS the images:  ./infra/scripts/build.sh  (once) then this.
 # Needs in infra/.env:  HWAX_DRIVE_REMOTE=ApptainerImages:HWAXPortal/images
 set -euo pipefail
+"$(dirname "$0")/bootstrap-rclone.sh"   # ensure rclone (no-op if present; installs no-sudo otherwise)
 . "$(dirname "$0")/_common.sh"
 
-command -v rclone >/dev/null 2>&1 \
-  || { echo "✗ rclone not installed (apt-get install rclone — or https://rclone.org/install/)"; exit 1; }
+"$RCLONE" version >/dev/null 2>&1 \
+  || { echo "✗ rclone unavailable — run ./infra/scripts/bootstrap-rclone.sh"; exit 1; }
 REMOTE="${HWAX_DRIVE_REMOTE:-}"
 [ -n "$REMOTE" ] \
   || { echo "✗ HWAX_DRIVE_REMOTE not set in infra/.env (e.g. ApptainerImages:HWAXPortal/images)"; exit 1; }
@@ -36,18 +37,18 @@ fi
   sha256sum $files > SHA256SUMS )
 
 echo "→ uploading to $REMOTE/images-$TS/  (+ latest/)"
-rclone copy --progress "$STAGE/" "$REMOTE/images-$TS/"
-rclone sync --progress "$STAGE/" "$REMOTE/latest/"   # exact mirror so stale files drop
+"$RCLONE" copy --progress "$STAGE/" "$REMOTE/images-$TS/"
+"$RCLONE" sync --progress "$STAGE/" "$REMOTE/latest/"   # exact mirror so stale files drop
 
 # Retention: keep last N timestamped sets (name sort = chronological).
 if [ "$RETAIN" -gt 0 ]; then
   echo "→ retention: keep last $RETAIN image set(s)"
-  TO_DELETE="$(rclone lsf --dirs-only "$REMOTE/" 2>/dev/null \
+  TO_DELETE="$("$RCLONE" lsf --dirs-only "$REMOTE/" 2>/dev/null \
     | sed 's#/$##' | grep -E '^images-' | sort | head -n -"$RETAIN" || true)"
   for d in $TO_DELETE; do
     [ -z "$d" ] && continue
     echo "  · deleting $d/"
-    rclone purge "$REMOTE/$d" 2>/dev/null || echo "    ⚠ purge failed (ignore)"
+    "$RCLONE" purge "$REMOTE/$d" 2>/dev/null || echo "    ⚠ purge failed (ignore)"
   done
 fi
 
