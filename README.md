@@ -142,9 +142,29 @@ ai-data-hub=http://localhost:9302
 ```
 
 The names/logos/descriptions live in `backend/config/systems.yaml`; **only the port/URL is in
-`routes.env`**. Edit it, then restart or `POST /systems/reload` (admin). Per-environment: dev
-points at `routes.env` (localhost ports), prod at `routes.prod.env` via `ROUTES_PATH`. Any line
-can be overridden by an env var `SYS_<ID>_URL` (id upper-cased, `-`→`_`) for Docker/prod.
+`routes.env`**. Edit it, then `./infra/scripts/restart.sh` (or `POST /systems/reload` as admin).
+Per-environment: dev points at `routes.env`, prod at `routes.prod.env` via `ROUTES_PATH`. Any line
+can be overridden by an env var `SYS_<ID>_URL` (id upper-cased, `-`→`_`).
+
+### Services on different servers
+
+Each value is **whatever address the destination is reachable at** — `localhost`, another server's
+**IP**, or a **domain**. Setting one line enables both connection paths at once:
+
+```ini
+mx-white-paper=http://localhost:5173            # same host as the portal
+heax-hub=http://10.123.45.67:4180               # another server, by IP
+ai-data-hub=https://aidata.sec.samsung.net      # another server, by domain
+report-archive=http://localhost:8001/dashboard/ # sub-path on a service
+```
+
+> ⚠️ `localhost` means a **different machine** for the two paths:
+> - **tile click → new tab** is resolved by the **user's browser** (so `localhost` = the user's PC),
+> - **nginx `/<id>/` proxy** is resolved by the **nginx host** (so `localhost` = the portal server).
+>
+> For cross-server setups the nginx `/<id>/` path is friendliest — users hit one portal domain and
+> never need internal IPs. (A service must tolerate a `/<id>/` base path for its own assets; if not,
+> use its own domain/IP and the new-tab path.)
 
 ## Auth model — the go-live switch
 
