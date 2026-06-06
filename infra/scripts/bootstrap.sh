@@ -30,13 +30,32 @@ for a in "$@"; do
   esac
 done
 
-# 0. Already usable? (PATH apptainer, or a previously-extracted local one)
+# Turn off the systemd cgroup manager in a (user-owned) extracted conf — see note at extraction.
+disable_cgroups() {
+  local conf="$1/etc/apptainer/apptainer.conf"
+  if [ -f "$conf" ] && grep -qiE '^systemd cgroups = yes' "$conf"; then
+    sed -i 's/^systemd cgroups = yes/systemd cgroups = no/' "$conf"
+    echo "  · set 'systemd cgroups = no' in $(basename "$1") (no D-Bus needed for instance start)"
+  fi
+}
+
+# 0. Already have OUR pinned, extracted apptainer? Ensure cgroups off, then use it.
 existing=""
 for c in "$APPT_DIR"/bin-*/usr/bin/apptainer; do [ -x "$c" ] && existing="$c"; done
-[ -z "$existing" ] && existing="$(command -v apptainer 2>/dev/null || true)"
 if [ -n "$existing" ] && "$existing" --version >/dev/null 2>&1; then
-  echo "✓ apptainer already available: $existing ($("$existing" --version 2>&1 | head -1))"
+  disable_cgroups "$(dirname "$(dirname "$(dirname "$existing")")")"
+  echo "✓ apptainer (pinned, no-sudo): $existing ($("$existing" --version 2>&1 | head -1))"
   exit 0
+fi
+# We PIN our own apptainer for reproducibility — a newer system apptainer (e.g. 1.5.0) enforces
+# rootless cgroups/D-Bus and its root-owned conf can't be relaxed without sudo, which breaks
+# `instance start` on hosts without a user D-Bus session. Only defer to the system one if asked.
+if [ "${HWAX_USE_SYSTEM_APPTAINER:-0}" = "1" ] || printf '%s\n' "$@" | grep -qx -- '--use-system'; then
+  sys="$(command -v apptainer 2>/dev/null || true)"
+  if [ -n "$sys" ] && "$sys" --version >/dev/null 2>&1; then
+    echo "✓ using system apptainer (--use-system): $sys ($("$sys" --version 2>&1 | head -1))"
+    exit 0
+  fi
 fi
 
 # 1. Locate a cached .deb (offline) or download one (online).
@@ -90,6 +109,7 @@ if [ ! -x "$bin" ]; then
   [ -d "$target/var" ] && [ ! -e "$target/usr/var" ] && ln -s ../var "$target/usr/var"
 fi
 [ -x "$bin" ] || { echo "✗ extraction failed: $bin not found"; exit 1; }
+disable_cgroups "$target"   # no D-Bus needed for rootless instance start
 
 # 3. Verify it runs.
 if ! "$bin" --version >/dev/null 2>&1; then
