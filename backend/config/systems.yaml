@@ -56,8 +56,9 @@ systems:
       아카이브. 일관된 템플릿으로 빠르게 만들고, 과거 보고 이력을 자산화합니다.
     accent: emerald
     category: Reporting
-    status: coming_soon
-    integration_type: proxy
+    status: available
+    integration_type: external-url
+    url: http://hwax.sec.samsung.net:3001   # temporary direct link (own port) until proxied
     sort_order: 40
 
   - id: smart-twin-cluster
