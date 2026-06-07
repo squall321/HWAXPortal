@@ -93,8 +93,17 @@ if want mxwp; then
       [ -f .env ] || cp .env.example .env
       set_remote .env MXWP_IMAGES_REMOTE MXWhitePaper/images
       ./infra/scripts/images-from-drive.sh    # web.sif (dist baked) — postgres/meili/minio already present
-      # Only the web instance needs the new image; bounce it (data instances keep running).
-      [ "$RESTART" = 1 ] || "${MXWP_APPTAINER:-apptainer}" instance stop mxwp_web 2>/dev/null || true
+      # Force-bounce the web instance so the NEW web.sif (baked dist) replaces the running one.
+      # Resolve an extracted (no-D-Bus) apptainer directly (don't source _common — its set -e can
+      # abort under odd shells); fall back to system apptainer.
+      _appt="apptainer"
+      for _c in infra/apptainer/bin-*/usr/bin/apptainer \
+                ../HWAXPortal/infra/apptainer/bin-*/usr/bin/apptainer \
+                "$HOME"/Projects/HWAXPortal/infra/apptainer/bin-*/usr/bin/apptainer \
+                "$HOME"/claude/HWAXPortal/infra/apptainer/bin-*/usr/bin/apptainer; do
+        [ -x "$_c" ] && { _appt="$_c"; break; }
+      done
+      [ "$RESTART" = 1 ] || "$_appt" instance stop mxwp_web 2>/dev/null || true
       ./infra/scripts/start.sh ) && ok "mxwp up" || skip "mxwp failed (see above)"
   else skip "MXWhitePaper repo not found (set MXWP_DIR=)"; fi
 fi
