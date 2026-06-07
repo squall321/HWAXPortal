@@ -50,8 +50,8 @@ export default function PortalHomePage() {
             HWAX <span className="hero-grad">Platform Hub</span>
           </h1>
           <p className="hero-sub">
-            사내 AI 자동화 시스템을 한 곳에서.
-            {user?.display_name ? ` ${user.display_name}님, 환영합니다.` : ''}
+            {user?.display_name ? `${user.display_name}님, 환영합니다. ` : ''}
+            검증된 사내 AI 자동화 플랫폼을 하나의 관문에서 안전하게 연결합니다.
           </p>
           <div className="hero-stats">
             <div>
