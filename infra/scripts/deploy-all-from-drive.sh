@@ -109,7 +109,11 @@ if want heax; then
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
       ./deploy/apptainer/dist-from-drive.sh   # frontend/dist (+ optional caddy sif)
       [ "$RESTART" = 1 ] || bash deploy/apptainer/stop.sh 2>/dev/null || true
-      HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh ) && ok "heax up" || skip "heax failed (see above)"
+      if ! HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh; then
+        echo "  ── last lines of var/logs/postgres-start.log (the hidden error) ──"
+        tail -15 var/logs/postgres-start.log 2>/dev/null | sed 's/^/    /'
+        exit 1
+      fi ) && ok "heax up" || skip "heax failed (see the log lines above)"
   else skip "HEAXHub repo not found (set HEAX_DIR=)"; fi
 fi
 
