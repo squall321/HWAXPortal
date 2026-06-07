@@ -47,6 +47,25 @@ fi
 [ -n "$REMOTE_ALIAS" ] && printf '\033[1;36mℹ rclone remote: %s:\033[0m\n' "$REMOTE_ALIAS" \
   || printf '\033[1;33m⚠ no rclone remote detected — configure one (rclone config / copy rclone.conf) or pass --remote=NAME\033[0m\n'
 
+# Robust git update: a plain `git pull --ff-only || true` silently leaves a repo on STALE code when
+# the tree is dirty or diverged (that's how cae00 kept an old routes.env → wrong nginx routing). This
+# stashes local junk and hard-resets to origin so the repo is ALWAYS current. Set NO_GIT_RESET=1 to
+# only do a soft pull (and just warn if it can't fast-forward).
+git_update() {  # run inside the repo dir
+  local branch; branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+  git fetch origin "$branch" --quiet 2>/dev/null || { echo "  ⚠ git fetch failed (offline?) — using current checkout"; return 0; }
+  if [ "${NO_GIT_RESET:-0}" = "1" ]; then
+    git merge --ff-only "origin/$branch" 2>/dev/null \
+      || echo "  ⚠ can't fast-forward (local changes/diverged) — NOT updated. Resolve, or unset NO_GIT_RESET."
+  else
+    local before after; before="$(git rev-parse --short HEAD 2>/dev/null)"
+    git stash push -u -q -m "deploy-all auto-stash" 2>/dev/null || true
+    git reset --hard "origin/$branch" --quiet 2>/dev/null || true
+    after="$(git rev-parse --short HEAD 2>/dev/null)"
+    [ "$before" = "$after" ] && echo "  · git: up to date ($after)" || echo "  · git: $before → $after (reset to origin/$branch)"
+  fi
+}
+
 # Write KEY=<alias>:<path> into a repo's env file IF not already a non-empty value (idempotent).
 set_remote() {  # $1=envfile  $2=KEY  $3=path
   local f="$1" key="$2" val="${REMOTE_ALIAS}:$3"
@@ -76,7 +95,7 @@ RESTART="${NO_RESTART:-0}"
 if want portal; then
   hr "HWAX Portal  ($PORTAL_DIR)"
   ( cd "$PORTAL_DIR"
-    git pull --ff-only 2>/dev/null || true
+    git_update
     [ -f infra/.env ] || cp infra/.env.example infra/.env
     set_remote infra/.env HWAX_DRIVE_REMOTE HWAXPortal/images
     ./infra/scripts/images-from-drive.sh      # portal.sif + nginx.sif + frontend/dist
@@ -89,7 +108,7 @@ if want mxwp; then
   if [ -n "$MXWP_DIR" ]; then
     hr "MX White Paper  ($MXWP_DIR)"
     ( cd "$MXWP_DIR"
-      git pull --ff-only 2>/dev/null || true
+      git_update
       [ -f .env ] || cp .env.example .env
       set_remote .env MXWP_IMAGES_REMOTE MXWhitePaper/images
       ./infra/scripts/images-from-drive.sh    # web.sif (dist baked) — postgres/meili/minio already present
@@ -113,7 +132,7 @@ if want heax; then
   if [ -n "$HEAX_DIR" ]; then
     hr "HEAX Hub  ($HEAX_DIR)"
     ( cd "$HEAX_DIR"
-      git pull --ff-only 2>/dev/null || true
+      git_update
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
       ./deploy/apptainer/dist-from-drive.sh   # frontend/dist (+ optional caddy sif)
@@ -134,7 +153,7 @@ if want aidh; then
     # --force restarts even if the port is busy (start_api.sh kills the old api.pid + relaunches),
     # so the new redirect/root_path code is picked up.
     ( cd "$AIDH_DIR"
-      git pull --ff-only 2>/dev/null || true
+      git_update
       AIDH_ROOT_PATH=/ai-data-hub ./boot.sh --force ) && ok "aidh up" || skip "aidh failed (see above)"
   else skip "AIDataHub repo not found (set AIDH_DIR=)"; fi
 fi
