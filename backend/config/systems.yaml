@@ -58,7 +58,7 @@ systems:
     category: Reporting
     status: available
     integration_type: external-url
-    url: http://hwax.sec.samsung.net:3001   # temporary direct link (own port) until proxied
+    url: http://hwax.sec.samsung.net:3000   # temporary direct link (own port) until proxied
     sort_order: 40
 
   - id: smart-twin-cluster

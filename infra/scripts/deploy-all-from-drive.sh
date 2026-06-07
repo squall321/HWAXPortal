@@ -67,6 +67,11 @@ hr() { printf '\n\033[1;36m── %s ──────────────�
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 skip() { printf '  \033[1;33m⚠ skip:\033[0m %s\n' "$*"; }
 
+# We RESTART each service (stop → start) so freshly pulled images / nginx conf / code actually take
+# effect. `start.sh` alone skips already-running instances, leaving stale config live (that's what
+# caused the 502 / JSON / CSS-MIME issues). Set NO_RESTART=1 to only start what's down.
+RESTART="${NO_RESTART:-0}"
+
 # ── 1. Portal (the hub) ─────────────────────────────────────────────────────
 if want portal; then
   hr "HWAX Portal  ($PORTAL_DIR)"
@@ -75,6 +80,7 @@ if want portal; then
     [ -f infra/.env ] || cp infra/.env.example infra/.env
     set_remote infra/.env HWAX_DRIVE_REMOTE HWAXPortal/images
     ./infra/scripts/images-from-drive.sh      # portal.sif + nginx.sif + frontend/dist
+    [ "$RESTART" = 1 ] || ./infra/scripts/stop.sh 2>/dev/null || true   # stop → start = pick up new conf/images
     HWAX_NO_BUILD=1 ./infra/scripts/start.sh ) && ok "portal up" || skip "portal failed (see above)"
 fi
 
@@ -87,6 +93,8 @@ if want mxwp; then
       [ -f .env ] || cp .env.example .env
       set_remote .env MXWP_IMAGES_REMOTE MXWhitePaper/images
       ./infra/scripts/images-from-drive.sh    # web.sif (dist baked) — postgres/meili/minio already present
+      # Only the web instance needs the new image; bounce it (data instances keep running).
+      [ "$RESTART" = 1 ] || "${MXWP_APPTAINER:-apptainer}" instance stop mxwp_web 2>/dev/null || true
       ./infra/scripts/start.sh ) && ok "mxwp up" || skip "mxwp failed (see above)"
   else skip "MXWhitePaper repo not found (set MXWP_DIR=)"; fi
 fi
@@ -100,17 +108,21 @@ if want heax; then
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
       ./deploy/apptainer/dist-from-drive.sh   # frontend/dist (+ optional caddy sif)
+      [ "$RESTART" = 1 ] || bash deploy/apptainer/stop.sh 2>/dev/null || true
       HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh ) && ok "heax up" || skip "heax failed (see above)"
   else skip "HEAXHub repo not found (set HEAX_DIR=)"; fi
 fi
 
 # ── 4. AI Data Hub (no build, no Drive artifact — git pull + root_path) ──────
+# boot.sh restarts uvicorn itself, so the redirect/root_path code is picked up.
 if want aidh; then
   if [ -n "$AIDH_DIR" ]; then
     hr "AI Data Hub  ($AIDH_DIR)"
+    # --force restarts even if the port is busy (start_api.sh kills the old api.pid + relaunches),
+    # so the new redirect/root_path code is picked up.
     ( cd "$AIDH_DIR"
       git pull --ff-only 2>/dev/null || true
-      AIDH_ROOT_PATH=/ai-data-hub ./boot.sh ) && ok "aidh up" || skip "aidh failed (see above)"
+      AIDH_ROOT_PATH=/ai-data-hub ./boot.sh --force ) && ok "aidh up" || skip "aidh failed (see above)"
   else skip "AIDataHub repo not found (set AIDH_DIR=)"; fi
 fi
 
