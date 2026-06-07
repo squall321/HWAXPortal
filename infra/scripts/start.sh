@@ -15,16 +15,19 @@ require_apptainer
 
 "$(dirname "$0")/build.sh"
 
-# 1. SPA must be built (host). Skip if dist already present.
+# 1. SPA must be present (built ONLINE, shipped via Drive). Skip if dist already there.
+# On cae00 (corp TLS-intercept: npm unreachable) NEVER build here — pull the dist instead.
 if [ ! -f "$REPO_ROOT/frontend/dist/index.html" ]; then
-  if command -v pnpm >/dev/null 2>&1; then
+  if [ "${HWAX_NO_BUILD:-0}" != "1" ] && command -v pnpm >/dev/null 2>&1; then
     echo "→ building SPA (frontend/dist)…"
     ( cd "$REPO_ROOT/frontend" && pnpm install --frozen-lockfile=false && pnpm build ) \
       > "$LOG_DIR/spa-build.log" 2>&1 \
       || { echo "✗ SPA build failed (see $LOG_DIR/spa-build.log)"; exit 1; }
   else
-    echo "✗ frontend/dist missing and pnpm not on host."
-    echo "  Build the SPA on a machine with Node, copy frontend/dist here, then re-run."
+    echo "✗ frontend/dist missing. Don't build on a corp-network server — fetch the prebuilt SPA"
+    echo "  (built once on a machine that can reach npm, shipped via Google Drive):"
+    echo "    ./infra/scripts/images-from-drive.sh    # pulls frontend/dist (+ the .sif images)"
+    echo "  or copy frontend/dist here manually, then re-run start.sh."
     exit 1
   fi
 fi
