@@ -28,10 +28,16 @@ if [ -f "$ROUTES_FILE" ]; then
     id="$(printf '%s' "${line%%=*}" | xargs)"
     url="$(printf '%s' "${line#*=}" | xargs)"
     [ -n "$id" ] && [ -n "$url" ] || continue
-    # URL verbatim → proxy_pass semantics do the right thing per service:
-    #   bare host (http://h:5173)         → no URI part → the /<id>/ prefix is PASSED THROUGH
-    #                                        (service must serve under that base path)
-    #   host + path (http://h:8001/dash/) → has a URI → /<id>/ is mapped to /dash/
+    # proxy_pass semantics: a trailing-slash/path URI makes nginx STRIP the /<id>/ prefix; a bare
+    # host PASSES it through. Our proxied services all serve at their root (Caddy / FastAPI / `serve`)
+    # and bake the base into their assets, so we always want STRIP. Normalize: if the URL is just a
+    # host with NO path (e.g. http://h:5173), append "/" so the prefix is stripped — regardless of
+    # whether routes.env had the slash. A URL that already has a path (…/api/, …/dashboard/) is left
+    # as-is (it maps /<id>/ → that path).
+    case "$url" in
+      http://*/*|https://*/*) : ;;                 # already has a path → leave as-is
+      http://*|https://*)     url="${url%/}/" ;;    # bare host → force trailing slash (strip)
+    esac
     locations="${locations}$(loc_block "$id" "$url")"$'\n'
     count=$((count + 1))
   done < "$ROUTES_FILE"
