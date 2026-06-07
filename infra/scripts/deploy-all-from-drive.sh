@@ -139,6 +139,18 @@ if want aidh; then
   else skip "AIDataHub repo not found (set AIDH_DIR=)"; fi
 fi
 
+# ── Always refresh the portal routing: regenerate nginx conf + restart nginx so the per-service
+#    strip/proxy rules are live (a service deploy that didn't touch the portal would otherwise leave
+#    nginx on a stale conf → /mx-white-paper/assets etc. served wrong). Cheap; nginx-only bounce.
+if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
+  hr "Portal routing refresh (nginx)"
+  ( cd "$PORTAL_DIR"
+    APPT="apptainer"; for c in infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && { APPT="$c"; break; }; done
+    ./infra/scripts/gen-nginx-conf.sh >/dev/null 2>&1 || true
+    "$APPT" instance stop hwax_nginx >/dev/null 2>&1 || true
+    HWAX_NO_BUILD=1 ./infra/scripts/start.sh >/dev/null 2>&1 || true ) && ok "nginx reloaded with current routes" || skip "nginx refresh failed"
+fi
+
 # ── Health summary (everything that was started) ────────────────────────────
 hr "Health"
 probe() {  # $1=label  $2=url
