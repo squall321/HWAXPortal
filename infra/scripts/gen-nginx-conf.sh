@@ -11,8 +11,14 @@ OUT="$NGINX_DIR/hwax.conf"
 
 loc_block() {  # $1=id  $2=url  (unquoted heredoc: ${} expands, \$ stays literal for nginx)
   local id="$1" url="$2"
+  # X-Forwarded-Prefix = the SERVICE root prefix (first path segment of the id), so a prefix-aware
+  # backend (e.g. HEAXHub's agent manifest building absolute installer/download URLs) can prepend it
+  # and emit https://<host>/<id>/... rather than a prefix-less URL the portal would 404. For a nested
+  # id like "mx-white-paper/api" the prefix is still the service root "/mx-white-paper".
+  local svc="/${id%%/*}"
   cat <<EOF
         location /${id}/ {
+            proxy_set_header X-Forwarded-Prefix ${svc};
             proxy_pass ${url};
         }
 EOF
