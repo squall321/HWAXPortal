@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HWAX 허브 추진 전략</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --navy:#0F2D52;--blue:#1A5FB4;--lblue:#E8F0FB;--teal:#128C7E;
+  --orange:#E27D2E;--dgray:#2B2F36;--gray:#6B7280;--white:#fff;
+  --green:#2E8B57;--red:#C0392B;--amber:#D97706;
+  --c1:#1A5FB4;--c2:#128C7E;--c3:#7B3FA0;--c4:#C0392B;
+  --f:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif
+}
+*{font-family:var(--f)}
+html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
+
+.deck{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative}
+.slide{
+  position:absolute;width:1280px;height:720px;background:#f0f3f8;
+  border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,.55);
+  overflow:hidden;opacity:0;pointer-events:none;
+  transform:translateX(60px);transition:opacity .32s,transform .32s
+}
+.slide.active{opacity:1;pointer-events:all;transform:none}
+.slide.prev{opacity:0;transform:translateX(-60px)}
+
+.prog{position:fixed;top:0;left:0;height:3px;background:var(--orange);transition:width .3s;z-index:50}
+.hint{position:fixed;top:14px;right:18px;color:rgba(255,255,255,.3);font-size:10.5px}
+.nav{
+  position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:10px;z-index:40;
+  background:rgba(10,25,50,.82);backdrop-filter:blur(8px);
+  border-radius:24px;padding:8px 18px
+}
+.nb{background:none;border:none;color:#8FB4DE;cursor:pointer;font-size:16px;
+  width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:.15s}
+.nb:hover{background:rgba(255,255,255,.12);color:#fff}
+.ndots{display:flex;gap:7px}
+.nd{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.25);border:none;cursor:pointer;transition:.2s;padding:0}
+.nd.on{background:#fff;width:20px;border-radius:3px}
+.nlbl{color:#C2D4EC;font-size:11px;min-width:90px;text-align:center}
+
+/* ── 공통 헤더 ── */
+.ph{background:var(--navy);padding:14px 30px 12px;display:flex;align-items:baseline;gap:12px}
+.ph-n{font-size:20px;font-weight:700;color:#6F9FD8}
+.ph-t{font-size:19px;font-weight:700;color:#fff}
+.ph-s{font-size:11.5px;color:#8BAFD4;margin-left:auto}
+.ph-line{height:3px;background:var(--blue);margin:0}
+
+/* ── 섹션 타이틀 ── */
+.st{font-size:11px;font-weight:700;color:var(--gray);letter-spacing:.8px;
+  text-transform:uppercase;display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.st::after{content:'';flex:1;height:1px;background:#d8dfe8}
+
+/* ── 배지 ── */
+.tag{display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;color:#fff;vertical-align:middle}
+.tg{background:var(--green)}.tb{background:var(--blue)}.to{background:var(--orange)}
+.tt{background:var(--teal)}.tgy{background:var(--gray)}
+
+/* ══════════════════════════════
+   PAGE 1 — 비전 + 왜
+══════════════════════════════ */
+#p1{display:grid;grid-template-columns:360px 1fr;height:100%}
+.p1l{background:var(--navy);padding:44px 34px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.p1l::before{content:'';position:absolute;right:-90px;top:-90px;width:320px;height:320px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.05)}
+.p1l::after{content:'';position:absolute;right:30px;bottom:50px;width:160px;height:160px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.04)}
+.p1-tag{font-size:10.5px;color:#6F9FD8;letter-spacing:.5px;margin-bottom:18px;text-transform:uppercase}
+.p1-main{font-size:58px;font-weight:700;color:#fff;line-height:1;letter-spacing:-2px;margin-bottom:4px}
+.p1-sub{font-size:15px;color:#8BAFD4;margin-bottom:22px;line-height:1.6}
+.p1-bar{width:36px;height:3px;background:var(--orange);border-radius:2px;margin-bottom:20px}
+.p1-msg{font-size:15px;color:#C8D8EC;line-height:1.85;flex:1}
+.p1-msg strong{color:var(--orange)}
+.p1-msg em{color:#6FCDC5;font-style:normal;font-weight:700}
+.p1-cond{margin-top:14px;background:rgba(255,255,255,.06);border-radius:6px;padding:12px 14px}
+.p1-cond-title{font-size:10.5px;color:#6F9FD8;letter-spacing:.3px;margin-bottom:7px;font-weight:700}
+.p1-cond-item{font-size:12.5px;color:#C2D4EC;padding:3px 0;display:flex;align-items:center;gap:7px}
+.p1-cond-item::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--orange);flex-shrink:0}
+.p1-foot{font-size:10px;color:#3F5F7A;margin-top:14px}
+
+.p1r{padding:26px 28px 20px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+
+/* Why 3 cards */
+.why3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.wcard{background:#fff;border-radius:8px;padding:14px 15px;border-top:3px solid var(--blue)}
+.wcard.wr{border-color:var(--red)}
+.wcard.wa{border-color:var(--amber)}
+.wcard.wg{border-color:var(--green)}
+.wcard-head{font-size:13px;font-weight:700;color:var(--dgray);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.wcard-now{font-size:11.5px;color:#888;background:#f6f7f9;border-radius:4px;padding:5px 8px;margin-bottom:6px;line-height:1.5}
+.wcard-arr{font-size:10px;color:#bbb;text-align:center;margin:3px 0}
+.wcard-aft{font-size:11.5px;color:var(--teal);font-weight:600;padding:5px 8px;background:#EAF6F4;border-radius:4px;line-height:1.5}
+
+/* 3-Tier */
+.portal-bar{background:var(--navy);border-radius:6px;padding:9px 16px;
+  display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.portal-bar strong{color:#fff;font-size:14px}
+.portal-bar span{font-size:12px;color:#C2D4EC}
+.portal-bar .arr{margin-left:auto;font-size:10.5px;color:#6F9FD8}
+.tiers{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.tc{background:#fff;border-radius:6px;overflow:hidden;border:1.5px solid #cdd}
+.tc-hd{padding:8px 12px;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px}
+.tc-bd{padding:10px 12px}
+.tc-nm{font-size:13.5px;font-weight:700;margin-bottom:5px}
+.tc-r{font-size:11px;color:var(--dgray);padding:2px 0;display:flex;gap:4px;line-height:1.45}
+.tc-r b{flex-shrink:0;width:28px}
+
+/* ══════════════════════════════
+   PAGE 2 — 타팀 4가지 할 일
+══════════════════════════════ */
+#p2{display:flex;flex-direction:column;height:100%}
+#p2 .body{padding:16px 28px 16px;flex:1;display:flex;flex-direction:column;gap:12px}
+.four-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:12px;flex:1}
+.fc{background:#fff;border-radius:8px;padding:15px 16px;display:flex;flex-direction:column;gap:0;
+  border-top:4px solid #ccc;position:relative;overflow:hidden}
+.fc::after{
+  content:attr(data-n);position:absolute;right:14px;bottom:10px;
+  font-size:52px;font-weight:700;opacity:.04;color:#000;line-height:1
+}
+.fc1{border-color:var(--c1)}
+.fc2{border-color:var(--c2)}
+.fc3{border-color:var(--c3)}
+.fc4{border-color:var(--c4)}
+.fc-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.fc-icon{font-size:24px;flex-shrink:0;margin-top:1px}
+.fc-meta{}
+.fc-num{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px}
+.fc1 .fc-num{color:var(--c1)}
+.fc2 .fc-num{color:var(--c2)}
+.fc3 .fc-num{color:var(--c3)}
+.fc4 .fc-num{color:var(--c4)}
+.fc-title{font-size:15px;font-weight:700;color:var(--dgray);line-height:1.3;margin-bottom:0}
+.fc-divider{height:1px;background:#eef0f4;margin:8px 0}
+.fc-rows{display:flex;flex-direction:column;gap:5px;flex:1}
+.fc-row{display:flex;align-items:baseline;gap:7px;font-size:12px;color:var(--dgray);line-height:1.5}
+.fc-row .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.fc1 .dot{background:var(--c1)}
+.fc2 .dot{background:var(--c2)}
+.fc3 .dot{background:var(--c3)}
+.fc4 .dot{background:var(--c4)}
+.fc-row .hl{font-weight:700}
+.fc-foot{margin-top:8px;padding:6px 10px;border-radius:5px;font-size:11px;line-height:1.5}
+.fc1 .fc-foot{background:#EBF2FF;color:var(--c1)}
+.fc2 .fc-foot{background:#EAF6F4;color:var(--c2)}
+.fc3 .fc-foot{background:#F5EEF8;color:var(--c3)}
+.fc4 .fc-foot{background:#FDECEA;color:var(--c4)}
+
+/* ══════════════════════════════
+   PAGE 3 — R&R 경계 + 로드맵
+══════════════════════════════ */
+#p3{display:flex;flex-direction:column;height:100%}
+#p3 .body{padding:16px 28px 16px;flex:1;display:flex;gap:14px;overflow:hidden}
+.p3-left{flex:1.15;display:flex;flex-direction:column;gap:12px}
+.p3-right{width:310px;display:flex;flex-direction:column;gap:12px}
+
+/* contract */
+.ct2{display:grid;grid-template-columns:1fr auto 1fr;gap:0;border-radius:7px;overflow:hidden}
+.ct-col{}
+.ct-hd{padding:9px 14px;color:#fff;font-size:13px;font-weight:700;text-align:center}
+.ct-bd{padding:10px 13px;border:2px solid #ccc;border-top:none}
+.ct-bd.team{border-color:var(--orange);background:#FEF9F5}
+.ct-bd.hub{border-color:var(--teal);background:#F0FAF8}
+.ct-row{display:flex;align-items:baseline;gap:6px;padding:4px 0;font-size:11.5px;
+  color:var(--dgray);border-bottom:1px solid rgba(0,0,0,.04)}
+.ct-row:last-child{border:none}
+.ct-mid{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:var(--navy);padding:0 12px;gap:4px}
+.ct-mid-lbl{font-size:9px;color:#6F9FD8;letter-spacing:.4px;writing-mode:vertical-rl;
+  text-orientation:mixed;font-weight:700;transform:rotate(180deg)}
+.ct-mid-ic{color:#4A7FB5;font-size:16px}
+.cl-bar{background:var(--navy);border-radius:6px;padding:9px 16px;display:flex;align-items:center;gap:12px}
+.cl-t{color:#6F9FD8;font-size:12.5px;font-weight:700;flex-shrink:0}
+.cl-v{color:#C2D4EC;font-size:11.5px;flex:1}
+.cl-rule{font-size:10.5px;color:#8BAFD4;border-left:1px solid #2C4A6A;padding-left:12px;flex-shrink:0}
+
+/* deliverables compact */
+.deliv3{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dv{background:#fff;border-radius:6px;padding:9px 12px;border-left:3px solid #ccc;
+  display:flex;align-items:flex-start;gap:7px}
+.dv.done{border-color:var(--green)}.dv.part{border-color:var(--orange)}.dv.new{border-color:var(--gray)}
+.dv-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.dv-area{font-size:11.5px;font-weight:700;color:var(--dgray);margin-bottom:2px}
+.dv-desc{font-size:10.5px;color:var(--gray);line-height:1.4}
+
+/* roadmap vertical */
+.rm-v{display:flex;flex-direction:column;gap:0;position:relative;padding-left:34px}
+.rm-v::before{content:'';position:absolute;left:12px;top:18px;bottom:18px;
+  width:2px;background:#c8d5e3;border-radius:1px}
+.rmp{position:relative;margin-bottom:9px;display:flex;gap:10px;align-items:flex-start}
+.rmp:last-child{margin-bottom:0}
+.rmp-node{width:26px;height:26px;border-radius:50%;position:absolute;left:-34px;top:2px;
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  color:#fff;border:2px solid #f0f3f8;flex-shrink:0;z-index:2}
+.rmp-card{flex:1;background:#fff;border-radius:5px;padding:7px 10px;border-left:2.5px solid #ccc}
+.rmp0 .rmp-node,.rmp0 .rmp-card{background:var(--green)!important;border-color:var(--green)!important}
+.rmp0 .rmp-card{background:#F0FAF0!important}
+.rmp1 .rmp-node,.rmp1 .rmp-card{border-color:var(--blue)!important}
+.rmp1 .rmp-node{background:var(--blue)!important}
+.rmp2 .rmp-node,.rmp2 .rmp-card{border-color:var(--blue)!important}
+.rmp2 .rmp-node{background:var(--blue)!important}
+.rmp3 .rmp-node,.rmp3 .rmp-card{border-color:var(--teal)!important}
+.rmp3 .rmp-node{background:var(--teal)!important}
+.rmp4 .rmp-node,.rmp4 .rmp-card{border-color:var(--orange)!important}
+.rmp4 .rmp-node{background:var(--orange)!important}
+.rmp-ph{font-size:11px;font-weight:700;margin-bottom:1px}
+.rmp0 .rmp-ph{color:var(--green)}.rmp1 .rmp-ph,.rmp2 .rmp-ph{color:var(--blue)}
+.rmp3 .rmp-ph{color:var(--teal)}.rmp4 .rmp-ph{color:var(--orange)}
+.rmp-desc{font-size:10.5px;color:var(--gray);line-height:1.4}
+
+@media print{
+  html,body{overflow:visible;background:#fff}
+  .deck{display:block;height:auto}
+  .slide{position:relative;opacity:1!important;transform:none!important;pointer-events:all;
+    page-break-after:always;margin:0;border-radius:0;box-shadow:none;width:297mm;height:167mm}
+  .nav,.hint,.prog{display:none}
+}
+</style>
+</head>
+<body>
+<div class="prog" id="prog"></div>
+<div class="hint">← → 방향키 / 1·2·3</div>
+<div class="deck">
+
+<!-- ═══════ PAGE 1 : 비전 + 구조 ═══════ -->
+<div class="slide active" id="p1">
+  <div class="p1l">
+    <div class="p1-tag">HW 담당 산하 개발실 · 공통 플랫폼 추진</div>
+    <div class="p1-main">HWAX</div>
+    <div class="p1-sub">데이터 &amp; AI Agent<br>통합 허브</div>
+    <div class="p1-bar"></div>
+    <div class="p1-msg">
+      "만드는 건 <strong>각 팀</strong>,<br>
+      서비스 운영은<br>
+      <em>HWAX 허브</em>가 맡는다."
+    </div>
+    <div class="p1-cond">
+      <div class="p1-cond-title">팀이 지켜야 할 3가지 약속</div>
+      <div class="p1-cond-item">공통 데이터 전송 규격 준수</div>
+      <div class="p1-cond-item">소스코드를 정해진 방식으로 공유</div>
+      <div class="p1-cond-item">그룹별 담당자 1명 지정</div>
+    </div>
+    <div class="p1-foot">현재 포탈 + 3개 서비스 동작 중</div>
+  </div>
+  <div class="p1r">
+    <!-- Why -->
+    <div>
+      <div class="st">왜 지금 해야 하나</div>
+      <div class="why3">
+        <div class="wcard wr">
+          <div class="wcard-head">⚡ 팀마다 따로 따로</div>
+          <div class="wcard-now">각 팀의 시스템·데이터가 서로 연결이 안 돼 중복 작업 발생</div>
+          <div class="wcard-arr">↓ 해결</div>
+          <div class="wcard-aft">하나의 허브로 연결 → 연동·공유 자동화</div>
+        </div>
+        <div class="wcard wa">
+          <div class="wcard-head">💸 같은 걸 여러 번</div>
+          <div class="wcard-now">팀마다 비슷한 인프라를 각자 구축하느라 시간·비용 낭비</div>
+          <div class="wcard-arr">↓ 해결</div>
+          <div class="wcard-aft">허브가 공통 인프라 대행 → 팀은 본업 집중</div>
+        </div>
+        <div class="wcard wg">
+          <div class="wcard-head">🚀 AI 활용이 안 됨</div>
+          <div class="wcard-now">데이터·업무 지식이 흩어져 AI/LLM 도입이 지지부진</div>
+          <div class="wcard-arr">↓ 해결</div>
+          <div class="wcard-aft">허브에 모아 AI 검색·자동화 즉시 활용</div>
+        </div>
+      </div>
+    </div>
+    <!-- 구조 -->
+    <div>
+      <div class="st">허브 구성 <span class="tag tg" style="font-size:9px;vertical-align:middle">3개 서비스 운영 중</span></div>
+      <div class="portal-bar">
+        <strong>HWAX Portal</strong>
+        <span>통합 관문 — 로그인 한 번으로 모든 서비스 접근 · 외부 포탈 링크 통합</span>
+        <span class="arr">단순 ──────── 복잡</span>
+      </div>
+      <div class="tiers">
+        <div class="tc" style="border-color:var(--blue)">
+          <div class="tc-hd" style="background:var(--blue)">
+            <span class="tag tb" style="font-size:9px">유형 1</span> MX White Paper
+          </div>
+          <div class="tc-bd">
+            <div class="tc-nm" style="color:var(--blue)">업무 백서 &amp; 링크 카탈로그</div>
+            <div class="tc-r"><b style="color:var(--orange)">팀</b>URL 또는 백서 등록</div>
+            <div class="tc-r"><b style="color:var(--blue)">허브</b>게시·검색 제공</div>
+          </div>
+        </div>
+        <div class="tc" style="border-color:var(--teal)">
+          <div class="tc-hd" style="background:var(--teal)">
+            <span class="tag tt" style="font-size:9px">유형 2</span> HWAX Hub
+          </div>
+          <div class="tc-bd">
+            <div class="tc-nm" style="color:var(--teal)">소스 제출 → 서비스 자동화</div>
+            <div class="tc-r"><b style="color:var(--orange)">팀</b>개발 후 소스 공유</div>
+            <div class="tc-r"><b style="color:var(--teal)">허브</b>배포·운영 자동 대행</div>
+          </div>
+        </div>
+        <div class="tc" style="border-color:var(--orange)">
+          <div class="tc-hd" style="background:var(--orange)">
+            <span class="tag to" style="font-size:9px">유형 3</span> AX Data Hub
+          </div>
+          <div class="tc-bd">
+            <div class="tc-nm" style="color:var(--orange)">데이터·AI Agent 허브</div>
+            <div class="tc-r"><b style="color:var(--orange)">팀</b>데이터·Agent 업로드</div>
+            <div class="tc-r"><b style="color:var(--teal)">허브</b>AI 검색·서비스 대행</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PAGE 2 : 타팀 4가지 할 일 ═══════ -->
+<div class="slide" id="p2">
+  <div class="ph">
+    <span class="ph-n">02</span>
+    <span class="ph-t">각 팀이 해야 할 일 — 4가지 유형</span>
+    <span class="ph-s">팀 상황에 맞게 선택 · 복수 참여 가능</span>
+  </div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="four-grid">
+
+      <!-- 1 -->
+      <div class="fc fc1" data-n="1">
+        <div class="fc-top">
+          <div class="fc-icon">🔌</div>
+          <div class="fc-meta">
+            <div class="fc-num">유형 1 — 자체 서비스 연동</div>
+            <div class="fc-title">이미 자체 서비스가 있는 팀</div>
+          </div>
+        </div>
+        <div class="fc-divider"></div>
+        <div class="fc-rows">
+          <div class="fc-row"><span class="dot"></span><span>팀 서비스를 계속 자체 운영하되, <span class="hl">허브와 데이터를 주고받을 수 있도록 규격 협의</span></span></div>
+          <div class="fc-row"><span class="dot"></span><span>정해진 API 규격(데이터 전송 방식)에 맞춰 연동하면 포탈에서 통합 접근 가능</span></div>
+          <div class="fc-row"><span class="dot"></span><span><span class="hl">연동 담당자 1명 지정</span> 필요 — 규격 협의 및 지속 관리 역할</span></div>
+        </div>
+        <div class="fc-foot">💬 허브팀과 연동 규격 협의 → 담당자 지정 후 시작</div>
+      </div>
+
+      <!-- 2 -->
+      <div class="fc fc2" data-n="2">
+        <div class="fc-top">
+          <div class="fc-icon">⚙️</div>
+          <div class="fc-meta">
+            <div class="fc-num">유형 2 — 서비스 운영 위탁</div>
+            <div class="fc-title">개발은 하지만 운영은 맡기고 싶은 팀</div>
+          </div>
+        </div>
+        <div class="fc-divider"></div>
+        <div class="fc-rows">
+          <div class="fc-row"><span class="dot"></span><span><span class="hl">개발·테스트는 자체적으로</span> 진행 (기존과 동일)</span></div>
+          <div class="fc-row"><span class="dot"></span><span>완성된 소스코드를 <span class="hl">정해진 방식으로 GitHub에 올리면</span> 허브가 자동으로 서비스 개시</span></div>
+          <div class="fc-row"><span class="dot"></span><span>배포·서버 관리·장애 대응을 허브가 대행 → 팀은 개발에만 집중</span></div>
+          <div class="fc-row"><span class="dot"></span><span>지원 가능 언어: Python, Java, Node.js, C++, Go, R 등 <span class="hl">15종 이상</span></span></div>
+        </div>
+        <div class="fc-foot">📋 소스코드 등록 규격 안내 후 GitHub 업로드만 하면 자동 운영</div>
+      </div>
+
+      <!-- 3 -->
+      <div class="fc fc3" data-n="3">
+        <div class="fc-top">
+          <div class="fc-icon">🤖</div>
+          <div class="fc-meta">
+            <div class="fc-num">유형 3 — AI Agent / 데이터 활용</div>
+            <div class="fc-title">AI 검색·자동화를 활용하고 싶은 팀</div>
+          </div>
+        </div>
+        <div class="fc-divider"></div>
+        <div class="fc-rows">
+          <div class="fc-row"><span class="dot"></span><span><span class="hl">그룹 데이터 담당자 지정</span> — AX Data Hub 데이터·Agent 업로드 관리</span></div>
+          <div class="fc-row"><span class="dot"></span><span>업무 데이터·문서를 정해진 형식으로 업로드하면 AI 검색·질의응답 즉시 활용 가능</span></div>
+          <div class="fc-row"><span class="dot"></span><span>반복 업무를 처리하는 <span class="hl">AI Agent 등록</span> 및 운용 (담당자가 직접 관리)</span></div>
+          <div class="fc-row"><span class="dot"></span><span style="color:#7B3FA0;font-weight:600">ChatGPT / Claude 오픈 후 — 데이터 업로드 방법 LLM 활용 가이드 공유 예정</span></div>
+        </div>
+        <div class="fc-foot">🔑 담당자 지정 → 업로드 규격 안내 → AI 서비스 즉시 사용</div>
+      </div>
+
+      <!-- 4 -->
+      <div class="fc fc4" data-n="4">
+        <div class="fc-top">
+          <div class="fc-icon">📘</div>
+          <div class="fc-meta">
+            <div class="fc-num">유형 4 — 업무 백서 등록</div>
+            <div class="fc-title">팀 핵심 업무 지식을 AI로 활용하고 싶은 팀</div>
+          </div>
+        </div>
+        <div class="fc-divider"></div>
+        <div class="fc-rows">
+          <div class="fc-row"><span class="dot"></span><span>팀의 <span class="hl">주요 업무 지식·노하우·매뉴얼을 백서로 정리</span>하여 MX White Paper에 등록</span></div>
+          <div class="fc-row"><span class="dot"></span><span>등록된 백서는 포탈 전체에서 검색·참조 가능 → 조직 내 지식 공유 가속</span></div>
+          <div class="fc-row"><span class="dot"></span><span>AX Data Hub와 연계 시 백서 기반 <span class="hl">AI 질의응답 서비스</span> 자동 구성</span></div>
+          <div class="fc-row"><span class="dot"></span><span style="color:#C0392B;font-weight:600">ChatGPT / Claude 오픈 후 — LLM을 활용한 백서 작성 방법 가이드 공유 예정</span></div>
+        </div>
+        <div class="fc-foot">📝 백서 작성 가이드 제공 → 업로드 → 즉시 AI 검색 적용</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PAGE 3 : R&R + 제공물 + 로드맵 ═══════ -->
+<div class="slide" id="p3">
+  <div class="ph">
+    <span class="ph-n">03</span>
+    <span class="ph-t">역할 분담 &amp; 추진 계획</span>
+    <span class="ph-s">팀↔허브 경계 · 우리 팀 제공물 · 단계별 로드맵</span>
+  </div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="p3-left">
+      <!-- Contract -->
+      <div>
+        <div class="st">역할 분담 — 경계선 <small style="font-weight:400;color:#bbb;font-size:10px;letter-spacing:0">(이 선 기준으로 책임 분리)</small></div>
+        <div class="ct2">
+          <div>
+            <div class="ct-hd" style="background:var(--orange)">각 팀 (서비스 제공자)</div>
+            <div class="ct-bd team">
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>서비스·업무 로직 개발</span></div>
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>소스코드 제출 / 데이터·백서 업로드</span></div>
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>정해진 규격 준수</span></div>
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>1차 기능 테스트</span></div>
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>그룹 담당자 1명 지정·유지</span></div>
+            </div>
+          </div>
+          <div class="ct-mid">
+            <div class="ct-mid-ic">⇄</div>
+            <div class="ct-mid-lbl">경계선</div>
+          </div>
+          <div>
+            <div class="ct-hd" style="background:var(--teal)">HWAX 허브 (우리 팀)</div>
+            <div class="ct-bd hub">
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>서버 배포·운영·장애 대응</span></div>
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>통합 로그인(SSO) · 접근 관리</span></div>
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>AI 검색·RAG 인프라 운영</span></div>
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>모니터링·로그·자동화 유지</span></div>
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>규격·가이드·온보딩 지원 제공</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cl-bar" style="margin-top:8px">
+          <span class="cl-t">경계선 =</span>
+          <span class="cl-v">공통 데이터 규격 준수 &nbsp;·&nbsp; 소스코드 공유 &nbsp;·&nbsp; 그룹 담당자 지정</span>
+          <span class="cl-rule">이 세 가지를 지키면 → 나머지는 허브가 책임</span>
+        </div>
+      </div>
+      <!-- 제공물 -->
+      <div>
+        <div class="st">허브(우리 팀) 제공물 현황</div>
+        <div class="deliv3">
+          <div class="dv done">
+            <div class="dv-icon">✅</div>
+            <div><div class="dv-area">통합 포탈 · SSO 로그인</div><div class="dv-desc">포탈·3서비스 연동 동작 중</div></div>
+          </div>
+          <div class="dv done">
+            <div class="dv-icon">✅</div>
+            <div><div class="dv-area">자동 빌드·서비스 (15종 언어)</div><div class="dv-desc">소스 제출 → 자동 배포 구현 완료</div></div>
+          </div>
+          <div class="dv done">
+            <div class="dv-icon">✅</div>
+            <div><div class="dv-area">AI 데이터 허브 (RAG·Agent)</div><div class="dv-desc">데이터 적재·AI 검색 동작 중</div></div>
+          </div>
+          <div class="dv part">
+            <div class="dv-icon">🔧</div>
+            <div><div class="dv-area">CI/CD 완전 자동화</div><div class="dv-desc">기본 자동화 완료 · 고도화 진행</div></div>
+          </div>
+          <div class="dv part">
+            <div class="dv-icon">🔧</div>
+            <div><div class="dv-area">모니터링·운영 체계</div><div class="dv-desc">진단 자동화 보유 · 강화 예정</div></div>
+          </div>
+          <div class="dv new">
+            <div class="dv-icon">📋</div>
+            <div><div class="dv-area">온보딩 가이드 · 담당자 체계</div><div class="dv-desc">LLM 활용 가이드 포함 · 신설 예정</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 로드맵 -->
+    <div class="p3-right">
+      <div class="st">추진 단계</div>
+      <div class="rm-v">
+        <div class="rmp rmp0">
+          <div class="rmp-node">0</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 0 — 완료 <span class="tag tg" style="font-size:9px">지금 여기</span></div>
+            <div class="rmp-desc">포탈 + 3서비스 동작 · 코어 인프라 구축 완료</div>
+          </div>
+        </div>
+        <div class="rmp rmp1">
+          <div class="rmp-node">1</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 1 — 표준 확정</div>
+            <div class="rmp-desc">데이터 규격·소스 공유 방식 문서화 + 담당님 승인</div>
+          </div>
+        </div>
+        <div class="rmp rmp2">
+          <div class="rmp-node">2</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 2 — 파일럿</div>
+            <div class="rmp-desc">1~2개 그룹 시범 온보딩 → 레퍼런스 케이스 확보</div>
+          </div>
+        </div>
+        <div class="rmp rmp3">
+          <div class="rmp-node">3</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 3 — 셀프서비스</div>
+            <div class="rmp-desc">소스 올리면 자동 서비스 · LLM 활용 가이드 배포</div>
+          </div>
+        </div>
+        <div class="rmp rmp4">
+          <div class="rmp-node">4</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 4 — 전사 확산</div>
+            <div class="rmp-desc">전 그룹 온보딩 · 담당자 체계 정착 · 지속 운영</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top-down 요약 -->
+      <div style="margin-top:4px">
+        <div class="st">결정 필요 사항 (담당님)</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="background:#fff;border-radius:5px;padding:8px 12px;border-left:3px solid var(--blue);font-size:11.5px;color:var(--dgray)">
+            <span style="font-weight:700;color:var(--blue)">T1</span>&nbsp; HWAX를 신규 서비스의 <b>표준 경로로 지정</b>
+          </div>
+          <div style="background:#fff;border-radius:5px;padding:8px 12px;border-left:3px solid var(--blue);font-size:11.5px;color:var(--dgray)">
+            <span style="font-weight:700;color:var(--blue)">T2</span>&nbsp; 공통 규격 준수 <b>의무화</b> (예외 승인제)
+          </div>
+          <div style="background:#fff;border-radius:5px;padding:8px 12px;border-left:3px solid var(--blue);font-size:11.5px;color:var(--dgray)">
+            <span style="font-weight:700;color:var(--blue)">T3</span>&nbsp; 내부 <b>GitHub 소스 공유</b> 의무화
+          </div>
+          <div style="background:#fff;border-radius:5px;padding:8px 12px;border-left:3px solid var(--blue);font-size:11.5px;color:var(--dgray)">
+            <span style="font-weight:700;color:var(--blue)">T4</span>&nbsp; 그룹별 <b>담당자(Owner) 지정</b>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="nav">
+  <button class="nb" id="bp">&#8592;</button>
+  <div class="ndots" id="dots"></div>
+  <button class="nb" id="bn">&#8594;</button>
+  <div class="nlbl" id="lbl"></div>
+</div>
+
+<script>
+const LS=['비전 & 구조','각 팀 4가지 할 일','역할 분담 & 추진 계획'];
+const sl=[...document.querySelectorAll('.slide')];
+const dots=document.getElementById('dots');
+const lbl=document.getElementById('lbl');
+const prog=document.getElementById('prog');
+let cur=0;
+LS.forEach((t,i)=>{
+  const b=document.createElement('button');
+  b.className='nd'+(i===0?' on':'');
+  b.title=t;b.onclick=()=>go(i);dots.appendChild(b);
+});
+function go(n){
+  if(n<0||n>=sl.length)return;
+  sl[cur].className='slide prev';dots.children[cur].classList.remove('on');
+  cur=n;sl[cur].className='slide active';dots.children[cur].classList.add('on');
+  lbl.textContent=(cur+1)+' / '+sl.length+'  '+LS[cur];
+  prog.style.width=((cur+1)/sl.length*100)+'%';
+  setTimeout(()=>sl.forEach((s,i)=>{if(i!==cur)s.className='slide';}),380);
+}
+document.getElementById('bp').onclick=()=>go(cur-1);
+document.getElementById('bn').onclick=()=>go(cur+1);
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown')go(cur+1);
+  if(e.key==='ArrowLeft'||e.key==='PageUp')go(cur-1);
+  if(e.key>='1'&&e.key<='3')go(+e.key-1);
+});
+let tx=0;
+document.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+document.addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-tx;if(Math.abs(d)>50)go(d<0?cur+1:cur-1);},{passive:true});
+go(0);
+</script>
+</body>
+</html>

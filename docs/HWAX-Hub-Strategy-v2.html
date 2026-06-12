@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HWAX 허브 추진 전략 v2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --navy:#0F2D52;--blue:#1A5FB4;--lblue:#E8F0FB;--teal:#128C7E;
+  --orange:#E27D2E;--dgray:#2B2F36;--gray:#6B7280;--white:#fff;
+  --green:#2E8B57;--red:#C0392B;--amber:#D97706;--purple:#7B3FA0;
+  --c1:#1A5FB4;--c2:#128C7E;--c3:#7B3FA0;--c4:#C0392B;
+  --f:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif
+}
+*{font-family:var(--f)}
+html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
+
+.deck{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative}
+.slide{
+  position:absolute;width:1280px;height:720px;background:#f0f3f8;
+  border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,.55);
+  overflow:hidden;opacity:0;pointer-events:none;
+  transform:translateX(60px);transition:opacity .32s,transform .32s
+}
+.slide.active{opacity:1;pointer-events:all;transform:none}
+.slide.prev{opacity:0;transform:translateX(-60px)}
+
+.prog{position:fixed;top:0;left:0;height:3px;background:var(--orange);transition:width .3s;z-index:50}
+.hint{position:fixed;top:14px;right:18px;color:rgba(255,255,255,.3);font-size:10.5px}
+.nav{
+  position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:10px;z-index:40;
+  background:rgba(10,25,50,.82);backdrop-filter:blur(8px);
+  border-radius:24px;padding:8px 18px
+}
+.nb{background:none;border:none;color:#8FB4DE;cursor:pointer;font-size:16px;
+  width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:.15s}
+.nb:hover{background:rgba(255,255,255,.12);color:#fff}
+.ndots{display:flex;gap:7px}
+.nd{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.25);border:none;cursor:pointer;transition:.2s;padding:0}
+.nd.on{background:#fff;width:20px;border-radius:3px}
+.nlbl{color:#C2D4EC;font-size:11px;min-width:110px;text-align:center}
+
+/* ── 공통 헤더 ── */
+.ph{background:var(--navy);padding:14px 30px 12px;display:flex;align-items:baseline;gap:12px}
+.ph-n{font-size:20px;font-weight:700;color:#6F9FD8}
+.ph-t{font-size:19px;font-weight:700;color:#fff}
+.ph-s{font-size:11.5px;color:#8BAFD4;margin-left:auto}
+.ph-line{height:3px;background:var(--blue);margin:0}
+
+/* ── 섹션 타이틀 ── */
+.st{font-size:11px;font-weight:700;color:var(--gray);letter-spacing:.8px;
+  text-transform:uppercase;display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.st::after{content:'';flex:1;height:1px;background:#d8dfe8}
+
+/* ── 배지 ── */
+.tag{display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;color:#fff;vertical-align:middle}
+.tg{background:var(--green)}.tb{background:var(--blue)}.to{background:var(--orange)}
+.tt{background:var(--teal)}.tgy{background:var(--gray)}.tr{background:var(--red)}
+
+/* ══════════════════════════════
+   PAGE 0 — 표지
+══════════════════════════════ */
+#p0{background:var(--navy);display:flex;flex-direction:column;justify-content:center;
+  padding:0 90px;position:relative}
+#p0::before{content:'';position:absolute;right:-160px;top:-160px;width:520px;height:520px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.06)}
+#p0::after{content:'';position:absolute;right:60px;bottom:-120px;width:340px;height:340px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.05)}
+.cv-tag{font-size:13px;color:#6F9FD8;letter-spacing:1px;margin-bottom:22px;text-transform:uppercase}
+.cv-main{font-size:96px;font-weight:700;color:#fff;line-height:1;letter-spacing:-3px;margin-bottom:14px}
+.cv-sub{font-size:27px;color:#DBE8F7;font-weight:700;margin-bottom:30px}
+.cv-bar{width:54px;height:4px;background:var(--orange);border-radius:2px;margin-bottom:30px}
+.cv-quote{font-size:18px;color:#C8D8EC;line-height:1.8}
+.cv-quote strong{color:var(--orange)}
+.cv-quote em{color:#6FCDC5;font-style:normal;font-weight:700}
+.cv-foot{position:absolute;bottom:46px;left:90px;right:90px;display:flex;align-items:center;
+  justify-content:space-between;border-top:1px solid rgba(255,255,255,.12);padding-top:16px}
+.cv-foot span{font-size:13px;color:#8BAFD4}
+.cv-foot b{color:#fff;font-size:14px}
+
+/* ══════════════════════════════
+   PAGE 1 — 비전 & 구조
+══════════════════════════════ */
+#p1{display:flex;flex-direction:column;height:100%}
+#p1 .body{padding:16px 28px;flex:1;display:flex;flex-direction:column;gap:13px;overflow:hidden}
+
+.why3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.wcard{background:#fff;border-radius:8px;padding:13px 15px;border-top:3px solid var(--blue)}
+.wcard.wr{border-color:var(--red)}
+.wcard.wa{border-color:var(--amber)}
+.wcard.wg{border-color:var(--green)}
+.wcard-head{font-size:13px;font-weight:700;color:var(--dgray);margin-bottom:7px;display:flex;align-items:center;gap:6px}
+.wcard-now{font-size:11.5px;color:#888;background:#f6f7f9;border-radius:4px;padding:5px 8px;margin-bottom:5px;line-height:1.5}
+.wcard-arr{font-size:10px;color:#bbb;text-align:center;margin:2px 0}
+.wcard-aft{font-size:11.5px;color:var(--teal);font-weight:600;padding:5px 8px;background:#EAF6F4;border-radius:4px;line-height:1.5}
+
+.vision-bar{background:var(--navy);border-radius:8px;padding:13px 20px;display:flex;align-items:center;gap:18px}
+.vb-q{font-size:15.5px;color:#fff;font-weight:700;flex-shrink:0;line-height:1.5}
+.vb-q strong{color:var(--orange)}
+.vb-q em{color:#6FCDC5;font-style:normal}
+.vb-promise{flex:1;border-left:1px solid #2C4A6A;padding-left:18px}
+.vb-p-t{font-size:10px;color:#6F9FD8;font-weight:700;letter-spacing:.4px;margin-bottom:5px}
+.vb-p-items{display:flex;gap:14px}
+.vb-p-item{font-size:11.5px;color:#C8D8EC;display:flex;align-items:center;gap:6px}
+.vb-p-item b{color:#fff}
+.vb-p-item .n{width:16px;height:16px;border-radius:50%;background:var(--orange);color:#fff;
+  font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+.portal-bar{background:var(--navy);border-radius:6px;padding:9px 16px;
+  display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.portal-bar strong{color:#fff;font-size:14px}
+.portal-bar span{font-size:12px;color:#C2D4EC}
+.portal-bar .arr{margin-left:auto;font-size:10.5px;color:#6F9FD8}
+.tiers{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.tc{background:#fff;border-radius:6px;overflow:hidden;border:1.5px solid #cdd}
+.tc-hd{padding:8px 12px;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px}
+.tc-bd{padding:10px 12px}
+.tc-nm{font-size:13.5px;font-weight:700;margin-bottom:5px}
+.tc-r{font-size:11px;color:var(--dgray);padding:2px 0;display:flex;gap:4px;line-height:1.45}
+.tc-r b{flex-shrink:0;width:32px}
+
+/* ══════════════════════════════
+   PAGE 2 — 참여 유형 4가지
+══════════════════════════════ */
+#p2{display:flex;flex-direction:column;height:100%}
+#p2 .body{padding:14px 28px 14px;flex:1;display:flex;flex-direction:column;gap:10px}
+.four-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:11px;flex:1}
+.fc{background:#fff;border-radius:8px;padding:13px 16px 11px;display:flex;flex-direction:column;
+  border-top:4px solid #ccc;position:relative;overflow:hidden}
+.fc::after{
+  content:attr(data-n);position:absolute;right:14px;bottom:8px;
+  font-size:50px;font-weight:700;opacity:.04;color:#000;line-height:1
+}
+.fc1{border-color:var(--c1)}
+.fc2{border-color:var(--c2)}
+.fc3{border-color:var(--c3)}
+.fc4{border-color:var(--c4)}
+.fc-badge{position:absolute;top:0;right:0;font-size:9.5px;font-weight:700;color:#fff;
+  padding:4px 12px;border-radius:0 0 0 8px;letter-spacing:.3px}
+.fc-badge.opt{background:#9AA6B5}
+.fc-badge.must{background:var(--red)}
+.fc-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:6px;padding-right:120px}
+.fc-icon{font-size:22px;flex-shrink:0;margin-top:1px}
+.fc-num{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px}
+.fc1 .fc-num{color:var(--c1)}
+.fc2 .fc-num{color:var(--c2)}
+.fc3 .fc-num{color:var(--c3)}
+.fc4 .fc-num{color:var(--c4)}
+.fc-title{font-size:14.5px;font-weight:700;color:var(--dgray);line-height:1.3}
+.fc-divider{height:1px;background:#eef0f4;margin:6px 0 7px}
+.fc-rows{display:flex;flex-direction:column;gap:4px;flex:1}
+.fc-row{display:flex;align-items:baseline;gap:7px;font-size:11.5px;color:var(--dgray);line-height:1.48}
+.fc-row .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.fc1 .dot{background:var(--c1)}
+.fc2 .dot{background:var(--c2)}
+.fc3 .dot{background:var(--c3)}
+.fc4 .dot{background:var(--c4)}
+.fc-row .hl{font-weight:700}
+.fc-foot{margin-top:7px;padding:5px 10px;border-radius:5px;font-size:10.5px;line-height:1.5}
+.fc1 .fc-foot{background:#EBF2FF;color:var(--c1)}
+.fc2 .fc-foot{background:#EAF6F4;color:var(--c2)}
+.fc3 .fc-foot{background:#F5EEF8;color:var(--c3)}
+.fc4 .fc-foot{background:#FDECEA;color:var(--c4)}
+
+/* ══════════════════════════════
+   PAGE 3 — API 표준화 · 창구 일원화
+══════════════════════════════ */
+#p3{display:flex;flex-direction:column;height:100%}
+#p3 .body{padding:14px 28px 14px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden}
+
+.prob-bar{background:#FDECEA;border-left:4px solid var(--red);border-radius:0 6px 6px 0;
+  padding:9px 14px;font-size:12.5px;color:var(--dgray);line-height:1.55}
+.prob-bar b{color:var(--red)}
+
+.flow{display:flex;align-items:stretch}
+.fl-node{background:#fff;border:2px solid #ccc;border-radius:8px;padding:11px 13px;flex:1;text-align:center;
+  display:flex;flex-direction:column;justify-content:center}
+.fl-node.sys{border-color:var(--gray)}
+.fl-node.hub{border-color:var(--navy);background:var(--navy);flex:1.25}
+.fl-node.team{border-color:var(--orange)}
+.fl-nm{font-size:14px;font-weight:700;color:var(--dgray);margin-bottom:3px}
+.fl-node.hub .fl-nm{color:#fff}
+.fl-ds{font-size:10.5px;color:var(--gray);line-height:1.5}
+.fl-node.hub .fl-ds{color:#C2D4EC}
+.fl-node.hub .fl-ds b{color:#FFB36B}
+.fl-arr{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:0 6px;width:148px;flex-shrink:0}
+.fl-arr-ic{font-size:19px;color:#9AA6B5;line-height:1}
+.fl-arr-lbl{font-size:9.5px;color:var(--gray);text-align:center;line-height:1.45;margin-top:3px;font-weight:600}
+
+.actors{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;flex:1}
+.ac{background:#fff;border-radius:7px;border-top:3px solid #ccc;padding:10px 12px;display:flex;flex-direction:column}
+.ac.a1{border-color:var(--orange)}
+.ac.a2{border-color:var(--teal)}
+.ac.a3{border-color:var(--gray)}
+.ac.a4{border-color:var(--purple);background:#FBF8FD}
+.ac-hd{font-size:13px;font-weight:700;color:var(--dgray);margin-bottom:2px;display:flex;align-items:center;gap:6px}
+.ac-role{font-size:9.5px;color:var(--gray);margin-bottom:7px;font-weight:600;letter-spacing:.2px}
+.ac.a4 .ac-role{color:var(--purple)}
+.ac-item{font-size:11px;color:var(--dgray);line-height:1.5;display:flex;gap:6px;padding:2.5px 0;align-items:baseline}
+.ac-item .n2{width:15px;height:15px;border-radius:50%;font-size:9px;font-weight:700;color:#fff;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.ac.a1 .n2{background:var(--orange)}
+.ac.a2 .n2{background:var(--teal)}
+.ac.a3 .n2{background:var(--gray)}
+.ac.a4 .n2{background:var(--purple)}
+.ac-item .hl{font-weight:700}
+
+.note2{background:var(--navy);border-radius:7px;padding:10px 16px;display:flex;gap:22px}
+.n2-item{flex:1;display:flex;gap:9px;align-items:baseline}
+.n2-ic{font-size:13px;flex-shrink:0}
+.n2-tx{font-size:11.5px;color:#C8D8EC;line-height:1.55}
+.n2-tx b{color:#fff}
+.n2-tx .or{color:#FFB36B;font-weight:700}
+
+/* ══════════════════════════════
+   PAGE 4 — 역할 분담 & 추진 계획
+══════════════════════════════ */
+#p4{display:flex;flex-direction:column;height:100%}
+#p4 .body{padding:14px 28px 14px;flex:1;display:flex;gap:14px;overflow:hidden}
+.p4-left{flex:1.15;display:flex;flex-direction:column;gap:11px}
+.p4-right{width:316px;display:flex;flex-direction:column;gap:10px}
+
+.ct2{display:grid;grid-template-columns:1fr auto 1fr;gap:0;border-radius:7px;overflow:hidden}
+.ct-hd{padding:8px 14px;color:#fff;font-size:13px;font-weight:700;text-align:center}
+.ct-bd{padding:9px 13px;border:2px solid #ccc;border-top:none}
+.ct-bd.team{border-color:var(--orange);background:#FEF9F5}
+.ct-bd.hub{border-color:var(--teal);background:#F0FAF8}
+.ct-row{display:flex;align-items:baseline;gap:6px;padding:3.5px 0;font-size:11.5px;
+  color:var(--dgray);border-bottom:1px solid rgba(0,0,0,.04)}
+.ct-row:last-child{border:none}
+.ct-mid{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:var(--navy);padding:0 12px;gap:4px}
+.ct-mid-lbl{font-size:9px;color:#6F9FD8;letter-spacing:.4px;writing-mode:vertical-rl;
+  text-orientation:mixed;font-weight:700;transform:rotate(180deg)}
+.ct-mid-ic{color:#4A7FB5;font-size:16px}
+.cl-bar{background:var(--navy);border-radius:6px;padding:8px 16px;display:flex;align-items:center;gap:12px}
+.cl-t{color:#6F9FD8;font-size:12px;font-weight:700;flex-shrink:0}
+.cl-v{color:#C2D4EC;font-size:11px;flex:1}
+.cl-rule{font-size:10px;color:#8BAFD4;border-left:1px solid #2C4A6A;padding-left:12px;flex-shrink:0}
+
+.deliv3{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.dv{background:#fff;border-radius:6px;padding:8px 11px;border-left:3px solid #ccc;
+  display:flex;align-items:flex-start;gap:7px}
+.dv.done{border-color:var(--green)}.dv.part{border-color:var(--orange)}.dv.new{border-color:var(--gray)}
+.dv-icon{font-size:15px;flex-shrink:0;margin-top:1px}
+.dv-area{font-size:11.5px;font-weight:700;color:var(--dgray);margin-bottom:1px}
+.dv-desc{font-size:10px;color:var(--gray);line-height:1.4}
+
+.rm-v{display:flex;flex-direction:column;position:relative;padding-left:34px}
+.rm-v::before{content:'';position:absolute;left:12px;top:16px;bottom:16px;
+  width:2px;background:#c8d5e3;border-radius:1px}
+.rmp{position:relative;margin-bottom:7px;display:flex;gap:10px;align-items:flex-start}
+.rmp:last-child{margin-bottom:0}
+.rmp-node{width:26px;height:26px;border-radius:50%;position:absolute;left:-34px;top:1px;
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  color:#fff;border:2px solid #f0f3f8;flex-shrink:0;z-index:2}
+.rmp-card{flex:1;background:#fff;border-radius:5px;padding:6px 10px;border-left:2.5px solid #ccc}
+.rmp0 .rmp-node{background:var(--green)}.rmp0 .rmp-card{border-color:var(--green);background:#F0FAF0}
+.rmp1 .rmp-node{background:var(--blue)}.rmp1 .rmp-card{border-color:var(--blue)}
+.rmp2 .rmp-node{background:var(--blue)}.rmp2 .rmp-card{border-color:var(--blue)}
+.rmp3 .rmp-node{background:var(--teal)}.rmp3 .rmp-card{border-color:var(--teal)}
+.rmp4 .rmp-node{background:var(--orange)}.rmp4 .rmp-card{border-color:var(--orange)}
+.rmp-ph{font-size:11px;font-weight:700;margin-bottom:1px}
+.rmp0 .rmp-ph{color:var(--green)}.rmp1 .rmp-ph,.rmp2 .rmp-ph{color:var(--blue)}
+.rmp3 .rmp-ph{color:var(--teal)}.rmp4 .rmp-ph{color:var(--orange)}
+.rmp-desc{font-size:10px;color:var(--gray);line-height:1.4}
+
+.tno{background:#fff;border-radius:5px;padding:7px 11px;border-left:3px solid var(--blue);
+  font-size:11px;color:var(--dgray);line-height:1.45}
+.tno b{color:var(--blue)}
+.tno.tno-p{border-color:var(--purple)}
+.tno.tno-p b{color:var(--purple)}
+
+@media print{
+  html,body{overflow:visible;background:#fff}
+  .deck{display:block;height:auto}
+  .slide{position:relative;opacity:1!important;transform:none!important;pointer-events:all;
+    page-break-after:always;margin:0;border-radius:0;box-shadow:none;width:297mm;height:167mm}
+  .nav,.hint,.prog{display:none}
+}
+</style>
+</head>
+<body>
+<div class="prog" id="prog"></div>
+<div class="hint">← → 방향키 / 1~5</div>
+<div class="deck">
+
+<!-- ═══════ PAGE 0 : 표지 ═══════ -->
+<div class="slide active" id="p0">
+  <div class="cv-tag">HW 담당 산하 개발실 · 공통 플랫폼 추진 전략</div>
+  <div class="cv-main">HWAX</div>
+  <div class="cv-sub">데이터 &amp; 생성형 AI 통합 허브</div>
+  <div class="cv-bar"></div>
+  <div class="cv-quote">
+    "만드는 건 <strong>각 팀</strong>, &nbsp;서비스 운영과 데이터 연결은 <em>HE팀(HWAX 허브)</em>이 맡는다."<br>
+    팀별로 흩어진 시스템·데이터·지식을 하나의 허브로 모아, 개발실 전체의 AI 활용을 가속합니다.
+  </div>
+  <div class="cv-foot">
+    <span><b>HE팀</b> &nbsp;|&nbsp; 2026. 06</span>
+    <span>현재 통합 포탈 + 3개 서비스 운영 중 · 구현 기준 작성</span>
+  </div>
+</div>
+
+<!-- ═══════ PAGE 1 : 비전 & 구조 ═══════ -->
+<div class="slide" id="p1">
+  <div class="ph">
+    <span class="ph-n">01</span>
+    <span class="ph-t">왜 지금, 무엇을 만드나</span>
+    <span class="ph-s">통합 포탈 + 3개 서비스 — 현재 운영 중</span>
+  </div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <!-- Why -->
+    <div>
+      <div class="st">왜 지금 해야 하나</div>
+      <div class="why3">
+        <div class="wcard wr">
+          <div class="wcard-head">⚡ 팀마다 따로 따로</div>
+          <div class="wcard-now">각 팀의 시스템·데이터가 서로 연결이 안 돼 같은 정보를 따로 관리</div>
+          <div class="wcard-arr">↓ 해결</div>
+          <div class="wcard-aft">하나의 허브로 연결 → 팀 간 데이터 상호 활용</div>
+        </div>
+        <div class="wcard wa">
+          <div class="wcard-head">💸 같은 걸 여러 번</div>
+          <div class="wcard-now">팀마다 비슷한 서버·시스템을 각자 구축 → 사내 시스템에도 중복 요청</div>
+          <div class="wcard-arr">↓ 해결</div>
+          <div class="wcard-aft">HE팀이 공통 운영 대행 → 팀은 본업 집중</div>
+        </div>
+        <div class="wcard wg">
+          <div class="wcard-head">🚀 AI 활용이 안 됨</div>
+          <div class="wcard-now">데이터·업무 지식이 흩어져 생성형 AI 도입이 지지부진</div>
+          <div class="wcard-arr">↓ 해결</div>
+          <div class="wcard-aft">허브에 모아 AI 검색·챗봇 즉시 활용</div>
+        </div>
+      </div>
+    </div>
+    <!-- 비전 + 약속 -->
+    <div class="vision-bar">
+      <div class="vb-q">"만드는 건 <strong>각 팀</strong>,<br>운영은 <em>HE팀</em>"</div>
+      <div class="vb-promise">
+        <div class="vb-p-t">성립 조건 — 각 팀이 지켜야 할 3가지</div>
+        <div class="vb-p-items">
+          <div class="vb-p-item"><span class="n">1</span><span><b>공통 API 규격</b> 준수 · 팀 포탈 데이터 개방</span></div>
+          <div class="vb-p-item"><span class="n">2</span><span><b>소스코드</b>를 정해진 방식으로 GitHub 공유</span></div>
+          <div class="vb-p-item"><span class="n">3</span><span><b>그룹 담당자</b> 1명 지정</span></div>
+        </div>
+      </div>
+    </div>
+    <!-- 구조 -->
+    <div>
+      <div class="st">허브 구성 <span class="tag tg" style="font-size:9px;vertical-align:middle">3개 서비스 운영 중</span></div>
+      <div class="portal-bar">
+        <strong>HWAX Portal</strong>
+        <span>통합 관문 — 로그인 한 번으로 모든 서비스 접근 · 각 팀 포탈 링크 통합</span>
+        <span class="arr">간단한 참여 ──────── 깊은 참여</span>
+      </div>
+      <div class="tiers">
+        <div class="tc" style="border-color:var(--c4)">
+          <div class="tc-hd" style="background:var(--c4)">MX White Paper</div>
+          <div class="tc-bd">
+            <div class="tc-nm" style="color:var(--c4)">업무 백서 &amp; 지식 카탈로그</div>
+            <div class="tc-r"><b style="color:var(--orange)">팀</b>백서·포탈 링크 등록</div>
+            <div class="tc-r"><b style="color:var(--teal)">HE팀</b>게시·검색·지식 연계 제공</div>
+          </div>
+        </div>
+        <div class="tc" style="border-color:var(--teal)">
+          <div class="tc-hd" style="background:var(--teal)">HWAX Hub</div>
+          <div class="tc-bd">
+            <div class="tc-nm" style="color:var(--teal)">소스 제출 → 서비스 자동화</div>
+            <div class="tc-r"><b style="color:var(--orange)">팀</b>개발 후 GitHub에 소스 공유</div>
+            <div class="tc-r"><b style="color:var(--teal)">HE팀</b>웹 서비스화·운영 자동 대행</div>
+          </div>
+        </div>
+        <div class="tc" style="border-color:var(--purple)">
+          <div class="tc-hd" style="background:var(--purple)">AX Data Hub</div>
+          <div class="tc-bd">
+            <div class="tc-nm" style="color:var(--purple)">데이터 · 생성형 AI 허브</div>
+            <div class="tc-r"><b style="color:var(--orange)">팀</b>데이터·챗봇 업로드</div>
+            <div class="tc-r"><b style="color:var(--teal)">HE팀</b>AI 검색·질의응답 서비스 대행</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PAGE 2 : 참여 유형 4가지 ═══════ -->
+<div class="slide" id="p2">
+  <div class="ph">
+    <span class="ph-n">02</span>
+    <span class="ph-t">각 팀 참여 유형 — 4가지</span>
+    <span class="ph-s">유형 1·2 = 팀 상황에 따라 &nbsp;·&nbsp; 유형 3·4 = 전 팀 필수 (Top-down)</span>
+  </div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="four-grid">
+
+      <!-- 1 -->
+      <div class="fc fc1" data-n="1">
+        <div class="fc-badge opt">해당 팀 · 협의</div>
+        <div class="fc-top">
+          <div class="fc-icon">🔗</div>
+          <div>
+            <div class="fc-num">유형 1 — 팀 포탈 연동</div>
+            <div class="fc-title">팀 내 자체 포탈 서비스를 운영하는 팀</div>
+          </div>
+        </div>
+        <div class="fc-divider"></div>
+        <div class="fc-rows">
+          <div class="fc-row"><span class="dot"></span><span>팀 포탈은 계속 자체 운영 — 단, 통합 포탈과 <span class="hl">공통 API 규격(데이터 주고받는 방식)을 협의</span></span></div>
+          <div class="fc-row"><span class="dot"></span><span><span class="hl">혜택:</span> 공통 데이터 수집 API를 제공받아 <span class="hl">타 팀 데이터 상호 접근</span> + <span class="hl">사내 시스템 데이터 활용</span> 가능</span></div>
+          <div class="fc-row"><span class="dot"></span><span>팀 포탈 <span class="hl">API 개방은 필수</span> — 통합 포탈이 데이터를 가져가 보관(캐싱)해 데이터 사일로(고립) 방지</span></div>
+          <div class="fc-row"><span class="dot"></span><span>연동 담당자 1명 지정 — 규격 협의·지속 관리</span></div>
+        </div>
+        <div class="fc-foot">💬 데이터를 여는 만큼, 개발실 전체 데이터를 받아 쓸 수 있음</div>
+      </div>
+
+      <!-- 2 -->
+      <div class="fc fc2" data-n="2">
+        <div class="fc-badge opt">해당 팀 · 신청</div>
+        <div class="fc-top">
+          <div class="fc-icon">⚙️</div>
+          <div>
+            <div class="fc-num">유형 2 — 서비스 운영 위탁</div>
+            <div class="fc-title">자동화 프로그램은 개발하지만, 웹 서비스 운영 지원이 필요한 팀</div>
+          </div>
+        </div>
+        <div class="fc-divider"></div>
+        <div class="fc-rows">
+          <div class="fc-row"><span class="dot"></span><span><span class="hl">개발·테스트는 기존처럼 자체 수행</span> — 바뀌는 것 없음</span></div>
+          <div class="fc-row"><span class="dot"></span><span>완성된 소스를 <span class="hl">정해진 방식으로 GitHub에 올리면, 허브가 자동으로 웹 서비스화</span></span></div>
+          <div class="fc-row"><span class="dot"></span><span>서버·배포·장애 대응은 HE팀이 대행 → 팀은 개발에만 집중</span></div>
+          <div class="fc-row"><span class="dot"></span><span>Python, Java, Node.js, C++ 등 <span class="hl">15종 이상 개발 언어 지원</span></span></div>
+        </div>
+        <div class="fc-foot">📋 등록 방법 안내 후, GitHub 업로드만 하면 자동 운영 시작</div>
+      </div>
+
+      <!-- 3 -->
+      <div class="fc fc3" data-n="3">
+        <div class="fc-badge must">전 팀 필수 · Top-down</div>
+        <div class="fc-top">
+          <div class="fc-icon">🤖</div>
+          <div>
+            <div class="fc-num">유형 3 — 생성형 AI 연계</div>
+            <div class="fc-title">팀 데이터·챗봇을 생성형 AI 서비스에 탑재</div>
+          </div>
+        </div>
+        <div class="fc-divider"></div>
+        <div class="fc-rows">
+          <div class="fc-row"><span class="dot"></span><span>각 팀의 <span class="hl">데이터와 챗봇을 생성형 AI 서비스(AX Data Hub)에 탑재</span></span></div>
+          <div class="fc-row"><span class="dot"></span><span>팀 간 데이터가 연결되어 <span class="hl">시너지</span> — 한 곳에서 여러 팀의 데이터를 함께 질의·활용</span></div>
+          <div class="fc-row"><span class="dot"></span><span>그룹 <span class="hl">데이터 담당자 지정</span> → 업로드·품질 관리 전담</span></div>
+          <div class="fc-row"><span class="dot"></span><span style="color:#7B3FA0;font-weight:600">ChatGPT / Claude 오픈 후 — LLM 활용 데이터 업로드 방법 공유 예정</span></div>
+        </div>
+        <div class="fc-foot">🔑 개별 팀의 선택이 아닌, 전 팀 공통 추진 사항 (담당님 지시 필요)</div>
+      </div>
+
+      <!-- 4 -->
+      <div class="fc fc4" data-n="4">
+        <div class="fc-badge must">전 팀 필수 · Top-down</div>
+        <div class="fc-top">
+          <div class="fc-icon">📘</div>
+          <div>
+            <div class="fc-num">유형 4 — 지식 온톨로지화</div>
+            <div class="fc-title">팀 업무 지식을 백서로 등록 — 지식 연결 체계 구축</div>
+          </div>
+        </div>
+        <div class="fc-divider"></div>
+        <div class="fc-rows">
+          <div class="fc-row"><span class="dot"></span><span>팀별 <span class="hl">핵심 업무 지식·노하우를 백서로 정리</span>해 MX White Paper에 등록</span></div>
+          <div class="fc-row"><span class="dot"></span><span>각 팀의 지식이 서로 연결되는 <span class="hl">지식 체계(온톨로지) 구축</span> — 조직 전체가 검색·활용</span></div>
+          <div class="fc-row"><span class="dot"></span><span>생성형 AI와 연계 → <span class="hl">백서 기반 AI 질의응답</span> 자동 구성</span></div>
+          <div class="fc-row"><span class="dot"></span><span style="color:#C0392B;font-weight:600">ChatGPT / Claude 오픈 후 — LLM 활용 백서 작성 방법 공유 예정</span></div>
+        </div>
+        <div class="fc-foot">📝 개별 팀의 선택이 아닌, 전 팀 공통 추진 사항 (담당님 지시 필요)</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PAGE 3 : API 표준화 · 창구 일원화 ═══════ -->
+<div class="slide" id="p3">
+  <div class="ph">
+    <span class="ph-n">03</span>
+    <span class="ph-t">API 표준화 — 사내 시스템 창구 일원화</span>
+    <span class="ph-s">중복 요청 정리 → 통합 포탈이 한 번 받아, 모두가 쓴다</span>
+  </div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <!-- 문제 -->
+    <div class="prob-bar">
+      <b>현재 문제 :</b> 각 팀이 사내 시스템(인사·구매·품질 등) 데이터를 <b>제각각 요청·호출</b> 중 →
+      같은 데이터를 여러 팀이 중복으로 가져가 <b>트래픽 낭비</b>, 요청 양식도 제각각이라 <b>전체 현황 파악 불가</b>
+    </div>
+    <!-- 흐름도 -->
+    <div>
+      <div class="st">목표 구조 — 창구 일원화 &amp; 데이터 캐싱</div>
+      <div class="flow">
+        <div class="fl-node sys">
+          <div class="fl-nm">사내 시스템</div>
+          <div class="fl-ds">인사 · 구매 · 품질 등<br>각 시스템 운영 그룹</div>
+        </div>
+        <div class="fl-arr">
+          <div class="fl-arr-ic">⇄</div>
+          <div class="fl-arr-lbl">창구 일원화<br>API 규격 협의<br>트래픽 1회로 절감</div>
+        </div>
+        <div class="fl-node hub">
+          <div class="fl-nm">HW 개발 통합 포탈 (HE팀)</div>
+          <div class="fl-ds">사내 시스템 데이터를 <b>한 번 받아 보관(캐싱)</b><br>→ 개발실 모든 팀이 여기서 가져다 사용</div>
+        </div>
+        <div class="fl-arr">
+          <div class="fl-arr-ic">⇄</div>
+          <div class="fl-arr-lbl">팀 포탈 API 개방 (필수)<br>상호 데이터 접근·캐싱<br>데이터 사일로 방지</div>
+        </div>
+        <div class="fl-node team">
+          <div class="fl-nm">각 팀 포탈</div>
+          <div class="fl-ds">팀 데이터 개방 ↔<br>전체 데이터 활용</div>
+        </div>
+      </div>
+    </div>
+    <!-- 누가 무엇을 -->
+    <div style="flex:1;display:flex;flex-direction:column">
+      <div class="st">누가, 무엇을 하나</div>
+      <div class="actors">
+        <div class="ac a1">
+          <div class="ac-hd">각 팀</div>
+          <div class="ac-role">데이터 제공 + 현황 제출</div>
+          <div class="ac-item"><span class="n2">1</span><span><span class="hl">사내 시스템 API 사용 현황을 신속히 정리·제출</span> (어떤 시스템에 무엇을 요청 중인지)</span></div>
+          <div class="ac-item"><span class="n2">2</span><span>팀 포탈 <span class="hl">API 개방</span> — 통합 포탈이 접근·캐싱하도록</span></div>
+        </div>
+        <div class="ac a2">
+          <div class="ac-hd">HE팀</div>
+          <div class="ac-role">통합 포탈 운영 · 캐싱 대행</div>
+          <div class="ac-item"><span class="n2">1</span><span>취합된 API 요청을 <span class="hl">이관받아 통합 포탈에서 데이터 캐싱</span> 운영</span></div>
+          <div class="ac-item"><span class="n2">2</span><span>공통 API 규격·연동 가이드 제공, 각 팀 온보딩 지원</span></div>
+        </div>
+        <div class="ac a3">
+          <div class="ac-hd">사내 시스템 운영 그룹</div>
+          <div class="ac-role">규격 협의 대상</div>
+          <div class="ac-item"><span class="n2">1</span><span><span class="hl">창구 일원화 안내</span> — 개발실 요청은 통합 포탈 하나로</span></div>
+          <div class="ac-item"><span class="n2">2</span><span>통합 포탈과 <span class="hl">API 규격 협의</span> — 과도한 트래픽 예방·효율화 (캐싱 허용)</span></div>
+        </div>
+        <div class="ac a4">
+          <div class="ac-hd">AX전략그룹 <span class="tag tr" style="font-size:8.5px">주관 제안</span></div>
+          <div class="ac-role">전체 취합·정리 주관 (제안)</div>
+          <div class="ac-item"><span class="n2">1</span><span>팀마다 제각각인 <span class="hl">사내 시스템 API 요청을 전수 취합·정리 주관</span></span></div>
+          <div class="ac-item"><span class="n2">2</span><span>R&amp;R상 HW담당님 직속보다 <span class="hl">적합할 수 있어 제안</span> — 협의 필요</span></div>
+        </div>
+      </div>
+    </div>
+    <!-- 명시 사항 -->
+    <div class="note2">
+      <div class="n2-item">
+        <span class="n2-ic">✦</span>
+        <span class="n2-tx"><b>API 양식</b> — 다소 복잡하거나 유연해도 무방. 앞으로 <span class="or">LLM 기반 개발</span>로 충분히 정리 가능</span>
+      </div>
+      <div class="n2-item">
+        <span class="n2-ic">✦</span>
+        <span class="n2-tx"><b>소프트웨어 스택</b> — 단, 각 팀 포탈의 <span class="or">유지보수를 위해 개발 언어·프레임워크는 일정 수준 정리 필요</span> (명시 사항)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PAGE 4 : 역할 분담 & 추진 계획 ═══════ -->
+<div class="slide" id="p4">
+  <div class="ph">
+    <span class="ph-n">04</span>
+    <span class="ph-t">역할 분담 &amp; 추진 계획</span>
+    <span class="ph-s">팀 ↔ HE팀 경계 · 제공물 현황 · 단계별 로드맵 · 결정 필요 사항</span>
+  </div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="p4-left">
+      <!-- Contract -->
+      <div>
+        <div class="st">역할 분담 — 경계선</div>
+        <div class="ct2">
+          <div>
+            <div class="ct-hd" style="background:var(--orange)">각 팀 (만드는 쪽)</div>
+            <div class="ct-bd team">
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>자동화·서비스·업무 로직 개발</span></div>
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>소스 제출 / 데이터·백서 업로드</span></div>
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>공통 API 규격 준수 · 팀 포탈 API 개방</span></div>
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>사내 시스템 API 사용 현황 제출</span></div>
+              <div class="ct-row"><span style="color:var(--orange);font-size:13px">✅</span><span>그룹 담당자 1명 지정·유지</span></div>
+            </div>
+          </div>
+          <div class="ct-mid">
+            <div class="ct-mid-ic">⇄</div>
+            <div class="ct-mid-lbl">경계선</div>
+          </div>
+          <div>
+            <div class="ct-hd" style="background:var(--teal)">HE팀 (운영하는 쪽)</div>
+            <div class="ct-bd hub">
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>서버 배포·운영·장애 대응 대행</span></div>
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>통합 로그인 · 접근 관리</span></div>
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>사내 시스템 데이터 캐싱 · 공통 API 운영</span></div>
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>생성형 AI 검색·챗봇 인프라 운영</span></div>
+              <div class="ct-row"><span style="color:var(--teal);font-size:13px">✅</span><span>규격·가이드·온보딩 지원 제공</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cl-bar" style="margin-top:7px">
+          <span class="cl-t">경계선 =</span>
+          <span class="cl-v">공통 API 규격 준수 · 소스코드 공유 · 그룹 담당자 지정</span>
+          <span class="cl-rule">이 세 가지를 지키면 → 나머지는 HE팀이 책임</span>
+        </div>
+      </div>
+      <!-- 제공물 -->
+      <div>
+        <div class="st">HE팀 제공물 현황</div>
+        <div class="deliv3">
+          <div class="dv done">
+            <div class="dv-icon">✅</div>
+            <div><div class="dv-area">통합 포탈 · 통합 로그인</div><div class="dv-desc">포탈·3서비스 연동 동작 중</div></div>
+          </div>
+          <div class="dv done">
+            <div class="dv-icon">✅</div>
+            <div><div class="dv-area">자동 빌드·서비스 (15종 언어)</div><div class="dv-desc">소스 제출 → 자동 배포 구현 완료</div></div>
+          </div>
+          <div class="dv done">
+            <div class="dv-icon">✅</div>
+            <div><div class="dv-area">AI 데이터 허브 (데이터·챗봇)</div><div class="dv-desc">데이터 적재·AI 검색 동작 중</div></div>
+          </div>
+          <div class="dv part">
+            <div class="dv-icon">🔧</div>
+            <div><div class="dv-area">공통 데이터 수집 API · 캐싱</div><div class="dv-desc">사내 시스템 연동 — 신규 추진</div></div>
+          </div>
+          <div class="dv part">
+            <div class="dv-icon">🔧</div>
+            <div><div class="dv-area">모니터링·운영 체계</div><div class="dv-desc">진단 자동화 보유 · 강화 예정</div></div>
+          </div>
+          <div class="dv new">
+            <div class="dv-icon">📋</div>
+            <div><div class="dv-area">온보딩 · LLM 활용 가이드</div><div class="dv-desc">ChatGPT/Claude 오픈 후 배포</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 우측: 로드맵 + 결정 -->
+    <div class="p4-right">
+      <div class="st">추진 단계</div>
+      <div class="rm-v">
+        <div class="rmp rmp0">
+          <div class="rmp-node">0</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 0 — 완료 <span class="tag tg" style="font-size:9px">지금 여기</span></div>
+            <div class="rmp-desc">통합 포탈 + 3서비스 동작 · 핵심 기반 구축 완료</div>
+          </div>
+        </div>
+        <div class="rmp rmp1">
+          <div class="rmp-node">1</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 1 — API 현황 조사</div>
+            <div class="rmp-desc">각 팀 사내 시스템 API 사용 현황 취합 (AX전략그룹 주관 제안)</div>
+          </div>
+        </div>
+        <div class="rmp rmp2">
+          <div class="rmp-node">2</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 2 — 표준 확정 · 창구 일원화</div>
+            <div class="rmp-desc">규격 문서화 + 사내 시스템 협의 + 캐싱 체계 구축</div>
+          </div>
+        </div>
+        <div class="rmp rmp3">
+          <div class="rmp-node">3</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 3 — 파일럿 · 자동화</div>
+            <div class="rmp-desc">시범 그룹 온보딩 · GitHub 자동 서비스 · LLM 가이드 배포</div>
+          </div>
+        </div>
+        <div class="rmp rmp4">
+          <div class="rmp-node">4</div>
+          <div class="rmp-card">
+            <div class="rmp-ph">Phase 4 — 전사 확산</div>
+            <div class="rmp-desc">전 그룹 온보딩 · 지식 온톨로지 연계 · 담당자 체계 정착</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:2px">
+        <div class="st">결정 필요 사항 (담당님)</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div class="tno"><b>T1</b>&nbsp; HWAX를 신규 서비스의 <b style="color:var(--dgray)">표준 경로로 지정</b></div>
+          <div class="tno"><b>T2</b>&nbsp; 각 팀 포탈 <b style="color:var(--dgray)">API 개방 의무화</b> (데이터 사일로 방지)</div>
+          <div class="tno"><b>T3</b>&nbsp; <b style="color:var(--dgray)">유형 3·4 전 팀 필수 추진</b> 확정 (Top-down)</div>
+          <div class="tno"><b>T4</b>&nbsp; 그룹별 <b style="color:var(--dgray)">담당자(Owner) 지정</b></div>
+          <div class="tno tno-p"><b>T5</b>&nbsp; API 취합·정리 주관 — <b style="color:var(--dgray)">AX전략그룹 제안</b> (R&amp;R 협의)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="nav">
+  <button class="nb" id="bp">&#8592;</button>
+  <div class="ndots" id="dots"></div>
+  <button class="nb" id="bn">&#8594;</button>
+  <div class="nlbl" id="lbl"></div>
+</div>
+
+<script>
+const LS=['표지','왜 지금 · 허브 구성','참여 유형 4가지','API 표준화','역할 분담 & 추진'];
+const sl=[...document.querySelectorAll('.slide')];
+const dots=document.getElementById('dots');
+const lbl=document.getElementById('lbl');
+const prog=document.getElementById('prog');
+let cur=0;
+LS.forEach((t,i)=>{
+  const b=document.createElement('button');
+  b.className='nd'+(i===0?' on':'');
+  b.title=t;b.onclick=()=>go(i);dots.appendChild(b);
+});
+function go(n){
+  if(n<0||n>=sl.length)return;
+  sl[cur].className='slide prev';dots.children[cur].classList.remove('on');
+  cur=n;sl[cur].className='slide active';dots.children[cur].classList.add('on');
+  lbl.textContent=(cur+1)+' / '+sl.length+'  '+LS[cur];
+  prog.style.width=((cur+1)/sl.length*100)+'%';
+  setTimeout(()=>sl.forEach((s,i)=>{if(i!==cur)s.className='slide';}),380);
+}
+document.getElementById('bp').onclick=()=>go(cur-1);
+document.getElementById('bn').onclick=()=>go(cur+1);
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown')go(cur+1);
+  if(e.key==='ArrowLeft'||e.key==='PageUp')go(cur-1);
+  if(e.key>='1'&&e.key<='5')go(+e.key-1);
+});
+let tx=0;
+document.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+document.addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-tx;if(Math.abs(d)>50)go(d<0?cur+1:cur-1);},{passive:true});
+go(0);
+</script>
+</body>
+</html>
