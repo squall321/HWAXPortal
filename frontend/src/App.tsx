@@ -1,6 +1,7 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
+import { ChatProvider } from './state/ChatContext';
 import { AppShell } from './components/layout/AppShell';
 import LaunchPage from './pages/LaunchPage';
 import LoginPage from './pages/LoginPage';
@@ -35,7 +36,9 @@ const router = createBrowserRouter([
 export default function App() {
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
+      <ChatProvider>
+        <RouterProvider router={router} />
+      </ChatProvider>
     </AuthProvider>
   );
 }
