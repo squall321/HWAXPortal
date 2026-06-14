@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Phase 0 — ChatDock 레이아웃 검증 mock</title>
+<!--
+  목적(계획서 §6 Phase 0): 코드 작성 전, ChatDock 우측 fixed 도크가
+  .hero / .pgrid 카드를 가리지 않는지 CSS만으로 3개 화면폭에서 확인.
+  검증에서 잡힌 것: .hero는 full-bleed 아님(중앙 1180px), .pgrid auto-fill은
+  도크 너비를 모름 → padding-right로 공간 비움. 모바일은 풀스크린 모달.
+
+  사용법: 브라우저로 열고 우상단 [폭] 버튼으로 375/768/1920 전환,
+  [도크] 버튼으로 열고/닫고. 카드가 도크 뒤로 숨는지 / hero 텍스트가
+  가려지는지 확인. body.dock-open 일 때 .home-wrap padding-right 적용.
+-->
+<style>
+:root{
+  --bg:#0b1220; --fg:#e6edf6; --muted:#8aa0bd; --accent:#4f9dff;
+  --card:#121a2b; --border:#22304a; --maxw:1180px; --dock-w:360px; --hdr-h:56px;
+  --f:'Malgun Gothic','맑은 고딕',sans-serif;
+}
+*{box-sizing:border-box;margin:0;font-family:var(--f)}
+body{background:#05080f;color:var(--fg);min-height:100vh}
+
+/* ── 화면폭 시뮬레이터 프레임 ── */
+.viewport{margin:0 auto;background:var(--bg);min-height:100vh;position:relative;
+  border-left:1px solid #1b2740;border-right:1px solid #1b2740;overflow-x:hidden;
+  transition:max-width .2s}
+.viewport.w375{max-width:375px}
+.viewport.w768{max-width:768px}
+.viewport.w1920{max-width:1920px}
+
+/* ── 컨트롤 (mock 전용, 실제 포털엔 없음) ── */
+.ctrl{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:9999;
+  display:flex;gap:6px;background:rgba(8,14,26,.95);padding:7px 10px;border-radius:20px;
+  border:1px solid var(--border)}
+.ctrl button{background:#1a2942;color:#bcd0ee;border:1px solid #2a3c5c;border-radius:14px;
+  padding:5px 12px;font-size:12px;cursor:pointer}
+.ctrl button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.ctrl .lbl{color:var(--muted);font-size:11px;align-self:center;padding:0 4px}
+
+/* ── AppHeader (실제 구조 모사: position 없음, flow 안) ── */
+.hdr{height:var(--hdr-h);display:flex;align-items:center;justify-content:space-between;
+  padding:0 1.5rem;border-bottom:1px solid var(--border);background:var(--card)}
+.hdr strong{color:var(--fg)} .hdr span{color:var(--muted);font-size:.85rem;margin-left:.6rem}
+
+/* ── main.page (full-bleed) ── */
+.page{width:100%}
+
+/* ── hero: full-bleed 배경, 내용은 중앙 1180px (실제와 동일) ── */
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--border);
+  background:radial-gradient(120% 80% at 70% 0%,#16233e 0%,#0b1220 60%)}
+.hero-inner{max-width:var(--maxw);margin:0 auto;padding:3rem 1.5rem 2.4rem}
+.hero-kicker{color:var(--accent);font-size:.8rem;letter-spacing:.12em;text-transform:uppercase}
+.hero-title{font-size:2.4rem;font-weight:800;margin:.4rem 0;line-height:1.1}
+.hero-sub{color:var(--muted);max-width:560px;line-height:1.6}
+.hero-stats{display:flex;gap:1.5rem;margin-top:1.4rem}
+.hero-stats b{font-size:1.4rem} .hero-stats span{color:var(--muted);font-size:.8rem;display:block}
+
+/* ── home-wrap + pgrid: 중앙 1180px, auto-fill minmax(320px) (실제와 동일) ── */
+.home-wrap{max-width:var(--maxw);margin:0 auto;padding:3rem 1.5rem 4rem;
+  transition:padding-right .2s,max-width .2s}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem}
+.pcard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.2rem;min-height:120px}
+.pcard h3{font-size:1.05rem;margin-bottom:.4rem}
+.pcard p{color:var(--muted);font-size:.85rem;line-height:1.5}
+.pcard .badge{display:inline-block;margin-top:.6rem;font-size:.7rem;color:var(--accent);
+  border:1px solid var(--accent);border-radius:8px;padding:1px 7px}
+
+/* ═══════════ ChatDock — 격리 CSS (Phase 0 검증 대상) ═══════════ */
+/* 데스크톱: 우측 fixed 도크. body.dock-open 일 때만 표시 + 본문 공간 확보 */
+.chatdock{position:fixed;top:var(--hdr-h);right:0;width:var(--dock-w);
+  height:calc(100vh - var(--hdr-h));background:var(--card);border-left:1px solid var(--border);
+  z-index:100;display:flex;flex-direction:column;transform:translateX(100%);
+  transition:transform .22s;box-shadow:-8px 0 28px rgba(0,0,0,.4)}
+body.dock-open .chatdock{transform:none}
+
+/* ★ 핵심: 도크 열림 → 본문이 도크 너비만큼 오른쪽 여백 확보 (카드가 안 숨음) */
+/*    .pgrid는 auto-fill이라 도크를 모름 → 컨테이너 padding-right로 공간을 비운다 */
+body.dock-open .home-wrap{padding-right:calc(var(--dock-w) + 1.5rem)}
+body.dock-open .hero-inner{padding-right:calc(var(--dock-w) + 1.5rem)}
+
+.dock-hd{height:48px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 .9rem;border-bottom:1px solid var(--border);flex-shrink:0}
+.dock-hd b{font-size:.95rem} .dock-x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px}
+.dock-body{flex:1;overflow-y:auto;padding:.9rem;display:flex;flex-direction:column;gap:.6rem}
+.msg{padding:.6rem .8rem;border-radius:10px;font-size:.85rem;line-height:1.5;max-width:88%}
+.msg.bot{background:#1a2942;align-self:flex-start}
+.msg.me{background:var(--accent);color:#fff;align-self:flex-end}
+.dock-in{flex-shrink:0;border-top:1px solid var(--border);padding:.7rem;display:flex;gap:.5rem}
+.dock-in input{flex:1;background:#0c1626;border:1px solid var(--border);border-radius:18px;
+  padding:.5rem .9rem;color:var(--fg);font-size:.85rem}
+.dock-in button{background:var(--accent);color:#fff;border:none;border-radius:18px;padding:0 1rem;cursor:pointer}
+
+/* 도크 토글 FAB (실제 ChatDock에도 들어갈 트리거) */
+.dock-fab{position:fixed;bottom:22px;right:22px;z-index:90;width:54px;height:54px;border-radius:50%;
+  background:var(--accent);color:#fff;border:none;font-size:22px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+body.dock-open .dock-fab{display:none}
+
+/* ★ 모바일: 풀스크린 모달 (고정 사이드바 금지 — 검증 지적사항) */
+@media (max-width:768px){
+  .chatdock{top:0;width:100%;height:100vh;border-left:none;
+    transform:translateY(100%)}
+  body.dock-open .chatdock{transform:none}
+  /* 모바일에선 도크가 화면 전체를 덮으므로 본문 여백 불필요 */
+  body.dock-open .home-wrap,body.dock-open .hero-inner{padding-right:1.5rem}
+  .pgrid{grid-template-columns:1fr}  /* 좁은 화면 카드 1열 */
+}
+</style>
+</head>
+<body>
+
+<div class="ctrl">
+  <span class="lbl">폭</span>
+  <button data-w="375">375 모바일</button>
+  <button data-w="768">768 태블릿</button>
+  <button data-w="1920" class="on">1920 데스크톱</button>
+  <span class="lbl">|</span>
+  <button id="toggleDock">도크 토글</button>
+</div>
+
+<div class="viewport w1920" id="vp">
+  <!-- AppHeader -->
+  <header class="hdr">
+    <div><strong>HWAX Portal</strong><span>hwax.sec.samsung.net</span></div>
+    <div style="color:var(--muted);font-size:.9rem">user@samsung.com</div>
+  </header>
+
+  <main class="page">
+    <!-- hero -->
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-kicker">HW 담당 개발실 · 통합 포탈</div>
+        <h1 class="hero-title">하나의 관문에서<br>모든 서비스로</h1>
+        <p class="hero-sub">로그인 한 번으로 백서·자동화·데이터·AI를 한 곳에서. 이 텍스트가 도크에 가려지면 안 됨(검증 포인트).</p>
+        <div class="hero-stats">
+          <div><b>4</b><span>서비스</span></div>
+          <div><b>15+</b><span>지원 언어</span></div>
+          <div><b>SSO</b><span>통합 로그인</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- pgrid: 카드 8개 (도크 뒤로 숨는지 확인) -->
+    <div class="home-wrap">
+      <div class="pgrid" id="grid"></div>
+    </div>
+  </main>
+
+  <!-- ChatDock -->
+  <button class="dock-fab" id="fab">💬</button>
+  <aside class="chatdock">
+    <div class="dock-hd"><b>HWAX Assistant</b><button class="dock-x" id="closeDock">×</button></div>
+    <div class="dock-body">
+      <div class="msg bot">무엇을 도와드릴까요? (이건 레이아웃 mock입니다)</div>
+      <div class="msg me">응력-변형률 커브 보여줘</div>
+      <div class="msg bot">응력 데이터 조회 중… (SSE status 이벤트 표시 위치)</div>
+    </div>
+    <div class="dock-in"><input placeholder="메시지 입력…"><button>전송</button></div>
+  </aside>
+</div>
+
+<script>
+// 카드 8개 생성
+const cards = [
+  ['MX White Paper','업무 백서 & 지식 카탈로그','Tier 1'],
+  ['HWAX Hub','소스 제출 → 서비스 자동화','Tier 2'],
+  ['AX Data Hub','데이터 · 생성형 AI 허브','Tier 3'],
+  ['SignalForge','VOC 인텔리전스','coming soon'],
+  ['Report Archive','AI 보조 보고 작성','link'],
+  ['Smart Twin','클러스터 시뮬레이션','link'],
+  ['SPDM','데이터 관리','link'],
+  ['+ 새 서비스','당신의 자동화를 등록','신규'],
+];
+document.getElementById('grid').innerHTML = cards.map(([t,d,b])=>
+  `<div class="pcard"><h3>${t}</h3><p>${d}</p><span class="badge">${b}</span></div>`).join('');
+
+const vp = document.getElementById('vp');
+document.querySelectorAll('.ctrl [data-w]').forEach(btn=>{
+  btn.onclick=()=>{
+    vp.className='viewport w'+btn.dataset.w;
+    document.querySelectorAll('.ctrl [data-w]').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+  };
+});
+const toggle=()=>document.body.classList.toggle('dock-open');
+document.getElementById('toggleDock').onclick=toggle;
+document.getElementById('fab').onclick=toggle;
+document.getElementById('closeDock').onclick=()=>document.body.classList.remove('dock-open');
+</script>
+</body>
+</html>
