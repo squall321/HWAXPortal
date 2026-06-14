@@ -91,6 +91,17 @@ class Settings(BaseSettings):
     # single-instance prod/mock-demo deploy too. Real multi-instance prod provisions keys.
     jwt_autogen_keys: bool = False
 
+    # ── MCP chat (Phase 1: agent proxy + MCP registry; echo mode needs no remote) ──
+    # The portal is a thin proxy + auth gate: real LLM/LangGraph/MCP fan-out lives in the
+    # remote Agent Server (URL below). dev/prod swap the URL via routes.env (vLLM split).
+    agent_server_url: str = "http://127.0.0.1:9000"  # remote Agent Server (SSE /chat)
+    mcp_gateway_url: str = "http://127.0.0.1:9100"    # MCP Gateway (tools/list, tools/call)
+    mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
+    agent_token_audience: str = "agent-server"         # aud for the RS256 handoff token
+    agent_request_timeout: float = 30.0                # per-call timeout to remote services (s)
+    max_concurrent_chats: int = 64                     # SSE connections hold a worker → cap + 429
+    agent_audit_log_path: str = "secrets/agent_audit.sqlite"  # who/when/which tool (Phase 1)
+
     # ── Mail (automated send from hwax@samsung.com) ────────────────────────────
     mail_backend: Literal["console", "smtp", "graph"] = "console"  # dev default = console
     mail_from: str = "hwax@samsung.com"

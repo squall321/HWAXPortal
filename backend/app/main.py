@@ -4,6 +4,7 @@ Routers are wired in as each build phase lands.
 Phase 0: health.  Phase 1: auth session + AuthProvider/JWTService on app.state.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -11,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import routes_health
+from app.agent import routes as agent_routes
+from app.agent.audit import AuditLog
 from app.auth.downstream import JwtDownstreamIssuer
 from app.auth.errors import AuthError
 from app.auth.keystore import KeyStore
@@ -25,6 +28,8 @@ from app.config import get_settings
 from app.deps import build_services
 from app.mail import routes as mail_routes
 from app.mail.service import build_mail_backend
+from app.mcp import routes as mcp_routes
+from app.mcp.registry import McpRegistry
 
 settings = get_settings()
 
@@ -40,6 +45,11 @@ async def lifespan(app: FastAPI):
     app.state.token_store = TokenStore(settings)
     # Mail backend (console in dev; smtp/graph via MAIL_BACKEND env).
     app.state.mail_backend = build_mail_backend(settings)
+    # MCP chat (Phase 1): server registry (PR-managed yaml), audit log (compliance), and a
+    # concurrency cap (SSE connections hold a worker → Semaphore, 429 over the cap).
+    app.state.mcp_registry = McpRegistry(settings)
+    app.state.agent_audit = AuditLog(settings)
+    app.state.agent_semaphore = asyncio.Semaphore(settings.max_concurrent_chats)
     yield
 
 
@@ -72,6 +82,8 @@ app.include_router(auth_jwks.router)
 app.include_router(catalog_routes.router)
 app.include_router(auth_launch.router)
 app.include_router(mail_routes.router)
+app.include_router(mcp_routes.router)
+app.include_router(agent_routes.router)
 
 # Dev-only mock SAML IdP — a real signing IdP fixture to exercise the SP path.
 if settings.app_env == "dev" and settings.saml_mock_idp_enabled:
