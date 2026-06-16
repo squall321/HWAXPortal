@@ -10,10 +10,18 @@
 > **prod** is a separate B300 host with Qwen 72B; code is identical, only
 > `routes.env` IP/model swap (§3-1). This document is dev-only.
 >
-> **⚠️ Nothing heavy has been installed or downloaded yet.** This guide contains
-> the *verified-shape* commands. Installing vLLM (~GBs) and pulling the model
-> (~6 GB) needs an explicit go-ahead from you. Run the commands in §3 or §4 when
-> ready.
+> **✅ INSTALLED & VERIFIED 2026-06-16 on this box.** vLLM `:latest` (0.23.0) runs
+> Qwen2.5-7B-AWQ on the 5070 Ti and answers in Korean over `/v1/chat/completions`.
+> GPU use ~13.7 GB / 16 GB, KV cache 104K tokens. Two gotchas were hit and fixed:
+>
+> 1. **Use `:latest`, not `:nightly`.** The 2026-06-16 nightly image shipped a
+>    broken `_C.abi3.so` (its own torch ABI mismatch). `:latest` (0.23.0) is clean.
+> 2. **`PYTHONNOUSERSITE=1` is REQUIRED.** apptainer bind-mounts `$HOME`, so the
+>    host `~/.local/.../torch` shadows the container torch and breaks vLLM's `_C`
+>    (undefined symbol `_ZNR5torch7Library4_def…`). Without the env var, BOTH
+>    nightly and latest fail identically — it is NOT an image bug, it's host bleed.
+>
+> Launch with `docs/start-dev-vllm.sh` (already updated with both fixes).
 
 ---
 

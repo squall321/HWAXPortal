@@ -15,8 +15,9 @@
 set -euo pipefail
 
 # ── Config (override via env) ────────────────────────────────────────────────
-SIF="${VLLM_SIF:-/home/koopark/serviceApptainers/vllm-openai-nightly.sif}"
-IMAGE="${VLLM_IMAGE:-docker://vllm/vllm-openai:nightly}"   # nightly = sm_120 kernels
+SIF="${VLLM_SIF:-/home/koopark/serviceApptainers/vllm-openai-latest.sif}"
+IMAGE="${VLLM_IMAGE:-docker://vllm/vllm-openai:latest}"    # stable 0.23.0 — has sm_120 kernels
+                                                          # (verified on this 5070 Ti 2026-06-16)
 MODEL="${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}"
 SERVED_NAME="${VLLM_SERVED_NAME:-qwen2.5-7b-dev}"          # stable name; prod swaps weights behind it
 PORT="${VLLM_PORT:-8000}"                                  # vLLM's port (Agent Server calls this), NOT the portal's 9000
@@ -51,9 +52,15 @@ fi
 
 # ── Launch OpenAI-compatible server ──────────────────────────────────────────
 # Model auto-downloads into HF_HOME on first run if not pre-pulled (see docs §3.2).
+# PYTHONNOUSERSITE=1 is REQUIRED: apptainer bind-mounts $HOME, so the host's
+# ~/.local/lib/python3.12/site-packages/torch shadows the container's torch and breaks
+# vLLM's _C extension (undefined symbol: _ZNR5torch7Library4_def…). This env var makes
+# Python ignore the user site, so the container's own torch loads. Verified the fix
+# 2026-06-16 — without it BOTH :nightly and :latest fail identically.
 echo "==> starting vLLM (Ctrl-C to stop)…"
 exec apptainer run --nv \
   --env "HF_HOME=${HF_HOME_DIR}" \
+  --env "PYTHONNOUSERSITE=1" \
   "$SIF" \
   --model "$MODEL" \
   --served-model-name "$SERVED_NAME" \
