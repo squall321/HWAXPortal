@@ -16,6 +16,7 @@ StreamingResponse → nginx buffering-off → fetch+ReadableStream) with no Agen
 import asyncio
 from collections.abc import AsyncIterator
 
+import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -67,6 +68,44 @@ async def _echo_stream(message: str, principal: Principal, audit: AuditLog) -> A
     yield sse_event("done", {})
 
 
+async def _relay_stream(
+    body: "ChatRequest", principal: Principal, audit: AuditLog, settings: Settings
+) -> AsyncIterator[bytes]:
+    """Relay the remote Agent Server's SSE stream byte-for-byte to the browser.
+
+    The portal stays a thin proxy: it forwards the message + the caller's groups (for
+    allowed_groups filtering downstream) and pipes back whatever the Agent Server emits,
+    which already speaks the §5 contract. Auth/CSRF were enforced before we got here.
+    """
+    chat_id = "relay"
+    audit.record(principal=principal.subject, event="chat_start", chat_id=chat_id,
+                 meta={"agent": settings.agent_server_url, "system_id": body.system_id})
+    payload = {"message": body.message, "system_id": body.system_id, "groups": principal.groups}
+    try:
+        async with (
+            httpx.AsyncClient(timeout=settings.agent_request_timeout) as client,
+            client.stream("POST", f"{settings.agent_server_url}/chat", json=payload) as r,
+        ):
+            if r.status_code != 200:
+                detail = (await r.aread()).decode(errors="replace")[:200]
+                audit.record(principal=principal.subject, event="chat_error",
+                             chat_id=chat_id, status="error",
+                             meta={"upstream": r.status_code})
+                yield sse_event("error", {"code": f"agent_{r.status_code}", "message": detail})
+                yield sse_event("done", {})
+                return
+            async for chunk in r.aiter_raw():
+                if chunk:
+                    yield chunk
+    except httpx.HTTPError as exc:
+        audit.record(principal=principal.subject, event="chat_error", chat_id=chat_id,
+                     status="error", meta={"reason": "agent_unreachable"})
+        yield sse_event("error", {"code": "agent_unreachable", "message": str(exc)})
+        yield sse_event("done", {})
+        return
+    audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok")
+
+
 @router.post("/chat")
 async def chat(
     request: Request,
@@ -98,6 +137,14 @@ async def chat(
 
         return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
 
-    # Non-echo: relay the remote Agent Server stream. Wired in Phase 3 (needs the remote up).
-    # We acquired no slot for this path (relay acquires inside its own generator later).
-    raise AuthError("remote agent relay not wired yet (use ?mode=echo in dev)", status_code=501)
+    # Non-echo: relay the remote Agent Server stream (the real LLM call lives there).
+    await sem.acquire()
+
+    async def relay() -> AsyncIterator[bytes]:
+        try:
+            async for frame in _relay_stream(body, principal, audit, settings):
+                yield frame
+        finally:
+            sem.release()
+
+    return StreamingResponse(relay(), media_type="text/event-stream", headers=SSE_HEADERS)
