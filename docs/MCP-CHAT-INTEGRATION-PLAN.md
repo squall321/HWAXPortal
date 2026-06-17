@@ -5,8 +5,33 @@
 > 무거운 GPU 추론서버(vLLM)와 개별 MCP 서버들은 포털 밖 별도 호스트에 두고 `routes.env`로 연결한다.
 >
 > **작성 근거**: 검토 문서(아키텍처 일반론) + **포털 실제 코드 실측**(file:line). 추측 아님.
-> 이 문서는 *계획*이다. 코드 변경 없음.
-> **상태: 4-에이전트 적대적 검증 완료(§8) — 본문에 수정 반영함.** §7 결정항(특히 A·F·G)을 닫은 뒤 Phase 0 착수.
+> 계획 → 4-에이전트 적대적 검증(§8) → 결정(§7 A·F·G) → 구현·실측 검증 완료.
+
+---
+
+## ★ 구현 현황 (2026-06-17 — dev 전체 체인 실동작)
+
+전체 파이프라인이 dev에서 **끝까지 동작·검증**됨. LLM이 실제 MCP 툴을 호출하고 답이 챗까지 SSE로 흐름("123×7"→multiply→861, "서울 시간"→current_time).
+
+```
+ChatDock → 포털 :8723 /agent/chat → Agent Server :9009 (LangGraph ReAct)
+            인증·CSRF·동시성·감사       → vLLM :8000 (Qwen2.5-7B, tool calling)
+                                        → MCP :8011 (add/multiply/current_time)
+```
+
+| 단계 | 상태 | 커밋 / 위치 |
+|---|---|---|
+| Phase 0 레이아웃 mock | ✅ 검증 7/7 | `cc02233` · `docs/chatdock-layout-mock.html` |
+| Phase 1 백엔드 SSE 골격 | ✅ echo 실 HTTP | `6c34c4e` · `backend/app/agent`, `app/mcp` |
+| Phase 2 프론트 ChatDock | ✅ tsc/build/lint | `d34c995` · `frontend/src/components/chat` |
+| Phase 3 nginx SSE + relay | ✅ `nginx -t`, relay 검증 | `817c454`, `0e7e5fd` |
+| dev vLLM (Qwen 7B, 5070 Ti) | ✅ 추론+tool_calls | `docs/dev-vllm-setup.md` |
+| Agent Server (LangGraph+MCP) | ✅ 툴 호출 | repo `squall321/HWAXAgentServer` |
+| config 흠 수정 (port/문서) | ✅ env 없이 동작 | `24b85b3` |
+
+**운영 가이드**: `docs/dev-stack-runbook.md` (기동/검증/정리 — 스택 미영속이라 재시작 절차 필수).
+
+**남은 것(별도 작업, 코드 흠 아님)**: ① 스택 영속화(apptainer instance/supervisor) ② Agent Server JWKS 인증(현재 dev localhost 신뢰) ③ 실제 업무 MCP 툴(현재 데모) ④ 브라우저 UI 클릭 테스트(현재 curl) ⑤ MCP Gateway(tools/list·circuit breaker — 현재 Agent Server가 MCP 직접 연결).
 
 ---
 
