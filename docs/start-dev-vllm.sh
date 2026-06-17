@@ -4,7 +4,7 @@
 #
 #   Server : RTX 5070 Ti (Blackwell sm_120), 16 GB VRAM
 #   Model  : Qwen/Qwen2.5-7B-Instruct-AWQ (4-bit, ~6 GB)
-#   Runtime: Apptainer + official vLLM nightly image (ships sm_120 kernels)
+#   Runtime: Apptainer + official vLLM :latest image (0.23.0; ships sm_120 kernels)
 #   API    : OpenAI-compatible, http://127.0.0.1:8000/v1  (consumed by Agent Server)
 #
 # See docs/dev-vllm-setup.md for the WHY behind every value.

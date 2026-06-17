@@ -27,15 +27,17 @@
 
 ## 0. TL;DR — recommended path
 
-**Use the official vLLM nightly container via Apptainer.** On a consumer
-Blackwell card (sm_120), the nightly image is the lowest-risk path: it ships
-PyTorch/vLLM kernels **pre-compiled for SM 12.0**, so there is no source build and
-no risk of clobbering the existing `~/.local` PyTorch that other projects
-(stable-diffusion, xformers, …) depend on.
+**Use the official vLLM `:latest` container via Apptainer, with `PYTHONNOUSERSITE=1`.**
+On a consumer Blackwell card (sm_120), `:latest` (v0.23.0) ships kernels
+**pre-compiled for SM 12.0** — no source build, and the container's PyTorch never
+clobbers the `~/.local` one other projects (stable-diffusion, xformers, …) depend on.
+(The 2026-06-14 research recommended `:nightly`; the 2026-06-16 install proved
+`:latest` is the right tag and that nightly's build was broken — see §2.)
 
-```
-Apptainer (vllm/vllm-openai:nightly, --nv)  →  Qwen/Qwen2.5-7B-Instruct-AWQ
-   --max-model-len 16384  --gpu-memory-utilization 0.80  --port 8000
+```text
+Apptainer (vllm/vllm-openai:latest, --nv, PYTHONNOUSERSITE=1)  →  Qwen/Qwen2.5-7B-Instruct-AWQ
+   --max-model-len 16384  --gpu-memory-utilization 0.78  --port 8000
+   --enable-auto-tool-choice  --tool-call-parser hermes
 ```
 
 A pip-venv alternative is in §4, but read §5 first — it has real footguns on this
@@ -72,32 +74,34 @@ path is recommended.
 Researched 2026-06-14 (sources at the bottom). Summary:
 
 - **Blackwell sm_120 needs CUDA ≥ 12.8 and a PyTorch built with cu128+** — met here (driver CUDA 13.0, torch 2.9.0+cu128).
-- **Official *stable* `vllm/vllm-openai` image does NOT support sm_120 out of the
-  box** — e.g. `v0.9.0` throws `CUDA error: no kernel image is available for
-  execution on the device` on RTX 5090/5070 Ti.
-- **The `vllm/vllm-openai:nightly` (and `cu130-nightly`) image DOES** — it ships
-  kernels compiled for **SM 12.0**, verified on RTX 5090 (same sm_120 as our 5070
-  Ti). ← this is the path we use.
-- **Latest stable vLLM `v0.23.0` (2026-06-12) pins `torch==2.11.0`.** That is
-  *newer* than our local 2.9.0 and would be pulled in by a pip install — see §5.
+- **OLD stable (e.g. `v0.9.0`) did NOT support sm_120** — `CUDA error: no kernel
+  image is available` on RTX 5090/5070 Ti. That is what the 2026-06-14 research saw.
+- **ACTUAL INSTALL (2026-06-16) overturned the nightly recommendation:**
+  - `vllm/vllm-openai:**latest**` (v0.23.0, torch 2.12+cu130) **DOES ship sm_120
+    kernels** and runs Qwen2.5-7B-AWQ on this 5070 Ti — verified, answers in Korean.
+    **Use `:latest`.**
+  - `vllm/vllm-openai:**nightly**` (the 2026-06-16 build) shipped a **broken
+    `_C.abi3.so`** (its own torch ABI mismatch) — do NOT use it. The "nightly is the
+    only path" advice above is superseded.
 - **AWQ on vLLM**: fully supported. `Qwen/Qwen2.5-7B-Instruct-AWQ` is a 4-bit AWQ
-  build, ~6 GB weights, vLLM-recommended for deployment. vLLM auto-detects the
-  quant from the model config; `--quantization awq` is optional/explicit.
+  build, ~6 GB weights; `--quantization awq` is explicit (vLLM also auto-detects).
 
-**⚠️ Confirm-before-launch (one residual unknown):** "nightly verified on RTX
-5090" is sm_120 = our card, but it is not a literal 5070 Ti report. First launch
-is the real test — if you see `no kernel image is available` (§6), the image tag
-is wrong/stale; pull a fresher nightly. This is the single item to validate
-empirically.
+**⚠️ The real gotcha was NOT the GPU — it was host bleed.** apptainer bind-mounts
+`$HOME`, so the host `~/.local/.../torch` shadows the container torch and breaks
+vLLM's `_C` (undefined symbol `_ZNR5torch7Library4_def…`) — identically on BOTH
+nightly and latest. **`PYTHONNOUSERSITE=1` is mandatory** (makes Python ignore the
+user site so the container's own torch loads). With it, `:latest` just works.
 
 ---
 
-## 3. Recommended: Apptainer + official nightly image
+## 3. Recommended: Apptainer + official `:latest` image
 
 This box already runs GPU workloads via `apptainer … --nv` (rootless, no docker).
-We pull the official vLLM nightly OCI image into a `.sif` and run it.
+We pull the official vLLM `:latest` OCI image into a `.sif` and run it.
+**Simplest path: just run `docs/start-dev-vllm.sh`** (does the pull + launch with all
+the fixes baked in). The manual steps below are the same thing, expanded.
 
-### 3.1 Pull the image (one-time, ~10 GB)
+### 3.1 Pull the image (one-time, ~7.6 GB)
 
 ```bash
 # Land big artifacts on /home (571 GB free) — or swap to /data if you prefer.
@@ -105,10 +109,9 @@ export VLLM_SIF_DIR=/home/koopark/serviceApptainers
 export APPTAINER_TMPDIR=/data/apptainer_tmp   # build scratch; needs ~2x image size
 mkdir -p "$APPTAINER_TMPDIR"
 
-# Nightly = the tag that ships sm_120 (SM 12.0) kernels. (Stable tags do NOT work
-# on this GPU — see §2.) If 'nightly' regresses, try 'cu130-nightly'.
-apptainer pull "$VLLM_SIF_DIR/vllm-openai-nightly.sif" \
-  docker://vllm/vllm-openai:nightly
+# :latest (v0.23.0) ships sm_120 kernels AND has a consistent torch/_C (nightly did not).
+apptainer pull "$VLLM_SIF_DIR/vllm-openai-latest.sif" \
+  docker://vllm/vllm-openai:latest
 ```
 
 ### 3.2 Download the model (one-time, ~6 GB) — optional pre-pull
@@ -135,16 +138,27 @@ nvidia-smi --query-gpu=memory.free --format=csv
 
 apptainer run --nv \
   --env HF_HOME=/home/koopark/.cache/huggingface \
-  /home/koopark/serviceApptainers/vllm-openai-nightly.sif \
+  --env PYTHONNOUSERSITE=1 \
+  /home/koopark/serviceApptainers/vllm-openai-latest.sif \
   --model Qwen/Qwen2.5-7B-Instruct-AWQ \
   --quantization awq \
   --port 8000 \
   --host 0.0.0.0 \
   --max-model-len 16384 \
-  --gpu-memory-utilization 0.80 \
+  --gpu-memory-utilization 0.78 \
   --served-model-name qwen2.5-7b-dev \
-  --max-num-seqs 16
+  --max-num-seqs 16 \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes
 ```
+
+> `PYTHONNOUSERSITE=1` is mandatory (host `~/.local` torch bleed — see §2/§5).
+> `--enable-auto-tool-choice --tool-call-parser hermes` turn on Qwen2.5 tool calling
+> (the Agent Server's LangGraph ReAct loop needs it). gpu-util 0.78 leaves headroom
+> for other GPU users on this shared box; raise toward 0.80 if the card is idle.
+> **If you hit `CUDA out of memory`**, check `nvidia-smi --query-compute-apps` for a
+> leaked `VLLM::EngineCore` from a prior run and `kill -9` it — `pkill -f *.sif`
+> won't catch it (the in-container process is `vllm serve`, not the .sif name).
 
 **Why these values (16 GB card):**
 
@@ -282,7 +296,9 @@ watch -n 2 'nvidia-smi --query-gpu=memory.used,memory.free,utilization.gpu --for
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `CUDA error: no kernel image is available for execution on the device` | vLLM/torch **not compiled for sm_120** (you got a stable image or a non-cu128 torch) | Use `vllm/vllm-openai:nightly` (§3). For pip, force the `+cu128` wheel + cu128 index (§4); confirm `python -c "import torch;print(torch.cuda.get_device_capability())"` returns `(12, 0)`. |
+| `CUDA error: no kernel image is available for execution on the device` | vLLM/torch **not compiled for sm_120** (an OLD stable image or a non-cu128 torch) | Use `vllm/vllm-openai:latest` (§3) — verified to ship sm_120 kernels. For pip, force the `+cu128` wheel + cu128 index (§4); confirm `python -c "import torch;print(torch.cuda.get_device_capability())"` returns `(12, 0)`. |
+| `ImportError: …/_C.abi3.so: undefined symbol: _ZNR5torch7Library4_def…` | host `~/.local` torch shadows the container torch (apptainer binds `$HOME`) | Add `--env PYTHONNOUSERSITE=1` to the `apptainer run` (§3.3). Hits BOTH nightly and latest without it. |
+| `CUDA error: out of memory` at engine init while `nvidia-smi` shows the port free | leaked `VLLM::EngineCore` from a prior run still holds VRAM | `nvidia-smi --query-compute-apps=pid,used_memory --format=csv` → `kill -9 <EngineCore pid>`. `pkill -f *.sif` misses it (in-container name is `vllm serve`). |
 | `torch.cuda.is_available() == False` inside container | `--nv` missing or driver mismatch | Always pass `--nv`. Verify host `nvidia-smi` works first. |
 | OOM at startup (`CUDA out of memory`) | KV cache + weights > free VRAM (remember ~1.5 GB is pre-used) | Lower `--gpu-memory-utilization` to 0.75, and/or `--max-model-len` to 8192. Check `nvidia-smi` for other processes. |
 | OOM only under concurrent load | KV cache exhausted by many sequences | Lower `--max-num-seqs` (e.g. 8) or `--max-model-len`. |
@@ -294,19 +310,20 @@ watch -n 2 'nvidia-smi --query-gpu=memory.used,memory.free,utilization.gpu --for
 
 ---
 
-## 8. Open items / risks (unverified — flag before relying on dev)
+## 8. Open items / risks
 
-1. **sm_120 on 5070 Ti specifically** — nightly image is verified on RTX 5090
-   (same sm_120), not a literal 5070 Ti report. **First launch is the test** (§2,
-   §6 row 1). Highest-confidence item to validate.
-2. **pip path torch pin** — vLLM v0.23.0 ⇒ torch 2.11.0; cu128 availability of
-   that exact torch at install time is uncertain (§4). Container avoids it.
+1. ✅ **sm_120 on 5070 Ti** — RESOLVED. `:latest` (v0.23.0) runs Qwen2.5-7B-AWQ on
+   this 5070 Ti, verified 2026-06-16 (Korean inference + tool calls). No longer a risk.
+2. **pip path torch pin** — vLLM v0.23.0 ⇒ torch 2.12; a pip install would clobber
+   the `~/.local` torch other projects use. The container avoids it — prefer it (§4).
 3. **32K context** — flags use 16K for safety on 16 GB. 32K may fit but is
    untested here; raise only after watching `nvidia-smi` headroom.
-4. **Image tag drift** — `:nightly` moves. Pin a dated digest once a known-good
-   one is confirmed, so dev is reproducible.
-5. **Shared GPU** — another process already holds ~1.5 GB; if it grows, vLLM's
-   0.80 budget can collide. Coordinate or set utilization lower.
+4. **Tag drift** — `:latest` also moves. Pin a dated digest once you have a
+   known-good one (current good: v0.23.0) so dev is reproducible.
+5. **Shared GPU** — chrome/AIDataHub/ollama and leaked EngineCores can hold VRAM;
+   we run at 0.78 for headroom. Check `nvidia-smi --query-compute-apps` before launch.
+6. **Not persisted** — dev vLLM/MCP/Agent run via `setsid`/background; they die on
+   reboot. Register as apptainer instances / a supervisor before relying on them.
 
 ---
 
