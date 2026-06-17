@@ -29,14 +29,16 @@ body.dock-open .chatdock {
 
 /* Dock open → main content reserves the dock width so cards never hide behind it.
    .pgrid is auto-fill and doesn't know the dock width → free the space on the container. */
-body.dock-open .home-wrap {
-  padding-right: calc(var(--dock-w) + 1.5rem);
-}
-body.dock-open .hero-inner {
+/* .home-wrap/.hero-inner = PortalHomePage; .container = the other AppShell pages
+   (LaunchPage). All three reserve the dock width so no page's content hides behind it. */
+body.dock-open .home-wrap,
+body.dock-open .hero-inner,
+body.dock-open .container {
   padding-right: calc(var(--dock-w) + 1.5rem);
 }
 .home-wrap,
-.hero-inner {
+.hero-inner,
+.container {
   transition: padding-right 0.2s;
 }
 
@@ -154,7 +156,8 @@ body.dock-open .hero-inner {
   }
   /* Dock covers the whole screen → no content padding needed. */
   body.dock-open .home-wrap,
-  body.dock-open .hero-inner {
+  body.dock-open .hero-inner,
+  body.dock-open .container {
     padding-right: 1.5rem;
   }
 }
