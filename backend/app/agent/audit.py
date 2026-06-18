@@ -53,3 +53,7 @@ class AuditLog:
                  json.dumps(meta, ensure_ascii=False) if meta else None),
             )
             self._conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()

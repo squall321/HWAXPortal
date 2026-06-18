@@ -7,6 +7,7 @@ Phase 0: health.  Phase 1: auth session + AuthProvider/JWTService on app.state.
 import asyncio
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -50,7 +51,17 @@ async def lifespan(app: FastAPI):
     app.state.mcp_registry = McpRegistry(settings)
     app.state.agent_audit = AuditLog(settings)
     app.state.agent_semaphore = asyncio.Semaphore(settings.max_concurrent_chats)
+    # One shared httpx client for relaying to the Agent Server — pooled keep-alive, not a
+    # fresh TCP+TLS per request. read=None so token streaming isn't cut by the total timeout.
+    app.state.agent_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(settings.agent_request_timeout, read=None),
+        limits=httpx.Limits(max_connections=settings.max_concurrent_chats,
+                            max_keepalive_connections=20),
+    )
     yield
+    # Shutdown: close the pooled client + the audit sqlite connection.
+    await app.state.agent_client.aclose()
+    app.state.agent_audit.close()
 
 
 app = FastAPI(

@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.agent.audit import AuditLog
 from app.agent.sse import sse_event
@@ -40,8 +40,8 @@ SSE_HEADERS = {
 
 
 class ChatRequest(BaseModel):
-    message: str
-    system_id: str | None = None  # current portal sub-page → per-page tool scope (Phase 2)
+    message: str = Field(min_length=1, max_length=8192)  # cap payload — no unbounded input (DoS)
+    system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
 
 
 def _audit(request: Request) -> AuditLog:
@@ -50,6 +50,10 @@ def _audit(request: Request) -> AuditLog:
 
 def _sem(request: Request) -> asyncio.Semaphore:
     return request.app.state.agent_semaphore
+
+
+def _agent_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.agent_client
 
 
 async def _echo_stream(message: str, principal: Principal, audit: AuditLog) -> AsyncIterator[bytes]:
@@ -69,29 +73,31 @@ async def _echo_stream(message: str, principal: Principal, audit: AuditLog) -> A
 
 
 async def _relay_stream(
-    body: "ChatRequest", principal: Principal, audit: AuditLog, settings: Settings
+    body: "ChatRequest", principal: Principal, audit: AuditLog,
+    settings: Settings, client: httpx.AsyncClient
 ) -> AsyncIterator[bytes]:
     """Relay the remote Agent Server's SSE stream byte-for-byte to the browser.
 
     The portal stays a thin proxy: it forwards the message + the caller's groups (for
     allowed_groups filtering downstream) and pipes back whatever the Agent Server emits,
     which already speaks the §5 contract. Auth/CSRF were enforced before we got here.
+    Upstream error detail is logged server-side (audit), NOT reflected to the browser.
     """
     chat_id = "relay"
     audit.record(principal=principal.subject, event="chat_start", chat_id=chat_id,
                  meta={"agent": settings.agent_server_url, "system_id": body.system_id})
     payload = {"message": body.message, "system_id": body.system_id, "groups": principal.groups}
     try:
-        async with (
-            httpx.AsyncClient(timeout=settings.agent_request_timeout) as client,
-            client.stream("POST", f"{settings.agent_server_url}/chat", json=payload) as r,
-        ):
+        async with client.stream(
+            "POST", f"{settings.agent_server_url}/chat", json=payload
+        ) as r:
             if r.status_code != 200:
-                detail = (await r.aread()).decode(errors="replace")[:200]
+                detail = (await r.aread()).decode(errors="replace")[:200]  # server-side only
                 audit.record(principal=principal.subject, event="chat_error",
                              chat_id=chat_id, status="error",
-                             meta={"upstream": r.status_code})
-                yield sse_event("error", {"code": f"agent_{r.status_code}", "message": detail})
+                             meta={"upstream": r.status_code, "detail": detail})
+                yield sse_event("error", {"code": f"agent_{r.status_code}",
+                                          "message": "agent server error"})
                 yield sse_event("done", {})
                 return
             async for chunk in r.aiter_raw():
@@ -99,8 +105,9 @@ async def _relay_stream(
                     yield chunk
     except httpx.HTTPError as exc:
         audit.record(principal=principal.subject, event="chat_error", chat_id=chat_id,
-                     status="error", meta={"reason": "agent_unreachable"})
-        yield sse_event("error", {"code": "agent_unreachable", "message": str(exc)})
+                     status="error", meta={"reason": "agent_unreachable", "exc": str(exc)})
+        yield sse_event("error", {"code": "agent_unreachable",
+                                  "message": "agent server unreachable"})
         yield sse_event("done", {})
         return
     audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok")
@@ -118,33 +125,27 @@ async def chat(
     sem = _sem(request)
     audit = _audit(request)
     # SSE holds a worker for the stream's lifetime → cap, and reject (not queue) over the cap.
-    # Acquire BEFORE returning the response so an over-cap request 429s instead of opening a
-    # stream we can't serve. acquire() is non-blocking only when a slot is free here.
+    # This IS atomic despite looking like check-then-act: asyncio is single-threaded and there
+    # is NO await between sem.locked() and sem.acquire() (acquire returns synchronously when a
+    # slot is free), so no other task can steal the slot in between. Acquire BEFORE returning
+    # so an over-cap request 429s up front instead of opening a stream we can't serve.
     if sem.locked():
         audit.record(principal=principal.subject, event="chat_error", status="rejected",
                      meta={"reason": "max_concurrent_chats"})
         raise AuthError("too many concurrent chats; retry shortly", status_code=429)
-
-    if mode == "echo":
-        await sem.acquire()
-
-        async def gen() -> AsyncIterator[bytes]:
-            try:
-                async for frame in _echo_stream(body.message, principal, audit):
-                    yield frame
-            finally:
-                sem.release()
-
-        return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
-
-    # Non-echo: relay the remote Agent Server stream (the real LLM call lives there).
     await sem.acquire()
 
-    async def relay() -> AsyncIterator[bytes]:
+    # Pick the stream source. echo = local mock (no remote); else relay the Agent Server.
+    if mode == "echo":
+        source = _echo_stream(body.message, principal, audit)
+    else:
+        source = _relay_stream(body, principal, audit, settings, _agent_client(request))
+
+    async def gen() -> AsyncIterator[bytes]:
         try:
-            async for frame in _relay_stream(body, principal, audit, settings):
+            async for frame in source:
                 yield frame
         finally:
-            sem.release()
+            sem.release()  # released even on client disconnect (Starlette aclose()s the gen)
 
-    return StreamingResponse(relay(), media_type="text/event-stream", headers=SSE_HEADERS)
+    return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)

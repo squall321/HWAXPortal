@@ -41,8 +41,12 @@ def mcp_health(request: Request) -> dict[str, int | str]:
 @router.post("/reload")
 def reload_registry(
     request: Request,
-    _admin: Principal = Depends(require_role("portal-admin")),
+    admin: Principal = Depends(require_role("portal-admin")),
     _csrf: None = Depends(require_csrf),
 ) -> dict[str, int | str]:
     count = _registry(request).reload()
+    # Sensitive admin action → audit it (who reloaded the MCP registry, to what size).
+    request.app.state.agent_audit.record(
+        principal=admin.subject, event="mcp_reload", status="ok", meta={"count": count}
+    )
     return {"status": "reloaded", "count": count}
