@@ -1,0 +1,84 @@
+# HWAX service manifest — the one place that says how each federated service starts.
+#
+# The portal orchestrator (infra/scripts/services.py) reads this to bring the whole stack
+# up / check / down. Routing (nginx) lives in backend/config/routes.env; THIS file is about
+# *starting the processes behind those routes* + the chat stack (vLLM / MCP / agent).
+#
+# NO SECRETS HERE. Remote hosts use SSH KEY auth (ssh_user only). If a remote start needs
+# root, put a NOPASSWD line in that host's sudoers — never a password in this file.
+#
+# Per service:
+#   name      identifier (also the audit/log name)
+#   host      'local' (this box) or an IP/hostname (SSH, key auth)
+#   ssh_user  remote only — the SSH user (key-based; no password)
+#   dir       absolute/~ path to the project. Omit to AUTO-DISCOVER by `discover`.
+#   discover  repo dir name searched in: <parent-of-portal>/, ~/Projects/, ~/claude/
+#   env       extra environment for the start command
+#   start     command run from `dir` (orchestrator detaches it; foreground servers are fine)
+#   health    URL polled until the service answers (any HTTP response = up)
+#   tier      startup order group (lower first): infra(0) → services(10) → chat(20)
+
+services:
+  # ── tier 0: the portal itself (nginx + backend + SPA) ──
+  - name: portal
+    host: local
+    dir: .                      # the portal repo is the orchestrator's own root
+    env: { HWAX_NO_BUILD: "1" }
+    start: ./infra/scripts/start.sh
+    health: http://localhost:8088/health
+    tier: 0
+
+  # ── tier 10: federated sub-services (proxied via routes.env) ──
+  - name: mx-white-paper
+    host: local
+    discover: MXWhitePaper
+    start: ./infra/scripts/start.sh
+    health: http://localhost:5173/
+    tier: 10
+
+  - name: heax-hub
+    host: local
+    discover: HEAXHub
+    env: { HEAX_NO_BUILD: "1" }
+    start: bash deploy/apptainer/start.sh
+    health: http://localhost:4180/
+    tier: 10
+
+  - name: ai-data-hub
+    host: local
+    discover: AIDataHub
+    env: { AIDH_ROOT_PATH: /ai-data-hub }
+    start: ./boot.sh --force
+    health: http://localhost:8001/
+    tier: 10
+
+  - name: signalforge
+    host: local
+    discover: SignalForge
+    start: ./scripts/up.sh
+    health: http://localhost:17370/
+    tier: 10
+
+  # ── tier 20: MCP chat stack (heavy GPU last; vLLM may live on a remote host) ──
+  - name: vllm
+    host: local                 # set to a B300 host IP + ssh_user for prod (URL-only swap)
+    dir: ./docs                 # start-dev-vllm.sh lives in the portal docs (dev)
+    start: ./start-dev-vllm.sh
+    health: http://localhost:8000/health
+    tier: 20
+
+  - name: mcp-demo
+    host: local
+    discover: HWAXAgentServer
+    start: .venv/bin/python mcp_demo_server.py
+    health: http://localhost:8011/mcp     # 406 to GET, but answering = up
+    tier: 20
+
+  - name: agent-server
+    host: local
+    discover: HWAXAgentServer
+    env: { VLLM_BASE_URL: "http://127.0.0.1:8000/v1", VLLM_MODEL: qwen2.5-7b-dev,
+           MCP_SERVERS: "demo=http://127.0.0.1:8011/mcp" }
+    start: ./start.sh
+    health: http://localhost:9009/health
+    tier: 20

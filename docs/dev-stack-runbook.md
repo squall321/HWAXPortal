@@ -1,8 +1,25 @@
 # HWAX MCP Chat — dev stack runbook
 
 How to bring up / verify / tear down the full MCP-chat chain on this box. The stack
-is **not persisted** (processes run via `setsid`/background and die on reboot) — this
-is the restart guide. Verified working 2026-06-17.
+is **not persisted** (processes run detached and die on reboot) — this is the restart
+guide. Verified working 2026-06-18.
+
+## TL;DR — one command (orchestrator)
+
+```bash
+./infra/scripts/services.sh up        # start the WHOLE stack (portal + 4 svcs + chat), tier by tier
+./infra/scripts/services.sh status    # health probe each service
+./infra/scripts/services.sh down       # stop (reverse order)
+./infra/scripts/services.sh up vllm agent-server   # just some, by name
+```
+
+Driven by `infra/services.yaml` (the manifest: each service's start command + health URL).
+Local services auto-discover their repo dir (`../<name>`, `~/Projects/<name>`, `~/claude/<name>`);
+a remote service (e.g. a B300 vLLM host) uses **SSH key auth** — set `host: <ip>` + `ssh_user:`
+in the manifest, **no passwords anywhere**. Idempotent: an already-healthy service is skipped.
+
+The manual per-service steps below are what the orchestrator automates — keep them for
+debugging a single layer.
 
 ## The chain
 
