@@ -47,7 +47,8 @@ services:
   - name: ai-data-hub
     host: local
     discover: AIDataHub
-    env: { AIDH_ROOT_PATH: /ai-data-hub }
+    # No AIDH_ROOT_PATH: portal nginx STRIPs /ai-data-hub/, so root_path would double-prefix
+    # the dashboard redirect. Standard mode + strip is the working combo (see its deploy .env).
     start: ./boot.sh --force
     health: http://localhost:8001/
     tier: 10
