@@ -67,10 +67,13 @@ export async function streamChat(
   message: string,
   opts: { systemId?: string; mode?: string } & StreamHandlers = {},
 ): Promise<void> {
-  const { systemId, mode = 'echo', signal, ...handlers } = opts;
+  // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
+  // when the chat stack isn't up.
+  const { systemId, mode, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
+  const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
-  const res = await fetch(`${config.apiBase}/agent/chat?mode=${encodeURIComponent(mode)}`, {
+  const res = await fetch(`${config.apiBase}/agent/chat${qs}`, {
     method: 'POST',
     credentials: 'include',
     headers: {

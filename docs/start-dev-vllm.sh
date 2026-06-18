@@ -69,7 +69,9 @@ exec apptainer run --nv \
   --port "$PORT" \
   --max-model-len "$MAX_MODEL_LEN" \
   --gpu-memory-utilization "$GPU_MEM_UTIL" \
-  --max-num-seqs "$MAX_NUM_SEQS"
+  --max-num-seqs "$MAX_NUM_SEQS" \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes
 
 # ── Verify (in another shell) ────────────────────────────────────────────────
 #   curl -s http://127.0.0.1:8000/v1/models | python3 -m json.tool
