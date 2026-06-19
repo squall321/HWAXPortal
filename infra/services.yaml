@@ -60,10 +60,18 @@ services:
     health: http://localhost:17370/
     tier: 10
 
+  - name: report-archive
+    host: local
+    discover: ReportArchive
+    start: ./start.sh
+    health: http://localhost:3000/api/health
+    tier: 10
+
   # ── tier 20: MCP chat stack (heavy GPU last; vLLM may live on a remote host) ──
   - name: vllm
     host: local                 # set to a B300 host IP + ssh_user for prod (URL-only swap)
     dir: ./docs                 # start-dev-vllm.sh lives in the portal docs (dev)
+    update: false               # stateless: code/model ship via SIF image, not git pull
     start: ./start-dev-vllm.sh
     health: http://localhost:8000/health
     tier: 20

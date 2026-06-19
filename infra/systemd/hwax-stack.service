@@ -1,0 +1,26 @@
+# HWAX full stack — one user service that brings up the whole federation via the
+# orchestrator (portal + sub-services + chat stack), updating code first.
+# Installed to ~/.config/systemd/user/ by infra/scripts/install-systemd.sh.
+#
+# Why one unit (not per-service): the orchestrator (services.py) already knows tier
+# order, health, auto-discovery, and SSH for remote hosts. systemd just needs to call
+# `up --update` on boot and `down` on stop. Rootless: runs as the user; linger makes it
+# survive logout / start on boot. /run/user/<uid> is required by rootless apptainer.
+
+[Unit]
+Description=HWAX full stack (portal + sub-services + chat) via orchestrator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=__PORTAL__
+# up --update: git-pull each service (vllm opts out), then start in tier order, health-polled.
+ExecStart=__PY__ __PORTAL__/infra/scripts/services.py up --update
+ExecStop=__PY__ __PORTAL__/infra/scripts/services.py down
+# vLLM model load + multi-service health can take a while on a cold boot.
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

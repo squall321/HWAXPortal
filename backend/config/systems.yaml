@@ -70,8 +70,7 @@ systems:
     accent: emerald
     category: Reporting
     status: available
-    integration_type: external-url
-    url: http://hwax.sec.samsung.net:3000   # temporary direct link (own port) until proxied
+    integration_type: proxy   # installed locally; routes.env proxies /report-archive/ → :3000
     sort_order: 40
 
   - id: smart-twin-cluster

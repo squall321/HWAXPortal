@@ -113,7 +113,38 @@ def start_one(svc: dict) -> str:
     return "up" if wait_health(url) else f"FAIL: no health after start (see {log})"
 
 
-def cmd_up(names: list[str]) -> int:
+def update_one(svc: dict) -> str:
+    """Pull latest code (git ff-only by default; `update:` in the manifest overrides).
+    Remote/none-update services are skipped. Build steps belong in each start script."""
+    if svc.get("host", "local") != "local":
+        return "skip (remote)"
+    cmd = svc.get("update")
+    if cmd is None:  # default: a safe fast-forward pull if it's a git repo
+        cmd = "git rev-parse --git-dir >/dev/null 2>&1 && git pull --ff-only || echo 'no-git'"
+    if cmd is False or cmd == "":  # explicit opt-out (e.g. vllm: stateless)
+        return "skip"
+    wd = resolve_dir(svc)
+    if not wd or not wd.is_dir():
+        return "FAIL: dir not found"
+    r = subprocess.run(["bash", "-c", cmd], cwd=str(wd),  # noqa: S602 — manifest-owned cmd
+                       capture_output=True, text=True)
+    out = (r.stdout + r.stderr).strip().splitlines()
+    tail = out[-1] if out else ""
+    return ("updated" if r.returncode == 0 else "FAIL") + (f": {tail[:60]}" if tail else "")
+
+
+def cmd_update(names: list[str]) -> int:
+    svcs = [s for s in load() if not names or s["name"] in names]
+    rc = 0
+    for s in svcs:
+        r = update_one(s)
+        if r.startswith("FAIL"):
+            rc = 1
+        print(f"  {'✗' if r.startswith('FAIL') else '·'} {s['name']:<16} {r}")
+    return rc
+
+
+def cmd_up(names: list[str], do_update: bool = False) -> int:
     svcs = [s for s in load() if not names or s["name"] in names]
     rc = 0
     cur_tier = None
@@ -121,6 +152,8 @@ def cmd_up(names: list[str]) -> int:
         if s.get("tier") != cur_tier:
             cur_tier = s.get("tier")
             print(f"── tier {cur_tier} ──")
+        if do_update:
+            print(f"  ↻ {s['name']:<16} {update_one(s)}")
         r = start_one(s)
         mark = "✓" if r in ("up", "already-up", "started (no health url)") else "✗"
         if mark == "✗":
@@ -167,11 +200,16 @@ def cmd_down(names: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update"):
         print(__doc__)
         return 2
-    action, names = sys.argv[1], sys.argv[2:]
-    return {"up": cmd_up, "status": cmd_status, "down": cmd_down}[action](names)
+    action = sys.argv[1]
+    args = sys.argv[2:]
+    do_update = "--update" in args
+    names = [a for a in args if not a.startswith("-")]
+    if action == "up":
+        return cmd_up(names, do_update=do_update)
+    return {"status": cmd_status, "down": cmd_down, "update": cmd_update}[action](names)
 
 
 if __name__ == "__main__":
