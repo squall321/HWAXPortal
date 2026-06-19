@@ -76,18 +76,27 @@ services:
     health: http://localhost:8000/health
     tier: 20
 
-  - name: mcp-demo
+  # ── tier 15: real per-service MCP servers (the chat's tools; Agent Server consumes these) ──
+  - name: reportarchive-mcp
     host: local
-    discover: HWAXAgentServer
-    start: .venv/bin/python mcp_demo_server.py
-    health: http://localhost:8011/mcp     # 406 to GET, but answering = up
-    tier: 20
+    discover: ReportArchive
+    start: ./mcp_server/run_dev.sh        # FastMCP :3002, forwards Authorization to the backend
+    health: http://localhost:3002/mcp     # 406 to GET, but answering = up
+    tier: 15
+
+  - name: signalforge-mcp
+    host: local
+    discover: SignalForge
+    env: { MCP_PORT: "8013" }
+    start: ./mcp-server/start_mcp.sh      # FastMCP :8013, VOC tools (no auth)
+    health: http://localhost:8013/mcp
+    tier: 15
 
   - name: agent-server
     host: local
     discover: HWAXAgentServer
     env: { VLLM_BASE_URL: "http://127.0.0.1:8000/v1", VLLM_MODEL: qwen2.5-7b-dev,
-           MCP_SERVERS: "demo=http://127.0.0.1:8011/mcp" }
+           MCP_CONFIG: "/home/koopark/claude/HWAXAgentServer/mcp_servers.json" }
     start: ./start.sh
     health: http://localhost:9009/health
     tier: 20
