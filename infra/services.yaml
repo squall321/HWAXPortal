@@ -72,6 +72,10 @@ services:
     host: local                 # set to a B300 host IP + ssh_user for prod (URL-only swap)
     dir: ./docs                 # start-dev-vllm.sh lives in the portal docs (dev)
     update: false               # stateless: code/model ship via SIF image, not git pull
+    # stop is a no-op so `down`/`restart` DON'T kill vLLM: it's a heavy GPU load (~1-2 min)
+    # and a plain port-kill leaves a VLLM::EngineCore zombie holding VRAM → next start OOMs.
+    # `up` finds it already-up and skips. To really restart it: infra/scripts/restart-vllm.sh.
+    stop: "true"
     start: ./start-dev-vllm.sh
     health: http://localhost:8000/health
     tier: 20

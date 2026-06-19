@@ -16,9 +16,13 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=__PORTAL__
-# up --update: git-pull each service (vllm opts out), then start in tier order, health-polled.
+# up --update is IDEMPOTENT: git-pull each service (vllm opts out), then start only what's
+# down (already-up services are skipped), in tier order, health-polled. So start/restart
+# never needlessly bounces heavy services (mxwp's 5 containers, etc.) — it just heals + updates.
 ExecStart=__PY__ __PORTAL__/infra/scripts/services.py up --update
-ExecStop=__PY__ __PORTAL__/infra/scripts/services.py down
+# No ExecStop: stopping the unit must NOT tear the whole federation down (that bounces heavy
+# stacks and risks the vLLM EngineCore-zombie OOM). To really stop everything, run the
+# orchestrator by hand:  ./infra/scripts/services.sh down
 # vLLM model load + multi-service health can take a while on a cold boot.
 TimeoutStartSec=900
 
