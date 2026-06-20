@@ -20,8 +20,11 @@ systems:
       한 곳에서 신청·실행하고, 반복적인 엔지니어링 업무를 자동화하는 팀의 AI 관문입니다.
     accent: violet
     category: AI Platform
-    status: coming_soon
-    integration_type: proxy
+    status: available
+    integration_type: jwt-handoff
+    audience: heax-hub                  # token `aud`; must equal HEAX PORTAL_AUDIENCE
+    # Launch token auto-POSTs here. Same portal origin; nginx proxies /heax-hub/ → HEAX (STRIP).
+    url: /heax-hub/api/v1/auth/portal-callback
     sort_order: 10
 
   - id: ai-data-hub
@@ -32,8 +35,11 @@ systems:
       단일 프록시로 통합 제공하는 AI 데이터 기반 인프라입니다.
     accent: cyan
     category: Data
-    status: coming_soon
-    integration_type: proxy
+    status: available
+    integration_type: jwt-handoff
+    audience: ai-data-hub             # token `aud`; must equal service PORTAL_AUDIENCE
+    # Launch token auto-POSTs here. nginx STRIPs /ai-data-hub/ → service /api/auth/portal-callback.
+    url: /ai-data-hub/api/auth/portal-callback
     sort_order: 20
 
   - id: mx-white-paper
@@ -44,8 +50,11 @@ systems:
       검색 가능한 지식 자산으로 전환해 팀의 집단 지능을 끌어올립니다.
     accent: amber
     category: Knowledge
-    status: coming_soon
-    integration_type: proxy
+    status: available
+    integration_type: jwt-handoff
+    audience: mx-white-paper            # token `aud`; must match mxwp PORTAL_AUDIENCE
+    # Launch token auto-POSTs here. Same portal origin; nginx proxies /mx-white-paper/api/ → mxwp.
+    url: /mx-white-paper/api/v1/auth/portal-callback
     sort_order: 30
 
   - id: signalforge
@@ -57,8 +66,11 @@ systems:
       전달하는 MX 음성 인텔리전스 플랫폼입니다.
     accent: indigo
     category: Intelligence
-    status: coming_soon
-    integration_type: proxy
+    status: available
+    integration_type: jwt-handoff
+    audience: signalforge              # token `aud`; must equal backend PORTAL_AUDIENCE
+    # Launch token auto-POSTs here. Same portal origin; nginx proxies /signalforge/api/ → :18000/api/.
+    url: /signalforge/api/v1/auth/portal-callback
     sort_order: 35
 
   - id: report-archive

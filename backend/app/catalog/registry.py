@@ -49,6 +49,15 @@ class CatalogRegistry:
         convention, so if the yaml left it at the bare default, treat it as `proxy`.
         """
         from_route = os.environ.get(_env_key(s.id)) or routes.get(s.id)
+        # Handoff tiles: systems.yaml `url` is the launch CALLBACK target (where the portal
+        # auto-POSTs the launch token), which is NOT the nginx proxy target in routes.env. A
+        # routes.env entry for these only wires reverse-proxy reachability, so it must never
+        # overwrite the callback url. Flip the tile live when it's routed (proxied) or already
+        # carries a callback url.
+        if s.integration_type in ("jwt-handoff", "saml-handoff"):
+            if from_route or s.url:
+                s.status = "available"
+            return
         url = from_route or s.url
         if url:
             s.url = url
