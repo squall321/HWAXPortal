@@ -40,6 +40,10 @@ services:
     host: local
     discover: HEAXHub
     env: { HEAX_NO_BUILD: "1" }
+    # update rebuilds the SPA with base=/heax-hub/ so its assets resolve under the portal
+    # sub-path (default build is base=/ → /assets/ 404s behind the proxy). ~0.8s, offline.
+    # heax repo untouched — its Makefile already takes HEAX_BASE_PATH; the portal supplies it.
+    update: "git pull --ff-only; HEAX_BASE_PATH=/heax-hub/ make build"
     start: bash deploy/apptainer/start.sh
     health: http://localhost:4180/
     tier: 10
