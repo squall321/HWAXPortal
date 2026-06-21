@@ -102,6 +102,12 @@ if settings.app_env == "dev" and settings.saml_mock_idp_enabled:
 
     app.include_router(mock_idp.router)
 
+# Dev-only mock OIDC OP — a real RS256-signing OP fixture to exercise the RP path.
+if settings.app_env == "dev" and settings.oidc_mock_idp_enabled:
+    from app.auth.routes import oidc_mock_idp
+
+    app.include_router(oidc_mock_idp.router)
+
 # Dev-only fake downstream — proves the launch token verifies via JWKS + replay defense.
 if settings.app_env == "dev":
     from app.auth.routes import dev_downstream

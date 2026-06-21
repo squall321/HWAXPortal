@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
     # ── Auth provider (the go-live switch) ───────────────────────────────────
-    auth_provider: Literal["mock", "saml"] = "mock"
+    auth_provider: Literal["mock", "saml", "oidc"] = "mock"
     mock_user_email: str = "hong.gildong@samsung.com"
     mock_user_name: str = "Hong Gil Dong"
     mock_user_groups: str = "portal-admin,mes-user"  # comma-separated
@@ -70,6 +70,23 @@ class Settings(BaseSettings):
     saml_mock_idp_enabled: bool = True
     saml_idp_cert_path: str = "config/saml/dev/idp.crt"
     saml_idp_key_path: str = "secrets/saml/idp.key"
+
+    # ── OIDC RP (used when AUTH_PROVIDER=oidc) — portal logs users in via an OIDC IdP ──
+    # GO-LIVE: set oidc_issuer (+ client id/secret) to the corp IdP — no code edits. The
+    # redirect_uri to register at the IdP is DERIVED from public_base_url (see property below).
+    # Leave oidc_issuer empty in dev to use the built-in mock OP (oidc_mock_idp_enabled).
+    oidc_issuer: str = ""               # IdP issuer URL (its discovery base)
+    oidc_discovery_url: str = ""        # override {issuer}/.well-known/openid-configuration
+    oidc_client_id: str = "hwax-portal"
+    oidc_client_secret: str = ""        # confidential-client secret (provision via env/secret in prod)
+    oidc_scopes: str = "openid email profile groups"  # space-separated (OIDC convention)
+    oidc_claim_email: str = "email"
+    oidc_claim_name: str = "name"
+    oidc_claim_groups: str = "groups"
+    oidc_claim_subject: str = "sub"
+
+    # ── Dev-only mock OIDC OP (a real RS256-signing OP fixture that exercises the RP) ──
+    oidc_mock_idp_enabled: bool = True
 
     # ── Catalog ──────────────────────────────────────────────────────────────
     catalog_path: str = "config/systems.yaml"
@@ -130,6 +147,25 @@ class Settings(BaseSettings):
     @property
     def saml_mock_idp_sso_url(self) -> str:
         return f"{self.public_base_url}/auth/mock-idp/sso"
+
+    # Derived OIDC URLs — single source of truth = public_base_url.
+    @property
+    def oidc_redirect_uri(self) -> str:
+        # Register THIS at the IdP. The generic /auth/callback handles the OIDC code+state.
+        return f"{self.public_base_url}/auth/callback"
+
+    @property
+    def oidc_mock_issuer(self) -> str:
+        return f"{self.public_base_url}/auth/oidc-mock"
+
+    @property
+    def oidc_discovery(self) -> str:
+        """Where the RP fetches the IdP's OpenID configuration (explicit > issuer > dev mock)."""
+        if self.oidc_discovery_url:
+            return self.oidc_discovery_url
+        if self.oidc_issuer:
+            return f"{self.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
+        return f"{self.oidc_mock_issuer}/.well-known/openid-configuration"
 
     def resolve(self, rel: str) -> str:
         """Resolve a backend-relative config/secret path to an absolute path."""

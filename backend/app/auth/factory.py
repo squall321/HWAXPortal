@@ -14,4 +14,9 @@ def build_auth_provider(settings: Settings) -> AuthProvider:
         from app.auth.saml_provider import SamlProvider
 
         return SamlProvider(settings)
+    if settings.auth_provider == "oidc":
+        # Portal as OIDC RP. Same interface; go-live = set OIDC_ISSUER + client creds (config only).
+        from app.auth.oidc_provider import OidcProvider
+
+        return OidcProvider(settings)
     raise ValueError(f"unknown AUTH_PROVIDER: {settings.auth_provider}")
