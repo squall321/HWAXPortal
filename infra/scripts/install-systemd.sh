@@ -28,9 +28,11 @@ if [ ! -e "/var/lib/systemd/linger/$USER" ]; then
   sudo loginctl enable-linger "$USER"
 fi
 
-# 2. render the unit (fill in absolute paths) and install it.
+# 2. render the unit (fill in absolute paths) and install it. Bake THIS box's $PATH into the unit
+#    (Environment=PATH) so the orchestrator finds pnpm/node/etc. under systemd's minimal env (heax
+#    `make build` needs pnpm). Captured per-box at install — nothing box-specific is hardcoded in repo.
 mkdir -p "$UNIT_DIR"
-sed -e "s#__PORTAL__#$ROOT#g" -e "s#__PY__#$PY#g" "$UNIT_SRC" > "$UNIT"
+sed -e "s#__PORTAL__#$ROOT#g" -e "s#__PY__#$PY#g" -e "s#__PATH__#$PATH#g" "$UNIT_SRC" > "$UNIT"
 systemctl --user daemon-reload
 systemctl --user enable hwax-stack.service
 echo "✓ installed + enabled hwax-stack.service (starts on boot, updates each service first)"

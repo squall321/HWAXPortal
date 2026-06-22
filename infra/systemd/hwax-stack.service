@@ -19,6 +19,11 @@ WorkingDirectory=__PORTAL__
 # up --update is IDEMPOTENT: git-pull each service (vllm opts out), then start only what's
 # down (already-up services are skipped), in tier order, health-polled. So start/restart
 # never needlessly bounces heavy services (mxwp's 5 containers, etc.) — it just heals + updates.
+# PATH is baked PER-BOX at install time: install-systemd.sh fills the PATH= line below with the
+# installing user's $PATH (pnpm/node/git/etc., wherever that box keeps them). systemd's own env is
+# minimal, so without this the heax `make build` (pnpm) fails with 127. No hardcoded path lives in
+# this template — each machine bakes its own at install.
+Environment="PATH=__PATH__"
 ExecStart=__PY__ __PORTAL__/infra/scripts/services.py up --update
 # No ExecStop: stopping the unit must NOT tear the whole federation down (that bounces heavy
 # stacks and risks the vLLM EngineCore-zombie OOM). To really stop everything, run the
