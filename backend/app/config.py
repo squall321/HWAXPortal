@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     # The portal is a thin proxy + auth gate: real LLM/LangGraph/MCP fan-out lives in the
     # remote Agent Server (URL below). dev/prod swap the URL via routes.env (vLLM split).
     agent_server_url: str = "http://127.0.0.1:9009"  # Agent Server (SSE /chat); 9000 is MinIO here
-    mcp_gateway_url: str = "http://127.0.0.1:9100"    # MCP Gateway (not yet called; registry only)
+    mcp_gateway_url: str = "http://127.0.0.1:9110"    # MCP Gateway (HWAXMcpGateway; aggregates the 3 MCPs). :9100 was node_exporter.
     mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
     agent_token_audience: str = "agent-server"         # aud for the RS256 handoff token
     agent_request_timeout: float = 30.0                # per-call timeout to remote services (s)

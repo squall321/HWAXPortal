@@ -110,6 +110,14 @@ services:
     health: http://localhost:8765/mcp     # 406 to GET, but answering = up; forwards Bearer mxwp_ to API
     tier: 15
 
+  # ── tier 16: central MCP gateway — aggregates the 3 tier-15 MCPs into one endpoint ──
+  - name: mcp-gateway
+    host: local
+    discover: HWAXMcpGateway
+    start: ./start.sh                     # streamable-http :9110, injects per-backend tokens
+    health: http://localhost:9110/mcp     # 406/401 to GET, but answering = up
+    tier: 16
+
   - name: agent-server
     host: local
     discover: HWAXAgentServer
