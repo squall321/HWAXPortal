@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HWAX 전체 개발 현황</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --navy:#0F2D52;--blue:#1A5FB4;--lblue:#E8F0FB;--teal:#128C7E;
+  --orange:#E27D2E;--dgray:#2B2F36;--gray:#6B7280;--white:#fff;
+  --green:#2E8B57;--red:#C0392B;--amber:#D97706;--purple:#7B3FA0;
+  --c1:#1A5FB4;--c2:#128C7E;--c3:#7B3FA0;--c4:#C0392B;
+  --f:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif
+}
+*{font-family:var(--f)}
+html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
+
+.deck{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative}
+.slide{
+  position:absolute;width:1280px;height:720px;background:#f0f3f8;
+  border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,.55);
+  overflow:hidden;opacity:0;pointer-events:none;
+  transform:translateX(60px);transition:opacity .32s,transform .32s
+}
+.slide.active{opacity:1;pointer-events:all;transform:none}
+.slide.prev{opacity:0;transform:translateX(-60px)}
+
+.prog{position:fixed;top:0;left:0;height:3px;background:var(--orange);transition:width .3s;z-index:50}
+.hint{position:fixed;top:14px;right:18px;color:rgba(255,255,255,.3);font-size:10.5px}
+.nav{
+  position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:10px;z-index:40;
+  background:rgba(10,25,50,.82);backdrop-filter:blur(8px);
+  border-radius:24px;padding:8px 18px
+}
+.nb{background:none;border:none;color:#8FB4DE;cursor:pointer;font-size:16px;
+  width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:.15s}
+.nb:hover{background:rgba(255,255,255,.12);color:#fff}
+.ndots{display:flex;gap:7px}
+.nd{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.25);border:none;cursor:pointer;transition:.2s;padding:0}
+.nd.on{background:#fff;width:20px;border-radius:3px}
+.nlbl{color:#C2D4EC;font-size:11px;min-width:150px;text-align:center}
+
+/* ── 공통 헤더 ── */
+.ph{background:var(--navy);padding:13px 30px 11px;display:flex;align-items:baseline;gap:12px}
+.ph-n{font-size:20px;font-weight:700;color:#6F9FD8}
+.ph-t{font-size:18px;font-weight:700;color:#fff}
+.ph-s{font-size:11px;color:#8BAFD4;margin-left:auto}
+.ph-line{height:3px;background:var(--blue);margin:0}
+
+.st{font-size:11px;font-weight:700;color:var(--gray);letter-spacing:.6px;
+  text-transform:uppercase;display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.st::after{content:'';flex:1;height:1px;background:#d8dfe8}
+
+.tag{display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;color:#fff;vertical-align:middle}
+.tg{background:var(--green)}.tb{background:var(--blue)}.to{background:var(--orange)}
+.tt{background:var(--teal)}.tgy{background:var(--gray)}.tr{background:var(--red)}.tp{background:var(--purple)}
+
+/* ══════ 표지 ══════ */
+#p0{background:var(--navy);display:flex;flex-direction:column;justify-content:center;padding:0 90px;position:relative}
+#p0::before{content:'';position:absolute;right:-160px;top:-160px;width:520px;height:520px;border-radius:50%;border:1px solid rgba(255,255,255,.06)}
+#p0::after{content:'';position:absolute;right:60px;bottom:-120px;width:340px;height:340px;border-radius:50%;border:1px solid rgba(255,255,255,.05)}
+.cv-tag{font-size:13px;color:#6F9FD8;letter-spacing:1px;margin-bottom:20px;text-transform:uppercase}
+.cv-main{font-size:84px;font-weight:700;color:#fff;line-height:1;letter-spacing:-3px;margin-bottom:12px}
+.cv-sub{font-size:25px;color:#DBE8F7;font-weight:700;margin-bottom:26px}
+.cv-bar{width:54px;height:4px;background:var(--orange);border-radius:2px;margin-bottom:26px}
+.cv-quote{font-size:17px;color:#C8D8EC;line-height:1.8}
+.cv-quote strong{color:var(--orange)}
+.cv-quote em{color:#6FCDC5;font-style:normal;font-weight:700}
+.cv-foot{position:absolute;bottom:46px;left:90px;right:90px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(255,255,255,.12);padding-top:16px}
+.cv-foot span{font-size:13px;color:#8BAFD4}
+.cv-foot b{color:#fff;font-size:14px}
+
+/* ══════ 공통 body ══════ */
+.body{padding:14px 26px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden}
+#p1,#p2,#p3,#p4,#p5,#p6,#p7,#p8{display:flex;flex-direction:column;height:100%}
+
+/* ── 요약 매트릭스 ── */
+.summ{display:flex;flex-direction:column;gap:9px;flex:1}
+.mtx{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.mtx th{background:var(--navy);color:#cfe0f3;font-size:11px;font-weight:700;padding:8px 10px;text-align:left;letter-spacing:.3px}
+.mtx td{padding:8px 10px;font-size:11.5px;color:var(--dgray);border-bottom:1px solid #eef1f5;vertical-align:middle}
+.mtx tr:last-child td{border-bottom:none}
+.mtx .nm{font-weight:700;color:var(--navy)}
+.mtx .pt{font-size:10.5px;color:var(--gray);font-family:monospace}
+.mtx .role{color:#444}
+.mtx .core{color:#555;font-size:10.8px}
+.mini{display:inline-block;width:60px;height:7px;background:#e6ebf2;border-radius:4px;overflow:hidden;vertical-align:middle;margin-right:6px}
+.mini i{display:block;height:100%;border-radius:4px}
+.pcv{font-size:11px;font-weight:700;color:var(--blue)}
+
+.foundation{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.fcard{background:#fff;border-radius:7px;padding:9px 12px;border-left:3px solid var(--teal)}
+.fcard.f2{border-color:var(--blue)}.fcard.f3{border-color:var(--purple)}.fcard.f4{border-color:var(--orange)}
+.fcard-t{font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:3px}
+.fcard-d{font-size:10.3px;color:var(--gray);line-height:1.45}
+
+/* ── 서비스 상세 슬라이드 ── */
+.svc-meta{display:flex;align-items:center;gap:12px;background:var(--lblue);border-radius:6px;padding:7px 14px}
+.svc-meta .role{font-size:12px;color:var(--dgray);font-weight:600}
+.svc-meta .role b{color:var(--navy)}
+.svc-meta .stack{font-size:10px;color:var(--gray);margin-left:auto;font-family:monospace;text-align:right;line-height:1.4}
+.svc-meta .pct{font-size:15px;font-weight:700;color:#fff;background:var(--blue);border-radius:14px;padding:2px 14px;flex-shrink:0}
+
+.svc-body{display:grid;grid-template-columns:1.48fr 1fr;gap:11px;flex:1;overflow:hidden}
+.col{display:flex;flex-direction:column;gap:9px;min-height:0}
+.box{background:#fff;border-radius:7px;padding:8px 12px;border-top:3px solid var(--blue)}
+.box.bg{border-color:var(--green)}.box.bt{border-color:var(--teal)}.box.bo{border-color:var(--orange)}.box.bp{border-color:var(--purple)}
+.box.fillcol{flex:1;min-height:0;overflow:hidden}
+.box-t{font-size:10.5px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;display:flex;align-items:center;gap:5px}
+.box-t .em{font-size:12px}
+.box-t .cnt{margin-left:auto;color:#b3bcc9;font-weight:700;font-size:9.5px}
+.items{display:flex;flex-direction:column;gap:2.5px}
+.items.two{display:grid;grid-template-columns:1fr 1fr;gap:2.5px 14px}
+.it{font-size:10.4px;color:var(--dgray);line-height:1.38;display:flex;gap:6px;align-items:baseline}
+.it .d{width:4px;height:4px;border-radius:50%;background:var(--blue);flex-shrink:0;margin-top:5px}
+.bg .it .d{background:var(--green)}.bt .it .d{background:var(--teal)}.bo .it .d{background:var(--orange)}
+.it b{color:var(--navy);font-weight:700}
+
+.stt{display:flex;flex-direction:column;gap:3px}
+.str{display:flex;align-items:center;gap:7px;font-size:10.2px;padding:.5px 0}
+.str .nm{flex:1;color:var(--dgray);line-height:1.25}
+.str .bar{width:42px;height:6px;background:#e6ebf2;border-radius:3px;overflow:hidden;flex-shrink:0}
+.str .bar i{display:block;height:100%;border-radius:3px}
+.str .pc{width:30px;text-align:right;font-weight:700;color:var(--gray);font-size:9.7px}
+.f9{background:var(--green)}.f7{background:var(--teal)}.f4{background:var(--amber)}.f1{background:var(--red)}
+
+.svc-note{background:var(--navy);border-radius:6px;padding:7px 13px;font-size:10.6px;color:#C8D8EC;line-height:1.5}
+.svc-note b{color:#fff}.svc-note .or{color:#FFB36B;font-weight:700}
+
+/* ── 로드맵 (P8) ── */
+.cc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cc{background:#fff;border-radius:7px;padding:9px 13px;border-left:3px solid var(--blue)}
+.cc.c2{border-color:var(--teal)}.cc.c3{border-color:var(--purple)}.cc.c4{border-color:var(--orange)}
+.cc-t{font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.cc-d{font-size:10.4px;color:#555;line-height:1.5}
+.cc-d b{color:var(--dgray)}.cc-d .g{color:var(--green);font-weight:700}.cc-d .a{color:var(--amber);font-weight:700}.cc-d .r{color:var(--red);font-weight:700}
+
+.rm-h{display:flex;gap:0;margin-top:2px}
+.rmh{flex:1;background:#fff;border-top:3px solid #ccc;padding:8px 11px;position:relative}
+.rmh.r0{border-color:var(--green)}.rmh.r1{border-color:var(--blue)}.rmh.r2{border-color:var(--teal)}.rmh.r3{border-color:var(--purple)}.rmh.r4{border-color:var(--orange)}
+.rmh:not(:last-child){margin-right:8px}
+.rmh-ph{font-size:10.5px;font-weight:700;margin-bottom:2px}
+.r0 .rmh-ph{color:var(--green)}.r1 .rmh-ph{color:var(--blue)}.r2 .rmh-ph{color:var(--teal)}.r3 .rmh-ph{color:var(--purple)}.r4 .rmh-ph{color:var(--orange)}
+.rmh-d{font-size:9.6px;color:var(--gray);line-height:1.4}
+
+@media print{
+  html,body{overflow:visible;background:#fff}
+  .deck{display:block;height:auto}
+  .slide{position:relative;opacity:1!important;transform:none!important;pointer-events:all;
+    page-break-after:always;margin:0 auto 6mm;border-radius:0;box-shadow:none;width:297mm;height:167mm}
+  .nav,.hint,.prog{display:none}
+}
+</style>
+</head>
+<body>
+<div class="prog" id="prog"></div>
+<div class="hint">← → 방향키 / 1~9</div>
+<div class="deck">
+
+<!-- ═══════ P0 표지 ═══════ -->
+<div class="slide active" id="p0">
+  <div class="cv-tag">HW 담당 산하 개발실 · 통합 플랫폼 개발 현황</div>
+  <div class="cv-main">HWAX</div>
+  <div class="cv-sub">데이터 &amp; 생성형 AI 통합 허브 — 전체 개발 현황</div>
+  <div class="cv-bar"></div>
+  <div class="cv-quote">
+    포털(허브) · <strong>4개 연동 서비스</strong> · <em>AI 채팅 백엔드</em> — 총 6개 영역의<br>
+    <strong>한 일 · 가능해진 것 · 남은 일</strong>을 서비스별로 정리했습니다.
+  </div>
+  <div class="cv-foot">
+    <span><b>HE팀</b> &nbsp;|&nbsp; 2026. 06 &nbsp;·&nbsp; 소스코드·런타임 실측 기준</span>
+    <span>대상 6개 · 제외: SignalForge · SPDM · Smart Twin</span>
+  </div>
+</div>
+
+<!-- ═══════ P1 전체 요약 ═══════ -->
+<div class="slide" id="p1">
+  <div class="ph"><span class="ph-n">00</span><span class="ph-t">전체 요약 — 6개 서비스 한눈에</span><span class="ph-s">완성도 = 개발 진척도(구현 기준) · 포트 = 운영 엔드포인트</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="summ">
+      <table class="mtx">
+        <thead><tr><th style="width:15%">서비스</th><th style="width:24%">역할</th><th style="width:11%">포트</th><th style="width:18%">개발 완성도</th><th style="width:32%">현재 핵심 상태</th></tr></thead>
+        <tbody>
+          <tr><td class="nm">① HWAX Portal</td><td class="role">SSO 허브 · 라우팅 · 오케스트레이터 · SPA · 채팅 프록시</td><td class="pt">:8088/:8723</td><td><span class="mini"><i class="f9" style="width:88%"></i></span><span class="pcv">~88%</span></td><td class="core">인증 코어(OIDC/SAML/handoff)·라우팅·오케스트레이터·채팅독 동작</td></tr>
+          <tr><td class="nm">② Agent Server</td><td class="role">포털 채팅의 LLM/에이전트 백엔드 (두뇌)</td><td class="pt">:9009</td><td><span class="mini"><i class="f9" style="width:85%"></i></span><span class="pcv">~85%</span></td><td class="core">LangGraph ReAct + MCP fan-out, 실 도구 29종 로드</td></tr>
+          <tr><td class="nm">③ MX White Paper</td><td class="role">AI 보조 사내 백서 · 지식 카탈로그/온톨로지</td><td class="pt">:8800/:5173</td><td><span class="mini"><i class="f9" style="width:85%"></i></span><span class="pcv">~85%</span></td><td class="core">문서·검색·변환·토큰·SSO 완비 (현재 데몬 중지, 코드 완성)</td></tr>
+          <tr><td class="nm">④ HEAX Hub</td><td class="role">소스 제출→자동 서비스화 · 표준 개발 스택 레퍼런스</td><td class="pt">:4180</td><td><span class="mini"><i class="f9" style="width:88%"></i></span><span class="pcv">~88%</span></td><td class="core">7종 데모 서브패스 200 라이브 · 5 runner · SSO consumer</td></tr>
+          <tr><td class="nm">⑤ AI Data Hub</td><td class="role">데이터 적재·정규화 + 생성형 AI 그라운딩 허브</td><td class="pt">:8001</td><td><span class="mini"><i class="f7" style="width:80%"></i></span><span class="pcv">~80%</span></td><td class="core">359건 적재·e5 시맨틱 검색·MCP 25도구·외부 sync 동작</td></tr>
+          <tr><td class="nm">⑥ Report Archive</td><td class="role">AI 보조 보고서 작성 · 아카이브 · 검색 (이관 대상지)</td><td class="pt">:3000/:3002</td><td><span class="mini"><i class="f9" style="width:90%"></i></span><span class="pcv">~90%</span></td><td class="core">RAG 시맨틱 검색 운영 반영 · MCP 13도구 · 워크스페이스</td></tr>
+        </tbody>
+      </table>
+      <div>
+        <div class="st">서비스를 가로지르는 공통 기반 (가로축)</div>
+        <div class="foundation">
+          <div class="fcard"><div class="fcard-t">🔐 통합 SSO (jwt-handoff)</div><div class="fcard-d">포털이 발급한 단명 RS256(aud 한정·jti replay) 토큰을 4개 서비스가 다운스트림 소비 — 로그인 1회로 진입</div></div>
+          <div class="fcard f2"><div class="fcard-t">🤖 MCP 오케스트레이션</div><div class="fcard-d">채팅(Agent Server)이 RA·SF MCP를 fan-out해 자연어→도구 호출(29종). 인증 헤더 전달</div></div>
+          <div class="fcard f3"><div class="fcard-t">🗂 데이터 평면 연계</div><div class="fcard-d">AI Data Hub가 SignalForge·MX를 정기 sync 미러링(359건)해 한 곳에서 검색·인용</div></div>
+          <div class="fcard f4"><div class="fcard-t">📦 사내망 배포 (dist-ship)</div><div class="fcard-d">Apptainer 무sudo + systemd 부팅자동(PATH 베이킹) + 프리빌드/Drive 폴백(에어갭 대응)</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ P2 HWAX Portal ═══════ -->
+<div class="slide" id="p2">
+  <div class="ph"><span class="ph-n">01</span><span class="ph-t">HWAX Portal — 통합 허브</span><span class="ph-s">SSO 브로커 · 경로 라우터 · 스택 오케스트레이터 · SPA · MCP 채팅 프록시</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="svc-meta"><span class="role"><b>역할</b> · 한 도메인의 단일 관문 — 로그인 1회로 모든 서비스 진입, 한 명령으로 전체 스택 기동</span><span class="stack">React+TS / FastAPI(py3.13)<br>Apptainer + systemd + nginx</span><span class="pct">~88%</span></div>
+    <div class="svc-body">
+      <div class="col">
+        <div class="box bg fillcol">
+          <div class="box-t"><span class="em">✅</span> 완료한 작업<span class="cnt">구현 완료</span></div>
+          <div class="items two">
+            <div class="it"><span class="d"></span><span><b>AuthProvider 추상화</b> + mock·SAML·OIDC 3구현</span></div>
+            <div class="it"><span class="d"></span><span><b>OIDC RP</b> 상류(PKCE+nonce·id_token RS256 검증)</span></div>
+            <div class="it"><span class="d"></span><span><b>SAML SP</b> + dev mock IdP(실 RSA 서명)</span></div>
+            <div class="it"><span class="d"></span><span><b>세션/CSRF</b> httpOnly 쿠키·double-submit</span></div>
+            <div class="it"><span class="d"></span><span><b>jwt-handoff 발급</b> aud한정 RS256·90s·jti</span></div>
+            <div class="it"><span class="d"></span><span><b>JWKS 공개</b> + 키회전 + SQLite replay 방어</span></div>
+            <div class="it"><span class="d"></span><span><b>routes.env→nginx</b> 서브패스 prefix strip</span></div>
+            <div class="it"><span class="d"></span><span><b>오케스트레이터</b> services.py/yaml tier·헬스</span></div>
+            <div class="it"><span class="d"></span><span><b>systemd</b> 부팅자동·per-box PATH 베이킹</span></div>
+            <div class="it"><span class="d"></span><span><b>SPA</b> 타일·LaunchPage auto-POST·로그인</span></div>
+            <div class="it"><span class="d"></span><span><b>ChatDock</b> fetch+ReadableStream SSE 파싱</span></div>
+            <div class="it"><span class="d"></span><span><b>채팅 프록시</b> 세마포어 429·감사로그·메일3종</span></div>
+          </div>
+        </div>
+        <div class="box bt">
+          <div class="box-t"><span class="em">⚡</span> 지금 가능해진 것</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>로그인 1회 → N개 서비스 진입</b> (jwt-handoff auto-POST / proxy) — 토큰이 주소창에 안 남음</span></div>
+            <div class="it"><span class="d"></span><span><b>한 도메인 path-routing</b> — :8088/ 포털, :8088/&lt;id&gt;/ 각 서비스로 nginx 라우팅</span></div>
+            <div class="it"><span class="d"></span><span><b>한 명령 스택 부팅</b> — services.py up이 포털+5서비스+MCP+vLLM+에이전트를 tier순 헬스확인 기동</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="box fillcol">
+          <div class="box-t"><span class="em">📊</span> 진행 상황</div>
+          <div class="stt">
+            <div class="str"><span class="nm">세션 인증 · CSRF</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">OIDC RP 상류(mock OP)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">SAML SP 상류</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">jwt-handoff + JWKS + jti</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">SPA(타일·채팅독·로그인)</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">라우팅(nginx strip)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">오케스트레이터·systemd</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">MCP 채팅 프록시·감사</span><span class="bar"><i class="f7" style="width:80%"></i></span><span class="pc">80</span></div>
+            <div class="str"><span class="nm">MCP 레지스트리 config</span><span class="bar"><i class="f4" style="width:40%"></i></span><span class="pc">40</span></div>
+            <div class="str"><span class="nm">TLS :443 종단</span><span class="bar"><i class="f1" style="width:30%"></i></span><span class="pc">30</span></div>
+            <div class="str"><span class="nm">MCP Gateway</span><span class="bar"><i class="f1" style="width:5%"></i></span><span class="pc">5</span></div>
+          </div>
+        </div>
+        <div class="box bo">
+          <div class="box-t"><span class="em">🎯</span> 다음 할 일</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>TLS :443 종단</b> — 스크립트 준비됨, 사내 인증서 스왑</span></div>
+            <div class="it"><span class="d"></span><span><b>MCP Gateway</b> 구현 (포트 :9100은 node_exporter 점유 → 변경 필수)</span></div>
+            <div class="it"><span class="d"></span><span><b>mcp_servers.yaml</b> 작성 — 레지스트리 비어 있음</span></div>
+            <div class="it"><span class="d"></span><span><b>per-box 하드코딩 제거</b> (services.yaml 절대경로 → .env)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ P3 Agent Server ═══════ -->
+<div class="slide" id="p3">
+  <div class="ph"><span class="ph-n">02</span><span class="ph-t">HWAX Agent Server — 채팅의 두뇌</span><span class="ph-s">LangGraph ReAct · MCP 다중서버 fan-out · vLLM(OpenAI 호환) · SSE</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="svc-meta"><span class="role"><b>역할</b> · 포털과 분리된 독립 백엔드 — 실제 모델 호출 + 도구 사용을 담당(포털은 인증·릴레이만)</span><span class="stack">FastAPI / LangGraph 1.2<br>langchain-mcp-adapters · Qwen2.5-7B</span><span class="pct">~85%</span></div>
+    <div class="svc-body">
+      <div class="col">
+        <div class="box bg fillcol">
+          <div class="box-t"><span class="em">✅</span> 완료한 작업<span class="cnt">4단계 진화</span></div>
+          <div class="items two">
+            <div class="it"><span class="d"></span><span><b>vLLM SSE 릴레이</b> → ReAct 에이전트로 격상</span></div>
+            <div class="it"><span class="d"></span><span><b>MCP 다중서버 fan-out</b> 한 번에 도구 로딩</span></div>
+            <div class="it"><span class="d"></span><span><b>astream_events(v2)</b> → token/status/done 매핑</span></div>
+            <div class="it"><span class="d"></span><span><b>per-server 헤더 인증</b> mcp_servers.json 기반</span></div>
+            <div class="it"><span class="d"></span><span><b>에러 정보누출 차단</b> (코드리뷰 반영)</span></div>
+            <div class="it"><span class="d"></span><span><b>LLM 추상화</b> VLLM_BASE_URL 하나로 dev/prod</span></div>
+            <div class="it"><span class="d"></span><span><b>실 도구 29종</b> 로드(RA 13 + SF 16)</span></div>
+            <div class="it"><span class="d"></span><span><b>장애 격리</b> MCP 다운 시 도구없이 기동 계속</span></div>
+          </div>
+        </div>
+        <div class="box bt">
+          <div class="box-t"><span class="em">⚡</span> 지금 가능해진 것</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>포털 채팅에서 자연어 → 도구 호출 → 근거 응답</b> — ReAct가 Qwen2.5-7B로 판단해 필요한 MCP 도구를 선택 호출, 결과 근거로 한국어 스트리밍</span></div>
+            <div class="it"><span class="d"></span><span><b>두 실 도메인 질의</b> — 보고서(템플릿·검색·초안·업로드 13종) + VOC(조회·감성·국가별·차트 16종)</span></div>
+            <div class="it"><span class="d"></span><span><b>dev/prod 무코드 전환 기반</b> — URL 하나로 7B↔72B(prod 미배포)</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="box fillcol">
+          <div class="box-t"><span class="em">📊</span> 진행 상황</div>
+          <div class="stt">
+            <div class="str"><span class="nm">dev E2E(포털→에이전트→vLLM+MCP)</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">LangGraph ReAct 루프</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">SSE 스트리밍 계약</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">MCP fan-out + 헤더 인증</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">vLLM(OpenAI 호환) 연동</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">동적 도구 로딩(JSON)</span><span class="bar"><i class="f7" style="width:80%"></i></span><span class="pc">80</span></div>
+            <div class="str"><span class="nm">groups 기반 도구 스코핑</span><span class="bar"><i class="f1" style="width:8%"></i></span><span class="pc">5</span></div>
+            <div class="str"><span class="nm">PAT/토큰 인증 통일</span><span class="bar"><i class="f1" style="width:30%"></i></span><span class="pc">30</span></div>
+            <div class="str"><span class="nm">prod 배포(72B/B300)</span><span class="bar"><i class="f1" style="width:3%"></i></span><span class="pc">0</span></div>
+            <div class="str"><span class="nm">운영화 · 테스트/CI</span><span class="bar"><i class="f1" style="width:10%"></i></span><span class="pc">10</span></div>
+          </div>
+        </div>
+        <div class="box bo">
+          <div class="box-t"><span class="em">🎯</span> 다음 할 일</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>PAT/토큰 인증 통일</b> — SF 정적·RA rat_ 혼재 → 표준 수렴</span></div>
+            <div class="it"><span class="d"></span><span><b>MX White Paper MCP 추가</b> (현재 RA·SF 2종)</span></div>
+            <div class="it"><span class="d"></span><span><b>groups 기반 도구 스코핑</b> — 받기만 하고 필터 미적용</span></div>
+            <div class="it"><span class="d"></span><span><b>MCP Gateway 연계</b> · <b>prod 72B</b> · 테스트</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ P4 MX White Paper ═══════ -->
+<div class="slide" id="p4">
+  <div class="ph"><span class="ph-n">03</span><span class="ph-t">MX White Paper — AI 백서 · 지식 카탈로그</span><span class="ph-s">DocumentJSON v1.0 SSOT · 블록 위젯 · 위키링크 그래프 · 문서변환 · MCP</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="svc-meta"><span class="role"><b>역할</b> · 사업부 지식 창고(나무위키 스타일 + 블록 위젯) — AI가 MCP로 백서를 직접 작성/편집</span><span class="stack">FastAPI(async) / React+BlockNote<br>Apptainer 5컨테이너 · Meili · MinIO · pgvector</span><span class="pct">~85%</span></div>
+    <div class="svc-body">
+      <div class="col">
+        <div class="box bg fillcol">
+          <div class="box-t"><span class="em">✅</span> 완료한 작업<span class="cnt">라우터 55 · 마이그 47</span></div>
+          <div class="items two">
+            <div class="it"><span class="d"></span><span><b>DocumentJSON v1.0 SSOT</b> → TS·Py·OpenAPI codegen</span></div>
+            <div class="it"><span class="d"></span><span><b>문서 CRUD</b> + 블록 PATCH(ETag 낙관락)·버전</span></div>
+            <div class="it"><span class="d"></span><span><b>공유링크·코멘트·발표모드</b> 협업</span></div>
+            <div class="it"><span class="d"></span><span><b>Meilisearch 검색</b> CJK·하이라이트·suggest</span></div>
+            <div class="it"><span class="d"></span><span><b>블록 위젯 41종</b> 표·차트·간트·수식·화이트보드</span></div>
+            <div class="it"><span class="d"></span><span><b>import</b> docx/pptx/xlsx/pdf/csv (그림 MinIO 업로드)</span></div>
+            <div class="it"><span class="d"></span><span><b>export</b> md/pdf/pptx/html</span></div>
+            <div class="it"><span class="d"></span><span><b>api_tokens(mxwp_)</b> argon2·26자 base32·scopes</span></div>
+            <div class="it"><span class="d"></span><span><b>포털 SSO·self-signup·2FA</b> 인증</span></div>
+            <div class="it"><span class="d"></span><span><b>용어집·도메인·위키링크 그래프</b></span></div>
+            <div class="it"><span class="d"></span><span><b>MCP 서버</b> stdio+http 19도구(read/write/image)</span></div>
+            <div class="it"><span class="d"></span><span><b>Apptainer 5컨테이너</b>·snapshot·Drive ship</span></div>
+          </div>
+        </div>
+        <div class="box bt">
+          <div class="box-t"><span class="em">⚡</span> 지금 가능해진 것</div>
+          <div class="items two">
+            <div class="it"><span class="d"></span><span><b>JSON 한 파일 → 위키 페이지</b> (번호·링크·태그·검색 자동)</span></div>
+            <div class="it"><span class="d"></span><span><b>Office 파일 → 위젯 백서</b> 변환</span></div>
+            <div class="it"><span class="d"></span><span><b>AI 에이전트가 MCP로 백서 작성/편집</b></span></div>
+            <div class="it"><span class="d"></span><span><b>포털 SSO 원클릭 진입</b> · 지식그래프 탐색</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="box fillcol">
+          <div class="box-t"><span class="em">📊</span> 진행 상황</div>
+          <div class="stt">
+            <div class="str"><span class="nm">문서 CRUD·버전·블록패치</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">검색(Meilisearch)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">import 5종 / export 4종</span><span class="bar"><i class="f9" style="width:88%"></i></span><span class="pc">88</span></div>
+            <div class="str"><span class="nm">api_tokens(mxwp_)</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">포털 SSO·2FA·signup</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">블록 위젯 41종</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">용어집·위키그래프</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">MCP 서버 (코드완성·미기동)</span><span class="bar"><i class="f7" style="width:80%"></i></span><span class="pc">80</span></div>
+            <div class="str"><span class="nm">AI assist(요약/번역)</span><span class="bar"><i class="f1" style="width:30%"></i></span><span class="pc">30</span></div>
+            <div class="str"><span class="nm">pgvector 임베딩 검색</span><span class="bar"><i class="f1" style="width:10%"></i></span><span class="pc">10</span></div>
+          </div>
+        </div>
+        <div class="box bo">
+          <div class="box-t"><span class="em">🎯</span> 다음 할 일</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>스택 상시기동 복구</b> (1순위 — 현재 데몬 중지, 코드 완비)</span></div>
+            <div class="it"><span class="d"></span><span><b>MCP :8765 상시기동 + 오케스트레이터 등록</b></span></div>
+            <div class="it"><span class="d"></span><span><b>에이전트용 mxwp_ 토큰 발급</b> 운영화</span></div>
+            <div class="it"><span class="d"></span><span><b>온톨로지 심화</b> (pgvector 임베딩·triple) · AI assist 실연결</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ P5 HEAX Hub ═══════ -->
+<div class="slide" id="p5">
+  <div class="ph"><span class="ph-n">04</span><span class="ph-t">HEAX Hub — 자동 서비스화 · 표준 스택</span><span class="ph-s">소스 제출 → 빌드(SIF) → 서브패스 자동 서빙 · 5 runner · 표준 개발 스택 레퍼런스</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="svc-meta"><span class="role"><b>역할</b> · 다언어 앱을 받아 자동 빌드·격리·서브패스 서빙 + 팀 공통 개발 스택의 레퍼런스 구현</span><span class="stack">FastAPI+Celery / React+TanStack<br>Caddy(:4180) · Apptainer per-app SIF</span><span class="pct">~88%</span></div>
+    <div class="svc-body">
+      <div class="col">
+        <div class="box bg fillcol">
+          <div class="box-t"><span class="em">✅</span> 완료한 작업<span class="cnt">데모 15 · 스택 20</span></div>
+          <div class="items two">
+            <div class="it"><span class="d"></span><span><b>다언어 자동 빌드·서비스화</b> (stack_resolver)</span></div>
+            <div class="it"><span class="d"></span><span><b>7종 service-mode 라이브</b> streamlit/fastapi/flask/go/nextjs/dash/react</span></div>
+            <div class="it"><span class="d"></span><span><b>서브패스 빌드 컨벤션</b> --root-path/BASE_PATH 주입</span></div>
+            <div class="it"><span class="d"></span><span><b>Caddy 동적 라우팅</b> Admin API PUT</span></div>
+            <div class="it"><span class="d"></span><span><b>5 runner</b> Local/Apptainer/Slurm/Windows/External</span></div>
+            <div class="it"><span class="d"></span><span><b>SSO consumer</b> jwt-handoff JIT 유저생성</span></div>
+            <div class="it"><span class="d"></span><span><b>표준 가이드 + template 6종</b> (풀스택 레퍼런스)</span></div>
+            <div class="it"><span class="d"></span><span><b>운영자 워크플로우</b> 신청→승인→빌드→공개</span></div>
+            <div class="it"><span class="d"></span><span><b>HWAXAgent 런처 P0</b> enroll/refresh/installer</span></div>
+            <div class="it"><span class="d"></span><span><b>dist-ship + Drive 폴백</b> 한방 셋업(air-gap)</span></div>
+            <div class="it"><span class="d"></span><span><b>자가치유</b> beat 5분 스캔·45초 reconcile</span></div>
+            <div class="it"><span class="d"></span><span><b>빌드 툴체인 SIF 4종</b> py/node/go/polyglot</span></div>
+          </div>
+        </div>
+        <div class="box bt">
+          <div class="box-t"><span class="em">⚡</span> 지금 가능해진 것</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>다언어 소스 → 격리 웹 서비스 자동화</b> — 7개 런타임이 각자 SIF로 동시 가동, 한 Caddy 진입점 서브패스에서 전부 200 응답(라이브 검증)</span></div>
+            <div class="it"><span class="d"></span><span><b>빌드 없는 등록</b> — 외부 URL·iframe·external_proxy로 기존 사내 서비스를 카탈로그+SSO 뒤로</span></div>
+            <div class="it"><span class="d"></span><span><b>포털 SSO 진입 · 자동 복원 · air-gap 사내망 배포</b></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="box fillcol">
+          <div class="box-t"><span class="em">📊</span> 진행 상황</div>
+          <div class="stt">
+            <div class="str"><span class="nm">인프라 오케(PG/Redis/Caddy SIF)</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">자동 서비스화(service-mode)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">Caddy 동적 서브패스 라우팅</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">프론트(카탈로그·운영자)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">백엔드 API(13 라우터)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">SSO consumer(jwt-handoff)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">5 runner</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">멀티언어(.NET/Java/Rust)</span><span class="bar"><i class="f4" style="width:60%"></i></span><span class="pc">60</span></div>
+            <div class="str"><span class="nm">dist-ship / offline</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">HWAXAgent 런처 실구현</span><span class="bar"><i class="f4" style="width:40%"></i></span><span class="pc">40</span></div>
+            <div class="str"><span class="nm">WebSocket push(fleet)</span><span class="bar"><i class="f1" style="width:3%"></i></span><span class="pc">0</span></div>
+          </div>
+        </div>
+        <div class="box bo">
+          <div class="box-t"><span class="em">🎯</span> 다음 할 일</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>HWAXAgent Phase 2 실구현</b> (installs/audit/heartbeat stub)</span></div>
+            <div class="it"><span class="d"></span><span><b>.NET/Java/Rust 데모 실증</b> — 토대는 있으나 미검증</span></div>
+            <div class="it"><span class="d"></span><span><b>WebSocket push</b> · 온보딩 스캐폴드 강화</span></div>
+            <div class="it"><span class="d"></span><span><b>문서 동기화</b> (ARCHITECTURE 현행화) · Tier2 상용 임베드</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ P6 AI Data Hub ═══════ -->
+<div class="slide" id="p6">
+  <div class="ph"><span class="ph-n">05</span><span class="ph-t">AI Data Hub — 데이터 · 생성형 AI 그라운딩 허브</span><span class="ph-s">표준 JSON 적재 · pgvector 시맨틱 검색 · MCP read/write · 외부 sync</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="svc-meta"><span class="role"><b>역할</b> · 문서·데이터를 표준 JSON으로 정규화 적재하고, 외부 LLM이 REST·MCP로 검색·인용하는 self-describing 데이터 레이어</span><span class="stack">FastAPI / PostgreSQL+pgvector<br>e5_base 임베딩 · vanilla 대시보드</span><span class="pct">~80%</span></div>
+    <div class="svc-body">
+      <div class="col">
+        <div class="box bg fillcol">
+          <div class="box-t"><span class="em">✅</span> 완료한 작업<span class="cnt">라이브 359건</span></div>
+          <div class="items two">
+            <div class="it"><span class="d"></span><span><b>표준 JSON intake</b> + 변환기(docx/xlsx/pptx/md/pdf/html)</span></div>
+            <div class="it"><span class="d"></span><span><b>정규화·멱등 upsert</b> content_hash 기반</span></div>
+            <div class="it"><span class="d"></span><span><b>구조적 계층</b> 섹션트리·parent/depth</span></div>
+            <div class="it"><span class="d"></span><span><b>규칙기반 온톨로지</b> doc_types·조직·taxonomy 동의어</span></div>
+            <div class="it"><span class="d"></span><span><b>AI 검색</b> semantic(e5)·fts·tag·faceted</span></div>
+            <div class="it"><span class="d"></span><span><b>의미 그룹 자동 클러스터링</b></span></div>
+            <div class="it"><span class="d"></span><span><b>MCP HTTP 25도구</b> read + write(import/convert/create)</span></div>
+            <div class="it"><span class="d"></span><span><b>임베딩 유사도 자동분류</b> (제안형)</span></div>
+            <div class="it"><span class="d"></span><span><b>외부 sync</b> SignalForge·MX 30분 미러링</span></div>
+            <div class="it"><span class="d"></span><span><b>거버넌스</b> audit·soft-delete·lineage</span></div>
+            <div class="it"><span class="d"></span><span><b>포털 SSO + X-API-Key</b> 인증 브릿지</span></div>
+            <div class="it"><span class="d"></span><span><b>VS Code 확장</b> vsix 패키징(드래그 적재)</span></div>
+          </div>
+        </div>
+        <div class="box bt">
+          <div class="box-t"><span class="em">⚡</span> 지금 가능해진 것</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>문서 적재 → AI 시맨틱 검색</b> — 외부 LLM이 MCP로 e5 검색해 근거 섹션 인용(359건 라이브)</span></div>
+            <div class="it"><span class="d"></span><span><b>외부 시스템 → 자동 미러링 → 검색</b> · <b>MCP 대화형 데이터 쓰기</b>(되묻기→저장)</span></div>
+            <div class="it"><span class="d"></span><span><b>self-describing 온보딩</b> — /discover·llm.txt 한 번으로 백엔드 코드 없이 사용</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="box fillcol">
+          <div class="box-t"><span class="em">📊</span> 진행 상황</div>
+          <div class="stt">
+            <div class="str"><span class="nm">적재·정규화 파이프라인</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">intake 스키마·변환 6종</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">AI 검색(e5 라이브)</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">의미 그룹·자동분류</span><span class="bar"><i class="f7" style="width:80%"></i></span><span class="pc">80</span></div>
+            <div class="str"><span class="nm">MCP 25도구(read+write)</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">외부 sync · 거버넌스</span><span class="bar"><i class="f7" style="width:82%"></i></span><span class="pc">82</span></div>
+            <div class="str"><span class="nm">포털 SSO + X-API-Key</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">/api/ask (검색만 · 생성 없음)</span><span class="bar"><i class="f4" style="width:70%"></i></span><span class="pc">70</span></div>
+            <div class="str"><span class="nm">MCP federation(코드만·미가동)</span><span class="bar"><i class="f1" style="width:10%"></i></span><span class="pc">10</span></div>
+            <div class="str"><span class="nm">챗봇 UI / ARTS·MES·PLM</span><span class="bar"><i class="f1" style="width:3%"></i></span><span class="pc">0</span></div>
+          </div>
+        </div>
+        <div class="box bo">
+          <div class="box-t"><span class="em">🎯</span> 다음 할 일</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>챗봇/ask UI 연결</b> (quick-win — 백엔드 완성)</span></div>
+            <div class="it"><span class="d"></span><span><b>생성형 RAG QA 격상</b> (현재 retrieval-only)</span></div>
+            <div class="it"><span class="d"></span><span><b>사내(ARTS/MES/PLM) 커넥터</b> 신규 개발</span></div>
+            <div class="it"><span class="d"></span><span><b>MCP federation 실가동</b> · hybrid/rerank 활성</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ P7 Report Archive ═══════ -->
+<div class="slide" id="p7">
+  <div class="ph"><span class="ph-n">06</span><span class="ph-t">Report Archive — 보고서 작성 · 아카이브 · 검색</span><span class="ph-s">위젯 에디터 · RAG 시맨틱 검색 · 워크스페이스 · MCP 13도구 (이관 대상지)</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="svc-meta"><span class="role"><b>역할</b> · 보고서를 일관 템플릿으로 작성·축적하고, 채팅(MCP)에서 자연어로 질의·작성 — 산출물이 흘러드는 종착지</span><span class="stack">FastAPI / React+TipTap<br>PostgreSQL+pgvector · Ollama bge-m3</span><span class="pct">~90%</span></div>
+    <div class="svc-body">
+      <div class="col">
+        <div class="box bg fillcol">
+          <div class="box-t"><span class="em">✅</span> 완료한 작업<span class="cnt">모듈 34 · 위젯 33+</span></div>
+          <div class="items two">
+            <div class="it"><span class="d"></span><span><b>보고서 데이터모델</b> JSONB 멀티페이지·phase·버전·휴지통</span></div>
+            <div class="it"><span class="d"></span><span><b>위젯 v1 33종+</b> 표·차트·플로우·수식·CAD</span></div>
+            <div class="it"><span class="d"></span><span><b>키워드 검색</b> pg_trgm(한글 부분일치)</span></div>
+            <div class="it"><span class="d"></span><span><b>시맨틱/하이브리드</b> pgvector + RRF 융합</span></div>
+            <div class="it"><span class="d"></span><span><b>워크스페이스</b> org/personal/virtual 트리</span></div>
+            <div class="it"><span class="d"></span><span><b>게시·grant 공유</b> 멤버십·역할 상속</span></div>
+            <div class="it"><span class="d"></span><span><b>PAT(rat_)</b> sha256·90일·사용자 스코프</span></div>
+            <div class="it"><span class="d"></span><span><b>MCP 13도구</b> 검색·초안·파일업로드(헤더 forward)</span></div>
+            <div class="it"><span class="d"></span><span><b>백그라운드 워커</b> PG jobs(SKIP LOCKED)</span></div>
+            <div class="it"><span class="d"></span><span><b>RAG Phase1 운영 반영</b> 792건 임베딩</span></div>
+            <div class="it"><span class="d"></span><span><b>협업</b> 댓글·알림·편집락·활동로그</span></div>
+            <div class="it"><span class="d"></span><span><b>대시보드·지식그래프·종합보고 export</b></span></div>
+          </div>
+        </div>
+        <div class="box bt">
+          <div class="box-t"><span class="em">⚡</span> 지금 가능해진 것</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>포털 채팅/Claude에서 RA 보고서 질의·작성</b> — 내 PAT·내 부서 권한으로 의미검색→읽기→초안 생성·수정(느슨한 입력도 백엔드가 정규화·검증)</span></div>
+            <div class="it"><span class="d"></span><span><b>의미 기반 검색</b> "브래킷 응력"→"브라켓 강도 검토"까지(운영 임베딩 가동)</span></div>
+            <div class="it"><span class="d"></span><span><b>로컬/웹 파일 첨부 · 부서 게시판 협업 · 셀프서비스 MCP 온보딩</b>(4 클라이언트)</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="box fillcol">
+          <div class="box-t"><span class="em">📊</span> 진행 상황</div>
+          <div class="stt">
+            <div class="str"><span class="nm">에디터·아카이브·위젯</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">키워드 검색(pg_trgm)</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">시맨틱/하이브리드(운영)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">백그라운드 워커(운영)</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">PAT(rat_) 발급·검증</span><span class="bar"><i class="f9" style="width:100%"></i></span><span class="pc">100</span></div>
+            <div class="str"><span class="nm">MCP 서버 13도구</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
+            <div class="str"><span class="nm">워크스페이스·게시·공유</span><span class="bar"><i class="f9" style="width:90%"></i></span><span class="pc">90</span></div>
+            <div class="str"><span class="nm">협업(댓글·알림·락)</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">대시보드·지식그래프</span><span class="bar"><i class="f9" style="width:85%"></i></span><span class="pc">85</span></div>
+            <div class="str"><span class="nm">포털 SSO(가이드만·코드 미반영)</span><span class="bar"><i class="f1" style="width:20%"></i></span><span class="pc">20</span></div>
+            <div class="str"><span class="nm">RAG QA(P3)·에이전트(P4)</span><span class="bar"><i class="f1" style="width:3%"></i></span><span class="pc">0</span></div>
+          </div>
+        </div>
+        <div class="box bo">
+          <div class="box-t"><span class="em">🎯</span> 다음 할 일</div>
+          <div class="items">
+            <div class="it"><span class="d"></span><span><b>포털 SSO 코드 반영</b> — 통합 인증 평면 미완(데이터 평면=MCP는 완료)</span></div>
+            <div class="it"><span class="d"></span><span><b>이관 파이프라인</b> (외부 산출물 → RA 아카이브)</span></div>
+            <div class="it"><span class="d"></span><span><b>RAG Phase 3/4</b> (B300 연결: 인용 Q&amp;A·요약·FMEA 추천)</span></div>
+            <div class="it"><span class="d"></span><span><b>실시간 동시편집 · 이메일 알림</b></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ P8 통합 현황 & 로드맵 ═══════ -->
+<div class="slide" id="p8">
+  <div class="ph"><span class="ph-n">07</span><span class="ph-t">통합 현황 &amp; 다음 단계</span><span class="ph-s">서비스를 가로지르는 축 — SSO · MCP · 데이터 · 배포 · 로드맵</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="cc-grid">
+      <div class="cc">
+        <div class="cc-t">🔐 통합 SSO (jwt-handoff)</div>
+        <div class="cc-d">포털이 <b>aud 한정 RS256(jti replay 방어)</b> 토큰 발급 → 다운스트림 소비. <span class="g">MX·HEAX·AIDH 코드 반영 완료</span>, <span class="a">Report Archive는 가이드만(코드 미반영)</span>. JWKS·JIT 유저생성 표준 패턴 확립.</div>
+      </div>
+      <div class="cc c2">
+        <div class="cc-t">🤖 MCP 오케스트레이션</div>
+        <div class="cc-d">채팅(Agent Server)이 <b>RA·SF 2서버 fan-out(29도구)</b> 동작. <span class="a">진행: PAT 인증 통일</span>(SF 정적·RA rat_·MX mxwp_) + <b>MX MCP 추가</b> → 그다음 <span class="r">MCP Gateway</span>(중앙 토큰 주입·라우팅·감사, :9100 충돌 회피).</div>
+      </div>
+      <div class="cc c3">
+        <div class="cc-t">🗂 데이터 평면 연계</div>
+        <div class="cc-d">AI Data Hub가 <b>SignalForge·MX를 sync 미러링(359건)</b>해 한 곳에서 검색·인용. <span class="r">사내(ARTS/MES/PLM) 커넥터·단일 API 프록시·캐싱은 미착수</span> — 창구 일원화의 핵심 과제.</div>
+      </div>
+      <div class="cc c4">
+        <div class="cc-t">📦 배포 · 운영</div>
+        <div class="cc-d"><b>Apptainer 무sudo + systemd 부팅자동(PATH 베이킹) + 사내망 dist-ship(Drive 폴백)</b> 동작. <span class="a">잔여 부채: per-box 하드코딩(절대경로)·TLS :443 종단 미완</span>.</div>
+      </div>
+    </div>
+    <div style="margin-top:3px">
+      <div class="st">추진 로드맵</div>
+      <div class="rm-h">
+        <div class="rmh r0"><div class="rmh-ph">Phase 0 — 완료 ✓</div><div class="rmh-d">포털+5서비스+채팅 동작 · 통합 SSO · MCP 오케스트레이션 기반</div></div>
+        <div class="rmh r1"><div class="rmh-ph">Phase 1 — 진행중</div><div class="rmh-d">PAT 인증 통일 · MX MCP 추가 · MX 스택 상시기동 복구</div></div>
+        <div class="rmh r2"><div class="rmh-ph">Phase 2</div><div class="rmh-d">MCP Gateway(중앙 토큰·라우팅·감사) · TLS :443 종단</div></div>
+        <div class="rmh r3"><div class="rmh-ph">Phase 3</div><div class="rmh-d">사내 API 단일창구·캐싱(ARTS/MES/PLM) · 생성형 RAG QA</div></div>
+        <div class="rmh r4"><div class="rmh-ph">Phase 4</div><div class="rmh-d">온톨로지 지식연계 · prod 72B · 전사 온보딩 확산</div></div>
+      </div>
+    </div>
+    <div class="svc-note" style="margin-top:3px">
+      <b>핵심 메시지</b> · 6개 서비스의 <span class="or">개발(빌드) 단계는 대부분 동작 가능 수준(80~90%)</span>에 도달했고, 인증·채팅·검색·자동 서비스화가 실제로 돈다. 남은 일은 개별 기능보다 <span class="or">"서비스를 가로지르는 통합"</span> — MCP Gateway로 도구 창구를 일원화하고, 사내 시스템 데이터를 단일 창구로 모으며, TLS·하드코딩 같은 운영 부채를 닫는 것이다.
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="nav">
+  <button class="nb" id="bp">&#8592;</button>
+  <div class="ndots" id="dots"></div>
+  <button class="nb" id="bn">&#8594;</button>
+  <div class="nlbl" id="lbl"></div>
+</div>
+
+<script>
+const LS=['표지','전체 요약','① HWAX Portal','② Agent Server','③ MX White Paper','④ HEAX Hub','⑤ AI Data Hub','⑥ Report Archive','통합 · 로드맵'];
+const sl=[...document.querySelectorAll('.slide')];
+const dots=document.getElementById('dots');
+const lbl=document.getElementById('lbl');
+const prog=document.getElementById('prog');
+let cur=0;
+LS.forEach((t,i)=>{
+  const b=document.createElement('button');
+  b.className='nd'+(i===0?' on':'');
+  b.title=t;b.onclick=()=>go(i);dots.appendChild(b);
+});
+function go(n){
+  if(n<0||n>=sl.length)return;
+  sl[cur].className='slide prev';dots.children[cur].classList.remove('on');
+  cur=n;sl[cur].className='slide active';dots.children[cur].classList.add('on');
+  lbl.textContent=(cur+1)+' / '+sl.length+'  '+LS[cur];
+  prog.style.width=((cur+1)/sl.length*100)+'%';
+  setTimeout(()=>sl.forEach((s,i)=>{if(i!==cur)s.className='slide';}),380);
+}
+document.getElementById('bp').onclick=()=>go(cur-1);
+document.getElementById('bn').onclick=()=>go(cur+1);
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown')go(cur+1);
+  if(e.key==='ArrowLeft'||e.key==='PageUp')go(cur-1);
+  if(e.key>='1'&&e.key<='9')go(+e.key-1);
+});
+let tx=0;
+document.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+document.addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-tx;if(Math.abs(d)>50)go(d<0?cur+1:cur-1);},{passive:true});
+go(0);
+</script>
+</body>
+</html>
