@@ -177,6 +177,28 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 .r2 .scn-pill{background:var(--teal)}.r3 .scn-pill{background:var(--purple)}.r4 .scn-pill{background:var(--orange)}.r5 .scn-pill{background:var(--green)}
 .scn-a{color:#aab4c0;font-size:16px;font-weight:700;padding:0 14px;flex-shrink:0}
 
+/* 그룹·인력 현황 */
+.ppl-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.ppl-card{background:#fff;border-radius:8px;padding:12px 16px;border-top:3px solid var(--teal);display:flex;flex-direction:column;justify-content:center}
+.ppl-card.p2{border-color:var(--purple)}.ppl-card.p3{border-color:var(--amber)}
+.ppl-h{font-size:13.5px;font-weight:700;color:var(--navy);margin-bottom:5px;display:flex;align-items:center;gap:8px}
+.ppl-n{font-size:10px;font-weight:700;color:#fff;background:var(--teal);border-radius:9px;padding:1px 9px}
+.ppl-card.p2 .ppl-n{background:var(--purple)}.ppl-card.p3 .ppl-n{background:var(--amber)}
+.ppl-d{font-size:11px;color:#46505c;line-height:1.5}.ppl-d b{color:var(--navy)}
+.grp-rows{display:flex;flex-direction:column;gap:11px;flex:1}
+.grp{background:#fff;border-radius:9px;border-left:5px solid var(--blue);box-shadow:0 1px 5px rgba(0,0,0,.07);display:grid;grid-template-columns:210px 1.25fr 1.5fr;flex:1;overflow:hidden}
+.grp.g2{border-color:var(--teal)}.grp.g3{border-color:var(--purple)}
+.grp-cell{padding:13px 18px;display:flex;flex-direction:column;justify-content:center}
+.grp-l,.grp-m{border-right:1px solid #eef1f5}
+.grp-nm{font-size:15.5px;font-weight:700;color:var(--navy);margin-bottom:5px}
+.grp-role{font-size:11.5px;font-weight:700;color:var(--blue);line-height:1.4}
+.g2 .grp-role{color:var(--teal)}.g3 .grp-role{color:var(--purple)}
+.grp-t{font-size:9px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.grp-i{font-size:11px;color:var(--dgray);line-height:1.42;display:flex;gap:7px;align-items:baseline;margin-bottom:4px}
+.grp-i .d{width:4px;height:4px;border-radius:50%;background:var(--blue);flex-shrink:0;margin-top:6px}
+.g2 .grp-i .d{background:var(--teal)}.g3 .grp-i .d{background:var(--purple)}
+.grp-now{font-size:11px;color:#46505c;line-height:1.6}.grp-now b{color:var(--navy)}.grp-now .hl{color:var(--teal);font-weight:700}
+
 /* 서비스 상세 */
 .svc-meta{display:flex;align-items:center;gap:12px;background:var(--lblue);border-radius:6px;padding:7px 14px}
 .svc-meta .role{font-size:12px;color:var(--dgray);font-weight:600}.svc-meta .role b{color:var(--navy)}
@@ -276,9 +298,88 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
   </div>
 </div>
 
+<!-- Org1 공통업무 — 문서 지식 자산화 -->
+<div class="slide" id="org1">
+  <div class="ph"><span class="ph-n">02</span><span class="ph-t">공통업무 — 팀 문서 지식 자산화</span><span class="ph-s">전 그룹 공통 · 총 5명 · 분야별 문서 수집 → 자산화</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="ka-hero">
+      <div class="ka-h1">전 그룹 공통 — 팀 내 <b>모든 문서(PPT·PDF·DOCX)를 분야별로 수집</b>해 지식 자산으로 만든다.</div>
+      <div class="ka-h2">총 5명의 인력이 각 팀의 문서를 모두 모으고, 수집한 자료를 아래 3단계로 자산화한다.</div>
+    </div>
+    <div class="ka-flow">
+      <div class="ka-step s1"><div class="ka-num">1</div><div class="ka-st">MCP 업로드</div><div class="ka-sd">수집한 문서를 MCP를 이용해 <b>Report Archive</b>에 업로드한다.</div></div>
+      <div class="ka-arr">→</div>
+      <div class="ka-step s2"><div class="ka-num">2</div><div class="ka-st">리뷰 + LLM 증강</div><div class="ka-sd">전문성 있는 인력이 내용을 리뷰하며 <b>LLM으로 정보를 augment</b>한다.</div></div>
+      <div class="ka-arr">→</div>
+      <div class="ka-step s3"><div class="ka-num">3</div><div class="ka-st">백서화</div><div class="ka-sd">사내 B300의 <b>local LLM(GLM 5.2)</b>으로 같은 업무 내용끼리 묶어 백서로 만든다.</div></div>
+    </div>
+    <div>
+      <div class="st">문서 수집 인력 배치 — 총 5명</div>
+      <div class="ppl-grid">
+        <div class="ppl-card"><div class="ppl-h">자주검증그룹 <span class="ppl-n">2명</span></div><div class="ppl-d">자검심사회 등 <b>내부 문서</b></div></div>
+        <div class="ppl-card p2"><div class="ppl-h">CAE그룹 <span class="ppl-n">2명</span></div><div class="ppl-d"><b>MCAE · ECAE</b> 문서</div></div>
+        <div class="ppl-card p3"><div class="ppl-h">실장솔루션그룹 <span class="ppl-n">1명</span></div><div class="ppl-d"><b>ECAD</b> 정보</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Org2 그룹별 현재 업무 & 현황 -->
+<div class="slide" id="org2">
+  <div class="ph"><span class="ph-n">03</span><span class="ph-t">그룹별 현재 업무 &amp; 진행 현황</span><span class="ph-s">자주검증 · 실장솔루션 · CAE — 무엇을 맡고, 어디까지 진행했는지</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="grp-rows">
+      <div class="grp g1">
+        <div class="grp-cell grp-l"><div class="grp-nm">자주검증그룹</div><div class="grp-role">인프라 · 인증 · API 횡전개</div></div>
+        <div class="grp-cell grp-m">
+          <div class="grp-t">핵심 업무</div>
+          <div class="grp-i"><span class="d"></span><span>SSO 등록 · 서버 라우팅/로드밸런싱 관리 (1명)</span></div>
+          <div class="grp-i"><span class="d"></span><span>HEAX Hub 관리 (1명)</span></div>
+          <div class="grp-i"><span class="d"></span><span>사내 시스템 연계 API 논의 인력 선정</span></div>
+          <div class="grp-i"><span class="d"></span><span>서버 관리 인력 IRP 과제 등록 중</span></div>
+        </div>
+        <div class="grp-cell">
+          <div class="grp-t">진행 현황</div>
+          <div class="grp-now">사내 인증서 · <b>SSO(AD 계정 연동)</b> → 메일 자동화 · 사내 API 연결 논의가 많이 진행되어 <span class="hl">API 연계 횡전개를 담당</span>한다.<br>· 검토: 사내 시스템 API를 SPDM으로 집결하고 AX허브도 SPDM으로 모을지, 또는 AX허브가 SPDM 연계 API를 <b>프록시</b>해 가져올지 <b>보안 측면 검토 중</b>.</div>
+        </div>
+      </div>
+      <div class="grp g2">
+        <div class="grp-cell grp-l"><div class="grp-nm">실장솔루션그룹</div><div class="grp-role">사내 시스템 API 개방 · 연동</div></div>
+        <div class="grp-cell grp-m">
+          <div class="grp-t">핵심 업무</div>
+          <div class="grp-i"><span class="d"></span><span>CIS 등 사내 시스템 API 개방 방법 논의</span></div>
+          <div class="grp-i"><span class="d"></span><span>사내 시스템 API 연동 작업 인력 보유</span></div>
+          <div class="grp-i"><span class="d"></span><span>CIS 진행 중 · API 사용법 확보</span></div>
+          <div class="grp-i"><span class="d"></span><span>5개 다른 사내 시스템에 횡전개 가능</span></div>
+        </div>
+        <div class="grp-cell">
+          <div class="grp-t">진행 현황</div>
+          <div class="grp-now">IRP 등록 후 SSO가 되면 연동 가능. API 방식 협의가 상당히 진행되어 <b>CIS · CAD 데이터 연동</b>을 먼저 진행한다.<br>· 이후 <b>ECAD를 자동으로 가져온 뒤</b> <span class="hl">MCP로 ECAD를 제어하며 정보를 검색</span>할 수 있도록 구현 예정.</div>
+        </div>
+      </div>
+      <div class="grp g3">
+        <div class="grp-cell grp-l"><div class="grp-nm">CAE그룹</div><div class="grp-role">MCP 개발 · 게이트웨이</div></div>
+        <div class="grp-cell grp-m">
+          <div class="grp-t">핵심 업무</div>
+          <div class="grp-i"><span class="d"></span><span>MCP 개발 업무 담당</span></div>
+          <div class="grp-i"><span class="d"></span><span>자동화 프로그램 · 시스템 컨트롤 구현</span></div>
+          <div class="grp-i"><span class="d"></span><span>기능 실행이 가능하도록 웹 개조</span></div>
+          <div class="grp-i"><span class="d"></span><span>팀 자원에 LLM 연결 기반 마련</span></div>
+        </div>
+        <div class="grp-cell">
+          <div class="grp-t">진행 현황 / 목표</div>
+          <div class="grp-now">포탈 사이트에 <span class="hl">MCP Gateway를 장착</span>하여, <b>모든 팀 내 자원에 LLM으로 접근하고 기능을 실행</b>하게 하는 것이 목표.<br>· 이를 위해 자동화 프로그램과 시스템 컨트롤이 가능하도록 웹을 개조하는 업무를 진행한다.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Pc 핵심 개념 쉽게 풀이 -->
 <div class="slide" id="pc">
-  <div class="ph"><span class="ph-n">02</span><span class="ph-t">핵심 개념 — 쉽게 풀이</span><span class="ph-s">이 자료에 나오는 어려운 용어를 "무엇을 하는 것인지"로 풀었습니다</span></div>
+  <div class="ph"><span class="ph-n">04</span><span class="ph-t">핵심 개념 — 쉽게 풀이</span><span class="ph-s">이 자료에 나오는 어려운 용어를 "무엇을 하는 것인지"로 풀었습니다</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="cpt-grid">
@@ -296,7 +397,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Mcp1 MCP 지식 자산화 핵심 흐름 -->
 <div class="slide" id="mcp1">
-  <div class="ph"><span class="ph-n">03</span><span class="ph-t">MCP로 모든 절차를 지식 자산화</span><span class="ph-s">흩어진 산출물 → MCP 연결 → LLM 증강 → 재사용 자산</span></div>
+  <div class="ph"><span class="ph-n">05</span><span class="ph-t">MCP로 모든 절차를 지식 자산화</span><span class="ph-s">흩어진 산출물 → MCP 연결 → LLM 증강 → 재사용 자산</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="ka-hero">
@@ -334,7 +435,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Mcp2 지식 자산화 시나리오 -->
 <div class="slide" id="mcp2">
-  <div class="ph"><span class="ph-n">04</span><span class="ph-t">지식 자산화 시나리오 — 무엇이든 자산이 된다</span><span class="ph-s">실제 절차별 흐름 — 입력에서 자산까지</span></div>
+  <div class="ph"><span class="ph-n">06</span><span class="ph-t">지식 자산화 시나리오 — 무엇이든 자산이 된다</span><span class="ph-s">실제 절차별 흐름 — 입력에서 자산까지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="ka-scn">
@@ -374,7 +475,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P2 전체 로드맵 -->
 <div class="slide" id="p2">
-  <div class="ph"><span class="ph-n">05</span><span class="ph-t">전체 로드맵 — 여정과 현재 위치</span><span class="ph-s">기반 구축 → 중앙화·보안 → 사내 데이터 창구 → 지능화·확산</span></div>
+  <div class="ph"><span class="ph-n">07</span><span class="ph-t">전체 로드맵 — 여정과 현재 위치</span><span class="ph-s">기반 구축 → 중앙화·보안 → 사내 데이터 창구 → 지능화·확산</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="road-top">
@@ -436,7 +537,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P3 주요 마일스톤 -->
 <div class="slide" id="p3">
-  <div class="ph"><span class="ph-n">06</span><span class="ph-t">주요 마일스톤 달성 현황 — 어디까지 왔나</span><span class="ph-s">무엇을 했고(deliverable) · 근거가 무엇인지(지표)</span></div>
+  <div class="ph"><span class="ph-n">08</span><span class="ph-t">주요 마일스톤 달성 현황 — 어디까지 왔나</span><span class="ph-s">무엇을 했고(deliverable) · 근거가 무엇인지(지표)</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="ms-grid">
@@ -486,7 +587,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Pi1 서비스 소개 ① -->
 <div class="slide" id="pi1">
-  <div class="ph"><span class="ph-n">07</span><span class="ph-t">서비스 소개 ① — 허브 · 채팅 · 백서</span><span class="ph-s">각 사이트가 무엇이고, 무슨 기능이 있고, 어디까지 됐는지</span></div>
+  <div class="ph"><span class="ph-n">09</span><span class="ph-t">서비스 소개 ① — 허브 · 채팅 · 백서</span><span class="ph-s">각 사이트가 무엇이고, 무슨 기능이 있고, 어디까지 됐는지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="intro-rows">
@@ -568,7 +669,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Pi2 서비스 소개 ② -->
 <div class="slide" id="pi2">
-  <div class="ph"><span class="ph-n">08</span><span class="ph-t">서비스 소개 ② — 자동화 · 데이터 · 보고서</span><span class="ph-s">각 사이트가 무엇이고, 무슨 기능이 있고, 어디까지 됐는지</span></div>
+  <div class="ph"><span class="ph-n">10</span><span class="ph-t">서비스 소개 ② — 자동화 · 데이터 · 보고서</span><span class="ph-s">각 사이트가 무엇이고, 무슨 기능이 있고, 어디까지 됐는지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="intro-rows">
@@ -650,7 +751,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Rc1 역할·컨셉 ① Portal -->
 <div class="slide" id="rc1">
-  <div class="ph"><span class="ph-n">09</span><span class="ph-t">역할 &amp; 컨셉 — ① HWAX Portal</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">11</span><span class="ph-t">역할 &amp; 컨셉 — ① HWAX Portal</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -671,7 +772,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Rc2 역할·컨셉 ② Agent -->
 <div class="slide" id="rc2">
-  <div class="ph"><span class="ph-n">10</span><span class="ph-t">역할 &amp; 컨셉 — ② Agent Server</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">12</span><span class="ph-t">역할 &amp; 컨셉 — ② Agent Server</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -692,7 +793,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Rc3 역할·컨셉 ③ MX -->
 <div class="slide" id="rc3">
-  <div class="ph"><span class="ph-n">11</span><span class="ph-t">역할 &amp; 컨셉 — ③ MX White Paper</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">13</span><span class="ph-t">역할 &amp; 컨셉 — ③ MX White Paper</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -713,7 +814,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Rc4 역할·컨셉 ④ HEAX -->
 <div class="slide" id="rc4">
-  <div class="ph"><span class="ph-n">12</span><span class="ph-t">역할 &amp; 컨셉 — ④ HEAX Hub</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">14</span><span class="ph-t">역할 &amp; 컨셉 — ④ HEAX Hub</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -734,7 +835,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Rc5 역할·컨셉 ⑤ AIDH -->
 <div class="slide" id="rc5">
-  <div class="ph"><span class="ph-n">13</span><span class="ph-t">역할 &amp; 컨셉 — ⑤ AI Data Hub</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">15</span><span class="ph-t">역할 &amp; 컨셉 — ⑤ AI Data Hub</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -755,7 +856,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- Rc6 역할·컨셉 ⑥ RA -->
 <div class="slide" id="rc6">
-  <div class="ph"><span class="ph-n">14</span><span class="ph-t">역할 &amp; 컨셉 — ⑥ Report Archive</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">16</span><span class="ph-t">역할 &amp; 컨셉 — ⑥ Report Archive</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -776,7 +877,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P4 HWAX Portal -->
 <div class="slide" id="p4">
-  <div class="ph"><span class="ph-n">15</span><span class="ph-t">① HWAX Portal — 통합 허브</span><span class="ph-s">SSO 브로커 · 경로 라우터 · 스택 오케스트레이터 · SPA · MCP 채팅 프록시</span></div>
+  <div class="ph"><span class="ph-n">17</span><span class="ph-t">① HWAX Portal — 통합 허브</span><span class="ph-s">SSO 브로커 · 경로 라우터 · 스택 오케스트레이터 · SPA · MCP 채팅 프록시</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 한 도메인의 단일 관문 — 로그인 1회로 모든 서비스 진입, 한 명령으로 전체 스택 기동</span><span class="stack">React+TS / FastAPI(py3.13)<br>Apptainer + systemd + nginx</span><span class="pct">~88%</span></div>
@@ -839,7 +940,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P5 Agent Server -->
 <div class="slide" id="p5">
-  <div class="ph"><span class="ph-n">16</span><span class="ph-t">② HWAX Agent Server — 채팅의 두뇌</span><span class="ph-s">LangGraph ReAct · MCP 다중서버 fan-out · vLLM(OpenAI 호환) · SSE</span></div>
+  <div class="ph"><span class="ph-n">18</span><span class="ph-t">② HWAX Agent Server — 채팅의 두뇌</span><span class="ph-s">LangGraph ReAct · MCP 다중서버 fan-out · vLLM(OpenAI 호환) · SSE</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 포털과 분리된 독립 백엔드 — 실제 모델 호출 + 도구 사용 담당(포털은 인증·릴레이만)</span><span class="stack">FastAPI / LangGraph 1.2<br>langchain-mcp-adapters · Qwen2.5-7B</span><span class="pct">~85%</span></div>
@@ -897,7 +998,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P6 MX White Paper -->
 <div class="slide" id="p6">
-  <div class="ph"><span class="ph-n">17</span><span class="ph-t">③ MX White Paper — AI 백서 · 지식 카탈로그</span><span class="ph-s">DocumentJSON v1.0 SSOT · 블록 위젯 · 위키링크 그래프 · 문서변환 · MCP</span></div>
+  <div class="ph"><span class="ph-n">19</span><span class="ph-t">③ MX White Paper — AI 백서 · 지식 카탈로그</span><span class="ph-s">DocumentJSON v1.0 SSOT · 블록 위젯 · 위키링크 그래프 · 문서변환 · MCP</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 사업부 지식 창고(나무위키 스타일 + 블록 위젯) — AI가 MCP로 백서를 직접 작성/편집</span><span class="stack">FastAPI(async) / React+BlockNote<br>Apptainer 5컨테이너 · Meili · MinIO · pgvector</span><span class="pct">~85%</span></div>
@@ -960,7 +1061,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P7 HEAX Hub -->
 <div class="slide" id="p7">
-  <div class="ph"><span class="ph-n">18</span><span class="ph-t">④ HEAX Hub — 자동 서비스화 · 표준 스택</span><span class="ph-s">소스 제출 → 빌드(SIF) → 서브패스 자동 서빙 · 5 runner · 표준 개발 스택 레퍼런스</span></div>
+  <div class="ph"><span class="ph-n">20</span><span class="ph-t">④ HEAX Hub — 자동 서비스화 · 표준 스택</span><span class="ph-s">소스 제출 → 빌드(SIF) → 서브패스 자동 서빙 · 5 runner · 표준 개발 스택 레퍼런스</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 다언어 앱을 받아 자동 빌드·격리·서브패스 서빙 + 팀 공통 개발 스택의 레퍼런스 구현</span><span class="stack">FastAPI+Celery / React+TanStack<br>Caddy(:4180) · Apptainer per-app SIF</span><span class="pct">~88%</span></div>
@@ -1022,7 +1123,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P8 AI Data Hub -->
 <div class="slide" id="p8">
-  <div class="ph"><span class="ph-n">19</span><span class="ph-t">⑤ AI Data Hub — 데이터 · 생성형 AI 그라운딩 허브</span><span class="ph-s">표준 JSON 적재 · pgvector 시맨틱 검색 · MCP read/write · 외부 sync</span></div>
+  <div class="ph"><span class="ph-n">21</span><span class="ph-t">⑤ AI Data Hub — 데이터 · 생성형 AI 그라운딩 허브</span><span class="ph-s">표준 JSON 적재 · pgvector 시맨틱 검색 · MCP read/write · 외부 sync</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 문서·데이터를 표준 JSON으로 정규화 적재하고, 외부 LLM이 REST·MCP로 검색·인용하는 self-describing 데이터 레이어</span><span class="stack">FastAPI / PostgreSQL+pgvector<br>e5_base 임베딩 · vanilla 대시보드</span><span class="pct">~80%</span></div>
@@ -1084,7 +1185,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P9 Report Archive -->
 <div class="slide" id="p9">
-  <div class="ph"><span class="ph-n">20</span><span class="ph-t">⑥ Report Archive — 보고서 작성 · 아카이브 · 검색</span><span class="ph-s">위젯 에디터 · RAG 시맨틱 검색 · 워크스페이스 · MCP 13도구 (이관 대상지)</span></div>
+  <div class="ph"><span class="ph-n">22</span><span class="ph-t">⑥ Report Archive — 보고서 작성 · 아카이브 · 검색</span><span class="ph-s">위젯 에디터 · RAG 시맨틱 검색 · 워크스페이스 · MCP 13도구 (이관 대상지)</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 보고서를 일관 템플릿으로 작성·축적하고, 채팅(MCP)에서 자연어로 질의·작성 — 산출물이 흘러드는 종착지</span><span class="stack">FastAPI / React+TipTap<br>PostgreSQL+pgvector · Ollama bge-m3</span><span class="pct">~90%</span></div>
@@ -1146,7 +1247,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- P10 다음 단계 -->
 <div class="slide" id="p10">
-  <div class="ph"><span class="ph-n">21</span><span class="ph-t">통합 과제 &amp; 다음 단계</span><span class="ph-s">서비스를 가로지르는 4개 축 · Phase 1→2 즉시 할 일</span></div>
+  <div class="ph"><span class="ph-n">23</span><span class="ph-t">통합 과제 &amp; 다음 단계</span><span class="ph-s">서비스를 가로지르는 4개 축 · Phase 1→2 즉시 할 일</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="cc-grid">
