@@ -98,8 +98,16 @@ services:
     host: local
     discover: SignalForge
     env: { MCP_PORT: "8013" }
-    start: ./mcp-server/start_mcp.sh      # FastMCP :8013, VOC tools (no auth)
+    start: ./mcp-server/start_mcp.sh      # FastMCP :8013, VOC tools (SF_MCP_TOKEN Bearer auth)
     health: http://localhost:8013/mcp
+    tier: 15
+
+  - name: mxwp-mcp
+    host: local
+    discover: MXWhitePaper
+    update: false                         # MX repo managed separately (own stack/systemd)
+    start: 'apptainer exec instance://mxwp_api bash -lc "cd /workspace/dist/llm-docx-toolkit && MXWP_API_URL=http://127.0.0.1:8800 python3 -m mcp --http --host 127.0.0.1 --port 8765"'
+    health: http://localhost:8765/mcp     # 406 to GET, but answering = up; forwards Bearer mxwp_ to API
     tier: 15
 
   - name: agent-server
