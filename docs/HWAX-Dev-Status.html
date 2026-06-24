@@ -85,7 +85,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 .rt-now{font-size:11.5px;color:#FFB36B;font-weight:700;flex-shrink:0}
 .rt-txt{font-size:11.5px;color:#C8D8EC;flex:1;line-height:1.45}.rt-txt b{color:#fff}
 .rt-bar{width:150px;height:9px;background:rgba(255,255,255,.16);border-radius:5px;overflow:hidden;flex-shrink:0}
-.rt-bar i{display:block;height:100%;width:42%;background:linear-gradient(90deg,var(--green),var(--orange));border-radius:5px}
+.rt-bar i{display:block;height:100%;width:52%;background:linear-gradient(90deg,var(--green),var(--orange));border-radius:5px}
 .road{display:flex;gap:8px;flex:1;align-items:stretch}
 .rp{flex:1;display:flex;flex-direction:column;background:#fff;border-radius:8px;overflow:hidden;border:1.5px solid #dde3ea}
 .rp.now{border-color:var(--orange);box-shadow:0 5px 16px rgba(226,125,46,.25)}
@@ -230,7 +230,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
         <div class="st">서비스를 가로지르는 공통 기반 (가로축)</div>
         <div class="foundation">
           <div class="fcard"><div class="fcard-t">🔐 통합 로그인 (SSO)</div><div class="fcard-d">출입증 하나로 여러 건물 통과하듯 — 로그인 한 번으로 4개 서비스에 다시 로그인 없이 진입</div></div>
-          <div class="fcard f2"><div class="fcard-t">🤖 AI 도구 연결 (MCP)</div><div class="fcard-d">채팅 AI가 3개 시스템의 기능 46가지를 자연어 명령만으로 직접 불러 씀</div></div>
+          <div class="fcard f2"><div class="fcard-t">🤖 AI 도구 연결 (MCP)</div><div class="fcard-d">채팅 AI가 단일 게이트웨이(:9110) 경유로 3개 시스템 기능 46종을 자연어로 불러 씀</div></div>
           <div class="fcard f3"><div class="fcard-t">🗂 데이터 한곳 모음</div><div class="fcard-d">여러 시스템의 데이터를 데이터허브 한 곳에 자동으로 모아(359건) 함께 검색·인용</div></div>
           <div class="fcard f4"><div class="fcard-t">📦 사내망 자동 배포</div><div class="fcard-d">인터넷 막힌 사내망에서도 자동 설치·부팅되게 필요한 걸 미리 묶어 배포(에어갭)</div></div>
         </div>
@@ -263,8 +263,8 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
   <div class="ph-line"></div>
   <div class="body">
     <div class="road-top">
-      <span class="rt-now">📍 지금 여기 — Phase 1</span>
-      <span class="rt-txt"><b>Phase 0(통합 기반) 완료</b> → <b>Phase 1(MCP·인증 통합) 진행 중</b>. 6개 서비스 + AI 채팅이 한 로그인·한 채팅으로 데이터를 가로질러 동작하는 단계까지 왔습니다.</span>
+      <span class="rt-now">📍 지금 여기 — Phase 1→2</span>
+      <span class="rt-txt"><b>Phase 0 완료</b> → <b>Phase 1(MCP·인증 통합) 진행 중</b>, <b>Phase 2 착수</b>(MCP Gateway 완료). 6개 서비스 + AI 채팅이 한 로그인·한 채팅·단일 게이트웨이로 데이터를 가로질러 동작합니다.</span>
       <span class="rt-bar"><i></i></span>
     </div>
     <div class="road">
@@ -290,9 +290,9 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
       </div>
       <div class="rp rp2">
         <div class="rp-hd">Phase 2<br>중앙화 &amp; 보안</div>
-        <div class="rp-tag">예정</div>
+        <div class="rp-tag">착수 (1/3)</div>
         <div class="rp-bd">
-          <div class="rp-ms todo"><span class="ic">📋</span><span>MCP Gateway<br>(중앙 토큰·라우팅·감사)</span></div>
+          <div class="rp-ms"><span class="ic">✅</span><span>MCP Gateway 완료<br>(:9110 단일 엔드포인트)</span></div>
           <div class="rp-ms todo"><span class="ic">📋</span><span>TLS :443 종단<br>(사내 인증서)</span></div>
           <div class="rp-ms todo"><span class="ic">📋</span><span>per-box 하드코딩 제거<br>(.env 표준화)</span></div>
         </div>
@@ -345,10 +345,10 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
         <div class="ms-del">MX 백서·41위젯 · HEAX 자동 서비스화(7런타임) · AIDH 데이터허브 · RA 보고서 RAG.</div>
         <div class="ms-evi">근거 · 각 서비스 <b>80~90%</b> · RA 임베딩 792건 · AIDH 적재 359건 운영 반영</div>
       </div>
-      <div class="ms plan">
-        <div class="ms-top"><span class="ms-no">M5</span><span class="ms-title">MCP Gateway</span><span class="ms-b plan">예정</span></div>
-        <div class="ms-del">서버별 직접 토큰 대신 <b>중앙 게이트웨이</b>가 토큰 주입·라우팅·rate-limit·감사를 일원화.</div>
-        <div class="ms-evi">선결 · 포털 config <b>:9100은 node_exporter 점유</b> → 포트 재지정 · registry yaml 작성</div>
+      <div class="ms done">
+        <div class="ms-top"><span class="ms-no">M5</span><span class="ms-title">MCP Gateway</span><span class="ms-b done">완료</span></div>
+        <div class="ms-del">중앙 게이트웨이가 3개 MCP를 <b>:9110 단일 엔드포인트</b>로 집계·토큰 주입(이름충돌만 프리픽스해 46개 유지).</div>
+        <div class="ms-evi">근거 · 게이트웨이 경유 <b>46도구 무회귀</b>·왕복 검증·토큰 게이팅 동작 — 다음 rate-limit·감사</div>
       </div>
       <div class="ms prog">
         <div class="ms-top"><span class="ms-no">M6</span><span class="ms-title">TLS :443 종단</span><span class="ms-b prog">부분 (30%)</span></div>
@@ -419,7 +419,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
         <div class="ir-cell">
           <div class="ir-use"><b>이렇게 씁니다</b> · 채팅에 질문하면 알맞은 도구를 스스로 골라 실행해, 추측이 아닌 근거와 함께 답변.</div>
           <div class="ir-bar"><i class="f9" style="width:85%"></i></div>
-          <div class="ir-now"><b>동작</b> · 세 도메인 도구 동시 사용 — 게이트웨이 경유·권한별 제한 남음</div>
+          <div class="ir-now"><b>동작</b> · 게이트웨이(:9110) 경유 46도구 — 권한별 제한 남음</div>
           <div class="ir-port">:9009 · LangGraph + 사내 vLLM</div>
         </div>
       </div>
@@ -586,7 +586,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
         <div class="box bo">
           <div class="box-t"><span class="em">🎯</span> 다음 할 일</div>
           <div class="items">
-            <div class="it"><span class="d"></span><span><b>MCP Gateway</b> 구현 (포트 :9100 node_exporter 점유 → 변경)</span></div>
+            <div class="it"><span class="d"></span><span><b>MCP Gateway 완료</b> — 운영 강화(rate-limit·감사) 연계</span></div>
             <div class="it"><span class="d"></span><span><b>TLS :443 종단</b> — 사내 인증서 스왑</span></div>
             <div class="it"><span class="d"></span><span><b>mcp_servers.yaml</b> 작성 · per-box 하드코딩 제거</span></div>
           </div>
@@ -637,14 +637,14 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
             <div class="str"><span class="nm">vLLM(OpenAI 호환) 연동</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
             <div class="str"><span class="nm">동적 도구 로딩(JSON)</span><span class="bar"><i class="f7" style="width:80%"></i></span><span class="pc">80</span></div>
             <div class="str"><span class="nm">groups 기반 도구 스코핑</span><span class="bar"><i class="f1" style="width:8%"></i></span><span class="pc">5</span></div>
-            <div class="str"><span class="nm">MCP Gateway 경유 전환</span><span class="bar"><i class="f1" style="width:5%"></i></span><span class="pc">0</span></div>
+            <div class="str"><span class="nm">MCP Gateway 경유 전환</span><span class="bar"><i class="f9" style="width:95%"></i></span><span class="pc">95</span></div>
             <div class="str"><span class="nm">prod 배포(72B/B300)·테스트</span><span class="bar"><i class="f1" style="width:8%"></i></span><span class="pc">5</span></div>
           </div>
         </div>
         <div class="box bo">
           <div class="box-t"><span class="em">🎯</span> 다음 할 일</div>
           <div class="items">
-            <div class="it"><span class="d"></span><span><b>MCP Gateway 경유로 전환</b> — 토큰을 게이트웨이로 이전</span></div>
+            <div class="it"><span class="d"></span><span><b>게이트웨이 rate-limit·감사·groups 가시성</b> 추가</span></div>
             <div class="it"><span class="d"></span><span><b>groups 기반 도구 스코핑</b> — 권한별 도구 노출</span></div>
             <div class="it"><span class="d"></span><span><b>prod 72B</b> · 테스트/CI · 운영화(systemd)</span></div>
           </div>
@@ -915,7 +915,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
       </div>
       <div class="cc c2">
         <div class="cc-t">🤖 MCP 오케스트레이션</div>
-        <div class="cc-d">채팅이 <b>3서버 fan-out(46도구)</b> · <span class="g">PAT 통일·MX 합류 완료</span>. 다음 <span class="r">MCP Gateway</span>(중앙 토큰·라우팅·감사, :9100 충돌 회피).</div>
+        <div class="cc-d">채팅이 <b>단일 게이트웨이(:9110) 경유 46도구</b> · <span class="g">PAT 통일·MX 합류·MCP Gateway 완료</span>. 다음 <span class="a">rate-limit·감사·groups 가시성</span>.</div>
       </div>
       <div class="cc c3">
         <div class="cc-t">🗂 데이터 평면 연계</div>
@@ -928,7 +928,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
     </div>
     <div class="next-bar">
       <span class="nb-t">즉시 다음 (Phase 1→2)</span>
-      <span class="nb-i"><b>① MCP Gateway 설계·구현</b>(포트 재지정 + 토큰 중앙화) · <b>② TLS :443 종단</b>(사내 인증서) · <b>③ MX 스택 상시기동 안정화</b> · <b>④ per-box 하드코딩 .env 표준화</b></span>
+      <span class="nb-i"><b>① TLS :443 종단</b>(사내 인증서) · <b>② 게이트웨이 rate-limit·감사·groups 가시성</b> · <b>③ MX 스택 상시기동 안정화</b> · <b>④ per-box 하드코딩 .env 표준화</b></span>
     </div>
     <div class="next-bar" style="background:#1b3a5f">
       <span class="nb-t" style="color:#9FC4EC">한 줄 결론</span>
