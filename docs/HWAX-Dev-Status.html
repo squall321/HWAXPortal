@@ -14,26 +14,22 @@
   --f:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif
 }
 *{font-family:var(--f)}
-html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
+html{scroll-behavior:smooth}
+html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
-.deck{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative}
-.slide{position:absolute;width:1280px;height:720px;background:#f0f3f8;border-radius:6px;
-  box-shadow:0 12px 48px rgba(0,0,0,.55);overflow:hidden;opacity:0;pointer-events:none;
-  transform:translateX(60px);transition:opacity .32s,transform .32s}
-.slide.active{opacity:1;pointer-events:all;transform:none}
-.slide.prev{opacity:0;transform:translateX(-60px)}
+.topnav{position:fixed;top:0;left:0;right:0;z-index:200;background:var(--navy);
+  display:flex;align-items:center;gap:14px;padding:7px 22px;box-shadow:0 2px 12px rgba(0,0,0,.4)}
+.tn-title{font-size:14px;font-weight:800;color:#fff;flex-shrink:0;letter-spacing:.02em}
+.tn-title b{color:var(--orange)}
+.tn-links{display:flex;gap:4px;flex-wrap:wrap}
+.tn-links a{background:#1c3a5e;color:#9FC4EC;text-decoration:none;padding:3px 8px;border-radius:5px;
+  font-size:10px;font-weight:700;transition:.15s;white-space:nowrap}
+.tn-links a:hover{background:var(--orange);color:#fff}
+.sprog{position:fixed;top:0;left:0;height:3px;width:0;background:var(--orange);z-index:201;transition:width .1s}
 
-.prog{position:fixed;top:0;left:0;height:3px;background:var(--orange);transition:width .3s;z-index:50}
-.hint{position:fixed;top:14px;right:18px;color:rgba(255,255,255,.3);font-size:10.5px}
-.nav{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;z-index:40;
-  background:rgba(10,25,50,.82);backdrop-filter:blur(8px);border-radius:24px;padding:8px 18px}
-.nb{background:none;border:none;color:#8FB4DE;cursor:pointer;font-size:16px;width:28px;height:28px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;transition:.15s}
-.nb:hover{background:rgba(255,255,255,.12);color:#fff}
-.ndots{display:flex;gap:6px}
-.nd{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.25);border:none;cursor:pointer;transition:.2s;padding:0}
-.nd.on{background:#fff;width:18px;border-radius:3px}
-.nlbl{color:#C2D4EC;font-size:11px;min-width:150px;text-align:center}
+.pages{padding-top:54px}
+.slide{min-height:calc(100vh - 54px);width:100%;display:flex;flex-direction:column;position:relative;
+  background:#f0f3f8;scroll-margin-top:54px;border-bottom:3px solid #c2cad4}
 
 .ph{background:var(--navy);padding:13px 30px 11px;display:flex;align-items:baseline;gap:12px}
 .ph-n{font-size:20px;font-weight:700;color:#6F9FD8}
@@ -49,7 +45,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 .tg{background:var(--green)}.tb{background:var(--blue)}.to{background:var(--orange)}.tt{background:var(--teal)}.tgy{background:var(--gray)}.tr{background:var(--red)}.tp{background:var(--purple)}
 
 /* 표지 */
-#p0{background:var(--navy);display:flex;flex-direction:column;justify-content:center;padding:0 90px;position:relative}
+#p0{background:var(--navy);display:flex;flex-direction:column;justify-content:center;padding:0 90px;position:relative;overflow:hidden}
 #p0::before{content:'';position:absolute;right:-160px;top:-160px;width:520px;height:520px;border-radius:50%;border:1px solid rgba(255,255,255,.06)}
 #p0::after{content:'';position:absolute;right:60px;bottom:-120px;width:340px;height:340px;border-radius:50%;border:1px solid rgba(255,255,255,.05)}
 .cv-tag{font-size:13px;color:#6F9FD8;letter-spacing:1px;margin-bottom:20px;text-transform:uppercase}
@@ -61,21 +57,21 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 .cv-foot{position:absolute;bottom:46px;left:90px;right:90px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(255,255,255,.12);padding-top:16px}
 .cv-foot span{font-size:13px;color:#8BAFD4}.cv-foot b{color:#fff;font-size:14px}
 
-.body{padding:14px 26px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden}
-#p1,#pc,#p2,#p3,#pi1,#pi2,#rc1,#rc2,#rc3,#rc4,#rc5,#rc6,#p4,#p5,#p6,#p7,#p8,#p9,#p10{display:flex;flex-direction:column;height:100%}
+.body{padding:20px 38px;flex:1;display:flex;flex-direction:column;gap:13px}
+#p1,#pc,#mcp1,#mcp2,#p2,#p3,#pi1,#pi2,#rc1,#rc2,#rc3,#rc4,#rc5,#rc6,#p4,#p5,#p6,#p7,#p8,#p9,#p10{display:flex;flex-direction:column;height:100%}
 
 /* 요약 매트릭스 */
-.summ{display:flex;flex-direction:column;gap:9px;flex:1}
+.summ{display:flex;flex-direction:column;gap:9px;flex:1;justify-content:space-between}
 .mtx{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .mtx th{background:var(--navy);color:#cfe0f3;font-size:11px;font-weight:700;padding:8px 10px;text-align:left;letter-spacing:.3px}
-.mtx td{padding:7.5px 10px;font-size:11.5px;color:var(--dgray);border-bottom:1px solid #eef1f5;vertical-align:middle}
+.mtx td{padding:14px 10px;font-size:11.5px;color:var(--dgray);border-bottom:1px solid #eef1f5;vertical-align:middle}
 .mtx tr:last-child td{border-bottom:none}
 .mtx .nm{font-weight:700;color:var(--navy)}.mtx .pt{font-size:10.5px;color:var(--gray);font-family:monospace}
 .mtx .core{color:#555;font-size:10.8px}
 .mini{display:inline-block;width:58px;height:7px;background:#e6ebf2;border-radius:4px;overflow:hidden;vertical-align:middle;margin-right:6px}
 .mini i{display:block;height:100%;border-radius:4px}.pcv{font-size:11px;font-weight:700;color:var(--blue)}
 .foundation{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-.fcard{background:#fff;border-radius:7px;padding:9px 12px;border-left:3px solid var(--teal)}
+.fcard{background:#fff;border-radius:7px;padding:13px 14px;border-left:3px solid var(--teal);display:flex;flex-direction:column;justify-content:center}
 .fcard.f2{border-color:var(--blue)}.fcard.f3{border-color:var(--purple)}.fcard.f4{border-color:var(--orange)}
 .fcard-t{font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:3px}
 .fcard-d{font-size:10.3px;color:var(--gray);line-height:1.45}
@@ -93,7 +89,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 .rp0 .rp-hd{background:var(--green)}.rp1 .rp-hd{background:var(--orange)}.rp2 .rp-hd{background:var(--blue)}.rp3 .rp-hd{background:var(--teal)}.rp4 .rp-hd{background:var(--purple)}
 .rp-tag{font-size:9px;font-weight:700;text-align:center;padding:3px 0;letter-spacing:.4px;color:#fff}
 .rp0 .rp-tag{background:#247048}.rp1 .rp-tag{background:#B5631F}.rp2 .rp-tag{background:#14467f}.rp3 .rp-tag{background:#0d6b60}.rp4 .rp-tag{background:#5e2f7c}
-.rp-bd{padding:8px 9px;display:flex;flex-direction:column;gap:6px;flex:1}
+.rp-bd{padding:8px 9px;display:flex;flex-direction:column;gap:6px;flex:1;justify-content:space-evenly}
 .rp-ms{font-size:10px;color:var(--dgray);line-height:1.32;display:flex;gap:5px;align-items:baseline}
 .rp-ms .ic{flex-shrink:0;font-size:9.5px;margin-top:1px}
 .rp-ms.todo{color:#828b98}
@@ -112,7 +108,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 /* 핵심 개념 쉽게 풀이 */
 .cpt-grid{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:9px;flex:1}
-.cpt{background:#fff;border-radius:8px;padding:9px 14px;border-left:4px solid var(--blue);display:flex;gap:11px;align-items:flex-start}
+.cpt{background:#fff;border-radius:8px;padding:9px 14px;border-left:4px solid var(--blue);display:flex;gap:11px;align-items:center}
 .cpt:nth-child(4n+2){border-color:var(--teal)}.cpt:nth-child(4n+3){border-color:var(--purple)}.cpt:nth-child(4n){border-color:var(--orange)}
 .cpt-ic{font-size:21px;flex-shrink:0;margin-top:2px}
 .cpt-bd{display:flex;flex-direction:column;gap:2px}
@@ -155,6 +151,32 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 .rc-foot{background:#EAF6F4;border-left:4px solid var(--teal);border-radius:0 7px 7px 0;padding:9px 18px;margin-top:11px;font-size:12.5px;color:var(--dgray);line-height:1.5}
 .rc-foot b{color:var(--teal)}
 
+/* MCP 지식 자산화 흐름 */
+.ka-hero{background:var(--navy);border-radius:9px;padding:13px 24px;margin-bottom:12px}
+.ka-h1{font-size:16px;font-weight:700;color:#fff;line-height:1.45;margin-bottom:5px}
+.ka-h1 b{color:var(--orange)}
+.ka-h2{font-size:12px;color:#9FC4EC;line-height:1.55}
+.ka-flow{display:flex;align-items:stretch;flex:1}
+.ka-step{background:#fff;border-radius:9px;border-top:4px solid var(--blue);padding:14px 15px;flex:1;display:flex;flex-direction:column;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.ka-step.s2{border-color:var(--teal)}.ka-step.s3{border-color:var(--orange)}.ka-step.s4{border-color:var(--green)}
+.ka-num{font-size:12px;font-weight:700;color:#fff;background:var(--blue);width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:9px}
+.s2 .ka-num{background:var(--teal)}.s3 .ka-num{background:var(--orange)}.s4 .ka-num{background:var(--green)}
+.ka-st{font-size:14.5px;font-weight:700;color:var(--navy);margin-bottom:7px}
+.ka-sd{font-size:11px;color:#46505c;line-height:1.55}
+.ka-arr{display:flex;align-items:center;justify-content:center;width:40px;flex-shrink:0;color:#b0bac6;font-size:24px;font-weight:700}
+.ka-feedback{background:#EAF6F4;border:1px dashed var(--teal);border-radius:7px;padding:9px 18px;margin-top:12px;font-size:11.8px;color:var(--dgray);line-height:1.5;text-align:center}
+.ka-feedback b{color:var(--teal)}
+.ka-scn{display:flex;flex-direction:column;gap:9px;flex:1}
+.scn{background:#fff;border-radius:8px;border-left:4px solid var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.07);display:grid;grid-template-columns:142px 1fr;flex:1;overflow:hidden}
+.scn.r2{border-color:var(--teal)}.scn.r3{border-color:var(--purple)}.scn.r4{border-color:var(--orange)}.scn.r5{border-color:var(--green)}
+.scn-tag{background:#f4f7fb;display:flex;align-items:center;padding:0 17px;font-size:13px;font-weight:700;color:var(--navy);border-right:1px solid #eef1f5}
+.scn-flow{display:flex;align-items:center;flex-wrap:wrap;padding:10px 18px}
+.scn-node{font-size:11.5px;color:#46505c;line-height:1.4}.scn-node b{color:var(--navy)}
+.scn-node.out{color:var(--teal);font-weight:700}
+.scn-pill{font-size:10.5px;font-weight:700;color:#fff;background:var(--blue);border-radius:11px;padding:3px 12px;white-space:nowrap}
+.r2 .scn-pill{background:var(--teal)}.r3 .scn-pill{background:var(--purple)}.r4 .scn-pill{background:var(--orange)}.r5 .scn-pill{background:var(--green)}
+.scn-a{color:#aab4c0;font-size:16px;font-weight:700;padding:0 14px;flex-shrink:0}
+
 /* 서비스 상세 */
 .svc-meta{display:flex;align-items:center;gap:12px;background:var(--lblue);border-radius:6px;padding:7px 14px}
 .svc-meta .role{font-size:12px;color:var(--dgray);font-weight:600}.svc-meta .role b{color:var(--navy)}
@@ -182,8 +204,8 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 .f9{background:var(--green)}.f7{background:var(--teal)}.f4{background:var(--amber)}.f1{background:var(--red)}
 
 /* 다음 단계 */
-.cc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.cc{background:#fff;border-radius:7px;padding:9px 13px;border-left:3px solid var(--blue)}
+.cc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;grid-auto-rows:1fr}
+.cc{background:#fff;border-radius:7px;padding:9px 14px;border-left:3px solid var(--blue);display:flex;flex-direction:column;justify-content:center}
 .cc.c2{border-color:var(--teal)}.cc.c3{border-color:var(--purple)}.cc.c4{border-color:var(--orange)}
 .cc-t{font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;display:flex;align-items:center;gap:6px}
 .cc-d{font-size:10.4px;color:#555;line-height:1.5}.cc-d b{color:var(--dgray)}
@@ -193,18 +215,20 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 .next-bar .nb-i{font-size:10.8px;color:#C8D8EC;flex:1;line-height:1.5}.next-bar .nb-i b{color:#FFB36B}
 
 @media print{
-  html,body{overflow:visible;background:#fff}
-  .deck{display:block;height:auto}
-  .slide{position:relative;opacity:1!important;transform:none!important;pointer-events:all;
-    page-break-after:always;margin:0 auto 6mm;border-radius:0;box-shadow:none;width:297mm;height:167mm}
-  .nav,.hint,.prog{display:none}
+  html,body{background:#fff}
+  .topnav,.prog{display:none}
+  .pages{padding-top:0}
+  .slide{min-height:auto;page-break-after:always;border:none;box-shadow:none}
 }
 </style>
 </head>
 <body>
-<div class="prog" id="prog"></div>
-<div class="hint">← → 방향키</div>
-<div class="deck">
+<div class="sprog" id="prog"></div>
+<nav class="topnav">
+  <div class="tn-title">HWAX 개발 현황 · <b>로드맵</b></div>
+  <div class="tn-links" id="tnlinks"></div>
+</nav>
+<div class="pages">
 
 <!-- P0 표지 -->
 <div class="slide active" id="p0">
@@ -270,9 +294,87 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
   </div>
 </div>
 
+<!-- Mcp1 MCP 지식 자산화 핵심 흐름 -->
+<div class="slide" id="mcp1">
+  <div class="ph"><span class="ph-n">03</span><span class="ph-t">MCP로 모든 절차를 지식 자산화</span><span class="ph-s">흩어진 산출물 → MCP 연결 → LLM 증강 → 재사용 자산</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="ka-hero">
+      <div class="ka-h1">핵심은, 모든 업무 절차에 MCP를 끼워 <b>무엇이든 LLM과 연결하고 지식 자산으로 쌓는 흐름</b>이다.</div>
+      <div class="ka-h2">만들면 흩어져 사라지던 산출물(PPT·보고서·LLM 대화·OCR 문서·시뮬레이션·사내 사이트·raw 데이터)이, MCP를 통해 검색·증강·재사용되는 자산으로 전환된다.</div>
+    </div>
+    <div class="ka-flow">
+      <div class="ka-step s1">
+        <div class="ka-num">1</div>
+        <div class="ka-st">캡처</div>
+        <div class="ka-sd">PPT·보고서·LLM 대화·OCR 문서·시뮬레이션 결과·사내 사이트·raw 데이터 — 어떤 산출물이든 입력이 된다.</div>
+      </div>
+      <div class="ka-arr">→</div>
+      <div class="ka-step s2">
+        <div class="ka-num">2</div>
+        <div class="ka-st">MCP 등록</div>
+        <div class="ka-sd">각 산출물을 MCP로 시스템(Report Archive · AI Data Hub · MX White Paper)에 등록·연결한다.</div>
+      </div>
+      <div class="ka-arr">→</div>
+      <div class="ka-step s3">
+        <div class="ka-num">3</div>
+        <div class="ka-st">LLM 증강</div>
+        <div class="ka-sd">검색·요약·내용 보강(augment)·백서화·대화 문서화 — LLM이 원자료를 정제된 지식으로 가공한다.</div>
+      </div>
+      <div class="ka-arr">→</div>
+      <div class="ka-step s4">
+        <div class="ka-num">4</div>
+        <div class="ka-st">지식 자산</div>
+        <div class="ka-sd">검색·인용 가능한 지식으로 축적. 부서·조직이 재사용하고, 다시 LLM의 근거가 된다.</div>
+      </div>
+    </div>
+    <div class="ka-feedback"><b>선순환</b> — 쌓인 지식 자산은 다시 MCP로 LLM에 연결되어 다음 작업의 근거가 된다. 쓸수록 자산이 늘고, 늘수록 똑똑해지는 구조.</div>
+  </div>
+</div>
+
+<!-- Mcp2 지식 자산화 시나리오 -->
+<div class="slide" id="mcp2">
+  <div class="ph"><span class="ph-n">04</span><span class="ph-t">지식 자산화 시나리오 — 무엇이든 자산이 된다</span><span class="ph-s">실제 절차별 흐름 — 입력에서 자산까지</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="ka-scn">
+      <div class="scn r1">
+        <div class="scn-tag">PPT 보강</div>
+        <div class="scn-flow">
+          <span class="scn-node">PPT를 <b>Report Archive</b>에 적재</span><span class="scn-a">→</span><span class="scn-pill">LLM augment</span><span class="scn-a">→</span><span class="scn-node out">내용이 보강된 보고서 자산</span>
+        </div>
+      </div>
+      <div class="scn r2">
+        <div class="scn-tag">대화 문서화</div>
+        <div class="scn-flow">
+          <span class="scn-node">내 지식을 근거로 <b>LLM과 대화</b>(MCP)</span><span class="scn-a">→</span><span class="scn-pill">대화 → 문서 정리</span><span class="scn-a">→</span><span class="scn-node out">정제된 지식 문서 자산</span>
+        </div>
+      </div>
+      <div class="scn r3">
+        <div class="scn-tag">백서화</div>
+        <div class="scn-flow">
+          <span class="scn-node"><b>OCR 문서</b> · RA의 <b>주제로 묶인 보고</b></span><span class="scn-a">→</span><span class="scn-pill">LLM 백서화</span><span class="scn-a">→</span><span class="scn-node out">MX White Paper 백서</span>
+        </div>
+      </div>
+      <div class="scn r4">
+        <div class="scn-tag">분석 자산화</div>
+        <div class="scn-flow">
+          <span class="scn-node"><b>시뮬레이션 결과</b> · <b>사내 사이트 데이터</b> 분석</span><span class="scn-a">→</span><span class="scn-pill">LLM 정리·해석</span><span class="scn-a">→</span><span class="scn-node out">분석 지식 자산</span>
+        </div>
+      </div>
+      <div class="scn r5">
+        <div class="scn-tag">데이터 등록</div>
+        <div class="scn-flow">
+          <span class="scn-node"><b>raw 데이터</b>를 <b>AI Data Hub</b>에</span><span class="scn-a">→</span><span class="scn-pill">MCP로 등록</span><span class="scn-a">→</span><span class="scn-node out">검색·인용 가능한 데이터 자산</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- P2 전체 로드맵 -->
 <div class="slide" id="p2">
-  <div class="ph"><span class="ph-n">03</span><span class="ph-t">전체 로드맵 — 여정과 현재 위치</span><span class="ph-s">기반 구축 → 중앙화·보안 → 사내 데이터 창구 → 지능화·확산</span></div>
+  <div class="ph"><span class="ph-n">05</span><span class="ph-t">전체 로드맵 — 여정과 현재 위치</span><span class="ph-s">기반 구축 → 중앙화·보안 → 사내 데이터 창구 → 지능화·확산</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="road-top">
@@ -334,7 +436,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- P3 주요 마일스톤 -->
 <div class="slide" id="p3">
-  <div class="ph"><span class="ph-n">04</span><span class="ph-t">주요 마일스톤 달성 현황 — 어디까지 왔나</span><span class="ph-s">무엇을 했고(deliverable) · 근거가 무엇인지(지표)</span></div>
+  <div class="ph"><span class="ph-n">06</span><span class="ph-t">주요 마일스톤 달성 현황 — 어디까지 왔나</span><span class="ph-s">무엇을 했고(deliverable) · 근거가 무엇인지(지표)</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="ms-grid">
@@ -384,7 +486,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- Pi1 서비스 소개 ① -->
 <div class="slide" id="pi1">
-  <div class="ph"><span class="ph-n">05</span><span class="ph-t">서비스 소개 ① — 허브 · 채팅 · 백서</span><span class="ph-s">각 사이트가 무엇이고, 무슨 기능이 있고, 어디까지 됐는지</span></div>
+  <div class="ph"><span class="ph-n">07</span><span class="ph-t">서비스 소개 ① — 허브 · 채팅 · 백서</span><span class="ph-s">각 사이트가 무엇이고, 무슨 기능이 있고, 어디까지 됐는지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="intro-rows">
@@ -466,7 +568,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- Pi2 서비스 소개 ② -->
 <div class="slide" id="pi2">
-  <div class="ph"><span class="ph-n">06</span><span class="ph-t">서비스 소개 ② — 자동화 · 데이터 · 보고서</span><span class="ph-s">각 사이트가 무엇이고, 무슨 기능이 있고, 어디까지 됐는지</span></div>
+  <div class="ph"><span class="ph-n">08</span><span class="ph-t">서비스 소개 ② — 자동화 · 데이터 · 보고서</span><span class="ph-s">각 사이트가 무엇이고, 무슨 기능이 있고, 어디까지 됐는지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="intro-rows">
@@ -548,7 +650,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- Rc1 역할·컨셉 ① Portal -->
 <div class="slide" id="rc1">
-  <div class="ph"><span class="ph-n">07</span><span class="ph-t">역할 &amp; 컨셉 — ① HWAX Portal</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">09</span><span class="ph-t">역할 &amp; 컨셉 — ① HWAX Portal</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -569,7 +671,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- Rc2 역할·컨셉 ② Agent -->
 <div class="slide" id="rc2">
-  <div class="ph"><span class="ph-n">08</span><span class="ph-t">역할 &amp; 컨셉 — ② Agent Server</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">10</span><span class="ph-t">역할 &amp; 컨셉 — ② Agent Server</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -590,7 +692,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- Rc3 역할·컨셉 ③ MX -->
 <div class="slide" id="rc3">
-  <div class="ph"><span class="ph-n">09</span><span class="ph-t">역할 &amp; 컨셉 — ③ MX White Paper</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">11</span><span class="ph-t">역할 &amp; 컨셉 — ③ MX White Paper</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -611,7 +713,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- Rc4 역할·컨셉 ④ HEAX -->
 <div class="slide" id="rc4">
-  <div class="ph"><span class="ph-n">10</span><span class="ph-t">역할 &amp; 컨셉 — ④ HEAX Hub</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">12</span><span class="ph-t">역할 &amp; 컨셉 — ④ HEAX Hub</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -632,7 +734,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- Rc5 역할·컨셉 ⑤ AIDH -->
 <div class="slide" id="rc5">
-  <div class="ph"><span class="ph-n">11</span><span class="ph-t">역할 &amp; 컨셉 — ⑤ AI Data Hub</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">13</span><span class="ph-t">역할 &amp; 컨셉 — ⑤ AI Data Hub</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -653,7 +755,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- Rc6 역할·컨셉 ⑥ RA -->
 <div class="slide" id="rc6">
-  <div class="ph"><span class="ph-n">12</span><span class="ph-t">역할 &amp; 컨셉 — ⑥ Report Archive</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
+  <div class="ph"><span class="ph-n">14</span><span class="ph-t">역할 &amp; 컨셉 — ⑥ Report Archive</span><span class="ph-s">무엇이고, 왜 필요하며, 어떻게 동작하고, 어떤 역할인지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="rc-hero">
@@ -674,7 +776,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- P4 HWAX Portal -->
 <div class="slide" id="p4">
-  <div class="ph"><span class="ph-n">13</span><span class="ph-t">① HWAX Portal — 통합 허브</span><span class="ph-s">SSO 브로커 · 경로 라우터 · 스택 오케스트레이터 · SPA · MCP 채팅 프록시</span></div>
+  <div class="ph"><span class="ph-n">15</span><span class="ph-t">① HWAX Portal — 통합 허브</span><span class="ph-s">SSO 브로커 · 경로 라우터 · 스택 오케스트레이터 · SPA · MCP 채팅 프록시</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 한 도메인의 단일 관문 — 로그인 1회로 모든 서비스 진입, 한 명령으로 전체 스택 기동</span><span class="stack">React+TS / FastAPI(py3.13)<br>Apptainer + systemd + nginx</span><span class="pct">~88%</span></div>
@@ -737,7 +839,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- P5 Agent Server -->
 <div class="slide" id="p5">
-  <div class="ph"><span class="ph-n">14</span><span class="ph-t">② HWAX Agent Server — 채팅의 두뇌</span><span class="ph-s">LangGraph ReAct · MCP 다중서버 fan-out · vLLM(OpenAI 호환) · SSE</span></div>
+  <div class="ph"><span class="ph-n">16</span><span class="ph-t">② HWAX Agent Server — 채팅의 두뇌</span><span class="ph-s">LangGraph ReAct · MCP 다중서버 fan-out · vLLM(OpenAI 호환) · SSE</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 포털과 분리된 독립 백엔드 — 실제 모델 호출 + 도구 사용 담당(포털은 인증·릴레이만)</span><span class="stack">FastAPI / LangGraph 1.2<br>langchain-mcp-adapters · Qwen2.5-7B</span><span class="pct">~85%</span></div>
@@ -795,7 +897,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- P6 MX White Paper -->
 <div class="slide" id="p6">
-  <div class="ph"><span class="ph-n">15</span><span class="ph-t">③ MX White Paper — AI 백서 · 지식 카탈로그</span><span class="ph-s">DocumentJSON v1.0 SSOT · 블록 위젯 · 위키링크 그래프 · 문서변환 · MCP</span></div>
+  <div class="ph"><span class="ph-n">17</span><span class="ph-t">③ MX White Paper — AI 백서 · 지식 카탈로그</span><span class="ph-s">DocumentJSON v1.0 SSOT · 블록 위젯 · 위키링크 그래프 · 문서변환 · MCP</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 사업부 지식 창고(나무위키 스타일 + 블록 위젯) — AI가 MCP로 백서를 직접 작성/편집</span><span class="stack">FastAPI(async) / React+BlockNote<br>Apptainer 5컨테이너 · Meili · MinIO · pgvector</span><span class="pct">~85%</span></div>
@@ -858,7 +960,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- P7 HEAX Hub -->
 <div class="slide" id="p7">
-  <div class="ph"><span class="ph-n">16</span><span class="ph-t">④ HEAX Hub — 자동 서비스화 · 표준 스택</span><span class="ph-s">소스 제출 → 빌드(SIF) → 서브패스 자동 서빙 · 5 runner · 표준 개발 스택 레퍼런스</span></div>
+  <div class="ph"><span class="ph-n">18</span><span class="ph-t">④ HEAX Hub — 자동 서비스화 · 표준 스택</span><span class="ph-s">소스 제출 → 빌드(SIF) → 서브패스 자동 서빙 · 5 runner · 표준 개발 스택 레퍼런스</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 다언어 앱을 받아 자동 빌드·격리·서브패스 서빙 + 팀 공통 개발 스택의 레퍼런스 구현</span><span class="stack">FastAPI+Celery / React+TanStack<br>Caddy(:4180) · Apptainer per-app SIF</span><span class="pct">~88%</span></div>
@@ -920,7 +1022,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- P8 AI Data Hub -->
 <div class="slide" id="p8">
-  <div class="ph"><span class="ph-n">17</span><span class="ph-t">⑤ AI Data Hub — 데이터 · 생성형 AI 그라운딩 허브</span><span class="ph-s">표준 JSON 적재 · pgvector 시맨틱 검색 · MCP read/write · 외부 sync</span></div>
+  <div class="ph"><span class="ph-n">19</span><span class="ph-t">⑤ AI Data Hub — 데이터 · 생성형 AI 그라운딩 허브</span><span class="ph-s">표준 JSON 적재 · pgvector 시맨틱 검색 · MCP read/write · 외부 sync</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 문서·데이터를 표준 JSON으로 정규화 적재하고, 외부 LLM이 REST·MCP로 검색·인용하는 self-describing 데이터 레이어</span><span class="stack">FastAPI / PostgreSQL+pgvector<br>e5_base 임베딩 · vanilla 대시보드</span><span class="pct">~80%</span></div>
@@ -982,7 +1084,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- P9 Report Archive -->
 <div class="slide" id="p9">
-  <div class="ph"><span class="ph-n">18</span><span class="ph-t">⑥ Report Archive — 보고서 작성 · 아카이브 · 검색</span><span class="ph-s">위젯 에디터 · RAG 시맨틱 검색 · 워크스페이스 · MCP 13도구 (이관 대상지)</span></div>
+  <div class="ph"><span class="ph-n">20</span><span class="ph-t">⑥ Report Archive — 보고서 작성 · 아카이브 · 검색</span><span class="ph-s">위젯 에디터 · RAG 시맨틱 검색 · 워크스페이스 · MCP 13도구 (이관 대상지)</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-meta"><span class="role"><b>역할</b> · 보고서를 일관 템플릿으로 작성·축적하고, 채팅(MCP)에서 자연어로 질의·작성 — 산출물이 흘러드는 종착지</span><span class="stack">FastAPI / React+TipTap<br>PostgreSQL+pgvector · Ollama bge-m3</span><span class="pct">~90%</span></div>
@@ -1044,7 +1146,7 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 <!-- P10 다음 단계 -->
 <div class="slide" id="p10">
-  <div class="ph"><span class="ph-n">19</span><span class="ph-t">통합 과제 &amp; 다음 단계</span><span class="ph-s">서비스를 가로지르는 4개 축 · Phase 1→2 즉시 할 일</span></div>
+  <div class="ph"><span class="ph-n">21</span><span class="ph-t">통합 과제 &amp; 다음 단계</span><span class="ph-s">서비스를 가로지르는 4개 축 · Phase 1→2 즉시 할 일</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="cc-grid">
@@ -1078,41 +1180,21 @@ html,body{width:100%;height:100%;background:#0d1b2e;overflow:hidden}
 
 </div>
 
-<div class="nav">
-  <button class="nb" id="bp">&#8592;</button>
-  <div class="ndots" id="dots"></div>
-  <button class="nb" id="bn">&#8594;</button>
-  <div class="nlbl" id="lbl"></div>
-</div>
-
 <script>
-const LS=['표지','전체 요약','핵심 개념 풀이','전체 로드맵','주요 마일스톤','서비스 소개 ①','서비스 소개 ②','역할·컨셉 ① Portal','역할·컨셉 ② Agent','역할·컨셉 ③ MX','역할·컨셉 ④ HEAX','역할·컨셉 ⑤ AIDH','역할·컨셉 ⑥ Report','① HWAX Portal','② Agent Server','③ MX White Paper','④ HEAX Hub','⑤ AI Data Hub','⑥ Report Archive','통합 · 다음 단계'];
-const sl=[...document.querySelectorAll('.slide')];
-const dots=document.getElementById('dots');
-const lbl=document.getElementById('lbl');
-const prog=document.getElementById('prog');
-let cur=0;
-LS.forEach((t,i)=>{const b=document.createElement('button');b.className='nd'+(i===0?' on':'');b.title=t;b.onclick=()=>go(i);dots.appendChild(b);});
-function go(n){
-  if(n<0||n>=sl.length)return;
-  sl[cur].className='slide prev';dots.children[cur].classList.remove('on');
-  cur=n;sl[cur].className='slide active';dots.children[cur].classList.add('on');
-  lbl.textContent=(cur+1)+' / '+sl.length+'  '+LS[cur];
-  prog.style.width=((cur+1)/sl.length*100)+'%';
-  setTimeout(()=>sl.forEach((s,i)=>{if(i!==cur)s.className='slide';}),380);
-}
-document.getElementById('bp').onclick=()=>go(cur-1);
-document.getElementById('bn').onclick=()=>go(cur+1);
-document.addEventListener('keydown',e=>{
-  if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown')go(cur+1);
-  if(e.key==='ArrowLeft'||e.key==='PageUp')go(cur-1);
-  if(e.key>='1'&&e.key<='9')go(+e.key-1);
-  if(e.key==='0')go(9);
+// 상단 네비 링크 생성 + 스크롤 진행바 (living_memory 스타일 스크롤 문서)
+const slides=[...document.querySelectorAll('.slide')];
+const links=document.getElementById('tnlinks');
+slides.forEach((s,i)=>{
+  const a=document.createElement('a');
+  a.href='#'+s.id;
+  a.textContent=String(i).padStart(2,'0');
+  const t=s.querySelector('.ph-t');
+  a.title=t?t.textContent.trim():'표지';
+  links.appendChild(a);
 });
-let tx=0;
-document.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
-document.addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-tx;if(Math.abs(d)>50)go(d<0?cur+1:cur-1);},{passive:true});
-go(0);
+const prog=document.getElementById('prog');
+function upd(){const h=document.documentElement;const m=h.scrollHeight-h.clientHeight;prog.style.width=(m>0?h.scrollTop/m*100:0)+'%';}
+addEventListener('scroll',upd,{passive:true});addEventListener('resize',upd);upd();
 </script>
 </body>
 </html>
