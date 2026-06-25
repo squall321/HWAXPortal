@@ -115,7 +115,7 @@ services:
     host: local
     discover: HWAXMcpGateway
     start: ./start.sh                     # streamable-http :9110, injects per-backend tokens
-    health: http://localhost:9110/mcp     # 406/401 to GET, but answering = up
+    health: http://localhost:9110/health  # unauthenticated JSON {status,tools,backends}
     tier: 16
 
   - name: agent-server
