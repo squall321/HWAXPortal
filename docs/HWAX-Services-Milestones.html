@@ -223,20 +223,18 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <!-- 2. 개발 마일스톤 (인프라) 주차별 -->
 <section class="page" id="ms">
-  <div class="ph"><span class="ph-n">02</span><span class="ph-t">개발 마일스톤 (인프라) — 주차별</span><span class="ph-s">서비스별 인프라 개발 마일스톤 · 5~6월 완료 · 7월~연말 운영 마일스톤 별도 예정</span></div>
+  <div class="ph"><span class="ph-n">02</span><span class="ph-t">개발 마일스톤 (인프라) — 주차별</span><span class="ph-s">서비스별 인프라 개발 마일스톤 · 5~6월 완료분 · 7월~내년 6월 월별 계획은 별도 페이지</span></div>
   <div class="ph-line"></div>
   <div class="body">
-    <div class="ms-note"><b>현재 = 인프라 개발 마일스톤</b>(5~6월). <b>7월~12월(연말)</b> 칸은 비워 둠 — <b>운영 마일스톤</b>이 추후 주차별로 별도 입력될 영역.</div>
+    <div class="ms-note"><b>현재까지 완료한 인프라 개발 마일스톤</b>(5월~6월 말)만 정리. <b>7월~내년 6월</b>은 <b>월별 계획</b>으로 별도 페이지에 작성 예정.</div>
     <div class="ms-wrap">
       <table class="gantt">
-        <colgroup><col style="width:120px"><col><col><col><col><col><col><col><col><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"></colgroup>
+        <colgroup><col style="width:120px"><col><col><col><col><col><col><col><col></colgroup>
         <thead>
           <tr>
             <th class="gh-svc">서비스</th>
             <th>5월<br>2주</th><th>5월<br>3주</th><th>5월<br>4주</th><th>5월<br>5주</th>
             <th>6월<br>1주</th><th>6월<br>2주</th><th>6월<br>3주</th><th>6월<br>4주</th>
-            <th class="future mon">7월</th><th class="future mon">8월</th><th class="future mon">9월</th>
-            <th class="future mon">10월</th><th class="future mon">11월</th><th class="future mon">12월</th>
           </tr>
         </thead>
         <tbody>
@@ -247,7 +245,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
             <td><span class="mc"><span class="mc-t"><i>M3</i> 채팅독</span><span class="mc-d">어느 화면에서나 채팅, 실시간 스트리밍 답변, 서비스 추가 연동</span></span></td>
             <td><span class="mc"><span class="mc-t"><i>M4</i> 오케스트레이터</span><span class="mc-d">한 명령으로 전체 기동·헬스·부팅 자동, 채팅↔AI 백엔드 실연동</span></span><span class="mc"><span class="mc-t"><i>M5</i> SSO 완성</span><span class="mc-d">로그인 1회로 4개 서비스 진입 + 회사 계정 로그인(OIDC/SAML)</span></span></td>
             <td><span class="mc"><span class="mc-t"><i>M6</i> MCP Gateway</span><span class="mc-d">도구 46종을 단일 관문으로 + 감사 기록·상태점검·리부팅 자동복구</span></span></td>
-            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s2">
             <th>Agent Server</th>
@@ -255,7 +252,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
             <td><span class="mc"><span class="mc-t"><i>M1</i> 골격</span><span class="mc-d">AI 답을 화면에 그대로 전달하는 기초 챗봇(도구 없음)</span></span><span class="mc"><span class="mc-t"><i>M2</i> 에이전트화</span><span class="mc-d">도구를 직접 쓰는 비서로 전환 — 도구 실제 사용까지 검증</span></span></td>
             <td><span class="mc"><span class="mc-t"><i>M3</i> 하드닝</span><span class="mc-d">오류 시 내부 정보 감춤, 보안·신뢰 안전장치 추가</span></span><span class="mc"><span class="mc-t"><i>M4</i> 실전 툴</span><span class="mc-d">연습용 도구 → 실제 업무 도구(보고서·VOC)로 교체</span></span><span class="mc"><span class="mc-t"><i>M5</i> 라이브</span><span class="mc-d">26개 도구 정상 가동(운영 전환은 주소 교체만 남음)</span></span></td>
             <td></td>
-            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s3">
             <th>MX White Paper</th>
@@ -267,7 +263,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
             <td><span class="mc"><span class="mc-t"><i>M5</i> 포탈통합·운영</span><span class="mc-d">메인 포탈 편입(통합 로그인) + 자동 백업·복구</span></span></td>
             <td><span class="mc"><span class="mc-t"><i>M6</i> AI연동·이식</span><span class="mc-d">AI 백서 작성·수정·그림 삽입 + 서버 이전 무관·배포 자동화</span></span></td>
             <td></td>
-            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s4">
             <th>HEAX Hub</th>
@@ -276,7 +271,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
             <td><span class="mc"><span class="mc-t"><i>M4</i> PC 연동</span><span class="mc-d">직원 PC 도우미 + 설치파일 자동배포·자동업데이트·이력</span></span></td>
             <td><span class="mc"><span class="mc-t"><i>M5</i> 사용성</span><span class="mc-d">일괄 등록 + 개발자 안내서 + 승인→공개 웹 완주</span></span><span class="mc"><span class="mc-t"><i>M6</i> 실전·자기완결</span><span class="mc-d">안정·보안 강화 + 자가 설치·드라이브 우회·자동 복구</span></span></td>
             <td></td>
-            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s5">
             <th>AI Data Hub</th>
@@ -287,7 +281,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
             <td><span class="mc"><span class="mc-t"><i>M4</i> 배포·포털</span><span class="mc-d">어느 서버에도 설치 자동화 + 매일 백업·사내 포털 통합</span></span></td>
             <td><span class="mc"><span class="mc-t"><i>M5</i> Claude 활용</span><span class="mc-d">채팅으로 자료 등록·정의, 표 자동 저장·부족분 되묻기</span></span><span class="mc"><span class="mc-t"><i>M6</i> 분석 AI</span><span class="mc-d">AI가 표를 직접 계산(평균·최대) + 그래프 도구 자동 선택</span></span></td>
             <td></td>
-            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s6">
             <th>Report Archive</th>
@@ -297,7 +290,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
             <td><span class="mc"><span class="mc-t"><i>M3</i> 내보내기·감사</span><span class="mc-d">위젯 복사 + PPT 내보내기 + 접속이력·감사로그</span></span><span class="mc"><span class="mc-t"><i>M4</i> 대시보드</span><span class="mc-d">부서 홈·서버 집계 + 드릴다운·교차분석·지표</span></span><span class="mc"><span class="mc-t"><i>M5</i> 공유심화</span><span class="mc-d">공유 브라우징 + 종합보고 공유 + MCP 연동 통일</span></span></td>
             <td><span class="mc"><span class="mc-t"><i>M6</i> 워커·RAG·통합</span><span class="mc-d">백그라운드 워커 + AI 의미검색(RAG) + HWAX 포털 통합·배포</span></span></td>
             <td></td>
-            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
         </tbody>
       </table>
@@ -309,7 +301,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
       <span><b style="background:var(--orange)"></b>HEAX</span>
       <span><b style="background:var(--green)"></b>AIDH</span>
       <span><b style="background:var(--purple)"></b>Report Archive</span>
-      <span style="margin-left:auto;color:#9aa6b5">※ Agent·AIDH 주차는 추정(요약에 절대 주차 미표기) · 7~12월 = 운영 마일스톤 입력 예정(공백)</span>
+      <span style="margin-left:auto;color:#9aa6b5">※ Agent·AIDH 주차는 추정(요약에 절대 주차 미표기) · 7월~내년 6월 월별 계획은 별도 페이지</span>
     </div>
   </div>
 </section>
