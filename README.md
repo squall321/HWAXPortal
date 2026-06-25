@@ -121,6 +121,8 @@ sudo ./infra/scripts/grant-net-bind.sh    # ONE-TIME: let rootless nginx bind :4
 - `:443` is rootless-bound via `grant-net-bind.sh` (one `sudo sysctl ip_unprivileged_port_start`).
   No sudo available? Run TLS on a high port instead (`HTTPS_PORT=8443` → `https://hwax.sec.samsung.net:8443`),
   exactly like the other services. The plain `:HTTP_PORT` listener stays up for health/LAN either way.
+- **Step-by-step go-live runbook** (run on the domain host; covers the case where a corp LB / system
+  nginx already holds `:443`): **`docs/TLS-GO-LIVE.md`**.
 
 ### Online vs offline install
 
