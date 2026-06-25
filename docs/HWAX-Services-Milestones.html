@@ -60,7 +60,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
   padding:9px 16px;font-size:12px;color:var(--dgray);line-height:1.5}
 .ms-note b{color:var(--teal)}
 .ms-wrap{flex:1;overflow:auto;border:1px solid #d8dfe8;border-radius:8px;background:#fff}
-.gantt{border-collapse:collapse;width:100%;min-width:1500px;table-layout:fixed}
+.gantt{border-collapse:collapse;width:100%;min-width:1120px;table-layout:fixed}
 .gantt th,.gantt td{border:1px solid #e6ebf2;vertical-align:top}
 .gantt thead th{background:var(--navy);color:#cfe0f3;font-size:10.5px;font-weight:700;padding:7px 4px;text-align:center;position:sticky;top:0;z-index:3}
 .gantt thead th.mon{background:#16406f}
@@ -72,15 +72,50 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 .gantt tbody tr.s1 th{border-left:4px solid var(--blue)}.gantt tbody tr.s2 th{border-left:4px solid var(--teal)}
 .gantt tbody tr.s3 th{border-left:4px solid var(--red)}.gantt tbody tr.s4 th{border-left:4px solid var(--orange)}
 .gantt tbody tr.s5 th{border-left:4px solid var(--green)}.gantt tbody tr.s6 th{border-left:4px solid var(--purple)}
-.gantt td{padding:4px 4px;height:62px}
+.gantt td{padding:5px;vertical-align:top}
 .gantt td.future{background:#f5f7fa}
-.mc{display:block;font-size:9px;font-weight:700;color:#fff;border-radius:5px;padding:3px 5px;margin-bottom:3px;line-height:1.25}
+.mc{display:block;color:#fff;border-radius:6px;padding:5px 8px;margin-bottom:4px}
 .s1 .mc{background:var(--blue)}.s2 .mc{background:var(--teal)}.s3 .mc{background:var(--red)}
 .s4 .mc{background:var(--orange)}.s5 .mc{background:var(--green)}.s6 .mc{background:var(--purple)}
-.mc i{font-style:normal;opacity:.8}
+.mc-t{display:block;font-size:9.7px;font-weight:700;line-height:1.25}
+.mc-t i{font-style:normal;opacity:.72;margin-right:3px}
+.mc-d{display:block;font-size:8.8px;line-height:1.34;opacity:.96;margin-top:2px}
 .ms-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:10.5px;color:var(--gray)}
 .ms-legend span{display:flex;align-items:center;gap:5px}
 .ms-legend b{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+/* ── 인트로 히어로 (그룹·회의 페이지 공용) ── */
+.ka-hero{background:var(--navy);border-radius:9px;padding:13px 24px;margin-bottom:12px}
+.ka-h1{font-size:16px;font-weight:700;color:#fff;line-height:1.45;margin-bottom:5px}
+.ka-h1 b{color:var(--orange)}
+.ka-h2{font-size:12px;color:#9FC4EC;line-height:1.55}
+
+/* ── 그룹별 현황 (그룹 행) ── */
+.grp-rows{display:flex;flex-direction:column;gap:11px;flex:1}
+.grp{background:#fff;border-radius:9px;border-left:5px solid var(--blue);box-shadow:0 1px 5px rgba(0,0,0,.07);display:grid;grid-template-columns:210px 1.25fr 1.5fr;flex:1;overflow:hidden}
+.grp.g2{border-color:var(--teal)}.grp.g3{border-color:var(--purple)}
+.grp-cell{padding:13px 18px;display:flex;flex-direction:column;justify-content:center}
+.grp-l,.grp-m{border-right:1px solid #eef1f5}
+.grp-nm{font-size:15.5px;font-weight:700;color:var(--navy);margin-bottom:5px}
+.grp-role{font-size:11.5px;font-weight:700;color:var(--blue);line-height:1.4}
+.g2 .grp-role{color:var(--teal)}.g3 .grp-role{color:var(--purple)}
+.grp-t{font-size:9px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.grp-i{font-size:11px;color:var(--dgray);line-height:1.42;display:flex;gap:7px;align-items:baseline;margin-bottom:4px}
+.grp-i .d{width:4px;height:4px;border-radius:50%;background:var(--blue);flex-shrink:0;margin-top:6px}
+.g2 .grp-i .d{background:var(--teal)}.g3 .grp-i .d{background:var(--purple)}
+.grp-now{font-size:11px;color:#46505c;line-height:1.6}.grp-now b{color:var(--navy)}.grp-now .hl{color:var(--teal);font-weight:700}
+
+/* ── 회의 안건 ── */
+.agd-grid{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:13px;flex:1}
+.agd{background:#fff;border-radius:9px;padding:14px 20px;border-top:4px solid var(--blue);display:flex;flex-direction:column;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.06)}
+.agd.a2{border-color:var(--teal)}.agd.a3{border-color:var(--purple)}.agd.a4{border-color:var(--orange)}
+.agd-h{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;gap:9px}
+.agd-tag{font-size:10px;font-weight:700;color:#fff;background:var(--blue);border-radius:9px;padding:2px 11px}
+.a2 .agd-tag{background:var(--teal)}.a3 .agd-tag{background:var(--purple)}.a4 .agd-tag{background:var(--orange)}
+.agd-i{font-size:11.7px;color:var(--dgray);line-height:1.55;display:flex;gap:8px;align-items:baseline;margin-bottom:8px}
+.agd-i .d{width:5px;height:5px;border-radius:50%;background:var(--blue);flex-shrink:0;margin-top:6px}
+.a2 .agd-i .d{background:var(--teal)}.a3 .agd-i .d{background:var(--purple)}.a4 .agd-i .d{background:var(--orange)}
+.agd-i b{color:var(--navy)}.agd-i .hl{color:var(--teal);font-weight:700}
 
 @media print{
   html,body{background:#fff}
@@ -194,6 +229,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
     <div class="ms-note"><b>현재 = 인프라 개발 마일스톤</b>(5~6월). <b>7월~12월(연말)</b> 칸은 비워 둠 — <b>운영 마일스톤</b>이 추후 주차별로 별도 입력될 영역.</div>
     <div class="ms-wrap">
       <table class="gantt">
+        <colgroup><col style="width:120px"><col><col><col><col><col><col><col><col><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"></colgroup>
         <thead>
           <tr>
             <th class="gh-svc">서비스</th>
@@ -207,59 +243,59 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
           <tr class="s1">
             <th>HWAX Portal</th>
             <td></td><td></td><td></td><td></td>
-            <td><span class="mc"><i>M1</i> 허브 첫동작</span><span class="mc"><i>M2</i> 배포 자동화</span></td>
-            <td><span class="mc"><i>M3</i> 채팅독</span></td>
-            <td><span class="mc"><i>M4</i> 오케스트레이터</span><span class="mc"><i>M5</i> SSO 완성</span></td>
-            <td><span class="mc"><i>M6</i> MCP Gateway</span></td>
+            <td><span class="mc"><span class="mc-t"><i>M1</i> 허브 첫동작</span><span class="mc-d">SSO 허브 생성 + 한 도메인 경로 라우팅 + 3개 서비스 연동 타일</span></span><span class="mc"><span class="mc-t"><i>M2</i> 배포 자동화</span><span class="mc-d">인터넷 차단 사내망에 한 번에 설치·배포(클라우드 폴백), TLS 골격</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M3</i> 채팅독</span><span class="mc-d">어느 화면에서나 채팅, 실시간 스트리밍 답변, 서비스 추가 연동</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M4</i> 오케스트레이터</span><span class="mc-d">한 명령으로 전체 기동·헬스·부팅 자동, 채팅↔AI 백엔드 실연동</span></span><span class="mc"><span class="mc-t"><i>M5</i> SSO 완성</span><span class="mc-d">로그인 1회로 4개 서비스 진입 + 회사 계정 로그인(OIDC/SAML)</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M6</i> MCP Gateway</span><span class="mc-d">도구 46종을 단일 관문으로 + 감사 기록·상태점검·리부팅 자동복구</span></span></td>
             <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s2">
             <th>Agent Server</th>
             <td></td><td></td><td></td><td></td><td></td>
-            <td><span class="mc"><i>M1</i> 골격</span><span class="mc"><i>M2</i> 에이전트화</span></td>
-            <td><span class="mc"><i>M3</i> 하드닝</span><span class="mc"><i>M4</i> 실전 툴</span><span class="mc"><i>M5</i> 라이브</span></td>
+            <td><span class="mc"><span class="mc-t"><i>M1</i> 골격</span><span class="mc-d">AI 답을 화면에 그대로 전달하는 기초 챗봇(도구 없음)</span></span><span class="mc"><span class="mc-t"><i>M2</i> 에이전트화</span><span class="mc-d">도구를 직접 쓰는 비서로 전환 — 도구 실제 사용까지 검증</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M3</i> 하드닝</span><span class="mc-d">오류 시 내부 정보 감춤, 보안·신뢰 안전장치 추가</span></span><span class="mc"><span class="mc-t"><i>M4</i> 실전 툴</span><span class="mc-d">연습용 도구 → 실제 업무 도구(보고서·VOC)로 교체</span></span><span class="mc"><span class="mc-t"><i>M5</i> 라이브</span><span class="mc-d">26개 도구 정상 가동(운영 전환은 주소 교체만 남음)</span></span></td>
             <td></td>
             <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s3">
             <th>MX White Paper</th>
-            <td><span class="mc"><i>M1</i> 첫 동작</span></td>
-            <td><span class="mc"><i>M2</i> 블록·가져오기</span></td>
-            <td><span class="mc"><i>M3</i> 보여주기</span></td>
-            <td><span class="mc"><i>M4</i> 분석력</span></td>
+            <td><span class="mc"><span class="mc-t"><i>M1</i> 첫 동작</span><span class="mc-d">작성·저장·내보내기 기본기 완성</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M2</i> 블록·가져오기</span><span class="mc-d">표·차트 등 콘텐츠 조각 구비, 워드→백서 자동 변환</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M3</i> 보여주기</span><span class="mc-d">다크모드·발표 보기·모바일, 다국어, 용어·문서 연결 지도</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M4</i> 분석력</span><span class="mc-d">문서 내 피벗·조건 필터·근거 원본 추적</span></span></td>
             <td></td>
-            <td><span class="mc"><i>M5</i> 포탈통합·운영</span></td>
-            <td><span class="mc"><i>M6</i> AI연동·이식</span></td>
+            <td><span class="mc"><span class="mc-t"><i>M5</i> 포탈통합·운영</span><span class="mc-d">메인 포탈 편입(통합 로그인) + 자동 백업·복구</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M6</i> AI연동·이식</span><span class="mc-d">AI 백서 작성·수정·그림 삽입 + 서버 이전 무관·배포 자동화</span></span></td>
             <td></td>
             <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s4">
             <th>HEAX Hub</th>
             <td></td><td></td><td></td><td></td>
-            <td><span class="mc"><i>M1</i> 뼈대</span><span class="mc"><i>M2</i> 포장공장</span><span class="mc"><i>M3</i> 포털입주·폐쇄망</span></td>
-            <td><span class="mc"><i>M4</i> PC 연동</span></td>
-            <td><span class="mc"><i>M5</i> 사용성</span><span class="mc"><i>M6</i> 실전·자기완결</span></td>
+            <td><span class="mc"><span class="mc-t"><i>M1</i> 뼈대</span><span class="mc-d">포털 기본 골격 + 샘플 프로그램 첫 구동</span></span><span class="mc"><span class="mc-t"><i>M2</i> 포장공장</span><span class="mc-d">자동 포장·공개 핵심 실동작 시작(22종 기술 지원)</span></span><span class="mc"><span class="mc-t"><i>M3</i> 포털입주·폐쇄망</span><span class="mc-d">사내 포털 한 메뉴로 편입 + 구글 드라이브 전달 방식</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M4</i> PC 연동</span><span class="mc-d">직원 PC 도우미 + 설치파일 자동배포·자동업데이트·이력</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M5</i> 사용성</span><span class="mc-d">일괄 등록 + 개발자 안내서 + 승인→공개 웹 완주</span></span><span class="mc"><span class="mc-t"><i>M6</i> 실전·자기완결</span><span class="mc-d">안정·보안 강화 + 자가 설치·드라이브 우회·자동 복구</span></span></td>
             <td></td>
             <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s5">
             <th>AI Data Hub</th>
             <td></td><td></td>
-            <td><span class="mc"><i>M1</i> 자료창고</span></td>
-            <td><span class="mc"><i>M2</i> AI 상담원</span></td>
-            <td><span class="mc"><i>M3</i> 자동연동·무인</span></td>
-            <td><span class="mc"><i>M4</i> 배포·포털</span></td>
-            <td><span class="mc"><i>M5</i> Claude 활용</span><span class="mc"><i>M6</i> 분석 AI</span></td>
+            <td><span class="mc"><span class="mc-t"><i>M1</i> 자료창고</span><span class="mc-d">흩어진 자료를 통합 검색 창고로(워드·엑셀·PDF 자동 변환)</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M2</i> AI 상담원</span><span class="mc-d">분야별 상담원이 데이터를 근거로 답변, 의미 기반 검색</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M3</i> 자동연동·무인</span><span class="mc-d">외부 시스템 자료 자동 수집 + 자동 복구·검색 속도 개선</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M4</i> 배포·포털</span><span class="mc-d">어느 서버에도 설치 자동화 + 매일 백업·사내 포털 통합</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M5</i> Claude 활용</span><span class="mc-d">채팅으로 자료 등록·정의, 표 자동 저장·부족분 되묻기</span></span><span class="mc"><span class="mc-t"><i>M6</i> 분석 AI</span><span class="mc-d">AI가 표를 직접 계산(평균·최대) + 그래프 도구 자동 선택</span></span></td>
             <td></td>
             <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
           <tr class="s6">
             <th>Report Archive</th>
-            <td><span class="mc"><i>M1</i> 코어 플랫폼</span></td>
+            <td><span class="mc"><span class="mc-t"><i>M1</i> 코어 플랫폼</span><span class="mc-d">작성·부서·역할·권한·조직 간 공개·종합보고 토대(최장 구간)</span></span></td>
             <td></td><td></td><td></td>
-            <td><span class="mc"><i>M2</i> 버전·AI작성</span></td>
-            <td><span class="mc"><i>M3</i> 내보내기·감사</span><span class="mc"><i>M4</i> 대시보드</span><span class="mc"><i>M5</i> 공유심화</span></td>
-            <td><span class="mc"><i>M6</i> 워커·RAG·통합</span></td>
+            <td><span class="mc"><span class="mc-t"><i>M2</i> 버전·AI작성</span><span class="mc-d">수정이력·되돌리기 + Claude로 보고서 직접 작성·자동 레이아웃</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M3</i> 내보내기·감사</span><span class="mc-d">위젯 복사 + PPT 내보내기 + 접속이력·감사로그</span></span><span class="mc"><span class="mc-t"><i>M4</i> 대시보드</span><span class="mc-d">부서 홈·서버 집계 + 드릴다운·교차분석·지표</span></span><span class="mc"><span class="mc-t"><i>M5</i> 공유심화</span><span class="mc-d">공유 브라우징 + 종합보고 공유 + MCP 연동 통일</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M6</i> 워커·RAG·통합</span><span class="mc-d">백그라운드 워커 + AI 의미검색(RAG) + HWAX 포털 통합·배포</span></span></td>
             <td></td>
             <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
           </tr>
@@ -278,11 +314,96 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
   </div>
 </section>
 
+<!-- 3. 그룹별 현재 업무 & 진행 현황 -->
+<section class="page" id="groups">
+  <div class="ph"><span class="ph-n">03</span><span class="ph-t">그룹별 현재 업무 &amp; 진행 현황</span><span class="ph-s">자주검증 · 실장솔루션 · CAE — 무엇을 맡고, 어디까지 진행했는지</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="grp-rows">
+      <div class="grp g1">
+        <div class="grp-cell grp-l"><div class="grp-nm">자주검증그룹</div><div class="grp-role">인프라 · 인증 · API 횡전개</div></div>
+        <div class="grp-cell grp-m">
+          <div class="grp-t">핵심 업무</div>
+          <div class="grp-i"><span class="d"></span><span>SSO 등록 · 서버 라우팅/로드밸런싱 관리 (1명)</span></div>
+          <div class="grp-i"><span class="d"></span><span>HEAX Hub 관리 (1명)</span></div>
+          <div class="grp-i"><span class="d"></span><span>사내 시스템 연계 API 논의 인력 선정</span></div>
+          <div class="grp-i"><span class="d"></span><span>서버 관리 인력 IRP 과제 등록 중</span></div>
+        </div>
+        <div class="grp-cell">
+          <div class="grp-t">진행 현황</div>
+          <div class="grp-now">사내 인증서 · <b>SSO(AD 계정 연동)</b> → 메일 자동화 · 사내 API 연결 논의가 많이 진행되어 <span class="hl">API 연계 횡전개를 담당</span>한다.<br>· 검토: 사내 시스템 API를 SPDM으로 집결하고 AX허브도 SPDM으로 모을지, 또는 AX허브가 SPDM 연계 API를 <b>프록시</b>해 가져올지 <b>보안 측면 검토 중</b>.</div>
+        </div>
+      </div>
+      <div class="grp g2">
+        <div class="grp-cell grp-l"><div class="grp-nm">실장솔루션그룹</div><div class="grp-role">사내 시스템 API 개방 · 연동</div></div>
+        <div class="grp-cell grp-m">
+          <div class="grp-t">핵심 업무</div>
+          <div class="grp-i"><span class="d"></span><span>CIS 등 사내 시스템 API 개방 방법 논의</span></div>
+          <div class="grp-i"><span class="d"></span><span>사내 시스템 API 연동 작업 인력 보유</span></div>
+          <div class="grp-i"><span class="d"></span><span>CIS 진행 중 · API 사용법 확보</span></div>
+          <div class="grp-i"><span class="d"></span><span>5개 다른 사내 시스템에 횡전개 가능</span></div>
+        </div>
+        <div class="grp-cell">
+          <div class="grp-t">진행 현황</div>
+          <div class="grp-now">IRP 등록 후 SSO가 되면 연동 가능. API 방식 협의가 상당히 진행되어 <b>CIS · CAD 데이터 연동</b>을 먼저 진행한다.<br>· 이후 <b>ECAD를 자동으로 가져온 뒤</b> <span class="hl">MCP로 ECAD를 제어하며 정보를 검색</span>할 수 있도록 구현 예정.</div>
+        </div>
+      </div>
+      <div class="grp g3">
+        <div class="grp-cell grp-l"><div class="grp-nm">CAE그룹</div><div class="grp-role">MCP 개발 · 게이트웨이</div></div>
+        <div class="grp-cell grp-m">
+          <div class="grp-t">핵심 업무</div>
+          <div class="grp-i"><span class="d"></span><span>MCP 개발 업무 담당</span></div>
+          <div class="grp-i"><span class="d"></span><span>자동화 프로그램 · 시스템 컨트롤 구현</span></div>
+          <div class="grp-i"><span class="d"></span><span>기능 실행이 가능하도록 웹 개조</span></div>
+          <div class="grp-i"><span class="d"></span><span>팀 자원에 LLM 연결 기반 마련</span></div>
+        </div>
+        <div class="grp-cell">
+          <div class="grp-t">진행 현황 / 목표</div>
+          <div class="grp-now">포탈 사이트에 <span class="hl">MCP Gateway를 장착</span>하여, <b>모든 팀 내 자원에 LLM으로 접근하고 기능을 실행</b>하게 하는 것이 목표.<br>· 이를 위해 자동화 프로그램과 시스템 컨트롤이 가능하도록 웹을 개조하는 업무를 진행한다.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. 차주 월요일 회의 안건 -->
+<section class="page" id="mtg">
+  <div class="ph"><span class="ph-n">04</span><span class="ph-t">차주 월요일 회의 — AX 담당자 논의 안건</span><span class="ph-s">개발실 내 AX 담당자 회의 · 설명 · 요청 · 제안 · 협의</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="ka-hero">
+      <div class="ka-h1">차주 월요일, 개발실 내 <b>AX 담당자들과 회의</b>를 진행한다.</div>
+      <div class="ka-h2">아래 안건을 설명·요청·제안하고 협의할 예정이다.</div>
+    </div>
+    <div class="agd-grid">
+      <div class="agd a1">
+        <div class="agd-h"><span class="agd-tag">설명</span> 우리가 안내할 것</div>
+        <div class="agd-i"><span class="d"></span><span>Report Archive·백서 사이트는 <b>위젯 기반</b>으로 복잡한 데이터 접근성이 확보돼, 사내 위키와 달리 <span class="hl">LLM의 데이터 인식이 수월</span>함을 설명.</span></div>
+        <div class="agd-i"><span class="d"></span><span>PPT를 모두 넣으면 내용이 잘 정리되는 점 — Report Archive 적재의 실효성을 안내.</span></div>
+      </div>
+      <div class="agd a2">
+        <div class="agd-h"><span class="agd-tag">요청</span> 각 팀에 요청</div>
+        <div class="agd-i"><span class="d"></span><span>Claude·Gemini·ChatGPT로 여러 주제를 선정해 <b>PPT를 다수 생성·적재</b>하고, 전문 인력이 읽으며 <span class="hl">LLM으로 내용 augment</span> 진행 요청.</span></div>
+        <div class="agd-i"><span class="d"></span><span>각 팀 <b>raw data를 MCP로 허브에 올리기</b> 위해, 각자 올릴 수 있는 <b>데이터 예시</b> 요청.</span></div>
+      </div>
+      <div class="agd a3">
+        <div class="agd-h"><span class="agd-tag">제안</span> 제안할 것</div>
+        <div class="agd-i"><span class="d"></span><span>데이터 취합 후 <b>분야별 백서화는 시스템으로 자동화</b> — 각 팀은 <span class="hl">검수만</span> 진행하도록.</span></div>
+        <div class="agd-i"><span class="d"></span><span>각 팀 포털의 <b>통합 진입점</b> 논의 + <span class="hl">MCP Gateway로 각 팀 Agent 통합 관리</span> 제안.</span></div>
+      </div>
+      <div class="agd a4">
+        <div class="agd-h"><span class="agd-tag">협의</span> 협의 · 공유</div>
+        <div class="agd-i"><span class="d"></span><span><b>부품전문팀</b>이 Report Archive 사용에 대해 문의(이점이 있어 보임) → <b>사용 가능 여부</b> 협의·공유.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 </div>
 
 <script>
 const links=document.getElementById('tnlinks');
-[['svc','01 서비스·기능'],['ms','02 마일스톤']].forEach(([id,label])=>{
+[['svc','01 서비스·기능'],['ms','02 마일스톤'],['groups','03 그룹별 현황'],['mtg','04 회의 안건']].forEach(([id,label])=>{
   const a=document.createElement('a');a.href='#'+id;a.textContent=label;links.appendChild(a);
 });
 const prog=document.getElementById('prog');
