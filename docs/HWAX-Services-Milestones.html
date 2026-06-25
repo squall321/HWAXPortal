@@ -117,6 +117,18 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 .a2 .agd-i .d{background:var(--teal)}.a3 .agd-i .d{background:var(--purple)}.a4 .agd-i .d{background:var(--orange)}
 .agd-i b{color:var(--navy)}.agd-i .hl{color:var(--teal);font-weight:700}
 
+/* ── 월별 계획 (연/월 헤더 · 6개월 스팬 · 진행 방법) ── */
+.gantt thead th.yr{background:#16406f;color:#cfe0f3;font-size:11.5px;letter-spacing:2px}
+.gantt thead th.m27{background:#1b4c84}
+.mc.span{display:flex;flex-direction:column;justify-content:center;height:100%}
+.mc-span-lbl{font-size:8.6px;font-weight:700;opacity:.82;margin-bottom:3px;letter-spacing:.3px}
+.plan-tbd{font-size:9.5px;color:#9aa6b5;font-style:italic}
+.mth-h{font-size:12.5px;font-weight:700;color:var(--purple);margin-top:14px}
+.mth{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px;flex-shrink:0}
+.mth .agd{border-top-color:var(--purple)}
+.mth .agd-tag{background:var(--purple)}
+.mth .agd-i .d{background:var(--purple)}
+
 @media print{
   html,body{background:#fff}
   .topnav,.sprog{display:none}.pages{padding-top:0}
@@ -139,6 +151,32 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
   <div class="ph-line"></div>
   <div class="body">
     <div class="svc-grid">
+      <div class="sc c6">
+        <div class="sc-hd"><span class="sc-nm">Report Archive</span><span class="sc-tag">보고서</span></div>
+        <div class="sc-role">AI 보조 보고서 작성기 + 조직 보고 아카이브</div>
+        <div class="sc-ft">핵심 기능</div>
+        <div class="sc-feats">
+          <div class="sc-f"><span class="d"></span><span>보고서 작성·편집(위젯 17종)</span></div>
+          <div class="sc-f"><span class="d"></span><span>AI 보고서 작성(MCP)</span></div>
+          <div class="sc-f"><span class="d"></span><span>부서·권한·공유</span></div>
+          <div class="sc-f"><span class="d"></span><span>게시·종합보고</span></div>
+          <div class="sc-f"><span class="d"></span><span>검색·지식연결·대시보드</span></div>
+          <div class="sc-f"><span class="d"></span><span>협업·이력·운영</span></div>
+        </div>
+      </div>
+      <div class="sc c3">
+        <div class="sc-hd"><span class="sc-nm">MX White Paper</span><span class="sc-tag">사내 백서</span></div>
+        <div class="sc-role">AI가 정리·작성하는 사내 백서/지식 자산 플랫폼</div>
+        <div class="sc-ft">핵심 기능</div>
+        <div class="sc-feats">
+          <div class="sc-f"><span class="d"></span><span>작성 틀·콘텐츠 블록(38종)</span></div>
+          <div class="sc-f"><span class="d"></span><span>파일 가져오기/내보내기</span></div>
+          <div class="sc-f"><span class="d"></span><span>데이터 분석 위젯</span></div>
+          <div class="sc-f"><span class="d"></span><span>디자인·사용 편의</span></div>
+          <div class="sc-f"><span class="d"></span><span>지식 연결·검색</span></div>
+          <div class="sc-f"><span class="d"></span><span>안정 운영·AI 연동</span></div>
+        </div>
+      </div>
       <div class="sc c1">
         <div class="sc-hd"><span class="sc-nm">HWAX Portal</span><span class="sc-tag">허브</span></div>
         <div class="sc-role">흩어진 서비스를 묶는 통합 관문 — 하나의 포털</div>
@@ -163,19 +201,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
           <div class="sc-f"><span class="d"></span><span>설정·보안 관리</span></div>
           <div class="sc-f"><span class="d"></span><span>실시간 응답(스트리밍)</span></div>
           <div class="sc-f"><span class="d"></span><span>무중단·안전</span></div>
-        </div>
-      </div>
-      <div class="sc c3">
-        <div class="sc-hd"><span class="sc-nm">MX White Paper</span><span class="sc-tag">사내 백서</span></div>
-        <div class="sc-role">AI가 정리·작성하는 사내 백서/지식 자산 플랫폼</div>
-        <div class="sc-ft">핵심 기능</div>
-        <div class="sc-feats">
-          <div class="sc-f"><span class="d"></span><span>작성 틀·콘텐츠 블록(38종)</span></div>
-          <div class="sc-f"><span class="d"></span><span>파일 가져오기/내보내기</span></div>
-          <div class="sc-f"><span class="d"></span><span>데이터 분석 위젯</span></div>
-          <div class="sc-f"><span class="d"></span><span>디자인·사용 편의</span></div>
-          <div class="sc-f"><span class="d"></span><span>지식 연결·검색</span></div>
-          <div class="sc-f"><span class="d"></span><span>안정 운영·AI 연동</span></div>
         </div>
       </div>
       <div class="sc c4">
@@ -204,19 +229,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
           <div class="sc-f"><span class="d"></span><span>무인 운영(자동 복구·백업)</span></div>
         </div>
       </div>
-      <div class="sc c6">
-        <div class="sc-hd"><span class="sc-nm">Report Archive</span><span class="sc-tag">보고서</span></div>
-        <div class="sc-role">AI 보조 보고서 작성기 + 조직 보고 아카이브</div>
-        <div class="sc-ft">핵심 기능</div>
-        <div class="sc-feats">
-          <div class="sc-f"><span class="d"></span><span>보고서 작성·편집(위젯 17종)</span></div>
-          <div class="sc-f"><span class="d"></span><span>AI 보고서 작성(MCP)</span></div>
-          <div class="sc-f"><span class="d"></span><span>부서·권한·공유</span></div>
-          <div class="sc-f"><span class="d"></span><span>게시·종합보고</span></div>
-          <div class="sc-f"><span class="d"></span><span>검색·지식연결·대시보드</span></div>
-          <div class="sc-f"><span class="d"></span><span>협업·이력·운영</span></div>
-        </div>
-      </div>
     </div>
   </div>
 </section>
@@ -238,6 +250,26 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
           </tr>
         </thead>
         <tbody>
+          <tr class="s6">
+            <th>Report Archive</th>
+            <td><span class="mc"><span class="mc-t"><i>M1</i> 코어 플랫폼</span><span class="mc-d">작성·부서·역할·권한·조직 간 공개·종합보고 토대(최장 구간)</span></span></td>
+            <td></td><td></td><td></td>
+            <td><span class="mc"><span class="mc-t"><i>M2</i> 버전·AI작성</span><span class="mc-d">수정이력·되돌리기 + Claude로 보고서 직접 작성·자동 레이아웃</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M3</i> 내보내기·감사</span><span class="mc-d">위젯 복사 + PPT 내보내기 + 접속이력·감사로그</span></span><span class="mc"><span class="mc-t"><i>M4</i> 대시보드</span><span class="mc-d">부서 홈·서버 집계 + 드릴다운·교차분석·지표</span></span><span class="mc"><span class="mc-t"><i>M5</i> 공유심화</span><span class="mc-d">공유 브라우징 + 종합보고 공유 + MCP 연동 통일</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M6</i> 워커·RAG·통합</span><span class="mc-d">백그라운드 워커 + AI 의미검색(RAG) + HWAX 포털 통합·배포</span></span></td>
+            <td></td>
+          </tr>
+          <tr class="s3">
+            <th>MX White Paper</th>
+            <td><span class="mc"><span class="mc-t"><i>M1</i> 첫 동작</span><span class="mc-d">작성·저장·내보내기 기본기 완성</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M2</i> 블록·가져오기</span><span class="mc-d">표·차트 등 콘텐츠 조각 구비, 워드→백서 자동 변환</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M3</i> 보여주기</span><span class="mc-d">다크모드·발표 보기·모바일, 다국어, 용어·문서 연결 지도</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M4</i> 분석력</span><span class="mc-d">문서 내 피벗·조건 필터·근거 원본 추적</span></span></td>
+            <td></td>
+            <td><span class="mc"><span class="mc-t"><i>M5</i> 포탈통합·운영</span><span class="mc-d">메인 포탈 편입(통합 로그인) + 자동 백업·복구</span></span></td>
+            <td><span class="mc"><span class="mc-t"><i>M6</i> AI연동·이식</span><span class="mc-d">AI 백서 작성·수정·그림 삽입 + 서버 이전 무관·배포 자동화</span></span></td>
+            <td></td>
+          </tr>
           <tr class="s1">
             <th>HWAX Portal</th>
             <td></td><td></td><td></td><td></td>
@@ -251,17 +283,6 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
             <td></td><td></td><td></td><td></td><td></td>
             <td><span class="mc"><span class="mc-t"><i>M1</i> 골격</span><span class="mc-d">AI 답을 화면에 그대로 전달하는 기초 챗봇(도구 없음)</span></span><span class="mc"><span class="mc-t"><i>M2</i> 에이전트화</span><span class="mc-d">도구를 직접 쓰는 비서로 전환 — 도구 실제 사용까지 검증</span></span></td>
             <td><span class="mc"><span class="mc-t"><i>M3</i> 하드닝</span><span class="mc-d">오류 시 내부 정보 감춤, 보안·신뢰 안전장치 추가</span></span><span class="mc"><span class="mc-t"><i>M4</i> 실전 툴</span><span class="mc-d">연습용 도구 → 실제 업무 도구(보고서·VOC)로 교체</span></span><span class="mc"><span class="mc-t"><i>M5</i> 라이브</span><span class="mc-d">26개 도구 정상 가동(운영 전환은 주소 교체만 남음)</span></span></td>
-            <td></td>
-          </tr>
-          <tr class="s3">
-            <th>MX White Paper</th>
-            <td><span class="mc"><span class="mc-t"><i>M1</i> 첫 동작</span><span class="mc-d">작성·저장·내보내기 기본기 완성</span></span></td>
-            <td><span class="mc"><span class="mc-t"><i>M2</i> 블록·가져오기</span><span class="mc-d">표·차트 등 콘텐츠 조각 구비, 워드→백서 자동 변환</span></span></td>
-            <td><span class="mc"><span class="mc-t"><i>M3</i> 보여주기</span><span class="mc-d">다크모드·발표 보기·모바일, 다국어, 용어·문서 연결 지도</span></span></td>
-            <td><span class="mc"><span class="mc-t"><i>M4</i> 분석력</span><span class="mc-d">문서 내 피벗·조건 필터·근거 원본 추적</span></span></td>
-            <td></td>
-            <td><span class="mc"><span class="mc-t"><i>M5</i> 포탈통합·운영</span><span class="mc-d">메인 포탈 편입(통합 로그인) + 자동 백업·복구</span></span></td>
-            <td><span class="mc"><span class="mc-t"><i>M6</i> AI연동·이식</span><span class="mc-d">AI 백서 작성·수정·그림 삽입 + 서버 이전 무관·배포 자동화</span></span></td>
             <td></td>
           </tr>
           <tr class="s4">
@@ -282,33 +303,97 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
             <td><span class="mc"><span class="mc-t"><i>M5</i> Claude 활용</span><span class="mc-d">채팅으로 자료 등록·정의, 표 자동 저장·부족분 되묻기</span></span><span class="mc"><span class="mc-t"><i>M6</i> 분석 AI</span><span class="mc-d">AI가 표를 직접 계산(평균·최대) + 그래프 도구 자동 선택</span></span></td>
             <td></td>
           </tr>
-          <tr class="s6">
-            <th>Report Archive</th>
-            <td><span class="mc"><span class="mc-t"><i>M1</i> 코어 플랫폼</span><span class="mc-d">작성·부서·역할·권한·조직 간 공개·종합보고 토대(최장 구간)</span></span></td>
-            <td></td><td></td><td></td>
-            <td><span class="mc"><span class="mc-t"><i>M2</i> 버전·AI작성</span><span class="mc-d">수정이력·되돌리기 + Claude로 보고서 직접 작성·자동 레이아웃</span></span></td>
-            <td><span class="mc"><span class="mc-t"><i>M3</i> 내보내기·감사</span><span class="mc-d">위젯 복사 + PPT 내보내기 + 접속이력·감사로그</span></span><span class="mc"><span class="mc-t"><i>M4</i> 대시보드</span><span class="mc-d">부서 홈·서버 집계 + 드릴다운·교차분석·지표</span></span><span class="mc"><span class="mc-t"><i>M5</i> 공유심화</span><span class="mc-d">공유 브라우징 + 종합보고 공유 + MCP 연동 통일</span></span></td>
-            <td><span class="mc"><span class="mc-t"><i>M6</i> 워커·RAG·통합</span><span class="mc-d">백그라운드 워커 + AI 의미검색(RAG) + HWAX 포털 통합·배포</span></span></td>
-            <td></td>
-          </tr>
         </tbody>
       </table>
     </div>
     <div class="ms-legend">
+      <span><b style="background:var(--purple)"></b>Report Archive</span>
+      <span><b style="background:var(--red)"></b>MX</span>
       <span><b style="background:var(--blue)"></b>Portal</span>
       <span><b style="background:var(--teal)"></b>Agent</span>
-      <span><b style="background:var(--red)"></b>MX</span>
       <span><b style="background:var(--orange)"></b>HEAX</span>
       <span><b style="background:var(--green)"></b>AIDH</span>
-      <span><b style="background:var(--purple)"></b>Report Archive</span>
       <span style="margin-left:auto;color:#9aa6b5">※ Agent·AIDH 주차는 추정(요약에 절대 주차 미표기) · 7월~내년 6월 월별 계획은 별도 페이지</span>
     </div>
   </div>
 </section>
 
-<!-- 3. 그룹별 현재 업무 & 진행 현황 -->
+<!-- 3. 월별 계획 (7월~내년 6월) -->
+<section class="page" id="plan">
+  <div class="ph"><span class="ph-n">03</span><span class="ph-t">월별 계획 (7월 ~ 내년 6월)</span><span class="ph-s">운영·지식 자산화 로드맵 · 초안 — Report Archive · MX 우선 확정</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="ms-note"><b>Report Archive</b>(7월~)와 <b>MX White Paper</b>(7~12월) 계획부터 확정. MX 백서는 <b>RA 문서를 MCP로 가져와 분석</b> → 주제별 deep report로 정리(<b>RA↔MX 연계</b>). 나머지 서비스는 순차 작성 예정 · <b>1~6월 = 2027년</b>.</div>
+    <div class="ms-wrap" style="flex:none">
+      <table class="gantt">
+        <colgroup><col style="width:120px"><col><col><col><col><col><col><col><col><col><col><col><col></colgroup>
+        <thead>
+          <tr>
+            <th class="gh-svc" rowspan="2">서비스</th>
+            <th class="yr" colspan="6">2026</th>
+            <th class="yr m27" colspan="6">2027</th>
+          </tr>
+          <tr>
+            <th>7월</th><th>8월</th><th>9월</th><th>10월</th><th>11월</th><th>12월</th>
+            <th>1월</th><th>2월</th><th>3월</th><th>4월</th><th>5월</th><th>6월</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="s6">
+            <th>Report Archive</th>
+            <td><span class="mc"><span class="mc-t">HE팀 보고서 전수 수집·업로드</span><span class="mc-d">HE 팀 내 모든 보고서 문서를 수집해 Report Archive에 전량 업로드 시작</span></span></td>
+            <td><span class="mc"><span class="mc-t">전문 분야별 재정리</span><span class="mc-d">수집 자료를 관련 전문 분야별로 새로 분류·정리</span></span></td>
+            <td colspan="6"><span class="mc span"><span class="mc-span-lbl">9월 ~ 2월 · 6개월</span><span class="mc-t">전문분야 데이터로 LLM 백서 작성 + Claude 대화 리뷰</span><span class="mc-d">각 전문분야 데이터로 LLM이 백서 초안을 작성 → 현업이 Claude와 대화하며 내용을 점검·리뷰(아래 진행 방법 참조)</span></span></td>
+            <td></td><td></td><td></td><td></td>
+          </tr>
+          <tr class="s3">
+            <th>MX White Paper</th>
+            <td><span class="mc"><span class="mc-t">담당자 배정 · RA 연동 MCP 착수</span><span class="mc-d">Report Archive 문서를 가져와 분석하는 MCP 설계·연결 시작</span></span></td>
+            <td><span class="mc"><span class="mc-t">RA 문서 분석 MCP 연결</span><span class="mc-d">문서 수집·분석 파이프라인 동작 — 주제 추출·요약</span></span></td>
+            <td><span class="mc"><span class="mc-t">LLM 서버 연결</span><span class="mc-d">투자한 LLM 서버 머신 연결, 주제별 분석 시범(파일럿)</span></span></td>
+            <td><span class="mc"><span class="mc-t">주제별 deep report 정리(1차)</span><span class="mc-d">주제별 심층 보고서 자동 정리 시작</span></span></td>
+            <td><span class="mc"><span class="mc-t">deep report 고도화</span><span class="mc-d">주제 확대 · 품질·근거 추적 강화</span></span></td>
+            <td><span class="mc"><span class="mc-t">산출물 검수·정리</span><span class="mc-d">deep report 검수 + RA 백서화 결과와 연계 마무리</span></span></td>
+            <td></td><td></td><td></td><td></td><td></td><td></td>
+          </tr>
+          <tr class="s1">
+            <th>HWAX Portal</th>
+            <td><span class="plan-tbd">작성 예정</span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+          </tr>
+          <tr class="s2">
+            <th>Agent Server</th>
+            <td><span class="plan-tbd">작성 예정</span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+          </tr>
+          <tr class="s4">
+            <th>HEAX Hub</th>
+            <td><span class="plan-tbd">작성 예정</span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+          </tr>
+          <tr class="s5">
+            <th>AI Data Hub</th>
+            <td><span class="plan-tbd">작성 예정</span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="mth-h">Report Archive — 9월~2월 백서화 진행 방법 (상세)</div>
+    <div class="mth">
+      <div class="agd">
+        <div class="agd-h"><span class="agd-tag">방법 1</span> 업무자–LLM 대화형 진행</div>
+        <div class="agd-i"><span class="d"></span><span>각 전문분야 <b>담당(업무자)</b>이 LLM과 직접 대화하며 백서 초안을 점검·보완하고, 누락·오류를 바로잡는다.</span></div>
+        <div class="agd-i"><span class="d"></span><span>대화 과정이 그대로 <b>근거·수정 이력</b>으로 남아 검수 추적이 된다.</span></div>
+      </div>
+      <div class="agd">
+        <div class="agd-h"><span class="agd-tag">방법 2</span> 인터뷰 기반 지식 자산화</div>
+        <div class="agd-i"><span class="d"></span><span>기술적·암묵지 영역은 담당자 <b>인터뷰</b>를 진행한다.</span></div>
+        <div class="agd-i"><span class="d"></span><span><b>인터뷰 내용 + 기존 보고서 내용</b>을 결합해 업무 지식으로 <span class="hl">백서에 자산화</span>한다.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. 그룹별 현재 업무 & 진행 현황 -->
 <section class="page" id="groups">
-  <div class="ph"><span class="ph-n">03</span><span class="ph-t">그룹별 현재 업무 &amp; 진행 현황</span><span class="ph-s">자주검증 · 실장솔루션 · CAE — 무엇을 맡고, 어디까지 진행했는지</span></div>
+  <div class="ph"><span class="ph-n">04</span><span class="ph-t">그룹별 현재 업무 &amp; 진행 현황</span><span class="ph-s">자주검증 · 실장솔루션 · CAE — 무엇을 맡고, 어디까지 진행했는지</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="grp-rows">
@@ -358,9 +443,9 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
   </div>
 </section>
 
-<!-- 4. 차주 월요일 회의 안건 -->
+<!-- 5. 차주 월요일 회의 안건 -->
 <section class="page" id="mtg">
-  <div class="ph"><span class="ph-n">04</span><span class="ph-t">차주 월요일 회의 — AX 담당자 논의 안건</span><span class="ph-s">개발실 내 AX 담당자 회의 · 설명 · 요청 · 제안 · 협의</span></div>
+  <div class="ph"><span class="ph-n">05</span><span class="ph-t">차주 월요일 회의 — AX 담당자 논의 안건</span><span class="ph-s">개발실 내 AX 담당자 회의 · 설명 · 요청 · 제안 · 협의</span></div>
   <div class="ph-line"></div>
   <div class="body">
     <div class="ka-hero">
@@ -395,7 +480,7 @@ html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
 
 <script>
 const links=document.getElementById('tnlinks');
-[['svc','01 서비스·기능'],['ms','02 마일스톤'],['groups','03 그룹별 현황'],['mtg','04 회의 안건']].forEach(([id,label])=>{
+[['svc','01 서비스·기능'],['ms','02 마일스톤'],['plan','03 월별 계획'],['groups','04 그룹별 현황'],['mtg','05 회의 안건']].forEach(([id,label])=>{
   const a=document.createElement('a');a.href='#'+id;a.textContent=label;links.appendChild(a);
 });
 const prog=document.getElementById('prog');
