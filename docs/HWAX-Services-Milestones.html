@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HWAX 포탈 서비스 & 개발 마일스톤</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --navy:#0F2D52;--blue:#1A5FB4;--teal:#128C7E;--orange:#E27D2E;
+  --green:#2E8B57;--red:#C0392B;--purple:#7B3FA0;--amber:#D97706;
+  --dgray:#2B2F36;--gray:#6B7280;
+  --f:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif
+}
+*{font-family:var(--f)}
+html{scroll-behavior:smooth}
+html,body{width:100%;background:#0d1b2e;overflow-x:hidden}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:200;background:var(--navy);
+  display:flex;align-items:center;gap:16px;padding:8px 24px;box-shadow:0 2px 12px rgba(0,0,0,.4)}
+.tn-title{font-size:15px;font-weight:800;color:#fff;flex-shrink:0}
+.tn-title b{color:var(--orange)}
+.tn-links{display:flex;gap:6px;flex-wrap:wrap}
+.tn-links a{background:#1c3a5e;color:#9FC4EC;text-decoration:none;padding:4px 12px;border-radius:6px;
+  font-size:11.5px;font-weight:700;transition:.15s;white-space:nowrap}
+.tn-links a:hover{background:var(--orange);color:#fff}
+.sprog{position:fixed;top:0;left:0;height:3px;width:0;background:var(--orange);z-index:201;transition:width .1s}
+
+.pages{padding-top:56px}
+.page{min-height:calc(100vh - 56px);width:100%;display:flex;flex-direction:column;
+  background:#f0f3f8;scroll-margin-top:56px;border-bottom:3px solid #c2cad4}
+.ph{background:var(--navy);padding:14px 30px 12px;display:flex;align-items:baseline;gap:12px}
+.ph-n{font-size:20px;font-weight:700;color:#6F9FD8}
+.ph-t{font-size:19px;font-weight:700;color:#fff}
+.ph-s{font-size:12px;color:#8BAFD4;margin-left:auto}
+.ph-line{height:3px;background:var(--blue)}
+.body{padding:22px 36px;flex:1;display:flex;flex-direction:column;gap:14px}
+
+/* ── 서비스 카드 (3×2) ── */
+.svc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;grid-auto-rows:1fr;gap:14px;flex:1}
+.sc{background:#fff;border-radius:10px;border-top:4px solid var(--blue);padding:14px 18px;
+  display:flex;flex-direction:column;box-shadow:0 1px 6px rgba(0,0,0,.07)}
+.sc.c2{border-color:var(--teal)}.sc.c3{border-color:var(--red)}.sc.c4{border-color:var(--orange)}
+.sc.c5{border-color:var(--green)}.sc.c6{border-color:var(--purple)}
+.sc-hd{display:flex;align-items:center;gap:9px;margin-bottom:5px}
+.sc-nm{font-size:16.5px;font-weight:700;color:var(--navy)}
+.sc-tag{font-size:9.5px;font-weight:700;color:#fff;background:var(--blue);border-radius:9px;padding:2px 9px}
+.c2 .sc-tag{background:var(--teal)}.c3 .sc-tag{background:var(--red)}.c4 .sc-tag{background:var(--orange)}.c5 .sc-tag{background:var(--green)}.c6 .sc-tag{background:var(--purple)}
+.sc-role{font-size:11.5px;font-weight:700;color:var(--teal);line-height:1.4;margin-bottom:8px}
+.c3 .sc-role{color:var(--red)}.c4 .sc-role{color:var(--orange)}.c5 .sc-role{color:var(--green)}.c6 .sc-role{color:var(--purple)}
+.sc-ft{font-size:9.5px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.sc-feats{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;flex:1;align-content:center}
+.sc-f{font-size:10.7px;color:var(--dgray);line-height:1.35;display:flex;gap:6px;align-items:baseline}
+.sc-f .d{width:4px;height:4px;border-radius:50%;background:var(--blue);flex-shrink:0;margin-top:5px}
+.c2 .sc-f .d{background:var(--teal)}.c3 .sc-f .d{background:var(--red)}.c4 .sc-f .d{background:var(--orange)}.c5 .sc-f .d{background:var(--green)}.c6 .sc-f .d{background:var(--purple)}
+.sc-f b{color:var(--navy)}
+
+/* ── 마일스톤 간트 ── */
+.ms-note{background:#EAF6F4;border-left:4px solid var(--teal);border-radius:0 7px 7px 0;
+  padding:9px 16px;font-size:12px;color:var(--dgray);line-height:1.5}
+.ms-note b{color:var(--teal)}
+.ms-wrap{flex:1;overflow:auto;border:1px solid #d8dfe8;border-radius:8px;background:#fff}
+.gantt{border-collapse:collapse;width:100%;min-width:1500px;table-layout:fixed}
+.gantt th,.gantt td{border:1px solid #e6ebf2;vertical-align:top}
+.gantt thead th{background:var(--navy);color:#cfe0f3;font-size:10.5px;font-weight:700;padding:7px 4px;text-align:center;position:sticky;top:0;z-index:3}
+.gantt thead th.mon{background:#16406f}
+.gantt .gh-svc{width:120px;background:var(--navy);position:sticky;left:0;z-index:4;text-align:left;padding-left:12px}
+.gantt .future{background:#f3f5f8}
+.gantt thead th.future{background:#3a516e;color:#b7c6da}
+.gantt tbody th{background:#fff;position:sticky;left:0;z-index:2;text-align:left;padding:8px 10px;
+  font-size:12.5px;font-weight:700;color:var(--navy);width:120px;border-right:2px solid #cdd6e0}
+.gantt tbody tr.s1 th{border-left:4px solid var(--blue)}.gantt tbody tr.s2 th{border-left:4px solid var(--teal)}
+.gantt tbody tr.s3 th{border-left:4px solid var(--red)}.gantt tbody tr.s4 th{border-left:4px solid var(--orange)}
+.gantt tbody tr.s5 th{border-left:4px solid var(--green)}.gantt tbody tr.s6 th{border-left:4px solid var(--purple)}
+.gantt td{padding:4px 4px;height:62px}
+.gantt td.future{background:#f5f7fa}
+.mc{display:block;font-size:9px;font-weight:700;color:#fff;border-radius:5px;padding:3px 5px;margin-bottom:3px;line-height:1.25}
+.s1 .mc{background:var(--blue)}.s2 .mc{background:var(--teal)}.s3 .mc{background:var(--red)}
+.s4 .mc{background:var(--orange)}.s5 .mc{background:var(--green)}.s6 .mc{background:var(--purple)}
+.mc i{font-style:normal;opacity:.8}
+.ms-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:10.5px;color:var(--gray)}
+.ms-legend span{display:flex;align-items:center;gap:5px}
+.ms-legend b{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+@media print{
+  html,body{background:#fff}
+  .topnav,.sprog{display:none}.pages{padding-top:0}
+  .page{min-height:auto;page-break-after:always;border:none}
+  .ms-wrap{overflow:visible}
+}
+</style>
+</head>
+<body>
+<div class="sprog" id="prog"></div>
+<nav class="topnav">
+  <div class="tn-title">HWAX 포탈 — 서비스 &amp; <b>개발 마일스톤</b></div>
+  <div class="tn-links" id="tnlinks"></div>
+</nav>
+<div class="pages">
+
+<!-- 1. 서비스 & 기능 -->
+<section class="page" id="svc">
+  <div class="ph"><span class="ph-n">01</span><span class="ph-t">포탈 서비스 &amp; 기능 — 6개 서비스</span><span class="ph-s">한 포털로 묶인 사내 AI 서비스와 각 핵심 기능</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="svc-grid">
+      <div class="sc c1">
+        <div class="sc-hd"><span class="sc-nm">HWAX Portal</span><span class="sc-tag">허브</span></div>
+        <div class="sc-role">흩어진 서비스를 묶는 통합 관문 — 하나의 포털</div>
+        <div class="sc-ft">핵심 기능</div>
+        <div class="sc-feats">
+          <div class="sc-f"><span class="d"></span><span>통합 로그인(SSO)</span></div>
+          <div class="sc-f"><span class="d"></span><span>서비스 카탈로그·자동 진입</span></div>
+          <div class="sc-f"><span class="d"></span><span>AI 채팅(채팅독)</span></div>
+          <div class="sc-f"><span class="d"></span><span>한 주소로 경로 라우팅</span></div>
+          <div class="sc-f"><span class="d"></span><span>전체 시스템 한 번에 관리</span></div>
+          <div class="sc-f"><span class="d"></span><span>사내망 배포·안전 운영</span></div>
+        </div>
+      </div>
+      <div class="sc c2">
+        <div class="sc-hd"><span class="sc-nm">Agent Server</span><span class="sc-tag">채팅 두뇌</span></div>
+        <div class="sc-role">포털 채팅의 두뇌 — 모델 호출과 도구 실행 담당</div>
+        <div class="sc-ft">핵심 기능</div>
+        <div class="sc-feats">
+          <div class="sc-f"><span class="d"></span><span>AI 두뇌 연결(주소 한 줄 전환)</span></div>
+          <div class="sc-f"><span class="d"></span><span>에이전트 진행(도구 자율 선택)</span></div>
+          <div class="sc-f"><span class="d"></span><span>업무 도구 연동(26개)</span></div>
+          <div class="sc-f"><span class="d"></span><span>설정·보안 관리</span></div>
+          <div class="sc-f"><span class="d"></span><span>실시간 응답(스트리밍)</span></div>
+          <div class="sc-f"><span class="d"></span><span>무중단·안전</span></div>
+        </div>
+      </div>
+      <div class="sc c3">
+        <div class="sc-hd"><span class="sc-nm">MX White Paper</span><span class="sc-tag">사내 백서</span></div>
+        <div class="sc-role">AI가 정리·작성하는 사내 백서/지식 자산 플랫폼</div>
+        <div class="sc-ft">핵심 기능</div>
+        <div class="sc-feats">
+          <div class="sc-f"><span class="d"></span><span>작성 틀·콘텐츠 블록(38종)</span></div>
+          <div class="sc-f"><span class="d"></span><span>파일 가져오기/내보내기</span></div>
+          <div class="sc-f"><span class="d"></span><span>데이터 분석 위젯</span></div>
+          <div class="sc-f"><span class="d"></span><span>디자인·사용 편의</span></div>
+          <div class="sc-f"><span class="d"></span><span>지식 연결·검색</span></div>
+          <div class="sc-f"><span class="d"></span><span>안정 운영·AI 연동</span></div>
+        </div>
+      </div>
+      <div class="sc c4">
+        <div class="sc-hd"><span class="sc-nm">HEAX Hub</span><span class="sc-tag">자동 서비스화</span></div>
+        <div class="sc-role">사내 앱스토어 + 자동 포장·배포 공장</div>
+        <div class="sc-ft">핵심 기능</div>
+        <div class="sc-feats">
+          <div class="sc-f"><span class="d"></span><span>프로그램 접수·심사(결재형)</span></div>
+          <div class="sc-f"><span class="d"></span><span>자동 포장·공개 공장(22종)</span></div>
+          <div class="sc-f"><span class="d"></span><span>실행 엔진(서버·슈퍼컴·PC)</span></div>
+          <div class="sc-f"><span class="d"></span><span>보안·출입 관리</span></div>
+          <div class="sc-f"><span class="d"></span><span>직원 PC 연동·외부 연결</span></div>
+          <div class="sc-f"><span class="d"></span><span>자가 설치·복구 배포</span></div>
+        </div>
+      </div>
+      <div class="sc c5">
+        <div class="sc-hd"><span class="sc-nm">AI Data Hub</span><span class="sc-tag">데이터 허브</span></div>
+        <div class="sc-role">데이터 카탈로그 + AI 검색·분석 서버</div>
+        <div class="sc-ft">핵심 기능</div>
+        <div class="sc-feats">
+          <div class="sc-f"><span class="d"></span><span>데이터 적재·정리(자동 변환)</span></div>
+          <div class="sc-f"><span class="d"></span><span>똑똑한 의미 기반 검색</span></div>
+          <div class="sc-f"><span class="d"></span><span>분야별 AI 상담원</span></div>
+          <div class="sc-f"><span class="d"></span><span>외부 시스템 자동 연동</span></div>
+          <div class="sc-f"><span class="d"></span><span>Claude 채팅으로 다루기</span></div>
+          <div class="sc-f"><span class="d"></span><span>무인 운영(자동 복구·백업)</span></div>
+        </div>
+      </div>
+      <div class="sc c6">
+        <div class="sc-hd"><span class="sc-nm">Report Archive</span><span class="sc-tag">보고서</span></div>
+        <div class="sc-role">AI 보조 보고서 작성기 + 조직 보고 아카이브</div>
+        <div class="sc-ft">핵심 기능</div>
+        <div class="sc-feats">
+          <div class="sc-f"><span class="d"></span><span>보고서 작성·편집(위젯 17종)</span></div>
+          <div class="sc-f"><span class="d"></span><span>AI 보고서 작성(MCP)</span></div>
+          <div class="sc-f"><span class="d"></span><span>부서·권한·공유</span></div>
+          <div class="sc-f"><span class="d"></span><span>게시·종합보고</span></div>
+          <div class="sc-f"><span class="d"></span><span>검색·지식연결·대시보드</span></div>
+          <div class="sc-f"><span class="d"></span><span>협업·이력·운영</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. 개발 마일스톤 (인프라) 주차별 -->
+<section class="page" id="ms">
+  <div class="ph"><span class="ph-n">02</span><span class="ph-t">개발 마일스톤 (인프라) — 주차별</span><span class="ph-s">서비스별 인프라 개발 마일스톤 · 5~6월 완료 · 7월~연말 운영 마일스톤 별도 예정</span></div>
+  <div class="ph-line"></div>
+  <div class="body">
+    <div class="ms-note"><b>현재 = 인프라 개발 마일스톤</b>(5~6월). <b>7월~12월(연말)</b> 칸은 비워 둠 — <b>운영 마일스톤</b>이 추후 주차별로 별도 입력될 영역.</div>
+    <div class="ms-wrap">
+      <table class="gantt">
+        <thead>
+          <tr>
+            <th class="gh-svc">서비스</th>
+            <th>5월<br>2주</th><th>5월<br>3주</th><th>5월<br>4주</th><th>5월<br>5주</th>
+            <th>6월<br>1주</th><th>6월<br>2주</th><th>6월<br>3주</th><th>6월<br>4주</th>
+            <th class="future mon">7월</th><th class="future mon">8월</th><th class="future mon">9월</th>
+            <th class="future mon">10월</th><th class="future mon">11월</th><th class="future mon">12월</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="s1">
+            <th>HWAX Portal</th>
+            <td></td><td></td><td></td><td></td>
+            <td><span class="mc"><i>M1</i> 허브 첫동작</span><span class="mc"><i>M2</i> 배포 자동화</span></td>
+            <td><span class="mc"><i>M3</i> 채팅독</span></td>
+            <td><span class="mc"><i>M4</i> 오케스트레이터</span><span class="mc"><i>M5</i> SSO 완성</span></td>
+            <td><span class="mc"><i>M6</i> MCP Gateway</span></td>
+            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
+          </tr>
+          <tr class="s2">
+            <th>Agent Server</th>
+            <td></td><td></td><td></td><td></td><td></td>
+            <td><span class="mc"><i>M1</i> 골격</span><span class="mc"><i>M2</i> 에이전트화</span></td>
+            <td><span class="mc"><i>M3</i> 하드닝</span><span class="mc"><i>M4</i> 실전 툴</span><span class="mc"><i>M5</i> 라이브</span></td>
+            <td></td>
+            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
+          </tr>
+          <tr class="s3">
+            <th>MX White Paper</th>
+            <td><span class="mc"><i>M1</i> 첫 동작</span></td>
+            <td><span class="mc"><i>M2</i> 블록·가져오기</span></td>
+            <td><span class="mc"><i>M3</i> 보여주기</span></td>
+            <td><span class="mc"><i>M4</i> 분석력</span></td>
+            <td></td>
+            <td><span class="mc"><i>M5</i> 포탈통합·운영</span></td>
+            <td><span class="mc"><i>M6</i> AI연동·이식</span></td>
+            <td></td>
+            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
+          </tr>
+          <tr class="s4">
+            <th>HEAX Hub</th>
+            <td></td><td></td><td></td><td></td>
+            <td><span class="mc"><i>M1</i> 뼈대</span><span class="mc"><i>M2</i> 포장공장</span><span class="mc"><i>M3</i> 포털입주·폐쇄망</span></td>
+            <td><span class="mc"><i>M4</i> PC 연동</span></td>
+            <td><span class="mc"><i>M5</i> 사용성</span><span class="mc"><i>M6</i> 실전·자기완결</span></td>
+            <td></td>
+            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
+          </tr>
+          <tr class="s5">
+            <th>AI Data Hub</th>
+            <td></td><td></td>
+            <td><span class="mc"><i>M1</i> 자료창고</span></td>
+            <td><span class="mc"><i>M2</i> AI 상담원</span></td>
+            <td><span class="mc"><i>M3</i> 자동연동·무인</span></td>
+            <td><span class="mc"><i>M4</i> 배포·포털</span></td>
+            <td><span class="mc"><i>M5</i> Claude 활용</span><span class="mc"><i>M6</i> 분석 AI</span></td>
+            <td></td>
+            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
+          </tr>
+          <tr class="s6">
+            <th>Report Archive</th>
+            <td><span class="mc"><i>M1</i> 코어 플랫폼</span></td>
+            <td></td><td></td><td></td>
+            <td><span class="mc"><i>M2</i> 버전·AI작성</span></td>
+            <td><span class="mc"><i>M3</i> 내보내기·감사</span><span class="mc"><i>M4</i> 대시보드</span><span class="mc"><i>M5</i> 공유심화</span></td>
+            <td><span class="mc"><i>M6</i> 워커·RAG·통합</span></td>
+            <td></td>
+            <td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td><td class="future"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="ms-legend">
+      <span><b style="background:var(--blue)"></b>Portal</span>
+      <span><b style="background:var(--teal)"></b>Agent</span>
+      <span><b style="background:var(--red)"></b>MX</span>
+      <span><b style="background:var(--orange)"></b>HEAX</span>
+      <span><b style="background:var(--green)"></b>AIDH</span>
+      <span><b style="background:var(--purple)"></b>Report Archive</span>
+      <span style="margin-left:auto;color:#9aa6b5">※ Agent·AIDH 주차는 추정(요약에 절대 주차 미표기) · 7~12월 = 운영 마일스톤 입력 예정(공백)</span>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+const links=document.getElementById('tnlinks');
+[['svc','01 서비스·기능'],['ms','02 마일스톤']].forEach(([id,label])=>{
+  const a=document.createElement('a');a.href='#'+id;a.textContent=label;links.appendChild(a);
+});
+const prog=document.getElementById('prog');
+function upd(){const h=document.documentElement;const m=h.scrollHeight-h.clientHeight;prog.style.width=(m>0?h.scrollTop/m*100:0)+'%';}
+addEventListener('scroll',upd,{passive:true});addEventListener('resize',upd);upd();
+</script>
+</body>
+</html>
