@@ -48,7 +48,10 @@ services:
     # sub-path (default build is base=/ → /assets/ 404s behind the proxy). ~0.8s, offline.
     # heax repo untouched — its Makefile already takes HEAX_BASE_PATH; the portal supplies it.
     update: "git pull --ff-only; HEAX_BASE_PATH=/heax-hub/ make build"
-    start: bash deploy/apptainer/start.sh
+    # heal.sh (not start.sh): idempotent converge-to-healthy. start.sh dies on `set -e` +
+    # "instance already exists" stale state, which left heax down after an update/restart.
+    # heal.sh clears stale infra → runs start.sh bootstrap → safety-net start → verify.
+    start: bash deploy/apptainer/heal.sh
     health: http://localhost:4180/
     tier: 10
 
