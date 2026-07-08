@@ -68,6 +68,8 @@ for s in (svcs or []):
     d = m.resolve_dir(s)
     if d is None:
         print("CLONE\t%s\t%s" % (repo, m.PARENT / (s.get("discover") or s["name"])))
+    elif not (d / ".git").exists():
+        print("CLONE\t%s\t%s" % (repo, d))   # 디렉토리는 있으나 git repo 아님 → in-place repo화
     else:
         print("SETREMOTE\t%s\t%s" % (repo, d))
 PY
@@ -91,8 +93,23 @@ run_preflight() {
     [ -n "${kind:-}" ] || continue
     case "$kind" in
       CLONE)
-        echo "  clone  $url → $dest"
-        [ "$DRY" = 1 ] || git clone "$url" "$dest" || echo "  ⚠ clone 실패: $url" ;;
+        if [ "$DRY" = 1 ]; then
+          echo "  clone  $url → $dest"
+        elif [ ! -e "$dest" ] || [ -z "$(ls -A "$dest" 2>/dev/null)" ]; then
+          echo "  clone  $url → $dest"
+          git clone "$url" "$dest" || echo "  ⚠ clone 실패: $url"
+        else
+          # 디렉토리는 있으나 git repo 가 아님(비어있지 않음) → in-place init 후 원격 상태로 강제 체크아웃
+          echo "  repair  기존 비-git 디렉토리 in-place 복구: $dest → origin=$url"
+          git -C "$dest" init -q
+          git -C "$dest" remote get-url origin >/dev/null 2>&1 || git -C "$dest" remote add origin "$url"
+          if git -C "$dest" fetch -q origin; then
+            b="$(git -C "$dest" remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')"; b="${b:-main}"
+            git -C "$dest" checkout -f -B "$b" "origin/$b" || echo "  ⚠ checkout 실패: $dest"
+          else
+            echo "  ⚠ fetch 실패(원격/네트워크 확인): $url"
+          fi
+        fi ;;
       SETREMOTE)
         if ! git -C "$dest" remote get-url origin >/dev/null 2>&1; then
           echo "  set-remote  $dest → origin=$url"
