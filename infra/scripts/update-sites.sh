@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# report-archive를 제외한 서버사이드 연동 사이트를 한 번에 git pull + 재기동하는 오케스트레이터 헬퍼
+# report-archive를 제외한 update-enabled 서비스 전부(포털·게이트웨이·에이전트·MCP·사이트)를 한 번에 git pull + 재기동하는 오케스트레이터 헬퍼
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -12,8 +12,8 @@ case "${1:-}" in
   -n|--dry-run) DRY=1; shift ;;
   -h|--help)
     echo "사용법: $(basename "$0") [-n|--dry-run] [서비스명...]"
-    echo "  인자 없음 : infra/services.yaml의 tier10 연동 사이트 중"
-    echo "              report-archive·update:false·원격을 뺀 것을 자동 선택."
+    echo "  인자 없음 : infra/services.yaml에서 report-archive·update:false·원격을 뺀"
+    echo "              update-enabled 서비스 전부 자동 선택(포털·게이트웨이·에이전트·MCP·사이트)."
     echo "  서비스명  : 준 목록만 대상(단 report-archive는 항상 제외)."
     echo "  동작       : down → up --update(git pull + 재기동, health 폴링) → status."
     exit 0 ;;
@@ -30,9 +30,8 @@ svcs = data if isinstance(data, list) else data.get("services", data)
 out = []
 for s in (svcs or []):
     if not isinstance(s, dict): continue
-    if s.get("tier") != 10: continue                 # tier10 = 연동 사이트
     if s.get("name") == sys.argv[2]: continue        # report-archive 제외
-    if s.get("update") is False: continue            # 매니페스트가 스킵 지정한 것 존중
+    if s.get("update") is False: continue            # update:false(vllm·일부 MCP 등)는 존중해 skip
     if s.get("host", "local") != "local": continue   # 원격은 SSH 경로라 제외
     out.append(s["name"])
 print(" ".join(out))
