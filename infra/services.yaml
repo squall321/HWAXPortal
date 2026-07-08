@@ -121,6 +121,7 @@ services:
   - name: mcp-gateway
     host: local
     discover: HWAXMcpGateway
+    repo: https://github.com/squall321/HWAXMcpGateway.git  # update-sites.sh auto-clones/sets-remote if missing
     start: ./start.sh                     # streamable-http :9110, injects per-backend tokens
     health: http://localhost:9110/health  # unauthenticated JSON {status,tools,backends}
     tier: 16
