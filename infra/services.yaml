@@ -25,6 +25,10 @@ services:
     dir: .                      # the portal repo is the orchestrator's own root
     env: { HWAX_NO_BUILD: "1" }
     start: ./infra/scripts/start.sh
+    # down/restart must stop the apptainer INSTANCES (backend :8723 + nginx), not fuser-kill the
+    # health port :8088 (that kills nginx only → the portal backend keeps running OLD code, so a
+    # pulled update never applies). This makes `down portal && up --update portal` truly redeploy.
+    stop: 'A="$(command -v apptainer || ls -d infra/apptainer/bin-*/usr/bin/apptainer 2>/dev/null | head -1)"; for i in hwax_portal hwax_nginx; do "$A" instance stop "$i" 2>/dev/null || true; done'
     health: http://localhost:8088/health
     tier: 0
 
