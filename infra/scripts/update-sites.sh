@@ -3,6 +3,7 @@
 # (repo: 있는데 없는/원격없는 서비스는 portal 상위로 자동 clone/remote → 포털 먼저 재기동+health
 #  → 실패 시 나머지 보존하고 중단, 나머지는 서비스별 순차·실패해도 계속)
 set -uo pipefail   # NOTE: -e 없음 — 한 서비스 실패가 전체 실행을 끊지 않도록
+export PYTHONUNBUFFERED=1   # tee 파이프로 넘겨도 진행 로그가 즉시(버퍼링 없이) 흐르도록
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SVC="$ROOT/infra/scripts/services.sh"
@@ -125,15 +126,24 @@ show_cause() {
   fi
 }
 
-# 한 서비스 재기동: down(무시가능) → up --update. up의 rc=health 반영(정상 0 / 실패 1)
-# 실패 시 원인을 인라인으로 노출.
+# 한 서비스 재기동: down → up --update. 진행을 라이브(tee)로 흘려보내 어디서 멈추는지 바로 보이게 한다.
+# 출력을 변수에 모으지 않음 — 모으면 명령이 끝날 때까지 화면이 비어 hang을 못 본다. rc는 PIPESTATUS[0].
 restart_svc() {
-  local name="$1" out rc
-  echo "── $name ──"
+  local name="$1" rc tmp
+  tmp="$(mktemp)"
+  echo "── $name ──  [$(date '+%H:%M:%S')]"
+  echo "  · down (기존 인스턴스 정리) …"
   "$SVC" down "$name" >/dev/null 2>&1 || true
-  out="$("$SVC" up --update "$name" 2>&1)"; rc=$?
-  printf '%s\n' "$out"
-  [ "$rc" -ne 0 ] && show_cause "$name" "$out"
+  echo "  · up --update (git pull → build → start → health 대기) …"
+  "$SVC" up --update "$name" 2>&1 | tee "$tmp"   # 화면+임시파일 동시 → 라이브 + 원인분석용 캡처
+  rc=${PIPESTATUS[0]}
+  if [ "$rc" -ne 0 ]; then
+    echo "  · ✗ $name 실패 (rc=$rc)  [$(date '+%H:%M:%S')]"
+    show_cause "$name" "$(cat "$tmp")"
+  else
+    echo "  · ✓ $name 완료  [$(date '+%H:%M:%S')]"
+  fi
+  rm -f "$tmp"
   return "$rc"
 }
 

@@ -59,11 +59,13 @@ def health_ok(url: str, timeout: float = 2.0) -> bool:
         return False
 
 
-def wait_health(url: str, tries: int = 60, gap: float = 2.0) -> bool:
+def wait_health(url: str, tries: int = 60, gap: float = 2.0, tick=None) -> bool:
     import time
-    for _ in range(tries):
+    for i in range(tries):
         if health_ok(url):
             return True
+        if tick:
+            tick(i + 1, tries)  # 실패한 폴 직후 진행 알림(어디서 멈추는지 가시화)
         time.sleep(gap)
     return False
 
@@ -110,12 +112,30 @@ def start_one(svc: dict) -> str:
 
     if not url:
         return "started (no health url)"
-    return "up" if wait_health(url) else f"FAIL: no health after start (see {log})"
+    tries, gap = 60, 2.0
+    print(f"      ▸ {name}: health 대기 {url} (최대 {int(tries * gap)}s) …", flush=True)
+
+    def _tick(i: int, n: int) -> None:
+        if i != 1 and i % 5 != 0:      # ~10초마다(1회차 + 5의 배수)만 출력
+            return
+        last = ""
+        try:  # 서비스 자기 로그 꼬리를 함께 보여 heal.sh/기동 진행을 노출
+            with open(log, encoding="utf-8", errors="replace") as lf:
+                ls = [ln for ln in lf if ln.strip()]
+            last = ls[-1].rstrip()[:90] if ls else ""
+        except OSError:
+            pass
+        print(f"        · 대기 {int(i * gap)}s/{int(n * gap)}s"
+              + (f"  | log꼬리: {last}" if last else "  | (로그 아직 없음)"), flush=True)
+
+    return "up" if wait_health(url, tries, gap, _tick) else \
+        f"FAIL: no health after start (see {log})"
 
 
 def update_one(svc: dict) -> str:
-    """Pull latest code (git ff-only by default; `update:` in the manifest overrides).
-    Remote/none-update services are skipped. Build steps belong in each start script."""
+    """Pull latest code (git ff-only by default; `update:` in the manifest overrides),
+    streaming output live to the terminal AND the service log so a slow build / hang is
+    visible where it happens. Remote/none-update services are skipped."""
     if svc.get("host", "local") != "local":
         return "skip (remote)"
     cmd = svc.get("update")
@@ -126,19 +146,26 @@ def update_one(svc: dict) -> str:
     wd = resolve_dir(svc)
     if not wd or not wd.is_dir():
         return "FAIL: dir not found"
-    r = subprocess.run(["bash", "-c", cmd], cwd=str(wd),  # noqa: S602 — manifest-owned cmd
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        # 실패 전문을 서비스 로그에 남겨 update-sites.sh 등이 원인(빌드/pull 오류)을 보여줄 수 있게 한다.
-        try:
-            LOG_DIR.mkdir(parents=True, exist_ok=True)
-            with open(LOG_DIR / f"{svc['name']}.log", "a") as lf:
-                lf.write(f"\n=== update FAILED (rc={r.returncode}): {cmd}\n{r.stdout}{r.stderr}\n")
-        except OSError:
-            pass
-    out = (r.stdout + r.stderr).strip().splitlines()
-    tail = out[-1] if out else ""
-    return ("updated" if r.returncode == 0 else "FAIL") + (f": {tail[:60]}" if tail else "")
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logp = LOG_DIR / f"{svc['name']}.log"
+    lines: list[str] = []
+    with open(logp, "a", encoding="utf-8") as lf:
+        lf.write(f"\n=== update START: {cmd}\n")
+        lf.flush()
+        proc = subprocess.Popen(  # noqa: S602 — manifest-owned cmd
+            ["bash", "-c", cmd], cwd=str(wd),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        for line in proc.stdout:  # 라인 도착 즉시 화면+로그로 흘려 진행(빌드/pull)을 가시화
+            lines.append(line)
+            lf.write(line)
+            lf.flush()
+            print(f"        · {line.rstrip()}", flush=True)
+        rc = proc.wait()
+        if rc != 0:
+            lf.write(f"=== update FAILED (rc={rc})\n")
+    tail = lines[-1].strip() if lines else ""
+    return ("updated" if rc == 0 else "FAIL") + (f": {tail[:60]}" if tail else "")
 
 
 def cmd_update(names: list[str]) -> int:
@@ -159,14 +186,16 @@ def cmd_up(names: list[str], do_update: bool = False) -> int:
     for s in svcs:
         if s.get("tier") != cur_tier:
             cur_tier = s.get("tier")
-            print(f"── tier {cur_tier} ──")
+            print(f"── tier {cur_tier} ──", flush=True)
         if do_update:
-            print(f"  ↻ {s['name']:<16} {update_one(s)}")
+            print(f"  ↻ {s['name']:<16} update …", flush=True)
+            print(f"  ↻ {s['name']:<16} {update_one(s)}", flush=True)
+        print(f"  ▷ {s['name']:<16} start + health …", flush=True)
         r = start_one(s)
         mark = "✓" if r in ("up", "already-up", "started (no health url)") else "✗"
         if mark == "✗":
             rc = 1
-        print(f"  {mark} {s['name']:<16} {r}")
+        print(f"  {mark} {s['name']:<16} {r}", flush=True)
     return rc
 
 
