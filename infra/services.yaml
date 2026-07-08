@@ -154,7 +154,7 @@ services:
   - name: agent-server
     host: local
     discover: HWAXAgentServer
-    repo: https://github.com/squall321/HWAXAgentServer.git  # private — 자동클론엔 git-credentials 필요
+    repo: https://github.com/squall321/HWAXAgentServer.git  # public — 익명 자동클론 가능(자격증명 불필요)
     # MCP_CONFIG 는 기동 cwd(=레포 디렉토리) 기준 상대경로 — 서버마다 경로가 달라도(~/Projects·~/claude) 동작.
     env: { VLLM_BASE_URL: "http://127.0.0.1:8000/v1", VLLM_MODEL: qwen2.5-7b-dev,
            MCP_CONFIG: "mcp_servers.json" }
