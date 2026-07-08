@@ -128,6 +128,14 @@ def update_one(svc: dict) -> str:
         return "FAIL: dir not found"
     r = subprocess.run(["bash", "-c", cmd], cwd=str(wd),  # noqa: S602 — manifest-owned cmd
                        capture_output=True, text=True)
+    if r.returncode != 0:
+        # 실패 전문을 서비스 로그에 남겨 update-sites.sh 등이 원인(빌드/pull 오류)을 보여줄 수 있게 한다.
+        try:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            with open(LOG_DIR / f"{svc['name']}.log", "a") as lf:
+                lf.write(f"\n=== update FAILED (rc={r.returncode}): {cmd}\n{r.stdout}{r.stderr}\n")
+        except OSError:
+            pass
     out = (r.stdout + r.stderr).strip().splitlines()
     tail = out[-1] if out else ""
     return ("updated" if r.returncode == 0 else "FAIL") + (f": {tail[:60]}" if tail else "")

@@ -109,11 +109,32 @@ run_preflight() {
 echo "▶ 사전작업:"; run_preflight
 if [ "$DRY" = 1 ]; then echo "(dry-run) 재기동은 실행하지 않음."; exit 0; fi
 
+# 실패 원인 노출: up 출력의 FAIL 라인 + 서비스 로그 꼬리(크래시/헬스실패/빌드오류 원인)
+show_cause() {
+  local name="$1" out="$2" log
+  echo "  ── ⚠ 실패 원인: $name ──"
+  printf '%s\n' "$out" | grep -iE 'FAIL|✗|error|traceback|exception' | sed 's/^/    /' | head -6
+  # up 출력이 알려주는 로그 경로(services.py "see <path>") 우선, 없으면 규약 경로
+  log="$(printf '%s\n' "$out" | grep -oE '/[^ )]+\.log' | head -1)"
+  [ -n "$log" ] || log="/tmp/hwax-services/${name}.log"
+  if [ -s "$log" ]; then
+    echo "    ↳ 로그 꼬리($log):"
+    tail -n 30 "$log" | grep -vE '^[[:space:]]*$' | tail -20 | sed 's/^/      /'
+  else
+    echo "    ↳ 로그 없음/빈 파일: $log"
+  fi
+}
+
 # 한 서비스 재기동: down(무시가능) → up --update. up의 rc=health 반영(정상 0 / 실패 1)
+# 실패 시 원인을 인라인으로 노출.
 restart_svc() {
-  echo "── $1 ──"
-  "$SVC" down "$1" >/dev/null 2>&1 || true
-  "$SVC" up --update "$1"
+  local name="$1" out rc
+  echo "── $name ──"
+  "$SVC" down "$name" >/dev/null 2>&1 || true
+  out="$("$SVC" up --update "$name" 2>&1)"; rc=$?
+  printf '%s\n' "$out"
+  [ "$rc" -ne 0 ] && show_cause "$name" "$out"
+  return "$rc"
 }
 
 # 1) 포털 먼저 — 실패하면 나머지 손대지 않고 중단(프론트를 확인된 상태로 유지)
