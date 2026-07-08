@@ -44,10 +44,35 @@ services:
     host: local
     discover: HEAXHub
     env: { HEAX_NO_BUILD: "1" }
-    # update rebuilds the SPA with base=/heax-hub/ so its assets resolve under the portal
-    # sub-path (default build is base=/ → /assets/ 404s behind the proxy). ~0.8s, offline.
-    # heax repo untouched — its Makefile already takes HEAX_BASE_PATH; the portal supplies it.
-    update: "git pull --ff-only; HEAX_BASE_PATH=/heax-hub/ make build"
+    # Rebuild the SPA with base=/heax-hub/ so its assets resolve under the portal sub-path
+    # (default base=/ → /assets/ 404s behind the proxy). Kept in the portal (heax repo
+    # untouched — its Makefile already takes HEAX_BASE_PATH). Hardened for the locked-down
+    # server:
+    #  1) skip the rebuild when git pulled NO change and a dist already exists — the common
+    #     path, and the one that was needlessly failing;
+    #  2) force the real offline pnpm (~/.npm-packages/bin) AHEAD of the /usr/bin corepack
+    #     shim, which tries to fetch pnpm/latest over TLS and dies with
+    #     UNABLE_TO_VERIFY_LEAF_SIGNATURE behind the corporate proxy (COREPACK_DEFAULT_TO_LATEST=0
+    #     is belt-and-suspenders so the shim, if ever used, stays offline);
+    #  3) if a NEEDED rebuild fails but a dist exists, keep serving it (warn, non-fatal) —
+    #     only fail when there is no dist to fall back on.
+    update: |
+      before=$(git rev-parse HEAD 2>/dev/null || echo none)
+      git pull --ff-only || echo "  git pull 실패(오프라인?) — 현재 체크아웃 유지"
+      after=$(git rev-parse HEAD 2>/dev/null || echo none)
+      if [ "$before" = "$after" ] && [ -f frontend/dist/index.html ]; then
+        echo "  소스 변경 없음 + dist 존재 → 재빌드 생략"
+      else
+        export PATH="$HOME/.npm-packages/bin:$PATH" COREPACK_DEFAULT_TO_LATEST=0
+        if HEAX_BASE_PATH=/heax-hub/ make build; then
+          echo "  build OK"
+        elif [ -f frontend/dist/index.html ]; then
+          echo "  ⚠ build 실패 — 기존 dist 유지(heax는 현재 빌드로 계속 서빙)" >&2
+        else
+          echo "  ✗ build 실패 + 폴백 dist 없음" >&2
+          exit 1
+        fi
+      fi
     # heal.sh (not start.sh): idempotent converge-to-healthy. start.sh dies on `set -e` +
     # "instance already exists" stale state, which left heax down after an update/restart.
     # heal.sh clears stale infra → runs start.sh bootstrap → safety-net start → verify.
