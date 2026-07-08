@@ -20,6 +20,7 @@ from app.auth.errors import AuthError
 from app.auth.keystore import KeyStore
 from app.auth.routes import jwks as auth_jwks
 from app.auth.routes import launch as auth_launch
+from app.auth.routes import pat as auth_pat
 from app.auth.routes import saml as auth_saml
 from app.auth.routes import session as auth_session
 from app.auth.token_store import TokenStore
@@ -92,6 +93,7 @@ app.include_router(auth_saml.router)
 app.include_router(auth_jwks.router)
 app.include_router(catalog_routes.router)
 app.include_router(auth_launch.router)
+app.include_router(auth_pat.router)
 app.include_router(mail_routes.router)
 app.include_router(mcp_routes.router)
 app.include_router(agent_routes.router)

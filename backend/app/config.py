@@ -108,6 +108,13 @@ class Settings(BaseSettings):
     # single-instance prod/mock-demo deploy too. Real multi-instance prod provisions keys.
     jwt_autogen_keys: bool = False
 
+    # ── Portal PAT (long-lived, scope="api" RS256 JWT; the REST API gateway verifies via JWKS) ──
+    # SAME keystore/JWKS as launch tokens — a PAT is just longer-lived, multi-audience, scope="api".
+    # Revocation = token_store jti denylist, published at /auth/pat/revoked.json for the gateway.
+    pat_ttl_days: int = 90            # default PAT lifetime (days)
+    pat_max_ttl_days: int = 365       # cap on a requested ttl
+    pat_default_audiences: str = "mx-white-paper,heax-hub,ai-data-hub,signalforge"  # comma-separated allowlist
+
     # ── MCP chat (Phase 1: agent proxy + MCP registry; echo mode needs no remote) ──
     # The portal is a thin proxy + auth gate: real LLM/LangGraph/MCP fan-out lives in the
     # remote Agent Server (URL below). dev/prod swap the URL via routes.env (vLLM split).
@@ -182,6 +189,10 @@ class Settings(BaseSettings):
     @property
     def mock_user_group_list(self) -> list[str]:
         return [g.strip() for g in self.mock_user_groups.split(",") if g.strip()]
+
+    @property
+    def pat_default_audience_list(self) -> list[str]:
+        return [a.strip() for a in self.pat_default_audiences.split(",") if a.strip()]
 
 
 @lru_cache
