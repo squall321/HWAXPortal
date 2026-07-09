@@ -48,22 +48,32 @@ services:
     # (default base=/ → /assets/ 404s behind the proxy). Kept in the portal (heax repo
     # untouched — its Makefile already takes HEAX_BASE_PATH). Hardened for the locked-down
     # server:
-    #  1) skip the rebuild when git pulled NO change and a dist already exists — the common
-    #     path, and the one that was needlessly failing;
-    #  2) force the real offline pnpm (~/.npm-packages/bin) AHEAD of the /usr/bin corepack
-    #     shim, which tries to fetch pnpm/latest over TLS and dies with
-    #     UNABLE_TO_VERIFY_LEAF_SIGNATURE behind the corporate proxy (COREPACK_DEFAULT_TO_LATEST=0
-    #     is belt-and-suspenders so the shim, if ever used, stays offline);
+    #  1) rebuild ONLY when frontend/ actually changed (deploy-script-only commits were
+    #     needlessly triggering a frontend build) — and always when dist is missing;
+    #  2) pnpm resolution, offline: vendored .tools/node-*/bin (HEAXHub's own pinned
+    #     node+pnpm — what the locked-down server has) first, then ~/.npm-packages/bin,
+    #     BOTH ahead of the /usr/bin corepack shim which fetches pnpm over TLS and dies
+    #     with UNABLE_TO_VERIFY_LEAF_SIGNATURE behind the corporate proxy. Corepack
+    #     download prompts/attempts are disabled outright as belt-and-suspenders;
     #  3) if a NEEDED rebuild fails but a dist exists, keep serving it (warn, non-fatal) —
     #     only fail when there is no dist to fall back on.
     update: |
       before=$(git rev-parse HEAD 2>/dev/null || echo none)
       git pull --ff-only || echo "  git pull 실패(오프라인?) — 현재 체크아웃 유지"
       after=$(git rev-parse HEAD 2>/dev/null || echo none)
-      if [ "$before" = "$after" ] && [ -f frontend/dist/index.html ]; then
-        echo "  소스 변경 없음 + dist 존재 → 재빌드 생략"
+      need=0
+      [ -f frontend/dist/index.html ] || need=1
+      if [ "$need" = 0 ] && [ "$before" != "$after" ] && [ "$before" != none ]; then
+        git diff --quiet "$before" "$after" -- frontend 2>/dev/null || need=1
+      fi
+      if [ "$need" = 0 ]; then
+        echo "  frontend 변경 없음 + dist 존재 → 재빌드 생략"
       else
-        export PATH="$HOME/.npm-packages/bin:$PATH" COREPACK_DEFAULT_TO_LATEST=0
+        VN="$(ls -d "$PWD"/deploy/apptainer/.tools/node-*/bin 2>/dev/null | head -1)"
+        [ -n "$VN" ] && export PATH="$VN:$PATH"
+        export PATH="$HOME/.npm-packages/bin:$PATH"
+        export COREPACK_DEFAULT_TO_LATEST=0 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 COREPACK_ENABLE_NETWORK=0
+        echo "  pnpm: $(command -v pnpm || echo '없음')"
         if HEAX_BASE_PATH=/heax-hub/ make build; then
           echo "  build OK"
         elif [ -f frontend/dist/index.html ]; then
