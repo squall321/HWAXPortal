@@ -82,7 +82,11 @@ systems:
     accent: emerald
     category: Reporting
     status: available
-    integration_type: proxy   # installed locally; routes.env proxies /report-archive/ → :3000
+    # 일단 :3000 직결 링크로 운영 — 타일이 http://<포털호스트>:3000 을 새 탭으로 연다.
+    # {host} 는 백엔드가 응답 시점에 요청 Host(브라우저가 보는 호스트)로 치환하므로
+    # dev/cae00 어디서든 하드코딩 없이 동작. (프록시로 되돌리려면 integration_type: proxy 로 원복.)
+    integration_type: external-url
+    url: http://{host}:3000
     sort_order: 40
 
   - id: smart-twin-cluster

@@ -58,6 +58,12 @@ class CatalogRegistry:
             if from_route or s.url:
                 s.status = "available"
             return
+        # yaml 이 external-url 을 명시하고 자체 url 까지 줬으면 그 의도를 존중한다 — routes.env
+        # 항목은 nginx 프록시 배선일 뿐이므로 타일 url 을 덮지도, 모드를 proxy 로 되돌리지도
+        # 않는다(예: report-archive 를 http://{host}:3000 직결 링크로 열되 프록시 경로도 유지).
+        if s.integration_type == "external-url" and s.url:
+            s.status = "available"
+            return
         url = from_route or s.url
         if url:
             s.url = url
