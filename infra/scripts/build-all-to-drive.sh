@@ -13,7 +13,8 @@ find_repo() { local v="$1" n="$2"; [ -n "$v" ] && { printf '%s' "$v"; return; }
 PORTAL_DIR="${PORTAL_DIR:-$SELF_REPO}"
 MXWP_DIR="$(find_repo "${MXWP_DIR:-}" MXWhitePaper)"
 HEAX_DIR="$(find_repo "${HEAX_DIR:-}" HEAXHub)"
-WANT="${*:-portal mxwp heax}"
+SF_DIR="$(find_repo "${SF_DIR:-}" SignalForge)"
+WANT="${*:-portal mxwp heax signalforge}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
 
@@ -40,6 +41,17 @@ if want heax && [ -n "$HEAX_DIR" ]; then
     pnpm --dir frontend install --frozen-lockfile=false
     HEAX_BASE_PATH=/heax-hub/ pnpm --dir frontend build
     ./deploy/apptainer/dist-to-drive.sh )
+fi
+
+# SignalForge: dist 는 frontend.sif 에 베이크되고(별도 dist 배송 없음), DATA(postgres) 까지 함께
+# 나른다. scripts/sync-to-drive.sh 가 SF 의 통합 업로드 진입점 — DB 덤프 + SIF + env 를 한 번에 Drive 로.
+if want signalforge && [ -n "$SF_DIR" ]; then
+  hr "SignalForge — build dist→sif + DB dump → Drive"
+  ( cd "$SF_DIR"
+    VITE_BASE_PATH=/signalforge/ pnpm --dir frontend install --frozen-lockfile=false
+    VITE_BASE_PATH=/signalforge/ pnpm --dir frontend build   # frontend.sif 가 이 dist 를 베이크
+    ./scripts/build.sh                                       # SIF 6종(있으면 skip)
+    ./scripts/sync-to-drive.sh )                             # DB 덤프 + SIF + env → Drive(통합)
 fi
 
 hr "Done — AIDataHub has no build (cae00 just git pulls). Now on cae00: deploy-all-from-drive.sh"

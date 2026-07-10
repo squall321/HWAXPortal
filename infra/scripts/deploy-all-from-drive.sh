@@ -3,10 +3,11 @@
 #   git pull  →  auto-fill the Drive remote in each .env  →  pull the prebuilt artifact from Google
 #   Drive  →  START the service.  Nothing is built here (cae00 can't reach npm / Docker Hub).
 #
-#   ./infra/scripts/deploy-all-from-drive.sh                 # pull + start ALL four services
+#   ./infra/scripts/deploy-all-from-drive.sh                 # pull + start ALL (portal mxwp heax aidh signalforge)
 #   ./infra/scripts/deploy-all-from-drive.sh portal heax     # only the named ones
 #   ./infra/scripts/deploy-all-from-drive.sh --remote=MyDrive # use a specific rclone remote alias
 #   MXWP_DIR=~/Projects/MXWhitePaper ./infra/scripts/deploy-all-from-drive.sh   # override a repo path
+#   SF_RESTORE_DB=1 ./infra/scripts/deploy-all-from-drive.sh signalforge  # 최초 시드/갱신 시에만 DB 복원
 #
 # Prereqs (once): an rclone remote configured on cae00 (likely ALREADY there from another project —
 # we auto-detect ApptainerImages:, else the first remote, else pass --remote=). You do NOT need to
@@ -28,6 +29,7 @@ PORTAL_DIR="${PORTAL_DIR:-$SELF_REPO}"
 MXWP_DIR="$(find_repo "${MXWP_DIR:-}" MXWhitePaper)"
 HEAX_DIR="$(find_repo "${HEAX_DIR:-}" HEAXHub)"
 AIDH_DIR="$(find_repo "${AIDH_DIR:-}" AIDataHub)"
+SF_DIR="$(find_repo "${SF_DIR:-}" SignalForge)"
 
 # Pick the rclone remote ALIAS: --remote=Name, else $RCLONE_REMOTE, else auto (ApptainerImages if
 # present, else the first configured remote). cae00 likely already has it (another project set it up).
@@ -80,7 +82,7 @@ set_remote() {  # $1=envfile  $2=KEY  $3=path
   printf '  · set %s=%s\n' "$key" "$val"
 }
 
-WANT="${*:-portal mxwp heax aidh}"
+WANT="${*:-portal mxwp heax aidh signalforge}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
@@ -145,6 +147,30 @@ if want heax; then
   else skip "HEAXHub repo not found (set HEAX_DIR=)"; fi
 fi
 
+# ── 3b. SignalForge (SIF + DATA) — sync-from-drive pulls SIF+DB dump, up.sh starts, DB 는 안전하게 ──
+# ⚠ 데이터: cae00 가 크롤로 축적한 DB 를 재배포가 덮어쓰지 않도록, DB 복원은 기본적으로 하지 않는다.
+#   · 최초 시드/명시적 갱신:  SF_RESTORE_DB=1 deploy-all-from-drive.sh signalforge
+#     → drive-sync/sync-from-drive.sh 가 Drive 최신 덤프를 sha256 검증 후 restore(직전 상태는 자동 안전백업).
+#   · 기본(재배포):  DB 손대지 않음 — 축적 데이터 보존.
+if want signalforge; then
+  if [ -n "$SF_DIR" ]; then
+    hr "SignalForge  ($SF_DIR)"
+    ( cd "$SF_DIR"
+      git_update
+      [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }   # 최초엔 example → 시크릿은 별도 채움
+      ./scripts/sync-from-drive.sh                # SIF(+.env.example) — Drive→apptainer/sif/ (SF 자체 remote 자동감지)
+      [ "$RESTART" = 1 ] || bash scripts/down.sh 2>/dev/null || true
+      ./scripts/up.sh                             # SIF 있으면 build skip; postgres+backend+mcp+crawler+frontend
+      # ── DATA: 기본 보존, SF_RESTORE_DB=1 일 때만 Drive 최신 덤프로 복원(안전백업 후) ──
+      if [ "${SF_RESTORE_DB:-0}" = "1" ]; then
+        echo "  · SF_RESTORE_DB=1 → Drive 최신 DB 덤프 복원(직전 상태 안전백업)"
+        bash scripts/drive-sync/sync-from-drive.sh || echo "  ⚠ DB 복원 실패 — backups/ 안전백업 확인"
+      else
+        echo "  · DB 보존(기존 cae00 데이터 유지). 최초 시드/갱신은:  SF_RESTORE_DB=1 $0 signalforge"
+      fi ) && ok "signalforge up" || skip "signalforge failed (see above)"
+  else skip "SignalForge repo not found (set SF_DIR=)"; fi
+fi
+
 # ── 4. AI Data Hub (no build, no Drive artifact — git pull + root_path) ──────
 # boot.sh restarts uvicorn itself, so the redirect/root_path code is picked up.
 if want aidh; then
@@ -179,10 +205,11 @@ probe() {  # $1=label  $2=url
 }
 want portal && { probe "portal /health   " "http://127.0.0.1:8723/health"
                  probe "nginx  /health   " "http://127.0.0.1:8088/health"; }
-want mxwp  && probe "mxwp   web      " "http://127.0.0.1:5173/"
-want heax  && probe "heax   :4180    " "http://127.0.0.1:4180/"
-want aidh  && probe "aidh   /health  " "http://127.0.0.1:8001/api/system/health"
+want mxwp        && probe "mxwp   web      " "http://127.0.0.1:5173/"
+want heax        && probe "heax   :4180    " "http://127.0.0.1:4180/"
+want aidh        && probe "aidh   /health  " "http://127.0.0.1:8001/api/system/health"
+want signalforge && probe "sf     :17370   " "http://127.0.0.1:17370/"
 
 hr "Done"
-echo "  Portal:  https://hwax.sec.samsung.net/   (tiles: /heax-hub/ /ai-data-hub/ /mx-white-paper/)"
-echo "  If a service shows a non-2xx above, re-run just it:  $0 <portal|mxwp|heax|aidh>"
+echo "  Portal:  https://hwax.sec.samsung.net/   (tiles: /heax-hub/ /ai-data-hub/ /mx-white-paper/ /signalforge/)"
+echo "  If a service shows a non-2xx above, re-run just it:  $0 <portal|mxwp|heax|aidh|signalforge>"
