@@ -166,8 +166,8 @@ services:
     discover: HWAXAgentServer
     repo: https://github.com/squall321/HWAXAgentServer.git  # public — 익명 자동클론 가능(자격증명 불필요)
     # MCP_CONFIG 는 기동 cwd(=레포 디렉토리) 기준 상대경로 — 서버마다 경로가 달라도(~/Projects·~/claude) 동작.
-    env: { VLLM_BASE_URL: "http://127.0.0.1:8000/v1", VLLM_MODEL: qwen2.5-7b-dev,
-           MCP_CONFIG: "mcp_servers.json" }
+    # vLLM 주소는 박스별 HWAXAgentServer/.env 로 잡는다(playbook §8) — 공유 manifest 엔 IP 하드코딩 금지.
+    env: { VLLM_MODEL: qwen2.5-7b-dev, MCP_CONFIG: "mcp_servers.json" }
     start: ./start.sh
     health: http://localhost:9009/health
     tier: 20

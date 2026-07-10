@@ -26,6 +26,7 @@ declare -A MAP=(
   [signalforge]="SignalForge:.env"
   [mx-white-paper]="MXWhitePaper:.env"
   [ai-data-hub]="AIDataHub:deploy/apptainer/.env"
+  [agent-server]="HWAXAgentServer:.env"
 )
 
 find_repo() {  # $1=디렉토리 이름 → 절대경로 or 실패
