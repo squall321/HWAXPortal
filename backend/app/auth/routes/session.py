@@ -79,7 +79,9 @@ def login(
     return response
 
 
-@router.get("/callback")
+# GET(response_mode=query) + POST(response_mode=form_post) 둘 다 — 사내 IdP 는 대개 form_post
+# 로 POST 콜백을 보내는데, GET 전용이면 여기서 405 Method Not Allowed 로 로그인이 깨진다.
+@router.api_route("/callback", methods=["GET", "POST"])
 async def callback(
     request: Request,
     settings: Settings = Depends(get_settings),

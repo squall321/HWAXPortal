@@ -89,11 +89,18 @@ class OidcProvider:
         return RedirectResponse(url, status_code=302)
 
     async def handle_callback(self, request: Request, *, expected_state: str | None) -> Principal:
+        # response_mode 에 따라 code/state 가 오는 위치가 다르다: 'query'(기본, code flow)는
+        # 쿼리스트링, 'form_post'(다수 사내 IdP 기본)는 POST 폼 바디. 둘 다 지원한다.
         q = request.query_params
-        if q.get("error"):
-            raise AuthError(f"IdP returned error: {q.get('error')}", status_code=401)
-        code = q.get("code")
-        returned_state = q.get("state")
+        if request.method == "POST":
+            form = await request.form()
+            get = lambda k: form.get(k) or q.get(k)  # noqa: E731
+        else:
+            get = q.get
+        if get("error"):
+            raise AuthError(f"IdP returned error: {get('error')}", status_code=401)
+        code = get("code")
+        returned_state = get("state")
         if not code or not expected_state or returned_state != expected_state:
             raise AuthError("login state mismatch", status_code=400)
 
