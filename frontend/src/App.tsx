@@ -3,6 +3,7 @@ import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { ChatProvider } from './state/ChatContext';
 import { AppShell } from './components/layout/AppShell';
+import ChatPage from './pages/ChatPage';
 import LaunchPage from './pages/LaunchPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -12,6 +13,16 @@ const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   {
     path: '/',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <ChatPage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/apps',
     element: (
       <ProtectedRoute>
         <AppShell>

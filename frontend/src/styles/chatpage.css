@@ -1,0 +1,53 @@
+/* 챗 메인 페이지 레이아웃 — 헤더 아래를 채우는 전면 대화 화면 (chat.css 클래스 재사용) */
+
+.chatpage {
+  max-width: 860px;
+  margin: 0 auto;
+  height: calc(100vh - var(--hdr-h));
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1.25rem 0;
+}
+
+.chatpage-head {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 0.4rem 0 1rem;
+}
+.chatpage-kicker {
+  display: inline-block;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  color: #aab2ff;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+}
+.chatpage-title {
+  margin: 0.8rem 0 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.chatpage-sub {
+  margin: 0.55rem auto 0;
+  max-width: 540px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+/* Conversation shell: reuses .chat-body (flex:1, scrolls) + .chat-in from chat.css.
+   min-height:0 lets the inner .chat-body shrink and scroll inside this flex column. */
+.chatpage-conv {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
