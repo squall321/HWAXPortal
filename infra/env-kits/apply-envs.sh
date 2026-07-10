@@ -37,6 +37,17 @@ find_repo() {  # $1=디렉토리 이름 → 절대경로 or 실패
   return 1
 }
 
+# 형제 ReportArchive 의 .env 에서 키 값을 읽는다(없으면 빈값) — agent-server 가 RA 의 상암 LLM 설정을
+# '그대로' 상속하는 용도(@FROM_RA:KEY@ 마커). RA 는 읽기 전용(수정하지 않음).
+ra_env_value() {  # $1=RA .env 키 → stdout 값
+  local radir raenv; radir="$(find_repo ReportArchive)" || return 1
+  for raenv in "$radir/backend/.env" "$radir/.env"; do
+    [ -f "$raenv" ] || continue
+    grep -E "^$1=" "$raenv" 2>/dev/null | head -1 | cut -d= -f2- && return 0
+  done
+  return 1
+}
+
 apply_one() {  # $1=서비스명
   local svc="$1" spec repo rel kit dir target added=0 kept=0 key val line
   spec="${MAP[$svc]:-}"
@@ -60,9 +71,15 @@ apply_one() {  # $1=서비스명
     if [ -f "$target" ] && grep -qE "^${key}=" "$target"; then
       kept=$((kept+1)); continue                       # 기존 값 보존
     fi
-    [ "$val" = "@GENERATE_HEX32@" ] && val="$(openssl rand -hex 32)"
+    case "$val" in
+      @GENERATE_HEX32@) val="$(openssl rand -hex 32)" ;;
+      @FROM_RA:*@)  # ReportArchive .env 의 해당 키를 상속 — 없으면(dev=mock) 이 키는 건너뜀
+        rak="${val#@FROM_RA:}"; rak="${rak%@}"
+        val="$(ra_env_value "$rak")"
+        [ -n "$val" ] || { echo "   · $key: RA .env 에 $rak 없음 → 건너뜀(agent-server 기본값=로컬 vLLM 사용)"; continue; } ;;
+    esac
     if [ "$DRY" = 1 ]; then
-      echo "   (dry-run) + $key"
+      echo "   (dry-run) + $key=$val"
     else
       printf '%s=%s\n' "$key" "$val" >> "$target"
     fi
