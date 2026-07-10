@@ -14,6 +14,10 @@
 # hand-edit any .env — this fills *_DRIVE_REMOTE / *_IMAGES_REMOTE for you. The sub-path is already
 # baked into each artifact (web.sif, HEAXHub dist) / handled by AIDH_ROOT_PATH.
 set -euo pipefail
+# apptainer rootless cgroups 는 D-Bus 사용자 세션 필요 — 비로그인 셸에 XDG_RUNTIME_DIR 가 비면
+# 'couldn't create cgroup manager' 로 죽는다. 사용자 세션 버스가 있으면 잡아준다.
+: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"; export XDG_RUNTIME_DIR
+[ -S "$XDG_RUNTIME_DIR/bus" ] && export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 
 # ── Repo locations (override via env). Default: siblings of this repo, then ~/Projects. ─────────
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -6,6 +6,11 @@
 #   ./infra/scripts/build-all-to-drive.sh                 # all
 #   ./infra/scripts/build-all-to-drive.sh portal mxwp     # only named
 set -euo pipefail
+# apptainer rootless cgroups 는 D-Bus 사용자 세션이 필요하다 — 비로그인/스크립트 셸엔 XDG_RUNTIME_DIR
+# 가 비어 'couldn't create cgroup manager: rootless cgroups require a D-Bus session' 로 죽는다
+# (예: SF DB dump 의 apptainer exec pg_dump). 사용자 세션 버스가 있으면 잡아준다.
+: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"; export XDG_RUNTIME_DIR
+[ -S "$XDG_RUNTIME_DIR/bus" ] && export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
 find_repo() { local v="$1" n="$2"; [ -n "$v" ] && { printf '%s' "$v"; return; }
