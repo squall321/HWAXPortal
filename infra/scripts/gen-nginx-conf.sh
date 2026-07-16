@@ -49,6 +49,24 @@ if [ -f "$ROUTES_FILE" ]; then
   done < "$ROUTES_FILE"
 fi
 
+# Streaming locations (chat SSE + MCP streamable-http). The HTTP server has these hardcoded in
+# the template; the TLS server (built here) MUST carry the same, or /agent (chat) and /mcp-gw
+# (personal-Claude MCP) would fall through to the buffered catch-all over HTTPS. Keep in sync
+# with hwax.conf.tmpl. proxy_pass with a trailing slash STRIPs the /<loc>/ prefix.
+stream_locations="$(cat <<'EOF'
+        location /agent/ {
+            proxy_pass http://127.0.0.1:{{PORTAL_PORT}};
+            proxy_buffering off; proxy_cache off; gzip off;
+            proxy_read_timeout 1h; proxy_connect_timeout 300s;
+        }
+        location /mcp-gw/ {
+            proxy_pass http://127.0.0.1:9110/;
+            proxy_buffering off; proxy_cache off; gzip off;
+            proxy_read_timeout 1h; proxy_connect_timeout 300s;
+        }
+EOF
+)"
+
 # Build the optional TLS server block (same locations + the cert, when ENABLE_TLS=true).
 # Cert/key are under the repo, which is bind-mounted at /workspace inside the nginx container.
 tls_server=""
@@ -69,7 +87,7 @@ if [ "${ENABLE_TLS:-false}" = "true" ]; then
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-${locations}        location / {
+${locations}${stream_locations}        location / {
             proxy_pass http://127.0.0.1:{{PORTAL_PORT}};
         }
     }
