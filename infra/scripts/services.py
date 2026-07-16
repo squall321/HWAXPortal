@@ -33,6 +33,17 @@ def load() -> list[dict]:
     return sorted(svcs, key=lambda s: s.get("tier", 10))
 
 
+def enabled_here(svc: dict) -> bool:
+    """`only_on: <hostname|[hostnames]>` — 그 박스에서만 다루는 서비스(예: dev 전용 로컬 vLLM).
+    다른 박스에선 up/down/update 가 조용히 skip 한다(공유 manifest 하나로 박스별 차이 표현)."""
+    only = svc.get("only_on")
+    if not only:
+        return True
+    hosts = [only] if isinstance(only, str) else list(only)
+    import socket
+    return socket.gethostname() in hosts
+
+
 def resolve_dir(svc: dict) -> Path | None:
     """Explicit dir wins; else auto-discover the repo by name in the usual roots."""
     if svc.get("dir"):
@@ -172,6 +183,9 @@ def cmd_update(names: list[str]) -> int:
     svcs = [s for s in load() if not names or s["name"] in names]
     rc = 0
     for s in svcs:
+        if not enabled_here(s):
+            print(f"  · {s['name']:<16} skip (only_on={s.get('only_on')})")
+            continue
         r = update_one(s)
         if r.startswith("FAIL"):
             rc = 1
@@ -187,6 +201,9 @@ def cmd_up(names: list[str], do_update: bool = False) -> int:
         if s.get("tier") != cur_tier:
             cur_tier = s.get("tier")
             print(f"── tier {cur_tier} ──", flush=True)
+        if not enabled_here(s):
+            print(f"  · {s['name']:<16} skip (only_on={s.get('only_on')} — 이 박스 대상 아님)", flush=True)
+            continue
         if do_update:
             print(f"  ↻ {s['name']:<16} update …", flush=True)
             print(f"  ↻ {s['name']:<16} {update_one(s)}", flush=True)
@@ -203,6 +220,9 @@ def cmd_status(names: list[str]) -> int:
     svcs = [s for s in load() if not names or s["name"] in names]
     any_down = 0
     for s in svcs:
+        if not enabled_here(s):
+            print(f"  {'· skip':<12} {s['name']:<16} only_on={s.get('only_on')}")
+            continue
         url = s.get("health", "")
         up = health_ok(url) if url else None
         mark = "✓ up" if up else ("? no-health" if up is None else "✗ down")
@@ -219,6 +239,9 @@ def cmd_down(names: list[str]) -> int:
     svcs = [s for s in load() if not names or s["name"] in names]
     for s in reversed(svcs):
         name = s["name"]
+        if not enabled_here(s):
+            print(f"  · {name}: skip (only_on={s.get('only_on')})")
+            continue
         if s.get("stop"):
             wd = resolve_dir(s)
             subprocess.run(["bash", "-c", s["stop"]], cwd=str(wd) if wd else None, check=False)

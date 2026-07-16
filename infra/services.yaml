@@ -115,8 +115,11 @@ services:
     tier: 10
 
   # ── tier 20: MCP chat stack (heavy GPU last; vLLM may live on a remote host) ──
+  # dev 박스 전용 로컬 vLLM(qwen 테스트용). only_on 밖의 박스(cae00 등)에선 up/down/status 가
+  # 자동 skip — cae00 챗은 HWAXAgentServer/.env 의 VLLM_BASE_URL(상암 B300 GLM)을 쓴다.
   - name: vllm
     host: local                 # set to a B300 host IP + ssh_user for prod (URL-only swap)
+    only_on: smarttwincluster   # 이 호스트에서만 관리 (다른 박스에선 skip)
     dir: ./docs                 # start-dev-vllm.sh lives in the portal docs (dev)
     update: false               # stateless: code/model ship via SIF image, not git pull
     # stop is a no-op so `down`/`restart` DON'T kill vLLM: it's a heavy GPU load (~1-2 min)
