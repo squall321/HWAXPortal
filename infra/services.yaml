@@ -29,7 +29,10 @@ services:
     # health port :8088 (that kills nginx only → the portal backend keeps running OLD code, so a
     # pulled update never applies). This makes `down portal && up --update portal` truly redeploy.
     stop: 'A="$(command -v apptainer || ls -d infra/apptainer/bin-*/usr/bin/apptainer 2>/dev/null | head -1)"; for i in hwax_portal hwax_nginx; do "$A" instance stop "$i" 2>/dev/null || true; done'
-    health: http://localhost:8088/health
+    # 포털 백엔드(:8723) 직접 체크 — 공유 nginx 프론트(:8088)로 체크하면 백엔드가 죽어도 그 포트를
+    # 다른 서비스가 점유해 응답하면(health_ok 는 3xx/4xx 도 up 처리) "already-up" 오판 → 백엔드 미재기동.
+    # 실제 사고: 재가동 틈에 wekan 스냅의 FerretDB 디버그 핸들러가 :8088 을 선점(303) → up 이 스킵.
+    health: http://127.0.0.1:8723/health
     tier: 0
 
   # ── tier 10: federated sub-services (proxied via routes.env) ──
