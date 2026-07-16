@@ -15,6 +15,7 @@ StreamingResponse → nginx buffering-off → fetch+ReadableStream) with no Agen
 
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -39,9 +40,16 @@ SSE_HEADERS = {
 }
 
 
+class ChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=4000)  # per-item cap — no unbounded input (DoS)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)  # cap payload — no unbounded input (DoS)
     system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
+    # 멀티턴 컨텍스트: 오래된 것→최신 순, 이번 message는 포함하지 않는다(agent-server 계약).
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=40)
 
 
 def _audit(request: Request) -> AuditLog:
@@ -86,7 +94,12 @@ async def _relay_stream(
     chat_id = "relay"
     audit.record(principal=principal.subject, event="chat_start", chat_id=chat_id,
                  meta={"agent": settings.agent_server_url, "system_id": body.system_id})
-    payload = {"message": body.message, "system_id": body.system_id, "groups": principal.groups}
+    payload = {
+        "message": body.message,
+        "system_id": body.system_id,
+        "groups": principal.groups,
+        "history": [{"role": m.role, "content": m.content} for m in body.history],
+    }
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload

@@ -63,13 +63,19 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
   }
 }
 
+// 멀티턴 계약(agent-server): 오래된 것→최신 순, 이번 message는 history에 넣지 않는다.
+export interface HistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export async function streamChat(
   message: string,
-  opts: { systemId?: string; mode?: string } & StreamHandlers = {},
+  opts: { systemId?: string; mode?: string; history?: HistoryMessage[] } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, signal, ...handlers } = opts;
+  const { systemId, mode, history, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -80,7 +86,11 @@ export async function streamChat(
       'Content-Type': 'application/json',
       ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
     },
-    body: JSON.stringify({ message, ...(systemId ? { system_id: systemId } : {}) }),
+    body: JSON.stringify({
+      message,
+      ...(systemId ? { system_id: systemId } : {}),
+      ...(history && history.length > 0 ? { history } : {}),
+    }),
     signal,
   });
 

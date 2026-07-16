@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { streamChat } from '../api/chat.api';
+import { streamChat, type HistoryMessage } from '../api/chat.api';
 import type { Conversation, Message } from '../types/chat';
 import {
   loadActiveId,
@@ -44,6 +44,27 @@ interface ChatContextValue {
 
 // eslint-disable-next-line react-refresh/only-export-components
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
+
+// 서버 캡(40항목/4000자)에 걸려 422가 나지 않도록 프론트에서도 자른다.
+const HISTORY_MAX_ITEMS = 20;
+const HISTORY_MAX_ITEM_CHARS = 4000;
+const HISTORY_MAX_TOTAL_CHARS = 16000;
+
+/** 멀티턴 history: 활성 대화의 기존 메시지 → 계약 형식(오래된 것→최신 순, 이번 발화 제외). */
+function buildHistory(messages: Message[]): HistoryMessage[] {
+  const items = messages
+    .filter((m) => !m.error && m.text.trim() !== '')
+    .map((m) => ({ role: m.role, content: m.text.slice(0, HISTORY_MAX_ITEM_CHARS) }));
+  // 최근 것 우선 — 뒤에서부터 개수/총량 예산만큼 담고, 다시 시간순으로 뒤집는다.
+  const out: HistoryMessage[] = [];
+  let total = 0;
+  for (let i = items.length - 1; i >= 0 && out.length < HISTORY_MAX_ITEMS; i--) {
+    if (total + items[i].content.length > HISTORY_MAX_TOTAL_CHARS) break;
+    total += items[i].content.length;
+    out.push(items[i]);
+  }
+  return out.reverse();
+}
 
 /** 첫 사용자 메시지 → 대화 제목(≈40자). */
 function makeTitle(text: string): string {
@@ -99,6 +120,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const botId = newId();
       const botMsg: Message = { id: botId, role: 'assistant', text: '', ts: now, streaming: true };
 
+      // 멀티턴: 이번 user 메시지를 붙이기 전의 활성 대화 메시지가 history가 된다(중복 금지).
+      const history = buildHistory(conversations.find((c) => c.id === activeId)?.messages ?? []);
+
       // 활성 대화가 없으면(랜딩/새 대화) 첫 전송 시점에 대화를 생성한다.
       let convId = activeId && conversations.some((c) => c.id === activeId) ? activeId : null;
       if (!convId) {
@@ -131,6 +155,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       void streamChat(text, {
         signal: controller.signal,
+        history,
         onStatus: (e) => patch(cid, botId, (m) => ({ ...m, status: e.step })),
         onToken: (e) =>
           patch(cid, botId, (m) => ({ ...m, text: m.text + e.delta, status: undefined })),
