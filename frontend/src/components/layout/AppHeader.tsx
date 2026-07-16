@@ -19,7 +19,9 @@ export function AppHeader() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0.75rem 1.5rem',
+        // 전체화면 챗('/')이 calc(100dvh - var(--hdr-h))로 정확히 채우도록 높이를 토큰에 고정.
+        height: 'var(--hdr-h)',
+        padding: '0 1.5rem',
         borderBottom: '1px solid var(--border)',
         background: 'var(--card)',
       }}

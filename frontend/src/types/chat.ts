@@ -15,11 +15,22 @@ export interface Message {
   // For assistant messages this fills incrementally from `token` deltas, then
   // settles to the final `result` block. User messages are plain text.
   text: string;
+  // Unix ms — set when the message is created; survives persistence round-trips.
+  ts?: number;
   result?: ResultBlock;
   // Transient status line shown while the agent works (from `status` events).
   status?: string;
   error?: string;
   streaming?: boolean;
+}
+
+// 대화 한 건 — localStorage('hwax.chat.*') 영속 단위 (chatStore.ts가 직렬화 담당).
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 // SSE event payloads (plan §5).
