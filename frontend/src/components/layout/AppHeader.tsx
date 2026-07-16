@@ -36,6 +36,9 @@ export function AppHeader() {
             <NavLink to="/apps" style={navLinkStyle}>
               앱
             </NavLink>
+            <NavLink to="/tokens" style={navLinkStyle}>
+              API 토큰
+            </NavLink>
           </nav>
         )}
       </div>

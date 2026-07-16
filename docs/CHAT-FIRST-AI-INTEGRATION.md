@@ -169,4 +169,72 @@ curl -s http://127.0.0.1:9110/health    # {status, tools, backends}
 
 ---
 
-*작성 기준 — HWAXAgentServer(:9009) · HWAXMcpGateway(:9110/mcp, GW_TOKEN) · 포털 `app/agent/routes.py` 릴레이 실동작(2026-07). 서브패스/외부 인프라 상세는 `PORTAL-INTEGRATION-PLAYBOOK.md §2·§8`, 타일 연결은 `LINKED-SERVICES.md` 참조.*
+## 8. 개인 토큰(PAT) 하나로 — 챗 + 개인 Claude MCP
+
+세션 로그인 없이도, 발급받은 포털 PAT **하나**로 두 가지를 다 한다 — ① 포털 챗을 스크립트/외부에서 구동하고 ② 내 Claude(Desktop/Code)에 게이트웨이를 MCP 서버로 물린다.
+같은 토큰, 같은 그룹 권한. 앱이 챗을 메인으로 올리는 것(§1~§7)과 별개로, **개인이 페더레이션 전체를 토큰 하나로 쓰는 접속면**이다.
+
+### 8.1 개념 (토큰 1개 = 챗 + 내 Claude)
+
+- **한 토큰, 두 표면.** 포털 PAT(RS256 서명 · `scope=api` · `aud` 에 `"mcp-gateway"` 포함)는 (a) 포털 챗 `/agent/chat` 을 `Authorization: Bearer <PAT>` 로 구동하고, (b) 개인 Claude 에 MCP 서버로 등록되어 게이트웨이 도구를 열어준다. 세션쿠키·CSRF 없이 동작하므로 스크립트·CI·외부 클라이언트에서 그대로 쓴다.
+- **게이트웨이가 PAT 를 직접 받는다.** 게이트웨이 `/mcp` 는 내부 에이전트용 `GW_TOKEN` 외에 **포털 PAT 도 인증 주체로 인정**한다. PAT 로 들어오면 토큰 안의 `groups` 클레임으로 도구를 필터한다 — 헤더로 넘어온 `X-HWAX-Groups`(위조 가능)는 **버린다**. 즉 개인 접속은 토큰이 곧 권한이다.
+- **접속 경로는 포털 오리진 경유.** 개인 Claude 가 바라볼 URL 은 게이트웨이 포트가 아니라 `<portal>/mcp-gw/mcp` — nginx 가 이 경로를 게이트웨이 `:9110/mcp` 로 **스트리밍 프록시**한다. 인증 헤더는 `Authorization: Bearer <PAT>`.
+- **그룹만큼만 보인다.** 내부 에이전트 경로(§2 그룹 스코핑)와 동일하게, 안 보이는 도구는 LLM 이 존재조차 모른다(fail-closed). 개인 Claude 에도 내 그룹 교집합 도구만 노출된다.
+
+### 8.2 발급 (포털 '토큰' 페이지 또는 curl)
+
+- **페이지.** 포털 로그인 후 **'토큰' 페이지**에서 발급한다. `audiences` 에 **`mcp-gateway` 를 반드시 포함**해야 개인 Claude 등록이 동작한다(빠지면 게이트웨이가 aud 불일치로 거절).
+- **curl(세션+CSRF).** 스크립트로 뽑을 땐 로그인 세션 쿠키 + CSRF 로 `POST /auth/pat`.
+  ```bash
+  PORTAL=http://127.0.0.1:8088
+  # 세션 로그인 상태에서 PAT 발급 — audiences 에 mcp-gateway 필수
+  curl -s -X POST "$PORTAL/auth/pat" \
+    -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" -b "$COOKIES" \
+    -d '{"scope":"api","audiences":["mcp-gateway"],"label":"my-claude"}'
+  #   → { "token": "<PAT>", ... }  이 값을 아래 두 곳(개인 Claude · 챗 curl)에 그대로 쓴다
+  ```
+
+### 8.3 개인 Claude 등록 (Code / Desktop)
+
+- **Claude Code(CLI).** MCP 서버 하나 추가 — transport 는 streamable-http, 헤더에 Bearer.
+  ```bash
+  claude mcp add --transport http hwax-gateway \
+    "$PORTAL/mcp-gw/mcp" \
+    --header "Authorization: Bearer <PAT>"
+  ```
+- **Claude Desktop(config JSON).** `claude_desktop_config.json` 의 `mcpServers` 에 게이트웨이를 등록.
+  ```json
+  {
+    "mcpServers": {
+      "hwax-gateway": {
+        "type": "streamable-http",
+        "url": "https://<portal>/mcp-gw/mcp",
+        "headers": { "Authorization": "Bearer <PAT>" }
+      }
+    }
+  }
+  ```
+- 등록 후 Claude 에서 게이트웨이 도구(그룹 권한만큼)가 바로 목록에 뜬다 — 별도 서버 설치·백엔드 토큰(rat_/sfmcp_/mxwp_) 조달 없이 포털 URL 하나로 끝(백엔드 토큰은 게이트웨이가 중앙에서 주입, §2).
+
+### 8.4 챗 curl (세션 없이 Bearer 로)
+
+- 같은 PAT 로 포털 챗도 그대로 스크립트에서 돌린다 — §7 검증의 세션+CSRF 대신 **`Authorization: Bearer <PAT>`** 하나면 된다.
+  ```bash
+  # 세션쿠키 없이 PAT 로 챗 SSE 구동 (외부/CI 에서도 동일)
+  curl -sN -X POST "$PORTAL/agent/chat" \
+    -H 'Content-Type: application/json' -H "Authorization: Bearer <PAT>" \
+    -d '{"message":"<질문>","system_id":"<app>"}'
+  #   기대: event: status → token×N → event: result → event: done  (§2 SSE 계약 동일)
+  ```
+
+### 8.5 보안 노트
+
+- **그룹 권한만큼만.** PAT 는 발급자의 권한을 넘어서지 못한다 — 토큰의 `groups` 로 게이트웨이가 도구를 필터하므로, 내가 못 보는 도구는 개인 Claude 에서도 안 보인다. 권한 상승 경로가 없다.
+- **위조 헤더 무시.** PAT 경로에서는 `X-HWAX-Groups` 를 신뢰하지 않는다(버린다). 권한 판단은 서명된 토큰 클레임에서만 나온다.
+- **폐기 가능.** 유출·오용 시 '토큰' 페이지에서 해당 PAT 를 즉시 폐기(revoke)한다 — 세션 로그아웃과 무관하게 그 토큰만 죽는다. 발급 시 `label` 을 달면 어떤 토큰인지 식별해 개별 폐기가 쉽다.
+- **aud 최소.** `audiences` 는 실제 쓸 대상만 담는다 — 개인 Claude+챗이면 `mcp-gateway` 하나로 충분하다. aud 를 넓게 잡을수록 유출 시 노출면이 커진다.
+- **평문 보관 금지.** PAT 는 비밀번호급이다 — config 파일 권한(600)·시크릿 매니저에 두고, 레포·로그·공유 채널에 남기지 않는다.
+
+---
+
+*작성 기준 — HWAXAgentServer(:9009) · HWAXMcpGateway(:9110/mcp, GW_TOKEN·포털 PAT) · 포털 `app/agent/routes.py` 릴레이 · `/mcp-gw/mcp` PAT 개인 Claude 접속 실동작(2026-07). 서브패스/외부 인프라 상세는 `PORTAL-INTEGRATION-PLAYBOOK.md §2·§8`, 타일 연결은 `LINKED-SERVICES.md` 참조.*

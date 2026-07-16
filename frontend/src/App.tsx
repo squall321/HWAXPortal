@@ -8,6 +8,7 @@ import LaunchPage from './pages/LaunchPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import PortalHomePage from './pages/PortalHomePage';
+import TokenPage from './pages/TokenPage';
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -27,6 +28,16 @@ const router = createBrowserRouter([
       <ProtectedRoute>
         <AppShell>
           <PortalHomePage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/tokens',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <TokenPage />
         </AppShell>
       </ProtectedRoute>
     ),
