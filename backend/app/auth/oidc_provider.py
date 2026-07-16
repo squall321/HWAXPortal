@@ -102,6 +102,19 @@ class OidcProvider:
         code = get("code")
         returned_state = get("state")
         if not code or not expected_state or returned_state != expected_state:
+            # 원인 구분을 로그로 남긴다 — 거의 항상 'state 쿠키가 안 돌아온' 경우다:
+            #  · no-state-cookie + http 접속: COOKIE_SECURE=true 인데 http 로 접속(쿠키 저장 거부)
+            #  · no-state-cookie + form_post(POST): COOKIE_SECURE=false → SameSite=Lax 가 cross-site
+            #    POST 에 안 실림 → https + COOKIE_SECURE=true 로 SameSite=None 이 돼야 함
+            #  · state-differs: 뒤로가기/이중 로그인으로 이전 state 쿠키가 남은 경우 → 재로그인
+            import logging
+            logging.getLogger("hwax.auth").warning(
+                "login state mismatch: method=%s code=%s state_cookie=%s returned_state=%s scheme=%s",
+                request.method, "yes" if code else "MISSING",
+                "yes" if expected_state else "MISSING(cookie not sent)",
+                "yes" if returned_state else "MISSING",
+                request.headers.get("x-forwarded-proto") or request.url.scheme,
+            )
             raise AuthError("login state mismatch", status_code=400)
 
         verifier = self._derive(expected_state, "pkce")
