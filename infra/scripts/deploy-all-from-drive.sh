@@ -128,8 +128,17 @@ if want mxwp; then
                 "$HOME"/claude/HWAXPortal/infra/apptainer/bin-*/usr/bin/apptainer; do
         [ -x "$_c" ] && { _appt="$_c"; break; }
       done
-      [ "$RESTART" = 1 ] || "$_appt" instance stop mxwp_web 2>/dev/null || true
+      # Bounce EVERY instance whose SIF may have been replaced by images-from-drive (it copies
+      # *.sif). A live instance whose SIF is overwritten underneath keeps a broken squashfs
+      # mount — every exec inside dies with "error while loading shared libraries: libc.so.6"
+      # (bit cae00's mxwp_api → mxwp-mcp). start.sh re-creates them cleanly from the new SIFs.
+      if [ "$RESTART" != 1 ]; then
+        for _i in mxwp_web mxwp_api; do "$_appt" instance stop "$_i" 2>/dev/null || true; done
+      fi
       ./infra/scripts/start.sh ) && ok "mxwp up" || skip "mxwp failed (see above)"
+      # mxwp_api 를 재기동했으면 그 안에서 돌던 mxwp-mcp 도 다시 올린다(있으면).
+      [ -x "$PORTAL_DIR/infra/scripts/services.sh" ] && \
+        "$PORTAL_DIR/infra/scripts/services.sh" up mxwp-mcp 2>/dev/null | tail -2 || true
   else skip "MXWhitePaper repo not found (set MXWP_DIR=)"; fi
 fi
 
