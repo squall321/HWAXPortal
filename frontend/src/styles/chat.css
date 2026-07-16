@@ -117,6 +117,52 @@
   background: rgba(255, 255, 255, 0.07);
   color: var(--fg);
 }
+.codeblock-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+.codeblock-toggle {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  padding: 0.25rem 0.45rem;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.codeblock-toggle:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--fg);
+}
+.codeblock-toggle.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--fg);
+}
+.codeblock-toggle:disabled {
+  opacity: 0.4;
+}
+.codeblock-copy:disabled {
+  opacity: 0.4;
+}
+
+/* html/svg 미리보기 — sandbox iframe. 기본 360px, 우하단 네이티브 핸들로 세로 리사이즈 */
+.preview-wrap {
+  height: 360px;
+  min-height: 120px;
+  max-height: 85vh;
+  resize: vertical;
+  overflow: hidden;
+  background: var(--card);
+}
+.preview-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff; /* 콘텐츠가 배경을 안 정하면 흰 캔버스 — 다크 포털 위 가독성 확보 */
+}
+
 .codeblock pre {
   margin: 0;
   padding: 0.75rem 0.9rem;
