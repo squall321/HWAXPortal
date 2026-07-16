@@ -21,6 +21,8 @@ mcp:
   expose: true            # 게이트웨이 흡수 대상 표식 (필수 true)
   path: /mcp              # 앱이 서빙하는 MCP 경로 (기본 /mcp)
   transport: streamable_http
+  allowed_groups: []      # (선택) 게이트웨이 그룹 필터 — 비면 전체 공개, 있으면 caller
+                          # groups 와 교집합 있어야 도구 노출/호출(쓰기·민감 도구 제한용)
 ```
 
 스캐너가 manifest 전체를 `AppVersion.manifest_snapshot`(raw yaml)로 저장하므로
