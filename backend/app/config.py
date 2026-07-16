@@ -113,7 +113,10 @@ class Settings(BaseSettings):
     # Revocation = token_store jti denylist, published at /auth/pat/revoked.json for the gateway.
     pat_ttl_days: int = 90            # default PAT lifetime (days)
     pat_max_ttl_days: int = 365       # cap on a requested ttl
-    pat_default_audiences: str = "mx-white-paper,heax-hub,ai-data-hub,signalforge"  # comma-separated allowlist
+    # comma-separated allowlist. "mcp-gateway" = the AI surface (LLM chat + MCP tools): a PAT with
+    # this audience can drive /agent/chat AND connect a personal Claude to the MCP gateway.
+    pat_default_audiences: str = "mx-white-paper,heax-hub,ai-data-hub,signalforge,mcp-gateway"
+    pat_chat_audience: str = "mcp-gateway"   # audience a PAT must carry to use the chat / MCP surface
 
     # ── MCP chat (Phase 1: agent proxy + MCP registry; echo mode needs no remote) ──
     # The portal is a thin proxy + auth gate: real LLM/LangGraph/MCP fan-out lives in the

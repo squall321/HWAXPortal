@@ -26,7 +26,7 @@ from app.agent.sse import sse_event
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
-from app.deps import get_current_principal, require_csrf
+from app.deps import principal_pat_or_session
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -118,8 +118,7 @@ async def chat(
     request: Request,
     body: ChatRequest,
     mode: str | None = None,
-    principal: Principal = Depends(get_current_principal),
-    _csrf: None = Depends(require_csrf),
+    principal: Principal = Depends(principal_pat_or_session),  # Bearer PAT 또는 세션 쿠키(+CSRF)
     settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:
     sem = _sem(request)

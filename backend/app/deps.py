@@ -69,3 +69,31 @@ def require_csrf(
     header = request.headers.get("X-CSRF-Token")
     if not cookie or not header or not secrets.compare_digest(cookie, header):
         raise AuthError("CSRF token missing or mismatched", status_code=403)
+
+
+def principal_pat_or_session(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    jwt_service: JWTService = Depends(get_jwt_service),
+) -> Principal:
+    """Chat/MCP auth: accept a Bearer PAT (aud=pat_chat_audience) OR the browser session cookie.
+
+    A PAT lets scripts / a personal Claude drive the LLM+tools with one long-lived token; it is
+    verified locally against the keystore (scope=api, aud, unexpired, not revoked) and does NOT
+    need CSRF (it rides the Authorization header, not a cookie). The cookie path keeps CSRF.
+    """
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() == "bearer ":
+        from app.auth.pat_verify import verify_pat
+        try:
+            return verify_pat(
+                auth[7:].strip(),
+                keystore=request.app.state.keystore,
+                revoked_jtis=request.app.state.token_store.revoked_jtis(),
+                audience=settings.pat_chat_audience,
+            )
+        except Exception as exc:  # noqa: BLE001 — any verify failure is a 401
+            raise AuthError("invalid or expired PAT", status_code=401) from exc
+    principal = get_current_principal(request, jwt_service)
+    require_csrf(request, settings)
+    return principal
