@@ -11,8 +11,8 @@ import '../styles/chat.css';
 import '../styles/chatpage.css';
 
 const EXAMPLE_PROMPTS = [
+  '이 포털 사용법을 알려줘 — 내 Claude에 연결하려면?',
   '이 포털에서 무엇을 할 수 있는지 알려줘',
-  '최근 해석 리포트에서 낙하 충격 결과를 찾아 요약해줘',
   '배터리 스웰링 관련 백서 내용을 정리해줘',
   '시험 신호 데이터의 전처리 방법을 추천해줘',
 ];
