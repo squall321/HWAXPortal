@@ -16,13 +16,16 @@
 |---|---|---|
 | **1. 발굴** | `recommend_agents(question)`로 관련 전문 페르소나 + 필요 도구 식별 | 게이트웨이 MCP (AIDataHub) |
 | **2. 분석(도구)** | 계산·데이터 MCP로 정량 근거 생성(DOE·비교·시뮬), 결과를 구조화 | 게이트웨이 MCP (laminate/materialtwin/…) |
-| **3. 심의(N라운드)** | R1 병렬 의견 → R2 반박·수치 심화 → R3 수렴 → 의사결정문 | **[hwax-deliberate.js](../.claude/workflows/hwax-deliberate.js)** |
+| **3. 심의(N라운드)** | R1 병렬 의견 → R2 반박·수치 심화 → R3 수렴 → 의사결정문 | **[hwax-deliberate.js](../infra/pipeline/hwax-deliberate.js)** |
 | **4. 시각화·분석** | 구조화 데이터 → 민감도 바·파레토 스캐터·수렴 다이어그램·의사결정 매트릭스 (인라인 SVG) | **[infra/pipeline/viz_module.py](../infra/pipeline/viz_module.py)** |
 | **5. 보고** | 회의록+의사결정+그래프를 정리해 Report Archive 보고서 작성 + 렌더 | 게이트웨이 MCP (ReportArchive `create_report_draft`) |
 
 **역할 분담** — 게이트웨이 MCP가 **도구(계산·에이전트·RA)** 를 제공하고, 파이프라인은 그 위의
 **오케스트레이션 패턴**이다. 도메인 도구 실행·페르소나 발굴·시각화 조립은 도메인별이라 호출자(역량 있는
 Claude) 몫이고, 도메인 무관한 **다중 라운드 수렴**은 워크플로가 캡슐화한다.
+
+> 정본은 `infra/pipeline/hwax-deliberate.js`(추적됨). 이름으로 호출하려면 `.claude/workflows/`(로컬,
+> gitignore)에 복사하고, 아니면 `Workflow({scriptPath:'infra/pipeline/hwax-deliberate.js', args})`로 호출.
 
 ## 코어 — 재사용 워크플로 `hwax-deliberate`
 
