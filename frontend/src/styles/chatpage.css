@@ -277,6 +277,18 @@
   opacity: 0.8;
 }
 
+/* 심의 모드 안내 — "/심의" 트리거를 챗 랜딩에 노출 */
+.cx-hero-hint {
+  margin: 1.2rem auto 0;
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+  letter-spacing: 0.01em;
+  opacity: 0.9;
+}
+
 /* 랜딩의 강조 컴포저 — 크고 또렷하게 */
 .cx-hero .composer {
   margin: 1.6rem auto 0;

@@ -13,9 +13,13 @@ import '../styles/chatpage.css';
 const EXAMPLE_PROMPTS = [
   '이 포털 사용법을 알려줘 — 내 Claude에 연결하려면?',
   '이 포털에서 무엇을 할 수 있는지 알려줘',
+  '/심의 FPCB 적층 동박을 두껍게 vs 얇게 — 전문가 다중 라운드 심의',
   '배터리 스웰링 관련 백서 내용을 정리해줘',
   '시험 신호 데이터의 전처리 방법을 추천해줘',
 ];
+
+// "/심의 <질문>" → 다중 라운드 전문가 심의 모드(agent-server deliberation). 챗 입력 안내에 노출.
+const DELIBERATE_HINT = '/심의 <질문> — 관련 전문가들이 여러 라운드로 토의해 의사결정문을 만듭니다';
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -106,6 +110,7 @@ export default function ChatPage() {
                   </button>
                 ))}
               </div>
+              <p className="cx-hero-hint">{DELIBERATE_HINT}</p>
               <p className="cx-hero-sub">
                 요청을 이해해 알맞은 플랫폼으로 연결하고 결과를 대화로 돌려드립니다.
               </p>
