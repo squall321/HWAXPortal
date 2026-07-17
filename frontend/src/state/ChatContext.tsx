@@ -73,12 +73,20 @@ function makeTitle(text: string): string {
   return t.length > 40 ? `${t.slice(0, 40).trimEnd()}…` : t;
 }
 
-export function ChatProvider({ children }: { children: ReactNode }) {
+interface ChatProviderProps {
+  children: ReactNode;
+  /** 이력 localStorage 네임스페이스 — 심의 페이지는 'hwax.delib' 로 분리(기본 일반 챗). */
+  storagePrefix?: string;
+  /** 전송 시 서버로만 붙는 프리픽스(화면 표시는 원문) — 심의 페이지가 '/심의 ' 자동 부착에 사용. */
+  sendPrefix?: string;
+}
+
+export function ChatProvider({ children, storagePrefix = 'hwax.chat', sendPrefix = '' }: ChatProviderProps) {
   // localStorage는 동기라 초기 렌더에서 바로 복원 — 새로고침 시 플래시 없음.
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations());
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(storagePrefix));
   const [activeId, setActiveId] = useState<string | null>(() => {
-    const saved = loadActiveId();
-    return saved && loadConversations().some((c) => c.id === saved) ? saved : null;
+    const saved = loadActiveId(storagePrefix);
+    return saved && loadConversations(storagePrefix).some((c) => c.id === saved) ? saved : null;
   });
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -89,12 +97,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // 변경 시 저장(토큰 단위 갱신이 잦으므로 250ms 디바운스).
   useEffect(() => {
-    const t = window.setTimeout(() => saveConversations(conversations), 250);
+    const t = window.setTimeout(() => saveConversations(conversations, storagePrefix), 250);
     return () => window.clearTimeout(t);
-  }, [conversations]);
+  }, [conversations, storagePrefix]);
   useEffect(() => {
-    saveActiveId(activeId);
-  }, [activeId]);
+    saveActiveId(activeId, storagePrefix);
+  }, [activeId, storagePrefix]);
 
   const patch = useCallback((convId: string, msgId: string, fn: (m: Message) => Message) => {
     setConversations((prev) =>
@@ -153,7 +161,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       streamConvRef.current = convId;
       const cid = convId;
 
-      void streamChat(text, {
+      // 심의 페이지 등에서 서버 트리거 프리픽스를 자동 부착(이미 입력했으면 중복 금지).
+      const outbound = sendPrefix && !text.startsWith(sendPrefix.trim()) ? sendPrefix + text : text;
+
+      void streamChat(outbound, {
         signal: controller.signal,
         history,
         onStatus: (e) => patch(cid, botId, (m) => ({ ...m, status: e.step })),
@@ -196,7 +207,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         streamConvRef.current = null;
       });
     },
-    [streaming, activeId, conversations, patch],
+    [streaming, activeId, conversations, patch, sendPrefix],
   );
 
   const stop = useCallback(() => {

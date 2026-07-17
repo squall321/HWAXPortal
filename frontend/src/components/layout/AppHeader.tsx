@@ -35,6 +35,9 @@ export function AppHeader() {
             <NavLink to="/" style={navLinkStyle} end>
               챗
             </NavLink>
+            <NavLink to="/deliberate" style={navLinkStyle}>
+              심의
+            </NavLink>
             <NavLink to="/apps" style={navLinkStyle}>
               앱
             </NavLink>

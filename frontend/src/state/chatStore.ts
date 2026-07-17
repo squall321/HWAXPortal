@@ -1,9 +1,9 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
 import type { Conversation, Message, Role } from '../types/chat';
 
-const CONVS_KEY = 'hwax.chat.conversations';
-const ACTIVE_KEY = 'hwax.chat.activeId';
-const SIDEBAR_KEY = 'hwax.chat.sidebar';
+// prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
+const DEFAULT_PREFIX = 'hwax.chat';
+const SIDEBAR_KEY = 'hwax.chat.sidebar'; // 사이드바 접힘은 페이지 공통 UI 선호라 공유
 const MAX_CONVERSATIONS = 100;
 
 // Persisted shape (plan: {role, content, ts}). Transient fields (streaming/status)
@@ -28,9 +28,9 @@ export function newId(): string {
   return `${Date.now().toString(36)}-${(++seq).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function loadConversations(): Conversation[] {
+export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation[] {
   try {
-    const raw = localStorage.getItem(CONVS_KEY);
+    const raw = localStorage.getItem(`${prefix}.conversations`);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -62,7 +62,7 @@ export function loadConversations(): Conversation[] {
   }
 }
 
-export function saveConversations(convs: Conversation[]): void {
+export function saveConversations(convs: Conversation[], prefix: string = DEFAULT_PREFIX): void {
   try {
     const stored: StoredConversation[] = convs.slice(0, MAX_CONVERSATIONS).map((c) => ({
       id: c.id,
@@ -79,24 +79,24 @@ export function saveConversations(convs: Conversation[]): void {
           ...(m.error ? { error: m.error } : {}),
         })),
     }));
-    localStorage.setItem(CONVS_KEY, JSON.stringify(stored));
+    localStorage.setItem(`${prefix}.conversations`, JSON.stringify(stored));
   } catch {
     // 쿼터 초과 등 — 채팅 자체는 계속 동작해야 하므로 무시
   }
 }
 
-export function loadActiveId(): string | null {
+export function loadActiveId(prefix: string = DEFAULT_PREFIX): string | null {
   try {
-    return localStorage.getItem(ACTIVE_KEY);
+    return localStorage.getItem(`${prefix}.activeId`);
   } catch {
     return null;
   }
 }
 
-export function saveActiveId(id: string | null): void {
+export function saveActiveId(id: string | null, prefix: string = DEFAULT_PREFIX): void {
   try {
-    if (id) localStorage.setItem(ACTIVE_KEY, id);
-    else localStorage.removeItem(ACTIVE_KEY);
+    if (id) localStorage.setItem(`${prefix}.activeId`, id);
+    else localStorage.removeItem(`${prefix}.activeId`);
   } catch {
     /* noop */
   }

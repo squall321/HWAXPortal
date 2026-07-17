@@ -4,6 +4,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute';
 import { ChatProvider } from './state/ChatContext';
 import { AppShell } from './components/layout/AppShell';
 import ChatPage from './pages/ChatPage';
+import DeliberatePage from './pages/DeliberatePage';
 import LaunchPage from './pages/LaunchPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -18,6 +19,19 @@ const router = createBrowserRouter([
       <ProtectedRoute>
         <AppShell>
           <ChatPage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/deliberate',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          {/* 심의 전용 이력(hwax.delib.*) + '/심의 ' 자동 트리거 — 중첩 Provider 라 일반 챗과 분리 */}
+          <ChatProvider storagePrefix="hwax.delib" sendPrefix="/심의 ">
+            <DeliberatePage />
+          </ChatProvider>
         </AppShell>
       </ProtectedRoute>
     ),

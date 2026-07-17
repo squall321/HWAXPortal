@@ -4,9 +4,9 @@ import { AppHeader } from './AppHeader';
 import { ChatDock } from '../chat/ChatDock';
 
 export function AppShell({ children }: { children: ReactNode }) {
-  // '/' is the full-screen ChatPage, so the floating dock would duplicate it there.
-  // Keep the dock as a secondary helper on the other pages (/apps, /launch).
-  const isChatMain = useLocation().pathname === '/';
+  // '/'(챗)과 '/deliberate'(심의)는 전체화면 챗형 UI라 플로팅 독이 중복 — 그 외 페이지에서만 보조로 띄운다.
+  const { pathname } = useLocation();
+  const isChatMain = pathname === '/' || pathname === '/deliberate';
   return (
     <>
       <AppHeader />

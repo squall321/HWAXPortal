@@ -14,6 +14,7 @@
 
 | 단계 | 하는 일 | 구현 |
 |---|---|---|
+| **0. 불량 환기(조건부)** | 화두에 불량·품질 얘기가 있으면 SignalForge 최근 이슈를 먼저 환기 — `alert_check` → 경보 제품별 `get_top_issues`(경보 없으면 `daily_briefing` 폴백) → `query_voc`(sentiment=negative) 증거. 연관되면 심의 컨텍스트에 포함, 아니면 환기만 하고 질문 기반 진행 | 게이트웨이 MCP (SignalForge VOC) |
 | **1. 발굴** | `recommend_agents(question)`로 관련 전문 페르소나 + 필요 도구 식별 | 게이트웨이 MCP (AIDataHub) |
 | **2. 분석(도구)** | 계산·데이터 MCP로 정량 근거 생성(DOE·비교·시뮬), 결과를 구조화 | 게이트웨이 MCP (laminate/materialtwin/…) |
 | **3. 심의(N라운드)** | R1 병렬 의견 → R2 반박·수치 심화 → R3 수렴 → 의사결정문 | **[hwax-deliberate.js](../infra/pipeline/hwax-deliberate.js)** |
@@ -49,10 +50,14 @@ Workflow({ name: 'hwax-deliberate', args: {
 
 ## 진입점 (노출)
 
-- **역량 있는 Claude(개인 Claude via MCP / Claude Code)** — 지금 바로. 게이트웨이 도구로 1·2·4·5 단계를
+- **역량 있는 Claude(개인 Claude via MCP / Claude Code)** — 지금 바로. 게이트웨이 도구로 0·1·2·4·5 단계를
   직접 오케스트레이션하고 3단계는 `hwax-deliberate` 워크플로 호출. (오늘 FPCB로 실증.)
-- **포털 챗 "심의 모드"** — 후속. dev vLLM(7B)은 이 오케스트레이션에 약하므로 상암 프로덕션 LLM(GLM) 연결 시
-  agent-server 에 트리거 노출. [[hwax-mcp-orchestration]] 의 agent-server 확장 지점.
+  단계 0의 SignalForge 환기 결과는 요약해 `args.context`에 담아 전달하면 된다(워크플로 수정 불요).
+- **포털 챗 "심의 모드"** — `/심의 <질문>` 트리거(agent-server `deliberation.py`). 단계 0(불량 환기·연관성
+  LLM 판정)이 내장되어 있고, 결과는 RA `deliberation` 템플릿 보고서로 저장된다. dev vLLM(7B)로 완주는
+  확인됐으나 실용 품질은 상암 프로덕션 LLM(GLM) 전제.
+- **포털 "심의" 메뉴(/deliberate)** — 전용 페이지. 화두를 입력하면 `/심의` 트리거를 자동 부착해 위와 같은
+  경로를 타고, 대화 기록은 챗과 분리된 `hwax.delib.*`(localStorage)에 남는다.
 
 ## 실증 (2026-07-17) — FPCB 적층 DOE
 
