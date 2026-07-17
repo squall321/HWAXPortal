@@ -41,11 +41,13 @@ if want mxwp && [ -n "$MXWP_DIR" ]; then
 fi
 
 if want heax && [ -n "$HEAX_DIR" ]; then
-  hr "HEAX Hub — build dist → Drive"
+  hr "HEAX Hub — build dist + app-data → Drive"
   ( cd "$HEAX_DIR"
     pnpm --dir frontend install --frozen-lockfile=false
     HEAX_BASE_PATH=/heax-hub/ pnpm --dir frontend build
-    ./deploy/apptainer/dist-to-drive.sh )
+    ./deploy/apptainer/dist-to-drive.sh
+    # 앱 런타임 데이터(materialtwin 재료 DB 등) — 코드/dist엔 없는 표면. 비치명적(실패해도 계속).
+    ./deploy/apptainer/appdata-to-drive.sh || echo "  ⚠ app-data 백업 생략(비치명적)" )
 fi
 
 # SignalForge: dist 는 frontend.sif 에 베이크되고(별도 dist 배송 없음), DATA(postgres) 까지 함께

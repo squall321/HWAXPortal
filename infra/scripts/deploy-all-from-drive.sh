@@ -151,6 +151,7 @@ if want heax; then
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
       ./deploy/apptainer/dist-from-drive.sh   # frontend/dist (+ optional caddy sif)
+      bash deploy/apptainer/appdata-from-drive.sh || true   # 앱 데이터(materialtwin 재료 DB 등) 복원(비치명적)
       [ "$RESTART" = 1 ] || bash deploy/apptainer/stop.sh 2>/dev/null || true
       if ! HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh; then
         echo "  ── last lines of var/logs/postgres-start.log (the hidden error) ──"
