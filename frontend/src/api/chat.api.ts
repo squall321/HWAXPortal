@@ -104,6 +104,18 @@ export async function streamChat(
   const decoder = new TextDecoder();
   let buffer = '';
 
+  // 서버가 done 이벤트 없이 스트림을 끊어도(제너레이터 사망 등) 호출측 잠금이 풀리도록,
+  // 스트림 종료 시 onDone 을 반드시 1회 보장한다(중복 방지).
+  let doneFired = false;
+  const guarded: StreamHandlers = {
+    ...handlers,
+    onDone: () => {
+      if (doneFired) return;
+      doneFired = true;
+      handlers.onDone?.();
+    },
+  };
+
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -116,13 +128,14 @@ export async function streamChat(
         const block = buffer.slice(0, sep);
         buffer = buffer.slice(sep + 2);
         const frame = parseFrame(block);
-        if (frame) dispatch(frame, handlers);
+        if (frame) dispatch(frame, guarded);
       }
     }
     // Flush any trailing frame without a closing blank line.
     const frame = parseFrame(buffer);
-    if (frame) dispatch(frame, handlers);
+    if (frame) dispatch(frame, guarded);
   } finally {
     reader.releaseLock();
+    guarded.onDone?.();
   }
 }
