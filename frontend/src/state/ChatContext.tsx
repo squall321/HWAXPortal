@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { streamChat, type HistoryMessage } from '../api/chat.api';
-import type { Conversation, Message } from '../types/chat';
+import type { Conversation, DelibData, DelibEvent, DelibTally, DelibTurn, Message } from '../types/chat';
 import {
   loadActiveId,
   loadConversations,
@@ -64,6 +64,54 @@ function buildHistory(messages: Message[]): HistoryMessage[] {
     out.push(items[i]);
   }
   return out.reverse();
+}
+
+/** 심의 delib 이벤트를 메시지의 DelibData 로 병합 — kind 별 리듀서. */
+function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
+  const d: DelibData = { ...(prev ?? {}) };
+  switch (e.kind) {
+    case 'stage': {
+      const stage = String(e.stage ?? '');
+      d.stage = stage;
+      d.stages = [...(d.stages ?? []), stage];
+      if (typeof e.n === 'number') d.roundN = e.n;
+      break;
+    }
+    case 'personas':
+      d.personas = (e.personas as DelibData['personas']) ?? [];
+      break;
+    case 'evidence':
+      d.evidence = {
+        source: String(e.source ?? ''),
+        text: String(e.text ?? ''),
+        included: Boolean(e.included),
+      };
+      break;
+    case 'turn': {
+      const turn: DelibTurn = {
+        round: Number(e.round ?? 0),
+        persona: String(e.persona ?? ''),
+        say: String(e.say ?? ''),
+        ...(e.position ? { position: String(e.position) } : {}),
+        ...(e.stance ? { stance: String(e.stance) } : {}),
+        ts: Date.now(),
+      };
+      d.turns = [...(d.turns ?? []), turn];
+      break;
+    }
+    case 'decision':
+      d.decision = String(e.text ?? '');
+      break;
+    case 'outcome':
+      d.outcome = {
+        report_id: (e.report_id as number | null) ?? null,
+        title: String(e.title ?? ''),
+        tally: e.tally as DelibTally | undefined,
+        unanimous: Boolean(e.unanimous),
+      };
+      break;
+  }
+  return d;
 }
 
 /** 첫 사용자 메시지 → 대화 제목(≈40자). */
@@ -191,6 +239,7 @@ export function ChatProvider({ children, storagePrefix = 'hwax.chat', sendPrefix
           }),
         onToken: (e) =>
           patch(cid, botId, (m) => ({ ...m, text: m.text + e.delta, status: undefined })),
+        onDelib: (e) => patch(cid, botId, (m) => ({ ...m, delib: mergeDelib(m.delib, e) })),
         onResult: (block) =>
           patch(cid, botId, (m) => ({
             ...m,

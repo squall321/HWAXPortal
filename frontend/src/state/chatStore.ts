@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, Conversation, Message, Role } from '../types/chat';
+import type { ActivityItem, Conversation, DelibData, Message, Role } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -15,6 +15,7 @@ interface StoredMessage {
   ts: number;
   error?: string;
   activity?: ActivityItem[];
+  delib?: DelibData;
 }
 interface StoredConversation {
   id: string;
@@ -49,6 +50,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           ts: typeof m.ts === 'number' ? m.ts : undefined,
           ...(m.error ? { error: m.error } : {}),
           ...(Array.isArray(m.activity) ? { activity: m.activity } : {}),
+          ...(m.delib && typeof m.delib === 'object' ? { delib: m.delib } : {}),
         });
       }
       convs.push({
@@ -65,6 +67,15 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
   }
 }
 
+/** 심의 데이터 저장 트림 — turns/evidence 캡으로 localStorage 누적 증가를 통제한다. */
+function trimDelib(d: DelibData): DelibData {
+  return {
+    ...d,
+    ...(d.turns ? { turns: d.turns.slice(-45) } : {}),
+    ...(d.evidence ? { evidence: { ...d.evidence, text: d.evidence.text.slice(0, 2000) } } : {}),
+  };
+}
+
 export function saveConversations(convs: Conversation[], prefix: string = DEFAULT_PREFIX): void {
   try {
     const stored: StoredConversation[] = convs.slice(0, MAX_CONVERSATIONS).map((c) => ({
@@ -74,18 +85,28 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       updatedAt: c.updatedAt,
       messages: c.messages
         // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
-        .filter((m) => m.text || m.error || m.role === 'user')
+        // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).
+        .filter((m) => m.text || m.error || m.delib || m.role === 'user')
         .map((m) => ({
           role: m.role,
           content: m.text,
           ts: m.ts ?? c.updatedAt,
           ...(m.error ? { error: m.error } : {}),
           ...(m.activity && m.activity.length > 0 ? { activity: m.activity.slice(-60) } : {}),
+          ...(m.delib ? { delib: trimDelib(m.delib) } : {}),
         })),
     }));
-    localStorage.setItem(`${prefix}.conversations`, JSON.stringify(stored));
+    try {
+      localStorage.setItem(`${prefix}.conversations`, JSON.stringify(stored));
+    } catch {
+      // 쿼터 초과 — 오래된 대화 절반을 버리고 1회 재시도(무음 전면 저장 중단 방지)
+      localStorage.setItem(
+        `${prefix}.conversations`,
+        JSON.stringify(stored.slice(0, Math.max(1, Math.floor(stored.length / 2)))),
+      );
+    }
   } catch {
-    // 쿼터 초과 등 — 채팅 자체는 계속 동작해야 하므로 무시
+    // 재시도까지 실패 — 채팅 자체는 계속 동작해야 하므로 무시
   }
 }
 

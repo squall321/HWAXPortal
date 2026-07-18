@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Message } from '../../types/chat';
 import { copyText } from './clipboard';
+import { DelibView } from './DelibView';
 import { IconArrowDown, IconCheck, IconCopy } from './icons';
 import { TextBlock } from './renderers/TextBlock';
 
@@ -33,15 +34,22 @@ function Row({ msg }: { msg: Message }) {
     );
   }
 
-  const thinking = Boolean(msg.streaming) && !msg.text;
+  // 심의 메시지는 구조화 라이브 뷰(스테퍼·회의·수렴)로 — 텍스트 스트림 대신 DelibView 가 본문.
+  const hasDelib = Boolean(msg.delib && (msg.delib.stages?.length || msg.delib.turns?.length));
+
+  const thinking = Boolean(msg.streaming) && !msg.text && !hasDelib;
   // A finished assistant turn with no text/error (e.g. the model only called a tool
   // and produced no closing text) would otherwise render empty — show a fallback.
-  const emptyDone = !msg.streaming && !msg.text && !msg.error && !msg.status;
+  const emptyDone = !msg.streaming && !msg.text && !msg.error && !msg.status && !hasDelib;
 
   return (
     <div className="msg assistant">
       <div className="msg-content">
-        {msg.text && <TextBlock text={msg.text} cursor={Boolean(msg.streaming)} />}
+        {hasDelib ? (
+          <DelibView msg={msg} />
+        ) : (
+          msg.text && <TextBlock text={msg.text} cursor={Boolean(msg.streaming)} />
+        )}
         {/* 토큰이 흐른 뒤에도 도구 호출 등으로 status가 다시 올 수 있다 — 텍스트 아래에 표시. */}
         {msg.text && msg.status && <div className="msg-status-text">{msg.status}</div>}
         {thinking && (

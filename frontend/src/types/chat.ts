@@ -21,6 +21,42 @@ export interface ActivityItem {
   result_preview?: string;
 }
 
+// ── 심의(deliberation) 구조화 스트림 — 라이브 회의·스테퍼·수렴 UI(DelibView)의 데이터 ──
+export interface DelibTurn {
+  round: number;
+  persona: string;
+  say: string;
+  position?: string; // 입장 한 줄 요약(R1/R3)
+  stance?: string; // R3: 동의|조건부 동의|반대
+  ts: number;
+}
+export interface DelibTally {
+  agree: number;
+  conditional: number;
+  oppose: number;
+  total: number;
+}
+export interface DelibData {
+  stage?: string; // recall|discover|r1|r2|r3|decide|report
+  stages?: string[]; // 지나온 단계(순서)
+  roundN?: number; // 라운드당 패널 수(진행률 분모)
+  personas?: { key: string; role?: string }[];
+  evidence?: { source: string; text: string; included: boolean };
+  turns?: DelibTurn[];
+  decision?: string;
+  outcome?: {
+    report_id?: number | null;
+    title?: string;
+    tally?: DelibTally;
+    unanimous?: boolean;
+  };
+}
+// SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
+export interface DelibEvent {
+  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'outcome';
+  [k: string]: unknown;
+}
+
 export interface Message {
   id: string;
   role: Role;
@@ -34,6 +70,8 @@ export interface Message {
   status?: string;
   // status 이벤트 누적 — 활동 패널(도구·전문가·진행)용. 영속됨.
   activity?: ActivityItem[];
+  // 심의 구조화 데이터 — 라이브 회의/스테퍼/수렴 렌더(DelibView)용. 영속됨.
+  delib?: DelibData;
   error?: string;
   streaming?: boolean;
 }

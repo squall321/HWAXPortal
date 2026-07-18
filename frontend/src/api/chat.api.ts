@@ -1,5 +1,5 @@
 import { config } from '../config';
-import type { ErrorEvent, ResultBlock, StatusEvent, TokenEvent } from '../types/chat';
+import type { DelibEvent, ErrorEvent, ResultBlock, StatusEvent, TokenEvent } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -15,6 +15,7 @@ export interface StreamHandlers {
   onStatus?: (e: StatusEvent) => void;
   onToken?: (e: TokenEvent) => void;
   onResult?: (block: ResultBlock) => void;
+  onDelib?: (e: DelibEvent) => void;
   onError?: (e: ErrorEvent) => void;
   onDone?: () => void;
   signal?: AbortSignal;
@@ -53,6 +54,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'result':
       h.onResult?.(payload as ResultBlock);
+      break;
+    case 'delib':
+      h.onDelib?.(payload as DelibEvent);
       break;
     case 'error':
       h.onError?.(payload as ErrorEvent);

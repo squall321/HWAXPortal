@@ -534,3 +534,81 @@ body.dock-open .container {
     padding-right: 1.5rem;
   }
 }
+
+/* ════ 심의 라이브 뷰 (DelibView — 스테퍼·회의 버블·수렴·산출물) ════ */
+
+.dv-root { display: flex; flex-direction: column; gap: 0.9rem; }
+
+/* 절차 스테퍼 */
+.dv-stepper { display: flex; align-items: center; flex-wrap: wrap; gap: 0.15rem; padding: 0.55rem 0.7rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+.dv-step { display: flex; align-items: center; gap: 0.35rem; }
+.dv-step-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); display: grid; place-items: center; font-size: 0.62rem; color: #fff; flex-shrink: 0; }
+.dv-step.done .dv-step-dot { background: #3f7d5a; border-color: #3f7d5a; }
+.dv-step.now .dv-step-dot { border-color: #4ade80; animation: act-pulse 1.2s ease-in-out infinite; }
+.dv-step-label { font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
+.dv-step.done .dv-step-label, .dv-step.now .dv-step-label { color: var(--fg); }
+.dv-step.now .dv-step-label { font-weight: 700; }
+.dv-step-sub { font-style: normal; margin-left: 0.3rem; color: #4ade80; font-size: 0.68rem; }
+.dv-step-bar { width: 16px; height: 2px; background: var(--border); margin: 0 0.25rem; }
+.dv-step.done .dv-step-bar { background: #3f7d5a; }
+
+/* 근거 카드 */
+.dv-evidence { border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.dv-evidence summary { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; cursor: pointer; font-size: 0.8rem; color: var(--fg); list-style: none; }
+.dv-evidence summary::-webkit-details-marker { display: none; }
+.dv-ev-badge { font-size: 0.62rem; letter-spacing: 0.08em; padding: 0.1rem 0.4rem; border-radius: 4px; background: rgba(112, 130, 255, 0.18); color: #aab6ff; }
+.dv-ev-flag { margin-left: auto; font-size: 0.68rem; color: var(--muted); }
+.dv-ev-flag.in { color: #4ade80; }
+.dv-ev-body { margin: 0; padding: 0.6rem 0.85rem 0.8rem; font-size: 0.74rem; line-height: 1.55; color: var(--muted); white-space: pre-wrap; word-break: break-word; border-top: 1px solid var(--border); }
+
+/* 회의 버블 */
+.dv-meeting { display: flex; flex-direction: column; gap: 0.7rem; }
+.dv-round { display: flex; flex-direction: column; gap: 0.6rem; }
+.dv-round-div { display: flex; align-items: center; gap: 0.7rem; color: #cf8b56; margin-top: 0.2rem; }
+.dv-round-div::before, .dv-round-div::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.dv-round-div span { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }
+.dv-round-div.chair { color: #d9a05f; }
+.dv-turn { display: flex; gap: 0.6rem; align-items: flex-start; max-width: 92%; animation: dv-in 0.25s ease; }
+@keyframes dv-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dv-turn { animation: none; } }
+.dv-av { flex: none; width: 30px; height: 30px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 0.78rem; display: grid; place-items: center; margin-top: 2px; }
+.dv-av.sm { width: 20px; height: 20px; font-size: 0.62rem; }
+.dv-turn-body { min-width: 0; }
+.dv-who { font-size: 0.72rem; font-weight: 640; color: var(--fg); margin: 0 0 0.22rem 2px; display: flex; align-items: center; gap: 0.4rem; }
+.dv-stance { font-size: 0.62rem; font-weight: 600; padding: 0.06rem 0.4rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.dv-stance.agree { color: #4ade80; border-color: rgba(74, 222, 128, 0.4); }
+.dv-stance.cond { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
+.dv-stance.oppose { color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
+.dv-bub { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 4px 10px 10px 10px; padding: 0.55rem 0.8rem; font-size: 0.83rem; color: var(--fg); line-height: 1.6; }
+.dv-typing { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.74rem; padding-left: 2.4rem; }
+
+/* 수렴 트래커 */
+.dv-conv { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 0.65rem 0.8rem; }
+.dv-conv-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; font-size: 0.78rem; font-weight: 700; color: var(--fg); margin-bottom: 0.55rem; }
+.dv-verdict { font-size: 0.68rem; font-weight: 600; padding: 0.12rem 0.5rem; border-radius: 999px; background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+.dv-verdict.unanimous { background: rgba(74, 222, 128, 0.14); color: #4ade80; }
+.dv-minority { font-size: 0.66rem; color: #f87171; }
+.dv-conv-grid { display: flex; flex-direction: column; gap: 0.35rem; }
+.dv-conv-row { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
+.dv-conv-pos { font-size: 0.7rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.dv-conv-pos.to { color: var(--fg); }
+.dv-conv-pos.to.agree { color: #4ade80; }
+.dv-conv-pos.to.cond { color: #fbbf24; }
+.dv-conv-pos.to.oppose { color: #f87171; }
+.dv-conv-arrow { color: var(--muted); flex-shrink: 0; font-size: 0.7rem; }
+
+/* 산출물 카드 */
+.dv-outcome { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.dv-card { display: flex; flex-direction: column; gap: 0.18rem; padding: 0.65rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--card); min-width: 200px; text-decoration: none; }
+.dv-card.report:hover { border-color: var(--accent); }
+.dv-card-k { font-size: 0.66rem; letter-spacing: 0.05em; color: var(--muted); }
+.dv-card-t { font-size: 0.8rem; font-weight: 700; color: var(--fg); }
+.dv-card-s { font-size: 0.68rem; color: var(--muted); }
+.dv-card.verdict.unanimous .dv-card-k { color: #4ade80; }
+
+/* 의사결정문 */
+.dv-decision { border: 1px solid rgba(217, 160, 95, 0.35); border-radius: 10px; padding: 0.2rem 0.9rem 0.7rem; background: linear-gradient(160deg, rgba(217, 160, 95, 0.06), transparent 40%); }
+
+/* 에러/중단으로 멈춘 심의 — 멈춘 지점을 펄스 없이 동결 표시 */
+.dv-step.halt .dv-step-dot { border-color: #fbbf24; color: #fbbf24; font-size: 0.55rem; animation: none; }
+.dv-step.halt .dv-step-label { color: var(--muted); }
