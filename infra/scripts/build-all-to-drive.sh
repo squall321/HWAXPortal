@@ -44,7 +44,9 @@ if want heax && [ -n "$HEAX_DIR" ]; then
   hr "HEAX Hub — build dist + app-data → Drive"
   ( cd "$HEAX_DIR"
     pnpm --dir frontend install --frozen-lockfile=false
-    HEAX_BASE_PATH=/heax-hub/ pnpm --dir frontend build
+    # heax vite.config 는 VITE_BASE_PATH 를 읽는다(HEAX_BASE_PATH 아님 — 과거 이름 불일치로
+    # 루트 base dist 가 배포돼 포털 서브패스에서 자산 404가 났던 원인). 둘 다 넘겨 견고하게.
+    VITE_BASE_PATH=/heax-hub/ HEAX_BASE_PATH=/heax-hub/ pnpm --dir frontend build
     ./deploy/apptainer/dist-to-drive.sh
     # 앱 런타임 데이터(materialtwin 재료 DB 등) — 코드/dist엔 없는 표면. 비치명적(실패해도 계속).
     ./deploy/apptainer/appdata-to-drive.sh || echo "  ⚠ app-data 백업 생략(비치명적)" )
