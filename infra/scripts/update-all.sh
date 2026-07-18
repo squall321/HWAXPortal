@@ -71,6 +71,28 @@ SF_RESTORE_DB="${SF_RESTORE_DB:-0}" "$SELF_REPO/infra/scripts/deploy-all-from-dr
 #      (prod 챗도 create_agent 등 쓰기 도구를 노출하므로, 새 덤프 없는데 매번 DROP+restore 하지 않는다) ──
 hr "3) AIDataHub 데이터(에이전트·레코드) 동기화"
 if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ]; then
+  # AIDH_DRIVE_REMOTE 자동 프로비저닝 — 미설정이면 박스의 rclone remote 로 채운다(기존 값은 존중).
+  # setup-drive-sync.sh 는 rclone remote 가 없는 새 박스용 대화형 설치라, remote 가 이미 있는
+  # 박스(cae00)에서는 env 한 줄이면 충분하다. (dev 원본 덤프 경로: <remote>:AIDataHub/db-dumps)
+  AIDH_ENV="$AIDH_DIR/deploy/apptainer/.env"
+  [ -f "$AIDH_ENV" ] || { [ -f "$AIDH_ENV.example" ] && cp "$AIDH_ENV.example" "$AIDH_ENV"; } || true
+  if ! grep -qE '^AIDH_DRIVE_REMOTE=.+' "$AIDH_ENV" 2>/dev/null; then
+    RCLONE_BIN="$(command -v rclone || echo "$SELF_REPO/infra/bin/rclone")"
+    AIDH_ALIAS=""
+    if [ -x "$RCLONE_BIN" ]; then
+      if "$RCLONE_BIN" listremotes 2>/dev/null | grep -qx 'ApptainerImages:'; then
+        AIDH_ALIAS="ApptainerImages"
+      else
+        AIDH_ALIAS="$("$RCLONE_BIN" listremotes 2>/dev/null | head -1 | sed 's/:$//')"
+      fi
+    fi
+    if [ -n "$AIDH_ALIAS" ]; then
+      printf 'AIDH_DRIVE_REMOTE=%s:AIDataHub/db-dumps\n' "$AIDH_ALIAS" >> "$AIDH_ENV"
+      ok "AIDH_DRIVE_REMOTE 자동 설정: $AIDH_ALIAS:AIDataHub/db-dumps"
+    else
+      bad "rclone remote 미탐지 — AIDH_DRIVE_REMOTE 수동 설정 필요($AIDH_ENV)"
+    fi
+  fi
   # dry-run(다운로드+검증만)으로 Drive 최신 덤프를 받아 이름 확인 → 마커와 비교
   ( cd "$AIDH_DIR" && ./deploy/apptainer/sync-from-drive.sh --dry-run --skip-git --skip-restart >/dev/null 2>&1 ) || true
   LATEST_LINK="$(find "$AIDH_DIR/deploy" -maxdepth 3 -name latest.sql.gz 2>/dev/null | head -1)"
