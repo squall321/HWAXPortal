@@ -1,6 +1,7 @@
 // 심의 전용 페이지 — 화두를 던지면 전문가 다중 라운드 심의(불량 화두면 SignalForge 환기 선행), 이력은 챗과 분리
 import { useCallback, useRef, useState } from 'react';
 import { useChat } from '../state/ChatContext';
+import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { Composer, type ComposerHandle } from '../components/chat/Composer';
 import { MessageList } from '../components/chat/MessageList';
@@ -111,6 +112,7 @@ export default function DeliberatePage() {
           </div>
         )}
       </section>
+      {!empty && <ActivityPanel messages={messages} />}
     </div>
   );
 }

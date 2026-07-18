@@ -9,6 +9,15 @@ export type ResultBlock =
   | { type: 'graph'; content: string; metadata?: { title?: string; source?: string } }
   | { type: 'cad'; content: string; metadata?: { part_id?: string; format?: string } };
 
+// 활동 패널 항목 — status 이벤트 누적분(어떤 도구·전문가가 쓰였는지). 대화 옆 정보 표시용.
+export interface ActivityItem {
+  ts: number;
+  step: string;
+  tool?: string | null;
+  personas?: string[];
+  tools_used?: string[];
+}
+
 export interface Message {
   id: string;
   role: Role;
@@ -20,6 +29,8 @@ export interface Message {
   result?: ResultBlock;
   // Transient status line shown while the agent works (from `status` events).
   status?: string;
+  // status 이벤트 누적 — 활동 패널(도구·전문가·진행)용. 영속됨.
+  activity?: ActivityItem[];
   error?: string;
   streaming?: boolean;
 }
@@ -37,6 +48,9 @@ export interface Conversation {
 export interface StatusEvent {
   step: string;
   tool: string | null;
+  // 심의 경로가 얹는 구조화 정보 — 활동 패널용(없으면 무시).
+  personas?: string[];
+  tools_used?: string[];
 }
 export interface TokenEvent {
   delta: string;

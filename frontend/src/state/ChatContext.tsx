@@ -167,7 +167,26 @@ export function ChatProvider({ children, storagePrefix = 'hwax.chat', sendPrefix
       void streamChat(outbound, {
         signal: controller.signal,
         history,
-        onStatus: (e) => patch(cid, botId, (m) => ({ ...m, status: e.step })),
+        onStatus: (e) =>
+          patch(cid, botId, (m) => {
+            // 활동 패널용 누적 — 같은 step 연속 중복은 스킵, 60건 캡(영속 크기 통제).
+            const prev = m.activity ?? [];
+            const last = prev[prev.length - 1];
+            const activity =
+              last && last.step === e.step
+                ? prev
+                : [
+                    ...prev.slice(-59),
+                    {
+                      ts: Date.now(),
+                      step: e.step,
+                      tool: e.tool ?? null,
+                      ...(e.personas ? { personas: e.personas } : {}),
+                      ...(e.tools_used ? { tools_used: e.tools_used } : {}),
+                    },
+                  ];
+            return { ...m, status: e.step, activity };
+          }),
         onToken: (e) =>
           patch(cid, botId, (m) => ({ ...m, text: m.text + e.delta, status: undefined })),
         onResult: (block) =>

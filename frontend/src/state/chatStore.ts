@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { Conversation, Message, Role } from '../types/chat';
+import type { ActivityItem, Conversation, Message, Role } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -8,11 +8,13 @@ const MAX_CONVERSATIONS = 100;
 
 // Persisted shape (plan: {role, content, ts}). Transient fields (streaming/status)
 // are intentionally dropped; `error` is kept so failed turns stay explainable.
+// `activity`(도구·전문가 활동 로그)는 활동 패널이 과거 대화에서도 보이도록 영속한다.
 interface StoredMessage {
   role: Role;
   content: string;
   ts: number;
   error?: string;
+  activity?: ActivityItem[];
 }
 interface StoredConversation {
   id: string;
@@ -46,6 +48,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           text: typeof m.content === 'string' ? m.content : '',
           ts: typeof m.ts === 'number' ? m.ts : undefined,
           ...(m.error ? { error: m.error } : {}),
+          ...(Array.isArray(m.activity) ? { activity: m.activity } : {}),
         });
       }
       convs.push({
@@ -77,6 +80,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
           content: m.text,
           ts: m.ts ?? c.updatedAt,
           ...(m.error ? { error: m.error } : {}),
+          ...(m.activity && m.activity.length > 0 ? { activity: m.activity.slice(-60) } : {}),
         })),
     }));
     localStorage.setItem(`${prefix}.conversations`, JSON.stringify(stored));

@@ -436,3 +436,98 @@
     animation: none;
   }
 }
+
+/* ════ 활동 패널 (대화 옆 — 어떤 에이전트·MCP 도구가 쓰이는지) ════ */
+
+.cx-activity {
+  flex-shrink: 0;
+  width: 236px;
+  border-left: 1px solid var(--border);
+  background: var(--card);
+  padding: 0.9rem 0.95rem;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  display: none; /* 좁은 화면에선 숨김 — 1180px 이상에서만 */
+}
+@media (min-width: 1180px) {
+  .cx-activity { display: block; }
+}
+.act-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  color: var(--fg);
+  font-size: 0.8rem;
+  margin-bottom: 0.7rem;
+}
+.act-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.act-dot.live {
+  background: #4ade80;
+  animation: act-pulse 1.2s ease-in-out infinite;
+}
+@keyframes act-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .act-dot.live { animation: none; }
+}
+.act-sec { margin-bottom: 0.85rem; }
+.act-sec h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.act-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.act-tag {
+  padding: 0.14rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.04);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.act-tag.persona { border-color: rgba(112, 130, 255, 0.45); }
+.act-tools { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.32rem; }
+.act-tools li { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; min-width: 0; }
+.act-tools code {
+  font-size: 0.72rem;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.act-origin { flex-shrink: 0; color: var(--muted); font-size: 0.68rem; }
+.act-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.act-steps li {
+  color: var(--muted);
+  padding-left: 0.85rem;
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.act-steps li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.42em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.act-steps li.now { color: var(--fg); }
+.act-steps li.now::before { background: #4ade80; }

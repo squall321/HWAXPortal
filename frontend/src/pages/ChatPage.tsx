@@ -2,6 +2,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
 import { useChat } from '../state/ChatContext';
+import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { Composer, type ComposerHandle } from '../components/chat/Composer';
 import { MessageList } from '../components/chat/MessageList';
@@ -125,6 +126,7 @@ export default function ChatPage() {
           </div>
         )}
       </section>
+      {!empty && <ActivityPanel messages={messages} />}
     </div>
   );
 }
