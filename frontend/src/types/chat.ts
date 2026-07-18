@@ -16,6 +16,9 @@ export interface ActivityItem {
   tool?: string | null;
   personas?: string[];
   tools_used?: string[];
+  // 드릴다운 — 도구 호출 입력/결과 요약(서버에서 절단되어 옴).
+  detail?: string;
+  result_preview?: string;
 }
 
 export interface Message {
@@ -51,6 +54,8 @@ export interface StatusEvent {
   // 심의 경로가 얹는 구조화 정보 — 활동 패널용(없으면 무시).
   personas?: string[];
   tools_used?: string[];
+  detail?: string;
+  result_preview?: string;
 }
 export interface TokenEvent {
   delta: string;

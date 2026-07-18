@@ -183,6 +183,8 @@ export function ChatProvider({ children, storagePrefix = 'hwax.chat', sendPrefix
                       tool: e.tool ?? null,
                       ...(e.personas ? { personas: e.personas } : {}),
                       ...(e.tools_used ? { tools_used: e.tools_used } : {}),
+                      ...(e.detail ? { detail: e.detail } : {}),
+                      ...(e.result_preview ? { result_preview: e.result_preview } : {}),
                     },
                   ];
             return { ...m, status: e.step, activity };

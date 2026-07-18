@@ -439,18 +439,67 @@
 
 /* ════ 활동 패널 (대화 옆 — 어떤 에이전트·MCP 도구가 쓰이는지) ════ */
 
+/* 기본(좁은 화면): 우측 드로어 — .open 일 때만 슬라이드 인. 넓은 화면: 정적 레일. */
 .cx-activity {
-  flex-shrink: 0;
-  width: 236px;
-  border-left: 1px solid var(--border);
   background: var(--card);
   padding: 0.9rem 0.95rem;
   overflow-y: auto;
   font-size: 0.78rem;
-  display: none; /* 좁은 화면에선 숨김 — 1180px 이상에서만 */
+  position: fixed;
+  top: var(--hdr-h);
+  right: 0;
+  bottom: 0;
+  width: min(300px, 85vw);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 30px rgba(0, 0, 0, 0.35);
+  transform: translateX(102%);
+  transition: transform 0.22s ease;
+  z-index: 40;
+}
+.cx-activity.open { transform: translateX(0); }
+.act-backdrop {
+  position: fixed;
+  inset: var(--hdr-h) 0 0 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 39;
+}
+.act-fab {
+  position: fixed;
+  right: 14px;
+  top: calc(var(--hdr-h) + 12px);
+  z-index: 38;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+.act-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 0.15rem;
 }
 @media (min-width: 1180px) {
-  .cx-activity { display: block; }
+  .cx-activity {
+    position: static;
+    flex-shrink: 0;
+    width: 236px;
+    transform: none;
+    transition: none;
+    box-shadow: none;
+    z-index: auto;
+  }
+  .act-fab, .act-backdrop, .act-close { display: none; }
 }
 .act-head {
   display: flex;
@@ -500,8 +549,20 @@
   white-space: nowrap;
 }
 .act-tag.persona { border-color: rgba(112, 130, 255, 0.45); }
-.act-tools { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.32rem; }
-.act-tools li { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; min-width: 0; }
+.act-tools { display: flex; flex-direction: column; gap: 0.32rem; }
+.act-tool.plain,
+.act-tool summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-width: 0;
+  cursor: default;
+}
+.act-tool summary { cursor: pointer; list-style: none; }
+.act-tool summary::-webkit-details-marker { display: none; }
+.act-tool summary::after { content: '▸'; color: var(--muted); font-size: 0.65rem; margin-left: 0.2rem; }
+.act-tool[open] summary::after { content: '▾'; }
 .act-tools code {
   font-size: 0.72rem;
   color: var(--fg);
@@ -510,6 +571,18 @@
   white-space: nowrap;
 }
 .act-origin { flex-shrink: 0; color: var(--muted); font-size: 0.68rem; }
+.act-io {
+  margin: 0.3rem 0 0.15rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  word-break: break-all;
+}
+.act-io-k { color: var(--fg); font-weight: 600; margin-right: 0.3rem; }
 .act-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .act-steps li {
   color: var(--muted);
