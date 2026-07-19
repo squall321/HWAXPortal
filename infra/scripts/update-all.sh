@@ -93,18 +93,20 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
       bad "rclone remote 미탐지 — AIDH_DRIVE_REMOTE 수동 설정 필요($AIDH_ENV)"
     fi
   fi
-  # dry-run(다운로드+검증만)으로 Drive 최신 덤프를 받아 이름 확인 → 마커와 비교
-  ( cd "$AIDH_DIR" && ./deploy/apptainer/sync-from-drive.sh --dry-run --skip-git --skip-restart >/dev/null 2>&1 ) || true
+  # 스택 보장 + 임베딩 모델 확보(sync-from-drive 의 [2]/[2b] 만, restore 는 안 함 = 비파괴)
+  ( cd "$AIDH_DIR" && AIDH_SKIP_MODEL=0 ./deploy/apptainer/sync-from-drive.sh --dry-run --skip-git >/dev/null 2>&1 ) || true
   LATEST_LINK="$(find "$AIDH_DIR/deploy" -maxdepth 3 -name latest.sql.gz 2>/dev/null | head -1)"
   LATEST_DUMP="$(readlink "$LATEST_LINK" 2>/dev/null || true)"
-  MARKER="${LATEST_LINK:+$(dirname "$LATEST_LINK")/.last-restored}"
+  MARKER="${LATEST_LINK:+$(dirname "$LATEST_LINK")/.last-merged}"
   if [ -n "$LATEST_DUMP" ] && [ -n "$MARKER" ] && [ "$(cat "$MARKER" 2>/dev/null)" = "$LATEST_DUMP" ]; then
-    ok "AIDH 덤프 변화 없음($(basename "$LATEST_DUMP")) — 복원 생략(프로드 데이터 보존)"
-  elif ( cd "$AIDH_DIR" && ./deploy/apptainer/sync-from-drive.sh --skip-git ); then
+    ok "AIDH 덤프 변화 없음($(basename "$LATEST_DUMP")) — merge 생략"
+  elif [ -x "$AIDH_DIR/deploy/apptainer/merge-from-drive.sh" ] \
+       && ( cd "$AIDH_DIR" && AIDH_MERGE_DUMP="$(readlink -f "$LATEST_LINK" 2>/dev/null)" ./deploy/apptainer/merge-from-drive.sh ); then
+    # MERGE(비파괴): dev 신규는 추가, cae00 자체 등록분은 유지(updated_at 최신 우선). DROP 안 함.
     [ -n "$MARKER" ] && printf '%s' "$(readlink "$LATEST_LINK" 2>/dev/null)" > "$MARKER" 2>/dev/null
-    ok "AIDH 데이터 동기화(새 덤프 복원)"
+    ok "AIDH 데이터 merge(dev 신규 반영 + cae00 데이터 보존)"
   else
-    bad "AIDH 데이터 동기화 실패(심의 페르소나 발굴에 영향)"
+    bad "AIDH 데이터 merge 실패 또는 merge-from-drive 없음 — cae00 데이터는 무손상"
   fi
 else
   bad "AIDataHub sync-from-drive.sh 없음 — 건너뜀"

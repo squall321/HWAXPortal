@@ -151,7 +151,13 @@ if want heax; then
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
       ./deploy/apptainer/dist-from-drive.sh   # frontend/dist (+ optional caddy sif)
-      bash deploy/apptainer/appdata-from-drive.sh || true   # 앱 데이터(materialtwin 재료 DB 등) 복원(비치명적)
+      # 앱 데이터(materialtwin 재료 DB 등) MERGE(비파괴 — dev 신규 추가 + cae00 데이터 보존).
+      # merge 스크립트 있으면 그것, 없으면 기존 보존 복원으로 폴백. 둘 다 비치명적.
+      if [ -x deploy/apptainer/appdata-merge-from-drive.sh ]; then
+        bash deploy/apptainer/appdata-merge-from-drive.sh || true
+      else
+        bash deploy/apptainer/appdata-from-drive.sh || true
+      fi
       [ "$RESTART" = 1 ] || bash deploy/apptainer/stop.sh 2>/dev/null || true
       if ! HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh; then
         echo "  ── last lines of var/logs/postgres-start.log (the hidden error) ──"
