@@ -184,7 +184,7 @@ export function ChatSidebar({
           ))}
         </nav>
 
-        <div className="sb-foot">대화는 이 브라우저에만 저장됩니다</div>
+        <div className="sb-foot">대화는 서버에 저장됩니다 — Claude(MCP) 심의도 여기 나타납니다</div>
       </div>
     </aside>
   );

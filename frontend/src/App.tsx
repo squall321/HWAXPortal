@@ -28,8 +28,8 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AppShell>
-          {/* 심의 전용 이력(hwax.delib.*) + '/심의 ' 자동 트리거 — 중첩 Provider 라 일반 챗과 분리 */}
-          <ChatProvider storagePrefix="hwax.delib" sendPrefix="/심의 ">
+          {/* 심의 전용 이력(hwax.delib.*) + 첫 발화 '/심의 ' 트리거 + 서버 심의 대화(MCP 포함) 병합 */}
+          <ChatProvider storagePrefix="hwax.delib" sendPrefix="/심의 " serverKind="deliberation">
             <DeliberatePage />
           </ChatProvider>
         </AppShell>
@@ -72,7 +72,8 @@ const router = createBrowserRouter([
 export default function App() {
   return (
     <AuthProvider>
-      <ChatProvider>
+      {/* 일반 챗도 서버 대화 저장소와 동기화(kind='chat') — 기기 간 이력 공유. */}
+      <ChatProvider serverKind="chat">
         <RouterProvider router={router} />
       </ChatProvider>
     </AuthProvider>

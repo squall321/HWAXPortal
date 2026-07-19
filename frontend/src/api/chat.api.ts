@@ -75,11 +75,17 @@ export interface HistoryMessage {
 
 export async function streamChat(
   message: string,
-  opts: { systemId?: string; mode?: string; history?: HistoryMessage[] } & StreamHandlers = {},
+  opts: {
+    systemId?: string;
+    mode?: string;
+    history?: HistoryMessage[];
+    /** 서버 대화 저장소 정본 id — 있으면 백엔드가 이 대화에 user+assistant 를 서버 저장. */
+    conversationId?: string;
+  } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -94,6 +100,7 @@ export async function streamChat(
       message,
       ...(systemId ? { system_id: systemId } : {}),
       ...(history && history.length > 0 ? { history } : {}),
+      ...(conversationId ? { conversation_id: conversationId } : {}),
     }),
     signal,
   });

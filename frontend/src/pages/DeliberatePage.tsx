@@ -23,8 +23,12 @@ const FLOW_HINT =
 
 const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 
+// RA 저장 — '/보고서' 트리거로 에이전트 서버가 대화 이력을 코드로 blocks 화해 결정적으로 저장
+// (LLM 재량에 맡기면 도구 인자를 텍스트로 에코하는 불안정성이 있어 서버 핸들러로 처리).
+const RA_SAVE_PROMPT = '/보고서';
+
 export default function DeliberatePage() {
-  const { messages, activeId, setInput, newConversation } = useChat();
+  const { messages, activeId, setInput, newConversation, sendMessage, streaming } = useChat();
   const composerRef = useRef<ComposerHandle>(null);
   // 데스크톱은 저장된 선호를 따르고, 좁은 화면은 오버레이라 기본 닫힘.
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow() && loadSidebarOpen());
@@ -99,7 +103,7 @@ export default function DeliberatePage() {
               </div>
               <p className="cx-hero-hint">{FLOW_HINT}</p>
               <p className="cx-hero-sub">
-                의견을 하나 던지면 전문가 에이전트들이 토의로 답합니다. 기록은 이 페이지에만 남습니다.
+                의견을 하나 던지면 전문가 에이전트들이 토의로 답합니다. 기록은 서버에 남아 Claude(MCP) 심의와 한곳에 모입니다.
               </p>
             </div>
           </div>
@@ -107,7 +111,23 @@ export default function DeliberatePage() {
           <div className="cx-thread" key={activeId ?? 'thread'}>
             <MessageList messages={messages} />
             <div className="cx-composer-dock">
-              <Composer ref={composerRef} autoFocus placeholder="추가 화두를 입력하세요…" />
+              {!streaming && messages.some((m) => m.role === 'assistant' && (m.text || m.delib)) && (
+                <div className="cx-delib-actions">
+                  <button
+                    type="button"
+                    className="cx-chip"
+                    onClick={() => sendMessage(RA_SAVE_PROMPT)}
+                    title="이 대화의 심의 내용·결론을 Report Archive 보고서로 저장"
+                  >
+                    📄 RA 보고서로 저장
+                  </button>
+                </div>
+              )}
+              <Composer
+                ref={composerRef}
+                autoFocus
+                placeholder="이어서 질문하거나 의견을 보태세요… (GLM이 심의 로그를 이어받아 답합니다)"
+              />
             </div>
           </div>
         )}

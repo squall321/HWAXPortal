@@ -368,6 +368,16 @@
   background: linear-gradient(to top, var(--bg) 55%, rgba(15, 17, 21, 0));
   pointer-events: none;
 }
+/* 심의 대화 액션 바(RA 저장 등) — 컴포저 위 우측 정렬 */
+.cx-delib-actions {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto 0.5rem;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: auto;
+}
+
 .cx-composer-dock .composer {
   width: 100%;
   max-width: 780px;

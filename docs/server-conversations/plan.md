@@ -91,12 +91,14 @@ messages(
 - [x] hwax-deliberate.js: RA 저장 옆 save_conversation 호출(user 질문 → 라운드별 persona → assistant 결정문). saveConversation:false 로 끄기 가능. RA 와 동일 폴백.
 - [x] 검증(라이브 e2e): 실제 PAT 로 MCP 핸드셰이크 → tools/list 160(로컬 포함) → tools/call → 포털 조회 owner 귀속·persona/round 보존 → GW_TOKEN 폴백 CONV_UNAVAILABLE. **통과.**
 
-### Phase 3 — 프론트 서버 연동(정본+캐시) + GLM 이어가기
-- [ ] chatStore 서버 우선 load/save + localStorage 캐시.
-- [ ] ChatContext sendMessage 에 conversation_id.
-- [ ] 심의 페이지가 서버 대화(MCP 포함) 로드·렌더. GLM 이어 질문 → 같은 대화 append.
-- [ ] RA 저장 버튼(대화 → create_report_draft).
-- [ ] 검증(e2e): MCP 심의 → 웹 챗에 로그 표시 → GLM 이어 대화 → RA 저장.
+### Phase 3 — 프론트 서버 연동(정본+캐시) + GLM 이어가기 ✅
+- [x] conversations.api.ts(REST 클라이언트) + 서버 메시지→로컬 변환(persona 발언을 delib.turns 로 묶어 기존 DelibView 재사용 — MCP 심의가 웹 심의처럼 렌더).
+- [x] ChatContext serverKind prop: 로그인 후 서버 목록 병합, "열 때 최신 로드"(선택 시 서버가 더 새로우면 상세 재로드), 전송 시 서버 대화 id 확보(없으면 생성) 후 conversation_id 로 스트리밍. 실패 시 localStorage 전용 폴백(cae00-safe).
+- [x] sendPrefix('/심의')는 **첫 발화에만** — 이후 발화는 일반 챗으로 흘러 심의 로그 위 GLM 이어가기(전면 재심의 방지). 삭제/이름변경 서버 미러.
+- [x] deps.py: 세션 경로 CSRF 를 상태변경 메서드에만 요구(GET 목록/상세는 세션만) — 프론트 GET 403 수정.
+- [x] RA 저장 버튼 → '/보고서' 트리거: **에이전트 서버 결정적 핸들러**(deliberation.py run_report_save)가 history 를 blocks 화해 create_report_draft 를 코드로 호출(GLM 이 도구 인자를 텍스트로 에코하는 불안정성 회피). '/보고서 <내 결론>' 이면 사용자 결론이 권고안 맨 앞.
+- [x] backup-local.sh 에 portal 대상 추가(conversations.sqlite + token_store.sqlite 원자 스냅샷).
+- [x] **e2e 검증(dev, 실제 브라우저)**: 웹 세션으로 PAT 발급(sub=hwax.demo) → 그 PAT 로 게이트웨이 save_conversation(심의 10건) → /deliberate 사이드바에 MCP 심의 표시 → 클릭 시 R1/R2/R3+결정문 렌더 → GLM 이어 질문(맥락 인지 답변, 재심의 없음) → 서버 대화 12→16 메시지 누적 → RA 버튼 → **보고서 #9 실제 생성**(search_reports 확인). **전부 통과.**
 
 ## 하위 호환/리스크
 

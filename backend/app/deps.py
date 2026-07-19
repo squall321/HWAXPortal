@@ -95,5 +95,7 @@ def principal_pat_or_session(
         except Exception as exc:  # noqa: BLE001 — any verify failure is a 401
             raise AuthError("invalid or expired PAT", status_code=401) from exc
     principal = get_current_principal(request, jwt_service)
-    require_csrf(request, settings)
+    # CSRF 는 상태 변경 요청에만 의미가 있다 — 대화 목록/상세 GET 은 세션만으로 허용.
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        require_csrf(request, settings)
     return principal

@@ -15,7 +15,7 @@ TS="$(date +%Y%m%d-%H%M%S)"
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
 find_repo() { local n="$1"; for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/claude/$n"; do [ -d "$c" ] && { printf '%s' "$c"; return; }; done; }
-WANT="${*:-aidh signalforge mxwp materialtwin}"
+WANT="${*:-aidh signalforge mxwp materialtwin portal}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
@@ -99,6 +99,30 @@ PY
     else bad "materialtwin: *.db 없음 — skip"; fi
     rm -rf "$snap"
   else bad "materialtwin: var/app_data 비어있음 — skip"; fi
+fi
+
+if want portal; then
+  hr "portal (SQLite — 대화 저장소·PAT 레지스트리)"
+  D="$(find_repo HWAXPortal)"; B="$D/backend"
+  dir="$BACKUP_ROOT/portal"; mkdir -p "$dir"
+  snap="$(mktemp -d)"
+  # conversations.sqlite(서버 대화 정본) + token_store.sqlite(PAT/jti) — .backup 원자 스냅샷
+  python3 - "$B" "$snap" <<'PY'
+import sys, os, sqlite3
+base, dst = sys.argv[1], sys.argv[2]
+for rel in ("data/conversations.sqlite", "secrets/token_store.sqlite"):
+    db = os.path.join(base, rel)
+    if not os.path.exists(db):
+        continue
+    out = os.path.join(dst, os.path.basename(db))
+    s = sqlite3.connect(f"file:{db}?mode=ro", uri=True); d = sqlite3.connect(out)
+    s.backup(d); d.close(); s.close()
+PY
+  if [ -n "$(ls -A "$snap" 2>/dev/null)" ]; then
+    out="$dir/portal-${TS}.tar.gz"
+    tar -czf "$out" -C "$snap" . && { sha256sum "$out" | awk '{print $1}' > "$out.sha256"; ok "portal → $(basename "$out") ($(du -h "$out" | cut -f1))"; }
+  else bad "portal: sqlite 없음 — skip"; fi
+  rm -rf "$snap"
 fi
 
 # ── 세대 보관: 서비스별로 RETAIN_DAYS 보다 오래된 스냅샷 정리 ──

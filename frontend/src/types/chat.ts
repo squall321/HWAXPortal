@@ -83,6 +83,9 @@ export interface Conversation {
   messages: Message[];
   createdAt: number;
   updatedAt: number;
+  // 서버 대화 저장소 정본 id — 있으면 /agent/chat 이 이 대화에 user+assistant 를 서버 저장.
+  // 서버에서 로드된 대화(MCP 심의 포함)는 id === serverId. 웹 생성분은 전송 시 발급받아 채움.
+  serverId?: string;
 }
 
 // SSE event payloads (plan §5).

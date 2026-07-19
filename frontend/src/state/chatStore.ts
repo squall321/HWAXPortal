@@ -23,6 +23,7 @@ interface StoredConversation {
   messages: StoredMessage[];
   createdAt: number;
   updatedAt: number;
+  serverId?: string; // 서버 정본 id — 캐시 재로드 후에도 서버 병합·이어쓰기가 이어지게 영속
 }
 
 let seq = 0;
@@ -59,6 +60,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
         messages,
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
         updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
+        ...(typeof c.serverId === 'string' ? { serverId: c.serverId } : {}),
       });
     }
     return convs;
@@ -83,6 +85,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       title: c.title,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
+      ...(c.serverId ? { serverId: c.serverId } : {}),
       messages: c.messages
         // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
         // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).

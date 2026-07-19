@@ -145,6 +145,22 @@ async def delete_conversation(
     return {"ok": True}
 
 
+class ConvRename(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
+@router.patch("/conversations/{cid}")
+async def rename_conversation(
+    cid: str,
+    request: Request,
+    body: ConvRename,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    if not _conv(request).rename(cid, principal.subject, body.title):
+        raise AuthError("conversation not found", status_code=404)
+    return {"ok": True}
+
+
 def _parse_sse_frame(frame: str) -> tuple[str, dict] | None:
     """완결된 SSE 프레임 1개('event: x\\ndata: {...}') → (event, data). 파싱 불가면 None."""
     evt = None
@@ -279,6 +295,8 @@ async def chat(
     async def gen() -> AsyncIterator[bytes]:
         acc: list[str] = []          # token delta 누적(폴백)
         final: str | None = None     # result 프레임의 전체 텍스트(우선)
+        decision: str | None = None  # 심의 결정문(result 없을 때 폴백)
+        turns: list[dict] = []       # 심의 persona 발언 — MCP 경로와 대칭으로 서버에 남긴다
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
         try:
             async for frame in source:
@@ -294,11 +312,24 @@ async def chat(
                             final = data["content"]
                         elif evt == "token" and isinstance(data.get("delta"), str):
                             acc.append(data["delta"])
+                        elif evt == "delib":
+                            k = data.get("kind")
+                            if k == "turn" and isinstance(data.get("say"), str):
+                                turns.append({"persona": data.get("persona"),
+                                              "round": data.get("round"),
+                                              "content": data["say"]})
+                            elif k == "decision" and isinstance(data.get("text"), str):
+                                decision = data["text"]
                 yield frame
         finally:
             sem.release()  # released even on client disconnect (Starlette aclose()s the gen)
             if store is not None and cid:
-                reply = final if final is not None else "".join(acc)
+                for t in turns[:60]:  # 심의 발언 수 캡(폭주 방어)
+                    store.append(conversation_id=cid, owner_sub=owner, role="persona",
+                                 content=str(t["content"])[:20000],
+                                 persona=(str(t["persona"])[:120] if t.get("persona") else None),
+                                 round=(int(t["round"]) if isinstance(t.get("round"), int) else None))
+                reply = final if final is not None else (decision or "".join(acc))
                 if reply:
                     store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply)
 
