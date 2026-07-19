@@ -59,18 +59,20 @@ class ChatRequest(BaseModel):
 # PAT(Bearer) 또는 세션 쿠키(+CSRF). owner_sub 로 소유권 강제(타인 대화 접근 차단).
 
 
-class ConvCreate(BaseModel):
-    title: str = Field(default="새 대화", max_length=200)
-    kind: Literal["chat", "deliberation"] = "chat"
-    source: Literal["web", "mcp"] = "web"
-
-
 class ConvMessageIn(BaseModel):
     role: Literal["user", "assistant", "system", "persona"] = "assistant"
     content: str = Field(max_length=20000)
     persona: str | None = Field(default=None, max_length=120)
     round: int | None = None
     meta: dict | None = None
+
+
+class ConvCreate(BaseModel):
+    title: str = Field(default="새 대화", max_length=200)
+    kind: Literal["chat", "deliberation"] = "chat"
+    source: Literal["web", "mcp"] = "web"
+    # MCP 심의 등 일괄 생성 — 라운드 발언 전체를 한 번에(왕복 최소화). 비면 빈 대화 생성.
+    messages: list[ConvMessageIn] = Field(default_factory=list, max_length=200)
 
 
 def _conv(request: Request):
@@ -91,9 +93,16 @@ async def create_conversation(
     body: ConvCreate,
     principal: Principal = Depends(principal_pat_or_session),
 ) -> dict:
-    cid = _conv(request).create(
-        owner_sub=principal.subject, title=body.title, kind=body.kind, source=body.source
-    )
+    if body.messages:
+        cid = _conv(request).create_with_messages(
+            owner_sub=principal.subject, title=body.title, kind=body.kind,
+            source=body.source,
+            messages=[m.model_dump() for m in body.messages],
+        )
+    else:
+        cid = _conv(request).create(
+            owner_sub=principal.subject, title=body.title, kind=body.kind, source=body.source
+        )
     return {"id": cid}
 
 

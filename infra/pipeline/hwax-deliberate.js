@@ -97,14 +97,17 @@ const decision = await agent(
 // Report Archive 저장 — MCP 경로도 포털 챗과 동일하게 웹(RA)에 보고서를 남긴다.
 // (챗 deliberation.py 와 같은 template_id/blocks + 대화체 회의록). saveReport:false 로 끄면
 // 반환만 하고 저장 안 함(호출자가 직접 보고서화하고 싶을 때).
+// 발언 합성 — RA 회의록과 서버 대화 저장이 공유(rnd별 대화체 한 줄).
+const sayText = (rnd, o) => {
+  if (rnd === 1) return `${o.lens || ''} — 권장: ${o.recommendation || ''}`
+  if (rnd === 2) return `수용: ${(o.concede||[]).join('; ')} / 반박: ${(o.rebut||[]).join('; ')} / 핵심: ${o.deepen || ''}`
+  return `${o.final_position || ''} — 최종권장: ${o.vote || ''}`
+}
+
 let report = null
 if (A.saveReport !== false) {
   phase('Report')
-  const say = (rnd, o) => {
-    if (rnd === 1) return `[${o.persona}] ${o.lens || ''} — 권장: ${o.recommendation || ''}`
-    if (rnd === 2) return `[${o.persona}] 수용: ${(o.concede||[]).join('; ')} / 반박: ${(o.rebut||[]).join('; ')} / 핵심: ${o.deepen || ''}`
-    return `[${o.persona}] ${o.final_position || ''} — 최종권장: ${o.vote || ''}`
-  }
+  const say = (rnd, o) => `[${o.persona}] ${sayText(rnd, o)}`
   const minutes = ['1라운드 — 도메인별 초기 입장', ...r1.filter(Boolean).map(o => say(1,o)),
                    '2라운드 — 상호 반박·심화', ...r2.filter(Boolean).map(o => say(2,o)),
                    '3라운드 — 수렴·최종 입장', ...r3.filter(Boolean).map(o => say(3,o))].map(s => String(s).slice(0,400))
@@ -134,4 +137,35 @@ if (A.saveReport !== false) {
   }
 }
 
-return { question: Q, round1: r1.filter(Boolean), round2: r2.filter(Boolean), round3: r3.filter(Boolean), decision, report }
+// 서버 대화 저장 — 심의의 "대화 전개"를 포털 웹 챗에도 남긴다(GLM 이어가기·직접 결론용).
+// 게이트웨이 save_conversation 도구가 호출자 PAT 를 포털에 포워딩해 owner 귀속.
+// RA 와 동일한 폴백 계약: 미가용이면 건너뛸 뿐, 심의 결과(return)는 절대 잃지 않는다.
+let conversation = null
+if (A.saveConversation !== false) {
+  phase('Report')
+  const msgs = [
+    { role: 'user', content: `${Q}${CTX ? `\n\n[정량 근거·분석]\n${CTX.slice(0,1500)}` : ''}` },
+    ...r1.filter(Boolean).map(o => ({ role: 'persona', persona: o.persona, round: 1, content: sayText(1,o).slice(0,2000) })),
+    ...r2.filter(Boolean).map(o => ({ role: 'persona', persona: o.persona, round: 2, content: sayText(2,o).slice(0,2000) })),
+    ...r3.filter(Boolean).map(o => ({ role: 'persona', persona: o.persona, round: 3, content: sayText(3,o).slice(0,2000) })),
+    { role: 'assistant', content: String(decision).slice(0,8000) },
+  ]
+  try {
+    conversation = await agent(
+      `save_conversation 도구가 사용 가능하면 호출해 아래 심의 대화 로그를 포털 대화 저장소에 저장하라.\n` +
+      `인자: title="심의 — ${Q.slice(0,50)}", kind="deliberation", source="mcp",\n` +
+      `messages=${JSON.stringify(msgs)}\n` +
+      `- 도구가 없거나 결과가 CONV_UNAVAILABLE 이면 절대 재시도하지 말고 "CONV_UNAVAILABLE" 한 줄만 반환.\n` +
+      `- 성공하면 반환된 conversation_id 만 한 줄로.`,
+      { label: 'conv-save', phase: 'Report' })
+    if (typeof conversation === 'string' && /CONV_UNAVAILABLE|FAILED|not available|unavailable/i.test(conversation)) {
+      log('포털 대화 저장소 미가용 — 저장 건너뜀(심의 결과는 반환됨)')
+      conversation = null
+    }
+  } catch (e) {
+    log(`대화 저장 실패(비치명적): ${String(e).slice(0,120)}`)
+    conversation = null
+  }
+}
+
+return { question: Q, round1: r1.filter(Boolean), round2: r2.filter(Boolean), round3: r3.filter(Boolean), decision, report, conversation }

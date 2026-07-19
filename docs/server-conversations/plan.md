@@ -85,10 +85,11 @@ messages(
 - [x] `backend/app/agent/routes.py`: conversations REST 5종(GET/POST 목록, GET/POST-messages/DELETE) + /chat 에 conversation_id 저장(user 선저장 + SSE 파싱해 assistant 종료 시 저장).
 - [x] 검증: 단위(conv_store 6종) + TestClient 통합(8종) — 생성·append·순서·meta·소유권 격리(타인 404)·/chat 저장·누수 없음. **통과.**
 
-### Phase 2 — 게이트웨이 save_conversation 도구 + 워크플로 연결
-- [ ] 게이트웨이에 save_conversation 도구(포털 REST 릴레이, PAT sub owner).
-- [ ] hwax-deliberate.js: RA 저장 옆에 save_conversation 호출(라운드 발언 → messages). RA 처럼 폴백(미가용 시 건너뜀, 심의 결과 유실 금지).
-- [ ] 검증: MCP 심의 → 서버에 conversation 생성 확인.
+### Phase 2 — 게이트웨이 save_conversation 도구 + 워크플로 연결 ✅
+- [x] 게이트웨이 로컬 도구 save_conversation — 호출자 Authorization(포털 PAT)을 그대로 포털에 포워딩 → 포털이 자체 검증, owner_sub=PAT sub(게이트웨이 신원 매핑 없음=위조 불가). GW_TOKEN 경로는 포털 401 → CONV_UNAVAILABLE(비치명적).
+- [x] 포털 POST /agent/conversations 에 messages[] 일괄 생성(심의 로그 15~20건 왕복 1회).
+- [x] hwax-deliberate.js: RA 저장 옆 save_conversation 호출(user 질문 → 라운드별 persona → assistant 결정문). saveConversation:false 로 끄기 가능. RA 와 동일 폴백.
+- [x] 검증(라이브 e2e): 실제 PAT 로 MCP 핸드셰이크 → tools/list 160(로컬 포함) → tools/call → 포털 조회 owner 귀속·persona/round 보존 → GW_TOKEN 폴백 CONV_UNAVAILABLE. **통과.**
 
 ### Phase 3 — 프론트 서버 연동(정본+캐시) + GLM 이어가기
 - [ ] chatStore 서버 우선 load/save + localStorage 캐시.
