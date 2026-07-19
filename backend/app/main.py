@@ -137,10 +137,15 @@ if settings.serve_frontend:
         dist = (BACKEND_DIR / dist).resolve()
     app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
+    # index.html 은 항상 재검증(no-cache) — 안 하면 브라우저가 옛 index.html(=옛 해시 번들)을
+    # 계속 로드해 새 배포가 사용자에게 반영되지 않는다. 해시 번들(/assets)은 캐시해도 안전.
+    _NO_CACHE = {"Cache-Control": "no-cache"}
+
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str, request: Request) -> FileResponse:
         # API routers are registered above and match first; this catches SPA routes only.
         candidate = (dist / full_path).resolve()
         if full_path and candidate.is_file() and dist in candidate.parents:
-            return FileResponse(candidate)  # real static file (favicon, etc.)
-        return FileResponse(dist / "index.html")  # SPA route → let the client router handle it
+            hdrs = _NO_CACHE if candidate.name == "index.html" else None
+            return FileResponse(candidate, headers=hdrs)  # real static file (favicon, etc.)
+        return FileResponse(dist / "index.html", headers=_NO_CACHE)  # SPA route → client router
