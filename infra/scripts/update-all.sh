@@ -62,6 +62,13 @@ if [ "${UPDATE_ALL_REEXEC:-0}" != "1" ]; then
 fi
 ok "포털 레포 최신 (재실행 완료)"
 
+# ── 1b) 배포 전 로컬 안전 백업 — merge/복원이 데이터를 건드리기 전에 /data/backups 스냅샷.
+#        비치명적(백업 실패가 배포를 막지 않음). 정기 백업은 별도 cron(backup-local --install-cron). ──
+if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
+  hr "1b) 배포 전 로컬 백업(/data/backups)"
+  "$SELF_REPO/infra/scripts/backup-local.sh" 2>&1 | tail -6 || echo "  ⚠ 사전 백업 실패(비치명적) — 배포는 계속"
+fi
+
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh)"
 SF_RESTORE_DB="${SF_RESTORE_DB:-0}" "$SELF_REPO/infra/scripts/deploy-all-from-drive.sh" \

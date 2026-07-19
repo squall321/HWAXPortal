@@ -94,4 +94,44 @@ const decision = await agent(
   `산출: ## 의사결정문 — (1) 결정사항(번호매김, 명확·실행가능하게), (2) 합의 근거(라운드를 거치며 어떻게 수렴했는지), (3) 반대/소수의견과 처리, (4) 미해결 쟁점 + 담당·다음 액션, (5) 결정 신뢰도·전제. 라운드별 입장 심화·수렴 과정을 반드시 드러내라.`,
   { label: 'decision', phase: 'Decision' })
 
-return { question: Q, round1: r1.filter(Boolean), round2: r2.filter(Boolean), round3: r3.filter(Boolean), decision }
+// Report Archive 저장 — MCP 경로도 포털 챗과 동일하게 웹(RA)에 보고서를 남긴다.
+// (챗 deliberation.py 와 같은 template_id/blocks + 대화체 회의록). saveReport:false 로 끄면
+// 반환만 하고 저장 안 함(호출자가 직접 보고서화하고 싶을 때).
+let report = null
+if (A.saveReport !== false) {
+  phase('Report')
+  const say = (rnd, o) => {
+    if (rnd === 1) return `[${o.persona}] ${o.lens || ''} — 권장: ${o.recommendation || ''}`
+    if (rnd === 2) return `[${o.persona}] 수용: ${(o.concede||[]).join('; ')} / 반박: ${(o.rebut||[]).join('; ')} / 핵심: ${o.deepen || ''}`
+    return `[${o.persona}] ${o.final_position || ''} — 최종권장: ${o.vote || ''}`
+  }
+  const minutes = ['1라운드 — 도메인별 초기 입장', ...r1.filter(Boolean).map(o => say(1,o)),
+                   '2라운드 — 상호 반박·심화', ...r2.filter(Boolean).map(o => say(2,o)),
+                   '3라운드 — 수렴·최종 입장', ...r3.filter(Boolean).map(o => say(3,o))].map(s => String(s).slice(0,400))
+  const blocks = {
+    background: [`심의 주제: ${Q}`, ...(CTX ? [`정량 근거·분석:\n${CTX.slice(0,1500)}`] : [])],
+    results: [R2T.slice(0,1500)],
+    recommendation: String(decision).split('\n\n').map(s=>s.trim()).filter(Boolean).slice(0,12),
+    minutes: [`참여: ${pk.join(', ')}`, '3라운드 심의(R1 초기→R2 심화→R3 수렴).', ...minutes.slice(0,40)],
+  }
+  // RA 부재/실패는 비치명적 — cae00 는 RA 가 안 떠 있을 수 있다(hands-off). 저장 실패해도
+  // 심의 결과(decision·라운드)는 이미 아래 return 에 있으므로 절대 잃지 않는다.
+  try {
+    report = await agent(
+      `create_report_draft 도구가 사용 가능하면 호출해 아래 심의 결과를 Report Archive 에 저장하라.\n` +
+      `인자: template_id="deliberation", template_version=1, title="심의 — ${Q.slice(0,50)}",\n` +
+      `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(blocks)}\n` +
+      `- 도구가 없거나(Report Archive 미가용) 저장이 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE" 한 줄만 반환.\n` +
+      `- 성공하면 반환된 report.id(보고서 번호)만 한 줄로.`,
+      { label: 'ra-save', phase: 'Report' })
+    if (typeof report === 'string' && /RA_UNAVAILABLE|FAILED|not available|unavailable/i.test(report)) {
+      log('Report Archive 미가용 — 저장 건너뜀(심의 결과는 반환됨)')
+      report = null
+    }
+  } catch (e) {
+    log(`Report Archive 저장 실패(비치명적): ${String(e).slice(0,120)}`)
+    report = null
+  }
+}
+
+return { question: Q, round1: r1.filter(Boolean), round2: r2.filter(Boolean), round3: r3.filter(Boolean), decision, report }
