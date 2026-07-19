@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from app import routes_health
 from app.agent import routes as agent_routes
 from app.agent.audit import AuditLog
+from app.agent.conv_store import ConversationStore
 from app.auth.downstream import JwtDownstreamIssuer
 from app.auth.errors import AuthError
 from app.auth.keystore import KeyStore
@@ -51,6 +52,8 @@ async def lifespan(app: FastAPI):
     # concurrency cap (SSE connections hold a worker → Semaphore, 429 over the cap).
     app.state.mcp_registry = McpRegistry(settings)
     app.state.agent_audit = AuditLog(settings)
+    # 서버 대화 저장소 — MCP 심의/웹 챗/GLM 이어가기가 공유하는 정본(SQLite, 재시작 내구성).
+    app.state.conv_store = ConversationStore(settings)
     app.state.agent_semaphore = asyncio.Semaphore(settings.max_concurrent_chats)
     # One shared httpx client for relaying to the Agent Server — pooled keep-alive, not a
     # fresh TCP+TLS per request. read=None so token streaming isn't cut by the total timeout.

@@ -104,6 +104,8 @@ class Settings(BaseSettings):
     jwt_active_kid: str = "dev-1"
     jwt_launch_ttl: int = 90  # downstream launch token (s) — short to shrink replay window
     token_store_path: str = "secrets/token_store.sqlite"
+    # 서버 대화 저장소(SQLite) — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본.
+    conv_store_path: str = "data/conversations.sqlite"
     # Auto-generate the JWT keypair if absent. dev always does; set true to allow it in a
     # single-instance prod/mock-demo deploy too. Real multi-instance prod provisions keys.
     jwt_autogen_keys: bool = False

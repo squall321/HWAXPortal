@@ -50,6 +50,108 @@ class ChatRequest(BaseModel):
     system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
     # 멀티턴 컨텍스트: 오래된 것→최신 순, 이번 message는 포함하지 않는다(agent-server 계약).
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=40)
+    # 있으면 이 대화(서버 정본)에 user+assistant 를 저장한다. 없으면 저장 안 함(하위호환).
+    conversation_id: str | None = Field(default=None, max_length=64)
+
+
+# ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
+# 웹 챗·Claude(MCP) 심의·GLM 이어가기가 공유하는 정본. 인증은 /chat 과 동일하게
+# PAT(Bearer) 또는 세션 쿠키(+CSRF). owner_sub 로 소유권 강제(타인 대화 접근 차단).
+
+
+class ConvCreate(BaseModel):
+    title: str = Field(default="새 대화", max_length=200)
+    kind: Literal["chat", "deliberation"] = "chat"
+    source: Literal["web", "mcp"] = "web"
+
+
+class ConvMessageIn(BaseModel):
+    role: Literal["user", "assistant", "system", "persona"] = "assistant"
+    content: str = Field(max_length=20000)
+    persona: str | None = Field(default=None, max_length=120)
+    round: int | None = None
+    meta: dict | None = None
+
+
+def _conv(request: Request):
+    return request.app.state.conv_store
+
+
+@router.get("/conversations")
+async def list_conversations(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    return {"conversations": _conv(request).list_for_owner(principal.subject)}
+
+
+@router.post("/conversations")
+async def create_conversation(
+    request: Request,
+    body: ConvCreate,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    cid = _conv(request).create(
+        owner_sub=principal.subject, title=body.title, kind=body.kind, source=body.source
+    )
+    return {"id": cid}
+
+
+@router.get("/conversations/{cid}")
+async def get_conversation(
+    cid: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    conv = _conv(request).get(cid, principal.subject)
+    if conv is None:
+        raise AuthError("conversation not found", status_code=404)
+    return conv
+
+
+@router.post("/conversations/{cid}/messages")
+async def append_conversation_message(
+    cid: str,
+    request: Request,
+    body: ConvMessageIn,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    ok = _conv(request).append(
+        conversation_id=cid, owner_sub=principal.subject, role=body.role,
+        content=body.content, persona=body.persona, round=body.round, meta=body.meta,
+    )
+    if not ok:
+        raise AuthError("conversation not found", status_code=404)
+    return {"ok": True}
+
+
+@router.delete("/conversations/{cid}")
+async def delete_conversation(
+    cid: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    if not _conv(request).delete(cid, principal.subject):
+        raise AuthError("conversation not found", status_code=404)
+    return {"ok": True}
+
+
+def _parse_sse_frame(frame: str) -> tuple[str, dict] | None:
+    """완결된 SSE 프레임 1개('event: x\\ndata: {...}') → (event, data). 파싱 불가면 None."""
+    evt = None
+    data_lines: list[str] = []
+    for line in frame.split("\n"):
+        if line.startswith("event:"):
+            evt = line[6:].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].strip())
+    if evt is None or not data_lines:
+        return None
+    import json
+    try:
+        return evt, json.loads("\n".join(data_lines))
+    except (ValueError, TypeError):
+        return None
 
 
 def _audit(request: Request) -> AuditLog:
@@ -153,11 +255,42 @@ async def chat(
     else:
         source = _relay_stream(body, principal, audit, settings, _agent_client(request))
 
+    # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
+    # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).
+    store = _conv(request) if body.conversation_id else None
+    owner = principal.subject
+    cid = body.conversation_id
+    if store is not None and cid:
+        # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
+        if store.append(conversation_id=cid, owner_sub=owner, role="user", content=body.message):
+            pass
+        else:
+            store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
+
     async def gen() -> AsyncIterator[bytes]:
+        acc: list[str] = []          # token delta 누적(폴백)
+        final: str | None = None     # result 프레임의 전체 텍스트(우선)
+        buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
         try:
             async for frame in source:
+                if store is not None:
+                    buf += frame.decode(errors="replace") if isinstance(frame, bytes) else str(frame)
+                    while "\n\n" in buf:
+                        one, buf = buf.split("\n\n", 1)
+                        parsed = _parse_sse_frame(one)
+                        if parsed is None:
+                            continue
+                        evt, data = parsed
+                        if evt == "result" and isinstance(data.get("content"), str):
+                            final = data["content"]
+                        elif evt == "token" and isinstance(data.get("delta"), str):
+                            acc.append(data["delta"])
                 yield frame
         finally:
             sem.release()  # released even on client disconnect (Starlette aclose()s the gen)
+            if store is not None and cid:
+                reply = final if final is not None else "".join(acc)
+                if reply:
+                    store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply)
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
