@@ -63,10 +63,12 @@ fi
 ok "포털 레포 최신 (재실행 완료)"
 
 # ── 1b) 배포 전 로컬 안전 백업 — merge/복원이 데이터를 건드리기 전에 /data/backups 스냅샷.
-#        비치명적(백업 실패가 배포를 막지 않음). 정기 백업은 별도 cron(backup-local --install-cron). ──
+#        비치명적(백업 실패가 배포를 막지 않음). 일일 cron(03:30)도 여기서 멱등 보장 —
+#        운영자가 --install-cron 을 따로 기억할 필요 없게 update-all 이 챙긴다. ──
 if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   hr "1b) 배포 전 로컬 백업(/data/backups)"
   "$SELF_REPO/infra/scripts/backup-local.sh" 2>&1 | tail -6 || echo "  ⚠ 사전 백업 실패(비치명적) — 배포는 계속"
+  "$SELF_REPO/infra/scripts/backup-local.sh" --install-cron 2>&1 | sed 's/^/  /' || true
 fi
 
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
