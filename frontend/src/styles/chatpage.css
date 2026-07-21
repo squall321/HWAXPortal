@@ -342,6 +342,40 @@
   display: flex;
   flex-direction: column;
   animation: cx-fade 0.3s ease;
+  position: relative;
+}
+/* 내보내기 캡처 래퍼 — 스크롤 레이아웃(.msg-wrap/.chat-body)을 그대로 통과시키는 flex 패스스루 */
+.cx-thread-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 내보내기 툴바 — 스레드 우상단에 조용히 떠 있는 고스트 버튼 */
+.cx-export {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.9rem;
+  z-index: 5;
+  display: flex;
+  gap: 0.35rem;
+}
+.cx-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.28rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+.cx-export-btn:hover {
+  color: var(--fg);
+  border-color: var(--muted);
 }
 
 /* 메시지 컬럼을 중앙 780px로 — 독(.chatdock)은 전체 폭 그대로 */

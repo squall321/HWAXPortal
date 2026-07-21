@@ -5,6 +5,7 @@ import { useChat } from '../state/ChatContext';
 import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { Composer, type ComposerHandle } from '../components/chat/Composer';
+import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
 import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
@@ -36,6 +37,7 @@ export default function ChatPage() {
   const { user } = useAuth();
   const { messages, activeId, setInput, newConversation } = useChat();
   const composerRef = useRef<ComposerHandle>(null);
+  const threadRef = useRef<HTMLDivElement>(null); // 내보내기(HTML)가 캡처할 렌더 루트
   // 데스크톱은 저장된 선호를 따르고, 좁은 화면은 오버레이라 기본 닫힘.
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow() && loadSidebarOpen());
 
@@ -119,7 +121,10 @@ export default function ChatPage() {
           </div>
         ) : (
           <div className="cx-thread" key={activeId ?? 'thread'}>
-            <MessageList messages={messages} />
+            <ExportBar threadRef={threadRef} />
+            <div ref={threadRef} className="cx-thread-body">
+              <MessageList messages={messages} />
+            </div>
             <div className="cx-composer-dock">
               <Composer ref={composerRef} autoFocus showHint placeholder="답장을 입력하세요…" />
             </div>
