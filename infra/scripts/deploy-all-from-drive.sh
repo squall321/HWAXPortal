@@ -201,6 +201,20 @@ if want aidh; then
     ( cd "$AIDH_DIR"
       git_update
       AIDH_ROOT_PATH=/ai-data-hub ./boot.sh --force ) && ok "aidh up" || skip "aidh failed (see above)"
+    # VSCode extension(vsix) — 빌드 산출물이라 git 미추적 + cae00 은 npm 없어 빌드 불가.
+    # dev 의 publish-ext.sh 가 Drive ext-downloads 에 게시한 것을 받아온다 (없으면 조용히 생략·비치명).
+    if [ -n "$REMOTE_ALIAS" ] && [ -x "$RCLONE_BIN" ]; then
+      AIDH_EXT_SRC="${AIDH_EXT_DRIVE_REMOTE:-$REMOTE_ALIAS:AIDataHub/ext-downloads}"
+      AIDH_DL_DIR="$AIDH_DIR/api_server/static/downloads"
+      if "$RCLONE_BIN" lsf "$AIDH_EXT_SRC/" >/dev/null 2>&1; then
+        mkdir -p "$AIDH_DL_DIR"
+        "$RCLONE_BIN" copy "$AIDH_EXT_SRC/" "$AIDH_DL_DIR/" 2>/dev/null \
+          && ok "aidh extension synced from Drive ($AIDH_EXT_SRC)" \
+          || skip "aidh extension sync failed (non-fatal)"
+      else
+        skip "aidh extension: Drive ext-downloads 없음 — dev 에서 publish-ext.sh 먼저"
+      fi
+    fi
   else skip "AIDataHub repo not found (set AIDH_DIR=)"; fi
 fi
 

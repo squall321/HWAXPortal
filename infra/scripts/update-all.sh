@@ -239,6 +239,22 @@ probe "nginx          :8088" http://127.0.0.1:8088/health 1 "200"
 probe "agent-server   :9009" http://127.0.0.1:9009/health 1 "200"
 probe "gateway        :9110" http://127.0.0.1:9110/health 1 "200"
 probe "aidh           :8001" http://127.0.0.1:8001/api/system/health 0 "200"
+# aidh MCP 드리프트 스모크 — 코드는 최신인데 구버전 프로세스가 살아있는 경우를 감지(비치명 경고).
+# 판정 앵커: list_agents 스키마의 compact 파라미터(2026-07 additive 보강)가 tools/list 에 보이는가.
+mcpj() { curl -sk -m 4 -X POST http://127.0.0.1:8001/mcp/ \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d "$1" 2>/dev/null; }
+mcpj '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"update-all","version":"1"}}}' >/dev/null
+mcpj '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
+AIDH_TL="$(mcpj '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')"
+if printf '%s' "$AIDH_TL" | grep -q '"list_agents"'; then
+  if printf '%s' "$AIDH_TL" | grep -q '"compact"'; then
+    ok "aidh MCP 스키마 최신 (list_agents.compact 노출)"
+  else
+    bad "aidh MCP 스키마 구버전 — 배포 드리프트 (AIDataHub update.sh 재실행 필요)"
+  fi
+else
+  bad "aidh MCP tools/list 무응답 — /mcp/ 상태 확인 (비치명)"
+fi
 probe "signalforge    :17370" http://127.0.0.1:17370/ 0 "200 302 401"
 H="$(gw_health)"
 if [ -n "$H" ] && json_ok "$H"; then
