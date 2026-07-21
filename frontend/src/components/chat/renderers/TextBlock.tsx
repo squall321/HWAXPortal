@@ -1,8 +1,10 @@
-// 최소 안전 마크다운 렌더러 — 코드펜스/인라인코드/볼드만 React 노드로 변환(HTML 미주입, 스트리밍 커서 지원)
+// 안전 마크다운 렌더러 — md.ts 파서의 블록 AST(제목/구분선/표/목록/인용/문단)와 인라인 서식을
+// React 노드로 변환(HTML 미주입, 스트리밍 커서 지원). 코드펜스는 기존 세그먼트 분리 유지,
 // html/svg 펜스는 sandbox iframe 미리보기 지원(포털 문서에 직접 주입하지 않음 — XSS 격리).
 import { useState, type ReactNode } from 'react';
 import { copyText } from '../clipboard';
 import { IconCheck, IconCopy, IconExternal } from '../icons';
+import { parseBlocks, parseInline, type Block } from './md';
 
 type Segment =
   | { kind: 'text'; body: string }
@@ -40,28 +42,114 @@ function splitFences(text: string): Segment[] {
   return segments;
 }
 
-// 텍스트 세그먼트 안의 `inline code` 와 **bold** 처리 (그 외는 pre-wrap 일반 텍스트).
+// 인라인 서식(md.ts parseInline) → React 노드. 링크는 http/https 만 파서가 통과시키며
+// 새 탭 + noopener 로만 연다. DelibView 발언 버블 등 인라인 전용 표면에서 재사용(InlineMd).
 function renderInline(s: string, keyBase: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*)/g;
-  let last = 0;
-  let i = 0;
-  for (let m = re.exec(s); m; m = re.exec(s)) {
-    if (m.index > last) out.push(s.slice(last, m.index));
-    const tok = m[0];
-    if (tok.startsWith('`')) {
-      out.push(
-        <code key={`${keyBase}-c${i++}`} className="inline-code">
-          {tok.slice(1, -1)}
-        </code>,
-      );
-    } else {
-      out.push(<strong key={`${keyBase}-b${i++}`}>{tok.slice(2, -2)}</strong>);
+  return parseInline(s).map((tok, i) => {
+    const key = `${keyBase}-i${i}`;
+    switch (tok.t) {
+      case 'code':
+        return (
+          <code key={key} className="inline-code">
+            {tok.s}
+          </code>
+        );
+      case 'bold':
+        return <strong key={key}>{tok.s}</strong>;
+      case 'em':
+        return <em key={key}>{tok.s}</em>;
+      case 'strike':
+        return <del key={key}>{tok.s}</del>;
+      case 'link':
+        return (
+          <a key={key} className="md-link" href={tok.href} target="_blank" rel="noopener noreferrer">
+            {tok.s}
+          </a>
+        );
+      default:
+        return tok.s;
     }
-    last = m.index + tok.length;
+  });
+}
+
+/** 인라인 마크다운만 렌더 — 심의 발언 버블처럼 블록 구조가 필요 없는 한 줄 표면용. */
+export function InlineMd({ text }: { text: string }) {
+  return <>{renderInline(text, 'im')}</>;
+}
+
+// 블록 AST → React 노드. 제목은 챗 버블 스케일에 맞춘 클래스(md-h1~h4)로,
+// 표는 가로 스크롤 래퍼로 격리해 버블 폭을 넘지 않게 한다.
+function renderBlock(b: Block, key: string): ReactNode {
+  switch (b.t) {
+    case 'h': {
+      const lv = Math.min(b.level, 4);
+      return (
+        <div key={key} className={`md-h md-h${lv}`}>
+          {renderInline(b.text, key)}
+        </div>
+      );
+    }
+    case 'hr':
+      return <hr key={key} className="md-hr" />;
+    case 'quote':
+      return (
+        <blockquote key={key} className="md-quote">
+          {renderInline(b.text, key)}
+        </blockquote>
+      );
+    case 'list': {
+      const items = b.items.map((it, i) => (
+        <li key={`${key}-l${i}`} className={it.depth ? `md-li-d${it.depth}` : undefined}>
+          {renderInline(it.text, `${key}-l${i}`)}
+        </li>
+      ));
+      return b.ordered ? (
+        <ol key={key} className="md-list" start={b.start}>
+          {items}
+        </ol>
+      ) : (
+        <ul key={key} className="md-list">
+          {items}
+        </ul>
+      );
+    }
+    case 'table':
+      return (
+        <div key={key} className="md-table-wrap">
+          <table className="md-table">
+            <thead>
+              <tr>
+                {b.head.map((c, i) => (
+                  <th key={i} style={{ textAlign: b.align[i] === 'c' ? 'center' : b.align[i] === 'r' ? 'right' : 'left' }}>
+                    {renderInline(c, `${key}-h${i}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {b.rows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((c, ci) => (
+                    <td
+                      key={ci}
+                      style={{ textAlign: b.align[ci] === 'c' ? 'center' : b.align[ci] === 'r' ? 'right' : 'left' }}
+                    >
+                      {renderInline(c, `${key}-r${ri}c${ci}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    default:
+      return (
+        <p key={key} className="md-p">
+          {renderInline(b.text, key)}
+        </p>
+      );
   }
-  if (last < s.length) out.push(s.slice(last));
-  return out;
 }
 
 // ── html/svg 미리보기 — sandbox iframe 경유만 허용(dangerouslySetInnerHTML 금지) ──
@@ -198,7 +286,7 @@ export function TextBlock({ text, cursor = false }: { text: string; cursor?: boo
           <CodeBlock key={i} lang={seg.lang} body={seg.body} closed={seg.closed} cursor={cursor && i === lastIdx} />
         ) : (
           <span key={i} className="chat-text-seg">
-            {renderInline(seg.body, `s${i}`)}
+            {parseBlocks(seg.body).map((b, bi) => renderBlock(b, `s${i}b${bi}`))}
             {cursor && i === lastIdx && <span className="stream-cursor" aria-hidden="true" />}
           </span>
         ),
