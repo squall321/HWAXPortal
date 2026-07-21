@@ -122,9 +122,12 @@ phase('초기입장')
 const R1_INSTRUCTION = CONT
   ? `이 논의는 이어하기 라운드다. 위 [이전 심의 요약]을 읽어라(당신이 이전에 참여했다면 거기 당신의 이전 입장도 있을 것이다). [인간 검토자 의견]이 있다면 반드시 정면으로 다뤄라. 당신의 도메인 관점에서: (1) 이전 논의·인간 의견에 대한 구체적 반응(동의/반박/보완, 구체 인용), (2) 갱신되었거나 새로 형성한 권장안, (3) 이 시점에 당신 도메인이 놓치고 있는 것/리스크. 수치엔 (도구)/(경험칙) 표기. 영역 밖은 아는 척 금지.`
   : `당신의 도메인 관점에서만: (1) 이 근거가 당신 관심사에 무엇을 의미하는지 구체 인용해 해석, (2) 권장안, (3) 이 분석이 당신 도메인에서 놓치는 것/리스크. 수치엔 (도구)/(경험칙) 표기. 영역 밖은 아는 척 금지.`
+// 페르소나 정규화 — LLM이 persona 필드에 긴 역할 설명을 붙여 반환하면 포털 저장(persona ≤120자
+// 검증)이 배치째 422로 거부된다(전기박리 심의 대화 유실 사고의 원인). 정본 키로 강제한다.
+const withKey = (k) => (o) => (o ? { ...o, persona: k } : o)
 const r1 = await parallel(pk.map(k => () => agent(
   `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n${R1_INSTRUCTION}`,
-  { label: `r${rn(1)}:${k}`, phase: '초기입장', schema: OP_SCHEMA })))
+  { label: `r${rn(1)}:${k}`, phase: '초기입장', schema: OP_SCHEMA }).then(withKey(k))))
 roundsData.push(r1)
 roundLabels.push(`${rn(1)}라운드 — ${CONT ? '이어하기·초기입장' : '초기입장'}`)
 
@@ -138,7 +141,7 @@ for (let i = 0; i < MID_ROUNDS; i++) {
   const rN = await parallel(pk.map(k => () => agent(
     `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n` +
     `${roundNo}라운드(심화 ${i + 1}/${MID_ROUNDS}): 다른 전문가 입장을 읽고 (1) 수용할 지적, (2) 반박(근거: 수치·표준·실패모드), (3) 당신 핵심 주장을 한 단계 더 깊게. 두루뭉술 금지, 당신 전문성으로.`,
-    { label: `r${roundNo}:${k}`, phase: '심화라운드', schema: R2_SCHEMA })))
+    { label: `r${roundNo}:${k}`, phase: '심화라운드', schema: R2_SCHEMA }).then(withKey(k))))
   roundsData.push(rN)
   roundLabels.push(`${roundNo}라운드 — 상호 반박·심화`)
   priorText = rN.filter(Boolean).map(o => `• ${o.persona}: ${summarize(false, false, o)}`).join('\n')
@@ -151,7 +154,7 @@ const finalRoundNo = rn(ROUNDS)
 const rFinal = await parallel(pk.map(k => () => agent(
   `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n` +
   `${finalRoundNo}라운드(최종수렴): 지금까지 논의를 반영해 최종 입장으로 수렴하라. (1) 최종 입장, (2) 절대 양보 못 하는 제약, (3) 최종 권장 선택지+이유. 결정 가능하도록 구체적으로.`,
-  { label: `r${finalRoundNo}:${k}`, phase: '수렴', schema: R3_SCHEMA })))
+  { label: `r${finalRoundNo}:${k}`, phase: '수렴', schema: R3_SCHEMA }).then(withKey(k))))
 roundsData.push(rFinal)
 roundLabels.push(`${finalRoundNo}라운드 — 수렴·최종 입장`)
 
