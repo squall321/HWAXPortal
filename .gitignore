@@ -44,3 +44,8 @@ infra/nginx/hwax.conf
 
 # Local Claude Code settings
 .claude/
+
+# TS 증분 빌드 캐시 — 빌드마다 바뀌는 산출물이라 추적 제외
+frontend/tsconfig.tsbuildinfo
+# env-kits 수동 전송용 아카이브(내용물은 개별 파일로 추적됨)
+infra/env-kits/env.zip
