@@ -815,6 +815,12 @@ body.dock-open .container {
 .dv-stance.cond { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
 .dv-stance.oppose { color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
 .dv-bub { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 4px 10px 10px 10px; padding: 0.55rem 0.8rem; font-size: 0.83rem; color: var(--fg); line-height: 1.6; }
+/* 버블 내부 블록 마크다운 — 작은 버블에 맞게 문단·목록 여백을 압축 */
+.dv-bub .md-p { margin: 0.3rem 0; }
+.dv-bub .md-p:first-child { margin-top: 0; }
+.dv-bub .md-p:last-child { margin-bottom: 0; }
+.dv-bub .md-list { margin: 0.25rem 0; padding-left: 1.2rem; }
+.dv-bub .md-h { margin: 0.5rem 0 0.2rem; font-size: 1em; }
 .dv-typing { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.74rem; padding-left: 2.4rem; }
 
 /* 수렴 트래커 */

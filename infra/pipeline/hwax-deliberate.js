@@ -89,11 +89,30 @@ const R3_SCHEMA = {
   required: ['persona', 'final_position', 'vote'],
 }
 
-// 라운드별 한 줄 요약(회의록·RA 저장에 공유) — idx=0 초기, idx=마지막 수렴, 그 사이는 전부 심화.
+// 라운드별 요약 — idx=0 초기, idx=마지막 수렴, 그 사이는 전부 심화.
+// 프롬프트 컨텍스트용(compact — 한 줄 대괄호)과 기록용(readable — 문단 개행)을 구분한다:
+// 웹 대화·RA 회의록에서 발언이 개행 없이 한 덩어리로 보이던 문제의 기록측 수정.
 const summarize = (isFirst, isLast, o) => {
   if (isFirst) return `관점[${o.lens}] 권장[${o.recommendation}] 우려[${(o.concerns || []).join('; ')}]`
   if (isLast) return `${o.final_position || ''} — 최종권장: ${o.vote || ''}`
   return `수용[${(o.concede || []).join('; ')}] 반박[${(o.rebut || []).join('; ')}] 심화:${o.deepen}`
+}
+const readable = (isFirst, isLast, o) => {
+  const join = v => (Array.isArray(v) ? v.filter(Boolean).join('\n- ') : String(v || ''))
+  if (isFirst) {
+    const parts = [o.lens, o.recommendation ? `저는 이렇게 봅니다 — ${o.recommendation}` : '',
+                   (o.concerns || []).length ? `우려:\n- ${join(o.concerns)}` : '']
+    return parts.filter(Boolean).join('\n\n')
+  }
+  if (isLast) {
+    return [o.final_position, o.non_negotiable ? `양보 불가 — ${o.non_negotiable}` : '',
+            o.vote ? `최종 권장 — ${o.vote}` : ''].filter(Boolean).join('\n\n')
+  }
+  const parts = []
+  if ((o.concede || []).length) parts.push(`그 지적은 받아들입니다.\n- ${join(o.concede)}`)
+  if ((o.rebut || []).length) parts.push(`다만 반박하자면,\n- ${join(o.rebut)}`)
+  if (o.deepen) parts.push(`제 핵심은 이겁니다. ${o.deepen}`)
+  return parts.join('\n\n')
 }
 
 const roundsData = []   // [ [페르소나별 결과...], ... ] — 길이 = ROUNDS
@@ -164,7 +183,7 @@ if (A.saveReport !== false) {
     const isFirst = idx === 0
     const isLast = idx === roundsData.length - 1
     minutes.push(roundLabels[idx])
-    rd.filter(Boolean).forEach(o => minutes.push(`[${o.persona}] ${summarize(isFirst, isLast, o)}`))
+    rd.filter(Boolean).forEach(o => minutes.push(`[${o.persona}] ${readable(isFirst, isLast, o)}`))
   })
   // 기록 층위 — RA 는 심의의 정본 기록이라 발언·결정문을 문장 중간에서 자르지 않는다.
   // 상한은 저장 API 보호용 여유값(발언당 2000자, 결정문 40문단). #14/#16 이 400자/12문단
@@ -215,7 +234,7 @@ if (A.saveConversation !== false) {
   roundsData.forEach((rd, idx) => {
     const isFirst = idx === 0
     const isLast = idx === roundsData.length - 1
-    rd.filter(Boolean).forEach(o => msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: summarize(isFirst, isLast, o).slice(0, 2000) }))
+    rd.filter(Boolean).forEach(o => msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: readable(isFirst, isLast, o).slice(0, 2000) }))
   })
   msgs.push({ role: 'assistant', content: String(decision).slice(0, 8000) })
   try {

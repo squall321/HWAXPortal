@@ -1,7 +1,7 @@
 // 심의 라이브 뷰 — 절차 스테퍼 + 근거 카드 + 라이브 회의 버블 + 수렴/소수의견 배지 + 산출물 카드
 import { useMemo } from 'react';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
-import { InlineMd, TextBlock } from './renderers/TextBlock';
+import { TextBlock } from './renderers/TextBlock';
 
 // 페르소나 → 고정 색(이름 해시) — 회의 chat 렌더와 같은 계열의 팔레트.
 const PALETTE = ['#c0673a', '#3f7d80', '#7a5aa6', '#4a7a3c', '#b08a2a', '#a24a5e', '#3a6ea0', '#6b8e23'];
@@ -132,7 +132,8 @@ function Meeting({ d, live }: { d: DelibData; live: boolean }) {
                     {t.stance && <span className={`dv-stance ${stanceClass(t.stance)}`}>{t.stance}</span>}
                   </div>
                   <div className="dv-bub" style={{ borderLeftColor: colorOf(t.persona) }}>
-                    <InlineMd text={t.say} />
+                    {/* 블록 렌더 — 발언의 문단 구분(수용/반박/심화)·목록·인라인 서식이 그대로 보인다 */}
+                    <TextBlock text={t.say} />
                   </div>
                 </div>
               </div>
