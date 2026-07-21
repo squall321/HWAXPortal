@@ -169,6 +169,140 @@ ol.md-list li.md-li-d2 {
 .md-table tbody tr:last-child td {
   border-bottom: none;
 }
+/* zebra 줄무늬 + 행 호버 — 판별 매트릭스류 다행 표 가독성 */
+.md-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.022);
+}
+.md-table tbody tr:hover td {
+  background: rgba(122, 162, 255, 0.07);
+}
+
+/* 외부 링크 표시 */
+.md-link::after {
+  content: '↗';
+  font-size: 0.8em;
+  margin-left: 0.1em;
+  opacity: 0.65;
+}
+
+/* ── 콜아웃 — > [!NOTE] / 선행 이모지 인용을 색 박스로 ── */
+.md-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.55rem 0;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid;
+}
+.md-callout-body {
+  white-space: pre-wrap;
+}
+.md-callout-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.md-callout-note {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(96, 165, 250, 0.08);
+}
+.md-callout-note .md-callout-label {
+  color: #7ab8ff;
+}
+.md-callout-tip {
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.07);
+}
+.md-callout-tip .md-callout-label {
+  color: #6fdc8f;
+}
+.md-callout-warn {
+  border-color: rgba(240, 180, 41, 0.45);
+  background: rgba(240, 180, 41, 0.08);
+}
+.md-callout-warn .md-callout-label {
+  color: #f0c04a;
+}
+
+/* ── 체크리스트 ── */
+.md-list li.md-task {
+  list-style: none;
+  margin-left: -1.15rem;
+}
+.md-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.45em;
+  border: 1.5px solid var(--muted);
+  border-radius: 4px;
+  font-size: 0.75em;
+  line-height: 1;
+  vertical-align: -0.1em;
+  color: transparent;
+}
+.md-check.done {
+  border-color: #6fdc8f;
+  background: rgba(74, 222, 128, 0.15);
+  color: #6fdc8f;
+}
+.md-list li.md-task.done {
+  color: var(--muted);
+}
+
+/* ── 블록/인라인 수식 (KaTeX) ── */
+.md-math {
+  overflow-x: auto;
+  padding: 0.35rem 0;
+  margin: 0.5rem 0;
+}
+.md-math-i .katex {
+  font-size: 1.02em;
+}
+
+/* ── 코드 구문 강조 (GitHub Dark 근사 팔레트) ── */
+.tok-kw {
+  color: #ff7b72;
+}
+.tok-str {
+  color: #a5d6ff;
+}
+.tok-com {
+  color: #8b949e;
+  font-style: italic;
+}
+.tok-num {
+  color: #79c0ff;
+}
+.tok-key {
+  color: #7ee787;
+}
+.tok-var {
+  color: #ffa657;
+}
+
+/* 줄번호(4줄 이상)·줄바꿈 토글 */
+.code-numbered {
+  counter-reset: cl;
+}
+.code-numbered .code-line::before {
+  counter-increment: cl;
+  content: counter(cl);
+  display: inline-block;
+  width: 2em;
+  margin-right: 0.9em;
+  color: var(--muted);
+  opacity: 0.45;
+  text-align: right;
+  user-select: none;
+}
+.codeblock pre.code-wrap .code-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 
 .inline-code {
   font-family: var(--cx-mono);

@@ -8,22 +8,44 @@ export type Inline =
   | { t: 'bold'; s: string }
   | { t: 'em'; s: string }
   | { t: 'strike'; s: string }
+  | { t: 'math'; s: string }
   | { t: 'link'; s: string; href: string };
 
-export type ListItem = { depth: number; text: string };
+export type ListItem = { depth: number; text: string; task?: 'todo' | 'done' };
 
 export type Block =
   | { t: 'p'; text: string }
   | { t: 'h'; level: number; text: string }
   | { t: 'hr' }
   | { t: 'quote'; text: string }
+  | { t: 'callout'; kind: 'note' | 'tip' | 'warn'; label: string; text: string }
   | { t: 'list'; ordered: boolean; start: number; items: ListItem[] }
+  | { t: 'math'; tex: string }
   | { t: 'table'; head: string[]; align: ('l' | 'c' | 'r')[]; rows: string[][] };
 
 const RE_HEADING = /^(#{1,6})\s+(.*)$/;
 const RE_HR = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const RE_LIST = /^(\s*)(?:([-*+])|(\d{1,3})[.)])\s+(.*)$/;
 const RE_QUOTE = /^\s*>\s?(.*)$/;
+// 콜아웃: GitHub 스타일 [!NOTE] 마커 또는 선행 이모지 — 인용을 색 박스로 승격
+const RE_CALLOUT_MARK = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$/i;
+const RE_CALLOUT_EMOJI = /^(⚠️|❗|🚨|💡|✅|📌|ℹ️)/u;
+const RE_TASK = /^\[( |x|X)\]\s+(.*)$/;
+
+const CALLOUT_KIND: Record<string, { kind: 'note' | 'tip' | 'warn'; label: string }> = {
+  NOTE: { kind: 'note', label: '참고' },
+  IMPORTANT: { kind: 'note', label: '중요' },
+  TIP: { kind: 'tip', label: '팁' },
+  WARNING: { kind: 'warn', label: '주의' },
+  CAUTION: { kind: 'warn', label: '주의' },
+  '⚠️': { kind: 'warn', label: '주의' },
+  '❗': { kind: 'warn', label: '주의' },
+  '🚨': { kind: 'warn', label: '주의' },
+  '💡': { kind: 'tip', label: '팁' },
+  '✅': { kind: 'tip', label: '확인' },
+  '📌': { kind: 'note', label: '참고' },
+  'ℹ️': { kind: 'note', label: '참고' },
+};
 // 표 구분행: |---|:--:|--- 류 — 셀마다 최소 하이픈 1개(콜론 정렬 허용)
 const RE_TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
@@ -111,7 +133,13 @@ export function parseBlocks(text: string): Block[] {
       for (; j < lines.length; j++) {
         const m = lines[j].match(RE_LIST);
         if (m && (m[3] !== undefined) === ordered) {
-          items.push({ depth: Math.min(2, Math.floor((m[1] ?? '').length / 2)), text: m[4] });
+          const depth = Math.min(2, Math.floor((m[1] ?? '').length / 2));
+          const task = m[4].match(RE_TASK);
+          if (task) {
+            items.push({ depth, text: task[2], task: task[1] === ' ' ? 'todo' : 'done' });
+          } else {
+            items.push({ depth, text: m[4] });
+          }
         } else if (lines[j].match(/^\s{2,}\S/) && items.length) {
           // 들여쓴 연속행은 직전 항목에 붙인다
           items[items.length - 1].text += '\n' + lines[j].trim();
@@ -134,12 +162,54 @@ export function parseBlocks(text: string): Block[] {
         if (!m) break;
         qlines.push(m[1]);
       }
-      blocks.push({ t: 'quote', text: qlines.join('\n') });
+      // [!NOTE] 마커 또는 선행 이모지 → 콜아웃 박스로 승격, 아니면 일반 인용
+      const first = qlines[0] ?? '';
+      const mark = first.match(RE_CALLOUT_MARK);
+      const emoji = mark ? null : first.match(RE_CALLOUT_EMOJI);
+      if (mark) {
+        const meta = CALLOUT_KIND[mark[1].toUpperCase()];
+        const body = [mark[2], ...qlines.slice(1)].filter(Boolean).join('\n');
+        blocks.push({ t: 'callout', kind: meta.kind, label: meta.label, text: body });
+      } else if (emoji && CALLOUT_KIND[emoji[1]]) {
+        const meta = CALLOUT_KIND[emoji[1]];
+        blocks.push({ t: 'callout', kind: meta.kind, label: meta.label, text: qlines.join('\n') });
+      } else {
+        blocks.push({ t: 'quote', text: qlines.join('\n') });
+      }
       i = j - 1;
       continue;
     }
 
-    if (line.trim() === '') {
+    // 블록 수식: $$…$$ 또는 \[ … \] — 한 줄형과 여러 줄형 모두. 닫힘이 아직 안 온
+    // 스트리밍 상태면 소비하지 않고 문단으로 남긴다(닫히는 순간 수식으로 전환).
+    const tr = line.trim();
+    if (tr.startsWith('$$') || tr === '\\[') {
+      const isDollar = tr.startsWith('$$');
+      const openRest = isDollar ? tr.slice(2) : '';
+      const closeMark = isDollar ? '$$' : '\\]';
+      if (isDollar && openRest.trimEnd().endsWith('$$') && openRest.trim().length > 2) {
+        flushPara();
+        blocks.push({ t: 'math', tex: openRest.trimEnd().slice(0, -2).trim() });
+        continue;
+      }
+      let close = -1;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].trim() === closeMark || (isDollar && lines[j].trim().endsWith('$$'))) {
+          close = j;
+          break;
+        }
+      }
+      if (close >= 0) {
+        flushPara();
+        const body = [openRest, ...lines.slice(i + 1, close)];
+        const lastLine = lines[close].trim();
+        if (isDollar && lastLine !== '$$') body.push(lastLine.slice(0, -2));
+        blocks.push({ t: 'math', tex: body.join('\n').trim() });
+        i = close;
+        continue;
+      }
+    }
+    if (tr === '') {
       flushPara();
       continue;
     }
@@ -149,10 +219,11 @@ export function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
-// 인라인: 코드 > 볼드 > 이탤릭 > 취소선 > 링크(http/https 만) — 알터네이션 순서가 우선순위.
-// 이탤릭은 여는 * 뒤 비공백 요구(곱셈 기호 오탐 방지). 미완성 구문은 일반 텍스트로 남는다.
+// 인라인: 코드 > 수식(\(..\), $..$) > 볼드 > 이탤릭 > 취소선 > 링크(http/https 만)
+// — 알터네이션 순서가 우선순위. 이탤릭은 여는 * 뒤 비공백 요구(곱셈 기호 오탐 방지),
+// $..$ 는 양끝 비공백 요구(통화 표기 "500 $ 부족" 류 오탐 방지). 미완성 구문은 텍스트로 남는다.
 const RE_INLINE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+?\*\*)|(\*(?=\S)[^*\n]+?\*)|(~~[^~\n]+?~~)|(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g;
+  /(`[^`\n]+`)|(\\\([^\n]+?\\\))|(\$(?=\S)(?:[^$\n]*\S)?\$)|(\*\*[^*\n]+?\*\*)|(\*(?=\S)[^*\n]+?\*)|(~~[^~\n]+?~~)|(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g;
 
 export function parseInline(s: string): Inline[] {
   const out: Inline[] = [];
@@ -162,9 +233,11 @@ export function parseInline(s: string): Inline[] {
     if (m.index > last) out.push({ t: 'text', s: s.slice(last, m.index) });
     const tok = m[0];
     if (m[1]) out.push({ t: 'code', s: tok.slice(1, -1) });
-    else if (m[2]) out.push({ t: 'bold', s: tok.slice(2, -2) });
-    else if (m[3]) out.push({ t: 'em', s: tok.slice(1, -1) });
-    else if (m[4]) out.push({ t: 'strike', s: tok.slice(2, -2) });
+    else if (m[2]) out.push({ t: 'math', s: tok.slice(2, -2).trim() });
+    else if (m[3]) out.push({ t: 'math', s: tok.slice(1, -1).trim() });
+    else if (m[4]) out.push({ t: 'bold', s: tok.slice(2, -2) });
+    else if (m[5]) out.push({ t: 'em', s: tok.slice(1, -1) });
+    else if (m[6]) out.push({ t: 'strike', s: tok.slice(2, -2) });
     else {
       const lm = tok.match(/^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)$/);
       if (lm) out.push({ t: 'link', s: lm[1], href: lm[2] });

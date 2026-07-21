@@ -1,10 +1,37 @@
 // 안전 마크다운 렌더러 — md.ts 파서의 블록 AST(제목/구분선/표/목록/인용/문단)와 인라인 서식을
 // React 노드로 변환(HTML 미주입, 스트리밍 커서 지원). 코드펜스는 기존 세그먼트 분리 유지,
 // html/svg 펜스는 sandbox iframe 미리보기 지원(포털 문서에 직접 주입하지 않음 — XSS 격리).
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import { copyText } from '../clipboard';
 import { IconCheck, IconCopy, IconExternal } from '../icons';
 import { parseBlocks, parseInline, type Block } from './md';
+import { tokenizeLines } from './highlight';
+
+// KaTeX 수식 렌더 — 라이브러리가 입력을 전량 이스케이프하고 trust:false 로 \href 류를
+// 차단하므로 dangerouslySetInnerHTML 이지만 XSS 표면이 없다. 오류 수식은 원문을 붉게 표시.
+function MathSpan({ tex, display }: { tex: string; display: boolean }) {
+  const html = useMemo(() => {
+    try {
+      return katex.renderToString(tex, {
+        displayMode: display,
+        throwOnError: false,
+        errorColor: '#f28b82',
+        trust: false,
+        strict: false,
+      });
+    } catch {
+      return null;
+    }
+  }, [tex, display]);
+  if (html === null) return <span>{display ? `$$${tex}$$` : `$${tex}$`}</span>;
+  return display ? (
+    <div className="md-math" dangerouslySetInnerHTML={{ __html: html }} />
+  ) : (
+    <span className="md-math-i" dangerouslySetInnerHTML={{ __html: html }} />
+  );
+}
 
 type Segment =
   | { kind: 'text'; body: string }
@@ -60,6 +87,8 @@ function renderInline(s: string, keyBase: string): ReactNode[] {
         return <em key={key}>{tok.s}</em>;
       case 'strike':
         return <del key={key}>{tok.s}</del>;
+      case 'math':
+        return <MathSpan key={key} tex={tok.s} display={false} />;
       case 'link':
         return (
           <a key={key} className="md-link" href={tok.href} target="_blank" rel="noopener noreferrer">
@@ -97,12 +126,31 @@ function renderBlock(b: Block, key: string): ReactNode {
           {renderInline(b.text, key)}
         </blockquote>
       );
+    case 'callout':
+      return (
+        <div key={key} className={`md-callout md-callout-${b.kind}`}>
+          <span className="md-callout-label">{b.label}</span>
+          <div className="md-callout-body">{renderInline(b.text, key)}</div>
+        </div>
+      );
+    case 'math':
+      return <MathSpan key={key} tex={b.tex} display />;
     case 'list': {
-      const items = b.items.map((it, i) => (
-        <li key={`${key}-l${i}`} className={it.depth ? `md-li-d${it.depth}` : undefined}>
-          {renderInline(it.text, `${key}-l${i}`)}
-        </li>
-      ));
+      const items = b.items.map((it, i) => {
+        const cls = [it.depth ? `md-li-d${it.depth}` : '', it.task ? `md-task ${it.task}` : '']
+          .filter(Boolean)
+          .join(' ');
+        return (
+          <li key={`${key}-l${i}`} className={cls || undefined}>
+            {it.task && (
+              <span className={`md-check ${it.task}`} aria-hidden="true">
+                {it.task === 'done' ? '✓' : ''}
+              </span>
+            )}
+            {renderInline(it.text, `${key}-l${i}`)}
+          </li>
+        );
+      });
       return b.ordered ? (
         <ol key={key} className="md-list" start={b.start}>
           {items}
@@ -208,10 +256,14 @@ function PreviewFrame({ lang, body }: { lang: string; body: string }) {
 function CodeBlock({ lang, body, closed, cursor }: { lang: string; body: string; closed: boolean; cursor: boolean }) {
   const [copied, setCopied] = useState(false);
   const [view, setView] = useState<'preview' | 'code'>('preview');
+  const [wrap, setWrap] = useState(false);
   const normLang = lang.toLowerCase();
   const previewable = PREVIEW_LANGS.has(normLang);
   // 스트리밍 중(펜스 미닫힘)에는 코드로 두고, 닫힌 뒤에만 미리보기 활성화.
   const showPreview = previewable && closed && view === 'preview';
+  // 구문 강조 토큰(줄 단위) — 4줄 이상이면 줄번호 표시. 스트리밍 중에도 매 렌더 재토크나이즈(경량).
+  const tokenLines = useMemo(() => tokenizeLines(normLang, body), [normLang, body]);
+  const numbered = tokenLines.length > 3;
 
   const onCopy = () => {
     void copyText(body).then((ok) => {
@@ -256,6 +308,17 @@ function CodeBlock({ lang, body, closed, cursor }: { lang: string; body: string;
               </button>
             </>
           )}
+          {!showPreview && (
+            <button
+              type="button"
+              className={`codeblock-toggle${wrap ? ' active' : ''}`}
+              onClick={() => setWrap((w) => !w)}
+              aria-label="줄바꿈 전환"
+              title="긴 줄 접기"
+            >
+              줄바꿈
+            </button>
+          )}
           <button type="button" className="codeblock-copy" onClick={onCopy} aria-label="코드 복사">
             {copied ? <IconCheck width={13} height={13} /> : <IconCopy width={13} height={13} />}
             <span>{copied ? '복사됨' : '복사'}</span>
@@ -265,9 +328,22 @@ function CodeBlock({ lang, body, closed, cursor }: { lang: string; body: string;
       {showPreview ? (
         <PreviewFrame lang={normLang} body={body} />
       ) : (
-        <pre>
+        <pre className={`${numbered ? 'code-numbered' : ''}${wrap ? ' code-wrap' : ''}`}>
           <code>
-            {body}
+            {tokenLines.map((toks, li) => (
+              <span key={li} className="code-line">
+                {toks.map((t, ti) =>
+                  t.t === 'txt' ? (
+                    t.s
+                  ) : (
+                    <span key={ti} className={`tok-${t.t}`}>
+                      {t.s}
+                    </span>
+                  ),
+                )}
+                {'\n'}
+              </span>
+            ))}
             {cursor && <span className="stream-cursor" aria-hidden="true" />}
           </code>
         </pre>
