@@ -121,6 +121,29 @@ else
   bad "AIDataHub sync-from-drive.sh 없음 — 건너뜀"
 fi
 
+# ── 3.5) agent-server .env 자동 보정 — 챗 스택 재기동 전에 vLLM 주소를 확정한다.
+#   ① .env 없으면 apply-envs 로 신규 생성(@FROM_RA 마커를 RA .env 의 LLM_* 값으로 치환)
+#   ② @FROM_RA 마커가 남아있으면(킷 raw 복사/수동편집 흔적 — apply-envs 는 기존키 보존이라 못 고침)
+#      그 줄을 지우고 재치환 → '@FROM_RA:LLM_BASE_URL@' 로 붙으려다 APIConnectionError 로 죽던 사고 차단.
+hr "3.5) agent-server .env 보정 (@FROM_RA 치환 확인)"
+if [ -n "${AGENT_DIR:-}" ]; then
+  AGENT_ENV="$AGENT_DIR/.env"
+  if [ -f "$AGENT_ENV" ] && grep -q '@FROM_RA:' "$AGENT_ENV"; then
+    bad "미치환 @FROM_RA 마커 발견 — 제거 후 재치환"
+    sed -i '/@FROM_RA:/d' "$AGENT_ENV"
+  fi
+  [ -f "$AGENT_ENV" ] || echo "  · .env 없음 — apply-envs 로 신규 생성"
+  bash "$SELF_REPO/infra/env-kits/apply-envs.sh" agent-server || echo "  ⚠ apply-envs agent-server 실패"
+  VB="$(grep -E '^VLLM_BASE_URL=' "$AGENT_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  case "${VB:-}" in
+    '')          bad "VLLM_BASE_URL 미설정 — RA .env 에 LLM_BASE_URL 없음? (상암 GLM 주소 필요, start.sh 는 로컬 기본으로 폴백)" ;;
+    *@FROM_RA:*) bad "VLLM_BASE_URL 아직 마커 — apply-envs 치환 실패(RA .env 의 LLM_BASE_URL 확인)" ;;
+    *)           ok "VLLM_BASE_URL=$VB" ;;
+  esac
+else
+  echo "  · HWAXAgentServer 레포 미발견 — 건너뜀"
+fi
+
 # ── 4) 챗 스택만 pull+재기동 — 2)에서 이미 재기동한 사이트들을 다시 내리지 않는다
 #      (mxwp-mcp는 deploy-all이 재기동, reportarchive-mcp는 RA 레포 공유라 update 금지 — 기동은 5에서) ──
 hr "4) update-sites (챗 스택: mcp-gateway·agent-server·signalforge-mcp)"
