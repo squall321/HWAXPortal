@@ -76,19 +76,24 @@ function Stepper({ d, live }: { d: DelibData; live: boolean }) {
 }
 
 function EvidenceCard({ d }: { d: DelibData }) {
-  const ev = d.evidence;
-  if (!ev) return null;
+  // 과거 저장분(단일 객체) 호환 — 배열로 정규화 후 출처별 카드.
+  const list = Array.isArray(d.evidence) ? d.evidence : d.evidence ? [d.evidence] : [];
+  if (!list.length) return null;
   return (
-    <details className="dv-evidence">
-      <summary>
-        <span className="dv-ev-badge">근거</span>
-        {ev.source}
-        <span className={`dv-ev-flag${ev.included ? ' in' : ''}`}>
-          {ev.included ? '심의에 포함' : '직접 연관 없음'}
-        </span>
-      </summary>
-      <pre className="dv-ev-body">{ev.text}</pre>
-    </details>
+    <>
+      {list.map((ev, i) => (
+        <details className="dv-evidence" key={`${ev.source}-${i}`}>
+          <summary>
+            <span className="dv-ev-badge">근거</span>
+            {ev.source}
+            <span className={`dv-ev-flag${ev.included ? ' in' : ''}`}>
+              {ev.included ? '심의에 포함' : '직접 연관 없음'}
+            </span>
+          </summary>
+          <pre className="dv-ev-body">{ev.text}</pre>
+        </details>
+      ))}
+    </>
   );
 }
 

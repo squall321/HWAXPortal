@@ -37,6 +37,8 @@ cd ~/Projects/HWAXPortal
 bash infra/env-kits/apply-envs.sh agent-server   # 기본 목록에 없음 — 인자 명시 필수
 # 적용 키: DELIB_TEMPERATURE=0.7, DELIB_CLIP_SCALE=1.5, DELIB_PARSE_RETRIES=2, DELIB_TIMEOUT_S=180
 # (DELIB_REASONING_EFFORT 는 §4 진단 전까지 주석 유지)
+# 신규: 깊이 회복 손잡이 7종(DELIB_EVIDENCE_PREPASS 등)이 킷에 주석 시드됨 — 기본 꺼짐.
+# 반드시 §5 A/B 로 한 번에 하나씩만 켤 것(동시 적용 시 상쇄, GLM 리뷰 §5). 순서·가이드는 킷 주석 참조.
 cd ~/Projects/HWAXAgentServer && ./start.sh      # 재시작 (MCP_CONFIG env 유지 확인 — .env 에 있음)
 ```
 

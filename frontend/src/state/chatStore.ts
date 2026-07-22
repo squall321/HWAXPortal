@@ -71,10 +71,14 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
 
 /** 심의 데이터 저장 트림 — turns/evidence 캡으로 localStorage 누적 증가를 통제한다. */
 function trimDelib(d: DelibData): DelibData {
+  // evidence 는 배열(과거 저장분은 단일 객체) — 최근 4개, 항목당 2000자 캡.
+  const evList = Array.isArray(d.evidence) ? d.evidence : d.evidence ? [d.evidence] : [];
   return {
     ...d,
     ...(d.turns ? { turns: d.turns.slice(-45) } : {}),
-    ...(d.evidence ? { evidence: { ...d.evidence, text: d.evidence.text.slice(0, 2000) } } : {}),
+    ...(evList.length
+      ? { evidence: evList.slice(-4).map((e) => ({ ...e, text: e.text.slice(0, 2000) })) }
+      : {}),
   };
 }
 

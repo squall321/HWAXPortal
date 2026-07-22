@@ -258,6 +258,15 @@ VLLM_TIMEOUT_S=180
 
 **T0 계측 하네스(비용 0, 선행 필수)** — 수치 인용 밀도(근거 유래/비유래 분리)·반박 타겟률·신규 개념 도입률·결정문 수치 밀도 + 가드레일(파싱 실패율·필드 원본 길이). → **T1 근거 주입 → T2 반박 계약 → T3 산문 선행(T4 thinking 진단 후) → T4 effort A/B → T5 의장 2-pass → T6 라운드 가변·레드팀(후순위)**. 조건당 3문항×3회, cae00 배치(러너북 §5 연계). **동시 적용 금지** — GLM급은 다중 제약에서 지시 추종 예산이 분산돼 기법 적층이 상쇄된다(단일 변수 A/B만).
 
+### 구현 상태 (2026-07-21)
+
+유효 판정 기법은 deliberation.py 에 env 게이트로 구현됨 — `DELIB_EVIDENCE_PREPASS` /
+`DELIB_REBUT_QUOTE` / `DELIB_PROSE_FIRST` / `DELIB_CROSS_EXAM` / `DELIB_ANCHOR` /
+`DELIB_CHAIR_BESTOF` / `DELIB_CHAIR_CITE`. 기본 전부 꺼짐(무회귀), env-kit(agent-server.env)에
+주석 시드 + A/B 순서 가이드. 무조건 견고화 3건(_parse_json 균형 스캔·_ser_val dict 직렬화·
+_say_of 인용 반박 렌더)은 항상 적용. 조건부 판정 기법(수치 앵커 확장·발언 분해·Socratic·
+수치 원장·챌린저)은 미구현 — T1/T2 A/B 결과 확인 후 결정.
+
 ### 원리적 한계 (모델 교체 없이 불가)
 
 - 0.7R급 실무 감각의 자발적 인출 — 근거 주입은 지식을 '조달'할 뿐 '이식' 못함.

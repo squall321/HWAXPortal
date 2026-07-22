@@ -41,7 +41,9 @@ export interface DelibData {
   stages?: string[]; // 지나온 단계(순서)
   roundN?: number; // 라운드당 패널 수(진행률 분모)
   personas?: { key: string; role?: string }[];
-  evidence?: { source: string; text: string; included: boolean };
+  // 근거 카드 — 한 심의에 복수 출처가 올 수 있어 배열(SignalForge 환기 + 정량 근거 선주입).
+  // 과거 저장분은 단일 객체일 수 있어 소비처는 배열/객체 양쪽을 허용한다.
+  evidence?: { source: string; text: string; included: boolean }[];
   turns?: DelibTurn[];
   decision?: string;
   outcome?: {

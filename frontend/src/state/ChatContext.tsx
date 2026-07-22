@@ -90,13 +90,19 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'personas':
       d.personas = (e.personas as DelibData['personas']) ?? [];
       break;
-    case 'evidence':
-      d.evidence = {
-        source: String(e.source ?? ''),
-        text: String(e.text ?? ''),
-        included: Boolean(e.included),
-      };
+    case 'evidence': {
+      // 복수 출처(SignalForge 환기 + 정량 근거 선주입)가 서로 덮어쓰지 않게 append.
+      const prevEv = Array.isArray(d.evidence) ? d.evidence : d.evidence ? [d.evidence] : [];
+      d.evidence = [
+        ...prevEv,
+        {
+          source: String(e.source ?? ''),
+          text: String(e.text ?? ''),
+          included: Boolean(e.included),
+        },
+      ];
       break;
+    }
     case 'turn': {
       const turn: DelibTurn = {
         round: Number(e.round ?? 0),
