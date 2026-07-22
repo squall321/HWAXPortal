@@ -266,6 +266,61 @@ print(f"  · gateway {h.get('tools')} tools | {parts}")
 PY
 fi
 
+# ── 7) 챗 스모크 — /health 는 프로세스 생존만 본다. 실제 문장 하나를 보내 AI 응답이 오는지
+#      (agent → gateway 도구 로딩 → vLLM 전 체인)를 태운다. 실패 시 로그 꼬리를 함께 출력. ──
+hr "7) 챗 스모크 (실제 응답 검증)"
+CHAT_RES="$(python3 - <<'PY'
+import json, urllib.request, sys
+body = json.dumps({"message": "한 문장으로 자기소개 해주세요.",
+                   "groups": ["ai-data-hub"], "history": []}).encode()
+req = urllib.request.Request("http://127.0.0.1:9009/chat", data=body,
+                             headers={"Content-Type": "application/json"})
+try:
+    with urllib.request.urlopen(req, timeout=60) as r:
+        raw = r.read().decode("utf-8", "replace")
+except Exception as e:
+    print("FAIL|요청 실패: %s" % e); sys.exit()
+has_result = ('"type": "text"' in raw) or ("event: result" in raw)
+has_error = "event: error" in raw
+content = ""
+for line in raw.splitlines():
+    if line.startswith("data:") and '"content"' in line:
+        try: content = json.loads(line[5:].strip()).get("content", "") or content
+        except Exception: pass
+if has_result and not has_error and content.strip():
+    print("OK|%s" % content[:80].replace("\n", " "))
+else:
+    print("FAIL|error=%s result=%s len=%d | %s" % (has_error, has_result, len(content), raw[:400].replace("\n", " ")))
+PY
+)"
+if [ "${CHAT_RES%%|*}" = "OK" ]; then
+  ok "챗 응답 수신 — ${CHAT_RES#*|}"
+else
+  bad "챗 응답 실패 — ${CHAT_RES#*|}"
+  echo "  --- agent-server 로그 꼬리 ---"
+  tail -n 40 /tmp/hwax-services/agent-server.log 2>/dev/null \
+    || tail -n 40 /tmp/agent-server.log 2>/dev/null \
+    || echo "  (로그 파일 없음 — /tmp/hwax-services/agent-server.log 확인)"
+  FAIL=1
+fi
+# 챗 도구 바인딩 가시성 — TOOL_MAX 가 게이트웨이 도구를 캡하면 heax-hub 등 일부 도구가
+# 챗 에이전트에 안 실린다(프로드는 TOOL_MAX=0 무제한 권장 — 대형 컨텍스트 GLM 이라 전부 실림).
+AH="$(curl -s -m 4 http://127.0.0.1:9009/health 2>/dev/null || true)"
+if [ -n "$AH" ]; then
+  AH="$AH" GH="$H" python3 - <<'PY' || true
+import json, os
+try:
+    ah = json.loads(os.environ["AH"]); gh = json.loads(os.environ.get("GH") or "{}")
+    tmax = ah.get("tool_max", 0); gtools = gh.get("tools")
+    if tmax and gtools and tmax < gtools:
+        print("  · ⚠ 챗 도구 캡: TOOL_MAX=%s < 게이트웨이 %s개 → 일부 도구(heax-hub 등) 챗 미바인딩. 프로드는 TOOL_MAX=0 권장" % (tmax, gtools))
+    elif gtools:
+        print("  · 챗 도구: TOOL_MAX=%s (0=무제한) → 게이트웨이 %s개 전부 바인딩 가능" % (tmax, gtools))
+except Exception:
+    pass
+PY
+fi
+
 if [ "$FAIL" = 1 ]; then
   bad "핵심 체인 실패 — 위의 ✗ 항목을 확인하세요 (재시도: 같은 명령 재실행)"
   exit 1
