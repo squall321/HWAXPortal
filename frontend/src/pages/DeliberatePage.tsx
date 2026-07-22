@@ -4,6 +4,7 @@ import { useChat } from '../state/ChatContext';
 import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { Composer, type ComposerHandle } from '../components/chat/Composer';
+import { DelibOptsPanel } from '../components/chat/DelibOptsPanel';
 import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
 import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
@@ -96,6 +97,7 @@ export default function DeliberatePage() {
               <p className="cx-hero-kicker">다중 전문가 심의</p>
               <h1 className="cx-hero-title">어떤 화두를 심의할까요?</h1>
               <Composer ref={composerRef} autoFocus placeholder="화두를 입력하세요…" />
+              <DelibOptsPanel />
               <div className="cx-chips">
                 {EXAMPLE_TOPICS.map((p) => (
                   <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
@@ -128,6 +130,7 @@ export default function DeliberatePage() {
                   </button>
                 </div>
               )}
+              <DelibOptsPanel />
               <Composer
                 ref={composerRef}
                 autoFocus

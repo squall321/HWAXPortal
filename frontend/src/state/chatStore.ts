@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, Conversation, DelibData, Message, Role } from '../types/chat';
+import type { ActivityItem, Conversation, DelibData, DelibOpts, Message, Role } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -148,4 +148,36 @@ export function saveSidebarOpen(open: boolean): void {
   } catch {
     /* noop */
   }
+}
+
+// 심의 손잡이(웹 토글) 영속 — prefix 네임스페이스로 심의 페이지 전용.
+export function loadDelibOpts(prefix: string = DEFAULT_PREFIX): DelibOpts {
+  try {
+    const raw = localStorage.getItem(`${prefix}.delibOpts`);
+    const o = raw ? JSON.parse(raw) : {};
+    return o && typeof o === 'object' ? (o as DelibOpts) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveDelibOpts(opts: DelibOpts, prefix: string = DEFAULT_PREFIX): void {
+  try {
+    localStorage.setItem(`${prefix}.delibOpts`, JSON.stringify(opts));
+  } catch {
+    /* noop */
+  }
+}
+
+// 손잡이 상태 → 서버 전송용(켠 것만). 나머지는 agent-server env 기본값 유지.
+export function delibOptsToWire(o: DelibOpts): Record<string, number> {
+  const w: Record<string, number> = {};
+  for (const k of ['evidence_prepass', 'rebut_quote', 'prose_first', 'cross_exam', 'anchor', 'chair_cite'] as const) {
+    if (o[k]) w[k] = 1;
+  }
+  if (o.chair_bestof && o.chair_bestof > 1) w.chair_bestof = Math.min(5, Math.max(1, o.chair_bestof));
+  // 타임아웃은 여기서 [10,1800] 클램프 — 포털 DelibOpts 는 범위를 '거부'(422)하므로(agent-server 는
+  // 클램프) HTML min/max 를 우회한 키보드 입력(5·5000 등)이 심의 전체를 422 로 죽이는 것 방지.
+  if (o.timeout_s != null && o.timeout_s > 0) w.timeout_s = Math.min(1800, Math.max(10, o.timeout_s));
+  return w;
 }

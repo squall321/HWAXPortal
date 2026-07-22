@@ -20,13 +20,16 @@ import {
   type ConvKind,
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
-import type { Conversation, DelibData, DelibEvent, DelibTally, DelibTurn, Message } from '../types/chat';
+import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message } from '../types/chat';
 import {
+  delibOptsToWire,
   loadActiveId,
   loadConversations,
+  loadDelibOpts,
   newId,
   saveActiveId,
   saveConversations,
+  saveDelibOpts,
 } from './chatStore';
 
 interface ChatContextValue {
@@ -40,6 +43,9 @@ interface ChatContextValue {
   streaming: boolean;
   setInput: (v: string) => void;
   sendMessage: (text: string) => void;
+  /** 심의 손잡이(웹 토글) — 심의 페이지 패널이 읽고 쓴다. 전송 시 켠 것만 서버로 실린다. */
+  delibOpts: DelibOpts;
+  setDelibOpts: (o: DelibOpts) => void;
   stop: () => void;
   newConversation: () => void;
   selectConversation: (id: string) => void;
@@ -164,6 +170,17 @@ export function ChatProvider({
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  // 심의 손잡이(웹 토글) — 상태는 UI 바인딩용, ref 는 전송 시점 읽기용(sendMessage 재생성·스테일 방지).
+  const [delibOpts, setDelibOptsState] = useState<DelibOpts>(() => loadDelibOpts(storagePrefix));
+  const delibOptsRef = useRef<DelibOpts>(delibOpts);
+  const setDelibOpts = useCallback(
+    (o: DelibOpts) => {
+      delibOptsRef.current = o;
+      setDelibOptsState(o);
+      saveDelibOpts(o, storagePrefix);
+    },
+    [storagePrefix],
+  );
   const abortRef = useRef<AbortController | null>(null);
   // 스트리밍 중인 대화 id — 그 대화가 삭제되면 스트림도 중단하기 위해 추적.
   const streamConvRef = useRef<string | null>(null);
@@ -337,6 +354,12 @@ export function ChatProvider({
         signal: controller.signal,
         history,
         ...(serverId ? { conversationId: serverId } : {}),
+        // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
+        // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
+        ...(() => {
+          const w = delibOptsToWire(delibOptsRef.current);
+          return Object.keys(w).length > 0 ? { delibOpts: w } : {};
+        })(),
         onStatus: (e) =>
           patch(cid, botId, (m) => {
             // 활동 패널용 누적 — 같은 step 연속 중복은 스킵, 60건 캡(영속 크기 통제).
@@ -464,6 +487,8 @@ export function ChatProvider({
         streaming,
         setInput,
         sendMessage,
+        delibOpts,
+        setDelibOpts,
         stop,
         newConversation,
         selectConversation,

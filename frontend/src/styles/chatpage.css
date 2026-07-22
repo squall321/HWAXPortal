@@ -648,3 +648,67 @@
 }
 .act-steps li.now { color: var(--fg); }
 .act-steps li.now::before { background: #4ade80; }
+
+/* ── 심의 옵션 패널(DelibOptsPanel) — 깊이 손잡이 웹 토글 ─────────────────── */
+.do-panel {
+  width: 100%;
+  max-width: 760px;
+  margin: 10px auto 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  font-size: 13px;
+}
+.do-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  cursor: pointer;
+  color: var(--fg);
+  user-select: none;
+  list-style: none;
+}
+.do-summary::-webkit-details-marker { display: none; }
+.do-gear { color: var(--muted); }
+.do-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--cx-accent);
+  background: var(--cx-accent-soft);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.do-body { padding: 4px 13px 13px; border-top: 1px solid var(--border); }
+.do-warn { margin: 9px 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.do-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.do-item { display: grid; grid-template-columns: minmax(150px, auto) 1fr; align-items: center; gap: 4px 12px; }
+.do-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.do-toggle input { width: 15px; height: 15px; accent-color: var(--cx-accent); cursor: pointer; }
+.do-label { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-weight: 500; }
+.do-heavy {
+  font-size: 10px;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-weight: 600;
+}
+.do-hint { grid-column: 1 / -1; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.do-item:has(.do-num) .do-hint { grid-column: 1 / -1; }
+.do-num {
+  justify-self: start;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+  min-width: 92px;
+}
+.do-timeout { display: inline-flex; align-items: center; gap: 6px; }
+.do-unit { color: var(--muted); font-size: 12px; }
+
+@media (prefers-color-scheme: dark) {
+  .do-heavy { color: #fcd34d; background: rgba(180, 83, 9, 0.25); }
+}

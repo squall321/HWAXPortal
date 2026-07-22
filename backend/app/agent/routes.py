@@ -45,6 +45,19 @@ class ChatHistoryMessage(BaseModel):
     content: str = Field(max_length=4000)  # per-item cap — no unbounded input (DoS)
 
 
+class DelibOpts(BaseModel):
+    """심의 손잡이 요청 오버라이드(웹 토글) — 각 필드 None=agent-server env 기본값 유지.
+    범위를 여기서 강제(agent-server 도 재클램프)해 신뢰 안 되는 값 유입을 막는다. GLM 리뷰 §5."""
+    evidence_prepass: int | None = Field(default=None, ge=0, le=1)
+    rebut_quote: int | None = Field(default=None, ge=0, le=1)
+    prose_first: int | None = Field(default=None, ge=0, le=1)
+    cross_exam: int | None = Field(default=None, ge=0, le=1)
+    anchor: int | None = Field(default=None, ge=0, le=1)
+    chair_bestof: int | None = Field(default=None, ge=1, le=5)
+    chair_cite: int | None = Field(default=None, ge=0, le=1)
+    timeout_s: float | None = Field(default=None, ge=10, le=1800)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)  # cap payload — no unbounded input (DoS)
     system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
@@ -52,6 +65,8 @@ class ChatRequest(BaseModel):
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=40)
     # 있으면 이 대화(서버 정본)에 user+assistant 를 저장한다. 없으면 저장 안 함(하위호환).
     conversation_id: str | None = Field(default=None, max_length=64)
+    # 심의 손잡이 오버라이드 — 심의(/심의) 요청에서만 의미. agent-server 로 그대로 포워딩.
+    delib_opts: DelibOpts | None = None
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -227,6 +242,8 @@ async def _relay_stream(
         "groups": principal.groups,
         "history": [{"role": m.role, "content": m.content} for m in body.history],
     }
+    if body.delib_opts is not None:  # 지정된 손잡이만 전달(None 필드는 제외 → env 기본값 유지)
+        payload["delib_opts"] = body.delib_opts.model_dump(exclude_none=True)
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload

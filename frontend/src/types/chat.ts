@@ -53,6 +53,19 @@ export interface DelibData {
     unanimous?: boolean;
   };
 }
+// 심의 손잡이(웹 토글) — 켠 것만 서버로 전송, 나머지는 agent-server env 기본값. GLM 리뷰 §5.
+// 불리언=0/1 플래그, chair_bestof=의장 후보 수(1=끔), timeout_s=호출당 타임아웃(초·미지정=기본).
+export interface DelibOpts {
+  evidence_prepass?: boolean;
+  rebut_quote?: boolean;
+  prose_first?: boolean;
+  cross_exam?: boolean;
+  anchor?: boolean;
+  chair_cite?: boolean;
+  chair_bestof?: number;
+  timeout_s?: number;
+}
+
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
 export interface DelibEvent {
   kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'outcome';

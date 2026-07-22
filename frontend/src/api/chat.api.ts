@@ -81,11 +81,13 @@ export async function streamChat(
     history?: HistoryMessage[];
     /** 서버 대화 저장소 정본 id — 있으면 백엔드가 이 대화에 user+assistant 를 서버 저장. */
     conversationId?: string;
+    /** 심의 손잡이 오버라이드(웹 토글) — 켠 것만. 심의(/심의) 요청에서만 의미. */
+    delibOpts?: Record<string, number>;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -101,6 +103,7 @@ export async function streamChat(
       ...(systemId ? { system_id: systemId } : {}),
       ...(history && history.length > 0 ? { history } : {}),
       ...(conversationId ? { conversation_id: conversationId } : {}),
+      ...(delibOpts && Object.keys(delibOpts).length > 0 ? { delib_opts: delibOpts } : {}),
     }),
     signal,
   });
