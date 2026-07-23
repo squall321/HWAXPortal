@@ -284,8 +284,17 @@ if [ -n "$H" ] && json_ok "$H"; then
   H="$H" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"])
-parts = " ".join(k + "=" + ("up" if v else "DOWN") for k, v in sorted((h.get("backends") or {}).items()))
+backends = h.get("backends") or {}
+parts = " ".join(k + "=" + ("up" if v else "DOWN") for k, v in sorted(backends.items()))
 print(f"  · gateway {h.get('tools')} tools | {parts}")
+# HEAX Hub 앱은 heax_registry 폴링으로 heax-* 백엔드로 동적 발견된다 — 하나도 없으면 등록/폴링 문제.
+heax = {k: v for k, v in backends.items() if k.startswith("heax") and k != "heax_registry"}
+if heax:
+    print("  · HEAX Hub 앱 발견: " + ", ".join(f"{k}={'up' if v else 'DOWN'}" for k, v in sorted(heax.items())))
+elif "heax_registry" in backends:
+    print("  · ⚠ HEAX Hub 앱 0개 발견 — heax_registry 는 있으나 폴링이 앱을 못 찾음(레지스트리에 앱 미등록/미기동?). 챗에 열충격·재료·적층 도구가 안 뜬다.")
+else:
+    print("  · ⚠ heax_registry 미설정 — HEAX Hub 앱 자동발견 비활성(§5 재프로비저닝 확인).")
 PY
 fi
 
