@@ -95,6 +95,7 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     }
     case 'personas':
       d.personas = (e.personas as DelibData['personas']) ?? [];
+      if (typeof e.totalRounds === 'number') d.totalRounds = e.totalRounds;
       break;
     case 'evidence': {
       // 복수 출처(SignalForge 환기 + 정량 근거 선주입)가 서로 덮어쓰지 않게 append.

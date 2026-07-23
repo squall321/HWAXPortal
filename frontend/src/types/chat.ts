@@ -37,9 +37,10 @@ export interface DelibTally {
   total: number;
 }
 export interface DelibData {
-  stage?: string; // recall|discover|r1|r2|r3|decide|report
+  stage?: string; // recall|discover|r1..rN|decide|report
   stages?: string[]; // 지나온 단계(순서)
   roundN?: number; // 라운드당 패널 수(진행률 분모)
+  totalRounds?: number; // 총 라운드 수(가변, 기본 3) — 스테퍼/회의록 동적 렌더용
   personas?: { key: string; role?: string }[];
   // 근거 카드 — 한 심의에 복수 출처가 올 수 있어 배열(SignalForge 환기 + 정량 근거 선주입).
   // 과거 저장분은 단일 객체일 수 있어 소비처는 배열/객체 양쪽을 허용한다.
@@ -63,6 +64,7 @@ export interface DelibOpts {
   anchor?: boolean;
   chair_cite?: boolean;
   chair_bestof?: number;
+  rounds?: number;
   timeout_s?: number;
 }
 

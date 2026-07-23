@@ -55,6 +55,7 @@ class DelibOpts(BaseModel):
     anchor: int | None = Field(default=None, ge=0, le=1)
     chair_bestof: int | None = Field(default=None, ge=1, le=5)
     chair_cite: int | None = Field(default=None, ge=0, le=1)
+    rounds: int | None = Field(default=None, ge=2, le=8)
     timeout_s: float | None = Field(default=None, ge=10, le=1800)
 
 

@@ -12,24 +12,33 @@ function colorOf(name: string): string {
 }
 const initialOf = (name: string) => (name.replace(/[^0-9A-Za-z가-힣]/g, '')[0] ?? '·').toUpperCase();
 
-// 절차 정의 — recall 은 불량 화두에서만 등장(없으면 스테퍼에서 생략).
-const STAGES: { id: string; label: string }[] = [
-  { id: 'recall', label: '환기' },
-  { id: 'discover', label: '발굴' },
-  { id: 'r1', label: '1라운드' },
-  { id: 'r2', label: '2라운드' },
-  { id: 'r3', label: '3라운드' },
-  { id: 'decide', label: '의결' },
-  { id: 'report', label: '보고' },
-];
+// 라운드 수는 가변(2~8) — 절차는 환기·발굴 + r1..rN + 의결·보고로 동적 구성한다.
+const roundNoOf = (stage?: string): number => {
+  const m = stage?.match(/^r(\d+)$/);
+  return m ? Number(m[1]) : 0;
+};
+// 라운드 성격 라벨(1=초기, 마지막=수렴, 중간=심화).
+const roundLabel = (r: number, total: number): string =>
+  r === 1 ? '도메인별 초기 입장' : r >= total ? '수렴·최종 입장' : '상호 반박·심화';
+
+function stageList(total: number, seen: string[]): { id: string; label: string }[] {
+  const rounds = Array.from({ length: total }, (_, i) => ({ id: `r${i + 1}`, label: `${i + 1}라운드` }));
+  return [
+    { id: 'recall', label: '환기' },
+    { id: 'discover', label: '발굴' },
+    ...rounds,
+    { id: 'decide', label: '의결' },
+    { id: 'report', label: '보고' },
+  ].filter((s) => s.id !== 'recall' || seen.includes('recall'));
+}
 
 function Stepper({ d, live }: { d: DelibData; live: boolean }) {
   const seen = d.stages ?? [];
   const cur = d.stage;
-  const list = STAGES.filter((s) => s.id !== 'recall' || seen.includes('recall'));
+  const list = stageList(d.totalRounds ?? 3, seen);
   const curIdx = list.findIndex((s) => s.id === cur);
   // 현재 라운드 발언 진행률(분자=이 라운드 turn 수, 분모=패널 수)
-  const roundNo = cur === 'r1' ? 1 : cur === 'r2' ? 2 : cur === 'r3' ? 3 : 0;
+  const roundNo = roundNoOf(cur);
   const spoken = roundNo ? (d.turns ?? []).filter((t) => t.round === roundNo).length : 0;
   const total = d.roundN ?? d.personas?.length ?? 0;
   return (
@@ -122,12 +131,6 @@ function EvidenceCard({ d }: { d: DelibData }) {
   );
 }
 
-const ROUND_LABEL: Record<number, string> = {
-  1: '1라운드 · 도메인별 초기 입장',
-  2: '2라운드 · 상호 반박·심화',
-  3: '3라운드 · 수렴·최종 입장',
-};
-
 function stanceClass(s?: string): string {
   if (!s) return '';
   if (s.includes('반대')) return 'oppose';
@@ -140,16 +143,20 @@ function Meeting({ d, live }: { d: DelibData; live: boolean }) {
   if (turns.length === 0 && !live) return null;
   const rounds: Record<number, DelibTurn[]> = {};
   for (const t of turns) (rounds[t.round] ??= []).push(t);
-  const roundNo = d.stage === 'r1' ? 1 : d.stage === 'r2' ? 2 : d.stage === 'r3' ? 3 : 0;
+  const roundNo = roundNoOf(d.stage);
   const total = d.roundN ?? d.personas?.length ?? 0;
+  const totalRounds = d.totalRounds ?? 3;
+  // 렌더할 라운드 = 1..총라운드 ∪ turn 에 실제로 등장한 라운드(가변·과거 저장분 방어).
+  const maxRound = Math.max(totalRounds, roundNo, ...Object.keys(rounds).map(Number), 0);
+  const roundNums = Array.from({ length: maxRound }, (_, i) => i + 1);
   return (
     <div className="dv-meeting" role="log" aria-live="polite" aria-label="전문가 회의 발언">
-      {[1, 2, 3]
+      {roundNums
         .filter((r) => rounds[r]?.length || (live && r === roundNo))
         .map((r) => (
           <section key={r} className="dv-round">
             <div className="dv-round-div">
-              <span>{ROUND_LABEL[r]}</span>
+              <span>{`${r}라운드 · ${roundLabel(r, totalRounds)}`}</span>
             </div>
             {(rounds[r] ?? []).map((t, i) => (
               <div key={`${r}-${t.persona}-${i}`} className="dv-turn">

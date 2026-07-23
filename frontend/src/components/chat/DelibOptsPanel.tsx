@@ -17,7 +17,7 @@ export function DelibOptsPanel() {
 
   const setFlag = (key: keyof DelibOpts, on: boolean) =>
     setDelibOpts({ ...delibOpts, [key]: on });
-  const setNum = (key: 'chair_bestof' | 'timeout_s', v: number | undefined) =>
+  const setNum = (key: 'chair_bestof' | 'timeout_s' | 'rounds', v: number | undefined) =>
     setDelibOpts({ ...delibOpts, [key]: v });
 
   const active =
@@ -32,7 +32,24 @@ export function DelibOptsPanel() {
         {active > 0 && <span className="do-count">{active}개 켜짐</span>}
       </summary>
       <div className="do-body">
-        <p className="do-warn">한 번에 하나씩 켜서 비교하세요 — 여러 개를 동시에 켜면 효과가 상쇄되고 부하가 커집니다.</p>
+        <ul className="do-list">
+          <li className="do-item">
+            <span className="do-label">라운드 수</span>
+            <select
+              className="do-num"
+              value={delibOpts.rounds ?? 3}
+              onChange={(e) => setNum('rounds', Number(e.target.value))}
+            >
+              {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+                <option key={n} value={n}>
+                  {n}라운드{n === 3 ? ' (기본)' : ''}
+                </option>
+              ))}
+            </select>
+            <span className="do-hint">1 초기입장 + 중간 심화·반박 + 마지막 수렴. 늘릴수록 깊어지지만 느려집니다</span>
+          </li>
+        </ul>
+        <p className="do-warn">아래 손잡이는 한 번에 하나씩 켜서 비교하세요 — 여러 개를 동시에 켜면 효과가 상쇄되고 부하가 커집니다.</p>
         <ul className="do-list">
           {FLAGS.map((f) => (
             <li key={f.key} className="do-item">

@@ -176,6 +176,8 @@ export function delibOptsToWire(o: DelibOpts): Record<string, number> {
     if (o[k]) w[k] = 1;
   }
   if (o.chair_bestof && o.chair_bestof > 1) w.chair_bestof = Math.min(5, Math.max(1, o.chair_bestof));
+  // 라운드 수 — 기본 3과 다를 때만 전송(같으면 서버 기본값). [2,8] 클램프(포털 DelibOpts 거부 방지).
+  if (o.rounds != null && o.rounds !== 3) w.rounds = Math.min(8, Math.max(2, o.rounds));
   // 타임아웃은 여기서 [10,1800] 클램프 — 포털 DelibOpts 는 범위를 '거부'(422)하므로(agent-server 는
   // 클램프) HTML min/max 를 우회한 키보드 입력(5·5000 등)이 심의 전체를 422 로 죽이는 것 방지.
   if (o.timeout_s != null && o.timeout_s > 0) w.timeout_s = Math.min(1800, Math.max(10, o.timeout_s));
