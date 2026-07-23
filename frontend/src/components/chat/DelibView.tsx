@@ -75,6 +75,31 @@ function Stepper({ d, live }: { d: DelibData; live: boolean }) {
   );
 }
 
+// 참여 전문가 소개 — 심의 시작 시 누가 참여하는지·각자 뭐 하는 사람인지. 아바타 색/이니셜은
+// 아래 라운드 버블과 동일해 '이 사람이 이 발언'을 눈으로 잇게 한다(진행 순서 파악에 도움).
+function PersonaIntro({ d }: { d: DelibData }) {
+  const personas = d.personas ?? [];
+  if (!personas.length) return null;
+  return (
+    <section className="dv-intro" aria-label="참여 전문가">
+      <div className="dv-intro-head">참여 전문가 {personas.length}인 · 각자 초기입장 → 상호 반박 → 수렴 순으로 발언합니다</div>
+      <ul className="dv-intro-list">
+        {personas.map((p) => (
+          <li key={p.key} className="dv-intro-item">
+            <span className="dv-intro-avatar" style={{ background: colorOf(p.key) }} aria-hidden="true">
+              {initialOf(p.key)}
+            </span>
+            <div className="dv-intro-body">
+              <span className="dv-intro-key">{p.key}</span>
+              {p.role && <span className="dv-intro-role">{p.role}</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function EvidenceCard({ d }: { d: DelibData }) {
   // 과거 저장분(단일 객체) 호환 — 배열로 정규화 후 출처별 카드.
   const list = Array.isArray(d.evidence) ? d.evidence : d.evidence ? [d.evidence] : [];
@@ -242,6 +267,7 @@ export function DelibView({ msg }: { msg: Message }) {
   return (
     <div className="dv-root">
       <Stepper d={d} live={live} />
+      <PersonaIntro d={d} />
       <EvidenceCard d={d} />
       <Meeting d={d} live={live} />
       <Convergence d={d} />
