@@ -196,9 +196,12 @@ else
   fi
 
   MISSING="$(calc_missing "$H")"
-  # heax_registry는 /health에 안 나오는 config 전용 항목 — 토큰이 준비됐는데 config에 없으면 재프로비저닝 대상.
-  if [ -n "${HEAX_MCP_TOKEN:-}" ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
-     && ! grep -q '"heax_registry"' "$GW_DIR/gateway_config.json" 2>/dev/null; then
+  # heax_registry는 /health에 안 나오는 config 전용 항목 — config에 없으면 재프로비저닝 대상.
+  # provision-config.sh 가 heax MCP 토큰을 자동 발급하므로, 명시 토큰이 없어도 heax-hub 백엔드(venv)만
+  # 있으면 재프로비저닝 → 자동 발급 → heax_registry 활성. (토큰 명시돼 있으면 그것으로.)
+  if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+     && ! grep -q '"heax_registry"' "$GW_DIR/gateway_config.json" 2>/dev/null \
+     && { [ -n "${HEAX_MCP_TOKEN:-}" ] || [ -x "$(find_repo HEAXHub)/backend/.venv/bin/python" ]; }; then
     MISSING="heax_registry${MISSING:+ $MISSING}"
   fi
 
@@ -304,10 +307,10 @@ if heax:
 elif "heax_registry" in backends:
     print("  · ⚠ HEAX Hub 앱 0개 발견 — heax_registry 는 있으나 폴링이 앱을 못 찾음(레지스트리에 앱 미등록/미기동?). 챗에 열충격·재료·적층 도구가 안 뜬다.")
 else:
-    print("  · ⚠ HEAX Hub 앱 0개 — 자동발견 비활성(열충격·재료·적층 도구 전부 없음).")
-    print("      해결: 게이트웨이 provision.env 에 HEAX_MCP_TOKEN=<heax-hub MCP 토큰> 설정")
-    print("            (+ 도메인이면 HEAX_MCP_SERVERS_URL·HEAX_MCP_BASE) 후 update-all 재실행 → §5 가")
-    print("            heax_registry 재프로비저닝. 토큰 없으면 §5 가 heax_registry 를 못 만든다.")
+    print("  · ⚠ HEAX Hub 앱 0개 — heax_registry 미구성(열충격·재료·적층 도구 없음).")
+    print("      §5 가 heax-hub 에서 MCP 토큰을 자동 발급해 heax_registry 를 만드는데 실패했을 수 있다:")
+    print("      heax-hub 백엔드(:4040)·DB 기동과 admin 유저 존재를 확인하라(provision-config.sh 로그의")
+    print("      'heax MCP 토큰' 라인). 최후 수동: provision.env 에 HEAX_MCP_TOKEN 설정 후 재실행.")
 PY
 fi
 
