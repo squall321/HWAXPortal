@@ -128,10 +128,22 @@ export function ChatSidebar({
   onNavigate?: () => void;
 }) {
   const { conversations, activeId, newConversation } = useChat();
+  const [query, setQuery] = useState('');
+
+  // 검색 — 제목 또는 발언 내용에 질의가 포함된 대화만(대소문자 무시). 쌓인 심의/대화 찾기용.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.messages.some((m) => m.text?.toLowerCase().includes(q)),
+    );
+  }, [conversations, query]);
 
   // updatedAt 내림차순 정렬 후 시간대 라벨로 그룹핑(라벨 등장 순서 유지).
   const groups = useMemo(() => {
-    const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+    const sorted = [...filtered].sort((a, b) => b.updatedAt - a.updatedAt);
     const out: { label: string; items: Conversation[] }[] = [];
     for (const c of sorted) {
       const label = groupLabel(c.updatedAt);
@@ -140,7 +152,7 @@ export function ChatSidebar({
       else out.push({ label, items: [c] });
     }
     return out;
-  }, [conversations]);
+  }, [filtered]);
 
   return (
     <aside className={`cx-sidebar${open ? ' open' : ''}`} aria-label="대화 이력" aria-hidden={!open}>
@@ -172,8 +184,22 @@ export function ChatSidebar({
           <span>새 대화</span>
         </button>
 
+        <div className="sb-search">
+          <input
+            type="search"
+            className="sb-search-input"
+            placeholder="대화 검색…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="대화 검색"
+            tabIndex={open ? 0 : -1}
+          />
+        </div>
+
         <nav className="sb-list">
-          {groups.length === 0 && <div className="sb-empty">아직 대화가 없습니다</div>}
+          {groups.length === 0 && (
+            <div className="sb-empty">{query.trim() ? '검색 결과 없음' : '아직 대화가 없습니다'}</div>
+          )}
           {groups.map((g) => (
             <div key={g.label} className="sb-group">
               <div className="sb-group-label">{g.label}</div>
