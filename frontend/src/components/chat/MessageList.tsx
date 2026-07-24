@@ -1,10 +1,44 @@
 // 대화 메시지 목록 — 클로드 스타일(어시스턴트 좌측 와이드/유저 버블), 스티키 자동 스크롤 + 하단 이동 버튼
 import { useEffect, useRef, useState } from 'react';
+import { useChat } from '../../state/ChatContext';
 import type { Message } from '../../types/chat';
 import { copyText } from './clipboard';
 import { DelibView } from './DelibView';
 import { IconArrowDown, IconCheck, IconCopy } from './icons';
 import { TextBlock } from './renderers/TextBlock';
+
+// 원문 오류를 사용자용 안내(원인+다음 행동)로 변환 — 막다른 원문 대신 뭘 해야 할지 알려준다.
+function friendlyError(raw: string): { title: string; hint?: string; retry: boolean } {
+  const r = raw || '';
+  if (/취소/.test(r)) return { title: '중단되었습니다', retry: true };
+  if (/gateway|게이트웨이|도구를 불러오지/i.test(r))
+    return { title: '도구 서버에 연결하지 못했습니다', hint: '게이트웨이가 준비 중일 수 있어요. 잠시 후 다시 시도하세요.', retry: true };
+  if (/no_personas|전문 페르소나|페르소나/i.test(r))
+    return { title: '관련 전문가를 찾지 못했습니다', hint: '화두를 조금 더 구체적으로 바꿔 다시 시도하세요.', retry: true };
+  if (/심의 처리 중 오류|timeout|시간 초과/i.test(r))
+    return { title: '심의가 완료되지 못했습니다', hint: '옵션 패널에서 라운드 수를 줄이거나 무거운 옵션(의장 best-of·산문 후 JSON)을 끄고 다시 시도하세요.', retry: true };
+  if (/unreachable|연결|connection|http_5/i.test(r))
+    return { title: '서버에 연결하지 못했습니다', hint: '네트워크를 확인하고 잠시 후 다시 시도하세요.', retry: true };
+  if (/에이전트 처리 중 오류|agent_error/i.test(r))
+    return { title: '응답 생성에 실패했습니다', hint: '잠시 후 다시 시도하세요. 반복되면 관리자에게 문의하세요.', retry: true };
+  return { title: r || '오류가 발생했습니다', retry: true };
+}
+
+function ErrorBlock({ raw }: { raw: string }) {
+  const { retryLast, streaming } = useChat();
+  const { title, hint, retry } = friendlyError(raw);
+  return (
+    <div className="chat-error">
+      <div className="chat-error-title">⚠ {title}</div>
+      {hint && <div className="chat-error-hint">{hint}</div>}
+      {retry && (
+        <button type="button" className="chat-error-retry" onClick={retryLast} disabled={streaming}>
+          다시 시도
+        </button>
+      )}
+    </div>
+  );
+}
 
 function CopyAction({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -66,7 +100,7 @@ function Row({ msg }: { msg: Message }) {
           </div>
         )}
         {emptyDone && <div className="msg-status-text">(응답이 없습니다)</div>}
-        {msg.error && <div className="chat-error">⚠ {msg.error}</div>}
+        {msg.error && <ErrorBlock raw={msg.error} />}
       </div>
       {!msg.streaming && msg.text && (
         <div className="msg-actions">

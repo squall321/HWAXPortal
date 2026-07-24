@@ -469,9 +469,36 @@ ol.md-list li.md-li-d2 {
 }
 
 .chat-error {
+  margin-top: 0.4rem;
+  padding: 9px 12px;
+  border: 1px solid rgba(251, 113, 133, 0.35);
+  border-radius: 10px;
+  background: rgba(251, 113, 133, 0.08);
+}
+.chat-error-title {
   color: #fb7185;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.chat-error-hint {
+  color: var(--muted);
   font-size: 0.8rem;
-  margin-top: 0.3rem;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.chat-error-retry {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+  font-size: 0.8rem;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.chat-error-retry:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* 위로 스크롤한 상태에서 새 토큰이 흐를 때 — 맨 아래로 이동 버튼 */

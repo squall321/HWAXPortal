@@ -45,6 +45,8 @@ interface ChatContextValue {
   sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>) => void;
   /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 같은 전문가로 후속 심의를 스티어링. */
   continueDeliberation: (prior: DelibData, opinion: string) => void;
+  /** 실패 재시도 — 마지막 사용자 발화를 다시 보낸다(심의 페이지는 트리거 강제). */
+  retryLast: () => void;
   /** 심의 손잡이(웹 토글) — 심의 페이지 패널이 읽고 쓴다. 전송 시 켠 것만 서버로 실린다. */
   delibOpts: DelibOpts;
   setDelibOpts: (o: DelibOpts) => void;
@@ -461,6 +463,18 @@ export function ChatProvider({
     [conversations, activeId, streaming, sendMessage],
   );
 
+  // 실패 재시도 — 활성 대화의 마지막 사용자 발화를 다시 보낸다. 심의 페이지(sendPrefix)에서는
+  // 트리거를 강제로 붙여 심의를 재실행한다(재시도는 '첫 발화'가 아니라 prefix 자동적용이 안 됨).
+  const retryLast = useCallback(() => {
+    if (streaming) return;
+    const conv = conversations.find((c) => c.id === activeId);
+    const lastUser = [...(conv?.messages ?? [])].reverse().find((m) => m.role === 'user');
+    if (!lastUser?.text) return;
+    const trig = sendPrefix.trim();
+    const text = trig && !lastUser.text.startsWith(trig) ? sendPrefix + lastUser.text : lastUser.text;
+    sendMessage(text);
+  }, [conversations, activeId, streaming, sendMessage, sendPrefix]);
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -523,6 +537,7 @@ export function ChatProvider({
         setInput,
         sendMessage,
         continueDeliberation,
+        retryLast,
         delibOpts,
         setDelibOpts,
         stop,
