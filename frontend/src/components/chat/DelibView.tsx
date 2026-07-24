@@ -1,5 +1,6 @@
 // 심의 라이브 뷰 — 절차 스테퍼 + 근거 카드 + 라이브 회의 버블 + 수렴/소수의견 배지 + 산출물 카드
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { useChat } from '../../state/ChatContext';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
 import { TextBlock } from './renderers/TextBlock';
 
@@ -267,6 +268,42 @@ function OutcomeCards({ d }: { d: DelibData }) {
 }
 
 /** 심의 메시지의 본문 렌더 — msg.delib 이 있으면 MessageList 가 TextBlock 대신 이걸 쓴다. */
+// 이어하기(사람 개입 스티어링) — 끝난 심의에 의견을 넣어 같은 전문가로 후속 심의를 유도한다.
+function ContinueBar({ d }: { d: DelibData }) {
+  const { continueDeliberation, streaming } = useChat();
+  const [note, setNote] = useState('');
+  if (!d.decision) return null;
+  const submit = () => {
+    const n = note.trim();
+    if (!n || streaming) return;
+    continueDeliberation(d, n);
+    setNote('');
+  };
+  return (
+    <section className="dv-continue">
+      <div className="dv-continue-head">💬 의견을 넣어 이어가기 — 같은 전문가들이 이 방향으로 다시 토론합니다</div>
+      <div className="dv-continue-row">
+        <textarea
+          className="dv-continue-input"
+          placeholder="예: 낙하 성능을 최우선으로 좁혀라 / A안은 비용 근거로 기각 / dwell 24h 이상만 검토"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          disabled={streaming}
+        />
+        <button
+          type="button"
+          className="dv-continue-btn"
+          onClick={submit}
+          disabled={!note.trim() || streaming}
+        >
+          이어가기
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function DelibView({ msg }: { msg: Message }) {
   const d = msg.delib!;
   const live = Boolean(msg.streaming);
@@ -287,6 +324,7 @@ export function DelibView({ msg }: { msg: Message }) {
         </section>
       )}
       <OutcomeCards d={d} />
+      {!live && <ContinueBar d={d} />}
     </div>
   );
 }

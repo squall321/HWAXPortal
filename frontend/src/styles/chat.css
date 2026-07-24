@@ -910,3 +910,52 @@ body.dock-open .container {
   color: var(--muted);
   line-height: 1.5;
 }
+
+/* ── 심의 이어하기(사람 개입 스티어링) 입력 ─────────────────────────────── */
+.dv-continue {
+  margin: 12px 0 4px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 11px 13px;
+}
+.dv-continue-head {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 9px;
+  line-height: 1.5;
+}
+.dv-continue-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.dv-continue-input {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 7px 9px;
+}
+.dv-continue-btn {
+  flex: none;
+  border: none;
+  border-radius: 8px;
+  background: var(--cx-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dv-continue-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

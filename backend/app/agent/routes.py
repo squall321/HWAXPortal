@@ -57,6 +57,10 @@ class DelibOpts(BaseModel):
     chair_cite: int | None = Field(default=None, ge=0, le=1)
     rounds: int | None = Field(default=None, ge=2, le=8)
     timeout_s: float | None = Field(default=None, ge=10, le=1800)
+    # 이어하기(사람 개입 스티어링) — 사람 의견 + 이전 심의 요약 + 전문가 재사용(발굴 생략)
+    human_note: str | None = Field(default=None, max_length=2000)
+    continue_summary: str | None = Field(default=None, max_length=8000)
+    personas: list[dict] | None = Field(default=None, max_length=12)
 
 
 class ChatRequest(BaseModel):

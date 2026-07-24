@@ -81,8 +81,9 @@ export async function streamChat(
     history?: HistoryMessage[];
     /** 서버 대화 저장소 정본 id — 있으면 백엔드가 이 대화에 user+assistant 를 서버 저장. */
     conversationId?: string;
-    /** 심의 손잡이 오버라이드(웹 토글) — 켠 것만. 심의(/심의) 요청에서만 의미. */
-    delibOpts?: Record<string, number>;
+    /** 심의 손잡이 오버라이드(웹 토글) — 켠 것만. 심의(/심의) 요청에서만 의미.
+     *  스칼라 손잡이 외에 이어하기 필드(human_note·continue_summary·personas)도 실린다. */
+    delibOpts?: Record<string, unknown>;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging

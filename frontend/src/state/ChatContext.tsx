@@ -42,7 +42,9 @@ interface ChatContextValue {
   input: string;
   streaming: boolean;
   setInput: (v: string) => void;
-  sendMessage: (text: string) => void;
+  sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>) => void;
+  /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 같은 전문가로 후속 심의를 스티어링. */
+  continueDeliberation: (prior: DelibData, opinion: string) => void;
   /** 심의 손잡이(웹 토글) — 심의 페이지 패널이 읽고 쓴다. 전송 시 켠 것만 서버로 실린다. */
   delibOpts: DelibOpts;
   setDelibOpts: (o: DelibOpts) => void;
@@ -287,7 +289,7 @@ export function ChatProvider({
   }, []);
 
   const sendMessage = useCallback(
-    (message: string) => {
+    (message: string, extraDelibOpts?: Record<string, unknown>) => {
       const text = message.trim();
       if (!text || streaming) return;
 
@@ -358,7 +360,8 @@ export function ChatProvider({
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
-          const w = delibOptsToWire(delibOptsRef.current);
+          // 패널 손잡이(켠 것만) + 일회성 extra(이어하기 human_note·요약·personas)를 병합
+          const w = { ...delibOptsToWire(delibOptsRef.current), ...(extraDelibOpts ?? {}) };
           return Object.keys(w).length > 0 ? { delibOpts: w } : {};
         })(),
         onStatus: (e) =>
@@ -427,6 +430,25 @@ export function ChatProvider({
     [streaming, activeId, conversations, patch, sendPrefix, serverKind],
   );
 
+  // 이어하기(사람 개입 스티어링) — 끝난 심의에 사람 의견을 넣어, 같은 전문가가 이전 결정을
+  // 이어받아 그 의견 방향으로 다시 토론하게 한다. 원 화두는 활성 대화의 첫 사용자 발화에서 취한다.
+  const continueDeliberation = useCallback(
+    (prior: DelibData, opinion: string) => {
+      const note = opinion.trim();
+      if (!note || streaming) return;
+      const conv = conversations.find((c) => c.id === activeId);
+      const firstUser = conv?.messages.find((m) => m.role === 'user');
+      const topic = (firstUser?.text ?? '').replace(/^\/(심의|deliberate|토의)\s*/, '').trim();
+      if (!topic) return;
+      sendMessage('/심의 ' + topic, {
+        human_note: note,
+        continue_summary: (prior.decision ?? '').slice(0, 8000),
+        personas: (prior.personas ?? []).map((p) => ({ key: p.key, role: p.role ?? '' })),
+      });
+    },
+    [conversations, activeId, streaming, sendMessage],
+  );
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -488,6 +510,7 @@ export function ChatProvider({
         streaming,
         setInput,
         sendMessage,
+        continueDeliberation,
         delibOpts,
         setDelibOpts,
         stop,
