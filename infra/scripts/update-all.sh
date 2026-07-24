@@ -311,6 +311,20 @@ else:
 PY
 fi
 
+# heax-hub dist base 검증 — 앱 '열기'는 window.open(BASE_URL + '/apps/<id>/') 로 열린다.
+# dist 가 base=/ 로 잘못 빌드되면 BASE_URL=/ → '/apps/<id>/' 로 포털 루트에서 열려 404 가 난다
+# (정상은 base=/heax-hub/ → '/heax-hub/apps/<id>/'). 서빙 HTML 의 자산 경로로 base 를 판정한다.
+HH="$(curl -s -m 4 http://127.0.0.1:4180/ 2>/dev/null || true)"
+if [ -n "$HH" ]; then
+  if printf '%s' "$HH" | grep -q '/heax-hub/assets/'; then
+    ok "heax-hub dist base=/heax-hub/ — 앱 '열기' 링크 정상"
+  elif printf '%s' "$HH" | grep -q '"/assets/\|src="/assets'; then
+    bad "heax-hub dist base=/ 로 잘못 빌드 — 앱 '열기'가 /apps/<id>/ 로 열려 포털 루트 404."
+    echo "      해결: (빌드호스트) VITE_BASE_PATH=/heax-hub/ pnpm --dir frontend build →"
+    echo "            build-all-to-drive.sh heax → cae00 에서 deploy-all-from-drive.sh 재배포."
+  fi
+fi
+
 # ── 7) 챗 스모크 — /health 는 프로세스 생존만 본다. 실제 문장 하나를 보내 AI 응답이 오는지
 #      (agent → gateway 도구 로딩 → vLLM 전 체인)를 태운다. 실패 시 로그 꼬리를 함께 출력. ──
 hr "7) 챗 스모크 (실제 응답 검증)"
