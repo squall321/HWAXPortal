@@ -304,7 +304,10 @@ if heax:
 elif "heax_registry" in backends:
     print("  · ⚠ HEAX Hub 앱 0개 발견 — heax_registry 는 있으나 폴링이 앱을 못 찾음(레지스트리에 앱 미등록/미기동?). 챗에 열충격·재료·적층 도구가 안 뜬다.")
 else:
-    print("  · ⚠ heax_registry 미설정 — HEAX Hub 앱 자동발견 비활성(§5 재프로비저닝 확인).")
+    print("  · ⚠ HEAX Hub 앱 0개 — 자동발견 비활성(열충격·재료·적층 도구 전부 없음).")
+    print("      해결: 게이트웨이 provision.env 에 HEAX_MCP_TOKEN=<heax-hub MCP 토큰> 설정")
+    print("            (+ 도메인이면 HEAX_MCP_SERVERS_URL·HEAX_MCP_BASE) 후 update-all 재실행 → §5 가")
+    print("            heax_registry 재프로비저닝. 토큰 없으면 §5 가 heax_registry 를 못 만든다.")
 PY
 fi
 
