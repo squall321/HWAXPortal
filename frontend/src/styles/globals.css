@@ -88,6 +88,18 @@ button {
 .tile:active {
   transform: translateY(1px);
 }
+/* 준비 중 — 클릭 불가, 흐리게(미배포 앱을 눌러 404 나는 것 방지) */
+.tile-soon {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.tile-soon:hover {
+  border-color: var(--border);
+}
+.tile-tag-soon {
+  color: #b45309;
+  background: rgba(180, 83, 9, 0.14);
+}
 
 .tile-icon {
   font-size: 1.6rem;
