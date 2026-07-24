@@ -197,6 +197,18 @@ export function ChatProvider({
     saveActiveId(activeId, storagePrefix);
   }, [activeId, storagePrefix]);
 
+  // 진행 중 이탈 경고 — 심의/챗은 스트림이 끊기면 서버가 진행을 취소해 결과가 통째로 유실된다.
+  // streaming 동안만 beforeunload 를 걸어 실수로 탭을 닫는 걸 막는다(완료 시 자동 해제).
+  useEffect(() => {
+    if (!streaming) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ''; // 브라우저 기본 확인 대화 표시
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [streaming]);
+
   // ── 서버 대화 저장소 동기화(정본=서버, localStorage=캐시) ──────────────────
   const { user } = useAuth();
   // 서버 목록의 updated_at(ms) — "열 때 최신 로드" 판정용(서버가 더 새로우면 상세 재로드).
