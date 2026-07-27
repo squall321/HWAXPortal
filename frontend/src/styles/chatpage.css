@@ -817,6 +817,27 @@
   border-radius: 999px;
   padding: 0.08rem 0.5rem;
 }
+.cx-ep-count {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+.cx-ep-count select {
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--fg);
+  font-size: 0.78rem;
+}
+.cx-ep-count select:focus {
+  outline: none;
+  border-color: var(--cx-accent);
+}
 
 .cx-ep-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .cx-ep-item {

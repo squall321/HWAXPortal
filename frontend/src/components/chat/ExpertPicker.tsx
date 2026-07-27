@@ -1,6 +1,6 @@
 // 심의 전 전문가 확인·수동추가 패널 — 추천(기본 선택)을 보여주고, 질문 관련도순 후보/검색으로 추가
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ExpertsResponse } from '../../api/chat.api';
+import type { ExpertsResponse, RecommendedExpert } from '../../api/chat.api';
 
 export interface Persona {
   key: string;
@@ -18,6 +18,9 @@ interface ExpertPickerProps {
 }
 
 const MIN_EXPERTS = 2; // 서버 심의는 전문가 2명 이상 필요
+const MAX_EXPERTS = 12; // 심의 계약(delib_opts.personas) 상한
+const DEFAULT_COUNT = 5;
+const COUNT_OPTIONS = [3, 5, 7, 10, 12];
 const POOL_LIMIT = 30; // 결과 표시 상한
 
 interface AddRow {
@@ -30,50 +33,74 @@ interface AddRow {
 }
 
 export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: ExpertPickerProps) {
-  // 선택 집합 — key → persona. 추천이 도착하면 1회 시딩(기본은 추천 그대로).
+  // 선택 집합 — key → persona. 관련도순 상위 autoCount 명을 기본 선택으로 시딩한다.
   const [chosen, setChosen] = useState<Record<string, Persona>>({});
+  const [autoCount, setAutoCount] = useState(DEFAULT_COUNT);
   const [query, setQuery] = useState('');
   const seededRef = useRef(false);
 
+  // 관련도순 랭킹 — candidates(≈40) 우선, 없으면 recommended 폴백.
+  const ranked = useMemo<RecommendedExpert[]>(
+    () => (experts?.candidates?.length ? experts.candidates : experts?.recommended || []),
+    [experts],
+  );
+
+  const seed = (n: number): Record<string, Persona> => {
+    const m: Record<string, Persona> = {};
+    for (const r of ranked.slice(0, n)) m[r.key] = { key: r.key, name: r.name, role: r.role };
+    return m;
+  };
+
   useEffect(() => {
     if (seededRef.current || !experts) return;
-    const init: Record<string, Persona> = {};
-    for (const r of experts.recommended) init[r.key] = { key: r.key, name: r.name, role: r.role };
-    setChosen(init);
+    setChosen(seed(DEFAULT_COUNT));
     seededRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [experts]);
+
+  // 자동 인원 변경 = 관련도 상위 N 명으로 재선택(명시적 액션 — 이후 수동 편집은 유지).
+  const changeCount = (n: number) => {
+    setAutoCount(n);
+    setChosen(seed(n));
+  };
 
   const toggle = (p: Persona) =>
     setChosen((prev) => {
       const next = { ...prev };
       if (next[p.key]) delete next[p.key];
-      else next[p.key] = p;
+      else if (Object.keys(next).length < MAX_EXPERTS) next[p.key] = p;
       return next;
     });
 
   const add = (r: { key: string; name: string; role?: string }) =>
-    setChosen((prev) => ({ ...prev, [r.key]: { key: r.key, name: r.name, role: r.role || '' } }));
+    setChosen((prev) => {
+      if (prev[r.key] || Object.keys(prev).length >= MAX_EXPERTS) return prev;
+      return { ...prev, [r.key]: { key: r.key, name: r.name, role: r.role || '' } };
+    });
 
   const chosenList = useMemo(() => Object.values(chosen), [chosen]);
+  const full = chosenList.length >= MAX_EXPERTS;
 
   // 후보(질문 연관도순) 인덱스 — 검색 결과를 관련도 우선으로 정렬하는 데 사용.
   const candByKey = useMemo(() => {
     const m = new Map<string, { rank: number; score?: number | null; role: string }>();
-    (experts?.candidates || []).forEach((c, i) => m.set(c.key, { rank: i, score: c.score, role: c.role }));
+    ranked.forEach((c, i) => m.set(c.key, { rank: i, score: c.score, role: c.role }));
     return m;
-  }, [experts]);
+  }, [ranked]);
 
-  // 관련도 표시 — recommend 점수는 0~1 확률이 아니라 상대값이라, 최상위 대비 % 로 환산해 보여준다.
-  const topScore = experts?.candidates?.[0]?.score ?? 0;
+  // 관련도 표시 — recommend 점수는 확률이 아니라 상대값 → 최상위 대비 % 로 환산.
+  const topScore = ranked[0]?.score ?? 0;
   const relPct = (s?: number | null): number | null =>
     typeof s === 'number' && topScore > 0 ? Math.round((s / topScore) * 100) : null;
 
-  // 추가 목록 — 검색어 없으면 질문 관련 후보(관련도순), 있으면 전체 풀 부분일치(관련 후보 우선).
+  const topPicks = ranked.slice(0, autoCount);
+
+  // 추가 목록 — 검색어 없으면 아직 미선택인 관련 후보(관련도순), 있으면 전체 풀 부분일치(관련 우선).
   const results = useMemo<AddRow[]>(() => {
     if (!experts) return [];
     const q = query.trim().toLowerCase();
     if (!q) {
-      return (experts.candidates || [])
+      return ranked
         .filter((c) => !chosen[c.key])
         .slice(0, POOL_LIMIT)
         .map((c, i) => ({ key: c.key, name: c.name, tags: c.tags || [], score: c.score, role: c.role, rank: i }));
@@ -95,7 +122,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
     }
     out.sort((x, y) => x.rank - y.rank);
     return out.slice(0, POOL_LIMIT);
-  }, [query, experts, chosen, candByKey]);
+  }, [query, experts, chosen, candByKey, ranked]);
 
   const enough = chosenList.length >= MIN_EXPERTS;
   const poolCount = experts?.pool.length ?? 0;
@@ -106,7 +133,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
         <p className="cx-ep-kicker">심의 전문가 선정</p>
         <h2 className="cx-ep-topic">{topic}</h2>
         <p className="cx-ep-note">
-          기본은 추천 전문가로 진행됩니다. 원하면 아래에서 제외하거나 직접 추가해 정합도를 높이세요.
+          기본은 추천 전문가로 진행됩니다. 인원을 늘리거나, 아래에서 제외·직접 추가해 정합도를 높이세요.
         </p>
       </div>
 
@@ -123,16 +150,30 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
           <section className="cx-ep-sec">
             <h3 className="cx-ep-sec-title">
               추천 전문가
-              {experts?.recommended?.length ? <span className="cx-ep-badge">{experts.recommended.length}</span> : null}
+              <span className="cx-ep-badge">관련도 상위 {topPicks.length}명</span>
+              <span className="cx-ep-count">
+                <label htmlFor="cx-ep-auto">자동 인원</label>
+                <select
+                  id="cx-ep-auto"
+                  value={autoCount}
+                  onChange={(e) => changeCount(Number(e.target.value))}
+                >
+                  {COUNT_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}명{n === DEFAULT_COUNT ? ' (기본)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </span>
             </h3>
-            {experts?.recommended?.length ? (
+            {topPicks.length ? (
               <ul className="cx-ep-list">
-                {experts.recommended.map((r) => {
+                {topPicks.map((r) => {
                   const pct = relPct(r.score);
                   return (
                     <li key={r.key} className="cx-ep-item">
                       <label className="cx-ep-check">
-                        <input type="checkbox" checked={!!chosen[r.key]} onChange={() => toggle(r)} />
+                        <input type="checkbox" checked={!!chosen[r.key]} onChange={() => toggle({ key: r.key, name: r.name, role: r.role })} />
                         <span className="cx-ep-body">
                           <span className="cx-ep-name">
                             {r.name}
@@ -165,19 +206,21 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
               aria-label="전문가 검색"
             />
             <p className="cx-ep-subtle">
-              {query.trim()
-                ? '검색 결과 — 질문 관련 전문가가 위로 정렬됩니다.'
-                : '질문 관련 전문가(관련도순). 검색하면 전체 풀에서 찾습니다.'}
+              {full
+                ? `최대 ${MAX_EXPERTS}명까지 선정됩니다 — 더 넣으려면 먼저 제외하세요.`
+                : query.trim()
+                  ? '검색 결과 — 질문 관련 전문가가 위로 정렬됩니다.'
+                  : '질문 관련 전문가(관련도순). 검색하면 전체 풀에서 찾습니다.'}
             </p>
             <ul className="cx-ep-results">
               {results.length === 0 ? (
-                <li className="cx-ep-empty">{query.trim() ? '일치하는 전문가가 없습니다.' : '관련 후보가 없습니다.'}</li>
+                <li className="cx-ep-empty">{query.trim() ? '일치하는 전문가가 없습니다.' : '추가할 관련 후보가 없습니다.'}</li>
               ) : (
                 results.map((a) => {
                   const pct = relPct(a.score);
                   return (
                     <li key={a.key} className="cx-ep-result">
-                      <button type="button" className="cx-ep-add" onClick={() => add(a)}>
+                      <button type="button" className="cx-ep-add" onClick={() => add(a)} disabled={full}>
                         <span className="cx-ep-name">{a.name}</span>
                         {pct !== null && <span className="cx-ep-score">관련도 {pct}%</span>}
                         {a.tags?.length ? <span className="cx-ep-tags">{a.tags.slice(0, 4).join(' · ')}</span> : null}
@@ -193,7 +236,9 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
           <section className="cx-ep-sec">
             <h3 className="cx-ep-sec-title">
               선정됨
-              <span className="cx-ep-badge">{chosenList.length}명</span>
+              <span className="cx-ep-badge">
+                {chosenList.length}/{MAX_EXPERTS}명
+              </span>
             </h3>
             <div className="cx-ep-chips">
               {chosenList.length === 0 ? (
