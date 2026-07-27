@@ -120,6 +120,8 @@ export interface Conversation {
   serverId?: string;
   // 사용자 지정 우선 도구 — 도구 카탈로그에서 선택. 이 대화의 이후 발화에 pinned_tools 로 실린다.
   pinnedTools?: string[];
+  // 사용자 지정 전문가(agent_type) — '전문가와 대화' 모드. 이후 발화에 pinned_agent 로 실린다.
+  pinnedAgent?: string;
 }
 
 // SSE event payloads (plan §5).

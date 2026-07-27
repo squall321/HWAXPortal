@@ -148,11 +148,13 @@ export async function streamChat(
     delibOpts?: Record<string, unknown>;
     /** 사용자 지정 우선 도구(챗) — 도구 카탈로그에서 선택. 서버가 우선 사용을 강제. */
     pinnedTools?: string[];
+    /** 사용자 지정 전문가(agent_type) — 이 전문가 페르소나로 대화. */
+    pinnedAgent?: string;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedAgent, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -170,6 +172,7 @@ export async function streamChat(
       ...(conversationId ? { conversation_id: conversationId } : {}),
       ...(delibOpts && Object.keys(delibOpts).length > 0 ? { delib_opts: delibOpts } : {}),
       ...(pinnedTools && pinnedTools.length > 0 ? { pinned_tools: pinnedTools.slice(0, 12) } : {}),
+      ...(pinnedAgent ? { pinned_agent: pinnedAgent } : {}),
     }),
     signal,
   });

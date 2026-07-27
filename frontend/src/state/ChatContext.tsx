@@ -50,9 +50,12 @@ interface ChatContextValue {
   /** 심의 손잡이(웹 토글) — 심의 페이지 패널이 읽고 쓴다. 전송 시 켠 것만 서버로 실린다. */
   delibOpts: DelibOpts;
   setDelibOpts: (o: DelibOpts) => void;
-  /** 사용자 지정 우선 도구(활성 대화) — 도구 카탈로그 카드에서 선택, 이후 발화에 실린다. */
+  /** 사용자 지정 우선 도구 — 활성 대화의 것(대화 전이면 다음 새 대화용 draft). 이후 발화에 실린다. */
   pinnedTools: string[];
   setPinnedTools: (names: string[]) => void;
+  /** 사용자 지정 전문가(agent_type) — '전문가와 대화' 모드. 대화 전 선택 시 새 대화에 적용. */
+  pinnedAgent: string | null;
+  setPinnedAgent: (key: string | null) => void;
   stop: () => void;
   newConversation: () => void;
   selectConversation: (id: string) => void;
@@ -192,6 +195,14 @@ export function ChatProvider({
   const abortRef = useRef<AbortController | null>(null);
   // 스트리밍 중인 대화 id — 그 대화가 삭제되면 스트림도 중단하기 위해 추적.
   const streamConvRef = useRef<string | null>(null);
+  // 대화 시작 전(랜딩) 선택한 전문가·도구 — 다음 '새 대화' 생성 시 대화에 옮겨 심는다.
+  // ref 는 sendMessage 전송 시점 읽기용(스테일 방지 — delibOpts 패턴과 동일).
+  const [draftPins, setDraftPinsState] = useState<{ agent?: string; tools: string[] }>({ tools: [] });
+  const draftPinsRef = useRef(draftPins);
+  const setDraftPins = useCallback((v: { agent?: string; tools: string[] }) => {
+    draftPinsRef.current = v;
+    setDraftPinsState(v);
+  }, []);
 
   // 변경 시 저장(토큰 단위 갱신이 잦으므로 250ms 디바운스).
   useEffect(() => {
@@ -321,6 +332,11 @@ export function ChatProvider({
       // 첫 발화 여부 — sendPrefix(심의 트리거)는 첫 발화에만 붙는다(이후는 GLM 이어가기).
       const isFirstTurn = !existing || existing.messages.length === 0;
 
+      // 유효 지정 전문가·도구 — 기존 대화는 대화에 저장된 것, 새 대화(랜딩)는 draft 를 쓴다.
+      const draft = draftPinsRef.current;
+      const effPinnedTools = existing ? (existing.pinnedTools ?? []) : draft.tools;
+      const effPinnedAgent = existing ? existing.pinnedAgent : draft.agent;
+
       // 활성 대화가 없으면(랜딩/새 대화) 첫 전송 시점에 대화를 생성한다.
       let convId = activeId && conversations.some((c) => c.id === activeId) ? activeId : null;
       if (!convId) {
@@ -331,9 +347,13 @@ export function ChatProvider({
           messages: [userMsg, botMsg],
           createdAt: now,
           updatedAt: now,
+          // 랜딩에서 고른 전문가·도구를 새 대화에 옮겨 심고 draft 는 비운다(1회성).
+          ...(draft.tools.length ? { pinnedTools: draft.tools } : {}),
+          ...(draft.agent ? { pinnedAgent: draft.agent } : {}),
         };
         setConversations((prev) => [conv, ...prev]);
         setActiveId(convId);
+        if (draft.tools.length || draft.agent) setDraftPins({ tools: [] });
       } else {
         setConversations((prev) =>
           prev.map((c) =>
@@ -374,8 +394,9 @@ export function ChatProvider({
         signal: controller.signal,
         history,
         ...(serverId ? { conversationId: serverId } : {}),
-        // 사용자 지정 우선 도구 — 이 대화에서 카탈로그로 선택해 둔 것(없으면 미전송).
-        ...(existing?.pinnedTools?.length ? { pinnedTools: existing.pinnedTools } : {}),
+        // 사용자 지정 전문가·도구 — 기존 대화 저장분 또는 랜딩 draft(없으면 미전송).
+        ...(effPinnedTools.length ? { pinnedTools: effPinnedTools } : {}),
+        ...(effPinnedAgent ? { pinnedAgent: effPinnedAgent } : {}),
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
@@ -448,7 +469,7 @@ export function ChatProvider({
         streamConvRef.current = null;
       });
     },
-    [streaming, activeId, conversations, patch, sendPrefix, serverKind],
+    [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins],
   );
 
   // 이어하기(사람 개입 스티어링) — 끝난 심의에 사람 의견을 넣어, 같은 전문가가 이전 결정을
@@ -482,17 +503,37 @@ export function ChatProvider({
     sendMessage(text);
   }, [conversations, activeId, streaming, sendMessage, sendPrefix]);
 
-  // 지정 도구 갱신 — 활성 대화에 저장(localStorage 영속). 빈 배열이면 해제.
+  // 지정 도구 갱신 — 활성 대화가 있으면 대화에 저장(localStorage 영속), 대화 전(랜딩)이면
+  // 다음 새 대화용 draft 에 저장. 빈 배열이면 해제.
   const setPinnedTools = useCallback(
     (names: string[]) => {
       const clean = [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, 12);
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id !== activeId ? c : { ...c, pinnedTools: clean.length ? clean : undefined },
-        ),
-      );
+      if (activeId) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id !== activeId ? c : { ...c, pinnedTools: clean.length ? clean : undefined },
+          ),
+        );
+      } else {
+        setDraftPins({ ...draftPinsRef.current, tools: clean });
+      }
     },
-    [activeId],
+    [activeId, setDraftPins],
+  );
+
+  // 지정 전문가 갱신 — 대화 있으면 대화에, 없으면 draft 에. null 이면 해제.
+  const setPinnedAgent = useCallback(
+    (key: string | null) => {
+      const clean = key?.trim() || undefined;
+      if (activeId) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id !== activeId ? c : { ...c, pinnedAgent: clean })),
+        );
+      } else {
+        setDraftPins({ ...draftPinsRef.current, agent: clean });
+      }
+    },
+    [activeId, setDraftPins],
   );
 
   const stop = useCallback(() => {
@@ -560,8 +601,10 @@ export function ChatProvider({
         retryLast,
         delibOpts,
         setDelibOpts,
-        pinnedTools: activeConversation?.pinnedTools ?? [],
+        pinnedTools: activeConversation ? (activeConversation.pinnedTools ?? []) : draftPins.tools,
         setPinnedTools,
+        pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
+        setPinnedAgent,
         stop,
         newConversation,
         selectConversation,

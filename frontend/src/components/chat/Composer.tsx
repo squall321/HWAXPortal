@@ -29,7 +29,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   { autoFocus = false, placeholder = '무엇이든 물어보세요…', showHint = false, onSubmitText },
   ref,
 ) {
-  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools } = useChat();
+  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedAgent, setPinnedAgent } =
+    useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }), []);
@@ -71,10 +72,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   return (
     <form className="composer" onSubmit={onSubmit}>
-      {/* 지정 도구 칩 — 이 대화에서 우선 사용될 도구를 항상 보이게(× 로 즉시 해제). */}
-      {pinnedTools.length > 0 && (
-        <div className="composer-pins" aria-label="지정 도구">
-          <span className="composer-pins-label">지정 도구</span>
+      {/* 지정 전문가·도구 칩 — 이 대화에 적용될 선택을 항상 보이게(× 로 즉시 해제). */}
+      {(pinnedTools.length > 0 || pinnedAgent) && (
+        <div className="composer-pins" aria-label="지정 전문가·도구">
+          {pinnedAgent && (
+            <span className="composer-pin composer-pin-agent" title="지정 전문가 페르소나">
+              👤 {pinnedAgent}
+              <button
+                type="button"
+                className="composer-pin-x"
+                onClick={() => setPinnedAgent(null)}
+                aria-label={`전문가 ${pinnedAgent} 해제`}
+                title="전문가 해제"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {pinnedTools.length > 0 && <span className="composer-pins-label">지정 도구</span>}
           {pinnedTools.map((n) => (
             <span key={n} className="composer-pin">
               {n}

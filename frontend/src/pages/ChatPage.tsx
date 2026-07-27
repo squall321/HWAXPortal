@@ -5,6 +5,7 @@ import { useChat } from '../state/ChatContext';
 import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { Composer, type ComposerHandle } from '../components/chat/Composer';
+import { StartPicker } from '../components/chat/StartPicker';
 import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
 import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
@@ -41,6 +42,8 @@ export default function ChatPage() {
   const threadRef = useRef<HTMLDivElement>(null); // 내보내기(HTML)가 캡처할 렌더 루트
   // 데스크톱은 저장된 선호를 따르고, 좁은 화면은 오버레이라 기본 닫힘.
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow() && loadSidebarOpen());
+  // 시작 전 전문가·도구 선택 패널(랜딩) — 열면 예시 칩 자리에 선택 카드가 뜬다.
+  const [picker, setPicker] = useState(false);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((v) => {
@@ -107,6 +110,16 @@ export default function ChatPage() {
               </p>
               <h1 className="cx-hero-title">무엇을 도와드릴까요?</h1>
               <Composer ref={composerRef} autoFocus showHint />
+              {/* 시작 전 구성 — 전문가(페르소나)·도구를 직접 고르고 대화 시작(심의 선정과 같은 구조). */}
+              {picker ? (
+                <StartPicker onClose={() => setPicker(false)} />
+              ) : (
+                <div className="cx-chips">
+                  <button type="button" className="cx-chip cx-chip-accent" onClick={() => setPicker(true)}>
+                    🎛 전문가·도구 고르고 시작
+                  </button>
+                </div>
+              )}
               <div className="cx-chips">
                 {EXAMPLE_PROMPTS.map((p) => (
                   <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
