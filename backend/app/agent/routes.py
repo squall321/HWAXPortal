@@ -275,6 +275,29 @@ async def _relay_stream(
     audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok")
 
 
+class ExpertsRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8192)
+
+
+@router.post("/deliberate/experts")
+async def deliberate_experts(
+    request: Request,
+    body: ExpertsRequest,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """심의 전 전문가 선정 미리보기 — agent-server 로 포워딩(caller groups 주입). 비스트리밍 JSON."""
+    client = _agent_client(request)
+    payload = {"message": body.message, "groups": principal.groups}
+    try:
+        r = await client.post(f"{settings.agent_server_url}/deliberate/experts", json=payload)
+        if r.status_code != 200:
+            return {"recommended": [], "pool": [], "error": f"agent_{r.status_code}"}
+        return r.json()
+    except httpx.HTTPError:
+        return {"recommended": [], "pool": [], "error": "agent_unreachable"}
+
+
 @router.post("/chat")
 async def chat(
     request: Request,
