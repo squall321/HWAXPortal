@@ -180,7 +180,7 @@ if want signalforge; then
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }   # 최초엔 example → 시크릿은 별도 채움
       ./scripts/sync-from-drive.sh                # SIF(+.env.example) — Drive→apptainer/sif/ (SF 자체 remote 자동감지)
       [ "$RESTART" = 1 ] || bash scripts/down.sh 2>/dev/null || true
-      ./scripts/up.sh                             # SIF 있으면 build skip; postgres+backend+mcp+crawler+frontend
+      SF_MIGRATE=1 ./scripts/up.sh                # SIF 있으면 build skip; 배포라 alembic 멱등 실행(기존 DB 도 신규 마이그레이션 반영)
       # ── DATA: 기본 보존, SF_RESTORE_DB=1 일 때만 Drive 최신 덤프로 복원(안전백업 후) ──
       if [ "${SF_RESTORE_DB:-0}" = "1" ]; then
         echo "  · SF_RESTORE_DB=1 → Drive 최신 DB 덤프 복원(직전 상태 안전백업)"
