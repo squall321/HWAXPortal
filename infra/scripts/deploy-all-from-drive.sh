@@ -135,7 +135,9 @@ if want mxwp; then
       if [ "$RESTART" != 1 ]; then
         for _i in mxwp_web mxwp_api; do "$_appt" instance stop "$_i" 2>/dev/null || true; done
       fi
-      ./infra/scripts/start.sh ) && ok "mxwp up" || skip "mxwp failed (see above)"
+      ./infra/scripts/start.sh \
+        && { ./infra/scripts/migrate.sh || echo "  ⚠ mxwp migrate 실패(비치명) — 수동: (mxwp) ./infra/scripts/migrate.sh"; } \
+      ) && ok "mxwp up" || skip "mxwp failed (see above)"
       # mxwp_api 를 재기동했으면 그 안에서 돌던 mxwp-mcp 도 다시 올린다(있으면).
       [ -x "$PORTAL_DIR/infra/scripts/services.sh" ] && \
         "$PORTAL_DIR/infra/scripts/services.sh" up mxwp-mcp 2>/dev/null | tail -2 || true
