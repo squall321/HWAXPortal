@@ -986,3 +986,94 @@ body.dock-open .container {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* ════ 도구 카탈로그 카드 (ToolCatalogBlock — '/도구' 검색 응답) ════ */
+
+.tc-card {
+  margin-top: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.85rem 0.95rem;
+  max-width: 640px;
+}
+.tc-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.tc-title { font-weight: 700; font-size: 0.92rem; }
+.tc-badge {
+  font-size: 0.72rem; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 0.06rem 0.5rem;
+}
+.tc-query { font-size: 0.78rem; color: var(--muted); font-family: var(--cx-mono); }
+.tc-note { margin: 0.45rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
+.tc-sec { margin-top: 0.8rem; }
+.tc-sec-title { font-size: 0.8rem; font-weight: 700; color: var(--muted); margin-bottom: 0.4rem; }
+.tc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.tc-scroll { max-height: 220px; overflow-y: auto; margin-top: 0.45rem; }
+.tc-item {
+  display: flex; align-items: baseline; gap: 0.5rem;
+  padding: 0.3rem 0.45rem; border-radius: 8px; cursor: pointer;
+}
+.tc-item:hover { background: var(--cx-accent-soft); }
+.tc-item input { accent-color: var(--cx-accent); flex-shrink: 0; transform: translateY(1px); }
+.tc-name { font-family: var(--cx-mono); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.tc-desc {
+  color: var(--muted); font-size: 0.75rem; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.tc-search {
+  width: 100%; padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); color: var(--fg); font-size: 0.82rem;
+}
+.tc-search:focus { outline: none; border-color: var(--cx-accent); box-shadow: 0 0 0 3px var(--cx-accent-soft); }
+.tc-empty { color: var(--muted); font-size: 0.78rem; padding: 0.3rem 0.45rem; }
+.tc-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  margin-top: 0.8rem; flex-wrap: wrap;
+}
+.tc-count { color: var(--muted); font-size: 0.76rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.tc-chips { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+.tc-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.72rem; font-family: var(--cx-mono); color: var(--fg);
+  background: var(--cx-accent-soft); border: 1px solid var(--cx-accent);
+  border-radius: 999px; padding: 0.12rem 0.3rem 0.12rem 0.5rem;
+}
+.tc-chip-x {
+  border: none; background: rgba(255, 255, 255, 0.08); color: var(--fg);
+  width: 15px; height: 15px; border-radius: 999px; line-height: 1;
+  font-size: 0.8rem; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+}
+.tc-chip-x:hover { background: rgba(255, 255, 255, 0.2); }
+.tc-actions { display: inline-flex; gap: 0.4rem; }
+.tc-clear {
+  font-size: 0.76rem; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 9px; padding: 0.3rem 0.7rem; background: transparent;
+}
+.tc-clear:hover { color: var(--fg); }
+.tc-apply {
+  font-size: 0.8rem; font-weight: 700; color: #0b0f1e;
+  background: var(--cx-accent); border: 1px solid var(--cx-accent);
+  border-radius: 9px; padding: 0.3rem 0.85rem;
+}
+.tc-apply:disabled { opacity: 0.45; cursor: default; }
+
+/* 지정 도구 칩(컴포저 위) — 이 대화에서 우선 사용될 도구 표시 + 즉시 해제 */
+.composer-pins {
+  display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;
+  margin-bottom: 0.35rem; padding: 0 0.2rem;
+}
+.composer-pins-label { font-size: 0.7rem; color: var(--muted); margin-right: 0.15rem; }
+.composer-pin {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.72rem; font-family: var(--cx-mono);
+  color: var(--fg); background: var(--cx-accent-soft);
+  border: 1px solid var(--cx-accent); border-radius: 999px;
+  padding: 0.1rem 0.3rem 0.1rem 0.5rem;
+}
+.composer-pin-x {
+  border: none; background: rgba(255, 255, 255, 0.08); color: var(--fg);
+  width: 14px; height: 14px; border-radius: 999px; line-height: 1;
+  font-size: 0.78rem; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+}
+.composer-pin-x:hover { background: rgba(255, 255, 255, 0.2); }

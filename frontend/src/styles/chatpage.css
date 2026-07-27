@@ -976,3 +976,14 @@
 }
 .cx-ep-start:hover:not(:disabled) { filter: brightness(1.08); }
 .cx-ep-start:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ExpertPicker 도구 행 — 체크박스 + 모노 이름 + 한줄 설명 */
+.cx-ep-tool {
+  display: flex; align-items: baseline; gap: 0.5rem;
+  padding: 0.35rem 0.55rem; border: 1px solid var(--border); border-radius: 10px;
+  cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.cx-ep-tool:hover { border-color: var(--cx-accent); background: var(--cx-accent-soft); }
+.cx-ep-tool input { accent-color: var(--cx-accent); flex-shrink: 0; transform: translateY(1px); }
+.cx-ep-tool .cx-ep-name { font-family: var(--cx-mono); font-size: 0.8rem; white-space: nowrap; }
+.cx-ep-tool .cx-ep-tags { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

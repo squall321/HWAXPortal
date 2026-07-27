@@ -49,13 +49,15 @@ export default function DeliberatePage() {
     );
   }, [setInput]);
 
-  // 선정 확정 → 고른 전문가로 심의 시작(personas 를 실어 발굴을 건너뛰고 이들로 진행).
-  const confirmExperts = useCallback((personas: Persona[]) => {
+  // 선정 확정 → 고른 전문가(+선택 도구)로 심의 시작. personas 는 발굴 생략, tools 는 심의가
+  // 실제 호출해 정량 근거로 주입한다(미선택이면 자동 파이프라인만 — 종전과 동일).
+  const confirmExperts = useCallback((personas: Persona[], tools: string[]) => {
     const topic = picking?.topic;
     setPicking(null);
     if (!topic) return;
     sendMessage('/심의 ' + topic, {
       personas: personas.map((p) => ({ key: p.key, role: p.role })),
+      ...(tools.length > 0 ? { tools } : {}),
     });
   }, [picking, sendMessage]);
 

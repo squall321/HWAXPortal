@@ -20,7 +20,7 @@ import {
   type ConvKind,
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
-import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message } from '../types/chat';
+import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, ToolCatalog } from '../types/chat';
 import {
   delibOptsToWire,
   loadActiveId,
@@ -50,6 +50,9 @@ interface ChatContextValue {
   /** 심의 손잡이(웹 토글) — 심의 페이지 패널이 읽고 쓴다. 전송 시 켠 것만 서버로 실린다. */
   delibOpts: DelibOpts;
   setDelibOpts: (o: DelibOpts) => void;
+  /** 사용자 지정 우선 도구(활성 대화) — 도구 카탈로그 카드에서 선택, 이후 발화에 실린다. */
+  pinnedTools: string[];
+  setPinnedTools: (names: string[]) => void;
   stop: () => void;
   newConversation: () => void;
   selectConversation: (id: string) => void;
@@ -371,6 +374,8 @@ export function ChatProvider({
         signal: controller.signal,
         history,
         ...(serverId ? { conversationId: serverId } : {}),
+        // 사용자 지정 우선 도구 — 이 대화에서 카탈로그로 선택해 둔 것(없으면 미전송).
+        ...(existing?.pinnedTools?.length ? { pinnedTools: existing.pinnedTools } : {}),
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
@@ -403,6 +408,8 @@ export function ChatProvider({
         onToken: (e) =>
           patch(cid, botId, (m) => ({ ...m, text: m.text + e.delta, status: undefined })),
         onDelib: (e) => patch(cid, botId, (m) => ({ ...m, delib: mergeDelib(m.delib, e) })),
+        onTools: (e: ToolCatalog) =>
+          patch(cid, botId, (m) => ({ ...m, toolCatalog: e, status: undefined })),
         onResult: (block) =>
           patch(cid, botId, (m) => ({
             ...m,
@@ -475,6 +482,19 @@ export function ChatProvider({
     sendMessage(text);
   }, [conversations, activeId, streaming, sendMessage, sendPrefix]);
 
+  // 지정 도구 갱신 — 활성 대화에 저장(localStorage 영속). 빈 배열이면 해제.
+  const setPinnedTools = useCallback(
+    (names: string[]) => {
+      const clean = [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, 12);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id !== activeId ? c : { ...c, pinnedTools: clean.length ? clean : undefined },
+        ),
+      );
+    },
+    [activeId],
+  );
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -540,6 +560,8 @@ export function ChatProvider({
         retryLast,
         delibOpts,
         setDelibOpts,
+        pinnedTools: activeConversation?.pinnedTools ?? [],
+        setPinnedTools,
         stop,
         newConversation,
         selectConversation,

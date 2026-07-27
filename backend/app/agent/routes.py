@@ -61,6 +61,8 @@ class DelibOpts(BaseModel):
     human_note: str | None = Field(default=None, max_length=2000)
     continue_summary: str | None = Field(default=None, max_length=8000)
     personas: list[dict] | None = Field(default=None, max_length=12)
+    # 사용자 지정 도구 — 심의에서 실제 호출돼 정량 근거로 주입(선정 패널에서 선택).
+    tools: list[str] | None = Field(default=None, max_length=6)
 
 
 class ChatRequest(BaseModel):
@@ -72,6 +74,8 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=64)
     # 심의 손잡이 오버라이드 — 심의(/심의) 요청에서만 의미. agent-server 로 그대로 포워딩.
     delib_opts: DelibOpts | None = None
+    # 사용자 지정 우선 도구(챗) — 도구 카탈로그에서 직접 선택한 도구를 우선 사용하게 강제.
+    pinned_tools: list[str] | None = Field(default=None, max_length=12)
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -249,6 +253,8 @@ async def _relay_stream(
     }
     if body.delib_opts is not None:  # 지정된 손잡이만 전달(None 필드는 제외 → env 기본값 유지)
         payload["delib_opts"] = body.delib_opts.model_dump(exclude_none=True)
+    if body.pinned_tools:  # 사용자 지정 우선 도구 — 켠 것만 전달
+        payload["pinned_tools"] = body.pinned_tools
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload

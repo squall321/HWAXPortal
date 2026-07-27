@@ -29,7 +29,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   { autoFocus = false, placeholder = '무엇이든 물어보세요…', showHint = false, onSubmitText },
   ref,
 ) {
-  const { input, setInput, sendMessage, stop, streaming } = useChat();
+  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools } = useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }), []);
@@ -71,6 +71,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   return (
     <form className="composer" onSubmit={onSubmit}>
+      {/* 지정 도구 칩 — 이 대화에서 우선 사용될 도구를 항상 보이게(× 로 즉시 해제). */}
+      {pinnedTools.length > 0 && (
+        <div className="composer-pins" aria-label="지정 도구">
+          <span className="composer-pins-label">지정 도구</span>
+          {pinnedTools.map((n) => (
+            <span key={n} className="composer-pin">
+              {n}
+              <button
+                type="button"
+                className="composer-pin-x"
+                onClick={() => setPinnedTools(pinnedTools.filter((x) => x !== n))}
+                aria-label={`${n} 지정 해제`}
+                title="지정 해제"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="composer-box">
         <textarea
           ref={taRef}

@@ -4,6 +4,7 @@ import { useChat } from '../../state/ChatContext';
 import type { Message } from '../../types/chat';
 import { copyText } from './clipboard';
 import { DelibView } from './DelibView';
+import { ToolCatalogBlock } from './ToolCatalogBlock';
 import { IconArrowDown, IconCheck, IconCopy } from './icons';
 import { TextBlock } from './renderers/TextBlock';
 
@@ -74,7 +75,8 @@ function Row({ msg }: { msg: Message }) {
   const thinking = Boolean(msg.streaming) && !msg.text && !hasDelib;
   // A finished assistant turn with no text/error (e.g. the model only called a tool
   // and produced no closing text) would otherwise render empty — show a fallback.
-  const emptyDone = !msg.streaming && !msg.text && !msg.error && !msg.status && !hasDelib;
+  const emptyDone =
+    !msg.streaming && !msg.text && !msg.error && !msg.status && !hasDelib && !msg.toolCatalog;
 
   return (
     <div className="msg assistant">
@@ -84,6 +86,8 @@ function Row({ msg }: { msg: Message }) {
         ) : (
           msg.text && <TextBlock text={msg.text} cursor={Boolean(msg.streaming)} />
         )}
+        {/* 도구 카탈로그('/도구' 검색) — 사용자가 직접 선택·변경해 지정 도구로 확정하는 카드. */}
+        {msg.toolCatalog && <ToolCatalogBlock catalog={msg.toolCatalog} />}
         {/* 토큰이 흐른 뒤에도 도구 호출 등으로 status가 다시 올 수 있다 — 텍스트 아래에 표시. */}
         {msg.text && msg.status && <div className="msg-status-text">{msg.status}</div>}
         {thinking && (

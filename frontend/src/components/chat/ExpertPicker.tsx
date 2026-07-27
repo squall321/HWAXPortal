@@ -12,8 +12,8 @@ interface ExpertPickerProps {
   topic: string;
   loading: boolean;
   experts: ExpertsResponse | null;
-  /** 선택 전문가로 심의 시작. */
-  onConfirm: (personas: Persona[]) => void;
+  /** 선택 전문가(+선택 도구 — 심의에서 실제 호출돼 정량 근거로 주입)로 심의 시작. */
+  onConfirm: (personas: Persona[], tools: string[]) => void;
   onCancel: () => void;
 }
 
@@ -22,6 +22,8 @@ const MAX_EXPERTS = 12; // 심의 계약(delib_opts.personas) 상한
 const DEFAULT_COUNT = 5;
 const COUNT_OPTIONS = [3, 5, 7, 10, 12];
 const POOL_LIMIT = 30; // 결과 표시 상한
+const MAX_TOOLS = 6; // 심의 계약(delib_opts.tools) 상한 — 도구당 인자구성+호출 비용이 있어 보수적
+const TOOL_LIST_LIMIT = 20;
 
 interface AddRow {
   key: string;
@@ -37,6 +39,9 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
   const [chosen, setChosen] = useState<Record<string, Persona>>({});
   const [autoCount, setAutoCount] = useState(DEFAULT_COUNT);
   const [query, setQuery] = useState('');
+  // 선택 도구 — 기본 빈 집합(자동 파이프라인 도구는 항상 돌아감). 고르면 실제 호출돼 근거 주입.
+  const [toolSel, setToolSel] = useState<Set<string>>(new Set());
+  const [toolQuery, setToolQuery] = useState('');
   const seededRef = useRef(false);
 
   // 관련도순 랭킹 — candidates(≈40) 우선, 없으면 recommended 폴백.
@@ -126,6 +131,26 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
 
   const enough = chosenList.length >= MIN_EXPERTS;
   const poolCount = experts?.pool.length ?? 0;
+
+  // ── 도구 선택 — 자동 파이프라인 도구는 항상 돌아가고, 여기서 고른 도구는 추가로 실호출된다.
+  const toolRec = experts?.tools?.recommended ?? [];
+  const toolPipeline = experts?.tools?.pipeline ?? [];
+  const toolAll = useMemo(() => experts?.tools?.all ?? [], [experts]);
+  const toolFull = toolSel.size >= MAX_TOOLS;
+  const toggleTool = (name: string) =>
+    setToolSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else if (next.size < MAX_TOOLS) next.add(name);
+      return next;
+    });
+  const toolResults = useMemo(() => {
+    const q = toolQuery.trim().toLowerCase();
+    if (!q) return [];
+    return toolAll
+      .filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q))
+      .slice(0, TOOL_LIST_LIMIT);
+  }, [toolQuery, toolAll]);
 
   return (
     <div className="cx-ep">
@@ -233,6 +258,87 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
             </ul>
           </section>
 
+          {(toolRec.length > 0 || toolAll.length > 0) && (
+            <section className="cx-ep-sec">
+              <h3 className="cx-ep-sec-title">
+                사용 도구
+                <span className="cx-ep-badge">선택 {toolSel.size}/{MAX_TOOLS}</span>
+              </h3>
+              {toolPipeline.length > 0 && (
+                <p className="cx-ep-subtle">
+                  자동 사용(파이프라인): {toolPipeline.join(' · ')} — 아래에서 고른 도구는 추가로 실제
+                  호출돼 정량 근거로 주입됩니다.
+                </p>
+              )}
+              {toolRec.length > 0 && (
+                <ul className="cx-ep-results">
+                  {toolRec.slice(0, 8).map((t) => (
+                    <li key={t.name}>
+                      <label className="cx-ep-tool">
+                        <input
+                          type="checkbox"
+                          checked={toolSel.has(t.name)}
+                          onChange={() => toggleTool(t.name)}
+                          disabled={!toolSel.has(t.name) && toolFull}
+                        />
+                        <span className="cx-ep-name">{t.name}</span>
+                        <span className="cx-ep-tags">{t.desc}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <input
+                className="cx-ep-search"
+                type="text"
+                value={toolQuery}
+                onChange={(e) => setToolQuery(e.target.value)}
+                placeholder="도구 검색 (예: predict_sed, warpage, voc)"
+                aria-label="도구 검색"
+              />
+              {toolQuery.trim() && (
+                <ul className="cx-ep-results">
+                  {toolResults.length === 0 ? (
+                    <li className="cx-ep-empty">일치하는 도구가 없습니다.</li>
+                  ) : (
+                    toolResults.map((t) => (
+                      <li key={t.name}>
+                        <label className="cx-ep-tool">
+                          <input
+                            type="checkbox"
+                            checked={toolSel.has(t.name)}
+                            onChange={() => toggleTool(t.name)}
+                            disabled={!toolSel.has(t.name) && toolFull}
+                          />
+                          <span className="cx-ep-name">{t.name}</span>
+                          <span className="cx-ep-tags">{t.desc}</span>
+                        </label>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
+              {toolSel.size > 0 && (
+                <div className="cx-ep-chips">
+                  {[...toolSel].map((n) => (
+                    <span key={n} className="cx-ep-chip">
+                      🔧 {n}
+                      <button
+                        type="button"
+                        className="cx-ep-chip-x"
+                        onClick={() => toggleTool(n)}
+                        aria-label={`${n} 제외`}
+                        title="제외"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           <section className="cx-ep-sec">
             <h3 className="cx-ep-sec-title">
               선정됨
@@ -270,10 +376,10 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
               type="button"
               className="cx-ep-start"
               disabled={!enough}
-              onClick={() => onConfirm(chosenList)}
-              title={enough ? '선정한 전문가로 심의를 시작합니다' : `전문가를 ${MIN_EXPERTS}명 이상 선정하세요`}
+              onClick={() => onConfirm(chosenList, [...toolSel])}
+              title={enough ? '선정한 전문가·도구로 심의를 시작합니다' : `전문가를 ${MIN_EXPERTS}명 이상 선정하세요`}
             >
-              심의 시작 ({chosenList.length}명)
+              심의 시작 ({chosenList.length}명{toolSel.size > 0 ? ` · 도구 ${toolSel.size}` : ''})
             </button>
           </div>
           {!enough && <p className="cx-ep-hint">전문가를 {MIN_EXPERTS}명 이상 선정해야 심의를 시작할 수 있습니다.</p>}

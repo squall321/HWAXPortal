@@ -74,6 +74,19 @@ export interface DelibEvent {
   [k: string]: unknown;
 }
 
+// 도구 카탈로그(SSE `tools` 이벤트) — '/도구' 검색 시 서버가 추천+전체 목록을 내려준다.
+// 사용자가 직접 선택한 도구는 대화의 pinnedTools 가 되어 이후 발화에서 우선 사용된다.
+export interface ToolInfo {
+  name: string;
+  desc: string;
+  score?: number;
+}
+export interface ToolCatalog {
+  query?: string;
+  recommended: ToolInfo[];
+  all: ToolInfo[];
+}
+
 export interface Message {
   id: string;
   role: Role;
@@ -89,6 +102,8 @@ export interface Message {
   activity?: ActivityItem[];
   // 심의 구조화 데이터 — 라이브 회의/스테퍼/수렴 렌더(DelibView)용. 영속됨.
   delib?: DelibData;
+  // 도구 카탈로그(SSE tools 이벤트) — 도구 선택 카드(ToolCatalogBlock) 렌더용. 영속됨.
+  toolCatalog?: ToolCatalog;
   error?: string;
   streaming?: boolean;
 }
@@ -103,6 +118,8 @@ export interface Conversation {
   // 서버 대화 저장소 정본 id — 있으면 /agent/chat 이 이 대화에 user+assistant 를 서버 저장.
   // 서버에서 로드된 대화(MCP 심의 포함)는 id === serverId. 웹 생성분은 전송 시 발급받아 채움.
   serverId?: string;
+  // 사용자 지정 우선 도구 — 도구 카탈로그에서 선택. 이 대화의 이후 발화에 pinned_tools 로 실린다.
+  pinnedTools?: string[];
 }
 
 // SSE event payloads (plan §5).

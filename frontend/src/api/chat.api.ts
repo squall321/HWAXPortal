@@ -1,5 +1,5 @@
 import { config } from '../config';
-import type { DelibEvent, ErrorEvent, ResultBlock, StatusEvent, TokenEvent } from '../types/chat';
+import type { DelibEvent, ErrorEvent, ResultBlock, StatusEvent, TokenEvent, ToolCatalog } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -16,6 +16,8 @@ export interface StreamHandlers {
   onToken?: (e: TokenEvent) => void;
   onResult?: (block: ResultBlock) => void;
   onDelib?: (e: DelibEvent) => void;
+  /** 도구 카탈로그(SSE tools) — '/도구' 검색 응답. 선택 카드 렌더용. */
+  onTools?: (e: ToolCatalog) => void;
   onError?: (e: ErrorEvent) => void;
   onDone?: () => void;
   signal?: AbortSignal;
@@ -58,6 +60,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
     case 'delib':
       h.onDelib?.(payload as DelibEvent);
       break;
+    case 'tools':
+      h.onTools?.(payload as ToolCatalog);
+      break;
     case 'error':
       h.onError?.(payload as ErrorEvent);
       break;
@@ -87,11 +92,22 @@ export interface PoolExpert {
   name: string;
   tags: string[];
 }
+export interface ExpertsTools {
+  /** 주제 관련도순 추천 도구 — 선택하면 심의에서 실제 호출돼 정량 근거로 주입. */
+  recommended: { name: string; desc: string; score?: number }[];
+  /** 심의 파이프라인이 자동 사용하는 도구(정보 표시 — 항상 돌아감). */
+  pipeline: string[];
+  /** 전체 도구 카탈로그 — 검색 추가용. */
+  all: { name: string; desc: string }[];
+}
+
 export interface ExpertsResponse {
   recommended: RecommendedExpert[];
   /** 질문 연관도순 후보(상위 ~40) — 수동 추가 기본 노출·검색 우선순위에 사용. */
   candidates?: RecommendedExpert[];
   pool: PoolExpert[];
+  /** 도구 정보 — 자동 파이프라인 + 주제 추천 + 전체 카탈로그. */
+  tools?: ExpertsTools;
   error?: string;
 }
 
@@ -128,13 +144,15 @@ export async function streamChat(
     /** 서버 대화 저장소 정본 id — 있으면 백엔드가 이 대화에 user+assistant 를 서버 저장. */
     conversationId?: string;
     /** 심의 손잡이 오버라이드(웹 토글) — 켠 것만. 심의(/심의) 요청에서만 의미.
-     *  스칼라 손잡이 외에 이어하기 필드(human_note·continue_summary·personas)도 실린다. */
+     *  스칼라 손잡이 외에 이어하기 필드(human_note·continue_summary·personas·tools)도 실린다. */
     delibOpts?: Record<string, unknown>;
+    /** 사용자 지정 우선 도구(챗) — 도구 카탈로그에서 선택. 서버가 우선 사용을 강제. */
+    pinnedTools?: string[];
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -151,6 +169,7 @@ export async function streamChat(
       ...(history && history.length > 0 ? { history } : {}),
       ...(conversationId ? { conversation_id: conversationId } : {}),
       ...(delibOpts && Object.keys(delibOpts).length > 0 ? { delib_opts: delibOpts } : {}),
+      ...(pinnedTools && pinnedTools.length > 0 ? { pinned_tools: pinnedTools.slice(0, 12) } : {}),
     }),
     signal,
   });
