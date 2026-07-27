@@ -186,12 +186,18 @@ if want signalforge; then
       ./scripts/sync-from-drive.sh                # SIF(+.env.example) — Drive→apptainer/sif/ (SF 자체 remote 자동감지)
       [ "$RESTART" = 1 ] || bash scripts/down.sh 2>/dev/null || true
       SF_MIGRATE=1 ./scripts/up.sh                # SIF 있으면 build skip; 배포라 alembic 멱등 실행(기존 DB 도 신규 마이그레이션 반영)
-      # ── DATA: 기본 보존, SF_RESTORE_DB=1 일 때만 Drive 최신 덤프로 복원(안전백업 후) ──
+      # ── DATA: 기본 = 비파괴 MERGE(dev 신규 VOC 반영 + cae00 축적 유지, DROP 안 함).
+      #    SF_RESTORE_DB=1 은 파괴적 통짜 복원(최초 시드/재구축용 오버라이드). ──
       if [ "${SF_RESTORE_DB:-0}" = "1" ]; then
-        echo "  · SF_RESTORE_DB=1 → Drive 최신 DB 덤프 복원(직전 상태 안전백업)"
+        echo "  · SF_RESTORE_DB=1 → Drive 최신 DB 덤프 통짜 복원(파괴적·직전 상태 안전백업)"
         bash scripts/drive-sync/sync-from-drive.sh || echo "  ⚠ DB 복원 실패 — backups/ 안전백업 확인"
+      elif [ -x scripts/drive-sync/merge-from-drive.sh ]; then
+        # dev 가 backup-to-drive 로 올린 덤프가 있으면 병합(없으면 조용히 생략=보존).
+        # dev 검증: insert/멱등/additive 무손실(363k행), cae00 축적분·미참조행 안전.
+        echo "  · DB MERGE(비파괴) — dev 신규 VOC 반영 + cae00 축적 유지"
+        bash scripts/drive-sync/merge-from-drive.sh || echo "  ⚠ SF merge 실패 — 사전 스냅샷으로 롤백 가능(운영 무손상)"
       else
-        echo "  · DB 보존(기존 cae00 데이터 유지). 최초 시드/갱신은:  SF_RESTORE_DB=1 $0 signalforge"
+        echo "  · DB 보존(merge 스크립트 없음)."
       fi ) && ok "signalforge up" || skip "signalforge failed (see above)"
   else skip "SignalForge repo not found (set SF_DIR=)"; fi
 fi
