@@ -328,6 +328,26 @@ if [ -n "$HH" ]; then
   fi
 fi
 
+# 호스팅 웹앱 실제 서빙 프로브 — MCP 앱(thermal_shock·laminate)은 위 gateway backend 로 판정되지만,
+# 순수 웹앱(materialtwin_web·voice_recorder)은 Caddy 가 /apps/<id>/ 로 직접 서빙해 게이트웨이엔
+# 안 잡힌다. SIF 교체 후 앱 인스턴스가 미기동이면 여기서 404 로 잡힌다(과거엔 루트만 봐서 조용히 통과).
+# reconcile 이 부팅 직후 도는 데 시간이 걸릴 수 있어 몇 번 재시도.
+for app in materialtwin_web voice_recorder; do
+  code=000
+  for _try in 1 2 3 4 5; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:4180/apps/$app/" 2>/dev/null || echo 000)
+    { [ "$code" = "200" ] || [ "$code" = "304" ]; } && break
+    sleep 3
+  done
+  if [ "$code" = "200" ] || [ "$code" = "304" ]; then
+    ok "heax 앱 $app → $code (/apps/$app/ 서빙 정상)"
+  else
+    bad "heax 앱 $app → $code — /apps/$app/ 미서빙(앱 인스턴스 미기동/route 미등록)."
+    echo "      재기동: (heax 레포) bash deploy/apptainer/stop.sh && HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh"
+    echo "              또는 앱 하나만: bash deploy/apptainer/redeploy-app.sh $(echo "$app" | tr '_' '-')"
+  fi
+done
+
 # ── 7) 챗 스모크 — /health 는 프로세스 생존만 본다. 실제 문장 하나를 보내 AI 응답이 오는지
 #      (agent → gateway 도구 로딩 → vLLM 전 체인)를 태운다. 실패 시 로그 꼬리를 함께 출력. ──
 hr "7) 챗 스모크 (실제 응답 검증)"

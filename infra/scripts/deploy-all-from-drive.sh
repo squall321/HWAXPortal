@@ -158,6 +158,9 @@ if want heax; then
       else
         bash deploy/apptainer/appdata-from-drive.sh || true
       fi
+      # 대용량 앱 모델 가중치(voice_recorder TTS 등)는 app-data tar 밖(별도 Drive models/) —
+      # 각 앱 런타임 모델 dir 로 증분 동기(비치명).
+      [ -x deploy/apptainer/models-from-drive.sh ] && bash deploy/apptainer/models-from-drive.sh || true
       [ "$RESTART" = 1 ] || bash deploy/apptainer/stop.sh 2>/dev/null || true
       if ! HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh; then
         echo "  ── last lines of var/logs/postgres-start.log (the hidden error) ──"
