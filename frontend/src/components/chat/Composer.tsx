@@ -21,10 +21,12 @@ interface ComposerProps {
   placeholder?: string;
   /** 힌트 라인(Enter 전송 · Shift+Enter 줄바꿈) 표시 여부 — 독에서는 생략. */
   showHint?: boolean;
+  /** 전송 가로채기 — 주어지면 sendMessage 대신 이 콜백을 호출(심의 전 전문가 선정 단계 진입). */
+  onSubmitText?: (text: string) => void;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { autoFocus = false, placeholder = '무엇이든 물어보세요…', showHint = false },
+  { autoFocus = false, placeholder = '무엇이든 물어보세요…', showHint = false, onSubmitText },
   ref,
 ) {
   const { input, setInput, sendMessage, stop, streaming } = useChat();
@@ -46,8 +48,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const submit = useCallback(() => {
     if (streaming) return;
-    sendMessage(input);
-  }, [streaming, sendMessage, input]);
+    const text = input.trim();
+    if (!text) return;
+    if (onSubmitText) onSubmitText(text);
+    else sendMessage(input);
+  }, [streaming, sendMessage, input, onSubmitText]);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();

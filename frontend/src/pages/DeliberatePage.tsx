@@ -5,9 +5,11 @@ import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { Composer, type ComposerHandle } from '../components/chat/Composer';
 import { DelibOptsPanel } from '../components/chat/DelibOptsPanel';
+import { ExpertPicker, type Persona } from '../components/chat/ExpertPicker';
 import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
 import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
+import { fetchDeliberateExperts, type ExpertsResponse } from '../api/chat.api';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
 import '../styles/chat.css';
 import '../styles/chatpage.css';
@@ -35,6 +37,36 @@ export default function DeliberatePage() {
   const threadRef = useRef<HTMLDivElement>(null); // 내보내기(HTML)가 캡처할 렌더 루트
   // 데스크톱은 저장된 선호를 따르고, 좁은 화면은 오버레이라 기본 닫힘.
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow() && loadSidebarOpen());
+  // 심의 전 전문가 선정 단계 — 화두 제출 시 추천/풀을 받아 확인 패널을 띄운다(기본 자동, 확인 후 시작).
+  const [picking, setPicking] = useState<{ topic: string; experts: ExpertsResponse | null } | null>(null);
+
+  // 화두 제출 → 전문가 미리보기 로드 후 선정 패널 표시. 실패해도 패널은 열려(자동/수동 선택 가능).
+  const startPicking = useCallback((topic: string) => {
+    setPicking({ topic, experts: null });
+    setInput('');
+    void fetchDeliberateExperts(topic).then((experts) =>
+      setPicking((cur) => (cur && cur.topic === topic ? { ...cur, experts } : cur)),
+    );
+  }, [setInput]);
+
+  // 선정 확정 → 고른 전문가로 심의 시작(personas 를 실어 발굴을 건너뛰고 이들로 진행).
+  const confirmExperts = useCallback((personas: Persona[]) => {
+    const topic = picking?.topic;
+    setPicking(null);
+    if (!topic) return;
+    sendMessage('/심의 ' + topic, {
+      personas: personas.map((p) => ({ key: p.key, role: p.role })),
+    });
+  }, [picking, sendMessage]);
+
+  const cancelPicking = useCallback(() => {
+    const topic = picking?.topic ?? '';
+    setPicking(null);
+    if (topic) {
+      setInput(topic);
+      composerRef.current?.focus();
+    }
+  }, [picking, setInput]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((v) => {
@@ -90,26 +122,43 @@ export default function DeliberatePage() {
 
         {empty ? (
           <div className="cx-hero" key={activeId ?? 'new'}>
-            <div className="cx-hero-inner">
-              <div className="cx-hero-mark" aria-hidden="true">
-                <IconSpark width={30} height={30} />
+            {picking ? (
+              <div className="cx-hero-inner">
+                <ExpertPicker
+                  topic={picking.topic}
+                  loading={picking.experts === null}
+                  experts={picking.experts}
+                  onConfirm={confirmExperts}
+                  onCancel={cancelPicking}
+                />
               </div>
-              <p className="cx-hero-kicker">다중 전문가 심의</p>
-              <h1 className="cx-hero-title">어떤 화두를 심의할까요?</h1>
-              <Composer ref={composerRef} autoFocus placeholder="화두를 입력하세요…" />
-              <DelibOptsPanel />
-              <div className="cx-chips">
-                {EXAMPLE_TOPICS.map((p) => (
-                  <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
-                    {p}
-                  </button>
-                ))}
+            ) : (
+              <div className="cx-hero-inner">
+                <div className="cx-hero-mark" aria-hidden="true">
+                  <IconSpark width={30} height={30} />
+                </div>
+                <p className="cx-hero-kicker">다중 전문가 심의</p>
+                <h1 className="cx-hero-title">어떤 화두를 심의할까요?</h1>
+                <Composer
+                  ref={composerRef}
+                  autoFocus
+                  placeholder="화두를 입력하세요…"
+                  onSubmitText={startPicking}
+                />
+                <DelibOptsPanel />
+                <div className="cx-chips">
+                  {EXAMPLE_TOPICS.map((p) => (
+                    <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                <p className="cx-hero-hint">{FLOW_HINT}</p>
+                <p className="cx-hero-sub">
+                  의견을 하나 던지면 전문가 에이전트들이 토의로 답합니다. 기록은 서버에 남아 Claude(MCP) 심의와 한곳에 모입니다.
+                </p>
               </div>
-              <p className="cx-hero-hint">{FLOW_HINT}</p>
-              <p className="cx-hero-sub">
-                의견을 하나 던지면 전문가 에이전트들이 토의로 답합니다. 기록은 서버에 남아 Claude(MCP) 심의와 한곳에 모입니다.
-              </p>
-            </div>
+            )}
           </div>
         ) : (
           <div className="cx-thread" key={activeId ?? 'thread'}>

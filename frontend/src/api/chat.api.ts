@@ -73,6 +73,50 @@ export interface HistoryMessage {
   content: string;
 }
 
+// ── 심의 전 전문가 선정 미리보기 ────────────────────────────────────────────
+export interface RecommendedExpert {
+  key: string;
+  name: string;
+  role: string;
+  score?: number | null;
+  why?: string;
+  tags?: string[];
+}
+export interface PoolExpert {
+  key: string;
+  name: string;
+  tags: string[];
+}
+export interface ExpertsResponse {
+  recommended: RecommendedExpert[];
+  pool: PoolExpert[];
+  error?: string;
+}
+
+/** 화두로 추천 전문가 + 전체 풀을 받아온다(비스트리밍). 수동 선정 패널이 사용. */
+export async function fetchDeliberateExperts(
+  message: string,
+  signal?: AbortSignal,
+): Promise<ExpertsResponse> {
+  const csrf = getCookie('hwax_csrf');
+  try {
+    const res = await fetch(`${config.apiBase}/agent/deliberate/experts`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
+      },
+      body: JSON.stringify({ message }),
+      signal,
+    });
+    if (!res.ok) return { recommended: [], pool: [], error: `http_${res.status}` };
+    return (await res.json()) as ExpertsResponse;
+  } catch {
+    return { recommended: [], pool: [], error: 'network' };
+  }
+}
+
 export async function streamChat(
   message: string,
   opts: {
