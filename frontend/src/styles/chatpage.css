@@ -1025,8 +1025,8 @@
   background: var(--cx-accent); color: #0b0f1e; font-size: 0.84rem; font-weight: 700;
 }
 .sp-go:disabled { opacity: 0.45; }
-.sp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; margin-top: 0.8rem; }
-@media (max-width: 640px) { .sp-cols { grid-template-columns: 1fr; } }
+/* 전문가/도구는 세로 배치 — 2열 그리드는 좁은 창에서 도구 열이 짜부라져 안 보였다. */
+.sp-cols { display: flex; flex-direction: column; gap: 1rem; margin-top: 0.8rem; }
 .sp-sec-title { font-size: 0.78rem; font-weight: 700; color: var(--muted); margin-bottom: 0.4rem; }
 .sp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
 .sp-scroll { max-height: 160px; overflow-y: auto; margin-top: 0.35rem; }
