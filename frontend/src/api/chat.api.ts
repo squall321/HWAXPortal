@@ -89,6 +89,8 @@ export interface PoolExpert {
 }
 export interface ExpertsResponse {
   recommended: RecommendedExpert[];
+  /** 질문 연관도순 후보(상위 ~40) — 수동 추가 기본 노출·검색 우선순위에 사용. */
+  candidates?: RecommendedExpert[];
   pool: PoolExpert[];
   error?: string;
 }

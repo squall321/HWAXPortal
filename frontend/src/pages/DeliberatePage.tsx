@@ -121,7 +121,7 @@ export default function DeliberatePage() {
         )}
 
         {empty ? (
-          <div className="cx-hero" key={activeId ?? 'new'}>
+          <div className={`cx-hero${picking ? ' cx-hero--picking' : ''}`} key={activeId ?? 'new'}>
             {picking ? (
               <div className="cx-hero-inner">
                 <ExpertPicker

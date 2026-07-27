@@ -737,12 +737,28 @@
 
 /* ════ 심의 전 전문가 선정 패널 (ExpertPicker) ════ */
 
+/* 선정 패널은 내용이 길어 세로 중앙정렬 시 상단이 잘리고(flex+overflow) FAB 바에 가린다 —
+   picking 상태에서는 상단정렬 + FAB 바 clearance 로 전환한다. */
+.cx-hero--picking {
+  align-items: flex-start;
+  padding-top: 3.2rem;
+}
+.cx-hero--picking .cx-hero-inner {
+  margin-top: 0;
+}
+
 .cx-ep {
   width: 100%;
   max-width: 640px;
   margin: 0 auto;
   text-align: left;
   animation: cx-fade 0.3s ease;
+}
+.cx-ep-subtle {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  opacity: 0.85;
 }
 .cx-ep-head { margin-bottom: 1.1rem; }
 .cx-ep-kicker {
