@@ -6,6 +6,9 @@
   --card: #1a1d24;
   --border: #2a2f3a;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* 다크 전용 앱 — 네이티브 폼 컨트롤(select 옵션 팝업·스크롤바 등)도 다크로 렌더.
+     미선언 시 브라우저가 옵션 팝업을 기본(흰 배경)으로 그려 --fg(밝은색) 글자가 흰-흰이 됐다. */
+  color-scheme: dark;
 }
 
 * {

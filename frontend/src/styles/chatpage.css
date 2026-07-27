@@ -830,9 +830,14 @@
   padding: 0.2rem 0.4rem;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--card); /* solid — rgba 위에 네이티브 팝업 흰 배경이 비쳐 흰-흰이 되던 문제 */
   color: var(--fg);
   font-size: 0.78rem;
+}
+/* 옵션 팝업 명시 색 — color-scheme:dark 를 완전히 따르지 않는 브라우저 방어. */
+.cx-ep-count select option {
+  background: var(--card);
+  color: var(--fg);
 }
 .cx-ep-count select:focus {
   outline: none;
