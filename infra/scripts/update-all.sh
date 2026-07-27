@@ -36,6 +36,18 @@ bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
 # HTTP 코드 프로브 — curl은 실패해도 -w로 '000'을 찍으므로 종료코드가 아니라 출력값으로만 판정한다.
 http_code() { curl -sk -m "${2:-4}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null; }
 
+# ── 0) git 자격증명 기본값 — private 레포 HTTPS pull 이 'Username for github' 를 반복해서 묻지
+#    않게 한다. 미설정일 때만 username=squall321 + credential.helper store 를 심는다(기존 설정
+#    보존). 토큰(PAT)은 보안상 스크립트에 넣지 않는다 — store 라 최초 1회만 입력하면
+#    ~/.git-credentials 에 저장돼 이후 모든 레포·모든 실행에서 무프롬프트.
+if [ -z "$(git config --global credential.helper 2>/dev/null)" ]; then
+  git config --global credential.helper store && ok "git credential.helper=store (PAT 1회 입력 후 영속)"
+fi
+if [ -z "$(git config --global 'credential.https://github.com.username' 2>/dev/null)" ]; then
+  git config --global 'credential.https://github.com.username' squall321 \
+    && ok "git username 기본값=squall321 (github — 이제 username 은 안 물음)"
+fi
+
 # ── 1) 자기 자신 최신화 — 스크립트가 구버전이면 갱신 후 새 버전으로 재실행(1회 한정) ──
 hr "1) 포털 레포 최신화"
 if [ "${UPDATE_ALL_REEXEC:-0}" != "1" ]; then
