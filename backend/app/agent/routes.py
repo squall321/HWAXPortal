@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -283,6 +283,30 @@ async def _relay_stream(
         yield sse_event("done", {})
         return
     audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok")
+
+
+@router.get("/artifacts/{name}")
+async def get_artifact(
+    name: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """도구 산출 이미지 프록시 — 챗 마크다운 ![](/agent/artifacts/…) 이 로드한다.
+    GET+세션쿠키(CSRF 불요), 파일명은 agent-server 가 재검증."""
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", name):
+        return Response(status_code=404)
+    client = _agent_client(request)
+    try:
+        r = await client.get(f"{settings.agent_server_url}/artifacts/{name}")
+        if r.status_code != 200:
+            return Response(status_code=404)
+        return Response(content=r.content,
+                        media_type=r.headers.get("content-type", "application/octet-stream"),
+                        headers={"Cache-Control": "private, max-age=86400"})
+    except httpx.HTTPError:
+        return Response(status_code=502)
 
 
 class CatalogAgentRequest(BaseModel):

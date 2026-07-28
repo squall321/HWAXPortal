@@ -9,6 +9,7 @@ export type Inline =
   | { t: 'em'; s: string }
   | { t: 'strike'; s: string }
   | { t: 'math'; s: string }
+  | { t: 'img'; s: string; href: string }
   | { t: 'link'; s: string; href: string };
 
 export type ListItem = { depth: number; text: string; task?: 'todo' | 'done' };
@@ -229,7 +230,7 @@ export function parseBlocks(text: string): Block[] {
 // — 알터네이션 순서가 우선순위. 이탤릭은 여는 * 뒤 비공백 요구(곱셈 기호 오탐 방지),
 // $..$ 는 양끝 비공백 요구(통화 표기 "500 $ 부족" 류 오탐 방지). 미완성 구문은 텍스트로 남는다.
 const RE_INLINE =
-  /(`[^`\n]+`)|(\\\([^\n]+?\\\))|(\$(?=\S)(?:[^$\n]*\S)?\$)|(\*\*[^*\n]+?\*\*)|(\*(?=\S)[^*\n]+?\*)|(~~[^~\n]+?~~)|(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g;
+  /(`[^`\n]+`)|(\\\([^\n]+?\\\))|(\$(?=\S)(?:[^$\n]*\S)?\$)|(\*\*[^*\n]+?\*\*)|(\*(?=\S)[^*\n]+?\*)|(~~[^~\n]+?~~)|(!\[[^\]\n]*\]\((?:https?:\/\/|\/)[^\s)]+\))|(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g;
 
 export function parseInline(s: string): Inline[] {
   const out: Inline[] = [];
@@ -244,6 +245,12 @@ export function parseInline(s: string): Inline[] {
     else if (m[4]) out.push({ t: 'bold', s: tok.slice(2, -2) });
     else if (m[5]) out.push({ t: 'em', s: tok.slice(1, -1) });
     else if (m[6]) out.push({ t: 'strike', s: tok.slice(2, -2) });
+    else if (m[7]) {
+      // 이미지 ![alt](url) — http(s) 또는 절대경로(/agent/artifacts/… 도구 산출 그래프)
+      const im = tok.match(/^!\[([^\]\n]*)\]\(((?:https?:\/\/|\/)[^\s)]+)\)$/);
+      if (im) out.push({ t: 'img', s: im[1], href: im[2] });
+      else out.push({ t: 'text', s: tok });
+    }
     else {
       const lm = tok.match(/^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)$/);
       if (lm) out.push({ t: 'link', s: lm[1], href: lm[2] });

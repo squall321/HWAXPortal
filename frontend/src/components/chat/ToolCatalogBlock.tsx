@@ -12,6 +12,7 @@ export function ToolCatalogBlock({ catalog }: { catalog: ToolCatalog }) {
   // 초안 선택 — 현재 지정 도구에서 시작(카드 재방문 시에도 상태 일치). 확정 전엔 저장 안 함.
   const [draft, setDraft] = useState<Set<string>>(() => new Set(pinnedTools));
   const [query, setQuery] = useState('');
+  const [group, setGroup] = useState('');   // 소유 MCP 앱 필터(계층 1단)
   const [applied, setApplied] = useState(false);
 
   const toggle = (name: string) =>
@@ -26,15 +27,28 @@ export function ToolCatalogBlock({ catalog }: { catalog: ToolCatalog }) {
   const byName = useMemo(() => new Map(catalog.all.map((t) => [t.name, t])), [catalog.all]);
   const recNames = useMemo(() => new Set(catalog.recommended.map((t) => t.name)), [catalog.recommended]);
 
-  // 검색 목록 — 검색어 없으면 추천 제외 전체(이름순), 있으면 이름/설명 부분일치.
+  // 앱(소유 MCP)별 목록 — 166개를 평평하게 훑지 않고 '어느 앱의 기능인지'로 먼저 좁힌다.
+  const groups = useMemo(() => {
+    const m = new Map<string, { label: string; n: number }>();
+    for (const t of catalog.all) {
+      const k = t.group || '';
+      if (!k) continue;
+      const cur = m.get(k);
+      if (cur) cur.n += 1;
+      else m.set(k, { label: t.group_label || k, n: 1 });
+    }
+    return [...m.entries()].sort((a, b) => b[1].n - a[1].n);
+  }, [catalog.all]);
+
+  // 검색 목록 — 앱 필터 + 검색어(둘 다 없으면 추천 제외 전체).
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const pool = catalog.all.filter((t) => !recNames.has(t.name));
-    if (!q) return pool.slice(0, LIST_LIMIT);
-    return catalog.all
-      .filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q))
-      .slice(0, LIST_LIMIT);
-  }, [query, catalog.all, recNames]);
+    let pool = catalog.all;
+    if (group) pool = pool.filter((t) => t.group === group);
+    if (q) return pool.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q)).slice(0, LIST_LIMIT);
+    if (!group) pool = pool.filter((t) => !recNames.has(t.name));
+    return pool.slice(0, LIST_LIMIT);
+  }, [query, group, catalog.all, recNames]);
 
   const draftList = useMemo(() => [...draft], [draft]);
   const dirty = useMemo(() => {
@@ -77,6 +91,14 @@ export function ToolCatalogBlock({ catalog }: { catalog: ToolCatalog }) {
 
       <div className="tc-sec">
         <div className="tc-sec-title">직접 검색·추가</div>
+        <select className="tc-group" value={group} onChange={(e) => setGroup(e.target.value)} aria-label="MCP 앱 선택">
+          <option value="">전체 앱 ({catalog.all.length}개 도구)</option>
+          {groups.map(([k, g]) => (
+            <option key={k} value={k}>
+              {g.label} ({g.n})
+            </option>
+          ))}
+        </select>
         <input
           className="tc-search"
           type="text"
@@ -94,6 +116,7 @@ export function ToolCatalogBlock({ catalog }: { catalog: ToolCatalog }) {
                 <label className="tc-item">
                   <input type="checkbox" checked={draft.has(t.name)} onChange={() => toggle(t.name)} />
                   <span className="tc-name">{t.name}</span>
+                  {!group && t.group_label && <span className="tc-app">{t.group_label}</span>}
                   <span className="tc-desc">{t.desc}</span>
                 </label>
               </li>

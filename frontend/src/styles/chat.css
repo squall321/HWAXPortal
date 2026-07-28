@@ -48,7 +48,7 @@
 
 /* 유저: 우측 정렬 버블 / 어시스턴트: 클로드처럼 좌측 와이드 플레인 텍스트 */
 .msg-bubble {
-  max-width: 85%;
+  max-width: 92%;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.05);
   padding: 0.65rem 0.95rem;
@@ -381,9 +381,11 @@ ol.md-list li.md-li-d2 {
   opacity: 0.4;
 }
 
-/* html/svg 미리보기 — sandbox iframe. 기본 360px, 우하단 네이티브 핸들로 세로 리사이즈 */
+/* html/svg 미리보기 — sandbox iframe. 대화 폭 전체를 쓰고 세로는 핸들로 조절.
+   (좁은 고정 폭에서 차트가 잘려 좌우 스크롤이 생기던 문제 — 폭을 100%로 펴서 해소) */
 .preview-wrap {
-  height: 360px;
+  width: 100%;
+  height: 460px;
   min-height: 120px;
   max-height: 85vh;
   resize: vertical;
@@ -1077,3 +1079,9 @@ body.dock-open .container {
   font-size: 0.78rem; padding: 0; display: inline-flex; align-items: center; justify-content: center;
 }
 .composer-pin-x:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* 마크다운 이미지 — 도구 산출 그래프(![](…)) */
+.md-img { display: block; max-width: 100%; border-radius: 10px; margin: 0.45rem 0; border: 1px solid var(--border); background: #fff; }
+.tc-group { width: 100%; margin-bottom: 0.4rem; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--fg); font-size: 0.82rem; }
+.tc-group:focus { outline: none; border-color: var(--cx-accent); }
+.tc-app { font-size: 0.68rem; color: var(--cx-accent); background: var(--cx-accent-soft); border-radius: 999px; padding: 0.02rem 0.4rem; white-space: nowrap; }

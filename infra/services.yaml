@@ -43,6 +43,16 @@ services:
     health: http://localhost:5173/
     tier: 10
 
+  # VoiceRecorder — 내레이션 스크립트 → 음성(mp3). torch(cu130)+Chatterbox 메인 venv 와
+  # CosyVoice 사이드카(.venv-cosy)를 쓰는 무거운 앱이라 heax-hub SIF 에 안 담긴다. 자체 venv 로
+  # 도는 독립 서비스로 등록(mx-white-paper 방식). GPU 여유 없으면 Chatterbox 는 CPU 폴백.
+  - name: voice-recorder
+    host: local
+    discover: VoiceRecorder
+    start: ./scripts/serve.sh
+    health: http://localhost:8177/api/health
+    tier: 10
+
   - name: heax-hub
     host: local
     discover: HEAXHub

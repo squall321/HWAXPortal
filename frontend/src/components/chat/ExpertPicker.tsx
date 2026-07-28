@@ -42,6 +42,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
   // 선택 도구 — 기본 빈 집합(자동 파이프라인 도구는 항상 돌아감). 고르면 실제 호출돼 근거 주입.
   const [toolSel, setToolSel] = useState<Set<string>>(new Set());
   const [toolQuery, setToolQuery] = useState('');
+  const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터
   const seededRef = useRef(false);
 
   // 관련도순 랭킹 — candidates(≈40) 우선, 없으면 recommended 폴백.
@@ -144,13 +145,24 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
       else if (next.size < MAX_TOOLS) next.add(name);
       return next;
     });
+  const toolGroups = useMemo(() => {
+    const m = new Map<string, { label: string; n: number }>();
+    for (const t of toolAll) {
+      const k = t.group || '';
+      if (!k) continue;
+      const c = m.get(k);
+      if (c) c.n += 1; else m.set(k, { label: t.group_label || k, n: 1 });
+    }
+    return [...m.entries()].sort((a, b) => b[1].n - a[1].n);
+  }, [toolAll]);
+  // 앱으로 먼저 좁히고(계층 1단) 그 안에서 검색.
   const toolResults = useMemo(() => {
     const q = toolQuery.trim().toLowerCase();
-    if (!q) return [];
-    return toolAll
-      .filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q))
-      .slice(0, TOOL_LIST_LIMIT);
-  }, [toolQuery, toolAll]);
+    let pool = toolAll;
+    if (toolGroup) pool = pool.filter((t) => t.group === toolGroup);
+    if (!q) return toolGroup ? pool.slice(0, TOOL_LIST_LIMIT) : [];
+    return pool.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q)).slice(0, TOOL_LIST_LIMIT);
+  }, [toolQuery, toolGroup, toolAll]);
 
   return (
     <div className="cx-ep">
@@ -288,6 +300,12 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
                   ))}
                 </ul>
               )}
+              <select className="sp-domain" value={toolGroup} onChange={(e) => setToolGroup(e.target.value)} aria-label="MCP 앱 선택">
+                <option value="">앱 선택… (전체 {toolAll.length}개)</option>
+                {toolGroups.map(([k, g]) => (
+                  <option key={k} value={k}>{g.label} ({g.n})</option>
+                ))}
+              </select>
               <input
                 className="cx-ep-search"
                 type="text"
@@ -296,7 +314,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
                 placeholder="도구 검색 (예: predict_sed, warpage, voc)"
                 aria-label="도구 검색"
               />
-              {toolQuery.trim() && (
+              {(toolQuery.trim() || toolGroup) && (
                 <ul className="cx-ep-results">
                   {toolResults.length === 0 ? (
                     <li className="cx-ep-empty">일치하는 도구가 없습니다.</li>

@@ -21,6 +21,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const [agentSel, setAgentSel] = useState<string | null>(pinnedAgent);
   const [toolSel, setToolSel] = useState<Set<string>>(() => new Set(pinnedTools));
   const [toolFilter, setToolFilter] = useState('');
+  const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터
   const [domain, setDomain] = useState('');
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -67,11 +68,24 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
 
   const toolAll = useMemo(() => res?.tools?.all ?? [], [res]);
   const toolRec = res?.tools?.recommended ?? [];
+  const toolGroups = useMemo(() => {
+    const m = new Map<string, { label: string; n: number }>();
+    for (const t of toolAll) {
+      const k = t.group || '';
+      if (!k) continue;
+      const c = m.get(k);
+      if (c) c.n += 1; else m.set(k, { label: t.group_label || k, n: 1 });
+    }
+    return [...m.entries()].sort((a, b) => b[1].n - a[1].n);
+  }, [toolAll]);
+  // 앱으로 먼저 좁히고(계층 1단) 그 안에서 검색 — 평평한 166개 훑기를 피한다.
   const toolResults = useMemo(() => {
     const q = toolFilter.trim().toLowerCase();
-    if (!q) return [];
-    return toolAll.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q)).slice(0, 15);
-  }, [toolFilter, toolAll]);
+    let pool = toolAll;
+    if (toolGroup) pool = pool.filter((t) => t.group === toolGroup);
+    if (!q) return toolGroup ? pool.slice(0, 15) : [];
+    return pool.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q)).slice(0, 15);
+  }, [toolFilter, toolGroup, toolAll]);
 
   const toggleTool = (name: string) =>
     setToolSel((prev) => {
@@ -196,6 +210,12 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
                 ))}
               </ul>
             )}
+            <select className="sp-domain" value={toolGroup} onChange={(e) => setToolGroup(e.target.value)} aria-label="MCP 앱 선택">
+              <option value="">앱 선택… (전체 {toolAll.length}개)</option>
+              {toolGroups.map(([k, g]) => (
+                <option key={k} value={k}>{g.label} ({g.n})</option>
+              ))}
+            </select>
             <input
               className="sp-search sp-search-sm"
               type="text"
@@ -204,7 +224,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
               placeholder={`전체 ${toolAll.length}개 도구 검색`}
               aria-label="도구 검색"
             />
-            {toolFilter.trim() && (
+            {(toolFilter.trim() || toolGroup) && (
               <ul className="sp-list sp-scroll">
                 {toolResults.length === 0 ? (
                   <li className="sp-empty">일치 없음</li>

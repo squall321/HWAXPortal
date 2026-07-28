@@ -2,6 +2,9 @@
 
 :root {
   --sb-w: 272px;
+  /* 대화 본문 폭 — 창 크기를 따라 넓어진다(고정 780px 이 넓은 모니터에서 답답했던 문제).
+     넓은 화면에선 min() 의 vw 항이 커져 그래프·표가 여유롭게 들어온다. */
+  --cx-col-w: min(1400px, max(780px, 78vw));
 }
 
 .cx-root {
@@ -406,7 +409,7 @@
 }
 .cx-main .chat-col {
   width: 100%;
-  max-width: 780px;
+  max-width: var(--cx-col-w);
   margin: 0 auto;
   padding-bottom: 1.25rem;
 }
@@ -427,7 +430,7 @@
 /* 심의 대화 액션 바(RA 저장 등) — 컴포저 위 우측 정렬 */
 .cx-delib-actions {
   width: 100%;
-  max-width: 780px;
+  max-width: var(--cx-col-w);
   margin: 0 auto 0.5rem;
   display: flex;
   justify-content: flex-end;
@@ -436,7 +439,7 @@
 
 .cx-composer-dock .composer {
   width: 100%;
-  max-width: 780px;
+  max-width: var(--cx-col-w);
   margin: 0 auto;
   pointer-events: auto;
 }

@@ -92,13 +92,23 @@ export interface PoolExpert {
   name: string;
   tags: string[];
 }
+export interface ToolEntry {
+  name: string;
+  desc: string;
+  score?: number;
+  /** 소유 MCP 앱 키(게이트웨이 백엔드) — 계층 선택용. */
+  group?: string;
+  /** 사람이 읽는 앱 이름(예: 열충격 해석). */
+  group_label?: string;
+}
+
 export interface ExpertsTools {
   /** 주제 관련도순 추천 도구 — 선택하면 심의에서 실제 호출돼 정량 근거로 주입. */
-  recommended: { name: string; desc: string; score?: number }[];
+  recommended: ToolEntry[];
   /** 심의 파이프라인이 자동 사용하는 도구(정보 표시 — 항상 돌아감). */
   pipeline: string[];
   /** 전체 도구 카탈로그 — 검색 추가용. */
-  all: { name: string; desc: string }[];
+  all: ToolEntry[];
 }
 
 export interface ExpertsResponse {

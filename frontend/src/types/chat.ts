@@ -80,6 +80,9 @@ export interface ToolInfo {
   name: string;
   desc: string;
   score?: number;
+  /** 소유 MCP 앱 키·이름 — 앱별 계층 선택용(게이트웨이 /tools-map 유래). */
+  group?: string;
+  group_label?: string;
 }
 export interface ToolCatalog {
   query?: string;

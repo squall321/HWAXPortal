@@ -4,6 +4,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { config } from '../../../config';
 import { copyText } from '../clipboard';
 import { IconCheck, IconCopy, IconExternal } from '../icons';
 import { parseBlocks, parseInline, type Block } from './md';
@@ -95,6 +96,11 @@ function renderInline(s: string, keyBase: string): ReactNode[] {
             {tok.s}
           </a>
         );
+      case 'img': {
+        // 도구 산출 그래프(/agent/artifacts/…)는 apiBase 경유 — 포털 프록시가 서빙.
+        const src = tok.href.startsWith('/') ? `${config.apiBase}${tok.href}` : tok.href;
+        return <img key={key} className="md-img" src={src} alt={tok.s || '이미지'} loading="lazy" />;
+      }
       default:
         return tok.s;
     }
