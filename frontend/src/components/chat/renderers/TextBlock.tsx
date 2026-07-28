@@ -1,7 +1,7 @@
 // 안전 마크다운 렌더러 — md.ts 파서의 블록 AST(제목/구분선/표/목록/인용/문단)와 인라인 서식을
 // React 노드로 변환(HTML 미주입, 스트리밍 커서 지원). 코드펜스는 기존 세그먼트 분리 유지,
 // html/svg 펜스는 sandbox iframe 미리보기 지원(포털 문서에 직접 주입하지 않음 — XSS 격리).
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { config } from '../../../config';
@@ -32,6 +32,43 @@ function MathSpan({ tex, display }: { tex: string; display: boolean }) {
   ) : (
     <span className="md-math-i" dangerouslySetInnerHTML={{ __html: html }} />
   );
+}
+
+// 지식 구조도 — ```mermaid 펜스를 코드가 아니라 실제 다이어그램으로 렌더한다(표와 같은 대우).
+// 라이브러리는 동적 import 라 초기 번들에 안 실리고, 로컬 번들이라 폐쇄망에서도 동작한다.
+let _mermaidReady: Promise<typeof import('mermaid').default> | null = null;
+function loadMermaid() {
+  if (!_mermaidReady) {
+    _mermaidReady = import('mermaid').then((m) => {
+      m.default.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',   // 스크립트·클릭 핸들러 차단
+        theme: 'dark',
+        fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+      });
+      return m.default;
+    });
+  }
+  return _mermaidReady;
+}
+
+function MermaidBlock({ code }: { code: string }) {
+  const [svg, setSvg] = useState('');
+  const [err, setErr] = useState('');
+  const id = useMemo(() => `mmd-${Math.random().toString(36).slice(2, 10)}`, []);
+  useEffect(() => {
+    let dead = false;
+    void loadMermaid()
+      .then((mm) => mm.render(id, code))
+      .then((r) => { if (!dead) { setSvg(r.svg); setErr(''); } })
+      .catch((e) => { if (!dead) setErr(String(e?.message ?? e)); });
+    return () => { dead = true; };
+  }, [code, id]);
+  // 실패 시 원문을 코드로 보여 준다 — 스트리밍 중 미완성 구문이면 곧 성공한다.
+  if (err) return <pre className="md-mermaid-err">{code}</pre>;
+  if (!svg) return <div className="md-mermaid-load">구조도 그리는 중…</div>;
+  // mermaid 가 생성한 SVG — securityLevel:'strict' 로 스크립트가 제거된 산출물이다.
+  return <div className="md-mermaid" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 type Segment =
@@ -383,7 +420,9 @@ export function TextBlock({ text, cursor = false }: { text: string; cursor?: boo
   return (
     <div className="chat-text">
       {segments.map((seg, i) =>
-        seg.kind === 'code' && !shouldUnwrapAsMarkdown(seg) ? (
+        seg.kind === 'code' && seg.lang.trim().toLowerCase() === 'mermaid' && seg.closed ? (
+          <MermaidBlock key={i} code={seg.body} />
+        ) : seg.kind === 'code' && !shouldUnwrapAsMarkdown(seg) ? (
           <CodeBlock key={i} lang={seg.lang} body={seg.body} closed={seg.closed} cursor={cursor && i === lastIdx} />
         ) : (
           <span key={i} className="chat-text-seg">

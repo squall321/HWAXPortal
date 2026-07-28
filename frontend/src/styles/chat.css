@@ -1089,3 +1089,9 @@ body.dock-open .container {
 /* 심의 '쉬운 설명' 카드 — 정식 단계(explain) 산출물, 결정문과 시각적으로 구분 */
 .dv-plain { margin-top: 0.9rem; padding: 0.85rem 1rem; border: 1px solid var(--cx-accent); border-radius: 14px; background: var(--cx-accent-soft); }
 .dv-plain .dv-round-div.chair { margin-top: 0; }
+
+/* 지식 구조도(mermaid) — 표처럼 본문에 자연스럽게 들어가고, 넓으면 자체 스크롤 */
+.md-mermaid { margin: 0.5rem 0; padding: 0.6rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.md-mermaid svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+.md-mermaid-load { margin: 0.5rem 0; padding: 0.7rem; color: var(--muted); font-size: 0.82rem; border: 1px dashed var(--border); border-radius: 12px; }
+.md-mermaid-err { margin: 0.5rem 0; padding: 0.6rem; overflow-x: auto; font-family: var(--cx-mono); font-size: 0.78rem; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; }
