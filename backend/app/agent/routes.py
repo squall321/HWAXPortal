@@ -42,7 +42,7 @@ SSE_HEADERS = {
 
 class ChatHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str = Field(max_length=4000)  # per-item cap — no unbounded input (DoS)
+    content: str = Field(max_length=24000)  # per-item cap — no unbounded input (DoS)
 
 
 class DelibOpts(BaseModel):
@@ -66,10 +66,10 @@ class DelibOpts(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=8192)  # cap payload — no unbounded input (DoS)
+    message: str = Field(min_length=1, max_length=65536)  # cap payload — no unbounded input (DoS)
     system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
     # 멀티턴 컨텍스트: 오래된 것→최신 순, 이번 message는 포함하지 않는다(agent-server 계약).
-    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=40)
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
     # 있으면 이 대화(서버 정본)에 user+assistant 를 저장한다. 없으면 저장 안 함(하위호환).
     conversation_id: str | None = Field(default=None, max_length=64)
     # 심의 손잡이 오버라이드 — 심의(/심의) 요청에서만 의미. agent-server 로 그대로 포워딩.

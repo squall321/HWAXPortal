@@ -72,9 +72,9 @@ interface ChatContextValue {
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
 // 서버 캡(40항목/4000자)에 걸려 422가 나지 않도록 프론트에서도 자른다.
-const HISTORY_MAX_ITEMS = 20;
-const HISTORY_MAX_ITEM_CHARS = 4000;
-const HISTORY_MAX_TOTAL_CHARS = 16000;
+const HISTORY_MAX_ITEMS = 60;
+const HISTORY_MAX_ITEM_CHARS = 20000;
+const HISTORY_MAX_TOTAL_CHARS = 180000;
 
 /** 멀티턴 history: 활성 대화의 기존 메시지 → 계약 형식(오래된 것→최신 순, 이번 발화 제외). */
 function buildHistory(messages: Message[]): HistoryMessage[] {
