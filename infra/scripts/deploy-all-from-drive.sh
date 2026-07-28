@@ -152,7 +152,10 @@ if want heax; then
       git_update
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
-      ./deploy/apptainer/dist-from-drive.sh   # frontend/dist (+ optional caddy sif)
+      ./deploy/apptainer/dist-from-drive.sh   # frontend/dist + 런타임 + base/서비스 + per-app SIF
+      # 폐쇄망 pip/npm 미러(var/pkg-mirror) — 서버가 SIF 를 직접 빌드할 때의 의존성 소스.
+      # 미리 받은 SIF(dist-from-drive)로 도는 앱엔 불필요하나, git 소스 빌드 앱엔 필요. 비치명적.
+      [ -x deploy/apptainer/mirror-from-drive.sh ] && bash deploy/apptainer/mirror-from-drive.sh || true
       # 앱 데이터(materialtwin 재료 DB 등) MERGE(비파괴 — dev 신규 추가 + cae00 데이터 보존).
       # merge 스크립트 있으면 그것, 없으면 기존 보존 복원으로 폴백. 둘 다 비치명적.
       if [ -x deploy/apptainer/appdata-merge-from-drive.sh ]; then
