@@ -152,15 +152,15 @@ if [ -n "${AGENT_DIR:-}" ]; then
     *@FROM_RA:*) bad "VLLM_BASE_URL 아직 마커 — apply-envs 치환 실패(RA .env 의 LLM_BASE_URL 확인)" ;;
     *)           ok "VLLM_BASE_URL=$VB" ;;
   esac
-  # TOOL_MAX 캡 해제(prod) — 양수면 게이트웨이 도구를 잘라 heax 등 일부가 챗에 안 실린다.
-  # 프로드는 대형 컨텍스트 GLM 이라 전량 바인딩이 옳다 → 양수 TOOL_MAX 줄 제거(기본 0=무제한).
-  # (TOOL_MAX 는 소형 dev 모델 보호용이라 dev .env 에만 두고, prod=update-all 은 자동 해제.)
+  # TOOL_MAX 정리(prod) — dev 전용 소형 캡(40 등)을 제거해 agent-server 기본값(80)을 쓰게 한다.
+  # 80 은 '무조건 절단'이 아니라 질의 관련도(어휘+시맨틱 RRF) 상위 80개 선택이라, 도구가 수백 개로
+  # 늘어도 필요한 도구가 남고 컨텍스트도 보호된다. 전량 바인딩이 필요하면 .env 에 TOOL_MAX=0 명시.
   TM="$(grep -E '^TOOL_MAX=' "$AGENT_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
   if [ -n "${TM:-}" ] && [ "${TM:-0}" -gt 0 ] 2>/dev/null; then
     sed -i '/^TOOL_MAX=/d' "$AGENT_ENV"
-    ok "TOOL_MAX=$TM 제거 → 무제한(0) — heax 등 전체 도구 챗 바인딩"
+    ok "TOOL_MAX=$TM 제거 → 기본 80(질의 관련도 상위 선택)"
   else
-    ok "TOOL_MAX 무제한(미설정/0) — 전체 도구 바인딩"
+    ok "TOOL_MAX 미설정 → 기본 80(질의 관련도 상위 선택)"
   fi
 else
   echo "  · HWAXAgentServer 레포 미발견 — 건너뜀"
