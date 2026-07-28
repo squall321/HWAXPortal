@@ -140,7 +140,13 @@ export function parseBlocks(text: string): Block[] {
           } else {
             items.push({ depth, text: m[4] });
           }
-        } else if (lines[j].match(/^\s{2,}\S/) && items.length) {
+        } else if (
+          lines[j].match(/^\s{2,}\S/) &&
+          items.length &&
+          // 들여쓴 표 시작(헤더행+구분행)은 연속행으로 삼키지 않는다 — 삼키면 표가
+          // 파이프 원문 그대로 노출된다. 목록을 끊고 표 파서가 처리하게 한다.
+          !(lines[j].includes('|') && j + 1 < lines.length && RE_TABLE_SEP.test(lines[j + 1]) && lines[j + 1].includes('-'))
+        ) {
           // 들여쓴 연속행은 직전 항목에 붙인다
           items[items.length - 1].text += '\n' + lines[j].trim();
         } else {

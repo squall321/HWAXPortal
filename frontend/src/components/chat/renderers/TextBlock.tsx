@@ -352,13 +352,32 @@ function CodeBlock({ lang, body, closed, cursor }: { lang: string; body: string;
   );
 }
 
+// 마크다운 표 시작(헤더행 + 구분행) 감지 — 언랩 판단용.
+const RE_MD_TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+function containsMdTable(body: string): boolean {
+  const lines = body.split('\n');
+  for (let i = 0; i + 1 < lines.length; i++) {
+    if (lines[i].includes('|') && lines[i + 1].includes('-') && RE_MD_TABLE_SEP.test(lines[i + 1])) return true;
+  }
+  return false;
+}
+
+// LLM(특히 심의 발언)이 표·요약을 ```markdown 펜스로 감싸면 코드로 렌더돼 원문(파이프)이
+// 그대로 보인다. lang 이 markdown/md 이거나, lang 없는 닫힌 펜스에 마크다운 표가 들어 있으면
+// 코드가 아니라 마크다운으로 풀어 렌더한다(실제 코드 펜스는 lang 이 붙거나 표가 없어 안전).
+function shouldUnwrapAsMarkdown(seg: { lang: string; body: string; closed: boolean }): boolean {
+  const lang = seg.lang.trim().toLowerCase();
+  if (lang === 'markdown' || lang === 'md') return seg.closed;
+  return seg.closed && lang === '' && containsMdTable(seg.body);
+}
+
 export function TextBlock({ text, cursor = false }: { text: string; cursor?: boolean }) {
   const segments = splitFences(text);
   const lastIdx = segments.length - 1;
   return (
     <div className="chat-text">
       {segments.map((seg, i) =>
-        seg.kind === 'code' ? (
+        seg.kind === 'code' && !shouldUnwrapAsMarkdown(seg) ? (
           <CodeBlock key={i} lang={seg.lang} body={seg.body} closed={seg.closed} cursor={cursor && i === lastIdx} />
         ) : (
           <span key={i} className="chat-text-seg">
