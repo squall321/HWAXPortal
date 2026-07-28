@@ -29,6 +29,7 @@ export const meta = {
     { title: '심화라운드', detail: '상호 반박·수치 심화 (가변 회차, 병렬)' },
     { title: '수렴', detail: '최종 입장·투표 (병렬)' },
     { title: 'Decision', detail: '의사결정문 합성' },
+    { title: 'Explain', detail: '비전문가용 쉬운 설명 — 정식 절차' },
   ],
 }
 
@@ -174,6 +175,19 @@ const decision = await agent(
   `산출: ## 의사결정문 — (1) 결정사항(번호매김, 명확·실행가능하게), (2) 합의 근거(라운드를 거치며 어떻게 수렴했는지), (3) 반대/소수의견과 처리, (4) 미해결 쟁점 + 담당·다음 액션, (5) 결정 신뢰도·전제. 라운드별 입장 심화·수렴 과정을 반드시 드러내라.${DECISION_CONT_NOTE}`,
   { label: 'decision', phase: 'Decision' })
 
+// 쉬운 설명 — 챗 파이프라인(deliberation.py)과 동일한 정식 심의 절차. 의결 뒤에 붙는다.
+// 여기 없으면 MCP 경로 결정문만 비전문가용 정리가 빠져 두 경로가 어긋난다.
+phase('Explain')
+const plain = await agent(
+  `당신은 어려운 기술 결정을 비전문가에게 설명하는 사람이다. 쉬운 말로, 과장 없이.\n\n` +
+  `다음 의사결정문을 처음 보는 사람도 이해하게 정리하라. 형식:\n` +
+  `### 한마디로\n(무엇을 하라는 것인지 한 문장)\n` +
+  `### 왜 그런가\n(핵심 근거 2~3개 — 수치가 있으면 쉬운 말로 풀어서)\n` +
+  `### 당장 할 일 / 다음에 할 일 / 하지 말 것\n(각 2~4개 불릿, 전문용어는 괄호로 풀어쓰기)\n` +
+  `새로운 내용을 지어내지 말고 원문에 있는 것만 쉽게 바꿔라.\n\n${decision.slice(0, 12000)}`,
+  { label: 'explain', phase: 'Explain' })
+const decisionFull = plain ? `${decision}\n\n---\n\n■ 쉬운 설명\n${plain}` : decision
+
 // Report Archive 저장 — MCP 경로도 포털 챗과 동일하게 웹(RA)에 보고서를 남긴다.
 // (챗 deliberation.py 와 같은 template_id/blocks + 대화체 회의록). saveReport:false 로 끄면
 // 반환만 하고 저장 안 함(호출자가 직접 보고서화하고 싶을 때). appendToReportId 가 있으면 새 보고서
@@ -198,7 +212,7 @@ if (A.saveReport !== false) {
   const blocks = {
     background: backgroundBlock,
     results: [preFinalText.slice(0, 4000)],
-    recommendation: String(decision).split('\n\n').map(s => s.trim()).filter(Boolean).slice(0, 40),
+    recommendation: String(decisionFull).split('\n\n').map(s => s.trim()).filter(Boolean).slice(0, 40),
     minutes: [`참여: ${pk.join(', ')}`, `${ROUNDS}라운드 심의(${rn(1)}라운드→${MID_ROUNDS > 0 ? `심화 ${MID_ROUNDS}회→` : ''}${finalRoundNo}라운드 수렴).`, ...trimmedMinutes.slice(0, 60)],
   }
   // RA 부재/실패는 비치명적 — cae00 는 RA 가 안 떠 있을 수 있다(hands-off). 저장 실패해도
@@ -239,7 +253,7 @@ if (A.saveConversation !== false) {
     const isLast = idx === roundsData.length - 1
     rd.filter(Boolean).forEach(o => msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: readable(isFirst, isLast, o).slice(0, 2000) }))
   })
-  msgs.push({ role: 'assistant', content: String(decision).slice(0, 8000) })
+  msgs.push({ role: 'assistant', content: String(decisionFull).slice(0, 24000) })
   try {
     conversation = await agent(
       `save_conversation 도구가 사용 가능하면 호출해 아래 심의 대화 로그를 포털 대화 저장소에 저장하라.\n` +
@@ -262,7 +276,8 @@ return {
   question: Q,
   rounds: roundsData.map(rd => rd.filter(Boolean)),
   roundLabels,
-  decision,
+  decision: decisionFull,
+  plain,
   report,
   conversation,
   nextRoundOffset: finalRoundNo,   // 다음 이어하기 호출의 continueFrom.roundsSoFar 로 그대로 전달
