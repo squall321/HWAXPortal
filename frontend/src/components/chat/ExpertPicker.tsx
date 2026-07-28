@@ -135,6 +135,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
 
   // ── 도구 선택 — 자동 파이프라인 도구는 항상 돌아가고, 여기서 고른 도구는 추가로 실호출된다.
   const toolRec = experts?.tools?.recommended ?? [];
+  const expertTools = experts?.tools?.expert_tools ?? [];
   const toolPipeline = experts?.tools?.pipeline ?? [];
   const toolAll = useMemo(() => experts?.tools?.all ?? [], [experts]);
   const toolFull = toolSel.size >= MAX_TOOLS;
@@ -281,6 +282,30 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
                   자동 사용(파이프라인): {toolPipeline.join(' · ')} — 아래에서 고른 도구는 추가로 실제
                   호출돼 정량 근거로 주입됩니다.
                 </p>
+              )}
+              {expertTools.length > 0 && (
+                <>
+                  <p className="cx-ep-subtle">선정 전문가가 쓰는 도구 — 담당 전문가와 짝지어진 도구입니다.</p>
+                  <ul className="cx-ep-results">
+                    {expertTools.slice(0, 6).map((t) => (
+                      <li key={`et-${t.name}`}>
+                        <label className="cx-ep-tool">
+                          <input
+                            type="checkbox"
+                            checked={toolSel.has(t.name)}
+                            onChange={() => toggleTool(t.name)}
+                            disabled={!toolSel.has(t.name) && toolFull}
+                          />
+                          <span className="cx-ep-name">{t.name}</span>
+                          {t.agents && t.agents.length > 0 && (
+                            <span className="cx-ep-score">👤 {t.agents.slice(0, 2).join(', ')}</span>
+                          )}
+                          <span className="cx-ep-tags">{t.desc}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               )}
               {toolRec.length > 0 && (
                 <ul className="cx-ep-results">

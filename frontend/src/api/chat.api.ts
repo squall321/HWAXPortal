@@ -107,6 +107,8 @@ export interface ExpertsTools {
   recommended: ToolEntry[];
   /** 심의 파이프라인이 자동 사용하는 도구(정보 표시 — 항상 돌아감). */
   pipeline: string[];
+  /** 전문가가 쓰는 도구 — AIDH 가 관리하는 도구↔에이전트 연결(compatible_agents). */
+  expert_tools?: (ToolEntry & { agents?: string[] })[];
   /** 전체 도구 카탈로그 — 검색 추가용. */
   all: ToolEntry[];
 }
