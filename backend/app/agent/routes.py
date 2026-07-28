@@ -285,6 +285,27 @@ async def _relay_stream(
     audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok")
 
 
+class CatalogAgentRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=120)
+
+
+@router.post("/catalog/agent")
+async def catalog_agent(
+    request: Request,
+    body: CatalogAgentRequest,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """전문가 상세+보유 지식 — 브라우즈 UI 용 프록시(비스트리밍 JSON)."""
+    client = _agent_client(request)
+    try:
+        r = await client.post(f"{settings.agent_server_url}/catalog/agent",
+                              json={"key": body.key, "groups": principal.groups})
+        return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}"}
+    except httpx.HTTPError:
+        return {"error": "agent_unreachable"}
+
+
 class ExpertsRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
 

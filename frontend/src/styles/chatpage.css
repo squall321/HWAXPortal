@@ -1054,3 +1054,26 @@
   background: var(--cx-accent); color: #0b0f1e; font-size: 0.84rem; font-weight: 700;
 }
 .sp-apply:hover { filter: brightness(1.08); }
+
+/* StartPicker 계층 브라우즈·상세 */
+.sp-dim { color: var(--muted); font-size: 0.74rem; font-weight: 400; }
+.sp-sub { margin: 0.5rem 0 0.25rem; font-weight: 600; }
+.sp-domain {
+  width: 100%; padding: 0.4rem 0.6rem; margin-top: 0.15rem;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); color: var(--fg); font-size: 0.82rem;
+}
+.sp-domain:focus { outline: none; border-color: var(--cx-accent); }
+.sp-detail {
+  margin-top: 0.9rem; padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.sp-detail-name { font-weight: 700; font-size: 0.88rem; }
+.sp-detail-role { margin: 0.4rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.55; }
+.sp-detail-list {
+  list-style: disc; margin: 0.2rem 0 0; padding-left: 1.1rem;
+  color: var(--fg); font-size: 0.78rem; line-height: 1.5;
+  display: block; max-height: 180px; overflow-y: auto;
+}
+.sp-detail-list li { margin-top: 0.15rem; }

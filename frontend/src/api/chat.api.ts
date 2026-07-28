@@ -135,6 +135,34 @@ export async function fetchDeliberateExperts(
   }
 }
 
+// ── 전문가 상세 + 보유 지식(카탈로그 브라우즈) ─────────────────────────────
+export interface AgentDetail {
+  key: string;
+  name: string;
+  role: string;
+  tags: string[];
+  samples: string[];
+  records: { id: string; title: string; data_type: string }[];
+  error?: string;
+}
+
+export async function fetchAgentDetail(key: string): Promise<AgentDetail> {
+  const csrf = getCookie('hwax_csrf');
+  const empty: AgentDetail = { key, name: key, role: '', tags: [], samples: [], records: [] };
+  try {
+    const res = await fetch(`${config.apiBase}/agent/catalog/agent`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify({ key }),
+    });
+    if (!res.ok) return { ...empty, error: `http_${res.status}` };
+    return { ...empty, ...(await res.json()) };
+  } catch {
+    return { ...empty, error: 'network' };
+  }
+}
+
 export async function streamChat(
   message: string,
   opts: {
