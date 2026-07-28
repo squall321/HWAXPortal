@@ -29,6 +29,7 @@ function stageList(total: number, seen: string[]): { id: string; label: string }
     { id: 'discover', label: '발굴' },
     ...rounds,
     { id: 'decide', label: '의결' },
+    { id: 'explain', label: '쉬운 설명' },
     { id: 'report', label: '보고' },
   ].filter((s) => s.id !== 'recall' || seen.includes('recall'));
 }
@@ -321,6 +322,17 @@ export function DelibView({ msg }: { msg: Message }) {
             <span>의장 · 의사결정문</span>
           </div>
           <TextBlock text={decision} />
+        </section>
+      )}
+      {/* 쉬운 설명 — 정식 심의 단계('explain')의 산출물. 결정문이 전문용어로 촘촘해
+          비전문가가 못 읽는 문제를 절차로 해소한다. 결정문 본문에도 포함되지만,
+          여기서 별도 카드로 강조해 '그래서 뭘 하라는 건지'가 바로 보이게 한다. */}
+      {d.plain && (
+        <section className="dv-plain">
+          <div className="dv-round-div chair">
+            <span>쉬운 설명 · 비전문가용 정리</span>
+          </div>
+          <TextBlock text={d.plain} />
         </section>
       )}
       <OutcomeCards d={d} />

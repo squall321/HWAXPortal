@@ -47,6 +47,8 @@ export interface DelibData {
   evidence?: { source: string; text: string; included: boolean }[];
   turns?: DelibTurn[];
   decision?: string;
+  /** 쉬운 설명 — 비전문가용 정리(정식 심의 단계 'explain' 산출물). */
+  plain?: string;
   outcome?: {
     report_id?: number | null;
     title?: string;
@@ -70,7 +72,7 @@ export interface DelibOpts {
 
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
 export interface DelibEvent {
-  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'outcome';
+  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome';
   [k: string]: unknown;
 }
 

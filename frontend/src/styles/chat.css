@@ -1085,3 +1085,7 @@ body.dock-open .container {
 .tc-group { width: 100%; margin-bottom: 0.4rem; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--fg); font-size: 0.82rem; }
 .tc-group:focus { outline: none; border-color: var(--cx-accent); }
 .tc-app { font-size: 0.68rem; color: var(--cx-accent); background: var(--cx-accent-soft); border-radius: 999px; padding: 0.02rem 0.4rem; white-space: nowrap; }
+
+/* 심의 '쉬운 설명' 카드 — 정식 단계(explain) 산출물, 결정문과 시각적으로 구분 */
+.dv-plain { margin-top: 0.9rem; padding: 0.85rem 1rem; border: 1px solid var(--cx-accent); border-radius: 14px; background: var(--cx-accent-soft); }
+.dv-plain .dv-round-div.chair { margin-top: 0; }

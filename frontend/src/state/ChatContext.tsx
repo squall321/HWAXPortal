@@ -135,6 +135,9 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'decision':
       d.decision = String(e.text ?? '');
       break;
+    case 'plain':
+      d.plain = String(e.text ?? '');
+      break;
     case 'outcome':
       d.outcome = {
         report_id: (e.report_id as number | null) ?? null,
