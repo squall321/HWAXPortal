@@ -43,15 +43,12 @@ services:
     health: http://localhost:5173/
     tier: 10
 
-  # VoiceRecorder — 내레이션 스크립트 → 음성(mp3). torch(cu130)+Chatterbox 메인 venv 와
-  # CosyVoice 사이드카(.venv-cosy)를 쓰는 무거운 앱이라 heax-hub SIF 에 안 담긴다. 자체 venv 로
-  # 도는 독립 서비스로 등록(mx-white-paper 방식). GPU 여유 없으면 Chatterbox 는 CPU 폴백.
-  - name: voice-recorder
-    host: local
-    discover: VoiceRecorder
-    start: ./scripts/serve.sh
-    health: http://localhost:8177/api/health
-    tier: 10
+  # VoiceRecorder(voice_recorder) · WebDesignAgents(web_design_agents) 는 여기서 관리하지
+  # 않는다 — 다른 HEAX 앱과 똑같이 **HEAXHub 가 SIF 로 빌드·서빙**한다(integrations/<slug>/,
+  # /apps/<slug>/ 서브경로). 무거운 의존성은 스택 .def 의 Stage 훅(scripts/heaxhub-build.sh)이
+  # 컨테이너에 심고(VR: torch+Chatterbox+Melo/Cosy 사이드카, WDA: chromium+ffmpeg+fonts),
+  # 가중치/데이터는 /data 볼륨으로 나른다. 예전엔 자체 venv 독립 서비스로 등록했으나
+  # SIF 경로와 이중 서빙이 돼 SIF 로 일원화했다.
 
   - name: heax-hub
     host: local
