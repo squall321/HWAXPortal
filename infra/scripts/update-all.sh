@@ -344,20 +344,53 @@ fi
 # 순수 웹앱(materialtwin_web·voice_recorder)은 Caddy 가 /apps/<id>/ 로 직접 서빙해 게이트웨이엔
 # 안 잡힌다. SIF 교체 후 앱 인스턴스가 미기동이면 여기서 404 로 잡힌다(과거엔 루트만 봐서 조용히 통과).
 # reconcile 이 부팅 직후 도는 데 시간이 걸릴 수 있어 몇 번 재시도.
-for app in materialtwin_web voice_recorder; do
+# 과거엔 (a) 하드코딩한 2개만, (b) Caddy(:4180) 직접만, (c) HTML 루트만 봤다. 그래서 실제
+# 파손 — 브라우저가 요청하는 자산이 nginx(:8088)에서 포털 SPA 로 떨어져 JS 자리에 HTML 이
+# 200 으로 오던 것 — 을 전부 통과시켰다. 이제 (a) 등록된 앱 전체를, (b) 사용자와 같은
+# nginx 경유로, (c) 첫 자산까지 받아 Content-Type 이 HTML 로 바뀌지 않는지 본다.
+HEAX_STATE_DIR="${HEAX_STATE_DIR:-$HOME/claude/HEAXHub/var/integration_state}"
+heax_apps=""
+[ -d "$HEAX_STATE_DIR" ] && heax_apps="$(ls "$HEAX_STATE_DIR"/*.json 2>/dev/null | while read -r f; do basename "$f" .json; done)"
+[ -n "$heax_apps" ] || heax_apps="materialtwin_web voice_recorder"
+for app in $heax_apps; do
   code=000
   for _try in 1 2 3 4 5; do
-    code=$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:4180/apps/$app/" 2>/dev/null || echo 000)
+    code=$(curl -s -o /dev/null -w '%{http_code}' -L -m 6 "http://127.0.0.1:8088/apps/$app/" 2>/dev/null || echo 000)
     { [ "$code" = "200" ] || [ "$code" = "304" ]; } && break
     sleep 3
   done
-  if [ "$code" = "200" ] || [ "$code" = "304" ]; then
-    ok "heax 앱 $app → $code (/apps/$app/ 서빙 정상)"
-  else
-    bad "heax 앱 $app → $code — /apps/$app/ 미서빙(앱 인스턴스 미기동/route 미등록)."
-    echo "      재기동: (heax 레포) bash deploy/apptainer/stop.sh && HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh"
-    echo "              또는 앱 하나만: bash deploy/apptainer/redeploy-app.sh $(echo "$app" | tr '_' '-')"
+  if [ "$code" != "200" ] && [ "$code" != "304" ]; then
+    # 401/403 = 비공개(visibility) 앱이거나 UI 없는 MCP 전용 — 파손이 아니라 정책이다.
+    if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+      ok "heax 앱 $app → $code (비공개/UI 없음 — 정상 정책)"
+    else
+      bad "heax 앱 $app → $code — /apps/$app/ 미서빙(앱 인스턴스 미기동/route 미등록)."
+      echo "      재기동: (heax 레포) bash deploy/apptainer/stop.sh && HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh"
+      echo "              또는 앱 하나만: bash deploy/apptainer/redeploy-app.sh $(echo "$app" | tr '_' '-')"
+    fi
+    continue
   fi
+  # 첫 자산을 브라우저와 동일하게 환산해 받아 본다 — HTML 이 오면 SPA 폴백에 먹힌 것이다.
+  html="$(curl -s -L -m 6 "http://127.0.0.1:8088/apps/$app/" 2>/dev/null || true)"
+  asset="$(printf '%s' "$html" | grep -oE '(src|href)="[^"]+\.(js|css)[^"]*"' | head -1 | sed -E 's/^(src|href)="//; s/"$//')"
+  if [ -z "$asset" ]; then
+    ok "heax 앱 $app → $code (외부 자산 없음 — 서빙 정상)"
+    continue
+  fi
+  case "$asset" in
+    /*)  aurl="http://127.0.0.1:8088$asset" ;;
+    ./*) aurl="http://127.0.0.1:8088/apps/$app/${asset#./}" ;;
+    *)   aurl="http://127.0.0.1:8088/apps/$app/$asset" ;;
+  esac
+  actype="$(curl -s -o /dev/null -w '%{content_type}' -m 6 "$aurl" 2>/dev/null || true)"
+  case "$actype" in
+    *text/html*)
+      bad "heax 앱 $app — 자산이 HTML 로 반환됨(SPA 폴백에 먹힘): $asset"
+      echo "      원인: 앱이 /apps/<id>/ 루트절대 URL 을 쓰는데 nginx 에 /apps/ 라우트가 없거나,"
+      echo "            Next 처럼 basePath 가 빌드에 안 구워진 경우. routes.env 의 apps= 라인 확인."
+      ;;
+    *) ok "heax 앱 $app → $code, 자산 $actype (서빙 정상)" ;;
+  esac
 done
 
 # ── 7) 챗 스모크 — /health 는 프로세스 생존만 본다. 실제 문장 하나를 보내 AI 응답이 오는지

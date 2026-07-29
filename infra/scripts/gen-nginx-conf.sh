@@ -16,8 +16,21 @@ loc_block() {  # $1=id  $2=url  (unquoted heredoc: ${} expands, \$ stays literal
   # and emit https://<host>/<id>/... rather than a prefix-less URL the portal would 404. For a nested
   # id like "mx-white-paper/api" the prefix is still the service root "/mx-white-paper".
   local svc="/${id%%/*}"
+  # ⚠️ nginx inheritance: proxy_set_header is inherited from the outer level ONLY when the current
+  # level declares NO proxy_set_header of its own. Declaring X-Forwarded-Prefix here therefore DROPS
+  # every outer header — Host, X-Real-IP, X-Forwarded-For/-Proto/-Host, and (worst) Upgrade/
+  # Connection. Measured effect: a WebSocket upgrade to /heax-hub/…/_stcore/stream came back 200
+  # instead of 101 (streamlit never connects), and prefix-aware backends lost the X-Forwarded-Host
+  # they use to rebuild public URLs. So re-declare the full set in every generated location.
   cat <<EOF
         location /${id}/ {
+            proxy_set_header Host              \$host;
+            proxy_set_header X-Real-IP         \$remote_addr;
+            proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_set_header X-Forwarded-Host  \$http_host;
+            proxy_set_header Upgrade           \$http_upgrade;
+            proxy_set_header Connection        \$connection_upgrade;
             proxy_set_header X-Forwarded-Prefix ${svc};
             proxy_pass ${url};
         }
