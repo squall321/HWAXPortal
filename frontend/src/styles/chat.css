@@ -1082,6 +1082,13 @@ body.dock-open .container {
 
 /* 마크다운 이미지 — 도구 산출 그래프(![](…)) */
 .md-img { display: block; max-width: 100%; border-radius: 10px; margin: 0.45rem 0; border: 1px solid var(--border); background: #fff; }
+
+/* 앱 산출물 영상 인라인 플레이어 — <p> 안에 들어가므로 span 을 블록으로 세운다 */
+.md-video-wrap { display: block; margin: 0.5rem 0; }
+.md-video { display: block; width: 100%; max-height: 60vh; border-radius: 10px; border: 1px solid var(--border); background: #000; }
+.md-video-open { display: inline-flex; align-items: center; gap: 0.3rem; margin-top: 0.35rem; font-size: 0.78rem; color: var(--cx-accent); text-decoration: none; }
+.md-video-open:hover { text-decoration: underline; }
+.md-video-open svg { width: 0.85em; height: 0.85em; }
 .tc-group { width: 100%; margin-bottom: 0.4rem; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--fg); font-size: 0.82rem; }
 .tc-group:focus { outline: none; border-color: var(--cx-accent); }
 .tc-app { font-size: 0.68rem; color: var(--cx-accent); background: var(--cx-accent-soft); border-radius: 999px; padding: 0.02rem 0.4rem; white-space: nowrap; }

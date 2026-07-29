@@ -252,7 +252,9 @@ export function parseInline(s: string): Inline[] {
       else out.push({ t: 'text', s: tok });
     }
     else {
-      const lm = tok.match(/^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)$/);
+      // 링크 [text](url) — http(s) 또는 같은 오리진 절대경로(/apps/… 앱 산출물 열람 URL).
+      // `\/(?!\/)` 로 프로토콜 상대(//evil.com)를 막고, 스킴이 없으니 javascript: 류도 불가.
+      const lm = tok.match(/^\[([^\]\n]+)\]\(((?:https?:\/\/|\/(?!\/))[^\s)]+)\)$/);
       if (lm) out.push({ t: 'link', s: lm[1], href: lm[2] });
       else out.push({ t: 'text', s: tok });
     }

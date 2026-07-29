@@ -107,6 +107,28 @@ function splitFences(text: string): Segment[] {
   return segments;
 }
 
+// ── 앱 산출물 영상 인라인 재생 ─────────────────────────────────────────────
+// 같은 오리진(/apps/<앱>/…)의 mp4 만 대상 — 외부 URL·다른 스킴은 링크로 남긴다. 서버가
+// 경로 경계를 다시 검사하므로 여기 판정은 "어떻게 보여줄지"만 결정한다.
+const RE_APP_VIDEO = /^\/apps\/[A-Za-z0-9._-]+\/[A-Za-z0-9._\-/]*(?:download\/(?:video|mp4)|\.mp4)$/;
+
+function isAppVideoHref(href: string): boolean {
+  return !href.includes('..') && RE_APP_VIDEO.test(href);
+}
+
+// <p> 안에 들어가므로 블록 요소(div) 대신 span + display:block 으로 감싼다(중첩 유효성).
+function VideoBlock({ href, label }: { href: string; label: string }) {
+  const src = `${config.apiBase}${href}`;
+  return (
+    <span className="md-video-wrap">
+      <video className="md-video" src={src} controls preload="metadata" playsInline />
+      <a className="md-video-open" href={src} target="_blank" rel="noopener noreferrer">
+        <IconExternal /> {label || '영상'} — 새 탭에서 열기
+      </a>
+    </span>
+  );
+}
+
 // 인라인 서식(md.ts parseInline) → React 노드. 링크는 http/https 만 파서가 통과시키며
 // 새 탭 + noopener 로만 연다. DelibView 발언 버블 등 인라인 전용 표면에서 재사용(InlineMd).
 function renderInline(s: string, keyBase: string): ReactNode[] {
@@ -127,12 +149,21 @@ function renderInline(s: string, keyBase: string): ReactNode[] {
         return <del key={key}>{tok.s}</del>;
       case 'math':
         return <MathSpan key={key} tex={tok.s} display={false} />;
-      case 'link':
+      case 'link': {
+        // 앱 산출물 영상은 링크가 아니라 인라인 플레이어로 — 도구가 렌더 결과 URL을 주면
+        // 사용자가 챗에서 바로 재생한다. html 미리보기 iframe(sandbox, same-origin 불허)
+        // 안에서는 세션 쿠키가 안 실려 재생이 불가하므로 iframe 밖에서 직접 렌더한다.
+        if (isAppVideoHref(tok.href)) {
+          return <VideoBlock key={key} href={tok.href} label={tok.s} />;
+        }
+        // 같은 오리진 절대경로는 apiBase 를 앞에 붙인다(이미지와 같은 규약).
+        const href = tok.href.startsWith('/') ? `${config.apiBase}${tok.href}` : tok.href;
         return (
-          <a key={key} className="md-link" href={tok.href} target="_blank" rel="noopener noreferrer">
+          <a key={key} className="md-link" href={href} target="_blank" rel="noopener noreferrer">
             {tok.s}
           </a>
         );
+      }
       case 'img': {
         // 도구 산출 그래프(/agent/artifacts/…)는 apiBase 경유 — 포털 프록시가 서빙.
         const src = tok.href.startsWith('/') ? `${config.apiBase}${tok.href}` : tok.href;
