@@ -155,8 +155,24 @@ if [ -n "${AGENT_DIR:-}" ]; then
   # TOOL_MAX 정리(prod) — dev 전용 소형 캡(40 등)을 제거해 agent-server 기본값(80)을 쓰게 한다.
   # 80 은 '무조건 절단'이 아니라 질의 관련도(어휘+시맨틱 RRF) 상위 80개 선택이라, 도구가 수백 개로
   # 늘어도 필요한 도구가 남고 컨텍스트도 보호된다. 전량 바인딩이 필요하면 .env 에 TOOL_MAX=0 명시.
+  # 원격 LLM(상암 GLM 등 대형 컨텍스트)이면 캡을 아예 푼다(TOOL_MAX=0). 기본 80 을 두면
+  # 게이트웨이 도구가 100 개를 넘는 순간 heax-hub 계열이 챗에 안 실려, 아래 헬스게이트가
+  # "TOOL_MAX=80 < 게이트웨이 N개" 경고를 내면서도 스크립트는 계속 80 을 강제하는 자기모순이
+  # 된다. 로컬 vLLM(작은 컨텍스트)에서는 종전대로 기본값에 맡긴다.
   TM="$(grep -E '^TOOL_MAX=' "$AGENT_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-  if [ -n "${TM:-}" ] && [ "${TM:-0}" -gt 0 ] 2>/dev/null; then
+  case "${VB:-}" in
+    ''|*127.0.0.1*|*localhost*) REMOTE_LLM=0 ;;
+    *)                          REMOTE_LLM=1 ;;
+  esac
+  if [ "$REMOTE_LLM" = "1" ]; then
+    if [ "${TM:-}" != "0" ]; then
+      sed -i '/^TOOL_MAX=/d' "$AGENT_ENV"
+      printf 'TOOL_MAX=0\n' >> "$AGENT_ENV"
+      ok "원격 LLM 감지 → TOOL_MAX=0(전량 바인딩) 설정${TM:+ (이전 $TM)}"
+    else
+      ok "TOOL_MAX=0 (전량 바인딩)"
+    fi
+  elif [ -n "${TM:-}" ] && [ "${TM:-0}" -gt 0 ] 2>/dev/null; then
     sed -i '/^TOOL_MAX=/d' "$AGENT_ENV"
     ok "TOOL_MAX=$TM 제거 → 기본 80(질의 관련도 상위 선택)"
   else
