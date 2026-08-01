@@ -185,7 +185,12 @@ fi
 # ── 4) 챗 스택만 pull+재기동 — 2)에서 이미 재기동한 사이트들을 다시 내리지 않는다
 #      (mxwp-mcp는 deploy-all이 재기동, reportarchive-mcp는 RA 레포 공유라 update 금지 — 기동은 5에서) ──
 hr "4) update-sites (챗 스택: mcp-gateway·agent-server·signalforge-mcp)"
-"$SELF_REPO/infra/scripts/update-sites.sh" mcp-gateway agent-server signalforge-mcp \
+# 순서가 중요하다: 백엔드(signalforge-mcp) → 게이트웨이 → 소비자(agent-server).
+# 종전엔 게이트웨이를 먼저 올려서, 그 시점에 아직 내려가 있던 signalforge-mcp 에 붙지 못하고
+# 6단계 헬스게이트가 'signalforge=DOWN' 을 찍었다(cae00 실측 — 게이트웨이 06:54:46 기동,
+# signalforge-mcp 는 06:54:51~54 재기동). _revive_loop 가 60초 안에 스스로 재편입하므로
+# 실제 장애는 아니었지만, 매 배포마다 가짜 DOWN 이 뜨면 진짜 장애와 구분이 안 된다.
+"$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server \
   || echo "  ⚠ update-sites 일부 실패 — 아래에서 판정"
 
 # ── 5) 게이트웨이 config 정합 — 기대 백엔드가 config에 아예 없으면 재프로비저닝 ──
