@@ -23,10 +23,30 @@ WANT="${*:-portal mxwp heax signalforge}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
 
+# 배포 빌드는 의존성을 **바꾸지 않는다**. 종전엔 --frozen-lockfile=false 라 package.json 과
+# 락파일이 어긋나 있으면 빌드가 조용히 락파일을 고쳐 커밋되지 않은 의존성 변경이 산출물에
+# 섞일 수 있었다(실제로 MXWhitePaper 의 recharts specifier 가 이 경로로 갱신됐다).
+# 락파일이 있으면 --frozen-lockfile 로 고정하고, 어긋나면 빌드를 멈춰 사람이 보게 한다.
+# 락파일이 아예 없는 프로젝트(pnpm-lock 을 커밋하지 않는 곳)는 멈추지 않되 경고를 남긴다.
+pnpm_install() {  # $1=프로젝트 디렉터리(. 이면 현재)
+  local d="${1:-.}"
+  if [ -f "$d/pnpm-lock.yaml" ]; then
+    pnpm --dir "$d" install --frozen-lockfile || {
+      echo "✗ $d: 락파일이 package.json 과 불일치합니다." >&2
+      echo "  배포 빌드에서 의존성을 임의로 바꾸지 않도록 여기서 멈춥니다." >&2
+      echo "  해결: 해당 레포에서 'pnpm install' 로 락파일을 갱신·검토 후 커밋하고 다시 실행하세요." >&2
+      return 1
+    }
+  else
+    echo "  ⚠ $d: pnpm-lock.yaml 없음 — 의존성 고정 불가(해석 설치로 진행)" >&2
+    pnpm --dir "$d" install
+  fi
+}
+
 if want portal; then
   hr "HWAX Portal — build SPA + sif → Drive"
   ( cd "$PORTAL_DIR"
-    pnpm --dir frontend install --frozen-lockfile=false && pnpm --dir frontend build
+    pnpm_install frontend && pnpm --dir frontend build
     ./infra/scripts/build.sh                       # portal.sif + nginx.sif (skips if present)
     ./infra/scripts/images-to-drive.sh )
 fi
@@ -34,7 +54,7 @@ fi
 if want mxwp && [ -n "$MXWP_DIR" ]; then
   hr "MX White Paper — build dist + bake web.sif → Drive"
   ( cd "$MXWP_DIR"
-    pnpm install --frozen-lockfile=false && pnpm schema:gen
+    pnpm_install . && pnpm schema:gen
     VITE_BASE_PATH=/mx-white-paper/ pnpm --filter @mx/web build
     apptainer build --force infra/apptainer/web.sif infra/apptainer/web.def   # bakes dist
     ./infra/scripts/images-to-drive.sh )
@@ -43,7 +63,7 @@ fi
 if want heax && [ -n "$HEAX_DIR" ]; then
   hr "HEAX Hub — build dist + app-data → Drive"
   ( cd "$HEAX_DIR"
-    pnpm --dir frontend install --frozen-lockfile=false
+    pnpm_install frontend
     # heax vite.config 는 VITE_BASE_PATH 를 읽는다(HEAX_BASE_PATH 아님 — 과거 이름 불일치로
     # 루트 base dist 가 배포돼 포털 서브패스에서 자산 404가 났던 원인). 둘 다 넘겨 견고하게.
     VITE_BASE_PATH=/heax-hub/ HEAX_BASE_PATH=/heax-hub/ pnpm --dir frontend build
@@ -59,7 +79,7 @@ fi
 if want signalforge && [ -n "$SF_DIR" ]; then
   hr "SignalForge — build dist→sif + DB dump → Drive"
   ( cd "$SF_DIR"
-    VITE_BASE_PATH=/signalforge/ pnpm --dir frontend install --frozen-lockfile=false
+    VITE_BASE_PATH=/signalforge/ pnpm_install frontend
     VITE_BASE_PATH=/signalforge/ pnpm --dir frontend build   # frontend.sif 가 이 dist 를 베이크
     ./scripts/build.sh                                       # SIF 6종(있으면 skip)
     ./scripts/sync-to-drive.sh )                             # DB 덤프 + SIF + env → Drive(통합)
