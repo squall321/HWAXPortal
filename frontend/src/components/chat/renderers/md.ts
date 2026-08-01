@@ -16,6 +16,7 @@ export type ListItem = { depth: number; text: string; task?: 'todo' | 'done' };
 
 export type Block =
   | { t: 'p'; text: string }
+  | { t: 'art'; text: string }   // 고정폭 도해(박스드로잉·정렬된 파이프) — 가변폭이면 열이 어긋난다
   | { t: 'h'; level: number; text: string }
   | { t: 'hr' }
   | { t: 'quote'; text: string }
@@ -77,6 +78,24 @@ function sepAligns(line: string): ('l' | 'c' | 'r')[] {
   });
 }
 
+// 박스드로잉 문자 — 이게 보이면 사람이 도해를 그린 것이다(일반 산문엔 거의 안 쓰인다).
+const RE_BOX = /[─│┌┐└┘├┤┬┴┼━┃╔╗╚╝╠╣═║]/;
+
+/**
+ * 이 문단이 고정폭으로 보여야 하는 도해인가.
+ * 오탐이 비용이 크다(평범한 문단이 코드처럼 보이면 더 나쁘다) → 보수적으로 판정한다.
+ *   ① 박스드로잉이 2줄 이상 — 거의 확실한 도해.
+ *   ② 또는 3줄 이상이 각각 파이프(|) 2개 이상 — 마크다운 표는 이미 위에서 걸러졌으므로
+ *      여기 남은 건 손으로 정렬한 표다.
+ */
+function looksLikeArt(lines: string[]): boolean {
+  if (lines.length < 2) return false;
+  const box = lines.filter((l) => RE_BOX.test(l)).length;
+  if (box >= 2) return true;
+  const piped = lines.filter((l) => (l.match(/\|/g) || []).length >= 2).length;
+  return piped >= 3;
+}
+
 /** 텍스트(코드펜스 제거 후)를 블록 목록으로 파싱. */
 export function parseBlocks(text: string): Block[] {
   const lines = text.split('\n');
@@ -87,7 +106,10 @@ export function parseBlocks(text: string): Block[] {
     // 앞뒤 빈 줄만 제거 — 문단 내부 줄바꿈은 보존(pre-wrap 렌더)
     while (para.length && para[0].trim() === '') para.shift();
     while (para.length && para[para.length - 1].trim() === '') para.pop();
-    if (para.length) blocks.push({ t: 'p', text: para.join('\n') });
+    // 코드펜스 없이 나온 도해는 문단으로 두면 가변폭 + overflow-wrap:anywhere 때문에 열이
+    // 어긋나고 줄 중간이 잘려 '원문이 그대로 보이는' 꼴이 된다(실측: FPCB 적층 단면도).
+    // 고정폭 블록으로 승격해 사람이 의도한 모양대로 보이게 한다.
+    if (para.length) blocks.push({ t: looksLikeArt(para) ? 'art' : 'p', text: para.join('\n') });
     para = [];
   };
 

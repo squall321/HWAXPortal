@@ -75,6 +75,24 @@
   white-space: pre-wrap;
   margin: 0.35rem 0;
 }
+
+/* 코드펜스 없이 나온 도해(적층 단면도·손으로 정렬한 표) — 가변폭이면 열이 어긋나고
+   .chat-text 의 overflow-wrap:anywhere 가 줄 중간을 끊어 원문처럼 보인다.
+   고정폭 + pre(줄바꿈 금지) + 가로 스크롤로 사람이 그린 모양 그대로 보여준다.
+   코드블록 같은 크롬(언어 라벨·복사 버튼)은 붙이지 않는다 — 코드가 아니라 그림이다. */
+.md-art {
+  font-family: var(--cx-mono);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-wrap: normal;
+  word-break: normal;
+  margin: 0.45rem 0;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  background: var(--cx-code-bg, rgba(127, 127, 127, 0.08));
+}
 .md-p:first-child,
 .md-h:first-child {
   margin-top: 0;

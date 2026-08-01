@@ -265,6 +265,13 @@ function renderBlock(b: Block, key: string): ReactNode {
           </table>
         </div>
       );
+    case 'art':
+      // 도해는 인라인 서식을 적용하지 않는다 — 도해 안의 *·_·| 는 강조 문법이 아니라 그림의 일부다.
+      return (
+        <pre key={key} className="md-art">
+          {b.text}
+        </pre>
+      );
     default:
       return (
         <p key={key} className="md-p">
