@@ -24,6 +24,7 @@ from app.auth.routes import launch as auth_launch
 from app.auth.routes import pat as auth_pat
 from app.auth.routes import saml as auth_saml
 from app.auth.routes import session as auth_session
+from app.auth.routes import tlscert as auth_tlscert
 from app.auth.token_store import TokenStore
 from app.catalog import routes as catalog_routes
 from app.catalog.registry import CatalogRegistry
@@ -94,6 +95,8 @@ app.include_router(routes_health.router)
 app.include_router(auth_session.router)
 app.include_router(auth_saml.router)
 app.include_router(auth_jwks.router)
+# 자체서명 인증서 배포 — 개인 Claude(Node)가 포털을 신뢰하려면 로그인 전에도 받아야 한다.
+app.include_router(auth_tlscert.router)
 app.include_router(catalog_routes.router)
 app.include_router(auth_launch.router)
 app.include_router(auth_pat.router)

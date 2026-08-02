@@ -12,8 +12,94 @@ function fmtDate(sec: number): string {
   return new Date(sec * 1000).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+const CERT_URL = `${ORIGIN}/tls/portal.crt`;
+
 function claudeCodeSnippet(token: string): string {
   return `claude mcp add --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`;
+}
+
+// 자체서명 인증서를 쓰는 동안의 등록 명령.
+// ⚠ `NODE_EXTRA_CA_CERTS=... claude mcp add --transport http ...` 는 듣지 않는다(실측).
+// --transport http 는 설정에 URL·헤더만 저장하고 환경변수를 담지 않아서, 등록 시점의 변수는
+// 정작 연결하는 시점(나중에 뜨는 Claude 프로세스)에 사라진다. stdio(mcp-remote) 형태는
+// -e 로 준 환경변수를 설정에 저장해 매 실행마다 적용하므로 이쪽을 쓴다.
+function claudeCodeSnippetSelfSigned(token: string, certPath: string): string {
+  return [
+    `claude mcp add hwax ^`,
+    `  -e AUTH="Bearer ${token}" ^`,
+    `  -e NODE_EXTRA_CA_CERTS=${certPath} ^`,
+    `  -- npx -y mcp-remote ${MCP_URL} --header "Authorization:\${AUTH}"`,
+  ].join('\n');
+}
+
+/**
+ * 윈도우 설치 배치파일 — 인증서를 심고 Claude 에 등록까지 한 번에 끝낸다.
+ * 인증서 PEM 을 파일 안에 그대로 넣어 첨부파일이 하나로 끝나게 한다(PEM 은 텍스트다).
+ * 이 파일은 토큰이 화면에 보이는 그 순간에만 만들 수 있다 — 서버는 평문 토큰을 보관하지 않는다.
+ */
+function buildSetupBat(token: string, name: string, pem: string | null): string {
+  const certDir = '%USERPROFILE%\\.hwax';
+  const certFile = `${certDir}\\hwax-portal.crt`;
+  const L: string[] = [
+    '@echo off',
+    'setlocal',
+    'chcp 65001 >nul',
+    'echo.',
+    'echo  HWAX 포털 - 개인 Claude 연결 설정',
+    `echo  토큰 이름: ${name}`,
+    'echo.',
+    '',
+    'where claude >nul 2>nul',
+    'if errorlevel 1 (',
+    '  echo  [X] claude 명령을 찾을 수 없습니다. Claude Code 를 먼저 설치하세요.',
+    '  echo      https://claude.com/claude-code',
+    '  pause & exit /b 1',
+    ')',
+    '',
+  ];
+  if (pem) {
+    L.push(
+      `if not exist "${certDir}" mkdir "${certDir}"`,
+      `if exist "${certFile}" del "${certFile}"`,
+      'echo  [1/2] 포털 인증서 설치...',
+    );
+    // PEM 한 줄씩 append. base64 와 -----BEGIN----- 은 배치 특수문자(^ & < > |)를 포함하지 않는다.
+    for (const line of pem.split('\n')) {
+      if (line.trim()) L.push(`>>"${certFile}" echo ${line.trim()}`);
+    }
+    L.push(
+      '',
+      'echo  [2/2] Claude 에 MCP 서버 등록...',
+      'claude mcp remove hwax -s local >nul 2>nul',
+      'claude mcp add hwax ^',
+      `  -e AUTH="Bearer ${token}" ^`,
+      `  -e NODE_EXTRA_CA_CERTS=${certFile} ^`,
+      `  -- npx -y mcp-remote ${MCP_URL} --header "Authorization:${'${AUTH}'}"`,
+    );
+  } else {
+    L.push(
+      'echo  [1/1] Claude 에 MCP 서버 등록...',
+      'claude mcp remove hwax -s local >nul 2>nul',
+      `claude mcp add --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
+    );
+  }
+  L.push(
+    '',
+    'if errorlevel 1 (',
+    '  echo.',
+    '  echo  [X] 등록에 실패했습니다. 위 메시지를 확인하세요.',
+    '  pause & exit /b 1',
+    ')',
+    'echo.',
+    'echo  [O] 완료. Claude 를 새로 열고 hwax 도구를 사용하세요.',
+    'echo      확인:  claude mcp get hwax',
+    'echo.',
+    'pause',
+  );
+  // 윈도우 배치는 CRLF 여야 안전하다(LF 만이면 일부 환경에서 마지막 인자에 CR 이 섞인다).
+  // UTF-8 BOM 을 붙인다 — cmd.exe 는 .bat 을 시스템 코드페이지로 읽어서, BOM 이 없으면
+  // 위 한글 안내가 전부 깨진다. BOM 이 있으면 UTF-8 로 인식한다(chcp 65001 은 출력 쪽 보정).
+  return '﻿' + L.join('\r\n') + '\r\n';
 }
 
 function claudeDesktopSnippet(token: string): string {
@@ -97,6 +183,40 @@ export default function TokenPage() {
   const [created, setCreated] = useState<PatCreated | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pats, setPats] = useState<PatMeta[] | null>(null);
+  // 포털이 자체서명 인증서로 떠 있는가 — 그때만 인증서 안내를 띄운다. 사내 CA 인증서로
+  // 교체되면 서버가 self_signed=false 를 돌려주므로 이 블록은 저절로 사라진다.
+  const [selfSigned, setSelfSigned] = useState(false);
+  const [batBusy, setBatBusy] = useState(false);
+  const [batError, setBatError] = useState<string | null>(null);
+
+  // 배치파일은 브라우저에서 만든다 — 평문 토큰을 가진 곳이 여기뿐이라, 서버에 한 번만
+  // 내려받게 하는 별도 상태를 두지 않아도 '발급 순간에만 가능'이 자연히 성립한다.
+  const downloadBat = async () => {
+    if (!created || batBusy) return;
+    setBatBusy(true);
+    setBatError(null);
+    try {
+      let pem: string | null = null;
+      if (selfSigned) {
+        const r = await fetch(CERT_URL);
+        if (!r.ok) throw new Error(`인증서를 받지 못했습니다 (HTTP ${r.status}).`);
+        pem = await r.text();
+      }
+      const blob = new Blob([buildSetupBat(created.token, created.name, pem)], {
+        type: 'application/octet-stream',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'hwax-claude-setup.bat';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setBatError(err instanceof Error ? err.message : '배치파일을 만들지 못했습니다.');
+    } finally {
+      setBatBusy(false);
+    }
+  };
 
   const refresh = () => {
     listPats()
@@ -106,6 +226,11 @@ export default function TokenPage() {
 
   useEffect(() => {
     refresh();
+    // 실패는 무시한다 — 안내가 안 뜰 뿐이고 토큰 발급 자체를 막을 이유가 없다.
+    fetch(`${ORIGIN}/tls/info`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setSelfSigned(Boolean(d?.self_signed)))
+      .catch(() => {});
   }, []);
 
   const onCreate = async (e: FormEvent) => {
@@ -194,7 +319,50 @@ export default function TokenPage() {
           <h3 style={{ color: 'var(--fg)', fontSize: '0.95rem', margin: '1.4rem 0 0' }}>
             개인 Claude에 등록
           </h3>
-          <CopyBlock label="Claude Code (터미널)" text={claudeCodeSnippet(created.token)} />
+          <div
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: '0.85rem 0.95rem',
+              margin: '0.9rem 0 0.6rem',
+              fontSize: '0.85rem',
+              color: 'var(--fg)',
+            }}
+          >
+            <b>윈도우라면 이것만 받아서 실행하세요.</b> 인증서 설치와 Claude 등록을 한 번에
+            끝냅니다. 이 파일에는 위 토큰이 들어 있어 <b>지금 이 화면에서만</b> 만들 수 있습니다.
+            {selfSigned && (
+              <div style={{ color: 'var(--muted)', marginTop: '0.45rem' }}>
+                이 포털은 아직 자체서명 인증서를 씁니다. 브라우저는 경고를 눌러 넘어갈 수 있지만
+                Claude(Node)는 그러지 못해, 인증서 없이 등록하면{' '}
+                <code>SELF_SIGNED_CERT_IN_CHAIN</code> 으로 연결이 실패합니다. 배치파일이 인증서를{' '}
+                <code>%USERPROFILE%\.hwax</code> 에 심고 그 경로를 등록에 함께 넣습니다. 통신은
+                그대로 HTTPS 입니다.
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.7rem' }}>
+              <button type="button" className="btn-primary" onClick={() => void downloadBat()}>
+                {batBusy ? '만드는 중…' : '설정 배치파일 내려받기 (.bat)'}
+              </button>
+              {selfSigned && (
+                <a href={CERT_URL} download="hwax-portal.crt" style={{ fontSize: '0.82rem' }}>
+                  인증서만 따로 받기
+                </a>
+              )}
+            </div>
+            {batError && (
+              <div style={{ color: '#ff9b9b', marginTop: '0.5rem' }}>{batError}</div>
+            )}
+          </div>
+          <CopyBlock
+            label={selfSigned ? 'Claude Code (터미널 — 직접 실행할 때)' : 'Claude Code (터미널)'}
+            text={
+              selfSigned
+                ? claudeCodeSnippetSelfSigned(created.token, '%USERPROFILE%\\.hwax\\hwax-portal.crt')
+                : claudeCodeSnippet(created.token)
+            }
+          />
           <CopyBlock
             label="Claude Desktop (claude_desktop_config.json)"
             text={claudeDesktopSnippet(created.token)}
