@@ -1,8 +1,11 @@
-# 클러스터 배포 — 구현 체크리스트
+# 클러스터 배포 — 구현 체크리스트 (v2)
 
-plan.md 의 실행 추적용. 구현 착수 전에는 전부 미체크가 정상.
+plan.md v2 (2026-08-02) 의 실행 추적용. 구현 착수 전에는 전부 미체크가 정상.
+Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에는 다음 Phase 착수 금지.
 
-## Phase 0 — endpoints 계층
+## Phase 0 — 기반 (기존 동작 무영향)
+
+### 0.1 endpoints 계층 (v1 승계)
 
 - [ ] `infra/scripts/gen-endpoints.sh` (cluster.yaml 없으면 전부 127.0.0.1)
 - [ ] routes.env 를 endpoints 에서 생성 — 현행과 diff 0 확인
@@ -11,26 +14,71 @@ plan.md 의 실행 추적용. 구현 착수 전에는 전부 미체크가 정상
 - [ ] agent mcp_servers.json 게이트웨이 주소 env 화
 - [ ] 검증: dev 풀런 — 생성물 diff 0 + 헬스게이트 통과
 
-## Phase 1 — cluster.yaml + cluster-deploy (1노드 동일성)
+### 0.2 RA DB 백업 편입 (전체 계획의 첫 실행 항목)
 
-- [ ] `infra/cluster.yaml.example` + 파서(singleton 가드 포함)
-- [ ] `infra/scripts/cluster-deploy.sh` — 자기노드 감지 / ssh 루프 / 클러스터 헬스게이트
-- [ ] `update-all.sh --services` 필터 인자
-- [ ] `--init` (ssh-copy-id · rclone.conf · NO_PROXY)
-- [ ] 수용 테스트: 1노드 cluster.yaml ≡ 현행 (config·헬스 출력 diff 0)
-- [ ] 회귀: cluster.yaml 부재 경로 = 현행 러닝북 그대로
+- [ ] backup-local.sh 에 RA pg_dump 추가 (포털 레포만 변경 — RA 소스 무수정)
+- [ ] 복구 리허설: 임시 DB 복원 → 로그인·보고서 열람 실측
+- [ ] 검증: cron 1회전 후 /data/backups 에 RA 덤프 존재 + 크기 sane
 
-## Phase 2 — 복제 + LB
+### 0.3 /data 스테이징 계층
 
-- [ ] placement 리스트 + singleton 배포 거부
-- [ ] gen-nginx-conf upstream 블록 생성
-- [ ] 헬스게이트 replica 전수 프로브
-- [ ] AIDH·SF DB 를 독립 배치 항목으로 분리(API 복제 전제)
-- [ ] 검증: 2-replica 라우팅·failover 실측
+- [ ] /data/hwax 레이아웃 생성 스크립트 (versions/current/secrets/state)
+- [ ] `infra/scripts/stage-to-data.sh` — 버전 스테이징 + sha256 manifest + 멱등
+- [ ] GC (최근 5세대 + last-good 보존)
+- [ ] 검증: dev 로컬 /data 에서 스테이징·재실행 멱등·GC 실측. 기존 서비스 무영향 확인
 
-## Phase 3 — heax 앱 단위 배치
+## Phase 1 — 1노드 클러스터 경로 (dev 동등성)
 
-- [ ] 선행조사: 허브 Caddy 앱 프록시 정의 위치 확정
-- [ ] manifest `state:`/`endpoint:` + 허브 프록시/upstream + sqlite singleton 가드
-- [ ] cluster.yaml `heax-apps:` 지원
-- [ ] 검증: laminate 2-replica + materialtwin 단일 강제 + 게이트웨이 도구 수 유지
+- [ ] `infra/cluster.yaml.example` (schema 2) + 파서 — 스키마 검증·singleton 가드·미정의 노드 거부
+- [ ] `infra/scripts/update-node.sh` (로컬 동작만 — ssh 중첩 없음)
+- [ ] services `--services` 필터 + current 경로 소비 (env, 기본값=현행 레포 경로)
+- [ ] update-all: cluster.yaml 존재 시 2.5~2.7(스테이징·preflight·스위치)·4'(fan-out)·6'(클러스터 게이트) 분기
+- [ ] 수용 테스트: dev 1노드 yaml — 헬스게이트 출력·게이트웨이 tools 수·챗 스모크 ≡ no-yaml
+- [ ] 회귀 테스트: cluster.yaml 부재 경로 = 현행 러닝북 그대로 (자동 비교 스크립트)
+- [ ] 롤백 리허설: current 를 직전 버전으로 → 이전 버전 서빙 실측
+- [ ] 원자 스위치 리허설: 가동 중 스위치 → 기존 인스턴스 무중단 실측
+
+## Phase 2 — 다노드 fan-out (파일럿 2~3대)
+
+진입 조건: [ ] 0.2 복구 리허설 성공 · [ ] Phase 1 수용 테스트 통과
+
+- [ ] `infra/scripts/preflight-cluster.sh` — ssh 도달성·/data 마운트 동일성·hard mount·
+      디스크 여유·시계 동기·sha256 재검증·NO_PROXY
+- [ ] fan-out (순서: DB·백엔드 → 게이트웨이 → 소비자, 복제는 노드별 롤링)
+- [ ] 클러스터 헬스게이트 (전 노드 × 전 서비스 + replica 전수) + last-good 갱신
+- [ ] 파일럿: laminate MCP 2노드 배치 — 게이트웨이 도구 수 불변
+- [ ] DB 이동 리허설: aidh PGDATA → /data/pg/aidh — singleton 락·hard mount 가드 실측
+- [ ] 의도적 이중 기동 시도 → 거부되는 것 실측
+- [ ] 복구 리허설 재실행 (/data 배치 후에도 백업·복원 동작)
+
+## Phase 3 — 본 배치 (18노드)
+
+- [ ] 서비스별 이관 (한 번에 한 서비스, 각각 헬스 통과 후 다음)
+- [ ] search-llm all-nodes 롤아웃 (모델·서빙 방식은 §11 결정 후)
+- [ ] RA placement 등록 + PGDATA /data/pg 이동 (사전 스냅샷) + 포털 라우트 endpoints 화
+- [ ] cae00 병행 운영 확인 (클러스터 작업이 cae00 에 영향 0)
+
+## Phase 4 — 이중화·100명 대비
+
+- [ ] secrets → /data/hwax/secrets 정본화 (세션 로그아웃 1회 — 공지 후 야간)
+- [ ] PAT store SQLite → Postgres (스냅샷 → 이중 read → 완전 전환, 롤백 절차 사전 문서화)
+- [ ] portal·agent-server 복제 + entry nginx upstream (gen-nginx-conf upstream 블록 — v1 승계)
+- [ ] 헬스게이트 replica 전수 프로브 (v1 승계)
+- [ ] pgbouncer + PG 튜닝(shared_buffers 등) + 앱 커넥션 풀 명시
+- [ ] 진입점 VIP (사내 협의 결과에 따라)
+
+## Phase 5 — HEAX 앱 노드 배치 (v1 Phase 3 승계)
+
+- [ ] 선행조사: 허브 Caddy 앱 프록시 정의 위치 확정 (v1 승계)
+- [ ] 앱 상태 var/integration_state JSON → DB (`node` 컬럼)
+- [ ] 원격 기동 (services.py ssh 경로 재사용)
+- [ ] `resources:` 필수화 — 미기재 앱 등록 거부 + 노드 용량 인식 배치
+- [ ] /data/appdata 앱별 바인드 마운트 격리 강제
+- [ ] manifest `state:`/`endpoint:` + 허브 프록시/upstream + sqlite singleton 가드 (v1 승계)
+- [ ] 검증: laminate 2-replica + materialtwin 단일 강제 + 게이트웨이 도구 수 유지 (v1 승계)
+
+## cae00 전환 (마지막 — 별도 결정 후)
+
+- [ ] cae00 데이터 스냅샷 → 클러스터 DB merge (비파괴 패턴 재사용)
+- [ ] DNS/진입점 전환
+- [ ] cae00 예비 강등 + 롤백 경로 확인
