@@ -40,6 +40,8 @@ function claudeCodeSnippetSelfSigned(token: string, certPath: string): string {
 function buildSetupBat(token: string, name: string, pem: string | null): string {
   const certDir = '%USERPROFILE%\\.hwax';
   const certFile = `${certDir}\\hwax-portal.crt`;
+  // Desktop 설정에 넣을 항목 — 경로는 배치가 실행될 때 확장되므로 %USERPROFILE% 을 그대로 둔다.
+  const entryJson = JSON.stringify(desktopServerEntry(token, pem ? certFile : null));
   const L: string[] = [
     '@echo off',
     'setlocal',
@@ -48,51 +50,95 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'echo  HWAX 포털 - 개인 Claude 연결 설정',
     `echo  토큰 이름: ${name}`,
     'echo.',
-    '',
-    'where claude >nul 2>nul',
-    'if errorlevel 1 (',
-    '  echo  [X] claude 명령을 찾을 수 없습니다. Claude Code 를 먼저 설치하세요.',
-    '  echo      https://claude.com/claude-code',
-    '  pause & exit /b 1',
-    ')',
+    'set HWAX_DONE=0',
     '',
   ];
   if (pem) {
     L.push(
+      'echo  [1] 포털 인증서 설치...',
       `if not exist "${certDir}" mkdir "${certDir}"`,
       `if exist "${certFile}" del "${certFile}"`,
-      'echo  [1/2] 포털 인증서 설치...',
     );
     // PEM 한 줄씩 append. base64 와 -----BEGIN----- 은 배치 특수문자(^ & < > |)를 포함하지 않는다.
     for (const line of pem.split('\n')) {
       if (line.trim()) L.push(`>>"${certFile}" echo ${line.trim()}`);
     }
-    L.push(
-      '',
-      'echo  [2/2] Claude 에 MCP 서버 등록...',
-      'claude mcp remove hwax -s local >nul 2>nul',
-      'claude mcp add hwax ^',
-      `  -e AUTH="Bearer ${token}" ^`,
-      `  -e NODE_EXTRA_CA_CERTS=${certFile} ^`,
-      `  -- npx -y mcp-remote ${MCP_URL} --header "Authorization:${'${AUTH}'}"`,
-    );
-  } else {
-    L.push(
-      'echo  [1/1] Claude 에 MCP 서버 등록...',
-      'claude mcp remove hwax -s local >nul 2>nul',
-      `claude mcp add --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
-    );
+    L.push(`echo      ${certFile}`, '');
   }
+
+  // ⚠ 아래는 일부러 괄호 블록( if ... ( ... ) )을 쓰지 않고 goto 로 흐름을 만든다.
+  // 괄호 안에 PowerShell 한 줄처럼 (, ), | 가 섞인 긴 명령을 넣으면 cmd 의 괄호 매칭이
+  // 어긋나 "예기치 않음" 으로 죽는 사고가 잦다. 라벨 방식이 장황해도 깨지지 않는다.
+
+  // ── Claude Code (CLI) — 있을 때만 ──────────────────────────────────────────
   L.push(
+    'echo  [2] Claude Code (CLI) 확인...',
+    'where claude >nul 2>nul',
+    'if errorlevel 1 goto :no_cli',
+    'claude mcp remove hwax -s local >nul 2>nul',
+  );
+  L.push(
+    pem
+      ? `claude mcp add hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL} --header "Authorization:${'${AUTH}'}"`
+      : `claude mcp add --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
+  );
+  L.push(
+    'if errorlevel 1 goto :cli_fail',
+    'set HWAX_DONE=1',
+    'echo      Claude Code 등록 완료',
+    'goto :desktop',
+    ':cli_fail',
+    'echo      [X] Claude Code 등록 실패',
+    'goto :desktop',
+    ':no_cli',
+    'echo      claude 명령 없음 - 건너뜀 ^(Claude Desktop 만 쓰신다면 정상^)',
     '',
-    'if errorlevel 1 (',
-    '  echo.',
-    '  echo  [X] 등록에 실패했습니다. 위 메시지를 확인하세요.',
-    '  pause & exit /b 1',
-    ')',
+  );
+
+  // ── Claude Desktop — 설정 JSON 에 병합 ────────────────────────────────────
+  // 배치로 JSON 을 다루면 깨지기 쉬워, 항목만 임시파일로 내보내고 병합은 PowerShell 이 한다.
+  // 기존 mcpServers 의 다른 서버는 보존하고 hwax 만 덮어쓴다. 원본은 .bak 으로 백업.
+  const ps = [
+    '$c=$env:HWAX_CFG;',
+    "$t=Join-Path $env:TEMP 'hwax-entry.json';",
+    '$e=Get-Content $t -Raw | ConvertFrom-Json;',
+    "if(Test-Path $c){Copy-Item $c ($c+'.bak') -Force; $j=Get-Content $c -Raw | ConvertFrom-Json}else{$j=[pscustomobject]@{}};",
+    'if(-not $j.mcpServers){$j | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) -Force};',
+    '$j.mcpServers | Add-Member -NotePropertyName hwax -NotePropertyValue $e -Force;',
+    '[System.IO.File]::WriteAllText($c, ($j | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))',
+  ].join(' ');
+  L.push(
+    ':desktop',
+    'echo  [3] Claude Desktop 확인...',
+    'set "HWAX_CFG=%APPDATA%\\Claude\\claude_desktop_config.json"',
+    'if not exist "%APPDATA%\\Claude" goto :no_desktop',
+    `>"%TEMP%\\hwax-entry.json" echo ${entryJson}`,
+    `powershell -NoProfile -ExecutionPolicy Bypass -Command "${ps}"`,
+    'if errorlevel 1 goto :desktop_fail',
+    'set HWAX_DONE=1',
+    'echo      Claude Desktop 등록 완료 ^(기존 설정은 .bak 으로 백업^)',
+    'goto :desktop_done',
+    ':desktop_fail',
+    'echo      [X] Desktop 설정 수정 실패',
+    'goto :desktop_done',
+    ':no_desktop',
+    'echo      Claude Desktop 설정 폴더 없음 - 건너뜀',
+    ':desktop_done',
+    'del "%TEMP%\\hwax-entry.json" >nul 2>nul',
+    '',
+  );
+
+  L.push(
     'echo.',
-    'echo  [O] 완료. Claude 를 새로 열고 hwax 도구를 사용하세요.',
-    'echo      확인:  claude mcp get hwax',
+    'if not "%HWAX_DONE%"=="0" goto :ok',
+    'echo  [X] Claude Code 도 Claude Desktop 도 설정하지 못했습니다.',
+    'echo      둘 중 하나를 설치한 뒤 이 파일을 다시 실행하세요.',
+    'pause',
+    'exit /b 1',
+    ':ok',
+    'echo  [O] 완료. Claude 를 완전히 종료한 뒤 다시 실행하세요.',
+    'echo      Desktop: 설정 - 커넥터에 hwax 가 보이면 정상',
+    'echo      CLI    : claude mcp get hwax',
     'echo.',
     'pause',
   );
@@ -102,16 +148,22 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
   return '﻿' + L.join('\r\n') + '\r\n';
 }
 
-function claudeDesktopSnippet(token: string): string {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        hwax: { type: 'http', url: MCP_URL, headers: { Authorization: `Bearer ${token}` } },
-      },
-    },
-    null,
-    2,
-  );
+// Claude Desktop 에 넣을 서버 항목. 자체서명 구간에는 CLI 와 같은 이유로 mcp-remote 를 쓴다 —
+// type:'http' 로는 CA 인증서를 지정할 방법이 없어 SELF_SIGNED_CERT_IN_CHAIN 으로 죽는다.
+// ${AUTH} 치환은 mcp-remote 가 자기 환경변수로 수행한다(토큰이 프로세스 인자에 안 남는다).
+function desktopServerEntry(token: string, certPath: string | null): object {
+  if (!certPath) {
+    return { type: 'http', url: MCP_URL, headers: { Authorization: `Bearer ${token}` } };
+  }
+  return {
+    command: 'npx',
+    args: ['-y', 'mcp-remote', MCP_URL, '--header', 'Authorization:${AUTH}'],
+    env: { AUTH: `Bearer ${token}`, NODE_EXTRA_CA_CERTS: certPath },
+  };
+}
+
+function claudeDesktopSnippet(token: string, certPath: string | null): string {
+  return JSON.stringify({ mcpServers: { hwax: desktopServerEntry(token, certPath) } }, null, 2);
 }
 
 function chatCurlSnippet(token: string): string {
@@ -365,7 +417,7 @@ export default function TokenPage() {
           />
           <CopyBlock
             label="Claude Desktop (claude_desktop_config.json)"
-            text={claudeDesktopSnippet(created.token)}
+            text={claudeDesktopSnippet(created.token, selfSigned ? String.raw`%USERPROFILE%\.hwax\hwax-portal.crt` : null)}
           />
 
           <h3 style={{ color: 'var(--fg)', fontSize: '0.95rem', margin: '1.4rem 0 0' }}>
