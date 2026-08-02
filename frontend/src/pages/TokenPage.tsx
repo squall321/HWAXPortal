@@ -128,17 +128,85 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     '',
   );
 
+  // ── Gemini CLI ────────────────────────────────────────────────────────────
+  // ⚠ `gemini mcp add` 는 --header 를 **자기 옵션으로 먹는다**(실측: args 에서 통째로 사라져
+  // 인증 없이 등록됨 → 401). npx 뒤에 `--` 를 넣어야 나머지가 서버 인자로 넘어간다(실측 확인).
+  const gemEnv = pem
+    ? `-e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile}`
+    : `-e AUTH="Bearer ${token}"`;
+  L.push(
+    ':gemini',
+    'echo  [4] Gemini CLI 확인...',
+    'where gemini >nul 2>nul',
+    'if errorlevel 1 goto :no_gemini',
+    'gemini mcp remove hwax -s user >nul 2>nul',
+    `gemini mcp add -s user -t stdio ${gemEnv} hwax npx -- -y mcp-remote ${MCP_URL} --header "Authorization:${'${AUTH}'}"`,
+    'if errorlevel 1 goto :gemini_fail',
+    'set HWAX_DONE=1',
+    'echo      Gemini CLI 등록 완료',
+    'goto :codex',
+    ':gemini_fail',
+    'echo      [X] Gemini CLI 등록 실패',
+    'goto :codex',
+    ':no_gemini',
+    'echo      gemini 명령 없음 - 건너뜀',
+    '',
+  );
+
+  // ── Codex CLI ─────────────────────────────────────────────────────────────
+  // 형식 출처: https://learn.chatgpt.com/docs/extend/mcp?surface=cli
+  //   config.toml → [mcp_servers.<name>] { command, args, env }
+  //   CLI         → codex mcp add <name> --env K=V -- <command> [args...]
+  // TOML 을 직접 고치지 않고 CLI 를 쓴다 — 남의 설정 파일을 파싱/재작성하지 않는 쪽이 안전하다.
+  // gemini 와 같은 이유로 `--` 뒤에 서버 명령을 둬야 --header 가 codex 옵션으로 먹히지 않는다.
+  // 실패하면 붙여넣을 TOML 조각을 남긴다(이 환경에 codex 가 없어 실행 검증은 못 했다).
+  const codexEnv = pem
+    ? `--env AUTH="Bearer ${token}" --env NODE_EXTRA_CA_CERTS=${certFile}`
+    : `--env AUTH="Bearer ${token}"`;
+  const codexToml = [
+    '[mcp_servers.hwax]',
+    'command = "npx"',
+    `args = ["-y", "mcp-remote", "${MCP_URL}", "--header", "Authorization:\${AUTH}"]`,
+    '',
+    '[mcp_servers.hwax.env]',
+    `AUTH = "Bearer ${token}"`,
+    ...(pem ? [`NODE_EXTRA_CA_CERTS = "${certFile.replace(/\\/g, '\\\\')}"`] : []),
+  ];
+  L.push(
+    ':codex',
+    'echo  [5] Codex CLI 확인...',
+    'where codex >nul 2>nul',
+    'if errorlevel 1 goto :no_codex',
+    'codex mcp remove hwax >nul 2>nul',
+    `codex mcp add hwax ${codexEnv} -- npx -y mcp-remote ${MCP_URL} --header "Authorization:${'${AUTH}'}"`,
+    'if errorlevel 1 goto :codex_manual',
+    'set HWAX_DONE=1',
+    'echo      Codex CLI 등록 완료',
+    'goto :codex_done',
+    ':codex_manual',
+    'set "HWAX_TOML=%USERPROFILE%\\hwax-codex-snippet.toml"',
+    'if exist "%HWAX_TOML%" del "%HWAX_TOML%"',
+    ...codexToml.map((l) => (l ? `>>"%HWAX_TOML%" echo ${l}` : '>>"%HWAX_TOML%" echo.')),
+    'echo      [X] codex mcp add 실패 - 아래 파일을 직접 붙여넣으세요:',
+    'echo        %HWAX_TOML%  ^-^-^>  %USERPROFILE%\\.codex\\config.toml',
+    'goto :codex_done',
+    ':no_codex',
+    'echo      codex 명령 없음 - 건너뜀',
+    ':codex_done',
+    '',
+  );
+
   L.push(
     'echo.',
     'if not "%HWAX_DONE%"=="0" goto :ok',
-    'echo  [X] Claude Code 도 Claude Desktop 도 설정하지 못했습니다.',
-    'echo      둘 중 하나를 설치한 뒤 이 파일을 다시 실행하세요.',
+    'echo  [X] Claude Code / Desktop / Gemini / Codex 중 어느 것도 설정하지 못했습니다.',
+    'echo      하나라도 설치한 뒤 이 파일을 다시 실행하세요.',
     'pause',
     'exit /b 1',
     ':ok',
     'echo  [O] 완료. Claude 를 완전히 종료한 뒤 다시 실행하세요.',
     'echo      Desktop: 설정 - 커넥터에 hwax 가 보이면 정상',
-    'echo      CLI    : claude mcp get hwax',
+    'echo      CLI    : claude mcp get hwax  ^| gemini mcp list  ^| codex mcp list',
     'echo.',
     'pause',
   );
