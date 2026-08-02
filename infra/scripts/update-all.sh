@@ -7,7 +7,7 @@
 #
 # 순서:
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
-#   2) deploy-all-from-drive.sh  — portal·mxwp·heax·signalforge·aidh (코드+Drive 아티팩트+기동+nginx)
+#   2) deploy-all-from-drive.sh  — portal·mxwp·heax·signalforge·aidh·kooremapper (코드+Drive 아티팩트+기동+nginx)
 #   3) AIDataHub 데이터 동기화   — dev가 원본. 단 Drive 덤프가 지난 복원분과 같으면 복원 생략
 #   4) update-sites.sh 챗 스택   — mcp-gateway·agent-server·signalforge-mcp 만(2에서 처리된 것 재기동 금지)
 #   5) 게이트웨이 config 정합    — /health backends + config의 heax_registry를 기대 목록과 비교,
@@ -84,7 +84,7 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
 fi
 
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
-hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh)"
+hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
 SF_RESTORE_DB="${SF_RESTORE_DB:-0}" "$SELF_REPO/infra/scripts/deploy-all-from-drive.sh" \
   || echo "  ⚠ deploy-all 일부 실패 — 아래 헬스게이트에서 판정"
 

@@ -34,6 +34,7 @@ MXWP_DIR="$(find_repo "${MXWP_DIR:-}" MXWhitePaper)"
 HEAX_DIR="$(find_repo "${HEAX_DIR:-}" HEAXHub)"
 AIDH_DIR="$(find_repo "${AIDH_DIR:-}" AIDataHub)"
 SF_DIR="$(find_repo "${SF_DIR:-}" SignalForge)"
+KOOR_DIR="$(find_repo "${KOOR_DIR:-}" KooRemapper)"
 
 # Pick the rclone remote ALIAS: --remote=Name, else $RCLONE_REMOTE, else auto (ApptainerImages if
 # present, else the first configured remote). cae00 likely already has it (another project set it up).
@@ -86,7 +87,7 @@ set_remote() {  # $1=envfile  $2=KEY  $3=path
   printf '  · set %s=%s\n' "$key" "$val"
 }
 
-WANT="${*:-portal mxwp heax aidh signalforge}"
+WANT="${*:-portal mxwp heax aidh signalforge kooremapper}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
@@ -232,6 +233,26 @@ if want aidh; then
   else skip "AIDataHub repo not found (set AIDH_DIR=)"; fi
 fi
 
+# ── 3d. KooRemapper (DynaForge) — LS-DYNA K파일 전처리 플랫폼 ──────────────────
+#    HEAX 하위앱(/apps/kooremapper, portal_auth SSO)으로 노출되므로 별도 포탈 서브패스
+#    라우팅은 없다(HEAX 가 /apps 를 이미 라우팅). 여기서는 서버 자체(koorm_api :8700 /
+#    koorm_mcp :8701)를 prod 에 띄워 HEAX Caddy 가 127.0.0.1 로 프록시할 수 있게 한다.
+#    바이너리·frontend dist·서비스 SIF 는 gitignore 라 Drive 로 조달(dist-from-drive).
+if want kooremapper; then
+  if [ -n "$KOOR_DIR" ]; then
+    hr "KooRemapper / DynaForge  ($KOOR_DIR)"
+    ( cd "$KOOR_DIR"
+      git_update
+      [ -f platform/.env ] || { [ -f platform/.env.example ] && cp platform/.env.example platform/.env; }
+      set_remote platform/.env KOORM_DRIVE_REMOTE KooRemapper/dist
+      # 바이너리+dist+서비스 SIF 반입(없으면 skip — prod 빌드 가능 시 start 가 알아서 빌드).
+      bash platform/infra/scripts/dist-from-drive.sh || skip "koorm dist-from-drive 실패(비치명) — 로컬 아티팩트로 진행"
+      [ "$RESTART" = 1 ] || bash platform/infra/scripts/stop.sh 2>/dev/null || true
+      bash platform/infra/scripts/start.sh
+    ) && ok "kooremapper up" || skip "kooremapper failed (see above)"
+  else skip "KooRemapper repo not found (set KOOR_DIR=)"; fi
+fi
+
 # ── Always refresh the portal routing: regenerate nginx conf + restart nginx so the per-service
 #    strip/proxy rules are live (a service deploy that didn't touch the portal would otherwise leave
 #    nginx on a stale conf → /mx-white-paper/assets etc. served wrong). Cheap; nginx-only bounce.
@@ -257,7 +278,9 @@ want mxwp        && probe "mxwp   web      " "http://127.0.0.1:5173/"
 want heax        && probe "heax   :4180    " "http://127.0.0.1:4180/"
 want aidh        && probe "aidh   /health  " "http://127.0.0.1:8001/api/system/health"
 want signalforge && probe "sf     :17370   " "http://127.0.0.1:17370/"
+want kooremapper && probe "koorm  /health  " "http://127.0.0.1:8700/health"
 
 hr "Done"
 echo "  Portal:  https://hwax.sec.samsung.net/   (tiles: /heax-hub/ /ai-data-hub/ /mx-white-paper/ /signalforge/)"
-echo "  If a service shows a non-2xx above, re-run just it:  $0 <portal|mxwp|heax|aidh|signalforge>"
+echo "  DynaForge(KooRemapper): HEAX 하위앱 /apps/kooremapper/ (portal_auth SSO), MCP /apps/kooremapper_mcp/"
+echo "  If a service shows a non-2xx above, re-run just it:  $0 <portal|mxwp|heax|aidh|signalforge|kooremapper>"
