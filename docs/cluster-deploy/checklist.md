@@ -3,6 +3,12 @@
 plan.md v2 (2026-08-02) 의 실행 추적용. 구현 착수 전에는 전부 미체크가 정상.
 Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에는 다음 Phase 착수 금지.
 
+## 착수 게이트 (2026-08-02 사용자 결정 — 계획 경화 먼저, 구현은 그 뒤)
+
+- [ ] plan §11 결정 중 최소 2건 확정: 배포 서버 지정 · 18노드 동질성
+- [ ] plan §14 실험 중 dev 에서 가능한 것(E3·E6) 완료
+- [ ] 계획 리뷰 1회전(이 문서 기준으로 사용자와 합의) 후 Phase 0 착수
+
 ## Phase 0 — 기반 (기존 동작 무영향)
 
 ### 0.1 endpoints 계층 (v1 승계)
@@ -41,6 +47,7 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 
 진입 조건: [ ] Phase 1 수용 테스트 통과
 
+- [ ] 노드 초기화(--init): ssh-copy-id · bootstrap.sh(apptainer 무sudo 설치 — 기존 스크립트 재사용) · NO_PROXY
 - [ ] `infra/scripts/preflight-cluster.sh` — ssh 도달성·/data 마운트 동일성·hard mount·
       디스크 여유·시계 동기·sha256 재검증·NO_PROXY
 - [ ] fan-out (순서: DB·백엔드 → 게이트웨이 → 소비자, 복제는 노드별 롤링)

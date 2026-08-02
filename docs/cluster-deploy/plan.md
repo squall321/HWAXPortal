@@ -61,7 +61,7 @@ dev 머신은 같은 흐름에서 노드가 자기 하나뿐이라 ssh 없이 �
 ```
 /data/hwax/                          ← 클러스터 배포 루트
   versions/<svc>/<YYYYMMDD-sha7>/    ← SIF·dist·src(+venv) — append-only 불변
-  current/<svc> → ../versions/<svc>/<ver>     ← 유일한 가변 포인터 (ln -sfn 원자 교체)
+  current/<svc> → ../versions/<svc>/<ver>     ← 유일한 가변 포인터 (tmp 심볼릭 + mv -T — §4 스위치 프로토콜)
   cluster.yaml                       ← 배치 정본 (시크릿 없음)
   endpoints/<node>.env               ← gen-endpoints 산출물 (파생물, 손으로 안 씀)
   secrets/                           ← jwt keys·session_secret·provision.env (0700/0600)
@@ -134,6 +134,17 @@ stage-to-data.sh <svc> [--src <dir>] [--from-drive]
 GC: 최근 5세대 + last-good 보존, 나머지 삭제 (가동 중 버전은 확인 후)
 ```
 
+**스위치 프로토콜(정밀)** — `ln -sfn` 금지(비원자). 반드시:
+```
+ln -s versions/<svc>/<ver> /data/hwax/current/.<svc>.tmp
+mv -T /data/hwax/current/.<svc>.tmp /data/hwax/current/<svc>     # rename(2) = 원자
+```
+- 스테이징 임시 디렉터리는 **반드시 /data 안**(`/data/hwax/.staging/`)에 둔다 — /tmp 에서
+  mv 하면 파일시스템 경계를 넘어 복사+삭제가 되어 원자성이 깨진다.
+- **venv 공유 시 pyc 경합**: 여러 노드가 같은 venv 를 첫 import 하면 `__pycache__` 동시 쓰기
+  경합이 난다. 스테이징 때 `python -m compileall` 로 선컴파일하고, 노드 실행 환경에
+  `PYTHONDONTWRITEBYTECODE=1` 을 준다(버전 디렉터리 불변 원칙과도 일치).
+
 - **코드형 서비스**(agent-server·gateway — venv 로 실행): src 를 `git archive` 로 내보내고
   venv 를 배포 서버에서 1회 빌드해 함께 스테이징. 전 노드가 같은 `/data` 경로로 마운트하므로
   venv 절대경로가 일치해 그대로 동작한다. **전제: 18노드 OS·glibc·Python 동질**(§11).
@@ -164,6 +175,17 @@ GC: 최근 5세대 + last-good 보존, 나머지 삭제 (가동 중 버전은 �
   update-sites 의 "원격 skip" 은 legacy 로 존치 — 클러스터 경로가 이를 대체한다.
 - fan-out 은 스위치된 **고정 버전**을 호출한다(자기 pull 재귀 없음 — UPDATE_ALL_REEXEC
   가드는 배포 서버 단계에만 존재).
+- **전역 배포 뮤텍스**: `state/locks/deploy.lock` 을 O_EXCL 로 잡고 시작(내용 {host, ts}).
+  두 운영자가 동시에 update-all 을 돌리는 사고 차단. 오래된 락(기본 60분↑)은 경고와 함께
+  `--force-takeover` 로만 해제 — 자동 탈취 금지.
+- **부분 실패 시 상태 규칙**: fan-out 은 노드별 진행을 deploy.log 에 기록한다. 중간 실패 시
+  클러스터는 혼합 버전 상태가 되는데, 롤백은 current 원복 후 **이미 재기동한 노드만** 다시
+  재기동한다(로그가 그 목록). 배포 순서(백엔드→게이트웨이→소비자)가 스큐 방향을 "소비자가
+  옛것" 쪽으로 고정하므로, **API 계약은 1버전 하위호환**을 유지한다는 가정을 명시한다 —
+  계약을 깨는 변경은 2단계 배포(호환 추가 → 소비 전환)로 나눈다.
+- **singleton 락 프로토콜(정밀)**: 획득 = O_EXCL 생성(내용 {host, svc, ts}), 유지 = 주기적
+  mtime 갱신(heartbeat), pid 는 노드 간 무의미하므로 판정에 쓰지 않는다. 탈취는
+  `--force-takeover` 명시 시에만 — 자동 탈취는 split-brain 위험이라 금지.
 
 ## 6. LLM 배치
 
@@ -205,7 +227,9 @@ GC: 최근 5세대 + last-good 보존, 나머지 삭제 (가동 중 버전은 �
 
 1. **cluster.yaml 부재 = 현행과 완전 동일.** 수용 테스트가 자동으로 증명한다
    (no-yaml vs 1노드 yaml — config 생성물·헬스게이트 출력 diff 0).
-2. **versions/ 는 append-only.** current 스위치는 `ln -sfn` 원자 교체만.
+2. **versions/ 는 append-only.** current 스위치는 §4 프로토콜(tmp 심볼릭 + `mv -T`)만.
+   ⚠ `ln -sfn` 은 **원자적이지 않다**(unlink→재생성 사이에 current 부재 창) — 계획 경화
+   과정에서 잡은 자체 오류(2026-08-02). rename(2) 만 원자성을 보장한다.
 3. **DB 는 항상 정확히 1노드.** 3중 가드 — ① 파서가 singleton 의 리스트 placement 거부,
    ② 기동 스크립트가 `state/locks/<svc>.lock` 의 타 호스트 기록을 보면 기동 거부(명시적
    override 플래그로만 해제), ③ PGDATA 서비스는 preflight 가 hard mount 미확인 시 기동 거부.
@@ -334,4 +358,18 @@ GC: 최근 5세대 + last-good 보존, 나머지 삭제 (가동 중 버전은 �
 | 여러 세션 동시 작업 충돌(실사고 2회) | 클러스터 작업 전용 브랜치, 공유 파일(services.py·gen-nginx-conf.sh) 담당 명시, git add -A 금지 유지 |
 | 사내 프록시가 노드 간 호출 삼킴 | preflight NO_PROXY 주입 + 노드 간 프로브 (v1 승계) |
 | update-all 재귀 | UPDATE_ALL_REEXEC 가드 + fan-out 고정 버전 호출 (v1 승계) |
+
+## 14. 착수 전 검증 실험 (코드 구현 없이 — 계획 경화의 실측 관문)
+
+구현 착수 전(또는 파일럿 초기)에 값싸게 답을 확정할 실험들. 전부 dev 또는 파일럿 장비에서만.
+
+| # | 실험 | 확정하려는 것 | 시기 |
+|---|---|---|---|
+| E1 | tmp 심볼릭 + mv -T 를 NFS 에서 반복 스위치하며 다른 노드에서 연속 readlink | 스위치 원자성이 실제 스토리지에서 성립하는지 (부재/이상값 0회) | 스토리지 도착 직후 |
+| E2 | 두 노드에서 같은 venv 동시 첫 import (compileall 전/후) | pyc 경합 실재 여부와 완화책 유효성 | 파일럿 |
+| E3 | singleton 락: 정상 획득·heartbeat·의도적 이중 획득·stale 락 + force-takeover | 락 프로토콜이 설계대로 동작 | dev (로컬 /data 로 가능) |
+| E4 | 파일럿 노드에서 PG on NFS + kill -9·전원단절 후 복구 | crash-consistency (fsync 정직성의 실증) | 파일럿, 실데이터 투입 전 |
+| E5 | 7GB 순차 스트림과 pgbench 동시 구동, 커밋 지연 측정 | I/O 경합 실재 여부 → PGDATA /data vs 로컬 NVMe 최종 결정 | 파일럿 |
+| E6 | 구버전 agent-server + 신버전 gateway 조합 챗 스모크 | 1버전 스큐 하위호환 가정의 실증 | dev |
+| E7 | 18노드 규모 헬스게이트 소요 시간 측정(병렬 프로브) | 게이트 타임아웃·병렬도 설계값 | 파일럿 |
 | aidh :8001 무인증 노출 | 노드 간 개방 전 방화벽 화이트리스트 또는 키 도입 — DB 분리 시 함께 (v1 승계) |
