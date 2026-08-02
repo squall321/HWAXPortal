@@ -85,6 +85,9 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 - [ ] /data/appdata 앱별 바인드 마운트 격리 강제
 - [ ] cluster.yaml `heax-apps:` 지원 (v1 승계 — v2 재작성에서 누락됐던 항목 복원)
 - [ ] 앱 SIF 를 허브 로컬 var/sifs → /data 스테이징으로 (어느 노드든 앱 기동 가능하게)
+- [ ] 스테이징 완전성 검사: integrations/ 중 SIF 필요 앱(process 형) 전수 vs var/sifs 존재 대조,
+      누락 시 경고 — var/sifs/*.sif 글롭은 "빌드된 것만" 올려 새 앱이 무언 탈락한다(실측 확인).
+      external_proxy 형(DynaForge 등)은 설계상 대상 아님을 검사에서 명시적으로 제외 표기.
 - [ ] manifest `state:`/`endpoint:` + 허브 프록시/upstream + sqlite singleton 가드 (v1 승계)
 - [ ] 검증: laminate 2-replica + materialtwin 단일 강제 + 게이트웨이 도구 수 유지 (v1 승계)
 
