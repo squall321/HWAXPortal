@@ -250,6 +250,11 @@ GC: 최근 5세대 + last-good 보존, 나머지 삭제 (가동 중 버전은 �
 ### Phase 3 — 본 배치 (18노드 서비스 이관)
 - **3.1** 서비스별 이관: 한 번에 한 서비스 — yaml 에 노드 반영 → fan-out → 헬스 → 다음.
   search-llm all-nodes 롤아웃 포함.
+- **3.1b 데이터 동기·백업의 노드 인식화** (실측 2026-08-02: merge-from-drive.sh 와
+  backup-local.sh 가 전부 `apptainer exec instance://…` — **같은 박스 인스턴스 가정**).
+  DB 가 다른 노드로 가면 그 단계는 소유 노드에서 돌아야 한다 — fan-out 이 update-all 의
+  3)단계(AIDH merge)·1b)단계(백업)·SF_RESTORE_DB 를 placement 의 DB 소유 노드로 위임하도록
+  확장. 1노드에선 현행과 동일(자기 자신에게 위임).
 - **3.2** RA 이관 — **블루-그린** (기존 인스턴스는 컷오버 순간까지 불간섭).
   ```
   ① 새 노드에 RA 인스턴스 기동 (자체 deploy.sh, DB 는 /data/pg/reportarchive 신규)

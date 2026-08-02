@@ -54,6 +54,7 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 
 - [ ] 서비스별 이관 (한 번에 한 서비스, 각각 헬스 통과 후 다음)
 - [ ] search-llm all-nodes 롤아웃 (모델·서빙 방식은 §11 결정 후)
+- [ ] 데이터 동기·백업 노드 인식화 (plan §3.1b — merge·backup·SF restore 를 DB 소유 노드로 위임)
 - [ ] RA 블루-그린 (plan §3.2): 새 인스턴스 기동 → 기계 검증(웹·MCP·스케줄러, 선택 SSO)
 - [ ]   컷오버: 구 RA 쓰기 정지 → pg_dump + upload 파일 rsync → 복원 → 연동 확인(기존 rat_ 토큰 생존 확인)
 - [ ]   구 인스턴스 완전 정지(스케줄러 중복 방지) → 포털 라우트 전환 → 롤백 경로 확인
@@ -75,6 +76,8 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 - [ ] 원격 기동 (services.py ssh 경로 재사용)
 - [ ] `resources:` 필수화 — 미기재 앱 등록 거부 + 노드 용량 인식 배치
 - [ ] /data/appdata 앱별 바인드 마운트 격리 강제
+- [ ] cluster.yaml `heax-apps:` 지원 (v1 승계 — v2 재작성에서 누락됐던 항목 복원)
+- [ ] 앱 SIF 를 허브 로컬 var/sifs → /data 스테이징으로 (어느 노드든 앱 기동 가능하게)
 - [ ] manifest `state:`/`endpoint:` + 허브 프록시/upstream + sqlite singleton 가드 (v1 승계)
 - [ ] 검증: laminate 2-replica + materialtwin 단일 강제 + 게이트웨이 도구 수 유지 (v1 승계)
 
