@@ -19,7 +19,8 @@ PORTAL_DIR="${PORTAL_DIR:-$SELF_REPO}"
 MXWP_DIR="$(find_repo "${MXWP_DIR:-}" MXWhitePaper)"
 HEAX_DIR="$(find_repo "${HEAX_DIR:-}" HEAXHub)"
 SF_DIR="$(find_repo "${SF_DIR:-}" SignalForge)"
-WANT="${*:-portal mxwp heax signalforge}"
+KOOR_DIR="$(find_repo "${KOOR_DIR:-}" KooRemapper)"
+WANT="${*:-portal mxwp heax signalforge kooremapper}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
 
@@ -83,6 +84,19 @@ if want signalforge && [ -n "$SF_DIR" ]; then
     VITE_BASE_PATH=/signalforge/ pnpm --dir frontend build   # frontend.sif 가 이 dist 를 베이크
     ./scripts/build.sh                                       # SIF 6종(있으면 skip)
     ./scripts/sync-to-drive.sh )                             # DB 덤프 + SIF + env → Drive(통합)
+fi
+
+# KooRemapper(DynaForge): compat 바이너리(glibc≤2.36, debian:12 빌더) + 듀얼 프론트
+# (standalone+portal) + 서비스 SIF 를 빌드하고 Drive 로 통합 업로드. dist-to-drive 가
+# bin+dist+*.sif 를 tar+checksum 후 publish 한다.
+if want kooremapper && [ -n "$KOOR_DIR" ]; then
+  hr "KooRemapper / DynaForge — compat 바이너리 + 듀얼 프론트 + SIF → Drive"
+  ( cd "$KOOR_DIR"
+    bash scripts/build_linux_compat.sh              # compat 바이너리 → platform/backend/bin
+    bash platform/infra/scripts/build-frontend.sh   # 듀얼 프론트(standalone + index.portal.html)
+    bash platform/infra/scripts/build.sh            # 서비스 SIF(api/mcp/postgres/nginx, skip if present)
+    bash platform/infra/scripts/build-cli.sh || echo "  ⚠ cli.sif 생략(비치명)"
+    bash platform/infra/scripts/dist-to-drive.sh )  # bin+dist+*.sif → Drive
 fi
 
 hr "Done — AIDataHub has no build (cae00 just git pulls). Now on cae00: deploy-all-from-drive.sh"
