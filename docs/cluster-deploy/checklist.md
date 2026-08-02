@@ -14,11 +14,10 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 - [ ] agent mcp_servers.json 게이트웨이 주소 env 화
 - [ ] 검증: dev 풀런 — 생성물 diff 0 + 헬스게이트 통과
 
-### 0.2 RA DB 백업 편입 (전체 계획의 첫 실행 항목)
+### 0.2 RA — 보류 (사용자 결정 2026-08-02)
 
-- [ ] backup-local.sh 에 RA pg_dump 추가 (포털 레포만 변경 — RA 소스 무수정)
-- [ ] 복구 리허설: 임시 DB 복원 → 로그인·보고서 열람 실측
-- [ ] 검증: cron 1회전 후 /data/backups 에 RA 덤프 존재 + 크기 sane
+- RA 는 일절 불간섭. 백업 편입 안 함 — 이관은 Phase 3.2 블루-그린으로, 컷오버 덤프가
+  첫 백업을 겸한다. 그 전까지 무백업 위험은 plan §0 에 기록됨.
 
 ### 0.3 /data 스테이징 계층
 
@@ -40,7 +39,7 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 
 ## Phase 2 — 다노드 fan-out (파일럿 2~3대)
 
-진입 조건: [ ] 0.2 복구 리허설 성공 · [ ] Phase 1 수용 테스트 통과
+진입 조건: [ ] Phase 1 수용 테스트 통과
 
 - [ ] `infra/scripts/preflight-cluster.sh` — ssh 도달성·/data 마운트 동일성·hard mount·
       디스크 여유·시계 동기·sha256 재검증·NO_PROXY
@@ -55,7 +54,9 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 
 - [ ] 서비스별 이관 (한 번에 한 서비스, 각각 헬스 통과 후 다음)
 - [ ] search-llm all-nodes 롤아웃 (모델·서빙 방식은 §11 결정 후)
-- [ ] RA placement 등록 + PGDATA /data/pg 이동 (사전 스냅샷) + 포털 라우트 endpoints 화
+- [ ] RA 블루-그린 (plan §3.2): 새 인스턴스 기동 → 기계 검증(웹·MCP·스케줄러, 선택 SSO)
+- [ ]   컷오버: 구 RA 쓰기 정지 → pg_dump + upload 파일 rsync → 복원 → 연동 확인(기존 rat_ 토큰 생존 확인)
+- [ ]   구 인스턴스 완전 정지(스케줄러 중복 방지) → 포털 라우트 전환 → 롤백 경로 확인
 - [ ] cae00 병행 운영 확인 (클러스터 작업이 cae00 에 영향 0)
 
 ## Phase 4 — 이중화·100명 대비
