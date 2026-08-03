@@ -9,6 +9,26 @@ ROUTES_FILE="$REPO_ROOT/backend/${ROUTES_PATH}"
 TMPL="$NGINX_DIR/hwax.conf.tmpl"
 OUT="$NGINX_DIR/hwax.conf"
 
+# Per-route extra directives. Most services need nothing; a few have traffic the defaults
+# break. Keyed by the FULL id so a nested id (e.g. "svc/api") can differ from its parent.
+#   ste — CAE decks are uploaded through this proxy. nginx's default client_max_body_size is
+#         1m, so a 50MB deck would 413 before ever reaching the backend (which allows 2048m).
+#         request_buffering off streams the upload instead of spooling it to disk first, which
+#         is also what makes the browser's XHR progress bar track reality. buffering off keeps
+#         log tails and result downloads from being held whole in nginx.
+loc_extras() { # $1=id
+  case "$1" in
+    ste)
+      cat <<'EOF'
+            client_max_body_size 2048m;
+            proxy_request_buffering off;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+EOF
+      ;;
+  esac
+}
+
 loc_block() {  # $1=id  $2=url  (unquoted heredoc: ${} expands, \$ stays literal for nginx)
   local id="$1" url="$2"
   # X-Forwarded-Prefix = the SERVICE root prefix (first path segment of the id), so a prefix-aware
@@ -32,9 +52,21 @@ loc_block() {  # $1=id  $2=url  (unquoted heredoc: ${} expands, \$ stays literal
             proxy_set_header Upgrade           \$http_upgrade;
             proxy_set_header Connection        \$connection_upgrade;
             proxy_set_header X-Forwarded-Prefix ${svc};
+$(loc_extras "${id}")
             proxy_pass ${url};
         }
 EOF
+  # Slashless entry point, OPT-IN per id. `location /id/` does not match a bare `/id`, so
+  # without this the request falls to the portal catch-all and returns the portal SPA with
+  # HTTP 200 — the user sees the portal home instead of the service, with nothing signalling why.
+  #
+  # Not enabled for everyone on purpose: a 301 changes what already-working clients see, and
+  # some turn a POST /id into GET /id/ when they follow it. Existing services have shipped
+  # without it, so opting them in is their owners' call, not a side effect of adding STE.
+  # To enable another service, add its id to this list.
+  case " ste " in
+    *" $id "*) printf '        location = /%s { return 301 /%s/; }\n' "$id" "$id" ;;
+  esac
 }
 
 locations=""

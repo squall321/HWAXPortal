@@ -325,6 +325,24 @@ else
   bad "aidh MCP tools/list 무응답 — /mcp/ 상태 확인 (비치명)"
 fi
 probe "signalforge    :17370" http://127.0.0.1:17370/ 0 "200 302 401"
+# Smart Twin Explorer — 백엔드가 이 박스에 없다(헤드노드에 있다). 그래서 둘 다 비치명이다:
+# 헤드노드가 꺼져 있거나 망이 닫힌 상태는 포털 배포의 실패가 아니다.
+#   ① 헤드노드 백엔드 직결 — /api/health 는 무인증 공개 경로다(update-all 이 토큰 없이 부른다)
+#   ② 포털 프록시 경유 — 여기서는 상태코드를 보면 안 된다. nginx location 이 안 붙어도
+#      포털 catch-all 이 SPA(index.html)를 200 으로 돌려주므로 코드만으로는 라우트가 먹었는지
+#      알 수 없다(실측 확인: 반영 전 /ste/api/health 가 200 + HTML). 그래서 본문을 본다.
+STE_UP="$(sed -n 's|^ste=http://\([^/]*\)/.*|\1|p' "$REPO_ROOT/backend/${ROUTES_PATH}" 2>/dev/null | head -1)"
+if [ -n "$STE_UP" ]; then
+  probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200"
+  STE_BODY="$(curl -s -m 4 http://127.0.0.1:8088/ste/api/health 2>/dev/null || true)"
+  if printf '%s' "$STE_BODY" | grep -q 'smart-twin-explorer'; then
+    ok "ste 프록시      :8088 → 백엔드 응답 확인"
+  else
+    bad "ste 프록시      :8088 → 포털 SPA 가 돌아온다 (nginx /ste/ location 미반영, 비치명)"
+  fi
+else
+  ok "ste 라우트 미설정 — 건너뜀"
+fi
 H="$(gw_health)"
 if [ -n "$H" ] && json_ok "$H"; then
   H="$H" python3 - <<'PY'

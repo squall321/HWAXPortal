@@ -102,6 +102,22 @@ systems:
     url: https://stcx.sec.samsung.net
     sort_order: 50
 
+  - id: ste
+    name: Smart Twin Explorer
+    tagline: Slurm 해석 잡 실행 — 파일 올리고, 코어 정하고, 결과 받기
+    description: >-
+      CAE 해석을 웹에서 바로 제출하는 잡 실행 서비스. 입력 파일 묶음과 코어 수만 정하면
+      Slurm 클러스터가 계산하고 결과 폴더를 통째로 돌려줍니다. LS-DYNA 등 솔버를
+      컨테이너로 실행하며, REST API 와 MCP 로도 같은 기능을 씁니다.
+    accent: teal
+    category: Simulation
+    status: available
+    # proxy — 포털이 nginx 로 /ste/ 를 헤드노드 백엔드에 넘긴다. jwt-handoff 가 아니다:
+    # STE 는 자체 Bearer 토큰으로 인증하고 미인증에 401 JSON 을 준다(SSO 리다이렉트 금지).
+    # 리다이렉트였다면 MCP·curl 클라이언트가 JSON 을 기대하다 HTML 을 받아 조용히 깨진다.
+    integration_type: proxy
+    sort_order: 55
+
   - id: spdm
     name: SPDM
     tagline: Simulation Process & Data Management

@@ -17,6 +17,7 @@ serves its assets:
 | heax-hub | `http://localhost:4180/` (slash) | **strip** prefix → `/` | Caddy serves at root; dist built with base `/heax-hub/` so HTML URLs carry the prefix |
 | ai-data-hub | `http://localhost:8001/` (slash) | **strip** prefix → `/` | FastAPI serves `/dashboard`,`/api`,`/static` at root; dashboard derives its own prefix |
 | report-archive | `http://127.0.0.1:3000/` (slash) | **strip** prefix → `/` | Combined FastAPI serves SPA+`/api` at root; dist built with base `/report-archive/` so HTML URLs carry the prefix |
+| ste | `http://<head-node>:15810/` (slash) | **strip** prefix → `/` | Backend lives on the **Slurm head node**, not this box, and serves the SPA itself. dist built with base `/ste/`; its `strip_base` middleware also absorbs the prefix so direct access works identically. Not in `services.yaml` — the portal must never start it. Auth is the backend's own Bearer token (401 JSON, no SSO redirect). Extra directives: `client_max_body_size 2048m` + `proxy_request_buffering off` for CAE deck uploads. |
 
 Rule of thumb:
 - Service serves **under** the sub-path (e.g. `vite preview` with `base`) → **no trailing slash** (pass).
