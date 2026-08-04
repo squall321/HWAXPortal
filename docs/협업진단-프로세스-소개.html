@@ -1,0 +1,416 @@
+<!-- 협업진단(물성 신뢰성 검증) 프로세스 소개 장표 — 수치는 2026-08-02 MaterialTwinWeb API 실측 -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>협업진단 — 해석 물성 신뢰성 검증 프로세스</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔬</text></svg>">
+<style>
+:root{
+  --surface:#fcfcfb; --card:#ffffff; --line:#e6e4df;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#8a887f;
+  --s1:#2a78d6; --s1-soft:#e3eefc; --accent:#eb6834; --accent-soft:#fdeae2;
+  --good:#008300; --good-soft:#e2f3e2; --warn:#b45309; --warn-soft:#fdf1e0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --surface:#1a1a19; --card:#232322; --line:#3a3936;
+    --ink:#ffffff; --ink-2:#c3c2b7; --ink-3:#8f8e85;
+    --s1:#3987e5; --s1-soft:#1d2f47;
+    --accent:#e87b50; --accent-soft:#3d2a20;
+    --good:#4caf50; --good-soft:#1e3320; --warn:#e8a33d; --warn-soft:#3a2f1a;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--surface);color:var(--ink);
+  font-family:"Pretendard","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  line-height:1.65;font-size:16px;word-break:keep-all}
+.wrap{max-width:1100px;margin:0 auto;padding:0 24px 80px}
+a{color:var(--s1)}
+code{font-family:var(--mono);font-size:.86em;background:var(--s1-soft);
+  padding:.1em .4em;border-radius:4px}
+
+/* ── hero ── */
+header{padding:64px 0 40px;border-bottom:1px solid var(--line)}
+.kicker{color:var(--s1);font-weight:700;letter-spacing:.08em;font-size:.82rem}
+h1{font-size:2.1rem;line-height:1.3;margin:.4rem 0 .8rem;font-weight:800}
+.lede{color:var(--ink-2);font-size:1.08rem;max-width:760px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:12px;margin-top:32px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:16px 18px}
+.tile b{display:block;font-size:1.7rem;font-weight:800;letter-spacing:-.02em}
+.tile span{color:var(--ink-2);font-size:.83rem}
+.tile small{display:block;color:var(--ink-3);font-size:.72rem;margin-top:2px}
+
+/* ── sections ── */
+section{margin-top:64px}
+h2{font-size:1.45rem;font-weight:800;margin-bottom:6px}
+.sub{color:var(--ink-2);margin-bottom:24px;max-width:780px}
+h3{font-size:1.05rem;font-weight:700;margin:26px 0 10px}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}
+.card h4{font-size:1rem;margin-bottom:8px}
+.card p{color:var(--ink-2);font-size:.92rem}
+.num{display:inline-flex;width:26px;height:26px;border-radius:50%;
+  background:var(--s1);color:#fff;font-weight:700;font-size:.85rem;
+  align-items:center;justify-content:center;margin-right:8px}
+
+/* ── diagram ── */
+.diagram{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:22px;overflow-x:auto}
+.diagram svg{display:block;min-width:900px;width:100%;height:auto}
+.dg-note{color:var(--ink-3);font-size:.8rem;margin-top:10px}
+
+/* ── charts ── */
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:860px){.charts{grid-template-columns:1fr}}
+.chart{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}
+.chart h4{font-size:.98rem;margin-bottom:2px}
+.chart .cap{color:var(--ink-3);font-size:.78rem;margin-bottom:14px}
+.bar-row{display:grid;grid-template-columns:110px 1fr 64px;align-items:center;
+  gap:10px;padding:3px 0;font-size:.86rem}
+.bar-row:hover{background:var(--s1-soft);border-radius:6px}
+.bar-row .lbl{color:var(--ink-2);text-align:right;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.bar-track{height:18px;position:relative}
+.bar-fill{position:absolute;inset:0 auto 0 0;background:var(--s1);
+  border-radius:0 4px 4px 0;min-width:2px}
+.bar-row .val{font-variant-numeric:tabular-nums;color:var(--ink);font-size:.84rem}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:999px;
+  padding:4px 12px;font-size:.82rem;color:var(--ink-2)}
+.chip b{color:var(--ink);font-weight:600}
+
+/* ── tables ── */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:640px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--ink-2);font-size:.8rem;font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td .src{color:var(--ink-3);font-size:.8rem}
+.pill{display:inline-block;border-radius:6px;padding:1px 8px;font-size:.78rem;font-weight:600}
+.pill.good{background:var(--good-soft);color:var(--good)}
+.pill.blue{background:var(--s1-soft);color:var(--s1)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.acc{background:var(--accent-soft);color:var(--accent)}
+
+.callout{border-left:3px solid var(--s1);background:var(--s1-soft);
+  border-radius:0 10px 10px 0;padding:14px 18px;margin:18px 0;font-size:.92rem}
+.callout.acc{border-color:var(--accent);background:var(--accent-soft)}
+
+footer{margin-top:72px;padding-top:20px;border-top:1px solid var(--line);
+  color:var(--ink-3);font-size:.8rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">HWAX · 협업진단 (Collaborative Diagnosis)</div>
+  <h1>해석 결과의 신뢰는<br>입력 물성의 신뢰에서 시작합니다</h1>
+  <p class="lede">
+    협업진단은 LS-DYNA 해석 모델(K파일)에 들어간 재료 물성이 <b>어디서 온 값이고, 이치에 맞는지</b>를
+    출처가 기록된 재료 DB와 AI 전문가 패널로 검증하는 프로세스입니다.
+    아래 모든 수치는 운영 중인 MaterialTwin 재료 DB 의 실측값입니다.
+  </p>
+  <div class="tiles">
+    <div class="tile"><b>425</b><span>등록 재료</span><small>금속·고분자·복합재·세라믹…</small></div>
+    <div class="tile"><b>11,043</b><span>물성값</span><small>값마다 출처·조건 기록</small></div>
+    <div class="tile"><b>1,301</b><span>출처 레코드</span><small>데이터시트·논문·규격·문헌</small></div>
+    <div class="tile"><b>51</b><span>표준 규격 연계</span><small>ASTM·IEC·ISO·IPC…</small></div>
+    <div class="tile"><b>73</b><span>자체 시험 분석 완료</span><small>인장 44 · 응력완화 29</small></div>
+    <div class="tile"><b>698</b><span>AI 전문가 페르소나</span><small>재료·신뢰성·공정 도메인</small></div>
+  </div>
+</header>
+
+<!-- ══════════════ 왜 ══════════════ -->
+<section>
+  <h2>왜 필요한가</h2>
+  <p class="sub">시뮬레이션은 입력이 틀리면 아무리 정교해도 틀린 답을 냅니다.
+  그런데 실무의 재료 물성은 대개 이렇게 흘러왔습니다.</p>
+  <div class="cards">
+    <div class="card">
+      <h4><span class="num">1</span>출처를 모르는 물성</h4>
+      <p>K파일 속 재료 카드는 이전 프로젝트에서 복사되어 전승됩니다.
+      영률 하나가 어느 데이터시트에서 왔는지, 몇 도에서 측정된 값인지
+      아무도 답할 수 없는 경우가 흔합니다.</p>
+    </div>
+    <div class="card">
+      <h4><span class="num">2</span>사람 검토의 한계</h4>
+      <p>수백 개 파트로 구성된 해석 덱의 재료 카드를 전수 검토할 시간은 없습니다.
+      단위계 실수(MPa 를 Pa 자리에), 자릿수 오타, 다른 재료의 카드 재사용 같은
+      오류가 결과가 이상해진 뒤에야 발견됩니다.</p>
+    </div>
+    <div class="card">
+      <h4><span class="num">3</span>흩어진 신뢰 가능한 출처</h4>
+      <p>제조사 데이터시트, 학술 논문, 표준 규격에 좋은 값이 있지만 흩어져 있습니다.
+      필요할 때마다 검색해 쓰면 같은 재료에 매번 다른 값이 들어갑니다.</p>
+    </div>
+  </div>
+  <div class="callout">
+    협업진단의 답은 두 가지입니다 — <b>① 출처가 값 단위로 기록된 재료 DB</b> 를 만들어 두고,
+    <b>② AI 전문가 패널</b>이 해석 모델의 물성을 그 DB와 대조해 이치에 맞는지 다각도로 따지게 하는 것.
+  </div>
+</section>
+
+<!-- ══════════════ 프로세스 도식 ══════════════ -->
+<section>
+  <h2>프로세스 한눈에 보기</h2>
+  <p class="sub">K파일을 가져오면, 재료 카드를 추출해 DB와 대조하고, AI 전문가 페르소나
+  (도메인 전문가의 지식·화법을 부여한 AI)가 다중 라운드로 토론해 판정합니다.</p>
+
+  <div class="diagram">
+  <svg viewBox="0 0 1060 420" role="img" aria-label="협업진단 프로세스 도식">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="var(--ink-3)"/>
+      </marker>
+    </defs>
+    <style>
+      .box{fill:var(--card);stroke:var(--line);rx:12}
+      .bx-t{font:700 14px sans-serif;fill:var(--ink)}
+      .bx-s{font:11.5px sans-serif;fill:var(--ink-2)}
+      .bx-m{font:10.5px var(--mono);fill:var(--ink-3)}
+      .flow{stroke:var(--ink-3);stroke-width:1.6;fill:none;marker-end:url(#arr)}
+      .lane{font:600 11px sans-serif;fill:var(--ink-3);letter-spacing:.06em}
+    </style>
+
+    <!-- 단계 1: K파일 -->
+    <rect class="box" x="10" y="60" width="150" height="104" rx="12"/>
+    <text class="bx-t" x="28" y="88">① K파일 입력</text>
+    <text class="bx-s" x="28" y="110">LS-DYNA 해석 덱</text>
+    <text class="bx-s" x="28" y="127">파트–재료 목록 추출</text>
+    <text class="bx-m" x="28" y="149">"101, SUS304" …</text>
+
+    <!-- 단계 2: DB 대조 -->
+    <rect class="box" x="205" y="60" width="200" height="104" rx="12"/>
+    <text class="bx-t" x="223" y="88">② 재료 DB 대조</text>
+    <text class="bx-s" x="223" y="110">이름 매칭 → 물성·시험곡선</text>
+    <text class="bx-s" x="223" y="127">·출처·측정조건 조회</text>
+    <text class="bx-m" x="223" y="149">dyna/match · 카드 자동생성</text>
+
+    <!-- 단계 3: 심의 -->
+    <rect class="box" x="450" y="30" width="280" height="164" rx="12" style="stroke:var(--accent)"/>
+    <text class="bx-t" x="468" y="58">③ AI 전문가 심의</text>
+    <text class="bx-s" x="468" y="80">질문 연관도로 전문가 자동 선정</text>
+    <text class="bx-s" x="468" y="97">→ 초기 의견 → 상호 반박·심화 → 수렴</text>
+    <!-- persona chips -->
+    <g font="10.5px sans-serif">
+      <rect x="468" y="110" width="112" height="22" rx="11" fill="var(--accent-soft)"/>
+      <text x="478" y="125" fill="var(--accent)">재료 물성 전문가</text>
+      <rect x="586" y="110" width="104" height="22" rx="11" fill="var(--accent-soft)"/>
+      <text x="596" y="125" fill="var(--accent)">신뢰성 시험 전문가</text>
+      <rect x="468" y="138" width="96" height="22" rx="11" fill="var(--accent-soft)"/>
+      <text x="478" y="153" fill="var(--accent)">해석 방법론</text>
+      <rect x="570" y="138" width="120" height="22" rx="11" fill="var(--accent-soft)"/>
+      <text x="580" y="153" fill="var(--accent)">공정·제조 전문가 …</text>
+    </g>
+    <text class="bx-m" x="468" y="182">DB 조회 결과가 발언의 인용 근거로 주입됨</text>
+
+    <!-- 단계 4: 판정 -->
+    <rect class="box" x="775" y="60" width="130" height="104" rx="12"/>
+    <text class="bx-t" x="791" y="88">④ 판정</text>
+    <text class="bx-s" x="791" y="110">근거 인용 의사결정문</text>
+    <text class="bx-s" x="791" y="127">+ 비전문가용 설명</text>
+
+    <!-- 단계 5: 보고서 -->
+    <rect class="box" x="940" y="60" width="110" height="104" rx="12"/>
+    <text class="bx-t" x="956" y="88">⑤ 보고서</text>
+    <text class="bx-s" x="956" y="110">Report Archive</text>
+    <text class="bx-s" x="956" y="127">이력·공유·이어하기</text>
+
+    <!-- flows -->
+    <path class="flow" d="M160 112 H205"/>
+    <path class="flow" d="M405 112 H450"/>
+    <path class="flow" d="M730 112 H775"/>
+    <path class="flow" d="M905 112 H940"/>
+
+    <!-- 데이터 공급 레인 -->
+    <text class="lane" x="10" y="262">재료 DB 는 이렇게 채워집니다</text>
+    <rect class="box" x="10" y="278" width="176" height="66" rx="10"/>
+    <text class="bx-s" x="26" y="302" style="font-weight:700;fill:var(--ink)">외부 신뢰 출처 수집</text>
+    <text class="bx-s" x="26" y="320">데이터시트·논문·규격·문헌</text>
+    <text class="bx-m" x="26" y="336">값마다 출처+조건 기록</text>
+
+    <rect class="box" x="216" y="278" width="176" height="66" rx="10"/>
+    <text class="bx-s" x="232" y="302" style="font-weight:700;fill:var(--ink)">자체 시험 실측</text>
+    <text class="bx-s" x="232" y="320">인장·응력완화 곡선 원본 보관</text>
+    <text class="bx-m" x="232" y="336">→ 구성방정식 피팅·카드 생성</text>
+
+    <!-- DB cylinder -->
+    <g>
+      <ellipse cx="500" cy="288" rx="72" ry="13" fill="var(--s1-soft)" stroke="var(--s1)"/>
+      <path d="M428 288 v40 a72 13 0 0 0 144 0 v-40" fill="var(--s1-soft)" stroke="var(--s1)"/>
+      <text x="500" y="316" text-anchor="middle" style="font:700 12.5px sans-serif;fill:var(--s1)">MaterialTwin DB</text>
+      <text x="500" y="332" text-anchor="middle" class="bx-m">재료 425 · 물성값 11,043</text>
+    </g>
+    <path class="flow" d="M186 311 H420"/>
+    <path class="flow" d="M392 311 H420"/>
+    <path class="flow" d="M500 273 C500 230 320 180 305 164"/>
+
+    <!-- legend note -->
+    <text class="bx-m" x="620" y="300">↑ 심의 ②·③ 단계가 이 DB 를 실시간 조회합니다.</text>
+    <text class="bx-m" x="620" y="318">전문가 발언의 수치는 기억이 아니라 DB 조회 결과에서 나오며,</text>
+    <text class="bx-m" x="620" y="336">조회 이력이 근거 패널에 그대로 남습니다.</text>
+  </svg>
+  <p class="dg-note">※ 페르소나 = 특정 도메인 전문가의 역할·지식 범위를 부여한 AI.
+  한 심의에 3~12명이 참여하며 질문 내용에 따라 자동 추천됩니다(수동 교체 가능).</p>
+  </div>
+</section>
+
+<!-- ══════════════ DB 현황 ══════════════ -->
+<section>
+  <h2>재료 DB 정리 현황</h2>
+  <p class="sub">스마트폰 세트를 구성하는 재료를 부위(서브시스템)별로 수집하고 있습니다.
+  단순 스펙 표가 아니라, 값 하나하나에 출처·측정조건·품질등급이 붙는 구조입니다.</p>
+
+  <div class="charts">
+    <div class="chart">
+      <h4>재료 분류별 등록 수</h4>
+      <div class="cap">총 425종 — 접착·테이프류가 많은 것은 스마트폰 적층 구조 특성</div>
+      <div class="bar-row" title="폴리머 194종"><span class="lbl">고분자</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">194</span></div>
+      <div class="bar-row" title="금속 74종"><span class="lbl">금속</span><span class="bar-track"><span class="bar-fill" style="width:38%"></span></span><span class="val">74</span></div>
+      <div class="bar-row" title="복합재 71종"><span class="lbl">복합재</span><span class="bar-track"><span class="bar-fill" style="width:37%"></span></span><span class="val">71</span></div>
+      <div class="bar-row" title="세라믹 42종"><span class="lbl">세라믹</span><span class="bar-track"><span class="bar-fill" style="width:22%"></span></span><span class="val">42</span></div>
+      <div class="bar-row" title="폼 22종"><span class="lbl">폼</span><span class="bar-track"><span class="bar-fill" style="width:11%"></span></span><span class="val">22</span></div>
+      <div class="bar-row" title="고무 22종"><span class="lbl">고무</span><span class="bar-track"><span class="bar-fill" style="width:11%"></span></span><span class="val">22</span></div>
+    </div>
+    <div class="chart">
+      <h4>물성값 도메인 분포</h4>
+      <div class="cap">11,043건 — 기계·열이 중심, 전기·광학·계면까지 11개 도메인</div>
+      <div class="bar-row" title="기계 3,513건"><span class="lbl">기계</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">3,513</span></div>
+      <div class="bar-row" title="열 2,828건"><span class="lbl">열</span><span class="bar-track"><span class="bar-fill" style="width:80%"></span></span><span class="val">2,828</span></div>
+      <div class="bar-row" title="전기 1,077건"><span class="lbl">전기</span><span class="bar-track"><span class="bar-fill" style="width:31%"></span></span><span class="val">1,077</span></div>
+      <div class="bar-row" title="광학 850건"><span class="lbl">광학</span><span class="bar-track"><span class="bar-fill" style="width:24%"></span></span><span class="val">850</span></div>
+      <div class="bar-row" title="물리 728건"><span class="lbl">물리</span><span class="bar-track"><span class="bar-fill" style="width:21%"></span></span><span class="val">728</span></div>
+      <div class="bar-row" title="계면 644건"><span class="lbl">계면</span><span class="bar-track"><span class="bar-fill" style="width:18%"></span></span><span class="val">644</span></div>
+      <div class="bar-row" title="화학 595건"><span class="lbl">화학</span><span class="bar-track"><span class="bar-fill" style="width:17%"></span></span><span class="val">595</span></div>
+      <div class="bar-row" title="구조 318 · 유변 195 · 자성 164 · 음향 131"><span class="lbl">구조·유변·자성·음향</span><span class="bar-track"><span class="bar-fill" style="width:23%"></span></span><span class="val">808</span></div>
+    </div>
+  </div>
+
+  <h3>서브시스템 커버리지</h3>
+  <div class="chips">
+    <span class="chip"><b>PCB</b> 50</span><span class="chip"><b>RF</b> 21</span>
+    <span class="chip"><b>패키징</b> 17</span><span class="chip"><b>디스플레이</b> 16</span>
+    <span class="chip"><b>배터리</b> 14</span><span class="chip"><b>수동소자</b> 10</span>
+    <span class="chip"><b>카메라</b> 9</span><span class="chip"><b>코팅</b> 7</span>
+    <span class="chip"><b>하우징</b> 6</span><span class="chip"><b>자성부품</b> 5</span>
+    <span class="chip"><b>반도체</b> 4</span><span class="chip"><b>센서</b> 4</span>
+    <span class="chip"><b>SoC</b> 3</span><span class="chip">기타 공용 247</span>
+  </div>
+
+  <h3>자체 시험 데이터 (실측 계층)</h3>
+  <p class="sub" style="margin-bottom:12px">외부 출처와 별도로, 직접 수행한 시험은 <b>곡선 원본</b>까지 보관합니다.
+  탄소성 44종(인장), 점탄성 29종(응력완화) — 시험 곡선에서 구성방정식
+  (Johnson-Cook·Hollomon·Voce 등 응력-변형률 관계식)을 피팅하고, 단위계를 지정하면
+  LS-DYNA 재료 카드가 자동 생성됩니다. 카드의 소성 곡선 각 점이 실측에서 나오므로
+  "이 카드가 어느 시험에서 왔는지"를 언제든 역추적할 수 있습니다.</p>
+  <div class="chips">
+    <span class="chip"><b>강</b> 13</span><span class="chip"><b>동합금</b> 18</span>
+    <span class="chip"><b>알루미늄</b> 12</span><span class="chip"><b>티탄</b> 6</span>
+    <span class="chip"><b>마그네슘</b> 3</span><span class="chip"><b>니켈</b> 3</span>
+    <span class="chip"><b>OCA·PSA 점탄성</b> 29</span>
+  </div>
+</section>
+
+<!-- ══════════════ 출처 체계 ══════════════ -->
+<section>
+  <h2>출처 체계 — 모든 값에 "어디서 왔는지"가 붙습니다</h2>
+  <p class="sub">1,301개 출처 레코드가 11,043개 물성값에 연결되어 있습니다.
+  출처 종류와 품질등급(quality tier)이 값 단위로 기록되므로,
+  같은 물성이라도 더 신뢰할 수 있는 값을 골라 쓸 수 있습니다.</p>
+
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>출처 종류</th><th>무엇인가</th><th>예시</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill good">measured · 자체 측정</span></td>
+        <td>직접 수행한 인장·응력완화 시험. 곡선 원본 보관, 최우선 신뢰</td>
+        <td class="src">탄소성 44종 · 점탄성 29종 시험 곡선</td></tr>
+      <tr><td><span class="pill blue">standard · 표준 규격</span></td>
+        <td>측정 방법이 규격으로 고정된 값 — 51개 규격과 연계</td>
+        <td class="src">ASTM D149(절연내력) · D150(유전율) · D256(충격) · D5470(열계면) · E595(아웃가싱) …</td></tr>
+      <tr><td><span class="pill blue">journal · 학술 논문</span></td>
+        <td>동료검토를 거친 측정값 — 측정 조건(주파수·온도 등)과 함께 기록</td>
+        <td class="src">FR4 유전율 4.2 @ 10.2 GHz (논문) vs 4.3 @ 1 MHz (데이터시트) — 조건별 병기</td></tr>
+      <tr><td><span class="pill acc">datasheet · 제조사 자료</span></td>
+        <td>제조사 공식 데이터시트 — 제조사명·문서까지 기록</td>
+        <td class="src">3M(29종) · Avery Dennison(14) · BASF(12) · Rogers(13) · DuPont(9) · SABIC(7) · tesa(6) · Nitto(4) · Isola(3) …</td></tr>
+      <tr><td><span class="pill warn">book/estimated · 문헌·추정</span></td>
+        <td>기술 문헌 대표값·공학적 추정 — 가장 낮은 등급으로 명시, 판정 근거로는 보수적으로만 사용</td>
+        <td class="src">포아송비·비열 등 문헌 대표값</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout acc">
+    <b>예시 — FR4 (PCB 기판 적층재).</b> 영률 21 GPa(면내, 데이터시트) · 굽힘강도 480 MPa ·
+    유전율 4.3@1MHz / 4.2@10.2GHz(주파수 조건 병기) · CTE 15.5 ppm/K(면내, Tg 이하) ·
+    Tg 135 ℃ · 24h 수분흡수 0.15% — 값마다 출처 문서와 측정 조건이 붙어 있어,
+    "고주파 기판 해석인데 1 MHz 유전율을 쓰고 있다" 같은 <b>조건 불일치까지 잡아낼 수 있습니다.</b>
+  </div>
+</section>
+
+<!-- ══════════════ 검증 사례 ══════════════ -->
+<section>
+  <h2>실제 검증 사례 — 물성이 이치에 맞는지 따지기</h2>
+  <p class="sub">아래는 실제 수행한 심의입니다. "Al6061-T6 브라켓의 항복 여유가 충분한가"를 묻자,
+  AI 가 재료 DB 를 스스로 조회(목록 → 상세 → 카드 체이닝)해 근거로 인용했습니다.</p>
+
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>항목</th><th>해석 카드 값</th><th>DB 실측(시험)</th><th>대조</th></tr></thead>
+    <tbody>
+      <tr><td>탄성계수 E</td><td class="src">6.89 × 10⁴ MPa</td><td>68.9 GPa</td>
+        <td><span class="pill good">✓ 일치</span></td></tr>
+      <tr><td>항복강도 σy</td><td class="src">275.5 MPa</td><td>275.45 MPa (0.2% 오프셋)</td>
+        <td><span class="pill good">✓ 일치</span></td></tr>
+      <tr><td>인장강도 UTS</td><td class="src">—</td><td>398.26 MPa</td>
+        <td><span class="pill blue">여유 산정 근거</span></td></tr>
+      <tr><td>소성 곡선</td><td class="src">21점 *DEFINE_CURVE</td><td>인장시험 곡선에서 생성</td>
+        <td><span class="pill good">✓ 실측 유래</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <p class="sub" style="margin-top:14px">
+    심의 결론문은 이 수치를 그대로 인용했습니다 — "UTS 398.26 MPa 대 항복 275.45 MPa,
+    변형경화 여유 약 1.45배". 반대로 카드 값이 DB 와 어긋나면(예: 항복을 35,000 MPa 로 오기입)
+    그 불일치 자체가 심의 안건이 됩니다. <b>수치의 출처가 "기억"이 아니라 "조회 기록"이라는 것</b>이 핵심입니다.
+  </p>
+</section>
+
+<!-- ══════════════ 이용 방법 ══════════════ -->
+<section>
+  <h2>이용 방법</h2>
+  <div class="cards">
+    <div class="card">
+      <h4>포털 챗에서 심의</h4>
+      <p><code>/심의 &lt;질문&gt;</code> 으로 시작합니다. 전문가 선정 패널에서 재료 DB 도구
+      (<code>list_materials</code>·<code>get_material</code>·<code>get_mat_card</code>)를
+      선택하면 심의 시작 전에 실제 호출되어 정량 근거로 주입됩니다.</p>
+    </div>
+    <div class="card">
+      <h4>MaterialTwin 웹</h4>
+      <p>HEAX Hub → MaterialTwin. 재료 카탈로그 탐색, Ashby 물성 공간, 파트–재료 행 매칭
+      (<code>"101, SUS304"</code> 붙여넣기 → DB 매칭 → LS-DYNA 덱 생성)을 직접 쓸 수 있습니다.</p>
+    </div>
+    <div class="card">
+      <h4>개인 Claude 연결 (MCP)</h4>
+      <p>포털 <code>/tokens</code> 에서 토큰을 발급하고 설정 배치파일을 실행하면,
+      본인 Claude·Gemini·Codex 에서 같은 재료 도구를 바로 호출할 수 있습니다.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  본 장표의 모든 수치는 2026-08-02 MaterialTwin 운영 DB API 실측입니다
+  (재료 425 · 물성값 11,043 · 출처 1,301 · 물성 정의 119종/11도메인 · 표준 51종 ·
+  시험 분석 73종). 검증 사례(Al6061-T6)는 동일 일자 실제 심의 기록입니다.
+</footer>
+
+</div>
+</body>
+</html>
