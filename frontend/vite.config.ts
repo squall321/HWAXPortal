@@ -16,6 +16,7 @@ export default defineConfig({
     port: 5283,
     proxy: {
       '/api': { target: API, changeOrigin: true },
+      '/agent': { target: API, changeOrigin: true },
       '/auth': { target: API, changeOrigin: true },
       '/systems': { target: API, changeOrigin: true },
       '/mail': { target: API, changeOrigin: true },
