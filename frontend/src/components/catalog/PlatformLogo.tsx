@@ -8,6 +8,7 @@ const GRAD: Record<Accent, [string, string]> = {
   sky: ['#38bdf8', '#2563eb'],
   rose: ['#fb7185', '#e11d48'],
   indigo: ['#818cf8', '#4f46e5'],
+  teal: ['#2dd4bf', '#0d9488'],
 };
 
 const stroke = {

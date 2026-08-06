@@ -1,7 +1,7 @@
 import { apiFetch } from './client';
 
 export type IntegrationType = 'external-url' | 'proxy' | 'jwt-handoff' | 'saml-handoff';
-export type Accent = 'violet' | 'cyan' | 'amber' | 'emerald' | 'sky' | 'rose' | 'indigo';
+export type Accent = 'violet' | 'cyan' | 'amber' | 'emerald' | 'sky' | 'rose' | 'indigo' | 'teal';
 export type SystemStatus = 'available' | 'coming_soon';
 
 export interface SystemTile {

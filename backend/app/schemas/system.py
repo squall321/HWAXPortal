@@ -18,7 +18,7 @@ IntegrationType = Literal["external-url", "proxy", "jwt-handoff", "saml-handoff"
 HandoffMode = Literal["redirect", "auto_post"]
 Status = Literal["available", "coming_soon"]
 # Signature gradient theme per platform (frontend maps these to colors).
-Accent = Literal["violet", "cyan", "amber", "emerald", "sky", "rose", "indigo"]
+Accent = Literal["violet", "cyan", "amber", "emerald", "sky", "rose", "indigo", "teal"]
 
 
 class LinkedSystem(BaseModel):
