@@ -16,13 +16,14 @@ FRONT_PORT=5283
 kill_port() {
   local port="$1"
   local pids
-  pids="$(lsof -ti "tcp:${port}" 2>/dev/null || true)"
+  # -sTCP:LISTEN 필수 — 없으면 이 포트에 "연결 중인" 클라이언트(MCP 게이트웨이 등)까지 죽인다.
+  pids="$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || true)"
   if [ -n "$pids" ]; then
     echo "  • stopping :${port} (pid: ${pids//$'\n'/ })"
     # shellcheck disable=SC2086
     kill $pids 2>/dev/null || true
     sleep 0.6
-    pids="$(lsof -ti "tcp:${port}" 2>/dev/null || true)"
+    pids="$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || true)"
     # shellcheck disable=SC2086
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   else
