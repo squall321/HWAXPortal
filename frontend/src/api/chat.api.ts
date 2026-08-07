@@ -111,6 +111,8 @@ export interface ExpertsTools {
   expert_tools?: (ToolEntry & { agents?: string[] })[];
   /** 전체 도구 카탈로그 — 검색 추가용. */
   all: ToolEntry[];
+  /** 앱 목록 — 앱 단위 선택(pinned_apps)용. 구 서버 응답에는 없다. */
+  apps?: { app: string; label: string; desc?: string; tool_count: number }[];
 }
 
 export interface ExpertsResponse {
@@ -188,13 +190,14 @@ export async function streamChat(
     delibOpts?: Record<string, unknown>;
     /** 사용자 지정 우선 도구(챗) — 도구 카탈로그에서 선택. 서버가 우선 사용을 강제. */
     pinnedTools?: string[];
+    pinnedApps?: string[];
     /** 사용자 지정 전문가(agent_type) — 이 전문가 페르소나로 대화. */
     pinnedAgent?: string;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedAgent, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -212,6 +215,8 @@ export async function streamChat(
       ...(conversationId ? { conversation_id: conversationId } : {}),
       ...(delibOpts && Object.keys(delibOpts).length > 0 ? { delib_opts: delibOpts } : {}),
       ...(pinnedTools && pinnedTools.length > 0 ? { pinned_tools: pinnedTools.slice(0, 12) } : {}),
+      // 앱은 서버가 도구로 펼치므로 12개 캡이 아니라 앱 수 캡(3)을 쓴다.
+      ...(pinnedApps && pinnedApps.length > 0 ? { pinned_apps: pinnedApps.slice(0, 3) } : {}),
       ...(pinnedAgent ? { pinned_agent: pinnedAgent } : {}),
     }),
     signal,

@@ -11,15 +11,17 @@ import {
 import { useChat } from '../../state/ChatContext';
 
 const MAX_TOOLS = 12; // 챗 pinned_tools 상한
+const MAX_APPS = 3;   // 챗 pinned_apps 상한 — 앱 하나가 도구 20~30개다
 const LIST_LIMIT = 10;
 
 export function StartPicker({ onClose }: { onClose: () => void }) {
-  const { pinnedTools, setPinnedTools, pinnedAgent, setPinnedAgent } = useChat();
+  const { pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent } = useChat();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState<ExpertsResponse | null>(null);
   const [agentSel, setAgentSel] = useState<string | null>(pinnedAgent);
   const [toolSel, setToolSel] = useState<Set<string>>(() => new Set(pinnedTools));
+  const [appSel, setAppSel] = useState<Set<string>>(() => new Set(pinnedApps));
   const [toolFilter, setToolFilter] = useState('');
   const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터
   const [domain, setDomain] = useState('');
@@ -68,16 +70,20 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
 
   const toolAll = useMemo(() => res?.tools?.all ?? [], [res]);
   const toolRec = res?.tools?.recommended ?? [];
-  const toolGroups = useMemo(() => {
-    const m = new Map<string, { label: string; n: number }>();
+  // 앱 목록 — 서버가 주면 그대로(설명 포함), 구 서버 응답이면 도구의 group 으로 재구성.
+  const toolApps = useMemo(() => {
+    const given = res?.tools?.apps;
+    if (given?.length) return given;
+    const m = new Map<string, { app: string; label: string; desc?: string; tool_count: number }>();
     for (const t of toolAll) {
       const k = t.group || '';
       if (!k) continue;
       const c = m.get(k);
-      if (c) c.n += 1; else m.set(k, { label: t.group_label || k, n: 1 });
+      if (c) c.tool_count += 1;
+      else m.set(k, { app: k, label: t.group_label || k, tool_count: 1 });
     }
-    return [...m.entries()].sort((a, b) => b[1].n - a[1].n);
-  }, [toolAll]);
+    return [...m.values()].sort((a, b) => b.tool_count - a.tool_count);
+  }, [res, toolAll]);
   // 앱으로 먼저 좁히고(계층 1단) 그 안에서 검색 — 평평한 166개 훑기를 피한다.
   const toolResults = useMemo(() => {
     const q = toolFilter.trim().toLowerCase();
@@ -86,6 +92,14 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
     if (!q) return toolGroup ? pool.slice(0, 15) : [];
     return pool.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q)).slice(0, 15);
   }, [toolFilter, toolGroup, toolAll]);
+
+  const toggleApp = (key: string) =>
+    setAppSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else if (next.size < MAX_APPS) next.add(key);
+      return next;
+    });
 
   const toggleTool = (name: string) =>
     setToolSel((prev) => {
@@ -112,6 +126,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
 
   const apply = () => {
     setPinnedAgent(agentSel);
+    setPinnedApps([...appSel]);
     setPinnedTools([...toolSel]);
     onClose();
   };
@@ -197,7 +212,29 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             )}
           </div>
           <div className="sp-col">
-            <div className="sp-sec-title">도구 (선택 {toolSel.size}/{MAX_TOOLS})</div>
+            <div className="sp-sec-title">
+              앱 (선택 {appSel.size}/{MAX_APPS}) — 앱을 고르면 그 기능 전체를 우선 사용
+            </div>
+            <ul className="tc-apps sp-apps">
+              {toolApps.map((a) => {
+                const on = appSel.has(a.app);
+                const full = !on && appSel.size >= MAX_APPS;
+                return (
+                  <li key={a.app}>
+                    <label className={`tc-app-card${on ? ' is-on' : ''}${full ? ' is-off' : ''}`} title={a.desc}>
+                      <input type="checkbox" checked={on} disabled={full} onChange={() => toggleApp(a.app)} />
+                      <span className="tc-app-body">
+                        <span className="tc-app-head">
+                          <span className="tc-app-name">{a.label}</span>
+                          <span className="tc-app-n">{a.tool_count}</span>
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="sp-sec-title">개별 도구 (선택 {toolSel.size}/{MAX_TOOLS})</div>
             {toolRec.length > 0 && (
               <ul className="sp-list">
                 {toolRec.slice(0, 8).map((t) => (
@@ -212,8 +249,8 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             )}
             <select className="sp-domain" value={toolGroup} onChange={(e) => setToolGroup(e.target.value)} aria-label="MCP 앱 선택">
               <option value="">앱 선택… (전체 {toolAll.length}개)</option>
-              {toolGroups.map(([k, g]) => (
-                <option key={k} value={k}>{g.label} ({g.n})</option>
+              {toolApps.map((a) => (
+                <option key={a.app} value={a.app}>{a.label} ({a.tool_count})</option>
               ))}
             </select>
             <input

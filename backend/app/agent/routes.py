@@ -76,6 +76,9 @@ class ChatRequest(BaseModel):
     delib_opts: DelibOpts | None = None
     # 사용자 지정 우선 도구(챗) — 도구 카탈로그에서 직접 선택한 도구를 우선 사용하게 강제.
     pinned_tools: list[str] | None = Field(default=None, max_length=12)
+    # 사용자 지정 우선 앱(챗) — 앱 하나가 도구 20~30개라 12개 캡을 씌우면 조용히 잘린다.
+    # 캡은 앱 수(3개)로 걸고, 도구 펼침은 agent-server 가 한다.
+    pinned_apps: list[str] | None = Field(default=None, max_length=3)
     # 사용자 지정 전문가(챗) — 이 전문가 페르소나로 대화('전문가와 대화' 모드).
     pinned_agent: str | None = Field(default=None, max_length=120)
 
@@ -257,6 +260,8 @@ async def _relay_stream(
         payload["delib_opts"] = body.delib_opts.model_dump(exclude_none=True)
     if body.pinned_tools:  # 사용자 지정 우선 도구 — 켠 것만 전달
         payload["pinned_tools"] = body.pinned_tools
+    if body.pinned_apps:  # 사용자 지정 우선 앱 — agent-server 가 도구로 펼친다
+        payload["pinned_apps"] = body.pinned_apps
     if body.pinned_agent:  # 사용자 지정 전문가 페르소나
         payload["pinned_agent"] = body.pinned_agent
     try:

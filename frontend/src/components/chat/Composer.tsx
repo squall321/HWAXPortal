@@ -29,7 +29,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   { autoFocus = false, placeholder = '무엇이든 물어보세요…', showHint = false, onSubmitText },
   ref,
 ) {
-  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedAgent, setPinnedAgent } =
+  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent } =
     useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -73,8 +73,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   return (
     <form className="composer" onSubmit={onSubmit}>
       {/* 지정 전문가·도구 칩 — 이 대화에 적용될 선택을 항상 보이게(× 로 즉시 해제). */}
-      {(pinnedTools.length > 0 || pinnedAgent) && (
-        <div className="composer-pins" aria-label="지정 전문가·도구">
+      {(pinnedTools.length > 0 || pinnedApps.length > 0 || pinnedAgent) && (
+        <div className="composer-pins" aria-label="지정 전문가·앱·도구">
           {pinnedAgent && (
             <span className="composer-pin composer-pin-agent" title="지정 전문가 페르소나">
               👤 {pinnedAgent}
@@ -89,6 +89,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               </button>
             </span>
           )}
+          {pinnedApps.length > 0 && <span className="composer-pins-label">지정 앱</span>}
+          {pinnedApps.map((k) => (
+            <span key={k} className="composer-pin composer-pin-app" title="이 앱의 기능 전체를 우선 사용">
+              {k}
+              <button
+                type="button"
+                className="composer-pin-x"
+                onClick={() => setPinnedApps(pinnedApps.filter((x) => x !== k))}
+                aria-label={`앱 ${k} 지정 해제`}
+                title="지정 해제"
+              >
+                ×
+              </button>
+            </span>
+          ))}
           {pinnedTools.length > 0 && <span className="composer-pins-label">지정 도구</span>}
           {pinnedTools.map((n) => (
             <span key={n} className="composer-pin">

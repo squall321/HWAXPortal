@@ -105,10 +105,19 @@ export interface ToolInfo {
   group?: string;
   group_label?: string;
 }
+/** MCP 앱 한 건 — 앱 단위 선택(pinnedApps)의 단위. tool_count 는 이 사용자에게 보이는 수. */
+export interface ToolApp {
+  app: string;
+  label: string;
+  desc?: string;
+  tool_count: number;
+}
 export interface ToolCatalog {
   query?: string;
   recommended: ToolInfo[];
   all: ToolInfo[];
+  /** 앱 목록 — 없으면(구 서버) all[].group 으로 프론트가 재구성한다. */
+  apps?: ToolApp[];
 }
 
 export interface Message {
@@ -144,6 +153,8 @@ export interface Conversation {
   serverId?: string;
   // 사용자 지정 우선 도구 — 도구 카탈로그에서 선택. 이 대화의 이후 발화에 pinned_tools 로 실린다.
   pinnedTools?: string[];
+  // 사용자 지정 우선 앱 — 앱을 고르면 그 앱의 도구 전체가 우선 사용된다(서버가 펼침).
+  pinnedApps?: string[];
   // 사용자 지정 전문가(agent_type) — '전문가와 대화' 모드. 이후 발화에 pinned_agent 로 실린다.
   pinnedAgent?: string;
 }

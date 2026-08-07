@@ -24,6 +24,10 @@ interface StoredConversation {
   createdAt: number;
   updatedAt: number;
   serverId?: string; // 서버 정본 id — 캐시 재로드 후에도 서버 병합·이어쓰기가 이어지게 영속
+  // 지정 앱·도구·전문가 — 영속하지 않으면 새로고침에 조용히 풀려, 사용자는 여전히 지정된 줄 안다.
+  pinnedApps?: string[];
+  pinnedTools?: string[];
+  pinnedAgent?: string;
 }
 
 let seq = 0;
@@ -61,6 +65,9 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
         updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
         ...(typeof c.serverId === 'string' ? { serverId: c.serverId } : {}),
+        ...(Array.isArray(c.pinnedApps) ? { pinnedApps: c.pinnedApps.filter((x) => typeof x === 'string') } : {}),
+        ...(Array.isArray(c.pinnedTools) ? { pinnedTools: c.pinnedTools.filter((x) => typeof x === 'string') } : {}),
+        ...(typeof c.pinnedAgent === 'string' ? { pinnedAgent: c.pinnedAgent } : {}),
       });
     }
     return convs;
@@ -90,6 +97,9 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
       ...(c.serverId ? { serverId: c.serverId } : {}),
+      ...(c.pinnedApps?.length ? { pinnedApps: c.pinnedApps } : {}),
+      ...(c.pinnedTools?.length ? { pinnedTools: c.pinnedTools } : {}),
+      ...(c.pinnedAgent ? { pinnedAgent: c.pinnedAgent } : {}),
       messages: c.messages
         // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
         // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).

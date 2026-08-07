@@ -1055,6 +1055,32 @@ body.dock-open .container {
   color: var(--muted); font-size: 0.75rem; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
+/* 앱 카드 — 앱 단위 선택(pinnedApps). 도구 한 줄과 달리 설명이 보여야 고를 수 있다. */
+.tc-apps {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.4rem;
+}
+.tc-app-card {
+  display: flex; align-items: flex-start; gap: 0.5rem; height: 100%;
+  padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 10px;
+  cursor: pointer; background: transparent;
+}
+.tc-app-card:hover { border-color: var(--cx-accent); background: var(--cx-accent-soft); }
+.tc-app-card.is-on { border-color: var(--cx-accent); background: var(--cx-accent-soft); }
+.tc-app-card.is-off { opacity: 0.45; cursor: default; }
+.tc-app-card input { accent-color: var(--cx-accent); flex-shrink: 0; margin-top: 0.15rem; }
+.tc-app-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.tc-app-head { display: flex; align-items: baseline; gap: 0.35rem; flex-wrap: wrap; }
+.tc-app-name { font-size: 0.82rem; font-weight: 700; }
+.tc-app-n { font-size: 0.7rem; color: var(--muted); }
+.tc-app-desc {
+  font-size: 0.72rem; color: var(--muted); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tc-chip-app { font-family: inherit; font-weight: 600; }
+/* 랜딩 패널은 열 폭이 좁다 — 앱 카드를 1열로 눕히고 최대 높이를 준다. */
+.sp-apps { grid-template-columns: 1fr; max-height: 150px; overflow-y: auto; margin-bottom: 0.4rem; }
+
 .tc-search {
   width: 100%; padding: 0.45rem 0.65rem;
   border: 1px solid var(--border); border-radius: 10px;
@@ -1106,6 +1132,8 @@ body.dock-open .container {
   border: 1px solid var(--cx-accent); border-radius: 999px;
   padding: 0.1rem 0.3rem 0.1rem 0.5rem;
 }
+/* 앱 칩 — 도구 칩과 같은 줄에 서므로 서체로 구분한다(도구는 mono, 앱은 본문체). */
+.composer-pin-app { font-family: inherit; font-weight: 600; }
 .composer-pin-x {
   border: none; background: rgba(255, 255, 255, 0.08); color: var(--fg);
   width: 14px; height: 14px; border-radius: 999px; line-height: 1;
