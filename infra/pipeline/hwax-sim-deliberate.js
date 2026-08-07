@@ -16,6 +16,10 @@
 //                       세션에 게이트웨이 MCP 가 연결되지 않아 좌석 발굴 에이전트가 recommend_agents 에
 //                       닿지 못하는 환경을 위한 우회로다. 고정 CAE 좌석과 물리 유임은 그대로 붙는다.
 //   - humanNote       : 1단에 주입할 사람 의견
+//   - deliberateScript: 자식으로 부를 심의 워크플로 경로(기본 'infra/pipeline/hwax-deliberate.js').
+//                       스크립트 안의 workflow() 는 이름으로 .claude/workflows/ 를 찾지 못한다 —
+//                       내장 워크플로(deep-research·code-review)만 이름으로 해석된다(실측 2026-08-07).
+//                       그래서 경로로 부른다. 정본을 직접 가리키므로 레지스트리 사본 동기화에도 무관하다.
 // 출력: { question, mechanism:{decision, rounds}, seats, simPlan:{decision, rounds}, report, conversation }
 //
 // 좌석 설계가 이 워크플로의 핵심이다. CAE 전문가만 모으면 틀린 물리를 아름답게 계산한다.
@@ -47,11 +51,12 @@ const CARRY = Math.min(4, Math.max(0, Math.round(Number(A.carryOver) ?? 2)))
 const FIXED_CAE = ['xd-cae-modeling', 'xd-cae-post']
 
 const dom = k => (String(k).includes('-') ? String(k).split('-')[0] : String(k))
+const DELIB = { scriptPath: A.deliberateScript || 'infra/pipeline/hwax-deliberate.js' }
 
 // ── 1단 — 메커니즘 심의 ──────────────────────────────────────────────────────
 phase('메커니즘')
 log(`1단 메커니즘 심의 — 좌석 ${PERS.length}인, ${R1}라운드`)
-const mech = await workflow('hwax-deliberate', {
+const mech = await workflow(DELIB, {
   question: Q,
   context: CTX,
   personas: PERS,
@@ -120,7 +125,7 @@ log(`2단 좌석 ${simSeats.length}인 (CAE ${simSeats.length - carryN} · 물�
 // ── 2단 — 해석 설계 심의 ─────────────────────────────────────────────────────
 phase('해석설계')
 const simQ = `위 메커니즘을 계산으로 확인하고 설계 인자로 돌리기 위한 해석 설계 — 무엇을 어떤 도구로 계산할 것인가. 원 현상: ${Q}`
-const sim = await workflow('hwax-deliberate', {
+const sim = await workflow(DELIB, {
   question: simQ,
   context: `[원 현상의 정량 근거]\n${CTX}`,
   personas: simSeats,
