@@ -1135,3 +1135,35 @@ body.dock-open .container {
 .md-mermaid svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
 .md-mermaid-load { margin: 0.5rem 0; padding: 0.7rem; color: var(--muted); font-size: 0.82rem; border: 1px dashed var(--border); border-radius: 12px; }
 .md-mermaid-err { margin: 0.5rem 0; padding: 0.6rem; overflow-x: auto; font-family: var(--cx-mono); font-size: 0.78rem; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; }
+
+/* ── 심의 모드 전환(전문가 심의 / 시뮬레이션 심의) ─────────────────────────
+   두 모드는 파이프라인이 달라(1단 vs 2단) 시작 전에 골라야 한다. 시작 후에는 바꿀 수
+   없으므로 히어로에만 두고, 진행 중 화면에는 노출하지 않는다. */
+.cx-modes {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0 0 0.9rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.06);
+}
+.cx-mode {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.32rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.cx-mode:hover { color: var(--fg); }
+.cx-mode.is-on {
+  color: var(--fg);
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}

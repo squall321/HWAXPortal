@@ -25,6 +25,34 @@ const EXAMPLE_TOPICS = [
 const FLOW_HINT =
   '화두에 불량·품질 얘기가 있으면 SignalForge 최근 이슈를 먼저 환기하고, 관련 전문가들이 여러 라운드로 심의해 Report Archive 보고서까지 남깁니다';
 
+// 심의 모드 — 일반은 "원인이 무엇인가"에서 끝나고, 시뮬레이션 심의는 거기서 한 걸음 더 가
+// "그걸 어떤 계산으로 확인할 것인가"까지 낸다. 트리거가 달라 서버가 2단 파이프라인으로 분기한다.
+const MODES = [
+  {
+    id: 'delib' as const,
+    trigger: '/심의 ',
+    label: '전문가 심의',
+    kicker: '다중 전문가 심의',
+    title: '어떤 화두를 심의할까요?',
+    hint: FLOW_HINT,
+  },
+  {
+    id: 'sim' as const,
+    trigger: '/시뮬심의 ',
+    label: '시뮬레이션 심의',
+    kicker: '메커니즘 → 해석 설계',
+    title: '어떤 현상을 계산으로 풀어볼까요?',
+    hint: '먼저 도메인 전문가가 지배 물리를 좁히고, 그 결론 위에서 CAE 전문가가 어떤 해석을 어떤 도구로 할지 계획서를 만듭니다. 물리를 아는 전문가 일부가 2단에 남아 해석이 물리에서 떠나지 않게 감시합니다',
+  },
+];
+type ModeId = (typeof MODES)[number]['id'];
+
+const SIM_SUGGESTIONS = [
+  '적색 발광이 외곽부터 액자 모양으로 죽어 들어가는데 UV 를 쬐면 회복되고 다시 재발한다',
+  '리플로우 후 warpage 산포가 커지는 원인을 계산으로 좁히고 싶다',
+  '낙하 시 특정 모서리에서만 크랙이 나는데 어떤 해석으로 재현할 수 있나',
+];
+
 const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 
 // RA 저장 — '/보고서' 트리거로 에이전트 서버가 대화 이력을 코드로 blocks 화해 결정적으로 저장
@@ -39,6 +67,8 @@ export default function DeliberatePage() {
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow() && loadSidebarOpen());
   // 심의 전 전문가 선정 단계 — 화두 제출 시 추천/풀을 받아 확인 패널을 띄운다(기본 자동, 확인 후 시작).
   const [picking, setPicking] = useState<{ topic: string; experts: ExpertsResponse | null } | null>(null);
+  const [mode, setMode] = useState<ModeId>('delib');
+  const modeDef = MODES.find((m) => m.id === mode) ?? MODES[0];
 
   // 화두 제출 → 전문가 미리보기 로드 후 선정 패널 표시. 실패해도 패널은 열려(자동/수동 선택 가능).
   const startPicking = useCallback((topic: string) => {
@@ -55,11 +85,11 @@ export default function DeliberatePage() {
     const topic = picking?.topic;
     setPicking(null);
     if (!topic) return;
-    sendMessage('/심의 ' + topic, {
+    sendMessage(modeDef.trigger + topic, {
       personas: personas.map((p) => ({ key: p.key, role: p.role })),
       ...(tools.length > 0 ? { tools } : {}),
     });
-  }, [picking, sendMessage]);
+  }, [picking, sendMessage, modeDef]);
 
   const cancelPicking = useCallback(() => {
     const topic = picking?.topic ?? '';
@@ -139,23 +169,37 @@ export default function DeliberatePage() {
                 <div className="cx-hero-mark" aria-hidden="true">
                   <IconSpark width={30} height={30} />
                 </div>
-                <p className="cx-hero-kicker">다중 전문가 심의</p>
-                <h1 className="cx-hero-title">어떤 화두를 심의할까요?</h1>
+                <p className="cx-hero-kicker">{modeDef.kicker}</p>
+                <h1 className="cx-hero-title">{modeDef.title}</h1>
+                <div className="cx-modes" role="tablist" aria-label="심의 모드">
+                  {MODES.map((m) => (
+                    <button
+                      type="button"
+                      key={m.id}
+                      role="tab"
+                      aria-selected={mode === m.id}
+                      className={`cx-mode${mode === m.id ? ' is-on' : ''}`}
+                      onClick={() => setMode(m.id)}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
                 <Composer
                   ref={composerRef}
                   autoFocus
-                  placeholder="화두를 입력하세요…"
+                  placeholder={mode === 'sim' ? '현상을 입력하세요…' : '화두를 입력하세요…'}
                   onSubmitText={startPicking}
                 />
                 <DelibOptsPanel />
                 <div className="cx-chips">
-                  {EXAMPLE_TOPICS.map((p) => (
+                  {(mode === 'sim' ? SIM_SUGGESTIONS : EXAMPLE_TOPICS).map((p) => (
                     <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
                       {p}
                     </button>
                   ))}
                 </div>
-                <p className="cx-hero-hint">{FLOW_HINT}</p>
+                <p className="cx-hero-hint">{modeDef.hint}</p>
                 <p className="cx-hero-sub">
                   의견을 하나 던지면 전문가 에이전트들이 토의로 답합니다. 기록은 서버에 남아 Claude(MCP) 심의와 한곳에 모입니다.
                 </p>
