@@ -25,8 +25,12 @@
 //                       지정 시 1라운드 프롬프트가 "이어하기"로 바뀌고, 라운드 번호가 roundsSoFar+1 부터 시작한다.
 //   - humanNote       : 이번 라운드에서 패널이 반드시 정면으로 다뤄야 할 사람(검토자)의 코멘트/질문. 매 라운드
 //                       프롬프트에 [인간 검토자 의견]으로 주입되어 무시할 수 없게 만든다.
+//   - stopAfterRound  : 1 이면 초기 라운드만 돌고 멈춘다(인간 체크포인트). 결정문·보고서 없이 checkpoint
+//                       페이로드를 반환하므로, 사람이 빠진 관점을 보태 continueFrom+humanNote 로 이어하기를
+//                       호출하면 그 지점부터 이어진다. 좌석 재심사가 사람이 준 방향에 맞는 도메인을 불러온다.
 //   - appendToReportId: 지정 시 새 RA 보고서를 만들지 않고 이 report_id 에 새 페이지로 결과를 이어붙인다.
 // 출력: { question, rounds:[페르소나별 라운드결과 배열...], roundLabels, decision, report, conversation, nextRoundOffset }
+//   — stopAfterRound:1 이면 decision/report/conversation 이 null 이고 checkpoint{stage,seats,positions,ask} 가 붙는다.
 //   — 호출자가 viz_module + Report Archive로 보고서화. nextRoundOffset 은 다음 이어하기 호출의
 //   continueFrom.roundsSoFar 로 그대로 넘기면 라운드 번호가 끊기지 않는다.
 //
@@ -50,6 +54,14 @@ const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
 const Q = A.question || '(질문 미지정)'
 const CTX = A.context || ''
 const OPTS = typeof A.options === 'string' ? A.options : JSON.stringify(A.options || [])
+// 선택지 개수 — 상호 배타 후보가 2개 미만이면 표결이 성립하지 않는다. 그런데도 vote 를 강제하면
+// 자기들이 공동 작성한 실행안을 승인하는 형태가 되어 정보량이 0 이 된다(실측: S26U 경시성
+// 이어하기의 vote 6건이 전부 '패키지 채택 찬성'). 그 경우 표결 대신 스탠스를 받는다.
+const OPT_LIST = (() => {
+  if (Array.isArray(A.options)) return A.options.filter(Boolean)
+  try { const x = JSON.parse(A.options || '[]'); return Array.isArray(x) ? x.filter(Boolean) : [] } catch { return [] }
+})()
+const HAS_CHOICES = OPT_LIST.length >= 2
 const PERS = A.personas || []
 const pk = PERS.map(p => p.key)
 if (!pk.length) throw new Error('personas 가 비어 있음 — 호출자가 recommend_agents 로 발굴해 전달해야 함')
@@ -57,6 +69,11 @@ if (!pk.length) throw new Error('personas 가 비어 있음 — 호출자가 rec
 const CONT = A.continueFrom || null           // { summary, roundsSoFar } — 이어하기 모드
 const HUMAN_NOTE = A.humanNote || ''          // 인간 검토자 의견(있으면 매 라운드 프롬프트에 강제 주입)
 const APPEND_TO = A.appendToReportId ? Number(A.appendToReportId) : null
+// 인간 체크포인트 — 1이면 초기 라운드만 돌고 반환한다. 사람이 빠진 관점·추가 관측을 보태
+// continueFrom + humanNote 로 이어하기를 부르면 그 지점부터 이어진다. 이번 세션 실측에서
+// 가장 큰 품질 개선이 사람의 중간 개입에서 나왔고(관측 3건 추가가 라운드 추가보다 결론을 크게
+// 바꿨다), 비용은 거의 0 이다.
+const STOP_AFTER = Number(A.stopAfterRound) === 1 ? 1 : 0
 
 // 참여 인원수는 personas 배열 길이가 그대로 결정(상한 없음).
 // 라운드 수는 이번 호출분만 — 기본 3(초기+심화1+수렴), 2~8 사이로 클램프(런어웨이 비용 방지).
@@ -168,6 +185,19 @@ roundLabels.push(`${rn(1)}라운드 — ${CONT ? '이어하기·초기입장' : 
 
 let priorText = r1.filter(Boolean).map(o => `• ${o.persona}: ${summarize(true, false, o)}`).join('\n')
 let priorLabel = `${rn(1)}라운드(초기입장) 전원 입장`
+if (STOP_AFTER === 1) {
+  log(`체크포인트 — ${rn(1)}라운드까지 진행하고 멈춘다. 사람 검토 후 continueFrom(roundsSoFar=${rn(1)}) + humanNote 로 이어하기를 호출할 것.`)
+  return {
+    question: Q, rounds: roundsData, roundLabels, decision: null, explain: null,
+    report: null, conversation: null, nextRoundOffset: rn(1),
+    checkpoint: {
+      stage: 'after-initial',
+      seats: SEAT_NOTE,
+      positions: r1.filter(Boolean).map(o => ({ persona: o.persona, position: o.position_short || o.lens, recommendation: o.recommendation })),
+      ask: '빠진 관점이나 추가 관측이 있는가. 있으면 humanNote 로 넣어 이어하기를 호출하라 — 좌석 재심사가 그에 맞는 도메인을 불러온다.',
+    },
+  }
+}
 let preFinalText = priorText   // 마지막 심화(또는 심화 없으면 초기) 시점 스냅샷 — RA 'results' 블록용
 
 for (let i = 0; i < MID_ROUNDS; i++) {
@@ -188,7 +218,11 @@ phase('수렴')
 const finalRoundNo = rn(ROUNDS)
 const rFinal = await parallel(pk.map(k => () => agent(
   `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n` +
-  `${finalRoundNo}라운드(최종수렴): 지금까지 논의를 반영해 최종 입장으로 수렴하라. (1) 최종 입장, (2) 절대 양보 못 하는 제약, (3) 최종 권장 선택지+이유. 결정 가능하도록 구체적으로.`,
+  `${finalRoundNo}라운드(최종수렴): 지금까지 논의를 반영해 최종 입장으로 수렴하라. (1) 최종 입장, (2) 절대 양보 못 하는 제약, ` +
+  (HAS_CHOICES
+    ? `(3) 위 [후보/선택지] 중 최종 권장 하나와 이유. 근거가 부족해 고를 수 없으면 "판정 불가 — 다음에 측정할 것"과 그 측정 항목을 쓰라.`
+    : `(3) 형성된 다수 의견에 대한 당신의 스탠스(동의/조건부 동의/반대)와 이유. 상호 배타적 선택지가 제시되지 않았으므로 표결이 아니라 입장 표명이다 — 선택지를 지어내 투표하지 마라.`) +
+  ` 결정 가능하도록 구체적으로.`,
   { label: `r${finalRoundNo}:${k}`, phase: '수렴', schema: R3_SCHEMA }).then(withKey(k))))
 roundsData.push(rFinal)
 roundLabels.push(`${finalRoundNo}라운드 — 수렴·최종 입장`)
