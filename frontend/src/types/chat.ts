@@ -41,7 +41,9 @@ export interface DelibData {
   stages?: string[]; // 지나온 단계(순서)
   roundN?: number; // 라운드당 패널 수(진행률 분모)
   totalRounds?: number; // 총 라운드 수(가변, 기본 3) — 스테퍼/회의록 동적 렌더용
-  personas?: { key: string; role?: string }[];
+  /** origin — 좌석 성격. primary(주 도메인) · counter(반대 도메인, 커버리지 게이트가 앉힌 좌석)
+   *  · carry(이어하기 유임) · new(이어하기 재심사로 합류). 없으면 primary 로 본다. */
+  personas?: { key: string; role?: string; origin?: 'primary' | 'counter' | 'carry' | 'new' }[];
   // 근거 카드 — 한 심의에 복수 출처가 올 수 있어 배열(SignalForge 환기 + 정량 근거 선주입).
   // 과거 저장분은 단일 객체일 수 있어 소비처는 배열/객체 양쪽을 허용한다.
   evidence?: { source: string; text: string; included: boolean }[];

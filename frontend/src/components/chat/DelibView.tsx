@@ -88,12 +88,23 @@ function Stepper({ d, live }: { d: DelibData; live: boolean }) {
 
 // 참여 전문가 소개 — 심의 시작 시 누가 참여하는지·각자 뭐 하는 사람인지. 아바타 색/이니셜은
 // 아래 라운드 버블과 동일해 '이 사람이 이 발언'을 눈으로 잇게 한다(진행 순서 파악에 도움).
+// 좌석 성격 라벨 — 왜 이 사람이 앉았는지가 보여야 결정문의 커버리지 기록과 이어진다.
+// counter 는 "주 도메인이 못 보는 축"을 맡으라고 일부러 앉힌 좌석이라 특히 눈에 띄어야 한다.
+const ORIGIN_LABEL: Record<string, { text: string; cls: string }> = {
+  counter: { text: '반대 도메인', cls: 'dv-seat-counter' },
+  new: { text: '이번 회차 합류', cls: 'dv-seat-new' },
+  carry: { text: '유임', cls: 'dv-seat-carry' },
+};
+
 function PersonaIntro({ d }: { d: DelibData }) {
   const personas = d.personas ?? [];
   if (!personas.length) return null;
+  const domains = new Set(personas.map((p) => (p.key.includes('-') ? p.key.split('-')[0] : p.key)));
   return (
     <section className="dv-intro" aria-label="참여 전문가">
-      <div className="dv-intro-head">참여 전문가 {personas.length}인 · 각자 초기입장 → 상호 반박 → 수렴 순으로 발언합니다</div>
+      <div className="dv-intro-head">
+        참여 전문가 {personas.length}인 · 도메인 {domains.size}종 · 각자 초기입장 → 상호 반박 → 수렴 순으로 발언합니다
+      </div>
       <ul className="dv-intro-list">
         {personas.map((p) => (
           <li key={p.key} className="dv-intro-item">
@@ -101,7 +112,12 @@ function PersonaIntro({ d }: { d: DelibData }) {
               {initialOf(p.key)}
             </span>
             <div className="dv-intro-body">
-              <span className="dv-intro-key">{p.key}</span>
+              <span className="dv-intro-key">
+                {p.key}
+                {p.origin && ORIGIN_LABEL[p.origin] && (
+                  <span className={`dv-seat ${ORIGIN_LABEL[p.origin].cls}`}>{ORIGIN_LABEL[p.origin].text}</span>
+                )}
+              </span>
               {p.role && <span className="dv-intro-role">{p.role}</span>}
             </div>
           </li>

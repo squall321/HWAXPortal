@@ -952,6 +952,21 @@ body.dock-open .container {
   font-weight: 600;
   color: var(--fg);
 }
+/* 좌석 성격 배지 — 반대 도메인은 커버리지 게이트가 일부러 앉힌 좌석이라 가장 눈에 띄게. */
+.dv-seat {
+  margin-left: 0.4rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.06rem 0.4rem;
+  border-radius: 999px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.dv-seat-counter { color: #a78bfa; background: rgba(167, 139, 250, 0.14); border: 1px solid rgba(167, 139, 250, 0.4); }
+.dv-seat-new { color: #2dd4bf; background: rgba(45, 212, 191, 0.14); border: 1px solid rgba(45, 212, 191, 0.4); }
+.dv-seat-carry { color: var(--muted); background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.3); }
+
 .dv-intro-role {
   font-size: 12px;
   color: var(--muted);
