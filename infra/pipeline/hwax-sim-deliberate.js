@@ -12,6 +12,9 @@
 //   - rounds          : 1단 라운드 수(기본 3)
 //   - simRounds       : 2단 라운드 수(기본 3)
 //   - carryOver       : 2단에 남길 물리 유임 좌석 수(기본 2, 0~4)
+//   - simPersonas     : [{key, role}] 2단 CAE 좌석을 호출자가 직접 지정(선택). 주면 내부 발굴을 건너뛴다.
+//                       세션에 게이트웨이 MCP 가 연결되지 않아 좌석 발굴 에이전트가 recommend_agents 에
+//                       닿지 못하는 환경을 위한 우회로다. 고정 CAE 좌석과 물리 유임은 그대로 붙는다.
 //   - humanNote       : 1단에 주입할 사람 의견
 // 출력: { question, mechanism:{decision, rounds}, seats, simPlan:{decision, rounds}, report, conversation }
 //
@@ -76,7 +79,13 @@ const SEAT_SCHEMA = {
   },
   required: ['axes', 'cae_seats', 'carry_seats', 'reason'],
 }
-const seatPick = await agent(
+// 호출자가 2단 CAE 좌석을 직접 주면 발굴을 건너뛴다 — hwax-deliberate 의 "좌석은 호출자가
+// 발굴해 전달" 계약과 같은 취급이다. 안 주면 메커니즘 결론을 읽고 워크플로가 발굴한다.
+const GIVEN = (A.simPersonas || []).filter(x => x && x.key)
+const seatPick = GIVEN.length
+  ? { axes: ['(호출자 지정)'], cae_seats: GIVEN.map(x => x.key), carry_seats: [],
+      reason: '호출자가 2단 CAE 좌석을 직접 지정해 발굴을 건너뛰었다.' }
+  : await agent(
   `아래 메커니즘 결론을 읽고, 이 물리를 계산으로 확인할 해석 설계 심의의 좌석을 구성하라.\n\n` +
   `[메커니즘 결론]\n${String(mech.decision).slice(0, 6000)}\n\n` +
   `[1단 참여 좌석]\n${PERS.map(p => p.key).join(', ')}\n\n` +
@@ -89,7 +98,7 @@ const seatPick = await agent(
   `도구를 못 쓰면 cae_seats 는 빈 배열로 두고 reason 에 사유를 적어라. 지어내지 마라.`,
   { label: 'seat-pick', phase: '좌석전환', schema: SEAT_SCHEMA })
 
-const roleOf = k => (PERS.find(p => p.key === k) || {}).role || ''
+const roleOf = k => (GIVEN.find(x => x.key === k) || PERS.find(p => p.key === k) || {}).role || ''
 const seen = new Set()
 const simSeats = []
 const push = (k, origin) => {
