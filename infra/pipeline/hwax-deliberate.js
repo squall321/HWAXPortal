@@ -4,12 +4,24 @@
 //   - question        : 심의 주제(문자열)
 //   - context         : 정량 근거/분석 결과(도구로 산출한 데이터의 텍스트 요약)
 //   - options         : 후보/선택지 목록(JSON 문자열 또는 배열)
-//   - personas        : [{key, role}] 참여 전문 페르소나(호출자가 recommend_agents로 발굴해 전달, 인원수 자유).
-//                       이어하기 라운드에서는 이전 패널 그대로/일부만/신규 전문가 추가 등 자유 구성 — 새로 합류한
-//                       페르소나도 continueFrom.summary 를 읽고 자연스럽게 합류하도록 프롬프트가 처리한다.
+//   - personas        : [{key, role, origin?}] 참여 전문 페르소나(호출자가 recommend_agents로 발굴해 전달).
+//                       origin — 'primary'(주 도메인, 기본) | 'counter'(반대 도메인) | 'carry'(이어하기 유임) |
+//                       'new'(이어하기 신규). 결정문이 커버리지를 기록하고, origin:'new' 좌석은 1라운드에서
+//                       이전 요약을 받지 않는다(앵커링 차단).
+//     [좌석 계약 — 지키지 않으면 결정문에 커버리지 한계로 기록된다]
+//       · 신규 심의: 질문으로 뽑은 주 도메인에 더해, 그 좌석들이 못 보는 원인 축을 명명하고 그 축으로 발굴한
+//         반대 도메인 좌석 1~2를 반드시 포함할 것. 원 질문에 "이 분야 밖"을 덧붙이는 역질의는 작동하지 않는다 —
+//         질의 대부분이 원 질문이라 임베딩 이웃이 그대로 돌아온다(실측: 도메인 확장 0). 짧은 축 질의를 쓸 것.
+//       · 이어하기: 이전 좌석 전원 재사용 금지. '원 질문 + 이전 결론 + 사람 의견'이라는 실효 질문으로 재심사해
+//         유임(전원) + 신규(다른 도메인 1~2)로 구성할 것. 좌석을 빼지는 말 것 — 그 도메인의 이전 발언에 대한
+//         책임 주체가 사라진다.
 //   - rounds          : 이번 호출에서 진행할 라운드 수(기본 3 = 초기+심화1+수렴). 최소 2, 최대 8로 클램프.
 //   - continueFrom    : 이전 심의를 이어갈 때만 지정. { summary: 이전 심의 요약(결정문+라운드 하이라이트, 호출자가
-//                       구성해 전달), roundsSoFar: 이전까지 이미 진행된 라운드 수(라운드 번호 이어붙이기용) }.
+//                       구성해 전달), roundsSoFar: 이전까지 이미 진행된 라운드 수(라운드 번호 이어붙이기용),
+//                       nonNegotiables: [이전 심의의 양보 불가 조항] }.
+//                       nonNegotiables 는 요약에 섞지 말고 따로 넘길 것 — 요약 문자열에만 의존하면 조항이
+//                       조용히 소실되고 결정이 되돌아간다. 넘기면 매 라운드 구속 조항으로 주입되고, 뒤집으려면
+//                       새 근거를 명시하도록 강제된다.
 //                       지정 시 1라운드 프롬프트가 "이어하기"로 바뀌고, 라운드 번호가 roundsSoFar+1 부터 시작한다.
 //   - humanNote       : 이번 라운드에서 패널이 반드시 정면으로 다뤄야 할 사람(검토자)의 코멘트/질문. 매 라운드
 //                       프롬프트에 [인간 검토자 의견]으로 주입되어 무시할 수 없게 만든다.
@@ -54,8 +66,30 @@ const ROUND_OFFSET = CONT ? Math.max(0, Math.round(Number(CONT.roundsSoFar) || 0
 const rn = localNo => ROUND_OFFSET + localNo   // 라운드 번호를 이전 회차 이후로 이어붙임
 
 const CONT_BLOCK = CONT ? `[이전 심의 요약 — 지금까지 ${ROUND_OFFSET}라운드 진행됨]\n${CONT.summary}\n\n` : ''
+// 양보 불가 조항 승계 — 요약 문자열에만 의존하면 조항이 소실되고 결정이 소리 없이 되돌아간다.
+const NN = (CONT && Array.isArray(CONT.nonNegotiables) ? CONT.nonNegotiables : []).filter(Boolean).slice(0, 12)
+const NN_BLOCK = NN.length
+  ? `[이전 심의의 양보 불가 조항 — 이번 라운드에서도 구속력을 가진다]\n${NN.map(x => `- ${x}`).join('\n')}\n` +
+    `이 조항을 뒤집으려면 어떤 새 근거 때문인지 반드시 명시하라. 근거 없는 폐기는 불인정.\n\n`
+  : ''
 const HUMAN_BLOCK = HUMAN_NOTE ? `[인간 검토자 의견 — 이번 라운드에서 반드시 정면으로 다룰 것]\n${HUMAN_NOTE}\n\n` : ''
-const BASE = `${CONT_BLOCK}${HUMAN_BLOCK}[심의 주제]\n${Q}\n\n[정량 근거·분석 결과]\n${CTX}\n\n[후보/선택지]\n${OPTS}\n`
+const TAIL = `[심의 주제]\n${Q}\n\n[정량 근거·분석 결과]\n${CTX}\n\n[후보/선택지]\n${OPTS}\n`
+const BASE = `${CONT_BLOCK}${NN_BLOCK}${HUMAN_BLOCK}${TAIL}`
+// 신규 좌석 앵커링 차단 — 이어하기에 새로 합류한 좌석(origin:'new')은 1라운드에서 이전 결론을
+// 받지 않는다. 새 관점을 얻으려고 부른 사람이 기존 결론을 먼저 읽으면 동조 압력을 받는다.
+const BASE_BLIND = `${NN_BLOCK}${HUMAN_BLOCK}${TAIL}\n[안내] 당신은 이번 회차에 새로 합류했다. ` +
+  `이전 논의 결과는 의도적으로 제공하지 않는다 — 먼저 당신 도메인의 독립적 판단을 내라. 다음 라운드에서 이전 결론을 받는다.\n`
+const originOf = k => (PERS.find(p => p.key === k) || {}).origin || 'primary'
+const baseFor = k => (CONT && originOf(k) === 'new' ? BASE_BLIND : BASE)
+// 좌석 구성 — 결정문이 커버리지를 스스로 밝히게 한다.
+const SEAT_NOTE = (() => {
+  const label = { primary: '주 도메인', counter: '반대 도메인', carry: '유임', new: '이어하기 신규' }
+  const by = {}
+  pk.forEach(k => { (by[originOf(k)] = by[originOf(k)] || []).push(k) })
+  const doms = [...new Set(pk.map(k => (k.includes('-') ? k.split('-')[0] : k)))].sort()
+  return `참여 좌석 — ${Object.entries(by).map(([o, ks]) => `${label[o] || o} ${ks.length}명(${ks.join(', ')})`).join(' / ')}. ` +
+         `착석 도메인 ${doms.length}종: ${doms.join(', ')}.`
+})()
 const role = k => (PERS.find(p => p.key === k) || {}).role || k
 
 const OP_SCHEMA = {
@@ -127,7 +161,7 @@ const R1_INSTRUCTION = CONT
 // 검증)이 배치째 422로 거부된다(전기박리 심의 대화 유실 사고의 원인). 정본 키로 강제한다.
 const withKey = (k) => (o) => (o ? { ...o, persona: k } : o)
 const r1 = await parallel(pk.map(k => () => agent(
-  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n${R1_INSTRUCTION}`,
+  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${baseFor(k)}\n\n${R1_INSTRUCTION}`,
   { label: `r${rn(1)}:${k}`, phase: '초기입장', schema: OP_SCHEMA }).then(withKey(k))))
 roundsData.push(r1)
 roundLabels.push(`${rn(1)}라운드 — ${CONT ? '이어하기·초기입장' : '초기입장'}`)
@@ -172,7 +206,8 @@ const DECISION_CONT_NOTE = CONT
 const decision = await agent(
   `당신은 심의체 의장. 이번 호출분 ${ROUNDS}라운드 토론(${rn(1)}~${finalRoundNo}라운드, 초기 1${MID_ROUNDS > 0 ? ` + 심화 ${MID_ROUNDS}` : ''} + 수렴 1)을 종합해 의사결정문을 한국어 엔지니어링 톤으로 작성하라.\n\n${BASE}\n\n` +
   `[전체 라운드 요약]\n${allRoundsText}\n\n[최종 라운드 상세]\n${JSON.stringify(rFinal.filter(Boolean), null, 1)}\n\n` +
-  `산출: ## 의사결정문 — (1) 결정사항(번호매김, 명확·실행가능하게), (2) 합의 근거(라운드를 거치며 어떻게 수렴했는지), (3) 반대/소수의견과 처리, (4) 미해결 쟁점 + 담당·다음 액션, (5) 결정 신뢰도·전제. 라운드별 입장 심화·수렴 과정을 반드시 드러내라.${DECISION_CONT_NOTE}`,
+  `[${SEAT_NOTE}]\n\n` +
+  `산출: ## 의사결정문 — (0) 참여 도메인과 커버리지 한계 — 위 좌석 구성을 한 문단으로 기록하고, 이 문제에 관련되나 착석하지 않은 인접 도메인이 있으면 명시하라(없으면 없다고 쓰라), (1) 결정사항(번호매김, 명확·실행가능하게), (2) 합의 근거(라운드를 거치며 어떻게 수렴했는지), (3) 반대/소수의견과 처리, (4) 미해결 쟁점 + 담당·다음 액션, (5) 결정 신뢰도·전제. 라운드별 입장 심화·수렴 과정을 반드시 드러내라.${DECISION_CONT_NOTE}`,
   { label: 'decision', phase: 'Decision' })
 
 // 쉬운 설명 — 챗 파이프라인(deliberation.py)과 동일한 정식 심의 절차. 의결 뒤에 붙는다.
