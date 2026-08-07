@@ -127,6 +127,7 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
         say: String(e.say ?? ''),
         ...(e.position ? { position: String(e.position) } : {}),
         ...(e.stance ? { stance: String(e.stance) } : {}),
+        ...(e.non_negotiable ? { nonNegotiable: String(e.non_negotiable) } : {}),
         ts: Date.now(),
       };
       d.turns = [...(d.turns ?? []), turn];
@@ -485,10 +486,20 @@ export function ChatProvider({
       const firstUser = conv?.messages.find((m) => m.role === 'user');
       const topic = (firstUser?.text ?? '').replace(/^\/(심의|deliberate|토의)\s*/, '').trim();
       if (!topic) return;
+      // 양보 불가 조항 승계 — 결정문 요약에만 의존하면 조항이 빠져도 아무도 모르고, 그러면
+      // 이전 심의가 조항으로 못박은 제약이 이어하기에서 조용히 되돌아간다.
+      const nonNegotiables = [
+        ...new Set(
+          (prior.turns ?? [])
+            .map((t) => (t.nonNegotiable ?? '').trim())
+            .filter(Boolean),
+        ),
+      ].slice(0, 12);
       sendMessage('/심의 ' + topic, {
         human_note: note,
         continue_summary: (prior.decision ?? '').slice(0, 8000),
         personas: (prior.personas ?? []).map((p) => ({ key: p.key, role: p.role ?? '' })),
+        ...(nonNegotiables.length ? { non_negotiables: nonNegotiables } : {}),
       });
     },
     [conversations, activeId, streaming, sendMessage],

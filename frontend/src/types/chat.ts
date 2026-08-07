@@ -28,6 +28,8 @@ export interface DelibTurn {
   say: string;
   position?: string; // 입장 한 줄 요약(R1/R3)
   stance?: string; // R3: 동의|조건부 동의|반대
+  /** R3 양보 불가 제약 원문 — 이어하기에서 승계해 이전 결정이 되돌아가지 않게 한다(표시용 say 와 별개). */
+  nonNegotiable?: string;
   ts: number;
 }
 export interface DelibTally {
@@ -70,6 +72,18 @@ export interface DelibOpts {
   chair_bestof?: number;
   rounds?: number;
   timeout_s?: number;
+  // ── 이어하기(사람 개입 스티어링) 필드 — 손잡이가 아니라 승계 데이터다 ──
+  /** 이번 회차에서 패널이 반드시 정면으로 다뤄야 할 사람의 의견. 매 라운드 프롬프트에 주입된다. */
+  human_note?: string;
+  /** 이전 심의 요약(보통 직전 결정문). 이어하기 1라운드의 출발점. */
+  continue_summary?: string;
+  /** 이전 좌석. 서버가 유임으로 잡고, 실효 질문으로 재심사해 신규 좌석을 더한다. */
+  personas?: { key: string; role?: string }[];
+  /** 이전 심의의 양보 불가 조항. 요약에 섞지 않고 따로 넘겨야 승계가 보장된다 —
+   *  빠지면 이전 결정이 조용히 되돌아간다. */
+  non_negotiables?: string[];
+  /** 이번 발화에서 우선 사용할 도구 이름. */
+  tools?: string[];
 }
 
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
