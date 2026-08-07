@@ -12,6 +12,10 @@ const FLAGS: { key: keyof DelibOpts; label: string; hint: string; heavy?: boolea
   { key: 'chair_cite', label: '의장 출처 태깅', hint: '결정문 항목별 근거 라운드 표기 (가장 저렴)' },
 ];
 
+// 손잡이가 아니라 진행 방식 — 위 A/B 플래그와 성격이 달라 따로 둔다.
+const CHECKPOINT_HINT =
+  '초기 입장만 듣고 멈춘다. 빠진 관점을 의견으로 보태 이어가면 좌석 재심사가 그 방향의 도메인을 불러온다';
+
 export function DelibOptsPanel() {
   const { delibOpts, setDelibOpts } = useChat();
 
@@ -22,7 +26,8 @@ export function DelibOptsPanel() {
 
   const active =
     FLAGS.filter((f) => delibOpts[f.key]).length +
-    (delibOpts.chair_bestof && delibOpts.chair_bestof > 1 ? 1 : 0);
+    (delibOpts.chair_bestof && delibOpts.chair_bestof > 1 ? 1 : 0) +
+    (delibOpts.stop_after_round === 1 ? 1 : 0);
 
   return (
     <details className="do-panel">
@@ -33,6 +38,19 @@ export function DelibOptsPanel() {
       </summary>
       <div className="do-body">
         <ul className="do-list">
+          <li className="do-item">
+            <label className="do-toggle">
+              <input
+                type="checkbox"
+                checked={delibOpts.stop_after_round === 1}
+                onChange={(e) =>
+                  setDelibOpts({ ...delibOpts, stop_after_round: e.target.checked ? 1 : undefined })
+                }
+              />
+              <span className="do-label">1라운드 후 검토</span>
+            </label>
+            <span className="do-hint">{CHECKPOINT_HINT}</span>
+          </li>
           <li className="do-item">
             <span className="do-label">라운드 수</span>
             <select

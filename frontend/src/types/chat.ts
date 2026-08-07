@@ -72,6 +72,9 @@ export interface DelibOpts {
   chair_bestof?: number;
   rounds?: number;
   timeout_s?: number;
+  /** 1이면 초기 라운드까지만 돌고 멈춘다(인간 체크포인트). 결정문 대신 전원 초기 입장이
+   *  내려오고, 이어하기 폼으로 의견을 보태면 좌석 재심사가 그 방향의 도메인을 불러온다. */
+  stop_after_round?: number;
   // ── 이어하기(사람 개입 스티어링) 필드 — 손잡이가 아니라 승계 데이터다 ──
   /** 이번 회차에서 패널이 반드시 정면으로 다뤄야 할 사람의 의견. 매 라운드 프롬프트에 주입된다. */
   human_note?: string;
