@@ -115,7 +115,19 @@ run_sim_deliberation(app, question, groups, opts)
 
 ---
 
-## 5. 수용 기준
+## 5. 구현 상태 (2026-08-07)
+
+| 항목 | 커밋 | 비고 |
+|---|---|---|
+| `chairTemplate` 스위치(MCP) | `ce03584` | default/mechanism/sim-plan. 미지정은 종전과 동일 |
+| `hwax-sim-deliberate.js` | `9da5a13` | hwax-deliberate 를 자식으로 2회 호출 |
+| `.claude/workflows/` 동기화 | `ce03584` | 정본과 85줄 갈라져 있던 것을 맞췄다 |
+| 웹 2단 래퍼 + `/시뮬심의` | agent-server `817dec5` | `_deliberation_stream` 2회 실행 |
+| 심의 모드 전환 UI | `d0d5aa4` | 히어로 탭, 모드별 제목·예시·설명 |
+
+테스트 82건 통과(시뮬 관련 신규 8건). 미실행 검증은 §6.
+
+## 6. 수용 기준
 
 1. S26U 관측 5건 + COE 전제로 시뮬레이션 심의를 돌렸을 때, 2단 결정문이 **반응-확산 계열 지배방정식**과 **파라미터 식별성 판정**을 포함한다.
 2. 2단 좌석에 CAE 도메인(`xd-`/`sim-`)과 1단 물리 유임자가 **함께** 있다(계측 하네스의 좌석 구성 지표로 확인).
