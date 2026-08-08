@@ -13,7 +13,7 @@ interface ExpertPickerProps {
   loading: boolean;
   experts: ExpertsResponse | null;
   /** 선택 전문가(+선택 도구 — 심의에서 실제 호출돼 정량 근거로 주입)로 심의 시작. */
-  onConfirm: (personas: Persona[], tools: string[]) => void;
+  onConfirm: (personas: Persona[], tools: string[], apps: string[]) => void;
   onCancel: () => void;
 }
 
@@ -23,6 +23,7 @@ const DEFAULT_COUNT = 5;
 const COUNT_OPTIONS = [3, 5, 7, 10, 12];
 const POOL_LIMIT = 30; // 결과 표시 상한
 const MAX_TOOLS = 6; // 심의 계약(delib_opts.tools) 상한 — 도구당 인자구성+호출 비용이 있어 보수적
+const MAX_APPS = 3;  // 심의 계약(delib_opts.apps) 상한 — 자유 조회 범위 제한용(전량 호출 아님)
 const TOOL_LIST_LIMIT = 20;
 
 interface AddRow {
@@ -41,6 +42,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
   const [query, setQuery] = useState('');
   // 선택 도구 — 기본 빈 집합(자동 파이프라인 도구는 항상 돌아감). 고르면 실제 호출돼 근거 주입.
   const [toolSel, setToolSel] = useState<Set<string>>(new Set());
+  const [appSel, setAppSel] = useState<Set<string>>(new Set());
   const [toolQuery, setToolQuery] = useState('');
   const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터
   const seededRef = useRef(false);
@@ -146,6 +148,28 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
       else if (next.size < MAX_TOOLS) next.add(name);
       return next;
     });
+  const toggleApp = (key: string) =>
+    setAppSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else if (next.size < MAX_APPS) next.add(key);
+      return next;
+    });
+  // 앱 목록 — 서버가 주면 그대로(설명 포함), 구 서버 응답이면 도구의 group 으로 재구성.
+  const toolAppList = useMemo(() => {
+    const given = experts?.tools?.apps;
+    if (given?.length) return given;
+    const m = new Map<string, { app: string; label: string; desc?: string; tool_count: number }>();
+    for (const t of toolAll) {
+      const k = t.group || '';
+      if (!k) continue;
+      const c = m.get(k);
+      if (c) c.tool_count += 1;
+      else m.set(k, { app: k, label: t.group_label || k, tool_count: 1 });
+    }
+    return [...m.values()].sort((a, b) => b.tool_count - a.tool_count);
+  }, [experts, toolAll]);
+
   const toolGroups = useMemo(() => {
     const m = new Map<string, { label: string; n: number }>();
     for (const t of toolAll) {
@@ -283,6 +307,37 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
                   호출돼 정량 근거로 주입됩니다.
                 </p>
               )}
+              {toolAppList.length > 0 && (
+                <>
+                  <p className="cx-ep-subtle">
+                    앱을 고르면 전문가들이 라운드 중 <b>직접 조회할 범위</b>가 그 앱으로 좁혀집니다
+                    (선택 {appSel.size}/{MAX_APPS}). 아래 개별 도구 선택과 달리 전량 호출하지 않습니다.
+                  </p>
+                  <ul className="tc-apps">
+                    {toolAppList.map((a) => {
+                      const on = appSel.has(a.app);
+                      const full = !on && appSel.size >= MAX_APPS;
+                      return (
+                        <li key={a.app}>
+                          <label
+                            className={`tc-app-card${on ? ' is-on' : ''}${full ? ' is-off' : ''}`}
+                            title={a.desc}
+                          >
+                            <input type="checkbox" checked={on} disabled={full} onChange={() => toggleApp(a.app)} />
+                            <span className="tc-app-body">
+                              <span className="tc-app-head">
+                                <span className="tc-app-name">{a.label}</span>
+                                <span className="tc-app-n">기능 {a.tool_count}개</span>
+                              </span>
+                              {a.desc && <span className="tc-app-desc">{a.desc}</span>}
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
               {expertTools.length > 0 && (
                 <>
                   <p className="cx-ep-subtle">선정 전문가가 쓰는 도구 — 담당 전문가와 짝지어진 도구입니다.</p>
@@ -419,7 +474,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
               type="button"
               className="cx-ep-start"
               disabled={!enough}
-              onClick={() => onConfirm(chosenList, [...toolSel])}
+              onClick={() => onConfirm(chosenList, [...toolSel], [...appSel])}
               title={enough ? '선정한 전문가·도구로 심의를 시작합니다' : `전문가를 ${MIN_EXPERTS}명 이상 선정하세요`}
             >
               심의 시작 ({chosenList.length}명{toolSel.size > 0 ? ` · 도구 ${toolSel.size}` : ''})

@@ -63,6 +63,9 @@ class DelibOpts(BaseModel):
     personas: list[dict] | None = Field(default=None, max_length=12)
     # 사용자 지정 도구 — 심의에서 실제 호출돼 정량 근거로 주입(선정 패널에서 선택).
     tools: list[str] | None = Field(default=None, max_length=6)
+    # 사용자 지정 앱 — 전문가 자유 조회 범위를 이 앱들로 좁힌다. 도구와 달리 전량 호출이 아니다
+    # (도구 하나당 LLM 인자 구성이 붙어, 앱을 20~30개로 펼쳐 호출하면 예산이 터진다).
+    apps: list[str] | None = Field(default=None, max_length=3)
 
 
 class ChatRequest(BaseModel):
