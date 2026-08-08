@@ -31,7 +31,17 @@
 - [x] `check-mcp-registration.sh web_research_mcp` 5단계 통과
 - [x] `/tools-map` 에 **프리픽스 없는 원래 이름**으로 등장 (충돌하면 자유조회에서 사라진다)
 - [x] `_free_tool_ok()` 전 도구 True
-- [ ] 컨테이너 외부 커넥션 0건 확인 (`ss -tnp`)
+- [x] 컨테이너 외부 커넥션 0건 확인 (`ss -tnp`) — pid 98499, 0건
+
+### P2 검증 결과 (2026-08-08)
+
+등록 체인 5단계 통과. 게이트웨이 45초 만에 합류(도구 225→227). 노출명이 프리픽스 없이
+`describe_search_status`·`search_internal` 로 나와 자유조회 화이트리스트를 통과한다.
+앱 프로세스 외부 커넥션 0건. `SEARCH_MODE=offline` 기본값에서 scholar·web 둘 다 비활성.
+
+**신규 앱은 `redeploy-app.sh` 로 등록되지 않는다.** 그 스크립트는 DB 에 App 행이 이미
+있는 앱을 재기동하는 용도라, 신규는 포트 할당에서 외래키 위반으로 실패한다
+(`port_allocations_app_id_fkey`). 스캐너를 먼저 돌려야 App 행이 생긴다.
 
 ## P3 — 증거 원장 코어 (egress 0, LLM 0)
 
