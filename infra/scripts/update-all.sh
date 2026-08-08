@@ -324,6 +324,32 @@ if printf '%s' "$AIDH_TL" | grep -q '"list_agents"'; then
 else
   bad "aidh MCP tools/list 무응답 — /mcp/ 상태 확인 (비치명)"
 fi
+# heax MCP 앱 실효성 — '등록됨'과 '쓸 수 있음'은 다르다. 앱의 MCP 프로세스가 죽으면 Caddy 가
+# 같은 경로에서 앱 정적 HTML 을 200 으로 돌려주고, 레지스트리는 기동 이력만 보므로 계속 노출한다.
+# 그러면 게이트웨이에 도구 0개 백엔드가 붙고, 사용자에겐 앱 목록에 이름만 있고 쓸 기능이 없다
+# (실측: web_design_agents 가 mcp 2.0 의 fastmcp 제거로 8/3~8/8 죽은 채 등록돼 있었다).
+# 앱 하나의 장애로 포털 배포를 막지는 않는다 — 대신 이름과 조치 명령을 찍는다.
+TM="$(curl -s -m 6 http://127.0.0.1:9110/tools-map 2>/dev/null || true)"
+if [ -n "$TM" ]; then
+  TM="$TM" python3 - <<'PY' || true
+import json, os
+try:
+    apps = (json.loads(os.environ["TM"]).get("apps") or [])
+except Exception:
+    raise SystemExit
+heax = [a for a in apps if str(a.get("app", "")).startswith("heax-")]
+if not heax:
+    print("  · ⚠ heax MCP 앱이 게이트웨이에 하나도 없다 — heax_registry 폴링/PAT 확인")
+    raise SystemExit
+dead = [a for a in heax if not (a.get("tool_count") or 0)]
+print("  · heax MCP 앱 %d개 중 도구 노출 %d개" % (len(heax), len(heax) - len(dead)))
+for a in dead:
+    slug = str(a["app"])[len("heax-"):]
+    print("  · ⚠ %s — 도구 0개(%s). 앱 MCP 프로세스 확인: "
+          "infra/scripts/check-mcp-registration.sh %s"
+          % (a["app"], "연결안됨" if not a.get("reachable") else "연결됨", slug))
+PY
+fi
 probe "signalforge    :17370" http://127.0.0.1:17370/ 0 "200 302 401"
 # Smart Twin Explorer — 백엔드가 이 박스에 없다(헤드노드에 있다). 그래서 둘 다 비치명이다:
 # 헤드노드가 꺼져 있거나 망이 닫힌 상태는 포털 배포의 실패가 아니다.
