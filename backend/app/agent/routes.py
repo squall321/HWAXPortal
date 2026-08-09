@@ -66,6 +66,8 @@ class DelibOpts(BaseModel):
     # 사용자 지정 앱 — 전문가 자유 조회 범위를 이 앱들로 좁힌다. 도구와 달리 전량 호출이 아니다
     # (도구 하나당 LLM 인자 구성이 붙어, 앱을 20~30개로 펼쳐 호출하면 예산이 터진다).
     apps: list[str] | None = Field(default=None, max_length=3)
+    # 웹 리서치 소스 토글(심의) — 켜지 않은 소스는 자유 조회에 바인딩되지 않는다.
+    search_sources: list[str] | None = Field(default=None, max_length=4)
 
 
 class ChatRequest(BaseModel):
@@ -84,6 +86,9 @@ class ChatRequest(BaseModel):
     pinned_apps: list[str] | None = Field(default=None, max_length=3)
     # 사용자 지정 전문가(챗) — 이 전문가 페르소나로 대화('전문가와 대화' 모드).
     pinned_agent: str | None = Field(default=None, max_length=120)
+    # 웹 리서치 소스 토글(챗) — None 이면 종전 동작, 리스트면 그 소스만 바인딩한다.
+    # 빈 리스트는 '전부 끔'이다. 전역 SEARCH_MODE 가 끄면 이 값과 무관하게 나가지 않는다.
+    search_sources: list[str] | None = Field(default=None, max_length=4)
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -267,6 +272,8 @@ async def _relay_stream(
         payload["pinned_apps"] = body.pinned_apps
     if body.pinned_agent:  # 사용자 지정 전문가 페르소나
         payload["pinned_agent"] = body.pinned_agent
+    if body.search_sources is not None:  # 빈 리스트도 의미가 있다(전부 끔) — None 과 구분
+        payload["search_sources"] = body.search_sources
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload

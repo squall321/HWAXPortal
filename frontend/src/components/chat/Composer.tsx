@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useChat } from '../../state/ChatContext';
+import { SourcePanel } from './SourcePanel';
 import { IconSend, IconStop } from './icons';
 
 export interface ComposerHandle {
@@ -72,6 +73,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   return (
     <form className="composer" onSubmit={onSubmit}>
+      <SourcePanel />
       {/* 지정 전문가·도구 칩 — 이 대화에 적용될 선택을 항상 보이게(× 로 즉시 해제). */}
       {(pinnedTools.length > 0 || pinnedApps.length > 0 || pinnedAgent) && (
         <div className="composer-pins" aria-label="지정 전문가·앱·도구">

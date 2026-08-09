@@ -720,6 +720,10 @@
   font-weight: 600;
 }
 .do-hint { grid-column: 1 / -1; color: var(--muted); font-size: 12px; line-height: 1.45; }
+/* 소스 토글 — 꺼짐이 기본이라 '꺼짐' 배지를 눈에 띄지 않게 두되 상태는 읽히게 한다. */
+.do-count-off { opacity: 0.6; }
+.do-note { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.do-warn { color: #f0a848; }
 .do-item:has(.do-num) .do-hint { grid-column: 1 / -1; }
 .do-num {
   justify-self: start;

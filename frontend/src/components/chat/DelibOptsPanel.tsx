@@ -1,5 +1,6 @@
 // 심의 손잡이(깊이 회복 옵션) 웹 토글 패널 — env 재시작 없이 심의마다 옵션을 바꿔 A/B 한다
 import { useChat } from '../../state/ChatContext';
+import { SourcePanel } from './SourcePanel';
 import type { DelibOpts } from '../../types/chat';
 
 // 표시 순서 = 권장 A/B 순서(GLM 리뷰 §5). heavy=부하 큰 옵션(경고 표식).
@@ -30,6 +31,7 @@ export function DelibOptsPanel() {
     (delibOpts.stop_after_round === 1 ? 1 : 0);
 
   return (
+    <><SourcePanel />
     <details className="do-panel">
       <summary className="do-summary">
         <span className="do-gear" aria-hidden="true">⚙</span>
@@ -125,5 +127,6 @@ export function DelibOptsPanel() {
         </ul>
       </div>
     </details>
+    </>
   );
 }

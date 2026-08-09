@@ -20,7 +20,7 @@ import {
   type ConvKind,
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
-import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, ToolCatalog } from '../types/chat';
+import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ToolCatalog } from '../types/chat';
 import {
   delibOptsToWire,
   loadActiveId,
@@ -56,6 +56,10 @@ interface ChatContextValue {
 
   pinnedApps: string[];
   setPinnedApps: (keys: string[]) => void;
+
+  /** 인터넷 소스 토글. 켠 것만 바인딩된다 — 끄면 모델의 도구 목록에서 사라진다. */
+  searchSources: SearchSource[];
+  setSearchSources: (v: SearchSource[]) => void;
   /** 사용자 지정 전문가(agent_type) — '전문가와 대화' 모드. 대화 전 선택 시 새 대화에 적용. */
   pinnedAgent: string | null;
   setPinnedAgent: (key: string | null) => void;
@@ -205,6 +209,9 @@ export function ChatProvider({
   // 대화 시작 전(랜딩) 선택한 전문가·도구 — 다음 '새 대화' 생성 시 대화에 옮겨 심는다.
   // ref 는 sendMessage 전송 시점 읽기용(스테일 방지 — delibOpts 패턴과 동일).
   const [draftPins, setDraftPinsState] = useState<{ agent?: string; tools: string[]; apps: string[] }>({ tools: [], apps: [] });
+  // 인터넷 소스는 대화별이 아니라 세션 단위 토글이다 — 기본값은 '전부 끔'(빈 배열).
+  // undefined 를 기본으로 두면 종전 동작(전부 허용)이 되어, 켠 적 없는데 나가는 상황이 된다.
+  const [searchSources, setSearchSources] = useState<SearchSource[]>([]);
   const draftPinsRef = useRef(draftPins);
   const setDraftPins = useCallback((v: { agent?: string; tools: string[]; apps: string[] }) => {
     draftPinsRef.current = v;
@@ -407,11 +414,15 @@ export function ChatProvider({
         ...(effPinnedTools.length ? { pinnedTools: effPinnedTools } : {}),
         ...(effPinnedApps.length ? { pinnedApps: effPinnedApps } : {}),
         ...(effPinnedAgent ? { pinnedAgent: effPinnedAgent } : {}),
+        searchSources,
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
           // 패널 손잡이(켠 것만) + 일회성 extra(이어하기 human_note·요약·personas)를 병합
-          const w = { ...delibOptsToWire(delibOptsRef.current), ...(extraDelibOpts ?? {}) };
+          // 심의는 자유 조회에서 거르므로 delib_opts 에도 실어야 한다. 챗은 top-level
+          // search_sources 를 쓴다 — 두 경로가 서버에서 서로 다른 자리에서 걸러진다.
+          const w = { ...delibOptsToWire(delibOptsRef.current),
+                      search_sources: searchSources, ...(extraDelibOpts ?? {}) };
           return Object.keys(w).length > 0 ? { delibOpts: w } : {};
         })(),
         onStatus: (e) =>
@@ -642,6 +653,8 @@ export function ChatProvider({
         setPinnedTools,
         pinnedApps: activeConversation ? (activeConversation.pinnedApps ?? []) : draftPins.apps,
         setPinnedApps,
+        searchSources,
+        setSearchSources,
         pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
         setPinnedAgent,
         stop,

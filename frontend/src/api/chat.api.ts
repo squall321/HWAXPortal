@@ -191,13 +191,14 @@ export async function streamChat(
     /** 사용자 지정 우선 도구(챗) — 도구 카탈로그에서 선택. 서버가 우선 사용을 강제. */
     pinnedTools?: string[];
     pinnedApps?: string[];
+    searchSources?: string[];
     /** 사용자 지정 전문가(agent_type) — 이 전문가 페르소나로 대화. */
     pinnedAgent?: string;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, searchSources, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -218,6 +219,8 @@ export async function streamChat(
       // 앱은 서버가 도구로 펼치므로 12개 캡이 아니라 앱 수 캡(3)을 쓴다.
       ...(pinnedApps && pinnedApps.length > 0 ? { pinned_apps: pinnedApps.slice(0, 3) } : {}),
       ...(pinnedAgent ? { pinned_agent: pinnedAgent } : {}),
+      // 빈 배열도 의미가 있다(전부 끔) — undefined 와 반드시 구분해서 보낸다.
+      ...(searchSources !== undefined ? { search_sources: searchSources } : {}),
     }),
     signal,
   });

@@ -89,7 +89,12 @@ export interface DelibOpts {
   tools?: string[];
   /** 라운드 중 전문가 자유 조회를 이 앱들로 좁힌다. tools 와 달리 전량 호출하지 않는다. */
   apps?: string[];
+  /** 인터넷 소스 토글. 켠 소스의 도구만 바인딩된다 — 끄면 모델의 도구 목록에 아예 없다. */
+  search_sources?: SearchSource[];
 }
+
+/** 인터넷 소스. 사내 자산은 나가지 않으므로 토글 대상이 아니다. */
+export type SearchSource = 'scholar' | 'web';
 
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
 export interface DelibEvent {
@@ -157,6 +162,8 @@ export interface Conversation {
   pinnedTools?: string[];
   // 사용자 지정 우선 앱 — 앱을 고르면 그 앱의 도구 전체가 우선 사용된다(서버가 펼침).
   pinnedApps?: string[];
+  // 인터넷 소스 토글 — undefined 면 종전 동작, 배열이면 그 소스만 바인딩된다(빈 배열=전부 끔).
+  searchSources?: SearchSource[];
   // 사용자 지정 전문가(agent_type) — '전문가와 대화' 모드. 이후 발화에 pinned_agent 로 실린다.
   pinnedAgent?: string;
 }
