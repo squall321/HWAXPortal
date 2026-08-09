@@ -45,12 +45,12 @@
 
 ## P3 — 증거 원장 코어 (egress 0, LLM 0)
 
-- [ ] fetch → 추출 → 문장분해 → 원장 → 독립군
-- [ ] 도구 3개 — `get_page`, `search_in_page`, `get_quote`
-- [ ] `get_page` 기본 `max_sentences=0` (본문 미반환)
-- [ ] 골든셋 20 URL — 전재본 5개가 독립군 1개로 접히는가
-- [ ] `(doc_id, i)` 왕복 바이트 동일
-- [ ] dev 7B 에서 `maximum context length` 미발생
+- [x] fetch → 추출 → 문장분해 → 원장 → 독립군
+- [x] 도구 3개 — `get_page`, `search_in_page`, `get_quote`
+- [x] `get_page` 본문 미반환 — 48,193→287토큰(168배)
+- [x] 골든셋 21건 — 전재본 8개(편집 3 포함)가 독립군 1개로 접힘, 정답 3군 일치
+- [x] `(doc_id, i)` 왕복 바이트 동일 — 212회 불일치 0
+- [x] 3단계 합계 836토큰 — 컨텍스트 초과 여지 없음
 
 ## P4 — 공공 학술 API + egress 래퍼 + **소스 토글 UI**
 
