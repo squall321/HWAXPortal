@@ -1,4 +1,6 @@
 // 인터넷 소스 토글 — 켠 소스의 도구만 서버가 바인딩한다(끄면 모델의 도구 목록에 아예 없다).
+import { useEffect, useState } from 'react';
+import { fetchSearchCapability } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import type { SearchSource } from '../../types/chat';
 
@@ -21,6 +23,17 @@ const SOURCES: { key: SearchSource; label: string; hint: string; approval?: stri
 export function SourcePanel() {
   const { searchSources, setSearchSources } = useChat();
   const on = new Set(searchSources);
+  // 서버가 그 소스를 실제로 제공하는가. 전역이 꺼져 있으면 켤 수 없게 해야 한다 —
+  // 켤 수 있는데 안 나가면 사용자는 도구가 고장났다고 생각한다.
+  const [avail, setAvail] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    void fetchSearchCapability(ac.signal)
+      .then((c) => setAvail(Object.fromEntries(
+        Object.entries(c.sources ?? {}).map(([k, v]) => [k, !!v?.available]))))
+      .catch(() => setAvail({}));
+    return () => ac.abort();
+  }, []);
 
   const toggle = (k: SearchSource) => {
     const next = new Set(on);
@@ -48,13 +61,21 @@ export function SourcePanel() {
         <ul className="do-list">
           {SOURCES.map((s) => (
             <li className="do-item" key={s.key}>
-              <label className="do-toggle">
-                <input type="checkbox" checked={on.has(s.key)} onChange={() => toggle(s.key)} />
+              <label className={`do-toggle${avail && !avail[s.key] ? ' is-off' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={on.has(s.key) && !(avail && !avail[s.key])}
+                  disabled={!!avail && !avail[s.key]}
+                  onChange={() => toggle(s.key)}
+                />
                 <span className="do-label">{s.label}</span>
               </label>
               <span className="do-hint">
                 {s.hint}
-                {s.approval && <b className="do-warn"> {s.approval}</b>}
+                {avail && !avail[s.key] && (
+                  <b className="do-warn"> 서버가 이 소스를 제공하지 않습니다 — 켤 수 없습니다.</b>
+                )}
+                {s.approval && avail?.[s.key] && <b className="do-warn"> {s.approval}</b>}
               </span>
             </li>
           ))}

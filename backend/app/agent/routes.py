@@ -116,6 +116,25 @@ def _conv(request: Request):
     return request.app.state.conv_store
 
 
+@router.get("/search-capability")
+async def search_capability(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    """웹 리서치 소스 가용성 — 프론트가 토글을 정직하게 그리기 위한 값.
+
+    전역이 꺼져 있는데 UI 에서 켤 수 있으면 사용자는 켰다고 믿고 기다린다. 아무것도
+    나가지 않는데 '검색이 잘 안 되는 도구'로만 보이는 것이 이 기능의 현실적 실패 모드다."""
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=6) as client:
+            r = await client.get(f"{settings.agent_server_url}/search-capability")
+            r.raise_for_status()
+            return r.json()
+    except Exception:  # noqa: BLE001 — agent-server 불통은 '알 수 없음'이지 '가능'이 아니다
+        return {"sources": {}, "note": "agent-server 에 연결하지 못해 가용성을 확인할 수 없습니다."}
+
+
 @router.get("/conversations")
 async def list_conversations(
     request: Request,

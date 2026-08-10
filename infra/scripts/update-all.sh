@@ -329,6 +329,26 @@ fi
 # 그러면 게이트웨이에 도구 0개 백엔드가 붙고, 사용자에겐 앱 목록에 이름만 있고 쓸 기능이 없다
 # (실측: web_design_agents 가 mcp 2.0 의 fastmcp 제거로 8/3~8/8 죽은 채 등록돼 있었다).
 # 앱 하나의 장애로 포털 배포를 막지는 않는다 — 대신 이름과 조치 명령을 찍는다.
+# 웹 리서치 브로커 — 이 조직의 유일한 외부 출구다. 조용히 죽으면 "인터넷 검색이 안 되네"로만
+# 보이고 원인을 못 찾는다. 전역 모드와 소스 가용성을 함께 찍는다.
+WRC="$(curl -s -m 6 http://127.0.0.1:9009/search-capability 2>/dev/null || true)"
+if [ -n "$WRC" ]; then
+  WRC="$WRC" python3 - <<'PYWR' || true
+import json, os
+try:
+    src = (json.loads(os.environ["WRC"]).get("sources") or {})
+except Exception:
+    raise SystemExit
+if not src:
+    print("  \u00b7 \u26a0 \uc6f9 \ub9ac\uc11c\uce58 \uc18c\uc2a4 \uc815\ubcf4 \uc5c6\uc74c \u2014 web-research-mcp \uac00 \uac8c\uc774\ud2b8\uc6e8\uc774\uc5d0 \uc548 \ubd99\uc5c8\uc744 \uc218 \uc788\ub2e4")
+    raise SystemExit
+on = [k for k, v in src.items() if v.get("available")]
+off = [k for k, v in src.items() if not v.get("available")]
+print("  \u00b7 \uc6f9 \ub9ac\uc11c\uce58 \uc18c\uc2a4 \u2014 \uc0ac\uc6a9\uac00\ub2a5 %s / \ubbf8\uc81c\uacf5 %s" % (on or "\uc5c6\uc74c", off or "\uc5c6\uc74c"))
+if not on:
+    print("  \u00b7 \u26a0 \uc778\ud130\ub137 \uac80\uc0c9\uc774 \uc804\ubd80 \uaebc\uc838 \uc788\ub2e4. \uc758\ub3c4\ud55c \uac83\uc774\uba74 \ubb34\uc2dc, \uc544\ub2c8\uba74 web-research-mcp \ub9e4\ub2c8\ud398\uc2a4\ud2b8\uc758 SEARCH_MODE \ub97c \ud655\uc778\ud558\ub77c")
+PYWR
+fi
 TM="$(curl -s -m 6 http://127.0.0.1:9110/tools-map 2>/dev/null || true)"
 if [ -n "$TM" ]; then
   TM="$TM" python3 - <<'PY' || true

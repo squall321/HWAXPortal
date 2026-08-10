@@ -115,6 +115,18 @@ export interface ExpertsTools {
   apps?: { app: string; label: string; desc?: string; tool_count: number }[];
 }
 
+/** 웹 리서치 소스 가용성 — 전역이 꺼져 있으면 토글을 비활성으로 그린다. */
+export interface SearchCapability {
+  sources: Record<string, { available: boolean }>;
+  note?: string;
+}
+
+export async function fetchSearchCapability(signal?: AbortSignal): Promise<SearchCapability> {
+  const r = await fetch(`${config.apiBase}/agent/search-capability`, { credentials: 'include', signal });
+  if (!r.ok) throw new Error(`search-capability ${r.status}`);
+  return (await r.json()) as SearchCapability;
+}
+
 export interface ExpertsResponse {
   recommended: RecommendedExpert[];
   /** 질문 연관도순 후보(상위 ~40) — 수동 추가 기본 노출·검색 우선순위에 사용. */
