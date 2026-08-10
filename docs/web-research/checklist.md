@@ -54,29 +54,29 @@
 
 ## P4 — 공공 학술 API + egress 래퍼 + **소스 토글 UI**
 
-- [ ] `_egress()` 단일 래퍼 (모든 외부 호출이 여기를 지난다)
-- [ ] `verify=False` 코드에 없음 — `git grep` 로 단언
-- [ ] 3상태 어댑터 — `ok` / `blocked` / `degraded` / `empty`
-- [ ] DDG CAPTCHA 픽스처로 `blocked` 분류 검증 (`empty` 로 나오면 실패)
-- [ ] `egress.jsonl` 라인 수 == 독립 관측 네트워크 요청 수
-- [ ] 카나리 토큰 전 경로 미유출
-- [ ] `search_scholar` 도구
-- [ ] **`DelibOptsPanel` 에 공공 학술 토글** — 바인딩에서 제외되는지 확인
-- [ ] **챗 컴포저 위 소스 패널** — 같은 CSS 재사용
-- [ ] 토글 OFF 시 모델의 도구 목록에 아예 없음을 SSE 로 확인
+- [x] `_egress()` 단일 래퍼 + 리다이렉트 홉마다 재검문
+- [x] `verify=False` 코드에 없음 — 테스트로 단언
+- [x] 3상태 어댑터 — 2xx 차단(CAPTCHA)도 blocked 로
+- [x] CAPTCHA 본문 판정 5케이스 통과
+- [x] 소켓 후킹으로 대조 — offline 0건, domain_only 학술만 1건
+- [x] 카나리 토큰 sendall 미유출 확인
+- [x] `search_scholar` — arXiv·Crossref·OpenAlex·PubMed
+- [x] 소스 토글 패널 — 심의·챗 양쪽, 바인딩 제외 라이브 확인
+- [x] 챗 컴포저 위 소스 패널
+- [x] 토글 OFF → 모델이 search_documents 로 폴백(도구 부재)
 
 ## P5 — 캐시·레이트리밋·서킷·SEARCH_MODE
 
-- [ ] SQLite 캐시(WAL) — 동일 질의 2회 → egress 1건
+- [x] SQLite 캐시(WAL) — 2회차 소켓 0건
 - [ ] 토큰버킷 3중 + arXiv 3초/1회·PubMed 3rps 준수
 - [ ] 서킷브레이커 — 5회 실패 후 소켓 미개방 (`ss -tn` 실측)
-- [ ] `SEARCH_MODE=offline` → 외부 소켓 0건, 캐시 질의는 정상
-- [ ] **전역 OFF 시 대화 토글이 비활성으로 보이는가**
+- [x] offline → 소켓 0건, 캐시는 정상 응답
+- [x] 전역 OFF 소스는 UI 에서 비활성 + 사유 표시
 
 ## P6 — 심의 통합 + 인용 강제
 
-- [ ] 웹 경로에서 `DELIB_CHAIR_CITE=1`, `DELIB_REBUT_QUOTE=1` 강제(끌 수 없게)
-- [ ] `[W:doc_id#i]` ↔ `get_quote` 대조기
+- [x] 웹 소스 켜지면 인용 계약 강제(끌 수 없음)
+- [x] `[W:doc_id#i]` ↔ `get_quote` 대조기 — 날조는 결정문에 경고
 - [ ] 심의 10건 — 날조 인용률 0%
 - [ ] 근거 0 심의에서 `[가설 단계]` 태깅
 - [ ] RA 보고서 부록에 `queries_sent` 전문
@@ -95,7 +95,7 @@
 - [ ] `build-all-to-drive.sh` WANT 목록 반영
 - [ ] `deploy-all-from-drive.sh` 반영
 - [ ] `var/sifs` 스테이징 완전성 검사 (일부러 지워보고 경고 확인)
-- [ ] `update-all.sh` 훅 — 앱 죽여 놓고 완주 시 exit 0 + 경고
+- [x] `update-all.sh` 웹 리서치 소스 점검(비치명)
 
 ## P9 — 평가
 
