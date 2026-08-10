@@ -1,0 +1,989 @@
+<title>복합물리 해결 에이전트 — 구상</title>
+<style>
+  :root{
+    --bg:#F6F8FB; --surface:#FFFFFF; --surface-2:#EEF3F7;
+    --ink:#0F1720; --ink-2:#41505F; --muted:#6E7E90;
+    --line:#DBE3EB; --line-2:#C6D2DD;
+    --accent:#0F6E8C; --accent-soft:#E3F0F5;
+    --warm:#B4541B; --warm-soft:#F8E9DE;
+    --good:#2C7A57; --good-soft:#E2F1EA;
+    --shadow:0 1px 2px rgba(15,23,32,.05), 0 8px 24px -18px rgba(15,23,32,.35);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1219; --surface:#131B25; --surface-2:#18222E;
+      --ink:#E9EFF5; --ink-2:#AEBCC9; --muted:#7E8FA0;
+      --line:#243040; --line-2:#31404F;
+      --accent:#54B6D6; --accent-soft:#12303C;
+      --warm:#E28A4E; --warm-soft:#3A2415;
+      --good:#5CBB8C; --good-soft:#12301F;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1219; --surface:#131B25; --surface-2:#18222E;
+    --ink:#E9EFF5; --ink-2:#AEBCC9; --muted:#7E8FA0;
+    --line:#243040; --line-2:#31404F;
+    --accent:#54B6D6; --accent-soft:#12303C;
+    --warm:#E28A4E; --warm-soft:#3A2415;
+    --good:#5CBB8C; --good-soft:#12301F;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    font-size:16px; line-height:1.72; -webkit-font-smoothing:antialiased;
+  }
+  /* 수치는 세리프 + tabular — 지식 기반이 논문·특허·전공서적이라는 성격을 조판으로 되비춘다 */
+  .num{font-family:"Iowan Old Style","Source Serif 4",Georgia,"Times New Roman",serif;
+       font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1;}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em}
+
+  .wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+  .prose{max-width:68ch}
+  section{padding:56px 0;border-top:1px solid var(--line)}
+  section:first-of-type{border-top:none}
+
+  .eyebrow{
+    font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);font-weight:700;margin:0 0 10px;
+  }
+  h1{font-size:clamp(30px,4.4vw,46px);line-height:1.16;margin:0 0 16px;
+     letter-spacing:-.022em;text-wrap:balance;font-weight:750}
+  h2{font-size:clamp(21px,2.4vw,27px);line-height:1.3;margin:0 0 8px;
+     letter-spacing:-.014em;text-wrap:balance;font-weight:720}
+  h3{font-size:16.5px;margin:30px 0 8px;letter-spacing:-.006em;font-weight:700}
+  p{margin:0 0 14px;color:var(--ink-2)}
+  .lede{font-size:17.5px;color:var(--ink-2)}
+  strong{color:var(--ink);font-weight:680}
+
+  header.hero{padding:60px 0 44px}
+  .kicker-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+  .tag{
+    font-size:12px;padding:4px 11px;border-radius:100px;
+    border:1px solid var(--line-2);color:var(--ink-2);background:var(--surface);
+  }
+  .tag.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  /* 다운로드 — 태그와 같은 칩 형태지만 누를 수 있다는 것이 보여야 한다 */
+  button.dl{
+    font:inherit;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;
+    border:1px solid var(--accent);color:var(--accent);background:var(--accent-soft);
+    padding:4px 12px;border-radius:100px;transition:background .12s,color .12s;
+  }
+  button.dl:hover{background:var(--accent);color:var(--surface)}
+  button.dl:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button.dl[data-done="1"]{border-color:var(--good);color:var(--good);background:var(--good-soft)}
+  @media (prefers-reduced-motion:reduce){button.dl{transition:none}}
+
+  /* 요약 수치 — 큰 숫자는 세리프, 라벨은 산세리프 */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+         background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:26px 0}
+  .stat{background:var(--surface);padding:16px 18px}
+  .stat b{display:block;font-size:29px;line-height:1.1;letter-spacing:-.02em;color:var(--ink)}
+  .stat span{display:block;font-size:12.5px;color:var(--muted);margin-top:5px}
+  .stat.warm b{color:var(--warm)}
+  .stat.good b{color:var(--good)}
+
+  .diagram{
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:22px 18px;box-shadow:var(--shadow);overflow-x:auto;margin:24px 0 8px;
+  }
+  .diagram pre.mermaid{margin:0;min-width:760px;text-align:center;background:transparent}
+  /* 머메이드가 아직 SVG 로 치환되지 않은 상태(저장본 등)에서도 읽히게 한다.
+     :has(svg) 로 렌더된 경우를 제외해, 그려졌으면 이 서식이 개입하지 않는다. */
+  .diagram pre.mermaid:not(:has(svg)){
+    text-align:left;white-space:pre;overflow-x:auto;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:11.5px;line-height:1.55;color:var(--ink-2);
+    background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+  }
+  .cap{font-size:12.5px;color:var(--muted);margin:10px 2px 0}
+
+  table{width:100%;border-collapse:collapse;font-size:14.5px;margin:14px 0}
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+  .tablewrap table{margin:0}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{background:var(--surface-2);font-size:12px;letter-spacing:.05em;text-transform:uppercase;
+           color:var(--muted);font-weight:700;white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  td.n{text-align:right;font-family:"Iowan Old Style",Georgia,serif;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* 커버리지 막대 — 값이 아니라 상태가 한눈에 읽혀야 한다 */
+  .bar{display:flex;height:7px;border-radius:100px;overflow:hidden;background:var(--line);min-width:110px}
+  .bar i{display:block;height:100%}
+  .bar .b-ok{background:var(--good)} .bar .b-part{background:var(--accent)} .bar .b-no{background:var(--warm)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:10px 0 0}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle}
+
+  .pill{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:100px;
+        font-weight:650;white-space:nowrap}
+  .p-ok{background:var(--good-soft);color:var(--good)}
+  .p-part{background:var(--accent-soft);color:var(--accent)}
+  .p-no{background:var(--warm-soft);color:var(--warm)}
+
+  /* 난제 카드 — 심각도를 형태로도 encode */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:20px}
+  .card{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line-2);
+        border-radius:8px;padding:16px 18px}
+  .card.hard{border-left-color:var(--warm)}
+  .card.mid{border-left-color:var(--accent)}
+  .card h4{margin:0 0 4px;font-size:15px;font-weight:700;letter-spacing:-.005em}
+  .card .why{margin:0 0 8px;font-size:13.5px;color:var(--ink-2)}
+  .card .meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+  .card .id{font-family:ui-monospace,Menlo,monospace;color:var(--accent);font-weight:700}
+
+  /* 일정 — 실제 순서라 번호를 붙인다 */
+  .phase{display:grid;grid-template-columns:56px 1fr;gap:18px;padding:18px 0;border-top:1px dashed var(--line)}
+  .phase:first-of-type{border-top:none}
+  .phase .no{font-family:"Iowan Old Style",Georgia,serif;font-size:26px;line-height:1;
+             color:var(--accent);font-variant-numeric:tabular-nums;padding-top:2px}
+  .phase h4{margin:0 0 3px;font-size:16px;font-weight:720}
+  .phase .span{font-size:12.5px;color:var(--muted);margin-bottom:7px}
+  .phase p{margin:0 0 6px;font-size:14.5px}
+  .phase ul{margin:6px 0 0;padding-left:18px;font-size:14px;color:var(--ink-2)}
+  .phase li{margin:3px 0}
+
+  .note{background:var(--surface-2);border:1px solid var(--line);border-radius:9px;
+        padding:14px 17px;font-size:14px;color:var(--ink-2);margin:20px 0}
+  .note b{color:var(--ink)}
+
+  /* 대표 난제 카드 — 4열 정보(물리·솔버·에이전트·물성)를 한 화면에 붙여 비교가 되게 한다 */
+  .case{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+        padding:22px 24px;margin:20px 0;box-shadow:var(--shadow)}
+  .case-head{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:start;
+             padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .case-id{font-size:13px;font-weight:800;color:var(--accent);background:var(--accent-soft);
+           padding:5px 11px;border-radius:6px;letter-spacing:.04em}
+  .case-t{margin:0 0 4px;font-size:18px;font-weight:730;letter-spacing:-.012em}
+  .case-s{margin:0;font-size:14px;color:var(--ink-2)}
+  /* 열마다 필요한 폭이 다르다 — 물성 키(physical.oxygen_permeability)가 가장 길고,
+     솔버 후보는 문장이 붙는다. 균등 분할하면 물성 열이 잘린다(실측). */
+  .case-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:22px}
+  @media (min-width:1000px){
+    .case-grid{grid-template-columns:0.92fr 1.16fr 0.86fr 1.06fr}
+  }
+  .col h5{margin:0 0 9px;font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;
+          color:var(--muted);font-weight:750}
+  ul.tight{margin:0;padding-left:17px;font-size:13.5px;color:var(--ink-2)}
+  ul.tight li{margin:4px 0}
+  ul.agents{list-style:none;margin:0;padding:0;font-size:13px}
+  ul.agents li{padding:4px 0;border-bottom:1px dotted var(--line)}
+  ul.agents li:last-child{border-bottom:none}
+  table.mini{width:100%;border-collapse:collapse;font-size:12.8px}
+  table.mini{table-layout:auto}
+  table.mini td{padding:4px 6px 4px 0;border-bottom:1px dotted var(--line);vertical-align:top;
+                overflow-wrap:anywhere}
+  table.mini td.mono{font-size:11.8px;line-height:1.45}
+  table.mini tr:last-child td{border-bottom:none}
+  table.mini td.k{color:var(--muted);white-space:nowrap;width:62px;font-weight:650}
+  table.mini td.n{text-align:right;width:44px;font-family:"Iowan Old Style",Georgia,serif;
+                  font-variant-numeric:tabular-nums;color:var(--ink)}
+  .sub{color:var(--muted);font-size:.92em}
+  .verdict{margin:10px 0 0;font-size:13px;color:var(--ink-2);padding-top:9px;border-top:1px solid var(--line)}
+  .case-note{margin:18px 0 0;padding:13px 16px;background:var(--surface-2);border-radius:8px;
+             font-size:13.8px;color:var(--ink-2)}
+  .case-note b{color:var(--ink)}
+  @media (max-width:640px){
+    .case{padding:18px 16px}
+    .case-head{grid-template-columns:auto 1fr;gap:10px}
+    .case-head>.pill{grid-column:1/-1}
+  }
+  footer{padding:36px 0 60px;color:var(--muted);font-size:13px;border-top:1px solid var(--line)}
+  @media (max-width:640px){
+    .wrap{padding:0 18px}
+    .phase{grid-template-columns:38px 1fr;gap:12px}
+    .phase .no{font-size:20px}
+  }
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <p class="eyebrow">HWAX · 복합물리 해결 에이전트 구상</p>
+  <h1>자연어로 묻고, CAD에서 바로 푸는<br>복합물리 해석 체계</h1>
+  <p class="lede prose">
+    사람이 해석 조건을 손으로 세우는 대신, <strong>질문을 그대로 받아</strong> 필요한 물성을 찾고,
+    풀 수 있는 솔버를 고르고, DoE를 설계해 돌린 뒤 근거와 함께 답하는 시스템이다.
+    지식은 논문·특허·전공서적·사내 보고서에서, 계산은 오픈소스 솔버에서, 판단은 전문가 에이전트 심의에서 온다.
+  </p>
+  <div class="kicker-row">
+    <span class="tag on">100% AX</span>
+    <span class="tag">자연어 입력</span>
+    <span class="tag">CAD 직결</span>
+    <span class="tag">생성형 AI 기반</span>
+    <span class="tag">오픈소스 솔버</span>
+    <button type="button" id="dl" class="tag dl">
+      <span aria-hidden="true">↓</span> HTML 저장
+    </button>
+  </div>
+  <div class="stats">
+    <div class="stat"><b class="num">99</b><span>오픈소스 솔버</span></div>
+    <div class="stat good"><b class="num">87</b><span>빌드 완료 SIF</span></div>
+    <div class="stat"><b class="num">544</b><span>재료 DB 등록</span></div>
+    <div class="stat"><b class="num">313</b><span>도출된 요구 물성</span></div>
+    <div class="stat warm"><b class="num">102</b><span>물성 공백(값 없음)</span></div>
+  </div>
+</header>
+
+<section>
+  <p class="eyebrow">Architecture</p>
+  <h2>전체 구조</h2>
+  <p class="prose">
+    다섯 층으로 나뉜다. 사람은 <strong>왼쪽 끝</strong>에서 질문과 형상만 준다.
+    가운데 세 층(지식·물성·계산)이 각자 근거를 만들고, 오른쪽 판정층이 그것을 합쳐 답과 함께
+    <strong>무엇을 근거로 그렇게 말했는지</strong>를 내놓는다.
+  </p>
+
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  classDef inp fill:#E3F0F5,stroke:#0F6E8C,stroke-width:1.5px,color:#0F1720
+  classDef kno fill:#FFFFFF,stroke:#C6D2DD,color:#0F1720
+  classDef mat fill:#FFFFFF,stroke:#C6D2DD,color:#0F1720
+  classDef cmp fill:#FFFFFF,stroke:#C6D2DD,color:#0F1720
+  classDef jud fill:#E2F1EA,stroke:#2C7A57,stroke-width:1.5px,color:#0F1720
+  classDef gap fill:#F8E9DE,stroke:#B4541B,stroke-width:1.5px,color:#0F1720
+
+  subgraph IN[" 입력 "]
+    direction TB
+    Q["자연어 질의<br/><small>‘이 구조 떨어뜨리면 셀 터지나?’</small>"]:::inp
+    C["CAD 형상<br/><small>STEP · 어셈블리</small>"]:::inp
+  end
+
+  subgraph KB[" 지식층 — 무엇이 알려져 있는가 "]
+    direction TB
+    K1["논문 · 특허"]:::kno
+    K2["전공서적 · 규격"]:::kno
+    K3["사내 보고서<br/>과거 심의"]:::kno
+    KA["전문가 에이전트<br/><small>도메인 722명 · 지식카드</small>"]:::kno
+  end
+
+  subgraph MT[" 물성층 — 무엇을 넣을 것인가 "]
+    direction TB
+    M1["MaterialTwin DB<br/><small>재료 544 · 물성정의 157종</small>"]:::mat
+    M2["조건축 확장<br/><small>온도 · 속도 · SOC · 습도</small>"]:::mat
+    M3["공백 판정<br/><small>값 없음 102건</small>"]:::gap
+  end
+
+  subgraph CP[" 계산층 — 어떻게 풀 것인가 "]
+    direction TB
+    P1["해석 계획 수립<br/><small>지배방정식 · 경계조건</small>"]:::cmp
+    P2["모델 자동생성<br/><small>de-feature · 메시 · 접촉</small>"]:::cmp
+    P3["DoE 설계<br/><small>인자 · 수준 · 표본</small>"]:::cmp
+    P4["솔버 컨테이너<br/><small>99종 · 23 카테고리</small>"]:::cmp
+    P5["HPC 실행<br/><small>Slurm 배치</small>"]:::cmp
+  end
+
+  subgraph JD[" 판정층 — 믿을 수 있는가 "]
+    direction TB
+    J1["다중 라운드 심의<br/><small>전문가 수렴</small>"]:::jud
+    J2["인용 검증<br/><small>문장 단위 대조</small>"]:::jud
+    J3["한계 명시<br/><small>못 푼 것을 못 풀었다고</small>"]:::jud
+  end
+
+  R["해석 결과 + 근거 보고서<br/><small>설계 판단으로 바로 쓰는 형태</small>"]:::jud
+
+  Q --> KA
+  C --> P2
+  K1 --> KA
+  K2 --> KA
+  K3 --> KA
+  KA --> P1
+  KA --> M2
+  M1 --> M2
+  M2 --> P1
+  M2 -.->|부족| M3
+  M3 -.->|시험 의뢰| M1
+  P1 --> P2 --> P3 --> P4 --> P5
+  P5 --> J1
+  KA --> J1
+  J1 --> J2 --> J3 --> R
+  M3 -.->|불확실성 꼬리표| J3
+</pre>
+  </div>
+  <p class="cap">
+    점선은 <strong>되먹임</strong>이다. 물성이 없으면 시험으로 되돌리고, 끝내 없으면 그 사실을 결과에 꼬리표로 남긴다 —
+    없는 값을 지어내지 않는 것이 이 구조의 전제다.
+  </p>
+
+  <div class="note">
+    <b>왜 이 순서인가.</b> 물성이 계산보다 앞에 온다. 도출된 요구 물성 313건 중 값이 있는 것이 211건이고,
+    해석 40건 중 <strong>물성만 채우면 바로 돌릴 수 있는 것이 14건</strong>이다.
+    지금의 병목은 해석 능력이 아니라 물성이다.
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Materials</p>
+  <h2>물성 현황</h2>
+  <p class="prose">
+    배터리·디스플레이 실패 모드 40건을 정의하고, 각각을 사전 예측하는 데 필요한 물성을 313건 도출해
+    사내 재료 DB와 대조한 결과다. 핵심은 값의 유무가 아니라 <strong>조건축의 유무</strong>다.
+  </p>
+
+  <div class="stats">
+    <div class="stat good"><b class="num">211</b><span>값 보유 — 즉시 사용</span></div>
+    <div class="stat"><b class="num">34</b><span>정의만 있고 값 없음</span></div>
+    <div class="stat warm"><b class="num">68</b><span>정의조차 없음</span></div>
+    <div class="stat"><b class="num">254</b><span>온도 조건을 요구</span></div>
+  </div>
+
+  <h3>요구가 몰린 조건축</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>조건축</th><th class="n">요구 물성</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td><strong>온도</strong></td><td class="n">254</td><td>지배 조건축. 상온 1점으로 가진 물성은 사실상 안 가진 것과 같다</td></tr>
+        <tr><td>사이클·시간</td><td class="n">90</td><td>경시 열화축. 출하 시점 물성만으로 시장 불량을 못 본다</td></tr>
+        <tr><td>변형률속도</td><td class="n">48</td><td>낙하·충격축. 준정적 값으로 풀면 하중 경로가 어긋난다</td></tr>
+        <tr><td>습도·확산</td><td class="n">48</td><td>침투·수송축. 봉지·접착 계면의 장기 신뢰성을 지배</td></tr>
+        <tr><td>SOC·전기화학</td><td class="n">45</td><td>배터리 고유축. <span class="pill p-no">DB에 도메인 자체가 없음</span></td></tr>
+        <tr><td>방향·이방성</td><td class="n">29</td><td>적층·권취 구조축. 등방 단일값으로는 구조 변경이 안 나타난다</td></tr>
+        <tr><td>주파수</td><td class="n">24</td><td>점탄성축. Prony·시간-온도 이동인자가 있어야 성립</td></tr>
+        <tr><td>계면</td><td class="n">18</td><td>이종 접합축. 신규 구조일수록 파괴가 계면으로 옮겨간다</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    공통 뿌리는 하나다 — <b>물성을 스칼라로 갖고 있고 조건축으로 갖고 있지 않다.</b>
+    온도축 254건은 “값이 없다”가 아니라 “있는 값이 어느 조건에서 잰 것인지 모른다”는 뜻이다.
+    신규 구조는 사용 조건을 기존 경험 범위 밖으로 밀어내므로, 조건축 없는 물성은 신규 구조에서 가장 먼저 무력해진다.
+  </div>
+
+  <h3>가장 많이 요구된 DB 키</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>키</th><th class="n">요구 모드 수</th><th>상태</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">structure.layer_thickness</td><td class="n">11</td><td><span class="pill p-part">디스플레이 11개 모드가 물고 있음</span></td></tr>
+        <tr><td class="mono">mechanical.youngs_modulus</td><td class="n">10</td><td><span class="pill p-ok">값 402재료 — 조건축만 붙이면 됨</span></td></tr>
+        <tr><td class="mono">mechanical.prony_shear_modulus</td><td class="n">10</td><td><span class="pill p-no">관측 0건</span></td></tr>
+        <tr><td class="mono">chemical.activation_energy</td><td class="n">9</td><td><span class="pill p-no">관측 1건 — 가속시험 환산 불가</span></td></tr>
+        <tr><td class="mono">physical.diffusion_coefficient</td><td class="n">8</td><td><span class="pill p-part">부분 보유</span></td></tr>
+        <tr><td class="mono">interface.peel_strength</td><td class="n">8</td><td><span class="pill p-part">부분 보유</span></td></tr>
+        <tr><td class="mono">interface.cohesive_energy_mode1</td><td class="n">8</td><td><span class="pill p-no">관측 3건</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap">
+    <code>chemical.activation_energy</code>가 특히 아프다. 이게 없으면 <strong>모든 가속시험을 실사용 조건으로 환산할 수 없다</strong> —
+    가속시험 체계 전체가 근거를 잃는다.
+  </p>
+</section>
+
+<section>
+  <p class="eyebrow">Solvers</p>
+  <h2>솔버 현황</h2>
+  <p class="prose">
+    오픈소스 솔버를 컨테이너로 묶어 <strong>같은 방식으로 부를 수 있게</strong> 만들어 둔 자산이다.
+    수치해석 에이전트가 여기서 도구를 고르고 DoE를 돌린다. 상용 라이선스에 묶이지 않는 것이 이 선택의 핵심이다.
+  </p>
+
+  <div class="stats">
+    <div class="stat"><b class="num">99</b><span>솔버 정의</span></div>
+    <div class="stat good"><b class="num">87</b><span>빌드 완료 SIF</span></div>
+    <div class="stat"><b class="num">23</b><span>카테고리</span></div>
+    <div class="stat"><b class="num">71</b><span>총 용량 (GB)</span></div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>카테고리</th><th class="n">정의</th><th class="n">빌드</th><th style="min-width:130px">커버리지</th><th>대표 솔버</th></tr></thead>
+      <tbody>
+        <tr><td><strong>구조해석</strong></td><td class="n">18</td><td class="n">15</td>
+          <td><span class="bar"><i class="b-ok" style="width:83%"></i><i class="b-no" style="width:17%"></i></span></td>
+          <td class="mono">OpenRadioss · CalculiX · Code_Aster · MOOSE</td></tr>
+        <tr><td><strong>최적화 · DoE</strong></td><td class="n">16</td><td class="n">15</td>
+          <td><span class="bar"><i class="b-ok" style="width:94%"></i><i class="b-no" style="width:6%"></i></span></td>
+          <td class="mono">Dakota · Optuna · Pagmo · SciPy</td></tr>
+        <tr><td>재료과학</td><td class="n">9</td><td class="n">8</td>
+          <td><span class="bar"><i class="b-ok" style="width:89%"></i><i class="b-no" style="width:11%"></i></span></td>
+          <td class="mono">Pymatgen · ASE · Phonopy · LAMMPS-ML</td></tr>
+        <tr><td>머신러닝</td><td class="n">6</td><td class="n">5</td>
+          <td><span class="bar"><i class="b-ok" style="width:83%"></i><i class="b-no" style="width:17%"></i></span></td>
+          <td class="mono">PyTorch · TensorFlow · JAX · XGBoost</td></tr>
+        <tr><td>유체역학</td><td class="n">5</td><td class="n">4</td>
+          <td><span class="bar"><i class="b-ok" style="width:80%"></i><i class="b-no" style="width:20%"></i></span></td>
+          <td class="mono">OpenFOAM · SU2 · Nektar++ · PyFR</td></tr>
+        <tr><td>계산화학</td><td class="n">5</td><td class="n">5</td>
+          <td><span class="bar"><i class="b-ok" style="width:100%"></i></span></td>
+          <td class="mono">Quantum ESPRESSO · Psi4 · RDKit</td></tr>
+        <tr><td>시각화</td><td class="n">5</td><td class="n">4</td>
+          <td><span class="bar"><i class="b-ok" style="width:80%"></i><i class="b-no" style="width:20%"></i></span></td>
+          <td class="mono">ParaView · VisIt · OVITO</td></tr>
+        <tr><td><strong>배터리</strong></td><td class="n">3</td><td class="n">3</td>
+          <td><span class="bar"><i class="b-ok" style="width:100%"></i></span></td>
+          <td class="mono">PyBaMM · Cantera · LIONSIMBA</td></tr>
+        <tr><td>분자동역학</td><td class="n">5</td><td class="n">5</td>
+          <td><span class="bar"><i class="b-ok" style="width:100%"></i></span></td>
+          <td class="mono">LAMMPS · GROMACS · CP2K · OpenMM</td></tr>
+        <tr><td>전자기</td><td class="n">3</td><td class="n">3</td>
+          <td><span class="bar"><i class="b-ok" style="width:100%"></i></span></td>
+          <td class="mono">MEEP · openEMS · gprMax</td></tr>
+        <tr><td>회로</td><td class="n">3</td><td class="n">3</td>
+          <td><span class="bar"><i class="b-ok" style="width:100%"></i></span></td>
+          <td class="mono">ngspice · KiCad · Qucs</td></tr>
+        <tr><td>기타 12개 카테고리</td><td class="n">21</td><td class="n">17</td>
+          <td><span class="bar"><i class="b-ok" style="width:81%"></i><i class="b-no" style="width:19%"></i></span></td>
+          <td class="mono">FLASH · WRF · Qiskit · OpenMC · BioPython</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--good)"></i>빌드 완료 — 바로 실행</span>
+    <span><i style="background:var(--warm)"></i>정의만 — 빌드 필요</span>
+  </div>
+
+  <div class="note">
+    <b>솔버는 있는데 못 푸는 영역이 남는다.</b> 앞선 물성 분석에서 해석 40건을 나눠 보면
+    <span class="pill p-ok">가능 14</span>
+    <span class="pill p-part">부분 14</span>
+    <span class="pill p-no">불가 12</span> 다.
+    ‘부분’은 솔버는 있으나 구성모델이 없는 경우(셀 이방성 균질화·압밀 lock-up이 대표),
+    ‘불가’는 전기화학 연성·광물리처럼 사내에 해석 체계 자체가 없는 영역이다 — 물성을 채워도 열리지 않는다.
+  </div>
+</section>
+
+
+<section>
+  <p class="eyebrow">Pilot Cases</p>
+  <h2>대표 난제 4건</h2>
+  <p class="prose">
+    앞서 정의한 배터리·디스플레이 실패 모드 40건 전체가 대상이지만, 먼저 칠 후보로 네 건을 세웠다.
+    각각에 대해 <strong>어떤 솔버로 풀 수 있는지(오픈소스 / 유료)</strong>,
+    <strong>어느 전문가 에이전트가 붙는지</strong>, <strong>물성이 얼마나 준비됐는지</strong>를 실측으로 정리했다.
+    에이전트는 사내 지식카드 검색 결과이고, 물성 관측 수는 재료 DB 표본 80건 기준이다.
+  </p>
+
+  <!-- ── P1 ─────────────────────────────────────────────── -->
+  <article class="case">
+    <div class="case-head">
+      <span class="case-id mono">P1</span>
+      <div>
+        <h3 class="case-t">디스플레이 내부 산소 확산 · 굴절률/투과율</h3>
+        <p class="case-s">봉지층을 통한 산소 침투와 그로 인한 발광 소광, 그리고 적층 광학계의 투과·색좌표 변화를 함께 본다.</p>
+      </div>
+      <span class="pill p-part">물성 준비 6/9</span>
+    </div>
+    <div class="case-grid">
+      <div class="col">
+        <h5>풀어야 하는 물리</h5>
+        <ul class="tight">
+          <li>Fick 확산 — 봉지 결함·OCA 경로를 통한 O₂ 침투</li>
+          <li>Stern-Volmer 소광 — 인광 발광체의 산소 소광</li>
+          <li>박막 다층 간섭 — 굴절률 분산에 따른 투과·반사</li>
+          <li>편광·복굴절 — pol-less(COE) 구조의 시야각 거동</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h5>솔버 후보</h5>
+        <table class="mini">
+          <tr><td class="k">오픈소스</td><td class="mono">MOOSE · FEniCS <span class="sub">확산</span> / MEEP · openEMS <span class="sub">FDTD 광학</span></td></tr>
+          <tr><td class="k">유료 후보</td><td class="mono">COMSOL <span class="sub">Transport of Diluted Species + Wave Optics</span> · Ansys Lumerical FDTD · Synopsys LightTools · Zemax OpticStudio</td></tr>
+        </table>
+        <p class="verdict"><b>판단</b> — 확산은 오픈소스로 충분하다. 다층 박막 광학은 유료가 유리하지만
+          <span class="mono">MEEP</span>로 1차 스크리닝 후 검증만 유료로 돌리는 절충이 가능하다.</p>
+      </div>
+      <div class="col">
+        <h5>협업진단 에이전트</h5>
+        <ul class="agents">
+          <li><span class="mono">cam-udc</span> <span class="sub">UDC 발광·소광</span></li>
+          <li><span class="mono">disp-upc</span> <span class="sub">UPC 투과 구조</span></li>
+          <li><span class="mono">disp-tfe-encap</span> <span class="sub">TFE 봉지</span></li>
+          <li><span class="mono">sim-optics</span> <span class="sub">광학 해석</span></li>
+          <li><span class="mono">mech-ip-sealing</span> <span class="sub">실링·방수</span></li>
+        </ul>
+      </div>
+      <div class="col">
+        <h5>물성 준비도</h5>
+        <table class="mini">
+          <tr><td class="mono">optical.refractive_index</td><td class="n">721</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">optical.transmittance</td><td class="n">56</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">physical.diffusion_coefficient</td><td class="n">56</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">optical.extinction_coefficient</td><td class="n">42</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">optical.haze</td><td class="n">14</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">chemical.activation_energy</td><td class="n">7</td><td><span class="pill p-part">희박</span></td></tr>
+          <tr><td class="mono">optical.birefringence</td><td class="n">0</td><td><span class="pill p-no">관측 0</span></td></tr>
+          <tr><td class="mono">physical.wvtr</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
+          <tr><td class="mono">physical.oxygen_permeability</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
+        </table>
+      </div>
+    </div>
+    <p class="case-note">
+      <b>가장 유리한 후보다.</b> 광학 물성이 이미 충분히 쌓여 있다 — 굴절률만 721건이다.
+      막히는 곳은 산소 쪽으로, <span class="mono">oxygen_permeability</span>·<span class="mono">wvtr</span>가
+      <strong>키 자체가 없어</strong> 값을 만들어도 저장할 자리가 없다. 스키마 신설이 선행이다.
+      복굴절 관측 0건은 pol-less 구조 해석의 직접적 공백이다.
+    </p>
+  </article>
+
+  <!-- ── P2 ─────────────────────────────────────────────── -->
+  <article class="case">
+    <div class="case-head">
+      <span class="case-id mono">P2</span>
+      <div>
+        <h3 class="case-t">면품질 — 적층·압착 조건에 의한 초기 휨과 크리즈</h3>
+        <p class="case-s">라미네이션 압력·온도·시간이 남기는 잔류응력과 초기 휨, 그리고 폴딩 반복이 만드는 크리즈까지 하나로 본다.</p>
+      </div>
+      <span class="pill p-no">물성 준비 3/8</span>
+    </div>
+    <div class="case-grid">
+      <div class="col">
+        <h5>풀어야 하는 물리</h5>
+        <ul class="tight">
+          <li>공정 잔류응력 — 압착 이력이 남긴 초기 형상</li>
+          <li>점탄성 크리프 — 접힌 상태 유지 중 미회복 변형</li>
+          <li>시간-온도 중첩 — 상온 준정적으로는 못 보는 거동</li>
+          <li>층간 슬립·좌굴 — 중립면 이동과 국부 좌굴</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h5>솔버 후보</h5>
+        <table class="mini">
+          <tr><td class="k">오픈소스</td><td class="mono">Code_Aster · CalculiX · MOOSE <span class="sub">점탄성·암시적</span></td></tr>
+          <tr><td class="k">유료 후보</td><td class="mono">Abaqus/Standard <span class="sub">viscoelastic + TTS</span> · MSC Marc · ANSYS Mechanical · LS-DYNA implicit</td></tr>
+        </table>
+        <p class="verdict"><b>판단</b> — 솔버가 문제가 아니다. <strong>넣을 물성이 없다.</strong>
+          Prony 급수와 이동인자 없이는 어떤 솔버로도 크리즈를 못 푼다.</p>
+      </div>
+      <div class="col">
+        <h5>협업진단 에이전트</h5>
+        <ul class="agents">
+          <li><span class="mono">disp-foldable-stackup</span> <span class="sub">폴더블 적층</span></li>
+          <li><span class="mono">disp-utg-cover</span> <span class="sub">UTG 커버</span></li>
+          <li><span class="mono">mech-psa-bonding</span> <span class="sub">PSA 접착</span></li>
+          <li><span class="mono">mech-foldable-hinge</span> <span class="sub">힌지 기구</span></li>
+          <li><span class="mono">rel-fastening-bonding</span> <span class="sub">접합 신뢰성</span></li>
+        </ul>
+      </div>
+      <div class="col">
+        <h5>물성 준비도</h5>
+        <table class="mini">
+          <tr><td class="mono">mechanical.youngs_modulus</td><td class="n">1882</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">interface.peel_strength</td><td class="n">105</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">structure.layer_thickness</td><td class="n">7</td><td><span class="pill p-part">희박</span></td></tr>
+          <tr><td class="mono">mechanical.prony_shear_modulus</td><td class="n">0</td><td><span class="pill p-no">관측 0</span></td></tr>
+          <tr><td class="mono">mechanical.prony_bulk_modulus</td><td class="n">0</td><td><span class="pill p-no">관측 0</span></td></tr>
+          <tr><td class="mono">interface.tack</td><td class="n">0</td><td><span class="pill p-no">관측 0</span></td></tr>
+          <tr><td class="mono">thermal.cte</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
+          <tr><td class="mono">mechanical.creep_coefficient</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
+        </table>
+      </div>
+    </div>
+    <p class="case-note">
+      <b>가장 불리한 후보다.</b> 이 문제의 지배 물성인 점탄성 Prony 항이 <strong>전단·체적 모두 관측 0건</strong>이고,
+      접착 tack도 0건, 열팽창계수는 키 자체가 없다. DMA 시험 체계를 세우는 것이 사실상 1단계다 —
+      솔버 선택은 그 뒤의 문제다.
+    </p>
+  </article>
+
+  <!-- ── P3 ─────────────────────────────────────────────── -->
+  <article class="case">
+    <div class="case-head">
+      <span class="case-id mono">P3</span>
+      <div>
+        <h3 class="case-t">저온/고온 환경 낙하</h3>
+        <p class="case-s">온도에 따라 접착층 강성이 급변해 하중 경로와 파단 위치가 바뀐다. 상온 낙하 해석이 통과시킨 설계가 저온에서 깨진다.</p>
+      </div>
+      <span class="pill p-part">물성 준비 5/7</span>
+    </div>
+    <div class="case-grid">
+      <div class="col">
+        <h5>풀어야 하는 물리</h5>
+        <ul class="tight">
+          <li>고속 동적 접촉 — 명시적 시간적분</li>
+          <li>변형률속도 의존 항복 — 준정적 값으로는 오배분</li>
+          <li>저온 강성 급증 — 중립면 이동, 취성층 인장 증가</li>
+          <li>계면 파괴 — CZM 기반 박리·층간 분리</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h5>솔버 후보</h5>
+        <table class="mini">
+          <tr><td class="k">오픈소스</td><td class="mono">OpenRadioss <span class="sub">명시적 충격 · 빌드 완료</span> · MOOSE</td></tr>
+          <tr><td class="k">유료 후보</td><td class="mono">LS-DYNA <span class="sub">사내 자산</span> · Abaqus/Explicit · ANSYS Autodyn · Altair Radioss</td></tr>
+        </table>
+        <p class="verdict"><b>판단</b> — 사내에 LS-DYNA 자산과 전처리 도구(DynaForge)가 이미 있다.
+          <strong>오픈소스 대체가 가장 현실적인 영역</strong>이기도 하다 — OpenRadioss가 같은 계열이다.</p>
+      </div>
+      <div class="col">
+        <h5>협업진단 에이전트</h5>
+        <ul class="agents">
+          <li><span class="mono">sim-drop-impact</span> <span class="sub">낙하·충격 해석</span></li>
+          <li><span class="mono">pcb-solder-joint-reliability</span> <span class="sub">솔더 접합</span></li>
+          <li><span class="mono">sim-solder-fatigue</span> <span class="sub">솔더 피로</span></li>
+          <li><span class="mono">disp-foldable-stackup</span> <span class="sub">적층 구조</span></li>
+          <li><span class="mono">mech-exterior-materials</span> <span class="sub">외장 재료</span></li>
+        </ul>
+      </div>
+      <div class="col">
+        <h5>물성 준비도</h5>
+        <table class="mini">
+          <tr><td class="mono">mechanical.youngs_modulus</td><td class="n">1882</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">interface.cohesive_energy_mode1</td><td class="n">371</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">mechanical.yield_strength_at_rate</td><td class="n">207</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">mechanical.elongation_at_break</td><td class="n">97</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">mechanical.fracture_toughness</td><td class="n">28</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">interface.cohesive_strength</td><td class="n">21</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">thermal.glass_transition_temp</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
+        </table>
+      </div>
+    </div>
+    <p class="case-note">
+      <b>물성 자체는 가장 잘 갖춰져 있다.</b> 변형률속도별 항복이 207건이나 있다.
+      문제는 <strong>온도축</strong>이다 — 이 값들이 몇 도에서 잰 것인지가 붙어 있지 않으면
+      저온/고온 낙하는 상온 해석과 같아진다. 유리전이온도는 키조차 없어 저온 강성 급증 시점을 모른다.
+    </p>
+  </article>
+
+  <!-- ── P4 ─────────────────────────────────────────────── -->
+  <article class="case">
+    <div class="case-head">
+      <span class="case-id mono">P4</span>
+      <div>
+        <h3 class="case-t">스웰링에 의한 back glass 들뜸 — 파손 메커니즘 변화</h3>
+        <p class="case-s">셀이 부풀면서 하중이 접착 계면으로 옮겨가고, 어느 시점부터 파손 방식 자체가 바뀐다. 그 전이점을 예측하는 문제다.</p>
+      </div>
+      <span class="pill p-no">물성 준비 4/7</span>
+    </div>
+    <div class="case-grid">
+      <div class="col">
+        <h5>풀어야 하는 물리</h5>
+        <ul class="tight">
+          <li>SOC·수명 의존 팽창 고유변형(eigenstrain)</li>
+          <li>비가역 가스 발생 — 전해액 분해 속도론</li>
+          <li>접착 계면 CZM — 박리 개시와 진전</li>
+          <li>메커니즘 전이 — 유리 파손 → 접착 박리로의 전환점</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h5>솔버 후보</h5>
+        <table class="mini">
+          <tr><td class="k">오픈소스</td><td class="mono">PyBaMM <span class="sub">P2D 전기화학 · 빌드 완료</span> · MOOSE <span class="sub">다물리 연성</span> · Code_Aster <span class="sub">CZM</span></td></tr>
+          <tr><td class="k">유료 후보</td><td class="mono">COMSOL <span class="sub">Battery Design + Structural Mechanics</span> · Abaqus <span class="sub">CZM/VCCT</span> · ANSYS Mechanical</td></tr>
+        </table>
+        <p class="verdict"><b>판단</b> — 전기화학–구조 <strong>양방향 연성</strong>이 필요한 유일한 후보다.
+          COMSOL이 가장 직접적이나, PyBaMM→MOOSE 단방향으로 시작해 범위를 넓히는 편이 현실적이다.</p>
+      </div>
+      <div class="col">
+        <h5>협업진단 에이전트</h5>
+        <ul class="agents">
+          <li><span class="mono">pwr-swelling</span> <span class="sub">셀 스웰링</span></li>
+          <li><span class="mono">pwr-pack-integration</span> <span class="sub">팩 통합</span></li>
+          <li><span class="mono">mech-psa-bonding</span> <span class="sub">PSA 접착</span></li>
+          <li><span class="mono">mech-exterior-materials</span> <span class="sub">외장 재료</span></li>
+          <li><span class="mono">sim-drop-impact</span> <span class="sub">구조 해석</span></li>
+        </ul>
+      </div>
+      <div class="col">
+        <h5>물성 준비도</h5>
+        <table class="mini">
+          <tr><td class="mono">interface.cohesive_energy_mode1</td><td class="n">371</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">interface.peel_strength</td><td class="n">105</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">mechanical.youngs_modulus</td><td class="n">1882</td><td><span class="pill p-ok">충분</span></td></tr>
+          <tr><td class="mono">chemical.activation_energy</td><td class="n">7</td><td><span class="pill p-part">희박</span></td></tr>
+          <tr><td class="mono">mechanical.swelling_strain</td><td class="n">0</td><td><span class="pill p-no">관측 0</span></td></tr>
+          <tr><td class="mono">mechanical.compression_set</td><td class="n">0</td><td><span class="pill p-no">관측 0</span></td></tr>
+          <tr><td class="mono">interface.shear_strength</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
+        </table>
+      </div>
+    </div>
+    <p class="case-note">
+      <b>계면 물성은 좋은데 원인 물성이 없다.</b> 박리를 계산할 CZM 파라미터는 371건이나 쌓여 있는데,
+      정작 <strong>얼마나 부푸는지</strong>를 말해 줄 <span class="mono">swelling_strain</span>이 관측 0건이다.
+      쿠션 폼의 압축영구변형도 0건이라 하중이 어디로 전달되는지 모른다.
+      그리고 이 문제는 앞서 정리한 <span class="mono">electrochemical</span> 도메인 부재(D-4)에 직접 걸린다.
+    </p>
+  </article>
+
+  <div class="tablewrap" style="margin-top:26px">
+    <table>
+      <thead><tr><th>대표 난제</th><th>물성 준비</th><th>오픈소스로 가능한가</th><th>유료가 유리한 지점</th><th>선행 조건</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="mono">P1</span> 산소확산·광학</td>
+          <td><span class="pill p-part">6/9</span></td>
+          <td>확산 <span class="pill p-ok">가능</span> / 광학 <span class="pill p-part">부분</span></td>
+          <td class="sub">다층 박막 간섭·편광 (Lumerical · LightTools)</td>
+          <td class="sub">산소투과·WVTR 키 신설</td>
+        </tr>
+        <tr>
+          <td><span class="mono">P2</span> 면품질·크리즈</td>
+          <td><span class="pill p-no">3/8</span></td>
+          <td><span class="pill p-ok">가능</span> <span class="sub">Code_Aster</span></td>
+          <td class="sub">TTS 내장 점탄성 (Abaqus · Marc)</td>
+          <td class="sub"><b>DMA 시험 체계</b> — Prony 0건</td>
+        </tr>
+        <tr>
+          <td><span class="mono">P3</span> 환경낙하</td>
+          <td><span class="pill p-part">5/7</span></td>
+          <td><span class="pill p-ok">가능</span> <span class="sub">OpenRadioss</span></td>
+          <td class="sub">사내 LS-DYNA 자산 활용</td>
+          <td class="sub">기존 물성에 <b>온도축</b> 부착</td>
+        </tr>
+        <tr>
+          <td><span class="mono">P4</span> 스웰링·들뜸</td>
+          <td><span class="pill p-no">4/7</span></td>
+          <td><span class="pill p-part">부분</span> <span class="sub">PyBaMM+MOOSE 단방향</span></td>
+          <td class="sub">전기화학–구조 양방향 (COMSOL)</td>
+          <td class="sub">swelling_strain 확보 + <span class="mono">electrochemical</span> 도메인</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <b>네 건이 서로 다른 벽에 막혀 있다.</b> P1은 <strong>스키마</strong>(저장할 키가 없다),
+    P2는 <strong>시험</strong>(잴 데이터가 없다), P3은 <strong>조건축</strong>(값은 있는데 조건을 모른다),
+    P4는 <strong>해석 체계</strong>(연성 모델이 없다)다.
+    같은 “물성 부족”으로 뭉뚱그리면 처방이 전부 달라지므로, 착수 순서는 이 벽의 성격으로 정하는 것이 맞다.
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Hard Problems</p>
+  <h2>난제 후보</h2>
+  <p class="prose">
+    이 시스템이 실제로 서려면 넘어야 하는 것들이다. 성격이 다르므로 나눠 적는다 —
+    <strong>데이터를 채우면 풀리는 것</strong>, <strong>방법을 만들어야 풀리는 것</strong>,
+    <strong>지금 기술로는 못 푸는 것</strong>. 어디를 먼저 칠지는 아직 정하지 않았다.
+  </p>
+
+  <h3>데이터로 풀리는 것 — 시험과 수집의 문제</h3>
+  <div class="cards">
+    <div class="card mid">
+      <h4>조건축 없는 물성</h4>
+      <p class="why">요구 313건 중 254건이 온도 조건을 요구하는데, 보유 값 대부분이 조건 없이 스칼라로 저장돼 있다.</p>
+      <p class="meta"><span class="id">D-1</span><span>기존 재료 온도 스윕 재측정</span></p>
+    </div>
+    <div class="card mid">
+      <h4>활성화에너지 공백</h4>
+      <p class="why">관측 1건. 없으면 가속시험을 실사용 조건으로 환산할 수 없어 가속시험 체계 전체가 근거를 잃는다.</p>
+      <p class="meta"><span class="id">D-2</span><span>최우선 확보 대상</span></p>
+    </div>
+    <div class="card mid">
+      <h4>점탄성 Prony 항 부재</h4>
+      <p class="why">전단·체적 Prony 관측 0건. 크리즈·딜라미네이션·장기 크리프를 계산할 입력이 없다.</p>
+      <p class="meta"><span class="id">D-3</span><span>DMA 시험 체계 필요</span></p>
+    </div>
+    <div class="card mid">
+      <h4>전기화학 도메인 자체가 없음</h4>
+      <p class="why">재료 DB 11개 도메인에 electrochemical이 없다. 값을 만들어도 저장할 자리가 없다.</p>
+      <p class="meta"><span class="id">D-4</span><span>스키마 신설 선행</span></p>
+    </div>
+  </div>
+
+  <h3>방법을 만들어야 풀리는 것 — 이 프로젝트의 본체</h3>
+  <div class="cards">
+    <div class="card mid">
+      <h4>자연어 → 해석 계획</h4>
+      <p class="why">“떨어뜨리면 터지나”를 지배방정식·경계조건·하중 이력으로 바꾸는 단계. 사람이 암묵적으로 채우던 가정을 명시해야 한다.</p>
+      <p class="meta"><span class="id">M-1</span><span>생성형 AI + 전문가 심의</span></p>
+    </div>
+    <div class="card mid">
+      <h4>CAD 직결 — 형상에서 해석 모델로</h4>
+      <p class="why">de-featuring 판단, 접촉 정의, 메시 품질. 지금은 엔지니어의 손과 눈이 하는 일이다.</p>
+      <p class="meta"><span class="id">M-2</span><span>가장 시간이 많이 드는 구간</span></p>
+    </div>
+    <div class="card mid">
+      <h4>DoE 자동 설계</h4>
+      <p class="why">무엇을 흔들지, 몇 수준으로, 몇 점을 볼지. 인자를 잘못 고르면 계산량만 늘고 답은 안 나온다.</p>
+      <p class="meta"><span class="id">M-3</span><span>Dakota·Optuna 활용</span></p>
+    </div>
+    <div class="card mid">
+      <h4>셀 균질화 구성모델</h4>
+      <p class="why">젤리롤·스택의 이방성 압밀과 lock-up. 솔버는 있으나 넣을 구성모델이 없어 ‘부분 가능’ 14건의 대표 사례다.</p>
+      <p class="meta"><span class="id">M-4</span><span>물성 + 모델 동시 필요</span></p>
+    </div>
+    <div class="card mid">
+      <h4>결과 신뢰성 자동 판정</h4>
+      <p class="why">수렴·격자 의존성·물리 타당성. 사람 없이 돌리려면 “이 결과는 못 믿는다”를 시스템이 말할 수 있어야 한다.</p>
+      <p class="meta"><span class="id">M-5</span><span>없으면 자동화가 위험해진다</span></p>
+    </div>
+    <div class="card mid">
+      <h4>1차 자료가 PDF 표</h4>
+      <p class="why">규격·논문의 물성값이 표에 있는데 표 추출은 실질 미해결이다. 행·열이 어긋나면 조용히 틀린 숫자를 인용한다.</p>
+      <p class="meta"><span class="id">M-6</span><span>지식 파이프라인의 구멍</span></p>
+    </div>
+  </div>
+
+  <h3>지금 기술로는 못 푸는 것 — 한계로 안고 가야 하는 것</h3>
+  <div class="cards">
+    <div class="card hard">
+      <h4>상충 근거의 함의 판정</h4>
+      <p class="why">“숫자는 같은데 정의가 다르다”(공칭 두께 vs 실측 두께)를 가르는 것. 합치는 것보다 병기하는 편이 안전하다.</p>
+      <p class="meta"><span class="id">H-1</span><span>모델 한계 — 병기로 우회</span></p>
+    </div>
+    <div class="card hard">
+      <h4>인용 문장 선택의 정확도</h4>
+      <p class="why">문장이 실재하는지는 코드로 검증되지만, 그 문장이 그 주장을 뒷받침하는지는 판단이다. 날조는 막아도 오독은 못 막는다.</p>
+      <p class="meta"><span class="id">H-2</span><span>구조로 대체 불가</span></p>
+    </div>
+    <div class="card hard">
+      <h4>공정 산포</h4>
+      <p class="why">물성은 재료의 성질이고 불량은 공정 산포에서도 온다. 조립 공차·라미 조건·경화 이력은 재료 DB 밖에 있다.</p>
+      <p class="meta"><span class="id">H-3</span><span>별도 데이터 계통 필요</span></p>
+    </div>
+    <div class="card hard">
+      <h4>사용자 사용 패턴</h4>
+      <p class="why">듀티·충전 습관·보관 온도 이력은 물성이 아니라 필드 데이터다. 가속시험의 환산 대상 자체를 모른다.</p>
+      <p class="meta"><span class="id">H-4</span><span>텔레메트리로만 취득</span></p>
+    </div>
+  </div>
+
+  <div class="note">
+    난제를 이렇게 가르는 이유가 있다. <b>세 종류를 섞으면 일정이 거짓말이 된다.</b>
+    데이터 문제는 시험 예산과 리드타임의 문제이고, 방법 문제는 개발의 문제이며,
+    한계는 <strong>일정으로 해결되지 않는다</strong> — 명시하고 안고 가는 것이 정직하다.
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Roadmap</p>
+  <h2>일정</h2>
+  <p class="prose">
+    승인·시험 리드타임에 묶이지 않는 것부터 앞에 뒀다. 각 단계는 <strong>무엇이 되면 다음으로 간다</strong>는
+    판정 기준을 함께 갖는다 — 기준 없이 넘어가면 뒤에서 되돌아온다.
+  </p>
+
+  <div class="phase">
+    <div class="no num">0</div>
+    <div>
+      <h4>지식 기반 구축</h4>
+      <p class="span">1–2개월 · 승인 불필요</p>
+      <p>논문·특허·전공서적·사내 보고서를 수집해 문장 단위로 인용 가능한 형태로 만든다. 전문가 에이전트의 지식카드와 연결한다.</p>
+      <ul>
+        <li>공공 학술 API(arXiv·Crossref·OpenAlex·PubMed) 수집 파이프라인 — <span class="pill p-ok">구축 완료</span></li>
+        <li>특허 DB 연계 — 질의 자체가 경쟁 신호라 별도 승인 선행</li>
+        <li><strong>판정</strong> — 임의 주장에 대해 출처 문장을 코드로 대조해 낼 수 있는가</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="no num">1</div>
+    <div>
+      <h4>물성 조건축 확장</h4>
+      <p class="span">3–5개월 · 시험 리드타임 지배</p>
+      <p>새 재료를 늘리는 게 아니라 <strong>이미 가진 재료에 조건축을 붙인다</strong>. 온도 스윕 재측정이 254건 요구를 한 번에 덮는다.</p>
+      <ul>
+        <li>1순위 — 영률·열전도·CTE·전기전도·Prony 온도 스윕</li>
+        <li>2순위 — 활성화에너지(<span class="mono">D-2</span>), 층 두께 분포</li>
+        <li>3순위 — <span class="mono">electrochemical</span> 도메인 스키마 신설 후 값 확보</li>
+        <li><strong>판정</strong> — ‘가능 14건’ 해석이 실제 물성으로 완주되는가</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="no num">2</div>
+    <div>
+      <h4>자연어 → 해석 계획</h4>
+      <p class="span">2–3개월 · 0단계와 병렬</p>
+      <p>질문을 받아 지배방정식·경계조건·하중·판정기준까지 적힌 계획서를 만든다. 사람이 검토하고 고칠 수 있는 형태여야 한다.</p>
+      <ul>
+        <li>전문가 심의로 계획을 수렴시키고 <strong>가정을 명시</strong>하게 강제</li>
+        <li>계획서에 “이 계획으로 답할 수 없는 것”을 반드시 포함</li>
+        <li><strong>판정</strong> — 도메인 전문가가 손대지 않고 그대로 쓸 수 있는 계획서 비율</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="no num">3</div>
+    <div>
+      <h4>CAD 직결 · 모델 자동생성</h4>
+      <p class="span">4–6개월 · 가장 긴 구간</p>
+      <p>형상에서 해석 모델까지를 자동화한다. de-featuring 판단과 접촉 정의가 난관이며, 여기서 사람 손이 가장 많이 줄어든다.</p>
+      <ul>
+        <li>단순 부품 → 어셈블리 → 적층 구조 순으로 범위 확대</li>
+        <li>메시 품질·요소 형상비를 자동 판정하고 실패를 드러냄</li>
+        <li><strong>판정</strong> — 동일 형상에 대해 엔지니어 수작업 모델과 결과가 허용오차 안에 드는가</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="no num">4</div>
+    <div>
+      <h4>DoE 자동화 · 솔버 오케스트레이션</h4>
+      <p class="span">3–4개월 · 3단계와 일부 병렬</p>
+      <p>인자와 수준을 스스로 정해 배치를 구성하고 HPC로 던진다. 계산 자원이 유한하므로 <strong>무엇을 안 돌릴지</strong>가 실력이다.</p>
+      <ul>
+        <li>Dakota·Optuna 연계, 대리모델로 표본 수 절감</li>
+        <li>실패한 케이스를 재설계로 되먹임</li>
+        <li><strong>판정</strong> — 동일 예산에서 수작업 DoE 대비 유효 정보량이 높은가</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="no num">5</div>
+    <div>
+      <h4>복합물리 연성</h4>
+      <p class="span">5–8개월 · 난이도 최상</p>
+      <p>전기화학–열–구조를 잇는다. ‘불가 12건’이 여기서 열리며, 셀 균질화 구성모델(<span class="mono">M-4</span>)이 선행 조건이다.</p>
+      <ul>
+        <li>P2D(뉴먼) ↔ 열 ↔ 구조 단방향 연성부터, 이후 양방향</li>
+        <li>구성모델 파라미터는 1단계 물성에 의존 — 순서를 앞당길 수 없다</li>
+        <li><strong>판정</strong> — 실측 스웰링 곡선을 재현하는가</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="no num">6</div>
+    <div>
+      <h4>신뢰성 판정 · 평가 체계</h4>
+      <p class="span">2–3개월 · 상시 운영으로 전환</p>
+      <p>결과를 믿을 수 있는지 시스템이 스스로 말하게 한다. 그리고 <strong>이 시스템이 실제로 나은지</strong>를 재는 기준을 만든다.</p>
+      <ul>
+        <li>수렴·격자 의존성·물리 타당성 자동 점검</li>
+        <li>벤치 문항으로 <strong>사람 해석과 나란히 공표</strong> — 개선이 없으면 없다고 쓴다</li>
+        <li><strong>판정</strong> — 개발 중 이슈 사전 포착률, 시장 불량 재현율</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>순서를 바꿀 수 없는 곳이 두 군데다.</b> 5단계 복합물리 연성은 1단계 물성 없이는 입력이 비고,
+    3단계 CAD 직결은 2단계 해석 계획이 없으면 무엇을 만들지 모른다.
+    나머지는 자원이 되는 만큼 병렬로 당길 수 있다.
+  </div>
+</section>
+
+<footer class="wrap" style="padding-left:0;padding-right:0">
+  물성 근거 — 사내 전문가 지식카드 검색 + MaterialTwin 실측 인벤토리(재료 544건 · 물성 정의 157종 · 11개 도메인).
+  솔버 근거 — KooSolverContainer 카탈로그(2025-11-16 기준, 99종 · 23 카테고리 · 빌드 87 SIF).
+  난제 선정은 미정 — 어느 항목을 먼저 칠지 정해지면 일정을 그 기준으로 다시 짠다.
+</footer>
+
+</div>
+<script>
+  // 지금 보고 있는 화면을 그대로 파일로 떨군다. 머메이드는 이미 SVG 로 그려진 뒤라
+  // 저장본은 라이브러리 없이도 다이어그램이 보인다 — 원본 텍스트를 다시 렌더할 필요가 없다.
+  document.getElementById('dl').addEventListener('click', function () {
+    var btn = this;
+    var clone = document.documentElement.cloneNode(true);
+    var b = clone.querySelector('#dl');
+    if (b) b.remove();                       // 저장본에는 버튼을 남기지 않는다
+    // 다이어그램이 SVG 로 그려진 뒤인지 확인한다. 아직이면 저장본에는 소스만 담기므로
+    // 그 사실을 사용자에게 알려야 한다 — 모르고 남에게 보내면 상대는 텍스트만 본다.
+    var rendered = !!document.querySelector('.diagram svg');
+    var html = '<!doctype html>\n<html lang="ko">' + clone.innerHTML + '</html>';
+    var url = URL.createObjectURL(new Blob([html], {type: 'text/html;charset=utf-8'}));
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = '복합물리_해결_에이전트_구상.html';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    btn.dataset.done = '1';
+    btn.firstElementChild.textContent = '✓';
+    btn.lastChild.textContent = rendered ? ' 저장됨' : ' 저장됨 (다이어그램은 소스로)';
+  });
+</script>
