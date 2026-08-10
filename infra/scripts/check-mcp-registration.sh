@@ -116,7 +116,29 @@ detail() {
     fi
   fi
 
-  # ── 2) 기동 상태 파일 ─────────────────────────────────────────────────────
+  # ── 2) 기동 상태 ──────────────────────────────────────────────────────────
+  # external_proxy 앱은 SIF 도 자체 프로세스도 없다. HEAXHub 는 별도로 떠 있는 서버로
+  # 프록시만 할 뿐이라, 그 업스트림이 죽으면 등록은 멀쩡한데 도구가 0개가 된다.
+  # 게다가 SIF 가 없어 Drive 아티팩트 경로를 타지 않으므로 배포 누락을 알아채기 어렵다.
+  local upstream=""
+  if [ -n "$mf" ] && grep -qE '^[[:space:]]*mode:[[:space:]]*proxy' "$mf"; then
+    upstream=$(grep -oP '^\s*upstream:\s*\K\S+' "$mf" | head -1)
+  fi
+  if [ -n "$upstream" ]; then
+    printf '\n2) 업스트림(external_proxy — 자체 프로세스 없음)\n'
+    local ucode
+    ucode=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 6 "$upstream" 2>/dev/null)
+    if [ "${ucode:-000}" = "000" ]; then
+      ng "업스트림 무응답: $upstream"
+      dim "이 앱은 SIF 가 없어 배포 아티팩트로 오지 않습니다 — 업스트림 서버를 그 박스에서"
+      dim "따로 띄워야 합니다(deploy-all-from-drive.sh kooremapper)."
+      dim "배포 스크립트는 이 실패를 skip(경고)으로만 남기고 종료코드로 알리지 않습니다."
+      rc=1
+    else
+      ok "업스트림 응답 (HTTP $ucode): $upstream"
+    fi
+    printf '\n3) MCP 프로토콜 응답\n'
+  else
   printf '\n2) 기동 이력(상태 파일)\n'
   local sf="${HUB_ROOT}/var/integration_state/${id}.json"
   if [ -f "$sf" ]; then
@@ -135,12 +157,13 @@ detail() {
     rc=1
   fi
 
+  fi
   # ── 3) 앱이 실제 MCP 로 응답하는가 ────────────────────────────────────────
   # "응답이 온다"로 판정하면 안 된다. 프로세스가 죽으면 Caddy 가 같은 경로에서 앱의 정적
   # 프론트엔드를 200 으로 돌려주고, 그걸 통과시키면 '살아 있다'는 거짓 판정이 나온다
   # (실측: web_design_agents 가 /mcp 에서 text/html 200 을 반환). MCP initialize 를
   # 실제로 걸어 Mcp-Session-Id 가 오는지로 판정한다.
-  printf '\n3) MCP 프로토콜 응답\n'
+  [ -n "$upstream" ] || printf '\n3) MCP 프로토콜 응답\n'
   local sub url hdr body status
   sub=$( [ -n "$mf" ] && sed -n '/^mcp:/,/^[^[:space:]]/p' "$mf" | grep -oP 'path:\s*\K\S+' | head -1 )
   sub="${sub:-/mcp}"
