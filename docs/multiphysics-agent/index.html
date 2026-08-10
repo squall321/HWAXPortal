@@ -219,11 +219,11 @@
     </button>
   </div>
   <div class="stats">
-    <div class="stat"><b class="num">99</b><span>오픈소스 솔버</span></div>
-    <div class="stat good"><b class="num">87</b><span>빌드 완료 SIF</span></div>
-    <div class="stat"><b class="num">544</b><span>재료 DB 등록</span></div>
-    <div class="stat"><b class="num">313</b><span>도출된 요구 물성</span></div>
-    <div class="stat warm"><b class="num">102</b><span>물성 공백(값 없음)</span></div>
+    <div class="stat"><b class="num">98</b><span>오픈소스 솔버</span></div>
+    <div class="stat good"><b class="num">86</b><span>빌드 완료 SIF</span></div>
+    <div class="stat"><b class="num">21,279</b><span>물성값 (출처 2,134)</span></div>
+    <div class="stat good"><b class="num">97.4%</b><span>현재 해석 격자 채움</span></div>
+    <div class="stat warm"><b class="num">61.8%</b><span>그중 실측 기반</span></div>
   </div>
 </header>
 
@@ -262,9 +262,9 @@ flowchart LR
 
   subgraph MT[" 물성층 — 무엇을 넣을 것인가 "]
     direction TB
-    M1["MaterialTwin DB<br/><small>재료 544 · 물성정의 157종</small>"]:::mat
+    M1["MaterialTwin 카탈로그<br/><small>물성값 21,279 · 출처 2,134</small>"]:::mat
     M2["조건축 확장<br/><small>온도 · 속도 · SOC · 습도</small>"]:::mat
-    M3["공백 판정<br/><small>값 없음 102건</small>"]:::gap
+    M3["공백 판정<br/><small>가정값 표지 · 구조적 부재</small>"]:::gap
   end
 
   subgraph CP[" 계산층 — 어떻게 풀 것인가 "]
@@ -272,7 +272,7 @@ flowchart LR
     P1["해석 계획 수립<br/><small>지배방정식 · 경계조건</small>"]:::cmp
     P2["모델 자동생성<br/><small>de-feature · 메시 · 접촉</small>"]:::cmp
     P3["DoE 설계<br/><small>인자 · 수준 · 표본</small>"]:::cmp
-    P4["솔버 컨테이너<br/><small>99종 · 23 카테고리</small>"]:::cmp
+    P4["솔버 컨테이너<br/><small>98종 · 빌드 86</small>"]:::cmp
     P5["HPC 실행<br/><small>Slurm 배치</small>"]:::cmp
   end
 
@@ -319,59 +319,97 @@ flowchart LR
   <p class="eyebrow">Materials</p>
   <h2>물성 현황</h2>
   <p class="prose">
-    배터리·디스플레이 실패 모드 40건을 정의하고, 각각을 사전 예측하는 데 필요한 물성을 313건 도출해
-    사내 재료 DB와 대조한 결과다. 핵심은 값의 유무가 아니라 <strong>조건축의 유무</strong>다.
+    재료 544종 × 물성 정의 161종은 87,584칸이지만, 그 전부를 채울 이유는 없다.
+    <strong>해석이 실제로 요구하는 칸만 세면 14,478칸</strong>이고 그중 14,102칸이 차 있다.
+    핵심 규칙은 하나다 — <strong>측정한 값과 가정한 값을 같은 표에 두되 절대 섞지 않는다.</strong>
   </p>
 
   <div class="stats">
-    <div class="stat good"><b class="num">211</b><span>값 보유 — 즉시 사용</span></div>
-    <div class="stat"><b class="num">34</b><span>정의만 있고 값 없음</span></div>
-    <div class="stat warm"><b class="num">68</b><span>정의조차 없음</span></div>
-    <div class="stat"><b class="num">254</b><span>온도 조건을 요구</span></div>
+    <div class="stat"><b class="num">14,478</b><span>해석이 요구하는 칸</span></div>
+    <div class="stat good"><b class="num">97.4%</b><span>셀 채움</span></div>
+    <div class="stat"><b class="num">61.8%</b><span>실측 기반 (가정 제외)</span></div>
+    <div class="stat good"><b class="num">99.5%</b><span>유효 채움</span></div>
   </div>
+  <p class="cap">
+    <strong>유효 채움</strong>은 구조적으로 못 채우는 722칸을 분모에서 뺀 값이다 —
+    저분자 도판트에 벌크 인장시편이 없고, 세라믹에 항복점이 물리적으로 없는 것처럼
+    <strong>원리적으로 존재하지 않는 값</strong>을 공백으로 세면 영원히 100%가 안 된다.
+    아직 채울 수 있는데 비어 있는 칸은 72개다.
+  </p>
 
-  <h3>요구가 몰린 조건축</h3>
+  <h3>해석 13종이 지금 돌아가는가</h3>
   <div class="tablewrap">
     <table>
-      <thead><tr><th>조건축</th><th class="n">요구 물성</th><th>의미</th></tr></thead>
+      <thead><tr><th>해석</th><th class="n">대상 재료</th><th class="n">칸</th><th class="n">셀 채움</th><th class="n">실측 기반</th><th class="n">적용 준비율</th></tr></thead>
       <tbody>
-        <tr><td><strong>온도</strong></td><td class="n">254</td><td>지배 조건축. 상온 1점으로 가진 물성은 사실상 안 가진 것과 같다</td></tr>
-        <tr><td>사이클·시간</td><td class="n">90</td><td>경시 열화축. 출하 시점 물성만으로 시장 불량을 못 본다</td></tr>
-        <tr><td>변형률속도</td><td class="n">48</td><td>낙하·충격축. 준정적 값으로 풀면 하중 경로가 어긋난다</td></tr>
-        <tr><td>습도·확산</td><td class="n">48</td><td>침투·수송축. 봉지·접착 계면의 장기 신뢰성을 지배</td></tr>
-        <tr><td>SOC·전기화학</td><td class="n">45</td><td>배터리 고유축. <span class="pill p-no">DB에 도메인 자체가 없음</span></td></tr>
-        <tr><td>방향·이방성</td><td class="n">29</td><td>적층·권취 구조축. 등방 단일값으로는 구조 변경이 안 나타난다</td></tr>
-        <tr><td>주파수</td><td class="n">24</td><td>점탄성축. Prony·시간-온도 이동인자가 있어야 성립</td></tr>
-        <tr><td>계면</td><td class="n">18</td><td>이종 접합축. 신규 구조일수록 파괴가 계면으로 옮겨간다</td></tr>
+        <tr><td>열전달·방열</td><td class="n">544</td><td class="n">1,632</td><td class="n">100.0</td><td class="n">67.6</td><td class="n"><span class="pill p-ok">100.0%</span></td></tr>
+        <tr><td>전기·EMI</td><td class="n">544</td><td class="n">544</td><td class="n">100.0</td><td class="n">75.2</td><td class="n"><span class="pill p-ok">100.0%</span></td></tr>
+        <tr><td>결로(표면)</td><td class="n">544</td><td class="n">2,176</td><td class="n">97.5</td><td class="n">68.3</td><td class="n"><span class="pill p-ok">100.0%</span></td></tr>
+        <tr><td>초탄성(실링·완충)</td><td class="n">46</td><td class="n">92</td><td class="n">100.0</td><td class="n">82.6</td><td class="n"><span class="pill p-ok">100.0%</span></td></tr>
+        <tr><td><strong>산소소광 — 발광체</strong></td><td class="n">55</td><td class="n">55</td><td class="n">100.0</td><td class="n">100.0</td><td class="n"><span class="pill p-ok">100.0%</span></td></tr>
+        <tr><td>구조·강성</td><td class="n">544</td><td class="n">1,632</td><td class="n">99.9</td><td class="n">58.4</td><td class="n"><span class="pill p-ok">99.8%</span></td></tr>
+        <tr><td>열응력·워피지</td><td class="n">544</td><td class="n">2,176</td><td class="n">99.9</td><td class="n">59.5</td><td class="n"><span class="pill p-ok">99.8%</span></td></tr>
+        <tr><td>결로(투습)</td><td class="n">417</td><td class="n">1,668</td><td class="n">96.8</td><td class="n">61.9</td><td class="n"><span class="pill p-ok">98.9%</span></td></tr>
+        <tr><td><strong>산소확산 — 매트릭스</strong></td><td class="n">79</td><td class="n">79</td><td class="n">97.5</td><td class="n">82.3</td><td class="n"><span class="pill p-ok">97.5%</span></td></tr>
+        <tr><td>폴더블 벤딩</td><td class="n">185</td><td class="n">740</td><td class="n">99.1</td><td class="n">60.1</td><td class="n"><span class="pill p-part">96.2%</span></td></tr>
+        <tr><td>접착·박리</td><td class="n">185</td><td class="n">370</td><td class="n">88.1</td><td class="n">68.9</td><td class="n"><span class="pill p-part">95.9%</span></td></tr>
+        <tr><td>낙하·충격</td><td class="n">544</td><td class="n">2,720</td><td class="n">95.0</td><td class="n">49.0</td><td class="n"><span class="pill p-part">93.5%</span></td></tr>
+        <tr><td>피로·수명</td><td class="n">198</td><td class="n">594</td><td class="n">87.2</td><td class="n">73.2</td><td class="n"><span class="pill p-part">88.4%</span></td></tr>
+        <tr><td><strong>전체</strong></td><td class="n">544</td><td class="n">14,478</td><td class="n">97.4</td><td class="n">61.8</td><td class="n">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap">
+    <strong>적용 준비율</strong>은 그 해석이 원리적으로 성립하는 재료만 분모로 둔 값이다.
+    산소 관련 두 해석이 이미 100%·97.5%라는 점이 <span class="mono">P1</span>의 출발선을 크게 앞당긴다.
+    반면 낙하·충격은 셀 채움 95.0%인데 <strong>실측 기반이 49.0%</strong>로 가장 낮다 —
+    칸은 차 있지만 절반이 가정값이다.
+  </p>
+
+  <h3>등급 — 가정을 허용하되 반드시 표시한다</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>등급</th><th class="n">값</th><th class="n">비중</th><th>무엇인가</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill p-ok">tier 1</span></td><td class="n">9,535</td><td class="n">44.8%</td><td>그 제품에 대해 인쇄된 값 — 벤더 데이터시트·논문이 이 제품을 시험한 결과</td></tr>
+        <tr><td><span class="pill p-ok">tier 2</span></td><td class="n">1,640</td><td class="n">7.7%</td><td>핸드북·규격·인증 DB — 계열 대표값이지만 권위 있는 기관이 보증한다</td></tr>
+        <tr><td><span class="pill p-part">tier 3</span></td><td class="n">5,614</td><td class="n">26.4%</td><td>2차 인용·클래스 대표 — 출처는 실재하나 이 제품의 값은 아니다</td></tr>
+        <tr><td><span class="pill p-no">tier 4</span></td><td class="n">4,490</td><td class="n">21.1%</td><td>계산·유도·추정·가정 — 우리가 만든 값이다. 반드시 표지를 단다</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="note">
-    공통 뿌리는 하나다 — <b>물성을 스칼라로 갖고 있고 조건축으로 갖고 있지 않다.</b>
-    온도축 254건은 “값이 없다”가 아니라 “있는 값이 어느 조건에서 잰 것인지 모른다”는 뜻이다.
-    신규 구조는 사용 조건을 기존 경험 범위 밖으로 밀어내므로, 조건축 없는 물성은 신규 구조에서 가장 먼저 무력해진다.
+    <b>왜 가정을 지우지 않는가.</b> 빈 칸으로 두면 해석이 아예 안 돌고, 표시 없이 채우면
+    가정이 실측 행세를 한다. 그래서 tier 4를 허용하되 <strong>표지를 달고 분모에서 구분해</strong> 센다.
+    지금 <strong>3,219칸(29.6%)이 가정값으로만 대표</strong>되고 있으며, 계산값이 많은 물성은
+    영률 87 · 초탄성 계수 76 · 반사율 74 · 동적증가계수 47 · 굴절률 37 · 박리강도 36 · 복굴절 23 순이다.
   </div>
 
-  <h3>가장 많이 요구된 DB 키</h3>
+  <h3>역산 경계 — 무엇이 계산이고 무엇이 조작인가</h3>
+  <p class="prose">
+    이 카탈로그가 실제로 걸러낸 오염 사례다. 값을 늘리는 것보다 <strong>틀린 값을 안 넣는 것</strong>이
+    더 어렵다는 것을 보여준다.
+  </p>
   <div class="tablewrap">
     <table>
-      <thead><tr><th>키</th><th class="n">요구 모드 수</th><th>상태</th></tr></thead>
+      <thead><tr><th>사례</th><th>판정</th></tr></thead>
       <tbody>
-        <tr><td class="mono">structure.layer_thickness</td><td class="n">11</td><td><span class="pill p-part">디스플레이 11개 모드가 물고 있음</span></td></tr>
-        <tr><td class="mono">mechanical.youngs_modulus</td><td class="n">10</td><td><span class="pill p-ok">값 402재료 — 조건축만 붙이면 됨</span></td></tr>
-        <tr><td class="mono">mechanical.prony_shear_modulus</td><td class="n">10</td><td><span class="pill p-no">관측 0건</span></td></tr>
-        <tr><td class="mono">chemical.activation_energy</td><td class="n">9</td><td><span class="pill p-no">관측 1건 — 가속시험 환산 불가</span></td></tr>
-        <tr><td class="mono">physical.diffusion_coefficient</td><td class="n">8</td><td><span class="pill p-part">부분 보유</span></td></tr>
-        <tr><td class="mono">interface.peel_strength</td><td class="n">8</td><td><span class="pill p-part">부분 보유</span></td></tr>
-        <tr><td class="mono">interface.cohesive_energy_mode1</td><td class="n">8</td><td><span class="pill p-no">관측 3건</span></td></tr>
+        <tr><td class="mono">AZoM Shear Modulus</td><td>같은 표의 E·ν로 <span class="mono">E/(2(1+ν))</span>를 계산하면 마지막 자리까지 일치 — 96% 알루미나 <span class="mono">300/(2×1.21)=123.97</span> = 인쇄값 124. <strong>인쇄된 실측이 아니라 그 표의 역산이다.</strong></td></tr>
+        <tr><td class="mono">MakeItFrom 폴리머 G</td><td>LDPE가 <span class="mono">E=0.30 GPa, G=0.21 GPa</span>를 동시에 인쇄 → <span class="mono">ν=−0.29</span>. 같은 사이트 금속 값은 정합한다 — <strong>폴리머만 오염됐다.</strong></td></tr>
+        <tr><td class="mono">AZoM Endurance Limit</td><td>범위 양 끝점이 정확히 같은 배수(PET 0.6000/0.6000). MgO는 내구한도 하한이 탄성한도 하한을 넘는다 — <strong>물리적으로 불가능하다.</strong></td></tr>
+        <tr><td class="mono">α = β/3 (액체 전해질)</td><td>인쇄된 것은 체적팽창계수뿐. 3으로 나누면 역산이라 <strong>칸을 비웠다.</strong></td></tr>
       </tbody>
     </table>
   </div>
-  <p class="cap">
-    <code>chemical.activation_energy</code>가 특히 아프다. 이게 없으면 <strong>모든 가속시험을 실사용 조건으로 환산할 수 없다</strong> —
-    가속시험 체계 전체가 근거를 잃는다.
-  </p>
+
+  <div class="note">
+    <b>지금 해석은 채워져 있고, 새 해석을 열면 공백이 드러난다.</b>
+    위 13종은 이미 정의된 해석이라 97.4%가 차 있다. 그런데 앞서 배터리·디스플레이
+    실패 모드 40건을 사전 예측하려고 필요한 물성을 다시 도출하니 <strong>313건 중 102건</strong>이
+    값이 없거나 키조차 없었다. 대표 난제 4건의 물성 준비도가 갈리는 것도 같은 이유다 —
+    <strong>격자를 넓히는 순간 커버리지는 다시 떨어진다.</strong>
+  </div>
 </section>
 
 <section>
@@ -384,7 +422,7 @@ flowchart LR
 
   <div class="stats">
     <div class="stat"><b class="num">99</b><span>솔버 정의</span></div>
-    <div class="stat good"><b class="num">87</b><span>빌드 완료 SIF</span></div>
+    <div class="stat good"><b class="num">86</b><span>빌드 완료 SIF</span></div>
     <div class="stat"><b class="num">23</b><span>카테고리</span></div>
     <div class="stat"><b class="num">71</b><span>총 용량 (GB)</span></div>
   </div>
@@ -466,7 +504,7 @@ flowchart LR
         <h3 class="case-t">디스플레이 내부 산소 확산 · 굴절률/투과율</h3>
         <p class="case-s">봉지층을 통한 산소 침투와 그로 인한 발광 소광, 그리고 적층 광학계의 투과·색좌표 변화를 함께 본다.</p>
       </div>
-      <span class="pill p-part">물성 준비 6/9</span>
+      <span class="pill p-ok">물성 준비 — 산소 100% · 광학 충분</span>
     </div>
     <div class="case-grid">
       <div class="col">
@@ -506,17 +544,17 @@ flowchart LR
           <tr><td class="mono">optical.extinction_coefficient</td><td class="n">42</td><td><span class="pill p-ok">충분</span></td></tr>
           <tr><td class="mono">optical.haze</td><td class="n">14</td><td><span class="pill p-ok">충분</span></td></tr>
           <tr><td class="mono">chemical.activation_energy</td><td class="n">7</td><td><span class="pill p-part">희박</span></td></tr>
-          <tr><td class="mono">optical.birefringence</td><td class="n">0</td><td><span class="pill p-no">관측 0</span></td></tr>
-          <tr><td class="mono">physical.wvtr</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
-          <tr><td class="mono">physical.oxygen_permeability</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
+          <tr><td class="mono">산소소광 — 발광체</td><td class="n">100%</td><td><span class="pill p-ok">준비 완료</span></td></tr>
+          <tr><td class="mono">산소확산 — 매트릭스</td><td class="n">97.5%</td><td><span class="pill p-ok">준비 완료</span></td></tr>
+          <tr><td class="mono">optical.birefringence</td><td class="n">23</td><td><span class="pill p-part">계산값 비중 큼</span></td></tr>
         </table>
       </div>
     </div>
     <p class="case-note">
-      <b>가장 유리한 후보다.</b> 광학 물성이 이미 충분히 쌓여 있다 — 굴절률만 721건이다.
-      막히는 곳은 산소 쪽으로, <span class="mono">oxygen_permeability</span>·<span class="mono">wvtr</span>가
-      <strong>키 자체가 없어</strong> 값을 만들어도 저장할 자리가 없다. 스키마 신설이 선행이다.
-      복굴절 관측 0건은 pol-less 구조 해석의 직접적 공백이다.
+      <b>가장 유리한 후보다.</b> 카탈로그에 <strong>산소소광 100% · 산소확산 97.5%</strong>로 이미
+      전용 해석 격자가 서 있고, 광학 물성도 두텁다(굴절률 721건).
+      남은 약점은 값의 <strong>출처 등급</strong>이다 — 굴절률 37건·복굴절 23건이 계산값(tier 4)이라
+      pol-less 구조의 시야각 거동을 이 값들로 단정하면 안 된다. 실측 승격이 먼저다.
     </p>
   </article>
 
@@ -528,7 +566,7 @@ flowchart LR
         <h3 class="case-t">면품질 — 적층·압착 조건에 의한 초기 휨과 크리즈</h3>
         <p class="case-s">라미네이션 압력·온도·시간이 남기는 잔류응력과 초기 휨, 그리고 폴딩 반복이 만드는 크리즈까지 하나로 본다.</p>
       </div>
-      <span class="pill p-no">물성 준비 3/8</span>
+      <span class="pill p-no">물성 준비 — 격자 밖 신규</span>
     </div>
     <div class="case-grid">
       <div class="col">
@@ -574,7 +612,9 @@ flowchart LR
       </div>
     </div>
     <p class="case-note">
-      <b>가장 불리한 후보다.</b> 이 문제의 지배 물성인 점탄성 Prony 항이 <strong>전단·체적 모두 관측 0건</strong>이고,
+      <b>가장 불리한 후보다.</b> 카탈로그의 해석 13종에 <strong>이 해석이 아예 없다</strong> —
+      폴더블 벤딩(96.2%)이 가장 가깝지만 공정 잔류응력·크리즈는 다른 격자다.
+      지배 물성인 점탄성 Prony 항이 <strong>전단·체적 모두 관측 0건</strong>이고,
       접착 tack도 0건, 열팽창계수는 키 자체가 없다. DMA 시험 체계를 세우는 것이 사실상 1단계다 —
       솔버 선택은 그 뒤의 문제다.
     </p>
@@ -588,7 +628,7 @@ flowchart LR
         <h3 class="case-t">저온/고온 환경 낙하</h3>
         <p class="case-s">온도에 따라 접착층 강성이 급변해 하중 경로와 파단 위치가 바뀐다. 상온 낙하 해석이 통과시킨 설계가 저온에서 깨진다.</p>
       </div>
-      <span class="pill p-part">물성 준비 5/7</span>
+      <span class="pill p-part">물성 준비 — 칸 95% · 실측 49%</span>
     </div>
     <div class="case-grid">
       <div class="col">
@@ -628,14 +668,16 @@ flowchart LR
           <tr><td class="mono">mechanical.elongation_at_break</td><td class="n">97</td><td><span class="pill p-ok">충분</span></td></tr>
           <tr><td class="mono">mechanical.fracture_toughness</td><td class="n">28</td><td><span class="pill p-ok">충분</span></td></tr>
           <tr><td class="mono">interface.cohesive_strength</td><td class="n">21</td><td><span class="pill p-ok">충분</span></td></tr>
-          <tr><td class="mono">thermal.glass_transition_temp</td><td class="n">—</td><td><span class="pill p-no">정의 없음</span></td></tr>
+          <tr><td class="mono">낙하·충격 (해석 격자)</td><td class="n">95.0%</td><td><span class="pill p-part">실측 49.0%</span></td></tr>
         </table>
       </div>
     </div>
     <p class="case-note">
-      <b>물성 자체는 가장 잘 갖춰져 있다.</b> 변형률속도별 항복이 207건이나 있다.
-      문제는 <strong>온도축</strong>이다 — 이 값들이 몇 도에서 잰 것인지가 붙어 있지 않으면
-      저온/고온 낙하는 상온 해석과 같아진다. 유리전이온도는 키조차 없어 저온 강성 급증 시점을 모른다.
+      <b>칸은 차 있는데 근거가 얇다.</b> 카탈로그에서 낙하·충격은 셀 채움 95.0%인데
+      <strong>실측 기반이 49.0%로 13종 중 가장 낮다</strong> — 절반이 가정값이라는 뜻이다.
+      동적증가계수(DIF)는 계산값이 47건으로 상위권에 있다.
+      여기에 <strong>온도축</strong>까지 요구되므로, 저온/고온 낙하는 값을 더 넣는 문제가 아니라
+      <strong>가정값을 실측으로 승격시키는</strong> 문제다.
     </p>
   </article>
 
@@ -647,7 +689,7 @@ flowchart LR
         <h3 class="case-t">스웰링에 의한 back glass 들뜸 — 파손 메커니즘 변화</h3>
         <p class="case-s">셀이 부풀면서 하중이 접착 계면으로 옮겨가고, 어느 시점부터 파손 방식 자체가 바뀐다. 그 전이점을 예측하는 문제다.</p>
       </div>
-      <span class="pill p-no">물성 준비 4/7</span>
+      <span class="pill p-no">물성 준비 — 격자 밖 신규</span>
     </div>
     <div class="case-grid">
       <div class="col">
@@ -692,7 +734,8 @@ flowchart LR
       </div>
     </div>
     <p class="case-note">
-      <b>계면 물성은 좋은데 원인 물성이 없다.</b> 박리를 계산할 CZM 파라미터는 371건이나 쌓여 있는데,
+      <b>계면 물성은 좋은데 원인 물성이 없다.</b> 접착·박리 해석은 카탈로그에서 95.9%로 서 있고
+      박리 CZM 파라미터도 371건 쌓여 있는데,
       정작 <strong>얼마나 부푸는지</strong>를 말해 줄 <span class="mono">swelling_strain</span>이 관측 0건이다.
       쿠션 폼의 압축영구변형도 0건이라 하중이 어디로 전달되는지 모른다.
       그리고 이 문제는 앞서 정리한 <span class="mono">electrochemical</span> 도메인 부재(D-4)에 직접 걸린다.
@@ -705,28 +748,28 @@ flowchart LR
       <tbody>
         <tr>
           <td><span class="mono">P1</span> 산소확산·광학</td>
-          <td><span class="pill p-part">6/9</span></td>
+          <td><span class="pill p-ok">격자 100% / 97.5%</span></td>
           <td>확산 <span class="pill p-ok">가능</span> / 광학 <span class="pill p-part">부분</span></td>
           <td class="sub">다층 박막 간섭·편광 (Lumerical · LightTools)</td>
-          <td class="sub">산소투과·WVTR 키 신설</td>
+          <td class="sub">굴절률·복굴절 <b>계산값 → 실측 승격</b></td>
         </tr>
         <tr>
           <td><span class="mono">P2</span> 면품질·크리즈</td>
-          <td><span class="pill p-no">3/8</span></td>
+          <td><span class="pill p-no">격자 밖</span></td>
           <td><span class="pill p-ok">가능</span> <span class="sub">Code_Aster</span></td>
           <td class="sub">TTS 내장 점탄성 (Abaqus · Marc)</td>
           <td class="sub"><b>DMA 시험 체계</b> — Prony 0건</td>
         </tr>
         <tr>
           <td><span class="mono">P3</span> 환경낙하</td>
-          <td><span class="pill p-part">5/7</span></td>
+          <td><span class="pill p-part">칸 95% · 실측 49%</span></td>
           <td><span class="pill p-ok">가능</span> <span class="sub">OpenRadioss</span></td>
           <td class="sub">사내 LS-DYNA 자산 활용</td>
-          <td class="sub">기존 물성에 <b>온도축</b> 부착</td>
+          <td class="sub"><b>가정값 승격</b> + 온도축 부착</td>
         </tr>
         <tr>
           <td><span class="mono">P4</span> 스웰링·들뜸</td>
-          <td><span class="pill p-no">4/7</span></td>
+          <td><span class="pill p-no">격자 밖</span></td>
           <td><span class="pill p-part">부분</span> <span class="sub">PyBaMM+MOOSE 단방향</span></td>
           <td class="sub">전기화학–구조 양방향 (COMSOL)</td>
           <td class="sub">swelling_strain 확보 + <span class="mono">electrochemical</span> 도메인</td>
@@ -736,10 +779,13 @@ flowchart LR
   </div>
 
   <div class="note">
-    <b>네 건이 서로 다른 벽에 막혀 있다.</b> P1은 <strong>스키마</strong>(저장할 키가 없다),
-    P2는 <strong>시험</strong>(잴 데이터가 없다), P3은 <strong>조건축</strong>(값은 있는데 조건을 모른다),
-    P4는 <strong>해석 체계</strong>(연성 모델이 없다)다.
-    같은 “물성 부족”으로 뭉뚱그리면 처방이 전부 달라지므로, 착수 순서는 이 벽의 성격으로 정하는 것이 맞다.
+    <b>네 건이 서로 다른 벽에 막혀 있다.</b>
+    P1은 <strong>등급</strong>(칸은 찼는데 굴절률·복굴절이 계산값이다),
+    P2는 <strong>시험</strong>(격자에 없는 해석이고 Prony 관측 0건이다),
+    P3은 <strong>근거</strong>(실측 기반 49%로 절반이 가정값이다),
+    P4는 <strong>해석 체계</strong>(전기화학–구조 연성 모델이 없다)다.
+    같은 “물성 부족”으로 뭉뚱그리면 처방이 전부 달라진다 — P1·P3은 <strong>있는 값을 승격</strong>시키는
+    일이고, P2·P4는 <strong>없는 격자를 새로 세우는</strong> 일이다. 착수 순서는 이 차이로 정하는 것이 맞다.
   </div>
 </section>
 
@@ -866,14 +912,17 @@ flowchart LR
   <div class="phase">
     <div class="no num">1</div>
     <div>
-      <h4>물성 조건축 확장</h4>
+      <h4>물성 — 가정값 승격과 격자 확장</h4>
       <p class="span">3–5개월 · 시험 리드타임 지배</p>
-      <p>새 재료를 늘리는 게 아니라 <strong>이미 가진 재료에 조건축을 붙인다</strong>. 온도 스윕 재측정이 254건 요구를 한 번에 덮는다.</p>
+      <p>칸을 더 채우는 일이 아니다. 이미 <strong>97.4%가 차 있고 유효 채움은 99.5%</strong>다.
+        실제 과제는 둘이다 — <strong>가정값을 실측으로 승격</strong>시키는 것과,
+        새 해석이 요구하는 <strong>격자를 새로 세우는</strong> 것.</p>
       <ul>
-        <li>1순위 — 영률·열전도·CTE·전기전도·Prony 온도 스윕</li>
-        <li>2순위 — 활성화에너지(<span class="mono">D-2</span>), 층 두께 분포</li>
-        <li>3순위 — <span class="mono">electrochemical</span> 도메인 스키마 신설 후 값 확보</li>
-        <li><strong>판정</strong> — ‘가능 14건’ 해석이 실제 물성으로 완주되는가</li>
+        <li>승격 1순위 — 낙하·충격(실측 49.0%)의 동적증가계수·영률. 13종 중 근거가 가장 얇다</li>
+        <li>승격 2순위 — 굴절률 37·복굴절 23의 계산값. <span class="mono">P1</span>의 시야각 판정이 여기 걸린다</li>
+        <li>신규 격자 — 점탄성 Prony(<span class="mono">P2</span>)·팽창 고유변형(<span class="mono">P4</span>).
+          현재 13종 어디에도 없어 시험 체계부터 세운다</li>
+        <li><strong>판정</strong> — 실측 기반 비율이 61.8%에서 얼마나 올랐는가(칸 수가 아니라 등급으로 잰다)</li>
       </ul>
     </div>
   </div>
@@ -952,12 +1001,17 @@ flowchart LR
     <b>순서를 바꿀 수 없는 곳이 두 군데다.</b> 5단계 복합물리 연성은 1단계 물성 없이는 입력이 비고,
     3단계 CAD 직결은 2단계 해석 계획이 없으면 무엇을 만들지 모른다.
     나머지는 자원이 되는 만큼 병렬로 당길 수 있다.
+    <br><br>
+    <b>다만 1단계의 성격을 오해하면 안 된다.</b> 물성은 “부족”한 상태가 아니라
+    <strong>“채워졌으나 절반이 가정”</strong>인 상태다. 칸 수를 목표로 잡으면 이미 달성한 것을
+    다시 달성하게 되고, 정작 해석 신뢰도는 그대로다 — 그래서 판정 기준을 채움률이 아니라
+    <strong>실측 기반 비율</strong>로 뒀다.
   </div>
 </section>
 
 <footer class="wrap" style="padding-left:0;padding-right:0">
-  물성 근거 — 사내 전문가 지식카드 검색 + MaterialTwin 실측 인벤토리(재료 544건 · 물성 정의 157종 · 11개 도메인).
-  솔버 근거 — KooSolverContainer 카탈로그(2025-11-16 기준, 99종 · 23 카테고리 · 빌드 87 SIF).
+  물성 근거 — <code>docs/물성카탈로그_현황.html</code> (라이브 DB 계산: 물성값 21,279 · 재료 544종 × 정의 161종 · 출처 2,134건).
+  솔버 근거 — <code>docs/open_solver_overview.html</code> (98종 · 빌드 86 SIF · 70GB · 8 도메인, OpenRadioss 1종 제외 기준).
   난제 선정은 미정 — 어느 항목을 먼저 칠지 정해지면 일정을 그 기준으로 다시 짠다.
 </footer>
 
