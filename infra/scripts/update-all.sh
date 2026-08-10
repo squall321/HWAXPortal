@@ -32,6 +32,10 @@ SVC="$SELF_REPO/infra/scripts/services.sh"
 hr() { printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
+# bad 는 경고라 종료코드에 영향이 없다 — 앱이 깨져도 update-all 이 초록으로 끝나던 원인이다.
+# 배포 실패로 계상해야 하는 것은 fail 로 낸다(§6 헬스게이트의 FAIL 을 세운다).
+fail() { bad "$@"; FAIL=1; }
+app_bad() { local c="$1"; shift; if [ "$c" = 1 ]; then fail "$@"; else bad "$@"; fi; }
 
 # HTTP 코드 프로브 — curl은 실패해도 -w로 '000'을 찍으므로 종료코드가 아니라 출력값으로만 판정한다.
 http_code() { curl -sk -m "${2:-4}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null; }
@@ -437,19 +441,87 @@ HEAX_STATE_DIR="${HEAX_STATE_DIR:-$HOME/claude/HEAXHub/var/integration_state}"
 heax_apps=""
 [ -d "$HEAX_STATE_DIR" ] && heax_apps="$(ls "$HEAX_STATE_DIR"/*.json 2>/dev/null | while read -r f; do basename "$f" .json; done)"
 [ -n "$heax_apps" ] || heax_apps="materialtwin_web voice_recorder"
+
+# MCP 노출 앱은 /apps/<id>/ 루트 코드로 판정할 수 없다 — MCP 는 하위경로(/mcp)라 루트가
+# 404/401 인 게 정상이다(실측: kooremapper_mcp·web_research_mcp 404, laminate·thermal 401).
+# 그래서 게이트웨이 /tools-map 의 도구 수로 본다. DynaForge 처럼 프록시 대상 업스트림이
+# 죽으면 '등록은 멀쩡한데 도구가 0개'가 되는데, 루트 코드만 보면 이걸 영영 못 잡는다.
+TM="$(curl -s -m 6 http://127.0.0.1:9110/tools-map 2>/dev/null || true)"
+MCP_COUNTS=""   # "<id> <도구수> <연결1/0>" 줄 목록
+TM_OK=1
+if [ -n "$TM" ] && json_ok "$TM"; then
+  MCP_COUNTS="$(TM="$TM" python3 - <<'PY'
+import json, os
+for a in json.loads(os.environ["TM"]).get("apps") or []:
+    name = a.get("app") or ""
+    if name.startswith("heax-"):
+        print(name[5:], a.get("tool_count") or 0, 1 if a.get("reachable") else 0)
+PY
+)"
+else
+  TM_OK=0
+  fail "게이트웨이 /tools-map 을 읽지 못함 — MCP 앱 도구 수를 판정할 수 없다(게이트웨이 확인)."
+fi
+
+# 등록 안 된 /apps/<id>/ 는 404 가 아니라 200 이 나온다 — Caddy catch-all 이 허브 SPA 를
+# 돌려주기 때문이다. 자산 검사도 못 잡는다(그 SPA 의 /assets/*.js 는 실재해서 정상 판정).
+# 그래서 '첫 화면 title 이 그대로 오면 미서빙'으로 본다. 제목을 하드코딩하지 않고 실제
+# 첫 화면에서 읽어 둔다 — 문구가 바뀌어도 검사가 조용히 죽지 않게.
+# 부분일치는 쓸 수 없다: 데모들이 'HEAXHub Dash Demo' 처럼 접두사를 공유한다(실측). 완전일치다.
+_title_of() { curl -s -L -m 6 "$1" 2>/dev/null | grep -oiE '<title>[^<]*' | head -1; }
+FALLBACK_TITLES="$(printf '%s\n%s\n' "$(_title_of http://127.0.0.1:4180/)" "$(_title_of http://127.0.0.1:8088/)" | grep -v '^$')"
+
 for app in $heax_apps; do
-  code=000
+  # 데모는 참고용이라 실패해도 배포를 막지 않는다. 그 외 앱은 실패를 종료코드로 올린다.
+  case "$app" in heax_demo_*) crit=0 ;; *) crit=1 ;; esac
+  tools="$(printf '%s\n' "$MCP_COUNTS" | awk -v id="$app" '$1==id {print $2; exit}')"
+  reach="$(printf '%s\n' "$MCP_COUNTS" | awk -v id="$app" '$1==id {print $3; exit}')"
+  is_mcp=0; [ -n "$tools" ] && is_mcp=1
+
+  # ① MCP 면 도구 수로 먼저 판정 — 웹 UI 유무와 무관하다(materialtwin_web 은 둘 다 갖는다).
+  if [ "$is_mcp" = 1 ]; then
+    if [ "$reach" != "1" ] || [ "${tools:-0}" -eq 0 ]; then
+      app_bad "$crit" "heax MCP 앱 $app → 도구 ${tools:-0}개 / 연결 $([ "$reach" = 1 ] && echo O || echo X) — 등록은 됐으나 기능이 0개다."
+      echo "      프록시형 앱은 업스트림 서버가 죽으면 이 모양이 된다(DynaForge=kooremapper_mcp → :8701)."
+      echo "      진단: $SELF_REPO/infra/scripts/check-mcp-registration.sh $app"
+    else
+      ok "heax MCP 앱 $app → 도구 ${tools}개 (정상)"
+    fi
+  fi
+
+  code=000; spa=0
   for _try in 1 2 3 4 5; do
     code=$(curl -s -o /dev/null -w '%{http_code}' -L -m 6 "http://127.0.0.1:8088/apps/$app/" 2>/dev/null || echo 000)
-    { [ "$code" = "200" ] || [ "$code" = "304" ]; } && break
+    if [ "$code" = "200" ] || [ "$code" = "304" ]; then
+      atitle="$(_title_of "http://127.0.0.1:8088/apps/$app/")"
+      if [ -n "$FALLBACK_TITLES" ] && [ -n "$atitle" ] \
+         && printf '%s\n' "$FALLBACK_TITLES" | grep -qxF "$atitle"; then
+        spa=1
+      else
+        spa=0; break
+      fi
+    fi
+    # MCP 전용 앱의 루트 404/401 은 정상이라 재시도할 이유가 없다(앱마다 15초씩 버리던 것).
+    { [ "$is_mcp" = 1 ] && { [ "$code" = "404" ] || [ "$code" = "401" ] || [ "$code" = "403" ]; }; } && break
     sleep 3
   done
+  if [ "$spa" = 1 ]; then
+    app_bad "$crit" "heax 앱 $app → 200 이지만 허브 첫 화면이 돌아왔다 — 실제로는 미서빙(route 미등록/앱 미기동)."
+    echo "      상태코드는 200 이라 겉으론 정상으로 보인다. 등록/기동을 확인하라."
+    continue
+  fi
   if [ "$code" != "200" ] && [ "$code" != "304" ]; then
     # 401/403 = 비공개(visibility) 앱이거나 UI 없는 MCP 전용 — 파손이 아니라 정책이다.
     if [ "$code" = "401" ] || [ "$code" = "403" ]; then
       ok "heax 앱 $app → $code (비공개/UI 없음 — 정상 정책)"
+    elif [ "$is_mcp" = 1 ] && [ "$code" = "404" ]; then
+      ok "heax 앱 $app → 404 (MCP 전용, UI 없음 — 위 도구 수로 판정함)"
+    elif [ "$TM_OK" = 0 ] && [ "$code" = "404" ]; then
+      # 게이트웨이가 죽어 MCP 여부를 모르는 상태다. MCP 전용 앱은 루트 404 가 정상이므로
+      # 여기서 '미서빙'이라 단정하면 멀쩡한 앱을 범인으로 지목하게 된다(게이트웨이는 이미 위에서 계상).
+      bad "heax 앱 $app → 404 — MCP 전용인지 판정 불가(게이트웨이 미응답). 게이트웨이부터 살려라."
     else
-      bad "heax 앱 $app → $code — /apps/$app/ 미서빙(앱 인스턴스 미기동/route 미등록)."
+      app_bad "$crit" "heax 앱 $app → $code — /apps/$app/ 미서빙(앱 인스턴스 미기동/route 미등록)."
       echo "      재기동: (heax 레포) bash deploy/apptainer/stop.sh && HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh"
       echo "              또는 앱 하나만: bash deploy/apptainer/redeploy-app.sh $(echo "$app" | tr '_' '-')"
     fi
@@ -457,7 +529,9 @@ for app in $heax_apps; do
   fi
   # 첫 자산을 브라우저와 동일하게 환산해 받아 본다 — HTML 이 오면 SPA 폴백에 먹힌 것이다.
   html="$(curl -s -L -m 6 "http://127.0.0.1:8088/apps/$app/" 2>/dev/null || true)"
-  asset="$(printf '%s' "$html" | grep -oE '(src|href)="[^"]+\.(js|css)[^"]*"' | head -1 | sed -E 's/^(src|href)="//; s/"$//')"
+  # 외부 CDN 자산(https://…, //…)은 제외하고 첫 동일출처 자산을 고른다 — 절대 URL 을 그대로
+  # 로컬 경로에 이어붙이면 SPA 폴백 HTML 이 돌아와 멀쩡한 앱을 파손으로 오판한다(실측: 데모 2건).
+  asset="$(printf '%s' "$html" | grep -oE '(src|href)="[^"]+\.(js|css)[^"]*"' | sed -E 's/^(src|href)="//; s/"$//' | grep -vE '^(https?:)?//' | head -1)"
   if [ -z "$asset" ]; then
     ok "heax 앱 $app → $code (외부 자산 없음 — 서빙 정상)"
     continue
@@ -470,7 +544,7 @@ for app in $heax_apps; do
   actype="$(curl -s -o /dev/null -w '%{content_type}' -m 6 "$aurl" 2>/dev/null || true)"
   case "$actype" in
     *text/html*)
-      bad "heax 앱 $app — 자산이 HTML 로 반환됨(SPA 폴백에 먹힘): $asset"
+      app_bad "$crit" "heax 앱 $app — 자산이 HTML 로 반환됨(SPA 폴백에 먹힘): $asset"
       echo "      원인: 앱이 /apps/<id>/ 루트절대 URL 을 쓰는데 nginx 에 /apps/ 라우트가 없거나,"
       echo "            Next 처럼 basePath 가 빌드에 안 구워진 경우. routes.env 의 apps= 라인 확인."
       ;;
