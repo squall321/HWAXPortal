@@ -29,6 +29,10 @@ GW_DIR="$(find_repo HWAXMcpGateway)"
 AGENT_DIR="$(find_repo HWAXAgentServer)"
 AIDH_DIR="$(find_repo AIDataHub)"
 SVC="$SELF_REPO/infra/scripts/services.sh"
+# 포털 라우팅 표. §6 의 ste 프로브가 $REPO_ROOT/$ROUTES_PATH 를 참조했는데 둘 다 어디에도
+# 정의돼 있지 않았다 — set -u 라 그 명령치환만 죽고 STE_UP 이 빈 값이 돼, routes.env 에
+# ste 가 멀쩡히 있는데도 매번 '라우트 미설정 — 건너뜀' 만 찍혔다(실측).
+ROUTES_ENV="${ROUTES_ENV:-$SELF_REPO/backend/config/routes.env}"
 hr() { printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
@@ -381,7 +385,7 @@ probe "signalforge    :17370" http://127.0.0.1:17370/ 0 "200 302 401"
 #   ② 포털 프록시 경유 — 여기서는 상태코드를 보면 안 된다. nginx location 이 안 붙어도
 #      포털 catch-all 이 SPA(index.html)를 200 으로 돌려주므로 코드만으로는 라우트가 먹었는지
 #      알 수 없다(실측 확인: 반영 전 /ste/api/health 가 200 + HTML). 그래서 본문을 본다.
-STE_UP="$(sed -n 's|^ste=http://\([^/]*\)/.*|\1|p' "$REPO_ROOT/backend/${ROUTES_PATH}" 2>/dev/null | head -1)"
+STE_UP="$(sed -n 's|^ste=http://\([^/]*\)/.*|\1|p' "$ROUTES_ENV" 2>/dev/null | head -1)"
 if [ -n "$STE_UP" ]; then
   probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200"
   STE_BODY="$(curl -s -m 4 http://127.0.0.1:8088/ste/api/health 2>/dev/null || true)"
@@ -558,6 +562,31 @@ for app in $heax_apps; do
     *) ok "heax 앱 $app → $code, 자산 $actype (서빙 정상)" ;;
   esac
 done
+
+# ── 6b) 등록 정합 — 배포·라우팅되는데 services.yaml 에 없는 서비스를 경고 ──
+#   kooremapper 가 정확히 이 구멍으로 빠져 있었다. deploy-all 에만 있고 등록부엔 없어서, 죽어도
+#   services.sh status 에 안 잡히고 '없다는 사실' 자체가 안 보였다(cae00 에서 502 로 드러남).
+#   목록을 여기 하드코딩하면 같은 종류로 또 썩는다 — 실제 정의에서 읽어 대조한다.
+hr "6b) 등록 정합 (services.yaml 누락 검사)"
+REG="$(grep -oP '^\s+- name: \K\S+' "$SELF_REPO/infra/services.yaml" 2>/dev/null | sort -u)"
+registered() { printf '%s\n' "$REG" | grep -qx "$1"; }
+if [ -z "$REG" ]; then
+  bad "services.yaml 을 읽지 못함 — 정합 검사 생략"
+else
+  MISS=0
+  # ① deploy-all 이 실제로 배포하는 것. WANT 는 축약명이라 등록부 이름으로 환산한다.
+  #    환산표에 없는 새 이름은 그대로 대조돼, 등록도 별칭도 없으면 여기서 걸린다.
+  for w in $(sed -n 's/^WANT="\${\*:-\(.*\)}"/\1/p' "$SELF_REPO/infra/scripts/deploy-all-from-drive.sh"); do
+    case "$w" in mxwp) n=mx-white-paper ;; heax) n=heax-hub ;; aidh) n=ai-data-hub ;; *) n="$w" ;; esac
+    registered "$n" || { bad "deploy-all 이 배포하는 '$w' → services.yaml 에 '$n' 없음(죽어도 status 에 안 잡힌다)"; MISS=1; }
+  done
+  # ② 포털이 프록시하는 것. apps= 는 HEAX 하위경로라 서비스가 아니고, ste 는 원격 박스다.
+  for k in $(sed -n 's/^\([a-z][a-z0-9-]*\)\(\/[a-z]*\)\?=.*/\1/p' "$ROUTES_ENV" 2>/dev/null | sort -u); do
+    case "$k" in apps|ste) continue ;; esac
+    registered "$k" || { bad "포털이 라우팅하는 '$k' 가 services.yaml 에 없음"; MISS=1; }
+  done
+  [ "$MISS" = 0 ] && ok "배포·라우팅 대상이 모두 services.yaml 에 등록돼 있다 (등록 $(printf '%s\n' "$REG" | wc -l)건)"
+fi
 
 # ── 7) 챗 스모크 — /health 는 프로세스 생존만 본다. 실제 문장 하나를 보내 AI 응답이 오는지
 #      (agent → gateway 도구 로딩 → vLLM 전 체인)를 태운다. 실패 시 로그 꼬리를 함께 출력. ──
