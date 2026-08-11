@@ -269,8 +269,12 @@ else
   if [ -n "$MISSING" ]; then
     echo "  · config에 없는 백엔드: $MISSING → 재프로비저닝"
     if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/provision-config.sh" ]; then
+      # provision.env 는 `. ` 로 소싱만 하므로(export 아님) 자식 프로세스가 못 본다.
+      # 그래서 여기서 하나하나 명시해 넘긴다 — ODB_HUB_* 를 빠뜨려서 cae00 에서
+      # ODB_HUB_TOKEN 이 설정돼 있는데도 provision 이 '미설정'으로 건너뛰었다(실측).
       ( cd "$GW_DIR" && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
+          ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
           bash provision-config.sh --force )
       "$SVC" down mcp-gateway agent-server 2>/dev/null
       "$SVC" up mcp-gateway agent-server
@@ -474,7 +478,9 @@ fi
 # 파손 — 브라우저가 요청하는 자산이 nginx(:8088)에서 포털 SPA 로 떨어져 JS 자리에 HTML 이
 # 200 으로 오던 것 — 을 전부 통과시켰다. 이제 (a) 등록된 앱 전체를, (b) 사용자와 같은
 # nginx 경유로, (c) 첫 자산까지 받아 Content-Type 이 HTML 로 바뀌지 않는지 본다.
-HEAX_STATE_DIR="${HEAX_STATE_DIR:-$HOME/claude/HEAXHub/var/integration_state}"
+# 경로를 하드코딩하면 안 된다 — cae00 은 ~/Projects/HEAXHub 라 여기가 어긋나 폴백 목록
+# ("materialtwin_web voice_recorder") 2개만 검사했다(cae00 실행 로그로 확인).
+HEAX_STATE_DIR="${HEAX_STATE_DIR:-${HEAX_DIR:-$HOME/claude/HEAXHub}/var/integration_state}"
 heax_apps=""
 [ -d "$HEAX_STATE_DIR" ] && heax_apps="$(ls "$HEAX_STATE_DIR"/*.json 2>/dev/null | while read -r f; do basename "$f" .json; done)"
 [ -n "$heax_apps" ] || heax_apps="materialtwin_web voice_recorder"
