@@ -124,6 +124,25 @@ services:
     health: http://localhost:3000/api/health
     tier: 10
 
+  # DynaForge(KooRemapper) — /apps/kooremapper 로 노출되지만 다른 HEAX 앱과 달리 SIF 가 없다.
+  # HEAXHub 는 :8700(웹)/:8701(MCP)로 프록시만 하고, 앱 등록은 HEAXHub 쪽 매니페스트에서 나온다.
+  # 그래서 이 서버가 없어도 앱 목록엔 '안정'으로 뜨고 열면 502 가 난다(cae00 실측). 여기 없으면
+  # status 에도 안 잡혀 '없다는 사실' 자체가 안 보였다 — 그게 이 항목을 만든 이유다.
+  # 배포(Drive 아티팩트 반입 포함)는 deploy-all-from-drive.sh 가 하고, 여기서는 등록·자동클론·
+  # 헬스·수동 재기동을 담당한다. 바이너리·프론트 dist·SIF 는 gitignore 라 Drive 에서 받는다.
+  - name: kooremapper
+    host: local
+    discover: KooRemapper
+    repo: https://github.com/squall321/KooRemapper.git
+    update: |
+      git fetch origin main --quiet && git reset --hard origin/main --quiet
+      bash platform/infra/scripts/dist-from-drive.sh \
+        || echo "⚠ Drive 아티팩트 반입 실패 — 기존 것으로 진행(remote 설정은 deploy-all 이 한다)"
+    start: bash platform/infra/scripts/start.sh
+    stop: bash platform/infra/scripts/stop.sh
+    health: http://127.0.0.1:8700/    # :8701 은 MCP 라 루트가 404 — 헬스 앵커로 못 쓴다
+    tier: 10
+
   # ── tier 20: MCP chat stack (heavy GPU last; vLLM may live on a remote host) ──
   # dev 박스 전용 로컬 vLLM(qwen 테스트용). only_on 밖의 박스(cae00 등)에선 up/down/status 가
   # 자동 skip — cae00 챗은 HWAXAgentServer/.env 의 VLLM_BASE_URL(상암 B300 GLM)을 쓴다.
