@@ -29,10 +29,13 @@ GW_DIR="$(find_repo HWAXMcpGateway)"
 AGENT_DIR="$(find_repo HWAXAgentServer)"
 AIDH_DIR="$(find_repo AIDataHub)"
 SVC="$SELF_REPO/infra/scripts/services.sh"
-# 포털 라우팅 표. §6 의 ste 프로브가 $REPO_ROOT/$ROUTES_PATH 를 참조했는데 둘 다 어디에도
-# 정의돼 있지 않았다 — set -u 라 그 명령치환만 죽고 STE_UP 이 빈 값이 돼, routes.env 에
-# ste 가 멀쩡히 있는데도 매번 '라우트 미설정 — 건너뜀' 만 찍혔다(실측).
-ROUTES_ENV="${ROUTES_ENV:-$SELF_REPO/backend/config/routes.env}"
+# 포털 라우팅 표. §6 의 ste 프로브가 $REPO_ROOT/$ROUTES_PATH 를 참조했는데 이 스크립트는
+# _common.sh 를 source 하지도, infra/.env 를 읽지도 않아 둘 다 미정의였다 — set -u 라 그
+# 명령치환만 죽고 STE_UP 이 빈 값이 돼, routes.env 에 ste 가 멀쩡히 있는데도 매번
+# '라우트 미설정 — 건너뜀' 만 찍혔다(실측). ROUTES_PATH 는 infra/.env 의 설정 항목이므로
+# 하드코딩하지 말고 거기서 읽는다(_common.sh 와 같은 기본값 config/routes.env).
+_routes_path="$(sed -n 's/^ROUTES_PATH=//p' "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' ')"
+ROUTES_ENV="${ROUTES_ENV:-$SELF_REPO/backend/${_routes_path:-config/routes.env}}"
 hr() { printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
