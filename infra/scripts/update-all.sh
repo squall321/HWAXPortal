@@ -19,6 +19,7 @@
 #   ~/Projects/HWAXMcpGateway/provision.env  (chmod 600, gitignore)
 #     RAT_TOKEN=rat_xxx            # ReportArchive PAT (심의 보고서 저장)
 #     HEAX_MCP_TOKEN=heax_xxx      # heax MCP 앱 자동연동(materialtwin·laminate)
+#     ODB_HUB_TOKEN=xxxx           # ODB 자동화 허브(10.252.38.121:8000) — cae00 에서만 도달
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -227,12 +228,15 @@ if [ -n "$H" ] && ! json_ok "$H"; then
 fi
 
 calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공백 구분). heax는 config 파일로 별도 판정.
-  H="$1" RAT="${RAT_TOKEN:-}" MXWP_UP="$MXWP_UP" python3 - <<'PY'
+  H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" MXWP_UP="$MXWP_UP" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
 want = {"ai-data-hub", "signalforge"}
 if os.environ.get("MXWP_UP") == "1": want.add("mx-white-paper")
 if os.environ.get("RAT"):           want.add("reportarchive")
+# ODB 자동화 허브는 cae00 에서만 도달한다(dev 는 포트 차단 — 실측). 토큰이 있는 박스에서만
+# 기대 목록에 넣는다 — RAT_TOKEN 과 같은 방식이라 dev 에서 가짜 DOWN 이 뜨지 않는다.
+if os.environ.get("ODB"):           want.add("odb-hub")
 print(" ".join(sorted(want - have)))
 PY
 }
