@@ -265,8 +265,11 @@ if want kooremapper; then
     # start.sh 가 0 으로 끝나도 업스트림이 안 떠 있으면 DynaForge 는 502 다. 여기서 못 박아 둔다 —
     # 이 두 줄이 없으면 긴 배포 로그 어디에도 '왜 502 인지'가 남지 않는다.
     for _p in 8700 8701; do
-      _c="$(curl -s -o /dev/null -w '%{http_code}' -m 4 "http://127.0.0.1:$_p/" 2>/dev/null || echo 000)"
-      case "$_c" in
+      # `|| echo 000` 을 붙이면 안 된다 — curl 은 연결 실패에도 -w 로 이미 '000' 을 찍고
+      # 종료코드만 0 이 아니다. 그래서 폴백이 덧붙어 '000000' 이 되고 case 000) 을 비껴가
+      # 무응답이 초록 ✓ 로 보고된다(실측). 종료코드가 아니라 출력값으로만 판정한다.
+      _c="$(curl -s -o /dev/null -w '%{http_code}' -m 4 "http://127.0.0.1:$_p/" 2>/dev/null)"
+      case "${_c:-000}" in
         000) skip "DynaForge 업스트림 :$_p 무응답 — /apps/kooremapper* 는 502 가 된다(위 로그에서 원인 확인)." ;;
         *)   ok "DynaForge 업스트림 :$_p → $_c" ;;
       esac
