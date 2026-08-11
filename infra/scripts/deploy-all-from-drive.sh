@@ -156,7 +156,9 @@ if want heax; then
       ./deploy/apptainer/dist-from-drive.sh   # frontend/dist + 런타임 + base/서비스 + per-app SIF
       # 폐쇄망 pip/npm 미러(var/pkg-mirror) — 서버가 SIF 를 직접 빌드할 때의 의존성 소스.
       # 미리 받은 SIF(dist-from-drive)로 도는 앱엔 불필요하나, git 소스 빌드 앱엔 필요. 비치명적.
-      [ -x deploy/apptainer/mirror-from-drive.sh ] && bash deploy/apptainer/mirror-from-drive.sh || true
+      # 가드는 -f 다 — 어차피 `bash <파일>` 로 부르므로 실행비트는 무의미하고, -x 로 두면
+      # 레포에 644 로 커밋된 순간 호출이 통째로 사라진다(실제로 models-from-drive 가 그랬다).
+      [ -f deploy/apptainer/mirror-from-drive.sh ] && bash deploy/apptainer/mirror-from-drive.sh || true
       # 앱 데이터(materialtwin 재료 DB 등) MERGE(비파괴 — dev 신규 추가 + cae00 데이터 보존).
       # merge 스크립트 있으면 그것, 없으면 기존 보존 복원으로 폴백. 둘 다 비치명적.
       if [ -x deploy/apptainer/appdata-merge-from-drive.sh ]; then
@@ -166,7 +168,7 @@ if want heax; then
       fi
       # 대용량 앱 모델 가중치(voice_recorder TTS 등)는 app-data tar 밖(별도 Drive models/) —
       # 각 앱 런타임 모델 dir 로 증분 동기(비치명).
-      [ -x deploy/apptainer/models-from-drive.sh ] && bash deploy/apptainer/models-from-drive.sh || true
+      [ -f deploy/apptainer/models-from-drive.sh ] && bash deploy/apptainer/models-from-drive.sh || true
       [ "$RESTART" = 1 ] || bash deploy/apptainer/stop.sh 2>/dev/null || true
       if ! HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh; then
         echo "  ── last lines of var/logs/postgres-start.log (the hidden error) ──"
@@ -319,7 +321,10 @@ want mxwp        && probe "mxwp   web      " "http://127.0.0.1:5173/"
 want heax        && probe "heax   :4180    " "http://127.0.0.1:4180/"
 want aidh        && probe "aidh   /health  " "http://127.0.0.1:8001/api/system/health"
 want signalforge && probe "sf     :17370   " "http://127.0.0.1:17370/"
-want kooremapper && probe "koorm  /health  " "http://127.0.0.1:8700/health"
+# /health 는 이 서버에 없다 — SPA 라우터가 어떤 경로든 같은 index.html 을 200 으로 준다
+# (/, /health, /zzz 의 md5 가 동일). 즉 API 라우터가 통째로 빠져도 초록이었다.
+# 실제 엔드포인트는 /api/health 다({"success":true,...,"binary_present":true}).
+want kooremapper && probe "koorm  /api/health" "http://127.0.0.1:8700/api/health"
 
 hr "Done"
 echo "  Portal:  https://hwax.sec.samsung.net/   (tiles: /heax-hub/ /ai-data-hub/ /mx-white-paper/ /signalforge/)"

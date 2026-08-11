@@ -43,7 +43,11 @@ services:
     host: local
     discover: MXWhitePaper
     start: ./infra/scripts/start.sh
-    health: http://localhost:5173/
+    # 프론트(:5173)는 정적 서버라 /zzz 도 200 이다 — 그걸 앵커로 쓰면 무엇도 판정 못 한다.
+    # routes.env 는 mx-white-paper/api → :8800 을 따로 프록시하는데 그 프로세스는 아무도 안 봤다.
+    # API 를 앵커로 삼는다(nginx 경유 금지 — 업스트림이 죽으면 502 인데 expect 없이는 up 이 된다).
+    expect: 200
+    health: http://127.0.0.1:8800/api/v1/healthz
     tier: 10
 
   # VoiceRecorder(voice_recorder) · WebDesignAgents(web_design_agents) 는 여기서 관리하지
@@ -121,7 +125,10 @@ services:
     host: local
     discover: SignalForge
     start: ./scripts/up.sh
-    health: http://localhost:17370/
+    # 프론트(:17370)도 정적이라 /zzz 가 200 이다. routes.env 의 signalforge/api → :18000 이
+    # 실제 백엔드이고 /health 가 진짜 엔드포인트다({"status":"ok","service":"SignalForge API"}).
+    expect: 200
+    health: http://127.0.0.1:18000/health
     tier: 10
 
   - name: report-archive
@@ -148,7 +155,11 @@ services:
         || echo "⚠ Drive 아티팩트 반입 실패 — 기존 것으로 진행(remote 설정은 deploy-all 이 한다)"
     start: bash platform/infra/scripts/start.sh
     stop: bash platform/infra/scripts/stop.sh
-    health: http://127.0.0.1:8700/    # :8701 은 MCP 라 루트가 404 — 헬스 앵커로 못 쓴다
+    # 루트(/)를 쓰면 안 된다 — SPA 라우터가 어떤 경로든 같은 index.html 을 200 으로 돌려줘
+    # API 가 죽어도 초록이다(/, /health, /zzz 의 md5 동일). /api/health 가 진짜 엔드포인트다.
+    # :8701(MCP)은 루트가 404 라 앵커로 못 쓴다 — 도구 수는 update-all 이 tools-map 으로 본다.
+    expect: 200
+    health: http://127.0.0.1:8700/api/health
     tier: 10
 
   # ── tier 20: MCP chat stack (heavy GPU last; vLLM may live on a remote host) ──

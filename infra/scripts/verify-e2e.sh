@@ -62,15 +62,31 @@ for r in "포털|$NGINX/|$NGINX" "heax-hub|$NGINX/heax-hub/|$NGINX/heax-hub" \
   esac
 done
 
+# MCP 앱 도구 수 — 아래 앱 루프가 '루트 404 = 파손' 오판을 하지 않도록 근거를 미리 받아 둔다.
+MCP_TOOLS="$(curl -s -m 6 http://127.0.0.1:9110/tools-map 2>/dev/null \
+  | python3 -c 'import json,sys
+try:
+    for a in (json.load(sys.stdin).get("apps") or []):
+        n = a.get("app") or ""
+        if n.startswith("heax-"): print(n[5:], a.get("tool_count") or 0)
+except Exception: pass' 2>/dev/null || true)"
+
 sec "2. heax 호스팅 앱 (등록된 전부)"
 if [ -d "$HEAX_ROOT/var/integration_state" ]; then
   for f in "$HEAX_ROOT"/var/integration_state/*.json; do
     [ -e "$f" ] || continue
     a="$(basename "$f" .json)"
     code="$(curl -s -o /dev/null -w '%{http_code}' -L -m 10 "$NGINX/apps/$a/" 2>/dev/null)"
+    # MCP 전용 앱은 도구가 하위경로(/mcp)에 있어 루트 404 가 정상이다. 이걸 red 로 찍는 바람에
+    # 스택이 완전 정상일 때도 이 스크립트가 실패로 끝났다(정상 앱 2개가 상시 빨간불).
+    # 판정은 update-all 과 같은 근거를 쓴다 — 게이트웨이 tools-map 의 도구 수.
+    _tc="$(printf '%s\n' "$MCP_TOOLS" | awk -v id="$a" '$1==id {print $2; exit}')"
     case "$code" in
       200|304) check_page_assets "앱 $a" "$NGINX/apps/$a/" "$NGINX/apps/$a" ;;
       401|403) grn "앱 $a — $code (비공개/UI 없음)" ;;
+      404)     if [ -n "$_tc" ] && [ "$_tc" -gt 0 ]; then
+                 grn "앱 $a — 404 (MCP 전용, UI 없음 — 도구 ${_tc}개 확인)"
+               else red "앱 $a — 404 (미기동/라우트 없음)"; fi ;;
       *)       red "앱 $a — $code (미기동/라우트 없음)" ;;
     esac
   done
@@ -95,14 +111,17 @@ WLOG="$HEAX_ROOT/var/logs/worker.log"
 if [ -f "$WLOG" ]; then
   wpid="$(pgrep -f 'celery -A app.workers.celery_app worker' | head -1)"
   since=""
-  [ -n "$wpid" ] && since="$(date -d "$(ps -o lstart= -p "$wpid" 2>/dev/null)" '+%H:%M:%S' 2>/dev/null)"
+  [ -n "$wpid" ] && since="$(date -d "$(ps -o lstart= -p "$wpid" 2>/dev/null)" '+%Y-%m-%d %H:%M:%S' 2>/dev/null)"
   # 중첩 heredoc 은 command substitution 안에서 since 가 비는 사고가 났다(실측: 전체 로그를
   # 세어 이미 고친 문제를 계속 실패로 보고). awk 한 줄로 단순화한다.
-  since="${since:-00:00:00}"
-  n_put=$(awk -v s="$since" '$0 ~ /PUT http:\/\/127.0.0.1:2019\/id\/app-/ && /400/ { if (match($0,/[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) && substr($0,RSTART,8) >= s) n++ } END{print n+0}' "$WLOG")
-  n_patch=$(awk -v s="$since" '$0 ~ /PATCH http:\/\/127.0.0.1:2019\/id\/app-/ { if (match($0,/[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) && substr($0,RSTART,8) >= s) n++ } END{print n+0}' "$WLOG")
-  n_del=$(awk -v s="$since" '$0 ~ /DELETE http:\/\/127.0.0.1:2019\/id\/app-/ { if (match($0,/[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) && substr($0,RSTART,8) >= s) n++ } END{print n+0}' "$WLOG")
-  n_failed=$(awk -v s="$since" '{ if (match($0,/[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) && substr($0,RSTART,8) >= s && match($0,/reconcile: [a-z0-9-]+ failed/)) { t=substr($0,RSTART+11); sub(/ failed.*/,"",t); print t } }' "$WLOG" | sort -u | paste -sd, -)
+  # 시:분:초만 비교하면 자정을 넘긴 순간 그날 로그가 통째로 탈락한다 — 워커가 어제 09:13 에
+  # 떴으면 오늘 01:31 줄이 문자열상 더 작아 전부 버려지고, 결과는 '실패 없음' 초록이다.
+  # 로그 줄 앞머리가 [YYYY-MM-DD HH:MM:SS 라 19자를 그대로 비교하면 사전순=시간순이 된다.
+  since="${since:-0000-00-00 00:00:00}"
+  n_put=$(awk -v s="$since" '$0 ~ /PUT http:\/\/127.0.0.1:2019\/id\/app-/ && /400/ { if (match($0,/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) && substr($0,RSTART,19) >= s) n++ } END{print n+0}' "$WLOG")
+  n_patch=$(awk -v s="$since" '$0 ~ /PATCH http:\/\/127.0.0.1:2019\/id\/app-/ { if (match($0,/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) && substr($0,RSTART,19) >= s) n++ } END{print n+0}' "$WLOG")
+  n_del=$(awk -v s="$since" '$0 ~ /DELETE http:\/\/127.0.0.1:2019\/id\/app-/ { if (match($0,/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) && substr($0,RSTART,19) >= s) n++ } END{print n+0}' "$WLOG")
+  n_failed=$(awk -v s="$since" '{ if (match($0,/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) && substr($0,RSTART,19) >= s && match($0,/reconcile: [a-z0-9-]+ failed/)) { t=substr($0,RSTART+11); sub(/ failed.*/,"",t); print t } }' "$WLOG" | sort -u | paste -sd, -)
   if [ -n "${n_failed:-}" ]; then
     for b in ${n_failed//,/ }; do red "앱 $b — reconcile 이 반복 실패시키는 중 (현재 워커 기준)"; done
   else
