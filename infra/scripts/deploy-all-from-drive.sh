@@ -239,6 +239,18 @@ fi
 #    koorm_mcp :8701)를 prod 에 띄워 HEAX Caddy 가 127.0.0.1 로 프록시할 수 있게 한다.
 #    바이너리·frontend dist·서비스 SIF 는 gitignore 라 Drive 로 조달(dist-from-drive).
 if want kooremapper; then
+  # 레포가 없으면 통째로 건너뛰던 자리다. DynaForge 는 SIF 없이 이 레포가 띄우는 서버(:8700/:8701)로
+  # 프록시만 하는데, 앱 등록은 HEAXHub 쪽 매니페스트에서 나온다 — 그래서 레포가 없어도 목록엔
+  # 멀쩡히 '안정'으로 뜨고 열면 502 가 난다. 조용한 skip 이 이 증상의 원인이다(cae00 실측).
+  # update-sites.sh 는 이미 같은 상황에서 자동 clone 한다. 같은 방식으로 맞춘다.
+  if [ -z "$KOOR_DIR" ] && [ -n "${PARENT:-}" ]; then
+    hr "KooRemapper 레포 없음 — clone 시도 ($PARENT/KooRemapper)"
+    if git clone --quiet https://github.com/squall321/KooRemapper.git "$PARENT/KooRemapper"; then
+      KOOR_DIR="$PARENT/KooRemapper"; ok "KooRemapper clone 완료 → $KOOR_DIR"
+    else
+      skip "KooRemapper clone 실패 — 수동 clone 후 재실행하거나 KOOR_DIR= 로 경로를 지정하라."
+    fi
+  fi
   if [ -n "$KOOR_DIR" ]; then
     hr "KooRemapper / DynaForge  ($KOOR_DIR)"
     ( cd "$KOOR_DIR"
@@ -250,7 +262,16 @@ if want kooremapper; then
       [ "$RESTART" = 1 ] || bash platform/infra/scripts/stop.sh 2>/dev/null || true
       bash platform/infra/scripts/start.sh
     ) && ok "kooremapper up" || skip "kooremapper failed (see above)"
-  else skip "KooRemapper repo not found (set KOOR_DIR=)"; fi
+    # start.sh 가 0 으로 끝나도 업스트림이 안 떠 있으면 DynaForge 는 502 다. 여기서 못 박아 둔다 —
+    # 이 두 줄이 없으면 긴 배포 로그 어디에도 '왜 502 인지'가 남지 않는다.
+    for _p in 8700 8701; do
+      _c="$(curl -s -o /dev/null -w '%{http_code}' -m 4 "http://127.0.0.1:$_p/" 2>/dev/null || echo 000)"
+      case "$_c" in
+        000) skip "DynaForge 업스트림 :$_p 무응답 — /apps/kooremapper* 는 502 가 된다(위 로그에서 원인 확인)." ;;
+        *)   ok "DynaForge 업스트림 :$_p → $_c" ;;
+      esac
+    done
+  else skip "KooRemapper repo not found — DynaForge(/apps/kooremapper*)는 502 가 된다. KOOR_DIR= 로 경로 지정 가능."; fi
 fi
 
 # ── Always refresh the portal routing: regenerate nginx conf + restart nginx so the per-service

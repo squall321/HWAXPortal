@@ -516,6 +516,13 @@ for app in $heax_apps; do
       ok "heax 앱 $app → $code (비공개/UI 없음 — 정상 정책)"
     elif [ "$is_mcp" = 1 ] && [ "$code" = "404" ]; then
       ok "heax 앱 $app → 404 (MCP 전용, UI 없음 — 위 도구 수로 판정함)"
+    elif [ "$code" = "502" ] || [ "$code" = "503" ] || [ "$code" = "504" ]; then
+      # 502/503/504 는 404 와 원인이 정반대다 — 라우트는 살아 있고 그 너머가 죽은 것이다.
+      # 같은 문구를 주면 없는 라우트를 찾아 헤매게 된다.
+      app_bad "$crit" "heax 앱 $app → $code — 라우트는 살아 있고 업스트림이 죽었다(등록 문제 아님)."
+      echo "      프록시형 앱이면 SIF 가 아니라 별도로 떠 있어야 할 서버가 없는 것이다."
+      echo "      DynaForge(kooremapper/kooremapper_mcp) → :8700 웹 / :8701 MCP."
+      echo "      조치: bash $SELF_REPO/infra/scripts/deploy-all-from-drive.sh kooremapper"
     elif [ "$TM_OK" = 0 ] && [ "$code" = "404" ]; then
       # 게이트웨이가 죽어 MCP 여부를 모르는 상태다. MCP 전용 앱은 루트 404 가 정상이므로
       # 여기서 '미서빙'이라 단정하면 멀쩡한 앱을 범인으로 지목하게 된다(게이트웨이는 이미 위에서 계상).
