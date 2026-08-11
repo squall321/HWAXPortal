@@ -145,7 +145,10 @@ APPT="$(command -v apptainer || true)"
 for c in "$HOME"/claude/HWAXPortal/infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && APPT="$c" && break; done
 if [ -n "$APPT" ]; then
   zombies=0
-  while read -r name _pid _ip sif; do
+  # IP 컬럼이 비어 있어 awk 필드가 한 칸 밀린다 — $4 는 항상 빈 문자열이고, 그래서
+  # 아래 `[ -f "$sif" ] || continue` 에서 모든 인스턴스가 조기 탈출해 검사가 0회 돌았다.
+  # IMAGE 는 항상 마지막 컬럼이므로 $NF 로 받는다(IP 채워짐 여부와 무관).
+  while read -r name _pid sif; do
     case "$name" in heax_app_*) ;; *) continue ;; esac
     [ -f "$sif" ] || continue
     # 인스턴스 시작 시각보다 SIF 파일이 더 새것이면, 그 인스턴스는 옛 rootfs 를 붙들고 있다.
@@ -153,7 +156,7 @@ if [ -n "$APPT" ]; then
     if [ "$(stat -c %Y "$sif")" -gt "$(date -d "$ist" +%s 2>/dev/null || echo 9999999999)" ]; then
       red "좀비 인스턴스 $name — SIF 가 인스턴스보다 새것(재기동 필요)"; zombies=$((zombies+1))
     fi
-  done < <("$APPT" instance list 2>/dev/null | awk 'NR>1{print $1, $2, $3, $4}')
+  done < <("$APPT" instance list 2>/dev/null | awk 'NR>1{print $1, $2, $NF}')
   [ "$zombies" = 0 ] && grn "좀비 인스턴스 없음"
 fi
 

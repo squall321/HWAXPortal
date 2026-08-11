@@ -59,21 +59,31 @@ def resolve_dir(svc: dict) -> Path | None:
     return None
 
 
-def health_ok(url: str, timeout: float = 2.0) -> bool:
-    """Any HTTP response (even 4xx) means the port is serving → up."""
+def health_ok(url: str, timeout: float = 2.0, expect: object = None) -> bool:
+    """Any HTTP response (even 4xx) means the port is serving → up.
+
+    expect 가 주어지면 상태코드까지 본다. 프록시 뒤에 있는 서비스는 '응답이 왔다'만으로는
+    판정이 안 되기 때문이다 — heax-hub 는 Caddy(:4180)가 앞에 있어서 백엔드(:4040)가 죽어도
+    정적 SPA 를 200 으로 돌려주고, 죽은 upstream 이면 502 가 오는데 그것도 '응답'이라 up 이
+    됐다. 그래서 '앱이 죽었는데 초록' 이 구조적으로 가능했다.
+    expect 가 없으면 종전 그대로다 — 406 을 up 으로 봐야 하는 항목들이 있어 전역 강제는 못 한다.
+    """
+    allowed = None
+    if expect is not None:
+        allowed = {int(c) for c in (expect if isinstance(expect, (list, tuple, set)) else [expect])}
     try:
-        urllib.request.urlopen(url, timeout=timeout)  # noqa: S310 (trusted local/own URLs)
-        return True
-    except urllib.error.HTTPError:
-        return True  # 404/406 etc — it answered, so it's up
+        r = urllib.request.urlopen(url, timeout=timeout)  # noqa: S310 (trusted local/own URLs)
+        return allowed is None or r.getcode() in allowed
+    except urllib.error.HTTPError as e:
+        return allowed is None or e.code in allowed  # 404/406 etc — it answered, so it's up
     except Exception:
         return False
 
 
-def wait_health(url: str, tries: int = 60, gap: float = 2.0, tick=None) -> bool:
+def wait_health(url: str, tries: int = 60, gap: float = 2.0, tick=None, expect=None) -> bool:
     import time
     for i in range(tries):
-        if health_ok(url):
+        if health_ok(url, expect=expect):
             return True
         if tick:
             tick(i + 1, tries)  # 실패한 폴 직후 진행 알림(어디서 멈추는지 가시화)
@@ -90,7 +100,7 @@ def env_prefix(env: dict | None) -> str:
 def start_one(svc: dict) -> str:
     name = svc["name"]
     url = svc.get("health", "")
-    if url and health_ok(url):
+    if url and health_ok(url, expect=svc.get("expect")):
         return "already-up"
 
     host = svc.get("host", "local")
@@ -139,7 +149,7 @@ def start_one(svc: dict) -> str:
         print(f"        · 대기 {int(i * gap)}s/{int(n * gap)}s"
               + (f"  | log꼬리: {last}" if last else "  | (로그 아직 없음)"), flush=True)
 
-    return "up" if wait_health(url, tries, gap, _tick) else \
+    return "up" if wait_health(url, tries, gap, _tick, expect=svc.get("expect")) else \
         f"FAIL: no health after start (see {log})"
 
 
@@ -224,7 +234,7 @@ def cmd_status(names: list[str]) -> int:
             print(f"  {'· skip':<12} {s['name']:<16} only_on={s.get('only_on')}")
             continue
         url = s.get("health", "")
-        up = health_ok(url) if url else None
+        up = health_ok(url, expect=s.get("expect")) if url else None
         mark = "✓ up" if up else ("? no-health" if up is None else "✗ down")
         if up is False:
             any_down = 1

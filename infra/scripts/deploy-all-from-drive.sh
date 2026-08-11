@@ -282,11 +282,28 @@ fi
 #    nginx on a stale conf → /mx-white-paper/assets etc. served wrong). Cheap; nginx-only bounce.
 if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   hr "Portal routing refresh (nginx)"
+  # 서브셸의 마지막 명령이 `|| true` 면 서브셸 rc 가 항상 0 이라 `&&` 쪽이 반드시 실행된다 —
+  # 즉 이 블록은 무엇이 실패하든 'nginx reloaded' 를 찍었다. 게다가 세 명령의 출력을 모두
+  # /dev/null 로 버려서 '왜 실패했는지'가 배포 로그에 남지도 않았다.
+  # 종료코드 대신 실제 상태로 판정한다 — 다시 뜬 nginx 가 /health 에 200 을 주는가.
+  NG_LOG="$(mktemp)"
   ( cd "$PORTAL_DIR"
     APPT="apptainer"; for c in infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && { APPT="$c"; break; }; done
-    ./infra/scripts/gen-nginx-conf.sh >/dev/null 2>&1 || true
-    "$APPT" instance stop hwax_nginx >/dev/null 2>&1 || true
-    HWAX_NO_BUILD=1 ./infra/scripts/start.sh >/dev/null 2>&1 || true ) && ok "nginx reloaded with current routes" || skip "nginx refresh failed"
+    ./infra/scripts/gen-nginx-conf.sh
+    "$APPT" instance stop hwax_nginx 2>/dev/null || true
+    HWAX_NO_BUILD=1 ./infra/scripts/start.sh ) >"$NG_LOG" 2>&1 || true
+  # `|| true` 는 여기서만 안전하다 — 이 파일은 set -e 라 서브셸 실패가 배포 전체를 끊는다.
+  # 종료코드를 판정에 쓰지 않고 바로 아래에서 실제 상태(/health)로 가르기 때문에,
+  # 삼켜도 실패가 사라지지 않는다. 로그는 NG_LOG 에 남아 실패 분기에서 출력된다.
+  NG_PORT="$(sed -n 's/^HTTP_PORT=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1)"
+  NG_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:${NG_PORT:-8088}/health" 2>/dev/null)"
+  if [ "${NG_CODE:-000}" = "200" ]; then
+    ok "nginx reloaded with current routes (/health → 200)"
+  else
+    skip "nginx refresh 실패 — /health → ${NG_CODE:-000}. 아래는 마지막 로그다."
+    tail -12 "$NG_LOG" | sed 's/^/      /'
+  fi
+  rm -f "$NG_LOG"
 fi
 
 # ── Health summary (everything that was started) ────────────────────────────

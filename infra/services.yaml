@@ -16,6 +16,9 @@
 #   env       extra environment for the start command
 #   start     command run from `dir` (orchestrator detaches it; foreground servers are fine)
 #   health    URL polled until the service answers (any HTTP response = up)
+#   expect    (선택) 허용 상태코드. 주면 코드까지 본다. 프록시 뒤 서비스는 '응답이 왔다'만으로
+#             판정이 안 된다 — 죽은 upstream 에 프록시가 주는 502 도 '응답'이라 up 이 됐다.
+#             없으면 종전 동작(406 등을 up 으로 보는 항목들이 있어 전역 강제는 못 한다).
 #   tier      startup order group (lower first): infra(0) → services(10) → chat(20)
 
 services:
@@ -53,6 +56,11 @@ services:
   - name: heax-hub
     host: local
     discover: HEAXHub
+    # health 앵커는 반드시 /health 여야 한다. 루트(/)는 Caddy 의 정적 SPA(file_server)라
+    # 백엔드(:4040 FastAPI)가 죽어도 index.html 을 200 으로 돌려준다 — 앱이 다 죽어도 초록이었다.
+    # expect: 200 도 함께 필요하다. health_ok 는 '응답이 오면 up' 이라, 죽은 upstream 에
+    # Caddy 가 주는 502 마저 up 으로 봤다. 이 둘이 같이 있어야 판정이 성립한다.
+    expect: 200
     env: { HEAX_NO_BUILD: "1" }
     # Rebuild the SPA with base=/heax-hub/ so its assets resolve under the portal sub-path
     # (default base=/ → /assets/ 404s behind the proxy). Kept in the portal (heax repo
@@ -97,7 +105,7 @@ services:
     # "instance already exists" stale state, which left heax down after an update/restart.
     # heal.sh clears stale infra → runs start.sh bootstrap → safety-net start → verify.
     start: bash deploy/apptainer/heal.sh
-    health: http://localhost:4180/
+    health: http://localhost:4180/health
     tier: 10
 
   - name: ai-data-hub

@@ -28,6 +28,7 @@ find_repo() { local n="$1"; for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/cla
 GW_DIR="$(find_repo HWAXMcpGateway)"
 AGENT_DIR="$(find_repo HWAXAgentServer)"
 AIDH_DIR="$(find_repo AIDataHub)"
+HEAX_DIR="$(find_repo HEAXHub)"   # §5 의 앱 단위 재배포에 필요 — 경로 하드코딩 금지
 SVC="$SELF_REPO/infra/scripts/services.sh"
 # 포털 라우팅 표. §6 의 ste 프로브가 $REPO_ROOT/$ROUTES_PATH 를 참조했는데 이 스크립트는
 # _common.sh 를 source 하지도, infra/.env 를 읽지도 않아 둘 다 미정의였다 — set -u 라 그
@@ -302,7 +303,20 @@ else
         mx-white-paper) UP_SVCS="$UP_SVCS mxwp-mcp" ;;
         reportarchive)  UP_SVCS="$UP_SVCS reportarchive-mcp" ;;
         ai-data-hub)    UP_SVCS="$UP_SVCS ai-data-hub" ;;
-        heax-*)         UP_SVCS="$UP_SVCS heax-hub" ;;
+        # heax-<slug> 는 '앱 하나'가 죽은 것이다. 여기서 heax-hub 통기동으로 접으면 안 된다 —
+        # 허브가 살아 있으면 services.py 가 'already-up' 으로 돌려보내 아무것도 안 하고,
+        # 화면엔 '✓ heax-hub already-up' 이 찍혀 복구된 것처럼 보인다(무동작을 복구로 표시).
+        # 앱 단위 조치를 직접 부른다. 스크립트가 없으면 할 일을 사람이 알 수 있게 남긴다.
+        heax-*)
+          _slug="${b#heax-}"
+          _rd="${HEAX_DIR:-}/deploy/apptainer/redeploy-app.sh"
+          if [ -x "$_rd" ]; then
+            echo "  · heax 앱 $_slug 다운 → redeploy-app.sh $(echo "$_slug" | tr '_' '-')"
+            bash "$_rd" "$(echo "$_slug" | tr '_' '-')" 2>&1 | tail -3 | sed 's/^/      /' \
+              || bad "heax 앱 $_slug 재배포 실패 — 수동 확인 필요"
+          else
+            bad "heax 앱 $_slug 다운 — redeploy-app.sh 없음($_rd). 허브 통기동으로는 안 살아난다."
+          fi ;;
         *) echo "  · 다운 백엔드 $b — 매핑된 서비스 없음(수동 확인)" ;;
       esac
     done
