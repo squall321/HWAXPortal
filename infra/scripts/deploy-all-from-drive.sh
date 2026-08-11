@@ -48,7 +48,14 @@ if [ -z "$REMOTE_ALIAS" ] && [ -x "$RCLONE_BIN" ]; then
   if "$RCLONE_BIN" listremotes 2>/dev/null | grep -qx "ApptainerImages:"; then
     REMOTE_ALIAS="ApptainerImages"
   else
-    REMOTE_ALIAS="$("$RCLONE_BIN" listremotes 2>/dev/null | head -1 | sed 's/:$//')"
+    # `| head -1` 은 pipefail 과 같이 쓰면 안 된다 — head 가 첫 줄만 읽고 파이프를 닫으면
+    # 생산자(rclone)가 SIGPIPE(rc=141)를 받고, pipefail 이 그걸 파이프라인 실패로 만들어
+    # set -e 가 여기서 스크립트를 죽인다. 출력이 한 줄도 없이 즉시 끝난다(실측 rc=141).
+    # cae00 에서 deploy-all 이 '아무 로그 없이' 끝나던 증상이 이것이다(remote 이름이
+    # ApptainerImages 가 아니면 이 줄을 탄다). 파이프 없이 첫 줄만 뽑는다.
+    REMOTE_ALIAS="$("$RCLONE_BIN" listremotes 2>/dev/null || true)"
+    REMOTE_ALIAS="${REMOTE_ALIAS%%$'\n'*}"
+    REMOTE_ALIAS="${REMOTE_ALIAS%:}"
   fi
 fi
 [ -n "$REMOTE_ALIAS" ] && printf '\033[1;36mℹ rclone remote: %s:\033[0m\n' "$REMOTE_ALIAS" \
