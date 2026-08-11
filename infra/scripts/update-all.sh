@@ -90,7 +90,18 @@ ok "포털 레포 최신 (재실행 완료)"
 #        운영자가 --install-cron 을 따로 기억할 필요 없게 update-all 이 챙긴다. ──
 if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   hr "1b) 배포 전 로컬 백업(/data/backups)"
-  "$SELF_REPO/infra/scripts/backup-local.sh" 2>&1 | tail -6 || echo "  ⚠ 사전 백업 실패(비치명적) — 배포는 계속"
+  # tail -6 을 쓰면 안 된다 — 백업 출력은 24줄이고 실패(✗)는 앞쪽에 찍혀 정확히 잘려나간다.
+  # 그래서 signalforge·mxwp 백업이 22회 내내 실패하는 동안 화면엔 '✓ 백업 완료'만 보였다.
+  # 성공하면 꼬리만, 실패하면 실패 줄을 전부 보여준다.
+  BK_LOG="$(mktemp)"
+  if "$SELF_REPO/infra/scripts/backup-local.sh" >"$BK_LOG" 2>&1; then
+    tail -4 "$BK_LOG" | sed 's/^/  /'
+  else
+    bad "사전 백업 실패 — 아래 항목이 백업되지 않았다(배포는 계속한다)"
+    grep -E '✗' "$BK_LOG" | sed 's/^/    /'
+    tail -3 "$BK_LOG" | sed 's/^/  /'
+  fi
+  rm -f "$BK_LOG"
   "$SELF_REPO/infra/scripts/backup-local.sh" --install-cron 2>&1 | sed 's/^/  /' || true
 fi
 

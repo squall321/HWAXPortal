@@ -18,7 +18,10 @@ find_repo() { local n="$1"; for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/cla
 WANT="${*:-aidh signalforge mxwp materialtwin portal}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
-bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
+FAILED=0
+# bad 는 출력만 하고 끝났다 — 그래서 백업이 한 건도 안 떠도 스크립트는 0 으로 끝나고
+# 마지막 줄에 무조건 '✓ 백업 완료' 가 찍혔다. 실패를 세어 종료코드로 올린다.
+bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; FAILED=$((FAILED+1)); }
 hr() { printf '\n\033[1;36m── %s ─────────────\033[0m\n' "$*"; }
 
 # cron 설치(멱등) — 매일 03:30 로컬 백업. 운영자 crontab 에 1줄 추가.
@@ -50,7 +53,16 @@ pg_backup() {  # $1=서비스라벨 $2=인스턴스 $3=user $4=port $5=db $6=출
       || { bad "$label: 덤프 0바이트 — 실패"; rm -f "$out"; return 1; }
   else bad "$label: pg_dump 실패"; rm -f "$out"; return 1; fi
 }
-env_get() { sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -1 | sed 's/^["'"'"']//; s/["'"'"']$//'; }
+# 값이 없으면 반드시 비0 으로 끝나야 한다 — 안 그러면 호출부의 `|| echo 기본값` 폴백이
+# 통째로 죽는다. sed -n 은 '못 찾음'도 정상 종료(0)라, 예전엔 키가 없을 때 인스턴스명으로
+# 빈 문자열이 넘어갔고 pg_backup 이 grep -qx "" 로 아무것도 못 찾아 매번 skip 했다.
+# 그 결과 signalforge·mxwp 백업이 22회 실행 내내 0건이었다(실측).
+env_get() {
+  local v
+  v="$(sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -1 | sed 's/^["'"'"']//; s/["'"'"']$//')"
+  [ -n "$v" ] || return 1
+  printf '%s' "$v"
+}
 
 if want aidh; then
   hr "AIDataHub"
@@ -64,7 +76,9 @@ if want signalforge; then
   hr "SignalForge"
   D="$(find_repo SignalForge)"; E="$D/.env"
   # SF 는 인스턴스명·포트가 다를 수 있어 .env 우선, 기본값 폴백
-  pg_backup "signalforge" "$(env_get "$E" SF_PG_INSTANCE || echo signalforge_postgres)" \
+  # 폴백은 sf_postgres 다 — signalforge_postgres 는 실제로 존재한 적이 없는 이름이라,
+  # env_get 을 고쳐 폴백이 살아나도 이 값이 틀리면 여전히 매칭에 실패한다(실측 인스턴스명 확인).
+  pg_backup "signalforge" "$(env_get "$E" SF_PG_INSTANCE || echo sf_postgres)" \
     "$(env_get "$E" POSTGRES_USER || echo signalforge)" "$(env_get "$E" POSTGRES_PORT || echo 5434)" \
     "$(env_get "$E" POSTGRES_DB || echo signalforge)" "$BACKUP_ROOT/signalforge"
 fi
@@ -130,5 +144,11 @@ hr "세대 정리 (${RETAIN_DAYS}일 초과 삭제)"
 find "$BACKUP_ROOT" -type f \( -name "*.sql.gz" -o -name "*.tar.gz" \) -mtime +"$RETAIN_DAYS" -print -delete 2>/dev/null | sed 's/^/  삭제: /' || true
 find "$BACKUP_ROOT" -type f -name "*.sha256" -mtime +"$RETAIN_DAYS" -delete 2>/dev/null || true
 
-echo; ok "백업 완료 — $BACKUP_ROOT"
+echo
 du -sh "$BACKUP_ROOT" 2>/dev/null | sed 's/^/  총량: /'
+if [ "$FAILED" -eq 0 ]; then
+  ok "백업 완료 — $BACKUP_ROOT"
+else
+  bad_n="$FAILED"; printf '  \033[1;31m✗\033[0m 백업 %s건 실패 — 위 ✗ 줄을 확인하라 (%s)\n' "$bad_n" "$BACKUP_ROOT"
+  exit 1
+fi
