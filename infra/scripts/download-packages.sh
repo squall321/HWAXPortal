@@ -37,7 +37,9 @@ else
 fi
 
 echo "▶ rclone (${ARCH}) — for Drive image sync"
-rz="$PKG_DIR/rclone-current-linux-${ARCH}.zip"
+rz="$PKG/rclone-current-linux-${ARCH}.zip"   # 이 파일에서 packages 루트는 $PKG 다
+                                            # (bootstrap-rclone.sh 는 같은 경로를 PKG_DIR 로 부른다 —
+                                            #  그쪽에서 복사해 오면서 이름이 어긋나 set -u 로 죽었다)
 rurl="https://downloads.rclone.org/rclone-current-linux-${ARCH}.zip"
 if [ -f "$rz" ] && [ "$(stat -c%s "$rz" 2>/dev/null || echo 0)" -ge 1000000 ]; then
   echo "  ✓ already cached: $rz"
