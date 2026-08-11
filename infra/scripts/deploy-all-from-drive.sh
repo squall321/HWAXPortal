@@ -22,12 +22,18 @@ set -euo pipefail
 # ── Repo locations (override via env). Default: siblings of this repo, then ~/Projects. ─────────
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
-find_repo() {  # $1=env-override  $2=dirname
+find_repo() {  # $1=env-override  $2=dirname → 없으면 빈 문자열(그리고 성공으로 끝난다)
+  # ⚠ 마지막에 `return 0` 이 없으면 못 찾았을 때 for 루프 마지막 `[ -d ]` 의 실패(1)가
+  # 함수 반환값이 된다. 이 파일은 set -e 라, 아래 `X="$(find_repo …)"` 대입에서 스크립트가
+  # 그 자리에서 죽는다 — 아직 아무것도 출력하기 전이라 화면에 한 글자도 안 남는다.
+  # cae00 에서 deploy-all 이 '로그 없이 즉시 종료'되던 실제 원인이다(레포 하나만 없어도 그렇다).
+  # 못 찾는 것은 정상 상황이고(그 서비스만 skip 하면 된다), 호출부가 [ -n "$X" ] 로 판정한다.
   local v="$1" name="$2"
-  [ -n "$v" ] && { printf '%s' "$v"; return; }
+  [ -n "$v" ] && { printf '%s' "$v"; return 0; }
   for cand in "$PARENT/$name" "$HOME/Projects/$name" "$HOME/claude/$name"; do
-    [ -d "$cand" ] && { printf '%s' "$cand"; return; }
+    [ -d "$cand" ] && { printf '%s' "$cand"; return 0; }
   done
+  return 0
 }
 PORTAL_DIR="${PORTAL_DIR:-$SELF_REPO}"
 MXWP_DIR="$(find_repo "${MXWP_DIR:-}" MXWhitePaper)"

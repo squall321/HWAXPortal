@@ -13,8 +13,13 @@ set -euo pipefail
 [ -S "$XDG_RUNTIME_DIR/bus" ] && export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
-find_repo() { local v="$1" n="$2"; [ -n "$v" ] && { printf '%s' "$v"; return; }
-  for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/claude/$n"; do [ -d "$c" ] && { printf '%s' "$c"; return; }; done; }
+# 못 찾으면 빈 문자열 + 성공(0)으로 끝나야 한다. `return 0` 이 없으면 for 루프 마지막
+# `[ -d ]` 의 실패(1)가 함수 반환값이 되고, set -e 라 아래 대입에서 스크립트가 그 자리에서
+# 죽는다 — 출력 한 글자 없이. deploy-all-from-drive.sh 에서 실제로 그 사고가 났다
+# (cae00 은 레포 하나가 없어 매번 즉시 종료 → DynaForge 가 배포된 적이 없었다).
+find_repo() { local v="$1" n="$2"; [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/claude/$n"; do [ -d "$c" ] && { printf '%s' "$c"; return 0; }; done
+  return 0; }
 PORTAL_DIR="${PORTAL_DIR:-$SELF_REPO}"
 MXWP_DIR="$(find_repo "${MXWP_DIR:-}" MXWhitePaper)"
 HEAX_DIR="$(find_repo "${HEAX_DIR:-}" HEAXHub)"
