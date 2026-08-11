@@ -91,7 +91,10 @@ WANT="${*:-portal mxwp heax aidh signalforge kooremapper}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
-skip() { printf '  \033[1;33m⚠ skip:\033[0m %s\n' "$*"; }
+DEPLOY_FAILED=0
+# skip 은 노란 경고만 찍고 끝났고, 스크립트 마지막이 echo 라 종료코드는 늘 0 이었다.
+# 그래서 update-all 의 `|| echo "⚠ deploy-all 일부 실패"` 가 실행될 수 없었다(18곳이 이걸 탄다).
+skip() { printf '  \033[1;33m⚠ skip:\033[0m %s\n' "$*"; DEPLOY_FAILED=$((DEPLOY_FAILED+1)); }
 
 # We RESTART each service (stop → start) so freshly pulled images / nginx conf / code actually take
 # effect. `start.sh` alone skips already-running instances, leaving stale config live (that's what

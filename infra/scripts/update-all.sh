@@ -109,8 +109,9 @@ fi
 
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
+# deploy-all 이 이제 skip 건수를 종료코드로 낸다(예전엔 늘 0 이라 이 || 가지가 죽은 코드였다).
 SF_RESTORE_DB="${SF_RESTORE_DB:-0}" "$SELF_REPO/infra/scripts/deploy-all-from-drive.sh" \
-  || echo "  ⚠ deploy-all 일부 실패 — 아래 헬스게이트에서 판정"
+  || bad "deploy-all 에서 일부 항목이 skip/실패 — 위 ⚠ 줄과 아래 헬스게이트를 함께 보라"
 
 # ── 3) AIDataHub 데이터 동기화 — dev가 원본. Drive 덤프가 지난 복원분과 같으면 restore 생략
 #      (prod 챗도 create_agent 등 쓰기 도구를 노출하므로, 새 덤프 없는데 매번 DROP+restore 하지 않는다) ──
