@@ -256,7 +256,22 @@ else
     case "$(http_code http://127.0.0.1:8765/mcp 2)" in ''|000) ;; *) MXWP_UP=1 ;; esac
   fi
 
+  # 프로비저닝보다 먼저 — DynaForge 의 kr_ PAT 발급이 이 시크릿에 걸려 있다. 불일치 상태로
+  # provision 을 돌리면 "발급 실패"만 찍히고 도구 22개가 목록에만 뜨는 상태가 유지된다.
+  if [ -f "$SELF_REPO/infra/scripts/sync-gateway-secret.sh" ]; then
+    bash "$SELF_REPO/infra/scripts/sync-gateway-secret.sh" --write
+    case $? in 0|1) ;; *) fail "게이트웨이 공유 시크릿을 맞추지 못했다 — DynaForge SSO·kr_ PAT 가 막힌다." ;; esac
+  fi
+
   MISSING="$(calc_missing "$H")"
+  # kr_ PAT 는 백엔드가 아니라 heax_registry 안의 예외표라 calc_missing 이 못 본다.
+  # 이게 없으면 DynaForge MCP 는 '연결됨·도구 22개'인 채로 호출만 전량 실패한다.
+  if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+     && grep -q '"heax_registry"' "$GW_DIR/gateway_config.json" 2>/dev/null \
+     && [ -n "$(find_repo KooRemapper)" ] \
+     && ! grep -q '"kooremapper_mcp"' "$GW_DIR/gateway_config.json" 2>/dev/null; then
+    MISSING="kr_pat(DynaForge)${MISSING:+ $MISSING}"
+  fi
   # heax_registry는 /health에 안 나오는 config 전용 항목 — config에 없으면 재프로비저닝 대상.
   # provision-config.sh 가 heax MCP 토큰을 자동 발급하므로, 명시 토큰이 없어도 heax-hub 백엔드(venv)만
   # 있으면 재프로비저닝 → 자동 발급 → heax_registry 활성. (토큰 명시돼 있으면 그것으로.)
