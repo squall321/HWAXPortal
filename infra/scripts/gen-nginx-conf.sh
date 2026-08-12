@@ -69,9 +69,32 @@ EOF
   esac
 }
 
+# 박스별 오버레이 — routes.env 는 git 추적이라 dev·cae00 이 같은 파일을 쓴다. 그런데 ste 처럼
+# 박스마다 주소가 다른 항목이 있고, deploy 의 git_update 가 `git reset --hard` 를 걸어 로컬
+# 수정을 매번 지운다(stash 로 치워진다). 그래서 손으로 고칠 방법이 아예 없었다.
+# routes.local.env(gitignore)가 있으면 같은 키를 덮어쓴다 — 없는 키는 base 그대로다.
+ROUTES_LOCAL="$REPO_ROOT/backend/config/routes.local.env"
+ROUTES_MERGED="$ROUTES_FILE"
+if [ -f "$ROUTES_LOCAL" ]; then
+  _merged="$(mktemp)"; trap 'rm -f "$_merged"' EXIT
+  # local 이 정의한 키 목록(주석·빈 줄 제외)
+  _lkeys="$(sed -n 's/^[[:space:]]*\([A-Za-z0-9_/-][A-Za-z0-9_/-]*\)[[:space:]]*=.*/\1/p' "$ROUTES_LOCAL")"
+  # base 에서 그 키들만 빼고 복사한 뒤 local 을 덧붙인다(= local 이 이긴다).
+  # xargs 는 쓰지 않는다 — 주석 줄의 홑따옴표에 걸려 죽는다(실측).
+  while IFS= read -r _l || [ -n "$_l" ]; do
+    _k="${_l%%=*}"; _k="${_k#"${_k%%[![:space:]]*}"}"; _k="${_k%"${_k##*[![:space:]]}"}"
+    case "$_l" in ''|\#*) printf '%s\n' "$_l"; continue ;; esac
+    if printf '%s\n' "$_lkeys" | grep -qxF "$_k"; then continue; fi
+    printf '%s\n' "$_l"
+  done < "$ROUTES_FILE" > "$_merged"
+  cat "$ROUTES_LOCAL" >> "$_merged"
+  ROUTES_MERGED="$_merged"
+  echo "  · routes.local.env 오버레이: $(printf '%s\n' "$_lkeys" | grep -c .)개 키 재정의"
+fi
+
 locations=""
 count=0
-if [ -f "$ROUTES_FILE" ]; then
+if [ -f "$ROUTES_MERGED" ]; then
   while IFS= read -r raw || [ -n "$raw" ]; do
     line="$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     case "$line" in ''|\#*) continue ;; esac
@@ -91,7 +114,7 @@ if [ -f "$ROUTES_FILE" ]; then
     esac
     locations="${locations}$(loc_block "$id" "$url")"$'\n'
     count=$((count + 1))
-  done < "$ROUTES_FILE"
+  done < "$ROUTES_MERGED"
 fi
 
 # Streaming locations (chat SSE + MCP streamable-http). The HTTP server has these hardcoded in

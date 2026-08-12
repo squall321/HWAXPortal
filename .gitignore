@@ -49,3 +49,4 @@ infra/nginx/hwax.conf
 frontend/tsconfig.tsbuildinfo
 # env-kits 수동 전송용 아카이브(내용물은 개별 파일로 추적됨)
 infra/env-kits/env.zip
+backend/config/routes.local.env
