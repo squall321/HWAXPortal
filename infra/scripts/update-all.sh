@@ -506,6 +506,31 @@ else
   fail "게이트웨이 /tools-map 을 읽지 못함 — MCP 앱 도구 수를 판정할 수 없다(게이트웨이 확인)."
 fi
 
+# 도구 수는 tools/list 의 응답 길이일 뿐이다 — tools/list 는 답하면서 tools/call 은 전부
+# 거절하는 백엔드가 실재한다(DynaForge MCP: 도구 22개 표시, 호출 성공 0건, 2026-08-01~08-12).
+# 그래서 백엔드마다 읽기 전용 도구를 실제로 몇 개 불러 본다. 판정은 백엔드 단위 '0성공'이다 —
+# 개별 도구가 인자 없이 실패하는 건 정상일 수 있어서다(예: plot_curves).
+SMOKE_PY="$AGENT_DIR/.venv/bin/python"    # mcp 모듈이 있는 venv(게이트웨이가 쓰는 것과 동일)
+if [ -x "$SMOKE_PY" ] && [ -f "$SELF_REPO/infra/scripts/mcp-smoke.py" ]; then
+  echo "  · MCP 도구 실호출 스모크"
+  SMOKE_OUT="$(mktemp)"
+  if "$SMOKE_PY" "$SELF_REPO/infra/scripts/mcp-smoke.py" >"$SMOKE_OUT" 2>&1; then
+    sed 's/^/  /' "$SMOKE_OUT"
+  else
+    rc=$?
+    sed 's/^/  /' "$SMOKE_OUT"
+    if [ "$rc" = 1 ]; then
+      fail "MCP 백엔드 중 호출이 전량 실패하는 것이 있다(위 ✗ 줄) — 목록만 뜨고 실제로는 못 쓴다."
+    else
+      fail "MCP 도구 스모크를 돌리지 못했다(rc=$rc) — 도구 동작 여부는 판정되지 않았다."
+    fi
+  fi
+  rm -f "$SMOKE_OUT"
+else
+  # 검사를 못 돌린 것과 통과한 것은 다르다 — 조용히 넘어가면 '항상 통과'가 된다.
+  echo "  ⚠ MCP 실호출 스모크 생략(python=$SMOKE_PY, script=$SELF_REPO/infra/scripts/mcp-smoke.py) — 도구 동작 미확인"
+fi
+
 # 등록 안 된 /apps/<id>/ 는 404 가 아니라 200 이 나온다 — Caddy catch-all 이 허브 SPA 를
 # 돌려주기 때문이다. 자산 검사도 못 잡는다(그 SPA 의 /assets/*.js 는 실재해서 정상 판정).
 # 그래서 '첫 화면 title 이 그대로 오면 미서빙'으로 본다. 제목을 하드코딩하지 않고 실제
