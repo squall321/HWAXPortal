@@ -669,7 +669,46 @@ for app in $heax_apps; do
   if [ "$code" != "200" ] && [ "$code" != "304" ]; then
     # 401/403 = 비공개(visibility) 앱이거나 UI 없는 MCP 전용 — 파손이 아니라 정책이다.
     if [ "$code" = "401" ] || [ "$code" = "403" ]; then
-      ok "heax 앱 $app → $code (비공개/UI 없음 — 정상 정책)"
+      # ⚠ 다만 '정책 401' 로 넘기면 그 뒤가 죽어도 안 보인다. portal_auth 앱(DynaForge)은
+      #   익명이면 게이트에서 401 이 나므로, 업스트림이 통째로 죽어 있어도 똑같이 401 이다.
+      #   그래서 Caddy 에 등록된 업스트림 주소를 꺼내 직접 두드려 본다. 게이트 앞에서 막힌
+      #   401 과, 뒤가 죽어서 못 쓰는 401 을 구분하지 못하면 '초록인데 안 되는' 상태가 된다.
+      _up="$(curl -s -m 5 http://127.0.0.1:2019/config/ 2>/dev/null | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit(0)
+app=sys.argv[1]; found=[]
+def walk(o):
+    if isinstance(o,dict):
+        if o.get("@id")==f"app-{app}":
+            found.append(json.dumps(o))
+        for v in o.values(): walk(v)
+    elif isinstance(o,list):
+        for v in o: walk(v)
+walk(d)
+if not found: raise SystemExit(0)
+o=json.loads(found[0])
+dials=[]
+def w2(x):
+    if isinstance(x,dict):
+        if "dial" in x and isinstance(x["dial"],str): dials.append(x["dial"])
+        for v in x.values(): w2(v)
+    elif isinstance(x,list):
+        for v in x: w2(v)
+w2(o)
+# forward_auth 서브리퀘스트(:4040)는 업스트림이 아니다 — 마지막 dial 이 실제 앱이다.
+print(dials[-1] if dials else "")' "$app" 2>/dev/null)"
+      if [ -n "$_up" ]; then
+        _uc="$(curl -s -o /dev/null -m 6 -w '%{http_code}' "http://$_up/" 2>/dev/null || echo 000)"
+        if [ "$_uc" = "000" ]; then
+          app_bad "$crit" "heax 앱 $app → $code 인데 업스트림($_up)이 응답하지 않는다 — 정책이 아니라 죽은 것이다."
+          echo "      조치: bash $SELF_REPO/infra/scripts/deploy-all-from-drive.sh $(echo "$app" | tr '_' '-')"
+        else
+          ok "heax 앱 $app → $code (로그인 필요 — 정상 정책, 업스트림 $_up 응답 $_uc)"
+        fi
+      else
+        ok "heax 앱 $app → $code (비공개/UI 없음 — 정상 정책)"
+      fi
     elif [ "$is_mcp" = 1 ] && [ "$code" = "404" ]; then
       ok "heax 앱 $app → 404 (MCP 전용, UI 없음 — 위 도구 수로 판정함)"
     elif [ "$code" = "502" ] || [ "$code" = "503" ] || [ "$code" = "504" ]; then

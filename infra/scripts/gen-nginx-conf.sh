@@ -16,9 +16,14 @@ OUT="$NGINX_DIR/hwax.conf"
 #         request_buffering off streams the upload instead of spooling it to disk first, which
 #         is also what makes the browser's XHR progress bar track reality. buffering off keeps
 #         log tails and result downloads from being held whole in nginx.
+#   apps / heax-hub — heax-hub 에 등록된 앱들이 사는 경로다(/apps/<id>/, /heax-hub/ 는 허브 UI
+#         이자 같은 업스트림으로 벗겨져 들어간다). 여기로 시뮬레이션 모델 파일이 올라간다 —
+#         MaterialTwin 물성 원본, DynaForge K파일·메시가 수십~수백 MB 다. ste 와 사정이 같은데
+#         상한만 안 걸려 있었다: nginx 기본 1m 이라 3MB 로도 413 이 났다(실측). 백엔드가 아무리
+#         큰 걸 받아도 여기서 먼저 잘린다. 업로드 실패가 앱 버그로 보이는 전형적인 자리다.
 loc_extras() { # $1=id
   case "$1" in
-    ste)
+    ste|apps|heax-hub)
       cat <<'EOF'
             client_max_body_size 2048m;
             proxy_request_buffering off;
