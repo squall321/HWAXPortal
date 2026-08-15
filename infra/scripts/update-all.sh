@@ -458,8 +458,21 @@ probe "signalforge    :17370" http://127.0.0.1:17370/ 0 "200 302 401"
 #   ② 포털 프록시 경유 — 여기서는 상태코드를 보면 안 된다. nginx location 이 안 붙어도
 #      포털 catch-all 이 SPA(index.html)를 200 으로 돌려주므로 코드만으로는 라우트가 먹었는지
 #      알 수 없다(실측 확인: 반영 전 /ste/api/health 가 200 + HTML). 그래서 본문을 본다.
-STE_UP="$(sed -n 's|^ste=http://\([^/]*\)/.*|\1|p' "$ROUTES_ENV" 2>/dev/null | head -1)"
+# ⚠ 주소는 박스마다 다르다. gen-nginx-conf.sh 는 routes.local.env 오버레이를 반영해 라우트를
+#   만드는데, 이 프로브만 base routes.env 를 보면 서로 다른 주소를 검사하게 된다 — cae00 에서
+#   오버레이로 바꿔 놔도 dev 주소를 찔러 매번 경고가 뜬다. 같은 우선순위를 쓴다.
+#   local 에 `ste=` 를 빈 값으로 두면 '이 박스에서는 STE 를 서빙하지 않음' 이다(라우트도 안 생긴다).
+_ROUTES_LOCAL="$SELF_REPO/backend/config/routes.local.env"
+if grep -q '^[[:space:]]*ste=' "$_ROUTES_LOCAL" 2>/dev/null; then
+  _STE_URL="$(sed -n 's|^[[:space:]]*ste=[[:space:]]*\(.*\)|\1|p' "$_ROUTES_LOCAL" | head -1 | xargs)"
+  _STE_SRC="routes.local.env"
+else
+  _STE_URL="$(sed -n 's|^[[:space:]]*ste=[[:space:]]*\(.*\)|\1|p' "$ROUTES_ENV" 2>/dev/null | head -1 | xargs)"
+  _STE_SRC="routes.env"
+fi
+STE_UP="$(printf '%s' "$_STE_URL" | sed -n 's|^http://\([^/]*\)/\?.*|\1|p')"
 if [ -n "$STE_UP" ]; then
+  echo "  · ste 주소 출처: $_STE_SRC ($STE_UP)"
   probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200"
   STE_BODY="$(curl -s -m 4 http://127.0.0.1:8088/ste/api/health 2>/dev/null || true)"
   if printf '%s' "$STE_BODY" | grep -q 'smart-twin-explorer'; then
@@ -467,6 +480,8 @@ if [ -n "$STE_UP" ]; then
   else
     bad "ste 프록시      :8088 → 포털 SPA 가 돌아온다 (nginx /ste/ location 미반영, 비치명)"
   fi
+elif [ "$_STE_SRC" = "routes.local.env" ]; then
+  ok "ste — 이 박스에서는 서빙 안 함(routes.local.env 에서 비활성). 라우트도 만들지 않는다."
 else
   ok "ste 라우트 미설정 — 건너뜀"
 fi
