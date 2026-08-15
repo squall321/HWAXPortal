@@ -293,18 +293,39 @@ if (A.saveReport !== false) {
     rd.filter(Boolean).forEach(o => minutes.push(`[${o.persona}] ${readable(isFirst, isLast, o)}`))
   })
   // 기록 층위 — RA 는 심의의 정본 기록이라 발언·결정문을 문장 중간에서 자르지 않는다.
-  // 상한은 저장 API 보호용 여유값(발언당 2000자, 결정문 40문단). #14/#16 이 400자/12문단
-  // 컷으로 잘려 수동 재작성했던 재발 방지.
-  const trimmedMinutes = minutes.map(s => String(s).slice(0, 2000))
-  const backgroundBlock = APPEND_TO
-    ? [`이어하기 라운드(${rn(1)}~${finalRoundNo}라운드) 주제: ${Q}`, ...(HUMAN_NOTE ? [`인간 검토자 의견:\n${HUMAN_NOTE.slice(0, 2000)}`] : [])]
-    : [`심의 주제: ${Q}`, ...(CTX ? [`정량 근거·분석:\n${CTX.slice(0, 4000)}`] : [])]
-  const blocks = {
-    background: backgroundBlock,
-    results: [preFinalText.slice(0, 4000)],
-    recommendation: String(decisionFull).split('\n\n').map(s => s.trim()).filter(Boolean).slice(0, 40),
-    minutes: [`참여: ${pk.join(', ')}`, `${ROUNDS}라운드 심의(${rn(1)}라운드→${MID_ROUNDS > 0 ? `심화 ${MID_ROUNDS}회→` : ''}${finalRoundNo}라운드 수렴).`, ...trimmedMinutes.slice(0, 60)],
+  // ⚠ RA rich_text 는 **항목당 2000자**가 서버 스키마 상한이다 — 하나라도 넘으면 보고서 전체가
+  //   "Content invalid" 로 거절된다. 예전 slice(0, 4000) 은 그 자리에서 저장을 못 하게 만들었다.
+  //   그래서 절단이 아니라 **분할**로 푼다(내용을 안 버린다). 결정문 40문단 컷도 없앤다 —
+  //   #14/#16 이 컷 때문에 잘려 수동 재작성했던 것과 같은 손실이라서.
+  const RA_MAX = 1900
+  const raSplit = (s) => {
+    s = String(s || '')
+    if (s.length <= RA_MAX) return s ? [s] : []
+    const out = []
+    let buf = ''
+    for (let part of s.split(/(?<=[.!?。])\s+|\n/)) {
+      if (!part) continue
+      if (buf.length + part.length + 1 > RA_MAX) {
+        if (buf) { out.push(buf.trim()); buf = '' }
+        while (part.length > RA_MAX) { out.push(part.slice(0, RA_MAX)); part = part.slice(RA_MAX) }
+      }
+      buf = buf ? `${buf}\n${part}` : part
+    }
+    if (buf.trim()) out.push(buf.trim())
+    return out
   }
+  const raBlocks = (b) => Object.fromEntries(
+    Object.entries(b).map(([k, v]) => [k, v.flatMap(raSplit)]))
+
+  const backgroundBlock = APPEND_TO
+    ? [`이어하기 라운드(${rn(1)}~${finalRoundNo}라운드) 주제: ${Q}`, ...(HUMAN_NOTE ? [`인간 검토자 의견:\n${HUMAN_NOTE}`] : [])]
+    : [`심의 주제: ${Q}`, ...(CTX ? [`정량 근거·분석:\n${CTX}`] : [])]
+  const blocks = raBlocks({
+    background: backgroundBlock,
+    results: [preFinalText],
+    recommendation: String(decisionFull).split('\n\n').map(s => s.trim()).filter(Boolean),
+    minutes: [`참여: ${pk.join(', ')}`, `${ROUNDS}라운드 심의(${rn(1)}라운드→${MID_ROUNDS > 0 ? `심화 ${MID_ROUNDS}회→` : ''}${finalRoundNo}라운드 수렴).`, ...minutes],
+  })
   // RA 부재/실패는 비치명적 — cae00 는 RA 가 안 떠 있을 수 있다(hands-off). 저장 실패해도
   // 심의 결과(decision·라운드)는 이미 아래 return 에 있으므로 절대 잃지 않는다.
   try {
