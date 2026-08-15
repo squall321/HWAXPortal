@@ -266,11 +266,32 @@ else
   MISSING="$(calc_missing "$H")"
   # kr_ PAT 는 백엔드가 아니라 heax_registry 안의 예외표라 calc_missing 이 못 본다.
   # 이게 없으면 DynaForge MCP 는 '연결됨·도구 22개'인 채로 호출만 전량 실패한다.
+  #
+  # ⚠ 예전엔 `grep -q '"kooremapper_mcp"'` 로 **키 존재만** 봤다. 그런데 취소·만료된 kr_ PAT 도
+  #   키는 그대로 있으므로 이 검사가 통과해 버린다 — 실패 출력이 성공 출력과 같아지는 그 부류다.
+  #   (실측: 저장 토큰으로 /api/v1/operations 가 401, 같은 순간 새 토큰은 200.)
+  #   그래서 키가 아니라 **토큰이 실제로 인증되는지**로 본다. 죽어 있으면 재프로비저닝 대상이고,
+  #   provision-config.sh 가 살아 있는지 확인한 뒤 재발급한다.
   if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
      && grep -q '"heax_registry"' "$GW_DIR/gateway_config.json" 2>/dev/null \
-     && [ -n "$(find_repo KooRemapper)" ] \
-     && ! grep -q '"kooremapper_mcp"' "$GW_DIR/gateway_config.json" 2>/dev/null; then
-    MISSING="kr_pat(DynaForge)${MISSING:+ $MISSING}"
+     && [ -n "$(find_repo KooRemapper)" ]; then
+    _KR_TOK="$(python3 - "$GW_DIR/gateway_config.json" <<'PY' 2>/dev/null || true
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: raise SystemExit(0)
+print(((d.get("heax_registry") or {}).get("app_tokens") or {}).get("kooremapper_mcp",""))
+PY
+)"
+    if [ -z "$_KR_TOK" ]; then
+      MISSING="kr_pat(DynaForge:없음)${MISSING:+ $MISSING}"
+    elif [ "$(curl -s -o /dev/null -m 8 -w '%{http_code}' \
+                -H "Authorization: Bearer $_KR_TOK" \
+                "${KOORM_BASE:-http://127.0.0.1:8700}/api/v1/operations" 2>/dev/null)" != "200" ]; then
+      # 업스트림(:8700)이 죽어 있어도 여기로 온다 — 재프로비저닝은 그 경우에도 무해하다
+      # (provision 이 발급을 못 하면 기존 값을 그대로 두고 경고만 남긴다).
+      MISSING="kr_pat(DynaForge:만료·취소)${MISSING:+ $MISSING}"
+    fi
+    unset _KR_TOK
   fi
   # heax_registry는 /health에 안 나오는 config 전용 항목 — config에 없으면 재프로비저닝 대상.
   # provision-config.sh 가 heax MCP 토큰을 자동 발급하므로, 명시 토큰이 없어도 heax-hub 백엔드(venv)만
@@ -526,24 +547,76 @@ fi
 # 그래서 백엔드마다 읽기 전용 도구를 실제로 몇 개 불러 본다. 판정은 백엔드 단위 '0성공'이다 —
 # 개별 도구가 인자 없이 실패하는 건 정상일 수 있어서다(예: plot_curves).
 SMOKE_PY="$AGENT_DIR/.venv/bin/python"    # mcp 모듈이 있는 venv(게이트웨이가 쓰는 것과 동일)
+
+# 스모크 1회 실행 — 출력은 들여쓰기해 찍고, rc 를 그대로 돌려준다.
+run_smoke() {
+  local out rc
+  out="$(mktemp)"
+  "$SMOKE_PY" "$SELF_REPO/infra/scripts/mcp-smoke.py" >"$out" 2>&1
+  rc=$?
+  sed 's/^/  /' "$out"
+  rm -f "$out"
+  return $rc
+}
+
+# 0성공 백엔드를 고쳐 본다. 지금까지 확인된 원인은 둘이다.
+#   ① kr_ PAT 만료·취소 → 재프로비저닝이 살아있는지 확인 후 재발급(provision-config.sh)
+#   ② 게이트웨이가 옛 토큰을 물고 있음 → config 는 기동 시 1회만 읽으므로 재기동이 필요
+# 둘 다 무해한 조치라 조건 없이 순서대로 시도하고, 마지막에 다시 검증한다.
+repair_mcp() {
+  echo "  · 자동 복구 시도 — 재프로비저닝 → 게이트웨이 재기동 → 재검증"
+  # ⚠ 순서가 중요하다. --force 는 .bak 을 덮어쓰므로, 직전 config 에서 토큰을 건져 오는
+  #   sync-provision-env 를 **먼저** 돌려야 한다. 반대로 하면 RAT/ODB 토큰을 못 건져
+  #   reportarchive·odb-hub 가 통째로 빠진다(cae00 실사고 2026-08-12).
+  if [ -n "$GW_DIR" ] && [ -x "$GW_DIR/sync-provision-env.sh" ]; then
+    bash "$GW_DIR/sync-provision-env.sh" --write 2>&1 | sed 's/^/      /' || true
+  fi
+  if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/provision-config.sh" ]; then
+    ( [ -f "$GW_DIR/provision.env" ] && set -a && . "$GW_DIR/provision.env" && set +a
+      bash "$GW_DIR/provision-config.sh" --force ) 2>&1 | sed 's/^/      /' || true
+  fi
+  if [ -n "$GW_DIR" ] && [ -x "$GW_DIR/start.sh" ]; then
+    local pid port
+    # 포트를 9110 으로 가정하면 안 된다 — 다른 포트를 쓰는 박스에서는 PID 를 못 찾아 kill 이
+    # 조용히 지나가고, start.sh 가 "이미 응답 중"이라며 기동을 생략해 옛 토큰이 그대로 남는다.
+    port="$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1]))["_gateway"].get("port",9110))
+except Exception: print(9110)' "$GW_DIR/gateway_config.json" 2>/dev/null || echo 9110)"
+    pid="$(ss -tlnpH "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    for _ in $(seq 1 20); do ss -tlnH "sport = :$port" 2>/dev/null | grep -q . || break; sleep 0.5; done
+    bash "$GW_DIR/start.sh" --bg 2>&1 | sed 's/^/      /' || true
+    sleep 5
+  fi
+}
+
 if [ -x "$SMOKE_PY" ] && [ -f "$SELF_REPO/infra/scripts/mcp-smoke.py" ]; then
   echo "  · MCP 도구 실호출 스모크"
-  SMOKE_OUT="$(mktemp)"
-  if "$SMOKE_PY" "$SELF_REPO/infra/scripts/mcp-smoke.py" >"$SMOKE_OUT" 2>&1; then
-    sed 's/^/  /' "$SMOKE_OUT"
+  if run_smoke; then
+    :
   else
     rc=$?
-    sed 's/^/  /' "$SMOKE_OUT"
     if [ "$rc" = 1 ]; then
-      fail "MCP 백엔드 중 호출이 전량 실패하는 것이 있다(위 ✗ 줄) — 목록만 뜨고 실제로는 못 쓴다."
+      # 검출만 하고 끝내면 사람이 손으로 고칠 때까지 죽어 있다 — 여기서 고쳐 본다.
+      repair_mcp
+      echo "  · 복구 후 재검증"
+      if run_smoke; then
+        ok "자동 복구 성공 — 0성공 백엔드가 사라졌다"
+      else
+        rc=$?
+        [ "$rc" = 1 ] \
+          && fail "MCP 백엔드 중 호출이 전량 실패하는 것이 있다(위 ✗ 줄) — 자동 복구로도 못 살렸다." \
+          || fail "복구 후 MCP 스모크를 돌리지 못했다(rc=$rc) — 도구 동작 여부는 판정되지 않았다."
+      fi
     else
       fail "MCP 도구 스모크를 돌리지 못했다(rc=$rc) — 도구 동작 여부는 판정되지 않았다."
     fi
   fi
-  rm -f "$SMOKE_OUT"
 else
   # 검사를 못 돌린 것과 통과한 것은 다르다 — 조용히 넘어가면 '항상 통과'가 된다.
-  echo "  ⚠ MCP 실호출 스모크 생략(python=$SMOKE_PY, script=$SELF_REPO/infra/scripts/mcp-smoke.py) — 도구 동작 미확인"
+  # 예전엔 echo 만 했다. 그래서 cae00 처럼 venv 경로가 다른 박스에서는 스모크가 통째로
+  # 생략된 채 초록으로 끝났고, DynaForge 가 죽어 있는 걸 아무도 못 봤다. 이제 실패로 센다.
+  fail "MCP 실호출 스모크를 생략했다(python=$SMOKE_PY, script=$SELF_REPO/infra/scripts/mcp-smoke.py) — 도구 동작 미확인"
 fi
 
 # 등록 안 된 /apps/<id>/ 는 404 가 아니라 200 이 나온다 — Caddy catch-all 이 허브 SPA 를
