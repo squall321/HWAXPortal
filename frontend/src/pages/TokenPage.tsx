@@ -40,8 +40,6 @@ function claudeCodeSnippetSelfSigned(token: string, certPath: string): string {
 function buildSetupBat(token: string, name: string, pem: string | null): string {
   const certDir = '%USERPROFILE%\\.hwax';
   const certFile = `${certDir}\\hwax-portal.crt`;
-  // Desktop 설정에 넣을 항목 — 경로는 배치가 실행될 때 확장되므로 %USERPROFILE% 을 그대로 둔다.
-  const entryJson = JSON.stringify(desktopServerEntry(token, pem ? certFile : null));
   const L: string[] = [
     '@echo off',
     'setlocal',
@@ -84,6 +82,9 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
   );
   L.push(
     'if errorlevel 1 goto :cli_fail',
+    // 등록됐다는 것과 설정에 남았다는 것은 다르다 — 되읽어서 확인해야 "완료"라고 말할 수 있다.
+    'claude mcp get hwax >nul 2>nul',
+    'if errorlevel 1 goto :cli_fail',
     'set HWAX_DONE=1',
     'echo      Claude Code 등록 완료',
     'goto :desktop',
@@ -96,35 +97,52 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
   );
 
   // ── Claude Desktop — 설정 JSON 에 병합 ────────────────────────────────────
-  // 배치로 JSON 을 다루면 깨지기 쉬워, 항목만 임시파일로 내보내고 병합은 PowerShell 이 한다.
   // 기존 mcpServers 의 다른 서버는 보존하고 hwax 만 덮어쓴다. 원본은 .bak 으로 백업.
+  //
+  // ⚠ 항목 JSON 을 배치의 echo 로 내보내지 않는다(실사고). JSON.stringify 로 이스케이프해 둔
+  //    "%USERPROFILE%\\.hwax\\..." 를 echo 하면 cmd 가 %USERPROFILE% 을 **이스케이프 뒤에**
+  //    확장해 "C:\Users\Sonic\\.hwax\\..." 처럼 홑/겹 백슬래시가 섞인다. \U 는 JSON 이스케이프가
+  //    아니라서 ConvertFrom-Json 이 "Unrecognized escape sequence" 로 죽는다.
+  //    → 경로는 환경변수로 넘기고 JSON 조립은 PowerShell 이 한다(ConvertTo-Json 이 알아서 이스케이프).
+  //
+  // ⚠ powershell.exe 는 cmdlet 이 에러를 뱉어도 **종료코드 0** 으로 끝난다. errorlevel 만 보면
+  //    실패가 성공으로 보인다(위 사고에서 "등록 완료" 가 찍혔다). ErrorActionPreference=Stop +
+  //    try/catch + exit 1 로 실패를 errorlevel 에 실어 보낸다.
+  const psEntry = pem
+    ? `$e=[pscustomobject]@{command='npx';args=@('-y','mcp-remote','${MCP_URL}','--header','Authorization:$\{AUTH}');env=[pscustomobject]@{AUTH=$env:HWAX_AUTH;NODE_EXTRA_CA_CERTS=$env:HWAX_CERT}};`
+    : `$e=[pscustomobject]@{type='http';url='${MCP_URL}';headers=[pscustomobject]@{Authorization=$env:HWAX_AUTH}};`;
+  // PowerShell 조각 안에서는 큰따옴표를 쓰지 않는다 — cmd 의 "..." 안에 들어가기 때문.
   const ps = [
+    "$ErrorActionPreference='Stop';",
+    'try{',
     '$c=$env:HWAX_CFG;',
-    "$t=Join-Path $env:TEMP 'hwax-entry.json';",
-    '$e=Get-Content $t -Raw | ConvertFrom-Json;',
+    psEntry,
     "if(Test-Path $c){Copy-Item $c ($c+'.bak') -Force; $j=Get-Content $c -Raw | ConvertFrom-Json}else{$j=[pscustomobject]@{}};",
     'if(-not $j.mcpServers){$j | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) -Force};',
     '$j.mcpServers | Add-Member -NotePropertyName hwax -NotePropertyValue $e -Force;',
-    '[System.IO.File]::WriteAllText($c, ($j | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))',
+    '[System.IO.File]::WriteAllText($c, ($j | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)));',
+    // 쓴 뒤 되읽어 확인한다. 파일이 깨졌으면 여기서 걸린다.
+    "if(-not ((Get-Content $c -Raw | ConvertFrom-Json).mcpServers.hwax)){throw 'config verify failed'};",
+    'exit 0}catch{[Console]::Error.WriteLine($_.Exception.Message);exit 1}',
   ].join(' ');
   L.push(
     ':desktop',
     'echo  [3] Claude Desktop 확인...',
     'set "HWAX_CFG=%APPDATA%\\Claude\\claude_desktop_config.json"',
     'if not exist "%APPDATA%\\Claude" goto :no_desktop',
-    `>"%TEMP%\\hwax-entry.json" echo ${entryJson}`,
+    `set "HWAX_AUTH=Bearer ${token}"`,
+    ...(pem ? [`set "HWAX_CERT=${certFile}"`] : []),
     `powershell -NoProfile -ExecutionPolicy Bypass -Command "${ps}"`,
     'if errorlevel 1 goto :desktop_fail',
     'set HWAX_DONE=1',
     'echo      Claude Desktop 등록 완료 ^(기존 설정은 .bak 으로 백업^)',
     'goto :desktop_done',
     ':desktop_fail',
-    'echo      [X] Desktop 설정 수정 실패',
+    'echo      [X] Desktop 설정 수정 실패 - 위 메시지 확인 ^(원본은 .bak 에 그대로 있습니다^)',
     'goto :desktop_done',
     ':no_desktop',
     'echo      Claude Desktop 설정 폴더 없음 - 건너뜀',
     ':desktop_done',
-    'del "%TEMP%\\hwax-entry.json" >nul 2>nul',
     '',
   );
 
@@ -170,7 +188,10 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     '',
     '[mcp_servers.hwax.env]',
     `AUTH = "Bearer ${token}"`,
-    ...(pem ? [`NODE_EXTRA_CA_CERTS = "${certFile.replace(/\\/g, '\\\\')}"`] : []),
+    // TOML 리터럴 문자열(홑따옴표)은 이스케이프를 처리하지 않으므로 경로를 그대로 쓴다.
+    // 큰따옴표 + 백슬래시 이중화는 Desktop JSON 과 똑같은 함정에 빠진다 — 배치가 echo 할 때
+    // %USERPROFILE% 이 확장되면서 홑/겹 백슬래시가 섞여 \U 가 되고 TOML 파싱이 깨진다.
+    ...(pem ? [`NODE_EXTRA_CA_CERTS = '${certFile}'`] : []),
   ];
   L.push(
     ':codex',
