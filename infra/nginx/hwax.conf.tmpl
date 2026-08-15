@@ -15,6 +15,15 @@ http {
     sendfile on;
     server_tokens off;
 
+    # 업로드 상한은 http 레벨에서 한 번만 정한다 — location 마다 붙이면 새 라우트가 생길 때마다
+    # 조용히 1m 로 되돌아간다. nginx 기본값 1m 은 이 포탈이 실제로 다루는 파일과 두 자릿수
+    # 어긋나 있다: 시뮬레이션 K파일·메시, 물성 원본, Report Archive 의 PPT/문서 업로드,
+    # 에이전트 첨부. 실측으로 /ai-data-hub/, /mx-white-paper/api/, /signalforge/api/,
+    # /report-archive/, /agent/, /mcp-gw/ 가 3MB 에서 전부 413 이었다.
+    # 백엔드가 아무리 크게 받아도 여기서 먼저 잘리므로 원인이 앱처럼 보인다.
+    # 개별 경로는 필요하면 location 에서 더 낮추거나 스트리밍 옵션을 얹는다.
+    client_max_body_size 2048m;
+
     client_body_temp_path /tmp/hwax-nginx-body;
     proxy_temp_path       /tmp/hwax-nginx-proxy;
     fastcgi_temp_path     /tmp/hwax-nginx-fastcgi;
