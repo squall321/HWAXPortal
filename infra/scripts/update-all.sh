@@ -611,7 +611,14 @@ if [ -x "$SMOKE_PY" ] && [ -f "$SELF_REPO/infra/scripts/mcp-smoke.py" ]; then
     :
   else
     rc=$?
-    if [ "$rc" = 1 ]; then
+    if [ "$rc" = 3 ]; then
+      # 드리프트는 토큰 문제가 아니다 — 재프로비저닝으로 안 고쳐진다. 배포본이 낡은 것이라
+      # 그 앱을 재기동/재빌드해야 한다. 엉뚱한 복구를 돌리지 않고 조치만 정확히 알린다.
+      fail "MCP 앱이 코드보다 오래된 배포본으로 돌고 있다(위 ✗ 줄) — 호출은 되지만 새 도구가 빠져 있다."
+      echo "      DynaForge(kooremapper_mcp): (KooRemapper) apptainer instance stop koorm_mcp && bash platform/infra/scripts/start.sh"
+      echo "      heax 등록 앱:              (HEAXHub) bash deploy/apptainer/redeploy-app.sh <slug> --rebuild"
+      echo "      둘 다 소스가 bind-mount 라 재기동만으로 최신 코드가 물린다(빌드형은 --rebuild)."
+    elif [ "$rc" = 1 ]; then
       # 검출만 하고 끝내면 사람이 손으로 고칠 때까지 죽어 있다 — 여기서 고쳐 본다.
       repair_mcp
       echo "  · 복구 후 재검증"
@@ -619,9 +626,11 @@ if [ -x "$SMOKE_PY" ] && [ -f "$SELF_REPO/infra/scripts/mcp-smoke.py" ]; then
         ok "자동 복구 성공 — 0성공 백엔드가 사라졌다"
       else
         rc=$?
-        [ "$rc" = 1 ] \
-          && fail "MCP 백엔드 중 호출이 전량 실패하는 것이 있다(위 ✗ 줄) — 자동 복구로도 못 살렸다." \
-          || fail "복구 후 MCP 스모크를 돌리지 못했다(rc=$rc) — 도구 동작 여부는 판정되지 않았다."
+        case "$rc" in
+          1) fail "MCP 백엔드 중 호출이 전량 실패하는 것이 있다(위 ✗ 줄) — 자동 복구로도 못 살렸다." ;;
+          3) fail "토큰은 살아났지만 배포본이 코드보다 오래됐다(위 ✗ 줄) — 해당 앱을 재기동/재빌드하라." ;;
+          *) fail "복구 후 MCP 스모크를 돌리지 못했다(rc=$rc) — 도구 동작 여부는 판정되지 않았다." ;;
+        esac
       fi
     else
       fail "MCP 도구 스모크를 돌리지 못했다(rc=$rc) — 도구 동작 여부는 판정되지 않았다."

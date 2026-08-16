@@ -11,8 +11,15 @@ update-all 은 /tools-map 의 도구 수로 MCP 앱을 판정했다. 그런데 �
 실패하는 건 정상일 수 있으므로(예: plot_curves — 그릴 곡선을 지정해야 한다) 도구
 단위로는 실패를 문제 삼지 않는다. 백엔드 전체가 0성공일 때만 FAIL 이다.
 
+또 하나 — 호출이 되는 것과 '최신 코드가 도는 것'은 다르다. DynaForge 는 프로세스가
+server.py 커밋보다 1분 먼저 떠서 도구 22개만 노출한 채로 돌았다(코드엔 36개). 22개가
+전부 정상 응답하니 위 판정은 초록이었고, 결과 분석 도구 14종이 통째로 빠진 걸 아무도
+못 봤다(2026-08-16 발견). 그래서 자기 도구 수를 보고하는 앱은 그 값과 게이트웨이 노출
+수를 대조한다.
+
 사용:  mcp-smoke.py [--json] [--per-backend N] [--timeout S]
-종료:  0=이상 없음, 1=0성공 백엔드 있음, 2=게이트웨이에 붙지 못함(판정 불가)
+종료:  0=이상 없음, 1=0성공 백엔드 있음, 2=게이트웨이에 붙지 못함(판정 불가),
+       3=버전 드리프트(호출은 되는데 배포본이 코드보다 오래됨)
 """
 import argparse
 import json
@@ -28,6 +35,11 @@ WRITE = re.compile(
     r"|meeting_|qa_run|smarttwin_submit|slurm_submit|slurm_job_control|slurm_node_set)")
 
 CFG = os.environ.get("GATEWAY_CONFIG") or "/home/koopark/claude/HWAXMcpGateway/gateway_config.json"
+
+# 자기 상태를 돌려주는 무인자 도구 이름들. 이 중 하나가 있으면 드리프트 대조를 시도한다.
+_SELF_REPORT = ("system_capabilities", "capabilities", "system_status")
+# 그 응답에서 '이 앱이 노출한다고 주장하는 도구 수'를 담고 있을 만한 키(먼저 맞는 것 하나).
+_COUNT_KEYS = ("mcp_tools", "tool_count", "tools_count", "n_tools")
 
 
 def main() -> int:
@@ -56,6 +68,7 @@ def main() -> int:
     headers = {"Authorization": f"Bearer {gw['token']}"}
 
     result: dict[str, dict] = {}
+    drift: dict[str, dict] = {}
 
     async def run() -> None:
         async with streamablehttp_client(url, headers=headers) as (r, w, _):
@@ -93,6 +106,43 @@ def main() -> int:
                             if not rec["why"]:
                                 rec["why"] = f"{type(exc).__name__}: {exc}"[:160]
 
+                # ── 버전 드리프트 ───────────────────────────────────────────
+                # 호출이 되는 것과 최신 코드가 도는 것은 다르다. DynaForge 가 실제로
+                # 그랬다 — 프로세스가 server.py 커밋보다 1분 먼저 떠서 도구 22개만
+                # 노출됐고(코드엔 36개), 스모크는 22개가 다 응답하니 초록이었다.
+                # 자기 도구 수를 보고하는 앱이면 그 값과 게이트웨이 노출 수를 대조한다.
+                # 표를 두지 않는다 — 이름이 맞는 도구가 있으면 자동으로 검사 대상이다.
+                exposed: dict[str, int] = {}
+                for t in tools:
+                    be = tmap.get(t.name, "?")
+                    if be != "_gateway":
+                        exposed[be] = exposed.get(be, 0) + 1
+                for be, names in sorted(by_be.items()):
+                    if be == "_gateway":
+                        continue
+                    # ⚠ 후보를 하나만 보고 포기하면 안 된다. DynaForge 는 system_status 와
+                    #   system_capabilities 를 둘 다 갖는데 도구 수는 뒤엣것에만 있다 —
+                    #   앞엣것에서 멈추면 대조가 조용히 생략된다(이 검사를 만들며 실제로 겪었다).
+                    for probe in [n for n in names if n in _SELF_REPORT]:
+                        try:
+                            with anyio.fail_after(a.timeout):
+                                res = await s.call_tool(probe, {})
+                            if getattr(res, "isError", False):
+                                continue
+                            rep = json.loads(_text(res))
+                        except Exception:  # noqa: BLE001 — 대조 실패는 스모크를 막지 않는다
+                            continue
+                        if not isinstance(rep, dict):
+                            continue
+                        want = next((rep[k] for k in _COUNT_KEYS
+                                     if isinstance(rep.get(k), int) and rep[k] > 0), None)
+                        if want is None:
+                            continue          # 이 도구엔 도구 수가 없다 → 다음 후보로
+                        have = exposed.get(be, 0)
+                        if want != have:
+                            drift[be] = {"tool": probe, "key": "tools", "app": want, "gateway": have}
+                        break
+
     try:
         anyio.run(run)
     except Exception as exc:  # noqa: BLE001
@@ -102,16 +152,23 @@ def main() -> int:
 
     dead = {be: r for be, r in result.items() if r["probed"] and r["ok"] == 0}
     if a.json:
-        print(json.dumps({"backends": result, "dead": sorted(dead)}, ensure_ascii=False, indent=1))
+        print(json.dumps({"backends": result, "dead": sorted(dead), "drift": drift},
+                         ensure_ascii=False, indent=1))
     else:
         for be, r in sorted(result.items()):
             mark = "✗" if be in dead else "·"
             print(f"  {mark} {be:28} 성공 {r['ok']}/{len(r['probed'])}"
                   + (f"   {r['why']}" if be in dead else ""))
+        for be, d in sorted(drift.items()):
+            print(f"  ✗ {be:28} 도구 수 불일치 — 앱은 {d['app']}개라는데 게이트웨이엔 {d['gateway']}개"
+                  f" ({d['tool']}.{d['key']})")
+            print(f"      배포본이 코드보다 오래됐다는 뜻이다. 그 앱을 재기동/재빌드하라.")
         if not result:
             print("  ⚠ 호출 가능한 읽기 도구가 하나도 없다 — 판정하지 못했다.")
             return 2
-    return 1 if dead else 0
+    if dead:
+        return 1
+    return 3 if drift else 0
 
 
 def _text(res) -> str:
