@@ -281,6 +281,9 @@ async def _relay_stream(
         "message": body.message,
         "system_id": body.system_id,
         "groups": principal.groups,
+        # 호출자 신원 — 게이트웨이가 사용자별 데이터를 쓰는 백엔드(DynaForge 등)를 이 사람의
+        # 자격증명으로 부른다. 브라우저가 보낸 값이 아니라 검증된 세션/PAT 주체에서 채운다.
+        "user_email": principal.email,
         "history": [{"role": m.role, "content": m.content} for m in body.history],
     }
     if body.delib_opts is not None:  # 지정된 손잡이만 전달(None 필드는 제외 → env 기본값 유지)
