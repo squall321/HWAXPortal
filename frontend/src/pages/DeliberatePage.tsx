@@ -44,6 +44,14 @@ const MODES = [
     title: '어떤 현상을 계산으로 풀어볼까요?',
     hint: '먼저 도메인 전문가가 지배 물리를 좁히고, 그 결론 위에서 CAE 전문가가 어떤 해석을 어떤 도구로 할지 계획서를 만듭니다. 물리를 아는 전문가 일부가 2단에 남아 해석이 물리에서 떠나지 않게 감시합니다',
   },
+  {
+    id: 'test' as const,
+    trigger: '/시험계획 ',
+    label: '시험 계획',
+    kicker: '무엇을 먼저 측정할까',
+    title: '어떤 물성·성능을 시험으로 확보할까요?',
+    hint: '계측·CAE·프로그램 전문가가 고정 착석해, 보유 실측을 재측정하지 않으면서 무엇을 어떤 규격·조건으로 몇 회 시험할지 9항목 계획서를 만듭니다. "하나만 먼저 한다면"과 "이 시험으로도 확보되지 않는 것"은 비워둘 수 없습니다',
+  },
 ];
 type ModeId = (typeof MODES)[number]['id'];
 
@@ -52,6 +60,19 @@ const SIM_SUGGESTIONS = [
   '리플로우 후 warpage 산포가 커지는 원인을 계산으로 좁히고 싶다',
   '낙하 시 특정 모서리에서만 크랙이 나는데 어떤 해석으로 재현할 수 있나',
 ];
+
+// 시험계획 예시 — '무엇을 먼저 측정할 것인가' 형태로. 물성 확보·수명·공정 산포 세 갈래.
+const TEST_SUGGESTIONS = [
+  '낙하·충격 해석용 물성 확보 — 무엇을 먼저 측정할 것인가',
+  '접착·테이프 계면의 신뢰성 판정을 위해 어떤 시험을 설계해야 하나',
+  '리플로우 warpage 산포의 지배 인자를 가리는 DOE 를 짜고 싶다',
+];
+
+const SUGGESTIONS_BY_MODE = {
+  delib: EXAMPLE_TOPICS,
+  sim: SIM_SUGGESTIONS,
+  test: TEST_SUGGESTIONS,
+} as const;
 
 const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 
@@ -190,12 +211,16 @@ export default function DeliberatePage() {
                 <Composer
                   ref={composerRef}
                   autoFocus
-                  placeholder={mode === 'sim' ? '현상을 입력하세요…' : '화두를 입력하세요…'}
+                  placeholder={
+                    mode === 'sim' ? '현상을 입력하세요…'
+                    : mode === 'test' ? '확보하려는 물성·성능을 입력하세요…'
+                    : '화두를 입력하세요…'
+                  }
                   onSubmitText={startPicking}
                 />
                 <DelibOptsPanel />
                 <div className="cx-chips">
-                  {(mode === 'sim' ? SIM_SUGGESTIONS : EXAMPLE_TOPICS).map((p) => (
+                  {SUGGESTIONS_BY_MODE[mode].map((p) => (
                     <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
                       {p}
                     </button>
