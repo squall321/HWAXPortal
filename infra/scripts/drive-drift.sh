@@ -11,7 +11,7 @@
 #   돌렸고, 새 데이터가 옛 스키마의 CHECK 에 걸려 app-data 병합이 통째로 실패했다.
 #
 #   ./infra/scripts/drive-drift.sh          # 전부 확인
-#   ./infra/scripts/drive-drift.sh heax     # 지정한 것만 (heax | koorm)
+#   ./infra/scripts/drive-drift.sh heax     # 지정한 것만 (portal | heax | koorm)
 #
 # 종료코드 0=일치, 1=드리프트 있음(올려야 함), 2=확인 불가.
 set -uo pipefail
@@ -21,12 +21,40 @@ PARENT="$(dirname "$SELF_REPO")"
 find_repo() { local n="$1"; for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/claude/$n"; do
   [ -d "$c" ] && { printf '%s' "$c"; return 0; }; done; return 0; }
 
-WANT="${*:-heax koorm}"
+WANT="${*:-portal heax koorm}"
 want() { printf '%s\n' $WANT | grep -qx "$1"; }
 command -v rclone >/dev/null 2>&1 || { echo "✗ rclone 없음 — 확인 불가"; exit 2; }
 
 DRIFT=0
 env_get() { sed -n "s/^$1=//p" "$2" 2>/dev/null | tail -1 | tr -d "\"'"; }
+
+# ── 포털 자신 — SPA(frontend/dist)와 SIF 가 Drive 아티팩트로 cae00 에 간다.
+# cae00 은 포털을 빌드하지 않는다(images-from-drive 로 받기만 한다). 그래서 프론트를 고치고
+# 올리지 않으면 그 화면은 영영 안 바뀐다 — 실제로 시험계획 탭과 mermaid 테마가 9일간
+# dev 에만 있었다(2026-08-19). 이 검사가 포털을 안 보고 있던 것이 그 원인이다.
+if want portal; then
+  R="$(env_get HWAX_DRIVE_REMOTE "$SELF_REPO/infra/.env")"; R="${R%/}"
+  if [ -z "$R" ]; then echo "· HWAX_DRIVE_REMOTE 미설정 — 건너뜀"; else
+    echo "── HWAX Portal ($R/latest)"
+    q=0
+    newest="$(find "$SELF_REPO/frontend/dist" -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"
+    t="$(rclone lsl "$R/latest/frontend-dist.tar.gz" 2>/dev/null | awk '{print $2" "$3}')"
+    if [ -n "$newest" ] && [ -n "$t" ]; then
+      e="$(date -d "$t" +%s 2>/dev/null || echo 0)"
+      if [ "${newest%.*}" -gt "$e" ]; then
+        echo "  ✗ frontend/dist — Drive frontend-dist.tar.gz($t)보다 새것이다"; DRIFT=1; q=1
+      fi
+    elif [ -z "$t" ]; then
+      echo "  ✗ frontend-dist.tar.gz — Drive 에 없다"; DRIFT=1; q=1
+    fi
+    # 소스가 dist 보다 새것이면 빌드부터 안 한 것이다 — 올려도 옛 화면이 간다.
+    src="$(find "$SELF_REPO/frontend/src" -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"
+    if [ -n "$src" ] && [ -n "$newest" ] && [ "${src%.*}" -gt "${newest%.*}" ]; then
+      echo "  ✗ frontend/src 가 dist 보다 새것이다 — pnpm --dir frontend build 부터 하라"; DRIFT=1; q=1
+    fi
+    [ "$q" = 0 ] && echo "  ✓ 일치"
+  fi
+fi
 
 # ── HEAXHub: 앱 SIF 는 크기로 비교한다(내용이 다르면 크기가 거의 항상 다르고, 해시보다 싸다) ──
 if want heax; then
