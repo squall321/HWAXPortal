@@ -20,6 +20,7 @@
 #     RAT_TOKEN=rat_xxx            # ReportArchive PAT (심의 보고서 저장)
 #     HEAX_MCP_TOKEN=heax_xxx      # heax MCP 앱 자동연동(materialtwin·laminate)
 #     ODB_HUB_TOKEN=xxxx           # ODB 자동화 허브(10.252.38.121:8000) — cae00 에서만 도달
+#     ARP_BASE=http://10.252.38.97:3001  # AI Ready Portal — 무인증, cae00 에서만 도달
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -229,7 +230,7 @@ if [ -n "$H" ] && ! json_ok "$H"; then
 fi
 
 calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공백 구분). heax는 config 파일로 별도 판정.
-  H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" MXWP_UP="$MXWP_UP" python3 - <<'PY'
+  H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_BASE:-}" MXWP_UP="$MXWP_UP" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
 want = {"ai-data-hub", "signalforge"}
@@ -238,6 +239,8 @@ if os.environ.get("RAT"):           want.add("reportarchive")
 # ODB 자동화 허브는 cae00 에서만 도달한다(dev 는 포트 차단 — 실측). 토큰이 있는 박스에서만
 # 기대 목록에 넣는다 — RAT_TOKEN 과 같은 방식이라 dev 에서 가짜 DOWN 이 뜨지 않는다.
 if os.environ.get("ODB"):           want.add("odb-hub")
+# ARP 도 cae00 전용이다. 토큰이 없는 서버라 '주소가 설정돼 있다'가 이 박스에서 쓴다는 신호다.
+if os.environ.get("ARP"):           want.add("arp")
 print(" ".join(sorted(want - have)))
 PY
 }
@@ -311,6 +314,7 @@ PY
       ( cd "$GW_DIR" && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
+          ARP_BASE="${ARP_BASE:-}" \
           bash provision-config.sh --force )
       "$SVC" down mcp-gateway agent-server 2>/dev/null
       "$SVC" up mcp-gateway agent-server
