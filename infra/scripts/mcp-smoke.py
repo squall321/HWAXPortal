@@ -24,6 +24,7 @@ server.py 커밋보다 1분 먼저 떠서 도구 22개만 노출한 채로 돌�
 import argparse
 import json
 import os
+import pathlib
 import re
 import sys
 
@@ -34,7 +35,28 @@ WRITE = re.compile(
     r"|recompute|prepare|fetch_|draft_|report_ingest|report_fragmentize|scenario_"
     r"|meeting_|qa_run|smarttwin_submit|slurm_submit|slurm_job_control|slurm_node_set)")
 
-CFG = os.environ.get("GATEWAY_CONFIG") or "/home/koopark/claude/HWAXMcpGateway/gateway_config.json"
+def _find_cfg() -> str:
+    """게이트웨이 config 경로. 박스마다 리포 위치가 달라 하드코딩하면 안 된다.
+
+    dev 는 ~/claude/, cae00 은 ~/Projects/ 아래다. 하드코딩 탓에 cae00 에서 스모크가
+    통째로 안 돌았고(FileNotFoundError → rc=2), 그러면 '도구가 동작한다'가 검증되지
+    않은 채로 배포가 끝난다 — 미검증이 초록처럼 지나가는 게 이 버그의 값이다.
+    update-all.sh 의 find_repo 와 같은 후보 순서를 쓴다(형제 리포 → Projects → claude).
+    """
+    env = os.environ.get("GATEWAY_CONFIG")
+    if env:
+        return env
+    here = pathlib.Path(__file__).resolve()
+    sibling = here.parents[3] / "HWAXMcpGateway"     # <parent>/HWAXPortal/infra/scripts/…
+    home = pathlib.Path.home()
+    for base in (sibling, home / "Projects" / "HWAXMcpGateway", home / "claude" / "HWAXMcpGateway"):
+        cand = base / "gateway_config.json"
+        if cand.is_file():
+            return str(cand)
+    return str(sibling / "gateway_config.json")      # 없으면 가장 그럴듯한 경로로 에러를 내게 둔다
+
+
+CFG = _find_cfg()
 
 # 자기 상태를 돌려주는 무인자 도구 이름들. 이 중 하나가 있으면 드리프트 대조를 시도한다.
 _SELF_REPORT = ("system_capabilities", "capabilities", "system_status")
