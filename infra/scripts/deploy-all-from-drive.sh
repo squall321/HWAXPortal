@@ -177,8 +177,17 @@ if want heax; then
       [ -f deploy/apptainer/mirror-from-drive.sh ] && bash deploy/apptainer/mirror-from-drive.sh || true
       # 앱 데이터(materialtwin 재료 DB 등) MERGE(비파괴 — dev 신규 추가 + cae00 데이터 보존).
       # merge 스크립트 있으면 그것, 없으면 기존 보존 복원으로 폴백. 둘 다 비치명적.
-      if [ -x deploy/apptainer/appdata-merge-from-drive.sh ]; then
-        bash deploy/apptainer/appdata-merge-from-drive.sh || true
+      # ⚠ 이 병합은 앱 기동보다 **먼저** 돈다. 그래서 dev 데이터가 새 스키마를 요구하면
+      # (새 CHECK 허용값·새 표) 반드시 여기서 실패한다 — 그 스키마를 만드는 마이그레이션은
+      # 아래 start.sh 에서 앱이 새 SIF 로 뜰 때 비로소 돌기 때문이다. 실제로 두 번 겪었다:
+      # 시험장비 두 표가 없어 750행이 통째로 건너뛰어졌고, method='digitized' 95행이
+      # 옛 CHECK 에 걸려 병합 전체가 중단됐다(2026-08-18~19).
+      # 그래서 실패를 기억해 두고 기동 뒤 한 번 더 시도한다. 사람에게 'update-all 을 두 번
+      # 돌려라'라고 시키는 건 계약이 아니다 — 아무도 기억하지 않는다.
+      # 가드는 -f 다(-x 로 두면 레포에 644 로 커밋되는 순간 호출이 조용히 사라진다).
+      _appdata_rc=0
+      if [ -f deploy/apptainer/appdata-merge-from-drive.sh ]; then
+        bash deploy/apptainer/appdata-merge-from-drive.sh || _appdata_rc=$?
       else
         bash deploy/apptainer/appdata-from-drive.sh || true
       fi
@@ -190,6 +199,12 @@ if want heax; then
         echo "  ── last lines of var/logs/postgres-start.log (the hidden error) ──"
         tail -15 var/logs/postgres-start.log 2>/dev/null | sed 's/^/    /'
         exit 1
+      fi
+      # 앱이 새 코드로 떴으니 마이그레이션이 적용됐다 — 스키마 때문에 실패했던 병합을 다시 한다.
+      if [ "${_appdata_rc:-0}" != 0 ] && [ -f deploy/apptainer/appdata-merge-from-drive.sh ]; then
+        echo "  · app-data 병합 재시도 — 앱 기동으로 마이그레이션이 적용된 뒤다"
+        bash deploy/apptainer/appdata-merge-from-drive.sh \
+          || echo "  ⚠ 재시도도 실패 — 스키마 말고 다른 원인이다(위 로그 확인)"
       fi ) && ok "heax up" || skip "heax failed (see the log lines above)"
   else skip "HEAXHub repo not found (set HEAX_DIR=)"; fi
 fi
