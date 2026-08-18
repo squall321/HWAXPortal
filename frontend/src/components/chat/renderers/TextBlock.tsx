@@ -34,6 +34,94 @@ function MathSpan({ tex, display }: { tex: string; display: boolean }) {
   );
 }
 
+// mermaid 색 — globals.css 의 토큰에서 파생한다. 값을 여기 적어 두는 이유는 mermaid 가
+// CSS 변수를 못 읽고 초기화 시점에 확정된 색 문자열만 받기 때문이다. 토큰을 바꾸면 여기도 함께.
+//   --bg #0f1115 · --card #1a1d24 · --border #2a2f3a · --fg #e6e8eb · --muted #9aa0a6
+//   --cx-accent #98a8ff (다크 위에서 읽히는 강조색)
+// 설계: 노드는 카드보다 한 단계 들린 면(#232936)으로 띄우고, 테두리는 경계선보다 한 단계 밝게,
+// 강조는 한 곳(클러스터 제목·활성 요소)에만 쓴다. 선은 노드보다 약하게 — 구조가 먼저 읽히고
+// 연결은 뒤따라 읽혀야 한다.
+const MERMAID_THEME = {
+  darkMode: true,
+  background: 'transparent',          // 컨테이너(.md-mermaid)의 --card 가 그대로 비치게
+  fontSize: '14px',
+
+  // 기본 노드
+  primaryColor: '#232936',
+  primaryTextColor: '#e6e8eb',
+  primaryBorderColor: '#3d4657',
+  mainBkg: '#232936',
+  nodeBorder: '#3d4657',
+  nodeTextColor: '#e6e8eb',
+  textColor: '#e6e8eb',
+
+  // 보조 계열 — 대비를 크게 벌리지 않는다(같은 도면 안에서 위계만 구분)
+  secondaryColor: '#1e2430',
+  secondaryTextColor: '#e6e8eb',
+  secondaryBorderColor: '#39415a',
+  tertiaryColor: '#20262f',
+  tertiaryTextColor: '#c9ced6',
+  tertiaryBorderColor: '#39415a',
+
+  // 선·라벨 — 노드보다 약하게
+  lineColor: '#5b6472',
+  edgeLabelBackground: '#1a1d24',
+  arrowheadColor: '#7c8698',
+
+  // 묶음(subgraph) — 면은 거의 안 보이게, 제목만 강조색
+  clusterBkg: 'rgba(122, 140, 255, 0.06)',
+  clusterBorder: '#39415a',
+  titleColor: '#98a8ff',
+
+  // 시퀀스 다이어그램
+  actorBkg: '#232936',
+  actorBorder: '#3d4657',
+  actorTextColor: '#e6e8eb',
+  actorLineColor: '#4a5364',
+  signalColor: '#c9ced6',
+  signalTextColor: '#c9ced6',
+  labelBoxBkgColor: '#232936',
+  labelBoxBorderColor: '#3d4657',
+  labelTextColor: '#e6e8eb',
+  loopTextColor: '#c9ced6',
+  activationBkgColor: 'rgba(122, 140, 255, 0.18)',
+  activationBorderColor: '#98a8ff',
+  noteBkgColor: 'rgba(122, 140, 255, 0.10)',
+  noteBorderColor: '#4d5875',
+  noteTextColor: '#dfe3e9',
+
+  // 상태·간트
+  sectionBkgColor: '#20262f',
+  altSectionBkgColor: '#1a1d24',
+  sectionBkgColor2: '#242b36',
+  taskBkgColor: '#2b3446',
+  taskTextColor: '#e6e8eb',
+  taskTextOutsideColor: '#c9ced6',
+  taskBorderColor: '#4d5875',
+  activeTaskBkgColor: 'rgba(122, 140, 255, 0.22)',
+  activeTaskBorderColor: '#98a8ff',
+  gridColor: '#2a2f3a',
+  doneTaskBkgColor: '#242b36',
+  doneTaskBorderColor: '#3d4657',
+  critBkgColor: 'rgba(229, 138, 158, 0.22)',
+  critBorderColor: '#e58a9e',
+
+  // 분류색(파이·여러 갈래) — 강조색 계열에서 시작해 색상환을 고르게 돈다.
+  // 순서가 곧 배정이다(1번부터 차례로). 어두운 바탕에서 읽히도록 명도를 맞췄다.
+  pie1: '#98a8ff', pie2: '#5fd0c4', pie3: '#e0b15c', pie4: '#e58a9e',
+  pie5: '#9ede8a', pie6: '#c9a2f0', pie7: '#7fc4f0', pie8: '#d9d06a',
+  pie9: '#8fb3d9', pie10: '#c4c9d4', pie11: '#6fb6a8', pie12: '#bfa27a',
+  pieTitleTextColor: '#e6e8eb',
+  pieSectionTextColor: '#0f1115',   // 밝은 조각 위 글자는 어두워야 읽힌다
+  pieLegendTextColor: '#c9ced6',
+  pieStrokeColor: '#1a1d24',
+  pieOuterStrokeColor: '#2a2f3a',
+
+  // 오류 표시
+  errorBkgColor: 'rgba(229, 138, 158, 0.18)',
+  errorTextColor: '#e58a9e',
+} as const;
+
 // 지식 구조도 — ```mermaid 펜스를 코드가 아니라 실제 다이어그램으로 렌더한다(표와 같은 대우).
 // 라이브러리는 동적 import 라 초기 번들에 안 실리고, 로컬 번들이라 폐쇄망에서도 동작한다.
 let _mermaidReady: Promise<typeof import('mermaid').default> | null = null;
@@ -43,8 +131,14 @@ function loadMermaid() {
       m.default.initialize({
         startOnLoad: false,
         securityLevel: 'strict',   // 스크립트·클릭 핸들러 차단
-        theme: 'dark',
+        // mermaid 기본 'dark' 테마는 이 앱과 무관한 색을 쓴다(형광 초록·보라, 튀는 대비).
+        // 'base' + themeVariables 로 포털 토큰(globals.css)에서 직접 파생시킨다 —
+        // 색을 여기서 새로 발명하지 않아야 다이어그램이 화면의 일부처럼 보인다.
+        theme: 'base',
+        themeVariables: MERMAID_THEME,
         fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+        flowchart: { curve: 'basis', padding: 14, nodeSpacing: 44, rankSpacing: 52 },
+        sequence: { actorMargin: 44, boxMargin: 10, mirrorActors: false },
       });
       return m.default;
     });
