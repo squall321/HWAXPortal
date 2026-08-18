@@ -104,4 +104,10 @@ if want kooremapper && [ -n "$KOOR_DIR" ]; then
     bash platform/infra/scripts/dist-to-drive.sh )  # bin+dist+*.sif → Drive
 fi
 
+# 올렸다고 끝이 아니다 — 부분 실행(이름 지정)이나 중간 실패로 Drive 가 dev 보다 뒤처진 채
+# 끝날 수 있고, 그건 cae00 에서 '옛 앱이 도는데 checksums 는 OK' 로 나타난다. 여기서 대조한다.
+hr "publish 확인 — Drive 가 이 박스와 일치하는가"
+bash "$SELF_REPO/infra/scripts/drive-drift.sh" || \
+  echo "  ⚠ 위 항목이 아직 Drive 에 없다 — cae00 은 그만큼 옛것을 받는다"
+
 hr "Done — AIDataHub has no build (cae00 just git pulls). Now on cae00: deploy-all-from-drive.sh"
