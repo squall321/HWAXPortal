@@ -79,6 +79,9 @@ const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 // RA 저장 — '/보고서' 트리거로 에이전트 서버가 대화 이력을 코드로 blocks 화해 결정적으로 저장
 // (LLM 재량에 맡기면 도구 인자를 텍스트로 에코하는 불안정성이 있어 서버 핸들러로 처리).
 const RA_SAVE_PROMPT = '/보고서';
+// 정리본 — LLM 이 읽고 결론·근거·미결로 재구성해 저장한다. 원문 보존형과 성격이 달라
+// 버튼을 따로 둔다(하나로 합치면 어느 쪽이 저장됐는지 사람이 알 수 없다).
+const RA_TIDY_PROMPT = '/보고서 정리';
 
 export default function DeliberatePage() {
   const { messages, activeId, setInput, newConversation, sendMessage, streaming } = useChat();
@@ -249,6 +252,14 @@ export default function DeliberatePage() {
                     title="이 대화의 심의 내용·결론을 Report Archive 보고서로 저장"
                   >
                     📄 RA 보고서로 저장
+                  </button>
+                  <button
+                    type="button"
+                    className="cx-chip"
+                    onClick={() => sendMessage(RA_TIDY_PROMPT)}
+                    title="대화를 결론·근거·미결로 정리해 Report Archive 보고서로 저장 (LLM, 수십 초)"
+                  >
+                    🧾 RA 정리본으로 저장
                   </button>
                 </div>
               )}

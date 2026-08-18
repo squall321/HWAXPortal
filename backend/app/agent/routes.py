@@ -14,8 +14,11 @@ StreamingResponse → nginx buffering-off → fetch+ReadableStream) with no Agen
 """
 
 import asyncio
+import json
+import re
 from collections.abc import AsyncIterator
 from typing import Literal
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
@@ -369,6 +372,100 @@ async def catalog_agent(
 
 class ExpertsRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
+
+
+class DocxRequest(BaseModel):
+    """대화 이력 → Word. mode='transcript' 는 있는 그대로, 'report' 는 LLM 이 정리한다."""
+    conversation: dict = Field(default_factory=dict)
+    mode: Literal["transcript", "report"] = "transcript"
+
+
+# 정리본 지시 — 대화를 요약하는 게 아니라 **문서로 재구성**하라는 것이 요점이다.
+# 요약만 시키면 "이런 얘기를 했다" 가 나오고, 그건 읽는 사람이 판단에 쓸 수 없다.
+_REPORT_PROMPT = """다음은 엔지니어링 포털에서 오간 대화 이력이다. 이것을 그대로 요약하지 말고,
+읽는 사람이 판단에 쓸 수 있는 **보고서**로 재구성하라.
+
+규칙:
+- 결론을 먼저 쓴다. 무엇을 하기로 했는지/무엇이 밝혀졌는지가 첫 절이다.
+- 근거는 대화에 실제로 나온 것만 쓴다. 수치는 원문 그대로 옮기고, 없는 값을 지어내지 않는다.
+- 대화에서 결론이 나지 않은 것은 '미결'로 따로 모은다. 억지로 결론을 만들지 않는다.
+- 누가 말했는지는 옮기지 않는다. 문서는 대화록이 아니다.
+- 한국어. 문장은 마침표로 끝낸다.
+
+형식(마크다운):
+# <문서 제목 — 내용을 담은 짧은 제목>
+## 요약
+## 결론과 근거
+## 미결·확인 필요
+## 상세
+
+대화 이력:
+"""
+
+
+@router.post("/export/docx")
+async def export_docx(
+    request: Request,
+    body: DocxRequest,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """대화 이력을 Word(.docx) 로 내려준다 — 브라우저가 그대로 저장한다.
+
+    report 모드는 LLM 왕복이 있다. 실패하면 transcript 로 조용히 대체하지 않는다 —
+    정리본을 기대한 사람에게 원문을 주면 '정리가 안 됐다'로 보이지 '실패했다'로 보이지 않는다.
+    """
+    from app.agent import docx_export as dx
+
+    conv = body.conversation or {}
+    title = (conv.get("title") or "대화").strip()[:60]
+    n_msg = len([m for m in (conv.get("messages") or []) if (m.get("text") or "").strip()])
+    if not n_msg:
+        return Response(content='{"error":"empty_conversation"}', status_code=400,
+                        media_type="application/json")
+
+    if body.mode == "transcript":
+        data = dx.build_transcript(conv)
+        name = f"{title}-전문"
+    else:
+        # 에이전트는 SSE 만 낸다(비스트리밍 엔드포인트가 없다). 여기서 스트림을 받아
+        # 최종 result 만 모은다 — 에이전트에 엔드포인트를 새로 파는 것보다 접점이 적다.
+        client = _agent_client(request)
+        payload = {"message": _REPORT_PROMPT + dx.transcript_text(conv),
+                   "groups": principal.groups, "user_email": principal.email}
+        md = ""
+        try:
+            async with client.stream("POST", f"{settings.agent_server_url}/chat",
+                                     json=payload) as resp:
+                if resp.status_code == 200:
+                    ev = ""
+                    async for line in resp.aiter_lines():
+                        if line.startswith("event: "):
+                            ev = line[7:].strip()
+                        elif line.startswith("data: ") and ev == "result":
+                            try:
+                                md = json.loads(line[6:]).get("content", "") or md
+                            except ValueError:
+                                pass
+        except httpx.HTTPError:
+            md = ""
+        if not md.strip():
+            return Response(
+                content='{"error":"report_failed","detail":"정리본 생성에 실패했습니다 — '
+                        'LLM 응답이 없습니다. 전문(transcript) 내보내기는 그대로 동작합니다."}',
+                status_code=503, media_type="application/json")
+        first = next((ln.lstrip("# ").strip() for ln in md.splitlines()
+                      if ln.startswith("#")), title)
+        data = dx.build_report(first, md, f"원본 대화 '{title}' · 발화 {n_msg}개")
+        name = f"{first[:50]}-정리본"
+
+    safe = re.sub(r'[\\/:*?"<>|]+', " ", name).strip() or "대화"
+    quoted = quote(f"{safe}.docx")
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
+    )
 
 
 @router.post("/deliberate/experts")

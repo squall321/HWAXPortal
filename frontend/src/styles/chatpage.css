@@ -1085,3 +1085,6 @@
   display: block; max-height: 180px; overflow-y: auto;
 }
 .sp-detail-list li { margin-top: 0.15rem; }
+
+/* 내보내기 실패 문구 — 버튼 옆에 붙여, 눌렀는데 아무 일도 없는 상태를 없앤다. */
+.cx-export-err { margin-left: 8px; font-size: 0.76rem; color: #e58a9e; }
