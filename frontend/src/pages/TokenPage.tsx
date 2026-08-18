@@ -6,6 +6,11 @@ import { ErrorBanner } from '../components/common/ErrorBanner';
 // 스니펫 값의 <host>는 현재 접속 중인 포털 origin을 그대로 사용한다.
 const ORIGIN = window.location.origin;
 const MCP_URL = `${ORIGIN}/mcp-gw/mcp`;
+// NO_PROXY 는 호스트(:포트)만 받는다 — 스킴이 붙으면 무시된다.
+const HOSTONLY = ORIGIN.replace(/^https?:\/\//, '');
+// 사내 프록시. 다른 서비스들이 쓰는 값과 같다(infra/.env.example HWAX_FALLBACK_PROXY,
+// AIDataHub _common.sh DEFAULT_FALLBACK_PROXY). npm 레지스트리는 이걸 타야 나간다.
+const CORP_PROXY = 'http://168.219.61.252:8080';
 const CHAT_URL = `${ORIGIN}/agent/chat`;
 
 function fmtDate(sec: number): string {
@@ -49,6 +54,57 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     `echo  토큰 이름: ${name}`,
     'echo.',
     'set HWAX_DONE=0',
+    '',
+    // ── [0] 네트워크 점검 ───────────────────────────────────────────────────
+    // 사내 PC 는 프록시가 걸려 있는 경우가 많다. 그러면 두 곳이 막히는데 증상이 둘 다
+    // "MCP 등록 실패" 로만 보여서 원인을 못 찾는다.
+    //   ① 포털(사내 주소) — 프록시를 타면 막히거나 TLS 가 프록시 인증서로 바뀐다
+    //   ② npx 가 npm 레지스트리에서 mcp-remote 를 받을 때 — 여긴 반대로 프록시가 있어야 한다
+    // 그래서 스스로 확인하고 포털만 NO_PROXY 에 넣는다. 레지스트리는 프록시를 계속 쓴다.
+    'echo  [0] 네트워크 점검...',
+    'if defined HTTP_PROXY echo      HTTP_PROXY=%HTTP_PROXY%',
+    'if defined HTTPS_PROXY echo      HTTPS_PROXY=%HTTPS_PROXY%',
+    'if defined NO_PROXY echo      NO_PROXY=%NO_PROXY%',
+    'if not defined HTTPS_PROXY if not defined HTTP_PROXY echo      프록시 환경변수 없음',
+    // 포털에 프록시 없이 붙어 본다. DefaultWebProxy=$null 이 PowerShell 5 에서도 통한다.
+    // ⚠ 인증서 검증을 끈다. 포털이 자체 서명이면 TLS 에서 걸려 '직결 불가'로 잘못 판정하고,
+    // 그러면 프록시 문제가 아닌데 프록시 안내를 띄운다. 이건 도달성 확인이지 보안 경계가 아니다
+    // (실제 통신은 아래 등록된 설정이 NODE_EXTRA_CA_CERTS 로 정상 검증한다).
+    'powershell -NoProfile -Command "$ErrorActionPreference=\'SilentlyContinue\';' +
+      '[System.Net.ServicePointManager]::ServerCertificateValidationCallback={$true};' +
+      'try{[System.Net.WebRequest]::DefaultWebProxy=$null;' +
+      `$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri \'${ORIGIN}/\';` +
+      'if($r.StatusCode -ge 200){exit 0}else{exit 1}}catch{exit 1}"',
+    'if errorlevel 1 goto :px_need',
+    // 기존 값을 먼저 잡고 분기한다 — 바로 이어 붙이면 NO_PROXY 가 비었을 때 ',host' 가 된다.
+    'set _NP=%NO_PROXY%',
+    `if not defined _NP set NO_PROXY=${HOSTONLY}`,
+    `if defined _NP set NO_PROXY=%_NP%,${HOSTONLY}`,
+    'set no_proxy=%NO_PROXY%',
+    'echo      포털 직결 확인 - 이 창에서는 포털을 프록시 없이 씁니다',
+    'goto :px_npm',
+    ':px_need',
+    'echo      [!] 포털에 직접 붙지 못했습니다.',
+    'echo          사내망^(VPN^) 연결을 확인하세요. 등록은 계속 진행합니다.',
+    ':px_npm',
+    // npx 는 레지스트리를 타야 mcp-remote 를 받는다. 프록시가 안 잡혀 있으면 여기서 죽는데,
+    // 에러가 'MCP 등록 실패' 로만 보인다. 미리 확인하고 없으면 사내 프록시를 이 창에 세운다.
+    'where npx >nul 2>nul',
+    'if errorlevel 1 goto :px_done',
+    'call npx -y mcp-remote --version >nul 2>nul',
+    'if not errorlevel 1 goto :px_done',
+    'if defined HTTPS_PROXY goto :px_npmfail',
+    `echo      npm 레지스트리에 못 나갑니다 - 사내 프록시^(${CORP_PROXY}^)를 이 창에 적용합니다`,
+    `set HTTPS_PROXY=${CORP_PROXY}`,
+    `set HTTP_PROXY=${CORP_PROXY}`,
+    'call npx -y mcp-remote --version >nul 2>nul',
+    'if not errorlevel 1 goto :px_done',
+    ':px_npmfail',
+    'echo      [!] npx 가 mcp-remote 를 받지 못했습니다.',
+    'echo          프록시 뒤라면 관리자에게 npm 레지스트리 허용을 요청하세요.',
+    'echo          ^(이 단계가 실패해도 Claude Desktop 등록 자체는 진행됩니다^)',
+    ':px_done',
+    'echo.',
     '',
   ];
   if (pem) {
