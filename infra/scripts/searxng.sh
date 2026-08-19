@@ -19,7 +19,7 @@ SIF="${SEARXNG_SIF:-}"
     [ -f "$c" ] && { SIF="$c"; break; }; done; }
 SIF="${SIF:-$HOME/serviceApptainers/searxng-fixed.sif}"
 CONF_DIR="${SEARXNG_CONF_DIR:-/data/hwax/secrets/searxng}"
-PORT="${SEARXNG_PORT:-8888}"
+PORT="${SEARXNG_PORT:-8888}"   # serve.py 가 SEARXNG_BIND_PORT 로 읽는다(아래 전달)
 APPT="$(command -v apptainer || echo "$HOME/claude/HWAXPortal/infra/apptainer/bin-1.3.6/usr/bin/apptainer")"
 
 [ -f "$SIF" ] || { echo "✗ SIF 없음: $SIF — infra/scripts/build-searxng.sh 로 굽는다"; exit 1; }
@@ -42,6 +42,7 @@ grep -q '^\s*- json' "$CONF_DIR/settings.yml" || echo "⚠ settings.yml 에 json
 pkill -f "$SIF" 2>/dev/null || true
 sleep 1
 exec env APPTAINERENV_SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml \
+  APPTAINERENV_SEARXNG_BIND_PORT="$PORT" \
   "$APPT" exec \
     --bind "$CONF_DIR/settings.yml:/etc/searxng/settings.yml:ro" \
     --bind "$CONF_DIR/serve.py:/opt/serve.py:ro" \

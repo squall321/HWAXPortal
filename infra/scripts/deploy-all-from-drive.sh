@@ -93,11 +93,24 @@ git_update() {  # run inside the repo dir
     git merge --ff-only "origin/$branch" 2>/dev/null \
       || echo "  ⚠ can't fast-forward (local changes/diverged) — NOT updated. Resolve, or unset NO_GIT_RESET."
   else
-    local before after; before="$(git rev-parse --short HEAD 2>/dev/null)"
+    local before after target _re
+    before="$(git rev-parse --short HEAD 2>/dev/null)"
+    target="$(git rev-parse --short "origin/$branch" 2>/dev/null)"
     git stash push -u -q -m "deploy-all auto-stash" 2>/dev/null || true
-    git reset --hard "origin/$branch" --quiet 2>/dev/null || true
+    _re="$(git reset --hard "origin/$branch" --quiet 2>&1)" || true
     after="$(git rev-parse --short HEAD 2>/dev/null)"
-    [ "$before" = "$after" ] && echo "  · git: up to date ($after)" || echo "  · git: $before → $after (reset to origin/$branch)"
+    # ⚠ before 와 after 만 비교하면 안 된다. reset 이 실패해도 둘이 같으므로 "up to date" 라는
+    # 거짓말이 찍히고, 레포는 옛 코드인 채 배포가 계속된다 — fetch 쪽과 같은 병이었는데
+    # 여기만 남아 있었다. 기준은 origin 과 같아졌는가다.
+    if [ -n "$target" ] && [ "$after" != "$target" ]; then
+      echo "  ✗ git reset 실패 — HEAD($after) ≠ origin/$branch($target). 소스가 갱신되지 않았다"
+      [ -n "$_re" ] && printf '      %s\n' "$_re" | head -3
+      echo "      → 이 상태로 진행하면 Drive 산출물만 새것이고 코드는 옛것이다."
+    elif [ "$before" = "$after" ]; then
+      echo "  · git: up to date ($after)"
+    else
+      echo "  · git: $before → $after (reset to origin/$branch)"
+    fi
   fi
 }
 

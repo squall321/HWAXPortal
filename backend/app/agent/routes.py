@@ -302,7 +302,7 @@ async def search_conversations(
     # 없는 것으로 읽힌다.
     left = store.remaining(principal.subject, conv_search.MODEL)
     return {"query": body.query, "results": hits,
-            "index": {**store.index_stats(principal.subject),
+            "index": {**store.index_stats(principal.subject, conv_search.MODEL),
                       "just_indexed": idx["indexed"], "too_short": idx["too_short"],
                       "not_indexed_yet": left,
                       "partial": bool(left)}}

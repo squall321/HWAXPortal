@@ -233,15 +233,19 @@ class ConversationStore:
                 (owner_sub, model),
             ).fetchall()
 
-    def index_stats(self, owner_sub: str) -> dict:
-        """messages/indexed 만 센다. chunk_ix=-1(짧아서 색인 대상 아님) 표식도 '처리됨'이다."""
+    def index_stats(self, owner_sub: str, model: str) -> dict:
+        """messages/indexed 만 센다. chunk_ix=-1(짧아서 색인 대상 아님) 표식도 '처리됨'이다.
+
+        ⚠ model 로 걸러야 한다. 안 그러면 옛 모델 벡터까지 세어 indexed 가 부풀고, 같은
+        응답에 나란히 실리는 not_indexed_yet(모델별)과 숫자가 어긋난다 — 서로 안 맞는
+        두 숫자를 함께 보여주는 것이 제일 나쁘다."""
         with self._lock:
             total = self._conn.execute(
                 "SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id "
                 "WHERE c.owner_sub = ?", (owner_sub,)).fetchone()[0]
             indexed = self._conn.execute(
-                "SELECT COUNT(DISTINCT message_id) FROM message_vectors WHERE owner_sub = ?",
-                (owner_sub,)).fetchone()[0]
+                "SELECT COUNT(DISTINCT message_id) FROM message_vectors "
+                "WHERE owner_sub = ? AND model = ?", (owner_sub, model)).fetchone()[0]
         # 'pending' 을 total-indexed 로 내지 않는다 — 너무 짧아 색인 대상이 아닌 메시지가
         # 영영 남아 "아직 10개 남았다"가 고정 표시된다. 남은 일이 없는데 남았다고 말하는
         # 숫자는 그냥 거짓말이다. 색인 대상 판정은 청크 규칙을 아는 conv_search 가 한다.
