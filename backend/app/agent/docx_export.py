@@ -40,12 +40,17 @@ def _style(doc: Document) -> None:
 
 
 def _run(par, text: str):
-    """add_run 의 유일한 통로. 제어문자는 여기서 막는다.
+    """전문(transcript) 경로의 정화 지점. 여기를 지나는 텍스트는 제어문자가 지워진다.
 
     호출부마다 _clean 을 기억하는 방식은 반드시 하나를 빠뜨린다 — 실제로 발화자 라벨의
     role 이 정화 밖에 남아 있었다(role 은 스키마상 40자 캡만 있고 내용 검사가 없다).
-    XML 이 못 담는 문자가 하나만 들어와도 문서 생성 전체가 ValueError 로 죽으므로,
-    쓰는 지점 하나에서 막는 편이 안전하다.
+    XML 이 못 담는 문자가 하나만 들어와도 문서 생성 전체가 ValueError 로 죽는다.
+
+    ⚠ '유일한 통로'가 아니다. 정리본 경로의 _md_para 는 제목·불릿·번호목록·인용
+    네 갈래에서 doc.add_heading / doc.add_paragraph(text) 를 직접 부르며 여기를
+    지나지 않는다. 그 네 갈래를 막는 것은 _body 의 _clean 이다(실측: _body 의
+    _clean 만 무력화하면 그 넷은 ValueError, 보통 문단만 통과한다).
+    두 층이 각각 다른 경로를 맡고 있으니, 어느 한쪽도 '중복이니 지우자'가 아니다.
     """
     return par.add_run(_CTRL.sub("", text or ""))
 
@@ -70,7 +75,12 @@ def _meta(doc: Document, title: str, subtitle: str) -> None:
 
 
 def _md_para(doc: Document, line: str) -> None:
-    """마크다운 한 줄을 문단으로. 제목·목록·인용만 다룬다 — 표는 원문 그대로 둔다."""
+    """마크다운 한 줄을 문단으로. 제목·목록·인용만 다룬다 — 표는 원문 그대로 둔다.
+
+    ⚠ 여기 들어오는 line 은 _body 에서 이미 _clean 을 지났다고 가정한다. 아래 네
+    갈래는 doc.add_heading / doc.add_paragraph(text) 를 직접 불러 _run 을 우회하므로,
+    정화되지 않은 줄을 직접 넘기면 python-docx 가 ValueError 를 던진다.
+    """
     t = line.rstrip()
     if not t.strip():
         return
@@ -217,8 +227,9 @@ def build_transcript(conv: dict[str, Any]) -> bytes:
 def build_report(title: str, markdown: str, source_note: str) -> bytes:
     """정리본 — LLM 이 만든 마크다운을 문서 서식으로 옮긴다.
 
-    정화는 여기서 하지 않는다. title·source_note 는 _meta→_run 으로, markdown 은
-    _body→_md_para→_run 으로 모두 _run 을 지나므로 거기서 한 번만 막는다.
+    정화는 여기서 하지 않는다. title·source_note 는 _meta→_run 이 맡고, markdown 은
+    _body 가 줄로 쪼개기 전에 _clean 으로 한 번에 맡는다 — _md_para 의 제목·불릿·
+    번호목록·인용 네 갈래는 _run 을 지나지 않으므로 _body 쪽이 유일한 방어다.
     (한때 이 자리에 _clean 대입문을 넣었는데, docstring 앞에 놓여 docstring 이
     docstring 이 아니게 됐고 정화도 중복이었다.)
     """

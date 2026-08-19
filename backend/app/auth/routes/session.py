@@ -182,9 +182,16 @@ def logout(
             #   heax-hub : /logout 은 Bearer+본문 필수 → 쿠키 전용 /logout-session 을 쓴다
             #   그 외    : /logout (없으면 SPA 가 그 사실을 사용자에게 알린다)
             # ⚠ 없는 엔드포인트를 목록에 넣지 않는다. ai-data-hub 는 로그아웃 경로가
-            # 아예 없고(자격증명이 localStorage 에 있어 SPA 가 직접 지운다), 넣어 두면
-            # 매 로그아웃마다 404 가 확정적으로 발생해 "실패를 알린다" 는 장치가 늘
-            # 울리는 경보가 된다 — 그러면 진짜 실패를 아무도 안 본다.
+            # 아예 없다. 넣어 두면 매 로그아웃마다 404 가 확정적으로 발생해 "실패를
+            # 알린다" 는 장치가 늘 울리는 경보가 된다 — 그러면 진짜 실패를 아무도 안 본다.
+            #
+            # ⚠ 다만 이건 '지웠다'가 아니라 '알리지 않는다'다. AIDataHub 의 자격증명은
+            # localStorage 의 X-API-Key 인데 그건 사본일 뿐이고, 정본은 서버의 ApiKey
+            # 행이다(portal_sso.py 가 name="sso:{email}" 로 발급, TTL 은
+            # portal_sso_key_ttl_days 기본 30일). 브라우저에서 지워도 그 행은 살아 있어
+            # 키 사본을 가진 쪽은 최대 30일간 그대로 들어간다. 포털 로그아웃은
+            # AIDataHub 접근을 회수하지 못한다 — 회수하려면 AIDataHub 에 그 행을
+            # revoke 하는 경로가 필요하다(재로그인 때는 portal_sso 가 이전 키를 폐기한다).
             if "/ai-data-hub/" in u:
                 continue
             outs.append(base + ("/logout-session" if "/heax-hub/" in u else "/logout"))
