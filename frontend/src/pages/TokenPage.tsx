@@ -37,7 +37,7 @@ function fmtDate(sec: number): string {
 const CERT_URL = `${ORIGIN}/tls/portal.crt`;
 
 function claudeCodeSnippet(token: string): string {
-  return `claude mcp add --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`;
+  return `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`;
 }
 
 // 자체서명 인증서를 쓰는 동안의 등록 명령.
@@ -47,7 +47,7 @@ function claudeCodeSnippet(token: string): string {
 // -e 로 준 환경변수를 설정에 저장해 매 실행마다 적용하므로 이쪽을 쓴다.
 function claudeCodeSnippetSelfSigned(token: string, certPath: string): string {
   return [
-    `claude mcp add hwax ^`,
+    `claude mcp add -s user hwax ^`,
     `  -e AUTH="Bearer ${token}" ^`,
     `  -e NODE_EXTRA_CA_CERTS=${certPath} ^`,
     `  -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:\${AUTH}"`,
@@ -181,12 +181,18 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'echo  [2] Claude Code (CLI) 확인...',
     'where claude >nul 2>nul',
     'if errorlevel 1 goto :no_cli',
+    // ⚠ 스코프는 user 다. `claude mcp add` 의 기본값은 local(그 폴더 전용)이라,
+    // 배치를 다운로드 폴더에서 더블클릭하면 그 폴더에서만 hwax 가 뜬다 — 사용자는
+    // '등록 완료' 를 보고 다른 데서 왜 안 보이는지 모른다(실사고). 같은 배치의
+    // gemini 는 이미 -s user 였다 — 또 한쪽에만 적용된 원칙이다.
+    // 이전 판이 local 에 남긴 것도 함께 치운다(안 그러면 그 폴더에서 둘이 겹친다).
     'claude mcp remove hwax -s local >nul 2>nul',
+    'claude mcp remove hwax -s user >nul 2>nul',
   );
   L.push(
     pem
-      ? `claude mcp add hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
-      : `claude mcp add --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
+      ? `claude mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
+      : `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
   );
   L.push(
     'if errorlevel 1 goto :cli_fail',
