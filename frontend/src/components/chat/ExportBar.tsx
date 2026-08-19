@@ -1,5 +1,6 @@
 // 활성 대화 내보내기 툴바 — HTML / JSON / Word(전문·정리본) 다운로드(ChatPage·DeliberatePage 공용)
 import { useCallback, useState, type RefObject } from 'react';
+import { apiFetch } from '../../api/client';
 import { useChat } from '../../state/ChatContext';
 import { downloadBlob, exportHtml, exportJson } from './exportChat';
 import { IconDownload } from './icons';
@@ -9,9 +10,10 @@ import { IconDownload } from './icons';
 //   전문   — 있는 그대로. 즉시 나온다.
 //   정리본 — LLM 이 읽고 보고서로 재구성. 왕복이 있어 수십 초 걸린다.
 async function exportDocx(conv: unknown, mode: 'transcript' | 'report'): Promise<string | null> {
-  const res = await fetch('/agent/export/docx', {
+  // 챗과 같은 이유로 apiFetch 를 쓴다 — access token 이 900초라 화면을 오래 띄워 두면
+  // raw fetch 는 401 로 조용히 실패하고, 사용자에겐 "가끔 안 되는 버튼"으로 보인다.
+  const res = await apiFetch('/agent/export/docx', {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ conversation: conv, mode }),
   });

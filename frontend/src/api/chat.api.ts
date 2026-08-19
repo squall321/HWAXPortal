@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { apiFetch } from './client';
 import type { DelibEvent, ErrorEvent, ResultBlock, StatusEvent, TokenEvent, ToolCatalog } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
@@ -122,7 +122,7 @@ export interface SearchCapability {
 }
 
 export async function fetchSearchCapability(signal?: AbortSignal): Promise<SearchCapability> {
-  const r = await fetch(`${config.apiBase}/agent/search-capability`, { credentials: 'include', signal });
+  const r = await apiFetch('/agent/search-capability', { signal });
   if (!r.ok) throw new Error(`search-capability ${r.status}`);
   return (await r.json()) as SearchCapability;
 }
@@ -144,9 +144,9 @@ export async function fetchDeliberateExperts(
 ): Promise<ExpertsResponse> {
   const csrf = getCookie('hwax_csrf');
   try {
-    const res = await fetch(`${config.apiBase}/agent/deliberate/experts`, {
+    const res = await apiFetch('/agent/deliberate/experts', {
       method: 'POST',
-      credentials: 'include',
+
       headers: {
         'Content-Type': 'application/json',
         ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
@@ -176,9 +176,9 @@ export async function fetchAgentDetail(key: string): Promise<AgentDetail> {
   const csrf = getCookie('hwax_csrf');
   const empty: AgentDetail = { key, name: key, role: '', tags: [], samples: [], records: [] };
   try {
-    const res = await fetch(`${config.apiBase}/agent/catalog/agent`, {
+    const res = await apiFetch('/agent/catalog/agent', {
       method: 'POST',
-      credentials: 'include',
+
       headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
       body: JSON.stringify({ key }),
     });
@@ -214,9 +214,13 @@ export async function streamChat(
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
-  const res = await fetch(`${config.apiBase}/agent/chat${qs}`, {
+  // ⚠ raw fetch 를 쓰면 안 된다. access token 수명이 900초라 화면을 15분만 띄워 둬도
+  // 다음 전송이 401 이 되는데, raw fetch 에는 갱신도 재시도도 없어 그대로 실패한다.
+  // 다른 화면은 apiFetch 를 타서 멀쩡하고 챗만 안 되는, "가끔 되고 오래 두면 안 되는"
+  // 증상이 이것이었다. apiFetch 는 401 이면 /auth/refresh 한 번 후 재시도하고 Response 를
+  // 그대로 돌려주므로 스트리밍에도 그대로 쓸 수 있다.
+  const res = await apiFetch(`/agent/chat${qs}`, {
     method: 'POST',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
