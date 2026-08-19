@@ -34,16 +34,26 @@ export async function postLogout(): Promise<void> {
     console.warn('[logout] 하위 서비스 세션을 끊지 못했다:', failed);
   }
 
-  // 서버 로그아웃으로 안 지워지는 것도 있다. AIDataHub 는 자격증명을 쿠키가 아니라
-  // localStorage 에 두고(대시보드가 SSO 쿠키를 읽어 옮긴 뒤 즉시 만료시킨다), 로그아웃
-  // 엔드포인트 자체가 없다 — 그대로 두면 포털에서 로그아웃해도 그 대시보드는 계속 열린다.
-  // 같은 오리진이라 여기서 지울 수 있다. 키가 바뀌면 이 줄도 같이 바꿔야 한다
-  // (AIDataHub dashboard.js 의 API_KEY_STORAGE).
   // 서버 쿠키만으로 안 끊기는 것들. 두 서비스 모두 자격증명을 localStorage 에 둔다 —
-  // AIDataHub 는 로그아웃 경로가 아예 없고, HEAXHub 는 쿠키를 지워도 주 자격증명이
+  // AIDataHub 는 SSO 쿠키를 읽어 거기로 옮기고, HEAXHub 는 쿠키를 지워도 주 자격증명이
   // heaxhub.auth 에 남는다. 같은 오리진이라 여기서 지울 수 있다.
-  // 키가 바뀌면 이 목록도 같이 바꿔야 한다(AIDataHub dashboard.js 의 API_KEY_STORAGE,
-  // HEAXHub frontend/src/lib/auth/store.ts 의 persist name).
+  //
+  // ⚠ 브라우저에서 지우는 것만으로는 권한이 회수되지 않는다. AIDataHub 의 정본은 서버의
+  // ApiKey 행(name="sso:<email>", 기본 30일)이고, localStorage 에 있는 건 그 사본일 뿐이다.
+  // 지우기 전에 그 키로 self-revoke 를 불러 서버 행부터 폐기한다 — 실패해도 로그아웃은
+  // 계속한다(막히면 안 된다). 키가 바뀌면 이 목록도 같이 바꿔야 한다
+  // (AIDataHub dashboard.js 의 API_KEY_STORAGE, HEAXHub store.ts 의 persist name).
+  try {
+    const aidh = localStorage.getItem('aidh.api_key');
+    if (aidh) {
+      await fetch('/ai-data-hub/api/auth/keys/self-revoke', {
+        method: 'POST',
+        headers: { 'X-API-Key': aidh },
+      }).catch(() => undefined);
+    }
+  } catch {
+    /* 저장소나 네트워크가 막혀도 아래 정리와 포털 로그아웃은 그대로 진행한다 */
+  }
   try {
     for (const k of ['aidh.api_key', 'heaxhub.auth']) localStorage.removeItem(k);
   } catch {
