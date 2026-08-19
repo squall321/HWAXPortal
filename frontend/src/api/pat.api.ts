@@ -1,5 +1,5 @@
 // 포털 PAT(AI 토큰) 발급·목록·폐기를 감싸는 얇은 API 래퍼 (세션 쿠키 + CSRF는 apiFetch가 처리)
-import { apiFetch } from './client';
+import { apiFetch, errorDetail } from './client';
 
 export interface PatMeta {
   jti: string;
@@ -22,9 +22,8 @@ export interface PatCreateBody {
   ttl_days?: number;
 }
 
-function detailMessage(detail: unknown, fallback: string): string {
-  return typeof detail === 'string' ? detail : fallback;
-}
+// 배열 detail(검증 오류)도 읽는 공용 구현을 쓴다 — 사본을 두면 한쪽만 고쳐진다.
+const detailMessage = errorDetail;
 
 export async function createPat(body: PatCreateBody): Promise<PatCreated> {
   const res = await apiFetch('/auth/pat', {

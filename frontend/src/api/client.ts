@@ -44,3 +44,21 @@ export async function apiFetch(path: string, init: RequestInit = {}, retry = tru
   }
   return res;
 }
+
+/** FastAPI 의 error detail 을 사람이 읽을 한 줄로.
+ *
+ * detail 은 문자열일 수도 있고(우리가 raise 한 것), 검증 오류면 배열이다
+ * (pydantic: [{loc, msg, type, input}]). 문자열로 가정하고 그대로 렌더하면 화면에
+ * "[object Object]" 가 뜬다 — 사용자는 무엇이 잘못됐는지 알 수 없다.
+ * input 필드는 요청 본문 전체를 되싣고 있을 수 있어 절대 쓰지 않는다(msg 만 쓴다).
+ */
+export function errorDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) => (d && typeof d === 'object' && 'msg' in d ? String((d as { msg: unknown }).msg) : ''))
+      .filter(Boolean);
+    if (msgs.length) return msgs.slice(0, 3).join(' / ');
+  }
+  return fallback;
+}

@@ -1,6 +1,6 @@
 // 활성 대화 내보내기 툴바 — HTML / JSON / Word(전문·정리본) 다운로드(ChatPage·DeliberatePage 공용)
 import { useCallback, useState, type RefObject } from 'react';
-import { apiFetch } from '../../api/client';
+import { apiFetch, errorDetail } from '../../api/client';
 import { useChat } from '../../state/ChatContext';
 import { downloadBlob, exportHtml, exportJson } from './exportChat';
 import { IconDownload } from './icons';
@@ -19,14 +19,15 @@ async function exportDocx(conv: unknown, mode: 'transcript' | 'report'): Promise
   });
   if (!res.ok) {
     // 실패를 조용히 넘기지 않는다 — 눌렀는데 아무 일도 안 일어나면 사용자는 다시 누른다.
-    let detail = `내보내기에 실패했습니다 (HTTP ${res.status}).`;
+    // detail 은 문자열일 수도 배열일 수도 있다(pydantic 검증 오류). 문자열로 가정하고
+    // 그대로 렌더하면 화면에 "[object Object]" 가 뜬다 — 공용 정규화를 쓴다.
+    const fallback = `내보내기에 실패했습니다 (HTTP ${res.status}).`;
     try {
       const j = await res.json();
-      if (j?.detail) detail = j.detail;
+      return errorDetail(j?.detail, fallback);
     } catch {
-      /* 본문이 JSON 이 아니면 기본 문구 */
+      return fallback;   /* 본문이 JSON 이 아니면 기본 문구 */
     }
-    return detail;
   }
   const cd = res.headers.get('Content-Disposition') || '';
   const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
