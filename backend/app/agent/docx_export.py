@@ -137,14 +137,16 @@ def _write_turns(doc: "Document", turns: list[dict]) -> None:
         if rd != last_round:
             last_round = rd
             h = doc.add_paragraph()
-            hr = h.add_run(f"라운드 {rd}" if rd is not None else "심의")
+            hr = h.add_run(_clean(f"라운드 {rd}") if rd is not None else "심의")
             hr.bold = True
             hr.font.size = Pt(10)
             hr.font.color.rgb = _MUTED
             h.paragraph_format.space_before = Pt(10)
-        who = str(t.get("persona") or "").strip() or "좌석"
-        stance = str(t.get("stance") or "").strip()
-        pos = str(t.get("position") or "").strip()
+        # 여기도 정화한다 — _body 만 걸어 두면 persona·stance·position 이 그대로
+        # add_run 에 들어가 같은 ValueError 로 500 이 된다(실측).
+        who = _clean(str(t.get("persona") or "")).strip() or "좌석"
+        stance = _clean(str(t.get("stance") or "")).strip()
+        pos = _clean(str(t.get("position") or "")).strip()
         lead = doc.add_paragraph()
         lr = lead.add_run(who + (f"  ·  {stance}" if stance else ""))
         lr.bold = True
@@ -154,7 +156,7 @@ def _write_turns(doc: "Document", turns: list[dict]) -> None:
             pr.font.size = Pt(9)
             pr.font.color.rgb = _MUTED
         _body(doc, str(t.get("say") or ""))
-        nn = str(t.get("nonNegotiable") or "").strip()
+        nn = _clean(str(t.get("nonNegotiable") or "")).strip()
         if nn:
             _body(doc, f"양보 불가: {nn}")
 
@@ -190,6 +192,7 @@ def build_transcript(conv: dict[str, Any]) -> bytes:
 
 
 def build_report(title: str, markdown: str, source_note: str) -> bytes:
+    title, markdown, source_note = _clean(title), _clean(markdown), _clean(source_note)
     """정리본 — LLM 이 만든 마크다운을 문서 서식으로 옮긴다."""
     doc = Document()
     _style(doc)

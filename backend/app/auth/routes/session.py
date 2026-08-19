@@ -140,8 +140,15 @@ def logout(
     # 각 서비스의 로그아웃을 쳐야 한다. 안 그러면 포털에서 로그아웃해도 /apps/<slug>/ 가
     # 그 서비스의 토큰 수명(최대 1시간) 동안 직전 사용자 신원으로 열려 있다.
     # 여기서는 '어디를 쳐야 하는지' 만 알려주고, 실제 호출은 SPA 가 한다.
+    # ⚠ 목록은 세션이 있는 사람에게만 준다. require_csrf 는 double-submit 이라 호출자가
+    # 쿠키·헤더를 같은 값으로 맞추면 스스로 통과시킬 수 있어 인증이 아니다 — 그대로 두면
+    # 미인증 호출자가 하위 서비스 인증 엔드포인트 목록을 그냥 받아 간다.
+    # 로그아웃 동작(쿠키 삭제)은 세션 유무와 무관하게 그대로 수행한다.
+    _has_session = bool(request.cookies.get(cookies.SESSION_COOKIE))
     outs = []
     try:
+        if not _has_session:
+            raise RuntimeError("no session — 목록 비공개")
         for sysm in request.app.state.catalog.all():
             u = getattr(sysm, "url", "") or ""
             if "/portal-callback" not in u:

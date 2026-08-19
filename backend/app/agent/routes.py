@@ -473,11 +473,29 @@ class ExpertsRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
 
 
+class DocxTurn(BaseModel):
+    """심의 좌석 발언 한 건. delib.turns 가 렌더 대상이 된 이상 여기에도 캡이 필요하다 —
+    extra=allow 로 열어 두면 캡을 건 text 옆에서 delib 이 무제한으로 들어온다."""
+    model_config = {"extra": "ignore"}
+    round: int | None = None
+    persona: str = Field(default="", max_length=120)
+    say: str = Field(default="", max_length=100_000)
+    position: str = Field(default="", max_length=2_000)
+    stance: str = Field(default="", max_length=120)
+    nonNegotiable: str = Field(default="", max_length=2_000)  # noqa: N815 — 프론트 필드명
+
+
+class DocxDelib(BaseModel):
+    model_config = {"extra": "ignore"}
+    turns: list[DocxTurn] = Field(default_factory=list, max_length=400)
+
+
 class DocxMessage(BaseModel):
     """내보내기 입력의 메시지 한 건. 프론트가 보내는 모양(text/delib)을 그대로 받되 상한을 건다."""
-    model_config = {"extra": "allow"}     # ts·role 외 필드는 통과시키되 아래 캡은 강제
+    model_config = {"extra": "allow"}     # ts 등 표시용 필드는 통과, 아래 캡은 강제
     role: str = Field(default="assistant", max_length=40)
     text: str = Field(default="", max_length=200_000)
+    delib: DocxDelib | None = None
 
 
 class ConvPayload(BaseModel):
