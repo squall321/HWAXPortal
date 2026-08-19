@@ -661,24 +661,35 @@ async def chat(
         raise AuthError("too many concurrent chats; retry shortly", status_code=429)
     await sem.acquire()
 
-    # Pick the stream source. echo = local mock (no remote); else relay the Agent Server.
-    if mode == "echo":
-        source = _echo_stream(body.message, principal, audit)
-    else:
-        source = _relay_stream(body, principal, audit, settings, _agent_client(request),
-                               _chat_user_pat(request.app.state.keystore, settings, principal))
+    # ⚠ acquire 와 gen() 사이는 반드시 보호한다. 여기서 예외가 나면 gen() 이 아예
+    # 만들어지지 않으므로 그 안의 finally(sem.release) 가 영원히 실행되지 않는다 —
+    # 퍼밋이 영구히 새고 상한(64)만큼 쌓이면 챗·docx 가 전부 429 로 고정된다.
+    # 실제 방아쇠가 있다: store.append 는 sqlite3 를 예외 처리 없이 부른다
+    # (database is locked / disk I/O error 등).
+    try:
 
-    # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
-    # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).
-    store = _conv(request) if body.conversation_id else None
-    owner = principal.subject
-    cid = body.conversation_id
-    if store is not None and cid:
-        # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
-        if store.append(conversation_id=cid, owner_sub=owner, role="user", content=body.message):
-            pass
+        # Pick the stream source. echo = local mock (no remote); else relay the Agent Server.
+        if mode == "echo":
+            source = _echo_stream(body.message, principal, audit)
         else:
-            store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
+            source = _relay_stream(body, principal, audit, settings, _agent_client(request),
+                                   _chat_user_pat(request.app.state.keystore, settings, principal))
+
+        # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
+        # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).
+        store = _conv(request) if body.conversation_id else None
+        owner = principal.subject
+        cid = body.conversation_id
+        if store is not None and cid:
+            # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
+            if store.append(conversation_id=cid, owner_sub=owner, role="user", content=body.message):
+                pass
+            else:
+                store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
+
+    except BaseException:
+        sem.release()
+        raise
 
     async def gen() -> AsyncIterator[bytes]:
         acc: list[str] = []          # token delta 누적(폴백)

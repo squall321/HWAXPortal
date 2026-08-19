@@ -412,5 +412,15 @@ echo "  Portal:  https://hwax.sec.samsung.net/   (tiles: /heax-hub/ /ai-data-hub
 echo "  DynaForge(KooRemapper): HEAX 하위앱 /apps/kooremapper/ (portal_auth SSO), MCP /apps/kooremapper_mcp/"
 echo "  If a service shows a non-2xx above, re-run just it:  $0 <portal|mxwp|heax|aidh|signalforge|kooremapper>"
 
-if [ -e "$GIT_STALE_FLAG" ]; then rm -f "$GIT_STALE_FLAG"; exit 3; fi
+# 종료코드로 무엇이 잘못됐는지 구분해 낸다. DEPLOY_FAILED 는 18곳에서 올라가기만 하고
+# 아무도 읽지 않아, 배포 항목이 통째로 skip 돼도 exit 0 이었다 — 호출자(update-all)가
+# 알 방법이 없었다. 소스 갱신 실패가 더 위험하므로 그쪽을 우선 알린다.
+_stale=0
+[ -e "$GIT_STALE_FLAG" ] && { _stale=1; rm -f "$GIT_STALE_FLAG"; }
+if [ "$DEPLOY_FAILED" -gt 0 ]; then
+  echo
+  echo "  ✗ 배포 항목 ${DEPLOY_FAILED}건이 skip/실패했다 — 위 '⚠ skip:' 줄을 보라."
+fi
+[ "$_stale" = 1 ] && exit 3
+[ "$DEPLOY_FAILED" -gt 0 ] && exit 4
 exit 0

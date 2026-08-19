@@ -39,8 +39,13 @@ export async function postLogout(): Promise<void> {
   // 엔드포인트 자체가 없다 — 그대로 두면 포털에서 로그아웃해도 그 대시보드는 계속 열린다.
   // 같은 오리진이라 여기서 지울 수 있다. 키가 바뀌면 이 줄도 같이 바꿔야 한다
   // (AIDataHub dashboard.js 의 API_KEY_STORAGE).
+  // 서버 쿠키만으로 안 끊기는 것들. 두 서비스 모두 자격증명을 localStorage 에 둔다 —
+  // AIDataHub 는 로그아웃 경로가 아예 없고, HEAXHub 는 쿠키를 지워도 주 자격증명이
+  // heaxhub.auth 에 남는다. 같은 오리진이라 여기서 지울 수 있다.
+  // 키가 바뀌면 이 목록도 같이 바꿔야 한다(AIDataHub dashboard.js 의 API_KEY_STORAGE,
+  // HEAXHub frontend/src/lib/auth/store.ts 의 persist name).
   try {
-    localStorage.removeItem('aidh.api_key');
+    for (const k of ['aidh.api_key', 'heaxhub.auth']) localStorage.removeItem(k);
   } catch {
     /* 저장소 접근이 막혀 있어도 포털 로그아웃 자체는 이미 끝났다 */
   }

@@ -123,8 +123,11 @@ if [ "$_DA_RC" = "3" ]; then
   # bad 가 아니라 fail 이다 — 코드가 안 올라간 상태를 '경고' 로 두면 마지막 요약이
   # '✓ 전체 최신화 완료' 로 끝나 그대로 운영에 들어간다.
   fail "소스 갱신 실패 — 코드는 옛것이다. 위 '✗ git' 줄의 원인을 먼저 해결하고 다시 돌려라"
+elif [ "$_DA_RC" = "4" ]; then
+  # 배포 항목 skip 도 실패다 — 그 서비스는 옛것으로 돌고 있다.
+  fail "deploy-all 에서 배포 항목이 skip/실패했다 — 위 '⚠ skip:' 줄의 원인을 해결하라"
 elif [ "$_DA_RC" != "0" ]; then
-  bad "deploy-all 에서 일부 항목이 skip/실패(rc=$_DA_RC) — 위 ⚠ 줄과 아래 헬스게이트를 함께 보라"
+  fail "deploy-all 이 rc=$_DA_RC 로 끝났다 — 위 ⚠ 줄과 아래 헬스게이트를 함께 보라"
 fi
 
 # ── 3) AIDataHub 데이터 동기화 — dev가 원본. Drive 덤프가 지난 복원분과 같으면 restore 생략

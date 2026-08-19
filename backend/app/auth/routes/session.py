@@ -144,7 +144,29 @@ def logout(
     # 쿠키·헤더를 같은 값으로 맞추면 스스로 통과시킬 수 있어 인증이 아니다 — 그대로 두면
     # 미인증 호출자가 하위 서비스 인증 엔드포인트 목록을 그냥 받아 간다.
     # 로그아웃 동작(쿠키 삭제)은 세션 유무와 무관하게 그대로 수행한다.
-    _has_session = bool(request.cookies.get(cookies.SESSION_COOKIE))
+    # ⚠ 쿠키 '존재' 로 판정하면 두 가지가 동시에 틀린다.
+    #   (1) 서명 검증이 없어 아무 값이나 넣으면 통과한다 — 막았다던 미인증 노출이 그대로다.
+    #   (2) hwax_session 은 900초라 15분만 놀아도 사라진다. SPA 에 주기 갱신이 없고 이
+    #       라우트는 401 을 안 내므로 refresh-on-401 도 안 탄다 → 정상 사용자가 하위
+    #       서비스를 하나도 못 끊는다(로그아웃이 무력화된다).
+    # 그래서 세션 또는 refresh 토큰 중 하나라도 '검증에 성공' 해야 목록을 준다.
+    _has_session = False
+    try:
+        _svc = request.app.state.jwt_service
+        _tok = request.cookies.get(cookies.SESSION_COOKIE)
+        if _tok:
+            _svc.verify_session(_tok)
+            _has_session = True
+    except Exception:  # noqa: BLE001 — 만료·위조는 아래 refresh 로 한 번 더 본다
+        _has_session = False
+    if not _has_session:
+        try:
+            _rt = request.cookies.get(cookies.REFRESH_COOKIE)
+            if _rt:
+                request.app.state.jwt_service.verify_refresh(_rt)
+                _has_session = True
+        except Exception:  # noqa: BLE001 — 둘 다 실패면 목록을 주지 않는다
+            _has_session = False
     outs = []
     try:
         if not _has_session:
