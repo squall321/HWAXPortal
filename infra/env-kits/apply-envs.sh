@@ -77,7 +77,9 @@ apply_one() {  # $1=서비스명
       @FROM_RA:*@)  # ReportArchive .env 의 해당 키를 상속 — 없으면(dev=mock) 이 키는 건너뜀
         rak="${val#@FROM_RA:}"; rak="${rak%@}"
         val="$(ra_env_value "$rak")"
-        [ -n "$val" ] || { echo "   · $key: RA .env 에 $rak 없음 → 건너뜀(agent-server 기본값=로컬 vLLM 사용)"; continue; } ;;
+        # 문구에 서비스 이름을 박아 두면 다른 kit 에서 거짓말이 된다 — 실제로 agent-server 가
+        # 아닌 kit 에서도 "agent-server 기본값" 이라고 찍혔다. 무엇이 없어서 무엇이 되는지만 말한다.
+        [ -n "$val" ] || { echo "   · $key: RA .env 에 $rak 없음 → 건너뜀(대상 앱의 자체 기본값을 쓴다)"; continue; } ;;
     esac
     if [ "$DRY" = 1 ]; then
       echo "   (dry-run) + $key=$val"
@@ -90,7 +92,10 @@ apply_one() {  # $1=서비스명
   return 0
 }
 
-SVCS=("$@"); [ ${#SVCS[@]} -gt 0 ] || SVCS=(heax-hub signalforge mx-white-paper ai-data-hub)
+# 기본 목록에 agent-server·paper-ingest 가 빠져 있어, 인자 없이 돌리면 LLM 주입이 절반만
+# 됐다. LLM 을 쓰는 서비스가 하나라도 빠지면 그 앱만 조용히 dev 폴백(127.0.0.1:8000)으로
+# 떨어지고, cae00 에서는 Errno 111 로 죽는다. 등록된 것은 전부 기본으로 돈다.
+SVCS=("$@"); [ ${#SVCS[@]} -gt 0 ] || SVCS=("${!MAP[@]}")
 RC=0
 for s in "${SVCS[@]}"; do apply_one "$s" || RC=1; done
 echo
