@@ -146,10 +146,20 @@ WANT="${*:-portal mxwp heax aidh signalforge kooremapper}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
-DEPLOY_FAILED=0
 # skip 은 노란 경고만 찍고 끝났고, 스크립트 마지막이 echo 라 종료코드는 늘 0 이었다.
 # 그래서 update-all 의 `|| echo "⚠ deploy-all 일부 실패"` 가 실행될 수 없었다(18곳이 이걸 탄다).
-skip() { printf '  \033[1;33m⚠ skip:\033[0m %s\n' "$*"; DEPLOY_FAILED=$((DEPLOY_FAILED+1)); }
+#
+# ⚠ 세는 자리는 파일이다. skip 은 절반이 ( cd "$DIR" … ) 서브셸 안에서 불리는데, 거기서
+# 올린 변수는 부모에 절대 도달하지 않는다 — GIT_STALE 이 그렇게 증발해 exit 3 이 죽은
+# 코드였던 것과 같은 부류다. 그때는 변수만 고치고 "원칙"으로 적어 뒀는데, 바로 옆의
+# 이 카운터에는 적용하지 않았다. 한 줄 = 한 건으로 파일에 적는다.
+DEPLOY_FAILED_FILE="$(mktemp -u /tmp/.hwax-deploy-failed.XXXXXX)"
+skip() { printf '  \033[1;33m⚠ skip:\033[0m %s\n' "$*"; printf '%s\n' "$*" >> "$DEPLOY_FAILED_FILE"; }
+
+# 비치명 항목 — 경고는 하되 종료코드를 올리지 않는다. skip 과 같이 쓰면 "실패해도 배포는
+# 진행된다"고 스스로 적어 둔 것까지 exit 4 가 되어, 호출자(update-all)가 멀쩡한 배포를
+# 실패로 보고한다. 그러면 exit 4 가 아무 의미도 없어진다 — 늘 켜져 있는 경보는 경보가 아니다.
+note() { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
 
 # We RESTART each service (stop → start) so freshly pulled images / nginx conf / code actually take
 # effect. `start.sh` alone skips already-running instances, leaving stale config live (that's what
@@ -300,9 +310,9 @@ if want aidh; then
         mkdir -p "$AIDH_DL_DIR"
         "$RCLONE_BIN" copy "$AIDH_EXT_SRC/" "$AIDH_DL_DIR/" 2>/dev/null \
           && ok "aidh extension synced from Drive ($AIDH_EXT_SRC)" \
-          || skip "aidh extension sync failed (non-fatal)"
+          || note "aidh extension sync 실패(비치명) — 확장 다운로드만 옛 버전이다"
       else
-        skip "aidh extension: Drive ext-downloads 없음 — dev 에서 publish-ext.sh 먼저"
+        note "aidh extension: Drive ext-downloads 없음 — dev 에서 publish-ext.sh 먼저"
       fi
     fi
   else skip "AIDataHub repo not found (set AIDH_DIR=)"; fi
@@ -333,7 +343,7 @@ if want kooremapper; then
       [ -f platform/.env ] || { [ -f platform/.env.example ] && cp platform/.env.example platform/.env; }
       set_remote platform/.env KOORM_DRIVE_REMOTE KooRemapper/dist
       # 바이너리+dist+서비스 SIF 반입(없으면 skip — prod 빌드 가능 시 start 가 알아서 빌드).
-      bash platform/infra/scripts/dist-from-drive.sh || skip "koorm dist-from-drive 실패(비치명) — 로컬 아티팩트로 진행"
+      bash platform/infra/scripts/dist-from-drive.sh || note "koorm dist-from-drive 실패(비치명) — 로컬 아티팩트로 진행"
       [ "$RESTART" = 1 ] || bash platform/infra/scripts/stop.sh 2>/dev/null || true
       bash platform/infra/scripts/start.sh
     ) && ok "kooremapper up" || skip "kooremapper failed (see above)"
@@ -384,7 +394,11 @@ fi
 # ── Health summary (everything that was started) ────────────────────────────
 hr "Health"
 probe() {  # $1=label  $2=url
-  local code; code="$(curl -sk -m4 -o /dev/null -w '%{http_code}' "$2" 2>/dev/null || echo 000)"
+  # ⚠ `|| echo 000` 을 붙이지 않는다. curl 은 연결 실패에도 -w 로 이미 '000' 을 찍고
+  # 종료코드만 0 이 아니다 — 폴백이 덧붙어 '000000' 이 된다(실측). 30줄 위 DynaForge
+  # 검사에 같은 주석을 달아 놓고 정작 이 함수에는 적용하지 않았다.
+  local code; code="$(curl -sk -m4 -o /dev/null -w '%{http_code}' "$2" 2>/dev/null)"
+  code="${code:-000}"
   if [ "$code" = 200 ] || [ "$code" = 401 ] || [ "$code" = 302 ]; then ok "$1 → $code  ($2)"
   else skip "$1 → $code  ($2)"; fi
 }
@@ -417,6 +431,9 @@ echo "  If a service shows a non-2xx above, re-run just it:  $0 <portal|mxwp|hea
 # 알 방법이 없었다. 소스 갱신 실패가 더 위험하므로 그쪽을 우선 알린다.
 _stale=0
 [ -e "$GIT_STALE_FLAG" ] && { _stale=1; rm -f "$GIT_STALE_FLAG"; }
+DEPLOY_FAILED="$(wc -l < "$DEPLOY_FAILED_FILE" 2>/dev/null || echo 0)"
+DEPLOY_FAILED="${DEPLOY_FAILED// /}"
+rm -f "$DEPLOY_FAILED_FILE"
 if [ "$DEPLOY_FAILED" -gt 0 ]; then
   echo
   echo "  ✗ 배포 항목 ${DEPLOY_FAILED}건이 skip/실패했다 — 위 '⚠ skip:' 줄을 보라."
