@@ -124,14 +124,33 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     // 에러가 'MCP 등록 실패' 로만 보인다. 미리 확인하고 없으면 사내 프록시를 이 창에 세운다.
     'where npx >nul 2>nul',
     'if errorlevel 1 goto :px_done',
-    'call npx -y mcp-remote --version >nul 2>nul',
+    // ⚠ mcp-remote 로 레지스트리를 재지 않는다. `npx -y mcp-remote --version` 은
+    // mcp-remote 가 --version 을 서버 URL 로 해석해 "Invalid URL" 로 죽는다 — 네트워크가
+    // 멀쩡하고 패키지가 이미 받아져 있어도 종료코드 1 이다(실측). 그래서 이 검사는 항상
+    // 실패했고, 늘 '레지스트리에 못 나갑니다' 를 찍고 사내 프록시를 강제로 걸었다.
+    // 그 프록시에 닿지 못하는 PC 에서는 이어지는 npx 가 타임아웃 없이 매달렸고, 출력도
+    // >nul 로 버려서 화면이 그냥 멈춘 것처럼 보였다(실사고).
+    // 레지스트리에 직접, 시간 상한을 걸고 묻는다 — npx 를 안 쓰니 하위 도구의 CLI 취향에
+    // 좌우되지 않고 응답이 없어도 반드시 끝난다.
+    'powershell -NoProfile -Command "$ErrorActionPreference=\'SilentlyContinue\';' +
+      'try{$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 ' +
+      '-Uri \'https://registry.npmjs.org/mcp-remote/latest\';' +
+      'if($r.StatusCode -eq 200){exit 0}else{exit 1}}catch{exit 1}"',
     'if not errorlevel 1 goto :px_done',
     'if defined HTTPS_PROXY goto :px_npmfail',
-    `echo      npm 레지스트리에 못 나갑니다 - 사내 프록시^(${CORP_PROXY}^)를 이 창에 적용합니다`,
+    // 프록시를 세우기 전에 그 프록시로 실제로 나가지는지 먼저 본다. 안 되는데 세우면 이 창의
+    // 이후 모든 npx 가 그 프록시로 끌려가 더 나빠진다 — 등록도 연결 시험도 같이 죽는다.
+    `echo      npm 레지스트리 직결 실패 - 사내 프록시^(${CORP_PROXY}^)로 시도합니다`,
+    'powershell -NoProfile -Command "$ErrorActionPreference=\'SilentlyContinue\';' +
+      `try{$px=New-Object System.Net.WebProxy(\'${CORP_PROXY}\');` +
+      '$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Proxy $px ' +
+      '-Uri \'https://registry.npmjs.org/mcp-remote/latest\';' +
+      'if($r.StatusCode -eq 200){exit 0}else{exit 1}}catch{exit 1}"',
+    'if errorlevel 1 goto :px_npmfail',
     `set HTTPS_PROXY=${CORP_PROXY}`,
     `set HTTP_PROXY=${CORP_PROXY}`,
-    'call npx -y mcp-remote --version >nul 2>nul',
-    'if not errorlevel 1 goto :px_done',
+    'echo      사내 프록시로 레지스트리 확인 - 이 창에 적용합니다',
+    'goto :px_done',
     ':px_npmfail',
     'echo      [!] npx 가 mcp-remote 를 받지 못했습니다.',
     'echo          프록시 뒤라면 관리자에게 npm 레지스트리 허용을 요청하세요.',
@@ -314,6 +333,20 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'pause',
     'exit /b 1',
     ':ok',
+    // ── [6] 실제 연결 확인 ───────────────────────────────────────────────
+    // 지금까지는 '등록됐는가' 만 봤다. 그건 연결된다는 뜻이 아니다 — http origin 에서
+    // 만든 설정이 등록은 되고 mcp-remote 는 "Non-HTTPS URLs are only allowed for
+    // localhost" 로 즉시 죽어, 사용자는 '완료' 를 보고도 Claude 에서 도구가 왜 안 뜨는지
+    // 몰랐다(실사고). 그래서 여기서 mcp-remote 를 그대로 띄워 프록시가 서는지 본다.
+    // 실패해도 배치를 끊지 않는다 — 등록은 이미 끝났고 되돌릴 것이 없다. 무엇을 봐야
+    // 하는지만 알려 준다. 토큰은 환경변수로만 넘긴다(명령줄에 실으면 프로세스 목록에 남는다).
+    'echo.',
+    'echo  [6] 실제 연결 확인 중... (최대 40초)',
+    `set "HWAX_MCP_URL=${MCP_URL}"`,
+    `set "HWAX_ALLOW_HTTP=${IS_PLAINTEXT ? '1' : '0'}"`,
+    'set "HWAX_TESTLOG=%TEMP%\\hwax-mcp-test.log"',
+    `powershell -NoProfile -ExecutionPolicy Bypass -Command "${"$ErrorActionPreference='SilentlyContinue';$env:AUTH=$env:HWAX_AUTH;if($env:HWAX_CERT){$env:NODE_EXTRA_CA_CERTS=$env:HWAX_CERT};$log=$env:HWAX_TESTLOG;Remove-Item $log,($log+'.out') -Force -EA SilentlyContinue;$a=@('/c','npx','-y','mcp-remote',$env:HWAX_MCP_URL);if($env:HWAX_ALLOW_HTTP -eq '1'){$a+='--allow-http'};$a+=@('--header','Authorization:${AUTH}');$p=Start-Process -FilePath 'cmd.exe' -ArgumentList $a -NoNewWindow -PassThru -RedirectStandardError $log -RedirectStandardOutput ($log+'.out');$ok=0;$err='';for($i=0;$i -lt 40;$i++){Start-Sleep -Seconds 1;$t=((Get-Content $log,($log+'.out') -Raw -EA SilentlyContinue) -join '');if($t -match 'Proxy established successfully'){$ok=1;break};if($t -match 'Non-HTTPS URLs'){$err='mcp-remote 가 http 주소를 거부했습니다 (--allow-http 누락).';break};if($t -match '401|403|Unauthorized|Forbidden'){$err='토큰이 거부됐습니다 (만료 또는 폐기).';break};if($t -match 'ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN'){$err='서버에 닿지 못했습니다 (주소/방화벽/프록시).';break};if($p.HasExited -and $i -gt 3){$err='mcp-remote 가 곧바로 종료했습니다.';break}};if(-not $p.HasExited){$p.Kill()};if($ok -eq 1){Write-Host '     [O] 연결 확인됨 - 서버가 응답했습니다.';exit 0}else{Write-Host ('     [!] 연결 확인 실패: '+$(if($err){$err}else{'응답이 없습니다 (시간 초과).'}));Write-Host ('     자세한 내용: '+$log);exit 1}"}"`,
+    'if errorlevel 1 echo      등록은 끝났습니다. 위 사유를 해결한 뒤 Claude 를 재시작하세요.',
     'echo  [O] 완료. Claude 를 완전히 종료한 뒤 다시 실행하세요.',
     'echo      Desktop: 설정 - 커넥터에 hwax 가 보이면 정상',
     'echo      CLI    : claude mcp get hwax  ^| gemini mcp list  ^| codex mcp list',
