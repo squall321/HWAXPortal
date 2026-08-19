@@ -8,6 +8,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import httpx
+from fastapi.exceptions import RequestValidationError
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -84,6 +85,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """검증 오류에서 입력 원문을 떼어 낸다.
+
+    pydantic 은 detail[i].input 에 거부한 값을 그대로 싣는다. 큰 페이로드를 상한으로
+    거부하면 그 페이로드가 통째로 응답에 실려 나가 — 거부가 렌더보다 비싸진다(실측:
+    5MB 요청에 5MB 응답). 사람이 읽을 msg 와 위치만 남긴다.
+    """
+    slim = [{"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")}
+            for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": slim})
 
 
 @app.exception_handler(AuthError)
