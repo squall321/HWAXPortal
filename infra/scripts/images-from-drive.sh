@@ -44,6 +44,12 @@ fi
 mkdir -p "$APPT_DIR"
 cp "$STAGE/portal.sif" "$STAGE/nginx.sif" "$APPT_DIR/"
 echo "  ✓ staged portal.sif + nginx.sif → $APPT_DIR"
+# SearxNG(일반 웹 검색) SIF — 올리는 쪽(images-to-drive)만 고치고 여기를 빼먹으면
+# "SIF 는 Drive 로 간다" 는 안내가 거짓이 된다. 없을 수도 있으므로 있을 때만 옮긴다.
+if [ -f "$STAGE/searxng-fixed.sif" ]; then
+  cp "$STAGE/searxng-fixed.sif" "$APPT_DIR/"
+  echo "  ✓ staged searxng-fixed.sif → $APPT_DIR"
+fi
 
 if [ -f "$STAGE/frontend-dist.tar.gz" ]; then
   ( cd "$REPO_ROOT/frontend" && tar -xzf "$STAGE/frontend-dist.tar.gz" )

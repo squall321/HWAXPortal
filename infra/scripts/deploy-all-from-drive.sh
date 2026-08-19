@@ -87,6 +87,7 @@ git_update() {  # run inside the repo dir
     [ -n "$_fe" ] && printf '      %s\n' "$_fe" | head -5
     echo "      origin: $(git remote get-url origin 2>/dev/null || echo '(없음)')"
     echo "      → 이 상태로 진행하면 Drive 산출물(SIF·dist)만 새것이고 코드는 옛것이다."
+    GIT_STALE=1
     return 0
   }
   if [ "${NO_GIT_RESET:-0}" = "1" ]; then
@@ -102,10 +103,18 @@ git_update() {  # run inside the repo dir
     # ⚠ before 와 after 만 비교하면 안 된다. reset 이 실패해도 둘이 같으므로 "up to date" 라는
     # 거짓말이 찍히고, 레포는 옛 코드인 채 배포가 계속된다 — fetch 쪽과 같은 병이었는데
     # 여기만 남아 있었다. 기준은 origin 과 같아졌는가다.
-    if [ -n "$target" ] && [ "$after" != "$target" ]; then
+    # ⚠ target 이 비는 경우를 '정상'으로 넘기면 안 된다. origin/<branch> 를 못 읽는 상황
+    # (--single-branch 클론, origin 을 config 로만 붙인 박스)은 곧 reset 이 반드시 실패하는
+    # 상황이라, 하필 그때 "up to date" 거짓말이 그대로 살아난다 — 고치려던 것을 비껴갔다.
+    if [ -z "$target" ]; then
+      echo "  ✗ origin/$branch 를 읽을 수 없다 — 소스가 갱신되지 않았다"
+      echo "      origin: $(git remote get-url origin 2>/dev/null || echo '(없음)')"
+      GIT_STALE=1
+    elif [ "$after" != "$target" ]; then
       echo "  ✗ git reset 실패 — HEAD($after) ≠ origin/$branch($target). 소스가 갱신되지 않았다"
       [ -n "$_re" ] && printf '      %s\n' "$_re" | head -3
       echo "      → 이 상태로 진행하면 Drive 산출물만 새것이고 코드는 옛것이다."
+      GIT_STALE=1
     elif [ "$before" = "$after" ]; then
       echo "  · git: up to date ($after)"
     else
@@ -386,6 +395,16 @@ want signalforge && probe "sf     :17370   " "http://127.0.0.1:17370/"
 want kooremapper && probe "koorm  /api/health" "http://127.0.0.1:8700/api/health"
 
 hr "Done"
+# 소스 갱신이 실패했으면 여기서 크게 말하고 종료코드로도 알린다. 화면에 한 줄 찍고
+# '✓ up / exit 0' 으로 끝내면 "up to date" 거짓말을 한 단계 위로 옮긴 것일 뿐이다 —
+# 호출자(update-all)는 종료코드를 보고 다음 단계를 정한다.
+if [ "${GIT_STALE:-0}" = "1" ]; then
+  echo
+  echo "  ✗ 소스가 갱신되지 않은 레포가 있다 — Drive 산출물만 새것이고 코드는 옛것이다."
+  echo "    위의 '✗ git' 줄을 보고 원인을 먼저 해결하라. 서비스는 떠 있어도 옛 코드다."
+fi
 echo "  Portal:  https://hwax.sec.samsung.net/   (tiles: /heax-hub/ /ai-data-hub/ /mx-white-paper/ /signalforge/)"
 echo "  DynaForge(KooRemapper): HEAX 하위앱 /apps/kooremapper/ (portal_auth SSO), MCP /apps/kooremapper_mcp/"
 echo "  If a service shows a non-2xx above, re-run just it:  $0 <portal|mxwp|heax|aidh|signalforge|kooremapper>"
+
+[ "${GIT_STALE:-0}" = "1" ] && exit 3 || exit 0

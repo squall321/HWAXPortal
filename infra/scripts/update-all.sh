@@ -110,9 +110,18 @@ fi
 
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
-# deploy-all 이 이제 skip 건수를 종료코드로 낸다(예전엔 늘 0 이라 이 || 가지가 죽은 코드였다).
-SF_RESTORE_DB="${SF_RESTORE_DB:-0}" "$SELF_REPO/infra/scripts/deploy-all-from-drive.sh" \
-  || bad "deploy-all 에서 일부 항목이 skip/실패 — 위 ⚠ 줄과 아래 헬스게이트를 함께 보라"
+# 종료코드 3 = 소스 갱신 실패(git fetch/reset). 서비스는 떠 있어도 옛 코드라 가장 위험한
+# 상태다 — "✓ up" 만 보고 끝내면 오늘 올린 변경이 하나도 반영되지 않은 채 정상으로 읽힌다.
+# (예전 주석은 'skip 건수를 종료코드로 낸다'였으나 실제로는 그런 코드가 없었다.)
+set +e
+SF_RESTORE_DB="${SF_RESTORE_DB:-0}" "$SELF_REPO/infra/scripts/deploy-all-from-drive.sh"
+_DA_RC=$?
+set -e
+if [ "$_DA_RC" = "3" ]; then
+  bad "소스 갱신 실패 — 코드는 옛것이다. 위 '✗ git' 줄의 원인을 먼저 해결하고 다시 돌려라"
+elif [ "$_DA_RC" != "0" ]; then
+  bad "deploy-all 에서 일부 항목이 skip/실패(rc=$_DA_RC) — 위 ⚠ 줄과 아래 헬스게이트를 함께 보라"
+fi
 
 # ── 3) AIDataHub 데이터 동기화 — dev가 원본. Drive 덤프가 지난 복원분과 같으면 restore 생략
 #      (prod 챗도 create_agent 등 쓰기 도구를 노출하므로, 새 덤프 없는데 매번 DROP+restore 하지 않는다) ──

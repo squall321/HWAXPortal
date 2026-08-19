@@ -26,6 +26,8 @@ DIM = 768
 _CHUNK = 900        # 문자. 한 메시지가 길면 주제가 여러 개다 — 통째로 임베딩하면 다 뭉갠다.
 _OVERLAP = 150      # 경계에 걸친 문장이 어느 쪽에서도 안 잡히는 것을 막는다.
 _MIN = 40           # 이보다 짧은 조각은 "네", "확인했습니다" 같은 것이라 검색 가치가 없다.
+_MIN_SCORE = 0.84   # 이보다 낮으면 "관련 없음" 으로 본다(e5 기준 실측 — 위 search 주석 참조)
+_SCORE_SPAN = 0.06  # 1위에서 이만큼 벌어지면 같은 답으로 묶지 않는다
 
 
 def chunks(text: str) -> list[str]:
@@ -128,6 +130,15 @@ def _rank(store, owner_sub: str, qv: list[float], limit: int) -> list[dict]:
             "message_id": mid, "chunk_ix": cix,
         })
     hits.sort(key=lambda h: h["score"], reverse=True)
+    # 하한을 둔다. e5 는 무관한 문장끼리도 0.75~0.85 가 나오므로, 하한이 없으면 한 번도
+    # 나온 적 없는 주제에도 늘 limit 건을 그럴듯한 점수와 함께 돌려준다 — "찾았다" 와
+    # "없다" 가 구분되지 않는 검색은 없는 사실을 지어내는 것과 같다.
+    # 값은 실측 기준이다: 같은 코퍼스에서 무관 질의 상위가 0.79~0.82, 적중은 0.86 이상.
+    if hits:
+        top = hits[0]["score"]
+        # 절대 하한과 '최고점 대비' 를 함께 본다. 절대값만 보면 코퍼스가 바뀔 때 무너지고,
+        # 상대값만 보면 전부 무관할 때 그중 1등이 통과한다.
+        hits = [h for h in hits if h["score"] >= _MIN_SCORE and h["score"] >= top - _SCORE_SPAN]
     # 같은 대화가 상위를 독식하면 "어느 대화였는지"를 못 고른다 — 대화당 2조각까지만 올린다.
     seen: dict[str, int] = {}
     out = []
