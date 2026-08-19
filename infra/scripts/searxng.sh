@@ -11,7 +11,13 @@
 #     없으면 format=json 이 403 이고, 부르는 쪽에는 '결과 없음'처럼 보인다.
 set -euo pipefail
 
-SIF="${SEARXNG_SIF:-$HOME/serviceApptainers/searxng-fixed.sif}"
+# SIF 위치 — Drive 로 받은 박스는 infra/apptainer/ 에 놓이고(images-from-drive), dev 는
+# ~/serviceApptainers 에 굽는다. 둘 다 본다. 한쪽만 보면 새 박스에서 "SIF 없음"이 된다.
+_R="$(cd "$(dirname "$0")/../.." && pwd)"
+SIF="${SEARXNG_SIF:-}"
+[ -n "$SIF" ] || { for c in "$_R/infra/apptainer/searxng-fixed.sif" "$HOME/serviceApptainers/searxng-fixed.sif"; do
+    [ -f "$c" ] && { SIF="$c"; break; }; done; }
+SIF="${SIF:-$HOME/serviceApptainers/searxng-fixed.sif}"
 CONF_DIR="${SEARXNG_CONF_DIR:-/data/hwax/secrets/searxng}"
 PORT="${SEARXNG_PORT:-8888}"
 APPT="$(command -v apptainer || echo "$HOME/claude/HWAXPortal/infra/apptainer/bin-1.3.6/usr/bin/apptainer")"

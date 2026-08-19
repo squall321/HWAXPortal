@@ -50,8 +50,12 @@ if want portal; then
     # SIF 도 본다 — 백엔드 의존성이 바뀌면(예: python-docx 추가) dist 는 그대로인데 SIF 만
     # 달라진다. dist 만 보고 있으면 '올렸는데 500' 이 된다(실측 2026-08-19: 컨테이너에
     # python-docx 가 없어 워드 내보내기가 500 이었다).
-    for _sif in portal nginx; do
+    # searxng-fixed.sif 도 본다. images-to-drive 가 latest/ 를 sync(미러)하므로 스테이징에서
+    # 빠지면 조용히 삭제된다 — 실제로 한 번 그렇게 사라졌고(2026-08-19), 이 검사가 그 파일을
+    # 안 보고 있어서 "✓ 일치" 로 보였다.
+    for _sif in portal nginx searxng-fixed; do
       _l="$SELF_REPO/infra/apptainer/${_sif}.sif"
+      [ -f "$_l" ] || _l="$HOME/serviceApptainers/${_sif}.sif"   # dev 는 여기에 굽는다
       [ -f "$_l" ] || continue
       _ls="$(stat -c%s "$_l")"
       _ds="$(rclone lsl "$R/latest/${_sif}.sif" 2>/dev/null | awk '{print $1}')"

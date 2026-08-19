@@ -30,10 +30,22 @@ if [ -f "$REPO_ROOT/frontend/dist/index.html" ]; then
   echo "  · included frontend/dist"
 fi
 
+# SearxNG(일반 웹 검색 공급자) SIF — 있으면 같이 나른다.
+# ⚠ 아래 업로드가 sync(정확한 미러)라 여기 스테이징하지 않은 파일은 latest/ 에서 지워진다.
+# 실제로 손으로 올려 뒀던 searxng-fixed.sif 가 그 다음 실행에 조용히 삭제됐다(2026-08-19).
+# 따로 올리지 말고 반드시 이 목록으로 나른다.
+SEARXNG_SIF="${SEARXNG_SIF:-$REPO_ROOT/infra/apptainer/searxng-fixed.sif}"
+[ -f "$SEARXNG_SIF" ] || SEARXNG_SIF="$HOME/serviceApptainers/searxng-fixed.sif"
+if [ -f "$SEARXNG_SIF" ]; then
+  cp "$SEARXNG_SIF" "$STAGE/searxng-fixed.sif"
+  echo "  · included searxng-fixed.sif"
+fi
+
 # Checksums over an EXPLICIT file list (so SHA256SUMS doesn't checksum itself).
 ( cd "$STAGE"
   files="portal.sif nginx.sif"
   [ -f frontend-dist.tar.gz ] && files="$files frontend-dist.tar.gz"
+  [ -f searxng-fixed.sif ] && files="$files searxng-fixed.sif"
   sha256sum $files > SHA256SUMS )
 
 echo "→ uploading to $REMOTE/images-$TS/  (+ latest/)"
