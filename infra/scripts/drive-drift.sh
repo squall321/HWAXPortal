@@ -47,6 +47,20 @@ if want portal; then
     elif [ -z "$t" ]; then
       echo "  ✗ frontend-dist.tar.gz — Drive 에 없다"; DRIFT=1; q=1
     fi
+    # SIF 도 본다 — 백엔드 의존성이 바뀌면(예: python-docx 추가) dist 는 그대로인데 SIF 만
+    # 달라진다. dist 만 보고 있으면 '올렸는데 500' 이 된다(실측 2026-08-19: 컨테이너에
+    # python-docx 가 없어 워드 내보내기가 500 이었다).
+    for _sif in portal nginx; do
+      _l="$SELF_REPO/infra/apptainer/${_sif}.sif"
+      [ -f "$_l" ] || continue
+      _ls="$(stat -c%s "$_l")"
+      _ds="$(rclone lsl "$R/latest/${_sif}.sif" 2>/dev/null | awk '{print $1}')"
+      if [ -z "$_ds" ]; then
+        echo "  ✗ ${_sif}.sif — Drive 에 없다"; DRIFT=1; q=1
+      elif [ "$_ls" != "$_ds" ]; then
+        echo "  ✗ ${_sif}.sif — 로컬 $_ls ≠ Drive $_ds"; DRIFT=1; q=1
+      fi
+    done
     # 소스가 dist 보다 새것이면 빌드부터 안 한 것이다 — 올려도 옛 화면이 간다.
     src="$(find "$SELF_REPO/frontend/src" -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"
     if [ -n "$src" ] && [ -n "$newest" ] && [ "${src%.*}" -gt "${newest%.*}" ]; then
