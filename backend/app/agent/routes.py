@@ -467,9 +467,24 @@ class ExpertsRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
 
 
+class DocxMessage(BaseModel):
+    """내보내기 입력의 메시지 한 건. 프론트가 보내는 모양(text/delib)을 그대로 받되 상한을 건다."""
+    model_config = {"extra": "allow"}     # ts·role 외 필드는 통과시키되 아래 캡은 강제
+    role: str = Field(default="assistant", max_length=40)
+    text: str = Field(default="", max_length=200_000)
+
+
+class ConvPayload(BaseModel):
+    model_config = {"extra": "allow"}
+    title: str = Field(default="", max_length=300)
+    messages: list[DocxMessage] = Field(default_factory=list, max_length=2000)
+
+
 class DocxRequest(BaseModel):
     """대화 이력 → Word. mode='transcript' 는 있는 그대로, 'report' 는 LLM 이 정리한다."""
-    conversation: dict = Field(default_factory=dict)
+    # 상한을 건다. 같은 파일의 다른 모델은 전부 캡이 있는데 여기만 맨 dict 였다 —
+    # 통째로 메모리에 올린 뒤 python-docx 로 렌더하므로 큰 입력이 그대로 부하가 된다.
+    conversation: ConvPayload = Field(default_factory=lambda: ConvPayload())
     mode: Literal["transcript", "report"] = "transcript"
 
 
@@ -510,7 +525,9 @@ async def export_docx(
     """
     from app.agent import docx_export as dx
 
-    conv = body.conversation or {}
+    # 모델 → dict. docx_export 는 dict 로 다루므로 여기서 한 번만 변환한다.
+    audit = _audit(request)
+    conv = body.conversation.model_dump()
     title = (conv.get("title") or "대화").strip()[:60]
     n_msg = len([m for m in (conv.get("messages") or []) if (m.get("text") or "").strip()])
     if not n_msg:
@@ -521,6 +538,15 @@ async def export_docx(
         data = dx.build_transcript(conv)
         name = f"{title}-전문"
     else:
+        # ⚠ 이 경로는 /chat 과 똑같은 부하를 건다(에이전트 + LLM 왕복 수십 초). 그런데
+        # 동시성 상한과 감사 기록을 둘 다 우회하고 있었다 — /chat 이 그 둘을 두는 이유가
+        # 그대로 적용되는데도. 같은 게이트를 통과시킨다.
+        sem = _sem(request)
+        if sem.locked():
+            audit.record(principal=principal.subject, event="docx_report", status="rejected",
+                         meta={"reason": "max_concurrent_chats"})
+            raise AuthError("too many concurrent chats; retry shortly", status_code=429)
+        await sem.acquire()
         # 에이전트는 SSE 만 낸다(비스트리밍 엔드포인트가 없다). 여기서 스트림을 받아
         # 최종 result 만 모은다 — 에이전트에 엔드포인트를 새로 파는 것보다 접점이 적다.
         client = _agent_client(request)
@@ -544,6 +570,12 @@ async def export_docx(
                                 pass
         except httpx.HTTPError:
             md = ""
+        finally:
+            # 반드시 놓는다. 여기서 새면 상한만큼 요청이 지나간 뒤 챗까지 429 가 된다.
+            sem.release()
+        audit.record(principal=principal.subject, event="docx_report",
+                     status="ok" if md.strip() else "error",
+                     meta={"messages": n_msg})
         if not md.strip():
             return Response(
                 content='{"error":"report_failed","detail":"정리본 생성에 실패했습니다 — '

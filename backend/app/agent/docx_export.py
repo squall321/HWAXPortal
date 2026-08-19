@@ -90,8 +90,18 @@ def _md_para(doc: Document, line: str) -> None:
         run.bold = i % 2 == 1
 
 
+# XML(따라서 docx)이 담을 수 없는 제어문자. 대화 본문에 ANSI 이스케이프나 NUL 이 한 글자만
+# 있어도 python-docx 가 예외를 던져 내보내기 전체가 500 이 된다 — 로그를 붙여넣은 대화에서
+# 실제로 흔하다. 탭·개행은 남기고 나머지만 지운다.
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _clean(text: str) -> str:
+    return _CTRL.sub("", text or "")
+
+
 def _body(doc: Document, text: str) -> None:
-    for line in (text or "").splitlines():
+    for line in _clean(text).splitlines():
         _md_para(doc, line)
 
 
@@ -152,7 +162,7 @@ def build_transcript(conv: dict[str, Any]) -> bytes:
     # 사라지던 경로다.
     msgs = [m for m in (conv.get("messages") or [])
             if (m.get("text") or "").strip() or _delib_turns(m)]
-    _meta(doc, conv.get("title") or "대화 기록",
+    _meta(doc, _clean(conv.get("title") or "대화 기록"),
           f"HWAX Portal · 발화 {len(msgs)}개 · 내보낸 시각 "
           f"{datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
