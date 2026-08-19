@@ -22,4 +22,15 @@ export async function postLogout(): Promise<void> {
   await Promise.allSettled(
     outs.map((u) => fetch(u, { method: 'POST', credentials: 'include' })),
   );
+
+  // 서버 로그아웃으로 안 지워지는 것도 있다. AIDataHub 는 자격증명을 쿠키가 아니라
+  // localStorage 에 두고(대시보드가 SSO 쿠키를 읽어 옮긴 뒤 즉시 만료시킨다), 로그아웃
+  // 엔드포인트 자체가 없다 — 그대로 두면 포털에서 로그아웃해도 그 대시보드는 계속 열린다.
+  // 같은 오리진이라 여기서 지울 수 있다. 키가 바뀌면 이 줄도 같이 바꿔야 한다
+  // (AIDataHub dashboard.js 의 API_KEY_STORAGE).
+  try {
+    localStorage.removeItem('aidh.api_key');
+  } catch {
+    /* 저장소 접근이 막혀 있어도 포털 로그아웃 자체는 이미 끝났다 */
+  }
 }
