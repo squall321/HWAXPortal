@@ -232,6 +232,10 @@ services:
     # ⚠ only_on 이 없으면 SIF 가 없는 박스에서 기동이 즉시 죽는데도 health 대기 120초를
     # 꼬박 태우고 영구 '✗ down' 으로 남는다(부팅·재배포마다). vllm 이 같은 이유로 이미
     # only_on 을 쓰고 있다. 일반 웹 검색은 사내 승인 사항이라 켠 박스에서만 돌리면 된다.
+    # cae00 에서 켜려면(사내 승인 후): 여기에 그 박스 hostname 을 더하고
+    #   [heax-hub .env] SEARCH_MODE=full / WEB_PROVIDER=searxng / SEARXNG_URL=http://127.0.0.1:8888
+    # SIF 는 이미 Drive 로 간다(images-to-drive 가 나른다) — 따로 옮길 것 없다.
+    #   only_on: [smarttwincluster, <cae00 hostname>]
     only_on: smarttwincluster
     dir: .                      # 포털 레포 자신 — 박스별 경로(~/claude·~/Projects)를 박지 않는다
     start: ./infra/scripts/searxng.sh
