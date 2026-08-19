@@ -153,7 +153,9 @@ ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # 올린 변수는 부모에 절대 도달하지 않는다 — GIT_STALE 이 그렇게 증발해 exit 3 이 죽은
 # 코드였던 것과 같은 부류다. 그때는 변수만 고치고 "원칙"으로 적어 뒀는데, 바로 옆의
 # 이 카운터에는 적용하지 않았다. 한 줄 = 한 건으로 파일에 적는다.
-DEPLOY_FAILED_FILE="$(mktemp -u /tmp/.hwax-deploy-failed.XXXXXX)"
+# -u 가 아니라 실제로 만든다. 존재 여부가 아니라 줄 수가 신호이므로, 없으면 마지막
+# 집계의 `wc -l <` 가 "No such file" 을 뱉는다 — 아무 실패도 없는 정상 배포에서.
+DEPLOY_FAILED_FILE="$(mktemp /tmp/.hwax-deploy-failed.XXXXXX)"
 skip() { printf '  \033[1;33m⚠ skip:\033[0m %s\n' "$*"; printf '%s\n' "$*" >> "$DEPLOY_FAILED_FILE"; }
 
 # 비치명 항목 — 경고는 하되 종료코드를 올리지 않는다. skip 과 같이 쓰면 "실패해도 배포는
@@ -394,10 +396,15 @@ fi
 # ── Health summary (everything that was started) ────────────────────────────
 hr "Health"
 probe() {  # $1=label  $2=url
-  # ⚠ `|| echo 000` 을 붙이지 않는다. curl 은 연결 실패에도 -w 로 이미 '000' 을 찍고
-  # 종료코드만 0 이 아니다 — 폴백이 덧붙어 '000000' 이 된다(실측). 30줄 위 DynaForge
-  # 검사에 같은 주석을 달아 놓고 정작 이 함수에는 적용하지 않았다.
-  local code; code="$(curl -sk -m4 -o /dev/null -w '%{http_code}' "$2" 2>/dev/null)"
+  # `|| echo 000` 은 두 가지 일을 한꺼번에 하고 있었고, 그래서 둘 다 어설펐다.
+  #   (a) set -e 방어 — 이게 진짜 목적이다. curl 은 연결 실패에 rc 7 을 내고,
+  #       `code="$(curl …)"` 의 종료코드가 곧 curl 의 rc 라 무응답 서비스 하나가
+  #       스크립트를 통째로 끊는다(실측: 이 폴백을 떼자 Health 첫 줄에서 exit 7).
+  #   (b) 값 폴백 — 이건 필요 없다. curl 은 실패해도 -w 로 이미 '000' 을 찍는다.
+  #       그래서 폴백이 덧붙어 '000000' 이 됐다(실측). 30줄 위 DynaForge 검사에
+  #       똑같은 주석을 달아 놓고 이 함수에는 적용하지 않은 자리다.
+  # 둘을 갈라 놓는다 — rc 는 `|| true` 로 삼키고, 값은 curl 이 찍은 것을 그대로 쓴다.
+  local code; code="$(curl -sk -m4 -o /dev/null -w '%{http_code}' "$2" 2>/dev/null)" || true
   code="${code:-000}"
   if [ "$code" = 200 ] || [ "$code" = 401 ] || [ "$code" = 302 ]; then ok "$1 → $code  ($2)"
   else skip "$1 → $code  ($2)"; fi
