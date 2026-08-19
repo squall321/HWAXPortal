@@ -39,16 +39,27 @@ def _style(doc: Document) -> None:
     pf.line_spacing = 1.35
 
 
+def _run(par, text: str):
+    """add_run 의 유일한 통로. 제어문자는 여기서 막는다.
+
+    호출부마다 _clean 을 기억하는 방식은 반드시 하나를 빠뜨린다 — 실제로 발화자 라벨의
+    role 이 정화 밖에 남아 있었다(role 은 스키마상 40자 캡만 있고 내용 검사가 없다).
+    XML 이 못 담는 문자가 하나만 들어와도 문서 생성 전체가 ValueError 로 죽으므로,
+    쓰는 지점 하나에서 막는 편이 안전하다.
+    """
+    return par.add_run(_CTRL.sub("", text or ""))
+
+
 def _meta(doc: Document, title: str, subtitle: str) -> None:
     h = doc.add_paragraph()
     h.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r = h.add_run(title)
+    r = _run(h, title)
     r.bold = True
     r.font.size = Pt(18)
     r.font.color.rgb = _INK
 
     s = doc.add_paragraph()
-    sr = s.add_run(subtitle)
+    sr = _run(s, subtitle)
     sr.font.size = Pt(9)
     sr.font.color.rgb = _MUTED
 
@@ -86,7 +97,7 @@ def _md_para(doc: Document, line: str) -> None:
     for i, seg in enumerate(re.split(r"\*\*(.+?)\*\*", t)):
         if not seg:
             continue
-        run = p.add_run(seg)
+        run = _run(p, seg)
         run.bold = i % 2 == 1
 
 
@@ -137,7 +148,7 @@ def _write_turns(doc: "Document", turns: list[dict]) -> None:
         if rd != last_round:
             last_round = rd
             h = doc.add_paragraph()
-            hr = h.add_run(_clean(f"라운드 {rd}") if rd is not None else "심의")
+            hr = _run(h, f"라운드 {rd}" if rd is not None else "심의")
             hr.bold = True
             hr.font.size = Pt(10)
             hr.font.color.rgb = _MUTED
@@ -148,11 +159,11 @@ def _write_turns(doc: "Document", turns: list[dict]) -> None:
         stance = _clean(str(t.get("stance") or "")).strip()
         pos = _clean(str(t.get("position") or "")).strip()
         lead = doc.add_paragraph()
-        lr = lead.add_run(who + (f"  ·  {stance}" if stance else ""))
+        lr = _run(lead, who + (f"  ·  {stance}" if stance else ""))
         lr.bold = True
         lr.font.size = Pt(9)
         if pos:
-            pr = lead.add_run(f"   {pos}")
+            pr = _run(lead, f"   {pos}")
             pr.font.size = Pt(9)
             pr.font.color.rgb = _MUTED
         _body(doc, str(t.get("say") or ""))
@@ -176,7 +187,7 @@ def build_transcript(conv: dict[str, Any]) -> bytes:
     for m in msgs:
         who = {"user": "질문", "assistant": "응답"}.get(m.get("role"), m.get("role") or "")
         p = doc.add_paragraph()
-        r = p.add_run(f"{who}   {_ts(m.get('ts'))}")
+        r = _run(p, f"{who}   {_ts(m.get('ts'))}")
         r.bold = True
         r.font.size = Pt(9)
         r.font.color.rgb = _MUTED
