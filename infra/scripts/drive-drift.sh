@@ -81,6 +81,11 @@ if want heax; then
     R="$(env_get HEAX_DRIVE_REMOTE "$D/.env")"; R="${R%/}"
     if [ -z "$R" ]; then echo "· HEAX_DRIVE_REMOTE 미설정 — 건너뜀"; else
       echo "── HEAXHub 앱 SIF ($R/latest)"
+      # ⚠ 구역별 플래그를 쓴다. 포털·KooRemapper 는 q/k 로 자기 구역만 판정하는데 여기만
+      # 전역 DRIFT 를 봤다 — 앞 구역이 하나라도 어긋나면 이 구역은 '✓ 일치'도 '✗'도 없이
+      # 헤더만 남는다. 읽는 사람은 "검사하고 통과한 것"과 "검사를 안 한 것"을 구분할 수
+      # 없다. 검사기가 판정을 안 보여주는 것은 이 스크립트가 막으려던 증상 그 자체다.
+      h=0
       TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
       rclone lsl "$R/latest/" 2>/dev/null | awk '{print $1, $NF}' > "$TMP"
       for f in "$D"/var/sifs/*.sif; do
@@ -88,9 +93,9 @@ if want heax; then
         b="$(basename "$f")"; ls_="$(stat -c%s "$f")"
         ds="$(awk -v n="$b" '$2==n{print $1}' "$TMP")"
         if [ -z "$ds" ]; then
-          echo "  ✗ $b — Drive 에 없다(한 번도 안 올라갔다)"; DRIFT=1
+          echo "  ✗ $b — Drive 에 없다(한 번도 안 올라갔다)"; DRIFT=1; h=1
         elif [ "$ls_" != "$ds" ]; then
-          echo "  ✗ $b — 로컬 $ls_ ≠ Drive $ds"; DRIFT=1
+          echo "  ✗ $b — 로컬 $ls_ ≠ Drive $ds"; DRIFT=1; h=1
         fi
       done
       # app-data(재료·장비 DB 등)는 tar 로 올라가므로 '가장 최근에 바뀐 DB' 와 tar 시각을 견준다.
@@ -99,10 +104,10 @@ if want heax; then
       if [ -n "$newest" ] && [ -n "$tar_t" ]; then
         tar_e="$(date -d "$tar_t" +%s 2>/dev/null || echo 0)"
         if [ "${newest%.*}" -gt "$tar_e" ]; then
-          echo "  ✗ app-data — DB 가 Drive tar($tar_t)보다 새것이다"; DRIFT=1
+          echo "  ✗ app-data — DB 가 Drive tar($tar_t)보다 새것이다"; DRIFT=1; h=1
         fi
       fi
-      [ "$DRIFT" = 0 ] && echo "  ✓ 일치"
+      [ "$h" = 0 ] && echo "  ✓ 일치"
     fi
   fi
 fi
