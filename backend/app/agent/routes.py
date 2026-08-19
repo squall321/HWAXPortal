@@ -15,12 +15,15 @@ StreamingResponse → nginx buffering-off → fetch+ReadableStream) with no Agen
 
 import asyncio
 import json
+import logging
 import re
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from urllib.parse import quote
 
 import httpx
+import jwt
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -32,6 +35,8 @@ from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
 from app.deps import principal_pat_or_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -137,6 +142,51 @@ async def search_capability(
             return r.json()
     except Exception:  # noqa: BLE001 — agent-server 불통은 '알 수 없음'이지 '가능'이 아니다
         return {"sources": {}, "note": "agent-server 에 연결하지 못해 가용성을 확인할 수 없습니다."}
+
+
+def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | None:
+    """이 챗 한 번을 위한 단명 PAT. agent-server 가 이걸로 게이트웨이에 붙는다.
+
+    왜 필요한가 — agent-server 는 지금까지 서비스 계정(GW_TOKEN)으로 게이트웨이에 붙고
+    사용자는 X-HWAX-User 헤더로만 알렸다. 그러면 게이트웨이가 "호출자 신원"을 요구하는
+    도구(대화 검색·저장처럼 포털에 되물어야 하는 것들)에서 포털이 401 을 준다. 실측으로
+    search_conversations 가 웹 챗에서만 CONV_UNAVAILABLE 이었다.
+
+    새 공유비밀을 만들지 않고 이미 있는 PAT 체계를 쓴다. 게이트웨이는 이 토큰을 포털
+    JWKS 로 검증하므로 위조가 불가능하고, 도구 인가도 서비스 계정이 아니라 이 사람의
+    groups 로 이뤄진다 — 감사 기록도 사람 단위로 남는다.
+
+    ⚠ 30분 창(window)에 맞춰 결정적으로 발급한다 — 같은 사용자·같은 창이면 토큰이 완전히
+    같다. 매번 새로 찍으면 agent-server 의 에이전트 캐시가 첫 요청의 토큰을 물고 계속
+    재사용해서, 이후에 보낸 새 토큰은 무시되고 60분 뒤 그 하나가 만료되며 도구가 조용히
+    죽는다. 창을 맞춰 두면 캐시는 그대로 맞고 자격증명은 30분마다 갱신된다(남은 유효기간
+    항상 30분 이상).
+    """
+    try:
+        now = datetime.now(tz=UTC)
+        win = int(now.timestamp()) // 1800 * 1800     # 30분 창의 시작
+        issued = datetime.fromtimestamp(win, tz=UTC)
+        claims = {
+            "iss": settings.jwt_issuer,
+            "sub": principal.subject,
+            "email": principal.email,
+            "name": principal.display_name,
+            "groups": principal.groups,
+            "aud": [settings.pat_chat_audience],
+            "scope": "api",
+            "scopes": ["chat"],
+            "pat_name": "chat-session",
+            "iat": issued, "nbf": issued, "exp": issued + timedelta(minutes=60),
+            # jti 도 결정적이어야 토큰이 바이트 단위로 같아진다. 서명된 토큰이라 예측
+            # 가능성 자체는 위험이 아니고, 폐기 목록에 이 값을 넣으면 그 창이 막힌다.
+            "jti": f"chat-{principal.subject}-{win}",
+        }
+        return jwt.encode(claims, keystore.private_pem, algorithm="RS256",
+                          headers={"kid": keystore.active_kid})
+    except Exception:  # noqa: BLE001 — 발급 실패로 챗 자체를 막지 않는다
+        logger.warning("챗용 사용자 PAT 발급 실패 — agent-server 가 GW_TOKEN 으로 돈다",
+                       exc_info=True)
+        return None
 
 
 @router.get("/conversations")
@@ -300,7 +350,7 @@ async def _echo_stream(message: str, principal: Principal, audit: AuditLog) -> A
 
 async def _relay_stream(
     body: "ChatRequest", principal: Principal, audit: AuditLog,
-    settings: Settings, client: httpx.AsyncClient
+    settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None
 ) -> AsyncIterator[bytes]:
     """Relay the remote Agent Server's SSE stream byte-for-byte to the browser.
 
@@ -319,6 +369,8 @@ async def _relay_stream(
         # 호출자 신원 — 게이트웨이가 사용자별 데이터를 쓰는 백엔드(DynaForge 등)를 이 사람의
         # 자격증명으로 부른다. 브라우저가 보낸 값이 아니라 검증된 세션/PAT 주체에서 채운다.
         "user_email": principal.email,
+        # agent-server 가 게이트웨이에 '이 사람으로' 붙기 위한 단명 자격증명.
+        "user_pat": user_pat,
         "history": [{"role": m.role, "content": m.content} for m in body.history],
     }
     if body.delib_opts is not None:  # 지정된 손잡이만 전달(None 필드는 제외 → env 기본값 유지)
@@ -464,7 +516,8 @@ async def export_docx(
         # 최종 result 만 모은다 — 에이전트에 엔드포인트를 새로 파는 것보다 접점이 적다.
         client = _agent_client(request)
         payload = {"message": _REPORT_PROMPT + dx.transcript_text(conv),
-                   "groups": principal.groups, "user_email": principal.email}
+                   "groups": principal.groups, "user_email": principal.email,
+                   "user_pat": _chat_user_pat(request.app.state.keystore, get_settings(), principal)}
         md = ""
         try:
             async with client.stream("POST", f"{settings.agent_server_url}/chat",
@@ -544,7 +597,8 @@ async def chat(
     if mode == "echo":
         source = _echo_stream(body.message, principal, audit)
     else:
-        source = _relay_stream(body, principal, audit, settings, _agent_client(request))
+        source = _relay_stream(body, principal, audit, settings, _agent_client(request),
+                               _chat_user_pat(request.app.state.keystore, settings, principal))
 
     # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
     # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).
