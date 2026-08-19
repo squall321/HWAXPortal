@@ -131,9 +131,23 @@ def refresh(
 
 @router.post("/logout")
 def logout(
+    request: Request,
     settings: Settings = Depends(get_settings),
     _: None = Depends(require_csrf),
 ) -> JSONResponse:
-    response = JSONResponse({"status": "logged_out"})
+    # 하위 서비스 세션도 같이 끊어야 한다. 그 쿠키들은 같은 호스트의 '경로 스코프' 라
+    # 서버가 대신 지울 수 없다(포털은 /heax-hub/ 경로 쿠키를 못 건드린다) — 브라우저가
+    # 각 서비스의 로그아웃을 쳐야 한다. 안 그러면 포털에서 로그아웃해도 /apps/<slug>/ 가
+    # 그 서비스의 토큰 수명(최대 1시간) 동안 직전 사용자 신원으로 열려 있다.
+    # 여기서는 '어디를 쳐야 하는지' 만 알려주고, 실제 호출은 SPA 가 한다.
+    outs = []
+    try:
+        for sysm in request.app.state.catalog.all():
+            u = getattr(sysm, "url", "") or ""
+            if "/portal-callback" in u:
+                outs.append(u.rsplit("/", 1)[0] + "/logout")
+    except Exception:  # noqa: BLE001 — 목록을 못 읽어도 포털 로그아웃 자체는 되어야 한다
+        outs = []
+    response = JSONResponse({"status": "logged_out", "downstream_logout": outs})
     cookies.clear_session_cookies(response, settings)
     return response
