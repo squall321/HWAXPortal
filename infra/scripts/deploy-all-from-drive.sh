@@ -156,6 +156,10 @@ ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # -u 가 아니라 실제로 만든다. 존재 여부가 아니라 줄 수가 신호이므로, 없으면 마지막
 # 집계의 `wc -l <` 가 "No such file" 을 뱉는다 — 아무 실패도 없는 정상 배포에서.
 DEPLOY_FAILED_FILE="$(mktemp /tmp/.hwax-deploy-failed.XXXXXX)"
+# 정리는 trap 으로 건다. 마지막 집계에서 rm 하지만 이 파일은 set -e 로 중간에 죽을 수 있는
+# 스크립트가 만드는 것이라(실제로 curl rc 로 중간사하는 경로가 있었다) 그 경로에서 그대로
+# 남는다. GIT_STALE_FLAG 도 같은 이유로 함께 건다 — mktemp -u 라 없으면 rm -f 가 무해하다.
+trap 'rm -f "$DEPLOY_FAILED_FILE" "$GIT_STALE_FLAG"' EXIT
 skip() { printf '  \033[1;33m⚠ skip:\033[0m %s\n' "$*"; printf '%s\n' "$*" >> "$DEPLOY_FAILED_FILE"; }
 
 # 비치명 항목 — 경고는 하되 종료코드를 올리지 않는다. skip 과 같이 쓰면 "실패해도 배포는
