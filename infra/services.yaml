@@ -224,3 +224,12 @@ services:
     start: ./start.sh
     health: http://localhost:9009/health
     tier: 20
+
+  # 일반 웹 검색 공급자. 레포가 아니라 SIF+설정이라 dir 을 직접 준다.
+  # WEB_PROVIDER=searxng 일 때만 의미가 있다 — 웹 리서치 앱이 이 주소로만 나간다.
+  - name: searxng
+    host: local
+    dir: "~/claude/HWAXPortal"
+    start: ./infra/scripts/searxng.sh
+    health: http://127.0.0.1:8888/
+    tier: 14
