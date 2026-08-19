@@ -12,6 +12,13 @@ const HOSTONLY = ORIGIN.replace(/^https?:\/\//, '');
 // AIDataHub _common.sh DEFAULT_FALLBACK_PROXY). npm 레지스트리는 이걸 타야 나간다.
 const CORP_PROXY = 'http://168.219.61.252:8080';
 const CHAT_URL = `${ORIGIN}/agent/chat`;
+// 이 페이지가 만들어 주는 것에는 전부 평문 PAT 가 들어간다. 지금 접속한 origin 이 http 면
+// 그 PAT 가 네트워크를 그대로 건너간다 — 게다가 인증서 설치(NODE_EXTRA_CA_CERTS)는
+// http 에서 아무 일도 하지 않아 사용자는 '보안 조치를 했다'고 오해한다.
+// localhost 는 예외다(같은 기계 안이라 나가지 않는다).
+const IS_PLAINTEXT =
+  ORIGIN.startsWith('http://') &&
+  !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(ORIGIN);
 
 function fmtDate(sec: number): string {
   return new Date(sec * 1000).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' });
@@ -46,6 +53,11 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
   const certDir = '%USERPROFILE%\\.hwax';
   const certFile = `${certDir}\\hwax-portal.crt`;
   const L: string[] = [
+    // ⚠ 첫 줄은 희생용이다. 아래에서 UTF-8 BOM 을 붙이는데, cmd.exe 가 그걸 첫 줄에
+    // 섞어 읽으면 그 줄의 명령이 죽는다. 그게 '@echo off' 면 배치 전체가 echo 된 채로
+    // 돌아 화면과 스크롤백에 PAT 평문이 두 번 찍힌다(실측: 사용자 콘솔 전량 노출).
+    // 죽어도 무해한 rem 을 앞에 두고 '@echo off' 를 둘째 줄로 내린다.
+    '@rem HWAX Portal setup',
     '@echo off',
     'setlocal',
     'chcp 65001 >nul',
@@ -53,6 +65,17 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'echo  HWAX 포털 - 개인 Claude 연결 설정',
     `echo  토큰 이름: ${name}`,
     'echo.',
+    // 평문 origin 이면 배치 첫머리에서 못 박는다. 조용히 진행하면 사용자는 인증서까지
+    // 깔았으니 암호화된 줄 안다 — 실제로는 PAT 가 그대로 네트워크를 건넌다.
+    ...(IS_PLAINTEXT
+      ? [
+          'echo  [!] 경고: 이 포털에 http 로 접속했습니다.',
+          `echo      ${ORIGIN}`,
+          'echo      아래 토큰이 암호화되지 않은 채 네트워크를 지나갑니다.',
+          'echo      https 주소로 다시 접속해 새 토큰을 받는 것을 권합니다.',
+          'echo.',
+        ]
+      : []),
     'set HWAX_DONE=0',
     '',
     // ── [0] 네트워크 점검 ───────────────────────────────────────────────────
