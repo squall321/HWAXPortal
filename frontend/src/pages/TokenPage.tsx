@@ -16,9 +16,19 @@ const CHAT_URL = `${ORIGIN}/agent/chat`;
 // 그 PAT 가 네트워크를 그대로 건너간다 — 게다가 인증서 설치(NODE_EXTRA_CA_CERTS)는
 // http 에서 아무 일도 하지 않아 사용자는 '보안 조치를 했다'고 오해한다.
 // localhost 는 예외다(같은 기계 안이라 나가지 않는다).
+// mcp-remote 는 https 가 아니면 즉시 종료한다("Non-HTTPS URLs are only allowed for localhost
+// or when --allow-http flag is provided"). 그래서 http origin 에서 만든 스니펫은 등록은
+// 되는데 연결은 100% 실패한다 — 사용자는 '등록 완료' 를 보고 도구가 왜 안 뜨는지 모른다
+// (실측: 배치가 만든 명령 그대로 돌려 이 에러로 죽었고, --allow-http 하나 붙이니
+//  "Proxy established successfully" 로 붙었다).
+// 아래 두 상수를 mcp-remote 인자를 만드는 모든 자리에 쓴다 — 일곱 군데다.
 const IS_PLAINTEXT =
   ORIGIN.startsWith('http://') &&
   !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(ORIGIN);
+// localhost 는 mcp-remote 가 원래 허용하므로 IS_PLAINTEXT 와 같은 조건이면 충분하다.
+const ALLOW_HTTP = IS_PLAINTEXT ? ' --allow-http' : '';
+const ALLOW_HTTP_ARR = IS_PLAINTEXT ? "'--allow-http'," : '';
+const ALLOW_HTTP_TOML = IS_PLAINTEXT ? ', "--allow-http"' : '';
 
 function fmtDate(sec: number): string {
   return new Date(sec * 1000).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' });
@@ -40,7 +50,7 @@ function claudeCodeSnippetSelfSigned(token: string, certPath: string): string {
     `claude mcp add hwax ^`,
     `  -e AUTH="Bearer ${token}" ^`,
     `  -e NODE_EXTRA_CA_CERTS=${certPath} ^`,
-    `  -- npx -y mcp-remote ${MCP_URL} --header "Authorization:\${AUTH}"`,
+    `  -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:\${AUTH}"`,
   ].join('\n');
 }
 
@@ -156,7 +166,7 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
   );
   L.push(
     pem
-      ? `claude mcp add hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL} --header "Authorization:${'${AUTH}'}"`
+      ? `claude mcp add hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
       : `claude mcp add --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
   );
   L.push(
@@ -188,7 +198,7 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
   //    실패가 성공으로 보인다(위 사고에서 "등록 완료" 가 찍혔다). ErrorActionPreference=Stop +
   //    try/catch + exit 1 로 실패를 errorlevel 에 실어 보낸다.
   const psEntry = pem
-    ? `$e=[pscustomobject]@{command='npx';args=@('-y','mcp-remote','${MCP_URL}','--header','Authorization:$\{AUTH}');env=[pscustomobject]@{AUTH=$env:HWAX_AUTH;NODE_EXTRA_CA_CERTS=$env:HWAX_CERT}};`
+    ? `$e=[pscustomobject]@{command='npx';args=@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}');env=[pscustomobject]@{AUTH=$env:HWAX_AUTH;NODE_EXTRA_CA_CERTS=$env:HWAX_CERT}};`
     : `$e=[pscustomobject]@{type='http';url='${MCP_URL}';headers=[pscustomobject]@{Authorization=$env:HWAX_AUTH}};`;
   // PowerShell 조각 안에서는 큰따옴표를 쓰지 않는다 — cmd 의 "..." 안에 들어가기 때문.
   const ps = [
@@ -237,7 +247,7 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'where gemini >nul 2>nul',
     'if errorlevel 1 goto :no_gemini',
     'gemini mcp remove hwax -s user >nul 2>nul',
-    `gemini mcp add -s user -t stdio ${gemEnv} hwax npx -- -y mcp-remote ${MCP_URL} --header "Authorization:${'${AUTH}'}"`,
+    `gemini mcp add -s user -t stdio ${gemEnv} hwax npx -- -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`,
     'if errorlevel 1 goto :gemini_fail',
     'set HWAX_DONE=1',
     'echo      Gemini CLI 등록 완료',
@@ -263,7 +273,7 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
   const codexToml = [
     '[mcp_servers.hwax]',
     'command = "npx"',
-    `args = ["-y", "mcp-remote", "${MCP_URL}", "--header", "Authorization:\${AUTH}"]`,
+    `args = ["-y", "mcp-remote", "${MCP_URL}"${ALLOW_HTTP_TOML}, "--header", "Authorization:\${AUTH}"]`,
     '',
     '[mcp_servers.hwax.env]',
     `AUTH = "Bearer ${token}"`,
@@ -278,7 +288,7 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'where codex >nul 2>nul',
     'if errorlevel 1 goto :no_codex',
     'codex mcp remove hwax >nul 2>nul',
-    `codex mcp add hwax ${codexEnv} -- npx -y mcp-remote ${MCP_URL} --header "Authorization:${'${AUTH}'}"`,
+    `codex mcp add hwax ${codexEnv} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`,
     'if errorlevel 1 goto :codex_manual',
     'set HWAX_DONE=1',
     'echo      Codex CLI 등록 완료',
@@ -325,7 +335,7 @@ function desktopServerEntry(token: string, certPath: string | null): object {
   }
   return {
     command: 'npx',
-    args: ['-y', 'mcp-remote', MCP_URL, '--header', 'Authorization:${AUTH}'],
+    args: ['-y', 'mcp-remote', MCP_URL, ...(IS_PLAINTEXT ? ['--allow-http'] : []), '--header', 'Authorization:${AUTH}'],
     env: { AUTH: `Bearer ${token}`, NODE_EXTRA_CA_CERTS: certPath },
   };
 }
