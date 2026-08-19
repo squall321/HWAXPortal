@@ -73,7 +73,22 @@ fi
 # only do a soft pull (and just warn if it can't fast-forward).
 git_update() {  # run inside the repo dir
   local branch; branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
-  git fetch origin "$branch" --quiet 2>/dev/null || { echo "  ⚠ git fetch failed (offline?) — using current checkout"; return 0; }
+  # 실패 원인을 그대로 보여준다. 예전엔 2>/dev/null 로 삼키고 "(offline?)" 한 줄만 찍었는데,
+  # 그 추측이 틀린 경우가 실제로 있었다 — cae00 은 github 에 정상 접속되는데도 이 줄이 떴고
+  # (2026-08-19), 원인이 가려져 코드가 안 올라온 것을 한참 못 봤다. 오프라인은 여러 원인 중
+  # 하나일 뿐이다: detached HEAD(branch 가 'HEAD' 가 되어 origin 에 없는 ref 를 요청),
+  # origin 미설정, PAT 미입력, 프록시. 어느 쪽인지는 stderr 만이 안다.
+  #
+  # ⚠ 여기서 실패해도 배포는 계속한다(Drive 산출물은 받을 수 있으므로). 다만 그때는 소스가
+  # 갱신되지 않는다 — 포털·HEAXHub 백엔드 코드는 SIF 에 굽지 않고 레포를 bind 하므로,
+  # 이 줄이 뜨면 그날의 코드 변경은 하나도 반영되지 않는다. 그래서 크게 경고한다.
+  local _fe; _fe="$(git fetch origin "$branch" --quiet 2>&1)" || {
+    echo "  ✗ git fetch 실패 (branch=$branch) — 소스가 갱신되지 않는다"
+    [ -n "$_fe" ] && printf '      %s\n' "$_fe" | head -5
+    echo "      origin: $(git remote get-url origin 2>/dev/null || echo '(없음)')"
+    echo "      → 이 상태로 진행하면 Drive 산출물(SIF·dist)만 새것이고 코드는 옛것이다."
+    return 0
+  }
   if [ "${NO_GIT_RESET:-0}" = "1" ]; then
     git merge --ff-only "origin/$branch" 2>/dev/null \
       || echo "  ⚠ can't fast-forward (local changes/diverged) — NOT updated. Resolve, or unset NO_GIT_RESET."
