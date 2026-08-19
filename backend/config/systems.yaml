@@ -130,3 +130,33 @@ systems:
     integration_type: external-url
     url: https://spdm.sec.samsung.net
     sort_order: 60
+
+
+  - id: arp
+    name: AI Ready Portal
+    tagline: 개발·시뮬레이션 AI Ready Data 허브
+    description: >-
+      CAE 그룹의 AI Ready Portal. 개발·시뮬레이션 과정에서 나오는 데이터를 AI 가 바로 쓸 수
+      있는 형태로 모아 두는 곳입니다. 흩어진 해석 결과와 설계 데이터를 한 자리에서 찾고,
+      MCP 도구로 포털 챗에서도 그대로 조회할 수 있습니다.
+    accent: amber
+    category: AI Platform
+    status: available
+    # 자체 주소를 가진 사내 서비스 — 프록시가 아니라 직결 링크다. 사내망에서만 열린다.
+    integration_type: external-url
+    url: http://10.252.38.97:3001/
+    sort_order: 65
+
+  - id: odb-hub
+    name: ECAD Automation Hub
+    tagline: ODB++ 기반 설계 검증·해석 자동화
+    description: >-
+      ODB++ 로 들어온 PCB 설계 데이터를 읽어 설계 체크리스트를 자동 점검하고, 그대로
+      시뮬레이션까지 이어 주는 플랫폼. 사람이 매번 손으로 확인하던 항목을 규칙으로 굳혀
+      설계 단계에서 문제를 먼저 잡습니다. MCP 도구로 포털 챗에서도 호출됩니다.
+    accent: teal
+    category: Design Automation
+    status: available
+    integration_type: external-url
+    url: http://10.252.38.121:8000/
+    sort_order: 70
