@@ -297,9 +297,15 @@ async def search_conversations(
     except (httpx.HTTPError, ValueError) as e:
         # 임베더 불통을 빈 결과로 바꾸지 않는다 — "찾아봤는데 없다"로 읽히면 없는 사실을 믿는다.
         raise AuthError(f"의미검색을 할 수 없습니다(임베더 응답 실패): {e}", status_code=503) from e
+    # 아직 남은 색인 분량을 반드시 실어 보낸다 — 게으른 색인은 한 번에 상한까지만 처리하므로,
+    # 큰 대화 이력에서는 첫 검색이 '부분 색인 위의 결과' 다. 그 사실을 숨기면 못 찾은 것이
+    # 없는 것으로 읽힌다.
+    left = store.remaining(principal.subject, conv_search.MODEL)
     return {"query": body.query, "results": hits,
             "index": {**store.index_stats(principal.subject),
-                      "just_indexed": idx["indexed"], "too_short": idx["too_short"]}}
+                      "just_indexed": idx["indexed"], "too_short": idx["too_short"],
+                      "not_indexed_yet": left,
+                      "partial": bool(left)}}
 
 
 def _parse_sse_frame(frame: str) -> tuple[str, dict] | None:
@@ -370,7 +376,10 @@ async def _relay_stream(
         # 자격증명으로 부른다. 브라우저가 보낸 값이 아니라 검증된 세션/PAT 주체에서 채운다.
         "user_email": principal.email,
         # agent-server 가 게이트웨이에 '이 사람으로' 붙기 위한 단명 자격증명.
-        "user_pat": user_pat,
+        # ⚠ None 을 그대로 보내면 안 된다. agent-server 의 ChatRequest.user_pat 은 str 이라
+        # pydantic 이 null 을 422 로 거절하고, 그러면 '발급 실패해도 챗은 계속' 이라는 이쪽
+        # 폴백이 정반대로 챗 전체를 죽인다(실측: null→422, ""→200). 빈 문자열이 '없음' 이다.
+        "user_pat": user_pat or "",
         "history": [{"role": m.role, "content": m.content} for m in body.history],
     }
     if body.delib_opts is not None:  # 지정된 손잡이만 전달(None 필드는 제외 → env 기본값 유지)
@@ -517,7 +526,8 @@ async def export_docx(
         client = _agent_client(request)
         payload = {"message": _REPORT_PROMPT + dx.transcript_text(conv),
                    "groups": principal.groups, "user_email": principal.email,
-                   "user_pat": _chat_user_pat(request.app.state.keystore, get_settings(), principal)}
+                   "user_pat": _chat_user_pat(request.app.state.keystore,
+                                              get_settings(), principal) or ""}
         md = ""
         try:
             async with client.stream("POST", f"{settings.agent_server_url}/chat",

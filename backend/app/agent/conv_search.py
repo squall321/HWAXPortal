@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import struct
 
@@ -70,12 +71,19 @@ async def embed(texts: list[str], base_url: str, kind: str = "passage",
 
 async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000) -> dict:
     """아직 벡터가 없는 내 메시지를 색인한다. 증분이며, 여러 번 불러도 안전하다."""
-    pending = store.unindexed(owner_sub, limit)
+    pending = store.unindexed(owner_sub, MODEL, limit)
     rows, texts, short = [], [], 0
     for m in pending:
         cs = chunks(m["content"])
         if not cs:
-            short += 1     # "네", "확인했습니다" 류. 색인 대상이 아니지 밀린 일이 아니다.
+            # "네", "확인했습니다" 류. 색인 대상이 아니지 밀린 일이 아니다.
+            # ⚠ 표식을 남긴다(chunk_ix=-1). 안 남기면 매 검색마다 다시 뽑혀 나와 LIMIT 창을
+            # 차지하고, 짧은 메시지가 창 크기를 넘으면 그보다 오래된 진짜 미색인 메시지가
+            # 영영 색인되지 않는다. 이 표식은 vectors_for 가 chunk_ix >= 0 으로 걸러 낸다.
+            short += 1
+            rows.append({"message_id": m["message_id"], "chunk_ix": -1,
+                         "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
+                         "text": "", "model": MODEL, "dim": 0, "vec": b""})
             continue
         for ix, c in enumerate(cs):
             rows.append({"message_id": m["message_id"], "chunk_ix": ix,
@@ -83,12 +91,15 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000) -> di
                          "text": c, "model": MODEL, "dim": DIM})
             texts.append(c)
     if not texts:
+        store.put_vectors(rows)          # 표식만이라도 남긴다
         return {"indexed": 0, "messages": len(pending), "too_short": short}
     # 한 번에 다 보내면 큰 대화에서 타임아웃이 난다. 나눠 보내되 실패는 그대로 올린다.
     vecs: list[list[float]] = []
     for i in range(0, len(texts), 64):
         vecs.extend(await embed(texts[i:i + 64], base_url, "passage"))
-    for r, v in zip(rows, vecs, strict=True):
+    # 표식 행(dim=0)은 임베딩 대상이 아니었으므로 벡터를 받을 행만 짝짓는다.
+    embedded = [r for r in rows if r["dim"]]
+    for r, v in zip(embedded, vecs, strict=True):
         r["vec"] = pack(_norm(v))
     store.put_vectors(rows)
     return {"indexed": len(rows), "messages": len(pending), "too_short": short}
@@ -98,6 +109,13 @@ async def search(store, owner_sub: str, query: str, base_url: str,
                  limit: int = 8) -> list[dict]:
     """내 대화 안에서만 찾는다. 소유자 필터는 store 가 강제한다."""
     qv = _norm((await embed([query], base_url, "query"))[0])
+    # SQLite 전량 조회와 순수 파이썬 코사인은 동기다 — async 엔드포인트에서 그대로 돌리면
+    # 색인이 커질수록 포털 이벤트 루프 전체가 그 시간만큼 멈춘다(다른 사용자의 요청까지).
+    # 스레드로 뺀다. sqlite3 연결은 check_same_thread=False 로 열려 있어 안전하다.
+    return await asyncio.to_thread(_rank, store, owner_sub, qv, limit)
+
+
+def _rank(store, owner_sub: str, qv: list[float], limit: int) -> list[dict]:
     hits = []
     for mid, cix, cid, text, blob, title, role, persona, ts in store.vectors_for(owner_sub, MODEL):
         v = unpack(blob)

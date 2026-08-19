@@ -173,18 +173,36 @@ class ConversationStore:
             return cur.rowcount > 0
 
     # ── 의미검색 인덱스 ──────────────────────────────────────────────────────
-    def unindexed(self, owner_sub: str, limit: int = 2000) -> list[dict]:
-        """아직 벡터가 없는 내 메시지. 색인은 증분이다 — 매번 전량 임베딩하면 느리고 비싸다."""
+    def unindexed(self, owner_sub: str, model: str, limit: int = 2000) -> list[dict]:
+        """이 모델로 아직 색인 안 된 내 메시지. 색인은 증분이다.
+
+        ⚠ model 조건이 있어야 한다. 없으면 임베딩 모델을 바꿨을 때 옛 모델 벡터가 존재한다는
+        이유로 전부 '색인됨' 으로 판정되고, 읽는 쪽(vectors_for)은 새 모델로 걸러 0건을 본다 —
+        검색이 영구히 빈손인데 통계는 전량 색인됐다고 말하는 상태가 된다.
+        """
         with self._lock:
             rows = self._conn.execute(
                 "SELECT m.id, m.conversation_id, m.content FROM messages m "
                 "JOIN conversations c ON c.id = m.conversation_id "
-                "LEFT JOIN message_vectors v ON v.message_id = m.id "
+                "LEFT JOIN message_vectors v "
+                "       ON v.message_id = m.id AND v.model = ? "
                 "WHERE c.owner_sub = ? AND v.message_id IS NULL "
                 "ORDER BY m.ts DESC LIMIT ?",
-                (owner_sub, limit),
+                (model, owner_sub, limit),
             ).fetchall()
         return [{"message_id": r[0], "conversation_id": r[1], "content": r[2]} for r in rows]
+
+    def remaining(self, owner_sub: str, model: str) -> int:
+        """아직 색인 안 된 내 메시지 수. 부분 색인 위에서 나온 결과를 완전한 검색처럼
+        보이게 하지 않으려면 이 값을 응답에 실어야 한다."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM messages m "
+                "JOIN conversations c ON c.id = m.conversation_id "
+                "LEFT JOIN message_vectors v ON v.message_id = m.id AND v.model = ? "
+                "WHERE c.owner_sub = ? AND v.message_id IS NULL",
+                (model, owner_sub),
+            ).fetchone()[0]
 
     def put_vectors(self, rows: list[dict]) -> int:
         """(message_id, chunk_ix) 단위 upsert. 같은 메시지를 다시 색인해도 중복되지 않는다."""
@@ -211,11 +229,12 @@ class ConversationStore:
                 "FROM message_vectors v "
                 "JOIN conversations c ON c.id = v.conversation_id "
                 "JOIN messages m ON m.id = v.message_id "
-                "WHERE v.owner_sub = ? AND v.model = ?",
+                "WHERE v.owner_sub = ? AND v.model = ? AND v.chunk_ix >= 0",
                 (owner_sub, model),
             ).fetchall()
 
     def index_stats(self, owner_sub: str) -> dict:
+        """messages/indexed 만 센다. chunk_ix=-1(짧아서 색인 대상 아님) 표식도 '처리됨'이다."""
         with self._lock:
             total = self._conn.execute(
                 "SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id "
