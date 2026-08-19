@@ -144,8 +144,15 @@ def logout(
     try:
         for sysm in request.app.state.catalog.all():
             u = getattr(sysm, "url", "") or ""
-            if "/portal-callback" in u:
-                outs.append(u.rsplit("/", 1)[0] + "/logout")
+            if "/portal-callback" not in u:
+                continue
+            base = u.rsplit("/", 1)[0]
+            # ⚠ 경로를 유도만 하고 존재를 확인하지 않으면 안 된다 — 실측으로 4개 중
+            # 3개가 404 이거나(엔드포인트 없음) 401/422 였다(헤더·본문 요구). 그런데도
+            # 화면은 '로그아웃됨' 으로 끝났다. 서비스별로 '쿠키만 지우는' 경로를 쓴다.
+            #   heax-hub : /logout 은 Bearer+본문 필수 → 쿠키 전용 /logout-session 을 쓴다
+            #   그 외    : /logout (없으면 SPA 가 그 사실을 사용자에게 알린다)
+            outs.append(base + ("/logout-session" if "/heax-hub/" in u else "/logout"))
     except Exception:  # noqa: BLE001 — 목록을 못 읽어도 포털 로그아웃 자체는 되어야 한다
         outs = []
     response = JSONResponse({"status": "logged_out", "downstream_logout": outs})

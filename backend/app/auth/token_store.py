@@ -57,6 +57,22 @@ class TokenStore:
             )
             self._conn.commit()
 
+    def all_pats(self, limit: int = 500) -> list[dict]:
+        """전체 소유자의 PAT 메타(토큰 자체는 절대 아님). 관리자 전용.
+
+        왜 필요한가 — 무기한 토큰은 만료로 안 죽고 폐기로만 죽는데, 관리자가 남의 토큰을
+        '찾을' 방법이 없으면 그 폐기를 실행할 수 없다. 통제 수단이 있다고 적어 놓고
+        실행 경로가 없으면 없는 것과 같다.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT jti, name, aud, scopes, created, exp, revoked, sub, email FROM pat "
+                "ORDER BY created DESC LIMIT ?", (limit,))
+            rows = cur.fetchall()
+        return [{"jti": r[0], "name": r[1], "audiences": json.loads(r[2]),
+                 "scopes": json.loads(r[3]), "created": r[4], "exp": r[5],
+                 "revoked": bool(r[6]), "sub": r[7], "email": r[8]} for r in rows]
+
     def list_pats(self, sub: str) -> list[dict]:
         """Metadata (never the token itself) for one owner's PATs, newest first."""
         with self._lock:

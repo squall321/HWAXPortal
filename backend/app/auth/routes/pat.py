@@ -8,6 +8,7 @@ token — the sub-sites are never changed. Revocation = the token_store jti deny
 published (non-expired revoked jtis) at `/auth/pat/revoked.json` for the gateway to poll.
 """
 
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -20,6 +21,8 @@ from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
 from app.deps import get_current_principal, require_csrf
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth/pat", tags=["pat"])
 
@@ -98,6 +101,12 @@ def create_pat(
         jti=jti, sub=principal.subject, email=principal.email, name=body.name,
         aud=auds, scopes=body.scopes, created=created, exp=exp,
     )
+    # 발급을 남긴다 — 특히 무기한은 만료로 안 죽으므로 "누가 언제 냈나" 가 사후 유일한
+    # 단서다. token_store 행 하나만으로는 조회 경로가 관리자 목록뿐이라 부족하다.
+    logger.warning("PAT issued: sub=%s name=%s aud=%s ttl=%s%s",
+                   principal.subject, body.name, auds,
+                   "무기한" if never else f"{ttl}d",
+                   " ⚠NEVER-EXPIRES" if never else "")
     return PatCreated(jti=jti, name=body.name, audiences=auds, scopes=body.scopes,
                       created=created, exp=exp, revoked=False, token=token)
 
@@ -108,6 +117,21 @@ def list_pat(
     principal: Principal = Depends(get_current_principal),
 ) -> list[PatMeta]:
     return [PatMeta(**r) for r in request.app.state.token_store.list_pats(principal.subject)]
+
+
+@router.get("/all")
+def list_all_pats(
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+) -> list[dict]:
+    """전체 PAT 메타 — 관리자 전용. 토큰 자체는 어디에도 실리지 않는다.
+
+    무기한 토큰은 폐기가 유일한 통제인데, 남의 토큰을 찾을 방법이 없으면 그 폐기를
+    실행할 수 없다. 목록 없이 '폐기하면 된다' 고만 적어 두는 것은 통제가 아니다.
+    """
+    if "portal-admin" not in principal.groups:
+        raise AuthError("admin only", status_code=403)
+    return request.app.state.token_store.all_pats()
 
 
 @router.delete("/{jti}")

@@ -120,7 +120,12 @@ def _delib_turns(m: dict[str, Any]) -> list[dict]:
     문서는 심의 기록으로 쓸 수 없다.
     """
     d = m.get("delib")
-    return list((d or {}).get("turns") or []) if isinstance(d, dict) else []
+    if not isinstance(d, dict):
+        return []
+    # 원소까지 검사한다. _write_turns 는 걸렀는데 transcript_text 는 안 걸러서,
+    # delib.turns 에 문자열이 하나만 섞여도 AttributeError 가 났다 — DocxRequest 가
+    # extra=allow 라 임의 JSON 이 그대로 들어온다. 여기서 한 번만 거른다.
+    return [t for t in (d.get("turns") or []) if isinstance(t, dict)]
 
 
 def _write_turns(doc: "Document", turns: list[dict]) -> None:

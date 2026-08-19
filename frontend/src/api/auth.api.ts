@@ -19,9 +19,20 @@ export async function postLogout(): Promise<void> {
   } catch {
     /* 본문이 없거나 형식이 달라도 포털 로그아웃 자체는 이미 끝났다 */
   }
-  await Promise.allSettled(
-    outs.map((u) => fetch(u, { method: 'POST', credentials: 'include' })),
+  // ⚠ allSettled 로 전부 삼키면 안 된다 — 실측으로 유도한 경로의 상당수가 404/401 이었는데도
+  // 화면은 '로그아웃됨' 으로 끝났다. 끊지 못한 서비스는 사용자가 알아야 직접 조치할 수 있다.
+  const results = await Promise.allSettled(
+    outs.map(async (u) => {
+      const r = await fetch(u, { method: 'POST', credentials: 'include' });
+      if (!r.ok) throw new Error(`${u} → ${r.status}`);
+      return u;
+    }),
   );
+  const failed = results.flatMap((r) => (r.status === 'rejected' ? [String(r.reason)] : []));
+  if (failed.length) {
+    // 로그아웃 자체는 이미 끝났으므로 막지 않는다. 다만 조용히 넘기지도 않는다.
+    console.warn('[logout] 하위 서비스 세션을 끊지 못했다:', failed);
+  }
 
   // 서버 로그아웃으로 안 지워지는 것도 있다. AIDataHub 는 자격증명을 쿠키가 아니라
   // localStorage 에 두고(대시보드가 SSO 쿠키를 읽어 옮긴 뒤 즉시 만료시킨다), 로그아웃

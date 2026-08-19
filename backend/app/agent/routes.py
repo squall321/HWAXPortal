@@ -553,15 +553,17 @@ async def export_docx(
                          meta={"reason": "max_concurrent_chats"})
             raise AuthError("too many concurrent chats; retry shortly", status_code=429)
         await sem.acquire()
-        # 에이전트는 SSE 만 낸다(비스트리밍 엔드포인트가 없다). 여기서 스트림을 받아
-        # 최종 result 만 모은다 — 에이전트에 엔드포인트를 새로 파는 것보다 접점이 적다.
-        client = _agent_client(request)
-        payload = {"message": _REPORT_PROMPT + dx.transcript_text(conv),
-                   "groups": principal.groups, "user_email": principal.email,
-                   "user_pat": _chat_user_pat(request.app.state.keystore,
-                                              get_settings(), principal) or ""}
+        # ⚠ acquire 와 try 사이에 아무것도 두지 않는다. 그 틈에서 예외가 나면
+        # 퍼밋이 영구히 새고, 상한만큼 쌓이면 챗 전체가 429 로 고정된다(실측 재현).
         md = ""
         try:
+            # 에이전트는 SSE 만 낸다(비스트리밍 엔드포인트가 없다). 여기서 스트림을 받아
+            # 최종 result 만 모은다 — 에이전트에 엔드포인트를 새로 파는 것보다 접점이 적다.
+            client = _agent_client(request)
+            payload = {"message": _REPORT_PROMPT + dx.transcript_text(conv),
+                       "groups": principal.groups, "user_email": principal.email,
+                       "user_pat": _chat_user_pat(request.app.state.keystore,
+                                                  get_settings(), principal) or ""}
             async with client.stream("POST", f"{settings.agent_server_url}/chat",
                                      json=payload) as resp:
                 if resp.status_code == 200:
