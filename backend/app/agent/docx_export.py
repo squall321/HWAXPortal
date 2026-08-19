@@ -119,18 +119,18 @@ def _body(doc: Document, text: str) -> None:
 def _ts(ms) -> str:
     """표시용 시각. 입력을 믿지 않는다.
 
-    ts 는 DocxMessage(extra=allow)로 그대로 들어오는 값이라 문자열·거대수·dict 무엇이든
+    ts 는 표시용 입력이라 문자열·거대수·dict 무엇이든
     올 수 있다. 예전엔 그대로 산술에 써서 ts="abc" 는 TypeError, ts=10**15 는 ValueError
     로 내보내기 전체가 500 이 됐다(실측). 못 읽으면 빈 문자열이다 — 시각 하나 때문에
     문서를 못 만드는 것이 더 나쁘다.
     """
+    # ⚠ 두 try 의 except 를 같게 둔다. 예전엔 아래만 OverflowError 를 잡고 위는 빠뜨려,
+    # float() 이 감당 못 하는 큰 정수(310자리 이상)에서 그대로 500 이 됐다 — 같은 원칙을
+    # 한 줄 건너 반만 적용한 셈이었다. 어느 쪽에서 터지든 결과는 '표시 못 함' 이다.
     try:
         v = float(ms)
-    except (TypeError, ValueError):
-        return ""
-    try:
         return datetime.fromtimestamp(v / 1000).strftime("%Y-%m-%d %H:%M")
-    except (ValueError, OverflowError, OSError):
+    except (TypeError, ValueError, OverflowError, OSError):
         return ""
 
 

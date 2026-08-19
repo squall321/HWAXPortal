@@ -83,7 +83,9 @@ async def embed(texts: list[str], base_url: str, kind: str = "passage",
 
 async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000) -> dict:
     """아직 벡터가 없는 내 메시지를 색인한다. 증분이며, 여러 번 불러도 안전하다."""
-    pending = store.unindexed(owner_sub, MODEL, limit)
+    # 동기 sqlite 전량 조회다. 색인 대상이 수천 건이면 그 시간만큼 이벤트 루프가 멈춘다 —
+    # _rank 만 빼고 여기를 남긴 것은 조사가 '아는 이름' 만 찾았기 때문이다(실측 지적).
+    pending = await asyncio.to_thread(store.unindexed, owner_sub, MODEL, limit)
     rows, texts, short = [], [], 0
     for m in pending:
         cs = chunks(m["content"])
@@ -103,7 +105,7 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000) -> di
                          "text": c, "model": MODEL, "dim": DIM})
             texts.append(c)
     if not texts:
-        store.put_vectors(rows)          # 표식만이라도 남긴다
+        await asyncio.to_thread(store.put_vectors, rows)   # 표식만이라도 남긴다
         return {"indexed": 0, "messages": len(pending), "too_short": short}
     # 한 번에 다 보내면 큰 대화에서 타임아웃이 난다. 나눠 보내되 실패는 그대로 올린다.
     vecs: list[list[float]] = []
@@ -113,7 +115,8 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000) -> di
     embedded = [r for r in rows if r["dim"]]
     for r, v in zip(embedded, vecs, strict=True):
         r["vec"] = pack(_norm(v))
-    store.put_vectors(rows)
+    # 수천 행 일괄 INSERT — 같은 이유로 스레드에서.
+    await asyncio.to_thread(store.put_vectors, rows)
     return {"indexed": len(rows), "messages": len(pending), "too_short": short}
 
 

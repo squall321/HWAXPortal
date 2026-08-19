@@ -501,7 +501,9 @@ class DocxMessage(BaseModel):
     model_config = {"extra": "ignore"}
     role: str = Field(default="assistant", max_length=40)
     text: str = Field(default="", max_length=200_000)
-    ts: Any = None          # 표시용. 형식은 믿지 않는다 — _ts 가 방어적으로 처리한다.
+    # 표시용 시각. int/float/str/None 만 받는다 — Any 로 열어 두면 extra 를 닫은 의미가
+    # 없다(임의 크기 dict·list 가 그대로 들어온다). 값의 타당성은 _ts 가 다시 본다.
+    ts: int | float | str | None = None
     delib: DocxDelib | None = None
 
 
@@ -515,9 +517,19 @@ class ConvPayload(BaseModel):
     def _total_budget(cls, v: list[DocxMessage]) -> list[DocxMessage]:
         """총량 상한. 항목별 캡만 있으면 2000개 × 20만자 = 4억자가 통과한다 —
         통째로 메모리에 올려 렌더하므로 그것 자체가 부하다."""
-        total = sum(len(m.text) + sum(len(t.say) for t in (m.delib.turns if m.delib else []))
+        # ⚠ 렌더되는 문자열 필드를 **전부** 센다. 앞선 커밋은 같은 자리에서 text 와 say 만
+        # 세어, position·nonNegotiable·persona·stance 로 채운 페이로드가 '0자' 로 통과했다 —
+        # 그 커밋이 바로 위 docstring 에 그 필드 목록을 적어 놓고도 합산식에 안 쓴 것이다.
+        # 필드를 늘리면 여기도 같이 늘려야 한다. 그래서 목록을 한 곳에 둔다.
+        def _turn_chars(t: "DocxTurn") -> int:
+            return sum(len(getattr(t, f) or "")
+                       for f in ("say", "position", "stance", "persona", "nonNegotiable"))
+
+        total = sum(len(m.text) + sum(_turn_chars(t) for t in (m.delib.turns if m.delib else []))
                     for m in v)
         if total > 4_000_000:
+            # 거부 메시지에 입력을 되싣지 않는다 — pydantic 이 detail.input 으로 페이로드
+            # 전체를 되돌려주면 거부가 렌더보다 비싸진다. 숫자만 말한다.
             raise ValueError(f"본문 총량이 상한(400만자)을 넘는다: {total}자")
         return v
 
@@ -565,8 +577,6 @@ async def export_docx(
     report 모드는 LLM 왕복이 있다. 실패하면 transcript 로 조용히 대체하지 않는다 —
     정리본을 기대한 사람에게 원문을 주면 '정리가 안 됐다'로 보이지 '실패했다'로 보이지 않는다.
     """
-    from app.agent import docx_export as dx
-
     # 모델 → dict. docx_export 는 dict 로 다루므로 여기서 한 번만 변환한다.
     audit = _audit(request)
     conv = body.conversation.model_dump()
@@ -575,6 +585,26 @@ async def export_docx(
     if not n_msg:
         return Response(content='{"error":"empty_conversation"}', status_code=400,
                         media_type="application/json")
+
+    # ⚠ 게이트는 두 분기 모두에 건다. report 에만 걸어 두면 기본값인 transcript 가 무방비다 —
+    # 총량 상한이 있어도 400만자 렌더는 수 초~수십 초 CPU 다. 같은 세마포어를 쓴다.
+    sem = _sem(request)
+    if sem.locked():
+        audit.record(principal=principal.subject, event="docx", status="rejected",
+                     meta={"reason": "max_concurrent_chats", "mode": body.mode})
+        raise AuthError("too many concurrent exports; retry shortly", status_code=429)
+    await sem.acquire()
+    try:
+        return await _export_docx_inner(request, body, principal, settings, audit, conv,
+                                        title, n_msg)
+    finally:
+        sem.release()
+
+
+async def _export_docx_inner(request, body, principal, settings, audit, conv, title, n_msg):
+    # python-docx 는 여기서만 쓴다 — 임포트를 바깥에 두면 이 함수 스코프에 없어 NameError 다
+    # (실측: 세마포어를 바깥으로 뺄 때 임포트를 같이 옮기지 않아 전문 내보내기가 500 이었다).
+    from app.agent import docx_export as dx
 
     if body.mode == "transcript":
         # python-docx 렌더는 동기 CPU 작업이다. async 안에서 그대로 돌리면 그 시간만큼
@@ -588,20 +618,17 @@ async def export_docx(
         # ⚠ 이 경로는 /chat 과 똑같은 부하를 건다(에이전트 + LLM 왕복 수십 초). 그런데
         # 동시성 상한과 감사 기록을 둘 다 우회하고 있었다 — /chat 이 그 둘을 두는 이유가
         # 그대로 적용되는데도. 같은 게이트를 통과시킨다.
-        sem = _sem(request)
-        if sem.locked():
-            audit.record(principal=principal.subject, event="docx_report", status="rejected",
-                         meta={"reason": "max_concurrent_chats"})
-            raise AuthError("too many concurrent chats; retry shortly", status_code=429)
-        await sem.acquire()
+        # 세마포어는 바깥(export_docx)에서 이미 잡았다 — 이중 획득 금지.
         # ⚠ acquire 와 try 사이에 아무것도 두지 않는다. 그 틈에서 예외가 나면
         # 퍼밋이 영구히 새고, 상한만큼 쌓이면 챗 전체가 429 로 고정된다(실측 재현).
+        # 대화 전체(총량 상한 400만자)를 문자열로 조립하는 동기 작업이다.
+        _tx = await asyncio.to_thread(dx.transcript_text, conv)
         md = ""
         try:
             # 에이전트는 SSE 만 낸다(비스트리밍 엔드포인트가 없다). 여기서 스트림을 받아
             # 최종 result 만 모은다 — 에이전트에 엔드포인트를 새로 파는 것보다 접점이 적다.
             client = _agent_client(request)
-            payload = {"message": _REPORT_PROMPT + dx.transcript_text(conv),
+            payload = {"message": _REPORT_PROMPT + _tx,
                        "groups": principal.groups, "user_email": principal.email,
                        "user_pat": _chat_user_pat(request.app.state.keystore,
                                                   get_settings(), principal) or ""}
@@ -619,9 +646,6 @@ async def export_docx(
                                 pass
         except httpx.HTTPError:
             md = ""
-        finally:
-            # 반드시 놓는다. 여기서 새면 상한만큼 요청이 지나간 뒤 챗까지 429 가 된다.
-            sem.release()
         audit.record(principal=principal.subject, event="docx_report",
                      status="ok" if md.strip() else "error",
                      meta={"messages": n_msg})
