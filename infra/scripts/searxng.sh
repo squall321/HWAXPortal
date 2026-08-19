@@ -17,7 +17,20 @@ PORT="${SEARXNG_PORT:-8888}"
 APPT="$(command -v apptainer || echo "$HOME/claude/HWAXPortal/infra/apptainer/bin-1.3.6/usr/bin/apptainer")"
 
 [ -f "$SIF" ] || { echo "✗ SIF 없음: $SIF — infra/scripts/build-searxng.sh 로 굽는다"; exit 1; }
-[ -f "$CONF_DIR/settings.yml" ] || { echo "✗ 설정 없음: $CONF_DIR/settings.yml"; exit 1; }
+
+# 첫 기동이면 설정을 만든다. 예전엔 이 두 파일이 레포 밖에만 있어서 새 박스(cae00)에서는
+# 그냥 못 떴다 — dev 에서만 되는 전형적인 구멍이라 여기서 자급자족하게 만든다.
+# secret_key 만 박스 로컬로 생성하고, 나머지는 레포의 템플릿을 그대로 쓴다.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+mkdir -p "$CONF_DIR" && chmod 700 "$CONF_DIR"
+if [ ! -f "$CONF_DIR/settings.yml" ]; then
+  SEC="$(openssl rand -hex 32)"
+  sed "s|@GENERATE@|$SEC|" "$ROOT/infra/searxng/settings.template.yml" > "$CONF_DIR/settings.yml"
+  chmod 600 "$CONF_DIR/settings.yml"
+  echo "· settings.yml 생성(secret_key 신규)"
+fi
+cp -f "$ROOT/infra/searxng/serve.py" "$CONF_DIR/serve.py"   # 비밀 아님 — 레포가 정본
+
 grep -q '^\s*- json' "$CONF_DIR/settings.yml" || echo "⚠ settings.yml 에 json 형식이 없다 — format=json 이 403 이 된다"
 
 pkill -f "$SIF" 2>/dev/null || true

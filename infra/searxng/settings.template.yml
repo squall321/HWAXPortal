@@ -1,0 +1,23 @@
+# SearxNG 설정 템플릿 — 첫 기동 때 searxng.sh 가 secret_key 를 채워
+# /data/hwax/secrets/searxng/settings.yml (0600) 로 복사한다. 이 파일 자체엔 비밀이 없다.
+use_default_settings: true
+
+server:
+  secret_key: "@GENERATE@"
+  bind_address: "127.0.0.1"
+  port: 8888
+  limiter: false          # 루프백 전용이고 앞단에서 이미 인증이 끝난다
+  public_instance: false
+
+search:
+  # ⚠ JSON 출력은 SearxNG 기본이 꺼짐이다. 이 줄이 없으면 format=json 이 403 이고,
+  # 부르는 쪽(web.py)에는 '검색 결과 없음' 처럼 보인다 — 가장 조용한 실패다.
+  formats:
+    - html
+    - json
+  safe_search: 0
+  autocomplete: ""
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0
