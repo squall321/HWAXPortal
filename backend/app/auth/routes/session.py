@@ -181,6 +181,12 @@ def logout(
             # 화면은 '로그아웃됨' 으로 끝났다. 서비스별로 '쿠키만 지우는' 경로를 쓴다.
             #   heax-hub : /logout 은 Bearer+본문 필수 → 쿠키 전용 /logout-session 을 쓴다
             #   그 외    : /logout (없으면 SPA 가 그 사실을 사용자에게 알린다)
+            # ⚠ 없는 엔드포인트를 목록에 넣지 않는다. ai-data-hub 는 로그아웃 경로가
+            # 아예 없고(자격증명이 localStorage 에 있어 SPA 가 직접 지운다), 넣어 두면
+            # 매 로그아웃마다 404 가 확정적으로 발생해 "실패를 알린다" 는 장치가 늘
+            # 울리는 경보가 된다 — 그러면 진짜 실패를 아무도 안 본다.
+            if "/ai-data-hub/" in u:
+                continue
             outs.append(base + ("/logout-session" if "/heax-hub/" in u else "/logout"))
     except Exception:  # noqa: BLE001 — 목록을 못 읽어도 포털 로그아웃 자체는 되어야 한다
         outs = []

@@ -123,7 +123,7 @@ def list_pat(
 def list_all_pats(
     request: Request,
     principal: Principal = Depends(get_current_principal),
-) -> list[dict]:
+) -> dict:
     """전체 PAT 메타 — 관리자 전용. 토큰 자체는 어디에도 실리지 않는다.
 
     무기한 토큰은 폐기가 유일한 통제인데, 남의 토큰을 찾을 방법이 없으면 그 폐기를
@@ -131,7 +131,14 @@ def list_all_pats(
     """
     if "portal-admin" not in principal.groups:
         raise AuthError("admin only", status_code=403)
-    return request.app.state.token_store.all_pats()
+    # 잘린 사실을 숨기지 않는다 — 목록이 전부인 줄 알면 없는 토큰을 없다고 믿는다.
+    ts = request.app.state.token_store
+    rows = ts.all_pats()
+    total = ts.count_pats()
+    return {"pats": rows, "shown": len(rows), "total": total,
+            "truncated": total > len(rows),
+            "note": ("만료가 먼 것(오래 사는 토큰)부터 보인다 — 폐기가 필요한 쪽이 먼저다."
+                     if total > len(rows) else "")}
 
 
 @router.delete("/{jti}")

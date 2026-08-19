@@ -57,6 +57,10 @@ class TokenStore:
             )
             self._conn.commit()
 
+    def count_pats(self) -> int:
+        with self._lock:
+            return self._conn.execute("SELECT COUNT(*) FROM pat").fetchone()[0]
+
     def all_pats(self, limit: int = 500) -> list[dict]:
         """전체 소유자의 PAT 메타(토큰 자체는 절대 아님). 관리자 전용.
 
@@ -65,9 +69,12 @@ class TokenStore:
         실행 경로가 없으면 없는 것과 같다.
         """
         with self._lock:
+            # ⚠ created DESC 로 자르면 안 된다. 무기한 토큰은 정의상 가장 오래 남는 쪽이라,
+            # 정확히 폐기해야 할 것부터 목록에서 사라진다. 만료가 먼 것(= 오래 사는 것)을
+            # 먼저 보여 준다 — 이 목록의 존재 이유가 그것이다.
             cur = self._conn.execute(
                 "SELECT jti, name, aud, scopes, created, exp, revoked, sub, email FROM pat "
-                "ORDER BY created DESC LIMIT ?", (limit,))
+                "ORDER BY revoked ASC, exp DESC, created DESC LIMIT ?", (limit,))
             rows = cur.fetchall()
         return [{"jti": r[0], "name": r[1], "audiences": json.loads(r[2]),
                  "scopes": json.loads(r[3]), "created": r[4], "exp": r[5],

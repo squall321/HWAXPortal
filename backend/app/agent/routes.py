@@ -19,14 +19,14 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.agent import conv_search
 from app.agent.audit import AuditLog
@@ -491,17 +491,35 @@ class DocxDelib(BaseModel):
 
 
 class DocxMessage(BaseModel):
-    """내보내기 입력의 메시지 한 건. 프론트가 보내는 모양(text/delib)을 그대로 받되 상한을 건다."""
-    model_config = {"extra": "allow"}     # ts 등 표시용 필드는 통과, 아래 캡은 강제
+    """내보내기 입력의 메시지 한 건.
+
+    ⚠ extra 를 닫는다. allow 로 두면 캡을 건 필드 옆으로 임의 크기 JSON 이 무제한 통과해
+    캡이 메모리 상한 구실을 못 한다. docx_export 가 실제로 읽는 필드를 전수 확인했고
+    (delib·role·text·ts, turn 은 round/persona/say/position/stance/nonNegotiable),
+    전부 여기 선언돼 있으므로 닫아도 잃는 것이 없다.
+    """
+    model_config = {"extra": "ignore"}
     role: str = Field(default="assistant", max_length=40)
     text: str = Field(default="", max_length=200_000)
+    ts: Any = None          # 표시용. 형식은 믿지 않는다 — _ts 가 방어적으로 처리한다.
     delib: DocxDelib | None = None
 
 
 class ConvPayload(BaseModel):
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "ignore"}
     title: str = Field(default="", max_length=300)
     messages: list[DocxMessage] = Field(default_factory=list, max_length=2000)
+
+    @field_validator("messages")
+    @classmethod
+    def _total_budget(cls, v: list[DocxMessage]) -> list[DocxMessage]:
+        """총량 상한. 항목별 캡만 있으면 2000개 × 20만자 = 4억자가 통과한다 —
+        통째로 메모리에 올려 렌더하므로 그것 자체가 부하다."""
+        total = sum(len(m.text) + sum(len(t.say) for t in (m.delib.turns if m.delib else []))
+                    for m in v)
+        if total > 4_000_000:
+            raise ValueError(f"본문 총량이 상한(400만자)을 넘는다: {total}자")
+        return v
 
 
 class DocxRequest(BaseModel):
@@ -559,8 +577,13 @@ async def export_docx(
                         media_type="application/json")
 
     if body.mode == "transcript":
-        data = dx.build_transcript(conv)
+        # python-docx 렌더는 동기 CPU 작업이다. async 안에서 그대로 돌리면 그 시간만큼
+        # 이벤트 루프가 멈춰 다른 사용자의 요청까지 함께 선다(대화검색 랭킹을 to_thread 로
+        # 뺀 것과 같은 이유). 총량 상한이 있어도 400만자는 짧지 않다.
+        data = await asyncio.to_thread(dx.build_transcript, conv)
         name = f"{title}-전문"
+        audit.record(principal=principal.subject, event="docx_transcript",
+                     status="ok", meta={"messages": n_msg})
     else:
         # ⚠ 이 경로는 /chat 과 똑같은 부하를 건다(에이전트 + LLM 왕복 수십 초). 그런데
         # 동시성 상한과 감사 기록을 둘 다 우회하고 있었다 — /chat 이 그 둘을 두는 이유가
@@ -609,7 +632,8 @@ async def export_docx(
                 status_code=503, media_type="application/json")
         first = next((ln.lstrip("# ").strip() for ln in md.splitlines()
                       if ln.startswith("#")), title)
-        data = dx.build_report(first, md, f"원본 대화 '{title}' · 발화 {n_msg}개")
+        data = await asyncio.to_thread(dx.build_report, first, md,
+                                       f"원본 대화 '{title}' · 발화 {n_msg}개")
         name = f"{first[:50]}-정리본"
 
     safe = re.sub(r'[\\/:*?"<>|]+', " ", name).strip() or "대화"

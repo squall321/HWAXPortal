@@ -215,8 +215,13 @@ def build_transcript(conv: dict[str, Any]) -> bytes:
 
 
 def build_report(title: str, markdown: str, source_note: str) -> bytes:
-    title, markdown, source_note = _clean(title), _clean(markdown), _clean(source_note)
-    """정리본 — LLM 이 만든 마크다운을 문서 서식으로 옮긴다."""
+    """정리본 — LLM 이 만든 마크다운을 문서 서식으로 옮긴다.
+
+    정화는 여기서 하지 않는다. title·source_note 는 _meta→_run 으로, markdown 은
+    _body→_md_para→_run 으로 모두 _run 을 지나므로 거기서 한 번만 막는다.
+    (한때 이 자리에 _clean 대입문을 넣었는데, docstring 앞에 놓여 docstring 이
+    docstring 이 아니게 됐고 정화도 중복이었다.)
+    """
     doc = Document()
     _style(doc)
     _meta(doc, title or "정리 보고서",
