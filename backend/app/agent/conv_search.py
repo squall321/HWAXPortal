@@ -31,6 +31,13 @@ _MIN = 40           # 이보다 짧은 조각은 "네", "확인했습니다" 같
 # 있고 0.84 가 그 한가운데다. 실측으로 정답 손실 0/23, 무관 통과 0/6.
 # 코퍼스가 크게 바뀌면 다시 재야 한다(같은 방식으로 두 분포를 찍어 보면 된다).
 _MIN_SCORE = 0.84
+# 짧은 질의는 이 하한을 못 쓴다. e5 는 짧은 문장을 긴 본문과 견줄 때 점수를 낮게 주는데,
+# 위 0.84 는 긴 질의(180자 발췌)로만 잰 값이라 '흡습재' 같은 정당한 질의가 통째로 걸렸다.
+# 짧은 질의로 다시 재 보니 온토픽 0.767~0.859, 오프토픽 최대 0.803 으로 **분포가 겹친다** —
+# 어떤 임계값도 깨끗이 가르지 못한다(0.78: 오탐 2/6, 0.82: 정답 3/6 손실).
+# 그래서 거르지 말고 알린다. 못 가르는 것을 가르는 척하면 둘 중 하나는 반드시 거짓이 된다.
+_SHORT_Q = 12          # 이보다 짧은 질의는 점수로 관련성을 판정하지 않는다
+_SHORT_FLOOR = 0.75    # 명백한 무관만 쳐내는 느슨한 바닥
 
 
 def chunks(text: str) -> list[str]:
@@ -110,6 +117,11 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000) -> di
     return {"indexed": len(rows), "messages": len(pending), "too_short": short}
 
 
+def short_query(query: str) -> bool:
+    """질의가 짧아 점수로 관련성을 판정할 수 없는가. 호출부가 그 사실을 사용자에게 알린다."""
+    return len((query or "").strip()) < _SHORT_Q
+
+
 async def search(store, owner_sub: str, query: str, base_url: str,
                  limit: int = 8) -> list[dict]:
     """내 대화 안에서만 찾는다. 소유자 필터는 store 가 강제한다."""
@@ -117,10 +129,11 @@ async def search(store, owner_sub: str, query: str, base_url: str,
     # SQLite 전량 조회와 순수 파이썬 코사인은 동기다 — async 엔드포인트에서 그대로 돌리면
     # 색인이 커질수록 포털 이벤트 루프 전체가 그 시간만큼 멈춘다(다른 사용자의 요청까지).
     # 스레드로 뺀다. sqlite3 연결은 check_same_thread=False 로 열려 있어 안전하다.
-    return await asyncio.to_thread(_rank, store, owner_sub, qv, limit)
+    return await asyncio.to_thread(_rank, store, owner_sub, qv, limit,
+                                   _SHORT_FLOOR if short_query(query) else _MIN_SCORE)
 
 
-def _rank(store, owner_sub: str, qv: list[float], limit: int) -> list[dict]:
+def _rank(store, owner_sub: str, qv: list[float], limit: int, floor: float) -> list[dict]:
     hits = []
     for mid, cix, cid, text, blob, title, role, persona, ts in store.vectors_for(owner_sub, MODEL):
         v = unpack(blob)
@@ -140,7 +153,7 @@ def _rank(store, owner_sub: str, qv: list[float], limit: int) -> list[dict]:
     # 상대폭('1위 대비 얼마 이내')도 함께 걸어 봤으나 이 코퍼스에서는 절대 하한과 결과가
     # 완전히 같았고(재현율 23/25·오탐 0/6 동일), 1위가 유난히 높을 때 멀쩡한 2·3위를
     # 버리는 실패 모드만 늘었다. 하는 일이 없으면 없는 편이 낫다.
-    hits = [h for h in hits if h["score"] >= _MIN_SCORE]
+    hits = [h for h in hits if h["score"] >= floor]
     # 같은 대화가 상위를 독식하면 "어느 대화였는지"를 못 고른다 — 대화당 2조각까지만 올린다.
     seen: dict[str, int] = {}
     out = []

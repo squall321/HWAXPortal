@@ -301,7 +301,13 @@ async def search_conversations(
     # 큰 대화 이력에서는 첫 검색이 '부분 색인 위의 결과' 다. 그 사실을 숨기면 못 찾은 것이
     # 없는 것으로 읽힌다.
     left = store.remaining(principal.subject, conv_search.MODEL)
+    # 짧은 질의는 점수로 관련성을 가릴 수 없다(온토픽·오프토픽 분포가 겹친다). 결과를
+    # 주되 그 사실을 함께 낸다 — 못 가르는 것을 가른 척하면 사용자가 무관한 결과를
+    # 관련 있는 것으로 읽는다.
+    warn = ("질의가 짧아 관련성 판정이 약합니다 — 무관한 결과가 섞일 수 있습니다. "
+            "문장으로 풀어 쓰면 정확해집니다.") if conv_search.short_query(body.query) else ""
     return {"query": body.query, "results": hits,
+            "low_confidence": bool(warn), "note": warn,
             "index": {**store.index_stats(principal.subject, conv_search.MODEL),
                       "just_indexed": idx["indexed"], "too_short": idx["too_short"],
                       "not_indexed_yet": left,
