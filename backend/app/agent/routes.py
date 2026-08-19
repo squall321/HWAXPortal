@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.agent import conv_search
 from app.agent.audit import AuditLog
 from app.agent.sse import sse_event
 from app.auth.errors import AuthError
@@ -218,6 +219,37 @@ async def rename_conversation(
     if not _conv(request).rename(cid, principal.subject, body.title):
         raise AuthError("conversation not found", status_code=404)
     return {"ok": True}
+
+
+class ConvSearch(BaseModel):
+    query: str = Field(min_length=2, max_length=1000)
+    limit: int = Field(default=8, ge=1, le=30)
+
+
+@router.post("/conversations/search")
+async def search_conversations(
+    request: Request,
+    body: ConvSearch,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    """내 지난 대화를 의미로 찾는다. 남의 대화는 store 가 owner_sub 로 막는다.
+
+    색인은 검색할 때 게으르게 채운다. 별도 워커를 두면 "언제 반영되는지"가 불투명해지고,
+    방금 한 대화를 못 찾는 이유를 사용자가 알 방법이 없다. 지금 규모(수백 메시지)에서
+    증분 색인은 한 번뿐이고, 그 다음부터는 새 메시지 몇 개만 채운다.
+    """
+    settings = get_settings()
+    store = _conv(request)
+    try:
+        idx = await conv_search.reindex(store, principal.subject, settings.embed_base_url)
+        hits = await conv_search.search(store, principal.subject, body.query,
+                                        settings.embed_base_url, body.limit)
+    except (httpx.HTTPError, ValueError) as e:
+        # 임베더 불통을 빈 결과로 바꾸지 않는다 — "찾아봤는데 없다"로 읽히면 없는 사실을 믿는다.
+        raise AuthError(f"의미검색을 할 수 없습니다(임베더 응답 실패): {e}", status_code=503) from e
+    return {"query": body.query, "results": hits,
+            "index": {**store.index_stats(principal.subject),
+                      "just_indexed": idx["indexed"], "too_short": idx["too_short"]}}
 
 
 def _parse_sse_frame(frame: str) -> tuple[str, dict] | None:

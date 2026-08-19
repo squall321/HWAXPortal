@@ -49,6 +49,19 @@ class ConversationStore:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS ix_conv_owner ON conversations (owner_sub, updated_at)"
         )
+        # 의미검색용 벡터. owner_sub 를 여기에 한 번 더 적는다(비정규화) — 검색은 항상
+        # "내 대화 안에서"이고, 조인 없이 소유자로 먼저 좁혀야 스캔량이 내 것만큼으로 준다.
+        # 소유권 판정을 이 테이블 하나로 끝내는 것이 더 중요하다: 조인을 빠뜨린 쿼리 하나가
+        # 남의 대화를 물어오는 사고가 되는데, 여기 owner_sub 가 있으면 그런 쿼리를 쓸 수 없다.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS message_vectors ("
+            "message_id TEXT NOT NULL, chunk_ix INTEGER NOT NULL, conversation_id TEXT NOT NULL, "
+            "owner_sub TEXT NOT NULL, text TEXT NOT NULL, model TEXT NOT NULL, dim INTEGER NOT NULL, "
+            "vec BLOB NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (message_id, chunk_ix))"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_vec_owner ON message_vectors (owner_sub)"
+        )
         self._conn.commit()
 
     # ── 생성 ────────────────────────────────────────────────────────────────
@@ -145,6 +158,7 @@ class ConversationStore:
             if not self._owns(cid, owner_sub):
                 return False
             self._conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
+            self._conn.execute("DELETE FROM message_vectors WHERE conversation_id = ?", (cid,))
             self._conn.execute("DELETE FROM conversations WHERE id = ?", (cid,))
             self._conn.commit()
         return True
@@ -157,3 +171,59 @@ class ConversationStore:
             )
             self._conn.commit()
             return cur.rowcount > 0
+
+    # ── 의미검색 인덱스 ──────────────────────────────────────────────────────
+    def unindexed(self, owner_sub: str, limit: int = 2000) -> list[dict]:
+        """아직 벡터가 없는 내 메시지. 색인은 증분이다 — 매번 전량 임베딩하면 느리고 비싸다."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT m.id, m.conversation_id, m.content FROM messages m "
+                "JOIN conversations c ON c.id = m.conversation_id "
+                "LEFT JOIN message_vectors v ON v.message_id = m.id "
+                "WHERE c.owner_sub = ? AND v.message_id IS NULL "
+                "ORDER BY m.ts DESC LIMIT ?",
+                (owner_sub, limit),
+            ).fetchall()
+        return [{"message_id": r[0], "conversation_id": r[1], "content": r[2]} for r in rows]
+
+    def put_vectors(self, rows: list[dict]) -> int:
+        """(message_id, chunk_ix) 단위 upsert. 같은 메시지를 다시 색인해도 중복되지 않는다."""
+        if not rows:
+            return 0
+        now = _now()
+        with self._lock:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO message_vectors "
+                "(message_id, chunk_ix, conversation_id, owner_sub, text, model, dim, vec, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(r["message_id"], r["chunk_ix"], r["conversation_id"], r["owner_sub"],
+                  r["text"], r["model"], r["dim"], r["vec"], now) for r in rows],
+            )
+            self._conn.commit()
+        return len(rows)
+
+    def vectors_for(self, owner_sub: str, model: str) -> list[tuple]:
+        """내 벡터 전량. 모델이 다르면 섞지 않는다 — 다른 임베딩 공간의 코사인은 무의미하다."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT v.message_id, v.chunk_ix, v.conversation_id, v.text, v.vec, "
+                "       c.title, m.role, m.persona, m.ts "
+                "FROM message_vectors v "
+                "JOIN conversations c ON c.id = v.conversation_id "
+                "JOIN messages m ON m.id = v.message_id "
+                "WHERE v.owner_sub = ? AND v.model = ?",
+                (owner_sub, model),
+            ).fetchall()
+
+    def index_stats(self, owner_sub: str) -> dict:
+        with self._lock:
+            total = self._conn.execute(
+                "SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id "
+                "WHERE c.owner_sub = ?", (owner_sub,)).fetchone()[0]
+            indexed = self._conn.execute(
+                "SELECT COUNT(DISTINCT message_id) FROM message_vectors WHERE owner_sub = ?",
+                (owner_sub,)).fetchone()[0]
+        # 'pending' 을 total-indexed 로 내지 않는다 — 너무 짧아 색인 대상이 아닌 메시지가
+        # 영영 남아 "아직 10개 남았다"가 고정 표시된다. 남은 일이 없는데 남았다고 말하는
+        # 숫자는 그냥 거짓말이다. 색인 대상 판정은 청크 규칙을 아는 conv_search 가 한다.
+        return {"messages": total, "indexed": indexed}

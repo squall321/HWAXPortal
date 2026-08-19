@@ -130,6 +130,9 @@ class Settings(BaseSettings):
     agent_request_timeout: float = 30.0                # per-call timeout to remote services (s)
     max_concurrent_chats: int = 64                     # SSE connections hold a worker → cap + 429
     agent_audit_log_path: str = "secrets/agent_audit.sqlite"  # who/when/which tool (Phase 1)
+    # 대화 의미검색용 임베더. AIDataHub 가 이미 같은 모델을 /api/embed 로 서비스한다 —
+    # 두 벌을 두면 임베딩 공간이 갈라져 코사인이 의미를 잃는다. 그래서 새로 안 띄우고 빌린다.
+    embed_base_url: str = "http://127.0.0.1:8001"
 
     # ── Mail (automated send from hwax@samsung.com) ────────────────────────────
     mail_backend: Literal["console", "smtp", "graph"] = "console"  # dev default = console
