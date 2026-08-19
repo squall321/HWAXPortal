@@ -28,7 +28,8 @@ class PatCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     audiences: list[str] = Field(default_factory=list)  # sites this PAT may reach; empty → config default
     scopes: list[str] = Field(default_factory=lambda: ["read", "write"])
-    ttl_days: int | None = None
+    # 0 = 무기한(만료로는 안 죽고 폐기로만 죽는다). None 이면 서버 기본값.
+    ttl_days: int | None = Field(default=None, ge=0, le=36500)
 
 
 class PatMeta(BaseModel):
@@ -77,9 +78,13 @@ def create_pat(
     _csrf: None = Depends(require_csrf),
     settings: Settings = Depends(get_settings),
 ) -> PatCreated:
-    ttl = body.ttl_days or settings.pat_ttl_days
-    if ttl < 1 or ttl > settings.pat_max_ttl_days:
-        raise AuthError(f"ttl_days must be 1..{settings.pat_max_ttl_days}", status_code=400)
+    # ttl_days=0 은 '무기한' 이다. `or` 로 기본값을 채우면 0 이 falsy 라 90일로 둔갑하므로
+    # None 과 0 을 반드시 구분한다.
+    never = body.ttl_days == 0
+    ttl = settings.pat_never_ttl_days if never else (body.ttl_days or settings.pat_ttl_days)
+    if not never and (ttl < 1 or ttl > settings.pat_max_ttl_days):
+        raise AuthError(f"ttl_days must be 0(무기한) or 1..{settings.pat_max_ttl_days}",
+                        status_code=400)
     auds = body.audiences or settings.pat_default_audience_list
     allowed = set(settings.pat_default_audience_list)  # least privilege: only known sites
     bad = [a for a in auds if a not in allowed]

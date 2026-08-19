@@ -376,6 +376,8 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
 
 export default function TokenPage() {
   const [name, setName] = useState('');
+  // 0 = 무기한. 만료로는 안 죽고 폐기로만 죽으므로 기본값으로 두지 않는다.
+  const [ttlDays, setTtlDays] = useState(90);
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<PatCreated | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -442,6 +444,7 @@ export default function TokenPage() {
         name: trimmed,
         audiences: ['mcp-gateway'],
         scopes: ['read', 'write'],
+        ttl_days: ttlDays,
       });
       setCreated(pat);
       setName('');
@@ -493,10 +496,34 @@ export default function TokenPage() {
             fontSize: '0.9rem',
           }}
         />
+        <select
+          value={ttlDays}
+          onChange={(e) => setTtlDays(Number(e.target.value))}
+          title="토큰 수명"
+          style={{
+            padding: '0.55rem 0.6rem',
+            background: 'var(--card)',
+            color: 'var(--fg)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            fontSize: '0.9rem',
+          }}
+        >
+          <option value={30}>30일</option>
+          <option value={90}>90일</option>
+          <option value={365}>1년</option>
+          <option value={0}>무기한</option>
+        </select>
         <button type="submit" className="btn-primary" disabled={busy || !name.trim()}>
           {busy ? '발급 중…' : '토큰 발급'}
         </button>
       </form>
+      {ttlDays === 0 && (
+        <div style={{ fontSize: '0.82rem', color: 'var(--muted)', margin: '-0.7rem 0 1rem' }}>
+          무기한 토큰은 <b>스스로 만료되지 않습니다</b>. 유출되면 아래 목록에서 <b>폐기</b>하는 것이
+          유일한 차단 수단이니, 배치파일·설정에 넣어 두는 용도로만 쓰고 안 쓰게 되면 바로 폐기하세요.
+        </div>
+      )}
 
       {created && (
         <section
@@ -601,7 +628,11 @@ export default function TokenPage() {
                     )}
                   </td>
                   <td style={tdStyle}>{fmtDate(p.created)}</td>
-                  <td style={tdStyle}>{fmtDate(p.exp)}</td>
+                  <td style={tdStyle}>
+                    {/* 무기한은 100년 뒤 만료로 발급된다 — 2126년 날짜를 그대로 보여주면
+                        읽는 사람이 오작동으로 읽는다. 10년 넘게 남았으면 무기한이다. */}
+                    {p.exp - Date.now() / 1000 > 10 * 365 * 86400 ? '무기한' : fmtDate(p.exp)}
+                  </td>
                   <td
                     style={{
                       ...tdStyle,

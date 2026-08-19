@@ -115,6 +115,10 @@ class Settings(BaseSettings):
     # Revocation = token_store jti denylist, published at /auth/pat/revoked.json for the gateway.
     pat_ttl_days: int = 90            # default PAT lifetime (days)
     pat_max_ttl_days: int = 365       # cap on a requested ttl
+    # 무기한 PAT(ttl_days=0)의 실제 만료. 진짜로 exp 를 빼면 검증기가 거부한다
+    # (pat_verify 가 exp 를 필수로 요구한다) — 사실상 무기한이 되는 지평을 둔다.
+    # ⚠ 무기한 토큰은 폐기(jti 차단)가 유일한 통제 수단이다. 발급은 명시적 선택이어야 한다.
+    pat_never_ttl_days: int = 36500   # 100년
     # comma-separated allowlist. "mcp-gateway" = the AI surface (LLM chat + MCP tools): a PAT with
     # this audience can drive /agent/chat AND connect a personal Claude to the MCP gateway.
     pat_default_audiences: str = "mx-white-paper,heax-hub,ai-data-hub,signalforge,mcp-gateway"
