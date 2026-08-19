@@ -113,12 +113,16 @@ hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper
 # 종료코드 3 = 소스 갱신 실패(git fetch/reset). 서비스는 떠 있어도 옛 코드라 가장 위험한
 # 상태다 — "✓ up" 만 보고 끝내면 오늘 올린 변경이 하나도 반영되지 않은 채 정상으로 읽힌다.
 # (예전 주석은 'skip 건수를 종료코드로 낸다'였으나 실제로는 그런 코드가 없었다.)
-set +e
+# ⚠ set -e 를 켜면 안 된다. 이 스크립트는 5행에서 의도적으로 -e 를 껐다 — 서비스 하나의
+# 실패가 전체를 끊지 않고 마지막 게이트에서 판정하는 설계다. 여기서 켜면 그 아래 400여
+# 줄이 첫 비영점에서 그냥 죽는다(게이트웨이가 내려가 있기만 해도 진단 없이 중단된다).
+# -e 가 꺼져 있으므로 rc 는 그냥 받으면 된다.
 SF_RESTORE_DB="${SF_RESTORE_DB:-0}" "$SELF_REPO/infra/scripts/deploy-all-from-drive.sh"
 _DA_RC=$?
-set -e
 if [ "$_DA_RC" = "3" ]; then
-  bad "소스 갱신 실패 — 코드는 옛것이다. 위 '✗ git' 줄의 원인을 먼저 해결하고 다시 돌려라"
+  # bad 가 아니라 fail 이다 — 코드가 안 올라간 상태를 '경고' 로 두면 마지막 요약이
+  # '✓ 전체 최신화 완료' 로 끝나 그대로 운영에 들어간다.
+  fail "소스 갱신 실패 — 코드는 옛것이다. 위 '✗ git' 줄의 원인을 먼저 해결하고 다시 돌려라"
 elif [ "$_DA_RC" != "0" ]; then
   bad "deploy-all 에서 일부 항목이 skip/실패(rc=$_DA_RC) — 위 ⚠ 줄과 아래 헬스게이트를 함께 보라"
 fi

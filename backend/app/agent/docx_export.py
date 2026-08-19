@@ -101,11 +101,57 @@ def _ts(ms: int | None) -> str:
     return datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d %H:%M")
 
 
+def _delib_turns(m: dict[str, Any]) -> list[dict]:
+    """심의 좌석 발언. 이것이 없으면 심의를 내보내도 결정문만 남는다.
+
+    ⚠ 좌석 발언은 message.text 에 없다 — 라이브 스트림은 delib 이벤트로만 오고(m.delib.turns),
+    서버에서 다시 읽을 때도 role='persona' 행이 turns 로 접혀 들어간다. text 만 읽으면
+    3라운드 5좌석 심의가 '질문 + 결정문' 두 줄로 줄어든다. 결론만 남고 근거가 사라지는
+    문서는 심의 기록으로 쓸 수 없다.
+    """
+    d = m.get("delib")
+    return list((d or {}).get("turns") or []) if isinstance(d, dict) else []
+
+
+def _write_turns(doc: "Document", turns: list[dict]) -> None:
+    last_round = None
+    for t in turns:
+        if not isinstance(t, dict):
+            continue
+        rd = t.get("round")
+        if rd != last_round:
+            last_round = rd
+            h = doc.add_paragraph()
+            hr = h.add_run(f"라운드 {rd}" if rd is not None else "심의")
+            hr.bold = True
+            hr.font.size = Pt(10)
+            hr.font.color.rgb = _MUTED
+            h.paragraph_format.space_before = Pt(10)
+        who = str(t.get("persona") or "").strip() or "좌석"
+        stance = str(t.get("stance") or "").strip()
+        pos = str(t.get("position") or "").strip()
+        lead = doc.add_paragraph()
+        lr = lead.add_run(who + (f"  ·  {stance}" if stance else ""))
+        lr.bold = True
+        lr.font.size = Pt(9)
+        if pos:
+            pr = lead.add_run(f"   {pos}")
+            pr.font.size = Pt(9)
+            pr.font.color.rgb = _MUTED
+        _body(doc, str(t.get("say") or ""))
+        nn = str(t.get("nonNegotiable") or "").strip()
+        if nn:
+            _body(doc, f"양보 불가: {nn}")
+
+
 def build_transcript(conv: dict[str, Any]) -> bytes:
     """있는 그대로 — 발화자·시각을 붙여 순서대로."""
     doc = Document()
     _style(doc)
-    msgs = [m for m in (conv.get("messages") or []) if (m.get("text") or "").strip()]
+    # text 가 비어도 심의 발언이 있으면 버리지 않는다 — 결정문 없이 끝난 심의가 통째로
+    # 사라지던 경로다.
+    msgs = [m for m in (conv.get("messages") or [])
+            if (m.get("text") or "").strip() or _delib_turns(m)]
     _meta(doc, conv.get("title") or "대화 기록",
           f"HWAX Portal · 발화 {len(msgs)}개 · 내보낸 시각 "
           f"{datetime.now().strftime('%Y-%m-%d %H:%M')}")
@@ -119,6 +165,8 @@ def build_transcript(conv: dict[str, Any]) -> bytes:
         r.font.color.rgb = _MUTED
         p.paragraph_format.space_before = Pt(12)
         p.paragraph_format.space_after = Pt(2)
+        # 좌석 발언을 먼저 싣고 결정문(text)을 뒤에 둔다 — 읽는 순서가 심의 순서와 같아진다.
+        _write_turns(doc, _delib_turns(m))
         _body(doc, m.get("text") or "")
 
     buf = io.BytesIO()
@@ -152,6 +200,12 @@ def transcript_text(conv: dict[str, Any], limit: int = 60000) -> str:
     """LLM 에 넘길 대화 원문. 너무 길면 앞부분을 자르되 잘랐다는 사실을 남긴다."""
     out = []
     for m in conv.get("messages") or []:
+        # 좌석 발언도 넣는다. 빼면 LLM 이 근거 없이 결론만 보고 '결론과 근거' 절을 쓰게 된다 —
+        # 정리본이 지어낸 근거를 달게 되는 가장 나쁜 경로다.
+        for t_ in _delib_turns(m):
+            say = str(t_.get("say") or "").strip()
+            if say:
+                out.append(f"[{t_.get('persona') or '좌석'} R{t_.get('round')}] {say}")
         t = (m.get("text") or "").strip()
         if not t:
             continue

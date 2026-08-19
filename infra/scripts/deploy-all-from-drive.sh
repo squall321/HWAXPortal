@@ -71,6 +71,11 @@ fi
 # the tree is dirty or diverged (that's how cae00 kept an old routes.env → wrong nginx routing). This
 # stashes local junk and hard-resets to origin so the repo is ALWAYS current. Set NO_GIT_RESET=1 to
 # only do a soft pull (and just warn if it can't fast-forward).
+# ⚠ 이 함수는 항상 서브셸 ( cd "$DIR" … ) 안에서 불린다. 그래서 여기서 변수를 대입해도
+# 부모 셸에는 절대 도달하지 않는다 — 실제로 GIT_STALE=1 이 그렇게 증발해 exit 3 이 죽은
+# 코드였다. 표식은 파일로 남긴다(서브셸 경계를 넘는 유일한 수단).
+GIT_STALE_FLAG="$(mktemp -u /tmp/.hwax-git-stale.XXXXXX)"
+mark_stale() { : > "$GIT_STALE_FLAG"; }
 git_update() {  # run inside the repo dir
   local branch; branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
   # 실패 원인을 그대로 보여준다. 예전엔 2>/dev/null 로 삼키고 "(offline?)" 한 줄만 찍었는데,
@@ -87,7 +92,7 @@ git_update() {  # run inside the repo dir
     [ -n "$_fe" ] && printf '      %s\n' "$_fe" | head -5
     echo "      origin: $(git remote get-url origin 2>/dev/null || echo '(없음)')"
     echo "      → 이 상태로 진행하면 Drive 산출물(SIF·dist)만 새것이고 코드는 옛것이다."
-    GIT_STALE=1
+    mark_stale
     return 0
   }
   if [ "${NO_GIT_RESET:-0}" = "1" ]; then
@@ -109,12 +114,12 @@ git_update() {  # run inside the repo dir
     if [ -z "$target" ]; then
       echo "  ✗ origin/$branch 를 읽을 수 없다 — 소스가 갱신되지 않았다"
       echo "      origin: $(git remote get-url origin 2>/dev/null || echo '(없음)')"
-      GIT_STALE=1
+      mark_stale
     elif [ "$after" != "$target" ]; then
       echo "  ✗ git reset 실패 — HEAD($after) ≠ origin/$branch($target). 소스가 갱신되지 않았다"
       [ -n "$_re" ] && printf '      %s\n' "$_re" | head -3
       echo "      → 이 상태로 진행하면 Drive 산출물만 새것이고 코드는 옛것이다."
-      GIT_STALE=1
+      mark_stale
     elif [ "$before" = "$after" ]; then
       echo "  · git: up to date ($after)"
     else
@@ -398,7 +403,7 @@ hr "Done"
 # 소스 갱신이 실패했으면 여기서 크게 말하고 종료코드로도 알린다. 화면에 한 줄 찍고
 # '✓ up / exit 0' 으로 끝내면 "up to date" 거짓말을 한 단계 위로 옮긴 것일 뿐이다 —
 # 호출자(update-all)는 종료코드를 보고 다음 단계를 정한다.
-if [ "${GIT_STALE:-0}" = "1" ]; then
+if [ -e "$GIT_STALE_FLAG" ]; then
   echo
   echo "  ✗ 소스가 갱신되지 않은 레포가 있다 — Drive 산출물만 새것이고 코드는 옛것이다."
   echo "    위의 '✗ git' 줄을 보고 원인을 먼저 해결하라. 서비스는 떠 있어도 옛 코드다."
@@ -407,4 +412,5 @@ echo "  Portal:  https://hwax.sec.samsung.net/   (tiles: /heax-hub/ /ai-data-hub
 echo "  DynaForge(KooRemapper): HEAX 하위앱 /apps/kooremapper/ (portal_auth SSO), MCP /apps/kooremapper_mcp/"
 echo "  If a service shows a non-2xx above, re-run just it:  $0 <portal|mxwp|heax|aidh|signalforge|kooremapper>"
 
-[ "${GIT_STALE:-0}" = "1" ] && exit 3 || exit 0
+if [ -e "$GIT_STALE_FLAG" ]; then rm -f "$GIT_STALE_FLAG"; exit 3; fi
+exit 0
