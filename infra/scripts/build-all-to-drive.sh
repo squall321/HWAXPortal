@@ -52,7 +52,12 @@ pnpm_install() {  # $1=프로젝트 디렉터리(. 이면 현재)
 if want portal; then
   hr "HWAX Portal — build SPA + sif → Drive"
   ( cd "$PORTAL_DIR"
-    pnpm_install frontend && pnpm --dir frontend build
+    # ⚠ `pnpm_install X && build` 로 쓰면 안 된다. && 리스트의 앞 명령 실패는 set -e 의
+    # 예외라, 가드가 "여기서 멈춥니다" 를 찍고도 서브셸은 rc=0 으로 끝나고 아래
+    # build.sh·images-to-drive.sh 가 그대로 돌아 옛 dist 가 Drive 로 올라간다(실측).
+    # heax·signalforge 는 줄을 나눠 써서 멀쩡했다 — 이 두 블록만 && 였다.
+    pnpm_install frontend
+    pnpm --dir frontend build
     ./infra/scripts/build.sh                       # portal.sif + nginx.sif (skips if present)
     ./infra/scripts/images-to-drive.sh )
 fi
@@ -60,7 +65,8 @@ fi
 if want mxwp && [ -n "$MXWP_DIR" ]; then
   hr "MX White Paper — build dist + bake web.sif → Drive"
   ( cd "$MXWP_DIR"
-    pnpm_install . && pnpm schema:gen
+    pnpm_install .            # ⚠ && 로 잇지 않는다 — 위 portal 블록 주석 참고
+    pnpm schema:gen
     VITE_BASE_PATH=/mx-white-paper/ pnpm --filter @mx/web build
     apptainer build --force infra/apptainer/web.sif infra/apptainer/web.def   # bakes dist
     ./infra/scripts/images-to-drive.sh )

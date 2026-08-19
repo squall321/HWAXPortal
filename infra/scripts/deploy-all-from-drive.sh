@@ -355,7 +355,10 @@ if want kooremapper; then
       # `|| echo 000` 을 붙이면 안 된다 — curl 은 연결 실패에도 -w 로 이미 '000' 을 찍고
       # 종료코드만 0 이 아니다. 그래서 폴백이 덧붙어 '000000' 이 되고 case 000) 을 비껴가
       # 무응답이 초록 ✓ 로 보고된다(실측). 종료코드가 아니라 출력값으로만 판정한다.
-      _c="$(curl -s -o /dev/null -w '%{http_code}' -m 4 "http://127.0.0.1:$_p/" 2>/dev/null)"
+      # rc 는 삼키고 값만 쓴다 — 아래 probe() 와 같은 이유다. 이 대입의 종료코드가 곧
+      # curl 의 rc(무응답이면 7)라 set -e 아래서 스크립트가 여기서 끊긴다. 즉 이 검사가
+      # 존재하는 바로 그 상황(:8700 무응답)에서 진단 한 줄을 못 찍고 죽는다.
+      _c="$(curl -s -o /dev/null -w '%{http_code}' -m 4 "http://127.0.0.1:$_p/" 2>/dev/null)" || true
       case "${_c:-000}" in
         000) skip "DynaForge 업스트림 :$_p 무응답 — /apps/kooremapper* 는 502 가 된다(위 로그에서 원인 확인)." ;;
         *)   ok "DynaForge 업스트림 :$_p → $_c" ;;
@@ -383,7 +386,10 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   # 종료코드를 판정에 쓰지 않고 바로 아래에서 실제 상태(/health)로 가르기 때문에,
   # 삼켜도 실패가 사라지지 않는다. 로그는 NG_LOG 에 남아 실패 분기에서 출력된다.
   NG_PORT="$(sed -n 's/^HTTP_PORT=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1)"
-  NG_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:${NG_PORT:-8088}/health" 2>/dev/null)"
+  # 같은 이유로 rc 를 삼킨다. 바로 위 주석이 "종료코드가 아니라 실제 상태로 가른다"고
+  # 적어 놨는데, nginx 가 안 떠 있으면 그 판정에 닿기 전에 이 줄에서 죽었다 —
+  # 아래 skip·tail 로그·Health 요약·종료코드 집계가 통째로 실행되지 않는다.
+  NG_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:${NG_PORT:-8088}/health" 2>/dev/null)" || true
   if [ "${NG_CODE:-000}" = "200" ]; then
     ok "nginx reloaded with current routes (/health → 200)"
   else
