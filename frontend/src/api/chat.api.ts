@@ -19,6 +19,8 @@ export interface StreamHandlers {
   /** 도구 카탈로그(SSE tools) — '/도구' 검색 응답. 선택 카드 렌더용. */
   onTools?: (e: ToolCatalog) => void;
   onError?: (e: ErrorEvent) => void;
+  /** 치명적이지 않은 경고(SSE warning) — 자격증명 강등 등. 응답은 계속된다. */
+  onWarning?: (e: { code?: string; message: string }) => void;
   onDone?: () => void;
   signal?: AbortSignal;
 }
@@ -62,6 +64,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'tools':
       h.onTools?.(payload as ToolCatalog);
+      break;
+    case 'warning':
+      h.onWarning?.(payload as { code?: string; message: string });
       break;
     case 'error':
       h.onError?.(payload as ErrorEvent);

@@ -1088,3 +1088,15 @@
 
 /* 내보내기 실패 문구 — 버튼 옆에 붙여, 눌렀는데 아무 일도 없는 상태를 없앤다. */
 .cx-export-err { margin-left: 8px; font-size: 0.76rem; color: #e58a9e; }
+
+/* 자격증명 강등 등 치명적이지 않은 경고 — 응답 옆에 지속 표시(무음 강등 가시화). */
+.msg-warn {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn, #b8860b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn, #b8860b) 40%, transparent);
+  color: var(--warn-fg, #8a6d00);
+  font-size: 13px;
+  line-height: 1.5;
+}

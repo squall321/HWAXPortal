@@ -104,6 +104,9 @@ function Row({ msg }: { msg: Message }) {
           </div>
         )}
         {emptyDone && <div className="msg-status-text">(응답이 없습니다)</div>}
+        {msg.warn && (
+          <div className="msg-warn" role="status">⚠ {msg.warn}</div>
+        )}
         {msg.error && <ErrorBlock raw={msg.error} />}
       </div>
       {!msg.streaming && msg.text && (

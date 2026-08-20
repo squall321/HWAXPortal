@@ -459,6 +459,7 @@ export function ChatProvider({
             text: block.type === 'text' ? block.content : m.text,
             status: undefined,
           })),
+        onWarning: (e) => patch(cid, botId, (m) => ({ ...m, warn: e.message })),
         onError: (e) => patch(cid, botId, (m) => ({ ...m, error: e.message, status: undefined })),
         onDone: () => {
           patch(cid, botId, (m) => ({ ...m, streaming: false, status: undefined }));

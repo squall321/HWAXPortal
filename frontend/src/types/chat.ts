@@ -145,6 +145,9 @@ export interface Message {
   // 도구 카탈로그(SSE tools 이벤트) — 도구 선택 카드(ToolCatalogBlock) 렌더용. 영속됨.
   toolCatalog?: ToolCatalog;
   error?: string;
+  // 자격증명 강등 등 치명적이지 않은 경고 — 심의가 서비스 계정으로 근거를 모은 경우.
+  // error 와 달리 응답을 막지 않고 옆에 지속 표시한다(무음 강등 가시화).
+  warn?: string;
   streaming?: boolean;
 }
 
