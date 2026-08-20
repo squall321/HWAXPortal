@@ -209,6 +209,16 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
             </p>
           )}
 
+          {/* 추천은 늘 5명을 채워 내놓는다. 맞는 사람이 없어도 그렇다 — 그래서 서버가
+              '자신 없음'을 말할 때는 화면이 그대로 옮겨야 한다. 이 문구가 없으면 사용자는
+              무관한 전문가 5명을 그대로 데리고 심의에 들어간다(실제로 그랬다). */}
+          {!experts?.error && experts?.low_confidence && (
+            <p className="cx-ep-warn">
+              이 주제를 맡을 전문가가 풀에 없을 수 있습니다 — 아래 추천은 관련도가 낮습니다.
+              직접 고르시거나, 질문을 더 구체적인 용어로 바꿔 다시 시도해 보세요.
+            </p>
+          )}
+
           <section className="cx-ep-sec">
             <h3 className="cx-ep-sec-title">
               추천 전문가

@@ -129,6 +129,12 @@ export async function fetchSearchCapability(signal?: AbortSignal): Promise<Searc
 
 export interface ExpertsResponse {
   recommended: RecommendedExpert[];
+  /** 풀에 이 주제를 맡을 전문가가 없을 가능성이 높다는 신호.
+   *  AIDataHub 가 역할/설명 어휘 일치로 판정한다 — 점수로는 못 한다(e5 코사인은
+   *  무관한 문장끼리도 0.87~0.90 이라 어떤 질의든 그럴듯한 값이 나온다).
+   *  실제 사고: "OCA 의 산소 확산 계수" 질의에 백플레인 TFT·안테나 OTA 가 추천됐고,
+   *  랭킹 버그가 아니라 762명 풀에 그 전문성이 아예 없었다. */
+  low_confidence?: boolean;
   /** 질문 연관도순 후보(상위 ~40) — 수동 추가 기본 노출·검색 우선순위에 사용. */
   candidates?: RecommendedExpert[];
   pool: PoolExpert[];
