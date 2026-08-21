@@ -41,8 +41,14 @@ if instance_running "$INST_PORTAL"; then
   echo "✓ $INST_PORTAL already running"
 else
   echo "→ start $INST_PORTAL (:$PORTAL_PORT)"
+  # 업로드 스테이징 — 호스트 영속 경로를 컨테이너 /var/upload-staging 에 바인드.
+  # 파일은 여기 잠깐 머물다 확정 후·TTL 후 삭제된다(레포 안에 두지 않는다).
+  STAGING_HOST="${HWAX_UPLOAD_STAGING:-$HOME/.hwax/upload-staging}"
+  mkdir -p "$STAGING_HOST"
   "$APPTAINER" instance start \
     --bind "$REPO_ROOT:/workspace" \
+    --bind "$STAGING_HOST:/var/upload-staging" \
+    --env "UPLOAD_STAGING_DIR=/var/upload-staging" \
     --env "APP_ENV=${APP_ENV:-prod}" \
     --env "SERVE_FRONTEND=true" \
     --env "JWT_AUTOGEN_KEYS=true" \

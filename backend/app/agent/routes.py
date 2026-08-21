@@ -24,7 +24,7 @@ from urllib.parse import quote
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -34,6 +34,7 @@ from app.agent.sse import sse_event
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
+from app.agent import upload as _upload
 from app.deps import principal_pat_or_session
 
 logger = logging.getLogger(__name__)
@@ -667,6 +668,27 @@ async def _export_docx_inner(request, body, principal, settings, audit, conv, ti
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
     )
+
+
+@router.post("/upload")
+async def upload_file(
+    request: Request,
+    file: UploadFile = File(...),
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """챗 파일 업로드 — 수신·스테이징만 한다(파싱·등록은 이후 단계에서 materialtwin 에 위임).
+
+    두 층 게이트의 백엔드 층 — 프론트가 버튼을 숨겨도 이 검사가 API 직접 호출을 막는다.
+    업로드는 쓰기라 사용자 자격증명이 반드시 있어야 하고, 강등되면 안 된다(무음 강등 금지).
+    """
+    _upload.require_upload_group(settings, principal.groups)
+    audit = _audit(request)
+    meta = await _upload.stage_upload(settings, principal.subject, file)
+    audit.record(principal=principal.subject, event="upload_stage", status="ok",
+                 meta={"filename": meta["filename"], "size": meta["size"], "ext": meta["ext"]})
+    # path 는 내부용 — 응답에 내보내지 않는다.
+    return {k: v for k, v in meta.items() if k != "path"}
 
 
 @router.post("/deliberate/experts")

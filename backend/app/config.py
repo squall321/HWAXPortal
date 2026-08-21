@@ -128,6 +128,13 @@ class Settings(BaseSettings):
     # The portal is a thin proxy + auth gate: real LLM/LangGraph/MCP fan-out lives in the
     # remote Agent Server (URL below). dev/prod swap the URL via routes.env (vLLM split).
     agent_server_url: str = "http://127.0.0.1:9009"  # Agent Server (SSE /chat); 9000 is MinIO here
+    # 챗 파일 업로드 — 물성 DB 는 정본이라 아무나 못 쓰게 그룹으로 게이트한다(2층: 프론트
+    # 숨김 + 백엔드 재검증). 콤마 구분. portal-admin 은 항상 포함, 물성 담당 그룹을 사내
+    # AD 그룹명으로 추가하면 된다. 빈 값이면 아무도 업로드 못 한다(안전 기본).
+    upload_allowed_groups: str = "portal-admin"
+    # 업로드 스테이징 루트 — 사용자별 하위폴더. TTL 지난 것과 확정된 것은 정리한다.
+    upload_staging_dir: str = "/var/upload-staging"   # 컨테이너 바인드(start.sh). UPLOAD_STAGING_DIR 로 오버라이드
+    upload_staging_ttl_hours: int = 6
     mcp_gateway_url: str = "http://127.0.0.1:9110"    # MCP Gateway (HWAXMcpGateway; aggregates the 3 MCPs). :9100 was node_exporter.
     mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
     agent_token_audience: str = "agent-server"         # aud for the RS256 handoff token
@@ -201,6 +208,10 @@ class Settings(BaseSettings):
     @property
     def mock_user_group_list(self) -> list[str]:
         return [g.strip() for g in self.mock_user_groups.split(",") if g.strip()]
+
+    @property
+    def upload_allowed_group_list(self) -> list[str]:
+        return [g.strip() for g in self.upload_allowed_groups.split(",") if g.strip()]
 
     @property
     def pat_default_audience_list(self) -> list[str]:
