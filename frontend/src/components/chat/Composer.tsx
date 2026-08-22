@@ -6,12 +6,16 @@ import {
   useImperativeHandle,
   useLayoutEffect,
   useRef,
+  useState,
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
 import { useChat } from '../../state/ChatContext';
 import { SourcePanel } from './SourcePanel';
 import { IconSend, IconStop } from './icons';
+import { useAuth } from '../../auth/useAuth';
+import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
+import { UploadPanel } from './UploadPanel';
 
 export interface ComposerHandle {
   focus: () => void;
@@ -33,6 +37,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent } =
     useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const { user } = useAuth();
+  const canUp = canUpload(user?.groups);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [staged, setStaged] = useState<StagedFile | null>(null);
+  const [upErr, setUpErr] = useState('');
+  const onPick = useCallback(async (f: File | undefined) => {
+    if (!f) return;
+    setUpErr('');
+    try { setStaged(await uploadFile(f)); }
+    catch (e) { setUpErr(e instanceof Error ? e.message : '업로드 실패'); }
+  }, []);
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }), []);
 
@@ -123,6 +138,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ))}
         </div>
       )}
+      {staged && <UploadPanel staged={staged} onClose={() => setStaged(null)} />}
+      {upErr && <div className="upl-err" role="alert">⚠ {upErr}</div>}
       <div className="composer-box">
         <textarea
           ref={taRef}
@@ -133,6 +150,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           placeholder={placeholder}
           aria-label="메시지 입력"
         />
+        {canUp && !streaming && (
+          <>
+            <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }}
+              onChange={(e) => void onPick(e.target.files?.[0] ?? undefined)} />
+            <button type="button" className="composer-btn composer-attach"
+              onClick={() => fileRef.current?.click()}
+              aria-label="물성 파일 업로드" title="물성 파일 업로드 (CSV)">+</button>
+          </>
+        )}
         {streaming ? (
           <button
             type="button"
