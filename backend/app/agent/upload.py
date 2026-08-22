@@ -89,3 +89,89 @@ def staged_path(settings: Settings, sub: str, staging_id: str, filename: str) ->
     for f in d.glob(f"{staging_id}__*"):
         return f
     raise AuthError("staging 파일을 찾을 수 없습니다(만료됐거나 이미 처리됨).", status_code=404)
+
+
+# ── 파싱 + MCP 도구 호출 (분석·확정 단계) ────────────────────────────────────
+import csv as _csv
+import json as _json
+
+import httpx as _httpx
+
+# CSV 헤더에서 변형률·응력 열을 찾는다. 열 이름이 조금씩 달라도 잡히게 후보를 넓게 둔다.
+_STRAIN_KEYS = ("strain", "변형률", "eng_strain", "true_strain", "e")
+_STRESS_KEYS = ("stress_mpa", "stress", "응력", "eng_stress", "sigma", "s")
+
+
+def parse_tensile_csv(path: Path) -> dict:
+    """인장 CSV → strain·stress_mpa 배열 + 감지 요약. stdlib 만 쓴다(포탈에 pandas 없음).
+
+    xlsx 등 다른 형식은 이 경로가 아니라 materialtwin sniff 로 위임한다(미구현: fast-follow).
+    """
+    rows = list(_csv.reader(path.open(newline="", encoding="utf-8-sig")))
+    if not rows:
+        raise AuthError("빈 파일입니다.", status_code=422)
+    header = [h.strip().lower() for h in rows[0]]
+
+    def _find(keys):
+        for i, h in enumerate(header):
+            if h in keys:
+                return i
+        return None
+
+    si = _find(_STRAIN_KEYS)
+    ti = _find(_STRESS_KEYS)
+    if si is None or ti is None:
+        return {"parsed": False, "header": rows[0],
+                "reason": "변형률/응력 열을 찾지 못했습니다 — 헤더에 strain, stress_mpa 가 있어야 합니다.",
+                "needs_manual_mapping": True}
+    strain, stress = [], []
+    for r in rows[1:]:
+        if len(r) <= max(si, ti):
+            continue
+        try:
+            strain.append(float(r[si])); stress.append(float(r[ti]))
+        except ValueError:
+            continue
+    if len(strain) < 5:
+        raise AuthError(f"유효 데이터 점이 {len(strain)}개뿐입니다 — 최소 5개 필요.", status_code=422)
+    return {"parsed": True, "n_points": len(strain), "strain": strain, "stress_mpa": stress,
+            "strain_col": rows[0][si], "stress_col": rows[0][ti], "needs_manual_mapping": False}
+
+
+async def mcp_call(gateway_url: str, pat: str, tool: str, args: dict, timeout: float = 90.0) -> dict:
+    """게이트웨이 MCP 도구를 사용자 PAT 로 한 번 호출한다(streamable-http: init→call).
+
+    포탈은 원래 MCP 를 직접 안 부르지만, 업로드의 register(dry_run/확정)는 사용자 신원으로
+    나가야 하고 감사도 사람 단위로 남아야 하므로 여기서 최소 클라이언트로 부른다.
+    """
+    url = gateway_url.rstrip("/") + "/mcp"
+    hdr = {"Authorization": f"Bearer {pat}", "Content-Type": "application/json",
+           "Accept": "application/json, text/event-stream"}
+
+    def _last_data(text: str) -> dict:
+        # SSE 응답에서 마지막 data: 줄의 JSON.
+        lines = [ln[6:] for ln in text.splitlines() if ln.startswith("data: ")]
+        return _json.loads(lines[-1]) if lines else _json.loads(text)
+
+    async with _httpx.AsyncClient(timeout=timeout) as c:
+        init = await c.post(url, headers=hdr, json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                       "clientInfo": {"name": "portal-upload", "version": "1"}}})
+        if init.status_code != 200:
+            raise AuthError(f"게이트웨이 초기화 실패 ({init.status_code}).", status_code=502)
+        sid = init.headers.get("mcp-session-id", "")
+        sh = {**hdr, "mcp-session-id": sid}
+        await c.post(url, headers=sh, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+        res = await c.post(url, headers=sh, json={
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": tool, "arguments": args}})
+        env = _last_data(res.text)
+        if env.get("error"):
+            raise AuthError(f"도구 오류: {env['error'].get('message', env['error'])}", status_code=502)
+        content = (env.get("result") or {}).get("content") or []
+        text = content[0].get("text", "{}") if content else "{}"
+        try:
+            return _json.loads(text)
+        except ValueError:
+            return {"raw": text}

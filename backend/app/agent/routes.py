@@ -670,6 +670,23 @@ async def _export_docx_inner(request, body, principal, settings, audit, conv, ti
     )
 
 
+class UploadAnalyzeReq(BaseModel):
+    model_config = {"extra": "ignore"}
+    staging_id: str
+    filename: str
+    # 재료 메타 — AI 가 채우거나 사용자가 입력. dry_run 미리보기에 필요.
+    material_name: str = ""
+    category: str = "metal"           # metal/polymer/rubber/composite/ceramic/foam
+    material_id: int | None = None    # 기존 재료에 붙일 때
+    gauge_length_mm: float = 25.0
+    width_mm: float = 5.0
+    thickness_mm: float = 1.0
+
+
+class UploadCommitReq(UploadAnalyzeReq):
+    pass
+
+
 @router.post("/upload")
 async def upload_file(
     request: Request,
@@ -689,6 +706,77 @@ async def upload_file(
                  meta={"filename": meta["filename"], "size": meta["size"], "ext": meta["ext"]})
     # path 는 내부용 — 응답에 내보내지 않는다.
     return {k: v for k, v in meta.items() if k != "path"}
+
+
+async def _upload_register(request, principal, settings, body, dry_run: bool):
+    """스테이징 CSV 를 파싱해 물성 등록(dry_run 또는 확정)을 사용자 PAT 로 호출한다."""
+    _upload.require_upload_group(settings, principal.groups)
+    path = _upload.staged_path(settings, principal.subject, body.staging_id, body.filename)
+    parsed = _upload.parse_tensile_csv(path)
+    if not parsed.get("parsed"):
+        return {"stage": "parse", **parsed}   # 열 매핑 실패 — 프론트가 사용자에게 매핑을 묻는다
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("업로드용 자격증명을 발급하지 못했습니다.", status_code=403)
+
+    # 재료가 없으면 먼저 등록(확정 때만). dry_run 미리보기는 기존 material_id 없이도 곡선만 계산.
+    mid = body.material_id
+    if not dry_run and mid is None:
+        if not body.material_name.strip():
+            raise AuthError("material_name 이 필요합니다(새 재료).", status_code=422)
+        matr = await _upload.mcp_call(settings.mcp_gateway_url, pat, "register_material",
+                                      {"name": body.material_name, "category": body.category})
+        mid = matr.get("material_id")
+        if mid is None:
+            return {"stage": "material", "error": matr.get("error") or matr.get("message"), "detail": matr}
+    # dry_run 은 material_id 가 있어야 곡선 계산이 된다 — 없으면 임시로 등록 안 하고
+    # material_id=0 을 못 쓰므로, 기존 재료 지정이 없으면 미리보기용으로 register_material dry_run 만.
+    if dry_run and mid is None:
+        # 재료 미리보기(저장 안 함) + 곡선은 material_id 필요 → 곡선 계산은 확정 시로 안내.
+        matr = await _upload.mcp_call(settings.mcp_gateway_url, pat, "register_material",
+                                      {"name": body.material_name or "(미정)", "category": body.category,
+                                       "dry_run": True})
+        return {"stage": "preview", "material_preview": matr, "curve": {"n_points": parsed["n_points"],
+                "strain_col": parsed["strain_col"], "stress_col": parsed["stress_col"]},
+                "note": "기존 재료를 지정하면 곡선 물성(E·항복·UTS) 미리보기가 나옵니다. "
+                        "새 재료면 확정 시 재료 등록 후 곡선이 계산됩니다."}
+
+    tool_args = {"material_id": mid, "strain": parsed["strain"], "stress_mpa": parsed["stress_mpa"],
+                 "gauge_length_mm": body.gauge_length_mm, "width_mm": body.width_mm,
+                 "thickness_mm": body.thickness_mm, "dry_run": dry_run}
+    out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "register_tensile_test", tool_args)
+    return {"stage": "preview" if dry_run else "committed", "material_id": mid, **out}
+
+
+@router.post("/upload/analyze")
+async def upload_analyze(
+    request: Request,
+    body: UploadAnalyzeReq,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """스테이징 파일을 파싱해 dry_run 미리보기(물성 계산, 저장 안 함)를 반환한다."""
+    return await _upload_register(request, principal, settings, body, dry_run=True)
+
+
+@router.post("/upload/commit")
+async def upload_commit(
+    request: Request,
+    body: UploadCommitReq,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """사용자 확인 후 실제 등록(dry_run=False). 성공하면 스테이징 파일을 삭제한다."""
+    audit = _audit(request)
+    out = await _upload_register(request, principal, settings, body, dry_run=False)
+    if out.get("stage") == "committed":
+        try:
+            _upload.staged_path(settings, principal.subject, body.staging_id, body.filename).unlink()
+        except Exception:  # noqa: BLE001 — 삭제 실패가 등록 성공을 뒤집지 않게
+            pass
+        audit.record(principal=principal.subject, event="upload_commit", status="ok",
+                     meta={"material_id": out.get("material_id"), "test_id": out.get("test_id")})
+    return out
 
 
 @router.post("/deliberate/experts")
