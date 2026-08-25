@@ -97,6 +97,16 @@ if [ -f "$ROUTES_LOCAL" ]; then
   echo "  · routes.local.env 오버레이: $(printf '%s\n' "$_lkeys" | grep -c .)개 키 재정의"
 fi
 
+# STE 주소는 박스마다 다르다. 오버레이가 없는데 base 에 (사설망) ste 주소가 살아 있으면 그 박스는
+# 남의 dev VM 주소를 물려받아 죽은 upstream 라우트가 생긴다(cae00 이 정확히 그 상태였다). 경고한다.
+if [ ! -f "$ROUTES_LOCAL" ]; then
+  _ste_host="$(sed -n 's|^[[:space:]]*ste=[[:space:]]*http://\([^:/]*\).*|\1|p' "$ROUTES_MERGED" 2>/dev/null | head -1)"
+  case "$_ste_host" in
+    10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+      echo "  ⚠ routes.local.env 없음 + base ste= 가 사설망 주소($_ste_host) — 이 박스 전용 STE 주소를 routes.local.env 에 두거나 base 의 ste= 를 비활성화하세요(안 그러면 죽은 /ste/ upstream 이 생깁니다)." >&2 ;;
+  esac
+fi
+
 locations=""
 count=0
 if [ -f "$ROUTES_MERGED" ]; then
