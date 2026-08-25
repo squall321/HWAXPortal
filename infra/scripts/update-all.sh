@@ -497,10 +497,28 @@ fi
 STE_UP="$(printf '%s' "$_STE_URL" | sed -n 's|^http://\([^/]*\)/\?.*|\1|p')"
 if [ -n "$STE_UP" ]; then
   echo "  · ste 주소 출처: $_STE_SRC ($STE_UP)"
-  probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200"
-  STE_BODY="$(curl -s -m 4 http://127.0.0.1:8088/ste/api/health 2>/dev/null || true)"
+  # R4 — cae00 은 stc 로 직결 경로가 없어 SSH 터널(127.0.0.1:15810)을 쓴다. 루프백이면 "직결"이
+  #   실경로를 오해시키므로 "터널 경유"로 라벨하고, 실패 시 터널 서비스 상태를 힌트로 붙인다.
+  case "$STE_UP" in
+    127.0.0.1:*|localhost:*|\[::1\]:*)
+      _stecode="$(http_code "http://$STE_UP/api/health")"
+      if [ "${_stecode:-000}" = "200" ]; then
+        ok "ste 백엔드      터널 경유 → $_stecode"
+      else
+        bad "ste 백엔드      터널 경유 → ${_stecode:-000}  (http://$STE_UP/api/health)"
+        echo "    힌트: ste-tunnel = $(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown)"
+      fi ;;
+    *)
+      probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200" ;;
+  esac
+  # R1 — 프록시 프로브는 본문만 보면 서로 다른 실패(라우트 미반영 vs upstream 도달불가)를 한
+  #   메시지로 뭉갠다. 상태코드로 분기해 오진을 막는다.
+  STE_RESP="$(curl -s -m 4 -w '\n%{http_code}' http://127.0.0.1:8088/ste/api/health 2>/dev/null || true)"
+  STE_CODE="${STE_RESP##*$'\n'}"; STE_BODY="${STE_RESP%$'\n'*}"
   if printf '%s' "$STE_BODY" | grep -q 'smart-twin-explorer'; then
-    ok "ste 프록시      :8088 → 백엔드 응답 확인"
+    ok  "ste 프록시      :8088 → 백엔드 응답 확인"
+  elif [ -z "$STE_CODE" ] || [ "$STE_CODE" = "000" ] || { [ "$STE_CODE" -ge 502 ] 2>/dev/null; }; then
+    bad "ste 프록시      :8088 → upstream($STE_UP) 도달 불가 [$STE_CODE]. nginx 라우트는 정상. 비치명"
   else
     bad "ste 프록시      :8088 → 포털 SPA 가 돌아온다 (nginx /ste/ location 미반영, 비치명)"
   fi
