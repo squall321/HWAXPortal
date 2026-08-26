@@ -1,0 +1,146 @@
+# cae00 배포 가이드 — 무엇이 `update-all` 로 되고, 무엇이 따로인가
+
+> 이 문서는 실제 스크립트(update-all.sh · deploy-all-from-drive.sh · AIDataHub deploy · STE deploy · 심의 파이프라인)를
+> 라인 단위로 대조해 작성했다. 런타임(cae00 실행) 검증이 아니라 소스 검증이므로, 박스별 상태
+> (provision.env 토큰 · rclone remote · .env 포트)에 따라 결과가 달라질 수 있다(§끝 주의 참조).
+
+## 0. 한 줄 요약
+
+- **`update-all` 한 방에 되는 것**: 포털·챗 스택·MCP 게이트웨이 배포 + **AIDataHub 데이터(전문가·카드) 병합** + 워크플로 사본 동기화 + 헬스 게이트.
+- **`update-all` 로 안 되는 것**: **STE(SmartTwinExplorer)**. 헤드노드 stc(에어갭)에 사는 별도 서비스라 프로브만 한다 — 배포는 `deploy-ste.sh` 를 따로 실행한다.
+- **dev 가 선행해야 하는 것**: 전문가/카드를 **dev AIDataHub 에 업로드 → `backup-to-drive`** (그래야 cae00 이 병합해 온다). STE 는 **`pack-staging + push-to-drive`**.
+
+---
+
+## 1. `git pull && update-all` 이 실제로 하는 일
+
+`update-all` 은 스스로 최신화한다 — 앞의 `git pull` 없이도 §1 이 포털 레포를 `fetch + reset --hard origin/<branch>` 후 새 버전으로 1회 재실행한다(`UPDATE_ALL_REEXEC` 가드로 딱 1번). 로컬 수정을 지키려면 `NO_GIT_RESET=1 update-all`(ff-only, reset 대신 stash).
+
+| 단계 | 하는 일 | 근거 |
+|---|---|---|
+| §1 | 포털 레포 self-update(fetch+reset) → 1회 재실행 | update-all.sh:66-89 |
+| **§1a** | **워크플로 정본→런타임 사본 동기화** — `infra/pipeline/*.js`(meta 보유)를 gitignore 사본 `.claude/workflows/` 로 복사. 이름호출 런타임이 옛 사본 쓰는 갭 봉합 | update-all.sh:91-95 · sync-workflows.sh |
+| §1b | 배포 전 로컬 백업(/data/backups) + 일일 cron(03:30) 멱등 보장 | update-all.sh:97-115 |
+| §2 | **전 서비스 배포** — `deploy-all-from-drive`: `portal mxwp heax aidh signalforge kooremapper`. 각 서비스 git pull → Drive 에서 **미리 빌드된 아티팩트 반입**(cae00 은 빌드 불가) → START. 끝에 nginx conf 재생성+재기동 | deploy-all-from-drive.sh:145,2-6,374-400 |
+| **§3** | **AIDataHub 데이터 병합** — 아래 §2 참조. 비파괴 merge | update-all.sh:139-182 |
+| §4 | 챗 스택 pull+재기동 — `signalforge-mcp mcp-gateway agent-server`(백엔드→게이트웨이→소비자 순) | update-all.sh:233-242 |
+| §5 | 게이트웨이 config 정합 — 기대 백엔드 빠졌으면 `provision-config --force` 후 재기동·재검증 | update-all.sh:244-364 |
+| §6 | **헬스 게이트**(critical): portal:8723 · nginx:8088 · agent-server:9009 · gateway:9110 의 `/health→200`. 하나라도 실패면 `exit 1` | update-all.sh:402-420 |
+
+**STE 는 §6 에서 프로브만** 한다(백엔드가 이 박스가 아니라 헤드노드라 실패해도 비치명). 실패 시 `deploy-ste.sh` 를 **힌트로 안내만** 하고 호출하지 않는다(update-all.sh:485-486,516).
+
+---
+
+## 2. 전문가·카드가 심의에 반영되는 경로 (AIDataHub)
+
+전문가 도구(`recommend_agents`·`get_context_bundle`·`agent_search`)는 **AIDataHub 가 서빙**한다(게이트웨이 백엔드 `ai-data-hub`). ExpertAgents 는 *저작소*이고, 카드는 **AIDataHub 로 업로드돼야** 심의가 본다.
+
+```
+ExpertAgents(저작)                    dev AIDataHub                Drive                 cae00 AIDataHub
+  knowledge/*/cards  ──erag export──▶  (Postgres)  ──backup-to-drive──▶  db-dumps  ──update-all §3 merge──▶  (live)
+     fact-checked                                    aidh-db-*.sql.gz      merge-from-drive(비파괴)
+```
+
+### dev 에서 (업로드 2종 + Drive 반출)
+
+| 명령 | 올리는 것 | 필터 |
+|---|---|---|
+| `erag export-aidatahub --upload --url <dev-aidh> --api-key <KEY>` | **전문가 정의**(agent) — recommend_agents·좌석 발굴이 이걸 본다 | 없음(전 전문가) |
+| `erag export-records --upload --bind --url <dev-aidh> --api-key <KEY>` | **지식카드**(record) — 그라운딩(get_context_bundle·agent_search)이 이걸 인용 | **`fact-checked` 카드만**(draft 제외, 0장이면 중단) |
+| `bash deploy/apptainer/backup-to-drive.sh` | dev AIDataHub DB 덤프 → Drive `AIDataHub/db-dumps` | 최신 RETAIN(기본 5)개 유지 |
+
+> ⚠️ **두 업로드를 다 해야 한다.** 전문가 정의만 올리면 좌석은 발굴되나 그라운딩이 빈 근거가 되고,
+> 카드만 올리면 records 는 있으나 전문가 목록에서 안 잡힐 수 있다. `export-aidatahub` → `export-records` 순.
+
+### cae00 에서 — `update-all` 이 자동으로
+
+§3 이 `merge-from-drive.sh` 로 Drive 최신 덤프를 **스테이징 DB 에 로드 후 병합**한다 — **dev 신규는 추가, cae00 자체 등록분은 보존(DROP 안 함, 운영 DB 가 순간도 안 빈다)**. 최신 덤프가 지난 병합분(`.last-merged`)과 같으면 생략(update-all.sh:170-182, merge-from-drive.sh:9).
+
+- 즉 **재기동만으로는 반영 안 된다**(레지스트리는 시작 스냅샷이지만 데이터는 Postgres 영속). **§3 병합**이 반영 지점이고, `update-all` 이 그걸 돈다.
+- `sync-from-drive.sh`(DROP+CREATE+restore, 파괴적 전체복원)는 **update-all/deploy-all 이 자동 호출하지 않는다** — 재해복구·초기시드용 별도 수동 명령이다. 일상 반영은 §3 merge 로 충분하다.
+
+---
+
+## 3. 심의가 실제로 새 전문가·카드를 쓰는 조건
+
+MCP 경로(Claude Code·게이트웨이)와 웹 경로(`/시뮬심의`) **둘 다 반영**돼 있다.
+
+- **수치 스파인 5석 고정 착석**(정식화·이산화·검증 + 리뷰어 2석) — 기본 ON.
+  - MCP: `hwax-sim-deliberate.js` `FIXED_CAE`(방법론 2 + 스파인 5 = 7석), `spine`/`spineReview` 플래그(기본 true).
+  - 웹: `deliberation.py` `_SIM_FIXED_CAE`, env `DELIB_SIM_SPINE`/`DELIB_SIM_SPINE_REVIEW`(기본 1).
+- **카드 그라운딩** — 발언이 지식카드를 인용.
+  - MCP: `groundCards`(sim 기본 ON) → 각 좌석이 `get_context_bundle(agent_type)`·`semantic_search` 호출(hwax-deliberate.js:191-198).
+  - 웹: `DELIB_PERSONA_KNOWLEDGE`(기본 1) → 페르소나별 `agent_search` 결정적 RAG 주입(deliberation.py:1837) — 다른 메커니즘, 같은 AIDataHub 의존.
+- **전제(둘 다)**:
+  1. **AIDataHub 에 해당 `xd-cae-*`(+발굴 대상) 전문가·records 가 동기화**돼 있어야 근거가 빈 값이 아니다 → §2 의 업로드+병합.
+  2. **세션에 게이트웨이 MCP 연결** — 도구(get_context_bundle/agent_search/recommend_agents)가 노출돼야 한다. 미연결 시 MCP 는 페르소나 지식으로 발언(가법적·회귀 없음), 웹은 카드 주입 생략.
+  3. **이름호출 최상위 워크플로**(hwax-sim-deliberate)는 `.claude/workflows/` 사본을 읽으므로 §1a 동기화가 선결(자식 hwax-deliberate 호출은 scriptPath 라 무관).
+
+**검증 방법**: cae00 재기동 후 `/시뮬심의` 1건 → 2단 좌석에 스파인 7석이 뜨는지 + 발언에 카드 출처가 붙는지.
+
+---
+
+## 4. STE(SmartTwinExplorer) — 왜/어떻게 따로 배포하나
+
+STE 백엔드는 **cae00 가 아니라 에어갭 헤드노드 stc** 에 있다. cae00 은 stc 직결 경로가 없어 **Teleport SSH 터널**(루프백 127.0.0.1:15810, `ste-tunnel`)로 닿는다. 그래서 STE 는 `services.yaml` 에 없고 `update-all` 은 프로브만 한다.
+
+### STE 는 3단계
+
+```
+① (1회) 최초 반입 — 런북 §1~§8 수동 (사람)
+      Teleport·transport.env · cluster.prod.yaml(노드·계정·키·라이선스) · 번들 9.6GB + SIF · installer(설치·토큰) · 첫 서비스 배포
+      ↳ 관리자 협조(계산노드 공개키 등록 등) 필요. 정본: SmartTwinExplorer/docs/03-runbook/cae00-staging.md
+② (이후) dev: deploy/pack-staging.sh
+              STE_BUNDLE_DIR=var/staging deploy/push-to-drive.sh --path SmartTwinExplorer/staging
+③ (이후) cae00: infra/scripts/deploy-ste.sh        # = STE deploy/refresh-code.sh(§11) 트리거
+```
+
+- `deploy-ste.sh` → `refresh-code.sh` 체인: pull-from-drive → sha256 → git 커밋 고정 → dist 전개 → (requirements 바뀐 회차만) wheel 병합 → deploy-frontend `--no-build` → deploy-backend. 배포 후 포털 프록시 `/ste/api/health` 본문에 `smart-twin-explorer` 있는지로 검증.
+- **런타임 게이트**(refresh-code.sh:27-33): transport.env 존재, `tr_run 'true'`로 헤드노드 도달(Teleport 세션 만료면 §9-A), 정체성 가드(cae00 자신 가리키면 §9-D). 조건 안 되면 fail-fast.
+- **최초 반입(①)은 자동화 밖** — refresh-code.sh 는 §11(코드 갱신)만 한다. 번들·SIF·토큰은 1회성이라 스크립트가 대신 안 한다.
+
+> **현재 상태 메모(2026-08-26)**: 클러스터측(Teleport·SIF·설치)은 완료, **cae00 에 staging 만 없음**. staging 은 `refresh-code.sh` 가 직접 당기므로 — **staging 이 Drive 에 있으면** cae00 에서 `deploy-ste.sh` 한 번이 첫 코드 배포가 된다. 없으면 dev 에서 ②(pack+push) 먼저.
+
+### `--with-ste` (원하면 붙일 수 있음, 현재 미적용)
+
+`update-all --with-ste` = 평소 배포 + 끝에 `deploy-ste.sh` 트리거. 구현은 플래그 파싱 2줄이면 된다.
+```sh
+case " $* " in *" --with-ste "*) WITH_STE=1 ;; esac      # 상단
+[ "${WITH_STE:-0}" = 1 ] && "$SELF_REPO/infra/scripts/deploy-ste.sh"   # 배포 끝
+```
+**기본은 분리 유지** — `--with-ste` 없이 도는 routine·크론 실행에 실 stc 에어갭 배포가 섞여 발화하지 않게. 명시적으로 줄 때만 STE 가 간다.
+
+---
+
+## 5. 명령 요약 (치트시트)
+
+```sh
+# ── 포털·챗·MCP·AIDataHub 반영 (cae00) ──
+./infra/scripts/update-all.sh              # 자기 최신화 + 전서비스 + AIDH merge + 헬스게이트
+NO_GIT_RESET=1 ./infra/scripts/update-all.sh   # 로컬 수정 보존 모드
+
+# ── 전문가/카드를 AIDataHub 에 반영 (dev 선행 → cae00 은 update-all 이 병합) ──
+# dev:
+erag export-aidatahub --upload --url http://localhost:8001 --api-key <KEY>   # 전문가 정의
+erag export-records   --upload --bind --url http://localhost:8001 --api-key <KEY>   # fact-checked 카드
+bash deploy/apptainer/backup-to-drive.sh                                       # 덤프 → Drive
+# cae00: (update-all §3 이 자동 merge)
+
+# ── STE 배포 (별도) ──
+# dev:
+deploy/pack-staging.sh && STE_BUNDLE_DIR=var/staging deploy/push-to-drive.sh --path SmartTwinExplorer/staging
+# cae00:
+infra/scripts/deploy-ste.sh                # refresh-code.sh(§11) 트리거
+
+# ── 재해복구: AIDataHub 를 Drive 덤프로 통째 교체(파괴적, 평소엔 불필요) ──
+bash deploy/apptainer/sync-from-drive.sh
+```
+
+---
+
+## 6. 주의 — 소스 검증 기준(런타임 미확인)
+
+- 이 가이드는 **스크립트를 읽어** 검증했고, cae00 에서 실제로 돌려 확인한 것이 아니다. 종료코드·재프로비저닝·Drive 반입의 실제 성패는 박스 상태에 달렸다.
+- **박스별(gitignore) 미확인**: `provision.env` 토큰, rclone remote, AIDataHub `.env` 의 실제 API 포트, `routes.local.env` 의 ste= 값, ste-tunnel 서비스 구동 여부.
+- **그라운딩의 실제 전제 미확인**: cae00 AIDataHub 에 `xd-cae-*`(스파인 7석 + 발굴 대상) 전문가·records 가 실제 동기화돼 있는지 — 이게 그라운딩이 "빈 근거"가 아니라 실제 인용으로 채워지는 배포측 조건이다. 재기동·업로드·병합 후 §3 검증 방법으로 확인할 것.
+- dev 에서 `backup-to-drive`/`export-*` 를 **크론으로 도는지 수동인지** 미확인 — 이 가이드는 명령만 정리했다.
