@@ -88,6 +88,12 @@ if [ "${UPDATE_ALL_REEXEC:-0}" != "1" ]; then
 fi
 ok "포털 레포 최신 (재실행 완료)"
 
+# ── 1a) 이름호출 워크플로 동기화 — 정본(infra/pipeline)을 gitignore 런타임 사본(.claude/workflows)에
+#        맞춘다. pull 로 정본이 바뀌어도 사본은 안 따라오므로(이름호출이 옛 사본을 쓴다) 여기서 덮는다. ──
+if [ -x "$SELF_REPO/infra/scripts/sync-workflows.sh" ]; then
+  "$SELF_REPO/infra/scripts/sync-workflows.sh" 2>&1 | sed 's/^/  /' || true
+fi
+
 # ── 1b) 배포 전 로컬 안전 백업 — merge/복원이 데이터를 건드리기 전에 /data/backups 스냅샷.
 #        비치명적(백업 실패가 배포를 막지 않음). 일일 cron(03:30)도 여기서 멱등 보장 —
 #        운영자가 --install-cron 을 따로 기억할 필요 없게 update-all 이 챙긴다. ──
