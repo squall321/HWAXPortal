@@ -184,11 +184,23 @@ phase('초기입장')
 const R1_INSTRUCTION = CONT
   ? `이 논의는 이어하기 라운드다. 위 [이전 심의 요약]을 읽어라(당신이 이전에 참여했다면 거기 당신의 이전 입장도 있을 것이다). [인간 검토자 의견]이 있다면 반드시 정면으로 다뤄라. 당신의 도메인 관점에서: (1) 이전 논의·인간 의견에 대한 구체적 반응(동의/반박/보완, 구체 인용), (2) 갱신되었거나 새로 형성한 권장안, (3) 이 시점에 당신 도메인이 놓치고 있는 것/리스크. 수치엔 (도구)/(경험칙) 표기. 영역 밖은 아는 척 금지.`
   : `당신의 도메인 관점에서만: (1) 이 근거가 당신 관심사에 무엇을 의미하는지 구체 인용해 해석, (2) 권장안, (3) 이 분석이 당신 도메인에서 놓치는 것/리스크. 수치엔 (도구)/(경험칙) 표기. 영역 밖은 아는 척 금지.`
+// 카드 그라운딩 — 켜지면 각 좌석이 발언 전 자기 지식카드를 조회해 수치·근거의 출처로 삼는다.
+// 기본 꺼짐(일반 심의·챗 무변경). sim 심의가 켠다. get_context_bundle/semantic_search 는 RAG
+// 색인을 읽으므로 새 카드가 잡히려면 색인이 최신이어야 한다(재색인 절차). 미사용·도구실패 시엔
+// 종전과 동일하게 페르소나 지식으로 발언한다 — 가법적이라 회귀 위험이 없다.
+const GROUND = A.groundCards === true
+const groundBlock = k => GROUND
+  ? `[근거 그라운딩 — 발언 전 실행] 먼저 get_context_bundle(agent_type: "${k}") 로 네 지식카드를 ` +
+    `불러오고, 필요하면 semantic_search(q: 쟁점, agent_type: "${k}") 로 쟁점 관련 근거를 찾아라. ` +
+    `수치·임계·정리를 인용할 땐 카드/섹션 출처를 붙이고, 카드에 없어 일반지식으로 답하면 ` +
+    `(경험칙)/(expert-judgement)로 표기하라. 도구가 실패하면 그 사실을 한 줄로 남기고 페르소나 ` +
+    `지식으로 답하되 과단정하지 마라.\n\n`
+  : ''
 // 페르소나 정규화 — LLM이 persona 필드에 긴 역할 설명을 붙여 반환하면 포털 저장(persona ≤120자
 // 검증)이 배치째 422로 거부된다(전기박리 심의 대화 유실 사고의 원인). 정본 키로 강제한다.
 const withKey = (k) => (o) => (o ? { ...o, persona: k } : o)
 const r1 = await parallel(pk.map(k => () => agent(
-  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${baseFor(k)}\n\n${R1_INSTRUCTION}`,
+  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${baseFor(k)}\n\n${groundBlock(k)}${R1_INSTRUCTION}`,
   { label: `r${rn(1)}:${k}`, phase: '초기입장', schema: OP_SCHEMA }).then(withKey(k))))
 roundsData.push(r1)
 roundLabels.push(`${rn(1)}라운드 — ${CONT ? '이어하기·초기입장' : '초기입장'}`)
@@ -214,7 +226,7 @@ for (let i = 0; i < MID_ROUNDS; i++) {
   const roundNo = rn(i + 2)
   phase('심화라운드')
   const rN = await parallel(pk.map(k => () => agent(
-    `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n` +
+    `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n${groundBlock(k)}` +
     `${roundNo}라운드(심화 ${i + 1}/${MID_ROUNDS}): 다른 전문가 입장을 읽고 (1) 수용할 지적, (2) 반박(근거: 수치·표준·실패모드), (3) 당신 핵심 주장을 한 단계 더 깊게. 두루뭉술 금지, 당신 전문성으로.`,
     { label: `r${roundNo}:${k}`, phase: '심화라운드', schema: R2_SCHEMA }).then(withKey(k))))
   roundsData.push(rN)
@@ -227,7 +239,7 @@ for (let i = 0; i < MID_ROUNDS; i++) {
 phase('수렴')
 const finalRoundNo = rn(ROUNDS)
 const rFinal = await parallel(pk.map(k => () => agent(
-  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n` +
+  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n${groundBlock(k)}` +
   `${finalRoundNo}라운드(최종수렴): 지금까지 논의를 반영해 최종 입장으로 수렴하라. (1) 최종 입장, (2) 절대 양보 못 하는 제약, ` +
   (HAS_CHOICES
     ? `(3) 위 [후보/선택지] 중 최종 권장 하나와 이유. 근거가 부족해 고를 수 없으면 "판정 불가 — 다음에 측정할 것"과 그 측정 항목을 쓰라.`

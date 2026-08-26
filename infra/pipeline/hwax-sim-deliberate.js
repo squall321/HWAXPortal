@@ -50,6 +50,9 @@ if (!PERS.length) throw new Error('personas 가 비어 있음 — 1단 좌석을
 const R1 = Math.min(8, Math.max(2, Math.round(Number(A.rounds) || 3)))
 const R2 = Math.min(8, Math.max(2, Math.round(Number(A.simRounds) || 3)))
 const CARRY = Math.min(4, Math.max(0, Math.round(Number(A.carryOver) ?? 2)))
+// 카드 그라운딩 — sim 심의는 기본 켠다(좌석이 발언 전 자기 지식카드를 조회해 인용). 자식
+// hwax-deliberate 에 groundCards 로 전달. groundCards:false 로 끌 수 있다(RAG 색인이 옛것이거나 비용 절감).
+const GROUND = A.groundCards !== false
 
 // 고정 좌석 — 현상과 무관하게 구축형 해석 설계에 항상 필요한 방법론 축. 발굴에 맡기면 현상
 // 어휘에 끌려 이 좌석들이 빠진다. 방법론 2석(modeling·post)에 더해 수치 스파인을 고정한다 —
@@ -87,6 +90,7 @@ const mech = await workflow(DELIB, {
   rounds: R1,
   humanNote: A.humanNote || '',
   chairTemplate: 'mechanism',
+  groundCards: GROUND,
   saveReport: false,       // 최종 저장은 2단 종료 후 한 번만 — 중간 산출물로 RA 를 어지럽히지 않는다
   saveConversation: false,
 })
@@ -157,6 +161,7 @@ const sim = await workflow(DELIB, {
   personas: simSeats,
   rounds: R2,
   chairTemplate: 'sim-plan',
+  groundCards: GROUND,
   continueFrom: { summary: String(mech.decision).slice(0, 12000), roundsSoFar: R1, nonNegotiables: NN },
   humanNote: '사내 보유 도구를 우선 검토하라. 파라미터 식별성 판정과 이 해석이 답할 수 없는 것을 비워두지 마라.',
   saveReport: A.saveReport !== false,
