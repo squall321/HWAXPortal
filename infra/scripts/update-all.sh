@@ -507,6 +507,7 @@ if [ -n "$STE_UP" ]; then
       else
         bad "ste 백엔드      터널 경유 → ${_stecode:-000}  (http://$STE_UP/api/health)"
         echo "    힌트: ste-tunnel = $(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown)"
+        echo "    배포: (cae00) infra/scripts/deploy-ste.sh — Drive 스테이징으로 stc 코드 갱신(런북 §11)"
       fi ;;
     *)
       probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200" ;;
