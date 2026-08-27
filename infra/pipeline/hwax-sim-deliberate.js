@@ -59,7 +59,8 @@ const R1 = Math.min(8, Math.max(2, Math.round(Number(A.rounds) || 3)))
 const R2 = Math.min(8, Math.max(2, Math.round(Number(A.simRounds) || 3)))
 // ?? 는 Number 인자 안에서 — Number(undefined)=NaN 은 nullish 가 아니라 `?? 2` 가 안 먹어 CARRY=NaN
 // 이 되고(기본 경로) slice(0,NaN)=[] 로 물리 유임 좌석이 통째로 사라진다. 명시적 0 은 0 으로 보존.
-const CARRY = Math.min(4, Math.max(0, Math.round(Number(A.carryOver ?? 2))))
+// `|| 0` 은 비수치 문자열(Number('x')=NaN)까지 흡수 — NaN→0→안전망이 유임 1석을 강제한다(R1~R3 와 대칭).
+const CARRY = Math.min(4, Math.max(0, Math.round(Number(A.carryOver ?? 2)) || 0))
 // 카드 그라운딩 — sim 심의는 기본 켠다(좌석이 발언 전 자기 지식카드를 조회해 인용). 자식
 // hwax-deliberate 에 groundCards 로 전달. groundCards:false 로 끌 수 있다(RAG 색인이 옛것이거나 비용 절감).
 const GROUND = A.groundCards !== false
@@ -216,7 +217,9 @@ if (DO_BUILD) {
     rounds: R3,
     chairTemplate: 'build-plan',
     groundCards: GROUND,
-    continueFrom: { summary: String(sim.decision).slice(0, 12000), roundsSoFar: R1 + R2, nonNegotiables: buildNN },
+    // 3단 (2)는 2단 계획서 10항목 전부를 승계·분류하므로 요약 상한을 2단(12000)보다 올린다 —
+    // 상세 해석 계획서가 길어 후미 항목((8)검증·(9)규모·(10)한계)이 잘리는 것을 완화. 조항은 buildNN 별도 승계.
+    continueFrom: { summary: String(sim.decision).slice(0, 20000), roundsSoFar: R1 + R2, nonNegotiables: buildNN },
     humanNote: '사내 자산(KooD3plotReader·StepForge·gmsh·oss-*·export_dyna_cards)을 우선 재사용하라. 최소입력 계약과 모델 IR 수렴·dry_run 매핑오류 게이트·페이즈별 수치 게이트를 비워두지 마라.',
     saveReport: A.saveReport !== false,
     saveConversation: A.saveConversation !== false,
