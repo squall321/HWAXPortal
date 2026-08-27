@@ -23,11 +23,14 @@
 //   - spineReview     : 스파인 리뷰어 2석(rigor-review·theory-grounding) 착석(기본 true, spine=true 일 때).
 //                       false 면 핵심 3석(formulation·discretization·verification)만 고정한다.
 //   - humanNote       : 1단에 주입할 사람 의견
+//   - groundCards     : 좌석이 발언 전 자기 지식카드를 조회·인용(기본 true). false 로 끈다(RAG 색인 옛것/비용).
+//   - appendToReportId: 지정 시 최종 결과(3단, buildPlan:false 면 2단)를 그 RA report_id 에 이어붙인다.
 //   - deliberateScript: 자식으로 부를 심의 워크플로 경로(기본 'infra/pipeline/hwax-deliberate.js').
 //                       스크립트 안의 workflow() 는 이름으로 .claude/workflows/ 를 찾지 못한다 —
 //                       내장 워크플로(deep-research·code-review)만 이름으로 해석된다(실측 2026-08-07).
 //                       그래서 경로로 부른다. 정본을 직접 가리키므로 레지스트리 사본 동기화에도 무관하다.
-// 출력: { question, mechanism:{decision, rounds}, seats, simPlan:{decision, rounds}, report, conversation }
+// 출력: { question, mechanism:{decision,rounds,roundLabels}, seats, simPlan:{decision,rounds,roundLabels},
+//        buildPlan:{decision,rounds,roundLabels}|null(buildPlan:true 일 때만 채워짐), report, conversation }
 //
 // 좌석 설계가 이 워크플로의 핵심이다. CAE 전문가만 모으면 틀린 물리를 아름답게 계산한다.
 // 그래서 2단 좌석을 넷으로 나눈다 — 고정 방법론 2석(modeling·post) + 수치 스파인 5석
@@ -54,7 +57,9 @@ const PERS = A.personas || []
 if (!PERS.length) throw new Error('personas 가 비어 있음 — 1단 좌석을 호출자가 발굴해 전달해야 함')
 const R1 = Math.min(8, Math.max(2, Math.round(Number(A.rounds) || 3)))
 const R2 = Math.min(8, Math.max(2, Math.round(Number(A.simRounds) || 3)))
-const CARRY = Math.min(4, Math.max(0, Math.round(Number(A.carryOver) ?? 2)))
+// ?? 는 Number 인자 안에서 — Number(undefined)=NaN 은 nullish 가 아니라 `?? 2` 가 안 먹어 CARRY=NaN
+// 이 되고(기본 경로) slice(0,NaN)=[] 로 물리 유임 좌석이 통째로 사라진다. 명시적 0 은 0 으로 보존.
+const CARRY = Math.min(4, Math.max(0, Math.round(Number(A.carryOver ?? 2))))
 // 카드 그라운딩 — sim 심의는 기본 켠다(좌석이 발언 전 자기 지식카드를 조회해 인용). 자식
 // hwax-deliberate 에 groundCards 로 전달. groundCards:false 로 끌 수 있다(RAG 색인이 옛것이거나 비용 절감).
 const GROUND = A.groundCards !== false
