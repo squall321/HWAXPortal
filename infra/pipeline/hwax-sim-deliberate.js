@@ -11,6 +11,10 @@
 //                       (좌석 계약은 hwax-deliberate.js 헤더 참조 — 지키지 않으면 결정문에 커버리지 한계로 남는다)
 //   - rounds          : 1단 라운드 수(기본 3)
 //   - simRounds       : 2단 라운드 수(기본 3)
+//   - buildPlan       : true 면 2단 뒤에 3단 '구축 계획서'(특화 파라메트릭 시뮬 모듈 개발)를 이어 만든다.
+//                       기본 false(2단까지). 좌석은 기존 실전문가 재사용(mcad-geometry·lsdyna·system-architecture·
+//                       virtual-doe·version-provenance + cae-modeling·rigor-review + 2단 솔버·물리 유임).
+//   - buildRounds     : 3단 라운드 수(기본 3). buildPlan:true 일 때만 유효.
 //   - carryOver       : 2단에 남길 물리 유임 좌석 수(기본 2, 0~4)
 //   - simPersonas     : [{key, role}] 2단 CAE 좌석을 호출자가 직접 지정(선택). 주면 내부 발굴을 건너뛴다.
 //                       세션에 게이트웨이 MCP 가 연결되지 않아 좌석 발굴 에이전트가 recommend_agents 에
@@ -38,6 +42,7 @@ export const meta = {
     { title: '메커니즘', detail: '현상 도메인 전문가가 지배 물리를 좁힌다' },
     { title: '좌석전환', detail: 'CAE 좌석 발굴 + 물리 유임자 선별' },
     { title: '해석설계', detail: 'CAE 전문가가 해석 계획서를 만든다' },
+    { title: '구축설계', detail: '(opt-in) 해석 계획을 특화 파라메트릭 모듈 구축 계획서로' },
     { title: '종합', detail: '메커니즘과 계획서를 하나로 잇는다' },
   ],
 }
@@ -53,6 +58,20 @@ const CARRY = Math.min(4, Math.max(0, Math.round(Number(A.carryOver) ?? 2)))
 // 카드 그라운딩 — sim 심의는 기본 켠다(좌석이 발언 전 자기 지식카드를 조회해 인용). 자식
 // hwax-deliberate 에 groundCards 로 전달. groundCards:false 로 끌 수 있다(RAG 색인이 옛것이거나 비용 절감).
 const GROUND = A.groundCards !== false
+
+// 3단 — 구축 계획서(opt-in). buildPlan:true 면 2단 해석 계획 뒤에 "그 문제에 특화된 반복 파라메트릭
+// 시뮬 모듈을 구축하는 계획"(chairTemplate build-plan)을 이어 만든다. 기본 꺼짐 — 기존 2단 무변경.
+// 좌석은 이미 저작·AIDataHub 색인된 실전문가를 재사용한다(신규 저작 0).
+const DO_BUILD = A.buildPlan === true
+const R3 = Math.min(8, Math.max(2, Math.round(Number(A.buildRounds) || 3)))
+// 3단 고정 좌석 — 모델링 자동화·구축의 실전문가. cae-modeling·rigor-review 는 별도로 이어 앉힌다.
+const BUILD_ROLES = {
+  'xd-mcad-geometry': 'STEP/CAD 지오메트리 — 어셈블리 하이라키·대상 파트 추출·인터페이스 검출·2D 단면 슬라이스',
+  'xd-lsdyna': 'LS-DYNA 덱·카드 — 파트명(Group\\Name)·MAT·CONTACT·BOUNDARY/INITIAL 승계·재생성 규칙',
+  'xd-system-architecture': '파라메트릭 툴 구조·모델 IR 계약·자산 재사용 경계·어댑터·오케스트레이션',
+  'xd-virtual-doe': '스윕 설계·DOE(요인·수준·응답·설계행렬·해상도)·응답면·감도',
+  'xd-version-provenance': '승계 원장·입력 해시·툴 버전 고정·dry_run 매핑오류 게이트·재현성',
+}
 
 // 고정 좌석 — 현상과 무관하게 구축형 해석 설계에 항상 필요한 방법론 축. 발굴에 맡기면 현상
 // 어휘에 끌려 이 좌석들이 빠진다. 방법론 2석(modeling·post)에 더해 수치 스파인을 고정한다 —
@@ -164,19 +183,51 @@ const sim = await workflow(DELIB, {
   groundCards: GROUND,
   continueFrom: { summary: String(mech.decision).slice(0, 12000), roundsSoFar: R1, nonNegotiables: NN },
   humanNote: '사내 보유 도구를 우선 검토하라. 파라미터 식별성 판정과 이 해석이 답할 수 없는 것을 비워두지 마라.',
-  saveReport: A.saveReport !== false,
-  saveConversation: A.saveConversation !== false,
-  appendToReportId: A.appendToReportId,
+  // 3단이 켜지면 최종 저장(RA 보고서·대화)은 3단이 한 번만 — 2단은 중간 산출물로 남기지 않는다.
+  saveReport: DO_BUILD ? false : (A.saveReport !== false),
+  saveConversation: DO_BUILD ? false : (A.saveConversation !== false),
+  appendToReportId: DO_BUILD ? undefined : A.appendToReportId,
 })
 
+// ── 3단 — 구축 설계 심의 (opt-in) ─────────────────────────────────────────────
+let build = null
+if (DO_BUILD) {
+  phase('구축설계')
+  const simFinal = (sim.rounds && sim.rounds[sim.rounds.length - 1]) || []
+  const buildNN = simFinal.filter(Boolean).map(o => o.non_negotiable).filter(Boolean).slice(0, 12)
+  // 3단 좌석 — 구축 실전문가 고정 + 2단에서 선택된 솔버(oss-*)·물리 유임을 carry 로 이어받는다.
+  const bSeen = new Set(); const buildSeats = []
+  const bpush = (k, origin, role) => { if (!k || bSeen.has(k)) return; bSeen.add(k); buildSeats.push({ key: k, role: role || '', origin }) }
+  Object.keys(BUILD_ROLES).forEach(k => bpush(k, 'new', BUILD_ROLES[k]))
+  bpush('xd-cae-modeling', 'new', FIXED_ROLES['xd-cae-modeling'])          // 전처리·메시 방법론
+  bpush('xd-cae-rigor-review', 'new', FIXED_ROLES['xd-cae-rigor-review'])  // 엄밀성·완전성 게이트
+  simSeats.forEach(s => { if (/^oss-/.test(s.key) || s.origin === 'carry') bpush(s.key, 'carry', s.role) })
+  log(`3단 구축설계 좌석 ${buildSeats.length}인 (구축 실전문가 ${Object.keys(BUILD_ROLES).length + 2} + 2단 솔버·물리 유임)`)
+  const buildQ = `위 해석 계획을 그 문제에 특화된 반복 실행형 파라메트릭 시뮬 모듈로 구축하는 계획 — 무엇을 어떤 사내 자산으로 자동 모델링하고 어떤 변수로 스윕할 것인가. 원 현상: ${Q}`
+  build = await workflow(DELIB, {
+    question: buildQ,
+    context: `[원 현상의 정량 근거]\n${CTX}`,
+    personas: buildSeats,
+    rounds: R3,
+    chairTemplate: 'build-plan',
+    groundCards: GROUND,
+    continueFrom: { summary: String(sim.decision).slice(0, 12000), roundsSoFar: R1 + R2, nonNegotiables: buildNN },
+    humanNote: '사내 자산(KooD3plotReader·StepForge·gmsh·oss-*·export_dyna_cards)을 우선 재사용하라. 최소입력 계약과 모델 IR 수렴·dry_run 매핑오류 게이트·페이즈별 수치 게이트를 비워두지 마라.',
+    saveReport: A.saveReport !== false,
+    saveConversation: A.saveConversation !== false,
+    appendToReportId: A.appendToReportId,
+  })
+}
+
 phase('종합')
-log(`완료 — 메커니즘 ${R1}라운드 + 해석 설계 ${R2}라운드`)
+log(`완료 — 메커니즘 ${R1}라운드 + 해석 설계 ${R2}라운드${DO_BUILD ? ` + 구축 설계 ${R3}라운드` : ''}`)
 return {
   question: Q,
   mechanism: { decision: mech.decision, rounds: mech.rounds, roundLabels: mech.roundLabels },
   seats: { axes: (seatPick && seatPick.axes) || [], reason: (seatPick && seatPick.reason) || '',
            sim: simSeats, carriedNonNegotiables: NN },
   simPlan: { decision: sim && sim.decision, rounds: sim && sim.rounds, roundLabels: sim && sim.roundLabels },
-  report: sim && sim.report,
-  conversation: sim && sim.conversation,
+  buildPlan: build ? { decision: build.decision, rounds: build.rounds, roundLabels: build.roundLabels } : null,
+  report: (build && build.report) || (sim && sim.report),
+  conversation: (build && build.conversation) || (sim && sim.conversation),
 }
