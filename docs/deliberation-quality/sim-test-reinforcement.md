@@ -41,16 +41,16 @@
 | test-plan 강화 | `hwax-deliberate.js` CHAIR_ITEMS['test-plan'] | `_CHAIR_ITEMS['test-plan']` (동일 문구) |
 | test BASE_NOTE | `hwax-test-plan.js` BASE_NOTE | (챗은 humanNote 로 주입 — 해당시) |
 
-## 체크리스트
+## 체크리스트 (완료 2026-08-28, 커밋 HWAXPortal 87a6cf2 · HWAXAgentServer 469ad5b)
 
-- [ ] SIM: JS SPINE_VALIDATION(+플래그) 배선, FIXED_CAE 합류
-- [ ] SIM: py `_SIM_SPINE_VALIDATION`(+env) 배선, `_SIM_FIXED_CAE` 합류
-- [ ] SIM: sim-plan CHAIR_ITEMS 강화 (JS·py 동일 문구)
-- [ ] TEST: JS FIXED_SEATS +2석, BASE_NOTE 강화
-- [ ] TEST: py `_TEST_FIXED` +2석
-- [ ] TEST: test-plan CHAIR_ITEMS 9→10항목 강화 (JS·py 동일 문구)
-- [ ] 검증: `node --check` 3 JS, `py_compile` deliberation.py, 좌석수·CARRY류 회귀 점검
-- [ ] 반영 주의: API 재기동 필요(deliberation.py), 워크플로 sync
+- [x] SIM: JS SPINE_VALIDATION(+spineValidation 플래그) 배선, FIXED_CAE 합류(9석)
+- [x] SIM: py `_SIM_SPINE_VALIDATION`(+env DELIB_SIM_SPINE_VALIDATION) 배선, `_SIM_FIXED_CAE` 합류
+- [x] SIM: sim-plan CHAIR_ITEMS 강화 (JS·py — Validation·유효범위·불확실 구간·실제 자원 수치)
+- [x] TEST: JS FIXED_SEATS +2석(model-correlation·reliability-stats), BASE_NOTE 강화
+- [x] TEST: py `_TEST_FIXED` +2석
+- [x] TEST: test-plan CHAIR_ITEMS 9→10항목 강화 (JS·py — 상관 계약·계측 불확실·통계·DOE)
+- [x] 검증: node --check 3 JS ✓, py_compile ✓, 좌석수(SIM 9·TEST 5) ✓, 문구 정합 ✓, FIXED_ROLES·발굴제외 회귀 ✓
+- [ ] **반영(사용자)**: deliberation.py 는 API 재기동, JS 는 `sync-workflows.sh` — 미실행
 
 ## 비목표
 
