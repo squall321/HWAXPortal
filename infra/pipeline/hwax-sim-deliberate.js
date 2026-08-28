@@ -21,6 +21,8 @@
 //                       닿지 못하는 환경을 위한 우회로다. 고정 CAE 좌석과 물리 유임은 그대로 붙는다.
 //   - spine           : 2단에 수치 스파인 고정 착석(기본 true). false 면 종전대로 modeling·post 만.
 //   - spineReview     : 스파인 리뷰어 2석(rigor-review·theory-grounding) 착석(기본 true, spine=true 일 때).
+//   - spineValidation : 검증·UQ 2석(model-validity·uncertainty) 착석(기본 true, spine=true 일 때) —
+//                       Verification 만이 아니라 Validation(현실 대조)·불확실성 구간을 강제한다.
 //                       false 면 핵심 3석(formulation·discretization·verification)만 고정한다.
 //   - humanNote       : 1단에 주입할 사람 의견
 //   - groundCards     : 좌석이 발언 전 자기 지식카드를 조회·인용(기본 true). false 로 끈다(RAG 색인 옛것/비용).
@@ -93,14 +95,21 @@ const FIXED_ROLES = {
   'xd-cae-verification': '코드검증·수렴차수(MMS·GCI) — 방정식을 올바로 푸는지의 정식 검증',
   'xd-cae-rigor-review': '수치 엄밀성 적대 리뷰어(레드팀) — 정식화·이산화·검증을 반증만, 구축은 안 한다',
   'xd-cae-theory-grounding': '이론·문헌 grounding 챌린저 — 방법 주장에 출처·인용을 요구한다',
+  'xd-model-validity': '검증(Validation) — 모델이 현실을 예측하는가, 유효 범위와 외삽 위험을 판정한다',
+  'xd-uncertainty': '불확실성 정량화(UQ) — 파라미터 불확실을 전파해 출력을 점값이 아닌 구간으로 만든다',
 }
 const SPINE_CORE = ['xd-cae-formulation', 'xd-cae-discretization', 'xd-cae-verification']
 const SPINE_REVIEW = ['xd-cae-rigor-review', 'xd-cae-theory-grounding']
+// 검증(V&V 의 Validation)·불확실성 다이어드 — Verification(방정식을 올바로 푸나)만으로는
+// '올바른 방정식인가(현실 대조)'와 '불확실→출력 구간'이 비어 계획이 그럴듯하게만 나온다.
+const SPINE_VALIDATION = ['xd-model-validity', 'xd-uncertainty']
 const useSpine = A.spine !== false
 const useReview = useSpine && A.spineReview !== false
+const useValidation = useSpine && A.spineValidation !== false  // 기본 ON — 현실 대조·UQ 좌석
 // 발굴 제외·중복 제거·자동 착석에 쓰는 고정 좌석 전체 목록
 const FIXED_CAE = ['xd-cae-modeling', 'xd-cae-post',
-  ...(useSpine ? SPINE_CORE : []), ...(useReview ? SPINE_REVIEW : [])]
+  ...(useSpine ? SPINE_CORE : []), ...(useReview ? SPINE_REVIEW : []),
+  ...(useValidation ? SPINE_VALIDATION : [])]
 
 const dom = k => (String(k).includes('-') ? String(k).split('-')[0] : String(k))
 const DELIB = { scriptPath: A.deliberateScript || 'infra/pipeline/hwax-deliberate.js' }
@@ -173,7 +182,7 @@ if (!simSeats.some(s => s.origin === 'carry')) {
 }
 const carryN = simSeats.filter(s => s.origin === 'carry').length
 const fixedN = simSeats.filter(s => FIXED_CAE.includes(s.key)).length
-log(`2단 좌석 ${simSeats.length}인 (고정 ${fixedN}${useSpine ? ` [수치 스파인 ${useReview ? SPINE_CORE.length + SPINE_REVIEW.length : SPINE_CORE.length}석 포함]` : ''} · ` +
+log(`2단 좌석 ${simSeats.length}인 (고정 ${fixedN}${useSpine ? ` [수치 스파인 ${useReview ? SPINE_CORE.length + SPINE_REVIEW.length : SPINE_CORE.length}석${useValidation ? ` + 검증·UQ ${SPINE_VALIDATION.length}석` : ''} 포함]` : ''} · ` +
     `발굴 ${simSeats.length - fixedN - carryN} · 물리 유임 ${carryN}) · ` +
     `도메인 ${[...new Set(simSeats.map(s => dom(s.key)))].length}종 · 축: ${((seatPick && seatPick.axes) || []).join(' / ')}`)
 
