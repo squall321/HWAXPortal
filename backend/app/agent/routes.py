@@ -76,6 +76,9 @@ class DelibOpts(BaseModel):
     # 사용자 지정 앱 — 전문가 자유 조회 범위를 이 앱들로 좁힌다. 도구와 달리 전량 호출이 아니다
     # (도구 하나당 LLM 인자 구성이 붙어, 앱을 20~30개로 펼쳐 호출하면 예산이 터진다).
     apps: list[str] | None = Field(default=None, max_length=3)
+    # 챗 워크스페이스가 정리해 넘긴 원천 근거(도구결과+출처). 심의는 '검증 대상·결론 아님'으로
+    # 좌석에 주입한다(요약 아닌 날것) — 핸드오프 P1. agent-server 가 항목 필드를 재클램프한다.
+    evidence: list[dict] | None = Field(default=None, max_length=12)
     # 웹 리서치 소스 토글(심의) — 켜지 않은 소스는 자유 조회에 바인딩되지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
 
