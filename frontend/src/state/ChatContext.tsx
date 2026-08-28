@@ -21,6 +21,7 @@ import {
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
 import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ToolCatalog } from '../types/chat';
+import { conversationEvidence } from '../components/chat/handoff';
 import {
   delibOptsToWire,
   loadActiveId,
@@ -45,6 +46,8 @@ interface ChatContextValue {
   sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>) => void;
   /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 같은 전문가로 후속 심의를 스티어링. */
   continueDeliberation: (prior: DelibData, opinion: string) => void;
+  // 심의로 넘기기(핸드오프) — 챗에서 정리한 실데이터(도구결과)를 원천 근거로 실어 현재 대화에서 심의를 연다.
+  startHandoff: (topicOverride?: string) => void;
   /** 실패 재시도 — 마지막 사용자 발화를 다시 보낸다(심의 페이지는 트리거 강제). */
   retryLast: () => void;
   /** 심의 손잡이(웹 토글) — 심의 페이지 패널이 읽고 쓴다. 전송 시 켠 것만 서버로 실린다. */
@@ -523,6 +526,25 @@ export function ChatProvider({
     [conversations, activeId, streaming, sendMessage],
   );
 
+  // 심의로 넘기기(핸드오프) — 챗 워크스페이스에서 정리한 실데이터(도구결과)를 원천 근거로 실어
+  // 현재 대화에서 심의를 연다. 요약이 아니라 날것을 넘긴다(P1). 좌석은 심의가 발굴한다
+  // (질문·좌석 확정 브리프 UI 는 후속 P3). 화두는 continueDeliberation 과 같이 첫 사용자 발화에서 취한다.
+  const startHandoff = useCallback(
+    (topicOverride?: string) => {
+      if (streaming) return;
+      const conv = conversations.find((c) => c.id === activeId);
+      if (!conv) return;
+      const firstUser = conv.messages.find((m) => m.role === 'user');
+      const topic = (topicOverride ?? firstUser?.text ?? '')
+        .replace(/^\/(심의|deliberate|토의)\s*/, '')
+        .trim();
+      if (!topic) return;
+      const evidence = conversationEvidence(conv);
+      sendMessage('/심의 ' + topic, evidence.length ? { evidence } : {});
+    },
+    [conversations, activeId, streaming, sendMessage],
+  );
+
   // 실패 재시도 — 활성 대화의 마지막 사용자 발화를 다시 보낸다. 심의 페이지(sendPrefix)에서는
   // 트리거를 강제로 붙여 심의를 재실행한다(재시도는 '첫 발화'가 아니라 prefix 자동적용이 안 됨).
   const retryLast = useCallback(() => {
@@ -647,6 +669,7 @@ export function ChatProvider({
         setInput,
         sendMessage,
         continueDeliberation,
+        startHandoff,
         retryLast,
         delibOpts,
         setDelibOpts,

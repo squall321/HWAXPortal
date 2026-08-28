@@ -1,7 +1,8 @@
 // 활성 대화 내보내기 툴바 — HTML / JSON / Word(전문·정리본) 다운로드(ChatPage·DeliberatePage 공용)
-import { useCallback, useState, type RefObject } from 'react';
+import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { apiFetch, errorDetail } from '../../api/client';
 import { useChat } from '../../state/ChatContext';
+import { conversationEvidence } from './handoff';
 import { downloadBlob, exportHtml, exportJson } from './exportChat';
 import { IconDownload } from './icons';
 
@@ -37,10 +38,12 @@ async function exportDocx(conv: unknown, mode: 'transcript' | 'report'): Promise
 }
 
 export function ExportBar({ threadRef }: { threadRef: RefObject<HTMLDivElement | null> }) {
-  const { conversations, activeId } = useChat();
+  const { conversations, activeId, startHandoff, streaming } = useChat();
   const conv = conversations.find((c) => c.id === activeId);
   const [busy, setBusy] = useState<'' | 'transcript' | 'report'>('');
   const [err, setErr] = useState('');
+  // 심의로 넘길 원천 근거(도구결과) 수 — 있을 때만 핸드오프 버튼을 보인다(빈 버튼 방지).
+  const evidenceCount = useMemo(() => (conv ? conversationEvidence(conv).length : 0), [conv]);
 
   const onHtml = useCallback(() => {
     if (conv && threadRef.current) exportHtml(threadRef.current, conv);
@@ -92,6 +95,17 @@ export function ExportBar({ threadRef }: { threadRef: RefObject<HTMLDivElement |
         <IconDownload width={13} height={13} />
         {busy === 'report' ? '정리 중…' : 'Word 정리본'}
       </button>
+      {evidenceCount > 0 && (
+        <button
+          type="button"
+          className="cx-export-btn"
+          onClick={() => startHandoff()}
+          disabled={busy !== '' || streaming}
+          title={`이 대화에서 정리한 실데이터 ${evidenceCount}건을 근거로 이 자리에서 심의를 시작합니다`}
+        >
+          🎛 심의로 넘기기
+        </button>
+      )}
       {err && (
         <span className="cx-export-err" role="alert">
           {err}
