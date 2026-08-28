@@ -4,7 +4,7 @@
 > 모아 공유·종합하는 사내 보고 자료 플랫폼.
 > 한마디로 "AI 보조 보고서 작성기 + 조직 보고 자산 아카이브".
 
-작성 기준: HWAX 포털 통합 대상 시스템 정리 (비개발자용 개조식)
+작성 기준: HWAX 포털 통합 대상 시스템 정리 (비개발자용 개조식) — 2026-08-28 갱신
 
 ---
 
@@ -46,7 +46,7 @@
 
 ## HWAX 포털 통합 메모 (기술)
 
-- **통합 방식**: `proxy` — nginx가 `/report-archive/` → `http://127.0.0.1:3000/` (combined FastAPI+SPA).
+- **통합 방식**: `external-url` — 포털 타일이 `http://{host}:3000`(combined FastAPI+SPA)로 **직접 연결**(systems.yaml 기준, 프록시 서브패스 아님).
 - **sub-path 지원**: 프런트 `vite build --base=/report-archive/` + React Router `basename` 1줄 + API base `/report-archive`. (이 1줄은 origin/main 미반영 → 재빌드 시 재적용 필요, 상세는 ReportArchive 리포의 `SSO_SETUP.local.md §A`)
 - **DB**: 중립 시스템 PostgreSQL `:5433` (구동 중인 다른 서비스 DB 미사용). 이 dev 박스 한정.
 - **SSO**: 미구현(가이드만). 콜백 consumer 추가 시 `jwt-handoff` 전환 — `SSO_SETUP.local.md §B`.
