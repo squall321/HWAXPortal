@@ -76,6 +76,11 @@ class DelibOpts(BaseModel):
     # 사용자 지정 앱 — 전문가 자유 조회 범위를 이 앱들로 좁힌다. 도구와 달리 전량 호출이 아니다
     # (도구 하나당 LLM 인자 구성이 붙어, 앱을 20~30개로 펼쳐 호출하면 예산이 터진다).
     apps: list[str] | None = Field(default=None, max_length=3)
+    # 결정문 형식(엔진). None=default 유지. agent-server 가 _CHAIR_ITEMS 로 검증·재클램프한다.
+    # ⚠ 종전 미선언이라 웹 경로에서 조용히 버려졌다(model_dump 에 안 실림) — 여기서 선언해 수정.
+    chair_template: str | None = Field(default=None, max_length=40)
+    # 얹을 층(2층 Modifier) — 심의 굴리는 방식 오버레이. agent-server 가 화이트리스트로 재클램프한다.
+    modifiers: list[str] | None = Field(default=None, max_length=5)
     # 챗 워크스페이스가 정리해 넘긴 원천 근거(도구결과+출처). 심의는 '검증 대상·결론 아님'으로
     # 좌석에 주입한다(요약 아닌 날것) — 핸드오프 P1. agent-server 가 항목 필드를 재클램프한다.
     evidence: list[dict] | None = Field(default=None, max_length=12)
