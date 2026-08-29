@@ -1,6 +1,6 @@
 // 서버 대화 저장소 REST 클라이언트 — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본
 import { apiFetch } from './client';
-import type { Conversation, DelibTurn, Message } from '../types/chat';
+import type { ActivityItem, Conversation, DelibTurn, Message } from '../types/chat';
 import { newId } from '../state/chatStore';
 
 export type ConvKind = 'chat' | 'deliberation';
@@ -89,7 +89,16 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       });
       turns = [];
     } else {
-      out.push({ id: newId(), role: m.role, text: m.content, ts });
+      // 서버 meta 에 영속된 도구 활동(status) 복원 — 리로드·크로스디바이스에서도 심의 핸드오프
+      // 근거 추출(conversationEvidence)이 동작하게 한다.
+      const act = (m.meta as { activity?: ActivityItem[] } | null)?.activity;
+      out.push({
+        id: newId(),
+        role: m.role,
+        text: m.content,
+        ts,
+        ...(Array.isArray(act) ? { activity: act } : {}),
+      });
     }
   }
   if (turns.length > 0) {

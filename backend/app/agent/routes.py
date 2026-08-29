@@ -857,6 +857,7 @@ async def chat(
         final: str | None = None     # result 프레임의 전체 텍스트(우선)
         decision: str | None = None  # 심의 결정문(result 없을 때 폴백)
         turns: list[dict] = []       # 심의 persona 발언 — MCP 경로와 대칭으로 서버에 남긴다
+        activity: list[dict] = []    # status 이벤트(도구 호출·결과) 누적 — 심의 핸드오프 스냅샷 서버 영속
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
         try:
             async for frame in source:
@@ -880,6 +881,15 @@ async def chat(
                                               "content": data["say"]})
                             elif k == "decision" and isinstance(data.get("text"), str):
                                 decision = data["text"]
+                        elif evt == "status" and data.get("tool"):
+                            # 도구가 붙은 status 만 근거로 남긴다(진행 텍스트만 있는 건 스냅샷 대상 아님).
+                            activity.append({
+                                "step": str(data.get("step") or "")[:200],
+                                "tool": str(data.get("tool"))[:80],
+                                "detail": (str(data.get("detail"))[:400] if data.get("detail") else None),
+                                "result_preview": (str(data.get("result_preview"))[:2000]
+                                                   if data.get("result_preview") else None),
+                            })
                 yield frame
         finally:
             sem.release()  # released even on client disconnect (Starlette aclose()s the gen)
@@ -891,6 +901,7 @@ async def chat(
                                  round=(int(t["round"]) if isinstance(t.get("round"), int) else None))
                 reply = final if final is not None else (decision or "".join(acc))
                 if reply:
-                    store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply)
+                    store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
+                                 meta=({"activity": activity[:60]} if activity else None))
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
