@@ -4,7 +4,7 @@ import { fetchDeliberateExperts, type ExpertsResponse } from '../../api/chat.api
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
 import { conversationEvidence } from './handoff';
-import { JOBS, JOB_BY_ID, MODIFIERS, suggestJob, type JobId } from './delibTaxonomy';
+import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob, type JobId } from './delibTaxonomy';
 
 const DEFAULT_SEATS = 6; // 추천 좌석 기본 선택 수(심의가 스파인 좌석은 자동 추가)
 
@@ -78,10 +78,12 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
     const apps = [
       ...new Set(toolAll.filter((x) => usedTools.has(x.name)).map((x) => x.group).filter(Boolean)),
     ].slice(0, 3) as string[];
+    const route = JOB_ROUTING[job];
     startHandoff({
       topic: t,
       personas,
-      chairTemplate: job,
+      trigger: route.trigger,
+      ...(route.chair ? { chairTemplate: route.chair } : {}),
       ...(mods.size ? { modifiers: [...mods] } : {}),
       ...(apps.length ? { apps } : {}),
     });
@@ -117,24 +119,32 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
 
         <div className="cx-brief-field">
           <span>무엇을 하는 심의인가 — 하나 고르세요 (산출은 결정 문서입니다)</span>
-          <div className="cx-brief-jobs">
-            {JOBS.map((j) => (
-              <button
-                type="button"
-                key={j.id}
-                className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
-                onClick={() => setJob(j.id)}
-                aria-pressed={job === j.id}
-                title={`산출: ${j.out}`}
-              >
-                <span className="cx-brief-job-top">
-                  <span className="cx-brief-job-name">{j.name}</span>
-                  <span className="cx-brief-job-eng">{j.engine}</span>
-                </span>
-                <span className="cx-brief-job-when">{j.when}</span>
-              </button>
-            ))}
-          </div>
+          {JOB_GROUPS.map((g) => (
+            <div className="cx-jobgroup" key={g.id}>
+              <div className="cx-jobgroup-label">
+                <b>{g.label}</b>
+                <span>{g.hint}</span>
+              </div>
+              <div className="cx-brief-jobs">
+                {jobsByGroup(g.id).map((j) => (
+                  <button
+                    type="button"
+                    key={j.id}
+                    className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
+                    onClick={() => setJob(j.id)}
+                    aria-pressed={job === j.id}
+                    title={`산출: ${j.out}`}
+                  >
+                    <span className="cx-brief-job-top">
+                      <span className="cx-brief-job-name">{j.name}</span>
+                      <span className="cx-brief-job-eng">{j.engine}</span>
+                    </span>
+                    <span className="cx-brief-job-when">{j.when}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
 
         <div className="cx-brief-field">

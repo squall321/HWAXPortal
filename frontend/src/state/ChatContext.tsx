@@ -55,6 +55,7 @@ interface ChatContextValue {
     modifiers?: string[];
     tools?: string[];
     apps?: string[];
+    trigger?: string; // 기본 '/심의 '. sim/test 는 다단 트리거(/시뮬심의·/시험계획)로 넘긴다.
   }) => void;
   /** 실패 재시도 — 마지막 사용자 발화를 다시 보낸다(심의 페이지는 트리거 강제). */
   retryLast: () => void;
@@ -545,6 +546,7 @@ export function ChatProvider({
       modifiers?: string[];
       tools?: string[];
       apps?: string[];
+      trigger?: string;
     }) => {
       if (streaming) return;
       const conv = conversations.find((c) => c.id === activeId);
@@ -562,7 +564,8 @@ export function ChatProvider({
       if (opts?.modifiers?.length) extra.modifiers = opts.modifiers;
       if (opts?.tools?.length) extra.tools = opts.tools;
       if (opts?.apps?.length) extra.apps = opts.apps;
-      sendMessage('/심의 ' + topic, extra);
+      // sim/test 는 다단 트리거로 넘겨 고정 좌석·2단 파이프라인을 타게 한다(evidence 는 그 경로도 승계).
+      sendMessage((opts?.trigger ?? '/심의 ') + topic, extra);
     },
     [conversations, activeId, streaming, sendMessage],
   );

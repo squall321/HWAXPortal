@@ -10,7 +10,7 @@ import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
 import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
 import { fetchDeliberateExperts, type ExpertsResponse } from '../api/chat.api';
-import { JOBS, JOB_BY_ID, MODIFIERS, type JobId } from '../components/chat/delibTaxonomy';
+import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, type JobId } from '../components/chat/delibTaxonomy';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
 import '../styles/chat.css';
 import '../styles/chatpage.css';
@@ -26,17 +26,7 @@ const EXAMPLE_TOPICS = [
 const FLOW_HINT =
   '화두에 불량·품질 얘기가 있으면 SignalForge 최근 이슈를 먼저 환기하고, 관련 전문가들이 여러 라운드로 심의해 Report Archive 보고서까지 남깁니다';
 
-// Job → 라우팅. 해석 설계·시험 설계는 기존 다단 트리거(서버가 chair 를 지정), 나머지는
-// /심의 + chair_template 단발. default 는 chair 없음(종전 동작). delibTaxonomy JOBS 와 정합.
-const JOB_ROUTING: Record<JobId, { trigger: string; chair?: JobId }> = {
-  diagnosis: { trigger: '/심의 ', chair: 'diagnosis' },
-  'option-select': { trigger: '/심의 ', chair: 'option-select' },
-  credibility: { trigger: '/심의 ', chair: 'credibility' },
-  'sim-plan': { trigger: '/시뮬심의 ' },
-  'test-plan': { trigger: '/시험계획 ' },
-  'build-plan': { trigger: '/심의 ', chair: 'build-plan' },
-  default: { trigger: '/심의 ' },
-};
+// 라우팅은 delibTaxonomy JOB_ROUTING 을 공유한다(브리프·랜딩 통일, 하드코딩 제거).
 
 const SIM_SUGGESTIONS = [
   '적색 발광이 외곽부터 액자 모양으로 죽어 들어가는데 UV 를 쬐면 회복되고 다시 재발한다',
@@ -51,16 +41,22 @@ const TEST_SUGGESTIONS = [
   '리플로우 warpage 산포의 지배 인자를 가리는 DOE 를 짜고 싶다',
 ];
 
+// 판단 그룹(원인규명·안선택·신뢰판정) 예시 — 진단·선택·판정 세 갈래.
+const JUDGE_SUGGESTIONS = [
+  '특정 로트에서만 폴더블 힌지 크랙이 나는데 원인을 못 좁히고 있다',
+  '방열 설계안 A(그래파이트) vs B(베이퍼챔버) — 무게·성능·원가로 못 정하겠다',
+  '이 낙하 해석 결과로 양산 go 를 내도 되는지 판정이 필요하다',
+];
+
+// 입력 예시는 선택한 Job 의 성격에 맞춘다 — sim/test 전용, 판단 그룹 공용, 그 외 일반 화두.
 const SUGGESTIONS_BY_JOB = (job: JobId): readonly string[] =>
-  job === 'sim-plan' ? SIM_SUGGESTIONS : job === 'test-plan' ? TEST_SUGGESTIONS : EXAMPLE_TOPICS;
-const PLACEHOLDER_BY_JOB = (job: JobId): string =>
   job === 'sim-plan'
-    ? '현상을 입력하세요…'
+    ? SIM_SUGGESTIONS
     : job === 'test-plan'
-      ? '확보하려는 물성·성능을 입력하세요…'
-      : job === 'diagnosis'
-        ? '불량 현상을 입력하세요…'
-        : '화두를 입력하세요…';
+      ? TEST_SUGGESTIONS
+      : JOB_BY_ID[job].group === 'judge'
+        ? JUDGE_SUGGESTIONS
+        : EXAMPLE_TOPICS;
 
 const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 
@@ -198,25 +194,50 @@ export default function DeliberatePage() {
                 <p className="cx-hero-clarify">
                   무엇을 고르든 산출은 근거가 붙은 결정 문서입니다 — 프로그램이 아니라 판단(계획·선택·판정)이 나옵니다.
                 </p>
-                <div className="cx-brief-jobs cx-jobs-wide" role="tablist" aria-label="심의 목적">
-                  {JOBS.map((j) => (
-                    <button
-                      type="button"
-                      key={j.id}
-                      role="tab"
-                      aria-selected={job === j.id}
-                      className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
-                      onClick={() => setJob(j.id)}
-                      title={`산출: ${j.out}`}
-                    >
-                      <span className="cx-brief-job-top">
-                        <span className="cx-brief-job-name">{j.name}</span>
-                        <span className="cx-brief-job-eng">{j.engine}</span>
-                      </span>
-                      <span className="cx-brief-job-when">{j.when}</span>
-                    </button>
-                  ))}
-                </div>
+                {JOB_GROUPS.filter((g) => g.id !== 'free').map((g) => (
+                  <div className="cx-jobgroup cx-jobgroup-wide" key={g.id}>
+                    <div className="cx-jobgroup-label">
+                      <b>{g.label}</b>
+                      <span>{g.hint}</span>
+                      <i />
+                    </div>
+                    <div className="cx-brief-jobs" role="tablist" aria-label={`심의 목적 — ${g.label}`}>
+                      {jobsByGroup(g.id).map((j) => (
+                        <button
+                          type="button"
+                          key={j.id}
+                          role="tab"
+                          aria-selected={job === j.id}
+                          className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
+                          onClick={() => setJob(j.id)}
+                          title={`산출: ${j.out}`}
+                        >
+                          <span className="cx-brief-job-top">
+                            <span className="cx-brief-job-name">{j.name}</span>
+                            <span className="cx-brief-job-eng">{j.engine}</span>
+                          </span>
+                          <span className="cx-brief-job-when">{j.when}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {jobsByGroup('free').map((j) => (
+                  <button
+                    type="button"
+                    key={j.id}
+                    className={`cx-brief-job cx-job-free${job === j.id ? ' is-on' : ''}`}
+                    onClick={() => setJob(j.id)}
+                    aria-pressed={job === j.id}
+                    title={`산출: ${j.out}`}
+                  >
+                    <span className="cx-brief-job-top">
+                      <span className="cx-brief-job-name">{j.name}</span>
+                      <span className="cx-brief-job-eng">{j.engine}</span>
+                    </span>
+                    <span className="cx-brief-job-when">{j.when} · {j.note}</span>
+                  </button>
+                ))}
                 <div className="cx-brief-mods cx-mods-wide">
                   <span className="cx-mods-label">얹을 층:</span>
                   {MODIFIERS.map((m) => (
@@ -235,7 +256,7 @@ export default function DeliberatePage() {
                 <Composer
                   ref={composerRef}
                   autoFocus
-                  placeholder={PLACEHOLDER_BY_JOB(job)}
+                  placeholder={JOB_BY_ID[job].placeholder}
                   onSubmitText={startPicking}
                 />
                 <DelibOptsPanel />
@@ -246,7 +267,7 @@ export default function DeliberatePage() {
                     </button>
                   ))}
                 </div>
-                <p className="cx-hero-hint">{JOB_BY_ID[job].name} · {JOB_BY_ID[job].out} — {FLOW_HINT}</p>
+                <p className="cx-hero-hint">{JOB_BY_ID[job].note} {FLOW_HINT}</p>
                 <p className="cx-hero-sub">
                   의견을 하나 던지면 전문가 에이전트들이 토의로 답합니다. 기록은 서버에 남아 Claude(MCP) 심의와 한곳에 모입니다.
                 </p>

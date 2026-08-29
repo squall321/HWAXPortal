@@ -1319,3 +1319,10 @@ body.dock-open .container {
 }
 .cx-brief-mod:hover { color: var(--fg); border-color: var(--muted); }
 .cx-brief-mod.is-on { color: var(--fg); border-color: var(--cx-accent); background: var(--cx-accent-soft); }
+
+/* Job 그룹 — 판단/계획/자유. 산출물 성격으로 묶어 산만함을 줄인다(delibTaxonomy JOB_GROUPS) */
+.cx-jobgroup { display: flex; flex-direction: column; gap: 6px; }
+.cx-jobgroup-label { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 0; }
+.cx-jobgroup-label b { font-family: var(--cx-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--cx-accent); }
+.cx-jobgroup-label span { font-size: 11px; color: var(--muted); }
+.cx-jobgroup-label i { flex: 1; height: 1px; background: var(--border); }
