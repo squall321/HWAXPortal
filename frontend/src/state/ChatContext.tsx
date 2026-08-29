@@ -47,7 +47,14 @@ interface ChatContextValue {
   /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 같은 전문가로 후속 심의를 스티어링. */
   continueDeliberation: (prior: DelibData, opinion: string) => void;
   // 심의로 넘기기(핸드오프) — 챗에서 정리한 실데이터(도구결과)를 원천 근거로 실어 현재 대화에서 심의를 연다.
-  startHandoff: (topicOverride?: string) => void;
+  // 브리프(P3)가 확정한 질문·좌석·템플릿을 받는다. 미지정이면 화두는 첫 발화, 좌석은 심의 자동발굴.
+  startHandoff: (opts?: {
+    topic?: string;
+    personas?: { key: string; role?: string }[];
+    chairTemplate?: string;
+    tools?: string[];
+    apps?: string[];
+  }) => void;
   /** 실패 재시도 — 마지막 사용자 발화를 다시 보낸다(심의 페이지는 트리거 강제). */
   retryLast: () => void;
   /** 심의 손잡이(웹 토글) — 심의 페이지 패널이 읽고 쓴다. 전송 시 켠 것만 서버로 실린다. */
@@ -530,17 +537,29 @@ export function ChatProvider({
   // 현재 대화에서 심의를 연다. 요약이 아니라 날것을 넘긴다(P1). 좌석은 심의가 발굴한다
   // (질문·좌석 확정 브리프 UI 는 후속 P3). 화두는 continueDeliberation 과 같이 첫 사용자 발화에서 취한다.
   const startHandoff = useCallback(
-    (topicOverride?: string) => {
+    (opts?: {
+      topic?: string;
+      personas?: { key: string; role?: string }[];
+      chairTemplate?: string;
+      tools?: string[];
+      apps?: string[];
+    }) => {
       if (streaming) return;
       const conv = conversations.find((c) => c.id === activeId);
       if (!conv) return;
       const firstUser = conv.messages.find((m) => m.role === 'user');
-      const topic = (topicOverride ?? firstUser?.text ?? '')
+      const topic = (opts?.topic ?? firstUser?.text ?? '')
         .replace(/^\/(심의|deliberate|토의)\s*/, '')
         .trim();
       if (!topic) return;
       const evidence = conversationEvidence(conv);
-      sendMessage('/심의 ' + topic, evidence.length ? { evidence } : {});
+      const extra: Record<string, unknown> = {};
+      if (evidence.length) extra.evidence = evidence;
+      if (opts?.personas?.length) extra.personas = opts.personas;
+      if (opts?.chairTemplate) extra.chair_template = opts.chairTemplate;
+      if (opts?.tools?.length) extra.tools = opts.tools;
+      if (opts?.apps?.length) extra.apps = opts.apps;
+      sendMessage('/심의 ' + topic, extra);
     },
     [conversations, activeId, streaming, sendMessage],
   );

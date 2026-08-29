@@ -101,8 +101,8 @@ cold-start 심의는 좌석·근거·프레이밍이 없어 **"상한 스크리�
 - [x] P1: `routes.py::DelibOpts` 에 `evidence` 통과 + relay(model_dump) 자동 포워딩 (679d672)
 - [~] P2: (대체) 서버 meta 대신 클라이언트 영속 `Message.activity[]`(도구호출·결과)에서 evidence 추출 — 더 깔끔·P1 준수. 서버 meta 영속은 후속(리로드 생존)
 - [x] P2: `ExportBar` "🎛 심의로 넘기기"(근거 있을 때만) + `ChatContext.startHandoff` + `handoff.ts::conversationEvidence`
-- [ ] P3: `HandoffBrief` 패널(제안·편집·확정), 원천/증류 분리·좌석 근거 표시
-- [ ] P4: 재활용 도구 레지스트리 인접(앱/백엔드 바운드)
+- [x] P3: `HandoffBrief` 모달 — AI 제안(질문·좌석·근거·템플릿)→사용자 확정. 좌석 근거(why) 표시, 근거 "검증 대상" 명시
+- [x] P4: 재활용 도구 일반화 — 챗이 부른 도구의 앱을 레지스트리 그룹에서 도출해 delib_opts.apps(free-query)로, 앱 바운드·하드코딩 0
 - [ ] 검증: 두 엔진 정합(MCP 워크플로도 evidence 받게), 직행 심의 회귀 없음, 비용 게이트 동작
 
 ## 9. 비목표·미결
