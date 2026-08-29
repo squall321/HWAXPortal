@@ -96,7 +96,7 @@ const CHAIR_ADVERSARY = {
 }
 {
   const adv = CHAIR_ADVERSARY[CHAIR_TEMPLATE]
-  if (adv && !pk.includes(adv.key)) { PERS.push({ key: adv.key, role: adv.role, origin: 'counter' }); pk.push(adv.key) }
+  if (adv && !pk.includes(adv.key)) { PERS.push({ key: adv.key, role: adv.role, origin: 'adversary' }); pk.push(adv.key) }
 }
 
 // 참여 인원수는 personas 배열 길이가 그대로 결정(상한 없음).
@@ -165,7 +165,7 @@ const ANON1R = MOD_LIST.includes('anon1r')
 const baseFor = k => (CONT && (ANON1R || originOf(k) === 'new') ? BASE_BLIND : BASE)
 // 좌석 구성 — 결정문이 커버리지를 스스로 밝히게 한다.
 const SEAT_NOTE = (() => {
-  const label = { primary: '주 도메인', counter: '반대 도메인', carry: '유임', new: '이어하기 신규' }
+  const label = { primary: '주 도메인', counter: '반대 도메인', adversary: '지정 반대석', carry: '유임', new: '이어하기 신규' }
   const by = {}
   pk.forEach(k => { (by[originOf(k)] = by[originOf(k)] || []).push(k) })
   const doms = [...new Set(pk.map(k => (k.includes('-') ? k.split('-')[0] : k)))].sort()

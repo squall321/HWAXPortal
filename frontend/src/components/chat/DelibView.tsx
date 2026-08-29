@@ -92,6 +92,7 @@ function Stepper({ d, live }: { d: DelibData; live: boolean }) {
 // counter 는 "주 도메인이 못 보는 축"을 맡으라고 일부러 앉힌 좌석이라 특히 눈에 띄어야 한다.
 const ORIGIN_LABEL: Record<string, { text: string; cls: string }> = {
   counter: { text: '반대 도메인', cls: 'dv-seat-counter' },
+  adversary: { text: '지정 반대석', cls: 'dv-seat-counter' },
   new: { text: '이번 회차 합류', cls: 'dv-seat-new' },
   carry: { text: '유임', cls: 'dv-seat-carry' },
 };
