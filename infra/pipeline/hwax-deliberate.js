@@ -1,5 +1,5 @@
 // HWAX 심의 파이프라인 — 재사용 다중 라운드 전문가 심의 워크플로
-// 입력(args): { question, context, options, personas:[{key,role}], rounds, saveReport, saveConversation,
+// 입력(args): { question, context, evidence:[{source,tool,args,result}], options, personas:[{key,role}], rounds, saveReport, saveConversation,
 //               continueFrom:{summary, roundsSoFar}, humanNote, appendToReportId }
 //   - question        : 심의 주제(문자열)
 //   - context         : 정량 근거/분석 결과(도구로 산출한 데이터의 텍스트 요약)
@@ -102,11 +102,32 @@ const NN_BLOCK = NN.length
     `이 조항을 뒤집으려면 어떤 새 근거 때문인지 반드시 명시하라. 근거 없는 폐기는 불인정.\n\n`
   : ''
 const HUMAN_BLOCK = HUMAN_NOTE ? `[인간 검토자 의견 — 이번 라운드에서 반드시 정면으로 다룰 것]\n${HUMAN_NOTE}\n\n` : ''
+// 챗 워크스페이스 핸드오프 원천 근거(deliberation.py 와 정합) — 요약이 아니라 날것 도구결과+출처를
+// 좌석에 준다. '검증 대상, 결론 아님'으로 프레이밍해 좌석이 재검토하게 한다(브리프 결론이 심의를
+// 오염 못 하게). 예산 ≈11KB 초과분은 중간절단 없이 항목 통째 드롭.
+const EV = (Array.isArray(A.evidence) ? A.evidence : [])
+  .filter(e => e && e.result != null && String(e.result).trim())
+  .slice(0, 12)
+let EV_BLOCK = ''
+if (EV.length) {
+  const evItems = []
+  let evBudget = 0
+  for (const e of EV) {
+    const src = String(e.source || '챗').slice(0, 120)
+    const meta = (e.tool ? ` · ${String(e.tool).slice(0, 80)}` : '') + (e.args ? `(${String(e.args).slice(0, 400)})` : '')
+    const line = `· [${src}${meta}] ${String(e.result).slice(0, 2000)}`
+    if (evBudget + line.length > 11000 && evItems.length) break
+    evItems.push(line)
+    evBudget += line.length
+  }
+  EV_BLOCK = `[챗 워크스페이스가 정리한 원천 데이터 — 검증 대상이지 결론이 아니다. 각 수치·주장을 ` +
+    `당신 도메인으로 재검토하고, 부족하면 도구로 더 확인하라]\n${evItems.join('\n')}\n\n`
+}
 const TAIL = `[심의 주제]\n${Q}\n\n[정량 근거·분석 결과]\n${CTX}\n\n[후보/선택지]\n${OPTS}\n`
-const BASE = `${CONT_BLOCK}${NN_BLOCK}${HUMAN_BLOCK}${TAIL}`
+const BASE = `${CONT_BLOCK}${NN_BLOCK}${HUMAN_BLOCK}${EV_BLOCK}${TAIL}`
 // 신규 좌석 앵커링 차단 — 이어하기에 새로 합류한 좌석(origin:'new')은 1라운드에서 이전 결론을
 // 받지 않는다. 새 관점을 얻으려고 부른 사람이 기존 결론을 먼저 읽으면 동조 압력을 받는다.
-const BASE_BLIND = `${NN_BLOCK}${HUMAN_BLOCK}${TAIL}\n[안내] 당신은 이번 회차에 새로 합류했다. ` +
+const BASE_BLIND = `${NN_BLOCK}${HUMAN_BLOCK}${EV_BLOCK}${TAIL}\n[안내] 당신은 이번 회차에 새로 합류했다. ` +
   `이전 논의 결과는 의도적으로 제공하지 않는다 — 먼저 당신 도메인의 독립적 판단을 내라. 다음 라운드에서 이전 결론을 받는다.\n`
 const originOf = k => (PERS.find(p => p.key === k) || {}).origin || 'primary'
 const baseFor = k => (CONT && originOf(k) === 'new' ? BASE_BLIND : BASE)
