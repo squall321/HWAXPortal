@@ -20,7 +20,7 @@
 export const meta = {
   name: 'hwax-test-plan',
   description: '물성·성능을 어떤 시험으로 언제 확보할지 — 근거 현황 조회 후 다중 라운드 심의로 시험 계획서 10항목 생성(sim 상관 계약 포함)',
-  whenToUse: '해석에 필요한 물성이 없거나 근거가 약해 "무엇을 먼저 측정할지" 를 정해야 할 때',
+  whenToUse: '해석에 필요한 물성이 없거나 근거가 약해 "무엇을 먼저 측정할지" 를 정해야 할 때. args.modifiers[] 로 얹을 층(voi·premortem·toulmin·eliminative·anon1r) 적용 가능. 다른 심의 유형은 hwax-deliberate.',
   phases: [
     { title: '근거조회', detail: '물성 DB 보유·공백·출처 등급 실조회' },
     { title: '심의', detail: 'hwax-deliberate 를 test-plan 계약으로 실행' },
@@ -81,6 +81,7 @@ const result = await workflow(DELIB, {
   personas,
   rounds: A.rounds ?? 3,
   chairTemplate: 'test-plan',
+  modifiers: Array.isArray(A.modifiers) ? A.modifiers : [],  // 얹을 층 — 하위 심의로 전달(화이트리스트 재검증)
   humanNote: [BASE_NOTE, String(A.humanNote || '').trim()].filter(Boolean).join('\n\n'),
   saveReport: A.saveReport,
   saveConversation: A.saveConversation,

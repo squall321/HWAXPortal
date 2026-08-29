@@ -47,8 +47,16 @@
 //       오케스트레이션을 캡슐화한다. 도메인 도구 실행/페르소나 발굴/시각화는 호출자 몫(도메인별이라).
 export const meta = {
   name: 'hwax-deliberate',
-  description: '질문+정량근거를 다중 라운드 전문가 심의로 수렴시켜 의사결정문 생성',
-  whenToUse: '여러 도메인 전문가의 의견이 갈리는 설계/분석 결정을, 도구 근거 위에서 라운드로 수렴시키고 싶을 때',
+  description: '질문을 다중 라운드 전문가 심의로 수렴 — chairTemplate 로 심의 유형(원인규명·안선택·신뢰판정·자유 등), modifiers 로 얹을 층 선택',
+  whenToUse:
+    '여러 도메인 전문가 의견이 갈리는 결정을 도구 근거 위에서 라운드로 수렴시킬 때. ' +
+    'args 는 객체 {question, chairTemplate?, modifiers?, personas?, evidence?, rounds?}. ' +
+    'chairTemplate 로 심의 유형을 고른다 — diagnosis(원인규명·FTA↔FMEA·is/is-not·ACH, 반증 지정석 자동) · ' +
+    'option-select(안선택·Pugh 2R/Flip) · credibility(신뢰판정·NASA-STD-7009 축별 채점, red-team 지정석 자동) · ' +
+    'sim-plan(해석 계획서·sim_spec) · test-plan(시험 계획서) · build-plan(구축 계획서) · default(자유 의사결정문). ' +
+    'modifiers[] 로 얹을 층(직교·다중) — voi(교착 정산/VoI) · premortem(사전부검) · toulmin(논증 엄밀) · ' +
+    'eliminative(완결 기준) · anon1r(익명 1R). ' +
+    '시뮬 2단(메커니즘→해석 설계)은 hwax-sim-deliberate, 무엇을 먼저 측정할지는 hwax-test-plan 을 쓴다.',
   phases: [
     { title: '초기입장', detail: '페르소나별 초기 의견(또는 이어하기 개시) — 병렬' },
     { title: '심화라운드', detail: '상호 반박·수치 심화 (가변 회차, 병렬)' },
