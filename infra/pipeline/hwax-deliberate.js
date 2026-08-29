@@ -87,6 +87,18 @@ const STOP_AFTER = Number(A.stopAfterRound) === 1 ? 1 : 0
 // 미지정이면 종전 항목((1)~(5))이 그대로 나가므로 기존 호출은 영향 없다.
 const CHAIR_TEMPLATE = String(A.chairTemplate || 'default')
 
+// 신규 Job 전용 지정 좌석 — 방법론의 반대/반증 역할을 좌석 구조로 보장(발굴이 반대석을 안 뽑을 수 있어
+// 프롬프트 지시만으론 아무도 안 맡는다). deliberation.py _CHAIR_ADVERSARY 와 키·역할 정합. 합성 좌석 push.
+const CHAIR_ADVERSARY = {
+  credibility: { key: 'delib-redteam', role: `이 심의의 red-team(반대 지정석). 결론을 지지하지 말고 깨는 것이 임무 — 가장 약한 가정·가장 위태로운 외삽·미검증 Validation 공백·간과된 물리를 집요하게 파고들어 '이 결과를 믿으면 안 되는 이유'를 대라. 근거 없는 go 를 쉽게 내주지 말고, 정말 살아남는 예측만 인정하라.` },
+  diagnosis: { key: 'delib-disconfirm', role: `이 진단의 반증 지정석. 지배원인 후보를 적극적으로 반증하라 — is/is-not 경계에서 그 원인이면 설명 안 되는 관측·아직 배제 안 된 대안 원인·증거의 과대해석을 지적하고, 팀이 '가장 그럴듯한 하나'로 성급히 수렴하는 것을 막아 미지영역을 드러내라.` },
+  'option-select': { key: 'delib-contrarian', role: `이 선택의 반대 지정석. 유력안을 의심하라 — 숨은 비용·실패모드·양산 리스크를 파고들고, 기준·가중이 특정 안에 유리하게 짜였는지·뒤집힘 임계가 얼마나 아슬아슬한지 지적하라. 만장일치를 경계하고 열등해 보이는 안의 강점을 대변하라.` },
+}
+{
+  const adv = CHAIR_ADVERSARY[CHAIR_TEMPLATE]
+  if (adv && !pk.includes(adv.key)) { PERS.push({ key: adv.key, role: adv.role, origin: 'counter' }); pk.push(adv.key) }
+}
+
 // 참여 인원수는 personas 배열 길이가 그대로 결정(상한 없음).
 // 라운드 수는 이번 호출분만 — 기본 3(초기+심화1+수렴), 2~8 사이로 클램프(런어웨이 비용 방지).
 const ROUNDS = Math.min(8, Math.max(2, Math.round(Number(A.rounds) || 3)))
@@ -147,7 +159,10 @@ const BASE = `${CONT_BLOCK}${NN_BLOCK}${HUMAN_BLOCK}${EV_BLOCK}${MODIF_BLOCK}${T
 const BASE_BLIND = `${NN_BLOCK}${HUMAN_BLOCK}${EV_BLOCK}${MODIF_BLOCK}${TAIL}\n[안내] 당신은 이번 회차에 새로 합류했다. ` +
   `이전 논의 결과는 의도적으로 제공하지 않는다 — 먼저 당신 도메인의 독립적 판단을 내라. 다음 라운드에서 이전 결론을 받는다.\n`
 const originOf = k => (PERS.find(p => p.key === k) || {}).origin || 'primary'
-const baseFor = k => (CONT && originOf(k) === 'new' ? BASE_BLIND : BASE)
+// 익명 1R(anon1r) — 이어하기에서 기존 좌석도 1R 엔 이전 결론을 가려 독립 재추정을 강제(1R 은 좌석 간
+// 이미 병렬 독립이라 남은 레버는 '이전 결론 은닉'). MOD_LIST 는 위에서 계산됨.
+const ANON1R = MOD_LIST.includes('anon1r')
+const baseFor = k => (CONT && (ANON1R || originOf(k) === 'new') ? BASE_BLIND : BASE)
 // 좌석 구성 — 결정문이 커버리지를 스스로 밝히게 한다.
 const SEAT_NOTE = (() => {
   const label = { primary: '주 도메인', counter: '반대 도메인', carry: '유임', new: '이어하기 신규' }
