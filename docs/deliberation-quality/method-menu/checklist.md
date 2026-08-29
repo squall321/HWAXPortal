@@ -8,6 +8,13 @@
 성공 기준. `node --check`(2 JS)·`py_compile`·프론트 빌드 통과 + 새 엔진 3종이
 두 엔진(MCP JS·웹 PY)에서 동일 키·동일 산출 규격 + chair_template 웹 경로 유실 수정.
 
+## 상태 (2026-08-29) — A·B·C 완료, D 문서·커밋 진행
+- **A 계약** ✅ routes.py DelibOpts(chair_template·modifiers) · deliberation.py _resolve_opts. py_compile OK.
+- **B 엔진** ✅ JS·PY 각 8 chair(신규 3 + build-plan PY 미러) + 5 modifier. 파리티 바이트 일치, node --check·AST OK.
+- **C 프론트** ✅ delibTaxonomy.ts · HandoffBrief 2층 · DeliberatePage 7-Job · ChatContext modifiers. tsc·vite build OK.
+- **D 문서·반영** 진행 — 커밋: RA 1f032e0(문서) · HWAXAgentServer c510300 · HWAXPortal daf3628(엔진)·9e9cf60(프론트).
+  남음: 반영(agent-server 재기동·워크플로 sync·erag 재색인 — 운영은 사용자), 라이브 시각 QA(vLLM 복구 후 e2e).
+
 ---
 
 ## A. 계약(contract) 정합 — 유실 버그 수정 + modifiers 신설

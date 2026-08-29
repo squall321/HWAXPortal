@@ -44,6 +44,15 @@
 ### D5. 카피 규칙 (사용자 지적: 불분명한 메시지가 최대 혼동원)
 - 상황=헤드라인 / 산출=결과 문서 / 애매동사 금지. checklist.md 하단 참조. decision-table.md 에 절로 못박음.
 
+## 진행 (2026-08-29)
+- **A·B 완료·커밋.** 계약(routes.py DelibOpts chair_template·modifiers) + 엔진 두 곳.
+  - HWAXAgentServer c510300 (deliberation.py), HWAXPortal daf3628 (hwax-deliberate.js·routes.py).
+- **build-plan PY 부재 발견.** 착수 시 PY `_CHAIR_ITEMS` 는 4종(default·mechanism·sim-plan·test-plan)뿐,
+  build-plan 이 없어 heading 맵만 build-plan 을 참조하던 선존 불일치. JS 텍스트를 충실 미러해 8종으로 맞춤.
+- **파리티 검증.** diagnosis/option-select/credibility 3종이 JS↔PY 정규화 후 바이트 일치(706/624/678).
+  modifier 필터(중복제거·화이트리스트·cap5)·`_modifier_note`(헤더·드롭·빈값) 실코드 고립 실행 통과.
+- **검증 로그.** py_compile(deliberation·routes) OK · node --check(3 JS) OK · AST 키수 8+5 OK.
+
 ## 열린 질문 / 유보
 - diagnosis 의 대표 좌석 로스터(rel-fa·품질·공정·SW)와 option-select/credibility 좌석 힌트는
   decision-table.md 에 초안, 실제 recommend_agents 연동은 후속.
