@@ -1,4 +1,4 @@
-// 심의 브리프 — 챗에서 넘길 질문·좌석·템플릿을 AI가 제안하고 사용자가 확정하는 모달(핸드오프 P3)
+// 심의 브리프 — 챗에서 넘길 질문·목적(Job)·얹을 층·좌석을 AI가 제안하고 사용자가 확정하는 모달(핸드오프)
 import { useEffect, useMemo, useState } from 'react';
 import { fetchDeliberateExperts, type ExpertsResponse } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
@@ -204,7 +204,7 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
             취소
           </button>
           <button type="button" className="cx-brief-go" onClick={confirm} disabled={!topic.trim() || streaming}>
-            심의 시작 · {checked.size}석 · 근거 {evidence.length}건
+            {JOB_BY_ID[job].name} 심의 시작 · {checked.size}석{mods.size ? ` · 얹을 층 ${mods.size}` : ''} · 근거 {evidence.length}
           </button>
         </div>
       </div>
