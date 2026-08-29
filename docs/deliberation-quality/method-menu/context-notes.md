@@ -53,6 +53,18 @@
   modifier 필터(중복제거·화이트리스트·cap5)·`_modifier_note`(헤더·드롭·빈값) 실코드 고립 실행 통과.
 - **검증 로그.** py_compile(deliberation·routes) OK · node --check(3 JS) OK · AST 키수 8+5 OK.
 
+## 깊이 보강 (2026-08-29, 후속)
+- **지정 좌석(좌석 레벨 강제).** 신규 3 Job 에 합성 반대/반증 좌석 자동 주입 — credibility=red-team
+  (delib-redteam)·diagnosis=반증(delib-disconfirm)·option-select=반대(delib-contrarian). 프롬프트 지시만으론
+  그 역할석이 발굴 안 되면 아무도 안 맡던 문제를 좌석 구조로 못박음. 좌석 시스템 프롬프트가 role 을 쓰므로
+  (deliberation.py:862/1278, JS role(k)) 합성 role 이 그대로 반영. RAG 는 합성 키에 빈값(try/except 안전).
+  두 엔진 역할 바이트 정합(167/144/130). 커밋 HWAXAgentServer 5386f2d · HWAXPortal 43a5ef7.
+- **anon1r 구조화.** 1R 은 좌석 간 이미 병렬 독립(서로 못 봄)이라, 남은 구조적 레버는 이어하기에서 기존
+  좌석도 1R 엔 이전 결론을 가리는 것. PY `_has_blind`·prompt_fn, JS `baseFor` 에 ANON1R 추가. fresh 심의는
+  프롬프트 지시가 이미 하는 일을 강화만.
+- **미결(정직).** ExpertAgents 다운·WIP 카드로 도메인 고정 좌석(rel-fa 등 실 레지스트리 키)은 미배선 —
+  지정 좌석은 역할 정의 합성석만. 라이브 e2e 는 vLLM 복구 후.
+
 ## 열린 질문 / 유보
 - diagnosis 의 대표 좌석 로스터(rel-fa·품질·공정·SW)와 option-select/credibility 좌석 힌트는
   decision-table.md 에 초안, 실제 recommend_agents 연동은 후속.
