@@ -106,13 +106,17 @@ delib_opts.modifiers[]     : 'voi'|'premortem'|'toulmin'|'eliminative'|'anon1r' 
 
 ---
 
-## 두 진입 맥락 (UX)
+## 세 진입 맥락 (UX)
 
 - **A. 챗에서 이어가기 — 추천 우선.** AI 가 대화를 읽고 Job 하나를 "왜"와 함께 추천, 1클릭 시작.
   관련 Modifier 는 선제안(예: sim 데이터 있으면 교착 정산). `HandoffBrief.tsx`.
-- **B. 새 심의 시작 — 상황 카드.** 맥락이 없으니 상황 카드 그리드로 고르게 한다(메뉴가 곧 학습).
+- **B. 새 심의 시작 — 상황 카드.** 맥락이 없으니 상황 카드 그리드(판단/계획/자유 그룹)로 고르게 한다.
   `pages/DeliberatePage.tsx`. "모르겠음 → 질문부터"는 A 의 추천 흐름으로 넘긴다.
-- 목업. `scratchpad/delib-method-mockup.html`(Artifact) — 두 화면 나란히.
+- **C. MCP / Claude Code — 스킬 인자.** 포털 UI 가 없으므로 Claude 가 사용자 의도를 읽어 유형을 고른다.
+  진입 표면은 워크플로 `meta.whenToUse`(hwax-deliberate·-sim-deliberate·-test-plan)에 유형·얹을 층을
+  카탈로그로 실어 Claude 가 인지·선택하게 한다 — `Workflow({name:'hwax-deliberate', args:{question,
+  chairTemplate, modifiers}})`. 유형 선택=chairTemplate, 얹을 층=modifiers[]. 지정 반대석은 엔진이 자동 착석.
+- 목업. `scratchpad/delib-method-mockup.html`(Artifact) — A·B 두 화면 나란히.
 
 ---
 
