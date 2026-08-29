@@ -65,6 +65,16 @@
 - **미결(정직).** ExpertAgents 다운·WIP 카드로 도메인 고정 좌석(rel-fa 등 실 레지스트리 키)은 미배선 —
   지정 좌석은 역할 정의 합성석만. 라이브 e2e 는 vLLM 복구 후.
 
+## UX 그룹화 + 배선 정리 (2026-08-29, 후속)
+- **Job 그룹화.** 7개 평면 그리드가 산만하다는 피드백 → 산출물 성격으로 3·3·1 묶음(판단=규명/선택/판정,
+  계획=해석/시험/구축, 자유 전폭). group·JOB_GROUPS·jobsByGroup 을 delibTaxonomy 에. 두 화면 동일 적용.
+- **하드코딩 제거·통일.** JOB_ROUTING·note·placeholder 를 컴포넌트에서 택소노미로 이관.
+- **sim/test 라우팅 통일(품질 결함 수정).** 브리프도 sim/test 를 다단 트리거(/시뮬심의·/시험계획)로 보내
+  고정 좌석·2단 파이프라인을 타게 함(run_sim_deliberation/run_test_plan 이 _resolve_opts→_deliberation_stream
+  경유라 evidence·modifiers 승계). 종전 단발 sim-plan 품질 저하 제거. startHandoff 에 trigger 추가.
+- **디테일.** job별 예시(판단 그룹)·placeholder·note 힌트, 브리프 시작 버튼에 방법·얹을 층 수 표시.
+- 커밋 a68a2c2(그룹·라우팅)·9ee1921(폴리시).
+
 ## 열린 질문 / 유보
 - diagnosis 의 대표 좌석 로스터(rel-fa·품질·공정·SW)와 option-select/credibility 좌석 힌트는
   decision-table.md 에 초안, 실제 recommend_agents 연동은 후속.
