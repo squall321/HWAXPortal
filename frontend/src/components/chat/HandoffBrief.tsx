@@ -4,14 +4,8 @@ import { fetchDeliberateExperts, type ExpertsResponse } from '../../api/chat.api
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
 import { conversationEvidence } from './handoff';
+import { JOBS, JOB_BY_ID, MODIFIERS, suggestJob, type JobId } from './delibTaxonomy';
 
-// 결정문 형식(chairTemplate) — 백엔드 _CHAIR_ITEMS 키와 맞춘다.
-const TEMPLATES = [
-  { id: 'default', label: '일반 의사결정문' },
-  { id: 'mechanism', label: '메커니즘 규명' },
-  { id: 'sim-plan', label: '해석 계획서' },
-  { id: 'test-plan', label: '시험 계획서' },
-];
 const DEFAULT_SEATS = 6; // 추천 좌석 기본 선택 수(심의가 스파인 좌석은 자동 추가)
 
 export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
@@ -21,9 +15,15 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
     return (firstUser?.text ?? '').replace(/^\/(심의|deliberate|토의)\s*/, '').trim();
   }, [conv]);
   const evidence = useMemo(() => conversationEvidence(conv), [conv]);
+  // 이 대화에서 감지된 도구 신호로 Job 제안(휴리스틱). null 이면 억지로 추천하지 않고 메뉴에서 고르게 한다.
+  const suggestion = useMemo(
+    () => suggestJob(evidence.map((e) => e.tool).filter(Boolean) as string[]),
+    [evidence],
+  );
 
   const [topic, setTopic] = useState(derived);
-  const [template, setTemplate] = useState('default');
+  const [job, setJob] = useState<JobId>(suggestion?.id ?? 'default');
+  const [mods, setMods] = useState<Set<string>>(new Set());
   const [experts, setExperts] = useState<ExpertsResponse | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -59,6 +59,13 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
       else n.add(k);
       return n;
     });
+  const toggleMod = (id: string) =>
+    setMods((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   const confirm = () => {
     const t = topic.trim();
@@ -71,7 +78,13 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
     const apps = [
       ...new Set(toolAll.filter((x) => usedTools.has(x.name)).map((x) => x.group).filter(Boolean)),
     ].slice(0, 3) as string[];
-    startHandoff({ topic: t, personas, chairTemplate: template, ...(apps.length ? { apps } : {}) });
+    startHandoff({
+      topic: t,
+      personas,
+      chairTemplate: job,
+      ...(mods.size ? { modifiers: [...mods] } : {}),
+      ...(apps.length ? { apps } : {}),
+    });
     onClose();
   };
 
@@ -91,16 +104,56 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
           <textarea value={topic} onChange={(e) => setTopic(e.target.value)} rows={2} />
         </label>
 
-        <label className="cx-brief-field">
-          <span>결정문 형식</span>
-          <select value={template} onChange={(e) => setTemplate(e.target.value)}>
-            {TEMPLATES.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
+        {suggestion && (
+          <div className="cx-brief-rec">
+            <span className="cx-brief-rec-badge">이 대화 기반 제안</span>
+            <div className="cx-brief-rec-line">
+              <strong>{JOB_BY_ID[suggestion.id].name}</strong>
+              <span className="cx-brief-rec-eng">{JOB_BY_ID[suggestion.id].engine}</span>
+            </div>
+            <p className="cx-brief-rec-why">{suggestion.why} · 다르면 아래에서 고르세요</p>
+          </div>
+        )}
+
+        <div className="cx-brief-field">
+          <span>무엇을 하는 심의인가 — 하나 고르세요 (산출은 결정 문서입니다)</span>
+          <div className="cx-brief-jobs">
+            {JOBS.map((j) => (
+              <button
+                type="button"
+                key={j.id}
+                className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
+                onClick={() => setJob(j.id)}
+                aria-pressed={job === j.id}
+                title={`산출: ${j.out}`}
+              >
+                <span className="cx-brief-job-top">
+                  <span className="cx-brief-job-name">{j.name}</span>
+                  <span className="cx-brief-job-eng">{j.engine}</span>
+                </span>
+                <span className="cx-brief-job-when">{j.when}</span>
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
+
+        <div className="cx-brief-field">
+          <span>얹을 층 — 선택 (여럿 가능)</span>
+          <div className="cx-brief-mods">
+            {MODIFIERS.map((m) => (
+              <button
+                type="button"
+                key={m.id}
+                className={`cx-brief-mod${mods.has(m.id) ? ' is-on' : ''}`}
+                onClick={() => toggleMod(m.id)}
+                aria-pressed={mods.has(m.id)}
+                title={m.when}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="cx-brief-field">
           <span>

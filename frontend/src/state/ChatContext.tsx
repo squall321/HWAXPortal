@@ -52,6 +52,7 @@ interface ChatContextValue {
     topic?: string;
     personas?: { key: string; role?: string }[];
     chairTemplate?: string;
+    modifiers?: string[];
     tools?: string[];
     apps?: string[];
   }) => void;
@@ -541,6 +542,7 @@ export function ChatProvider({
       topic?: string;
       personas?: { key: string; role?: string }[];
       chairTemplate?: string;
+      modifiers?: string[];
       tools?: string[];
       apps?: string[];
     }) => {
@@ -557,6 +559,7 @@ export function ChatProvider({
       if (evidence.length) extra.evidence = evidence;
       if (opts?.personas?.length) extra.personas = opts.personas;
       if (opts?.chairTemplate) extra.chair_template = opts.chairTemplate;
+      if (opts?.modifiers?.length) extra.modifiers = opts.modifiers;
       if (opts?.tools?.length) extra.tools = opts.tools;
       if (opts?.apps?.length) extra.apps = opts.apps;
       sendMessage('/심의 ' + topic, extra);

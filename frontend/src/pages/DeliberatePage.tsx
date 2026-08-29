@@ -10,6 +10,7 @@ import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
 import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
 import { fetchDeliberateExperts, type ExpertsResponse } from '../api/chat.api';
+import { JOBS, JOB_BY_ID, MODIFIERS, type JobId } from '../components/chat/delibTaxonomy';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
 import '../styles/chat.css';
 import '../styles/chatpage.css';
@@ -25,35 +26,17 @@ const EXAMPLE_TOPICS = [
 const FLOW_HINT =
   '화두에 불량·품질 얘기가 있으면 SignalForge 최근 이슈를 먼저 환기하고, 관련 전문가들이 여러 라운드로 심의해 Report Archive 보고서까지 남깁니다';
 
-// 심의 모드 — 일반은 "원인이 무엇인가"에서 끝나고, 시뮬레이션 심의는 거기서 한 걸음 더 가
-// "그걸 어떤 계산으로 확인할 것인가"까지 낸다. 트리거가 달라 서버가 2단 파이프라인으로 분기한다.
-const MODES = [
-  {
-    id: 'delib' as const,
-    trigger: '/심의 ',
-    label: '전문가 심의',
-    kicker: '다중 전문가 심의',
-    title: '어떤 화두를 심의할까요?',
-    hint: FLOW_HINT,
-  },
-  {
-    id: 'sim' as const,
-    trigger: '/시뮬심의 ',
-    label: '시뮬레이션 심의',
-    kicker: '메커니즘 → 해석 설계',
-    title: '어떤 현상을 계산으로 풀어볼까요?',
-    hint: '먼저 도메인 전문가가 지배 물리를 좁히고, 그 결론 위에서 CAE 전문가가 어떤 해석을 어떤 도구로 할지 계획서를 만듭니다. 물리를 아는 전문가 일부가 2단에 남아 해석이 물리에서 떠나지 않게 감시합니다',
-  },
-  {
-    id: 'test' as const,
-    trigger: '/시험계획 ',
-    label: '시험 계획',
-    kicker: '무엇을 먼저 측정할까',
-    title: '어떤 물성·성능을 시험으로 확보할까요?',
-    hint: '계측·CAE·프로그램 전문가가 고정 착석해, 보유 실측을 재측정하지 않으면서 무엇을 어떤 규격·조건으로 몇 회 시험할지 9항목 계획서를 만듭니다. "하나만 먼저 한다면"과 "이 시험으로도 확보되지 않는 것"은 비워둘 수 없습니다',
-  },
-];
-type ModeId = (typeof MODES)[number]['id'];
+// Job → 라우팅. 해석 설계·시험 설계는 기존 다단 트리거(서버가 chair 를 지정), 나머지는
+// /심의 + chair_template 단발. default 는 chair 없음(종전 동작). delibTaxonomy JOBS 와 정합.
+const JOB_ROUTING: Record<JobId, { trigger: string; chair?: JobId }> = {
+  diagnosis: { trigger: '/심의 ', chair: 'diagnosis' },
+  'option-select': { trigger: '/심의 ', chair: 'option-select' },
+  credibility: { trigger: '/심의 ', chair: 'credibility' },
+  'sim-plan': { trigger: '/시뮬심의 ' },
+  'test-plan': { trigger: '/시험계획 ' },
+  'build-plan': { trigger: '/심의 ', chair: 'build-plan' },
+  default: { trigger: '/심의 ' },
+};
 
 const SIM_SUGGESTIONS = [
   '적색 발광이 외곽부터 액자 모양으로 죽어 들어가는데 UV 를 쬐면 회복되고 다시 재발한다',
@@ -68,11 +51,16 @@ const TEST_SUGGESTIONS = [
   '리플로우 warpage 산포의 지배 인자를 가리는 DOE 를 짜고 싶다',
 ];
 
-const SUGGESTIONS_BY_MODE = {
-  delib: EXAMPLE_TOPICS,
-  sim: SIM_SUGGESTIONS,
-  test: TEST_SUGGESTIONS,
-} as const;
+const SUGGESTIONS_BY_JOB = (job: JobId): readonly string[] =>
+  job === 'sim-plan' ? SIM_SUGGESTIONS : job === 'test-plan' ? TEST_SUGGESTIONS : EXAMPLE_TOPICS;
+const PLACEHOLDER_BY_JOB = (job: JobId): string =>
+  job === 'sim-plan'
+    ? '현상을 입력하세요…'
+    : job === 'test-plan'
+      ? '확보하려는 물성·성능을 입력하세요…'
+      : job === 'diagnosis'
+        ? '불량 현상을 입력하세요…'
+        : '화두를 입력하세요…';
 
 const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 
@@ -91,8 +79,15 @@ export default function DeliberatePage() {
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow() && loadSidebarOpen());
   // 심의 전 전문가 선정 단계 — 화두 제출 시 추천/풀을 받아 확인 패널을 띄운다(기본 자동, 확인 후 시작).
   const [picking, setPicking] = useState<{ topic: string; experts: ExpertsResponse | null } | null>(null);
-  const [mode, setMode] = useState<ModeId>('delib');
-  const modeDef = MODES.find((m) => m.id === mode) ?? MODES[0];
+  const [job, setJob] = useState<JobId>('default');
+  const [mods, setMods] = useState<Set<string>>(new Set());
+  const toggleMod = (id: string) =>
+    setMods((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   // 화두 제출 → 전문가 미리보기 로드 후 선정 패널 표시. 실패해도 패널은 열려(자동/수동 선택 가능).
   const startPicking = useCallback((topic: string) => {
@@ -110,12 +105,15 @@ export default function DeliberatePage() {
     const topic = picking?.topic;
     setPicking(null);
     if (!topic) return;
-    sendMessage(modeDef.trigger + topic, {
+    const route = JOB_ROUTING[job];
+    sendMessage(route.trigger + topic, {
       personas: personas.map((p) => ({ key: p.key, role: p.role })),
+      ...(route.chair ? { chair_template: route.chair } : {}),
+      ...(mods.size ? { modifiers: [...mods] } : {}),
       ...(tools.length > 0 ? { tools } : {}),
       ...(apps.length > 0 ? { apps } : {}),
     });
-  }, [picking, sendMessage, modeDef]);
+  }, [picking, sendMessage, job, mods]);
 
   const cancelPicking = useCallback(() => {
     const topic = picking?.topic ?? '';
@@ -195,41 +193,60 @@ export default function DeliberatePage() {
                 <div className="cx-hero-mark" aria-hidden="true">
                   <IconSpark width={30} height={30} />
                 </div>
-                <p className="cx-hero-kicker">{modeDef.kicker}</p>
-                <h1 className="cx-hero-title">{modeDef.title}</h1>
-                <div className="cx-modes" role="tablist" aria-label="심의 모드">
-                  {MODES.map((m) => (
+                <p className="cx-hero-kicker">심의 시작</p>
+                <h1 className="cx-hero-title">어떤 판단이 필요하세요?</h1>
+                <p className="cx-hero-clarify">
+                  무엇을 고르든 산출은 근거가 붙은 결정 문서입니다 — 프로그램이 아니라 판단(계획·선택·판정)이 나옵니다.
+                </p>
+                <div className="cx-brief-jobs cx-jobs-wide" role="tablist" aria-label="심의 목적">
+                  {JOBS.map((j) => (
+                    <button
+                      type="button"
+                      key={j.id}
+                      role="tab"
+                      aria-selected={job === j.id}
+                      className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
+                      onClick={() => setJob(j.id)}
+                      title={`산출: ${j.out}`}
+                    >
+                      <span className="cx-brief-job-top">
+                        <span className="cx-brief-job-name">{j.name}</span>
+                        <span className="cx-brief-job-eng">{j.engine}</span>
+                      </span>
+                      <span className="cx-brief-job-when">{j.when}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="cx-brief-mods cx-mods-wide">
+                  <span className="cx-mods-label">얹을 층:</span>
+                  {MODIFIERS.map((m) => (
                     <button
                       type="button"
                       key={m.id}
-                      role="tab"
-                      aria-selected={mode === m.id}
-                      className={`cx-mode${mode === m.id ? ' is-on' : ''}`}
-                      onClick={() => setMode(m.id)}
+                      className={`cx-brief-mod${mods.has(m.id) ? ' is-on' : ''}`}
+                      onClick={() => toggleMod(m.id)}
+                      aria-pressed={mods.has(m.id)}
+                      title={m.when}
                     >
-                      {m.label}
+                      {m.name}
                     </button>
                   ))}
                 </div>
                 <Composer
                   ref={composerRef}
                   autoFocus
-                  placeholder={
-                    mode === 'sim' ? '현상을 입력하세요…'
-                    : mode === 'test' ? '확보하려는 물성·성능을 입력하세요…'
-                    : '화두를 입력하세요…'
-                  }
+                  placeholder={PLACEHOLDER_BY_JOB(job)}
                   onSubmitText={startPicking}
                 />
                 <DelibOptsPanel />
                 <div className="cx-chips">
-                  {SUGGESTIONS_BY_MODE[mode].map((p) => (
+                  {SUGGESTIONS_BY_JOB(job).map((p) => (
                     <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
                       {p}
                     </button>
                   ))}
                 </div>
-                <p className="cx-hero-hint">{modeDef.hint}</p>
+                <p className="cx-hero-hint">{JOB_BY_ID[job].name} · {JOB_BY_ID[job].out} — {FLOW_HINT}</p>
                 <p className="cx-hero-sub">
                   의견을 하나 던지면 전문가 에이전트들이 토의로 답합니다. 기록은 서버에 남아 Claude(MCP) 심의와 한곳에 모입니다.
                 </p>
