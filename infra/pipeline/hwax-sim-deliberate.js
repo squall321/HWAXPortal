@@ -112,6 +112,24 @@ const FIXED_CAE = ['xd-cae-modeling', 'xd-cae-post',
   ...(useValidation ? SPINE_VALIDATION : [])]
 
 const dom = k => (String(k).includes('-') ? String(k).split('-')[0] : String(k))
+// sim-plan 결정문에서 기계판독 규격(sim_spec) 추출 — ```json 펜스 우선, 없으면 마지막 중괄호 블록.
+// 다음 단계(구축)가 산문 재파싱 대신 이 구조를 승계한다. 파싱 실패는 null(비치명적).
+const parseSimSpec = text => {
+  const s = String(text || '')
+  const m = s.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/)
+  if (m) { try { return JSON.parse(m[1]) } catch { /* 펜스 파싱 실패 → 아래 균형스캔 폴백 */ } }
+  // 펜스 없거나 실패 시 — 마지막 } 에서 중괄호를 세어 짝 { 를 찾는다(중첩 JSON 방어).
+  const end = s.lastIndexOf('}')
+  if (end === -1) return null
+  let depth = 0
+  for (let i = end; i >= 0; i--) {
+    if (s[i] === '}') depth++
+    else if (s[i] === '{' && --depth === 0) {
+      try { return JSON.parse(s.slice(i, end + 1)) } catch { return null }
+    }
+  }
+  return null
+}
 const DELIB = { scriptPath: A.deliberateScript || 'infra/pipeline/hwax-deliberate.js' }
 
 // ── 1단 — 메커니즘 심의 ──────────────────────────────────────────────────────
@@ -204,6 +222,10 @@ const sim = await workflow(DELIB, {
   appendToReportId: DO_BUILD ? undefined : A.appendToReportId,
 })
 
+// 2단 규격 — 변수·산출·모델·자원의 기계판독 sim_spec. 구축 단계가 산문 재파싱 대신 이걸 승계한다.
+const simSpec = parseSimSpec(sim && sim.decision)
+if (simSpec) log(`2단 규격 추출 — 변수 ${(simSpec.parameters || []).length}·산출 ${(simSpec.outputs || []).length}`)
+
 // ── 3단 — 구축 설계 심의 (opt-in) ─────────────────────────────────────────────
 let build = null
 if (DO_BUILD) {
@@ -221,7 +243,8 @@ if (DO_BUILD) {
   const buildQ = `위 해석 계획을 그 문제에 특화된 반복 실행형 파라메트릭 시뮬 모듈로 구축하는 계획 — 무엇을 어떤 사내 자산으로 자동 모델링하고 어떤 변수로 스윕할 것인가. 원 현상: ${Q}`
   build = await workflow(DELIB, {
     question: buildQ,
-    context: `[원 현상의 정량 근거]\n${CTX}`,
+    context: `[원 현상의 정량 근거]\n${CTX}` +
+      (simSpec ? `\n\n[2단 sim_spec — 재파싱 없이 승계할 기계판독 규격(변수·산출·모델·자원)]\n${JSON.stringify(simSpec)}` : ''),
     personas: buildSeats,
     rounds: R3,
     chairTemplate: 'build-plan',
@@ -243,7 +266,7 @@ return {
   mechanism: { decision: mech.decision, rounds: mech.rounds, roundLabels: mech.roundLabels },
   seats: { axes: (seatPick && seatPick.axes) || [], reason: (seatPick && seatPick.reason) || '',
            sim: simSeats, carriedNonNegotiables: NN },
-  simPlan: { decision: sim && sim.decision, rounds: sim && sim.rounds, roundLabels: sim && sim.roundLabels },
+  simPlan: { decision: sim && sim.decision, rounds: sim && sim.rounds, roundLabels: sim && sim.roundLabels, spec: simSpec },
   buildPlan: build ? { decision: build.decision, rounds: build.rounds, roundLabels: build.roundLabels } : null,
   report: (build && build.report) || (sim && sim.report),
   conversation: (build && build.conversation) || (sim && sim.conversation),
