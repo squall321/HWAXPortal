@@ -81,6 +81,8 @@ class DelibOpts(BaseModel):
     chair_template: str | None = Field(default=None, max_length=40)
     # 얹을 층(2층 Modifier) — 심의 굴리는 방식 오버레이. agent-server 가 화이트리스트로 재클램프한다.
     modifiers: list[str] | None = Field(default=None, max_length=5)
+    # 시뮬 심의(/시뮬심의)에서 1이면 2단(해석 계획) 뒤 3단 구축 계획까지 이어 만든다(구축 계획 유형).
+    build_plan: int | None = Field(default=None, ge=0, le=1)
     # 챗 워크스페이스가 정리해 넘긴 원천 근거(도구결과+출처). 심의는 '검증 대상·결론 아님'으로
     # 좌석에 주입한다(요약 아닌 날것) — 핸드오프 P1. agent-server 가 항목 필드를 재클램프한다.
     evidence: list[dict] | None = Field(default=None, max_length=12)

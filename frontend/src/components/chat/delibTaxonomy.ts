@@ -32,7 +32,7 @@ export const JOBS: Job[] = [
   { id: 'credibility', group: 'judge', name: '신뢰 판정', engine: 'NASA-7009 · red-team', when: '이 해석/결정 믿어도 되나 · go/no-go', out: '신뢰도 채점 · 생존/기각', note: 'NASA-7009 축별로 신뢰도를 채점하고 red-team 지정석이 결론을 깨봅니다.', placeholder: '판정할 해석·결정을 입력하세요…' },
   { id: 'sim-plan', group: 'plan', name: '해석 설계', engine: 'sim-plan', when: '이 물리를 무엇으로 어떻게 계산할지', out: '해석 계획서 · sim_spec', note: '메커니즘을 먼저 좁히고 그 위에서 CAE 가 해석을 설계하는 2단 심의입니다.', placeholder: '계산으로 풀 현상을 입력하세요…' },
   { id: 'test-plan', group: 'plan', name: '시험 설계', engine: 'test-plan', when: '무엇을 어떤 시험으로 언제 확보할지', out: '시험 계획서 · 상관 계약', note: '계측·CAE·프로그램 전문가가 고정 착석해 무엇을 먼저 측정할지 계획합니다.', placeholder: '확보하려는 물성·성능을 입력하세요…' },
-  { id: 'build-plan', group: 'plan', name: '구축 계획', engine: 'build-plan', when: '같은 해석을 형상·조건 바꿔 여러 번 돌릴 때', out: '구축 계획서 · P1~P4 게이트', note: '해석 계획을 반복 실행형 파라메트릭 모듈로 구축하는 계획서를 냅니다(P1~P4).', placeholder: '반복해서 돌릴 해석을 입력하세요…' },
+  { id: 'build-plan', group: 'plan', name: '구축 계획', engine: 'build-plan', when: '같은 해석을 형상·조건 바꿔 여러 번 돌릴 때', out: '구축 계획서 · P1~P4 게이트', note: '메커니즘→해석 계획을 거쳐 반복 파라메트릭 모듈 구축 계획서까지 3단으로 냅니다(P1~P4).', placeholder: '반복해서 돌릴 해석을 입력하세요…' },
   { id: 'default', group: 'free', name: '자유 심의', engine: '적대 패널', when: '위에 안 맞음 · 보고서 통째로 심의', out: '의사결정문', note: '관련 전문가들이 여러 라운드로 자유롭게 심의합니다.', placeholder: '화두를 입력하세요…' },
 ];
 
@@ -60,6 +60,7 @@ export const jobsByGroup = (g: JobGroupId): Job[] => JOBS.filter((j) => j.group 
 export interface JobRouting {
   trigger: string;
   chair?: JobId; // 다단 트리거는 서버가 chair 를 세우므로 비운다.
+  opts?: Record<string, unknown>; // 추가 delib_opts(예: build_plan). sendMessage 2번째 인자로 병합.
 }
 
 export const JOB_ROUTING: Record<JobId, JobRouting> = {
@@ -68,7 +69,8 @@ export const JOB_ROUTING: Record<JobId, JobRouting> = {
   credibility: { trigger: '/심의 ', chair: 'credibility' },
   'sim-plan': { trigger: '/시뮬심의 ' },
   'test-plan': { trigger: '/시험계획 ' },
-  'build-plan': { trigger: '/심의 ', chair: 'build-plan' },
+  // 구축 계획은 sim_spec 을 승계해야 하므로 단발이 아니라 시뮬 심의 3단 체인(메커니즘→해석→구축)으로 간다.
+  'build-plan': { trigger: '/시뮬심의 ', opts: { build_plan: 1 } },
   default: { trigger: '/심의 ' },
 };
 

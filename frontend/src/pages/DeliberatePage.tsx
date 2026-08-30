@@ -105,6 +105,7 @@ export default function DeliberatePage() {
     sendMessage(route.trigger + topic, {
       personas: personas.map((p) => ({ key: p.key, role: p.role })),
       ...(route.chair ? { chair_template: route.chair } : {}),
+      ...(route.opts ?? {}),
       ...(mods.size ? { modifiers: [...mods] } : {}),
       ...(tools.length > 0 ? { tools } : {}),
       ...(apps.length > 0 ? { apps } : {}),

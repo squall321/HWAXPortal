@@ -84,6 +84,7 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
       personas,
       trigger: route.trigger,
       ...(route.chair ? { chairTemplate: route.chair } : {}),
+      ...(route.opts ? { extraOpts: route.opts } : {}),
       ...(mods.size ? { modifiers: [...mods] } : {}),
       ...(apps.length ? { apps } : {}),
     });
