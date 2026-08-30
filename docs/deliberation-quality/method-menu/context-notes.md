@@ -75,6 +75,17 @@
 - **디테일.** job별 예시(판단 그룹)·placeholder·note 힌트, 브리프 시작 버튼에 방법·얹을 층 수 표시.
 - 커밋 a68a2c2(그룹·라우팅)·9ee1921(폴리시).
 
+## 구축 계획 3단 체인 (2026-08-30, e2e 점검 중 발견한 rough edge 수정)
+- **문제.** fresh 메뉴에서 `구축 계획`을 고르면 `/심의`+build-plan **단발**로 가 sim_spec 없이 퇴화했다
+  (build-plan 은 2단 sim-plan 의 sim_spec 을 승계해야 함).
+- **수정.** 웹 `run_sim_deliberation` 에 **build 3단** 추가(`build_plan=1`) — 2단 결정문(_capture_b,
+  sim_spec 포함)을 continue_summary 로 승계, CAE 좌석을 carry(1R 비블라인드)로 유임, chair=build-plan.
+  전용 BUILD_ROLES 없이 템플릿이 12항목 강제. off 면 종전 2단 그대로(회귀 없음).
+- **라우팅.** delibTaxonomy JOB_ROUTING build-plan → `/시뮬심의`+`build_plan:1`. JobRouting.opts·
+  startHandoff.extraOpts 로 전달. routes.py DelibOpts.build_plan.
+- **검증.** py_compile·40 tests·tsc·build. **웹 build 3단 e2e 는 vLLM 대기**(MCP 경로 build 는 기존부터
+  동작·이번 미변경). 커밋 HWAXAgentServer 90a3acf · HWAXPortal 6a29993.
+
 ## 열린 질문 / 유보
 - diagnosis 의 대표 좌석 로스터(rel-fa·품질·공정·SW)와 option-select/credibility 좌석 힌트는
   decision-table.md 에 초안, 실제 recommend_agents 연동은 후속.
