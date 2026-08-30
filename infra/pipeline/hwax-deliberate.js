@@ -79,7 +79,7 @@ const OPT_LIST = (() => {
   try { const x = JSON.parse(A.options || '[]'); return Array.isArray(x) ? x.filter(Boolean) : [] } catch { return [] }
 })()
 const HAS_CHOICES = OPT_LIST.length >= 2
-const PERS = A.personas || []
+const PERS = Array.isArray(A.personas) ? A.personas.slice() : []  // 사본 — 지정 좌석 push 가 호출자 배열을 오염시키지 않게
 const pk = PERS.map(p => p.key)
 if (!pk.length) throw new Error('personas 가 비어 있음 — 호출자가 recommend_agents 로 발굴해 전달해야 함')
 
