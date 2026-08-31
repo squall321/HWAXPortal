@@ -135,6 +135,11 @@
 - **신원 헤더는 service 모드에서 오지 않는다(재확인).** HEAXHub proxy_manager `_build_route` 는 launch.mode=service 앱에 forward_auth 만
   세우고 `copy_identity` 없음 → `X-Heax-User-*` 는 도착하지 않고 클라이언트 위조값이 통과한다. 스캐폴드 identity.py 는
   `source='header_unverified'` 스탠드인, P1 에서 heax `GET /api/v1/auth/me` 되묻기(§8.2.8)로 교체.
+- **rr_ 표는 33개다(32 아님).** §5.2.2 DDL 을 바이트 그대로 옮기면 `rr_delta_contrib`(§4.7.1 추가)까지 33표·인덱스 36 — 요약 문구
+  '32표' 7곳을 33 으로 고쳤다(정합 커밋 4cf8ed5 이후 코드 `_DDL_V1_SQL` 은 plan DDL 과 diff 0, test_store 가 33 단언).
+- **identity 불통은 P0 에서 anonymous.** §8.2.8 은 401→401·5xx/불통→503 이나 P0(읽기 전용)는 401/불통/없음 전부 anonymous(불통은
+  캐시하지 않음)로 구현했고 P1 쓰기 라우트 확장 시 401/503 구분을 재결정한다. 같은 이유로 `PUT /me/portal-pat` 의 포털 검증
+  불통이 지금은 422 `pat_invalid` 로 보이는데, P1 에서 503 `pat_verify_unavailable` 로 분리하는 것을 §8.2.3 오류 표에 제안한다.
 - **HEAXHub 매니페스트 스키마 파일은 v1** (`schemas/manifest.schema.json` const 1). v2 검증은 backend `manifest_validator` 분기
   (`manifest.schema.v2.json`)와 같은 기준이어야 하고, `mcp`·`source.ref` 확장 키는 validator 도 통과시킨다(thermal-shock-mcp 동일).
 
