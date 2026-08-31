@@ -4,7 +4,7 @@
 // 파싱·병합·원장·보고서 반영은 전부 앱(hwax_risk) 한 곳에서 한다. 여기서 risk_spec 을 파싱하지 않는다.
 //
 // 앱과의 접점은 게이트웨이 MCP 도구 둘뿐이다(백엔드 heax-hwax_risk).
-//   risk_get_brief(target_key, tier)          → 패널 목록·delib_opts 초안·근거 E0~E9
+//   risk_get_brief(target_key, brief_token, tier) → 패널 목록·delib_opts 초안·근거 E0~E9
 //   risk_submit_panel_result(panel_id, ...)   → 결정문·라운드 수·보고서 번호 회수
 // 포털 REST 를 직접 부르지 않는다(fetch 없음) — PAT 인자도 없고 신원은 게이트웨이가 정한다.
 //
@@ -13,8 +13,10 @@
 // 로 기록한다(웹 러너의 C2 strong 비율 분모에서 빠진다). Tier A 대표 패널과 무인 배치는 웹 러너
 // 전용이라 tier:'A' 를 요청하면 앱이 {error:'tier_a_web_only'} 를 돌려주고 여기서 멈춘다.
 //
-// 입력(args): { targetKey, tier, panels?, actor?, model?, deliberateScript? }
+// 입력(args): { targetKey, briefToken, tier, panels?, actor?, model?, deliberateScript? }
 //   - targetKey : 심사 대상 과제 키(앱 원장의 target_key)
+//   - briefToken: 앱 화면(GET /targets/{key}/brief)이 발급한 1건짜리 브리프 토큰. 읽기 범위를 여는 유일한
+//                 열쇠라 필수다 — 없으면 앱을 부르기 전에 멈춘다(계획 §8.2.5)
 //   - tier      : 'B' | 'C'. 'A' 는 웹 전용이라 앱이 거절한다
 //   - panels    : 이번 실행에서 돌릴 패널 수(기본 1, 1~4). 브리프가 더 줘도 앞에서부터 이만큼만
 //   - actor     : 결과 제출자 이메일(앱은 actor_verified:false 로 표기 — 검증 신원이 아니다)
@@ -28,7 +30,7 @@
 export const meta = {
   name: 'hwax-risk-review',
   description: '리스크 심사 패널을 앱 원장에서 받아 심의로 돌리고 결과를 되돌린다 — L2 오케스트레이터',
-  whenToUse: '설계 리스크 심사(risk-review)의 편성된 패널을 Claude Code 에서 보충 회차로 돌릴 때. args 는 객체 {targetKey, tier, panels?, actor?, model?}. tier 는 B 또는 C 이며 A(대표 패널)와 무인 배치는 웹 러너 전용이다. 이 경로는 좌석 도구 호출이 없는 evidence_only 등급으로 원장에 들어간다. 단발 심사(원장 미연동)는 hwax-deliberate 에 chairTemplate:risk-review 만 주면 된다.',
+  whenToUse: '설계 리스크 심사(risk-review)의 편성된 패널을 Claude Code 에서 보충 회차로 돌릴 때. args 는 객체 {targetKey, briefToken, tier, panels?, actor?, model?}. briefToken 은 앱 화면 GET /targets/{key}/brief 에서 복사해 오는 필수 인자다. tier 는 B 또는 C 이며 A(대표 패널)와 무인 배치는 웹 러너 전용이다. 이 경로는 좌석 도구 호출이 없는 evidence_only 등급으로 원장에 들어간다. 단발 심사(원장 미연동)는 hwax-deliberate 에 chairTemplate:risk-review 만 주면 된다.',
   phases: [
     { title: '브리프', detail: '앱 원장에서 패널 목록·delib_opts·근거를 받는다' },
     { title: '심의', detail: '패널마다 hwax-deliberate 를 자식으로 호출' },
@@ -39,6 +41,10 @@ export const meta = {
 const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
 const TARGET = String(A.targetKey || '').trim()
 if (!TARGET) throw new Error('targetKey 가 비어 있음 — 심사 대상 과제 키가 필요하다')
+// brief_token 은 읽기 범위를 여는 유일한 열쇠다(계획 §8.2.5) — 없이 부르면 앱이 brief_token_invalid 를
+// 돌려주므로 앱을 부르기 전에 사람에게 되돌린다.
+const BRIEF_TOKEN = String(A.briefToken || '').trim()
+if (!BRIEF_TOKEN) throw new Error('briefToken 이 비어 있음 — 앱 화면에서 브리프 토큰을 받아 오세요')
 const TIER = String(A.tier || 'C').trim().toUpperCase()
 const MAX_PANELS = Math.min(4, Math.max(1, Math.round(Number(A.panels) || 1)))
 const ACTOR = String(A.actor || '').trim()
@@ -142,9 +148,9 @@ const BRIEF_SCHEMA = {
 
 const brief = await agent(
   `risk_get_brief 도구를 정확히 한 번 호출해 리스크 심사 패널 브리프를 받아라.\n` +
-  // 인자는 둘뿐이다 — 도구는 actor 를 받지 않는다(게이트웨이가 최종 사용자를 싣지 않아
-  // 앱이 응답에 reason='caller_unresolved' 를 남긴다, §6.11).
-  `인자: target_key="${TARGET}", tier="${TIER}"\n` +
+  // 인자는 셋뿐이다 — 도구는 actor 를 받지 않는다. 읽기 범위는 자칭 신원이 아니라 brief_token
+  // 대조가 정하고, 토큰이 틀리거나 만료면 앱이 {error:'brief_token_invalid'} 를 돌려준다(§8.2.5).
+  `인자: target_key="${TARGET}", brief_token="${BRIEF_TOKEN}", tier="${TIER}"\n` +
   `- 결과를 요약·가공하지 말고 스키마 필드에 그대로 옮겨라. 근거(evidence)의 result 문자열은 원문 그대로다.\n` +
   `- 응답에 error 가 있으면 error 에 그 코드를 넣고 panels 는 빈 배열로 둬라.\n` +
   `- 도구가 없거나 호출이 실패하면 error="brief_unavailable" 로 두고 panels 는 빈 배열로 둬라. 재시도하지 마라.`,
@@ -153,6 +159,8 @@ const brief = await agent(
 const briefError = (brief && String(brief.error || '')).trim()
 if (briefError) {
   // tier_a_web_only 는 정상 응답이다 — 대표 패널은 웹 러너만 돌린다. 그대로 보고하고 멈춘다.
+  // brief_token_invalid 는 토큰이 다르거나 만료(기본 900 s)라는 뜻이다 — 앱 화면에서 다시 받아야 한다.
+  if (briefError === 'brief_token_invalid') log('브리프 토큰이 만료·불일치다 — 앱 화면에서 다시 받아 오세요')
   log(`브리프 중단 — ${briefError}${brief.reason ? ` (${brief.reason})` : ''}`)
   return { targetKey: TARGET, tier: TIER, submitted: [], failed: [], error: briefError,
            reason: String((brief && brief.reason) || '') }

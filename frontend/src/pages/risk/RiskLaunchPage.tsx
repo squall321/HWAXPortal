@@ -66,40 +66,29 @@ export default function RiskLaunchPage() {
         </div>
       )}
 
-      <ol style={{ color: 'var(--fg)', lineHeight: 1.9, paddingLeft: '1.2rem' }}>
-        <li>
-          HEAX 에 로그인해 앱 접근 자격(쿠키)을 받습니다.
-          <div style={{ margin: '0.4rem 0 0.9rem' }}>
-            <button
-              className="btn-secondary"
-              disabled={!ready}
-              style={disabledStyle}
-              onClick={() => navigate('/launch/hwax-risk')}
-            >
-              HEAX 로그인
-            </button>
-          </div>
-        </li>
-        <li>
-          리스크 심사 앱을 새 탭으로 엽니다.
-          <div style={{ margin: '0.4rem 0 0' }}>
-            <button
-              className="btn-secondary"
-              disabled={!ready}
-              style={disabledStyle}
-              onClick={() => window.open(APP_URL, '_blank', 'noopener')}
-            >
-              리스크 심사 열기
-            </button>
-          </div>
-        </li>
-      </ol>
+      <div style={{ margin: '1.2rem 0 0.6rem' }}>
+        <button
+          className="btn-primary"
+          disabled={!ready}
+          style={disabledStyle}
+          onClick={() => window.open(APP_URL, '_blank', 'noopener')}
+        >
+          리스크 심사 열기
+        </button>
+      </div>
 
       <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>
-        새 탭이 401 로 막히면 1번을 먼저 누른 뒤 다시 2번을 누르세요. HEAX 로그인은 항상
-        <span style={{ whiteSpace: 'nowrap' }}> /heax-hub/ </span>
-        로 착지하므로 두 단계가 필요합니다.
+        포털에 로그인하면 앱 접근 자격이 자동으로 준비됩니다. 혹시 새 탭이 401 로 막히면 아래로 한 번
+        연결한 뒤 다시 여세요.
       </p>
+      <button
+        className="btn-secondary"
+        disabled={!ready}
+        style={{ ...(disabledStyle ?? {}), fontSize: '0.85rem', padding: '0.35rem 0.7rem' }}
+        onClick={() => navigate('/launch/hwax-risk')}
+      >
+        HEAX 연결 다시 하기
+      </button>
     </div>
   );
 }
