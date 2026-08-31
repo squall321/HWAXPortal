@@ -88,6 +88,11 @@ class DelibOpts(BaseModel):
     evidence: list[dict] | None = Field(default=None, max_length=12)
     # 웹 리서치 소스 토글(심의) — 켜지 않은 소스는 자유 조회에 바인딩되지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
+    # 자유 조회 — 좌석이 발언 전 읽기 도구를 직접 호출하는 단계의 on/off(엔진 DELIB_FREE_TOOLS).
+    # ⚠ 종전 미선언이라 웹 경로에서 조용히 버려졌다(model_dump 에 안 실림) — 여기서 선언해 수정.
+    free_tools: int | None = Field(default=None, ge=0, le=1)
+    # 자유 조회 1인당 라운드 호출 상한. 엔진이 1~6 으로 재클램프한다(deliberation.py _resolve_opts).
+    tool_budget: int | None = Field(default=None, ge=1, le=6)
 
 
 class ChatRequest(BaseModel):
@@ -126,7 +131,8 @@ class ConvMessageIn(BaseModel):
 
 class ConvCreate(BaseModel):
     title: str = Field(default="새 대화", max_length=200)
-    kind: Literal["chat", "deliberation"] = "chat"
+    # risk-review = 리스크 심사 패널 대화(앱 러너가 생성). 저장은 kind TEXT 그대로라 DDL 변경 없다.
+    kind: Literal["chat", "deliberation", "risk-review"] = "chat"
     source: Literal["web", "mcp"] = "web"
     # MCP 심의 등 일괄 생성 — 라운드 발언 전체를 한 번에(왕복 최소화). 비면 빈 대화 생성.
     messages: list[ConvMessageIn] = Field(default_factory=list, max_length=200)
