@@ -147,6 +147,27 @@ systems:
     url: http://10.252.38.97:3001/
     sort_order: 65
 
+  - id: hwax-risk
+    name: 리스크 심사
+    tagline: 설계 IR·diff 위의 전문가 리스크 심사
+    description: >-
+      StepForge·DynaForge 스냅샷을 동결·비교하고 HW/XD 전문가 패널이 리스크·개선·성격을
+      판정해 등록부로 누적합니다.
+    accent: rose
+    category: Engineering
+    # 2026-08-31 HEAX 앱 hwax_risk 등록·기동 완료(SIF·Caddy 라우트·게이트웨이 흡수 실측).
+    # 참고 — handoff 타일은 url 이 있으면 CatalogRegistry._apply_route 가 런타임에
+    # available 로 덮으므로 이 값은 표기용이다.
+    status: available
+    integration_type: jwt-handoff
+    audience: heax-hub                  # token `aud`; must equal HEAX PORTAL_AUDIENCE
+    # Launch token auto-POSTs here. Same portal origin; nginx proxies /heax-hub/ → HEAX (STRIP).
+    url: /heax-hub/api/v1/auth/portal-callback
+    handoff_mode: auto_post
+    handoff_param: token
+    # required_role: <포털 그룹명>   # 선택 — 두면 그 그룹만 타일·NavLink 가 보인다
+    sort_order: 62
+
   - id: odb-hub
     name: ECAD Automation Hub
     tagline: ODB++ 기반 설계 검증·해석 자동화

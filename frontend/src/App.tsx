@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import PortalHomePage from './pages/PortalHomePage';
 import TokenPage from './pages/TokenPage';
+import RiskLaunchPage from './pages/risk/RiskLaunchPage';
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -62,6 +63,16 @@ const router = createBrowserRouter([
       <ProtectedRoute>
         <AppShell>
           <LaunchPage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/risk',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <RiskLaunchPage />
         </AppShell>
       </ProtectedRoute>
     ),
