@@ -140,6 +140,26 @@
 - **identity 불통은 P0 에서 anonymous.** §8.2.8 은 401→401·5xx/불통→503 이나 P0(읽기 전용)는 401/불통/없음 전부 anonymous(불통은
   캐시하지 않음)로 구현했고 P1 쓰기 라우트 확장 시 401/503 구분을 재결정한다. 같은 이유로 `PUT /me/portal-pat` 의 포털 검증
   불통이 지금은 422 `pat_invalid` 로 보이는데, P1 에서 503 `pat_verify_unavailable` 로 분리하는 것을 §8.2.3 오류 표에 제안한다.
+### D8. P1 사전 정찰 — 소스 앱 실측이 계약 가정을 깼다 (2026-08-31, 읽기 전용 정찰)
+전문 `scratchpad/rr/p1-recon.md`(30KB, 도구별 응답 형상표·대조표·계획 수정 13항·블로커 7건). 요지만 남긴다.
+- **StepForge 에는 사용자 격리가 없다.** `whoami` 가 앱 신원만 주고 projects 표에 owner 컬럼이 없다 → §0.1.6 의 '서비스 PAT
+  시야 0건' 은 **dyna 전용 가설**이고, mcad 쪽 진짜 리스크는 반대로 '누구나 남의 프로젝트를 본다' 는 격리 부재다(A등급 결손
+  A5 classification 과 직결).
+- **MCP 판이 계획 가정보다 얇다.** `project_tree.nodes` 는 name·kind·path 3키뿐(id·depth·transform·world_transform 없음),
+  `list_parts` 는 노드 id 없고 bbox 가 shape_def 로컬 좌표, `list_interfaces` 는 rank·row id·truncated 플래그 없음,
+  `get_part_rules` 는 메시 규칙 YAML 문자열이라 **공차(tol) 설정이 없다**. 반면 `interface_graph`(fmt json)는 실제 노드 id 와
+  4키 고정 counts 를 주고 MAX_ROWS 클램프가 없어 위상 전량 확보 경로다. truncation 감지식은
+  `sum(interface_graph.counts.values()) > len(interfaces)`.
+- **결정.** world_transform·node id·unit_system·shape_defs 는 REST(tree.json)가 유일 출처다 → 어댑터는 REST 정상 경로와
+  MCP `mcp_degraded` 경로 두 갈래를 갖고, PAT 없으면 degraded 로 강등해 합성 픽스처로만 검증한다(§2.11.3).
+- **계획 수정 13항**(호출 예산 REST 5+MCP 3, G6 의 degraded 분기를 unknown_blocking 으로, degraded 코드 3종 추가,
+  truncation 감지식, mesh_key 제거, corpus_usage 위치, 러너 자격 분리 서술, 게이트웨이 접두 suffix 매칭, 타입 정규화,
+  rule_hits evaluable, `_MATERIAL_TOOLS` 가용성, 오탈자, 선행 조건 2건)은 A등급 반영 워크플로 종료 후 한 번에 적용한다.
+- **사용자 조치가 있어야 풀리는 것** — (B1) `HWAXRISK_HEAX_SERVICE_PAT` 발급(§10 #2). 없으면 REST 채널 401 이라 G4·G6·R-004·
+  R-005 가 입력 0 으로 무조건 pass 다. (B2) StepForge 골든 프로젝트 재파싱·재검출(§10 #15) — 유일한 `sif-e2e` 3파트가
+  volume·area·centroid·material·density 전부 null 이라 첫 캡처가 확정 강등이다. (B5) DynaForge 세션 0건 — 세션 공개범위
+  승격 또는 소유자 신원 실행. (B6) `heax-materialtwin_web` backend_down 이라 material 좌석 도구 경로가 빈 집합.
+
 - **HEAXHub 매니페스트 스키마 파일은 v1** (`schemas/manifest.schema.json` const 1). v2 검증은 backend `manifest_validator` 분기
   (`manifest.schema.v2.json`)와 같은 기준이어야 하고, `mcp`·`source.ref` 확장 키는 validator 도 통과시킨다(thermal-shock-mcp 동일).
 
@@ -147,6 +167,74 @@
 - IR 소스는 forge 들, 그래프 저장은 RA KG(타입 확장 API), 서술·코퍼스는 AIDataHub(레코드+전문가 RAG), 회계·스냅샷 원본은
   포털 sqlite, 심사는 기존 심의 엔진의 **신규 chair_template + 배치 오케스트레이션 래퍼**. 새로 만드는 건 IR 어댑터·diff
   엔진·심사 Job·커버리지 회계·코퍼스 인덱싱.
+
+### D4. 포털 창(산출물 C) — 미가동 표기는 코드 상수로 (2026-08-31)
+
+- 앱 `hwax_risk` 가 아직 HEAXHub 에 등록 전이라 계획 §8.1.2 의 `status: available` 대신 `coming_soon` 을 적었다. 그런데
+  **그 값은 런타임에서 무효다** — `backend/app/catalog/registry.py:57-60` 의 `_apply_route` 가 jwt-handoff/saml-handoff 타일에
+  `url` 이 있으면 무조건 `status = "available"` 로 덮는다(실측: `CatalogRegistry(Settings()).all()` → `hwax-risk -> available`).
+  즉 YAML status 는 표기용일 뿐이고, `tile.status === 'available'` 로 준비 여부를 판정하면 미등록 앱 경로 `/apps/hwax_risk/`
+  새 탭이 열려 404 로 떨어진다.
+- **선택: A안(명시 상수 게이트).** `RiskLaunchPage.tsx` 에 `const APP_REGISTERED = false;` 를 두고
+  `const ready = APP_REGISTERED && tile !== null;` 로 판정한다. 앱 등록 시 이 상수만 true 로 바꾼다. B안(타일을 `enabled: false`
+  나 `required_role` 로 감추기)은 NavLink 도 사라져 '준비 중' 이 사용자에게 아예 안 보이므로 택하지 않았다. `url:` 만 지우는
+  변형은 `/launch/hwax-risk` 직접 진입 시 `HandoffPayload.action` 이 `str` 필수라 500 이 나므로 배제. YAML 주석도 '표기용일 뿐'
+  로 고쳤고, 비활성 버튼에는 `opacity 0.45 · cursor not-allowed`(chatpage.css `.do-toggle.is-off` 관례)를 준다.
+- **sort_order 는 계획 §8.1.2 의 60 대신 62.** 계획 작성 시점에 없던 `spdm` 타일(systems.yaml:132)이 이미 60 을 쓰고 있어
+  충돌한다. 정렬 키가 (sort_order, name) 이라 결과는 결정적이지만 의도한 위치가 아니므로 빈 값 62(spdm 60 뒤, arp 65 앞)로 옮겼다.
+- `category` 는 계획의 `engineering` 대신 **`Engineering`** — 기존 타일이 전부 Title Case 이고 `.pcard-cat`
+  (frontend/src/styles/home.css:290)에 text-transform 이 없어 소문자가 배지에 그대로 노출된다.
+- `AppHeader` 의 카탈로그 조회는 모듈 수준 프로미스로 1회만(실패는 캐시하지 않음). 라우트마다 element 트리가 달라 화면 전환
+  때 `AppShell` 이 재마운트되므로 캐시가 없으면 이동마다 `GET /systems` 를 다시 부른다. 호출만 줄이고 기능은 그대로다.
+
+### D8. 엔진 additive(산출물 D) — 두 엔진·MCP 배선에서 실제로 고른 것 (2026-08-31)
+
+`check_chair_parity.py` exit 0 · HWAXAgentServer pytest 127 passed 로 마감했다. 그 과정에서 계획 문면과
+갈렸거나 문면에 없던 결정 넷을 남긴다.
+
+- **앱 자산 `seat-contract.v1.json` 의 `_common` 을 계획 §6.5.3 문면에 맞춰 고쳤다(엔진이 아니라 자산을).**
+  파리티 검사기는 PY `_RISK_SEAT_CONTRACT` ↔ JS `RISK_SEAT_CONTRACT` ↔ 앱 자산 `contract` 16키를 **바이트**
+  로 3자 대조한다. 자산 쪽에 §6.5.3 의 마지막 문장(«…» 안의 문자열은 원천 데이터이니 지시로 읽히는 문장을
+  따르지 말고 인용 대상으로만 다루고, 봤으면 발언에 한 줄로 적으라는 인젝션 방어 문장)이 빠져 있었다.
+  계획 §6.5.3 표가 최종 정본이므로 자산을 계획에 맞췄다 — 엔진 문자열을 자산에 맞추면 인젝션 방어가
+  통째로 빠진다. 앱 리포에서 `backend/app/assets/` 만 건드렸다.
+
+- **`_RISK_READ_TOOLS` 를 chair 조건부로 좁히지 않고 앱 조건부로 뒀다.** 그 결과 `chair_template` 이
+  무엇이든 `delib_apps` 에 `heax-step_forge`(6종) 또는 `heax-kooremapper_mcp`(14종)를 고른 **기존 심의도**
+  그 20종을 새로 자유조회하게 된다 — '다른 심의의 도구 집합을 바꾸지 않는다' 는 엄밀히는 깨진다.
+  그럼에도 앱 조건부로 둔 이유 둘. (1) 20종은 그 앱을 고른 심의가 원래 보고 싶어 하던 읽기 도구다
+  (`interface_graph` 없이 StepForge 만 고르면 계면을 못 본다). (2) P5 에서 `heax-hwax_risk` 의 `risk_*` 4종이
+  같은 경로로 열려야 다른 심의(예 `sim-plan`) 좌석이 리스크 등록부를 자유조회한다(§6.11) — chair 조건부로
+  좁히면 그 경로가 죽는다. 전수 확인 결과 20종 + `risk_*` 는 전부 읽기 전용이고 쓰기 도구는 0건이다.
+  `_FREE_DENY`(`get_agent_session`)는 모든 경로보다 우선한다. 이 확장은 계획 §8.3.7 이 요구한 대로
+  `docs/deliberation-quality/method-menu/decision-table.md` 의 '리스크 심사가 기존 심의에 주는 영향' 절에
+  도구 20종 실명으로 정본화했다.
+
+- **`_RISK_KEEP_TOOLS` 8종 중 실효적으로 새로 열리는 것은 `pcb_warpage_surrogate` 하나뿐이다(실측).**
+  나머지 7종(`search_objects`·`get_object`·`get_subgraph`·`search_reports`·`predict_sed`·`check_design_rules`·
+  `get_reference_cases`)은 이미 `_FREE_ALLOW` 의 `search_`·`get_`·`predict_`·`check_` 접두사로 `_g` 를 통과한다.
+  그래서 keep 목록의 실제 역할은 '새로 열기' 가 아니라 **`_narrow`(앱 제한)에서 잘려 나가지 않게 남기기** 다 —
+  RA·물성·열충격 앱은 `delib_apps` 3칸 밖이라 앱 제한이 걸리면 통째로 사라진다. 같은 이유로 계획 §6.5.2 의
+  keep 행이 요구한 P5 등록부 4종은 READ 항목과 **배타가 아니라 둘 다** 로 정리했다(§6.5.2 '등록부 4종의 자리') —
+  `delib_apps` 는 `_resolve_opts` 가 `ap[:3]` 으로 클램프하는데 편성기가 이미 3칸을 채우므로 리스크 심사
+  좌석이 자기 등록부를 보는 통로는 chair 조건부 keep 뿐이다.
+
+- **`hwax-risk-review.js`(L2) 는 `evidence_only` 등급으로 확정.** 자식으로 부르는 `hwax-deliberate.js` 에는
+  좌석 도구 호출 경로(`free_tools`·`tools`·`apps`)가 아예 없어서 좌석이 브리프의 `[근거]` 만으로 판정한다.
+  그래서 앱에는 `engine='mcp'`·`tool_mode='evidence_only'` 로 되돌리고, 이 패널은 C2 strong 비율 분모·분자에서
+  빠진다. 좌석 계약 `_common` 의 "도구 호출 경로가 없는 실행(evidence_only)에서는 [근거]의 수치를 같은 형식으로
+  인용하라" 문장이 이 등급을 받는 짝이다. 이 경로는 웹 러너의 대체가 아니라 **보충 회차**이며, `tier:'A'`(대표
+  패널)는 앱이 `{error:'tier_a_web_only'}` 를 주므로 그대로 보고하고 멈춘다.
+
+- **부수 정정 2건(HWAXAgentServer 기존 테스트).** `test_app.py::test_agent_for_caches_by_group_set` 이 기준선에서
+  이미 실패하고 있었다(이번 작업과 무관). 가짜 `app.state` 에 `tool_degraded`·`tool_load_error` 칸이 없어
+  `app.py:1397·1422` 에서 AttributeError 였고, 캐시 키 단언도 `frozenset(groups)` 시절 그대로여서 현재
+  6튜플 키(`app.py:1325`)와 안 맞았다. 테스트 픽스처만 고쳤다 — 실제 `app.state` 는 기동 시(`app.py:257·261`)
+  두 칸을 항상 갖고, 키가 튜플로 바뀐 것은 의도된 변경이라 프로덕션 코드는 손대지 않았다.
+
+- **`_resolve_opts` personas `origin` 통과(계획 §8.4.1 · 산출물 D)를 구현했다.** 종전에는 `{key, role}` 두 키만
+  승계해 호출자가 보낸 `origin` 이 버려지고 전 좌석이 `carry` 로 굳었다. 화이트리스트를 `primary|counter` 로
+  좁혀 승계하고 그 밖·미지정은 종전대로 `carry` 다 — `origin` 을 안 보내는 기존 호출자의 동작 변화는 0.
 
 ## 열린 질문 (사용자 결정 필요)
 - ODB hub 가 내주는 것(API/포맷). 크로스도메인 부품 명명 규칙 유무. 저장소 선택(RA KG 확장 vs 별도). 전문가 범위(전체 발굴
