@@ -21,6 +21,7 @@
 | **시험 설계** | 무엇을 어떤 시험으로 언제 확보할지 | 시험이 필요 없음 | 시험 계획서 · 상관 계약 | `test-plan` | 우선순위 · DOE · sim 상관 |
 | **구축 계획** | 같은 해석을 형상·조건 바꿔 여러 번 돌릴 때 | 1회성 해석 | 구축 계획서 · P1~P4 게이트 | `build-plan` | 모델링 자동화 · 모델 IR · 스윕 |
 | **자유 심의** | 위에 안 맞음 · 보고서 통째 복붙 심의 | — | 의사결정문 | `default` | 변증법적 적대 패널 |
+| **리스크 심사** | 설계가 바뀌었다(스냅샷·그래프 diff) · 이 변경이 무엇을 깨뜨리나 | 변경 대상이 없음 · 원인이 이미 난 불량(→ 원인 규명) | 리스크 심사 보고서 · `risk_spec` | `risk-review` | 등록부 선례 · 커버리지 회계 · 기준선 옹호 지정석 |
 
 > `mechanism`(해석 전 인과사슬 확정)은 top-level Job 이 아니라 **해석 설계의 전반부**다.
 > sim-deliberate 가 mechanism→sim-plan 으로 연쇄한다.
@@ -43,6 +44,17 @@
   **채점**하고, red-team 이 결론을 **적극적으로 깨보며**, severe test(가장 깨지기 쉬운 예측이 살아남았나)로
   **생존/기각/조건부 승인**을 낸다. 점수의 근거를 반드시 붙인다.
 - **대표 좌석(초안).** V&V · UQ · 해당 물리 도메인 · red-team(반대 지정석).
+
+### 리스크 심사 — `risk-review`
+- **상황.** 과제의 설계가 바뀌었고(이전 과제 대비 또는 한 과제 안의 개념설계 변동), 그 변경이 어느
+  도메인에서 무엇을 깨뜨리는지를 HW/XD 크로스도메인으로 훑어야 한다.
+- **엔진이 강제하는 것.** 좌석마다 **도메인별 좌석 계약**(`_RISK_SEAT_CONTRACT` 16키)이 붙어 1R 발언 전
+  자기 도메인 도구를 1회 이상 실호출하고 결과 수치·id 를 인용하게 한다. 인용 없는 주장은 [경험칙]으로
+  등급이 내려간다. **기준선 옹호 지정석**(`delib-baseline-defender`)이 자동 착석해 "변경 전이 더 낫다"를
+  적극 변호하고, 결정문은 8항목 + `risk_spec` 펜스로 낸다.
+- **대표 좌석(초안).** 변경이 닿는 도메인(mech·xd·sim·rel·pcb·disp…) + 기준선 옹호(지정 반대석).
+- **주의.** 이 Job 은 앱 `hwax_risk` 의 원장·등록부와 함께 쓸 때 커버리지 회계가 돈다. 앱 없이
+  `chairTemplate:'risk-review'` 만 주면 단발 심의(원장 미연동)다.
 
 ### 해석 설계 / 시험 설계 / 구축 계획 / 자유 심의
 - 기존 엔진 그대로. 상세는 각 엔진 정의(hwax-deliberate.js CHAIR_ITEMS)와
@@ -76,6 +88,7 @@
 | "이걸 어떻게 계산하지 / 무슨 솔버로" | 해석 설계 |
 | "뭘 시험해야 하지 / 무슨 데이터를 확보" | 시험 설계 |
 | "이 해석을 형상만 바꿔 계속 돌리고 싶다" | 구축 계획 |
+| "설계가 이렇게 바뀌었는데 뭐가 문제되나 / 이전 과제 대비 리스크" | 리스크 심사 |
 | 위에 안 맞거나 남의 보고서로 심의 | 자유 심의 |
 
 ---
@@ -96,13 +109,18 @@
 
 ```
 delib_opts.chair_template : 'default'|'mechanism'|'sim-plan'|'test-plan'|'build-plan'
-                            |'diagnosis'|'option-select'|'credibility'   (하나)
+                            |'diagnosis'|'option-select'|'credibility'|'risk-review'   (하나)
 delib_opts.modifiers[]     : 'voi'|'premortem'|'toulmin'|'eliminative'|'anon1r'  (0~5)
+delib_opts.personas[]      : {key, role, origin?}  origin ∈ 'primary'|'counter' (그 밖·미지정은 'carry')
 ```
 
 - 두 엔진이 같은 키를 쓴다. 알 수 없는 값은 agent-server(`_resolve_opts`)가 드롭·재클램프.
 - **주의(수정 완료).** 종전 `routes.py` DelibOpts 에 `chair_template` 미선언 → 웹 경로에서 유실됐다.
   본 작업에서 `chair_template`·`modifiers` 를 DelibOpts 에 선언해 model_dump 에 실리게 한다.
+- **`personas[].origin` 통과(추가).** `_resolve_opts` 가 `origin` 을 화이트리스트(`primary`·`counter`)로
+  승계한다. 호출자(리스크 심사 러너)가 로스터석·반대 도메인석을 구분해 보내면 SSE `personas` 이벤트와
+  결정문 (0) 커버리지 문단이 그 값을 그린다. **`origin` 을 안 보내는 기존 호출자는 종전대로 전 좌석
+  `carry`** 다 — 동작 변화 0. `human_note`·`continue_summary` 는 리스크 심사 러너가 쓰지 않는다.
 
 ---
 
@@ -120,8 +138,85 @@ delib_opts.modifiers[]     : 'voi'|'premortem'|'toulmin'|'eliminative'|'anon1r' 
 
 ---
 
+## 리스크 심사가 기존 심의에 주는 영향
+
+`risk-review` 추가는 전부 additive 지만, **자유조회 도구 목록에 한 곳만 chair 무관 확장**이 있다.
+정본으로 여기에 남긴다(계획 §6.5.2 통과경로 표).
+
+| 상수 | 조건 | 다른 심의 영향 |
+|---|---|---|
+| `_RISK_KEEP_TOOLS` | `chair_template == 'risk-review'` 일 때만 | **0** — 조건부라 다른 심의는 1바이트도 안 바뀐다 |
+| `_RISK_SEAT_CONTRACT` 좌석 계약 접미 | 같은 chair 조건부 | **0** |
+| `_RISK_READ_TOOLS` | **chair 무관 · 앱 조건부** — `delib_apps` 에 그 앱을 고르면 열린다 | **있음(읽기 전용 확장)** — 아래 |
+
+- **무엇이 늘어나나.** `chair_template` 이 무엇이든(`default`·`diagnosis`·`sim-plan` …) `delib_apps` 에
+  `heax-step_forge` 를 고르면 `project_tree` · `interface_graph` · `inspect_report` · `mass_estimate` ·
+  `mesh_report` · `part_mesh_map` **6종**이, `heax-kooremapper_mcp` 를 고르면 `inspect_file` ·
+  `report_summary` · `report_case` · `report_findings` · `report_part_risk` · `report_energy_flow` ·
+  `report_directional` · `report_worst_cases` · `report_part_series` · `report_scatter` ·
+  `report_corpus` · `section_contact_usage` · `operation_usage` · `corpus_summary` **14종**이 좌석
+  자유조회 목록에 새로 들어온다(합 **20종**). 이 20종은 전부 접두사 규칙 `_FREE_ALLOW` 에 걸리지 않아
+  종전에는 목록에 없었다.
+- **왜 chair 조건부로 막지 않았나.** 이 20종은 그 앱을 고른 심의가 원래 보고 싶어 하는 읽기 도구다
+  (`interface_graph` 없이 StepForge 앱만 고르면 계면을 못 본다). 또 P5 에서 `heax-hwax_risk` 항목의
+  `risk_*` 4종이 같은 경로로 열려야 **다른 심의(예 `sim-plan`) 좌석이 리스크 등록부를 자유조회**할 수
+  있다(계획 §6.11). chair 조건부로 좁히면 그 경로가 죽는다.
+- **안전 한계.** 20종 + `risk_*` 는 전부 **읽기 전용**이다. 쓰기 도구(`run_job`·`run_operation`·
+  `set_interface`·`confirm_interfaces`·`remesh_parts`·`upload_*`·`add_training_data`·`create_object`·
+  `update_object`·`link_objects`·`import_record`·`bind_records_to_agent`·`patch_agent`)는 어느 경로에도
+  없다. `_FREE_DENY`(`get_agent_session`)는 모든 경로보다 우선한다. 앱 지정도 `risk-review` 도 아니면
+  도구-앱 매핑 조회 자체를 하지 않으므로 종전 심의의 호출 수도 그대로다.
+- `_RISK_KEEP_TOOLS` 8종 중 실제로 새로 열리는 것은 `pcb_warpage_surrogate` 하나뿐이다 — 나머지
+  7종(`search_objects`·`get_object`·`get_subgraph`·`search_reports`·`predict_sed`·`check_design_rules`·
+  `get_reference_cases`)은 이미 `search_`·`get_`·`predict_`·`check_` 접두사로 통과한다. keep 의 역할은
+  `_narrow`(앱 제한)에서 잘려 나가지 않게 남기는 것이다.
+
+---
+
 ## 두 엔진 정합 (반영)
 
 - MCP JS `infra/pipeline/hwax-deliberate.js` CHAIR_ITEMS ↔ 웹 PY `HWAXAgentServer/deliberation.py`
   `_CHAIR_ITEMS` — 같은 키·같은 항목·같은 heading 맵.
 - 반영. agent-server 재기동 · 워크플로 sync · erag 재색인(운영은 사용자 몫).
+
+### 리스크 심사 파리티 표 (계획 §8.3.6)
+
+| 항목 | 웹(deliberation.py) | MCP(hwax-deliberate.js) |
+|---|---|---|
+| 결정문 8항목 + risk_spec 펜스 | `_CHAIR_ITEMS['risk-review']` | `CHAIR_ITEMS['risk-review']` (바이트 동일) |
+| 기준선 옹호 지정석 | `_CHAIR_ADVERSARY['risk-review']` 합성 push | `CHAIR_ADVERSARY['risk-review']` 합성 push |
+| 좌석 계약 | `_RISK_SEAT_CONTRACT`(chair 조건부) | `RISK_SEAT_CONTRACT`(chair 조건부) |
+| 지정 도구 tools ≤6 | 실호출·tool_inject | N/A(evidence-only) |
+| 자유조회 free_tools·apps | `_RISK_READ_TOOLS`·`_RISK_KEEP_TOOLS` | N/A(evidence-only) |
+| evidence ≤12 | 동일 예산 | 동일 예산 |
+| 호출자 | 앱 러너 → 포털 `/agent/chat`(포털 PAT) → agent-server | 사람 → Claude Code 워크플로 → 게이트웨이 도구 |
+| 원장·등록부·성격 저장 | 앱 러너 → 앱 `narrative.py` | 앱 MCP `risk_submit_panel_result` → 같은 `narrative.py` |
+| 신원 | 포털 PAT(검증) · `credential service\|owner` | `actor`(미검증, `actor_verified:false`) |
+| tool_mode | `tools` | `evidence_only`(C2 strong 비율 제외) |
+| 제목 | doc_title '리스크 심사 보고서' | 삼항 '리스크 심사 보고서' |
+
+- 세 정본(PY 상수 · JS 상수 · 앱 자산 `HWAXRisk/backend/app/assets/seat-contract.v1.json`)의 바이트
+  동일은 `scripts/check_chair_parity.py` 가 검사한다(**exit 0 이 통과 기준**).
+
+### 호출 경로 (계획 §6.7.1)
+
+- **정본(웹).** 앱 러너 → `POST {포털}/agent/chat`(`Authorization: Bearer <포털 PAT>`, SSE). 포털이 PAT 의
+  sub·email·groups 를 신원으로 채우므로 좌석 도구 스코핑이 '앱 자칭 그룹' 이 아니라 '검증된 PAT 의
+  groups' 로 강제된다. conv_store 저장·감사로그·세마포어가 함께 붙는다.
+- **폴백.** `HWAXRISK_AGENT_URL` 이 설정된 박스에서 정본 경로가 연결 오류 3회 연속일 때만 agent-server
+  직결. 401/403 은 자격 문제라 폴백하지 않는다.
+- **MCP.** 사람 → Claude Code 워크플로. 단발 심사는 `hwax-deliberate`(`chairTemplate:'risk-review'`),
+  편성된 패널의 보충 회차는 L2 오케스트레이터 `hwax-risk-review`
+  (`{targetKey, tier, panels?, actor?, model?}`, `tier:'A'` 는 웹 러너 전용이라 그대로 멈춘다).
+- **앱 MCP 직접 등록(선택).** `claude mcp add --transport http hwax-risk <포털베이스>/apps/hwax_risk/mcp`
+  (헤더 `Authorization: Bearer heax_pat_…`). 게이트웨이가 `heax-hwax_risk` 로 이미 흡수하므로 필수는 아니다.
+
+### 반영 절차 (계획 §8.4.4 1항 — 엔진 부분만)
+
+1. agent-server 재기동(`deliberation.py` 상수·`_g` 조립 조건·`_narrow`·좌석 계약 접미).
+2. `infra/scripts/sync-workflows.sh`(`hwax-deliberate.js`·`hwax-risk-review.js` → `.claude/workflows`).
+3. erag 재색인(`meta.whenToUse` 변경분).
+4. `python3 scripts/check_chair_parity.py` **exit 0** 확인.
+
+포털 창(타일·라우트)·앱 등록·app-data·게이트웨이 흡수·cae00 이관은 계획 §8.4.4 2~6항이며 운영은
+사용자 몫이다.
