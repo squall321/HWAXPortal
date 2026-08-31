@@ -69,6 +69,75 @@
 - 1차 산출(doc_20·doc_22)은 잘린 본이라 폐기, plan.md 가 유일 정본. 워크플로 산출 파트 파일은 scratchpad 에만.
 - 남은 리스크: 문서가 커서 개요 페이지(artifact)로 진입점 제공. P0 착수 전 §10 (1)(2)(3)(10) 사용자 결정 필요.
 
+### D4. 토폴로지 B — 자산은 HEAX 앱 `hwax-risk`, 포털은 메뉴/창 (2026-08-31, 사용자 결정)
+- **질문.** 재활용을 위해 별도 포털/DB 가 필요한가. 재분석 시 같으면 드랍·다르면 add 가 가능한가.
+- **답.** 별도 DB 는 A 계획에도 이미 있었다(포털 내부 sqlite). 다만 이 자산은 과제 수십 개·수년치가 쌓이는 **장기 자산**이라
+  포털 릴리스·박스 수명에 묶이는 A 보다, thermal_shock MCP 선례처럼 **데이터를 품은 HEAX 앱**으로 분리하는 B 가 맞다 —
+  `HEAX_DATA_DIR` 영구 경로 + `appdata-to-drive.sh` 백업 + 매니페스트 `mcp:{expose}` 로 게이트웨이 자동 흡수 + Caddy
+  forward_auth 가 `X-Heax-User-*` 로 신원 전달. 포털에는 '심의'와 별개 메뉴 하나(창)만.
+- **멱등 규칙(재분석).** 입력 같음 → `(project_id, ir_hash)` 로 새 행 없음. 의견 같음 → 드랍이 아니라 `cluster_key` 병합으로
+  `support+1`(재현성 신호 보존). 다름 → (a) 입력 변경=새 타깃·옛 것 superseded/stale, (b) 같은 입력 다른 의견=dissent/contested
+  보존, (c) 코드 버전 변경=버전 스탬프 재계산. 외부 반영 UPSERT(external_id)·RA create_object 멱등.
+- **불변.** rr_* 스키마·원자·해시·prior_evidence E0~E9·커버리지 상태기계·학습 루프·엔진 additive 항목. 바뀌는 건 위치·
+  호출 경로·인증·P0 산출물.
+- **실측 지형.** HEAX 매니페스트 v2(thermal_shock 예), integration_launcher 가 `var/app_data/<id>` 를 `HEAX_DATA_DIR` 로 주입,
+  Caddy `/apps/<id>/*` strip_prefix, authz 2xx 시 `X-Heax-User-*` 복사, 포털→heax 는 jwt-handoff(localStorage bearer, 쿠키 아님)
+  → 포털 SPA 가 앱 REST 를 직접 fetch 못 함 → 포털 메뉴는 앱 UI 를 여는 방식이 자연스러움. 게이트웨이 rest_proxy 에 heax
+  사이트 없음(설정 변경 필요 시 §10). odb-hub 는 external_link 앱이고 게이트웨이 백엔드에 없음(계약만 유지).
+- **개정 방식.** 워크플로(리더 2 → 섹션 개정기 4 순차 in-place → 일관성 스위프 → 완결성 → 수정). 원본은 커밋 396b720.
+
+### D5. 프로젝트 경로·이름 관례 (2026-08-31, 실측 — 다른 앱과 동일하게)
+- 리포: `~/claude/<PascalCase>` — 앱 리포는 ThermalShockMCP·WebResearchMCP·PaperIngest, HWAX 계열은 HWAX 접두(HWAXPortal·
+  HWAXAgentServer·HWAXMcpGateway). → **`/home/koopark/claude/HWAXRisk`**, GitHub **`squall321/HWAXRisk`**(다른 앱 전부 squall321).
+- HEAXHub 등록: `HEAXHub/integrations/<kebab>/.portal/manifest.yaml` **매니페스트 복사본만**(심볼릭 링크 아님, 리포의
+  `.portal/manifest.yaml` 과 동일 파일). `source:{type: git, url: github, ref: main}` 으로 5분 주기 스캔·재빌드가 GitHub 에서
+  받아온다. → **`HEAXHub/integrations/hwax-risk/`**, 매니페스트 **`id: hwax_risk`**, Caddy **`/apps/hwax_risk/`**, MCP
+  `/apps/hwax_risk/mcp` → 게이트웨이 백엔드 `heax-hwax_risk`.
+- 리포 표준 구성(ThermalShockMCP 기준): `app/{main,config,mcp_server,…}.py` · `tests/` · `pyproject.toml`(mcp>=1.10,<2 핀 —
+  2.0 이 FastMCP 제거) · `README.md` · `docs/` · `checklist.md` · `context-notes.md` · `.portal/manifest.yaml` · `.gitignore`
+  (.venv/__pycache__/egg-info/.pytest_cache/.bkit/.koo-llm-sessions) · `data/`(HEAX_DATA_DIR 폴백). 여기에 `frontend/`(SPA) 추가.
+- 데이터: `HEAX_DATA_DIR`(=HEAXHub/var/app_data/hwax_risk) 우선, 없으면 리포 `data/` 폴백(thermal_shock config.py 패턴).
+
+### D6. 어떤 LLM 이 점검했는지 기록한다 — 모델 출처(provenance) 축 추가 (2026-08-31, 사용자 지적)
+- **갭(실측).** 계획의 `rr_panels` 는 `engine(web|mcp)`·`tool_mode` 만 있고 **모델 식별이 없다**. 엔진도 SSE 에 모델 이벤트가 없고
+  agent-server 는 `GET /health` 의 `model`(=`VLLM_MODEL`, 기본 qwen2.5-7b-dev)·`vllm`(base_url)만 노출한다(app.py:2419). 같은 좌석·
+  같은 브리프라도 모델이 다르면 의견의 성격·정밀도가 다르고, 학습 루프(§7)가 모델을 섞어 세면 지표가 오염된다. 선례 — 포털
+  `message_vectors.model`(conv_store.py:59·179, 임베더 교체 시 옛 벡터 혼입 방지용 model 조건).
+- **결정.** 패널 단위 `rr_panels.model_json` 을 추가하고 원자(finding·opinion·character)는 panel_id 로 승계한다.
+  `model_json = {runtime: 'agent-server'|'claude-code', provider: 'vllm'|'anthropic'|…, model: '<served name>', endpoint_host,
+  captured: 'health_snapshot'|'caller_reported', engine_rev: <deliberation.py 또는 hwax-deliberate.js 의 git sha>,
+  chair_rev: <chair_template 텍스트 sha>, seat_contract_rev}`.
+  - 웹 러너 — 패널 시작 직전·직후 agent-server `/health` 를 읽어 `model`·`vllm` 을 담고 둘이 다르면 `quality.flag=model_changed_midrun`.
+  - MCP 경로 — `risk_submit_panel_result(model?)`·`POST /panels/{id}/complete{model?}` 로 **호출자 신고값**(actor 와 같은 등급,
+    `captured:'caller_reported'`, 미검증). L2 오케스트레이터 `hwax-risk-review.js` 는 args.model 을 그대로 넘기고 없으면 `unknown`.
+  - 커버리지 원장 — 종결 판정은 모델 무관(한 번 봤으면 넘어감)이되 `rr_coverage.model` 열을 두어 진행판·통합 보고서에 **모델 혼합 표**
+    (모델별 패널 수·strong 비율·contested)를 싣는다. 모델 교체 시 재심은 자동이 아니라 Settings `risk_recheck_on_model_change`(기본 off) 로
+    `carried` 를 다시 `pending` 으로 돌리는 명시 동작.
+  - 학습 루프(§7) — delta_priors·patterns 집계는 `model` 로 층화하고, 승격 조건에 "서로 다른 모델 ≥2 에서 재현" 을 선택 가드로 둔다.
+  - 보고서·브리프 — RA 보고서 background 와 `prior_evidence` E0 에 모델명을 표기해 다음 과제가 "무엇이 본 의견인지" 알게 한다.
+- **반영 위치(개정 워크플로 종료 후 편집 — 동시 편집 회피).** plan.md §5.2 DDL(rr_panels.model_json·rr_coverage.model) · §6.7 러너
+  1·7단계(health 스냅샷) · §6.11 MCP 경로(caller_reported) · §7.4 층화·승격 가드 · §4.5 seat_opinion 봉투 `model` · §8.3.4 도구 인자 ·
+  §9 P1 테스트(모델 기록·midrun 변경 플래그) · checklist P1 항목. 스캐폴드(P0 4표)에는 rr_panels 가 없어 지금 변경 없음.
+
+### D7. P0 스캐폴드 실측으로 드러난 계획 정정 사항 (2026-08-31, 개정 워크플로 종료 후 plan.md 에 반영)
+- **§0.4.1 의 `Mount('/mcp')` 권고는 틀렸다(실측).** Starlette `Mount('/mcp')` + `streamable_http_path='/'` 는 `POST /mcp` 에 307 → `/mcp/`
+  리다이렉트를 내고 MCP 클라이언트·게이트웨이는 따라가지 않는다. `mount('/', mcp_app)`(thermal_shock 방식)는 동작하지만 StaticFiles
+  `'/'` 와 공존 불가. **정본은 MaterialTwinWeb 패턴** — `mcp._session_manager = None` 후 `streamable_http_app().routes` 의 `Route('/mcp')`
+  를 메인 라우터에 이식(exact 매칭, 리다이렉트 없음), StaticFiles 는 마지막에 `'/'`. (MaterialTwinWeb/backend/app/main.py:53~66)
+- **레이아웃은 fastapi_react 로 확정** — 계획 §0.4.1·§8.2.1 대로 `backend/`(app·tests·pyproject·scripts/heaxhub-build.sh) + `frontend/`
+  (Vite base './', 상대경로 fetch), health `/api/health`, REST `/api/…`(v1 접두 없음). 첫 스캐폴드가 fastapi(app/ 루트)·`/health`·
+  `/api/v1` 로 나와 전환 워크플로로 정합(P1 에서 옮기면 더 비쌈).
+- **이름 정합** — env 접두는 **`HWAXRISK_`**(개정기가 plan 전체 124곳을 이 표기로 통일했고 HEAX 앱 선례 `THERMALSHOCK_DATA_DIR`·
+  `MATERIALTWIN_MCP_*` 와 같은 '구분자 없는 앱명' 관례라 채택. 전환 워크플로가 만든 `HWAX_RISK_DATA_DIR` 는 후속 정합 패스에서
+  `HWAXRISK_DATA_DIR` 로 되돌린다), DB `risk_review.db`(`.db` 여야 appdata-to-drive.sh 가
+  `sqlite3 .backup` 원자 스냅샷으로 교체 — `.sqlite` 는 WAL 내용이 빠진 사본이 된다), `PRAGMA user_version` 이 스키마 버전 정본이고
+  `schema_migrations` 는 이력표(§5.2.5 (6) 과 일치).
+- **신원 헤더는 service 모드에서 오지 않는다(재확인).** HEAXHub proxy_manager `_build_route` 는 launch.mode=service 앱에 forward_auth 만
+  세우고 `copy_identity` 없음 → `X-Heax-User-*` 는 도착하지 않고 클라이언트 위조값이 통과한다. 스캐폴드 identity.py 는
+  `source='header_unverified'` 스탠드인, P1 에서 heax `GET /api/v1/auth/me` 되묻기(§8.2.8)로 교체.
+- **HEAXHub 매니페스트 스키마 파일은 v1** (`schemas/manifest.schema.json` const 1). v2 검증은 backend `manifest_validator` 분기
+  (`manifest.schema.v2.json`)와 같은 기준이어야 하고, `mcp`·`source.ref` 확장 키는 validator 도 통과시킨다(thermal-shock-mcp 동일).
+
 ### D1. 조립 우선 (신규 최소화)
 - IR 소스는 forge 들, 그래프 저장은 RA KG(타입 확장 API), 서술·코퍼스는 AIDataHub(레코드+전문가 RAG), 회계·스냅샷 원본은
   포털 sqlite, 심사는 기존 심의 엔진의 **신규 chair_template + 배치 오케스트레이션 래퍼**. 새로 만드는 건 IR 어댑터·diff
