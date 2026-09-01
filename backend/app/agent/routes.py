@@ -832,32 +832,35 @@ async def upload_dispatch(
     src = _upload.host_path(settings, path)
     run = body.run if body.run in ("parse", "detect", "mesh", "pipeline", "none") else "parse"
     pid = (body.project_id or "").strip()
+    created = False
 
     if not pid:
-        # 새 과제 — intake 하나로 과제 생성·메타·등록·잡까지 끝난다(세 번 부를 것을 한 번에).
-        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "intake", {
-            "path": src,
+        # ⚠ `intake` 한 번으로 끝내려 했으나 **배포된 StepForge 에는 아직 없다** — 2026-09-01
+        #   e2e 에서 "unknown tool: intake" 로 드러났다. 게이트웨이는 실행 중인 앱이 가진
+        #   도구만 노출하는데, intake 는 그날 커밋됐고 SIF 는 그보다 낡았다.
+        #   intake 자체가 create_project→등록→run_job 묶음이라 그 묶음을 여기서 편다.
+        #   SIF 가 새로 배포돼도 이 경로는 그대로 동작한다(있는 도구만 쓴다).
+        proj = await _upload.mcp_call(settings.mcp_gateway_url, pat, "create_project", {
             "name": (body.project_name or "").strip() or Path(body.filename).stem,
-            "owner": principal.subject,
-            "run": run,
+            "description": f"포탈 챗 업로드 — {principal.subject}",
         })
-        pid = str(out.get("project_id") or "").strip()
-        job_id = out.get("job_id")
+        pid = str(proj.get("project_id") or "").strip()
         created = True
-    else:
-        # 기존 과제에 추가 — intake 는 과제를 새로 만들므로 여기선 쓰지 않는다.
-        # 같은 이름 재등록은 StepForge 가 **갱신**으로 처리하고, 잡이 도는 중 교체는 거부한다.
-        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "upload_step",
-                                     {"project_id": pid, "path": src})
-        job_id = None
-        if run != "none":
-            job = await _upload.mcp_call(settings.mcp_gateway_url, pat, "run_job",
-                                         {"project_id": pid, "kind": run})
-            job_id = job.get("job_id")
-        created = False
+        if not pid:
+            return {"stage": "failed", "error": "StepForge 과제를 만들지 못했습니다.", "detail": proj}
 
-    if not pid:
-        return {"stage": "failed", "error": "StepForge 과제를 만들지 못했습니다.", "detail": out}
+    # zip 은 안에 STEP·MSH 가 여럿 들어 전용 반입기로 간다 — upload_step 은 파일 하나짜리다.
+    # 목적지가 zip 을 받으므로 이 분기가 없으면 zip 업로드가 등록 단계에서 터진다.
+    # 같은 이름 재등록은 StepForge 가 **갱신**으로 처리하고, 잡이 도는 중 교체는 거부한다.
+    tool = "import_archive" if Path(body.filename).suffix.lower() == ".zip" else "upload_step"
+    out = await _upload.mcp_call(settings.mcp_gateway_url, pat, tool,
+                                 {"project_id": pid, "path": src})
+
+    job_id = None
+    if run != "none":
+        job = await _upload.mcp_call(settings.mcp_gateway_url, pat, "run_job",
+                                     {"project_id": pid, "kind": run})
+        job_id = job.get("job_id")
 
     audit.record(principal=principal.subject, event="upload_dispatch", status="ok",
                  meta={"destination": "stepforge", "project_id": pid,
