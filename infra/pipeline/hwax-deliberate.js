@@ -411,7 +411,21 @@ const decision = await agent(
   `[${SEAT_NOTE}]\n\n` +
   `산출: ## ${CHAIR_TEMPLATE === 'sim-plan' ? '해석 계획서' : CHAIR_TEMPLATE === 'test-plan' ? '시험 계획서' : CHAIR_TEMPLATE === 'build-plan' ? '구축 계획서' : CHAIR_TEMPLATE === 'risk-review' ? '리스크 심사 보고서' : CHAIR_TEMPLATE === 'diagnosis' ? '원인 규명 결정문' : CHAIR_TEMPLATE === 'option-select' ? '안 선택 결정문' : CHAIR_TEMPLATE === 'credibility' ? '신뢰 판정문' : '의사결정문'} — (0) 참여 도메인과 커버리지 한계 — 위 좌석 구성을 한 문단으로 기록하고, 이 문제에 관련되나 착석하지 않은 인접 도메인이 있으면 명시하라(없으면 없다고 쓰라), ` +
   `${CHAIR_ITEMS[CHAIR_TEMPLATE] || CHAIR_ITEMS.default} 라운드별 입장 심화·수렴 과정을 반드시 드러내라.${DECISION_CONT_NOTE}`,
+  `\n\n[출력 형식 — 반드시 지킬 것] 결정문 전체를 **한 번의 최종 응답으로** 내라. 여러 메시지에 나눠 쓰면 ` +
+  `마지막 조각만 반환값이 되어 앞부분이 통째로 유실된다(실측 2026-09-01: 구축 계획서 75,373자 중 ` +
+  `42,291자가 그렇게 반환값에서 빠졌고 에이전트 전사에서 손으로 복원해야 했다). 길면 항목을 줄여서라도 ` +
+  `한 응답 안에서 끝내라. 첫 줄은 반드시 '## ' 로 시작하는 제목이어야 한다.`,
   { label: 'decision', phase: 'Decision' })
+
+// 절단 감지 — 의장이 여러 턴에 나눠 쓰면 마지막 턴만 반환값이 된다. 그 경우 결정문이 제목 없이
+// 문장 중간에서 시작하므로 첫 줄로 가른다. 워크플로는 전사에 접근할 수 없어 자동 복구는 못 하지만,
+// 조용히 반쪽 결정문을 내보내는 것보다 크게 알리는 편이 낫다(호출자가 전사에서 복원할 수 있다).
+const decisionHead = String(decision || '').trimStart().slice(0, 2)
+if (decisionHead !== '##' && decisionHead !== '# ') {
+  log(`⚠ 의장 결정문이 제목 없이 시작한다(첫 2자 "${decisionHead}") — 여러 턴에 나눠 써서 앞부분이 ` +
+      `반환값에서 빠졌을 수 있다. 전문은 트랜스크립트 디렉터리의 agent-<decision id>.jsonl 에서 ` +
+      `assistant 텍스트 블록을 순서대로 이어 붙여 복원한다.`)
+}
 
 // 쉬운 설명 — 챗 파이프라인(deliberation.py)과 동일한 정식 심의 절차. 의결 뒤에 붙는다.
 // 여기 없으면 MCP 경로 결정문만 비전문가용 정리가 빠져 두 경로가 어긋난다.
@@ -487,7 +501,53 @@ if (A.saveReport !== false) {
         `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(blocks)}\n` +
         `- 도구가 없거나(Report Archive 미가용) 저장이 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE" 한 줄만 반환.\n` +
         `- 성공하면 반환된 report.id(보고서 번호)만 한 줄로.`
-    report = await agent(raInstruction, { label: 'ra-save', phase: 'Report' })
+
+    // ⚠ 이 에이전트는 blocks 를 **도구 인자로 그대로 되받아 적어야** 한다. 그래서 blocks 가 크면
+    //   에이전트 출력이 모델 상한(64k 토큰)을 넘어 저장이 통째로 실패한다 — 실측 2026-09-01,
+    //   구축 계획서 75,373자 심의에서 ra-save 가 그 오류로 죽었다(심의 결과 자체는 무사).
+    //   그래서 한 호출이 감당할 크기로 페이지를 쪼갠다. 작은 심의는 종전 단일 호출 경로 그대로다.
+    const RA_PAGE_BUDGET = 24000
+    const pageChunks = (b) => {                 // 배열 항목을 누적 크기로 잘라 페이지 목록을 만든다
+      const keys = Object.keys(b)
+      const pages = []
+      let cur = {}, size = 0
+      for (const k of keys) {
+        for (const item of b[k]) {
+          const cost = item.length + 8
+          if (size + cost > RA_PAGE_BUDGET && size > 0) { pages.push(cur); cur = {}; size = 0 }
+          ;(cur[k] = cur[k] || []).push(item)
+          size += cost
+        }
+      }
+      if (size > 0) pages.push(cur)
+      return pages
+    }
+
+    if (!APPEND_TO && JSON.stringify(blocks).length > RA_PAGE_BUDGET) {
+      const pages = pageChunks(blocks)
+      log(`RA 저장 — 분량이 커서 ${pages.length}쪽으로 나눠 넣는다(한 쪽 ${RA_PAGE_BUDGET}자 예산)`)
+      report = await agent(
+        `create_report_draft 도구로 아래 심의 결과를 Report Archive 에 저장하라.\n` +
+        `인자: template_id="deliberation", template_version=1, title="심의 — ${Q.slice(0, 50)}",\n` +
+        `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(pages[0])}\n` +
+        `- 도구가 없거나 실패하면 재시도 없이 "RA_UNAVAILABLE" 한 줄만 반환.\n` +
+        `- 성공하면 반환된 report.id 만 한 줄로.`,
+        { label: 'ra-save', phase: 'Report' })
+      const rid = String(report || '').trim()
+      if (/^\d+$/.test(rid)) {
+        for (let i = 1; i < pages.length; i++) {
+          // 한 쪽이 실패해도 앞쪽은 이미 저장돼 있다 — 남은 쪽을 계속 시도하고 실패만 기록한다.
+          const r = await agent(
+            `update_report_draft(report_id=${rid}, page=${i + 1}, blocks=${JSON.stringify(pages[i])}) 를 호출하라.\n` +
+            `- 실패하면 재시도 없이 "PAGE_FAILED" 한 줄만 반환. 성공하면 "OK" 한 줄만.`,
+            { label: `ra-page${i + 1}`, phase: 'Report' })
+          if (/PAGE_FAILED/i.test(String(r || ''))) log(`⚠ RA ${i + 1}쪽 저장 실패 — 보고서 ${rid} 은 그 앞까지만 담겼다`)
+        }
+        report = rid
+      }
+    } else {
+      report = await agent(raInstruction, { label: 'ra-save', phase: 'Report' })
+    }
     if (typeof report === 'string' && /RA_UNAVAILABLE|FAILED|not available|unavailable/i.test(report)) {
       log('Report Archive 미가용 — 저장 건너뜀(심의 결과는 반환됨)')
       report = null
