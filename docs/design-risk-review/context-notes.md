@@ -140,6 +140,80 @@
 - **identity 불통은 P0 에서 anonymous.** §8.2.8 은 401→401·5xx/불통→503 이나 P0(읽기 전용)는 401/불통/없음 전부 anonymous(불통은
   캐시하지 않음)로 구현했고 P1 쓰기 라우트 확장 시 401/503 구분을 재결정한다. 같은 이유로 `PUT /me/portal-pat` 의 포털 검증
   불통이 지금은 422 `pat_invalid` 로 보이는데, P1 에서 503 `pat_verify_unavailable` 로 분리하는 것을 §8.2.3 오류 표에 제안한다.
+### D10. 포털 로그인 한 번으로 HEAX 앱까지 — 숨은 iframe SSO 프라이밍 (2026-08-31, 사용자 요구 "불편함은 다 없애라")
+- **원인.** HEAX `portal-callback`(HEAXHub `api/v1/portal_sso.py:181`)은 `heax_access_token` 쿠키를 심고 부트스트랩 HTML 로
+  `settings.portal_sso_landing`(고정 `/heax-hub/`)에 착지시킨다. 착지 경로를 인자로 받지 않아, 앱에 가려면 사용자가
+  ①HEAX 로그인 ②앱 열기 를 눌러야 했다.
+- **해결(포털 단독, HEAXHub 무수정).** 포털·HEAX·앱이 전부 같은 오리진(nginx :8088 뒤)이므로 로그인 직후 **숨은 iframe 으로
+  핸드오프를 조용히 태운다** — `frontend/src/components/layout/SsoPrimer.tsx` 를 `AppShell` 에 두었다(AppShell 은
+  `ProtectedRoute` 안에서만 그려져 '여기 닿음 = 로그인 완료'). 세션당 1회(`sessionStorage` `hwax.sso.primed`),
+  `mode==='auto_post'` 인 시스템만, 실패해도 화면 무영향. `heax-hub` 하나를 태우면 그 아래 모든 `/apps/<slug>/` 가 열린다.
+- **실측.** 클릭 0회로 포털 홈만 열었는데 `POST /systems/heax-hub/launch 200` → `POST /api/v1/auth/portal-callback 200` →
+  `GET /apps/hwax_risk/api/me` 가 `{email, anonymous:false, source:'cookie'}`. 커밋 9a15512.
+- **부수 확인.** 로그인 400 `state mismatch` 는 접속 호스트가 `PUBLIC_BASE_URL`(=`http://110.15.177.120:8088`)과 다를 때
+  난다 — state 쿠키를 심은 오리진과 콜백 오리진이 갈리기 때문이다. 쿠키 자체는 정상(`HttpOnly; Path=/auth; SameSite=lax`).
+  다른 호스트명으로 서비스하려면 `infra/.env` 의 `PUBLIC_BASE_URL` 을 바꾸고 `restart.sh` 를 돌려야 한다.
+
+### D9. 계획이 구현보다 앞선 상태 — 동기 패스가 닫아야 할 격차 목록 (2026-08-31, 실측)
+계획 개정(커밋 b9bd5f4)이 구현(앱 커밋 088b928)보다 앞서 있다. 의도한 순서다 — 구현은 커밋 f5c44e8 스냅샷(33표)을
+기준으로 병렬 진행했고, 개정분은 아래 한 패스로 흡수한다. **앱 DB 는 실데이터가 없어 v1 재생성 비용이 0 이다.**
+- **DDL 33 → 41.** `risk_store.py` 의 `_DDL_V1_SQL` 을 개정본 §5.2.2 전문으로 교체. 신규 표 8 — `rr_project_members` ·
+  `rr_gate_acks` · `rr_registry_status_log` · `rr_audit` · `rr_panel_calls` · `rr_cluster_alias` · `rr_requirements` ·
+  `rr_snapshot_jobs`. 열 추가 — `rr_projects`(classification·lifecycle·corpus_excluded·status·purged_at·merged_into·
+  mcp_visibility·product_code·product_refs_json·predecessor_product_code) · `rr_snapshots`(degraded_json·primary_source·
+  capture_partial·app_versions_json·job_id) · `rr_snapshot_calls`(job_id·contract_ok·reused_from_call_id, call_id 접두가
+  snapshot_id[:8]→job_id[:8], snapshot_id NULL 허용) · `rr_findings`(origin·author_sub·requirement_ref·status_source…) ·
+  `rr_registry`(status_source·human_n·needs_review_json…) · `rr_coverage`·`rr_jobs`·`rr_panels`(brief_token_hash 등).
+- **살림 표 `_user_credentials` 재정의** — `portal_pat` 평문 → `portal_pat_enc`(Fernet) + `pat_scopes_json` · `pat_jti` ·
+  `revoked_at`. 지금 코드는 평문을 넣는다.
+- **좌석 계약 `_common` 이 계획에서 2문장 늘었다**(요구 한계 기준 판정·요구 미등록 시 '내 경험 기준' 명기 / 소스 버전
+  상이·부분 캡처를 인용에 병기). 엔진 3자 파리티는 여전히 exit 0 이지만 **셋 다 계획보다 옛 문안**이다 — 앱 자산·PY·JS 를
+  함께 갱신하고 파리티를 다시 통과시켜야 한다.
+- **`_RISK_KEEP_TOOLS` 8 → 15** (get_top_issues·query_voc·search_voc·get_voc_summary·get_kg_relations·search_scholar·
+  search_web 추가). `query_voc` 는 `_FREE_ALLOW` 접두사에 안 걸려 `_g` 조립식 세 번째 or 조건이 필요하다.
+- **REST 4행 신설(requirements) + P1 산출물 라우트 16행 미착수.** requirements 4종은 구현돼 있으나(routes.py) 개정
+  §0.5.1 경로 집합 대비 라우터에 없는 것이 최소 16개다 — `PATCH /projects/{id}` · `GET|PUT /projects/{id}/members` ·
+  `POST /projects/{id}/transfer` · `POST /projects/{id}/merge` · `POST /projects/{id}/purge` · `GET /projects/{id}/audit` ·
+  `POST|DELETE /snapshots/{id}/gates/{G}/ack` · `PUT /targets/{key}/coverage/{agent_key}` · `POST /targets/{key}/findings` ·
+  `PUT|DELETE /findings/{id}` · `GET /targets/{key}/audit` · `GET /panels/{id}/brief` · `GET /curation` · `PUT /curation/{id}` ·
+  `PUT /registry/{cluster}/merge` · `POST /vocab/synonyms` · `POST /vocab/stop-tokens`. 이 중 members·transfer·purge·audit·
+  ack·curation 은 plan.md P1 산출물이다. 같은 이유로 `rr_project_members`·`rr_audit` 도 쓰는 라우트가 없었고 Settings
+  `risk_admin_roles` 는 consumer 0 이다. **이번 패스 범위** — `require_role()`·`project_role()`·`_audit()` 세 함수와
+  `PATCH /projects/{id}` · `POST|DELETE /snapshots/{id}/gates/{G}/ack` 를 넣었다(2026-08-31). 나머지 라우트 묶음
+  (members·transfer·merge·purge·audit·coverage·findings·curation·vocab)은 여전히 미착수다.
+- **Settings 17행 추가**(risk_max_leaf·risk_max_interfaces·risk_snapshot_budget_s·
+  risk_mcad_domains·risk_source_drift_block·risk_field_evidence_lines·risk_brief_token_ttl_s 등).
+- **MCP 계약 변경** — `risk_get_brief(target_key, brief_token, tier='B')` 로 인자 1개 추가(`brief_token_invalid`), 읽기 4종에
+  caller 범위 판정과 `{error:'not_visible'}`. `hwax-risk-review.js` args 에 `briefToken` 필수. 도구 수는 6종 그대로.
+- **409 확정** — `POST /diffs`·`POST /targets` 가 `gate_blocked {gates, reason∈unit_mismatch|unit_unknown}`, G6 는
+  `unknown_blocking` 이라 ack 불가(422 `gate_blocking`).
+
+**D9-a. 동기 패스 1차 반영분 (2026-08-31).** 위 목록 중 아래는 코드에 들어갔다.
+- 게이트 3값(`pass ∈ true|false|null` + `reason` 5종) · G6 `unknown_blocking` · `blocked` 계산식 · 규칙
+  `evaluable`·`not_evaluable_reason`(state.py). 픽스처 8케이스(gate_f6~f8 추가)와 `tests/test_gate_ack.py`.
+- 409 `gate_blocked {gates, reason}` — `AppError.detail` 이 본문 최상위에 실린다(errors.py).
+- `POST|DELETE /snapshots/{id}/gates/{G}/ack`(422 gate_passing·gate_blocking·reason_required, 409 gates_hash_stale,
+  rr_gate_acks 1행 + rr_audit(action='gate.ack')).
+- `PATCH /projects/{id}`(editor, mcp_visibility 는 owner) + `rr_project_members` owner 행 자동 삽입 + visible_projects
+  멤버십 갈래 → §8.2.5 ② org 경로가 실제로 열린다.
+- 서비스 자격 2키 분리(`HWAXRISK_PORTAL_PAT_RW`) + 정적 검사 `tests/test_no_write_tools.py`.
+- 표기층 위생 `render.sanitize_source_text` · `INJECTION_LEXICON`(inj-1.0) · `«[suspect_text …]»` ·
+  `rr_curation_queue(kind='suspect_text')` 적재. brief.py 의 E0·E2·E3·E4·E5·E6·E9·M 외부 문자열이 «…» 안에 들어간다.
+- `HWAXRISK_CRED_KEY`(env·secrets.env) 1순위 로드 + `HWAXRISK_CRED_KEY_PATH`, `$DATA_DIR/cred.key` 는 로컬 개발 폴백
+  (그때 `secrets_valid=false`). HEAXHub `appdata-to-drive.sh` 가 `cred.key`·`secrets.env` 를 tar 에서 뺀다.
+- PAT 폐기 대조(`runner.poll_revoked_pats`, sync_loop) + 재등록 시 `revoked_at` 해제 + 자격 write 의 트랜잭션 경계.
+- 미검증 actor(MCP) 산출의 `recall_eligible=0` 집행 · E6 후보 질의의 `recall_eligible=1` 필터.
+- 반출 경계 — `risk_export_allowed_groups`(403 export_not_allowed) · `X-Risk-Classification-Max` ·
+  purged/corpus_excluded 기본 제외(`?include_excluded=1`) · exports 사본 0600 · `risk_export_retain_days` 정리 ·
+  `X-Export-Path`(서버 절대 경로) 제거.
+- `POST /projects/{id}/snapshots` 의 `allow_large` + 409 `model_too_large`.
+- identity 캐시 상한(만료 회수 + 5000 상한), `GET /me` 의 `box.cred_key_present`·`portal_pat.jti`·`decryptable`.
+
+**미착수(다음 패스).** 스냅샷 캡처의 202 `{job_id}`·`rr_snapshot_jobs` 상태기계 · E5 3블록(E5+/E5−/E10)과
+`risk_neg_precedent_lines`·`risk_field_evidence_lines` · `backend/tests/golden/sif-e2e.ir.json`(실캡처 필요) ·
+D9 목록의 나머지 라우트 묶음. 그리고 `risk_pat_require_read_only` 는 **발급 메타데이터 확인이지 런타임 강제가 아니다** —
+포털·게이트웨이가 요청 경로에서 scopes 를 보지 않는다(plan §10 #17 ② 결정 대기). 동의 문구를 그 수준으로 낮춰 적었다.
+
 ### D8. P1 사전 정찰 — 소스 앱 실측이 계약 가정을 깼다 (2026-08-31, 읽기 전용 정찰)
 전문 `scratchpad/rr/p1-recon.md`(30KB, 도구별 응답 형상표·대조표·계획 수정 13항·블로커 7건). 요지만 남긴다.
 - **StepForge 에는 사용자 격리가 없다.** `whoami` 가 앱 신원만 주고 projects 표에 owner 컬럼이 없다 → §0.1.6 의 '서비스 PAT
