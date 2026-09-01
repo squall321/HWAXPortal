@@ -132,8 +132,19 @@ class Settings(BaseSettings):
     # 숨김 + 백엔드 재검증). 콤마 구분. portal-admin 은 항상 포함, 물성 담당 그룹을 사내
     # AD 그룹명으로 추가하면 된다. 빈 값이면 아무도 업로드 못 한다(안전 기본).
     upload_allowed_groups: str = "portal-admin"
+    # 목적지별 그룹 — 업로드가 물성 하나로 고정돼 있던 것을 여러 목적지로 연다. 목적지마다
+    # 파급이 달라 그룹도 따로 둔다(물성 DB 오염 ≠ CAD 과제 생성). 빈 값이면 그 목적지는
+    # 아무도 못 쓴다(안전 기본 — upload_allowed_groups 와 같은 규칙).
+    # ⚠ upload_allowed_groups 는 material 목적지의 별칭으로 남는다(하위호환, 기존 배포 무변경).
+    upload_groups_step: str = "portal-admin"          # StepForge — CAD 반입·파트 추출
     # 업로드 스테이징 루트 — 사용자별 하위폴더. TTL 지난 것과 확정된 것은 정리한다.
     upload_staging_dir: str = "/var/upload-staging"   # 컨테이너 바인드(start.sh). UPLOAD_STAGING_DIR 로 오버라이드
+    # 같은 스테이징의 **호스트** 경로. StepForge 등 다른 컨테이너에 파일을 넘길 때 필요하다 —
+    # MCP upload_step 은 "서버가 읽을 수 있는 절대경로"를 받는데, 포탈이 보는 컨테이너 경로
+    # (/var/upload-staging)를 그대로 주면 상대는 못 읽는다. apptainer 가 $HOME 을 자동 마운트하므로
+    # 호스트 경로는 양쪽에서 같게 보인다(2026-09-01 heax_app_step_forge 인스턴스에서 실측 확인).
+    # 빈 값이면 변환하지 않고 컨테이너 경로를 그대로 쓴다(로컬 개발·비컨테이너 실행).
+    upload_staging_host_dir: str = ""                 # 예: /home/koopark/.hwax/upload-staging
     upload_staging_ttl_hours: int = 6
     mcp_gateway_url: str = "http://127.0.0.1:9110"    # MCP Gateway (HWAXMcpGateway; aggregates the 3 MCPs). :9100 was node_exporter.
     mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
@@ -212,6 +223,10 @@ class Settings(BaseSettings):
     @property
     def upload_allowed_group_list(self) -> list[str]:
         return [g.strip() for g in self.upload_allowed_groups.split(",") if g.strip()]
+
+    @property
+    def upload_group_step_list(self) -> list[str]:
+        return [g.strip() for g in self.upload_groups_step.split(",") if g.strip()]
 
     @property
     def pat_default_audience_list(self) -> list[str]:

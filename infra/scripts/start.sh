@@ -49,6 +49,11 @@ else
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \
+    `# 같은 스테이징의 호스트 경로 — 다른 컨테이너(StepForge)에 파일을 넘길 때 필요하다.` \
+    `# MCP upload_step/intake 는 "서버가 읽을 수 있는 절대경로"를 받는데, 컨테이너 경로를` \
+    `# 그대로 주면 상대는 못 읽는다. apptainer 가 $HOME 을 자동 마운트해 호스트 경로는` \
+    `# 양쪽에서 같게 보인다(heax_app_step_forge 인스턴스에서 실측 확인, 2026-09-01).` \
+    --env "UPLOAD_STAGING_HOST_DIR=$STAGING_HOST" \
     --env "APP_ENV=${APP_ENV:-prod}" \
     --env "SERVE_FRONTEND=true" \
     --env "JWT_AUTOGEN_KEYS=true" \

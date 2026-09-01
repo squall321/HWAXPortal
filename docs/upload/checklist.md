@@ -1,31 +1,42 @@
-# 챗 파일 업로드 — 체크리스트
+# 챗 업로드 목적지 라우팅 — 체크리스트
 
-각 항목은 "무엇을 한다 → 무엇으로 검증한다" 형태다.
+계획 `PLAN-destinations.md` 기준. 사용자 결정 — 목적지별 그룹 · STEP 먼저 · B(되묻기) ·
+그룹은 일단 `portal-admin` 후 `.env` 로 조정 · 되묻기에 **기존 과제 목록도 함께** 띄운다.
 
-## A. 첨부·수신
-- [ ] 챗 입력에 파일 첨부 버튼/드롭존 추가 → 검증: 파일 선택 시 파일명·크기가 입력 위에 칩으로 뜬다
-- [ ] `POST /agent/upload` (multipart) 백엔드 엔드포인트 → 검증: curl 로 파일 올리면 staging_id 반환, 스테이징 디렉터리에 파일 생김
-- [ ] 파일을 디스크로 스트리밍(메모리에 통째로 안 올림) → 검증: 큰 파일 업로드 중 프로세스 RSS 가 파일 크기만큼 안 뜀. nginx 2GB 초과는 nginx 가 413 으로 막음
-- [ ] 스테이징 TTL 정리 + 확정 후 삭제 → 검증: TTL 지난 파일이 다음 정리에서 사라짐, 확정 후 즉시 삭제됨
-- [ ] 업로드는 사용자 PAT 필수, 강등 시 거부 → 검증: PAT 없는/거절된 요청에 401·403, 서비스 계정 폴백 안 함
-- [ ] 업로드 권한 그룹 게이트(두 층) → 검증: 그룹 밖 사용자는 첨부 UI 안 뜸 + 백엔드가 그룹 없는 요청 403
+## 백엔드
 
-## B. 검사·메타추출
-- [ ] 파일 종류 판별(확장자+매직바이트) → 검증: xlsx/csv/pdf/png 각각 올려 종류가 맞게 찍힘
-- [ ] 구조 파악 — inspect_file/parse_raw_rows 로 표/시트 구조 → 검증: 시험보고서 xlsx 에서 열·행 구조가 나옴
-- [ ] 대상 스키마 로드 — list_property_definitions(물성) → 검증: 물성 정의 목록이 실제로 옴
-- [ ] AI 메타 초안 — 추출값을 스키마 필드에 매핑 → 검증: 알려진 시험보고서에서 재료명·물성값이 맞는 필드로 감
+- [ ] `config.py` — `upload_groups_step` 추가, `upload_allowed_groups` 를 material 별칭으로 유지
+      → 검증: 기존 물성 업로드 경로가 그대로 동작(회귀 없음)
+- [ ] `config.py` — `upload_staging_host_dir` 추가(컨테이너 경로 → 호스트 경로 변환용)
+      → 검증: 미설정 시 컨테이너 경로 그대로 반환(로컬 개발에서 안 깨짐)
+- [ ] `upload.py` — `DESTINATIONS` 레지스트리(id·label·exts·groups_setting)
+      → 검증: 확장자·그룹 조합별 단위 시험
+- [ ] `upload.py` — `allowed_destinations(settings, groups, ext)` · `require_destination_group()`
+      → 검증: 그룹 없는 사용자에게 빈 배열, dispatch 는 403
+- [ ] `upload.py` — `host_path(settings, container_path)` 변환
+      → 검증: 탐침으로 확인한 실제 경로와 일치
+- [ ] `routes.py` — `POST /upload` 응답에 `destinations[]` 추가
+      → 검증: STEP 올리면 stepforge 만, CSV 면 material 만
+- [ ] `routes.py` — `GET /upload/destinations/stepforge/projects` (되묻기용 기존 과제 목록)
+      → 검증: MCP `list_projects` 결과가 그대로 온다
+- [ ] `routes.py` — `POST /upload/dispatch` — 목적지 그룹 재검사 → 핸들러 분기
+      → 검증: 클라이언트가 목적지를 조작해도 403
+- [ ] STEP 핸들러 — 새 과제(`create_project`) 또는 기존 과제 선택 → `upload_step(호스트경로)` → 잡 반환
+      → 검증: 실제 STEP 으로 end-to-end 1회
 
-## C. 확인·보완
-- [ ] 추출 결과 폼 렌더 — 채운 필드/빈 필드 구분 → 검증: 화면에 자동채움/수동입력이 시각적으로 갈림
-- [ ] 빈 필드 사용자 입력 → 검증: 입력 후 폼이 완결됨
-- [ ] dry_run 미리보기 — register_*(dry_run) 검증 결과 → 검증: 잘못된 값이면 그 사유가 폼에 표시됨
+## 프론트
 
-## D. 확정·기록
-- [ ] 확정 시 register_*(dry_run=False) 호출 → 검증: 실제로 DB 에 들어가고 조회로 확인됨(get_material 등)
-- [ ] 결과·링크 반환 + 스테이징 삭제 → 검증: 성공 응답에 레코드 id, 스테이징 파일 사라짐
-- [ ] 실패 시 조용히 성공 위장 안 함 → 검증: 백엔드 거절 시 그 사유가 사용자에게 그대로 보임
+- [ ] `Composer.tsx` — 업로드 응답의 `destinations` 로 버튼 렌더(심의 브리프 패턴 재사용)
+- [ ] stepforge 선택 시 — 새 과제명 입력 / 기존 과제 선택 토글
+- [ ] dispatch 후 잡 id·진행 안내
 
-## 회귀
-- [ ] 기존 챗·심의 동작 무변화 → 검증: 첨부 없는 일반 챗·심의가 종전대로 돎
-- [ ] 프론트 빌드 통과 + 번들에 첨부 UI 포함
+## 배포
+
+- [ ] `start.sh` — `UPLOAD_STAGING_HOST_DIR` 주입
+- [ ] `.env.example` — 새 키 문서화
+
+## 마무리
+
+- [ ] `context-notes.md` 에 결정·근거 누적
+- [ ] 프론트 빌드 통과
+- [ ] 커밋(의미 단위로 분리 — 백엔드/프론트/배포)

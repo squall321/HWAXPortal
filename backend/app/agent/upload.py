@@ -14,6 +14,98 @@ from app.config import Settings
 _CHUNK = 1 << 20  # 1MiB
 
 
+# ── 목적지 레지스트리 ────────────────────────────────────────────
+# 업로드가 materialtwin 물성 하나로 고정돼 있던 것을 목적지 선택형으로 연다.
+# 확장자로 **자동 라우팅하지 않는다** — 목적지는 사람이 고른다(PLAN-destinations.md).
+# 같은 확장자를 다른 곳에 넣고 싶은 경우가 있고, 자동 분기는 이 기능의 2층 권한 게이트
+# 설계(오염 파급이 큰 곳일수록 사람이 확인)와 어긋난다.
+#
+# groups_attr 는 Settings 의 그룹 리스트 property 이름이다. 목적지마다 파급이 달라
+# 그룹을 따로 둔다 — 물성 DB 오염과 CAD 과제 생성은 위험 등급이 같지 않다.
+DESTINATIONS: dict[str, dict] = {
+    "material": {
+        "label": "물성 DB — 인장·완화 시험 등록",
+        "exts": {"csv", "xlsx"},
+        "groups_attr": "upload_allowed_group_list",
+    },
+    "stepforge": {
+        "label": "StepForge — 어셈블리 파트 추출·메시·K파일",
+        "exts": {"step", "stp", "msh", "zip"},
+        "groups_attr": "upload_group_step_list",
+    },
+}
+
+
+def _dest_groups(settings: Settings, dest_id: str) -> list[str]:
+    spec = DESTINATIONS.get(dest_id)
+    if not spec:
+        return []
+    return list(getattr(settings, spec["groups_attr"], []) or [])
+
+
+def allowed_destinations(settings: Settings, groups: list[str], ext: str) -> list[dict]:
+    """이 사용자·이 확장자로 고를 수 있는 목적지. 되묻기(B) 화면의 입력이다.
+
+    빈 배열이면 프론트가 "보낼 곳이 없다" 를 띄운다 — 조용히 아무 데나 보내지 않는다.
+    """
+    have = set(groups or [])
+    out: list[dict] = []
+    for did, spec in DESTINATIONS.items():
+        if ext and ext not in spec["exts"]:
+            continue
+        allowed = set(_dest_groups(settings, did))
+        if allowed and (allowed & have):
+            out.append({"id": did, "label": spec["label"]})
+    return out
+
+
+def require_any_upload_group(settings: Settings, groups: list[str]) -> None:
+    """수신(스테이징) 게이트 — 목적지 **하나라도** 쓸 수 있으면 통과.
+
+    목적지별 판정은 dispatch 가 다시 한다. 여기서 특정 목적지 그룹을 요구하면
+    CAD 담당자가 STEP 을 올리지도 못한다(목적지를 나누기 전 동작이 그랬다).
+    어디에도 속하지 않으면 파일을 받지 않는다 — 쓰지도 못할 파일을 디스크에 쌓지 않는다.
+    """
+    have = set(groups or [])
+    for did in DESTINATIONS:
+        allowed = set(_dest_groups(settings, did))
+        if allowed and (allowed & have):
+            return
+    raise AuthError(
+        "파일 업로드 권한이 없습니다 — 업로드 대상 그룹에 속해 있어야 합니다.",
+        status_code=403,
+    )
+
+
+def require_destination_group(settings: Settings, groups: list[str], dest_id: str) -> None:
+    """dispatch 층의 재검사. /upload 응답의 destinations 를 믿지 않는다 — 클라이언트가
+    목적지 문자열을 바꿔 보낼 수 있으므로 실제 실행 직전에 다시 판정한다."""
+    if dest_id not in DESTINATIONS:
+        raise AuthError(f"알 수 없는 목적지입니다: {dest_id}", status_code=400)
+    allowed = set(_dest_groups(settings, dest_id))
+    if not allowed or not (allowed & set(groups or [])):
+        raise AuthError(
+            f"'{DESTINATIONS[dest_id]['label']}' 으로 보낼 권한이 없습니다.",
+            status_code=403,
+        )
+
+
+def host_path(settings: Settings, container_path: str | Path) -> str:
+    """컨테이너 경로 → 호스트 절대경로. 다른 컨테이너(StepForge)에 파일을 넘길 때 쓴다.
+
+    MCP upload_step 은 "서버가 읽을 수 있는 절대경로" 를 받는데, 포탈이 보는
+    /var/upload-staging 은 포탈 컨테이너 안에서만 유효하다. apptainer 가 $HOME 을
+    자동 마운트하므로 호스트 경로는 양쪽에서 같게 보인다(실측 확인).
+    upload_staging_host_dir 이 비면 변환하지 않는다(로컬·비컨테이너 실행).
+    """
+    p = str(container_path)
+    hostdir = (settings.upload_staging_host_dir or "").rstrip("/")
+    base = str(settings.upload_staging_dir).rstrip("/")
+    if hostdir and p.startswith(base + "/"):
+        return hostdir + p[len(base):]
+    return p
+
+
 def require_upload_group(settings: Settings, groups: list[str]) -> None:
     """업로드 권한 그룹 게이트(백엔드 층). 프론트가 버튼을 숨겨도 API 직접 호출을 막는다.
 

@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import re
+from pathlib import Path
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -715,13 +716,20 @@ async def upload_file(
     두 층 게이트의 백엔드 층 — 프론트가 버튼을 숨겨도 이 검사가 API 직접 호출을 막는다.
     업로드는 쓰기라 사용자 자격증명이 반드시 있어야 하고, 강등되면 안 된다(무음 강등 금지).
     """
-    _upload.require_upload_group(settings, principal.groups)
+    # 수신 게이트는 **어느 목적지든 하나는 쓸 수 있는 사람**이면 통과시킨다. 목적지별
+    # 판정은 dispatch 에서 다시 한다 — 여기서 물성 그룹만 요구하면 CAD 담당자가 STEP 을
+    # 아예 올리지도 못한다(목적지를 나누기 전 동작이 그랬다).
+    _upload.require_any_upload_group(settings, principal.groups)
     audit = _audit(request)
     meta = await _upload.stage_upload(settings, principal.subject, file)
     audit.record(principal=principal.subject, event="upload_stage", status="ok",
                  meta={"filename": meta["filename"], "size": meta["size"], "ext": meta["ext"]})
     # path 는 내부용 — 응답에 내보내지 않는다.
-    return {k: v for k, v in meta.items() if k != "path"}
+    out = {k: v for k, v in meta.items() if k != "path"}
+    # 되묻기(B)의 입력 — 이 사용자·이 확장자로 고를 수 있는 목적지. 빈 배열이면
+    # 프론트가 "보낼 곳이 없다" 를 띄운다. 조용히 아무 데나 보내지 않는다.
+    out["destinations"] = _upload.allowed_destinations(settings, principal.groups, meta["ext"])
+    return out
 
 
 async def _upload_register(request, principal, settings, body, dry_run: bool):
@@ -762,6 +770,104 @@ async def _upload_register(request, principal, settings, body, dry_run: bool):
                  "thickness_mm": body.thickness_mm, "dry_run": dry_run}
     out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "register_tensile_test", tool_args)
     return {"stage": "preview" if dry_run else "committed", "material_id": mid, **out}
+
+
+class UploadDispatchReq(BaseModel):
+    """되묻기(B)에서 사용자가 고른 목적지로 스테이징 파일을 보낸다."""
+    model_config = {"extra": "ignore"}
+    staging_id: str
+    filename: str
+    destination: str                   # DESTINATIONS 의 id
+    # stepforge 전용 — 새 과제를 만들거나(project_name) 기존 과제에 붙인다(project_id).
+    project_id: str = ""
+    project_name: str = ""
+    run: str = "parse"                 # parse|pipeline|detect|mesh|none — 등록 후 돌릴 잡
+
+
+@router.get("/upload/destinations/stepforge/projects")
+async def upload_stepforge_projects(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """되묻기 화면에 띄울 StepForge 기존 과제 목록. 새 과제/기존 과제를 고르게 한다."""
+    _upload.require_destination_group(settings, principal.groups, "stepforge")
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+    out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "list_projects", {})
+    return out
+
+
+@router.post("/upload/dispatch")
+async def upload_dispatch(
+    request: Request,
+    body: UploadDispatchReq,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """고른 목적지로 스테이징 파일을 넘긴다.
+
+    ⚠ 목적지 권한을 **여기서 다시 판정한다** — /upload 응답의 destinations 는 참고용이고
+    클라이언트가 destination 문자열을 바꿔 보낼 수 있다.
+    """
+    _upload.require_destination_group(settings, principal.groups, body.destination)
+    audit = _audit(request)
+    path = _upload.staged_path(settings, principal.subject, body.staging_id, body.filename)
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+
+    if body.destination != "stepforge":
+        # material 은 파싱·미리보기가 필요해 기존 analyze/commit 경로를 그대로 쓴다.
+        raise AuthError(
+            f"'{body.destination}' 은 dispatch 로 보내지 않습니다 — 전용 경로를 쓰세요.",
+            status_code=400,
+        )
+
+    # ── StepForge ────────────────────────────────────────────────
+    # ⚠ 컨테이너 경로가 아니라 **호스트 경로**를 넘긴다 — StepForge 는 다른 컨테이너다.
+    #   apptainer 가 $HOME 을 자동 마운트해 같은 절대경로로 보인다(실측 확인).
+    #   파일 본문은 MCP 로 나르지 않는다 — 693MB 급을 페이로드에 못 싣는다(StepForge PLAN §8).
+    src = _upload.host_path(settings, path)
+    run = body.run if body.run in ("parse", "detect", "mesh", "pipeline", "none") else "parse"
+    pid = (body.project_id or "").strip()
+
+    if not pid:
+        # 새 과제 — intake 하나로 과제 생성·메타·등록·잡까지 끝난다(세 번 부를 것을 한 번에).
+        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "intake", {
+            "path": src,
+            "name": (body.project_name or "").strip() or Path(body.filename).stem,
+            "owner": principal.subject,
+            "run": run,
+        })
+        pid = str(out.get("project_id") or "").strip()
+        job_id = out.get("job_id")
+        created = True
+    else:
+        # 기존 과제에 추가 — intake 는 과제를 새로 만들므로 여기선 쓰지 않는다.
+        # 같은 이름 재등록은 StepForge 가 **갱신**으로 처리하고, 잡이 도는 중 교체는 거부한다.
+        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "upload_step",
+                                     {"project_id": pid, "path": src})
+        job_id = None
+        if run != "none":
+            job = await _upload.mcp_call(settings.mcp_gateway_url, pat, "run_job",
+                                         {"project_id": pid, "kind": run})
+            job_id = job.get("job_id")
+        created = False
+
+    if not pid:
+        return {"stage": "failed", "error": "StepForge 과제를 만들지 못했습니다.", "detail": out}
+
+    audit.record(principal=principal.subject, event="upload_dispatch", status="ok",
+                 meta={"destination": "stepforge", "project_id": pid,
+                       "filename": body.filename, "run": run, "created": created})
+    # 파싱은 잡이다 — 407MB SIF 에 파싱 피크 RSS 5.13GB 실측이라 챗 요청 안에서 기다리지 않는다
+    # (매니페스트 memory_gb: 16 의 근거). job_id 로 진행을 본다.
+    return {"stage": "dispatched", "destination": "stepforge", "project_id": pid,
+            "created_project": created, "job_id": job_id, "kind": None if run == "none" else run,
+            "next": "job_status(job_id) 로 진행을 보고, 끝나면 project_tree·list_interfaces",
+            "result": out}
 
 
 @router.post("/upload/analyze")
