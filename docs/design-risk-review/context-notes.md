@@ -186,6 +186,10 @@
   `rr_registry`(status_source·human_n·needs_review_json…) · `rr_coverage`·`rr_jobs`·`rr_panels`(brief_token_hash 등).
 - **살림 표 `_user_credentials` 재정의** — `portal_pat` 평문 → `portal_pat_enc`(Fernet) + `pat_scopes_json` · `pat_jti` ·
   `revoked_at`. 지금 코드는 평문을 넣는다.
+  - **정정(2026-09-01).** '`cred.key` 를 Drive tar 제외 규칙에 넣어야 한다' 고 적었으나 **이미 되어 있다** —
+    `HEAXHub/deploy/apptainer/appdata-to-drive.sh:43-45` 가 tar 직전 스냅샷에서 `cred.key`·`secrets.env` 를
+    찾아 지운다(주석: 둘이 한 tarball 로 나가면 `Fernet(cred.key).decrypt(portal_pat_enc)` 로 PAT 원문이 복구된다).
+    부수 효과 — 복원한 박스에는 키가 없으므로 사용자가 PAT 를 **재등록**해야 하고, 앱은 `cred_key_absent` 로 안내한다.
 - **좌석 계약 `_common` 이 계획에서 2문장 늘었다**(요구 한계 기준 판정·요구 미등록 시 '내 경험 기준' 명기 / 소스 버전
   상이·부분 캡처를 인용에 병기). 엔진 3자 파리티는 여전히 exit 0 이지만 **셋 다 계획보다 옛 문안**이다 — 앱 자산·PY·JS 를
   함께 갱신하고 파리티를 다시 통과시켜야 한다.
