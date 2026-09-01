@@ -1138,7 +1138,11 @@
   background: var(--surface, #fff); cursor: pointer; font-size: 13px;
 }
 .upl-actions .upl-commit { background: var(--accent, #2563eb); color: #fff; border-color: transparent; }
+.upl-actions .upl-go { background: var(--accent, #2563eb); color: #fff; border-color: transparent; }
 .upl-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 목적지 되묻기 — 버튼이 라벨을 담아 길어지므로 줄바꿈을 허용하고 세로로 쌓는다. */
+.upl-actions.upl-dests { flex-wrap: wrap; }
+.upl-actions.upl-dests .upl-go { flex: 1 1 240px; text-align: left; }
 
 /* 심의 목적(Job) 그리드 · 얹을 층 — DeliberatePage 히어로. method-picker 클래스(.cx-brief-*) 재사용 */
 .cx-jobgroup-wide { width: 100%; margin-top: 10px; text-align: left; }

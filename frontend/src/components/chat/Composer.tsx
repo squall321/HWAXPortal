@@ -15,7 +15,7 @@ import { SourcePanel } from './SourcePanel';
 import { IconSend, IconStop } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
-import { UploadPanel } from './UploadPanel';
+import { UploadRouter } from './UploadRouter';
 
 export interface ComposerHandle {
   focus: () => void;
@@ -138,7 +138,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ))}
         </div>
       )}
-      {staged && <UploadPanel staged={staged} onClose={() => setStaged(null)} />}
+      {staged && <UploadRouter staged={staged} onClose={() => setStaged(null)} />}
       {upErr && <div className="upl-err" role="alert">⚠ {upErr}</div>}
       <div className="composer-box">
         <textarea
@@ -152,11 +152,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         />
         {canUp && !streaming && (
           <>
-            <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }}
+            <input ref={fileRef} type="file" accept=".csv,.xlsx,.step,.stp,.msh,.zip" style={{ display: 'none' }}
               onChange={(e) => void onPick(e.target.files?.[0] ?? undefined)} />
             <button type="button" className="composer-btn composer-attach"
               onClick={() => fileRef.current?.click()}
-              aria-label="물성 파일 업로드" title="물성 파일 업로드 (CSV)">+</button>
+              aria-label="파일 업로드" title="파일 업로드 — 물성 CSV · STEP·MSH·ZIP">+</button>
           </>
         )}
         {streaming ? (
