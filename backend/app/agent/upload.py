@@ -128,17 +128,27 @@ def _user_dir(settings: Settings, sub: str) -> Path:
 
 
 def sweep_expired(settings: Settings) -> int:
-    """TTL 지난 스테이징 파일을 지운다. 지운 개수 반환. 실패는 무시(청소가 업로드를 막지 않게)."""
+    """TTL 지난 스테이징을 지운다. 지운 개수 반환. 실패는 무시(청소가 업로드를 막지 않게)."""
     root = Path(settings.upload_staging_dir)
     if not root.exists():
         return 0
     cutoff = time.time() - settings.upload_staging_ttl_hours * 3600
     n = 0
-    for f in root.glob("*/*"):
+    # <사용자>/<staging_id 상자>. 파일이 곧바로 오면 폴더로 바꾸기 전에 남은 것이라 같이 지운다.
+    for entry in root.glob("*/*"):
         try:
-            if f.is_file() and f.stat().st_mtime < cutoff:
-                f.unlink()
+            # 상자 자체의 mtime 으로 판정한다 — 쓰는 중인 상자는 mtime 이 새것이라
+            # 청소가 진행 중인 업로드를 지우지 않는다.
+            if entry.stat().st_mtime >= cutoff:
+                continue
+            if entry.is_file():
+                entry.unlink()
                 n += 1
+            elif entry.is_dir():
+                for f in entry.iterdir():
+                    f.unlink()
+                    n += 1
+                entry.rmdir()
         except OSError:
             continue
     return n
@@ -154,7 +164,12 @@ async def stage_upload(settings: Settings, sub: str, file: UploadFile) -> dict:
     d = _user_dir(settings, sub)
     staging_id = uuid.uuid4().hex
     orig = (file.filename or "upload").replace("/", "_").replace("\\", "_")
-    dest = d / f"{staging_id}__{orig}"
+    # staging_id 를 **파일명 접두가 아니라 폴더**로 쓴다. 접두를 쓰면 그 32자가 파일명의
+    # 일부가 되어 StepForge 의 영구 파트 경로에까지 박힌다 — 그 경로가 곧 run_job 의
+    # 범위 지정(match_path) 대상이라 남의 시스템 식별자를 오염시킨다(2026-09-01 e2e 확인).
+    box = d / staging_id
+    box.mkdir(parents=True, exist_ok=True)
+    dest = box / orig
     size = 0
     with dest.open("wb") as out:
         while True:
@@ -175,11 +190,15 @@ async def stage_upload(settings: Settings, sub: str, file: UploadFile) -> dict:
 
 
 def staged_path(settings: Settings, sub: str, staging_id: str, filename: str) -> Path:
-    """확정·삭제용 경로 복원. staging_id 가 파일명 접두라 사용자 폴더 안에서만 찾는다."""
-    d = _user_dir(settings, sub)
-    # staging_id 로 시작하는 파일 하나. 경로 조작은 _user_dir 의 sub 정규화로 이미 막힌다.
-    for f in d.glob(f"{staging_id}__*"):
-        return f
+    """확정·삭제용 경로 복원. staging_id 가 폴더라 그 안의 파일 하나를 집는다."""
+    # staging_id 는 이제 **경로 한 조각**이라 값 자체를 막아야 한다(전에는 glob 패턴의
+    # 접두라 그럴 필요가 없었다). uuid4().hex 만 통과시키면 '..' 도 '/' 도 못 들어온다.
+    if not staging_id.isalnum():
+        raise AuthError("staging_id 형식이 아닙니다.", status_code=400)
+    box = _user_dir(settings, sub) / staging_id
+    for f in sorted(box.glob("*")):
+        if f.is_file():
+            return f
     raise AuthError("staging 파일을 찾을 수 없습니다(만료됐거나 이미 처리됨).", status_code=404)
 
 
