@@ -140,6 +140,26 @@
 - **identity 불통은 P0 에서 anonymous.** §8.2.8 은 401→401·5xx/불통→503 이나 P0(읽기 전용)는 401/불통/없음 전부 anonymous(불통은
   캐시하지 않음)로 구현했고 P1 쓰기 라우트 확장 시 401/503 구분을 재결정한다. 같은 이유로 `PUT /me/portal-pat` 의 포털 검증
   불통이 지금은 422 `pat_invalid` 로 보이는데, P1 에서 503 `pat_verify_unavailable` 로 분리하는 것을 §8.2.3 오류 표에 제안한다.
+### D11. 첫 실주행 — MCP 경로로 서비스 PAT 없이 실제 스냅샷을 떴다 (2026-09-01)
+- **경로.** 포털 로그인 → `SsoPrimer` 자동 연동 → 사용자 본인 포털 PAT 발급(`scopes:['read']`·`aud:['mcp-gateway']`·30일)
+  → 앱 `PUT /api/me/portal-pat` 등록 → `POST /api/projects`(SIF-E2E, classification internal) →
+  `POST /projects/{id}/sources`(mcad · heax-step_forge · `stepforge_project_id 001a02ba21cd51064a68c35`) →
+  `POST /projects/{id}/snapshots` → **`snapshot_id c185def4…` · `ir_hash 3815efa9c49dde50…`**. 앱 화면에도 렌더된다.
+- **핵심.** `create_snapshot`(routes.py:1128)이 **호출자 본인의 등록 PAT**를 쓴다 — 관리자 서비스 PAT 없이도 게이트웨이 MCP
+  경로로 실캡처가 된다. 서비스 PAT 는 REST 채널(tree.json) 전용이다.
+- **결과가 정찰을 재현했다.** 게이트 G1·G2·G3·G5 pass / **G4·G6 fail → `blocked:true`**, degraded 는
+  `mcp_degraded · no_node_id · no_world_transform · no_depth_seq · tol_config_unknown · volume_null_pre_d168 ·
+  detect_absent · ecad_absent · no_auto_named_flag`. MCP 판에 노드 id·transform·공차가 없다는 D8 실측 그대로다.
+  **온전한 스냅샷(blocked:false)에는 `HWAXRISK_HEAX_SERVICE_PAT` 가 필요하다.**
+- **가는 길에 잡은 실제 결함 3건.**
+  1. **HEAXHub 는 SIF 를 재빌드해도 실행 중 인스턴스를 자동 재시작하지 않는다** — 배포본이 12시간 전 코드였고
+     openapi 경로가 6개였다(현재 58). `deploy/apptainer/redeploy-app.sh <slug>` 가 라이브 전환 정본이다.
+     ⚠ `/api/health` 응답 형식만 보고 최신이라 판단하면 안 된다(P0 정합 때부터 같은 3키였다).
+  2. **v1 DDL 을 교체해도 이미 만들어진 DB 는 `user_version=1` 이라 마이그레이션이 건너뛴다** — 배포 DB 가 옛 33표에
+     묶여 `no column named classification` 로 500. 행 0건 확인 후 `risk_review.db{,-wal,-shm}.pre-recreate-<ts>` 로
+     백업하고 재기동해 41표로 재생성했다. 실데이터가 생긴 뒤에는 이 방법을 쓸 수 없다 — 그때는 v2 마이그레이션이어야 한다.
+  3. **SsoPrimer 가 세션당 1회라 heax 토큰(3600 s) 만료 뒤 401** — TTL 45분·5분 주기·탭 복귀 재확인으로 고쳤다(b5323db).
+
 ### D10. 포털 로그인 한 번으로 HEAX 앱까지 — 숨은 iframe SSO 프라이밍 (2026-08-31, 사용자 요구 "불편함은 다 없애라")
 - **원인.** HEAX `portal-callback`(HEAXHub `api/v1/portal_sso.py:181`)은 `heax_access_token` 쿠키를 심고 부트스트랩 HTML 로
   `settings.portal_sso_landing`(고정 `/heax-hub/`)에 착지시킨다. 착지 경로를 인자로 받지 않아, 앱에 가려면 사용자가
