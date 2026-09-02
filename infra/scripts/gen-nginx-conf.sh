@@ -8,6 +8,8 @@ set -euo pipefail
 ROUTES_FILE="$REPO_ROOT/backend/${ROUTES_PATH}"
 TMPL="$NGINX_DIR/hwax.conf.tmpl"
 OUT="$NGINX_DIR/hwax.conf"
+# 접근 로그 디렉터리 — nginx 는 디렉터리를 만들어 주지 않는다. conf 가 가리키는 자리를 보장.
+mkdir -p "$(dirname "$NGINX_DIR")/data"
 
 # Per-route extra directives. Most services need nothing; a few have traffic the defaults
 # break. Keyed by the FULL id so a nested id (e.g. "svc/api") can differ from its parent.

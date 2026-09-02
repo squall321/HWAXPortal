@@ -11,7 +11,14 @@ events { worker_connections 1024; }
 http {
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
-    access_log off;
+    # 접근 로그 — "얼마나 많은 사람이 쓰는가"의 정문 기록(2026-09-02, 그전엔 off 라 정문이
+    # 통째로 안 세졌다). 쿼리 스트링은 일부러 뺀다($uri) — /auth/callback?code=… 의 자격
+    # 코드가 로그에 남으면 안 된다. 위치는 /workspace(레포 바인드)의 gitignore 영역이라
+    # 재기동에도 남고 커밋되진 않는다. 집계는 infra/scripts/usage-report.sh.
+    log_format hwax_access '$remote_addr "$http_x_forwarded_for" [$time_iso8601] '
+                           '"$request_method $uri" $status $body_bytes_sent '
+                           '"$http_user_agent"';
+    access_log /workspace/infra/data/nginx-access.log hwax_access buffer=16k flush=5s;
     sendfile on;
     server_tokens off;
 
