@@ -420,6 +420,23 @@ PY
         # 허브가 살아 있으면 services.py 가 'already-up' 으로 돌려보내 아무것도 안 하고,
         # 화면엔 '✓ heax-hub already-up' 이 찍혀 복구된 것처럼 보인다(무동작을 복구로 표시).
         # 앱 단위 조치를 직접 부른다. 스크립트가 없으면 할 일을 사람이 알 수 있게 남긴다.
+        # DynaForge MCP 는 **프록시**다 — heax 앱이 :8701(KooRemapper mcp_server)로 넘긴다.
+        # 앱만 재배포하면 프록시는 살아나고 업스트림은 그대로라 '도구는 뜨는데 호출은 실패'가
+        # 된다(update-all 자신이 §6에서 그 모양을 설명하고 있다). 업스트림을 함께 띄운다 —
+        # kooremapper start.sh 가 :8700 과 :8701 을 같이 세운다. 아래 heax-* 보다 먼저 온다.
+        heax-kooremapper_mcp)
+          if [ "$(http_code http://127.0.0.1:8701/mcp 3)" = "000" ]; then
+            echo "  · DynaForge 업스트림(:8701)이 죽었다 — kooremapper 를 함께 띄운다"
+            UP_SVCS="$UP_SVCS kooremapper"
+          fi
+          _rd="${HEAX_DIR:-}/deploy/apptainer/redeploy-app.sh"
+          if [ -x "$_rd" ]; then
+            echo "  · heax 앱 kooremapper_mcp 다운 → redeploy-app.sh kooremapper-mcp"
+            bash "$_rd" kooremapper-mcp 2>&1 | tail -3 | sed 's/^/      /' \
+              || bad "heax 앱 kooremapper_mcp 재배포 실패 — 수동 확인 필요"
+          else
+            bad "heax 앱 kooremapper_mcp 다운 — redeploy-app.sh 없음($_rd)."
+          fi ;;
         heax-*)
           _slug="${b#heax-}"
           _rd="${HEAX_DIR:-}/deploy/apptainer/redeploy-app.sh"
@@ -523,7 +540,18 @@ for a in dead:
           % (a["app"], "연결안됨" if not a.get("reachable") else "연결됨", slug))
 PY
 fi
-probe "signalforge    :17370" http://127.0.0.1:17370/ 0 "200 302 401"
+# ⚠ :17370 은 **정적 프론트**라 API 가 죽어도 200 이 나온다(services.yaml 주석에도
+#   "프론트(:17370)도 정적이라 /zzz 가 200 이다" 라고 적혀 있다). 그것만 보면 '초록인데
+#   안 되는' 판정이 된다. 실제로 무엇이 도는지는 API 헬스가 말한다 — 둘 다 본다.
+probe "signalforge    :17370(프론트)" http://127.0.0.1:17370/ 0 "200 302 401"
+probe "signalforge    :18000(API)" http://127.0.0.1:18000/health 0 "200"
+# searxng — 종전엔 프로브도 복구도 없었다. 죽으면 웹 리서치가 조용히 멈추는데
+# update-all 은 아무 말도 안 했다(WEB_PROVIDER=searxng 일 때 앱이 이 주소로만 나간다).
+probe "searxng        :8888" http://127.0.0.1:8888/ 0 "200 302"
+if [ "$(http_code http://127.0.0.1:8888/ 4)" = "000" ]; then
+  echo "  · searxng 다운 → 기동"
+  "$SVC" up searxng || bad "searxng 기동 실패 — 웹 리서치가 막힌다(수동 확인)"
+fi
 # Smart Twin Explorer — 백엔드가 이 박스에 없다(헤드노드에 있다). 그래서 둘 다 비치명이다:
 # 헤드노드가 꺼져 있거나 망이 닫힌 상태는 포털 배포의 실패가 아니다.
 #   ① 헤드노드 백엔드 직결 — /api/health 는 무인증 공개 경로다(update-all 이 토큰 없이 부른다)
