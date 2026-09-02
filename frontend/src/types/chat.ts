@@ -19,6 +19,8 @@ export interface ActivityItem {
   // 드릴다운 — 도구 호출 입력/결과 요약(서버에서 절단되어 옴).
   detail?: string;
   result_preview?: string;
+  /** 심의 핸드오프용 날것(≈1200자) — 화면에는 안 쓴다. 표시용(220자)보다 길 때만 온다. */
+  result_full?: string;
 }
 
 // ── 심의(deliberation) 구조화 스트림 — 라이브 회의·스테퍼·수렴 UI(DelibView)의 데이터 ──
@@ -181,6 +183,7 @@ export interface StatusEvent {
   tools_used?: string[];
   detail?: string;
   result_preview?: string;
+  result_full?: string;
 }
 export interface TokenEvent {
   delta: string;

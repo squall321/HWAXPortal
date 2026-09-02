@@ -456,6 +456,8 @@ export function ChatProvider({
                       ...(e.tools_used ? { tools_used: e.tools_used } : {}),
                       ...(e.detail ? { detail: e.detail } : {}),
                       ...(e.result_preview ? { result_preview: e.result_preview } : {}),
+                      // 화면엔 안 쓴다 — 심의 핸드오프가 읽는 날것. 영속 시 예산으로 묶는다.
+                      ...(e.result_full ? { result_full: e.result_full } : {}),
                     },
                   ];
             return { ...m, status: e.step, activity };

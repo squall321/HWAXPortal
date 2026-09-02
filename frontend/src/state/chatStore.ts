@@ -89,9 +89,32 @@ function trimDelib(d: DelibData): DelibData {
   };
 }
 
+// 심의 핸드오프용 날것(`result_full`)을 대화당 몇 자까지 영속할지. 쿼터를 넘기면 저장이
+// **대화 절반을 버리고** 재시도하므로(아래 catch) 무겁게 만들면 이력이 조용히 날아간다.
+// 핸드오프가 실제로 쓰는 양에 맞춘다 — 심의 챗근거 예산이 11KB고 항목 상한이 12건이다.
+const HANDOFF_STORE_BUDGET = 14_000;
+
+/** 예산 안에서만 `result_full` 을 남긴다. 예산을 넘긴 항목은 **날것만** 떨어뜨리고
+ *  활동 기록 자체(step·tool·미리보기)는 그대로 둔다 — 패널 표시가 망가지면 안 된다. */
+function keepHandoffBudget(acts: ActivityItem[], budget: { left: number }): ActivityItem[] {
+  return acts.map((a) => {
+    if (!a.result_full) return a;
+    if (budget.left >= a.result_full.length) {
+      budget.left -= a.result_full.length;
+      return a;
+    }
+    const { result_full: _drop, ...rest } = a;
+    return rest;
+  });
+}
+
 export function saveConversations(convs: Conversation[], prefix: string = DEFAULT_PREFIX): void {
   try {
-    const stored: StoredConversation[] = convs.slice(0, MAX_CONVERSATIONS).map((c) => ({
+    const stored: StoredConversation[] = convs.slice(0, MAX_CONVERSATIONS).map((c) => {
+      // 예산은 **대화 단위**다 — 한 대화가 전체를 먹지 않게. 오래된 활동부터 채운다
+      // (핸드오프가 앞에서부터 12건을 뜨므로 앞쪽이 살아야 한다).
+      const budget = { left: HANDOFF_STORE_BUDGET };
+      return {
       id: c.id,
       title: c.title,
       createdAt: c.createdAt,
@@ -109,10 +132,13 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
           content: m.text,
           ts: m.ts ?? c.updatedAt,
           ...(m.error ? { error: m.error } : {}),
-          ...(m.activity && m.activity.length > 0 ? { activity: m.activity.slice(-60) } : {}),
+          ...(m.activity && m.activity.length > 0
+            ? { activity: keepHandoffBudget(m.activity.slice(-60), budget) }
+            : {}),
           ...(m.delib ? { delib: trimDelib(m.delib) } : {}),
         })),
-    }));
+      };
+    });
     try {
       localStorage.setItem(`${prefix}.conversations`, JSON.stringify(stored));
     } catch {

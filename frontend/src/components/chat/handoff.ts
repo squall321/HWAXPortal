@@ -18,7 +18,9 @@ export function conversationEvidence(conv: Conversation): HandoffEvidence[] {
   for (const m of conv.messages) {
     for (const a of m.activity ?? []) {
       if (!a.tool) continue;
-      const result = (a.result_preview ?? '').trim();
+      // 날것(result_full)이 있으면 그것을 쓴다 — result_preview 는 활동 패널용 220자라
+      // 심의에 넘기면 표의 첫 줄만 간다. 서버가 핸드오프용으로 따로 실어 보낸다.
+      const result = (a.result_full ?? a.result_preview ?? '').trim();
       if (!result) continue; // 결과 없는 호출은 근거가 아니다
       const key = `${a.tool}|${result.slice(0, 80)}`;
       if (seen.has(key)) continue;
