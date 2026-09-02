@@ -435,7 +435,8 @@ const decision = await agent(
 // 문장 중간에서 시작하므로 첫 줄로 가른다. 워크플로는 전사에 접근할 수 없어 자동 복구는 못 하지만,
 // 조용히 반쪽 결정문을 내보내는 것보다 크게 알리는 편이 낫다(호출자가 전사에서 복원할 수 있다).
 const decisionHead = String(decision || '').trimStart().slice(0, 2)
-if (decisionHead !== '##' && decisionHead !== '# ') {
+const decisionTruncated = decisionHead !== '##' && decisionHead !== '# '
+if (decisionTruncated) {
   log(`⚠ 의장 결정문이 제목 없이 시작한다(첫 2자 "${decisionHead}") — 여러 턴에 나눠 써서 앞부분이 ` +
       `반환값에서 빠졌을 수 있다. 전문은 트랜스크립트 디렉터리의 agent-<decision id>.jsonl 에서 ` +
       `assistant 텍스트 블록을 순서대로 이어 붙여 복원한다.`)
@@ -459,7 +460,11 @@ const decisionFull = plain ? `${decision}\n\n---\n\n■ 쉬운 설명\n${plain}`
 // 반환만 하고 저장 안 함(호출자가 직접 보고서화하고 싶을 때). appendToReportId 가 있으면 새 보고서
 // 대신 그 report_id 에 새 페이지로 이어붙인다(get_report 로 현재 페이지 수 확인 → page=마지막+1).
 let report = null
-if (A.saveReport !== false) {
+// ⚠ 기본이 **꺼짐**이다(saveReport:true 를 줄 때만 저장). 2026-09-02 솔더볼 심의 실측 —
+//   심의 본체 3시간에 RA 저장이 1시간 반이었다. 페이지마다 에이전트를 띄워 blocks JSON 을
+//   통째로 인자로 넘기는 구조라 그렇다(24000자 예산 × 25쪽 이상). 탐색적으로 돌리는 심의까지
+//   보고서를 남길 이유가 없다. 결과는 아래 포털 대화 저장소와 반환값에 **전문으로** 남는다.
+if (A.saveReport === true) {
   phase('Report')
   const minutes = []
   roundsData.forEach((rd, idx) => {
@@ -572,6 +577,10 @@ if (A.saveReport !== false) {
   }
 }
 
+// 포털 ConvMessageIn.content 의 서버 캡과 맞춘다(routes.py: Field(max_length=20000)).
+// 여유를 조금 두는 이유 — 앞에 붙는 "(결정문 n/N)" 머리말도 같은 항목에 들어간다.
+const CONV_ITEM_MAX = 19500
+
 // 서버 대화 저장 — 심의의 "대화 전개"를 포털 웹 챗에도 남긴다(GLM 이어가기·직접 결론용).
 // 게이트웨이 save_conversation 도구가 호출자 PAT 를 포털에 포워딩해 owner 귀속.
 // RA 와 동일한 폴백 계약: 미가용이면 건너뛸 뿐, 심의 결과(return)는 절대 잃지 않는다.
@@ -584,9 +593,17 @@ if (A.saveConversation !== false) {
   roundsData.forEach((rd, idx) => {
     const isFirst = idx === 0
     const isLast = idx === roundsData.length - 1
-    rd.filter(Boolean).forEach(o => msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: readable(isFirst, isLast, o).slice(0, 2000) }))
+    rd.filter(Boolean).forEach(o => msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: readable(isFirst, isLast, o).slice(0, CONV_ITEM_MAX) }))
   })
-  msgs.push({ role: 'assistant', content: String(decisionFull).slice(0, 24000) })
+  // 결정문은 서버 항목 캡(20000자)을 넘기 일쑤다 — 실측 61,956자. 잘라 버리면 '전문이
+  // 어디에도 없는' 상태가 되므로 **쪼개서 전부** 넣는다(항목 캡 200개라 여유가 크다).
+  const _dec = String(decisionFull)
+  for (let i = 0; i < _dec.length; i += CONV_ITEM_MAX) {
+    const part = _dec.slice(i, i + CONV_ITEM_MAX)
+    const n = Math.floor(i / CONV_ITEM_MAX) + 1
+    const total = Math.ceil(_dec.length / CONV_ITEM_MAX)
+    msgs.push({ role: 'assistant', content: total > 1 ? `(결정문 ${n}/${total})\n${part}` : part })
+  }
   try {
     conversation = await agent(
       `save_conversation 도구가 사용 가능하면 호출해 아래 심의 대화 로그를 포털 대화 저장소에 저장하라.\n` +
@@ -610,6 +627,10 @@ return {
   rounds: roundsData.map(rd => rd.filter(Boolean)),
   roundLabels,
   decision: decisionFull,
+  // ⚠ true 면 의장이 여러 턴에 나눠 써서 **반환값에 앞부분이 없다**(실측 2026-09-02:
+  //   61,246자 중 709자만 반환됐다). 로그로만 알리면 호출자가 놓친다 — 계약으로 올린다.
+  //   복원: 트랜스크립트 디렉터리의 agent-*.jsonl 에서 assistant 텍스트 블록을 순서대로 이어붙인다.
+  decisionTruncated,
   plain,
   report,
   conversation,

@@ -27,6 +27,9 @@
 //                       false 면 핵심 4석(formulation·discretization·solver·verification)만 고정한다.
 //   - humanNote       : 1단에 주입할 사람 의견
 //   - groundCards     : 좌석이 발언 전 자기 지식카드를 조회·인용(기본 true). false 로 끈다(RAG 색인 옛것/비용).
+//   - saveReport      : RA 보고서 저장(**기본 꺼짐**). true 를 줄 때만 저장한다 — 실측(2026-09-02)
+//                       심의 본체 3시간에 RA 저장이 1시간 반이었다(페이지마다 에이전트 1개).
+//                       끄더라도 결과는 포털 대화 저장소와 반환값에 전문으로 남는다.
 //   - appendToReportId: 지정 시 최종 결과(3단, buildPlan:false 면 2단)를 그 RA report_id 에 이어붙인다.
 //   - deliberateScript: 자식으로 부를 심의 워크플로 경로(기본 'infra/pipeline/hwax-deliberate.js').
 //                       스크립트 안의 workflow() 는 이름으로 .claude/workflows/ 를 찾지 못한다 —
@@ -137,7 +140,17 @@ const parseSimSpec = text => {
   }
   return null
 }
+// ⚠ 이 상대경로는 **정본(infra/pipeline/)에서 부를 때만** 맞는다. 사본
+//   (.claude/workflows/)에서 부르면 `.claude/workflows/infra/pipeline/…` 을 찾아 없다 —
+//   실측 2026-09-02: 즉시 "script file not found" 로 죽었고, 원인이 안 보여 한참 헤맸다.
+//   암묵 규약을 명시적 안내로 바꾼다. 사본에서 부를 일이 있으면 deliberateScript 에
+//   절대경로를 주면 된다(그 인자가 이 용도로 있다).
 const DELIB = { scriptPath: A.deliberateScript || 'infra/pipeline/hwax-deliberate.js' }
+if (!A.deliberateScript) {
+  log('자식 심의는 상대경로로 부른다 — 이 워크플로는 **정본**(infra/pipeline/hwax-sim-deliberate.js)' +
+      '으로 실행해야 한다. 사본(.claude/workflows/)에서 부르면 자식을 못 찾는다. ' +
+      '사본에서 부르려면 args.deliberateScript 에 자식 절대경로를 주라.')
+}
 // 얹을 층(2층 Modifier) — 서브 심의(hwax-deliberate)로 전달해 sim 2단 전체에 적용(하위가 화이트리스트 재검증).
 const MODS = Array.isArray(A.modifiers) ? A.modifiers : []
 
@@ -235,7 +248,7 @@ const sim = await workflow(DELIB, {
   continueFrom: { summary: String(mech.decision).slice(0, 12000), roundsSoFar: R1, nonNegotiables: NN },
   humanNote: '사내 보유 도구를 우선 검토하라. 파라미터 식별성 판정과 이 해석이 답할 수 없는 것을 비워두지 마라.',
   // 3단이 켜지면 최종 저장(RA 보고서·대화)은 3단이 한 번만 — 2단은 중간 산출물로 남기지 않는다.
-  saveReport: DO_BUILD ? false : (A.saveReport !== false),
+  saveReport: DO_BUILD ? false : (A.saveReport === true),
   saveConversation: DO_BUILD ? false : (A.saveConversation !== false),
   appendToReportId: DO_BUILD ? undefined : A.appendToReportId,
 })
@@ -272,7 +285,7 @@ if (DO_BUILD) {
     // 상세 해석 계획서가 길어 후미 항목((8)검증·(9)규모·(10)한계)이 잘리는 것을 완화. 조항은 buildNN 별도 승계.
     continueFrom: { summary: String(sim.decision).slice(0, 20000), roundsSoFar: R1 + R2, nonNegotiables: buildNN },
     humanNote: '사내 자산(KooD3plotReader·StepForge·gmsh·oss-*·export_dyna_cards)을 우선 재사용하라. 최소입력 계약과 모델 IR 수렴·dry_run 매핑오류 게이트·페이즈별 수치 게이트를 비워두지 마라.',
-    saveReport: A.saveReport !== false,
+    saveReport: A.saveReport === true,
     saveConversation: A.saveConversation !== false,
     appendToReportId: A.appendToReportId,
   })
