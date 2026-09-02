@@ -68,7 +68,15 @@ const OPTS = typeof A.options === 'string' ? A.options : JSON.stringify(A.option
 // 이어하기의 vote 6건이 전부 '패키지 채택 찬성'). 그 경우 표결 대신 스탠스를 받는다.
 const OPT_LIST = (() => {
   if (Array.isArray(A.options)) return A.options.filter(Boolean)
-  try { const x = JSON.parse(A.options || '[]'); return Array.isArray(x) ? x.filter(Boolean) : [] } catch { return [] }
+  const raw = String(A.options || '').trim()
+  if (!raw) return []
+  try { const x = JSON.parse(raw); if (Array.isArray(x)) return x.filter(Boolean) } catch { /* 아래 폴백 */ }
+  // JSON 이 아니면(사람이 '1안 X | 2안 Y' 로 준 경우) 구분자로 살린다 — 조용히 버리면
+  // 표결이어야 할 심의가 스탠스 표명으로 바뀌는데 아무도 모른다(감사 C10).
+  const split = raw.split(/\r?\n|\||;/).map(x => x.trim()).filter(Boolean)
+  if (split.length >= 2) { log(`options 를 JSON 이 아니라 구분자로 해석 — ${split.length}개: ${split.join(' / ').slice(0, 120)}`); return split }
+  log(`⚠ options 해석 불가("${raw.slice(0, 60)}") — 선택지 없이 진행(표결 대신 스탠스)`)
+  return []
 })()
 const HAS_CHOICES = OPT_LIST.length >= 2
 const PERS = Array.isArray(A.personas) ? A.personas.slice() : []  // 사본 — 지정 좌석 push 가 호출자 배열을 오염시키지 않게
@@ -109,7 +117,12 @@ const rn = localNo => ROUND_OFFSET + localNo   // 라운드 번호를 이전 회
 
 const CONT_BLOCK = CONT ? `[이전 심의 요약 — 지금까지 ${ROUND_OFFSET}라운드 진행됨]\n${CONT.summary}\n\n` : ''
 // 양보 불가 조항 승계 — 요약 문자열에만 의존하면 조항이 소실되고 결정이 소리 없이 되돌아간다.
-const NN = (CONT && Array.isArray(CONT.nonNegotiables) ? CONT.nonNegotiables : []).filter(Boolean).slice(0, 12)
+// 중복을 먼저 접는다(여러 좌석이 같은 조항을 낸다) — 그 뒤에도 상한을 넘으면 **몇 건이
+// 잘렸는지 말한다**. 실측 최종라운드에서 좌석 20/20 이 non_negotiable 을 냈다 — 12 상한이면
+// 9건이 무기록 소실이었다(감사 C8). 조항은 한 줄짜리라 상한을 20 으로 올려도 비용이 작다.
+const _nnAll = [...new Set((CONT && Array.isArray(CONT.nonNegotiables) ? CONT.nonNegotiables : []).filter(Boolean).map(x => String(x).trim()))]
+const NN = _nnAll.slice(0, 20)
+if (_nnAll.length > NN.length) log(`⚠ 양보 불가 조항 ${_nnAll.length}건 중 ${NN.length}건만 승계 — ${_nnAll.length - NN.length}건 탈락(상한 20)`)
 const NN_BLOCK = NN.length
   ? `[이전 심의의 양보 불가 조항 — 이번 라운드에서도 구속력을 가진다]\n${NN.map(x => `- ${x}`).join('\n')}\n` +
     `이 조항을 뒤집으려면 어떤 새 근거 때문인지 반드시 명시하라. 근거 없는 폐기는 불인정.\n\n`
@@ -128,13 +141,18 @@ if (EV.length) {
   for (const e of EV) {
     const src = String(e.source || '챗').slice(0, 120)
     const meta = (e.tool ? ` · ${String(e.tool).slice(0, 80)}` : '') + (e.args ? `(${String(e.args).slice(0, 400)})` : '')
-    const line = `· [${src}${meta}] ${String(e.result).slice(0, 2000)}`
+    const raw = String(e.result)
+    // 항목 안 절단도 표시한다 — 무표시로 자르면 좌석이 잘린 수치를 완결 데이터로 읽는다(감사 C5).
+    const body = raw.length > 2000 ? raw.slice(0, 2000) + ` …[${raw.length}자 중 2,000자]` : raw
+    const line = `· [${src}${meta}] ${body}`
     if (evBudget + line.length > 11000 && evItems.length) break
     evItems.push(line)
     evBudget += line.length
   }
+  const _evDropped = (Array.isArray(A.evidence) ? A.evidence.length : 0) - evItems.length
+  if (_evDropped > 0) log(`근거 ${A.evidence.length}건 중 ${evItems.length}건만 주입 — ${_evDropped}건 드롭(항목 12·예산 11KB)`)
   EV_BLOCK = `[챗 워크스페이스가 정리한 원천 데이터 — 검증 대상이지 결론이 아니다. 각 수치·주장을 ` +
-    `당신 도메인으로 재검토하고, 부족하면 도구로 더 확인하라]\n${evItems.join('\n')}\n\n`
+    `당신 도메인으로 재검토하고, 부족하면 도구로 더 확인하라${_evDropped > 0 ? ` · 원근거 ${A.evidence.length}건 중 ${evItems.length}건만 표시됨` : ''}]\n${evItems.join('\n')}\n\n`
 }
 // 얹을 층(2층 Modifier) — chairTemplate(무엇을 산출)과 직교하는 "어떻게 굴리나" 오버레이.
 // deliberation.py _MODIFIER_BLOCKS 와 키·취지 정합. BASE/BASE_BLIND 에 실어 좌석·의장 전체에 적용.
@@ -146,10 +164,13 @@ const MODIFIERS = {
   anon1r: `[얹을 층 · 익명 1R] 1라운드는 좌석들이 서로의 발언을 보기 전에 **독립적으로** 초기 입장·핵심 추정치를 낸다(초반 쏠림·거수기 방지). 2라운드부터 공개해 반박·수렴한다. 1라운드에서 추정이 크게 갈린 지점을 이후 라운드의 우선 쟁점으로 삼아라.`,
 }
 const _seenMod = new Set()
-const MOD_LIST = (Array.isArray(A.modifiers) ? A.modifiers : [])
-  .map(m => String(m).trim())
+const _modReq = (Array.isArray(A.modifiers) ? A.modifiers : []).map(m => String(m).trim())
+const MOD_LIST = _modReq
   .filter(m => MODIFIERS[m] && !_seenMod.has(m) && _seenMod.add(m))
   .slice(0, 5)
+// 사전에 없는 이름(오타·대소문자)이 조용히 걸러지면 호출자는 그 층이 적용된 줄 안다(감사 C11).
+const _modBad = _modReq.filter(m => m && !MODIFIERS[m])
+if (_modBad.length) log(`⚠ 알 수 없는 modifier 무시됨: ${_modBad.join(', ')} — 사용 가능: ${Object.keys(MODIFIERS).join(', ')}`)
 const MODIF_BLOCK = MOD_LIST.length
   ? `[얹을 층 — 아래 방식을 심의 전체에 적용하라]\n${MOD_LIST.map(m => MODIFIERS[m]).join('\n')}\n\n`
   : ''
@@ -245,15 +266,20 @@ const R3_SCHEMA = {
 // 라운드별 요약 — idx=0 초기, idx=마지막 수렴, 그 사이는 전부 심화.
 // 프롬프트 컨텍스트용(compact — 한 줄 대괄호)과 기록용(readable — 문단 개행)을 구분한다:
 // 웹 대화·RA 회의록에서 발언이 개행 없이 한 덩어리로 보이던 문제의 기록측 수정.
+// ⚠ reads(근거 데이터의 구체 인용)는 R1 스키마가 일부러 요구하는 필드다 — 요약·기록에서
+//   버리면 좌석들의 인용이 다음 라운드에도 의장에게도 안 닿아 '수치는 조회 기록' 계약이
+//   승계에서 끊긴다(감사 C6). 압축하되 버리지 않는다.
 const summarize = (isFirst, isLast, o) => {
-  if (isFirst) return `관점[${o.lens}] 권장[${o.recommendation}] 우려[${(o.concerns || []).join('; ')}]`
+  if (isFirst) return `관점[${o.lens}] 근거[${(o.reads || []).join('; ').slice(0, 600)}] 권장[${o.recommendation}] 우려[${(o.concerns || []).join('; ')}]`
   if (isLast) return `${o.final_position || ''} — 최종권장: ${o.vote || ''}`
   return `수용[${(o.concede || []).join('; ')}] 반박[${(o.rebut || []).join('; ')}] 심화:${o.deepen}`
 }
 const readable = (isFirst, isLast, o) => {
   const join = v => (Array.isArray(v) ? v.filter(Boolean).join('\n- ') : String(v || ''))
   if (isFirst) {
-    const parts = [o.lens, o.recommendation ? `저는 이렇게 봅니다 — ${o.recommendation}` : '',
+    const parts = [o.lens,
+                   (o.reads || []).length ? `근거 해석:\n- ${join(o.reads)}` : '',
+                   o.recommendation ? `저는 이렇게 봅니다 — ${o.recommendation}` : '',
                    (o.concerns || []).length ? `우려:\n- ${join(o.concerns)}` : '']
     return parts.filter(Boolean).join('\n\n')
   }
@@ -327,7 +353,7 @@ if (STOP_AFTER === 1) {
     checkpoint: {
       stage: 'after-initial',
       seats: SEAT_NOTE,
-      positions: r1.filter(Boolean).map(o => ({ persona: o.persona, position: o.position_short || o.lens, recommendation: o.recommendation })),
+      positions: r1.filter(Boolean).map(o => ({ persona: o.persona, position: o.lens, recommendation: o.recommendation })),   // position_short 는 스키마상 존재 불가였다(죽은 참조)
       ask: '빠진 관점이나 추가 관측이 있는가. 있으면 humanNote 로 넣어 이어하기를 호출하라 — 좌석 재심사가 그에 맞는 도메인을 불러온다.',
     },
   }
@@ -439,6 +465,12 @@ const CHAIR_ITEMS = {
 const DECISION_CONT_NOTE = CONT
   ? `\n\n이는 이전 심의(위 [이전 심의 요약] 참조)의 후속 라운드다. 위 산출 항목에 더해, 이전 결정문과의 관계(보완/수정/신규 쟁점 해소 중 무엇인지)를 별도 항목으로 반드시 명시하라.`
   : ''
+// 의장 프롬프트 크기 계측 — 상한 없이 조립되므로 최소한 크기는 알려야 한다(감사 C9).
+{
+  const _chairSize = BASE.length + allRoundsText.length + JSON.stringify(rFinal.filter(Boolean)).length
+  log(`의장 프롬프트 ≈ ${_chairSize.toLocaleString()}자 (BASE ${BASE.length.toLocaleString()} + 라운드요약 ${allRoundsText.length.toLocaleString()} + 최종상세)`)
+  if (_chairSize > 400000) log(`⚠ 의장 프롬프트가 40만자를 넘는다 — 컨텍스트 초과로 null(결정 실패) 가능성. 좌석·라운드를 줄이거나 이어하기로 나눠라`)
+}
 const decision = await agent(
   `당신은 심의체 의장. 이번 호출분 ${ROUNDS}라운드 토론(${rn(1)}~${finalRoundNo}라운드, 초기 1${MID_ROUNDS > 0 ? ` + 심화 ${MID_ROUNDS}` : ''} + 수렴 1)을 종합해 의사결정문을 한국어 엔지니어링 톤으로 작성하라.\n\n${BASE}\n\n` +
   `[전체 라운드 요약]\n${allRoundsText}\n\n[최종 라운드 상세]\n${JSON.stringify(rFinal.filter(Boolean), null, 1)}\n\n` +
@@ -455,38 +487,66 @@ const decision = await agent(
   `\n\n[출력 형식 — 반드시 지킬 것] 결정문 전체를 **한 번의 최종 응답으로** 내라. 여러 메시지에 나눠 쓰면 ` +
   `마지막 조각만 반환값이 되어 앞부분이 통째로 유실된다(실측 2026-09-01: 구축 계획서 75,373자 중 ` +
   `42,291자가 그렇게 반환값에서 빠졌고 에이전트 전사에서 손으로 복원해야 했다). 길면 항목을 줄여서라도 ` +
-  `한 응답 안에서 끝내라. 첫 줄은 반드시 '## ' 로 시작하는 제목이어야 한다.`,
+  `한 응답 안에서 끝내라. 첫 줄은 반드시 '## ' 로 시작하는 제목이어야 하고, ` +
+  `마지막 줄은 반드시 〔결정문 끝〕 한 줄이어야 한다(이 마커가 없으면 절단으로 판정된다).`,
   { label: 'decision', phase: 'Decision' })
 
-// 절단 감지 — 의장이 여러 턴에 나눠 쓰면 마지막 턴만 반환값이 된다. 그 경우 결정문이 제목 없이
-// 문장 중간에서 시작하므로 첫 줄로 가른다. 워크플로는 전사에 접근할 수 없어 자동 복구는 못 하지만,
-// 조용히 반쪽 결정문을 내보내는 것보다 크게 알리는 편이 낫다(호출자가 전사에서 복원할 수 있다).
-const decisionHead = String(decision || '').trimStart().slice(0, 2)
-const decisionTruncated = decisionHead !== '##' && decisionHead !== '# '
-if (decisionTruncated) {
-  log(`⚠ 의장 결정문이 제목 없이 시작한다(첫 2자 "${decisionHead}") — 여러 턴에 나눠 써서 앞부분이 ` +
-      `반환값에서 빠졌을 수 있다. 전문은 트랜스크립트 디렉터리의 agent-<decision id>.jsonl 에서 ` +
-      `assistant 텍스트 블록을 순서대로 이어 붙여 복원한다.`)
+// ⚠ agent() 는 API 오류·취소 시 null 이다(좌석에서 실측). 여기서 decision.slice 를 그대로
+//   부르면 TypeError 로 워크플로 전체가 죽고, **그때까지의 전 라운드가 반환값에 실리지 못한다**
+//   (감사 C1 — 대화·RA 저장이 모두 이 아래라 크래시 시점엔 어느 저장소에도 없다).
+//   의장이 죽어도 수 시간짜리 라운드 데이터는 반드시 돌려준다.
+let decText = String(decision || '').trim()
+if (!decText) {
+  log('⚠ 의장 결정문 생성 실패(API 오류·취소) — 라운드 데이터만 부분 반환한다. ' +
+      '전사(agent-*.jsonl)에서 의장 응답을 확인하거나 continueFrom 으로 재의결하라.')
+  return {
+    question: Q, rounds: roundsData.map(rd => rd.filter(Boolean)), roundLabels,
+    decision: null, decisionFailed: true, decisionTruncated: false, seatLoss,
+    plain: null, report: null, conversation: null, nextRoundOffset: finalRoundNo,
+  }
 }
+// 절단 감지 — 양방향. (a) 머리: 여러 턴에 나눠 쓰면 마지막 턴만 반환돼 제목 없이 시작한다.
+// (b) 꼬리: 종결 마커 〔결정문 끝〕 부재 — 머리가 우연히 '## 부록' 으로 시작하는 절단을 잡는다
+// (실측 61,246자 중 709자 반환 사고의 마지막 턴이 정확히 그런 모양일 수 있었다).
+const decisionHead = decText.trimStart().slice(0, 2)
+const _headBad = decisionHead !== '##' && decisionHead !== '# '
+const _tailBad = !decText.endsWith('〔결정문 끝〕')
+const decisionTruncated = _headBad || _tailBad
+if (decisionTruncated) {
+  log(`⚠ 의장 결정문 절단 의심(머리 ${_headBad ? '이상' : '정상'} · 종결마커 ${_tailBad ? '없음' : '있음'}) — ` +
+      `여러 턴에 나눠 써서 일부가 반환값에서 빠졌을 수 있다. 전문은 트랜스크립트의 ` +
+      `agent-<decision id>.jsonl 에서 assistant 텍스트 블록을 순서대로 이어 붙여 복원한다.`)
+}
+decText = decText.replace(/〔결정문 끝〕\s*$/, '').trimEnd()
 
 // 쉬운 설명 — 챗 파이프라인(deliberation.py)과 동일한 정식 심의 절차. 의결 뒤에 붙는다.
 // 여기 없으면 MCP 경로 결정문만 비전문가용 정리가 빠져 두 경로가 어긋난다.
 phase('Explain')
+// ⚠ 머리 12,000자만 주면 실측 6만자 결정문에서 (5)뒤집힘·(7)신뢰도·(8)수렴경과 같은 **뒤쪽
+//   항목이 요약에서 구조적으로 빠진다**(감사 C4 — 전문 요약처럼 붙는데 19.6%만 본 요약이었다).
+//   16,000자까지는 전문, 넘으면 머리 10k + 꼬리 6k 를 주고 부분 요약임을 표시한다.
+const plainPartial = decText.length > 16000
+const plainInput = plainPartial
+  ? decText.slice(0, 10000) + `\n\n…[중략 — 전문 ${decText.length}자 중 앞 10,000자·뒤 6,000자만 발췌. 중략 구간을 아는 척하지 마라]…\n\n` + decText.slice(-6000)
+  : decText
 const plain = await agent(
   `당신은 어려운 기술 결정을 비전문가에게 설명하는 사람이다. 쉬운 말로, 과장 없이.\n\n` +
   `다음 의사결정문을 처음 보는 사람도 이해하게 정리하라. 형식:\n` +
   `### 한마디로\n(무엇을 하라는 것인지 한 문장)\n` +
   `### 왜 그런가\n(핵심 근거 2~3개 — 수치가 있으면 쉬운 말로 풀어서)\n` +
   `### 당장 할 일 / 다음에 할 일 / 하지 말 것\n(각 2~4개 불릿, 전문용어는 괄호로 풀어쓰기)\n` +
-  `새로운 내용을 지어내지 말고 원문에 있는 것만 쉽게 바꿔라.\n\n${decision.slice(0, 12000)}`,
+  `새로운 내용을 지어내지 말고 원문에 있는 것만 쉽게 바꿔라.\n\n${plainInput}`,
   { label: 'explain', phase: 'Explain' })
-const decisionFull = plain ? `${decision}\n\n---\n\n■ 쉬운 설명\n${plain}` : decision
+const decisionFull = plain
+  ? `${decText}\n\n---\n\n■ 쉬운 설명${plainPartial ? ' (결정문 일부 기준 — 전문 ' + decText.length + '자 중 앞뒤 발췌)' : ''}\n${plain}`
+  : decText
 
 // Report Archive 저장 — MCP 경로도 포털 챗과 동일하게 웹(RA)에 보고서를 남긴다.
 // (챗 deliberation.py 와 같은 template_id/blocks + 대화체 회의록). saveReport:false 로 끄면
 // 반환만 하고 저장 안 함(호출자가 직접 보고서화하고 싶을 때). appendToReportId 가 있으면 새 보고서
 // 대신 그 report_id 에 새 페이지로 이어붙인다(get_report 로 현재 페이지 수 확인 → page=마지막+1).
 let report = null
+let reportPagesFailed = []   // RA 페이지 저장 실패 목록 — 빈 배열이면 전부 성공
 // ⚠ 기본이 **꺼짐**이다(saveReport:true 를 줄 때만 저장). 2026-09-02 솔더볼 심의 실측 —
 //   심의 본체 3시간에 RA 저장이 1시간 반이었다. 페이지마다 에이전트를 띄워 blocks JSON 을
 //   통째로 인자로 넘기는 구조라 그렇다(24000자 예산 × 25쪽 이상). 탐색적으로 돌리는 심의까지
@@ -569,8 +629,43 @@ if (A.saveReport === true) {
       return pages
     }
 
-    if (!APPEND_TO && JSON.stringify(blocks).length > RA_PAGE_BUDGET) {
-      const pages = pageChunks(blocks)
+    // ⚠ 분할은 신규·이어붙이기 **양쪽**에 적용한다. 전에는 !APPEND_TO 조건이라 이어붙이기가
+    //   blocks 전체를 단일 재출력으로 갔고, 실측 규모(회의록 수십만자)에서 반드시 죽었다(감사 C2).
+    // rid 추출도 견고화 — 에이전트가 "보고서 52에 저장 완료" 처럼 서술형으로 답하면 /^\d+$/ 가
+    //   실패해 2쪽 이후가 무기록 스킵됐다(감사 C7/C57). 첫 정수를 뽑는다.
+    const pickRid = (v) => { const m = String(v || '').match(/\d+/); return m ? m[0] : '' }
+    const savePages = async (rid, pages, startPage) => {
+      const failed = []
+      for (let i = 0; i < pages.length; i++) {
+        const r = await agent(
+          `update_report_draft(report_id=${rid}, page=${startPage + i}, blocks=${JSON.stringify(pages[i])}) 를 호출하라.\n` +
+          `- blocks 값은 **한 글자도 바꾸지 말고 그대로** 인자로 넘겨라(요약·의역 금지).\n` +
+          `- 실패하면 재시도 없이 "PAGE_FAILED" 한 줄만 반환. 성공하면 "OK" 한 줄만.`,
+          { label: `ra-page${startPage + i}`, phase: 'Report' })
+        if (!/^\s*OK\s*$/i.test(String(r || ''))) {
+          failed.push(startPage + i)
+          log(`⚠ RA ${startPage + i}쪽 저장 실패 — 보고서 ${rid} 에 그 쪽이 비어 있다`)
+        }
+      }
+      return failed
+    }
+
+    const pages = pageChunks(blocks)
+    if (APPEND_TO) {
+      // 현재 페이지 수를 먼저 묻는다 — 서술형 응답에서도 숫자만 뽑는다.
+      const pcRaw = await agent(
+        `get_report(report_id=${APPEND_TO}) 를 호출해 pages 배열의 **길이 숫자만** 한 줄로 반환하라.\n` +
+        `- 도구가 없거나 실패하면 "RA_UNAVAILABLE" 한 줄만 반환.`,
+        { label: 'ra-pagecount', phase: 'Report' })
+      if (/RA_UNAVAILABLE/i.test(String(pcRaw || '')) ) {
+        report = 'RA_UNAVAILABLE'
+      } else {
+        const pc = parseInt(pickRid(pcRaw) || '0', 10)
+        log(`RA 이어붙이기 — 보고서 ${APPEND_TO} 의 ${pc}쪽 뒤에 ${pages.length}쪽 추가`)
+        reportPagesFailed = await savePages(APPEND_TO, pages, pc + 1)
+        report = String(APPEND_TO)
+      }
+    } else if (JSON.stringify(blocks).length > RA_PAGE_BUDGET) {
       log(`RA 저장 — 분량이 커서 ${pages.length}쪽으로 나눠 넣는다(한 쪽 ${RA_PAGE_BUDGET}자 예산)`)
       report = await agent(
         `create_report_draft 도구로 아래 심의 결과를 Report Archive 에 저장하라.\n` +
@@ -579,20 +674,16 @@ if (A.saveReport === true) {
         `- 도구가 없거나 실패하면 재시도 없이 "RA_UNAVAILABLE" 한 줄만 반환.\n` +
         `- 성공하면 반환된 report.id 만 한 줄로.`,
         { label: 'ra-save', phase: 'Report' })
-      const rid = String(report || '').trim()
-      if (/^\d+$/.test(rid)) {
-        for (let i = 1; i < pages.length; i++) {
-          // 한 쪽이 실패해도 앞쪽은 이미 저장돼 있다 — 남은 쪽을 계속 시도하고 실패만 기록한다.
-          const r = await agent(
-            `update_report_draft(report_id=${rid}, page=${i + 1}, blocks=${JSON.stringify(pages[i])}) 를 호출하라.\n` +
-            `- 실패하면 재시도 없이 "PAGE_FAILED" 한 줄만 반환. 성공하면 "OK" 한 줄만.`,
-            { label: `ra-page${i + 1}`, phase: 'Report' })
-          if (/PAGE_FAILED/i.test(String(r || ''))) log(`⚠ RA ${i + 1}쪽 저장 실패 — 보고서 ${rid} 은 그 앞까지만 담겼다`)
-        }
+      const rid = pickRid(/RA_UNAVAILABLE/i.test(String(report || '')) ? '' : report)
+      if (rid) {
+        reportPagesFailed = await savePages(rid, pages.slice(1), 2)
         report = rid
+      } else if (report != null && !/RA_UNAVAILABLE/i.test(String(report))) {
+        log(`⚠ RA create 응답에서 보고서 번호를 못 뽑았다("${String(report).slice(0, 80)}") — 1쪽만 저장됐을 수 있다`)
       }
     } else {
       report = await agent(raInstruction, { label: 'ra-save', phase: 'Report' })
+      if (report === null) log('⚠ RA 저장 에이전트가 응답 없이 죽었다(API 오류) — 저장 여부 불명')
     }
     if (typeof report === 'string' && /RA_UNAVAILABLE|FAILED|not available|unavailable/i.test(report)) {
       log('Report Archive 미가용 — 저장 건너뜀(심의 결과는 반환됨)')
@@ -612,10 +703,11 @@ const CONV_ITEM_MAX = 19500
 // 게이트웨이 save_conversation 도구가 호출자 PAT 를 포털에 포워딩해 owner 귀속.
 // RA 와 동일한 폴백 계약: 미가용이면 건너뛸 뿐, 심의 결과(return)는 절대 잃지 않는다.
 let conversation = null
+let conversationSkipped = null   // 용량 초과로 저장을 건너뛴 사유 — null 이면 정상 시도
 if (A.saveConversation !== false) {
   phase('Report')
   const msgs = [
-    { role: 'user', content: `${CONT ? '(이어하기) ' : ''}${Q}${HUMAN_NOTE ? `\n\n[인간 검토자 의견]\n${HUMAN_NOTE}` : ''}${CTX ? `\n\n[정량 근거·분석]\n${CTX.slice(0, 1500)}` : ''}` },
+    { role: 'user', content: `${CONT ? '(이어하기) ' : ''}${Q}${HUMAN_NOTE ? `\n\n[인간 검토자 의견]\n${HUMAN_NOTE}` : ''}${CTX ? `\n\n[정량 근거·분석]\n${CTX.slice(0, 4000)}${CTX.length > 4000 ? `\n…[근거 ${CTX.length}자 중 앞 4,000자]` : ''}` : ''}` },
   ]
   roundsData.forEach((rd, idx) => {
     const isFirst = idx === 0
@@ -631,21 +723,37 @@ if (A.saveConversation !== false) {
     const total = Math.ceil(_dec.length / CONV_ITEM_MAX)
     msgs.push({ role: 'assistant', content: total > 1 ? `(결정문 ${n}/${total})\n${part}` : part })
   }
-  try {
-    conversation = await agent(
-      `save_conversation 도구가 사용 가능하면 호출해 아래 심의 대화 로그를 포털 대화 저장소에 저장하라.\n` +
-      `인자: title="${CONT ? '심의(이어하기) — ' : '심의 — '}${Q.slice(0, 50)}", kind="deliberation", source="mcp",\n` +
-      `messages=${JSON.stringify(msgs)}\n` +
-      `- 도구가 없거나 결과가 CONV_UNAVAILABLE 이면 절대 재시도하지 말고 "CONV_UNAVAILABLE" 한 줄만 반환.\n` +
-      `- 성공하면 반환된 conversation_id 만 한 줄로.`,
-      { label: 'conv-save', phase: 'Report' })
-    if (typeof conversation === 'string' && /CONV_UNAVAILABLE|FAILED|not available|unavailable/i.test(conversation)) {
-      log('포털 대화 저장소 미가용 — 저장 건너뜀(심의 결과는 반환됨)')
+  // ⚠ 저장 에이전트는 msgs 를 **도구 인자로 되받아 적어야** 한다. 페이로드가 크면 두 가지가
+  //   실측으로 확인됐다(감사 C37/C50) — (a) 출력 상한(~7.5만자)에서 통째 실패, (b) 더 나쁘게는
+  //   모델이 발언을 **요약·의역해 넣고 성공 id 를 돌려준다**(무음 변조 — 전사에서 확인).
+  //   에코 경로로는 원문 보장이 불가능하므로, 예산을 넘는 심의는 여기서 저장하지 않는다.
+  //   전문은 반환값(rounds·decision)에 이미 있고, 결정적 저장은 LLM 없이 REST 로 하는
+  //   infra/scripts/save-delib-conversation.py 가 담당한다(원문 그대로, 수 초).
+  const CONV_AGENT_BUDGET = 60000
+  const msgsSize = JSON.stringify(msgs).length
+  if (msgsSize > CONV_AGENT_BUDGET) {
+    log(`대화 저장 건너뜀 — 페이로드 ${msgsSize.toLocaleString()}자 > 에이전트 에코 예산 ${CONV_AGENT_BUDGET.toLocaleString()}자. ` +
+        `에코 저장은 이 크기에서 실패하거나 의역 저장된다(실측). 전문 저장: ` +
+        `infra/scripts/save-delib-conversation.py <이 워크플로 결과 JSON> 을 실행하라.`)
+    conversationSkipped = `payload ${msgsSize} > ${CONV_AGENT_BUDGET} — save-delib-conversation.py 로 저장`
+  } else {
+    try {
+      conversation = await agent(
+        `save_conversation 도구가 사용 가능하면 호출해 아래 심의 대화 로그를 포털 대화 저장소에 저장하라.\n` +
+        `인자: title="${CONT ? '심의(이어하기) — ' : '심의 — '}${Q.slice(0, 50)}", kind="deliberation", source="mcp",\n` +
+        `messages=${JSON.stringify(msgs)}\n` +
+        `- messages 값은 **한 글자도 바꾸지 말고 그대로** 인자로 넘겨라(요약·의역·생략 금지).\n` +
+        `- 도구가 없거나 결과가 CONV_UNAVAILABLE 이면 절대 재시도하지 말고 "CONV_UNAVAILABLE" 한 줄만 반환.\n` +
+        `- 성공하면 반환된 conversation_id 만 한 줄로.`,
+        { label: 'conv-save', phase: 'Report' })
+      if (typeof conversation === 'string' && /CONV_UNAVAILABLE|FAILED|not available|unavailable/i.test(conversation)) {
+        log('포털 대화 저장소 미가용 — 저장 건너뜀(심의 결과는 반환됨)')
+        conversation = null
+      }
+    } catch (e) {
+      log(`대화 저장 실패(비치명적): ${String(e).slice(0, 120)}`)
       conversation = null
     }
-  } catch (e) {
-    log(`대화 저장 실패(비치명적): ${String(e).slice(0, 120)}`)
-    conversation = null
   }
 }
 
@@ -661,6 +769,9 @@ return {
   seatLoss,   // [{round, lost:[key]}] — API 오류로 빠진 좌석. 빈 배열이면 전원 발언.
   plain,
   report,
+  conversationSkipped,   // 대화 저장을 건너뛴 사유(용량) — save-delib-conversation.py 로 저장 가능.
+  reportPagesFailed,   // RA 저장 실패 쪽 번호 — 비어 있지 않으면 그 쪽이 보고서에서 빠져 있다.
+  plainPartial,        // true 면 쉬운 설명이 결정문 일부(머리+꼬리)만 보고 쓰였다.
   conversation,
   nextRoundOffset: finalRoundNo,   // 다음 이어하기 호출의 continueFrom.roundsSoFar 로 그대로 전달
 }

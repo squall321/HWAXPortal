@@ -145,6 +145,17 @@ const parseSimSpec = text => {
 //   실측 2026-09-02: 즉시 "script file not found" 로 죽었고, 원인이 안 보여 한참 헤맸다.
 //   암묵 규약을 명시적 안내로 바꾼다. 사본에서 부를 일이 있으면 deliberateScript 에
 //   절대경로를 주면 된다(그 인자가 이 용도로 있다).
+// 결정문 승계용 발췌 — 머리만 자르면 받는 쪽이 완결 문서로 읽는다(감사 C17: 뒤쪽의
+// (4)미지 파라미터·(5)반증 관측이 2단에 안 닿았다). 예산을 넘으면 머리+꼬리를 주고
+// **중략을 명시**한다 — 받는 쪽 프롬프트가 '아는 척'하지 않게.
+const excerpt = (text, headN, tailN) => {
+  const t = String(text || '')
+  if (t.length <= headN + tailN + 200) return t
+  return t.slice(0, headN) +
+    `\n\n…[중략 — 전문 ${t.length.toLocaleString()}자 중 앞 ${headN.toLocaleString()}·뒤 ${tailN.toLocaleString()}자만 발췌. ` +
+    `중략 구간의 내용을 아는 척하지 말고, 필요하면 '원문 확인 필요' 로 표기하라]…\n\n` + t.slice(-tailN)
+}
+
 const DELIB = { scriptPath: A.deliberateScript || 'infra/pipeline/hwax-deliberate.js' }
 if (!A.deliberateScript) {
   log('자식 심의는 상대경로로 부른다 — 이 워크플로는 **정본**(infra/pipeline/hwax-sim-deliberate.js)' +
@@ -195,7 +206,7 @@ const seatPick = GIVEN.length
       reason: '호출자가 2단 CAE 좌석을 직접 지정해 발굴을 건너뛰었다.' }
   : await agent(
   `아래 메커니즘 결론을 읽고, 이 물리를 계산으로 확인할 해석 설계 심의의 좌석을 구성하라.\n\n` +
-  `[메커니즘 결론]\n${String(mech.decision).slice(0, 6000)}\n\n` +
+  `[메커니즘 결론]\n${excerpt(mech.decision, 4500, 1500)}\n\n` +
   `[1단 참여 좌석]\n${PERS.map(p => p.key).join(', ')}\n\n` +
   `순서: (1) 결론에서 해석 물리 축을 2~3개 뽑아라 — '확산 반응 수치해석', '낙하 충격 구조해석' 처럼 ` +
   `전문가 검색에 쓸 짧은 명사구다. 현상 이름이 아니라 계산의 성격을 써라. ` +
@@ -222,8 +233,15 @@ const push = (k, origin) => {
   simSeats.push({ key: k, role: roleOf(k), origin })
 }
 FIXED_CAE.forEach(k => push(k, 'new'))
-;((seatPick && seatPick.cae_seats) || []).slice(0, 3).forEach(k => push(k, 'new'))
-;((seatPick && seatPick.carry_seats) || []).slice(0, CARRY).forEach(k => push(k, 'carry'))
+// 발굴 에이전트가 API 오류로 null 이면 고정 좌석만으로 진행된다 — 조용히 지나가면 '축이 빈'
+// 심의가 정상처럼 보인다(감사 C20). 초과 반환의 무통보 절단도 말한다(C21).
+if (!seatPick) log('⚠ 2단 좌석 발굴 실패(API 오류·취소) — 고정 스파인 + 강제 유임만으로 진행한다. 발굴 축·신규 CAE 좌석 없음.')
+const _cae = (seatPick && seatPick.cae_seats) || []
+const _car = (seatPick && seatPick.carry_seats) || []
+if (_cae.length > 3) log(`발굴 CAE 좌석 ${_cae.length}명 중 3명만 착석 — 탈락: ${_cae.slice(3).join(', ')}`)
+if (_car.length > CARRY) log(`유임 후보 ${_car.length}명 중 ${CARRY}명만 착석 — 탈락: ${_car.slice(CARRY).join(', ')}`)
+_cae.slice(0, 3).forEach(k => push(k, 'new'))
+_car.slice(0, CARRY).forEach(k => push(k, 'carry'))
 // 유임이 하나도 안 잡히면 1단 좌석 앞에서 채운다 — 물리 감시자 없는 해석 설계를 막는다.
 if (!simSeats.some(s => s.origin === 'carry')) {
   PERS.slice(0, Math.max(1, CARRY)).forEach(p => push(p.key, 'carry'))
@@ -245,7 +263,7 @@ const sim = await workflow(DELIB, {
   chairTemplate: 'sim-plan',
   modifiers: MODS,
   groundCards: GROUND,
-  continueFrom: { summary: String(mech.decision).slice(0, 12000), roundsSoFar: R1, nonNegotiables: NN },
+  continueFrom: { summary: excerpt(mech.decision, 9000, 3000), roundsSoFar: R1, nonNegotiables: NN },
   humanNote: '사내 보유 도구를 우선 검토하라. 파라미터 식별성 판정과 이 해석이 답할 수 없는 것을 비워두지 마라.',
   // 3단이 켜지면 최종 저장(RA 보고서·대화)은 3단이 한 번만 — 2단은 중간 산출물로 남기지 않는다.
   saveReport: DO_BUILD ? false : (A.saveReport === true),
@@ -283,7 +301,7 @@ if (DO_BUILD) {
     groundCards: GROUND,
     // 3단 (2)는 2단 계획서 10항목 전부를 승계·분류하므로 요약 상한을 2단(12000)보다 올린다 —
     // 상세 해석 계획서가 길어 후미 항목((8)검증·(9)규모·(10)한계)이 잘리는 것을 완화. 조항은 buildNN 별도 승계.
-    continueFrom: { summary: String(sim.decision).slice(0, 20000), roundsSoFar: R1 + R2, nonNegotiables: buildNN },
+    continueFrom: { summary: excerpt(sim.decision, 14000, 6000), roundsSoFar: R1 + R2, nonNegotiables: buildNN },
     humanNote: '사내 자산(KooD3plotReader·StepForge·gmsh·oss-*·export_dyna_cards)을 우선 재사용하라. 최소입력 계약과 모델 IR 수렴·dry_run 매핑오류 게이트·페이즈별 수치 게이트를 비워두지 마라.',
     saveReport: A.saveReport === true,
     saveConversation: A.saveConversation !== false,
@@ -292,6 +310,14 @@ if (DO_BUILD) {
 }
 
 phase('종합')
+// DO_BUILD 는 2단 저장을 3단으로 이연한다 — 3단이 null 로 죽으면 RA·대화 어디에도 저장이
+// 없는 채 buildPlan:null 만 돌아온다. buildPlan:false 로 돌린 것과 구분이 안 됐다(감사 C16).
+const buildFailed = DO_BUILD && !build
+if (buildFailed) {
+  log('⚠ 3단 구축 심의가 결과 없이 죽었다(API 오류·자식 실패) — 2단 저장을 3단으로 이연해 둔 상태라 ' +
+      'RA·대화 저장이 아무 데도 안 됐다. 결과는 이 반환값에만 있다. 저장: save-delib-conversation.py, ' +
+      '재시도: 2단 결정문을 continueFrom 으로 chairTemplate:build-plan 단발 심의.')
+}
 log(`완료 — 메커니즘 ${R1}라운드 + 해석 설계 ${R2}라운드${DO_BUILD ? ` + 구축 설계 ${R3}라운드` : ''}`)
 // buildPlan 을 끄고 돌리면 산출이 "무엇을 계산할지"에서 멈춘다 — "어떻게 반복 자동화할지"가 없다.
 // 기본값이 false 라 호출자가 의식하지 못한 채 지나가기 쉬우므로(실측 2026-09-01: 염수 부식-낙하
@@ -302,13 +328,22 @@ if (!DO_BUILD) {
       '이 산출에 없다. 필요하면 buildPlan:true 로 다시 돌리거나, 2단 결정문을 continueFrom 으로 ' +
       '승계해 chairTemplate:build-plan 으로 이어 돌릴 수 있다(양보 불가 조항은 nonNegotiables 로 따로 넘길 것).')
 }
+// 자식이 계약으로 올려보내는 감지 플래그(절단·좌석 유실·부분 요약·저장 건너뜀)를 단계별로
+// 승계한다 — 여기서 떨어뜨리면 상류에서 만든 감지가 최종 호출자에게 안 닿는다(감사 C15).
+const flags = (st) => st ? {
+  decisionTruncated: !!st.decisionTruncated, decisionFailed: !!st.decisionFailed,
+  seatLoss: st.seatLoss || [], plainPartial: !!st.plainPartial,
+  conversationSkipped: st.conversationSkipped || null,
+  reportPagesFailed: st.reportPagesFailed || [],
+} : null
 return {
   question: Q,
-  mechanism: { decision: mech.decision, rounds: mech.rounds, roundLabels: mech.roundLabels },
+  mechanism: { decision: mech.decision, rounds: mech.rounds, roundLabels: mech.roundLabels, ...flags(mech) },
   seats: { axes: (seatPick && seatPick.axes) || [], reason: (seatPick && seatPick.reason) || '',
-           sim: simSeats, carriedNonNegotiables: NN },
-  simPlan: { decision: sim && sim.decision, rounds: sim && sim.rounds, roundLabels: sim && sim.roundLabels, spec: simSpec },
-  buildPlan: build ? { decision: build.decision, rounds: build.rounds, roundLabels: build.roundLabels } : null,
+           sim: simSeats, carriedNonNegotiables: NN, seatPickFailed: !seatPick },
+  simPlan: { decision: sim && sim.decision, rounds: sim && sim.rounds, roundLabels: sim && sim.roundLabels, spec: simSpec, ...flags(sim) },
+  buildPlan: build ? { decision: build.decision, rounds: build.rounds, roundLabels: build.roundLabels, ...flags(build) } : null,
+  buildFailed,   // DO_BUILD 였는데 3단이 죽음 — 저장이 어디에도 안 된 상태(위 log 참조).
   report: (build && build.report) || (sim && sim.report),
   conversation: (build && build.conversation) || (sim && sim.conversation),
 }
