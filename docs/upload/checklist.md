@@ -21,10 +21,11 @@
       → 검증: MCP `list_projects` 결과가 그대로 온다
 - [x] `routes.py` — `POST /upload/dispatch` — 목적지 그룹 재검사 → 핸들러 분기
       → 검증: 클라이언트가 목적지를 조작해도 403
-- [x] STEP 핸들러 — 새 과제는 `intake` 한 번(과제·메타·등록·잡), 기존 과제면 `upload_step` + `run_job`
-      → 계획 단계에선 `create_project`+`upload_step` 3회를 예상했으나, StepForge 에 `intake` 가
-        이미 있어 새 과제 경로는 1회로 줄었다. `run_operation` 이 아니라 `run_job` 이다(도구명 확인).
-      → 검증: 단위·타입·빌드까지. **실제 STEP end-to-end 는 아직**(아래 남은 것)
+- [x] STEP 핸들러 — 새 과제면 `create_project`, 그다음 공통으로 등록(`upload_step`, zip 이면
+      `import_archive`) + `run_job`
+      → 한때 `intake` 한 번으로 줄였으나 되돌렸다. **배포된 SIF 에 `intake` 가 없어**
+        첫 e2e 가 "unknown tool" 로 터졌다(D-8). `run_operation` 이 아니라 `run_job` 이다.
+      → 검증: 실제 STEP e2e — 과제 생성 → 파싱 잡 `done` → 트리 9노드·5단계 → 파트 4개 형상
 
 ## 프론트
 
@@ -35,19 +36,21 @@
 ## 배포
 
 - [x] `start.sh` — `UPLOAD_STAGING_HOST_DIR` 주입
-- [ ] `.env.example` — 새 키 문서화
+- [x] `.env.example` — 업로드 섹션 신설(그룹 2개·스테이징 경로 2개·TTL). 원래 업로드 설정이
+      템플릿에 통째로 없었다.
 
 ## 마무리
 
 - [x] `context-notes.md` 에 결정·근거 누적
 - [x] 프론트 빌드 통과
-- [ ] 커밋(의미 단위로 분리 — 백엔드/프론트/배포)
+- [x] 커밋(의미 단위로 분리 — 백엔드/프론트/배포/실주행 수정 2건)
+- [x] **실제 STEP 으로 end-to-end** — 포털 재기동 후 실주행. 목적지 필터(`.step` → stepforge 만)
+      → 과제 생성 → 파싱 잡 `done` → 트리 9노드·5단계 → 파트 4개 형상까지 확인.
+      돌리며 결함 2건을 잡았다(D-8·D-10). 시험 과제·PAT·스테이징은 회수했다.
 
 ## 남은 것
 
-- [ ] **실제 STEP 으로 end-to-end 1회** — 지금까지는 단위·타입·빌드 검증까지다.
-      포털 재기동 후 STEP 을 올려 job_id 가 돌아오는지 확인해야 한다.
-- [ ] `.env.example` — `UPLOAD_GROUPS_STEP` · `UPLOAD_STAGING_HOST_DIR` 문서화
+- [ ] **zip 실주행** — `import_archive` 분기는 코드로만 맞췄다. STEP 단일 파일만 실증했다.
 - [ ] 프론트 `canUpload` 하드코딩(`['portal-admin']`) — 사내 그룹명을 .env 로 바꾸면
       여기도 고쳐야 버튼이 보인다. 서버가 그룹을 내려주는 쪽이 옳으나 이번 범위 밖.
 - [ ] 두 번째 목적지(K파일 → DynaForge)는 이 구조가 서면 반복이다
