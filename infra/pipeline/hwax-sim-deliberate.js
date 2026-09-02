@@ -46,7 +46,7 @@
 export const meta = {
   name: 'hwax-sim-deliberate',
   description: '메커니즘 심의 → CAE 해석 설계 심의 2단으로 해석 계획서까지 만든다',
-  whenToUse: '현상의 원인을 좁힌 뒤 "그걸 어떤 시뮬레이션으로, 무슨 도구로 확인할 것인가"까지 결정해야 할 때. args.modifiers[] 로 얹을 층(voi·premortem·toulmin·eliminative·anon1r)을 2단 전체에 적용. buildPlan:true 면 구축 계획서(3단)까지. 단발 심의·다른 유형은 hwax-deliberate.',
+  whenToUse: '현상의 원인을 좁힌 뒤 "그걸 어떤 시뮬레이션으로, 무슨 도구로 확인할 것인가"까지 결정해야 할 때. args.modifiers[] 로 얹을 층(voi·premortem·toulmin·eliminative·anon1r)을 2단 전체에 적용. buildPlan:true 면 구축 계획서(3단)까지. 단발 심의·다른 유형은 hwax-deliberate. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — 정본 경로로 부른다: Workflow({scriptPath:'<리포루트>/infra/pipeline/hwax-sim-deliberate.js'}). 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
   phases: [
     { title: '메커니즘', detail: '현상 도메인 전문가가 지배 물리를 좁힌다' },
     { title: '좌석전환', detail: 'CAE 좌석 발굴 + 물리 유임자 선별' },

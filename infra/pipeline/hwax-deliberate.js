@@ -48,7 +48,7 @@
 export const meta = {
   name: 'hwax-deliberate',
   description: '질문을 다중 라운드 전문가 심의로 수렴 — chairTemplate 로 심의 유형(원인규명·안선택·신뢰판정·자유 등), modifiers 로 얹을 층 선택',
-  whenToUse: '여러 도메인 전문가 의견이 갈리는 결정을 도구 근거 위에서 라운드로 수렴시킬 때. args 는 객체 {question, chairTemplate?, modifiers?, personas?, evidence?, rounds?}. chairTemplate 로 심의 유형을 고른다 — diagnosis(원인규명·FTA↔FMEA·is/is-not·ACH, 반증 지정석 자동) · option-select(안선택·Pugh 2R/Flip) · credibility(신뢰판정·NASA-STD-7009 축별 채점, red-team 지정석 자동) · sim-plan(해석 계획서·sim_spec) · test-plan(시험 계획서) · build-plan(구축 계획서) · risk-review(리스크 심사 보고서·risk_spec, 기준선 옹호 지정석 자동) · default(자유 의사결정문). modifiers[] 로 얹을 층(직교·다중) — voi(교착 정산/VoI) · premortem(사전부검) · toulmin(논증 엄밀) · eliminative(완결 기준) · anon1r(익명 1R). 시뮬 2단(메커니즘→해석 설계)은 hwax-sim-deliberate, 무엇을 먼저 측정할지는 hwax-test-plan 을 쓴다.',
+  whenToUse: '여러 도메인 전문가 의견이 갈리는 결정을 도구 근거 위에서 라운드로 수렴시킬 때. args 는 객체 {question, chairTemplate?, modifiers?, personas?, evidence?, rounds?}. chairTemplate 로 심의 유형을 고른다 — diagnosis(원인규명·FTA↔FMEA·is/is-not·ACH, 반증 지정석 자동) · option-select(안선택·Pugh 2R/Flip) · credibility(신뢰판정·NASA-STD-7009 축별 채점, red-team 지정석 자동) · sim-plan(해석 계획서·sim_spec) · test-plan(시험 계획서) · build-plan(구축 계획서) · risk-review(리스크 심사 보고서·risk_spec, 기준선 옹호 지정석 자동) · default(자유 의사결정문). modifiers[] 로 얹을 층(직교·다중) — voi(교착 정산/VoI) · premortem(사전부검) · toulmin(논증 엄밀) · eliminative(완결 기준) · anon1r(익명 1R). 시뮬 2단(메커니즘→해석 설계)은 hwax-sim-deliberate, 무엇을 먼저 측정할지는 hwax-test-plan 을 쓴다. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — 정본 경로로 부른다: Workflow({scriptPath:'<리포루트>/infra/pipeline/hwax-deliberate.js'}). 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
   phases: [
     { title: '초기입장', detail: '페르소나별 초기 의견(또는 이어하기 개시) — 병렬' },
     { title: '심화라운드', detail: '상호 반박·수치 심화 (가변 회차, 병렬)' },
