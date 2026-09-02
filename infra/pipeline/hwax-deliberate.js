@@ -230,7 +230,12 @@ const R3_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: {
     persona: { type: 'string' },
-    final_position: { type: 'string' },
+    // ⚠ description 이 없으면 모델이 단서를 넣을 자리를 못 찾아 **필드를 발명한다.** 실측
+    //   (2026-09-02 솔더볼 심의): 서로 다른 좌석 2개가 똑같이 `final_position_note` 를
+    //   만들어 제출했고 additionalProperties:false 에 걸려 거부·재시도했다(6회). 프롬프트는
+    //   "결정 가능하도록 구체적으로" 를 요구하는데 스키마가 그 자리를 안 줬던 것이다.
+    final_position: { type: 'string',
+      description: '최종 입장. 조건·단서·유보도 이 안에 함께 쓴다(별도 note 필드를 만들지 마라)' },
     non_negotiable: { type: 'string', description: '절대 양보 못 하는 제약' },
     vote: { type: 'string', description: '최종 권장 선택지 + 이유' },
   },
