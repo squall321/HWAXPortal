@@ -1041,12 +1041,22 @@ async def chat(
                                 "detail": (str(data.get("detail"))[:400] if data.get("detail") else None),
                                 "result_preview": (str(data.get("result_preview"))[:2000]
                                                    if data.get("result_preview") else None),
+                                # 핸드오프용 날것 — 이것을 안 남기면 새로고침 뒤 심의로 넘길 때
+                                # 220자 미리보기만 남는다(감사 C45 — result_full 채널을 뚫어놓고
+                                # 서버 스냅샷이 버리고 있었다).
+                                "result_full": (str(data.get("result_full"))[:2000]
+                                                if data.get("result_full") else None),
                             })
                 yield frame
         finally:
             sem.release()  # released even on client disconnect (Starlette aclose()s the gen)
             if store is not None and cid:
-                for t in turns[:60]:  # 심의 발언 수 캡(폭주 방어)
+                # ⚠ 머리 60 이면 잘리는 쪽이 뒤 = 수렴 라운드의 최종 입장이다(감사 C41).
+                #   캡은 서버 생성 상한(200)에 맞추고 꼬리를 지킨다 — 초기입장보다 최종입장이
+                #   이어가기·재열람에 더 값나간다. 잘리면 로그를 남긴다.
+                if len(turns) > 199:
+                    logger.warning("심의 발언 %d건 중 뒤 199건만 저장(cid=%s)", len(turns), cid)
+                for t in turns[-199:]:  # 심의 발언 수 캡(폭주 방어) — 꼬리 유지
                     store.append(conversation_id=cid, owner_sub=owner, role="persona",
                                  content=str(t["content"])[:20000],
                                  persona=(str(t["persona"])[:120] if t.get("persona") else None),
