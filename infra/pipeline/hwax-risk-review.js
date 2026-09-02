@@ -30,7 +30,7 @@
 export const meta = {
   name: 'hwax-risk-review',
   description: '리스크 심사 패널을 앱 원장에서 받아 심의로 돌리고 결과를 되돌린다 — L2 오케스트레이터',
-  whenToUse: '설계 리스크 심사(risk-review)의 편성된 패널을 Claude Code 에서 보충 회차로 돌릴 때. args 는 객체 {targetKey, briefToken, tier, panels?, actor?, model?}. briefToken 은 앱 화면 GET /targets/{key}/brief 에서 복사해 오는 필수 인자다. tier 는 B 또는 C 이며 A(대표 패널)와 무인 배치는 웹 러너 전용이다. 이 경로는 좌석 도구 호출이 없는 evidence_only 등급으로 원장에 들어간다. 단발 심사(원장 미연동)는 hwax-deliberate 에 chairTemplate:risk-review 만 주면 된다. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — 정본 경로로 부른다: Workflow({scriptPath:'<리포루트>/infra/pipeline/hwax-risk-review.js'}). 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
+  whenToUse: '설계 리스크 심사(risk-review)의 편성된 패널을 Claude Code 에서 보충 회차로 돌릴 때. args 는 객체 {targetKey, briefToken, tier, panels?, actor?, model?}. briefToken 은 앱 화면 GET /targets/{key}/brief 에서 복사해 오는 필수 인자다. tier 는 B 또는 C 이며 A(대표 패널)와 무인 배치는 웹 러너 전용이다. 이 경로는 좌석 도구 호출이 없는 evidence_only 등급으로 원장에 들어간다. 단발 심사(원장 미연동)는 hwax-deliberate 에 chairTemplate:risk-review 만 주면 된다. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — Workflow 의 scriptPath 에 정본 경로 <리포루트>/infra/pipeline/hwax-risk-review.js 를 준다. 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
   phases: [
     { title: '브리프', detail: '앱 원장에서 패널 목록·delib_opts·근거를 받는다' },
     { title: '심의', detail: '패널마다 hwax-deliberate 를 자식으로 호출' },
