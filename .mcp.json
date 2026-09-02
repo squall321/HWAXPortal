@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "리포에 두는 MCP 등록 — 박스 경로에 묶이지 않게 하려는 것이다.",
+    "종전에는 ~/.claude.json 의 projects['/home/koopark/claude/HWAXPortal'] 아래에만 있어서,",
+    "리포 경로가 다른 박스(cae00 은 ~/Projects/<Repo>)에서는 키가 안 맞아 이 서버가",
+    "'에러도 없이 그냥 없는' 상태로 세션이 시작됐다. 이 파일은 리포와 함께 이동한다.",
+    "토큰은 여기 적지 않는다 — 환경변수로 주입한다. 발급법은 CLAUDE.md 참조."
+  ],
+  "mcpServers": {
+    "hwax": {
+      "type": "http",
+      "url": "${HWAX_GATEWAY_URL:-http://127.0.0.1:9110/mcp}",
+      "headers": {
+        "Authorization": "Bearer ${HWAX_GATEWAY_PAT}"
+      }
+    }
+  }
+}
