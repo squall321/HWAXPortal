@@ -370,7 +370,11 @@ PY
     UP_SVCS=""
     for b in $DOWN; do
       case "$b" in
-        signalforge)    UP_SVCS="$UP_SVCS signalforge-mcp" ;;
+        # signalforge-mcp 는 웹(:18000)이 아니라 **SignalForge postgres(:5432)에 직결**한다
+        # (mcp-server/db.py: postgresql+asyncpg://…/signalforge). 그 postgres 를 띄우는 건
+        # signalforge 서비스의 scripts/up.sh 다. MCP 만 띄우면 FastMCP 는 응답하고 health 도
+        # 통과하는데 도구 호출은 전량 DB 오류가 된다 — mxwp 와 같은 '초록인데 안 되는' 모양.
+        signalforge)    UP_SVCS="$UP_SVCS signalforge signalforge-mcp" ;;
         # ⚠ mxwp-mcp 만 띄우면 안 된다. 브리지는 instance://mxwp_api 안에서 :8800 으로
         #   포워딩할 뿐이라, API 가 죽어 있어도 브리지는 뜨고 health(406)도 통과한다 —
         #   '초록인데 도구는 안 나오는' 상태가 된다. API(:8800)를 함께 띄운다.
@@ -392,7 +396,25 @@ PY
             sleep 2
           fi
           UP_SVCS="$UP_SVCS mx-white-paper mxwp-mcp" ;;
-        reportarchive)  UP_SVCS="$UP_SVCS reportarchive-mcp" ;;
+        # reportarchive-mcp(:3002)는 RA 백엔드(:3000)로 요청을 넘긴다(mcp_server/server.py
+        # REPORTARCHIVE_API_BASE). 그런데 **RA 는 hands-off** 라 자동 기동하지 않는다 —
+        # 이 블록이 무인자 up 을 금지하는 이유가 바로 RA·vllm 을 되살리지 않기 위함이다.
+        # 대신 MCP 만 띄우고 끝내지 않고, 백엔드가 죽어 있으면 크게 말한다. 안 그러면
+        # ':3002 초록 + 호출 전량 실패' 로 끝나고 원인이 안 보인다.
+        reportarchive)
+          if [ "$(http_code http://127.0.0.1:3000/api/health 3)" != "200" ]; then
+            bad "ReportArchive 백엔드(:3000)가 죽어 있다 — reportarchive-mcp 를 띄워도 호출은 전량 실패한다."
+            echo "      RA 는 hands-off 라 자동 기동하지 않는다. 살리려면: $SVC up report-archive"
+          fi
+          UP_SVCS="$UP_SVCS reportarchive-mcp" ;;
+        # STC MCP(:5012)는 services.yaml 밖이다 — systemd 데몬으로 상시 기동하며
+        # dashboard-backend(:5010)를 Wants 한다. 여기서 sudo systemctl 을 부르지 않는다.
+        # 할 일을 사람이 바로 알 수 있게 남긴다(전엔 '매핑된 서비스 없음' 만 찍혔다).
+        smart-twin-cluster)
+          bad "STC MCP(:5012) 다운 — services.yaml 밖(systemd 데몬)이라 여기서 못 살린다."
+          echo "      확인: systemctl status mcp-slurm  (없으면 KooSlurmInstallAutomationRefactory/"
+          echo "            dashboard/mcp_slurm 의 install_offline.sh · mcp-slurm.service.example 참조)"
+          echo "      수동: cd <repo>/dashboard/mcp_slurm && SLURM_MCP_BACKEND=http://127.0.0.1:5010 ./venv/bin/python server.py" ;;
         ai-data-hub)    UP_SVCS="$UP_SVCS ai-data-hub" ;;
         # heax-<slug> 는 '앱 하나'가 죽은 것이다. 여기서 heax-hub 통기동으로 접으면 안 된다 —
         # 허브가 살아 있으면 services.py 가 'already-up' 으로 돌려보내 아무것도 안 하고,
@@ -623,7 +645,11 @@ except Exception: pass
 PY
 )"
 if [ -n "$GW_TOK" ]; then
-  RF="$(curl -s -m 90 -X POST -H "Authorization: Bearer $GW_TOK" \
+  # ⚠ 타임아웃을 넉넉히 잡는다. /refresh 는 백엔드마다 liveness(10s) + 재연결(10s)을 쓸 수
+  #   있어 14개가 모두 불통이면 최악 280s 다 — 그리고 **배포 직후가 정확히 그 상황**이라
+  #   이 스크립트가 가장 자주 만나는 조건이다. 90s 로 자르면 성공할 갱신을 '실패'로 보고
+  #   폴백 sleep 까지 더 하게 된다(느려지고 결과도 틀린다).
+  RF="$(curl -s -m "${GATEWAY_REFRESH_TIMEOUT:-300}" -X POST -H "Authorization: Bearer $GW_TOK" \
         http://127.0.0.1:9110/refresh 2>/dev/null || true)"
   if [ -n "$RF" ] && json_ok "$RF"; then
     echo "  · MCP 카탈로그 갱신: $(RF="$RF" python3 -c '
