@@ -585,11 +585,69 @@ heax_apps=""
 [ -d "$HEAX_STATE_DIR" ] && heax_apps="$(ls "$HEAX_STATE_DIR"/*.json 2>/dev/null | while read -r f; do basename "$f" .json; done)"
 [ -n "$heax_apps" ] || heax_apps="materialtwin_web voice_recorder"
 
+# ── 외부 MCP 카탈로그 최신화 ─────────────────────────────────────────────────
+# 앱을 재배포해도 게이트웨이 카탈로그는 재활 주기(기본 60s)가 돌아야 바뀐다. 그 전에
+# 판정하면 **옛 도구 목록으로 초록을 찍는다.** 실제로 그렇게 놓쳤다 — StepForge 가 intake·
+# set_project_meta 를 추가했는데 배포된 SIF 가 낡아 게이트웨이에 없었고, 포털이 그 도구를
+# 부르다 'unknown tool: intake' 로 터졌다(2026-09-01).
+#
+# 그래서 여기서 즉시 갱신시키고(POST /refresh — 주기 루프와 같은 코드), 무엇이 늘고
+# 줄었는지 **도구 이름으로** 보고한다. 수만 보면 1개 추가 + 1개 삭제가 '변화 없음'이 된다.
+# 트리거가 없는 옛 게이트웨이면 한 주기를 기다렸다가 넘어간다(기능 저하 없이 동작).
+_tm_snapshot() { curl -s -m 6 http://127.0.0.1:9110/tools-map 2>/dev/null || true; }
+TM_BEFORE="$(_tm_snapshot)"
+GW_TOK="$(python3 - "$GW_DIR/gateway_config.json" <<'PY' 2>/dev/null || true
+import json, sys
+try: print(json.load(open(sys.argv[1]))["_gateway"].get("token", ""))
+except Exception: pass
+PY
+)"
+if [ -n "$GW_TOK" ]; then
+  RF="$(curl -s -m 90 -X POST -H "Authorization: Bearer $GW_TOK" \
+        http://127.0.0.1:9110/refresh 2>/dev/null || true)"
+  if [ -n "$RF" ] && json_ok "$RF"; then
+    echo "  · MCP 카탈로그 갱신: $(RF="$RF" python3 -c '
+import json, os
+d = json.loads(os.environ["RF"])
+if not d.get("ok"): print("실패 —", d.get("error", "?")); raise SystemExit
+down = [k for k, v in (d.get("backends") or {}).items() if not v]
+print(f"도구 {d.get(\"tools_before\")}→{d.get(\"tools\")}"
+      + (" (변화 있음)" if d.get("changed") else "")
+      + (f" · 불통 백엔드 {len(down)}: {\" \".join(sorted(down))}" if down else ""))')"
+  else
+    echo "  · /refresh 미지원 또는 실패 — 재활 주기를 기다린다(${GATEWAY_REVIVE_WAIT:-65}s)"
+    sleep "${GATEWAY_REVIVE_WAIT:-65}"
+  fi
+else
+  echo "  · 게이트웨이 토큰을 못 읽어 카탈로그 갱신을 생략했다(gateway_config.json 확인)"
+fi
+
 # MCP 노출 앱은 /apps/<id>/ 루트 코드로 판정할 수 없다 — MCP 는 하위경로(/mcp)라 루트가
 # 404/401 인 게 정상이다(실측: kooremapper_mcp·web_research_mcp 404, laminate·thermal 401).
 # 그래서 게이트웨이 /tools-map 의 도구 수로 본다. DynaForge 처럼 프록시 대상 업스트림이
 # 죽으면 '등록은 멀쩡한데 도구가 0개'가 되는데, 루트 코드만 보면 이걸 영영 못 잡는다.
-TM="$(curl -s -m 6 http://127.0.0.1:9110/tools-map 2>/dev/null || true)"
+TM="$(_tm_snapshot)"
+
+# 갱신 전후 도구 **이름** 차이 — 외부 MCP 가 무엇을 새로 내놓았고 무엇을 거뒀는지.
+if [ -n "$TM_BEFORE" ] && [ -n "$TM" ] && json_ok "$TM_BEFORE" && json_ok "$TM"; then
+  BEFORE_TM="$TM_BEFORE" AFTER_TM="$TM" python3 - <<'PY' | sed 's/^/  /'
+import json, os
+a = json.loads(os.environ["BEFORE_TM"]).get("map") or {}
+b = json.loads(os.environ["AFTER_TM"]).get("map") or {}
+added, gone = sorted(set(b) - set(a)), sorted(set(a) - set(b))
+if not added and not gone:
+    raise SystemExit
+by = {}
+for n in added: by.setdefault(b[n], {"+": [], "-": []})["+"].append(n)
+for n in gone:  by.setdefault(a[n], {"+": [], "-": []})["-"].append(n)
+print("· 도구 변화:")
+for bk, d in sorted(by.items()):
+    bits = []
+    if d["+"]: bits.append("+" + " +".join(d["+"][:8]) + (" …" if len(d["+"]) > 8 else ""))
+    if d["-"]: bits.append("-" + " -".join(d["-"][:8]) + (" …" if len(d["-"]) > 8 else ""))
+    print(f"    {bk}: " + "  ".join(bits))
+PY
+fi
 MCP_COUNTS=""   # "<id> <도구수> <연결1/0>" 줄 목록
 TM_OK=1
 if [ -n "$TM" ] && json_ok "$TM"; then
