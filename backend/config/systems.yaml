@@ -148,11 +148,15 @@ systems:
     sort_order: 65
 
   - id: hwax-risk
-    name: 리스크 심사
-    tagline: 설계 IR·diff 위의 전문가 리스크 심사
+    # 표시명 정본은 HEAXHub 매니페스트(integrations/hwax-risk/.portal/manifest.yaml)와
+    # 앱 <title> 이다 — 둘 다 "HWAX Risk Review". 여기만 한글이라 어긋나 있었다.
+    name: HWAX Risk Review
+    tagline: 설계 스냅샷 비교 — 무엇이 바뀌었고, 무엇이 위험한가
     description: >-
-      StepForge·DynaForge 스냅샷을 동결·비교하고 HW/XD 전문가 패널이 리스크·개선·성격을
-      판정해 등록부로 누적합니다.
+      과제의 CAD·해석 모델(StepForge·DynaForge·ECAD)을 읽기 전용으로 읽어 그 시점 그대로
+      동결하고, 두 시점을 비교해 무엇이 바뀌었는지 코드가 결론 없이 정리합니다. 그 위에서
+      HW/XD 전문가 패널이 리스크와 개선점을 판정하고, 판정은 바뀐 지점에 붙어 쌓여 다음
+      과제의 심사 브리프로 되먹여집니다.
     accent: rose
     category: Engineering
     # 2026-08-31 HEAX 앱 hwax_risk 등록·기동 완료(SIF·Caddy 라우트·게이트웨이 흡수 실측).
