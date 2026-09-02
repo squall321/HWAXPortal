@@ -42,14 +42,19 @@ hwax-hero*.png
 infra/data/
 infra/nginx/hwax.conf
 
-# Claude Code — **박스별인 것만** 무시한다. 전에는 `.claude/` 를 통째로 무시했는데,
-# 그러면 권한 allowlist 가 다른 박스로 안 가서 같은 Claude 라도 거부가 잦아 우회 경로를
-# 타고, 결과 품질이 달라진다(cae00 실측 문제). 공유해야 할 것은 추적한다.
+# Claude Code — `.claude/` 아래는 **전부 박스별**이라 하나도 추적하지 않는다. 다른 박스의
+# 세션에 맥락을 전하는 일은 여기가 아니라 리포 본체가 한다 — CLAUDE.md(규칙),
+# docs/gotchas.md(사고 기록), .mcp.json(MCP 등록), infra/pipeline(심의 워크플로 정본).
+#   settings.json        Claude Code 가 승인마다 스스로 늘리는 파일이다(현재 60항목).
+#                        추적하면 여러 세션이 같은 리포를 만질 때 diff 가 계속 생기고 남의
+#                        승인 이력이 커밋에 섞인다 — docs/gotchas.md #2 와 같은 사고다.
+#                        한 번 추적했다가(5a18254) 그 이유로 되돌렸다.
 #   settings.local.json  개인 승인 이력 — 사람마다 다르다
 #   scheduled_tasks.lock 런타임 락
 #   workflows/           생성물 — 정본은 infra/pipeline/*.js, sync-workflows.sh 가 복사한다
 # ⚠ gitignore 는 **줄 끝 주석을 지원하지 않는다** — 패턴 뒤에 `#` 를 붙이면 그 주석까지
 #   패턴이 되어 아무것도 안 걸린다(실측: 아래 네 줄이 전부 무매치였다). 주석은 위에 적는다.
+.claude/settings.json
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/workflows/
