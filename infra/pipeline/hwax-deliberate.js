@@ -280,21 +280,42 @@ const R1_INSTRUCTION = CONT
 // 색인을 읽으므로 새 카드가 잡히려면 색인이 최신이어야 한다(재색인 절차). 미사용·도구실패 시엔
 // 종전과 동일하게 페르소나 지식으로 발언한다 — 가법적이라 회귀 위험이 없다.
 const GROUND = A.groundCards === true
-const groundBlock = k => GROUND
+// ⚠ 카드 전량 조회는 **1라운드에서만** 시킨다. 지식카드는 라운드 사이에 바뀌지 않는데,
+//   모든 라운드 프롬프트에 같은 지시를 붙이면 좌석이 매 라운드 다시 부른다 — 실측
+//   (2026-09-02 솔더볼 심의): get_context_bundle 이 좌석당 5~6회, 총 97회 호출됐고 그중
+//   96회가 권한 판정 rate-limit 에 걸렸다(호출이 몰릴수록 막힌다). 2라운드부터는 이미 읽은
+//   카드를 쓰게 하고, **쟁점이 옮겨갔을 때만** 좁은 재조회(semantic_search)를 허용한다.
+const groundBlock = (k, first) => !GROUND ? ''
+  : first
   ? `[근거 그라운딩 — 발언 전 실행] 먼저 get_context_bundle(agent_type: "${k}") 로 네 지식카드를 ` +
     `불러오고, 필요하면 semantic_search(q: 쟁점, agent_type: "${k}") 로 쟁점 관련 근거를 찾아라. ` +
     `수치·임계·정리를 인용할 땐 카드/섹션 출처를 붙이고, 카드에 없어 일반지식으로 답하면 ` +
     `(경험칙)/(expert-judgement)로 표기하라. 도구가 실패하면 그 사실을 한 줄로 남기고 페르소나 ` +
     `지식으로 답하되 과단정하지 마라.\n\n`
-  : ''
+  : `[근거 그라운딩] 네 지식카드는 앞 라운드에서 이미 읽었다 — get_context_bundle 을 다시 ` +
+    `부르지 마라(같은 결과다). 쟁점이 앞 라운드에서 옮겨가 새 근거가 필요할 때만 ` +
+    `semantic_search(q: 그 쟁점, agent_type: "${k}") 로 좁혀 찾아라. 인용·표기 규칙은 그대로다.\n\n`
 // 페르소나 정규화 — LLM이 persona 필드에 긴 역할 설명을 붙여 반환하면 포털 저장(persona ≤120자
 // 검증)이 배치째 422로 거부된다(전기박리 심의 대화 유실 사고의 원인). 정본 키로 강제한다.
 const withKey = (k) => (o) => (o ? { ...o, persona: k } : o)
+// 좌석 유실 보고 — agent() 는 API 오류·중도 취소 시 null 을 돌려주고, 아래 filter(Boolean)
+// 이 그것을 조용히 지운다. 실측(2026-09-02 솔더볼 심의): sim-pcb-warpage 가 "response
+// stopped arriving" 로 빠졌는데 **어디에도 안 남았다** — 결정문은 그 도메인이 원래 없었던
+// 것처럼 읽힌다. 커버리지가 심의 품질의 축이므로 빠진 좌석은 반드시 말한다.
+const seatLoss = []
+const reportSeats = (label, want, got) => {
+  const lost = want.filter(k => !got.some(o => o && o.persona === k))
+  if (!lost.length) return
+  seatLoss.push({ round: label, lost })
+  log(`⚠ ${label}: 좌석 ${lost.length}석 유실 — ${lost.join(', ')} (API 오류·취소). ` +
+      `이 라운드는 그 도메인 없이 수렴했다.`)
+}
 const r1 = await parallel(pk.map(k => () => agent(
-  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${baseFor(k)}\n\n${groundBlock(k)}${R1_INSTRUCTION}`,
+  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${baseFor(k)}\n\n${groundBlock(k, true)}${R1_INSTRUCTION}`,
   { label: `r${rn(1)}:${k}`, phase: '초기입장', schema: OP_SCHEMA }).then(withKey(k))))
 roundsData.push(r1)
 roundLabels.push(`${rn(1)}라운드 — ${CONT ? '이어하기·초기입장' : '초기입장'}`)
+reportSeats(`${rn(1)}라운드`, pk, r1)
 
 let priorText = r1.filter(Boolean).map(o => `• ${o.persona}: ${summarize(true, false, o)}`).join('\n')
 let priorLabel = `${rn(1)}라운드(초기입장) 전원 입장`
@@ -317,11 +338,12 @@ for (let i = 0; i < MID_ROUNDS; i++) {
   const roundNo = rn(i + 2)
   phase('심화라운드')
   const rN = await parallel(pk.map(k => () => agent(
-    `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n${groundBlock(k)}` +
+    `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n${groundBlock(k, false)}` +
     `${roundNo}라운드(심화 ${i + 1}/${MID_ROUNDS}): 다른 전문가 입장을 읽고 (1) 수용할 지적, (2) 반박(근거: 수치·표준·실패모드), (3) 당신 핵심 주장을 한 단계 더 깊게. 두루뭉술 금지, 당신 전문성으로.`,
     { label: `r${roundNo}:${k}`, phase: '심화라운드', schema: R2_SCHEMA }).then(withKey(k))))
   roundsData.push(rN)
   roundLabels.push(`${roundNo}라운드 — 상호 반박·심화`)
+  reportSeats(`${roundNo}라운드`, pk, rN)
   priorText = rN.filter(Boolean).map(o => `• ${o.persona}: ${summarize(false, false, o)}`).join('\n')
   priorLabel = `${roundNo}라운드(심화) 전원 입장`
   preFinalText = priorText
@@ -330,7 +352,7 @@ for (let i = 0; i < MID_ROUNDS; i++) {
 phase('수렴')
 const finalRoundNo = rn(ROUNDS)
 const rFinal = await parallel(pk.map(k => () => agent(
-  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n${groundBlock(k)}` +
+  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n${groundBlock(k, false)}` +
   `${finalRoundNo}라운드(최종수렴): 지금까지 논의를 반영해 최종 입장으로 수렴하라. (1) 최종 입장, (2) 절대 양보 못 하는 제약, ` +
   (HAS_CHOICES
     ? `(3) 위 [후보/선택지] 중 최종 권장 하나와 이유. 근거가 부족해 고를 수 없으면 "판정 불가 — 다음에 측정할 것"과 그 측정 항목을 쓰라.`
@@ -339,6 +361,7 @@ const rFinal = await parallel(pk.map(k => () => agent(
   { label: `r${finalRoundNo}:${k}`, phase: '수렴', schema: R3_SCHEMA }).then(withKey(k))))
 roundsData.push(rFinal)
 roundLabels.push(`${finalRoundNo}라운드 — 수렴·최종 입장`)
+reportSeats(`${finalRoundNo}라운드`, pk, rFinal)
 
 phase('Decision')
 const allRoundsText = roundsData.map((rd, idx) => {
@@ -420,6 +443,10 @@ const decision = await agent(
   `당신은 심의체 의장. 이번 호출분 ${ROUNDS}라운드 토론(${rn(1)}~${finalRoundNo}라운드, 초기 1${MID_ROUNDS > 0 ? ` + 심화 ${MID_ROUNDS}` : ''} + 수렴 1)을 종합해 의사결정문을 한국어 엔지니어링 톤으로 작성하라.\n\n${BASE}\n\n` +
   `[전체 라운드 요약]\n${allRoundsText}\n\n[최종 라운드 상세]\n${JSON.stringify(rFinal.filter(Boolean), null, 1)}\n\n` +
   `[${SEAT_NOTE}]\n\n` +
+  // 유실 좌석을 의장에게 사실로 준다 — (0) 커버리지 항목이 '없던 도메인'으로 오해하지 않게.
+  (seatLoss.length ? `[좌석 유실 — 아래 좌석은 그 라운드에서 API 오류로 발언하지 못했다. `
+    + `(0) 커버리지에 이 사실을 그대로 적고, 그 도메인 판단이 빠진 채 수렴했음을 밝혀라]\n`
+    + seatLoss.map(x => `· ${x.round}: ${x.lost.join(', ')}`).join('\n') + '\n\n' : '') +
   `산출: ## ${CHAIR_TEMPLATE === 'sim-plan' ? '해석 계획서' : CHAIR_TEMPLATE === 'test-plan' ? '시험 계획서' : CHAIR_TEMPLATE === 'build-plan' ? '구축 계획서' : CHAIR_TEMPLATE === 'risk-review' ? '리스크 심사 보고서' : CHAIR_TEMPLATE === 'diagnosis' ? '원인 규명 결정문' : CHAIR_TEMPLATE === 'option-select' ? '안 선택 결정문' : CHAIR_TEMPLATE === 'credibility' ? '신뢰 판정문' : '의사결정문'} — (0) 참여 도메인과 커버리지 한계 — 위 좌석 구성을 한 문단으로 기록하고, 이 문제에 관련되나 착석하지 않은 인접 도메인이 있으면 명시하라(없으면 없다고 쓰라), ` +
   // 종전엔 "라운드별 입장 심화·수렴 과정을 반드시 드러내라"를 무조건 요구했다. 그러면 과정
   // 서술이 분량을 먹고 종합을 밀어낸다 — 읽는 사람이 먼저 알아야 할 건 결론의 그림이다.
@@ -631,6 +658,7 @@ return {
   //   61,246자 중 709자만 반환됐다). 로그로만 알리면 호출자가 놓친다 — 계약으로 올린다.
   //   복원: 트랜스크립트 디렉터리의 agent-*.jsonl 에서 assistant 텍스트 블록을 순서대로 이어붙인다.
   decisionTruncated,
+  seatLoss,   // [{round, lost:[key]}] — API 오류로 빠진 좌석. 빈 배열이면 전원 발언.
   plain,
   report,
   conversation,
