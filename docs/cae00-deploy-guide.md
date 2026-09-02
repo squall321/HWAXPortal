@@ -144,3 +144,18 @@ bash deploy/apptainer/sync-from-drive.sh
 - **박스별(gitignore) 미확인**: `provision.env` 토큰, rclone remote, AIDataHub `.env` 의 실제 API 포트, `routes.local.env` 의 ste= 값, ste-tunnel 서비스 구동 여부.
 - **그라운딩의 실제 전제 미확인**: cae00 AIDataHub 에 `xd-cae-*`(스파인 7석 + 발굴 대상) 전문가·records 가 실제 동기화돼 있는지 — 이게 그라운딩이 "빈 근거"가 아니라 실제 인용으로 채워지는 배포측 조건이다. 재기동·업로드·병합 후 §3 검증 방법으로 확인할 것.
 - dev 에서 `backup-to-drive`/`export-*` 를 **크론으로 도는지 수동인지** 미확인 — 이 가이드는 명령만 정리했다.
+
+## 2026-09-02 반영분 — update-all 후 확인·1회 조치
+
+`git pull && update-all` 로 자동 반영되는 것.
+- 심의 파이프라인 절단·유실 수정 전체(워크플로 JS 는 §1a 동기화, agent-server·게이트웨이는 §4).
+- AIDataHub **데이터**(§3 병합) — `material-twin-analyst` 승격 페르소나, 물성 지식 41건 바인딩,
+  재료 카드 2,688건. dev 가 `export-to-drive.sh` 로 올린 sync JSONL 을 §3 이 머지한다.
+
+1회 수동 조치(있다면).
+- **cae00 AIDataHub 자체의 materialtwin 동기화 소스**: dev 에서 `page_size 50 × max_pages 50 = 2,500`
+  상한에 걸려 카드가 2,500 에서 매번 끊기던 함정이 있었다(커서는 소진 전 미저장이라 매회 처음부터).
+  cae00 이 자기 MaterialTwin 을 직접 동기화한다면 같은 함정이 있다 —
+  `PATCH /api/sync/sources/<materialtwin id> {"page_size":100}` 한 번이면 된다(코드 무변경).
+- `.mcp.json` 이 리포에 생겼다 — `export HWAX_GATEWAY_PAT=<PAT>` 없으면 hwax MCP 가 연결 실패로
+  뜬다(조용히 없는 게 아니라 명확히 실패한다). CLAUDE.md 참조.
