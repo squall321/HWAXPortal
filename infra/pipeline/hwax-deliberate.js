@@ -488,7 +488,8 @@ const decision = await agent(
   `마지막 조각만 반환값이 되어 앞부분이 통째로 유실된다(실측 2026-09-01: 구축 계획서 75,373자 중 ` +
   `42,291자가 그렇게 반환값에서 빠졌고 에이전트 전사에서 손으로 복원해야 했다). 길면 항목을 줄여서라도 ` +
   `한 응답 안에서 끝내라. 첫 줄은 반드시 '## ' 로 시작하는 제목이어야 하고, ` +
-  `마지막 줄은 반드시 〔결정문 끝〕 한 줄이어야 한다(이 마커가 없으면 절단으로 판정된다).`,
+  `마지막 줄은 반드시 〔결정문 끝〕 한 줄이어야 한다(이 마커가 없으면 절단으로 판정된다). ` +
+  `긴 결정문에서 이 마커가 가장 자주 누락된다 — 결어 문장을 쓴 뒤 잊지 말고 다음 줄에 찍어라.`,
   { label: 'decision', phase: 'Decision' })
 
 // ⚠ agent() 는 API 오류·취소 시 null 이다(좌석에서 실측). 여기서 decision.slice 를 그대로
@@ -511,11 +512,18 @@ if (!decText) {
 const decisionHead = decText.trimStart().slice(0, 2)
 const _headBad = decisionHead !== '##' && decisionHead !== '# '
 const _tailBad = !decText.endsWith('〔결정문 끝〕')
-const decisionTruncated = _headBad || _tailBad
+// 마커 누락 오탐 분리 — 실측 2026-09-02(ADC12 시험계획): 의장이 13,097자 결정문을 '의장
+// 결어' 완결 문장으로 끝내고 마커만 안 찍어 true 가 떴다(전사 대조로 무손실 확인). 꼬리가
+// 종결부호로 끝나면 절단이 아니라 마커 누락일 공산이 크므로 'marker-missing' 으로 구분해
+// 보고한다 — truthy 는 유지해 후속 처리(전사 복원 안내)는 동일하게 걸린다.
+const _tailLooksComplete = /[.!?…」』〕)]\s*$/.test(decText)
+const decisionTruncated =
+  _headBad ? true : _tailBad ? (_tailLooksComplete ? 'marker-missing' : true) : false
 if (decisionTruncated) {
-  log(`⚠ 의장 결정문 절단 의심(머리 ${_headBad ? '이상' : '정상'} · 종결마커 ${_tailBad ? '없음' : '있음'}) — ` +
+  log(`⚠ 의장 결정문 ${decisionTruncated === 'marker-missing' ? '종결마커 누락(꼬리 문장은 완결 — 오탐 가능)'
+      : `절단 의심(머리 ${_headBad ? '이상' : '정상'} · 종결마커 ${_tailBad ? '없음' : '있음'})`} — ` +
       `여러 턴에 나눠 써서 일부가 반환값에서 빠졌을 수 있다. 전문은 트랜스크립트의 ` +
-      `agent-<decision id>.jsonl 에서 assistant 텍스트 블록을 순서대로 이어 붙여 복원한다.`)
+      `agent-<decision id>.jsonl 에서 assistant 텍스트 블록을 순서대로 이어 붙여 복원해 대조한다.`)
 }
 decText = decText.replace(/〔결정문 끝〕\s*$/, '').trimEnd()
 
