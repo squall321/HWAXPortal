@@ -489,6 +489,9 @@ async def catalog_agent(
 
 class ExpertsRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
+    # 대화 전체 — 좌석 추천을 화두 한 줄이 아니라 오간 맥락 위에서 하기 위한 것.
+    # 캡은 챗 경로와 같은 계약을 쓴다(별도 규칙을 만들면 한쪽만 조이는 일이 생긴다).
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
 
 
 class DocxTurn(BaseModel):
@@ -938,7 +941,9 @@ async def deliberate_experts(
 ):
     """심의 전 전문가 선정 미리보기 — agent-server 로 포워딩(caller groups 주입). 비스트리밍 JSON."""
     client = _agent_client(request)
-    payload = {"message": body.message, "groups": principal.groups}
+    payload = {"message": body.message, "groups": principal.groups,
+               # ⚠ 이 줄이 없으면 프론트가 대화를 보내도 여기서 버려져 축이 안 나온다.
+               "history": [m.model_dump() for m in body.history]}
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/experts", json=payload)
         if r.status_code != 200:

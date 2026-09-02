@@ -91,6 +91,8 @@ export interface RecommendedExpert {
   score?: number | null;
   why?: string;
   tags?: string[];
+  /** 이 좌석을 찾아낸 축들("도메인 · 구절"). 없으면 화두 질의로 나온 좌석이다. */
+  axes?: string[];
 }
 export interface PoolExpert {
   key: string;
@@ -132,6 +134,13 @@ export async function fetchSearchCapability(signal?: AbortSignal): Promise<Searc
   return (await r.json()) as SearchCapability;
 }
 
+/** 좌석 검색 축 — 풀의 도메인 분류에서 고른 것(자유 생성이 아니다). */
+export interface SeatAxis {
+  domain: string;
+  phrase: string;
+  seats?: string[];
+}
+
 export interface ExpertsResponse {
   recommended: RecommendedExpert[];
   /** 풀에 이 주제를 맡을 전문가가 없을 가능성이 높다는 신호.
@@ -145,6 +154,8 @@ export interface ExpertsResponse {
   pool: PoolExpert[];
   /** 도구 정보 — 자동 파이프라인 + 주제 추천 + 전체 카탈로그. */
   tools?: ExpertsTools;
+  /** 대화에서 고른 도메인 축. 빈 배열이면 화두 한 줄로만 추천했다는 뜻이다. */
+  axes?: SeatAxis[];
   error?: string;
 }
 
@@ -152,6 +163,8 @@ export interface ExpertsResponse {
 export async function fetchDeliberateExperts(
   message: string,
   signal?: AbortSignal,
+  // 대화 전체 — 축 분해에만 쓴다. 서버가 통째로 임베딩 질의에 넣지 않는다(그러면 추천이 나빠진다).
+  history?: HistoryMessage[],
 ): Promise<ExpertsResponse> {
   const csrf = getCookie('hwax_csrf');
   try {
@@ -162,7 +175,7 @@ export async function fetchDeliberateExperts(
         'Content-Type': 'application/json',
         ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, ...(history?.length ? { history } : {}) }),
       signal,
     });
     if (!res.ok) return { recommended: [], pool: [], error: `http_${res.status}` };

@@ -1245,9 +1245,9 @@ body.dock-open .container {
   resize: vertical;
 }
 .cx-brief-seats { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+/* 자식 수가 3(체크·이름·why)일 수도 4(축 칩 추가)일 수도 있어 고정 컬럼 그리드를 쓰지 않는다. */
 .cx-brief-seat {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -1259,7 +1259,35 @@ body.dock-open .container {
 }
 .cx-brief-seat:hover { background: var(--cx-accent-soft); }
 .cx-brief-seat-name { color: var(--fg); font-weight: 500; }
-.cx-brief-seat-why { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* flex 안에서 ellipsis 가 먹으려면 min-width:0 이 있어야 한다(기본 min-width:auto 는 안 줄어든다). */
+.cx-brief-seat-why {
+  color: var(--muted); font-size: 11px; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 이 좌석을 찾아낸 축 — 왜 추천됐는지가 좌석 옆에 붙는다. */
+.cx-brief-seat-axis {
+  flex: 0 0 auto; font-size: 10px; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+}
+/* 대화에서 잡은 도메인 축 목록 */
+.cx-brief-axes { display: flex; flex-wrap: wrap; gap: 6px; }
+.cx-brief-axis {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px;
+  background: rgba(255, 255, 255, 0.022); font-size: 12px;
+}
+.cx-brief-axis-dom {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: var(--cx-accent, var(--fg));
+}
+.cx-brief-axis-phrase { color: var(--fg); }
+/* 추천 밖 전문가 직접 찾기 */
+.cx-brief-seatsearch {
+  margin-top: 6px; width: 100%; padding: 6px 9px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface, transparent); color: var(--fg);
+}
+.cx-brief-hits { margin-top: 6px; max-height: 180px; }
 .cx-brief-ev { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }
 .cx-brief-ev-item {
   display: flex;
