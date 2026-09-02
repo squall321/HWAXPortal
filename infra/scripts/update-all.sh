@@ -371,7 +371,27 @@ PY
     for b in $DOWN; do
       case "$b" in
         signalforge)    UP_SVCS="$UP_SVCS signalforge-mcp" ;;
-        mx-white-paper) UP_SVCS="$UP_SVCS mxwp-mcp" ;;
+        # ⚠ mxwp-mcp 만 띄우면 안 된다. 브리지는 instance://mxwp_api 안에서 :8800 으로
+        #   포워딩할 뿐이라, API 가 죽어 있어도 브리지는 뜨고 health(406)도 통과한다 —
+        #   '초록인데 도구는 안 나오는' 상태가 된다. API(:8800)를 함께 띄운다.
+        #   tier 가 다르므로(10 vs 15) services.py 가 API → 브리지 순서로 세운다.
+        mx-white-paper)
+          # 그리고 API 를 되살리려면 **껍데기 인스턴스를 먼저 내려야 한다.** MXWhitePaper
+          # start.sh 는 인스턴스 존재만 보고 'mxwp_api already running' 으로 건너뛰는데,
+          # 안의 uvicorn 이 죽은 경우가 실제로 있다(2026-09-02: appinit 만 남아 있었고
+          # 그대로 up 하면 120초 기다리다 FAIL 했다). 살아 있는데 불건강하면 재활용이 맞다.
+          # ⚠ 이 스크립트는 _common.sh 를 source 하지 않는다(36행) — $APPTAINER 를 쓰면
+          #   set -u 에서 unbound variable 로 죽는다. 280행처럼 여기서 직접 잡는다.
+          _appt="$(ls "$SELF_REPO"/infra/apptainer/bin-*/usr/bin/apptainer 2>/dev/null | tail -1)"
+          [ -x "$_appt" ] || _appt="$(command -v apptainer || true)"
+          if [ -n "$_appt" ] \
+             && [ "$(http_code http://127.0.0.1:8800/api/v1/healthz 3)" != "200" ] \
+             && "$_appt" instance list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx mxwp_api; then
+            echo "  · mxwp_api 인스턴스는 있는데 API 가 응답 없음 — 껍데기 인스턴스를 먼저 내린다"
+            "$_appt" instance stop mxwp_api >/dev/null 2>&1 || true
+            sleep 2
+          fi
+          UP_SVCS="$UP_SVCS mx-white-paper mxwp-mcp" ;;
         reportarchive)  UP_SVCS="$UP_SVCS reportarchive-mcp" ;;
         ai-data-hub)    UP_SVCS="$UP_SVCS ai-data-hub" ;;
         # heax-<slug> 는 '앱 하나'가 죽은 것이다. 여기서 heax-hub 통기동으로 접으면 안 된다 —
