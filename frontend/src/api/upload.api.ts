@@ -100,9 +100,14 @@ export async function stepProjects(): Promise<StepProject[]> {
 }
 
 /** 고른 목적지로 스테이징 파일을 보낸다. 서버가 목적지 권한을 다시 판정한다. */
+/** 개발단계 — 백엔드 `_STEP_STAGES` 와 같은 목록이어야 한다(어긋나면 조용히 버려진다). */
+export const STEP_STAGES = ['선행', 'DV', 'PV', '양산'] as const;
+
 export async function dispatchUpload(body: {
   staging_id: string; filename: string; destination: string;
   project_id?: string; project_name?: string; run?: string;
+  // 과제 메타 — 새 과제일 때만 보낸다. 기존 과제 메타는 덮지 않는다.
+  code?: string; department?: string; purpose?: string; note?: string; stage?: string;
 }): Promise<DispatchResult> {
   const r = await apiFetch('/agent/upload/dispatch', {
     method: 'POST',
