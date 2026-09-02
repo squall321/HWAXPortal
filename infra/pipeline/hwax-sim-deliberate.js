@@ -274,6 +274,7 @@ const sim = await workflow(DELIB, {
 // 2단 규격 — 변수·산출·모델·자원의 기계판독 sim_spec. 구축 단계가 산문 재파싱 대신 이걸 승계한다.
 const simSpec = parseSimSpec(sim && sim.decision)
 if (simSpec) log(`2단 규격 추출 — 변수 ${(simSpec.parameters || []).length}·산출 ${(simSpec.outputs || []).length}`)
+else if (DO_BUILD) log('⚠ 2단 결정문에서 sim_spec 펜스를 못 뽑았다 — 3단이 기계 규격 없이 산문만 승계한다(퇴화 위험)')
 
 // ── 3단 — 구축 설계 심의 (opt-in) ─────────────────────────────────────────────
 let build = null
