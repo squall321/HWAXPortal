@@ -138,13 +138,15 @@ let EV_BLOCK = ''
 if (EV.length) {
   const evItems = []
   let evBudget = 0
+  let evId = 0
   for (const e of EV) {
     const src = String(e.source || '챗').slice(0, 120)
     const meta = (e.tool ? ` · ${String(e.tool).slice(0, 80)}` : '') + (e.args ? `(${String(e.args).slice(0, 400)})` : '')
     const raw = String(e.result)
     // 항목 안 절단도 표시한다 — 무표시로 자르면 좌석이 잘린 수치를 완결 데이터로 읽는다(감사 C5).
     const body = raw.length > 2000 ? raw.slice(0, 2000) + ` …[${raw.length}자 중 2,000자]` : raw
-    const line = `· [${src}${meta}] ${body}`
+    // [e:N] 안정 id — 의장·좌석이 근거 항목을 지목해 인용할 참조 체계(감사 원장 (3)).
+    const line = `· [e:${++evId}] [${src}${meta}] ${body}`
     if (evBudget + line.length > 11000 && evItems.length) break
     evItems.push(line)
     evBudget += line.length
@@ -152,7 +154,8 @@ if (EV.length) {
   const _evDropped = (Array.isArray(A.evidence) ? A.evidence.length : 0) - evItems.length
   if (_evDropped > 0) log(`근거 ${A.evidence.length}건 중 ${evItems.length}건만 주입 — ${_evDropped}건 드롭(항목 12·예산 11KB)`)
   EV_BLOCK = `[챗 워크스페이스가 정리한 원천 데이터 — 검증 대상이지 결론이 아니다. 각 수치·주장을 ` +
-    `당신 도메인으로 재검토하고, 부족하면 도구로 더 확인하라${_evDropped > 0 ? ` · 원근거 ${A.evidence.length}건 중 ${evItems.length}건만 표시됨` : ''}]\n${evItems.join('\n')}\n\n`
+    `당신 도메인으로 재검토하고, 부족하면 도구로 더 확인하라. 이 항목의 수치·주장을 발언·결정문에 ` +
+    `쓸 때는 해당 [e:N] 표지를 함께 적어라${_evDropped > 0 ? ` · 원근거 ${A.evidence.length}건 중 ${evItems.length}건만 표시됨` : ''}]\n${evItems.join('\n')}\n\n`
 }
 // 얹을 층(2층 Modifier) — chairTemplate(무엇을 산출)과 직교하는 "어떻게 굴리나" 오버레이.
 // deliberation.py _MODIFIER_BLOCKS 와 키·취지 정합. BASE/BASE_BLIND 에 실어 좌석·의장 전체에 적용.
@@ -493,7 +496,10 @@ const decision = await agent(
   `42,291자가 그렇게 반환값에서 빠졌고 에이전트 전사에서 손으로 복원해야 했다). 길면 항목을 줄여서라도 ` +
   `한 응답 안에서 끝내라. 첫 줄은 반드시 '## ' 로 시작하는 제목이어야 하고, ` +
   `마지막 줄은 반드시 〔결정문 끝〕 한 줄이어야 한다(이 마커가 없으면 절단으로 판정된다). ` +
-  `긴 결정문에서 이 마커가 가장 자주 누락된다 — 결어 문장을 쓴 뒤 잊지 말고 다음 줄에 찍어라.`,
+  `긴 결정문에서 이 마커가 가장 자주 누락된다 — 결어 문장을 쓴 뒤 잊지 말고 다음 줄에 찍어라. ` +
+  `근거 인용 — [원천 데이터]의 수치·주장을 쓸 때는 그 항목의 [e:N] 표지를 함께 적어라. ` +
+  `좌석 발언의 수치는 그 발언의 (도구)/(경험칙) 표기를 유지하라. 결정문의 모든 수치는 ` +
+  `결정적 후검증으로 근거·발언 원문과 대조된다 — 어느 원문에도 없는 수치는 [미대조]로 보고된다.`,
   { label: 'decision', phase: 'Decision' })
 
 // ⚠ agent() 는 API 오류·취소 시 null 이다(좌석에서 실측). 여기서 decision.slice 를 그대로
@@ -530,6 +536,34 @@ if (decisionTruncated) {
       `agent-<decision id>.jsonl 에서 assistant 텍스트 블록을 순서대로 이어 붙여 복원해 대조한다.`)
 }
 decText = decText.replace(/〔결정문 끝〕\s*$/, '').trimEnd()
+
+// ── 인용 후검증(결정적, LLM 아님) — 감사 원장 (3) 본 작업 ─────────────────────
+// 결정문의 유의미 수치를 근거 원문(evidence 는 절단 전 **전문**)·정량 근거·전 라운드 발언과
+// 대조한다. unmatched 가 곧 오류는 아니다 — 의장의 정당한 신규 산술(비율 계산 등)일 수
+// 있다. 목적은 '환각 수치가 무검증으로 통과하는 경로'를 없애고 감사 가능하게 만드는 것.
+const _numRe = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+\.\d+|\d{3,}/g
+const _normNum = (s) => String(s).replace(/,/g, '')
+const _citCorpus = _normNum([
+  ...EV.map(e => `${e.source || ''} ${e.tool || ''} ${e.args || ''} ${e.result || ''}`),
+  CTX, Q, OPTS, JSON.stringify(roundsData),
+].join('\n'))
+const _decNums = [...new Set((decText.match(_numRe) || []).map(_normNum))]
+  .filter(n => !/^(19|20)\d{2}$/.test(n))   // 연도 잡음 제외
+const _unmatchedNums = _decNums.filter(n => !_citCorpus.includes(n))
+const citationAudit = {
+  numbersChecked: _decNums.length,
+  matched: _decNums.length - _unmatchedNums.length,
+  unmatched: _unmatchedNums.slice(0, 40),
+  evidenceIds: EV.length,   // [e:N] 참조 체계가 몇 항목에 부여됐나
+  note: '결정문 수치를 근거(전문)·정량 근거·전 라운드 발언 원문과 결정적으로 대조. ' +
+        'unmatched = 어느 원문에도 없는 수치(의장 신규 산술 또는 환각 — 사람이 훑을 목록).',
+}
+if (_unmatchedNums.length) {
+  log(`근거 대조 — 결정문 수치 ${_decNums.length}건 중 ${_unmatchedNums.length}건 미대조: ` +
+      `${_unmatchedNums.slice(0, 8).join(', ')}${_unmatchedNums.length > 8 ? ' …' : ''}`)
+} else if (_decNums.length) {
+  log(`근거 대조 — 결정문 수치 ${_decNums.length}건 전부 근거·발언 원문에서 확인됨`)
+}
 
 // 쉬운 설명 — 챗 파이프라인(deliberation.py)과 동일한 정식 심의 절차. 의결 뒤에 붙는다.
 // 여기 없으면 MCP 경로 결정문만 비전문가용 정리가 빠져 두 경로가 어긋난다.
@@ -784,6 +818,7 @@ return {
   conversationSkipped,   // 대화 저장을 건너뛴 사유(용량) — save-delib-conversation.py 로 저장 가능.
   reportPagesFailed,   // RA 저장 실패 쪽 번호 — 비어 있지 않으면 그 쪽이 보고서에서 빠져 있다.
   plainPartial,        // true 면 쉬운 설명이 결정문 일부(머리+꼬리)만 보고 쓰였다.
+  citationAudit,       // 결정문 수치 ↔ 근거·발언 원문 결정적 대조 결과(원장 (3) — unmatched 는 사람이 훑을 목록)
   conversation,
   nextRoundOffset: finalRoundNo,   // 다음 이어하기 호출의 continueFrom.roundsSoFar 로 그대로 전달
 }
