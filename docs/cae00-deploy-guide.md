@@ -175,8 +175,9 @@ bash deploy/apptainer/sync-from-drive.sh
 cd ~/Projects/HWAXPortal
 echo 'ste=http://127.0.0.1:15810/' >> backend/config/routes.local.env   # Teleport 터널(§5)
 ./infra/scripts/gen-nginx-conf.sh
-apptainer exec instance://hwax_nginx nginx -s reload \
-  || kill -HUP $(pgrep -f 'nginx.*hwax.conf' | head -1)
+# ⚠ -c 필수 — 없이 부르면 reload 프로세스가 기본 conf 의 pid 경로(/run/nginx.pid)를 봐서
+#   "open /run/nginx.pid failed" 로 죽는다. 우리 conf 는 pid 를 /tmp 에 둔다(rootless).
+apptainer exec instance://hwax_nginx nginx -c /workspace/infra/nginx/hwax.conf -s reload
 systemctl --user status ste-tunnel   # 터널이 죽어 있으면 재기동
 apptainer instance stop hwax_portal && ./infra/scripts/start.sh   # 타일 상태 반영(레지스트리)
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8088/ste/   # 200/401 이면 복구
