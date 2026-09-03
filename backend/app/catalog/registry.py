@@ -58,10 +58,14 @@ class CatalogRegistry:
             if from_route or s.url:
                 s.status = "available"
             return
-        # yaml 이 external-url 을 명시하고 자체 url 까지 줬으면 그 의도를 존중한다 — routes.env
-        # 항목은 nginx 프록시 배선일 뿐이므로 타일 url 을 덮지도, 모드를 proxy 로 되돌리지도
-        # 않는다(예: report-archive 를 http://{host}:3000 직결 링크로 열되 프록시 경로도 유지).
+        # external-url 타일도 routes 파일에 항목이 있으면 proxy 로 승격한다 — 라우트 파일이
+        # 박스별 진실이다(2026-09-03, report-archive 실사고: dev 는 RA 가 127.0.0.1 바인드라
+        # 직결 링크가 원격에서 연결 거부 → dev routes.env 의 항목이 프록시로 살리고, cae00 은
+        # routes.prod.env 에 항목이 없어 yaml 의 :3000 직결이 그대로 산다). 항목 없이 yaml 이
+        # url 을 줬으면 그 직결 의도를 존중한다.
         if s.integration_type == "external-url" and s.url:
+            if from_route:
+                s.integration_type = "proxy"
             s.status = "available"
             return
         url = from_route or s.url
