@@ -196,26 +196,46 @@ export function ChatProvider({
   sendPrefix = '',
   serverKind,
 }: ChatProviderProps) {
-  // localStorage는 동기라 초기 렌더에서 바로 복원 — 새로고침 시 플래시 없음.
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(storagePrefix));
-  const [activeId, setActiveId] = useState<string | null>(() => {
-    const saved = loadActiveId(storagePrefix);
-    return saved && loadConversations(storagePrefix).some((c) => c.id === saved) ? saved : null;
-  });
+  // 캐시 네임스페이스는 **계정별**이다 — 미구분 키는 같은 브라우저의 이전 사용자 대화가
+  // 다음 사용자에게 그대로 보였다(실사고 2026-09-03: koo.park 로그인에 hwax.demo 대화 노출).
+  // 로그인 확정(user) 후 아래 로드 효과가 채운다 — 그 전에는 빈 상태.
+  const { user } = useAuth();
+  const scopedPrefix = user ? `${storagePrefix}.${user.email}` : null;
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   // 심의 손잡이(웹 토글) — 상태는 UI 바인딩용, ref 는 전송 시점 읽기용(sendMessage 재생성·스테일 방지).
-  const [delibOpts, setDelibOptsState] = useState<DelibOpts>(() => loadDelibOpts(storagePrefix));
+  const [delibOpts, setDelibOptsState] = useState<DelibOpts>({});
   const delibOptsRef = useRef<DelibOpts>(delibOpts);
   const setDelibOpts = useCallback(
     (o: DelibOpts) => {
       delibOptsRef.current = o;
       setDelibOptsState(o);
-      saveDelibOpts(o, storagePrefix);
+      if (scopedPrefix) saveDelibOpts(o, scopedPrefix);
     },
-    [storagePrefix],
+    [scopedPrefix],
   );
+  // 계정별 캐시 로드 — 로그인(또는 계정 전환) 시점에 그 사람 네임스페이스로 다시 채운다.
+  useEffect(() => {
+    if (!scopedPrefix) return;
+    const convs = loadConversations(scopedPrefix);
+    setConversations(convs);
+    const saved = loadActiveId(scopedPrefix);
+    setActiveId(saved && convs.some((c) => c.id === saved) ? saved : null);
+    const opts = loadDelibOpts(scopedPrefix);
+    delibOptsRef.current = opts;
+    setDelibOptsState(opts);
+    // 구(계정 미구분) 키는 그 자체가 누출 사본 — 발견 즉시 제거한다.
+    try {
+      for (const k of ['conversations', 'activeId', 'delibOpts']) {
+        localStorage.removeItem(`${storagePrefix}.${k}`);
+      }
+    } catch {
+      /* noop */
+    }
+  }, [scopedPrefix, storagePrefix]);
   const abortRef = useRef<AbortController | null>(null);
   // 스트리밍 중인 대화 id — 그 대화가 삭제되면 스트림도 중단하기 위해 추적.
   const streamConvRef = useRef<string | null>(null);
@@ -231,14 +251,16 @@ export function ChatProvider({
     setDraftPinsState(v);
   }, []);
 
-  // 변경 시 저장(토큰 단위 갱신이 잦으므로 250ms 디바운스).
+  // 변경 시 저장(토큰 단위 갱신이 잦으므로 250ms 디바운스). 로그인 전(null)에는 저장하지 않는다.
   useEffect(() => {
-    const t = window.setTimeout(() => saveConversations(conversations, storagePrefix), 250);
+    if (!scopedPrefix) return;
+    const t = window.setTimeout(() => saveConversations(conversations, scopedPrefix), 250);
     return () => window.clearTimeout(t);
-  }, [conversations, storagePrefix]);
+  }, [conversations, scopedPrefix]);
   useEffect(() => {
-    saveActiveId(activeId, storagePrefix);
-  }, [activeId, storagePrefix]);
+    if (!scopedPrefix) return;
+    saveActiveId(activeId, scopedPrefix);
+  }, [activeId, scopedPrefix]);
 
   // 진행 중 이탈 경고 — 심의/챗은 스트림이 끊기면 서버가 진행을 취소해 결과가 통째로 유실된다.
   // streaming 동안만 beforeunload 를 걸어 실수로 탭을 닫는 걸 막는다(완료 시 자동 해제).
@@ -253,7 +275,6 @@ export function ChatProvider({
   }, [streaming]);
 
   // ── 서버 대화 저장소 동기화(정본=서버, localStorage=캐시) ──────────────────
-  const { user } = useAuth();
   // 서버 목록의 updated_at(ms) — "열 때 최신 로드" 판정용(서버가 더 새로우면 상세 재로드).
   const serverMetaRef = useRef<Map<string, number>>(new Map());
   // 상세 로드 중복 방지.
