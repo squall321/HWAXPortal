@@ -117,6 +117,8 @@ case " $* " in *" --with-ste "*) WITH_STE=1 ;; esac      # 상단
 ```sh
 # ── 포털·챗·MCP·AIDataHub 반영 (cae00) ──
 ./infra/scripts/update-all.sh              # 자기 최신화 + 전서비스 + AIDH merge + 헬스게이트
+./infra/scripts/update-forges.sh           # ★경량: DynaForge·StepForge 만 표적 최신화(수 분)
+./infra/scripts/update-forges.sh dynaforge # 하나만도 가능 (stepforge|dynaforge)
 NO_GIT_RESET=1 ./infra/scripts/update-all.sh   # 로컬 수정 보존 모드
 
 # ── 전문가/카드를 AIDataHub 에 반영 (dev 선행 → cae00 은 update-all 이 병합) ──
