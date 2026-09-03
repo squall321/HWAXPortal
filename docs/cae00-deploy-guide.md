@@ -120,6 +120,7 @@ case " $* " in *" --with-ste "*) WITH_STE=1 ;; esac      # 상단
 ./infra/scripts/update-forges.sh           # ★경량 표적 갱신: stepforge+dynaforge+ste+chat(수 분)
 ./infra/scripts/update-forges.sh chat      # 챗·심의 스택만(포털+agent-server+게이트웨이)
 ./infra/scripts/update-forges.sh ste       # STE 코드 갱신(deploy-ste 체인)  — 골라서 조합 가능
+./infra/scripts/update-forges.sh restart   # 갱신 없이 재시작만 — nginx 안 뜨면 자동 부검(conf -t·TLS cap 힌트)
 NO_GIT_RESET=1 ./infra/scripts/update-all.sh   # 로컬 수정 보존 모드
 
 # ── 전문가/카드를 AIDataHub 에 반영 (dev 선행 → cae00 은 update-all 이 병합) ──
