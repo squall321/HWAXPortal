@@ -70,7 +70,13 @@ async def set_ra_connection(
             f"RA 계정 이메일({ra_email})이 포털 계정({principal.email})과 다릅니다. "
             "같은 이메일의 RA 계정에서 발급한 토큰을 등록하세요.", status_code=400)
     ws_slug = str(me.get("home_workspace_slug") or "")
-    ws_name = next((str(m.get("workspace_name") or "") for m in me.get("memberships") or []
+    mems = me.get("memberships") or []
+    # home 미지정 계정(RA 구계정 등) 폴백 — 개인(personal-*) 아닌 첫 부서 멤버십.
+    if not ws_slug:
+        ws_slug = next((str(m.get("workspace_slug") or "") for m in mems
+                        if m.get("workspace_kind") != "personal"
+                        and not str(m.get("workspace_slug") or "").startswith("personal-")), "")
+    ws_name = next((str(m.get("workspace_name") or "") for m in mems
                     if m.get("workspace_slug") == ws_slug), "")
     store = _store(request)
     store.set_connection(email=principal.email, service="reportarchive",
