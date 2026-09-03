@@ -685,9 +685,11 @@ import json, os
 d = json.loads(os.environ["RF"])
 if not d.get("ok"): print("실패 —", d.get("error", "?")); raise SystemExit
 down = [k for k, v in (d.get("backends") or {}).items() if not v]
-print(f"도구 {d.get(\"tools_before\")}→{d.get(\"tools\")}"
-      + (" (변화 있음)" if d.get("changed") else "")
-      + (f" · 불통 백엔드 {len(down)}: {\" \".join(sorted(down))}" if down else ""))')"
+# f-string 안 \" 는 셸 홑따옴표 래핑을 거치면 SyntaxError 다(cae00 실측) — 문자열 조립로 회피.
+msg = "도구 %s→%s" % (d.get("tools_before"), d.get("tools"))
+if d.get("changed"): msg += " (변화 있음)"
+if down: msg += " · 불통 백엔드 %d: %s" % (len(down), " ".join(sorted(down)))
+print(msg)')"
   else
     echo "  · /refresh 미지원 또는 실패 — 재활 주기를 기다린다(${GATEWAY_REVIVE_WAIT:-65}s)"
     sleep "${GATEWAY_REVIVE_WAIT:-65}"

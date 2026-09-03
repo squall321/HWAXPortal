@@ -99,6 +99,25 @@ if [ -f "$ROUTES_LOCAL" ]; then
   echo "  · routes.local.env 오버레이: $(printf '%s\n' "$_lkeys" | grep -c .)개 키 재정의"
 fi
 
+# 같은 키가 **한 파일 안에서** 중복돼도 마지막 값이 이기게 최종 dedupe 한다 — 중복을 그대로
+# 흘리면 location 이 두 번 생성돼 nginx 가 [emerg] duplicate location 으로 즉사한다
+# (cae00 실사고 2026-09-04: routes.local.env 에 ste= 두 줄 → /health 000).
+_dedup="$(mktemp)"
+awk '
+  /^[[:space:]]*(#|$)/ { next }
+  /=/ {
+    key=$0; sub(/=.*/, "", key); gsub(/^[ \t]+|[ \t]+$/, "", key)
+    if (!(key in seen)) order[++n]=key
+    seen[key]=$0
+  }
+  END { for (i=1; i<=n; i++) print seen[order[i]] }
+' "$ROUTES_MERGED" > "$_dedup"
+# 주석 줄에도 '=' 가 흔하다(예시 URL) — 실키 줄만 센다. 안 그러면 매번 가짜 '접음' 경고가 뜬다.
+_before="$(grep -vE '^[[:space:]]*(#|$)' "$ROUTES_MERGED" | grep -c '=' || true)"
+_after="$(grep -c '=' "$_dedup" 2>/dev/null || echo 0)"
+[ "$_before" != "$_after" ] && echo "  ⚠ 중복 라우트 키 $((_before - _after))건 접음(마지막 값 승) — 라우트 파일 정리 권장"
+ROUTES_MERGED="$_dedup"
+
 # STE 주소는 박스마다 다르다. 오버레이가 없는데 base 에 (사설망) ste 주소가 살아 있으면 그 박스는
 # 남의 dev VM 주소를 물려받아 죽은 upstream 라우트가 생긴다(cae00 이 정확히 그 상태였다). 경고한다.
 if [ ! -f "$ROUTES_LOCAL" ]; then
@@ -191,3 +210,17 @@ TMP1="$(mktemp)"; trap 'rm -f "$TMP1"' EXIT
 
 tls_note=""; [ "${ENABLE_TLS:-false}" = "true" ] && tls_note=" + TLS :${HTTPS_PORT:-443}"
 echo "✓ generated $OUT  (routes file: backend/${ROUTES_PATH}, ${count} system route(s)${tls_note})"
+
+# 생성 직후 자체 검증 — 깨진 conf 로 nginx 를 띄우면 [emerg] 즉사해 정문이 000 이 된다.
+# SIF 가 있는 박스에서만 검사하고, 실패해도 경고만 한다(포털 기동 자체를 막지 않는다 —
+# 원인 문구가 여기서 이미 찍히므로 뒤의 000 이 미궁이 되지 않는다).
+NGX_SIF="$REPO_ROOT/infra/apptainer/nginx.sif"
+if [ -f "$NGX_SIF" ]; then
+  APPT="apptainer"
+  for c in "$REPO_ROOT"/infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && { APPT="$c"; break; }; done
+  if ! _t="$("$APPT" exec --bind "$REPO_ROOT:/workspace" "$NGX_SIF" \
+              nginx -c /workspace/infra/nginx/hwax.conf -t 2>&1)"; then
+    echo "  ✗ 생성된 conf 가 nginx -t 검증 실패 — 이대로 재기동하면 정문이 000 이 된다:" >&2
+    printf '%s\n' "$_t" | tail -4 | sed 's/^/      /' >&2
+  fi
+fi
