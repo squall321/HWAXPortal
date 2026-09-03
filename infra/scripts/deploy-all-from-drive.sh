@@ -352,6 +352,9 @@ if want kooremapper; then
       bash platform/infra/scripts/dist-from-drive.sh || note "koorm dist-from-drive 실패(비치명) — 로컬 아티팩트로 진행"
       [ "$RESTART" = 1 ] || bash platform/infra/scripts/stop.sh 2>/dev/null || true
       bash platform/infra/scripts/start.sh
+      # 자동 재기동 편입(리포트 2026-09-04 §4-①) — 감독자가 없으면 죽어도 되살릴 주체가
+      # 없어 간헐 접속 불가가 된다. @reboot 크론 + supervisor 감시를 멱등 설치한다.
+      bash platform/infra/scripts/install-autostart.sh || echo "  ⚠ autostart 설치 실패(비치명)"
     ) && ok "kooremapper up" || skip "kooremapper failed (see above)"
     # start.sh 가 0 으로 끝나도 업스트림이 안 떠 있으면 DynaForge 는 502 다. 여기서 못 박아 둔다 —
     # 이 두 줄이 없으면 긴 배포 로그 어디에도 '왜 502 인지'가 남지 않는다.
