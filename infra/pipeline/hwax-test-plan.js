@@ -7,7 +7,9 @@
 //   - deliberateScript: 자식으로 부를 심의 워크플로 경로(기본 'infra/pipeline/hwax-deliberate.js').
 //                  ⚠ 스크립트 안의 workflow() 는 이름으로 .claude/workflows/ 를 못 찾는다 —
 //                  내장 워크플로만 이름 해석된다(실측). 그래서 경로로 부른다.
-//   - 나머지는 hwax-deliberate 와 동일(rounds 기본 3, saveReport 기본 true).
+//   - 나머지는 hwax-deliberate 와 동일(rounds 기본 3). ⚠ saveReport 는 자식 기본이 **꺼짐**
+//     (opt-in, === true 판정) — RA 저장을 원하면 saveReport:true 를 명시하라(감사 1-F:
+//     종전 주석 '기본 true' 는 자식 실제와 어긋난 거짓 계약이었다).
 //
 // 왜 별도 워크플로인가 — 챗의 /시험계획 과 **같은 계약**을 MCP 쪽에도 두기 위해서다.
 // 예전에는 hwax-deliberate 의 question 에 9항목 계약을 손으로 밀어 넣어 우회했는데,
@@ -68,6 +70,18 @@ if (!evidence) {
     `출력은 '[물성 근거 현황]' 으로 시작하는 텍스트 요약. 숫자는 조회값을 그대로 쓰고 추정하지 마라.\n` +
     `도구가 하나도 없으면 "물성 근거 현황: 조회 불가(MaterialTwin 도구 없음)" 한 줄만 반환하라.`,
     { label: 'evidence:물성근거', phase: '근거조회' })
+  // agent() 는 API 오류·취소 시 null 이다(계약) — 무감지로 통과하면 심의가 근거 0 으로 완주하고
+  // 결과만 봐서는 '근거가 원래 없었는지'와 구분이 안 된다(감사 1-F 치명). 명시 표식으로 바꾼다.
+  if (!evidence) {
+    evidence = '[물성 근거 현황] 조회 실패(API 오류·취소) — 근거 없이 진행함. 결정문 해석 시 유의.'
+    log('⚠ 근거 조회 agent 가 null 반환 — 근거 없이 심의를 진행한다(결과에 표식 있음)')
+  } else if (!String(evidence).trimStart().startsWith('[물성 근거 현황]')
+             && !String(evidence).includes('조회 불가')) {
+    // 머리 마커 부재 = 다중 턴 반환으로 앞부분이 유실됐을 수 있다(agent 는 마지막 턴만 반환).
+    log(`⚠ 근거 요약이 '[물성 근거 현황]' 으로 시작하지 않는다(${String(evidence).length}자) — ` +
+        `머리 유실 가능성. 전사 agent-*.jsonl 대조 권장`)
+    evidence = `[물성 근거 현황 — 머리 유실 의심, 전사 대조 권장]\n${evidence}`
+  }
 }
 
 // ── 2) 심의 ─────────────────────────────────────────────────────────────────

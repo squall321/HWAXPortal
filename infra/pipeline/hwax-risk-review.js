@@ -23,10 +23,13 @@
 //   - model     : 이 워크플로를 돌리는 LLM 모델명 신고값(없으면 'unknown', caller_reported 등급)
 //   - deliberateScript : 자식 심의 워크플로 경로(기본 'infra/pipeline/hwax-deliberate.js').
 //                        workflow() 는 이름으로 .claude/workflows/ 를 못 찾으므로 경로로 부른다.
-// 출력: { targetKey, tier, submitted:[{panel_id, report_id, turns, decisionChars}],
-//         failed:[{panel_id, error}], error? }
+// 출력: { targetKey, tier, submitted:[{panel_id, report_id, turns, decisionChars, flags}],
+//         failed:[{panel_id, error}], partials:[{panel_id, decision?, rounds, …}], error? }
 //   - submitted[].turns 는 원장에 넘긴 발언 레코드 수다(라운드 수가 아니다).
 //   - submitted[].report_id 는 정수 또는 null 이다(rr_panels.report_id 가 INTEGER).
+//   - partials 는 제출되지 못한 패널의 심의 데이터 보존분이다(결정문 절단·페이로드 초과·
+//     제출 실패·no_decision) — 자식의 부분 반환 원칙을 부모도 지킨다(감사 1-F). 여기 있는
+//     데이터로 결정적 재제출·전사 복원·continueFrom 재의결이 가능하다.
 export const meta = {
   name: 'hwax-risk-review',
   description: '리스크 심사 패널을 앱 원장에서 받아 심의로 돌리고 결과를 되돌린다 — L2 오케스트레이터',
@@ -62,9 +65,15 @@ const EVIDENCE_ONLY_NOTE = '이 실행에는 도구 호출 경로가 없다 — 
 // 중간 {concede, rebut, deepen}, 마지막 {final_position, non_negotiable, vote}.
 const TURN_CAP = 60          // 저장 상한(계획 §0.6 turns 60/대화)
 const SAY_CAP = 2000         // seat_opinion.say_excerpt 상한
+// 캡 절단에 표식을 남긴다(감사 1-F) — 무표식 절단은 좌석이 잘린 발언을 완결로 읽게 한다.
+// 표식 포함 총길이가 캡을 넘지 않게 안쪽에서 자른다(원장 열 상한이 캡 기준일 수 있다).
+const capMark = (s) => {
+  const v = String(s)
+  return v.length > SAY_CAP ? v.slice(0, SAY_CAP - 25) + ` …[총 ${v.length}자]` : v
+}
 const joinList = v => (Array.isArray(v) ? v.filter(Boolean).map(String) : [])
 function toTurns(roundsData) {
-  if (!Array.isArray(roundsData)) return []
+  if (!Array.isArray(roundsData)) return { turns: [], dropped: 0 }
   const out = []
   const last = roundsData.length - 1
   roundsData.forEach((rd, i) => {
@@ -84,14 +93,21 @@ function toTurns(roundsData) {
         say = [...joinList(o.concede), ...joinList(o.rebut), o.deepen].filter(Boolean).join('\n')
         position = String(o.deepen || '')
       }
-      const t = { round: i + 1, persona: String(o.persona), say: say.slice(0, SAY_CAP) }
-      if (position) t.position = position.slice(0, SAY_CAP)
-      if (isLast && o.non_negotiable) t.non_negotiable = String(o.non_negotiable).slice(0, SAY_CAP)
+      const t = { round: i + 1, persona: String(o.persona), say: capMark(say) }
+      if (position) t.position = capMark(position)
+      if (isLast && o.non_negotiable) t.non_negotiable = capMark(o.non_negotiable)
       out.push(t)
-      if (out.length >= TURN_CAP) return
     }
   })
-  return out.slice(0, TURN_CAP)
+  // 캡 초과분은 **앞(초기 라운드)** 을 버리고 꼬리를 지킨다(감사 1-F 실증) — 종전의 선두 우선
+  // 채움은 21석×6R(126건)에서 최종 라운드의 final_position·vote 전원분을 무표시로 버렸다.
+  // 원장의 최우선 가치는 최종 입장이다. 드롭은 반드시 로그한다.
+  const dropped = Math.max(0, out.length - TURN_CAP)
+  if (dropped) {
+    log(`⚠ 발언 ${out.length}건 중 앞라운드 ${dropped}건 드롭(TURN_CAP ${TURN_CAP}) — ` +
+        `최종 라운드를 보존했다. 전체 발언은 반환 partials/자식 결과에 있다.`)
+  }
+  return { turns: out.slice(-TURN_CAP), dropped }
 }
 
 // ── 브리프 ───────────────────────────────────────────────────────────────────
@@ -156,7 +172,8 @@ const brief = await agent(
   `- 도구가 없거나 호출이 실패하면 error="brief_unavailable" 로 두고 panels 는 빈 배열로 둬라. 재시도하지 마라.`,
   { label: 'brief', phase: '브리프', schema: BRIEF_SCHEMA })
 
-const briefError = (brief && String(brief.error || '')).trim()
+// agent() 는 API 오류·취소 시 null 이다(계약) — 가드 밖 .trim() 은 TypeError 즉사였다(감사 1-F).
+const briefError = String((brief && brief.error) || '').trim()
 if (briefError) {
   // tier_a_web_only 는 정상 응답이다 — 대표 패널은 웹 러너만 돌린다. 그대로 보고하고 멈춘다.
   // brief_token_invalid 는 토큰이 다르거나 만료(기본 900 s)라는 뜻이다 — 앱 화면에서 다시 받아야 한다.
@@ -166,8 +183,17 @@ if (briefError) {
            reason: String((brief && brief.reason) || '') }
 }
 
-const panels = ((brief && brief.panels) || []).filter(p => p && p.panel_id && (p.seats || []).length)
-  .slice(0, MAX_PANELS)
+const _rawPanels = (brief && brief.panels) || []
+const _validPanels = _rawPanels.filter(p => p && p.panel_id && (p.seats || []).length)
+if (_validPanels.length < _rawPanels.length) {
+  log(`⚠ 브리프 패널 ${_rawPanels.length}건 중 ${_rawPanels.length - _validPanels.length}건 제외` +
+      `(panel_id 또는 seats 누락) — 앱 브리프를 점검하라`)
+}
+if (_validPanels.length > MAX_PANELS) {
+  log(`패널 ${_validPanels.length}건 중 앞 ${MAX_PANELS}건만 실행(panels 인자 상한) — ` +
+      `나머지는 다음 실행에서`)
+}
+const panels = _validPanels.slice(0, MAX_PANELS)
 if (!panels.length) {
   log('편성된 패널이 없다 — 앱에서 먼저 패널을 편성해야 한다')
   return { targetKey: TARGET, tier: TIER, submitted: [], failed: [], error: 'no_planned_panel',
@@ -178,6 +204,18 @@ log(`패널 ${panels.length}건 — target=${TARGET} tier=${TIER} actor=${ACTOR 
 // ── 패널마다 심의 → 회수 ─────────────────────────────────────────────────────
 const submitted = []
 const failed = []
+// 제출 못 한 패널의 심의 데이터 보존(감사 1-F) — 자식의 "의장이 죽어도 라운드는 돌려준다"
+// 원칙을 부모도 지킨다. 수 시간 심의가 제출 한 홉의 실패로 증발하지 않게 한다.
+const partials = []
+const keepPartial = (p, result, why) => partials.push({
+  panel_id: p.panel_id, why,
+  decision: result && result.decision ? String(result.decision) : null,
+  decisionTruncated: result ? result.decisionTruncated : undefined,
+  rounds: (result && result.rounds) || [],
+  seatLoss: (result && result.seatLoss) || [],
+  citationAudit: result ? result.citationAudit : undefined,
+  nextRoundOffset: result ? result.nextRoundOffset : undefined,
+})
 for (const p of panels) {
   const seats = (p.seats || []).filter(s => s && s.key).map(s => ({
     key: String(s.key),
@@ -212,13 +250,28 @@ for (const p of panels) {
   }
   if (!result || !result.decision) {
     failed.push({ panel_id: p.panel_id, error: 'no_decision' })
-    log(`패널 ${p.panel_id} 결정문 없음 — 제출하지 않는다`)
+    keepPartial(p, result, 'no_decision')   // 자식의 부분 반환(라운드·seatLoss)을 폐기하지 않는다
+    log(`패널 ${p.panel_id} 결정문 없음 — 제출하지 않는다(라운드 데이터는 반환 partials 에 보존)`)
     continue
+  }
+  // 절단본을 기계 병합(앱의 risk_spec 파싱)에 넘기면 원장이 반쪽 펜스로 오염된다(감사 1-F 치명).
+  // 'marker-missing' 은 꼬리 완결 오탐 분류라 진행하되 제출 레코드 플래그로 남긴다.
+  if (result.decisionTruncated === true) {
+    failed.push({ panel_id: p.panel_id, error: 'decision_truncated' })
+    keepPartial(p, result, 'decision_truncated')
+    log(`패널 ${p.panel_id} 결정문 절단 — 원장 오염 방지 위해 제출하지 않는다. ` +
+        `전문은 전사 agent-*.jsonl 에서 복원 후 결정적 재제출(반환 partials 참조)`)
+    continue
+  }
+  if (result.seatLoss && result.seatLoss.length) {
+    log(`⚠ 패널 ${p.panel_id} 좌석 유실 ${result.seatLoss.length}건 — ` +
+        result.seatLoss.map(x => `${x.round}R:${(x.lost || []).join('/')}`).join(', ') +
+        ` (결정문 (0)항에 반영됨, 제출 레코드 플래그로도 남긴다)`)
   }
 
   // 회수 — 결정문 원문을 그대로 앱에 넘긴다. 파싱·병합은 앱 한 곳에서 한다.
   phase('회수')
-  const turns = toTurns(result.rounds)
+  const { turns, dropped: droppedTurns } = toTurns(result.rounds)
   // 보고서 번호는 원장 열이 INTEGER 다(rr_panels.report_id) — 에이전트가 한 줄로 돌려주는
   // 보고서 번호에서 숫자만 뽑고, 없으면 null 로 보내 열을 건드리지 않는다.
   const reportNo = (() => {
@@ -232,6 +285,19 @@ for (const p of panels) {
       detail: { type: 'string', description: '실패했으면 오류 코드·메시지, 성공이면 빈 문자열' },
     },
     required: ['ok'],
+  }
+  // 에코 제출 크기 예산(감사 1-F 치명) — 자식 CONV_AGENT_BUDGET 와 같은 근거: 대형 페이로드를
+  // LLM 이 도구 인자로 옮기면 조용히 요약·의역해 넣고 성공을 돌려준다(실측 C37/C50). 절단보다
+  // 나쁜 무표시 변조라, 예산을 넘으면 에코 제출을 생략하고 데이터를 반환에 보존한다.
+  const SUBMIT_BUDGET = 60000
+  const payloadSize = JSON.stringify(turns).length + String(result.decision).length
+  if (payloadSize > SUBMIT_BUDGET) {
+    failed.push({ panel_id: p.panel_id,
+                  error: `payload_too_large: ${payloadSize}자 > ${SUBMIT_BUDGET}` })
+    keepPartial(p, result, 'payload_too_large')
+    log(`패널 ${p.panel_id} 페이로드 ${payloadSize.toLocaleString()}자 — LLM 에코 제출은 이 크기에서 ` +
+        `의역 변조된다(실측). 제출 생략, 반환 partials 의 원문으로 결정적 제출이 필요하다`)
+    continue
   }
   let ack = null
   try {
@@ -253,14 +319,26 @@ for (const p of panels) {
     ack = { ok: false, detail: String(e).slice(0, 300) }
   }
   if (ack && ack.ok) {
-    submitted.push({ panel_id: p.panel_id, report_id: reportNo, turns: turns.length,
-                     decisionChars: String(result.decision).length })
-    log(`패널 ${p.panel_id} 제출 완료 — 발언 ${turns.length}건, 보고서 ${reportNo ?? '미저장'}`)
+    submitted.push({
+      panel_id: p.panel_id, report_id: reportNo, turns: turns.length,
+      decisionChars: String(result.decision).length,
+      // 자식 품질 플래그 승계(감사 1-F) — 원장 감사 시 절단·유실·대조 상태를 여기서 본다.
+      flags: {
+        decisionTruncated: result.decisionTruncated || false,   // 'marker-missing' 이면 그 문자열
+        seatLoss: (result.seatLoss || []).length,
+        droppedTurns,
+        citationUnmatched: (result.citationAudit && result.citationAudit.unmatched
+                            ? result.citationAudit.unmatched.length : null),
+      },
+    })
+    log(`패널 ${p.panel_id} 제출 완료 — 발언 ${turns.length}건${droppedTurns ? `(+드롭 ${droppedTurns})` : ''}, ` +
+        `보고서 ${reportNo ?? '미저장'}`)
   } else {
     failed.push({ panel_id: p.panel_id, error: `submit_failed: ${(ack && ack.detail) || 'unknown'}` })
-    log(`패널 ${p.panel_id} 제출 실패 — 심의 결과는 아래 반환에 남는다`)
+    keepPartial(p, result, 'submit_failed')
+    log(`패널 ${p.panel_id} 제출 실패 — 결정문·라운드는 반환 partials 에 보존했다(결정적 재제출 재료)`)
   }
 }
 
-log(`완료 — 제출 ${submitted.length}건 / 실패 ${failed.length}건`)
-return { targetKey: TARGET, tier: TIER, submitted, failed }
+log(`완료 — 제출 ${submitted.length}건 / 실패 ${failed.length}건 / 보존 ${partials.length}건`)
+return { targetKey: TARGET, tier: TIER, submitted, failed, partials }
