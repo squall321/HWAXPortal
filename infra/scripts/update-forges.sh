@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# DynaForge(KooRemapper)·StepForge 표적 최신화 — update-all(전체 배포)이 무거울 때.
+# 표적 최신화 — update-all(전체 배포)이 무거울 때, 갱신이 잦은 것만 골라 올린다.
+# (이름은 역사적 — forge 2종으로 시작해 ste·chat 이 추가됐다.)
 #
-#   ./infra/scripts/update-forges.sh                 # 둘 다
-#   ./infra/scripts/update-forges.sh stepforge       # 하나만
-#   ./infra/scripts/update-forges.sh dynaforge
+#   ./infra/scripts/update-forges.sh                 # 기본: stepforge dynaforge ste chat 전부
+#   ./infra/scripts/update-forges.sh dynaforge       # 골라서: stepforge|dynaforge|ste|chat
+#   ./infra/scripts/update-forges.sh chat            # 챗+심의 스택만(포털·agent-server·게이트웨이)
+#
+# 포함하지 않는 것 — 포털 외 서비스(mxwp·heax·aidh·signalforge)와 AIDataHub 데이터 병합.
+# 그건 update-all §2·§3 의 몫이다.
 #
 # 박스 자동 감지 — 리포 루트가 */Projects/* 면 cae00(운영: git pull + Drive 반입),
 # 아니면 dev(로컬 소스 그대로 — 타 세션 WIP 를 pull/reset 으로 건드리지 않는다).
@@ -64,12 +68,74 @@ do_dynaforge() {
   done
 }
 
-WANT="${*:-stepforge dynaforge}"
+do_ste() {
+  hr "STE(SmartTwinExplorer) — $BOX 모드"
+  if [ "$BOX" != cae00 ]; then
+    echo "· dev 스킵 — STE 웹은 헤드노드(stc) 배포라 deploy-ste 는 cae00 전용이다."
+    echo "  (dev 쪽 선행은 STE 리포의 pack-staging + push-to-drive — 가이드 §4 참조)"
+    return
+  fi
+  # deploy-ste.sh → refresh-code.sh 체인 — transport.env 존재·헤드노드 도달 같은
+  # 런타임 게이트를 스스로 검사하고 명확한 메시지로 fail-fast 한다(가이드 §4).
+  if bash "$ROOT/infra/scripts/deploy-ste.sh"; then
+    echo "✓ STE 코드 갱신 완료"
+    c="$(curl -s -o /dev/null -w '%{http_code}' -m 6 "http://127.0.0.1:8088/ste/api/health" 2>/dev/null)" || true
+    case "${c:-000}" in
+      000) echo "✗ /ste/api/health 무응답 — 터널(ste-tunnel)·라우트 확인"; FAIL=1 ;;
+      *)   echo "✓ /ste/api/health → $c" ;;
+    esac
+  else
+    echo "✗ STE 갱신 실패(위 게이트 메시지 확인)"; FAIL=1
+  fi
+}
+
+do_chat() {
+  hr "챗·심의 스택 — 포털 + agent-server + 게이트웨이 ($BOX 모드)"
+  local aserver gw
+  aserver="$(find_repo HWAXAgentServer)"; gw="$(find_repo HWAXMcpGateway)"
+  # ① 코드 최신화 — cae00 만 pull(dev 는 로컬 소스 보호)
+  if [ "$BOX" = cae00 ]; then
+    for r in "$ROOT" "$aserver" "$gw"; do
+      [ -n "$r" ] && { git -C "$r" pull --ff-only || { echo "✗ $r pull 실패"; FAIL=1; }; }
+    done
+  fi
+  # ② 심의 워크플로 정본→사본 동기화(이름호출 런타임이 사본을 읽는다)
+  bash "$ROOT/infra/scripts/sync-workflows.sh" || { echo "✗ 워크플로 동기화 실패"; FAIL=1; }
+  # ③ 프론트(챗·심의 UI) — cae00 은 Drive 산출물(빌드 불가 박스), dev 는 로컬 빌드
+  if [ "$BOX" = cae00 ]; then
+    bash "$ROOT/infra/scripts/images-from-drive.sh"       || echo "  ⚠ images-from-drive 실패(비치명) — 기존 dist 로 진행"
+  else
+    ( cd "$ROOT/frontend" && pnpm build ) || { echo "✗ 프론트 빌드 실패"; FAIL=1; }
+  fi
+  # ④ 재기동 — 포털 백엔드(챗 라우트) → 게이트웨이 → agent-server(소비자 순서 아님에 주의:
+  #    게이트웨이가 먼저 떠야 agent-server 바인딩이 도구를 본다)
+  apptainer instance stop hwax_portal >/dev/null 2>&1 || true
+  bash "$ROOT/infra/scripts/start.sh" >/dev/null || { echo "✗ 포털 재기동 실패"; FAIL=1; }
+  if [ -n "$gw" ]; then
+    ( cd "$gw" && ./start.sh restart ) || { echo "✗ 게이트웨이 재기동 실패"; FAIL=1; }
+  fi
+  if [ -n "$aserver" ]; then
+    ( cd "$aserver" && ./start.sh -d ) || { echo "✗ agent-server 재기동 실패"; FAIL=1; }
+  fi
+  sleep 3
+  for pp in "8723 /health 포털" "9009 /health agent-server" "9110 /health 게이트웨이"; do
+    set -- $pp
+    c="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:$1$2" 2>/dev/null)" || true
+    case "${c:-000}" in
+      200) echo "✓ $3 :$1 → 200" ;;
+      *)   echo "✗ $3 :$1 → ${c:-000}"; FAIL=1 ;;
+    esac
+  done
+}
+
+WANT="${*:-stepforge dynaforge ste chat}"
 for t in $WANT; do
   case "$t" in
     stepforge) do_stepforge ;;
     dynaforge) do_dynaforge ;;
-    *) echo "✗ 모르는 대상: $t (stepforge|dynaforge)"; FAIL=1 ;;
+    ste)       do_ste ;;
+    chat|delib) do_chat ;;
+    *) echo "✗ 모르는 대상: $t (stepforge|dynaforge|ste|chat)"; FAIL=1 ;;
   esac
 done
 
