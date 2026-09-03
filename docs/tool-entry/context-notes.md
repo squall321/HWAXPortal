@@ -39,6 +39,21 @@ MCP 도구가 351개(14 백엔드)로 늘며 "적절한 입구 찾기"가 병목
 - search_tools 동의어 맵은 실사용 감사에서 "검색했는데 빗나간 질의"를 보며 증보한다.
 - 도입 후 감시 지표: 감사 로그에서 search_tools 호출 빈도·후속 호출 성공률.
 
+## 전수 역감사 (2026-09-03 — 체크리스트를 기존 356개에 적용)
+
+- **① 캐시 위험(읽기 접두사+쓰기): 실질 위반 0** — 휴리스틱에 걸린 30여 건은 전부
+  설명에 이웃 쓰기 도구를 언급한 오탐(describe_metadata 등). 기존 _CACHE_DENY 3종으로 충분.
+- **② invoke 차단망 구멍: 실질 0** — 걸린 것들은 복구 가능한 편집·제출 도구
+  (update_report_draft, scenario_patch 등). smarttwin_submit·slurm_submit_job 같은
+  자원 소모성 제출은 직접 바인딩과 동일 권한이라 허용 유지(dry_run 기본 등 자체 완화).
+- **③ 설명 60자 미만 38건** — 최다 보유 StepForge 10건 보강 완료(create_project 12자
+  →133자 등, 커밋 4970ac0). 재배포는 반드시 `redeploy-app.sh <slug> --rebuild` —
+  --rebuild 없이는 옛 이미지 재시작이라 반영 안 됨(재확인된 함정). 게이트웨이 지문
+  감지가 60초 내 자동 재집계함을 실증(07:13 "메타 변경 (60→60) — 재집계").
+- **잔여 백로그(설명 보강)**: KooRemapper 8건(list_sessions·cancel_job 등 — 타 세션
+  WIP 정리 후), MXWP 2건(delete_block·get_block), PaperIngest·ThermalShock·
+  WebDesignAgents·HWAXRisk·d3plot 계열 각 1~3건. 시스템 도구(*_whoami 등)는 의도적 간결.
+
 ## 반영 경로
 
 - 게이트웨이: git pull + ./start.sh restart
