@@ -91,7 +91,23 @@
       "mcp__hwax__semantic_search",
       "mcp__hwax__slurm_cluster_health",
       "mcp__hwax__slurm_list_nodes",
-      "mcp__hwax__slurm_list_partitions"
+      "mcp__hwax__slurm_list_partitions",
+      "mcp__hwax__get_report",
+      "mcp__hwax__list_reports",
+      "mcp__hwax__list_my_reports",
+      "mcp__hwax__list_my_drafts",
+      "mcp__hwax__search_reports",
+      "mcp__hwax__get_reports_digest",
+      "mcp__hwax__get_report_outline",
+      "mcp__hwax__list_templates",
+      "mcp__hwax__describe_template",
+      "mcp__hwax__describe_widgets",
+      "mcp__hwax__describe_metadata",
+      "mcp__hwax__list_boards",
+      "mcp__hwax__list_folders",
+      "mcp__hwax__list_related_reports",
+      "mcp__hwax__list_report_links",
+      "mcp__hwax__get_guide"
     ]
   }
 }
