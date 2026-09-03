@@ -5,6 +5,7 @@
 #   ./infra/scripts/update-forges.sh                 # 기본: stepforge dynaforge ste chat 전부
 #   ./infra/scripts/update-forges.sh dynaforge       # 골라서: stepforge|dynaforge|ste|chat
 #   ./infra/scripts/update-forges.sh chat            # 챗+심의 스택만(포털·agent-server·게이트웨이)
+#   ./infra/scripts/update-forges.sh restart         # 갱신 없이 전 서비스 재시작만(+nginx 부검)
 #
 # 포함하지 않는 것 — 포털 외 서비스(mxwp·heax·aidh·signalforge)와 AIDataHub 데이터 병합.
 # 그건 update-all §2·§3 의 몫이다.
@@ -128,6 +129,59 @@ do_chat() {
   done
 }
 
+do_restart() {
+  hr "재시작 전용 — 코드·아티팩트 갱신 없이 서비스만 재기동"
+  local APPT="apptainer"
+  for c in "$ROOT"/infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && { APPT="$c"; break; }; done
+  # ① nginx — 내리고 start.sh(멱등)로 올린다. 안 뜨면 그 자리에서 부검한다.
+  "$APPT" instance stop hwax_nginx >/dev/null 2>&1 || true
+  "$APPT" instance stop hwax_portal >/dev/null 2>&1 || true
+  local SLOG; SLOG="$(mktemp)"
+  HWAX_NO_BUILD=1 bash "$ROOT/infra/scripts/start.sh" >"$SLOG" 2>&1 || true
+  local port; port="$(sed -n 's/^HTTP_PORT=//p' "$ROOT/infra/.env" 2>/dev/null | tail -1)"
+  local c; c="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:${port:-8088}/health" 2>/dev/null)" || true
+  if [ "${c:-000}" = 200 ]; then
+    echo "✓ nginx+포털 :${port:-8088} → 200"
+  else
+    echo "✗ nginx /health → ${c:-000} — 부검:"
+    tail -8 "$SLOG" | sed 's/^/    /'
+    # conf 자체 검증(인스턴스 없이 SIF 단발 실행 — 죽은 인스턴스에는 exec 이 안 된다)
+    "$APPT" exec --bind "$ROOT:/workspace" "$ROOT/infra/apptainer/nginx.sif"       nginx -c /workspace/infra/nginx/hwax.conf -t 2>&1 | sed 's/^/    conf: /' || true
+    # rootless TLS 저포트 — Drive 로 apptainer 바이너리가 갱신되면 setcap 이 벗겨져
+    # :443 바인드 실패로 죽는다(grant-net-bind.sh 재실행 필요).
+    if grep -q '^ENABLE_TLS=true' "$ROOT/infra/.env" 2>/dev/null; then
+      local hp; hp="$(sed -n 's/^HTTPS_PORT=//p' "$ROOT/infra/.env" | tail -1)"
+      if [ "${hp:-443}" -lt 1024 ]; then
+        echo "    힌트: TLS :${hp:-443} 은 rootless 저포트 — apptainer 바이너리가 갱신됐다면"
+        echo "          sudo ./infra/scripts/grant-net-bind.sh ${hp:-443} 를 1회 재실행하라."
+        getcap "$APPT" 2>/dev/null | sed 's/^/    cap: /' || true
+      fi
+    fi
+    FAIL=1
+  fi
+  # ② 게이트웨이·agent-server
+  local gw aserver
+  gw="$(find_repo HWAXMcpGateway)"; aserver="$(find_repo HWAXAgentServer)"
+  [ -n "$gw" ] && { ( cd "$gw" && ./start.sh restart ) || { echo "✗ 게이트웨이 재기동 실패"; FAIL=1; }; }
+  [ -n "$aserver" ] && { ( cd "$aserver" && ./start.sh -d ) || { echo "✗ agent-server 재기동 실패"; FAIL=1; }; }
+  # ③ DynaForge 스택(갱신 없이 stop/start) + StepForge 인스턴스(리빌드 없이 전환)
+  local koor heax
+  koor="$(find_repo KooRemapper)"
+  [ -n "$koor" ] && ( cd "$koor" && bash platform/infra/scripts/stop.sh 2>/dev/null || true
+                      bash platform/infra/scripts/start.sh )     || { echo "✗ DynaForge 재기동 실패"; FAIL=1; }
+  heax="$(find_repo HEAXHub)"
+  [ -n "$heax" ] && { ( cd "$heax" && bash deploy/apptainer/redeploy-app.sh step_forge )     || { echo "✗ step_forge 재기동 실패"; FAIL=1; }; }
+  sleep 3
+  for pp in "8723 /health 포털" "9009 /health agent-server" "9110 /health 게이트웨이" "8700 / DynaForge"; do
+    set -- $pp
+    c="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:$1$2" 2>/dev/null)" || true
+    case "${c:-000}" in
+      000) echo "✗ $3 :$1 → 000"; FAIL=1 ;;
+      *)   echo "✓ $3 :$1 → $c" ;;
+    esac
+  done
+}
+
 WANT="${*:-stepforge dynaforge ste chat}"
 for t in $WANT; do
   case "$t" in
@@ -135,7 +189,8 @@ for t in $WANT; do
     dynaforge) do_dynaforge ;;
     ste)       do_ste ;;
     chat|delib) do_chat ;;
-    *) echo "✗ 모르는 대상: $t (stepforge|dynaforge|ste|chat)"; FAIL=1 ;;
+    restart|bounce) do_restart ;;
+    *) echo "✗ 모르는 대상: $t (stepforge|dynaforge|ste|chat|restart)"; FAIL=1 ;;
   esac
 done
 
