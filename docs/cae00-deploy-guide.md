@@ -183,9 +183,10 @@ apptainer instance stop hwax_portal && ./infra/scripts/start.sh   # 타일 상�
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8088/ste/   # 200/401 이면 복구
 ```
 
-**RA 연결 토큰(1회 수동 2건).**
-- 포털 `backend/.env` 에 `GATEWAY_SHARED_TOKEN=<게이트웨이 gateway_config.json 의 _gateway.token>`.
-- 게이트웨이 `gateway_config.json` 의 `portal` 절에 `"api_base": "http://127.0.0.1:8723"` 추가.
+**RA 연결 토큰(1회 — 스크립트가 양쪽을 배선한다, 멱등).**
+```bash
+./infra/scripts/wire-gateway-shared-token.sh   # backend/.env 없으면 만들고, 있으면 덧붙인다
+```
 - 이후 각 사용자: RA 프로필에서 토큰(rat_) 발급 → 포털 API 토큰 페이지 하단 카드에 등록.
   cae00 RA 가 `/api/me/mcp-tokens` 라우트(v0.157.x)를 갖고 있는지 확인 — 없으면 RA 재기동으로
   최신 코드 반영(dev 에서 실사고: 8/14 프로세스가 낡아 404, requirements 동기화 후 재기동으로 해소).
