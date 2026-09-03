@@ -17,12 +17,38 @@ hr() { printf '\n\033[1;36m── %s ──────────────�
 
 hr "① 포털 정문 nginx (:8088) — 최근 ${DAYS}일 실IP"
 NLOG="$ROOT/infra/data/nginx-access.log"
+# SSO 전면 전에는 여러 명이 데모 계정 하나를 공유하므로, 사람 수 근사의 주 원천은
+# 신원(③)이 아니라 여기 IP 다. 스캐너와 실사용을 가르기 위해 '앱 경로'(auth/agent/
+# api/systems 에 4xx 미만)를 접촉한 IP 를 따로 세고, IP×브라우저(UA) 조합으로
+# 같은 IP(사내 NAT) 뒤의 기기 수를 근사한다.
+_ngx() {  # $1: table(앱 IP 별 히트) | sum(요약 수치)
+  awk -F'"' -v since="$SINCE" -v mode="$1" '
+    {
+      ip=$1; sub(/ +$/, "", ip)
+      # XFF 는 remote 가 내부망(우리 앞단 프록시)일 때만 신뢰 — 외부인의 XFF 위조 방지.
+      if ($2 != "-" && $2 != "" &&
+          ip ~ /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/) {
+        split($2, x, ","); ip=x[1]; gsub(/ /, "", ip)
+      }
+      t=$3; gsub(/[\[\] ]/, "", t)
+      if (t < since || ip == "127.0.0.1") next
+      split($5, s, " "); st=s[1]+0
+      isapp = (st < 400 && $4 ~ /^[A-Z]+ \/(auth|agent|api|systems|upload)/) ? 1 : 0
+      hits[ip]++; combo[ip "|" $6]=1
+      if (isapp) { app[ip]++; appcombo[ip "|" $6]=1 }
+    }
+    END {
+      if (mode == "table") { for (i in app) printf "%d %s\n", app[i], i }
+      else printf "  고유 IP %d (그중 앱 경로 접촉 %d) · IP×브라우저 조합 %d (앱 %d — 대략 기기 수)\n", \
+                  length(hits), length(app), length(combo), length(appcombo)
+    }' "$NLOG"
+}
 if [ -s "$NLOG" ]; then
-  awk -v since="[$SINCE" '$3 >= since' "$NLOG" \
-    | awk '$1 != "127.0.0.1" {print $1}' | sort | uniq -c | sort -rn | head -20 \
-    | awk '{printf "  %6d  %s\n", $1, $2}'
-  N=$(awk '$1!="127.0.0.1"{print $1}' "$NLOG" | sort -u | wc -l)
-  echo "  고유 IP(전체 기간): $N"
+  T="$(_ngx table | sort -rn | head -20 | awk '{printf "  %6d  %s\n", $1, $2}')"
+  [ -n "$T" ] && { echo "  [앱 경로 접촉 IP — 실사용 근사]"; echo "$T"; } \
+              || echo "  (앱 경로 접촉 IP 없음)"
+  _ngx sum
+  echo "  (기록 시작 2026-09-02 23:20 — 그 전 정문 트래픽은 소실)"
 else
   echo "  (기록 없음 — 2026-09-02 에 로깅을 켰다. 그 전 정문 트래픽은 소실)"
 fi
@@ -83,6 +109,8 @@ else
 fi
 
 hr "읽는 법"
-echo "  · '사람 수'의 정본은 ③(SSO 신원)이다 — IP 는 NAT·프록시 뒤에서 여러 명이 겹친다."
-echo "  · ① 은 2026-09-02 부터 쌓인다. ①의 고유 IP 와 ③의 신원 수를 함께 보면"
-echo "    '로그인 없이 구경만 한 사람'과 '실제 쓰는 사람'이 갈린다."
+echo "  · SSO 전면 전(데모 계정 공유 중)에는 ①의 IP·IP×브라우저 조합이 사람 수의 주 근사다."
+echo "    ③(신원)은 계정 단위라 지금은 하한일 뿐이다. SSO 가 깔리면 ③이 정본으로 복귀한다."
+echo "  · IP 의 한계 — 사내 NAT 뒤 여러 명이 한 IP 로 겹치면 과소, 한 사람이 집·회사·폰을"
+echo "    오가면 과대. 그 사이를 IP×브라우저(UA) 조합(대략 기기 수)이 좁혀 준다."
+echo "  · '앱 경로 접촉'(auth/agent/api/systems 4xx 미만)이 인터넷 스캐너를 걸러낸 실사용 근사다."
