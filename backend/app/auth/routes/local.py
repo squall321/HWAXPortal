@@ -55,6 +55,7 @@ class SignupIn(BaseModel):
     email: EmailStr
     name: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=8, max_length=128)
+    department: str = Field(default="", max_length=80)  # 선택 — RA 연결 시 자동 채움도 됨
 
 
 class LoginIn(BaseModel):
@@ -80,7 +81,8 @@ def signup(
         raise AuthError("too many signup attempts", status_code=429)
     try:
         res = store.signup(email=body.email, name=body.name, password=body.password,
-                           bootstrap_admins=settings.local_bootstrap_admin_list)
+                           bootstrap_admins=settings.local_bootstrap_admin_list,
+                           department=body.department)
     except ValueError:
         # 이미 있는 이메일 — 존재 여부를 노출하지 않고 같은 응답을 준다.
         logger.info("local signup duplicate: %s", body.email)

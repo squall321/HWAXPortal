@@ -23,6 +23,34 @@
   lifespan 이 실설정으로 덮어써 실DB(data/users.sqlite)에 테스트 계정이 기록된다.
   진입 후 교체로 수정, 오염 DB 는 검사 후 삭제.
 
+## 실사고 2건 (2026-09-03, koo.park 가입 직후)
+
+- **대화 누출(브라우저 캐시)** — localStorage 키(hwax.chat/hwax.delib)가 계정 미구분이라
+  같은 브라우저의 이전 사용자(demo) 대화가 새 계정에 그대로 보였다. 서버는 소유자
+  분리를 강제하고 있었고 화면 캐시가 범인. `${prefix}.${email}` 네임스페이스로 고치고
+  구 키는 발견 즉시 제거(그 자체가 누출 사본).
+- **"부서 dev" 메시지** — RA 의 워크스페이스=부서 개념. 게이트웨이가 서비스 PAT
+  (워크스페이스 dev)로 RA 를 불러 새 계정에게 남의 부서 문구가 보였다. 아래 연결
+  토큰 기능이 근본 해법.
+
+## RA 연결 토큰 — 구현 완료 (2026-09-03, 사용자 발안)
+
+"RA 에서 발급받은 키를 포털에 등록해 두고 그걸로 연결" — 채택·구현. SSO 가 오면
+RA 쪽 자동 계정 등록으로 대체될 브리지.
+
+- 포털: `PUT /auth/connections/reportarchive` 가 RA `/api/me`(주의: /api/users/me 아님,
+  openapi 실측)로 토큰 검증 + **이메일 일치 강제**(남의 토큰 등록=오귀속 차단) +
+  home_workspace_slug 저장 + 포털 부서 자동 채움. UI 는 API 토큰 페이지 하단 카드.
+- 게이트웨이: reportarchive 호출 시 `/internal/connections`(공유 시크릿=GW_TOKEN,
+  포털 .env 의 GATEWAY_SHARED_TOKEN)로 토큰 조회 → 단발 세션에 Bearer rat_ +
+  X-Workspace-Slug(사용자 부서) 교체. 미등록자는 종전 서비스 계정 폴백,
+  등록자 실패 시엔 강등하지 않고 재등록 안내(오귀속 재발 방지). 캐시 5분.
+- RA 응답은 {success, data:{…}} 봉투 — data 언랩 필요(실측 두 번 걸림).
+- dev RA 는 8/14 프로세스가 낡아 mcp-tokens 라우트가 없었다 → requirements 동기화
+  (ijson 등) 후 ./start.sh restart 로 v0.157.1 정상 기동(코드 무수정, 운영 재시작만).
+- e2e 실증: RA 가입(hwax.demo)→rat_ 발급→포털 등록 200(부서 'Dev (개발)' 자동 채움)
+  →내부 조회 403/200. 게이트웨이 audit 에는 실사용 시 `as-conn:<email>` 로 찍힌다.
+
 ## RA(Report Archive) 연동 조사 결과 (2026-09-03)
 
 - RA 는 **이미 이메일 UNIQUE 키 + owner_user_id 소유 모델** — 포털 이메일 계정과

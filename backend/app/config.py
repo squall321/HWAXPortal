@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     user_store_path: str = "data/users.sqlite"
     # 테이블이 비어 있을 때 이 명단의 이메일이 가입하면 즉시 active+portal-admin(첫 관리자).
     local_bootstrap_admins: str = "hwax.demo@samsung.com"
+    # 외부 서비스 연결 토큰(RA PAT 등록) — 검증에 부를 RA 주소와, 게이트웨이가
+    # /internal/connections 를 읽을 때 쓸 공유 시크릿(게이트웨이 GW_TOKEN 과 같은 값).
+    ra_base_url: str = "http://127.0.0.1:3000"
+    gateway_shared_token: str = ""
 
     # ── Session token TTLs (HS256; downstream RS256 launch tokens land in Phase 4) ──
     jwt_issuer: str = "https://hwax.sec.samsung.net"

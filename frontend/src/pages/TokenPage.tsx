@@ -2,6 +2,7 @@
 import { type CSSProperties, type FormEvent, useEffect, useState } from 'react';
 import { createPat, listPats, revokePat, type PatCreated, type PatMeta } from '../api/pat.api';
 import { ErrorBanner } from '../components/common/ErrorBanner';
+import { RaConnectionCard } from '../components/RaConnectionCard';
 
 // 스니펫 값의 <host>는 현재 접속 중인 포털 origin을 그대로 사용한다.
 const ORIGIN = window.location.origin;
@@ -732,6 +733,7 @@ export default function TokenPage() {
           </table>
         </div>
       )}
+      <RaConnectionCard />
     </div>
   );
 }

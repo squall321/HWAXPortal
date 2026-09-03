@@ -70,6 +70,7 @@ export default function UsersAdminPage() {
             <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
               <th style={cell}>이메일</th>
               <th style={cell}>이름</th>
+              <th style={cell}>부서</th>
               <th style={cell}>상태</th>
               <th style={cell}>역할</th>
               <th style={cell}>로그인 수단</th>
@@ -82,6 +83,7 @@ export default function UsersAdminPage() {
               <tr key={r.email}>
                 <td style={cell}>{r.email}</td>
                 <td style={cell}>{r.name}</td>
+                <td style={cell}>{r.department || '—'}</td>
                 <td style={cell}>
                   {STATUS_LABEL[r.status]}
                   {r.locked_until * 1000 > Date.now() && ' · 잠금'}

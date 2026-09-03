@@ -6,6 +6,7 @@ conv_store 와 같은 패턴(stdlib sqlite3 + threading.Lock). 이메일이 영�
 수단(auth_source)만 갱신한다. 비밀번호는 stdlib scrypt(의존성 無).
 """
 import base64
+import contextlib
 import hashlib
 import hmac
 import json
@@ -64,6 +65,16 @@ class UserStore:
             "last_login_at INTEGER, failed_count INTEGER NOT NULL DEFAULT 0, "
             "locked_until INTEGER NOT NULL DEFAULT 0)"
         )
+        # 부서 — 가입 폼 입력(또는 RA 연동 시 자동 채움). 기존 DB 는 컬럼 추가 마이그레이션.
+        with contextlib.suppress(sqlite3.OperationalError):  # 이미 있으면 무시
+            self._conn.execute("ALTER TABLE users ADD COLUMN department TEXT NOT NULL DEFAULT ''")
+        # 외부 서비스 연결 토큰(예: Report Archive PAT) — 사용자가 등록, 게이트웨이가 소비.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS connections ("
+            "email TEXT NOT NULL, service TEXT NOT NULL, token TEXT NOT NULL, "
+            "workspace TEXT NOT NULL DEFAULT '', "   # RA 부서(워크스페이스) slug — 호출 헤더용
+            "created_at INTEGER NOT NULL, PRIMARY KEY (email, service))"
+        )
         self._conn.commit()
 
     # ── 조회 ────────────────────────────────────────────────────────────────
@@ -79,8 +90,8 @@ class UserStore:
 
     def list_users(self) -> list[dict]:
         cur = self._conn.execute(
-            "SELECT email, name, groups, status, auth_source, created_at, approved_at, "
-            "last_login_at, locked_until FROM users ORDER BY created_at DESC")
+            "SELECT email, name, department, groups, status, auth_source, created_at, "
+            "approved_at, last_login_at, locked_until FROM users ORDER BY created_at DESC")
         cols = [c[0] for c in cur.description]
         out = []
         for row in cur.fetchall():
@@ -100,7 +111,7 @@ class UserStore:
 
     # ── 가입·승인 ───────────────────────────────────────────────────────────
     def signup(self, *, email: str, name: str, password: str,
-               bootstrap_admins: list[str]) -> dict:
+               bootstrap_admins: list[str], department: str = "") -> dict:
         """가입 신청. 원칙은 pending — 단 테이블이 비어 있고 부트스트랩 명단에 든 이메일이면
         즉시 active+portal-admin (첫 관리자를 만들 다른 경로가 없다)."""
         email = norm_email(email)
@@ -114,9 +125,10 @@ class UserStore:
             now = _now()
             self._conn.execute(
                 "INSERT INTO users (email, name, pw_hash, groups, status, created_at, "
-                "approved_at, approved_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "approved_at, approved_by, department) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (email, name.strip()[:80], hash_password(password), json.dumps(groups),
-                 status, now, now if bootstrap else None, "bootstrap" if bootstrap else None))
+                 status, now, now if bootstrap else None, "bootstrap" if bootstrap else None,
+                 department.strip()[:80]))
             self._conn.commit()
         return {"email": email, "status": status}
 
@@ -146,6 +158,45 @@ class UserStore:
                 "WHERE email = ?", (hash_password(password), norm_email(email)))
             self._conn.commit()
             return cur.rowcount > 0
+
+    def set_department(self, email: str, department: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE users SET department = ? WHERE email = ?",
+                (department.strip()[:80], norm_email(email)))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    # ── 외부 서비스 연결 토큰(RA PAT 등) ─────────────────────────────────────
+    def set_connection(self, *, email: str, service: str, token: str, workspace: str = "") -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO connections (email, service, token, workspace, created_at) "
+                "VALUES (?, ?, ?, ?, ?)", (norm_email(email), service, token, workspace, _now()))
+            self._conn.commit()
+
+    def get_connection(self, *, email: str, service: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT token, workspace FROM connections WHERE email = ? AND service = ?",
+            (norm_email(email), service)).fetchone()
+        return {"token": row[0], "workspace": row[1]} if row else None
+
+    def delete_connection(self, *, email: str, service: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM connections WHERE email = ? AND service = ?",
+                (norm_email(email), service))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def connection_meta(self, *, email: str, service: str) -> dict | None:
+        """토큰 원문 없이 표시용 요약만 — 꼬리 4자·부서·등록 시각."""
+        row = self._conn.execute(
+            "SELECT token, workspace, created_at FROM connections WHERE email = ? AND service = ?",
+            (norm_email(email), service)).fetchone()
+        if not row:
+            return None
+        return {"tail": row[0][-4:], "workspace": row[1], "created_at": row[2]}
 
     def set_groups(self, email: str, groups: list[str]) -> bool:
         with self._lock:

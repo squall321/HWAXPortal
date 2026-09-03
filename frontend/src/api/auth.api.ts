@@ -11,6 +11,7 @@ export async function getMe(): Promise<User | null> {
 export interface LocalUserRow {
   email: string;
   name: string;
+  department: string;
   groups: string[];
   status: 'pending' | 'active' | 'disabled';
   auth_source: 'local' | 'sso';
@@ -32,11 +33,16 @@ export async function localLogin(email: string, password: string): Promise<void>
   }
 }
 
-export async function localSignup(email: string, name: string, password: string): Promise<string> {
+export async function localSignup(
+  email: string,
+  name: string,
+  password: string,
+  department = '',
+): Promise<string> {
   const res = await apiFetch('/auth/local/signup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, name, password }),
+    body: JSON.stringify({ email, name, password, department }),
   });
   const body = (await res.json().catch(() => ({}))) as { status?: string; detail?: unknown };
   if (!res.ok) {

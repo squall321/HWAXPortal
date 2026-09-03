@@ -36,6 +36,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [department, setDepartment] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export default function LoginPage() {
         await refresh();
         navigate(returnTo, { replace: true });
       } else {
-        const st = await localSignup(email, name, password);
+        const st = await localSignup(email, name, password, department);
         if (st === 'active') {
           setNotice('가입이 완료됐습니다. 바로 로그인하세요.');
         } else {
@@ -91,14 +92,23 @@ export default function LoginPage() {
           required
         />
         {mode === 'signup' && (
-          <input
-            style={field}
-            type="text"
-            placeholder="이름"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
+          <>
+            <input
+              style={field}
+              type="text"
+              placeholder="이름"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+            <input
+              style={field}
+              type="text"
+              placeholder="부서 (선택 — Report Archive 연결 시 자동 채움)"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+            />
+          </>
         )}
         <input
           style={field}

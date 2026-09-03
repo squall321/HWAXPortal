@@ -159,3 +159,32 @@ bash deploy/apptainer/sync-from-drive.sh
   `PATCH /api/sync/sources/<materialtwin id> {"page_size":100}` 한 번이면 된다(코드 무변경).
 - `.mcp.json` 이 리포에 생겼다 — `export HWAX_GATEWAY_PAT=<PAT>` 없으면 hwax MCP 가 연결 실패로
   뜬다(조용히 없는 게 아니라 명확히 실패한다). CLAUDE.md 참조.
+
+## 2026-09-03 반영분 — STE 웹 복구 + 로컬 계정·RA 연결
+
+`git pull && update-all` 로 자동 반영되는 것.
+- 이메일 로컬 계정(승인제 가입·/admin/users)·계정별 챗 캐시 분리·RA 연결 토큰 기능.
+  프론트 dist 는 Drive `latest/` 에 있다(§ images-from-drive).
+- 카탈로그가 routes.local.env 오버레이를 읽는다 — 아래 STE 복구의 전제.
+
+**STE 웹 복구(1회 수동).** 8/25 커밋(419b5ec)이 base routes.env 의 ste 를 끄고 오버레이
+방식으로 바꿨는데 cae00 에 오버레이가 없어, update-all 의 nginx conf 재생성 시점부터
+/ste/ 가 사라졌다(웹 접속 두절 — 실사고). 타일도 이때부터 '준비중'으로 뜬다.
+
+```bash
+cd ~/Projects/HWAXPortal
+echo 'ste=http://127.0.0.1:15810/' >> backend/config/routes.local.env   # Teleport 터널(§5)
+./infra/scripts/gen-nginx-conf.sh
+apptainer exec instance://hwax_nginx nginx -s reload \
+  || kill -HUP $(pgrep -f 'nginx.*hwax.conf' | head -1)
+systemctl --user status ste-tunnel   # 터널이 죽어 있으면 재기동
+apptainer instance stop hwax_portal && ./infra/scripts/start.sh   # 타일 상태 반영(레지스트리)
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8088/ste/   # 200/401 이면 복구
+```
+
+**RA 연결 토큰(1회 수동 2건).**
+- 포털 `backend/.env` 에 `GATEWAY_SHARED_TOKEN=<게이트웨이 gateway_config.json 의 _gateway.token>`.
+- 게이트웨이 `gateway_config.json` 의 `portal` 절에 `"api_base": "http://127.0.0.1:8723"` 추가.
+- 이후 각 사용자: RA 프로필에서 토큰(rat_) 발급 → 포털 API 토큰 페이지 하단 카드에 등록.
+  cae00 RA 가 `/api/me/mcp-tokens` 라우트(v0.157.x)를 갖고 있는지 확인 — 없으면 RA 재기동으로
+  최신 코드 반영(dev 에서 실사고: 8/14 프로세스가 낡아 404, requirements 동기화 후 재기동으로 해소).

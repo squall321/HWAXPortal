@@ -108,12 +108,19 @@ async def callback(
 
 
 @router.get("/me", response_model=UserProfile)
-def me(principal=Depends(get_current_principal)) -> UserProfile:
+def me(request: Request, principal=Depends(get_current_principal)) -> UserProfile:
+    # 부서는 세션 JWT 가 아니라 users 원장에서 — 갱신(RA 연결 자동 채움)이 즉시 보인다.
+    department = ""
+    store = getattr(request.app.state, "user_store", None)
+    if store is not None:
+        u = store.get(principal.email)
+        department = (u or {}).get("department") or ""
     return UserProfile(
         subject=principal.subject,
         email=principal.email,
         display_name=principal.display_name,
         groups=principal.groups,
+        department=department,
     )
 
 
