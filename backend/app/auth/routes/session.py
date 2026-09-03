@@ -5,6 +5,7 @@ process the IdP response) to the active AuthProvider, then run the same session 
 for mock and SAML alike.
 """
 
+import contextlib
 import secrets
 
 import jwt
@@ -40,12 +41,19 @@ def complete_login(
     expected_state: str | None,
     settings: Settings,
     jwt_service: JWTService,
+    user_store=None,
 ) -> RedirectResponse:
     """Issue the portal session and bounce the browser back to where it wanted to go.
 
     Shared by the mock callback and the SAML ACS — everything from a verified Principal
     onward is IdP-independent.
     """
+    # SSO 연동 훅 — 같은 이메일의 로컬 계정이 있으면 연결(auth_source 갱신), 없으면 원장에
+    # 생성. 계정 행은 SSO 전환 후에도 남는다(로컬 계정 브리지의 승계 보장). 실패해도
+    # 로그인은 막지 않는다 — 원장은 부기록이다.
+    if user_store is not None and getattr(principal, "email", None):
+        with contextlib.suppress(Exception):
+            user_store.note_sso_login(email=principal.email, name=principal.display_name)
     return_to = "/"
     if expected_state:
         try:
@@ -95,6 +103,7 @@ async def callback(
         expected_state=expected_state,
         settings=settings,
         jwt_service=jwt_service,
+        user_store=getattr(request.app.state, "user_store", None),
     )
 
 

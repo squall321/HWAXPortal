@@ -33,6 +33,7 @@ async def acs(
         expected_state=expected_state,
         settings=settings,
         jwt_service=jwt_service,
+        user_store=getattr(request.app.state, "user_store", None),
     )
 
 

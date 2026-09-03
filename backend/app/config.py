@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     mock_user_name: str = "Hong Gil Dong"
     mock_user_groups: str = "portal-admin,mes-user"  # comma-separated
 
+    # ── Local email accounts (SSO 지연 브리지 — 승인제 가입, subject=이메일 영구 키) ──
+    local_auth_enabled: bool = True
+    user_store_path: str = "data/users.sqlite"
+    # 테이블이 비어 있을 때 이 명단의 이메일이 가입하면 즉시 active+portal-admin(첫 관리자).
+    local_bootstrap_admins: str = "hwax.demo@samsung.com"
+
     # ── Session token TTLs (HS256; downstream RS256 launch tokens land in Phase 4) ──
     jwt_issuer: str = "https://hwax.sec.samsung.net"
     jwt_session_ttl: int = 900       # access token (s)
@@ -227,6 +233,10 @@ class Settings(BaseSettings):
     @property
     def upload_group_step_list(self) -> list[str]:
         return [g.strip() for g in self.upload_groups_step.split(",") if g.strip()]
+
+    @property
+    def local_bootstrap_admin_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.local_bootstrap_admins.split(",") if e.strip()]
 
     @property
     def pat_default_audience_list(self) -> list[str]:

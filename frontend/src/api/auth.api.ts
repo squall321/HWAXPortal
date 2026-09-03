@@ -7,6 +7,71 @@ export async function getMe(): Promise<User | null> {
   return null;
 }
 
+// ── 로컬 이메일 계정(SSO 지연 브리지) ─────────────────────────────────────────
+export interface LocalUserRow {
+  email: string;
+  name: string;
+  groups: string[];
+  status: 'pending' | 'active' | 'disabled';
+  auth_source: 'local' | 'sso';
+  created_at: number;
+  approved_at: number | null;
+  last_login_at: number | null;
+  locked_until: number;
+}
+
+export async function localLogin(email: string, password: string): Promise<void> {
+  const res = await apiFetch('/auth/local/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+    throw new Error(typeof body.detail === 'string' ? body.detail : '로그인에 실패했습니다.');
+  }
+}
+
+export async function localSignup(email: string, name: string, password: string): Promise<string> {
+  const res = await apiFetch('/auth/local/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, name, password }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { status?: string; detail?: unknown };
+  if (!res.ok) {
+    throw new Error(typeof body.detail === 'string' ? body.detail : '가입 신청에 실패했습니다.');
+  }
+  return body.status ?? 'pending';
+}
+
+export async function listLocalUsers(): Promise<LocalUserRow[]> {
+  const res = await apiFetch('/auth/local/users');
+  if (!res.ok) throw new Error('사용자 목록을 불러오지 못했습니다.');
+  return (await res.json()) as LocalUserRow[];
+}
+
+async function postAdmin(path: string, body?: object): Promise<void> {
+  const res = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!res.ok) {
+    const b = (await res.json().catch(() => ({}))) as { detail?: unknown };
+    throw new Error(typeof b.detail === 'string' ? b.detail : '요청이 실패했습니다.');
+  }
+}
+
+export const approveLocalUser = (email: string, groups: string[]) =>
+  postAdmin(`/auth/local/users/${encodeURIComponent(email)}/approve`, { groups });
+export const setLocalUserStatus = (email: string, status: 'active' | 'disabled') =>
+  postAdmin(`/auth/local/users/${encodeURIComponent(email)}/status`, { status });
+export const resetLocalUserPassword = (email: string, newPassword: string) =>
+  postAdmin(`/auth/local/users/${encodeURIComponent(email)}/reset-password`, {
+    new_password: newPassword,
+  });
+
 export async function postLogout(): Promise<void> {
   const res = await apiFetch('/auth/logout', { method: 'POST' });
   // 하위 서비스 세션도 끊는다. 그 쿠키들은 같은 호스트의 '경로 스코프' 라 포털 서버가

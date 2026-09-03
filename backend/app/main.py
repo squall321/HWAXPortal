@@ -22,11 +22,13 @@ from app.auth.errors import AuthError
 from app.auth.keystore import KeyStore
 from app.auth.routes import jwks as auth_jwks
 from app.auth.routes import launch as auth_launch
+from app.auth.routes import local as auth_local
 from app.auth.routes import pat as auth_pat
 from app.auth.routes import saml as auth_saml
 from app.auth.routes import session as auth_session
 from app.auth.routes import tlscert as auth_tlscert
 from app.auth.token_store import TokenStore
+from app.auth.user_store import UserStore
 from app.catalog import routes as catalog_routes
 from app.catalog.registry import CatalogRegistry
 from app.config import get_settings
@@ -48,6 +50,7 @@ async def lifespan(app: FastAPI):
     app.state.keystore = KeyStore(settings)
     app.state.downstream_issuer = JwtDownstreamIssuer(settings, app.state.keystore)
     app.state.token_store = TokenStore(settings)
+    app.state.user_store = UserStore(settings)
     # Mail backend (console in dev; smtp/graph via MAIL_BACKEND env).
     app.state.mail_backend = build_mail_backend(settings)
     # MCP chat (Phase 1): server registry (PR-managed yaml), audit log (compliance), and a
@@ -107,6 +110,7 @@ async def _auth_error_handler(_request: Request, exc: AuthError) -> JSONResponse
 
 app.include_router(routes_health.router)
 app.include_router(auth_session.router)
+app.include_router(auth_local.router)
 app.include_router(auth_saml.router)
 app.include_router(auth_jwks.router)
 # 자체서명 인증서 배포 — 개인 Claude(Node)가 포털을 신뢰하려면 로그인 전에도 받아야 한다.

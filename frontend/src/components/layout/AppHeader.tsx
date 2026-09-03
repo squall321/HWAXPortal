@@ -71,6 +71,11 @@ export function AppHeader() {
                 리스크 심사
               </NavLink>
             )}
+            {user.groups.includes('portal-admin') && (
+              <NavLink to="/admin/users" style={navLinkStyle}>
+                사용자 관리
+              </NavLink>
+            )}
           </nav>
         )}
       </div>
