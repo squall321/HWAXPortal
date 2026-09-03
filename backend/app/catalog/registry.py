@@ -73,6 +73,12 @@ class CatalogRegistry:
             # external-url here).
             if from_route and s.integration_type == "external-url":
                 s.integration_type = "proxy"
+        elif s.integration_type == "proxy":
+            # 목적지 없는 proxy 타일은 정직하게 끈다. yaml/스키마 기본값이 available 이라
+            # 여기서 강등하지 않으면 라우트 없는 타일이 클릭 가능하게 뜨고, /<id>/ 는
+            # nginx catch-all 이 SPA index.html 을 200 으로 돌려줘 조용히 깨진다
+            # (실사고 2026-09-03: ste — routes.local.env 없는 박스에서 available 로 노출).
+            s.status = "coming_soon"
 
     def reload(self) -> int:
         raw = yaml.safe_load(self._catalog_path.read_text(encoding="utf-8")) or {}
