@@ -28,10 +28,19 @@ class CatalogRegistry:
         self.reload()
 
     def _load_routes(self) -> dict[str, str]:
-        """Parse the simple `system-id=URL` routes file (if present)."""
+        """Parse the simple `system-id=URL` routes file (if present).
+
+        routes.local.env(gitignore, 박스별 오버레이)가 옆에 있으면 같은 키를 덮어쓴다 —
+        gen-nginx-conf.sh 와 동일 규칙. 이걸 안 읽으면 오버레이로 nginx 라우트만 생기고
+        타일은 coming_soon 으로 남는다(실사고 2026-09-03: cae00 STE — update-all 의 conf
+        재생성이 base 의 주석 처리된 ste 를 반영하며 웹 접속이 끊겼다).
+        """
         routes: dict[str, str] = {}
-        if self._routes_path.exists():
-            for raw in self._routes_path.read_text(encoding="utf-8").splitlines():
+        overlay = self._routes_path.parent / "routes.local.env"
+        for path in (self._routes_path, overlay):
+            if not path.exists():
+                continue
+            for raw in path.read_text(encoding="utf-8").splitlines():
                 line = raw.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
