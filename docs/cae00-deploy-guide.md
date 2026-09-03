@@ -190,3 +190,41 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8088/ste/   # 200/401 
 - 이후 각 사용자: RA 프로필에서 토큰(rat_) 발급 → 포털 API 토큰 페이지 하단 카드에 등록.
   cae00 RA 가 `/api/me/mcp-tokens` 라우트(v0.157.x)를 갖고 있는지 확인 — 없으면 RA 재기동으로
   최신 코드 반영(dev 에서 실사고: 8/14 프로세스가 낡아 404, requirements 동기화 후 재기동으로 해소).
+
+## 2026-09-04 반영분 — DynaForge 불안정 리포트 회신
+
+cae00 리포트(§1~§5)에 대한 판정·조치. `git pull && update-all` 후 아래가 자동/수동으로 갈린다.
+
+**판정 교정 2건(문제 아님).**
+- "heax var/sifs·integration 로그 없음" — **설계다.** DynaForge 는 heax 통합 빌드가 아니라
+  **자체 스택**(KooRemapper platform: 자체 SIF `platform/infra/apptainer/*.sif`, 자체
+  supervisor, 자체 로그 `platform/data/`)이고, update-all(deploy-all §kooremapper)이
+  git_update + dist-from-drive + start 로 이미 관리한다. 상태 확인 위치가 다를 뿐이다.
+- "MCP 라우트 406(무인증 도달)" — 핸드셰이크·tools/list 는 열리지만 **실도구 호출은 앱
+  자체 kr_ 토큰 인증이 거부함을 실측**(무토큰 list_sessions → '인증 토큰이 필요합니다').
+  외부 MCP 클라이언트(허브 세션 불가)가 kr_ 만으로 붙게 하는 의도적 개방 — 노출은 도구
+  목록 스키마 수준. 더 닫고 싶으면 별도 결정.
+
+**자동 반영(이번 커밋들).**
+- 간헐 다운의 본체 = **감독 부재**: deploy-all kooremapper 절이 이제
+  `install-autostart.sh`(@reboot 크론+supervisor 감시, 멱등)를 설치한다(237c27e).
+- `env: development` 의 본체 = .env 부재 시 example 복사: **example 기본을 production
+  으로**(KooRemapper 96aa47f). 단 cae00 에 이미 생성된 platform/.env 는 안 바뀐다 —
+  **1회 수동**: `KOORM_APP_ENV=production` 으로 고치고 재기동.
+- `mcp_add_hint` 가 프록시 경유 접속에선 포털 고정 라우트
+  (`https://<포털>/apps/kooremapper_mcp/mcp`)를 안내한다(KooRemapper 1f2c817).
+  게이트웨이 등 직결 조회는 종전 로컬 주소 폴백 — 원하면 platform/.env 에
+  `KOORM_MCP_PUBLIC_URL=` 로 못 박는다.
+
+**신원(§5)** — 게이트웨이 per-user 위임은 이미 작동한다(등록 사용자는 본인 명의 응답 실측).
+"전원 hwax.demo" 는 위임 결함이 아니라 **다들 데모 계정으로 로그인**한 결과다 — 포털
+로컬 계정(각자 이메일 가입)으로 옮기면 그대로 각자 명의가 된다. kr_ 발급이 웹 전용인
+것은 감독 편입으로 웹이 안정되면 충분하다.
+
+**확인법(순서).**
+```bash
+crontab -l | grep koorm-autostart               # 감독 설치됨
+pgrep -f 'supervisor.sh' >/dev/null && echo 감시중
+curl -s http://127.0.0.1:8700/api/health        # api ok
+# system_status 의 env 가 production (KOORM_APP_ENV 수동 조치 후)
+```
