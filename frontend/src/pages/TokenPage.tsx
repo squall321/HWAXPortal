@@ -60,9 +60,39 @@ function claudeCodeSnippetSelfSigned(token: string, certPath: string): string {
  * 인증서 PEM 을 파일 안에 그대로 넣어 첨부파일이 하나로 끝나게 한다(PEM 은 텍스트다).
  * 이 파일은 토큰이 화면에 보이는 그 순간에만 만들 수 있다 — 서버는 평문 토큰을 보관하지 않는다.
  */
+// cmd 의 echo 로 **파일에 글자를 쓸 때** 리다이렉트·파이프·앰퍼샌드는 이스케이프해야 한다.
+// 안 하면 그 줄이 파일에 안 들어가고 지금 여기서 실행돼 버린다.
+const echoEsc = (s: string) => s.replace(/([&<>|^])/g, '^$1');
+
+/** `claude|gemini|codex mcp add` 를 **별도 .cmd 로 분리해 start /wait 로 격리 실행**한다.
+ *
+ * ⚠ 이게 없으면 배치가 그 줄에서 조용히 죽는다. 사내 PC 실측(2026-09-04 리포트): `claude mcp
+ * add` 는 성공해서 ~/.claude.json 도 정상 수정되는데, **그것을 호출한 배치 프로세스가 다음
+ * 줄로 못 넘어가고 끝난다.** 그래서 이후 [3] Desktop·[4] Gemini·[5] Codex·[6] 연결확인이
+ * 통째로 실행되지 않는데 에러도 안 뜨고 프롬프트로 돌아가, 사용자는 "조용히 끝났나 보다"로
+ * 오해한다. PAT 재발급 때 옛 토큰이 그대로 남는 사고가 여기서 나온다.
+ * 원인은 claude(Node CLI)가 콘솔 모드를 건드리는 것으로 추정되며, 같은 명령을 터미널에
+ * 직접 타이핑하면 100% 정상이다 — 즉 "배치 안에서 직접 호출"만 문제다.
+ * 해결책은 실측으로 검증됐다: 임시 .cmd 로 떼어내 `start "" /wait cmd /c` 로 부르면 통과한다.
+ *
+ * 종료코드는 `%HWAX_RC%` 로 받는다(호출부가 이 변수를 읽는다). 임시 파일에는 PAT 가 평문으로
+ * 들어가므로 실행 직후 지운다 — %TEMP% 에 토큰 사본을 남기지 않는다.
+ */
+const isolatedCli = (varName: string, tmpFile: string, lines: string[]): string[] => [
+  `set "${varName}=${tmpFile}"`,
+  `if exist "%${varName}%" del "%${varName}%" >nul 2>nul`,
+  ...lines.map((l) => `>>"%${varName}%" echo ${echoEsc(l)}`),
+  `start "" /wait cmd /c "%${varName}%"`,
+  'set "HWAX_RC=%errorlevel%"',
+  `del "%${varName}%" >nul 2>nul`,
+];
+
 function buildSetupBat(token: string, name: string, pem: string | null): string {
   const certDir = '%USERPROFILE%\\.hwax';
   const certFile = `${certDir}\\hwax-portal.crt`;
+  // 등록 뒤 "이 토큰으로 갱신됐는지" 를 되읽어 확인할 표식. 재발급했는데 옛 토큰이 그대로
+  // 남는 것이 이 스크립트의 가장 조용한 실패라, 존재 확인만으로는 부족하다.
+  const tokenTail = token.slice(-8);
   const L: string[] = [
     // ⚠ 첫 줄은 희생용이다. 아래에서 UTF-8 BOM 을 붙이는데, cmd.exe 가 그걸 첫 줄에
     // 섞어 읽으면 그 줄의 명령이 죽는다. 그게 '@echo off' 면 배치 전체가 echo 된 채로
@@ -104,11 +134,17 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     // ⚠ 인증서 검증을 끈다. 포털이 자체 서명이면 TLS 에서 걸려 '직결 불가'로 잘못 판정하고,
     // 그러면 프록시 문제가 아닌데 프록시 안내를 띄운다. 이건 도달성 확인이지 보안 경계가 아니다
     // (실제 통신은 아래 등록된 설정이 NODE_EXTRA_CA_CERTS 로 정상 검증한다).
+    // ⚠ 찌르는 곳은 무인증 /health 다. 종전엔 `/` 를 찔렀는데, 로그인이 필요한 루트가
+    //   4xx/302 를 주면 Invoke-WebRequest 는 **예외를 던지고** catch 가 무조건 실패로
+    //   처리해 "직접 연결 실패 → VPN 확인" 오탐이 매번 났다(리포트 §2: curl/openssl 로는
+    //   붙는데 여기만 실패). 게다가 HTTP 응답을 받았다는 것 자체가 '연결됨' 의 증거이므로,
+    //   catch 에서도 Response 가 있으면 도달로 판정한다.
     'powershell -NoProfile -Command "$ErrorActionPreference=\'SilentlyContinue\';' +
       '[System.Net.ServicePointManager]::ServerCertificateValidationCallback={$true};' +
       'try{[System.Net.WebRequest]::DefaultWebProxy=$null;' +
-      `$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri \'${ORIGIN}/\';` +
-      'if($r.StatusCode -ge 200){exit 0}else{exit 1}}catch{exit 1}"',
+      `$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri \'${ORIGIN}/health\';` +
+      'if($r.StatusCode -ge 200){exit 0}else{exit 1}}' +
+      'catch{if($_.Exception.Response){exit 0}else{exit 1}}"',
     'if errorlevel 1 goto :px_need',
     // 기존 값을 먼저 잡고 분기한다 — 바로 이어 붙이면 NO_PROXY 가 비었을 때 ',host' 가 된다.
     'set _NP=%NO_PROXY%',
@@ -124,7 +160,9 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     // npx 는 레지스트리를 타야 mcp-remote 를 받는다. 프록시가 안 잡혀 있으면 여기서 죽는데,
     // 에러가 'MCP 등록 실패' 로만 보인다. 미리 확인하고 없으면 사내 프록시를 이 창에 세운다.
     'where npx >nul 2>nul',
-    'if errorlevel 1 goto :px_done',
+    // 종전엔 npx 가 없으면 아무 말 없이 다음 단계로 갔다 — Node.js 없는 PC 에서는 이후
+    // 등록이 전부 "왜 실패하는지 모르는 채로" 실패한다(리포트 §3). 사유를 알려 준다.
+    'if errorlevel 1 goto :px_nonode',
     // ⚠ mcp-remote 로 레지스트리를 재지 않는다. `npx -y mcp-remote --version` 은
     // mcp-remote 가 --version 을 서버 URL 로 해석해 "Invalid URL" 로 죽는다 — 네트워크가
     // 멀쩡하고 패키지가 이미 받아져 있어도 종료코드 1 이다(실측). 그래서 이 검사는 항상
@@ -156,6 +194,25 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'echo      [!] npx 가 mcp-remote 를 받지 못했습니다.',
     'echo          프록시 뒤라면 관리자에게 npm 레지스트리 허용을 요청하세요.',
     'echo          ^(이 단계가 실패해도 Claude Desktop 등록 자체는 진행됩니다^)',
+    'goto :px_done',
+    ':px_nonode',
+    'echo      [!] Node.js^(npx^)가 설치돼 있지 않습니다.',
+    // 자체서명 구간은 mcp-remote 경유가 유일한 길이라 여기서 멈춘다. https 직결 구간은
+    // Claude Code/Desktop 이 npx 없이도 붙으므로 경고만 하고 계속한다(등록을 막지 않는다).
+    ...(pem
+      ? [
+          'echo          이 설정은 mcp-remote^(npx^)가 있어야 동작합니다.',
+          'echo          Node.js 20 이상을 설치한 뒤 이 파일을 다시 실행하세요.',
+          'echo          https://nodejs.org/',
+          'echo.',
+          'pause',
+          'exit /b 1',
+        ]
+      : [
+          'echo          Claude Code/Desktop 은 http 직결이라 없어도 등록됩니다.',
+          'echo          Gemini/Codex 를 쓰신다면 Node.js 20 이상이 필요합니다. https://nodejs.org/',
+        ]),
+    'goto :px_done',
     ':px_done',
     'echo.',
     '',
@@ -187,21 +244,34 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     // '등록 완료' 를 보고 다른 데서 왜 안 보이는지 모른다(실사고). 같은 배치의
     // gemini 는 이미 -s user 였다 — 또 한쪽에만 적용된 원칙이다.
     // 이전 판이 local 에 남긴 것도 함께 치운다(안 그러면 그 폴더에서 둘이 겹친다).
-    'claude mcp remove hwax -s local >nul 2>nul',
-    'claude mcp remove hwax -s user >nul 2>nul',
-  );
-  L.push(
-    pem
-      ? `claude mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
-      : `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
-  );
-  L.push(
-    'if errorlevel 1 goto :cli_fail',
-    // 등록됐다는 것과 설정에 남았다는 것은 다르다 — 되읽어서 확인해야 "완료"라고 말할 수 있다.
-    'claude mcp get hwax >nul 2>nul',
-    'if errorlevel 1 goto :cli_fail',
+    // ⚠ remove·add·get 은 전부 격리 .cmd 안에서 돈다 — isolatedCli 주석 참조.
+    //   등록됐다는 것과 설정에 남았다는 것은 다르므로 되읽어 확인하고, 토큰 꼬리까지
+    //   대조해 "갱신됐다" 를 구분한다(3 = 등록은 됐는데 갱신 확인 실패).
+    ...isolatedCli('HWAX_CLI_CMD', '%TEMP%\\hwax-cli-setup.cmd', [
+      '@echo off',
+      'claude mcp remove hwax -s local >nul 2>nul',
+      'claude mcp remove hwax -s user >nul 2>nul',
+      pem
+        ? `claude mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
+        : `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
+      'if errorlevel 1 exit /b 2',
+      'claude mcp get hwax >nul 2>nul',
+      'if errorlevel 1 exit /b 1',
+      `claude mcp get hwax | findstr /C:"${tokenTail}" >nul`,
+      'if errorlevel 1 exit /b 3',
+      'exit /b 0',
+    ]),
+    'if "%HWAX_RC%"=="0" goto :cli_ok',
+    'if "%HWAX_RC%"=="3" goto :cli_stale',
+    'goto :cli_fail',
+    ':cli_ok',
     'set HWAX_DONE=1',
-    'echo      Claude Code 등록 완료',
+    'echo      Claude Code 등록 완료 ^(토큰 갱신 확인됨^)',
+    'goto :desktop',
+    ':cli_stale',
+    'set HWAX_DONE=1',
+    'echo      Claude Code 등록됨 - 다만 토큰 갱신은 확인하지 못했습니다',
+    'echo          확인: claude mcp get hwax',
     'goto :desktop',
     ':cli_fail',
     'echo      [X] Claude Code 등록 실패',
@@ -272,9 +342,13 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'echo  [4] Gemini CLI 확인...',
     'where gemini >nul 2>nul',
     'if errorlevel 1 goto :no_gemini',
-    'gemini mcp remove hwax -s user >nul 2>nul',
-    `gemini mcp add -s user -t stdio ${gemEnv} hwax npx -- -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`,
-    'if errorlevel 1 goto :gemini_fail',
+    // claude 와 같은 이유로 격리 실행한다 — gemini 도 Node CLI 라 배치를 끊는다(리포트 §1 후속).
+    ...isolatedCli('HWAX_GEM_CMD', '%TEMP%\\hwax-gemini-setup.cmd', [
+      '@echo off',
+      'gemini mcp remove hwax -s user >nul 2>nul',
+      `gemini mcp add -s user -t stdio ${gemEnv} hwax npx -- -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`,
+    ]),
+    'if not "%HWAX_RC%"=="0" goto :gemini_fail',
     'set HWAX_DONE=1',
     'echo      Gemini CLI 등록 완료',
     'goto :codex',
@@ -313,9 +387,13 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'echo  [5] Codex CLI 확인...',
     'where codex >nul 2>nul',
     'if errorlevel 1 goto :no_codex',
-    'codex mcp remove hwax >nul 2>nul',
-    `codex mcp add hwax ${codexEnv} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`,
-    'if errorlevel 1 goto :codex_manual',
+    // claude 와 같은 이유로 격리 실행한다 — codex 도 Node CLI 다(리포트 §1 후속).
+    ...isolatedCli('HWAX_CDX_CMD', '%TEMP%\\hwax-codex-setup.cmd', [
+      '@echo off',
+      'codex mcp remove hwax >nul 2>nul',
+      `codex mcp add hwax ${codexEnv} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`,
+    ]),
+    'if not "%HWAX_RC%"=="0" goto :codex_manual',
     'set HWAX_DONE=1',
     'echo      Codex CLI 등록 완료',
     'goto :codex_done',
