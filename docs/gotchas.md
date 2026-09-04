@@ -176,3 +176,33 @@ AIDataHub `/api/embed` 는 multilingual-e5-base(768차원)를 서비스한다
 
 실측 — 좌석이 AIDataHub `record_id` 를 들고 이름이 그대로인 `get_section` 을 불러 오류 4회.
 두 설명에 앱 경계를 박아 두었지만, **새 앱을 붙일 때 이름 충돌을 먼저 확인하는 편이 낫다.**
+
+## 12. Node CLI 를 배치(.bat)에서 직접 부르면 배치가 조용히 죽는다
+
+사내 PC 실측(2026-09-04). PAT 발급 시 내려주는 `hwax-claude-setup.bat` 이
+`claude mcp add` 줄에서 **아무 에러 없이** 끝나 이후 단계가 통째로 실행되지 않았다.
+
+- `claude mcp add` **자체는 성공**한다 — `~/.claude.json` 도 정상 수정되고 CLI 가
+  "Added stdio MCP server" 까지 찍는다. 그런데 **그것을 호출한 배치 프로세스**가
+  다음 줄로 못 넘어간다. `echo AFTER` 조차 안 찍힌다.
+- 같은 명령을 **터미널에 직접 타이핑하면 100% 정상**이다. 즉 "배치 안에서 직접 호출"
+  만의 문제다(claude 가 콘솔 raw mode/VT 를 건드리는 것으로 추정 — 내부 기전 미확인).
+- 화면에는 에러가 없고 프롬프트로 돌아가서 **"조용히 끝났나 보다"로 오해**한다.
+  PAT 를 재발급해도 뒷단계가 안 돌아 **옛 토큰이 그대로 남는다**.
+
+**해결(실측 검증)** — 호출부를 임시 `.cmd` 로 떼어내 격리 실행한다.
+
+```bat
+>>"%TMPCMD%" echo claude mcp add -s user hwax ... --header "Authorization:${AUTH}"
+start "" /wait cmd /c "%TMPCMD%"
+set "HWAX_RC=%errorlevel%"        rem del 보다 먼저 — del 이 errorlevel 을 덮는다
+del "%TMPCMD%" >nul 2>nul         rem 임시파일에 PAT 평문이 들어간다. 반드시 지운다
+```
+
+`gemini`/`codex` 도 같은 Node CLI 라 동일하게 격리한다(`frontend/src/pages/TokenPage.tsx`
+의 `isolatedCli`). `claude mcp get` 은 배치에서 직접 불러도 됐다는 관측이 있으나 표본이
+적어 같이 격리했다.
+
+곁들여 확인된 것 — 네트워크 점검을 **로그인 필요한 `/`** 로 하면 `Invoke-WebRequest` 가
+4xx/302 에 예외를 던져 "직접 연결 실패(VPN 확인)" 오탐이 난다. 무인증 `/health` 를 찌르고,
+응답을 받았으면(`$_.Exception.Response`) 도달로 판정한다.
