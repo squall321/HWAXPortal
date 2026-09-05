@@ -131,4 +131,15 @@ dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
   - 커밋 밖 부작용(crontab·logrotate 상태파일·/data/hwax/state·리허설 잔존·chmod)은 checklist 롤백 목록으로. 첫 조치 전 `crontab -l` 저장.
 
 ## 작업 로그
-- 2026-09-05: 인벤토리·패널·계획 수립. 코드 변경 0. 다음 = 착수 게이트(§12 답) → D0.
+- 2026-09-05: 인벤토리·패널·계획 수립. 코드 변경 0.
+- 2026-09-05 (오후): 사용자 결정 — 크론 24·1행 삭제 OK, vllm 기준선 제외 OK, a.txt 삭제 OK, "내부 프로젝트 하던 건 다 커밋 push 해서 동기화한 다음".
+  → 12리포 WIP 동기화(HEAX 2·StepForge 53·HWAXRisk 6·MTW 161 push, 소스·설정 커밋; 데이터·시크릿·바이너리·런타임 상태는 의도적 제외).
+  → **D0 실행**: ⓪ crontab·status 기준선 저장(vllm 제외), dev hwax-stack.service disable ① 크론 2줄 제거(24→22줄), a.txt 삭제
+  ② /data/hwax/secrets 0700·upload-staging rmdir(searxng 200 유지) ③ 7리포 .gitignore 앵커 커밋·push(게이트: 스크래치 clone 심링크 미노출 0 —
+  첫 게이트 스크립트가 하위 .gitignore 를 미추적 디렉터리로 오탐해 HWAXPortal·AIDH 만 재검증) ④ services.yaml data:(매핑)+data_only:+services.py
+  resolve_data/data --check + .env.example(게이트 5종 통과: YAML·6b grep 14·status diff 0·check rc 0·오버라이드) ⑤ sqlite 헬퍼·db-sync 읽기 전용
+  ⑥ backup-local 재구성 + 1회 실행(13항목 ✓ 7m30s, 옛 80파일 daily 편입, heax·koorm 첫 덤프, 0600) + 치환형 install-cron
+  ⑦ logrotate 템플릿·설치기(147 대상, -d 통과, 매시 크론) + update-all 옵트인 훅(HWAX_LOGROTATE=1, dev 만 켬) ⑧ 리허설: 인스턴스 안 3종·sqlite 3종 ✓,
+  signalforge·aidh 임시 인스턴스(:5440·:5441) 진행 중. 커밋: b156da8·0265c99·163fae4·3a79da3·944070b(+7리포 .gitignore).
+  실행 중 잡은 것 — 첫 게이트 오탐(`?? infra/`), MXWP commitlint subject-case(대문자 시작 금지), 편입된 옛 portal tar 664→600 정정,
+  AIDH merge-from-drive 는 pre-merge 디렉터리를 자체 mkdir -p(재생성해 둠).
