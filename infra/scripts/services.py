@@ -86,13 +86,25 @@ def class_paths(svc: dict, cname: str, c: dict, root: str | None, box: str) -> t
     return curp, tgt
 
 
+def data_root() -> str | None:
+    """HWAX_DATA_ROOT — 반드시 절대경로. cae00 실사고(2026-09-05): 'data'(슬래시 없음)가 들어가 목표가 전부 cwd 상대경로로 계산돼
+    포털이 상대경로 --bind 로 기동 실패, 두 서비스 심링크가 허공을 가리켰다. 절대경로가 아니면 미설정으로 본다(경고 1회)."""
+    v = _hwax_setting("HWAX_DATA_ROOT")
+    if v and not v.startswith("/"):
+        if not getattr(data_root, "_warned", False):
+            print(f"  ⚠ HWAX_DATA_ROOT='{v}' 는 절대경로가 아니다(예: /data) — 미설정으로 취급", file=sys.stderr, flush=True)
+            data_root._warned = True  # type: ignore[attr-defined]
+        return None
+    return v
+
+
 def resolve_data(svc: dict) -> dict[str, str]:
     """`data:` 블록 → 주입할 env. HWAX_DATA_ROOT 없으면 {}.
 
     ⚠ **이동이 끝난 클래스만 주입한다**(상태 same·only-target). 아직 현행 경로에 있는 클래스에 새 경로 env 를
     주면 앱이 그 자리에 빈 DB 를 새로 만든다 — 포털은 users/token_store 가 비고 JWT 키를 새로 민팅한다.
     이동은 data-migrate.sh 가 하고, 그 뒤 재기동에서야 이 env 가 붙는다(브리지 심링크가 있어 안 붙어도 동작한다)."""
-    root = _hwax_setting("HWAX_DATA_ROOT")
+    root = data_root()
     data = svc.get("data") or {}
     if not root or not data:
         return {}
@@ -131,7 +143,7 @@ def _data_status(cur: Path | None, tgt: Path | None) -> str:
 def cmd_data(names: list[str], check: bool = False) -> int:
     """data [svc] [--check] — 레지스트리 해석 결과(현행 → 목표·상태). --check 는 이동 대상 종류에 divergent·only-target 이 있으면 1.
     HWAX_DATA_ROOT 미설정이면 목표가 없으므로 상태는 only-current/absent 만 나온다."""
-    root = _hwax_setting("HWAX_DATA_ROOT")
+    root = data_root()
     box = box_name()
     print(f"  HWAX_DATA_ROOT={root or '(미설정 — 주입 없음, 현행 경로)'}  box={box}  role={_hwax_setting('HWAX_BOX_ROLE') or '-'}")
     raw = yaml.safe_load(MANIFEST.read_text(encoding="utf-8")) or {}

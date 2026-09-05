@@ -145,7 +145,7 @@ fi
 #      (prod 챗도 create_agent 등 쓰기 도구를 노출하므로, 새 덤프 없는데 매번 DROP+restore 하지 않는다) ──
 # ── 2b) /data 이관(docs/data-migration) — infra/.env 에 HWAX_DATA_ROOT 가 있을 때만. 아직 현행 경로에 있는
 #        데이터만 옮기고(멱등) 이미 옮긴 건 건너뛴다. 실패는 자동 롤백. 없으면 이 절은 아무것도 안 한다. ──
-if grep -qE '^HWAX_DATA_ROOT=[^[:space:]#]' "$SELF_REPO/infra/.env" 2>/dev/null && [ -x "$SELF_REPO/infra/scripts/data-migrate.sh" ]; then
+if grep -qE '^HWAX_DATA_ROOT=/' "$SELF_REPO/infra/.env" 2>/dev/null && [ -x "$SELF_REPO/infra/scripts/data-migrate.sh" ]; then   # 절대경로만(상대값 'data' 실사고)
   hr "2b) /data 이관 (HWAX_DATA_ROOT 설정됨 — 미이동 클래스만)"
   "$SELF_REPO/infra/scripts/data-migrate.sh" run --yes 2>&1 | sed 's/^/  /' || bad "/data 이관 일부 실패 — 위 ✗·↩ 줄 확인(자동 롤백됨)"
 fi

@@ -29,7 +29,7 @@ TS = time.strftime("%Y%m%d-%H%M%S")
 
 
 def root_dir() -> str | None:
-    return S._hwax_setting("HWAX_DATA_ROOT")
+    return S.data_root()   # 절대경로만. 아니면 None(services.py 가 경고)
 
 
 def state_dir() -> Path:
@@ -219,6 +219,14 @@ def svc_up(svc: dict) -> bool:
     return ok
 
 
+def log_tail(svc: dict, n: int = 6) -> str:
+    f = S.LOG_DIR / f"{svc['name']}.log"
+    try:
+        return "\n".join("      | " + l for l in f.read_text(errors="replace").splitlines()[-n:])
+    except OSError:
+        return f"      | (로그 없음: {f})"
+
+
 def svc_down(svc: dict) -> None:
     S.cmd_down([svc["name"]])
     for _ in range(30):
@@ -356,7 +364,9 @@ def run_service(svc: dict, root: str, box: str, yes: bool) -> int:
                 p["tgt"].parent.mkdir(parents=True, exist_ok=True)
             inst = data.get("app_instance")
             print(f"  · needs_bind {len(nb)}클래스 — 재기동 뒤 컨테이너({inst}) 가시성 확인")
-            svc_down(svc); svc_up(svc)
+            svc_down(svc)
+            if not svc_up(svc):
+                raise RuntimeError("needs_bind 확인용 재기동 실패 — 서비스가 내려가 있다. 로그:\n" + log_tail(svc))
             for p in list(nb):
                 if not inst or not container_sees(inst, p["tgt"].parent):
                     print(f"    ✗ {p['class']}: 컨테이너가 {p['tgt'].parent} 를 못 본다 — start.sh 바인드(D9) 필요, 이번엔 건너뜀")
@@ -386,7 +396,7 @@ def run_service(svc: dict, root: str, box: str, yes: bool) -> int:
             swapped.append((p["cur"], swap_class(p))); print(f"  ✓ 스왑 {p['cur']} → 심링크", flush=True)
         print(f"  · 기동 {svc['name']}", flush=True)
         if not svc_up(svc):
-            raise RuntimeError("기동 실패(health)")
+            raise RuntimeError("기동 실패(health). 로그:\n" + log_tail(svc))
         for p in todo:
             if p["kind"] != "postgres":
                 continue
@@ -420,7 +430,8 @@ def run_service(svc: dict, root: str, box: str, yes: bool) -> int:
             unswap_class(cur, pre); print(f"    ↩ {cur} 복원", flush=True)
         for p in todo:
             park_target(p["tgt"])
-        svc_up(svc)
+        if not svc_up(svc):
+            print(f"  ✗✗ {svc['name']} 롤백 뒤에도 기동 실패 — 서비스가 내려가 있다. services.sh up {svc['name']} 와 로그 확인\n{log_tail(svc)}", flush=True)
         journal({"verb": "move", "svc": svc["name"], "result": "rolled-back", "error": repr(e)[:300]})
         if not isinstance(e, Exception):
             raise
@@ -459,6 +470,9 @@ def main(argv: list[str]) -> int:
         cls = rest[rest.index("--class") + 1] if "--class" in rest else None
         return cmd_rollback(names[0], cls) if names else 2
     root, box = root_dir(), S.box_name()
+    raw = S._hwax_setting("HWAX_DATA_ROOT")
+    if raw and not root:
+        print(f"  ✗ HWAX_DATA_ROOT='{raw}' — 절대경로여야 한다(예: /data). infra/.env 를 고친 뒤 다시. 아무것도 건드리지 않았다"); return 1
     print(f"  HWAX_DATA_ROOT={root or '(미설정 — plan 만, 이동 없음)'}  box={box}  role={S._hwax_setting('HWAX_BOX_ROLE') or '-'}")
     if (state_dir() / "crontab.paused").exists():
         others = [l for l in sh("pgrep -af datamigrate.py", check=False).stdout.splitlines() if l.split()[0] != str(os.getpid())]
