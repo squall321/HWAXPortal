@@ -177,6 +177,8 @@ def plan_service(svc: dict, root: str | None, box: str) -> list[dict]:
                 p["blockers"].append(f"gitignore 아님: {rel} — .gitignore 에 앵커 추가 먼저")
             if sh(f"git -C {S.shlex.quote(str(sdir))} ls-files -- {S.shlex.quote(rel)} | head -1", check=False).stdout.strip():
                 p["blockers"].append(f"추적 파일 포함: {rel} — 심링크 불가")
+            if sh(f"git -C {S.shlex.quote(str(sdir))} check-ignore -q {S.shlex.quote(rel + '.pre-move-x')}", check=False).returncode != 0:
+                p["blockers"].append(f"옛 경로 이름 {rel}.pre-move-* 가 gitignore 아님 — deploy-all 의 git stash -u 가 치운다. .gitignore 에 '*.pre-move-*'")
         if c["kind"] == "postgres" and not c.get("external_instance"):
             inst = c.get("instance") or ""
             running = sh("apptainer instance list 2>/dev/null | awk 'NR>1{print $1}'", check=False).stdout.split()
