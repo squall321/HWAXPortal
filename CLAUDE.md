@@ -99,6 +99,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 챗 업로드 목적지 라우팅 | `docs/upload/` (PLAN·checklist·context-notes) |
 | 심의 품질·방법 메뉴 | `docs/deliberation-quality/` |
 | 설계 리스크 심사 | `docs/design-risk-review/` |
+| 데이터 /data 통합·경로 레지스트리·DB 동기화 | `docs/data-migration/` (PLAN·checklist·context-notes) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
 거기 있고, 없으면 같은 판단을 다시 내리느라 시간을 쓴다.
