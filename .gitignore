@@ -64,3 +64,7 @@ frontend/tsconfig.tsbuildinfo
 # env-kits 수동 전송용 아카이브(내용물은 개별 파일로 추적됨)
 infra/env-kits/env.zip
 backend/config/routes.local.env
+
+# /data 이관 브리지(심링크) 이름 — dir/ 패턴은 심링크를 무시하지 않아 git stash -u 가 치운다(data-migration D0)
+backend/data
+backend/secrets
