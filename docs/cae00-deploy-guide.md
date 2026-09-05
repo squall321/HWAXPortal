@@ -265,3 +265,39 @@ pre-move 백업은 1b) 가 방금 만든 덤프(3시간 이내)를 재사용하�
 옮기지 않는 것: 로그(logrotate 몫)·백업 디렉터리(backup-local 이 `/data/backups/hwax/<box>/` 에 이미 쓴다)·캐시·
 SignalForge `reports/`·`audit/`(추적 파일 포함 — 심링크 불가, 등록만).
 
+### 2026-09-05 실사고 — `HWAX_DATA_ROOT=data`(슬래시 없음)로 첫 실행
+
+infra/.env 에 `/data` 가 아니라 `data` 가 들어갔다. 도구가 절대경로를 검증하지 않아 목표가 전부 `~/Projects/HWAXPortal/data/…` 상대경로로
+계산됐고, 결과는 세 가지였다. ① 포털 `start.sh` 가 상대경로 `--bind` 를 만들어 apptainer 가 기동을 거부, 포털이 내려간 채 남음.
+② mcp-gateway `audit.jsonl`·agent-server `artifacts` 가 허공을 가리키는 상대 심링크로 바뀜(agent-server 는 그 때문에 기동 실패 → 자동 롤백).
+③ 리포 루트에 미추적 `data/` 트리가 생김. 이후 코드는 절대경로가 아니면 아무것도 하지 않고 rc 1 로 끝나며, start.sh 도 절대경로만 바인드한다.
+
+**복구 순서**(update-all 이 아직 돌고 있으면 Ctrl-C 한 번 → `↩ 롤백`·`크론 복원` 줄을 기다린 뒤).
+
+```bash
+cd ~/Projects/HWAXPortal
+# 1) 값 교정
+sed -i 's|^HWAX_DATA_ROOT=.*|HWAX_DATA_ROOT=/data|' infra/.env && grep '^HWAX_DATA_ROOT=' infra/.env
+# 2) 상대경로를 가리키는 심링크만 골라 .pre-move 원본을 제자리로(절대경로 심링크·일반 디렉터리는 건드리지 않음)
+for f in ../HWAXMcpGateway/audit.jsonl ../HWAXAgentServer/artifacts \
+         ../MXWhitePaper/infra/data/postgres ../MXWhitePaper/infra/data/minio \
+         ../KooRemapper/platform/infra/data/postgres ../KooRemapper/platform/storage \
+         ../HEAXHub/var/pg ../HEAXHub/var/app_data ../HEAXHub/job_storage ../SignalForge/data/postgres \
+         ../AIDataHub/deploy/apptainer/data/postgres ../AIDataHub/deploy/apptainer/data/attachments \
+         ../AIDataHub/deploy/apptainer/data/figures ../AIDataHub/api_server/mcp_uploads/_uploads \
+         backend/data/users.sqlite backend/data/conversations.sqlite backend/secrets/agent_audit.sqlite backend/secrets/token_store.sqlite backend/secrets/jwt; do
+  [ -L "$f" ] || continue
+  case "$(readlink "$f")" in /*) ;; *) rm "$f" && mv "$f".pre-move-* "$f" && echo "복원 $f" ;; esac
+done
+# 3) 리포 루트에 생긴 상대 트리 — 원장만 /data 로 보존하고 제거(안 지우면 다음 deploy-all 의 git stash -u 가 통째로 stash 한다)
+du -sh data; find data -type f | head -20
+mkdir -p /data/hwax/state/data-migrate && cat data/hwax/state/data-migrate/journal.jsonl >> /data/hwax/state/data-migrate/journal.jsonl
+rm -rf data
+# 4) 내려간 서비스 기동·확인
+./infra/scripts/services.sh up && ./infra/scripts/services.sh status
+crontab -l | grep -cv '^\s*\(#\|$\)'          # 종전 줄 수(2)
+# 5) 고친 코드로 다시
+git pull && ./infra/scripts/data-migrate.sh plan   # 목표가 /data/... 절대경로인지 눈으로 확인
+./infra/scripts/update-all.sh
+```
+

@@ -163,6 +163,19 @@ dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
 - **pre-move 백업은 3시간 안의 daily 덤프를 재사용**: update-all 은 1b) 에서 전부 덤프한 직후 2b) 를 부른다. 다시 덤프하면 cae00 에서 AIDH 만 10분+ 가 두 번. 옛 경로
   원본이 `.pre-move` 로 그대로 남으므로 "≤3시간 전 덤프 + 원본 보존" 이 D3 의 뜻을 충족한다. 재시도(aidh 2차)도 이 덕에 21s.
 
+### 2026-09-05 cae00 첫 실행 사고 — 상대경로 `HWAX_DATA_ROOT=data`
+
+- **무엇이**: cae00 infra/.env 에 `HWAX_DATA_ROOT=data`. `_hwax_setting` 은 값을 그대로 돌려줬고 `class_paths` 는 `Path(root)/…` 로 cwd 상대 목표를 만들었다.
+  `state_dir()`·`mkdir`·`rsync`·`os.symlink(str(tgt))` 전부 상대경로로 동작했다 — 심링크는 자기 디렉터리 기준으로 풀리니 HWAXMcpGateway/audit.jsonl → `data/svc/…` 는 허공.
+- **왜 포털이 내려갔나**: 포털 `start.sh` 는 `_common.sh` 가 infra/.env 를 `set -a` 로 읽어 `HWAX_DATA_ROOT=data` 를 보고, 이관기가 needs_bind 확인용으로 만든
+  상대 디렉터리 `data/svc/portal` 이 `-d` 에 걸려 `--bind data/svc/portal:data/svc/portal` 을 만들었다. apptainer 는 상대 바인드를 거부해 인스턴스 기동 자체가 FATAL.
+  그리고 needs_bind 분기가 `svc_up` 의 실패를 보지 않고 "못 본다 → 건너뜀 → return 0" 했다. **내려간 서비스를 도구가 방치한 유일한 경로**였다.
+- **고친 것**: `services.data_root()` — 절대경로가 아니면 미설정(경고). 이관기 main 은 값이 있는데 절대경로가 아니면 아무것도 건드리지 않고 rc 1.
+  needs_bind 재기동 실패는 RuntimeError → 롤백 경로에서 다시 기동, 롤백 뒤에도 실패면 ✗✗. 포털·Koorm start.sh 는 절대경로 루트만 바인드. update-all 훅은 `^HWAX_DATA_ROOT=/`.
+- **덤으로 잡은 것**: 옛 경로 이름 `<cur>.pre-move-*` 가 부모 디렉터리 무시에 안 걸리는 곳이 5 리포(Koorm storage·HEAX job_storage·AIDH _uploads·gateway audit.jsonl·
+  agent-server artifacts)에 있었다 — cae00 은 deploy-all 이 `git stash -u` 를 하므로 570M SIF 트리를 stash 로 끌고 갔을 것. `*.pre-move-*` gitignore + plan 블로커.
+- **교훈**: 사용자 입력 한 줄도 형식 검증 없이 경로 연산에 넣지 않는다. dev 는 내가 `/data` 를 넣어 통과했으니 "검증 완료" 가 아니었다.
+
 ## 작업 로그
 - 2026-09-05: 인벤토리·패널·계획 수립. 코드 변경 0.
 - 2026-09-05 (오후): 사용자 결정 — 크론 24·1행 삭제 OK, vllm 기준선 제외 OK, a.txt 삭제 OK, "내부 프로젝트 하던 건 다 커밋 push 해서 동기화한 다음".
@@ -181,4 +194,6 @@ dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
   update-all 2b 옵트인 훅. dev infra/.env 에 `HWAX_DATA_ROOT=/data`·`HWAX_BOX_ROLE=dev` 설정 후 portal(12:17) → mxwp(1차 롤백 → 12:31 ✓) → gateway·agent-server·
   koorm(12:33) → heax(12:35, 48s) → signalforge(12:37) → aidh(1차 12:41 SQL 리터럴 버그로 롤백 → 12:48 ✓ 21s) 순 실행 — **dev 8서비스 전부 /data**.
   hwax-stack.service 재enable. 커밋 986d058·61cdb5b(+수정 1건). cae00 절차는 cae00-deploy-guide 2026-09-05 절.
+- 2026-09-05 (밤): cae00 첫 update-all 2b 가 `HWAX_DATA_ROOT=data`(상대값)로 실패 — 포털 다운·상대 심링크 2곳. 절대경로 강제·needs_bind 실패 전파·start.sh 가드·
+  `*.pre-move-*` gitignore(5 리포) 수정 push. 복구 절차는 cae00-deploy-guide 2026-09-05 실사고 절. 사용자가 cae00 에서 복구 후 재실행.
 
