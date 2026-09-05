@@ -115,7 +115,20 @@ dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
   · /home 222G·/data 3.6T 여유 · logrotate 3.19 · /data/hwax 는 searxng 만 읽음(0700 안전), upload-staging 비어 있고 참조 0 · crontab 1행 스크립트 부재(dpkg 소유 아님)
   · WIP: HWAXPortal D0 대상 파일 미커밋 0, 8리포 .gitignore 전부 미변경(파일 단위 커밋 안전); HEAXHub 미푸시 2·MTW 미푸시 161 → 그 두 리포는 .gitignore 커밋만 하고 push 는 소유자 몫
   · cae00 인스턴스 이름은 같은 코드(HEAXHub start.sh:58 `heax-pg`, Koorm `_common.sh:71`)라 동일; `hostname -s` = cae00/smarttwincluster 로 <box> 적합.
-- 워크플로(9 에이전트)는 계정 한도로 두 번 시작 실패 — 위 항목은 전부 메인 세션 인라인 실측이다.
+- 워크플로(9 에이전트)는 두 번 한도로 실패 뒤 세 번째에 완주(0 오류) — 인라인 결과를 전부 확인하고 다음을 더했다(2차 반영, checklist D0 재작성).
+  - **H1 dev 에서 update-all 금지(NO-GO)**: `update-all.sh:126` 이 deploy-all 을 호스트 가드 없이 무조건 부른다 → dev 리포 6개 stash+reset(미푸시 커밋·SF 라이브 쓰기 추적 파일 7개 소실). "update-all 1회 정상" 게이트는 push 뒤 cae00 에서만. dev 게이트는 `services.sh status` diff·backup-local 수동·6b grep 14·`data --check` 로 분해.
+  - dev `hwax-stack.service` 가 **enabled·active**(`systemctl --user`) — 부팅마다 형제 리포 `git pull --ff-only`. D0 기간 disable.
+  - 오늘 dev 기준선은 **vllm down** 으로 `services.sh status` rc=1 → vllm(dev 전용·stateless·update:false)은 기준선에서 제외하기로.
+  - 단일 세그먼트 gitignore 이름은 **앵커 `/name`** — 슬래시 없는 `reports` 는 추적 패키지 `crawler/reports/`, `audit` 는 `reports/audit/` 에도 걸린다(실측). 무시된 심링크는 `git stash -u` 에서 살아남고 `git clean -fdx` 만 지우는데 8리포·포털 스크립트에 `git clean` 없음(실측 — D2 브리지 영구의 안전 근거).
+  - 리허설: aidh 덤프가 HNSW 인덱스 3개(3.3GB, 86만 벡터)를 CREATE — 라이브 인스턴스(maintenance_work_mem 64MB) 안에서 하면 수 시간 + /home 89% → **같은 SIF 임시 인스턴스**(/data, :5440 빈 포트 실측) 로. D12 에 예외 한 줄. backup-local 덤프는 plain SQL 이라 `psql -v ON_ERROR_STOP=1`(pg_restore 아님, ON_ERROR_STOP 없으면 거짓 초록).
+  - heax-pg 는 127.0.0.1 도 scram-sha-256(다른 4개는 trust) → backup-local 이 그대로면 heax 는 매일 '0바이트 실패'. DATABASE_URL 파싱으로 `--env PGPASSWORD`.
+  - `--install-cron` 멱등 판정이 `grep -qF "$SELF"` → 줄 내용을 바꿔도 dev·cae00 어디서도 영원히 갱신 안 됨 → 치환형. crontab 24행은 SELF 를 포함하지 않아 별도 제거(순서상 먼저).
+  - 옛 8세대(38G)는 `legacy/` 동결이 아니라 `mv -n` 으로 새 `daily/` 편입(mtime 보존 → 자동 정리, 사람 삭제 0). AIDH `merge-from-drive.sh:46` 의 `/data/backups/aidh/pre-merge-*` 는 update-all 마다 4.4G 를 계속 쓰므로 정리 find 유지.
+  - `data_only:` 최상위 매핑 채택으로 services-yaml-readers 가 제안한 3건(update-all:969 grep 앵커·enabled_here skip·update:false)은 **불필요 → 수정하지 않음**(수술적 변경). 6b 등록 건수 14 유지가 정답.
+  - `data --check` 상태에 `same(현행유지)`·`absent`·`n/a` 추가, 게이트 = divergent 0·only-target 0, update-all 배선은 D1 이후.
+  - `$BOX`/`HWAX_*` 해석은 bash(backup-local)·python(services.py) 이 같은 우선순위(`os.environ > infra/.env > hostname -s`, 빈 값 = 미설정) — 아니면 디렉터리 이름이 갈린다.
+  - MTW `.agent_work` gitignore 는 D0 묶음에서 빼 D2 로(어떤 stash -u 경로에도 없고, 미푸시 161 커밋 동반 push 가 실코드 배포가 됨). KooRemapper 는 feat 커밋 → main ff → 둘 push(cae00 은 origin/main reset). HEAXHub 는 타 세션 미푸시 2커밋 + 활성 세션 7개 → 로컬 커밋만, push 는 소유자 확인.
+  - 커밋 밖 부작용(crontab·logrotate 상태파일·/data/hwax/state·리허설 잔존·chmod)은 checklist 롤백 목록으로. 첫 조치 전 `crontab -l` 저장.
 
 ## 작업 로그
 - 2026-09-05: 인벤토리·패널·계획 수립. 코드 변경 0. 다음 = 착수 게이트(§12 답) → D0.

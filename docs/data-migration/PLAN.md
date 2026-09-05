@@ -58,7 +58,7 @@
 | D9 | **컨테이너 서비스는 바인드+env 를 한 재기동에.** 대상 디렉터리가 있으면 동일경로 `--bind` (env 조건 없이). | 파괴검증 B2 |
 | D10 | 비-HEAX 서비스 데이터는 `/data/appdata` 에 두지 않는다(`/data/svc/<svc>/`). | plan §2 의 `/data/appdata/<app>` = HEAX 앱 격리 경계, 런처가 canonical 을 서브디렉터리로 씀(B3) |
 | D11 | **기준선이 전부 초록일 때만 첫 이동을 시작한다.** D0 게이트 = 전 서비스 health · 백업 전부 산출+복원 리허설 통과 · `data --check` divergent 0 · update-all 1회 정상. 이 스냅샷을 "기준선" 으로 원장에 기록하고, 이관 중에는 **이관과 무관한 수리를 섞지 않는다**(타 리포 수리는 §12-7 로 분리, 각자 커밋). | 사용자 전제(2026-09-05) "다 문제없다는 전제에서 시작" — 문제가 있으면 그것이 이관 때문인지 원래 있었는지 가릴 수 없다 |
-| D12 | **프로젝트별 DB 는 완전히 분리한다.** postgres 는 서비스마다 자기 인스턴스·PGDATA(`/data/pg/<svc>/`)·포트·롤·비밀번호. 한 클러스터로 합치지 않고, 스테이징 DB(`_mergestage`·`_syncstage`)도 그 서비스 인스턴스 안에만. sqlite 는 앱/서비스 디렉터리 안에만. 동기화 도구는 두 서비스의 DB 를 절대 교차 조회·조인하지 않는다. | 사용자 전제(2026-09-05). 지금도 5 인스턴스가 분리돼 있다(아래 현황) — 이관이 그것을 무너뜨리면 안 된다 |
+| D12 | **프로젝트별 DB 는 완전히 분리한다.** postgres 는 서비스마다 자기 인스턴스·PGDATA(`/data/pg/<svc>/`)·포트·롤·비밀번호. 한 클러스터로 합치지 않고, 스테이징 DB(`_mergestage`·`_syncstage`)도 그 서비스 인스턴스 안에만. sqlite 는 앱/서비스 디렉터리 안에만. 동기화 도구는 두 서비스의 DB 를 절대 교차 조회·조인하지 않는다. **예외 하나**: 복원 리허설만은 **그 서비스의 SIF** 로 띄운 1회성 임시 인스턴스(`/data/hwax/.staging/rehearsal/<svc>`, 다른 포트) 허용 — 다른 서비스 인스턴스 사용은 금지. | 사용자 전제(2026-09-05). 지금도 5 인스턴스가 분리돼 있다(아래 현황) — 이관이 그것을 무너뜨리면 안 된다. 리허설 예외는 aidh HNSW 3.3GB 재빌드를 라이브(maintenance_work_mem 64MB)에 시키지 않기 위함 |
 
 **DB 격리 현황(실측)과 이관 후.**
 
@@ -161,9 +161,9 @@ data:
   identity: [.env, celerybeat-schedule*]   # 복사·동기화 금지 목록
 ```
 
-`--check` 는 클래스마다 `same`(같은 inode = 브리지 완료) / `divergent`(둘 다 존재·다름 = **위험**) /
-`only-current`(미이동) 를 낸다. `divergent` 하나라도 있으면 종료코드 1 → update-all preflight 에 물린다.
-`only-target` 상태는 두지 않는다(D2). `services.py` 변경은 세 곳 — `resolve_data()` 추가,
+`--check` 는 클래스마다 `same`(같은 inode = 브리지 완료, 또는 current==target 인 delib-runs 류) / `divergent`(둘 다 존재·다름 = **위험**) /
+`only-current`(미이동) / `absent`(둘 다 없음) / `n/a`(identity·`enabled:false`) 를 낸다. 게이트는 **`divergent` 0 · `only-target` 0**.
+종료코드 1 을 update-all preflight 에 물리는 것은 **D1 이후**(D0 에서는 수동 실행만 — cae00 의 `current` 경로가 dev 와 달라 오판 여지). `only-target` 은 정상 종착 상태가 아니다(D2). `services.py` 변경은 세 곳 — `resolve_data()` 추가,
 `start_one():109` 의 `env_prefix({**resolve_data(svc), **(svc.get('env') or {})})`, `main()` 에 `data` 액션.
 
 포털 예시(요지): users/conversations/agent_audit/token_store → `svc/portal/`(sqlite, env 이미 존재:
@@ -295,6 +295,8 @@ merge 스크립트를 그대로 두고, (1) 입력 덤프가 Drive 다운로드�
 어느 박스로 무엇을 보내는지를 레지스트리 `owner`(§3)로 통제하고, (3) 원장에 남긴다. Drive 는 코드·아티팩트 반입과
 오프사이트 백업 자리만 지킨다(cluster-deploy context-notes:20-24 결정과 일치).
 
+**D0 범위**: 코드 추가 + `status·verify·keys-check`(읽기 전용) 만 실행. `snapshot` 은 D0 에서 aidh(7분 pg_dump 라이브 부하)·sf 에 치지 않고 03:30 daily 덤프를 입력으로 재사용. `keys-check` 는 sha256 만 출력(원문 금지) 를 테스트로 고정.
+
 ### 8.1 흐름 — 세 단계, 전부 기존 도구
 ```
 [소스 박스]  덤프 생산 = 기존   backup-local.sh <svc>(daily) · SF backup-to-drive.sh 의 로컬 덤프 · HEAX appdata-to-drive.sh 의 tar 생성부(업로드 전 단계)
@@ -372,10 +374,10 @@ sha256 · `alembic_version` 이 대상 코드가 아는 리비전인지(소스�
 | AIDH 이중 덤프 | `deploy/apptainer/backups` 42G(KEEP 10) + `/data/backups/aidh` 33G | **한 곳**(daily 7, Drive 3). backup-to-drive 로컬 출력을 `…/aidh/daily` 로, backup-local 당일 덤프 있으면 재덤프 생략 | AIDH `backup-to-drive.sh` 로컬 경로·KEEP |
 | materialtwin `.pre-*` 13개 924M | 정책 없음 | `tar --zstd` 1회 legacy 보관 후 삭제. 0바이트 `var/app_data/materialtwin.db` 삭제. 이후 pre-merge 는 pre-sync 3세대 | `appdata-merge-from-drive.sh:35` 경로 |
 | pre-move / pre-sync | 신설 | 14일 또는 backup-local 정상 2회 중 늦은 쪽 / 최근 3세대. `db-sync prune` 만 | `dbsync/prune.py` |
-| backup-local 세대 정리 | `find $BACKUP_ROOT` 전체 `-mtime +7`(:144-145) — 수동 아카이브·무관 잔재까지 삭제 | `hwax/$BOX/*/daily` 로 한정 | `backup-local.sh:144-145` |
-| backup-local 파일명·로그 | `<svc>-<TS>` 두 박스 충돌 · `/data/backups/backup.log` 하드코딩(:30) | `<svc>-<box>-<TS>` · `$BACKUP_ROOT/hwax/$BOX/backup.log` | `backup-local.sh:30·35·44-55·97·121` |
+| backup-local 세대 정리 | `find $BACKUP_ROOT` 전체 `-mtime +7`(:144-145) — 수동 아카이브·무관 잔재까지 삭제 | `hwax/$BOX/*/daily` 로 한정 **+ `$BACKUP_ROOT/aidh/pre-merge-*.sql.gz`**(AIDH `merge-from-drive.sh:46` 이 update-all 마다 4.4G 를 계속 쓴다) · 옛 8세대는 `mv -n` 으로 새 `daily/` 편입(mtime 보존 → 같은 정책 안에서 자동 정리) | `backup-local.sh:144-145` |
+| backup-local 파일명·로그·크론 | `<svc>-<TS>` 두 박스 충돌 · `/data/backups/backup.log` 하드코딩(:30) · `--install-cron` 멱등이 `grep -qF "$SELF"` 라 **줄 내용이 바뀌어도 영원히 갱신 안 됨** | `<svc>-<box>-<TS>` · `$BACKUP_ROOT/hwax/$BOX/backup.log` · install-cron 을 치환형으로(기존 SELF 줄 제거 후 새 줄) · `BOX="${HWAX_BOX:-$(env_get infra/.env HWAX_BOX \|\| hostname -s)}"` — python `_infra_env` 와 같은 우선순위 · heax pg 는 `.env` DATABASE_URL 파싱 → `--env PGPASSWORD`(scram) · 시크릿 절 `umask 077`·`mkdir -m 700` | `backup-local.sh:29-35·44-55·97·121` |
 | backup-local WANT | aidh signalforge mxwp materialtwin portal(2파일) | + `heax`(pg :5732) `kooremapper`(pg) `portal` 4파일+jwt 0600 tar `gateway`(audit) `smarttwinmcp` `delib-runs` `paper-index`(4 원장) `expertagents`(git bundle) `secrets`(rclone.conf 등 0600 tar, Drive 로는 절대 안 나감). RA 제외 유지 | `backup-local.sh:18` WANT + 함수 |
-| 로그 회전 | 없음(caddy 557M·worker 488M·sf-crawler-worker.err 902M·gateway.log 20M·mcp-gateway.log 33M·nginx-access·mtw-sync·backup.log·uvicorn.log.1 309M) | 사용자 logrotate `daily, rotate 14, compress, delaycompress, copytruncate, maxsize 200M` — **단 O_APPEND 쓰기자에만**(사전점검: gateway.log·apptainer `.out/.err` 는 O_APPEND, **HEAX worker/backend·AIDH uvicorn 은 `nohup >` 라 O_APPEND 아님 → copytruncate 시 sparse 구멍**). 이 셋은 기동 스크립트 `>`→`>>` 1글자 수정(§12-7) 뒤 편입, caddy 는 Caddy 자체 `roll` 설정, nginx 는 컨테이너 안이라 USR1 경로 확인 뒤 | 신규 `infra/logrotate/hwax.conf` + `install-logrotate.sh`(멱등, update-all 호출) |
+| 로그 회전 | 없음(caddy 557M·worker 488M·sf-crawler-worker.err 902M·gateway.log 20M·mcp-gateway.log 33M·nginx-access·mtw-sync·backup.log·uvicorn.log.1 309M) | 사용자 logrotate — conf 는 **템플릿 렌더**(`infra/logrotate/hwax.conf.tmpl` → `~/.config/hwax/logrotate.conf`; 박스별 경로·hostname 이 달라 정적 파일 불가), 크론 **매시**(`maxsize` 는 실행 시점에만 평가 — daily 크론이면 900M .err 가 하루 한 번만), `-s ~/.local/state/hwax/logrotate.status`(비-root 는 /var/lib 상태파일 못 씀) · `daily, rotate 14, compress, delaycompress, copytruncate, maxsize 200M` — **단 O_APPEND 쓰기자에만**(사전점검: gateway.log·apptainer `.out/.err` 는 O_APPEND, **HEAX worker/backend·AIDH uvicorn 은 `nohup >` 라 O_APPEND 아님 → copytruncate 시 sparse 구멍**). 이 셋은 기동 스크립트 `>`→`>>` 1글자 수정(§12-7) 뒤 편입, caddy 는 Caddy 자체 `roll` 설정, nginx 는 컨테이너 안이라 USR1 경로 확인 뒤 | 신규 `infra/logrotate/hwax.conf` + `install-logrotate.sh`(멱등, update-all 호출) |
 | Drive 보존 | SF db-dumps 53개 11.8GiB, AIDH 5세대 20.6GiB, MTW sif 4.8GiB 중복, 고아 채널(HEAXHub/browser·app-data/{voice_recorder,web_design_agents}·AIDataHub/sync) | D5 뒤 db-dumps 3세대, 고아는 §12 결정 후 purge | 각 `*-to-drive.sh` RETAIN |
 | 가짜·죽은 크론 | 24행 fakerepo backup-local(매일 실패) · 1행 `apptainer_sync.sh`(파일 없음) | 제거(24행 확정, 1행 출처 확인 후) | crontab |
 
@@ -385,7 +387,7 @@ sha256 · `alembic_version` 이 대상 코드가 아는 리비전인지(소스�
 
 | 단계 | 내용 | 성공 판정(자동) | 롤백 | 대응 |
 |---|---|---|---|---|
-| **D0 무영향 추가** | ① 8개 리포 `.gitignore` 에 심링크 이름(슬래시 없이; SF 는 `reports`·`audit` 제외) 선행 커밋 ② `services.yaml data:`(클래스 매핑) 전 서비스 + `data_only:` + `services.py resolve_data`/`data --check` + `infra/.env` 세 키만 자체 읽기(EnvironmentFile 금지) ③ db-sync `snapshot·verify·status` 만 ④ backup-local WANT 확장·경로 한정·파일명 박스·로그 경로 ⑤ logrotate(O_APPEND 쓰기자만) ⑥ python sqlite 헬퍼 ⑦ `chmod 0700 /data/hwax/secrets`, `rmdir /data/hwax/upload-staging` ⑧ 가짜 크론 제거(사용자 확인) ⑨ 복원 리허설(pg 5·sqlite 3, staging DB/임시 파일) | `HWAX_DATA_ROOT` 미설정에서 `services.py up/status/down` 출력 diff 0 · `data --check` 전 클래스 `only-current` · 심링크 후보 경로 `git status --porcelain <link>` 빈 결과(`check-ignore <link>/` 는 fatal — 쓰지 말 것) · backup-local WANT 전부 sha256 산출 · 리허설 로그 | revert 로 충분(추가만) | P0.3 |
+| **D0 무영향 추가** | ⓪ crontab·status 기준선 저장(vllm 제외)·dev hwax-stack.service 일시 disable ① 7개 리포 `.gitignore` 에 앵커 `/name`(SF 는 data·backups·logs 만; MTW 는 D2 로) 선행 커밋 ② `services.yaml data:`(클래스 매핑) 전 서비스 + `data_only:` + `services.py resolve_data`/`data --check` + `infra/.env` 세 키만 자체 읽기(EnvironmentFile 금지) ③ db-sync `snapshot·verify·status` 만 ④ backup-local WANT 확장·경로 한정·파일명 박스·로그 경로 ⑤ logrotate(O_APPEND 쓰기자만) ⑥ python sqlite 헬퍼 ⑦ `chmod 0700 /data/hwax/secrets`, `rmdir /data/hwax/upload-staging` ⑧ 가짜 크론 제거(사용자 확인) ⑨ 복원 리허설(pg 5·sqlite 3, staging DB/임시 파일) | `HWAX_DATA_ROOT` 미설정에서 `services.py up/status/down` 출력 diff 0 · `data --check` 전 클래스 `only-current` · 심링크 후보 경로 `git status --porcelain <link>` 빈 결과(`check-ignore <link>/` 는 fatal — 쓰지 말 것) · backup-local WANT 전부 sha256 산출 · 리허설 로그 | revert 로 충분(추가만) | P0.3 |
 | **D1 포털 자기 것** | §7.1(agent_audit→users→conversations→token_store+jwt, 바인드+env 한 재기동) · §7.2 artifacts · §7.3 audit.jsonl · nginx 로그 | 로그인 · 기존 PAT 로 게이트웨이 tools/list 개수 동일 · conversations count 동일 · launch-JWT heax SSO 1회 · jwt kid 개수 불변 · `data --check` same · 심링크+bind 커널 해석 실측 기록 | 클래스별 심링크 제거 + rename | P1.2 데이터판 |
 | **D2 HEAX appdata** | MTW 크론 읽기 전용화(§7.15③) → `HEAX_APP_DATA_ROOT` env + `var/app_data → /data/appdata` 루트 심링크(§7.4) · `.agent_work` + 18행 UPDATE · `.pre-*` legacy 보관 | HEAXHub /health 200 + 앱 8개 페이지 · 표별 count · integrity ok · `register_material` 1회 · `source.local_path` 존재 100% · 컨테이너 `/data` 내용 동일 | 루트 심링크 제거 + rename | P5 선행 |
 | **D3 비-HEAX 블롭** | AIDH attachments·figures·mcp_uploads(+22행) · SF reports·audit · MXWP minio(+meili 수리 결정 시) · Koorm storage(+`KOORM_STORAGE_DIR` bind) · HEAX job_storage | DB 경로 행 전수 존재 · 첨부 다운로드 표본 200 · MinIO 객체 354+175 · `data --check` same | 심링크 제거 + 역 replace(pre-move) | — |
