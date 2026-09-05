@@ -326,6 +326,24 @@ sha256 · `alembic_version` 이 대상 코드가 아는 리비전인지(소스�
 - 오프사이트 백업: SF·AIDH `backup-to-drive` 일 1회 크론은 유지하되 보존 3세대(§9). 평문 문제는 §12-3(선택). `*/30` push(SF 16·MTW 19)는 동기화 목적이 사라져 D5 뒤 정지.
 - `HEAX_DRIVE_*`·`SF_DRIVE_*` 등 기존 remote 설정은 손대지 않는다.
 
+### 8.7 낭비 줄이기 (사용자 요구: 기존 방식은 유지하되 동기화의 낭비는 줄인다)
+
+지금의 낭비(실측): SF 가 30분마다 232MB 전량 덤프(하루 11GB, 로컬 84G + Drive 11.8GiB) · AIDH 가 같은 DB 를 하루 두 번 4.4G 전량 덤프
+(임베딩 포함) · MTW 30분 번들(소비자 없음) · SIF 가 Drive 에 두 번 · cae00 이 매 update-all 마다 4.4G 를 내려받아 merge. 줄이는 법 — 우선순위순.
+
+| # | 방법 | 효과 | 기존 방식과의 관계 |
+|---|---|---|---|
+| 1 | **덤프는 하루 한 번, 한 파일** — backup-local 의 daily 덤프가 곧 동기화 소스. 별도 덤프 없음 | SF 하루 48회→1회, AIDH 2회→1회. 디스크 ~150G 회수 | backup-local 그대로, 크론 7·16·17·19 정리만 |
+| 2 | **안 바뀌면 안 보낸다** — 전송 전에 소스 manifest(표별 행수·max(updated_at)·sha)와 대상 원장 `last-applied` 비교, 같으면 종료 | 콘텐츠가 안 바뀐 날(대부분)은 전송 0 | 래퍼의 첫 단계, 스크립트 무수정 |
+| 3 | **표 단위 덤프** — publish 는 `pg_dump -t <콘텐츠 표>` 만(레지스트리 `tables:`). 사용자 표·파생 표(embeddings)는 안 실림 | AIDH 4.4G → 수십 MB 급(record_sections 임베딩 8.3G 가 빠짐) | merge 스크립트는 받은 덤프의 표만 처리 — 입력이 작아질 뿐 동작 동일 |
+| 4 | **증분(워터마크)** — `updated_at`/`created_at`/`collected_at` 이 있는 표는 `WHERE col > <last-applied>` 로 COPY 한 델타만(AIDH records·agents 는 updated_at, SF voc_records 는 collected_at 삽입 워터마크, materialtwin 은 content_hash). 워터마크 없는 표만 전량 | 일상 전송이 KB~MB | merge 의 upsert 는 델타 입력에도 동일하게 동작(자연키 ON CONFLICT) |
+| 5 | **블롭은 rsync 델타** — `rsync -az --partial` 이 바뀐 파일만. sha256 은 manifest 로 1회 | curves·attachments·storage 는 변경분만 | — |
+| 6 | **주기 분리** — 콘텐츠 publish 일 1회(03:50), 사용자 mirror 주 1회, 오프사이트 백업 일 1회 3세대 | 30분 주기 소멸 | 크론 16·19 정지 |
+| 7 | **Drive 중복 제거** — MaterialTwin/sif(4.8G) 는 HEAXHub/dist 와 중복 → 정지, db-dumps 3세대 | Drive 용량·업로드 시간 | §12-8 |
+
+증분(4)의 정직한 한계: 삭제는 전파되지 않는다(비파괴 원칙과 일치 — 삭제는 어차피 안 나른다). 워터마크 열이 없거나 신뢰할 수 없는 표
+(SF voc_records 의 분류·감성 갱신은 collected_at 이 안 움직인다)는 전량 덤프로 후퇴하되 표 단위라 여전히 작다. 첫 동기화(last-applied 없음)는 전량.
+
 ### 8.7 스케줄
 03:30 각 박스 backup-local(기존) · 03:50 dev→staging `push`(콘텐츠) · staging→prod 는 수동 · 일요일 04:30 prod→staging `mirror`(§12-4 마스킹) · 매일 05:00 prod `/data/backups/hwax/prod/` → staging rsync(오프박스 2차 보관).
 
