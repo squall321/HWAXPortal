@@ -235,14 +235,19 @@ def backup_pre_move(svc: dict) -> str | None:
     want = (svc.get("data") or {}).get("backup_want") or []
     if not want:
         return None
-    r = sh(f"{S.shlex.quote(str(S.PORTAL_ROOT / 'infra/scripts/backup-local.sh'))} {' '.join(want)}", check=False)
-    if r.returncode != 0:
-        raise RuntimeError("pre-move 백업 실패:\n" + "\n".join(l for l in r.stdout.splitlines() if "✗" in l))
     bk = Path(os.environ.get("BACKUP_ROOT", "/data/backups")) / "hwax" / S.box_name()
+    fresh = time.time() - 3 * 3600   # update-all 1b 가 직전에 전부 덤프한다 — 3시간 안의 daily 는 재사용(두 번 덤프 안 함)
+    stale = [w for w in want if not any(f.stat().st_mtime > fresh for f in (bk / w / "daily").glob(f"{w}-*") if f.is_file())]
+    if stale:
+        r = sh(f"{S.shlex.quote(str(S.PORTAL_ROOT / 'infra/scripts/backup-local.sh'))} {' '.join(stale)}", check=False)
+        if r.returncode != 0:
+            raise RuntimeError("pre-move 백업 실패:\n" + "\n".join(l for l in r.stdout.splitlines() if "✗" in l))
+    else:
+        print(f"  · pre-move 백업: 3시간 안의 daily 덤프 재사용({', '.join(want)})", flush=True)
     pre = bk / svc["name"] / "pre-move" / TS
     pre.mkdir(parents=True, exist_ok=True)
     for w in want:  # 최신 daily 산출을 pre-move 로 하드링크(정리 find 범위 밖 → D7 사람이 지운다)
-        files = sorted((bk / w / "daily").glob(f"{w}-*-{TS[:8]}*"), key=lambda f: f.stat().st_mtime)[-2:]
+        files = sorted((f for f in (bk / w / "daily").glob(f"{w}-*") if f.is_file() and f.stat().st_mtime > fresh), key=lambda f: f.stat().st_mtime)[-2:]
         for f in files:
             try:
                 os.link(f, pre / f.name)
@@ -295,18 +300,29 @@ def unswap_class(cur: Path, pre: Path) -> None:
         os.rename(pre, cur)
 
 
-def rewrite_db_paths(svc: dict, p: dict, conn: dict | None) -> list[str]:
+def sql_lit(v: str) -> str:
+    """SQL 문자열 리터럴. shlex.quote 는 슬래시만 있는 경로를 인용하지 않아 'syntax error at or near /' 로 롤백된 실사고(aidh 2026-09-05)."""
+    return "'" + v.replace("'", "''") + "'"
+
+
+def db_paths_sql(p: dict) -> list[tuple[str, str, str]]:
+    old, new = sql_lit(str(p["cur"])), sql_lit(str(p["tgt"]))
     out = []
-    if not conn:
-        raise RuntimeError("db_paths 있으나 pg conn 없음 — services.yaml conn: 확인")
-    old, new = str(p["cur"]), str(p["tgt"])
     for d in p["c"].get("db_paths") or []:
         t, col = d["table"], d["column"]
         if d.get("json"):
-            sql = f"UPDATE {t} SET {col} = replace({col}::text, {S.shlex.quote(old)!s}, {S.shlex.quote(new)!s})::jsonb WHERE {col}::text LIKE '%' || {S.shlex.quote(old)!s} || '%'"
+            sql = f"UPDATE {t} SET {col} = replace({col}::text, {old}, {new})::jsonb WHERE {col}::text LIKE '%' || {old} || '%'"
         else:
-            sql = f"UPDATE {t} SET {col} = replace({col}, {S.shlex.quote(old)!s}, {S.shlex.quote(new)!s}) WHERE {col} LIKE {S.shlex.quote(old)!s} || '%'"
-        sql = sql.replace("'" + old + "'", "'" + old.replace("'", "''") + "'")  # psql 리터럴
+            sql = f"UPDATE {t} SET {col} = replace({col}, {old}, {new}) WHERE {col} LIKE {old} || '%'"
+        out.append((t, col, sql))
+    return out
+
+
+def rewrite_db_paths(svc: dict, p: dict, conn: dict | None) -> list[str]:
+    if not conn:
+        raise RuntimeError("db_paths 있으나 pg conn 없음 — services.yaml conn: 확인")
+    out = []
+    for t, col, sql in db_paths_sql(p):
         r = sh(f"apptainer exec {('--env PGPASSWORD=' + S.shlex.quote(conn['pw']) + ' ') if conn.get('pw') else ''}instance://{conn['inst']} "
                f"psql -h 127.0.0.1 -p {conn['port']} -U {S.shlex.quote(conn['user'])} -d {S.shlex.quote(conn['db'])} -v ON_ERROR_STOP=1 -c {S.shlex.quote(sql)} 2>&1", check=False)
         if r.returncode != 0:   # 경로 행이 옛 경로로 남으면 첨부가 404 — 이동 자체를 되돌린다
