@@ -10,18 +10,18 @@
 - [ ] 작업 중 `hwax-stack.service` 부팅 갱신기 일시 disable 절차 합의(PLAN §11)
 
 ## D0 — 무영향 추가 (P0.3)
-- [ ] 8개 리포 `.gitignore` 에 심링크 이름(슬래시 없이) 커밋 — HWAXPortal(`backend/data` `backend/secrets` / infra: `data`) · SignalForge(`data` `backups` `logs` `reports` `audit`) · AIDataHub(`deploy/apptainer/data` `deploy/apptainer/backups` `api_server/mcp_uploads/_uploads`) · MXWhitePaper(`infra/data` `data.ms` `infra/backups`) · KooRemapper(`platform/infra/data` `platform/storage`) · HEAXHub(`var` `job_storage`) · HWAXAgentServer(`artifacts`) · MaterialTwinWeb(`.agent_work`)
+- [ ] 8개 리포 `.gitignore` 에 심링크 이름(슬래시 없이) 커밋 — HWAXPortal(`backend/data` `backend/secrets` / infra: `data`) · SignalForge(`data` `backups` `logs` — **`reports`·`audit` 는 추적 파일 248·9 로 심링크 불가, 제외**) · AIDataHub(`deploy/apptainer/data` `deploy/apptainer/backups` `api_server/mcp_uploads/_uploads`) · MXWhitePaper(`infra/data` `data.ms` `infra/backups`) · KooRemapper(`platform/infra/data` `platform/storage`) · HEAXHub(`var` `job_storage`) · HWAXAgentServer(`artifacts`) · MaterialTwinWeb(`.agent_work`)
 - [ ] `infra/.env.example` 에 `HWAX_DATA_ROOT=` `HWAX_BOX=` `HWAX_BOX_ROLE=` 추가(주석: 미설정 = 현행)
-- [ ] `services.py` — `_infra_env()` · `resolve_data()` · `start_one` env 병합 · `data [svc] [--check]` 액션 · `managed:false` skip
-- [ ] `services.yaml` — 전 서비스 `data:` 블록(+ `smarttwinmcp`·`ste` 등록 항목) · PLAN §5 SF voc_records 실측 컬럼
-- [ ] `infra/systemd/hwax-stack.service` `EnvironmentFile=-__PORTAL__/infra/.env` + `install-systemd.sh` 렌더
+- [ ] `services.py` — `_infra_env()`(**HWAX_DATA_ROOT·HWAX_BOX·HWAX_BOX_ROLE 세 키만, 인라인 주석 제거, 자식에 export 안 함**) · `resolve_data()` · `start_one` env 병합 · `data [svc] [--check]` 액션 · `data_only:` 는 up/down/status/update 대상 아님
+- [ ] `services.yaml` — 전 서비스 `data:` 블록(**classes 는 이름 키 매핑 — `- name:` 줄 금지**, update-all §6b grep 보호) + 최상위 `data_only:` 매핑(smarttwinmcp·ste) · PLAN §5 SF voc_records 실측 컬럼 · 커밋 전 `update-all §6b` 의 grep 결과가 변경 전과 동일한지 확인
+- [x] ~~`hwax-stack.service` `EnvironmentFile`~~ — **NO-GO**(사전점검: infra/.env 의 인라인 주석 오독 + APP_ENV/SESSION_SECRET 이 전 자식 서비스에 상속). 유닛 무수정
 - [ ] db-sync `snapshot · verify · status · keys-check` (적용 verbs 없이) + `manifest.json` 스키마 + 원장 경로
-- [ ] `backup-local.sh` — WANT 확장(heax·kooremapper·portal 4파일+jwt·gateway·smarttwinmcp·delib-runs·paper-index·expertagents·secrets) · 산출 경로 `hwax/$BOX/<svc>/daily` · 파일명 `<svc>-<box>-<TS>` · find 범위 한정 · 로그 경로
+- [ ] `backup-local.sh` — WANT 확장(heax·kooremapper·portal 4파일+jwt·gateway·smarttwinmcp·delib-runs·paper-index·expertagents·secrets) — **각 항목은 존재 검사 후 없으면 skip**(cae00 에 없는 것들) · heax pg 는 PGPASSWORD(HEAXHub .env DATABASE_URL 에서) · 산출 경로 `hwax/$BOX/<svc>/daily` · 파일명 `<svc>-<box>-<TS>` · find 범위 한정 + **기존 8세대를 `legacy/` 로 1회 이동**(안 하면 옛 자리 파일이 영원히 남음) · 로그 경로
 - [ ] python sqlite `.backup`/integrity 헬퍼(`infra/scripts/lib/sqlite_backup.py`)
-- [ ] `infra/logrotate/hwax.conf` + `install-logrotate.sh`(멱등) + update-all 호출
+- [ ] `infra/logrotate/hwax.conf` + `install-logrotate.sh`(멱등) + update-all 호출 — **대상은 O_APPEND 쓰기자만**(gateway.log·`~/.apptainer/instances/logs/*/*.{out,err}`·정지 로그). HEAX worker/backend·AIDH uvicorn 은 `>>` 수리(§12-7) 뒤
 - [ ] `chmod 0700 /data/hwax/secrets` · `rmdir /data/hwax/upload-staging`(비어 있음 확인)
-- [ ] crontab 24행(fakerepo backup-local) 제거 — 사용자 확인 후 · 1행 `apptainer_sync.sh` 출처 확인
-- [ ] 복원 리허설: pg 5종(staging DB 로드·표 행수 대조) · sqlite 3종(임시 파일 `.backup`·integrity)
+- [ ] crontab 24행(fakerepo backup-local) 제거 — 사용자 확인 후 · 1행 `apptainer_sync.sh`(파일 없음·dpkg 소유 아님 — 출처 미상, 제거 여부 사용자 확인)
+- [ ] 복원 리허설: pg 5종(각 인스턴스 안 `<db>_rehearsal` — 잔존 스테이징 DB 없음·pg_restore 5 SIF 전부 존재·/home 222G 여유 확인됨; 끝나면 DROP 확인) · sqlite 3종(임시 파일 `.backup`·integrity)
 - [ ] **기준선(D11)**: 전 서비스 health 초록 · 알려진 문제(materialtwin 스키마 드리프트·MXWP meili 바인드·SF crawler reports) 는 "원래 있던 것" 으로 원장에 기록하고 이관과 분리
 - [ ] **게이트**: `HWAX_DATA_ROOT` 미설정에서 `services.py up/status/down` 출력 diff 0 · `data --check` 전 클래스 `only-current` · 심링크 후보 경로 `git status --porcelain <path>` 빈 결과 · backup-local WANT 전부 sha256 산출 · 리허설 로그 존재 · `update-all` 1회 정상
 

@@ -103,5 +103,19 @@
   유일한 약점은 RA 가 시스템 PG14 를 다른 DB 와 공유하는 것 — green 은 자체 인스턴스(`/data/pg/reportarchive`) 로 권고.
   동기화 도구는 서비스 간 DB 를 절대 교차하지 않는다(표 단위 덤프·서비스별 원장).
 
+### 2026-09-05 D0 사전점검 (사용자: "시스템이 이상해지면 안 되니 꼼꼼히 더 점검") — GO with adjustments
+dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
+- ★ **`hwax-stack.service` 에 `EnvironmentFile=infra/.env` → NO-GO.** `COOKIE_SECURE` 줄 인라인 주석을 systemd 가 값으로 읽고, 로드된 `APP_ENV=dev`·`SESSION_SECRET`
+  등이 services.py 의 모든 자식 서비스에 상속된다(heax Settings 는 `APP_ENV=dev` 거부 — 09-04 실사고 재현 경로). → services.py 가 파일에서 `HWAX_*` 세 키만 파싱, export 안 함.
+- ★ **SF `reports/`(추적 248)·`audit/`(추적 9) 는 심링크 불가.** 다른 22개 경로는 추적 0. → SF 는 pg·backups·logs 만 심링크, reports/audit 는 env·바인드 또는 추적 해제 선행.
+- ★ **copytruncate 는 O_APPEND 쓰기자에만 안전.** /proc fdinfo 실측: gateway.log·apptainer `.err` 는 O_APPEND, HEAX worker.log(471M)/backend.log·AIDH uvicorn.log 는 `nohup >` 라
+  O_APPEND 아님 → truncate 뒤 sparse 구멍. → logrotate 범위 축소 + 타 리포 `>`→`>>` 1글자 수정을 §12-7 에 추가.
+- **update-all §6b 가 `grep '^\s+- name:'` 로 services.yaml 을 읽는다** → `data:` 안 클래스는 리스트가 아니라 매핑. 데이터 전용 등록은 `data_only:` 매핑(update-sites 무인자 모드·services.py KeyError 회피).
+- 그 외 확인: services.py/update-sites 는 PyYAML(추가 키 무해), system python3 yaml 6.0.3(폴백 OK) · 5 pg 인스턴스에 잔존 스테이징 DB 없음, SIF 마다 pg_dump/pg_restore/psql 있음(pg15.17/15.18/16.14/16.14/16.13)
+  · /home 222G·/data 3.6T 여유 · logrotate 3.19 · /data/hwax 는 searxng 만 읽음(0700 안전), upload-staging 비어 있고 참조 0 · crontab 1행 스크립트 부재(dpkg 소유 아님)
+  · WIP: HWAXPortal D0 대상 파일 미커밋 0, 8리포 .gitignore 전부 미변경(파일 단위 커밋 안전); HEAXHub 미푸시 2·MTW 미푸시 161 → 그 두 리포는 .gitignore 커밋만 하고 push 는 소유자 몫
+  · cae00 인스턴스 이름은 같은 코드(HEAXHub start.sh:58 `heax-pg`, Koorm `_common.sh:71`)라 동일; `hostname -s` = cae00/smarttwincluster 로 <box> 적합.
+- 워크플로(9 에이전트)는 계정 한도로 두 번 시작 실패 — 위 항목은 전부 메인 세션 인라인 실측이다.
+
 ## 작업 로그
 - 2026-09-05: 인벤토리·패널·계획 수립. 코드 변경 0. 다음 = 착수 게이트(§12 답) → D0.
