@@ -13,6 +13,8 @@ NO SECRETS: remote = ssh <ssh_user>@<host> with key auth. sudo on a remote = tha
 NOPASSWD sudoers, never a password here.
 """
 
+import os
+import re
 import shlex
 import subprocess
 import sys
@@ -25,6 +27,124 @@ PORTAL_ROOT = Path(__file__).resolve().parent.parent.parent  # infra/scripts →
 PARENT = PORTAL_ROOT.parent
 MANIFEST = PORTAL_ROOT / "infra" / "services.yaml"
 LOG_DIR = Path("/tmp/hwax-services")
+
+# ── 데이터 경로 레지스트리(docs/data-migration/PLAN.md §5) ──────────────────────────
+# services.yaml 의 서비스별 `data:` 블록을 기동 env 로 해석한다. HWAX_DATA_ROOT 가 없으면 {} 를
+# 돌려 기동 명령줄이 종전과 바이트 하나 안 달라진다(원칙 D1 — 켜지 않으면 무영향).
+# infra/.env 는 여기서만, HWAX_* 키만 읽고 **os.environ 에 넣지 않는다**. 유닛 EnvironmentFile 로
+# 파일 전체를 실으면 APP_ENV·SESSION_SECRET 이 모든 자식 서비스에 상속되는데, heax Settings 가
+# APP_ENV=dev 를 거부하며 죽은 것이 2026-09-04 실사고다(사전점검 NO-GO).
+_INFRA_ENV_RE = re.compile(r"^\s*(?:export\s+)?(HWAX_(?:DATA_ROOT|BOX|BOX_ROLE|DATA_[A-Z0-9_]+))=(.*)$")
+
+
+def _infra_env() -> dict[str, str]:
+    p = PORTAL_ROOT / "infra" / ".env"
+    out: dict[str, str] = {}
+    if not p.exists():
+        return out
+    for ln in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = _INFRA_ENV_RE.match(ln)
+        if not m:
+            continue
+        try:
+            toks = shlex.split(m.group(2), comments=True)  # 인라인 주석·따옴표 처리, $VAR 는 확장 안 함
+        except ValueError:
+            continue
+        if toks and toks[0].strip():  # 빈 값(.env.example 의 `KEY=`)은 미설정과 같다
+            out[m.group(1)] = toks[0]
+    return out
+
+
+def _hwax_setting(key: str) -> str | None:
+    """우선순위 os.environ > infra/.env, 빈 값 = 미설정. backup-local.sh 의 폴백과 같은 순서여야
+    두 도구가 같은 박스 이름·경로를 본다."""
+    v = os.environ.get(key)
+    if v is None or not v.strip():
+        v = _infra_env().get(key)
+    return v.strip() if v and v.strip() else None
+
+
+def box_name() -> str:
+    import socket
+    return _hwax_setting("HWAX_BOX") or socket.gethostname().split(".")[0]
+
+
+def resolve_data(svc: dict) -> dict[str, str]:
+    """`data:` 블록 → 주입할 env. HWAX_DATA_ROOT 없으면 {}. 클래스별 HWAX_DATA_<SVC>_<CLASS> 오버레이."""
+    root = _hwax_setting("HWAX_DATA_ROOT")
+    data = svc.get("data") or {}
+    if not root or not data:
+        return {}
+    box = box_name()
+    key = svc["name"].upper().replace("-", "_")
+    env: dict[str, str] = {}
+    if data.get("root_env"):
+        default_root = f"{root}/svc/{svc['name']}"
+        env[data["root_env"]] = _hwax_setting(f"HWAX_DATA_{key}_ROOT") or default_root
+    for cname, c in (data.get("classes") or {}).items():
+        if not isinstance(c, dict) or c.get("enabled") is False or not c.get("env") or not c.get("path"):
+            continue
+        override = _hwax_setting(f"HWAX_DATA_{key}_{cname.upper()}")
+        env[c["env"]] = override or f"{root}/{c['path']}".replace("{box}", box)
+    return env
+
+
+def _data_status(cur: Path | None, tgt: Path | None) -> str:
+    """same(같은 inode·브리지 완료) / divergent(둘 다 있고 다름 — 위험) / only-current / only-target / absent"""
+    ce = cur is not None and (cur.exists() or cur.is_symlink())
+    te = tgt is not None and tgt.exists()
+    if not ce and not te:
+        return "absent"
+    if ce and not te:
+        return "only-current"
+    if te and not ce:
+        return "only-target"
+    try:
+        if os.path.samefile(str(cur), str(tgt)):
+            return "same"
+    except OSError:
+        pass
+    return "divergent"
+
+
+def cmd_data(names: list[str], check: bool = False) -> int:
+    """data [svc] [--check] — 레지스트리 해석 결과(현행 → 목표·상태). --check 는 divergent·only-target 이 있으면 1.
+    HWAX_DATA_ROOT 미설정이면 목표가 없으므로 상태는 only-current/absent 만 나온다."""
+    root = _hwax_setting("HWAX_DATA_ROOT")
+    box = box_name()
+    print(f"  HWAX_DATA_ROOT={root or '(미설정 — 주입 없음, 현행 경로)'}  box={box}  role={_hwax_setting('HWAX_BOX_ROLE') or '-'}")
+    raw = yaml.safe_load(MANIFEST.read_text(encoding="utf-8")) or {}
+    items: list[dict] = [s for s in load() if s.get("data") and (not names or s["name"] in names)]
+    for dname, d in (raw.get("data_only") or {}).items():  # 기동 대상이 아닌 데이터만 등록된 것(슬럼 헤드 등)
+        if not names or dname in names:
+            items.append({"name": dname, "data": d, "_data_only": True})
+    bad = 0
+    for s in items:
+        data = s["data"]
+        sdir = None if s.get("_data_only") else resolve_dir(s)
+        print(f"── {s['name']}{'  (data_only)' if s.get('_data_only') else ''}")
+        for cname, c in (data.get("classes") or {}).items():
+            if not isinstance(c, dict):
+                continue
+            curp: Path | None = None
+            cur = c.get("current")
+            if cur and "#" not in str(cur):  # ".env#KEY" 같은 키 참조는 경로가 아니다
+                curp = Path(os.path.expandvars(str(cur))).expanduser()
+                if not curp.is_absolute():
+                    curp = (sdir / curp) if sdir else None
+            tgt: Path | None = None
+            if root and c.get("path") and c.get("enabled") is not False:
+                tgt = Path(f"{root}/{c['path']}".replace("{box}", box))
+            if c.get("kind") == "identity" or c.get("enabled") is False or (not c.get("path") and curp is None):
+                st = "n/a"
+            elif tgt is None:
+                st = "only-current" if (curp is not None and (curp.exists() or curp.is_symlink())) else "absent"
+            else:
+                st = _data_status(curp, tgt)
+            if st in ("divergent", "only-target"):
+                bad = 1
+            print(f"  {st:<13} {cname:<16} {str(c.get('kind', '-')):<9} {str(curp) if curp else '-'}  →  {str(tgt) if tgt else '-'}")
+    return bad if check else 0
 
 
 def load() -> list[dict]:
@@ -106,7 +226,8 @@ def start_one(svc: dict) -> str:
     host = svc.get("host", "local")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log = LOG_DIR / f"{name}.log"
-    inner = f"{env_prefix(svc.get('env'))}{svc['start']}"
+    # 레지스트리 env(HWAX_DATA_ROOT 있을 때만) 위에 명시 env: 가 덮는다. 미설정이면 종전과 동일.
+    inner = f"{env_prefix({**resolve_data(svc), **(svc.get('env') or {})})}{svc['start']}"
 
     if host == "local":
         wd = resolve_dir(svc)
@@ -270,7 +391,7 @@ def cmd_down(names: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data"):
         print(__doc__)
         return 2
     action = sys.argv[1]
@@ -279,6 +400,8 @@ def main() -> int:
     names = [a for a in args if not a.startswith("-")]
     if action == "up":
         return cmd_up(names, do_update=do_update)
+    if action == "data":  # 데이터 경로 레지스트리 조회·검증(docs/data-migration)
+        return cmd_data(names, check="--check" in args)
     return {"status": cmd_status, "down": cmd_down, "update": cmd_update}[action](names)
 
 

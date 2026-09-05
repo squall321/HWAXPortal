@@ -36,6 +36,19 @@ services:
     # 다른 서비스가 점유해 응답하면(health_ok 는 3xx/4xx 도 up 처리) "already-up" 오판 → 백엔드 미재기동.
     # 실제 사고: 재가동 틈에 wekan 스냅의 FerretDB 디버그 핸들러가 :8088 을 선점(303) → up 이 스킵.
     health: http://127.0.0.1:8723/health
+    # 데이터 경로 레지스트리(docs/data-migration/PLAN.md §5). HWAX_DATA_ROOT 없으면 무영향.
+    # ⚠ classes 는 리스트(- name:) 가 아니라 매핑 — update-all §6b 가 '^\s+- name:' 를 grep 해 서비스 목록을 만든다.
+    data:
+      classes:
+        users:          { kind: sqlite, path: svc/portal/users.sqlite,         current: backend/data/users.sqlite,          env: USER_STORE_PATH,      fs: local, sync: mirror }
+        conv:           { kind: sqlite, path: svc/portal/conversations.sqlite, current: backend/data/conversations.sqlite,  env: CONV_STORE_PATH,      fs: local, sync: mirror }
+        audit:          { kind: sqlite, path: svc/portal/agent_audit.sqlite,   current: backend/secrets/agent_audit.sqlite, env: AGENT_AUDIT_LOG_PATH, fs: local, sync: none }
+        token_store:    { kind: sqlite, path: svc/portal/token_store.sqlite,   current: backend/secrets/token_store.sqlite, env: TOKEN_STORE_PATH,     fs: local, sync: none, keys_with: [jwt] }
+        jwt:            { kind: secret, path: hwax/secrets/portal/jwt,          current: backend/secrets/jwt,                env: JWT_KEYS_DIR,         sync: none }
+        upload_staging: { kind: cache,  path: svc/portal/upload-staging,        current: "~/.hwax/upload-staging",           env: HWAX_UPLOAD_STAGING,  enabled: false, sync: none }
+        nginx_log:      { kind: log,    path: "logs/{box}/portal",              current: infra/data,                         env: HWAX_NGINX_LOG_DIR,   sync: none }
+        delib_runs:     { kind: blob,   path: delib-runs,                       current: /data/delib-runs,                   env: DELIB_ARCHIVE_ROOT,   sync: publish-replace }
+      identity: [infra/.env, backend/.env, backend/config/routes.local.env]
     tier: 0
 
   # ── tier 10: federated sub-services (proxied via routes.env) ──
@@ -48,6 +61,14 @@ services:
     # API 를 앵커로 삼는다(nginx 경유 금지 — 업스트림이 죽으면 502 인데 expect 없이는 up 이 된다).
     expect: 200
     health: http://127.0.0.1:8800/api/v1/healthz
+    data:
+      root_env: MXWP_DATA_ROOT      # infra/scripts/_common.sh:44 DATA_DIR (.env 로딩이 앞서 리포 .env 로도 먹음)
+      classes:
+        pg:      { kind: postgres, path: pg/mxwp,         current: infra/data/postgres, bind: /var/lib/postgresql/data, instance: mxwp_postgres, port: 5532, sync: publish-merge, merge_tool: infra/scripts/data-merge.sh }
+        minio:   { kind: blob,     path: svc/mxwp/minio,  current: infra/data/minio,    bind: /data, sync: publish-merge }
+        meili:   { kind: cache,    path: svc/mxwp/meili,  current: data.ms,             enabled: false, sync: none }   # start.sh:83 바인드가 죽어 있어 MEILI_DB_PATH 수리 전 비활성
+        backups: { kind: backup,   path: "backups/hwax/{box}/mxwp/legacy", current: infra/backups, sync: none }
+      identity: [.env, .env.bak]
     tier: 10
 
   # VoiceRecorder(voice_recorder) · WebDesignAgents(web_design_agents) 는 여기서 관리하지
@@ -110,6 +131,24 @@ services:
     # heal.sh clears stale infra → runs start.sh bootstrap → safety-net start → verify.
     start: bash deploy/apptainer/heal.sh
     health: http://localhost:4180/health
+    data:
+      classes:
+        pg:          { kind: postgres, path: pg/heax,     current: var/pg,       env: HEAX_PG_DIR,        bind: /var/lib/postgresql/data, instance: heax-pg, port: 5732, sync: mirror, keys_with: [secret_encryption_key] }
+        secret_encryption_key: { kind: secret, current: ".env#SECRET_ENCRYPTION_KEY", sync: none }   # 파일 아닌 .env 키 — 해시만 대조
+        app_data:    { kind: blob,     path: appdata,     current: var/app_data, env: HEAX_APP_DATA_ROOT, sync: per-app }   # 앱별 규칙은 apps:
+        job_storage: { kind: blob,     path: svc/heax-hub/job_storage, current: job_storage, env: JOB_STORAGE_ROOT, sync: mirror }
+        logs:        { kind: log,      path: "logs/{box}/heax-hub",       current: var/logs,  sync: none }
+        caddy_log:   { kind: log,      path: "logs/{box}/heax-hub/caddy", current: var/caddy, sync: none }
+      apps:                           # /data/appdata/<app> — HEAX 앱 전용 격리 경계(plan §2)
+        materialtwin_web:  { kind: sqlite, file: materialtwin.db,   sync: publish-merge, merge_tool: deploy/apptainer/_materialtwin_merge.py, blobs: [curves] }
+        step_forge:        { kind: sqlite, file: stepforge.db,      sync: mirror, blobs: [projects, materials] }
+        hwax_risk:         { kind: sqlite, file: risk_review.db,    sync: mirror, keys_with: [cred.key], identity: [origin.json] }
+        voice_recorder:    { kind: sqlite, file: voicerecorder.db,  sync: mirror }
+        thermal_shock_mcp: { kind: model,  sync: publish-replace }
+        web_design_agents: { kind: blob,   sync: mirror }
+        paper_ingest:      { kind: blob,   sync: none }
+        web_research_mcp:  { kind: cache,  sync: none }
+      identity: [.env, var/integration_state, var/external-apps.yaml, var/caddy/bootstrap.json]
     tier: 10
 
   - name: ai-data-hub
@@ -119,6 +158,16 @@ services:
     # the dashboard redirect. Standard mode + strip is the working combo (see its deploy .env).
     start: ./boot.sh --force
     health: http://localhost:8001/
+    data:
+      root_env: AIDH_DATA_ROOT      # deploy/apptainer/_common.sh:13 DATA_DIR (+ load_env 뒤 재평가 필요 — PLAN §7.7)
+      classes:
+        pg:          { kind: postgres, path: pg/aidh,             current: deploy/apptainer/data/postgres,    bind: /var/lib/postgresql/data, instance: aidh_postgres, port: 5435, sync: publish-merge, merge_tool: deploy/apptainer/merge-from-drive.sh }
+        attachments: { kind: blob,     path: svc/aidh/attachments, current: deploy/apptainer/data/attachments, sync: mirror, db_paths: record_attachments.file_path }
+        figures:     { kind: blob,     path: svc/aidh/figures,     current: deploy/apptainer/data/figures,     sync: mirror }
+        mcp_uploads: { kind: blob,     path: svc/aidh/mcp_uploads, current: api_server/mcp_uploads/_uploads,   env: AIDH_MCP_UPLOADS_DIR, sync: mirror, db_paths: mcp_uploads.manifest.sif_path }
+        backups:     { kind: backup,   path: "backups/hwax/{box}/aidh/daily", current: deploy/apptainer/backups, sync: none }
+        logs:        { kind: log,      path: "logs/{box}/aidh",     current: deploy/apptainer/logs, sync: none }
+      identity: [deploy/apptainer/.env, api_server/.env, deploy/apptainer/.last-merged]
     tier: 10
 
   - name: signalforge
@@ -129,6 +178,19 @@ services:
     # 실제 백엔드이고 /health 가 진짜 엔드포인트다({"status":"ok","service":"SignalForge API"}).
     expect: 200
     health: http://127.0.0.1:18000/health
+    data:
+      root_env: SF_DATA_ROOT        # scripts/_common.sh:10 DATA_DIR (+ load_env 뒤 재평가 필요 — PLAN §7.6)
+      classes:
+        pg:      { kind: postgres, path: pg/signalforge, current: data/postgres, bind: /var/lib/postgresql/data, instance: sf_postgres, port: 5434, sync: publish-merge, merge_tool: scripts/drive-sync/merge-from-drive.sh,
+                   tables: { voc_categories: { keys: [code] },
+                             voc_records: { keys: [platform_id, external_id], exclude_cols: [id],
+                                            update_cols: [content_original, content_translated, language_detected, country_code, source_url, author_name, published_at, likes_count, comments_count, shares_count, engagement_score, content_hash] } } }
+        dumps:   { kind: backup, path: "backups/hwax/{box}/signalforge", current: backups, env: SF_BACKUP_DIR, sync: none }
+        logs:    { kind: log,    path: "logs/{box}/signalforge",         current: logs,    sync: none }
+        # reports/·audit/ 는 추적 파일(248·9)이 있어 심링크 불가 — env/바인드 방식(D3, PLAN §12-7). 등록만, 비활성.
+        reports: { kind: blob, path: svc/signalforge/reports, current: reports, env: REPORT_DIR, bind: /reports, enabled: false, sync: none }
+        audit:   { kind: blob, path: svc/signalforge/audit,   current: audit,   bind: /audit,   enabled: false, sync: none }
+      identity: [.env, "celerybeat-schedule*", backups/last_verified.json]
     tier: 10
 
   - name: report-archive
@@ -137,6 +199,10 @@ services:
     update: false               # do NOT auto git-pull/touch the ReportArchive repo
     start: ./start.sh
     health: http://localhost:3000/api/health
+    data:                           # blue 는 hands-off(데이터 관점도). green 이 /data 규약 — PLAN §7.9
+      classes:
+        pg:      { kind: postgres, current: /var/lib/postgresql/14/main, external_instance: true, port: 5433, sync: none }
+        uploads: { kind: blob, path: svc/reportarchive/uploads, current: backend/uploads, env: UPLOAD_DIR, enabled: false, sync: none }
     tier: 10
 
   # DynaForge(KooRemapper) — /apps/kooremapper 로 노출되지만 다른 HEAX 앱과 달리 SIF 가 없다.
@@ -160,6 +226,13 @@ services:
     # :8701(MCP)은 루트가 404 라 앵커로 못 쓴다 — 도구 수는 update-all 이 tools-map 으로 본다.
     expect: 200
     health: http://127.0.0.1:8700/api/health
+    data:
+      root_env: KOORM_DATA_ROOT     # platform/infra/scripts/_common.sh:63 DATA_DIR (.env 로딩이 앞서 리포 .env 로도 먹음)
+      classes:
+        pg:      { kind: postgres, path: pg/kooremapper,        current: platform/infra/data/postgres, bind: /var/lib/postgresql/data, instance: koorm_postgres, port: 5436, sync: mirror }
+        storage: { kind: blob,     path: svc/kooremapper/storage, current: platform/storage, env: KOORM_STORAGE_DIR, needs_bind: true, sync: mirror }   # 컨테이너는 /data 를 못 봄 — start.sh 바인드 필요
+        supervisor_log: { kind: log, path: "logs/{box}/kooremapper", current: platform/infra/data/supervisor.log, sync: none }
+      identity: [platform/.env]
     tier: 10
 
   # ── tier 20: MCP chat stack (heavy GPU last; vLLM may live on a remote host) ──
@@ -210,6 +283,11 @@ services:
     repo: https://github.com/squall321/HWAXMcpGateway.git  # update-sites.sh auto-clones/sets-remote if missing
     start: ./start.sh                     # streamable-http :9110, injects per-backend tokens
     health: http://localhost:9110/health  # unauthenticated JSON {status,tools,backends}
+    data:
+      classes:
+        audit: { kind: blob, path: svc/mcp-gateway/audit.jsonl, current: audit.jsonl, env: GATEWAY_AUDIT, sync: mirror }   # gateway.py:55 os.environ 직접 — .env 는 안 읽음
+        log:   { kind: log,  path: "logs/{box}/mcp-gateway",     current: gateway.log, sync: none }
+      identity: [gateway_config.json, "gateway_config.json.bak*", provision.env, mcp_servers.json, .env]
     tier: 16
 
   - name: agent-server
@@ -223,6 +301,10 @@ services:
     env: { MCP_CONFIG: "mcp_servers.json" }
     start: ./start.sh
     health: http://localhost:9009/health
+    data:
+      classes:
+        artifacts: { kind: blob, path: svc/agent-server/artifacts, current: artifacts, env: ARTIFACT_DIR, sync: mirror }
+      identity: [.env, mcp_servers.json]
     tier: 20
 
   # 일반 웹 검색 공급자. 레포가 아니라 SIF+설정이라 dir 을 직접 준다.
@@ -240,4 +322,21 @@ services:
     dir: .                      # 포털 레포 자신 — 박스별 경로(~/claude·~/Projects)를 박지 않는다
     start: ./infra/scripts/searxng.sh
     health: http://127.0.0.1:8888/
+    data:
+      classes:
+        conf: { kind: secret, path: hwax/secrets/searxng, current: /data/hwax/secrets/searxng, env: SEARXNG_CONF_DIR, sync: none }   # current == target (이미 §2 규약)
     tier: 14
+
+# ── 데이터만 등록(기동·갱신 대상 아님). services: 소비자(services.py up/status/down, update-sites.sh,
+#    update-all §6b grep)에 보이지 않는다 — 슬럼 헤드 로컬 sqlite 등. `services.py data --check` 만 본다.
+data_only:
+  smarttwinmcp:
+    box_scope: slurm-head
+    classes:
+      jobs:  { kind: sqlite, current: /data/SmartTwinMCP/jobs.db,  fs: local, sync: none }   # 슬럼 호스트당 1개 설계
+      audit: { kind: sqlite, current: /data/SmartTwinMCP/audit.db, fs: local, sync: none }
+  ste:
+    box_scope: slurm-head
+    classes:
+      state: { kind: sqlite, current: /opt/ste/state/ste.db, fs: local, sync: none }   # 헤드노드 로컬(별 박스)
+      jobs:  { kind: blob,   current: /srv/ste/jobs,         sync: none }
