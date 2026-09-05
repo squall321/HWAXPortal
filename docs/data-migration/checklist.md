@@ -4,7 +4,8 @@
 한 단계 = 한 커밋 묶음. 공유 파일(services.py·services.yaml·backup-local.sh) 은 전용 브랜치에서, `git add` 파일 단위.
 
 ## 착수 게이트
-- [ ] PLAN §12 결정 1(토폴로지 개정)·2(prod 박스)·5(SF 소유권)·6(upload-staging) 사용자 답
+- [x] 전 박스 ssh 가능(2026-09-05) → 동기화 매체 rsync/ssh, Drive 데이터 채널 불필요
+- [ ] PLAN §12 결정 1(토폴로지 개정)·2(prod hostname·/data 종류)·5(SF 소유권)·6(upload-staging) 사용자 답
 - [ ] `docs/cluster-deploy/context-notes.md` 에 토폴로지 개정 + `/data/svc` 한 줄 추가 기록
 - [ ] 작업 중 `hwax-stack.service` 부팅 갱신기 일시 disable 절차 합의(PLAN §11)
 
@@ -58,13 +59,15 @@
 - [ ] **게이트**(svc 별): `pg_isready` · 표별 count = 사전 · `\dx` 동일 · 앱 health · backup-local 1회 정상 · `data --check` same
 - [ ] 유예 뒤 `db-sync prune --pre-move` (사람)
 
-## D5 — db-sync 적용 verbs (P3.1b)
-- [ ] `stage · apply(publish-merge/replace, mirror RENAME, seed) · rollback · prune · push/pull(ssh, drive+age 는 결정 3 후)`
-- [ ] SF `merge-from-drive.sh:33-37` `SF_MERGE_DUMP` 입구 6줄 · AIDH records 자연키·embeddings 제외·agents 충돌 격리 · materialtwin `_materialtwin_merge.py` 단일 호출
-- [ ] update-all/deploy-all 세 merge 를 `DB_SYNC` 플래그로 이중화(기본 0)
-- [ ] 같은 덤프로 종전 merge vs `--plan` 표별 diff 0 → 기본값 전환
+## D5 — 동기화 배선 (P3.1b) — 기존 스크립트 + ssh
+- [ ] `infra/boxes.yaml`(gitignore) + ssh 키 확인(dev↔cae00↔prod BatchMode)
+- [ ] `db-sync.sh push|pull|mirror|status|rollback` 얇은 래퍼(~150줄) — rsync → pre-sync(backup-local) → 기존 merge 호출 → 원장
+- [ ] 로컬 입력 입구 6줄: SF `merge-from-drive.sh:33-37` `SF_MERGE_DUMP` · HEAX `appdata-merge-from-drive.sh:20-22` `HEAX_APPDATA_TAR` (AIDH 는 이미 있음)
+- [ ] 기존 merge 소규모 수정(PLAN §8.4 순서): AIDH embeddings 제외 → agents DO NOTHING+보고 → records 자연키 → SF update_cols(결정 5 에 따라) → HEAX 시드 `--exclude`
+- [ ] mirror: Koorm·HEAX `pg_restore --clean` 4줄 + `exclude_on_mirror` TRUNCATE + `provision-config.sh --force` · sqlite `.backup` rsync→`mv -T`
+- [ ] update-all §3·deploy-all SF/heax merge 를 `DB_SYNC` 플래그로 이중화(기본 0) → 같은 덤프로 결과 diff 0 → 기본값 전환
 - [ ] SF·MTW `*/30` Drive push 정지 · AIDH 이중 덤프 통합 · Drive db-dumps 3세대
-- [ ] **게이트**: 원장 1건 · 롤백 리허설(pre-sync 복원) 1회 · `divergent` 0 · `db-sync status` 종료코드 0
+- [ ] **게이트**: 원장 1건 · 롤백 리허설(pre-sync 복원) 1회 · `divergent` 0 · `db-sync status` 0 · Drive 채널(코드) 무변경 확인
 
 ## D6 — prod 편입
 - [ ] prod 박스 준비(결정 2) · `HWAX_DATA_ROOT=/data` 레이아웃 · update-all 1회

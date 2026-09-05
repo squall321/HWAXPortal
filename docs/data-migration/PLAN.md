@@ -21,6 +21,7 @@
   `dir/` 패턴은 심링크를 무시하지 않아 `git stash -u`(update-all·deploy-all 매 실행)가 치운다(파괴검증 B1).
 - **컨테이너 서비스는 바인드+env 를 한 재기동에.** 컨테이너 안에서 호스트 `/data` 는 보이지 않는다
   (실측 B2). 대상 디렉터리가 존재하면 동일경로 `--bind` 를 건다(env 조건 없이).
+- **박스 간 전부 ssh 가능(2026-09-05 확인) → 데이터 동기화는 rsync/ssh + 기존 merge 스크립트(입력 경로만 치환).** Drive 는 코드·아티팩트 반입과 오프사이트 백업만.
 - **소유권을 표 단위로 명시한다.** 콘텐츠(dev 정본) 는 publish, 사용자 데이터(prod 정본) 는 mirror,
   staging 은 어떤 데이터의 owner 도 아니다. 목록에 없는 표는 동기화 대상이 아니다(누락 = 안전).
 - **가장 큰 실측 문제는 보존정책이다.** SF 30분 덤프×7일 = 84G, AIDH 이중 덤프 75G, materialtwin
@@ -270,78 +271,63 @@ python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("prag
 ### 7.15 MaterialTwinWeb
 - 정본 DB 는 HEAX appdata(§7.4). 이 리포 몫: ① `backend/var/data/materialtwin.db`(70종, 1단 낡은 스키마) 는 샌드박스 — 단 `.mcp.json` 이 이걸 가리켜 이 리포의 Claude 가 라이브 2,663종을 못 본다(§12 결정 7). ② `.agent_work/` 327M = 라이브 `source.local_path` 18행이 참조하는 출처 원문 → `/data/appdata/materialtwin_web/sources/agent_work/` M-BLOB + 18행 UPDATE(+`/tmp` 1행은 파일 구해 UPDATE) + 심링크. gitignore `.agent_work`. ③ 크론 19·20행 — export 를 **`.backup` 사본에서**(`sync-to-drive.sh:31` 자리: `TMP=$(mktemp -d); python .backup → $TMP; cp -r curves; MATERIALTWIN_DATA_DIR=$TMP`) — 라이브에 alembic 이 닿지 않게. ④ 병합기는 `_materialtwin_merge.py` 하나로 통일, `app.sync import`(sync-from-drive.sh) 운영 금지. data-bundles 크론은 D5 뒤 정지(소비자 없음). `MaterialTwin/sif` Drive 중복 4.8G → §12.
 
-## 8. DB 동기화 도구 — db-sync
+## 8. DB 동기화 — 기존 스크립트 + ssh 전송 + 경로 치환
 
-### 8.1 형태
+**결정(2026-09-05, 사용자)**: 박스 간 전부 ssh 가능 → **새 병합 엔진을 만들지 않는다.** 지금 update-all·deploy-all 이 부르는
+merge 스크립트를 그대로 두고, (1) 입력 덤프가 Drive 다운로드가 아니라 rsync 로 온 **로컬 파일**이 되게, (2) 어느 박스가
+어느 박스로 무엇을 보내는지를 레지스트리 `owner`(§3)로 통제하고, (3) 원장에 남긴다. Drive 는 코드·아티팩트 반입과
+오프사이트 백업 자리만 지킨다(cluster-deploy context-notes:20-24 결정과 일치).
+
+### 8.1 흐름 — 세 단계, 전부 기존 도구
 ```
-infra/scripts/db-sync.sh <verb> [--svc <name>[:<class>]] [--from <box>] [--to <box>] [--via local|ssh|drive]
-                         [--mode publish|mirror|seed] [--plan|--stage-only] [--yes] [--override-ownership "<사유>"]
-verbs: snapshot | push | pull | stage | apply | verify | rollback | status | prune | keys-check
+[소스 박스]  덤프 생산 = 기존   backup-local.sh <svc>(daily) · SF backup-to-drive.sh 의 로컬 덤프 · HEAX appdata-to-drive.sh 의 tar 생성부(업로드 전 단계)
+      │  rsync -a --partial (ssh)   /data/backups/hwax/<src>/<svc>/daily/<TS>… → <dst>:/data/hwax/.staging/inbound/<svc>/<TS>/   + sha256 검증(불일치 = 중단)
+[대상 박스]  사전 스냅샷 = 기존   backup-local.sh <svc> 1회 → pre-sync/<TS>/ 로 복사 (롤백 지점은 여기 하나)
+             merge = 기존         AIDH  AIDH_MERGE_DUMP=<file> deploy/apptainer/merge-from-drive.sh        (이미 로컬 입력 지원 :24-32)
+                                  SF    SF_MERGE_DUMP=<file>   scripts/drive-sync/merge-from-drive.sh      (:33-37 에 6줄 — AIDH 와 같은 모양)
+                                  HEAX  HEAX_APPDATA_TAR=<file> deploy/apptainer/appdata-merge-from-drive.sh (:20-22 에 6줄) → _materialtwin_merge.py 그대로
+                                  MXWP  infra/scripts/data-merge.sh <tar> --on-conflict=skip                (이미 로컬 입력)
+             원장 append          /data/hwax/state/db-sync/journal.jsonl  { ts, svc, class, from, to, mode, snapshot_ts, pre_sync_path, result, counts, operator }
 ```
-구현 `infra/scripts/dbsync/`(python, services.py 의 `load()`·`resolve_data()` import) + 얇은 bash 래퍼.
-박스 도달은 `infra/boxes.yaml`(gitignore, 시크릿 없음 — `{prod: {host, user, data_root}}`).
-**같은 박스 가정(3.1b) 유지** — `pg_dump`·`.backup`·`pg_restore` 는 인스턴스가 있는 박스에서 `apptainer exec instance://` 로;
-`--from prod` 를 다른 박스에서 부르면 `ssh prod 'db-sync snapshot …'` 로 자기 자신을 원격 실행하고 결과만 받아 온다.
+얇은 래퍼 `infra/scripts/db-sync.sh <push|pull|mirror|status|rollback> --svc <s> --to|--from <box> [--plan]` (bash ~150줄) 이 위
+세 단계를 순서대로 부르고 `HWAX_BOX_ROLE × owner` 로 방향을 검사할 뿐이다. 박스 목록은 `infra/boxes.yaml`(gitignore, `{prod: {host, user}}`).
+`--from <box>` 를 다른 박스에서 부르면 `ssh <box> 'backup-local.sh <svc>'` 로 소스에서 덤프를 만들고 받아 온다(3.1b 같은 박스 가정 유지).
 
-### 8.2 단계
-```
-snapshot(소유 박스)  pg: pg_dump -Fc --no-owner --no-privileges [-t tables]  sqlite: python .backup  blob: rsync 목록 + sha256
-                     manifest.json { svc, class, box, role, ts, kind, schema_version(alembic_version|user_version), pg_version, extensions,
-                                     row_counts{table:n}, files{path:sha256,size}, keys_with{name: sha256 12자}, excluded[], scrubbed[], tool_git_sha }
-                     → /data/backups/hwax/<box>/<svc>/sync-out/<TS>/
-transfer             ssh: rsync -a --partial → <to>:/data/hwax/.staging/inbound/<svc>/<TS>/   (임시는 /data 안 — plan §4 원자성)
-                     drive: age 암호화 후 rclone (owner=prod 클래스는 drive 전송 거부 — 매니페스트만 허용)   도착 후 sha256 전수, 불일치 = 중단
-stage(대상)          pg: CREATE DATABASE <db>_syncstage → pg_restore → 확장 재생성 → manifest.row_counts 대조   sqlite/blob: .syncstage / .staging
-pre-snapshot(대상)   /data/backups/hwax/<box>/<svc>/pre-sync/<TS>/  — 롤백 지점은 여기 하나
-apply                §8.3
-verify               §8.5
-record               state/db-sync/journal.jsonl append + last-applied/<svc>.<class> ; stage DROP(실패해도)
-```
+### 8.2 사용자 데이터 mirror — 채널이 없던 4곳도 기존 도구로
+- **postgres**(Koorm·HEAX·그리고 콘텐츠 표 밖의 SF/AIDH/MXWP 사용자 표): 소스 backup-local 덤프 → rsync → 대상에서 pre-sync 후
+  **기존 restore 계열**(`restore-db.sh` — DROP DATABASE 지만 staging 에선 그것이 mirror 의 정의). restore 스크립트가 없는 Koorm·HEAX 는
+  `pg_restore --clean --if-exists` 4줄. `exclude_on_mirror` 표(시크릿·PAT 해시)는 복원 뒤 TRUNCATE + `provision-config.sh --force` 재민팅.
+- **sqlite**(포털 4종·HEAX 앱 4종): `.backup` 파일 rsync → 서비스 정지 → 파일 교체(`mv -T`) → 기동.
+- **블롭**: `rsync -a` (identity·cache·`*.db-wal`·`*.pid` `--exclude`).
+- **prod 는 mirror 수신 무조건 거부**(`HWAX_BOX_ROLE=prod`). prod 편입 1회는 "prod 가 비어 있을 때만 허용되는 mirror" = `seed`.
+- **키**: mirror 받은 staging 은 복호 불가가 정상(HEAX `secret_values`·HWAXRisk `portal_pat_enc`) — 재프로비저닝으로 해소. 키 원문은 어느 채널에도 안 실린다.
 
-### 8.3 적용 모드와 소유권 규칙
-| mode | 조건 | 동작 | 롤백 |
-|---|---|---|---|
-| publish-merge | 소스 owner=content | 표별 자연키 upsert(§8.4), 삭제 없음 | pre-sync 복원 |
-| publish-replace | 불변물(model·delib-runs·proposals) | 새 디렉터리 전개 → `mv -T` 교체(`.prev` 유지) | `mv -T` 되돌리기 |
-| mirror | 소스 canonical → 대상 mirror | pg: `<db>_syncstage` 완성 → 클라이언트 차단(`conn.clients`) → `ALTER DATABASE <db> RENAME TO <db>_prev_<TS>; ALTER DATABASE <db>_syncstage RENAME TO <db>` (초 단위 창, DROP 없음) ; sqlite/blob: 정지 → `mv -T` ; `exclude_on_mirror` 표(시크릿·PAT 해시)는 비움 + 대상에서 `provision-config.sh --force` 재민팅 | RENAME 역순 / `mv -T` |
-| seed | 대상이 비어 있을 때만 | replace 와 같되 비어 있지 않으면 거부 | 대상 삭제 |
-| none | identity·slurm-local·external | 시도 자체 거부(exit 3) | — |
+### 8.3 방향·소유권 — §3 그대로
+콘텐츠(dev owner) → staging → prod **publish**(기존 merge, 비파괴). 사용자 데이터(prod owner) → staging **mirror**. staging 은 owner 불가.
+`mirror→canonical`·`own→타박스` 거부. 목록(`tables:`)에 없는 표는 대상 아님. staging→prod publish 는 **자동 없음** — update-all(staging) 헬스게이트 뒤 사람이 `db-sync push --to prod`.
 
-`HWAX_BOX_ROLE × owner` 정책: `canonical→mirror` 만 mirror, `content→*` 만 publish, `mirror→canonical`·`own→타박스` 거부,
-**prod 에서 replace/mirror 수신 무조건 거부**(prod canonical 을 덮는 유일한 길은 `rollback`), dev 는 수신 거부.
-`--override-ownership "<사유>"` 는 사유를 원장에 남기고 진행하되 mode 는 표의 것만. prod 편입은 `seed` 로만 표현된다.
+### 8.4 기존 스크립트 안의 소규모 수정 (충돌 처방 — 우선순위순)
+1. AIDH `agent_sample_embeddings`(autoincrement 대리키) 동기화 제외·대상 재계산 — 1줄 삭제.
+2. AIDH `agents` 기존 행 `DO NOTHING`(신규만 삽입) + 다른 행은 `conflicts/<TS>.jsonl` 보고 — 양 박스 create_agent 덮어쓰기 방지.
+3. AIDH `records` 충돌키를 자연키 `(data_type,team,group,year,seq)`(`models.py:72-80`)로, id 제외·자식 FK 재매핑(`_materialtwin_merge.py:539-556` 방식).
+4. SF `voc_records` `DO UPDATE SET` 을 `update_cols` 허용목록으로(§5 실측 컬럼 — `updated_at` 없음), FK 로 버린 행 수 보고. (§12 결정 5 가 "prod 단일 크롤" 이면 이 표는 publish 대상에서 빠져 수정 불필요.)
+5. materialtwin — `_materialtwin_merge.py` 하나만, MTW `app.sync import` 운영 금지. 크론 export 는 `.backup` 사본에서(§7.15).
+6. HEAX 비-DB 시드 루프(`appdata-merge-from-drive.sh:48-54`)에 identity·cache `--exclude`.
 
-### 8.4 기존 프리미티브 재사용과 처방
-- **SF** `merge-from-drive.sh`(COPY→TEMP→INSERT … ON CONFLICT DO UPDATE 전 컬럼) — SQL 골격을 python 으로 옮기되 `DO UPDATE SET` 을 `update_cols` 허용목록으로 제한(운영 분류·감성 열 보존), FK 필터로 버린 행 수를 **보고**. 과도기엔 `merge-from-drive.sh:33-37` 에 `SF_MERGE_DUMP` 로컬 덤프 입구 6줄(AIDH `:24-32` 와 같은 모양)만 더해 종전 경로와 병렬 시험.
-- **AIDH** `merge-from-drive.sh`(updated_at 가드 :89, 표별 실패 수집 :113-133) — 골격 재사용. ① `records` 충돌키를 자연키 `(data_type,team,group,year,seq)`(`models.py:72-80`) 로, id 재부여·FK 재매핑(`_materialtwin_merge.py:539-556` 방식). ② `agent_sample_embeddings`(autoincrement 대리키) **제외·대상에서 재계산**. ③ `agents` 는 행 단위 충돌 격리(§8.6).
-- **materialtwin** — `_materialtwin_merge.py <src> <dst>` 그대로(출력 `*_misses`·`fk_violations`·`ownership_diffs` 를 원장에 첨부). `app.sync import` 호출 금지.
-- **MXWP** `data-dump.sh`/`data-merge.sh --on-conflict=skip` 콘텐츠 표만 publish-merge 배선, MinIO `mc mirror --no-overwrite`.
-- **채널 없던 것**(포털 sqlite·Koorm pg·HEAX pg·gateway audit·HEAX 앱 sqlite) — `mirror` 만.
+### 8.5 검증·원장·상태
+기존 merge 스크립트의 출력(표별 삽입·갱신·`fk_violations`·`*_misses`·`ownership_diffs`)을 그대로 원장에 첨부 · 행수 대조(merge: 후 ≥ 전 / mirror: 후 = 소스) ·
+sha256 · `alembic_version` 이 대상 코드가 아는 리비전인지(소스가 앞서면 거부 — 지금 dev materialtwin 이 이 상태) · 서비스 `health` ·
+`services.py data --check` divergent 0. `db-sync status` 는 원장 `last-applied` 로 "박스×서비스 마지막 적용 TS" 한 표(age>26h ✗).
+`--plan` 은 매니페스트와 대상 count 만 읽고 예상만 낸다(AIDH `--dry-run` 이 다운로드도 안 하던 혼란을 피하려 이름을 바꿈).
 
-### 8.5 검증
-행수(merge: 후 ≥ 전, 후 ≥ 소스 − 충돌·FK 버림 / mirror·replace: 후 = manifest) · 파일 sha256 전수 · 스키마
-(`alembic_version` 이 대상 코드가 아는 리비전인지 — 소스가 앞서면 거부; **지금 dev materialtwin 이 정확히 이 상태**) ·
-pg_version·extensions 일치(pg14/15/16·pgvector 0.8.2/0.8.3 혼재) · `keys_with` 지문(mirror 는 경고+진행, seed 는 중단) ·
-서비스 `health` + 스모크 1개(포털 PAT 검증 호출, 게이트웨이 tools/list 개수) · `services.py data --check` divergent 0.
+### 8.6 Drive 의 자리
+- 코드·아티팩트: `build-all-to-drive.sh` → `deploy-all-from-drive.sh` **무변경**.
+- 데이터 동기화: **Drive 를 거치지 않는다.** dev→cae00 의 db-dumps 다운로드 단계만 rsync 로 바뀌고 merge 는 동일. update-all §3(AIDH)·deploy-all(SF·heax appdata)은 `DB_SYNC=1` 이면 inbound 파일을, `0`(기본) 이면 종전 Drive 를 본다 — 같은 덤프로 결과 diff 0 확인 뒤 기본값 전환.
+- 오프사이트 백업: SF·AIDH `backup-to-drive` 일 1회 크론은 유지하되 보존 3세대(§9). 평문 문제는 §12-3(선택). `*/30` push(SF 16·MTW 19)는 동기화 목적이 사라져 D5 뒤 정지.
+- `HEAX_DRIVE_*`·`SF_DRIVE_*` 등 기존 remote 설정은 손대지 않는다.
 
-### 8.6 충돌 처방
-| 사례 | 처방 |
-|---|---|
-| AIDH `agents` 상호 덮어쓰기 | 대상 행 `updated_at > last-applied.ts` 이고 내용이 다르면 적용하지 않고 `conflicts/<TS>.jsonl` 에 양쪽 기록 → 사람이 `apply --resolve`. 필드 병합 없음. 신규 페르소나는 `--insert-only`(DO NOTHING) |
-| SF voc_records 운영 편집 되돌림 | `update_cols` 허용목록. updated_at 없음 → "기존 행은 콘텐츠 열만, 신규 행만 전체" |
-| AIDH records 자연키 위반 | 자연키 충돌키 + id 재부여. 그래도 위반이면 그 표만 SAVEPOINT 롤백·보고, 다른 표 계속, 종료코드 비0 |
-| `agent_sample_embeddings` id 충돌 | 제외·재계산 |
-| materialtwin 정정 후 옛 행 잔존 | 병합기 `value_corrections` 에 맡김. `*_misses` 비0 이면 원장 표시. 삭제 절대 없음 |
-| 두 병합기 경쟁 | `app.sync` 호출 금지 |
-| HEAX 비-DB 시드가 identity 를 나름 | 블롭 rsync `--exclude` (identity·cache·`*.db-wal`·`*.db-shm`·`*.db.pre-*`·`*.pid`) |
-| Drive 30분 스냅샷 비결정성 | `LATEST` 안 봄. **TS 인자로 특정 스냅샷만** 적용, 원장 기록 |
-
-### 8.7 원장·plan·상태·스케줄
-- `--plan` 은 manifest 와 대상 count 만 읽어 표별 삽입·갱신·충돌·FK 버림 예상을 내고 stage DB 도 만들지 않는다(AIDH `--dry-run` 이 다운로드도 안 하던 혼란을 피하려고 이름을 바꿈).
-- 원장 한 줄 = `{ts, verb, svc, class, from, to, via, mode, snapshot_ts, pre_sync_path, result, counts, conflicts, operator}`. AIDH `.last-merged` 대체 — update-all §3(update-all.sh:165-178)은 `db-sync status --svc ai-data-hub` 로 같은 판정.
-- `db-sync status` 한 화면: 서비스×클래스 매트릭스, 자기 스냅샷 age>26h ✗ · peer>8d ⚠ · owner 대비 행수 초과 = 게시 대기, 레지스트리 밖 `/data` 하위·크론 경고. 종료코드 0/1/2 를 update-all 헬스게이트가 소비.
-- 스케줄: 03:30 각 박스 backup-local(기존) · 03:50 dev→staging publish(콘텐츠 전부) · staging→prod publish 는 **자동 없음**(update-all(staging) 헬스게이트 통과 뒤 사람이 `push --to prod`) · 일요일 04:30 prod→staging mirror(§12 결정 4 마스킹) · 매일 05:00 prod 백업 → staging 오프박스 rsync · SF·MTW `*/30` Drive push 는 D5 뒤 정지(Drive 는 dev→배포서버 반입 채널로만).
-- update-all/deploy-all 의 세 merge 호출(AIDH·SF·heax appdata)은 `DB_SYNC=1` 이면 db-sync 로, `DB_SYNC=0`(기본) 이면 종전대로 — 같은 덤프로 `--plan` 결과 diff 0 을 본 뒤 기본값을 바꾼다. update-all 자체는 그 전까지 무수정.
+### 8.7 스케줄
+03:30 각 박스 backup-local(기존) · 03:50 dev→staging `push`(콘텐츠) · staging→prod 는 수동 · 일요일 04:30 prod→staging `mirror`(§12-4 마스킹) · 매일 05:00 prod `/data/backups/hwax/prod/` → staging rsync(오프박스 2차 보관).
 
 ## 9. 보존·정리 정책
 
@@ -388,8 +374,8 @@ pg_version·extensions 일치(pg14/15/16·pgvector 0.8.2/0.8.3 혼재) · `keys_
 ## 12. 결정 필요 (사용자)
 
 1. **토폴로지 개정 승인** — plan §0·§9-7 "cae00 은 클러스터 검증 완료까지 불간섭" → "prod 편입(D6) + cae00 강등→staging". 이 계획은 개정을 전제로 썼다.
-2. **prod 박스** — hostname, `/data` 가 로컬인지 NFS 인지(NFS 면 sqlite 클래스를 singleton 노드 로컬로), cae00↔prod ssh 가능 여부(불가면 drive + age 암호화).
-3. **Drive 덤프 암호화(age)** 도입과 키 보관.
+2. **prod 박스** — hostname·계정, `/data` 가 로컬인지 NFS 인지(NFS 면 sqlite 클래스를 singleton 노드 로컬로). ~~ssh 가능 여부~~ → **전부 ssh 가능(확인)**.
+3. (선택, 우선순위 낮음) **오프사이트 Drive 백업의 암호화(age)** — 동기화는 Drive 를 안 거치므로 남는 것은 SF·AIDH 일 1회 백업 덤프의 평문 문제만.
 4. **prod→staging mirror 를 원문으로 할지 마스킹**(PAT 해시·이메일·대화 원문이 시험 박스에 복제된다).
 5. **SF voc_records 소유권** — 권고: prod 단일 크롤 + dev/staging 은 mirror(updated_at 부재가 실확인됐으므로 가장 정합). 대안: 양쪽 크롤 유지 + `update_cols` 허용목록.
 6. **upload-staging** — `~/.hwax` 유지·이관 제외(권고) vs HEAX 런처 바인드 추가.
