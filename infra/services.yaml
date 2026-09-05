@@ -39,12 +39,14 @@ services:
     # 데이터 경로 레지스트리(docs/data-migration/PLAN.md §5). HWAX_DATA_ROOT 없으면 무영향.
     # ⚠ classes 는 리스트(- name:) 가 아니라 매핑 — update-all §6b 가 '^\s+- name:' 를 grep 해 서비스 목록을 만든다.
     data:
+      app_instance: hwax_portal      # needs_bind 클래스 가시성 확인용(이관 도구)
+      backup_want: [portal]          # 이관 직전 backup-local 대상
       classes:
-        users:          { kind: sqlite, path: svc/portal/users.sqlite,         current: backend/data/users.sqlite,          env: USER_STORE_PATH,      fs: local, sync: mirror }
-        conv:           { kind: sqlite, path: svc/portal/conversations.sqlite, current: backend/data/conversations.sqlite,  env: CONV_STORE_PATH,      fs: local, sync: mirror }
-        audit:          { kind: sqlite, path: svc/portal/agent_audit.sqlite,   current: backend/secrets/agent_audit.sqlite, env: AGENT_AUDIT_LOG_PATH, fs: local, sync: none }
-        token_store:    { kind: sqlite, path: svc/portal/token_store.sqlite,   current: backend/secrets/token_store.sqlite, env: TOKEN_STORE_PATH,     fs: local, sync: none, keys_with: [jwt] }
-        jwt:            { kind: secret, path: hwax/secrets/portal/jwt,          current: backend/secrets/jwt,                env: JWT_KEYS_DIR,         sync: none }
+        users:          { kind: sqlite, path: svc/portal/users.sqlite,         current: backend/data/users.sqlite,          env: USER_STORE_PATH,      fs: local, sync: mirror, needs_bind: true }
+        conv:           { kind: sqlite, path: svc/portal/conversations.sqlite, current: backend/data/conversations.sqlite,  env: CONV_STORE_PATH,      fs: local, sync: mirror, needs_bind: true }
+        audit:          { kind: sqlite, path: svc/portal/agent_audit.sqlite,   current: backend/secrets/agent_audit.sqlite, env: AGENT_AUDIT_LOG_PATH, fs: local, sync: none, needs_bind: true }
+        token_store:    { kind: sqlite, path: svc/portal/token_store.sqlite,   current: backend/secrets/token_store.sqlite, env: TOKEN_STORE_PATH,     fs: local, sync: none, keys_with: [jwt], needs_bind: true }
+        jwt:            { kind: secret, path: hwax/secrets/portal/jwt,          current: backend/secrets/jwt,                env: JWT_KEYS_DIR,         sync: none, needs_bind: true }
         upload_staging: { kind: cache,  path: svc/portal/upload-staging,        current: "~/.hwax/upload-staging",           env: HWAX_UPLOAD_STAGING,  enabled: false, sync: none }
         nginx_log:      { kind: log,    path: "logs/{box}/portal",              current: infra/data,                         env: HWAX_NGINX_LOG_DIR,   sync: none }
         delib_runs:     { kind: blob,   path: delib-runs,                       current: /data/delib-runs,                   env: DELIB_ARCHIVE_ROOT,   sync: publish-replace }
@@ -62,13 +64,17 @@ services:
     expect: 200
     health: http://127.0.0.1:8800/api/v1/healthz
     data:
-      root_env: MXWP_DATA_ROOT      # infra/scripts/_common.sh:44 DATA_DIR (.env 로딩이 앞서 리포 .env 로도 먹음)
+      # 데이터 루트 env 없음(infra/scripts/_common.sh:44 DATA_DIR 고정) — 브리지 심링크로 잇는다(D2). 주입 안 함.
+      backup_want: [mxwp]
+      restart_also: [mxwp-mcp]       # stop.sh 가 mxwp_api 를 세우면 그 안의 MCP(:8765)도 죽는다 — 이관 뒤 같이 올린다
       classes:
-        pg:      { kind: postgres, path: pg/mxwp,         current: infra/data/postgres, bind: /var/lib/postgresql/data, instance: mxwp_postgres, port: 5532, sync: publish-merge, merge_tool: infra/scripts/data-merge.sh }
+        pg:      { kind: postgres, path: pg/mxwp,         current: infra/data/postgres, bind: /var/lib/postgresql/data, instance: mxwp_postgres, port: 5532, sync: publish-merge, merge_tool: infra/scripts/data-merge.sh,
+                   conn: { env: .env, user: POSTGRES_USER, db: POSTGRES_DB, pw: POSTGRES_PASSWORD, user_default: mxwp, db_default: mxwp } }
         minio:   { kind: blob,     path: svc/mxwp/minio,  current: infra/data/minio,    bind: /data, sync: publish-merge }
         meili:   { kind: cache,    path: svc/mxwp/meili,  current: data.ms,             enabled: false, sync: none }   # start.sh:83 바인드가 죽어 있어 MEILI_DB_PATH 수리 전 비활성
         backups: { kind: backup,   path: "backups/hwax/{box}/mxwp/legacy", current: infra/backups, sync: none }
       identity: [.env, .env.bak]
+    stop: bash infra/scripts/stop.sh   # update.sh:188 의 instance stop --all 은 절대 쓰지 않는다(전 인스턴스 사망)
     tier: 10
 
   # VoiceRecorder(voice_recorder) · WebDesignAgents(web_design_agents) 는 여기서 관리하지
@@ -132,8 +138,10 @@ services:
     start: bash deploy/apptainer/heal.sh
     health: http://localhost:4180/health
     data:
+      backup_want: [heax, materialtwin]
       classes:
-        pg:          { kind: postgres, path: pg/heax,     current: var/pg,       env: HEAX_PG_DIR,        bind: /var/lib/postgresql/data, instance: heax-pg, port: 5732, sync: mirror, keys_with: [secret_encryption_key] }
+        pg:          { kind: postgres, path: pg/heax,     current: var/pg,       env: HEAX_PG_DIR,        bind: /var/lib/postgresql/data, instance: heax-pg, port: 5732, sync: mirror, keys_with: [secret_encryption_key],
+                       conn: { env: .env, url: DATABASE_URL } }
         secret_encryption_key: { kind: secret, current: ".env#SECRET_ENCRYPTION_KEY", sync: none }   # 파일 아닌 .env 키 — 해시만 대조
         app_data:    { kind: blob,     path: appdata,     current: var/app_data, env: HEAX_APP_DATA_ROOT, sync: per-app }   # 앱별 규칙은 apps:
         job_storage: { kind: blob,     path: svc/heax-hub/job_storage, current: job_storage, env: JOB_STORAGE_ROOT, sync: mirror }
@@ -149,6 +157,7 @@ services:
         paper_ingest:      { kind: blob,   sync: none }
         web_research_mcp:  { kind: cache,  sync: none }
       identity: [.env, var/integration_state, var/external-apps.yaml, var/caddy/bootstrap.json]
+    stop: bash deploy/apptainer/stop.sh   # 이관 도구(data-migrate)가 앱·caddy·pg 전부 세울 때 — 앱 데이터 루트를 옮기려면 전체 정지가 필요
     tier: 10
 
   - name: ai-data-hub
@@ -159,15 +168,18 @@ services:
     start: ./boot.sh --force
     health: http://localhost:8001/
     data:
-      root_env: AIDH_DATA_ROOT      # deploy/apptainer/_common.sh:13 DATA_DIR (+ load_env 뒤 재평가 필요 — PLAN §7.7)
+      # 데이터 루트 env 없음(deploy/apptainer/_common.sh:13 DATA_DIR 고정) — 브리지 심링크로 잇는다(D2). 주입 안 함.
+      backup_want: [aidh]
       classes:
-        pg:          { kind: postgres, path: pg/aidh,             current: deploy/apptainer/data/postgres,    bind: /var/lib/postgresql/data, instance: aidh_postgres, port: 5435, sync: publish-merge, merge_tool: deploy/apptainer/merge-from-drive.sh }
-        attachments: { kind: blob,     path: svc/aidh/attachments, current: deploy/apptainer/data/attachments, sync: mirror, db_paths: record_attachments.file_path }
+        pg:          { kind: postgres, path: pg/aidh,             current: deploy/apptainer/data/postgres,    bind: /var/lib/postgresql/data, instance: aidh_postgres, port: 5435, sync: publish-merge, merge_tool: deploy/apptainer/merge-from-drive.sh,
+                       conn: { env: deploy/apptainer/.env, user: POSTGRES_USER, db: POSTGRES_DB, pw: POSTGRES_PASSWORD } }
+        attachments: { kind: blob,     path: svc/aidh/attachments, current: deploy/apptainer/data/attachments, sync: mirror, db_paths: [{ table: record_attachments, column: file_path }] }
         figures:     { kind: blob,     path: svc/aidh/figures,     current: deploy/apptainer/data/figures,     sync: mirror }
-        mcp_uploads: { kind: blob,     path: svc/aidh/mcp_uploads, current: api_server/mcp_uploads/_uploads,   env: AIDH_MCP_UPLOADS_DIR, sync: mirror, db_paths: mcp_uploads.manifest.sif_path }
+        mcp_uploads: { kind: blob,     path: svc/aidh/mcp_uploads, current: api_server/mcp_uploads/_uploads,   env: AIDH_MCP_UPLOADS_DIR, sync: mirror, db_paths: [{ table: mcp_uploads, column: manifest, json: true }] }
         backups:     { kind: backup,   path: "backups/hwax/{box}/aidh/daily", current: deploy/apptainer/backups, sync: none }
         logs:        { kind: log,      path: "logs/{box}/aidh",     current: deploy/apptainer/logs, sync: none }
       identity: [deploy/apptainer/.env, api_server/.env, deploy/apptainer/.last-merged]
+    stop: bash deploy/apptainer/stop.sh
     tier: 10
 
   - name: signalforge
@@ -179,9 +191,12 @@ services:
     expect: 200
     health: http://127.0.0.1:18000/health
     data:
-      root_env: SF_DATA_ROOT        # scripts/_common.sh:10 DATA_DIR (+ load_env 뒤 재평가 필요 — PLAN §7.6)
+      # 데이터 루트 env 없음(scripts/_common.sh:10 DATA_DIR 고정) — 브리지 심링크로 잇는다(D2). 주입 안 함.
+      backup_want: [signalforge]
+      restart_also: [signalforge-mcp]   # down.sh 가 MCP 도 세운다 — 이관 뒤 같이 올린다
       classes:
         pg:      { kind: postgres, path: pg/signalforge, current: data/postgres, bind: /var/lib/postgresql/data, instance: sf_postgres, port: 5434, sync: publish-merge, merge_tool: scripts/drive-sync/merge-from-drive.sh,
+                   conn: { env: .env, user: POSTGRES_USER, db: POSTGRES_DB, pw: POSTGRES_PASSWORD, user_default: signalforge, db_default: signalforge },
                    tables: { voc_categories: { keys: [code] },
                              voc_records: { keys: [platform_id, external_id], exclude_cols: [id],
                                             update_cols: [content_original, content_translated, language_detected, country_code, source_url, author_name, published_at, likes_count, comments_count, shares_count, engagement_score, content_hash] } } }
@@ -191,6 +206,7 @@ services:
         reports: { kind: blob, path: svc/signalforge/reports, current: reports, env: REPORT_DIR, bind: /reports, enabled: false, sync: none }
         audit:   { kind: blob, path: svc/signalforge/audit,   current: audit,   bind: /audit,   enabled: false, sync: none }
       identity: [.env, "celerybeat-schedule*", backups/last_verified.json]
+    stop: bash scripts/down.sh
     tier: 10
 
   - name: report-archive
@@ -227,9 +243,12 @@ services:
     expect: 200
     health: http://127.0.0.1:8700/api/health
     data:
-      root_env: KOORM_DATA_ROOT     # platform/infra/scripts/_common.sh:63 DATA_DIR (.env 로딩이 앞서 리포 .env 로도 먹음)
+      # 데이터 루트 env 없음(platform/infra/scripts/_common.sh:63 DATA_DIR 고정) — 브리지 심링크로 잇는다(D2). 주입 안 함.
+      app_instance: koorm_api
+      backup_want: [kooremapper]
       classes:
-        pg:      { kind: postgres, path: pg/kooremapper,        current: platform/infra/data/postgres, bind: /var/lib/postgresql/data, instance: koorm_postgres, port: 5436, sync: mirror }
+        pg:      { kind: postgres, path: pg/kooremapper,        current: platform/infra/data/postgres, bind: /var/lib/postgresql/data, instance: koorm_postgres, port: 5436, sync: mirror,
+                   conn: { env: platform/.env, user: POSTGRES_USER, db: POSTGRES_DB, pw: POSTGRES_PASSWORD, user_default: koorm, db_default: koorm } }
         storage: { kind: blob,     path: svc/kooremapper/storage, current: platform/storage, env: KOORM_STORAGE_DIR, needs_bind: true, sync: mirror }   # 컨테이너는 /data 를 못 봄 — start.sh 바인드 필요
         supervisor_log: { kind: log, path: "logs/{box}/kooremapper", current: platform/infra/data/supervisor.log, sync: none }
       identity: [platform/.env]
@@ -284,10 +303,12 @@ services:
     start: ./start.sh                     # streamable-http :9110, injects per-backend tokens
     health: http://localhost:9110/health  # unauthenticated JSON {status,tools,backends}
     data:
+      backup_want: [gateway]
       classes:
         audit: { kind: blob, path: svc/mcp-gateway/audit.jsonl, current: audit.jsonl, env: GATEWAY_AUDIT, sync: mirror }   # gateway.py:55 os.environ 직접 — .env 는 안 읽음
         log:   { kind: log,  path: "logs/{box}/mcp-gateway",     current: gateway.log, sync: none }
       identity: [gateway_config.json, "gateway_config.json.bak*", provision.env, mcp_servers.json, .env]
+    stop: ./start.sh stop
     tier: 16
 
   - name: agent-server

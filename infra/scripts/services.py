@@ -69,23 +69,44 @@ def box_name() -> str:
     return _hwax_setting("HWAX_BOX") or socket.gethostname().split(".")[0]
 
 
+def class_paths(svc: dict, cname: str, c: dict, root: str | None, box: str) -> tuple[Path | None, Path | None]:
+    """클래스의 (현행 경로, 목표 경로). 목표는 HWAX_DATA_ROOT 있을 때만, HWAX_DATA_<SVC>_<CLASS> 오버레이 우선."""
+    sdir = None if svc.get("_data_only") else resolve_dir(svc)
+    curp: Path | None = None
+    cur = c.get("current")
+    if cur and "#" not in str(cur):  # ".env#KEY" 같은 키 참조는 경로가 아니다
+        curp = Path(os.path.expandvars(str(cur))).expanduser()
+        if not curp.is_absolute():
+            curp = (sdir / curp) if sdir else None
+    tgt: Path | None = None
+    if root and c.get("path") and c.get("enabled") is not False:
+        key = svc["name"].upper().replace("-", "_")
+        override = _hwax_setting(f"HWAX_DATA_{key}_{cname.upper()}")
+        tgt = Path(override) if override else Path(f"{root}/{c['path']}".replace("{box}", box))
+    return curp, tgt
+
+
 def resolve_data(svc: dict) -> dict[str, str]:
-    """`data:` 블록 → 주입할 env. HWAX_DATA_ROOT 없으면 {}. 클래스별 HWAX_DATA_<SVC>_<CLASS> 오버레이."""
+    """`data:` 블록 → 주입할 env. HWAX_DATA_ROOT 없으면 {}.
+
+    ⚠ **이동이 끝난 클래스만 주입한다**(상태 same·only-target). 아직 현행 경로에 있는 클래스에 새 경로 env 를
+    주면 앱이 그 자리에 빈 DB 를 새로 만든다 — 포털은 users/token_store 가 비고 JWT 키를 새로 민팅한다.
+    이동은 data-migrate.sh 가 하고, 그 뒤 재기동에서야 이 env 가 붙는다(브리지 심링크가 있어 안 붙어도 동작한다)."""
     root = _hwax_setting("HWAX_DATA_ROOT")
     data = svc.get("data") or {}
     if not root or not data:
         return {}
     box = box_name()
-    key = svc["name"].upper().replace("-", "_")
     env: dict[str, str] = {}
-    if data.get("root_env"):
-        default_root = f"{root}/svc/{svc['name']}"
-        env[data["root_env"]] = _hwax_setting(f"HWAX_DATA_{key}_ROOT") or default_root
+    # root_env 는 주입하지 않는다 — 4 리포 모두 DATA_DIR 이 리포 상대로 고정돼 읽는 코드가 없고, 클래스가
+    # /data/pg 와 /data/svc 로 갈리므로 한 루트로 가리킬 수도 없다. 브리지 심링크(D2)가 경로를 잇는다.
     for cname, c in (data.get("classes") or {}).items():
         if not isinstance(c, dict) or c.get("enabled") is False or not c.get("env") or not c.get("path"):
             continue
-        override = _hwax_setting(f"HWAX_DATA_{key}_{cname.upper()}")
-        env[c["env"]] = override or f"{root}/{c['path']}".replace("{box}", box)
+        curp, tgt = class_paths(svc, cname, c, root, box)
+        if tgt is None or _data_status(curp, tgt) not in ("same", "only-target"):
+            continue
+        env[c["env"]] = str(tgt)
     return env
 
 
@@ -108,7 +129,7 @@ def _data_status(cur: Path | None, tgt: Path | None) -> str:
 
 
 def cmd_data(names: list[str], check: bool = False) -> int:
-    """data [svc] [--check] — 레지스트리 해석 결과(현행 → 목표·상태). --check 는 divergent·only-target 이 있으면 1.
+    """data [svc] [--check] — 레지스트리 해석 결과(현행 → 목표·상태). --check 는 이동 대상 종류에 divergent·only-target 이 있으면 1.
     HWAX_DATA_ROOT 미설정이면 목표가 없으므로 상태는 only-current/absent 만 나온다."""
     root = _hwax_setting("HWAX_DATA_ROOT")
     box = box_name()
@@ -126,22 +147,14 @@ def cmd_data(names: list[str], check: bool = False) -> int:
         for cname, c in (data.get("classes") or {}).items():
             if not isinstance(c, dict):
                 continue
-            curp: Path | None = None
-            cur = c.get("current")
-            if cur and "#" not in str(cur):  # ".env#KEY" 같은 키 참조는 경로가 아니다
-                curp = Path(os.path.expandvars(str(cur))).expanduser()
-                if not curp.is_absolute():
-                    curp = (sdir / curp) if sdir else None
-            tgt: Path | None = None
-            if root and c.get("path") and c.get("enabled") is not False:
-                tgt = Path(f"{root}/{c['path']}".replace("{box}", box))
+            curp, tgt = class_paths(s, cname, c, root, box)
             if c.get("kind") == "identity" or c.get("enabled") is False or (not c.get("path") and curp is None):
                 st = "n/a"
             elif tgt is None:
                 st = "only-current" if (curp is not None and (curp.exists() or curp.is_symlink())) else "absent"
             else:
                 st = _data_status(curp, tgt)
-            if st in ("divergent", "only-target"):
+            if st in ("divergent", "only-target") and c.get("kind") not in ("backup", "log", "cache"):   # 옮기지 않는 종류는 참고만
                 bad = 1
             print(f"  {st:<13} {cname:<16} {str(c.get('kind', '-')):<9} {str(curp) if curp else '-'}  →  {str(tgt) if tgt else '-'}")
     return bad if check else 0
@@ -254,7 +267,8 @@ def start_one(svc: dict) -> str:
 
     if not url:
         return "started (no health url)"
-    tries, gap = 60, 2.0
+    gap = 2.0
+    tries = max(1, int(int(os.environ.get("HWAX_HEALTH_WAIT") or 120) / gap))   # 초. 이관기는 300 — HEAX 전체 재기동이 120s 를 넘긴다
     print(f"      ▸ {name}: health 대기 {url} (최대 {int(tries * gap)}s) …", flush=True)
 
     def _tick(i: int, n: int) -> None:

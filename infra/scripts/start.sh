@@ -45,7 +45,18 @@ else
   # 파일은 여기 잠깐 머물다 확정 후·TTL 후 삭제된다(레포 안에 두지 않는다).
   STAGING_HOST="${HWAX_UPLOAD_STAGING:-$HOME/.hwax/upload-staging}"
   mkdir -p "$STAGING_HOST"
+  # /data 레지스트리 바인드(docs/data-migration D9) — 컨테이너는 호스트 /data 를 못 본다(실측). 대상 디렉터리가
+  # **존재하면** 동일경로로 바인드한다(env 조건 없이 — 이관 도구가 디렉터리를 만든 뒤 재기동해 가시성을 확인한다).
+  # 없으면 바인드 0개·env 0개 = 종전과 동일. 레지스트리가 주입한 경로 env 는 있을 때만 컨테이너에 전달.
+  DATA_BINDS=(); DATA_ENVS=()
+  for d in "${HWAX_DATA_ROOT:-/data}/svc/portal" "${HWAX_DATA_ROOT:-/data}/hwax/secrets/portal" "${HWAX_DATA_ROOT:-/data}/delib-runs"; do
+    [ -d "$d" ] && DATA_BINDS+=(--bind "$d:$d")
+  done
+  for k in USER_STORE_PATH CONV_STORE_PATH TOKEN_STORE_PATH AGENT_AUDIT_LOG_PATH JWT_KEYS_DIR DELIB_ARCHIVE_ROOT; do
+    [ -n "${!k:-}" ] && DATA_ENVS+=(--env "$k=${!k}")
+  done
   "$APPTAINER" instance start \
+    ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \
