@@ -57,6 +57,20 @@
 | D8 | 한 박스에서 한 인스턴스만 세운다. `apptainer instance stop --all`(MXWP `update.sh:188`) 류는 이관 창 금지. | 실측: 시스템·번들 apptainer 의 instance list 가 동일 40개 → 전부 죽는다 |
 | D9 | **컨테이너 서비스는 바인드+env 를 한 재기동에.** 대상 디렉터리가 있으면 동일경로 `--bind` (env 조건 없이). | 파괴검증 B2 |
 | D10 | 비-HEAX 서비스 데이터는 `/data/appdata` 에 두지 않는다(`/data/svc/<svc>/`). | plan §2 의 `/data/appdata/<app>` = HEAX 앱 격리 경계, 런처가 canonical 을 서브디렉터리로 씀(B3) |
+| D11 | **기준선이 전부 초록일 때만 첫 이동을 시작한다.** D0 게이트 = 전 서비스 health · 백업 전부 산출+복원 리허설 통과 · `data --check` divergent 0 · update-all 1회 정상. 이 스냅샷을 "기준선" 으로 원장에 기록하고, 이관 중에는 **이관과 무관한 수리를 섞지 않는다**(타 리포 수리는 §12-7 로 분리, 각자 커밋). | 사용자 전제(2026-09-05) "다 문제없다는 전제에서 시작" — 문제가 있으면 그것이 이관 때문인지 원래 있었는지 가릴 수 없다 |
+| D12 | **프로젝트별 DB 는 완전히 분리한다.** postgres 는 서비스마다 자기 인스턴스·PGDATA(`/data/pg/<svc>/`)·포트·롤·비밀번호. 한 클러스터로 합치지 않고, 스테이징 DB(`_mergestage`·`_syncstage`)도 그 서비스 인스턴스 안에만. sqlite 는 앱/서비스 디렉터리 안에만. 동기화 도구는 두 서비스의 DB 를 절대 교차 조회·조인하지 않는다. | 사용자 전제(2026-09-05). 지금도 5 인스턴스가 분리돼 있다(아래 현황) — 이관이 그것을 무너뜨리면 안 된다 |
+
+**DB 격리 현황(실측)과 이관 후.**
+
+| 서비스 | 지금 | 이관 후 | 비고 |
+|---|---|---|---|
+| MXWP | 자체 인스턴스 `mxwp_postgres` :5532, 롤 mxwp | `/data/pg/mxwp`, 동일 | pgvector pg15 |
+| KooRemapper | `koorm_postgres` :5436, 롤 koorm | `/data/pg/kooremapper` | pg15 |
+| HEAX | `heax-pg` :5732, 롤 heaxhub | `/data/pg/heax` | pg16 |
+| SignalForge | `sf_postgres` :5434, 롤 signalforge | `/data/pg/signalforge` | pg16 |
+| AIDH | `aidh_postgres` :5435, 롤 aidh | `/data/pg/aidh` | pgvector pg16 |
+| **RA** | **시스템 PG14 :5433 을 다른 DB(newskoo)와 공유** — 유일하게 격리가 약한 곳 | green 은 자체 인스턴스 `/data/pg/reportarchive`(§7.9 두 안 중 이쪽을 권고) | blue 는 hands-off, 컷오버까지 그대로 |
+| sqlite | 앱/서비스별 파일 | `/data/appdata/<app>/`·`/data/svc/<svc>/` — 서비스 경계 = 디렉터리 경계 | 공유 파일 없음 |
 
 ## 3. 소유권 모델
 

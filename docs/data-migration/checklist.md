@@ -22,6 +22,7 @@
 - [ ] `chmod 0700 /data/hwax/secrets` · `rmdir /data/hwax/upload-staging`(비어 있음 확인)
 - [ ] crontab 24행(fakerepo backup-local) 제거 — 사용자 확인 후 · 1행 `apptainer_sync.sh` 출처 확인
 - [ ] 복원 리허설: pg 5종(staging DB 로드·표 행수 대조) · sqlite 3종(임시 파일 `.backup`·integrity)
+- [ ] **기준선(D11)**: 전 서비스 health 초록 · 알려진 문제(materialtwin 스키마 드리프트·MXWP meili 바인드·SF crawler reports) 는 "원래 있던 것" 으로 원장에 기록하고 이관과 분리
 - [ ] **게이트**: `HWAX_DATA_ROOT` 미설정에서 `services.py up/status/down` 출력 diff 0 · `data --check` 전 클래스 `only-current` · 심링크 후보 경로 `git status --porcelain <path>` 빈 결과 · backup-local WANT 전부 sha256 산출 · 리허설 로그 존재 · `update-all` 1회 정상
 
 ## D1 — 포털 자기 것 (P1.2 데이터판)
