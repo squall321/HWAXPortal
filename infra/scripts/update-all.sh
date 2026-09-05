@@ -112,6 +112,11 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   fi
   rm -f "$BK_LOG"
   "$SELF_REPO/infra/scripts/backup-local.sh" --install-cron 2>&1 | sed 's/^/  /' || true
+  # 로그 회전(data-migration D0 ⑦) — infra/.env 에 HWAX_LOGROTATE=1 일 때만. 기본은 안 켠다:
+  # D0 항목 중 유일하게 박스 운영 동작(회전)을 바꾸는 것이라 env 게이트 없이 cae00 에 퍼지지 않게 한다.
+  if grep -qE '^HWAX_LOGROTATE=1' "$SELF_REPO/infra/.env" 2>/dev/null && [ -x "$SELF_REPO/infra/scripts/install-logrotate.sh" ]; then
+    "$SELF_REPO/infra/scripts/install-logrotate.sh" 2>&1 | sed 's/^/  /' || true
+  fi
 fi
 
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──

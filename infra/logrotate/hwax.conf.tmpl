@@ -1,0 +1,50 @@
+# HWAX 로그 회전 템플릿 — install-logrotate.sh 가 __ROOT__(형제 리포 부모)·__HOME__·__USER__ 를 치환해
+# ~/.config/hwax/logrotate.conf 로 렌더한다(박스별 경로가 달라 정적 파일 불가 — CLAUDE.md 절대경로 금지).
+#
+# ⚠ copytruncate 는 **O_APPEND 로 열린 쓰기자에만** 안전하다(사전점검 /proc fdinfo 실측). O_APPEND 가 아니면
+#   truncate 뒤 다음 write 가 옛 오프셋으로 가서 파일 앞이 NUL 구멍(sparse)이 된다. 그래서 아래 (A) 는 실측으로
+#   O_APPEND 가 확인된 것만이다. HEAX var/logs/{worker,backend,beat}.log · AIDH deploy/apptainer/logs/uvicorn.log 는
+#   `nohup >` 로 열려 O_APPEND 가 아니라 **제외** — 기동 스크립트 `>`→`>>` 수리(PLAN §12-7) 뒤 편입한다.
+#   /tmp/hwax-services/*.log 는 services.py 가 "wb" 로 열어 자식이 상속 — 역시 제외(기동마다 truncate 되므로 회전 불필요).
+# 크론은 매시 — maxsize 는 logrotate 가 돌 때만 평가되므로 daily 크론이면 900M .err 도 하루 한 번만 잘린다.
+
+# (A) 장수 프로세스가 O_APPEND 로 쥔 로그 — apptainer 인스턴스 stdout/stderr(apptainer 가 append 로 연다),
+#     게이트웨이(python logging append), nginx(NGX_FILE_APPEND), HEAX 앱 런처 통합 로그(append).
+__HOME__/.apptainer/instances/logs/*/__USER__/*.out
+__HOME__/.apptainer/instances/logs/*/__USER__/*.err
+__ROOT__/HWAXMcpGateway/gateway.log
+__ROOT__/HWAXPortal/infra/data/nginx-access.log
+__ROOT__/HEAXHub/var/logs/integration_*.log
+{
+    daily
+    rotate 14
+    maxsize 200M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    dateext
+    dateformat -%Y%m%d-%s
+}
+
+# (B) 크론 로그 — `>>` 리다이렉트(= O_APPEND) 로만 쓰인다.
+__HOME__/mtw-sync.log
+__HOME__/sf-sync.log
+__HOME__/sf-backup.log
+__HOME__/aidh-backup.log
+/data/backups/backup.log
+/data/backups/hwax/*/backup.log
+__HOME__/.local/state/hwax/logrotate.log
+{
+    weekly
+    rotate 8
+    maxsize 100M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    dateext
+    dateformat -%Y%m%d-%s
+}
