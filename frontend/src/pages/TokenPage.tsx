@@ -351,9 +351,19 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'if not "%HWAX_RC%"=="0" goto :gemini_fail',
     'set HWAX_DONE=1',
     'echo      Gemini CLI 등록 완료',
+    // 등록이 됐는데도 목록에 안 뜨는 사례가 있다 — 아래 폴더 신뢰 정책 때문이다.
+    // "완료" 만 찍고 끝내면 사용자는 이 배치를 의심한다. 한 줄로 미리 짚어 준다.
+    'echo          ^(gemini mcp list 에 안 보이면 폴더 신뢰 설정을 확인하세요.^)',
     'goto :codex',
     ':gemini_fail',
+    // ⚠ 이 실패는 이 배치의 버그가 아닐 수 있다. Gemini CLI 는 **신뢰하지 않는 폴더**에서
+    // user 범위 MCP 서버를 끄거나 숨긴다(사용자 실측 2026-09-04: 격리 패치로 배치는 안
+    // 죽는데 등록만 실패/Disabled 로 보임). 사유를 짚지 않으면 사용자가 원인을 못 찾는다.
     'echo      [X] Gemini CLI 등록 실패',
+    'echo          Gemini CLI 는 신뢰하지 않는 폴더에서 user 범위 MCP 서버를 끄거나 숨깁니다.',
+    'echo          ^(다운로드 폴더에서 바로 실행하면 특히 그렇습니다.^)',
+    'echo          gemini mcp list 로 hwax 가 보이는지 확인하고, 안 보이거나 Disabled 면',
+    'echo          Gemini CLI 에서 이 폴더를 신뢰하도록 설정한 뒤 다시 실행하세요.',
     'goto :codex',
     ':no_gemini',
     'echo      gemini 명령 없음 - 건너뜀',
