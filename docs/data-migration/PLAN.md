@@ -397,6 +397,14 @@ sha256 · `alembic_version` 이 대상 코드가 아는 리비전인지(소스�
 
 각 단계 시작 전 `context-notes.md` 에 시작·실측·결정을, `checklist.md` 에 체크박스를.
 
+**2026-09-05 개정 — D1~D4 는 도구가 한다.** §6 절차를 코드로 옮긴 `infra/scripts/data-migrate.sh`(본체 `datamigrate.py`) 가 `services.yaml data:` 를 읽어
+**아직 현행 경로에 있는 이동 종류(postgres·sqlite·blob·model·secret)만** 서비스 단위로 옮긴다. 순서는 portal → mcp-gateway → agent-server → mx-white-paper →
+kooremapper → heax-hub → signalforge → ai-data-hub. 어느 단계든 실패 = 자동 롤백(옛 경로 복원 + 목표 사본은 `<목표>.rolled-back-<TS>` 로 비켜둠 — 지우지
+않고, 다음 run 이 divergent 로 막히지도 않게). `update-all` 은 infra/.env 에 `HWAX_DATA_ROOT` 가 있을 때만 `2b)` 에서 이걸 부른다 — 즉 **cae00/prod 는
+한 줄 추가 뒤 평소처럼 update-all**. dev 는 2026-09-05 에 전 서비스 통과(checklist D1~D4). 규칙 보정: log·backup·cache 종류는 옮기지 않는다(logrotate·
+backup-local 몫 — `data --check` 도 이 종류는 rc 에 안 센다); DB 행수는 post ≥ pre(앱 기동 시 쓰는 행 허용, 감소 = 유실 → 롤백); blob 은 정지 뒤 복사
+직후 대조(기동 뒤 다시 세지 않음 — minio `.minio.sys/tmp` 실사고); `root_env` 는 주입하지 않는다(소비자 없음·pg 와 blob 이 다른 루트).
+
 ## 11. 리스크·함정 (증명된 것 우선)
 
 1. **B1 심링크가 `git stash -u` 에 치워진다** — gitignore `dir/` 패턴은 심링크를 무시하지 않는다(실측 git 2.34). `update-all.sh:76`·`deploy-all-from-drive.sh:106` 매 실행. 치워진 뒤 `_common.sh` 의 `mkdir -p` → initdb → 빈 DB / 포털은 새 JWT 민팅. **D0 ① 가 선행 조건.**

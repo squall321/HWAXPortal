@@ -7,7 +7,7 @@
 - [x] 전 박스 ssh 가능(2026-09-05) → 동기화 매체 rsync/ssh, Drive 데이터 채널 불필요
 - [ ] PLAN §12 결정 1(토폴로지 개정)·2(prod hostname·/data 종류)·5(SF 소유권)·6(upload-staging) 사용자 답
 - [ ] `docs/cluster-deploy/context-notes.md` 에 토폴로지 개정 + `/data/svc` 한 줄 추가 기록(D1 전)
-- [x] 작업 중 `hwax-stack.service` 부팅 갱신기 일시 disable — dev 에서 disable(2026-09-05, D0 끝나면 enable)
+- [x] 작업 중 `hwax-stack.service` 부팅 갱신기 일시 disable — dev 에서 disable(2026-09-05, D0 끝나면 enable) → **재enable 완료**(2026-09-05 dev D1~D4 뒤)
 
 ## D0 — 무영향 추가 (P0.3) — 사전점검 2회 반영판
 
@@ -26,45 +26,27 @@
   - 게이트: 존재 소스 전부 `.sha256`·부재는 skip·rc 0 · `[ -s …/heax/daily/heax-*.sql.gz ]` · `crontab -l | grep -c backup-local` = 1(새 로그 경로) · `du -sh /data/backups/*`
 - [x] **7 logrotate** — `infra/logrotate/hwax.conf.tmpl`(추적, `__ROOT__`·`__HOME__`) → `install-logrotate.sh` 가 `~/.config/hwax/logrotate.conf` 로 렌더(`install -m 0644`, `command -v logrotate || skip`) · 크론 **매시** `17 * * * *` + `-s ~/.local/state/hwax/logrotate.status` · 대상 = **O_APPEND 검증분만**(`~/.apptainer/instances/logs/*/koopark/*.{out,err}`·gateway.log·nginx-access.log·HEAX `integration_*.log`) + 정지 로그; HEAX worker/backend·AIDH uvicorn(자체 회전 있음)·caddy 는 제외 · `backup.log` 는 옛·새 경로 둘 다 `missingok`
   - 게이트: `logrotate -d <렌더 conf>` — 대상 목록 일치, "bad file mode" 없음
-- [~] **8 복원 리허설**(mxwp·kooremapper·heax·sqlite 3 ✓ — signalforge·aidh 임시 인스턴스 진행 중) — mxwp·koorm·heax 는 **인스턴스 안** `<db>_rehearsal` · **aidh·sf 는 같은 SIF 로 임시 인스턴스**(`/data/hwax/.staging/rehearsal/<svc>`, :5440 — HNSW 3.3GB 재빌드를 라이브 인스턴스(maintenance_work_mem 64MB)에 시키지 않는다; D12 예외) · 입력 = 오늘 daily 덤프(plain SQL → `gunzip -c | psql -v ON_ERROR_STOP=1`, `set -o pipefail`; pg_restore 아님) · 표별 count 대조 · sqlite 3종 python `.backup` + integrity
+- [x] **8 복원 리허설**(mxwp 72·kooremapper 8·heax 23 표·sqlite 3 ✓ · signalforge 임시 인스턴스 75s voc_records +1 · aidh 790s sync_runs +2 — 덤프 이후 라이브 증분, 표 집합 동일 · 잔존 0·:5440/:5441 빈·staging 삭제) — mxwp·koorm·heax 는 **인스턴스 안** `<db>_rehearsal` · **aidh·sf 는 같은 SIF 로 임시 인스턴스**(`/data/hwax/.staging/rehearsal/<svc>`, :5440 — HNSW 3.3GB 재빌드를 라이브 인스턴스(maintenance_work_mem 64MB)에 시키지 않는다; D12 예외) · 입력 = 오늘 daily 덤프(plain SQL → `gunzip -c | psql -v ON_ERROR_STOP=1`, `set -o pipefail`; pg_restore 아님) · 표별 count 대조 · sqlite 3종 python `.backup` + integrity
   - 게이트: 5 인스턴스 `\l` 에 `_rehearsal|_mergestage` 0 · `apptainer instance list | grep -c rehearsal` = 0 · `ss -ltn | grep :5440` 빈 결과 · `/data/hwax/.staging/rehearsal` 삭제
-- [ ] **9 cae00** — D0 브랜치 → main → push → **cae00 에서** 사전 확인(`grep -E '^HWAX_(DATA_ROOT|BOX|BOX_ROLE)=' infra/.env` 비어야 · `apptainer instance list | grep -E 'heax-pg|koorm_postgres'` · `hostname -s` · `df -h /data` · `ls /usr/local/bin/apptainer_sync.sh` · KooRemapper `git rev-parse --abbrev-ref HEAD`) → `update-all` 1회 → §1b heax/kooremapper ✓·부재 소스 skip·6b "등록 14건"·`crontab -l | grep -c backup-local` = 1·`git check-ignore -v <name>` 이 새 줄
+- [ ] **9 cae00** — push 뒤 **cae00 에서**(절차: `docs/cae00-deploy-guide.md` 2026-09-05 절) 사전 확인(`grep -E '^HWAX_(DATA_ROOT|BOX|BOX_ROLE)=' infra/.env` 비어야 · pg 인스턴스 5개 기동 · `hostname -s` · `df -h /data` 여유 ≥ SF+AIDH pg ×1.2 · `ls /usr/local/bin/apptainer_sync.sh` · KooRemapper `git rev-parse --abbrev-ref HEAD` = main) → **infra/.env 에 `HWAX_DATA_ROOT=/data`·`HWAX_BOX_ROLE=staging` 추가** → `update-all` 1회 → §1b heax/kooremapper ✓·6b "등록 14건"·`crontab -l | grep -c backup-local` = 1·**2b) 서비스별 "이동 완료"**(롤백 `↩` 줄 없음)·`services.sh data --check` rc 0·전 서비스 health·기존 PAT 로 게이트웨이 tools/list
 - [ ] **롤백 목록(커밋 밖)**: `crontab <scratch>/crontab.before` · `~/.config/hwax/logrotate.conf`·`~/.local/state/hwax/` rm · `/data/hwax/state/db-sync` (원장이라 보관 권고) · 리허설 잔존(DROP WITH (FORCE)·instance stop·rm -r) · `chmod 755 /data/hwax/secrets`(되돌릴 이유 없음) · hwax-stack.service 재enable · **동반 push 된 무관 커밋은 cae00 배포 뒤 되돌릴 수 없다 — push 는 사용자 결정**
 
-## D1 — 포털 자기 것 (P1.2 데이터판)
-- [ ] `infra/scripts/start.sh` — D9 바인드(존재 시 동일경로) + 5개 env 조건부 `--env`
-- [ ] `hwax.conf.tmpl:21` 로그 경로 렌더 + nginx 동일경로 바인드
-- [ ] `apply-envs.sh agent-server` `ARTIFACT_DIR` 조건부 줄
-- [ ] pre-move 스냅샷(backup-local portal) → agent_audit → users → conversations → token_store+jwt(`install -m 0600`) 순 M-SQLITE
-- [ ] conversations `LIKE '/home/%'` 스캔 결과 기록
-- [ ] agent-server artifacts M-BLOB · gateway audit.jsonl 파일 심링크
-- [ ] 심링크 + `--bind` 커널 해석 1회 실측 기록(context-notes)
-- [ ] **게이트**: 로그인 · 기존 PAT 로 게이트웨이 tools/list 개수 동일 · conversations count 동일 · launch-JWT heax SSO 1회 · jwt kid 개수 불변 · `data --check` same · 포털 컨테이너 안 `ls /data/svc/portal` 정상
+## D1~D4 — 이관기(`infra/scripts/data-migrate.sh`)가 수행 — dev 실행 결과(2026-09-05)
 
-## D2 — HEAX appdata (P5 선행)
-- [ ] 결정 7 HEAX 런처 `HEAX_APP_DATA_ROOT` env(integration_launcher.py:56) 반영 확인
-- [ ] MTW 크론 19·20 export 를 `.backup` 사본에서(§7.15③) 먼저 · 컨테이너 SIF 스키마 = 라이브 스키마 확인
-- [ ] 크론 19·20 주석 → 컨테이너 8개 정지 → `pgrep -f scripts/catalog` 0
-- [ ] `var/app_data → /data/appdata` 루트 통째(M-SQLITE·M-BLOB 혼합, WAL 포함 `.backup`) · `.env` `HEAX_APP_DATA_ROOT` · `.pre-*` 13개 legacy tar 후 삭제 · 0바이트 materialtwin.db 삭제
-- [ ] `.agent_work` → `/data/appdata/materialtwin_web/sources/agent_work/` + `source.local_path` 18행 UPDATE + `/tmp` 1행
-- [ ] risk_review.db · stepforge.db `LIKE '/home/%'` 스캔 기록
-- [ ] **게이트**: HEAXHub /health 200 + 앱 8 페이지 · 표별 count(materialtwin 11표) · integrity ok · `register_material` 1회 · `source.local_path` 존재 100% · `heax_app_step_forge` 안 `/data` 내용 동일 · 크론 19·20 복구(읽기 전용판)
+수동 절차(옛 D1~D4 항목)는 **레지스트리 기반 이관기**로 대체했다: 서비스별 `pre-move 백업 → 크론 일시정지 → 정지 → 복사·checksum → rename+심링크 → 기동 → 행수 대조(DB post≥pre) → db_paths 치환 → 원장`, 실패 시 자동 롤백(목표 사본은 `.rolled-back-TS` 로 비켜둠). cae00/prod 는 `HWAX_DATA_ROOT=/data` 한 줄 → `update-all 2b`.
 
-## D3 — 비-HEAX 블롭
-- [ ] AIDH `_common.sh:13` + load_env 재평가 · `deploy/apptainer/.env` `AIDH_MCP_UPLOADS_DIR` · attachments·figures·mcp_uploads M-BLOB · `record_attachments.file_path` 18행 + `mcp_uploads.manifest.sif_path` 4행 UPDATE · 미참조 SIF 2개 목록
-- [ ] SF `_common.sh:10` + load_env 재평가 · reports·audit M-BLOB(crawler `/reports` 바인드는 결정 7)
-- [ ] MXWP `_common.sh:44` · minio M-BLOB · meili 는 `MEILI_DB_PATH` 수리 결정 전 `enabled:false`
-- [ ] Koorm `_common.sh:63` · storage M-BLOB · start.sh `KOORM_STORAGE_DIR` `--env` + 존재 시 `--bind`
-- [ ] HEAX `job_storage` M-BLOB + `.env` 값
-- [ ] **게이트**: DB 경로 행 전수 존재 · AIDH 첨부 다운로드 표본 200 · MinIO 객체 354+175 · Koorm 세션 파일 다운로드 1건 · `data --check` same
-
-## D4 — Postgres (P2.4 dev 선행)
-- [ ] 순서: mxwp → kooremapper → heax → signalforge → aidh. 각각 M-PG 0~7
-- [ ] heax: `SECRET_ENCRYPTION_KEY` sha256 을 pre-move 매니페스트에 · 야간 창(SSO 핸드오프 단절)
-- [ ] signalforge: 크론 7·16·17·18·21·23 주석 → 이동 → 복구 · `signalforge_mergestage` 잔존 확인
-- [ ] aidh: `aidh_mergestage` 잔존 확인 · 9.6G 복사 시간 기록
-- [ ] **게이트**(svc 별): `pg_isready` · 표별 count = 사전 · `\dx` 동일 · 앱 health · backup-local 1회 정상 · `data --check` same
-- [ ] 유예 뒤 `db-sync prune --pre-move` (사람)
+- [x] **portal**(D1) 12:17 — users·conv·audit·token_store·jwt 5클래스 → `/data/svc/portal`·`/data/hwax/secrets/portal/jwt`. 게이트: health 200 · 컨테이너 `ls /data/svc/portal` ✓ · 프로세스 env 6종(USER/CONV/TOKEN/AUDIT/JWT_KEYS_DIR/DELIB) 새 경로 ✓ · 행수 conversations 1753·users 3·token_store 38 일치 · 가짜 PAT → portal/gateway 401(스토어 조회 정상) · jwt kid `dev-1` 불변 · `data --check` same · conversations `'/home/'` 포함 = messages.content 4행(본문 언급, 경로 컬럼 아님)
+  - [ ] 기존 PAT 로 tools/list 개수·launch-JWT heax SSO 1회 — 브라우저 수동(사용자)
+  - [x] `start.sh` D9 바인드(존재 시 동일경로) + 6 env 조건부 `--env` · `apply-envs.sh ARTIFACT_DIR` 줄은 **불필요**(resolve_data 주입 + 심링크) · nginx 로그는 이동 대상 아님(log 종류 — logrotate 몫)
+- [x] **mcp-gateway** audit.jsonl(파일형 blob) · **agent-server** artifacts 12:33 — 호스트 프로세스, env 주입 확인(GATEWAY_AUDIT·ARTIFACT_DIR)
+- [x] **mx-white-paper**(D4·D3) 12:31 — pg 275M(72표 일치)·minio 14M. **1차 시도 롤백**(minio 파일수 568→554: `.minio.sys/tmp` 를 시작·종료마다 갈아치움 → 대조 규칙 수정) · stop.sh 가 mxwp_api 를 세워 mxwp-mcp 도 죽음 → `restart_also` · 게이트웨이 revive 루프가 1~2분 뒤 재부착(372 도구 복귀)
+- [x] **kooremapper**(D4·D3) 12:33 — pg 64M(8표)·storage 4M. needs_bind 사전 재기동 → 컨테이너 `/data/svc/kooremapper` ✓ · `KOORM_STORAGE_DIR` env ✓
+- [x] **heax-hub**(D4·D2·D3) 12:35 — pg 70M(23표)·app_data 1035M → `/data/appdata` 루트 심링크·job_storage. 48s(heal.sh 40s). 게이트: /health 200 · 앱 인스턴스 16 · materialtwin 49,386행 동일 · 앱 컨테이너 `/data` 에 materialtwin.db ✓ · materialtwin web 200·stepforge 401(인증 요구=생존) · 런처 가드 `resolve()` 양쪽이라 심링크 루트 허용(실측)
+  - [ ] `.agent_work` → `/data/appdata/materialtwin_web/sources/agent_work/` + `source.local_path` 18행 UPDATE(MTW, D2 잔여) · `.pre-*` 13 legacy tar·0바이트 materialtwin.db 정리(D7 사람) · `SECRET_ENCRYPTION_KEY` sha256 매니페스트 기록 · `register_material` 1회(수동)
+- [x] **signalforge**(D4) 12:37 — pg 1.9G(11표 일치) · reports·audit 는 추적 파일 → 등록만(`enabled:false`)
+- [x] **ai-data-hub**(D4·D3) 12:48 — pg 9.8G(21표 일치)·attachments·figures·mcp_uploads 570M + db_paths 치환 `record_attachments.file_path` 18행·`mcp_uploads.manifest` 4행. **1차 시도(12:41) 롤백**: 치환 SQL 리터럴을 `shlex.quote` 로 만들어 슬래시만 있는 경로가 인용되지 않음(`syntax error at or near "/"`) → `sql_lit()` 로 수정. 롤백이 pg 9.8G 사본 포함 4개를 `.rolled-back-20260905-123758` 로 비켜둠(사람이 지운다). 재실행은 3시간 안의 daily 덤프를 재사용해 21s
+- [x] **공통 게이트**: `services.sh data --check` rc 0(이동 종류 전부 same) · 심링크가 `--bind` 소스여도 커널이 해석(mxwp·koorm·heax·sf pg 인스턴스가 `/data/pg/<svc>/pgdata/postmaster.pid` 갱신 — 실측) · 크론 23줄 매번 복원 · 원장 `/data/hwax/state/data-migrate/journal.jsonl`
+- [ ] 유예 뒤 `.pre-move-*`(8리포)·`.rolled-back-*`(`/data/pg/mxwp.…-122907`·`/data/svc/mxwp/minio.…-122907`·`/data/pg/aidh.…-123758` 9.8G·`/data/svc/aidh/{attachments,figures,mcp_uploads}.…-123758`) 삭제 — 사람(D7)
 
 ## D5 — 동기화 배선 (P3.1b) — 기존 스크립트 + ssh
 - [ ] `infra/boxes.yaml`(gitignore) + ssh 키 확인(dev↔cae00↔prod BatchMode)

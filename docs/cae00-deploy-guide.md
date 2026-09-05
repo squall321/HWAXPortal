@@ -232,3 +232,36 @@ pgrep -f 'supervisor.sh' >/dev/null && echo 감시중
 curl -s http://127.0.0.1:8700/api/health        # api ok
 # system_status 의 env 가 production (KOORM_APP_ENV 수동 조치 후)
 ```
+
+## 2026-09-05 반영분 — /data 이관(옵트인, infra/.env 한 줄)
+
+리포 안에 쌓이던 데이터(pg·sqlite·첨부·MinIO·JWT 키)를 `/data` 로 옮기는 이관기가 `update-all` 에 들어갔다.
+**infra/.env 에 `HWAX_DATA_ROOT` 가 없으면 아무것도 하지 않는다**(종전과 동일). 켜면 update-all 의 `2b)` 단계가
+아직 옛 경로에 있는 것만 골라 옮기고(멱등), 옛 경로는 심링크로 남겨 크론·워치독·수동 스크립트가 그대로 동작한다.
+설계·근거는 `docs/data-migration/`(PLAN §2 원칙 D1~D12, §10).
+
+```bash
+cd ~/Projects/HWAXPortal
+grep -E '^HWAX_(DATA_ROOT|BOX|BOX_ROLE)=' infra/.env        # 비어 있어야 정상(처음)
+df -h /data && du -sh ../SignalForge/data/postgres ../AIDataHub/deploy/apptainer/data/postgres   # 여유 ≥ 합계 ×1.2
+apptainer instance list | grep -cE 'postgres|heax-pg'         # pg 인스턴스가 떠 있어야 행수 대조가 된다(안 떠 있으면 그 서비스는 블로커로 건너뜀)
+printf 'HWAX_DATA_ROOT=/data\nHWAX_BOX_ROLE=staging\n' >> infra/.env
+git pull && ./infra/scripts/update-all.sh                    # 2b) 단계에서 서비스별 "이동 완료 (N클래스)" 확인
+./infra/scripts/services.sh data --check                     # rc 0 · 옮긴 클래스가 same
+```
+
+서비스별로 **정지 → pre-move 백업(backup-local) → 복사·checksum 검증 → 옛 경로 rename+심링크 → 기동 → 행수 대조**
+순이며 어느 단계든 실패하면 자동 롤백(`↩` 줄)하고 다음 서비스로 넘어간다. 정지 창은 서비스당 수 초~1분(dev 실측: 포털 9s·HEAX 48s·AIDH 9.8G 21s).
+pre-move 백업은 1b) 가 방금 만든 덤프(3시간 이내)를 재사용하므로 두 번 덤프하지 않는다. 실행 동안 크론을 통째로 멈추고(워치독이 되살리지 않게) 끝나면 복원한다.
+
+| 상황 | 할 일 |
+|---|---|
+| 일부 `✗ … 롤백` | 그냥 다음 `update-all` 에서 다시 시도된다(멱등). 원인은 출력의 ✗ 줄·`/data/hwax/state/data-migrate/journal.jsonl` |
+| 무엇을 옮길지 미리 보기 | `./infra/scripts/data-migrate.sh plan` (변경 없음) |
+| 특정 서비스만 되돌리기 | `./infra/scripts/data-migrate.sh rollback <svc>` |
+| 강제 종료 뒤 크론이 비어 있음 | `./infra/scripts/data-migrate.sh resume-crons` (다음 run 도 자동 복원한다) |
+| 옛 사본 정리 | `<옛경로>.pre-move-<TS>`·`<목표>.rolled-back-<TS>` 는 도구가 지우지 않는다 — 며칠 지켜본 뒤 사람이 `rm -r` |
+
+옮기지 않는 것: 로그(logrotate 몫)·백업 디렉터리(backup-local 이 `/data/backups/hwax/<box>/` 에 이미 쓴다)·캐시·
+SignalForge `reports/`·`audit/`(추적 파일 포함 — 심링크 불가, 등록만).
+

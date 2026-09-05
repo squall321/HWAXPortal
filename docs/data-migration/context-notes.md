@@ -130,6 +130,39 @@ dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
   - MTW `.agent_work` gitignore 는 D0 묶음에서 빼 D2 로(어떤 stash -u 경로에도 없고, 미푸시 161 커밋 동반 push 가 실코드 배포가 됨). KooRemapper 는 feat 커밋 → main ff → 둘 push(cae00 은 origin/main reset). HEAXHub 는 타 세션 미푸시 2커밋 + 활성 세션 7개 → 로컬 커밋만, push 는 소유자 확인.
   - 커밋 밖 부작용(crontab·logrotate 상태파일·/data/hwax/state·리허설 잔존·chmod)은 checklist 롤백 목록으로. 첫 조치 전 `crontab -l` 저장.
 
+### 2026-09-05 이관기(data-migrate) — dev D1~D4 실행이 바꾼 규칙
+
+사용자: "기존에 cae00 에서 셋업되어 있다는 걸 가정하고, /data 로 안 되어 있으면 그쪽으로 옮겨지게, 직접 손 안 대도 되게". → 수동 D1~D4 대신
+레지스트리 기반 이관기 + update-all 옵트인 훅. dev 에서 서비스 하나씩 돌리며 잡은 것들.
+
+- **root_env 주입 제거**: `MXWP/SF/AIDH/KOORM_DATA_ROOT` 를 읽는 코드가 4리포 어디에도 없다(`_common.sh` DATA_DIR 리포 상대 고정). 게다가 pg 는
+  `/data/pg/<svc>`, blob 은 `/data/svc/<svc>/…` 로 갈려 한 루트로 가리킬 수도 없다. 브리지 심링크(D2)가 전부를 잇는다. yaml 의 `root_env:` 4줄은 주석으로.
+- **심링크가 `--bind` 소스여도 된다(실측)**: mxwp·koorm·heax·sf 의 pg 인스턴스가 `var/pg → /data/pg/<svc>` 심링크를 소스로 떠서 `postmaster.pid` 를 새
+  경로에 썼다. 커널 mount(2) 가 소스를 해석한다. 컨테이너 **안**에서 심링크를 따라가는 경우(포털 sqlite·Koorm storage)만 D9 바인드가 필요하고, 그건
+  `needs_bind` 로 표시해 이관기가 재기동 뒤 `apptainer exec … test -d` 로 확인한 다음에만 옮긴다.
+- **blob 대조 규칙**: mxwp 1차 시도가 "minio 파일 수 568→554" 로 롤백됐다. 정지 전 스냅 vs 기동 후 스냅을 비교했는데 minio 가 `.minio.sys/tmp` 를 시작·
+  종료마다 갈아치운다. 정본은 정지 상태에서의 `rsync -n --checksum` 0줄이고, 보조 대조도 **정지 뒤 → 복사 직후** 로 옮겼다. 기동 뒤엔 blob 을 다시 세지 않는다.
+- **DB 대조 규칙 post ≥ pre**: 기동 시 앱이 쓰는 행(감사 로그·시드)이 있어 "동일" 은 거짓 실패를 만든다. 표 집합 동일 + 표마다 감소 없음 = 통과, 증가는 출력에 적는다.
+- **롤백은 목표 사본을 비켜둔다**: 그대로 두면 다음 run 이 `divergent` 로 영영 막혀 무인 update-all 이 의미를 잃는다. 삭제는 D7 위반이라 `<목표>.rolled-back-<TS>`
+  로 rename(원장 `park`). mxwp 1차 잔여 2개가 그 이름으로 남아 있다.
+- **동거 프로세스 `restart_also`**: mxwp `stop.sh` 가 `mxwp_api` 인스턴스를 세우면 그 안에서 `apptainer exec` 로 뜬 mxwp-mcp(:8765) 도 죽는다. 게이트웨이는
+  revive 루프(liveness 실패 → 재연결 예약)가 있어 1~2분 뒤 스스로 다시 붙었다(343 → 372 도구). 이관기는 `restart_also: [mxwp-mcp]`(SF 는 signalforge-mcp) 를
+  기동 뒤 함께 올린다.
+- **헬스 대기 knob**: services.py 상한 120s 는 HEAX 전체 재기동(dev 40s, cae00 은 더)에 빠듯해 `HWAX_HEALTH_WAIT`(초) 를 두고 이관기는 300 으로.
+- **pg 인스턴스 미기동 = plan 블로커**: 런 중 psql 실패로 롤백되는 대신 사전에 "인스턴스 '<이름>' 미기동/이름 불일치" 로 막는다(cae00 이름 불일치 방어).
+- **크론**: `crontab -r` 로 통째 정지(워치독 4종·MTW 라이브 sqlite 크론) → finally 복원. 비정상 종료로 `crontab.paused` 가 남으면 다른 이관기 프로세스가 없을 때
+  자동 복원 후 진행(무인 update-all 이 영영 막히지 않게). Ctrl-C·SIGTERM 도 `BaseException` 으로 잡아 롤백·기동·크론 복원까지 한다(서비스가 내려간 채 남지 않게).
+- **backup 종류 제외**: SF `dumps`·AIDH `backups` 는 backup-local 이 이미 `/data/backups/hwax/<box>/` 에 쓰기 시작해 `divergent` 가 설계상 정상 → MOVABLE 과
+  `data --check` rc 둘 다에서 log·backup·cache 를 뺐다.
+- **update-all 2b 훅 인용 사고**: `tr -d '"'"'"'` 를 `$( )` 안에 넣어 bash 구문이 깨졌다(`bash -n` 이 커밋 전에 잡음). `grep -qE '^HWAX_DATA_ROOT=[^[:space:]#]'` 로.
+- **HEAX 런처 가드는 심링크 루트를 허용**: `_app_data_dir` 가 `APP_DATA_ROOT.resolve()` 와 `(root/canonical).resolve()` 양쪽을 풀어 비교 → `var/app_data → /data/appdata`
+  로 16 앱이 전부 다시 떴고 materialtwin 컨테이너 `/data` 에 DB 가 보였다. 사전점검 때의 우려(앱별 심링크 거부)는 **루트 통째 심링크** 에는 해당 없음.
+- 출력 순서: 하위 스크립트가 터미널에 직접 쓰고 파이썬은 버퍼링돼 로그가 뒤섞였다 → 래퍼 `python -u`.
+- **SQL 리터럴은 `shlex.quote` 로 만들면 안 된다**: aidh 1차 시도가 `db_paths` 치환에서 `syntax error at or near "/"` 로 롤백됐다. shlex.quote 는 `[A-Za-z0-9@%+=:,./-_]` 만으로 된
+  문자열(=보통의 절대경로)을 **인용하지 않는다**. `sql_lit()`(`'…'` + `''` 이스케이프) 로. 롤백은 pg 9.8G 사본까지 정확히 비켜뒀고(21표 일치까지 갔던 상태) 재실행 21s 로 완주 — 롤백 경로가 실전에서 검증된 셈.
+- **pre-move 백업은 3시간 안의 daily 덤프를 재사용**: update-all 은 1b) 에서 전부 덤프한 직후 2b) 를 부른다. 다시 덤프하면 cae00 에서 AIDH 만 10분+ 가 두 번. 옛 경로
+  원본이 `.pre-move` 로 그대로 남으므로 "≤3시간 전 덤프 + 원본 보존" 이 D3 의 뜻을 충족한다. 재시도(aidh 2차)도 이 덕에 21s.
+
 ## 작업 로그
 - 2026-09-05: 인벤토리·패널·계획 수립. 코드 변경 0.
 - 2026-09-05 (오후): 사용자 결정 — 크론 24·1행 삭제 OK, vllm 기준선 제외 OK, a.txt 삭제 OK, "내부 프로젝트 하던 건 다 커밋 push 해서 동기화한 다음".
@@ -143,3 +176,9 @@ dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
   signalforge·aidh 임시 인스턴스(:5440·:5441) 진행 중. 커밋: b156da8·0265c99·163fae4·3a79da3·944070b(+7리포 .gitignore).
   실행 중 잡은 것 — 첫 게이트 오탐(`?? infra/`), MXWP commitlint subject-case(대문자 시작 금지), 편입된 옛 portal tar 664→600 정정,
   AIDH merge-from-drive 는 pre-merge 디렉터리를 자체 mkdir -p(재생성해 둠).
+- 2026-09-05 (저녁): **이관기 구현 + dev D1~D4 실행**. `datamigrate.py`/`data-migrate.sh`(plan/run/rollback/resume-crons), services.yaml 보강(stop·conn·backup_want·
+  needs_bind·db_paths·app_instance·restart_also), services.py(resolve_data 는 이동된 클래스만 주입·HWAX_HEALTH_WAIT·check 규칙), 포털·Koorm start.sh D9 바인드,
+  update-all 2b 옵트인 훅. dev infra/.env 에 `HWAX_DATA_ROOT=/data`·`HWAX_BOX_ROLE=dev` 설정 후 portal(12:17) → mxwp(1차 롤백 → 12:31 ✓) → gateway·agent-server·
+  koorm(12:33) → heax(12:35, 48s) → signalforge(12:37) → aidh(1차 12:41 SQL 리터럴 버그로 롤백 → 12:48 ✓ 21s) 순 실행 — **dev 8서비스 전부 /data**.
+  hwax-stack.service 재enable. 커밋 986d058·61cdb5b(+수정 1건). cae00 절차는 cae00-deploy-guide 2026-09-05 절.
+
