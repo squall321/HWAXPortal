@@ -267,7 +267,11 @@ calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공�
   H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_BASE:-}" MXWP_UP="$MXWP_UP" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
-want = {"ai-data-hub", "signalforge"}
+# hwax-deliberation 은 agent-server(:9009/mcp) 내장이라 이 스택이면 항상 있어야 한다.
+# ⚠ 기대 목록에 없으면 재프로비저닝이 안 돈다. gateway_config.json 은 gitignore 라 git pull 로도
+#   안 오므로, 코드만 최신이고 게이트웨이는 이 백엔드를 모르는 상태로 남는다 — 그러면 MCP
+#   클라이언트에서 심의 진입점(deliberate_*)이 통째로 사라진다(도구 목록에 0개).
+want = {"ai-data-hub", "signalforge", "hwax-deliberation"}
 if os.environ.get("MXWP_UP") == "1": want.add("mx-white-paper")
 if os.environ.get("RAT"):           want.add("reportarchive")
 # ODB 자동화 허브는 cae00 에서만 도달한다(dev 는 포트 차단 — 실측). 토큰이 있는 박스에서만
