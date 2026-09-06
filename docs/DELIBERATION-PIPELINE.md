@@ -41,7 +41,7 @@ Claude) 몫이고, 도메인 무관한 **다중 라운드 수렴**은 워크플�
 ①이 품질 정본이다(좌석이 Claude). ②·③은 같은 엔진이라 결과 형식(의사결정문·RA 보고서)이 같고
 좌석 구성·근거 주입 규율도 같지만, 추론 모델이 다르다.
 
-### ③ MCP 경로 — 2026-09-06 신설
+### ③ MCP 경로 — 2026-09-06 신설 (웹 파리티)
 
 **왜 만들었나.** 게이트웨이 도구 목록에 심의 진입점이 **0개**였다. ①은 MCP 도구가 아니고(Claude Code
 런타임 전용), ②는 HTTP 슬래시 트리거라 도구로 안 보인다. 그래서 MCP 클라이언트가 "심의" 를 찾으면
@@ -52,15 +52,40 @@ Claude) 몫이고, 도메인 무관한 **다중 라운드 수렴**은 워크플�
 클라이언트 타임아웃으로 끊기는데, 그때 심의는 이미 GPU 를 쓰고 있다.
 
 ```
-deliberate_kinds()                      # 어떤 심의가 있는지
-deliberate_start(kind, question)        # 즉시 job_id 반환, 심의는 뒤에서 계속
+deliberate_jobs()                       # 심의 9종 메뉴 · modifier · 옵션 목록
+deliberate_start(question, job, …)      # 즉시 job_id 반환, 심의는 뒤에서 계속
 deliberate_status(job_id)               # 단계·라운드·좌석
-deliberate_result(job_id)               # 의사결정문 전문
+deliberate_result(job_id)               # 결정 문서 전문 + 좌석·적용 옵션
+deliberate_transcript(job_id, …)        # 좌석 발언 원문(페이지)
+deliberate_continue(previous_job_id, human_note, …)   # 이어하기 — 결정문·좌석 자동 승계
+deliberate_cancel(job_id)               # 진행 중인 심의 접기
 deliberate_list(limit)                  # 최근 잡
 ```
 
-`kind` 는 `general`(범용) · `sim`(2단 — 메커니즘→해석 설계) · `test-plan`(시험 계획).
-`modifiers` 는 voi · premortem · toulmin · eliminative · anon1r.
+**job 9종** — 포털 웹 메뉴(`delibTaxonomy.ts` 7 Job)를 그대로 옮기고, 엔진 `_CHAIR_ITEMS` 에만
+있던 2종을 더했다. `chair_template` 은 Job 표가 세우므로 웹과 같은 조합이 나온다.
+
+| job | 산출 | 특이 |
+|---|---|---|
+| `diagnosis` | 원인 규명 결정문 | 반증 지정석 자동 |
+| `option-select` | 안 선택 결정문 | 반대 지정석 자동 |
+| `credibility` | 신뢰 판정문 | red-team 지정석 자동 |
+| `risk-review` | 리스크 심사 보고서 | **기준선 옹호 지정석 + 좌석 계약 16종 + 도구 화이트리스트** |
+| `mechanism` | 메커니즘 결정문 | sim-plan 1단만 따로 |
+| `sim-plan` | 해석 계획서 · sim_spec | 2단 · 수치 스파인 고정석 |
+| `test-plan` | 시험 계획서 | 좌석 5석 고정 |
+| `build-plan` | 구축 계획서 | 3단 · P1~P4 게이트 |
+| `default` | 의사결정문 | 자유 |
+
+**옵션은 웹 토글과 같은 것을 전부 받는다** — `modifiers`(voi·premortem·toulmin·eliminative·anon1r) ·
+`evidence`(원천 근거 주입 ≤12) · `personas`(좌석 지정 ≤12) · `tools`/`apps`(근거 조회 범위) ·
+`human_note` · `stop_after_round`(체크포인트) · `search_sources` · `advanced`(품질 손잡이 통과).
+검증·클램프는 전부 엔진(`_resolve_opts`)이 한다.
+
+**리스크 심사를 MCP 로 끝까지** — `risk_get_brief` 로 브리프를 받아 `evidence` 로 넘기고
+`job="risk-review"` 로 돌린 뒤 `deliberate_transcript` 로 전사를 뽑아 `risk_submit_panel_result`
+로 원장에 되돌린다. 원장 왕복을 한 도구로 묶는 러너는 아직 없다(Claude Code 의
+`hwax-risk-review.js` 가 그 자리다).
 
 **배선.** `HWAXAgentServer/mcp_server.py`(FastMCP) 를 `app.py` 가 `/mcp` 로 mount 하고,
 게이트웨이가 `hwax-deliberation` 백엔드(`:9009/mcp/`)로 문다. 잡 원장은 `delib_jobs.py`,
