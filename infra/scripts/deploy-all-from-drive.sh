@@ -14,6 +14,9 @@
 # hand-edit any .env — this fills *_DRIVE_REMOTE / *_IMAGES_REMOTE for you. The sub-path is already
 # baked into each artifact (web.sif, HEAXHub dist) / handled by AIDH_ROOT_PATH.
 set -euo pipefail
+# 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
+# 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
+export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"; export no_proxy="$NO_PROXY"
 # apptainer rootless cgroups 는 D-Bus 사용자 세션 필요 — 비로그인 셸에 XDG_RUNTIME_DIR 가 비면
 # 'couldn't create cgroup manager' 로 죽는다. 사용자 세션 버스가 있으면 잡아준다.
 : "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"; export XDG_RUNTIME_DIR

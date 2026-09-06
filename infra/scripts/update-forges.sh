@@ -22,6 +22,9 @@
 #                       index.portal.html 을 안 만들어 포털 경유가 깨진다 — 실사고)
 #               → stop/start → install-autostart(멱등) → :8700/:8701 프로브
 set -uo pipefail
+# 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
+# 이 나고 서비스를 죽은 것으로 오판한다(실사고). 바깥용 http_proxy 는 그대로 두고 로컬만 우회.
+export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"; export no_proxy="$NO_PROXY"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$ROOT")"
 find_repo() { for c in "$PARENT/$1" "$HOME/Projects/$1" "$HOME/claude/$1"; do [ -d "$c" ] && { printf '%s' "$c"; return; }; done; }

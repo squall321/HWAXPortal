@@ -22,6 +22,9 @@
 #     ODB_HUB_TOKEN=xxxx           # ODB 자동화 허브(10.252.38.121:8000) — cae00 에서만 도달
 #     ARP_BASE=http://10.252.38.97:3001  # AI Ready Portal — 무인증, cae00 에서만 도달
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
+# 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
+# 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
+export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"; export no_proxy="$NO_PROXY"
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
