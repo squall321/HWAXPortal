@@ -428,6 +428,9 @@ PY
           echo "            dashboard/mcp_slurm 의 install_offline.sh · mcp-slurm.service.example 참조)"
           echo "      수동: cd <repo>/dashboard/mcp_slurm && SLURM_MCP_BACKEND=http://127.0.0.1:5010 ./venv/bin/python server.py" ;;
         ai-data-hub)    UP_SVCS="$UP_SVCS ai-data-hub" ;;
+        # 심의 MCP(:9009/mcp)는 agent-server 에 내장이다 — 이 백엔드가 죽었다는 건 에이전트 서버가 죽은 것.
+        # 살리지 않으면 MCP 클라이언트에서 심의를 시작할 진입점이 도구 목록에서 통째로 사라진다.
+        hwax-deliberation) UP_SVCS="$UP_SVCS agent-server" ;;
         # heax-<slug> 는 '앱 하나'가 죽은 것이다. 여기서 heax-hub 통기동으로 접으면 안 된다 —
         # 허브가 살아 있으면 services.py 가 'already-up' 으로 돌려보내 아무것도 안 하고,
         # 화면엔 '✓ heax-hub already-up' 이 찍혀 복구된 것처럼 보인다(무동작을 복구로 표시).

@@ -25,6 +25,53 @@
 **오케스트레이션 패턴**이다. 도메인 도구 실행·페르소나 발굴·시각화 조립은 도메인별이라 호출자(역량 있는
 Claude) 몫이고, 도메인 무관한 **다중 라운드 수렴**은 워크플로가 캡슐화한다.
 
+
+---
+
+## 심의를 여는 세 가지 길 (2026-09-06)
+
+엔진이 둘이고 진입점이 셋이다. 어느 길로 들어가느냐에 따라 **좌석을 연기하는 모델이 다르다**.
+
+| 길 | 진입 | 엔진 · 좌석 모델 | 쓸 수 있는 곳 |
+|---|---|---|---|
+| **① 워크플로(JS)** | `Workflow({scriptPath: 'infra/pipeline/hwax-deliberate.js', args})` | JS 파이프라인. 좌석마다 `agent()` 로 **Claude 서브에이전트**가 앉는다 | Claude Code 전용 |
+| **② 포털 웹** | 챗에 `/심의` · `/시뮬심의` · `/시험계획` | 파이썬 엔진(`deliberation.py`). 좌석은 **vLLM/GLM** | 브라우저 |
+| **③ MCP 도구** | `deliberate_start(kind, question)` | ②와 **같은 파이썬 엔진**을 잡으로 감쌌다 | 게이트웨이에 붙은 모든 MCP 클라이언트 |
+
+①이 품질 정본이다(좌석이 Claude). ②·③은 같은 엔진이라 결과 형식(의사결정문·RA 보고서)이 같고
+좌석 구성·근거 주입 규율도 같지만, 추론 모델이 다르다.
+
+### ③ MCP 경로 — 2026-09-06 신설
+
+**왜 만들었나.** 게이트웨이 도구 목록에 심의 진입점이 **0개**였다. ①은 MCP 도구가 아니고(Claude Code
+런타임 전용), ②는 HTTP 슬래시 트리거라 도구로 안 보인다. 그래서 MCP 클라이언트가 "심의" 를 찾으면
+이름에 그 낱말이 든 유일한 앱(**발표자료 생성기** WebDesignAgents)으로 수렴했다 — 실제로 시뮬레이션
+심의 요청이 슬라이드 제작으로 갔다. 랭킹이 빗나간 게 아니라 **정답이 목록에 없었다**.
+
+**3단인 이유.** 심의는 수 분~수 시간이고 MCP 도구 호출은 동기다. 한 호출로 끝내려 하면 반드시
+클라이언트 타임아웃으로 끊기는데, 그때 심의는 이미 GPU 를 쓰고 있다.
+
+```
+deliberate_kinds()                      # 어떤 심의가 있는지
+deliberate_start(kind, question)        # 즉시 job_id 반환, 심의는 뒤에서 계속
+deliberate_status(job_id)               # 단계·라운드·좌석
+deliberate_result(job_id)               # 의사결정문 전문
+deliberate_list(limit)                  # 최근 잡
+```
+
+`kind` 는 `general`(범용) · `sim`(2단 — 메커니즘→해석 설계) · `test-plan`(시험 계획).
+`modifiers` 는 voi · premortem · toulmin · eliminative · anon1r.
+
+**배선.** `HWAXAgentServer/mcp_server.py`(FastMCP) 를 `app.py` 가 `/mcp` 로 mount 하고,
+게이트웨이가 `hwax-deliberation` 백엔드(`:9009/mcp/`)로 문다. 잡 원장은 `delib_jobs.py`,
+산출물은 `$ARTIFACT_DIR` 옆 `delib-jobs/`(=/data 이관 시 함께 이동). 동시 실행 상한은
+`DELIB_JOB_MAX_RUNNING`(기본 2) — 심의 하나가 좌석 수만큼 LLM 을 물어 무제한이면 큐가 잠긴다.
+
+**⚠ meeting_\* 는 심의가 아니다.** 게이트웨이의 `meeting_start`·`meeting_submit_turn` 계열은
+발표자료(슬라이드) 제작용 디자인 회의체다. 그쪽은 LLM 이 엔진에 없어서 호출자가 매 턴 발언문을
+직접 써 넣어야 하고, 응답에 슬라이드 리뷰 진행 지시문이 실려 있어 한 번 부르면 그 루프에 갇힌다.
+
+
 > 정본은 `infra/pipeline/hwax-deliberate.js`(추적됨). 이름으로 호출하려면 `.claude/workflows/`(로컬,
 > gitignore)에 복사하고, 아니면 `Workflow({scriptPath:'infra/pipeline/hwax-deliberate.js', args})`로 호출.
 
