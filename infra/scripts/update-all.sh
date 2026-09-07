@@ -345,6 +345,20 @@ PY
      && { [ -n "${HEAX_MCP_TOKEN:-}" ] || [ -x "$(find_repo HEAXHub)/backend/.venv/bin/python" ]; }; then
     MISSING="heax_registry${MISSING:+ $MISSING}"
   fi
+  # 리스크 심사 앱 사용자 위임도 heax_registry 안의 항목이라 /health 에 안 나온다. 없으면 MCP 가
+  # 서비스 계정 시야로만 돌아 '과제 0건'을 답한다 — 도구는 다 뜨는데 내용이 비는 부류라 눈에 안 띈다.
+  if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+     && [ -s "$(find_repo HEAXHub)/var/app_data/hwax_risk/secrets.env" ] \
+     && ! python3 - "$GW_DIR/gateway_config.json" <<'PY' 2>/dev/null
+import json, sys
+try: d = json.load(open(sys.argv[1]))
+except Exception: raise SystemExit(1)
+sso = ((d.get("heax_registry") or {}).get("per_user_sso") or {}).get("hwax_risk") or {}
+raise SystemExit(0 if sso.get("secret") and sso.get("sso_url") else 1)
+PY
+  then
+    MISSING="hwax_risk_sso${MISSING:+ $MISSING}"
+  fi
 
   if [ -n "$MISSING" ]; then
     echo "  · config에 없는 백엔드: $MISSING → 재프로비저닝"
