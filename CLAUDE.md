@@ -98,6 +98,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | cae00 배포 | `docs/cae00-deploy-guide.md` |
 | 챗 업로드 목적지 라우팅 | `docs/upload/` (PLAN·checklist·context-notes) |
 | 심의 품질·방법 메뉴 | `docs/deliberation-quality/` |
+| 띵킹 모드(답할 수 있는 전문가만 각자 답한다) | `docs/thinking-mode/` |
 | 설계 리스크 심사 | `docs/design-risk-review/` |
 | 데이터 /data 통합·경로 레지스트리·DB 동기화 | `docs/data-migration/` (PLAN·checklist·context-notes) |
 
