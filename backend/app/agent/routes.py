@@ -115,6 +115,10 @@ class ChatRequest(BaseModel):
     # 웹 리서치 소스 토글(챗) — None 이면 종전 동작, 리스트면 그 소스만 바인딩한다.
     # 빈 리스트는 '전부 끔'이다. 전역 SEARCH_MODE 가 끄면 이 값과 무관하게 나가지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
+    # 띵킹 모드(챗) — 질문을 전문가 풀에 돌려 답할 수 있는 좌석만 각자 답하게 한다.
+    # delib_opts 가 아니라 top-level 인 이유는 매 턴 켜져 있어야 하는 모드이기 때문이다
+    # (프론트 슬래시 접두사는 첫 발화에만 붙는다). 여기 선언하지 않으면 조용히 유실된다.
+    thinking: bool = False
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -416,6 +420,8 @@ async def _relay_stream(
         payload["pinned_agent"] = body.pinned_agent
     if body.search_sources is not None:  # 빈 리스트도 의미가 있다(전부 끔) — None 과 구분
         payload["search_sources"] = body.search_sources
+    if body.thinking:  # 띵킹 모드 — 켠 것만 전달(끄면 agent-server 기본값 False)
+        payload["thinking"] = True
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload
