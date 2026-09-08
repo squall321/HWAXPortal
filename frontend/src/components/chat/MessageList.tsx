@@ -4,6 +4,7 @@ import { useChat } from '../../state/ChatContext';
 import type { Message } from '../../types/chat';
 import { copyText } from './clipboard';
 import { DelibView } from './DelibView';
+import { ThinkView } from './ThinkView';
 import { ToolCatalogBlock } from './ToolCatalogBlock';
 import { IconArrowDown, IconCheck, IconCopy } from './icons';
 import { TextBlock } from './renderers/TextBlock';
@@ -71,18 +72,24 @@ function Row({ msg }: { msg: Message }) {
 
   // 심의 메시지는 구조화 라이브 뷰(스테퍼·회의·수렴)로 — 텍스트 스트림 대신 DelibView 가 본문.
   const hasDelib = Boolean(msg.delib && (msg.delib.stages?.length || msg.delib.turns?.length));
+  // 띵킹 메시지도 마찬가지 — 좌석이 하나라도 소집되면 ThinkView 가 본문이다.
+  const hasThink = Boolean(msg.think?.seats?.length);
 
-  const thinking = Boolean(msg.streaming) && !msg.text && !hasDelib;
+  // ⚠ 이 지역 변수의 뜻은 '스트리밍 중인데 아직 내용이 없다' 이지 띵킹 모드가 아니다.
+  //   이름이 겹치므로 헷갈리지 말 것(모드 쪽은 hasThink).
+  const thinking = Boolean(msg.streaming) && !msg.text && !hasDelib && !hasThink;
   // A finished assistant turn with no text/error (e.g. the model only called a tool
   // and produced no closing text) would otherwise render empty — show a fallback.
   const emptyDone =
-    !msg.streaming && !msg.text && !msg.error && !msg.status && !hasDelib && !msg.toolCatalog;
+    !msg.streaming && !msg.text && !msg.error && !msg.status && !hasDelib && !hasThink && !msg.toolCatalog;
 
   return (
     <div className="msg assistant">
       <div className="msg-content">
         {hasDelib ? (
           <DelibView msg={msg} />
+        ) : hasThink ? (
+          <ThinkView msg={msg} />
         ) : (
           msg.text && <TextBlock text={msg.text} cursor={Boolean(msg.streaming)} />
         )}

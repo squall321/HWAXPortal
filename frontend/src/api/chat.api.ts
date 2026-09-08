@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { DelibEvent, ErrorEvent, ResultBlock, StatusEvent, TokenEvent, ToolCatalog } from '../types/chat';
+import type { DelibEvent, ErrorEvent, ResultBlock, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -16,6 +16,8 @@ export interface StreamHandlers {
   onToken?: (e: TokenEvent) => void;
   onResult?: (block: ResultBlock) => void;
   onDelib?: (e: DelibEvent) => void;
+  /** 띵킹 모드(SSE think) — 좌석별 예심·자기판정·답변·위임. kind 로 종류가 갈린다. */
+  onThink?: (e: ThinkEvent) => void;
   /** 도구 카탈로그(SSE tools) — '/도구' 검색 응답. 선택 카드 렌더용. */
   onTools?: (e: ToolCatalog) => void;
   onError?: (e: ErrorEvent) => void;
@@ -61,6 +63,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'delib':
       h.onDelib?.(payload as DelibEvent);
+      break;
+    case 'think':
+      h.onThink?.(payload as ThinkEvent);
       break;
     case 'tools':
       h.onTools?.(payload as ToolCatalog);
@@ -230,11 +235,13 @@ export async function streamChat(
     searchSources?: string[];
     /** 사용자 지정 전문가(agent_type) — 이 전문가 페르소나로 대화. */
     pinnedAgent?: string;
+    /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다. 매 발화에 실린다(슬래시 접두사 아님). */
+    thinking?: boolean;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, searchSources, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, searchSources, thinking, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -261,6 +268,8 @@ export async function streamChat(
       ...(pinnedAgent ? { pinned_agent: pinnedAgent } : {}),
       // 빈 배열도 의미가 있다(전부 끔) — undefined 와 반드시 구분해서 보낸다.
       ...(searchSources !== undefined ? { search_sources: searchSources } : {}),
+      // 켠 것만 보낸다(서버 기본값 false). 끄면 키 자체가 안 나간다.
+      ...(thinking ? { thinking: true } : {}),
     }),
     signal,
   });

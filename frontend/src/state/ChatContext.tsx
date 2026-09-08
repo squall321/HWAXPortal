@@ -20,7 +20,7 @@ import {
   type ConvKind,
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
-import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ToolCatalog } from '../types/chat';
+import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence } from '../components/chat/handoff';
 import {
   delibOptsToWire,
@@ -76,6 +76,9 @@ interface ChatContextValue {
   /** 사용자 지정 전문가(agent_type) — '전문가와 대화' 모드. 대화 전 선택 시 새 대화에 적용. */
   pinnedAgent: string | null;
   setPinnedAgent: (key: string | null) => void;
+  /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다(회의 아님). 세션 토글이라 매 발화에 실린다. */
+  thinking: boolean;
+  setThinking: (v: boolean) => void;
   stop: () => void;
   newConversation: () => void;
   selectConversation: (id: string) => void;
@@ -171,6 +174,65 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
   return d;
 }
 
+/** 띵킹 think 이벤트를 메시지의 ThinkData 로 병합 — 좌석 키로 한 행을 계속 채워 나간다. */
+function mergeThink(prev: ThinkData | undefined, e: ThinkEvent): ThinkData {
+  const d: ThinkData = { ...(prev ?? {}) };
+  const seats = [...(d.seats ?? [])];
+  const upsert = (key: string, patch: Partial<ThinkSeat>) => {
+    const i = seats.findIndex((x) => x.key === key);
+    if (i >= 0) seats[i] = { ...seats[i], ...patch };
+    else seats.push({ key, ...patch });
+  };
+  switch (e.kind) {
+    case 'roster': {
+      const hop = Number(e.hop ?? 0);
+      for (const raw of (e.seats as ThinkSeat[]) ?? []) upsert(raw.key, { ...raw, hop });
+      break;
+    }
+    case 'screen':
+      upsert(String(e.key ?? ''), {
+        hits: Number(e.hits ?? 0),
+        screened: !e.passed,
+        screenReason: String(e.reason ?? ''),
+      });
+      break;
+    case 'verdict':
+      upsert(String(e.key ?? ''), {
+        verdict: e.verdict as ThinkSeat['verdict'],
+        scope: String(e.scope ?? ''),
+        refer: (e.refer as string[]) ?? [],
+      });
+      break;
+    case 'answer':
+      upsert(String(e.key ?? ''), {
+        name: String(e.name ?? ''),
+        domain: String(e.domain ?? ''),
+        answer: String(e.text ?? ''),
+        basis: (e.basis as string[]) ?? [],
+      });
+      break;
+    case 'handoff':
+      d.handoffs = [
+        ...(d.handoffs ?? []),
+        { phrases: (e.phrases as string[]) ?? [], seats: (e.seats as string[]) ?? [] },
+      ];
+      break;
+    case 'summary':
+      d.summary = {
+        answered: Number(e.answered ?? 0),
+        passed: Number(e.passed ?? 0),
+        screened_out: Number(e.screened_out ?? 0),
+        errored: Number(e.errored ?? 0),
+        capped: Number(e.capped ?? 0),
+        hops: Number(e.hops ?? 0),
+        no_answer: Boolean(e.no_answer),
+      };
+      break;
+  }
+  d.seats = seats;
+  return d;
+}
+
 /** 첫 사용자 메시지 → 대화 제목(≈40자). */
 function makeTitle(text: string): string {
   const t = text.replace(/\s+/g, ' ').trim();
@@ -245,6 +307,14 @@ export function ChatProvider({
   // 인터넷 소스는 대화별이 아니라 세션 단위 토글이다 — 기본값은 '전부 끔'(빈 배열).
   // undefined 를 기본으로 두면 종전 동작(전부 허용)이 되어, 켠 적 없는데 나가는 상황이 된다.
   const [searchSources, setSearchSources] = useState<SearchSource[]>([]);
+  // 띵킹 모드도 세션 토글이다(소스 토글과 같은 성격). ref 는 전송 시점 읽기용 —
+  // 상태만 쓰면 sendMessage 클로저가 스테일 값을 실어 토글이 한 턴 늦게 반영된다.
+  const [thinking, setThinkingState] = useState(false);
+  const thinkingRef = useRef(false);
+  const setThinking = useCallback((v: boolean) => {
+    thinkingRef.current = v;
+    setThinkingState(v);
+  }, []);
   const draftPinsRef = useRef(draftPins);
   const setDraftPins = useCallback((v: { agent?: string; tools: string[]; apps: string[] }) => {
     draftPinsRef.current = v;
@@ -449,6 +519,9 @@ export function ChatProvider({
         ...(effPinnedApps.length ? { pinnedApps: effPinnedApps } : {}),
         ...(effPinnedAgent ? { pinnedAgent: effPinnedAgent } : {}),
         searchSources,
+        // 띵킹 모드 — 켠 동안 모든 발화에 실린다. 서버는 명시 슬래시 트리거(/심의 등)를
+        // 먼저 보므로, 모드가 켜져 있어도 그 턴에 대놓고 심의를 부르면 심의가 이긴다.
+        ...(thinkingRef.current ? { thinking: true } : {}),
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
@@ -486,6 +559,7 @@ export function ChatProvider({
         onToken: (e) =>
           patch(cid, botId, (m) => ({ ...m, text: m.text + e.delta, status: undefined })),
         onDelib: (e) => patch(cid, botId, (m) => ({ ...m, delib: mergeDelib(m.delib, e) })),
+        onThink: (e) => patch(cid, botId, (m) => ({ ...m, think: mergeThink(m.think, e) })),
         onTools: (e: ToolCatalog) =>
           patch(cid, botId, (m) => ({ ...m, toolCatalog: e, status: undefined })),
         onResult: (block) =>
@@ -732,6 +806,8 @@ export function ChatProvider({
         setSearchSources,
         pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
         setPinnedAgent,
+        thinking,
+        setThinking,
         stop,
         newConversation,
         selectConversation,

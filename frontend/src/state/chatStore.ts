@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, Conversation, DelibData, DelibOpts, Message, Role } from '../types/chat';
+import type { ActivityItem, Conversation, DelibData, DelibOpts, Message, Role, ThinkData } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -16,6 +16,7 @@ interface StoredMessage {
   error?: string;
   activity?: ActivityItem[];
   delib?: DelibData;
+  think?: ThinkData;
 }
 interface StoredConversation {
   id: string;
@@ -56,6 +57,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           ...(m.error ? { error: m.error } : {}),
           ...(Array.isArray(m.activity) ? { activity: m.activity } : {}),
           ...(m.delib && typeof m.delib === 'object' ? { delib: m.delib } : {}),
+          ...(m.think && typeof m.think === 'object' ? { think: m.think } : {}),
         });
       }
       convs.push({
@@ -74,6 +76,21 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
   } catch {
     return []; // 손상된 저장분은 조용히 버리고 빈 상태로 시작
   }
+}
+
+/** 띵킹 데이터 저장 트림 — 좌석 수와 답변 길이를 캡한다(심의 trimDelib 과 같은 이유). */
+function trimThink(t: ThinkData): ThinkData {
+  return {
+    ...t,
+    ...(t.seats
+      ? {
+          seats: t.seats.slice(0, 24).map((s) => ({
+            ...s,
+            ...(s.answer ? { answer: s.answer.slice(0, 4000) } : {}),
+          })),
+        }
+      : {}),
+  };
 }
 
 /** 심의 데이터 저장 트림 — turns/evidence 캡으로 localStorage 누적 증가를 통제한다. */
@@ -126,7 +143,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       messages: c.messages
         // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
         // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).
-        .filter((m) => m.text || m.error || m.delib || m.role === 'user')
+        .filter((m) => m.text || m.error || m.delib || m.think || m.role === 'user')
         .map((m) => ({
           role: m.role,
           content: m.text,
@@ -136,6 +153,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ? { activity: keepHandoffBudget(m.activity.slice(-60), budget) }
             : {}),
           ...(m.delib ? { delib: trimDelib(m.delib) } : {}),
+          ...(m.think ? { think: trimThink(m.think) } : {}),
         })),
       };
     });

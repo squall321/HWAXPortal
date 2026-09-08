@@ -99,6 +99,53 @@ export interface DelibOpts {
 /** 인터넷 소스. 사내 자산은 나가지 않으므로 토글 대상이 아니다. */
 export type SearchSource = 'scholar' | 'web';
 
+// ── 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다(회의 아님) ──────────────────
+// 심의(DelibData)와 형제이지만 구조가 다르다. 라운드도 표결도 결정문도 없고, 좌석마다
+// '답했나 기권했나' 와 '기권했으면 어디로 넘겼나' 가 단위다.
+export interface ThinkSeat {
+  key: string;
+  name?: string;
+  domain?: string;
+  /** recommend_agents 의 합성 점수. 코사인이 아니라 순위용이다(절대값 비교 금물). */
+  score?: number;
+  /** 질의 토큰이 좌석 프로필에 포함된 어휘 비율(0~1). 벡터와 독립인 신호다. */
+  desc_match?: number;
+  sections?: number;
+  records?: number;
+  /** 예심 — 그 좌석의 실제 바인딩 문서에서 나온 근거 수. */
+  hits?: number;
+  screened?: boolean;
+  screenReason?: string;
+  /** 본심 — answer(답함) · pass(기권) · error(응답 실패, 기권 아님). */
+  verdict?: 'answer' | 'pass' | 'error';
+  scope?: string;
+  answer?: string;
+  basis?: string[];
+  /** 기권 좌석이 지목한 분야(위임 사슬의 입력). */
+  refer?: string[];
+  /** 소집된 홉. 0=최초 소집, 1 이상=위임으로 합류. */
+  hop?: number;
+}
+export interface ThinkData {
+  seats?: ThinkSeat[];
+  handoffs?: { phrases: string[]; seats: string[] }[];
+  summary?: {
+    answered: number;
+    passed: number;
+    screened_out: number;
+    errored: number;
+    /** 답변 상한에 걸려 **묻지 않은** 좌석 수. 0이 아니면 화면이 그렇게 말해야 한다. */
+    capped?: number;
+    hops: number;
+    no_answer: boolean;
+  };
+}
+// SSE `think` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
+export interface ThinkEvent {
+  kind: 'roster' | 'screen' | 'verdict' | 'answer' | 'handoff' | 'summary';
+  [k: string]: unknown;
+}
+
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
 export interface DelibEvent {
   kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome';
@@ -147,6 +194,8 @@ export interface Message {
   delib?: DelibData;
   // 도구 카탈로그(SSE tools 이벤트) — 도구 선택 카드(ToolCatalogBlock) 렌더용. 영속됨.
   toolCatalog?: ToolCatalog;
+  // 띵킹 구조화 데이터 — 좌석별 답변·기권 렌더(ThinkView)용. 영속됨.
+  think?: ThinkData;
   error?: string;
   // 자격증명 강등 등 치명적이지 않은 경고 — 심의가 서비스 계정으로 근거를 모은 경우.
   // error 와 달리 응답을 막지 않고 옆에 지속 표시한다(무음 강등 가시화).

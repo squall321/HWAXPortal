@@ -1354,3 +1354,54 @@ body.dock-open .container {
 .cx-jobgroup-label b { font-family: var(--cx-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--cx-accent); }
 .cx-jobgroup-label span { font-size: 11px; color: var(--muted); }
 .cx-jobgroup-label i { flex: 1; height: 1px; background: var(--border); }
+
+/* ── 띵킹 모드(ThinkView) — 좌석별 답변·기권 ────────────────────────────────
+   심의(.dv-*)와 형제이나 회의가 아니라 개별 자문이라, 회의록 버블 대신 카드가 단위다. */
+.tv { display: flex; flex-direction: column; gap: 0.85rem; }
+.tv-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.tv-title { font-size: 0.82rem; font-weight: 700; color: var(--fg); }
+.tv-counts { display: flex; gap: 0.5rem; flex-wrap: wrap; font-size: 0.7rem; }
+.tv-c-ok { color: #4ade80; }
+.tv-c-pass { color: var(--muted); }
+.tv-c-err { color: #fbbf24; }
+.tv-c-live { color: var(--accent); }
+
+/* 아무도 답하지 못한 경우 — 오류가 아니라 판정 결과임을 화면이 말해야 한다. */
+.tv-none { margin: 0; padding: 0.7rem 0.85rem; border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 10px; background: rgba(251, 191, 36, 0.06); font-size: 0.8rem; line-height: 1.55; }
+.tv-wait { margin: 0; font-size: 0.78rem; color: var(--muted); }
+
+.tv-answer { border: 1px solid var(--border); border-radius: 10px; padding: 0.55rem 0.9rem 0.35rem;
+  background: var(--card); }
+.tv-answer-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+.tv-avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff; flex: none; }
+.tv-answer-who { display: flex; align-items: baseline; gap: 0.45rem; flex-wrap: wrap; min-width: 0; }
+.tv-answer-who b { font-size: 0.8rem; }
+.tv-answer-who code { font-size: 0.66rem; color: var(--muted); }
+.tv-badge { font-size: 0.62rem; padding: 0.05rem 0.4rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.tv-badge-hop { border-color: rgba(217, 160, 95, 0.4); color: #d9a05f; }
+.tv-scope { margin: 0 0 0.35rem; font-size: 0.74rem; font-style: italic; color: var(--muted); }
+.tv-basis { margin: 0.25rem 0 0.4rem; font-size: 0.68rem; color: var(--muted); }
+
+.tv-passed { border-top: 1px dashed var(--border); padding-top: 0.6rem; }
+.tv-passed h4 { margin: 0 0 0.4rem; font-size: 0.72rem; font-weight: 700; color: var(--muted); }
+.tv-passed ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.3rem; }
+.tv-passed li { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; font-size: 0.74rem; }
+.tv-passed code { font-size: 0.68rem; color: var(--fg); }
+.tv-pass-why { color: var(--muted); }
+.tv-refer { display: inline-flex; gap: 0.25rem; align-items: baseline; flex-wrap: wrap; color: var(--muted); }
+.tv-refer-chip { font-size: 0.66rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+  border: 1px solid rgba(217, 160, 95, 0.35); color: #d9a05f; }
+
+.tv-handoff { margin: 0; font-size: 0.72rem; color: var(--muted); display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.tv-handoff code { font-size: 0.66rem; }
+
+.tv-skipped { border-top: 1px dashed var(--border); padding-top: 0.5rem; }
+.tv-skip-toggle { background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 0.7rem; color: var(--muted); font-family: inherit; }
+.tv-skip-toggle:hover { color: var(--fg); }
+.tv-skip-list { margin: 0.4rem 0 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 0.22rem; font-size: 0.7rem; color: var(--muted); }
+.tv-skip-list code { font-size: 0.66rem; color: var(--fg); }
+.tv-skip-err code { color: #fbbf24; }
