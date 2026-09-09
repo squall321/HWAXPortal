@@ -307,9 +307,17 @@ if want aidh; then
     hr "AI Data Hub  ($AIDH_DIR)"
     # --force restarts even if the port is busy (start_api.sh kills the old api.pid + relaunches),
     # so the new redirect/root_path code is picked up.
+    #
+    # ⚠ 헬스 대기를 600초로 늘린다(기본 120초). entrypoint 가 `alembic upgrade head` 를
+    #   **uvicorn 보다 먼저** 돌리므로, 스키마 마이그레이션이 도는 동안 헬스 엔드포인트가
+    #   아예 없다. 0031(record_sections 100만 행에 GIN 표현식 인덱스 CONCURRENTLY 생성)
+    #   같은 무거운 것이 120초를 넘기면 update-all 이 'aidh failed' 로 오판한다 —
+    #   실제로는 멀쩡하고 인덱스가 계속 만들어지고 있는 중이다.
+    #   호출자가 이미 정했으면 그 값을 존중한다.
     ( cd "$AIDH_DIR"
       git_update
-      AIDH_ROOT_PATH=/ai-data-hub ./boot.sh --force ) && ok "aidh up" || skip "aidh failed (see above)"
+      AIDH_ROOT_PATH=/ai-data-hub AIDH_BOOT_HEALTH_TIMEOUT="${AIDH_BOOT_HEALTH_TIMEOUT:-600}" \
+        ./boot.sh --force ) && ok "aidh up" || skip "aidh failed (see above)"
     # VSCode extension(vsix) — 빌드 산출물이라 git 미추적 + cae00 은 npm 없어 빌드 불가.
     # dev 의 publish-ext.sh 가 Drive ext-downloads 에 게시한 것을 받아온다 (없으면 조용히 생략·비치명).
     if [ -n "$REMOTE_ALIAS" ] && [ -x "$RCLONE_BIN" ]; then
