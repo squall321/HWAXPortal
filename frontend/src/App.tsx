@@ -3,6 +3,7 @@ import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { ChatProvider } from './state/ChatContext';
 import { AppShell } from './components/layout/AppShell';
+import ChangelogPage from './pages/ChangelogPage';
 import ChatPage from './pages/ChatPage';
 import DeliberatePage from './pages/DeliberatePage';
 import LaunchPage from './pages/LaunchPage';
@@ -44,6 +45,18 @@ const router = createBrowserRouter([
       <ProtectedRoute>
         <AppShell>
           <PortalHomePage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    // ⚠ SPA 경로는 '/updates' 다. '/changelog' 는 **API** 가 쓰고 있어서, 같은 경로로
+    //    만들면 브라우저 새로고침이 SPA 가 아니라 JSON 을 받는다.
+    path: '/updates',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <ChangelogPage />
         </AppShell>
       </ProtectedRoute>
     ),

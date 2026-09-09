@@ -101,7 +101,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 띵킹 모드(답할 수 있는 전문가만 각자 답한다) | `docs/thinking-mode/` |
 | 설계 리스크 심사 | `docs/design-risk-review/` |
 | 데이터 /data 통합·경로 레지스트리·DB 동기화 | `docs/data-migration/` (PLAN·checklist·context-notes) |
-| 로그인 업데이트 안내 팝업(항목 추가법) | `docs/changelog-popup.md` |
+| 업데이트 이력(팝업·`/updates` 페이지, 항목 추가법) | `docs/changelog.md` |
 | 전문가 페르소나 챗 | `docs/persona-chat/` (PLAN·checklist·context-notes) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가

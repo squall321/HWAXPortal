@@ -1,74 +1,35 @@
 // 로그인 직후 '아직 안 본 업데이트'를 한 번 띄운다 — 닫으면 그 날짜까지 봤다고 기록한다
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { fetchChangelog, type ChangelogEntry } from '../../api/changelog.api';
 import { useAuth } from '../../auth/useAuth';
+import { ChangelogBold as Bold } from './ChangelogBold';
+import { dayLabel, readSeen, writeSeen } from './changelogShared';
 import '../../styles/changelog.css';
-
-const SEEN_PREFIX = 'hwax.changelog.seen';
 
 // 한 탭에서 한 번만 뜬다. AppShell 은 라우트마다 다시 마운트되므로, 이게 없으면 사용자가
 // 닫자마자 페이지를 옮길 때 또 뜬다(저장이 막힌 브라우저에서는 매번 뜬다).
 let shownThisSession = false;
-
-const seenKey = (email: string) => `${SEEN_PREFIX}.${email}`;
-
-function readSeen(email: string): string {
-  try {
-    return localStorage.getItem(seenKey(email)) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function writeSeen(email: string, date: string): void {
-  try {
-    localStorage.setItem(seenKey(email), date);
-  } catch {
-    /* 사생활 모드 등 — 저장이 막혀도 팝업은 정상 동작한다(세션 플래그가 반복을 막는다) */
-  }
-}
-
-/** `**굵게**` 만 지원하는 최소 렌더. 이력 문구가 쓰는 유일한 마크업이라 마크다운 스택을
- *  끌어오지 않는다(레이아웃 컴포넌트가 챗 렌더러에 묶이면 안 된다). */
-function Bold({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-        part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
-          <b key={i}>{part.slice(2, -2)}</b>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
-
-/** 날짜를 '9월 9일' 로. 연도가 다르면 연도까지 보여 준다. */
-function dayLabel(iso: string, today: string): string {
-  const [y, m, d] = iso.split('-');
-  if (!y || !m || !d) return iso;
-  const same = today.startsWith(`${y}-`);
-  const body = `${Number(m)}월 ${Number(d)}일`;
-  return same ? body : `${y}년 ${body}`;
-}
 
 export function ChangelogPopup() {
   const { user } = useAuth();
   const [entries, setEntries] = useState<ChangelogEntry[]>([]);
   const [latest, setLatest] = useState('');
   const [today, setToday] = useState('');
+  // 상한(5건)에 걸려 못 보여 준 게 몇 건인지 — "이전 이력" 으로 안내할 근거다.
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     if (!user?.email || shownThisSession) return;
     let alive = true;
-    void fetchChangelog(readSeen(user.email) || undefined).then((r) => {
+    void fetchChangelog({ since: readSeen(user.email) || undefined }).then((r) => {
       if (!alive || r.entries.length === 0) return;
       shownThisSession = true;
       setEntries(r.entries);
       setLatest(r.latest);
       setToday(r.today);
+      setTotal(r.total ?? r.entries.length);
     });
     return () => {
       alive = false;
@@ -94,6 +55,7 @@ export function ChangelogPopup() {
   if (entries.length === 0) return null;
 
   const isToday = Boolean(today) && entries[0].date === today;
+  const hidden = Math.max(0, total - entries.length);
 
   return createPortal(
     <div className="cl-backdrop" onClick={close}>
@@ -115,7 +77,7 @@ export function ChangelogPopup() {
             <p className="cl-sub">
               {isToday
                 ? '이번에 바뀐 내용입니다.'
-                : `마지막으로 보신 뒤 ${entries.length}건이 올라왔습니다.`}
+                : `마지막으로 보신 뒤 ${total}건이 올라왔습니다.`}
             </p>
           </div>
           <button type="button" className="cl-x" onClick={close} aria-label="닫기">
@@ -142,9 +104,16 @@ export function ChangelogPopup() {
               )}
             </section>
           ))}
+          {hidden > 0 && (
+            <p className="cl-more-note">…그 밖에 {hidden}건이 더 있습니다.</p>
+          )}
         </div>
 
         <div className="cl-foot">
+          {/* 팝업을 닫아도 언제든 다시 볼 수 있어야 한다 — 지난 이력으로 가는 길. */}
+          <Link className="cl-link" to="/updates" onClick={close}>
+            이전 이력 모두 보기 →
+          </Link>
           <button type="button" className="cl-ok" onClick={close}>
             확인
           </button>

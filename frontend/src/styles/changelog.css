@@ -128,3 +128,137 @@
   cursor: pointer;
 }
 .cl-ok:hover { filter: brightness(1.18); }
+
+/* 팝업 하단 — 지난 이력으로 가는 길 */
+.cl-foot { justify-content: space-between; align-items: center; }
+.cl-link {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.cl-link:hover { color: var(--fg); border-bottom-color: var(--border); }
+.cl-more-note { margin: 0.6rem 0 0; font-size: 0.75rem; color: var(--muted); text-align: center; }
+
+/* ── 업데이트 이력 페이지 ──────────────────────────────────────────────────── */
+.clp-wrap { max-width: 860px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+.clp-head { margin-bottom: 1.4rem; }
+.clp-title { margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--fg); }
+.clp-sub {
+  margin: 0.45rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.clp-filters { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1rem; }
+.clp-chip {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.24rem 0.8rem;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+.clp-chip:hover { color: var(--fg); }
+/* 선택된 칩은 분류 색을 테두리로 그대로 쓴다 — currentColor 라 칩마다 자기 색이 된다. */
+.clp-chip.is-on {
+  color: var(--fg);
+  border-color: currentColor;
+  background: rgba(255, 255, 255, 0.07);
+}
+.clp-count { margin: 0 0 0.9rem; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.clp-empty { font-size: 0.86rem; color: var(--muted); line-height: 1.7; padding: 1.5rem 0; }
+
+/* 날짜 레일 — 왼쪽 세로선에 날짜 점이 박히고 오른쪽에 그날 항목이 붙는다. */
+.clp-timeline { list-style: none; margin: 0; padding: 0; }
+.clp-day {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 1.1rem;
+  padding-bottom: 1.5rem;
+}
+.clp-day-mark {
+  position: relative;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border);
+  padding-top: 0.15rem;
+}
+/* 세로선은 각 날짜 칸이 이어 그린다 — 마지막 칸도 끊기지 않게 패딩 끝까지 간다. */
+.clp-day:last-child .clp-day-mark { border-left-color: transparent; }
+.clp-day:last-child .clp-day-mark::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 0;
+  width: 1px;
+  height: 1.4rem;
+  background: var(--border);
+}
+.clp-dot {
+  position: absolute;
+  left: -4.5px;
+  top: 0.42rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 3px var(--bg);
+}
+.clp-day-date { display: block; font-size: 0.82rem; font-weight: 650; color: var(--fg); }
+.clp-dow { color: var(--muted); font-weight: 400; }
+.clp-today {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.66rem;
+  color: #9db4ff;
+  border: 1px solid rgba(120, 145, 255, 0.45);
+  border-radius: 999px;
+  padding: 0.04rem 0.45rem;
+}
+.clp-day-body { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+.clp-entry {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01));
+  padding: 0.85rem 1rem;
+}
+.clp-entry-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--fg);
+  text-wrap: balance;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.clp-entry .cl-items { padding-left: 1.15rem; }
+.clp-entry .cl-items li { font-size: 0.85rem; }
+
+.clp-more {
+  width: 100%;
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  border-radius: 10px;
+  padding: 0.6rem;
+  font-size: 0.83rem;
+  cursor: pointer;
+}
+.clp-more:hover:not(:disabled) { border-color: var(--accent); background: rgba(20, 40, 160, 0.22); }
+.clp-more:disabled { color: var(--muted); cursor: default; }
+.clp-end { text-align: center; font-size: 0.74rem; color: var(--muted); margin: 1.4rem 0 0; }
+
+/* 좁은 화면 — 날짜를 위로 올리고 레일을 접는다. */
+@media (max-width: 720px) {
+  .clp-day { grid-template-columns: minmax(0, 1fr); gap: 0.55rem; }
+  .clp-day-mark { border-left: none; padding-left: 0; }
+  .clp-day:last-child .clp-day-mark::after { display: none; }
+  .clp-dot { display: none; }
+  .clp-day-date { font-size: 0.78rem; color: var(--muted); }
+}

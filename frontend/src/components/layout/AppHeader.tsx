@@ -66,6 +66,10 @@ export function AppHeader() {
             <NavLink to="/tokens" style={navLinkStyle}>
               API 토큰
             </NavLink>
+            {/* 매일 무엇이 바뀌었는지 아무 때나 볼 수 있는 자리 — 팝업은 새 것만 알려 준다. */}
+            <NavLink to="/updates" style={navLinkStyle}>
+              업데이트
+            </NavLink>
             {hasRiskTile && (
               <NavLink to="/risk" style={navLinkStyle}>
                 리스크 심사
