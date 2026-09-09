@@ -2,16 +2,11 @@
 import { useMemo, useState } from 'react';
 import { useChat } from '../../state/ChatContext';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
+import { colorOf, initialOf } from './personaColor';
 import { TextBlock } from './renderers/TextBlock';
 
-// 페르소나 → 고정 색(이름 해시) — 회의 chat 렌더와 같은 계열의 팔레트.
-const PALETTE = ['#c0673a', '#3f7d80', '#7a5aa6', '#4a7a3c', '#b08a2a', '#a24a5e', '#3a6ea0', '#6b8e23'];
-function colorOf(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return PALETTE[h % PALETTE.length];
-}
-const initialOf = (name: string) => (name.replace(/[^0-9A-Za-z가-힣]/g, '')[0] ?? '·').toUpperCase();
+// 색·이니셜은 공용 모듈에서 온다 — 챗 페르소나 말풍선이 같은 함수를 써야
+// 같은 전문가가 심의와 챗에서 같은 색으로 보인다.
 
 // 라운드 수는 가변(2~8) — 절차는 환기·발굴 + r1..rN + 의결·보고로 동적 구성한다.
 const roundNoOf = (stage?: string): number => {
