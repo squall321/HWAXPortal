@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app import changelog as changelog_routes
 from app import routes_health
 from app.agent import routes as agent_routes
 from app.agent.audit import AuditLog
@@ -110,6 +111,7 @@ async def _auth_error_handler(_request: Request, exc: AuthError) -> JSONResponse
 
 
 app.include_router(routes_health.router)
+app.include_router(changelog_routes.router)
 app.include_router(auth_session.router)
 app.include_router(auth_local.router)
 app.include_router(auth_connections.router)

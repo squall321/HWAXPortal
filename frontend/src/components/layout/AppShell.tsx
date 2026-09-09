@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { AppHeader } from './AppHeader';
+import { ChangelogPopup } from './ChangelogPopup';
 import { ChatDock } from '../chat/ChatDock';
 import { SsoPrimer } from './SsoPrimer';
 
@@ -12,6 +13,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <>
       {/* AppShell 은 ProtectedRoute 안에서만 그려진다 — 여기 닿았다는 것이 곧 포털 로그인 완료다. */}
       <SsoPrimer enabled />
+      {/* 아직 안 본 업데이트가 있으면 한 번 띄운다(없으면 아무것도 안 그린다). */}
+      <ChangelogPopup />
       <AppHeader />
       {/* Full-bleed: pages manage their own width (the home hero spans the viewport). */}
       <main className="page">{children}</main>

@@ -1,0 +1,130 @@
+/* 로그인 직후 뜨는 업데이트 안내 팝업 */
+
+.cl-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  animation: cl-fade 0.18s ease;
+}
+@keyframes cl-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes cl-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cl-backdrop, .cl-card { animation: none; }
+}
+
+.cl-card {
+  width: min(620px, 100%);
+  max-height: min(82vh, 760px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: cl-rise 0.22s ease;
+}
+
+.cl-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 1rem 1.1rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  /* 강조는 여기 한 곳에만 쓴다 — 나머지는 조용히 둔다. */
+  background: linear-gradient(135deg, rgba(20, 40, 160, 0.28), transparent 62%);
+}
+.cl-spark {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 40, 160, 0.45);
+  border: 1px solid rgba(120, 145, 255, 0.4);
+  color: #cdd6ff;
+  font-size: 1rem;
+}
+.cl-title { margin: 0; font-size: 1rem; font-weight: 680; color: var(--fg); }
+.cl-sub { margin: 0.2rem 0 0; font-size: 0.76rem; color: var(--muted); }
+.cl-x {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+.cl-x:hover { color: var(--fg); }
+
+.cl-body { flex: 1; overflow-y: auto; padding: 0.4rem 1.1rem 0.9rem; }
+.cl-entry { padding: 0.85rem 0; border-bottom: 1px solid var(--border); }
+.cl-entry:last-child { border-bottom: none; }
+.cl-entry-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.28rem; }
+.cl-date {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cl-tag {
+  font-size: 0.67rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.06rem 0.48rem;
+}
+/* 자주 쓰는 분류만 색을 준다. 나머지는 기본 배지로 그려도 깨지지 않는다. */
+.cl-tag-챗 { color: #9db4ff; border-color: rgba(120, 145, 255, 0.45); }
+.cl-tag-심의 { color: #c7a6f0; border-color: rgba(170, 130, 230, 0.45); }
+.cl-tag-연결 { color: #85c9b6; border-color: rgba(110, 190, 165, 0.45); }
+.cl-tag-배포 { color: #e0b487; border-color: rgba(215, 165, 110, 0.45); }
+.cl-tag-수정 { color: #d69aa4; border-color: rgba(200, 130, 145, 0.45); }
+
+.cl-entry-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--fg);
+  text-wrap: balance;
+}
+.cl-items { margin: 0; padding-left: 1.1rem; }
+.cl-items li {
+  font-size: 0.81rem;
+  line-height: 1.7;
+  color: var(--fg);
+  margin-bottom: 0.28rem;
+}
+.cl-items li::marker { color: var(--muted); }
+.cl-items b { font-weight: 650; }
+
+.cl-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.7rem 1.1rem;
+  border-top: 1px solid var(--border);
+}
+.cl-ok {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
+  padding: 0.42rem 1.4rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cl-ok:hover { filter: brightness(1.18); }

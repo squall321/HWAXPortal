@@ -21,6 +21,7 @@ export default defineConfig({
       '/systems': { target: API, changeOrigin: true },
       '/mail': { target: API, changeOrigin: true },
       '/health': { target: API, changeOrigin: true },
+      '/changelog': { target: API, changeOrigin: true },
       '/.well-known': { target: API, changeOrigin: true },
     },
   },
