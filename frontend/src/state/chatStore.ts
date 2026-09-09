@@ -17,6 +17,8 @@ interface StoredMessage {
   activity?: ActivityItem[];
   delib?: DelibData;
   think?: ThinkData;
+  /** 이 답을 낸 전문가(페르소나). 없으면 일반 어시스턴트 답이다. */
+  persona?: { key: string; name?: string };
 }
 interface StoredConversation {
   id: string;
@@ -29,6 +31,7 @@ interface StoredConversation {
   pinnedApps?: string[];
   pinnedTools?: string[];
   pinnedAgent?: string;
+  pinnedAgentName?: string;
 }
 
 let seq = 0;
@@ -58,6 +61,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           ...(Array.isArray(m.activity) ? { activity: m.activity } : {}),
           ...(m.delib && typeof m.delib === 'object' ? { delib: m.delib } : {}),
           ...(m.think && typeof m.think === 'object' ? { think: m.think } : {}),
+          ...(m.persona && typeof m.persona.key === 'string' ? { persona: m.persona } : {}),
         });
       }
       convs.push({
@@ -70,6 +74,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
         ...(Array.isArray(c.pinnedApps) ? { pinnedApps: c.pinnedApps.filter((x) => typeof x === 'string') } : {}),
         ...(Array.isArray(c.pinnedTools) ? { pinnedTools: c.pinnedTools.filter((x) => typeof x === 'string') } : {}),
         ...(typeof c.pinnedAgent === 'string' ? { pinnedAgent: c.pinnedAgent } : {}),
+        ...(typeof c.pinnedAgentName === 'string' ? { pinnedAgentName: c.pinnedAgentName } : {}),
       });
     }
     return convs;
@@ -140,6 +145,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       ...(c.pinnedApps?.length ? { pinnedApps: c.pinnedApps } : {}),
       ...(c.pinnedTools?.length ? { pinnedTools: c.pinnedTools } : {}),
       ...(c.pinnedAgent ? { pinnedAgent: c.pinnedAgent } : {}),
+      ...(c.pinnedAgentName ? { pinnedAgentName: c.pinnedAgentName } : {}),
       messages: c.messages
         // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
         // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).
@@ -154,6 +160,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             : {}),
           ...(m.delib ? { delib: trimDelib(m.delib) } : {}),
           ...(m.think ? { think: trimThink(m.think) } : {}),
+          ...(m.persona ? { persona: m.persona } : {}),
         })),
       };
     });

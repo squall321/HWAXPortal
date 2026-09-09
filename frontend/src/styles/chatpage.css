@@ -1161,3 +1161,66 @@
 .cx-hero-clarify { font-size: 13px; color: var(--muted); margin: 6px 0 0; line-height: 1.5; }
 .cx-mods-wide { justify-content: center; align-items: center; width: 100%; margin-top: 8px; }
 .cx-mods-label { font-size: 12px; color: var(--muted); margin-right: 2px; }
+
+/* ── 현재 전문가 칸 — 상태 바 바로 아래. 활동이 없어도 여기는 남는다 ────────────────────── */
+.act-persona {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.55rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+}
+.pb-row { display: flex; align-items: center; gap: 0.5rem; }
+.pb-av {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.78rem;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+}
+.pb-av-none { background: transparent; border: 1px dashed var(--border); color: var(--muted); }
+.pb-body { min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.pb-name {
+  font-size: 0.78rem;
+  font-weight: 620;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-name.pb-none { color: var(--muted); font-weight: 500; }
+.pb-key {
+  font-family: var(--cx-mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-conflict {
+  margin: 0.45rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.55;
+  color: #f0c674;
+  border-left: 2px solid #f0c674;
+  padding-left: 0.45rem;
+}
+.pb-conflict b { color: #f5d99a; }
+.pb-acts { display: flex; gap: 0.3rem; margin-top: 0.5rem; }
+.pb-btn {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  border-radius: 7px;
+  padding: 0.26rem 0.3rem;
+  font-size: 0.71rem;
+  cursor: pointer;
+}
+.pb-btn:hover { border-color: var(--accent); background: rgba(20, 40, 160, 0.22); }
+.pb-btn-off { flex: 0 0 auto; color: var(--muted); }
+.pb-btn-off:hover { border-color: var(--muted); background: rgba(255, 255, 255, 0.06); }

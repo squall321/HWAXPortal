@@ -11,6 +11,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useChat } from '../../state/ChatContext';
+import { shortName } from './personaColor';
 import { SourcePanel } from './SourcePanel';
 import { ThinkPanel } from './ThinkPanel';
 import { IconSend, IconStop } from './icons';
@@ -35,7 +36,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   { autoFocus = false, placeholder = '무엇이든 물어보세요…', showHint = false, onSubmitText },
   ref,
 ) {
-  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent } =
+  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, pinnedAgentName, setPinnedAgent } =
     useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { user } = useAuth();
@@ -95,13 +96,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       {(pinnedTools.length > 0 || pinnedApps.length > 0 || pinnedAgent) && (
         <div className="composer-pins" aria-label="지정 전문가·앱·도구">
           {pinnedAgent && (
-            <span className="composer-pin composer-pin-agent" title="지정 전문가 페르소나">
-              👤 {pinnedAgent}
+            // 기계 키가 아니라 사람 이름을 보여 준다 — 키는 툴팁으로 남긴다(구 저장분은 이름이 없어
+            // 키가 그대로 보인다).
+            <span className="composer-pin composer-pin-agent" title={`지정 전문가 페르소나 — ${pinnedAgent}`}>
+              👤 {shortName(pinnedAgentName || pinnedAgent)}
               <button
                 type="button"
                 className="composer-pin-x"
                 onClick={() => setPinnedAgent(null)}
-                aria-label={`전문가 ${pinnedAgent} 해제`}
+                aria-label={`전문가 ${pinnedAgentName || pinnedAgent} 해제`}
                 title="전문가 해제"
               >
                 ×

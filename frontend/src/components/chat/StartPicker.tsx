@@ -1,7 +1,7 @@
 // 챗 시작 전 전문가·도구 선택 패널 — 검색 + 분야별 계층 브라우즈로 전문가(1명, 페르소나)와
 // 도구(≤12)를 직접 골라 대화를 구성한다. 전문가 클릭 시 상세(역할·태그·샘플질의·보유 지식)를
 // UI 로 보여준다 — LLM 텍스트 나열은 절단되므로 탐색은 결정적 데이터로 그린다.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchAgentDetail,
   fetchDeliberateExperts,
@@ -27,6 +27,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const [domain, setDomain] = useState('');
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const selKeyRef = useRef<string | null>(pinnedAgent);
 
   // 열자마자 전체 풀·도구 카탈로그 로드 — 검색 없이도 분야별 브라우즈가 되게.
   useEffect(() => {
@@ -62,6 +63,12 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
     () => (domain ? pool.filter((a) => a.key.startsWith(domain + '-') || a.key === domain) : []),
     [pool, domain],
   );
+
+  // 키 → 사람 이름. 지정 시 표시용 이름을 함께 실어야 칩·말풍선이 키를 안 보여 준다.
+  const nameOf = (key: string) =>
+    pool.find((a) => a.key === key)?.name ??
+    (res?.candidates ?? res?.recommended ?? []).find((a) => a.key === key)?.name ??
+    key;
 
   const experts = useMemo(() => {
     const ranked = res?.candidates?.length ? res.candidates : (res?.recommended ?? []);
@@ -110,22 +117,26 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
     });
 
   // 전문가 선택 + 상세(역할·지식) 로드 — 재클릭 시 해제.
+  // ⚠ 상세는 콜드에 6~11초 걸린다. 연달아 누르면 늦게 온 응답이 **다른 사람의 상세**로 화면을
+  //   덮어, 라디오는 C 에 있는데 설명은 A 인 상태가 된다(감사 실측). 지금 선택과 같을 때만 반영.
   const pickAgent = (key: string) => {
     if (agentSel === key) {
       setAgentSel(null);
       return;
     }
     setAgentSel(key);
+    selKeyRef.current = key;
     setDetail(null);
     setDetailLoading(true);
     void fetchAgentDetail(key).then((d) => {
+      if (selKeyRef.current !== d.key) return;
       setDetail(d);
       setDetailLoading(false);
     });
   };
 
   const apply = () => {
-    setPinnedAgent(agentSel);
+    setPinnedAgent(agentSel, agentSel ? nameOf(agentSel) : undefined);
     setPinnedApps([...appSel]);
     setPinnedTools([...toolSel]);
     onClose();
@@ -181,7 +192,11 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             </div>
             {experts.length > 0 && (
               <>
-                <div className="sp-dim sp-sub">주제 관련 추천</div>
+                {/* ⚠ 검색 전에는 더미 질의('전체 카탈로그 조회') 결과다. e5 코사인은 무관한
+                    문장끼리도 0.87~0.90 이라 '추천'이라 부르면 난수를 추천으로 읽게 된다. */}
+                <div className="sp-dim sp-sub">
+                  {query.trim() ? '주제 관련 추천' : '전체에서 일부 (검색하면 주제 추천으로 바뀝니다)'}
+                </div>
                 <ul className="sp-list">
                   {experts.map((e) => (
                     <li key={e.key}>{agentRow(e.key, e.name)}</li>

@@ -3,10 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useChat } from '../../state/ChatContext';
 import type { Message } from '../../types/chat';
 import { copyText } from './clipboard';
+import { AgentCatalogBlock } from './AgentCatalogBlock';
 import { DelibView } from './DelibView';
 import { ThinkView } from './ThinkView';
 import { ToolCatalogBlock } from './ToolCatalogBlock';
 import { IconArrowDown, IconCheck, IconCopy } from './icons';
+import { colorOf, initialOf, shortName } from './personaColor';
 import { TextBlock } from './renderers/TextBlock';
 
 // 원문 오류를 사용자용 안내(원인+다음 행동)로 변환 — 막다른 원문 대신 뭘 해야 할지 알려준다.
@@ -81,11 +83,29 @@ function Row({ msg }: { msg: Message }) {
   // A finished assistant turn with no text/error (e.g. the model only called a tool
   // and produced no closing text) would otherwise render empty — show a fallback.
   const emptyDone =
-    !msg.streaming && !msg.text && !msg.error && !msg.status && !hasDelib && !hasThink && !msg.toolCatalog;
+    !msg.streaming && !msg.text && !msg.error && !msg.status && !hasDelib && !hasThink &&
+    !msg.toolCatalog && !msg.agentCatalog;
+
+  // 페르소나 말풍선 — 지정 전문가로 보낸 발화의 답이면 심의 회의록처럼 '누가 말했는지'를 세운다.
+  // 심의·띵킹 메시지에는 붙이지 않는다 — 그쪽은 좌석마다 자기 버블을 이미 그린다.
+  const persona = !hasDelib && !hasThink ? msg.persona : undefined;
+  const who = persona ? persona.name || persona.key : '';
 
   return (
-    <div className="msg assistant">
-      <div className="msg-content">
+    <div className={`msg assistant${persona ? ' is-persona' : ''}`}>
+      {persona && (
+        <div className="msg-who">
+          <span className="msg-av" style={{ background: colorOf(who) }} aria-hidden="true">
+            {initialOf(who)}
+          </span>
+          <span className="msg-who-name" title={who}>{shortName(who)}</span>
+          <span className="msg-who-key">{persona.key}</span>
+        </div>
+      )}
+      <div
+        className="msg-content"
+        style={persona ? { borderLeftColor: colorOf(who) } : undefined}
+      >
         {hasDelib ? (
           <DelibView msg={msg} />
         ) : hasThink ? (
@@ -95,6 +115,8 @@ function Row({ msg }: { msg: Message }) {
         )}
         {/* 도구 카탈로그('/도구' 검색) — 사용자가 직접 선택·변경해 지정 도구로 확정하는 카드. */}
         {msg.toolCatalog && <ToolCatalogBlock catalog={msg.toolCatalog} />}
+        {/* 전문가 카탈로그('/전문가' 검색) — 도구와 같은 대우. 여기서 바로 페르소나를 지정한다. */}
+        {msg.agentCatalog && <AgentCatalogBlock catalog={msg.agentCatalog} />}
         {/* 토큰이 흐른 뒤에도 도구 호출 등으로 status가 다시 올 수 있다 — 텍스트 아래에 표시. */}
         {msg.text && msg.status && <div className="msg-status-text">{msg.status}</div>}
         {thinking && (

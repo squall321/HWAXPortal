@@ -184,6 +184,16 @@ export interface ToolCatalog {
   apps?: ToolApp[];
 }
 
+// 전문가 카탈로그(SSE `agents` 이벤트) — '/전문가' 검색 시 서버가 추천+전체 풀을 내려준다.
+// 도구(ToolCatalog)와 대칭인 채널인데 오래 소비처가 없어 조용히 버려지고 있었다.
+export interface AgentCatalog {
+  query?: string;
+  recommended: { key: string; name: string; desc?: string }[];
+  pool: { key: string; name: string }[];
+  /** [도메인 코드, 인원] — 서버가 인원 많은 순으로 정렬해 준다. */
+  domains?: [string, number][];
+}
+
 export interface Message {
   id: string;
   role: Role;
@@ -201,6 +211,13 @@ export interface Message {
   delib?: DelibData;
   // 도구 카탈로그(SSE tools 이벤트) — 도구 선택 카드(ToolCatalogBlock) 렌더용. 영속됨.
   toolCatalog?: ToolCatalog;
+  // 전문가 카탈로그(SSE agents 이벤트) — 전문가 선택 카드용. toolCatalog 와 같이 영속하지
+  // 않는다(풀이 700명 넘어 대화마다 쌓으면 localStorage 쿼터를 먹는다).
+  agentCatalog?: AgentCatalog;
+  /** 이 답이 **누구의 것**인지 — 지정 전문가(페르소나)로 보낸 발화의 답에 전송 시점에 찍는다.
+   *  대화 상태(pinnedAgent)만 보면 나중에 전문가를 바꿨을 때 과거 답까지 그 사람 것으로
+   *  보이고, 새로고침하면 아예 사라진다. name 은 표시용(서버 계약은 여전히 key=agent_type). */
+  persona?: { key: string; name?: string };
   // 띵킹 구조화 데이터 — 좌석별 답변·기권 렌더(ThinkView)용. 영속됨.
   think?: ThinkData;
   error?: string;
@@ -228,6 +245,8 @@ export interface Conversation {
   searchSources?: SearchSource[];
   // 사용자 지정 전문가(agent_type) — '전문가와 대화' 모드. 이후 발화에 pinned_agent 로 실린다.
   pinnedAgent?: string;
+  // 그 전문가의 사람 이름 — 화면 표시용이다. 없으면 키를 그대로 보여 준다(구 저장분).
+  pinnedAgentName?: string;
 }
 
 // SSE event payloads (plan §5).

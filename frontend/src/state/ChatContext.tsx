@@ -20,7 +20,7 @@ import {
   type ConvKind,
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
-import type { Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
+import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence } from '../components/chat/handoff';
 import {
   delibOptsToWire,
@@ -75,7 +75,9 @@ interface ChatContextValue {
   setSearchSources: (v: SearchSource[]) => void;
   /** 사용자 지정 전문가(agent_type) — '전문가와 대화' 모드. 대화 전 선택 시 새 대화에 적용. */
   pinnedAgent: string | null;
-  setPinnedAgent: (key: string | null) => void;
+  /** 지정 전문가의 사람 이름(표시용). 없으면 키를 그대로 보여 준다. */
+  pinnedAgentName: string | null;
+  setPinnedAgent: (key: string | null, name?: string) => void;
   /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다(회의 아님). 세션 토글이라 매 발화에 실린다. */
   thinking: boolean;
   setThinking: (v: boolean) => void;
@@ -303,7 +305,7 @@ export function ChatProvider({
   const streamConvRef = useRef<string | null>(null);
   // 대화 시작 전(랜딩) 선택한 전문가·도구 — 다음 '새 대화' 생성 시 대화에 옮겨 심는다.
   // ref 는 sendMessage 전송 시점 읽기용(스테일 방지 — delibOpts 패턴과 동일).
-  const [draftPins, setDraftPinsState] = useState<{ agent?: string; tools: string[]; apps: string[] }>({ tools: [], apps: [] });
+  const [draftPins, setDraftPinsState] = useState<{ agent?: string; agentName?: string; tools: string[]; apps: string[] }>({ tools: [], apps: [] });
   // 인터넷 소스는 대화별이 아니라 세션 단위 토글이다 — 기본값은 '전부 끔'(빈 배열).
   // undefined 를 기본으로 두면 종전 동작(전부 허용)이 되어, 켠 적 없는데 나가는 상황이 된다.
   const [searchSources, setSearchSources] = useState<SearchSource[]>([]);
@@ -316,7 +318,7 @@ export function ChatProvider({
     setThinkingState(v);
   }, []);
   const draftPinsRef = useRef(draftPins);
-  const setDraftPins = useCallback((v: { agent?: string; tools: string[]; apps: string[] }) => {
+  const setDraftPins = useCallback((v: { agent?: string; agentName?: string; tools: string[]; apps: string[] }) => {
     draftPinsRef.current = v;
     setDraftPinsState(v);
   }, []);
@@ -440,9 +442,6 @@ export function ChatProvider({
       if (!text || streaming) return;
 
       const now = Date.now();
-      const userMsg: Message = { id: newId(), role: 'user', text, ts: now };
-      const botId = newId();
-      const botMsg: Message = { id: botId, role: 'assistant', text: '', ts: now, streaming: true };
 
       // 멀티턴: 이번 user 메시지를 붙이기 전의 활성 대화 메시지가 history가 된다(중복 금지).
       const existing = conversations.find((c) => c.id === activeId);
@@ -455,6 +454,20 @@ export function ChatProvider({
       const effPinnedTools = existing ? (existing.pinnedTools ?? []) : draft.tools;
       const effPinnedApps = existing ? (existing.pinnedApps ?? []) : draft.apps;
       const effPinnedAgent = existing ? existing.pinnedAgent : draft.agent;
+      const effPinnedAgentName = existing ? existing.pinnedAgentName : draft.agentName;
+
+      const userMsg: Message = { id: newId(), role: 'user', text, ts: now };
+      const botId = newId();
+      // 이 답이 누구 것인지는 **보낼 때** 찍는다 — 나중에 전문가를 바꿔도 과거 답의 주인이
+      // 바뀌지 않고, 새로고침해도 남는다(대화 상태만 보면 둘 다 깨진다).
+      const botMsg: Message = {
+        id: botId,
+        role: 'assistant',
+        text: '',
+        ts: now,
+        streaming: true,
+        ...(effPinnedAgent ? { persona: { key: effPinnedAgent, name: effPinnedAgentName } } : {}),
+      };
 
       // 활성 대화가 없으면(랜딩/새 대화) 첫 전송 시점에 대화를 생성한다.
       let convId = activeId && conversations.some((c) => c.id === activeId) ? activeId : null;
@@ -470,6 +483,7 @@ export function ChatProvider({
           ...(draft.tools.length ? { pinnedTools: draft.tools } : {}),
           ...(draft.apps.length ? { pinnedApps: draft.apps } : {}),
           ...(draft.agent ? { pinnedAgent: draft.agent } : {}),
+          ...(draft.agent && draft.agentName ? { pinnedAgentName: draft.agentName } : {}),
         };
         setConversations((prev) => [conv, ...prev]);
         setActiveId(convId);
@@ -562,6 +576,8 @@ export function ChatProvider({
         onThink: (e) => patch(cid, botId, (m) => ({ ...m, think: mergeThink(m.think, e) })),
         onTools: (e: ToolCatalog) =>
           patch(cid, botId, (m) => ({ ...m, toolCatalog: e, status: undefined })),
+        onAgents: (e: AgentCatalog) =>
+          patch(cid, botId, (m) => ({ ...m, agentCatalog: e, status: undefined })),
         onResult: (block) =>
           patch(cid, botId, (m) => ({
             ...m,
@@ -718,15 +734,19 @@ export function ChatProvider({
   );
 
   // 지정 전문가 갱신 — 대화 있으면 대화에, 없으면 draft 에. null 이면 해제.
+  // name 은 표시용이다. 서버 계약은 그대로 key(agent_type) 하나만 나간다.
   const setPinnedAgent = useCallback(
-    (key: string | null) => {
+    (key: string | null, name?: string) => {
       const clean = key?.trim() || undefined;
+      const label = clean ? name?.trim() || undefined : undefined;
       if (activeId) {
         setConversations((prev) =>
-          prev.map((c) => (c.id !== activeId ? c : { ...c, pinnedAgent: clean })),
+          prev.map((c) =>
+            c.id !== activeId ? c : { ...c, pinnedAgent: clean, pinnedAgentName: label },
+          ),
         );
       } else {
-        setDraftPins({ ...draftPinsRef.current, agent: clean });
+        setDraftPins({ ...draftPinsRef.current, agent: clean, agentName: label });
       }
     },
     [activeId, setDraftPins],
@@ -805,6 +825,9 @@ export function ChatProvider({
         searchSources,
         setSearchSources,
         pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
+        pinnedAgentName: activeConversation
+          ? (activeConversation.pinnedAgentName ?? null)
+          : (draftPins.agentName ?? null),
         setPinnedAgent,
         thinking,
         setThinking,

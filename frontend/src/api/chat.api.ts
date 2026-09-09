@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { DelibEvent, ErrorEvent, ResultBlock, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog } from '../types/chat';
+import type { AgentCatalog, DelibEvent, ErrorEvent, ResultBlock, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -20,6 +20,8 @@ export interface StreamHandlers {
   onThink?: (e: ThinkEvent) => void;
   /** 도구 카탈로그(SSE tools) — '/도구' 검색 응답. 선택 카드 렌더용. */
   onTools?: (e: ToolCatalog) => void;
+  /** 전문가 카탈로그(SSE agents) — '/전문가' 검색 응답. 선택 카드 렌더용. */
+  onAgents?: (e: AgentCatalog) => void;
   onError?: (e: ErrorEvent) => void;
   /** 치명적이지 않은 경고(SSE warning) — 자격증명 강등 등. 응답은 계속된다. */
   onWarning?: (e: { code?: string; message: string }) => void;
@@ -69,6 +71,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'tools':
       h.onTools?.(payload as ToolCatalog);
+      break;
+    case 'agents':
+      h.onAgents?.(payload as AgentCatalog);
       break;
     case 'warning':
       h.onWarning?.(payload as { code?: string; message: string });

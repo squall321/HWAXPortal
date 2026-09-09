@@ -1577,3 +1577,559 @@ body.dock-open .container {
   display: flex; flex-direction: column; gap: 0.22rem; font-size: 0.7rem; color: var(--muted); }
 .tv-skip-list code { font-size: 0.66rem; color: var(--fg); }
 .tv-skip-err code { color: #fbbf24; }
+
+/* ── 페르소나 말풍선 — 지정 전문가의 답은 심의 회의록처럼 '누가 말했는지'를 세운다 ────────── */
+.msg-who {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.74rem;
+}
+.msg-av {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.68rem;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+.msg-who-name { font-weight: 650; color: var(--fg); }
+.msg-who-key {
+  font-family: var(--cx-mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+  opacity: 0.75;
+}
+/* 색 테두리는 인라인 style 로 그 사람 색이 들어온다 — 여기서는 자리만 만든다. */
+.msg.assistant.is-persona .msg-content {
+  border-left: 3px solid var(--border);
+  padding-left: 0.8rem;
+}
+
+/* ── 전문가 카탈로그 카드('/전문가') — 도구 카드와 같은 대우 ──────────────────────────── */
+.ac-card {
+  margin-top: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+  padding: 0.7rem 0.8rem 0.6rem;
+}
+.ac-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.ac-title { font-size: 0.82rem; font-weight: 650; color: var(--fg); }
+.ac-dim, .ac-desc { color: var(--muted); font-weight: 400; }
+.ac-browse {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.ac-browse:hover { border-color: var(--accent); }
+.ac-sec {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin: 0.5rem 0 0.3rem;
+  letter-spacing: 0.02em;
+}
+.ac-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.ac-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 9px;
+  padding: 0.38rem 0.5rem;
+  cursor: pointer;
+  color: var(--fg);
+}
+.ac-row:hover { border-color: var(--border); background: rgba(255, 255, 255, 0.06); }
+.ac-row.is-on { border-color: var(--accent); background: rgba(20, 40, 160, 0.18); }
+.ac-av {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.7rem;
+  display: grid;
+  place-items: center;
+}
+.ac-body { min-width: 0; display: flex; flex-direction: column; gap: 0.08rem; }
+.ac-name { font-size: 0.8rem; font-weight: 600; }
+.ac-desc {
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-pick { margin-left: auto; flex: none; font-size: 0.68rem; color: var(--muted); }
+.ac-row.is-on .ac-pick { color: var(--fg); }
+.ac-doms { display: flex; flex-wrap: wrap; gap: 0.28rem; margin: 0.45rem 0; }
+.ac-dom {
+  font-size: 0.68rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+}
+.ac-dom b { color: var(--fg); font-weight: 600; }
+.ac-search {
+  width: 100%;
+  margin-top: 0.4rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  padding: 0.36rem 0.55rem;
+  font-size: 0.78rem;
+}
+.ac-empty, .ac-note { font-size: 0.72rem; color: var(--muted); margin: 0.45rem 0 0; }
+.ac-note b { color: var(--fg); font-weight: 600; }
+
+/* ── 빠른 전문가 선택기(레일에서 열림) ──────────────────────────────────────────────── */
+.pp-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  animation: cx-msg-in 0.16s ease;
+}
+.pp-card {
+  width: min(460px, 100%);
+  max-height: min(80vh, 640px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 0.8rem;
+}
+.pp-head { display: flex; align-items: center; margin-bottom: 0.5rem; }
+.pp-title { font-size: 0.88rem; font-weight: 650; color: var(--fg); }
+.pp-x {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.pp-x:hover { color: var(--fg); }
+.pp-current {
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.45rem;
+  min-width: 0;
+}
+.pp-current-k { flex: none; }
+/* 이름은 한 줄로 자르고, 해제 버튼은 절대 눌리지 않게 — 긴 이름에 버튼이 세로로 찌그러졌었다. */
+.pp-current b {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg);
+  font-weight: 620;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pp-clear {
+  flex: none;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.pp-clear:hover { color: var(--fg); border-color: var(--fg); }
+.pp-search {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--fg);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.82rem;
+}
+.pp-search:focus { outline: none; border-color: var(--accent); }
+.pp-body { flex: 1; overflow-y: auto; margin-top: 0.5rem; }
+.pp-sec { font-size: 0.7rem; color: var(--muted); margin: 0.5rem 0 0.28rem; }
+.pp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.22rem; }
+.pp-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 9px;
+  padding: 0.4rem 0.5rem;
+  color: var(--fg);
+  cursor: pointer;
+}
+.pp-row:hover { border-color: var(--border); background: rgba(255, 255, 255, 0.07); }
+.pp-row.is-on { border-color: var(--accent); }
+.pp-av {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.7rem;
+  display: grid;
+  place-items: center;
+}
+.pp-row-body { min-width: 0; display: flex; flex-direction: column; gap: 0.08rem; }
+.pp-row-name { font-size: 0.8rem; font-weight: 600; }
+.pp-row-sub {
+  font-size: 0.69rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pp-empty, .pp-hint { font-size: 0.74rem; color: var(--muted); margin: 0.5rem 0; line-height: 1.6; }
+.pp-expand {
+  margin-top: 0.6rem;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  border-radius: 10px;
+  padding: 0.45rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.pp-expand:hover { border-color: var(--accent); background: rgba(20, 40, 160, 0.2); }
+
+/* ── 전문가 조직도(전창) ────────────────────────────────────────────────────────────── */
+.pv-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(3px);
+  padding: clamp(0.5rem, 3vw, 2rem);
+  animation: cx-msg-in 0.18s ease;
+}
+.pv-win {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.pv-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
+}
+.pv-title { margin: 0; font-size: 0.95rem; font-weight: 650; color: var(--fg); }
+.pv-count { font-size: 0.72rem; color: var(--muted); }
+.pv-search {
+  margin-left: auto;
+  width: min(300px, 40vw);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+.pv-search:focus { outline: none; border-color: var(--accent); }
+.pv-icon {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.3rem;
+}
+.pv-icon:hover { color: var(--fg); }
+.pv-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) 300px; }
+
+/* 왼쪽 분류 트리 — 접혀 있어도 인원이 보인다. 연결선은 조직도의 계보다. */
+.pv-tree { border-right: 1px solid var(--border); overflow-y: auto; padding: 0.6rem 0.5rem; }
+.pv-tree-root {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 0.8rem;
+  font-weight: 650;
+  padding: 0.32rem 0.45rem;
+  cursor: pointer;
+}
+.pv-tree-root.is-on, .pv-tree-root:hover { background: rgba(255, 255, 255, 0.06); }
+.pv-n {
+  float: right;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.pv-tree-list, .pv-tree-sub { list-style: none; margin: 0; padding: 0; }
+.pv-tree-list { margin-top: 0.25rem; }
+.pv-tree-row { display: flex; align-items: center; border-radius: 8px; }
+.pv-tree-row.is-on { background: rgba(20, 40, 160, 0.22); }
+.pv-tree-row:hover { background: rgba(255, 255, 255, 0.05); }
+.pv-twist {
+  flex: none;
+  width: 20px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0.25rem 0;
+}
+.pv-tree-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  font-size: 0.78rem;
+  padding: 0.3rem 0.4rem 0.3rem 0;
+  cursor: pointer;
+}
+.pv-tree-sub { margin: 0.1rem 0 0.25rem 20px; padding-left: 10px; border-left: 1px solid var(--border); }
+.pv-tree-sub li { position: relative; }
+.pv-tree-sub li::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 0.85em;
+  width: 8px;
+  height: 1px;
+  background: var(--border);
+}
+.pv-tree-sub-btn {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.73rem;
+  font-family: var(--cx-mono);
+  padding: 0.2rem 0.35rem;
+  cursor: pointer;
+}
+.pv-tree-sub-btn:hover { color: var(--fg); background: rgba(255, 255, 255, 0.05); }
+.pv-tree-sub-btn.is-on { color: var(--fg); background: rgba(20, 40, 160, 0.25); }
+
+/* 가운데 — 조직도 개요 또는 사람 카드 */
+.pv-main { overflow-y: auto; padding: 0.9rem 1rem; }
+.pv-chart { display: flex; flex-direction: column; align-items: stretch; }
+.pv-chart-root {
+  align-self: center;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+  font-size: 0.82rem;
+  padding: 0.35rem 1.1rem;
+}
+.pv-chart-root::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+}
+.pv-chart-kids {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.6rem;
+}
+.pv-dom {
+  width: 100%;
+  height: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
+  color: var(--fg);
+  padding: 0.6rem 0.7rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.pv-dom:hover { border-color: var(--accent); transform: translateY(-1px); }
+.pv-dom-head { display: flex; align-items: baseline; gap: 0.4rem; }
+.pv-dom-name { font-size: 0.83rem; font-weight: 650; }
+.pv-dom-n {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.pv-dom-code { font-family: var(--cx-mono); font-size: 0.66rem; color: var(--muted); }
+.pv-dom-groups { display: flex; flex-wrap: wrap; gap: 0.22rem; }
+.pv-chip {
+  font-family: var(--cx-mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.42rem;
+  white-space: nowrap;
+}
+.pv-chip-btn { background: transparent; cursor: pointer; }
+.pv-chip-btn:hover { color: var(--fg); border-color: var(--fg); }
+.pv-crumb { font-size: 0.78rem; color: var(--fg); margin-bottom: 0.55rem; }
+.pv-crumb-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  font-size: 0.78rem;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pv-dim { color: var(--muted); }
+.pv-grouprow { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.6rem; }
+.pv-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.45rem;
+}
+.pv-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--fg);
+  padding: 0.45rem 0.55rem;
+  cursor: pointer;
+}
+.pv-card:hover { background: rgba(255, 255, 255, 0.07); }
+.pv-card.is-on { border-color: var(--accent); background: rgba(20, 40, 160, 0.2); }
+.pv-card-av {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.72rem;
+  display: grid;
+  place-items: center;
+}
+.pv-card-body { min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.pv-card-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pv-card-key { font-family: var(--cx-mono); font-size: 0.65rem; color: var(--muted); }
+.pv-empty { font-size: 0.78rem; color: var(--muted); line-height: 1.6; }
+
+/* 오른쪽 상세 — 누른 사람의 설명, 그리고 거기서 바로 고르기 */
+.pv-detail { border-left: 1px solid var(--border); overflow-y: auto; padding: 0.8rem; }
+.pv-detail-hint { margin-top: 2rem; text-align: center; }
+.pv-detail-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+.pv-detail-name { font-size: 0.85rem; font-weight: 650; color: var(--fg); line-height: 1.3; }
+.pv-apply {
+  width: 100%;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
+  padding: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pv-apply:hover:not(:disabled) { filter: brightness(1.18); }
+.pv-apply:disabled { background: transparent; color: var(--muted); border-color: var(--border); cursor: default; }
+.pv-detail-role { font-size: 0.76rem; color: var(--fg); line-height: 1.65; margin: 0.7rem 0 0.4rem; }
+.pv-detail-tags { font-size: 0.68rem; line-height: 1.6; margin: 0 0 0.5rem; }
+.pv-detail-h {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0.7rem 0 0.3rem;
+  letter-spacing: 0.02em;
+}
+.pv-detail-list { margin: 0; padding-left: 1.05rem; font-size: 0.73rem; color: var(--fg); line-height: 1.6; }
+.pv-detail-list li { margin-bottom: 0.2rem; }
+.pv-detail-scroll { max-height: 240px; overflow-y: auto; }
+
+/* 좁은 화면 — 3단이 안 들어가므로 트리를 접고 상세를 아래로 흘린다. */
+@media (max-width: 1000px) {
+  .pv-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .pv-tree { border-right: none; border-bottom: 1px solid var(--border); max-height: 32vh; }
+  .pv-detail { display: none; border-left: none; border-top: 1px solid var(--border); }
+  .pv-detail.is-open { display: block; }
+  .pv-search { width: min(180px, 34vw); }
+}
+.pv-samples { list-style: none; padding-left: 0; }
+.pv-sample {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg);
+  font-size: 0.73rem;
+  line-height: 1.5;
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+}
+.pv-sample:hover { border-color: var(--accent); background: rgba(20, 40, 160, 0.2); }
