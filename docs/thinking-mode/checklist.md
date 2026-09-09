@@ -45,14 +45,19 @@
 - [x] `CLAUDE.md` 문서 색인에 모드 추가
 - [ ] 커밋 분할 — 엔진 / 배선 / 프론트 / 문서
 
-## 별건 보고 (이 작업 범위 밖, 사용자 판단 대기)
+## 별건 — 사용자 지시로 이어서 처리 (2026-09-09 완료)
 
-- [ ] `deliberation.py:1943,1959` `_capture`/`_capture_b` 의 `startswith(b"data:")` 가
-      항상 거짓 — `/시뮬심의` 웹 경로가 1단에서 `sim_no_mechanism` 으로 죽는다(실측 확인)
-- [ ] `agent_search(mode="hybrid")` 102초 / `fts` 221초 — 심의·챗의 지식카드 주입이
-      여기 묶여 있고 `_call` 이 타임아웃을 삼켜 조용히 빈 지식으로 돈다.
-      원인은 `record_sections.content_text` `to_tsvector` 식 GIN 인덱스 부재
-- [ ] `app.py:2624` `recd` 스코프 — `expert_tools` 가 조용히 빈다
+- [x] `_capture`/`_capture_b` 의 `startswith(b"data:")` 가 항상 거짓 — `/시뮬심의` 웹
+      경로가 1단에서 죽던 것. SSE 문자열 파싱을 걷어내고 코어가 `out: dict` 를 직접
+      채우게 했다(`a984d2b`). 실주행 확인 — 1단 결정문 2,253자 → 2단 좌석 11인 진입
+- [x] `agent_search` 지연 — 원인이 둘이었다. ⓐ `hybrid_search` 가 범위를 SQL 이 아니라
+      파이썬으로 걸어 코퍼스 전체를 훑고 상위 N 이 범위 밖에서 정해졌다(정확성 문제이기도
+      했다 — FTS 절반이 0건 기여). ⓑ `to_tsvector` 식에 GIN 인덱스 부재.
+      AIDataHub `bf57f06`(범위 SQL 화) + `15612b2`(0031 GIN 인덱스).
+      실측 fts 221.4초 0건 → 0.3초 6건, hybrid 102.5초 3건 → 0.5초 6건
+- [x] 호출부가 느린 검색을 상정하게 — `_agent_search_hits` 공용 헬퍼(타임아웃·semantic
+      폴백·삼켜진 오류 판별·강등 가시화)로 심의·챗·띵킹 세 곳을 통일(`132c956`)
+- [ ] `app.py:2624` `recd` 스코프 — `expert_tools` 가 조용히 빈다(아직 미확인·미수정)
 
 
 ## 남은 것
