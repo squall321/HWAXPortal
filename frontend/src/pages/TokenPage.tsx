@@ -237,8 +237,31 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
   // ── Claude Code (CLI) — 있을 때만 ──────────────────────────────────────────
   L.push(
     'echo  [2] Claude Code (CLI) 확인...',
+    // ⚠ `where` 는 **PATH 에 있는 것만** 찾는다. 설치 프로그램은 실행 파일을 사용자 PATH 에
+    //   넣는데, 그 변경은 **이미 열려 있던 셸·Explorer 세션에는 반영되지 않는다**(새 터미널이
+    //   필요하다 — 공식 설치 문서). 그래서 방금 설치하고 배치를 더블클릭한 사람은 `where` 가
+    //   실패하고, 예전 판은 그 상황에서 "Claude Desktop 만 쓰신다면 정상" 이라고 말했다.
+    //   설치해 둔 사용자에게 정반대 안내다 — 실패가 성공처럼 보이는 그 부류다.
+    //   PATH 가 아니라 **파일이 있느냐**로 다시 본다.
+    'set "HWAX_CLAUDE="',
     'where claude >nul 2>nul',
-    'if errorlevel 1 goto :no_cli',
+    'if not errorlevel 1 set "HWAX_CLAUDE=claude"',
+    'if defined HWAX_CLAUDE goto :cli_go',
+    // 네이티브 설치 표준 위치(문서 명시). 실제 바이너리는 .local\\share\\claude\\versions 에
+    // 버전별로 있고 이 경로가 그것을 가리킨다.
+    'if exist "%USERPROFILE%\\.local\\bin\\claude.exe" set "HWAX_CLAUDE=%USERPROFILE%\\.local\\bin\\claude.exe"',
+    'if defined HWAX_CLAUDE goto :cli_found',
+    // npm 전역 설치(prefix 기본값). prefix 를 바꾼 사람은 여기 없고, 그건 PATH 에 있을 것이다.
+    'if exist "%APPDATA%\\npm\\claude.cmd" set "HWAX_CLAUDE=%APPDATA%\\npm\\claude.cmd"',
+    'if defined HWAX_CLAUDE goto :cli_found',
+    'if exist "%APPDATA%\\npm\\claude.exe" set "HWAX_CLAUDE=%APPDATA%\\npm\\claude.exe"',
+    'if defined HWAX_CLAUDE goto :cli_found',
+    'goto :no_cli',
+    ':cli_found',
+    'echo      PATH 에는 없지만 설치돼 있습니다 - 그 경로로 진행합니다.',
+    'echo          %HWAX_CLAUDE%',
+    'echo          ^(설치 직후라면 새 터미널을 열어야 PATH 에 반영됩니다.^)',
+    ':cli_go',
     // ⚠ 스코프는 user 다. `claude mcp add` 의 기본값은 local(그 폴더 전용)이라,
     // 배치를 다운로드 폴더에서 더블클릭하면 그 폴더에서만 hwax 가 뜬다 — 사용자는
     // '등록 완료' 를 보고 다른 데서 왜 안 보이는지 모른다(실사고). 같은 배치의
@@ -249,15 +272,18 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     //   대조해 "갱신됐다" 를 구분한다(3 = 등록은 됐는데 갱신 확인 실패).
     ...isolatedCli('HWAX_CLI_CMD', '%TEMP%\\hwax-cli-setup.cmd', [
       '@echo off',
-      'claude mcp remove hwax -s local >nul 2>nul',
-      'claude mcp remove hwax -s user >nul 2>nul',
+      // ⚠ `%%…%%` 로 쓴다 — 부모가 echo 할 때 확장하지 않고 **자식이 런타임에** 푼다.
+      //   부모가 확장하면 경로에 & 같은 문자가 섞였을 때 echo 가 그 자리에서 깨진다.
+      //   자식은 start 로 뜨므로 부모 환경을 그대로 물려받는다.
+      '"%%HWAX_CLAUDE%%" mcp remove hwax -s local >nul 2>nul',
+      '"%%HWAX_CLAUDE%%" mcp remove hwax -s user >nul 2>nul',
       pem
-        ? `claude mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
-        : `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
+        ? `"%%HWAX_CLAUDE%%" mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
+        : `"%%HWAX_CLAUDE%%" mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
       'if errorlevel 1 exit /b 2',
-      'claude mcp get hwax >nul 2>nul',
+      '"%%HWAX_CLAUDE%%" mcp get hwax >nul 2>nul',
       'if errorlevel 1 exit /b 1',
-      `claude mcp get hwax | findstr /C:"${tokenTail}" >nul`,
+      `"%%HWAX_CLAUDE%%" mcp get hwax | findstr /C:"${tokenTail}" >nul`,
       'if errorlevel 1 exit /b 3',
       'exit /b 0',
     ]),
@@ -277,7 +303,17 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'echo      [X] Claude Code 등록 실패',
     'goto :desktop',
     ':no_cli',
-    'echo      claude 명령 없음 - 건너뜀 ^(Claude Desktop 만 쓰신다면 정상^)',
+    // 예전엔 여기서 "정상" 이라고 했다. 설치해 둔 사용자에게는 거짓이다 — 무엇을 확인했고
+    // 무엇을 모르는지 말하고, 다음에 할 일을 준다. 토큰은 절대 화면에 찍지 않는다.
+    'echo      Claude Code 를 찾지 못해 이 단계만 건너뜁니다.',
+    'echo          PATH 와 아래 위치를 모두 확인했습니다:',
+    'echo            %USERPROFILE%\\.local\\bin\\claude.exe',
+    'echo            %APPDATA%\\npm\\claude.cmd ^| claude.exe',
+    'echo          Claude Desktop 만 쓰신다면 이대로 정상입니다.',
+    'echo          Claude Code 를 쓰신다면 둘 중 하나입니다:',
+    'echo            1^) 아직 설치 전 - https://claude.ai/install.ps1 로 설치',
+    'echo            2^) 설치했는데 이 창의 PATH 에 아직 반영 안 됨',
+    'echo               ^> 새 터미널을 열고, 토큰 페이지의 Claude Code 명령을 붙여넣으세요.',
     '',
   );
 
@@ -444,7 +480,11 @@ function buildSetupBat(token: string, name: string, pem: string | null): string 
     'if errorlevel 1 echo      등록은 끝났습니다. 위 사유를 해결한 뒤 Claude 를 재시작하세요.',
     'echo  [O] 완료. Claude 를 완전히 종료한 뒤 다시 실행하세요.',
     'echo      Desktop: 설정 - 커넥터에 hwax 가 보이면 정상',
-    'echo      CLI    : claude mcp get hwax  ^| gemini mcp list  ^| codex mcp list',
+    // ⚠ 확인 명령도 PATH 를 전제하면 안 된다 — 여기까지 온 사용자 중에 PATH 에 claude 가
+    //   없는 사람이 있다(위 [2] 가 파일 경로로 찾아 등록해 준 경우). 찾은 경로를 그대로 준다.
+    'if defined HWAX_CLAUDE echo      CLI    : "%HWAX_CLAUDE%" mcp get hwax',
+    'if not defined HWAX_CLAUDE echo      CLI    : claude mcp get hwax',
+    'echo               gemini mcp list  ^| codex mcp list',
     'echo.',
     'pause',
   );
