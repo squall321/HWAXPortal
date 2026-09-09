@@ -181,6 +181,19 @@ class UserStore:
             (norm_email(email), service)).fetchone()
         return {"token": row[0], "workspace": row[1]} if row else None
 
+    def set_connection_workspace(self, *, email: str, service: str, workspace: str) -> bool:
+        """토큰은 그대로 두고 워크스페이스만 바꾼다.
+
+        set_connection 을 쓰면 토큰을 다시 받아야 하는데, 조직만 옮기는 사람에게 PAT 재발급을
+        시키는 것은 과하다(그리고 그 과정에서 토큰이 한 번 더 사람 손을 탄다).
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE connections SET workspace = ? WHERE email = ? AND service = ?",
+                (workspace, norm_email(email), service))
+            self._conn.commit()
+            return cur.rowcount > 0
+
     def delete_connection(self, *, email: str, service: str) -> bool:
         with self._lock:
             cur = self._conn.execute(
