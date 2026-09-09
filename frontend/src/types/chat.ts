@@ -38,6 +38,13 @@ export interface DelibTally {
   agree: number;
   conditional: number;
   oppose: number;
+  /** 스탠스를 표명하지 않았거나 아예 응답하지 못한 좌석. 침묵을 동의로 세지 않기 위한 칸이다.
+   *  과거 저장분에는 없으므로 optional. */
+  abstain?: number;
+  /** 마지막 라운드에 실제로 응답한 좌석 수. total 은 **착석 수**라 둘이 다를 수 있다. */
+  responded?: number;
+  /** 착석 좌석 수(응답자 수가 아니다) — 예전엔 응답자 수였고 그래서 좌석이 유실되면
+   *  '만장일치 3/3' 같은 거짓 표시가 나갔다. */
   total: number;
 }
 export interface DelibData {

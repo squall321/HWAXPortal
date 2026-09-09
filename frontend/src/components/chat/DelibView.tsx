@@ -154,6 +154,8 @@ function stanceClass(s?: string): string {
   if (!s) return '';
   if (s.includes('반대')) return 'oppose';
   if (s.includes('조건')) return 'cond';
+  // ⚠ '미표명' 이 else 로 떨어지면 초록(동의)이 된다 — 말하지 않은 것을 동의로 칠하는 셈이다.
+  if (s.includes('미표명')) return 'abstain';
   return 'agree';
 }
 
@@ -223,11 +225,17 @@ function Convergence({ d }: { d: DelibData }) {
           <span className={`dv-verdict${d.outcome?.unanimous ? ' unanimous' : ''}`}>
             {d.outcome?.unanimous
               ? `만장일치 ${tally.agree}/${tally.total}`
-              : `동의 ${tally.agree} · 조건부 ${tally.conditional} · 반대 ${tally.oppose}`}
+              : `동의 ${tally.agree} · 조건부 ${tally.conditional} · 반대 ${tally.oppose}` +
+                (tally.abstain ? ` · 미표명 ${tally.abstain}` : '')}
           </span>
         )}
-        {tally && !d.outcome?.unanimous && (tally.conditional > 0 || tally.oppose > 0) && (
-          <span className="dv-minority">소수의견 있음 — 의사결정문 (3)절 참조</span>
+        {tally && !d.outcome?.unanimous &&
+          (tally.conditional > 0 || tally.oppose > 0 || (tally.abstain ?? 0) > 0) && (
+          <span className="dv-minority">
+            {(tally.abstain ?? 0) > 0
+              ? `미표명 ${tally.abstain}석 — 그 도메인 판단은 빠져 있습니다`
+              : '소수의견 있음 — 의사결정문 (3)절 참조'}
+          </span>
         )}
       </div>
       <div className="dv-conv-grid">
@@ -277,8 +285,15 @@ function OutcomeCards({ d }: { d: DelibData }) {
           <span className="dv-card-k">{o.unanimous ? '🤝 만장일치' : '⚖ 다수결'}</span>
           <span className="dv-card-t">
             동의 {o.tally.agree} · 조건부 {o.tally.conditional} · 반대 {o.tally.oppose}
+            {o.tally.abstain ? ` · 미표명 ${o.tally.abstain}` : ''}
           </span>
-          <span className="dv-card-s">패널 {o.tally.total}명 · 3라운드 수렴</span>
+          <span className="dv-card-s">
+            패널 {o.tally.total}명
+            {o.tally.responded !== undefined && o.tally.responded < o.tally.total
+              ? ` (최종 라운드 응답 ${o.tally.responded}명)`
+              : ''}
+            {' · 수렴'}
+          </span>
         </div>
       )}
     </div>
