@@ -7,6 +7,7 @@ import 'katex/dist/katex.min.css';
 import { config } from '../../../config';
 import { copyText } from '../clipboard';
 import { IconCheck, IconCopy, IconExternal } from '../icons';
+import { Figure, FigureShell } from './Figure';
 import { parseBlocks, parseInline, type Block } from './md';
 import { tokenizeLines } from './highlight';
 
@@ -162,7 +163,12 @@ function MermaidBlock({ code }: { code: string }) {
   if (err) return <pre className="md-mermaid-err">{code}</pre>;
   if (!svg) return <div className="md-mermaid-load">구조도 그리는 중…</div>;
   // mermaid 가 생성한 SVG — securityLevel:'strict' 로 스크립트가 제거된 산출물이다.
-  return <div className="md-mermaid" dangerouslySetInnerHTML={{ __html: svg }} />;
+  // 노드가 많은 구조도는 챗 폭에서 글자가 뭉갠다 — 이미지와 같은 조작으로 크게 볼 수 있게 한다.
+  return (
+    <FigureShell item={{ kind: 'svg', svg, caption: '구조도' }} className="md-figure-svg">
+      <div className="md-mermaid" dangerouslySetInnerHTML={{ __html: svg }} />
+    </FigureShell>
+  );
 }
 
 type Segment =
@@ -261,7 +267,8 @@ function renderInline(s: string, keyBase: string): ReactNode[] {
       case 'img': {
         // 도구 산출 그래프(/agent/artifacts/…)는 apiBase 경유 — 포털 프록시가 서빙.
         const src = tok.href.startsWith('/') ? `${config.apiBase}${tok.href}` : tok.href;
-        return <img key={key} className="md-img" src={src} alt={tok.s || '이미지'} loading="lazy" />;
+        // 가로로 긴 차트는 축소하면 축 라벨이 뭉갠다 — Figure 가 스크롤로 두고 확대를 연다.
+        return <Figure key={key} src={src} alt={tok.s || '이미지'} />;
       }
       default:
         return tok.s;
@@ -414,17 +421,22 @@ function openPreviewTab(lang: string, body: string): void {
 }
 
 function PreviewFrame({ lang, body }: { lang: string; body: string }) {
+  const doc = buildSrcDoc(lang, body);
+  const label = lang === 'svg' ? 'SVG 미리보기' : 'HTML 미리보기';
   return (
-    <div className="preview-wrap">
-      {/* allow-same-origin 절대 금지 — 포털 쿠키/스토리지 격리 */}
-      <iframe
-        className="preview-frame"
-        sandbox="allow-scripts"
-        srcDoc={buildSrcDoc(lang, body)}
-        referrerPolicy="no-referrer"
-        title={lang === 'svg' ? 'SVG 미리보기' : 'HTML 미리보기'}
-      />
-    </div>
+    // 크게 보기도 같은 격리를 탄다 — 라이트박스의 iframe 도 sandbox="allow-scripts" 뿐이다.
+    <FigureShell item={{ kind: 'frame', srcDoc: doc, caption: label }} className="md-figure-frame-wrap">
+      <div className="preview-wrap">
+        {/* allow-same-origin 절대 금지 — 포털 쿠키/스토리지 격리 */}
+        <iframe
+          className="preview-frame"
+          sandbox="allow-scripts"
+          srcDoc={doc}
+          referrerPolicy="no-referrer"
+          title={label}
+        />
+      </div>
+    </FigureShell>
   );
 }
 
