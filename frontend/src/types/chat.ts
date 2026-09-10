@@ -125,6 +125,9 @@ export interface ThinkSeat {
   screenReason?: string;
   /** 본심 — answer(답함) · pass(기권) · error(응답 실패, 기권 아님). */
   verdict?: 'answer' | 'pass' | 'error';
+  /** verdict='error' 의 사유(타임초과 · 형식 실패 · 예외 원문). 다음 행동이 갈린다 —
+   *  타임초과는 재시도, 형식 실패는 질문을 바꾸는 쪽이다. 없으면 서버가 안 보낸 것(구 버전). */
+  error?: string;
   scope?: string;
   answer?: string;
   basis?: string[];

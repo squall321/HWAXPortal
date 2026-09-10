@@ -2133,3 +2133,12 @@ body.dock-open .container {
   cursor: pointer;
 }
 .pv-sample:hover { border-color: var(--accent); background: rgba(20, 40, 160, 0.2); }
+/* 응답 실패 좌석의 사유 — 없으면 그 좌석이 이유 없이 끊긴 것처럼 읽힌다 */
+.tv-err-why {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1.5;
+  word-break: break-word;
+}

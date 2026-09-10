@@ -203,6 +203,7 @@ function mergeThink(prev: ThinkData | undefined, e: ThinkEvent): ThinkData {
         verdict: e.verdict as ThinkSeat['verdict'],
         scope: String(e.scope ?? ''),
         refer: (e.refer as string[]) ?? [],
+        ...(e.error ? { error: String(e.error) } : {}),
       });
       break;
     case 'answer':

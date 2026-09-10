@@ -1,4 +1,4 @@
-// 띵킹 라이브 뷰 — 좌석별 예심·자기판정을 보이고, 답한 좌석은 답을, 기권한 좌석은 넘긴 곳을 그린다
+// Thinking 라이브 뷰 — 좌석별 예심·자기판정을 보이고, 답한 좌석은 답을, 기권한 좌석은 넘긴 곳을 그린다
 import { useMemo, useState } from 'react';
 import type { Message, ThinkSeat } from '../../types/chat';
 import { TextBlock } from './renderers/TextBlock';
@@ -55,7 +55,7 @@ export function ThinkView({ msg }: { msg: Message }) {
   return (
     <div className="tv">
       <header className="tv-head">
-        <span className="tv-title">🧠 띵킹</span>
+        <span className="tv-title">🧠 Thinking</span>
         <span className="tv-counts">
           {answered.length > 0 && <b className="tv-c-ok">{answered.length}명 답변</b>}
           {passed.length > 0 && <span className="tv-c-pass">{passed.length}명 기권</span>}
@@ -133,6 +133,8 @@ export function ThinkView({ msg }: { msg: Message }) {
               {errored.map((s) => (
                 <li key={s.key} className="tv-skip-err">
                   <code>{s.key}</code> 응답 실패(기권 아님)
+                  {/* 사유를 반드시 보여 준다 — 없으면 그 좌석이 이유 없이 끊긴 것처럼 읽힌다. */}
+                  {s.error && <span className="tv-err-why">{s.error}</span>}
                 </li>
               ))}
             </ul>

@@ -1,4 +1,4 @@
-// 띵킹 모드 토글 — 켜면 질문이 전문가 풀로 가고 답할 수 있는 좌석만 각자 답한다(회의 아님)
+// Thinking 모드 토글 — (화면 이름은 영문 "Thinking". 한글 음차 "띵킹" 은 쓰지 않는다) 켜면 질문이 전문가 풀로 가고 답할 수 있는 좌석만 각자 답한다(회의 아님)
 import { useChat } from '../../state/ChatContext';
 
 export function ThinkPanel() {
@@ -8,7 +8,7 @@ export function ThinkPanel() {
     <details className="do-panel">
       <summary className="do-summary">
         <span className="do-gear" aria-hidden="true">🧠</span>
-        띵킹 모드
+        Thinking 모드
         {thinking ? (
           <span className="do-count">켜짐</span>
         ) : (
