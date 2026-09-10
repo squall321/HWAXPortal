@@ -212,42 +212,24 @@ del "%TMPCMD%" >nul 2>nul         rem 임시파일에 PAT 평문이 들어간다
 4xx/302 에 예외를 던져 "직접 연결 실패(VPN 확인)" 오탐이 난다. 무인증 `/health` 를 찌르고,
 응답을 받았으면(`$_.Exception.Response`) 도달로 판정한다.
 
-## 13. dev 의 vLLM 과 AIDataHub 는 같은 GPU 를 쓴다 — 기동 순서를 지켜야 한다
+## 13. 챗·심의·띵킹이 **한꺼번에** 이상하면 LLM 백엔드부터 본다
 
-**증상.** 챗·심의·띵킹이 전부 안 된다. 띵킹 화면에는 오류가 아니라
-`전문가를 부르지 못했습니다` 로만 보이고, 좌석마다 `APIConnectionError('Connection error.')`
-가 붙는다. 사용자에게는 "한글 답이 이상하다" 로 읽힌다.
+**증상.** 좌석마다 `APIConnectionError('Connection error.')` 가 붙고, 띵킹 화면에는 오류가
+아니라 `전문가를 부르지 못했습니다` 로만 보인다. 사용자에게는 "한글 답이 이상하다" 로
+읽힌다(2026-09-10 실제 신고). 챗·심의도 같이 죽어 있는데 띵킹에서만 눈에 띈다.
 
-**원인.** vLLM(:8000)이 안 떠 있는 것이다. 그런데 **다시 띄우려 해도 안 뜬다** —
+**첫 확인.** 기능을 뒤지지 말고 LLM 엔드포인트를 먼저 본다.
 
+```bash
+curl -s --noproxy '*' "$VLLM_BASE_URL/models"      # HWAXAgentServer/.env 의 그 주소
 ```
-ValueError: Free memory on device cuda:0 (12.08/15.46 GiB) on startup is less than
-desired GPU memory utilization (0.8, 12.37 GiB).
-```
 
-실측(2026-09-10, RTX 5070 Ti 15.92 GiB) —
+**대상은 박스마다 다르다.** cae00 은 상암 B300 **GLM** 을 쓴다(`HWAXAgentServer/.env` 의
+`VLLM_BASE_URL`) — 운영 타깃은 이쪽이다. dev 의 로컬 vLLM(:8000)은 **테스트 편의용**이고
+`services.yaml` 에서 `stop: "true"`(no-op)라 죽어도 자동 복구되지 않는다. dev 에서 죽어
+있으면 `./infra/scripts/services.sh up vllm`, 재기동은 `restart-vllm.sh`(포트킬만 하면
+`VLLM::EngineCore` 가 VRAM 을 쥔 채 남는다).
 
-| | VRAM |
-|---|---|
-| vLLM `--gpu-memory-utilization 0.80` | 12.85 GiB |
-| AIDataHub API 정상 상태 | 1.11 GiB |
-| **합** | 14.42 / 15.92 (여유 1.38) |
-| AIDataHub **기동 중 피크** | **~3.1 GiB** (e5 임베더 + 리랭커 적재) |
-
-둘은 **떠 있을 때는 공존하지만 한쪽이 기동하는 순간에는 공존하지 못한다.**
-AIDataHub 를 재기동한 직후(임베더가 아직 피크일 때) vLLM 을 띄우면 EngineCore 가 죽는다.
-
-**규칙.**
-- AIDataHub 가 **완전히 뜬 것을 확인한 뒤** vLLM 을 띄운다(`nvidia-smi` 로 이웃이
-  1.1~1.4 GiB 로 내려앉았는지 본다).
-- 반대로 vLLM 이 떠 있는 동안 AIDataHub 를 재기동하면 이번엔 임베더가 CUDA OOM 날 수 있다.
-  **둘을 동시에 만지지 마라.**
-- vLLM 재기동은 반드시 `./infra/scripts/restart-vllm.sh` 다. 포트킬만 하면
-  `VLLM::EngineCore` 가 VRAM 을 쥔 채 남아 다음 기동이 OOM 난다.
-- 여유가 더 필요하면 gitignore 된 `.env` 에 `VLLM_GPU_MEM_UTIL=0.70` — KV 캐시가 줄어
-  동시 좌석 수가 준다. 공짜가 아니다.
-
-**왜 조용한가.** `services.yaml` 의 vllm 은 `stop: "true"`(no-op)라 `down`/`restart` 가
-건드리지 않고, `up` 은 이미 떠 있으면 건너뛴다. **죽으면 아무도 되살리지 않는다.**
-`./infra/scripts/status.sh` 가 `vllm` 을 보여 주지만 아무도 보지 않으면 며칠도 간다.
-챗이 이상하면 **가장 먼저 `curl -s --noproxy '*' http://127.0.0.1:8000/v1/models`** 를 본다.
+> dev 한정 참고 — 로컬 vLLM 은 AIDataHub API 와 같은 GPU 를 쓴다. AIDataHub 가 막 기동해
+> 임베더를 올리는 중(피크 ~3.1 GiB)이면 vLLM 이 VRAM 부족으로 못 뜬다. 잠시 뒤 다시 띄우면
+> 된다. dev 편의 문제라 운영과는 무관하다.

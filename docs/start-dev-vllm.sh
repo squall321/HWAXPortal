@@ -23,20 +23,11 @@ SERVED_NAME="${VLLM_SERVED_NAME:-qwen2.5-7b-dev}"          # stable name; prod s
 PORT="${VLLM_PORT:-8000}"                                  # vLLM's port (Agent Server calls this), NOT the portal's 9000
 HOST="${VLLM_HOST:-0.0.0.0}"
 MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-16384}"               # 16K KV fits 16 GB; raise only after watching nvidia-smi
-# ⚠ 이 값은 **AIDataHub API 와 같은 GPU 를 나눠 쓴다**는 전제 위에 있다. 옛 주석은 이웃이
-#   ~1.5 GB 라고 적혀 있었는데 실측(2026-09-10)은 다르다 —
-#     vLLM 0.80 → 12.85 GiB · AIDataHub 정상 1.11 GiB · 합 14.42 / 15.92 GiB (여유 1.38)
-#     그런데 AIDataHub 는 **기동 중 피크가 ~3.1 GiB** 다(e5 임베더 + 리랭커 적재).
-#   즉 둘은 '떠 있을 때'는 공존하지만 **한쪽이 기동하는 순간에는 공존하지 못한다.**
-#   실제로 그렇게 깨졌다 — AIDataHub 를 재기동한 직후 vLLM 을 띄우니
-#     ValueError: Free memory on device cuda:0 (12.08/15.46 GiB) ... less than 0.8 (12.37 GiB)
-#   로 EngineCore 가 죽었고, 그러면 챗·심의·띵킹이 전부 APIConnectionError 가 된다
-#   (띵킹 화면에는 "전문가를 부르지 못했습니다" 로만 보인다).
-#
-#   순서 규칙 — **AIDataHub 가 완전히 뜬 뒤에 vLLM 을 띄운다.** 반대로 vLLM 이 떠 있는 동안
-#   AIDataHub 를 재기동하면 이번엔 임베더가 CUDA OOM 날 수 있다. 동시에 만지지 말 것.
-#   여유가 더 필요하면 gitignore 된 .env 에서 VLLM_GPU_MEM_UTIL=0.70 으로 낮춘다
-#   (KV 캐시가 줄어 동시 처리 좌석 수가 준다 — 공짜가 아니다).
+# dev 한정 참고 — 이 GPU 는 AIDataHub API 와 공유한다. 실측(2026-09-10, 15.92 GiB) —
+#   vLLM 0.80 = 12.85 GiB · AIDataHub 정상 1.11 GiB (여유 1.38).
+#   단 AIDataHub 는 **기동 중 피크가 ~3.1 GiB** 라, 그 순간에 vLLM 을 띄우면 VRAM 부족으로
+#   EngineCore 가 죽는다. 잠시 뒤 다시 띄우면 된다. 급하면 .env 에 VLLM_GPU_MEM_UTIL=0.70.
+#   ⚠ 운영 타깃은 이 로컬 vLLM 이 아니라 상암 B300 GLM 이다(HWAXAgentServer/.env). dev 편의용.
 GPU_MEM_UTIL="${VLLM_GPU_MEM_UTIL:-0.80}"
 MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-16}"
 HF_HOME_DIR="${HF_HOME:-/home/koopark/.cache/huggingface}"
