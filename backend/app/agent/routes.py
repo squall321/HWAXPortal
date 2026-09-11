@@ -71,7 +71,9 @@ class DelibOpts(BaseModel):
     # 이어하기(사람 개입 스티어링) — 사람 의견 + 이전 심의 요약 + 전문가 재사용(발굴 생략)
     human_note: str | None = Field(default=None, max_length=2000)
     continue_summary: str | None = Field(default=None, max_length=8000)
-    personas: list[dict] | None = Field(default=None, max_length=12)
+    # 좌석 상한 — 엔진 MAX_REQ_SEATS·ExpertPicker·HandoffBrief 와 같은 값이어야 한다
+    # (tests/test_seat_cap_contract.py). 넘으면 422 로 막는다 — 엔진까지 가면 잘려서 사라진다.
+    personas: list[dict] | None = Field(default=None, max_length=20)
     # ⚠ 아래 넷은 **엔진에 이미 구현돼 있는데 여기 선언이 없어 웹에서만 죽어 있던** 것이다
     #   (2026-09-11 조사). 선언 안 된 키는 model_dump(exclude_none=True) 에서 조용히 사라지고
     #   에러가 안 나므로, 심의는 정상 동작한 것처럼 끝난다. chair_template·free_tools 가 같은

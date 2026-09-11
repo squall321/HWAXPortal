@@ -14,9 +14,9 @@ import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob,
 
 const DEFAULT_SEATS = 6; // 추천 좌석 기본 선택 수(심의가 스파인 좌석은 자동 추가)
 const MIN_SEATS = 2;  // 서버 심의는 좌석 2명 이상 필요
-// ⚠ delib_opts.personas 는 백엔드에서 max_length=12 다(routes.py). 넘겨 보내면 422 로
-// 심의가 시작조차 안 된다 — 여기서 막고, 막았다는 걸 보여 준다.
-const MAX_SEATS = 12;
+// ⚠ delib_opts.personas 는 백엔드에서 max_length=20 이다(routes.py). 넘겨 보내면 422 로
+// 심의가 시작조차 안 된다 — 여기서 막고, 막았다는 걸 보여 준다. 엔진 MAX_REQ_SEATS 와 같아야 한다.
+const MAX_SEATS = 20;
 
 export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
   const { startHandoff, streaming } = useChat();

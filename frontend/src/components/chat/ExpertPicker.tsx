@@ -19,7 +19,7 @@ interface ExpertPickerProps {
 }
 
 const MIN_EXPERTS = 2; // 서버 심의는 전문가 2명 이상 필요
-const MAX_EXPERTS = 12; // 심의 계약(delib_opts.personas) 상한
+const MAX_EXPERTS = 20; // 심의 계약(delib_opts.personas) 상한 — 엔진 MAX_REQ_SEATS 와 같아야 한다
 const DEFAULT_COUNT = 5;
 const COUNT_OPTIONS = [3, 5, 7, 10, 12];
 const POOL_LIMIT = 30; // 결과 표시 상한
