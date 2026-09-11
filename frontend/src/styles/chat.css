@@ -2378,6 +2378,45 @@ body.dock-open .container {
   .pv-detail.is-open { display: block; }
   .pv-search { width: min(180px, 34vw); }
 }
+/* ── 조직도 계층(루트→분류→도메인) — 챗·심의 조직도 공용(OrgTree.tsx) ──────────── */
+.ot-root { margin-top: 0.7rem; }
+.ot-root-head {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0.2rem 0.45rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.2rem;
+}
+.ot-cat-name { font-weight: 650; }
+.ot-cat.is-on { background: rgba(20, 40, 160, 0.22); }
+.ot-doms { margin-left: 10px; }
+.ot-sec { margin-top: 1.3rem; }
+.ot-sec-h {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 750;
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3rem;
+}
+.ot-cat-block { margin: 0.6rem 0 1rem; }
+.ot-cat-h {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 0.45rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.ot-cat-h:hover { color: var(--cx-accent); }
+/* 계층 개요에서는 루트 아래 연결선 대신 섹션으로 나눈다 — 줄기 하나로 30개 분야를 잇으면 선만 보인다 */
+.ot-kids { margin-top: 0; padding-top: 0; border-top: none; }
+
 /* ── 심의 좌석 조직도 — .pv-* 껍데기를 그대로 쓰고 다중선택에 필요한 것만 덧붙인다 ──── */
 .sb-chosen {
   font-size: 0.73rem;

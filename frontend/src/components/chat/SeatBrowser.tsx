@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { fetchAgentDetail, type AgentDetail, type PoolExpert, type RecommendedExpert } from '../../api/chat.api';
 import { colorOf, initialOf, shortName } from './personaColor';
-import { buildTree, domainLabel, matches, type DomainNode } from './personaCatalog';
-
-const groupLabel = (code: string) => (code ? code : '개별');
+import { findDomain } from './personaCatalog';
+import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
+import { useOrgNav } from './orgNav';
 
 export interface SeatBrowserProps {
   pool: PoolExpert[];
@@ -20,10 +20,9 @@ export interface SeatBrowserProps {
 }
 
 export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, onClose }: SeatBrowserProps) {
-  const [q, setQ] = useState('');
-  const [dom, setDom] = useState<string | null>(null);
-  const [grp, setGrp] = useState<string | null>(null);
-  const [open, setOpen] = useState<string[]>([]);
+  // 탐색은 챗 조직도와 같은 공용 훅(루트→분류→도메인→그룹·검색).
+  const nav = useOrgNav(pool);
+  const { q, setQ, shown } = nav;
   const [sel, setSel] = useState<PoolExpert | null>(null);
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -42,18 +41,12 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
     return m;
   }, [candidates]);
 
-  const tree = useMemo(() => buildTree(pool), [pool]);
-  const hits = useMemo(
-    () => (q.trim() ? pool.filter((a) => matches(a, q)).slice(0, 120) : []),
-    [pool, q],
-  );
-  const node: DomainNode | undefined = useMemo(() => tree.find((d) => d.code === dom), [tree, dom]);
-  const shown = useMemo(() => {
-    if (q.trim()) return hits;
-    if (!node) return [];
-    if (grp === null) return node.agents;
-    return node.groups.find((g) => g.code === grp)?.agents ?? [];
-  }, [q, hits, node, grp]);
+  // 분야마다 이미 앉힌 좌석 수 — 분야로 접으면 한쪽에 쏠린 걸 못 본다.
+  const pickedBadge = (code: string) => {
+    const d = findDomain(nav.tree, code);
+    const n = d ? d.agents.filter((a) => selected[a.key]).length : 0;
+    return n > 0 ? <span className="sb-tree-pick">{n}석</span> : null;
+  };
 
   // 늦게 온 상세가 지금 선택을 덮지 않게 — /catalog/agent 는 콜드 6~11초다.
   const selKeyRef = useRef<string | null>(null);
@@ -136,7 +129,7 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
         <header className="pv-head">
           <h2 className="pv-title">좌석 조직도</h2>
           <span className="pv-count">
-            {pool.length}명 · {tree.length}개 분야
+            {pool.length}명 · {nav.domainCount}개 분야
           </span>
           <span className={`sb-chosen${full ? ' is-full' : ''}`}>
             선정 {count}/{max}
@@ -156,162 +149,14 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
         </header>
 
         <div className="pv-body">
-          <nav className="pv-tree" aria-label="분야 분류">
-            <button
-              type="button"
-              className={`pv-tree-root${dom === null && !q.trim() ? ' is-on' : ''}`}
-              onClick={() => {
-                setQ('');
-                setDom(null);
-                setGrp(null);
-              }}
-            >
-              전체 <span className="pv-n">{pool.length}</span>
-            </button>
-            <ul className="pv-tree-list">
-              {tree.map((d) => {
-                const expanded = open.includes(d.code);
-                // 이 분야에 이미 몇 석을 앉혔는지 — 분야로 접으면 그게 안 보인다.
-                const picked = d.agents.filter((a) => selected[a.key]).length;
-                return (
-                  <li key={d.code} className="pv-tree-item">
-                    <div className={`pv-tree-row${dom === d.code ? ' is-on' : ''}`}>
-                      <button
-                        type="button"
-                        className="pv-twist"
-                        onClick={() =>
-                          setOpen((p) => (p.includes(d.code) ? p.filter((x) => x !== d.code) : [...p, d.code]))
-                        }
-                        aria-expanded={expanded}
-                        aria-label={`${d.label} ${expanded ? '접기' : '펼치기'}`}
-                      >
-                        {expanded ? '▾' : '▸'}
-                      </button>
-                      <button
-                        type="button"
-                        className="pv-tree-name"
-                        onClick={() => {
-                          setQ('');
-                          setDom(d.code);
-                          setGrp(null);
-                          setOpen((p) => (p.includes(d.code) ? p : [...p, d.code]));
-                        }}
-                      >
-                        {d.label}
-                        {picked > 0 && <span className="sb-tree-pick">{picked}석</span>}
-                        <span className="pv-n">{d.agents.length}</span>
-                      </button>
-                    </div>
-                    {expanded && (
-                      <ul className="pv-tree-sub">
-                        {d.groups.map((g) => (
-                          <li key={g.code || '_loose'}>
-                            <button
-                              type="button"
-                              className={`pv-tree-sub-btn${dom === d.code && grp === g.code ? ' is-on' : ''}`}
-                              onClick={() => {
-                                setQ('');
-                                setDom(d.code);
-                                setGrp(g.code);
-                              }}
-                            >
-                              {groupLabel(g.code)}
-                              <span className="pv-n">{g.agents.length}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
+          <OrgTreeNav nav={nav} total={pool.length} badge={pickedBadge} />
 
           <main className="pv-main">
-            {!q.trim() && !node && (
-              <div className="pv-chart">
-                <div className="pv-chart-root">
-                  전문가 풀 <b>{pool.length}명</b>
-                </div>
-                <ul className="pv-chart-kids">
-                  {tree.map((d) => {
-                    const picked = d.agents.filter((a) => selected[a.key]).length;
-                    return (
-                      <li key={d.code}>
-                        <button
-                          type="button"
-                          className="pv-dom"
-                          onClick={() => {
-                            setDom(d.code);
-                            setGrp(null);
-                            setOpen((p) => (p.includes(d.code) ? p : [...p, d.code]));
-                          }}
-                        >
-                          <span className="pv-dom-head">
-                            <span className="pv-dom-name">{d.label}</span>
-                            <span className="pv-dom-n">{d.agents.length}</span>
-                          </span>
-                          <span className="pv-dom-code">{d.code}</span>
-                          <span className="pv-dom-groups">
-                            {picked > 0 && <span className="sb-dom-pick">{picked}석 선정</span>}
-                            {d.groups
-                              .filter((g) => g.code)
-                              .slice(0, 4)
-                              .map((g) => (
-                                <span key={g.code} className="pv-chip">
-                                  {g.code} {g.agents.length}
-                                </span>
-                              ))}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
+            {!q.trim() && !nav.node && <OrgOverview nav={nav} total={pool.length} badge={pickedBadge} />}
 
-            {(q.trim() || node) && (
+            {(q.trim() || nav.node) && (
               <>
-                <div className="pv-crumb">
-                  {q.trim() ? (
-                    <span>
-                      ‘{q.trim()}’ 검색 — {hits.length}명
-                    </span>
-                  ) : (
-                    <>
-                      <button type="button" className="pv-crumb-btn" onClick={() => setDom(null)}>
-                        전체
-                      </button>
-                      <span className="pv-dim"> / </span>
-                      <button type="button" className="pv-crumb-btn" onClick={() => setGrp(null)}>
-                        {domainLabel(dom ?? '')}
-                      </button>
-                      {grp !== null && (
-                        <>
-                          <span className="pv-dim"> / </span>
-                          <span>{groupLabel(grp)}</span>
-                        </>
-                      )}
-                      <span className="pv-dim"> — {shown.length}명</span>
-                    </>
-                  )}
-                </div>
-                {!q.trim() && node && grp === null && node.groups.length > 1 && (
-                  <div className="pv-grouprow">
-                    {node.groups.map((g) => (
-                      <button
-                        key={g.code || '_loose'}
-                        type="button"
-                        className="pv-chip pv-chip-btn"
-                        onClick={() => setGrp(g.code)}
-                      >
-                        {groupLabel(g.code)} {g.agents.length}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <OrgCrumb nav={nav} />
                 {shown.length === 0 ? (
                   <p className="pv-empty">일치하는 전문가가 없습니다.</p>
                 ) : (

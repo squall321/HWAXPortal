@@ -1,14 +1,12 @@
 // 전문가 조직도 — 전창으로 전체 분류(분야→그룹→사람)를 펼쳐 보고, 누르면 설명이 뜨고 거기서 고른다
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { fetchAgentDetail, type AgentDetail, type PoolExpert } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import { colorOf, initialOf, shortName } from './personaColor';
-import { buildTree, domainLabel, matches, type DomainNode } from './personaCatalog';
+import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
+import { useOrgNav } from './orgNav';
 import { usePersonaPool } from './usePersonaPool';
-
-/** 그룹 코드 '' 는 '묶이지 않은 사람들' 이다(2명 미만이라 그룹을 안 세운 것). */
-const groupLabel = (code: string) => (code ? code : '개별');
 
 function AgentCard({
   agent,
@@ -37,30 +35,12 @@ function AgentCard({
 export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBack?: () => void }) {
   const { pinnedAgent, setPinnedAgent, setInput } = useChat();
   const { pool, loading, failed } = usePersonaPool();
-  const [q, setQ] = useState('');
-  // 선택 경로 — 분야(없으면 전체 조직도), 그 안의 그룹.
-  const [dom, setDom] = useState<string | null>(null);
-  const [grp, setGrp] = useState<string | null>(null);
-  const [open, setOpen] = useState<string[]>([]); // 트리에서 펼친 분야
+  // 탐색(루트→분류→도메인→그룹·검색)은 심의 좌석 조직도와 같은 규칙이라 공용 훅을 쓴다.
+  const nav = useOrgNav(pool);
+  const { q, setQ, shown } = nav;
   const [sel, setSel] = useState<PoolExpert | null>(null);
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-
-  const tree = useMemo(() => buildTree(pool), [pool]);
-  const hits = useMemo(
-    () => (q.trim() ? pool.filter((a) => matches(a, q)).slice(0, 120) : []),
-    [pool, q],
-  );
-  const node: DomainNode | undefined = useMemo(
-    () => tree.find((d) => d.code === dom),
-    [tree, dom],
-  );
-  const shown = useMemo(() => {
-    if (q.trim()) return hits;
-    if (!node) return [];
-    if (grp === null) return node.agents;
-    return node.groups.find((g) => g.code === grp)?.agents ?? [];
-  }, [q, hits, node, grp]);
 
   // 지금 열어 둔 사람 — 상태 갱신 함수 안에서 부수효과를 내지 않으려고 ref 로 따로 둔다.
   const selKeyRef = useRef<string | null>(null);
@@ -102,13 +82,6 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
     onClose();
   };
 
-  const gotoDomain = (code: string) => {
-    setQ('');
-    setDom(code);
-    setGrp(null);
-    setOpen((prev) => (prev.includes(code) ? prev : [...prev, code]));
-  };
-
   return createPortal(
     <div className="pv-overlay" role="dialog" aria-modal="true" aria-label="전문가 조직도">
       <div className="pv-win">
@@ -120,7 +93,7 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
           )}
           <h2 className="pv-title">전문가 조직도</h2>
           <span className="pv-count">
-            {loading ? '불러오는 중…' : `${pool.length}명 · ${tree.length}개 분야`}
+            {loading ? '불러오는 중…' : `${pool.length}명 · ${nav.domainCount}개 분야`}
           </span>
           <input
             className="pv-search"
@@ -136,148 +109,19 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
         </header>
 
         <div className="pv-body">
-          {/* ── 왼쪽: 전체 분류 트리(조직도의 계보). 접혀 있어도 인원이 다 보인다 ── */}
-          <nav className="pv-tree" aria-label="분야 분류">
-            <button
-              type="button"
-              className={`pv-tree-root${dom === null && !q.trim() ? ' is-on' : ''}`}
-              onClick={() => {
-                setQ('');
-                setDom(null);
-                setGrp(null);
-              }}
-            >
-              전체 <span className="pv-n">{pool.length}</span>
-            </button>
-            <ul className="pv-tree-list">
-              {tree.map((d) => {
-                const expanded = open.includes(d.code);
-                return (
-                  <li key={d.code} className="pv-tree-item">
-                    <div className={`pv-tree-row${dom === d.code ? ' is-on' : ''}`}>
-                      <button
-                        type="button"
-                        className="pv-twist"
-                        onClick={() =>
-                          setOpen((prev) =>
-                            prev.includes(d.code)
-                              ? prev.filter((x) => x !== d.code)
-                              : [...prev, d.code],
-                          )
-                        }
-                        aria-label={`${d.label} ${expanded ? '접기' : '펼치기'}`}
-                        aria-expanded={expanded}
-                      >
-                        {expanded ? '▾' : '▸'}
-                      </button>
-                      <button type="button" className="pv-tree-name" onClick={() => gotoDomain(d.code)}>
-                        {d.label}
-                        <span className="pv-n">{d.agents.length}</span>
-                      </button>
-                    </div>
-                    {expanded && (
-                      <ul className="pv-tree-sub">
-                        {d.groups.map((g) => (
-                          <li key={g.code || '_loose'}>
-                            <button
-                              type="button"
-                              className={`pv-tree-sub-btn${dom === d.code && grp === g.code ? ' is-on' : ''}`}
-                              onClick={() => {
-                                setQ('');
-                                setDom(d.code);
-                                setGrp(g.code);
-                              }}
-                            >
-                              {groupLabel(g.code)}
-                              <span className="pv-n">{g.agents.length}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
+          {/* ── 왼쪽: 조직도 트리(루트→분류→도메인→그룹). 접혀 있어도 인원이 다 보인다 ── */}
+          <OrgTreeNav nav={nav} total={pool.length} />
 
           {/* ── 가운데: 조직도 개요 또는 선택한 갈래의 사람들 ── */}
           <main className="pv-main">
             {failed && <p className="pv-empty">전문가 목록을 불러오지 못했습니다 — 잠시 후 다시 열어 보세요.</p>}
             {loading && <p className="pv-empty">조직도를 불러오는 중…</p>}
 
-            {!loading && !q.trim() && !node && (
-              <div className="pv-chart">
-                <div className="pv-chart-root">
-                  전문가 풀 <b>{pool.length}명</b>
-                </div>
-                <ul className="pv-chart-kids">
-                  {tree.map((d) => (
-                    <li key={d.code}>
-                      <button type="button" className="pv-dom" onClick={() => gotoDomain(d.code)}>
-                        <span className="pv-dom-head">
-                          <span className="pv-dom-name">{d.label}</span>
-                          <span className="pv-dom-n">{d.agents.length}</span>
-                        </span>
-                        <span className="pv-dom-code">{d.code}</span>
-                        <span className="pv-dom-groups">
-                          {d.groups
-                            .filter((g) => g.code)
-                            .slice(0, 5)
-                            .map((g) => (
-                              <span key={g.code} className="pv-chip">
-                                {g.code} {g.agents.length}
-                              </span>
-                            ))}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {!loading && !q.trim() && !nav.node && <OrgOverview nav={nav} total={pool.length} />}
 
-            {!loading && (q.trim() || node) && (
+            {!loading && (q.trim() || nav.node) && (
               <>
-                <div className="pv-crumb">
-                  {q.trim() ? (
-                    <span>
-                      ‘{q.trim()}’ 검색 — {hits.length}명
-                      {hits.length >= 120 && <span className="pv-dim"> (상위 120명만)</span>}
-                    </span>
-                  ) : (
-                    <>
-                      <button type="button" className="pv-crumb-btn" onClick={() => setDom(null)}>
-                        전체
-                      </button>
-                      <span className="pv-dim"> / </span>
-                      <button type="button" className="pv-crumb-btn" onClick={() => setGrp(null)}>
-                        {domainLabel(dom ?? '')}
-                      </button>
-                      {grp !== null && (
-                        <>
-                          <span className="pv-dim"> / </span>
-                          <span>{groupLabel(grp)}</span>
-                        </>
-                      )}
-                      <span className="pv-dim"> — {shown.length}명</span>
-                    </>
-                  )}
-                </div>
-                {!q.trim() && node && grp === null && node.groups.length > 1 && (
-                  <div className="pv-grouprow">
-                    {node.groups.map((g) => (
-                      <button
-                        key={g.code || '_loose'}
-                        type="button"
-                        className="pv-chip pv-chip-btn"
-                        onClick={() => setGrp(g.code)}
-                      >
-                        {groupLabel(g.code)} {g.agents.length}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <OrgCrumb nav={nav} />
                 {shown.length === 0 ? (
                   <p className="pv-empty">일치하는 전문가가 없습니다.</p>
                 ) : (
