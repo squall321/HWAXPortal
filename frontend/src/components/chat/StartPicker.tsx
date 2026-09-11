@@ -1,6 +1,6 @@
-// 챗 시작 전 전문가·도구 선택 패널 — 검색 + 조직도(전창)로 전문가(1명, 페르소나)와
-// 도구(≤12)를 직접 골라 대화를 구성한다. 전문가 클릭 시 상세(역할·태그·샘플질의·보유 지식)를
-// UI 로 보여준다 — LLM 텍스트 나열은 절단되므로 탐색은 결정적 데이터로 그린다.
+// 챗 시작 전 전문가·도구 선택 패널 — 전문가(1명)는 조직도 전창에서, 도구는 앱(≤3)·개별(≤12)로
+// 고른다. 고른 전문가의 상세(역할·태그·샘플질의·보유 지식)는 UI 로 보여준다 — LLM 텍스트 나열은
+// 절단되므로 탐색은 결정적 데이터로 그린다.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchAgentDetail,
@@ -17,14 +17,11 @@ import { inArea, toolAreasOf } from './toolAreas';
 
 const MAX_TOOLS = 12; // 챗 pinned_tools 상한
 const MAX_APPS = 3;   // 챗 pinned_apps 상한 — 앱 하나가 도구 20~30개다
-const LIST_LIMIT = 10;
 
 export function StartPicker({ onClose }: { onClose: () => void }) {
   const { pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent, setInput } = useChat();
   // 전문가 칸은 '전문가와 대화' 권한이 있어야 보인다 — 도구·앱 고르기는 누구나(docs/access-control).
   const canExperts = useCan()('feat:expert-chat');
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
   const [res, setRes] = useState<ExpertsResponse | null>(null);
   const [agentSel, setAgentSel] = useState<string | null>(pinnedAgent);
   const [toolSel, setToolSel] = useState<Set<string>>(() => new Set(pinnedTools));
@@ -37,7 +34,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const selKeyRef = useRef<string | null>(pinnedAgent);
 
-  // 열자마자 전체 풀·도구 카탈로그 로드 — 검색 없이도 분야별 브라우즈가 되게.
+  // 열자마자 전체 풀·도구 카탈로그 로드 — 조직도와 앱 목록이 이 응답 하나로 선다.
   useEffect(() => {
     let cancelled = false;
     void fetchDeliberateExperts('전체 카탈로그 조회').then((r) => {
@@ -48,30 +45,12 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  const search = async () => {
-    const q = query.trim();
-    if (!q || loading) return;
-    setLoading(true);
-    const r = await fetchDeliberateExperts(q);
-    setRes(r);
-    setLoading(false);
-  };
-
   const pool = useMemo(() => res?.pool ?? [], [res]);
 
   // 키 → 사람 이름. 지정 시 표시용 이름을 함께 실어야 칩·말풍선이 키를 안 보여 준다.
-  const nameOf = (key: string) =>
-    pool.find((a) => a.key === key)?.name ??
-    (res?.candidates ?? res?.recommended ?? []).find((a) => a.key === key)?.name ??
-    key;
-
-  const experts = useMemo(() => {
-    const ranked = res?.candidates?.length ? res.candidates : (res?.recommended ?? []);
-    return ranked.slice(0, LIST_LIMIT);
-  }, [res]);
+  const nameOf = (key: string) => pool.find((a) => a.key === key)?.name ?? key;
 
   const toolAll = useMemo(() => res?.tools?.all ?? [], [res]);
-  const toolRec = res?.tools?.recommended ?? [];
   // 앱 목록 — 서버가 주면 그대로(설명 포함), 구 서버 응답이면 도구의 group 으로 재구성.
   const toolApps = useMemo(() => {
     const given = res?.tools?.apps;
@@ -138,8 +117,6 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
       setDetailLoading(false);
     });
   };
-  const pickAgent = (key: string) => (agentSel === key ? setAgentSel(null) : showAgent(key));
-
   // 확정은 전문가·앱·도구를 한 번에 — 조직도 샘플 질의로 곧장 시작할 때는 방금 고른 키를 받는다
   // (setAgentSel 은 이 렌더에 반영되지 않는다).
   const applyWith = (key: string | null) => {
@@ -160,13 +137,6 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
     applyWith(a.key);
   };
 
-  const agentRow = (key: string, label: string) => (
-    <label className="sp-item">
-      <input type="radio" name="sp-agent" checked={agentSel === key} onChange={() => {}} onClick={() => pickAgent(key)} />
-      <span className="sp-name">{label}</span>
-    </label>
-  );
-
   return (
     <div className="sp-card">
       <div className="sp-head">
@@ -176,28 +146,9 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       <p className="sp-note">
-        검색하거나 조직도를 훑어 전문가(페르소나 1명)와 우선 도구를 고르세요. 전문가를 클릭하면
-        역할·보유 지식이 보입니다. 고르지 않고 그냥 대화해도 됩니다.
+        전문가는 조직도에서, 도구는 앱으로 고르세요. 고른 전문가의 역할·보유 지식은 아래에
+        보입니다. 고르지 않고 그냥 대화해도 됩니다.
       </p>
-      <div className="sp-search-row">
-        <input
-          className="sp-search"
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void search();
-            }
-          }}
-          placeholder="주제·키워드 검색 (예: PCB 휨, 배터리 스웰링, 열충격 SED)"
-          aria-label="전문가·도구 검색"
-        />
-        <button type="button" className="sp-go" onClick={() => void search()} disabled={loading || !query.trim()}>
-          {loading ? '검색 중…' : '검색'}
-        </button>
-      </div>
 
       {res?.error && <p className="sp-warn">조회 실패({res.error}) — 다시 시도하세요.</p>}
       {!res && <p className="sp-empty">카탈로그 로딩 중…</p>}
@@ -209,22 +160,8 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             <div className="sp-sec-title">
               전문가 {pool.length > 0 && <span className="sp-dim">(전체 {pool.length}명)</span>}
             </div>
-            {experts.length > 0 && (
-              <>
-                {/* ⚠ 검색 전에는 더미 질의('전체 카탈로그 조회') 결과다. e5 코사인은 무관한
-                    문장끼리도 0.87~0.90 이라 '추천'이라 부르면 난수를 추천으로 읽게 된다. */}
-                <div className="sp-dim sp-sub">
-                  {query.trim() ? '주제 관련 추천' : '전체에서 일부 (검색하면 주제 추천으로 바뀝니다)'}
-                </div>
-                <ul className="sp-list">
-                  {experts.map((e) => (
-                    <li key={e.key}>{agentRow(e.key, e.name)}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-            {/* 분야는 조직도에서 고른다 — 예전 드롭다운은 키 접두어(cam·mech…)를 그대로 보여
-                무엇인지 알 수 없었다. 여기 조직도는 챗·심의 좌석과 같은 화면이다. */}
+            {/* 전문가는 조직도에서만 고른다 — 여기 있던 목록(추천 10명)은 더미 질의 결과인데다
+                이름이 한 줄을 넘겨, 시작 화면을 길게 만들면서 고르는 데는 도움이 안 됐다. */}
             <button type="button" className="sp-browse" onClick={() => setBrowse(true)}>
               🗂 조직도에서 고르기 <span className="sp-dim">— 분야·그룹으로 훑어보기</span>
             </button>
@@ -258,19 +195,8 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
                 );
               })}
             </ul>
-            <div className="sp-sec-title">개별 도구 (선택 {toolSel.size}/{MAX_TOOLS})</div>
-            {toolRec.length > 0 && (
-              <ul className="sp-list">
-                {toolRec.slice(0, 8).map((t) => (
-                  <li key={t.name}>
-                    <label className="sp-item" title={t.desc}>
-                      <input type="checkbox" checked={toolSel.has(t.name)} onChange={() => toggleTool(t.name)} />
-                      <span className="sp-name sp-mono">{t.name}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {/* 개별 도구는 찾아서 고른다 — 늘 펼쳐 두던 '추천 8개'도 더미 질의 결과였다. */}
+            <div className="sp-sec-title">개별 도구 (선택 {toolSel.size}/{MAX_TOOLS}) — 영역·앱·검색으로 찾기</div>
             <ToolAreaChips areas={toolAreas} value={toolArea} onChange={pickToolArea} />
             <select className="sp-domain" value={toolGroup} onChange={(e) => setToolGroup(e.target.value)} aria-label="MCP 앱 선택">
               <option value="">
