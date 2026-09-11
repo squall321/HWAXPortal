@@ -4,6 +4,8 @@ import type { ExpertsResponse, RecommendedExpert } from '../../api/chat.api';
 import { SeatBrowser } from './SeatBrowser';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
+import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
+import { vocEvidence } from './vocEvidence';
 
 export interface Persona {
   key: string;
@@ -11,12 +13,19 @@ export interface Persona {
   role: string;
 }
 
+export interface DelibExtra {
+  evidence?: ReturnType<typeof vocEvidence>;
+  human_note?: string;
+  voc?: 'off';
+}
+
 interface ExpertPickerProps {
   topic: string;
   loading: boolean;
   experts: ExpertsResponse | null;
-  /** 선택 전문가(+선택 도구 — 심의에서 실제 호출돼 정량 근거로 주입)로 심의 시작. */
-  onConfirm: (personas: Persona[], tools: string[], apps: string[]) => void;
+  /** 선택 전문가(+선택 도구 — 심의에서 실제 호출돼 정량 근거로 주입)로 심의 시작.
+   *  extra — 'VOC 먼저 보기' 결과(고른 VOC 는 원천 근거, 보강 문장은 human_note, 직접 봤으면 voc:'off'). */
+  onConfirm: (personas: Persona[], tools: string[], apps: string[], extra?: DelibExtra) => void;
   onCancel: () => void;
 }
 
@@ -50,6 +59,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
   const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터(2단)
   const [toolArea, setToolArea] = useState<string | null>(null);   // 영역(하는 일) 필터(1단)
   const [browsing, setBrowsing] = useState(false);  // 전창 좌석 조직도
+  const [voc, setVoc] = useState<VocChoice>({ used: false, picked: [], note: '' });
   const seededRef = useRef(false);
 
   // 관련도순 랭킹 — candidates(≈40) 우선, 없으면 recommended 폴백.
@@ -231,6 +241,10 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
               직접 고르시거나, 질문을 더 구체적인 용어로 바꿔 다시 시도해 보세요.
             </p>
           )}
+
+          <section className="cx-ep-sec">
+            <VocFirstPanel topic={topic} onChange={setVoc} />
+          </section>
 
           <section className="cx-ep-sec">
             <h3 className="cx-ep-sec-title">
@@ -510,10 +524,17 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
               type="button"
               className="cx-ep-start"
               disabled={!enough}
-              onClick={() => onConfirm(chosenList, [...toolSel], [...appSel])}
+              onClick={() =>
+                onConfirm(chosenList, [...toolSel], [...appSel], {
+                  ...(voc.picked.length ? { evidence: vocEvidence(voc.picked) } : {}),
+                  ...(voc.note ? { human_note: voc.note } : {}),
+                  ...(voc.used ? { voc: 'off' as const } : {}),
+                })
+              }
               title={enough ? '선정한 전문가·도구로 심의를 시작합니다' : `전문가를 ${MIN_EXPERTS}명 이상 선정하세요`}
             >
-              심의 시작 ({chosenList.length}명{toolSel.size > 0 ? ` · 도구 ${toolSel.size}` : ''})
+              심의 시작 ({chosenList.length}명{toolSel.size > 0 ? ` · 도구 ${toolSel.size}` : ''}
+              {voc.picked.length > 0 ? ` · VOC ${voc.picked.length}` : ''})
             </button>
           </div>
           {!enough && <p className="cx-ep-hint">전문가를 {MIN_EXPERTS}명 이상 선정해야 심의를 시작할 수 있습니다.</p>}

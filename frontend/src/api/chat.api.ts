@@ -200,6 +200,52 @@ export async function fetchDeliberateExperts(
   }
 }
 
+// ── 심의 전 'VOC 먼저 보기' ────────────────────────────────────────────────
+export interface VocItem {
+  id: number | string;
+  keyword: string;
+  product: string;
+  platform: string;
+  country: string;
+  date: string;
+  sentiment: string;
+  score?: number | null;
+  text: string;
+  url: string;
+}
+export interface VocPreview {
+  keywords: string[];
+  items: VocItem[];
+  total?: number;
+  /** 이 사용자에게 VOC 도구가 없다(권한·연결) — '없음'과 다르다. */
+  unavailable?: boolean;
+  /** 물어봤는데 도구가 실패했다 — '없음'과 다르다. */
+  degraded?: boolean;
+  partial?: boolean;
+  note?: string;
+  error?: string;
+}
+
+export async function fetchDeliberateVoc(
+  message: string,
+  keywords?: string[],
+  signal?: AbortSignal,
+): Promise<VocPreview> {
+  const csrf = getCookie('hwax_csrf');
+  try {
+    const res = await apiFetch('/agent/deliberate/voc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify({ message, ...(keywords?.length ? { keywords } : {}) }),
+      signal,
+    });
+    if (!res.ok) return { keywords: [], items: [], error: `http_${res.status}` };
+    return (await res.json()) as VocPreview;
+  } catch {
+    return { keywords: [], items: [], error: 'network' };
+  }
+}
+
 // ── 전문가 상세 + 보유 지식(카탈로그 브라우즈) ─────────────────────────────
 export interface AgentDetail {
   key: string;

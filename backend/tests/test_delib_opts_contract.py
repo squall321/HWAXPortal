@@ -37,12 +37,21 @@ def _extra_keys() -> set[str]:
     통과하면 된다. 그래서 더 쉽게 새고, 실제로 non_negotiables 가 그렇게 샜다.
     """
     src = (_FRONT / "ChatContext.tsx").read_text(encoding="utf-8")
-    keys: set[str] = set()
-    # sendMessage('/심의 ' + topic, { ... }) 의 객체 리터럴
-    for block in re.findall(r"sendMessage\([^,]+,\s*\{(.*?)\n      \}\)", src, re.S):
-        keys |= set(re.findall(r"^\s*(?:\.\.\.\([^)]*\?\s*\{\s*)?([a-z_]+):", block, re.M))
+    keys = _send_keys(src)
     # extra.xxx = ... (startHandoff 가 조립하는 dict)
     keys |= set(re.findall(r"\bextra\.([a-z_]+)\s*=", src))
+    # ⚠ /심의 페이지도 sendMessage 두 번째 인자로 직접 싣는다(선정 패널 → personas·tools·evidence…).
+    #   종전엔 ChatContext 만 봐서 여기로 들어가는 새 키는 검사 밖이었다.
+    keys |= _send_keys((_FRONT.parent / "pages" / "DeliberatePage.tsx").read_text(encoding="utf-8"))
+    return keys
+
+
+def _send_keys(src: str) -> set[str]:
+    """sendMessage(text, { ... }) 객체 리터럴의 키 — 들여쓰기에 기대지 않는다."""
+    keys: set[str] = set()
+    for block in re.findall(r"sendMessage\([^,]+,\s*\{(.*?)\n\s*\}\)", src, re.S):
+        keys |= set(re.findall(r"^\s*(?:\.\.\.\([^)]*\?\s*\{\s*)?([a-z_]+):", block, re.M))
+        keys |= set(re.findall(r"\?\s*\{\s*([a-z_]+)\s*\}", block))   # 단축 속성 ...(c ? { tools } : {})
     return keys
 
 

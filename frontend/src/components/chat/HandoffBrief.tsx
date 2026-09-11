@@ -10,6 +10,8 @@ import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
 import { conversationEvidence } from './handoff';
 import { SeatBrowser } from './SeatBrowser';
+import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
+import { mergeEvidence, vocEvidence } from './vocEvidence';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob, type JobId } from './delibTaxonomy';
 
 const DEFAULT_SEATS = 6; // 추천 좌석 기본 선택 수(심의가 스파인 좌석은 자동 추가)
@@ -49,6 +51,10 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [browsing, setBrowsing] = useState(false); // 전창 좌석 조직도
+  const [voc, setVoc] = useState<VocChoice>({ used: false, picked: [], note: '' });
+  // 원천 근거 = 고른 VOC(앞) + 대화 근거, 합쳐 12건 — 화면 수와 실제 실릴 수가 같아야 한다.
+  const vocEv = useMemo(() => vocEvidence(voc.picked), [voc.picked]);
+  const { droppedConv } = useMemo(() => mergeEvidence(vocEv, evidence), [vocEv, evidence]);
 
   // 화두로 추천 좌석 발굴(디바운스 + 취소) — AI 제안, 사용자 확정. 상위 N석 기본 선택.
   useEffect(() => {
@@ -154,12 +160,20 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
       ...new Set(toolAll.filter((x) => usedTools.has(x.name)).map((x) => x.group).filter(Boolean)),
     ].slice(0, 3) as string[];
     const route = JOB_ROUTING[job];
+    // VOC 먼저 보기 — 직접 봤으면 자동 환기를 끄고(사람이 뺀 VOC 가 다시 들어오지 않게),
+    // 보강 문장은 매 라운드 구속 의견(human_note)으로.
+    const extraOpts = {
+      ...(route.opts ?? {}),
+      ...(voc.used ? { voc: 'off' } : {}),
+      ...(voc.note ? { human_note: voc.note } : {}),
+    };
     startHandoff({
       topic: t,
       personas,
       trigger: route.trigger,
       ...(route.chair ? { chairTemplate: route.chair } : {}),
-      ...(route.opts ? { extraOpts: route.opts } : {}),
+      ...(Object.keys(extraOpts).length ? { extraOpts } : {}),
+      ...(vocEv.length ? { extraEvidence: vocEv } : {}),
       ...(mods.size ? { modifiers: [...mods] } : {}),
       ...(apps.length ? { apps } : {}),
     });
@@ -342,7 +356,16 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
         </div>
 
         <div className="cx-brief-field">
-          <span>원천 근거 {evidence.length}건 — 검증 대상이지 결론이 아닙니다</span>
+          <VocFirstPanel topic={topic} onChange={setVoc} />
+        </div>
+
+        <div className="cx-brief-field">
+          <span>
+            원천 근거 {Math.min(12, vocEv.length + evidence.length)}건
+            {vocEv.length > 0 && ` (고른 VOC ${vocEv.length} + 대화 ${evidence.length - droppedConv})`} — 검증 대상이지
+            결론이 아닙니다
+            {droppedConv > 0 && ` · 대화 근거 ${droppedConv}건은 12건 상한으로 빠집니다`}
+          </span>
           <div className="cx-brief-ev">
             {evidence.map((ev, i) => (
               <div key={i} className="cx-brief-ev-item">
@@ -362,7 +385,8 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
             취소
           </button>
           <button type="button" className="cx-brief-go" onClick={confirm} disabled={!topic.trim() || streaming}>
-            {JOB_BY_ID[job].name} 심의 시작 · {checked.size}석{mods.size ? ` · 얹을 층 ${mods.size}` : ''} · 근거 {evidence.length}
+            {JOB_BY_ID[job].name} 심의 시작 · {checked.size}석{mods.size ? ` · 얹을 층 ${mods.size}` : ''} · 근거{' '}
+            {Math.min(12, vocEv.length + evidence.length)}
           </button>
         </div>
 

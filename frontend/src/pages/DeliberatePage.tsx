@@ -5,7 +5,7 @@ import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { Composer, type ComposerHandle } from '../components/chat/Composer';
 import { DelibOptsPanel } from '../components/chat/DelibOptsPanel';
-import { ExpertPicker, type Persona } from '../components/chat/ExpertPicker';
+import { ExpertPicker, type DelibExtra, type Persona } from '../components/chat/ExpertPicker';
 import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
 import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
@@ -97,7 +97,7 @@ export default function DeliberatePage() {
   // 선정 확정 → 고른 전문가(+선택 도구·앱)로 심의 시작. personas 는 발굴 생략, tools 는 심의가
   // 실제 호출해 정량 근거로 주입한다(미선택이면 자동 파이프라인만 — 종전과 동일).
   // apps 는 호출 대상이 아니라 라운드 중 전문가 자유 조회의 범위 제한이다.
-  const confirmExperts = useCallback((personas: Persona[], tools: string[], apps: string[]) => {
+  const confirmExperts = useCallback((personas: Persona[], tools: string[], apps: string[], extra?: DelibExtra) => {
     const topic = picking?.topic;
     setPicking(null);
     if (!topic) return;
@@ -109,6 +109,10 @@ export default function DeliberatePage() {
       ...(mods.size ? { modifiers: [...mods] } : {}),
       ...(tools.length > 0 ? { tools } : {}),
       ...(apps.length > 0 ? { apps } : {}),
+      // 'VOC 먼저 보기' — 고른 VOC 는 원천 근거, 보강 문장은 매 라운드 구속 의견, 직접 봤으면 자동 환기 끔.
+      ...(extra?.evidence?.length ? { evidence: extra.evidence } : {}),
+      ...(extra?.human_note ? { human_note: extra.human_note } : {}),
+      ...(extra?.voc ? { voc: extra.voc } : {}),
     });
   }, [picking, sendMessage, job, mods]);
 

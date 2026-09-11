@@ -70,6 +70,9 @@ class DelibOpts(BaseModel):
     timeout_s: float | None = Field(default=None, ge=10, le=1800)
     # 이어하기(사람 개입 스티어링) — 사람 의견 + 이전 심의 요약 + 전문가 재사용(발굴 생략)
     human_note: str | None = Field(default=None, max_length=2000)
+    # 불량 환기 — auto(질문에 불량 단어가 있을 때만, 엔진 종전) | off | always. 'VOC 먼저 보기' 에서
+    # 사람이 이미 골랐으면 off 로 보낸다(자동 환기가 사람이 뺀 VOC 를 다시 넣지 않게).
+    voc: Literal["auto", "off", "always"] | None = None
     continue_summary: str | None = Field(default=None, max_length=8000)
     # 좌석 상한 — 엔진 MAX_REQ_SEATS·ExpertPicker·HandoffBrief 와 같은 값이어야 한다
     # (tests/test_seat_cap_contract.py). 넘으면 422 로 막는다 — 엔진까지 가면 잘려서 사라진다.
@@ -517,6 +520,12 @@ class ExpertsRequest(BaseModel):
     # 대화 전체 — 좌석 추천을 화두 한 줄이 아니라 오간 맥락 위에서 하기 위한 것.
     # 캡은 챗 경로와 같은 계약을 쓴다(별도 규칙을 만들면 한쪽만 조이는 일이 생긴다).
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
+
+
+class VocPreviewRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8192)
+    # 사람이 고친 영어 검색어 — 주면 추출을 건너뛴다.
+    keywords: list[str] = Field(default_factory=list, max_length=6)
 
 
 class DocxTurn(BaseModel):
@@ -976,6 +985,28 @@ async def deliberate_experts(
         return r.json()
     except httpx.HTTPError:
         return {"recommended": [], "pool": [], "error": "agent_unreachable"}
+
+
+@router.post("/deliberate/voc")
+async def deliberate_voc(
+    request: Request,
+    body: VocPreviewRequest,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """심의 전 'VOC 먼저 보기' — 화두로 SignalForge 를 검색해 사람이 고를 목록(agent-server 포워딩).
+
+    고른 항목은 프론트가 delib_opts.evidence 로, 보강 문장은 human_note 로 싣는다."""
+    client = _agent_client(request)
+    payload = {"message": body.message, "groups": principal.groups,
+               "keywords": [k.strip()[:40] for k in body.keywords if k and k.strip()]}
+    try:
+        r = await client.post(f"{settings.agent_server_url}/deliberate/voc-preview", json=payload)
+        if r.status_code != 200:
+            return {"items": [], "keywords": [], "error": f"agent_{r.status_code}"}
+        return r.json()
+    except httpx.HTTPError:
+        return {"items": [], "keywords": [], "error": "agent_unreachable"}
 
 
 @router.post("/chat")

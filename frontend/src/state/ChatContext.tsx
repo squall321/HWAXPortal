@@ -21,7 +21,8 @@ import {
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
 import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
-import { conversationEvidence } from '../components/chat/handoff';
+import { conversationEvidence, type HandoffEvidence } from '../components/chat/handoff';
+import { mergeEvidence } from '../components/chat/vocEvidence';
 import {
   delibOptsToWire,
   loadActiveId,
@@ -57,6 +58,7 @@ interface ChatContextValue {
     apps?: string[];
     trigger?: string; // 기본 '/심의 '. sim/test 는 다단 트리거(/시뮬심의·/시험계획)로 넘긴다.
     extraOpts?: Record<string, unknown>; // 추가 delib_opts(예: build_plan) 를 그대로 병합.
+    extraEvidence?: HandoffEvidence[]; // 브리프에서 사람이 고른 추가 원천(VOC 먼저 보기) — 대화 근거 앞에.
   }) => void;
   /** 실패 재시도 — 마지막 사용자 발화를 다시 보낸다(심의 페이지는 트리거 강제). */
   retryLast: () => void;
@@ -715,6 +717,8 @@ export function ChatProvider({
       apps?: string[];
       trigger?: string;
       extraOpts?: Record<string, unknown>;
+      /** 브리프에서 사람이 고른 추가 원천(예: 'VOC 먼저 보기'). 대화 근거 **앞**에 두고 합쳐 12건. */
+      extraEvidence?: HandoffEvidence[];
     }) => {
       if (streaming) return;
       const conv = conversations.find((c) => c.id === activeId);
@@ -724,7 +728,8 @@ export function ChatProvider({
         .replace(/^\/(심의|deliberate|토의)\s*/, '')
         .trim();
       if (!topic) return;
-      const evidence = conversationEvidence(conv);
+      // 사람이 고른 것(extraEvidence)을 앞에 — DelibOpts.evidence 는 max_length=12 라 넘치면 422 다.
+      const { merged: evidence } = mergeEvidence(opts?.extraEvidence ?? [], conversationEvidence(conv));
       const extra: Record<string, unknown> = {};
       if (evidence.length) extra.evidence = evidence;
       if (opts?.personas?.length) extra.personas = opts.personas;
