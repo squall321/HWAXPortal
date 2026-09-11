@@ -20,6 +20,7 @@ import {
   type ConvKind,
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
+import { useCan } from '../auth/useCan';
 import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, type HandoffEvidence } from '../components/chat/handoff';
 import { mergeEvidence } from '../components/chat/vocEvidence';
@@ -306,6 +307,9 @@ export function ChatProvider({
   // 다음 사용자에게 그대로 보였다(실사고 2026-09-03: koo.park 로그인에 hwax.demo 대화 노출).
   // 로그인 확정(user) 후 아래 로드 효과가 채운다 — 그 전에는 빈 상태.
   const { user } = useAuth();
+  // 권한 없는 모드는 보내지 않는다 — 입구를 숨겨도 저장된 상태(Thinking 켬·지정 전문가·웹 검색
+  // 소스)가 남아 있으면 매 발화가 403 이 된다. 백엔드도 막는다(docs/access-control).
+  const can = useCan();
   const scopedPrefix = user ? `${storagePrefix}.${user.email}` : null;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -495,7 +499,8 @@ export function ChatProvider({
       const draft = draftPinsRef.current;
       const effPinnedTools = existing ? (existing.pinnedTools ?? []) : draft.tools;
       const effPinnedApps = existing ? (existing.pinnedApps ?? []) : draft.apps;
-      const effPinnedAgent = existing ? existing.pinnedAgent : draft.agent;
+      const effPinnedAgent = can('feat:expert-chat') ? (existing ? existing.pinnedAgent : draft.agent) : null;
+      const effSources = can('plat:webresearch') ? searchSources : [];
       const effPinnedAgentName = existing ? existing.pinnedAgentName : draft.agentName;
 
       const userMsg: Message = { id: newId(), role: 'user', text, ts: now };
@@ -574,10 +579,10 @@ export function ChatProvider({
         ...(effPinnedTools.length ? { pinnedTools: effPinnedTools } : {}),
         ...(effPinnedApps.length ? { pinnedApps: effPinnedApps } : {}),
         ...(effPinnedAgent ? { pinnedAgent: effPinnedAgent } : {}),
-        searchSources,
+        searchSources: effSources,
         // 띵킹 모드 — 켠 동안 모든 발화에 실린다. 서버는 명시 슬래시 트리거(/심의 등)를
         // 먼저 보므로, 모드가 켜져 있어도 그 턴에 대놓고 심의를 부르면 심의가 이긴다.
-        ...(thinkingRef.current ? { thinking: true } : {}),
+        ...(thinkingRef.current && can('feat:thinking') ? { thinking: true } : {}),
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
@@ -585,7 +590,7 @@ export function ChatProvider({
           // 심의는 자유 조회에서 거르므로 delib_opts 에도 실어야 한다. 챗은 top-level
           // search_sources 를 쓴다 — 두 경로가 서버에서 서로 다른 자리에서 걸러진다.
           const w = { ...delibOptsToWire(delibOptsRef.current),
-                      search_sources: searchSources, ...(extraDelibOpts ?? {}) };
+                      search_sources: effSources, ...(extraDelibOpts ?? {}) };
           return Object.keys(w).length > 0 ? { delibOpts: w } : {};
         })(),
         onStatus: (e) =>
@@ -659,7 +664,7 @@ export function ChatProvider({
         streamConvRef.current = null;
       });
     },
-    [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins],
+    [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can],
   );
 
   // 이어하기(사람 개입 스티어링) — 끝난 심의에 사람 의견을 넣어, 같은 전문가가 이전 결정을

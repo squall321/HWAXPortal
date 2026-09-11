@@ -16,6 +16,7 @@ import { SourcePanel } from './SourcePanel';
 import { ThinkPanel } from './ThinkPanel';
 import { IconSend, IconStop } from './icons';
 import { useAuth } from '../../auth/useAuth';
+import { useCan } from '../../auth/useCan';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
 import { UploadRouter } from './UploadRouter';
 
@@ -40,7 +41,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { user } = useAuth();
-  const canUp = canUpload(user?.groups);
+  // 권한이 없으면 입구를 아예 숨긴다(docs/access-control). 업로드는 종전 그룹 설정도 인정한다.
+  const can = useCan();
+  const canUp = can('feat:upload') || canUpload(user?.groups);
   const fileRef = useRef<HTMLInputElement>(null);
   const [staged, setStaged] = useState<StagedFile | null>(null);
   const [upErr, setUpErr] = useState('');
@@ -90,8 +93,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   return (
     <form className="composer" onSubmit={onSubmit}>
-      <SourcePanel />
-      <ThinkPanel />
+      {can('plat:webresearch') && <SourcePanel />}
+      {can('feat:thinking') && <ThinkPanel />}
       {/* 지정 전문가·도구 칩 — 이 대화에 적용될 선택을 항상 보이게(× 로 즉시 해제). */}
       {(pinnedTools.length > 0 || pinnedApps.length > 0 || pinnedAgent) && (
         <div className="composer-pins" aria-label="지정 전문가·앱·도구">

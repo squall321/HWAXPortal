@@ -1,6 +1,7 @@
 // 심의 라이브 뷰 — 절차 스테퍼 + 근거 카드 + 라이브 회의 버블 + 수렴/소수의견 배지 + 산출물 카드
 import { useMemo, useState } from 'react';
 import { useChat } from '../../state/ChatContext';
+import { useCan } from '../../auth/useCan';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
 import { DelibGraph } from './DelibGraph';
 import { RosterEditor, type Seat } from './RosterEditor';
@@ -371,6 +372,7 @@ function ContinueBar({ d }: { d: DelibData }) {
 export function DelibView({ msg }: { msg: Message }) {
   const d = msg.delib!;
   const live = Boolean(msg.streaming);
+  const can = useCan();
   const decision = useMemo(() => d.decision ?? '', [d.decision]);
   return (
     <div className="dv-root">
@@ -402,7 +404,8 @@ export function DelibView({ msg }: { msg: Message }) {
         </section>
       )}
       <OutcomeCards d={d} />
-      {!live && <ContinueBar d={d} />}
+      {/* 지난 심의를 보는 것은 누구나, 이어 돌리는 것은 심의 권한이 있어야 한다. */}
+      {!live && can('feat:deliberation') && <ContinueBar d={d} />}
     </div>
   );
 }

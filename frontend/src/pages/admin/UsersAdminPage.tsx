@@ -1,5 +1,6 @@
-// 사용자 관리(관리자 전용) — 가입 승인·비활성·비밀번호 재설정. SSO 지연 브리지의 운영 화면.
-import { useCallback, useEffect, useState } from 'react';
+// 사용자 관리(관리자 전용) — 가입 승인·비활성·비밀번호 재설정·소속과 권한. SSO 지연 브리지의 운영 화면.
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { fetchAccessPolicy, type AccessPolicy } from '../../api/access.api';
 import {
   approveLocalUser,
   listLocalUsers,
@@ -10,6 +11,7 @@ import {
 import { useAuth } from '../../auth/useAuth';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
+import { AccessRequestsPanel, AffiliationSelect, BulkAffiliation, GrantEditor } from './AccessAdmin';
 
 const cell: React.CSSProperties = { padding: '0.5rem 0.7rem', borderBottom: '1px solid var(--border)' };
 
@@ -28,6 +30,11 @@ export default function UsersAdminPage() {
   const [rows, setRows] = useState<LocalUserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // 작업 중인 이메일
+  const [policy, setPolicy] = useState<AccessPolicy | null>(null);
+  const [editing, setEditing] = useState<string | null>(null); // 개별 허가를 펼친 이메일
+  useEffect(() => {
+    fetchAccessPolicy().then(setPolicy).catch(() => setPolicy(null));
+  }, []);
 
   const reload = useCallback(() => {
     listLocalUsers()
@@ -57,13 +64,15 @@ export default function UsersAdminPage() {
   const pending = rows.filter((r) => r.status === 'pending');
 
   return (
-    <section style={{ maxWidth: '60rem', margin: '0 auto', padding: '1.5rem' }}>
+    <section style={{ maxWidth: '78rem', margin: '0 auto', padding: '1.5rem' }}>
       <h2>사용자 관리</h2>
       <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-        가입은 승인제입니다. 승인·역할 변경은 해당 사용자의 다음 로그인부터 반영됩니다.
+        가입은 승인제입니다. 관리자 역할은 다음 로그인부터, <b>소속·권한은 곧바로</b> 반영됩니다.
         {pending.length > 0 && <strong> 승인 대기 {pending.length}건.</strong>}
       </p>
       {error && <ErrorBanner message={error} />}
+      <AccessRequestsPanel policy={policy} onChanged={reload} />
+      <BulkAffiliation policy={policy} rows={rows} onChanged={reload} /> 
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
           <thead>
@@ -71,6 +80,8 @@ export default function UsersAdminPage() {
               <th style={cell}>이메일</th>
               <th style={cell}>이름</th>
               <th style={cell}>부서</th>
+              <th style={cell}>소속</th>
+              <th style={cell}>개별 허가</th>
               <th style={cell}>상태</th>
               <th style={cell}>역할</th>
               <th style={cell}>로그인 수단</th>
@@ -80,10 +91,22 @@ export default function UsersAdminPage() {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.email}>
+              <Fragment key={r.email}>
+              <tr>
                 <td style={cell}>{r.email}</td>
                 <td style={cell}>{r.name}</td>
                 <td style={cell}>{r.department || '—'}</td>
+                <td style={cell}>
+                  <AffiliationSelect policy={policy} row={r} onSaved={reload} onError={setError} />
+                </td>
+                <td style={cell}>
+                  {(r.grants ?? []).length}건{' '}
+                  {policy && (
+                    <button className="btn-secondary" onClick={() => setEditing(editing === r.email ? null : r.email)}>
+                      {editing === r.email ? '접기' : '편집'}
+                    </button>
+                  )}
+                </td>
                 <td style={cell}>
                   {STATUS_LABEL[r.status]}
                   {r.locked_until * 1000 > Date.now() && ' · 잠금'}
@@ -148,6 +171,14 @@ export default function UsersAdminPage() {
                   )}
                 </td>
               </tr>
+              {editing === r.email && policy && (
+                <tr>
+                  <td style={cell} colSpan={10}>
+                    <GrantEditor policy={policy} row={r} onSaved={reload} onClose={() => setEditing(null)} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

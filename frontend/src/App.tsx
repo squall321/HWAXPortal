@@ -1,8 +1,10 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
+import { RequireEntitlement } from './auth/RequireEntitlement';
 import { ChatProvider } from './state/ChatContext';
 import { AppShell } from './components/layout/AppShell';
+import AccessPage from './pages/AccessPage';
 import ChangelogPage from './pages/ChangelogPage';
 import ChatPage from './pages/ChatPage';
 import DeliberatePage from './pages/DeliberatePage';
@@ -31,10 +33,12 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AppShell>
-          {/* 심의 전용 이력(hwax.delib.*) + 첫 발화 '/심의 ' 트리거 + 서버 심의 대화(MCP 포함) 병합 */}
-          <ChatProvider storagePrefix="hwax.delib" sendPrefix="/심의 " serverKind="deliberation">
-            <DeliberatePage />
-          </ChatProvider>
+          <RequireEntitlement need="feat:deliberation">
+            {/* 심의 전용 이력(hwax.delib.*) + 첫 발화 '/심의 ' 트리거 + 서버 심의 대화(MCP 포함) 병합 */}
+            <ChatProvider storagePrefix="hwax.delib" sendPrefix="/심의 " serverKind="deliberation">
+              <DeliberatePage />
+            </ChatProvider>
+          </RequireEntitlement>
         </AppShell>
       </ProtectedRoute>
     ),
@@ -66,7 +70,9 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AppShell>
-          <TokenPage />
+          <RequireEntitlement need="feat:api-token">
+            <TokenPage />
+          </RequireEntitlement>
         </AppShell>
       </ProtectedRoute>
     ),
@@ -96,7 +102,20 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AppShell>
-          <RiskLaunchPage />
+          <RequireEntitlement need="plat:risk">
+            <RiskLaunchPage />
+          </RequireEntitlement>
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    // 내 권한 — 모든 기능·플랫폼의 사용 가능 여부와 요청(docs/access-control). 누구나 연다.
+    path: '/access',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <AccessPage />
         </AppShell>
       </ProtectedRoute>
     ),

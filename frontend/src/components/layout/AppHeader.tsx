@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { listSystems, type SystemTile } from '../../api/systems.api';
 import { useAuth } from '../../auth/useAuth';
+import { useCan } from '../../auth/useCan';
 
 // 화면 전환마다 AppShell 이 재마운트돼 카탈로그를 다시 받지 않게 모듈 수준에서 한 번만 받는다.
 let catalogOnce: Promise<SystemTile[]> | null = null;
@@ -27,6 +28,8 @@ const navLinkStyle = ({ isActive }: { isActive: boolean }) => ({
 
 export function AppHeader() {
   const { user, logout } = useAuth();
+  // 권한이 없는 메뉴는 비활성으로 두지 않고 아예 숨긴다(사용자 요구 — docs/access-control).
+  const can = useCan();
   // '리스크 심사' 는 카탈로그에 hwax-risk 타일이 보이는 사용자에게만 뜬다(env 플래그 없음).
   const [hasRiskTile, setHasRiskTile] = useState(false);
   useEffect(() => {
@@ -57,18 +60,25 @@ export function AppHeader() {
             <NavLink to="/" style={navLinkStyle} end>
               챗
             </NavLink>
-            <NavLink to="/deliberate" style={navLinkStyle}>
-              심의
-            </NavLink>
+            {can('feat:deliberation') && (
+              <NavLink to="/deliberate" style={navLinkStyle}>
+                심의
+              </NavLink>
+            )}
             <NavLink to="/apps" style={navLinkStyle}>
               앱
             </NavLink>
-            <NavLink to="/tokens" style={navLinkStyle}>
-              API 토큰
-            </NavLink>
+            {can('feat:api-token') && (
+              <NavLink to="/tokens" style={navLinkStyle}>
+                API 토큰
+              </NavLink>
+            )}
             {/* 매일 무엇이 바뀌었는지 아무 때나 볼 수 있는 자리 — 팝업은 새 것만 알려 준다. */}
             <NavLink to="/updates" style={navLinkStyle}>
               업데이트
+            </NavLink>
+            <NavLink to="/access" style={navLinkStyle}>
+              내 권한
             </NavLink>
             {hasRiskTile && (
               <NavLink to="/risk" style={navLinkStyle}>

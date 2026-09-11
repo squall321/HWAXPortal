@@ -2,6 +2,7 @@
 // 넓은 화면(≥1180px)은 우측 레일, 좁은 화면은 플로팅 버튼 → 드로어. 도구 항목은 클릭 시 입력/결과 요약.
 import { useEffect, useMemo, useState } from 'react';
 import { useChat } from '../../state/ChatContext';
+import { useCan } from '../../auth/useCan';
 import type { ActivityItem, Message } from '../../types/chat';
 import { PersonaBrowser } from './PersonaBrowser';
 import { PersonaPicker } from './PersonaPicker';
@@ -124,6 +125,7 @@ export function ActivityPanel({
   showPersona?: boolean;
 }) {
   const msg = pickActive(messages);
+  const can = useCan();
   const items: ActivityItem[] = useMemo(() => msg?.activity ?? [], [msg]);
   const live = Boolean(msg?.streaming);
   // 좁은 화면 드로어 상태 — 대화(메시지 주체)가 바뀌면 닫는다.
@@ -168,7 +170,8 @@ export function ActivityPanel({
         </button>
       </div>
 
-      {showPersona && <PersonaBar />}
+      {/* 전문가와 대화 권한이 없으면 칸 자체를 숨긴다(docs/access-control). */}
+      {showPersona && can('feat:expert-chat') && <PersonaBar />}
 
       {personas.length > 0 && (
         <section className="act-sec">

@@ -2,6 +2,7 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { apiFetch, errorDetail } from '../../api/client';
 import { useChat } from '../../state/ChatContext';
+import { useCan } from '../../auth/useCan';
 import { conversationEvidence } from './handoff';
 import { HandoffBrief } from './HandoffBrief';
 import { downloadBlob, exportHtml, exportJson } from './exportChat';
@@ -40,6 +41,7 @@ async function exportDocx(conv: unknown, mode: 'transcript' | 'report'): Promise
 
 export function ExportBar({ threadRef }: { threadRef: RefObject<HTMLDivElement | null> }) {
   const { conversations, activeId, streaming } = useChat();
+  const can = useCan();
   const conv = conversations.find((c) => c.id === activeId);
   const [busy, setBusy] = useState<'' | 'transcript' | 'report'>('');
   const [err, setErr] = useState('');
@@ -97,7 +99,7 @@ export function ExportBar({ threadRef }: { threadRef: RefObject<HTMLDivElement |
         <IconDownload width={13} height={13} />
         {busy === 'report' ? '정리 중…' : 'Word 정리본'}
       </button>
-      {evidenceCount > 0 && (
+      {evidenceCount > 0 && can('feat:deliberation') && (
         <button
           type="button"
           className="cx-export-btn"

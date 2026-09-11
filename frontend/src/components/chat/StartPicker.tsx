@@ -9,6 +9,7 @@ import {
   type ExpertsResponse,
 } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
+import { useCan } from '../../auth/useCan';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
 
@@ -18,6 +19,8 @@ const LIST_LIMIT = 10;
 
 export function StartPicker({ onClose }: { onClose: () => void }) {
   const { pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent } = useChat();
+  // 전문가 칸은 '전문가와 대화' 권한이 있어야 보인다 — 도구·앱 고르기는 누구나(docs/access-control).
+  const canExperts = useCan()('feat:expert-chat');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState<ExpertsResponse | null>(null);
@@ -202,6 +205,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
 
       {res && (
         <div className="sp-cols">
+          {canExperts && (
           <div className="sp-col">
             <div className="sp-sec-title">
               전문가 {pool.length > 0 && <span className="sp-dim">(전체 {pool.length}명)</span>}
@@ -242,6 +246,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
               </button>
             )}
           </div>
+          )}
           <div className="sp-col">
             <div className="sp-sec-title">
               앱 (선택 {appSel.size}/{MAX_APPS}) — 앱을 고르면 그 기능 전체를 우선 사용

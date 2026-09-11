@@ -12,6 +12,9 @@ export interface LocalUserRow {
   email: string;
   name: string;
   department: string;
+  /** 소속(관리자 지정)·개별 허가 — docs/access-control. */
+  affiliation?: string;
+  grants?: string[];
   groups: string[];
   status: 'pending' | 'active' | 'disabled';
   auth_source: 'local' | 'sso';

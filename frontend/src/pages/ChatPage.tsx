@@ -1,6 +1,7 @@
 // 챗 메인 페이지 — 헤더 아래 전체화면 2단 레이아웃(이력 사이드바 + 활성 대화), 빈 상태는 클로드식 랜딩
 import { useCallback, useRef, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
+import { useCan } from '../auth/useCan';
 import { useChat } from '../state/ChatContext';
 import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
@@ -37,6 +38,7 @@ const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 
 export default function ChatPage() {
   const { user } = useAuth();
+  const can = useCan();
   const { messages, activeId, setInput, newConversation } = useChat();
   const composerRef = useRef<ComposerHandle>(null);
   const threadRef = useRef<HTMLDivElement>(null); // 내보내기(HTML)가 캡처할 렌더 루트
@@ -116,18 +118,19 @@ export default function ChatPage() {
               ) : (
                 <div className="cx-chips">
                   <button type="button" className="cx-chip cx-chip-accent" onClick={() => setPicker(true)}>
-                    🎛 전문가·도구 고르고 시작
+                    {can('feat:expert-chat') ? '🎛 전문가·도구 고르고 시작' : '🎛 도구 고르고 시작'}
                   </button>
                 </div>
               )}
               <div className="cx-chips">
-                {EXAMPLE_PROMPTS.map((p) => (
+                {/* 권한이 없는 기능의 예시는 보이지 않는다 — 눌러도 막히는 것을 권하지 않는다. */}
+                {EXAMPLE_PROMPTS.filter((p) => !p.startsWith('/심의') || can('feat:deliberation')).map((p) => (
                   <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
                     {p}
                   </button>
                 ))}
               </div>
-              <p className="cx-hero-hint">{DELIBERATE_HINT}</p>
+              {can('feat:deliberation') && <p className="cx-hero-hint">{DELIBERATE_HINT}</p>}
               <p className="cx-hero-sub">
                 요청을 이해해 알맞은 플랫폼으로 연결하고 결과를 대화로 돌려드립니다.
               </p>
