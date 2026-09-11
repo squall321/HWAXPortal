@@ -34,6 +34,18 @@ const DOMAIN_LABEL: Record<string, string> = {
 
 export const domainLabel = (code: string) => DOMAIN_LABEL[code] ?? code;
 
+/** HE팀 묶음(키 둘째 세그먼트, he-<묶음>-<앱>) 라벨. 정본은 infra/personas/he-team.json 의 groups 이고
+ *  backend/tests/test_he_personas.py 가 두 곳을 대조한다 — 한쪽만 고치면 조직도에 코드가 그대로 뜬다. */
+export const HE_GROUP_LABEL: Record<string, string> = {
+  cad: '설계 데이터(CAD·ECAD)',
+  sim: '시뮬레이션·해석 결과',
+  calc: '해석 계산·물성',
+  data: '데이터 허브·VOC',
+  doc: '보고서·문서·발표',
+  research: '웹·논문 조사',
+  expert: '심의·리스크',
+};
+
 /** 키의 첫 세그먼트 = 도메인. 세그먼트가 없으면 '기타'로 모은다. */
 export const domainOf = (key: string) => key.split('-')[0] || '기타';
 

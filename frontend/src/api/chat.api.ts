@@ -295,6 +295,9 @@ export interface AgentDetail {
   tags: string[];
   samples: string[];
   records: { id: string; title: string; data_type: string }[];
+  /** HE팀 MCP 운영자 — 지식카드가 아니라 이 앱들의 도구로 답한다. connected=false 면 이 서버 게이트웨이에 없다. */
+  operator?: boolean;
+  apps?: { key: string; label: string; tool_count: number; connected: boolean | null }[];
   error?: string;
 }
 

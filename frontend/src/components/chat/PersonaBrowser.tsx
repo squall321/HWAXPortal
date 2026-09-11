@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { fetchAgentDetail, type AgentDetail, type PoolExpert } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import { colorOf, initialOf, shortName } from './personaColor';
+import { OperatorApps } from './AgentFacts';
 import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
 import { useOrgNav } from './orgNav';
 import { usePersonaPool } from './usePersonaPool';
@@ -170,6 +171,7 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
                     {detail.tags.length > 0 && (
                       <p className="pv-dim pv-detail-tags">{detail.tags.slice(0, 14).join(' · ')}</p>
                     )}
+                    <OperatorApps detail={detail} />
                     {detail.samples.length > 0 && (
                       <>
                         <h4 className="pv-detail-h">이런 걸 물을 수 있어요 — 누르면 입력창에 들어갑니다</h4>

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { fetchAgentDetail, type AgentDetail, type PoolExpert, type RecommendedExpert } from '../../api/chat.api';
 import { colorOf, initialOf, shortName } from './personaColor';
+import { OperatorApps } from './AgentFacts';
 import { findDomain } from './personaCatalog';
 import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
 import { useOrgNav } from './orgNav';
@@ -201,6 +202,7 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
                     {detail.tags.length > 0 && (
                       <p className="pv-dim pv-detail-tags">{detail.tags.slice(0, 14).join(' · ')}</p>
                     )}
+                    <OperatorApps detail={detail} />
                     {detail.records.length > 0 && (
                       <>
                         <h4 className="pv-detail-h">보유 지식 {detail.records.length}건</h4>

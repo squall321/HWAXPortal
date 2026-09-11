@@ -1,10 +1,12 @@
 // 조직도 탐색 상태 훅 — 루트→분류→도메인→그룹·검색(챗 조직도·심의 좌석 조직도 공용)
 import { useMemo, useState } from 'react';
 import type { PoolExpert } from '../../api/chat.api';
-import { buildOrgTree, findDomain, matches, pathOf, type CategoryNode } from './personaCatalog';
+import { buildOrgTree, findDomain, HE_GROUP_LABEL, matches, pathOf, type CategoryNode } from './personaCatalog';
 
-/** 그룹 코드 '' 는 '묶이지 않은 사람들' 이다(2명 미만이라 그룹을 안 세운 것). */
-export const groupLabel = (code: string) => (code ? code : '개별');
+/** 그룹 코드 '' 는 '묶이지 않은 사람들' 이다(2명 미만이라 그룹을 안 세운 것).
+ *  HE팀 묶음만 이름이 있다 — 나머지 도메인의 그룹 코드는 기술 토큰(oled·burnin…)이라 그대로 읽힌다. */
+export const groupLabel = (code: string, dom?: string | null) =>
+  !code ? '개별' : dom === 'he' ? (HE_GROUP_LABEL[code] ?? code) : code;
 
 /** 조직도 탐색 상태 — 두 브라우저가 같은 규칙으로 움직이게 한곳에 둔다.
  *  선택 경로는 분류(cat) → 도메인(dom) → 그룹(grp). 검색어가 있으면 경로보다 검색이 이긴다. */

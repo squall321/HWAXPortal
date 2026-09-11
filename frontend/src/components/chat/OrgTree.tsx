@@ -64,7 +64,7 @@ export function OrgTreeNav({ nav, total, badge }: { nav: OrgNav; total: number; 
                                     <button type="button"
                                       className={`pv-tree-sub-btn${dom === d.code && grp === g.code ? ' is-on' : ''}`}
                                       onClick={() => { nav.gotoDomain(d.code); nav.setGrp(g.code); }}>
-                                      {groupLabel(g.code)}
+                                      {groupLabel(g.code, d.code)}
                                       <span className="pv-n">{g.agents.length}</span>
                                     </button>
                                   </li>
@@ -97,7 +97,7 @@ function DomainCard({ d, onOpen, badge }: { d: CategoryNode['domains'][number]; 
         <span className="pv-dom-groups">
           {badge}
           {d.groups.filter((g) => g.code).slice(0, 5).map((g) => (
-            <span key={g.code} className="pv-chip">{g.code} {g.agents.length}</span>
+            <span key={g.code} className="pv-chip">{groupLabel(g.code, d.code)} {g.agents.length}</span>
           ))}
         </span>
       </button>
@@ -170,7 +170,7 @@ export function OrgCrumb({ nav }: { nav: OrgNav }) {
             {grp !== null && (
               <>
                 <span className="pv-dim"> / </span>
-                <span>{groupLabel(grp)}</span>
+                <span>{groupLabel(grp, dom)}</span>
               </>
             )}
             <span className="pv-dim"> — {nav.shown.length}명</span>
@@ -181,7 +181,7 @@ export function OrgCrumb({ nav }: { nav: OrgNav }) {
         <div className="pv-grouprow">
           {node.groups.map((g) => (
             <button key={g.code || '_loose'} type="button" className="pv-chip pv-chip-btn" onClick={() => nav.setGrp(g.code)}>
-              {groupLabel(g.code)} {g.agents.length}
+              {groupLabel(g.code, node.code)} {g.agents.length}
             </button>
           ))}
         </div>

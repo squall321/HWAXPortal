@@ -2366,6 +2366,20 @@ body.dock-open .container {
   margin: 0.7rem 0 0.3rem;
   letter-spacing: 0.02em;
 }
+/* HE팀 운영자 — 보유 지식 대신 '무엇으로 답하나'(앱·도구 수) */
+.pv-op-apps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.pv-op-app {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.73rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
+.pv-op-name { color: var(--fg); font-weight: 600; }
+.pv-op-app.is-off { border-style: dashed; }
+.pv-op-app.is-off .pv-op-name { color: var(--muted); }
 .pv-detail-list { margin: 0; padding-left: 1.05rem; font-size: 0.73rem; color: var(--fg); line-height: 1.6; }
 .pv-detail-list li { margin-bottom: 0.2rem; }
 .pv-detail-scroll { max-height: 240px; overflow-y: auto; }
