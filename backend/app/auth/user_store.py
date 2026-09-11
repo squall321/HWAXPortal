@@ -53,9 +53,9 @@ class UserStore:
         raw = getattr(settings, "user_store_path", None) or "data/users.sqlite"
         path = Path(settings.resolve(raw))
         path.parent.mkdir(parents=True, exist_ok=True)
-        # 연결 하나를 스레드풀이 나눠 쓴다(check_same_thread=False) — 읽기도 잠가야 한다. 권한을 요청마다
-        # 계산하면서 get() 이 모든 요청에서 동시에 돌자 'bad parameter or other API misuse'·열 개수
-        # 불일치로 500 이 났다(dev 실측). 쓰기 안에서 get() 을 부르므로 재진입 잠금이다.
+        # 연결 하나를 스레드풀이 나눠 쓴다(check_same_thread=False) — 읽기도 잠가야 한다. 권한을
+        # 요청마다 계산하면서 get() 이 모든 요청에서 동시에 돌자 'bad parameter or other API
+        # misuse'·열 개수 불일치로 500 이 났다(dev 실측). 쓰기 안에서 get() 을 부르므로 재진입 잠금.
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.execute(
