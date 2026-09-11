@@ -1036,8 +1036,9 @@ async def deliberate_experts(
     settings: Settings = Depends(get_settings),
 ):
     """심의 전 전문가 선정 미리보기 — agent-server 로 포워딩(caller groups 주입). 비스트리밍 JSON.
-    챗 조직도(전문가와 대화)도 이 풀을 쓴다 — 심의나 전문가 대화 권한 중 하나가 있어야 한다."""
-    ensure(principal, "feat:deliberation", "feat:expert-chat", any_of=True)
+    챗 조직도(전문가와 대화)도 이 풀을 쓴다. 같은 응답에 도구 카탈로그도 실려서(챗 시작 패널의
+    앱·도구 고르기) 엔드포인트는 막지 않고, 심의·전문가 대화 권한이 없으면 전문가 목록만 비운다."""
+    experts_ok = any(k in principal.groups for k in ("feat:deliberation", "feat:expert-chat"))
     client = _agent_client(request)
     payload = {"message": body.message, "groups": principal.groups,
                # ⚠ 이 줄이 없으면 프론트가 대화를 보내도 여기서 버려져 축이 안 나온다.
@@ -1047,7 +1048,10 @@ async def deliberate_experts(
         if r.status_code != 200:
             return {"recommended": [], "pool": [], "error": f"agent_{r.status_code}"}
         # 못 쓰는 HE팀 운영자는 조직도에 안 보인다(골라도 403 인 사람을 보이면 고장으로 읽힌다).
-        return filter_experts(r.json(), request.app.state.access.get(), principal.groups)
+        data = filter_experts(r.json(), request.app.state.access.get(), principal.groups)
+        if not experts_ok:
+            data = {**data, "recommended": [], "candidates": [], "pool": [], "experts_hidden": True}
+        return data
     except httpx.HTTPError:
         return {"recommended": [], "pool": [], "error": "agent_unreachable"}
 

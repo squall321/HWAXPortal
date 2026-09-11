@@ -53,7 +53,10 @@ class UserStore:
         raw = getattr(settings, "user_store_path", None) or "data/users.sqlite"
         path = Path(settings.resolve(raw))
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        # 연결 하나를 스레드풀이 나눠 쓴다(check_same_thread=False) — 읽기도 잠가야 한다. 권한을 요청마다
+        # 계산하면서 get() 이 모든 요청에서 동시에 돌자 'bad parameter or other API misuse'·열 개수
+        # 불일치로 500 이 났다(dev 실측). 쓰기 안에서 get() 을 부르므로 재진입 잠금이다.
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS users ("
@@ -93,24 +96,27 @@ class UserStore:
 
     # ── 조회 ────────────────────────────────────────────────────────────────
     def get(self, email: str) -> dict | None:
-        cur = self._conn.execute("SELECT * FROM users WHERE email = ?", (norm_email(email),))
-        row = cur.fetchone()
+        with self._lock:
+            cur = self._conn.execute("SELECT * FROM users WHERE email = ?", (norm_email(email),))
+            row = cur.fetchone()
+            cols = [c[0] for c in cur.description] if row is not None else []
         if row is None:
             return None
-        cols = [c[0] for c in cur.description]
         d = dict(zip(cols, row, strict=True))
         d["groups"] = json.loads(d.get("groups") or "[]")
         d["grants"] = json.loads(d.get("grants") or "[]")
         return d
 
     def list_users(self) -> list[dict]:
-        cur = self._conn.execute(
-            "SELECT email, name, department, affiliation, grants, groups, status, auth_source, "
-            "created_at, approved_at, last_login_at, locked_until FROM users "
-            "ORDER BY created_at DESC")
-        cols = [c[0] for c in cur.description]
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT email, name, department, affiliation, grants, groups, status, auth_source, "
+                "created_at, approved_at, last_login_at, locked_until FROM users "
+                "ORDER BY created_at DESC")
+            cols = [c[0] for c in cur.description]
+            rows = cur.fetchall()
         out = []
-        for row in cur.fetchall():
+        for row in rows:
             d = dict(zip(cols, row, strict=True))
             d["groups"] = json.loads(d.get("groups") or "[]")
             d["grants"] = json.loads(d.get("grants") or "[]")
@@ -118,13 +124,15 @@ class UserStore:
         return out
 
     def count(self) -> int:
-        return self._conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        with self._lock:
+            return self._conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
     def count_local(self) -> int:
         """비밀번호를 가진(=로컬 가입) 계정 수 — SSO 가 먼저 원장 행을 만들어도
         부트스트랩 창이 닫히지 않도록 부트스트랩 판정은 이걸 쓴다."""
-        return self._conn.execute(
-            "SELECT COUNT(*) FROM users WHERE pw_hash IS NOT NULL").fetchone()[0]
+        with self._lock:
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM users WHERE pw_hash IS NOT NULL").fetchone()[0]
 
     # ── 가입·승인 ───────────────────────────────────────────────────────────
     def signup(self, *, email: str, name: str, password: str,
@@ -193,9 +201,10 @@ class UserStore:
             self._conn.commit()
 
     def get_connection(self, *, email: str, service: str) -> dict | None:
-        row = self._conn.execute(
-            "SELECT token, workspace FROM connections WHERE email = ? AND service = ?",
-            (norm_email(email), service)).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT token, workspace FROM connections WHERE email = ? AND service = ?",
+                (norm_email(email), service)).fetchone()
         return {"token": row[0], "workspace": row[1]} if row else None
 
     def set_connection_workspace(self, *, email: str, service: str, workspace: str) -> bool:
@@ -221,9 +230,10 @@ class UserStore:
 
     def connection_meta(self, *, email: str, service: str) -> dict | None:
         """토큰 원문 없이 표시용 요약만 — 꼬리 4자·부서·등록 시각."""
-        row = self._conn.execute(
-            "SELECT token, workspace, created_at FROM connections WHERE email = ? AND service = ?",
-            (norm_email(email), service)).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT token, workspace, created_at FROM connections "
+                "WHERE email = ? AND service = ?", (norm_email(email), service)).fetchone()
         if not row:
             return None
         return {"tail": row[0][-4:], "workspace": row[1], "created_at": row[2]}
@@ -285,9 +295,11 @@ class UserStore:
             args.append(norm_email(email))
         if conds:
             q += " WHERE " + " AND ".join(conds)
-        cur = self._conn.execute(q + " ORDER BY id DESC LIMIT ?", (*args, limit))
-        cols = [c[0] for c in cur.description]
-        return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+        with self._lock:
+            cur = self._conn.execute(q + " ORDER BY id DESC LIMIT ?", (*args, limit))
+            cols = [c[0] for c in cur.description]
+            rows = cur.fetchall()
+        return [dict(zip(cols, r, strict=True)) for r in rows]
 
     def decide_request(self, req_id: int, *, approve: bool, by: str) -> dict | None:
         """승인이면 그 키를 사용자 개별 허가에 더한다. 이미 결정된 요청은 건드리지 않는다(None)."""

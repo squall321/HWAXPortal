@@ -307,3 +307,60 @@ def test_업로드는_기능_권한과_목적지_플랫폼이_함께_있어야_�
     assert up.allowed_destinations(s, ["feat:upload", "plat:stepforge"], "csv") == [], (
         "물성 DB 는 materialtwin 허가"
     )
+
+
+def test_전문가_목록은_권한이_있어야_실리고_도구_카탈로그는_누구나(client):
+    import httpx
+
+    _setup_users(client)
+    h = _login(client, "user@corp.com")
+    body = {
+        "recommended": [{"key": "rel-drop-impact"}],
+        "pool": [{"key": "rel-drop-impact"}],
+        "tools": {"apps": [{"app": "signalforge"}]},
+    }
+    real = app.state.agent_client
+    app.state.agent_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, json=body))
+    )
+    try:
+        out = client.post("/agent/deliberate/experts", json={"message": "x"}, headers=h).json()
+    finally:
+        app.state.agent_client = real
+    assert out["pool"] == [] and out["recommended"] == [] and out["experts_hidden"] is True
+    assert out["tools"] == body["tools"], "챗 시작 패널의 도구 고르기는 기본 권한으로도 된다"
+
+
+def test_원장_조회는_여러_스레드에서_동시에_불러도_깨지지_않는다(tmp_path):
+    # 권한을 요청마다 계산하면서 store.get 이 모든 요청에서 스레드풀로 돈다. 연결 하나를 잠금
+    # 없이 나눠 쓰면 sqlite3 가 'bad parameter or other API misuse'·열 개수 불일치로 깨졌다
+    # (dev 실측 500).
+    import threading
+
+    st = UserStore(Settings(user_store_path=str(tmp_path / "u.sqlite")))
+    for i in range(5):
+        st.signup(email=f"u{i}@corp.com", name="U", password="pw123456", bootstrap_admins=[])
+    errors: list = []
+
+    def reader():
+        try:
+            for _ in range(300):
+                assert st.get("u1@corp.com")["email"] == "u1@corp.com"
+                st.list_requests(email="u1@corp.com")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def writer():
+        try:
+            for i in range(100):
+                st.set_access("u2@corp.com", grants=[f"feat:{i % 3}"])
+                st.create_request(email="u3@corp.com", key="feat:deliberation")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    ts = [threading.Thread(target=reader) for _ in range(8)] + [threading.Thread(target=writer)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not errors, errors[:3]
