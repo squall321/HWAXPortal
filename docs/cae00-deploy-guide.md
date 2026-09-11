@@ -301,3 +301,40 @@ git pull && ./infra/scripts/data-migrate.sh plan   # 목표가 /data/... 절대�
 ./infra/scripts/update-all.sh
 ```
 
+
+## 2026-09-11 반영분 — HE팀 MCP 운영자 · 전문가 심층 보기 · 소속·허가 기반 접근
+
+세 가지가 함께 들어간다. **반영 순서는 포털 → 에이전트서버 → 게이트웨이**다(게이트웨이가 포털에서
+권한 정책을 받아 온다).
+
+```bash
+cd ~/Projects/HWAXPortal && git pull && (cd frontend && pnpm build)
+apptainer instance stop hwax_portal && ./infra/scripts/start.sh
+cd ../HWAXAgentServer && git pull && ./start.sh -d
+cd ../HWAXMcpGateway && git pull && ./start.sh restart --bg
+curl -s 127.0.0.1:9110/health | python3 -m json.tool | head -20   # access_policy 에 백엔드가 보이면 정책이 붙은 것
+```
+
+**1) HE팀 페르소나 등록(ARP·ODB 포함).** cae00 게이트웨이에는 arp·odb-hub 가 붙어 있어 dev 에서
+건너뛴 둘까지 생긴다.
+
+```bash
+cd ~/Projects/HWAXPortal
+python3 infra/scripts/sync-he-personas.py            # 미리보기 — 무엇이 생기고 무엇이 바뀌는지
+python3 infra/scripts/sync-he-personas.py --apply
+```
+
+ARP·ODB 페르소나의 사전 지식은 뼈대(매니페스트 설명 + 도구 지도)다. 실제 도구를 보고
+`infra/personas/he-team.json` 의 workflow·pitfalls·key_tools 를 채운 뒤 다시 `--apply` 한다.
+
+**2) 소속 지정 — 안 하면 기존 사용자가 일반 챗만 쓴다.** 권한 모델을 켜면 소속이 없는 사용자는
+기본 권한(일반 챗)만 갖는다. 관리자로 로그인해 **사용자 관리** 화면 위쪽의
+`소속 없는 활성 사용자 N명 → 모두 이 소속으로(CAE그룹)` 를 한 번 누른다. 다른 그룹(자주검증·
+실장솔루션) 사람이 섞여 있으면 그 사람만 소속을 빼고 개별 허가로 필요한 것만 켠다.
+
+**3) 서비스 PAT 계정 확인.** HWAXRisk 는 포털 PAT(`HWAXRISK_PORTAL_PAT`)로 게이트웨이를 부른다.
+그 PAT 를 발급한 계정이 CAEG 이거나 관리자여야 도구가 보인다 — 게이트웨이가 PAT 에 박힌 값이
+아니라 **그 계정의 지금 권한**을 쓰기 때문이다. 리스크 심사에서 조회가 비면 여기부터 본다.
+
+**4) 확인.** 권한이 없는 계정으로 로그인해 심의 메뉴가 **안 보이는지**, `/deliberate` 가 내 권한
+화면으로 가는지, 내 권한에서 요청→승인 뒤 새로고침 없이 메뉴가 뜨는지 본다.

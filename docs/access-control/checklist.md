@@ -4,39 +4,43 @@
 
 ## A. 정책·계산 (포털 백엔드)
 
-- [ ] `backend/config/access.yaml` — 기능·플랫폼 표(포털 타일·게이트웨이 백엔드), 소속별 기본 허가(CAEG=전부), 기본 허가(일반 챗)
-- [ ] 정책 로더 + 대조 테스트(타일·게이트웨이 백엔드·HE팀 앱이 전부 어느 플랫폼에 속하는지)
-- [ ] users 에 affiliation·grants 칸, 허가 요청 표
-- [ ] 유효 권한 계산(소속 ∪ 개별 ∪ 기본 ∪ 함의, 관리자=전부) — 요청마다, 합성 그룹(feat:·plat:)으로 principal.groups 에
-- [ ] `/auth/me` 에 affiliation·entitlements
+- [x] `backend/config/access.yaml` — 기능 6·플랫폼 18, CAEG=전부, 기본=일반 챗, 함의(AI 데이터 허브)
+- [x] 정책 대조 테스트 — 모든 포털 타일·HE팀 페르소나 앱이 어느 플랫폼에든 속한다
+- [x] users.affiliation·grants, access_requests 표
+- [x] 요청마다 계산(합성 그룹, JWT·PAT 에 박힌 합성 그룹은 버림), `/auth/me` 에 affiliation·entitlements
 
 ## B. 관리·요청
 
-- [ ] 관리자 API — 사용자 소속·개별 허가 편집, 요청 승인·거절
-- [ ] 사용자 API — 내 권한 표(허가 여부·이유·요청 상태), 요청 보내기
+- [x] 관리자 API — 소속·개별 허가 편집(표에 없는 값 422), 요청 승인·거절
+- [x] 사용자 API — 내 권한 표(허가 여부·이유·요청 상태), 요청(중복 대기는 하나로)
 
 ## C. 포털 강제
 
-- [ ] /agent/chat — thinking·pinned_agent·delib_opts·검색 소스, 에이전트서버에 entitlements 전달
-- [ ] /agent/deliberate/*·/agent/catalog/*·업로드·PAT 발급·/systems 타일·launch
+- [x] /agent/chat — Thinking·전문가 지정(HE팀은 그 플랫폼까지), agent-server 에 entitlements
+- [x] 심의 되묻기·VOC·카탈로그·업로드(기능+목적지 플랫폼)·PAT 발급·/systems 타일·launch
+- [x] 전문가 풀 — 권한 없으면 목록만 비움(도구 카탈로그는 누구나), 못 쓰는 HE팀 운영자 뺌
 
 ## D. 에이전트서버
 
-- [ ] ChatRequest.entitlements — 심의 계열 트리거·Thinking·전문가 지정 막기(방어 심층)
+- [x] entitlements — 심의 계열 트리거·Thinking·전문가 지정·/전문가 검색, 대화에 남는 안내 한 줄
 
 ## E. 게이트웨이
 
-- [ ] 포털 정책(백엔드별 필요 권한) 가져오기·캐시
-- [ ] PAT 호출자의 권한을 요청 시점 값으로(PAT 에 박힌 그룹 대신)
+- [x] 포털 정책(백엔드별 필요 권한) 60초 갱신·디스크 캐시·실패 시 직전 값
+- [x] PAT 호출자의 권한을 포털의 지금 값으로(60초 캐시), 그룹 헤더 없는 GW_TOKEN 호출은 내부 서비스
 
 ## F. 프론트
 
-- [ ] User 타입·can() — 창에 돌아오면 /auth/me 다시
-- [ ] 메뉴·라우트 숨김(심의·API 토큰·리스크), 입구 숨김(슬래시 명령·넘기기·Thinking·조직도·업로드·웹 검색)
-- [ ] 내 권한 페이지 — 표·요청
-- [ ] 관리자 화면 — 소속·개별 허가·요청 큐
+- [x] useCan·RequireEntitlement, 창 포커스 때 /auth/me 다시(30초)
+- [x] 메뉴·라우트·챗 입구 숨김, 권한 밖 저장 상태는 싣지 않음
+- [x] 내 권한 페이지 — 표·이유·요청
+- [x] 사용자 관리 — 요청 대기열·소속·개별 허가·소속 일괄 지정
 
 ## G. 검증
 
-- [ ] dev 에서 CAEG 밖 테스트 계정으로 — 메뉴 숨김·API 거절·MCP 도구 차단 → 허가 → 보임
-- [ ] 문서·체인지로그·cae00 배포 안내(기존 사용자 소속 지정)
+- [x] 백엔드 테스트 73 · 에이전트서버 243 · 게이트웨이 19 통과
+- [x] dev E2E(CAEG 밖 테스트 계정) — 숨김·리다이렉트·/심의 안내·요청→승인→새로고침 없이 메뉴·MCP 도구 범위
+- [x] E2E 가 잡은 결함 — 챗 가드가 delib_opts 로 모든 챗을 막음(ec73088), 원장 동시 조회 500(1c8184d)
+- [x] 테스트 계정(access-test@example.com) 비활성화
+- [x] 문서·체인지로그·cae00 배포 안내
+- [ ] cae00 — 배포 뒤 기존 사용자 소속 지정(사용자 관리 '모두 이 소속으로'), HWAXRisk PAT 계정 확인
