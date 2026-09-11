@@ -4,15 +4,21 @@
 
 ## ① 화이트리스트 네 칸 — 엔진에 있는데 웹에서 죽은 것을 켠다
 
-- [ ] 백엔드 `DelibOpts` 에 `non_negotiables` 선언(backend/app/agent/routes.py)
-- [ ] 백엔드 `DelibOpts` 에 `stop_after_round` 선언
-- [ ] 백엔드 `DelibOpts` 에 `rounds_so_far` 선언
-- [ ] 백엔드 `DelibOpts` 에 `append_to_report_id` 선언
-- [ ] `delibOptsToWire`(chatStore.ts)에 `stop_after_round` 추가 — 패널 토글은 이 겹도 통과해야 한다
-- [ ] `continueDeliberation` 이 `rounds_so_far`·`append_to_report_id` 를 실어 보낸다
-- [ ] ⚠ 체크포인트 토글이 **이어하기에 따라붙지 않게** 한다(안 끄면 이어하기도 1R 에서 멈춘다)
-- [ ] 회귀 방지 테스트 — 프론트가 보내는 키와 백엔드 모델 필드의 **집합 대조**
-- [ ] 실측: 이어하기 한 번 돌려 조항·라운드 번호·보고서 append 가 실제로 붙는지
+- [x] 백엔드 `DelibOpts` 에 `non_negotiables` 선언(backend/app/agent/routes.py)
+- [x] 백엔드 `DelibOpts` 에 `stop_after_round` 선언
+- [x] 백엔드 `DelibOpts` 에 `rounds_so_far` 선언
+- [x] 백엔드 `DelibOpts` 에 `append_to_report_id` 선언
+- [x] `delibOptsToWire`(chatStore.ts)에 `stop_after_round` 추가 — 패널 토글은 이 겹도 통과해야 한다
+- [x] `continueDeliberation` 이 `rounds_so_far`·`append_to_report_id` 를 실어 보낸다
+      (`rounds_so_far` 는 `totalRounds`(계획값)가 아니라 **발언의 최대 round**(실측값)로 센다 —
+      체크포인트로 일찍 멈추면 계획값이 과대평가된다)
+- [x] ⚠ 체크포인트 토글이 이어하기에 따라붙지 않게 `stop_after_round: 0` 을 명시 —
+      `extraDelibOpts` 가 패널 토글보다 **뒤에 병합**되므로 1회성이 보장된다
+- [x] 회귀 방지 테스트 4건 — 프론트 두 경로에서 키를 뽑아 모델 필드와 집합 대조.
+      **일부러 필드를 빼서 실제로 실패하는지 확인**했다(추출 실패 시에도 실패하게 만들었다)
+- [x] 모델 통과 실측 — 네 값 전부 `model_dump` 를 통과해 중계된다
+- [ ] **실제 심의를 한 번 돌려** 조항·라운드 번호·보고서 append 가 붙는지 — 아직 안 했다
+      (LLM 왕복이 필요하고 RA 에 보고서가 생긴다)
 
 ## ② 반박 관계를 구조로 남긴다 (⑥·⑦의 재료)
 

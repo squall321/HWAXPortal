@@ -242,5 +242,9 @@ export function delibOptsToWire(o: DelibOpts): Record<string, number> {
   // 타임아웃은 여기서 [10,1800] 클램프 — 포털 DelibOpts 는 범위를 '거부'(422)하므로(agent-server 는
   // 클램프) HTML min/max 를 우회한 키보드 입력(5·5000 등)이 심의 전체를 422 로 죽이는 것 방지.
   if (o.timeout_s != null && o.timeout_s > 0) w.timeout_s = Math.min(1800, Math.max(10, o.timeout_s));
+  // 인간 체크포인트 — 1이면 초기 라운드에서 멈춘다. 패널 토글이라 **이 관문과 백엔드
+  // DelibOpts 둘 다** 통과해야 한다. 한쪽만 있으면 에러 없이 조용히 사라진다(실제로
+  // 그래서 이 토글이 죽어 있었다 — docs/delib-ux/context-notes.md D-1).
+  if (o.stop_after_round === 1) w.stop_after_round = 1;
   return w;
 }

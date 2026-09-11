@@ -640,11 +640,23 @@ export function ChatProvider({
             .filter(Boolean),
         ),
       ].slice(0, 12);
+      // 이전 회차까지 실제로 돈 라운드 수 — 없으면 회의록이 매 회차 '1R 초기입장' 으로
+      // 되돌아가 몇 번째 논의인지 알 수 없다. 발언의 최대 round 가 실측값이다
+      // (totalRounds 는 '계획된' 수라 체크포인트로 일찍 멈추면 과대평가된다).
+      const roundsSoFar = Math.max(0, ...(prior.turns ?? []).map((t) => t.round || 0));
+      // 같은 RA 보고서에 페이지로 덧붙인다 — 없으면 회차마다 새 보고서로 흩어진다.
+      const priorReport = prior.outcome?.report_id ?? null;
       sendMessage('/심의 ' + topic, {
         human_note: note,
         continue_summary: (prior.decision ?? '').slice(0, 8000),
         personas: (prior.personas ?? []).map((p) => ({ key: p.key, role: p.role ?? '' })),
         ...(nonNegotiables.length ? { non_negotiables: nonNegotiables } : {}),
+        ...(roundsSoFar > 0 ? { rounds_so_far: roundsSoFar } : {}),
+        ...(priorReport ? { append_to_report_id: priorReport } : {}),
+        // ⚠ 체크포인트는 **1회성**이다. 패널 토글이 매 발화에 다시 실리므로(아래 sendMessage
+        //   의 delibOptsToWire), 켜 둔 채 이어하면 이어하기도 1라운드에서 또 멈춘다.
+        //   사용자는 "이어가라고 했는데 또 멈췄다" 를 보게 된다. 여기서 명시적으로 끈다.
+        stop_after_round: 0,
       });
     },
     [conversations, activeId, streaming, sendMessage],

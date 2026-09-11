@@ -72,6 +72,23 @@ class DelibOpts(BaseModel):
     human_note: str | None = Field(default=None, max_length=2000)
     continue_summary: str | None = Field(default=None, max_length=8000)
     personas: list[dict] | None = Field(default=None, max_length=12)
+    # ⚠ 아래 넷은 **엔진에 이미 구현돼 있는데 여기 선언이 없어 웹에서만 죽어 있던** 것이다
+    #   (2026-09-11 조사). 선언 안 된 키는 model_dump(exclude_none=True) 에서 조용히 사라지고
+    #   에러가 안 나므로, 심의는 정상 동작한 것처럼 끝난다. chair_template·free_tools 가 같은
+    #   사고를 겪고 아래에 주석으로 남아 있는데 그 옆에서 네 개가 더 새고 있었다.
+    #
+    # 이전 심의의 양보 불가 조항. 요약에 섞지 않고 따로 넘겨야 승계가 보장된다 —
+    # 빠지면 이전 결정이 소리 없이 되돌아간다(엔진 _cont_block 이 매 라운드 프롬프트에 넣는다).
+    non_negotiables: list[str] | None = Field(default=None, max_length=12)
+    # 1이면 초기 라운드까지만 돌고 사람에게 넘긴다(인간 체크포인트). 결정문 대신 전원 초기
+    # 입장이 내려오고, 이어하기 폼으로 의견을 보태면 좌석 재심사가 그 방향의 도메인을 부른다.
+    stop_after_round: int | None = Field(default=None, ge=0, le=1)
+    # 이어하기 표시 오프셋 — 이전 회차까지 돈 라운드 수. 없으면 회차마다 회의록이
+    # '1R 초기입장' 으로 되돌아간다. 엔진이 0~64 로 재클램프한다.
+    rounds_so_far: int | None = Field(default=None, ge=0, le=64)
+    # 이어하기를 **같은 RA 보고서**에 페이지로 덧붙인다. 없으면 회차마다 새 보고서가 생겨
+    # 한 사안이 여러 건으로 흩어진다(MCP 경로는 이미 묶는다).
+    append_to_report_id: int | None = Field(default=None, ge=0)
     # 사용자 지정 도구 — 심의에서 실제 호출돼 정량 근거로 주입(선정 패널에서 선택).
     tools: list[str] | None = Field(default=None, max_length=6)
     # 사용자 지정 앱 — 전문가 자유 조회 범위를 이 앱들로 좁힌다. 도구와 달리 전량 호출이 아니다
