@@ -103,6 +103,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 데이터 /data 통합·경로 레지스트리·DB 동기화 | `docs/data-migration/` (PLAN·checklist·context-notes) |
 | 업데이트 이력(팝업·`/updates` 페이지, 항목 추가법) | `docs/changelog.md` |
 | 전문가 페르소나 챗 | `docs/persona-chat/` (PLAN·checklist·context-notes) |
+| 심의 UX 7건(좌석 조직도·도구 영역·VOC 먼저·되묻기·관계도·이어하기) | `docs/delib-ux/` (PLAN·checklist·context-notes) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
 거기 있고, 없으면 같은 판단을 다시 내리느라 시간을 쓴다.
