@@ -1,9 +1,9 @@
 # 챗·심의 요청의 권한 검사 — 챗 필드별 기능 권한, HE팀 운영자의 플랫폼 권한, 전문가 목록 거르기
 """Agent-route guards (docs/access-control).
 
-메뉴를 숨겨도 요청은 직접 보낼 수 있다 — 포털이 챗 요청의 필드(thinking·pinned_agent·delib_opts·
-search_sources·pinned_apps)를 권한과 대조한다. 심의 트리거(/심의 등)는 에이전트서버가 쥐고 있어
-entitlements 를 넘겨 그쪽이 한 번 더 막는다(트리거 목록을 두 곳에 두지 않는다).
+메뉴를 숨겨도 요청은 직접 보낼 수 있다 — 포털이 챗의 명시 모드(thinking·pinned_agent)를 권한과
+대조한다. 심의 트리거(/심의 등)는 에이전트서버가 쥐고 있어 entitlements 를 넘겨 그쪽이 막고,
+도구는 게이트웨이가 거른다(같은 판정을 두 곳에 두지 않는다).
 """
 from __future__ import annotations
 
@@ -44,25 +44,18 @@ def persona_allowed(policy: Policy, key: str, groups: list[str]) -> bool:
     return not need or any(k in groups for k in need)
 
 
-def check_chat(policy: Policy, principal: Principal, *, thinking: bool, pinned_agent: str | None,
-               delib_opts: object | None, search_sources: list[str] | None,
-               pinned_apps: list[str] | None) -> None:
-    """챗 요청 필드별 권한. 없으면 403 — 조용히 떼고 진행하면 사용자는 기능이 고장 난 줄 안다."""
+def check_chat(policy: Policy, principal: Principal, *, thinking: bool,
+               pinned_agent: str | None) -> None:
+    """챗의 명시 모드(Thinking·전문가 지정)만 본다. 없으면 403.
+
+    나머지는 여기서 보지 않는다 — 프론트는 delib_opts 를 **늘** 싣고(search_sources 를 담아서) 일반
+    챗에서도 보낸다. 그걸 심의 권한으로 막으면 모든 챗이 403 이 된다. 심의 트리거는 에이전트서버가,
+    도구(웹 검색·지정 앱)는 게이트웨이가 권한으로 거른다 — 같은 판정을 세 곳에 두지 않는다."""
     if thinking:
         ensure(principal, "feat:thinking")
-    if delib_opts is not None:
-        ensure(principal, "feat:deliberation")
     if pinned_agent:
         ensure(principal, "feat:expert-chat")
         need = policy.keys_for_gateway(he_apps(pinned_agent))
-        if need:
-            ensure(principal, *need, any_of=True)
-    if search_sources:                     # 빈 리스트는 '전부 끔'이라 권한이 필요 없다
-        need = policy.keys_for_gateway(["heax-web_research_mcp"])
-        if need:
-            ensure(principal, *need, any_of=True)
-    for app in pinned_apps or []:
-        need = policy.keys_for_gateway([app])
         if need:
             ensure(principal, *need, any_of=True)
 

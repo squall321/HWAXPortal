@@ -128,6 +128,25 @@ def test_CAEG_밖은_일반_챗만_요청하고_승인되면_바로_보인다(cl
         client.post("/agent/chat", json={"message": "x", "thinking": True}, headers=h).status_code
         == 403
     )
+    # 회귀 — 프론트는 일반 챗에도 delib_opts(search_sources 담아)를 늘 싣는다. 심의 권한으로 막으면
+    # 모든 챗이 403 이 된다(구현 중 실제로 그렇게 짰다가 잡았다).
+    import httpx
+
+    real = app.state.agent_client
+    app.state.agent_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(200, stream=httpx.ByteStream(b"event: done\ndata: {}\n\n"))
+        )
+    )
+    try:
+        r = client.post(
+            "/agent/chat",
+            json={"message": "안녕", "delib_opts": {"search_sources": []}, "search_sources": []},
+            headers=h,
+        )
+    finally:
+        app.state.agent_client = real
+    assert r.status_code == 200, "일반 챗은 기본 권한만으로 된다"
     table = client.get("/auth/access").json()
     feats = {r["key"]: r for r in table["features"]}
     assert feats["feat:chat"]["allowed"] and feats["feat:chat"]["reason"] == "모든 사용자 기본"
@@ -266,34 +285,12 @@ def test_HE팀_운영자는_그_플랫폼_허가가_있어야_고르고_보인�
     from app.auth.errors import AuthError
 
     with pytest.raises(AuthError):
-        agent_guard.check_chat(
-            pol,
-            _p("feat:chat", "feat:expert-chat"),
-            thinking=False,
-            pinned_agent="he-cad-stepforge",
-            delib_opts=None,
-            search_sources=None,
-            pinned_apps=None,
-        )
-    agent_guard.check_chat(
-        pol,
-        _p("feat:expert-chat", "plat:stepforge"),
-        thinking=False,
-        pinned_agent="he-cad-stepforge",
-        delib_opts=None,
-        search_sources=None,
-        pinned_apps=None,
-    )
+        no_plat = _p("feat:chat", "feat:expert-chat")
+        agent_guard.check_chat(pol, no_plat, thinking=False, pinned_agent="he-cad-stepforge")
+    ok = _p("feat:expert-chat", "plat:stepforge")
+    agent_guard.check_chat(pol, ok, thinking=False, pinned_agent="he-cad-stepforge")
     with pytest.raises(AuthError):
-        agent_guard.check_chat(
-            pol,
-            _p("feat:chat"),
-            thinking=False,
-            pinned_agent=None,
-            delib_opts=None,
-            search_sources=["web"],
-            pinned_apps=None,
-        )
+        agent_guard.check_chat(pol, _p("feat:chat"), thinking=True, pinned_agent=None)
     resp = {"pool": [{"key": "he-cad-stepforge"}, {"key": "rel-drop-impact"}], "recommended": []}
     out = agent_guard.filter_experts(resp, pol, ["feat:expert-chat"])
     assert [r["key"] for r in out["pool"]] == ["rel-drop-impact"]

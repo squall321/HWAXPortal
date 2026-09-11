@@ -1108,8 +1108,7 @@ async def chat(
 ) -> StreamingResponse:
     # 권한 — 메뉴를 숨겨도 요청은 직접 보낼 수 있다. 세마포어를 잡기 전에 거절한다.
     check_chat(request.app.state.access.get(), principal, thinking=body.thinking,
-               pinned_agent=body.pinned_agent, delib_opts=body.delib_opts,
-               search_sources=body.search_sources, pinned_apps=body.pinned_apps)
+               pinned_agent=body.pinned_agent)
     sem = _sem(request)
     audit = _audit(request)
     # SSE holds a worker for the stream's lifetime → cap, and reject (not queue) over the cap.
