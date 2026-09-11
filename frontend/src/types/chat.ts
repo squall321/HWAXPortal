@@ -25,7 +25,10 @@ export interface ActivityItem {
 
 // ── 심의(deliberation) 구조화 스트림 — 라이브 회의·스테퍼·수렴 UI(DelibView)의 데이터 ──
 export interface DelibTurn {
+  /** 이번 회차 안의 라운드(1..N) — 진행률·라운드 묶음·수렴 판정은 이것으로 한다. */
   round: number;
+  /** 이어하기 회차를 이어 센 번호(엔진 display_round). 라벨·다음 이어하기의 rounds_so_far 는 이것. */
+  displayRound?: number;
   persona: string;
   say: string;
   position?: string; // 입장 한 줄 요약(R1/R3)

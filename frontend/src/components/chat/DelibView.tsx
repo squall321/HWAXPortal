@@ -173,7 +173,7 @@ function Meeting({ d, live }: { d: DelibData; live: boolean }) {
         .map((r) => (
           <section key={r} className="dv-round">
             <div className="dv-round-div">
-              <span>{`${r}라운드 · ${roundLabel(r, totalRounds)}`}</span>
+              <span>{`${rounds[r]?.[0]?.displayRound ?? r}라운드 · ${roundLabel(r, totalRounds)}`}</span>
             </div>
             {(rounds[r] ?? []).map((t, i) => (
               <div key={`${r}-${t.persona}-${i}`} className="dv-turn">
@@ -210,7 +210,8 @@ function Meeting({ d, live }: { d: DelibData; live: boolean }) {
 
 function Convergence({ d }: { d: DelibData }) {
   const r1 = (d.turns ?? []).filter((t) => t.round === 1 && t.position);
-  const r3 = (d.turns ?? []).filter((t) => t.round === 3 && t.position);
+  // 마지막(수렴) 라운드 = totalRounds. 종전 3 고정이라 rounds=4 면 심화 라운드를 수렴으로 읽었다.
+  const r3 = (d.turns ?? []).filter((t) => t.round === (d.totalRounds ?? 3) && t.position);
   if (r3.length === 0) return null;
   const tally = d.outcome?.tally;
   return (

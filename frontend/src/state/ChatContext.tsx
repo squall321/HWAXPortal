@@ -150,6 +150,7 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'turn': {
       const turn: DelibTurn = {
         round: Number(e.round ?? 0),
+        ...(e.display_round != null ? { displayRound: Number(e.display_round) } : {}),
         persona: String(e.persona ?? ''),
         say: String(e.say ?? ''),
         ...(e.position ? { position: String(e.position) } : {}),
@@ -201,7 +202,7 @@ function priorIssueBlock(turns: DelibTurn[] | undefined, budget: number): string
       if (seen.has(key)) continue;
       seen.add(key);
       const basis = r.basis ? ` (근거 ${r.basis})` : '';
-      lines.push(`- R${t.round} ${t.persona} → ${r.target}: ${counter}${basis}`);
+      lines.push(`- R${t.displayRound ?? t.round} ${t.persona} → ${r.target}: ${counter}${basis}`);
     }
   }
   if (lines.length === 0) return '';
@@ -682,7 +683,8 @@ export function ChatProvider({
       // 이전 회차까지 실제로 돈 라운드 수 — 없으면 회의록이 매 회차 '1R 초기입장' 으로
       // 되돌아가 몇 번째 논의인지 알 수 없다. 발언의 최대 round 가 실측값이다
       // (totalRounds 는 '계획된' 수라 체크포인트로 일찍 멈추면 과대평가된다).
-      const roundsSoFar = Math.max(0, ...(prior.turns ?? []).map((t) => t.round || 0));
+      // 이어 센 번호로 센다 — 회차 안 번호로 세면 이어하기를 두 번 할 때 번호가 또 겹친다(실심의 E2E).
+      const roundsSoFar = Math.max(0, ...(prior.turns ?? []).map((t) => t.displayRound ?? t.round ?? 0));
       // 같은 RA 보고서에 페이지로 덧붙인다 — 없으면 회차마다 새 보고서로 흩어진다.
       const priorReport = prior.outcome?.report_id ?? null;
       sendMessage('/심의 ' + topic, {

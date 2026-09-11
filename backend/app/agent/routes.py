@@ -1114,7 +1114,12 @@ async def chat(
                             k = data.get("kind")
                             if k == "turn" and isinstance(data.get("say"), str):
                                 turns.append({"persona": data.get("persona"),
-                                              "round": data.get("round"),
+                                              # 이어하기 회차를 이어 센 번호로 저장한다 — MCP 경로
+                                              # (JS rn())와 같은 의미. 회차 안 번호(round)로 두면
+                                              # 이어하기 회의록이 다시 '1R' 로 저장됐다(실심의 E2E).
+                                              "round": (data.get("display_round")
+                                                        if isinstance(data.get("display_round"), int)
+                                                        else data.get("round")),
                                               "content": data["say"],
                                               # 관계·입장은 say 산문에 녹아 있지만 구조로 남기지
                                               # 않으면 다른 기기에서 열었을 때 관계도가 비고

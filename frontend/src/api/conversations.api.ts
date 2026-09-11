@@ -88,12 +88,16 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
     }
     if (m.role === 'system') continue; // 화면 비표시(향후 필요 시 확장)
     if (m.role === 'assistant' && turns.length > 0) {
+      // 저장된 round 는 이어하기를 이어 센 번호다(웹·MCP 공통). 한 회차의 라운드는 offset+1 부터
+      // 연속이므로 최소값으로 회차 안 번호를 되살린다 — 라운드 묶음·수렴 판정이 그걸 쓴다.
+      const off = Math.min(...turns.map((t) => t.round || 1)) - 1;
+      const local = turns.map((t) => ({ ...t, displayRound: t.round, round: (t.round || 1) - off }));
       out.push({
         id: newId(),
         role: 'assistant',
         text: m.content,
         ts,
-        delib: { turns, decision: m.content },
+        delib: { turns: local, decision: m.content, totalRounds: Math.max(...local.map((t) => t.round)) },
       });
       turns = [];
     } else {

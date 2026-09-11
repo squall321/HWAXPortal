@@ -43,7 +43,7 @@ export function DelibGraph({ d }: { d: DelibData }) {
         const to = resolveTarget(r.target, list);
         // 대상을 못 찾으면 그리지 않는다 — 없는 사람을 가리키는 화살표는 거짓이다.
         if (!to || to === t.persona) continue;
-        es.push({ from: t.persona, to, round: t.round, counter: r.counter, quote: r.quote, basis: r.basis });
+        es.push({ from: t.persona, to, round: t.displayRound ?? t.round, counter: r.counter, quote: r.quote, basis: r.basis });
       }
     }
     return { edges: es, seats: list };
