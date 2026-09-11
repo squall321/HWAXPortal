@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import { useChat } from '../../state/ChatContext';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
+import { DelibGraph } from './DelibGraph';
 import { colorOf, initialOf } from './personaColor';
 import { TextBlock } from './renderers/TextBlock';
 
@@ -342,6 +343,9 @@ export function DelibView({ msg }: { msg: Message }) {
       <PersonaIntro d={d} />
       <EvidenceCard d={d} />
       <Meeting d={d} live={live} />
+      {/* 관계도 — 회의록은 시간순이라 '누가 누구를 향해 말했는지' 가 안 보인다.
+          진행 중에는 반박이 아직 모이지 않았으므로 끝난 뒤에만 그린다. */}
+      {!live && <DelibGraph d={d} />}
       <Convergence d={d} />
       {decision && (
         <section className="dv-decision">

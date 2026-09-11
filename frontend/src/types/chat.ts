@@ -32,6 +32,9 @@ export interface DelibTurn {
   stance?: string; // R3: 동의|조건부 동의|반대
   /** R3 양보 불가 제약 원문 — 이어하기에서 승계해 이전 결정이 되돌아가지 않게 한다(표시용 say 와 별개). */
   nonNegotiable?: string;
+  /** 이 발언이 **누구의 어떤 말을** 반박했는지. 산문(say)에도 녹아 있지만, 그것만으로는
+   *  관계를 그릴 수 없다 — 지식 그래프와 이어하기 승계가 쓰는 구조 부본이다. */
+  rebut?: { target: string; quote: string; counter: string; basis: string }[];
   ts: number;
 }
 export interface DelibTally {

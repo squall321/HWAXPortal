@@ -2142,3 +2142,41 @@ body.dock-open .container {
   line-height: 1.5;
   word-break: break-word;
 }
+
+/* ── 심의 관계도 — 누가 누구를 반박했는지 ──────────────────────────────────── */
+.dg { margin: 0.9rem 0; }
+.dg-toggle {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg);
+  font-size: 0.79rem;
+  padding: 0.42rem 0.6rem;
+  cursor: pointer;
+}
+.dg-toggle:hover { border-color: var(--accent); }
+.dg-note { font-size: 0.74rem; color: var(--muted); line-height: 1.6; margin: 0.55rem 0 0.3rem; }
+.dg-note b { color: var(--fg); }
+.dg-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.dg-list li {
+  font-size: 0.76rem;
+  line-height: 1.6;
+  color: var(--fg);
+  border-left: 2px solid var(--border);
+  padding-left: 0.55rem;
+}
+.dg-round {
+  display: inline-block;
+  margin-right: 0.35rem;
+  font-size: 0.66rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.35rem;
+}
+.dg-arrow { margin: 0 0.3rem; color: var(--muted); }
+.dg-quote { display: block; color: var(--muted); font-style: italic; margin-top: 0.1rem; }
+.dg-counter { display: block; margin-top: 0.1rem; }
+.dg-basis { display: block; margin-top: 0.1rem; font-size: 0.7rem; color: var(--muted); }

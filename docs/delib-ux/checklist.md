@@ -22,11 +22,15 @@
 
 ## ② 반박 관계를 구조로 남긴다 (⑥·⑦의 재료)
 
-- [ ] 엔진이 `rebut` 를 turn 이벤트에 구조로 싣는다(지금은 산문 평탄화)
-- [ ] 프론트 타입 `DelibTurn.rebut` + 저장(chatStore trim 예산 확인)
-- [ ] 서버 대화 저장소가 stance·non_negotiable·rebut 를 잃지 않는지
-- [ ] 심의 종료 후 **지식 그래프** 렌더(mermaid) — 누가 누구를 반박/지지했는지
-- [ ] 이어하기가 반박·수치를 요약이 아니라 구조로 승계하는지
+- [x] 엔진이 `rebut` 를 turn 이벤트에 구조로 싣는다(`_rebut_items`, 테스트 3건)
+- [x] 프론트 타입 `DelibTurn.rebut` + `mergeDelib` 병합
+- [x] 심의 종료 후 **관계도** 렌더(`DelibGraph.tsx`, mermaid) — 누가 누구를 반박했는지.
+      임시 진입점으로 확인: 노드 4·엣지 4 렌더, 좌석 색이 회의록과 일치,
+      **반박이 없으면 아무것도 안 그린다**, mermaid 파싱 오류 0
+- [ ] `chatStore` 저장 트림에 `rebut` 예산 — 지금은 turns 45개 컷만 있고 rebut 은 그대로 실린다
+- [ ] 서버 대화 저장소가 stance·non_negotiable·rebut 를 잃지 않는지(지금은 persona·round·say 만 저장)
+- [ ] 이어하기가 반박·수치를 요약이 아니라 구조로 승계하는지 — 아직 결정문 텍스트만 간다
+- [ ] JS 정본(infra/pipeline/hwax-deliberate.js)도 같은 구조를 내는지 — MCP 경로 파리티
 
 ## ③ 심의 좌석 조직도
 

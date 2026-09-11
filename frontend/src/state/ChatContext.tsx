@@ -153,6 +153,9 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
         ...(e.position ? { position: String(e.position) } : {}),
         ...(e.stance ? { stance: String(e.stance) } : {}),
         ...(e.non_negotiable ? { nonNegotiable: String(e.non_negotiable) } : {}),
+        ...(Array.isArray(e.rebut) && e.rebut.length
+          ? { rebut: e.rebut as DelibTurn['rebut'] }
+          : {}),
         ts: Date.now(),
       };
       d.turns = [...(d.turns ?? []), turn];
