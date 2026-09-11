@@ -1,10 +1,11 @@
 # 심의 좌석 상한이 엔진·포털·프론트 두 입구에서 같은 값인지 — 어긋나면 조용히 잘리거나 422 가 난다
-"""좌석 상한은 네 곳에 박혀 있다.
+"""좌석 상한은 다섯 곳에 박혀 있다.
 
   엔진   HWAXAgentServer/deliberation.py  MAX_REQ_SEATS        (넘으면 잘라 버린다)
   포털   backend/app/agent/routes.py      DelibOpts.personas   (넘으면 422)
   프론트 ExpertPicker.tsx                 MAX_EXPERTS          (넘게 못 고른다)
   프론트 HandoffBrief.tsx                 MAX_SEATS            (넘게 못 고른다)
+  프론트 RosterEditor.tsx                 MAX_SEATS            (이어하기 좌석 조정)
 
 한 곳만 올리면 두 가지로 샌다 — 프론트만 올리면 심의가 422 로 시작조차 안 되고, 포털까지
 올리고 엔진을 빼먹으면 초과 좌석이 **소리 없이** 사라진다(종전 엔진은 cp[:12] 였다).
@@ -39,8 +40,10 @@ def test_좌석_상한은_네_곳이_같다():
     portal = _portal_cap()
     picker = _front_cap("ExpertPicker.tsx", "MAX_EXPERTS")
     brief = _front_cap("HandoffBrief.tsx", "MAX_SEATS")
+    roster = _front_cap("RosterEditor.tsx", "MAX_SEATS")
     assert picker == portal, f"ExpertPicker {picker} ≠ 포털 {portal} — 넘치면 422"
     assert brief == portal, f"HandoffBrief {brief} ≠ 포털 {portal} — 넘치면 422"
+    assert roster == portal, f"RosterEditor(이어하기 좌석 조정) {roster} ≠ 포털 {portal} — 넘치면 422"
 
 
 def test_엔진_상한도_같다():

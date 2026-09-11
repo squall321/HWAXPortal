@@ -988,7 +988,59 @@ body.dock-open .container {
   color: var(--muted);
   margin-bottom: 9px;
   line-height: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
+/* 이어하기 좌석 조정 — 한 회차 돈 뒤 명단을 사람이 고른다 */
+.dv-roster-btn {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.dv-roster-btn:hover:not(:disabled) { border-color: var(--cx-accent); color: var(--cx-accent); }
+.re { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 9px; display: flex; flex-direction: column; gap: 6px; }
+.re-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.re-seat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--cx-accent);
+  background: var(--cx-accent-soft);
+  border-radius: 999px;
+  padding: 2px 10px 2px 4px;
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.re-seat input { accent-color: var(--cx-accent); margin: 0 0 0 4px; }
+.re-seat.is-off { border-color: var(--border); background: transparent; color: var(--muted); text-decoration: line-through; }
+.re-seat.is-new { border-style: dashed; }
+.re-av { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; flex: none; }
+.re-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.re-tag { font-size: 10px; color: var(--cx-accent); }
+.re-foot { display: flex; align-items: center; gap: 8px; }
+.re-add {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.re-add:hover:not(:disabled) { border-color: var(--cx-accent); color: var(--cx-accent); }
+.re-count { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.re-warn { margin: 0; font-size: 11.5px; color: #fcd34d; line-height: 1.5; }
+.re-hint { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
 .dv-continue-row {
   display: flex;
   gap: 8px;

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useChat } from '../../state/ChatContext';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
 import { DelibGraph } from './DelibGraph';
+import { RosterEditor, type Seat } from './RosterEditor';
 import { colorOf, initialOf } from './personaColor';
 import { TextBlock } from './renderers/TextBlock';
 
@@ -302,16 +303,49 @@ function OutcomeCards({ d }: { d: DelibData }) {
 function ContinueBar({ d }: { d: DelibData }) {
   const { continueDeliberation, streaming } = useChat();
   const [note, setNote] = useState('');
+  // 좌석 조정 — 한 회차를 돌고 명단을 사람이 고른다(요청 3번 '토론이 잘 안 되면 한 번 돌고 로스터 선택').
+  // 현재 좌석은 personas 정본, 복원된 심의(personas 없음)는 발언자로 채운다.
+  const current = useMemo<Seat[]>(
+    () =>
+      d.personas?.length
+        ? d.personas.map((p) => ({ key: p.key, role: p.role ?? '' }))
+        : [...new Set((d.turns ?? []).map((t) => t.persona).filter(Boolean))].map((key) => ({ key, role: '' })),
+    [d.personas, d.turns],
+  );
+  const [editing, setEditing] = useState(false);
+  const [roster, setRoster] = useState<Seat[] | null>(null);
+  const seats = roster ?? current;
+  const edited =
+    roster !== null &&
+    (roster.length !== current.length || roster.some((s) => !current.some((c) => c.key === s.key)));
   if (!d.decision) return null;
+  const tooFew = edited && seats.length < 2;
   const submit = () => {
+    if (streaming || tooFew) return;
     const n = note.trim();
-    if (!n || streaming) return;
-    continueDeliberation(d, n);
+    // 명단만 바꿔 이어갈 수도 있다 — 그때는 무엇을 바꿨는지를 의견으로 대신 싣는다(좌석들이 누가
+    // 들어오고 나갔는지 알아야 새 구성으로 쟁점을 다시 다룬다).
+    const plus = seats.filter((s) => !current.some((c) => c.key === s.key)).map((s) => s.key);
+    const minus = current.filter((c) => !seats.some((s) => s.key === c.key)).map((c) => c.key);
+    const change = edited
+      ? `좌석 조정 —${plus.length ? ` 합류 ${plus.join(', ')}` : ''}${minus.length ? ` · 제외 ${minus.join(', ')}` : ''}. 새 구성으로 남은 쟁점을 다시 다뤄라.`
+      : '';
+    const opinion = [n, change].filter(Boolean).join('\n');
+    if (!opinion) return;
+    continueDeliberation(d, opinion, edited ? seats : undefined);
     setNote('');
+    setRoster(null);
+    setEditing(false);
   };
   return (
     <section className="dv-continue">
-      <div className="dv-continue-head">💬 의견을 넣어 이어가기 — 같은 전문가들이 이 방향으로 다시 토론합니다</div>
+      <div className="dv-continue-head">
+        💬 의견을 넣어 이어가기 — {edited ? `고른 ${seats.length}석으로` : '같은 전문가들이'} 이 방향으로 다시 토론합니다
+        <button type="button" className="dv-roster-btn" onClick={() => setEditing((v) => !v)} disabled={streaming}>
+          {editing ? '좌석 조정 닫기' : `🗂 좌석 조정 (${seats.length}석)`}
+        </button>
+      </div>
+      {editing && <RosterEditor current={current} roster={seats} onChange={setRoster} />}
       <div className="dv-continue-row">
         <textarea
           className="dv-continue-input"
@@ -325,7 +359,7 @@ function ContinueBar({ d }: { d: DelibData }) {
           type="button"
           className="dv-continue-btn"
           onClick={submit}
-          disabled={!note.trim() || streaming}
+          disabled={(!note.trim() && !edited) || streaming || tooFew}
         >
           이어가기
         </button>

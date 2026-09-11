@@ -94,6 +94,9 @@ class DelibOpts(BaseModel):
     # 이어하기를 **같은 RA 보고서**에 페이지로 덧붙인다. 없으면 회차마다 새 보고서가 생겨
     # 한 사안이 여러 건으로 흩어진다(MCP 경로는 이미 묶는다).
     append_to_report_id: int | None = Field(default=None, ge=0)
+    # 이어하기 좌석 재심사(0=끔). 사람이 이어하기 명단을 직접 고르면 0 — 고른 명단 위에 재심사가
+    # 좌석을 몰래 더 얹으면 '고르게 했다'가 거짓이 된다. 미지정이면 엔진 기본(DELIB_RESCREEN).
+    rescreen: int | None = Field(default=None, ge=0, le=1)
     # 사용자 지정 도구 — 심의에서 실제 호출돼 정량 근거로 주입(선정 패널에서 선택).
     tools: list[str] | None = Field(default=None, max_length=6)
     # 사용자 지정 앱 — 전문가 자유 조회 범위를 이 앱들로 좁힌다. 도구와 달리 전량 호출이 아니다

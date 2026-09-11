@@ -45,8 +45,9 @@ interface ChatContextValue {
   streaming: boolean;
   setInput: (v: string) => void;
   sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>) => void;
-  /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 같은 전문가로 후속 심의를 스티어링. */
-  continueDeliberation: (prior: DelibData, opinion: string) => void;
+  /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 후속 심의를 스티어링. roster 를 주면 그 명단으로
+   *  간다(사람이 좌석을 직접 고름 — 재심사가 좌석을 더 얹지 않는다). 없으면 같은 전문가 + 재심사. */
+  continueDeliberation: (prior: DelibData, opinion: string, roster?: { key: string; role?: string }[]) => void;
   // 심의로 넘기기(핸드오프) — 챗에서 정리한 실데이터(도구결과)를 원천 근거로 실어 현재 대화에서 심의를 연다.
   // 브리프(P3)가 확정한 질문·좌석·템플릿을 받는다. 미지정이면 화두는 첫 발화, 좌석은 심의 자동발굴.
   startHandoff: (opts?: {
@@ -664,7 +665,7 @@ export function ChatProvider({
   // 이어하기(사람 개입 스티어링) — 끝난 심의에 사람 의견을 넣어, 같은 전문가가 이전 결정을
   // 이어받아 그 의견 방향으로 다시 토론하게 한다. 원 화두는 활성 대화의 첫 사용자 발화에서 취한다.
   const continueDeliberation = useCallback(
-    (prior: DelibData, opinion: string) => {
+    (prior: DelibData, opinion: string, roster?: { key: string; role?: string }[]) => {
       const note = opinion.trim();
       if (!note || streaming) return;
       const conv = conversations.find((c) => c.id === activeId);
@@ -687,13 +688,20 @@ export function ChatProvider({
       const roundsSoFar = Math.max(0, ...(prior.turns ?? []).map((t) => t.displayRound ?? t.round ?? 0));
       // 같은 RA 보고서에 페이지로 덧붙인다 — 없으면 회차마다 새 보고서로 흩어진다.
       const priorReport = prior.outcome?.report_id ?? null;
+      // 좌석 — 사람이 고른 명단이 우선. 없으면 이전 좌석. ⚠ 서버에서 **복원한** 심의는 personas 가
+      // 비어 있어서(발언만 저장된다) 그대로 보내면 엔진이 좌석을 처음부터 새로 발굴했다 — 발언자로 채운다.
+      const carried = prior.personas?.length
+        ? prior.personas.map((p) => ({ key: p.key, role: p.role ?? '' }))
+        : [...new Set((prior.turns ?? []).map((t) => t.persona).filter(Boolean))].map((key) => ({ key, role: '' }));
+      const seats = roster?.length ? roster.map((p) => ({ key: p.key, role: p.role ?? '' })) : carried;
       sendMessage('/심의 ' + topic, {
         human_note: note,
         // 결정문이 우선이고, 남는 예산으로 쟁점을 붙인다(둘 다 같은 8000자 칸이다).
         continue_summary:
           (prior.decision ?? '').slice(0, 8000) +
           priorIssueBlock(prior.turns, 8000 - Math.min(8000, (prior.decision ?? '').length)),
-        personas: (prior.personas ?? []).map((p) => ({ key: p.key, role: p.role ?? '' })),
+        personas: seats,
+        ...(roster?.length ? { rescreen: 0 } : {}),
         ...(nonNegotiables.length ? { non_negotiables: nonNegotiables } : {}),
         ...(roundsSoFar > 0 ? { rounds_so_far: roundsSoFar } : {}),
         ...(priorReport ? { append_to_report_id: priorReport } : {}),
