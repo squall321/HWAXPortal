@@ -34,7 +34,12 @@
 - [x] 이어하기가 **미해결 쟁점**을 승계 — `continue_summary` 의 남는 예산에 붙인다.
       결정문을 밀어내지 않고, 뒤 라운드(더 좁혀진 쟁점)를 먼저 싣는다.
       경계 실측: 예산 205/300/600/1200 전부 준수, 항목이 하나도 안 들어가면 빈 문자열
-- [ ] JS 정본(infra/pipeline/hwax-deliberate.js)도 같은 구조를 내는지 — MCP 경로 파리티
+- [x] JS 정본(infra/pipeline/hwax-deliberate.js)도 같은 구조 — R2 스키마 `rebut` 를 객체로.
+      rebut 를 읽는 곳 셋(summarize·readable, hwax-risk-review, save-delib-conversation)이 객체를
+      문자열화하면 `[object Object]`·dict 표기가 박혀서 전부 고쳤다. 구형 문자열 반박도 읽힌다
+- [x] ⚠ 게이트웨이 `save_conversation` 이 meta 를 **조용히 버리고** 있었다(`_msg()` 가 4칸만 옮김) —
+      MCP 심의의 반박이 포털 관계도에 닿을 길이 없었다. 웹 경로와 같은 자르기로 통과(테스트 2건,
+      옛 게이트웨이에서 실패 확인)
 
 ## ③ 심의 좌석 조직도
 
@@ -49,8 +54,18 @@
 - [x] HandoffBrief 의 어긋남 정리 — `low_confidence` 경고가 **없었다**(ExpertPicker 에만 있었다),
       좌석 상한이 **없었다**(`personas` 는 백엔드 `max_length=12` 라 13석이면 422)
 - [x] 실 풀 781명·22분야로 임시 vite 진입점 검증 — 0/1/12석 상태, 검색 9건, 1000px 미만 레이아웃
-- [ ] `axes`(대화에서 잡은 축)는 HandoffBrief 에만 있다 — ExpertPicker 는 `history` 를 안 보내
-      서버가 축을 못 만든다. 양쪽을 맞추려면 서버 호출부터 바꿔야 해서 ③ 범위 밖으로 둔다
+- [x] `axes` 는 HandoffBrief 에만 있다 — **어긋남이 아니라 정당한 차이로 판정.** 서버 `_seat_axes` 는
+      `if not history: return []` 이고(app.py), `/심의` 페이지는 이어 붙일 대화가 없다. ExpertPicker 에
+      축 UI 를 붙이면 늘 빈 칸인 죽은 코드가 된다
+
+## ③+ 좌석 확장 — "12석 상한이 꼭 필요한가" 에서 나온 갈래 (context-notes D-12·D-13)
+
+- [x] 교차심문 기본 켜짐 + 표적을 관련도 상위 2명으로(용어 겹침 IDF, 조사 제거, 커버리지 보정)
+- [x] 좌석 상한 12 → 20, 네 곳(엔진 `MAX_REQ_SEATS`·포털·ExpertPicker·HandoffBrief)을 계약 테스트로 묶음.
+      엔진만 되돌려 실제로 실패하는 것 확인. 엔진이 잘라내면 이제 status 로 알린다
+- [x] 좌석 프롬프트 상한 `DELIB_SEAT_CTX`(48K, 좌석마다 같은 몫) — **수렴 라운드는 교차심문과 무관하게
+      전문을 줘서** 교차심문만으로는 N² 가 안 닫혔다. 실데이터 12라운드 중 상한 안 8개 바이트 동일
+- [x] JS 정본에도 교차심문·좌석 상한 — 파이썬과 배정 162/162 일치
 
 ## ④ 도구 영역 분류
 
