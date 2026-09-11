@@ -9,9 +9,14 @@ import {
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
 import { conversationEvidence } from './handoff';
+import { SeatBrowser } from './SeatBrowser';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob, type JobId } from './delibTaxonomy';
 
 const DEFAULT_SEATS = 6; // 추천 좌석 기본 선택 수(심의가 스파인 좌석은 자동 추가)
+const MIN_SEATS = 2;  // 서버 심의는 좌석 2명 이상 필요
+// ⚠ delib_opts.personas 는 백엔드에서 max_length=12 다(routes.py). 넘겨 보내면 422 로
+// 심의가 시작조차 안 된다 — 여기서 막고, 막았다는 걸 보여 준다.
+const MAX_SEATS = 12;
 
 export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
   const { startHandoff, streaming } = useChat();
@@ -43,6 +48,7 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
   const [experts, setExperts] = useState<ExpertsResponse | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [browsing, setBrowsing] = useState(false); // 전창 좌석 조직도
 
   // 화두로 추천 좌석 발굴(디바운스 + 취소) — AI 제안, 사용자 확정. 상위 N석 기본 선택.
   useEffect(() => {
@@ -106,13 +112,24 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
     [checked, rec, seatIndex],
   );
 
+  // 조직도용 어댑터 — 여기 정본은 `checked`(키 집합)라서 조직도가 쓰는 모양으로 옮겨 준다.
+  const seatSelected = useMemo(() => {
+    const m: Record<string, { key: string; name: string; role: string }> = {};
+    for (const k of checked) {
+      const e = seatIndex.get(k);
+      m[k] = { key: k, name: e?.name ?? k, role: e?.role ?? '' };
+    }
+    return m;
+  }, [checked, seatIndex]);
+
   const toggle = (k: string) =>
     setChecked((s) => {
       const n = new Set(s);
       if (n.has(k)) n.delete(k);
-      else n.add(k);
+      else if (n.size < MAX_SEATS) n.add(k);
       return n;
     });
+  const seatFull = checked.size >= MAX_SEATS;
   const toggleMod = (id: string) =>
     setMods((s) => {
       const n = new Set(s);
@@ -246,14 +263,37 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
           </div>
         )}
 
+        {/* 추천은 관련도가 낮아도 늘 채워 내놓는다 — 서버가 '자신 없음'을 말하면 화면이 그대로
+            옮겨야 한다. ExpertPicker 에만 있고 여기엔 없어서, 같은 실수를 브리프 경로에서는
+            계속 할 수 있었다. */}
+        {!loading && experts?.low_confidence && (
+          <p className="cx-brief-lowconf">
+            이 주제를 맡을 전문가가 풀에 없을 수 있습니다 — 아래 추천은 관련도가 낮습니다.
+            조직도에서 직접 고르시거나, 질문을 더 구체적인 용어로 바꿔 보세요.
+          </p>
+        )}
+
         <div className="cx-brief-field">
-          <span>
-            좌석 제안 {loading ? '(발굴 중…)' : `— ${checked.size}석 선택 · 심의가 스파인 좌석 자동 추가`}
+          <span className="cx-brief-seatlabel">
+            좌석 제안{' '}
+            {loading
+              ? '(발굴 중…)'
+              : `— ${checked.size}/${MAX_SEATS}석 선택${seatFull ? ' · 가득' : ''} · 심의가 스파인 좌석 자동 추가`}
+            {!loading && experts?.pool?.length ? (
+              <button type="button" className="cx-brief-browse" onClick={() => setBrowsing(true)}>
+                🗂 조직도에서 고르기
+              </button>
+            ) : null}
           </span>
           <div className="cx-brief-seats">
             {rec.map((e) => (
               <label key={e.key} className="cx-brief-seat">
-                <input type="checkbox" checked={checked.has(e.key)} onChange={() => toggle(e.key)} />
+                <input
+                  type="checkbox"
+                  checked={checked.has(e.key)}
+                  disabled={seatFull && !checked.has(e.key)}
+                  onChange={() => toggle(e.key)}
+                />
                 <span className="cx-brief-seat-name">{e.name}</span>
                 {e.axes?.length ? (
                   <span className="cx-brief-seat-axis">{e.axes.join(' · ')}</span>
@@ -286,7 +326,12 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
             <div className="cx-brief-seats cx-brief-hits">
               {searchHits.map((e) => (
                 <label key={e.key} className="cx-brief-seat">
-                  <input type="checkbox" checked={checked.has(e.key)} onChange={() => toggle(e.key)} />
+                  <input
+                    type="checkbox"
+                    checked={checked.has(e.key)}
+                    disabled={seatFull && !checked.has(e.key)}
+                    onChange={() => toggle(e.key)}
+                  />
                   <span className="cx-brief-seat-name">{e.name}</span>
                   <span className="cx-brief-seat-axis">{e.key}</span>
                 </label>
@@ -320,6 +365,18 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
             {JOB_BY_ID[job].name} 심의 시작 · {checked.size}석{mods.size ? ` · 얹을 층 ${mods.size}` : ''} · 근거 {evidence.length}
           </button>
         </div>
+
+        {browsing && experts && (
+          <SeatBrowser
+            pool={experts.pool}
+            candidates={experts.candidates?.length ? experts.candidates : rec}
+            selected={seatSelected}
+            onToggle={(r) => toggle(r.key)}
+            min={MIN_SEATS}
+            max={MAX_SEATS}
+            onClose={() => setBrowsing(false)}
+          />
+        )}
       </div>
     </div>
   );

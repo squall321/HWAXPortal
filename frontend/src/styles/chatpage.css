@@ -884,6 +884,19 @@
   border-radius: 999px;
   padding: 0.05rem 0.45rem;
 }
+/* 조직도 열기 — 평평한 검색만으로는 781명에서 누굴 빠뜨렸는지 알 수 없다 */
+.cx-ep-browse {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.16rem 0.6rem;
+  cursor: pointer;
+}
+.cx-ep-browse:hover { border-color: var(--cx-accent); color: var(--cx-accent); }
 .cx-ep-role { font-size: 0.8rem; color: var(--muted); line-height: 1.45; }
 .cx-ep-why { font-size: 0.74rem; color: var(--muted); opacity: 0.8; font-family: var(--cx-mono); }
 

@@ -1,6 +1,7 @@
 // 심의 전 전문가 확인·수동추가 패널 — 추천(기본 선택)을 보여주고, 질문 관련도순 후보/검색으로 추가
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ExpertsResponse, RecommendedExpert } from '../../api/chat.api';
+import { SeatBrowser } from './SeatBrowser';
 
 export interface Persona {
   key: string;
@@ -45,6 +46,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
   const [appSel, setAppSel] = useState<Set<string>>(new Set());
   const [toolQuery, setToolQuery] = useState('');
   const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터
+  const [browsing, setBrowsing] = useState(false);  // 전창 좌석 조직도
   const seededRef = useRef(false);
 
   // 관련도순 랭킹 — candidates(≈40) 우선, 없으면 recommended 폴백.
@@ -268,6 +270,11 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
             <h3 className="cx-ep-sec-title">
               직접 추가
               {poolCount > 0 && <span className="cx-ep-badge">{poolCount}명 풀</span>}
+              {poolCount > 0 && (
+                <button type="button" className="cx-ep-browse" onClick={() => setBrowsing(true)}>
+                  🗂 조직도에서 고르기
+                </button>
+              )}
             </h3>
             <input
               className="cx-ep-search"
@@ -491,6 +498,18 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
             </button>
           </div>
           {!enough && <p className="cx-ep-hint">전문가를 {MIN_EXPERTS}명 이상 선정해야 심의를 시작할 수 있습니다.</p>}
+
+          {browsing && experts && (
+            <SeatBrowser
+              pool={experts.pool}
+              candidates={ranked}
+              selected={chosen}
+              onToggle={toggle}
+              min={MIN_EXPERTS}
+              max={MAX_EXPERTS}
+              onClose={() => setBrowsing(false)}
+            />
+          )}
         </>
       )}
     </div>

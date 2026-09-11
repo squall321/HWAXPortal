@@ -1453,6 +1453,32 @@ body.dock-open .container {
   font-size: 11px; color: var(--cx-accent, var(--fg));
 }
 .cx-brief-axis-phrase { color: var(--fg); }
+/* 서버가 '이 주제 맡을 사람이 없을 수 있다'고 할 때 — 추천 5명은 늘 채워 나온다 */
+.cx-brief-lowconf {
+  margin: 0;
+  border: 1px solid rgba(252, 211, 77, 0.4);
+  background: rgba(252, 211, 77, 0.1);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: #fcd34d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+/* 조직도 열기 — 이름 검색만으로는 781명 중 누굴 빠뜨렸는지 알 수 없다 */
+.cx-brief-field > span.cx-brief-seatlabel { display: flex; align-items: center; gap: 8px; }
+.cx-brief-browse {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.cx-brief-browse:hover { border-color: var(--cx-accent); color: var(--cx-accent); }
 /* 추천 밖 전문가 직접 찾기 */
 .cx-brief-seatsearch {
   margin-top: 6px; width: 100%; padding: 6px 9px; font-size: 13px;
@@ -2119,6 +2145,109 @@ body.dock-open .container {
   .pv-detail.is-open { display: block; }
   .pv-search { width: min(180px, 34vw); }
 }
+/* ── 심의 좌석 조직도 — .pv-* 껍데기를 그대로 쓰고 다중선택에 필요한 것만 덧붙인다 ──── */
+.sb-chosen {
+  font-size: 0.73rem;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.sb-chosen.is-full { color: #fcd34d; border-color: currentColor; }
+/* 분야를 접어도 거기 몇 석을 앉혔는지는 보여야 한다 — 안 그러면 한 분야에 쏠린 걸 못 본다. */
+.sb-tree-pick, .sb-dom-pick {
+  margin-left: 0.3rem;
+  font-size: 0.65rem;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 0 0.35rem;
+}
+/* 카드가 배지·버튼까지 이고 있어 챗 조직도(230px)보다 넓어야 이름이 안 잘린다 */
+.sb-cards { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+.sb-card {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0.35rem 0.4rem 0.35rem 0.55rem;
+}
+.sb-card:hover { background: rgba(255, 255, 255, 0.07); }
+.sb-card.is-on { border-color: var(--accent); background: rgba(20, 40, 160, 0.2); }
+.sb-card.is-blocked { opacity: 0.55; }
+.sb-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  padding: 0;
+  cursor: pointer;
+}
+/* 키가 줄바꿈하면 카드 높이가 제각각이 되어 격자가 무너진다 */
+.sb-card .pv-card-key { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-rel {
+  flex: none;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--cx-accent);
+  background: var(--cx-accent-soft);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sb-pick {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.7rem;
+  padding: 0.18rem 0.5rem;
+  cursor: pointer;
+}
+.sb-pick:hover:not(:disabled) { border-color: var(--accent); background: rgba(20, 40, 160, 0.25); }
+.sb-pick:disabled { color: var(--muted); cursor: default; }
+.sb-card.is-on .sb-pick { border-color: var(--accent); }
+.sb-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border-top: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+}
+.sb-foot-list {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.74rem;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-warn { flex: none; font-size: 0.72rem; color: #fcd34d; }
+.sb-done {
+  flex: none;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sb-done:hover { filter: brightness(1.18); }
+
 .pv-samples { list-style: none; padding-left: 0; }
 .pv-sample {
   width: 100%;

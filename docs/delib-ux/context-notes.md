@@ -62,3 +62,51 @@ MCP 로 직결할 때는 분류가 아예 안 보인다 — 실제 도구 호출
 `rounds_data`(서버 메모리)에서만 살고, 프론트로 나가는 turn 이벤트에도 `delib_jobs` 저장에도
 RA 회의록에도 안 남는다는 것이다 — `_item_text` 가 산문으로 평탄화한다. 즉 ⑥(지식 그래프)은
 **새로 만드는 게 아니라 버리기를 멈추는 일**이다.
+
+## D-7. 조직도를 `PersonaBrowser` 재사용이 아니라 **새로 짰다**
+
+`PersonaBrowser` 는 `useChat()` 의 `pinnedAgent`/`setPinnedAgent`/`setInput` 에 직접 물려
+있다 — 단일 선택이고, 선택 상태가 컴포넌트 밖(ChatContext)에 있다. 여기에 다중 선택을
+끼우려면 그 세 배선을 전부 옵셔널로 바꾸고 호출부 셋(ActivityPanel·AgentCatalogBlock·
+PersonaPicker)을 같이 손대야 한다. 챗 쪽이 잘 돌고 있는데 건드릴 이유가 없다.
+
+`SeatBrowser.tsx` 는 선택을 **전부 props 로 받는다**(`selected`/`onToggle`/`min`/`max`).
+그래서 정본이 `Record<string, Persona>`(ExpertPicker)든 `Set<string>`(HandoffBrief)든
+어댑터 한 조각으로 붙는다. 껍데기 CSS(`.pv-*` 76규칙)와 `personaCatalog.ts` 는 그대로 쓴다 —
+분류 로직을 두 벌 만들면 도메인 라벨이 두 곳에서 갈라진다.
+
+## D-8. 상한을 **조용히 무시하지 않는다**
+
+종전 `toggle` 은 `else if (size < MAX) add` 라, 12석이 찬 뒤 체크박스를 눌러도 아무 일이
+없었다. 사용자 입장에선 고장이다. 조직도는 카드를 흐리게 + 버튼을 `가득` 비활성으로 바꾸고
+헤더 배지를 호박색 `선정 12/12 — 가득` 로 돌린다. HandoffBrief 의 체크박스도 같은 이유로
+`disabled` 를 붙였다.
+
+⚠ HandoffBrief 에는 **상한 자체가 없었다.** `delib_opts.personas` 는 백엔드에서
+`max_length=12`(routes.py:74)라 13석을 고르면 심의가 422 로 시작조차 안 된다.
+
+## D-9. 하한은 2 인데 **0 은 정상이다**
+
+엔진은 좌석이 2 미만이면 `no_personas` 로 죽는다(deliberation.py:2472). 그런데 `personas` 가
+**비어 있으면** `_discover` 가 돌아 서버가 알아서 발굴한다 — HandoffBrief 가 "추천 좌석 없음
+— 심의가 자동 발굴합니다" 라고 쓰는 그 경로다. 그래서 조직도의 경고는 `count < min` 이 아니라
+`0 < count < min` 일 때만 뜬다. 0석에 경고를 띄우면 정상 경로를 고장으로 읽게 만든다.
+
+## D-10. 카드 폭 — 챗 조직도 값을 그대로 쓰면 이름이 잘린다
+
+`.pv-cards` 는 `minmax(230px, 1fr)` 다. 좌석 카드는 거기에 관련도 배지와 `＋ 좌석` 버튼이
+더 붙어서, 실 데이터(카메라 21석)로 띄우면 "카메라 ...", "플레어·고..." 로 전부 잘렸다.
+`.sb-cards` 로 330px 로 올리고 키(`.pv-card-key`)는 줄바꿈 대신 말줄임으로 막았다 —
+키가 3줄로 접히면 카드 높이가 제각각이 되어 격자가 무너진다.
+
+## D-11. HandoffBrief 에 `low_confidence` 가 **없었다**
+
+"이 주제를 맡을 전문가가 풀에 없을 수 있다" 경고는 ExpertPicker 에만 있었다. 그 자리 주석에
+"이 문구가 없으면 사용자는 무관한 전문가 5명을 그대로 데리고 심의에 들어간다(실제로 그랬다)"
+라고 적혀 있는데, 정작 챗 핸드오프 경로에서는 계속 그럴 수 있었다. 같은 서버 신호를 두 입구가
+다르게 다루면 고친 쪽만 고쳐진 채로 남는다.
+
+반대 방향의 어긋남도 하나 있고 **이번엔 안 맞췄다** — `axes`(대화에서 잡은 도메인 축)는
+HandoffBrief 에만 나온다. ExpertPicker 를 여는 DeliberatePage 가 `fetchDeliberateExperts(topic)`
+를 `history` 없이 부르기 때문에 서버가 축을 만들지 못한다(DeliberatePage.tsx:92). 맞추려면
+서버 호출부터 바꿔야 해서 ③ 범위 밖으로 뒀다.
