@@ -68,6 +68,20 @@ class UserStore:
         # 부서 — 가입 폼 입력(또는 RA 연동 시 자동 채움). 기존 DB 는 컬럼 추가 마이그레이션.
         with contextlib.suppress(sqlite3.OperationalError):  # 이미 있으면 무시
             self._conn.execute("ALTER TABLE users ADD COLUMN department TEXT NOT NULL DEFAULT ''")
+        # 소속·개별 허가 — 권한 계산의 입력(docs/access-control). 소속은 관리자만 정한다 — 부서(자유
+        # 텍스트, 본인 입력)와 따로 둔다. 본인이 바꿀 수 있는 값이 권한이 되면 스스로 올릴 수 있다.
+        with contextlib.suppress(sqlite3.OperationalError):
+            self._conn.execute("ALTER TABLE users ADD COLUMN affiliation TEXT NOT NULL DEFAULT ''")
+        with contextlib.suppress(sqlite3.OperationalError):
+            self._conn.execute("ALTER TABLE users ADD COLUMN grants TEXT NOT NULL DEFAULT '[]'")
+        # 허가 요청 — 사용자가 내 권한 페이지에서 보내고 관리자가 승인·거절한다.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS access_requests ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, key TEXT NOT NULL, "
+            # status: pending | approved | rejected
+            "note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', "
+            "created_at INTEGER NOT NULL, decided_at INTEGER, decided_by TEXT)"
+        )
         # 외부 서비스 연결 토큰(예: Report Archive PAT) — 사용자가 등록, 게이트웨이가 소비.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS connections ("
@@ -86,17 +100,20 @@ class UserStore:
         cols = [c[0] for c in cur.description]
         d = dict(zip(cols, row, strict=True))
         d["groups"] = json.loads(d.get("groups") or "[]")
+        d["grants"] = json.loads(d.get("grants") or "[]")
         return d
 
     def list_users(self) -> list[dict]:
         cur = self._conn.execute(
-            "SELECT email, name, department, groups, status, auth_source, created_at, "
-            "approved_at, last_login_at, locked_until FROM users ORDER BY created_at DESC")
+            "SELECT email, name, department, affiliation, grants, groups, status, auth_source, "
+            "created_at, approved_at, last_login_at, locked_until FROM users "
+            "ORDER BY created_at DESC")
         cols = [c[0] for c in cur.description]
         out = []
         for row in cur.fetchall():
             d = dict(zip(cols, row, strict=True))
             d["groups"] = json.loads(d.get("groups") or "[]")
+            d["grants"] = json.loads(d.get("grants") or "[]")
             out.append(d)
         return out
 
@@ -218,6 +235,83 @@ class UserStore:
                 (json.dumps(list(groups)), norm_email(email)))
             self._conn.commit()
             return cur.rowcount > 0
+
+    # ── 소속·개별 허가·허가 요청(docs/access-control) ──────────────────────────
+    def set_access(self, email: str, *, affiliation: str | None = None,
+                   grants: list[str] | None = None) -> bool:
+        """준 칸만 바꾼다. 소속은 관리자만 정한다(호출부가 관리자 확인)."""
+        sets, args = [], []
+        if affiliation is not None:
+            sets.append("affiliation = ?")
+            args.append(affiliation.strip()[:40])
+        if grants is not None:
+            sets.append("grants = ?")
+            args.append(json.dumps(sorted(set(grants))))
+        if not sets:
+            return False
+        with self._lock:
+            cur = self._conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE email = ?",  # noqa: S608 — 칸 이름은 고정 목록
+                                     (*args, norm_email(email)))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def create_request(self, *, email: str, key: str, note: str = "") -> dict:
+        """허가 요청. 같은 키로 대기 중인 요청이 있으면 새로 만들지 않고 그걸 돌려준다
+        (두 번 누름)."""
+        email = norm_email(email)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM access_requests WHERE email = ? AND key = ? AND status = 'pending'",
+                (email, key)).fetchone()
+            if row:
+                return {"id": row[0], "status": "pending", "duplicate": True}
+            cur = self._conn.execute(
+                "INSERT INTO access_requests (email, key, note, created_at) VALUES (?, ?, ?, ?)",
+                (email, key, note.strip()[:500], _now()))
+            self._conn.commit()
+            return {"id": cur.lastrowid, "status": "pending", "duplicate": False}
+
+    def list_requests(self, *, status: str | None = None, email: str | None = None,
+                      limit: int = 200) -> list[dict]:
+        q = ("SELECT id, email, key, note, status, created_at, decided_at, decided_by "
+             "FROM access_requests")
+        args: list = []
+        conds = []
+        if status:
+            conds.append("status = ?")
+            args.append(status)
+        if email:
+            conds.append("email = ?")
+            args.append(norm_email(email))
+        if conds:
+            q += " WHERE " + " AND ".join(conds)
+        cur = self._conn.execute(q + " ORDER BY id DESC LIMIT ?", (*args, limit))
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+
+    def decide_request(self, req_id: int, *, approve: bool, by: str) -> dict | None:
+        """승인이면 그 키를 사용자 개별 허가에 더한다. 이미 결정된 요청은 건드리지 않는다(None)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT email, key FROM access_requests WHERE id = ? AND status = 'pending'",
+                (req_id,)).fetchone()
+            if not row:
+                return None
+            email, key = row
+            self._conn.execute(
+                "UPDATE access_requests SET status = ?, decided_at = ?, decided_by = ? "
+                "WHERE id = ?",
+                ("approved" if approve else "rejected", _now(), norm_email(by), req_id))
+            if approve:
+                cur = self._conn.execute(
+                    "SELECT grants FROM users WHERE email = ?", (email,)).fetchone()
+                have = set(json.loads((cur or ["[]"])[0] or "[]"))
+                have.add(key)
+                self._conn.execute("UPDATE users SET grants = ? WHERE email = ?",
+                                   (json.dumps(sorted(have)), email))
+            self._conn.commit()
+            return {"id": req_id, "email": email, "key": key,
+                    "status": "approved" if approve else "rejected"}
 
     # ── 로그인 ──────────────────────────────────────────────────────────────
     def verify_login(self, *, email: str, password: str) -> dict:

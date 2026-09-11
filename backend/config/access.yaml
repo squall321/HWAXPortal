@@ -1,0 +1,107 @@
+# 소속·허가 정책 정본 — 기능·플랫폼 표와 소속별 기본 허가. 사용자별 소속·개별 허가는 users 원장에 있다.
+#
+# 권한 키는 두 종류다 — 기능 feat:<id> · 플랫폼 plat:<id>. 포털이 요청마다 계산해 합성 그룹으로
+# principal.groups 에 얹고, 에이전트서버·게이트웨이는 그 그룹을 그대로 받는다(docs/access-control).
+#
+#   · 유효 권한 = default_grants ∪ 소속 grants ∪ 사용자 개별 grants (+ 함의 implies). portal-admin 은 전부.
+#   · "*" 는 표에 있는 모든 기능·플랫폼이다.
+#   · platforms[].systems 는 포털 타일 id(systems.yaml), gateway 는 게이트웨이 백엔드 키다 — 타일은
+#     그 플랫폼 허가가 있어야 보이고, 게이트웨이 백엔드는 그 플랫폼 허가가 있어야 도구가 붙는다.
+#   · 모든 포털 타일·게이트웨이 백엔드·HE팀 페르소나 앱은 어느 플랫폼에든 속해야 한다
+#     (backend/tests/test_access_policy.py 가 대조한다 — 표에 없으면 아무도 못 쓰거나 아무나 쓴다).
+#   · 이 파일은 요청마다 mtime 을 본다. 고쳐도 재기동이 필요 없다.
+
+default_grants: [feat:chat]
+
+affiliations:
+  - id: CAEG
+    label: CAE그룹
+    grants: ["*"]          # 지금 만드는 것은 모두 CAEG 것 — 다 같이 쓴다(사용자 결정 2026-09-11)
+
+features:
+  - id: chat
+    label: 일반 챗
+    desc: LLM 과 대화한다. 플랫폼 도구는 그 플랫폼 허가가 있을 때만 붙는다.
+  - id: expert-chat
+    label: 전문가와 대화
+    desc: 조직도에서 전문가(HE팀 운영자 포함)를 골라 그 역할로 대화한다. /전문가 검색 포함.
+    implies: [plat:aidatahub]          # 역할·지식카드가 AI 데이터 허브에 있다(D-3)
+  - id: deliberation
+    label: 전문가 심의
+    desc: /심의·/시뮬심의·/시험계획, 심의 화면, 챗에서 심의로 넘기기·이어하기, MCP 심의 도구.
+    implies: [plat:aidatahub]
+    gateway: [hwax-deliberation]       # Claude·PAT 로 deliberate_* 를 직접 부르는 길도 막는다
+  - id: thinking
+    label: Thinking
+    desc: 질문에 답할 수 있는 전문가만 각자 답한다.
+    implies: [plat:aidatahub]
+  - id: upload
+    label: 파일 올리기
+    desc: 챗에서 파일을 올려 물성 DB·StepForge 로 보낸다(보낼 곳의 플랫폼 허가도 있어야 한다).
+  - id: api-token
+    label: API 토큰 · MCP 개인 연결
+    desc: Claude·스크립트에서 게이트웨이 도구를 쓰는 개인 토큰을 발급한다.
+
+platforms:
+  - id: heaxhub
+    label: HEAXHub 앱 허브
+    systems: [heax-hub]
+  - id: aidatahub
+    label: AI 데이터 허브
+    systems: [ai-data-hub]
+    gateway: [ai-data-hub]
+  - id: mxwhitepaper
+    label: MX 백서
+    systems: [mx-white-paper]
+    gateway: [mx-white-paper]
+  - id: signalforge
+    label: SignalForge VOC
+    systems: [signalforge]
+    gateway: [signalforge]
+  - id: reportarchive
+    label: Report Archive
+    systems: [report-archive]
+    gateway: [reportarchive]
+  - id: smarttwin
+    label: SmartTwin 시뮬레이션
+    systems: [smart-twin-cluster, ste]
+    gateway: [smart-twin-mcp, smart-twin-cluster]
+  - id: spdm
+    label: SPDM
+    systems: [spdm]
+  - id: risk
+    label: HWAX Risk Review
+    systems: [hwax-risk]
+    gateway: [heax-hwax_risk]
+  - id: arp
+    label: AI Ready Portal
+    systems: [arp]
+    gateway: [arp]
+  - id: odbhub
+    label: ECAD Automation Hub
+    systems: [odb-hub]
+    gateway: [odb-hub]
+  - id: stepforge
+    label: StepForge
+    gateway: [heax-step_forge]
+  - id: dynaforge
+    label: DynaForge
+    gateway: [heax-kooremapper_mcp]
+  - id: laminate
+    label: Laminate Analyzer
+    gateway: [heax-laminate_analyzer_mcp]
+  - id: thermalshock
+    label: Thermal Shock SED
+    gateway: [heax-thermal_shock_mcp]
+  - id: materialtwin
+    label: MaterialTwin
+    gateway: [heax-materialtwin_web]
+  - id: webdesign
+    label: Web Design Agents
+    gateway: [heax-web_design_agents]
+  - id: webresearch
+    label: 웹 리서치(사외 검색)
+    gateway: [heax-web_research_mcp]
+  - id: paperingest
+    label: Paper Ingest
+    gateway: [heax-paper_ingest]

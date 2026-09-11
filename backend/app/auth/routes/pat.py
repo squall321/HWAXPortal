@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
-from app.deps import get_current_principal, require_csrf
+from app.deps import ensure, get_current_principal, require_csrf
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,9 @@ def create_pat(
     _csrf: None = Depends(require_csrf),
     settings: Settings = Depends(get_settings),
 ) -> PatCreated:
+    # API 토큰은 게이트웨이 도구를 포털 밖(Claude·스크립트)에서 쓰는 열쇠다 — 허가가 있어야
+    # 발급한다.
+    ensure(principal, "feat:api-token")
     # ttl_days=0 은 '무기한' 이다. `or` 로 기본값을 채우면 0 이 falsy 라 90일로 둔갑하므로
     # None 과 0 을 반드시 구분한다.
     never = body.ttl_days == 0

@@ -18,7 +18,7 @@ def test_voc_경로는_그룹과_검색어를_포워딩한다():
         return httpx.Response(200, json={"keywords": ["hinge"], "items": [{"id": 1, "text": "t"}]})
 
     app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
-        subject="u1", email="u1@hwax.local", display_name="U", groups=["analyst"])
+        subject="u1", email="u1@hwax.local", display_name="U", groups=["analyst", "feat:deliberation"])
     try:
         with TestClient(app) as c:
             real = app.state.agent_client
@@ -31,7 +31,8 @@ def test_voc_경로는_그룹과_검색어를_포워딩한다():
         assert r.status_code == 200 and r.json()["items"][0]["id"] == 1
         assert seen["path"] == "/deliberate/voc-preview"
         # 그룹은 로그인 주체의 것 — 프론트가 보낸 값을 믿지 않는다. 빈 검색어는 버린다.
-        assert seen["body"] == {"message": "폴드 힌지 파손", "groups": ["analyst"], "keywords": ["hinge", "crease"]}
+        assert seen["body"] == {"message": "폴드 힌지 파손", "groups": ["analyst", "feat:deliberation"],
+                                "keywords": ["hinge", "crease"]}
     finally:
         app.dependency_overrides.pop(principal_pat_or_session, None)
 
@@ -66,7 +67,7 @@ def test_clarify_경로는_방법과_대화를_포워딩하고_실패는_묻지_
         return httpx.Response(502)
 
     app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
-        subject="u1", email="u1@hwax.local", display_name="U", groups=[])
+        subject="u1", email="u1@hwax.local", display_name="U", groups=["feat:deliberation"])
     try:
         with TestClient(app) as c:
             real = app.state.agent_client

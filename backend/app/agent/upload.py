@@ -27,11 +27,13 @@ DESTINATIONS: dict[str, dict] = {
         "label": "물성 DB — 인장·완화 시험 등록",
         "exts": {"csv", "xlsx"},
         "groups_attr": "upload_allowed_group_list",
+        "platform": "plat:materialtwin",
     },
     "stepforge": {
         "label": "StepForge — 어셈블리 파트 추출·메시·K파일",
         "exts": {"step", "stp", "msh", "zip"},
         "groups_attr": "upload_group_step_list",
+        "platform": "plat:stepforge",
     },
 }
 
@@ -43,18 +45,26 @@ def _dest_groups(settings: Settings, dest_id: str) -> list[str]:
     return list(getattr(settings, spec["groups_attr"], []) or [])
 
 
+def _dest_ok(settings: Settings, groups: list[str], dest_id: str) -> bool:
+    """이 목적지로 보낼 수 있나 — 목적지 그룹(종전 설정) 이거나, 파일 올리기 권한 + 그 목적지
+    플랫폼 허가(docs/access-control). 둘 다 없으면 못 보낸다(안전 기본)."""
+    have = set(groups or [])
+    if set(_dest_groups(settings, dest_id)) & have:
+        return True
+    plat = (DESTINATIONS.get(dest_id) or {}).get("platform")
+    return bool(plat) and "feat:upload" in have and plat in have
+
+
 def allowed_destinations(settings: Settings, groups: list[str], ext: str) -> list[dict]:
     """이 사용자·이 확장자로 고를 수 있는 목적지. 되묻기(B) 화면의 입력이다.
 
     빈 배열이면 프론트가 "보낼 곳이 없다" 를 띄운다 — 조용히 아무 데나 보내지 않는다.
     """
-    have = set(groups or [])
     out: list[dict] = []
     for did, spec in DESTINATIONS.items():
         if ext and ext not in spec["exts"]:
             continue
-        allowed = set(_dest_groups(settings, did))
-        if allowed and (allowed & have):
+        if _dest_ok(settings, groups, did):
             out.append({"id": did, "label": spec["label"]})
     return out
 
@@ -66,10 +76,8 @@ def require_any_upload_group(settings: Settings, groups: list[str]) -> None:
     CAD 담당자가 STEP 을 올리지도 못한다(목적지를 나누기 전 동작이 그랬다).
     어디에도 속하지 않으면 파일을 받지 않는다 — 쓰지도 못할 파일을 디스크에 쌓지 않는다.
     """
-    have = set(groups or [])
     for did in DESTINATIONS:
-        allowed = set(_dest_groups(settings, did))
-        if allowed and (allowed & have):
+        if _dest_ok(settings, groups, did):
             return
     raise AuthError(
         "파일 업로드 권한이 없습니다 — 업로드 대상 그룹에 속해 있어야 합니다.",
@@ -82,8 +90,7 @@ def require_destination_group(settings: Settings, groups: list[str], dest_id: st
     목적지 문자열을 바꿔 보낼 수 있으므로 실제 실행 직전에 다시 판정한다."""
     if dest_id not in DESTINATIONS:
         raise AuthError(f"알 수 없는 목적지입니다: {dest_id}", status_code=400)
-    allowed = set(_dest_groups(settings, dest_id))
-    if not allowed or not (allowed & set(groups or [])):
+    if not _dest_ok(settings, groups, dest_id):
         raise AuthError(
             f"'{DESTINATIONS[dest_id]['label']}' 으로 보낼 권한이 없습니다.",
             status_code=403,
@@ -111,8 +118,7 @@ def require_upload_group(settings: Settings, groups: list[str]) -> None:
 
     허용 그룹이 비어 있으면 아무도 못 한다 — 안전 기본. 물성 DB 는 정본이라 오염 파급이 크다.
     """
-    allowed = set(settings.upload_allowed_group_list)
-    if not allowed or not (allowed & set(groups or [])):
+    if not _dest_ok(settings, groups, "material"):
         raise AuthError(
             "파일 업로드 권한이 없습니다 — 물성 담당 그룹만 사용할 수 있습니다.",
             status_code=403,

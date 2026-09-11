@@ -13,6 +13,7 @@ from app.auth.downstream import HandoffPayload
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.catalog.registry import CatalogRegistry
+from app.catalog.routes import visible_systems
 from app.deps import get_catalog, get_current_principal, require_csrf
 
 router = APIRouter(prefix="/systems", tags=["launch"])
@@ -26,7 +27,7 @@ def launch(
     catalog: CatalogRegistry = Depends(get_catalog),
     _csrf: None = Depends(require_csrf),
 ) -> HandoffPayload:
-    visible = {s.id for s in catalog.visible_for(principal.groups)}
+    visible = {s.id for s in visible_systems(request, catalog, principal)}
     system = catalog.get(system_id)
     if not system or system_id not in visible:
         raise AuthError("system not found", status_code=404)

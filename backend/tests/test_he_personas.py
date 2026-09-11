@@ -9,6 +9,7 @@
 한 곳만 고치면 조용히 샌다 — 묶음 라벨이 빠지면 조직도에 코드가 뜨고, 상한이 어긋나면 역할 뒤쪽
 ('답하는 법')이 잘린 채 돈다.
 """
+
 import importlib.util
 import json
 import re
@@ -68,15 +69,28 @@ def test_조직도_묶음_라벨이_정본과_같다():
 
 
 FAKE_MAP = {
-    "map": {"predict_sed": "heax-thermal_shock_mcp", "get_dataset_summary": "heax-thermal_shock_mcp",
-            "parse_raw_rows": "heax-thermal_shock_mcp", "predict_sed_batch": "heax-thermal_shock_mcp",
-            "get_model_info": "heax-thermal_shock_mcp", "add_training_data": "heax-thermal_shock_mcp",
-            "remove_training_data": "heax-thermal_shock_mcp", "train_model": "heax-thermal_shock_mcp",
-            "activate_model": "heax-thermal_shock_mcp",
-            "arp_search": "arp", "arp_get": "arp"},
+    "map": {
+        "predict_sed": "heax-thermal_shock_mcp",
+        "get_dataset_summary": "heax-thermal_shock_mcp",
+        "parse_raw_rows": "heax-thermal_shock_mcp",
+        "predict_sed_batch": "heax-thermal_shock_mcp",
+        "get_model_info": "heax-thermal_shock_mcp",
+        "add_training_data": "heax-thermal_shock_mcp",
+        "remove_training_data": "heax-thermal_shock_mcp",
+        "train_model": "heax-thermal_shock_mcp",
+        "activate_model": "heax-thermal_shock_mcp",
+        "arp_search": "arp",
+        "arp_get": "arp",
+    },
     "areas": {"predict_sed": "calc", "arp_search": "knowledge"},
-    "area_meta": [{"area": "calc", "label": "해석 계산·예측"}, {"area": "knowledge", "label": "사내 지식 검색"}],
-    "apps": [{"app": "heax-thermal_shock_mcp", "label": "Thermal Shock"}, {"app": "arp", "label": "AI Ready Portal"}],
+    "area_meta": [
+        {"area": "calc", "label": "해석 계산·예측"},
+        {"area": "knowledge", "label": "사내 지식 검색"},
+    ],
+    "apps": [
+        {"app": "heax-thermal_shock_mcp", "label": "Thermal Shock"},
+        {"app": "arp", "label": "AI Ready Portal"},
+    ],
 }
 
 
@@ -89,10 +103,15 @@ def test_조립한_프롬프트는_지식카드_안내를_끄고_앱을_묶는�
     rows, skipped, errors = _sync().plan(_one("he-calc-thermalshock"), FAKE_MAP)
     assert not errors and not skipped
     (r,) = rows
-    assert r["system_prompt"].startswith("<!-- no-tool-guide -->"), "없으면 AIDataHub 가 agent_search 안내를 덧붙인다"
-    assert r["response_config"] == {"persona_kind": "mcp_operator", "mcp_apps": ["heax-thermal_shock_mcp"],
-                                    "key_tools": _one("he-calc-thermalshock")["personas"][0]["key_tools"],
-                                    "managed_by": "HWAXPortal/infra/personas/he-team.json"}
+    assert r["system_prompt"].startswith("<!-- no-tool-guide -->"), (
+        "없으면 AIDataHub 가 agent_search 안내를 덧붙인다"
+    )
+    assert r["response_config"] == {
+        "persona_kind": "mcp_operator",
+        "mcp_apps": ["heax-thermal_shock_mcp"],
+        "key_tools": _one("he-calc-thermalshock")["personas"][0]["key_tools"],
+        "managed_by": "HWAXPortal/infra/personas/he-team.json",
+    }
     assert "HE팀" in r["common_tags"] and "해석 계산·물성" in r["common_tags"]
     assert "## 답하는 법" in r["system_prompt"]
 
@@ -104,7 +123,9 @@ def test_게이트웨이에_없는_앱은_건너뛰고_없는_도구_이름은_�
     bad = _one("he-calc-thermalshock")
     bad["personas"][0] = {**bad["personas"][0], "key_tools": ["predict_sedd"]}
     _rows, _skipped, errors = sync.plan(bad, FAKE_MAP)
-    assert errors and "predict_sedd" in errors[0], "오타 난 도구 이름을 그대로 올리면 모델이 없는 도구를 부른다"
+    assert errors and "predict_sedd" in errors[0], (
+        "오타 난 도구 이름을 그대로 올리면 모델이 없는 도구를 부른다"
+    )
 
 
 def test_사전_지식이_얇은_앱은_도구_지도를_싣는다():
@@ -119,4 +140,6 @@ def test_프롬프트_상한이_에이전트서버와_같다():
         pytest.skip(f"형제 리포 없음: {_AGENT}")
     m = re.search(r"^PERSONA_ROLE_MAX\s*=\s*(\d+)", _AGENT.read_text(encoding="utf-8"), re.M)
     assert m, "app.py 에서 PERSONA_ROLE_MAX 를 못 찾았다"
-    assert int(m.group(1)) == _sync().PROMPT_MAX, "동기화가 허락한 길이를 에이전트서버가 자르면 역할 뒤쪽이 사라진다"
+    assert int(m.group(1)) == _sync().PROMPT_MAX, (
+        "동기화가 허락한 길이를 에이전트서버가 자르면 역할 뒤쪽이 사라진다"
+    )

@@ -29,6 +29,8 @@ from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
+from app.access.agent_guard import check_chat, filter_experts
+from app.access.policy import is_synthetic
 from app.agent import conv_search
 from app.agent.audit import AuditLog
 from app.agent.sse import sse_event
@@ -36,7 +38,7 @@ from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
 from app.agent import upload as _upload
-from app.deps import principal_pat_or_session
+from app.deps import ensure, principal_pat_or_session
 
 logger = logging.getLogger(__name__)
 
@@ -434,6 +436,8 @@ async def _relay_stream(
         # 폴백이 정반대로 챗 전체를 죽인다(실측: null→422, ""→200). 빈 문자열이 '없음' 이다.
         "user_pat": user_pat or "",
         "history": [{"role": m.role, "content": m.content} for m in body.history],
+        # 요청 시점 권한 — 심의·Thinking 트리거는 agent-server 가 판정하므로 그쪽이 한 번 더 막는다.
+        "entitlements": sorted(g for g in principal.groups if is_synthetic(g)),
     }
     if body.delib_opts is not None:  # 지정된 손잡이만 전달(None 필드는 제외 → env 기본값 유지)
         payload["delib_opts"] = body.delib_opts.model_dump(exclude_none=True)
@@ -509,6 +513,7 @@ async def catalog_agent(
     settings: Settings = Depends(get_settings),
 ):
     """전문가 상세+보유 지식 — 브라우즈 UI 용 프록시(비스트리밍 JSON)."""
+    ensure(principal, "feat:deliberation", "feat:expert-chat", any_of=True)
     client = _agent_client(request)
     try:
         r = await client.post(f"{settings.agent_server_url}/catalog/agent",
@@ -533,6 +538,7 @@ async def catalog_agent_records(
     settings: Settings = Depends(get_settings),
 ):
     """전문가 한 명의 지식카드 목록(검색·쪽·총수) — 심층 보기 프록시."""
+    ensure(principal, "feat:deliberation", "feat:expert-chat", any_of=True)
     client = _agent_client(request)
     try:
         r = await client.post(f"{settings.agent_server_url}/catalog/agent/records",
@@ -554,6 +560,7 @@ async def catalog_record(
     settings: Settings = Depends(get_settings),
 ):
     """지식카드 한 장(본문·표·출처) — 심층 보기의 읽기 칸 프록시."""
+    ensure(principal, "feat:deliberation", "feat:expert-chat", any_of=True)
     client = _agent_client(request)
     try:
         r = await client.post(f"{settings.agent_server_url}/catalog/record",
@@ -1028,7 +1035,9 @@ async def deliberate_experts(
     principal: Principal = Depends(principal_pat_or_session),
     settings: Settings = Depends(get_settings),
 ):
-    """심의 전 전문가 선정 미리보기 — agent-server 로 포워딩(caller groups 주입). 비스트리밍 JSON."""
+    """심의 전 전문가 선정 미리보기 — agent-server 로 포워딩(caller groups 주입). 비스트리밍 JSON.
+    챗 조직도(전문가와 대화)도 이 풀을 쓴다 — 심의나 전문가 대화 권한 중 하나가 있어야 한다."""
+    ensure(principal, "feat:deliberation", "feat:expert-chat", any_of=True)
     client = _agent_client(request)
     payload = {"message": body.message, "groups": principal.groups,
                # ⚠ 이 줄이 없으면 프론트가 대화를 보내도 여기서 버려져 축이 안 나온다.
@@ -1037,7 +1046,8 @@ async def deliberate_experts(
         r = await client.post(f"{settings.agent_server_url}/deliberate/experts", json=payload)
         if r.status_code != 200:
             return {"recommended": [], "pool": [], "error": f"agent_{r.status_code}"}
-        return r.json()
+        # 못 쓰는 HE팀 운영자는 조직도에 안 보인다(골라도 403 인 사람을 보이면 고장으로 읽힌다).
+        return filter_experts(r.json(), request.app.state.access.get(), principal.groups)
     except httpx.HTTPError:
         return {"recommended": [], "pool": [], "error": "agent_unreachable"}
 
@@ -1052,6 +1062,7 @@ async def deliberate_clarify(
     """심의 전 되묻기 — 메커니즘 분석 최소 정보 중 빈 칸을 스캔(agent-server 포워딩).
 
     ⚠ 실패는 '묻지 않음' 이다(ask=[]). 되묻기가 심의를 막으면 안 된다."""
+    ensure(principal, "feat:deliberation")
     client = _agent_client(request)
     payload = {"message": body.message, "job": body.job,
                "history": [m.model_dump() for m in body.history]}
@@ -1074,6 +1085,7 @@ async def deliberate_voc(
     """심의 전 'VOC 먼저 보기' — 화두로 SignalForge 를 검색해 사람이 고를 목록(agent-server 포워딩).
 
     고른 항목은 프론트가 delib_opts.evidence 로, 보강 문장은 human_note 로 싣는다."""
+    ensure(principal, "feat:deliberation")
     client = _agent_client(request)
     payload = {"message": body.message, "groups": principal.groups,
                "keywords": [k.strip()[:40] for k in body.keywords if k and k.strip()]}
@@ -1094,6 +1106,10 @@ async def chat(
     principal: Principal = Depends(principal_pat_or_session),  # Bearer PAT 또는 세션 쿠키(+CSRF)
     settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:
+    # 권한 — 메뉴를 숨겨도 요청은 직접 보낼 수 있다. 세마포어를 잡기 전에 거절한다.
+    check_chat(request.app.state.access.get(), principal, thinking=body.thinking,
+               pinned_agent=body.pinned_agent, delib_opts=body.delib_opts,
+               search_sources=body.search_sources, pinned_apps=body.pinned_apps)
     sem = _sem(request)
     audit = _audit(request)
     # SSE holds a worker for the stream's lifetime → cap, and reject (not queue) over the cap.

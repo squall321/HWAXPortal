@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     catalog_path: str = "config/systems.yaml"
     # 업데이트 이력 — 로그인 팝업이 읽는다. 요청마다 mtime 확인이라 고쳐도 재기동이 필요 없다.
     changelog_path: str = "config/changelog.yaml"
+    # 소속·허가 정책(기능·플랫폼 표, 소속별 기본 허가) — docs/access-control. mtime 캐시라 재기동 불필요.
+    access_path: str = "config/access.yaml"
     # Routing destinations. A simple `system-id=URL` file: set a system's URL here and that
     # tile becomes clickable (opens the URL); omit it and the tile stays "coming_soon".
     # systems.yaml holds the metadata (name/logo/description); routes.env holds the ports.

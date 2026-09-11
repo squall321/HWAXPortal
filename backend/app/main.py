@@ -15,6 +15,8 @@ from fastapi.responses import JSONResponse
 
 from app import changelog as changelog_routes
 from app import routes_health
+from app.access import routes as access_routes
+from app.access.policy import AccessPolicy
 from app.agent import routes as agent_routes
 from app.agent.audit import AuditLog
 from app.agent.conv_store import ConversationStore
@@ -53,6 +55,8 @@ async def lifespan(app: FastAPI):
     app.state.downstream_issuer = JwtDownstreamIssuer(settings, app.state.keystore)
     app.state.token_store = TokenStore(settings)
     app.state.user_store = UserStore(settings)
+    # 소속·허가 정책(access.yaml) — 요청마다 권한을 계산하는 입력(docs/access-control).
+    app.state.access = AccessPolicy(settings)
     # Mail backend (console in dev; smtp/graph via MAIL_BACKEND env).
     app.state.mail_backend = build_mail_backend(settings)
     # MCP chat (Phase 1): server registry (PR-managed yaml), audit log (compliance), and a
@@ -114,6 +118,7 @@ app.include_router(routes_health.router)
 app.include_router(changelog_routes.router)
 app.include_router(auth_session.router)
 app.include_router(auth_local.router)
+app.include_router(access_routes.router)
 app.include_router(auth_connections.router)
 app.include_router(auth_saml.router)
 app.include_router(auth_jwks.router)

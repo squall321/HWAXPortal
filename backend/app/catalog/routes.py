@@ -1,12 +1,13 @@
 """Catalog endpoints.
 
-  GET  /systems            — tiles the current user may see (filtered by required_role).
+  GET  /systems            — tiles the current user may see (required_role + 플랫폼 허가 plat:*).
   GET  /systems/{id}       — one tile (404 if hidden/absent).
   POST /systems/reload     — re-read systems.yaml without restart (admin only, CSRF-guarded).
 """
 
 from fastapi import APIRouter, Depends, Request
 
+from app.access.policy import filter_tiles
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.catalog.registry import CatalogRegistry
@@ -24,6 +25,14 @@ def _fill_host(url: str | None, request: Request) -> str | None:
     host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "")
     host = host.split(",")[0].strip().split(":")[0]  # 첫 항목, 포트 제거
     return url.replace("{host}", host) if host else url
+
+
+def visible_systems(request: Request, catalog: CatalogRegistry,
+                    principal: Principal) -> list[LinkedSystem]:
+    """이 사람에게 보이는 타일 — required_role 에 더해 그 타일의 플랫폼 허가(access-control)."""
+    systems = catalog.visible_for(principal.groups)
+    access = getattr(request.app.state, "access", None)
+    return systems if access is None else filter_tiles(access.get(), systems, principal.groups)
 
 
 def _to_read(s: LinkedSystem, request: Request) -> SystemRead:
@@ -49,7 +58,7 @@ def list_systems(
     principal: Principal = Depends(get_current_principal),
     catalog: CatalogRegistry = Depends(get_catalog),
 ) -> list[SystemRead]:
-    return [_to_read(s, request) for s in catalog.visible_for(principal.groups)]
+    return [_to_read(s, request) for s in visible_systems(request, catalog, principal)]
 
 
 @router.get("/{system_id}", response_model=SystemRead)
@@ -59,7 +68,7 @@ def get_system(
     principal: Principal = Depends(get_current_principal),
     catalog: CatalogRegistry = Depends(get_catalog),
 ) -> SystemRead:
-    visible = {s.id for s in catalog.visible_for(principal.groups)}
+    visible = {s.id for s in visible_systems(request, catalog, principal)}
     system = catalog.get(system_id)
     if not system or system_id not in visible:
         raise AuthError("system not found", status_code=404)

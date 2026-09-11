@@ -12,6 +12,7 @@ import jwt
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from app.access.policy import is_synthetic
 from app.auth import cookies
 from app.auth.errors import AuthError
 from app.auth.jwt_service import JWTService
@@ -115,12 +116,16 @@ def me(request: Request, principal=Depends(get_current_principal)) -> UserProfil
     if store is not None:
         u = store.get(principal.email)
         department = (u or {}).get("department") or ""
+    # 권한(feat:·plat:)은 로그인 그룹과 나눠 준다 — 화면은 entitlements 로 메뉴·입구를 숨긴다.
+    ents = getattr(request.state, "entitlements", None)
     return UserProfile(
         subject=principal.subject,
         email=principal.email,
         display_name=principal.display_name,
-        groups=principal.groups,
+        groups=[g for g in principal.groups if not is_synthetic(g)],
         department=department,
+        affiliation=ents.affiliation if ents else "",
+        entitlements=sorted(g for g in principal.groups if is_synthetic(g)),
     )
 
 

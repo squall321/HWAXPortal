@@ -11,3 +11,5 @@ class UserProfile(BaseModel):
     display_name: str | None = None
     groups: list[str] = []
     department: str = ""  # users 원장(가입 입력 또는 RA 연결 자동 채움) — 세션 JWT 에는 없음
+    affiliation: str = ""  # 소속(관리자 지정) — 권한 계산의 입력(docs/access-control)
+    entitlements: list[str] = []  # 요청 시점에 계산한 권한 키(feat:·plat:) — 메뉴·입구를 숨기는 근거

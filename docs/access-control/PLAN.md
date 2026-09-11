@@ -42,8 +42,9 @@
 
 **전달 — 합성 그룹.** 계산 결과를 `plat:*`·`feat:*` 그룹으로 만들어 기존 groups 에 얹는다. 에이전트
 서버·게이트웨이는 코드 변경 없이 그대로 받는다 — 게이트웨이 백엔드의 `allowed_groups` 에
-`plat:stepforge` 같은 값을 넣으면 tools/list·call 이 둘 다 걸린다. 게이트웨이 정책은 git 추적 파일로
-(tool_areas.json 선례) — 지금 gateway_config.json 은 provision 이 다시 만들어 손으로 넣은 값이 날아간다.
+`plat:stepforge` 같은 값을 넣으면 tools/list·call 이 둘 다 걸린다. 게이트웨이는 백엔드별 필요 권한을
+포털에서 받아 온다(정본은 access.yaml 하나) — gateway_config.json 에 손으로 넣으면 provision 이 다시
+만들며 날아가고, 두 곳에 두면 어긋난다(D-4).
 
 **화면.**
 - `/auth/me` 가 계산된 권한을 준다. 메뉴·라우트·입구(슬래시 명령·넘기기·Thinking 토글·타일)가 그걸로

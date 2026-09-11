@@ -16,3 +16,9 @@
 심의·Thinking·전문가 챗은 좌석 발굴·역할·지식카드를 AI 데이터 허브 도구(recommend_agents·
 get_agent_session·agent_search)로 한다. 이 기능만 주고 허브를 안 주면 기능이 조용히 부서진다.
 기능 정의에 implies 를 두고, 내 권한 페이지는 '전문가 심의에 포함'처럼 이유를 적는다.
+
+## D-4. 게이트웨이 정책은 포털에서 받아 온다 — 정본은 access.yaml 하나
+게이트웨이 리포에 정책 파일을 따로 두면(tool_areas.json 선례) 포털 표와 두 곳이 된다. 게이트웨이는
+어차피 PAT 호출자의 현재 권한을 포털에 물어야 하므로(D-2), 백엔드별 필요 권한도 같은 통로
+(/internal/*, GATEWAY_SHARED_TOKEN)로 받는다. 받은 값은 디스크에 캐시해 포털이 잠깐 죽어도 직전
+정책으로 돈다. gateway_config.json 의 allowed_groups 는 provision 이 다시 쓰며 날아가서 쓰지 않는다.
