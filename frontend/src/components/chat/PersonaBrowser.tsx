@@ -4,9 +4,10 @@ import { createPortal } from 'react-dom';
 import { fetchAgentDetail, type AgentDetail, type PoolExpert } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import { colorOf, initialOf, shortName } from './personaColor';
-import { OperatorApps } from './AgentFacts';
+import { OperatorApps, RecordsHeading } from './AgentFacts';
+import { AgentDeepView } from './AgentDeepView';
 import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
-import { useOrgNav } from './orgNav';
+import { agentPath, useOrgNav } from './orgNav';
 import { usePersonaPool } from './usePersonaPool';
 
 function AgentCard({
@@ -42,6 +43,8 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
   const [sel, setSel] = useState<PoolExpert | null>(null);
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // 한 명을 전체 화면으로 — 상세칸은 요약이고, 설명 전문·지식카드 전체·카드 본문은 여기서 본다.
+  const [deep, setDeep] = useState(false);
 
   // 지금 열어 둔 사람 — 상태 갱신 함수 안에서 부수효과를 내지 않으려고 ref 로 따로 둔다.
   const selKeyRef = useRef<string | null>(null);
@@ -164,6 +167,9 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
                 >
                   {pinnedAgent === sel.key ? '이미 이 전문가와 대화 중' : '이 전문가로 대화하기'}
                 </button>
+                <button type="button" className="pv-deep" onClick={() => setDeep(true)}>
+                  ⤢ 전체 화면으로 보기 — 설명 전문·지식카드 전체
+                </button>
                 {detailLoading && <p className="pv-empty">상세 불러오는 중…</p>}
                 {detail && (
                   <>
@@ -188,7 +194,7 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
                     )}
                     {detail.records.length > 0 && (
                       <>
-                        <h4 className="pv-detail-h">보유 지식 {detail.records.length}건</h4>
+                        <RecordsHeading detail={detail} onMore={() => setDeep(true)} />
                         <ul className="pv-detail-list pv-detail-scroll">
                           {detail.records.map((r) => (
                             <li key={r.id || r.title}>
@@ -207,6 +213,20 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
           </aside>
         </div>
       </div>
+      {deep && sel && (
+        <AgentDeepView
+          agent={sel}
+          path={agentPath(nav.tree, sel.key)}
+          initialDetail={detail}
+          actions={
+            <button type="button" className="pv-apply" onClick={() => pick(sel)} disabled={pinnedAgent === sel.key}>
+              {pinnedAgent === sel.key ? '이미 이 전문가와 대화 중' : '이 전문가로 대화하기'}
+            </button>
+          }
+          onAsk={(s) => askSample(sel, s)}
+          onClose={() => setDeep(false)}
+        />
+      )}
     </div>,
     document.body,
   );

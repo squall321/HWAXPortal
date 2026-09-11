@@ -518,6 +518,51 @@ async def catalog_agent(
         return {"error": "agent_unreachable"}
 
 
+class CatalogRecordsRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=120)
+    q: str = Field(default="", max_length=200)
+    offset: int = Field(default=0, ge=0, le=1_000_000)
+    limit: int = Field(default=50, ge=1, le=100)
+
+
+@router.post("/catalog/agent/records")
+async def catalog_agent_records(
+    request: Request,
+    body: CatalogRecordsRequest,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """전문가 한 명의 지식카드 목록(검색·쪽·총수) — 심층 보기 프록시."""
+    client = _agent_client(request)
+    try:
+        r = await client.post(f"{settings.agent_server_url}/catalog/agent/records",
+                              json={**body.model_dump(), "groups": principal.groups})
+        return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}", "total": 0, "items": []}
+    except httpx.HTTPError:
+        return {"error": "agent_unreachable", "total": 0, "items": []}
+
+
+class CatalogRecordRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+
+
+@router.post("/catalog/record")
+async def catalog_record(
+    request: Request,
+    body: CatalogRecordRequest,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """지식카드 한 장(본문·표·출처) — 심층 보기의 읽기 칸 프록시."""
+    client = _agent_client(request)
+    try:
+        r = await client.post(f"{settings.agent_server_url}/catalog/record",
+                              json={"id": body.id, "groups": principal.groups})
+        return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}", "id": body.id}
+    except httpx.HTTPError:
+        return {"error": "agent_unreachable", "id": body.id}
+
+
 class ExpertsRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
     # 대화 전체 — 좌석 추천을 화두 한 줄이 아니라 오간 맥락 위에서 하기 위한 것.

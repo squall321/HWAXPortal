@@ -3,10 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { fetchAgentDetail, type AgentDetail, type PoolExpert, type RecommendedExpert } from '../../api/chat.api';
 import { colorOf, initialOf, shortName } from './personaColor';
-import { OperatorApps } from './AgentFacts';
+import { OperatorApps, RecordsHeading } from './AgentFacts';
+import { AgentDeepView } from './AgentDeepView';
 import { findDomain } from './personaCatalog';
 import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
-import { useOrgNav } from './orgNav';
+import { agentPath, useOrgNav } from './orgNav';
 
 export interface SeatBrowserProps {
   pool: PoolExpert[];
@@ -27,6 +28,8 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
   const [sel, setSel] = useState<PoolExpert | null>(null);
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // 한 명을 전체 화면으로 — 앉히기 전에 무엇을 아는 사람인지(지식카드 전체)를 확인한다.
+  const [deep, setDeep] = useState(false);
 
   // 관련도·역할을 key 로 얹는다 — 조직도 카드가 판단 근거를 잃지 않게.
   const relBy = useMemo(() => {
@@ -195,6 +198,9 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
                       ? `${max}석이 찼습니다`
                       : '이 전문가를 좌석에'}
                 </button>
+                <button type="button" className="pv-deep" onClick={() => setDeep(true)}>
+                  ⤢ 전체 화면으로 보기 — 설명 전문·지식카드 전체
+                </button>
                 {detailLoading && <p className="pv-empty">상세 불러오는 중…</p>}
                 {detail && (
                   <>
@@ -205,7 +211,7 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
                     <OperatorApps detail={detail} />
                     {detail.records.length > 0 && (
                       <>
-                        <h4 className="pv-detail-h">보유 지식 {detail.records.length}건</h4>
+                        <RecordsHeading detail={detail} onMore={() => setDeep(true)} />
                         <ul className="pv-detail-list pv-detail-scroll">
                           {detail.records.map((r) => (
                             <li key={r.id || r.title}>{r.title}</li>
@@ -238,6 +244,20 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
           </button>
         </footer>
       </div>
+      {deep && sel && (
+        <AgentDeepView
+          agent={sel}
+          path={agentPath(nav.tree, sel.key)}
+          initialDetail={detail}
+          actions={
+            <button type="button" className="pv-apply" onClick={() => toggle(sel)}
+              disabled={!selected[sel.key] && full}>
+              {selected[sel.key] ? '좌석에서 제외' : full ? `${max}석이 찼습니다` : '이 전문가를 좌석에'}
+            </button>
+          }
+          onClose={() => setDeep(false)}
+        />
+      )}
     </div>,
     document.body,
   );

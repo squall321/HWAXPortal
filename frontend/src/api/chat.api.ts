@@ -294,7 +294,11 @@ export interface AgentDetail {
   role: string;
   tags: string[];
   samples: string[];
+  /** 미리보기 20건. 실제 수는 records_total — 전체는 fetchAgentRecords 로 넘긴다. */
   records: { id: string; title: string; data_type: string }[];
+  records_total?: number | null;
+  /** 역할 문서 전문(허브 공용 안내는 뗀 것). 비었으면 역할 문서가 없는 전문가다. */
+  prompt?: string;
   /** HE팀 MCP 운영자 — 지식카드가 아니라 이 앱들의 도구로 답한다. connected=false 면 이 서버 게이트웨이에 없다. */
   operator?: boolean;
   apps?: { key: string; label: string; tool_count: number; connected: boolean | null }[];
@@ -316,6 +320,71 @@ export async function fetchAgentDetail(key: string): Promise<AgentDetail> {
   } catch {
     return { ...empty, error: 'network' };
   }
+}
+
+// ── 전문가 심층 보기 — 지식카드 전체(검색·쪽)와 카드 한 장 ──────────────────────
+export interface AgentRecordRow {
+  id: string;
+  title: string;
+  data_type: string;
+  doc_type: string;
+  year: number | null;
+  tags: string[];
+  summary: string;
+}
+
+export interface AgentRecordsPage {
+  total: number;
+  offset: number;
+  items: AgentRecordRow[];
+  /** 있으면 '0건'이 아니라 '못 불러왔다' 다 — 화면이 둘을 다르게 말해야 한다. */
+  error?: string;
+}
+
+export interface RecordView extends AgentRecordRow {
+  agents: string[];
+  sections: { id: string; title: string; level: number; text: string }[];
+  table: {
+    caption: string;
+    headers: string[];
+    rows: (string | number | boolean | null)[][];
+    total_rows: number;
+    notes: string;
+  } | null;
+  sources: { title: string; doi: string; url: string; kind: string; authors: string; year: number | null }[];
+  /** 본문·표를 앞쪽만 실었다 — 전부인 척 보이지 않게 화면이 알린다. */
+  truncated: boolean;
+  error?: string;
+}
+
+async function postJson<T>(path: string, body: unknown, fallback: T): Promise<T> {
+  const csrf = getCookie('hwax_csrf');
+  try {
+    const res = await apiFetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return { ...fallback, error: `http_${res.status}` };
+    return { ...fallback, ...(await res.json()) };
+  } catch {
+    return { ...fallback, error: 'network' };
+  }
+}
+
+export function fetchAgentRecords(
+  key: string,
+  opts: { q?: string; offset?: number; limit?: number } = {},
+): Promise<AgentRecordsPage> {
+  const { q = '', offset = 0, limit = 50 } = opts;
+  return postJson('/agent/catalog/agent/records', { key, q, offset, limit }, { total: 0, offset, items: [] });
+}
+
+export function fetchRecord(id: string): Promise<RecordView> {
+  return postJson('/agent/catalog/record', { id }, {
+    id, title: '', data_type: '', doc_type: '', year: null, tags: [], summary: '', agents: [],
+    sections: [], table: null, sources: [], truncated: false,
+  });
 }
 
 export async function streamChat(
