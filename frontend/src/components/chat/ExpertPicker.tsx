@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ExpertsResponse, RecommendedExpert } from '../../api/chat.api';
 import { SeatBrowser } from './SeatBrowser';
+import { ToolAreaChips } from './ToolAreaChips';
+import { inArea, toolAreasOf } from './toolAreas';
 
 export interface Persona {
   key: string;
@@ -45,7 +47,8 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
   const [toolSel, setToolSel] = useState<Set<string>>(new Set());
   const [appSel, setAppSel] = useState<Set<string>>(new Set());
   const [toolQuery, setToolQuery] = useState('');
-  const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터
+  const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터(2단)
+  const [toolArea, setToolArea] = useState<string | null>(null);   // 영역(하는 일) 필터(1단)
   const [browsing, setBrowsing] = useState(false);  // 전창 좌석 조직도
   const seededRef = useRef(false);
 
@@ -172,24 +175,32 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
     return [...m.values()].sort((a, b) => b.tool_count - a.tool_count);
   }, [experts, toolAll]);
 
+  const toolAreas = useMemo(() => toolAreasOf(toolAll, experts?.tools?.areas), [toolAll, experts]);
+  // 앱 드롭다운은 고른 영역 안의 앱만, 영역 안 개수로.
   const toolGroups = useMemo(() => {
     const m = new Map<string, { label: string; n: number }>();
     for (const t of toolAll) {
       const k = t.group || '';
-      if (!k) continue;
+      if (!k || !inArea(t, toolArea)) continue;
       const c = m.get(k);
       if (c) c.n += 1; else m.set(k, { label: t.group_label || k, n: 1 });
     }
     return [...m.entries()].sort((a, b) => b[1].n - a[1].n);
-  }, [toolAll]);
-  // 앱으로 먼저 좁히고(계층 1단) 그 안에서 검색.
-  const toolResults = useMemo(() => {
+  }, [toolAll, toolArea]);
+  // 영역(1단) → 앱(2단) → 검색어. 잘린 수를 같이 돌려준다 — 영역 하나에 70개가 있는데
+  // 20개만 보이면 나머지는 없는 줄 안다.
+  const { toolResults, toolHidden } = useMemo(() => {
     const q = toolQuery.trim().toLowerCase();
-    let pool = toolAll;
+    let pool = toolAll.filter((t) => inArea(t, toolArea));
     if (toolGroup) pool = pool.filter((t) => t.group === toolGroup);
-    if (!q) return toolGroup ? pool.slice(0, TOOL_LIST_LIMIT) : [];
-    return pool.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q)).slice(0, TOOL_LIST_LIMIT);
-  }, [toolQuery, toolGroup, toolAll]);
+    if (q) pool = pool.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q));
+    else if (!toolGroup && toolArea === null) return { toolResults: [], toolHidden: 0 };
+    return { toolResults: pool.slice(0, TOOL_LIST_LIMIT), toolHidden: Math.max(0, pool.length - TOOL_LIST_LIMIT) };
+  }, [toolQuery, toolGroup, toolArea, toolAll]);
+  const pickToolArea = (a: string | null) => {
+    setToolArea(a);
+    if (toolGroup && a !== null && !toolAll.some((t) => t.group === toolGroup && inArea(t, a))) setToolGroup('');
+  };
 
   return (
     <div className="cx-ep">
@@ -391,14 +402,18 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
                           disabled={!toolSel.has(t.name) && toolFull}
                         />
                         <span className="cx-ep-name">{t.name}</span>
+                        {t.area_label && <span className="cx-ep-area">{t.area_label}</span>}
                         <span className="cx-ep-tags">{t.desc}</span>
                       </label>
                     </li>
                   ))}
                 </ul>
               )}
+              <ToolAreaChips areas={toolAreas} value={toolArea} onChange={pickToolArea} />
               <select className="sp-domain" value={toolGroup} onChange={(e) => setToolGroup(e.target.value)} aria-label="MCP 앱 선택">
-                <option value="">앱 선택… (전체 {toolAll.length}개)</option>
+                <option value="">
+                  앱 선택… ({toolArea === null ? `전체 ${toolAll.length}` : `이 영역 ${toolGroups.reduce((n, [, g]) => n + g.n, 0)}`}개)
+                </option>
                 {toolGroups.map(([k, g]) => (
                   <option key={k} value={k}>{g.label} ({g.n})</option>
                 ))}
@@ -411,7 +426,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
                 placeholder="도구 검색 (예: predict_sed, warpage, voc)"
                 aria-label="도구 검색"
               />
-              {(toolQuery.trim() || toolGroup) && (
+              {(toolQuery.trim() || toolGroup || toolArea !== null) && (
                 <ul className="cx-ep-results">
                   {toolResults.length === 0 ? (
                     <li className="cx-ep-empty">일치하는 도구가 없습니다.</li>
@@ -426,10 +441,14 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
                             disabled={!toolSel.has(t.name) && toolFull}
                           />
                           <span className="cx-ep-name">{t.name}</span>
+                          {toolArea === null && t.area_label && <span className="cx-ep-area">{t.area_label}</span>}
                           <span className="cx-ep-tags">{t.desc}</span>
                         </label>
                       </li>
                     ))
+                  )}
+                  {toolHidden > 0 && (
+                    <li className="cx-ep-empty">… {toolHidden}개 더 — 앱을 고르거나 검색으로 좁히세요.</li>
                   )}
                 </ul>
               )}

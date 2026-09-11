@@ -1326,6 +1326,37 @@ body.dock-open .container {
 .tc-group:focus { outline: none; border-color: var(--cx-accent); }
 .tc-app { font-size: 0.68rem; color: var(--cx-accent); background: var(--cx-accent-soft); border-radius: 999px; padding: 0.02rem 0.4rem; white-space: nowrap; }
 
+/* 도구 영역(하는 일) — 앱 드롭다운 위의 1단 필터. 앱 배지(accent)와 헷갈리지 않게 영역 배지는 테두리형이다. */
+.ta-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.15rem 0 0.45rem; }
+.ta-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.74rem;
+  padding: 0.18rem 0.6rem;
+  cursor: pointer;
+}
+.ta-chip:hover { border-color: var(--cx-accent); }
+.ta-chip:focus-visible { outline: 2px solid var(--cx-accent); outline-offset: 1px; }
+.ta-chip.is-on { border-color: var(--cx-accent); background: var(--cx-accent-soft); color: var(--cx-accent); font-weight: 600; }
+.ta-chip.is-none { border-style: dashed; color: #fcd34d; }  /* 미분류 — 분류표에 한 줄이 빠졌다는 신호 */
+.ta-n { font-size: 0.66rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ta-chip.is-on .ta-n { color: inherit; opacity: 0.8; }
+.tc-area, .cx-ep-area {
+  font-size: 0.66rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  white-space: nowrap;
+  flex: none;
+}
+.tc-area { background: transparent; }
+
 /* 심의 '쉬운 설명' 카드 — 정식 단계(explain) 산출물, 결정문과 시각적으로 구분 */
 .dv-plain { margin-top: 0.9rem; padding: 0.85rem 1rem; border: 1px solid var(--cx-accent); border-radius: 14px; background: var(--cx-accent-soft); }
 .dv-plain .dv-round-div.chair { margin-top: 0; }

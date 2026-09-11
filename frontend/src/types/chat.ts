@@ -174,10 +174,20 @@ export interface ToolInfo {
   /** 소유 MCP 앱 키·이름 — 앱별 계층 선택용(게이트웨이 /tools-map 유래). */
   group?: string;
   group_label?: string;
+  /** 영역(하는 일) 키·이름 — 게이트웨이 tool_areas.json 판정. ''/없음 = 미분류. */
+  area?: string;
+  area_label?: string;
 }
 /** MCP 앱 한 건 — 앱 단위 선택(pinnedApps)의 단위. tool_count 는 이 사용자에게 보이는 수. */
 export interface ToolApp {
   app: string;
+  label: string;
+  desc?: string;
+  tool_count: number;
+}
+/** 도구 영역 한 건 — 앱이 아니라 '하는 일'로 묶은 1단 필터. area='' 는 미분류. */
+export interface ToolArea {
+  area: string;
   label: string;
   desc?: string;
   tool_count: number;
@@ -188,6 +198,8 @@ export interface ToolCatalog {
   all: ToolInfo[];
   /** 앱 목록 — 없으면(구 서버) all[].group 으로 프론트가 재구성한다. */
   apps?: ToolApp[];
+  /** 영역 목록 — 없으면(구 서버) all[].area 로 재구성, 그마저 없으면 영역 칩을 안 그린다. */
+  areas?: ToolArea[];
 }
 
 // 전문가 카탈로그(SSE `agents` 이벤트) — '/전문가' 검색 시 서버가 추천+전체 풀을 내려준다.

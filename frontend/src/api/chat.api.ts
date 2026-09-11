@@ -117,6 +117,9 @@ export interface ToolEntry {
   group?: string;
   /** 사람이 읽는 앱 이름(예: 열충격 해석). */
   group_label?: string;
+  /** 영역(하는 일) — CAD·형상 제어, 시뮬레이션 실행·잡 … (게이트웨이 tool_areas.json). */
+  area?: string;
+  area_label?: string;
 }
 
 export interface ExpertsTools {
@@ -130,6 +133,8 @@ export interface ExpertsTools {
   all: ToolEntry[];
   /** 앱 목록 — 앱 단위 선택(pinned_apps)용. 구 서버 응답에는 없다. */
   apps?: { app: string; label: string; desc?: string; tool_count: number }[];
+  /** 영역 목록 — 하는 일로 고르는 1단 필터. 구 서버 응답에는 없다. */
+  areas?: { area: string; label: string; desc?: string; tool_count: number }[];
 }
 
 /** 웹 리서치 소스 가용성 — 전역이 꺼져 있으면 토글을 비활성으로 그린다. */

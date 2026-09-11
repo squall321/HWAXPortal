@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { useChat } from '../../state/ChatContext';
 import type { ToolApp, ToolCatalog } from '../../types/chat';
+import { ToolAreaChips } from './ToolAreaChips';
+import { inArea, toolAreasOf } from './toolAreas';
 
 const MAX_PINNED = 12;
 const MAX_APPS = 3;
@@ -14,7 +16,8 @@ export function ToolCatalogBlock({ catalog }: { catalog: ToolCatalog }) {
   const [draft, setDraft] = useState<Set<string>>(() => new Set(pinnedTools));
   const [appDraft, setAppDraft] = useState<Set<string>>(() => new Set(pinnedApps));
   const [query, setQuery] = useState('');
-  const [group, setGroup] = useState('');   // 소유 MCP 앱 필터(계층 1단)
+  const [area, setArea] = useState<string | null>(null);   // 영역(하는 일) 필터 — 1단
+  const [group, setGroup] = useState('');   // 소유 MCP 앱 필터 — 2단
   const [applied, setApplied] = useState(false);
 
   const toggle = (name: string) =>
@@ -53,16 +56,33 @@ export function ToolCatalogBlock({ catalog }: { catalog: ToolCatalog }) {
     return [...m.values()].sort((a, b) => b.tool_count - a.tool_count);
   }, [catalog.apps, catalog.all]);
   const appLabel = useMemo(() => new Map(apps.map((a) => [a.app, a.label])), [apps]);
+  const areas = useMemo(() => toolAreasOf(catalog.all, catalog.areas), [catalog.all, catalog.areas]);
 
-  // 검색 목록 — 앱 필터 + 검색어(둘 다 없으면 추천 제외 전체).
-  const results = useMemo(() => {
+  // 영역을 고르면 앱 드롭다운도 그 영역에 도구가 있는 앱만, 영역 안 개수로 보인다.
+  const appsInArea = useMemo(() => {
+    if (area === null) return apps;
+    const n = new Map<string, number>();
+    for (const t of catalog.all) if (inArea(t, area) && t.group) n.set(t.group, (n.get(t.group) || 0) + 1);
+    return apps.filter((a) => n.has(a.app)).map((a) => ({ ...a, tool_count: n.get(a.app) || 0 }));
+  }, [apps, area, catalog.all]);
+
+  // 검색 목록 — 영역 → 앱 → 검색어. 아무것도 안 골랐으면 추천 제외 전체.
+  // ⚠ 상한(LIST_LIMIT)에 걸려 잘린 수를 같이 돌려준다 — 영역 하나에 70개가 있는데 30개만
+  //   보이면 나머지는 없는 줄 안다.
+  const { results, hiddenCount } = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let pool = catalog.all;
+    let pool = catalog.all.filter((t) => inArea(t, area));
     if (group) pool = pool.filter((t) => t.group === group);
-    if (q) return pool.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q)).slice(0, LIST_LIMIT);
-    if (!group) pool = pool.filter((t) => !recNames.has(t.name));
-    return pool.slice(0, LIST_LIMIT);
-  }, [query, group, catalog.all, recNames]);
+    if (q) pool = pool.filter((t) => `${t.name} ${t.desc}`.toLowerCase().includes(q));
+    else if (!group && area === null) pool = pool.filter((t) => !recNames.has(t.name));
+    return { results: pool.slice(0, LIST_LIMIT), hiddenCount: Math.max(0, pool.length - LIST_LIMIT) };
+  }, [query, area, group, catalog.all, recNames]);
+
+  const pickArea = (a: string | null) => {
+    setArea(a);
+    // 고른 앱이 새 영역에 도구가 없으면 풀어 준다 — 안 그러면 빈 목록이 고장처럼 보인다.
+    if (group && a !== null && !catalog.all.some((t) => t.group === group && inArea(t, a))) setGroup('');
+  };
 
   const draftList = useMemo(() => [...draft], [draft]);
   const appList = useMemo(() => [...appDraft], [appDraft]);
@@ -143,9 +163,12 @@ export function ToolCatalogBlock({ catalog }: { catalog: ToolCatalog }) {
 
       <div className="tc-sec">
         <div className="tc-sec-title">개별 기능으로 선택 — 콕 집어야 할 때만</div>
+        <ToolAreaChips areas={areas} value={area} onChange={pickArea} />
         <select className="tc-group" value={group} onChange={(e) => setGroup(e.target.value)} aria-label="MCP 앱 선택">
-          <option value="">전체 앱 ({catalog.all.length}개 도구)</option>
-          {apps.map((a) => (
+          <option value="">
+            전체 앱 ({area === null ? catalog.all.length : appsInArea.reduce((n, a) => n + a.tool_count, 0)}개 도구)
+          </option>
+          {appsInArea.map((a) => (
             <option key={a.app} value={a.app}>
               {a.label} ({a.tool_count})
             </option>
@@ -168,12 +191,14 @@ export function ToolCatalogBlock({ catalog }: { catalog: ToolCatalog }) {
                 <label className="tc-item">
                   <input type="checkbox" checked={draft.has(t.name)} onChange={() => toggle(t.name)} />
                   <span className="tc-name">{t.name}</span>
+                  {area === null && t.area_label && <span className="tc-app tc-area">{t.area_label}</span>}
                   {!group && t.group_label && <span className="tc-app">{t.group_label}</span>}
                   <span className="tc-desc">{t.desc}</span>
                 </label>
               </li>
             ))
           )}
+          {hiddenCount > 0 && <li className="tc-empty">… {hiddenCount}개 더 — 앱을 고르거나 검색으로 좁히세요.</li>}
         </ul>
       </div>
 
