@@ -522,6 +522,13 @@ class ExpertsRequest(BaseModel):
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
 
 
+class ClarifyRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8192)
+    # 심의 방법 — 칸 묶음을 고른다(원인 규명·안 선택·신뢰 판정·시험 설계…). 모르는 값은 서버가 자유 심의로 본다.
+    job: str = Field(default="default", max_length=40)
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
+
+
 class VocPreviewRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
     # 사람이 고친 영어 검색어 — 주면 추출을 건너뛴다.
@@ -985,6 +992,28 @@ async def deliberate_experts(
         return r.json()
     except httpx.HTTPError:
         return {"recommended": [], "pool": [], "error": "agent_unreachable"}
+
+
+@router.post("/deliberate/clarify")
+async def deliberate_clarify(
+    request: Request,
+    body: ClarifyRequest,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """심의 전 되묻기 — 메커니즘 분석 최소 정보 중 빈 칸을 스캔(agent-server 포워딩).
+
+    ⚠ 실패는 '묻지 않음' 이다(ask=[]). 되묻기가 심의를 막으면 안 된다."""
+    client = _agent_client(request)
+    payload = {"message": body.message, "job": body.job,
+               "history": [m.model_dump() for m in body.history]}
+    try:
+        r = await client.post(f"{settings.agent_server_url}/deliberate/clarify", json=payload)
+        if r.status_code != 200:
+            return {"applicable": False, "slots": [], "ask": [], "error": f"agent_{r.status_code}"}
+        return r.json()
+    except httpx.HTTPError:
+        return {"applicable": False, "slots": [], "ask": [], "error": "agent_unreachable"}
 
 
 @router.post("/deliberate/voc")

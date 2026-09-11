@@ -200,6 +200,47 @@ export async function fetchDeliberateExperts(
   }
 }
 
+// ── 심의 전 되묻기 — 메커니즘 분석 최소 정보 중 빈 칸 ──────────────────────
+export interface ClarifySlot {
+  key: string;
+  label: string;
+  hint: string;
+  /** 화두·대화에 실제로 적혀 있다(서버가 원문 대조로 판정 — LLM 자기판정이 아니다). */
+  present: boolean;
+  value: string;
+  question: string;
+  options: string[];
+}
+export interface ClarifyResult {
+  applicable: boolean;
+  slots: ClarifySlot[];
+  /** 물을 칸 키(최대 4). 비었으면 묻지 않는다. */
+  ask: string[];
+  error?: string;
+}
+
+export async function fetchDeliberateClarify(
+  message: string,
+  job: string,
+  history?: HistoryMessage[],
+  signal?: AbortSignal,
+): Promise<ClarifyResult> {
+  const csrf = getCookie('hwax_csrf');
+  const none: ClarifyResult = { applicable: false, slots: [], ask: [] };
+  try {
+    const res = await apiFetch('/agent/deliberate/clarify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify({ message, job, ...(history?.length ? { history } : {}) }),
+      signal,
+    });
+    if (!res.ok) return { ...none, error: `http_${res.status}` };
+    return (await res.json()) as ClarifyResult;
+  } catch {
+    return { ...none, error: 'network' };
+  }
+}
+
 // ── 심의 전 'VOC 먼저 보기' ────────────────────────────────────────────────
 export interface VocItem {
   id: number | string;

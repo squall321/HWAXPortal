@@ -784,6 +784,19 @@
   letter-spacing: -0.01em;
   line-height: 1.35;
 }
+/* 되묻기로 붙은 보강 정보 — 질문 아래에 원문 그대로(무엇이 덧붙었는지 보이게) */
+.cx-ep-aug {
+  margin: 0.4rem 0 0;
+  padding: 0.45rem 0.6rem;
+  border-left: 2px solid var(--cx-accent);
+  background: var(--cx-accent-soft);
+  border-radius: 0 8px 8px 0;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--fg);
+}
 .cx-ep-note {
   margin: 0.5rem 0 0;
   color: var(--muted);

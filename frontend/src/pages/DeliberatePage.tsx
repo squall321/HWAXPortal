@@ -182,6 +182,10 @@ export default function DeliberatePage() {
             {picking ? (
               <div className="cx-hero-inner">
                 <ExpertPicker
+                  // 되묻기로 화두가 바뀌면 다시 마운트 — 새 추천으로 좌석을 다시 시딩한다.
+                  key={picking.topic}
+                  job={job}
+                  onAugment={startPicking}
                   topic={picking.topic}
                   loading={picking.experts === null}
                   experts={picking.experts}

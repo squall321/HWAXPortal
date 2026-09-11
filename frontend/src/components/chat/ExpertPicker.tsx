@@ -5,6 +5,8 @@ import { SeatBrowser } from './SeatBrowser';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
 import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
+import { ClarifyPanel } from './ClarifyPanel';
+import { splitTopic } from './clarify';
 import { vocEvidence } from './vocEvidence';
 
 export interface Persona {
@@ -27,6 +29,10 @@ interface ExpertPickerProps {
    *  extra — 'VOC 먼저 보기' 결과(고른 VOC 는 원천 근거, 보강 문장은 human_note, 직접 봤으면 voc:'off'). */
   onConfirm: (personas: Persona[], tools: string[], apps: string[], extra?: DelibExtra) => void;
   onCancel: () => void;
+  /** 심의 방법(Job) — 되묻기 칸 묶음을 고른다. */
+  job?: string;
+  /** 되묻기로 보강된 화두 — 부모가 전문가를 다시 찾는다. 없으면 되묻기를 안 그린다. */
+  onAugment?: (topic: string) => void;
 }
 
 const MIN_EXPERTS = 2; // 서버 심의는 전문가 2명 이상 필요
@@ -47,7 +53,7 @@ interface AddRow {
   rank: number;
 }
 
-export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: ExpertPickerProps) {
+export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job, onAugment }: ExpertPickerProps) {
   // 선택 집합 — key → persona. 관련도순 상위 autoCount 명을 기본 선택으로 시딩한다.
   const [chosen, setChosen] = useState<Record<string, Persona>>({});
   const [autoCount, setAutoCount] = useState(DEFAULT_COUNT);
@@ -216,11 +222,15 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel }: E
     <div className="cx-ep">
       <div className="cx-ep-head">
         <p className="cx-ep-kicker">심의 전문가 선정</p>
-        <h2 className="cx-ep-topic">{topic}</h2>
+        <h2 className="cx-ep-topic">{splitTopic(topic)[0]}</h2>
+        {splitTopic(topic)[1] && <pre className="cx-ep-aug">{splitTopic(topic)[1]}</pre>}
         <p className="cx-ep-note">
           기본은 추천 전문가로 진행됩니다. 인원을 늘리거나, 아래에서 제외·직접 추가해 정합도를 높이세요.
         </p>
       </div>
+
+      {/* 되묻기는 전문가 선정과 나란히 돈다 — 먼저 오면 먼저 보인다. 보강하면 부모가 다시 찾는다. */}
+      {onAugment && <ClarifyPanel topic={topic} job={job ?? 'default'} onApply={onAugment} />}
 
       {loading ? (
         <div className="cx-ep-loading">전문가 선정 중…</div>

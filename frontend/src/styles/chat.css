@@ -1484,6 +1484,67 @@ body.dock-open .container {
   font-size: 11px; color: var(--cx-accent, var(--fg));
 }
 .cx-brief-axis-phrase { color: var(--fg); }
+/* ── 심의 전 되묻기 — 메커니즘 분석 최소 정보(선택) ───────────────────────────── */
+.cq {
+  border: 1px solid var(--cx-accent);
+  border-radius: 12px;
+  background: var(--cx-accent-soft);
+  padding: 0.6rem 0.75rem;
+  margin: 0.7rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.cq-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.cq-head strong { font-size: 0.86rem; color: var(--fg); }
+.cq-sub { font-size: 0.74rem; color: var(--muted); }
+.cq-skip { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 0.74rem; cursor: pointer; }
+.cq-skip:hover { color: var(--fg); text-decoration: underline; }
+.cq-known { margin: 0; font-size: 0.74rem; color: var(--muted); line-height: 1.6; }
+.cq-known-item { margin-right: 0.6rem; }
+.cq-known-item b { color: var(--fg); font-weight: 600; }
+.cq-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.cq-item { display: flex; flex-direction: column; gap: 0.25rem; }
+.cq-q { font-size: 0.8rem; color: var(--fg); line-height: 1.5; }
+.cq-q b { color: var(--cx-accent); margin-right: 0.25rem; }
+.cq-item input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.38rem 0.55rem;
+}
+.cq-item input:focus { outline: none; border-color: var(--cx-accent); }
+.cq-opts { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.cq-opt {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.12rem 0.55rem;
+  cursor: pointer;
+}
+.cq-opt:hover { border-color: var(--cx-accent); color: var(--cx-accent); }
+.cq-foot { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.cq-hint { font-size: 0.72rem; color: var(--muted); }
+.cq-apply {
+  margin-left: auto;
+  border: 1px solid var(--cx-accent);
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.32rem 0.8rem;
+  cursor: pointer;
+}
+.cq-apply:disabled { background: transparent; color: var(--muted); border-color: var(--border); cursor: default; }
+
 /* ── 심의 전 'VOC 먼저 보기' — 브리프·선정 패널 공통 ───────────────────────────── */
 .vf-open {
   width: 100%;

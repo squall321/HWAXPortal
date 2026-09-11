@@ -11,6 +11,7 @@ import type { Conversation } from '../../types/chat';
 import { conversationEvidence } from './handoff';
 import { SeatBrowser } from './SeatBrowser';
 import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
+import { ClarifyPanel } from './ClarifyPanel';
 import { mergeEvidence, vocEvidence } from './vocEvidence';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob, type JobId } from './delibTaxonomy';
 
@@ -195,6 +196,9 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
           <span>질문 (편집 가능)</span>
           <textarea value={topic} onChange={(e) => setTopic(e.target.value)} rows={2} />
         </label>
+
+        {/* 되묻기 — 대화에 이미 있는 건 안 묻는다(서버가 대화까지 원문 대조). 보강하면 좌석을 다시 찾는다. */}
+        <ClarifyPanel topic={topic} job={job} history={history} onApply={setTopic} />
 
         {suggestion && (
           <div className="cx-brief-rec">
