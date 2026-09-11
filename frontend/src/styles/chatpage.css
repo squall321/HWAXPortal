@@ -1098,6 +1098,15 @@
   background: var(--card); color: var(--fg); font-size: 0.82rem;
 }
 .sp-domain:focus { outline: none; border-color: var(--cx-accent); }
+/* 조직도 열기 — 예전 분야 드롭다운 자리. 전문가 칸의 주 진입점이라 한 줄을 다 쓴다. */
+.sp-browse {
+  width: 100%; margin-top: 0.5rem; padding: 0.45rem 0.7rem;
+  display: flex; align-items: baseline; gap: 0.35rem;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); color: var(--fg);
+  font-size: 0.82rem; font-weight: 600; text-align: left;
+}
+.sp-browse:hover { border-color: var(--cx-accent); background: var(--cx-accent-soft); }
 .sp-detail {
   margin-top: 0.9rem; padding: 0.75rem 0.85rem;
   border: 1px solid var(--border); border-radius: 12px;

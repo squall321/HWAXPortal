@@ -34,8 +34,22 @@ function AgentCard({
   );
 }
 
-export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBack?: () => void }) {
+/** `onPick` 이 오면 **고르기만 하고 돌려준다** — 챗 시작 화면처럼 도구·앱과 함께 나중에 한 번에
+ *  확정하는 자리를 위해서다(그 자리에서 대화가 시작되면 안 된다). 없으면 곧장 지정하고 닫는다.
+ *  `picked` 는 그 모드에서 '이미 고른 사람'(지정된 전문가가 아니라). */
+export function PersonaBrowser({
+  onClose,
+  onBack,
+  onPick,
+  picked,
+}: {
+  onClose: () => void;
+  onBack?: () => void;
+  onPick?: (agent: PoolExpert, sample?: string) => void;
+  picked?: string | null;
+}) {
   const { pinnedAgent, setPinnedAgent, setInput } = useChat();
+  const current = onPick ? (picked ?? null) : pinnedAgent;
   const { pool, loading, failed } = usePersonaPool();
   // 탐색(루트→분류→도메인→그룹·검색)은 심의 좌석 조직도와 같은 규칙이라 공용 훅을 쓴다.
   const nav = useOrgNav(pool);
@@ -74,17 +88,30 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
   }, [onClose]);
 
   const pick = (a: PoolExpert) => {
-    setPinnedAgent(a.key, a.name);
+    if (onPick) onPick(a);
+    else setPinnedAgent(a.key, a.name);
     onClose();
   };
 
   // 샘플 질의는 "이 사람한테 뭘 물어야 하나" 가 막히는 자리의 답이다 — 읽고 옮겨 적게 하지 말고
   // 눌러서 그 전문가를 지정하고 입력창까지 채운다.
   const askSample = (a: PoolExpert, q: string) => {
-    setPinnedAgent(a.key, a.name);
-    setInput(q);
+    if (onPick) {
+      onPick(a, q);
+    } else {
+      setPinnedAgent(a.key, a.name);
+      setInput(q);
+    }
     onClose();
   };
+
+  const pickBtn = (a: PoolExpert) => (
+    <button type="button" className="pv-apply" onClick={() => pick(a)} disabled={current === a.key}>
+      {current === a.key
+        ? onPick ? '이미 고른 전문가' : '이미 이 전문가와 대화 중'
+        : onPick ? '이 전문가로 고르기' : '이 전문가로 대화하기'}
+    </button>
+  );
 
   return createPortal(
     <div className="pv-overlay" role="dialog" aria-modal="true" aria-label="전문가 조직도">
@@ -159,14 +186,7 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
                     <div className="pv-card-key">{sel.key}</div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="pv-apply"
-                  onClick={() => pick(sel)}
-                  disabled={pinnedAgent === sel.key}
-                >
-                  {pinnedAgent === sel.key ? '이미 이 전문가와 대화 중' : '이 전문가로 대화하기'}
-                </button>
+                {pickBtn(sel)}
                 <button type="button" className="pv-deep" onClick={() => setDeep(true)}>
                   ⤢ 전체 화면으로 보기 — 설명 전문·지식카드 전체
                 </button>
@@ -218,11 +238,7 @@ export function PersonaBrowser({ onClose, onBack }: { onClose: () => void; onBac
           agent={sel}
           path={agentPath(nav.tree, sel.key)}
           initialDetail={detail}
-          actions={
-            <button type="button" className="pv-apply" onClick={() => pick(sel)} disabled={pinnedAgent === sel.key}>
-              {pinnedAgent === sel.key ? '이미 이 전문가와 대화 중' : '이 전문가로 대화하기'}
-            </button>
-          }
+          actions={pickBtn(sel)}
           onAsk={(s) => askSample(sel, s)}
           onClose={() => setDeep(false)}
         />

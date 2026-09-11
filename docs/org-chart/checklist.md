@@ -5,6 +5,7 @@
 - [x] 도메인→분류→루트 표(personaCatalog) + 미분류 폴더
 - [x] 트리·개요 공용 컴포넌트 — PersonaBrowser·SeatBrowser 둘 다
 - [x] 실 풀 781명으로 임시 진입점 검증
+- [x] 챗 시작 화면(StartPicker)도 같은 조직도로 — 분야 코드 드롭다운을 걷어내고 '고르기만' 모드 추가
 
 ## ② HE팀 MCP 페르소나
 

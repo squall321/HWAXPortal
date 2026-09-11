@@ -1,4 +1,4 @@
-// 챗 시작 전 전문가·도구 선택 패널 — 검색 + 분야별 계층 브라우즈로 전문가(1명, 페르소나)와
+// 챗 시작 전 전문가·도구 선택 패널 — 검색 + 조직도(전창)로 전문가(1명, 페르소나)와
 // 도구(≤12)를 직접 골라 대화를 구성한다. 전문가 클릭 시 상세(역할·태그·샘플질의·보유 지식)를
 // UI 로 보여준다 — LLM 텍스트 나열은 절단되므로 탐색은 결정적 데이터로 그린다.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -7,9 +7,11 @@ import {
   fetchDeliberateExperts,
   type AgentDetail,
   type ExpertsResponse,
+  type PoolExpert,
 } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import { useCan } from '../../auth/useCan';
+import { PersonaBrowser } from './PersonaBrowser';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
 
@@ -18,7 +20,7 @@ const MAX_APPS = 3;   // 챗 pinned_apps 상한 — 앱 하나가 도구 20~30�
 const LIST_LIMIT = 10;
 
 export function StartPicker({ onClose }: { onClose: () => void }) {
-  const { pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent } = useChat();
+  const { pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent, setInput } = useChat();
   // 전문가 칸은 '전문가와 대화' 권한이 있어야 보인다 — 도구·앱 고르기는 누구나(docs/access-control).
   const canExperts = useCan()('feat:expert-chat');
   const [query, setQuery] = useState('');
@@ -30,7 +32,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const [toolFilter, setToolFilter] = useState('');
   const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터(2단)
   const [toolArea, setToolArea] = useState<string | null>(null);   // 영역(하는 일) 필터(1단)
-  const [domain, setDomain] = useState('');
+  const [browse, setBrowse] = useState(false);   // 조직도 전창(분야→그룹→사람)
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const selKeyRef = useRef<string | null>(pinnedAgent);
@@ -56,19 +58,6 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   };
 
   const pool = useMemo(() => res?.pool ?? [], [res]);
-  // 분야 = 키 접두어(cam/mech/rel/…) — 계층 브라우즈의 1단.
-  const domains = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const a of pool) {
-      const d = a.key.split('-')[0] || '기타';
-      m.set(d, (m.get(d) ?? 0) + 1);
-    }
-    return [...m.entries()].sort((x, y) => y[1] - x[1]);
-  }, [pool]);
-  const domainAgents = useMemo(
-    () => (domain ? pool.filter((a) => a.key.startsWith(domain + '-') || a.key === domain) : []),
-    [pool, domain],
-  );
 
   // 키 → 사람 이름. 지정 시 표시용 이름을 함께 실어야 칩·말풍선이 키를 안 보여 준다.
   const nameOf = (key: string) =>
@@ -138,11 +127,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   // 전문가 선택 + 상세(역할·지식) 로드 — 재클릭 시 해제.
   // ⚠ 상세는 콜드에 6~11초 걸린다. 연달아 누르면 늦게 온 응답이 **다른 사람의 상세**로 화면을
   //   덮어, 라디오는 C 에 있는데 설명은 A 인 상태가 된다(감사 실측). 지금 선택과 같을 때만 반영.
-  const pickAgent = (key: string) => {
-    if (agentSel === key) {
-      setAgentSel(null);
-      return;
-    }
+  const showAgent = (key: string) => {
     setAgentSel(key);
     selKeyRef.current = key;
     setDetail(null);
@@ -153,12 +138,26 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
       setDetailLoading(false);
     });
   };
+  const pickAgent = (key: string) => (agentSel === key ? setAgentSel(null) : showAgent(key));
 
-  const apply = () => {
-    setPinnedAgent(agentSel, agentSel ? nameOf(agentSel) : undefined);
+  // 확정은 전문가·앱·도구를 한 번에 — 조직도 샘플 질의로 곧장 시작할 때는 방금 고른 키를 받는다
+  // (setAgentSel 은 이 렌더에 반영되지 않는다).
+  const applyWith = (key: string | null) => {
+    setPinnedAgent(key, key ? nameOf(key) : undefined);
     setPinnedApps([...appSel]);
     setPinnedTools([...toolSel]);
     onClose();
+  };
+  const apply = () => applyWith(agentSel);
+
+  // 조직도에서 고르면 여기로 돌아온다 — 담아 두고(확정은 아래 버튼), 샘플 질의를 눌렀으면 그대로 시작.
+  const pickFromOrg = (a: PoolExpert, sample?: string) => {
+    if (!sample) {
+      showAgent(a.key);
+      return;
+    }
+    setInput(sample);
+    applyWith(a.key);
   };
 
   const agentRow = (key: string, label: string) => (
@@ -177,7 +176,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       <p className="sp-note">
-        검색하거나 분야로 훑어 전문가(페르소나 1명)와 우선 도구를 고르세요. 전문가를 클릭하면
+        검색하거나 조직도를 훑어 전문가(페르소나 1명)와 우선 도구를 고르세요. 전문가를 클릭하면
         역할·보유 지식이 보입니다. 고르지 않고 그냥 대화해도 됩니다.
       </p>
       <div className="sp-search-row">
@@ -224,22 +223,11 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
                 </ul>
               </>
             )}
-            <div className="sp-dim sp-sub">분야별 보기</div>
-            <select className="sp-domain" value={domain} onChange={(e) => setDomain(e.target.value)} aria-label="분야 선택">
-              <option value="">분야 선택…</option>
-              {domains.map(([d, n]) => (
-                <option key={d} value={d}>
-                  {d} ({n}명)
-                </option>
-              ))}
-            </select>
-            {domain && (
-              <ul className="sp-list sp-scroll">
-                {domainAgents.map((a) => (
-                  <li key={a.key}>{agentRow(a.key, a.name)}</li>
-                ))}
-              </ul>
-            )}
+            {/* 분야는 조직도에서 고른다 — 예전 드롭다운은 키 접두어(cam·mech…)를 그대로 보여
+                무엇인지 알 수 없었다. 여기 조직도는 챗·심의 좌석과 같은 화면이다. */}
+            <button type="button" className="sp-browse" onClick={() => setBrowse(true)}>
+              🗂 조직도에서 고르기 <span className="sp-dim">— 분야·그룹으로 훑어보기</span>
+            </button>
             {agentSel && (
               <button type="button" className="sp-clear" onClick={() => setAgentSel(null)}>
                 전문가 해제
@@ -371,6 +359,15 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
           적용하고 대화 시작
         </button>
       </div>
+
+      {/* 조직도는 고르기만 하고 돌아온다 — 확정은 위 '적용하고 대화 시작'에서 도구·앱과 함께. */}
+      {browse && (
+        <PersonaBrowser
+          onClose={() => setBrowse(false)}
+          onPick={pickFromOrg}
+          picked={agentSel}
+        />
+      )}
     </div>
   );
 }
