@@ -72,6 +72,15 @@ const capMark = (s) => {
   return v.length > SAY_CAP ? v.slice(0, SAY_CAP - 25) + ` …[총 ${v.length}자]` : v
 }
 const joinList = v => (Array.isArray(v) ? v.filter(Boolean).map(String) : [])
+// 반박 항목은 이제 객체다({target,quote,counter,basis} — hwax-deliberate R2_SCHEMA). joinList 의
+// String() 을 그대로 쓰면 '[object Object]' 가 원장에 박힌다. hwax-deliberate.js rebutText 와 같은 모양.
+// (워크플로 스크립트끼리는 import 가 없어 짧게 복제한다.)
+const rebutList = v => (Array.isArray(v) ? v.filter(Boolean).map(r => {
+  if (typeof r !== 'object') return String(r)
+  const q = String(r.quote || '').replace(/\s+/g, ' ').trim()
+  const head = (r.target ? `${r.target}의 ` : '') + (q ? `'${q.slice(0, 80)}' 에 대해 —` : '')
+  return [head.trim(), String(r.counter || '').trim(), r.basis ? `(근거: ${r.basis})` : ''].filter(Boolean).join(' ')
+}) : [])
 function toTurns(roundsData) {
   if (!Array.isArray(roundsData)) return { turns: [], dropped: 0 }
   const out = []
@@ -90,7 +99,7 @@ function toTurns(roundsData) {
         say = [o.final_position, o.non_negotiable, o.vote].filter(Boolean).join('\n')
         position = String(o.final_position || '')
       } else {
-        say = [...joinList(o.concede), ...joinList(o.rebut), o.deepen].filter(Boolean).join('\n')
+        say = [...joinList(o.concede), ...rebutList(o.rebut), o.deepen].filter(Boolean).join('\n')
         position = String(o.deepen || '')
       }
       const t = { round: i + 1, persona: String(o.persona), say: capMark(say) }

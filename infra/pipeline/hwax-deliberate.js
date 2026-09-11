@@ -16,6 +16,12 @@
 //         유임(전원) + 신규(다른 도메인 1~2)로 구성할 것. 좌석을 빼지는 말 것 — 그 도메인의 이전 발언에 대한
 //         책임 주체가 사라진다.
 //   - rounds          : 이번 호출에서 진행할 라운드 수(기본 3 = 초기+심화1+수렴). 최소 2, 최대 8로 클램프.
+//   - crossExam       : 심화 라운드 교차심문(기본 true). 좌석마다 **관련도 상위 표적**의 발언 전체 + 나머지
+//                       한 줄 입장만 준다 — 끄면 전원 텍스트를 전원에게 줘서 프롬프트가 좌석 수의 제곱으로 자란다.
+//                       deliberation.py(DELIB_CROSS_EXAM)와 같은 알고리즘이다(용어 겹침 IDF + 커버리지 보정).
+//   - crossTargets    : 좌석당 반박 표적 수(기본 2). 1명이면 반박이 한 갈래로 끝나 교착이 안 드러난다.
+//   - seatCtx         : 좌석에게 싣는 직전 라운드 텍스트 상한(자, 기본 48000, 0=무제한). 넘치면 좌석마다
+//                       같은 몫으로 줄인다. 수렴 라운드는 교차심문과 무관하게 전문을 주므로 이 선이 유일한 방어다.
 //   - continueFrom    : 이전 심의를 이어갈 때만 지정. { summary: 이전 심의 요약(결정문+라운드 하이라이트, 호출자가
 //                       구성해 전달), roundsSoFar: 이전까지 이미 진행된 라운드 수(라운드 번호 이어붙이기용),
 //                       nonNegotiables: [이전 심의의 양보 불가 조항] }.
@@ -114,6 +120,11 @@ const ROUNDS = Math.min(8, Math.max(2, Math.round(Number(A.rounds) || 3)))
 const MID_ROUNDS = ROUNDS - 2   // 초기(1)·수렴(1)을 뺀 중간 심화 라운드 수(0이면 심화 생략, 초기→바로 수렴)
 const ROUND_OFFSET = CONT ? Math.max(0, Math.round(Number(CONT.roundsSoFar) || 0)) : 0
 const rn = localNo => ROUND_OFFSET + localNo   // 라운드 번호를 이전 회차 이후로 이어붙임
+// 교차심문·좌석 프롬프트 상한 — deliberation.py 의 DELIB_CROSS_EXAM·DELIB_CROSS_TARGETS·DELIB_SEAT_CTX 와 같은 기본값.
+const CROSS = A.crossExam !== false
+const CROSS_K = Math.max(1, Math.round(Number(A.crossTargets) || 2))
+const SEAT_CTX = (A.seatCtx === undefined || A.seatCtx === null || A.seatCtx === '')
+  ? 48000 : Math.max(0, Math.round(Number(A.seatCtx) || 0))
 
 const CONT_BLOCK = CONT ? `[이전 심의 요약 — 지금까지 ${ROUND_OFFSET}라운드 진행됨]\n${CONT.summary}\n\n` : ''
 // 양보 불가 조항 승계 — 요약 문자열에만 의존하면 조항이 소실되고 결정이 소리 없이 되돌아간다.
@@ -245,7 +256,22 @@ const R2_SCHEMA = {
   properties: {
     persona: { type: 'string' },
     concede: { type: 'array', items: { type: 'string' }, description: '타 전문가 지적 중 수용' },
-    rebut: { type: 'array', items: { type: 'string' }, description: '반박 + 근거(수치·표준·실패모드)' },
+    // ⚠ 종전엔 문자열 배열이라 '누가 누구의 어떤 말을' 반박했는지가 산문 속에 묻혔다 — 관계도(DelibGraph)가
+    //   못 그렸다. deliberation.py 의 인용 반박 계약({target,quote,counter,basis})과 같은 구조로 받는다.
+    rebut: {
+      type: 'array',
+      description: '반박 — 항목마다 누구의 어떤 발언에 대한 것인지 구조로',
+      items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          target: { type: 'string', description: '반박 대상 좌석 키(위 발언의 • 뒤 키 그대로)' },
+          quote: { type: 'string', description: '대상 발언에서 20자 이상 그대로 복사한 문구 — 지어내지 말 것' },
+          counter: { type: 'string', description: '반박 논지' },
+          basis: { type: 'string', description: '근거 — 수치·표준·실패모드' },
+        },
+        required: ['target', 'quote', 'counter'],
+      },
+    },
     deepen: { type: 'string', description: '핵심 주장을 한 단계 더 깊게(구체적으로)' },
   },
   required: ['persona', 'concede', 'rebut', 'deepen'],
@@ -272,10 +298,109 @@ const R3_SCHEMA = {
 // ⚠ reads(근거 데이터의 구체 인용)는 R1 스키마가 일부러 요구하는 필드다 — 요약·기록에서
 //   버리면 좌석들의 인용이 다음 라운드에도 의장에게도 안 닿아 '수치는 조회 기록' 계약이
 //   승계에서 끊긴다(감사 C6). 압축하되 버리지 않는다.
+// 반박 항목 → 읽히는 문장. deliberation.py _item_text 와 같은 모양이다. ⚠ rebut 가 객체라서
+// .join('; ') 을 그대로 쓰면 '[object Object]' 가 찍힌다 — rebut 를 읽는 곳은 전부 이걸 거친다.
+const rebutText = r => {
+  if (!r || typeof r !== 'object') return String(r || '')
+  const tgt = String(r.target || '').trim()
+  const q = String(r.quote || '').replace(/\s+/g, ' ').trim()
+  const c = String(r.counter || '').trim()
+  const b = String(r.basis || '').trim()
+  const head = (tgt ? `${tgt}의 ` : '') + (q ? `'${q.slice(0, 80)}' 에 대해 —` : '')
+  return [head.trim(), c, b ? `(근거: ${b})` : ''].filter(Boolean).join(' ')
+}
+const clip = (s, n) => {
+  const t = String(s || '').replace(/\s+/g, ' ').trim()
+  return t.length <= n ? t : t.slice(0, n).trimEnd() + '…'
+}
+
+// ── 교차심문 표적 배정 — deliberation.py _terms/_cross_targets 와 같은 알고리즘 ─────────────
+// 옆자리(링) 배정은 무관한 상대를 걸어 반박이 뜬다. 직전 발언의 용어 겹침(라운드 내 IDF)으로
+// 고르고, 관련도만 보면 생기는 '아무도 안 겨냥한 좌석'을 보정한다. 임베딩은 쓰지 않는다 —
+// e5 는 무관한 문장끼리도 코사인 0.87~0.90 이라 한 라운드 안의 순위를 못 가른다.
+const TERM_RE = /[A-Za-z][A-Za-z0-9_+.\-]+|\d+(?:\.\d+)?[A-Za-z%°µΩ]*|[가-힣]{2,}/g
+// 조사를 떼지 않으면 '크랙이'와 '크랙은'이 다른 용어가 되어 겹침이 0 이 된다. 긴 것부터.
+const JOSA_RE = /(?:으로서|으로써|에게서|이라고|으로는|에서는|에게는|라고|으로|에서|에게|한테|까지|부터|보다|처럼|마다|조차|밖에|이나|나마|들의|들이|들을|들은|들도|의|이|가|은|는|을|를|에|와|과|도|만|로|랑)+$/
+const terms = s => {
+  const out = new Set()
+  for (const t0 of (String(s || '').match(TERM_RE) || [])) {
+    let t = t0
+    if (t[0] >= '가' && t[0] <= '힣') {
+      const stem = t.replace(JOSA_RE, '')
+      if (stem.length >= 2) t = stem
+    }
+    out.add(t.toLowerCase())
+  }
+  return out
+}
+const crossTargets = (texts, k) => {
+  const keys = Object.keys(texts)
+  if (keys.length < 2) return Object.fromEntries(keys.map(x => [x, []]))
+  const tset = Object.fromEntries(keys.map(x => [x, terms(texts[x])]))
+  const df = new Map()
+  for (const s of Object.values(tset)) for (const t of s) df.set(t, (df.get(t) || 0) + 1)
+  const n = keys.length
+  const ix = Object.fromEntries(keys.map((x, i) => [x, i]))
+  const S = {}   // 대칭 점수표를 한 번만 계산한다(정렬 비교마다 다시 세지 않게)
+  for (const a of keys) {
+    S[a] = {}
+    for (const b of keys) {
+      if (a === b) continue
+      let v = 0
+      for (const t of tset[a]) if (tset[b].has(t)) v += Math.log(n / df.get(t))
+      S[a][b] = v
+    }
+  }
+  const out = {}
+  const cnt = Object.fromEntries(keys.map(x => [x, 0]))
+  for (const a of keys) {
+    out[a] = keys.filter(b => b !== a)
+      .sort((b1, b2) => (S[a][b2] - S[a][b1]) || (ix[b1] - ix[b2]))
+      .slice(0, Math.max(1, k))
+    for (const b of out[a]) cnt[b]++
+  }
+  for (const b of keys) {
+    if (cnt[b]) continue
+    const cands = keys.filter(x => x !== b).sort((x1, x2) => (S[x2][b] - S[x1][b]) || (ix[x1] - ix[x2]))
+    let placed = false
+    for (const a of cands) {   // (1) 중복 지목된 표적 칸만 내준다 — 메우다 새 구멍을 내지 않게
+      let slot = -1
+      for (let i = out[a].length - 1; i >= 0; i--) if (cnt[out[a][i]] > 1) { slot = i; break }
+      if (slot >= 0) { cnt[out[a][slot]]--; out[a][slot] = b; placed = true; break }
+    }
+    if (!placed) {             // (2) 없으면 가장 적게 맡은 좌석부터 — 인기 좌석에 몰리지 않게
+      const a = cands.slice().sort((x1, x2) =>
+        (out[x1].length - out[x2].length) || (S[x2][b] - S[x1][b]) || (ix[x1] - ix[x2]))[0]
+      out[a].push(b)
+    }
+    cnt[b]++
+  }
+  return out
+}
+// 좌석 프롬프트 상한 — 합이 budget 을 넘으면 좌석마다 같은 몫(deliberation.py _fit_rows).
+// 머리·꼬리 절단은 중간 좌석을 통째로 지운다(감사 C22).
+const fitRows = (rows, budget, floor = 1200) => {
+  const total = rows.reduce((s, r) => s + r[1].length, 0)
+  if (budget <= 0 || !rows.length || total <= budget) return [rows, 0]
+  const share = Math.max(Math.floor(budget / rows.length), floor)
+  return [rows.map(([k, t]) => [k, t.length <= share ? t
+    : t.slice(0, share).trimEnd() + ` …[${t.length.toLocaleString()}자 중 앞 ${share.toLocaleString()}자]`]), share]
+}
+// 직전 라운드를 좌석에게 보여 줄 판 — 상한 안이면 종전 priorText 와 글자까지 같다.
+const seatView = (round, isFirst) => {
+  const rows = round.filter(Boolean).map(o => [o.persona, summarize(isFirst, false, o)])
+  const [fit, share] = fitRows(rows, SEAT_CTX)
+  const body = fit.map(([k, t]) => `• ${k}: ${t}`).join('\n')
+  if (!share) return body
+  const full = rows.reduce((s, r) => s + r[1].length, 0)
+  log(`직전 라운드 ${full.toLocaleString()}자 — 좌석 프롬프트 상한 ${SEAT_CTX.toLocaleString()}자라 좌석당 ${share.toLocaleString()}자로 줄여 싣는다`)
+  return `[직전 라운드 ${full.toLocaleString()}자 — 좌석당 ${share.toLocaleString()}자로 줄임. 잘린 부분을 아는 척하지 마라]\n${body}`
+}
+
 const summarize = (isFirst, isLast, o) => {
   if (isFirst) return `관점[${o.lens}] 근거[${(o.reads || []).join('; ').slice(0, 600)}] 권장[${o.recommendation}] 우려[${(o.concerns || []).join('; ')}]`
   if (isLast) return `${o.final_position || ''} — 최종권장: ${o.vote || ''}`
-  return `수용[${(o.concede || []).join('; ')}] 반박[${(o.rebut || []).join('; ')}] 심화:${o.deepen}`
+  return `수용[${(o.concede || []).join('; ')}] 반박[${(o.rebut || []).map(rebutText).join('; ')}] 심화:${o.deepen}`
 }
 const readable = (isFirst, isLast, o) => {
   const join = v => (Array.isArray(v) ? v.filter(Boolean).join('\n- ') : String(v || ''))
@@ -292,9 +417,25 @@ const readable = (isFirst, isLast, o) => {
   }
   const parts = []
   if ((o.concede || []).length) parts.push(`그 지적은 받아들입니다.\n- ${join(o.concede)}`)
-  if ((o.rebut || []).length) parts.push(`다만 반박하자면,\n- ${join(o.rebut)}`)
+  if ((o.rebut || []).length) parts.push(`다만 반박하자면,\n- ${join((o.rebut || []).map(rebutText))}`)
   if (o.deepen) parts.push(`제 핵심은 이겁니다. ${o.deepen}`)
   return parts.join('\n\n')
+}
+
+// 대화 저장 meta — 웹 경로(backend/app/agent/routes.py 발언 저장)와 **같은 모양·같은 자르기**다.
+// 포털 프론트가 m.meta 에서 관계도(rebut)와 이어하기 조항(non_negotiable)을 되살린다. 관계는
+// target 만 있으면 그려지므로 본문은 짧게 — 원문은 content 에 이미 있다.
+const turnMeta = o => {
+  const m = {}
+  if (o.non_negotiable) m.non_negotiable = String(o.non_negotiable).slice(0, 1200)
+  if (Array.isArray(o.rebut) && o.rebut.length) {
+    const rb = o.rebut.filter(r => r && typeof r === 'object').slice(0, 4).map(r => ({
+      target: String(r.target || '').slice(0, 60), quote: String(r.quote || '').slice(0, 80),
+      counter: String(r.counter || '').slice(0, 160), basis: String(r.basis || '').slice(0, 60),
+    }))
+    if (rb.length) m.rebut = rb
+  }
+  return Object.keys(m).length ? m : null
 }
 
 const roundsData = []   // [ [페르소나별 결과...], ... ] — 길이 = ROUNDS
@@ -367,12 +508,35 @@ if (STOP_AFTER === 1) {
 }
 let preFinalText = priorText   // 마지막 심화(또는 심화 없으면 초기) 시점 스냅샷 — RA 'results' 블록용
 
+let prevRound = r1, prevIsFirst = true, prevNo = rn(1)
 for (let i = 0; i < MID_ROUNDS; i++) {
   const roundNo = rn(i + 2)
   phase('심화라운드')
+  // 교차심문 — 표적 배정은 라운드당 1회다(좌석마다 다시 세지 않는다).
+  const prevOk = prevRound.filter(Boolean)
+  const prevTexts = Object.fromEntries(prevOk.map(o => [o.persona, summarize(prevIsFirst, false, o)]))
+  const tg = CROSS && prevOk.length >= 2 ? crossTargets(prevTexts, CROSS_K) : null
+  if (tg) log(`교차심문 표적 배정 — ${Object.entries(tg).slice(0, 6).map(([a, v]) => `${a}→${v.join('·')}`).join(' / ')}${prevOk.length > 6 ? ' …' : ''}`)
+  const view = tg ? null : seatView(prevRound, prevIsFirst)   // 교차심문을 끄면 전원 텍스트(상한 안)
+  const ctxFor = k => {
+    if (!tg) return `[${priorLabel}]\n${view}`
+    // 배정이 없는 좌석(직전 라운드 유실 등)은 자기 아닌 첫 좌석으로 폴백한다.
+    const tk = (tg[k] && tg[k].length) ? tg[k] : prevOk.map(o => o.persona).filter(x => x !== k).slice(0, 1)
+    const [trows] = fitRows(tk.map(x => [x, prevTexts[x]]), SEAT_CTX)
+    const others = prevOk.filter(o => !tk.includes(o.persona))
+      .map(o => `• ${o.persona}: ${clip((prevIsFirst ? o.lens : o.deepen) || o.lens || '', 160)}`).join('\n')
+    return `[당신의 지정 반박 표적 ${tk.length}명 — ${prevNo}라운드 발언 전체]\n` +
+      trows.map(([x, t]) => `— ${x} —\n${t}`).join('\n\n') +
+      `\n\n[다른 전문가 한 줄 입장]\n${others}\n\n` +
+      `표적(${tk.join(', ')}) 각각의 논증에서 특정 주장을 골라 반박하라(표적당 최소 1개). 다른 전문가 언급은 자유.`
+  }
+  const nmin = k => (tg && tg[k] && tg[k].length > 1 ? tg[k].length : 1)
   const rN = await parallel(pk.map(k => () => agent(
-    `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n${groundBlock(k, false)}` +
-    `${roundNo}라운드(심화 ${i + 1}/${MID_ROUNDS}): 다른 전문가 입장을 읽고 (1) 수용할 지적, (2) 반박(근거: 수치·표준·실패모드), (3) 당신 핵심 주장을 한 단계 더 깊게. 두루뭉술 금지, 당신 전문성으로.`,
+    `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n${ctxFor(k)}\n\n${groundBlock(k, false)}` +
+    `${roundNo}라운드(심화 ${i + 1}/${MID_ROUNDS}): 다른 전문가 입장을 읽고 (1) 수용할 지적, ` +
+    `(2) 반박(최소 ${nmin(k)}개${nmin(k) > 1 ? ', 표적마다 하나씩' : ''} — 항목마다 target=대상 좌석 키, ` +
+    `quote=그 발언에서 20자 이상 그대로 복사한 문구, counter=반박 논지, basis=수치·표준·실패모드. 인용 없는 반박은 불인정), ` +
+    `(3) 당신 핵심 주장을 한 단계 더 깊게. 두루뭉술 금지, 당신 전문성으로.`,
     { label: `r${roundNo}:${k}`, phase: '심화라운드', schema: R2_SCHEMA }).then(withKey(k))))
   roundsData.push(rN)
   roundLabels.push(`${roundNo}라운드 — 상호 반박·심화`)
@@ -380,12 +544,15 @@ for (let i = 0; i < MID_ROUNDS; i++) {
   priorText = rN.filter(Boolean).map(o => `• ${o.persona}: ${summarize(false, false, o)}`).join('\n')
   priorLabel = `${roundNo}라운드(심화) 전원 입장`
   preFinalText = priorText
+  prevRound = rN; prevIsFirst = false; prevNo = roundNo
 }
 
 phase('수렴')
 const finalRoundNo = rn(ROUNDS)
+// ⚠ 수렴 라운드는 교차심문과 무관하게 직전 라운드 **전문**을 전원에게 준다 — 상한이 유일한 방어다.
+const finalView = seatView(prevRound, prevIsFirst)
 const rFinal = await parallel(pk.map(k => () => agent(
-  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${priorText}\n\n${groundBlock(k, false)}` +
+  `당신은 "${k}" 전문가. 영역: ${role(k)}\n\n${BASE}\n\n[${priorLabel}]\n${finalView}\n\n${groundBlock(k, false)}` +
   `${finalRoundNo}라운드(최종수렴): 지금까지 논의를 반영해 최종 입장으로 수렴하라. (1) 최종 입장, (2) 절대 양보 못 하는 제약, ` +
   (HAS_CHOICES
     ? `(3) 위 [후보/선택지] 중 최종 권장 하나와 이유. 근거가 부족해 고를 수 없으면 "판정 불가 — 다음에 측정할 것"과 그 측정 항목을 쓰라.`
@@ -758,7 +925,10 @@ if (A.saveConversation !== false) {
   roundsData.forEach((rd, idx) => {
     const isFirst = idx === 0
     const isLast = idx === roundsData.length - 1
-    rd.filter(Boolean).forEach(o => msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: readable(isFirst, isLast, o).slice(0, CONV_ITEM_MAX) }))
+    rd.filter(Boolean).forEach(o => {
+      const meta = turnMeta(o)
+      msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: readable(isFirst, isLast, o).slice(0, CONV_ITEM_MAX), ...(meta ? { meta } : {}) })
+    })
   })
   // 결정문은 서버 항목 캡(20000자)을 넘기 일쑤다 — 실측 61,956자. 잘라 버리면 '전문이
   // 어디에도 없는' 상태가 되므로 **쪼개서 전부** 넣는다(항목 캡 200개라 여유가 크다).

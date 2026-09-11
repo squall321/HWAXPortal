@@ -38,6 +38,30 @@ def _chunks(text: str, label: str):
         yield head + text[i:i + ITEM_MAX]
 
 
+def _item(x) -> str:
+    """배열 항목 → 문장. 반박은 이제 객체({target,quote,counter,basis})라 str() 이면 파이썬 dict
+    표기가 그대로 박힌다 — deliberation.py _item_text·hwax-deliberate.js rebutText 와 같은 모양으로."""
+    if not isinstance(x, dict):
+        return str(x)
+    q = " ".join(str(x.get("quote") or "").split())
+    head = (f"{x['target']}의 " if x.get("target") else "") + (f"'{q[:80]}' 에 대해 —" if q else "")
+    return " ".join(p for p in (head.strip(), str(x.get("counter") or "").strip(),
+                                f"(근거: {x['basis']})" if x.get("basis") else "") if p)
+
+
+def _meta(o: dict) -> dict | None:
+    """발언 meta — 포털이 관계도·양보 불가 조항을 되살린다. 웹 경로(routes.py)와 같은 자르기."""
+    m: dict = {}
+    if o.get("non_negotiable"):
+        m["non_negotiable"] = str(o["non_negotiable"])[:1200]
+    rb = [{"target": str(r.get("target") or "")[:60], "quote": str(r.get("quote") or "")[:80],
+           "counter": str(r.get("counter") or "")[:160], "basis": str(r.get("basis") or "")[:60]}
+          for r in (o.get("rebut") or [])[:4] if isinstance(r, dict)]
+    if rb:
+        m["rebut"] = rb
+    return m or None
+
+
 def _msgs_for(stage: dict, question: str, cont: bool) -> list[dict]:
     msgs = [{"role": "user", "content": ("(이어하기) " if cont else "") + question}]
     labels = stage.get("roundLabels") or []
@@ -59,12 +83,15 @@ def _msgs_for(stage: dict, question: str, cont: bool) -> list[dict]:
                 v = o.get(k)
                 if not v:
                     continue
-                body = "\n- ".join(str(x) for x in v) if isinstance(v, list) else str(v)
+                body = "\n- ".join(_item(x) for x in v) if isinstance(v, list) else str(v)
                 parts.append(f"[{name}]\n{body}")
             content = "\n\n".join(parts)
-            for chunk in _chunks(content, "발언"):
+            meta = _meta(o)
+            for ci, chunk in enumerate(_chunks(content, "발언")):
                 msgs.append({"role": "persona", "persona": str(o.get("persona", "?"))[:120],
-                             **({"round": rno} if rno is not None else {}), "content": chunk})
+                             **({"round": rno} if rno is not None else {}), "content": chunk,
+                             # meta 는 첫 조각에만 — 조각마다 실으면 관계도가 같은 반박을 여러 번 그린다.
+                             **({"meta": meta} if (meta and ci == 0) else {})})
     for chunk in _chunks(stage.get("decision") or "", "결정문"):
         msgs.append({"role": "assistant", "content": chunk})
     return msgs
