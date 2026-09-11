@@ -179,6 +179,40 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
   return d;
 }
 
+/** 이어하기에 실을 **미해결 쟁점** 블록 — 누가 누구의 무엇을 반박했는지.
+ *
+ *  ⚠ 이게 없으면 이어하기에 **의장 결정문 텍스트만** 간다. 결정문은 합의된 결론이라
+ *  '무엇을 두고 갈렸는지' 가 지워진다 — 다음 회차가 같은 논점을 처음부터 다시 판다.
+ *  반박은 라운드를 거쳐 좁혀진 쟁점이므로 승계 가치가 가장 높은 부분이다.
+ *
+ *  결정문을 밀어내지 않는다 — 남는 예산 안에서만 붙인다. */
+function priorIssueBlock(turns: DelibTurn[] | undefined, budget: number): string {
+  if (budget < 200) return '';
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  // 뒤 라운드가 더 좁혀진 쟁점이다 — 예산이 모자라면 앞(초기)을 버린다.
+  for (const t of [...(turns ?? [])].reverse()) {
+    for (const r of t.rebut ?? []) {
+      const counter = (r.counter || '').trim();
+      if (!counter) continue;
+      const key = `${t.persona}>${r.target}:${counter.slice(0, 40)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const basis = r.basis ? ` (근거 ${r.basis})` : '';
+      lines.push(`- R${t.round} ${t.persona} → ${r.target}: ${counter}${basis}`);
+    }
+  }
+  if (lines.length === 0) return '';
+  const head = '\n\n[이전 회차에서 갈렸던 쟁점 — 결론이 아니라 **아직 다툰 자리**다. ' +
+    '이번 회차에서 정면으로 다루고, 해소됐으면 무엇이 근거였는지 밝혀라]\n';
+  let out = head;
+  for (const l of lines) {
+    if (out.length + l.length + 1 > budget) break;
+    out += l + '\n';
+  }
+  return out.length > head.length ? out : '';
+}
+
 /** 띵킹 think 이벤트를 메시지의 ThinkData 로 병합 — 좌석 키로 한 행을 계속 채워 나간다. */
 function mergeThink(prev: ThinkData | undefined, e: ThinkEvent): ThinkData {
   const d: ThinkData = { ...(prev ?? {}) };
@@ -651,7 +685,10 @@ export function ChatProvider({
       const priorReport = prior.outcome?.report_id ?? null;
       sendMessage('/심의 ' + topic, {
         human_note: note,
-        continue_summary: (prior.decision ?? '').slice(0, 8000),
+        // 결정문이 우선이고, 남는 예산으로 쟁점을 붙인다(둘 다 같은 8000자 칸이다).
+        continue_summary:
+          (prior.decision ?? '').slice(0, 8000) +
+          priorIssueBlock(prior.turns, 8000 - Math.min(8000, (prior.decision ?? '').length)),
         personas: (prior.personas ?? []).map((p) => ({ key: p.key, role: p.role ?? '' })),
         ...(nonNegotiables.length ? { non_negotiables: nonNegotiables } : {}),
         ...(roundsSoFar > 0 ? { rounds_so_far: roundsSoFar } : {}),

@@ -104,7 +104,27 @@ function trimDelib(d: DelibData): DelibData {
   const evList = Array.isArray(d.evidence) ? d.evidence : d.evidence ? [d.evidence] : [];
   return {
     ...d,
-    ...(d.turns ? { turns: d.turns.slice(-45) } : {}),
+    // 반박은 **관계만** 남긴다. quote·counter 원문은 say 안에 이미 있으므로(엔진이 산문으로도
+    // 합성한다) 저장에 두 번 실으면 한 대화가 쿼터를 먹는다 — 쿼터를 넘기면 저장이 대화
+    // 절반을 버리고 재시도하므로(saveConversations catch) 이력이 조용히 날아간다.
+    // 관계도는 target·round 만 있으면 그려지고, 본문은 회의록에서 읽는다.
+    ...(d.turns
+      ? {
+          turns: d.turns.slice(-45).map((t) =>
+            t.rebut?.length
+              ? {
+                  ...t,
+                  rebut: t.rebut.slice(0, 4).map((r) => ({
+                    target: r.target,
+                    quote: r.quote.slice(0, 80),
+                    counter: r.counter.slice(0, 160),
+                    basis: r.basis.slice(0, 60),
+                  })),
+                }
+              : t,
+          ),
+        }
+      : {}),
     ...(evList.length
       ? { evidence: evList.slice(-4).map((e) => ({ ...e, text: e.text.slice(0, 2000) })) }
       : {}),

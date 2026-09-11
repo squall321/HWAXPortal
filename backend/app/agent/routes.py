@@ -1053,7 +1053,13 @@ async def chat(
                             if k == "turn" and isinstance(data.get("say"), str):
                                 turns.append({"persona": data.get("persona"),
                                               "round": data.get("round"),
-                                              "content": data["say"]})
+                                              "content": data["say"],
+                                              # 관계·입장은 say 산문에 녹아 있지만 구조로 남기지
+                                              # 않으면 다른 기기에서 열었을 때 관계도가 비고
+                                              # 이어하기가 조항을 승계하지 못한다(감사 2026-09-11).
+                                              "stance": data.get("stance"),
+                                              "non_negotiable": data.get("non_negotiable"),
+                                              "rebut": data.get("rebut")})
                             elif k == "decision" and isinstance(data.get("text"), str):
                                 decision = data["text"]
                         elif evt == "status" and data.get("tool"):
@@ -1080,10 +1086,26 @@ async def chat(
                 if len(turns) > 199:
                     logger.warning("심의 발언 %d건 중 뒤 199건만 저장(cid=%s)", len(turns), cid)
                 for t in turns[-199:]:  # 심의 발언 수 캡(폭주 방어) — 꼬리 유지
+                    # meta 는 이미 있는 칸이라 스키마 변경이 필요 없다. 관계는 target·round 만
+                    # 있으면 그려지므로 본문은 짧게 자른다(원문은 content 에 이미 있다).
+                    _m: dict = {}
+                    if t.get("stance"):
+                        _m["stance"] = str(t["stance"])[:40]
+                    if t.get("non_negotiable"):
+                        _m["non_negotiable"] = str(t["non_negotiable"])[:1200]
+                    if isinstance(t.get("rebut"), list) and t["rebut"]:
+                        _m["rebut"] = [
+                            {"target": str(r.get("target") or "")[:60],
+                             "quote": str(r.get("quote") or "")[:80],
+                             "counter": str(r.get("counter") or "")[:160],
+                             "basis": str(r.get("basis") or "")[:60]}
+                            for r in t["rebut"][:4] if isinstance(r, dict)
+                        ]
                     store.append(conversation_id=cid, owner_sub=owner, role="persona",
                                  content=str(t["content"])[:20000],
                                  persona=(str(t["persona"])[:120] if t.get("persona") else None),
-                                 round=(int(t["round"]) if isinstance(t.get("round"), int) else None))
+                                 round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
+                                 meta=(_m or None))
                 reply = final if final is not None else (decision or "".join(acc))
                 if reply:
                     store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,

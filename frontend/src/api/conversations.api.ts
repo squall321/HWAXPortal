@@ -70,10 +70,18 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
   for (const m of server) {
     const ts = (m.ts ?? 0) * 1000;
     if (m.role === 'persona') {
+      // meta 에 영속된 관계·입장을 되살린다 — 없으면 다른 기기에서 연 심의는 관계도가 비고
+      // 이어하기가 양보 불가 조항을 승계하지 못한다(구 저장분은 meta 가 없어 그대로 비어 온다).
+      const meta = (m.meta ?? {}) as Record<string, unknown>;
       turns.push({
         round: m.round ?? 0,
         persona: m.persona ?? '',
         say: m.content,
+        ...(typeof meta.stance === 'string' ? { stance: meta.stance } : {}),
+        ...(typeof meta.non_negotiable === 'string' ? { nonNegotiable: meta.non_negotiable } : {}),
+        ...(Array.isArray(meta.rebut) && meta.rebut.length
+          ? { rebut: meta.rebut as DelibTurn['rebut'] }
+          : {}),
         ts,
       });
       continue;
