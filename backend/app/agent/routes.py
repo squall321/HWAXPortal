@@ -575,6 +575,8 @@ class ExpertsRequest(BaseModel):
     # 대화 전체 — 좌석 추천을 화두 한 줄이 아니라 오간 맥락 위에서 하기 위한 것.
     # 캡은 챗 경로와 같은 계약을 쓴다(별도 규칙을 만들면 한쪽만 조이는 일이 생긴다).
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
+    # 조직도 1단계(명부만) — 트리를 먼저 그리고 태그·도구 카탈로그는 뒤에서 받는다.
+    light: bool = False
 
 
 class ClarifyRequest(BaseModel):
@@ -1040,7 +1042,7 @@ async def deliberate_experts(
     앱·도구 고르기) 엔드포인트는 막지 않고, 심의·전문가 대화 권한이 없으면 전문가 목록만 비운다."""
     experts_ok = any(k in principal.groups for k in ("feat:deliberation", "feat:expert-chat"))
     client = _agent_client(request)
-    payload = {"message": body.message, "groups": principal.groups,
+    payload = {"message": body.message, "groups": principal.groups, "light": body.light,
                # ⚠ 이 줄이 없으면 프론트가 대화를 보내도 여기서 버려져 축이 안 나온다.
                "history": [m.model_dump() for m in body.history]}
     try:

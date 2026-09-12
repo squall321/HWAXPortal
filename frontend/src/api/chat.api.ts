@@ -180,6 +180,8 @@ export async function fetchDeliberateExperts(
   signal?: AbortSignal,
   // 대화 전체 — 축 분해에만 쓴다. 서버가 통째로 임베딩 질의에 넣지 않는다(그러면 추천이 나빠진다).
   history?: HistoryMessage[],
+  // 조직도 1단계 — 명부(키·이름)만 받아 트리를 먼저 그린다(태그·도구 카탈로그는 생략).
+  light?: boolean,
 ): Promise<ExpertsResponse> {
   const csrf = getCookie('hwax_csrf');
   try {
@@ -190,7 +192,7 @@ export async function fetchDeliberateExperts(
         'Content-Type': 'application/json',
         ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
       },
-      body: JSON.stringify({ message, ...(history?.length ? { history } : {}) }),
+      body: JSON.stringify({ message, ...(history?.length ? { history } : {}), ...(light ? { light: true } : {}) }),
       signal,
     });
     if (!res.ok) return { recommended: [], pool: [], error: `http_${res.status}` };
