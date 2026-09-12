@@ -38,6 +38,21 @@ DESTINATIONS: dict[str, dict] = {
     # K파일은 여기다. 챗 프롬프트로 나르지 않는 이유는 크기다 — LS-DYNA 덱은 수십 MB 가 흔해
     # upload_kfile(content=문자열) 로는 못 싣는다. 스테이징한 **호스트 경로**를 넘겨
     # upload_local_path 가 읽게 한다(StepForge 와 같은 방식 — apptainer 가 $HOME 을 공유한다).
+    # 문서는 **각 서비스가 자기 취입기를 갖고 있다** — 포털은 배달만 한다(파서를 새로 안 만든다).
+    # DRM 은 대개 브라우저 읽기에 투명해서 여기 도착한 바이트가 이미 평문이다(사용자 실측).
+    # 막히는 정책이면 그때 COM 추출기로 간다(docs/doc-deliberate).
+    "reportarchive": {
+        "label": "Report Archive — 슬라이드를 보고서 페이지로(그림·표 포함)",
+        "exts": {"pptx"},                      # RA /imports/pptx 가 받는 것이 이것뿐이다
+        "groups_attr": "upload_allowed_group_list",
+        "platform": "plat:reportarchive",
+    },
+    "aidatahub": {
+        "label": "AI 데이터 허브 — 지식카드로 변환(검토 후 저장)",
+        "exts": {"pptx", "docx", "pdf", "xlsx", "md"},
+        "groups_attr": "upload_allowed_group_list",
+        "platform": "plat:aidatahub",
+    },
     "dynaforge": {
         "label": "DynaForge — LS-DYNA 덱 전처리(재료·메시·초기응력·해석 세팅)",
         "exts": {"k", "key", "dyn", "inc"},

@@ -702,6 +702,52 @@ D0 CF 11 E0         → OLE 복합문서   = 암호화·구형   COM 이 필요�
 DRM 걸린 `.pptx` 를 붙여 안내가 뭐라고 하는지 본다 — "평문으로 읽힙니다" 가 뜨면
 브라우저까지 투명한 정책이고, **포털 업로드가 그대로 성립한다.**
 
+## D-34. 전제가 뒤집혔다 — 파서를 만들지 말고 **각 서비스로 배달**한다
+
+사용자 확인: "실제로 PPT DRM 이 그냥 RA 절차대로 하면 신경 안 써도 되었었다."
+
+즉 **DRM 이 브라우저 읽기에 투명하다.** 파일 선택으로 읽힌 바이트가 이미 평문이라 서버가
+그대로 파싱한다. 그러면 이 기능의 전제가 달라진다 — **COM 추출은 일반 경우에 필요 없다.**
+
+### 그래서 설계를 바꿨다: 포털은 배달만 한다
+
+파서를 새로 만들지 않는다. **각 서비스가 이미 자기 취입기를 갖고 있다.**
+
+| 서비스 | 취입 | 받는 것 |
+|---|---|---|
+| Report Archive | `POST /api/imports/pptx` | 멀티파트 → 위젯 draft(**그림·표 포함**) |
+| AI 데이터 허브 | `convert_file(file)` | inbox 의 파일 → record 초안 (docx·xlsx·pdf·pptx) |
+| MX 백서 | `import_file(path)` | 로컬 경로 → 위키 문서 |
+
+포털에는 python-pptx 도 RA 서비스 토큰도 **없다**(확인함). 그런데 둘 다 필요 없었다 —
+RA 는 사용자 `rat_` PAT 로 부르면 되고(`get_current_user` 가 HTTPBearer 라 통한다),
+AIDataHub 는 `~/aidh-inbox` 에 복사하면 된다(포털 컨테이너가 `$HOME` 을 마운트한다).
+StepForge·DynaForge 가 쓰던 **호스트 경로 전달**과 같은 방식이다.
+
+### 구현
+
+`DESTINATIONS` 에 둘을 더하고 dispatch 에 분기를 붙였다.
+- `reportarchive`(pptx) — RA import → `draft.pages` → `create_report_draft(__import_blank__, pages=…)`.
+  워크스페이스 헤더까지 사용자 것으로 간다.
+- `aidatahub`(pptx·docx·pdf·xlsx·md) — inbox 복사 → `convert_file`. **저장은 안 한다** —
+  모자란 항목을 되묻는 것이 `import_record` 의 규약이라 그 확인을 챗에 남긴다.
+
+붙일 때 **첫 바이트가 평문이면 곧장 업로드 경로**로 보낸다(D-33). 암호화·구형일 때만
+COM 안내가 뜬다 — 이제 그게 **예외 경로**다.
+
+### 실측
+
+RA 파서를 직접 태워 확인했다(2슬라이드·표 포함 pptx 생성 → `parse_pptx`).
+
+```
+페이지 2 · 경고 0
+  p1 '폴더블 힌지 FPCB 굽힘 수명 검토' — heading · rich_text · table
+  p2 '결론'                            — heading · rich_text
+```
+
+계약 테스트가 새 목적지의 앱 매핑 누락을 바로 잡았다(`destApps.ts`) — 빠지면 '지금 전문가'
+추천이 **조용히** 안 뜨는 자리다.
+
 ## 남은 것
 
 - **RA 세그먼트(문서 → 보고서)** — 자유형식 템플릿이 생기면(D-22 ④) 변환기를 붙인다.

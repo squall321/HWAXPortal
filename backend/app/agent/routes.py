@@ -17,6 +17,8 @@ import asyncio
 import json
 import logging
 import re
+import os
+import shutil
 from pathlib import Path
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -955,6 +957,71 @@ async def upload_dispatch(
     pat = _chat_user_pat(request.app.state.keystore, settings, principal)
     if not pat:
         raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+
+    if body.destination == "reportarchive":
+        # ── Report Archive ────────────────────────────────────────────
+        # **RA 의 파서를 그대로 쓴다**(포털에 python-pptx 를 넣지 않는다). RA 의 웹 '가져오기'
+        # 와 같은 엔드포인트라 그림·표까지 위젯으로 들어온다. 사용자 rat_ PAT 로 부르므로
+        # 권한·워크스페이스가 그 사람 것이다.
+        conn = request.app.state.user_store.get_connection(
+            email=principal.email or principal.subject, service="reportarchive")
+        if not conn or not conn.get("token"):
+            raise AuthError(
+                "Report Archive 연결이 없습니다 — 포털 'API 토큰' 에서 RA 토큰을 먼저 등록하세요.",
+                status_code=400)
+        hdrs = {"Authorization": f"Bearer {conn['token']}"}
+        if conn.get("workspace"):
+            hdrs["X-Workspace-Slug"] = conn["workspace"]
+        try:
+            async with httpx.AsyncClient(timeout=600) as cli:
+                with path.open("rb") as fh:
+                    r = await cli.post(
+                        settings.ra_base_url.rstrip("/") + "/api/imports/pptx",
+                        headers=hdrs,
+                        files={"file": (body.filename, fh,
+                                        "application/vnd.openxmlformats-officedocument."
+                                        "presentationml.presentation")})
+        except httpx.HTTPError as exc:
+            return {"stage": "failed", "error": f"Report Archive 에 연결하지 못했습니다({exc.__class__.__name__})."}
+        if r.status_code >= 400:
+            detail = (r.json() if r.headers.get("content-type", "").startswith("application/json")
+                      else {"text": r.text[:400]})
+            return {"stage": "failed", "error": f"변환 실패(HTTP {r.status_code}).", "detail": detail}
+        body_j = r.json()
+        draft = ((body_j.get("data") or body_j).get("draft")) or {}
+        warns = (body_j.get("data") or body_j).get("warnings") or []
+        pages = draft.get("pages") or []
+        if not pages:
+            return {"stage": "failed", "error": "가져올 내용이 없습니다(텍스트·표·그림을 못 찾음).",
+                    "detail": {"warnings": warns}}
+        # 변환 결과를 보고서 초안으로. __import_blank__ 은 필수 블록이 없어 문서를 그대로 담는다
+        # (RA 웹 가져오기가 쓰는 그 템플릿이다 — 처음 쓰일 때 생성된다).
+        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "create_report_draft", {
+            "template_id": "__import_blank__", "template_version": 1,
+            "title": (draft.get("title") or Path(body.filename).stem)[:200],
+            "blocks": {}, "pages": pages,
+        })
+        audit.record(principal=principal.subject, event="upload_dispatch",
+                     meta={"destination": "reportarchive", "pages": len(pages)})
+        return {"stage": "done", "destination": "reportarchive", "created": True,
+                "pages": len(pages), "warnings": warns, "result": out}
+
+    if body.destination == "aidatahub":
+        # ── AI 데이터 허브 ────────────────────────────────────────────
+        # convert_file 은 **inbox 하위만** 변환한다(경로/.. 불가). 스테이징 파일을 거기로
+        # 복사하고 파일명만 넘긴다. 저장은 여기서 하지 않는다 — 모자란 항목을 사람에게
+        # 되묻는 것이 import_record 의 규약이라, 그 확인을 챗에 남긴다.
+        inbox = Path(os.environ.get("AIDH_CONVERT_INBOX") or (Path.home() / "aidh-inbox"))
+        inbox.mkdir(parents=True, exist_ok=True)
+        safe = Path(body.filename).name
+        dest = inbox / f"{principal.subject.split('@')[0][:24]}-{safe}"
+        shutil.copy2(path, dest)
+        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "convert_file",
+                                     {"file": dest.name})
+        audit.record(principal=principal.subject, event="upload_dispatch",
+                     meta={"destination": "aidatahub", "file": dest.name})
+        return {"stage": "done", "destination": "aidatahub", "inbox_name": dest.name,
+                "result": out}
 
     if body.destination == "dynaforge":
         # ── DynaForge ────────────────────────────────────────────────

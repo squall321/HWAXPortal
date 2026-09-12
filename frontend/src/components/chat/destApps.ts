@@ -10,6 +10,8 @@ export const DEST_APPS: Record<string, string[]> = {
   material: ['heax-materialtwin_web'],
   stepforge: ['heax-step_forge'],
   dynaforge: ['heax-kooremapper_mcp'],
+  reportarchive: ['reportarchive'],
+  aidatahub: ['ai-data-hub'],
   // 문서 행선지(DocActions)
   card: ['ai-data-hub'],
   report: ['reportarchive'],

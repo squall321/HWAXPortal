@@ -63,7 +63,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setUpErr(''); setComFile(null);
     const verdict = classify(f.name);
     if (verdict === 'needs-com') {
-      setComFile({ name: f.name, encrypted: await isEncryptedOffice(f) });
+      // **평문이면 서버가 읽는다** — 각 서비스가 자기 취입기를 갖고 있으므로 그냥 올린다.
+      // DRM 이 브라우저 읽기까지 막는 경우에만 COM 추출기로 보낸다.
+      const enc = await isEncryptedOffice(f);
+      if (enc === false) {
+        try { setStaged(await uploadFile(f)); }
+        catch (e) { setUpErr(e instanceof Error ? e.message : '업로드 실패'); }
+        return;
+      }
+      setComFile({ name: f.name, encrypted: enc });
       return;
     }
     if (verdict === 'text') {

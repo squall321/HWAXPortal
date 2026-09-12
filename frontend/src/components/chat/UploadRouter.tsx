@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { StagedFile } from '../../api/upload.api';
 import { useChat } from '../../state/ChatContext';
 import { DEST_APPS } from './destApps';
+import { DocDispatchPanel } from './DocDispatchPanel';
 import { DynaForgePanel } from './DynaForgePanel';
 import { StepForgePanel } from './StepForgePanel';
 import { UploadPanel } from './UploadPanel';
@@ -58,5 +59,7 @@ export function UploadRouter({ staged, onClose }: { staged: StagedFile; onClose:
 
   if (picked === 'stepforge') return <StepForgePanel staged={staged} onClose={onClose} />;
   if (picked === 'dynaforge') return <DynaForgePanel staged={staged} onClose={onClose} />;
+  if (picked === 'reportarchive' || picked === 'aidatahub')
+    return <DocDispatchPanel staged={staged} destination={picked} onClose={onClose} />;
   return <UploadPanel staged={staged} onClose={onClose} />;
 }
