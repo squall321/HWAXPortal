@@ -372,6 +372,45 @@ RA 웹의 `/imports/pptx` 가 쓰는 `__import_blank__` 는 그 라우트가 **�
 **PowerShell 은 안 건드린다** — 마크다운에 이미 `[s.N]`·표가 있으므로 서버에서 변환하면
 시험 못 하는 코드를 늘리지 않는다.
 
+## D-23. 행선지 전수 조사 — 처음 셋은 전부가 아니었다
+
+사용자: "특정 플랫폼에 올리기는 상당히 여러 개가 할 만한 게 있을 것 같은데 저게 전부인 거 맞지?"
+
+아니었다. 17개 앱을 **'본문을 문자열로 받는가'** 기준으로 다시 훑었다 — 그게 DRM 에서
+갈리는 유일한 기준이다(서버 경로를 받는 도구는 전부 막힌다).
+
+### 쓸 수 있는 것 (추출문이 그대로 들어간다)
+
+| 행선지 | 도구 | 권한 | 언제 |
+|---|---|---|---|
+| 심의 | `deliberate_start` | `feat:deliberation` | 판단이 갈리는 것을 좌석으로 수렴 |
+| 지식카드 | `import_record` | `plat:aidatahub` | 나중에 검색·심의 근거로 재사용할 것 |
+| Report Archive | `create_report_draft` | `plat:reportarchive` | 보고서로 남길 것 |
+| **MX 백서** | `create_document`+`insert_block` | `plat:mxwhitepaper` | 노하우·가이드 (← 빠뜨렸던 것) |
+| **논문 코퍼스** | `submit_paper`(markdown) | `plat:paperingest` | 외부 논문·특허 (← 빠뜨렸던 것) |
+| **DynaForge 세션** | `ingest_report`(html_content) | `plat:dynaforge` | 낙하·충격 리포트 HTML |
+| StepForge 물성표 | `register_materials_csv`(text) | `plat:stepforge` | CSV 물성표 — 문서 경로 아님(기존 업로드) |
+
+### 막히는 것 (서버가 파일을 읽는다 = DRM 차단)
+
+`convert_file`(AIDataHub) · `import_file`(MX 백서) · `mxwhitepaper_extract_pptx_images` ·
+`report_ingest`(WebDesignAgents) · `intake`/`upload_step`(StepForge) · RA `/imports/pptx`.
+
+**패턴이 같다** — 어느 앱이든 "파일을 주면 우리가 파싱한다" 는 도구는 전부 DRM 에서 죽는다.
+COM 추출은 그 도구들 **각각의** DRM 대체재다. 하나 만들어 여섯 곳에 쓴다.
+
+### 형식이 행선지를 가른다
+
+```
+ppt   delib · read · report · wiki · card · paper     검토·보고 자료
+word  read · card · wiki · delib · report · paper     표준·절차서는 재사용 자산
+pdf   read · paper · card · wiki · delib · report     논문일 확률이 높다
+html  dyna · read · delib · …                         낙하 리포트가 정확히 이 형식
+```
+
+없애지 않고 **순서만** 바꾼다. 교육자료·회의록은 PPT 로 오고, 논문을 PPT 로 받는 일도 있다 —
+판단은 사람이 한다(지식카드 건에서 배운 것).
+
 ## 남은 것
 
 - **RA 세그먼트(문서 → 보고서)** — 자유형식 템플릿이 생기면(D-22 ④) 변환기를 붙인다.

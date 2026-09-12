@@ -64,6 +64,34 @@ export function DocActions({ docs, onFill }: Props) {
     });
   }
 
+  if (can('plat:mxwhitepaper')) {
+    actions.push({
+      key: 'wiki',
+      label: '📘 MX 백서에 싣기',
+      title: '사내 업무 백서(위키)에 문서를 만든다 — 노하우·가이드가 여기 쌓인다',
+      // import_file(path) 는 서버가 파일을 읽어 DRM 에서 막힌다 — 추출문으로 같은 일을 한다.
+      text: `붙인 ${one ? '문서를' : '문서들을'} MX 백서에 싣고 싶습니다.\n`
+        + '1) search_documents 로 같은 주제 문서가 이미 있는지 먼저 보세요 — 있으면 '
+        + '새로 만들지 말고 그 문서에 이어 붙일지 물어보세요.\n'
+        + '2) 새로 만들 거면 create_document 로 문서를 만들고, query_rules 로 블록 작성법을 확인한 뒤 '
+        + 'insert_block 으로 섹션을 채우세요. validate_block 으로 미리 검증하면 실패가 줍니다.\n'
+        + '3) 슬라이드·쪽 번호를 소제목에 남겨 원본과 대조할 수 있게 하세요.',
+    });
+  }
+
+  if (can('plat:paperingest')) {
+    actions.push({
+      key: 'paper',
+      label: '🔬 논문 코퍼스에 넣기',
+      title: '외부 논문·특허라면 — 분류·색인·그라운딩을 거쳐 전문가 지식카드 근거가 된다',
+      text: `붙인 ${one ? '문서가' : '문서들이'} 외부 학술 논문(또는 특허)이면 코퍼스에 넣고 싶습니다.\n`
+        + '1) 먼저 이게 **사내 산출물이 아니라 외부 문헌인지** 확인하세요. 사내 보고서면 '
+        + '여기가 아니라 Report Archive 나 지식카드입니다 — 아니면 그렇다고 말해 주세요.\n'
+        + '2) 맞으면 submit_paper 로 본문(markdown)을 스테이징하고, inbox_status 로 대기 상태를 알려 주세요.\n'
+        + '3) ingest_now 는 분류·색인·게이트까지 도는 무거운 작업이니 내가 시킬 때만 부르세요.',
+    });
+  }
+
   if (can('plat:reportarchive')) {
     actions.push({
       key: 'report',
@@ -82,10 +110,20 @@ export function DocActions({ docs, onFill }: Props) {
     });
   }
 
-  // 발표자료면 지식카드를 맨 뒤로 민다. 지우지 않는 이유는 위 주석대로다.
-  const ordered = isDeck
-    ? [...actions.filter((a) => a.key !== 'card'), ...actions.filter((a) => a.key === 'card')]
-    : actions;
+  // 형식별 우선순위. 없애지 않고 순서만 바꾼다 — 교육자료·회의록은 PPT 로 오고,
+  // 논문을 PPT 로 받는 일도 드물게 있다. 판단은 사람이 한다.
+  const RANK: Record<string, string[]> = {
+    //    발표자료: 검토·보고 자료다
+    ppt: ['delib', 'read', 'report', 'wiki', 'card', 'paper'],
+    //    문서·PDF: 표준·절차서·논문처럼 나중에 근거로 꺼내 쓰는 것이 많다
+    word: ['read', 'card', 'wiki', 'delib', 'report', 'paper'],
+    pdf: ['read', 'paper', 'card', 'wiki', 'delib', 'report'],
+  };
+  const order = RANK[docs[0]?.meta?.kind ?? ''] ?? RANK.word;
+  const ordered = [...actions].sort((a, b) => {
+    const ia = order.indexOf(a.key), ib = order.indexOf(b.key);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
 
   return (
     <div className="doc-actions" role="group" aria-label="붙인 문서로 할 일">
