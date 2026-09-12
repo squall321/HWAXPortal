@@ -212,6 +212,15 @@ export function RaConnectionCard() {
           </button>
         </div>
       )}
+      {/* 조직 선택 칸은 등록 뒤에 생긴다 — 후보를 그 토큰으로 RA 에 물어와야 하기 때문이다.
+          그 사실을 안 적어 두면 "워크스페이스 고르는 데가 없는데?" 가 된다(실제 질문). */}
+      {loaded && !meta && (
+        <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '0.5rem 0 0' }}>
+          등록하면 바로 아래에 <b>보고서를 저장할 조직</b>을 고르는 칸이 생깁니다 — 고를 수 있는
+          조직 목록을 이 토큰으로 RA 에 물어오기 때문에 등록이 먼저입니다.
+          안 고르면 RA 계정의 기본 워크스페이스(대개 개인함)로 갑니다.
+        </p>
+      )}
       {msg && (
         <p style={{ fontSize: '0.85rem', color: msg.ok ? 'var(--muted)' : 'var(--danger-fg, #b91c1c)' }}>
           {msg.text}
