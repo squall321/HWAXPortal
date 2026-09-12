@@ -3,8 +3,14 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useCan } from './useCan';
 
-export function RequireEntitlement({ need, children }: { need: string; children: ReactNode }) {
+/** `need` 가 여럿이면 **하나만 있어도** 연다 — 한 페이지가 여러 권한의 살림을 같이 이고 있는
+ *  경우가 있다(예: /tokens 는 PAT 발급과 Report Archive 연결·조직 선택을 함께 담는다).
+ *  없는 권한으로 튕길 때는 첫 번째 것을 이유로 보여 준다. */
+export function RequireEntitlement({ need, children }: { need: string | string[]; children: ReactNode }) {
   const can = useCan();
-  if (!can(need)) return <Navigate to={`/access?need=${encodeURIComponent(need)}`} replace />;
+  const keys = Array.isArray(need) ? need : [need];
+  if (!keys.some((k) => can(k))) {
+    return <Navigate to={`/access?need=${encodeURIComponent(keys[0])}`} replace />;
+  }
   return <>{children}</>;
 }

@@ -70,7 +70,9 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AppShell>
-          <RequireEntitlement need="feat:api-token">
+          {/* Report Archive 연결(토큰·내 조직 선택)이 이 페이지에 함께 산다 — API 토큰 권한이
+              없어도 RA 를 쓰는 사람은 조직을 골라야 보고서가 제 자리에 쌓인다. */}
+          <RequireEntitlement need={['feat:api-token', 'plat:reportarchive']}>
             <TokenPage />
           </RequireEntitlement>
         </AppShell>

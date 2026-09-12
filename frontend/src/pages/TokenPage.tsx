@@ -3,6 +3,7 @@ import { type CSSProperties, type FormEvent, useEffect, useState } from 'react';
 import { createPat, listPats, revokePat, type PatCreated, type PatMeta } from '../api/pat.api';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { RaConnectionCard } from '../components/RaConnectionCard';
+import { useCan } from '../auth/useCan';
 
 // 스니펫 값의 <host>는 현재 접속 중인 포털 origin을 그대로 사용한다.
 const ORIGIN = window.location.origin;
@@ -576,6 +577,8 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
 }
 
 export default function TokenPage() {
+  // 이 페이지는 PAT 발급과 Report Archive 연결을 함께 담는다 — 권한에 맞는 것만 보인다.
+  const canToken = useCan()('feat:api-token');
   const [name, setName] = useState('');
   // 0 = 무기한. 만료로는 안 죽고 폐기로만 죽으므로 기본값으로 두지 않는다.
   const [ttlDays, setTtlDays] = useState(90);
@@ -667,6 +670,20 @@ export default function TokenPage() {
       setError(err instanceof Error ? err.message : '토큰 폐기에 실패했습니다.');
     }
   };
+
+  // API 토큰 권한 없이 Report Archive 권한으로 들어온 사람 — PAT 발급부는 감추고 연결만 남긴다.
+  // (이 페이지가 RA 연결·내 조직 선택을 함께 담고 있어서 열어 준 것이다.)
+  if (!canToken) {
+    return (
+      <div className="container">
+        <h1 style={{ fontSize: '1.4rem', marginBottom: '0.4rem' }}>연결 설정</h1>
+        <p style={{ color: 'var(--muted)', marginTop: 0, fontSize: '0.9rem' }}>
+          Report Archive 계정을 연결하고, 보고서를 쌓을 내 조직(워크스페이스)을 고릅니다.
+        </p>
+        <RaConnectionCard />
+      </div>
+    );
+  }
 
   return (
     <div className="container">

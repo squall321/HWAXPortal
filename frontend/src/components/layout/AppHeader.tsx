@@ -68,9 +68,11 @@ export function AppHeader() {
             <NavLink to="/apps" style={navLinkStyle}>
               앱
             </NavLink>
-            {can('feat:api-token') && (
+            {/* 같은 페이지가 PAT 발급과 Report Archive 연결(내 조직 선택)을 담는다 — 토큰 권한이
+                없어도 RA 를 쓰는 사람은 들어갈 수 있어야 한다(못 들어가면 조직을 못 고른다). */}
+            {(can('feat:api-token') || can('plat:reportarchive')) && (
               <NavLink to="/tokens" style={navLinkStyle}>
-                API 토큰
+                {can('feat:api-token') ? 'API 토큰' : '연결 설정'}
               </NavLink>
             )}
             {/* 매일 무엇이 바뀌었는지 아무 때나 볼 수 있는 자리 — 팝업은 새 것만 알려 준다. */}
