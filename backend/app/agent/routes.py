@@ -71,11 +71,11 @@ class DelibOpts(BaseModel):
     rounds: int | None = Field(default=None, ge=2, le=8)
     timeout_s: float | None = Field(default=None, ge=10, le=1800)
     # 이어하기(사람 개입 스티어링) — 사람 의견 + 이전 심의 요약 + 전문가 재사용(발굴 생략)
-    human_note: str | None = Field(default=None, max_length=2000)
+    human_note: str | None = Field(default=None, max_length=8000)
     # 불량 환기 — auto(질문에 불량 단어가 있을 때만, 엔진 종전) | off | always. 'VOC 먼저 보기' 에서
     # 사람이 이미 골랐으면 off 로 보낸다(자동 환기가 사람이 뺀 VOC 를 다시 넣지 않게).
     voc: Literal["auto", "off", "always"] | None = None
-    continue_summary: str | None = Field(default=None, max_length=8000)
+    continue_summary: str | None = Field(default=None, max_length=24000)
     # 좌석 상한 — 엔진 MAX_REQ_SEATS·ExpertPicker·HandoffBrief 와 같은 값이어야 한다
     # (tests/test_seat_cap_contract.py). 넘으면 422 로 막는다 — 엔진까지 가면 잘려서 사라진다.
     personas: list[dict] | None = Field(default=None, max_length=20)
@@ -113,7 +113,9 @@ class DelibOpts(BaseModel):
     build_plan: int | None = Field(default=None, ge=0, le=1)
     # 챗 워크스페이스가 정리해 넘긴 원천 근거(도구결과+출처). 심의는 '검증 대상·결론 아님'으로
     # 좌석에 주입한다(요약 아닌 날것) — 핸드오프 P1. agent-server 가 항목 필드를 재클램프한다.
-    evidence: list[dict] | None = Field(default=None, max_length=12)
+    # 상한은 프론트 handoff.ts EVID_ITEMS·엔진 _EVID_ITEMS 와 같은 값이어야 한다
+    # (tests/test_evidence_budget_contract.py). 종전 12 는 문서 한 건도 못 실었다.
+    evidence: list[dict] | None = Field(default=None, max_length=40)
     # 웹 리서치 소스 토글(심의) — 켜지 않은 소스는 자유 조회에 바인딩되지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
     # 자유 조회 — 좌석이 발언 전 읽기 도구를 직접 호출하는 단계의 on/off(엔진 DELIB_FREE_TOOLS).

@@ -1,6 +1,11 @@
 // 챗 대화에서 심의로 넘길 원천 근거(도구결과)를 추출한다 — 요약·결론이 아니라 도구가 낸 날것(핸드오프 P1)
 import type { Conversation } from '../../types/chat';
 
+// 사전 근거 상한 — 포털 DelibOpts.evidence(max_length)·엔진 _EVID_ITEMS/_EVID_ITEM_MAX 와 **같은 값**
+// 이어야 한다. 세 계층 중 하나만 작으면 거기서 잘리고, 잘린 사실은 아무 데도 안 남는다.
+export const EVID_ITEMS = 40;
+export const EVID_ITEM_MAX = 12000;
+
 // 심의로 넘기는 원천 근거 한 항목 — 백엔드 delib_opts.evidence 스키마와 맞춘다(agent-server 가 재클램프).
 export interface HandoffEvidence {
   source: string;
@@ -26,12 +31,12 @@ export function conversationEvidence(conv: Conversation): HandoffEvidence[] {
       if (seen.has(key)) continue;
       seen.add(key);
       out.push({
-        source: (a.step || a.tool).slice(0, 120),
+        source: (a.step || a.tool).slice(0, 200),
         tool: a.tool.slice(0, 80),
-        args: (a.detail ?? '').trim().slice(0, 400) || undefined,
-        result: result.slice(0, 2000),
+        args: (a.detail ?? '').trim().slice(0, 1200) || undefined,
+        result: result.slice(0, EVID_ITEM_MAX),
       });
-      if (out.length >= 12) return out; // 백엔드 상한과 동일 — 앞쪽(먼저 호출한 것)을 남긴다
+      if (out.length >= EVID_ITEMS) return out; // 백엔드 상한과 동일 — 앞쪽(먼저 호출한 것)을 남긴다
     }
   }
   return out;
