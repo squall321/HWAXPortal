@@ -85,7 +85,14 @@ const DESTINATIONS: Destination[] = [
       + '(heading·rich_text·table 위젯)에 담아 create_report_draft 를 dry_run=true 로 먼저 부르세요.\n'
       + '3) 문서가 길면 한 번에 다 넣지 말고 create_report_draft 로 앞쪽을 만든 뒤 '
       + 'update_report_draft(page=N) 으로 쪽을 이어 붙이세요. 몇 쪽으로 나눌지 먼저 알려 주세요.\n'
-      + '4) 슬라이드·쪽 번호를 각 블록 제목에 남겨 원본과 대조할 수 있게 하세요.',
+      + '4) 슬라이드·쪽 번호를 각 블록 제목에 남겨 원본과 대조할 수 있게 하세요.\n'
+      + '5) 만든 뒤 suggest_report_tags → add_report_tags 로 축 태그를 붙이세요 — '
+      + '**안 붙으면 나중에 목록·집계에서 안 찾힙니다.**\n'
+      + '6) 초안은 내 개인함에 생깁니다. **어느 부서 게시판에 올릴지는 내가 고릅니다** — '
+      + 'list_boards 로 후보를 보여 주고, 내가 고르면 preview_publish 로 대상을 확인시킨 뒤 '
+      + 'publish_report 로 게시하세요(토큰은 10분·그 게시판 조합에만 유효). '
+      + '폴더까지 정할 거면 list_folders → set_report_folders 입니다. '
+      + '개인함에만 두겠다고 하면 게시하지 마세요.',
   },
   {
     key: 'wiki',
