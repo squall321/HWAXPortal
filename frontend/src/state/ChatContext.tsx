@@ -82,6 +82,9 @@ interface ChatContextValue {
   /** 지정 전문가의 사람 이름(표시용). 없으면 키를 그대로 보여 준다. */
   pinnedAgentName: string | null;
   setPinnedAgent: (key: string | null, name?: string) => void;
+  /** 보조 전문가 — 주 전문가와 한 목소리로 답한다(각자 답하는 Thinking 과 다르다). 최대 4명. */
+  pinnedHelpers: { key: string; name?: string }[];
+  setPinnedHelpers: (list: { key: string; name?: string }[]) => void;
   /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다(회의 아님). 세션 토글이라 매 발화에 실린다. */
   thinking: boolean;
   setThinking: (v: boolean) => void;
@@ -351,7 +354,7 @@ export function ChatProvider({
   const streamConvRef = useRef<string | null>(null);
   // 대화 시작 전(랜딩) 선택한 전문가·도구 — 다음 '새 대화' 생성 시 대화에 옮겨 심는다.
   // ref 는 sendMessage 전송 시점 읽기용(스테일 방지 — delibOpts 패턴과 동일).
-  const [draftPins, setDraftPinsState] = useState<{ agent?: string; agentName?: string; tools: string[]; apps: string[] }>({ tools: [], apps: [] });
+  const [draftPins, setDraftPinsState] = useState<{ agent?: string; agentName?: string; helpers?: { key: string; name?: string }[]; tools: string[]; apps: string[] }>({ tools: [], apps: [] });
   // 인터넷 소스는 대화별이 아니라 세션 단위 토글이다 — 기본값은 '전부 끔'(빈 배열).
   // undefined 를 기본으로 두면 종전 동작(전부 허용)이 되어, 켠 적 없는데 나가는 상황이 된다.
   const [searchSources, setSearchSources] = useState<SearchSource[]>([]);
@@ -364,7 +367,7 @@ export function ChatProvider({
     setThinkingState(v);
   }, []);
   const draftPinsRef = useRef(draftPins);
-  const setDraftPins = useCallback((v: { agent?: string; agentName?: string; tools: string[]; apps: string[] }) => {
+  const setDraftPins = useCallback((v: { agent?: string; agentName?: string; helpers?: { key: string; name?: string }[]; tools: string[]; apps: string[] }) => {
     draftPinsRef.current = v;
     setDraftPinsState(v);
   }, []);
@@ -502,6 +505,10 @@ export function ChatProvider({
       const effPinnedAgent = can('feat:expert-chat') ? (existing ? existing.pinnedAgent : draft.agent) : null;
       const effSources = can('plat:webresearch') ? searchSources : [];
       const effPinnedAgentName = existing ? existing.pinnedAgentName : draft.agentName;
+      // 보조 전문가 — 주 전문가가 없으면 보조도 없다(첫 명이 목소리다). 권한도 주 전문가와 같이 본다.
+      const effHelpers = (effPinnedAgent
+        ? (existing ? (existing.pinnedHelpers ?? []) : (draft.helpers ?? []))
+        : []).slice(0, 4);
 
       const userMsg: Message = { id: newId(), role: 'user', text, ts: now };
       const botId = newId();
@@ -531,6 +538,7 @@ export function ChatProvider({
           ...(draft.apps.length ? { pinnedApps: draft.apps } : {}),
           ...(draft.agent ? { pinnedAgent: draft.agent } : {}),
           ...(draft.agent && draft.agentName ? { pinnedAgentName: draft.agentName } : {}),
+          ...(draft.agent && draft.helpers?.length ? { pinnedHelpers: draft.helpers } : {}),
         };
         setConversations((prev) => [conv, ...prev]);
         setActiveId(convId);
@@ -579,6 +587,10 @@ export function ChatProvider({
         ...(effPinnedTools.length ? { pinnedTools: effPinnedTools } : {}),
         ...(effPinnedApps.length ? { pinnedApps: effPinnedApps } : {}),
         ...(effPinnedAgent ? { pinnedAgent: effPinnedAgent } : {}),
+        // 여러 명이면 [주 전문가, ...보조] 로 보낸다 — 서버가 첫 명을 목소리로 삼는다.
+        ...(effPinnedAgent && effHelpers.length
+          ? { pinnedAgents: [effPinnedAgent, ...effHelpers.map((h: { key: string }) => h.key)] }
+          : {}),
         searchSources: effSources,
         // 띵킹 모드 — 켠 동안 모든 발화에 실린다. 서버는 명시 슬래시 트리거(/심의 등)를
         // 먼저 보므로, 모드가 켜져 있어도 그 턴에 대놓고 심의를 부르면 심의가 이긴다.
@@ -825,6 +837,22 @@ export function ChatProvider({
     [activeId, setDraftPins],
   );
 
+  // 보조 전문가 갱신 — 주 전문가와 같은 자리(대화 또는 draft)에 둔다. 주 전문가가 없으면
+  // 보조도 의미가 없으므로 보내는 쪽에서 함께 비운다(effHelpers).
+  const setPinnedHelpers = useCallback(
+    (list: { key: string; name?: string }[]) => {
+      const clean = list.filter((h) => h && h.key.trim()).slice(0, 4);
+      if (activeId) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id !== activeId ? c : { ...c, pinnedHelpers: clean })),
+        );
+      } else {
+        setDraftPins({ ...draftPinsRef.current, helpers: clean });
+      }
+    },
+    [activeId, setDraftPins],
+  );
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -902,6 +930,10 @@ export function ChatProvider({
           ? (activeConversation.pinnedAgentName ?? null)
           : (draftPins.agentName ?? null),
         setPinnedAgent,
+        pinnedHelpers: (activeConversation
+          ? (activeConversation.pinnedHelpers ?? [])
+          : (draftPins.helpers ?? [])),
+        setPinnedHelpers,
         thinking,
         setThinking,
         stop,

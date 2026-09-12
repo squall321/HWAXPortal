@@ -45,7 +45,7 @@ def persona_allowed(policy: Policy, key: str, groups: list[str]) -> bool:
 
 
 def check_chat(policy: Policy, principal: Principal, *, thinking: bool,
-               pinned_agent: str | None) -> None:
+               pinned_agent: str | None, pinned_agents: list[str] | None = None) -> None:
     """챗의 명시 모드(Thinking·전문가 지정)만 본다. 없으면 403.
 
     나머지는 여기서 보지 않는다 — 프론트는 delib_opts 를 **늘** 싣고(search_sources 를 담아서) 일반
@@ -53,11 +53,16 @@ def check_chat(policy: Policy, principal: Principal, *, thinking: bool,
     도구(웹 검색·지정 앱)는 게이트웨이가 권한으로 거른다 — 같은 판정을 세 곳에 두지 않는다."""
     if thinking:
         ensure(principal, "feat:thinking")
-    if pinned_agent:
+    # 여러 명을 세우면 **각자** 검사한다 — 한 명만 봐도 되는 것처럼 두면 못 쓰는 운영자를
+    # 두 번째 자리에 끼워 그 앱 도구를 얻을 수 있다(권한 우회).
+    keys = [k for k in (list(pinned_agents or []) or ([pinned_agent] if pinned_agent else []))
+            if isinstance(k, str) and k.strip()]
+    if keys:
         ensure(principal, "feat:expert-chat")
-        need = policy.keys_for_gateway(he_apps(pinned_agent))
-        if need:
-            ensure(principal, *need, any_of=True)
+        for key in keys:
+            need = policy.keys_for_gateway(he_apps(key))
+            if need:
+                ensure(principal, *need, any_of=True)
 
 
 def filter_experts(resp: dict, policy: Policy, groups: list[str]) -> dict:

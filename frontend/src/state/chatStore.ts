@@ -32,6 +32,8 @@ interface StoredConversation {
   pinnedTools?: string[];
   pinnedAgent?: string;
   pinnedAgentName?: string;
+  // 보조 전문가 — 주 전문가(pinnedAgent) 뒤에 서서 판단 기준·도구만 빌려준다(한 목소리로 답한다).
+  pinnedHelpers?: { key: string; name?: string }[];
 }
 
 let seq = 0;
@@ -75,6 +77,12 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
         ...(Array.isArray(c.pinnedTools) ? { pinnedTools: c.pinnedTools.filter((x) => typeof x === 'string') } : {}),
         ...(typeof c.pinnedAgent === 'string' ? { pinnedAgent: c.pinnedAgent } : {}),
         ...(typeof c.pinnedAgentName === 'string' ? { pinnedAgentName: c.pinnedAgentName } : {}),
+        ...(Array.isArray(c.pinnedHelpers)
+          ? { pinnedHelpers: c.pinnedHelpers
+              .filter((h: unknown): h is { key: string; name?: string } =>
+                !!h && typeof h === 'object' && typeof (h as { key?: unknown }).key === 'string')
+              .slice(0, 4) }
+          : {}),
       });
     }
     return convs;
@@ -166,6 +174,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       ...(c.pinnedTools?.length ? { pinnedTools: c.pinnedTools } : {}),
       ...(c.pinnedAgent ? { pinnedAgent: c.pinnedAgent } : {}),
       ...(c.pinnedAgentName ? { pinnedAgentName: c.pinnedAgentName } : {}),
+      ...(c.pinnedHelpers?.length ? { pinnedHelpers: c.pinnedHelpers } : {}),
       messages: c.messages
         // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
         // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).

@@ -406,13 +406,15 @@ export async function streamChat(
     searchSources?: string[];
     /** 사용자 지정 전문가(agent_type) — 이 전문가 페르소나로 대화. */
     pinnedAgent?: string;
+    /** 여러 명을 한 목소리로 — [주 전문가, ...보조]. 첫 명이 목소리고 나머지는 렌즈·도구다. */
+    pinnedAgents?: string[];
     /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다. 매 발화에 실린다(슬래시 접두사 아님). */
     thinking?: boolean;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, searchSources, thinking, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgents, searchSources, thinking, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -437,6 +439,8 @@ export async function streamChat(
       // 앱은 서버가 도구로 펼치므로 12개 캡이 아니라 앱 수 캡(3)을 쓴다.
       ...(pinnedApps && pinnedApps.length > 0 ? { pinned_apps: pinnedApps.slice(0, 3) } : {}),
       ...(pinnedAgent ? { pinned_agent: pinnedAgent } : {}),
+      // 보조까지 고른 경우에만 실린다(한 명이면 종전 계약 그대로). 서버 상한과 같은 5명.
+      ...(pinnedAgents && pinnedAgents.length > 1 ? { pinned_agents: pinnedAgents.slice(0, 5) } : {}),
       // 빈 배열도 의미가 있다(전부 끔) — undefined 와 반드시 구분해서 보낸다.
       ...(searchSources !== undefined ? { search_sources: searchSources } : {}),
       // 켠 것만 보낸다(서버 기본값 false). 끄면 키 자체가 안 나간다.

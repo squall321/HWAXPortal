@@ -42,11 +42,17 @@ export function PersonaBrowser({
   onBack,
   onPick,
   picked,
+  onAddHelper,
+  mode,
 }: {
   onClose: () => void;
   onBack?: () => void;
   onPick?: (agent: PoolExpert, sample?: string) => void;
   picked?: string | null;
+  /** 보조 전문가로 더하기 — 주 전문가가 이미 있는 자리에서만 준다. */
+  onAddHelper?: (agent: PoolExpert) => void;
+  /** 'helper' 면 고르기 버튼 문구가 '보조로 추가'가 된다(조직도를 보조 고르러 연 경우). */
+  mode?: 'lead' | 'helper';
 }) {
   const { pinnedAgent, setPinnedAgent, setInput } = useChat();
   const current = onPick ? (picked ?? null) : pinnedAgent;
@@ -106,11 +112,20 @@ export function PersonaBrowser({
   };
 
   const pickBtn = (a: PoolExpert) => (
-    <button type="button" className="pv-apply" onClick={() => pick(a)} disabled={current === a.key}>
-      {current === a.key
-        ? onPick ? '이미 고른 전문가' : '이미 이 전문가와 대화 중'
-        : onPick ? '이 전문가로 고르기' : '이 전문가로 대화하기'}
-    </button>
+    <>
+      <button type="button" className="pv-apply" onClick={() => pick(a)} disabled={current === a.key}>
+        {current === a.key
+          ? onPick ? '이미 고른 전문가' : '이미 이 전문가와 대화 중'
+          : onPick ? (mode === 'helper' ? '보조로 추가하기' : '이 전문가로 고르기') : '이 전문가로 대화하기'}
+      </button>
+      {/* 보조로 더하기 — 주 전문가가 이미 있을 때만. 목소리는 주 전문가 하나이고 보조는
+          판단 기준과 도구만 빌려준다(각자 답하는 Thinking 과 다르다). */}
+      {onAddHelper && current && current !== a.key && (
+        <button type="button" className="pv-deep" onClick={() => { onAddHelper(a); onClose(); }}>
+          ＋ 보조 전문가로 더하기 — 도구·판단 기준만 빌린다
+        </button>
+      )}
+    </>
   );
 
   return createPortal(

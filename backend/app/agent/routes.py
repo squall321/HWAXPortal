@@ -139,6 +139,8 @@ class ChatRequest(BaseModel):
     pinned_apps: list[str] | None = Field(default=None, max_length=3)
     # 사용자 지정 전문가(챗) — 이 전문가 페르소나로 대화('전문가와 대화' 모드).
     pinned_agent: str | None = Field(default=None, max_length=120)
+    # 여러 전문가를 한 목소리로 — 첫 명이 주 전문가다(도구 특화 + 전문지식 조합).
+    pinned_agents: list[str] = Field(default_factory=list, max_length=5)
     # 웹 리서치 소스 토글(챗) — None 이면 종전 동작, 리스트면 그 소스만 바인딩한다.
     # 빈 리스트는 '전부 끔'이다. 전역 SEARCH_MODE 가 끄면 이 값과 무관하게 나가지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
@@ -447,6 +449,8 @@ async def _relay_stream(
         payload["pinned_apps"] = body.pinned_apps
     if body.pinned_agent:  # 사용자 지정 전문가 페르소나
         payload["pinned_agent"] = body.pinned_agent
+    if body.pinned_agents:  # 여러 명 — 첫 명이 주 전문가
+        payload["pinned_agents"] = body.pinned_agents
     if body.search_sources is not None:  # 빈 리스트도 의미가 있다(전부 끔) — None 과 구분
         payload["search_sources"] = body.search_sources
     if body.thinking:  # 띵킹 모드 — 켠 것만 전달(끄면 agent-server 기본값 False)
@@ -1114,7 +1118,7 @@ async def chat(
 ) -> StreamingResponse:
     # 권한 — 메뉴를 숨겨도 요청은 직접 보낼 수 있다. 세마포어를 잡기 전에 거절한다.
     check_chat(request.app.state.access.get(), principal, thinking=body.thinking,
-               pinned_agent=body.pinned_agent)
+               pinned_agent=body.pinned_agent, pinned_agents=body.pinned_agents)
     sem = _sem(request)
     audit = _audit(request)
     # SSE holds a worker for the stream's lifetime → cap, and reject (not queue) over the cap.

@@ -37,7 +37,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   { autoFocus = false, placeholder = '무엇이든 물어보세요…', showHint = false, onSubmitText },
   ref,
 ) {
-  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, pinnedAgentName, setPinnedAgent } =
+  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, pinnedAgentName, setPinnedAgent, pinnedHelpers, setPinnedHelpers } =
     useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { user } = useAuth();
@@ -96,7 +96,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       {can('plat:webresearch') && <SourcePanel />}
       {can('feat:thinking') && <ThinkPanel />}
       {/* 지정 전문가·도구 칩 — 이 대화에 적용될 선택을 항상 보이게(× 로 즉시 해제). */}
-      {(pinnedTools.length > 0 || pinnedApps.length > 0 || pinnedAgent) && (
+      {(pinnedTools.length > 0 || pinnedApps.length > 0 || pinnedAgent || pinnedHelpers.length > 0) && (
         <div className="composer-pins" aria-label="지정 전문가·앱·도구">
           {pinnedAgent && (
             // 기계 키가 아니라 사람 이름을 보여 준다 — 키는 툴팁으로 남긴다(구 저장분은 이름이 없어
@@ -114,6 +114,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               </button>
             </span>
           )}
+          {/* 보조 전문가 — 답은 주 전문가 한 목소리이고 이들은 판단 기준·도구만 빌려준다.
+              누가 서 있는지 안 보이면 왜 그 도구를 쓰는지 알 수 없다. */}
+          {pinnedHelpers.map((h) => (
+            <span key={h.key} className="composer-pin" title={`보조 전문가 — ${h.key}`}>
+              ＋{shortName(h.name || h.key)}
+              <button
+                type="button"
+                className="composer-pin-x"
+                onClick={() => setPinnedHelpers(pinnedHelpers.filter((x) => x.key !== h.key))}
+                aria-label={`보조 전문가 ${h.name || h.key} 빼기`}
+                title="보조 빼기"
+              >
+                ×
+              </button>
+            </span>
+          ))}
           {pinnedApps.length > 0 && <span className="composer-pins-label">지정 앱</span>}
           {pinnedApps.map((k) => (
             <span key={k} className="composer-pin composer-pin-app" title="이 앱의 기능 전체를 우선 사용">

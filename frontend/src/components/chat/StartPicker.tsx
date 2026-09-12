@@ -12,6 +12,7 @@ import {
 import { useChat } from '../../state/ChatContext';
 import { useCan } from '../../auth/useCan';
 import { PersonaBrowser } from './PersonaBrowser';
+import { shortName } from './personaColor';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
 
@@ -19,7 +20,8 @@ const MAX_TOOLS = 12; // 챗 pinned_tools 상한
 const MAX_APPS = 3;   // 챗 pinned_apps 상한 — 앱 하나가 도구 20~30개다
 
 export function StartPicker({ onClose }: { onClose: () => void }) {
-  const { pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent, setInput } = useChat();
+  const { pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, setPinnedAgent,
+          pinnedHelpers, setPinnedHelpers, setInput } = useChat();
   // 전문가 칸은 '전문가와 대화' 권한이 있어야 보인다 — 도구·앱 고르기는 누구나(docs/access-control).
   const canExperts = useCan()('feat:expert-chat');
   const [res, setRes] = useState<ExpertsResponse | null>(null);
@@ -29,7 +31,9 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const [toolFilter, setToolFilter] = useState('');
   const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터(2단)
   const [toolArea, setToolArea] = useState<string | null>(null);   // 영역(하는 일) 필터(1단)
-  const [browse, setBrowse] = useState(false);   // 조직도 전창(분야→그룹→사람)
+  const [browse, setBrowse] = useState<null | 'lead' | 'helper'>(null);   // 조직도 전창(분야→그룹→사람)
+  // 보조 전문가 — 확정 전까지 여기 담는다(주 전문가와 한 목소리로 답한다).
+  const [helperSel, setHelperSel] = useState<{ key: string; name?: string }[]>(pinnedHelpers);
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const selKeyRef = useRef<string | null>(pinnedAgent);
@@ -121,6 +125,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   // (setAgentSel 은 이 렌더에 반영되지 않는다).
   const applyWith = (key: string | null) => {
     setPinnedAgent(key, key ? nameOf(key) : undefined);
+    setPinnedHelpers(key ? helperSel : []);   // 주 전문가가 없으면 보조도 의미가 없다
     setPinnedApps([...appSel]);
     setPinnedTools([...toolSel]);
     onClose();
@@ -128,6 +133,14 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const apply = () => applyWith(agentSel);
 
   // 조직도에서 고르면 여기로 돌아온다 — 담아 두고(확정은 아래 버튼), 샘플 질의를 눌렀으면 그대로 시작.
+  // 보조로 더하기 — 주 전문가와 같은 사람은 안 받고, 상한(4)을 넘기지 않는다.
+  const addHelper = (a: PoolExpert) => {
+    setHelperSel((prev) =>
+      prev.some((h) => h.key === a.key) || a.key === agentSel || prev.length >= 4
+        ? prev
+        : [...prev, { key: a.key, name: a.name }]);
+  };
+
   const pickFromOrg = (a: PoolExpert, sample?: string) => {
     if (!sample) {
       showAgent(a.key);
@@ -162,13 +175,35 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             </div>
             {/* 전문가는 조직도에서만 고른다 — 여기 있던 목록(추천 10명)은 더미 질의 결과인데다
                 이름이 한 줄을 넘겨, 시작 화면을 길게 만들면서 고르는 데는 도움이 안 됐다. */}
-            <button type="button" className="sp-browse" onClick={() => setBrowse(true)}>
+            <button type="button" className="sp-browse" onClick={() => setBrowse('lead')}>
               🗂 조직도에서 고르기 <span className="sp-dim">— 분야·그룹으로 훑어보기</span>
             </button>
             {agentSel && (
-              <button type="button" className="sp-clear" onClick={() => setAgentSel(null)}>
-                전문가 해제
-              </button>
+              <>
+                {/* 보조 전문가 — 도구 특화(HE팀 운영자)와 전문 지식을 조합해 **한 목소리**로 답한다.
+                    같은 층 전문가를 여럿 겹치면 답이 평균으로 무너져, 상한을 4명으로 둔다. */}
+                <div className="sp-dim sp-sub">보조 전문가 {helperSel.length > 0 && `(${helperSel.length}/4)`}</div>
+                {helperSel.length > 0 && (
+                  <div className="sp-helpers">
+                    {helperSel.map((h) => (
+                      <span key={h.key} className="sp-helper">
+                        {h.name ? shortName(h.name) : h.key}
+                        <button type="button" onClick={() => setHelperSel((p) => p.filter((x) => x.key !== h.key))}
+                                aria-label={`${h.name || h.key} 빼기`}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {helperSel.length < 4 && (
+                  <button type="button" className="sp-browse" onClick={() => setBrowse('helper')}>
+                    ＋ 보조 전문가 추가 <span className="sp-dim">— 도구·판단 기준만 빌린다</span>
+                  </button>
+                )}
+                <button type="button" className="sp-clear"
+                        onClick={() => { setAgentSel(null); setHelperSel([]); }}>
+                  전문가 해제
+                </button>
+              </>
             )}
           </div>
           )}
@@ -289,9 +324,11 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
       {/* 조직도는 고르기만 하고 돌아온다 — 확정은 위 '적용하고 대화 시작'에서 도구·앱과 함께. */}
       {browse && (
         <PersonaBrowser
-          onClose={() => setBrowse(false)}
-          onPick={pickFromOrg}
+          mode={browse}
+          onClose={() => setBrowse(null)}
+          onPick={browse === 'helper' ? addHelper : pickFromOrg}
           picked={agentSel}
+          onAddHelper={browse === 'lead' ? addHelper : undefined}
         />
       )}
     </div>

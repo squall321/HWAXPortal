@@ -1101,6 +1101,18 @@
   font-size: 0.82rem; font-weight: 600; text-align: left;
 }
 .sp-browse:hover { border-color: var(--cx-accent); background: var(--cx-accent-soft); }
+/* 보조 전문가 칩 — 주 전문가와 한 목소리로 답하는 사람들(각자 답하는 Thinking 과 다르다). */
+.sp-helpers { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.15rem 0 0.1rem; }
+.sp-helper {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.18rem 0.4rem 0.18rem 0.55rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--card); font-size: 0.76rem;
+}
+.sp-helper button {
+  border: none; background: transparent; color: var(--muted);
+  font-size: 0.9rem; line-height: 1; padding: 0 0.1rem; cursor: pointer;
+}
+.sp-helper button:hover { color: var(--fg); }
 .sp-detail {
   margin-top: 0.9rem; padding: 0.75rem 0.85rem;
   border: 1px solid var(--border); border-radius: 12px;

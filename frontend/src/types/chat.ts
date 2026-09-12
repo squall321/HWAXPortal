@@ -268,6 +268,8 @@ export interface Conversation {
   pinnedAgent?: string;
   // 그 전문가의 사람 이름 — 화면 표시용이다. 없으면 키를 그대로 보여 준다(구 저장분).
   pinnedAgentName?: string;
+  /** 보조 전문가 — 주 전문가 뒤에 서서 판단 기준·도구만 빌려준다(답은 한 목소리다). */
+  pinnedHelpers?: { key: string; name?: string }[];
 }
 
 // SSE event payloads (plan §5).
