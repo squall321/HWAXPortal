@@ -20,6 +20,7 @@ import { useCan } from '../../auth/useCan';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
 import { classify, readDoc, kindLabel, unitsLabel, DOC_MAX } from './docAttach';
 import { DocExtractHint } from './DocExtractHint';
+import { DocActions } from './DocActions';
 import { UploadRouter } from './UploadRouter';
 
 export interface ComposerHandle {
@@ -192,6 +193,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </span>
           ))}
         </div>
+      )}
+      {attachedDocs.length > 0 && (
+        <DocActions docs={attachedDocs} onFill={(t) => { setInput(t); taRef.current?.focus(); }} />
       )}
       {upErr && <div className="upl-err" role="alert">⚠ {upErr}</div>}
       <div className="composer-box">
