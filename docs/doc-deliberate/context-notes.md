@@ -330,7 +330,27 @@ LLM 요약이 가능해지지만 그건 별건이다. 지금은 결정적·무�
 실측 검증: initialize·tools/list·tools/call 정상, `notifications/*` 는 무응답(규약),
 `/etc/passwd` 거절, 없는 파일 거절, PowerShell 부재 시 깨끗한 오류.
 
-**④ RA 세그먼트(문서 → 보고서) — 막혔다.**
+**④ RA 세그먼트(문서 → 보고서) — 막혔다고 했다가 정정. 된다.**
+
+> **정정(사용자 지적).** "옵션으로 뜨면 되는 거 아니냐, 선택적으로 버릴 수 있으면 되잖아."
+> 맞다. 아래는 *자유형식 템플릿이 없다* 는 사실이고, 그건 **기능 차단이 아니라 분류 문제**다.
+> 어느 템플릿에 담을지는 **사용자 결정**인데 내가 대신 막고 있었다.
+>
+> **dry_run 으로 실제 확인했다 — 된다.** 기존 `deliberation` 템플릿 + `extra_blocks` 로
+> heading·table·rich_text 를 넣어 호출하니 `warnings: []` 로 통과했다.
+>
+> ```
+> create_report_draft(template_id="deliberation", extra_blocks=[heading, table, rich_text],
+>                     dry_run=true)  →  page_count 1, blocks 4개, warnings []
+> ```
+>
+> 그래서 칩 `📄 Report Archive 에 올리기` 를 붙였다. 지시문이 ⑴ 템플릿 목록을 보여 주고
+> ⑵ 딱 맞는 게 없으면 **없다고 말한 뒤** 가장 가까운 것을 근거와 함께 제안하게 하고
+> ⑶ 고르는 건 사람이 하게 한다. 긴 문서는 `update_report_draft(page=N)` 으로 쪽을 이어
+> 붙이게 안내한다 — 한 번의 도구 호출에 다 담으려 하면 출력 토큰 상한에서 끊긴다.
+>
+> 아래 사실은 그대로 유효하다. 자유형식 템플릿이 생기면 결과가 더 깔끔해지므로 UI 에
+> 그 방법을 적어 뒀다(칩 옆 접힘 안내).
 
 `create_report_draft` 로 넣으려면 자유형식 템플릿이 필요한데 **게이트웨이에 없다.**
 
@@ -342,10 +362,10 @@ describe_template("__import_blank__") → Template not found: __import_blank__@1
 RA 웹의 `/imports/pptx` 가 쓰는 `__import_blank__` 는 그 라우트가 **처음 쓰일 때 만든다**
 (`ensure_import_template`, get-or-create). 아직 아무도 안 써서 존재하지 않는다.
 
-억지로 우회하지 않았다 — 있는 템플릿("심의 보고서")에 문서를 밀어 넣으면 아카이브에
-**잘못 분류된 보고서**가 쌓인다. 되돌리기 어려운 오염이다.
+분류가 어긋나는 것은 사실이다. 다만 그건 **사람이 감수할지 정할 일**이지 코드가 막을 일이
+아니었다 — 이 판단을 내가 대신 한 것이 이번 건의 교훈이다.
 
-풀려면 둘 중 하나다.
+더 깔끔하게 하려면 둘 중 하나다.
   (a) RA 웹에서 아무 PPTX 나 한 번 '가져오기' 하면 템플릿이 생긴다(그 뒤엔 MCP 로 보인다).
   (b) RA 소유자에게 자유형식 템플릿 게시를 요청한다.
 둘 중 하나가 되면 변환기(마크다운 → heading/rich_text/table 위젯)를 붙인다.

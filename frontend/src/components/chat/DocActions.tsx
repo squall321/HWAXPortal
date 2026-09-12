@@ -57,11 +57,18 @@ export function DocActions({ docs, onFill }: Props) {
   if (can('plat:reportarchive')) {
     actions.push({
       key: 'report',
-      label: '📄 보고서 초안으로',
-      title: 'Report Archive 에 초안을 만든다',
-      text: `붙인 ${one ? '문서로' : '문서들로'} 보고서 초안을 만들려 합니다. `
-        + 'list_templates → describe_template 순으로 보고 **어느 템플릿에 어떻게 담을지 먼저 제안**해 '
-        + '주세요. 내가 고른 다음에 create_report_draft 를 부르세요.',
+      label: '📄 Report Archive 에 올리기',
+      title: '이 문서를 보고서 초안으로 만든다 — 템플릿은 내가 고른다',
+      // 긴 문서를 한 번의 도구 호출에 다 담으려 하면 출력 토큰 상한에 걸려 중간에서 끊긴다.
+      // update_report_draft(page=N) 으로 쪽을 이어 붙이는 길을 미리 알려 준다.
+      text: `붙인 ${one ? '문서를' : '문서들을'} Report Archive 에 보고서 초안으로 올리려 합니다.\n`
+        + '1) list_templates 로 쓸 수 있는 템플릿을 보여 주세요. 문서 성격에 딱 맞는 게 없으면 '
+        + '**없다고 말하고** 그중 가장 가까운 것을 근거와 함께 제안하세요 — 고르는 건 내가 합니다.\n'
+        + '2) 내가 고르면 describe_template 으로 블록 구성을 확인하고, 본문은 extra_blocks '
+        + '(heading·rich_text·table 위젯)에 담아 create_report_draft 를 dry_run=true 로 먼저 부르세요.\n'
+        + '3) 문서가 길면 한 번에 다 넣지 말고 create_report_draft 로 앞쪽을 만든 뒤 '
+        + 'update_report_draft(page=N) 으로 쪽을 이어 붙이세요. 몇 쪽으로 나눌지 먼저 알려 주세요.\n'
+        + '4) 슬라이드·쪽 번호를 각 블록 제목에 남겨 원본과 대조할 수 있게 하세요.',
     });
   }
 
@@ -73,6 +80,14 @@ export function DocActions({ docs, onFill }: Props) {
         </button>
       ))}
       <span className="doc-actions-hint">고르면 입력창에 채워집니다 — 고쳐서 보내세요.</span>
+      {can('plat:reportarchive') && (
+        <details className="doc-actions-note">
+          <summary>보고서 템플릿이 문서와 안 맞는다면</summary>
+          Report Archive 에는 자유형식 문서를 담는 <code>문서 가져오기</code> 템플릿이 있는데,
+          <b>누군가 RA 웹에서 '가져오기'를 한 번 써야 만들어집니다</b>(get-or-create).
+          한 번만 하면 그 뒤로는 여기서도 고를 수 있습니다.
+        </details>
+      )}
     </div>
   );
 }

@@ -1347,3 +1347,9 @@
   overflow-x: auto; white-space: pre;
   background: color-mix(in srgb, var(--fg, #1f2937) 7%, transparent);
 }
+.doc-actions-note { flex-basis: 100%; font-size: 11.5px; opacity: 0.66; margin-top: 2px; line-height: 1.6; }
+.doc-actions-note summary { cursor: pointer; }
+.doc-actions-note code {
+  font-size: 11px; padding: 1px 4px; border-radius: 4px;
+  background: color-mix(in srgb, var(--fg, #1f2937) 8%, transparent);
+}
