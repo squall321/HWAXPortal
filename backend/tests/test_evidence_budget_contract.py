@@ -147,3 +147,49 @@ def test_k파일은_dynaforge_로_간다():
     assert m and "'k'" in m.group(1), "프론트가 .k 를 브라우저에서 읽으려 한다 — 수십 MB 가 프롬프트로 간다"
     m2 = re.search(r"const EXT_TEXT = \[([^\]]+)\]", front)
     assert m2 and "'k'" not in m2.group(1)
+
+
+# ── 붙인 문서가 실제로 '전송' 되는가 — 네 계층 중 하나만 빠져도 조용히 사라진다 ──────
+# delib_opts 가 겪은 것과 같은 함정이다(test_delib_opts_contract 참조). 포털은 선언된 필드만
+# 중계하므로, 어느 한 곳에 documents 가 없으면 **에러 없이** 문서 없는 답이 나온다.
+_AGENT = _ROOT.parent / "HWAXAgentServer" / "app.py"
+
+
+def test_문서_전송_경로가_네_계층에_다_있다():
+    front = (_ROOT / "frontend" / "src" / "api" / "chat.api.ts").read_text(encoding="utf-8")
+    routes = (_ROOT / "backend" / "app" / "agent" / "routes.py").read_text(encoding="utf-8")
+    agent = _AGENT.read_text(encoding="utf-8")
+
+    # ① 프론트가 요청 본문에 싣는다
+    assert re.search(r"\{\s*documents:\s*documents\.slice\(", front), \
+        "chat.api.ts 가 documents 를 본문에 안 싣는다"
+    # ② 포털이 받는다(선언 없으면 pydantic 이 버린다)
+    assert "documents: list[ChatDocument] | None" in routes, \
+        "ChatRequest 에 documents 선언이 없다 — 조용히 버려진다"
+    # ③ 포털이 중계한다(선언만 있고 payload 에 안 넣으면 역시 사라진다)
+    assert re.search(r'payload\["documents"\]\s*=', routes), \
+        "릴레이 payload 에 documents 가 없다 — 포털에서 끝난다"
+    # ④ 에이전트서버가 받는다
+    assert re.search(r"^\s+documents: list\[dict\] = \[\]", agent, re.M), \
+        "agent-server ChatRequest 에 documents 가 없다"
+    # ⑤ 그리고 실제로 프롬프트에 들어간다(받기만 하고 안 쓰면 같은 증상이다)
+    assert "_doc_block(req.documents" in agent, "받은 documents 를 프롬프트에 안 싣는다"
+
+
+def test_포털이_문서를_그대로_통과시킨다():
+    """모델 선언만 보지 말고 값이 실제로 살아 나오는지 본다."""
+    from app.agent.routes import ChatRequest
+
+    req = ChatRequest(message="이 문서 봐줘",
+                      documents=[{"name": "설계.hwax.md", "kind": "ppt", "text": "본문" * 10}])
+    assert req.documents and len(req.documents) == 1
+    dumped = [d.model_dump() for d in req.documents]
+    assert dumped[0]["text"].startswith("본문")
+    assert dumped[0]["kind"] == "ppt"
+
+
+def test_문서_없이_보내면_키_자체가_안_나간다():
+    """빈 배열을 보내면 서버가 '문서가 있는데 비었다' 로 읽는다 — 없으면 없어야 한다."""
+    from app.agent.routes import ChatRequest
+
+    assert ChatRequest(message="그냥 질문").documents is None
