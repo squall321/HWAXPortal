@@ -7,12 +7,15 @@ conv_store 와 같은 패턴(stdlib sqlite3 + threading.Lock). 이메일이 영�
 """
 import base64
 import contextlib
+import copy
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import sqlite3
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -57,6 +60,13 @@ class UserStore:
         # 요청마다 계산하면서 get() 이 모든 요청에서 동시에 돌자 'bad parameter or other API
         # misuse'·열 개수 불일치로 500 이 났다(dev 실측). 쓰기 안에서 get() 을 부르므로 재진입 잠금.
         self._lock = threading.RLock()
+        # 권한을 요청마다 계산하면서 get() 이 **모든 요청**의 임계경로가 됐다. 연결 하나를 락으로
+        # 직렬화하므로 사람이 늘수록 여기서 줄을 선다. 아주 짧은 TTL 로 같은 사람의 연속 조회를
+        # 합친다 — 쓰기는 _commit 이 epoch 를 올려 **즉시** 무효화하므로, 관리자가 권한을 바꾸면
+        # 그 순간부터 새 값이다(TTL 은 '아무도 안 고쳤을 때'만 의미가 있다). 0 이면 캐시 끔.
+        self._row_ttl = float(os.environ.get("USER_ROW_TTL_S", "3") or 0)
+        self._row_cache: dict[str, tuple[float, int, dict | None]] = {}
+        self._epoch = 0
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS users ("
@@ -92,20 +102,32 @@ class UserStore:
             "workspace TEXT NOT NULL DEFAULT '', "   # RA 부서(워크스페이스) slug — 호출 헤더용
             "created_at INTEGER NOT NULL, PRIMARY KEY (email, service))"
         )
+        self._commit()
+
+    def _commit(self) -> None:
+        """쓰기 확정 — 행 캐시도 함께 버린다. 쓰기가 이 함수를 안 거치면 캐시가 낡은 권한을
+        들고 있게 되므로, 테스트가 `self._conn.commit()` 직접 호출이 없는지 대조한다."""
         self._conn.commit()
+        self._epoch += 1
 
     # ── 조회 ────────────────────────────────────────────────────────────────
     def get(self, email: str) -> dict | None:
+        key = norm_email(email)
+        hit = self._row_cache.get(key)
+        if hit and hit[1] == self._epoch and (time.monotonic() - hit[0]) < self._row_ttl:
+            return copy.deepcopy(hit[2])   # 호출부가 고쳐도 캐시가 오염되지 않게
         with self._lock:
-            cur = self._conn.execute("SELECT * FROM users WHERE email = ?", (norm_email(email),))
+            cur = self._conn.execute("SELECT * FROM users WHERE email = ?", (key,))
             row = cur.fetchone()
             cols = [c[0] for c in cur.description] if row is not None else []
-        if row is None:
-            return None
-        d = dict(zip(cols, row, strict=True))
-        d["groups"] = json.loads(d.get("groups") or "[]")
-        d["grants"] = json.loads(d.get("grants") or "[]")
-        return d
+        d: dict | None = None
+        if row is not None:
+            d = dict(zip(cols, row, strict=True))
+            d["groups"] = json.loads(d.get("groups") or "[]")
+            d["grants"] = json.loads(d.get("grants") or "[]")
+        if self._row_ttl > 0:
+            self._row_cache[key] = (time.monotonic(), self._epoch, d)
+        return copy.deepcopy(d)
 
     def list_users(self) -> list[dict]:
         with self._lock:
@@ -154,7 +176,7 @@ class UserStore:
                 (email, name.strip()[:80], hash_password(password), json.dumps(groups),
                  status, now, now if bootstrap else None, "bootstrap" if bootstrap else None,
                  department.strip()[:80]))
-            self._conn.commit()
+            self._commit()
         return {"email": email, "status": status}
 
     def approve(self, email: str, *, by: str, groups: list[str] | None = None) -> bool:
@@ -164,7 +186,7 @@ class UserStore:
                 "groups = COALESCE(?, groups) WHERE email = ? AND status = 'pending'",
                 (_now(), norm_email(by), json.dumps(groups) if groups is not None else None,
                  norm_email(email)))
-            self._conn.commit()
+            self._commit()
             return cur.rowcount > 0
 
     def set_status(self, email: str, status: str) -> bool:
@@ -173,7 +195,7 @@ class UserStore:
         with self._lock:
             cur = self._conn.execute(
                 "UPDATE users SET status = ? WHERE email = ?", (status, norm_email(email)))
-            self._conn.commit()
+            self._commit()
             return cur.rowcount > 0
 
     def set_password(self, email: str, password: str) -> bool:
@@ -181,7 +203,7 @@ class UserStore:
             cur = self._conn.execute(
                 "UPDATE users SET pw_hash = ?, failed_count = 0, locked_until = 0 "
                 "WHERE email = ?", (hash_password(password), norm_email(email)))
-            self._conn.commit()
+            self._commit()
             return cur.rowcount > 0
 
     def set_department(self, email: str, department: str) -> bool:
@@ -189,7 +211,7 @@ class UserStore:
             cur = self._conn.execute(
                 "UPDATE users SET department = ? WHERE email = ?",
                 (department.strip()[:80], norm_email(email)))
-            self._conn.commit()
+            self._commit()
             return cur.rowcount > 0
 
     # ── 외부 서비스 연결 토큰(RA PAT 등) ─────────────────────────────────────
@@ -198,7 +220,7 @@ class UserStore:
             self._conn.execute(
                 "INSERT OR REPLACE INTO connections (email, service, token, workspace, created_at) "
                 "VALUES (?, ?, ?, ?, ?)", (norm_email(email), service, token, workspace, _now()))
-            self._conn.commit()
+            self._commit()
 
     def get_connection(self, *, email: str, service: str) -> dict | None:
         with self._lock:
@@ -217,7 +239,7 @@ class UserStore:
             cur = self._conn.execute(
                 "UPDATE connections SET workspace = ? WHERE email = ? AND service = ?",
                 (workspace, norm_email(email), service))
-            self._conn.commit()
+            self._commit()
             return cur.rowcount > 0
 
     def delete_connection(self, *, email: str, service: str) -> bool:
@@ -225,7 +247,7 @@ class UserStore:
             cur = self._conn.execute(
                 "DELETE FROM connections WHERE email = ? AND service = ?",
                 (norm_email(email), service))
-            self._conn.commit()
+            self._commit()
             return cur.rowcount > 0
 
     def connection_meta(self, *, email: str, service: str) -> dict | None:
@@ -243,7 +265,7 @@ class UserStore:
             cur = self._conn.execute(
                 "UPDATE users SET groups = ? WHERE email = ?",
                 (json.dumps(list(groups)), norm_email(email)))
-            self._conn.commit()
+            self._commit()
             return cur.rowcount > 0
 
     # ── 소속·개별 허가·허가 요청(docs/access-control) ──────────────────────────
@@ -262,7 +284,7 @@ class UserStore:
         with self._lock:
             cur = self._conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE email = ?",  # noqa: S608 — 칸 이름은 고정 목록
                                      (*args, norm_email(email)))
-            self._conn.commit()
+            self._commit()
             return cur.rowcount > 0
 
     def create_request(self, *, email: str, key: str, note: str = "") -> dict:
@@ -278,7 +300,7 @@ class UserStore:
             cur = self._conn.execute(
                 "INSERT INTO access_requests (email, key, note, created_at) VALUES (?, ?, ?, ?)",
                 (email, key, note.strip()[:500], _now()))
-            self._conn.commit()
+            self._commit()
             return {"id": cur.lastrowid, "status": "pending", "duplicate": False}
 
     def list_requests(self, *, status: str | None = None, email: str | None = None,
@@ -321,7 +343,7 @@ class UserStore:
                 have.add(key)
                 self._conn.execute("UPDATE users SET grants = ? WHERE email = ?",
                                    (json.dumps(sorted(have)), email))
-            self._conn.commit()
+            self._commit()
             return {"id": req_id, "email": email, "key": key,
                     "status": "approved" if approve else "rejected"}
 
@@ -345,7 +367,7 @@ class UserStore:
                 self._conn.execute(
                     "UPDATE users SET failed_count = ?, locked_until = ? WHERE email = ?",
                     (0 if locked else fails, locked, email))
-                self._conn.commit()
+                self._commit()
             raise ValueError("locked" if locked else "bad credentials")
         if u["status"] != "active":
             raise ValueError("not active")
@@ -353,7 +375,7 @@ class UserStore:
             self._conn.execute(
                 "UPDATE users SET failed_count = 0, locked_until = 0, last_login_at = ?, "
                 "auth_source = 'local' WHERE email = ?", (now, email))
-            self._conn.commit()
+            self._commit()
         return u
 
     # ── SSO 연동(미래) ──────────────────────────────────────────────────────
@@ -373,4 +395,4 @@ class UserStore:
                 self._conn.execute(
                     "UPDATE users SET auth_source = 'sso', last_login_at = ? WHERE email = ?",
                     (now, email))
-            self._conn.commit()
+            self._commit()

@@ -364,3 +364,36 @@ def test_원장_조회는_여러_스레드에서_동시에_불러도_깨지지_�
     for t in ts:
         t.join()
     assert not errors, errors[:3]
+
+
+def test_사용자_행_캐시는_쓰기_즉시_무효화된다(tmp_path):
+    """권한을 요청마다 계산하느라 get() 이 모든 요청의 임계경로다 — 짧은 TTL 로 합치되,
+    관리자가 권한을 바꾸면 TTL 을 기다리지 않고 그 순간부터 새 값이어야 한다."""
+    from app.auth.user_store import UserStore
+    from app.config import Settings
+
+    st = Settings(user_store_path=str(tmp_path / "u.sqlite"))
+    store = UserStore(st)
+    store.signup(email="a@b.com", name="A", password="pw12345678", department="",
+                 bootstrap_admins=[])
+    assert store.get("a@b.com")["grants"] == []
+    store.get("a@b.com")                                   # 캐시에 올린다
+    store.set_access("a@b.com", affiliation="CAEG", grants=["plat:stepforge"])
+    assert store.get("a@b.com")["grants"] == ["plat:stepforge"], "쓰기 뒤에도 옛 행을 돌려줬다"
+    # 캐시가 준 dict 를 호출부가 고쳐도 다음 조회가 오염되면 안 된다.
+    row = store.get("a@b.com")
+    row["grants"].append("plat:oops")
+    assert store.get("a@b.com")["grants"] == ["plat:stepforge"]
+
+
+def test_쓰기는_모두_commit_헬퍼를_지난다():
+    """`self._conn.commit()` 을 직접 부르는 쓰기가 생기면 행 캐시가 낡은 권한을 들고 있게 된다.
+    잊기 쉬운 자리라 코드로 대조한다(잊었을 때 증상이 '가끔 옛 권한'이라 추적이 어렵다)."""
+    from pathlib import Path
+    src = Path(__file__).resolve().parents[1] / "app" / "auth" / "user_store.py"
+    body = src.read_text(encoding="utf-8")
+    direct = [ln for ln in body.splitlines()
+              if "self._conn.commit()" in ln and not ln.lstrip().startswith("#")
+              and '"""' not in ln and "`" not in ln]
+    # _commit 안의 한 줄만 허용
+    assert len(direct) == 1, f"_commit 을 거치지 않는 commit 이 있다: {direct}"
