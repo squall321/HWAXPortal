@@ -47,6 +47,19 @@ export function DocExtractHint({ filename, onClose }: Props) {
         Word·PowerPoint 가 이미 열려 있어도 괜찮습니다 — 작업 중인 창은 건드리지 않습니다.
         스캔한 PDF 는 글자가 없어 빈 결과가 나옵니다.
       </p>
+      <details className="doc-hint-more">
+        <summary>개인 클로드(Claude Code)를 쓴다면 — 올리는 단계 없이</summary>
+        <p>
+          같은 폴더에 <a href="/doc-extract/hwax-doc-mcp.mjs" download>hwax-doc-mcp.mjs</a> 를 함께
+          받아 아래 한 줄로 등록하면, 클로드가 이 PC 의 문서를 직접 읽습니다.
+          <b>추출한 글조차 서버로 가지 않습니다.</b>
+        </p>
+        <code className="doc-hint-cmd">claude mcp add hwax-doc -- node "C:\받은폴더\hwax-doc-mcp.mjs"</code>
+        <p>
+          기본으로 내 문서·바탕화면·다운로드만 읽습니다. 다른 폴더를 열려면
+          <code>HWAX_DOC_ROOTS</code> 환경변수에 <code>;</code> 로 구분해 적으세요.
+        </p>
+      </details>
     </div>
   );
 }

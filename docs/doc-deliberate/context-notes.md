@@ -310,12 +310,51 @@ LLM 요약이 가능해지지만 그건 별건이다. 지금은 결정적·무�
 차이가 4% 라 실질 손실은 없다. 더 키우려면 전송 상한을 올려야 하는데, 그건 브라우저가 4MB
 문자열을 읽어 JSON 으로 싣는 비용이라 지금은 두었다.
 
+## D-22. 남겨 뒀던 것들 — 셋은 했고 하나는 막혔다
+
+**① 띵킹 모드 문서 주입 — 했다.** 두 가지를 지켰다. 문서를 질문(q)에 붙이면 `recommend_agents`
+검색어가 수십만 자가 되어 **전문가 발굴이 통째로 망가진다** → 좌석 프롬프트에만 싣는다.
+그리고 띵킹은 선별 좌석 **전원이 동시에** 도니 챗과 같은 몫을 주면 한 발화에 수백만 토큰이
+나간다 → `THINK_DOC_SHARE`(0.5)로 줄인다.
+
+**② 목적지 선택 — 했다. 다만 전용 라우트를 파지 않았다.**
+등록·발행은 되돌리기 어렵다. 전용 라우트를 만들면 확인 절차를 거기 다시 지어야 하는데
+챗 경로엔 이미 있다 — `import_record` 는 `dry_run` 으로 모자란 항목을 되묻고,
+`create_report_draft` 는 템플릿을 먼저 보게 한다. 그래서 칩이 **지시문을 입력창에 채우고,
+보내는 건 사람이 한다.** 코드가 줄고 확인 절차가 한 곳에 남는다.
+
+**③ 로컬 MCP 서버 — 했다.** `hwax-doc-mcp.mjs`(Node, 무의존 stdio JSON-RPC). 포털 경로는
+추출한 *글*을 서버로 보내지만 이 경로는 그것조차 안 보낸다. 읽기 폴더를 화이트리스트로
+좁혔다(`HWAX_DOC_ROOTS`, 기본 내문서·바탕화면·다운로드) — MCP 는 **모델이 인자를 정하므로**
+경로를 열어 두면 모델이 아무 파일이나 읽어 달라고 할 수 있다.
+실측 검증: initialize·tools/list·tools/call 정상, `notifications/*` 는 무응답(규약),
+`/etc/passwd` 거절, 없는 파일 거절, PowerShell 부재 시 깨끗한 오류.
+
+**④ RA 세그먼트(문서 → 보고서) — 막혔다.**
+
+`create_report_draft` 로 넣으려면 자유형식 템플릿이 필요한데 **게이트웨이에 없다.**
+
+```
+list_templates       → "심의 보고서", "DOE 분석 보고서" 둘뿐
+describe_template("__import_blank__") → Template not found: __import_blank__@1
+```
+
+RA 웹의 `/imports/pptx` 가 쓰는 `__import_blank__` 는 그 라우트가 **처음 쓰일 때 만든다**
+(`ensure_import_template`, get-or-create). 아직 아무도 안 써서 존재하지 않는다.
+
+억지로 우회하지 않았다 — 있는 템플릿("심의 보고서")에 문서를 밀어 넣으면 아카이브에
+**잘못 분류된 보고서**가 쌓인다. 되돌리기 어려운 오염이다.
+
+풀려면 둘 중 하나다.
+  (a) RA 웹에서 아무 PPTX 나 한 번 '가져오기' 하면 템플릿이 생긴다(그 뒤엔 MCP 로 보인다).
+  (b) RA 소유자에게 자유형식 템플릿 게시를 요청한다.
+둘 중 하나가 되면 변환기(마크다운 → heading/rich_text/table 위젯)를 붙인다.
+**PowerShell 은 안 건드린다** — 마크다운에 이미 `[s.N]`·표가 있으므로 서버에서 변환하면
+시험 못 하는 코드를 늘리지 않는다.
+
 ## 남은 것
 
-- **2차 — RA 세그먼트 출력**: `.hwax.json`(heading/rich_text/table/image) → `create_report_draft`.
-  슬라이드 그림은 COM 의 `Slide.Export` 로 PNG 를 뽑아 `prepare_upload` 로 올려 file_id 를 얻는다.
-- 목적지 선택 UI: 지금은 "읽고 심의" 하나뿐이다. `upload.py DESTINATIONS` 에 문서 목적지
-  (`import_record`·`create_report_draft`·`ingest_report`)를 더하면 종전 되묻기 화면이 그대로 쓰인다.
-- 띵킹 모드 경로에는 문서가 안 들어간다(챗·심의만). 필요하면 같은 `_doc_block` 을 붙인다.
+- **RA 세그먼트(문서 → 보고서)** — 자유형식 템플릿이 생기면(D-22 ④) 변환기를 붙인다.
+- 슬라이드 그림: COM `Slide.Export` → PNG → `prepare_upload` → file_id. 위 건과 같이 간다.
 - **실제 DRM 문서로 `-SelfTest` 후 본 시험** — 이 박스에는 PowerShell 도 Office 도 없어
   문법 검사조차 못 했다. 첫 실행은 사용자 PC 에서다.
