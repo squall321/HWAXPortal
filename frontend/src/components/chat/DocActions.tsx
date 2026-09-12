@@ -20,6 +20,11 @@ export function DocActions({ docs, onFill }: Props) {
   const can = useCan();
   const names = docs.map((d) => d.meta?.source || d.name).join(', ');
   const one = docs.length === 1;
+  // 형식이 행선지를 가른다. 발표자료는 검토·보고 자료라 심의·보고서로 가고, 문서·PDF 는
+  // 표준·절차서·논문처럼 **나중에 근거로 다시 꺼내 쓰는** 것이 많아 지식카드가 앞이다.
+  // 지식카드에 PPT 가 아예 안 가는 건 아니다 — training(교육자료)·meeting_minutes(회의록)·
+  // design_spec(설계사양서)는 사내에서 대개 PPT 다. 그래서 없애지 않고 뒤로만 보낸다.
+  const isDeck = docs.some((d) => d.meta?.kind === 'ppt');
 
   const actions: { key: string; label: string; title: string; text: string }[] = [];
 
@@ -46,11 +51,16 @@ export function DocActions({ docs, onFill }: Props) {
     actions.push({
       key: 'card',
       label: '📚 지식카드로 등록',
-      title: 'AI 데이터 허브에 등록해 이후 검색·심의 근거로 쓴다',
-      text: `붙인 ${one ? '문서를' : '문서들을'} 지식카드로 등록하려 합니다. `
-        + 'describe_record_schema 로 규격을 먼저 확인하고, import_record 를 **dry_run=true 로** '
-        + '돌려 모자란 항목(team·group 등)을 나에게 물어보세요. '
-        + '내가 확인하기 전에는 실제 저장하지 마세요.',
+      title: isDeck
+        ? '발표자료엔 드물지만 교육자료·회의록·설계사양서라면 여기다 — 이후 검색·심의 근거로 재사용된다'
+        : 'AI 데이터 허브에 등록해 이후 검색·심의 근거로 재사용한다',
+      text: `붙인 ${one ? '문서를' : '문서들을'} 지식카드로 등록하려 합니다.\n`
+        + '1) list_doc_types 로 분류를 보고 이 문서에 맞는 doc_type 을 제안하세요 '
+        + '(예: 설계사양서 design_spec · 시험계획 test_plan · 교육자료 training · 회의록 meeting_minutes). '
+        + '**맞는 분류가 없으면 없다고 말하세요** — 분류가 어긋나면 나중에 검색으로 안 찾힙니다.\n'
+        + '2) describe_record_schema 로 규격을 확인하고 import_record 를 **dry_run=true 로** 돌려 '
+        + '모자란 항목(team·group·year 등)을 나에게 물어보세요.\n'
+        + '3) 내가 확인하기 전에는 실제 저장하지 마세요.',
     });
   }
 
@@ -72,9 +82,14 @@ export function DocActions({ docs, onFill }: Props) {
     });
   }
 
+  // 발표자료면 지식카드를 맨 뒤로 민다. 지우지 않는 이유는 위 주석대로다.
+  const ordered = isDeck
+    ? [...actions.filter((a) => a.key !== 'card'), ...actions.filter((a) => a.key === 'card')]
+    : actions;
+
   return (
     <div className="doc-actions" role="group" aria-label="붙인 문서로 할 일">
-      {actions.map((a) => (
+      {ordered.map((a) => (
         <button key={a.key} type="button" title={a.title} onClick={() => onFill(a.text)}>
           {a.label}
         </button>
