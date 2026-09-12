@@ -20,6 +20,14 @@ export function DocExtractHint({ filename, onClose }: Props) {
         <span className="doc-hint-sub">{label} 는 이 PC 에서 읽습니다.</span>
         <button type="button" className="doc-hint-x" onClick={onClose} aria-label="닫기">×</button>
       </div>
+      {/* DRM 이 아니면 이 경로를 쓸 이유가 없다 — RA 웹 가져오기가 **그림까지** 넣어 준다.
+          우리 COM 추출은 글만 간다(그림은 아직). 안내를 안 하면 불필요한 수고를 시킨다. */}
+      <p className="doc-hint-alt">
+        <b>DRM 이 안 걸린 자료라면</b> 이 추출기가 필요 없습니다 —
+        <a href="/report-archive/" target="_blank" rel="noreferrer">Report Archive</a> 의
+        <b> 가져오기</b> 로 올리면 서버가 직접 읽어 <b>그림·표까지</b> 보고서로 만들어 줍니다
+        (여기 추출은 글만 갑니다). DRM 문서만 아래로 진행하세요.
+      </p>
       <p className="doc-hint-why">
         사내 DRM 문서는 <b>그 PC, 그 계정</b>에서만 복호화됩니다. 파일을 그대로 올리면 서버는
         암호화된 바이트만 보게 됩니다. 그래서 PC 에 설치된 Office 로 한 번 읽어 <b>글만</b>

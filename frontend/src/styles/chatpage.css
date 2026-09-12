@@ -1374,3 +1374,8 @@
 }
 .cx-brief-alts button:hover { border-style: solid; background: color-mix(in srgb, var(--accent, #2563eb) 9%, transparent); }
 .cx-brief-alts .cx-brief-raw { opacity: 0.66; }
+.doc-hint-alt {
+  margin: 10px 0 0; padding: 8px 10px; border-radius: 7px; font-size: 12px; line-height: 1.6;
+  background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #2563eb) 22%, transparent);
+}
