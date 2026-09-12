@@ -18,6 +18,8 @@ import { IconSend, IconStop } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
+import { classify, readDoc, kindLabel, unitsLabel, DOC_MAX } from './docAttach';
+import { DocExtractHint } from './DocExtractHint';
 import { UploadRouter } from './UploadRouter';
 
 export interface ComposerHandle {
@@ -37,7 +39,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   { autoFocus = false, placeholder = '무엇이든 물어보세요…', showHint = false, onSubmitText },
   ref,
 ) {
-  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, pinnedAgentName, setPinnedAgent, pinnedHelpers, setPinnedHelpers } =
+  const { input, setInput, sendMessage, stop, streaming, pinnedTools, setPinnedTools, pinnedApps, setPinnedApps, pinnedAgent, pinnedAgentName, setPinnedAgent, pinnedHelpers, setPinnedHelpers, attachedDocs, setAttachedDocs } =
     useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { user } = useAuth();
@@ -47,12 +49,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const fileRef = useRef<HTMLInputElement>(null);
   const [staged, setStaged] = useState<StagedFile | null>(null);
   const [upErr, setUpErr] = useState('');
+  // Office 원본을 붙였을 때 띄우는 안내 — DRM 때문에 추출은 이 PC 에서 해야 한다.
+  const [comFile, setComFile] = useState<string | null>(null);
+  // 붙인 파일이 갈 곳은 셋이고 **내용을 읽기 전에** 갈린다(확장자로만 판정).
+  //   text      추출문·평문 → 브라우저에서 그대로 읽어 챗·심의 근거로. 서버에 안 올린다.
+  //   needs-com PPT·Word·PDF 원본 → 서버가 파싱하면 DRM 에 막힌다. PC 추출 안내를 띄운다.
+  //   upload    물성 CSV·STEP 등 → 종전 목적지 선택 경로 그대로.
   const onPick = useCallback(async (f: File | undefined) => {
     if (!f) return;
-    setUpErr('');
+    setUpErr(''); setComFile(null);
+    const verdict = classify(f.name);
+    if (verdict === 'needs-com') { setComFile(f.name); return; }
+    if (verdict === 'text') {
+      if (attachedDocs.length >= DOC_MAX) { setUpErr(`문서는 한 번에 ${DOC_MAX}건까지 붙일 수 있습니다.`); return; }
+      try { setAttachedDocs([...attachedDocs, await readDoc(f)]); }
+      catch (e) { setUpErr(e instanceof Error ? e.message : '문서를 읽지 못했습니다.'); }
+      return;
+    }
     try { setStaged(await uploadFile(f)); }
     catch (e) { setUpErr(e instanceof Error ? e.message : '업로드 실패'); }
-  }, []);
+  }, [attachedDocs, setAttachedDocs]);
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }), []);
 
@@ -163,6 +179,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         </div>
       )}
       {staged && <UploadRouter staged={staged} onClose={() => setStaged(null)} />}
+      {comFile && <DocExtractHint filename={comFile} onClose={() => setComFile(null)} />}
+      {attachedDocs.length > 0 && (
+        <div className="doc-chips">
+          {attachedDocs.map((d, i) => (
+            <span key={`${d.name}-${i}`} className="doc-chip" title={`${d.chars.toLocaleString()}자`}>
+              📄 {d.name}
+              <em>{[kindLabel(d.meta), unitsLabel(d.meta), `${d.chars.toLocaleString()}자`].filter(Boolean).join(' · ')}</em>
+              {d.truncated && <b className="doc-chip-cut">잘림</b>}
+              <button type="button" onClick={() => setAttachedDocs(attachedDocs.filter((_, j) => j !== i))}
+                aria-label={`${d.name} 떼기`}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
       {upErr && <div className="upl-err" role="alert">⚠ {upErr}</div>}
       <div className="composer-box">
         <textarea
@@ -176,11 +206,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         />
         {canUp && !streaming && (
           <>
-            <input ref={fileRef} type="file" accept=".csv,.xlsx,.step,.stp,.msh,.zip" style={{ display: 'none' }}
+            <input ref={fileRef} type="file"
+              accept=".md,.txt,.pptx,.ppt,.docx,.doc,.pdf,.htm,.html,.csv,.xlsx,.step,.stp,.msh,.zip"
+              style={{ display: 'none' }}
               onChange={(e) => void onPick(e.target.files?.[0] ?? undefined)} />
             <button type="button" className="composer-btn composer-attach"
               onClick={() => fileRef.current?.click()}
-              aria-label="파일 업로드" title="파일 업로드 — 물성 CSV · STEP·MSH·ZIP">+</button>
+              aria-label="파일 붙이기" title="파일 붙이기 — 문서(PPT·Word·PDF) · 물성 CSV · STEP·MSH·ZIP">+</button>
           </>
         )}
         {streaming ? (

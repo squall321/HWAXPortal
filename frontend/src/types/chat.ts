@@ -241,6 +241,9 @@ export interface Message {
   persona?: { key: string; name?: string };
   // 띵킹 구조화 데이터 — 좌석별 답변·기권 렌더(ThinkView)용. 영속됨.
   think?: ThinkData;
+  /** 이 발화에 붙인 문서 — **이름과 길이만** 남긴다. 본문(수만 자)까지 대화에 넣으면
+   *  localStorage 쿼터를 바로 먹는다(agentCatalog 를 안 남기는 것과 같은 이유). */
+  docs?: { name: string; chars: number; kind?: string }[];
   error?: string;
   // 자격증명 강등 등 치명적이지 않은 경고 — 심의가 서비스 계정으로 근거를 모은 경우.
   // error 와 달리 응답을 막지 않고 옆에 지속 표시한다(무음 강등 가시화).

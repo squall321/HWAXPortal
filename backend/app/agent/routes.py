@@ -125,6 +125,17 @@ class DelibOpts(BaseModel):
     tool_budget: int | None = Field(default=None, ge=1, le=6)
 
 
+class ChatDocument(BaseModel):
+    """사용자가 붙인 문서 한 건 — 이름과 **추출된 글**만 온다.
+
+    상한 200,000자는 엔진 근거 예산(_EVID_BUDGET 60,000)보다 크게 잡은 값이다. 여기서 미리
+    자르면 '왜 뒷부분이 없나' 를 사용자가 알 길이 없다 — 자르는 일은 예산을 아는 엔진이 하고,
+    잘랐다는 사실을 화면에 남긴다."""
+    name: str = Field(min_length=1, max_length=260)
+    kind: str | None = Field(default=None, max_length=16)
+    text: str = Field(min_length=1, max_length=200000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=65536)  # cap payload — no unbounded input (DoS)
     system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
@@ -143,6 +154,9 @@ class ChatRequest(BaseModel):
     pinned_agent: str | None = Field(default=None, max_length=120)
     # 여러 전문가를 한 목소리로 — 첫 명이 주 전문가다(도구 특화 + 전문지식 조합).
     pinned_agents: list[str] = Field(default_factory=list, max_length=5)
+    # 붙인 문서의 **추출문**(챗). 원본 파일은 오지 않는다 — DRM 문서는 그 PC 에서만 복호화되므로
+    # 추출을 사용자 PC 의 Office COM 으로 옮겼다(docs/doc-deliberate). 여기 오는 것은 이미 평문이다.
+    documents: list[ChatDocument] | None = Field(default=None, max_length=5)
     # 웹 리서치 소스 토글(챗) — None 이면 종전 동작, 리스트면 그 소스만 바인딩한다.
     # 빈 리스트는 '전부 끔'이다. 전역 SEARCH_MODE 가 끄면 이 값과 무관하게 나가지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
@@ -457,6 +471,8 @@ async def _relay_stream(
         payload["search_sources"] = body.search_sources
     if body.thinking:  # 띵킹 모드 — 켠 것만 전달(끄면 agent-server 기본값 False)
         payload["thinking"] = True
+    if body.documents:  # 붙인 문서의 추출문 — 원본이 아니라 평문이다
+        payload["documents"] = [d.model_dump() for d in body.documents]
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload

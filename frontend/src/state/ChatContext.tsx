@@ -22,7 +22,8 @@ import {
 import { useAuth } from '../auth/useAuth';
 import { useCan } from '../auth/useCan';
 import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
-import { conversationEvidence, type HandoffEvidence } from '../components/chat/handoff';
+import { conversationEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
+import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import { mergeEvidence } from '../components/chat/vocEvidence';
 import {
   delibOptsToWire,
@@ -88,6 +89,10 @@ interface ChatContextValue {
   /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다(회의 아님). 세션 토글이라 매 발화에 실린다. */
   thinking: boolean;
   setThinking: (v: boolean) => void;
+  /** 이번 발화에 붙인 문서(브라우저에서 읽은 추출문). 보내면 비워진다 — 1회성이다.
+   *  원본 파일은 서버로 가지 않는다(DRM 전제: 추출은 PC 의 Office COM 에서 끝난다). */
+  attachedDocs: AttachedDoc[];
+  setAttachedDocs: (list: AttachedDoc[]) => void;
   stop: () => void;
   newConversation: () => void;
   selectConversation: (id: string) => void;
@@ -366,6 +371,14 @@ export function ChatProvider({
     thinkingRef.current = v;
     setThinkingState(v);
   }, []);
+  // 붙인 문서도 전송 시점 읽기다(같은 스테일 함정). 보낸 뒤 비운다 — 다음 발화에 딸려가면
+  // 사용자는 한 번 붙였다고 생각하는데 매 턴 수만 자가 다시 실린다.
+  const [attachedDocs, setAttachedDocsState] = useState<AttachedDoc[]>([]);
+  const attachedDocsRef = useRef<AttachedDoc[]>([]);
+  const setAttachedDocs = useCallback((list: AttachedDoc[]) => {
+    attachedDocsRef.current = list;
+    setAttachedDocsState(list);
+  }, []);
   const draftPinsRef = useRef(draftPins);
   const setDraftPins = useCallback((v: { agent?: string; agentName?: string; helpers?: { key: string; name?: string }[]; tools: string[]; apps: string[] }) => {
     draftPinsRef.current = v;
@@ -510,7 +523,12 @@ export function ChatProvider({
         ? (existing ? (existing.pinnedHelpers ?? []) : (draft.helpers ?? []))
         : []).slice(0, 4);
 
-      const userMsg: Message = { id: newId(), role: 'user', text, ts: now };
+      // 붙인 문서 — 이 발화에만 실린다. 본문은 대화에 남기지 않고(쿼터) 이름·길이만 남긴다.
+      const docs = attachedDocsRef.current;
+      const userMsg: Message = {
+        id: newId(), role: 'user', text, ts: now,
+        ...(docs.length ? { docs: docs.map((d) => ({ name: d.name, chars: d.chars, kind: d.meta?.kind })) } : {}),
+      };
       const botId = newId();
       // 이 답이 누구 것인지는 **보낼 때** 찍는다 — 나중에 전문가를 바꿔도 과거 답의 주인이
       // 바뀌지 않고, 새로고침해도 남는다(대화 상태만 보면 둘 다 깨진다).
@@ -592,6 +610,8 @@ export function ChatProvider({
           ? { pinnedAgents: [effPinnedAgent, ...effHelpers.map((h: { key: string }) => h.key)] }
           : {}),
         searchSources: effSources,
+        // 붙인 문서의 **추출문**만 간다(원본 파일은 브라우저를 떠나지 않는다).
+        ...(docs.length ? { documents: docs.map((d) => ({ name: d.name, kind: d.meta?.kind, text: d.text })) } : {}),
         // 띵킹 모드 — 켠 동안 모든 발화에 실린다. 서버는 명시 슬래시 트리거(/심의 등)를
         // 먼저 보므로, 모드가 켜져 있어도 그 턴에 대놓고 심의를 부르면 심의가 이긴다.
         ...(thinkingRef.current && can('feat:thinking') ? { thinking: true } : {}),
@@ -601,8 +621,15 @@ export function ChatProvider({
           // 패널 손잡이(켠 것만) + 일회성 extra(이어하기 human_note·요약·personas)를 병합
           // 심의는 자유 조회에서 거르므로 delib_opts 에도 실어야 한다. 챗은 top-level
           // search_sources 를 쓴다 — 두 경로가 서버에서 서로 다른 자리에서 걸러진다.
-          const w = { ...delibOptsToWire(delibOptsRef.current),
+          const w: Record<string, unknown> = { ...delibOptsToWire(delibOptsRef.current),
                       search_sources: effSources, ...(extraDelibOpts ?? {}) };
+          // 붙인 문서는 심의에도 **원천 근거 채널**로 넣는다 — 엔진이 이미 '검증 대상이지
+          // 결론이 아니다' 로 프레이밍해 좌석에 주므로 별도 통로를 팔 이유가 없다.
+          // 문서를 앞에 둔다(사람이 방금 고른 것 = 더 관련).
+          if (docs.length) {
+            const prev = Array.isArray(w.evidence) ? (w.evidence as HandoffEvidence[]) : [];
+            w.evidence = [...docsAsEvidence(docs), ...prev].slice(0, EVID_ITEMS);
+          }
           return Object.keys(w).length > 0 ? { delibOpts: w } : {};
         })(),
         onStatus: (e) =>
@@ -925,6 +952,8 @@ export function ChatProvider({
         setPinnedApps,
         searchSources,
         setSearchSources,
+        attachedDocs,
+        setAttachedDocs,
         pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
         pinnedAgentName: activeConversation
           ? (activeConversation.pinnedAgentName ?? null)

@@ -410,11 +410,14 @@ export async function streamChat(
     pinnedAgents?: string[];
     /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다. 매 발화에 실린다(슬래시 접두사 아님). */
     thinking?: boolean;
+    /** 붙인 문서의 **추출문**. 원본 파일은 올라가지 않는다 — DRM 때문에 추출은 PC 의
+     *  Office COM 에서 끝난다(docs/doc-deliberate). 서버가 예산에 맞춰 다시 자른다. */
+    documents?: { name: string; kind?: string; text: string }[];
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgents, searchSources, thinking, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgents, searchSources, thinking, documents, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -445,6 +448,7 @@ export async function streamChat(
       ...(searchSources !== undefined ? { search_sources: searchSources } : {}),
       // 켠 것만 보낸다(서버 기본값 false). 끄면 키 자체가 안 나간다.
       ...(thinking ? { thinking: true } : {}),
+      ...(documents && documents.length > 0 ? { documents: documents.slice(0, 5) } : {}),
     }),
     signal,
   });
