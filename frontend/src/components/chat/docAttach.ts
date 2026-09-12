@@ -6,8 +6,8 @@ import type { HandoffEvidence } from './handoff';
  *  여기서 미리 자르지 않는 이유는, 자르는 일을 예산과 낱장 경계를 아는 서버가 하기 때문이다.
  *  200슬라이드급 발표자료도 통째로 보낸다. */
 export const DOC_CHARS_MAX = 2_000_000;
-/** 한 발화에 붙일 수 있는 문서 수. */
-export const DOC_MAX = 5;
+/** 한 발화에 붙일 수 있는 문서 수. 포털 ChatRequest.documents·엔진 DOC_MAX_FILES 와 같은 값. */
+export const DOC_MAX = 10;
 
 /** COM 추출이 필요한 형식 — 브라우저는 COM 을 못 부르고, DRM 은 서버 파싱을 막는다. */
 const EXT_NEEDS_COM = ['pptx', 'ppt', 'docx', 'doc', 'pdf', 'rtf', 'odt', 'odp', 'htm', 'html', 'mht', 'mhtml'];

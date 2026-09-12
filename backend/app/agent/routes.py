@@ -144,7 +144,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=65536)  # cap payload — no unbounded input (DoS)
     system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
     # 멀티턴 컨텍스트: 오래된 것→최신 순, 이번 message는 포함하지 않는다(agent-server 계약).
-    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=160)
     # 있으면 이 대화(서버 정본)에 user+assistant 를 저장한다. 없으면 저장 안 함(하위호환).
     conversation_id: str | None = Field(default=None, max_length=64)
     # 심의 손잡이 오버라이드 — 심의(/심의) 요청에서만 의미. agent-server 로 그대로 포워딩.
@@ -160,7 +160,7 @@ class ChatRequest(BaseModel):
     pinned_agents: list[str] = Field(default_factory=list, max_length=5)
     # 붙인 문서의 **추출문**(챗). 원본 파일은 오지 않는다 — DRM 문서는 그 PC 에서만 복호화되므로
     # 추출을 사용자 PC 의 Office COM 으로 옮겼다(docs/doc-deliberate). 여기 오는 것은 이미 평문이다.
-    documents: list[ChatDocument] | None = Field(default=None, max_length=5)
+    documents: list[ChatDocument] | None = Field(default=None, max_length=10)
     # 웹 리서치 소스 토글(챗) — None 이면 종전 동작, 리스트면 그 소스만 바인딩한다.
     # 빈 리스트는 '전부 끔'이다. 전역 SEARCH_MODE 가 끄면 이 값과 무관하게 나가지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
@@ -600,7 +600,7 @@ class ExpertsRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
     # 대화 전체 — 좌석 추천을 화두 한 줄이 아니라 오간 맥락 위에서 하기 위한 것.
     # 캡은 챗 경로와 같은 계약을 쓴다(별도 규칙을 만들면 한쪽만 조이는 일이 생긴다).
-    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=160)
     # 조직도 1단계(명부만) — 트리를 먼저 그리고 태그·도구 카탈로그는 뒤에서 받는다.
     light: bool = False
 
@@ -609,7 +609,7 @@ class ClarifyRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
     # 심의 방법 — 칸 묶음을 고른다(원인 규명·안 선택·신뢰 판정·시험 설계…). 모르는 값은 서버가 자유 심의로 본다.
     job: str = Field(default="default", max_length=40)
-    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=80)
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=160)
 
 
 class VocPreviewRequest(BaseModel):

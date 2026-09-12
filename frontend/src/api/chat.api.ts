@@ -448,7 +448,7 @@ export async function streamChat(
       ...(searchSources !== undefined ? { search_sources: searchSources } : {}),
       // 켠 것만 보낸다(서버 기본값 false). 끄면 키 자체가 안 나간다.
       ...(thinking ? { thinking: true } : {}),
-      ...(documents && documents.length > 0 ? { documents: documents.slice(0, 5) } : {}),
+      ...(documents && documents.length > 0 ? { documents: documents.slice(0, 10) } : {}),
     }),
     signal,
   });

@@ -108,10 +108,14 @@ interface ChatContextValue {
 // eslint-disable-next-line react-refresh/only-export-components
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
-// 서버 캡(40항목/4000자)에 걸려 422가 나지 않도록 프론트에서도 자른다.
-const HISTORY_MAX_ITEMS = 60;
-const HISTORY_MAX_ITEM_CHARS = 20000;
-const HISTORY_MAX_TOTAL_CHARS = 180000;
+// 포털 ChatRequest.history(160항목 · 항목당 24,000자) 안에서 자른다 — 넘으면 422.
+// ⚠ 여기서 먼저 버리면 **서버가 압축할 것조차 없다.** 서버는 모델 컨텍스트를 알고 오래된
+// 턴을 발췌 압축본으로 남기는데(app._compact_turns), 프론트가 미리 떨어뜨리면 그 턴은
+// 존재 자체가 사라진다. 그래서 넉넉히 보내고 줄이는 일은 컨텍스트를 아는 서버가 한다.
+// cae00 운영 GLM-5-2 는 1M 창이라 이력에 40만 자를 써도 문서 자리가 남는다.
+const HISTORY_MAX_ITEMS = 160;
+const HISTORY_MAX_ITEM_CHARS = 24000;
+const HISTORY_MAX_TOTAL_CHARS = 600000;
 
 /** 멀티턴 history: 활성 대화의 기존 메시지 → 계약 형식(오래된 것→최신 순, 이번 발화 제외). */
 function buildHistory(messages: Message[]): HistoryMessage[] {
