@@ -3,13 +3,15 @@ import { kindLabel } from './docAttach';
 
 interface Props {
   filename: string;
+  /** 파일 첫 바이트로 본 판정. true=암호화(또는 구형 OLE) · false=평문 · null=모름. */
+  encrypted: boolean | null;
   onClose: () => void;
 }
 
 /** DRM 문서는 그 PC·그 사용자 세션에서만 복호화된다. 서버가 원본을 받아 파싱하면 암호화된
  *  바이트만 본다 — ReportArchive 의 /imports/pptx 도, AI 데이터 허브의 convert_file 도 거기서
  *  막힌다. 그래서 추출을 PC 로 옮긴다. 올라가는 것은 원본이 아니라 추출된 글이다. */
-export function DocExtractHint({ filename, onClose }: Props) {
+export function DocExtractHint({ filename, encrypted, onClose }: Props) {
   const ext = filename.slice(filename.lastIndexOf('.') + 1).toLowerCase();
   const label = kindLabel({ kind: ext === 'pptx' || ext === 'ppt' ? 'ppt' : ext === 'pdf' ? 'pdf' : 'word' });
 
@@ -20,14 +22,26 @@ export function DocExtractHint({ filename, onClose }: Props) {
         <span className="doc-hint-sub">{label} 는 이 PC 에서 읽습니다.</span>
         <button type="button" className="doc-hint-x" onClick={onClose} aria-label="닫기">×</button>
       </div>
-      {/* DRM 이 아니면 이 경로를 쓸 이유가 없다 — RA 웹 가져오기가 **그림까지** 넣어 준다.
-          우리 COM 추출은 글만 간다(그림은 아직). 안내를 안 하면 불필요한 수고를 시킨다. */}
-      <p className="doc-hint-alt">
-        <b>DRM 이 안 걸린 자료라면</b> 이 추출기가 필요 없습니다 —
-        <a href="/report-archive/" target="_blank" rel="noreferrer">Report Archive</a> 의
-        <b> 가져오기</b> 로 올리면 서버가 직접 읽어 <b>그림·표까지</b> 보고서로 만들어 줍니다
-        (여기 추출은 글만 갑니다). DRM 문서만 아래로 진행하세요.
-      </p>
+      {/* 이름이 아니라 **바이트**로 갈린다. DRM 이 브라우저 읽기에도 투명하면 여기서 이미
+          평문이라 서버가 그대로 파싱할 수 있고, COM 추출이 필요 없다. 짐작하면 멀쩡한
+          파일에도 불필요한 수고를 시킨다. */}
+      {encrypted === false ? (
+        <p className="doc-hint-alt">
+          <b>이 파일은 이 PC 에서 평문으로 읽힙니다</b> — 첫 바이트가 정상 문서 형식입니다.
+          그러면 추출기가 필요 없습니다.
+          <a href="/report-archive/" target="_blank" rel="noreferrer"> Report Archive</a> 의
+          <b> PPT에서 불러오기</b> 로 올리면 서버가 직접 읽어 <b>그림·표까지</b> 보고서로
+          만들어 줍니다(여기 추출은 글만 갑니다). 그래도 글만 빠르게 보고 싶으면 아래로 진행하세요.
+        </p>
+      ) : (
+        <p className="doc-hint-alt">
+          {encrypted === true
+            ? '이 파일은 암호화돼 있거나 구형 형식입니다 — 서버가 열지 못합니다. 아래 방법이 맞습니다.'
+            : '형식을 단정하지 못했습니다. 서버가 못 읽으면 아래 방법으로 진행하세요.'}
+          {' '}DRM 이 안 걸린 자료라면 <a href="/report-archive/" target="_blank" rel="noreferrer">Report Archive</a> 의
+          <b> PPT에서 불러오기</b> 가 그림까지 넣어 주므로 그쪽이 낫습니다.
+        </p>
+      )}
       <p className="doc-hint-why">
         사내 DRM 문서는 <b>그 PC, 그 계정</b>에서만 복호화됩니다. 파일을 그대로 올리면 서버는
         암호화된 바이트만 보게 됩니다. 그래서 PC 에 설치된 Office 로 한 번 읽어 <b>글만</b>

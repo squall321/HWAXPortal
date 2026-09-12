@@ -19,6 +19,29 @@ const EXT_UPLOAD = ['csv', 'xlsx', 'step', 'stp', 'msh', 'zip', 'k', 'key', 'dyn
 
 export type DocVerdict = 'text' | 'needs-com' | 'upload' | 'unknown';
 
+/** 이 파일이 **실제로 암호화돼 있나** — 첫 4바이트면 갈린다.
+ *
+ *  DRM 은 대개 파일시스템을 후킹해 **읽는 순간 투명하게 복호화**한다. 그게 브라우저에도
+ *  적용되면 여기서 읽은 바이트는 이미 평문이고, 서버가 그대로 파싱할 수 있다 —
+ *  COM 추출이 필요 없다. 허용 프로세스를 Office 로만 묶는 정책이면 반대다.
+ *
+ *  제품·정책마다 다르므로 **짐작하지 않고 바이트를 본다.**
+ *    50 4B 03 04  "PK"  → zip(정상 OOXML) = 평문
+ *    D0 CF 11 E0        → OLE 복합문서 = 암호화(또는 구형 .ppt/.doc)
+ */
+export async function isEncryptedOffice(file: File): Promise<boolean | null> {
+  try {
+    const b = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+    if (b.length < 4) return null;
+    if (b[0] === 0x50 && b[1] === 0x4b) return false;                      // PK — zip
+    if (b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0) return true;  // OLE
+    if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return false; // %PDF
+    return null;   // 모르겠으면 모른다고 한다 — 억지로 단정하지 않는다
+  } catch {
+    return null;
+  }
+}
+
 export interface AttachedDoc {
   name: string;
   /** 본문(추출문). 이것만 서버로 간다. */

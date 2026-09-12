@@ -18,7 +18,7 @@ import { IconSend, IconStop } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
-import { classify, readDoc, kindLabel, unitsLabel, DOC_MAX } from './docAttach';
+import { classify, readDoc, kindLabel, unitsLabel, isEncryptedOffice, DOC_MAX } from './docAttach';
 import { DocExtractHint } from './DocExtractHint';
 import { DocActions } from './DocActions';
 import { UploadRouter } from './UploadRouter';
@@ -51,7 +51,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [staged, setStaged] = useState<StagedFile | null>(null);
   const [upErr, setUpErr] = useState('');
   // Office 원본을 붙였을 때 띄우는 안내 — DRM 때문에 추출은 이 PC 에서 해야 한다.
-  const [comFile, setComFile] = useState<string | null>(null);
+  // 이름만이 아니라 **바이트**로 갈린다 — DRM 이 브라우저에도 투명하면 평문이 읽히고,
+  // 그러면 COM 추출이 필요 없다(서버가 그대로 파싱한다). 짐작하지 않고 본다.
+  const [comFile, setComFile] = useState<{ name: string; encrypted: boolean | null } | null>(null);
   // 붙인 파일이 갈 곳은 셋이고 **내용을 읽기 전에** 갈린다(확장자로만 판정).
   //   text      추출문·평문 → 브라우저에서 그대로 읽어 챗·심의 근거로. 서버에 안 올린다.
   //   needs-com PPT·Word·PDF 원본 → 서버가 파싱하면 DRM 에 막힌다. PC 추출 안내를 띄운다.
@@ -60,7 +62,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (!f) return;
     setUpErr(''); setComFile(null);
     const verdict = classify(f.name);
-    if (verdict === 'needs-com') { setComFile(f.name); return; }
+    if (verdict === 'needs-com') {
+      setComFile({ name: f.name, encrypted: await isEncryptedOffice(f) });
+      return;
+    }
     if (verdict === 'text') {
       if (attachedDocs.length >= DOC_MAX) { setUpErr(`문서는 한 번에 ${DOC_MAX}건까지 붙일 수 있습니다.`); return; }
       try { setAttachedDocs([...attachedDocs, await readDoc(f)]); }
@@ -180,7 +185,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         </div>
       )}
       {staged && <UploadRouter staged={staged} onClose={() => setStaged(null)} />}
-      {comFile && <DocExtractHint filename={comFile} onClose={() => setComFile(null)} />}
+      {comFile && <DocExtractHint filename={comFile.name} encrypted={comFile.encrypted}
+        onClose={() => setComFile(null)} />}
       {attachedDocs.length > 0 && (
         <div className="doc-chips">
           {attachedDocs.map((d, i) => (
