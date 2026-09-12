@@ -3,13 +3,21 @@
 // 넣고 싶은 경우가 있고, 파급이 큰 곳일수록 사람이 확인해야 한다.
 import { useState } from 'react';
 import type { StagedFile } from '../../api/upload.api';
+import { useChat } from '../../state/ChatContext';
+import { DEST_APPS } from './destApps';
+import { DynaForgePanel } from './DynaForgePanel';
 import { StepForgePanel } from './StepForgePanel';
 import { UploadPanel } from './UploadPanel';
 
 export function UploadRouter({ staged, onClose }: { staged: StagedFile; onClose: () => void }) {
   const dests = staged.destinations ?? [];
-  // 고를 게 하나뿐이면 묻지 않는다 — 버튼 하나짜리 질문은 방해일 뿐이다.
-  const [picked, setPicked] = useState<string>(dests.length === 1 ? dests[0].id : '');
+  const { pinnedApps } = useChat();
+  // ⚠ 종전에는 목적지가 하나면 묻지 않고 바로 들어갔다. 목적지는 계속 는다 — 하나일 때
+  // 자동으로 가면, 둘이 되는 순간 사람은 이미 "올리면 알아서 간다" 로 학습돼 있다.
+  // 되돌리기 어려운 일에서 그 어긋남은 위험하다. 그래서 하나여도 고르게 한다.
+  const [picked, setPicked] = useState<string>('');
+  // 지금 고른 전문가가 그 앱의 운영자면 그쪽을 추천으로 앞세운다(고르는 건 여전히 사람).
+  const rec = dests.find((d) => (DEST_APPS[d.id] ?? []).some((a) => pinnedApps.includes(a)))?.id;
 
   if (dests.length === 0) {
     return (
@@ -36,9 +44,11 @@ export function UploadRouter({ staged, onClose }: { staged: StagedFile; onClose:
           <button type="button" className="upl-x" onClick={onClose} aria-label="닫기">✕</button>
         </div>
         <div className="upl-actions upl-dests">
-          {dests.map((d) => (
-            <button key={d.id} type="button" className="upl-go" onClick={() => setPicked(d.id)}>
-              {d.label}
+          {[...dests].sort((a, b) => (a.id === rec ? -1 : b.id === rec ? 1 : 0)).map((d) => (
+            <button key={d.id} type="button"
+              className={d.id === rec ? 'upl-go upl-rec' : 'upl-go'}
+              onClick={() => setPicked(d.id)}>
+              {d.label}{d.id === rec && <em> · 지금 전문가</em>}
             </button>
           ))}
         </div>
@@ -47,5 +57,6 @@ export function UploadRouter({ staged, onClose }: { staged: StagedFile; onClose:
   }
 
   if (picked === 'stepforge') return <StepForgePanel staged={staged} onClose={onClose} />;
+  if (picked === 'dynaforge') return <DynaForgePanel staged={staged} onClose={onClose} />;
   return <UploadPanel staged={staged} onClose={onClose} />;
 }

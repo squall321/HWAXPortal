@@ -211,12 +211,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         {canUp && !streaming && (
           <>
             <input ref={fileRef} type="file"
-              accept=".md,.txt,.pptx,.ppt,.docx,.doc,.pdf,.htm,.html,.csv,.xlsx,.step,.stp,.msh,.zip"
+              accept=".md,.txt,.pptx,.ppt,.docx,.doc,.pdf,.htm,.html,.csv,.xlsx,.step,.stp,.msh,.zip,.k,.key,.dyn,.inc"
               style={{ display: 'none' }}
               onChange={(e) => void onPick(e.target.files?.[0] ?? undefined)} />
             <button type="button" className="composer-btn composer-attach"
               onClick={() => fileRef.current?.click()}
-              aria-label="파일 붙이기" title="파일 붙이기 — 문서(PPT·Word·PDF) · 물성 CSV · STEP·MSH·ZIP">+</button>
+              aria-label="파일 붙이기" title="파일 붙이기 — 문서(PPT·Word·PDF) · 물성 CSV · STEP·MSH·ZIP · K파일">+</button>
           </>
         )}
         {streaming ? (

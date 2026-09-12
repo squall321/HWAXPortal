@@ -14,7 +14,8 @@ const EXT_NEEDS_COM = ['pptx', 'ppt', 'docx', 'doc', 'pdf', 'rtf', 'odt', 'odp',
 /** 그대로 읽히는 형식 — 추출기 산출물(.hwax.md)과 평문. */
 const EXT_TEXT = ['md', 'txt', 'text', 'log'];
 /** 종전 업로드 경로(물성 DB·StepForge)가 가져가는 형식. */
-const EXT_UPLOAD = ['csv', 'xlsx', 'step', 'stp', 'msh', 'zip'];
+// K파일도 여기다 — LS-DYNA 덱은 수십 MB 가 흔해 브라우저가 읽어 프롬프트에 실으면 안 된다.
+const EXT_UPLOAD = ['csv', 'xlsx', 'step', 'stp', 'msh', 'zip', 'k', 'key', 'dyn', 'inc'];
 
 export type DocVerdict = 'text' | 'needs-com' | 'upload' | 'unknown';
 

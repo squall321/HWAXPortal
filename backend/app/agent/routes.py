@@ -956,6 +956,28 @@ async def upload_dispatch(
     if not pat:
         raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
 
+    if body.destination == "dynaforge":
+        # ── DynaForge ────────────────────────────────────────────────
+        # 세션이 모든 작업의 컨테이너다(create_session 이 첫 도구). 파일 본문은 안 나른다 —
+        # LS-DYNA 덱은 수십 MB 가 흔해 upload_kfile(content) 로는 못 싣는다. StepForge 와 같이
+        # **호스트 경로**를 넘겨 upload_local_path 가 직접 읽게 한다.
+        src = _upload.host_path(settings, path)
+        name = (body.project_name or "").strip() or Path(body.filename).stem
+        sess = await _upload.mcp_call(settings.mcp_gateway_url, pat, "create_session", {
+            "name": name[:120],
+            "description": f"포탈 챗 업로드 · {principal.subject}",
+        })
+        sid = str(sess.get("session_id") or sess.get("id") or "").strip()
+        if not sid:
+            return {"stage": "failed", "error": "DynaForge 세션을 만들지 못했습니다.", "detail": sess}
+        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "upload_local_path", {
+            "session_id": sid, "path": src, "filename": body.filename,
+        })
+        audit.record(principal=principal.subject, event="upload_dispatch",
+                     meta={"destination": "dynaforge", "session_id": sid})
+        return {"stage": "done", "destination": "dynaforge", "session_id": sid,
+                "created": True, "result": out}
+
     if body.destination != "stepforge":
         # material 은 파싱·미리보기가 필요해 기존 analyze/commit 경로를 그대로 쓴다.
         raise AuthError(

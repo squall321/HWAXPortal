@@ -1,5 +1,8 @@
 // 문서를 붙인 뒤 '어디로 보낼지' 고르는 선택지 — 고르면 입력창에 채운다(보내는 건 사람이)
+import { useEffect, useRef } from 'react';
 import { useCan } from '../../auth/useCan';
+import { useChat } from '../../state/ChatContext';
+import { DEST_APPS } from './destApps';
 import type { AttachedDoc } from './docAttach';
 
 interface Props {
@@ -137,6 +140,7 @@ const RANK: Record<string, string[]> = {
 
 export function DocActions({ docs, onFill }: Props) {
   const can = useCan();
+  const { pinnedApps, input } = useChat();
   const ctx = { one: docs.length === 1, names: docs.map((d) => d.meta?.source || d.name).join(', ') };
   const kinds = new Set(docs.map((d) => d.meta?.kind).filter(Boolean) as string[]);
   const deck = kinds.has('ppt');
@@ -149,12 +153,29 @@ export function DocActions({ docs, onFill }: Props) {
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
 
+  // 지금 고른 전문가가 그 앱의 운영자면 그쪽이 추천이다 — 앞에 놓고 입력창에 **미리 채운다.**
+  // 사람은 읽고 보내기만 하면 된다(확인 한 번). 자동 전송은 하지 않는다.
+  const rec = shown.find((d) => (DEST_APPS[d.key] ?? []).some((a) => pinnedApps.includes(a)));
+  const ordered = rec ? [rec, ...shown.filter((d) => d !== rec)] : shown;
+
+  // 붙인 문서가 바뀔 때 한 번만 채운다. 사람이 이미 쓰던 글은 덮지 않는다.
+  const filledFor = useRef('');
+  const sig = docs.map((d) => d.name).join('|') + '#' + (rec?.key ?? '');
+  useEffect(() => {
+    if (!rec || filledFor.current === sig) return;
+    filledFor.current = sig;
+    if (!input.trim()) onFill(rec.text(ctx));
+    // ctx·onFill 은 매 렌더 새로 만들어져 의존성에 넣으면 매번 다시 돈다 — sig 로 1회를 보장한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, rec, input]);
+
   return (
     <div className="doc-actions" role="group" aria-label="붙인 문서를 어디로 보낼지">
-      {shown.map((d) => (
+      {ordered.map((d) => (
         <button key={d.key} type="button" onClick={() => onFill(d.text(ctx))}
+          className={d === rec ? 'doc-rec' : undefined}
           title={typeof d.title === 'function' ? d.title(deck) : d.title}>
-          {d.label}
+          {d.label}{d === rec && <em> · 지금 전문가</em>}
         </button>
       ))}
       <span className="doc-actions-hint">고르면 입력창에 채워집니다 — 읽고 고쳐서 보내세요.</span>

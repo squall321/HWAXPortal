@@ -122,3 +122,28 @@ def test_긴_발표자료_한_건이_들어간다():
     """200슬라이드급이 보통 30만~60만 자다. 이 기능의 실질 요구다."""
     assert _extractor_max_chars() >= 1_000_000, "추출기가 긴 발표자료를 통째로 못 뽑는다"
     assert _portal_doc_chars() >= 1_000_000, "포털이 긴 발표자료를 거절한다"
+
+
+# ── 목적지↔앱 매핑 — 어긋나면 '지금 전문가' 추천이 조용히 안 뜬다 ──────────────────
+def test_업로드_목적지가_전부_앱_매핑에_있다():
+    """전문가를 고르면 그 앱이 pinnedApps 로 묶이고, 그걸로 행선지를 앞세운다.
+    매핑이 빠지면 **아무 오류 없이 추천만 사라진다** — 그래서 테스트로 본다."""
+    from app.agent.upload import DESTINATIONS
+
+    src = (_ROOT / "frontend" / "src" / "components" / "chat" / "destApps.ts").read_text(encoding="utf-8")
+    for dest in DESTINATIONS:
+        assert re.search(rf"^\s+{re.escape(dest)}:\s*\[", src, re.M), (
+            f"destApps.ts 에 '{dest}' 가 없다 — 그 목적지는 '지금 전문가' 추천이 안 뜬다"
+        )
+
+
+def test_k파일은_dynaforge_로_간다():
+    """K파일은 챗 프롬프트로 못 나른다(수십 MB). 서버 스테이징 경로여야 한다."""
+    from app.agent.upload import DESTINATIONS
+
+    assert "k" in DESTINATIONS["dynaforge"]["exts"]
+    front = (_ROOT / "frontend" / "src" / "components" / "chat" / "docAttach.ts").read_text(encoding="utf-8")
+    m = re.search(r"const EXT_UPLOAD = \[([^\]]+)\]", front)
+    assert m and "'k'" in m.group(1), "프론트가 .k 를 브라우저에서 읽으려 한다 — 수십 MB 가 프롬프트로 간다"
+    m2 = re.search(r"const EXT_TEXT = \[([^\]]+)\]", front)
+    assert m2 and "'k'" not in m2.group(1)

@@ -35,6 +35,15 @@ DESTINATIONS: dict[str, dict] = {
         "groups_attr": "upload_group_step_list",
         "platform": "plat:stepforge",
     },
+    # K파일은 여기다. 챗 프롬프트로 나르지 않는 이유는 크기다 — LS-DYNA 덱은 수십 MB 가 흔해
+    # upload_kfile(content=문자열) 로는 못 싣는다. 스테이징한 **호스트 경로**를 넘겨
+    # upload_local_path 가 읽게 한다(StepForge 와 같은 방식 — apptainer 가 $HOME 을 공유한다).
+    "dynaforge": {
+        "label": "DynaForge — LS-DYNA 덱 전처리(재료·메시·초기응력·해석 세팅)",
+        "exts": {"k", "key", "dyn", "inc"},
+        "groups_attr": "upload_group_step_list",
+        "platform": "plat:dynaforge",
+    },
 }
 
 
