@@ -73,3 +73,52 @@ def test_문서_한_건_분량이_들어간다():
     """발표자료·보고서를 추출하면 보통 30,000자를 넘는다. 이 기능의 최소 요구다."""
     assert _engine("_EVID_ITEM_MAX") >= 12000, "항목당 상한이 발표자료 한 건을 못 담는다"
     assert _engine("_EVID_BUDGET") >= 40000, "합계 예산이 문서 한 건 + 챗 근거를 못 담는다"
+
+
+# ── 붙인 문서 상한 — 계층이 역전되면 **전송 자체가 422 로 죽는다** ──────────────────
+# 근거 예산(위)과 달리 이쪽은 조용하지 않다. 프론트가 포털보다 큰 문서를 허용하면
+# 사용자가 붙일 수는 있는데 보내는 순간 실패한다. 실제로 그 상태로 커밋된 적이 있다
+# (프론트 400,000 · 포털 200,000).
+_DOCATTACH = _ROOT / "frontend" / "src" / "components" / "chat" / "docAttach.ts"
+_EXTRACTOR = _ROOT / "frontend" / "public" / "doc-extract" / "hwax-doc-extract.ps1"
+
+
+def _portal_doc_chars() -> int:
+    from app.agent.routes import ChatDocument
+
+    f = ChatDocument.model_fields["text"]
+    caps = [m.max_length for m in f.metadata if getattr(m, "max_length", None) is not None]
+    assert caps, "ChatDocument.text 에 max_length 가 없다"
+    return caps[0]
+
+
+def _front_doc_chars() -> int:
+    src = _DOCATTACH.read_text(encoding="utf-8")
+    m = re.search(r"^export const DOC_CHARS_MAX\s*=\s*([\d_]+)", src, re.M)
+    assert m, "docAttach.ts 에서 DOC_CHARS_MAX 를 못 찾았다"
+    return int(m.group(1).replace("_", ""))
+
+
+def _extractor_max_chars() -> int:
+    src = _EXTRACTOR.read_text(encoding="utf-8-sig")
+    m = re.search(r"\[int\]\s*\$MaxChars\s*=\s*(\d+)", src)
+    assert m, "추출기에서 $MaxChars 기본값을 못 찾았다"
+    return int(m.group(1))
+
+
+def test_문서_상한은_뒤로_갈수록_작아지면_안_된다():
+    """추출기 → 프론트 → 포털. 뒤가 작으면 그 계층에서 거절당한다."""
+    ext, front, portal = _extractor_max_chars(), _front_doc_chars(), _portal_doc_chars()
+    assert front <= portal, (
+        f"역전 — 프론트가 {front:,}자까지 붙이게 해 놓고 포털이 {portal:,}자에서 422 를 낸다. "
+        "긴 발표자료를 붙이면 전송 자체가 실패한다."
+    )
+    assert ext <= front, (
+        f"역전 — 추출기가 {ext:,}자까지 뽑는데 프론트가 {front:,}자에서 잘라 버린다."
+    )
+
+
+def test_긴_발표자료_한_건이_들어간다():
+    """200슬라이드급이 보통 30만~60만 자다. 이 기능의 실질 요구다."""
+    assert _extractor_max_chars() >= 1_000_000, "추출기가 긴 발표자료를 통째로 못 뽑는다"
+    assert _portal_doc_chars() >= 1_000_000, "포털이 긴 발표자료를 거절한다"

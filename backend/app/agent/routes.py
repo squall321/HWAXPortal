@@ -128,12 +128,16 @@ class DelibOpts(BaseModel):
 class ChatDocument(BaseModel):
     """사용자가 붙인 문서 한 건 — 이름과 **추출된 글**만 온다.
 
-    상한 200,000자는 엔진 근거 예산(_EVID_BUDGET 60,000)보다 크게 잡은 값이다. 여기서 미리
-    자르면 '왜 뒷부분이 없나' 를 사용자가 알 길이 없다 — 자르는 일은 예산을 아는 엔진이 하고,
-    잘랐다는 사실을 화면에 남긴다."""
+    상한은 **프론트 DOC_CHARS_MAX 이상**이어야 한다. 작으면 사용자가 붙일 수 있는 문서를
+    여기서 422 로 거절한다 — 종전 200,000(프론트 400,000)이 정확히 그 상태였고, 긴 발표자료를
+    붙이면 전송 자체가 실패했다(test_evidence_budget_contract 가 이 역전을 본다).
+
+    여기서 미리 자르지 않는 이유 — 자르는 일은 예산을 아는 엔진이 한다. 엔진은 낱장 경계에서
+    가운데를 덜어내고(evidence.fit_document) 무엇이 빠졌는지 밝힌다. 앞에서 잘라 보내면
+    발표자료의 결론이 여기서 이미 사라진다."""
     name: str = Field(min_length=1, max_length=260)
     kind: str | None = Field(default=None, max_length=16)
-    text: str = Field(min_length=1, max_length=200000)
+    text: str = Field(min_length=1, max_length=2000000)
 
 
 class ChatRequest(BaseModel):

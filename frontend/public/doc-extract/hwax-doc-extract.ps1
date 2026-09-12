@@ -20,7 +20,9 @@
     출력 폴더(기본값: 원본과 같은 폴더).
 
 .PARAMETER MaxChars
-    문서당 최대 글자 수(기본 400000). 넘으면 자르고 잘랐다고 표시한다.
+    문서당 최대 글자 수(기본 2000000 — 200슬라이드급도 통째로 들어간다).
+    넘으면 자르고 잘랐다고 표시한다. 서버는 이보다 작은 예산에 맞출 때 **앞에서 자르지 않고**
+    낱장 경계에서 가운데를 덜어낸다(발표자료는 결론이 뒤에 있어서다).
 
 .PARAMETER SelfTest
     Office COM 이 이 PC 에서 실제로 동작하는지 스스로 시험한다. DRM 문서를 붙이기
@@ -38,7 +40,7 @@ param(
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $Path,
     [string] $OutDir,
-    [int] $MaxChars = 400000,
+    [int] $MaxChars = 2000000,
     [switch] $SelfTest
 )
 

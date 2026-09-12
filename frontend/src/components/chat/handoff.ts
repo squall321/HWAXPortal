@@ -4,7 +4,7 @@ import type { Conversation } from '../../types/chat';
 // 사전 근거 상한 — 포털 DelibOpts.evidence(max_length)·엔진 _EVID_ITEMS/_EVID_ITEM_MAX 와 **같은 값**
 // 이어야 한다. 세 계층 중 하나만 작으면 거기서 잘리고, 잘린 사실은 아무 데도 안 남는다.
 export const EVID_ITEMS = 40;
-export const EVID_ITEM_MAX = 12000;
+export const EVID_ITEM_MAX = 40000;
 
 // 심의로 넘기는 원천 근거 한 항목 — 백엔드 delib_opts.evidence 스키마와 맞춘다(agent-server 가 재클램프).
 export interface HandoffEvidence {
