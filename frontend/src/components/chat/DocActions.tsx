@@ -79,10 +79,15 @@ const DESTINATIONS: Destination[] = [
     // 긴 문서를 한 번의 도구 호출에 다 담으려 하면 출력 토큰 상한에 걸려 중간에서 끊긴다.
     text: ({ one }) =>
       `붙인 ${one ? '문서를' : '문서들을'} Report Archive 에 보고서 초안으로 올리려 합니다.\n`
-      + '1) list_templates 로 쓸 수 있는 템플릿을 보여 주세요. 문서 성격에 딱 맞는 게 없으면 '
-      + '**없다고 말하고** 그중 가장 가까운 것을 근거와 함께 제안하세요 — 고르는 건 내가 합니다.\n'
-      + '2) 내가 고르면 describe_template 으로 블록 구성을 확인하고, 본문은 extra_blocks '
-      + '(heading·rich_text·table 위젯)에 담아 create_report_draft 를 dry_run=true 로 먼저 부르세요.\n'
+      + '1) 자유형식 문서는 **`__import_blank__`(문서 가져오기)** 템플릿이 맞습니다 — 필수 블록이 '
+      + '없어 본문을 그대로 담습니다. list_templates 에 없으면 그렇다고 말하고 가장 가까운 것을 '
+      + '제안하세요(고르는 건 내가 합니다).\n'
+      + '2) 본문은 extra_blocks 에 heading·rich_text·table 위젯으로 담고, create_report_draft 를 '
+      + '**dry_run=true 로 먼저** 불러 warnings 를 확인하세요.\n'
+      + '   ⚠ **블록 id 는 `b001`·`b002`… 처럼 0 을 채워 매기세요.** 화면 순서가 준 순서가 아니라 '
+      + '**id 알파벳순**으로 정해집니다 — `b2` 는 `b10` 뒤로 가고, 제목과 본문이 뒤바뀝니다(실측).\n'
+      + '   ⚠ 위젯 텍스트에 마크다운 표식(**굵게**·# 제목·- 글머리)을 쓰지 마세요 — 파서가 없어 '
+      + '별표·우물정자가 그대로 보입니다. 제목은 heading, 목록은 bulleted_list 위젯입니다.\n'
       + '3) 문서가 길면 한 번에 다 넣지 말고 create_report_draft 로 앞쪽을 만든 뒤 '
       + 'update_report_draft(page=N) 으로 쪽을 이어 붙이세요. 몇 쪽으로 나눌지 먼저 알려 주세요.\n'
       + '4) 슬라이드·쪽 번호를 각 블록 제목에 남겨 원본과 대조할 수 있게 하세요.\n'

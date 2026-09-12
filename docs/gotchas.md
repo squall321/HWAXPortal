@@ -233,3 +233,31 @@ curl -s --noproxy '*' "$VLLM_BASE_URL/models"      # HWAXAgentServer/.env 의 �
 > dev 한정 참고 — 로컬 vLLM 은 AIDataHub API 와 같은 GPU 를 쓴다. AIDataHub 가 막 기동해
 > 임베더를 올리는 중(피크 ~3.1 GiB)이면 vLLM 이 VRAM 부족으로 못 뜬다. 잠시 뒤 다시 띄우면
 > 된다. dev 편의 문제라 운영과는 무관하다.
+
+## ReportArchive 프론트를 `npm run build` 로 빌드하면 화면이 하얘진다
+
+**사고(2026-09-12).** RA 메뉴에 'PPT에서 불러오기' 가 안 보여 빌드가 낡은 걸 확인하고
+`cd frontend && npm run build` 를 돌렸다. 빌드는 성공했고 — **포털 경유 화면이 백지가 됐다.**
+
+`vite.config.js` 에 `base` 가 **없다**(기본 `/`). 실제 빌드 명령은 RA 레포 루트의
+`start.sh` 안에 있다.
+
+```
+VITE_API_BASE_URL="/report-archive"  npx vite build --base="/report-archive/"
+```
+
+맨 빌드는 **둘 다 잃는다.**
+
+| | 맨 `npm run build` | `./start.sh` |
+|---|---|---|
+| 자산 | `/assets/…` → 포털 루트에서 찾음 → 404 | `/report-archive/assets/…` |
+| API | `/api/…` | `/report-archive/api/…` |
+
+→ **서브패스로 서빙되는 앱은 `package.json` 의 build 스크립트를 믿지 마라.** 그 앱의 전용
+기동 스크립트(`start.sh` 등)를 먼저 찾아 거기에 맞춘다. 복구는 `./start.sh --rebuild`.
+
+덤 — `start.sh` 는 `NODE_HEAP_MB=8192` 도 준다. 맨 빌드는 `ReportDetailPage.jsx`(541KB)에서
+**JS 힙 부족(exit 134)** 으로 죽는데, 그것도 이미 풀려 있는 문제였다.
+
+같은 자리의 다른 함정 — `npm run build 2>&1 | tail -20` 은 **`tail` 의 종료코드**를 준다.
+빌드가 실패해도 `exit 0` 으로 보인다. 로그는 파일로 받고 종료코드를 따로 찍어라.
