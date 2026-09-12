@@ -221,6 +221,32 @@ export interface ClarifyResult {
   error?: string;
 }
 
+/** 챗 대화 → 심의 화두 제안. 실패는 **fallback 그대로**다 — 브리프가 못 열리면 안 된다. */
+export interface TopicSuggestion { topic: string; why: string; options: string[]; error?: string }
+
+export async function fetchDeliberateTopic(
+  history: HistoryMessage[],
+  fallback: string,
+  job: string,
+  signal?: AbortSignal,
+): Promise<TopicSuggestion> {
+  const csrf = getCookie('hwax_csrf');
+  const none: TopicSuggestion = { topic: fallback, why: '', options: [] };
+  try {
+    const res = await apiFetch('/agent/deliberate/topic', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify({ history, fallback, job }),
+      signal,
+    });
+    if (!res.ok) return none;
+    const b = (await res.json()) as Partial<TopicSuggestion>;
+    return { topic: (b.topic || fallback).trim() || fallback, why: b.why ?? '', options: b.options ?? [] };
+  } catch {
+    return none;   // 취소·네트워크 실패 — 첫 발화로 연다
+  }
+}
+
 export async function fetchDeliberateClarify(
   message: string,
   job: string,

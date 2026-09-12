@@ -1,10 +1,12 @@
 // 심의 브리프 — 챗에서 넘길 질문·목적(Job)·얹을 층·좌석을 AI가 제안하고 사용자가 확정하는 모달(핸드오프)
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchDeliberateExperts,
+  fetchDeliberateTopic,
   type ExpertsResponse,
   type HistoryMessage,
   type RecommendedExpert,
+  type TopicSuggestion,
 } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
@@ -46,6 +48,14 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
   );
 
   const [topic, setTopic] = useState(derived);
+  // 화두는 **첫 발화가 아니라 오간 내용 전체**에서 뽑는다. 대화는 움직인다 — 처음엔 "왜 부족하냐"
+  // 로 시작해도 쟁점은 "12um 로 낮출 것인가" 로 옮겨 간다. 첫 발화를 화두로 넣으면 심의가
+  // 이미 지나온 자리를 다시 판다.
+  //   ⚠ 실패는 **첫 발화 그대로**다(되묻기와 같은 규율). 제안이 안 되는 것보다 화면이 안
+  //     열리는 것이 나쁘다. 사람이 고쳐 쓰는 칸이므로 제안은 초안일 뿐이다.
+  const [suggested, setSuggested] = useState<TopicSuggestion | null>(null);
+  const [topicBusy, setTopicBusy] = useState(true);
+  const touched = useRef(false);            // 사람이 손대면 제안이 덮지 않는다
   const [job, setJob] = useState<JobId>(suggestion?.id ?? 'default');
   const [mods, setMods] = useState<Set<string>>(new Set());
   const [experts, setExperts] = useState<ExpertsResponse | null>(null);
@@ -53,6 +63,20 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
   const [loading, setLoading] = useState(false);
   const [browsing, setBrowsing] = useState(false); // 전창 좌석 조직도
   const [voc, setVoc] = useState<VocChoice>({ used: false, picked: [], note: '' });
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setTopicBusy(true);
+    void fetchDeliberateTopic(history, derived, job, ctrl.signal).then((r) => {
+      setSuggested(r);
+      // 사람이 이미 고쳤으면 덮지 않는다 — 제안이 사람 입력을 지우면 최악이다.
+      if (!touched.current && r.topic.trim()) setTopic(r.topic);
+      setTopicBusy(false);
+    });
+    return () => ctrl.abort();
+    // job 이 바뀌면 다시 뽑는다(무엇을 판단할지가 달라진다). history·derived 는 대화 고정.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job]);
   // 원천 근거 = 고른 VOC(앞) + 대화 근거, 합쳐 12건 — 화면 수와 실제 실릴 수가 같아야 한다.
   const vocEv = useMemo(() => vocEvidence(voc.picked), [voc.picked]);
   const { droppedConv } = useMemo(() => mergeEvidence(vocEv, evidence), [vocEv, evidence]);
@@ -193,9 +217,30 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
         </div>
 
         <label className="cx-brief-field">
-          <span>질문 (편집 가능)</span>
-          <textarea value={topic} onChange={(e) => setTopic(e.target.value)} rows={2} />
+          <span>
+            질문 (편집 가능)
+            {topicBusy && <em className="cx-brief-note"> · 대화를 읽어 화두를 뽑는 중…</em>}
+          </span>
+          <textarea value={topic} rows={3}
+            onChange={(e) => { touched.current = true; setTopic(e.target.value); }} />
         </label>
+        {suggested && !topicBusy && (
+          <div className="cx-brief-topic">
+            {suggested.why && <p className="cx-brief-why">{suggested.why}</p>}
+            <div className="cx-brief-alts">
+              {suggested.options.map((o) => (
+                <button key={o} type="button" title="이 화두로 바꾸기"
+                  onClick={() => { touched.current = true; setTopic(o); }}>{o}</button>
+              ))}
+              {derived && topic.trim() !== derived && (
+                <button type="button" className="cx-brief-raw" title="대화에서 뽑지 않고 첫 발화 그대로"
+                  onClick={() => { touched.current = true; setTopic(derived); }}>
+                  ↩ 첫 발화 그대로
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 되묻기 — 대화에 이미 있는 건 안 묻는다(서버가 대화까지 원문 대조). 보강하면 좌석을 다시 찾는다. */}
         <ClarifyPanel topic={topic} job={job} history={history} onApply={setTopic} />

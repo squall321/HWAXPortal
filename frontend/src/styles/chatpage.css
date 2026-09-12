@@ -1361,3 +1361,16 @@
   font-weight: 600;
 }
 .doc-actions button.doc-rec em, .upl-go.upl-rec em { font-style: normal; font-weight: 400; opacity: 0.7; }
+
+/* ── 심의 화두 제안 — 대화 전체에서 뽑는다(첫 발화가 아니라) ─────────────────── */
+.cx-brief-note { font-style: normal; font-size: 11.5px; opacity: 0.6; font-weight: 400; }
+.cx-brief-topic { margin: -4px 0 10px; }
+.cx-brief-why { margin: 0 0 6px; font-size: 11.5px; opacity: 0.62; line-height: 1.55; }
+.cx-brief-alts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cx-brief-alts button {
+  max-width: 100%; padding: 4px 9px; border-radius: 7px; font-size: 11.5px; cursor: pointer;
+  text-align: left; background: transparent; color: inherit;
+  border: 1px dashed var(--border, #dfe3e8);
+}
+.cx-brief-alts button:hover { border-style: solid; background: color-mix(in srgb, var(--accent, #2563eb) 9%, transparent); }
+.cx-brief-alts .cx-brief-raw { opacity: 0.66; }

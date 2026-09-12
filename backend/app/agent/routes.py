@@ -1129,6 +1129,39 @@ async def deliberate_clarify(
         return {"applicable": False, "slots": [], "ask": [], "error": "agent_unreachable"}
 
 
+class TopicRequest(BaseModel):
+    """챗 대화 → 심의 화두. history 상한은 ChatRequest 와 같은 이유로 둔다(무한 입력 금지)."""
+
+    history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=160)
+    fallback: str = Field(default="", max_length=2000)
+    job: str = Field(default="default", max_length=40)
+
+
+@router.post("/deliberate/topic")
+async def deliberate_topic(
+    request: Request,
+    body: TopicRequest,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """대화를 읽고 심의 화두 한 문장을 제안한다(agent-server 포워딩).
+
+    ⚠ 되묻기와 같은 규율 — **실패는 fallback 이다.** 화두 제안이 안 되면 첫 발화를 그대로
+    쓰면 되지, 브리프가 안 열리면 안 된다."""
+    ensure(principal, "feat:deliberation")
+    client = _agent_client(request)
+    payload = {"history": [m.model_dump() for m in body.history],
+               "fallback": body.fallback, "job": body.job}
+    fail = {"topic": body.fallback, "why": "", "options": []}
+    try:
+        r = await client.post(f"{settings.agent_server_url}/deliberate/topic", json=payload)
+        if r.status_code != 200:
+            return {**fail, "error": f"agent_{r.status_code}"}
+        return r.json()
+    except httpx.HTTPError:
+        return {**fail, "error": "agent_unreachable"}
+
+
 @router.post("/deliberate/voc")
 async def deliberate_voc(
     request: Request,
