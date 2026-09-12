@@ -74,6 +74,19 @@ EOF
   case " ste " in
     *" $id "*) printf '        location = /%s { return 301 /%s/; }\n' "$id" "$id" ;;
   esac
+  # 반대 경우 — 포털이 **같은 이름의 자기 SPA 페이지**를 가진 id. nginx 는 prefix location
+  # (`/id/`)에 대해 슬래시 없는 `/id` 를 자동으로 301 `/id/` 한다(실측: /apps·/heax-hub·
+  # /report-archive 모두). 그래서 포털의 /apps(플랫폼 타일)는 주소로 들어가거나 새로고침하면
+  # HEAX Hub 의 앱 호스팅으로 넘어갔다 — 링크 클릭(SPA 내부 이동)만 멀쩡해 발견이 늦었다.
+  # 정확일치 location 이 prefix 보다 먼저 매치되므로 그 한 줄로 포털에 되돌린다.
+  # `= /apps/` 까지 되돌리는 이유 — 301 은 브라우저가 **영구 캐시**한다. 이미 한 번 넘어간
+  # 사람은 conf 를 고쳐도 계속 /apps/ 로 간다. 앱 호스팅이 실제로 쓰는 건 /apps/<id>/ 라
+  # 빈 /apps/ 를 포털로 돌려도 잃는 게 없다(prefix 는 그대로 Caddy 로 간다).
+  case " apps " in
+    *" $id "*)
+      printf '        location = /%s { proxy_pass http://127.0.0.1:{{PORTAL_PORT}}; }\n' "$id"
+      printf '        location = /%s/ { proxy_pass http://127.0.0.1:{{PORTAL_PORT}}; }\n' "$id" ;;
+  esac
 }
 
 # 박스별 오버레이 — routes.env 는 git 추적이라 dev·cae00 이 같은 파일을 쓴다. 그런데 ste 처럼
