@@ -34,7 +34,7 @@ ACTOR = "he-team-sync"
 
 # 에이전트서버가 페르소나 역할을 이만큼만 싣는다(app.py _persona_meta ROLE_MAX). 넘으면 뒤가 조용히
 # 잘리므로 여기서 먼저 멈춘다 — 잘린 페르소나는 '답하는 법' 이 통째로 빠진 채 돈다.
-PROMPT_MAX = 4000
+PROMPT_MAX = 8000
 NO_GUIDE = "<!-- no-tool-guide -->"   # AIDataHub 가 지식카드 도구 안내를 덧붙이지 않게 하는 표지
 MANAGED = ("name", "description", "common_tags", "sample_queries", "system_prompt", "response_config")
 
