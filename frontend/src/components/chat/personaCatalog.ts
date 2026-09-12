@@ -1,50 +1,21 @@
 // 전문가 풀을 도메인 → 그룹 → 사람으로 접는 분류기 — 조직도 뷰와 빠른 선택기가 함께 쓴다
 import type { PoolExpert } from '../../api/chat.api';
+// 라벨 정본은 JSON 한 파일이다 — 포털 백엔드가 같은 파일을 읽어 /org-taxonomy 로 내보내고,
+// MCP 게이트웨이가 그걸 받아 클로드에도 같은 조직도를 보여 준다(사본을 만들면 갈라진다).
+import taxonomy from './orgTaxonomy.json';
 
 /** 도메인 코드 → 사람이 읽는 이름.
  *
  *  ⚠ AIDataHub `list_agent_domains` 는 **코드와 인원만** 준다(라벨 정본이 없다). 그래서
  *  여기서 붙인다. 모르는 코드는 코드 그대로 보여 준다 — 새 도메인이 생겨도 화면은 안 깨지고
  *  이름만 코드로 나온다. 코드는 키의 첫 세그먼트다(`sh-imu` → `sh`). */
-const DOMAIN_LABEL: Record<string, string> = {
-  sw: '소프트웨어·플랫폼',
-  xd: '업무·프로세스(교차 도메인)',
-  sim: '시뮬레이션·해석',
-  cam: '카메라',
-  rel: '신뢰성',
-  soc: 'AP·SoC·패키지',
-  disp: '디스플레이',
-  mech: '기구·구조',
-  pcb: '기판(PCB)',
-  rf: '무선(RF)',
-  passive: '수동부품',
-  pwr: '전원·배터리',
-  sh: '센서·음향',
-  mem: '메모리·스토리지',
-  std: '표준·규격',
-  oss: '오픈소스',
-  misc: '규제·안전',
-  material: '소재',
-  market: '시장',
-  mx: 'MX 백서',
-  kooremapper: 'KooRemapper',
-  dynaforge: 'DynaForge',
-  he: 'HE팀',
-};
+const DOMAIN_LABEL: Record<string, string> = taxonomy.domain_label;
 
 export const domainLabel = (code: string) => DOMAIN_LABEL[code] ?? code;
 
 /** HE팀 묶음(키 둘째 세그먼트, he-<묶음>-<앱>) 라벨. 정본은 infra/personas/he-team.json 의 groups 이고
  *  backend/tests/test_he_personas.py 가 두 곳을 대조한다 — 한쪽만 고치면 조직도에 코드가 그대로 뜬다. */
-export const HE_GROUP_LABEL: Record<string, string> = {
-  cad: '설계 데이터(CAD·ECAD)',
-  sim: '시뮬레이션·해석 결과',
-  calc: '해석 계산·물성',
-  data: '데이터 허브·VOC',
-  doc: '보고서·문서·발표',
-  research: '웹·논문 조사',
-  expert: '심의·리스크',
-};
+export const HE_GROUP_LABEL: Record<string, string> = taxonomy.he_group_label;
 
 /** 키의 첫 세그먼트 = 도메인. 세그먼트가 없으면 '기타'로 모은다. */
 export const domainOf = (key: string) => key.split('-')[0] || '기타';
@@ -87,25 +58,14 @@ export interface RootNode {
   count: number;
 }
 
-const ROOTS: { id: string; label: string }[] = [
-  { id: 'knowledge', label: '전문 지식 에이전트' },
-  { id: 'platform', label: '플랫폼 에이전트' },
-  { id: 'other', label: '미분류' },
-];
+const ROOTS: { id: string; label: string }[] = taxonomy.roots;
 
 // 분류 순서·도메인 순서가 곧 화면 순서다(인원순으로 섞지 않는다 — 조직도는 설계된 계보다).
-const CATEGORIES: { id: string; root: string; label: string; domains: string[] }[] = [
-  { id: 'hw', root: 'knowledge', label: '스마트폰 HW 지식',
-    domains: ['rel', 'disp', 'mech', 'cam', 'soc', 'pcb', 'rf', 'passive', 'pwr', 'sh', 'mem', 'sim'] },
-  { id: 'sw', root: 'knowledge', label: '스마트폰 SW 지식', domains: [] },   // SW 는 아래 규칙으로 하위 영역을 만든다
-  { id: 'common', root: 'knowledge', label: '공통·업무 지식', domains: ['xd', 'std', 'misc', 'oss'] },
-  { id: 'he', root: 'platform', label: 'HE팀 — MCP 도구 전문가', domains: ['he'] },
-  { id: 'apps', root: 'platform', label: '앱 지식 분석가', domains: ['apps'] },
-];
+const CATEGORIES: { id: string; root: string; label: string; domains: string[] }[] = taxonomy.categories;
 
 // 앱 지식 분석가 — 앱마다 1~2명이라 도메인 5개로 쪼개면 조직도가 부스러기가 된다. 한 도메인으로
 // 모으고 앱 이름을 그룹으로 쓴다(material-twin-analyst 등, 지식카드로 답하는 분석가들).
-const APP_ANALYST_DOMAINS = new Set(['material', 'mx', 'market', 'kooremapper', 'dynaforge']);
+const APP_ANALYST_DOMAINS = new Set(taxonomy.app_analyst_domains);
 
 // ── 스마트폰 SW 하위 영역 — sw 408명은 둘째 세그먼트가 분류가 아니다(57개 소그룹 + 1명짜리 205명).
 // 키의 토큰을 앞에서부터 보고 처음 걸리는 영역에 둔다. 모호한 키만 전체 키로 덮어쓴다.

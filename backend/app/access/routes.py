@@ -1,6 +1,9 @@
 # 소속·허가 API — 내 권한·허가 요청(사용자), 소속·허가 편집·요청 결정(관리자), 게이트웨이 조회
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
@@ -168,3 +171,17 @@ def internal_entitlements(request: Request, email: str = Query(min_length=3, max
     base = [g for g in groups.split(",") if g]
     ents = compute(_policy(request), groups=base, row=_store(request).get(email))
     return {"email": email, "keys": sorted(ents.keys)}
+
+@router.get("/internal/org-taxonomy")
+def internal_org_taxonomy(request: Request, settings: Settings = Depends(get_settings)) -> dict:
+    """전문가 조직도 라벨 정본 — 게이트웨이가 받아 MCP(클로드)에도 같은 계층을 보여 준다.
+
+    ⚠ 정본은 `frontend/src/components/chat/orgTaxonomy.json` 파일 하나다. 프론트가 그 파일을
+    import 하고 여기서는 같은 파일을 읽어 내보낸다 — 파이썬으로 옮겨 적으면 두 조직도가 갈린다
+    (AIDataHub 는 도메인 **코드**만 주고 사람 이름표가 없어서 이 표가 필요하다)."""
+    _internal(request, settings)
+    path = Path(__file__).resolve().parents[3] / "frontend" / "src" / "components" / "chat" / "orgTaxonomy.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — 없으면 코드가 그대로 보이는 조직도가 된다(치명적이지 않다)
+        raise AuthError(f"org taxonomy unavailable: {exc}", status_code=503) from exc

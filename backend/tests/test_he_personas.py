@@ -61,11 +61,10 @@ def test_한국어_문장은_콜론으로_끝나지_않는다():
 
 
 def test_조직도_묶음_라벨이_정본과_같다():
-    src = _CATALOG.read_text(encoding="utf-8")
-    m = re.search(r"HE_GROUP_LABEL[^=]*=\s*\{(.*?)\};", src, re.S)
-    assert m, "personaCatalog.ts 에서 HE_GROUP_LABEL 을 못 찾았다"
-    front = dict(re.findall(r"(\w+):\s*'([^']*)'", m.group(1)))
-    assert front == _load()["groups"], "묶음 라벨이 어긋나면 조직도에 코드가 그대로 뜬다"
+    """라벨 정본은 orgTaxonomy.json 하나다 — 프론트가 import 하고, 포털이 /internal/org-taxonomy
+    로 내보내 MCP 게이트웨이(클로드 조직도)도 같은 표를 쓴다. 어긋나면 조직도에 코드가 뜬다."""
+    tax = json.loads((_CATALOG.parent / "orgTaxonomy.json").read_text(encoding="utf-8"))
+    assert tax["he_group_label"] == _load()["groups"]
 
 
 FAKE_MAP = {

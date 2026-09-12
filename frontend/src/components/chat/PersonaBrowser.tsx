@@ -1,7 +1,7 @@
 // 전문가 조직도 — 전창으로 전체 분류(분야→그룹→사람)를 펼쳐 보고, 누르면 설명이 뜨고 거기서 고른다
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { fetchAgentDetail, type AgentDetail, type PoolExpert } from '../../api/chat.api';
+import { fetchAgentDetail, fetchDeliberateExperts, type AgentDetail, type PoolExpert } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import { colorOf, initialOf, shortName } from './personaColor';
 import { OperatorApps, RecordsHeading } from './AgentFacts';
@@ -65,6 +65,25 @@ export function PersonaBrowser({
   const [detailLoading, setDetailLoading] = useState(false);
   // 한 명을 전체 화면으로 — 상세칸은 요약이고, 설명 전문·지식카드 전체·카드 본문은 여기서 본다.
   const [deep, setDeep] = useState(false);
+  // 의미 검색 — 글자가 안 맞아도 주제가 맞는 사람을 찾는다(임베딩). 문자열 일치는 즉시 나오고
+  // 이건 서버 왕복이라, **누를 때만** 돈다(입력마다 던지면 796명 풀에 질의가 쏟아진다).
+  const [sem, setSem] = useState<{
+    q: string; rows: PoolExpert[]; loading: boolean; axes: string[]; weak: boolean;
+  } | null>(null);
+  const runSemantic = useCallback(async (query: string) => {
+    const t = query.trim();
+    if (t.length < 2) return;
+    setSem({ q: t, rows: [], loading: true, axes: [], weak: false });
+    const r = await fetchDeliberateExperts(t);
+    const rows = (r.candidates ?? r.recommended ?? []).map((e) => ({
+      key: e.key, name: e.name, tags: e.tags ?? [],
+    }));
+    // 축 = 서버가 질문을 쪼갠 도메인. 축이 없으면 **질문 그대로** 임베딩 검색만 한 것이라
+    // 구어("떨어뜨렸을 때 깨진다")가 전문 용어(낙하·커버글라스)에 못 닿는다 — 그걸 화면이 말한다.
+    setSem({ q: t, rows, loading: false,
+             axes: (r.axes ?? []).map((a) => `${a.domain} · ${a.phrase}`),
+             weak: Boolean(r.low_confidence) });
+  }, []);
 
   // 지금 열어 둔 사람 — 상태 갱신 함수 안에서 부수효과를 내지 않으려고 ref 로 따로 둔다.
   const selKeyRef = useRef<string | null>(null);
@@ -146,9 +165,19 @@ export function PersonaBrowser({
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="이름·키·태그로 찾기"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void runSemantic(q);
+              }
+            }}
+            placeholder="이름·키·태그로 찾기 · Enter = 의미로 찾기"
             aria-label="전문가 검색"
           />
+          <button type="button" className="pv-icon pv-sem" onClick={() => void runSemantic(q)}
+                  disabled={q.trim().length < 2} title="주제·의미로 찾기(글자가 달라도 찾는다)">
+            의미 검색
+          </button>
           <button type="button" className="pv-icon pv-close" onClick={onClose} aria-label="닫기">
             ×
           </button>
@@ -164,6 +193,36 @@ export function PersonaBrowser({
             {loading && <p className="pv-empty">조직도를 불러오는 중…</p>}
 
             {!loading && !q.trim() && !nav.node && <OrgOverview nav={nav} total={pool.length} />}
+
+            {/* 의미 검색 결과 — 문자열 일치와 **따로** 보여 준다. 임베딩(e5)은 무관한 문장끼리도
+                코사인 0.87~0.90 이라 점수를 섞어 한 줄로 세우면 난수를 순위로 읽게 된다. */}
+            {sem && (
+              <section className="pv-sem-box">
+                <div className="pv-crumb">
+                  🧭 ‘{sem.q}’ 의미 검색 —{' '}
+                  {sem.loading ? '찾는 중…' : `${sem.rows.length}명 (주제 관련도순)`}
+                  <button type="button" className="pv-crumb-btn" onClick={() => setSem(null)}>닫기</button>
+                </div>
+                {!sem.loading && (
+                  <p className="pv-dim pv-sem-note">
+                    {sem.axes.length > 0
+                      ? `질문을 이렇게 쪼개 찾았습니다 — ${sem.axes.join(' / ')}`
+                      : '질문 그대로 찾았습니다(도메인 분해 없음) — 일상어보다 전문 용어로 물으면 잘 찾습니다.'}
+                    {sem.weak && ' ⚠ 이 주제를 맡을 전문가가 풀에 없을 수 있습니다.'}
+                  </p>
+                )}
+                {!sem.loading && sem.rows.length === 0 && (
+                  <p className="pv-empty">주제로도 찾지 못했습니다 — 다른 말로 물어보세요.</p>
+                )}
+                {sem.rows.length > 0 && (
+                  <ul className="pv-cards">
+                    {sem.rows.slice(0, 24).map((a) => (
+                      <AgentCard key={a.key} agent={a} active={sel?.key === a.key} onOpen={() => openAgent(a)} />
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
 
             {!loading && (q.trim() || nav.node) && (
               <>
