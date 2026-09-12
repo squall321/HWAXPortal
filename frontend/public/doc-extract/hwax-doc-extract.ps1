@@ -33,7 +33,9 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(ValueFromRemainingArguments = $true, ValueFromPipeline = $true)]
+    # ValueFromPipeline 은 일부러 안 쓴다 — process{} 블록이 없으면 마지막 항목만 바인딩되어
+    # 앞엣것을 조용히 버린다. 인자로만 받는다(.bat 끌어놓기가 이 경로다).
+    [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $Path,
     [string] $OutDir,
     [int] $MaxChars = 400000,
@@ -56,8 +58,16 @@ $script:EXT_HTML = @('.htm', '.html', '.mht', '.mhtml')
 #
 # 떠 있는 인스턴스를 어떻게 알아내나 — Marshal::GetActiveObject 는 .NET Core 에서
 # 없어져 PowerShell 7 에서 터진다. 프로세스 유무로 판정하면 5.1·7 양쪽에서 똑같이 된다.
+$script:OFFICE = @{}   # ProgId -> {App, Owned} — 실행당 하나씩만 잡는다
+
 function Get-OfficeApp {
-    param([string] $ProgId, [string] $ProcName)
+    param(
+        [Parameter(Mandatory = $true)][string] $ProgId,
+        # 필수다. 빠지면 '떠 있지 않다' 로 판정해 **사용자가 편집 중인 창을 Quit 한다.**
+        [Parameter(Mandatory = $true)][string] $ProcName
+    )
+
+    if ($script:OFFICE.ContainsKey($ProgId)) { return $script:OFFICE[$ProgId] }
 
     $wasRunning = [bool](Get-Process -Name $ProcName -ErrorAction SilentlyContinue)
 
@@ -67,7 +77,30 @@ function Get-OfficeApp {
     } catch {
         throw "$ProgId 를 띄우지 못했다. 이 PC 에 해당 Office 앱이 설치돼 있고 데스크톱 세션에서 실행 중인지 확인하라. ($($_.Exception.Message))"
     }
-    return [pscustomobject]@{ App = $app; Owned = (-not $wasRunning) }
+    $h = [pscustomobject]@{ App = $app; Owned = (-not $wasRunning) }
+    $script:OFFICE[$ProgId] = $h
+    return $h
+}
+
+# 실행이 끝날 때 한 번만 부른다. **우리가 띄운 것만** 끈다 — 사용자가 문서를 편집 중이던
+# Word·PowerPoint 는 그대로 둔다(단일 인스턴스라 Quit 하면 그 창이 닫힌다).
+function Close-OfficeApps {
+    foreach ($key in @($script:OFFICE.Keys)) {
+        $h = $script:OFFICE[$key]
+        if ($h.Owned) {
+            if ($key -eq 'PowerPoint.Application') {
+                # 우리가 띄웠더라도 그 사이 사람이 발표자료를 열었을 수 있다.
+                $others = 0
+                try { $others = [int]$h.App.Presentations.Count } catch { }
+                if ($others -eq 0) { try { $h.App.Quit() } catch { } }
+            } else {
+                try { $h.App.Quit() } catch { }
+            }
+        }
+        Release-Com $h.App
+        $script:OFFICE.Remove($key)
+    }
+    [GC]::Collect(); [GC]::WaitForPendingFinalizers()
 }
 
 function Release-Com {
@@ -120,7 +153,7 @@ function Extract-Word {
     $wdDoNotSaveChanges = 0
     $wdAlertsNone = 0
 
-    $h = Get-OfficeApp 'Word.Application'
+    $h = Get-OfficeApp 'Word.Application' 'WINWORD'
     $word = $h.App
     $doc = $null
     $prevAlerts = $null
@@ -175,10 +208,15 @@ function Extract-Word {
             try {
                 $tbl = $doc.Tables.Item($t)
                 $cols = [int]$tbl.Columns.Count
+                # ⚠ 0 이면 아래 for 의 `$i += $cols` 가 영원히 제자리다 — 오류도 없이 안 끝난다.
+                if ($cols -lt 1) { $Warnings.Add("표 $t 은 열 수를 못 읽어 건너뛴다."); Release-Com $tbl; continue }
                 # 표 전체를 한 번에 읽어 셀 구분자로 쪼갠다(셀마다 COM 왕복하면 느리다).
                 $raw = [string]$tbl.Range.Text
-                $cells = $raw -split "`r`a" | ForEach-Object { ($_ -replace "[`r`n`a\u0007]", ' ').Trim() }
-                if ($cells.Count -gt 0 -and $cells[-1] -eq '') { $cells = $cells[0..($cells.Count - 2)] }
+                $cells = @($raw -split "`r`a" | ForEach-Object { ($_ -replace "[`r`n`a\u0007]", ' ').Trim() })
+                # 마지막 빈 조각만 떼어낸다. Count 가 1 이면 0..-1 이 되어 **첫 칸과 마지막 칸이
+                # 중복**으로 잡히므로 2개 이상일 때만 자른다.
+                if ($cells.Count -gt 1 -and $cells[-1] -eq '') { $cells = $cells[0..($cells.Count - 2)] }
+                elseif ($cells.Count -eq 1 -and $cells[0] -eq '') { $cells = @() }
                 $rows = @()
                 for ($i = 0; $i -lt $cells.Count; $i += $cols) {
                     $end = [Math]::Min($i + $cols - 1, $cells.Count - 1)
@@ -198,12 +236,9 @@ function Extract-Word {
         return [pscustomobject]@{ Body = ($body -join "`n`n"); Pages = $pageCount; App = 'Word' }
     }
     finally {
+        # 문서만 닫는다. 앱은 실행이 끝날 때 Close-OfficeApps 가 한 번에 정리한다.
         if ($doc) { try { $doc.Close($wdDoNotSaveChanges) } catch { } ; Release-Com $doc }
         if ($null -ne $prevAlerts) { try { $word.DisplayAlerts = $prevAlerts } catch { } }
-        # 우리가 띄운 것만 우리가 끈다. 사용자가 쓰던 Word 는 건드리지 않는다.
-        if ($h.Owned) { try { $word.Quit() } catch { } }
-        Release-Com $word
-        [GC]::Collect(); [GC]::WaitForPendingFinalizers()
     }
 }
 
@@ -224,10 +259,12 @@ function Get-ShapeText {
     try {
         if ($Shape.HasTable -eq $msoTrue) {
             $tbl = $Shape.Table
+            $nr = [int]$tbl.Rows.Count
+            $nc = [int]$tbl.Columns.Count      # 매 반복 되물으면 셀 수만큼 COM 왕복이 는다
             $rows = @()
-            for ($r = 1; $r -le $tbl.Rows.Count; $r++) {
+            for ($r = 1; $r -le $nr; $r++) {
                 $line = @()
-                for ($c = 1; $c -le $tbl.Columns.Count; $c++) {
+                for ($c = 1; $c -le $nc; $c++) {
                     $line += (Clean-Text ([string]$tbl.Cell($r, $c).Shape.TextFrame.TextRange.Text))
                 }
                 $rows += , $line
@@ -260,7 +297,7 @@ function Extract-Ppt {
     $msoFalse = 0
     $ppPlaceholderBody = 2
 
-    $h = Get-OfficeApp 'PowerPoint.Application'
+    $h = Get-OfficeApp 'PowerPoint.Application' 'POWERPNT'
     $ppt = $h.App
     $pres = $null
     $body = New-Object Collections.Generic.List[string]
@@ -275,17 +312,23 @@ function Extract-Ppt {
             $slide = $pres.Slides.Item($i)
             $parts = New-Object Collections.Generic.List[string]
 
+            # 제목은 루프 **밖에서** 한 번만 집는다. 안에서 $slide.Shapes.Title 을 다시 부르면
+            # 도형 수만큼 COM 객체가 새로 생기고 아무도 놓아주지 않는다.
             $title = ''
+            $titleName = ''
             try {
                 if ($slide.Shapes.HasTitle -eq $msoTrue) {
-                    $title = Clean-Text ([string]$slide.Shapes.Title.TextFrame.TextRange.Text)
+                    $ttl = $slide.Shapes.Title
+                    $titleName = [string]$ttl.Name
+                    $title = Clean-Text ([string]$ttl.TextFrame.TextRange.Text)
+                    Release-Com $ttl
                 }
             } catch { }
 
             foreach ($shape in $slide.Shapes) {
-                $skip = $false
-                try { if ($title -and $shape.Name -eq $slide.Shapes.Title.Name) { $skip = $true } } catch { }
-                if (-not $skip) { Get-ShapeText $shape $parts }
+                if (-not ($titleName -and ([string]$shape.Name) -eq $titleName)) {
+                    Get-ShapeText $shape $parts
+                }
                 Release-Com $shape
             }
 
@@ -310,15 +353,8 @@ function Extract-Ppt {
         return [pscustomobject]@{ Body = ($body -join "`n`n"); Pages = $n; App = 'PowerPoint' }
     }
     finally {
+        # 발표자료만 닫는다. 앱 정리는 Close-OfficeApps 가 실행 끝에 한 번.
         if ($pres) { try { $pres.Close() } catch { } ; Release-Com $pres }
-        # 남의 PowerPoint 에 다른 발표자료가 열려 있으면 끄지 않는다.
-        if ($h.Owned) {
-            $others = 0
-            try { $others = [int]$ppt.Presentations.Count } catch { }
-            if ($others -eq 0) { try { $ppt.Quit() } catch { } }
-        }
-        Release-Com $ppt
-        [GC]::Collect(); [GC]::WaitForPendingFinalizers()
     }
 }
 
@@ -442,15 +478,13 @@ function Invoke-SelfTest {
         # 1) Word 왕복
         Write-Host '[1/3] Word COM ...' -NoNewline
         try {
-            $h = Get-OfficeApp 'Word.Application'
+            $h = Get-OfficeApp 'Word.Application' 'WINWORD'
             $doc = $h.App.Documents.Add()
             $doc.Content.Text = $marker
             $docPath = Join-Path $tmp 'test.docx'
             $doc.SaveAs2($docPath, 16)   # wdFormatDocumentDefault
             $doc.Close(0)
-            if ($h.Owned) { $h.App.Quit() }
-            Release-Com $h.App
-            [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+            Release-Com $doc
 
             $r = Extract-One $docPath $tmp
             $txt = Get-Content -LiteralPath $r.Out -Raw -Encoding UTF8
@@ -463,16 +497,14 @@ function Invoke-SelfTest {
         # 2) PowerPoint 왕복
         Write-Host '[2/3] PowerPoint COM ...' -NoNewline
         try {
-            $h = Get-OfficeApp 'PowerPoint.Application'
+            $h = Get-OfficeApp 'PowerPoint.Application' 'POWERPNT'
             $pres = $h.App.Presentations.Add(0)      # WithWindow=msoFalse
             $slide = $pres.Slides.Add(1, 2)          # ppLayoutText
             $slide.Shapes.Item(1).TextFrame.TextRange.Text = $marker
             $pptPath = Join-Path $tmp 'test.pptx'
             $pres.SaveAs($pptPath, 24)               # ppSaveAsOpenXMLPresentation
             $pres.Close()
-            if ($h.Owned -and $h.App.Presentations.Count -eq 0) { $h.App.Quit() }
-            Release-Com $h.App
-            [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+            Release-Com $slide; Release-Com $pres
 
             $r = Extract-One $pptPath $tmp
             $txt = Get-Content -LiteralPath $r.Out -Raw -Encoding UTF8
@@ -495,7 +527,8 @@ function Invoke-SelfTest {
             Write-Host " 실패 — $($_.Exception.Message)" -ForegroundColor Red; $ok = $false
         }
 
-        Start-Sleep -Seconds 2
+        Close-OfficeApps
+        Start-Sleep -Seconds 3      # 종료는 비동기다 — 바로 세면 아직 살아 있다
         $after = @(Get-Process -Name WINWORD, POWERPNT -ErrorAction SilentlyContinue).Count
         if ($after -gt $before) {
             Write-Host "경고 — Office 프로세스가 $($after - $before) 개 남았다(누수)." -ForegroundColor Yellow
@@ -504,6 +537,7 @@ function Invoke-SelfTest {
         }
     }
     finally {
+        Close-OfficeApps    # 위에서 이미 닫았으면 무해하다(비어 있으면 아무것도 안 한다)
         Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
@@ -546,17 +580,23 @@ if ($files.Count -eq 0) { Write-Warning '처리할 문서가 없다.'; exit 1 }
 
 Write-Host "문서 $($files.Count) 건을 이 PC 의 Office 로 읽는다." -ForegroundColor Cyan
 $fail = 0
-foreach ($f in $files) {
-    $dest = if ($OutDir) { $OutDir } else { $f.DirectoryName }
-    if (-not (Test-Path -LiteralPath $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
-    try {
-        $r = Extract-One $f.FullName $dest
-        Write-Host "  → $($r.Out)  ($($r.Chars) 자)" -ForegroundColor Green
-        foreach ($w in $r.Warnings) { Write-Host "    · $w" -ForegroundColor Yellow }
-    } catch {
-        Write-Host "  실패 — $($f.Name): $($_.Exception.Message)" -ForegroundColor Red
-        $fail++
+try {
+    foreach ($f in $files) {
+        $dest = if ($OutDir) { $OutDir } else { $f.DirectoryName }
+        if (-not (Test-Path -LiteralPath $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+        try {
+            $r = Extract-One $f.FullName $dest
+            Write-Host "  → $($r.Out)  ($($r.Chars) 자)" -ForegroundColor Green
+            foreach ($w in $r.Warnings) { Write-Host "    · $w" -ForegroundColor Yellow }
+        } catch {
+            Write-Host "  실패 — $($f.Name): $($_.Exception.Message)" -ForegroundColor Red
+            $fail++
+        }
     }
+}
+finally {
+    # 중간에 Ctrl+C 로 끊겨도 우리가 띄운 Office 는 남기지 않는다.
+    Close-OfficeApps
 }
 
 Write-Host ''

@@ -103,6 +103,44 @@ RA 파서의 출력(heading/rich_text/table/image)은 `create_report_draft(extra
 쿼터를 바로 먹는다(`agentCatalog` 를 안 남기는 것과 같은 이유). 본문은 전송 1회성이고,
 `attachedDocs` 는 보낸 뒤 비운다 — 안 비우면 매 턴 수만 자가 다시 실린다.
 
+## D-13. 정독에서 나온 것들 — PowerShell 을 못 돌리는 박스에서 만들었다
+
+이 박스에는 PowerShell 도 Office 도 없다. **문법 검사조차 못 한다.** 그래서 전체를 한 번
+정독했고, 아래 넷이 나왔다. 셋은 실행해 보기 전엔 안 보이는 종류다.
+
+1. **`Get-OfficeApp` 에 인자를 추가하고 호출부 4곳을 안 고쳤다.** `$ProcName` 이 비면
+   `wasRunning` 이 늘 false 가 되어 **사용자가 편집 중인 Word 를 Quit 한다** — 막으려고 만든
+   장치가 정확히 반대로 동작하는 상태였다. 인자를 `Mandatory` 로 못박았다.
+2. **무한 루프.** Word 표에서 `$cols` 가 0 이면 `for (… $i += $cols)` 가 영원히 제자리다.
+   오류도 안 나고 그냥 안 끝난다. 열 수를 못 읽는 표는 건너뛰고 경고에 남긴다.
+3. **배열 슬라이스 `$cells[0..($cells.Count - 2)]`** — Count 가 1이면 `0..-1` 이 되어 첫 칸과
+   **마지막 칸이 중복**으로 잡힌다. 2개 이상일 때만 자른다.
+4. **RCW 누수** — 도형 루프 안에서 `$slide.Shapes.Title` 을 매번 다시 가져와 COM 객체가 도형
+   수만큼 쌓였다. 루프 밖에서 한 번만 집는다.
+
+## D-14. Office 앱 수명은 '파일당' 이 아니라 '실행당' 이다
+
+파일마다 열고 닫으면 두 가지가 깨진다.
+
+- **경합** — `Quit()` 은 비동기다. 다음 파일에서 `Get-Process WINWORD` 를 보면 아직 살아
+  있어 "남의 Word" 로 오판하고, 그러면 **영영 안 끈다**(누수). 자가 시험의 누수 검사도
+  이것 때문에 거짓 경고를 냈다.
+- **속도** — 50개 폴더에서 Word 를 50번 띄운다.
+
+→ `$script:OFFICE` 에 ProgId 로 캐시하고, 실행이 끝날 때 `Close-OfficeApps` 가 한 번에
+정리한다. 본 실행 루프를 `try/finally` 로 감싸 **Ctrl+C 로 끊겨도** Office 를 안 남긴다.
+PowerPoint 는 우리가 띄웠더라도 그 사이 사람이 발표자료를 열었으면 안 끈다.
+
+## D-15. 검증한 것과 못 한 것
+
+| 무엇 | 어떻게 | 결과 |
+|---|---|---|
+| 챗 주입 | agent-server `/chat` 에 documents 로 직접 POST | **된다** — 모델이 `[s.2]` 인용, 발표자 노트까지 |
+| 심의 정규화 | `_resolve_opts` 에 30,000자 항목 | 2,000 → **12,000자**, 문서 3건도 예산 안 |
+| 프론트 파서 | `tsx` 로 `classify`/`parseMeta`/`docsAsEvidence` 실행 | 라우팅·머리말·칩 라벨 전부 정상 |
+| 추출기 문법 | **못 함**(PowerShell 없음) — 정독 + 괄호 균형 검사만 | 첫 실행은 사용자 PC 에서 `-SelfTest` |
+| 브라우저 UI | **못 함** — 로그인 자격이 없다 | 사용자 확인 필요 |
+
 ## 남은 것
 
 - **2차 — RA 세그먼트 출력**: `.hwax.json`(heading/rich_text/table/image) → `create_report_draft`.
