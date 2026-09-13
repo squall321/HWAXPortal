@@ -57,7 +57,10 @@
       실측 fts 221.4초 0건 → 0.3초 6건, hybrid 102.5초 3건 → 0.5초 6건
 - [x] 호출부가 느린 검색을 상정하게 — `_agent_search_hits` 공용 헬퍼(타임아웃·semantic
       폴백·삼켜진 오류 판별·강등 가시화)로 심의·챗·띵킹 세 곳을 통일(`132c956`)
-- [ ] `app.py:2624` `recd` 스코프 — `expert_tools` 가 조용히 빈다(아직 미확인·미수정)
+- [x] `recd` 스코프 — `expert_tools` 가 조용히 비던 건. `raw_by_q` 로 원 응답을 따로 보관해
+      해결됐다(`app.py:3047`·주석에 2026-09-09 재현 기록). 2026-09-13 실측 재확인 —
+      `POST /deliberate/experts` 가 `expert_tools` 2건(`pcb_warpage_surrogate`·
+      `stress_strain_plot`)을 채워 돌려준다
 
 
 ## 남은 것
