@@ -42,6 +42,9 @@ function SidebarItem({
     return () => window.clearTimeout(t);
   }, [armed]);
 
+  // 이 대화에 고른 전문가(다른 기기에서 열어도 서버 meta 로 복원된다).
+  const agentLabel = conv.pinnedAgentName || conv.pinnedAgent || '';
+
   const commitRename = () => {
     renameConversation(conv.id, draft);
     setEditing(false);
@@ -84,9 +87,11 @@ function SidebarItem({
           selectConversation(conv.id);
           onNavigate?.();
         }}
-        title={conv.title}
+        title={agentLabel ? `${conv.title} — ${agentLabel}` : conv.title}
       >
         {conv.title}
+        {/* 어느 전문가와 나눈 대화인지 — 목록에서 안 보이면 열어 봐야만 안다. */}
+        {agentLabel && <span className="sb-item-agent">👤 {agentLabel}</span>}
       </button>
       <div className="sb-item-actions">
         <button

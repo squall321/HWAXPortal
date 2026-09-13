@@ -277,3 +277,38 @@ export function delibOptsToWire(o: DelibOpts): Record<string, number> {
   if (o.stop_after_round === 1) w.stop_after_round = 1;
   return w;
 }
+
+/** 대화 시작 전(랜딩)에 고른 전문가·도구. 새로고침에 날아가면 사용자는 **여전히 골라 둔 줄**
+ *  알고 첫 발화를 던진다 — 그리고 아무것도 적용되지 않은 답을 받는다. delibOpts 와 같은 방식. */
+export interface DraftPins {
+  agent?: string;
+  agentName?: string;
+  helpers?: { key: string; name?: string }[];
+  tools: string[];
+  apps: string[];
+}
+
+export function loadDraftPins(prefix: string = DEFAULT_PREFIX): DraftPins {
+  try {
+    const raw = localStorage.getItem(`${prefix}.draftPins`);
+    const o = raw ? JSON.parse(raw) : null;
+    if (!o || typeof o !== 'object') return { tools: [], apps: [] };
+    return {
+      ...(typeof o.agent === 'string' ? { agent: o.agent } : {}),
+      ...(typeof o.agentName === 'string' ? { agentName: o.agentName } : {}),
+      ...(Array.isArray(o.helpers) ? { helpers: o.helpers.slice(0, 4) } : {}),
+      tools: Array.isArray(o.tools) ? o.tools.slice(0, 12) : [],
+      apps: Array.isArray(o.apps) ? o.apps.slice(0, 3) : [],
+    };
+  } catch {
+    return { tools: [], apps: [] };
+  }
+}
+
+export function saveDraftPins(v: DraftPins, prefix: string = DEFAULT_PREFIX): void {
+  try {
+    localStorage.setItem(`${prefix}.draftPins`, JSON.stringify(v));
+  } catch {
+    /* noop */
+  }
+}

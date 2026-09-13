@@ -150,6 +150,17 @@
 .sb-item.active .sb-item-title {
   color: var(--fg);
 }
+/* 어느 전문가와 나눈 대화인지 — 제목 아래 한 줄. 제목이 길면 제목이 먼저 잘린다. */
+.sb-item-agent {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .sb-item-actions {
   display: none;

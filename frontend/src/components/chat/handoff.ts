@@ -41,3 +41,40 @@ export function conversationEvidence(conv: Conversation): HandoffEvidence[] {
   }
   return out;
 }
+
+// 이어하기 — **이전 회차 좌석들이 도구로 조회한 결과**를 원천 근거로 승계한다.
+//
+// 종전에는 요약·양보 불가 조항·사람 의견만 넘어갔다. 조항을 요약에서 분리한 이유가
+// "요약은 자유 텍스트라 빠져도 아무도 모른다" 인데, **수치도 똑같다** — 이전 회차에 DB 로
+// 뽑은 값이 결정문 문장에 살아남은 것만 넘어가고 나머지는 사라졌다. 그러면 다음 회차 좌석이
+// 같은 것을 다시 조회하거나, 못 하면 기억으로 말한다.
+//
+// 새 채널을 파지 않는다 — delib_opts.evidence 가 이미 "검증 대상이지 결론이 아닌 원천 데이터"
+// 통로이고 엔진이 [e:N] 인용 표지까지 붙여 준다. 출처에 '이전 회차' 를 적어 지위를 밝힌다.
+export function priorGatheredEvidence(
+  evidence: { source: string; text: string; included: boolean }[] | undefined,
+): HandoffEvidence[] {
+  const out: HandoffEvidence[] = [];
+  const seen = new Set<string>();
+  for (const e of evidence ?? []) {
+    if (!e?.included) continue;
+    const i = (e.source ?? '').indexOf(' · ');
+    if (i < 0) continue;
+    const seat = e.source.slice(0, i).trim();
+    const tool = e.source.slice(i + 3).trim();
+    // 도구 이름만 받는다 — '지식카드'·'자유 조회 실패' 같은 한글 라벨은 도구가 아니다.
+    if (!/^[a-z][a-z0-9_]{2,79}$/.test(tool)) continue;
+    const result = (e.text ?? '').trim();
+    if (!result) continue;
+    const key = `${tool}|${result.slice(0, 80)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      source: `이전 회차 · ${seat}`.slice(0, 200),
+      tool: tool.slice(0, 80),
+      result: result.slice(0, EVID_ITEM_MAX),
+    });
+    if (out.length >= EVID_ITEMS) break;
+  }
+  return out;
+}

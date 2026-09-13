@@ -22,7 +22,7 @@ import {
 import { useAuth } from '../auth/useAuth';
 import { useCan } from '../auth/useCan';
 import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
-import { conversationEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
+import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import { mergeEvidence } from '../components/chat/vocEvidence';
 import {
@@ -30,10 +30,13 @@ import {
   loadActiveId,
   loadConversations,
   loadDelibOpts,
+  loadDraftPins,
   newId,
   saveActiveId,
   saveConversations,
   saveDelibOpts,
+  saveDraftPins,
+  type DraftPins,
 } from './chatStore';
 
 interface ChatContextValue {
@@ -363,7 +366,8 @@ export function ChatProvider({
   const streamConvRef = useRef<string | null>(null);
   // 대화 시작 전(랜딩) 선택한 전문가·도구 — 다음 '새 대화' 생성 시 대화에 옮겨 심는다.
   // ref 는 sendMessage 전송 시점 읽기용(스테일 방지 — delibOpts 패턴과 동일).
-  const [draftPins, setDraftPinsState] = useState<{ agent?: string; agentName?: string; helpers?: { key: string; name?: string }[]; tools: string[]; apps: string[] }>({ tools: [], apps: [] });
+  // 새로고침에 날아가면 사용자는 **여전히 골라 둔 줄** 알고 첫 발화를 던진다(entry-F7).
+  const [draftPins, setDraftPinsState] = useState<DraftPins>(() => loadDraftPins());
   // 인터넷 소스는 대화별이 아니라 세션 단위 토글이다 — 기본값은 '전부 끔'(빈 배열).
   // undefined 를 기본으로 두면 종전 동작(전부 허용)이 되어, 켠 적 없는데 나가는 상황이 된다.
   const [searchSources, setSearchSources] = useState<SearchSource[]>([]);
@@ -384,9 +388,10 @@ export function ChatProvider({
     setAttachedDocsState(list);
   }, []);
   const draftPinsRef = useRef(draftPins);
-  const setDraftPins = useCallback((v: { agent?: string; agentName?: string; helpers?: { key: string; name?: string }[]; tools: string[]; apps: string[] }) => {
+  const setDraftPins = useCallback((v: DraftPins) => {
     draftPinsRef.current = v;
     setDraftPinsState(v);
+    saveDraftPins(v);
   }, []);
 
   // 변경 시 저장(토큰 단위 갱신이 잦으므로 250ms 디바운스). 로그인 전(null)에는 저장하지 않는다.
@@ -744,8 +749,13 @@ export function ChatProvider({
         ? prior.personas.map((p) => ({ key: p.key, role: p.role ?? '' }))
         : [...new Set((prior.turns ?? []).map((t) => t.persona).filter(Boolean))].map((key) => ({ key, role: '' }));
       const seats = roster?.length ? roster.map((p) => ({ key: p.key, role: p.role ?? '' })) : carried;
+      // 이전 회차가 도구로 뽑은 수치를 승계한다 — 조항을 요약에서 분리한 것과 같은 이유다.
+      // 요약 문장에 살아남은 것만 넘어가면 나머지는 사라지고, 다음 회차는 같은 걸 다시
+      // 조회하거나 못 하면 기억으로 말한다. 기존 evidence 채널을 쓴다(계약 변경 없음).
+      const gathered = priorGatheredEvidence(prior.evidence);
       sendMessage('/심의 ' + topic, {
         human_note: note,
+        ...(gathered.length ? { evidence: gathered } : {}),
         // 결정문이 우선이고, 남는 예산으로 쟁점을 붙인다(둘 다 같은 8000자 칸이다).
         continue_summary:
           (prior.decision ?? '').slice(0, 8000) +
