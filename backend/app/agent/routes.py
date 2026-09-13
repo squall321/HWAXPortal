@@ -160,6 +160,9 @@ class ChatRequest(BaseModel):
     pinned_agent: str | None = Field(default=None, max_length=120)
     # 여러 전문가를 한 목소리로 — 첫 명이 주 전문가다(도구 특화 + 전문지식 조합).
     pinned_agents: list[str] = Field(default_factory=list, max_length=5)
+    # 표시용 이름. **agent-server 로 넘기지 않는다** — 서버 대화에 같이 적어 두었다가 다른
+    # 기기에서 열 때 키 대신 사람이 읽을 이름을 되살리는 데만 쓴다.
+    pinned_agent_name: str | None = Field(default=None, max_length=200)
     # 붙인 문서의 **추출문**(챗). 원본 파일은 오지 않는다 — DRM 문서는 그 PC 에서만 복호화되므로
     # 추출을 사용자 PC 의 Office COM 으로 옮겼다(docs/doc-deliberate). 여기 오는 것은 이미 평문이다.
     documents: list[ChatDocument] | None = Field(default=None, max_length=10)
@@ -1296,8 +1299,17 @@ async def chat(
         owner = principal.subject
         cid = body.conversation_id
         if store is not None and cid:
+            # 고른 전문가를 발화에 같이 적어 둔다. 이게 없으면 **다른 기기에서 대화를 열 때
+            # 전문가가 조용히 풀린다** — 화면엔 그 전문가의 지난 답이 그대로 있어서 사용자는
+            # 여전히 지정된 줄 안다(로컬 저장소에는 있는데 서버에는 없던 자리다).
+            # meta 는 자유 JSON 칸이라 스키마·API 계약은 그대로다.
+            _pin = {k: v for k, v in (("pinned_agent", body.pinned_agent),
+                                      ("pinned_agent_name", body.pinned_agent_name)) if v}
+            if body.pinned_agents:
+                _pin["pinned_agents"] = list(body.pinned_agents)
             # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
-            if store.append(conversation_id=cid, owner_sub=owner, role="user", content=body.message):
+            if store.append(conversation_id=cid, owner_sub=owner, role="user", content=body.message,
+                            meta=_pin or None):
                 pass
             else:
                 store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함

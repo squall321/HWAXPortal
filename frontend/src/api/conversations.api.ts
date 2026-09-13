@@ -124,6 +124,17 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
 export function serverConvToLocal(
   conv: ServerConvMeta & { messages: ServerMessage[] },
 ): Conversation {
+  // 마지막 사용자 발화의 meta 에서 고른 전문가를 되살린다. 없으면 안 건드린다 —
+  // 다른 기기에서 열면 전문가가 조용히 풀리는데, 화면엔 그 전문가의 지난 답이 그대로
+  // 있어서 사용자는 여전히 지정된 줄 안다(구 저장분은 meta 가 없어 그대로 비어 온다).
+  let pin: Record<string, unknown> = {};
+  for (let i = conv.messages.length - 1; i >= 0; i -= 1) {
+    const m = conv.messages[i];
+    if (m.role !== 'user') continue;
+    const meta = (m.meta ?? {}) as Record<string, unknown>;
+    if (typeof meta.pinned_agent === 'string') pin = meta;
+    break;   // 가장 최근 발화의 상태가 현재 상태다 — 중간에 바꿨으면 그 뒤가 맞다
+  }
   return {
     id: conv.id,
     serverId: conv.id,
@@ -131,5 +142,10 @@ export function serverConvToLocal(
     messages: serverMessagesToLocal(conv.messages),
     createdAt: conv.created_at * 1000,
     updatedAt: conv.updated_at * 1000,
+    ...(typeof pin.pinned_agent === 'string' ? { pinnedAgent: pin.pinned_agent } : {}),
+    ...(typeof pin.pinned_agent_name === 'string'
+      ? { pinnedAgentName: pin.pinned_agent_name } : {}),
+    ...(Array.isArray(pin.pinned_agents) && pin.pinned_agents.length > 1
+      ? { pinnedHelpers: (pin.pinned_agents as string[]).slice(1).map((k) => ({ key: k })) } : {}),
   };
 }

@@ -609,6 +609,8 @@ export function ChatProvider({
         ...(effPinnedTools.length ? { pinnedTools: effPinnedTools } : {}),
         ...(effPinnedApps.length ? { pinnedApps: effPinnedApps } : {}),
         ...(effPinnedAgent ? { pinnedAgent: effPinnedAgent } : {}),
+        // 이름도 함께 — 서버 대화에 적혀 다른 기기에서 키가 아닌 이름으로 되살아난다.
+        ...(effPinnedAgent && effPinnedAgentName ? { pinnedAgentName: effPinnedAgentName } : {}),
         // 여러 명이면 [주 전문가, ...보조] 로 보낸다 — 서버가 첫 명을 목소리로 삼는다.
         ...(effPinnedAgent && effHelpers.length
           ? { pinnedAgents: [effPinnedAgent, ...effHelpers.map((h: { key: string }) => h.key)] }
