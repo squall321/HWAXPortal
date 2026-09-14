@@ -163,7 +163,7 @@ CALLS = [
     # ("list_components",      {"job_id": "<실제 job_id>", "category": "IC"}),
     # 4) 적층·보드 정보(있으면) — 워피지 3인자의 원천
     # ("get_stackup",          {"job_id": "<실제 job_id>"}),
-    # 5) 과제명·리비전으로 필터한 목록(그실행 인자가 있으면)
+    # 5) 과제명·리비전으로 필터한 목록(그런 인자가 있으면)
     # 6) 고의 실패 둘 — 없는 잡, 없는 레이어(읽기 전용이라 안전하다)
     # ("job_info",             {"job_id": "0000000000000000"}),
     # ("list_nets",            {"job_id": "<실제 job_id>", "layer": "no_such_layer"}),

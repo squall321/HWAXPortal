@@ -285,7 +285,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
               )}
               {detail.samples.length > 0 && (
                 <>
-                  <div className="sp-sub sp-dim">이실행 걸 물을 수 있어요</div>
+                  <div className="sp-sub sp-dim">이런 걸 물을 수 있어요</div>
                   <ul className="sp-detail-list">
                     {detail.samples.slice(0, 3).map((s, i) => (
                       <li key={i}>{s}</li>
