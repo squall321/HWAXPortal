@@ -346,3 +346,65 @@ def _vkey(v: Any) -> str:
         except ValueError:
             return f"s:{v}"
     return "j:" + json.dumps(v, sort_keys=True, ensure_ascii=False, default=str)
+
+
+# ── 사람이 확정한다 — 상수를 변수로 올린다 ───────────────────────────────
+def promote(spec: dict, picks: list[dict], *, tool_schemas: dict[str, dict] | None = None
+            ) -> tuple[dict, list[str]]:
+    """초안의 **상수 몇 개를 변수로** 올린다. 확정은 사람이 하고 이 함수는 그 결정을 적용한다.
+
+    `picks` 는 `[{step, arg, key?, label?, why?}]` — `step` 은 1부터다(화면이 보는 번호).
+
+    ⚠ **같은 인자·같은 값은 전부 함께 올린다.** 한 자리만 바꾸면 나머지는 상수로 남아,
+    사람이 값을 바꿔도 그 단계들은 옛 값으로 돈다 — 절차가 조용히 어긋나는 자리다.
+    도출이 변수를 하나로 묶는 것(`by_value`)과 같은 규율이다.
+
+    돌려주는 것은 `(새 spec, 경고)` 다. 못 올린 것은 경고로 말한다 — 조용히 건너뛰지 않는다.
+    """
+    ts = tool_schemas or {}
+    out = json.loads(json.dumps(spec, ensure_ascii=False, default=str))  # 원본을 안 건드린다
+    steps = out.get("steps") or []
+    names = {v.get("key") for v in (out.get("vars") or [])}
+    warns: list[str] = []
+
+    for pick in picks or []:
+        ix = int(pick.get("step") or 0) - 1
+        arg = str(pick.get("arg") or "")
+        if not (0 <= ix < len(steps)) or arg not in (steps[ix].get("args") or {}):
+            warns.append(f"{pick.get('step')}단계의 `{arg}` 를 못 찾았다 — 건너뛰었다")
+            continue
+        val = steps[ix]["args"][arg]
+        if isinstance(val, str) and val.startswith("{{"):
+            warns.append(f"{pick.get('step')}단계의 `{arg}` 는 이미 변수다 — 건너뛰었다")
+            continue
+
+        # ⚠ 변수 이름은 소문자·숫자·밑줄만 된다(`Var._key`). 사람이 `지그` 라고 적으면
+        # 규칙상 쓸 글자가 하나도 안 남아 **조용히 `arg` 가 된다** — 그건 다른 이름이다.
+        # 그럴 땐 인자 이름을 쓰고 **그 사실을 말한다.**
+        want = str(pick.get("key") or arg)
+        key = _var_name(want, {n: 1 for n in names})
+        if pick.get("key") and not re.search(r"[a-z0-9]", want.lower()):
+            key = _var_name(arg, {n: 1 for n in names})
+            warns.append(f"`{want}` 는 변수 이름으로 못 쓴다(소문자·숫자·밑줄만) — "
+                         f"`{key}` 로 저장했다. 보이는 이름은 그대로 쓴다")
+        names.add(key)
+        token = "{{%s}}" % key
+        hit = 0
+        for st in steps:
+            for k, v in list((st.get("args") or {}).items()):
+                if k == arg and _same(v, val):
+                    st["args"][k] = token
+                    hit += 1
+        var = describe_var(key, arg, val, tool=steps[ix].get("tool") or "", step=ix + 1,
+                           prop=_prop(ts.get(steps[ix].get("tool")), arg))
+        var.pop("_undocumented", None)
+        if pick.get("label"):
+            var["label"] = str(pick["label"])[:80]
+        if pick.get("why"):
+            var["why"] = str(pick["why"])[:600]
+        out.setdefault("vars", []).append(var)
+        if hit > 1:
+            warns.append(f"`{key}` 는 {hit}곳에 함께 들어간다 — 값을 바꾸면 그 전부가 바뀐다")
+
+    _spread({v["key"]: v for v in out.get("vars") or []}, steps, [], ts)
+    return out, warns

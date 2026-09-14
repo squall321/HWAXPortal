@@ -498,6 +498,12 @@ async def run_draft(request: Request, run_id: str,
     ⚠ **저장하지 않는다.** 어느 인자가 변수이고 어느 것이 상수인지는 사람이 확정한다
     (PLAN §7 "자동 저장 금지"). `needs_human` 이 물어볼 자리다.
     """
+    got, _ = await _draft_of(request, principal, run_id)
+    return {"run_id": run_id, **got}
+
+
+async def _draft_of(request: Request, principal: Principal, run_id: str) -> tuple[dict, dict]:
+    """실행 → 초안 + 그때 쓴 도구 스키마. `/draft` 와 `/draft/save` 가 **같은 것**을 쓴다."""
     from app.procedures import derive as _d
 
     store = _store(request)
@@ -523,7 +529,7 @@ async def run_draft(request: Request, run_id: str,
     got = _d.draft(steps, tool_backend=tmap, asked=(run.get("title") or ""),
                    tool_schemas=tschemas)
     got["input_schema"] = _d.to_input_schema(got["spec"])
-    return {"run_id": run_id, **got}
+    return got, tschemas
 
 
 @router.get("/procedures/{procedure_id}/tool")
@@ -587,6 +593,36 @@ def save_as_procedure(request: Request, run_id: str, body: SaveAsIn,
         owner_sub=principal.subject, spec=spec, title=body.title,
         visibility=body.visibility, derived_from_run=run_id)
     return {**got, "warnings": warns}
+
+
+class DraftSaveIn(BaseModel):
+    title: str
+    # 어느 상수를 변수로 올릴지 — **사람이 고른 것만** 온다. [{step, arg, key?, label?, why?}]
+    promote: list[dict] = Field(default_factory=list)
+    visibility: str = Field(default="all", pattern="^(all|private)$")
+
+
+@router.post("/runs/{run_id}/draft/save", status_code=201,
+             dependencies=[Depends(require_csrf)])
+async def save_draft(request: Request, run_id: str, body: DraftSaveIn,
+                     principal: Principal = Depends(_me)) -> dict:
+    """초안을 **사람이 확정해** 절차로 굳힌다(PLAN §9-2 고리의 마지막 칸).
+
+    화면은 **결정만** 보낸다 — 어느 상수를 변수로 올릴지. 초안 자체는 여기서 다시 뽑는다.
+    화면이 만든 spec 을 그대로 받으면 도출기가 낸 것과 다른 것이 저장될 수 있다.
+
+    저장 검증은 **사람이 만든 절차와 똑같이** 탄다(`_validated`) — 도출이라고 우회하지 않는다.
+    """
+    from app.procedures import derive as _d
+
+    spec_draft, tschemas = await _draft_of(request, principal, run_id)
+    spec, warns = _d.promote(spec_draft["spec"], body.promote, tool_schemas=tschemas)
+    spec["title"] = body.title
+    _, save_warns = _validated(request, spec)
+    got = _store(request).create_procedure(
+        owner_sub=principal.subject, spec=spec, title=body.title,
+        visibility=body.visibility, derived_from_run=run_id)
+    return {**got, "warnings": warns + save_warns}
 
 
 # ── 쓸모 판정(§6-1) ──────────────────────────────────────────────────────

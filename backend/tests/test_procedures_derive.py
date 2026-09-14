@@ -232,3 +232,79 @@ def test_절차_변수가_도구_입력_스키마가_된다():
 def test_json_변수는_object_로_나간다():
     sc = derive.to_input_schema({"vars": [{"key": "laminate", "type": "json", "why": "적층"}]})
     assert sc["properties"]["laminate"]["type"] == "object"
+
+
+# ── 사람이 확정한다 — 상수를 변수로 올린다 ───────────────────────────────
+def _two_step_draft():
+    steps = [
+        {"tool": "solve_prescribed_curvature", "args": {"width": "constrained"}, "result": {}},
+        {"tool": "solve_prescribed_curvature", "args": {"width": "constrained"}, "result": {}},
+    ]
+    return derive.draft(steps, tool_backend={"solve_prescribed_curvature": "heax-x"},
+                        asked="", tool_schemas=SCHEMAS)
+
+
+def test_고른_상수가_변수가_된다():
+    d = _two_step_draft()
+    assert d["spec"]["steps"][0]["args"]["width"] == "constrained"
+    got, warns = derive.promote(d["spec"], [{"step": 1, "arg": "width", "key": "width_mode"}],
+                                tool_schemas=SCHEMAS)
+    assert got["steps"][0]["args"]["width"] == "{{width_mode}}"
+    v = next(v for v in got["vars"] if v["key"] == "width_mode")
+    assert v["type"] == "enum" and v["values"] == ["free", "constrained"]
+    assert "9.6%" in v["why"], "스키마 설명이 안 실렸다"
+
+
+def test_같은_인자_같은_값은_전부_함께_올린다():
+    """**한 자리만 바꾸면 나머지는 옛 값으로 돈다.** 절차가 조용히 어긋나는 자리다."""
+    d = _two_step_draft()
+    got, warns = derive.promote(d["spec"], [{"step": 1, "arg": "width", "key": "w"}],
+                                tool_schemas=SCHEMAS)
+    assert [st["args"]["width"] for st in got["steps"]] == ["{{w}}", "{{w}}"]
+    assert any("2곳" in w for w in warns), f"함께 바뀐다는 사실을 안 알렸다: {warns}"
+
+
+def test_원본_초안을_안_건드린다():
+    d = _two_step_draft()
+    derive.promote(d["spec"], [{"step": 1, "arg": "width", "key": "w"}], tool_schemas=SCHEMAS)
+    assert d["spec"]["steps"][0]["args"]["width"] == "constrained", "원본이 바뀌었다"
+
+
+def test_못_올린_것은_조용히_건너뛰지_않는다():
+    d = _two_step_draft()
+    got, warns = derive.promote(d["spec"], [
+        {"step": 9, "arg": "width"}, {"step": 1, "arg": "없는인자"}], tool_schemas=SCHEMAS)
+    assert len(warns) == 2 and all("건너뛰었다" in w for w in warns)
+    assert not got.get("vars"), "못 올렸는데 변수가 생겼다"
+
+
+def test_이미_변수인_칸은_다시_안_올린다():
+    d = _two_step_draft()
+    once, _ = derive.promote(d["spec"], [{"step": 1, "arg": "width", "key": "w"}],
+                             tool_schemas=SCHEMAS)
+    twice, warns = derive.promote(once, [{"step": 1, "arg": "width", "key": "w2"}],
+                                  tool_schemas=SCHEMAS)
+    assert any("이미 변수다" in w for w in warns)
+    assert [v["key"] for v in twice.get("vars", [])] == ["w"]
+
+
+def test_사람이_준_이름과_설명이_이긴다():
+    d = _two_step_draft()
+    got, _ = derive.promote(d["spec"], [{"step": 1, "arg": "width", "key": "지그",
+                                         "label": "지그 구속", "why": "우리 지그는 구속이다"}],
+                            tool_schemas=SCHEMAS)
+    v = got["vars"][0]
+    assert v["label"] == "지그 구속"
+    # 사람이 쓴 설명은 **살아남고**, 쓰이는 자리가 함께 적힌다(둘 다 필요하다)
+    assert "우리 지그는 구속이다" in v["why"]
+    assert "1단계" in v["why"] and "2단계" in v["why"], v["why"]
+
+
+def test_못_쓰는_이름은_조용히_바꾸지_않고_말한다():
+    """`지그` 는 규칙상 쓸 글자가 하나도 없어 종전엔 **조용히 `arg`** 가 됐다.
+    조용히 다른 이름이 되는 것이 이 리포가 싫어하는 모양이다."""
+    d = _two_step_draft()
+    got, warns = derive.promote(d["spec"], [{"step": 1, "arg": "width", "key": "지그"}],
+                                tool_schemas=SCHEMAS)
+    assert got["vars"][0]["key"] == "width", "인자 이름으로 안 떨어졌다"
+    assert any("못 쓴다" in w for w in warns), f"조용히 바꿨다: {warns}"
