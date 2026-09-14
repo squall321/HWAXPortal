@@ -65,8 +65,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       `{version_id, version_no, spec_json, author_sub, created_at, derived_from_run}`
 - [ ] 변수 — `{key, label, type: string|enum|number|boolean|json, values?, required, why?}`. `why` 는
       **왜 물어보는지**(`pkg_type` 처럼 유도 불가한 값에 필수)
-- [ ] 단계 — `{backend, tool, schema_fp, args, save?, gate?, raw?, unwrap?}`. 기계장치는 치환 `{{var}}` 과
-      추출 `save` 둘뿐이고 의미는 PLAN §2 표대로 **고정**
+- [ ] 단계 — `{backend, tool, schema_fp, expect, args, save?, gate?, raw?, unwrap?, warmup?}`.
+      기계장치는 치환 `{{var}}` 과 추출 `save` 둘뿐이고 의미는 PLAN §2 표대로 **고정**.
+      `expect` 는 `fast|slow|job` — `job` 은 저장 시점에 거절(PLAN §5-10)
 - [ ] 런 — `{id, owner_sub, run_by, recipe_version_id?, inputs_json, origin: manual|replay, mode: plan|live,
       state, …}` + 단계 `{backend, tool, schema_fp, args(+sha256), result_gz/bytes/sha256, truncated, notes,
       state, ok, error, started_at, duration_ms, mode, identity_note, reused_from_run_id}` + `run_gate_acks`
@@ -130,7 +131,12 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] ⚠ 게이트웨이 읽기 캐시 300초 — `list_`·`get_` 접두 도구는 같은 인자·사용자면 첫 응답이 그대로 오고
       0건도 캐시된다. 상태 조회 단계는 캐시 접두 이름을 **저장 시점에 거절**. 런 화면에 "직전 비캐시 호출 =
       X" 를 남긴다(MCP 응답만으로는 hit 를 알 수 없다)
-- [ ] 120초를 넘길 수 있는 동기 도구는 레시피에 넣지 않는다 — 잡 제출형으로만
+- [ ] **시간 정책**(PLAN §5-10) — 단계마다 `expect` 를 선언하고 `job` 은 저장 거절. `warmup: true`
+      단계는 한 번 먼저 불러 결과를 버리고 **타임아웃이 나도 실패로 안 친다**(카탈로그 검색은 세션
+      첫 호출에 **120.3초**, 이후 0.1초 — 상한 120초라 첫 호출이 잘린다). 실행 화면은 시작 전에
+      "보통 N초 걸립니다" 를 런 기록 p95 로 보이고, 선언과 실측이 어긋나면 화면이 말한다
+- [ ] `slow` 단계가 도는 동안 **같은 백엔드에 다른 단계를 걸지 않는다** — 재연결이 나면 그 백엔드의
+      다른 런까지 끊긴다
 - [ ] 감사 — 런 기록이 정본(append-only). 게이트웨이 원장과는 시각·도구·백엔드 근사 대조만
 - [ ] `workbench_max_steps` 는 저장 시점 거절(금지 도구 검사와 같은 자리)
 - → 검증: (1) 존재하지 않는 도구명 레시피가 1단계에서 정지, `error='unknown tool: …'`, `save` 미실행
@@ -251,6 +257,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       보인다. 런 기록에 산출 파일 유무를 남긴다
 - [ ] 과제 메타(`project`·`dev_rev`·`variation`·`doe`·`focus`)를 안 넣으면 `find_reports` 로 다시 못 찾는다
 - [ ] ⚠ **dev 에서 검증 불가** — `report_corpus` 가 0건이다. 계약만 확인하고 실동작은 cae00
+- [ ] 이 판독 도구 묶음이 **심의 좌석에 주는 도구 목록**이다(PLAN §6 심의 경계). 제출 계열은 좌석에서
+      뺀다 — 심의는 잡을 걸지 않고 이미 있는 `report_id` 를 읽는다
 
 ## S4 · R3 ODB 어댑터 + 열충격 SED (S0 선행)
 
@@ -325,6 +333,11 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] **런 → 심의 다리** — 런 상세 "심의로 넘기기". 단계 기록을 `[{source, tool, args, result}]` 로 바꿔
       `POST /agent/conversations` → `POST /agent/chat`(`'/심의 ' + 화두`, `delib_opts.evidence`,
       `chair_template: "risk-review"`). 새 엔드포인트 아님. 상한 40건·결과 150,000자·**인자 1,200자**
+- [ ] **심의 좌석 도구는 읽기 전용 판독 도구만** — `report_summary`·`report_worst_cases`·
+      `report_directional`·`report_part_risk`·`report_findings`·`report_query`·`report_case`·
+      `report_angle_stats`·`report_scatter`·`report_energy_flow`·`report_part_series`·
+      `compare_reports`. `smarttwin_submit`·`slurm_submit_job`·`run_job`·`submit_lsdyna_job` 은 **뺀다**
+- [ ] `compare_reports`(리비전 비교)·`report_corpus`(반복 findings = 설계 규칙 후보)가 패턴화 재료
 - [ ] 선행 결손 — `delibTaxonomy.ts:5-12` `JobId` 에 `risk-review`
 - [ ] 선행 결손 — `conversations.api.ts:6` `ConvKind` 에 `'risk-review'`(없으면 `ChatContext.tsx:457` 필터에서
       조용히 걸러진다)

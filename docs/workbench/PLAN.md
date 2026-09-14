@@ -118,7 +118,7 @@ recipe_versions (version_id PK, recipe_id, version_no, spec_json 불변, author_
                  derived_from_run NULL 허용)
 runs            (id, owner_sub, run_by, recipe_version_id NULL 허용, inputs_json, origin, mode,
                  state, started_at, ended_at, cancelled_by, cancelled_at)
-run_steps       (run_id, ix, backend, tool, schema_fp, args_json, args_sha256,
+run_steps       (run_id, ix, backend, tool, schema_fp, expect, args_json, args_sha256,
                  result_gz, result_bytes, result_sha256, truncated, notes,
                  state, ok, error, started_at, duration_ms, mode, identity_note, reused_from_run_id)
 run_gate_acks   (run_id, step_ix, ack_by, ack_at, args_sha256, args_override_json)
@@ -453,6 +453,43 @@ sort_keys=True))[:16]`(게이트웨이 내부 `_tools_fp` 와 같은 식)을 박
 거절한다. `get_job`·`get_job_details` 를 `_CACHE_DENY` 에 넣는 것은 게이트웨이 쪽 별개
 결손으로 기록만 한다.
 
+### 5-10. 오래 걸리는 도구를 상정한다 — 상한은 120초이고 실측이 그 위에 있다
+
+게이트웨이 호출 상한은 **120초**이고(`gateway.py:57`, infra 어디에도 override 가 없다) 넘기면
+그 백엔드 **영속 세션이 재연결**되면서 같은 백엔드에 걸려 있던 챗·심의 호출까지 끊긴다. 게다가
+게이트웨이는 재연결 뒤 **같은 인자로 한 번 더** 부른다 — 비멱등 쓰기가 두 번 난다.
+
+실측이 이미 상한 위에 있다.
+
+| 도구 | 실측 | 성격 |
+|---|---|---|
+| `search_catalog_property`·`search_by_property` | **120.3초** (세션 첫 호출, 3회 재현) · 이후 0.1초 | 콜드스타트 — **첫 호출이 잘린다** |
+| `agent_search`(hybrid) | 102~221초 | 상시 |
+| `list_materials` | 120초 | 상시 |
+| 감사 원장 전체 | ≥60초 호출 **71건** | — |
+| 적층 도구 · `thickness_report` · `mesh_size_advice` | 0.0~3.2초 | 빠름 |
+
+→ 실행기가 넷을 한다.
+
+1. **단계가 `expect` 를 선언한다** — `fast`(<5초) · `slow`(5~110초) · `job`(120초를 넘길 수
+   있다). `job` 인 단계는 **저장 시점에 거절**하고 제출·회수 두 레시피로 가르게 한다(§4).
+   선언은 사람이 하지만 **런 기록의 `duration_ms` 가 쌓이면 실측 p95 를 옆에 보여 준다** —
+   워크벤치가 자기 관측자라는 §1 원칙이 여기에도 적용된다. 선언과 실측이 어긋나면 화면이 말한다.
+2. **`warmup: true` 단계를 둔다** — 그 도구를 한 번 먼저 부르고 결과를 버린다. 타임아웃이 나도
+   실패로 치지 않는다. 콜드스타트가 상한을 넘기는 도구(카탈로그 검색)를 정확히 푸는 자리다.
+3. **실행기 httpx 타임아웃은 ≥260초** — 게이트웨이 120초 + 재연결 재시도 한 번을 덮는다.
+   실행기가 먼저 포기하면 쓰기는 그 뒤 완료되고 런에는 `unknown` 만 남는다(§2 런).
+4. **`slow` 단계가 도는 동안 같은 백엔드에 다른 단계를 걸지 않는다** — S5 일괄 재생의 동시
+   상한이 "같은 백엔드에 동시 N" 인 이유다. 재연결이 나면 그 백엔드의 다른 런까지 끊긴다.
+
+화면은 단계를 시작하기 전에 **"이 단계는 보통 N초 걸립니다"** 를 보인다(런 기록에서 계산).
+사람이 기다릴지 나중에 볼지를 정할 수 있어야 폴링 화면이 고장으로 안 보인다.
+
+읽기 캐시(§5-9)가 여기서는 유일하게 도움이 된다 — 느린 읽기 도구가 한 번 성공하면 300초 동안
+같은 인자에 즉답이다. 재개·재실행이 그만큼 싸다.
+
+---
+
 ---
 
 ## 6. 단계
@@ -496,6 +533,32 @@ sort_keys=True))[:16]`(게이트웨이 내부 `_tools_fp` 와 같은 식)을 박
 
 **S6 은 뒤로 뺐다** — 작지 않고(앱마다 시야가 다르다) 예제 넷의 임계 경로에 있지도 않다
 (context-notes W-22).
+
+### 심의는 잡을 걸지 않는다 — 이미 있는 결과를 읽는다
+
+**심의 좌석에 주는 낙하·충격 도구는 읽기 전용 판독 도구뿐이다** — `report_summary`·
+`report_worst_cases`·`report_directional`·`report_part_risk`·`report_findings`·`report_query`·
+`report_case`·`report_angle_stats`·`report_scatter`·`report_energy_flow`·`report_part_series`·
+`compare_reports`. 제출 계열(`smarttwin_submit`·`slurm_submit_job`·`run_job`·`submit_lsdyna_job`)은
+**좌석 도구에서 뺀다.**
+
+근거 셋.
+
+1. **시간이 안 맞는다.** 드라이버 잡 walltime 이 167시간인데 심의 라운드는 몇 분이다. 심의 중에
+   잡을 걸면 그 심의는 결과 없이 끝나고 **의도만 남은 근거**가 된다.
+2. **집계가 좌석의 일이 아니다.** 전각도 낙하는 자식 잡을 26~10000개 만들고 그것을 하나로
+   모으는 것이 `sphere_report`·`impact_report` 의 일이다. 좌석이 라운드 중간에 그걸 모을 수
+   없고, 모으려 들면 부분 결과로 결론을 낸다.
+3. **판독 도구가 이미 집계된 슬라이스를 준다.** `report_worst_cases` 는 최악 랭킹을,
+   `report_directional` 은 방향 범주별 롤업을, `report_query` 는 서버가 필터한 조각만 준다.
+   좌석이 받아야 할 모양 그대로다.
+
+→ **순서가 정해진다.** 워크벤치가 먼저 돌고(R2a 제출 → 잡 → R2b 회수·반입), 심의는 그 뒤에
+`report_id` 를 받아 읽는다. 이것이 앞서 말한 "레시피를 도구로 등록해 심의가 부른다" 의 정확한
+형태다 — 심의에 주는 것은 **R2b(회수·판독)** 쪽이지 R2a(제출)가 아니다.
+
+`compare_reports`(리비전·조건 간 파트별 최악 응력 비교)와 `report_corpus`(반복되는 findings =
+설계 규칙 후보)가 S8 리스크 패턴화의 재료다.
 
 **S8 첫 항목은 런 → 심의 다리다.** 런 상세에 "심의로 넘기기" 를 두고 단계 기록을
 `[{source: "<레시피>#<단계>", tool, args, result}]` 로 바꿔 챗 핸드오프와 **같은 통로**

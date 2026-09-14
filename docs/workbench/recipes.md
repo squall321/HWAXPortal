@@ -326,6 +326,16 @@ steps:
 - 과제 메타(`project`·`dev_rev`·`variation`·`doe`·`focus`)를 안 넣으면 `find_reports`·
   `report_facets` 로 **다시 못 찾는다.**
 
+### 이 묶음이 심의 좌석에 주는 도구다
+
+R2b 의 판독 도구가 그대로 **심의 좌석 도구 목록**이다 — 여기에 `report_query`·`report_case`·
+`report_angle_stats`·`report_scatter`·`report_energy_flow`·`report_part_series`·`compare_reports`
+를 더한다. 제출 계열은 좌석에서 **뺀다**(PLAN §6 심의 경계).
+
+순서가 정해진다 — **워크벤치가 먼저 돌고(R2a → 잡 → R2b), 심의는 그 뒤에 `report_id` 를 읽는다.**
+심의 중에 잡을 걸면 walltime 167시간 뒤에나 결과가 나오고 그 심의는 의도만 남은 근거가 된다.
+전각도 자식 잡 26~10000개를 라운드 중간에 좌석이 모을 수도 없다.
+
 ### ⚠ dev 에서 검증 불가
 
 `report_corpus` → `{"reports": 0, "cases": 0, "note": "해석 결과 리포트가 아직 없다."}`,
@@ -392,3 +402,6 @@ steps:
 | 잡을 거는 도구는 제출·회수 **두 레시피**로 가른다 | 드라이버 walltime 167시간 |
 | 파일을 나르는 단계는 레시피 밖이다 | `model_path` 는 공유 FS 절대경로, 리포트는 512MB REST |
 | 되돌리기 어려운 단계는 실행기가 멈춘다 | `smarttwin_submit(dry_run=false)` · `add_report_tags` · `publish_report` |
+| 단계마다 `expect`(`fast`/`slow`/`job`)를 선언하고 `job` 은 저장 거절 | 게이트웨이 상한 120초 · 실측 `search_catalog_property` **120.3초**(세션 첫 호출)·`agent_search` 102~221초 |
+| 콜드스타트가 상한을 넘기는 도구 앞에 `warmup: true` 단계를 둔다 | 두 번째 호출부터 0.1초다 — 한 번 버리는 호출이 제일 싼 해법 |
+| **심의는 잡을 걸지 않는다** — 좌석에는 `report_*` 판독 도구만 준다 | walltime 167시간 · 자식 잡 26~10000개의 집계는 `sphere_report` 의 일이다 |
