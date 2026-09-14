@@ -8,6 +8,7 @@ docs/procedures/PLAN.md 의 YAML 은 예시이고 이 파일이 정본이다.
 다른 해석이 정상으로 돌고 난 뒤다.
 """
 
+import json
 import re
 from typing import Any, Literal
 
@@ -73,6 +74,11 @@ class Var(BaseModel):
     values: list[str] | None = None
     required: bool = True
     why: str | None = None
+    # ⚠ **기본값이 아니라 예시다.** 칸은 비어 있고, 사람이 "예시 넣기" 를 눌러야 들어간다.
+    # 왜 기본값으로 안 두나 — 미리 채워 두면 4겹 적층이 **자기 부품의 값처럼** 보인 채로
+    # 그냥 돌아가고, 결과는 정상으로 나온다. 이 리포가 반복해서 만나는 모양 그대로다.
+    # required 가 계속 물어보게 두고, 넣는 것은 사람의 **명시적 한 번**으로 만든다.
+    example: Any | None = None
 
     @field_validator("key")
     @classmethod
@@ -89,6 +95,13 @@ class Var(BaseModel):
             raise ValueError(f"enum 변수 {self.key} 에 values 가 없다")
         if self.type != "enum" and self.values:
             raise ValueError(f"{self.key}: values 는 enum 에만 쓴다")
+        # 예시가 그 형으로 안 맞으면 **저장 시점에** 막는다. 안 막으면 사람이 버튼을
+        # 누른 뒤 실행에서야 터지는데, 그때는 앞 단계가 이미 돌아 있다.
+        if self.example is not None:
+            try:
+                self.coerce(self.example)
+            except SpecError as exc:
+                raise ValueError(f"{self.key}: example 이 형에 안 맞는다 — {exc}") from None
         return self
 
     def coerce(self, raw: Any) -> Any:
@@ -105,12 +118,25 @@ class Var(BaseModel):
         if self.type == "boolean":
             if isinstance(raw, bool):
                 return raw
+            # 화면의 입력칸은 문자열밖에 못 보낸다 — 이 함수의 일이 그걸 형으로 맞추는 것이다.
+            if isinstance(raw, str) and raw.strip().lower() in ("true", "false"):
+                return raw.strip().lower() == "true"
             raise SpecError(f"{self.key}: 참·거짓이 아니다 — {raw!r}")
         if self.type == "string":
             if isinstance(raw, str):
                 return raw
             raise SpecError(f"{self.key}: 문자열이 아니다 — {type(raw).__name__}")
-        return raw  # json — 무엇이든
+        if self.type == "json":
+            # ⚠ 화면에서 온 적층 정의는 **문자열**이다. 그대로 두면 `laminate` 인자에
+            # 객체가 아니라 문자열이 실려 도구가 거절한다 — 사람은 자기가 옳게 붙여
+            # 넣었는데 왜 틀렸는지 알 수 없다. 여기서 한 번 푼다.
+            if isinstance(raw, str):
+                try:
+                    return json.loads(raw)
+                except ValueError as exc:
+                    raise SpecError(f"{self.key}: JSON 이 아니다 — {exc}") from None
+            return raw
+        return raw
 
 
 def _bad(key, raw):
@@ -182,6 +208,32 @@ class ProcedureSpec(BaseModel):
 # ── 저장 시점 검증 ────────────────────────────────────────────────────────
 
 RESERVED = frozenset({"run_id"})  # me.email·me.sub 은 접두로 따로 본다
+
+
+def coerce_inputs(spec: ProcedureSpec, raw: dict) -> dict:
+    """화면에서 온 값을 **선언한 형으로** 맞추고, 빠진 필수 변수를 먼저 잡는다.
+
+    ⚠ 이 함수가 없던 동안 `Var.coerce` 는 테스트에서만 불렸다. 그래서 화면에서 채운
+    적층 정의가 **문자열 그대로** 실행 범위에 들어갔고, `laminate` 인자에 객체가 아니라
+    문자열이 실려 도구가 거절했다. 숫자 변수도 `"1000"` 이라 같은 일이 났다.
+    치환기는 통째 리프의 **형을 그대로 보존**하므로(`template.substitute`), 형을 맞추는
+    자리는 여기 하나뿐이다.
+
+    빠진 필수 변수도 여기서 막는다. 안 막으면 그 변수를 쓰는 **단계에 가서야** 터지는데,
+    그때는 앞 단계가 이미 게이트웨이를 부르고 난 뒤다 — 되돌릴 수 없는 것도 있다.
+    """
+    out = dict(raw or {})
+    missing: list[str] = []
+    for v in spec.vars:
+        if v.key not in out or out[v.key] is None or out[v.key] == "":
+            out.pop(v.key, None)
+            if v.required:
+                missing.append(f"{v.label}({v.key})")
+            continue
+        out[v.key] = v.coerce(out[v.key])   # SpecError 는 호출부가 422 로 바꾼다
+    if missing:
+        raise SpecError("채워야 할 값이 비어 있습니다 — " + ", ".join(missing))
+    return out
 
 
 def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:

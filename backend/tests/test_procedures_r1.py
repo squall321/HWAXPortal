@@ -145,3 +145,39 @@ def test_clean_run_has_no_warnings_to_lift(real):
     """경고가 없을 때 빈 칸을 만들지 않는다 — 있으면 사람이 무시하게 된다."""
     v = judge(is_error=False, text=json.dumps(real["life"]["body"], ensure_ascii=False))
     assert v.ok is True and "warnings" not in v.notes
+
+
+# ── 붙여 넣을 예시 — 씨앗이 들고 있어야 한다 ─────────────────────────────────
+def test_laminate_example_is_a_real_payload_the_tool_accepts(spec):
+    """사람이 손으로 쓰면 **두 번 걸린다**(실호출 2026-09-14) — `material.type` 누락은
+    E202, `fatigue.k > 1` 은 E100 이다. 예시는 그 둘을 피한 판이어야 한다.
+    """
+    v = next(x for x in spec.vars if x.key == "laminate")
+    assert v.example, "붙여 넣을 예시가 없으면 사람이 4겹을 손으로 쓴다"
+    plies = v.example["laminae"]
+    assert len(plies) == 4 and v.example["unit_system"] == "SI_mm"
+    for i, p in enumerate(plies):
+        m = p["material"]
+        assert m.get("type") == "orthotropic_2d", f"ply {i}: type 이 없으면 E202 다"
+        assert m["fatigue"]["k"] <= 1, f"ply {i}: k 는 기울기라 1 이하다(아니면 E100)"
+        assert set(m["strength"]) >= {"Xt", "Xc", "Yt", "Yc", "S"}, f"ply {i}: 강도가 모자라다"
+
+
+def test_example_total_thickness_matches_the_part_the_geometry_step_reads(spec, real):
+    """총두께가 ①이 준 두께와 다르면 **다른 부품을 해석하는 것이다.**"""
+    v = next(x for x in spec.vars if x.key == "laminate")
+    total = sum(p["thickness"] for p in v.example["laminae"])
+    from_geometry = template.extract(real["bend"]["body"],
+                                     "parts[0].for_bending_analysis.thickness_mm")
+    assert total == pytest.approx(from_geometry, abs=1e-9), (
+        f"예시 총두께 {total}mm 인데 형상은 {from_geometry}mm 다")
+
+
+def test_example_does_not_quietly_become_the_answer(spec):
+    """**예시는 기본값이 아니다.** 비워 두면 시작에서 걸려야 한다 — 남의 값으로 돌면 안 된다."""
+    from app.procedures.models import SpecError, coerce_inputs
+
+    assert next(x for x in spec.vars if x.key == "laminate").required is True
+    with pytest.raises(SpecError):
+        coerce_inputs(spec, {"project_id": "p", "part": "UBEND_1", "r_unfold": 1000,
+                             "bend_axis": "x", "width_mode": "free"})   # laminate 없음

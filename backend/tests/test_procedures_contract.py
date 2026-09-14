@@ -360,3 +360,44 @@ def test_threads_get_their_own_connection(store):
     for t in ts:
         t.join()
     assert not errs
+
+
+# ── example 은 기본값이 아니다 ───────────────────────────────────────────────
+def test_example_은_형에_맞는지_저장_시점에_본다():
+    """예시가 형에 안 맞으면 사람이 버튼을 누른 **뒤** 실행에서야 터진다."""
+    from app.procedures.models import Var
+
+    ok = Var(key="laminate", label="적층", type="json", example={"unit_system": "SI_mm"})
+    assert ok.example["unit_system"] == "SI_mm"
+
+    with pytest.raises(ValueError, match="example"):
+        Var(key="r", label="R", type="number", example="여섯")
+    with pytest.raises(ValueError, match="example"):
+        Var(key="ax", label="축", type="enum", values=["x", "y"], example="z")
+
+
+def test_example_이_없으면_아무것도_안_바뀐다():
+    """예시는 선택이다 — 안 적은 절차가 달라지면 안 된다."""
+    from app.procedures.models import Var
+
+    assert Var(key="p", label="과제").example is None
+
+
+def test_example_는_required_를_풀어_주지_않는다():
+    """**예시는 기본값이 아니다.** 미리 채워 두면 남의 값이 자기 값처럼 보인 채 돌아간다.
+
+    사람이 넣지 않으면 여전히 비어 있고, 필수면 시작에서 걸린다.
+    """
+    from app.procedures.models import ProcedureSpec, SpecError, coerce_inputs
+
+    spec = ProcedureSpec.model_validate({
+        "title": "t",
+        "vars": [{"key": "laminate", "label": "적층", "type": "json",
+                  "required": True, "example": {"unit_system": "SI_mm"}}],
+        "steps": [{"backend": "heax-laminate_analyzer_mcp", "tool": "analyze_laminate",
+                   "args": {"laminate": "{{laminate}}"}}],
+    })
+    with pytest.raises(SpecError, match="적층"):
+        coerce_inputs(spec, {})            # 예시가 있어도 자동으로 안 들어간다
+    got = coerce_inputs(spec, {"laminate": '{"unit_system": "SI"}'})
+    assert got["laminate"] == {"unit_system": "SI"}

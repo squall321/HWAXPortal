@@ -84,6 +84,8 @@ export type VarDef = {
   values?: string[];
   required?: boolean;
   why?: string;
+  /** 기본값이 아니다 — 사람이 "예시 넣기" 를 눌러야 칸에 들어간다. */
+  example?: unknown;
 };
 
 export type StepDef = {

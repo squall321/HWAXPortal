@@ -413,3 +413,96 @@ def test_seed_import_goes_through_the_same_validation(user, tmp_path, monkeypatc
     c, h = user
     r = c.post(f"{PREFIX}/seeds/bad-seed/import", headers=h)
     assert r.status_code == 422 and "gate: human" in r.text
+
+
+# ── 화면에서 온 값의 형 — 실행을 만들기 전에 맞춘다 ─────────────────────────
+def _json_var_procedure(c, h) -> str:
+    """`json` 변수 하나와 `number` 변수 하나를 쓰는 최소 절차."""
+    spec = {
+        "title": "형 맞추기",
+        "vars": [
+            {"key": "laminate", "label": "적층 정의", "type": "json", "why": "형상에 없다"},
+            {"key": "r_unfold", "label": "펼침 R", "type": "number", "why": "쓰임새가 정한다"},
+            {"key": "memo", "label": "비고", "type": "string", "required": False},
+        ],
+        "steps": [{"backend": "heax-laminate_analyzer_mcp", "tool": "analyze_laminate",
+                   "args": {"laminate": "{{laminate}}", "bend_radius": "{{r_unfold}}"}}],
+    }
+    r = c.post(f"{PREFIX}/procedures", json={"title": "형 맞추기", "spec": spec}, headers=h)
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def test_화면에서_온_적층은_문자열이_아니라_객체로_들어간다(user):
+    """**이것이 첫 실행을 깨뜨리던 자리다.**
+
+    화면의 입력칸은 문자열밖에 못 보낸다. `Var.coerce` 는 있었지만 **운영 경로에서
+    한 번도 안 불렸다** — 그래서 적층 정의가 문자열인 채 실행 범위로 들어갔고,
+    `laminate` 인자에 객체가 아니라 문자열이 실려 도구가 거절했다. 사람은 자기가
+    옳게 붙여 넣었는데 왜 틀렸는지 알 수 없다.
+    """
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    r = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": pid, "mode": "plan",
+        "vars": {"laminate": '{"unit_system": "SI_mm", "laminae": [{"thickness": 0.3}]}',
+                 "r_unfold": "1000"},
+    })
+    assert r.status_code == 202, r.text
+    got = c.get(f"{PREFIX}/runs/{r.json()['run_id']}", headers=h).json()["inputs"]
+    assert isinstance(got["laminate"], dict), f"문자열 그대로 들어갔다: {got['laminate']!r}"
+    assert got["laminate"]["unit_system"] == "SI_mm"
+    assert got["r_unfold"] == 1000.0, f"숫자가 문자열이다: {got['r_unfold']!r}"
+
+
+def test_깨진_JSON_은_실행을_만들기_전에_막힌다(user):
+    """실행을 만들고 나서 터지면 앞 단계가 이미 돌아 있다."""
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    before = len(c.get(f"{PREFIX}/runs", headers=h).json()["runs"])
+    r = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": pid, "mode": "plan",
+        "vars": {"laminate": "{적층: 없음", "r_unfold": "1000"}})
+    assert r.status_code == 422 and "JSON" in r.text
+    after = len(c.get(f"{PREFIX}/runs", headers=h).json()["runs"])
+    assert after == before, "거절했는데 실행이 남았다"
+
+
+def test_필수_변수가_비면_시작조차_안_한다(user):
+    """빠진 변수는 그것을 쓰는 **단계에 가서야** 터졌다 — 그전 단계는 이미 돌고 난 뒤다."""
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    r = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": pid, "mode": "plan", "vars": {"laminate": "{}"}})
+    assert r.status_code == 422
+    assert "펼침 R" in r.text and "r_unfold" in r.text, "무엇을 채워야 하는지 안 알려 준다"
+
+
+def test_안_채운_선택_변수는_빈_문자열로_안_들어간다(user):
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    r = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": pid, "mode": "plan",
+        "vars": {"laminate": "{}", "r_unfold": "6", "memo": ""}})
+    assert r.status_code == 202
+    got = c.get(f"{PREFIX}/runs/{r.json()['run_id']}", headers=h).json()["inputs"]
+    assert "memo" not in got, "빈 칸이 값으로 들어갔다"
+
+
+def test_빈_실행은_형_맞추기를_건너뛴다(user):
+    """절차 없이 도구를 한 단계씩 돌리는 실행에는 선언된 변수가 없다."""
+    c, h = user
+    r = c.post(f"{PREFIX}/runs", json={"mode": "live"}, headers=h)
+    assert r.status_code == 202 and r.json()["empty"] is True
+
+
+def test_씨앗을_가져오면_붙여_넣을_예시까지_따라온다(user):
+    """예시가 저장·조회 경로에서 떨어지면 화면의 "예시 넣기" 버튼이 안 뜬다."""
+    c, h = user
+    r = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h)
+    assert r.status_code == 201, r.text
+    spec = c.get(f"{PREFIX}/procedures/{r.json()['id']}", headers=h).json()["spec"]
+    lam = next(v for v in spec["vars"] if v["key"] == "laminate")
+    assert lam["example"]["unit_system"] == "SI_mm"
+    assert len(lam["example"]["laminae"]) == 4
+    assert lam["required"] is True, "예시가 있다고 필수가 풀리면 안 된다"

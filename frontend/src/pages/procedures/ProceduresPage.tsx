@@ -178,6 +178,12 @@ function EmptyWithSeeds({ onImported }: { onImported: () => void }) {
   );
 }
 
+/** 예시를 칸에 넣을 문자열로. 객체·배열은 사람이 고칠 수 있게 들여쓴 JSON 이다. */
+function exampleText(v: unknown): string {
+  if (typeof v === 'string') return v;
+  return JSON.stringify(v, null, 2);
+}
+
 function ProcedureDetail() {
   const { id = '' } = useParams();
   const nav = useNavigate();
@@ -249,10 +255,30 @@ function ProcedureDetail() {
                       </option>
                     ))}
                   </select>
+                ) : d.type === 'json' ? (
+                  // 적층 정의는 한 줄 칸에 못 넣는다 — 여러 줄로 받고 형은 서버가 푼다
+                  <textarea
+                    style={{ ...inp, minHeight: '9rem', fontFamily: 'ui-monospace, monospace', fontSize: '0.78rem' }}
+                    spellCheck={false}
+                    placeholder='{"unit_system": "SI_mm", "laminae": [...]}'
+                    value={vals[d.key] ?? ''}
+                    onChange={(e) => setVals({ ...vals, [d.key]: e.target.value })}
+                  />
                 ) : (
                   <input style={inp} value={vals[d.key] ?? ''} onChange={(e) => setVals({ ...vals, [d.key]: e.target.value })} />
                 )}
                 {d.why && <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>{d.why}</span>}
+                {d.example !== undefined && d.example !== null && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <button type="button" style={tiny}
+                            onClick={() => setVals({ ...vals, [d.key]: exampleText(d.example) })}>
+                      예시 넣기
+                    </button>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>
+                      내 값이 아니다 — 넣고 <b>고쳐서</b> 쓴다.
+                    </span>
+                  </span>
+                )}
               </label>
             ))}
           </div>
@@ -408,4 +434,11 @@ const ghost: React.CSSProperties = {
   padding: '0.45rem 1rem',
   cursor: 'pointer',
   fontSize: '0.88rem',
+};
+
+const tiny: React.CSSProperties = {
+  ...ghost,
+  padding: '0.2rem 0.55rem',
+  fontSize: '0.74rem',
+  alignSelf: 'flex-start',
 };

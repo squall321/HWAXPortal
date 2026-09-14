@@ -30,8 +30,10 @@ from app.config import BACKEND_DIR, get_settings
 from app.deps import ensure, get_current_principal, require_csrf
 from app.procedures.models import (
     ProcedureSpec,
+    SpecError,
     Step,
     check_against_schemas,
+    coerce_inputs,
     schema_fingerprint,
     validate_spec,
 )
@@ -261,15 +263,25 @@ async def start_run(request: Request, body: RunIn,
         if version is None:
             raise AuthError("절차 판본을 찾을 수 없습니다", status_code=404)
 
+    # ⚠ **실행을 만들기 전에** 형을 맞추고 빠진 값을 잡는다. 화면은 문자열밖에 못 보내므로
+    # 여기서 안 풀면 적층 정의가 문자열인 채 도구로 가고, 필수 변수가 비면 그 변수를 쓰는
+    # 단계에 가서야 터진다 — 그때는 앞 단계가 이미 게이트웨이를 부르고 난 뒤다.
+    spec = ProcedureSpec.model_validate(version["spec"]) if version else None
+    inputs = dict(body.vars)
+    if spec is not None:
+        try:
+            inputs = coerce_inputs(spec, body.vars)
+        except SpecError as exc:
+            raise AuthError(str(exc), status_code=422) from None
+
     run_id = store.create_run(
         owner_sub=principal.subject, run_by=principal.subject,
-        procedure_version_id=(version or {}).get("version_id"), inputs=body.vars,
+        procedure_version_id=(version or {}).get("version_id"), inputs=inputs,
         origin="replay" if version else "manual", mode=body.mode, title=body.title)
 
-    if version is None:
+    if spec is None:
         return {"run_id": run_id, "state": "queued", "empty": True}
 
-    spec = ProcedureSpec.model_validate(version["spec"])
     _spawn(runner.run(run_id=run_id, spec=spec, principal=principal), f"run {run_id}")
     return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}"}
 
