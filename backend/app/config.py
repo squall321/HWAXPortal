@@ -120,6 +120,13 @@ class Settings(BaseSettings):
     token_store_path: str = "secrets/token_store.sqlite"
     # 서버 대화 저장소(SQLite) — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본.
     conv_store_path: str = "data/conversations.sqlite"
+
+    # 워크벤치(업무 절차 인벤토리) — 챗과 자원을 공유하지 않는 격리 모듈(docs/workbench/PLAN.md §3).
+    # 동시 실행 상한은 심의 DELIB_JOB_MAX_RUNNING·HWAXRisk risk_concurrency 와 같은 2.
+    # gate: human 에서 기다리는 런은 슬롯을 쥐지 않는다.
+    workbench_store_path: str = "data/workbench.sqlite"
+    workbench_concurrency: int = 2
+    workbench_max_steps: int = 30
     # Auto-generate the JWT keypair if absent. dev always does; set true to allow it in a
     # single-instance prod/mock-demo deploy too. Real multi-instance prod provisions keys.
     jwt_autogen_keys: bool = False
