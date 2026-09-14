@@ -1,0 +1,49 @@
+# 2단 도구 등록부 — 역량이 도구 하나 뒤에 숨어 있는 자리 (PLAN §9-4·§9-5)
+#
+# ⚠ 이 파일은 **사람이 확정한 것만** 담는다. 후보 검출은 코드가 하지만(`detect_dispatchers`)
+#    등재는 사람이 한다 — 자동 등재는 곧 엉뚱한 인자를 검증하게 만든다.
+#
+# 왜 필요한가. DynaForge 는 연산 47개를 들고 있는데 게이트웨이에는 `run_operation` 하나로
+# 보인다. `search_tools("물성 교체")` 로 `matdb`·`matswap` 이 **안 나오고**, 절차는 도구
+# 단위라 단계를 만들 수 없다. 그런데 계약은 있다 — `describe_operation` 이 JSON Schema 를
+# 준다. 등록부가 그 두 번째 단을 어디서 받아 오는지 적는다.
+#
+# 두 번째 단의 **형식이 앱마다 다르다**. `schema_kind` 가 그것을 말한다.
+#   json_schema : 응답의 `schema_at` 경로에 JSON Schema 가 그대로 있다
+#   params_ko   : {이름: {type, default, 설명}} 모양(StepForge). 어댑터가 JSON Schema 로 옮긴다
+
+dispatchers:
+  - backend: heax-kooremapper_mcp
+    tool: run_operation
+    selector: operation          # 무엇을 고르는 인자
+    payload: args                # 그 계약이 검증할 인자
+    list: list_operations
+    describe: describe_operation
+    describe_arg: operation
+    schema_kind: json_schema
+    schema_at: args_schema
+    note: >-
+      연산 47개(analysis·bc·core·deform·inspect·material·mesh). 물성 교체는
+      `matdb`(JSON 물성 DB 로 *MAT 교체) · `matswap`(파트별 물성 묶음 교체).
+      2026-09-14 실호출로 `describe_operation("matdb")` 가 required·additionalProperties:false
+      까지 갖춘 args_schema 를 내는 것을 확인했다.
+
+  - backend: heax-step_forge
+    tool: run_job
+    selector: kind               # parse | detect | mesh | pipeline
+    payload: params
+    list: null                   # 목록 도구가 따로 없다 — kind 는 네 개로 닫혀 있다
+    describe: job_params_guide
+    describe_arg: kind
+    schema_kind: params_ko
+    schema_at: jobs              # 응답 `jobs[kind]` 아래에 {이름: {type, default, 설명}}
+    note: >-
+      모르는 키는 **거절된다**(D-278). 공차(tied_gap 등)는 detect·mesh·pipeline 에만 얹힌다 —
+      그 제약은 스키마가 아니라 응답의 `공차를_받는_잡` 에 있다. 어댑터가 그것도 옮긴다.
+
+# 아직 확인 안 한 후보 — 등재하지 않는다(확인해야 등재한다)
+candidates:
+  - {backend: smart-twin-cluster, tool: slurm_submit_job, hint: slurm_list_templates}
+  - {backend: reportarchive, tool: create_report_from_preset, hint: list_presets}
+  - {backend: ai-data-hub, tool: run_saved_search, hint: list_saved_searches}
+  - {backend: smart-twin-mcp, tool: catalog_run, hint: catalog_describe}

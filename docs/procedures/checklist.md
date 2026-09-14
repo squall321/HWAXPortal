@@ -256,6 +256,19 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 검증: dev 에서 완주 → 저장 → `bend_radius` 만 바꿔 재생. 층별 응력·수명이 R 에 따라 변한다
 - [ ] 검증: 물성 없는 ply 를 일부러 넣어 **W120 이 `notes` 에 올라오는지**
 
+## S2.5 · 2단 도구 — 역량이 도구 뒤에 숨은 자리 (PLAN §9-4·§9-5)
+
+- [x] 등록부 `docs/procedures/dispatchers.yaml` — **사람이 확정한 것만**(확정 2 · 후보 4)
+- [x] `dispatch.py` — 등록부 읽기 · 형식 어댑터(json_schema · params_ko) · 후보 검출
+- [x] 후보 검출은 **이름이 아니라 스키마 모양**으로(자유 페이로드 + 고르는 인자 + describe 짝)
+- [x] `check_against_schemas(spec, gw, second_stage)` — 속 인자 오타를 **저장 시점에** 잡는다
+- [x] `runner.second_stage()` — describe 를 불러 계약을 받는다. **못 받으면 검사 안 한다**
+- [x] `/validate` 배선 + 정적 계약 가드가 새 호출을 본다
+- [x] 테스트 13건(등록부 중복 거절 · 어댑터 둘 · 지어내지 않음 · 오타 검출 · 변수면 통과)
+- [ ] 후보 넷 확인 — `slurm_submit_job` · `create_report_from_preset` · `run_saved_search` · `catalog_run`
+- [ ] 절차 저장(`POST /procedures`)에도 2단 검사 배선(지금은 `/validate` 만)
+- [ ] 화면 — 2단 단계를 만들 때 연산 목록과 그 계약을 보여 준다
+
 ## S3 · R2 낙하·충격 — 제출/회수 두 절차 (S1 만 선행)
 
 절차 전문은 [examples.md#r2](examples.md). 여기서 처음 증명되는 것 — **잡 제출을 사람 확인

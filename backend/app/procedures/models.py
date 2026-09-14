@@ -329,7 +329,8 @@ def _scan_args(args: Any, at: str, trail: str = "") -> list[str]:
     return errs
 
 
-def check_against_schemas(spec: ProcedureSpec, schemas: dict[str, dict]) -> list[str]:
+def check_against_schemas(spec: ProcedureSpec, schemas: dict[str, dict],
+                          second_stage: dict | None = None) -> list[str]:
     """게이트웨이 `tools/list` 스키마와 대조한다 — 호출 시점에 받아 따로 돈다.
 
     게이트웨이는 `validate_input=False`(gateway.py:1766) 라 인자를 검증하지 않고, 백엔드는
@@ -351,7 +352,46 @@ def check_against_schemas(spec: ProcedureSpec, schemas: dict[str, dict]) -> list
         for k in req:
             if k not in st.args:
                 errs.append(f"{at}: 필수 인자가 빠졌다 — {k}")
+        errs += check_dispatch_payload(st, at, second_stage)
     return errs
+
+
+def check_dispatch_payload(step: "Step", at: str, second_stage: dict | None) -> list[str]:
+    """2단 도구의 **속 인자**를 두 번째 단 스키마로 대조한다(PLAN §9-4·§9-5).
+
+    `run_operation(operation="matdb", args={…})` 의 `args` 는 게이트웨이 스키마상 **속성 없는
+    object** 라 위 검사가 통과시킨다. 그러면 `outut` 같은 오타가 실행 시점에야 터진다 —
+    그 자리에서는 앞 단계가 이미 돌아 있다.
+
+    `second_stage` 는 `{(backend, tool, 고른 것): JSON Schema}` 다. 호출부가 describe 를
+    불러 채워 준다. **없으면 검사하지 않는다** — 모르는 것을 틀렸다고 하지 않는다.
+    """
+    if not second_stage:
+        return []
+    from app.procedures import dispatch as _dsp
+
+    d = _dsp.load().get((step.backend, step.tool))
+    if d is None:
+        return []
+    item = _dsp.selected(step.args, d)
+    if item is None:
+        return []   # 무엇을 부를지 변수라 저장 시점엔 모른다
+    sch = second_stage.get((step.backend, step.tool, item))
+    if not isinstance(sch, dict) or not (sch.get("properties") or {}):
+        return []
+    payload = step.args.get(d.payload)
+    if not isinstance(payload, dict):
+        return []
+    out: list[str] = []
+    props = (sch.get("properties") or {}).keys()
+    if sch.get("additionalProperties") is False:
+        for k in payload:
+            if k not in props:
+                out.append(f"{at}: {item} 에 없는 인자 — {d.payload}.{k}")
+    for k in sch.get("required") or []:
+        if k not in payload:
+            out.append(f"{at}: {item} 의 필수 인자가 빠졌다 — {d.payload}.{k}")
+    return out
 
 
 def schema_fingerprint(description: str, input_schema: dict) -> str:

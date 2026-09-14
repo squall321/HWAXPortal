@@ -530,8 +530,12 @@ async def validate(request: Request, body: ProcedureIn,
         spec, max_steps=int(getattr(get_settings(), "procedures_max_steps", 30)))
     schema_errs: list[str] = []
     try:
-        cat = await _runner(request).catalog(principal)
-        schema_errs = check_against_schemas(spec, cat)
+        runner = _runner(request)
+        cat = await runner.catalog(principal)
+        # 2단 도구는 **속 인자**까지 본다 — `run_operation(args=…)` 는 1단 스키마상 자유
+        # object 라 오타가 그냥 통과한다(PLAN §9-4). 못 받아 오면 그 항목만 안 본다.
+        second = await runner.second_stage(principal, spec)
+        schema_errs = check_against_schemas(spec, cat, second)
     except Exception:  # noqa: BLE001 — 게이트웨이가 없어도 나머지 검증은 낸다
         logger.info("검증 중 도구 카탈로그 조회 실패", exc_info=True)
     return {

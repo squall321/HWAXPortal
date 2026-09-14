@@ -18,6 +18,7 @@ import time
 
 import httpx
 
+from app.procedures import dispatch
 from app.procedures import judge as J
 from app.procedures import template
 from app.procedures.models import ProcedureSpec, Step, schema_fingerprint
@@ -321,6 +322,54 @@ class ProceduresRunner:
             return await sess.list_tools(pat)
         finally:
             await sess.close(pat)
+
+    async def second_stage(self, principal, spec, run_id: str = "describe") -> dict:
+        """2단 도구의 **두 번째 단 계약**을 받아 온다(PLAN §9-4·§9-5).
+
+        `run_operation(operation="matdb", args={…})` 의 `args` 는 게이트웨이 스키마상 속성
+        없는 object 라 1단 검사를 그냥 통과한다. 그러면 오타가 실행 시점에야 터진다.
+        여기서 `describe_operation("matdb")` 를 불러 진짜 계약을 가져온다.
+
+        ⚠ **못 받아 오면 빈 칸으로 둔다.** 모르는 것을 틀렸다고 하지 않는다 —
+        호출부(`check_against_schemas`)가 없는 항목은 검사하지 않는다.
+        """
+        reg = dispatch.load()
+        want: list[tuple] = []
+        for st in spec.steps:
+            d = reg.get((st.backend, st.tool))
+            if d is None:
+                continue
+            item = dispatch.selected(st.args, d)
+            if item and (st.backend, st.tool, item) not in {w[0] for w in want}:
+                want.append(((st.backend, st.tool, item), d, item))
+        if not want:
+            return {}
+
+        sess = GatewaySession(self.gateway_url, self._client)
+        pat = self.mint_pat(principal, run_id, 0)
+        if not pat:
+            raise RunnerError("사용자 명의 PAT 발급 실패")
+        out: dict = {}
+        try:
+            await sess.open(pat)
+            for key, d, item in want:
+                alias = f"{d.backend.replace('-', '')}_{d.describe}"
+                try:
+                    res = await sess.call("invoke_tool",
+                                          {"name": alias, "arguments": {d.describe_arg: item}},
+                                          pat, 30.0)
+                except Exception:  # noqa: BLE001 — 계약을 못 받는 것이 저장을 막으면 안 된다
+                    logger.info("2단 계약 조회 실패 — 검사 건너뜀 %s/%s", d.tool, item)
+                    continue
+                text, _ = J.join_content(getattr(res, "content", None) or [])
+                body = J.judge(is_error=bool(getattr(res, "isError", False)),
+                               text=text).parsed
+                sch = dispatch.to_json_schema(body, d, item=item)
+                if sch:
+                    out[key] = sch
+        finally:
+            await sess.close(pat)
+        return out
 
     async def _one(self, run_id, ix, st: Step, scope, principal, sess):
         """단계 하나 — 치환 → 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다."""
