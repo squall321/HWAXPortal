@@ -118,6 +118,61 @@ U자 판(t 1.2 · R 6.0 · 폭 40 · 180°)으로 두 경로 다 실측했다 �
 - 적층 백엔드는 `gateway_config.json` 정적 목록이 아니라 **HEAXHub 레지스트리 자동발견**이다 —
   레지스트리가 떠 있어야 도구가 보인다.
 
+### 그대로 붙여 넣는 `laminate` — 두 번 걸려서 적어 둔다
+
+`laminate` 를 손으로 쓰면 **두 번 걸린다**(2026-09-14 실호출로 둘 다 맞았다).
+
+| 걸리는 것 | 오류 | 고치는 법 |
+|---|---|---|
+| `material.type` 누락 | `E202 INVALID_MATERIAL_TYPE` | `"type": "orthotropic_2d"`(또는 `"isotropic"`)를 **반드시** 적는다 |
+| `fatigue.k` 를 크게 | `E100 … k: Input should be less than or equal to 1` | `k` 는 기울기라 **≤ 1** 이다. CFRP 관례는 `0.1` |
+
+둘 다 `suggestion` 이 고치는 법을 적어 주지만, 화면에서 처음 만나면 멈칫한다.
+정본 예시는 도구가 들고 있다 — `get_reference_cases(case_id="fatigue_reversed_cycle")`.
+
+아래는 그 예시를 **부품 두께 1.2mm 에 맞춰** 4겹 × 0.3mm 로 바꾼 것이다(①이 준
+`thickness_mm` 과 총두께가 같아야 같은 부품을 해석하는 것이다).
+
+```json
+{"unit_system": "SI_mm", "name": "R1 demo [0/90]s t=1.2mm",
+ "laminae": [
+  {"thickness": 0.3, "angle_deg": 0,  "material": {"type": "orthotropic_2d", "name": "T300/5208",
+    "E1": 181000, "E2": 10300, "G12": 7170, "nu12": 0.28,
+    "strength": {"Xt": 1500, "Xc": 1200, "Yt": 40, "Yc": 246, "S": 68},
+    "fatigue": {"model_type": "log_linear", "k": 0.1}}},
+  {"thickness": 0.3, "angle_deg": 90, "material": {"type": "orthotropic_2d", "name": "T300/5208",
+    "E1": 181000, "E2": 10300, "G12": 7170, "nu12": 0.28,
+    "strength": {"Xt": 1500, "Xc": 1200, "Yt": 40, "Yc": 246, "S": 68},
+    "fatigue": {"model_type": "log_linear", "k": 0.1}}},
+  {"thickness": 0.3, "angle_deg": 90, "material": {"type": "orthotropic_2d", "name": "T300/5208",
+    "E1": 181000, "E2": 10300, "G12": 7170, "nu12": 0.28,
+    "strength": {"Xt": 1500, "Xc": 1200, "Yt": 40, "Yc": 246, "S": 68},
+    "fatigue": {"model_type": "log_linear", "k": 0.1}}},
+  {"thickness": 0.3, "angle_deg": 0,  "material": {"type": "orthotropic_2d", "name": "T300/5208",
+    "E1": 181000, "E2": 10300, "G12": 7170, "nu12": 0.28,
+    "strength": {"Xt": 1500, "Xc": 1200, "Yt": 40, "Yc": 246, "S": 68},
+    "fatigue": {"model_type": "log_linear", "k": 0.1}}}]}
+```
+
+⚠ **이 값으로 R=6mm 는 파손한다** — 표면 변형률이 ±10% 로 나온다. 그게 정상이고, 절차가
+답해야 할 질문이 바로 그것이다(이 설계가 유리한가 불리한가). 통과하는 그림을 보고 싶으면
+`r_unfold` 대신 **더 큰 R** 을 ①의 부품으로 주거나 더 얇은 적층을 넣는다.
+
+### 씨앗의 `save` 경로 넷이 **살아 있는 응답**에서 풀린다(2026-09-14 실호출)
+
+고정물만으로는 "기록해 둔 응답" 을 시험할 뿐이다. 게이트웨이 너머로 실제로 불러 확인했다.
+
+| 단계 | 확인한 것 |
+|---|---|
+| ① `bend_profile` | 두께 1.2 · R_mid 6.0 · 폭 40.0 · 180.0° · `analytic_cylinder_pair` — 픽스처 진리값과 일치. `part` 인자도 받는다 |
+| ③④ `solve_prescribed_curvature` | `data.equivalent_loads` 있음. `status:"warning"` + **W130**(자유 폭)이 함께 온다 |
+| ⑤ `recover_ply_stresses` | `data.first_ply_failure.tsai_wu_R`·`governing_mode` 있음 |
+| ⑥ `estimate_fatigue_life` | `data.life_cycles` 있음 |
+
+**`equivalent_loads` 에는 `chain` 이라는 설명 문자열이 끼어 있다.** 씨앗은 이 객체를 통째로
+넘기는데, 받는 쪽 둘(`recover_ply_stresses`·`estimate_fatigue_life`)이 **그대로 받아 준다** —
+`load_state` 가 N·M 만 읽는다. 따로 걷어낼 필요가 없다는 것을 실호출로 확인했다.
+
 ### R 스윕은 반복이 아니라 S5 다
 
 R_min 과 R_max 의 유불리 비교는 조건 분기가 아니라 **같은 절차 × `bend_radius` N개 = 비교표**

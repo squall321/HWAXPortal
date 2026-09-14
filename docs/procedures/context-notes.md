@@ -758,3 +758,29 @@ dev 에 예제 과제를 하나 만들어 뒀다 — **`R1-굴곡수명-예제(U
 `POST /refresh`(Bearer GW_TOKEN)를 한 번 건다. `list_`·`search_` 접두사 도구
 (`list_tool_apps`·`search_tools`)는 **게이트웨이 읽기 캐시 300초**에 걸리므로
 "아직 안 떴다" 를 그것으로 판정하면 안 된다.
+
+## W-34. 씨앗 ②~⑥ 도 살아 있는 게이트웨이에서 돌려 봤다 — 두 곳이 걸렸다
+
+고정물은 "기록해 둔 응답" 을 시험한다. 그것만으로는 사용자가 화면에서 처음 돌릴 때
+무엇에 걸릴지 모른다. 그래서 ②~⑥ 을 실제로 이어 불렀다.
+
+**걸린 것 둘은 전부 `laminate` 스키마였다.**
+- `material.type` 을 빼면 `E202 INVALID_MATERIAL_TYPE`.
+- `fatigue.k` 를 1보다 크게 주면 `E100 … should be less than or equal to 1`(k 는 기울기다).
+
+둘 다 도구가 `suggestion` 으로 고치는 법을 준다 — **이 서버의 오류는 자가 복구가 된다.**
+다만 화면에서 처음 만나면 멈칫하므로 씨앗의 `why` 와 examples.md 에 붙여 넣을 판을 적었다.
+정본은 도구가 들고 있다 — `get_reference_cases(case_id="fatigue_reversed_cycle")`.
+
+**확인된 것 하나가 중요하다.** `equivalent_loads` 에는 `chain` 이라는 **설명 문자열**이
+끼어 있다. 씨앗은 이 객체를 통째로 다음 단계에 넘기는데, 받는 쪽 둘이 **그대로 받아 준다**
+(`load_state` 가 N·M 만 읽는다). 걷어내는 단계를 따로 두지 않아도 된다는 뜻이고,
+이건 소스를 읽어 짐작한 것이 아니라 **실호출로 확인했다**.
+
+`save` 경로 여섯이 살아 있는 응답에서 전부 풀렸다 — ① 셋 + `basis`, ③④ `equivalent_loads`,
+⑤ `tsai_wu_R`·`governing_mode`, ⑥ `life_cycles`.
+
+**미해결 마찰 하나를 남긴다.** `json` 형 변수에 **기본값 칸이 없다**(`Var` 에 `default`
+없음, `extra: forbid`). 그래서 사람이 4겹 적층 JSON 을 화면에서 손으로 채워야 한다.
+`default` 를 더하면 규격·지문·폼이 함께 바뀌므로 **혼자 정할 일이 아니라고 보고 안 했다.**
+지금은 문서로 막아 뒀다.
