@@ -15,8 +15,8 @@ import PortalHomePage from './pages/PortalHomePage';
 import TokenPage from './pages/TokenPage';
 import RiskLaunchPage from './pages/risk/RiskLaunchPage';
 import UsersAdminPage from './pages/admin/UsersAdminPage';
-import WorkbenchPage from './pages/workbench/WorkbenchPage';
-import { WorkbenchProvider } from './state/WorkbenchContext';
+import ProceduresPage from './pages/procedures/ProceduresPage';
+import { ProceduresProvider } from './state/ProceduresContext';
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -46,18 +46,18 @@ const router = createBrowserRouter([
     ),
   },
   {
-    // 자식 라우트는 WorkbenchPage 안에 둔다 — 레시피·런에 링크할 URL 이 있어야
-    // '남과 공유된다' 가 성립하고, 게이트에 멈춘 런으로 돌아오는 길도 URL 이다.
-    // ⚠ API 접두사는 '/workbench-api' 다(겹치면 새로고침이 JSON 을 받는다).
-    path: '/workbench/*',
+    // 자식 라우트는 ProceduresPage 안에 둔다 — 절차·실행에 링크할 URL 이 있어야
+    // '남과 공유된다' 가 성립하고, 게이트에 멈춘 실행으로 돌아오는 길도 URL 이다.
+    // ⚠ API 접두사는 '/procedures-api' 다(겹치면 새로고침이 JSON 을 받는다).
+    path: '/procedures/*',
     element: (
       <ProtectedRoute>
         <AppShell>
-          <RequireEntitlement need="feat:workbench">
+          <RequireEntitlement need="feat:procedures">
             {/* 페이지 스코프 Provider — App() 루트에 두지 않고 useChat 도 쓰지 않는다. */}
-            <WorkbenchProvider>
-              <WorkbenchPage />
-            </WorkbenchProvider>
+            <ProceduresProvider>
+              <ProceduresPage />
+            </ProceduresProvider>
           </RequireEntitlement>
         </AppShell>
       </ProtectedRoute>

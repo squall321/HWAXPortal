@@ -230,7 +230,7 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
                 {detail.samples.length > 0 && (
                   <>
                     <h4 className="pv-detail-h">
-                      이런 걸 물을 수 있어요{onAsk ? ' — 누르면 이 전문가와 대화를 시작합니다' : ''}
+                      이실행 걸 물을 수 있어요{onAsk ? ' — 누르면 이 전문가와 대화를 시작합니다' : ''}
                     </h4>
                     <ul className="pv-detail-list pv-samples">
                       {detail.samples.map((s, i) => (

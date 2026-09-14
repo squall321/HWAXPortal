@@ -1,4 +1,4 @@
-// 워크벤치 셸 — 탭 셋(워크벤치·레시피·런 이력)과 자식 라우트
+// 절차 셸 — 탭 셋(만들기·절차·실행 이력)과 자식 라우트
 //
 // 루트는 `.container` 다 — AppShell 의 ChatDock 이 열릴 때 자리를 비켜 주는 클래스다.
 // 우하단은 비워 둔다(닫힌 독의 💬 FAB 가 거기 고정이라 겹친다).
@@ -6,43 +6,43 @@ import { NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom
 import { useEffect, useState } from 'react';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
-import { useWorkbench } from '../../state/WorkbenchContext';
+import { useProcedures } from '../../state/ProceduresContext';
 import {
   cancelRun,
-  getRecipe,
-  listRecipes,
+  getProcedure,
+  listProcedures,
   listRuns,
-  replayRecipe,
+  replayProcedure,
   resumeRun,
-  type RecipeRow,
-  type RecipeVersion,
+  type ProcedureRow,
+  type ProcedureVersion,
   type RunSummary,
-} from '../../api/workbench.api';
-import BenchView from './BenchView';
+} from '../../api/procedures.api';
+import BuildView from './BuildView';
 import { RunSteps } from './RunSteps';
 
-export default function WorkbenchPage() {
+export default function ProceduresPage() {
   return (
     <div className="container" style={{ maxWidth: 1080, margin: '0 auto', padding: '1.6rem 1.5rem 4rem' }}>
       <header style={{ marginBottom: '1.1rem' }}>
-        <h1 style={{ color: 'var(--fg)', margin: '0 0 0.2rem', fontSize: '1.5rem' }}>워크벤치</h1>
+        <h1 style={{ color: 'var(--fg)', margin: '0 0 0.2rem', fontSize: '1.5rem' }}>절차</h1>
         <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
           한 번 해낸 일을 절차로 굳혀 두었다가, 대상만 바꿔 다시 돌립니다.
         </p>
       </header>
 
       <nav style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.1rem', flexWrap: 'wrap' }}>
-        <Tab to="/workbench" end>
-          워크벤치
+        <Tab to="/procedures" end>
+          만들기
         </Tab>
-        <Tab to="/workbench/recipes">레시피</Tab>
-        <Tab to="/workbench/runs">런 이력</Tab>
+        <Tab to="/procedures/saved">절차</Tab>
+        <Tab to="/procedures/runs">실행 이력</Tab>
       </nav>
 
       <Routes>
-        <Route index element={<BenchView />} />
-        <Route path="recipes" element={<RecipeList />} />
-        <Route path="recipes/:id" element={<RecipeDetail />} />
+        <Route index element={<BuildView />} />
+        <Route path="saved" element={<ProcedureList />} />
+        <Route path="saved/:id" element={<ProcedureDetail />} />
         <Route path="runs" element={<RunList />} />
         <Route path="runs/:id" element={<RunDetailView />} />
       </Routes>
@@ -70,23 +70,23 @@ function Tab({ to, end, children }: { to: string; end?: boolean; children: React
   );
 }
 
-// ── 레시피 ───────────────────────────────────────────────────────────────
-function RecipeList() {
-  const [rows, setRows] = useState<RecipeRow[] | null>(null);
+// ── 절차 ───────────────────────────────────────────────────────────────
+function ProcedureList() {
+  const [rows, setRows] = useState<ProcedureRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    listRecipes()
-      .then((r) => setRows(r.recipes))
+    listProcedures()
+      .then((r) => setRows(r.procedures))
       .catch((e: Error) => setErr(e.message));
   }, []);
 
   if (err) return <ErrorBanner message={err} />;
-  if (!rows) return <Spinner label="레시피를 불러오는 중…" />;
+  if (!rows) return <Spinner label="절차를 불러오는 중…" />;
   if (!rows.length)
     return (
       <p style={{ color: 'var(--muted)' }}>
-        아직 레시피가 없습니다. <b>워크벤치</b> 탭에서 도구를 한 단계씩 돌린 뒤 "레시피로 저장" 을
+        아직 절차가 없습니다. <b>만들기</b> 탭에서 도구를 한 단계씩 돌린 뒤 "절차로 저장" 을
         누르면 여기 쌓입니다.
       </p>
     );
@@ -95,7 +95,7 @@ function RecipeList() {
     <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.5rem' }}>
       {rows.map((r) => (
         <li key={r.id} style={rowCard}>
-          <NavLink to={`/workbench/recipes/${r.id}`} style={{ color: 'var(--fg)', fontWeight: 600, textDecoration: 'none' }}>
+          <NavLink to={`/procedures/saved/${r.id}`} style={{ color: 'var(--fg)', fontWeight: 600, textDecoration: 'none' }}>
             {r.title}
           </NavLink>
           <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
@@ -107,17 +107,17 @@ function RecipeList() {
   );
 }
 
-function RecipeDetail() {
+function ProcedureDetail() {
   const { id = '' } = useParams();
   const nav = useNavigate();
-  const { watch } = useWorkbench();
-  const [v, setV] = useState<RecipeVersion | null>(null);
+  const { watch } = useProcedures();
+  const [v, setV] = useState<ProcedureVersion | null>(null);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    getRecipe(id)
+    getProcedure(id)
       .then(setV)
       .catch((e: Error) => setErr(e.message));
   }, [id]);
@@ -126,9 +126,9 @@ function RecipeDetail() {
     setBusy(true);
     setErr(null);
     try {
-      const r = await replayRecipe(id, vals, mode);
+      const r = await replayProcedure(id, vals, mode);
       watch(r.run_id);
-      nav(`/workbench/runs/${r.run_id}`);
+      nav(`/procedures/runs/${r.run_id}`);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -137,7 +137,7 @@ function RecipeDetail() {
   };
 
   if (err) return <ErrorBanner message={err} />;
-  if (!v) return <Spinner label="레시피를 불러오는 중…" />;
+  if (!v) return <Spinner label="절차를 불러오는 중…" />;
 
   const gates = v.spec.steps.filter((s) => s.gate === 'human');
 
@@ -147,7 +147,7 @@ function RecipeDetail() {
         <h2 style={{ color: 'var(--fg)', margin: 0, fontSize: '1.05rem' }}>{v.spec.title}</h2>
         <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
           판본 {v.version_no}
-          {v.derived_from_run && ' · 런에서 뽑음'}
+          {v.derived_from_run && ' · 실행에서 뽑음'}
         </span>
       </section>
 
@@ -216,7 +216,7 @@ function RecipeDetail() {
   );
 }
 
-// ── 런 ───────────────────────────────────────────────────────────────────
+// ── 실행 ───────────────────────────────────────────────────────────────────
 function RunList() {
   const [rows, setRows] = useState<RunSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -228,14 +228,14 @@ function RunList() {
   }, []);
 
   if (err) return <ErrorBanner message={err} />;
-  if (!rows) return <Spinner label="런 이력을 불러오는 중…" />;
-  if (!rows.length) return <p style={{ color: 'var(--muted)' }}>아직 런이 없습니다.</p>;
+  if (!rows) return <Spinner label="실행 이력을 불러오는 중…" />;
+  if (!rows.length) return <p style={{ color: 'var(--muted)' }}>아직 실행이 없습니다.</p>;
 
   return (
     <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.5rem' }}>
       {rows.map((r) => (
         <li key={r.id} style={{ ...rowCard, borderColor: r.state === 'gated' ? '#d9a441' : 'var(--border)' }}>
-          <NavLink to={`/workbench/runs/${r.id}`} style={{ color: 'var(--fg)', textDecoration: 'none' }}>
+          <NavLink to={`/procedures/runs/${r.id}`} style={{ color: 'var(--fg)', textDecoration: 'none' }}>
             {r.title ?? r.id.slice(0, 8)}
           </NavLink>
           <span style={{ color: r.state === 'gated' ? '#d9a441' : 'var(--muted)', fontSize: '0.8rem' }}>
@@ -250,13 +250,13 @@ function RunList() {
 
 function RunDetailView() {
   const { id = '' } = useParams();
-  const { watch, watched, refreshWatched } = useWorkbench();
+  const { watch, watched, refreshWatched } = useProcedures();
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => watch(id), [id, watch]);
 
   if (err) return <ErrorBanner message={err} />;
-  if (!watched) return <Spinner label="런을 불러오는 중…" />;
+  if (!watched) return <Spinner label="실행을 불러오는 중…" />;
 
   const act = async (fn: () => Promise<unknown>) => {
     setErr(null);

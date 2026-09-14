@@ -1,10 +1,10 @@
-// 워크벤치 API 클라이언트 — 레시피·런·단계·도구 카탈로그
+// 절차 API 클라이언트 — 절차·실행·단계·도구 카탈로그
 //
-// ⚠ 접두사는 '/workbench-api' 다. SPA 경로는 '/workbench/*' — 같게 두면 브라우저
+// ⚠ 접두사는 '/procedures-api' 다. SPA 경로는 '/procedures/*' — 같게 두면 브라우저
 //    새로고침이 SPA 가 아니라 JSON 을 받는다('/changelog' 와 '/updates' 를 가른 것과 같다).
 import { apiFetch, errorDetail } from './client';
 
-const P = '/workbench-api';
+const P = '/procedures-api';
 
 export type ToolInfo = {
   name: string;
@@ -48,7 +48,7 @@ export type RunDetail = {
   mode: 'plan' | 'live';
   origin: string;
   title: string | null;
-  recipe_version_id: string | null;
+  procedure_version_id: string | null;
   inputs: Record<string, unknown>;
   steps: StepRow[];
   started_at: number;
@@ -57,7 +57,7 @@ export type RunDetail = {
 
 export type RunSummary = Omit<RunDetail, 'steps' | 'inputs'>;
 
-export type RecipeRow = {
+export type ProcedureRow = {
   id: string;
   title: string;
   owner_sub: string;
@@ -67,9 +67,9 @@ export type RecipeRow = {
   updated_at: number;
 };
 
-export type RecipeVersion = {
+export type ProcedureVersion = {
   version_id: string;
-  recipe_id: string;
+  procedure_id: string;
   version_no: number;
   author_sub: string;
   created_at: number;
@@ -121,39 +121,39 @@ export function listTools() {
   return get<{ count: number; tools: ToolInfo[] }>('/tools', '도구 목록을 불러오지 못했습니다.');
 }
 
-export function listRecipes() {
-  return get<{ recipes: RecipeRow[] }>('/recipes', '레시피를 불러오지 못했습니다.');
+export function listProcedures() {
+  return get<{ procedures: ProcedureRow[] }>('/procedures', '절차를 불러오지 못했습니다.');
 }
 
-export function getRecipe(id: string) {
-  return get<RecipeVersion>(`/recipes/${id}`, '레시피를 불러오지 못했습니다.');
+export function getProcedure(id: string) {
+  return get<ProcedureVersion>(`/procedures/${id}`, '절차를 불러오지 못했습니다.');
 }
 
 export function listRuns() {
-  return get<{ runs: RunSummary[] }>('/runs', '런 이력을 불러오지 못했습니다.');
+  return get<{ runs: RunSummary[] }>('/runs', '실행 이력을 불러오지 못했습니다.');
 }
 
 export function getRun(id: string) {
-  return get<RunDetail>(`/runs/${id}`, '런을 불러오지 못했습니다.');
+  return get<RunDetail>(`/runs/${id}`, '실행을 불러오지 못했습니다.');
 }
 
 export function stepResult(runId: string, ix: number) {
   return get<{ text: string }>(`/runs/${runId}/steps/${ix}/result`, '결과를 불러오지 못했습니다.');
 }
 
-/** 레시피 없이 시작하는 **빈 런** — 워크벤치의 진입점이다(레시피 목록이 아니다). */
+/** 절차 없이 시작하는 **빈 실행** — 절차 기능의 진입점이다(절차 목록이 아니다). */
 export function startEmptyRun(title?: string) {
   return post<{ run_id: string; empty?: boolean }>(
     '/runs',
     { mode: 'live', title },
-    '런을 시작하지 못했습니다.',
+    '실행을 시작하지 못했습니다.',
   );
 }
 
-export function replayRecipe(recipeId: string, vars: Record<string, unknown>, mode: 'plan' | 'live') {
+export function replayProcedure(procedureId: string, vars: Record<string, unknown>, mode: 'plan' | 'live') {
   return post<{ run_id: string }>(
     '/runs',
-    { recipe_id: recipeId, vars, mode },
+    { procedure_id: procedureId, vars, mode },
     '재생을 시작하지 못했습니다.',
   );
 }
@@ -179,11 +179,11 @@ export function cancelRun(runId: string) {
   return post<{ cancelled: boolean }>(`/runs/${runId}/cancel`, {}, '중단하지 못했습니다.');
 }
 
-export function saveAsRecipe(runId: string, title: string, vars: VarDef[], steps: StepDef[]) {
+export function saveAsProcedure(runId: string, title: string, vars: VarDef[], steps: StepDef[]) {
   return post<{ id: string; version_no: number; warnings: string[] }>(
-    `/runs/${runId}/save-as-recipe`,
+    `/runs/${runId}/save-as-procedure`,
     { title, vars, steps },
-    '레시피로 저장하지 못했습니다.',
+    '절차로 저장하지 못했습니다.',
   );
 }
 

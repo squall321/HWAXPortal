@@ -693,7 +693,7 @@ class DocxRequest(BaseModel):
 
 
 # 정리본 지시 — 대화를 요약하는 게 아니라 **문서로 재구성**하라는 것이 요점이다.
-# 요약만 시키면 "이런 얘기를 했다" 가 나오고, 그건 읽는 사람이 판단에 쓸 수 없다.
+# 요약만 시키면 "이실행 얘기를 했다" 가 나오고, 그건 읽는 사람이 판단에 쓸 수 없다.
 _REPORT_PROMPT = """다음은 엔지니어링 포털에서 오간 대화 이력이다. 이것을 그대로 요약하지 말고,
 읽는 사람이 판단에 쓸 수 있는 **보고서**로 재구성하라.
 
@@ -765,7 +765,7 @@ async def _export_docx_inner(request, body, principal, settings, audit, conv, ti
         audit.record(principal=principal.subject, event="docx_transcript",
                      status="ok", meta={"messages": n_msg})
     else:
-        # ⚠ 이 경로는 /chat 과 똑같은 부하를 건다(에이전트 + LLM 왕복 수십 초). 그런데
+        # ⚠ 이 경로는 /chat 과 똑같은 부하를 건다(에이전트 + LLM 왕복 수십 초). 그실행데
         # 동시성 상한과 감사 기록을 둘 다 우회하고 있었다 — /chat 이 그 둘을 두는 이유가
         # 그대로 적용되는데도. 같은 게이트를 통과시킨다.
         # 세마포어는 바깥(export_docx)에서 이미 잡았다 — 이중 획득 금지.

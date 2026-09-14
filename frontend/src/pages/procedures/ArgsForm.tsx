@@ -1,7 +1,7 @@
 // 인자 입력 2단 — 스키마 폼 + 원문 JSON
 //
 // 게이트웨이 465종 중 44종이 **속성 없는 object/array** 다(predict_sed 의 sample,
-// create_report_draft 의 blocks). 그런 인자는 필수 필드 목록이 스키마가 아니라 도구 설명
+// create_report_draft 의 blocks). 그실행 인자는 필수 필드 목록이 스키마가 아니라 도구 설명
 // 산문에 있어서 폼을 그릴 수가 없다 — 원문 JSON 으로 받고 설명을 옆에 접어 둔다.
 //
 // 프론트에서 값을 검증하지 않는다. 서버(도구 pydantic)가 돌려준 오류를 그대로 보인다 —
@@ -9,7 +9,7 @@
 //
 // 새 npm 의존성 0 — rjsf·monaco 를 들이지 않는다(cae00 은 오프라인 pnpm 빌드다).
 import { useMemo, useState } from 'react';
-import type { JsonSchema, ToolInfo } from '../../api/workbench.api';
+import type { JsonSchema, ToolInfo } from '../../api/procedures.api';
 
 export type ArgsState = { values: Record<string, string>; raw: string; useRaw: boolean };
 

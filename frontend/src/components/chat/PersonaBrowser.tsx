@@ -274,7 +274,7 @@ export function PersonaBrowser({
                     <OperatorApps detail={detail} />
                     {detail.samples.length > 0 && (
                       <>
-                        <h4 className="pv-detail-h">이런 걸 물을 수 있어요 — 누르면 입력창에 들어갑니다</h4>
+                        <h4 className="pv-detail-h">이실행 걸 물을 수 있어요 — 누르면 입력창에 들어갑니다</h4>
                         <ul className="pv-detail-list pv-samples">
                           {detail.samples.slice(0, 4).map((s, i) => (
                             <li key={i}>

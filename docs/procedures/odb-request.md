@@ -1,6 +1,6 @@
 # cae00 에서 받아 올 것 — ODB 허브 API 정보
 
-워크벤치 [S3(ODB 어댑터)](checklist.md) 를 설계하려면 cae00 `odb-hub` 가 **무엇을 내주는지**
+절차 [S3(ODB 어댑터)](checklist.md) 를 설계하려면 cae00 `odb-hub` 가 **무엇을 내주는지**
 알아야 한다. dev 에서는 알 방법이 없다.
 
 | 왜 dev 에서 못 하나 | |
@@ -25,7 +25,7 @@
 export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"; export no_proxy="$NO_PROXY"
 
 RAW=~/odb-hub-raw; mkdir -p "$RAW"                      # 원본은 리포 밖에 받는다
-mkdir -p ~/Projects/HWAXPortal/docs/workbench/fixtures/odb-hub   # 지운 뒤에만 여기로(§3½)
+mkdir -p ~/Projects/HWAXPortal/docs/procedures/fixtures/odb-hub   # 지운 뒤에만 여기로(§3½)
 ```
 
 원본은 `$RAW` 에 받고, §3½ 에서 지운 것만 `fixtures/odb-hub/` 에 두고 **커밋해서 dev 로
@@ -109,7 +109,7 @@ for a in d.get('apps', []):
 
 `apps` 배열이 §1 의 (a)/(b) 를 가른다.
 
-**사용자 PAT 로 한 번 더.** 워크벤치 실행기는 위 서비스 토큰이 아니라 **사용자 명의 PAT** 로
+**사용자 PAT 로 한 번 더.** 절차 실행기는 위 서비스 토큰이 아니라 **사용자 명의 PAT** 로
 게이트웨이를 부른다(PLAN §3). 서비스 시야에서 보이던 허브도 사용자에게 `plat:odbhub` 가 없으면
 사라진다. 포털 `/auth/pat` 로 발급한 개인 PAT 로 `list_tool_apps` 를 한 번 부른다.
 
@@ -163,7 +163,7 @@ CALLS = [
     # ("list_components",      {"job_id": "<실제 job_id>", "category": "IC"}),
     # 4) 적층·보드 정보(있으면) — 워피지 3인자의 원천
     # ("get_stackup",          {"job_id": "<실제 job_id>"}),
-    # 5) 과제명·리비전으로 필터한 목록(그런 인자가 있으면)
+    # 5) 과제명·리비전으로 필터한 목록(그실행 인자가 있으면)
     # 6) 고의 실패 둘 — 없는 잡, 없는 레이어(읽기 전용이라 안전하다)
     # ("job_info",             {"job_id": "0000000000000000"}),
     # ("list_nets",            {"job_id": "<실제 job_id>", "layer": "no_such_layer"}),
@@ -244,7 +244,7 @@ error:{code,message}}` 를 정상 응답으로)인지가 여기서 갈린다. �
 python3 - <<'PY'
 import re, os, glob
 RAW = os.path.expanduser("~/odb-hub-raw")
-DST = os.path.expanduser("~/Projects/HWAXPortal/docs/workbench/fixtures/odb-hub")
+DST = os.path.expanduser("~/Projects/HWAXPortal/docs/procedures/fixtures/odb-hub")
 os.makedirs(DST, exist_ok=True)
 RULES = [
     (r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "<ip>"),
@@ -264,13 +264,13 @@ PY
 cd ~/Projects/HWAXPortal
 # 통과 게이트 — 0건이어야 넘어간다. 아는 고객사명·과제명·사번 형식은 -e 로 더한다
 grep -nE -e 'token=|Bearer |[0-9]{1,3}(\.[0-9]{1,3}){3}|@' -e '<고객사명>' -e '<미공개 과제명>' \
-  docs/workbench/fixtures/odb-hub/* ; echo "exit=$?  (1 이면 통과)"
+  docs/procedures/fixtures/odb-hub/* ; echo "exit=$?  (1 이면 통과)"
 ```
 
 게이트웨이는 백엔드 오류를 예외 repr 그대로 돌려주고 odb-hub URL 은 `?token=` 쿼리를 달고 있어
 오류 문자열에 토큰이 실릴 수 있다 — 그래서 §3 의 마스킹과 이 게이트가 둘 다 있다.
 
-`.gitignore` 에 `docs/workbench/fixtures/**/raw/` 한 줄을 넣어 리포 안에 raw 를 두더라도
+`.gitignore` 에 `docs/procedures/fixtures/**/raw/` 한 줄을 넣어 리포 안에 raw 를 두더라도
 안 잡히게 한다. 잡 ID·프로젝트명·고객사명은 정규식으로 못 잡는다 — 사람이 본다.
 
 ---
@@ -305,7 +305,7 @@ grep -nE -e 'token=|Bearer |[0-9]{1,3}(\.[0-9]{1,3}){3}|@' -e '<고객사명>' -
 |---|---|---|
 | `ap_x`·`ap_y` | 수치(mm, >0). 학습범위 8.0~15.6 / 9.5~15.6 | 비우면 중앙값 대치 + `ap_size_known=0`. AP 부품 bbox 에서 나오면 채운다 |
 | `ap_type` | `POP` / `FO`, 기본 `POP` | 형상에서 유도 불가. 학습 294건 전부 POP 이라 당분간 기본값(FO 는 외삽 경고) |
-| `project`·`pkg` | 문자열 메타, 기본 `"unknown"` | 레시피의 과제 키를 여기 싣는다 |
+| `project`·`pkg` | 문자열 메타, 기본 `"unknown"` | 절차의 과제 키를 여기 싣는다 |
 
 **설계 가정** — 사람이 채우는 칸은 `pkg_type` 하나이고 `ap_type` 은 기본값을 쓴다. 맞는지
 확인하는 것이 목적이다. 틀리면 사람이 채우는 칸이 늘 뿐이고 **계획이 깨지지는 않는다**.
@@ -339,7 +339,7 @@ ODB 쪽 `board_type` 은 ingest 때 사람이 넣는 자유 문자열일 가능�
 | 도구명 | 무엇을 바꾸나 | 되돌릴 수 있나 | annotations 에 hint 가 있나 |
 |---|---|---|---|
 
-이 표가 워크벤치 저장 시점 거절 목록의 **odb 쪽 정본**이다 — 게이트웨이 접두 관문은 원본 이름의
+이 표가 절차 저장 시점 거절 목록의 **odb 쪽 정본**이다 — 게이트웨이 접두 관문은 원본 이름의
 `delete_`·`remove_` 접두만 보므로 `odb_delete_job` 같은 앱 접두 이름은 하나도 걸리지 않는다.
 허브 웹 UI 의 삭제·메타 수정 기능이 MCP 로도 노출되는지도 한 줄.
 
@@ -369,13 +369,13 @@ ODB 쪽 `board_type` 은 ingest 때 사람이 넣는 자유 문자열일 가능�
 - **잡(job) 수명·식별** — `ingest` 로 만든 잡이 얼마나 남나? 서버 재기동에도 사나? 잡 ID 가 내용
   해시(같은 파일을 다시 넣으면 같은 ID)인가 무작위인가. 잡 메타에 과제명·모델·리비전 필드가 있나,
   목록 도구가 그것으로 필터되나(있으면 §3 에 필터 호출 한 건). 두 잡을 비교하는 도구가 있나.
-  (레시피가 잡 ID 를 변수로 들고 다닐지, 과제명+리비전으로 둘지가 여기서 갈린다)
+  (절차가 잡 ID 를 변수로 들고 다닐지, 과제명+리비전으로 둘지가 여기서 갈린다)
 - **파일을 어떻게 주나** — `ingest` 인자가 경로면 **어느 머신 기준**인가(허브 호스트인가 cae00 포털
   컨테이너인가), 허용 디렉토리는 어디인가, 포털·cae00 과 공유되는 디렉토리가 있나(있으면 마운트
   경로). 경로가 아니면 웹 UI 업로드의 REST 엔드포인트·인증 방식·용량 상한. `*upload_instructions`
   류 안내 도구가 있으면 그 응답도 `samples.json` 에. 포털 업로드 스테이징은 6시간 뒤 지워지고 호스트
-  경로 전제라 레시피가 그 경로를 들고 다닐 수 없다 — 미리 올려 둔 것을 참조하는 방식이면 그 참조
-  키가 레시피 변수가 된다.
+  경로 전제라 절차가 그 경로를 들고 다닐 수 없다 — 미리 올려 둔 것을 참조하는 방식이면 그 참조
+  키가 절차 변수가 된다.
 - **오래 걸리는 도구가 있나** — 잡 상태 도구(`job_status`·`get_job` 류)가 따로 있나. 분석 도구가
   즉시 job_id 를 주고 끝나나, 결과를 다 만들고 돌아오나. §3 에서 가장 오래 걸린 도구와 ms, 120초로
   끊긴 도구 이름. **상태 도구의 정확한 이름** — 이름이 `get_`·`list_`·`describe_` 로 시작하면
@@ -390,7 +390,7 @@ ODB 쪽 `board_type` 은 ingest 때 사람이 넣는 자유 문자열일 가능�
   PKG 가 다른 면이면 차이 계산이 달라진다). 레이어 JSON 의 `"units":"INCH"` 같은 심볼 해석용 힌트가
   좌표 단위로 오해될 여지가 있는지.
 - **시야와 쓰기 명의** — odb-hub 는 게이트웨이에 **서비스 토큰 하나**로 붙어 있어 포털의 사용자
-  위임 세 갈래 어디에도 들지 않는다. 워크벤치가 사용자 PAT 로 불러도 허브에는 늘 토큰 주인의
+  위임 세 갈래 어디에도 들지 않는다. 절차 기능이 사용자 PAT 로 불러도 허브에는 늘 토큰 주인의
   신원으로 간다. `whoami` 류가 있으면 결과를 남기고, 게이트웨이로 부른 잡 목록 개수와 웹 UI 에
   로그인해 보이는 잡 개수를 나란히 적는다 — 둘이 다르면 사용자별 스코프이고 그때 목록 도구의 빈
   배열은 부재 증거가 아니다. 웹 UI 의 기존 잡에서 `uploaded_by` 가 어떤 값(사번·이메일·고정
@@ -404,8 +404,8 @@ ODB 쪽 `board_type` 은 ingest 때 사람이 넣는 자유 문자열일 가능�
 
 ```bash
 cd ~/Projects/HWAXPortal
-git add docs/workbench/fixtures/odb-hub/tools.json docs/workbench/fixtures/odb-hub/apps.txt \
-        docs/workbench/fixtures/odb-hub/samples.json docs/workbench/fixtures/odb-hub/sed-mapping.md
+git add docs/procedures/fixtures/odb-hub/tools.json docs/procedures/fixtures/odb-hub/apps.txt \
+        docs/procedures/fixtures/odb-hub/samples.json docs/procedures/fixtures/odb-hub/sed-mapping.md
 git commit -m "fixtures(odb-hub): cae00 수집"
 git push origin main
 ```
@@ -422,16 +422,16 @@ push 가 안 되면 `git format-patch -1` 로 만든 패치를 Drive 로 나른�
 1. `fixtures/odb-hub/` 를 고정물로 삼아 **SedInput 어댑터**를 만든다. 키 15개(필수 10·선택 5) 외에는
    아무것도 `sample` 에 넣지 않는다 — 게이트웨이 스키마의 `additionalProperties: true` 는 믿지 마라.
    서버는 `extra="forbid"` 라 ODB 에서 딸려 온 키가 하나라도 섞이면 E100 으로 통째로 거부한다.
-   품질 플래그는 선행 검사로 두고 걸리면 값을 채우지 않고 사유를 런 기록 `notes` 에 남긴다.
+   품질 플래그는 선행 검사로 두고 걸리면 값을 채우지 않고 사유를 실행 기록 `notes` 에 남긴다.
 2. 허브가 예외형인지 봉투형인지를 표본으로 정한다. 봉투형이면 S1 실행기의 단계 판정 규칙(PLAN §5-6)이
    그것을 실패로 친다.
-3. `sed-mapping.md` 의 빈 칸을 레시피 **변수**로 옮긴다(`why` 에 왜 물어보는지). 선별 규칙이 없으면
+3. `sed-mapping.md` 의 빈 칸을 절차 **변수**로 옮긴다(`why` 에 왜 물어보는지). 선별 규칙이 없으면
    `ap_refdes`·`pkg_refdes` 는 `pkg_type` 과 같은 영구 변수다.
-4. 레시피는 노출 이름이 아니라 `backend`+`original` 로 저장한다(PLAN §5-8).
-5. 쓰기·파괴 도구 표를 워크벤치 저장 시점 거절 목록의 odb 쪽 정본으로 쓴다.
+4. 절차는 노출 이름이 아니라 `backend`+`original` 로 저장한다(PLAN §5-8).
+5. 쓰기·파괴 도구 표를 절차 저장 시점 거절 목록의 odb 쪽 정본으로 쓴다.
 6. `predict_sed_batch` 는 S4 일괄 재생에 쓰지 않는다 — 검증이 전부-아니면-전무라 한 건만 틀려도 결과
    0건이고 과제별 건너뛰기가 안 되며, 응답 모양도 단건 `data` 와 달리 `data.n`+`data.results[]` 다.
-   S4 는 런당 `predict_sed` 를 유지한다.
+   S4 는 실행당 `predict_sed` 를 유지한다.
 7. `tools.json` 의 도구명을 `HWAXRisk/docs/odb-adapter-contract.md` 의 4도구(`odb_get_board`·
    `odb_list_components`·`odb_list_nets`·`odb_get_stackup`)와 대조해 있음/다른 이름/없음을
    `sed-mapping.md` 에 적고, 다르면 계약 개정을 HWAXRisk 쪽 일감으로 남긴다(같은 허브를 두 어댑터가
@@ -439,5 +439,5 @@ push 가 안 되면 `git format-patch -1` 로 만든 패치를 Drive 로 나른�
 8. ODB 잡 메타에 과제 필드가 있으면 S2 매핑표에 ODB 열을 더한다.
 9. 허브가 사용자별 스코프면 "S3 는 토큰 주인 시야로만 돌고 감사 귀속도 그 사람으로 찍힌다" 를
    context-notes 에 적는다. 사용자 위임 편입은 v1 밖 별도 결정(PLAN §7 #9).
-10. dev 에서는 ODB 단계가 "사람이 채우는 칸" 으로 내려간 상태로 레시피를 완주시켜 본다.
+10. dev 에서는 ODB 단계가 "사람이 채우는 칸" 으로 내려간 상태로 절차를 완주시켜 본다.
     **실주행 검증은 cae00 에서** 한다.

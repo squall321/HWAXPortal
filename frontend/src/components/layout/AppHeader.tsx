@@ -68,9 +68,9 @@ export function AppHeader() {
             <NavLink to="/apps" style={navLinkStyle}>
               앱
             </NavLink>
-            {can('feat:workbench') && (
-              <NavLink to="/workbench" style={navLinkStyle}>
-                워크벤치
+            {can('feat:procedures') && (
+              <NavLink to="/procedures" style={navLinkStyle}>
+                절차
               </NavLink>
             )}
             {/* 같은 페이지가 PAT 발급과 Report Archive 연결(내 조직 선택)을 담는다 — 토큰 권한이

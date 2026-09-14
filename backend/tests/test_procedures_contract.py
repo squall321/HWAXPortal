@@ -1,21 +1,21 @@
-# 워크벤치 계약 — 치환·추출·저장 시점 거절·저장소 격리·기동 회복(docs/workbench/checklist.md S1)
+# 절차 계약 — 치환·추출·저장 시점 거절·저장소 격리·기동 회복(docs/procedures/checklist.md S1)
 import json
 
 import pytest
 
 from app.config import Settings
-from app.workbench import template
-from app.workbench.models import (
+from app.procedures import template
+from app.procedures.models import (
     DRY_RUN_TOOLS,
     MUST_GATE,
-    RecipeSpec,
+    ProcedureSpec,
     Step,
     Var,
     check_against_schemas,
     schema_fingerprint,
     validate_spec,
 )
-from app.workbench.store import WorkbenchStore
+from app.procedures.store import ProceduresStore
 
 
 # ── 기계장치 ① 치환 ─────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ def test_empty_values_stop_the_step():
 
 # ── 저장 시점 거절 ───────────────────────────────────────────────────────
 def _spec(steps, vars_=None):
-    return RecipeSpec(title="t", vars=vars_ or [], steps=[Step(**s) for s in steps])
+    return ProcedureSpec(title="t", vars=vars_ or [], steps=[Step(**s) for s in steps])
 
 
 def _hard(errs):
@@ -192,7 +192,7 @@ def test_enum_var_requires_values():
 
 
 def test_var_coerce_guards_types():
-    from app.workbench.models import SpecError
+    from app.procedures.models import SpecError
 
     v = Var(key="pkg_type", label="분류", type="enum", values=["WLP", "FX", "DIG"])
     assert v.coerce("WLP") == "WLP"
@@ -237,8 +237,8 @@ def test_fingerprint_changes_with_schema():
 # ── 저장소 ───────────────────────────────────────────────────────────────
 @pytest.fixture
 def store(tmp_path):
-    s = Settings(workbench_store_path=str(tmp_path / "wb.sqlite"))
-    st = WorkbenchStore(s)
+    s = Settings(procedures_store_path=str(tmp_path / "wb.sqlite"))
+    st = ProceduresStore(s)
     yield st
     st.close()
 
@@ -249,18 +249,18 @@ def test_wal_is_on(store):
 
 
 def test_run_records_version_and_inputs(store):
-    r = store.create_recipe(owner_sub="u1", spec={"title": "t", "steps": []}, title="t")
-    run = store.create_run(owner_sub="u1", recipe_version_id=r["version_id"],
+    r = store.create_procedure(owner_sub="u1", spec={"title": "t", "steps": []}, title="t")
+    run = store.create_run(owner_sub="u1", procedure_version_id=r["version_id"],
                            inputs={"r_min": 50}, origin="replay", mode="live")
     got = store.get_run(run, owner_sub="u1")
-    assert got["recipe_version_id"] == r["version_id"]
+    assert got["procedure_version_id"] == r["version_id"]
     assert got["inputs"] == {"r_min": 50}
     assert got["origin"] == "replay"
 
 
 def test_new_version_bumps_and_keeps_old(store):
-    r = store.create_recipe(owner_sub="u1", spec={"n": 1}, title="t")
-    v2 = store.add_version(recipe_id=r["id"], author_sub="u2", spec={"n": 2})
+    r = store.create_procedure(owner_sub="u1", spec={"n": 1}, title="t")
+    v2 = store.add_version(procedure_id=r["id"], author_sub="u2", spec={"n": 2})
     assert v2["version_no"] == 2
     assert store.get_version(r["version_id"])["spec"] == {"n": 1}  # 판본은 불변
     assert store.latest_version_of(r["id"])["spec"] == {"n": 2}
@@ -326,15 +326,15 @@ def test_restart_marks_unknown_not_failed(store):
 
 def test_stats_needs_fields_that_cannot_be_recovered_later(store):
     """§6-1 판정에 쓰는 네 수 — created_by·run_by·origin 이 없으면 영영 못 센다."""
-    r = store.create_recipe(owner_sub="author", spec={}, title="t")
-    mine = store.create_run(owner_sub="author", recipe_version_id=r["version_id"],
+    r = store.create_procedure(owner_sub="author", spec={}, title="t")
+    mine = store.create_run(owner_sub="author", procedure_version_id=r["version_id"],
                             origin="replay")
     store.set_run_state(mine, "done", ended=True)
     other = store.create_run(owner_sub="someone", run_by="someone",
-                             recipe_version_id=r["version_id"], origin="replay")
+                             procedure_version_id=r["version_id"], origin="replay")
     store.set_run_state(other, "done", ended=True)
     s = store.stats()
-    assert s["recipes"] == 1 and s["replays"] == 2
+    assert s["procedures"] == 1 and s["replays"] == 2
     assert s["replays_by_others"] == 1
     assert s["replay_completion"] == 1.0
 

@@ -42,7 +42,7 @@ export function SsoPrimer({ enabled }: { enabled: boolean }) {
     busyRef.current = true;
     launchSystem(next)
       .then((handoff) => {
-        // redirect 방식은 주소창을 옮겨야 해서 조용히 태울 수 없다 — 그런 시스템은 건너뛴다.
+        // redirect 방식은 주소창을 옮겨야 해서 조용히 태울 수 없다 — 그실행 시스템은 건너뛴다.
         if (handoff.mode !== 'auto_post') {
           busyRef.current = false;
           return;

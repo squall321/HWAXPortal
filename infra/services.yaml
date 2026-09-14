@@ -44,14 +44,14 @@ services:
       classes:
         users:          { kind: sqlite, path: svc/portal/users.sqlite,         current: backend/data/users.sqlite,          env: USER_STORE_PATH,      fs: local, sync: mirror, needs_bind: true }
         conv:           { kind: sqlite, path: svc/portal/conversations.sqlite, current: backend/data/conversations.sqlite,  env: CONV_STORE_PATH,      fs: local, sync: mirror, needs_bind: true }
-        workbench:      { kind: sqlite, path: svc/portal/workbench.sqlite,     current: backend/data/workbench.sqlite,      env: WORKBENCH_STORE_PATH, fs: local, sync: mirror, needs_bind: true }
+        procedures:      { kind: sqlite, path: svc/portal/procedures.sqlite,     current: backend/data/procedures.sqlite,      env: PROCEDURES_STORE_PATH, fs: local, sync: mirror, needs_bind: true }
         audit:          { kind: sqlite, path: svc/portal/agent_audit.sqlite,   current: backend/secrets/agent_audit.sqlite, env: AGENT_AUDIT_LOG_PATH, fs: local, sync: none, needs_bind: true }
         token_store:    { kind: sqlite, path: svc/portal/token_store.sqlite,   current: backend/secrets/token_store.sqlite, env: TOKEN_STORE_PATH,     fs: local, sync: none, keys_with: [jwt], needs_bind: true }
         jwt:            { kind: secret, path: hwax/secrets/portal/jwt,          current: backend/secrets/jwt,                env: JWT_KEYS_DIR,         sync: none, needs_bind: true }
         upload_staging: { kind: cache,  path: svc/portal/upload-staging,        current: "~/.hwax/upload-staging",           env: HWAX_UPLOAD_STAGING,  enabled: false, sync: none }
         nginx_log:      { kind: log,    path: "logs/{box}/portal",              current: infra/data,                         env: HWAX_NGINX_LOG_DIR,   sync: none }
         delib_runs:     { kind: blob,   path: delib-runs,                       current: /data/delib-runs,                   env: DELIB_ARCHIVE_ROOT,   sync: publish-replace }
-        wb_artifacts:   { kind: blob,   path: svc/portal/workbench-artifacts,   current: backend/data/workbench-artifacts, env: WORKBENCH_ARTIFACT_ROOT, sync: mirror }
+        proc_artifacts: { kind: blob,   path: svc/portal/procedures-artifacts,   current: backend/data/procedures-artifacts, env: PROCEDURES_ARTIFACT_ROOT, sync: mirror }
       identity: [infra/.env, backend/.env, backend/config/routes.local.env]
     tier: 0
 

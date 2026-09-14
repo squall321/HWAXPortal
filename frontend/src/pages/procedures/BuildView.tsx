@@ -1,22 +1,22 @@
-// 워크벤치 — **진입점**. 레시피 없이 도구를 한 단계씩 돌리고, 끝나면 레시피로 굳힌다.
+// 만들기 — **진입점**. 저장된 절차가 없어도 도구를 한 단계씩 돌리고, 끝나면 절차로 굳힌다.
 //
-// 레시피 목록이 아니라 여기가 시작이다(PLAN §1) — 레시피가 하나도 없어도 일을 시작할 수 있어야
+// 절차 목록이 아니라 여기가 시작이다(PLAN §1) — 저장된 절차가 하나도 없어도 시작할 수 있어야
 // 하고, 그 기록이 곧 절차라 해석이 필요 없다.
 import { useEffect, useMemo, useState } from 'react';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
-import { useWorkbench } from '../../state/WorkbenchContext';
+import { useProcedures } from '../../state/ProceduresContext';
 import {
   runStep,
-  saveAsRecipe,
+  saveAsProcedure,
   startEmptyRun,
   type StepDef,
   type ToolInfo,
-} from '../../api/workbench.api';
+} from '../../api/procedures.api';
 import { ArgsForm, buildArgs, emptyArgs, type ArgsState } from './ArgsForm';
 import { RunSteps } from './RunSteps';
 
-export default function BenchView() {
-  const { tools, toolsError, toolsLoading, reloadTools, watch, watched, refreshWatched } = useWorkbench();
+export default function BuildView() {
+  const { tools, toolsError, toolsLoading, reloadTools, watch, watched, refreshWatched } = useProcedures();
   const [runId, setRunId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<string>('');
@@ -43,7 +43,7 @@ export default function BenchView() {
   const begin = async () => {
     setErr(null);
     try {
-      const r = await startEmptyRun('워크벤치');
+      const r = await startEmptyRun('절차');
       setRunId(r.run_id);
       watch(r.run_id);
     } catch (e) {
@@ -83,8 +83,8 @@ export default function BenchView() {
         <section style={card}>
           <h2 style={h2}>도구를 한 단계씩 돌립니다</h2>
           <p style={{ color: 'var(--muted)', marginTop: 0 }}>
-            레시피가 없어도 시작할 수 있습니다. 워크벤치가 <b>과정을 전부 기록</b>하고, 끝나면
-            그대로 레시피로 굳혀 다음 과제에서 값만 바꿔 재생합니다.
+            절차가 없어도 시작할 수 있습니다. 절차 기능이 <b>과정을 전부 기록</b>하고, 끝나면
+            그대로 절차로 굳혀 다음 과제에서 값만 바꿔 재생합니다.
           </p>
           <button type="button" onClick={begin} style={primary}>
             시작하기
@@ -158,14 +158,14 @@ export default function BenchView() {
             )}
           </section>
 
-          {done.length > 0 && <SaveAsRecipe runId={runId} steps={done} />}
+          {done.length > 0 && <SaveAsProcedure runId={runId} steps={done} />}
         </>
       )}
     </div>
   );
 }
 
-function SaveAsRecipe({
+function SaveAsProcedure({
   runId,
   steps,
 }: {
@@ -193,7 +193,7 @@ function SaveAsRecipe({
         tool: s.tool,
         args: substituteLeaves(s.args, i, vars),
       }));
-      const r = await saveAsRecipe(runId, title || '이름 없는 절차', defs, patched);
+      const r = await saveAsProcedure(runId, title || '이름 없는 절차', defs, patched);
       setMsg(`저장했습니다 — 판본 ${r.version_no}${r.warnings.length ? ` · 경고 ${r.warnings.length}건` : ''}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -204,7 +204,7 @@ function SaveAsRecipe({
 
   return (
     <section style={card}>
-      <h2 style={h2}>레시피로 저장</h2>
+      <h2 style={h2}>절차로 저장</h2>
       <p style={{ color: 'var(--muted)', marginTop: 0, fontSize: '0.85rem' }}>
         성공한 단계 {steps.length}개를 절차로 굳힙니다. <b>과제마다 바뀌는 값에 이름을 붙이면</b>{' '}
         다음에는 그 값만 채워 한 번에 재생합니다. 이름을 안 붙인 인자는 <b>상수로 박힙니다</b> —
@@ -251,7 +251,7 @@ function SaveAsRecipe({
       </table>
 
       <button type="button" onClick={save} disabled={busy} style={{ ...primary, marginTop: '0.8rem' }}>
-        {busy ? '저장 중…' : '레시피로 저장'}
+        {busy ? '저장 중…' : '절차로 저장'}
       </button>
     </section>
   );

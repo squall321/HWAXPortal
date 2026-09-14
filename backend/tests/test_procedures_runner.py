@@ -1,4 +1,4 @@
-# 실행기 — invoke_tool 경유·isError 보존·save 체인·게이트·취소·시간(docs/workbench/PLAN.md §5-6·§5-10)
+# 실행기 — invoke_tool 경유·isError 보존·save 체인·게이트·취소·시간(docs/procedures/PLAN.md §5-6·§5-10)
 #
 # 게이트웨이는 httpx.MockTransport 로 세운다(tests/test_access_control.py:134 선례).
 # 프로토콜은 실물 그대로 — initialize → mcp-session-id → notifications/initialized →
@@ -11,12 +11,12 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.workbench.models import RecipeSpec, Step, schema_fingerprint
-from app.workbench.runner import WorkbenchRunner
-from app.workbench.store import WorkbenchStore
+from app.procedures.models import ProcedureSpec, Step, schema_fingerprint
+from app.procedures.runner import ProceduresRunner
+from app.procedures.store import ProceduresStore
 
 PRINCIPAL = types.SimpleNamespace(subject="u1", email="u1@x.io", display_name="U",
-                                  groups=["feat:workbench"])
+                                  groups=["feat:procedures"])
 
 
 def _sse(payload: dict) -> httpx.Response:
@@ -86,12 +86,12 @@ def err(text: str) -> dict:
 
 @pytest.fixture
 def kit(tmp_path):
-    s = Settings(workbench_store_path=str(tmp_path / "wb.sqlite"))
-    store = WorkbenchStore(s)
+    s = Settings(procedures_store_path=str(tmp_path / "wb.sqlite"))
+    store = ProceduresStore(s)
 
     def build(gate: Gate, **kw):
         client = httpx.AsyncClient(transport=gate.transport(), timeout=5.0)
-        return WorkbenchRunner(settings=s, store=store, client=client,
+        return ProceduresRunner(settings=s, store=store, client=client,
                                mint_pat=lambda p, run, ix: f"pat-{run}-{ix}", **kw)
 
     yield store, build
@@ -99,7 +99,7 @@ def kit(tmp_path):
 
 
 def _spec(steps, title="t"):
-    return RecipeSpec(title=title, steps=[Step(**x) for x in steps])
+    return ProcedureSpec(title=title, steps=[Step(**x) for x in steps])
 
 
 def _run(store, spec, mode="live", inputs=None):
@@ -135,14 +135,14 @@ def test_one_session_per_run_and_it_is_closed(kit):
         rid = _run(store, spec)
         await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
         await r.aclose()
-        assert len(g.sessions) == 1                  # 런당 하나
+        assert len(g.sessions) == 1                  # 실행당 하나
         assert {c["sid"] for c in g.calls} == {"s1"}  # 두 단계가 같은 세션
         assert g.deleted == ["s1"]                    # finally 에서 닫힌다
     asyncio.run(go(*kit))
 
 
 def test_pat_is_minted_per_step_not_once(kit):
-    """exp 가 창 시작+60분이라 오래 멈춘 런이 저장된 토큰으로 재개하면 401 이다."""
+    """exp 가 창 시작+60분이라 오래 멈춘 실행이 저장된 토큰으로 재개하면 401 이다."""
     async def go(store, build):
         g = Gate(tools={"b_a": {}, "b_c": {}}, replies={"b_a": ok({}), "b_c": ok({})})
         r = build(g)
@@ -279,7 +279,7 @@ def test_gate_stops_before_calling_and_holds_no_slot(kit):
         assert out["state"] == "gated" and out["stopped_at"] == 0
         assert g.calls == []                                   # 부르지 않았다
         assert store.get_run(rid)["state"] == "gated"
-        assert r.sem._value == int(r.settings.workbench_concurrency)  # 슬롯을 놓았다
+        assert r.sem._value == int(r.settings.procedures_concurrency)  # 슬롯을 놓았다
     asyncio.run(go(*kit))
 
 
@@ -363,7 +363,7 @@ def test_timeout_is_unknown_not_failed(kit):
         rid = _run(store, spec)
         out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
         await r.aclose()
-        assert out["state"] == "failed"          # 런은 멈춘다
+        assert out["state"] == "failed"          # 실행은 멈춘다
         st = store.list_steps(rid)[0]
         assert st["state"] == "unknown" and st["stage"] == "timeout"   # 단계는 unknown
         assert "실행 여부를 모른다" in st["error"]
@@ -388,7 +388,7 @@ def test_warmup_discards_result_and_survives_timeout(kit):
 
 
 def test_slow_steps_serialise_per_backend(kit):
-    """느린 단계 중 같은 백엔드를 또 치면 재연결이 다른 런까지 끊는다."""
+    """느린 단계 중 같은 백엔드를 또 치면 재연결이 다른 실행까지 끊는다."""
     async def go(store, build):
         g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})
         r = build(g)

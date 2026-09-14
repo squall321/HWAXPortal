@@ -196,11 +196,11 @@ if want portal; then
   D="$(find_repo HWAXPortal)"; B="$D/backend"
   snap="$(mktemp -d)"
   # users(로컬 계정·RA 연결 토큰)·conversations·token_store(PAT/jti)·agent_audit — 레지스트리 env 가 있으면 그 경로
-  python3 - "$B" "$snap" "${USER_STORE_PATH:-}" "${CONV_STORE_PATH:-}" "${TOKEN_STORE_PATH:-}" "${AGENT_AUDIT_LOG_PATH:-}" "${WORKBENCH_STORE_PATH:-}" <<'PY'
+  python3 - "$B" "$snap" "${USER_STORE_PATH:-}" "${CONV_STORE_PATH:-}" "${TOKEN_STORE_PATH:-}" "${AGENT_AUDIT_LOG_PATH:-}" "${PROCEDURES_STORE_PATH:-}" <<'PY'
 import sys, os, sqlite3
 base, dst = sys.argv[1], sys.argv[2]
 defaults = ("data/users.sqlite", "data/conversations.sqlite", "secrets/token_store.sqlite",
-            "secrets/agent_audit.sqlite", "data/workbench.sqlite")
+            "secrets/agent_audit.sqlite", "data/procedures.sqlite")
 for rel, override in zip(defaults, sys.argv[3:8]):
     db = override or os.path.join(base, rel)
     if not os.path.exists(db):

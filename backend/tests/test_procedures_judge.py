@@ -1,10 +1,10 @@
-# 단계 판정 — 실패 다섯 모양 중 셋이 isError=false 다(docs/workbench/PLAN.md §5-6)
+# 단계 판정 — 실패 다섯 모양 중 셋이 isError=false 다(docs/procedures/PLAN.md §5-6)
 #
 # ⚠ 여기 쓰인 응답 문자열은 **실물**이다 — 2026-09-14 dev 게이트웨이를 실제로 불러 받은 것.
 #    합성 예시로 재현되는 결함은 결함이 아니다. 실물에 있느냐가 가른다.
 import json
 
-from app.workbench.judge import (
+from app.procedures.judge import (
     Verdict,
     collect_notes,
     join_content,
@@ -32,7 +32,7 @@ REAL_RA = json.dumps({"error": "report not found: 999"}, ensure_ascii=False)
 
 
 def test_gateway_plaintext_is_classified_by_prefix():
-    """권한·부재·불통은 재시도 판단이 다르다 — 런 기록에 따로 남는다."""
+    """권한·부재·불통은 재시도 판단이 다르다 — 실행 기록에 따로 남는다."""
     a = judge(is_error=True, text="unknown tool: odb_list_components")
     assert (a.ok, a.kind, a.retriable) == (False, "unknown_tool", False)
 

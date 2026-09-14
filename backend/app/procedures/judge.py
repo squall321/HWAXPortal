@@ -43,7 +43,7 @@ class Verdict:
     notes: dict = field(default_factory=dict)
 
     def as_row(self) -> dict:
-        """런 기록에 남기는 세 층. 권한·부재·불통은 재시도 판단이 다르다."""
+        """실행 기록에 남기는 세 층. 권한·부재·불통은 재시도 판단이 다르다."""
         return {"layer": self.layer, "kind": self.kind, "retriable": self.retriable}
 
 
@@ -207,7 +207,7 @@ def short_error(verdict: Verdict) -> str:
     """실패 카드 한 줄 — 포털 관례(`client.ts:47-60` errorDetail)를 따른다.
 
     규칙 둘. **`msg` 만 추리고 `input` 은 절대 쓰지 않는다**(사용자가 넣은 값이 화면·로그에
-    번지지 않게), 그리고 `errors.pydantic.dev` URL 을 띄우지 않는다. 원문은 런 기록에
+    번지지 않게), 그리고 `errors.pydantic.dev` URL 을 띄우지 않는다. 원문은 실행 기록에
     그대로 남고 화면은 접이식으로 연다.
     """
     msg = (verdict.error or "").strip()

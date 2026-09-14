@@ -52,7 +52,7 @@ class ConversationStore:
         # 의미검색용 벡터. owner_sub 를 여기에 한 번 더 적는다(비정규화) — 검색은 항상
         # "내 대화 안에서"이고, 조인 없이 소유자로 먼저 좁혀야 스캔량이 내 것만큼으로 준다.
         # 소유권 판정을 이 테이블 하나로 끝내는 것이 더 중요하다: 조인을 빠뜨린 쿼리 하나가
-        # 남의 대화를 물어오는 사고가 되는데, 여기 owner_sub 가 있으면 그런 쿼리를 쓸 수 없다.
+        # 남의 대화를 물어오는 사고가 되는데, 여기 owner_sub 가 있으면 그실행 쿼리를 쓸 수 없다.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS message_vectors ("
             "message_id TEXT NOT NULL, chunk_ix INTEGER NOT NULL, conversation_id TEXT NOT NULL, "

@@ -102,7 +102,7 @@ def _workspace_options(me: dict) -> list[dict]:
 def _pick_default_workspace(me: dict, options: list[dict]) -> str:
     """기본값 — **조직을 먼저** 고른다.
 
-    예전엔 home_workspace_slug 를 그대로 썼다. 그런데 RA 계정의 home 이 personal-N 이면
+    예전엔 home_workspace_slug 를 그대로 썼다. 그실행데 RA 계정의 home 이 personal-N 이면
     개인 워크스페이스가 박히고, 화면에 바꿀 방법이 없어 보고서가 계속 개인함에 쌓인다.
     home 이 조직이면 그것을 존중하고, 아니면 첫 조직 멤버십으로 간다.
     """

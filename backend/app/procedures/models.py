@@ -1,7 +1,7 @@
-"""레시피·런 모델의 **정본**. 저장 시점 검증이 전부 여기 있다(PLAN §2-1).
+"""절차·실행 모델의 **정본**. 저장 시점 검증이 전부 여기 있다(PLAN §2-1).
 
 pydantic v2 — 포털 관례다(`jsonschema` 의존성이 리포에 없고, 새 pip 의존성 0 이 원칙이다).
-docs/workbench/PLAN.md 의 YAML 은 예시이고 이 파일이 정본이다.
+docs/procedures/PLAN.md 의 YAML 은 예시이고 이 파일이 정본이다.
 
 검증이 여기 있는 이유 — 이 스택의 반복 사고가 "실패가 정상 응답과 똑같이 생겼다" 이고,
 그중 셋(enum 오타·단위·미지 인자)은 **저장 시점에만** 잡을 수 있다. 실행 시점에는 이미
@@ -13,10 +13,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.workbench import template
+from app.procedures import template
 
 # ── 2026-09-14 게이트웨이 465종 전수에서 뽑은 목록 ────────────────────────
-# ⚠ 손으로 고치지 마라. 게이트웨이가 바뀌면 다시 뽑는다(docs/workbench/PLAN.md §5-4).
+# ⚠ 손으로 고치지 마라. 게이트웨이가 바뀌면 다시 뽑는다(docs/procedures/PLAN.md §5-4).
 
 # 되돌리려면 타인 승인이 필요한 바깥 방향 행위 — gate: human 이 없으면 저장 거절.
 MUST_GATE = frozenset({
@@ -33,7 +33,7 @@ WARN_EXACT = frozenset({"run_job", "train_model", "smarttwin_submit", "slurm_sub
 GW_DENY_PREFIX = ("delete_", "remove_", "cancel_", "purge_", "destroy_")
 GW_DENY_SUFFIX = ("_control", "_set_state")
 
-# 인자에 상수로 박히면 공유 레시피가 곧 유출이다. 변수·앞 단계 save 만 허용한다.
+# 인자에 상수로 박히면 공유 절차가 곧 유출이다. 변수·앞 단계 save 만 허용한다.
 SECRET_KEY = re.compile(r"token|secret|password|authorization|api_key|cookie", re.I)
 USERINFO_URL = re.compile(r"://[^/\s:@]+:[^/\s@]+@")
 
@@ -60,7 +60,7 @@ _BACKEND = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 class SpecError(ValueError):
-    """레시피가 저장 시점 검증에 걸렸다."""
+    """절차가 저장 시점 검증에 걸렸다."""
 
 
 class Var(BaseModel):
@@ -121,7 +121,7 @@ class Step(BaseModel):
     """한 단계. 노출 이름이 아니라 `backend` + 원본 `tool` 로 저장한다(PLAN §5-8).
 
     `expect` 는 예상 소요다 — `job`(120초를 넘길 수 있다)은 저장 거절이고 제출·회수 두
-    레시피로 갈라야 한다(PLAN §5-10).
+    절차로 갈라야 한다(PLAN §5-10).
     """
     model_config = {"extra": "forbid"}
 
@@ -161,8 +161,8 @@ class Step(BaseModel):
         return self.tool.startswith(CACHE_PREFIX)
 
 
-class RecipeSpec(BaseModel):
-    """레시피 판본의 불변 본문. 이것이 바뀔 때만 새 판본이 생긴다."""
+class ProcedureSpec(BaseModel):
+    """절차 판본의 불변 본문. 이것이 바뀔 때만 새 판본이 생긴다."""
     model_config = {"extra": "forbid"}
 
     title: str
@@ -184,8 +184,8 @@ class RecipeSpec(BaseModel):
 RESERVED = frozenset({"run_id"})  # me.email·me.sub 은 접두로 따로 본다
 
 
-def validate_spec(spec: RecipeSpec, *, max_steps: int = 30) -> list[str]:
-    """레시피를 저장해도 되는지 본다. 문제를 **전부** 모아 돌려준다(첫 건에서 멈추지 않는다).
+def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
+    """절차를 저장해도 되는지 본다. 문제를 **전부** 모아 돌려준다(첫 건에서 멈추지 않는다).
 
     빈 리스트면 통과. 경고는 `warn:` 접두로 온다 — 거절이 아니라 화면에 띄울 것.
     """
@@ -214,7 +214,7 @@ def validate_spec(spec: RecipeSpec, *, max_steps: int = 30) -> list[str]:
 
         # ③ 시간 — job 은 제출·회수로 갈라야 한다
         if st.expect == "job":
-            errs.append(f"{at}: expect=job — 120초를 넘길 수 있다. 제출·회수 두 레시피로 가른다")
+            errs.append(f"{at}: expect=job — 120초를 넘길 수 있다. 제출·회수 두 절차로 가른다")
         if st.expect == "slow" and st.cacheable:
             errs.append(f"warn:{at}: 느린 읽기 도구다 — 재실행은 300초 캐시가 받는다")
 
@@ -222,7 +222,7 @@ def validate_spec(spec: RecipeSpec, *, max_steps: int = 30) -> list[str]:
         if "dry_run" in st.args and st.tool not in DRY_RUN_TOOLS:
             errs.append(f"{at}: 이 도구에는 dry_run 인자가 없다 — 백엔드가 버리고 실제로 실행한다")
 
-        # ⑤ 비밀·경로가 상수로 박히면 공유 레시피가 곧 유출이다
+        # ⑤ 비밀·경로가 상수로 박히면 공유 절차가 곧 유출이다
         errs += _scan_args(st.args, at)
 
         # ⑥ 치환 — 참조하는 변수가 앞에서 나왔나
@@ -251,7 +251,7 @@ def validate_spec(spec: RecipeSpec, *, max_steps: int = 30) -> list[str]:
     return errs
 
 
-def _all_refs(spec: RecipeSpec) -> set[str]:
+def _all_refs(spec: ProcedureSpec) -> set[str]:
     out: set[str] = set()
     for st in spec.steps:
         out |= {r.split(".")[0] for r in template.refs(st.args)}
@@ -277,7 +277,7 @@ def _scan_args(args: Any, at: str, trail: str = "") -> list[str]:
     return errs
 
 
-def check_against_schemas(spec: RecipeSpec, schemas: dict[str, dict]) -> list[str]:
+def check_against_schemas(spec: ProcedureSpec, schemas: dict[str, dict]) -> list[str]:
     """게이트웨이 `tools/list` 스키마와 대조한다 — 호출 시점에 받아 따로 돈다.
 
     게이트웨이는 `validate_input=False`(gateway.py:1766) 라 인자를 검증하지 않고, 백엔드는

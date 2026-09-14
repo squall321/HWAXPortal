@@ -1,9 +1,9 @@
-"""워크벤치 저장소(SQLite) — 레시피·판본·런·단계·게이트 승인. **런 기록이 감사 정본이다.**
+"""절차 저장소(SQLite) — 절차·판본·실행·단계·게이트 승인. **실행 기록이 감사 정본이다.**
 
 챗의 `conv_store` 와 **연결을 공유하지 않는다**(PLAN §3 격리표). 다른 점 셋이 의도다.
 
 1. **스레드별 연결** — 포털 4곳은 연결 1개 + Lock 이라 `to_thread` 로 감싸면 트랜잭션 경계가
-   스레드 사이에서 섞인다. S5 일괄 재생(런 N개 동시)에서 바로 난다.
+   스레드 사이에서 섞인다. S5 일괄 재생(실행 N개 동시)에서 바로 난다.
 2. **WAL + busy_timeout=5000** — `backup-local.sh`·이관기가 `mode=ro` 로 동시에 여는 순간을
    견딘다. 포털 sqlite 4곳은 디스크 실측이 전부 `journal_mode=delete` 다.
 3. **append-only** — 단계 기록에 수정·삭제 API 가 없다. 게이트웨이 원장은 MCP 경로에서
@@ -21,7 +21,7 @@ from pathlib import Path
 
 from app.config import Settings
 
-# 결과 본문 상한. 넘으면 해시·크기·앞 4KB 프리뷰만 남긴다(PLAN §2 런).
+# 결과 본문 상한. 넘으면 해시·크기·앞 4KB 프리뷰만 남긴다(PLAN §2 실행).
 RESULT_MAX = 2 * 1024 * 1024
 PREVIEW = 4096
 
@@ -29,19 +29,19 @@ RUN_STATES = ("queued", "running", "gated", "done", "failed", "cancelled", "unkn
 STEP_STATES = ("pending", "running", "done", "failed", "unknown", "skipped")
 
 _DDL = (
-    """CREATE TABLE IF NOT EXISTS recipes (
+    """CREATE TABLE IF NOT EXISTS procedures (
         id TEXT PRIMARY KEY, owner_sub TEXT NOT NULL, created_by TEXT NOT NULL,
         title TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'all',
         latest_version INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS recipe_versions (
-        version_id TEXT PRIMARY KEY, recipe_id TEXT NOT NULL, version_no INTEGER NOT NULL,
+    """CREATE TABLE IF NOT EXISTS procedure_versions (
+        version_id TEXT PRIMARY KEY, procedure_id TEXT NOT NULL, version_no INTEGER NOT NULL,
         spec_json TEXT NOT NULL, author_sub TEXT NOT NULL, created_at INTEGER NOT NULL,
         derived_from_run TEXT,
-        UNIQUE (recipe_id, version_no))""",
+        UNIQUE (procedure_id, version_no))""",
     """CREATE TABLE IF NOT EXISTS runs (
         id TEXT PRIMARY KEY, owner_sub TEXT NOT NULL, run_by TEXT NOT NULL,
-        recipe_version_id TEXT, title TEXT,
+        procedure_version_id TEXT, title TEXT,
         inputs_json TEXT NOT NULL DEFAULT '{}',
         origin TEXT NOT NULL DEFAULT 'manual',
         mode TEXT NOT NULL DEFAULT 'plan',
@@ -66,7 +66,7 @@ _DDL = (
         PRIMARY KEY (run_id, step_ix))""",
     "CREATE INDEX IF NOT EXISTS ix_runs_owner ON runs (owner_sub, started_at DESC)",
     "CREATE INDEX IF NOT EXISTS ix_runs_state ON runs (state)",
-    "CREATE INDEX IF NOT EXISTS ix_ver_recipe ON recipe_versions (recipe_id, version_no)",
+    "CREATE INDEX IF NOT EXISTS ix_ver_procedure ON procedure_versions (procedure_id, version_no)",
 )
 
 
@@ -78,9 +78,9 @@ def _uid() -> str:
     return uuid.uuid4().hex
 
 
-class WorkbenchStore:
+class ProceduresStore:
     def __init__(self, settings: Settings) -> None:
-        raw = getattr(settings, "workbench_store_path", None) or "data/workbench.sqlite"
+        raw = getattr(settings, "procedures_store_path", None) or "data/procedures.sqlite"
         self._path = Path(settings.resolve(raw))
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
@@ -112,83 +112,83 @@ class WorkbenchStore:
         mode = c.execute("PRAGMA journal_mode").fetchone()[0]
         return {"journal_mode": mode, "path": str(self._path)}
 
-    # ── 레시피 · 판본 ─────────────────────────────────────────────────────
-    def create_recipe(self, *, owner_sub: str, spec: dict, title: str,
+    # ── 절차 · 판본 ─────────────────────────────────────────────────────
+    def create_procedure(self, *, owner_sub: str, spec: dict, title: str,
                       visibility: str = "all", derived_from_run: str | None = None) -> dict:
         rid, vid, now = _uid(), _uid(), _now()
         c = self._conn()
         with c:
             c.execute(
-                "INSERT INTO recipes (id, owner_sub, created_by, title, visibility,"
+                "INSERT INTO procedures (id, owner_sub, created_by, title, visibility,"
                 " latest_version, created_at, updated_at) VALUES (?,?,?,?,?,1,?,?)",
                 (rid, owner_sub, owner_sub, title, visibility, now, now),
             )
             c.execute(
-                "INSERT INTO recipe_versions (version_id, recipe_id, version_no, spec_json,"
+                "INSERT INTO procedure_versions (version_id, procedure_id, version_no, spec_json,"
                 " author_sub, created_at, derived_from_run) VALUES (?,?,1,?,?,?,?)",
                 (vid, rid, json.dumps(spec, ensure_ascii=False), owner_sub, now,
                  derived_from_run),
             )
         return {"id": rid, "version_id": vid, "version_no": 1}
 
-    def add_version(self, *, recipe_id: str, author_sub: str, spec: dict,
+    def add_version(self, *, procedure_id: str, author_sub: str, spec: dict,
                     derived_from_run: str | None = None) -> dict:
         c = self._conn()
         with c:
-            row = c.execute("SELECT latest_version FROM recipes WHERE id=?",
-                            (recipe_id,)).fetchone()
+            row = c.execute("SELECT latest_version FROM procedures WHERE id=?",
+                            (procedure_id,)).fetchone()
             if row is None:
-                raise KeyError(recipe_id)
+                raise KeyError(procedure_id)
             no = int(row["latest_version"]) + 1
             vid, now = _uid(), _now()
             c.execute(
-                "INSERT INTO recipe_versions (version_id, recipe_id, version_no, spec_json,"
+                "INSERT INTO procedure_versions (version_id, procedure_id, version_no, spec_json,"
                 " author_sub, created_at, derived_from_run) VALUES (?,?,?,?,?,?,?)",
-                (vid, recipe_id, no, json.dumps(spec, ensure_ascii=False), author_sub, now,
+                (vid, procedure_id, no, json.dumps(spec, ensure_ascii=False), author_sub, now,
                  derived_from_run),
             )
-            c.execute("UPDATE recipes SET latest_version=?, updated_at=? WHERE id=?",
-                      (no, now, recipe_id))
-        return {"id": recipe_id, "version_id": vid, "version_no": no}
+            c.execute("UPDATE procedures SET latest_version=?, updated_at=? WHERE id=?",
+                      (no, now, procedure_id))
+        return {"id": procedure_id, "version_id": vid, "version_no": no}
 
     def get_version(self, version_id: str) -> dict | None:
         row = self._conn().execute(
-            "SELECT * FROM recipe_versions WHERE version_id=?", (version_id,)).fetchone()
+            "SELECT * FROM procedure_versions WHERE version_id=?", (version_id,)).fetchone()
         if row is None:
             return None
         d = dict(row)
         d["spec"] = json.loads(d.pop("spec_json"))
         return d
 
-    def latest_version_of(self, recipe_id: str) -> dict | None:
+    def latest_version_of(self, procedure_id: str) -> dict | None:
         row = self._conn().execute(
-            "SELECT version_id FROM recipe_versions WHERE recipe_id=?"
-            " ORDER BY version_no DESC LIMIT 1", (recipe_id,)).fetchone()
+            "SELECT version_id FROM procedure_versions WHERE procedure_id=?"
+            " ORDER BY version_no DESC LIMIT 1", (procedure_id,)).fetchone()
         return self.get_version(row["version_id"]) if row else None
 
-    def list_recipes(self, *, owner_sub: str, limit: int = 100) -> list[dict]:
-        """`visibility='all'` 이면 남의 것도 보인다 — 레시피는 공유 자산이다(PLAN §1).
+    def list_procedures(self, *, owner_sub: str, limit: int = 100) -> list[dict]:
+        """`visibility='all'` 이면 남의 것도 보인다 — 절차는 공유 자산이다(PLAN §1).
 
-        런은 따라가지 않는다. 런 결과에는 그 사람 시야의 데이터가 담긴다.
+        실행은 따라가지 않는다. 실행 결과에는 그 사람 시야의 데이터가 담긴다.
         """
         rows = self._conn().execute(
-            "SELECT * FROM recipes WHERE visibility='all' OR owner_sub=?"
+            "SELECT * FROM procedures WHERE visibility='all' OR owner_sub=?"
             " ORDER BY updated_at DESC LIMIT ?", (owner_sub, limit)).fetchall()
         return [dict(r) for r in rows]
 
-    # ── 런 ────────────────────────────────────────────────────────────────
+    # ── 실행 ────────────────────────────────────────────────────────────────
     def create_run(self, *, owner_sub: str, run_by: str | None = None,
-                   recipe_version_id: str | None = None, inputs: dict | None = None,
+                   procedure_version_id: str | None = None, inputs: dict | None = None,
                    origin: str = "manual", mode: str = "plan", title: str | None = None,
                    trigger_kind: str | None = None, trigger_ref: str | None = None) -> str:
-        """`recipe_version_id` 가 없으면 **빈 런** — 도구를 한 단계씩 돌리는 워크벤치다."""
+        """`procedure_version_id` 가 없으면 **빈 실행** — 도구를 한 단계씩 돌리는 절차다."""
         run_id, now = _uid(), _now()
         with self._conn() as c:
             c.execute(
-                "INSERT INTO runs (id, owner_sub, run_by, recipe_version_id, title,"
+                "INSERT INTO runs (id, owner_sub, run_by, procedure_version_id, title,"
                 " inputs_json, origin, mode, state, started_at, trigger_kind, trigger_ref)"
                 " VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)",
-                (run_id, owner_sub, run_by or owner_sub, recipe_version_id, title,
+                (run_id, owner_sub, run_by or owner_sub, procedure_version_id, title,
                  json.dumps(inputs or {}, ensure_ascii=False), origin, mode, now,
                  trigger_kind, trigger_ref),
             )
@@ -197,7 +197,7 @@ class WorkbenchStore:
     def set_run_state(self, run_id: str, state: str, *, stage: str | None = None,
                       ended: bool = False) -> None:
         if state not in RUN_STATES:
-            raise ValueError(f"모르는 런 상태: {state}")
+            raise ValueError(f"모르는 실행 상태: {state}")
         with self._conn() as c:
             c.execute("UPDATE runs SET state=?, stage=?, ended_at=? WHERE id=?",
                       (state, stage, _now() if ended else None, run_id))
@@ -213,16 +213,16 @@ class WorkbenchStore:
         if row is None:
             return None
         if owner_sub is not None and row["owner_sub"] != owner_sub:
-            return None  # 런은 공유하지 않는다
+            return None  # 실행은 공유하지 않는다
         d = dict(row)
         d["inputs"] = json.loads(d.pop("inputs_json") or "{}")
         d["steps"] = self.list_steps(run_id)
         return d
 
     def list_runs(self, *, owner_sub: str, limit: int = 50) -> list[dict]:
-        """확인 대기(`gated`)를 맨 위에 — 게이트에서 멈춘 런의 표면이 이 목록이다."""
+        """확인 대기(`gated`)를 맨 위에 — 게이트에서 멈춘 실행의 표면이 이 목록이다."""
         rows = self._conn().execute(
-            "SELECT id, title, state, stage, mode, origin, recipe_version_id, started_at,"
+            "SELECT id, title, state, stage, mode, origin, procedure_version_id, started_at,"
             " ended_at FROM runs WHERE owner_sub=?"
             " ORDER BY (state='gated') DESC, started_at DESC LIMIT ?",
             (owner_sub, limit)).fetchall()
@@ -334,18 +334,18 @@ class WorkbenchStore:
 
     # ── §6-1 쓸모 판정 ────────────────────────────────────────────────────
     def stats(self) -> dict:
-        """레시피 수 · 재생 런 수 · 타인 재생 수 · 재생 완주율. 사후 복원이 안 되는 값들이다."""
+        """절차 수 · 재생 실행 수 · 타인 재생 수 · 재생 완주율. 사후 복원이 안 되는 값들이다."""
         c = self._conn()
-        recipes = c.execute("SELECT COUNT(*) FROM recipes").fetchone()[0]
+        procedures = c.execute("SELECT COUNT(*) FROM procedures").fetchone()[0]
         replays = c.execute("SELECT COUNT(*) FROM runs WHERE origin='replay'").fetchone()[0]
         by_others = c.execute(
-            "SELECT COUNT(*) FROM runs r JOIN recipe_versions v"
-            " ON r.recipe_version_id = v.version_id"
+            "SELECT COUNT(*) FROM runs r JOIN procedure_versions v"
+            " ON r.procedure_version_id = v.version_id"
             " WHERE r.origin='replay' AND r.run_by <> v.author_sub").fetchone()[0]
         done = c.execute(
             "SELECT COUNT(*) FROM runs WHERE origin='replay' AND state='done'").fetchone()[0]
         return {
-            "recipes": recipes,
+            "procedures": procedures,
             "replays": replays,
             "replays_by_others": by_others,
             "replay_completion": round(done / replays, 3) if replays else None,

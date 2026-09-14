@@ -1,4 +1,4 @@
-# 워크벤치 체크리스트
+# 절차 체크리스트
 
 [PLAN.md](PLAN.md) 의 단계를 실행 항목으로 편 것이다. **착수 전이라 전부 미체크다.**
 
@@ -28,11 +28,11 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       목록 상한 · 단위·면 · 시야·쓰기 명의 · resources 노출 여부
 - [ ] 지우기 게이트 `grep` 0건 → 파일 단위 `git add` → 커밋 → **push** 완료
 
-## S1 · 레시피 저장소 + 실행기 + 최소 화면 (가장 큰 덩어리)
+## S1 · 절차 저장소 + 실행기 + 최소 화면 (가장 큰 덩어리)
 
 ### 격리 — 이게 "챗에 지장 없음" 의 실질이다
-- [x] **자기 `asyncio.Semaphore`** — 크기 `Settings.workbench_concurrency`(기본 2). 파이썬 기본값 1
-      이면 직렬이다. `gate: human` 대기 런은 슬롯을 놓는다. 넘치면 429 가 아니라 큐
+- [x] **자기 `asyncio.Semaphore`** — 크기 `Settings.procedures_concurrency`(기본 2). 파이썬 기본값 1
+      이면 직렬이다. `gate: human` 대기 실행은 슬롯을 놓는다. 넘치면 429 가 아니라 큐
 - [x] **자기 `httpx.AsyncClient`** — read 타임아웃 **≥260초**(게이트웨이 120초 + 재연결 재시도 한 번을
       덮는다. 실행기가 게이트웨이보다 먼저 포기하면 쓰기가 뒤늦게 완료돼 `unknown` 만 늘린다)
 - [x] **자기 sqlite** — 연결은 스레드별(`threading.local`) 또는 호출당 `connect`. 단일 연결을 스레드풀이
@@ -40,50 +40,50 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       연결마다 `PRAGMA journal_mode=WAL; synchronous=NORMAL; busy_timeout=5000`(busy_timeout 은
       `backup-local.sh`·이관기가 `mode=ro` 로 동시에 여는 순간용). 쓰기는 `with conn:` 한 트랜잭션,
       메서드 단위 `asyncio.to_thread`. lifespan 종료에서 닫는다(`main.py:77-79` `agent_audit.close()` 옆)
-- [x] 런 하나에 MCP 세션 하나 — initialize 1회, 단계들은 같은 `mcp-session-id` 재사용, 종료·정지·예외
+- [x] 실행 하나에 MCP 세션 하나 — initialize 1회, 단계들은 같은 `mcp-session-id` 재사용, 종료·정지·예외
       시 `finally` 에서 `DELETE /mcp`. 게이트웨이 SDK 는 세션 유휴 만료가 없다
-- [x] `main.py` 에서 워크벤치 import·스토어 오픈을 try/except 로 감싼다 — 실패하면 라우터를 빼고
-      `app.state.workbench_error` 에 남기며 포털(챗 릴레이)은 뜬다
-- [x] `GET /workbench-api/health`(무인증) — 열렸으면 200 `{journal_mode, path}`, 아니면 503
+- [x] `main.py` 에서 절차 import·스토어 오픈을 try/except 로 감싼다 — 실패하면 라우터를 빼고
+      `app.state.procedures_error` 에 남기며 포털(챗 릴레이)은 뜬다
+- [x] `GET /procedures-api/health`(무인증) — 열렸으면 200 `{journal_mode, path}`, 아니면 503
 - [x] agent-server 는 **안 쓴다**
-- → 검증: 챗을 동시에 돌리며 재생 — 429·지연 없음. `/workbench-api/health` 가 `wal` 을 돌려준다
+- → 검증: 챗을 동시에 돌리며 재생 — 429·지연 없음. `/procedures-api/health` 가 `wal` 을 돌려준다
 
 ### 저장소 등록 — 네 곳 전부, 값까지. 하나만 빠져도 조용히 샌다
-- [x] `infra/services.yaml` `portal.classes` 에 `workbench: {kind: sqlite, path: svc/portal/workbench.sqlite,
-      current: backend/data/workbench.sqlite, env: WORKBENCH_STORE_PATH, fs: local, sync: mirror,
+- [x] `infra/services.yaml` `portal.classes` 에 `procedures: {kind: sqlite, path: svc/portal/procedures.sqlite,
+      current: backend/data/procedures.sqlite, env: PROCEDURES_STORE_PATH, fs: local, sync: mirror,
       needs_bind: true}` — `path` 는 반드시 `svc/portal/` 아래(`start.sh:53` 바인드 범위), `current` 는
-      `backend/data/` 아래(`.gitignore` 앵커 — 이관기가 강제). `sync: mirror` = 런은 사용자 데이터·prod 정본
-- [x] `infra/services.yaml` 에 `workbench_artifacts: {kind: blob, path: svc/portal/workbench-artifacts, …}`
-- [x] `infra/scripts/start.sh:56` env 키 목록에 `WORKBENCH_STORE_PATH`
-- [x] `infra/scripts/backup-local.sh` **세 줄** — `:199` python3 인자에 `"${WORKBENCH_STORE_PATH:-}"` ·
-      `:202` 튜플에 `"data/workbench.sqlite"` · `:203` 슬라이스 `[3:7]` → `[3:8]`. **튜플만 늘리면 `zip` 이
+      `backend/data/` 아래(`.gitignore` 앵커 — 이관기가 강제). `sync: mirror` = 실행은 사용자 데이터·prod 정본
+- [x] `infra/services.yaml` 에 `procedures_artifacts: {kind: blob, path: svc/portal/procedures-artifacts, …}`
+- [x] `infra/scripts/start.sh:56` env 키 목록에 `PROCEDURES_STORE_PATH`
+- [x] `infra/scripts/backup-local.sh` **세 줄** — `:199` python3 인자에 `"${PROCEDURES_STORE_PATH:-}"` ·
+      `:202` 튜플에 `"data/procedures.sqlite"` · `:203` 슬라이스 `[3:7]` → `[3:8]`. **튜플만 늘리면 `zip` 이
       짧은 쪽에서 멈춰 다섯째 파일이 오류 없이 빠진다.** 헤더 `:6`·`:195` 의 'sqlite 4' 를 5 로
-- [x] `backend/app/config.py` `workbench_store_path: str = "data/workbench.sqlite"` · `workbench_concurrency` ·
-      `workbench_max_steps`
+- [x] `backend/app/config.py` `procedures_store_path: str = "data/procedures.sqlite"` · `procedures_concurrency` ·
+      `procedures_max_steps`
 - [x] 메모 — 새 클래스는 현행·목표 둘 다 없어 `absent` 라 첫 기동은 `backend/data/` 에 생기고 `/data` 로
       가는 것은 다음 `update-all` 2b 때다(`update-forges.sh` 는 이관을 안 부른다)
-- → 검증: `./infra/scripts/backup-local.sh portal` 뒤 최신 tar 를 `tar -tzf` 로 열어 `workbench.sqlite` 가
-  있다. `./infra/scripts/data-migrate.sh --check` 에서 workbench 가 보인다
+- → 검증: `./infra/scripts/backup-local.sh portal` 뒤 최신 tar 를 `tar -tzf` 로 열어 `procedures.sqlite` 가
+  있다. `./infra/scripts/data-migrate.sh --check` 에서 procedures 가 보인다
 
-### 모델 (`backend/app/workbench/models.py`, pydantic v2)
-- [x] 레시피 — `{id, owner_sub, visibility, title, created_by, latest_version}` + 판본
+### 모델 (`backend/app/procedures/models.py`, pydantic v2)
+- [x] 절차 — `{id, owner_sub, visibility, title, created_by, latest_version}` + 판본
       `{version_id, version_no, spec_json, author_sub, created_at, derived_from_run}`
 - [x] 변수 — `{key, label, type: string|enum|number|boolean|json, values?, required, why?}`. `why` 는
       **왜 물어보는지**(`pkg_type` 처럼 유도 불가한 값에 필수)
 - [x] 단계 — `{backend, tool, schema_fp, expect, args, save?, gate?, raw?, unwrap?, warmup?}`.
       기계장치는 치환 `{{var}}` 과 추출 `save` 둘뿐이고 의미는 PLAN §2 표대로 **고정**.
       `expect` 는 `fast|slow|job` — `job` 은 저장 시점에 거절(PLAN §5-10)
-- [x] 런 — `{id, owner_sub, run_by, recipe_version_id?, inputs_json, origin: manual|replay, mode: plan|live,
+- [x] 실행 — `{id, owner_sub, run_by, procedure_version_id?, inputs_json, origin: manual|replay, mode: plan|live,
       state, …}` + 단계 `{backend, tool, schema_fp, args(+sha256), result_gz/bytes/sha256, truncated, notes,
       state, ok, error, started_at, duration_ms, mode, identity_note, reused_from_run_id}` + `run_gate_acks`
-- [x] 상태 CHECK — 런 `queued|running|gated|done|failed|cancelled|unknown`, 단계
+- [x] 상태 CHECK — 실행 `queued|running|gated|done|failed|cancelled|unknown`, 단계
       `pending|running|done|failed|unknown|skipped`
 - [x] `save` 점·인덱스 표기 파서 자체 구현(20줄 안팎, 의존성 0)
 - → 검증: pytest — 치환 규칙(정확히 하나면 형 유지·섞이면 문자열)·`save` 추출·상태 CHECK
 
-### 실행기 (`backend/app/workbench/runner.py`)
+### 실행기 (`backend/app/procedures/runner.py`)
 - [x] **실행은 요청 밖에서 돈다** — `POST /runs`·`POST /runs/{id}/steps` 는 `202` 로 즉시 돌려주고
-      `asyncio.create_task`(자기 세마포어 안), 단계마다 sqlite 에 쓰고 화면은 `GET /runs/{id}` 폴링. 워크벤치
+      `asyncio.create_task`(자기 세마포어 안), 단계마다 sqlite 에 쓰고 화면은 `GET /runs/{id}` 폴링. 절차
       경로는 nginx catch-all(`hwax.conf.tmpl:95-97`·`gen-nginx-conf.sh:207-209`, 기본 60초)이라 동기로 두면
       nginx 는 504·uvicorn 은 완료 → 재시도 → 중복. **dev vite 프록시에선 재현되지 않는다**
 - [x] 같은 단계 재실행 방지 — 단계가 `running` 이면 `POST …/steps` 는 409
@@ -94,14 +94,14 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 별칭 호출 — `f"{backend.replace('-','')}_{tool}"`. 저장 시 `/tools-map` 의 `map` 으로 노출 이름 →
       백엔드 키 해석
 - [x] **사용자 명의 PAT** — `_chat_user_pat`(`backend/app/agent/routes.py:223`) 을 **단계 호출 시점마다** 찍어
-      그 호출에만 싣는다. 런 기록에 저장하거나 `gate: human` 뒤 재개·다음 단계에 재사용하지 않는다(exp 가
+      그 호출에만 싣는다. 실행 기록에 저장하거나 `gate: human` 뒤 재개·다음 단계에 재사용하지 않는다(exp 가
       창 시작+60분, 실측 401). 30분 창 결정성은 agent-server 캐시 얘기라 요건이 아니다(따라도 무해)
-- [x] 단계 직전 검사 셋 — 런 상태가 `running` 인가 · 소유자 `user_store.get(email).status == "active"` 인가 ·
+- [x] 단계 직전 검사 셋 — 실행 상태가 `running` 인가 · 소유자 `user_store.get(email).status == "active"` 인가 ·
       `schema_fp` 가 지금 `tools/list` 와 같은가(다르면 정지 + diff 표시, 자동 진행 금지). 셋이 PAT 발급의
       선행 조건이다
-- [x] 런 시작 전 사전검사 — 실행자 PAT 로 `tools/list` 를 받아 레시피 단계 도구가 하나라도 없으면 한 단계도
+- [x] 실행 시작 전 사전검사 — 실행자 PAT 로 `tools/list` 를 받아 절차 단계 도구가 하나라도 없으면 한 단계도
       실행하지 않고 거절, 빠진 도구와 '내 권한' 링크를 보인다. 포털에서 권한을 재계산하지 않는다
-      (access-control D-5). 런 중간의 `forbidden:` 은 '권한 부족' 정지 사유로만 기록
+      (access-control D-5). 실행 중간의 `forbidden:` 은 '권한 부족' 정지 사유로만 기록
 - [ ] RA 사전검사 — 단계 중 `map[tool] == "reportarchive"` 가 있으면 `user_store.get_connection(email,
       service="reportarchive")` 확인, 없으면 시작 거절(`routes.py:969-974` 와 같은 400 문구). 단계마다
       `identity_note`(as-conn·as-user·service)를 사전검사 결과로 기록(게이트웨이는 결과에 안 돌려준다)
@@ -111,7 +111,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       `register_*`·`upload_*`·`ingest_*`·`train_model` 은 저장 시 경고. 게이트웨이 `_INVOKE_DENY`
       (`gateway.py:1100-1101`)는 백스톱일 뿐 — 앱 접두 이름(`odb_delete_job`)은 안 걸린다. S0 의 쓰기·파괴
       도구 표를 받으면 그것이 odb 쪽 정본
-- [x] `save` 로 `confirm_token`·`*_token` 을 뽑아 다음 인자로 쓰는 레시피는 저장 거절
+- [x] `save` 로 `confirm_token`·`*_token` 을 뽑아 다음 인자로 쓰는 절차는 저장 거절
 - [ ] `publish_report` 게이트 — preview(카드) → 사람 확인 → preview 재호출 → 그 토큰으로 즉시 publish.
       대상이 다르면 다시 멈춤
 - [x] 게이트 확인 — 소유자만, `(run_id, step, sha256(치환 인자))` 귀속, `run_gate_acks` 에 기록
@@ -119,108 +119,108 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       저장 거절. 단계마다 `mode: plan|dry|live`
 - [x] **단계 판정 규칙**(PLAN §5-6) — 실행 전 최상위 `required`·`properties` 대조(모르는 키 저장 거절).
       실행 후 `isError` · JSON 파싱 · `ok===false`/`error`/`errors[]`/`refused` · `save` non-null(빈 배열 포함)
-      네 조건. 하나라도 깨지면 정지, 빈 값 치환 금지. 세 층 + 게이트웨이 접두 분류를 런에 남긴다
+      네 조건. 하나라도 깨지면 정지, 빈 값 치환 금지. 세 층 + 게이트웨이 접두 분류를 실행에 남긴다
 - [x] 실패 카드는 `client.ts:47-60` errorDetail 관례 — `msg` 만 추려 한 줄, 원문은 접이식. pydantic 덤프
       그대로 띄우지 않는다
 - [x] 재개 — `failed`·`unknown` 단계부터, 앞 단계 결과 재사용(`reused_from_run_id`). `done` 은 절대
       재실행 안 함. `unknown` 인 쓰기 단계(`create_`·`submit_`·`ingest_`·`publish_`)는 사람 확인 뒤에만.
       재개는 소유자만, PAT 는 재개자 명의로 새로. 클라이언트 타임아웃·프로세스 종료는 `failed` 가 아니라
-      `unknown`. 기동 시 `running` 단계 → `unknown(stage=restart)`, 런 → `failed(stage=restart)`
+      `unknown`. 기동 시 `running` 단계 → `unknown(stage=restart)`, 실행 → `failed(stage=restart)`
 - [ ] 비멱등 재실행 경로 둘을 안다 — ① 게이트웨이가 예외(120초 포함) 뒤 재연결하고 **같은 인자로 한 번
       더** 부른다(`gateway.py:1929-1949`) ② 실행기가 먼저 포기하면 쓰기는 그 뒤 완료된다. 그래서 타임아웃
       ≥260초·`unknown` 규칙이다
 - [x] 취소 — `POST /runs/{id}/cancel`, 단계 경계에서 `cancelled`, 주체·시각 기록, portal-admin 우회 한 줄
 - [x] 결과 저장 — gzip BLOB + bytes + sha256, 2MB 초과는 프리뷰 4KB + `truncated`, 이미지는
-      `workbench-artifacts/` 파일, 본문 90일 뒤 비움·메타 영구. `save` 는 저장·절단 전에
+      `procedures-artifacts/` 파일, 본문 90일 뒤 비움·메타 영구. `save` 는 저장·절단 전에
 - [x] `notes`(4KB) 채우기 — 어댑터가 결과 속 경고·모델 출처를 뽑아 올린다
 - [x] ⚠ 게이트웨이 읽기 캐시 300초 — `list_`·`get_` 접두 도구는 같은 인자·사용자면 첫 응답이 그대로 오고
-      0건도 캐시된다. 상태 조회 단계는 캐시 접두 이름을 **저장 시점에 거절**. 런 화면에 "직전 비캐시 호출 =
+      0건도 캐시된다. 상태 조회 단계는 캐시 접두 이름을 **저장 시점에 거절**. 실행 화면에 "직전 비캐시 호출 =
       X" 를 남긴다(MCP 응답만으로는 hit 를 알 수 없다)
 - [x] **시간 정책**(PLAN §5-10) — 단계마다 `expect` 를 선언하고 `job` 은 저장 거절. `warmup: true`
       단계는 한 번 먼저 불러 결과를 버리고 **타임아웃이 나도 실패로 안 친다**(카탈로그 검색은 세션
       첫 호출에 **120.3초**, 이후 0.1초 — 상한 120초라 첫 호출이 잘린다). 실행 화면은 시작 전에
-      "보통 N초 걸립니다" 를 런 기록 p95 로 보이고, 선언과 실측이 어긋나면 화면이 말한다
+      "보통 N초 걸립니다" 를 실행 기록 p95 로 보이고, 선언과 실측이 어긋나면 화면이 말한다
 - [x] `slow` 단계가 도는 동안 **같은 백엔드에 다른 단계를 걸지 않는다** — 재연결이 나면 그 백엔드의
-      다른 런까지 끊긴다
-- [x] 감사 — 런 기록이 정본(append-only). 게이트웨이 원장과는 시각·도구·백엔드 근사 대조만
-- [x] `workbench_max_steps` 는 저장 시점 거절(금지 도구 검사와 같은 자리)
-- → 검증: (1) 존재하지 않는 도구명 레시피가 1단계에서 정지, `error='unknown tool: …'`, `save` 미실행
+      다른 실행까지 끊긴다
+- [x] 감사 — 실행 기록이 정본(append-only). 게이트웨이 원장과는 시각·도구·백엔드 근사 대조만
+- [x] `procedures_max_steps` 는 저장 시점 거절(금지 도구 검사와 같은 자리)
+- → 검증: (1) 존재하지 않는 도구명 절차가 1단계에서 정지, `error='unknown tool: …'`, `save` 미실행
   (2) `predict_sed` 에 `sample:{ap_cx:"x"}` 가 isError=false 인데도 정지 (3) nginx :8088 경유로 60초
   넘는 단계(예: `list_materials`)가 504 없이 폴링으로 완료 — 8723 직접 호출로는 안 보인다
-  (4) 재생 뒤 `gateway.log` 의 세션 생성·종료 건수가 같이 는다 (5) RA 단계 런의 `audit.jsonl` 에
+  (4) 재생 뒤 `gateway.log` 의 세션 생성·종료 건수가 같이 는다 (5) RA 단계 실행의 `audit.jsonl` 에
   `as-conn:<email>` 이 찍힌다
 
 ### 화면
-- [x] 워크벤치(빈 런) — **진입점**. 도구 고르기 → 인자 → 실행 → 결과, 한 단계씩
-- [x] 도구 고르기 데이터 — `GET /workbench-api/tools`: 사용자 PAT `tools/list`(권한 필터·`inputSchema`
+- [x] 절차(빈 실행) — **진입점**. 도구 고르기 → 인자 → 실행 → 결과, 한 단계씩
+- [x] 도구 고르기 데이터 — `GET /procedures-api/tools`: 사용자 PAT `tools/list`(권한 필터·`inputSchema`
       정본) + 무인증 `/tools-map` 의 `apps`·`areas`·`area_meta` 라벨. `/tools-map` 만 쓰면 못 부르는
       도구까지 보여 403 이 난다. `ToolAreaChips`·`toolAreasOf` 재사용, `ToolCatalogBlock` 은 `useChat`
       결합이라 안 씀. 캐시는 없거나 ≤60초
 - [x] 인자 입력 2단 — `properties` 있으면 타입별 위젯 + required 표시, 속성 없는 object/array(44/465)는
       원문 JSON textarea + 도구 설명 접이식. 프론트 검증 없이 서버 에러를 '필드명 → 메시지' 로
-- [x] 레시피 목록 / 상세 / 판본 / 런 이력(내 것만) / 실행(변수 폼 → 계획 모드 목록 → 진행 → 게이트)
-- [x] **"레시피로 저장"** — 보낸 인자를 잎 단위 트리로 펼쳐 클릭으로 변수화(key·label·type 은 잎의 JSON
+- [x] 절차 목록 / 상세 / 판본 / 실행 이력(내 것만) / 실행(변수 폼 → 계획 모드 목록 → 진행 → 게이트)
+- [x] **"절차로 저장"** — 보낸 인자를 잎 단위 트리로 펼쳐 클릭으로 변수화(key·label·type 은 잎의 JSON
       타입에서), 결과 트리에서 클릭으로 `save` 경로 생성, JSON 아니면 '추출 불가' 표시. **상수로 남는
-      인자를 전부 나열해 확인**(과제 ID·워크스페이스·본문이 공유 레시피에 박힌다). 키가
+      인자를 전부 나열해 확인**(과제 ID·워크스페이스·본문이 공유 절차에 박힌다). 키가
       `token|secret|password|authorization|api_key|cookie` 이거나 URL userinfo 가 든 값은 상수 저장 거절
       (변수·앞 단계 `save` 만 허용). `path|local_path|file_path|url` 키(10/465)와 24-hex·이메일 꼴 값은
       기본을 변수로 올린다
-- [x] 재생 전 "되돌리기 어려운 단계 N개" 목록 · 게이트 카드에 실제 인자와 직전 결과 · 확인 대기 런 상단
-- [ ] 레시피 YAML export/import(dev → cae00 이관 경로)
+- [x] 재생 전 "되돌리기 어려운 단계 N개" 목록 · 게이트 카드에 실제 인자와 직전 결과 · 확인 대기 실행 상단
+- [ ] 절차 YAML export/import(dev → cae00 이관 경로)
 - [x] 레이아웃 — 루트는 `.container`(ChatDock 자리 예약). 고정 액션 바는 우하단 비우고 상단·좌측.
-      `AppShell` 은 손대지 않는다. `WorkbenchContext` 는 `/workbench/*` 요소 안, `useChat` 안 씀,
+      `AppShell` 은 손대지 않는다. `ProceduresContext` 는 `/procedures/*` 요소 안, `useChat` 안 씀,
       localStorage 는 입력 중 인자 초안에만
 - [x] 실패 카드·재개 경고(위 실행기 항목)
-- → 검증: 빈 런에서 `list_projects` → 저장 → 변수 바꿔 재생이 브라우저에서 된다
+- → 검증: 빈 실행에서 `list_projects` → 저장 → 변수 바꿔 재생이 브라우저에서 된다
 
 ### 접점 (챗·심의 0줄)
-- [x] `backend/app/main.py` — import + `include_router(prefix="/workbench-api")`. **`:156`
+- [x] `backend/app/main.py` — import + `include_router(prefix="/procedures-api")`. **`:156`
       `if settings.serve_frontend:` 블록보다 위** — 뒤에 두면 GET 이 `index.html` 로 먹힌다(200 text/html 로
       조용히 실패, POST 는 도달). dev 에서 `SERVE_FRONTEND` 없이 uvicorn 만 띄우면 안 드러난다 —
       배포 인스턴스(8723)에서 GET 으로 확인
-- [x] `frontend/src/App.tsx` 라우트 1개 `"/workbench/*"`(자식 `recipes/:id`·`runs/:id`) ·
-      `AppHeader.tsx` 메뉴 1개 · `state/WorkbenchContext.tsx`
-- [x] `backend/config/access.yaml` `features:` 에 `workbench` + **모든 라우트에 `ensure(principal,
-      "feat:workbench")`**. 실행 라우트는 추가로 `owner_sub == principal.subject`
-- [x] `frontend/vite.config.ts:18-26` 프록시 `'/workbench-api'` 1줄
+- [x] `frontend/src/App.tsx` 라우트 1개 `"/procedures/*"`(자식 `procedures/:id`·`runs/:id`) ·
+      `AppHeader.tsx` 메뉴 1개 · `state/ProceduresContext.tsx`
+- [x] `backend/config/access.yaml` `features:` 에 `procedures` + **모든 라우트에 `ensure(principal,
+      "feat:procedures")`**. 실행 라우트는 추가로 `owner_sub == principal.subject`
+- [x] `frontend/vite.config.ts:18-26` 프록시 `'/procedures-api'` 1줄
 - [x] SSE 를 내지 않는다 — 내면 nginx **두 파일**(`hwax.conf.tmpl:74-93` + `gen-nginx-conf.sh:173-184`)을
       같이 고쳐야 한다. 폴링으로 충분하다
 - [ ] ⚠ `systems.yaml` 타일을 만들면 `access.yaml` `platforms:` 에도(`test_access_control.py:28-36` 강제)
 - [x] `backend/config/changelog.yaml` 에 사용자가 겪는 변화
 - [x] `git diff backend/requirements.txt`·`frontend/package.json` 이 **비어 있다**
-- → 검증: `git diff --stat` 에 챗·심의 파일 0개. `curl -s :8723/workbench-api/recipes` 가 JSON(HTML 아님)
+- → 검증: `git diff --stat` 에 챗·심의 파일 0개. `curl -s :8723/procedures-api/procedures` 가 JSON(HTML 아님)
 
 ### 테스트
-- [x] `backend/tests/test_workbench_contract.py` — (1) `{{var}}` 치환·`required`·enum `values` (2) `save` 값이
+- [x] `backend/tests/test_procedures_contract.py` — (1) `{{var}}` 치환·`required`·enum `values` (2) `save` 값이
       다음 단계 인자로 (3) must-gate·deny·비밀 키·미지 인자·`dry_run` 미지원 도구 → **저장 거절**
-      (4) `gate: human` 정지, 실패 시 단계·이유 기록, 다섯 실패 모양 각각 정지 (5) 런이 판본 id 를 박는다
+      (4) `gate: human` 정지, 실패 시 단계·이유 기록, 다섯 실패 모양 각각 정지 (5) 실행이 판본 id 를 박는다
       (6) 기동 시 `running` → `unknown/failed(stage=restart)`. 게이트웨이는 자기 `AsyncClient` 에
       `httpx.MockTransport`(`test_access_control.py:134` 선례)
-- [x] 권한 전수 — `app.routes` 에서 `/workbench-api` 접두 라우트를 전부 뽑아 `feat:workbench` 없는 계정으로
+- [x] 권한 전수 — `app.routes` 에서 `/procedures-api` 접두 라우트를 전부 뽑아 `feat:procedures` 없는 계정으로
       모두 403(열거는 `HWAXRisk/backend/tests/test_client_contract.py:33` 방식). 손으로 고른 몇 개가 아니라
       **전수**여야 나중에 단 라우트가 조용히 열리지 않는다
-- [ ] 첫 레시피 픽스처(`project_id` 변수 → `list_parts` → `create_report_draft`)가 스키마 검증 통과
+- [ ] 첫 절차 픽스처(`project_id` 변수 → `list_parts` → `create_report_draft`)가 스키마 검증 통과
 - [ ] `cd backend && pytest` 전체 초록 뒤에만 S1 완료(전역 §8)
 
 ### 검증 (S1 전체)
 - [ ] **챗·심의 파일 0개 변경**을 diff 로 확인
-- [ ] dev 첫 레시피 완주 → 저장 → 변수 바꿔 재생(`create_report_draft` 는 `dry_run=true`)
+- [ ] dev 첫 절차 완주 → 저장 → 변수 바꿔 재생(`create_report_draft` 는 `dry_run=true`)
 - [ ] 챗 동시 실행에서 429·지연 없음
-- [ ] §6-1 의 네 수가 `GET /workbench-api/stats` 또는 sqlite 질의로 나온다
-- [ ] cae00 — `update-forges.sh chat` 뒤 `/workbench` 페이지가 실제로 뜬다(dist 가 Drive 를 거쳤는지)
+- [ ] §6-1 의 네 수가 `GET /procedures-api/stats` 또는 sqlite 질의로 나온다
+- [ ] cae00 — `update-forges.sh chat` 뒤 `/procedures` 페이지가 실제로 뜬다(dist 가 Drive 를 거쳤는지)
 
 ## S2 · R1 적층 굴곡 수명 — **dev 완주 첫 실전** (S1 만 선행)
 
-레시피 전문은 [recipes.md#r1](recipes.md). 여기서 처음 증명되는 것 — **판단 단계 없이 직선
+절차 전문은 [examples.md#r1](examples.md). 여기서 처음 증명되는 것 — **판단 단계 없이 직선
 체인이 끝까지 간다.** `save` 두 줄이 도구 넷을 잇는다.
 
-- [ ] 레시피 작성 — `part_info` → `thickness_report` → `analyze_laminate` →
+- [ ] 절차 작성 — `part_info` → `thickness_report` → `analyze_laminate` →
       `solve_prescribed_curvature` → `recover_ply_stresses` → `estimate_fatigue_life` →
       `create_report_draft`(gate)
 - [ ] ★체인의 핵심 — `solve_prescribed_curvature` 의 `equivalent_loads` 를 `save` 해
       `recover_ply_stresses` 의 `loads` 로 **그대로** 넘긴다. 손으로 `(z−z_ns)/R` 을 계산하지 않는다
 - [ ] **`M = D·κ` 지름길을 쓰지 않는다** — 도구 설명이 비대칭 스택에서 **실측 +244.8% 과대**라고
-      못 박는다. 이 한 줄이 워크벤치의 존재 이유다
+      못 박는다. 이 한 줄이 절차 기능의 존재 이유다
 - [ ] 사람이 채우는 변수 넷에 `why` 를 적는다 — `bend_radius`(StepForge 형상 도구에 곡률·반경이
       **없다**) · `width_mode`(free/constrained 가 **9.6%** 갈린다) · `laminate`(StepForge 재질은
       LS-DYNA 카드 쪽이라 **형식이 다르다**) · `cycles_N`
@@ -231,9 +231,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 검증: dev 에서 완주 → 저장 → `bend_radius` 만 바꿔 재생. 층별 응력·수명이 R 에 따라 변한다
 - [ ] 검증: 물성 없는 ply 를 일부러 넣어 **W120 이 `notes` 에 올라오는지**
 
-## S3 · R2 낙하·충격 — 제출/회수 두 레시피 (S1 만 선행)
+## S3 · R2 낙하·충격 — 제출/회수 두 절차 (S1 만 선행)
 
-레시피 전문은 [recipes.md#r2](recipes.md). 여기서 처음 증명되는 것 — **잡 제출을 사람 확인
+절차 전문은 [examples.md#r2](examples.md). 여기서 처음 증명되는 것 — **잡 제출을 사람 확인
 아래 두고, 제출과 회수를 가른다**(드라이버 walltime **167시간**).
 
 ### R2a 제출 (dev 는 `dry_run` 까지)
@@ -247,19 +247,19 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       tonne-mm(7.85e-9, 2.0e5). `scenario_overrides` 물성은 **무변환 기입**된다. 변수 label 에 단위를 박는다
 - [ ] ⚠ enum 저장 시점 검증 — `generation_mode` 오타는 **조용히 기본값 처리**된다
 - [ ] ⚠ 전각도 `scenario_overrides` 에 `mode` 키가 섞이면 **조용히 부분충격으로 오실행**(사고 `799`)
-- [ ] `model_path` 는 공유 FS 절대경로 — 파일 반입은 레시피 밖(§4)
+- [ ] `model_path` 는 공유 FS 절대경로 — 파일 반입은 절차 밖(§4)
 - [ ] ⚠ 미확인 — `smarttwin_submit` 반환 모양(제출계라 안 불렀다). `save` 경로는 첫 실행에서 확정한다
 
 ### R2b 회수 (cae00)
 - [ ] `slurm_job_results` → `report_summary` → `report_worst_cases` → `report_directional` →
       `report_part_risk` → `report_findings` → `create_report_draft`(gate)
 - [ ] `report_id` 를 **변수로 받는다** — 리포트 HTML 이 8~10MB 라 MCP 로 못 나른다. 반입은 REST
-      intake(512MB)이고 레시피 밖이다
+      intake(512MB)이고 절차 밖이다
 - [ ] `sphere`/`impact` 는 리포트 `kind` — `sim_type` 과 짝이다. `ingest_report` 가 자동 판별한다
 - [ ] ⚠ **부분충격은 scenario 첨부를 생략**한다 — 파서가 `scenarios` 배열을 요구하는데 평탄
       구조라 `ScenarioParseError` 로 **인제스트 전체가 실패**한다
 - [ ] ⚠ 구버전 SIF 는 `impact_report` 를 **`exit 0` 으로 조용히 건너뛴다** — 산출이 없는데 성공으로
-      보인다. 런 기록에 산출 파일 유무를 남긴다
+      보인다. 실행 기록에 산출 파일 유무를 남긴다
 - [ ] 과제 메타(`project`·`dev_rev`·`variation`·`doe`·`focus`)를 안 넣으면 `find_reports` 로 다시 못 찾는다
 - [ ] ⚠ **dev 에서 검증 불가** — `report_corpus` 가 0건이다. 계약만 확인하고 실동작은 cae00
 - [ ] 이 판독 도구 묶음이 **심의 좌석에 주는 도구 목록**이다(PLAN §6 심의 경계). 제출 계열은 좌석에서
@@ -267,7 +267,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 ## S4 · R3 ODB 어댑터 + 열충격 SED (S0 선행)
 
-레시피 전문은 [recipes.md#r3](recipes.md). 여기서 처음 증명되는 것 — **공급자 없는 값이
+절차 전문은 [examples.md#r3](examples.md). 여기서 처음 증명되는 것 — **공급자 없는 값이
 사람이 채우는 칸으로 내려간다**(§5-1).
 
 - [ ] 고정물로 어댑터 작성 — odb-hub 산출 → `SedInput`. **키 15개(필수 10·선택 5) 외엔 `sample` 에 넣지
@@ -281,22 +281,22 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 단위 환산 — `ball_size` 는 µm 정수 문자열, 좌표·치수는 mm, 두 중심은 같은 좌표계
 - [ ] 상태 조회 단계가 캐시 접두 이름이면 저장 거절 — 비캐시 이름(`job_status` 류)만
 - [ ] dev 완주 시험 — ODB 단계가 "사람이 채우는 칸" 으로 내려간 상태
-- [ ] 열충격 레시피를 export 해 `docs/workbench/fixtures/` 에 커밋 → cae00 에서 import
+- [ ] 열충격 절차를 export 해 `docs/procedures/fixtures/` 에 커밋 → cae00 에서 import
 - [ ] **cae00 실주행 검증** — 여기서만 진짜 확인된다. 허브가 사용자별 스코프면 "토큰 주인 시야로만 돈다"
       를 context-notes 에 적는다
 - [ ] 워피지 — `copper_imbalance_pct`·`stackup_asymmetry`(산식은 dev 에서 정한다)·`board_thickness_mm` +
       선택 `diagonal_mm`·`peak_temp_c` 가 같은 다리로 열리는지
 - [ ] 보고서 경로 — `create_report_draft`(gate) → `suggest_report_tags`(후보만) → gate → `add_report_tags`.
-      `create_report_from_run` 은 못 쓴다(적재 런 `status=ready` 전용)
+      `create_report_from_run` 은 못 쓴다(적재 실행 `status=ready` 전용)
 - [ ] `pcb_warpage_surrogate` 의 합성 데이터 경고를 `notes` 로
 - [ ] HWAXRisk `odb-adapter-contract.md` 4도구와 이름이 다르면 계약 개정을 HWAXRisk 쪽 일감으로
 
 ## S5 · 일괄 재생 (S2~S4 중 하나만 서면 된다)
 
 첫 실사용례가 이미 둘 있다 — **R1 의 굽힘반경 스윕**(R_min·R_max 유불리)과 **R2 의 각도 프리셋
-비교**. 조건 분기로 보이던 자리가 "같은 레시피 × 변수 N개" 였다.
+비교**. 조건 분기로 보이던 자리가 "같은 절차 × 변수 N개" 였다.
 
-- [ ] 레시피 1개 × 과제 N건 → 비교표 — `inputs_json` 을 그대로 열로 펴고(단계 인자 역파싱 금지) `notes`
+- [ ] 절차 1개 × 과제 N건 → 비교표 — `inputs_json` 을 그대로 열로 펴고(단계 인자 역파싱 금지) `notes`
       경고 유무를 열로
 - [ ] **배치는 첫 `gate: human` 직전까지** 돌고 표를 만든다. 이후는 표에서 골라 개별 재개(초안 N개 금지)
 - [ ] 동시 상한 — "같은 백엔드에 동시 N". 계획 모드로 시작
@@ -316,9 +316,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 이름·코드로도 찾기(StepForge 가 이미 그렇게 한다)
 - [ ] 검증: 실제 과제 하나로 앱을 오가며 키가 안 끊기는지
 
-## S7 · 챗 → 레시피 제안 (선택, 관측 개선 선행)
+## S7 · 챗 → 절차 제안 (선택, 관측 개선 선행)
 
-관측 개선 — 워크벤치와 무관하게 그 자체로 값어치가 있다.
+관측 개선 — 절차 기능과 무관하게 그 자체로 값어치가 있다.
 - [ ] `on_tool_start`/`on_tool_end` 의 `event["run_id"]` 를 status 에 싣는다(`HWAXAgentServer/app.py:2607`·
       `:2633` — **이미 손에 있는 값**)
 - [ ] 인자 절단을 하나로 통일(지금 네 갈래 · `deliberation.py:2361` 의 `…#sha1[:6]` 가 유일한 선례)
@@ -328,14 +328,14 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       경유 호출도 같은 기준
 
 그 뒤에
-- [ ] 런 기록 → 레시피 초안 제안
+- [ ] 실행 기록 → 절차 초안 제안
 - [ ] 어느 인자가 변수이고 상수인지 사람이 확정. **자동 저장 금지**
-- [ ] 런의 '챗으로 가져가기' 는 `conv_store.create_with_messages(kind='workbench')` 로 잇되 그때
-      `routes.py:194` Literal 과 `ConvKind` 를 함께 넓힌다(v1 런은 대화 저장소에 쓰지 않는다)
+- [ ] 실행의 '챗으로 가져가기' 는 `conv_store.create_with_messages(kind='procedures')` 로 잇되 그때
+      `routes.py:194` Literal 과 `ConvKind` 를 함께 넓힌다(v1 실행은 대화 저장소에 쓰지 않는다)
 
 ## S8 · 리스크 패턴화 (가장 뒤)
 
-- [ ] **런 → 심의 다리** — 런 상세 "심의로 넘기기". 단계 기록을 `[{source, tool, args, result}]` 로 바꿔
+- [ ] **실행 → 심의 다리** — 실행 상세 "심의로 넘기기". 단계 기록을 `[{source, tool, args, result}]` 로 바꿔
       `POST /agent/conversations` → `POST /agent/chat`(`'/심의 ' + 화두`, `delib_opts.evidence`,
       `chair_template: "risk-review"`). 새 엔드포인트 아님. 상한 40건·결과 150,000자·**인자 1,200자**
 - [ ] **심의 좌석 도구는 읽기 전용 판독 도구만** — `report_summary`·`report_worst_cases`·

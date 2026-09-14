@@ -1,4 +1,4 @@
-// 런의 단계 목록 — 게이트 카드·실패 카드·결과 펼치기
+// 실행의 단계 목록 — 게이트 카드·실패 카드·결과 펼치기
 //
 // 실패 카드는 포털 관례(client.ts errorDetail)를 따른다 — 한 줄로 추리고 원문은 접어 둔다.
 // pydantic 덤프를 그대로 띄우지 않고, 사용자가 넣은 값(input_value)은 화면에 안 쓴다.
@@ -8,7 +8,7 @@ import {
   stepResult,
   type RunDetail,
   type StepRow,
-} from '../../api/workbench.api';
+} from '../../api/procedures.api';
 
 const STATE_LABEL: Record<string, string> = {
   pending: '대기',

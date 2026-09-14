@@ -54,7 +54,7 @@ else
     [ -d "$d" ] && DATA_BINDS+=(--bind "$d:$d")
   done
   for k in USER_STORE_PATH CONV_STORE_PATH TOKEN_STORE_PATH AGENT_AUDIT_LOG_PATH JWT_KEYS_DIR DELIB_ARCHIVE_ROOT \
-           WORKBENCH_STORE_PATH WORKBENCH_ARTIFACT_ROOT; do
+           PROCEDURES_STORE_PATH PROCEDURES_ARTIFACT_ROOT; do
     [ -n "${!k:-}" ] && DATA_ENVS+=(--env "$k=${!k}")
   done
   "$APPTAINER" instance start \

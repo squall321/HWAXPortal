@@ -1,6 +1,6 @@
-"""실행기 — 레시피를 한 단계씩 돌리고 런에 남긴다. **챗과 자원을 공유하지 않는다.**
+"""실행기 — 절차를 한 단계씩 돌리고 실행에 남긴다. **챗과 자원을 공유하지 않는다.**
 
-격리가 이 파일의 절반이다(PLAN §3). 자기 세마포어·자기 httpx 클라이언트·런당 MCP 세션 하나.
+격리가 이 파일의 절반이다(PLAN §3). 자기 세마포어·자기 httpx 클라이언트·실행당 MCP 세션 하나.
 
 게이트웨이 호출은 `agent/upload.py:mcp_call` 의 **방식만** 따르고 **베끼지 않는다**. 그 함수는
 JSON-RPC `error` 만 보고 `result.isError` 를 버리며, `content[0]` 만 취하고, 파싱 실패를
@@ -18,15 +18,15 @@ import time
 
 import httpx
 
-from app.workbench import judge as J
-from app.workbench import template
-from app.workbench.models import RecipeSpec, Step, schema_fingerprint
-from app.workbench.store import WorkbenchStore
+from app.procedures import judge as J
+from app.procedures import template
+from app.procedures.models import ProcedureSpec, Step, schema_fingerprint
+from app.procedures.store import ProceduresStore
 
 logger = logging.getLogger(__name__)
 
 # 실행기 클라이언트는 게이트웨이(120초)보다 **늦게** 포기한다 — 재연결 재시도 한 번까지 덮는다.
-# 먼저 포기하면 쓰기는 그 뒤 완료되고 런에는 unknown 만 남아 사람이 확인해야 한다.
+# 먼저 포기하면 쓰기는 그 뒤 완료되고 실행에는 unknown 만 남아 사람이 확인해야 한다.
 CLIENT_TIMEOUT = 260.0
 # 단계 자체의 상한. 게이트웨이 120초보다 짧게 둬 우리가 먼저 끊고 기록을 남긴다.
 EXPECT_TIMEOUT = {"fast": 30.0, "slow": 110.0, "job": 110.0}
@@ -44,7 +44,7 @@ def _last_data(text: str) -> dict:
 
 
 class GatewaySession:
-    """런 하나에 MCP 세션 하나. 종료·정지·예외 시 `finally` 에서 닫는다.
+    """실행 하나에 MCP 세션 하나. 종료·정지·예외 시 `finally` 에서 닫는다.
 
     `mcp_call` 은 호출마다 세션을 만들고 **안 닫는다.** 게이트웨이 SDK 는 세션 유휴 만료가
     없어서 폴링처럼 반복 호출하면 챗과 공유하는 게이트웨이에 세션이 쌓인다.
@@ -66,7 +66,7 @@ class GatewaySession:
         r = await self._c.post(self.url, headers=self._hdr(pat), json={
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {"protocolVersion": "2024-11-05", "capabilities": {},
-                       "clientInfo": {"name": "portal-workbench", "version": "1"}}})
+                       "clientInfo": {"name": "portal-procedures", "version": "1"}}})
         if r.status_code != 200:
             raise RunnerError(f"게이트웨이 초기화 실패 ({r.status_code})")
         self.sid = r.headers.get("mcp-session-id") or None
@@ -78,8 +78,8 @@ class GatewaySession:
             return
         try:
             await self._c.request("DELETE", self.url, headers=self._hdr(pat))
-        except Exception:  # noqa: BLE001 — 닫기 실패로 런을 실패시키지 않는다
-            logger.warning("워크벤치 MCP 세션 닫기 실패 sid=%s", self.sid, exc_info=True)
+        except Exception:  # noqa: BLE001 — 닫기 실패로 실행을 실패시키지 않는다
+            logger.warning("절차 MCP 세션 닫기 실패 sid=%s", self.sid, exc_info=True)
         finally:
             self.sid = None
 
@@ -120,13 +120,13 @@ class GatewaySession:
         return out
 
 
-class WorkbenchRunner:
-    """런 하나를 끝까지(또는 게이트·실패까지) 돌린다.
+class ProceduresRunner:
+    """실행 하나를 끝까지(또는 게이트·실패까지) 돌린다.
 
     `mint_pat`·`is_active` 는 주입받는다 — 시험이 keystore·user_store 를 안 세워도 되게.
     """
 
-    def __init__(self, *, settings, store: WorkbenchStore, mint_pat, is_active=None,
+    def __init__(self, *, settings, store: ProceduresStore, mint_pat, is_active=None,
                  client: httpx.AsyncClient | None = None) -> None:
         self.settings = settings
         self.store = store
@@ -134,13 +134,13 @@ class WorkbenchRunner:
         self.is_active = is_active or (lambda _email: True)
         self.gateway_url = getattr(settings, "mcp_gateway_url", None) or \
             "http://127.0.0.1:9110"
-        n = int(getattr(settings, "workbench_concurrency", 2) or 2)
+        n = int(getattr(settings, "procedures_concurrency", 2) or 2)
         # 챗의 agent_semaphore(64)를 **재사용하지 않는다** — 넘치면 큐 없이 429 라 챗이 막힌다.
         self.sem = asyncio.Semaphore(n)
         self._own_client = client is None
         self._client = client or httpx.AsyncClient(timeout=CLIENT_TIMEOUT)
         # slow 단계가 도는 동안 같은 백엔드에 다른 단계를 걸지 않는다 — 재연결이 나면
-        # 그 백엔드의 다른 런까지 끊긴다.
+        # 그 백엔드의 다른 실행까지 끊긴다.
         self._backend_locks: dict[str, asyncio.Lock] = {}
 
     async def aclose(self) -> None:
@@ -153,13 +153,13 @@ class WorkbenchRunner:
             lk = self._backend_locks[backend] = asyncio.Lock()
         return lk
 
-    # ── 런 ────────────────────────────────────────────────────────────────
-    async def run(self, *, run_id: str, spec: RecipeSpec, principal, scope: dict | None = None,
+    # ── 실행 ────────────────────────────────────────────────────────────────
+    async def run(self, *, run_id: str, spec: ProcedureSpec, principal, scope: dict | None = None,
                   start_at: int = 0) -> dict:
         """`start_at` 부터 단계를 돈다. 게이트·실패·취소에서 멈추고 상태를 남긴다."""
         run = self.store.get_run(run_id)
         if run is None:
-            raise RunnerError(f"런이 없다: {run_id}")
+            raise RunnerError(f"실행이 없다: {run_id}")
         mode = run.get("mode") or "plan"
         scope = dict(scope or run.get("inputs") or {})
         scope.setdefault("run_id", run_id)
@@ -169,7 +169,7 @@ class WorkbenchRunner:
         if mode == "plan":
             return self._plan(run_id, spec, scope)
 
-        async with self.sem:  # 게이트에서 멈춘 런은 이 블록 밖이라 슬롯을 쥐지 않는다
+        async with self.sem:  # 게이트에서 멈춘 실행은 이 블록 밖이라 슬롯을 쥐지 않는다
             sess = GatewaySession(self.gateway_url, self._client)
             pat = self.mint_pat(principal, run_id, start_at)
             if not pat:
@@ -190,7 +190,7 @@ class WorkbenchRunner:
                 except Exception:  # noqa: BLE001
                     logger.warning("세션 정리 실패 run=%s", run_id, exc_info=True)
 
-    def _plan(self, run_id: str, spec: RecipeSpec, scope: dict) -> dict:
+    def _plan(self, run_id: str, spec: ProcedureSpec, scope: dict) -> dict:
         """계획 모드 — 게이트웨이를 **부르지 않는다.** 부를 호출 목록만 보여 준다."""
         calls, unknown = [], []
         known = set(scope)
@@ -209,7 +209,7 @@ class WorkbenchRunner:
         self.store.set_run_state(run_id, "done", stage="plan", ended=True)
         return {"state": "done", "stage": "plan", "calls": calls, "unverified": unknown}
 
-    def _check_drift(self, spec: RecipeSpec, catalog: dict) -> list[str]:
+    def _check_drift(self, spec: ProcedureSpec, catalog: dict) -> list[str]:
         """도구에 판본이 없으니 **변화를 잡아 멈추는 것까지** 한다(PLAN §5-8)."""
         out = []
         for i, st in enumerate(spec.steps, 1):
@@ -277,7 +277,7 @@ class WorkbenchRunner:
                 await sess.call("invoke_tool", {"name": st.alias, "arguments": args},
                                 pat, timeout)
             except Exception:  # noqa: BLE001
-                logger.info("워크벤치 워밍업 무응답 — 그대로 진행 tool=%s", st.tool)
+                logger.info("절차 워밍업 무응답 — 그대로 진행 tool=%s", st.tool)
             return None
 
         self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
