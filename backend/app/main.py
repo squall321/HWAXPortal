@@ -196,8 +196,8 @@ if settings.app_env == "dev":
 if settings.serve_frontend:
     from pathlib import Path
 
-    from fastapi import Request
-    from fastapi.responses import FileResponse
+    from fastapi import Request, Response
+    from fastapi.responses import FileResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
 
     from app.config import BACKEND_DIR
@@ -211,11 +211,25 @@ if settings.serve_frontend:
     # 계속 로드해 새 배포가 사용자에게 반영되지 않는다. 해시 번들(/assets)은 캐시해도 안전.
     _NO_CACHE = {"Cache-Control": "no-cache"}
 
+    # 없는 **API** 경로는 SPA 로 흘리지 않는다. 그냥 두면 `/auth/오타` 가 200 + HTML 로
+    # 돌아오고, 호출부는 res.ok 를 보고 성공으로 알았다가 JSON 파싱에서 엉뚱한 곳에서
+    # 터진다 — "실패가 정상 응답과 똑같이 생긴" 바로 그 모양이다.
+    # 접두사는 손으로 적지 않고 **등록된 라우트에서 유도**한다(라우터를 더해도 안 어긋난다).
+    # SPA 경로(/login·/deliberate·/procedures·/apps·/updates·/tokens·/launch·/admin·
+    # /risk·/access)와는 한 칸도 겹치지 않아 깊은 링크 새로고침은 그대로 산다.
+    _API_SEGMENTS = frozenset(
+        getattr(r, "path", "").split("/")[1]
+        for r in app.routes
+        if getattr(r, "path", "").startswith("/") and "{full_path" not in getattr(r, "path", "")
+    ) - {""}
+
     @app.get("/{full_path:path}", include_in_schema=False)
-    async def spa_fallback(full_path: str, request: Request) -> FileResponse:
+    async def spa_fallback(full_path: str, request: Request) -> Response:
         # API routers are registered above and match first; this catches SPA routes only.
         candidate = (dist / full_path).resolve()
         if full_path and candidate.is_file() and dist in candidate.parents:
             hdrs = _NO_CACHE if candidate.name == "index.html" else None
             return FileResponse(candidate, headers=hdrs)  # real static file (favicon, etc.)
+        if full_path.split("/")[0] in _API_SEGMENTS:
+            return JSONResponse({"detail": f"없는 API 경로입니다: /{full_path}"}, status_code=404)
         return FileResponse(dist / "index.html", headers=_NO_CACHE)  # SPA route → client router
