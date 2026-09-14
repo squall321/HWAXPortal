@@ -3,13 +3,15 @@
 // 루트는 `.container` 다 — AppShell 의 ChatDock 이 열릴 때 자리를 비켜 주는 클래스다.
 // 우하단은 비워 둔다(닫힌 독의 💬 FAB 가 거기 고정이라 겹친다).
 import { NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
 import { useProcedures } from '../../state/ProceduresContext';
 import {
   cancelRun,
   getProcedure,
+  importSeed,
+  listSeeds,
   listProcedures,
   listRuns,
   replayProcedure,
@@ -17,6 +19,7 @@ import {
   type ProcedureRow,
   type ProcedureVersion,
   type RunSummary,
+  type SeedRow,
 } from '../../api/procedures.api';
 import BuildView from './BuildView';
 import { RunSteps } from './RunSteps';
@@ -75,21 +78,16 @@ function ProcedureList() {
   const [rows, setRows] = useState<ProcedureRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     listProcedures()
       .then((r) => setRows(r.procedures))
       .catch((e: Error) => setErr(e.message));
   }, []);
+  useEffect(() => reload(), [reload]);
 
   if (err) return <ErrorBanner message={err} />;
   if (!rows) return <Spinner label="절차를 불러오는 중…" />;
-  if (!rows.length)
-    return (
-      <p style={{ color: 'var(--muted)' }}>
-        아직 절차가 없습니다. <b>만들기</b> 탭에서 도구를 한 단계씩 돌린 뒤 "절차로 저장" 을
-        누르면 여기 쌓입니다.
-      </p>
-    );
+  if (!rows.length) return <EmptyWithSeeds onImported={reload} />;
 
   return (
     <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.5rem' }}>
@@ -104,6 +102,79 @@ function ProcedureList() {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** 절차가 하나도 없을 때 — 무엇을 만들 수 있는지 **실물로** 보여 준다. */
+function EmptyWithSeeds({ onImported }: { onImported: () => void }) {
+  const [seeds, setSeeds] = useState<SeedRow[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    listSeeds()
+      .then((r) => setSeeds(r.seeds))
+      .catch((e: Error) => setErr(e.message));
+  }, []);
+
+  const take = async (name: string) => {
+    setBusy(name);
+    setErr(null);
+    try {
+      await importSeed(name);
+      onImported();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: '1rem' }}>
+      <p style={{ color: 'var(--muted)', margin: 0 }}>
+        아직 저장된 절차가 없습니다. <b>만들기</b> 탭에서 도구를 한 단계씩 돌린 뒤 "절차로
+        저장" 을 누르면 여기 쌓입니다. 아래는 함께 오는 <b>정본 예제</b>입니다 — 가져와서
+        값만 채워 돌려 볼 수 있습니다.
+      </p>
+      {err && <ErrorBanner message={err} />}
+      {!seeds && <Spinner label="예제를 불러오는 중…" />}
+      {seeds?.map((s) => (
+        <section key={s.name} style={{ ...rowCard, alignItems: 'flex-start' }}>
+          <div style={{ display: 'grid', gap: '0.3rem', flex: '1 1 320px', minWidth: 0 }}>
+            <strong style={{ color: 'var(--fg)' }}>{s.title}</strong>
+            {s.broken ? (
+              <span style={{ color: '#e5534b', fontSize: '0.82rem' }}>
+                이 예제가 깨져 있습니다({s.broken}) — 가져올 수 없습니다.
+              </span>
+            ) : (
+              <>
+                <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+                  단계 {s.steps} · {s.backends?.join(' · ')}
+                  {s.gates?.length ? ` · 사람 확인 ${s.gates.length}곳` : ''}
+                </span>
+                {!!s.vars?.length && (
+                  <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem',
+                               color: 'var(--muted)', fontSize: '0.78rem' }}>
+                    {s.vars.filter((v) => v.why).slice(0, 3).map((v) => (
+                      <li key={v.key}>
+                        <b style={{ color: 'var(--fg)' }}>{v.label}</b> — {v.why}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
+          {!s.broken && (
+            <button type="button" style={primary} disabled={busy === s.name}
+                    onClick={() => take(s.name)}>
+              {busy === s.name ? '가져오는 중…' : '가져오기'}
+            </button>
+          )}
+        </section>
+      ))}
+    </div>
   );
 }
 

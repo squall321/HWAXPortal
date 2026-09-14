@@ -348,3 +348,68 @@ def test_tools_route_returns_the_catalog(user):
         assert len(t["schema_fp"]) == 16, "스키마 지문이 실려야 드리프트를 잡는다"
     finally:
         app.state.procedures_runner = None
+
+
+# ── 씨앗 절차 ────────────────────────────────────────────────────────────
+def test_seeds_list_the_bundled_examples(user):
+    """첫날 화면이 비어 있으면 무엇을 만들 수 있는지 모른다 — 씨앗이 그 자리다."""
+    c, h = user
+    got = c.get(f"{PREFIX}/seeds", headers=h).json()["seeds"]
+    r1 = next(s for s in got if s["name"] == "laminate-bend-life")
+    assert "broken" not in r1, f"씨앗이 깨져 있다: {r1}"
+    assert r1["steps"] == 7 and "create_report_draft" in r1["gates"]
+    assert "heax-step_forge" in r1["backends"]
+    # 사람이 채울 값은 **왜 물어보는지**가 있어야 한다
+    asked = [v for v in r1["vars"] if v["key"] != "project_id"]
+    assert asked and all(v["why"] for v in asked)
+
+
+def test_importing_a_seed_puts_it_in_my_procedures(user):
+    c, h = user
+    assert c.get(f"{PREFIX}/procedures", headers=h).json()["procedures"] == []
+    r = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h)
+    assert r.status_code == 201, r.text
+    assert r.json()["from_seed"] == "laminate-bend-life" and r.json()["version_no"] == 1
+
+    rows = c.get(f"{PREFIX}/procedures", headers=h).json()["procedures"]
+    assert len(rows) == 1 and "굴곡 수명" in rows[0]["title"]
+    v = c.get(f"{PREFIX}/procedures/{rows[0]['id']}", headers=h).json()
+    assert len(v["spec"]["steps"]) == 7
+    assert v["spec"]["steps"][0]["tool"] == "bend_profile"
+
+
+def test_imported_seed_is_a_normal_procedure(user):
+    """들어온 뒤에는 특별하지 않다 — 고치면 새 판본이다."""
+    c, h = user
+    pid = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h).json()["id"]
+    v = c.get(f"{PREFIX}/procedures/{pid}", headers=h).json()
+    spec = dict(v["spec"])
+    spec["steps"] = spec["steps"][:2]
+    r = c.post(f"{PREFIX}/procedures/{pid}/versions",
+               json={"title": spec["title"], "spec": spec}, headers=h)
+    assert r.status_code == 201 and r.json()["version_no"] == 2
+
+
+def test_seed_name_cannot_escape_the_directory(user):
+    c, h = user
+    for bad in ("../../etc/passwd", "..", "a/b", "Laminate", "x" * 80):
+        r = c.post(f"{PREFIX}/seeds/{bad}/import", headers=h)
+        assert r.status_code in (400, 404, 422), f"{bad} 가 {r.status_code} 로 통과했다"
+
+
+def test_unknown_seed_is_404(user):
+    c, h = user
+    assert c.post(f"{PREFIX}/seeds/nope/import", headers=h).status_code == 404
+
+
+def test_seed_import_goes_through_the_same_validation(user, tmp_path, monkeypatch):
+    """가져오기가 저장 시점 검증의 우회로가 되면 안 된다."""
+    from app.procedures import routes as R
+
+    bad = tmp_path / "bad-seed.yaml"
+    bad.write_text("title: 나쁜 씨앗\nsteps:\n  - backend: reportarchive\n"
+                   "    tool: publish_report\n", encoding="utf-8")
+    monkeypatch.setattr(R, "SEED_DIR", tmp_path)
+    c, h = user
+    r = c.post(f"{PREFIX}/seeds/bad-seed/import", headers=h)
+    assert r.status_code == 422 and "gate: human" in r.text

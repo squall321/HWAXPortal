@@ -121,6 +121,29 @@ export function listTools() {
   return get<{ count: number; tools: ToolInfo[] }>('/tools', '도구 목록을 불러오지 못했습니다.');
 }
 
+export type SeedRow = {
+  name: string;
+  title: string;
+  steps?: number;
+  vars?: { key: string; label: string; why?: string | null }[];
+  gates?: string[];
+  backends?: string[];
+  broken?: string;
+};
+
+/** 리포에 함께 오는 정본 예제 — 첫 화면이 비어 있지 않게 하는 자리. */
+export function listSeeds() {
+  return get<{ seeds: SeedRow[] }>('/seeds', '씨앗 절차를 불러오지 못했습니다.');
+}
+
+export function importSeed(name: string) {
+  return post<{ id: string; version_no: number; from_seed: string; warnings: string[] }>(
+    `/seeds/${encodeURIComponent(name)}/import`,
+    {},
+    '씨앗을 가져오지 못했습니다.',
+  );
+}
+
 export function listProcedures() {
   return get<{ procedures: ProcedureRow[] }>('/procedures', '절차를 불러오지 못했습니다.');
 }

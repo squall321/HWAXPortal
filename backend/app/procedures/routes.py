@@ -15,6 +15,10 @@
 
 import asyncio
 import logging
+import re
+from pathlib import Path
+
+import yaml
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
@@ -22,7 +26,7 @@ from pydantic import BaseModel, Field
 from app.access.policy import ADMIN_GROUP
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
-from app.config import get_settings
+from app.config import BACKEND_DIR, get_settings
 from app.deps import ensure, get_current_principal, require_csrf
 from app.procedures.models import (
     ProcedureSpec,
@@ -147,6 +151,55 @@ def _validated(request: Request, raw: dict) -> tuple[ProcedureSpec, list[str]]:
     if hard:
         raise AuthError("절차를 저장할 수 없습니다:\n- " + "\n- ".join(hard), status_code=422)
     return spec, [e[5:] for e in errs if e.startswith("warn:")]
+
+
+# ── 씨앗 절차 ────────────────────────────────────────────────────────────
+# 리포에 함께 오는 정본 예제다(docs/procedures/fixtures/*.yaml). 첫날 화면이 비어 있으면
+# 사람은 무엇을 만들 수 있는지 모른다 — 씨앗은 "이렇게 생긴 것" 을 보여 주는 자리다.
+# 가져오기는 **같은 저장 시점 검증**을 그대로 탄다(우회로가 아니다).
+SEED_DIR = Path(BACKEND_DIR).parent / "docs" / "procedures" / "fixtures"
+_SEED_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}$")
+
+
+def _seed_path(name: str) -> Path:
+    """이름으로만 고른다 — 경로를 받지 않는다(디렉터리 탈출 차단)."""
+    if not _SEED_NAME.match(name):
+        raise AuthError("씨앗 이름이 아닙니다", status_code=400)
+    p = SEED_DIR / f"{name}.yaml"
+    if not p.is_file():
+        raise AuthError("그런 씨앗이 없습니다", status_code=404)
+    return p
+
+
+@router.get("/seeds")
+def list_seeds(principal: Principal = Depends(_me)) -> dict:
+    out = []
+    for f in sorted(SEED_DIR.glob("*.yaml")) if SEED_DIR.is_dir() else []:
+        try:
+            raw = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            spec = ProcedureSpec.model_validate(raw)
+        except Exception as exc:  # noqa: BLE001 — 깨진 씨앗이 목록을 통째로 죽이지 않게
+            out.append({"name": f.stem, "title": f.stem, "broken": f"{type(exc).__name__}"})
+            continue
+        out.append({
+            "name": f.stem, "title": spec.title, "steps": len(spec.steps),
+            "vars": [{"key": v.key, "label": v.label, "why": v.why} for v in spec.vars],
+            "gates": [st.tool for st in spec.steps if st.gate == "human"],
+            "backends": sorted({st.backend for st in spec.steps}),
+        })
+    return {"seeds": out}
+
+
+@router.post("/seeds/{name}/import", status_code=201,
+             dependencies=[Depends(require_csrf)])
+def import_seed(request: Request, name: str,
+                principal: Principal = Depends(_me)) -> dict:
+    """씨앗을 내 절차로 들인다. 들어온 뒤에는 보통 절차와 똑같다(고치면 새 판본)."""
+    raw = yaml.safe_load(_seed_path(name).read_text(encoding="utf-8")) or {}
+    spec, warns = _validated(request, raw)
+    got = _store(request).create_procedure(
+        owner_sub=principal.subject, spec=raw, title=spec.title, visibility="all")
+    return {**got, "warnings": warns, "from_seed": name}
 
 
 @router.get("/procedures")

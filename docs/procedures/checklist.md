@@ -200,6 +200,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       모두 403(열거는 `HWAXRisk/backend/tests/test_client_contract.py:33` 방식). 손으로 고른 몇 개가 아니라
       **전수**여야 나중에 단 라우트가 조용히 열리지 않는다
 - [ ] 첫 절차 픽스처(`project_id` 변수 → `list_parts` → `create_report_draft`)가 스키마 검증 통과
+- [x] 씨앗 가져오기 — `GET /seeds` · `POST /seeds/{name}/import`, 빈 목록에서 카드로 뜬다(W-31)
+- [x] 가져오기가 저장과 **같은** 검증을 탄다(게이트 없는 씨앗 → 422) · 이름 경로 탈출 차단
 - [ ] `cd backend && pytest` 전체 초록 뒤에만 S1 완료(전역 §8)
 
 ### 검증 (S1 전체)
