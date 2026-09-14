@@ -4,6 +4,7 @@
 # access.yaml 의 features 선언만으로는 아무 라우트도 안 막힌다(기능 키는 타일·게이트웨이
 # 백엔드에만 자동으로 묶인다).
 import json
+from pathlib import Path
 
 import pytest
 import yaml
@@ -268,3 +269,82 @@ def test_라우터가_SPA_폴백보다_먼저_등록됐다(client):
     r = client.get(f"{PREFIX}/health")
     assert r.headers["content-type"].startswith("application/json")
     assert json.loads(r.text)["ok"] is True
+
+
+# ── 라우트가 부르는 이름이 실제로 있나 ──────────────────────────────────
+#
+# 2026-09-14 에 실제로 이것 때문에 화면이 죽었다. routes.py 가
+# `_runner(request).catalog(...)` 를 부르는데 그 메서드가 **아예 없었다** — 셸에서
+# `cd backend && python …` 의 cd 가 실패해 &&  가 끊겼고, 편집이 안 된 채로 커밋됐다.
+# 기존 테스트가 못 잡은 이유는 그 라우트를 아무도 안 쳤고, 202 라우트는 실패가
+# 백그라운드 로거로만 가기 때문이다. **호출하는 이름을 소스에서 뽑아 대조한다.**
+import re as _re
+
+from app.procedures.runner import ProceduresRunner
+from app.procedures.store import ProceduresStore
+
+_ROUTES_SRC = (Path(__file__).resolve().parents[1] / "app" / "procedures" /
+               "routes.py").read_text(encoding="utf-8")
+
+
+def _called(helper: str) -> set[str]:
+    return set(_re.findall(rf"{helper}\(request\)\.([a-zA-Z_][a-zA-Z0-9_]*)\(", _ROUTES_SRC))
+
+
+def test_every_runner_method_the_routes_call_exists():
+    missing = sorted(n for n in _called("_runner") if not hasattr(ProceduresRunner, n))
+    assert not missing, f"routes.py 가 부르는데 실행기에 없다: {missing}"
+
+
+def test_every_store_method_the_routes_call_exists():
+    missing = sorted(n for n in _called("_store") if not hasattr(ProceduresStore, n))
+    assert not missing, f"routes.py 가 부르는데 저장소에 없다: {missing}"
+
+
+def test_the_guard_actually_finds_the_calls():
+    """가드가 0건을 훑고 통과하면 아무것도 안 지킨다 — 실제로 찾는지 본다."""
+    assert "catalog" in _called("_runner") and "step_once" in _called("_runner")
+    assert "get_run" in _called("_store") and len(_called("_store")) >= 6
+
+
+# ── /tools 가 실제로 도는가 ─────────────────────────────────────────────
+def test_tools_route_returns_the_catalog(user):
+    """화면이 처음 부르는 라우트다. 게이트웨이는 MockTransport 로 세운다."""
+    import httpx
+
+    from app.config import Settings
+
+    c, h = user
+
+    async def handler(req: httpx.Request) -> httpx.Response:
+        if req.method == "DELETE":
+            return httpx.Response(200)
+        body = json.loads(req.content) if req.content else {}
+        if body.get("method") == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {}},
+                                  headers={"mcp-session-id": "s1"})
+        if body.get("method") == "tools/list":
+            payload = {"jsonrpc": "2.0", "id": 3, "result": {"tools": [
+                {"name": "heaxstep_forge_bend_profile", "description": "굽힘 구조",
+                 "inputSchema": {"properties": {"project_id": {"type": "string"}},
+                                 "required": ["project_id"]}}]}}
+            return httpx.Response(200, text=f"data: {json.dumps(payload)}\n\n",
+                                  headers={"content-type": "text/event-stream"})
+        return httpx.Response(200)
+
+    s = Settings()
+    app.state.procedures_runner = ProceduresRunner(
+        settings=s, store=app.state.procedures_store,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=5.0),
+        mint_pat=lambda p, run, ix: "pat-test")
+    try:
+        r = c.get(f"{PREFIX}/tools", headers=h)
+        assert r.status_code == 200, r.text
+        got = r.json()
+        assert got["count"] == 1
+        t = got["tools"][0]
+        assert t["name"] == "heaxstep_forge_bend_profile"
+        assert t["inputSchema"]["required"] == ["project_id"]
+        assert len(t["schema_fp"]) == 16, "스키마 지문이 실려야 드리프트를 잡는다"
+    finally:
+        app.state.procedures_runner = None

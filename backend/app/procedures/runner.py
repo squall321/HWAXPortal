@@ -265,6 +265,63 @@ class ProceduresRunner:
         self.store.set_run_state(run_id, "done", ended=True)
         return {"state": "done"}
 
+    async def step_once(self, *, run_id: str, step: Step, principal,
+                        scope: dict | None = None) -> dict:
+        """빈 실행에 단계 하나 — **절차 기능의 진입점**이다(저장된 절차 목록이 아니다).
+
+        세션을 열고 한 단계만 돌리고 닫는다. 여러 단계를 이어 붙이는 것은 사람이 화면에서
+        한다 — 그 기록이 나중에 "절차로 저장" 의 재료가 된다.
+        """
+        run = self.store.get_run(run_id)
+        if run is None:
+            raise RunnerError(f"실행이 없다: {run_id}")
+        ix = len(run["steps"])
+        if any(s["state"] == "running" for s in run["steps"]):
+            raise RunnerError("이미 도는 단계가 있다")
+
+        scope = dict(scope or run.get("inputs") or {})
+        scope.setdefault("run_id", run_id)
+        scope.setdefault("me.email", getattr(principal, "email", "") or "")
+        scope.setdefault("me.sub", getattr(principal, "subject", "") or "")
+
+        async with self.sem:
+            sess = GatewaySession(self.gateway_url, self._client)
+            pat = self.mint_pat(principal, run_id, ix)
+            if not pat:
+                raise RunnerError("사용자 명의 PAT 발급 실패 — 서비스 계정으로 대신 돌지 않는다")
+            try:
+                await sess.open(pat)
+                self.store.set_run_state(run_id, "running")
+                v = await self._one(run_id, ix, step, scope, principal, sess)
+                if v is None:
+                    return {"ix": ix, "state": "skipped"}
+                saved = {}
+                if v.ok:
+                    for key, path in (step.save or {}).items():
+                        saved[key] = template.extract(v.parsed, path)
+                    # 뽑은 값은 실행 입력에 합쳐 다음 단계가 {{key}} 로 쓸 수 있게 한다.
+                    if saved:
+                        self.store.merge_inputs(run_id, saved)
+                self.store.set_run_state(run_id, "queued" if v.ok else "failed",
+                                         stage=None if v.ok else f"step:{ix}",
+                                         ended=not v.ok)
+                return {"ix": ix, "ok": v.ok, "kind": v.kind, "saved": saved,
+                        "error": None if v.ok else J.short_error(v)}
+            finally:
+                await sess.close(pat)
+
+    async def catalog(self, principal, run_id: str = "catalog") -> dict:
+        """도구 고르기 화면의 데이터 — 사용자 PAT `tools/list` 가 권한 필터의 정본이다."""
+        sess = GatewaySession(self.gateway_url, self._client)
+        pat = self.mint_pat(principal, run_id, 0)
+        if not pat:
+            raise RunnerError("사용자 명의 PAT 발급 실패")
+        try:
+            await sess.open(pat)
+            return await sess.list_tools(pat)
+        finally:
+            await sess.close(pat)
+
     async def _one(self, run_id, ix, st: Step, scope, principal, sess):
         """단계 하나 — 치환 → 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다."""
         args = template.substitute(st.args, scope)

@@ -194,6 +194,18 @@ class ProceduresStore:
             )
         return run_id
 
+    def merge_inputs(self, run_id: str, extra: dict) -> None:
+        """빈 실행에서 한 단계씩 돌 때, 뽑은 값을 다음 단계가 쓸 수 있게 합친다."""
+        c = self._conn()
+        with c:
+            row = c.execute("SELECT inputs_json FROM runs WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise KeyError(run_id)
+            cur = json.loads(row["inputs_json"] or "{}")
+            cur.update(extra)
+            c.execute("UPDATE runs SET inputs_json=? WHERE id=?",
+                      (json.dumps(cur, ensure_ascii=False), run_id))
+
     def set_run_state(self, run_id: str, state: str, *, stage: str | None = None,
                       ended: bool = False) -> None:
         if state not in RUN_STATES:

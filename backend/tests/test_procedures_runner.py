@@ -12,7 +12,7 @@ import pytest
 
 from app.config import Settings
 from app.procedures.models import ProcedureSpec, Step, schema_fingerprint
-from app.procedures.runner import ProceduresRunner
+from app.procedures.runner import ProceduresRunner, RunnerError
 from app.procedures.store import ProceduresStore
 
 PRINCIPAL = types.SimpleNamespace(subject="u1", email="u1@x.io", display_name="U",
@@ -476,3 +476,77 @@ def test_resume_starts_after_the_done_steps(kit):
     asyncio.run(go(*kit))
 
 
+
+
+# ── 빈 실행에 단계 하나(진입점) ─────────────────────────────────────────
+def test_step_once_appends_and_feeds_the_next_step(kit):
+    """뽑은 값이 실행 입력에 합쳐져 **다음 단계가 {{key}} 로 쓴다** — 진입점의 핵심."""
+    async def go(store, build):
+        g = Gate(tools={"b_first": {}, "b_second": {}},
+                 replies={"b_first": ok({"project": {"id": "P-1"}}),
+                          "b_second": ok({"done": True})})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live")
+
+        out = await r.step_once(run_id=rid, principal=PRINCIPAL,
+                                step=Step(backend="b", tool="first",
+                                          save={"pid": "project.id"}))
+        assert out["ok"] is True and out["ix"] == 0 and out["saved"] == {"pid": "P-1"}
+        assert store.get_run(rid)["inputs"]["pid"] == "P-1", "다음 단계가 못 쓴다"
+
+        out2 = await r.step_once(run_id=rid, principal=PRINCIPAL,
+                                 step=Step(backend="b", tool="second",
+                                           args={"project_id": "{{pid}}"}))
+        await r.aclose()
+        assert out2["ok"] is True and out2["ix"] == 1
+        assert g.calls[1]["arguments"]["arguments"] == {"project_id": "P-1"}
+    asyncio.run(go(*kit))
+
+
+def test_step_once_opens_and_closes_its_own_session(kit):
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live")
+        await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="a"))
+        await r.aclose()
+        assert len(g.sessions) == 1 and g.deleted == ["s1"]
+    asyncio.run(go(*kit))
+
+
+def test_step_once_refuses_while_another_step_runs(kit):
+    """같은 단계 재실행 방지 — 라우트의 409 와 같은 판정을 실행기도 한다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live")
+        store.begin_step(rid, 0, backend="b", tool="a", args={})
+        with pytest.raises(RunnerError):
+            await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="a"))
+        await r.aclose()
+        assert g.calls == []
+    asyncio.run(go(*kit))
+
+
+def test_step_once_failure_marks_the_run(kit):
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": err("unknown tool: a")})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live")
+        out = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="a"))
+        await r.aclose()
+        assert out["ok"] is False and out["kind"] == "unknown_tool"
+        assert store.get_run(rid)["state"] == "failed"
+    asyncio.run(go(*kit))
+
+
+def test_catalog_lists_tools_and_closes_the_session(kit):
+    """화면이 처음 부르는 것 — 권한 필터는 tools/list 쪽이 정본이다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {"description": "설명", "inputSchema": {"x": 1}}})
+        r = build(g)
+        cat = await r.catalog(PRINCIPAL)
+        await r.aclose()
+        assert set(cat) == {"b_a"} and cat["b_a"]["description"] == "설명"
+        assert g.deleted == ["s1"], "카탈로그 조회도 세션을 닫아야 한다"
+    asyncio.run(go(*kit))
