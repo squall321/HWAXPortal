@@ -506,3 +506,128 @@ def test_씨앗을_가져오면_붙여_넣을_예시까지_따라온다(user):
     assert lam["example"]["unit_system"] == "SI_mm"
     assert len(lam["example"]["laminae"]) == 4
     assert lam["required"] is True, "예시가 있다고 필수가 풀리면 안 된다"
+
+
+# ── 이력은 절차에 묶이고, 그 값 그대로 다시 돌아간다 ─────────────────────────
+def test_실행_이력이_어느_절차에서_나왔는지_안다(user):
+    """`procedure_version_id` 하나만 들고 있으면 화면에서 절차로 되짚을 수 없다."""
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    rid = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": pid, "mode": "plan",
+        "vars": {"laminate": "{}", "r_unfold": "6"}}).json()["run_id"]
+
+    row = next(r for r in c.get(f"{PREFIX}/runs", headers=h).json()["runs"] if r["id"] == rid)
+    assert row["procedure_id"] == pid and row["version_no"] == 1
+    detail = c.get(f"{PREFIX}/runs/{rid}", headers=h).json()
+    assert detail["procedure_id"] == pid and detail["version_no"] == 1
+
+
+def test_절차별_이력만_따로_본다(user):
+    """한 절차로 돌린 것이 전체 목록에 섞이면 '이 절차를 몇 번 돌렸나' 를 못 본다."""
+    c, h = user
+    a, b = _json_var_procedure(c, h), _json_var_procedure(c, h)
+    for pid in (a, a, b):
+        c.post(f"{PREFIX}/runs", headers=h, json={
+            "procedure_id": pid, "mode": "plan",
+            "vars": {"laminate": "{}", "r_unfold": "6"}})
+    c.post(f"{PREFIX}/runs", json={"mode": "plan"}, headers=h)   # 빈 실행도 하나
+
+    only_a = c.get(f"{PREFIX}/runs?procedure_id={a}", headers=h).json()["runs"]
+    assert len(only_a) == 2 and {r["procedure_id"] for r in only_a} == {a}
+    assert len(c.get(f"{PREFIX}/runs", headers=h).json()["runs"]) == 4
+
+
+def test_지난_실행을_그_값_그대로_다시_돌린다(user):
+    """이력이 값을 들고 있는데 다시 돌릴 길이 없으면 사람이 칸을 손으로 옮겨 적는다."""
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    first = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": pid, "mode": "plan",
+        "vars": {"laminate": '{"unit_system": "SI_mm"}', "r_unfold": "1000", "memo": "1차"},
+    }).json()["run_id"]
+
+    r = c.post(f"{PREFIX}/runs/{first}/replay", json={"mode": "plan"}, headers=h)
+    assert r.status_code == 202 and r.json()["from_run"] == first
+    again = c.get(f"{PREFIX}/runs/{r.json()['run_id']}", headers=h).json()
+    assert again["id"] != first, "같은 실행을 덮어쓰면 이력이 사라진다"
+    assert again["origin"] == "replay"
+    assert again["inputs"]["laminate"] == {"unit_system": "SI_mm"}
+    assert again["inputs"]["r_unfold"] == 1000.0 and again["inputs"]["memo"] == "1차"
+    assert again["procedure_id"] == pid, "다시 돌린 것도 같은 절차의 이력이다"
+
+    hist = c.get(f"{PREFIX}/runs?procedure_id={pid}", headers=h).json()["runs"]
+    assert {x["id"] for x in hist} == {first, again["id"]}, "둘 다 이력에 남아야 한다"
+
+
+def test_다시_돌릴_때_지난_중간값은_안_딸려온다(user):
+    """`inputs` 에는 앞 단계가 뽑은 save 값도 섞인다 — 그걸 그대로 물려주면
+    이번 실행이 **옛 중간값을 쥔 채** 시작해 단계가 조용히 건너뛰어진다."""
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    rid = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": pid, "mode": "plan",
+        "vars": {"laminate": "{}", "r_unfold": "6"}}).json()["run_id"]
+    # 실행 중 save 로 합쳐진 값을 흉내 낸다
+    c.app.state.procedures_store.merge_inputs(rid, {"loads_bent": {"N": [1, 2, 3]}})
+    assert "loads_bent" in c.get(f"{PREFIX}/runs/{rid}", headers=h).json()["inputs"]
+
+    again_id = c.post(f"{PREFIX}/runs/{rid}/replay", json={"mode": "plan"},
+                      headers=h).json()["run_id"]
+    got = c.get(f"{PREFIX}/runs/{again_id}", headers=h).json()["inputs"]
+    assert "loads_bent" not in got, f"옛 중간값이 딸려 왔다: {sorted(got)}"
+    assert set(got) == {"laminate", "r_unfold"}
+
+
+def test_다시_돌리기는_남의_실행을_못_건드린다(user):
+    """실행은 공유하지 않는다 — 결과에 그 사람 시야의 데이터가 담긴다.
+
+    ⚠ 만들기를 **먼저** 하고 로그인을 나중에 한다. 로그인이 세션을 갈아 끼우면
+    앞서 받은 CSRF 헤더가 낡아 403 이 난다(실제로 이 순서로 한 번 걸렸다).
+    """
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    rid = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": pid, "mode": "plan",
+        "vars": {"laminate": "{}", "r_unfold": "6"}}).json()["run_id"]
+
+    boss = _login(c, "boss@corp.com")   # 관리자여도 남의 실행은 못 본다
+    assert c.post(f"{PREFIX}/runs/{rid}/replay", json={"mode": "plan"},
+                  headers=boss).status_code == 404
+
+
+def test_빈_실행은_다시_돌릴_절차가_없다(user):
+    c, h = user
+    rid = c.post(f"{PREFIX}/runs", json={"mode": "plan"}, headers=h).json()["run_id"]
+    r = c.post(f"{PREFIX}/runs/{rid}/replay", json={"mode": "plan"}, headers=h)
+    assert r.status_code == 422 and "절차" in r.text
+
+
+def test_같은_씨앗을_다시_가져오면_사본이_아니라_판본이_올라간다(user):
+    """씨앗은 리포와 함께 자란다(예시가 늘고 경고가 붙는다). 가져올 때마다 사본이 생기면
+    목록이 같은 이름으로 채워지고 어느 것이 최신인지 사람이 알 수 없다."""
+    c, h = user
+    a = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h).json()
+    assert a["version_no"] == 1 and a["updated"] is False
+
+    b = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h).json()
+    assert b["id"] == a["id"], "사본이 생겼다"
+    assert b["version_no"] == 2 and b["updated"] is True
+
+    rows = c.get(f"{PREFIX}/procedures", headers=h).json()["procedures"]
+    assert len(rows) == 1, f"목록에 {len(rows)}건 — 사본이 늘었다"
+
+
+def test_옛_판본과_그_이력은_판본이_올라도_남는다(user):
+    """판본을 올리는 것이 지우는 것이면 안 된다 — 지난 실행이 어느 절차였는지 잃는다."""
+    c, h = user
+    a = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h).json()
+    rid = c.post(f"{PREFIX}/runs", headers=h, json={
+        "version_id": a["version_id"], "mode": "plan",
+        "vars": {"project_id": "p", "part": "x", "r_unfold": "1000", "bend_axis": "x",
+                 "width_mode": "free", "laminate": '{"unit_system": "SI_mm"}'},
+    }).json()["run_id"]
+
+    c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h)   # 판본 2
+    hist = c.get(f"{PREFIX}/runs?procedure_id={a['id']}", headers=h).json()["runs"]
+    assert [r["id"] for r in hist] == [rid] and hist[0]["version_no"] == 1

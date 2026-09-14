@@ -49,13 +49,19 @@ export type RunDetail = {
   origin: string;
   title: string | null;
   procedure_version_id: string | null;
+  procedure_id?: string | null;
+  version_no?: number | null;
   inputs: Record<string, unknown>;
   steps: StepRow[];
   started_at: number;
   ended_at: number | null;
 };
 
-export type RunSummary = Omit<RunDetail, 'steps' | 'inputs'>;
+export type RunSummary = Omit<RunDetail, 'steps' | 'inputs'> & {
+  /** 어느 절차의 몇 판본에서 나왔나 — 빈 실행이면 null 이다. */
+  procedure_id?: string | null;
+  version_no?: number | null;
+};
 
 export type ProcedureRow = {
   id: string;
@@ -65,6 +71,8 @@ export type ProcedureRow = {
   visibility: string;
   latest_version: number;
   updated_at: number;
+  /** 함께 오는 정본 예제에서 들여온 것 — 다시 가져오면 판본이 올라간다. */
+  from_seed?: string | null;
 };
 
 export type ProcedureVersion = {
@@ -139,7 +147,8 @@ export function listSeeds() {
 }
 
 export function importSeed(name: string) {
-  return post<{ id: string; version_no: number; from_seed: string; warnings: string[] }>(
+  return post<{ id: string; version_no: number; from_seed: string; warnings: string[];
+                updated: boolean }>(
     `/seeds/${encodeURIComponent(name)}/import`,
     {},
     '씨앗을 가져오지 못했습니다.',
@@ -154,8 +163,8 @@ export function getProcedure(id: string) {
   return get<ProcedureVersion>(`/procedures/${id}`, '절차를 불러오지 못했습니다.');
 }
 
-export function listRuns() {
-  return get<{ runs: RunSummary[] }>('/runs', '실행 이력을 불러오지 못했습니다.');
+export function listRuns(procedureId?: string) {
+  return get<{ runs: RunSummary[] }>(procedureId ? `/runs?procedure_id=${encodeURIComponent(procedureId)}` : '/runs', '실행 이력을 불러오지 못했습니다.');
 }
 
 export function getRun(id: string) {
@@ -172,6 +181,15 @@ export function startEmptyRun(title?: string) {
     '/runs',
     { mode: 'live', title },
     '실행을 시작하지 못했습니다.',
+  );
+}
+
+/** 지난 실행을 **그 값 그대로** 다시 돌린다. 기록 재생이 아니라 실제 재계산이다. */
+export function replayRun(runId: string, mode: 'plan' | 'live' = 'live') {
+  return post<{ run_id: string; state: string; from_run: string }>(
+    `/runs/${runId}/replay`,
+    { mode },
+    '이 실행을 다시 돌리지 못했습니다.',
   );
 }
 

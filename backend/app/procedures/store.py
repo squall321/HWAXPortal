@@ -33,7 +33,8 @@ _DDL = (
         id TEXT PRIMARY KEY, owner_sub TEXT NOT NULL, created_by TEXT NOT NULL,
         title TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'all',
         latest_version INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""",
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        from_seed TEXT)""",
     """CREATE TABLE IF NOT EXISTS procedure_versions (
         version_id TEXT PRIMARY KEY, procedure_id TEXT NOT NULL, version_no INTEGER NOT NULL,
         spec_json TEXT NOT NULL, author_sub TEXT NOT NULL, created_at INTEGER NOT NULL,
@@ -87,6 +88,19 @@ class ProceduresStore:
         with self._conn() as c:  # 스키마는 한 번만
             for stmt in _DDL:
                 c.execute(stmt)
+            self._migrate(c)
+
+    # ⚠ `CREATE TABLE IF NOT EXISTS` 는 **이미 있는 표를 고치지 않는다.** 칼럼을 DDL 에만
+    #    더하면 새 DB 에서는 되고 돌고 있는 DB 에서는 조용히 없다 — 그러면 그 칼럼을 읽는
+    #    코드가 운영에서만 터진다. 더하는 칼럼은 여기 한 줄씩 적는다(멱등).
+    _ADD_COLUMNS = (("procedures", "from_seed", "TEXT"),)
+
+    @classmethod
+    def _migrate(cls, c: sqlite3.Connection) -> None:
+        for table, col, decl in cls._ADD_COLUMNS:
+            have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+            if col not in have:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
     # ── 연결 ──────────────────────────────────────────────────────────────
     def _conn(self) -> sqlite3.Connection:
@@ -113,15 +127,24 @@ class ProceduresStore:
         return {"journal_mode": mode, "path": str(self._path)}
 
     # ── 절차 · 판본 ─────────────────────────────────────────────────────
+    def find_by_seed(self, *, owner_sub: str, seed: str) -> str | None:
+        """이 사람이 이미 이 씨앗을 들여놨나 — 다시 가져오기를 **사본이 아니라 판본**으로."""
+        r = self._conn().execute(
+            "SELECT id FROM procedures WHERE owner_sub=? AND from_seed=?"
+            " ORDER BY created_at LIMIT 1", (owner_sub, seed)).fetchone()
+        return r["id"] if r else None
+
     def create_procedure(self, *, owner_sub: str, spec: dict, title: str,
-                      visibility: str = "all", derived_from_run: str | None = None) -> dict:
+                      visibility: str = "all", derived_from_run: str | None = None,
+                      from_seed: str | None = None) -> dict:
         rid, vid, now = _uid(), _uid(), _now()
         c = self._conn()
         with c:
             c.execute(
                 "INSERT INTO procedures (id, owner_sub, created_by, title, visibility,"
-                " latest_version, created_at, updated_at) VALUES (?,?,?,?,?,1,?,?)",
-                (rid, owner_sub, owner_sub, title, visibility, now, now),
+                " latest_version, created_at, updated_at, from_seed)"
+                " VALUES (?,?,?,?,?,1,?,?,?)",
+                (rid, owner_sub, owner_sub, title, visibility, now, now, from_seed),
             )
             c.execute(
                 "INSERT INTO procedure_versions (version_id, procedure_id, version_no, spec_json,"
@@ -229,16 +252,37 @@ class ProceduresStore:
         d = dict(row)
         d["inputs"] = json.loads(d.pop("inputs_json") or "{}")
         d["steps"] = self.list_steps(run_id)
+        # 어느 절차에서 나왔나 — 화면이 절차로 되짚고 "이 값으로 다시" 를 걸 수 있게 한다
+        d["procedure_id"] = d["version_no"] = None
+        if d.get("procedure_version_id"):
+            v = self._conn().execute(
+                "SELECT procedure_id, version_no FROM procedure_versions WHERE version_id=?",
+                (d["procedure_version_id"],)).fetchone()
+            if v is not None:
+                d["procedure_id"], d["version_no"] = v["procedure_id"], v["version_no"]
         return d
 
-    def list_runs(self, *, owner_sub: str, limit: int = 50) -> list[dict]:
-        """확인 대기(`gated`)를 맨 위에 — 게이트에서 멈춘 실행의 표면이 이 목록이다."""
-        rows = self._conn().execute(
-            "SELECT id, title, state, stage, mode, origin, procedure_version_id, started_at,"
-            " ended_at FROM runs WHERE owner_sub=?"
-            " ORDER BY (state='gated') DESC, started_at DESC LIMIT ?",
-            (owner_sub, limit)).fetchall()
-        return [dict(r) for r in rows]
+    def list_runs(self, *, owner_sub: str, limit: int = 50,
+                  procedure_id: str | None = None) -> list[dict]:
+        """확인 대기(`gated`)를 맨 위에 — 게이트에서 멈춘 실행의 표면이 이 목록이다.
+
+        **어느 절차의 몇 판본에서 나왔는지**를 함께 낸다. 실행이 `procedure_version_id`
+        하나만 들고 있으면 화면에서 절차로 되짚을 수가 없어서, 한 절차의 이력을 모아
+        보는 것 자체가 불가능했다. `procedure_id` 를 주면 그 절차의 이력만 낸다.
+        """
+        sql = ("SELECT r.id, r.title, r.state, r.stage, r.mode, r.origin,"
+               " r.procedure_version_id, r.started_at, r.ended_at,"
+               " v.procedure_id, v.version_no"
+               " FROM runs r LEFT JOIN procedure_versions v"
+               "   ON v.version_id = r.procedure_version_id"
+               " WHERE r.owner_sub=?")
+        args: list = [owner_sub]
+        if procedure_id:
+            sql += " AND v.procedure_id=?"
+            args.append(procedure_id)
+        sql += " ORDER BY (r.state='gated') DESC, r.started_at DESC LIMIT ?"
+        args.append(limit)
+        return [dict(r) for r in self._conn().execute(sql, args).fetchall()]
 
     # ── 단계 ──────────────────────────────────────────────────────────────
     def begin_step(self, run_id: str, ix: int, *, backend: str, tool: str, args: dict,

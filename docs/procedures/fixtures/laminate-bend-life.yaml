@@ -16,12 +16,15 @@ vars:
     type: string
     required: true
 
+    # ⚠ dev 에 반입해 둔 예제 과제다(g_ubend 합성 형상). cae00 에는 따로 반입해야 한다.
+    example: R1-굴곡수명-예제(U자판)
   - key: part
     label: 부품 이름
     type: string
     required: true
     why: 한 과제에 굽힘 부품이 여럿이면 어느 것인지 사람이 고른다.
 
+    example: UBEND_1
   - key: r_unfold
     label: 펼친 상태 굽힘반경 R_max (mm)
     type: number
@@ -30,6 +33,7 @@ vars:
       형상은 **설계된 굽힘 하나**만 안다. 그것이 사이클의 한쪽 끝이고, 반대쪽 끝(얼마나
       펴지는가)은 쓰임새가 정한다 — 완전히 펴지면 큰 값(예: 1000), 반만 펴지면 그 값.
 
+    example: 1000
   - key: bend_axis
     label: 굽힘축
     type: enum
@@ -37,6 +41,7 @@ vars:
     required: true
     why: 적층의 0° 방향을 기준으로 어느 축으로 굽는지. 적층 좌표계는 형상이 모른다.
 
+    example: x
   - key: width_mode
     label: 폭 구속
     type: enum
@@ -46,6 +51,7 @@ vars:
       free(M_y=0, 자유 폭)와 constrained(κ_y=0, 구속 폭)는 답이 **9.6% 갈린다**(도구가
       W130 으로 경고한다). 실제 지그가 어느 쪽인지는 형상에 없다.
 
+    example: free
   - key: laminate
     label: 적층 정의
     type: json

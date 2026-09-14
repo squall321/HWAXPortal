@@ -199,9 +199,18 @@ def import_seed(request: Request, name: str,
     """씨앗을 내 절차로 들인다. 들어온 뒤에는 보통 절차와 똑같다(고치면 새 판본)."""
     raw = yaml.safe_load(_seed_path(name).read_text(encoding="utf-8")) or {}
     spec, warns = _validated(request, raw)
-    got = _store(request).create_procedure(
-        owner_sub=principal.subject, spec=raw, title=spec.title, visibility="all")
-    return {**got, "warnings": warns, "from_seed": name}
+    store = _store(request)
+    # 씨앗은 리포와 함께 **자란다**(예시가 늘고 경고가 붙는다). 다시 가져올 때마다 사본이
+    # 생기면 목록이 같은 이름으로 채워지고, 어느 것이 최신인지 사람이 알 수 없다.
+    # 이미 들여놓은 것이 있으면 **판본을 올린다** — 옛 판본과 그 이력은 그대로 남는다.
+    existing = store.find_by_seed(owner_sub=principal.subject, seed=name)
+    if existing:
+        got = store.add_version(procedure_id=existing, author_sub=principal.subject, spec=raw)
+        return {**got, "id": existing, "warnings": warns, "from_seed": name, "updated": True}
+    got = store.create_procedure(
+        owner_sub=principal.subject, spec=raw, title=spec.title, visibility="all",
+        from_seed=name)
+    return {**got, "warnings": warns, "from_seed": name, "updated": False}
 
 
 @router.get("/procedures")
@@ -329,9 +338,61 @@ async def _step_and_log(request: Request, run_id: str, step: Step, principal) ->
 
 
 @router.get("/runs")
-def list_runs(request: Request, principal: Principal = Depends(_me)) -> dict:
-    """확인 대기가 맨 위에 온다 — 게이트에서 멈춘 실행의 표면이 이 목록이다."""
-    return {"runs": _store(request).list_runs(owner_sub=principal.subject)}
+def list_runs(request: Request, procedure_id: str | None = None,
+              principal: Principal = Depends(_me)) -> dict:
+    """확인 대기가 맨 위에 온다 — 게이트에서 멈춘 실행의 표면이 이 목록이다.
+
+    `procedure_id` 를 주면 **그 절차의 이력만** 낸다. 절차를 한 번 만들면 그것으로 돌린
+    실행이 쌓이는데, 종전에는 전체 목록에 섞여 어느 절차의 것인지 볼 수가 없었다.
+    """
+    return {"runs": _store(request).list_runs(
+        owner_sub=principal.subject, procedure_id=procedure_id)}
+
+
+class ReplayIn(BaseModel):
+    mode: str = Field(default="live", pattern="^(plan|live)$")
+    vars: dict | None = None   # 주면 그 값만 덮어쓴다(나머지는 지난 실행 그대로)
+
+
+@router.post("/runs/{run_id}/replay", status_code=202,
+             dependencies=[Depends(require_csrf)])
+async def replay_run(request: Request, run_id: str, body: ReplayIn,
+                     principal: Principal = Depends(_me)) -> dict:
+    """**지난 실행을 그 값 그대로 다시 돌린다.**
+
+    이력이 값을 들고 있는데 다시 돌릴 길이 없으면, 사람이 화면을 보며 여섯 칸을 손으로
+    옮겨 적어야 한다 — 옮겨 적는 순간 "같은 입력" 이라는 보장이 사라진다.
+
+    예제 실행(`origin='sample'`)도 여기서 돌린다. 기록된 결과를 **재생하는 것이 아니라**
+    그 입력으로 도구를 실제로 다시 부른다 — 그래서 지금 데이터로 계산된 값이 나온다.
+    """
+    store, runner = _store(request), _runner(request)
+    src = _owned(request, principal, run_id)
+    if not src.get("procedure_version_id"):
+        raise AuthError("빈 실행은 다시 돌릴 절차가 없습니다", status_code=422)
+    version = store.get_version(src["procedure_version_id"])
+    if version is None:
+        raise AuthError("그 판본이 더 이상 없습니다", status_code=404)
+
+    spec = ProcedureSpec.model_validate(version["spec"])
+    # 지난 실행의 inputs 에는 **앞 단계가 뽑은 save 값도 섞여 있다**(merge_inputs).
+    # 그대로 넘기면 이번 실행이 옛 중간값을 쥔 채 시작한다 — 선언된 변수만 걸러 낸다.
+    declared = {v.key for v in spec.vars}
+    seed_vars = {k: v for k, v in (src.get("inputs") or {}).items() if k in declared}
+    seed_vars.update(body.vars or {})
+    try:
+        inputs = coerce_inputs(spec, seed_vars)
+    except SpecError as exc:
+        raise AuthError(str(exc), status_code=422) from None
+
+    new_id = store.create_run(
+        owner_sub=principal.subject, run_by=principal.subject,
+        procedure_version_id=src["procedure_version_id"], inputs=inputs,
+        origin="replay", mode=body.mode,
+        title=src.get("title") or (version.get("spec") or {}).get("title"))
+    _spawn(runner.run(run_id=new_id, spec=spec, principal=principal), f"run {new_id}")
+    return {"run_id": new_id, "state": "queued", "from_run": run_id,
+            "poll": f"/procedures-api/runs/{new_id}"}
 
 
 @router.get("/runs/{run_id}")

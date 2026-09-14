@@ -12,6 +12,7 @@ import {
   getProcedure,
   importSeed,
   listSeeds,
+  replayRun,
   listProcedures,
   listRuns,
   replayProcedure,
@@ -88,8 +89,10 @@ function ProcedureList() {
   if (err) return <ErrorBanner message={err} />;
   if (!rows) return <Spinner label="절차를 불러오는 중…" />;
   if (!rows.length) return <EmptyWithSeeds onImported={reload} />;
+  // 목록이 차 있어도 씨앗은 리포와 함께 자란다 — 다시 가져오면 판본이 올라간다(사본 아님).
 
   return (
+    <>
     <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.5rem' }}>
       {rows.map((r) => (
         <li key={r.id} style={rowCard}>
@@ -98,10 +101,62 @@ function ProcedureList() {
           </NavLink>
           <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
             판본 {r.latest_version} · {r.visibility === 'all' ? '공유' : '개인'}
+            {r.from_seed && ' · 정본 예제'}
           </span>
         </li>
       ))}
     </ul>
+      <SeedRefresh onImported={reload} />
+    </>
+  );
+}
+
+/** 씨앗은 리포와 함께 자란다 — 목록이 차 있어도 최신판을 받을 길이 있어야 한다. */
+function SeedRefresh({ onImported }: { onImported: () => void }) {
+  const [seeds, setSeeds] = useState<SeedRow[] | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    listSeeds().then((r) => setSeeds(r.seeds.filter((x) => !x.broken))).catch(() => setSeeds([]));
+  }, []);
+  if (!seeds?.length) return null;
+
+  const take = async (s: SeedRow) => {
+    setBusy(s.name);
+    setMsg(null);
+    try {
+      const r = await importSeed(s.name);
+      setMsg(r.updated ? `${s.title} — 판본 ${r.version_no} 로 올렸습니다.`
+                       : `${s.title} — 가져왔습니다.`);
+      onImported();
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section style={{ ...rowCard, marginTop: '0.8rem', alignItems: 'flex-start',
+                      flexWrap: 'wrap', gap: '0.5rem' }}>
+      <div style={{ display: 'grid', gap: '0.2rem', flex: '1 1 300px', minWidth: 0 }}>
+        <strong style={{ color: 'var(--fg)', fontSize: '0.88rem' }}>함께 오는 정본 예제</strong>
+        <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>
+          예제는 리포와 함께 자랍니다. 다시 받으면 <b>사본이 아니라 판본</b>이 올라가고,
+          옛 판본과 그 이력은 그대로 남습니다.
+        </span>
+        {msg && <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>{msg}</span>}
+      </div>
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        {seeds.map((s) => (
+          <button key={s.name} type="button" style={tiny} disabled={busy === s.name}
+                  onClick={() => take(s)}>
+            {busy === s.name ? '받는 중…' : `${s.title} 최신으로`}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -239,7 +294,26 @@ function ProcedureDetail() {
 
       {v.spec.vars.length > 0 && (
         <section style={rowCard}>
-          <h3 style={{ color: 'var(--fg)', margin: '0 0 0.6rem', fontSize: '0.95rem' }}>이번에 채울 값</h3>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap',
+                        margin: '0 0 0.6rem' }}>
+            <h3 style={{ color: 'var(--fg)', margin: 0, fontSize: '0.95rem' }}>이번에 채울 값</h3>
+            {v.spec.vars.some((d) => d.example !== undefined && d.example !== null) && (
+              <>
+                <button type="button" style={tiny}
+                        onClick={() => setVals({
+                          ...vals,
+                          ...Object.fromEntries(v.spec.vars
+                            .filter((d) => d.example !== undefined && d.example !== null)
+                            .map((d) => [d.key, exampleText(d.example)])),
+                        })}>
+                  예제 값 모두 넣기
+                </button>
+                <span style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>
+                  함께 오는 예제로 한 번 돌려 보는 용도입니다. <b>내 부품의 값이 아닙니다.</b>
+                </span>
+              </>
+            )}
+          </div>
           <div style={{ display: 'grid', gap: '0.6rem' }}>
             {v.spec.vars.map((d) => (
               <label key={d.key} style={{ display: 'grid', gap: '0.2rem' }}>
@@ -309,7 +383,57 @@ function ProcedureDetail() {
       <p style={{ color: 'var(--muted)', fontSize: '0.78rem', margin: 0 }}>
         계획 모드는 게이트웨이를 부르지 않고 <b>무엇을 어떤 인자로 부를지</b>만 보여 줍니다.
       </p>
+
+      <ProcedureRuns procedureId={id} />
     </div>
+  );
+}
+
+/** 이 절차로 돌린 것들 — 절차를 만든 뜻은 **다시 돌리는 것**이라 이력이 절차 옆에 있어야 한다. */
+function ProcedureRuns({ procedureId }: { procedureId: string }) {
+  const [rows, setRows] = useState<RunSummary[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    listRuns(procedureId)
+      .then((r) => setRows(r.runs))
+      .catch((e: Error) => setErr(e.message));
+  }, [procedureId]);
+
+  return (
+    <section style={rowCard}>
+      <h3 style={{ color: 'var(--fg)', margin: '0 0 0.5rem', fontSize: '0.95rem' }}>
+        이 절차로 돌린 이력 {rows ? `${rows.length}건` : ''}
+      </h3>
+      {err && <ErrorBanner message={err} />}
+      {!rows && <Spinner label="이력을 불러오는 중…" />}
+      {rows?.length === 0 && (
+        <p style={{ color: 'var(--muted)', fontSize: '0.84rem', margin: 0 }}>
+          아직 없습니다. 위에서 값을 채우고 <b>재생</b> 을 누르면 여기 쌓이고, 쌓인 실행은
+          그 값 그대로 다시 돌릴 수 있습니다.
+        </p>
+      )}
+      {!!rows?.length && (
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.4rem' }}>
+          {rows.map((r) => (
+            <li key={r.id} style={{ display: 'flex', gap: '0.6rem', alignItems: 'baseline',
+                                    justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <NavLink to={`/procedures/runs/${r.id}`}
+                       style={{ color: 'var(--fg)', textDecoration: 'none', fontSize: '0.86rem' }}>
+                {new Date(r.started_at * 1000).toLocaleString('ko-KR')}
+                {r.version_no ? ` · 판본 ${r.version_no}` : ''}
+              </NavLink>
+              <span style={{ color: r.state === 'gated' ? '#d9a441' : 'var(--muted)',
+                             fontSize: '0.78rem' }}>
+                {r.state === 'gated' ? '확인 대기' : r.state}
+                {r.mode === 'plan' && ' · 계획'}
+                {r.origin === 'replay' && ' · 다시 돌림'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -338,6 +462,8 @@ function RunList() {
           <span style={{ color: r.state === 'gated' ? '#d9a441' : 'var(--muted)', fontSize: '0.8rem' }}>
             {r.state === 'gated' ? '확인 대기' : r.state}
             {r.mode === 'plan' && ' · 계획'}
+            {r.origin === 'replay' && ' · 다시 돌림'}
+            {r.version_no ? ` · 판본 ${r.version_no}` : ' · 절차 없음'}
           </span>
         </li>
       ))}
@@ -347,6 +473,7 @@ function RunList() {
 
 function RunDetailView() {
   const { id = '' } = useParams();
+  const nav = useNavigate();
   const { watch, watched, refreshWatched } = useProcedures();
   const [err, setErr] = useState<string | null>(null);
 
@@ -377,8 +504,28 @@ function RunDetailView() {
             · {watched.state}
             {watched.stage ? ` (${watched.stage})` : ''} · {watched.mode === 'plan' ? '계획' : '실행'}
           </span>
+          {watched.procedure_id && (
+            <div style={{ marginTop: '0.25rem' }}>
+              <NavLink to={`/procedures/saved/${watched.procedure_id}`}
+                       style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>
+                ← 이 절차 판본 {watched.version_no} 에서 나왔습니다
+              </NavLink>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {!running && watched.procedure_version_id && (
+            // 이력이 값을 들고 있는데 다시 돌릴 길이 없으면 사람이 칸을 손으로 옮겨 적는다.
+            // 옮겨 적는 순간 "같은 입력" 이라는 보장이 사라진다.
+            <button type="button" style={primary}
+                    onClick={() => act(async () => {
+                      const r = await replayRun(watched.id, 'live');
+                      watch(r.run_id);
+                      nav(`/procedures/runs/${r.run_id}`);
+                    })}>
+              이 값으로 다시 돌리기
+            </button>
+          )}
           {(watched.state === 'failed' || watched.state === 'unknown') && (
             <button type="button" style={ghost} onClick={() => act(() => resumeRun(watched.id))}>
               재개
