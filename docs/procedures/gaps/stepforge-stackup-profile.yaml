@@ -1,0 +1,33 @@
+# 결손 하나 = 파일 하나 (PLAN §9-6). 검출은 코드가, **등재는 사람이** 한다.
+id: stepforge-stackup-profile
+title: 적층(스택업) 환원 도구가 없다
+
+flow: 패널류를 룰로 골라 → 2차원으로 줄여 → 적층 해석으로 넘긴다
+step: 고른 뒤 "적층 정보" 를 만드는 자리
+kind: 1                       # ① 도구 없음 (§9-3)
+owner_candidate: heax-step_forge
+
+# ⚠ 후보 소유자는 **후보다**. 아래 확인을 거쳤다.
+checked:
+  - "② 숨어 있나 — `list_operations` 류 2단 도구 확인함. StepForge 의 2단은 `run_job`
+     (parse|detect|mesh|pipeline)뿐이고 적층 환원은 없다"
+  - "③ 안 이어지나 — 인접 도구 넷을 실제로 조회했다(axis_gap·thickness_report·
+     interface_summary·part_location). 재료는 있으나 **적층으로 내는 자리**가 없다"
+  - "④ 재현 불가인가 — 아니다. 순서·두께·법선·외곽은 **형상에 있다**"
+
+evidence:
+  - "2026-09-14 게이트웨이 실조회 — `search_tools('평판 스택업 층 구조와 면 정보 추출')`
+     33건 중 적층을 내는 도구 0건"
+  - "heax-step_forge 도구 82개 전수 — axis_gap(쌍별) · thickness_report(파트별 최소
+     벽두께) · interface_summary(관계 집계) 뿐"
+  - "받는 쪽 계약 실측 — laminate_analyzer 의 `laminate.laminae[]` 는 순서·두께·재질을
+     요구한다"
+
+request: ../../../StepForge/docs/REQUEST-stackup-profile.md
+status: open                  # open | confirmed | fixed | wontfix
+confirmed_by: null            # 사람이 확정할 때 채운다
+
+note: >-
+  ⚠ 한 번 헛짚은 적이 있다 — 도구 지도만 보고 "DynaForge 에 물성 갱신 도구가 없다" 고
+  판단했는데 `run_operation` 뒤에 matdb·matswap 이 있었다(W-43). 그래서 이번엔 ②를 먼저
+  확인하고 요청서에도 "이미 되는 길이 있으면 알려 달라" 를 적었다.
