@@ -5,7 +5,7 @@
 S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할 수 있다.
 
 > **진행 중 — S1.** 격리·저장소 등록 네 곳·모델·기계장치 둘·판정·실행기까지 섰다
-> (커밋 `463ca77`·`85ef3e1` 이후, 백엔드 183 tests). 남은 것은 **라우트와 화면**이다.
+> (커밋 `463ca77`·`85ef3e1`·`8bf6ac4` 이후 **라우트까지**, 백엔드 203 tests). 남은 것은 **화면**이다.
 > 챗·심의 파일 0개 변경, 새 pip·npm 의존성 0 을 매 커밋에서 확인한다. S1 의 소제목마다
 **→ 검증** 한 줄이 있다 — 세션이 끊겨도 다음 세션이 어디까지 됐는지 그 줄로 안다.
 
@@ -41,9 +41,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       메서드 단위 `asyncio.to_thread`. lifespan 종료에서 닫는다(`main.py:77-79` `agent_audit.close()` 옆)
 - [x] 런 하나에 MCP 세션 하나 — initialize 1회, 단계들은 같은 `mcp-session-id` 재사용, 종료·정지·예외
       시 `finally` 에서 `DELETE /mcp`. 게이트웨이 SDK 는 세션 유휴 만료가 없다
-- [ ] `main.py` 에서 워크벤치 import·스토어 오픈을 try/except 로 감싼다 — 실패하면 라우터를 빼고
+- [x] `main.py` 에서 워크벤치 import·스토어 오픈을 try/except 로 감싼다 — 실패하면 라우터를 빼고
       `app.state.workbench_error` 에 남기며 포털(챗 릴레이)은 뜬다
-- [ ] `GET /workbench-api/health`(무인증) — 열렸으면 200 `{journal_mode, path}`, 아니면 503
+- [x] `GET /workbench-api/health`(무인증) — 열렸으면 200 `{journal_mode, path}`, 아니면 503
 - [x] agent-server 는 **안 쓴다**
 - → 검증: 챗을 동시에 돌리며 재생 — 429·지연 없음. `/workbench-api/health` 가 `wal` 을 돌려준다
 
@@ -85,7 +85,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       `asyncio.create_task`(자기 세마포어 안), 단계마다 sqlite 에 쓰고 화면은 `GET /runs/{id}` 폴링. 워크벤치
       경로는 nginx catch-all(`hwax.conf.tmpl:95-97`·`gen-nginx-conf.sh:207-209`, 기본 60초)이라 동기로 두면
       nginx 는 504·uvicorn 은 완료 → 재시도 → 중복. **dev vite 프록시에선 재현되지 않는다**
-- [ ] 같은 단계 재실행 방지 — 단계가 `running` 이면 `POST …/steps` 는 409
+- [x] 같은 단계 재실행 방지 — 단계가 `running` 이면 `POST …/steps` 는 409
 - [x] 게이트웨이 호출 함수 — `upload.py:282 mcp_call` 의 방식(httpx JSON-RPC)만 따르고 **베끼지 않는다**.
       (a) `tools/call` 을 `name="invoke_tool", arguments={name: <별칭>, arguments}` 로 감싼다(파괴 도구
       거부는 `invoke_tool` 일 때만 검사) (b) `result.isError` 를 보존한다(`mcp_call` 은 버려서 `unknown tool`
@@ -98,13 +98,13 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 단계 직전 검사 셋 — 런 상태가 `running` 인가 · 소유자 `user_store.get(email).status == "active"` 인가 ·
       `schema_fp` 가 지금 `tools/list` 와 같은가(다르면 정지 + diff 표시, 자동 진행 금지). 셋이 PAT 발급의
       선행 조건이다
-- [ ] 런 시작 전 사전검사 — 실행자 PAT 로 `tools/list` 를 받아 레시피 단계 도구가 하나라도 없으면 한 단계도
+- [x] 런 시작 전 사전검사 — 실행자 PAT 로 `tools/list` 를 받아 레시피 단계 도구가 하나라도 없으면 한 단계도
       실행하지 않고 거절, 빠진 도구와 '내 권한' 링크를 보인다. 포털에서 권한을 재계산하지 않는다
       (access-control D-5). 런 중간의 `forbidden:` 은 '권한 부족' 정지 사유로만 기록
 - [ ] RA 사전검사 — 단계 중 `map[tool] == "reportarchive"` 가 있으면 `user_store.get_connection(email,
       service="reportarchive")` 확인, 없으면 시작 거절(`routes.py:969-974` 와 같은 400 문구). 단계마다
       `identity_note`(as-conn·as-user·service)를 사전검사 결과로 기록(게이트웨이는 결과에 안 돌려준다)
-- [ ] 예약 변수 `{{me.email}}`·`{{me.sub}}`·`{{run_id}}`
+- [x] 예약 변수 `{{me.email}}`·`{{me.sub}}`·`{{run_id}}`
 - [x] **must-gate** — `publish_report`·`request_unpublish`·`trash_report`·`restore_version`·`job_stop`·
       `risk_add_finding`·`add_report_tags` 단계에 `gate: human` 없으면 저장 거절. `submit_*`·`run_job`·
       `register_*`·`upload_*`·`ingest_*`·`train_model` 은 저장 시 경고. 게이트웨이 `_INVOKE_DENY`
@@ -121,14 +121,14 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       네 조건. 하나라도 깨지면 정지, 빈 값 치환 금지. 세 층 + 게이트웨이 접두 분류를 런에 남긴다
 - [x] 실패 카드는 `client.ts:47-60` errorDetail 관례 — `msg` 만 추려 한 줄, 원문은 접이식. pydantic 덤프
       그대로 띄우지 않는다
-- [ ] 재개 — `failed`·`unknown` 단계부터, 앞 단계 결과 재사용(`reused_from_run_id`). `done` 은 절대
+- [x] 재개 — `failed`·`unknown` 단계부터, 앞 단계 결과 재사용(`reused_from_run_id`). `done` 은 절대
       재실행 안 함. `unknown` 인 쓰기 단계(`create_`·`submit_`·`ingest_`·`publish_`)는 사람 확인 뒤에만.
       재개는 소유자만, PAT 는 재개자 명의로 새로. 클라이언트 타임아웃·프로세스 종료는 `failed` 가 아니라
       `unknown`. 기동 시 `running` 단계 → `unknown(stage=restart)`, 런 → `failed(stage=restart)`
 - [ ] 비멱등 재실행 경로 둘을 안다 — ① 게이트웨이가 예외(120초 포함) 뒤 재연결하고 **같은 인자로 한 번
       더** 부른다(`gateway.py:1929-1949`) ② 실행기가 먼저 포기하면 쓰기는 그 뒤 완료된다. 그래서 타임아웃
       ≥260초·`unknown` 규칙이다
-- [ ] 취소 — `POST /runs/{id}/cancel`, 단계 경계에서 `cancelled`, 주체·시각 기록, portal-admin 우회 한 줄
+- [x] 취소 — `POST /runs/{id}/cancel`, 단계 경계에서 `cancelled`, 주체·시각 기록, portal-admin 우회 한 줄
 - [x] 결과 저장 — gzip BLOB + bytes + sha256, 2MB 초과는 프리뷰 4KB + `truncated`, 이미지는
       `workbench-artifacts/` 파일, 본문 90일 뒤 비움·메타 영구. `save` 는 저장·절단 전에
 - [x] `notes`(4KB) 채우기 — 어댑터가 결과 속 경고·모델 출처를 뽑아 올린다
@@ -173,13 +173,13 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - → 검증: 빈 런에서 `list_projects` → 저장 → 변수 바꿔 재생이 브라우저에서 된다
 
 ### 접점 (챗·심의 0줄)
-- [ ] `backend/app/main.py` — import + `include_router(prefix="/workbench-api")`. **`:156`
+- [x] `backend/app/main.py` — import + `include_router(prefix="/workbench-api")`. **`:156`
       `if settings.serve_frontend:` 블록보다 위** — 뒤에 두면 GET 이 `index.html` 로 먹힌다(200 text/html 로
       조용히 실패, POST 는 도달). dev 에서 `SERVE_FRONTEND` 없이 uvicorn 만 띄우면 안 드러난다 —
       배포 인스턴스(8723)에서 GET 으로 확인
 - [ ] `frontend/src/App.tsx` 라우트 1개 `"/workbench/*"`(자식 `recipes/:id`·`runs/:id`) ·
       `AppHeader.tsx` 메뉴 1개 · `state/WorkbenchContext.tsx`
-- [ ] `backend/config/access.yaml` `features:` 에 `workbench` + **모든 라우트에 `ensure(principal,
+- [x] `backend/config/access.yaml` `features:` 에 `workbench` + **모든 라우트에 `ensure(principal,
       "feat:workbench")`**. 실행 라우트는 추가로 `owner_sub == principal.subject`
 - [ ] `frontend/vite.config.ts:18-26` 프록시 `'/workbench-api'` 1줄
 - [ ] SSE 를 내지 않는다 — 내면 nginx **두 파일**(`hwax.conf.tmpl:74-93` + `gen-nginx-conf.sh:173-184`)을
@@ -195,7 +195,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       (4) `gate: human` 정지, 실패 시 단계·이유 기록, 다섯 실패 모양 각각 정지 (5) 런이 판본 id 를 박는다
       (6) 기동 시 `running` → `unknown/failed(stage=restart)`. 게이트웨이는 자기 `AsyncClient` 에
       `httpx.MockTransport`(`test_access_control.py:134` 선례)
-- [ ] 권한 전수 — `app.routes` 에서 `/workbench-api` 접두 라우트를 전부 뽑아 `feat:workbench` 없는 계정으로
+- [x] 권한 전수 — `app.routes` 에서 `/workbench-api` 접두 라우트를 전부 뽑아 `feat:workbench` 없는 계정으로
       모두 403(열거는 `HWAXRisk/backend/tests/test_client_contract.py:33` 방식). 손으로 고른 몇 개가 아니라
       **전수**여야 나중에 단 라우트가 조용히 열리지 않는다
 - [ ] 첫 레시피 픽스처(`project_id` 변수 → `list_parts` → `create_report_draft`)가 스키마 검증 통과

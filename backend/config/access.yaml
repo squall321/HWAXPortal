@@ -41,6 +41,9 @@ features:
   - id: api-token
     label: API 토큰 · MCP 개인 연결
     desc: Claude·스크립트에서 게이트웨이 도구를 쓰는 개인 토큰을 발급한다.
+  - id: workbench
+    label: 워크벤치 · 업무 절차
+    desc: 도구를 한 단계씩 돌린 기록을 레시피로 굳혀 대상만 바꿔 재생한다. 도구 인가는 각자 권한 그대로다.
 
 platforms:
   - id: heaxhub

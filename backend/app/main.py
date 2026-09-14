@@ -5,6 +5,7 @@ Phase 0: health.  Phase 1: auth session + AuthProvider/JWTService on app.state.
 """
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
@@ -43,6 +44,7 @@ from app.mcp import routes as mcp_routes
 from app.mcp.registry import McpRegistry
 
 settings = get_settings()
+_log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -73,10 +75,39 @@ async def lifespan(app: FastAPI):
         limits=httpx.Limits(max_connections=settings.max_concurrent_chats,
                             max_keepalive_connections=20),
     )
+    # 워크벤치(업무 절차 인벤토리) — 챗과 자원을 공유하지 않는 격리 모듈(docs/workbench/PLAN.md §3).
+    # ⚠ 여기서 터져도 포털은 떠야 한다. W-10 의 "영향 0" 은 런타임 자원 얘기이고 **기동 실패는
+    #   공유되므로** 모듈만 끄고 챗 릴레이(/agent/)는 살린다.
+    app.state.workbench_store = None
+    app.state.workbench_runner = None
+    try:
+        from app.workbench.pat import mint as _wb_mint
+        from app.workbench.runner import WorkbenchRunner
+        from app.workbench.store import WorkbenchStore
+
+        _wb = WorkbenchStore(settings)
+        _stale = _wb.close_stale()   # 프로세스와 함께 죽은 단계는 unknown 으로 마감한다
+        if _stale:
+            _log.warning("워크벤치: 재기동으로 %d개 단계를 unknown 으로 마감했다", _stale)
+        app.state.workbench_store = _wb
+        app.state.workbench_runner = WorkbenchRunner(
+            settings=settings, store=_wb,
+            mint_pat=lambda p, run, ix: _wb_mint(app.state.keystore, settings, p, run, ix),
+            is_active=lambda email: (app.state.user_store.get(email) or {}).get(
+                "status", "active") == "active",
+        )
+    except Exception as exc:  # noqa: BLE001
+        app.state.workbench_error = f"{type(exc).__name__}: {exc}"
+        _log.error("워크벤치 기동 실패 — 모듈만 끄고 포털은 계속 뜬다", exc_info=True)
+
     yield
     # Shutdown: close the pooled client + the audit sqlite connection.
     await app.state.agent_client.aclose()
     app.state.agent_audit.close()
+    if app.state.workbench_runner is not None:
+        await app.state.workbench_runner.aclose()
+    if app.state.workbench_store is not None:
+        app.state.workbench_store.close()
 
 
 app = FastAPI(
@@ -130,6 +161,15 @@ app.include_router(auth_pat.router)
 app.include_router(mail_routes.router)
 app.include_router(mcp_routes.router)
 app.include_router(agent_routes.router)
+
+# 워크벤치 — SPA 폴백보다 위. 등록이 실패해도 포털(챗 릴레이)은 뜬다.
+try:
+    from app.workbench import routes as workbench_routes
+
+    app.include_router(workbench_routes.router)
+except Exception as exc:  # noqa: BLE001
+    app.state.workbench_error = f"{type(exc).__name__}: {exc}"
+    _log.error("워크벤치 라우터 등록 실패 — 포털은 계속 뜬다", exc_info=True)
 
 # Dev-only mock SAML IdP — a real signing IdP fixture to exercise the SP path.
 if settings.app_env == "dev" and settings.saml_mock_idp_enabled:
