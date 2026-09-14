@@ -22,6 +22,7 @@ export default defineConfig({
       '/mail': { target: API, changeOrigin: true },
       '/health': { target: API, changeOrigin: true },
       '/changelog': { target: API, changeOrigin: true },
+      '/workbench-api': { target: API, changeOrigin: true },
       '/.well-known': { target: API, changeOrigin: true },
     },
   },

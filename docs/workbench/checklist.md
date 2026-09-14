@@ -5,7 +5,8 @@
 S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할 수 있다.
 
 > **진행 중 — S1.** 격리·저장소 등록 네 곳·모델·기계장치 둘·판정·실행기까지 섰다
-> (커밋 `463ca77`·`85ef3e1`·`8bf6ac4` 이후 **라우트까지**, 백엔드 203 tests). 남은 것은 **화면**이다.
+> **S1 의 코드가 다 섰다** — 격리·저장소 등록·모델·판정·실행기·라우트·화면(커밋 `463ca77`
+> 이후 5개, 백엔드 203 tests · tsc·빌드 통과). 남은 것은 **브라우저 실물 확인**이다.
 > 챗·심의 파일 0개 변경, 새 pip·npm 의존성 0 을 매 커밋에서 확인한다. S1 의 소제목마다
 **→ 검증** 한 줄이 있다 — 세션이 끊겨도 다음 세션이 어디까지 됐는지 그 줄로 안다.
 
@@ -150,26 +151,26 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
   `as-conn:<email>` 이 찍힌다
 
 ### 화면
-- [ ] 워크벤치(빈 런) — **진입점**. 도구 고르기 → 인자 → 실행 → 결과, 한 단계씩
-- [ ] 도구 고르기 데이터 — `GET /workbench-api/tools`: 사용자 PAT `tools/list`(권한 필터·`inputSchema`
+- [x] 워크벤치(빈 런) — **진입점**. 도구 고르기 → 인자 → 실행 → 결과, 한 단계씩
+- [x] 도구 고르기 데이터 — `GET /workbench-api/tools`: 사용자 PAT `tools/list`(권한 필터·`inputSchema`
       정본) + 무인증 `/tools-map` 의 `apps`·`areas`·`area_meta` 라벨. `/tools-map` 만 쓰면 못 부르는
       도구까지 보여 403 이 난다. `ToolAreaChips`·`toolAreasOf` 재사용, `ToolCatalogBlock` 은 `useChat`
       결합이라 안 씀. 캐시는 없거나 ≤60초
-- [ ] 인자 입력 2단 — `properties` 있으면 타입별 위젯 + required 표시, 속성 없는 object/array(44/465)는
+- [x] 인자 입력 2단 — `properties` 있으면 타입별 위젯 + required 표시, 속성 없는 object/array(44/465)는
       원문 JSON textarea + 도구 설명 접이식. 프론트 검증 없이 서버 에러를 '필드명 → 메시지' 로
-- [ ] 레시피 목록 / 상세 / 판본 / 런 이력(내 것만) / 실행(변수 폼 → 계획 모드 목록 → 진행 → 게이트)
-- [ ] **"레시피로 저장"** — 보낸 인자를 잎 단위 트리로 펼쳐 클릭으로 변수화(key·label·type 은 잎의 JSON
+- [x] 레시피 목록 / 상세 / 판본 / 런 이력(내 것만) / 실행(변수 폼 → 계획 모드 목록 → 진행 → 게이트)
+- [x] **"레시피로 저장"** — 보낸 인자를 잎 단위 트리로 펼쳐 클릭으로 변수화(key·label·type 은 잎의 JSON
       타입에서), 결과 트리에서 클릭으로 `save` 경로 생성, JSON 아니면 '추출 불가' 표시. **상수로 남는
       인자를 전부 나열해 확인**(과제 ID·워크스페이스·본문이 공유 레시피에 박힌다). 키가
       `token|secret|password|authorization|api_key|cookie` 이거나 URL userinfo 가 든 값은 상수 저장 거절
       (변수·앞 단계 `save` 만 허용). `path|local_path|file_path|url` 키(10/465)와 24-hex·이메일 꼴 값은
       기본을 변수로 올린다
-- [ ] 재생 전 "되돌리기 어려운 단계 N개" 목록 · 게이트 카드에 실제 인자와 직전 결과 · 확인 대기 런 상단
+- [x] 재생 전 "되돌리기 어려운 단계 N개" 목록 · 게이트 카드에 실제 인자와 직전 결과 · 확인 대기 런 상단
 - [ ] 레시피 YAML export/import(dev → cae00 이관 경로)
-- [ ] 레이아웃 — 루트는 `.container`(ChatDock 자리 예약). 고정 액션 바는 우하단 비우고 상단·좌측.
+- [x] 레이아웃 — 루트는 `.container`(ChatDock 자리 예약). 고정 액션 바는 우하단 비우고 상단·좌측.
       `AppShell` 은 손대지 않는다. `WorkbenchContext` 는 `/workbench/*` 요소 안, `useChat` 안 씀,
       localStorage 는 입력 중 인자 초안에만
-- [ ] 실패 카드·재개 경고(위 실행기 항목)
+- [x] 실패 카드·재개 경고(위 실행기 항목)
 - → 검증: 빈 런에서 `list_projects` → 저장 → 변수 바꿔 재생이 브라우저에서 된다
 
 ### 접점 (챗·심의 0줄)
@@ -177,15 +178,15 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       `if settings.serve_frontend:` 블록보다 위** — 뒤에 두면 GET 이 `index.html` 로 먹힌다(200 text/html 로
       조용히 실패, POST 는 도달). dev 에서 `SERVE_FRONTEND` 없이 uvicorn 만 띄우면 안 드러난다 —
       배포 인스턴스(8723)에서 GET 으로 확인
-- [ ] `frontend/src/App.tsx` 라우트 1개 `"/workbench/*"`(자식 `recipes/:id`·`runs/:id`) ·
+- [x] `frontend/src/App.tsx` 라우트 1개 `"/workbench/*"`(자식 `recipes/:id`·`runs/:id`) ·
       `AppHeader.tsx` 메뉴 1개 · `state/WorkbenchContext.tsx`
 - [x] `backend/config/access.yaml` `features:` 에 `workbench` + **모든 라우트에 `ensure(principal,
       "feat:workbench")`**. 실행 라우트는 추가로 `owner_sub == principal.subject`
-- [ ] `frontend/vite.config.ts:18-26` 프록시 `'/workbench-api'` 1줄
-- [ ] SSE 를 내지 않는다 — 내면 nginx **두 파일**(`hwax.conf.tmpl:74-93` + `gen-nginx-conf.sh:173-184`)을
+- [x] `frontend/vite.config.ts:18-26` 프록시 `'/workbench-api'` 1줄
+- [x] SSE 를 내지 않는다 — 내면 nginx **두 파일**(`hwax.conf.tmpl:74-93` + `gen-nginx-conf.sh:173-184`)을
       같이 고쳐야 한다. 폴링으로 충분하다
 - [ ] ⚠ `systems.yaml` 타일을 만들면 `access.yaml` `platforms:` 에도(`test_access_control.py:28-36` 강제)
-- [ ] `backend/config/changelog.yaml` 에 사용자가 겪는 변화
+- [x] `backend/config/changelog.yaml` 에 사용자가 겪는 변화
 - [x] `git diff backend/requirements.txt`·`frontend/package.json` 이 **비어 있다**
 - → 검증: `git diff --stat` 에 챗·심의 파일 0개. `curl -s :8723/workbench-api/recipes` 가 JSON(HTML 아님)
 
