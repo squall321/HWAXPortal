@@ -1381,6 +1381,8 @@ async def chat(
                                 # ⚠ ok 는 **없을 수 있다**(시작 이벤트). None 과 False 를
                                 # 섞으면 '모른다' 가 '실패했다' 가 된다.
                                 "call": (str(data.get("call"))[:80] if data.get("call") else None),
+                                # `invoke_tool` 경유였다는 사실 — `tool` 은 이미 안쪽 이름이다
+                                "via": (str(data.get("via"))[:40] if data.get("via") else None),
                                 "ok": (bool(data["ok"]) if isinstance(data.get("ok"), bool) else None),
                                 "detail": (str(data.get("detail"))[:400] if data.get("detail") else None),
                                 # 절차 도출용 날것 — 미리보기로 만든 절차는 인자가 손상돼 있다
