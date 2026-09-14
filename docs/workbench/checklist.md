@@ -1,6 +1,6 @@
 # 워크벤치 체크리스트
 
-[PLAN.md](PLAN.md) 개정 2 기준. **착수 전이라 전부 미체크다.**
+[PLAN.md](PLAN.md) 의 단계를 실행 항목으로 편 것이다. **착수 전이라 전부 미체크다.**
 
 S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할 수 있다.
 
@@ -8,15 +8,14 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 ## S0 · cae00 API 수집 (사용자, 30분)
 
-ODB 소스가 이 박스에 없고 dev 에서 도달도 안 된다. **받아 오지 않으면 ODB 설계는 전부 가정이다.**
+**실행 절차는 [odb-request.md](odb-request.md) 에 따로 있다.** 그 문서 하나만 보고 cae00 에서
+할 수 있게 썼다. 여기서는 완료 여부만 센다.
 
-- [ ] cae00 에서 `odb` 도구 목록 + `args_schema` 덤프 (PLAN §3 의 스크립트)
-- [ ] 그중 `list_components`·`extract`·`copper` 계열을 **한 번씩 실호출한 응답 표본**
-      (민감정보 제거)
-- [ ] `/tools-map` 에서 odb-hub 앱 키 확인
-- [ ] `docs/workbench/fixtures/odb-hub/` 에 넣기
-- [ ] 확인: SED 필수 10개 중 **몇 개가 실제로 채워지는지** 표본으로 대조
-      (설계 가정은 `pkg_type` 하나만 남는 것이다 — 맞는지 확인)
+- [ ] `fixtures/odb-hub/tools.json` — odb 도구 목록 + `args_schema`
+- [ ] `fixtures/odb-hub/apps.txt` — 앱 키
+- [ ] `fixtures/odb-hub/samples.json` — 읽기 도구 응답 표본
+- [ ] `fixtures/odb-hub/sed-mapping.md` — SED 필수 10개 대조표(**"없다" 도 답이다**)
+- [ ] 세 줄 메모 — 잡 수명 · 파일 주는 법 · 오래 걸리는 도구 유무
 
 ## S1 · 레시피 저장소 + 실행기 + 최소 화면 (가장 큰 덩어리)
 
@@ -134,5 +133,5 @@ ODB 소스가 이 박스에 없고 dev 에서 도달도 안 된다. **받아 오
 
 ## 착수 전
 
-- [ ] PLAN §9 결정 — S0 시점, 첫 레시피를 무엇으로 할지
+- [ ] PLAN §7 결정 — S0 시점, 첫 레시피를 무엇으로 할지
 - [ ] S1 을 먼저 시작할지(S0 과 병렬 가능) 확인
