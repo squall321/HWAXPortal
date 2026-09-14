@@ -199,6 +199,17 @@ export type RunDraft = {
   needs_human: DraftReason[];
 };
 
+export type ProcedureTool = {
+  name: string; title: string; description: string;
+  inputSchema: { properties?: Record<string, unknown>; required?: string[] };
+  version_no: number; human_gates: string[];
+};
+
+/** 이 절차의 **도구 계약** — 이름·설명·입력 스키마. 절차를 도구로 등록하는 다리다. */
+export function getProcedureTool(id: string) {
+  return get<ProcedureTool>(`/procedures/${id}/tool`, '도구 계약을 불러오지 못했습니다.');
+}
+
 /** 이 실행을 절차 **초안**으로 펴 본다. 저장하지 않는다 — 확정은 사람이 한다. */
 export function getRunDraft(runId: string) {
   return get<RunDraft>(`/runs/${runId}/draft`, '초안을 만들지 못했습니다.');

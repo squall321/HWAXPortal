@@ -695,3 +695,30 @@ def test_초안은_남의_실행을_안_보여준다(user):
                                      {"tool": "t", "call": "a", "ok": True, "result_preview": "{}"}])
     boss = _login(c, "boss@corp.com")
     assert c.get(f"{PREFIX}/runs/{rid}/draft", headers=boss).status_code == 404
+
+
+def test_절차를_도구_계약으로_낸다(user):
+    """절차는 사실상 도구다 — 계약을 같은 모양으로 내면 부르는 쪽이 같아진다(PLAN §9)."""
+    c, h = user
+    got = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h).json()
+    r = c.get(f"{PREFIX}/procedures/{got['id']}/tool", headers=h)
+    assert r.status_code == 200, r.text
+    t = r.json()
+
+    sc = t["inputSchema"]
+    assert sc["type"] == "object" and sc["additionalProperties"] is False
+    assert "laminate" in sc["properties"] and sc["properties"]["laminate"]["type"] == "object"
+    # 허용값이 있는 변수는 고르는 칸으로 나간다 — 오타가 조용히 살면 안 된다
+    assert sc["properties"]["bend_axis"]["enum"] == ["x", "y"]
+    # 왜 물어보는지가 설명으로 실린다 — LLM 이 읽을 수 있어야 한다
+    assert "9.6%" in sc["properties"]["width_mode"]["description"]
+    assert set(sc["required"]) >= {"project_id", "part", "laminate"}
+
+    # ⚠ 사람 확인에서 멈춘다는 사실이 **계약의 일부**다 — 모르면 "왜 안 끝나지" 가 된다
+    assert t["human_gates"] == ["create_report_draft"]
+    assert "사람 확인" in t["description"] and "bend_profile" in t["description"]
+
+
+def test_없는_절차의_도구_계약은_404(user):
+    c, h = user
+    assert c.get(f"{PREFIX}/procedures/없는id/tool", headers=h).status_code == 404

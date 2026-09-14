@@ -130,3 +130,105 @@ def test_근거가_인자마다_달린다():
     kinds = {r["arg"]: r["kind"] for r in got["reasons"]}
     assert kinds == {"a": "asked", "b": "constant"}
     assert all(r.get("why") for r in got["reasons"])
+
+
+# ── 변수의 뜻은 도구 스키마에서 온다 (지어내지 않는다) ───────────────────
+SCHEMAS = {
+    "solve_prescribed_curvature": {"properties": {
+        "bend_radius": {"type": "number",
+                        "description": "굽힘반경, 길이 단위. unit_system 에 묶인다"},
+        "width": {"type": "string", "enum": ["free", "constrained"],
+                  "description": "폭 구속 — free(M_y=0) vs constrained(κ_y=0). 답이 9.6% 갈린다",
+                  "default": "free"},
+        "bend_axis": {"type": "string"},   # 설명이 없다 — 결손이어야 한다
+    }},
+}
+
+
+def test_변수_설명이_도구_스키마에서_온다():
+    """절차는 사실상 도구다 — 변수가 그 입력 스키마다. 설명을 지어낼 필요가 없다."""
+    steps = [{"tool": "solve_prescribed_curvature",
+              "args": {"bend_radius": 6.0}, "result": {}}]
+    got = derive.draft(steps, tool_backend={"solve_prescribed_curvature": "x"},
+                       asked="굽힘반경 6.0 으로 봐줘", tool_schemas=SCHEMAS)
+    v = got["spec"]["vars"][0]
+    assert "굽힘반경, 길이 단위" in v["why"], v
+    assert "1단계" in v["why"] and "bend_radius" in v["why"], "어디에 쓰이는지가 없다"
+    assert v["type"] == "number", "스키마의 형을 안 썼다"
+
+
+def test_허용값이_있으면_고르는_칸이_된다():
+    """`free|constrained` 는 답이 9.6% 갈리는 자리다 — 자유 입력으로 두면 오타가 조용히 산다."""
+    steps = [{"tool": "solve_prescribed_curvature",
+              "args": {"width": "constrained"}, "result": {}}]
+    got = derive.draft(steps, tool_backend={"solve_prescribed_curvature": "x"},
+                       asked="폭은 constrained 로", tool_schemas=SCHEMAS)
+    v = got["spec"]["vars"][0]
+    assert v["type"] == "enum" and v["values"] == ["free", "constrained"]
+    assert "9.6%" in v["why"], "왜 중요한지가 안 실렸다"
+    assert "기본값" in v["why"], "도구 기본값이 안 실렸다"
+
+
+def test_설명_없는_인자는_결손으로_올린다():
+    """⚠ 설명 없는 인자는 **그 앱의 문서 결손**이다. 사람도 LLM 도 그 칸의 뜻을 알 수 없다."""
+    steps = [{"tool": "solve_prescribed_curvature",
+              "args": {"bend_axis": "x축으로"}, "result": {}}]
+    got = derive.draft(steps, tool_backend={"solve_prescribed_curvature": "x"},
+                       asked="x축으로 굽혀", tool_schemas=SCHEMAS)
+    assert any(g["kind"] == "arg_undocumented" and g["arg"] == "bend_axis" for g in got["gaps"])
+    v = got["spec"]["vars"][0]
+    assert "설명이 없다" in v["why"], "모르면서 아는 척하면 안 된다"
+    assert "_undocumented" not in v, "내부 표식이 밖으로 샜다"
+
+
+def test_실제로_쓰인_값이_예시로_남는다():
+    """기본값이 아니다 — 사람이 눌러야 들어간다(Var.example 규약)."""
+    steps = [{"tool": "solve_prescribed_curvature", "args": {"bend_radius": 6.0}, "result": {}}]
+    got = derive.draft(steps, tool_backend={"solve_prescribed_curvature": "x"},
+                       asked="6.0 으로", tool_schemas=SCHEMAS)
+    assert got["spec"]["vars"][0]["example"] == 6.0
+
+
+def test_여러_단계에_쓰이면_그_자리를_전부_적는다():
+    """한 칸이 세 단계를 움직이는데 한 단계만 적혀 있으면 영향 범위를 오해한다."""
+    steps = [
+        {"tool": "solve_prescribed_curvature", "args": {"width": "constrained"}, "result": {}},
+        {"tool": "solve_prescribed_curvature", "args": {"width": "constrained"}, "result": {}},
+    ]
+    got = derive.draft(steps, tool_backend={"solve_prescribed_curvature": "x"},
+                       asked="폭은 constrained", tool_schemas=SCHEMAS)
+    why = got["spec"]["vars"][0]["why"]
+    assert "1단계" in why and "2단계" in why, why
+
+
+def test_살찐_변수가_저장_검증을_통과한다():
+    """스키마에서 끌어온 값이 절차 규격에 안 맞으면 도출이 못 쓰는 초안을 낸다."""
+    steps = [{"tool": "solve_prescribed_curvature",
+              "args": {"width": "free", "bend_radius": 6.0}, "result": {}}]
+    got = derive.draft(steps, tool_backend={"solve_prescribed_curvature": "heax-x"},
+                       asked="free 로 6.0", tool_schemas=SCHEMAS)
+    spec = ProcedureSpec.model_validate(got["spec"])
+    assert [e for e in validate_spec(spec) if not e.startswith("warn:")] == []
+
+
+# ── 절차 → 도구 계약 ─────────────────────────────────────────────────────
+def test_절차_변수가_도구_입력_스키마가_된다():
+    """절차는 사실상 도구다 — 계약을 같은 모양으로 내면 부르는 쪽이 같아진다."""
+    spec = {"title": "t", "vars": [
+        {"key": "project_id", "label": "과제", "type": "string", "why": "어느 과제인가"},
+        {"key": "width_mode", "label": "폭", "type": "enum", "values": ["free", "constrained"],
+         "why": "답이 9.6% 갈린다", "example": "free"},
+        {"key": "memo", "label": "비고", "type": "string", "required": False},
+    ], "steps": []}
+    sc = derive.to_input_schema(spec)
+    assert sc["type"] == "object" and sc["additionalProperties"] is False
+    assert sc["required"] == ["project_id", "width_mode"], "선택 변수가 필수로 갔다"
+    assert sc["properties"]["width_mode"]["enum"] == ["free", "constrained"]
+    assert "9.6%" in sc["properties"]["width_mode"]["description"]
+    assert sc["properties"]["width_mode"]["examples"] == ["free"]
+    assert sc["properties"]["memo"]["type"] == "string"
+
+
+def test_json_변수는_object_로_나간다():
+    sc = derive.to_input_schema({"vars": [{"key": "laminate", "type": "json", "why": "적층"}]})
+    assert sc["properties"]["laminate"]["type"] == "object"

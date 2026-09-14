@@ -89,7 +89,7 @@ def _too_short(v: Any) -> bool:
 
 # ── 초안 ─────────────────────────────────────────────────────────────────
 def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
-          asked: str = "") -> dict:
+          asked: str = "", tool_schemas: dict[str, dict] | None = None) -> dict:
     """원장의 단계 목록 → 절차 초안 + **왜 그렇게 판단했나**.
 
     `steps` 는 `{tool, args, result}` 목록이다(`args`·`result` 는 파싱된 값이거나 원문 문자열).
@@ -97,6 +97,7 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
     지어내지 않는다.
     """
     tb = tool_backend or {}
+    ts = tool_schemas or {}
     parsed = [{"tool": s.get("tool") or "", "args": _obj(s.get("args")),
                "result": _obj(s.get("result"))} for s in steps]
 
@@ -107,6 +108,9 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
     # 변수와 save 는 **같은 이름 공간**을 쓴다(둘 다 `{{이름}}` 으로 불린다).
     # 따로 세면 `part` 변수와 `part` save 가 겹쳐 뒤엣것이 앞엣것을 조용히 덮는다.
     names: dict[str, str] = {}
+    # ⚠ 같은 인자에 같은 값이 여러 단계에 쓰이면 **변수는 하나여야 한다.** 갈라 두면
+    # 사람이 같은 값을 두 번 채우게 되고, 한쪽만 바꾸면 절차가 조용히 어긋난다.
+    by_value: dict[tuple, str] = {}
 
     for ix, st in enumerate(parsed):
         backend = tb.get(st["tool"]) or ""
@@ -126,16 +130,35 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
                 out_steps[src["from_step"]].setdefault("save", {})[name] = src["path"]
                 args_out[key] = "{{%s}}" % name
             elif src["kind"] == "asked":
+                seen_at = by_value.get((key, _vkey(val)))
+                if seen_at:
+                    args_out[key] = "{{%s}}" % seen_at
+                    reasons.append({"step": ix + 1, "tool": st["tool"], "arg": key,
+                                    "kind": "asked", "why": f"`{seen_at}` 와 같은 값이다"})
+                    continue
                 name = _var_name(key, names)
                 names[name] = "var"
-                variables[name] = {"key": name, "label": key, "type": _type_of(val),
-                                   "why": "사람이 이번 대화에서 준 값이다"}
+                by_value[(key, _vkey(val))] = name
+                variables[name] = describe_var(
+                    name, key, val, tool=st["tool"], step=ix + 1,
+                    prop=_prop(ts.get(st["tool"]), key))
+                if variables[name].pop("_undocumented", False):
+                    # 인자에 설명이 없는 도구는 **그 앱의 문서 결손**이다. 절차를 쓰는 사람도
+                    # LLM 도 그 칸이 무엇인지 알 길이 없다 — 지어내지 말고 결손으로 올린다.
+                    gaps.append({"step": ix + 1, "tool": st["tool"], "kind": "arg_undocumented",
+                                 "arg": key,
+                                 "why": f"`{st['tool']}` 스키마에 `{key}` 설명이 없다 — "
+                                        "절차 변수의 뜻을 적을 근거가 없다"})
                 args_out[key] = "{{%s}}" % name
             else:
                 args_out[key] = val
             reasons.append({"step": ix + 1, "tool": st["tool"], "arg": key, **src})
 
         out_steps.append({"backend": backend, "tool": st["tool"], "args": args_out})
+
+    # 같은 값이 여러 단계에 쓰였으면 **어디 어디에 쓰이는지**를 설명에 모은다 —
+    # 한 칸이 세 단계를 움직이는데 한 단계만 적혀 있으면 사람이 영향 범위를 오해한다.
+    _spread(variables, out_steps, parsed, ts)
 
     return {
         "spec": {"title": (asked or "챗에서 뽑은 절차")[:80],
@@ -204,3 +227,122 @@ def _var_name(key: str, seen: dict) -> str:
 def _save_name(from_step: int, path: str, seen: dict) -> str:
     tail = re.split(r"[.\[]", path)[-1].strip("]") or "value"
     return _var_name(f"s{from_step + 1}_{tail}", seen)
+
+
+# ── 변수의 뜻은 **도구 스키마에서 온다** ─────────────────────────────────
+# 절차는 사실상 도구다 — 변수가 그 입력 스키마다. 그러니 변수 설명도 MCP 도구 인자처럼
+# 갖춰져야 한다(형·허용값·단위·왜 필요한가). 그런데 **지어낼 필요가 없다.** 그 인자를 받는
+# 도구의 `inputSchema` 에 이미 있다. 거기서 끌어오고, 없으면 **없다고 말한다**(결손).
+def _prop(schema: dict | None, key: str) -> dict:
+    if not isinstance(schema, dict):
+        return {}
+    got = (schema.get("properties") or {}).get(key)
+    return got if isinstance(got, dict) else {}
+
+
+_SCHEMA_TYPE = {"string": "string", "integer": "number", "number": "number",
+                "boolean": "boolean", "object": "json", "array": "json"}
+
+
+def describe_var(name: str, key: str, val: Any, *, tool: str, step: int, prop: dict) -> dict:
+    """변수 하나를 **읽을 수 있게** 만든다 — 형·허용값·설명·쓰이는 자리.
+
+    `_undocumented` 는 호출부가 결손으로 올리고 지운다.
+    """
+    enum = [str(x) for x in (prop.get("enum") or []) if x is not None]
+    kind = _SCHEMA_TYPE.get(_first_type(prop), "") or _type_of(val)
+    desc = str(prop.get("description") or "").strip()
+
+    out: dict[str, Any] = {"key": name, "label": _label(key, desc), "type": kind}
+    if enum:
+        out["type"] = "enum"
+        out["values"] = enum
+    used = f"{step}단계 `{tool}` 의 `{key}`"
+    if desc:
+        out["why"] = f"{used} — {desc[:400]}"
+    else:
+        out["why"] = f"{used}. ⚠ 도구 스키마에 이 인자 설명이 없다 — 뜻을 적을 근거가 없다."
+        out["_undocumented"] = True
+    if prop.get("default") is not None:
+        out["why"] += f" (도구 기본값: {prop['default']})"
+    # 실제로 쓰인 값을 예시로 둔다 — **기본값이 아니다**(사람이 눌러야 들어간다).
+    if not _too_short(val) or isinstance(val, (int, float)):
+        out["example"] = val
+    return out
+
+
+def _first_type(prop: dict) -> str:
+    t = prop.get("type")
+    if isinstance(t, list):
+        t = next((x for x in t if x != "null"), "")
+    if not t:
+        for a in prop.get("anyOf") or []:
+            if isinstance(a, dict) and a.get("type") and a["type"] != "null":
+                return str(a["type"])
+    return str(t or "")
+
+
+def _label(key: str, desc: str) -> str:
+    """사람이 읽는 이름 — 설명 첫 조각이 있으면 그걸 쓴다(없으면 인자 이름)."""
+    head = re.split(r"[.\n—(]", desc)[0].strip() if desc else ""
+    return f"{head[:40]} ({key})" if 2 < len(head) <= 60 else key
+
+
+def _spread(variables: dict, out_steps: list[dict], parsed: list[dict],
+            ts: dict[str, dict]) -> None:
+    """한 변수가 여러 단계를 움직이면 **그 자리를 전부** 설명에 적는다.
+
+    한 칸이 세 단계에 물려 있는데 한 단계만 적혀 있으면 사람이 영향 범위를 오해한다 —
+    값을 바꿨을 때 무엇이 함께 바뀌는지가 절차의 요점이다.
+    """
+    for name, var in variables.items():
+        token = "{{%s}}" % name
+        where = [f"{i + 1}단계 `{st['tool']}` 의 `{k}`"
+                 for i, st in enumerate(out_steps)
+                 for k, v in (st.get("args") or {}).items() if v == token]
+        if len(where) > 1:
+            var["why"] = f"{', '.join(where)} 에 함께 들어간다. " + var["why"].split(" — ", 1)[-1]
+
+
+def to_input_schema(spec: dict) -> dict:
+    """절차 변수 → **MCP 도구 입력 스키마**. 절차를 도구로 등록하는 다리다.
+
+    절차는 사실상 도구다. 그 계약을 도구와 같은 모양으로 내면, 챗·심의가 절차를
+    부르는 것과 도구를 부르는 것이 같아진다.
+    """
+    props: dict[str, Any] = {}
+    required: list[str] = []
+    for v in spec.get("vars") or []:
+        key = v.get("key")
+        if not key:
+            continue
+        t = v.get("type") or "string"
+        p: dict[str, Any] = {"type": {"number": "number", "boolean": "boolean",
+                                      "json": "object"}.get(t, "string")}
+        if t == "enum" and v.get("values"):
+            p = {"type": "string", "enum": list(v["values"])}
+        if v.get("why"):
+            p["description"] = str(v["why"])[:600]
+        elif v.get("label"):
+            p["description"] = str(v["label"])[:600]
+        if v.get("example") is not None:
+            p["examples"] = [v["example"]]
+        props[key] = p
+        if v.get("required", True):
+            required.append(key)
+    return {"type": "object", "properties": props, "required": required,
+            "additionalProperties": False}
+
+
+def _vkey(v: Any) -> str:
+    """값의 동일성 키. 화면이 문자열로 보낸 숫자도 같게 본다(`"6.0"` == `6.0`)."""
+    if isinstance(v, bool):
+        return f"b:{v}"
+    if isinstance(v, (int, float)):
+        return f"n:{float(v)}"
+    if isinstance(v, str):
+        try:
+            return f"n:{float(v)}"
+        except ValueError:
+            return f"s:{v}"
+    return "j:" + json.dumps(v, sort_keys=True, ensure_ascii=False, default=str)

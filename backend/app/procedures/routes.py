@@ -508,13 +508,60 @@ async def run_draft(request: Request, run_id: str,
                       "args": (st.get("args") or {}).get("_text") or st.get("args") or {},
                       "result": store.step_result(run_id, st["ix"])})
     # 챗 기록에는 **어느 앱인지 없다**(PLAN §9-8). 도구 지도로 채운다 — 못 채우면 결손이다.
-    tmap = {}
+    tmap, tschemas = {}, {}
     try:
         tmap = (await _tools_map(request)).get("map") or {}
     except Exception:  # noqa: BLE001 — 지도가 없어도 초안은 낸다(그 단계가 결손으로 잡힌다)
         logger.info("초안 — 도구 지도 조회 실패", exc_info=True)
-    got = _d.draft(steps, tool_backend=tmap, asked=(run.get("title") or ""))
+    try:
+        # 변수의 뜻은 **도구 스키마에서 온다** — 지어내지 않는다. 설명이 없는 인자는
+        # 그 앱의 문서 결손으로 올라간다(PLAN §9-3 ①).
+        cat = await _runner(request).catalog(principal)
+        tschemas = {n: (m.get("inputSchema") or {}) for n, m in cat.items()}
+    except Exception:  # noqa: BLE001
+        logger.info("초안 — 도구 스키마 조회 실패", exc_info=True)
+    got = _d.draft(steps, tool_backend=tmap, asked=(run.get("title") or ""),
+                   tool_schemas=tschemas)
+    got["input_schema"] = _d.to_input_schema(got["spec"])
     return {"run_id": run_id, **got}
+
+
+@router.get("/procedures/{procedure_id}/tool")
+def procedure_as_tool(request: Request, procedure_id: str,
+                      principal: Principal = Depends(_me)) -> dict:
+    """이 절차를 **도구 계약**으로 낸다 — 이름·설명·입력 스키마(PLAN §9).
+
+    절차는 사실상 도구다. 계약을 도구와 같은 모양으로 내면 챗·심의가 절차를 부르는 것과
+    도구를 부르는 것이 같아진다. 그 다리를 여기서 놓는다(등록은 아직 사람 손이다).
+    """
+    from app.procedures import derive as _d
+
+    v = _store(request).latest_version_of(procedure_id)
+    if v is None:
+        raise AuthError("절차를 찾을 수 없습니다", status_code=404)
+    spec = v["spec"]
+    gates = [st.get("tool") for st in (spec.get("steps") or []) if st.get("gate") == "human"]
+    return {
+        "name": f"procedure_{procedure_id}",
+        "title": spec.get("title") or "",
+        "description": _tool_desc(spec, gates),
+        "inputSchema": _d.to_input_schema(spec),
+        "version_no": v.get("version_no"),
+        # ⚠ 사람 확인이 걸린 단계는 **계약에 적는다.** 도구처럼 부르는 쪽이 이것을 모르면
+        # "왜 안 끝나지" 가 된다 — 멈추는 것이 정상이라는 사실이 계약의 일부다.
+        "human_gates": gates,
+    }
+
+
+def _tool_desc(spec: dict, gates: list) -> str:
+    steps = spec.get("steps") or []
+    lines = [spec.get("title") or "절차",
+             f"단계 {len(steps)}개: " + " → ".join(str(st.get("tool")) for st in steps[:8])]
+    if len(steps) > 8:
+        lines[-1] += f" … 외 {len(steps) - 8}"
+    if gates:
+        lines.append(f"⚠ 사람 확인에서 멈춘다: {', '.join(map(str, gates))}")
+    return "\n".join(lines)
 
 
 @router.post("/runs/{run_id}/save-as-procedure", status_code=201,

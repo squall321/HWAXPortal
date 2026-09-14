@@ -10,6 +10,7 @@ import { useProcedures } from '../../state/ProceduresContext';
 import {
   cancelRun,
   getProcedure,
+  getProcedureTool,
   getRunDraft,
   importSeed,
   listSeeds,
@@ -19,6 +20,7 @@ import {
   replayProcedure,
   resumeRun,
   type ProcedureRow,
+  type ProcedureTool,
   type ProcedureVersion,
   type RunDraft,
   type RunSummary,
@@ -386,6 +388,7 @@ function ProcedureDetail() {
         계획 모드는 게이트웨이를 부르지 않고 <b>무엇을 어떤 인자로 부를지</b>만 보여 줍니다.
       </p>
 
+      <ToolContract procedureId={id} />
       <ProcedureRuns procedureId={id} />
     </div>
   );
@@ -475,6 +478,68 @@ function DraftView({ runId }: { runId: string }) {
               </p>
             </div>
           )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** 이 절차를 **도구로 본다** — 변수가 곧 입력 스키마다.
+ *
+ * 절차는 사실상 도구다. 그 계약을 도구와 같은 모양으로 보여 주면, 이 절차를 남에게(또는
+ * 챗·심의에) 넘길 때 무엇을 채워야 하는지가 한눈에 보인다.
+ */
+function ToolContract({ procedureId }: { procedureId: string }) {
+  const [t, setT] = useState<ProcedureTool | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (open && !t) getProcedureTool(procedureId).then(setT).catch(() => setT(null));
+  }, [open, t, procedureId]);
+
+  const props = (t?.inputSchema.properties ?? {}) as Record<string, {
+    type?: string; description?: string; enum?: string[]; examples?: unknown[];
+  }>;
+  const req = new Set(t?.inputSchema.required ?? []);
+
+  return (
+    <section style={rowCard}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap' }}>
+        <h3 style={{ color: 'var(--fg)', margin: 0, fontSize: '0.95rem' }}>도구로 보기</h3>
+        <button type="button" style={tiny} onClick={() => setOpen((v) => !v)}>
+          {open ? '접기' : '펴기'}
+        </button>
+        <span style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>
+          절차의 변수가 곧 <b>입력 스키마</b>입니다.
+        </span>
+      </div>
+      {open && t && (
+        <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.6rem' }}>
+          {t.human_gates.length > 0 && (
+            <p style={{ color: '#d9a441', fontSize: '0.8rem', margin: 0 }}>
+              ⚠ <b>{t.human_gates.join(', ')}</b> 에서 멈추고 사람 확인을 받습니다 —
+              부르는 쪽이 이걸 모르면 “왜 안 끝나지” 가 됩니다.
+            </p>
+          )}
+          <table style={{ borderCollapse: 'collapse', fontSize: '0.8rem', width: '100%' }}>
+            <tbody>
+              {Object.entries(props).map(([k, p]) => (
+                <tr key={k} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: '0.35rem 0.5rem 0.35rem 0', verticalAlign: 'top',
+                               whiteSpace: 'nowrap' }}>
+                    <code style={{ color: 'var(--fg)' }}>{k}</code>
+                    {req.has(k) && <span style={{ color: '#e5534b' }}> *</span>}
+                    <div style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>
+                      {p.enum ? p.enum.join(' | ') : p.type}
+                    </div>
+                  </td>
+                  <td style={{ padding: '0.35rem 0', color: 'var(--muted)', verticalAlign: 'top' }}>
+                    {p.description || <i>설명이 없습니다 — 도구 스키마에 근거가 없습니다.</i>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </section>
