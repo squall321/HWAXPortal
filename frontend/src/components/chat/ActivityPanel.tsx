@@ -39,8 +39,9 @@ const originOf = (tool: string) =>
 
 interface ToolInfo {
   name: string;
-  detail?: string; // 마지막 호출 입력 요약
-  result?: string; // 마지막 완료 결과 요약
+  detail?: string; // 이 호출의 입력 요약
+  result?: string; // 이 호출의 결과 요약
+  ok?: boolean;    // 실패한 호출이 성공한 호출과 똑같이 보이면 안 된다
 }
 
 /** 활동 패널이 보여줄 메시지 선택 — 스트리밍 중인 턴 우선, 없으면 활동이 있는 마지막 어시스턴트 턴. */
@@ -145,11 +146,16 @@ export function ActivityPanel({
         (t): t is string => Boolean(t) && t !== 'signalforge',
       );
       for (const t of names) {
-        const cur = map.get(t) ?? { name: t };
-        // 호출(detail)과 완료(result_preview)가 별개 status로 오므로 나중 값으로 갱신.
+        // 호출(detail)과 완료(result_preview)가 별개 status 로 온다. 종전에는 **도구 이름**으로
+        // 묶어서 같은 도구를 N번 부르면 한 줄로 합쳐지고 마지막 인자와 마지막 결과만 남았다 —
+        // 그 둘이 서로 다른 호출일 수 있다(실측: predict_sed 다섯 번의 프리뷰가 전부 같았다).
+        // 이제 서버가 짝 키(call)를 보내므로 그걸로 묶는다. 없는 낡은 이벤트만 이름으로 묶는다.
+        const key = it.call && it.tool === t ? `${t}\u0000${it.call}` : t;
+        const cur = map.get(key) ?? { name: t };
         if (it.detail && it.tool === t) cur.detail = it.detail;
         if (it.result_preview && it.tool === t) cur.result = it.result_preview;
-        map.set(t, cur);
+        if (typeof it.ok === 'boolean' && it.tool === t) cur.ok = it.ok;
+        map.set(key, cur);
       }
     }
     return [...map.values()];

@@ -19,6 +19,10 @@ export interface ActivityItem {
   // 드릴다운 — 도구 호출 입력/결과 요약(서버에서 절단되어 옴).
   detail?: string;
   result_preview?: string;
+  /** 같은 호출의 시작·완료를 잇는 키. 없으면 낡은 이벤트다(이름으로 묶는다). */
+  call?: string;
+  /** 도구 호출이 성공했나. 없으면 **모른다**(실패가 아니다). */
+  ok?: boolean;
   /** 심의 핸드오프용 날것(≈1200자) — 화면에는 안 쓴다. 표시용(220자)보다 길 때만 온다. */
   result_full?: string;
 }
@@ -284,6 +288,10 @@ export interface StatusEvent {
   tools_used?: string[];
   detail?: string;
   result_preview?: string;
+  /** 같은 호출의 시작·완료를 잇는 키. 없으면 낡은 이벤트다(이름으로 묶는다). */
+  call?: string;
+  /** 도구 호출이 성공했나. 없으면 **모른다**(실패가 아니다). */
+  ok?: boolean;
   result_full?: string;
 }
 export interface TokenEvent {

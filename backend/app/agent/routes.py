@@ -44,6 +44,19 @@ from app.deps import ensure, principal_pat_or_session
 
 logger = logging.getLogger(__name__)
 
+
+def _clip(v, n: int) -> str | None:
+    """표식 붙인 절단. 표식 없이 자르면 **잘린 줄도 모른 채** 뒤가 사라진다 —
+    에이전트 서버 `_tool_preview` 와 같은 규약(`…#sha1[:6]`)을 쓴다."""
+    if not v:
+        return None
+    s = str(v)
+    if len(s) <= n:
+        return s
+    import hashlib
+    return s[:n] + "…#" + hashlib.sha1(s.encode("utf-8")).hexdigest()[:6]
+
+
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 # text/event-stream + the headers nginx needs to NOT buffer the stream. proxy_buffering off
@@ -1363,14 +1376,21 @@ async def chat(
                             activity.append({
                                 "step": str(data.get("step") or "")[:200],
                                 "tool": str(data.get("tool"))[:80],
+                                # 짝 키와 성패 — 이 둘이 없어서 인자와 결과를 못 붙였고
+                                # 실패한 호출이 성공한 호출과 똑같이 생겼다(PLAN §9-8).
+                                # ⚠ ok 는 **없을 수 있다**(시작 이벤트). None 과 False 를
+                                # 섞으면 '모른다' 가 '실패했다' 가 된다.
+                                "call": (str(data.get("call"))[:80] if data.get("call") else None),
+                                "ok": (bool(data["ok"]) if isinstance(data.get("ok"), bool) else None),
                                 "detail": (str(data.get("detail"))[:400] if data.get("detail") else None),
                                 "result_preview": (str(data.get("result_preview"))[:2000]
                                                    if data.get("result_preview") else None),
                                 # 핸드오프용 날것 — 이것을 안 남기면 새로고침 뒤 심의로 넘길 때
                                 # 220자 미리보기만 남는다(감사 C45 — result_full 채널을 뚫어놓고
                                 # 서버 스냅샷이 버리고 있었다).
-                                "result_full": (str(data.get("result_full"))[:2000]
-                                                if data.get("result_full") else None),
+                                # ⚠ 에이전트는 4000자를 보내는데 여기서 2000 으로 **다시**
+                                # 잘랐다(표식 없이). 잘린 줄도 모르고 뒤가 사라졌다.
+                                "result_full": _clip(data.get("result_full"), 4000),
                             })
                 yield frame
         finally:
@@ -1406,5 +1426,14 @@ async def chat(
                 if reply:
                     store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
                                  meta=({"activity": activity[:60]} if activity else None))
+                # 이 턴의 도구 호출을 **절차 원장**에도 남긴다 — 하나의 원장, 세 생산자
+                # (PLAN §9-9). 대화 저장과 별개이고, 실패해도 챗을 막지 않는다.
+                _pstore = getattr(request.app.state, "procedures_store", None)
+                if _pstore is not None and activity and cid:
+                    from app.procedures import from_chat as _fc
+
+                    _fc.record(_pstore, owner_sub=owner, conversation_id=cid,
+                               activity=activity,
+                               title=(str(body.message or "")[:60].strip() or None))
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
