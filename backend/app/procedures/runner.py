@@ -51,16 +51,23 @@ class GatewaySession:
     없어서 폴링처럼 반복 호출하면 챗과 공유하는 게이트웨이에 세션이 쌓인다.
     """
 
-    def __init__(self, gateway_url: str, client: httpx.AsyncClient) -> None:
+    def __init__(self, gateway_url: str, client: httpx.AsyncClient,
+                 corr: str | None = None) -> None:
         self.url = gateway_url.rstrip("/") + "/mcp"
         self._c = client
         self.sid: str | None = None
+        # 어느 실행의 호출인가. 게이트웨이 감사에 `corr` 로 남아 **감사 줄과 실행이 이어진다**
+        # (PLAN §9-9 ⑥). 챗은 도구 연결을 그룹 집합으로 캐시해서 여기 붙이면 대화마다 캐시가
+        # 쪼개진다 — 절차는 **세션이 실행 단위**라 붙일 자리가 여기다.
+        self.corr = corr
 
     def _hdr(self, pat: str) -> dict:
         h = {"Authorization": f"Bearer {pat}", "Content-Type": "application/json",
              "Accept": "application/json, text/event-stream"}
         if self.sid:
             h["mcp-session-id"] = self.sid
+        if self.corr:
+            h["X-HWAX-Corr"] = self.corr
         return h
 
     async def open(self, pat: str) -> None:
@@ -171,7 +178,7 @@ class ProceduresRunner:
             return self._plan(run_id, spec, scope)
 
         async with self.sem:  # 게이트에서 멈춘 실행은 이 블록 밖이라 슬롯을 쥐지 않는다
-            sess = GatewaySession(self.gateway_url, self._client)
+            sess = GatewaySession(self.gateway_url, self._client, corr=run_id)
             pat = self.mint_pat(principal, run_id, start_at)
             if not pat:
                 raise RunnerError("사용자 명의 PAT 발급 실패 — 서비스 계정으로 대신 돌지 않는다")
@@ -286,7 +293,7 @@ class ProceduresRunner:
         scope.setdefault("me.sub", getattr(principal, "subject", "") or "")
 
         async with self.sem:
-            sess = GatewaySession(self.gateway_url, self._client)
+            sess = GatewaySession(self.gateway_url, self._client, corr=run_id)
             pat = self.mint_pat(principal, run_id, ix)
             if not pat:
                 raise RunnerError("사용자 명의 PAT 발급 실패 — 서비스 계정으로 대신 돌지 않는다")
@@ -313,7 +320,7 @@ class ProceduresRunner:
 
     async def catalog(self, principal, run_id: str = "catalog") -> dict:
         """도구 고르기 화면의 데이터 — 사용자 PAT `tools/list` 가 권한 필터의 정본이다."""
-        sess = GatewaySession(self.gateway_url, self._client)
+        sess = GatewaySession(self.gateway_url, self._client, corr=run_id)
         pat = self.mint_pat(principal, run_id, 0)
         if not pat:
             raise RunnerError("사용자 명의 PAT 발급 실패")
@@ -345,7 +352,7 @@ class ProceduresRunner:
         if not want:
             return {}
 
-        sess = GatewaySession(self.gateway_url, self._client)
+        sess = GatewaySession(self.gateway_url, self._client, corr=run_id)
         pat = self.mint_pat(principal, run_id, 0)
         if not pat:
             raise RunnerError("사용자 명의 PAT 발급 실패")
