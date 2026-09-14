@@ -211,20 +211,24 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 ## S2 · R1 적층 굴곡 수명 — **dev 완주 첫 실전** (S1 만 선행)
 
+> **진행 중.** 씨앗 절차 `fixtures/laminate-bend-life.yaml` 와 회귀
+> `test_procedures_r1.py`(16개) 가 섰다 — `save` 경로가 실물 응답에서 풀리는 것까지 시험한다.
+> 굽힘반경은 이제 `bend_profile` 이 준다(W-28). 남은 것은 **포털에서 한 번 완주**시키는 것이다.
+
 절차 전문은 [examples.md#r1](examples.md). 여기서 처음 증명되는 것 — **판단 단계 없이 직선
 체인이 끝까지 간다.** `save` 두 줄이 도구 넷을 잇는다.
 
-- [ ] 절차 작성 — `part_info` → `thickness_report` → `analyze_laminate` →
+- [x] 절차 작성 — `part_info` → `thickness_report` → `analyze_laminate` →
       `solve_prescribed_curvature` → `recover_ply_stresses` → `estimate_fatigue_life` →
       `create_report_draft`(gate)
-- [ ] ★체인의 핵심 — `solve_prescribed_curvature` 의 `equivalent_loads` 를 `save` 해
+- [x] ★체인의 핵심 — `solve_prescribed_curvature` 의 `equivalent_loads` 를 `save` 해
       `recover_ply_stresses` 의 `loads` 로 **그대로** 넘긴다. 손으로 `(z−z_ns)/R` 을 계산하지 않는다
 - [ ] **`M = D·κ` 지름길을 쓰지 않는다** — 도구 설명이 비대칭 스택에서 **실측 +244.8% 과대**라고
       못 박는다. 이 한 줄이 절차 기능의 존재 이유다
 - [ ] 사람이 채우는 변수 넷에 `why` 를 적는다 — `bend_radius`(StepForge 형상 도구에 곡률·반경이
       **없다**) · `width_mode`(free/constrained 가 **9.6%** 갈린다) · `laminate`(StepForge 재질은
       LS-DYNA 카드 쪽이라 **형식이 다르다**) · `cycles_N`
-- [ ] ⚠ **W120 을 `notes` 로 올린다** — `estimate_fatigue_life` 는 `strength`/`fatigue` 없는 ply 를
+- [x] ⚠ **W120 을 `notes` 로 올린다** — `estimate_fatigue_life` 는 `strength`/`fatigue` 없는 ply 를
       **조용히 제외하고** 경고만 낸다. 임계 ply 가 빠지면 과대평가다
 - [ ] `laminate` 는 속성 없는 object(44/465) — 원문 JSON 2단 입력으로 받는다. `unit_system` 은
       `SI`|`SI_mm` 이고 섞이면 조용히 틀린다
@@ -357,3 +361,6 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 - [ ] PLAN §7 결정 — S0 시점 · 공유 정책(#6). **S2(R1)부터 권장** — 선행 0, dev 완주
 - [ ] S1 을 먼저 시작할지(S0 과 병렬 가능) 확인
+- [x] 씨앗 절차 + 실물 응답 고정물 + 회귀 16개 — `save` 경로가 봉투(`data.`) 아래라는 것을
+      테스트가 잡았다(W-29). 굽힘반경은 `bend_profile` 이 준다(W-28)
+- [ ] 포털 화면에서 R1 을 **실제로 완주** — StepForge 에 U자 판을 반입하고 절차를 재생한다(사람)

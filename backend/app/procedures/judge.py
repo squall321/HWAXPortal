@@ -122,6 +122,12 @@ def judge(*, is_error: bool, text: str, raw: bool = False,
 
     # ③ ④ 앱 봉투 층 — 여기가 isError=false 인데 실패인 자리다
     if isinstance(parsed, dict):
+        # `status` 를 쓰는 앱이 있다(적층 해석기는 ok|warning|error 를 낸다 — 실측).
+        # error 면 대개 errors[] 도 차 있지만, 비어 있어도 실패로 친다.
+        if str(parsed.get("status") or "").lower() in ("error", "failed", "failure"):
+            return Verdict(False, "envelope", "app_envelope", parsed=parsed,
+                           error=_envelope_msg(parsed) or f"status={parsed.get('status')}",
+                           retriable=False)
         if parsed.get("ok") is False:
             return Verdict(False, "envelope", "app_envelope", parsed=parsed,
                            error=_envelope_msg(parsed), retriable=False)
@@ -168,7 +174,8 @@ def _envelope_msg(parsed: dict) -> str:
 
 
 # 결과 속에 도구가 넣어 준 경고를 뽑아 올린다. 안 올리면 보존기간 뒤 본문과 함께 사라진다.
-_NOTE_KEYS = ("warnings", "warning", "notes", "caveats", "model_version", "model",
+_NOTE_KEYS = ("warnings", "warning", "notes", "caveats", "status", "assumptions",
+              "model_version", "model",
               "provenance", "out_of_domain", "extrapolation", "quality_flags",
               "suspect_shared_values", "degenerate")
 _NOTE_MAX = 4096

@@ -1,0 +1,130 @@
+# R1 — 적층 굴곡 수명. dev 에서 끝까지 도는 첫 실전 절차다.
+#
+# ⚠ 이 파일이 정본이 아니다. 정본은 저장소에 들어간 판본이고, 이것은 **가져다 쓰는 씨앗**이다.
+#    `backend/tests/test_procedures_r1.py` 가 이 파일을 읽어 검증하고, `save` 경로가 실제
+#    게이트웨이 응답에서 풀리는지까지 본다(고정물: tests/fixtures/procedures/).
+#
+# 굽힘반경이 **사람이 채우는 칸이 아니다**(StepForge D-287·D-288). 형상에서 읽는다 —
+# 굽힘부 안팎 곡면의 반경 차이가 두께이고 평균이 중립면 반경이다. 그래서 변수가 넷에서
+# 셋으로 줄었고, 남은 셋은 형상에 **없는 것**들이다.
+
+title: 적층 굴곡 수명 — 설계 굽힘 ↔ 펼침 사이클
+
+vars:
+  - key: project_id
+    label: StepForge 과제 ID
+    type: string
+    required: true
+
+  - key: part
+    label: 부품 이름
+    type: string
+    required: true
+    why: 한 과제에 굽힘 부품이 여럿이면 어느 것인지 사람이 고른다.
+
+  - key: r_unfold
+    label: 펼친 상태 굽힘반경 R_max (mm)
+    type: number
+    required: true
+    why: >-
+      형상은 **설계된 굽힘 하나**만 안다. 그것이 사이클의 한쪽 끝이고, 반대쪽 끝(얼마나
+      펴지는가)은 쓰임새가 정한다 — 완전히 펴지면 큰 값(예: 1000), 반만 펴지면 그 값.
+
+  - key: bend_axis
+    label: 굽힘축
+    type: enum
+    values: [x, y]
+    required: true
+    why: 적층의 0° 방향을 기준으로 어느 축으로 굽는지. 적층 좌표계는 형상이 모른다.
+
+  - key: width_mode
+    label: 폭 구속
+    type: enum
+    values: [free, constrained]
+    required: true
+    why: >-
+      free(M_y=0, 자유 폭)와 constrained(κ_y=0, 구속 폭)는 답이 **9.6% 갈린다**(도구가
+      W130 으로 경고한다). 실제 지그가 어느 쪽인지는 형상에 없다.
+
+  - key: laminate
+    label: 적층 정의
+    type: json
+    required: true
+    why: >-
+      {unit_system: "SI_mm", laminae: [{thickness, angle_deg, material}]}. 각 ply 에
+      strength{Xt,Xc,Yt,Yc,S}·fatigue{model_type,k} 가 있어야 파손·수명이 나온다.
+      StepForge material_lookup 은 **등방**(RHO·E·PR)이라 라미나로 못 쓰고,
+      derive_lamina_from_constituents 는 강성만 낸다 — 강도·피로를 주는 도구가 없다.
+      ⚠ 총두께가 ①의 thickness_mm 와 다르면 다른 부품을 해석하는 것이다(보고서에 둘 다 싣는다).
+
+steps:
+  # ① 형상에서 굽힘을 읽는다 — 이 한 단계가 R·두께·폭 셋을 채운다
+  - backend: heax-step_forge
+    tool: bend_profile
+    expect: slow
+    args:
+      project_id: "{{project_id}}"
+      part: "{{part}}"
+    save:
+      r_designed: parts[0].for_bending_analysis.bend_radius_mm
+      t_part: parts[0].for_bending_analysis.thickness_mm
+      w_part: parts[0].for_bending_analysis.width_mm
+      bend_basis: parts[0].primary.basis
+
+  # ② 적층 검증 + ABD + 중립면 — 커플링이 크면 여기서 경고가 뜬다
+  - backend: heax-laminate_analyzer_mcp
+    tool: analyze_laminate
+    args:
+      laminate: "{{laminate}}"
+
+  # ③ ★변위 제어 — 설계된 굽힘 상태. M = D·κ 지름길을 쓰지 않는 자리다
+  - backend: heax-laminate_analyzer_mcp
+    tool: solve_prescribed_curvature
+    args:
+      laminate: "{{laminate}}"
+      bend_radius: "{{r_designed}}"
+      bend_axis: "{{bend_axis}}"
+      width: "{{width_mode}}"
+    save:
+      loads_bent: data.equivalent_loads
+
+  # ④ 펼친 상태 — 두 상태의 차이가 곧 하중 사이클이라 별도 하중 변수가 없다
+  - backend: heax-laminate_analyzer_mcp
+    tool: solve_prescribed_curvature
+    args:
+      laminate: "{{laminate}}"
+      bend_radius: "{{r_unfold}}"
+      bend_axis: "{{bend_axis}}"
+      width: "{{width_mode}}"
+    save:
+      loads_flat: data.equivalent_loads
+
+  # ⑤ 층별 응력·파손 판정 — 가장 굽은 상태로 본다
+  - backend: heax-laminate_analyzer_mcp
+    tool: recover_ply_stresses
+    args:
+      laminate: "{{laminate}}"
+      loads: "{{loads_bent}}"
+    save:
+      tsai_wu_r: data.first_ply_failure.tsai_wu_R   # 이름은 우리 것(snake_case), 경로는 응답 필드
+      failure_mode: data.first_ply_failure.governing_mode
+
+  # ⑥ ★굽힘 사이클 수명 — ③·④ 의 등가하중이 그대로 들어간다
+  - backend: heax-laminate_analyzer_mcp
+    tool: estimate_fatigue_life
+    args:
+      laminate: "{{laminate}}"
+      loads_max: "{{loads_bent}}"
+      loads_min: "{{loads_flat}}"
+    save:
+      life_cycles: data.life_cycles
+
+  # ⑦ 보고서 초안 — 실행기가 강제하는 사람 자리
+  - backend: reportarchive
+    tool: create_report_draft
+    gate: human
+    args:
+      title: "굴곡 수명 — {{part}} (R {{r_designed}} ↔ {{r_unfold}} mm)"
+      template_id: __import_blank__
+      template_version: 1
+      blocks: {}

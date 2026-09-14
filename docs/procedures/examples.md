@@ -5,7 +5,7 @@
 
 | # | 절차 | 어디서 도나 | 무엇을 처음 증명하나 |
 |---|---|---|---|
-| **R1** | [적층 굴곡 수명](#r1) | **dev 완주** | 판단 단계 없이 직선 체인이 끝까지 간다 |
+| **R1** | [적층 굴곡 수명](#r1) | **dev 완주** | 직선 체인이 끝까지 가고, **형상이 변수를 채운다** |
 | **R2a** | [전각도 낙하 · 제출](#r2) | dev 는 `dry_run` 까지 | 잡 제출을 사람 확인 아래 둔다 |
 | **R2b** | [낙하·충격 · 회수](#r2b) | cae00 | 제출과 회수가 **다른 절차**다 |
 | **R3** | [열충격 SED](#r3) | **cae00 전용** | 공급자 없는 값이 사람이 채우는 칸으로 내려간다 |
@@ -35,75 +35,59 @@ LLM 이 스스로 엮으면 2.4배 틀린다. **절차로 굳히면 안 틀린�
 
 ### 절차
 
+정본 씨앗은 [`fixtures/laminate-bend-life.yaml`](fixtures/laminate-bend-life.yaml) 이고,
+`backend/tests/test_procedures_r1.py` 가 그 파일을 읽어 검증한다 — **`save` 경로가 실제
+게이트웨이 응답에서 풀리는지까지** 본다(고정물은 2026-09-14 실호출 응답이다).
+
 ```yaml
-id: laminate-bend-life
-version: 1
-title: 적층 굴곡 수명 — R_min↔R_max 굽힘 사이클
-vars:
-  - {key: project_id, label: "StepForge 과제 ID", type: string, required: true}
-  - {key: part,       label: "부품 이름",        type: string, required: true}
-  - {key: r_min, label: "굽힘반경 최소 R_min (mm)", type: number, required: true,
-     why: "가장 심하게 굽힌 상태. StepForge 형상 도구는 곡률·반경을 주지 않는다 — 설계 구속이라 사람이 준다"}
-  - {key: r_max, label: "굽힘반경 최대 R_max (mm)", type: number, required: true,
-     why: "펴진 상태. 두 R 의 차이가 곧 하중 사이클이다"}
-  - {key: bend_axis,  label: "굽힘축", type: enum, values: [x, y], required: true}
-  - {key: width_mode, label: "폭 구속", type: enum, values: [free, constrained], required: true,
-     why: "free(M_y=0)와 constrained(κ_y=0)는 답이 다르다(실측 9.6%, 도구가 W130 으로 경고). 실제 지그가 어느 쪽인지 사람만 안다"}
-  - {key: laminate,   label: "적층 정의", type: json, required: true,
-     why: "{unit_system, laminae:[{thickness, angle_deg, material}]}. 각 ply 에 strength{Xt,Xc,Yt,Yc,S}·fatigue{model_type,k|b} 가 있어야 파손·수명이 나온다"}
+vars:  project_id · part · r_unfold · bend_axis · width_mode · laminate
 steps:
-  - backend: heax-step_forge          # ① 부품 실측 — 두께가 적층 두께의 근거
-    tool: part_info
-    args: {project_id: "{{project_id}}", part: "{{part}}"}
-    save: {bbox: "bbox", volume: "volume", material_name: "material"}
-  - backend: heax-step_forge          # ② 최소 벽 두께 — 적층 총두께 대조
-    tool: thickness_report
-    args: {project_id: "{{project_id}}", limit: 50}
-  - backend: heax-laminate_analyzer_mcp   # ③ 적층 검증 + ABD + 중립면
-    tool: analyze_laminate
-    args: {laminate: "{{laminate}}"}
-    save: {abd: "abd", neutral_axis: "neutral_axis"}
-  - backend: heax-laminate_analyzer_mcp   # ④ ★변위 제어 — 가장 굽은 상태
-    tool: solve_prescribed_curvature
-    args: {laminate: "{{laminate}}", bend_radius: "{{r_min}}",
-           bend_axis: "{{bend_axis}}", width: "{{width_mode}}"}
-    save: {loads_bent: "equivalent_loads", strain_bent: "surface_strain"}
-  - backend: heax-laminate_analyzer_mcp   # ⑤ 펴진 상태
-    tool: solve_prescribed_curvature
-    args: {laminate: "{{laminate}}", bend_radius: "{{r_max}}",
-           bend_axis: "{{bend_axis}}", width: "{{width_mode}}"}
-    save: {loads_flat: "equivalent_loads"}
-  - backend: heax-laminate_analyzer_mcp   # ⑥ 층별 응력 + 파손 판정 (최악 상태로)
-    tool: recover_ply_stresses
-    args: {laminate: "{{laminate}}", loads: "{{loads_bent}}"}
-    save: {tsai_wu: "min_tsai_wu_R", mode: "governing_mode"}
-  - backend: heax-laminate_analyzer_mcp   # ⑦ ★굽힘 사이클 수명 — 두 R 이 곧 하중 사이클이다
-    tool: estimate_fatigue_life
-    args: {laminate: "{{laminate}}", loads_max: "{{loads_bent}}", loads_min: "{{loads_flat}}"}
-    save: {life: "life_cycles", critical: "critical_ply"}
-  - backend: reportarchive                # ⑧ 보고서 초안
-    tool: create_report_draft
-    gate: human
-    args: {…}
+  ① bend_profile            [heax-step_forge]           ← ★형상이 R·두께·폭을 준다
+       save: r_designed = parts[0].for_bending_analysis.bend_radius_mm
+             t_part      = …thickness_mm      w_part = …width_mm
+             bend_basis  = parts[0].primary.basis
+  ② analyze_laminate        [heax-laminate_analyzer_mcp]
+  ③ solve_prescribed_curvature  bend_radius = {{r_designed}}   ← 설계된 굽힘
+       save: loads_bent = data.equivalent_loads
+  ④ solve_prescribed_curvature  bend_radius = {{r_unfold}}     ← 펼친 상태
+       save: loads_flat = data.equivalent_loads
+  ⑤ recover_ply_stresses    loads = {{loads_bent}}
+       save: tsai_wu_r = data.first_ply_failure.tsai_wu_R
+  ⑥ estimate_fatigue_life   loads_max = {{loads_bent}}, loads_min = {{loads_flat}}
+       save: life_cycles = data.life_cycles
+  ⑦ create_report_draft     [reportarchive]  gate: human
 ```
 
-### 체인이 안 끊기는 자리 — 도구가 설계로 이어 놓았다
+### ⚠ 응답은 봉투다 — `save` 경로가 `data.` 아래다
 
-`solve_prescribed_curvature` 의 반환 `equivalent_loads`(`{N[3], M[3]}`)가 `recover_ply_stresses`
-의 `loads` 와 `estimate_fatigue_life` 의 `loads_max`/`loads_min` 에 **그대로** 들어간다. 세 도구가
-같은 형식을 쓴다. 도구 설명이 못 박는다 — *"equivalent_loads(recover_ply_stresses 에 그대로 넘겨
-파손 판정까지 이어진다), surface_strain(손으로 (z−z_ns)/R 을 계산하지 말 것)"*.
+적층 해석기는 `{status, data, errors, warnings, assumptions, metadata}` 로 답한다(실측).
+**이 문서의 앞 판은 경로를 전부 최상위로 적어 놨고, 그대로 짰으면 첫 실행에서 죽었다.**
+회귀가 그것을 잡았다.
 
-**그래서 굽힘 사이클에 별도 하중 변수가 필요 없다.** R_min(굽은 상태)과 R_max(펴진 상태)를 각각
-풀어 두 `equivalent_loads` 를 `loads_max`/`loads_min` 에 넣으면 그것이 곧 폴더블·롤투롤의 실제
-사이클이다. 실호출로 확인했다 — R=50 → `kappa_x = 0.02`(1/mm = 1/R), R50↔R200 →
-`life_cycles ≈ 3.39e7`. `save` 세 줄이 이 체인의 전부다.
+| 값 | 틀린 경로(앞 판) | 실물 |
+|---|---|---|
+| 등가하중 | `equivalent_loads` | **`data.equivalent_loads`** |
+| 파손 여유 | `min_tsai_wu_R` | **`data.first_ply_failure.tsai_wu_R`** |
+| 수명 | `life_cycles` | **`data.life_cycles`** |
+| 경고 | — | **최상위 `warnings[]`**(`data` 밖이다) |
+
+실패도 `{status:"error", data:null, errors:[{code:"E102"…}]}` 로 오고 **`isError` 는 false** 다
+— §5-6 판정이 `errors` 와 `status` 로 잡는다.
+
+### 굽힘반경이 사람이 채우는 칸이 아니게 됐다
+
+앞 판은 `r_min`·`r_max` 를 둘 다 사람에게 물었다. **형상이 답을 갖고 있었다** —
+굽힘부 안팎 곡면의 반경 차이가 두께이고 평균이 중립면 반경이다(StepForge D-287).
+해석 원통이 없어도 **주곡률 방향이 축을, 곡률 중심이 짝짓기를** 해 준다(D-288) —
+변환기를 거친 실무 STEP 이 그 경우다.
+
+U자 판(t 1.2 · R 6.0 · 폭 40 · 180°)으로 두 경로 다 실측했다 — 오차 0, NURBS 변환본도 같다.
 
 ### 끊기는 자리 — 사람이 채운다
 
 | 자리 | 왜 — 전부 실호출로 확인했다 |
 |---|---|
-| **R_min · R_max** | StepForge 형상 도구의 반환에 **곡률·반경이 없다**(`part_info` 는 volume·area·bbox·centroid·material·interfaces·mesh, `measurement_guide` 에 곡률 항목 자체가 없다). 465종 전수에서 곡률을 말하는 StepForge 도구는 `mesh_size_advice`·`mesh_forecast` 둘뿐인데 그건 **격자용 기하 곡률**(필렛·구멍)이지 굽힘 R 이 아니고, 면당 중앙값이며 **max 가 없다** |
+| ~~R_min~~ | **해결됐다** — `bend_profile` 이 형상에서 준다(D-287·D-288). 남은 것은 `r_unfold`(얼마나 펴지는가)뿐이고 그건 쓰임새가 정하지 형상에 없다 |
 | **`width_mode`** | 실제 지그가 자유 폭인지 구속 폭인지는 형상에 없다. 답이 9.6% 갈리고 도구가 W130 으로 경고한다 |
 | **`laminate` 전체** | `material_lookup("CFRP")` 실호출 → `{RHO:2e-9, E:69000, PR:0.33}` + `*MAT_ELASTIC` — **등방**이다. E1/E2/G12/nu12 도 강도도 없고 값 자체도 라미나로 못 쓴다. `resolve_materials` 는 파트↔재질 **이름** 매핑만 본다. **자동 변환기가 없다** |
 | **`strength` · `fatigue`** | `derive_lamina_from_constituents` 는 **강성만** 낸다(`{type,E1,E2,G12,nu12,rho}`). `strength{Xt,Xc,Yt,Yc,S}`·`fatigue{model_type,k\|b}` 는 **어느 도구도 안 준다** |

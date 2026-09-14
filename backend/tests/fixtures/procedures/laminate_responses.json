@@ -1,0 +1,1277 @@
+{
+ "bent": {
+  "tool": "solve_prescribed_curvature",
+  "is_error": false,
+  "body": {
+   "status": "warning",
+   "data": {
+    "prescribed_dof": [
+     "kappa_x"
+    ],
+    "free_dof": [
+     "eps_x",
+     "eps_y",
+     "gamma_xy",
+     "kappa_y",
+     "kappa_xy"
+    ],
+    "response": {
+     "epsilon0": [
+      0.0008972062508742809,
+      0.0014808988616884632,
+      -4.2793866929458444e-21
+     ],
+     "kappa": [
+      0.3333333333333333,
+      -0.0498933764669513,
+      4.197893042860424e-18
+     ]
+    },
+    "equivalent_loads": {
+     "N": [
+      -9.094947017729283e-16,
+      -3.637978807091713e-15,
+      2.0194839173657903e-31
+     ],
+     "M": [
+      51.37607479326196,
+      0.0,
+      0.0
+     ],
+     "chain": "이 N·M 을 recover_ply_stresses·run_progressive_failure 에 그대로 넘기면 파손 판정까지 이어진다"
+    },
+    "naive_D_kappa": {
+     "M": [
+      51.42157295388814,
+      -0.7376894776360341,
+      -4.264363859763378e-17
+     ],
+     "overprediction_Mx": 1.0008855904389207,
+     "note": "에이전트가 흔히 쓰는 지름길 M = D·κ 와의 대조. 비대칭 적층이나 자유 폭에서는 크게 틀린다(실측 +244.8%)"
+    },
+    "surface_strain": {
+     "bottom": [
+      -0.044936127082459046,
+      0.008341238125894268,
+      -5.814896800862542e-19
+     ],
+     "top": [
+      0.046730539584207614,
+      -0.005379440402517342,
+      5.729309067003625e-19
+     ],
+     "applied_strain_x": {
+      "bottom": -0.044936127082459046,
+      "top": 0.046730539584207614
+     },
+     "note": "bottom·top 은 [εx, εy, γxy] 3벡터다. assess_crack_shielding 의 applied_strain 은 **스칼라**이므로 applied_strain_x 의 해당 면 값을 넘길 것 — 손으로 (z−z_ns)/R 을 계산하지 말 것"
+    },
+    "per_ply_strain": [
+     {
+      "ply": 0,
+      "angle_deg": 0.0,
+      "bottom": {
+       "epsilon_xyz": [
+        -0.044936127082459046,
+        0.008341238125894268,
+        -5.814896800862542e-19
+       ],
+       "epsilon_1": -0.044936127082459046,
+       "epsilon_2": 0.008341238125894268
+      },
+      "mid": {
+       "epsilon_xyz": [
+        -0.04076946041579238,
+        0.007717570920057376,
+        -5.290160170504989e-19
+       ],
+       "epsilon_1": -0.04076946041579238,
+       "epsilon_2": 0.007717570920057376
+      },
+      "top": {
+       "epsilon_xyz": [
+        -0.036602793749125714,
+        0.007093903714220485,
+        -4.765423540147436e-19
+       ],
+       "epsilon_1": -0.036602793749125714,
+       "epsilon_2": 0.007093903714220485
+      }
+     },
+     {
+      "ply": 1,
+      "angle_deg": 0.0,
+      "bottom": {
+       "epsilon_xyz": [
+        -0.036602793749125714,
+        0.007093903714220485,
+        -4.765423540147436e-19
+       ],
+       "epsilon_1": -0.036602793749125714,
+       "epsilon_2": 0.007093903714220485
+      },
+      "mid": {
+       "epsilon_xyz": [
+        -0.01993612708245905,
+        0.0045992348908729195,
+        -2.6664770187172235e-19
+       ],
+       "epsilon_1": -0.01993612708245905,
+       "epsilon_2": 0.0045992348908729195
+      },
+      "top": {
+       "epsilon_xyz": [
+        -0.0032694604157923876,
+        0.0021045660675253547,
+        -5.675304972870117e-20
+       ],
+       "epsilon_1": -0.0032694604157923876,
+       "epsilon_2": 0.0021045660675253547
+      }
+     },
+     {
+      "ply": 2,
+      "angle_deg": 90.0,
+      "bottom": {
+       "epsilon_xyz": [
+        -0.0032694604157923876,
+        0.0021045660675253547,
+        -5.675304972870117e-20
+       ],
+       "epsilon_1": 0.0021045660675253547,
+       "epsilon_2": -0.0032694604157923876
+      },
+      "mid": {
+       "epsilon_xyz": [
+        0.013397206250874276,
+        -0.0003901027558222102,
+        1.5314160241432001e-19
+       ],
+       "epsilon_1": -0.0003901027558222102,
+       "epsilon_2": 0.013397206250874276
+      },
+      "top": {
+       "epsilon_xyz": [
+        0.03006387291754094,
+        -0.002884771579169775,
+        3.630362545573412e-19
+       ],
+       "epsilon_1": -0.002884771579169775,
+       "epsilon_2": 0.03006387291754094
+      }
+     },
+     {
+      "ply": 3,
+      "angle_deg": 0.0,
+      "bottom": {
+       "epsilon_xyz": [
+        0.03006387291754094,
+        -0.002884771579169775,
+        3.630362545573412e-19
+       ],
+       "epsilon_1": 0.03006387291754094,
+       "epsilon_2": -0.002884771579169775
+      },
+      "mid": {
+       "epsilon_xyz": [
+        0.03839720625087428,
+        -0.004132105990843558,
+        4.679835806288518e-19
+       ],
+       "epsilon_1": 0.03839720625087428,
+       "epsilon_2": -0.004132105990843558
+      },
+      "top": {
+       "epsilon_xyz": [
+        0.046730539584207614,
+        -0.005379440402517342,
+        5.729309067003625e-19
+       ],
+       "epsilon_1": 0.046730539584207614,
+       "epsilon_2": -0.005379440402517342
+      }
+     }
+    ],
+    "definition": "K[ε⁰;κ] = [N;M] 의 지정/미지 자유도 분할. 지정된 자유도는 일반변형률이 알려지고 대응 일반력이 반력이 된다. 대칭 적층에서 κ 를 전부 지정하면 M = D·κ 로, 비대칭이면 M = D*·κ 로 정확히 환원된다"
+   },
+   "errors": [],
+   "warnings": [
+    {
+     "code": "W130",
+     "name": "MODEL_APPLICABILITY",
+     "message": "모델 적용 가정에서 벗어난 조건입니다: 자유 폭(M_y=0) 가정이다 — 폭이 구속된 실제 지그라면 width='constrained' 로 다시 보라. 실측 9.6% 차이가 났다",
+     "suggestion": "결과를 경향 판단용으로 사용하고, 정밀 판정이 필요하면 상세 해석(FE)을 병행하세요.",
+     "field": "width"
+    },
+    {
+     "code": "W130",
+     "name": "MODEL_APPLICABILITY",
+     "message": "모델 적용 가정에서 벗어난 조건입니다: 비대칭 적층 — 곡률을 지정하면 막변형이 함께 생긴다(εx≠0). equivalent_loads 의 N 이 0이 아니면 그 축력을 지그가 실제로 받아줄 수 있는지 확인할 것",
+     "suggestion": "결과를 경향 판단용으로 사용하고, 정밀 판정이 필요하면 상세 해석(FE)을 병행하세요.",
+     "field": "laminate"
+    }
+   ],
+   "assumptions": [
+    "고전 적층판 이론(CLT, Kirchhoff-Love): 횡전단 변형 무시 — 두꺼운 판·샌드위치 코어에는 부정확",
+    "평면응력 선형탄성, 완전 접착(층간 슬립 없음), 층 두께 균일",
+    "열·흡습 잔류변형은 delta_T/delta_C를 준 해석에서만 반영됨 (미지정이면 기계 하중만)",
+    "N·M은 단위 폭당 물리량 (SI: N/m, N·m/m)",
+    "변위 제어 — 지정 자유도의 일반력은 지그가 제공하는 반력이다",
+    "자유 폭(M_y=0)과 구속 폭(κ_y=0)은 다른 문제다 — width 로 명시한다"
+   ],
+   "metadata": {
+    "server_version": "0.21.0",
+    "engine_version": "0.21.0",
+    "unit_system_in": "SI_mm",
+    "units": {
+     "E": "MPa",
+     "thickness": "mm",
+     "density": "t/mm^3",
+     "A": "N/mm",
+     "B": "N",
+     "D": "N*mm",
+     "z": "mm",
+     "A_hat/B_hat/D_hat": "MPa",
+     "areal_mass": "t/mm^2",
+     "angle": "deg",
+     "alpha": "1/K",
+     "delta_T": "K",
+     "kappa": "1/mm",
+     "gamma": "N/mm (=kJ/m^2)",
+     "stress": "MPa",
+     "S6666": "1/MPa^3"
+    },
+    "method": "clt",
+    "payload_hash": "sha256:75a44849883bf787fa8aeb5f2b39573a0894835973122993ad75f5e84245bfb8"
+   }
+  }
+ },
+ "flat": {
+  "tool": "solve_prescribed_curvature",
+  "is_error": false,
+  "body": {
+   "status": "warning",
+   "data": {
+    "prescribed_dof": [
+     "kappa_x"
+    ],
+    "free_dof": [
+     "eps_x",
+     "eps_y",
+     "gamma_xy",
+     "kappa_y",
+     "kappa_xy"
+    ],
+    "response": {
+     "epsilon0": [
+      1.3458093763114215e-05,
+      2.2213482925326948e-05,
+      -6.419080039418735e-23
+     ],
+     "kappa": [
+      0.005,
+      -0.0007484006470042696,
+      6.296839564290637e-20
+     ]
+    },
+    "equivalent_loads": {
+     "N": [
+      -2.6645352591003758e-18,
+      5.684341886080802e-17,
+      3.155443620884047e-33
+     ],
+     "M": [
+      0.7706411218989293,
+      -3.469446951953614e-18,
+      9.62964972193618e-35
+     ],
+     "chain": "이 N·M 을 recover_ply_stresses·run_progressive_failure 에 그대로 넘기면 파손 판정까지 이어진다"
+    },
+    "naive_D_kappa": {
+     "M": [
+      0.7713235943083221,
+      -0.011065342164540515,
+      -6.396545789645066e-19
+     ],
+     "overprediction_Mx": 1.0008855904389207,
+     "note": "에이전트가 흔히 쓰는 지름길 M = D·κ 와의 대조. 비대칭 적층이나 자유 폭에서는 크게 틀린다(실측 +244.8%)"
+    },
+    "surface_strain": {
+     "bottom": [
+      -0.0006740419062368859,
+      0.000125118571888414,
+      -8.722345201293815e-21
+     ],
+     "top": [
+      0.0007009580937631142,
+      -8.069160603776011e-05,
+      8.593963600505439e-21
+     ],
+     "applied_strain_x": {
+      "bottom": -0.0006740419062368859,
+      "top": 0.0007009580937631142
+     },
+     "note": "bottom·top 은 [εx, εy, γxy] 3벡터다. assess_crack_shielding 의 applied_strain 은 **스칼라**이므로 applied_strain_x 의 해당 면 값을 넘길 것 — 손으로 (z−z_ns)/R 을 계산하지 말 것"
+    },
+    "per_ply_strain": [
+     {
+      "ply": 0,
+      "angle_deg": 0.0,
+      "bottom": {
+       "epsilon_xyz": [
+        -0.0006740419062368859,
+        0.000125118571888414,
+        -8.722345201293815e-21
+       ],
+       "epsilon_1": -0.0006740419062368859,
+       "epsilon_2": 0.000125118571888414
+      },
+      "mid": {
+       "epsilon_xyz": [
+        -0.0006115419062368858,
+        0.00011576356380086065,
+        -7.935240255757484e-21
+       ],
+       "epsilon_1": -0.0006115419062368858,
+       "epsilon_2": 0.00011576356380086065
+      },
+      "top": {
+       "epsilon_xyz": [
+        -0.0005490419062368859,
+        0.00010640855571330728,
+        -7.148135310221155e-21
+       ],
+       "epsilon_1": -0.0005490419062368859,
+       "epsilon_2": 0.00010640855571330728
+      }
+     },
+     {
+      "ply": 1,
+      "angle_deg": 0.0,
+      "bottom": {
+       "epsilon_xyz": [
+        -0.0005490419062368859,
+        0.00010640855571330728,
+        -7.148135310221155e-21
+       ],
+       "epsilon_1": -0.0005490419062368859,
+       "epsilon_2": 0.00010640855571330728
+      },
+      "mid": {
+       "epsilon_xyz": [
+        -0.00029904190623688577,
+        6.89885233630938e-05,
+        -3.999715528075835e-21
+       ],
+       "epsilon_1": -0.00029904190623688577,
+       "epsilon_2": 6.89885233630938e-05
+      },
+      "top": {
+       "epsilon_xyz": [
+        -4.904190623688581e-05,
+        3.156849101288032e-05,
+        -8.512957459305173e-22
+       ],
+       "epsilon_1": -4.904190623688581e-05,
+       "epsilon_2": 3.156849101288032e-05
+      }
+     },
+     {
+      "ply": 2,
+      "angle_deg": 90.0,
+      "bottom": {
+       "epsilon_xyz": [
+        -4.904190623688581e-05,
+        3.156849101288032e-05,
+        -8.512957459305173e-22
+       ],
+       "epsilon_1": 3.156849101288032e-05,
+       "epsilon_2": -4.904190623688581e-05
+      },
+      "mid": {
+       "epsilon_xyz": [
+        0.00020095809376311416,
+        -5.8515413373331534e-06,
+        2.2971240362148014e-21
+       ],
+       "epsilon_1": -5.8515413373331534e-06,
+       "epsilon_2": 0.00020095809376311416
+      },
+      "top": {
+       "epsilon_xyz": [
+        0.0004509580937631142,
+        -4.327157368754662e-05,
+        5.44554381836012e-21
+       ],
+       "epsilon_1": -4.327157368754662e-05,
+       "epsilon_2": 0.0004509580937631142
+      }
+     },
+     {
+      "ply": 3,
+      "angle_deg": 0.0,
+      "bottom": {
+       "epsilon_xyz": [
+        0.0004509580937631142,
+        -4.327157368754662e-05,
+        5.44554381836012e-21
+       ],
+       "epsilon_1": 0.0004509580937631142,
+       "epsilon_2": -4.327157368754662e-05
+      },
+      "mid": {
+       "epsilon_xyz": [
+        0.0005759580937631141,
+        -6.198158986265337e-05,
+        7.01975370943278e-21
+       ],
+       "epsilon_1": 0.0005759580937631141,
+       "epsilon_2": -6.198158986265337e-05
+      },
+      "top": {
+       "epsilon_xyz": [
+        0.0007009580937631142,
+        -8.069160603776011e-05,
+        8.593963600505439e-21
+       ],
+       "epsilon_1": 0.0007009580937631142,
+       "epsilon_2": -8.069160603776011e-05
+      }
+     }
+    ],
+    "definition": "K[ε⁰;κ] = [N;M] 의 지정/미지 자유도 분할. 지정된 자유도는 일반변형률이 알려지고 대응 일반력이 반력이 된다. 대칭 적층에서 κ 를 전부 지정하면 M = D·κ 로, 비대칭이면 M = D*·κ 로 정확히 환원된다"
+   },
+   "errors": [],
+   "warnings": [
+    {
+     "code": "W130",
+     "name": "MODEL_APPLICABILITY",
+     "message": "모델 적용 가정에서 벗어난 조건입니다: 자유 폭(M_y=0) 가정이다 — 폭이 구속된 실제 지그라면 width='constrained' 로 다시 보라. 실측 9.6% 차이가 났다",
+     "suggestion": "결과를 경향 판단용으로 사용하고, 정밀 판정이 필요하면 상세 해석(FE)을 병행하세요.",
+     "field": "width"
+    },
+    {
+     "code": "W130",
+     "name": "MODEL_APPLICABILITY",
+     "message": "모델 적용 가정에서 벗어난 조건입니다: 비대칭 적층 — 곡률을 지정하면 막변형이 함께 생긴다(εx≠0). equivalent_loads 의 N 이 0이 아니면 그 축력을 지그가 실제로 받아줄 수 있는지 확인할 것",
+     "suggestion": "결과를 경향 판단용으로 사용하고, 정밀 판정이 필요하면 상세 해석(FE)을 병행하세요.",
+     "field": "laminate"
+    }
+   ],
+   "assumptions": [
+    "고전 적층판 이론(CLT, Kirchhoff-Love): 횡전단 변형 무시 — 두꺼운 판·샌드위치 코어에는 부정확",
+    "평면응력 선형탄성, 완전 접착(층간 슬립 없음), 층 두께 균일",
+    "열·흡습 잔류변형은 delta_T/delta_C를 준 해석에서만 반영됨 (미지정이면 기계 하중만)",
+    "N·M은 단위 폭당 물리량 (SI: N/m, N·m/m)",
+    "변위 제어 — 지정 자유도의 일반력은 지그가 제공하는 반력이다",
+    "자유 폭(M_y=0)과 구속 폭(κ_y=0)은 다른 문제다 — width 로 명시한다"
+   ],
+   "metadata": {
+    "server_version": "0.21.0",
+    "engine_version": "0.21.0",
+    "unit_system_in": "SI_mm",
+    "units": {
+     "E": "MPa",
+     "thickness": "mm",
+     "density": "t/mm^3",
+     "A": "N/mm",
+     "B": "N",
+     "D": "N*mm",
+     "z": "mm",
+     "A_hat/B_hat/D_hat": "MPa",
+     "areal_mass": "t/mm^2",
+     "angle": "deg",
+     "alpha": "1/K",
+     "delta_T": "K",
+     "kappa": "1/mm",
+     "gamma": "N/mm (=kJ/m^2)",
+     "stress": "MPa",
+     "S6666": "1/MPa^3"
+    },
+    "method": "clt",
+    "payload_hash": "sha256:7bce68bd9b43dc458c353120ae2fc100881214cdb3407c12d23e0c8aa55c2f6d"
+   }
+  }
+ },
+ "plies": {
+  "tool": "recover_ply_stresses",
+  "is_error": false,
+  "body": {
+   "status": "ok",
+   "data": {
+    "load_state": {
+     "N": [
+      -9.094947017729283e-16,
+      -3.637978807091713e-15,
+      2.0194839173657903e-31
+     ],
+     "M": [
+      51.37607479326196,
+      0.0,
+      0.0
+     ],
+     "delta_T": null
+    },
+    "plies": [
+     {
+      "ply": 0,
+      "angle_deg": 0.0,
+      "name": null,
+      "stresses": {
+       "bottom": {
+        "sigma_xyz": [
+         -119.00753652096057,
+         -19.609467102390926,
+         -5.424344030655353e-16
+        ],
+        "sigma_12": [
+         -119.00753652096057,
+         -19.609467102390926,
+         -5.424344030655353e-16
+        ],
+        "failure": {
+         "tsai_wu_R": 1.0858216595667636,
+         "max_stress_FI": 0.9917294710080048,
+         "governing_mode": "fiber_compression",
+         "fails": false
+        }
+       },
+       "mid": {
+        "sigma_xyz": [
+         -107.82871523906852,
+         -17.36783588113986,
+         -4.934850905321815e-16
+        ],
+        "sigma_12": [
+         -107.82871523906852,
+         -17.36783588113986,
+         -4.934850905321815e-16
+        ],
+        "failure": {
+         "tsai_wu_R": 1.1966586800899641,
+         "max_stress_FI": 0.8985726269922377,
+         "governing_mode": "fiber_compression",
+         "fails": false
+        }
+       },
+       "top": {
+        "sigma_xyz": [
+         -96.6498939571765,
+         -15.126204659888801,
+         -4.445357779988277e-16
+        ],
+        "sigma_12": [
+         -96.6498939571765,
+         -15.126204659888801,
+         -4.445357779988277e-16
+        ],
+        "failure": {
+         "tsai_wu_R": 1.3326706184509929,
+         "max_stress_FI": 0.8054157829764709,
+         "governing_mode": "fiber_compression",
+         "fails": false
+        }
+       }
+      },
+      "min_tsai_wu_R": 1.0858216595667636
+     },
+     {
+      "ply": 1,
+      "angle_deg": 0.0,
+      "name": null,
+      "stresses": {
+       "bottom": {
+        "sigma_xyz": [
+         -4951.935227468387,
+         -35.193571121383386,
+         -2.2397490638692936e-15
+        ],
+        "sigma_12": [
+         -4951.935227468387,
+         -35.193571121383386,
+         -2.2397490638692936e-15
+        ],
+        "failure": {
+         "tsai_wu_R": 0.273253797191612,
+         "max_stress_FI": 4.12661268955699,
+         "governing_mode": "fiber_compression",
+         "fails": true
+        }
+       },
+       "mid": {
+        "sigma_xyz": [
+         -2695.1300019382447,
+         -12.509486020908627,
+         -1.2532441987970937e-15
+        ],
+        "sigma_12": [
+         -2695.1300019382447,
+         -12.509486020908627,
+         -1.2532441987970937e-15
+        ],
+        "failure": {
+         "tsai_wu_R": 0.4814401971857329,
+         "max_stress_FI": 2.2459416682818705,
+         "governing_mode": "fiber_compression",
+         "fails": true
+        }
+       },
+       "top": {
+        "sigma_xyz": [
+         -438.32477640810254,
+         10.17459907956614,
+         -2.667393337248939e-16
+        ],
+        "sigma_12": [
+         -438.32477640810254,
+         10.17459907956614,
+         -2.667393337248939e-16
+        ],
+        "failure": {
+         "tsai_wu_R": 1.9138719383277794,
+         "max_stress_FI": 0.36527064700675216,
+         "governing_mode": "fiber_compression",
+         "fails": false
+        }
+       }
+      },
+      "min_tsai_wu_R": 0.273253797191612
+     },
+     {
+      "ply": 2,
+      "angle_deg": 90.0,
+      "name": null,
+      "stresses": {
+       "bottom": {
+        "sigma_xyz": [
+         -23.886132152729413,
+         276.95057947010395,
+         1.5060992828296774e-14
+        ],
+        "sigma_12": [
+         276.95057947010395,
+         -23.886132152729413,
+         3.3599429694491362e-15
+        ],
+        "failure": {
+         "tsai_wu_R": 4.707558116197936,
+         "max_stress_FI": 0.15386143303894664,
+         "governing_mode": "fiber_tension",
+         "fails": false
+        }
+       },
+       "mid": {
+        "sigma_xyz": [
+         120.24303703938484,
+         -16.59096092418298,
+         2.7685405695234023e-16
+        ],
+        "sigma_12": [
+         -16.59096092418298,
+         120.24303703938484,
+         -8.65551993798328e-15
+        ],
+        "failure": {
+         "tsai_wu_R": 0.4144054688398675,
+         "max_stress_FI": 2.404860740787697,
+         "governing_mode": "transverse_tension",
+         "fails": true
+        }
+       },
+       "top": {
+        "sigma_xyz": [
+         264.37220623149915,
+         -310.1325013184699,
+         -1.4507284714392098e-14
+        ],
+        "sigma_12": [
+         -310.1325013184699,
+         264.37220623149915,
+         -2.0670982845415696e-14
+        ],
+        "failure": {
+         "tsai_wu_R": 0.1836284975599621,
+         "max_stress_FI": 5.287444124629983,
+         "governing_mode": "transverse_tension",
+         "fails": true
+        }
+       }
+      },
+      "min_tsai_wu_R": 0.1836284975599621
+     },
+     {
+      "ply": 3,
+      "angle_deg": 0.0,
+      "name": null,
+      "stresses": {
+       "bottom": {
+        "sigma_xyz": [
+         4075.285674652182,
+         55.54276928051567,
+         1.7062703964195054e-15
+        ],
+        "sigma_12": [
+         4075.285674652182,
+         55.54276928051567,
+         1.7062703964195054e-15
+        ],
+        "failure": {
+         "tsai_wu_R": 0.41735219099362003,
+         "max_stress_FI": 2.26404759702899,
+         "governing_mode": "fiber_tension",
+         "fails": true
+        }
+       },
+       "mid": {
+        "sigma_xyz": [
+         5203.688287417255,
+         66.88481183075308,
+         2.1995228289556055e-15
+        ],
+        "sigma_12": [
+         5203.688287417255,
+         66.88481183075308,
+         2.1995228289556055e-15
+        ],
+        "failure": {
+         "tsai_wu_R": 0.32845739428996096,
+         "max_stress_FI": 2.890937937454031,
+         "governing_mode": "fiber_tension",
+         "fails": true
+        }
+       },
+       "top": {
+        "sigma_xyz": [
+         6332.090900182327,
+         78.22685438099047,
+         2.692775261491706e-15
+        ],
+        "sigma_12": [
+         6332.090900182327,
+         78.22685438099047,
+         2.692775261491706e-15
+        ],
+        "failure": {
+         "tsai_wu_R": 0.2707483812584376,
+         "max_stress_FI": 3.5178282778790706,
+         "governing_mode": "fiber_tension",
+         "fails": true
+        }
+       }
+      },
+      "min_tsai_wu_R": 0.2707483812584376
+     }
+    ],
+    "first_ply_failure": {
+     "ply": 2,
+     "location": "top",
+     "tsai_wu_R": 0.1836284975599621,
+     "governing_mode": "transverse_tension",
+     "fails_at_current_load": true,
+     "meaning": "현재 하중을 R배 하면 해당 ply가 Tsai-Wu 파손면에 도달 (R>1 = 여유)"
+    }
+   },
+   "errors": [],
+   "warnings": [],
+   "assumptions": [
+    "고전 적층판 이론(CLT, Kirchhoff-Love): 횡전단 변형 무시 — 두꺼운 판·샌드위치 코어에는 부정확",
+    "평면응력 선형탄성, 완전 접착(층간 슬립 없음), 층 두께 균일",
+    "열·흡습 잔류변형은 delta_T/delta_C를 준 해석에서만 반영됨 (미지정이면 기계 하중만)",
+    "N·M은 단위 폭당 물리량 (SI: N/m, N·m/m)",
+    "파손 판정: Tsai-Wu(F12=-0.5√(F11F22) 표준 상호작용) 강도비 R 주지표 + Max Stress 지배 모드",
+    "응력은 각 ply의 bottom/mid/top 3점 (ply 내 z 선형)"
+   ],
+   "metadata": {
+    "server_version": "0.21.0",
+    "engine_version": "0.21.0",
+    "unit_system_in": "SI_mm",
+    "units": {
+     "E": "MPa",
+     "thickness": "mm",
+     "density": "t/mm^3",
+     "A": "N/mm",
+     "B": "N",
+     "D": "N*mm",
+     "z": "mm",
+     "A_hat/B_hat/D_hat": "MPa",
+     "areal_mass": "t/mm^2",
+     "angle": "deg",
+     "alpha": "1/K",
+     "delta_T": "K",
+     "kappa": "1/mm",
+     "gamma": "N/mm (=kJ/m^2)",
+     "stress": "MPa",
+     "S6666": "1/MPa^3"
+    },
+    "method": "clt",
+    "payload_hash": "sha256:7545d7056a3748f40045fb96db9d6e7d9a6f4ae903f1e95087c955e5ccab1a80"
+   }
+  }
+ },
+ "life": {
+  "tool": "estimate_fatigue_life",
+  "is_error": false,
+  "body": {
+   "status": "ok",
+   "data": {
+    "cycle": {
+     "loads_max": {
+      "N": [
+       -9.094947017729283e-16,
+       -3.637978807091713e-15,
+       2.0194839173657903e-31
+      ],
+      "M": [
+       51.37607479326196,
+       0.0,
+       0.0
+      ],
+      "chain": "이 N·M 을 recover_ply_stresses·run_progressive_failure 에 그대로 넘기면 파손 판정까지 이어진다"
+     },
+     "loads_min": {
+      "N": [
+       -2.6645352591003758e-18,
+       5.684341886080802e-17,
+       3.155443620884047e-33
+      ],
+      "M": [
+       0.7706411218989293,
+       -3.469446951953614e-18,
+       9.62964972193618e-35
+      ],
+      "chain": "이 N·M 을 recover_ply_stresses·run_progressive_failure 에 그대로 넘기면 파손 판정까지 이어진다"
+     },
+     "note": "성분별로 큰 값을 max로 정렬하므로 두 인자의 순서는 결과에 영향을 주지 않습니다"
+    },
+    "plies": [
+     {
+      "ply": 0,
+      "angle_deg": 0.0,
+      "z": -0.1375,
+      "governing_component": "sigma_1",
+      "sigma_amplitude": 58.611211736573075,
+      "sigma_mean": -60.39632478438749,
+      "r_alternating": 0.4884267644714423,
+      "cycles_to_failure": 130536.6176008223,
+      "at_cap": false,
+      "model": "log_linear",
+      "param": 0.1
+     },
+     {
+      "ply": 1,
+      "angle_deg": 0.0,
+      "z": -0.11250000000000002,
+      "governing_component": "sigma_1",
+      "sigma_amplitude": 2438.828099528181,
+      "sigma_mean": -2513.1071279402063,
+      "r_alternating": 2.0323567496068176,
+      "cycles_to_failure": 1.0,
+      "at_cap": false,
+      "model": "log_linear",
+      "param": 0.08
+     },
+     {
+      "ply": 2,
+      "angle_deg": 90.0,
+      "z": 0.03749999999999999,
+      "governing_component": "sigma_2",
+      "sigma_amplitude": 59.219695741897034,
+      "sigma_mean": 61.02334129748782,
+      "r_alternating": null,
+      "cycles_to_failure": 1.0,
+      "at_cap": false,
+      "model": "log_linear",
+      "param": 0.08,
+      "note": "평균 응력이 이미 정적 한계 이상 — 첫 사이클 파손"
+     },
+     {
+      "ply": 3,
+      "angle_deg": 0.0,
+      "z": 0.08749999999999998,
+      "governing_component": "sigma_1",
+      "sigma_amplitude": 2007.0781947661994,
+      "sigma_mean": 2068.2074798859826,
+      "r_alternating": null,
+      "cycles_to_failure": 1.0,
+      "at_cap": false,
+      "model": "log_linear",
+      "param": 0.08,
+      "note": "평균 응력이 이미 정적 한계 이상 — 첫 사이클 파손"
+     }
+    ],
+    "critical_ply": {
+     "ply": 1,
+     "angle_deg": 0.0,
+     "z": -0.11250000000000002,
+     "governing_component": "sigma_1",
+     "sigma_amplitude": 2438.828099528181,
+     "sigma_mean": -2513.1071279402063,
+     "r_alternating": 2.0323567496068176,
+     "cycles_to_failure": 1.0,
+     "at_cap": false,
+     "model": "log_linear",
+     "param": 0.08
+    },
+    "tied_plies": [
+     1,
+     2,
+     3
+    ],
+    "life_cycles": 1.0,
+    "meaning": "life_cycles = 임계 ply의 반복 수명 추정 (성분별 부호 보존 진폭·평균 + Goodman + S-N). 1e+12 도달 시 at_cap=true. life_cycles=null이면 전 ply 진폭 0(무손상)",
+    "delta_T": null
+   },
+   "errors": [],
+   "warnings": [],
+   "assumptions": [
+    "고전 적층판 이론(CLT, Kirchhoff-Love): 횡전단 변형 무시 — 두꺼운 판·샌드위치 코어에는 부정확",
+    "평면응력 선형탄성, 완전 접착(층간 슬립 없음), 층 두께 균일",
+    "열·흡습 잔류변형은 delta_T/delta_C를 준 해석에서만 반영됨 (미지정이면 기계 하중만)",
+    "N·M은 단위 폭당 물리량 (SI: N/m, N·m/m)",
+    "피로: 재료축 성분별(σ1/σ2/τ12) 부호 보존 진폭·평균 + 표준 Goodman(인장 평균만 감산) + S-N",
+    "등진폭·비례하중, 성분 독립(다축 상호작용 미고려) 1차 근사",
+    "S-N은 시험 데이터 범위(보통 1e4~1e7 사이클) 밖에서는 외삽 — 큰 N은 자릿수만 참고할 것",
+    "층간·박리 피로, 잔류강도 저하, 하중 순서·환경 효과는 미포함"
+   ],
+   "metadata": {
+    "server_version": "0.21.0",
+    "engine_version": "0.21.0",
+    "unit_system_in": "SI_mm",
+    "units": {
+     "E": "MPa",
+     "thickness": "mm",
+     "density": "t/mm^3",
+     "A": "N/mm",
+     "B": "N",
+     "D": "N*mm",
+     "z": "mm",
+     "A_hat/B_hat/D_hat": "MPa",
+     "areal_mass": "t/mm^2",
+     "angle": "deg",
+     "alpha": "1/K",
+     "delta_T": "K",
+     "kappa": "1/mm",
+     "gamma": "N/mm (=kJ/m^2)",
+     "stress": "MPa",
+     "S6666": "1/MPa^3"
+    },
+    "method": "clt",
+    "payload_hash": "sha256:623eeec8a8759b6db414df9fbe9142c46f809e0c6239f209ca8a90caee18db28"
+   }
+  }
+ },
+ "life_w120": {
+  "tool": "estimate_fatigue_life",
+  "is_error": false,
+  "body": {
+   "status": "warning",
+   "data": {
+    "cycle": {
+     "loads_max": {
+      "N": [
+       -9.094947017729283e-16,
+       -3.637978807091713e-15,
+       2.0194839173657903e-31
+      ],
+      "M": [
+       51.37607479326196,
+       0.0,
+       0.0
+      ],
+      "chain": "이 N·M 을 recover_ply_stresses·run_progressive_failure 에 그대로 넘기면 파손 판정까지 이어진다"
+     },
+     "loads_min": {
+      "N": [
+       -2.6645352591003758e-18,
+       5.684341886080802e-17,
+       3.155443620884047e-33
+      ],
+      "M": [
+       0.7706411218989293,
+       -3.469446951953614e-18,
+       9.62964972193618e-35
+      ],
+      "chain": "이 N·M 을 recover_ply_stresses·run_progressive_failure 에 그대로 넘기면 파손 판정까지 이어진다"
+     },
+     "note": "성분별로 큰 값을 max로 정렬하므로 두 인자의 순서는 결과에 영향을 주지 않습니다"
+    },
+    "plies": [
+     {
+      "ply": 0,
+      "angle_deg": 0.0,
+      "z": -0.1375,
+      "governing_component": "sigma_1",
+      "sigma_amplitude": 58.611211736573075,
+      "sigma_mean": -60.39632478438749,
+      "r_alternating": 0.4884267644714423,
+      "cycles_to_failure": 130536.6176008223,
+      "at_cap": false,
+      "model": "log_linear",
+      "param": 0.1
+     },
+     {
+      "ply": 1,
+      "angle_deg": 0.0,
+      "z": -0.11250000000000002,
+      "governing_component": "sigma_1",
+      "sigma_amplitude": 2438.828099528181,
+      "sigma_mean": -2513.1071279402063,
+      "r_alternating": 2.0323567496068176,
+      "cycles_to_failure": 1.0,
+      "at_cap": false,
+      "model": "log_linear",
+      "param": 0.08
+     },
+     {
+      "ply": 3,
+      "angle_deg": 0.0,
+      "z": 0.08749999999999998,
+      "governing_component": "sigma_1",
+      "sigma_amplitude": 2007.0781947661994,
+      "sigma_mean": 2068.2074798859826,
+      "r_alternating": null,
+      "cycles_to_failure": 1.0,
+      "at_cap": false,
+      "model": "log_linear",
+      "param": 0.08,
+      "note": "평균 응력이 이미 정적 한계 이상 — 첫 사이클 파손"
+     }
+    ],
+    "critical_ply": {
+     "ply": 1,
+     "angle_deg": 0.0,
+     "z": -0.11250000000000002,
+     "governing_component": "sigma_1",
+     "sigma_amplitude": 2438.828099528181,
+     "sigma_mean": -2513.1071279402063,
+     "r_alternating": 2.0323567496068176,
+     "cycles_to_failure": 1.0,
+     "at_cap": false,
+     "model": "log_linear",
+     "param": 0.08
+    },
+    "tied_plies": [
+     1,
+     3
+    ],
+    "life_cycles": 1.0,
+    "meaning": "life_cycles = 임계 ply의 반복 수명 추정 (성분별 부호 보존 진폭·평균 + Goodman + S-N). 1e+12 도달 시 at_cap=true. life_cycles=null이면 전 ply 진폭 0(무손상)",
+    "delta_T": null,
+    "excluded_plies": [
+     2
+    ]
+   },
+   "errors": [],
+   "warnings": [
+    {
+     "code": "W120",
+     "name": "ASSUMED_CONSTANT",
+     "message": "실측 없이 가정된 상수가 포함되어 있습니다: laminae[2]는 strength/fatigue 미입력으로 평가에서 제외됩니다 — 제외된 ply가 실제 임계면 life_cycles가 과대평가(비보수)입니다",
+     "suggestion": "결과 해석 시 해당 상수의 불확실성을 감안하세요.",
+     "field": "laminae"
+    }
+   ],
+   "assumptions": [
+    "고전 적층판 이론(CLT, Kirchhoff-Love): 횡전단 변형 무시 — 두꺼운 판·샌드위치 코어에는 부정확",
+    "평면응력 선형탄성, 완전 접착(층간 슬립 없음), 층 두께 균일",
+    "열·흡습 잔류변형은 delta_T/delta_C를 준 해석에서만 반영됨 (미지정이면 기계 하중만)",
+    "N·M은 단위 폭당 물리량 (SI: N/m, N·m/m)",
+    "피로: 재료축 성분별(σ1/σ2/τ12) 부호 보존 진폭·평균 + 표준 Goodman(인장 평균만 감산) + S-N",
+    "등진폭·비례하중, 성분 독립(다축 상호작용 미고려) 1차 근사",
+    "S-N은 시험 데이터 범위(보통 1e4~1e7 사이클) 밖에서는 외삽 — 큰 N은 자릿수만 참고할 것",
+    "층간·박리 피로, 잔류강도 저하, 하중 순서·환경 효과는 미포함"
+   ],
+   "metadata": {
+    "server_version": "0.21.0",
+    "engine_version": "0.21.0",
+    "unit_system_in": "SI_mm",
+    "units": {
+     "E": "MPa",
+     "thickness": "mm",
+     "density": "t/mm^3",
+     "A": "N/mm",
+     "B": "N",
+     "D": "N*mm",
+     "z": "mm",
+     "A_hat/B_hat/D_hat": "MPa",
+     "areal_mass": "t/mm^2",
+     "angle": "deg",
+     "alpha": "1/K",
+     "delta_T": "K",
+     "kappa": "1/mm",
+     "gamma": "N/mm (=kJ/m^2)",
+     "stress": "MPa",
+     "S6666": "1/MPa^3"
+    },
+    "method": "clt",
+    "payload_hash": "sha256:09e5f5557bf43b93763fcb7391d07e9b5820e694d2649bdc348dcf8e90dc62e9"
+   }
+  }
+ },
+ "bad": {
+  "tool": "solve_prescribed_curvature",
+  "is_error": false,
+  "body": {
+   "status": "error",
+   "data": null,
+   "errors": [
+    {
+     "code": "E102",
+     "name": "EMPTY_LAMINATE",
+     "message": "laminae가 비어 있습니다.",
+     "suggestion": "최소 1개 ply를 포함해 다시 호출하세요. laminae[0]이 최하단 ply입니다.",
+     "field": "laminae"
+    }
+   ],
+   "warnings": [],
+   "assumptions": [
+    "고전 적층판 이론(CLT, Kirchhoff-Love): 횡전단 변형 무시 — 두꺼운 판·샌드위치 코어에는 부정확",
+    "평면응력 선형탄성, 완전 접착(층간 슬립 없음), 층 두께 균일",
+    "열·흡습 잔류변형은 delta_T/delta_C를 준 해석에서만 반영됨 (미지정이면 기계 하중만)",
+    "N·M은 단위 폭당 물리량 (SI: N/m, N·m/m)"
+   ],
+   "metadata": {
+    "server_version": "0.21.0",
+    "engine_version": "0.21.0",
+    "unit_system_in": "SI_mm",
+    "units": {
+     "E": "MPa",
+     "thickness": "mm",
+     "density": "t/mm^3",
+     "A": "N/mm",
+     "B": "N",
+     "D": "N*mm",
+     "z": "mm",
+     "A_hat/B_hat/D_hat": "MPa",
+     "areal_mass": "t/mm^2",
+     "angle": "deg",
+     "alpha": "1/K",
+     "delta_T": "K",
+     "kappa": "1/mm",
+     "gamma": "N/mm (=kJ/m^2)",
+     "stress": "MPa",
+     "S6666": "1/MPa^3"
+    },
+    "method": "clt",
+    "payload_hash": "sha256:54d0ed6db37c9ec0f6c521ba9e01c9a2f9c23635cc84878e2be9f2e6fcc588e7"
+   }
+  }
+ },
+ "bad2": {
+  "tool": "recover_ply_stresses",
+  "is_error": false,
+  "body": {
+   "status": "error",
+   "data": null,
+   "errors": [
+    {
+     "code": "E100",
+     "name": "SCHEMA_INVALID",
+     "message": "입력 스키마가 유효하지 않습니다: loads.N는 숫자 3개 리스트여야 합니다",
+     "suggestion": "필드 타입과 필수 항목을 확인해 다시 호출하세요. 완전한 입력 예시는 get_reference_cases로 확인할 수 있습니다.",
+     "field": "loads.N"
+    }
+   ],
+   "warnings": [],
+   "assumptions": [
+    "고전 적층판 이론(CLT, Kirchhoff-Love): 횡전단 변형 무시 — 두꺼운 판·샌드위치 코어에는 부정확",
+    "평면응력 선형탄성, 완전 접착(층간 슬립 없음), 층 두께 균일",
+    "열·흡습 잔류변형은 delta_T/delta_C를 준 해석에서만 반영됨 (미지정이면 기계 하중만)",
+    "N·M은 단위 폭당 물리량 (SI: N/m, N·m/m)"
+   ],
+   "metadata": {
+    "server_version": "0.21.0",
+    "engine_version": "0.21.0",
+    "unit_system_in": "SI_mm",
+    "units": {
+     "E": "MPa",
+     "thickness": "mm",
+     "density": "t/mm^3",
+     "A": "N/mm",
+     "B": "N",
+     "D": "N*mm",
+     "z": "mm",
+     "A_hat/B_hat/D_hat": "MPa",
+     "areal_mass": "t/mm^2",
+     "angle": "deg",
+     "alpha": "1/K",
+     "delta_T": "K",
+     "kappa": "1/mm",
+     "gamma": "N/mm (=kJ/m^2)",
+     "stress": "MPa",
+     "S6666": "1/MPa^3"
+    },
+    "method": "clt",
+    "payload_hash": "sha256:eec6f8beade76c040b629b523443e9efd86bf08487dcdb5606582e37d781ef57"
+   }
+  }
+ },
+ "bend": {
+  "tool": "bend_profile",
+  "is_error": false,
+  "body": {
+   "definitions": 1,
+   "bent": 1,
+   "not_bent": 0,
+   "truncated": false,
+   "parts": [
+    {
+     "is_bent_plate": true,
+     "bends": [
+      {
+       "thickness": 1.2,
+       "radius_inner": 5.4,
+       "radius_outer": 6.6,
+       "radius_mid": 6.0,
+       "axis": [
+        0.0,
+        0.0,
+        -1.0
+       ],
+       "angle_deg": 180.0,
+       "width": 40.0,
+       "arc_length_mid": 18.849556,
+       "basis": "analytic_cylinder_pair",
+       "notes": []
+      }
+     ],
+     "primary": {
+      "thickness": 1.2,
+      "radius_inner": 5.4,
+      "radius_outer": 6.6,
+      "radius_mid": 6.0,
+      "axis": [
+       0.0,
+       0.0,
+       -1.0
+      ],
+      "angle_deg": 180.0,
+      "width": 40.0,
+      "arc_length_mid": 18.849556,
+      "basis": "analytic_cylinder_pair",
+      "notes": []
+     },
+     "thickness_check": {
+      "bend": 1.2,
+      "min_wall": 1.2,
+      "agree": true
+     },
+     "for_bending_analysis": {
+      "thickness_mm": 1.2,
+      "bend_radius_mm": 6.0,
+      "bend_radius_inner_mm": 5.4,
+      "width_mm": 40.0,
+      "bend_angle_deg": 180.0,
+      "curvature_1_per_mm": 0.16666667
+     },
+     "parts": [
+      "UBEND_1"
+     ],
+     "instances": 1
+    }
+   ],
+   "not_bent_reasons": [],
+   "note": "굽힘부 안팎 원통면 한 쌍에서 잰 값이다…"
+  }
+ }
+}
