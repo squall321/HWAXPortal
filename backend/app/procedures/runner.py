@@ -270,6 +270,12 @@ class ProceduresRunner:
             for key, path in (st.save or {}).items():
                 scope[key] = template.extract(v.parsed, path)
 
+            # 선택 — 룰이 고른 것을 범위에 담는다(PLAN §10-1). 0/1/N 이 여기서 갈린다.
+            if st.select is not None:
+                picked = self._pick(run_id, ix, st, v, scope)
+                if picked is not None:
+                    return picked   # 0개 실패 · 여럿이라 사람에게 묻는다
+
         self.store.set_run_state(run_id, "done", ended=True)
         return {"state": "done"}
 
@@ -377,6 +383,54 @@ class ProceduresRunner:
         finally:
             await sess.close(pat)
         return out
+
+    def _pick(self, run_id: str, ix: int, st: Step, v, scope: dict) -> dict | None:
+        """룰이 고른 후보를 범위에 담는다. 멈춰야 하면 그 결과를 돌려준다(아니면 None).
+
+        ⚠ **여럿에서 첫 번째를 조용히 집는 것이 가장 위험하다.** 엉뚱한 대상으로 절차
+        전체가 돌고 결과는 정상으로 나온다. StepForge 가 이미 그 자세다 — "이름이 겹치면
+        후보를 돌려주고 **고르지 않는다**"(D-170). 기본이 `ask` 인 이유다.
+        """
+        sel = st.select
+        try:
+            cand = template.extract(v.parsed, sel.from_)
+        except Exception:  # noqa: BLE001 — 경로가 안 풀리면 후보 없음과 같다
+            cand = None
+        rows = cand if isinstance(cand, list) else ([] if cand is None else [cand])
+        rows = [r for r in rows if isinstance(r, dict)]
+
+        if not rows:
+            if sel.on_none == "skip":
+                self.store.finish_step(run_id, ix, ok=True, state="skipped",
+                                       stage="select:none",
+                                       notes={"select": "룰이 아무것도 못 골랐다 — 건너뛴다"})
+                return None
+            self.store.finish_step(run_id, ix, ok=False, stage="select:none",
+                                   error=f"룰이 아무것도 못 골랐다 (`{sel.from_}` 가 비었다)")
+            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            return {"state": "failed", "stopped_at": ix, "kind": "select_none",
+                    "error": "룰이 아무것도 못 골랐다"}
+
+        if len(rows) > 1 and sel.on_many != "first":
+            shown = [{"i": i, "label": str(r.get(sel.label or sel.save, ""))[:120],
+                      "value": r.get(sel.save)} for i, r in enumerate(rows[:50])]
+            if sel.on_many == "fail":
+                self.store.finish_step(run_id, ix, ok=False, stage="select:many",
+                                       error=f"룰이 {len(rows)}개를 골랐다 — 하나로 좁혀라",
+                                       notes={"candidates": shown})
+                self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                return {"state": "failed", "stopped_at": ix, "kind": "select_many",
+                        "error": f"룰이 {len(rows)}개를 골랐다"}
+            # ask — 사람이 고른다. 게이트와 같은 자리에서 멈춘다.
+            self.store.finish_step(run_id, ix, ok=False, state="pending", stage="select:ask",
+                                   error=None, notes={"candidates": shown, "pick_into": sel.var})
+            self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
+            return {"state": "gated", "stopped_at": ix, "kind": "select_ask",
+                    "candidates": shown}
+
+        scope[sel.var] = rows[0].get(sel.save)
+        self.store.merge_inputs(run_id, {sel.var: scope[sel.var]})
+        return None
 
     async def _one(self, run_id, ix, st: Step, scope, principal, sess):
         """단계 하나 — 치환 → 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다."""

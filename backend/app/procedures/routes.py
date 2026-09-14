@@ -17,6 +17,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -415,6 +416,46 @@ def step_result(request: Request, run_id: str, ix: int,
 
 class AckIn(BaseModel):
     args_sha256: str
+
+
+class PickIn(BaseModel):
+    value: Any   # 사람이 고른 후보의 값(목록의 `value`)
+
+
+@router.post("/runs/{run_id}/steps/{ix}/pick", dependencies=[Depends(require_csrf)])
+async def pick(request: Request, run_id: str, ix: int, body: PickIn,
+               principal: Principal = Depends(_me)) -> dict:
+    """룰이 여럿을 골랐을 때 **사람이 하나를 고른다**(PLAN §10-1).
+
+    확인(ack)과 다르다. 확인은 "이대로 해라" 이고, 이쪽은 **"이것으로 해라"** 다.
+    조용히 첫 번째를 집지 않으려면 이 자리가 있어야 한다.
+
+    ⚠ **보여 준 후보 중에서만** 고를 수 있다. 아무 값이나 받으면 룰을 우회해 엉뚱한
+    대상으로 절차가 돈다 — 그건 고르는 것이 아니라 박는 것이다.
+    """
+    store = _store(request)
+    run = _owned(request, principal, run_id)
+    steps = {s["ix"]: s for s in run["steps"]}
+    if ix not in steps:
+        raise AuthError("그 단계가 없습니다", status_code=404)
+    notes = steps[ix].get("notes") or {}
+    cands = notes.get("candidates")
+    into = notes.get("pick_into")
+    if not cands or not into:
+        raise AuthError("이 단계는 고를 것이 없습니다", status_code=409)
+    if not any(c.get("value") == body.value for c in cands):
+        raise AuthError("보여 준 후보 중에서 골라 주세요", status_code=422)
+
+    store.merge_inputs(run_id, {into: body.value})
+    store.finish_step(run_id, ix, ok=True, state="done", stage="select:picked",
+                      notes={**notes, "picked": body.value})
+    version = store.get_version(run["procedure_version_id"] or "")
+    if version is None:
+        return {"picked": body.value, "resumed": False}
+    spec = ProcedureSpec.model_validate(version["spec"])
+    _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=ix + 1),
+           f"resume {run_id}")
+    return {"picked": body.value, "resumed": True}
 
 
 @router.post("/runs/{run_id}/steps/{ix}/ack", dependencies=[Depends(require_csrf)])

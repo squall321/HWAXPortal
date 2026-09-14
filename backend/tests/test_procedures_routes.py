@@ -722,3 +722,63 @@ def test_절차를_도구_계약으로_낸다(user):
 def test_없는_절차의_도구_계약은_404(user):
     c, h = user
     assert c.get(f"{PREFIX}/procedures/없는id/tool", headers=h).status_code == 404
+
+
+# ── 룰이 여럿을 골랐을 때 사람이 고른다 (PLAN §10-1) ─────────────────────
+def _gated_pick_run(c, h):
+    """select:ask 로 멈춘 실행을 흉내 낸다."""
+    store = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spec = {"title": "룰로 고르기",
+            "vars": [{"key": "project_id", "label": "과제"}],
+            "steps": [{"backend": "heax-step_forge", "tool": "find_parts",
+                       "args": {"project_id": "{{project_id}}"},
+                       "select": {"from": "parts", "save": "name", "as": "part"}}]}
+    got = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec},
+                 headers=h).json()
+    rid = store.create_run(owner_sub=me, run_by=me, procedure_version_id=got["version_id"],
+                           inputs={"project_id": "p"}, origin="replay", mode="live")
+    store.begin_step(rid, 0, backend="heax-step_forge", tool="find_parts", args={}, mode="live")
+    store.finish_step(rid, 0, ok=False, state="pending", stage="select:ask", error=None,
+                      notes={"pick_into": "part",
+                             "candidates": [{"i": 0, "label": "PANEL_1", "value": "PANEL_1"},
+                                            {"i": 1, "label": "PANEL_2", "value": "PANEL_2"}]})
+    store.set_run_state(rid, "gated", stage="step:0")
+    return rid
+
+
+def test_보여_준_후보_중에서_고른다(user):
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"value": "PANEL_2"}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["picked"] == "PANEL_2"
+    run = c.get(f"{PREFIX}/runs/{rid}", headers=h).json()
+    assert run["inputs"]["part"] == "PANEL_2", "고른 것이 범위에 안 담겼다"
+
+
+def test_후보_밖의_값은_못_넣는다(user):
+    """⚠ 아무 값이나 받으면 룰을 우회해 엉뚱한 대상으로 절차가 돈다 — 그건 고르는 게
+    아니라 박는 것이다."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"value": "남의부품"}, headers=h)
+    assert r.status_code == 422 and "후보" in r.text
+    run = c.get(f"{PREFIX}/runs/{rid}", headers=h).json()
+    assert "part" not in run["inputs"]
+
+
+def test_고를_것이_없는_단계는_거절한다(user):
+    c, h = user
+    rid = c.post(f"{PREFIX}/runs", json={"mode": "live"}, headers=h).json()["run_id"]
+    c.app.state.procedures_store.begin_step(rid, 0, backend="b", tool="t", args={}, mode="live")
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"value": "x"}, headers=h)
+    assert r.status_code == 409
+
+
+def test_고르기는_남의_실행을_못_건드린다(user):
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    boss = _login(c, "boss@corp.com")
+    assert c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"value": "PANEL_1"},
+                  headers=boss).status_code == 404

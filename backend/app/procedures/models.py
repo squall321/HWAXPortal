@@ -143,6 +143,37 @@ def _bad(key, raw):
     raise SpecError(f"{key}: 수치가 아니다 — {raw!r}")
 
 
+class Select(BaseModel):
+    """룰로 **대상을 고른다** — 이름을 박지 않는다(PLAN §10-1).
+
+    `find_parts(name="*BRKT*")` 같은 조회 단계에 붙인다. 결과에서 후보를 꺼내고
+    **0/1/N 을 정책대로** 다룬다.
+
+    ⚠ **N에서 첫 번째를 조용히 집으면 안 된다.** StepForge 가 이미 그 자세다 —
+    "이름이 겹치면 후보를 돌려주고 **고르지 않는다** — 엉뚱한 파트를 답하는 것이 가장
+    나쁘다"(D-170). 절차도 같다. 기본이 `ask` 인 이유이고, `first` 는 사람이 명시해야 한다.
+    """
+    model_config = {"extra": "forbid"}
+
+    from_: str = Field(alias="from")   # 결과에서 후보 목록이 있는 경로 (`parts`)
+    save: str                          # 고른 후보의 이 필드를 변수로 담는다 (`name`)
+    as_: str | None = Field(default=None, alias="as")   # 담을 변수 이름(기본 = save)
+    label: str | None = None           # 후보를 사람에게 보일 때 쓸 필드(기본 = save)
+    on_many: Literal["ask", "first", "fail"] = "ask"
+    on_none: Literal["fail", "skip"] = "fail"
+
+    @property
+    def var(self) -> str:
+        return self.as_ or self.save
+
+    @field_validator("from_", "save")
+    @classmethod
+    def _nonempty(cls, v: str) -> str:
+        if not str(v).strip():
+            raise ValueError("select 의 from·save 는 비울 수 없다")
+        return v
+
+
 class Step(BaseModel):
     """한 단계. 노출 이름이 아니라 `backend` + 원본 `tool` 로 저장한다(PLAN §5-8).
 
@@ -161,6 +192,7 @@ class Step(BaseModel):
     raw: bool = False          # 결과가 JSON 이 아니다(텍스트 카탈로그 등)
     unwrap: str | None = None  # SmartTwin 류 이중 포장 — 그 필드를 한 번 더 파싱
     warmup: bool = False       # 한 번 먼저 부르고 버린다. 타임아웃이 나도 실패로 안 친다
+    select: "Select | None" = None   # 룰로 고른다 — PLAN §10-1
     note: str | None = None
 
     @field_validator("backend")
@@ -296,6 +328,27 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
             produced.add(key)
         if st.save and st.raw:
             errs.append(f"{at}: raw 단계는 JSON 이 아니라 save 로 못 뽑는다")
+
+        # ⑧ 선택 — 룰로 고른다(PLAN §10-1). 0/1/N 정책이 이 검사의 요점이다.
+        if st.select is not None:
+            sel = st.select
+            if st.raw:
+                errs.append(f"{at}: raw 단계는 JSON 이 아니라 select 로 못 고른다")
+            if not _KEY.match(sel.var):
+                errs.append(f"{at}: select 가 담을 이름이 소문자·숫자·밑줄이 아니다 — {sel.var!r}")
+            if sel.var in declared:
+                errs.append(f"{at}: select 이름이 변수와 겹친다 — {sel.var}")
+            if sel.var in produced:
+                errs.append(f"{at}: select 이름이 앞 단계 save 와 겹친다 — {sel.var}")
+            # ⚠ **여럿에서 첫 번째를 조용히 집는 것**이 가장 위험하다. 엉뚱한 대상으로
+            # 절차 전체가 돌고, 결과는 정상으로 나온다 — StepForge D-170 과 같은 자리다.
+            if sel.on_many == "first":
+                errs.append(f"warn:{at}: 후보가 여럿이면 **첫 번째를 조용히 집는다**"
+                            f"(on_many: first). 사람에게 묻게 하려면 ask 로 두라")
+            if sel.on_none == "skip":
+                errs.append(f"warn:{at}: 룰이 아무것도 못 골라도 그냥 넘어간다"
+                            f"(on_none: skip) — 뒤 단계가 옛 값으로 돈다")
+            produced.add(sel.var)
 
     unused = declared - _all_refs(spec)
     for k in sorted(unused):
