@@ -487,6 +487,36 @@ class SaveAsIn(BaseModel):
     visibility: str = Field(default="all", pattern="^(all|private)$")
 
 
+@router.get("/runs/{run_id}/draft")
+async def run_draft(request: Request, run_id: str,
+                    principal: Principal = Depends(_me)) -> dict:
+    """이 실행을 **절차 초안**으로 펴 본다 — 그리고 안 펴지는 칸을 함께 낸다(PLAN §9-2).
+
+    결손 찾기와 절차 도출은 두 일이 아니라 하나다. 펴 보면 안 펴지는 칸이 나오고 그게
+    결손이다. 그래서 응답에 `spec` 과 `gaps` 가 같이 온다.
+
+    ⚠ **저장하지 않는다.** 어느 인자가 변수이고 어느 것이 상수인지는 사람이 확정한다
+    (PLAN §7 "자동 저장 금지"). `needs_human` 이 물어볼 자리다.
+    """
+    from app.procedures import derive as _d
+
+    store = _store(request)
+    run = _owned(request, principal, run_id)
+    steps = []
+    for st in run["steps"]:
+        steps.append({"tool": st["tool"],
+                      "args": (st.get("args") or {}).get("_text") or st.get("args") or {},
+                      "result": store.step_result(run_id, st["ix"])})
+    # 챗 기록에는 **어느 앱인지 없다**(PLAN §9-8). 도구 지도로 채운다 — 못 채우면 결손이다.
+    tmap = {}
+    try:
+        tmap = (await _tools_map(request)).get("map") or {}
+    except Exception:  # noqa: BLE001 — 지도가 없어도 초안은 낸다(그 단계가 결손으로 잡힌다)
+        logger.info("초안 — 도구 지도 조회 실패", exc_info=True)
+    got = _d.draft(steps, tool_backend=tmap, asked=(run.get("title") or ""))
+    return {"run_id": run_id, **got}
+
+
 @router.post("/runs/{run_id}/save-as-procedure", status_code=201,
              dependencies=[Depends(require_csrf)])
 def save_as_procedure(request: Request, run_id: str, body: SaveAsIn,

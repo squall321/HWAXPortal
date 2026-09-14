@@ -1383,6 +1383,8 @@ async def chat(
                                 "call": (str(data.get("call"))[:80] if data.get("call") else None),
                                 "ok": (bool(data["ok"]) if isinstance(data.get("ok"), bool) else None),
                                 "detail": (str(data.get("detail"))[:400] if data.get("detail") else None),
+                                # 절차 도출용 날것 — 미리보기로 만든 절차는 인자가 손상돼 있다
+                                "detail_full": _clip(data.get("detail_full"), 4000),
                                 "result_preview": (str(data.get("result_preview"))[:2000]
                                                    if data.get("result_preview") else None),
                                 # 핸드오프용 날것 — 이것을 안 남기면 새로고침 뒤 심의로 넘길 때

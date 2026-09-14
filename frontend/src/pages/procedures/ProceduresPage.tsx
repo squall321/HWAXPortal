@@ -10,6 +10,7 @@ import { useProcedures } from '../../state/ProceduresContext';
 import {
   cancelRun,
   getProcedure,
+  getRunDraft,
   importSeed,
   listSeeds,
   replayRun,
@@ -19,6 +20,7 @@ import {
   resumeRun,
   type ProcedureRow,
   type ProcedureVersion,
+  type RunDraft,
   type RunSummary,
   type SeedRow,
 } from '../../api/procedures.api';
@@ -389,6 +391,96 @@ function ProcedureDetail() {
   );
 }
 
+/** 이 실행을 절차로 펴 본다 — **안 펴지는 칸이 곧 결손이다**(PLAN §9-2).
+ *
+ * ⚠ 저장하지 않는다. 어느 인자가 변수이고 어느 것이 상수인지는 사람이 확정한다.
+ */
+function DraftView({ runId }: { runId: string }) {
+  const [d, setD] = useState<RunDraft | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const look = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setD(await getRunDraft(runId));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section style={rowCard}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap' }}>
+        <h3 style={{ color: 'var(--fg)', margin: 0, fontSize: '0.95rem' }}>절차로 펴 보기</h3>
+        <button type="button" style={tiny} disabled={busy} onClick={look}>
+          {busy ? '펴는 중…' : d ? '다시 펴 보기' : '펴 보기'}
+        </button>
+        <span style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>
+          저장하지 않습니다. 무엇이 변수인지는 <b>사람이 정합니다.</b>
+        </span>
+      </div>
+      {err && <ErrorBanner message={err} />}
+      {d && (
+        <div style={{ display: 'grid', gap: '0.7rem', marginTop: '0.6rem' }}>
+          <div>
+            <b style={{ color: 'var(--fg)', fontSize: '0.86rem' }}>
+              단계 {d.spec.steps.length} · 변수 {d.spec.vars.length}
+            </b>
+            <ol style={{ margin: '0.3rem 0 0', paddingLeft: '1.2rem',
+                         color: 'var(--muted)', fontSize: '0.82rem' }}>
+              {d.spec.steps.map((st, i) => (
+                <li key={i}>
+                  <code style={{ color: 'var(--fg)' }}>{st.tool}</code>{' '}
+                  {st.backend || <span style={{ color: '#e5534b' }}>앱을 모름</span>}
+                  {st.save && (
+                    <span> · 넘김 {Object.entries(st.save).map(([k, v]) => `${k}←${v}`).join(', ')}</span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {d.needs_human.length > 0 && (
+            <div>
+              <b style={{ color: '#d9a441', fontSize: '0.86rem' }}>
+                사람이 정할 자리 {d.needs_human.length}곳
+              </b>
+              <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem',
+                           color: 'var(--muted)', fontSize: '0.8rem' }}>
+                {d.needs_human.map((r, i) => (
+                  <li key={i}>
+                    {r.step}단계 <code style={{ color: 'var(--fg)' }}>{r.arg}</code> — {r.why}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {d.gaps.length > 0 && (
+            <div>
+              <b style={{ color: '#e5534b', fontSize: '0.86rem' }}>안 펴지는 칸 {d.gaps.length}곳</b>
+              <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem',
+                           color: 'var(--muted)', fontSize: '0.8rem' }}>
+                {d.gaps.map((g, i) => (
+                  <li key={i}>{g.step}단계 <code>{g.tool}</code> — {g.why}</li>
+                ))}
+              </ul>
+              <p style={{ color: 'var(--muted)', fontSize: '0.76rem', margin: '0.3rem 0 0' }}>
+                이 칸들이 <b>결손</b>입니다. 그 값이 어느 시스템엔가 이미 있다면 그 앱에 도구를
+                만들 자리이고, 없다면 절차의 변수로 남습니다.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /** 이 절차로 돌린 것들 — 절차를 만든 뜻은 **다시 돌리는 것**이라 이력이 절차 옆에 있어야 한다. */
 function ProcedureRuns({ procedureId }: { procedureId: string }) {
   const [rows, setRows] = useState<RunSummary[] | null>(null);
@@ -540,6 +632,7 @@ function RunDetailView() {
       </section>
       {err && <ErrorBanner message={err} />}
       <RunSteps run={watched} onChanged={refreshWatched} />
+      <DraftView runId={watched.id} />
     </div>
   );
 }

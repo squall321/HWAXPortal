@@ -39,8 +39,10 @@ def pair(activity: list[dict]) -> list[dict]:
                    "result_text": None, "ok": None, "step": ev.get("step")}
             by_call[cid] = cur
             order.append(cid)
-        if ev.get("detail") and cur["args_text"] is None:
-            cur["args_text"] = str(ev["detail"])
+        # 날것이 있으면 그것을 쓴다 — 미리보기로 만든 절차는 **인자가 손상돼 있다**
+        got_args = ev.get("detail_full") or ev.get("detail")
+        if got_args and cur["args_text"] is None:
+            cur["args_text"] = str(got_args)
         got = ev.get("result_full") or ev.get("result_preview")
         if got and cur["result_text"] is None:
             cur["result_text"] = str(got)

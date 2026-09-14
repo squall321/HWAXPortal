@@ -184,6 +184,26 @@ export function startEmptyRun(title?: string) {
   );
 }
 
+export type DraftReason = {
+  step: number; tool: string; arg: string;
+  kind: 'chain' | 'asked' | 'constant';
+  why: string; path?: string; from_step?: number;
+};
+
+export type RunDraft = {
+  run_id: string;
+  spec: { title: string; vars: VarDef[]; steps: StepDef[] };
+  reasons: DraftReason[];
+  gaps: { step: number; tool: string; kind: string; why: string }[];
+  /** 사람이 확정해야 하는 자리 — 변수인지 상수인지 코드가 모른다. */
+  needs_human: DraftReason[];
+};
+
+/** 이 실행을 절차 **초안**으로 펴 본다. 저장하지 않는다 — 확정은 사람이 한다. */
+export function getRunDraft(runId: string) {
+  return get<RunDraft>(`/runs/${runId}/draft`, '초안을 만들지 못했습니다.');
+}
+
 /** 지난 실행을 **그 값 그대로** 다시 돌린다. 기록 재생이 아니라 실제 재계산이다. */
 export function replayRun(runId: string, mode: 'plan' | 'live' = 'live') {
   return post<{ run_id: string; state: string; from_run: string }>(

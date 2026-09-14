@@ -631,3 +631,67 @@ def test_옛_판본과_그_이력은_판본이_올라도_남는다(user):
     c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h)   # 판본 2
     hist = c.get(f"{PREFIX}/runs?procedure_id={a['id']}", headers=h).json()["runs"]
     assert [r["id"] for r in hist] == [rid] and hist[0]["version_no"] == 1
+
+
+# ── 실행 → 절차 초안 (도출) ──────────────────────────────────────────────
+def test_챗_실행을_절차_초안으로_편다(user):
+    """**한 고리의 마지막 칸이다.** 챗에서 한 일이 원장에 남았으면 절차로 펴 본다."""
+    from app.procedures import from_chat
+
+    c, h = user
+    store = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()
+    rid = from_chat.record(
+        store, owner_sub=me["subject"], conversation_id="conv-1",
+        title="R1-예제 의 UBEND_1 굽힘 좀 봐줘",
+        activity=[
+            {"tool": "bend_profile", "call": "a", "ok": True,
+             "detail_full": '{"project_id": "R1-예제", "part": "UBEND_1"}'},
+            {"tool": "bend_profile", "call": "a", "ok": True,
+             "result_full": '{"parts": [{"for_bending_analysis": {"bend_radius_mm": 6.0}}]}'},
+            {"tool": "solve_prescribed_curvature", "call": "b", "ok": True,
+             "detail_full": '{"bend_radius": 6.0, "width": "free"}'},
+            {"tool": "solve_prescribed_curvature", "call": "b", "ok": True,
+             "result_full": '{"status": "ok"}'},
+        ])
+    assert rid
+
+    got = c.get(f"{PREFIX}/runs/{rid}/draft", headers=h)
+    assert got.status_code == 200, got.text
+    d = got.json()
+    s1, s2 = d["spec"]["steps"]
+    # ①이 읽은 값을 ③이 쓴 것을 **사람이 안 적어 줘도** 알아낸다
+    assert list(s1["save"].values()) == ["parts[0].for_bending_analysis.bend_radius_mm"]
+    assert s2["args"]["bend_radius"] == "{{%s}}" % list(s1["save"])[0]
+    # 사람이 대화에서 준 값은 변수
+    assert {v["label"] for v in d["spec"]["vars"]} >= {"project_id", "part"}
+    # 모르는 값은 상수로 두고 물어본다
+    assert any(r["arg"] == "width" for r in d["needs_human"])
+
+
+def test_초안은_저장하지_않는다(user):
+    """자동 저장 금지 — 펴 보기만 한다(PLAN §7)."""
+    from app.procedures import from_chat
+
+    c, h = user
+    me = c.get("/auth/me", headers=h).json()
+    rid = from_chat.record(c.app.state.procedures_store, owner_sub=me["subject"],
+                           conversation_id="c", title="t",
+                           activity=[{"tool": "t", "call": "a", "ok": True, "detail": "{}"},
+                                     {"tool": "t", "call": "a", "ok": True, "result_preview": "{}"}])
+    before = len(c.get(f"{PREFIX}/procedures", headers=h).json()["procedures"])
+    c.get(f"{PREFIX}/runs/{rid}/draft", headers=h)
+    assert len(c.get(f"{PREFIX}/procedures", headers=h).json()["procedures"]) == before
+
+
+def test_초안은_남의_실행을_안_보여준다(user):
+    from app.procedures import from_chat
+
+    c, h = user
+    me = c.get("/auth/me", headers=h).json()
+    rid = from_chat.record(c.app.state.procedures_store, owner_sub=me["subject"],
+                           conversation_id="c", title="t",
+                           activity=[{"tool": "t", "call": "a", "ok": True, "detail": "{}"},
+                                     {"tool": "t", "call": "a", "ok": True, "result_preview": "{}"}])
+    boss = _login(c, "boss@corp.com")
+    assert c.get(f"{PREFIX}/runs/{rid}/draft", headers=boss).status_code == 404
