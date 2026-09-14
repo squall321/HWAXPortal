@@ -198,7 +198,64 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] §6-1 의 네 수가 `GET /workbench-api/stats` 또는 sqlite 질의로 나온다
 - [ ] cae00 — `update-forges.sh chat` 뒤 `/workbench` 페이지가 실제로 뜬다(dist 가 Drive 를 거쳤는지)
 
-## S3 · ODB 어댑터 + 열충격 레시피 (S0 선행)
+## S2 · R1 적층 굴곡 수명 — **dev 완주 첫 실전** (S1 만 선행)
+
+레시피 전문은 [recipes.md#r1](recipes.md). 여기서 처음 증명되는 것 — **판단 단계 없이 직선
+체인이 끝까지 간다.** `save` 두 줄이 도구 넷을 잇는다.
+
+- [ ] 레시피 작성 — `part_info` → `thickness_report` → `analyze_laminate` →
+      `solve_prescribed_curvature` → `recover_ply_stresses` → `estimate_fatigue_life` →
+      `create_report_draft`(gate)
+- [ ] ★체인의 핵심 — `solve_prescribed_curvature` 의 `equivalent_loads` 를 `save` 해
+      `recover_ply_stresses` 의 `loads` 로 **그대로** 넘긴다. 손으로 `(z−z_ns)/R` 을 계산하지 않는다
+- [ ] **`M = D·κ` 지름길을 쓰지 않는다** — 도구 설명이 비대칭 스택에서 **실측 +244.8% 과대**라고
+      못 박는다. 이 한 줄이 워크벤치의 존재 이유다
+- [ ] 사람이 채우는 변수 넷에 `why` 를 적는다 — `bend_radius`(StepForge 형상 도구에 곡률·반경이
+      **없다**) · `width_mode`(free/constrained 가 **9.6%** 갈린다) · `laminate`(StepForge 재질은
+      LS-DYNA 카드 쪽이라 **형식이 다르다**) · `cycles_N`
+- [ ] ⚠ **W120 을 `notes` 로 올린다** — `estimate_fatigue_life` 는 `strength`/`fatigue` 없는 ply 를
+      **조용히 제외하고** 경고만 낸다. 임계 ply 가 빠지면 과대평가다
+- [ ] `laminate` 는 속성 없는 object(44/465) — 원문 JSON 2단 입력으로 받는다. `unit_system` 은
+      `SI`|`SI_mm` 이고 섞이면 조용히 틀린다
+- [ ] 검증: dev 에서 완주 → 저장 → `bend_radius` 만 바꿔 재생. 층별 응력·수명이 R 에 따라 변한다
+- [ ] 검증: 물성 없는 ply 를 일부러 넣어 **W120 이 `notes` 에 올라오는지**
+
+## S3 · R2 낙하·충격 — 제출/회수 두 레시피 (S1 만 선행)
+
+레시피 전문은 [recipes.md#r2](recipes.md). 여기서 처음 증명되는 것 — **잡 제출을 사람 확인
+아래 두고, 제출과 회수를 가른다**(드라이버 walltime **167시간**).
+
+### R2a 제출 (dev 는 `dry_run` 까지)
+- [ ] `save_result_to_path`(gate) → `smarttwin_scenario_options`(`raw: true` — 반환이 텍스트
+      카탈로그다) → `smarttwin_submit`(**must-gate**)
+- [ ] `sim_type` 만 바꾼 판본 둘 — `fullangle_drop`(각도 프리셋) · `partial_impact`
+      (`locations.mode` = grid|list|lhs|part_center, `impactor` Sphere|Cylinder)
+- [ ] **제출 갈래는 `smarttwin_submit` 만** 쓴다 — `fullangle_drop_simulation` 은 `lstc_license_ip`
+      를 사람에게 묻고 부분충격 빌더가 없다
+- [ ] ⚠ **단위계가 실제로 섞여 있다** — 프리셋 `26direction` 은 SI(7850, 2e11), 부분충격 실제 잡은
+      tonne-mm(7.85e-9, 2.0e5). `scenario_overrides` 물성은 **무변환 기입**된다. 변수 label 에 단위를 박는다
+- [ ] ⚠ enum 저장 시점 검증 — `generation_mode` 오타는 **조용히 기본값 처리**된다
+- [ ] ⚠ 전각도 `scenario_overrides` 에 `mode` 키가 섞이면 **조용히 부분충격으로 오실행**(사고 `799`)
+- [ ] `model_path` 는 공유 FS 절대경로 — 파일 반입은 레시피 밖(§4)
+- [ ] ⚠ 미확인 — `smarttwin_submit` 반환 모양(제출계라 안 불렀다). `save` 경로는 첫 실행에서 확정한다
+
+### R2b 회수 (cae00)
+- [ ] `slurm_job_results` → `report_summary` → `report_worst_cases` → `report_directional` →
+      `report_part_risk` → `report_findings` → `create_report_draft`(gate)
+- [ ] `report_id` 를 **변수로 받는다** — 리포트 HTML 이 8~10MB 라 MCP 로 못 나른다. 반입은 REST
+      intake(512MB)이고 레시피 밖이다
+- [ ] `sphere`/`impact` 는 리포트 `kind` — `sim_type` 과 짝이다. `ingest_report` 가 자동 판별한다
+- [ ] ⚠ **부분충격은 scenario 첨부를 생략**한다 — 파서가 `scenarios` 배열을 요구하는데 평탄
+      구조라 `ScenarioParseError` 로 **인제스트 전체가 실패**한다
+- [ ] ⚠ 구버전 SIF 는 `impact_report` 를 **`exit 0` 으로 조용히 건너뛴다** — 산출이 없는데 성공으로
+      보인다. 런 기록에 산출 파일 유무를 남긴다
+- [ ] 과제 메타(`project`·`dev_rev`·`variation`·`doe`·`focus`)를 안 넣으면 `find_reports` 로 다시 못 찾는다
+- [ ] ⚠ **dev 에서 검증 불가** — `report_corpus` 가 0건이다. 계약만 확인하고 실동작은 cae00
+
+## S4 · R3 ODB 어댑터 + 열충격 SED (S0 선행)
+
+레시피 전문은 [recipes.md#r3](recipes.md). 여기서 처음 증명되는 것 — **공급자 없는 값이
+사람이 채우는 칸으로 내려간다**(§5-1).
 
 - [ ] 고정물로 어댑터 작성 — odb-hub 산출 → `SedInput`. **키 15개(필수 10·선택 5) 외엔 `sample` 에 넣지
       않는다** — 서버 `extra="forbid"`, ODB 에서 딸려 온 키 하나면 E100 통째 거부
@@ -221,7 +278,19 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] `pcb_warpage_surrogate` 의 합성 데이터 경고를 `notes` 로
 - [ ] HWAXRisk `odb-adapter-contract.md` 4도구와 이름이 다르면 계약 개정을 HWAXRisk 쪽 일감으로
 
-## S2 · 과제 키 레지스트리 (S3 뒤, 또는 S4 안)
+## S5 · 일괄 재생 (S2~S4 중 하나만 서면 된다)
+
+첫 실사용례가 이미 둘 있다 — **R1 의 굽힘반경 스윕**(R_min·R_max 유불리)과 **R2 의 각도 프리셋
+비교**. 조건 분기로 보이던 자리가 "같은 레시피 × 변수 N개" 였다.
+
+- [ ] 레시피 1개 × 과제 N건 → 비교표 — `inputs_json` 을 그대로 열로 펴고(단계 인자 역파싱 금지) `notes`
+      경고 유무를 열로
+- [ ] **배치는 첫 `gate: human` 직전까지** 돌고 표를 만든다. 이후는 표에서 골라 개별 재개(초안 N개 금지)
+- [ ] 동시 상한 — "같은 백엔드에 동시 N". 계획 모드로 시작
+- [ ] 실패한 과제를 건너뛰고 계속 + 무엇이 왜 실패했는지 표에
+- [ ] `predict_sed_batch` 는 쓰지 않는다 — 전부-아니면-전무 검증이라 건너뛰기가 안 되고 응답 모양이 다르다
+
+## S6 · 과제 키 레지스트리 (S5 뒤)
 
 - [ ] 결정 — HWAXRisk `rr_sources`·`rr_projects` 확장인가 신규인가(PLAN §7 #8)
 - [ ] 매핑 표 — StepForge `project_id`(23-hex) · DynaForge `session_id`(ULID) · ThermalShock `project` ·
@@ -234,16 +303,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 이름·코드로도 찾기(StepForge 가 이미 그렇게 한다)
 - [ ] 검증: 실제 과제 하나로 앱을 오가며 키가 안 끊기는지
 
-## S4 · 일괄 재생 (S1·S3 이 서면 작다)
-
-- [ ] 레시피 1개 × 과제 N건 → 비교표 — `inputs_json` 을 그대로 열로 펴고(단계 인자 역파싱 금지) `notes`
-      경고 유무를 열로
-- [ ] **배치는 첫 `gate: human` 직전까지** 돌고 표를 만든다. 이후는 표에서 골라 개별 재개(초안 N개 금지)
-- [ ] 동시 상한 — "같은 백엔드에 동시 N". 계획 모드로 시작
-- [ ] 실패한 과제를 건너뛰고 계속 + 무엇이 왜 실패했는지 표에
-- [ ] `predict_sed_batch` 는 쓰지 않는다 — 전부-아니면-전무 검증이라 건너뛰기가 안 되고 응답 모양이 다르다
-
-## S5 · 챗 → 레시피 제안 (선택, 관측 개선 선행)
+## S7 · 챗 → 레시피 제안 (선택, 관측 개선 선행)
 
 관측 개선 — 워크벤치와 무관하게 그 자체로 값어치가 있다.
 - [ ] `on_tool_start`/`on_tool_end` 의 `event["run_id"]` 를 status 에 싣는다(`HWAXAgentServer/app.py:2607`·
@@ -260,7 +320,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 런의 '챗으로 가져가기' 는 `conv_store.create_with_messages(kind='workbench')` 로 잇되 그때
       `routes.py:194` Literal 과 `ConvKind` 를 함께 넓힌다(v1 런은 대화 저장소에 쓰지 않는다)
 
-## S6 · 리스크 패턴화 (가장 뒤)
+## S8 · 리스크 패턴화 (가장 뒤)
 
 - [ ] **런 → 심의 다리** — 런 상세 "심의로 넘기기". 단계 기록을 `[{source, tool, args, result}]` 로 바꿔
       `POST /agent/conversations` → `POST /agent/chat`(`'/심의 ' + 화두`, `delib_opts.evidence`,
@@ -277,5 +337,5 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 ## 착수 전
 
-- [ ] PLAN §7 결정 — S0 시점 · 첫 레시피 · 공유 정책(#6)
+- [ ] PLAN §7 결정 — S0 시점 · 공유 정책(#6). **S2(R1)부터 권장** — 선행 0, dev 완주
 - [ ] S1 을 먼저 시작할지(S0 과 병렬 가능) 확인

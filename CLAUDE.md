@@ -106,7 +106,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 전문가 조직도·HE팀 MCP 운영자·심층 보기 | `docs/org-chart/` |
 | 소속·허가 기반 접근(권한) | `docs/access-control/` |
 | 심의 UX 7건(좌석 조직도·도구 영역·VOC 먼저·되묻기·관계도·이어하기) | `docs/delib-ux/` (PLAN·checklist·context-notes) |
-| 워크벤치(업무 절차 인벤토리 — 계획만, 구현 전) | `docs/workbench/` (PLAN·checklist·context-notes·odb-request) |
+| 워크벤치(업무 절차 인벤토리 — 계획만, 구현 전) | `docs/workbench/` (PLAN·**recipes**·checklist·context-notes·odb-request) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
 거기 있고, 없으면 같은 판단을 다시 내리느라 시간을 쓴다.
