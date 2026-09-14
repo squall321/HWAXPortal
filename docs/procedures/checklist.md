@@ -199,7 +199,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 권한 전수 — `app.routes` 에서 `/procedures-api` 접두 라우트를 전부 뽑아 `feat:procedures` 없는 계정으로
       모두 403(열거는 `HWAXRisk/backend/tests/test_client_contract.py:33` 방식). 손으로 고른 몇 개가 아니라
       **전수**여야 나중에 단 라우트가 조용히 열리지 않는다
-- [ ] 첫 절차 픽스처(`project_id` 변수 → `list_parts` → `create_report_draft`)가 스키마 검증 통과
+- [x] 첫 절차 픽스처(`project_id` 변수 → `list_parts` → `create_report_draft`)가 스키마 검증 통과 ✅ R1 씨앗이 그 자리를 대신한다(7단계, `test_procedures_r1` 이 고정)
 - [x] 씨앗 가져오기 — `GET /seeds` · `POST /seeds/{name}/import`, 빈 목록에서 카드로 뜬다(W-31)
 - [x] 가져오기가 저장과 **같은** 검증을 탄다(게이트 없는 씨앗 → 422) · 이름 경로 탈출 차단
 - [x] 없는 API 경로가 SPA 로 새지 않는다 — JSON 404, 깊은 링크 11개는 그대로(W-32)
@@ -221,13 +221,13 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] `GET /runs?procedure_id=` + 절차 상세의 이력 + 실행 상세의 "← 이 절차에서"
 - [x] 씨앗 재가져오기 = **판본 올리기**(사본 아님), 옛 판본·이력 보존 · 멱등 스키마 마이그레이션
 - [ ] 포털 **브라우저**에서 로그인해 완주(사람) — PAT 경로는 아직 사람 손으로만 지나간다
-- [ ] `cd backend && pytest` 전체 초록 뒤에만 S1 완료(전역 §8)
+- [x] `cd backend && pytest` 전체 초록 뒤에만 S1 완료(전역 §8) ✅ 261 통과
 
 ### 검증 (S1 전체)
-- [ ] **챗·심의 파일 0개 변경**을 diff 로 확인
+- [x] **챗·심의 파일 0개 변경**을 diff 로 확인 ✅ 확인했고 **1건 나왔다** — 개명이 깨뜨린 낱말이었다(W-41, 수정·검사기 추가)
 - [ ] dev 첫 절차 완주 → 저장 → 변수 바꿔 재생(`create_report_draft` 는 `dry_run=true`)
 - [ ] 챗 동시 실행에서 429·지연 없음
-- [ ] §6-1 의 네 수가 `GET /procedures-api/stats` 또는 sqlite 질의로 나온다
+- [x] §6-1 의 네 수가 `GET /procedures-api/stats` 또는 sqlite 질의로 나온다 ✅ `store.stats()` 가 절차수·재생수·타인재생·재생완주율을 낸다(관리자 전용)
 - [ ] cae00 — `update-forges.sh chat` 뒤 `/procedures` 페이지가 실제로 뜬다(dist 가 Drive 를 거쳤는지)
 
 ## S2 · R1 적층 굴곡 수명 — **dev 완주 첫 실전** (S1 만 선행)
@@ -244,14 +244,14 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       `create_report_draft`(gate)
 - [x] ★체인의 핵심 — `solve_prescribed_curvature` 의 `equivalent_loads` 를 `save` 해
       `recover_ply_stresses` 의 `loads` 로 **그대로** 넘긴다. 손으로 `(z−z_ns)/R` 을 계산하지 않는다
-- [ ] **`M = D·κ` 지름길을 쓰지 않는다** — 도구 설명이 비대칭 스택에서 **실측 +244.8% 과대**라고
+- [x] **`M = D·κ` 지름길을 쓰지 않는다** — 도구 설명이 비대칭 스택에서 **실측 +244.8% 과대**라고 ✅ 씨앗 ③④가 `solve_prescribed_curvature`(변위 제어)를 쓴다
       못 박는다. 이 한 줄이 절차 기능의 존재 이유다
-- [ ] 사람이 채우는 변수 넷에 `why` 를 적는다 — `bend_radius`(StepForge 형상 도구에 곡률·반경이
+- [x] 사람이 채우는 변수 넷에 `why` 를 적는다 — `bend_radius`(StepForge 형상 도구에 곡률·반경이 ✅ 셋으로 줄었고(D-287) `test_procedures_r1` 이 `why` 를 강제한다
       **없다**) · `width_mode`(free/constrained 가 **9.6%** 갈린다) · `laminate`(StepForge 재질은
       LS-DYNA 카드 쪽이라 **형식이 다르다**) · `cycles_N`
 - [x] ⚠ **W120 을 `notes` 로 올린다** — `estimate_fatigue_life` 는 `strength`/`fatigue` 없는 ply 를
       **조용히 제외하고** 경고만 낸다. 임계 ply 가 빠지면 과대평가다
-- [ ] `laminate` 는 속성 없는 object(44/465) — 원문 JSON 2단 입력으로 받는다. `unit_system` 은
+- [x] `laminate` 는 속성 없는 object(44/465) — 원문 JSON 2단 입력으로 받는다. `unit_system` 은 ✅ 화면이 여러 줄 원문 JSON 칸으로 받고 `coerce_inputs` 가 푼다(W-35)
       `SI`|`SI_mm` 이고 섞이면 조용히 틀린다
 - [ ] 검증: dev 에서 완주 → 저장 → `bend_radius` 만 바꿔 재생. 층별 응력·수명이 R 에 따라 변한다
 - [ ] 검증: 물성 없는 ply 를 일부러 넣어 **W120 이 `notes` 에 올라오는지**
