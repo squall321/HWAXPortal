@@ -1085,3 +1085,41 @@ def test_남의_실행으로는_결손을_못_만든다(user):
     boss = _login(c, "boss@corp.com")
     assert c.post(f"{PREFIX}/gaps/draft", headers=boss,
                   json={"run_id": rid, "gap": {"kind": "x"}}).status_code == 404
+
+
+# ── 재개 — 약속만 있고 확인이 없던 자리(2026-09-15 감사) ──────────────────
+def _run_with_unknown_write(c, h, tool: str):
+    """쓰기 단계가 `unknown` 으로 끝난 실행을 만든다 — 타임아웃·재기동이 남기는 모양이다."""
+    spec = {"title": "t", "vars": [],
+            "steps": [{"backend": "ra", "tool": tool, "gate": "human", "args": {"x": 1}}]}
+    r = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec}, headers=h)
+    assert r.status_code == 201, r.text
+    st = c.app.state.procedures_store
+    rid = st.create_run(owner_sub=c.get("/auth/me").json()["subject"],
+                        procedure_version_id=r.json()["version_id"], mode="live")
+    st.begin_step(rid, 0, backend="ra", tool=tool, args={"x": 1})
+    st.finish_step(rid, 0, ok=False, state="unknown", stage="timeout")
+    return rid, st
+
+
+def test_실행_여부를_모르는_쓰기는_승인_없이_재개하지_않는다(user):
+    """독스트링은 여태 '사람이 확인한 뒤에만 돈다' 고 했는데 **확인이 없었다.**
+    타임아웃 뒤 재기동하면 `close_stale()` 이 진행 중 단계를 전부 unknown 으로 만든다 —
+    그 상태로 재개를 한 번 누르면 중단된 쓰기가 전부 다시 나간다."""
+    c, h = user
+    rid, st = _run_with_unknown_write(c, h, "add_report_tags")   # MUST_GATE
+    r = c.post(f"{PREFIX}/runs/{rid}/resume", headers=h)
+    assert r.status_code == 409, r.text
+    assert "실행 여부를 모르는 쓰기" in r.text
+
+    # 사람이 확인하고 승인하면 재개한다 — 인자 지문에 묶인 1회용이다
+    sha = st.get_run(rid)["steps"][0]["args_sha256"]
+    st.ack_gate(rid, 0, by="u", args_sha256=sha)
+    assert c.post(f"{PREFIX}/runs/{rid}/resume", headers=h).status_code == 200
+
+
+def test_읽기_단계는_그대로_재개한다(user):
+    """가드가 **너무 넓으면** 평범한 조회 재개까지 막는다 — 그 짝을 함께 고정한다."""
+    c, h = user
+    rid, _st = _run_with_unknown_write(c, h, "find_reports")
+    assert c.post(f"{PREFIX}/runs/{rid}/resume", headers=h).status_code == 200

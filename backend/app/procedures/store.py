@@ -353,29 +353,45 @@ class ProceduresStore:
                     error: str | None = None, duration_ms: int | None = None,
                     notes: dict | None = None, state: str | None = None,
                     stage: str | None = None) -> None:
-        """결과는 gzip BLOB + bytes + sha256. 2MB 초과는 프리뷰만 남긴다."""
+        """결과는 gzip BLOB + bytes + sha256. 2MB 초과는 프리뷰만 남긴다.
+
+        ⚠ **안 준 것은 지우지 않는다.** 한 단계를 두 번 마감하는 자리가 있다 — 이미 돌아
+        결과가 있는 단계를 `select:ask` 가 `pending` 으로 되돌려 사람에게 묻는다. 그때
+        `result_text=None` 으로 덮어써서 **결과·판정 노트·소요가 통째로 날아갔다**.
+        `/steps/{ix}/result` 는 404 가 되고, 초안이 그 단계를 거쳐 값을 잇지 못하고,
+        W120 같은 경고가 배치 비교표에 닿기 전에 사라졌다. 모르는 것과 없는 것은 다르다.
+        (`begin_step` 이 `INSERT OR REPLACE` 라 매 단계는 깨끗이 시작한다 — 남을 것이 없다.)
+        `notes` 는 **합친다** — 판정이 적은 경고와 고르기가 적는 후보는 둘 다 참이다.
+        """
         st = state or ("done" if ok else "failed")
         if st not in STEP_STATES:
             raise ValueError(f"모르는 단계 상태: {st}")
-        gz = size = digest = None
-        trunc, preview = 0, None
+        sets = ["state=?", "ok=?", "error=?", "stage=?"]
+        vals: list = [st, 1 if ok else 0, error, stage]
         if result_text is not None:
             raw = result_text.encode("utf-8")
             size = len(raw)
-            digest = hashlib.sha256(raw).hexdigest()
+            gz, trunc, preview = None, 0, None
             if size > RESULT_MAX:
                 trunc, preview = 1, result_text[:PREVIEW]
             else:
                 gz = gzip.compress(raw)
+            sets += ["result_gz=?", "result_bytes=?", "result_sha256=?",
+                     "truncated=?", "preview=?"]
+            vals += [gz, size, hashlib.sha256(raw).hexdigest(), trunc, preview]
+        if duration_ms is not None:
+            sets.append("duration_ms=?")
+            vals.append(duration_ms)
         with self._conn() as c:
-            c.execute(
-                "UPDATE run_steps SET state=?, ok=?, error=?, result_gz=?, result_bytes=?,"
-                " result_sha256=?, truncated=?, preview=?, notes=?, duration_ms=?, stage=?"
-                " WHERE run_id=? AND ix=?",
-                (st, 1 if ok else 0, error, gz, size, digest, trunc, preview,
-                 json.dumps(notes, ensure_ascii=False) if notes else None,
-                 duration_ms, stage, run_id, ix),
-            )
+            if notes:
+                row = c.execute("SELECT notes FROM run_steps WHERE run_id=? AND ix=?",
+                                (run_id, ix)).fetchone()
+                cur = json.loads((row["notes"] if row else None) or "{}")
+                cur.update(notes)
+                sets.append("notes=?")
+                vals.append(json.dumps(cur, ensure_ascii=False))
+            c.execute(f"UPDATE run_steps SET {', '.join(sets)} WHERE run_id=? AND ix=?",
+                      (*vals, run_id, ix))
 
     def step_result(self, run_id: str, ix: int) -> str | None:
         row = self._conn().execute(

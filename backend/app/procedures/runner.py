@@ -269,6 +269,13 @@ class ProceduresRunner:
                         "error": J.short_error(v)}
             for key, path in (st.save or {}).items():
                 scope[key] = template.extract(v.parsed, path)
+            if st.save:
+                # ⚠ **원장에도 남긴다.** scope 는 이 호출 안에서만 산다. 게이트에서 멈췄다
+                # 재개하면 `run()` 이 scope 를 `inputs` 에서 다시 만드는데, 거기 없으면
+                # 그 값을 쓰는 단계가 `TemplateError` 로 죽고 — 그 예외가 `_loop` 밖이라
+                # 실행은 `running` 인 채 영원히 남았다. '앞에서 뽑아 두고 되돌리기 어려운
+                # 단계를 게이트로 막는다' 는 **가장 흔한 모양**이 재개가 안 됐다.
+                self.store.merge_inputs(run_id, {k: scope[k] for k in st.save})
 
             # 선택 — 룰이 고른 것을 범위에 담는다(PLAN §10-1). 0/1/N 이 여기서 갈린다.
             if st.select is not None:
@@ -399,8 +406,30 @@ class ProceduresRunner:
             cand = template.extract(v.parsed, sel.from_)
         except Exception:  # noqa: BLE001 — 경로가 안 풀리면 후보 없음과 같다
             cand = None
-        rows = cand if isinstance(cand, list) else ([] if cand is None else [cand])
-        rows = [r for r in rows if isinstance(r, dict)]
+        raw_rows = cand if isinstance(cand, list) else ([] if cand is None else [cand])
+        rows = [r for r in raw_rows if isinstance(r, dict)]
+        if raw_rows and not rows:
+            # ⚠ **"없다" 가 아니다.** `parts: ["BRKT_1","BRKT_2"]` 처럼 이름 목록으로 오면
+            # 여기서 전부 걸러진다. 그걸 "비었다" 로 말하면 사람은 질의를 고치러 간다 —
+            # 고칠 곳은 `select` 쪽이다.
+            kinds = sorted({type(r).__name__ for r in raw_rows})
+            self.store.finish_step(
+                run_id, ix, ok=False, stage="select:shape",
+                error=f"`{sel.from_}` 에 {len(raw_rows)}개가 있는데 객체가 아니다"
+                      f"({'·'.join(kinds)}) — `save: {sel.save}` 로 꺼낼 칸이 없다")
+            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            return {"state": "failed", "stopped_at": ix, "kind": "select_shape",
+                    "error": f"`{sel.from_}` 가 객체 목록이 아니다"}
+        if rows and not any(sel.save in r for r in rows):
+            # 칸 이름이 틀린 것도 "비었다" 와 다르다. 이걸 안 가르면 후보가 전부
+            # `value: null` 로 뜨고, 사람이 그중 하나를 고르면 None 이 다음 단계로 간다.
+            self.store.finish_step(
+                run_id, ix, ok=False, stage="select:no_field",
+                error=f"고른 {len(rows)}개 어디에도 `{sel.save}` 칸이 없다 — "
+                      f"있는 칸: {sorted(rows[0])[:12]}")
+            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            return {"state": "failed", "stopped_at": ix, "kind": "select_no_field",
+                    "error": f"`{sel.save}` 칸이 없다"}
 
         if not rows:
             if sel.on_none == "skip":
@@ -431,8 +460,19 @@ class ProceduresRunner:
             return {"state": "gated", "stopped_at": ix, "kind": "select_ask",
                     "candidates": shown}
 
-        scope[sel.var] = rows[0].get(sel.save)
-        self.store.merge_inputs(run_id, {sel.var: scope[sel.var]})
+        got = rows[0].get(sel.save)
+        if template.is_empty(got):
+            # `save` 경로는 40줄 위에서 이미 이러고 있다(PLAN §5-6). 여기만 안 보고
+            # 있었다 — `find_parts(name=null)` 은 대개 **필터 없음**으로 읽혀 전부가
+            # 돌아오고, 실행은 `done` 이 되고, 보고서는 엉뚱한 집합 위에서 나온다.
+            self.store.finish_step(run_id, ix, ok=False, stage="select:empty",
+                                   error=f"고른 것의 `{sel.save}` 가 빈 값이다 — "
+                                         f"다음 단계에 빈 값을 넘기지 않는다")
+            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            return {"state": "failed", "stopped_at": ix, "kind": "select_empty",
+                    "error": f"`{sel.save}` 가 빈 값이다"}
+        scope[sel.var] = got
+        self.store.merge_inputs(run_id, {sel.var: got})
         return None
 
     async def dispatcher_items(self, principal, d, run_id: str = "items") -> list[dict]:

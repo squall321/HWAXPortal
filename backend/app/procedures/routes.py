@@ -77,14 +77,40 @@ def _owned(request: Request, principal: Principal, run_id: str) -> dict:
     return run
 
 
-def _spawn(coro, what: str) -> None:
+def _writey(tool: str) -> bool:
+    """되돌리기 어렵거나 자원을 쓰는 도구인가. 분류의 정본은 `models.py` 다 —
+    여기서 목록을 다시 만들면 두 곳이 어긋난다."""
+    from app.procedures.models import (GW_DENY_PREFIX, MUST_GATE, WARN_EXACT,
+                                       WARN_PREFIX)
+
+    return (tool in MUST_GATE or tool in WARN_EXACT
+            or tool.startswith(WARN_PREFIX) or tool.startswith(GW_DENY_PREFIX))
+
+
+def _spawn(coro, what: str, *, store, run_id: str) -> None:
+    """배경 실행. **터지면 그 실행을 끝난 것으로 표시한다.**
+
+    ⚠ 여태는 로그만 찍었다. 그래서 게이트웨이가 안 뜨거나(`RunnerError`) PAT 발급이
+    실패하면 실행은 `queued`·`running` 인 채 남고, 화면은 영원히 '도는 중' 을 돌았다 —
+    **멈춘 것과 도는 것이 같은 모양**이다. 다음 재기동의 `close_stale()` 전까지 아무도
+    모른다. `store`·`run_id` 를 필수로 받는 것은, 새로 다는 사람이 빼먹을 수 없게다.
+    """
     t = asyncio.create_task(coro)
     _TASKS.add(t)
 
     def _done(task: asyncio.Task) -> None:
         _TASKS.discard(task)
-        if not task.cancelled() and task.exception() is not None:
-            logger.error("절차 %s 실패", what, exc_info=task.exception())
+        if task.cancelled() or task.exception() is None:
+            return
+        exc = task.exception()
+        logger.error("절차 %s 실패", what, exc_info=exc)
+        try:
+            run = store.get_run(run_id)
+            if run and run["state"] in ("queued", "running"):
+                store.set_run_state(run_id, "failed",
+                                    stage=f"crashed:{type(exc).__name__}", ended=True)
+        except Exception:  # noqa: BLE001 — 표시 실패가 더 시끄러우면 안 된다
+            logger.error("절차 %s 실패 표시 실패 run=%s", what, run_id, exc_info=True)
 
     t.add_done_callback(_done)
 
@@ -404,7 +430,8 @@ async def start_run(request: Request, body: RunIn,
     if spec is None:
         return {"run_id": run_id, "state": "queued", "empty": True}
 
-    _spawn(runner.run(run_id=run_id, spec=spec, principal=principal), f"run {run_id}")
+    _spawn(runner.run(run_id=run_id, spec=spec, principal=principal), f"run {run_id}",
+           store=store, run_id=run_id)
     return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}",
             **({"warnings": notes} if notes else {})}
 
@@ -439,7 +466,8 @@ async def add_step(request: Request, run_id: str, body: StepIn,
     if hard:
         raise AuthError("이 단계는 실행할 수 없습니다:\n- " + "\n- ".join(hard), status_code=422)
 
-    _spawn(_step_and_log(request, run_id, step, principal), f"step {run_id}")
+    _spawn(_step_and_log(request, run_id, step, principal), f"step {run_id}",
+           store=_store(request), run_id=run_id)
     return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}"}
 
 
@@ -504,7 +532,8 @@ async def replay_run(request: Request, run_id: str, body: ReplayIn,
         procedure_version_id=src["procedure_version_id"], inputs=inputs,
         origin="replay", mode=body.mode,
         title=src.get("title") or (version.get("spec") or {}).get("title"))
-    _spawn(runner.run(run_id=new_id, spec=spec, principal=principal), f"run {new_id}")
+    _spawn(runner.run(run_id=new_id, spec=spec, principal=principal), f"run {new_id}",
+           store=store, run_id=new_id)
     return {"run_id": new_id, "state": "queued", "from_run": run_id,
             "poll": f"/procedures-api/runs/{new_id}"}
 
@@ -567,7 +596,8 @@ async def pick(request: Request, run_id: str, ix: int, body: PickIn,
         return {"picked": body.value, "resumed": False}
     spec = ProcedureSpec.model_validate(version["spec"])
     _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=ix + 1),
-           f"resume {run_id}")
+           f"resume {run_id}",
+           store=_store(request), run_id=run_id)
     return {"picked": body.value, "resumed": True}
 
 
@@ -636,7 +666,8 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
             title=f"{run.get('title') or spec.title} — {val}", batch_id=batch_id)
         # 고른 값이 이미 범위에 있으니 **그 선택 단계 다음부터** 돈다.
         _spawn(runner.run(run_id=new_id, spec=spec, principal=principal, start_at=ix + 1),
-               f"batch {new_id}")
+               f"batch {new_id}",
+               store=_store(request), run_id=new_id)
         made.append({"run_id": new_id, "value": val})
     return {"batch_id": batch_id, "mode": body.mode, "count": len(made), "runs": made,
             "poll": f"/procedures-api/batches/{batch_id}"}
@@ -695,7 +726,8 @@ async def ack(request: Request, run_id: str, ix: int, body: AckIn,
         return {"acked": True, "resumed": False}
     spec = ProcedureSpec.model_validate(version["spec"])
     _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=ix),
-           f"resume {run_id}")
+           f"resume {run_id}",
+           store=_store(request), run_id=run_id)
     return {"acked": True, "resumed": True}
 
 
@@ -712,11 +744,23 @@ async def resume(request: Request, run_id: str,
         raise AuthError("빈 실행은 재개하지 않습니다 — 단계를 다시 실행하세요", status_code=409)
     at = next((s["ix"] for s in run["steps"]
                if s["state"] in ("failed", "unknown", "pending")), len(run["steps"]))
-    if at >= len(ProcedureSpec.model_validate(version["spec"]).steps):
-        raise AuthError("재개할 단계가 없습니다", status_code=409)
     spec = ProcedureSpec.model_validate(version["spec"])
+    if at >= len(spec.steps):
+        raise AuthError("재개할 단계가 없습니다", status_code=409)
+    # ⚠ 여기가 위 약속을 지키는 자리다. 여태 **약속만 있고 확인이 없었다** — `unknown` 은
+    # 타임아웃·재기동으로 '실행 여부를 모른다' 는 뜻인데, 그대로 다시 부르면 업로드·등록이
+    # 두 번 나간다. 게이트 승인 기구가 이미 있으니 그것을 쓴다(인자 지문에 묶인 1회용).
+    was = next((s for s in run["steps"] if s["ix"] == at), None)
+    if was and was["state"] == "unknown" and _writey(spec.steps[at].tool):
+        ack = _store(request).gate_ack(run_id, at)
+        if ack is None or ack["args_sha256"] != was["args_sha256"]:
+            raise AuthError(
+                f"{at + 1}단계 `{spec.steps[at].tool}` 은 실행 여부를 모르는 쓰기입니다 — "
+                "실제로 됐는지 확인한 뒤 그 단계를 승인하면 재개합니다",
+                status_code=409)
     _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=at),
-           f"resume {run_id}")
+           f"resume {run_id}",
+           store=_store(request), run_id=run_id)
     return {"resumed_at": at}
 
 

@@ -136,3 +136,31 @@ def test_경로가_안_풀리면_후보_없음과_같다():
     r.store = _Store()
     out = r._pick("run", 0, st, Verdict(True, "json", "ok", parsed={"parts": [{"name": "A"}]}), {})
     assert out["kind"] == "select_none"
+
+
+# ── "못 골랐다" 와 구분해야 하는 것들(2026-09-15 감사) ──────────────────────
+# 셋 다 예전엔 하나로 뭉뚱그려졌거나 아예 성공으로 흘렀다. 진단이 틀리면 사람이
+# 엉뚱한 데를 고치러 간다 — `select` 를 봐야 할 때 질의를 고치러 가는 식이다.
+def test_이름_목록으로_오면_비었다고_하지_않는다():
+    """`parts: ["A","B"]` — 객체가 아니라 전부 걸러진다. 3개가 왔는데 '비었다' 는 거짓이다."""
+    out, scope, store = _pick(["BRKT_1", "BRKT_2", "BRKT_3"])
+    assert out["kind"] == "select_shape", out
+    assert "3개" in store.finished[-1]["error"] and "str" in store.finished[-1]["error"]
+    assert "part" not in scope
+
+
+def test_칸_이름이_틀리면_그렇게_말한다():
+    """`save: name` 인데 행에 `name` 이 없다. 예전엔 후보가 전부 `value: null` 로 떴고,
+    사람이 그중 하나를 고르면 None 이 다음 단계로 갔다."""
+    out, scope, store = _pick([{"pid": 1, "label": "A"}, {"pid": 2, "label": "B"}])
+    assert out["kind"] == "select_no_field", out
+    assert "pid" in store.finished[-1]["error"] and "label" in store.finished[-1]["error"]
+
+
+def test_고른_것의_값이_비면_다음_단계로_안_넘긴다():
+    """`save` 경로는 이미 이러고 있다(PLAN §5-6). 여기만 안 보고 있었다 —
+    `find_parts(name=null)` 은 대개 '필터 없음' 으로 읽혀 **전부**가 돌아온다."""
+    out, scope, store = _pick([{"name": ""}])
+    assert out["kind"] == "select_empty", out
+    assert "part" not in scope and store.inputs == {}
+    assert store.state == "failed"
