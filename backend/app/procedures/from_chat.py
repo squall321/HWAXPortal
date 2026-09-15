@@ -36,7 +36,7 @@ def pair(activity: list[dict]) -> list[dict]:
         cur = by_call.get(cid)
         if cur is None:
             cur = {"call": cid, "tool": str(ev["tool"]), "args_text": None,
-                   "result_text": None, "ok": None, "step": ev.get("step")}
+                   "result_text": None, "ok": None, "ms": None, "step": ev.get("step")}
             by_call[cid] = cur
             order.append(cid)
         # 날것이 있으면 그것을 쓴다 — 미리보기로 만든 절차는 **인자가 손상돼 있다**
@@ -48,6 +48,8 @@ def pair(activity: list[dict]) -> list[dict]:
             cur["result_text"] = str(got)
         if isinstance(ev.get("ok"), bool):
             cur["ok"] = ev["ok"]
+        if isinstance(ev.get("ms"), int) and cur["ms"] is None:
+            cur["ms"] = ev["ms"]
     return [by_call[c] for c in order[:MAX_STEPS]]
 
 
@@ -73,7 +75,7 @@ def record(store, *, owner_sub: str, conversation_id: str, activity: list[dict],
                              args={"_text": st["args_text"]} if st["args_text"] else {},
                              expect="fast", mode="live")
             store.finish_step(run_id, ix, ok=(st["ok"] is not False),
-                              result_text=st["result_text"],
+                              result_text=st["result_text"], duration_ms=st.get("ms"),
                               error=None if st["ok"] is not False else (st["step"] or "실패"))
         store.set_run_state(run_id, "done", ended=True)
         return run_id

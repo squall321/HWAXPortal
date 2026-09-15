@@ -1383,6 +1383,9 @@ async def chat(
                                 "call": (str(data.get("call"))[:80] if data.get("call") else None),
                                 # `invoke_tool` 경유였다는 사실 — `tool` 은 이미 안쪽 이름이다
                                 "via": (str(data.get("via"))[:40] if data.get("via") else None),
+                                # 시각·소요 — 원장에는 있는데 활동에는 없었다(PLAN §9-8)
+                                "ts": (int(data["ts"]) if isinstance(data.get("ts"), int) else None),
+                                "ms": (int(data["ms"]) if isinstance(data.get("ms"), int) else None),
                                 "ok": (bool(data["ok"]) if isinstance(data.get("ok"), bool) else None),
                                 "detail": (str(data.get("detail"))[:400] if data.get("detail") else None),
                                 # 절차 도출용 날것 — 미리보기로 만든 절차는 인자가 손상돼 있다

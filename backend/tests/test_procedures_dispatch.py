@@ -53,8 +53,24 @@ def reg():
 def test_등록부가_리포와_함께_온다(reg):
     """없으면 2단 지원이 없을 뿐이지만, 있는 것을 확인해 둔다."""
     assert (ROOT / "docs" / "procedures" / "dispatchers.yaml").is_file()
-    assert ("heax-kooremapper_mcp", "run_operation") in reg
-    assert ("heax-step_forge", "run_job") in reg
+    for key in (("heax-kooremapper_mcp", "run_operation"),
+                ("heax-step_forge", "run_job"),
+                ("smart-twin-mcp", "catalog_run")):
+        assert key in reg, key
+
+
+def test_후보는_확인한_것만_등재한다():
+    """⚠ **확인 못 한 것과 없는 것은 다르다.** 이 박스에 프리셋이 0건이라고 그 앱에
+    2단이 없는 게 아니다 — 후보로 두고 `checked` 에 무엇을 봤는지 적는다."""
+    import yaml as _y
+
+    raw = _y.safe_load((ROOT / "docs" / "procedures" / "dispatchers.yaml")
+                       .read_text(encoding="utf-8"))
+    for c in raw.get("candidates") or []:
+        assert c.get("checked"), f"확인 기록 없는 후보: {c}"
+    # 확정된 것은 전부 describe 를 갖는다 — 그게 2단의 조건이다
+    for d in raw["dispatchers"]:
+        assert d.get("describe") and d.get("schema_kind")
 
 
 def test_같은_도구를_두_번_등재하면_거절한다(tmp_path):

@@ -35,6 +35,33 @@ def _fill(path: str) -> str:
             .replace("{ix}", "0"))
 
 
+def _offline_runner(s):
+    """도구 0개를 돌려주는 가짜 게이트웨이 위의 실행기.
+
+    `tools/list` 가 빈 목록이면 저장 검증은 **"못 물어봤다"** 로 다루고 경고만 남긴다.
+    실제 백엔드는 부르지 않는다 — 테스트가 공유 서비스에 세션을 쌓지 않는다.
+    """
+    import httpx
+
+    from app.procedures.runner import ProceduresRunner
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content or b"{}") if req.content else {}
+        if body.get("method") == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {}},
+                                  headers={"mcp-session-id": "offline"})
+        if body.get("method") == "tools/list":
+            payload = {"jsonrpc": "2.0", "id": 2, "result": {"tools": []}}
+            return httpx.Response(200, text=f"data: {json.dumps(payload)}\n\n",
+                                  headers={"content-type": "text/event-stream"})
+        return httpx.Response(200)
+
+    return ProceduresRunner(
+        settings=s, store=app.state.procedures_store,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=5.0),
+        mint_pat=lambda p, run, ix: "pat-offline")
+
+
 @pytest.fixture()
 def client(tmp_path):
     s = Settings(user_store_path=str(tmp_path / "users.sqlite"),
@@ -48,7 +75,16 @@ def client(tmp_path):
     with TestClient(app) as c:
         app.state.user_store = UserStore(s)
         app.state.procedures_store = ProceduresStore(s)
+        # ⚠ **테스트는 공유 서비스를 치면 안 된다.** lifespan 이 진짜 실행기를 세우고,
+        # 그 실행기는 이 박스에 떠 있는 게이트웨이(:9110)를 실제로 부른다. 그러면 —
+        #   · 게이트웨이가 내려가면 테스트 결과가 달라지고
+        #   · 결과가 **그 신원의 권한**에 좌우된다(실제로 R1 씨앗이 저장 거절됐다, W-52)
+        #   · 남의 게이트웨이에 세션이 쌓인다
+        # 그래서 **오프라인 실행기**를 세운다 — 도구 0개를 돌려주는 가짜 게이트웨이다.
+        # 0개는 "못 물어봤다" 로 다뤄지므로(W-52) 저장은 경고만 남기고 통과한다.
+        app.state.procedures_runner = _offline_runner(s)
         yield c
+        app.state.procedures_runner = None
     app.dependency_overrides.pop(get_settings, None)
 
 

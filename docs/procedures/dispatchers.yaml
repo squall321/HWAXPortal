@@ -41,9 +41,29 @@ dispatchers:
       모르는 키는 **거절된다**(D-278). 공차(tied_gap 등)는 detect·mesh·pipeline 에만 얹힌다 —
       그 제약은 스키마가 아니라 응답의 `공차를_받는_잡` 에 있다. 어댑터가 그것도 옮긴다.
 
+  - backend: smart-twin-mcp
+    tool: catalog_run
+    selector: name               # 카탈로그 도구 이름
+    payload: args
+    list: catalog_search
+    describe: catalog_describe
+    describe_arg: name
+    schema_kind: json_schema
+    schema_at: args_schema
+    note: >-
+      카탈로그 도구 **44개**가 이 하나 뒤에 있다(2026-09-15 `catalog_search` 실호출).
+      `catalog_describe` 가 JSON Schema draft 2020-12 을 그대로 준다 — `required` ·
+      `additionalProperties:false` 에 더해 `examples` 와 `how_to_call` 까지 있다.
+      지금 등재한 셋 중 계약이 가장 잘 갖춰져 있다.
+
 # 아직 확인 안 한 후보 — 등재하지 않는다(확인해야 등재한다)
 candidates:
-  - {backend: smart-twin-cluster, tool: slurm_submit_job, hint: slurm_list_templates}
-  - {backend: reportarchive, tool: create_report_from_preset, hint: list_presets}
-  - {backend: ai-data-hub, tool: run_saved_search, hint: list_saved_searches}
-  - {backend: smart-twin-mcp, tool: catalog_run, hint: catalog_describe}
+  # 2단은 맞는데 **계약이 산문이다** — 기계가 읽을 스키마가 없어 등재 못 한다.
+  # 결손으로 올렸다: gaps/stc-template-schema.yaml
+  - {backend: smart-twin-cluster, tool: slurm_submit_job, hint: slurm_list_templates,
+     checked: "2026-09-15 — 템플릿 4개를 텍스트로 준다. 필수 파일이 산문에 있다"}
+  # 이 박스에 항목이 0건이라 **확인 못 했다**. 없다는 뜻이 아니다.
+  - {backend: reportarchive, tool: create_report_from_preset, hint: list_presets,
+     checked: "2026-09-15 — list_presets 0건. 프리셋이 있는 박스에서 다시 본다"}
+  - {backend: ai-data-hub, tool: run_saved_search, hint: list_saved_searches,
+     checked: "2026-09-15 — list_saved_searches 0건. 저장된 검색이 있을 때 다시 본다"}

@@ -112,3 +112,13 @@ def test_챗_실행은_재생용_판본이_없다(store):
     rid = from_chat.record(store, owner_sub="u", conversation_id="c1",
                            activity=[_start("r1", "t", "{}"), _end("r1", "t", "x")])
     assert store.get_run(rid, owner_sub="u")["procedure_version_id"] is None
+
+
+def test_소요가_원장에_남는다(store):
+    """원장에는 duration_ms 칸이 있는데 챗이 안 채우고 있었다(PLAN §9-8)."""
+    rid = from_chat.record(store, owner_sub="u", conversation_id="c1",
+                           activity=[_start("r1", "t", "{}"),
+                                     {"tool": "t", "call": "r1", "ok": True,
+                                      "result_preview": "r", "ms": 1234, "ts": 1789}])
+    st = store.get_run(rid, owner_sub="u")["steps"][0]
+    assert st["duration_ms"] == 1234
