@@ -2,7 +2,7 @@
  "_why": "models.py 의 손으로 적은 목록(MUST_GATE·DRY_RUN_TOOLS·WARN_EXACT)이 '게이트웨이가 바뀌면 다시 뽑는다' 고만 적혀 있고 **확인하는 코드가 없었다**. 이 파일이 그 '뽑은 시점' 을 남긴다 — 목록은 이제 데이터에 대조된다.",
  "_refresh": "backend/scripts/refresh-census.py (살아 있는 게이트웨이에서 다시 뽑는다)",
  "generated": "2026-09-15",
- "gateway_tools": 470,
+ "gateway_tools": 471,
  "tools": [
   {
    "name": "activate_model",
@@ -1989,7 +1989,7 @@
    "name": "mesh_size_advice",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -2480,6 +2480,13 @@
    "backend": "reportarchive",
    "dry_run": true,
    "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "rigid_body_check",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
    "args_documented": 0
   },
   {
