@@ -10,6 +10,9 @@ import {
   saveAsProcedure,
   startEmptyRun,
   type StepDef,
+  type Dispatcher,
+  dispatcherItems,
+  listDispatchers,
   type ToolInfo,
 } from '../../api/procedures.api';
 import { ArgsForm, buildArgs, emptyArgs, type ArgsState } from './ArgsForm';
@@ -115,6 +118,8 @@ export default function BuildView() {
                   ))}
                 </select>
               </label>
+
+              {tool && <TwoStage tool={tool} />}
 
               <ArgsForm tool={tool} state={args} onChange={setArgs} />
 
@@ -349,3 +354,94 @@ const pre: React.CSSProperties = {
 };
 const th: React.CSSProperties = { padding: '0.3rem 0.4rem', borderBottom: '1px solid var(--border)' };
 const td: React.CSSProperties = { padding: '0.3rem 0.4rem', borderBottom: '1px solid var(--border)', color: 'var(--fg)' };
+
+/** 이 도구가 **2단**이면 뒤에 무엇이 있는지 보여 준다(PLAN §9-4).
+ *
+ * `run_operation` 하나 뒤에 연산 47개가 있는데 화면에는 도구 하나로만 보인다. 그러면
+ * `operation` 에 무엇을 적을지 알 방법이 없다 — 그게 이 칸이 있는 이유다.
+ */
+function TwoStage({ tool }: { tool: ToolInfo }) {
+  const [reg, setReg] = useState<Dispatcher[] | null>(null);
+  const [items, setItems] = useState<{ name: string; summary: string; category?: string }[] | null>(null);
+  const [pickedItem, setPickedItem] = useState('');
+  const [schema, setSchema] = useState<Record<string, unknown> | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    listDispatchers().then((r) => setReg(r.dispatchers)).catch(() => setReg([]));
+  }, []);
+
+  // 노출 이름은 앱이 겹치면 접두어가 붙는다 — 등록부의 tool 로 끝나는지로 본다
+  const d = (reg ?? []).find(
+    (x) => tool.name === x.tool || tool.name.endsWith(`_${x.tool}`),
+  );
+
+  useEffect(() => {
+    setItems(null);
+    setPickedItem('');
+    setSchema(null);
+    setNote(null);
+    if (!d) return;
+    dispatcherItems(d.backend, d.tool)
+      .then((r) => { setItems(r.items ?? []); setNote(r.note ?? null); })
+      .catch(() => setItems([]));
+  }, [d]);
+
+  if (!d) return null;
+
+  return (
+    <section style={{ border: '1px solid #d9a441', borderRadius: 6, padding: '0.6rem',
+                      background: 'rgba(217,164,65,0.07)', display: 'grid', gap: '0.4rem' }}>
+      <strong style={{ color: '#d9a441', fontSize: '0.86rem' }}>
+        이 도구는 뒤에 여럿이 있습니다{items ? ` — ${items.length}개` : ''}
+      </strong>
+      <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>
+        <code>{d.selector}</code> 로 고르고 <code>{d.payload}</code> 에 그 인자를 넣습니다.
+        고르면 <b>그 계약</b>을 보여 주고, 저장할 때 <b>속 인자까지 검증</b>합니다.
+      </span>
+      {note && <span style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>{note}</span>}
+      {!items && <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>불러오는 중…</span>}
+      {!!items?.length && (
+        <select
+          style={input}
+          value={pickedItem}
+          onChange={(e) => {
+            const n = e.target.value;
+            setPickedItem(n);
+            setSchema(null);
+            if (!n) return;
+            dispatcherItems(d.backend, d.tool, n)
+              .then((r) => setSchema((r.schema as Record<string, unknown>) ?? null))
+              .catch(() => setSchema(null));
+          }}
+        >
+          <option value="">({items.length}개 중에서 — {d.selector})</option>
+          {items.map((it) => (
+            <option key={it.name} value={it.name}>
+              {it.name}{it.category ? ` [${it.category}]` : ''} — {it.summary.slice(0, 60)}
+            </option>
+          ))}
+        </select>
+      )}
+      {pickedItem && (
+        <div style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>
+          {schema ? (
+            <>
+              <b style={{ color: 'var(--fg)' }}>{pickedItem} 의 인자</b> —{' '}
+              {Object.keys((schema.properties as Record<string, unknown>) ?? {}).map((k) => (
+                <code key={k} style={{ marginRight: '0.3rem' }}>
+                  {k}{((schema.required as string[]) ?? []).includes(k) ? '*' : ''}
+                </code>
+              ))}
+              <div style={{ marginTop: '0.2rem' }}>
+                <code>{d.payload}</code> 칸에 이 키들로 JSON 을 넣으세요.
+              </div>
+            </>
+          ) : (
+            <span>계약을 못 받았습니다 — 이름이 틀렸거나 그 앱이 지금 안 붙어 있습니다.</span>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

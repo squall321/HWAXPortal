@@ -244,6 +244,27 @@ export function getBatch(batchId: string) {
   return get<BatchTable>(`/batches/${encodeURIComponent(batchId)}`, '비교표를 불러오지 못했습니다.');
 }
 
+export type Dispatcher = {
+  backend: string; tool: string; selector: string; payload: string;
+  list: string | null; describe: string; note: string;
+};
+
+/** 등록부에 확정된 2단 도구 — 이 도구는 **뒤에 여럿이 있다**. */
+export function listDispatchers() {
+  return get<{ dispatchers: Dispatcher[] }>('/dispatchers', '2단 도구 목록을 불러오지 못했습니다.');
+}
+
+/** 그 도구 뒤에 무엇이 있나(name 없이) · 하나의 계약(name 주면). */
+export function dispatcherItems(backend: string, tool: string, name?: string) {
+  const q = name ? `?name=${encodeURIComponent(name)}` : '';
+  return get<{
+    items?: { name: string; summary: string; category?: string }[];
+    selector?: string; payload?: string; note?: string;
+    schema?: { properties?: Record<string, unknown>; required?: string[] } | null;
+  }>(`/dispatchers/${encodeURIComponent(backend)}/${encodeURIComponent(tool)}/items${q}`,
+     '뒤에 무엇이 있는지 알아내지 못했습니다.');
+}
+
 /** 결손 하나를 **장부 파일 초안**으로. ⚠ 파일을 쓰지 않는다 — 사람이 읽고 커밋한다. */
 export function draftGap(runId: string, gap: Record<string, unknown>, ownerCandidate?: string) {
   return post<{ filename: string; yaml_text: string }>(

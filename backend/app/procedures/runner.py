@@ -432,6 +432,40 @@ class ProceduresRunner:
         self.store.merge_inputs(run_id, {sel.var: scope[sel.var]})
         return None
 
+    async def dispatcher_items(self, principal, d, run_id: str = "items") -> list[dict]:
+        """2단 도구 뒤에 **무엇이 있나**. 목록 도구가 없으면 빈 목록이다(모른다).
+
+        응답 모양이 앱마다 달라(JSON 목록·텍스트) 이름만 골라 낸다 — 지어내지 않는다.
+        """
+        if not d.list_tool:
+            return []
+        body = await self._call_one(principal, d.backend, d.list_tool, {}, run_id)
+        return _names_of(body)
+
+    async def second_stage_one(self, principal, d, item: str,
+                               run_id: str = "describe") -> dict | None:
+        """그 항목 **하나**의 계약. 못 받으면 None — 모르는 것을 틀렸다고 하지 않는다."""
+        body = await self._call_one(principal, d.backend, d.describe,
+                                    {d.describe_arg: item}, run_id)
+        return dispatch.to_json_schema(body, d, item=item)
+
+    async def _call_one(self, principal, backend: str, tool: str, args: dict,
+                        run_id: str):
+        """세션 하나 열고 한 번 부르고 닫는다 — 조회용 짧은 길."""
+        sess = GatewaySession(self.gateway_url, self._client, corr=run_id)
+        pat = self.mint_pat(principal, run_id, 0)
+        if not pat:
+            raise RunnerError("사용자 명의 PAT 발급 실패")
+        try:
+            await sess.open(pat)
+            alias = f"{backend.replace('-', '')}_{tool}"
+            res = await sess.call("invoke_tool", {"name": alias, "arguments": args},
+                                  pat, 30.0)
+            text, _ = J.join_content(getattr(res, "content", None) or [])
+            return J.judge(is_error=bool(getattr(res, "isError", False)), text=text).parsed
+        finally:
+            await sess.close(pat)
+
     async def _one(self, run_id, ix, st: Step, scope, principal, sess):
         """단계 하나 — 치환 → 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다."""
         args = template.substitute(st.args, scope)
@@ -525,3 +559,29 @@ def _resolvable(st: Step, known: set) -> bool:
         if name not in known:
             return False
     return True
+
+
+def _names_of(body) -> list[dict]:
+    """목록 응답에서 **이름과 한 줄 요약**만 골라 낸다.
+
+    앱마다 모양이 다르다 — DynaForge 는 `{name, category, summary}` 의 연속,
+    SmartTwinMCP 는 `{hits: [{name, summary}]}`. 모르는 모양이면 빈 목록이다.
+    """
+    rows = []
+    if isinstance(body, dict):
+        for key in ("operations", "items", "hits", "tools", "results"):
+            if isinstance(body.get(key), list):
+                rows = body[key]
+                break
+        else:
+            rows = [body] if body.get("name") else []
+    elif isinstance(body, list):
+        rows = body
+    out = []
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("name"):
+            continue
+        out.append({"name": str(r["name"]),
+                    "summary": str(r.get("summary") or r.get("description") or "")[:160],
+                    **({"category": str(r["category"])} if r.get("category") else {})})
+    return out[:200]

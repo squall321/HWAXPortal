@@ -203,3 +203,42 @@ def test_속성_있는_object_는_자유_페이로드가_아니다():
         "describe_thing": {"inputSchema": {"properties": {}}},
     }
     assert dispatch.detect_candidates(catalog) == []
+
+
+# ── 목록 응답 모양이 앱마다 다르다 ───────────────────────────────────────
+def test_앱마다_다른_목록_모양에서_이름을_골라_낸다():
+    """DynaForge 는 `{name, category, summary}` 의 연속, SmartTwinMCP 는 `{hits: […]}`.
+    모양을 하나로 가정하면 한쪽이 **조용히 빈 목록**이 된다."""
+    from app.procedures.runner import _names_of
+
+    dyna = [{"name": "matdb", "category": "material", "summary": "*MAT 카드를 갈아 끼운다"},
+            {"name": "matswap", "category": "material", "summary": "물성 묶음 교체"}]
+    assert [r["name"] for r in _names_of(dyna)] == ["matdb", "matswap"]
+    assert _names_of(dyna)[0]["category"] == "material"
+
+    stmc = {"total_tools": 44, "hits": [{"name": "echo", "summary": "Echo the message"}]}
+    assert [r["name"] for r in _names_of(stmc)] == ["echo"]
+
+
+def test_모르는_모양이면_빈_목록이다():
+    """⚠ 지어내지 않는다 — 이름이 없는 것은 항목이 아니다."""
+    from app.procedures.runner import _names_of
+
+    assert _names_of("텍스트 한 덩이") == []
+    assert _names_of({"뭔가": "다른 모양"}) == []
+    assert _names_of([{"summary": "이름이 없다"}]) == []
+
+
+def test_라우트가_부르는_실행기_메서드가_실제로_있다():
+    """정적 계약 가드 — 이름 하나가 없으면 라우트를 안 쳐도 잡힌다(W-30 재발 방지)."""
+    import re
+    from pathlib import Path
+
+    from app.procedures.runner import ProceduresRunner
+
+    src = (Path(__file__).resolve().parents[1] / "app" / "procedures" / "routes.py"
+           ).read_text(encoding="utf-8")
+    called = sorted(set(re.findall(r"runner\.(\w+)\(", src)))
+    assert {"dispatcher_items", "second_stage_one"} <= set(called), called
+    missing = [c for c in called if not hasattr(ProceduresRunner, c)]
+    assert not missing, f"라우트가 없는 메서드를 부른다: {missing}"

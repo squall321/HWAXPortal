@@ -140,6 +140,48 @@ async def _tools_map(request: Request) -> dict:
         return {}
 
 
+# ── 2단 도구 — 역량이 도구 하나 뒤에 숨은 자리(PLAN §9-4) ────────────────
+@router.get("/dispatchers")
+def dispatchers(principal: Principal = Depends(_me)) -> dict:
+    """등록부에 확정된 2단 도구들. 화면이 "이 도구는 뒤에 여럿이 있다" 를 알게 한다."""
+    from app.procedures import dispatch as _dsp
+
+    out = []
+    for d in _dsp.load().values():
+        out.append({"backend": d.backend, "tool": d.tool, "selector": d.selector,
+                    "payload": d.payload, "list": d.list_tool, "describe": d.describe,
+                    "note": d.note})
+    return {"dispatchers": out}
+
+
+@router.get("/dispatchers/{backend}/{tool}/items")
+async def dispatcher_items(request: Request, backend: str, tool: str,
+                           name: str | None = None,
+                           principal: Principal = Depends(_me)) -> dict:
+    """그 도구 뒤에 **무엇이 있나**, 그리고 하나를 고르면 **그 계약**.
+
+    `name` 없이 부르면 목록, 주면 그 항목의 JSON Schema 다. 이게 없으면 사람이
+    `run_operation(operation=…)` 의 `operation` 에 무엇을 적을지 알 방법이 없다 —
+    47개가 도구 하나로 보이기 때문이다(§9-4).
+    """
+    from app.procedures import dispatch as _dsp
+
+    d = _dsp.load().get((backend, tool))
+    if d is None:
+        raise AuthError("등록부에 없는 2단 도구입니다", status_code=404)
+    runner = _runner(request)
+    if name:
+        sch = (await runner.second_stage_one(principal, d, name))
+        if sch is None:
+            # ⚠ 계약을 못 받은 것과 그 항목이 없는 것은 다르다 — 못 받았다고 말한다.
+            return {"name": name, "schema": None,
+                    "note": "그 항목의 계약을 못 받았습니다 — 이름이 틀렸거나 앱이 안 붙어 있습니다"}
+        return {"name": name, "schema": sch}
+    items = await runner.dispatcher_items(principal, d)
+    return {"backend": backend, "tool": tool, "selector": d.selector,
+            "payload": d.payload, "items": items, "note": d.note}
+
+
 # ── 절차 ───────────────────────────────────────────────────────────────
 class ProcedureIn(BaseModel):
     title: str
