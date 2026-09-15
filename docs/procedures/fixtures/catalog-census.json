@@ -1,0 +1,3298 @@
+{
+ "_why": "models.py 의 손으로 적은 목록(MUST_GATE·DRY_RUN_TOOLS·WARN_EXACT)이 '게이트웨이가 바뀌면 다시 뽑는다' 고만 적혀 있고 **확인하는 코드가 없었다**. 이 파일이 그 '뽑은 시점' 을 남긴다 — 목록은 이제 데이터에 대조된다.",
+ "_refresh": "backend/scripts/refresh-census.py (살아 있는 게이트웨이에서 다시 뽑는다)",
+ "generated": "2026-09-15",
+ "gateway_tools": 470,
+ "tools": [
+  {
+   "name": "activate_model",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "add_object_alias",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "add_report_tags",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "add_training_data",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "agent_search",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "aggregate_reports",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 11,
+   "args_documented": 0
+  },
+  {
+   "name": "alert_check",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "analyze_laminate",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "analyze_sentiment_trend",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "append_rows",
+   "backend": "reportarchive",
+   "dry_run": true,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "apply_naming_rules",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "ashby_data",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "ask_ontology",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "assembly_check",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "assess_bonded_lap_joint",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "assess_crack_shielding",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "assess_free_edge_delamination",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "assess_notched_strength",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "assess_partial_composite_bending",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "assess_sandwich_local_failure",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "attach_report_scenario",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "axis_gap",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "batch_evaluate_laminates",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "bend_profile",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "bind_records_to_agent",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "bom_export",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "browse_experts",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
+   "name": "build_cavity",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "catalog_describe",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "catalog_property_distribution",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "catalog_reload",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "catalog_run",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "catalog_search",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "catalog_versions",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "chart_category_distribution",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "chart_country_distribution",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "chart_crisis_timeline",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "chart_keyword_network",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "chart_sentiment_timeseries",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "check_deck",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "check_design_rules",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "compare_analysis_runs",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "compare_materials",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "compare_products",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "compare_reports",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "compare_revisions",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_abd_matrix",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_bistable_shapes",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_buckling",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_failure_envelope",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_interlaminar_stresses",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_large_deflection",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_moisture_uptake",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_natural_frequencies",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_neutral_axis",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_postbuckling",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "compute_thermal_response",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "confirm_interfaces",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "contact_preview",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "convert_file",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "copy_report",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "corpus_summary",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "coverage_gaps",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "create_agent",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "create_doc_type",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "create_document",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "create_object",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "create_project",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "create_relationship",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "create_report_draft",
+   "backend": "reportarchive",
+   "dry_run": true,
+   "args": 12,
+   "args_documented": 0
+  },
+  {
+   "name": "create_report_from_preset",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "create_report_from_run",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "create_session",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "daily_briefing",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "data_aggregate",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "database_summary",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "defect_anomalies",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "defect_profile",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "delete_block",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "delete_file",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "delete_project",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "delete_relationship",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "delete_report",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "delete_session",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "deliberate_cancel",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "deliberate_continue",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
+   "name": "deliberate_jobs",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "deliberate_list",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "deliberate_result",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "deliberate_start",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 14,
+   "args_documented": 0
+  },
+  {
+   "name": "deliberate_status",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "deliberate_transcript",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "derive_lamina_from_constituents",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_agent_schema",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_data_capability",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_metadata",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_operation",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_record_schema",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_search_status",
+   "backend": "heax-web_research_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_template",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_widgets",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "discover",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "download_artifact",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "download_file",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "download_result",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "draft_agent",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "duplicate_shapes",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "echo",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "echo_args",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "estimate_fatigue_life",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "estimate_spectrum_life",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "evaluate_laminate",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "export_document",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "export_dyna_cards",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "export_step",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "extract_relationships",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "fetch_rerank_model",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "file_distances",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "find_materials_by_metadata",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 0
+  },
+  {
+   "name": "find_materials_in_property_range",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "find_parts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "find_reports",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 21,
+   "args_documented": 0
+  },
+  {
+   "name": "find_similar_data",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "free_bodies",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "fts_search",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "fullangle_drop_simulation",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "gate_expert_now",
+   "backend": "heax-paper_ingest",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "generate_design_report",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "geometry_health",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_agent_session",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_analysis_peaks",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "get_analysis_series",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "get_analysis_summary",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_backlinks",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_block",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_composite",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_context_bundle",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "get_country_breakdown",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_curve",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_dataset_summary",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "get_document_outline",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_engagement_leaders",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_fits",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_glossary_term",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_guide",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_job",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_job_details",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_job_outputs",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_kg_relations",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_language_breakdown",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_mat_card",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_material",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_material_properties",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_model_info",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_object",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_page",
+   "backend": "heax-web_research_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_part_rules",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_platform_breakdown",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_product_timeline",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_project_meta",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_quote",
+   "backend": "heax-web_research_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_record",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_record_sections",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_reference_cases",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_related_subgraph",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_relationships",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_report",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_report_outline",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_reports_digest",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_section",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_server_info",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "get_session",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_subgraph",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_top_issues",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_training_data",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "get_unmapped_voc",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_voc_summary",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxkooremapper_mcp_cancel_job",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxkooremapper_mcp_list_reports",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxkooremapper_mcp_system_capabilities",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxkooremapper_mcp_system_status",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxkooremapper_mcp_whoami",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxmaterialtwin_web_register_material",
+   "backend": "heax-materialtwin_web",
+   "dry_run": true,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxstep_forge_cancel_job",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxstep_forge_job_status",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxstep_forge_register_material",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxstep_forge_system_capabilities",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxstep_forge_system_status",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxstep_forge_whoami",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "homogenize_layer",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "homogenize_patterned_layer",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "how_to_measure",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "hybrid_search",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "identify_part",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "identify_parts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "import_archive",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "import_file",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "import_record",
+   "backend": "ai-data-hub",
+   "dry_run": true,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "inbox_status",
+   "backend": "heax-paper_ingest",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "ingest_now",
+   "backend": "heax-paper_ingest",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "ingest_report",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 12,
+   "args_documented": 0
+  },
+  {
+   "name": "insert_block",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "insert_image_block",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "inspect_file",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "inspect_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "instrument_summary",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "intake",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
+   "name": "interface_graph",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "interface_summary",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 0
+  },
+  {
+   "name": "invoke_tool",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "job_collect",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "job_diagnose",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "job_log",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "job_params_guide",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "job_postprocess",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "job_rerun",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "job_stop",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "leak_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "lifecycle_compare",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "ligament_check",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "link_objects",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "link_reports",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "list_agent_domains",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_agents",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_alert_firing",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_alert_rules",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_analysis_parts",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_analysis_runs",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "list_artifacts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_boards",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_comments",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_composites",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_doc_types",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_documents",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_egress_log",
+   "backend": "heax-web_research_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_folders",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_glossary",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_instruments",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "list_interfaces",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_jobs",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_local_materials",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_materials",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_models",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_my_notifications",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_my_reports",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_object_types",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_operations",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_parts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_presets",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_projects",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_property_definitions",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_recent_jobs",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_records",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 10,
+   "args_documented": 0
+  },
+  {
+   "name": "list_related_reports",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_relationship_types",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_report_files",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_report_links",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_saved_searches",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_session_files",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_session_jobs",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "list_sessions",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_submittable_composites",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_tags",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_templates",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "list_tool_apps",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "list_versions",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "map_analysis_part",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "mass_estimate",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "material_lookup",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "material_sources",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "material_taxonomy",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "material_usage",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "measure_distance",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "measurement_gaps",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "measurement_guide",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "meeting_close",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "meeting_get_briefing",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "meeting_personas",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "meeting_start",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "meeting_status",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "meeting_submit_turn",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 0
+  },
+  {
+   "name": "mesh_forecast",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "mesh_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "mesh_size_advice",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "model_extents",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "move_block",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "mxwhitepaper_extract_pptx_images",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "naming_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "nearest_parts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "operation_usage",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "parse_raw_rows",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "part_info",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "part_location",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "part_mesh_map",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "part_relations",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "patch_agent",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "patch_cells",
+   "backend": "reportarchive",
+   "dry_run": true,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "pcb_warpage_surrogate",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "plot_ashby",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "plot_curve",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "plot_curves",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "predict_sed",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "predict_sed_batch",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "prepare_upload",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "preview_publish",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "project_tree",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "property_distribution",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "publish_report",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "publish_report_to_datahub",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "qa_run",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "query_rules",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "query_voc",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
+   "name": "recommend_agents",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "recompute_properties",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "recover_ply_stresses",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "register_materials",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "register_materials_csv",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "register_property",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 18,
+   "args_documented": 0
+  },
+  {
+   "name": "register_relaxation_test",
+   "backend": "heax-materialtwin_web",
+   "dry_run": true,
+   "args": 10,
+   "args_documented": 0
+  },
+  {
+   "name": "register_tensile_test",
+   "backend": "heax-materialtwin_web",
+   "dry_run": true,
+   "args": 10,
+   "args_documented": 0
+  },
+  {
+   "name": "remesh_parts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "remove_part",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "remove_rows",
+   "backend": "reportarchive",
+   "dry_run": true,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "remove_training_data",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "rename_part",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "render_3d",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "render_status",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "render_submit",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "reply_comment",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_angle_stats",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
+   "name": "report_case",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_corpus",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "report_directional",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_energy_flow",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_facets",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "report_findings",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_fragmentize",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "report_geometry",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "report_ingest",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "report_part_energy",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_part_risk",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_part_series",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "report_query",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 13,
+   "args_documented": 0
+  },
+  {
+   "name": "report_scatter",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "report_summary",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "report_upload_instructions",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_worst_cases",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "reportarchive_extract_pptx_images",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "reportarchive_list_reports",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 21,
+   "args_documented": 0
+  },
+  {
+   "name": "request_composite_item",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "request_unpublish",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "resolve_materials",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "resolve_thread",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "restore_version",
+   "backend": "reportarchive",
+   "dry_run": true,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "rigid_properties",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_add_finding",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 14,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_claims_for_ref",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_get_brief",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_get_coverage",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_get_diff",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_get_panel_transcript",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_get_precedents",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_get_registry",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_get_snapshot",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_list_panels",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_list_projects",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_similar_projects",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_submit_panel_result",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "risk_taxonomy",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "run_job",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "run_operation",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "run_progressive_failure",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "run_saved_search",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "run_sensitivity_analysis",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "save_conversation",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 1
+  },
+  {
+   "name": "save_report_as_preset",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "save_result_to_path",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "scenario_build",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "scenario_patch",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "scene_html",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "scene_list",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "scene_still",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "search_by_property",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "search_catalog_property",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "search_conversations",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 1
+  },
+  {
+   "name": "search_documents",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "search_in_page",
+   "backend": "heax-web_research_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "search_internal",
+   "backend": "heax-web_research_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "search_knowledge",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "search_objects",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "search_reports",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 15,
+   "args_documented": 0
+  },
+  {
+   "name": "search_scholar",
+   "backend": "heax-web_research_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "search_tools",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "search_voc",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "search_web",
+   "backend": "heax-web_research_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "section_area",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "section_contact_usage",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "section_profile",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "section_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "section_view",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "semantic_search",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "set_file_transform",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "set_instrument_ownership",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "set_interface",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "set_part_metadata",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "set_part_rules",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "set_project_meta",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
+   "name": "set_report_folders",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "single_drop_simulation",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "site_health",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slenderness_check",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_cluster_health",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_fairshare",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_job_accounting",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_job_control",
+   "backend": "smart-twin-cluster",
+   "dry_run": true,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_job_log",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_job_priority",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_job_results",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_job_stat",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_list_jobs",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_list_nodes",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_list_partitions",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_list_qos",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_list_reservations",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_list_templates",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_node_set_state",
+   "backend": "smart-twin-cluster",
+   "dry_run": true,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_scheduler_diag",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "slurm_submit_job",
+   "backend": "smart-twin-cluster",
+   "dry_run": true,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "smarttwin_scenario_options",
+   "backend": "smart-twin-cluster",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "smarttwin_submit",
+   "backend": "smart-twin-cluster",
+   "dry_run": true,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
+   "name": "smarttwinmcp_job_status",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "solve_load_response",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "solve_nonlinear_shear_response",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "solve_prescribed_curvature",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "solve_required_thickness_scale",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "solve_stress_relaxation",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 0
+  },
+  {
+   "name": "stackup_profile",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "step_header_info",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "stress_strain_plot",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "submit_job",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "submit_lsdyna_job",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "submit_paper",
+   "backend": "heax-paper_ingest",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "suggest_report_tags",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "tag_search",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "test_plan_for_material",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "thickness_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "top_emerging_keywords",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "train_model",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "transform_instance",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "trash_report",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "update_block",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "update_material",
+   "backend": "heax-materialtwin_web",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "update_object",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "update_report_draft",
+   "backend": "reportarchive",
+   "dry_run": true,
+   "args": 13,
+   "args_documented": 0
+  },
+  {
+   "name": "update_report_meta",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 0
+  },
+  {
+   "name": "update_session",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_file",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_from_url",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_image",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_image_base64",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_image_from_url",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_instructions",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_kfile",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_local_path",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_step",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "use_experts",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "validate_block",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "validate_laminate_input",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "verify_answer",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "view_3d",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  }
+ ]
+}

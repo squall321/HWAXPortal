@@ -23,6 +23,9 @@ from app.procedures import template
 MUST_GATE = frozenset({
     "publish_report", "request_unpublish", "trash_report", "restore_version",
     "job_stop", "risk_add_finding", "add_report_tags",
+    # 2026-09-15 추가 — 인구조사 대조 가드가 잡았다(첫 실행에서). AI Data Hub 에 **등재**하는
+    # 도구라 바깥으로 나가고 되돌리려면 남의 손이 필요하다. 465종에서 뽑을 땐 없었다.
+    "publish_report_to_datahub",
 })
 
 # 자원을 쓰거나 잡을 만든다 — 거절이 아니라 경고. must-gate 로 하면 S5 일괄 재생이 죽는다.

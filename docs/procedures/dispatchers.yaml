@@ -37,6 +37,11 @@ dispatchers:
     describe_arg: kind
     schema_kind: params_ko
     schema_at: jobs              # 응답 `jobs[kind]` 아래에 {이름: {type, default, 설명}}
+    # ⚠ 검출기가 **이것을 못 민다.** 짝 이름이 `job_params_guide` 라 어간(`job`)에서
+    #    이름 규칙으로 만들어지지 않는다. 규칙을 늘려 맞추지 않는다 — 그게 이 프로젝트가
+    #    피하려는 하드코딩이다. 못 민다는 사실을 **데이터로 적고** 사람이 등재한다.
+    detector_finds: false
+    detector_note: "짝이 job_params_guide — 어간 + 동사로 안 만들어진다"
     note: >-
       모르는 키는 **거절된다**(D-278). 공차(tied_gap 등)는 detect·mesh·pipeline 에만 얹힌다 —
       그 제약은 스키마가 아니라 응답의 `공차를_받는_잡` 에 있다. 어댑터가 그것도 옮긴다.

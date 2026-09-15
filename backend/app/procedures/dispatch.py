@@ -25,7 +25,8 @@ class Dispatcher:
     """도구 하나 뒤에 여러 역량이 있는 자리."""
 
     __slots__ = ("backend", "tool", "selector", "payload", "list_tool",
-                 "describe", "describe_arg", "schema_kind", "schema_at", "note")
+                 "describe", "describe_arg", "schema_kind", "schema_at", "note",
+                 "detector_finds")
 
     def __init__(self, raw: dict):
         self.backend: str = raw["backend"]
@@ -38,6 +39,9 @@ class Dispatcher:
         self.schema_kind: str = raw.get("schema_kind") or "json_schema"
         self.schema_at: str = raw.get("schema_at") or ""
         self.note: str = raw.get("note") or ""
+        # 검출기가 이 항목을 후보로 밀 수 있나. 못 미는 것은 **데이터로 적는다** —
+        # 이름 규칙을 늘려 맞추면 그게 이 프로젝트가 피하려는 하드코딩이다.
+        self.detector_finds: bool = raw.get("detector_finds", True)
 
     @property
     def key(self) -> tuple[str, str]:
@@ -159,21 +163,46 @@ def _is_plain_string(v: Any) -> bool:
     return isinstance(v, dict) and v.get("type") == "string" and not v.get("enum")
 
 
-_VERBS = (("run_", "describe_", "list_"), ("submit_", "describe_", "list_"))
+# 부르는 동사·설명하는 동사·목록 동사. **접두와 접미 둘 다** 본다 —
+# `run_operation`/`describe_operation` 도 있고 `catalog_run`/`catalog_describe` 도 있다.
+# ⚠ 처음엔 접두만 봐서 **확정 등재된 `catalog_run` 을 못 찾았다**(2026-09-15 점검에서 잡힘).
+_RUN_V = ("run", "submit", "execute")
+_DESC_V = ("describe", "spec", "schema", "params")
+_LIST_V = ("list", "search", "catalog", "index")
 
 
 def _mate(name: str, names: set[str]) -> dict | None:
-    """`run_X` 의 짝 `describe_X`·`list_X` 를 찾는다. 없으면 후보가 아니다."""
-    for run_p, desc_p, list_p in _VERBS:
-        if not name.startswith(run_p):
-            continue
-        stem = name[len(run_p):]
-        for d in (desc_p + stem, desc_p + stem.rstrip("s")):
-            if d in names:
-                cand = {"describe": d}
-                for lst in (list_p + stem, list_p + stem + "s"):
-                    if lst in names:
-                        cand["list"] = lst
+    """그 도구의 짝(설명·목록)을 찾는다. 없으면 후보가 아니다.
+
+    ⚠ **이름 규칙이라 놓치는 게 있다.** 여기서 못 찾는다고 2단이 아닌 게 아니다 —
+    검출기는 **후보를 미는 것**이고, 등재는 사람이 한다(§9-5). 실제로 이 함수는
+    `slurm_submit_job`/`slurm_list_templates` 처럼 어간이 다른 짝은 못 잡는다.
+    """
+    for stem, verb in _stems(name, _RUN_V):
+        for d in _cands(stem, _DESC_V):
+            if d in names and d != name:
+                out = {"describe": d}
+                for lst in _cands(stem, _LIST_V):
+                    if lst in names and lst != name:
+                        out["list"] = lst
                         break
-                return cand
+                return out
     return None
+
+
+def _stems(name: str, verbs: tuple) -> list[tuple[str, str]]:
+    """`run_operation` → ("operation", 접두) · `catalog_run` → ("catalog", 접미)."""
+    out = []
+    for v in verbs:
+        if name.startswith(v + "_"):
+            out.append((name[len(v) + 1:], "prefix"))
+        if name.endswith("_" + v):
+            out.append((name[: -(len(v) + 1)], "suffix"))
+    return out
+
+
+def _cands(stem: str, verbs: tuple) -> list[str]:
+    """어간 하나에서 나올 수 있는 짝 이름들(단수·복수 · 접두·접미)."""
+    bases = {stem, stem.rstrip("s"), stem + "s"}
+    return [f"{v}_{b}" for b in bases for v in verbs] + \
+           [f"{b}_{v}" for b in bases for v in verbs]

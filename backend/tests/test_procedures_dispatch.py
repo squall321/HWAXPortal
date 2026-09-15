@@ -242,3 +242,39 @@ def test_라우트가_부르는_실행기_메서드가_실제로_있다():
     assert {"dispatcher_items", "second_stage_one"} <= set(called), called
     missing = [c for c in called if not hasattr(ProceduresRunner, c)]
     assert not missing, f"라우트가 없는 메서드를 부른다: {missing}"
+
+
+def test_이름이_run_으로_시작하지_않는_2단도_찾는다():
+    """⚠ **점검에서 잡힌 구멍이다.** 접두만 보면 확정 등재된 `catalog_run` 을 못 찾는다 —
+    검출기가 이미 아는 것도 못 미는 셈이다."""
+    cat = {
+        "catalog_run": {"inputSchema": {"properties": {
+            "name": {"type": "string"}, "args": {"type": "object"}}}},
+        "catalog_describe": {"inputSchema": {"properties": {"name": {"type": "string"}}}},
+        "catalog_search": {"inputSchema": {"properties": {"query": {"type": "string"}}}},
+    }
+    got = dispatch.detect_candidates(cat)
+    assert [c["tool"] for c in got] == ["catalog_run"], got
+    assert got[0]["describe"] == "catalog_describe" and got[0]["list"] == "catalog_search"
+
+
+def test_등록부에_확정된_것은_검출기도_밀_수_있어야_한다():
+    """검출기가 **이미 확정된 것조차 못 밀면** 새 후보는 더 못 민다.
+    ⚠ 어간이 다른 짝(`slurm_submit_job`↔`slurm_list_templates`)은 여전히 못 잡는다 —
+    이름 규칙의 한계이고, 그래서 등재는 사람이 한다."""
+    reg = dispatch.load()
+    fake = {}
+    for d in reg.values():
+        fake[d.tool] = {"inputSchema": {"properties": {
+            d.selector: {"type": "string"}, d.payload: {"type": "object"}}}}
+        fake[d.describe] = {"inputSchema": {"properties": {}}}
+        if d.list_tool:
+            fake[d.list_tool] = {"inputSchema": {"properties": {}}}
+    found = {c["tool"] for c in dispatch.detect_candidates(fake)}
+    # 못 미는 것은 등록부에 `detector_finds: false` 로 **적혀 있어야** 한다.
+    # 규칙을 늘려 전부 맞추는 대신, 못 민다는 사실을 데이터로 남기고 사람이 등재한다.
+    should = {d.tool for d in reg.values() if d.detector_finds}
+    known_miss = {d.tool for d in reg.values() if not d.detector_finds}
+    assert not (should - found), f"민다고 적혀 있는데 못 민다: {sorted(should - found)}"
+    assert not (known_miss & found), (
+        f"못 민다고 적혀 있는데 민다: {sorted(known_miss & found)} — 등록부를 고쳐라")
