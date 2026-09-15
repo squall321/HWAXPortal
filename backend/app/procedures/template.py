@@ -23,11 +23,20 @@ class TemplateError(ValueError):
     """치환·추출이 값을 못 찾았거나 표기가 틀렸다."""
 
 
+# 인자 트리 순회 깊이 상한. **여기가 정본이다** — 이 모듈의 순회기를 부르는 쪽이
+# 여럿이라(저장 검증·미사용 변수 계산·실행 시 치환), 호출부마다 재면 하나는 빠진다.
+# 넘으면 `TemplateError` 다 — 그래야 호출부가 '거절' 로 다루지 파이썬 재귀 한계에
+# 먼저 닿아 **500** 이 되지 않는다(2026-09-15 3차 감사).
+DEPTH_MAX = 60
+
+
 def refs(value):
     """이 인자 트리가 참조하는 변수 이름을 모은다(순서 보존, 중복 제거)."""
     out: list[str] = []
 
-    def walk(v):
+    def walk(v, d=0):
+        if d > DEPTH_MAX:
+            raise TemplateError(f"인자가 너무 깊다({DEPTH_MAX}단 초과)")
         if isinstance(v, str):
             for m in _INLINE.finditer(v):
                 name = m.group(1)
@@ -35,17 +44,19 @@ def refs(value):
                     out.append(name)
         elif isinstance(v, dict):
             for x in v.values():
-                walk(x)
+                walk(x, d + 1)
         elif isinstance(v, list):
             for x in v:
-                walk(x)
+                walk(x, d + 1)
 
     walk(value)
     return out
 
 
-def substitute(value, scope: dict):
+def substitute(value, scope: dict, _depth: int = 0):
     """인자 트리의 문자열 리프에 `scope` 를 채운다. 없는 변수는 TemplateError."""
+    if _depth > DEPTH_MAX:
+        raise TemplateError(f"인자가 너무 깊다({DEPTH_MAX}단 초과)")
     if isinstance(value, str):
         whole = _WHOLE.match(value)
         if whole:
@@ -63,9 +74,9 @@ def substitute(value, scope: dict):
 
         return _INLINE.sub(one, value)
     if isinstance(value, dict):
-        return {k: substitute(v, scope) for k, v in value.items()}
+        return {k: substitute(v, scope, _depth + 1) for k, v in value.items()}
     if isinstance(value, list):
-        return [substitute(v, scope) for v in value]
+        return [substitute(v, scope, _depth + 1) for v in value]
     return value  # 숫자·불리언·None 은 그대로
 
 

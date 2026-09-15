@@ -331,6 +331,14 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
         if st.expect == "slow" and st.cacheable:
             errs.append(f"warn:{at}: 느린 읽기 도구다 — 재실행은 300초 캐시가 받는다")
 
+        # ⚠ **깊이를 먼저 본다.** 아래 검사들(`_scan_args`·`template.refs`)이 전부
+        # 재귀 순회라, 깊은 dict 를 그대로 넘기면 `RecursionError` 가 라우트 밖으로 새어
+        # **500** 이 된다 — 권한 있는 누구나 반복시킬 수 있다. pydantic 은 `dict[str, Any]`
+        # 속을 안 보므로 모양 검증(422)이 이걸 못 잡는다. 여기서 재귀 없이 재고 거절한다.
+        if _too_deep(st.args):
+            errs.append(f"{at}: 인자가 너무 깊다({ARG_DEPTH_MAX}단 초과)")
+            continue
+
         # ④ dry_run — 스키마에 없는 도구에 얹으면 조용히 진짜 실행된다
         if "dry_run" in st.args and st.tool not in DRY_RUN_TOOLS:
             errs.append(f"{at}: 이 도구에는 dry_run 인자가 없다 — 백엔드가 버리고 실제로 실행한다")
@@ -339,7 +347,7 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
         errs += _collapse(_scan_args(st.args, at))
 
         # ⑥ 치환 — 참조하는 변수가 앞에서 나왔나
-        for name in template.refs(st.args):
+        for name in _refs_or_empty(st.args):
             root = name.split(".")[0]
             if root == "me" or name in RESERVED:
                 continue
@@ -395,7 +403,7 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
 def _all_refs(spec: ProcedureSpec) -> set[str]:
     out: set[str] = set()
     for st in spec.steps:
-        out |= {r.split(".")[0] for r in template.refs(st.args)}
+        out |= {r.split(".")[0] for r in _refs_or_empty(st.args)}
     return out
 
 
@@ -421,7 +429,36 @@ def _collapse(errs: list[str]) -> list[str]:
     return out
 
 
-def _scan_args(args: Any, at: str, trail: str = "", key: str = "") -> list[str]:
+# 인자 트리를 훑을 깊이 상한. 넘으면 **거절**한다 — 파이썬 재귀 한계에 먼저 닿으면
+# `RecursionError` 가 라우트 밖으로 새어 500 이 되고, 권한 있는 누구나 반복시킬 수 있다.
+# pydantic 은 `dict[str, Any]` 속을 안 보므로 모양 검증(422)이 이걸 절대 못 잡는다.
+ARG_DEPTH_MAX = 60
+
+
+def _refs_or_empty(args: Any) -> list[str]:
+    """참조 변수 목록. 너무 깊으면 빈 목록 — 깊이는 `_too_deep` 이 이미 오류로 냈다."""
+    try:
+        return template.refs(args)
+    except template.TemplateError:
+        return []
+
+
+def _too_deep(args: Any) -> bool:
+    """인자 트리가 상한보다 깊은가. **재귀로 재지 않는다** — 재는 것 자체가 터진다."""
+    stack = [(args, 0)]
+    while stack:
+        node, d = stack.pop()
+        if d > ARG_DEPTH_MAX:
+            return True
+        if isinstance(node, dict):
+            stack.extend((v, d + 1) for v in node.values())
+        elif isinstance(node, list):
+            stack.extend((v, d + 1) for v in node)
+    return False
+
+
+def _scan_args(args: Any, at: str, trail: str = "", key: str = "",
+               depth: int = 0) -> list[str]:
     """인자 트리에서 비밀·자격증명을 찾는다. **잎에서 판정한다.**
 
     ⚠ 예전에는 dict 를 도는 자리에서만 봤다. 그래서 값이 **목록이면 그 안의 문자열은
@@ -431,12 +468,14 @@ def _scan_args(args: Any, at: str, trail: str = "", key: str = "") -> list[str]:
     즉 **공유가 기본**이라 그대로 유출이다. 목록은 그 키의 값이므로 키를 물려준다.
     """
     errs: list[str] = []
+    if depth > ARG_DEPTH_MAX:
+        return [f"{at}: 인자가 너무 깊다({ARG_DEPTH_MAX}단 초과) — {trail or '최상위'}"]
     if isinstance(args, dict):
         for k, v in args.items():
-            errs += _scan_args(v, at, f"{trail}.{k}" if trail else k, k)
+            errs += _scan_args(v, at, f"{trail}.{k}" if trail else k, k, depth + 1)
     elif isinstance(args, list):
         for i, v in enumerate(args):
-            errs += _scan_args(v, at, f"{trail}[{i}]", key)
+            errs += _scan_args(v, at, f"{trail}[{i}]", key, depth + 1)
     elif isinstance(args, str) and args and "{{" not in args:
         if SECRET_KEY.search(key):
             errs.append(f"{at}: 비밀로 보이는 인자를 상수로 저장할 수 없다 — {trail}")

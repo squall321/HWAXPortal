@@ -80,6 +80,29 @@ def _gw_kind(text: str) -> tuple[str, bool] | None:
     return None
 
 
+# 한 줄에 하나씩 JSON 이 오는 응답을 몇 줄까지 볼까. 목록형 도구는 수백 줄이 온다.
+_MULTI_MAX = 2000
+
+
+def _parse_json_multi(text: str) -> list | None:
+    """줄마다 JSON 인 모양이면 **리스트로** 돌려준다. 아니면 None.
+
+    이어 붙인 한 덩이를 한 번만 파싱하면 목록형 도구가 전부 `not_json` 이 된다
+    (PLAN §79 가 "다중 text 항목은 각각 파싱해 리스트로" 라고 적은 자리다).
+    한 줄이라도 JSON 이 아니면 **포기한다** — 반만 읽고 성공이라고 하지 않는다.
+    """
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    if len(lines) < 2 or len(lines) > _MULTI_MAX:
+        return None
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln))
+        except ValueError:
+            return None
+    return out
+
+
 def judge(*, is_error: bool, text: str, raw: bool = False,
           unwrap: str | None = None) -> Verdict:
     """한 단계의 성공 여부. 네 조건이 **모두** 성립해야 성공이다.
@@ -107,44 +130,88 @@ def judge(*, is_error: bool, text: str, raw: bool = False,
     try:
         parsed = json.loads(text)
     except ValueError:
+        # ⚠ **줄마다 JSON 인 모양을 본다.** 목록형 도구는 항목마다 TextContent 로 오고
+        # (`list_agents` 는 796개 — 실측), `join_content` 가 그것을 줄바꿈으로 잇는다.
+        # 한 덩이로 파싱하면 `{…}\n{…}` 라 당연히 실패한다. 실호출로 확인한 것만
+        # `list_operations` 47 · `list_agent_domains` 23 · `list_agents` 408 블록이고
+        # 셋 다 `not_json` 이었다 — 그러면 2단 항목 목록이 **빈 칸**으로 보인다
+        # ("이 도구 뒤에 아무것도 없다" 와 같은 모양이다).
+        rows = _parse_json_multi(text)
+        if rows is not None:
+            return Verdict(True, "parse", "ok", parsed=rows, notes=collect_notes(rows))
         if raw:
             return Verdict(True, "parse", "ok", parsed=text)
         return Verdict(False, "parse", "not_json",
                        error=f"JSON 이 아니다(앞 200자): {text[:200]}", retriable=False)
 
-    # SmartTwin 류 이중 포장 — stdout 문자열 안에 JSON 이 또 있다
-    if unwrap and isinstance(parsed, dict) and isinstance(parsed.get(unwrap), str):
-        try:
-            parsed = json.loads(parsed[unwrap])
-        except ValueError:
-            return Verdict(False, "parse", "not_json",
-                           error=f"{unwrap} 안이 JSON 이 아니다", retriable=False)
+    # ③ ④ 앱 봉투 층 — 여기가 isError=false 인데 실패인 자리다.
+    #
+    # ⚠ **unwrap 보다 먼저 본다.** 예전엔 순서가 반대였는데, SmartTwin 계열은 실패해도
+    # `stdout` 이 채워져 온다(`{ok:false, exit_code:2, stderr:…, stdout:"{…}"}`).
+    # 먼저 벗기면 바깥의 `ok:false`·`errors[]`·`exit_code` 가 통째로 사라지고 **잡이
+    # 죽었는데 부분 결과가 성공으로** 기록됐다(실측). PLAN §79 가 `unwrap: stdout` 을
+    # 지정한 바로 그 조합이다.
+    bad = _envelope_fail(parsed)
+    if bad is not None:
+        return bad
 
-    # ③ ④ 앱 봉투 층 — 여기가 isError=false 인데 실패인 자리다
-    if isinstance(parsed, dict):
-        # `status` 를 쓰는 앱이 있다(적층 해석기는 ok|warning|error 를 낸다 — 실측).
-        # error 면 대개 errors[] 도 차 있지만, 비어 있어도 실패로 친다.
-        if str(parsed.get("status") or "").lower() in ("error", "failed", "failure"):
-            return Verdict(False, "envelope", "app_envelope", parsed=parsed,
-                           error=_envelope_msg(parsed) or f"status={parsed.get('status')}",
-                           retriable=False)
-        if parsed.get("ok") is False:
-            return Verdict(False, "envelope", "app_envelope", parsed=parsed,
-                           error=_envelope_msg(parsed), retriable=False)
-        if parsed.get("refused") is True:
-            # 허브 관례 — '자료가 없다' 가 아니라 '근거 점수가 임계 밑' 이다
-            return Verdict(False, "envelope", "refused", parsed=parsed,
-                           error=_envelope_msg(parsed) or "refused: 근거 점수가 임계 밑",
-                           retriable=False)
-        if isinstance(parsed.get("error"), (str, dict)) and parsed.get("error"):
-            return Verdict(False, "envelope", "error_key", parsed=parsed,
-                           error=_envelope_msg(parsed), retriable=False)
-        errs = parsed.get("errors")
-        if isinstance(errs, list) and errs:
-            return Verdict(False, "envelope", "app_envelope", parsed=parsed,
-                           error=_envelope_msg(parsed), retriable=False)
+    # SmartTwin 류 이중 포장 — 바깥이 성공이라고 한 **뒤에** 속을 연다
+    if unwrap and isinstance(parsed, dict):
+        inner = parsed.get(unwrap)
+        if isinstance(inner, str):
+            try:
+                parsed = json.loads(inner)
+            except ValueError:
+                return Verdict(False, "parse", "not_json",
+                               error=f"{unwrap} 안이 JSON 이 아니다", retriable=False)
+        elif isinstance(inner, (dict, list)):
+            parsed = inner          # 이미 풀려 온 모양 — 그대로 쓴다
+        else:
+            # ⚠ **조용히 바깥 dict 로 성공하지 않는다.** 벗기라고 적힌 칸이 없거나 다른
+            # 형이면 응답 모양이 바뀐 것이고, 그걸 모른 채 바깥을 결과로 쓰면
+            # `save` 경로가 엉뚱한 곳을 판다.
+            return Verdict(False, "parse", "unwrap_missing", parsed=parsed,
+                           error=f"`{unwrap}` 칸이 없거나 문자열이 아니다 — "
+                                 f"있는 칸: {sorted(parsed)[:12]}", retriable=False)
+        # 속에도 봉투가 있을 수 있다(바깥은 러너, 속은 앱)
+        bad = _envelope_fail(parsed)
+        if bad is not None:
+            return bad
 
     return Verdict(True, "envelope", "ok", parsed=parsed, notes=collect_notes(parsed))
+
+
+def _envelope_fail(parsed) -> Verdict | None:
+    """앱이 `isError=false` 로 돌려준 **실패**인가. 아니면 None."""
+    if not isinstance(parsed, dict):
+        return None
+    # `status` 를 쓰는 앱이 있다(적층 해석기는 ok|warning|error 를 낸다 — 실측).
+    # error 면 대개 errors[] 도 차 있지만, 비어 있어도 실패로 친다.
+    if str(parsed.get("status") or "").lower() in ("error", "failed", "failure"):
+        return Verdict(False, "envelope", "app_envelope", parsed=parsed,
+                       error=_envelope_msg(parsed) or f"status={parsed.get('status')}",
+                       retriable=False)
+    if parsed.get("ok") is False:
+        return Verdict(False, "envelope", "app_envelope", parsed=parsed,
+                       error=_envelope_msg(parsed), retriable=False)
+    if parsed.get("refused") is True:
+        # 허브 관례 — '자료가 없다' 가 아니라 '근거 점수가 임계 밑' 이다
+        return Verdict(False, "envelope", "refused", parsed=parsed,
+                       error=_envelope_msg(parsed) or "refused: 근거 점수가 임계 밑",
+                       retriable=False)
+    if isinstance(parsed.get("error"), (str, dict)) and parsed.get("error"):
+        return Verdict(False, "envelope", "error_key", parsed=parsed,
+                       error=_envelope_msg(parsed), retriable=False)
+    errs = parsed.get("errors")
+    if isinstance(errs, list) and errs:
+        return Verdict(False, "envelope", "app_envelope", parsed=parsed,
+                       error=_envelope_msg(parsed), retriable=False)
+    # 프로세스를 돌리는 앱은 성패를 **종료 코드**로도 말한다 — 0 이 아니면 실패다.
+    code = parsed.get("exit_code")
+    if isinstance(code, int) and not isinstance(code, bool) and code != 0:
+        return Verdict(False, "envelope", "app_envelope", parsed=parsed,
+                       error=_envelope_msg(parsed) or f"exit_code={code}", retriable=False)
+    return None
 
 
 def _envelope_msg(parsed: dict) -> str:
@@ -235,16 +302,29 @@ def collect_notes(parsed: object) -> dict:
             if v not in (None, "", [], {}, False) and k not in out:
                 out[k] = v
     if out and len(json.dumps(out, ensure_ascii=False)) > _NOTE_MAX:
-        out = {"truncated": True,
-               "keys": sorted(out)[:20],
-               "head": json.dumps(out, ensure_ascii=False)[:_NOTE_MAX - 200]}
+        # ⚠ **경고 칸은 살린다.** 절단본으로 통째로 바꾸면 W120 같은 표식이 사라지고,
+        # 배치 비교표의 경고 칸이 빈다 — 사람은 그것을 '깨끗하다' 로 읽는다. 그 칸이
+        # 있는 이유가 **결과는 정상인데 경고만이 유일한 신호**인 자리를 보이는 것이므로,
+        # 무관한 노트(출처 60건 같은 것)가 커졌다고 경고가 밀려나면 안 된다.
+        keys = sorted(out)[:20]
+        warn = {k: out[k] for k in _WARN_KEYS if k in out}
+        if len(json.dumps(warn, ensure_ascii=False)) > _NOTE_MAX // 2:
+            warn = {"warnings": warn_labels(out)}   # 경고 자체가 크면 **표식만** 남긴다
+        rest = json.dumps({k: v for k, v in out.items() if k not in warn},
+                          ensure_ascii=False)
+        room = _NOTE_MAX - 200 - len(json.dumps(warn, ensure_ascii=False))
+        out = {**warn, "truncated": True, "keys": keys, "head": rest[:max(room, 0)]}
     return out
 
 
 # "…Error executing tool <tool>: 1 validation error for <tool>Arguments" — 앞머리는 버린다.
 _PYD_HEAD = re.compile(r"Error executing tool ([A-Za-z0-9_]+)\s*:", re.I)
 # "[type=int_parsing, input_value='no-such-report', input_type=str]" — 값이 실린다.
-_PYD_TAIL = re.compile(r"\s*\[type=[^\]]*\]\s*$")
+# ⚠ `[^\]]*` 로 두면 **값 안에 `]` 가 있을 때** 꼬리를 못 떼고 통째로 남긴다 —
+# 리스트 인자가 가장 흔하다(`input_value=['0','45']`). 그러면 이 함수의 첫 번째 규칙
+# ("`input` 은 절대 쓰지 않는다")이 깨지고 사용자가 넣은 값이 실패 카드와 `run_steps.error`
+# 에 그대로 저장된다. pydantic 은 이 꼬리를 **줄 끝에** 붙이므로 `[type=` 부터 끝까지 버린다.
+_PYD_TAIL = re.compile(r"\s*\[type=.*$")
 
 
 def short_error(verdict: Verdict) -> str:

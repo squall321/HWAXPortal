@@ -217,3 +217,82 @@ def test_upload_mcp_call_behaviour_would_have_passed_all_three():
 def test_verdict_is_a_dataclass_not_a_dict():
     v = judge(is_error=False, text="{}")
     assert isinstance(v, Verdict) and v.ok is True
+
+
+# ── 3차 감사(2026-09-15) — 실호출로 드러난 둘 ─────────────────────────────
+def test_항목마다_TextContent_로_오는_목록을_읽는다():
+    """`join_content` 가 줄바꿈으로 잇는데 한 덩이로 파싱하니 `{…}\\n{…}` 라 당연히
+    실패했다. 실호출 확인: `list_operations` 47 · `list_agent_domains` 23 ·
+    `list_agents` 408 블록이 전부 `not_json` 이었다 — 그러면 2단 항목 목록이 **빈 칸**이
+    되고, 화면은 "이 도구 뒤에 아무것도 없다" 와 똑같이 보인다."""
+    blocks = [{"type": "text", "text": json.dumps({"name": f"op{i}"})} for i in range(47)]
+    text, _other = join_content(blocks)
+    v = judge(is_error=False, text=text)
+    assert v.ok and v.kind == "ok", f"{v.kind}: {v.error}"
+    assert isinstance(v.parsed, list) and len(v.parsed) == 47
+    assert v.parsed[0]["name"] == "op0"
+
+
+def test_한_줄이라도_JSON_이_아니면_포기한다():
+    """반만 읽고 성공이라고 하지 않는다."""
+    v = judge(is_error=False, text='{"a":1}\n이건 글이다\n{"b":2}')
+    assert not v.ok and v.kind == "not_json"
+
+
+def test_이중_포장은_바깥_봉투를_먼저_본다():
+    """SmartTwin 계열은 **실패해도 `stdout` 이 채워져 온다.** 먼저 벗기면 바깥의
+    `ok:false`·`errors[]`·`exit_code` 가 통째로 사라지고, **잡이 죽었는데 부분 결과가
+    성공으로** 기록된다 — PLAN §79 가 `unwrap: stdout` 을 지정한 바로 그 조합이다."""
+    dead = json.dumps({"ok": False, "exit_code": 2, "stderr": "죽었다",
+                       "stdout": json.dumps({"peak_stress": None, "rows": []})})
+    v = judge(is_error=False, text=dead, unwrap="stdout")
+    assert not v.ok and v.kind == "app_envelope", f"{v.ok} {v.kind}"
+
+    # 종료 코드만으로도 실패를 안다 — 프로세스를 돌리는 앱은 그것으로 말한다
+    v2 = judge(is_error=False, text=json.dumps({"exit_code": 3, "stdout": "{}"}),
+                 unwrap="stdout")
+    assert not v2.ok
+
+    # 정상은 그대로 벗긴다
+    good = json.dumps({"ok": True, "exit_code": 0, "stdout": json.dumps({"peak": 12.3})})
+    v3 = judge(is_error=False, text=good, unwrap="stdout")
+    assert v3.ok and v3.parsed == {"peak": 12.3}
+
+
+def test_벗길_칸이_없으면_조용히_바깥을_쓰지_않는다():
+    """응답 모양이 바뀐 것인데 그걸 모른 채 바깥을 결과로 쓰면 `save` 가 엉뚱한 곳을 판다."""
+    v = judge(is_error=False, text=json.dumps({"ok": True, "rows": [1]}), unwrap="stdout")
+    assert not v.ok and v.kind == "unwrap_missing"
+    assert "stdout" in v.error and "rows" in v.error
+    # 이미 풀려 온 모양은 그대로 쓴다
+    v2 = judge(is_error=False, text=json.dumps({"ok": True, "stdout": {"peak": 1}}),
+                 unwrap="stdout")
+    assert v2.ok and v2.parsed == {"peak": 1}
+
+
+def test_노트가_잘려도_경고_표식은_남는다():
+    """절단본이 `{truncated,keys,head}` 로 바뀌면서 경고 키가 통째로 사라졌다.
+    **무관한 노트**(출처 60건 같은 것)가 커졌다고 W120 이 밀려나면, 표의 경고 칸이 비고
+    사람은 그것을 '깨끗하다' 로 읽는다 — 이 칸이 있는 이유가 정반대다."""
+    from app.procedures.judge import collect_notes, warn_labels
+
+    n = collect_notes({"warnings": ["W120: ply 3 은 strength 가 없어 제외됨"],
+                       "provenance": [{"src": f"긴 출처 {i}" * 8} for i in range(60)]})
+    assert n.get("truncated") is True, "고정물 전제가 바뀌었다(안 잘렸다)"
+    assert warn_labels(n) == ["W120: ply 3 은 strength 가 없어 제외됨"], n
+
+    # 경고 자체가 아주 크면 **표식만** 남긴다 — 그래도 0건은 아니다
+    big = collect_notes({"warnings": [f"W{i}: " + "긴 문구 " * 20 for i in range(60)]})
+    assert big.get("truncated") is True and warn_labels(big), big
+    assert len(json.dumps(big, ensure_ascii=False)) < 6000
+
+
+def test_실패_문구가_사용자_입력을_흘리지_않는다():
+    """`[^\\]]*` 는 **값 안에 `]` 가 있으면** 꼬리를 못 뗀다 — 리스트 인자가 가장 흔하다.
+    그러면 이 함수의 첫 규칙("`input` 은 절대 쓰지 않는다")이 깨지고, 사용자가 넣은 값이
+    실패 카드와 `run_steps.error` 에 그대로 저장된다."""
+    msg = ("1 validation error for X\nplies\n  Input should be a dict "
+           "[type=dict_type, input_value=['0','45','-45'], input_type=list]")
+    out = short_error(Verdict(False, "mcp", "tool_error", error=msg))
+    assert "input_value" not in out and "'45'" not in out, out
+    assert "plies" in out, "무엇이 틀렸는지는 남아야 한다"

@@ -74,9 +74,15 @@ def pull(url: str = "http://127.0.0.1:9110") -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="갱신하지 않고 어긋난 것만 보고")
+    ap.add_argument("--force", action="store_true",
+                    help="도구가 크게 줄어도 덮어쓴다(부분 실패가 아님을 확인했을 때)")
     a = ap.parse_args()
 
     fresh = pull()
+    # ⚠ 0종을 고정물로 쓰면 그 뒤 인구조사 가드가 **전부 통과한다**(비교 대상이 없다).
+    if not fresh["tools"]:
+        print("✗ 게이트웨이에서 도구를 하나도 못 받았다 — 고정물을 건드리지 않는다")
+        return 2
     if not CENSUS.is_file():
         CENSUS.write_text(json.dumps(fresh, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"✓ 새로 만들었다 — {fresh['gateway_tools']}종")
@@ -95,6 +101,12 @@ def main() -> int:
             print(f"  ⚠ {label} {len(s)}: {sorted(s)[:12]}")
     if a.check:
         return 1 if (was != now or dry_was != dry_now) else 0
+    # ⚠ **줄어든 것을 그냥 덮어쓰지 않는다.** 부분 실패로 소수만 받아 고정물을 줄이면,
+    # 그 뒤 가드는 줄어든 목록을 기준으로 삼아 조용히 통과한다. 크게 줄면 사람이 본다.
+    if len(now) < len(was) * 0.9 and not a.force:
+        print(f"✗ {len(was)}종 → {len(now)}종으로 **크게 줄었다**. 부분 실패일 수 있어 "
+              f"덮어쓰지 않는다 — 맞으면 --force 로 다시 돌려라")
+        return 2
     CENSUS.write_text(json.dumps(fresh, ensure_ascii=False, indent=1), encoding="utf-8")
     print("✓ 갱신했다 — **models.py 의 목록도 사람이 다시 본다**"
           "(MUST_GATE·DRY_RUN_TOOLS·WARN_EXACT)")

@@ -161,3 +161,49 @@ def test_같은_경고가_줄줄이_나오지_않는다():
     hard = _collapse(_scan_args(
         {"headers": {"Authorization": [f"Bearer sk-{i}" for i in range(5)]}}, "1단계"))
     assert len(hard) == 1 and not hard[0].startswith("warn:"), hard
+
+
+# ── ⑤ 한 단계에 save 와 select 를 같이 쓰면 select 가 깨졌다(3차 감사) ─────
+def test_save_와_select_를_같이_써도_돈다(store):
+    """`SAVE_PERSIST_MAX` 를 넣으면서 루프 변수를 `v` 로 둬 **바로 위의 판정을 덮었다.**
+    `_pick` 이 `v.parsed` 를 읽다 `AttributeError` 를 내고, 그 넓은 except 가 그것을
+    "후보 없음" 으로 바꾼다 — 후보가 둘 있는데 "룰이 아무것도 못 골랐다" 가 된다.
+
+    가장 나쁜 모양은 `on_none: skip` 이다. 그러면 **전부 초록인 채로** 뒤 단계가 헛돈다 —
+    context-notes 가 "조용히 건너뛰면 뒤 단계가 전부 헛도는데 화면은 정상으로 보인다"
+    고 적은 그 상태를 코드가 만들어 냈다.
+    """
+    spec = ProcedureSpec.model_validate({"title": "t", "vars": [], "steps": [
+        {"backend": "ra", "tool": "find_parts", "args": {},
+         "save": {"total": "count"},
+         "select": {"from": "rows", "save": "pid", "as": "pid", "on_many": "first"}},
+        {"backend": "ra", "tool": "get_part", "args": {"id": "{{pid}}"}},
+    ]})
+    seen: list = []
+    r = _runner(store, {"ra_find_parts": {"count": 2, "rows": [{"pid": "P-1"},
+                                                               {"pid": "P-2"}]},
+                        "ra_get_part": {"ok": True}}, seen)
+    rid = store.create_run(owner_sub="u1", inputs={}, mode="live")
+    got = asyncio.run(r.run(run_id=rid, spec=spec, principal=_P()))
+
+    assert got["state"] == "done", got
+    run = store.get_run(rid)
+    assert run["inputs"]["pid"] == "P-1", f"select 가 못 골랐다: {run['inputs']}"
+    assert run["inputs"]["total"] == 2, "save 도 함께 돌아야 한다"
+    calls = [a for a in seen if isinstance(a, dict) and "arguments" in a]
+    assert calls[-1]["arguments"] == {"id": "P-1"}, calls[-1]
+
+
+def test_상한은_글자가_아니라_바이트로_센다(store):
+    """한국어는 UTF-8 로 글자당 3바이트다 — 글자 수로 세면 상한의 3배까지 통과해,
+    상한이 막으려던 병이 그대로 난다."""
+    from app.procedures.runner import SAVE_PERSIST_MAX
+
+    ko = "가" * (SAVE_PERSIST_MAX // 2)          # 글자로는 절반, 바이트로는 1.5배
+    assert len(ko) < SAVE_PERSIST_MAX < len(ko.encode("utf-8"))
+    spec = ProcedureSpec.model_validate({"title": "t", "vars": [], "steps": [
+        {"backend": "ra", "tool": "big", "args": {}, "save": {"txt": "text"}}]})
+    rid = store.create_run(owner_sub="u1", inputs={}, mode="live")
+    r = _runner(store, {"ra_big": {"text": ko}})
+    assert asyncio.run(r.run(run_id=rid, spec=spec, principal=_P()))["state"] == "done"
+    assert "txt" not in store.get_run(rid)["inputs"], "한국어가 상한을 빠져나갔다"

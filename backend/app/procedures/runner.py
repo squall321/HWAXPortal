@@ -312,12 +312,20 @@ class ProceduresRunner:
                 # save 10단계 = 25MB · 2.7초, 전부 이벤트 루프 위다). 결과 본문은 이미
                 # gzip 으로 따로 있으니 원장이 그것을 또 품을 이유가 없다. 넘치는 값은
                 # **안 넣고 그 사실을 단계에 적는다** — 조용히 넣는 것보다 낫다.
+                # ⚠ 루프 변수를 `v` 로 두면 **바로 위의 판정(Verdict)을 덮는다** — 아래
+                # `select` 가 `v.parsed` 를 읽으므로 `AttributeError` 가 나고, `_pick` 의
+                # 넓은 except 가 그걸 "후보 없음" 으로 바꾼다. 후보가 있는데 "룰이 아무것도
+                # 못 골랐다" 가 되고, `on_none: skip` 이면 **전부 초록인 채로** 뒤 단계가
+                # 헛돈다. 실제로 그렇게 냈다(2026-09-15 3차 감사).
                 keep, oversize = {}, []
                 for k in st.save:
-                    v = scope[k]
-                    n = len(json.dumps(v, ensure_ascii=False, default=str))
+                    got = scope[k]
+                    # ⚠ **바이트로 센다.** 글자 수로 세면 한국어가 3배 아래에서 통과해
+                    # 상한이 막으려던 병이 그대로 난다(실측: 25만 자 = 75만 바이트).
+                    n = len(json.dumps(got, ensure_ascii=False,
+                                       default=str).encode("utf-8"))
                     (oversize.append((k, n)) if n > SAVE_PERSIST_MAX
-                     else keep.__setitem__(k, v))
+                     else keep.__setitem__(k, got))
                 if keep:
                     self.store.merge_inputs(run_id, keep)
                 if oversize:

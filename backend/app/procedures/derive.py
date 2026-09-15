@@ -219,7 +219,12 @@ def _in_prose(needle: str, prose: str) -> bool:
     tail_is_digit = needle[-1].isdigit()
     for m in re.finditer(re.escape(needle), prose):
         lo, hi = m.start(), m.end()
-        if lo and (_ascii_alnum(prose[lo - 1]) or prose[lo - 1] in ident):
+        # ⚠ **앞 경계는 유니코드 기준이다.** 완화해야 했던 것은 **뒤**쪽뿐이다(조사·단위).
+        # 앞까지 ASCII 로 풀었더니 한국어 합성어의 **접미가 값으로** 잡혔다 —
+        # `고전압배터리팩` 에서 `배터리`, `리어BRKT` 에서 `BRKT`, `이차전지셀` 에서
+        # `전지셀`. 그러면 "사람이 쓴 말 안에 이 값이 있다" 는 이유가 거짓이 되고,
+        # 사람은 그 말을 믿고 변수로 올린다(2026-09-15 3차 감사).
+        if lo and (prose[lo - 1].isalnum() or prose[lo - 1] in ident):
             continue
         if hi < len(prose):
             nxt = prose[hi]
