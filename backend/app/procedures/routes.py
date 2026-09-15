@@ -24,7 +24,7 @@ from typing import Any
 import yaml
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.access.policy import ADMIN_GROUP
 from app.auth.errors import AuthError
@@ -41,6 +41,7 @@ from app.procedures.models import (
     schema_fingerprint,
     validate_spec,
 )
+from app.procedures.runner import STEP_MAX as _STEP_MAX
 from app.procedures.runner import RunnerError
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,12 @@ def _spawn(coro, what: str, *, store, run_id: str) -> None:
         logger.error("절차 %s 실패", what, exc_info=exc)
         try:
             run = store.get_run(run_id)
-            if run and run["state"] in ("queued", "running"):
+            # ⚠ `gated` 도 본다. 재개 계열(ack·pick·resume)이 띄우는 `run()` 은
+            # `sess.open()` 이 **성공한 뒤에야** `running` 을 쓴다 — 게이트웨이가 죽어
+            # 있으면 그 전에 `RunnerError` 가 나고 실행은 `gated` 그대로 남는다.
+            # 화면은 "사람 확인 대기" 를 계속 보이고, 사람은 이미 눌렀다. 없애려던
+            # **"멈춘 것과 도는 것이 같은 모양"** 이 여기 한 칸 남아 있었다.
+            if run and run["state"] in ("queued", "running", "gated"):
                 store.set_run_state(run_id, "failed",
                                     stage=f"crashed:{type(exc).__name__}", ended=True)
         except Exception:  # noqa: BLE001 — 표시 실패가 더 시끄러우면 안 된다
@@ -230,7 +236,16 @@ async def _checked(request: Request, raw: dict,
     ⚠ 다만 **못 물어봤을 때와 틀렸을 때를 섞지 않는다.** 게이트웨이가 불통이면 대조를
     건너뛰고 그 사실을 경고로 남긴다 — 못 물어본 것을 통과로도, 실패로도 치지 않는다.
     """
-    spec = ProcedureSpec.model_validate(raw)
+    # ⚠ **모양이 안 맞는 것도 거절이지 고장이 아니다.** 여태 `ValidationError` 가 그대로
+    # 올라가 500 이 됐다 — 초안에서 `backend` 를 못 찾은 절차(도구 지도가 불통일 때 흔하다)
+    # 를 저장하면 "서버 오류" 가 뜨고, 왜 안 되는지가 화면에 없다. 같은 422 로 낸다.
+    try:
+        spec = ProcedureSpec.model_validate(raw)
+    except ValidationError as exc:
+        lines = [f"{'.'.join(str(x) for x in e['loc'])}: {e['msg']}"
+                 for e in exc.errors()[:8]]
+        raise AuthError("절차 모양이 맞지 않습니다:\n- " + "\n- ".join(lines),
+                        status_code=422) from None
     errs = validate_spec(
         spec, max_steps=int(getattr(get_settings(), "procedures_max_steps", 30)))
     if principal is not None:
@@ -472,6 +487,12 @@ async def add_step(request: Request, run_id: str, body: StepIn,
         raise AuthError("이미 도는 단계가 있습니다", status_code=409)
     if run["state"] in ("cancelled", "gated"):
         raise AuthError(f"이 실행은 {run['state']} 상태입니다", status_code=409)
+    # ⚠ 상한은 **여기서** 본다. 실행기 안에서만 보면 라우트는 202 를 주고 배경에서
+    # `RunnerError` 가 나는데, `_step_and_log` 가 그것을 **실행 전체의 failed** 로 옮겨
+    # 잘 쌓아 온 기록이 붉게 마감된다. 안내는 로그로만 나가 사람에게 안 닿는다.
+    if len(run["steps"]) >= _STEP_MAX:
+        raise AuthError(f"한 실행의 단계 상한({_STEP_MAX})입니다 — 절차로 저장하고 "
+                        f"새 실행에서 이어가세요", status_code=409)
 
     step = Step(**body.model_dump())
     one = ProcedureSpec(title="ad-hoc", steps=[step])
@@ -677,7 +698,15 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
     if version is None:
         raise AuthError("그 판본이 더 이상 없습니다", status_code=404)
     spec = ProcedureSpec.model_validate(version["spec"])
+    # ⚠ 자식은 **고른 단계 다음부터** 돈다. 그러니 건너뛰는 앞 구간이 만들어 냈을 이름도
+    # 함께 물려줘야 한다 — 선언 변수만 넘기면 `{{proj}}` 같은 앞 단계 산출이 비어
+    # 첫 치환에서 `TemplateError` 로 죽는다(단계 0개짜리 실패 N건이 되어 비교표가
+    # **이유 없이** 실패만 보인다). 이름은 짐작하지 않고 **명세에서 센다.**
     declared = {v.key for v in spec.vars}
+    for st in spec.steps[:ix + 1]:
+        declared |= set((st.save or {}).keys())
+        if st.select is not None:
+            declared.add(st.select.var)
     base = {k: v for k, v in (run.get("inputs") or {}).items() if k in declared}
 
     batch_id = f"b-{run_id}-{ix}"

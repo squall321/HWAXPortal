@@ -35,6 +35,9 @@ WARMUP_TIMEOUT = 125.0  # 콜드스타트가 120.3초다 — 워밍업은 그걸
 # 빈 실행 하나가 가질 수 있는 단계 수. 저장된 절차의 `procedures_max_steps`(30)보다
 # 넉넉하다 — 여기는 사람이 탐색하며 붙이는 자리라 30 은 좁다. 다만 천장은 있어야 한다.
 STEP_MAX = 120
+# `save` 로 뽑은 값을 실행 `inputs` 에 남길 때의 한 값 상한. 넘으면 안 남기고 말한다 —
+# `inputs_json` 은 통째로 다시 쓰는 한 덩이라 큰 값이 들어가면 단계 수의 제곱으로 자란다.
+SAVE_PERSIST_MAX = 256 * 1024
 
 
 class RunnerError(RuntimeError):
@@ -303,7 +306,29 @@ class ProceduresRunner:
                 # 그 값을 쓰는 단계가 `TemplateError` 로 죽고 — 그 예외가 `_loop` 밖이라
                 # 실행은 `running` 인 채 영원히 남았다. '앞에서 뽑아 두고 되돌리기 어려운
                 # 단계를 게이트로 막는다' 는 **가장 흔한 모양**이 재개가 안 됐다.
-                self.store.merge_inputs(run_id, {k: scope[k] for k in st.save})
+                #
+                # ⚠ 다만 **상한이 있다.** `inputs_json` 은 통째로 읽고-합치고-다시 쓰는
+                # 한 덩이라, 큰 값을 넣으면 단계마다 그만큼을 다시 쓴다(실측: 2.5MB 짜리
+                # save 10단계 = 25MB · 2.7초, 전부 이벤트 루프 위다). 결과 본문은 이미
+                # gzip 으로 따로 있으니 원장이 그것을 또 품을 이유가 없다. 넘치는 값은
+                # **안 넣고 그 사실을 단계에 적는다** — 조용히 넣는 것보다 낫다.
+                keep, oversize = {}, []
+                for k in st.save:
+                    v = scope[k]
+                    n = len(json.dumps(v, ensure_ascii=False, default=str))
+                    (oversize.append((k, n)) if n > SAVE_PERSIST_MAX
+                     else keep.__setitem__(k, v))
+                if keep:
+                    self.store.merge_inputs(run_id, keep)
+                if oversize:
+                    logger.info("save 값이 커서 원장에 안 남겼다 run=%s ix=%s %s",
+                                run_id, ix, oversize)
+                    self.store.annotate_step(run_id, ix, {
+                        "save_not_persisted": [k for k, _ in oversize],
+                        "why": f"뽑은 값이 {SAVE_PERSIST_MAX // 1024}KB 를 넘어 원장에 안 남겼다"
+                               f"({', '.join(f'{k} {n // 1024}KB' for k, n in oversize)}) — "
+                               "이 실행을 **재개하면** 그 값을 다시 만들지 못한다. "
+                               "결과 자체는 이 단계에 그대로 있다"})
 
             # 선택 — 룰이 고른 것을 범위에 담는다(PLAN §10-1). 0/1/N 이 여기서 갈린다.
             if st.select is not None:

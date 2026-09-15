@@ -1214,3 +1214,107 @@ def test_펼치기는_같은_값을_두_번_안_만든다(user):
     assert r.status_code == 202, r.text
     after = c.get(f"{PREFIX}/runs", headers=h).json()["runs"]
     assert len(after) - before == 1, f"{len(after) - before}개가 생겼다"
+
+
+# ── 2차 감사(2026-09-15) — 고친 것이 남긴 자리들 ──────────────────────────
+def test_펼친_자식이_앞_단계_값을_물려받는다(user):
+    """자식은 **고른 단계 다음부터** 돈다. 선언 변수만 넘기면 앞 단계가 뽑아 둔 값이
+    비어 첫 치환에서 `TemplateError` 로 죽는다 — 단계 0개짜리 실패 N건이 되어,
+    비교표가 **이유 없이** 실패만 보인다(그 표가 존재하는 이유가 사라진다)."""
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spec = {"title": "t", "vars": [{"key": "rule", "label": "룰"}],
+            "steps": [
+                {"backend": "ra", "tool": "list_reports", "args": {},
+                 "save": {"proj": "project"}},
+                {"backend": "ra", "tool": "find_parts", "args": {"q": "{{rule}}"},
+                 "select": {"from": "parts", "save": "name", "as": "part"}},
+                {"backend": "ra", "tool": "part_info",
+                 "args": {"project": "{{proj}}", "part": "{{part}}"}}]}
+    got = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec},
+                 headers=h).json()
+    rid = st.create_run(owner_sub=me, run_by=me, procedure_version_id=got["version_id"],
+                        inputs={"rule": "*", "proj": "P9"}, origin="replay", mode="live")
+    st.begin_step(rid, 1, backend="ra", tool="find_parts", args={}, mode="live")
+    st.finish_step(rid, 1, ok=False, state="pending", stage="select:ask", error=None,
+                   notes={"pick_into": "part",
+                          "candidates": [{"i": 0, "label": "A", "value": "A"},
+                                         {"i": 1, "label": "B", "value": "B"}]})
+    st.set_run_state(rid, "gated", stage="step:1")
+
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/1/fan-out", json={"mode": "plan"}, headers=h)
+    assert r.status_code == 202, r.text
+    for row in r.json()["runs"]:
+        got_in = st.get_run(row["run_id"])["inputs"]
+        assert got_in.get("proj") == "P9", f"앞 단계 산출을 안 물려줬다: {got_in}"
+        assert got_in.get("part") == row["value"]
+
+
+def test_단계_상한은_받기_전에_말한다(user, monkeypatch):
+    """실행기 안에서만 보면 라우트는 202 를 주고 배경에서 `RunnerError` 가 나는데,
+    그것이 **실행 전체의 failed** 로 옮겨져 잘 쌓아 온 기록이 붉게 마감된다.
+    안내는 로그로만 나가 사람에게 절대 안 닿는다."""
+    from app.procedures import routes as R
+
+    c, h = user
+    rid = c.post(f"{PREFIX}/runs", json={"mode": "live"}, headers=h).json()["run_id"]
+    st = c.app.state.procedures_store
+    for i in range(3):
+        st.begin_step(rid, i, backend="b", tool="t", args={})
+        st.finish_step(rid, i, ok=True, result_text="{}")
+    monkeypatch.setattr(R, "_STEP_MAX", 3)
+
+    r = c.post(f"{PREFIX}/runs/{rid}/steps",
+               json={"backend": "b", "tool": "list_parts", "args": {}}, headers=h)
+    assert r.status_code == 409 and "상한" in r.text, r.text
+    assert st.get_run(rid)["state"] != "failed", "쌓아 온 기록이 붉게 마감됐다"
+
+
+def test_모양이_안_맞는_절차는_422_다(user):
+    """`ValidationError` 가 그대로 올라가 **500** 이 됐다. 도구 지도가 불통일 때 초안은
+    `backend: ""` 를 내는데(가장 흔한 결손), 그걸 저장하면 "서버 오류" 가 뜨고 왜 안 되는지가
+    화면에 없다. 거절이지 고장이 아니다."""
+    c, h = user
+    r = c.post(f"{PREFIX}/procedures", headers=h, json={"title": "t", "spec": {
+        "title": "t", "vars": [],
+        "steps": [{"backend": "", "tool": "list_parts", "args": {}}]}})
+    assert r.status_code == 422, f"{r.status_code} {r.text[:120]}"
+    assert "모양이 맞지 않습니다" in r.text and "backend" in r.text
+
+
+def test_재개가_터지면_게이트에_매달리지_않는다(user):
+    """재개 계열이 띄우는 `run()` 은 `sess.open()` 이 **성공한 뒤에야** `running` 을
+    쓴다. 게이트웨이가 죽어 있으면 그 전에 터지고 실행은 `gated` 그대로 남아,
+    화면은 "사람 확인 대기" 를 계속 보인다 — 사람은 이미 눌렀는데."""
+    import asyncio as _a
+
+    from app.procedures.runner import RunnerError
+
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spec = {"title": "t", "vars": [],
+            "steps": [{"backend": "ra", "tool": "add_report_tags", "gate": "human",
+                       "args": {"x": 1}}]}
+    got = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec},
+                 headers=h).json()
+    rid = st.create_run(owner_sub=me, run_by=me, procedure_version_id=got["version_id"],
+                        inputs={}, origin="replay", mode="live")
+    st.begin_step(rid, 0, backend="ra", tool="add_report_tags", args={"x": 1}, mode="live")
+    st.finish_step(rid, 0, ok=False, state="pending", stage="gate")
+    st.set_run_state(rid, "gated", stage="step:0")
+
+    async def _boom(**kw):
+        raise RunnerError("게이트웨이 초기화 실패 (503)")
+
+    c.app.state.procedures_runner.run = _boom
+    sha = st.get_run(rid)["steps"][0]["args_sha256"]
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/ack", json={"args_sha256": sha}, headers=h)
+    assert r.status_code == 200, r.text
+
+    async def _settle():
+        await _a.sleep(0.1)
+    _a.run(_settle())
+    state = st.get_run(rid)["state"]
+    assert state == "failed", f"게이트에 매달려 있다: {state}"

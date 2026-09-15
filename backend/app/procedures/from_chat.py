@@ -94,12 +94,13 @@ def record(store, *, owner_sub: str, conversation_id: str, activity: list[dict],
                                   result_text=st["result_text"], duration_ms=st.get("ms"),
                                   error=None if st["ok"] else (st["step"] or "실패"))
             if st.get("truncated"):
-                store.finish_step(
-                    run_id, ix, ok=st["ok"] is not False,
-                    state="unknown" if st["ok"] is None else None,
-                    notes={"truncated": st["truncated"],
-                           "why": f"이 턴은 호출이 더 있었는데 {MAX_STEPS}개에서 잘렸다 — "
-                                  f"{st['truncated']}개가 원장에 없다"})
+                # 노트만 더한다 — `finish_step` 을 다시 부르면 바로 위에서 적은 성패·사유가
+                # 지워진다(그쪽은 state·ok·error·stage 를 항상 쓴다).
+                store.annotate_step(
+                    run_id, ix,
+                    {"truncated": st["truncated"],
+                     "why": f"이 턴은 호출이 더 있었는데 {MAX_STEPS}개에서 잘렸다 — "
+                            f"{st['truncated']}개가 원장에 없다"})
         store.set_run_state(run_id, "done", ended=True)
         return run_id
     except Exception:  # noqa: BLE001 — ② 기록 실패가 챗을 막지 않는다

@@ -393,6 +393,26 @@ class ProceduresStore:
             c.execute(f"UPDATE run_steps SET {', '.join(sets)} WHERE run_id=? AND ix=?",
                       (*vals, run_id, ix))
 
+    def annotate_step(self, run_id: str, ix: int, notes: dict) -> None:
+        """단계에 **노트만** 더한다 — 성패·상태·사유는 건드리지 않는다.
+
+        ⚠ `finish_step` 으로 이걸 하면 안 된다. 그쪽은 `state`·`ok`·`error`·`stage` 를
+        **항상** 쓰므로, 노트만 주려고 부르면 앞서 적힌 실패 사유가 지워지고 `ok` 가
+        기본값으로 돌아간다(실측: `unknown`+"성패를 못 받았다" → `done`+`ok=1`).
+        '마감' 과 '덧붙임' 은 다른 일이라 함수도 따로 둔다.
+        """
+        if not notes:
+            return
+        with self._conn() as c:
+            row = c.execute("SELECT notes FROM run_steps WHERE run_id=? AND ix=?",
+                            (run_id, ix)).fetchone()
+            if row is None:
+                raise KeyError((run_id, ix))
+            cur = json.loads(row["notes"] or "{}")
+            cur.update(notes)
+            c.execute("UPDATE run_steps SET notes=? WHERE run_id=? AND ix=?",
+                      (json.dumps(cur, ensure_ascii=False), run_id, ix))
+
     def step_result(self, run_id: str, ix: int) -> str | None:
         row = self._conn().execute(
             "SELECT result_gz, preview FROM run_steps WHERE run_id=? AND ix=?",

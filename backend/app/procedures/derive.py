@@ -63,7 +63,9 @@ def _same(a: Any, b: Any) -> bool:
     if isinstance(a, bool) or isinstance(b, bool):
         return a is b
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return float(a) == float(b)
+        # ⚠ `float(a) == float(b)` 로 보면 2^53 위의 서로 다른 정수가 같아진다.
+        # 파이썬의 `==` 는 int·float 을 정확히 비교한다 — 그대로 쓴다.
+        return a == b
     if isinstance(a, (dict, list)) and isinstance(b, (dict, list)):
         return a == b
     sa, sb = (a if isinstance(a, str) else None), (b if isinstance(b, str) else None)
@@ -83,16 +85,20 @@ def _num_text(n) -> set[str] | None:
     게다가 이유 문구는 "값이 같다" 고 단언한다. `MIN_MATCH_LEN` 이 우연한 일치를 막으려고
     있는데, 이 경로가 그 밑을 뚫고 있었다.
     """
+    if isinstance(n, bool):
+        return None
+    if isinstance(n, int):
+        # ⚠ **float 를 거치지 않는다.** `str(int(float(n)))` 은 2^53 위에서 **다른 수**다 —
+        # 9007199254740993 을 넣으면 9007199254740992 가 "같은 표기" 로 끼어들어,
+        # 서로 다른 id 둘이 한 변수로 합쳐진다(이 함수가 막으려던 바로 그 사고다).
+        return {str(n), f"{n}.0"}
     try:
         f = float(n)
     except (TypeError, ValueError, OverflowError):
         return None
-    out = {str(n)}
-    if f.is_integer():
-        out |= {str(int(f)), str(float(f))}
-    else:
-        out.add(str(f))
-    return out
+    if f != f or f in (float("inf"), float("-inf")):
+        return None
+    return {str(f), str(int(f))} if f.is_integer() else {str(f)}
 
 
 def _too_short(v: Any) -> bool:
@@ -405,12 +411,23 @@ def to_input_schema(spec: dict) -> dict:
             "additionalProperties": False}
 
 
+def _nkey(n) -> str:
+    """수의 동일성 키. 정수로 떨어지면 **정수 표기**로 모은다.
+
+    ⚠ `float(v)` 로 키를 만들면 2^53 위에서 서로 다른 정수가 같은 키가 된다. 정수는
+    정수로 두고, 정수로 떨어지는 실수만 정수 표기로 맞춘다(`10` 과 `10.0` 은 같은 값이다).
+    """
+    if isinstance(n, int):
+        return f"n:{n}"
+    return f"n:{int(n)}" if n.is_integer() else f"n:{n}"
+
+
 def _vkey(v: Any) -> str:
     """값의 동일성 키. 화면이 문자열로 보낸 숫자도 같게 본다(`"6.0"` == `6.0`)."""
     if isinstance(v, bool):
         return f"b:{v}"
     if isinstance(v, (int, float)):
-        return f"n:{float(v)}"
+        return _nkey(v)
     if isinstance(v, str):
         # `_same` 과 **같은 잣대**여야 한다 — 여기만 느슨하면 `"0012"` 와 `12` 가 한
         # 변수로 합쳐져, 사람이 한 번 채운 값이 원래 다르던 두 단계로 같이 간다.
@@ -418,7 +435,7 @@ def _vkey(v: Any) -> str:
             f = float(v)
         except ValueError:
             return f"s:{v}"
-        return f"n:{f}" if v in (_num_text(f) or set()) else f"s:{v}"
+        return _nkey(f) if v in (_num_text(f) or set()) else f"s:{v}"
     return "j:" + json.dumps(v, sort_keys=True, ensure_ascii=False, default=str)
 
 
