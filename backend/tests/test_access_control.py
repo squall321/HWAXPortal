@@ -447,3 +447,33 @@ def test_정지된_계정은_세션도_PAT_도_막힌다(client):
     assert client.post("/auth/local/users/user@corp.com/status",
                        json={"status": "active"}, headers=hb).status_code == 200
     assert _login(client, "user@corp.com") and client.get("/auth/me").status_code == 200
+
+
+def test_userinfo_가_검증된_id_token_을_못_덮는다():
+    """userinfo 는 **서명이 없다.** OIDC Core §5.3.2 는 그 응답의 `sub` 를 id_token 의
+    `sub` 와 대조하라고 한다 — 없으면 다른 주체의 프로필로 로그인시킬 수 있다.
+    그리고 병합 순서가 `{**claims, **info}` 라 **서명 없는 값이 서명된 값을 덮었다**.
+    """
+    import inspect
+
+    from app.auth import oidc_provider as O
+
+    # 주석에도 같은 문구가 나오므로 **코드 줄만** 센다
+    code = "\n".join(ln for ln in inspect.getsource(O).splitlines()
+                     if not ln.strip().startswith("#"))
+    assert "merged = {**info, **claims}" in code, "검증된 claims 가 이기지 않는다"
+    assert "merged = {**claims, **info}" not in code
+    assert 'info.get("sub")' in code and 'claims.get("sub")' in code, "sub 대조가 없다"
+
+
+def test_RA_토큰_신원_결속이_fail_open_이_아니다():
+    """`if ra_email and …` 이면 RA 가 이메일을 안 줄 때 검사가 **통째로 사라진다**.
+    신원 결속에서 '모르겠다' 는 '맞다' 가 아니다 — 남의 토큰을 등록하면 그 사람 명의로
+    보고서가 쌓인다(오귀속)."""
+    import inspect
+
+    from app.auth.routes import connections as C
+
+    src = inspect.getsource(C)
+    assert "if not ra_email:" in src, "이메일이 없을 때 거절하지 않는다"
+    assert "if ra_email and ra_email !=" not in src

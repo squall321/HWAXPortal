@@ -146,7 +146,15 @@ async def set_ra_connection(
     ra_user = me.get("user") or {}
     ra_email = str(ra_user.get("email") or "").strip().lower()
     # 이메일 일치 강제 — 남의 토큰을 등록하면 그 사람 명의로 보고서가 쌓인다(오귀속).
-    if ra_email and ra_email != principal.email.lower():
+    # ⚠ **확인 못 한 것을 확인한 것으로 치지 않는다.** 예전엔 `if ra_email and …` 라서
+    # RA 가 이메일을 안 주면 검사가 **통째로 사라졌다**(fail-open). 신원 결속에서
+    # "모르겠다" 는 "맞다" 가 아니다. RA 스키마상 `email` 은 필수라 닫아도 안 깨진다
+    # (`UserRead.email: str` — 2026-09-15 확인).
+    if not ra_email:
+        raise AuthError(
+            "RA 가 계정 이메일을 주지 않아 이 토큰이 누구 것인지 확인할 수 없습니다 — "
+            "등록하지 않습니다. RA 쪽 응답 모양이 바뀌었을 수 있습니다.", status_code=502)
+    if ra_email != principal.email.lower():
         raise AuthError(
             f"RA 계정 이메일({ra_email})이 포털 계정({principal.email})과 다릅니다. "
             "같은 이메일의 RA 계정에서 발급한 토큰을 등록하세요.", status_code=400)

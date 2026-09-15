@@ -21,6 +21,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 from typing import Any
 from urllib.parse import urlencode
 
@@ -36,6 +37,9 @@ from app.config import Settings
 
 def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+logger = logging.getLogger(__name__)
 
 
 class OidcProvider:
@@ -159,7 +163,15 @@ class OidcProvider:
                 except Exception:  # noqa: BLE001
                     info = {}
 
-        merged = {**claims, **info}
+        # ⚠ **userinfo 는 서명이 없다.** OIDC Core §5.3.2 는 그 응답의 `sub` 가 id_token 의
+        # `sub` 와 같은지 **반드시 대조하라**고 한다 — 안 하면 다른 주체의 프로필을 받아
+        # 그 사람으로 로그인시킬 수 있다. 대조가 없었다.
+        if info and str(info.get("sub") or "") != str(claims.get("sub") or ""):
+            logger.warning("userinfo sub 불일치 — 버린다(id_token sub=%s)", claims.get("sub"))
+            info = {}
+        # ⚠ **검증된 쪽이 이긴다.** `{**claims, **info}` 는 서명 없는 값이 서명된 값을
+        # 덮는다. userinfo 는 id_token 에 **없는 칸만** 채우는 용도다(그게 가져오는 이유다).
+        merged = {**info, **claims}
         s = self._s
         email = merged.get(s.oidc_claim_email)
         if not email:
