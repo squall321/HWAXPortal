@@ -239,6 +239,17 @@ class Step(BaseModel):
         return self.tool.startswith(CACHE_PREFIX)
 
 
+def normalized(spec: "ProcedureSpec") -> dict:
+    """저장할 **정규 모양**. 받은 dict 를 그대로 넣지 않는다.
+
+    ⚠ 원본을 저장하면 모델이 보장하는 칸이 없을 수 있다. `vars` 는 `default_factory=list`
+    라 YAML 에 없어도 통과하는데, 그대로 저장되면 화면은 `spec.vars.length` 를 읽다
+    **TypeError** 로 죽는다 — 이 리포에 ErrorBoundary 가 하나도 없어 라우트가 아니라
+    **앱 전체가 흰 화면**이 된다(2026-09-15 4차 감사). 저장 시점에 모양을 맞춘다.
+    """
+    return spec.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
 class ProcedureSpec(BaseModel):
     """절차 판본의 불변 본문. 이것이 바뀔 때만 새 판본이 생긴다."""
     model_config = {"extra": "forbid"}

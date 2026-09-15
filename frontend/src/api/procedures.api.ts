@@ -83,7 +83,10 @@ export type ProcedureVersion = {
   author_sub: string;
   created_at: number;
   derived_from_run: string | null;
-  spec: { title: string; vars: VarDef[]; steps: StepDef[] };
+  // ⚠ `vars` 를 필수로 두면 **낡은 판본**(서버가 정규화하기 전에 들어간 것)에서
+  // 화면이 `.length` 를 읽다 죽는다 — 이 리포엔 ErrorBoundary 가 없어 라우트가
+  // 아니라 **앱 전체가 흰 화면**이 된다. 서버는 이제 채워 주지만 타입은 방어한다.
+  spec: { title: string; vars?: VarDef[]; steps: StepDef[] };
 };
 
 export type VarDef = {
@@ -193,7 +196,10 @@ export type DraftReason = {
 
 export type RunDraft = {
   run_id: string;
-  spec: { title: string; vars: VarDef[]; steps: StepDef[] };
+  // ⚠ `vars` 를 필수로 두면 **낡은 판본**(서버가 정규화하기 전에 들어간 것)에서
+  // 화면이 `.length` 를 읽다 죽는다 — 이 리포엔 ErrorBoundary 가 없어 라우트가
+  // 아니라 **앱 전체가 흰 화면**이 된다. 서버는 이제 채워 주지만 타입은 방어한다.
+  spec: { title: string; vars?: VarDef[]; steps: StepDef[] };
   reasons: DraftReason[];
   gaps: { step: number; tool: string; kind: string; why: string }[];
   /** 사람이 확정해야 하는 자리 — 변수인지 상수인지 코드가 모른다. */

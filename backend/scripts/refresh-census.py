@@ -84,6 +84,12 @@ def main() -> int:
         print("✗ 게이트웨이에서 도구를 하나도 못 받았다 — 고정물을 건드리지 않는다")
         return 2
     if not CENSUS.is_file():
+        # ⚠ `--check` 는 **절대 안 쓴다.** 이 파일 머리말이 "갱신은 사람이 돌린다 —
+        # 테스트가 자동으로 뽑으면 어긋난 것이 조용히 정상이 된다" 인데, 고정물이 없을 때
+        # `--check` 가 만들어 버리면 그 규칙이 정확히 깨진다(2026-09-15 4차 감사).
+        if a.check:
+            print("✗ 고정물이 없다 — `--check` 는 만들지 않는다. 사람이 인자 없이 돌려라")
+            return 1
         CENSUS.write_text(json.dumps(fresh, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"✓ 새로 만들었다 — {fresh['gateway_tools']}종")
         return 0

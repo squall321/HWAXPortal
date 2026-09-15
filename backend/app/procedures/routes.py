@@ -38,6 +38,7 @@ from app.procedures.models import (
     Step,
     check_against_schemas,
     coerce_inputs,
+    normalized,
     schema_fingerprint,
     validate_spec,
 )
@@ -273,12 +274,16 @@ async def _checked(request: Request, raw: dict,
 
 
 async def _validated(request: Request, raw: dict, principal: Principal | None = None):
-    """저장 경로 — 딱딱한 오류가 있으면 **거절한다**. 경고만 돌려준다."""
+    """저장 경로 — 딱딱한 오류가 있으면 **거절한다**. 경고만 돌려준다.
+
+    돌려주는 첫 값은 **정규화된 dict** 다(받은 원본이 아니다) — 저장되는 것이 모델이
+    보장하는 모양이어야 화면이 없는 칸을 읽다 죽지 않는다.
+    """
     spec, errs = await _checked(request, raw, principal)
     hard = [e for e in errs if not e.startswith("warn:")]
     if hard:
         raise AuthError("절차를 저장할 수 없습니다:\n- " + "\n- ".join(hard), status_code=422)
-    return spec, [e[5:] for e in errs if e.startswith("warn:")]
+    return normalized(spec), [e[5:] for e in errs if e.startswith("warn:")]
 
 
 # ── 씨앗 절차 ────────────────────────────────────────────────────────────
@@ -327,17 +332,17 @@ async def import_seed(request: Request, name: str,
                 principal: Principal = Depends(_me)) -> dict:
     """씨앗을 내 절차로 들인다. 들어온 뒤에는 보통 절차와 똑같다(고치면 새 판본)."""
     raw = yaml.safe_load(_seed_path(name).read_text(encoding="utf-8")) or {}
-    spec, warns = await _validated(request, raw, principal)
+    norm, warns = await _validated(request, raw, principal)
     store = _store(request)
     # 씨앗은 리포와 함께 **자란다**(예시가 늘고 경고가 붙는다). 다시 가져올 때마다 사본이
     # 생기면 목록이 같은 이름으로 채워지고, 어느 것이 최신인지 사람이 알 수 없다.
     # 이미 들여놓은 것이 있으면 **판본을 올린다** — 옛 판본과 그 이력은 그대로 남는다.
     existing = store.find_by_seed(owner_sub=principal.subject, seed=name)
     if existing:
-        got = store.add_version(procedure_id=existing, author_sub=principal.subject, spec=raw)
+        got = store.add_version(procedure_id=existing, author_sub=principal.subject, spec=norm)
         return {**got, "id": existing, "warnings": warns, "from_seed": name, "updated": True}
     got = store.create_procedure(
-        owner_sub=principal.subject, spec=raw, title=spec.title, visibility="all",
+        owner_sub=principal.subject, spec=norm, title=norm["title"], visibility="all",
         from_seed=name)
     return {**got, "warnings": warns, "from_seed": name, "updated": False}
 
@@ -350,9 +355,9 @@ def list_procedures(request: Request, principal: Principal = Depends(_me)) -> di
 @router.post("/procedures", status_code=201, dependencies=[Depends(require_csrf)])
 async def create_procedure(request: Request, body: ProcedureIn,
                   principal: Principal = Depends(_me)) -> dict:
-    _, warns = await _validated(request, body.spec, principal)
+    norm, warns = await _validated(request, body.spec, principal)
     got = _store(request).create_procedure(
-        owner_sub=principal.subject, spec=body.spec, title=body.title,
+        owner_sub=principal.subject, spec=norm, title=body.title,
         visibility=body.visibility, derived_from_run=body.derived_from_run)
     return {**got, "warnings": warns}
 
@@ -372,10 +377,10 @@ def get_procedure(request: Request, procedure_id: str,
              dependencies=[Depends(require_csrf)])
 async def add_version(request: Request, procedure_id: str, body: ProcedureIn,
                 principal: Principal = Depends(_me)) -> dict:
-    _, warns = await _validated(request, body.spec, principal)
+    norm, warns = await _validated(request, body.spec, principal)
     try:
         got = _store(request).add_version(
-            procedure_id=procedure_id, author_sub=principal.subject, spec=body.spec,
+            procedure_id=procedure_id, author_sub=principal.subject, spec=norm,
             derived_from_run=body.derived_from_run)
     except KeyError:
         raise AuthError("절차를 찾을 수 없습니다", status_code=404) from None
@@ -956,12 +961,12 @@ async def save_as_procedure(request: Request, run_id: str, body: SaveAsIn,
         raise AuthError("저장할 단계가 없습니다 — 성공한 단계가 하나도 없습니다",
                         status_code=422)
     spec = {"title": body.title, "vars": body.vars, "steps": steps}
-    _, warns = await _validated(request, spec, principal)
+    norm, warns = await _validated(request, spec, principal)
     if dropped:
         warns = warns + [f"성공하지 않은 단계를 빼고 굳혔습니다 — {', '.join(dropped[:6])}. "
                          "이 절차는 **통째로 돌아 본 적이 없습니다**"]
     got = _store(request).create_procedure(
-        owner_sub=principal.subject, spec=spec, title=body.title,
+        owner_sub=principal.subject, spec=norm, title=body.title,
         visibility=body.visibility, derived_from_run=run_id)
     return {**got, "warnings": warns}
 
@@ -990,14 +995,14 @@ async def save_draft(request: Request, run_id: str, body: DraftSaveIn,
     spec, warns = _d.promote(spec_draft["spec"], body.promote, tool_schemas=tschemas,
                              tool_desc=tdesc)
     spec["title"] = body.title
-    _, save_warns = await _validated(request, spec, principal)
+    norm, save_warns = await _validated(request, spec, principal)
     # ⚠ **초안이 안 것을 버리지 않는다.** 여태 `gaps` 를 통째로 떨궜다. 인자가 잘린
     # 미리보기라 구조가 아니었던 단계는 `args: {}` 로 굳는데, 그 도구에 필수 인자가
     # 없으면 스키마 대조도 통과한다 — **인자 없이 부르는 단계**가 조용히 저장된다.
     gap_warns = [f"{g.get('step') or '-'}단계 {g.get('tool') or ''}: {g.get('why') or g.get('kind')}"
                  for g in (spec_draft.get("gaps") or [])]
     got = _store(request).create_procedure(
-        owner_sub=principal.subject, spec=spec, title=body.title,
+        owner_sub=principal.subject, spec=norm, title=body.title,
         visibility=body.visibility, derived_from_run=run_id)
     return {**got, "warnings": warns + save_warns + gap_warns}
 
@@ -1049,9 +1054,9 @@ async def import_procedure(request: Request, body: ImportIn,
         raise AuthError("절차 본문이 아닙니다(맵이어야 합니다)", status_code=422)
     if body.title:
         raw["title"] = body.title
-    spec, warns = await _validated(request, raw, principal)
+    norm, warns = await _validated(request, raw, principal)
     got = _store(request).create_procedure(
-        owner_sub=principal.subject, spec=raw, title=spec.title,
+        owner_sub=principal.subject, spec=norm, title=norm["title"],
         visibility=body.visibility)
     return {**got, "warnings": warns}
 

@@ -80,26 +80,62 @@ def _gw_kind(text: str) -> tuple[str, bool] | None:
     return None
 
 
-# 한 줄에 하나씩 JSON 이 오는 응답을 몇 줄까지 볼까. 목록형 도구는 수백 줄이 온다.
+# 이어 붙인 텍스트에서 JSON 값을 몇 개까지 훑을까. `list_agents` 는 796개가 온다.
 _MULTI_MAX = 2000
+_DECODER = json.JSONDecoder()
+
+
+def _notes_of_rows(rows: list) -> dict:
+    """여러 값에서 노트를 모은다. `collect_notes` 는 dict 만 보므로 리스트면 늘 비었다 —
+    그러면 W120 같은 표식이 이 경로에서만 사라진다(경고 칸이 있는 이유가 없어진다).
+    """
+    out: dict = {}
+    for r in rows[:200]:
+        for k, v in collect_notes(r).items():
+            if k in out and isinstance(out[k], list) and isinstance(v, list):
+                out[k] = (out[k] + v)[:50]
+            else:
+                out.setdefault(k, v)
+    return out
 
 
 def _parse_json_multi(text: str) -> list | None:
-    """줄마다 JSON 인 모양이면 **리스트로** 돌려준다. 아니면 None.
+    """JSON 값이 **연달아** 붙어 온 모양이면 리스트로 돌려준다. 아니면 None.
 
     이어 붙인 한 덩이를 한 번만 파싱하면 목록형 도구가 전부 `not_json` 이 된다
     (PLAN §79 가 "다중 text 항목은 각각 파싱해 리스트로" 라고 적은 자리다).
-    한 줄이라도 JSON 이 아니면 **포기한다** — 반만 읽고 성공이라고 하지 않는다.
+
+    ⚠ **줄 단위로 쪼개면 안 된다.** 처음에 그렇게 짰다가 프로덕션에서 한 번도 안 걸렸다 —
+    게이트웨이 블록은 **pretty-print** 라 `{` 한 줄이 JSON 이 아니기 때문이다. 테스트는
+    compact 로 만든 인공 모양이라 초록이었다(2026-09-15 4차 감사). `join_content` 가
+    블록 경계를 지워 버리므로, 여기서 **값 단위로** 이어 훑는 수밖에 없다.
+
+    끝까지 다 먹지 못하면 **포기한다** — 반만 읽고 성공이라고 하지 않는다.
     """
-    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
-    if len(lines) < 2 or len(lines) > _MULTI_MAX:
+    src = (text or "").strip()
+    if not src:
         return None
-    out = []
-    for ln in lines:
+    out: list = []
+    i = 0
+    n = len(src)
+    while i < n:
         try:
-            out.append(json.loads(ln))
+            val, end = _DECODER.raw_decode(src, i)
         except ValueError:
             return None
+        out.append(val)
+        if len(out) > _MULTI_MAX:
+            return None
+        i = end
+        while i < n and src[i].isspace():
+            i += 1
+    if len(out) < 2:
+        return None
+    # ⚠ **스칼라만 늘어선 것은 다중 블록이 아니다.** 도구가 항목마다 보내는 것은 레코드
+    # (객체·배열)다. 숫자·따옴표 문자열이 줄줄이 있는 글(수치 덤프·로그)을 리스트로
+    # 읽어 버리면, JSON 이 아닌 응답이 **성공**이 된다 — 없던 성공을 만드는 쪽이다.
+    if not all(isinstance(x, (dict, list)) for x in out):
+        return None
     return out
 
 
@@ -138,7 +174,21 @@ def judge(*, is_error: bool, text: str, raw: bool = False,
         # ("이 도구 뒤에 아무것도 없다" 와 같은 모양이다).
         rows = _parse_json_multi(text)
         if rows is not None:
-            return Verdict(True, "parse", "ok", parsed=rows, notes=collect_notes(rows))
+            # ⚠ **여기서 바로 성공으로 나가면 안 된다.** 예전엔 그랬고, 그래서 같은
+            # 커밋이 고친 두 가지(봉투 먼저 보기·`unwrap` 존중)가 **이 경로에서만**
+            # 통째로 무효였다 — 죽은 잡이 블록 두 개로 오면 `done` 이 됐다.
+            if unwrap:
+                # 사람이 "이 도구는 한 겹 싸여 온다" 고 선언했는데 값이 여럿 왔다.
+                # 모양이 바뀐 것이고, 그걸 모른 채 리스트를 결과로 쓰면 `save` 가
+                # 엉뚱한 곳을 판다.
+                return Verdict(False, "parse", "unwrap_missing", parsed=rows,
+                               error=f"`{unwrap}` 로 벗기라고 했는데 값이 {len(rows)}개 왔다",
+                               retriable=False)
+            for row in rows:
+                bad = _envelope_fail(row)
+                if bad is not None:
+                    return bad
+            return Verdict(True, "parse", "ok", parsed=rows, notes=_notes_of_rows(rows))
         if raw:
             return Verdict(True, "parse", "ok", parsed=text)
         return Verdict(False, "parse", "not_json",

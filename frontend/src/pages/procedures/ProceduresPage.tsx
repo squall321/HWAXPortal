@@ -371,17 +371,17 @@ function ProcedureDetail() {
         </section>
       )}
 
-      {v.spec.vars.length > 0 && (
+      {(v.spec.vars?.length ?? 0) > 0 && (
         <section style={rowCard}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap',
                         margin: '0 0 0.6rem' }}>
             <h3 style={{ color: 'var(--fg)', margin: 0, fontSize: '0.95rem' }}>이번에 채울 값</h3>
-            {v.spec.vars.some((d) => d.example !== undefined && d.example !== null) && (
+            {(v.spec.vars ?? []).some((d) => d.example !== undefined && d.example !== null) && (
               <>
                 <button type="button" style={tiny}
                         onClick={() => setVals({
                           ...vals,
-                          ...Object.fromEntries(v.spec.vars
+                          ...Object.fromEntries((v.spec.vars ?? [])
                             .filter((d) => d.example !== undefined && d.example !== null)
                             .map((d) => [d.key, exampleText(d.example)])),
                         })}>
@@ -394,7 +394,7 @@ function ProcedureDetail() {
             )}
           </div>
           <div style={{ display: 'grid', gap: '0.6rem' }}>
-            {v.spec.vars.map((d) => (
+            {(v.spec.vars ?? []).map((d) => (
               <label key={d.key} style={{ display: 'grid', gap: '0.2rem' }}>
                 <span style={{ fontSize: '0.82rem', color: 'var(--fg)' }}>
                   {d.label} <code style={{ color: 'var(--muted)' }}>{d.key}</code>
@@ -622,7 +622,7 @@ function DraftView({ runId }: { runId: string }) {
         <div style={{ display: 'grid', gap: '0.7rem', marginTop: '0.6rem' }}>
           <div>
             <b style={{ color: 'var(--fg)', fontSize: '0.86rem' }}>
-              단계 {d.spec.steps.length} · 변수 {d.spec.vars.length}
+              단계 {d.spec.steps?.length ?? 0} · 변수 {d.spec.vars?.length ?? 0}
             </b>
             <ol style={{ margin: '0.3rem 0 0', paddingLeft: '1.2rem',
                          color: 'var(--muted)', fontSize: '0.82rem' }}>

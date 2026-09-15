@@ -1318,3 +1318,26 @@ def test_재개가_터지면_게이트에_매달리지_않는다(user):
     _a.run(_settle())
     state = st.get_run(rid)["state"]
     assert state == "failed", f"게이트에 매달려 있다: {state}"
+
+
+def test_저장된_명세는_늘_모델_모양이다(user):
+    """⚠ 받은 dict 를 그대로 저장하면 모델이 보장하는 칸이 없을 수 있다. `vars` 는
+    `default_factory=list` 라 YAML 에 없어도 통과하는데, 그대로 저장되면 화면이
+    `spec.vars.length` 를 읽다 **TypeError** 로 죽는다 — 이 리포에 ErrorBoundary 가
+    하나도 없어 라우트가 아니라 **앱 전체가 흰 화면**이 된다(4차 감사)."""
+    c, h = user
+    bare = {"title": "vars 없는 절차",
+            "steps": [{"backend": "b", "tool": "list_parts", "args": {}}]}
+    r = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": bare}, headers=h)
+    assert r.status_code == 201, r.text
+    got = c.get(f"{PREFIX}/procedures/{r.json()['id']}", headers=h).json()["spec"]
+    assert got["vars"] == [], got
+    assert {"title", "vars", "steps"} <= set(got)
+    # 들여오기 경로도 같다 — 거기가 YAML 을 받는 자리라 더 잘 닿는다
+    import yaml as _y
+
+    r2 = c.post(f"{PREFIX}/procedures/import",
+                json={"yaml_text": _y.safe_dump(bare, allow_unicode=True)}, headers=h)
+    assert r2.status_code == 201, r2.text
+    got2 = c.get(f"{PREFIX}/procedures/{r2.json()['id']}", headers=h).json()["spec"]
+    assert got2["vars"] == [], got2

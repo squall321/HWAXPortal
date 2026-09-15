@@ -10,6 +10,7 @@ from app.procedures.judge import (
     join_content,
     judge,
     short_error,
+    warn_labels,
 )
 
 # ── 실물 응답 ────────────────────────────────────────────────────────────
@@ -225,18 +226,46 @@ def test_항목마다_TextContent_로_오는_목록을_읽는다():
     실패했다. 실호출 확인: `list_operations` 47 · `list_agent_domains` 23 ·
     `list_agents` 408 블록이 전부 `not_json` 이었다 — 그러면 2단 항목 목록이 **빈 칸**이
     되고, 화면은 "이 도구 뒤에 아무것도 없다" 와 똑같이 보인다."""
-    blocks = [{"type": "text", "text": json.dumps({"name": f"op{i}"})} for i in range(47)]
-    text, _other = join_content(blocks)
-    v = judge(is_error=False, text=text)
-    assert v.ok and v.kind == "ok", f"{v.kind}: {v.error}"
-    assert isinstance(v.parsed, list) and len(v.parsed) == 47
-    assert v.parsed[0]["name"] == "op0"
+    # ⚠ **`indent=2` 가 요점이다.** 처음에 compact 로 고정물을 만들어 검사는 초록인데
+    # 프로덕션에서는 한 번도 안 걸렸다 — 게이트웨이 블록은 pretty-print 라 `{` 한 줄이
+    # JSON 이 아니기 때문이다. 인공 모양으로 고정하면 고친 줄 알고 넘어간다(4차 감사).
+    for kw in ({"indent": 2}, {}):
+        blocks = [{"type": "text", "text": json.dumps({"name": f"op{i}"}, **kw)}
+                  for i in range(47)]
+        text, _other = join_content(blocks)
+        v = judge(is_error=False, text=text)
+        assert v.ok and v.kind == "ok", f"{kw}: {v.kind} {v.error}"
+        assert isinstance(v.parsed, list) and len(v.parsed) == 47, kw
+        assert v.parsed[0]["name"] == "op0"
 
 
-def test_한_줄이라도_JSON_이_아니면_포기한다():
+def test_끝까지_못_먹으면_포기한다():
     """반만 읽고 성공이라고 하지 않는다."""
-    v = judge(is_error=False, text='{"a":1}\n이건 글이다\n{"b":2}')
-    assert not v.ok and v.kind == "not_json"
+    assert judge(is_error=False, text='{"a":1}\n이건 글이다\n{"b":2}').kind == "not_json"
+    # 스칼라가 줄줄이 있는 **글**을 리스트로 읽으면 없던 성공을 만든다
+    assert judge(is_error=False, text="1\n2\n3").kind == "not_json"
+    assert judge(is_error=False, text='"a"\n"b"').kind == "not_json"
+
+
+def test_다중_블록도_봉투와_unwrap_을_건너뛰지_않는다():
+    """다중 경로가 바로 성공으로 나가서, 같은 커밋이 고친 둘(봉투 먼저·`unwrap` 존중)이
+    **이 경로에서만** 통째로 무효였다 — 죽은 잡이 블록 둘로 오면 `done` 이 됐다."""
+    dead = json.dumps({"ok": False, "exit_code": 2, "stdout": "{}"}, indent=2)
+    text, _o = join_content([{"type": "text", "text": dead}] * 2)
+    assert judge(is_error=False, text=text).kind == "app_envelope"
+    # `unwrap` 을 선언했는데 값이 여럿이면 모양이 바뀐 것이다 — 조용히 리스트를 쓰지 않는다
+    assert judge(is_error=False, text=text, unwrap="stdout").kind == "unwrap_missing"
+
+
+def test_다중_블록의_경고도_모은다():
+    """`collect_notes` 는 dict 만 보므로 리스트면 늘 비었다 — 그러면 W120 같은 표식이
+    이 경로에서만 사라진다(경고 칸이 있는 이유가 없어진다)."""
+    blocks = [{"type": "text", "text": json.dumps({"id": 1, "warnings": ["W120: 제외"]},
+                                                  indent=2)},
+              {"type": "text", "text": json.dumps({"id": 2}, indent=2)}]
+    text, _o = join_content(blocks)
+    v = judge(is_error=False, text=text)
+    assert v.ok and warn_labels(v.notes) == ["W120: 제외"], v.notes
 
 
 def test_이중_포장은_바깥_봉투를_먼저_본다():
