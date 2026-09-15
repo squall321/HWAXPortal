@@ -244,6 +244,15 @@ export function getBatch(batchId: string) {
   return get<BatchTable>(`/batches/${encodeURIComponent(batchId)}`, '비교표를 불러오지 못했습니다.');
 }
 
+/** 결손 하나를 **장부 파일 초안**으로. ⚠ 파일을 쓰지 않는다 — 사람이 읽고 커밋한다. */
+export function draftGap(runId: string, gap: Record<string, unknown>, ownerCandidate?: string) {
+  return post<{ filename: string; yaml_text: string }>(
+    '/gaps/draft',
+    { run_id: runId, gap, owner_candidate: ownerCandidate },
+    '장부 초안을 만들지 못했습니다.',
+  );
+}
+
 /** 절차를 YAML 한 장으로. dev 에서 만들고 cae00 에서 쓰는 길이다. */
 export function exportProcedureUrl(id: string): string {
   return `${config.apiBase}/procedures-api/procedures/${id}/export`;

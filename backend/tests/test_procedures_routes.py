@@ -969,3 +969,119 @@ def test_YAML_이_아니면_그렇게_말한다(user):
     r2 = c.post(f"{PREFIX}/procedures/import", json={"yaml_text": "- 목록이다\n- 맵이 아니다"},
                 headers=h)
     assert r2.status_code == 422 and "맵" in r2.text
+
+
+# ── ReportArchive 사전검사 (PLAN S1) ─────────────────────────────────────
+def _ra_procedure(c, h) -> str:
+    spec = {"title": "보고서 쓰는 절차",
+            "vars": [{"key": "t", "label": "제목"}],
+            "steps": [{"backend": "reportarchive", "tool": "create_report_draft",
+                       "gate": "human",
+                       "args": {"title": "{{t}}", "template_id": "__import_blank__",
+                                "template_version": 1, "blocks": {}}}]}
+    r = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec}, headers=h)
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def test_RA_연결이_없으면_시작_전에_말한다(user):
+    """⚠ 연결이 없으면 게이트웨이가 **서비스 계정으로 내려앉아** 남의 함에 쓰거나 401 이
+    난다 — 어느 쪽이든 그 단계에 가서야 안다."""
+    c, h = user
+    pid = _ra_procedure(c, h)
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan",
+                                       "vars": {"t": "보고서"}}, headers=h)
+    assert r.status_code == 202, r.text
+    w = " ".join(r.json().get("warnings") or [])
+    assert "Report Archive 연결이 없습니다" in w and "토큰 페이지" in w, r.json()
+
+
+def test_사전검사는_막지_않는다(user):
+    """계획 모드로 무엇을 부를지만 보려는 경우가 있다 — 모르는 것과 틀린 것을 안 섞는다."""
+    c, h = user
+    pid = _ra_procedure(c, h)
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan",
+                                       "vars": {"t": "보고서"}}, headers=h)
+    assert r.status_code == 202 and r.json()["state"] == "queued"
+
+
+def test_워크스페이스를_안_골랐으면_그것도_말한다(user):
+    """연결만 있고 워크스페이스가 없으면 보고서가 **개인함**에 쌓인다(실사고)."""
+    c, h = user
+    me = c.get("/auth/me", headers=h).json()
+    c.app.state.user_store.set_connection(email=me["email"], service="reportarchive",
+                                          token="tok", workspace="")
+    pid = _ra_procedure(c, h)
+    w = " ".join(c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan",
+                                                "vars": {"t": "x"}},
+                        headers=h).json().get("warnings") or [])
+    assert "워크스페이스를 안 골랐습니다" in w, w
+
+
+def test_RA_단계가_없으면_아무_말도_안_한다(user):
+    """경고를 남발하면 사람이 무시하게 된다."""
+    c, h = user
+    pid = _json_var_procedure(c, h)
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan",
+                                       "vars": {"laminate": "{}", "r_unfold": "6"}}, headers=h)
+    assert "warnings" not in r.json()
+
+
+# ── 결손을 장부 초안으로 (PLAN §9-6) ─────────────────────────────────────
+def test_결손을_장부_파일_초안으로_만든다(user):
+    """도출이 찾은 결손이 화면에만 떠 있으면 앱 팀에 안 간다."""
+    from app.procedures import from_chat
+
+    c, h = user
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    rid = from_chat.record(c.app.state.procedures_store, owner_sub=me, conversation_id="c",
+                           title="t",
+                           activity=[{"tool": "t", "call": "a", "ok": True, "detail": "{}"},
+                                     {"tool": "t", "call": "a", "ok": True, "result_preview": "{}"}])
+    r = c.post(f"{PREFIX}/gaps/draft", headers=h, json={
+        "run_id": rid,
+        "gap": {"step": 1, "tool": "모르는도구", "kind": "backend_unknown",
+                "why": "이 도구가 어느 앱 것인지 기록에 없다"},
+        "owner_candidate": "heax-step_forge"})
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["filename"].endswith(".yaml")
+    d = yaml.safe_load(got["yaml_text"])
+    assert d["status"] == "open" and d["confirmed_by"] is None, "자동으로 확정하면 안 된다"
+    assert d["owner_candidate"] == "heax-step_forge"
+    assert rid in d["evidence"][0], "근거가 안 붙었다"
+    assert "§9-3 순서" in d["checked"][0], "검사 순서를 안 일깨운다"
+
+
+def test_장부_초안은_파일을_쓰지_않는다(user, tmp_path):
+    """⚠ 포털이 리포에 직접 쓰면 검토 없이 결손이 늘고, 누가 등재했는지가 git 이 아니라
+    웹 세션에 남는다."""
+    from pathlib import Path
+
+    from app.procedures import from_chat
+
+    c, h = user
+    gaps = Path(__file__).resolve().parents[2] / "docs" / "procedures" / "gaps"
+    before = sorted(p.name for p in gaps.glob("*.yaml"))
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    rid = from_chat.record(c.app.state.procedures_store, owner_sub=me, conversation_id="c",
+                           title="t",
+                           activity=[{"tool": "t", "call": "a", "ok": True, "detail": "{}"},
+                                     {"tool": "t", "call": "a", "ok": True, "result_preview": "{}"}])
+    c.post(f"{PREFIX}/gaps/draft", headers=h,
+           json={"run_id": rid, "gap": {"kind": "backend_unknown", "tool": "x"}})
+    assert sorted(p.name for p in gaps.glob("*.yaml")) == before, "파일을 썼다"
+
+
+def test_남의_실행으로는_결손을_못_만든다(user):
+    from app.procedures import from_chat
+
+    c, h = user
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    rid = from_chat.record(c.app.state.procedures_store, owner_sub=me, conversation_id="c",
+                           title="t",
+                           activity=[{"tool": "t", "call": "a", "ok": True, "detail": "{}"},
+                                     {"tool": "t", "call": "a", "ok": True, "result_preview": "{}"}])
+    boss = _login(c, "boss@corp.com")
+    assert c.post(f"{PREFIX}/gaps/draft", headers=boss,
+                  json={"run_id": rid, "gap": {"kind": "x"}}).status_code == 404

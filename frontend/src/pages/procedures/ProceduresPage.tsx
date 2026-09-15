@@ -10,6 +10,7 @@ import { useProcedures } from '../../state/ProceduresContext';
 import {
   cancelRun,
   getProcedure,
+  draftGap,
   exportProcedureUrl,
   getBatch,
   getProcedureTool,
@@ -567,6 +568,7 @@ function DraftView({ runId }: { runId: string }) {
   const [promote, setPromote] = useState<Record<string, string>>({});
   const [title, setTitle] = useState('');
   const [saved, setSaved] = useState<string[] | null>(null);
+  const [gapDoc, setGapDoc] = useState<{ filename: string; yaml_text: string } | null>(null);
 
   const look = async () => {
     setBusy(true);
@@ -706,13 +708,43 @@ function DraftView({ runId }: { runId: string }) {
               <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem',
                            color: 'var(--muted)', fontSize: '0.8rem' }}>
                 {d.gaps.map((g, i) => (
-                  <li key={i}>{g.step}단계 <code>{g.tool}</code> — {g.why}</li>
+                  <li key={i} style={{ marginBottom: '0.25rem' }}>
+                    {g.step ? `${g.step}단계 ` : ''}
+                    {g.tool && <code>{g.tool}</code>} {g.why}{' '}
+                    <button type="button" style={{ ...tiny, padding: '0.1rem 0.4rem' }}
+                            onClick={async () => {
+                              try {
+                                const got = await draftGap(runId, g as unknown as
+                                  Record<string, unknown>);
+                                setGapDoc(got);
+                              } catch (e) {
+                                setErr((e as Error).message);
+                              }
+                            }}>
+                      장부 초안
+                    </button>
+                  </li>
                 ))}
               </ul>
               <p style={{ color: 'var(--muted)', fontSize: '0.76rem', margin: '0.3rem 0 0' }}>
                 이 칸들이 <b>결손</b>입니다. 그 값이 어느 시스템엔가 이미 있다면 그 앱에 도구를
                 만들 자리이고, 없다면 절차의 변수로 남습니다.
               </p>
+              {gapDoc && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <p style={{ color: 'var(--muted)', fontSize: '0.76rem', margin: '0 0 0.25rem' }}>
+                    ⚠ <b>초안입니다.</b> 확인한 뒤 리포의{' '}
+                    <code>docs/procedures/gaps/{gapDoc.filename}</code> 로 커밋하세요 —
+                    포털이 리포에 직접 쓰지 않습니다.
+                  </p>
+                  <textarea
+                    readOnly
+                    style={{ ...inp, minHeight: '11rem',
+                             fontFamily: 'ui-monospace, monospace', fontSize: '0.72rem' }}
+                    value={gapDoc.yaml_text}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

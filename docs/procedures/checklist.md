@@ -102,7 +102,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 실행 시작 전 사전검사 — 실행자 PAT 로 `tools/list` 를 받아 절차 단계 도구가 하나라도 없으면 한 단계도
       실행하지 않고 거절, 빠진 도구와 '내 권한' 링크를 보인다. 포털에서 권한을 재계산하지 않는다
       (access-control D-5). 실행 중간의 `forbidden:` 은 '권한 부족' 정지 사유로만 기록
-- [ ] RA 사전검사 — 단계 중 `map[tool] == "reportarchive"` 가 있으면 `user_store.get_connection(email,
+- [x] RA 사전검사 — 연결 없음·워크스페이스 미선택을 **시작 전에** 말한다(막지는 않는다, W-63)
+      ~~단계 중 `map[tool] == "reportarchive"` 가 있으면 `user_store.get_connection(email,~~
       service="reportarchive")` 확인, 없으면 시작 거절(`routes.py:969-974` 와 같은 400 문구). 단계마다
       `identity_note`(as-conn·as-user·service)를 사전검사 결과로 기록(게이트웨이는 결과에 안 돌려준다)
 - [x] 예약 변수 `{{me.email}}`·`{{me.sub}}`·`{{run_id}}`
@@ -428,7 +429,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] `activity[]` 에 `ts`·`ms` + 원장 `duration_ms` 까지 — 짝 키로 시작을 기억해 잰다
 - [ ] 합격 기준 확인 — `predict_sed` 병렬 5회가 **각각 다른 인자에 짝지어지는지** 실제로 본다
 - [x] 초안 확정 화면 — 사람이 정할 자리마다 체크상자·이름 칸, 고른 것만 변수로(W-59)
-- [ ] 결손을 `docs/procedures/gaps/` 장부로 옮기는 길(사람이 등재)
+- [x] 결손 → 장부 **초안**(`POST /gaps/draft`) + 화면 버튼. ⚠ 파일은 포털이 안 쓴다(W-64)
 - [ ] 절차를 게이트웨이에 **실제 도구로 등록**(계약은 섰다 — 등록 경로는 사람 결정)
 - [ ] 실행의 '챗으로 가져가기' — `conv_store.create_with_messages(kind='procedures')`
 

@@ -293,6 +293,39 @@ class RunIn(BaseModel):
     title: str | None = None
 
 
+# ReportArchive 는 **사용자별 연결 토큰**으로 돈다(포털 토큰 페이지에서 등록). 등록이
+# 없으면 게이트웨이가 서비스 계정으로 내려앉아 **남의 함에 쓰거나 401 이 난다** — 어느
+# 쪽이든 그 단계에 가서야 안다. 시작 전에 본다.
+RA_BACKEND = "reportarchive"
+
+
+def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal) -> list[str]:
+    """RA 단계가 있는데 연결이 없으면 **시작 전에** 말한다(PLAN S1).
+
+    ⚠ 막지는 않는다. 계획 모드로 무엇을 부를지만 보려는 경우가 있고, 관리자가 남의
+    절차를 검토할 수도 있다. **모르는 것과 틀린 것을 안 섞는 것**과 같은 자세다.
+    """
+    tools = [st.tool for st in spec.steps if st.backend == RA_BACKEND]
+    if not tools:
+        return []
+    store = getattr(request.app.state, "user_store", None)
+    if store is None:
+        return []
+    try:
+        conn = store.get_connection(email=principal.email, service=RA_BACKEND)
+    except Exception:  # noqa: BLE001 — 사전검사 실패가 실행을 막지 않는다
+        logger.info("RA 사전검사 실패(건너뜀)", exc_info=True)
+        return []
+    if conn and conn.get("token"):
+        if not conn.get("workspace"):
+            return [f"Report Archive 연결은 있는데 **워크스페이스를 안 골랐습니다** — "
+                    f"보고서가 개인함에 쌓입니다(단계: {', '.join(tools[:3])})"]
+        return []
+    return [f"Report Archive 연결이 없습니다 — 포털 **토큰 페이지**에서 등록하세요. "
+            f"없으면 서비스 계정으로 내려앉아 **남의 함에 쓰거나 401** 이 납니다"
+            f"(단계: {', '.join(tools[:3])})"]
+
+
 @router.post("/runs", status_code=202, dependencies=[Depends(require_csrf)])
 async def start_run(request: Request, body: RunIn,
                     principal: Principal = Depends(_me)) -> dict:
@@ -316,6 +349,8 @@ async def start_run(request: Request, body: RunIn,
         except SpecError as exc:
             raise AuthError(str(exc), status_code=422) from None
 
+    notes = _ra_precheck(request, spec, principal) if spec is not None else []
+
     run_id = store.create_run(
         owner_sub=principal.subject, run_by=principal.subject,
         procedure_version_id=(version or {}).get("version_id"), inputs=inputs,
@@ -325,7 +360,8 @@ async def start_run(request: Request, body: RunIn,
         return {"run_id": run_id, "state": "queued", "empty": True}
 
     _spawn(runner.run(run_id=run_id, spec=spec, principal=principal), f"run {run_id}")
-    return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}"}
+    return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}",
+            **({"warnings": notes} if notes else {})}
 
 
 class StepIn(BaseModel):
@@ -856,6 +892,59 @@ async def import_procedure(request: Request, body: ImportIn,
         owner_sub=principal.subject, spec=raw, title=spec.title,
         visibility=body.visibility)
     return {**got, "warnings": warns}
+
+
+class GapDraftIn(BaseModel):
+    run_id: str
+    gap: dict                       # 초안이 낸 gaps[] 의 한 항목
+    title: str | None = None
+    owner_candidate: str | None = None
+
+
+@router.post("/gaps/draft", dependencies=[Depends(require_csrf)])
+def gap_draft(request: Request, body: GapDraftIn,
+              principal: Principal = Depends(_me)) -> dict:
+    """결손 하나를 **장부 파일 초안**으로 만든다(PLAN §9-6).
+
+    ⚠ **파일을 쓰지 않는다.** YAML 텍스트를 돌려줄 뿐이고, 사람이 읽고 리포에 커밋한다.
+    포털이 리포에 직접 쓰면 ① 검토 없이 결손이 늘고 ② 컨테이너가 리포를 쓰게 되며
+    ③ 누가 등재했는지가 git 이 아니라 웹 세션에 남는다. 셋 다 싫다.
+
+    §9-6 의 규율 그대로 — **근거 없는 등재 금지 · 자동 등재 금지 · 후보 소유자는 후보**.
+    """
+    _owned(request, principal, body.run_id)   # 남의 실행으로 결손을 만들 수 없다
+    g = body.gap if isinstance(body.gap, dict) else {}
+    kind = str(g.get("kind") or "unknown")
+    slug = re.sub(r"[^a-z0-9]+", "-",
+                  f"{g.get('tool') or kind}-{kind}".lower()).strip("-")[:60] or "gap"
+    doc = {
+        "id": slug,
+        "title": body.title or str(g.get("why") or kind)[:120],
+        "flow": "(어느 흐름에서 나왔는지 사람이 적는다)",
+        "step": (f"{g.get('step')}단계 {g.get('tool') or ''}".strip()
+                 if g.get("step") else "(어느 자리인지 사람이 적는다)"),
+        "kind": _GAP_KIND.get(kind, 1),
+        "owner_candidate": body.owner_candidate or "(사람이 확인한다)",
+        "detected": {"by": "derive.draft", "kind": kind,
+                     "why": str(g.get("why") or "")[:400],
+                     **({"count": g["count"]} if isinstance(g.get("count"), int) else {}),
+                     **({"where": g["where"][:12]} if isinstance(g.get("where"), list) else {})},
+        "evidence": [f"실행 {body.run_id} 을 절차로 펴는 중에 드러났다"],
+        "checked": ["⚠ 등재 전에 §9-3 순서를 밟을 것 — ② 숨어 있나(2단 도구) → "
+                    "③ 안 이어지나 → ① 도구 없나 → ④ 재현 불가인가"],
+        "status": "open",
+        "confirmed_by": None,
+    }
+    head = ("# 결손 하나 = 파일 하나 (PLAN §9-6)\n"
+            "# ⚠ 이것은 **초안**이다. 사람이 읽고 확인한 뒤 리포에 커밋한다.\n"
+            f"#    두는 곳: docs/procedures/gaps/{slug}.yaml\n")
+    return {"filename": f"{slug}.yaml",
+            "yaml_text": head + yaml.safe_dump(doc, allow_unicode=True, sort_keys=False,
+                                               width=100)}
+
+
+# 검출 종류 → §9-3 의 결손 종류. 모르는 것은 ①로 두고 사람이 고친다.
+_GAP_KIND = {"backend_unknown": 1, "args_not_structured": 3, "args_undocumented": 1}
 
 
 # ── 쓸모 판정(§6-1) ──────────────────────────────────────────────────────
