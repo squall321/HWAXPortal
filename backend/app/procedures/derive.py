@@ -208,15 +208,28 @@ def _in_prose(needle: str, prose: str) -> bool:
     """
     if not needle:
         return False
-    tail = needle[-1]
+    # 경계는 **ASCII 기준**이다. 한국어는 조사를 값에 붙여 쓰므로(`PANEL_1을`·`BRKT부품`),
+    # "뒤에 글자가 오면 다른 이름" 이라는 규칙을 그대로 쓰면 한국어 문장에서 거의 다
+    # 놓친다. 반대로 영문·숫자·`._-` 가 이어지면 그건 **더 긴 식별자**의 일부다.
+    ident = "._-"
+
+    def _ascii_alnum(ch: str) -> bool:
+        return ch.isascii() and ch.isalnum()
+
+    tail_is_digit = needle[-1].isdigit()
     for m in re.finditer(re.escape(needle), prose):
         lo, hi = m.start(), m.end()
-        before_ok = lo == 0 or not (prose[lo - 1].isalnum() or prose[lo - 1] in "._-")
-        after_ok = hi == len(prose) or not (
-            prose[hi].isalnum() if not tail.isdigit() else
-            (prose[hi].isdigit() or prose[hi] == "."))
-        if before_ok and after_ok:
-            return True
+        if lo and (_ascii_alnum(prose[lo - 1]) or prose[lo - 1] in ident):
+            continue
+        if hi < len(prose):
+            nxt = prose[hi]
+            # 숫자로 끝나면 **단위가 붙는 것**을 허용한다(`12.5mm`). 다만 숫자·소수점이
+            # 이어지면 다른 수이고(`2012.5`), `._-` 가 이어지면 다른 식별자다(`12_ASSY`).
+            bad = (nxt.isdigit() or nxt in ident) if tail_is_digit else (
+                _ascii_alnum(nxt) or nxt in ident)
+            if bad:
+                continue
+        return True
     return False
 
 

@@ -336,7 +336,7 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
             errs.append(f"{at}: 이 도구에는 dry_run 인자가 없다 — 백엔드가 버리고 실제로 실행한다")
 
         # ⑤ 비밀·경로가 상수로 박히면 공유 절차가 곧 유출이다
-        errs += _scan_args(st.args, at)
+        errs += _collapse(_scan_args(st.args, at))
 
         # ⑥ 치환 — 참조하는 변수가 앞에서 나왔나
         for name in template.refs(st.args):
@@ -354,6 +354,11 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
                 errs.append(f"{at}: save 로 토큰을 넘길 수 없다 — {key} (2단 확인 우회)")
             if key in declared:
                 errs.append(f"{at}: save 이름이 변수와 겹친다 — {key}")
+            if key in RESERVED or key.startswith("me."):
+                # ⚠ `Var._key` 는 이 이름들을 막는데 save·select 는 안 보고 있었다.
+                # 실행기가 범위에 신원을 **덮어쓰므로** 한 `_loop` 안에서는 save 값이고
+                # 재개 뒤에는 진짜 값이 되어, 같은 `{{run_id}}` 가 때에 따라 다른 것을 가리킨다.
+                errs.append(f"{at}: save 이름이 예약어와 겹친다 — {key}")
             produced.add(key)
         if st.save and st.raw:
             errs.append(f"{at}: raw 단계는 JSON 이 아니라 save 로 못 뽑는다")
@@ -369,6 +374,8 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
                 errs.append(f"{at}: select 이름이 변수와 겹친다 — {sel.var}")
             if sel.var in produced:
                 errs.append(f"{at}: select 이름이 앞 단계 save 와 겹친다 — {sel.var}")
+            if sel.var in RESERVED or sel.var.startswith("me."):
+                errs.append(f"{at}: select 이름이 예약어와 겹친다 — {sel.var}")
             # ⚠ **여럿에서 첫 번째를 조용히 집는 것**이 가장 위험하다. 엉뚱한 대상으로
             # 절차 전체가 돌고, 결과는 정상으로 나온다 — StepForge D-170 과 같은 자리다.
             if sel.on_many == "first":
@@ -389,6 +396,28 @@ def _all_refs(spec: ProcedureSpec) -> set[str]:
     out: set[str] = set()
     for st in spec.steps:
         out |= {r.split(".")[0] for r in template.refs(st.args)}
+    return out
+
+
+_IDX = re.compile(r"\[\d+\]")
+
+
+def _collapse(errs: list[str]) -> list[str]:
+    """같은 자리에서 **목록 원소마다** 난 같은 경고를 한 줄로 모은다.
+
+    ⚠ **99%에서 울리는 검출기는 검출기가 아니다.** `{"path": [파일 50개]}` 면 같은 말이
+    50줄 나오고, 그러면 진짜 오류가 그 아래 묻힌다(초안의 인자 설명 결손을 한 줄로 모은
+    것과 같은 이유다). 첨자만 다른 것들을 묶어 **몇 개인지**를 대신 말한다.
+    """
+    out: list[str] = []
+    seen: dict[str, list[str]] = {}
+    for e in errs:
+        seen.setdefault(_IDX.sub("[]", e), []).append(e)
+    for shape, members in seen.items():
+        if len(members) <= 2:
+            out += members
+        else:
+            out.append(f"{shape} 외 {len(members)}곳")
     return out
 
 

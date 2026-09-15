@@ -112,3 +112,52 @@ def test_큰_save_값은_원장에_안_넣고_말한다(store):
     assert "재개" in note["why"], "재개가 안 된다는 것을 말해야 한다"
     # 결과 자체는 그대로 있다 — 못 남긴 것은 **입력 사본**이지 결과가 아니다
     assert store.step_result(rid, 0)
+
+
+# ── ④ 예약 이름이 save·select 로는 뚫려 있었다 ────────────────────────────
+def test_예약_이름은_save_로도_못_만든다():
+    """`Var._key` 는 `run_id`·`me.*` 를 막는데 save·select 는 안 봤다. 실행기가 범위에
+    신원을 **덮어쓰므로**, 같은 `{{run_id}}` 가 한 `_loop` 안에서는 save 값이고 재개
+    뒤에는 진짜 실행 id 가 된다 — 때에 따라 다른 것을 가리킨다."""
+    from app.procedures.models import validate_spec
+
+    def _hard(step):
+        spec = ProcedureSpec.model_validate({"title": "t", "vars": [],
+                                             "steps": [{"backend": "b", "tool": "t", **step}]})
+        return [e for e in validate_spec(spec) if not e.startswith("warn:")]
+
+    assert any("예약어" in e for e in _hard({"save": {"run_id": "x"}}))
+    assert any("예약어" in e for e in
+               _hard({"select": {"from": "p", "save": "n", "as": "run_id"}}))
+    # 평범한 이름은 그대로 통과한다
+    assert _hard({"save": {"rid": "x"}}) == []
+
+
+def test_사람_말_경계는_한국어에서도_돈다():
+    """경계를 "뒤에 글자가 오면 다른 이름" 으로 두면 한국어 문장에서 거의 다 놓친다 —
+    조사를 값에 붙여 쓰기 때문이다. ASCII 기준으로 본다."""
+    from app.procedures.derive import _in_prose
+
+    assert _in_prose("BRKT", "BRKT부품 을 골라") is True
+    assert _in_prose("PANEL_1", "PANEL_1을 분석") is True
+    assert _in_prose("12.5", "두께 12.5mm") is True
+    # 더 긴 식별자의 일부는 그 값이 아니다
+    assert _in_prose("12", "12_ASSY") is False
+    assert _in_prose("BRKT", "BRKT_1_ASSY") is False
+    assert _in_prose("12.5", "2012.5월") is False
+
+
+def test_같은_경고가_줄줄이_나오지_않는다():
+    """**99%에서 울리는 검출기는 검출기가 아니다.** `{"path": [파일 50개]}` 면 같은 말이
+    50줄 나오고, 진짜 오류가 그 아래 묻힌다."""
+    from app.procedures.models import _collapse, _scan_args
+
+    many = _collapse(_scan_args({"path": [f"/d/f{i}" for i in range(50)]}, "1단계"))
+    assert len(many) == 1 and "50곳" in many[0], many
+    # 몇 개 안 되면 그대로 보인다 — 뭉치는 것이 정보를 지우면 안 된다
+    few = _collapse(_scan_args({"path": ["/a", "/b"]}, "1단계"))
+    assert len(few) == 2, few
+    # 딱딱한 오류도 같이 뭉치되 **딱딱한 채로** 남는다
+    hard = _collapse(_scan_args(
+        {"headers": {"Authorization": [f"Bearer sk-{i}" for i in range(5)]}}, "1단계"))
+    assert len(hard) == 1 and not hard[0].startswith("warn:"), hard
