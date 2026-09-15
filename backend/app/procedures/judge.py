@@ -119,7 +119,9 @@ def _notes_of_rows(rows: list) -> dict:
                     cur.append(item)
                     n += 1
         if n >= 50:
-            out["truncated"] = True
+            # 안 자른 것을 잘랐다고 말하지 않는다 — 마지막 행에서 딱 채웠으면 남은 게 없다.
+            if r is not rows[-1]:
+                out["truncated"] = True
             break
     return out
 
@@ -281,11 +283,19 @@ def _envelope_fail(parsed) -> Verdict | None:
         return Verdict(False, "envelope", "refused", parsed=parsed,
                        error=_envelope_msg(parsed) or "refused: 근거 점수가 임계 밑",
                        retriable=False)
-    if isinstance(parsed.get("error"), (str, dict)) and parsed.get("error"):
+    # ⚠ `errors[]`·`error` 는 **실패 채널일 수도, 산출물일 수도** 있다. 검사기(validator)의
+    # 계약이 `{valid, errors:[{path, message}…]}` 인 자리가 있다 — 거기서 errors 는
+    # **찾아낸 문제**이지 고장이 아니다(실호출: `validate_block{"type":"nope"}` →
+    # `{"valid": false, "errors":[…]}`, isError=false). 그걸 실패로 적으면 화면에 빨간
+    # '실패' 배지가 붙고 절차 원장에서 그 단계가 빠진다 — 도구는 제대로 일했는데.
+    # **성공을 명시한 신호가 있으면** errors 로 실패를 단정하지 않는다(6차 감사).
+    verdict_shape = "valid" in parsed or parsed.get("ok") is True
+    if (not verdict_shape and parsed.get("error")
+            and isinstance(parsed.get("error"), (str, dict))):
         return Verdict(False, "envelope", "error_key", parsed=parsed,
                        error=_envelope_msg(parsed), retriable=False)
     errs = parsed.get("errors")
-    if isinstance(errs, list) and errs:
+    if not verdict_shape and isinstance(errs, list) and errs:
         return Verdict(False, "envelope", "app_envelope", parsed=parsed,
                        error=_envelope_msg(parsed), retriable=False)
     # 프로세스를 돌리는 앱은 성패를 **종료 코드**로도 말한다 — 0 이 아니면 실패다.

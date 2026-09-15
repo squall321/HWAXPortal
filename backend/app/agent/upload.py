@@ -310,9 +310,18 @@ async def mcp_call(gateway_url: str, pat: str, tool: str, args: dict, timeout: f
         env = _last_data(res.text)
         if env.get("error"):
             raise AuthError(f"도구 오류: {env['error'].get('message', env['error'])}", status_code=502)
-        content = (env.get("result") or {}).get("content") or []
-        text = content[0].get("text", "{}") if content else "{}"
-        try:
-            return _json.loads(text)
-        except ValueError:
-            return {"raw": text}
+        # ⚠ **여기가 `judge.py` 가 "베끼면 안 되는 예" 로 이름을 적어 둔 자리다**(모듈 머리말).
+        # 셋이 전부 실패를 성공으로 만들고 있었다 —
+        #   ① `result.isError` 를 안 읽었다. 게이트웨이 거절(`unknown tool:`·`forbidden:`·
+        #      파괴 도구 관문)이 그대로 돌아와 라우트가 **`created: true`** 를 냈다.
+        #   ② `content[0]` 만 봤다. 항목마다 블록으로 오는 도구는 23개 중 1개만 남았다.
+        #   ③ 파싱 실패를 `{"raw": …}` 로 **정상 반환**했다 — 거절 문구가 결과인 척했다.
+        # 다섯 번의 감사가 그 문장을 읽고도 함수는 안 고쳤다(6차에 실호출로 확인).
+        # 같은 리포에 판정기가 있으니 그것을 쓴다.
+        from app.procedures import judge as _J
+        res_obj = env.get("result") or {}
+        text, _other = _J.join_content(res_obj.get("content") or [])
+        v = _J.judge(is_error=bool(res_obj.get("isError")), text=text)
+        if not v.ok:
+            raise AuthError(f"{tool}: {_J.short_error(v)}", status_code=502)
+        return v.parsed if isinstance(v.parsed, dict) else {"result": v.parsed}

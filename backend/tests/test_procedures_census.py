@@ -155,13 +155,30 @@ def test_게이트웨이가_실제로_보내는_문구를_본다():
     src = _gateway_source()
     if src is None:
         pytest.skip("HWAXMcpGateway 리포가 이 박스에 없다")
-    # `TextContent(... text=...)` 로 나가는 문구에 있어야 한다 — 감사 줄이 아니라
+    lines = src.splitlines()
+
+    def _body_lines(needle: str) -> list[int]:
+        """그 문자열이 **응답 본문을 만드는 줄**에 있나. 감사·주석 줄은 뺀다.
+
+        ⚠ 처음엔 "앞뒤 문자 거리 안에 `TextContent` 가 있나" 로 봤는데, 감사 줄
+        **바로 다음 줄**이 `TextContent(` 라서 `invoke-denied`(로그 전용 문자열)가
+        그대로 통과했다 — 이 가드가 잡으려던 바로 그 회귀를 못 잡았다(6차 감사).
+        줄 단위로 본다.
+        """
+        out = []
+        for n, ln in enumerate(lines, 1):
+            if needle not in ln or ln.strip().startswith("#") or "_audit(" in ln:
+                continue
+            if "text=" in "\n".join(lines[max(0, n - 3):n]):
+                out.append(n)
+        return out
+
+    # 먼저 가드 자신이 살아 있는지 — 로그 전용 문자열은 **반드시 0건**이어야 한다
+    assert _body_lines("invoke-denied") == [], (
+        "가드가 로그 전용 문자열을 본문으로 셌다 — 이 검사가 아무것도 안 지킨다")
     for name, needle in (("GW_DENIED", GW_DENIED), ("GW_UNKNOWN", GW_UNKNOWN),
                          ("GW_FORBIDDEN", GW_FORBIDDEN),
                          ("GW_UNAVAILABLE", GW_UNAVAILABLE)):
-        assert needle in src, f"{name}({needle!r}) 가 게이트웨이 소스에 없다"
-        i = src.find(needle)
-        around = src[max(0, i - 400):i + 200]
-        assert "TextContent" in around or "isError" in around, (
-            f"{name} 은 응답 본문이 아니라 로그·주석 자리에만 있다 — "
-            f"호출자는 그 문자열을 절대 못 받는다")
+        assert _body_lines(needle), (
+            f"{name}({needle!r}) 이 응답 본문 자리에 없다 — 로그·주석에만 있으면 "
+            f"호출자는 그 문자열을 절대 못 받고, 그 갈래는 죽은 코드다")

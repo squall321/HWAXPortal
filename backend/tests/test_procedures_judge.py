@@ -329,3 +329,35 @@ def test_실패_문구가_사용자_입력을_흘리지_않는다():
     out = short_error(Verdict(False, "mcp", "tool_error", error=msg))
     assert "input_value" not in out and "'45'" not in out, out
     assert "plies" in out, "무엇이 틀렸는지는 남아야 한다"
+
+
+def test_검사기가_찾아낸_문제는_고장이_아니다():
+    """`errors[]` 는 **실패 채널일 수도, 산출물일 수도** 있다. 검사기의 계약이
+    `{valid, errors:[{path,message}…]}` 인 자리가 있고(실호출: `validate_block` →
+    `{"valid": false, "errors":[…]}`, isError=false), 거기서 errors 는 **찾아낸 문제**다.
+    그걸 실패로 적으면 화면에 빨간 배지가 붙고 절차 원장에서 그 단계가 빠진다 —
+    도구는 제대로 일했는데(6차 감사)."""
+    ok_shapes = [
+        {"valid": False, "errors": [{"path": "type", "message": "알 수 없는 type"}]},
+        {"errors": 12, "warnings": 3, "checked": 40},     # 개수는 실패가 아니다
+        {"errors": {"E1": 2}, "ok": True},                 # 집계도 아니다
+    ]
+    for obj in ok_shapes:
+        v = judge(is_error=False, text=json.dumps(obj, ensure_ascii=False))
+        assert v.ok, f"{obj} → {v.kind}: {v.error}"
+
+    # 진짜 실패는 그대로 잡는다 — 너무 풀면 5차가 고친 것이 되돌아간다
+    for obj in ({"status": "error", "data": None, "errors": [{"code": "E101"}]},
+                {"error": "not_visible", "message": "볼 수 없는 id"},
+                {"ok": False, "error": "args validation failed"},
+                {"refused": True}, {"exit_code": 2}):
+        v = judge(is_error=False, text=json.dumps(obj, ensure_ascii=False))
+        assert not v.ok, obj
+
+
+def test_안_자른_것을_잘랐다고_하지_않는다():
+    from app.procedures.judge import _notes_of_rows
+
+    assert "truncated" not in _notes_of_rows([{"warnings": [f"W{i}" for i in range(50)]}])
+    assert _notes_of_rows([{"warnings": [f"W{i}" for i in range(50)]},
+                           {"warnings": ["W99"]}]).get("truncated") is True
