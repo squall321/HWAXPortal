@@ -383,7 +383,8 @@ def _scan_args(args: Any, at: str, trail: str = "") -> list[str]:
 
 
 def check_against_schemas(spec: ProcedureSpec, schemas: dict[str, dict],
-                          second_stage: dict | None = None) -> list[str]:
+                          second_stage: dict | None = None,
+                          *, missing_is_error: bool = True) -> list[str]:
     """게이트웨이 `tools/list` 스키마와 대조한다 — 호출 시점에 받아 따로 돈다.
 
     게이트웨이는 `validate_input=False`(gateway.py:1766) 라 인자를 검증하지 않고, 백엔드는
@@ -394,7 +395,16 @@ def check_against_schemas(spec: ProcedureSpec, schemas: dict[str, dict],
         at = f"{i}단계 {st.tool}"
         sch = schemas.get(st.alias) or schemas.get(st.tool)
         if sch is None:
-            errs.append(f"{at}: 게이트웨이에 이 도구가 없다 ({st.alias})")
+            # ⚠ **없는 것과 내 권한 밖인 것은 다르다.** 카탈로그는 부르는 사람의 권한으로
+            # 필터된다(`tools/list`). 남이 쓸 절차를 만드는 사람이 그 도구를 못 볼 수 있고,
+            # 게이트웨이가 그 앱을 잠깐 못 볼 수도 있다. 저장을 막으면 그 둘을 "없다" 로
+            # 뭉개는 것이다 — 만드는 화면에서는 알려 주되(error), 저장은 막지 않는다(warn).
+            errs.append((f"{at}: 게이트웨이에 이 도구가 안 보인다 ({st.alias}) — "
+                         "없거나, 내 권한 밖이거나, 그 앱이 지금 안 붙어 있다")
+                        if missing_is_error else
+                        (f"warn:{at}: 게이트웨이에 이 도구가 **안 보인다** ({st.alias}). "
+                         "없는 것일 수도, 내 권한 밖일 수도 있어 저장은 막지 않는다 — "
+                         "실행에서 `unknown tool` 이 나면 이것이다"))
             continue
         props = (sch.get("properties") or {}).keys()
         req = sch.get("required") or []

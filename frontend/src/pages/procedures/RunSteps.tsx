@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import {
   ackGate,
+  pickCandidate,
   stepResult,
   type RunDetail,
   type StepRow,
@@ -65,6 +66,13 @@ function StepCard({
   const [showArgs, setShowArgs] = useState(false);
 
   const gated = run.state === 'gated' && step.stage === 'gate' && step.state === 'pending';
+  // 룰이 여럿을 골라 멈춘 자리 — **고르기는 확인과 다르다.** 확인은 "이대로 해라",
+  // 이쪽은 "이것으로 해라". 첫 번째를 조용히 집지 않으려면 이 화면이 있어야 한다.
+  const cands = (step.notes?.candidates ?? null) as
+    | { i: number; label: string; value: unknown }[]
+    | null;
+  const asking = run.state === 'gated' && step.stage === 'select:ask' && !!cands?.length;
+  const into = (step.notes?.pick_into ?? '') as string;
   const notes = step.notes ?? {};
   const warnings = (notes.warnings ?? notes.warning) as unknown;
 
@@ -115,6 +123,56 @@ function StepCard({
           <span style={{ color: '#d9a441', fontSize: '0.75rem' }}>결과가 커서 프리뷰만 남음</span>
         )}
       </div>
+
+      {asking && (
+        <div
+          style={{
+            marginTop: '0.6rem',
+            padding: '0.7rem',
+            borderRadius: 6,
+            border: '1px solid #d9a441',
+            background: 'rgba(217,164,65,0.08)',
+          }}
+        >
+          <strong style={{ color: '#d9a441' }}>룰이 {cands!.length}개를 골랐습니다</strong>
+          <p style={{ color: 'var(--muted)', fontSize: '0.82rem', margin: '0.3rem 0 0.5rem' }}>
+            하나를 고르면 <code>{into}</code> 에 담고 이어서 돕니다. 첫 번째를 자동으로 집지
+            않습니다 — <b>엉뚱한 대상으로 돌아도 결과는 정상으로 나오기 때문입니다.</b>
+          </p>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+            {cands!.map((c) => (
+              <button
+                key={c.i}
+                type="button"
+                disabled={busy}
+                style={{
+                  background: 'var(--bg)',
+                  color: 'var(--fg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 4,
+                  padding: '0.3rem 0.7rem',
+                  cursor: 'pointer',
+                  fontSize: '0.82rem',
+                }}
+                onClick={async () => {
+                  setBusy(true);
+                  setErr(null);
+                  try {
+                    await pickCandidate(run.id, step.ix, c.value);
+                    onChanged();
+                  } catch (e) {
+                    setErr((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {c.label || String(c.value)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {gated && (
         <div

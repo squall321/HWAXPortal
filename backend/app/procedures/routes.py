@@ -146,10 +146,40 @@ class ProcedureIn(BaseModel):
     derived_from_run: str | None = None
 
 
-def _validated(request: Request, raw: dict) -> tuple[ProcedureSpec, list[str]]:
+async def _validated(request: Request, raw: dict,
+                     principal: Principal | None = None) -> tuple[ProcedureSpec, list[str]]:
+    """저장 시점 검증. `principal` 을 주면 **게이트웨이 스키마 대조까지** 한다.
+
+    ⚠ 스키마 대조가 `/validate` 에만 있으면 그건 **권고**지 검증이 아니다. API 를 직접
+    부르면 그대로 통과한다. 그래서 저장에서도 같은 검사를 한다.
+
+    ⚠ 다만 **못 물어봤을 때와 틀렸을 때를 섞지 않는다.** 게이트웨이가 불통이면 대조를
+    건너뛰고 그 사실을 경고로 남긴다 — 못 물어본 것을 통과로도, 실패로도 치지 않는다.
+    """
     spec = ProcedureSpec.model_validate(raw)
     errs = validate_spec(
         spec, max_steps=int(getattr(get_settings(), "procedures_max_steps", 30)))
+    if principal is not None:
+        cat: dict = {}
+        try:
+            runner = _runner(request)
+            cat = await runner.catalog(principal)
+        except Exception:  # noqa: BLE001 — 불통이 저장을 막지 않는다. 다만 말한다.
+            logger.info("저장 — 도구 카탈로그 조회 실패(대조 건너뜀)", exc_info=True)
+        # ⚠ **빈 카탈로그를 "그 도구가 없다" 로 읽으면 안 된다.** 게이트웨이는 465종을
+        # 들고 있으므로 0건은 "못 물어봤다" 는 뜻이다. 그걸 실패로 치면 게이트웨이가
+        # 잠깐 흔들릴 때 멀쩡한 절차가 저장 거절된다 — 모른다와 틀렸다를 섞는 것이다.
+        if cat:
+            try:
+                second = await runner.second_stage(principal, spec)
+            except Exception:  # noqa: BLE001
+                second = {}
+            # 저장에서는 **안 보이는 도구**를 막지 않는다(권한·일시 불통과 구분 불가).
+            # 인자 오타처럼 **보이는 도구에서 확실한 것**만 거절한다.
+            errs += check_against_schemas(spec, cat, second, missing_is_error=False)
+        else:
+            errs.append("warn:게이트웨이에 못 물어봐 **도구 스키마 대조를 건너뛰었다** — "
+                        "인자 오타가 실행 시점에야 드러날 수 있다")
     hard = [e for e in errs if not e.startswith("warn:")]
     if hard:
         raise AuthError("절차를 저장할 수 없습니다:\n- " + "\n- ".join(hard), status_code=422)
@@ -195,11 +225,11 @@ def list_seeds(principal: Principal = Depends(_me)) -> dict:
 
 @router.post("/seeds/{name}/import", status_code=201,
              dependencies=[Depends(require_csrf)])
-def import_seed(request: Request, name: str,
+async def import_seed(request: Request, name: str,
                 principal: Principal = Depends(_me)) -> dict:
     """씨앗을 내 절차로 들인다. 들어온 뒤에는 보통 절차와 똑같다(고치면 새 판본)."""
     raw = yaml.safe_load(_seed_path(name).read_text(encoding="utf-8")) or {}
-    spec, warns = _validated(request, raw)
+    spec, warns = await _validated(request, raw, principal)
     store = _store(request)
     # 씨앗은 리포와 함께 **자란다**(예시가 늘고 경고가 붙는다). 다시 가져올 때마다 사본이
     # 생기면 목록이 같은 이름으로 채워지고, 어느 것이 최신인지 사람이 알 수 없다.
@@ -220,9 +250,9 @@ def list_procedures(request: Request, principal: Principal = Depends(_me)) -> di
 
 
 @router.post("/procedures", status_code=201, dependencies=[Depends(require_csrf)])
-def create_procedure(request: Request, body: ProcedureIn,
+async def create_procedure(request: Request, body: ProcedureIn,
                   principal: Principal = Depends(_me)) -> dict:
-    _, warns = _validated(request, body.spec)
+    _, warns = await _validated(request, body.spec, principal)
     got = _store(request).create_procedure(
         owner_sub=principal.subject, spec=body.spec, title=body.title,
         visibility=body.visibility, derived_from_run=body.derived_from_run)
@@ -240,9 +270,9 @@ def get_procedure(request: Request, procedure_id: str,
 
 @router.post("/procedures/{procedure_id}/versions", status_code=201,
              dependencies=[Depends(require_csrf)])
-def add_version(request: Request, procedure_id: str, body: ProcedureIn,
+async def add_version(request: Request, procedure_id: str, body: ProcedureIn,
                 principal: Principal = Depends(_me)) -> dict:
-    _, warns = _validated(request, body.spec)
+    _, warns = await _validated(request, body.spec, principal)
     try:
         got = _store(request).add_version(
             procedure_id=procedure_id, author_sub=principal.subject, spec=body.spec,
@@ -613,7 +643,7 @@ def _tool_desc(spec: dict, gates: list) -> str:
 
 @router.post("/runs/{run_id}/save-as-procedure", status_code=201,
              dependencies=[Depends(require_csrf)])
-def save_as_procedure(request: Request, run_id: str, body: SaveAsIn,
+async def save_as_procedure(request: Request, run_id: str, body: SaveAsIn,
                    principal: Principal = Depends(_me)) -> dict:
     """실행에서 절차를 뽑는다 — **"하고 나서 저장" 이 성립하는 자리**다.
 
@@ -629,7 +659,7 @@ def save_as_procedure(request: Request, run_id: str, body: SaveAsIn,
         raise AuthError("저장할 단계가 없습니다 — 성공한 단계가 하나도 없습니다",
                         status_code=422)
     spec = {"title": body.title, "vars": body.vars, "steps": steps}
-    _, warns = _validated(request, spec)
+    _, warns = await _validated(request, spec, principal)
     got = _store(request).create_procedure(
         owner_sub=principal.subject, spec=spec, title=body.title,
         visibility=body.visibility, derived_from_run=run_id)
@@ -659,7 +689,7 @@ async def save_draft(request: Request, run_id: str, body: DraftSaveIn,
     spec_draft, tschemas = await _draft_of(request, principal, run_id)
     spec, warns = _d.promote(spec_draft["spec"], body.promote, tool_schemas=tschemas)
     spec["title"] = body.title
-    _, save_warns = _validated(request, spec)
+    _, save_warns = await _validated(request, spec, principal)
     got = _store(request).create_procedure(
         owner_sub=principal.subject, spec=spec, title=body.title,
         visibility=body.visibility, derived_from_run=run_id)

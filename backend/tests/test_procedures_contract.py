@@ -224,8 +224,35 @@ def test_unknown_arg_caught_against_schema():
 
 
 def test_missing_tool_is_reported():
+    """만드는 화면에서는 **안 보인다**고 알려 준다."""
     spec = _spec([{"backend": "odb-hub", "tool": "odb_list_components"}])
-    assert any("게이트웨이에 이 도구가 없다" in e for e in check_against_schemas(spec, {}))
+    errs = check_against_schemas(spec, {})
+    assert any("안 보인다" in e and not e.startswith("warn:") for e in errs), errs
+
+
+def test_안_보이는_도구는_저장을_막지_않는다():
+    """⚠ **없는 것과 내 권한 밖인 것은 다르다.** 카탈로그는 부르는 사람의 권한으로
+    필터된다 — 남이 쓸 절차를 만드는 사람이 그 도구를 못 볼 수 있고, 그 앱이 잠깐 안
+    붙어 있을 수도 있다. 저장을 막으면 그 셋을 "없다" 로 뭉개는 것이다.
+
+    실제로 이것 때문에 걸렸다 — 테스트가 살아 있는 게이트웨이를 부르는데 그 신원의
+    시야에는 step_forge 도구가 없어서, 멀쩡한 씨앗이 저장 거절됐다."""
+    spec = _spec([{"backend": "odb-hub", "tool": "odb_list_components"}])
+    errs = check_against_schemas(spec, {}, missing_is_error=False)
+    assert all(e.startswith("warn:") for e in errs), errs
+    assert any("안 보인다" in e for e in errs)
+
+
+def test_보이는_도구의_인자_오타는_저장에서도_막는다():
+    """안 보이는 것은 봐주되, **보이는 도구에서 확실한 것**은 막는다."""
+    spec = _spec([{"backend": "heax-step_forge", "tool": "list_parts",
+                   "args": {"project_idd": "x"}}])
+    gw = {"heaxstep_forge_list_parts": {"properties": {"project_id": {"type": "string"}},
+                                        "required": ["project_id"]}}
+    errs = check_against_schemas(spec, gw, missing_is_error=False)
+    hard = [e for e in errs if not e.startswith("warn:")]
+    assert any("project_idd" in e for e in hard), hard
+    assert any("project_id" in e and "빠졌다" in e for e in hard), hard
 
 
 def test_fingerprint_changes_with_schema():

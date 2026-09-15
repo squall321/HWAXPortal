@@ -205,6 +205,15 @@ export type ProcedureTool = {
   version_no: number; human_gates: string[];
 };
 
+/** 룰이 여럿을 고르면 **사람이 하나를 고른다.** 확인(ack)과 다른 자리다. */
+export function pickCandidate(runId: string, ix: number, value: unknown) {
+  return post<{ picked: unknown; resumed: boolean }>(
+    `/runs/${runId}/steps/${ix}/pick`,
+    { value },
+    '후보를 고르지 못했습니다.',
+  );
+}
+
 /** 이 절차의 **도구 계약** — 이름·설명·입력 스키마. 절차를 도구로 등록하는 다리다. */
 export function getProcedureTool(id: string) {
   return get<ProcedureTool>(`/procedures/${id}/tool`, '도구 계약을 불러오지 못했습니다.');
