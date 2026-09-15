@@ -289,9 +289,11 @@ def _envelope_fail(parsed) -> Verdict | None:
     # `{"valid": false, "errors":[…]}`, isError=false). 그걸 실패로 적으면 화면에 빨간
     # '실패' 배지가 붙고 절차 원장에서 그 단계가 빠진다 — 도구는 제대로 일했는데.
     # **성공을 명시한 신호가 있으면** errors 로 실패를 단정하지 않는다(6차 감사).
+    # ⚠ **완화는 `errors`(복수)에만.** `error`(단수)는 관례상 **오류 채널**이라
+    # 덮으면 `{"valid": true, "error": "백엔드 불통"}` 이 성공이 된다 — 검사기가
+    # 제대로 못 돌았는데 "검사 통과" 로 읽힌다(7차 자체 점검에서 잡음).
     verdict_shape = "valid" in parsed or parsed.get("ok") is True
-    if (not verdict_shape and parsed.get("error")
-            and isinstance(parsed.get("error"), (str, dict))):
+    if isinstance(parsed.get("error"), (str, dict)) and parsed.get("error"):
         return Verdict(False, "envelope", "error_key", parsed=parsed,
                        error=_envelope_msg(parsed), retriable=False)
     errs = parsed.get("errors")

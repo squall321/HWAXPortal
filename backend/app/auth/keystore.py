@@ -9,6 +9,7 @@ stays available until old tokens expire.
 """
 
 import json
+import re
 from pathlib import Path
 
 import jwt
@@ -27,10 +28,31 @@ class KeyStore:
         self._private_pem = self._priv_path(self._active_kid).read_text()
 
     def _priv_path(self, kid: str) -> Path:
-        return self._dir / f"{kid}.key"
+        # 공개키 쪽과 같은 잣대 — 여기는 우리가 만든 kid 만 들어오지만, 두 곳이 다르면
+        # 다음 사람이 "여긴 검사 안 하네" 로 읽는다.
+        return self._dir / f"{self._check_kid(kid)}.key"
+
+    # 키 id 는 **식별자**다 — 경로가 아니다. 소문자·숫자·`.`·`_`·`-` 만.
+    _KID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+    @classmethod
+    def _check_kid(cls, kid: str) -> str:
+        """⚠ **토큰이 준 `kid` 를 그대로 경로에 넣으면 안 된다.**
+
+        `kid` 는 검증 **전의** 헤더에서 온다 — 즉 공격자가 정하는 값이다. 그대로
+        `self._dir / f"{kid}.pub"` 에 넣으면 `../` 로 keystore 밖의 아무 `.pub` 를
+        검증키로 쓸 수 있다. 공격자가 자기 공개키를 아무 데나 심고(업로드 스테이징 등)
+        그 경로를 `kid` 로 가리키면, **자기 개인키로 서명한 위조 PAT 가 통과한다** —
+        `sub`·`email`·`groups` 를 마음대로 적을 수 있으므로 곧 임의 신원·권한 탈취다.
+        실측(2026-09-15 7차 감사): 계정도 없는 신원이 `portal-admin` 으로 수락됐다.
+        게이트웨이는 JWKS(발행 키목록 대조)라 안 뚫렸고 **포털의 로컬 검증만** 뚫렸다.
+        """
+        if not kid or not cls._KID.match(kid):
+            raise ValueError(f"키 id 가 식별자 모양이 아니다: {kid!r}")
+        return kid
 
     def _pub_path(self, kid: str) -> Path:
-        return self._dir / f"{kid}.pub"
+        return self._dir / f"{self._check_kid(kid)}.pub"
 
     def _ensure_active_key(self, settings: Settings) -> None:
         if self._priv_path(self._active_kid).exists():

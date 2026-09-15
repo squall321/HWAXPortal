@@ -346,6 +346,14 @@ def test_검사기가_찾아낸_문제는_고장이_아니다():
         v = judge(is_error=False, text=json.dumps(obj, ensure_ascii=False))
         assert v.ok, f"{obj} → {v.kind}: {v.error}"
 
+    # ⚠ **완화는 `errors`(복수)에만이다.** `error`(단수)는 관례상 오류 채널이라 덮으면
+    # `{"valid": true, "error": "백엔드 불통"}` 이 성공이 된다 — 검사기가 제대로 못 돌았는데
+    # "검사 통과" 로 읽힌다. 완화를 넣고 나서 스스로 다시 본 자리다(7차).
+    for obj in ({"valid": True, "error": "백엔드 불통"},
+                {"ok": True, "error": "timeout"}):
+        v = judge(is_error=False, text=json.dumps(obj, ensure_ascii=False))
+        assert not v.ok, f"단수 error 를 덮었다: {obj}"
+
     # 진짜 실패는 그대로 잡는다 — 너무 풀면 5차가 고친 것이 되돌아간다
     for obj in ({"status": "error", "data": None, "errors": [{"code": "E101"}]},
                 {"error": "not_visible", "message": "볼 수 없는 id"},
