@@ -176,6 +176,15 @@ stream_locations="$(cat <<'EOF'
             proxy_buffering off; proxy_cache off; gzip off;
             proxy_read_timeout 1h; proxy_connect_timeout 300s;
         }
+        # ⚠ **무인증 진단 엔드포인트는 밖으로 열지 않는다.** 게이트웨이의 `/health`·
+        # `/tools-map` 은 Bearer 를 안 본다(오케스트레이터가 싸게 프로브하라고 그렇게 뒀다).
+        # 그런데 `/mcp-gw/` 를 통째로 프록시하면 그게 **외부 오리진에서 그대로 보인다** —
+        # 실측으로 `/mcp-gw/tools-map` 이 200·43KB(도구 473종 → 앱 매핑 전체)를 냈다.
+        # 인증을 지나는 `/mcp-gw/mcp` 와 `/mcp-gw/api/` 만 남긴다(6차가 `/health` 본문에서
+        # 권한 지도를 뺐지만, 형제 `/tools-map` 은 그대로였다 — 7차 감사).
+        location ~ ^/mcp-gw/(health|tools-map|refresh|conn-invalidate) {
+            return 404;
+        }
         location /mcp-gw/ {
             proxy_pass http://127.0.0.1:9110/;
             proxy_buffering off; proxy_cache off; gzip off;
