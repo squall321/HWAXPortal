@@ -122,3 +122,27 @@ def test_소요가_원장에_남는다(store):
                                       "result_preview": "r", "ms": 1234, "ts": 1789}])
     st = store.get_run(rid, owner_sub="u")["steps"][0]
     assert st["duration_ms"] == 1234
+
+
+def test_성패를_못_받았으면_성공으로_적지_않는다(tmp_path):
+    """규율 ③ 이 여기서 깨져 있었다 — `None is not False` 라 **성공**으로 적혔다.
+
+    그러면 `/runs` 에 성공으로 뜨고, 절차로 뽑을 때 `state == "done"` 필터를 통과해
+    **검증된 단계인 양** 굳는다. 원장에는 `unknown` 이라는 칸이 이미 있다.
+    """
+    from app.config import Settings
+    from app.procedures.store import ProceduresStore
+
+    st = ProceduresStore(Settings(procedures_store_path=str(tmp_path / "w.sqlite")))
+    rid = from_chat.record(st, owner_sub="u1", conversation_id="c1", activity=[
+        {"tool": "a", "call": "1", "detail": "{}", "step": "도구 시작"},
+        {"tool": "a", "call": "1", "result_preview": "결과", "step": "도구 완료"},   # ok 없음
+        {"tool": "b", "call": "2", "detail": "{}", "step": "도구 시작", "ok": True},
+        {"tool": "b", "call": "2", "result_preview": "결과", "step": "도구 완료", "ok": True},
+    ])
+    steps = {s["tool"]: s for s in st.get_run(rid)["steps"]}
+    assert steps["a"]["state"] == "unknown", "성패를 모르는 것을 성공으로 적었다"
+    assert steps["a"]["error"], "왜 모르는지도 남겨야 한다"
+    assert steps["b"]["state"] == "done"
+    # 결과는 둘 다 남는다 — 모르는 것은 성패이지 결과가 아니다
+    assert st.step_result(rid, steps["a"]["ix"]) == "결과"

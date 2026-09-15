@@ -74,9 +74,18 @@ def record(store, *, owner_sub: str, conversation_id: str, activity: list[dict],
             store.begin_step(run_id, ix, backend="", tool=st["tool"],
                              args={"_text": st["args_text"]} if st["args_text"] else {},
                              expect="fast", mode="live")
-            store.finish_step(run_id, ix, ok=(st["ok"] is not False),
-                              result_text=st["result_text"], duration_ms=st.get("ms"),
-                              error=None if st["ok"] is not False else (st["step"] or "실패"))
+            # ⚠ 규율 ③ 이 여기서 깨져 있었다. `ok` 가 None(성패를 못 받았다)이면
+            # `None is not False` → True 라 **성공으로** 적혔다. 그러면 `/runs` 에 성공으로
+            # 뜨고, 절차로 뽑을 때 `state == "done"` 필터를 통과해 **검증된 단계인 양**
+            # 굳는다. 원장에는 `unknown` 이라는 칸이 이미 있다 — 그걸 쓴다.
+            if st["ok"] is None:
+                store.finish_step(run_id, ix, ok=False, state="unknown", stage="no_outcome",
+                                  result_text=st["result_text"], duration_ms=st.get("ms"),
+                                  error="성패를 못 받았다 — 실행 여부를 모른다")
+            else:
+                store.finish_step(run_id, ix, ok=st["ok"],
+                                  result_text=st["result_text"], duration_ms=st.get("ms"),
+                                  error=None if st["ok"] else (st["step"] or "실패"))
         store.set_run_state(run_id, "done", ended=True)
         return run_id
     except Exception:  # noqa: BLE001 — ② 기록 실패가 챗을 막지 않는다
