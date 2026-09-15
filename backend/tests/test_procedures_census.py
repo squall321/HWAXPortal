@@ -182,3 +182,22 @@ def test_게이트웨이가_실제로_보내는_문구를_본다():
         assert _body_lines(needle), (
             f"{name}({needle!r}) 이 응답 본문 자리에 없다 — 로그·주석에만 있으면 "
             f"호출자는 그 문자열을 절대 못 받고, 그 갈래는 죽은 코드다")
+
+
+def test_게이트웨이_파괴_관문이_MUST_GATE_와_같다():
+    """게이트웨이는 `invoke_tool`(범용 실행기)로 못 부르는 목록을 따로 들고 있다.
+    그 목록이 포털 `MUST_GATE` 와 어긋나면 **어긋난 쪽이 늘 느슨한 쪽**이다 —
+    이름 패턴(`delete_`…)만으로는 `trash_report`·`publish_report` 가 안 걸린다.
+    """
+    src = _gateway_source()
+    if src is None:
+        pytest.skip("HWAXMcpGateway 리포가 이 박스에 없다")
+    import re as _re
+
+    m = _re.search(r"_INVOKE_DENY_EXACT\s*=\s*frozenset\(\{(.*?)\}\)", src, _re.S)
+    assert m, "게이트웨이에 _INVOKE_DENY_EXACT 가 없다 — 이름이 바뀌었나"
+    theirs = set(_re.findall(r'"([a-z_][a-z0-9_]*)"', m.group(1)))
+    assert theirs == set(MUST_GATE), (
+        f"게이트웨이 관문과 MUST_GATE 가 어긋났다 — "
+        f"게이트웨이에만: {sorted(theirs - set(MUST_GATE))} · "
+        f"포털에만: {sorted(set(MUST_GATE) - theirs)}")

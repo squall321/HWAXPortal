@@ -922,22 +922,27 @@ _STEP_STAGES = ("선행", "DV", "PV", "양산")
 
 
 class UploadDispatchReq(BaseModel):
-    """되묻기(B)에서 사용자가 고른 목적지로 스테이징 파일을 보낸다."""
+    """되묻기(B)에서 사용자가 고른 목적지로 스테이징 파일을 보낸다.
+
+    ⚠ **문자열마다 상한을 건다.** 바로 위 `DocxMessage` 에 똑같은 흉터 주석이 달려 있는데
+    여기만 비어 있었다 — 2MB 짜리 `purpose` 가 그대로 통과했다(실측). 이 값들은 다른 앱의
+    과제 메타로 **저장되므로**, 상한이 없으면 우리가 남의 저장소를 부풀리는 통로가 된다.
+    """
     model_config = {"extra": "ignore"}
-    staging_id: str
-    filename: str
-    destination: str                   # DESTINATIONS 의 id
+    staging_id: str = Field(max_length=200)
+    filename: str = Field(max_length=400)
+    destination: str = Field(max_length=64)    # DESTINATIONS 의 id
     # stepforge 전용 — 새 과제를 만들거나(project_name) 기존 과제에 붙인다(project_id).
-    project_id: str = ""
-    project_name: str = ""
+    project_id: str = Field(default="", max_length=200)
+    project_name: str = Field(default="", max_length=200)
     run: str = "parse"                 # parse|pipeline|detect|mesh|none — 등록 후 돌릴 잡
     # 과제 메타 — **새 과제일 때만** 쓴다. 기존 과제에 파일 하나 붙였다고 그 과제의 메타를
     # 덮어쓰는 건 남의 기록을 지우는 일이다. 담당자(owner)는 묻지 않는다 — 포탈이 안다.
-    code: str = ""                     # 과제번호
-    department: str = ""               # 부서
-    purpose: str = ""                  # 해석목적(자유 문장)
-    note: str = ""                     # 특이사항
-    stage: str = ""                    # 개발단계 — 선행|DV|PV|양산. extras.stage 로 간다
+    code: str = Field(default="", max_length=120)          # 과제번호
+    department: str = Field(default="", max_length=120)    # 부서
+    purpose: str = Field(default="", max_length=4000)      # 해석목적(자유 문장)
+    note: str = Field(default="", max_length=4000)         # 특이사항
+    stage: str = Field(default="", max_length=40)          # 개발단계 — 선행|DV|PV|양산
 
 
 @router.get("/upload/destinations/stepforge/projects")

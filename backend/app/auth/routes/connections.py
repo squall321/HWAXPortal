@@ -7,6 +7,7 @@
 저장 → 게이트웨이가 RA 호출 시 /internal/connections 로 조회해 그 토큰+부서 헤더로 호출.
 SSO 가 연동되면 RA 쪽 자동 계정 등록으로 대체될 브리지다 — 그날 이 등록부는 자연 소멸.
 """
+import hmac
 import logging
 
 import httpx
@@ -245,7 +246,8 @@ def internal_connection(
         raise AuthError("internal connections disabled (GATEWAY_SHARED_TOKEN unset)",
                         status_code=503)
     auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {expected}":
+    # 공유 시크릿은 **상수 시간**으로 본다(access/routes.py 와 같은 이유).
+    if not hmac.compare_digest(auth, f"Bearer {expected}"):
         raise AuthError("forbidden", status_code=403)
     if service not in SERVICES:
         raise AuthError("unknown service", status_code=404)

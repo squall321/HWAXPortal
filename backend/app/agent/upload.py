@@ -1,6 +1,7 @@
 # 챗 파일 업로드 — 수신·그룹게이트·스테이징(포탈 엣지). 파싱·등록은 materialtwin 에 위임한다.
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -238,6 +239,8 @@ import json as _json
 
 import httpx as _httpx
 
+logger = logging.getLogger(__name__)
+
 # CSV 헤더에서 변형률·응력 열을 찾는다. 열 이름이 조금씩 달라도 잡히게 후보를 넓게 둔다.
 _STRAIN_KEYS = ("strain", "변형률", "eng_strain", "true_strain", "e")
 _STRESS_KEYS = ("stress_mpa", "stress", "응력", "eng_stress", "sigma", "s")
@@ -304,9 +307,19 @@ async def mcp_call(gateway_url: str, pat: str, tool: str, args: dict, timeout: f
         sid = init.headers.get("mcp-session-id", "")
         sh = {**hdr, "mcp-session-id": sid}
         await c.post(url, headers=sh, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
-        res = await c.post(url, headers=sh, json={
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": tool, "arguments": args}})
+        try:
+            res = await c.post(url, headers=sh, json={
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": tool, "arguments": args}})
+        finally:
+            # ⚠ **세션을 닫는다.** 게이트웨이 SDK 는 세션 유휴 만료가 없어서, 안 닫으면
+            # 챗과 공유하는 게이트웨이에 세션이 쌓인다 — `procedures/runner.py` 가 같은
+            # 이유로 `finally` 에서 닫는다고 적어 뒀는데 이 경로만 안 닫고 있었다.
+            if sid:
+                try:
+                    await c.request("DELETE", url, headers=sh)
+                except Exception:  # noqa: BLE001 — 닫기 실패가 호출을 실패시키지 않는다
+                    logger.info("업로드 MCP 세션 닫기 실패 sid=%s", sid, exc_info=True)
         env = _last_data(res.text)
         if env.get("error"):
             raise AuthError(f"도구 오류: {env['error'].get('message', env['error'])}", status_code=502)

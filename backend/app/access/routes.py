@@ -1,6 +1,7 @@
 # 소속·허가 API — 내 권한·허가 요청(사용자), 소속·허가 편집·요청 결정(관리자), 게이트웨이 조회
 from __future__ import annotations
 
+import hmac
 import json
 from pathlib import Path
 
@@ -150,7 +151,10 @@ def _internal(request: Request, settings: Settings) -> None:
     expected = settings.gateway_shared_token
     if not expected:
         raise AuthError("internal access disabled (GATEWAY_SHARED_TOKEN unset)", status_code=503)
-    if request.headers.get("authorization", "") != f"Bearer {expected}":
+    # 공유 시크릿은 **상수 시간**으로 본다 — `!=` 는 앞에서부터 갈려 길이·접두를 흘린다.
+    # 같은 리포의 `require_csrf` 가 이미 `compare_digest` 를 쓴다(여기만 달랐다).
+    if not hmac.compare_digest(request.headers.get("authorization", ""),
+                               f"Bearer {expected}"):
         raise AuthError("forbidden", status_code=403)
 
 
