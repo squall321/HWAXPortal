@@ -56,6 +56,15 @@ def entitled(request: Request, principal: Principal) -> Principal:
         return principal
     store = getattr(request.app.state, "user_store", None)
     row = store.get(principal.email) if (store is not None and principal.email) else None
+    # ⚠ **정지를 여기서 본다.** 여태 `status` 를 인증 판단에 쓰는 자리가 백엔드 전체에서
+    # 로컬 비밀번호 경로(`verify_login`) **하나뿐**이었다. SSO 콜백·기존 세션·`/auth/refresh`·
+    # PAT 은 아무도 안 봐서, 계정을 정지해도 전부 그대로 돌았다 — 살아 있는 박스는
+    # `AUTH_PROVIDER=oidc` 라 **실제로 쓰이는 경로가 뚫린 쪽**이었다(6차 감사).
+    # 정지된 관리자는 `portal-admin` 까지 유지했다(`set_status` 는 groups 를 안 건드린다).
+    # 이 함수가 요청마다 원장 행을 이미 읽으므로(D-2 "권한은 매 요청 재계산") 자리가 여기다.
+    # 행이 없으면 **막지 않는다** — 원장에 없는 것과 정지된 것은 다르다.
+    if row is not None and row.get("status") == "disabled":
+        raise AuthError("이 계정은 정지되었습니다 — 관리자에게 문의하세요", status_code=403)
     ents = compute(access.get(), groups=principal.groups, row=row)
     request.state.entitlements = ents
     return principal.model_copy(update={"groups": with_entitlements(principal.groups, ents)})

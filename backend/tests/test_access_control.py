@@ -417,3 +417,33 @@ def test_원장에만_관리자여도_관리자_검사를_통과한다():
     e2 = compute(pol, groups=[], row={"grants": []})
     assert e2.is_admin is False
     assert ADMIN_GROUP not in with_entitlements([], e2)
+
+
+def test_정지된_계정은_세션도_PAT_도_막힌다(client):
+    """⚠ `status` 를 인증 판단에 쓰는 자리가 백엔드 전체에서 **로컬 비밀번호 경로 하나**
+    뿐이었다. SSO 콜백·기존 세션·`/auth/refresh`·PAT 은 아무도 안 봐서, 계정을 정지해도
+    전부 그대로 돌았다 — 살아 있는 박스는 `AUTH_PROVIDER=oidc` 라 **실제로 쓰이는 경로가
+    뚫린 쪽**이었다. 정지된 관리자는 `portal-admin` 까지 유지했다(6차 감사).
+    """
+    _setup_users(client)
+    h = _login(client, "user@corp.com")
+    assert client.get("/auth/me").status_code == 200        # 정지 전에는 된다
+    sess = client.cookies.get("hwax_session")              # 그 사람이 들고 있는 세션
+
+    hb = _login(client, "boss@corp.com")
+    assert client.post("/auth/local/users/user@corp.com/status",
+                       json={"status": "disabled"}, headers=hb).status_code == 200
+
+    # 다시 로그인하려 해도 막히고(원래 되던 것), **이미 들고 있던 세션도** 막힌다.
+    assert client.post("/auth/local/login",
+                       json={"email": "user@corp.com",
+                             "password": "pw123456"}).status_code == 401
+    client.cookies.clear()
+    r = client.get("/auth/me", cookies={"hwax_session": sess})
+    assert r.status_code == 403 and "정지" in r.text, f"{r.status_code} {r.text[:120]}"
+
+    # 되살리면 다시 된다 — 정지가 영구 차단이 아니다
+    hb = _login(client, "boss@corp.com")
+    assert client.post("/auth/local/users/user@corp.com/status",
+                       json={"status": "active"}, headers=hb).status_code == 200
+    assert _login(client, "user@corp.com") and client.get("/auth/me").status_code == 200
