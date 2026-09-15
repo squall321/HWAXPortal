@@ -297,6 +297,63 @@ Bearer $KR_PAT      전송 상한 512MB(압축) / 해제 2048MB
 `ingest_report` 는 본문을 문자열로 나르므로 **작은 것 전용**이고 도구 설명이 직접 그렇게 말한다.
 → 절차는 `report_id` 를 **변수로 받는다.**
 
+### ⚠ 이 자리는 **옮겨진다** — 후처리가 DynaForge 로 온다
+
+> 2026-09-15 사용자: *"낙하 충격은 최신의 KooD3plot 쪽이 후처리 모듈을 DynaForge 에
+> 올려놓고 쓸 거잖아? 그걸 감안해서 잘 구성해 주면 좋을 것 같아."*
+
+**지금 사슬(실측 2026-09-15).**
+
+```
+제출          smarttwin_submit / slurm_submit_job          (STC)
+  ↓ 잡
+후처리        job_postprocess(mode: all|deep|sphere)       (smart-twin-mcp)
+              → KooChainRun postprocess → KooD3plotReader
+              → Run_*/Output/report/ (deep) · sphere_report.html
+  ↓ **파일을 옮긴다** ← 여기가 아픈 자리
+반입          REST intake (512MB) 또는 ingest_report(작은 것만)   (DynaForge)
+  ↓
+판독          report_summary · report_worst_cases · report_directional …
+```
+
+**후처리기의 실물** — `KooDynaPostProcessor`(Qt/VTK 바이너리, 오프스크린 가능).
+KooD3plotReader V1.3.0 의 `references/` 에 번들·standalone 로 들어 있다. **라이브러리가
+아니라 실행 파일**이라, 어디에 두든 "그 자리에서 돌린다" 가 된다.
+
+**옮겨지면 무엇이 달라지나.** 후처리가 리포트가 살 곳(DynaForge)에서 돌면 **운반이 통째로
+사라진다.** `sphere_report.html` 이 9.8MB, `impact_report.html` 이 7.9MB 인데 그걸 나르려고
+REST intake 를 쓰고 `report_id` 를 사람이 변수로 넣고 있다 — **그건 설계가 아니라 우회다.**
+
+```
+제출 → 잡 → [DynaForge 가 후처리하고 그 자리에 리포트가 생긴다] → 판독
+```
+
+### 그래서 절차를 이렇게 가른다
+
+| 반쪽 | 무엇 | 옮겨져도 |
+|---|---|---|
+| **얻는 쪽** | 잡 결과 → 리포트가 생기고 `report_id` 가 정해진다 | **바뀐다** |
+| **읽는 쪽** | `report_summary`·`report_worst_cases`·`report_directional`·`report_part_risk`… | **안 바뀐다** |
+
+→ **읽는 쪽으로 절차를 쓴다.** 얻는 쪽은 `report_id` **변수 하나**로 좁혀 둔다. 그러면
+후처리가 옮겨 왔을 때 **앞에 단계 하나를 더하는 것**으로 끝난다 — 절차를 다시 쓰지 않는다.
+
+⚠ 반대로 지금 사슬을 절차에 통째로 박으면(REST 명령·파일 경로·postprocess 인자까지),
+옮겨진 뒤 그 절차는 **전부 거짓말**이 된다. R2b 가 `report_id` 를 변수로 받는 진짜 이유가
+이것이다(운반 한계는 부차적이다).
+
+### 옮겨 올 때 필요한 것 — 미리 적어 둔다
+
+- **DynaForge 연산으로 온다면** `run_operation(operation="postprocess", args={…})` 가 되고,
+  `describe_operation` 이 그 계약을 준다 → 절차가 **저장 시점에 인자를 검증한다**(§9-5).
+  등록부에 이미 DynaForge 가 있으니 그날 한 줄도 안 고쳐도 된다.
+- **직접 도구로 온다면** 인자 스키마가 필요하다. 지금 `job_postprocess` 는 인자가
+  `args` **자유 object 하나**이고 `mode` 는 산문에만 있다 — 그대로 오면 오타를 저장
+  시점에 못 잡는다(`gaps/stc-template-schema.yaml` 과 같은 모양).
+- **오래 걸린다면** 제출·회수를 또 가른다(§5-10). 후처리는 전각도 낙하에서 Run 수가
+  수십~수백이라 120초를 넘길 가능성이 높다 — `expect: job` 이면 저장이 거절되고
+  두 절차로 갈리게 되어 있다. **그 규칙이 여기서 자동으로 값을 한다.**
+
 ### 절차
 
 ```yaml

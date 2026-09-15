@@ -3,6 +3,7 @@
 // ⚠ 접두사는 '/procedures-api' 다. SPA 경로는 '/procedures/*' — 같게 두면 브라우저
 //    새로고침이 SPA 가 아니라 JSON 을 받는다('/changelog' 와 '/updates' 를 가른 것과 같다).
 import { apiFetch, errorDetail } from './client';
+import { config } from '../config';
 
 const P = '/procedures-api';
 
@@ -241,6 +242,20 @@ export function fanOut(runId: string, ix: number, mode: 'plan' | 'live' = 'plan'
 /** 비교표 — 한 배치의 실행들을 나란히. `inputs` 를 그대로 열로 편다. */
 export function getBatch(batchId: string) {
   return get<BatchTable>(`/batches/${encodeURIComponent(batchId)}`, '비교표를 불러오지 못했습니다.');
+}
+
+/** 절차를 YAML 한 장으로. dev 에서 만들고 cae00 에서 쓰는 길이다. */
+export function exportProcedureUrl(id: string): string {
+  return `${config.apiBase}/procedures-api/procedures/${id}/export`;
+}
+
+/** 내보낸 YAML 을 들인다 — **사람이 만든 것과 똑같이** 검증한다. */
+export function importProcedureYaml(yamlText: string, title?: string) {
+  return post<{ id: string; version_no: number; warnings: string[] }>(
+    '/procedures/import',
+    title ? { yaml_text: yamlText, title } : { yaml_text: yamlText },
+    '가져오지 못했습니다.',
+  );
 }
 
 /** 이 절차의 **도구 계약** — 이름·설명·입력 스키마. 절차를 도구로 등록하는 다리다. */

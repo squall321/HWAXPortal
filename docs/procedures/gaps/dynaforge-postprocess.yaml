@@ -1,0 +1,39 @@
+# 결손 하나 = 파일 하나 (PLAN §9-6)
+id: dynaforge-postprocess
+title: 후처리가 리포트가 살 곳 밖에서 돈다 — 9.8MB 를 나른다
+
+flow: 낙하·충격 회수(R2b) — 잡이 끝난 뒤 리포트를 읽기까지
+step: 후처리 결과를 DynaForge 로 **옮기는** 자리
+kind: 3                       # ③ 안 이어짐 — 둘 다 있는데 사이에 운반이 낀다
+owner_candidate: heax-kooremapper_mcp
+
+# ⚠ 이건 **이미 진행 중인 일**이다. 사용자가 그렇게 말했다(2026-09-15).
+#    우리가 요청할 것이 아니라, 그 이동을 **절차가 흡수할 수 있게 해 두는 것**이 우리 몫이다.
+status: in_progress_elsewhere
+confirmed_by: null
+
+now:
+  - "후처리 — smart-twin-mcp `job_postprocess`(KooChainRun → KooD3plotReader)"
+  - "산출 — Run_*/Output/report/(deep) · sphere_report.html"
+  - "반입 — REST intake(512MB) 또는 ingest_report(작은 것만)"
+  - "판독 — DynaForge report_summary·report_worst_cases·report_directional …"
+
+measured:
+  - "sphere_report.html 9.8MB · impact_report.html 7.9MB — MCP 로 못 나른다"
+  - "ingest_report 도구 설명이 직접 '대용량은 이 도구가 아니다' 라고 말한다"
+  - "후처리기 실물은 KooDynaPostProcessor(Qt/VTK **실행 바이너리**, 오프스크린 가능).
+     KooD3plotReader V1.3.0 references/ 에 번들·standalone 로 있다"
+
+our_part: >-
+  절차를 **읽는 쪽으로** 쓰고, 얻는 쪽은 `report_id` 변수 하나로 좁혀 둔다. 그러면
+  후처리가 옮겨 왔을 때 **앞에 단계 하나를 더하는 것**으로 끝난다. 지금 사슬(REST 명령·
+  파일 경로·postprocess 인자)을 절차에 박으면 옮겨진 뒤 그 절차가 전부 거짓말이 된다.
+
+when_it_lands:
+  - "DynaForge 연산으로 오면 — `run_operation(operation='postprocess')` + `describe_operation`
+     이 계약을 준다. 등록부(dispatchers.yaml)에 DynaForge 가 이미 있어 **한 줄도 안 고친다**"
+  - "직접 도구로 오면 — 인자 스키마가 필요하다. 지금 `job_postprocess` 는 `args` 자유
+     object 하나이고 `mode`(all|deep|sphere)가 산문에만 있다. 그대로 오면 오타를 저장
+     시점에 못 잡는다(`stc-template-schema` 와 같은 모양)"
+  - "오래 걸리면 — 전각도 낙하는 Run 이 수십~수백이라 120초를 넘길 수 있다.
+     `expect: job` 은 저장 거절이라 제출·회수가 **자동으로** 갈린다(§5-10)"

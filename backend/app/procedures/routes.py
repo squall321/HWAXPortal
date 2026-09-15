@@ -17,6 +17,7 @@ import asyncio
 import logging
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -802,6 +803,59 @@ async def save_draft(request: Request, run_id: str, body: DraftSaveIn,
         owner_sub=principal.subject, spec=spec, title=body.title,
         visibility=body.visibility, derived_from_run=run_id)
     return {**got, "warnings": warns + save_warns}
+
+
+@router.get("/procedures/{procedure_id}/export")
+def export_procedure(request: Request, procedure_id: str, response: Response,
+                     principal: Principal = Depends(_me)) -> Response:
+    """절차를 **YAML 한 장**으로 뽑는다 — dev 에서 만들고 cae00 에서 쓰는 길(PLAN S1).
+
+    두 박스는 망이 갈려 있어 DB 를 못 옮긴다. 옮기는 것은 **판본의 본문**뿐이고,
+    실행 기록·소유자·id 는 안 옮긴다(그 사람 시야의 데이터이고 박스마다 다르다).
+
+    받는 쪽은 `POST /procedures/import` 가 **사람이 만든 것과 똑같이** 검증한다 —
+    내보낸 것이라고 통과시키지 않는다.
+    """
+    v = _store(request).latest_version_of(procedure_id)
+    if v is None:
+        raise AuthError("절차를 찾을 수 없습니다", status_code=404)
+    spec = dict(v["spec"])
+    head = (f"# 절차 내보내기 — {spec.get('title') or procedure_id}\n"
+            f"# 판본 {v.get('version_no')} · {datetime.now(timezone.utc).date().isoformat()}\n"
+            "#\n"
+            "# 받는 쪽에서 `POST /procedures-api/procedures/import` 로 들인다.\n"
+            "# ⚠ 실행 기록·소유자·id 는 **안 담겼다** — 본문만 옮긴다.\n"
+            "# ⚠ 도구가 그 박스에 있는지는 들일 때 대조한다(없으면 경고로 말한다).\n")
+    body = yaml.safe_dump(spec, allow_unicode=True, sort_keys=False, width=100)
+    return Response(content=head + body, media_type="application/x-yaml",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="procedure-{procedure_id}.yaml"'})
+
+
+class ImportIn(BaseModel):
+    yaml_text: str
+    title: str | None = None
+    visibility: str = Field(default="all", pattern="^(all|private)$")
+
+
+@router.post("/procedures/import", status_code=201,
+             dependencies=[Depends(require_csrf)])
+async def import_procedure(request: Request, body: ImportIn,
+                           principal: Principal = Depends(_me)) -> dict:
+    """내보낸 YAML 을 들인다 — **사람이 만든 것과 똑같이** 검증한다."""
+    try:
+        raw = yaml.safe_load(body.yaml_text) or {}
+    except yaml.YAMLError as exc:
+        raise AuthError(f"YAML 이 아닙니다 — {str(exc)[:200]}", status_code=422) from None
+    if not isinstance(raw, dict):
+        raise AuthError("절차 본문이 아닙니다(맵이어야 합니다)", status_code=422)
+    if body.title:
+        raw["title"] = body.title
+    spec, warns = await _validated(request, raw, principal)
+    got = _store(request).create_procedure(
+        owner_sub=principal.subject, spec=raw, title=spec.title,
+        visibility=body.visibility)
+    return {**got, "warnings": warns}
 
 
 # ── 쓸모 판정(§6-1) ──────────────────────────────────────────────────────

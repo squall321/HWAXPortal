@@ -917,3 +917,55 @@ def test_비교표가_왜_실패했는지_싣는다(user):
     assert by[b]["failed_at"] is None
     # 결과는 정상인데 경고만이 유일한 신호인 자리 — 표에 보여야 한다
     assert by[b]["warnings"] == ["W120"]
+
+
+# ── 절차 내보내기·가져오기 (dev → cae00 이관, PLAN S1) ───────────────────
+def test_절차를_YAML_한_장으로_뽑는다(user):
+    """두 박스는 망이 갈려 DB 를 못 옮긴다. 옮기는 것은 **판본의 본문**뿐이다."""
+    c, h = user
+    got = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h).json()
+    r = c.get(f"{PREFIX}/procedures/{got['id']}/export", headers=h)
+    assert r.status_code == 200
+    assert "attachment" in r.headers.get("content-disposition", "")
+
+    text = r.text
+    assert text.startswith("# 절차 내보내기"), text[:60]
+    body = yaml.safe_load(text)
+    assert body["title"] and len(body["steps"]) == 7
+    # ⚠ 실행 기록·소유자·id 는 안 담긴다 — 그 사람 시야의 데이터이고 박스마다 다르다
+    assert not ({"owner_sub", "id", "runs", "version_id"} & set(body))
+
+
+def test_내보낸_것을_그대로_들인다(user):
+    c, h = user
+    a = c.post(f"{PREFIX}/seeds/laminate-bend-life/import", headers=h).json()
+    text = c.get(f"{PREFIX}/procedures/{a['id']}/export", headers=h).text
+
+    r = c.post(f"{PREFIX}/procedures/import",
+               json={"yaml_text": text, "title": "cae00 로 옮긴 R1"}, headers=h)
+    assert r.status_code == 201, r.text
+    spec = c.get(f"{PREFIX}/procedures/{r.json()['id']}", headers=h).json()["spec"]
+    assert spec["title"] == "cae00 로 옮긴 R1" and len(spec["steps"]) == 7
+    # 변수의 뜻·예시가 함께 건너간다 — 그게 없으면 받은 쪽이 못 쓴다
+    lam = next(v for v in spec["vars"] if v["key"] == "laminate")
+    assert lam["example"]["unit_system"] == "SI_mm" and lam["why"]
+
+
+def test_들이는_것도_같은_검증을_탄다(user):
+    """⚠ 내보낸 것이라고 통과시키면 안 된다 — 게이트 없는 절차가 그 길로 들어온다."""
+    c, h = user
+    bad = yaml.safe_dump({"title": "나쁜 것",
+                          "steps": [{"backend": "reportarchive", "tool": "publish_report"}]},
+                         allow_unicode=True)
+    r = c.post(f"{PREFIX}/procedures/import", json={"yaml_text": bad}, headers=h)
+    assert r.status_code == 422 and "gate: human" in r.text
+
+
+def test_YAML_이_아니면_그렇게_말한다(user):
+    c, h = user
+    r = c.post(f"{PREFIX}/procedures/import", json={"yaml_text": "{{{ 이건 YAML 이 아니다"},
+               headers=h)
+    assert r.status_code == 422 and "YAML" in r.text
+    r2 = c.post(f"{PREFIX}/procedures/import", json={"yaml_text": "- 목록이다\n- 맵이 아니다"},
+                headers=h)
+    assert r2.status_code == 422 and "맵" in r2.text

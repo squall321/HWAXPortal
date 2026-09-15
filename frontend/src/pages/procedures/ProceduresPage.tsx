@@ -10,9 +10,11 @@ import { useProcedures } from '../../state/ProceduresContext';
 import {
   cancelRun,
   getProcedure,
+  exportProcedureUrl,
   getBatch,
   getProcedureTool,
   getRunDraft,
+  importProcedureYaml,
   importSeed,
   listSeeds,
   replayRun,
@@ -115,7 +117,53 @@ function ProcedureList() {
       ))}
     </ul>
       <SeedRefresh onImported={reload} />
+      <YamlImport onImported={reload} />
     </>
+  );
+}
+
+/** 다른 박스에서 내보낸 절차를 들인다(PLAN S1 — dev → cae00). */
+function YamlImport({ onImported }: { onImported: () => void }) {
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <section style={{ ...rowCard, marginTop: '0.8rem', display: 'grid', gap: '0.4rem' }}>
+      <strong style={{ color: 'var(--fg)', fontSize: '0.88rem' }}>YAML 가져오기</strong>
+      <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>
+        다른 박스에서 내려받은 절차 YAML 을 붙여 넣습니다. <b>사람이 만든 것과 똑같이</b>
+        검증하므로, 그 박스에 없는 도구가 있으면 경고로 알려 줍니다.
+      </span>
+      <textarea
+        style={{ ...inp, minHeight: '5rem', fontFamily: 'ui-monospace, monospace',
+                 fontSize: '0.76rem' }}
+        spellCheck={false}
+        placeholder="# 절차 내보내기 — …"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" style={tiny} disabled={busy || !text.trim()}
+                onClick={async () => {
+                  setBusy(true);
+                  setMsg(null);
+                  try {
+                    const got = await importProcedureYaml(text.trim());
+                    setText('');
+                    setMsg(got.warnings?.length ? got.warnings.join(' · ') : '들였습니다.');
+                    onImported();
+                  } catch (e) {
+                    setMsg((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}>
+          {busy ? '들이는 중…' : '들이기'}
+        </button>
+        {msg && <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>{msg}</span>}
+      </div>
+    </section>
   );
 }
 
@@ -391,6 +439,17 @@ function ProcedureDetail() {
       <p style={{ color: 'var(--muted)', fontSize: '0.78rem', margin: 0 }}>
         계획 모드는 게이트웨이를 부르지 않고 <b>무엇을 어떤 인자로 부를지</b>만 보여 줍니다.
       </p>
+
+      <section style={{ ...rowCard, alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap' }}>
+        <h3 style={{ color: 'var(--fg)', margin: 0, fontSize: '0.95rem' }}>다른 박스로 옮기기</h3>
+        <a href={exportProcedureUrl(id)} style={{ ...tiny, textDecoration: 'none' }}>
+          YAML 로 내려받기
+        </a>
+        <span style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>
+          본문만 옮깁니다 — <b>실행 기록·소유자는 안 담깁니다.</b> 받는 쪽에서 절차 목록의
+          “YAML 가져오기” 로 들이면 사람이 만든 것과 똑같이 검증합니다.
+        </span>
+      </section>
 
       <ToolContract procedureId={id} />
       <ProcedureRuns procedureId={id} />
