@@ -44,7 +44,11 @@ def test_gateway_plaintext_is_classified_by_prefix():
     assert (c.ok, c.kind) == (False, "unavailable")
     assert c.retriable is True  # 불통만 재시도가 의미 있다
 
-    d = judge(is_error=True, text="invoke-denied: delete_report")
+    # ⚠ **실물 문구다**(게이트웨이 실호출에서 줄인 것). 손으로 지어낸 `invoke-denied` 는
+    # 감사 로그에만 있어, 그걸 단언하던 동안 이 갈래는 프로덕션에서 죽어 있었다.
+    d = judge(is_error=True, text=(
+        "invoke_tool: 'delete_report' 은 파괴·제어성 도구라 범용 실행기로 부를 수 "
+        "없습니다. 직접 바인딩된 도구로만 호출하세요."))
     assert d.kind == "denied" and d.retriable is False
 
 

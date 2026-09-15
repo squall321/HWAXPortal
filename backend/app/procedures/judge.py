@@ -24,7 +24,12 @@ from dataclasses import dataclass, field
 # 게이트웨이가 직접 만드는 평문. 재시도 판단이 셋 다 다르다.
 GW_UNKNOWN = "unknown tool:"          # 이름이 틀렸거나 그 앱이 안 붙어 있다 → 재시도 무의미
 GW_FORBIDDEN = "forbidden:"           # 권한 부족 → 재시도 무의미, 사람이 권한을 받아야 한다
-GW_DENIED = "invoke-denied"           # 파괴 도구 관문 → 재시도 무의미
+# 파괴 도구 관문 → 재시도 무의미. ⚠ **호출자가 실제로 받는 문구**여야 한다 —
+# `invoke-denied` 는 게이트웨이 **감사 로그**에만 쓰이고 응답 본문에는 없다
+# (gateway.py:1854 vs :1856). 그것만 보던 동안 이 갈래는 **죽은 코드**였고, 관문에 막힌
+# 호출이 `tool_error`(그냥 에러)로 기록됐다. 테스트가 손으로 지어낸 문자열을 단언해
+# 초록이었다 — 4차가 적은 "인공 고정물" 그 패턴이 같은 파일에 하나 더 있었다(5차 감사).
+GW_DENIED = "파괴·제어성 도구라"
 GW_UNAVAILABLE = "unavailable:"       # 백엔드 불통·타임아웃 → 재시도가 의미 있을 수 있다
 
 # 앱 봉투가 실패를 말하는 키들.
@@ -73,7 +78,7 @@ def _gw_kind(text: str) -> tuple[str, bool] | None:
         return "unknown_tool", False
     if low.startswith(GW_FORBIDDEN):
         return "forbidden", False
-    if GW_DENIED in low:
+    if GW_DENIED in text or "invoke-denied" in low:
         return "denied", False
     if GW_UNAVAILABLE in low and low.startswith("backend"):
         return "unavailable", True
@@ -86,16 +91,36 @@ _DECODER = json.JSONDecoder()
 
 
 def _notes_of_rows(rows: list) -> dict:
-    """여러 값에서 노트를 모은다. `collect_notes` 는 dict 만 보므로 리스트면 늘 비었다 —
+    """여러 값에서 **경고만** 모은다. `collect_notes` 는 dict 만 보므로 리스트면 늘 비었다 —
     그러면 W120 같은 표식이 이 경로에서만 사라진다(경고 칸이 있는 이유가 없어진다).
+
+    ⚠ 둘을 고쳤다(2026-09-15 5차 감사).
+    ① **행 수로 자르지 않는다.** 처음에 `rows[:200]` 으로 뒀는데 실물이 그보다 길다 —
+       `list_agents` 796행 · `list_property_definitions` 275행. 241번째 행의 경고가
+       조용히 사라졌다. 이 함수가 존재하는 이유를 이 함수가 되돌린 셈이다. 대신
+       **모은 개수**로 멈춘다.
+    ② **경고가 아닌 노트는 안 모은다.** 행마다 다른 값(`status: healthy`)을 첫 행 것으로
+       대표시키면 거짓이다 — `site_health` 101행이 healthy 57 / no_data_ever 44 인데
+       `status: "healthy"` 하나만 남았다. 전체를 대표하지 않는 것은 안 싣는다.
     """
-    out: dict = {}
-    for r in rows[:200]:
-        for k, v in collect_notes(r).items():
-            if k in out and isinstance(out[k], list) and isinstance(v, list):
-                out[k] = (out[k] + v)[:50]
-            else:
-                out.setdefault(k, v)
+    out: dict[str, list] = {}
+    n = 0
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        for k in _WARN_KEYS:
+            v = r.get(k)
+            if v in (None, "", [], {}, False):
+                continue
+            got = v if isinstance(v, list) else [v]
+            cur = out.setdefault(k, [])
+            for item in got:
+                if item not in cur:
+                    cur.append(item)
+                    n += 1
+        if n >= 50:
+            out["truncated"] = True
+            break
     return out
 
 
@@ -121,7 +146,10 @@ def _parse_json_multi(text: str) -> list | None:
     while i < n:
         try:
             val, end = _DECODER.raw_decode(src, i)
-        except ValueError:
+        except (ValueError, RecursionError):
+            # ⚠ 깊은 중첩은 `ValueError` 가 아니라 `RecursionError` 다. 저장 경로에는
+            # 깊이 가드가 있지만 **판정 경로에는 없다** — 여기서 안 받으면 라우트 밖으로
+            # 새어 500 이 된다. 고장난 백엔드가 그런 본문을 낼 수 있다(5차 감사).
             return None
         out.append(val)
         if len(out) > _MULTI_MAX:
@@ -165,6 +193,10 @@ def judge(*, is_error: bool, text: str, raw: bool = False,
     # 파싱 층
     try:
         parsed = json.loads(text)
+    except RecursionError:
+        # 깊이는 '모양이 이상하다' 이지 우리 고장이 아니다 — 500 이 아니라 판정으로 낸다.
+        return Verdict(False, "parse", "too_deep",
+                       error="결과가 너무 깊게 중첩됐다 — 읽을 수 없다", retriable=False)
     except ValueError:
         # ⚠ **줄마다 JSON 인 모양을 본다.** 목록형 도구는 항목마다 TextContent 로 오고
         # (`list_agents` 는 796개 — 실측), `join_content` 가 그것을 줄바꿈으로 잇는다.

@@ -140,3 +140,28 @@ def test_게이트웨이_호출_상한과의_관계가_아직_성립한다():
         f"단계 상한 {max(EXPECT_TIMEOUT.values())} 이 게이트웨이 {gw} 보다 짧지 않다")
     assert WARMUP_TIMEOUT > gw, (
         f"워밍업 {WARMUP_TIMEOUT} 이 게이트웨이 {gw} 를 안 넘는다 — 콜드스타트를 못 흡수한다")
+
+
+def test_게이트웨이가_실제로_보내는_문구를_본다():
+    """⚠ 판정기가 찾는 문자열은 **호출자가 받는 본문**에 있어야 한다.
+
+    `invoke-denied` 는 게이트웨이 **감사 로그**에만 쓰이고 응답 본문에는 없다. 그것만
+    보던 동안 파괴 도구 관문 갈래는 프로덕션에서 죽어 있었고, 관문에 막힌 호출이
+    `tool_error`(그냥 에러)로 기록됐다. 테스트는 손으로 지어낸 문자열을 단언해 초록이었다.
+    """
+    from app.procedures.judge import (GW_DENIED, GW_FORBIDDEN, GW_UNAVAILABLE,
+                                      GW_UNKNOWN)
+
+    src = _gateway_source()
+    if src is None:
+        pytest.skip("HWAXMcpGateway 리포가 이 박스에 없다")
+    # `TextContent(... text=...)` 로 나가는 문구에 있어야 한다 — 감사 줄이 아니라
+    for name, needle in (("GW_DENIED", GW_DENIED), ("GW_UNKNOWN", GW_UNKNOWN),
+                         ("GW_FORBIDDEN", GW_FORBIDDEN),
+                         ("GW_UNAVAILABLE", GW_UNAVAILABLE)):
+        assert needle in src, f"{name}({needle!r}) 가 게이트웨이 소스에 없다"
+        i = src.find(needle)
+        around = src[max(0, i - 400):i + 200]
+        assert "TextContent" in around or "isError" in around, (
+            f"{name} 은 응답 본문이 아니라 로그·주석 자리에만 있다 — "
+            f"호출자는 그 문자열을 절대 못 받는다")
