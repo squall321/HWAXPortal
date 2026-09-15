@@ -189,8 +189,19 @@ def compute(policy: Policy, *, groups: list[str], row: dict | None) -> Entitleme
 
 
 def with_entitlements(groups: list[str], ents: Entitlements) -> list[str]:
-    """principal.groups 에 얹을 값 — 들어온 합성 그룹은 버리고 계산값으로 바꾼다."""
-    return [g for g in (groups or []) if not is_synthetic(g)] + sorted(ents.keys)
+    """principal.groups 에 얹을 값 — 들어온 합성 그룹은 버리고 계산값으로 바꾼다.
+
+    ⚠ **관리자 표시를 되돌려 놓는다.** `compute` 는 "로그인 값이나 원장 값 어느 쪽이든"
+    관리자로 인정하는데, 여기서 들어온 그룹만 되살리다 보니 **원장에만 관리자인 사람**은
+    `portal-admin` 을 잃었다. 그런 사람은 기능 키는 전부 받으면서
+    `ensure(principal, ADMIN_GROUP)` 같은 관리자 검사는 못 통과한다 — 앞뒤가 안 맞고,
+    막히는 쪽이라 조용하다(아무도 신고하지 않는다). 새 승격이 아니다: `is_admin` 이
+    이미 참일 때만 붙는다.
+    """
+    out = [g for g in (groups or []) if not is_synthetic(g)] + sorted(ents.keys)
+    if ents.is_admin and ADMIN_GROUP not in out:
+        out.append(ADMIN_GROUP)
+    return out
 
 
 def filter_tiles(policy: Policy, systems: list, groups: list[str]) -> list:

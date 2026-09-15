@@ -118,8 +118,21 @@ class Var(BaseModel):
                 raise SpecError(f"{self.key}: {raw!r} 은 허용값이 아니다 {self.values}")
             return raw
         if self.type == "number":
+            if isinstance(raw, bool):
+                _bad(self.key, raw)
+            # ⚠ **정수로 적힌 것은 정수로 보낸다.** 무조건 float 을 거치면 두 가지가 샌다 —
+            # `10` 이 `10.0` 이 되어 int 를 요구하는 백엔드가 거절하고, 2^53 을 넘는 id 는
+            # **값이 조용히 바뀐다**(실측: `"9007199254740993"` → `9007199254740992.0`).
+            # 스키마 `integer` 도 이 형으로 들어온다(`derive._SCHEMA_TYPE`).
+            if isinstance(raw, int):
+                return raw
+            if isinstance(raw, str):
+                try:
+                    return int(raw.strip())
+                except ValueError:
+                    pass
             try:
-                return float(raw) if not isinstance(raw, bool) else _bad(self.key, raw)
+                return float(raw)
             except (TypeError, ValueError):
                 raise SpecError(f"{self.key}: 수치가 아니다 — {raw!r}") from None
         if self.type == "boolean":

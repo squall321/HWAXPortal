@@ -159,3 +159,53 @@ def test_성패를_못_받았으면_성공으로_적지_않는다(tmp_path):
     assert steps["b"]["state"] == "done"
     # 결과는 둘 다 남는다 — 모르는 것은 성패이지 결과가 아니다
     assert st.step_result(rid, steps["a"]["ix"]) == "결과"
+
+
+def test_잘렸으면_잘렸다고_남긴다(tmp_path):
+    """조용히 끊으면 70번 부른 턴이 원장에서는 **완전한** 60단계로 보이고, 거기서 뽑은
+    절차는 뒷부분이 통째로 없는 채 '이대로 하면 된다' 가 된다."""
+    from app.config import Settings
+    from app.procedures.store import ProceduresStore
+
+    acts = []
+    for i in range(70):
+        acts += [_start(f"c{i}", "t", "{}"), _end(f"c{i}", "t", "x")]
+    folded = from_chat.pair(acts)
+    assert len(folded) == from_chat.MAX_STEPS
+    assert folded[-1].get("truncated") == 10, folded[-1]
+
+    st = ProceduresStore(Settings(procedures_store_path=str(tmp_path / "w.sqlite")))
+    rid = from_chat.record(st, owner_sub="u", conversation_id="c", activity=acts)
+    last = st.get_run(rid)["steps"][-1]
+    assert (last.get("notes") or {}).get("truncated") == 10, last
+    # 잘렸어도 그 단계의 결과는 남는다 — 모르는 것은 뒷부분이지 이 단계가 아니다
+    assert st.step_result(rid, last["ix"]) == "x"
+
+
+def test_반쯤_쓴_실행을_도는_중으로_두지_않는다(tmp_path):
+    """`create_run` 은 됐는데 단계 쓰기가 터지면, 부르는 쪽은 None('남긴 게 없다')을 받는데
+    사용자 `/runs` 에는 잘린 실행이 **도는 중**으로 남았다."""
+    from app.config import Settings
+    from app.procedures.store import ProceduresStore
+
+    real = ProceduresStore(Settings(procedures_store_path=str(tmp_path / "w.sqlite")))
+
+    class HalfBroken:
+        def __init__(self):
+            self.rid = None
+
+        def create_run(self, **kw):
+            self.rid = real.create_run(**kw)
+            return self.rid
+
+        def begin_step(self, *a, **kw):
+            raise RuntimeError("디스크 꽉 참")
+
+        def set_run_state(self, *a, **kw):
+            return real.set_run_state(*a, **kw)
+
+    s = HalfBroken()
+    assert from_chat.record(s, owner_sub="u", conversation_id="c",
+                            activity=[_start("r1", "t", "{}"), _end("r1", "t", "x")]) is None
+    got = real.get_run(s.rid)
+    assert got["state"] == "failed" and got["ended_at"], got

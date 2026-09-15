@@ -50,7 +50,13 @@ def pair(activity: list[dict]) -> list[dict]:
             cur["ok"] = ev["ok"]
         if isinstance(ev.get("ms"), int) and cur["ms"] is None:
             cur["ms"] = ev["ms"]
-    return [by_call[c] for c in order[:MAX_STEPS]]
+    out = [by_call[c] for c in order[:MAX_STEPS]]
+    if len(order) > MAX_STEPS:
+        # ⚠ **잘렸다는 것을 남긴다.** 조용히 끊으면 70번 부른 턴이 원장에서는 **완전한**
+        # 60단계로 보이고, 거기서 뽑은 절차는 뒷부분이 통째로 없는 채 "이대로 하면 된다"
+        # 가 된다. 마지막 칸을 표식으로 쓴다.
+        out[-1] = {**out[-1], "truncated": len(order) - MAX_STEPS}
+    return out
 
 
 def record(store, *, owner_sub: str, conversation_id: str, activity: list[dict],
@@ -63,6 +69,7 @@ def record(store, *, owner_sub: str, conversation_id: str, activity: list[dict],
     steps = pair(activity)
     if not steps:
         return None
+    run_id = None
     try:
         run_id = store.create_run(
             owner_sub=owner_sub, run_by=owner_sub, procedure_version_id=None,
@@ -86,8 +93,23 @@ def record(store, *, owner_sub: str, conversation_id: str, activity: list[dict],
                 store.finish_step(run_id, ix, ok=st["ok"],
                                   result_text=st["result_text"], duration_ms=st.get("ms"),
                                   error=None if st["ok"] else (st["step"] or "실패"))
+            if st.get("truncated"):
+                store.finish_step(
+                    run_id, ix, ok=st["ok"] is not False,
+                    state="unknown" if st["ok"] is None else None,
+                    notes={"truncated": st["truncated"],
+                           "why": f"이 턴은 호출이 더 있었는데 {MAX_STEPS}개에서 잘렸다 — "
+                                  f"{st['truncated']}개가 원장에 없다"})
         store.set_run_state(run_id, "done", ended=True)
         return run_id
     except Exception:  # noqa: BLE001 — ② 기록 실패가 챗을 막지 않는다
         logger.info("챗 턴을 절차 원장에 남기지 못했다 conv=%s", conversation_id, exc_info=True)
+        # ⚠ **반쯤 쓴 실행을 `queued` 로 두지 않는다.** `create_run` 은 됐는데 단계 쓰기가
+        # 중간에 터지면, 부르는 쪽은 None("남긴 게 없다")을 받는데 사용자 `/runs` 목록에는
+        # 잘린 실행이 **도는 중**으로 남는다. 끝난 것으로 표시하고 이유를 남긴다.
+        try:
+            if run_id:
+                store.set_run_state(run_id, "failed", stage="record_failed", ended=True)
+        except Exception:  # noqa: BLE001
+            logger.info("잘린 챗 실행을 마감하지도 못했다 run=%s", run_id, exc_info=True)
         return None

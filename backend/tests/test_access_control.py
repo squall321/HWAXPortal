@@ -397,3 +397,23 @@ def test_쓰기는_모두_commit_헬퍼를_지난다():
               and '"""' not in ln and "`" not in ln]
     # _commit 안의 한 줄만 허용
     assert len(direct) == 1, f"_commit 을 거치지 않는 commit 이 있다: {direct}"
+
+
+def test_원장에만_관리자여도_관리자_검사를_통과한다():
+    """`compute` 는 "로그인 값이나 원장 값 어느 쪽이든" 관리자로 인정한다고 적어 놨는데,
+    `with_entitlements` 가 들어온 그룹만 되살려 **원장에만 관리자인 사람**은
+    `portal-admin` 을 잃었다. 기능 키는 전부 받으면서 관리자 검사는 못 통과하는,
+    앞뒤 안 맞는 상태다 — 게다가 **막히는 쪽**이라 조용하다."""
+    from app.access.policy import (ADMIN_GROUP, AccessPolicy, compute,
+                                   with_entitlements)
+    from app.config import Settings
+
+    pol = AccessPolicy(Settings()).get()
+    e = compute(pol, groups=[], row={"groups": [ADMIN_GROUP]})
+    assert e.is_admin is True
+    assert ADMIN_GROUP in with_entitlements([], e)
+
+    # 관리자가 아니면 붙지 않는다 — 이 짝이 없으면 위 검사는 "항상 붙인다" 로도 통과한다
+    e2 = compute(pol, groups=[], row={"grants": []})
+    assert e2.is_admin is False
+    assert ADMIN_GROUP not in with_entitlements([], e2)
