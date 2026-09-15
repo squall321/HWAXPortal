@@ -2,7 +2,7 @@
  "_why": "models.py 의 손으로 적은 목록(MUST_GATE·DRY_RUN_TOOLS·WARN_EXACT)이 '게이트웨이가 바뀌면 다시 뽑는다' 고만 적혀 있고 **확인하는 코드가 없었다**. 이 파일이 그 '뽑은 시점' 을 남긴다 — 목록은 이제 데이터에 대조된다.",
  "_refresh": "backend/scripts/refresh-census.py (살아 있는 게이트웨이에서 다시 뽑는다)",
  "generated": "2026-09-15",
- "gateway_tools": 471,
+ "gateway_tools": 480,
  "tools": [
   {
    "name": "activate_model",
@@ -432,6 +432,13 @@
    "args_documented": 0
   },
   {
+   "name": "corpus_overview",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
    "name": "corpus_summary",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
@@ -544,10 +551,45 @@
    "args_documented": 0
   },
   {
+   "name": "defect_breakdown",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 11,
+   "args_documented": 0
+  },
+  {
+   "name": "defect_cooccurrence",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "defect_evidence",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
+   "name": "defect_onset",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
    "name": "defect_profile",
    "backend": "signalforge",
    "dry_run": false,
    "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "defect_timeline",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 10,
    "args_documented": 0
   },
   {
@@ -1524,6 +1566,13 @@
    "args_documented": 0
   },
   {
+   "name": "keyword_stats",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
    "name": "leak_report",
    "backend": "heax-step_forge",
    "dry_run": false,
@@ -2088,6 +2137,13 @@
    "backend": "ai-data-hub",
    "dry_run": false,
    "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "period_compare",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 7,
    "args_documented": 0
   },
   {
@@ -3299,6 +3355,13 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "voc_breakdown",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 10,
    "args_documented": 0
   }
  ]
