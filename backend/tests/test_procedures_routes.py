@@ -152,7 +152,11 @@ def test_로그인조차_안_했으면_401(client):
 def test_health_는_무인증이고_모듈만_본다(client):
     r = client.get(f"{PREFIX}/health")
     assert r.status_code == 200
-    assert r.json()["ok"] is True and r.json()["journal_mode"].lower() == "wal"
+    body = r.json()
+    assert body["ok"] is True and body["journal_mode"].lower() == "wal"
+    # ⚠ **무인증 라우트다.** 저장소 경로·기동 예외 문구를 여기서 낼 이유가 없다 —
+    # 내부 배치와 모듈 구조가 그대로 드러난다. 상세는 서버 로그에 있다.
+    assert "path" not in body, body
 
 
 # ── 권한 있는 계정 ───────────────────────────────────────────────────────
@@ -1123,3 +1127,15 @@ def test_읽기_단계는_그대로_재개한다(user):
     c, h = user
     rid, _st = _run_with_unknown_write(c, h, "find_reports")
     assert c.post(f"{PREFIX}/runs/{rid}/resume", headers=h).status_code == 200
+
+
+def test_펼치기는_같은_값을_두_번_안_만든다(user):
+    """같은 값을 두 번 주면 **똑같은 실행이 둘** 생겼다 — 배치는 대상마다 하나다."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    before = len(c.get(f"{PREFIX}/runs", headers=h).json()["runs"])
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out",
+               json={"values": ["PANEL_1", "PANEL_1"], "mode": "plan"}, headers=h)
+    assert r.status_code == 202, r.text
+    after = c.get(f"{PREFIX}/runs", headers=h).json()["runs"]
+    assert len(after) - before == 1, f"{len(after) - before}개가 생겼다"

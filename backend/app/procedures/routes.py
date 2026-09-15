@@ -123,10 +123,13 @@ def health(request: Request, response: Response) -> dict:
     st = getattr(request.app.state, "procedures_store", None)
     if st is None:
         response.status_code = 503
-        return {"ok": False,
-                "error": getattr(request.app.state, "procedures_error", "not initialised")}
+        # 기동 예외 문구도 그대로 내보내지 않는다 — 경로·모듈 구조가 섞여 나온다.
+        # 상세는 서버 로그에 있고, 운영자는 거기서 본다.
+        return {"ok": False, "error": "절차 저장소가 열리지 않았습니다"}
     try:
-        return {"ok": True, **st.health()}
+        # ⚠ 이 라우트만 **무인증**이다(모듈이 떴는지 보는 프로브). 저장소 **경로**는
+        # 여기서 낼 이유가 없다 — 내부 배치가 그대로 드러난다.
+        return {"ok": True, "journal_mode": st.health().get("journal_mode")}
     except Exception as exc:  # noqa: BLE001
         response.status_code = 503
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -613,7 +616,9 @@ BATCH_MAX = int(os.environ.get("PROCEDURES_BATCH_MAX", "50"))
 
 
 class FanOutIn(BaseModel):
-    values: list | None = None   # 안 주면 그 단계가 고른 후보 전부
+    # 상한은 아래에서도 보지만 **파싱 단계에서 먼저** 막는다 — nginx 가 2GB 본문을
+    # 허용하므로, 큰 배열을 파이썬 객체로 다 만든 뒤에 세는 것 자체가 비용이다.
+    values: list | None = Field(default=None, max_length=BATCH_MAX)
     mode: str = Field(default="plan", pattern="^(plan|live)$")
 
 
@@ -645,16 +650,23 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
         raise AuthError("빈 실행은 펼칠 절차가 없습니다", status_code=422)
 
     allowed = [c.get("value") for c in cands]
-    want = body.values if body.values is not None else allowed
+    raw_want = body.values if body.values is not None else allowed
+    # 같은 값을 두 번 주면 **똑같은 실행이 둘** 생긴다 — 배치는 대상마다 하나다.
+    want: list = []
+    for v in raw_want:
+        if v not in want:
+            want.append(v)
+    if not want:
+        raise AuthError("펼칠 대상이 없습니다", status_code=422)
+    # ⚠ **세는 것이 먼저다.** 후보 대조는 목록 두 개를 훑는 일이라, 큰 배열이 오면
+    # 상한에 걸릴 것을 다 훑고 나서야 거절했다.
+    if len(want) > BATCH_MAX:
+        raise AuthError(f"한 번에 {BATCH_MAX}개까지입니다 — 룰을 좁혀 주세요"
+                        f"(지금 {len(want)}개)", status_code=422)
     # ⚠ **보여 준 후보 안에서만** 펼친다 — 아무 값이나 받으면 룰을 우회한다(pick 과 같은 규율).
     bad = [v for v in want if v not in allowed]
     if bad:
         raise AuthError(f"보여 준 후보 밖입니다: {bad[:3]}", status_code=422)
-    if not want:
-        raise AuthError("펼칠 대상이 없습니다", status_code=422)
-    if len(want) > BATCH_MAX:
-        raise AuthError(f"한 번에 {BATCH_MAX}개까지입니다 — 룰을 좁혀 주세요"
-                        f"(지금 {len(want)}개)", status_code=422)
 
     version = store.get_version(run["procedure_version_id"])
     if version is None:
@@ -836,8 +848,13 @@ async def _draft_of(request: Request, principal: Principal,
         tdesc = {n: str(m.get("description") or "") for n, m in cat.items()}
     except Exception:  # noqa: BLE001
         logger.info("초안 — 도구 스키마 조회 실패", exc_info=True)
-    got = _d.draft(steps, tool_backend=tmap, asked=(run.get("title") or ""),
-                   tool_schemas=tschemas, tool_desc=tdesc)
+    # ⚠ **루프를 비켜서 돈다.** `draft` 는 단계마다 앞 단계들의 결과 전체를 훑어 값을
+    # 찾으므로 단계 수의 제곱으로 자란다(실측: 30단계 0.7초 · 60단계 2.7초 · 120단계
+    # 10.8초). 순수 파이썬이라 그 시간 동안 **포털 전체가 멈춘다** — 챗·심의 SSE 까지.
+    # 그리고 `/draft` 는 그냥 GET 이라 몇 번이고 다시 부를 수 있다.
+    got = await asyncio.to_thread(
+        _d.draft, steps, tool_backend=tmap, asked=(run.get("title") or ""),
+        tool_schemas=tschemas, tool_desc=tdesc)
     got["input_schema"] = _d.to_input_schema(got["spec"])
     return got, tschemas, tdesc
 

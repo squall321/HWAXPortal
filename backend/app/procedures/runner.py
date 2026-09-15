@@ -32,6 +32,9 @@ CLIENT_TIMEOUT = 260.0
 # 단계 자체의 상한. 게이트웨이 120초보다 짧게 둬 우리가 먼저 끊고 기록을 남긴다.
 EXPECT_TIMEOUT = {"fast": 30.0, "slow": 110.0, "job": 110.0}
 WARMUP_TIMEOUT = 125.0  # 콜드스타트가 120.3초다 — 워밍업은 그걸 넘겨 기다린다
+# 빈 실행 하나가 가질 수 있는 단계 수. 저장된 절차의 `procedures_max_steps`(30)보다
+# 넉넉하다 — 여기는 사람이 탐색하며 붙이는 자리라 30 은 좁다. 다만 천장은 있어야 한다.
+STEP_MAX = 120
 
 
 class RunnerError(RuntimeError):
@@ -145,6 +148,10 @@ class ProceduresRunner:
         n = int(getattr(settings, "procedures_concurrency", 2) or 2)
         # 챗의 agent_semaphore(64)를 **재사용하지 않는다** — 넘치면 큐 없이 429 라 챗이 막힌다.
         self.sem = asyncio.Semaphore(n)
+        # ⚠ 조회용(카탈로그·2단 계약·목록)은 **따로 센다.** 실행 세마포어에 묶으면 저장
+        # 화면이 긴 실행 뒤에 줄을 서고, 안 묶으면 `GET /tools` 를 반복하는 것만으로
+        # 게이트웨이에 세션이 무제한 쌓인다 — 챗·심의가 그 게이트웨이를 같이 쓴다.
+        self.lookup_sem = asyncio.Semaphore(4)
         self._own_client = client is None
         self._client = client or httpx.AsyncClient(timeout=CLIENT_TIMEOUT)
         # slow 단계가 도는 동안 같은 백엔드에 다른 단계를 걸지 않는다 — 재연결이 나면
@@ -313,6 +320,12 @@ class ProceduresRunner:
         ix = len(run["steps"])
         if any(s["state"] == "running" for s in run["steps"]):
             raise RunnerError("이미 도는 단계가 있다")
+        # ⚠ **상한이 없었다.** 저장된 절차는 `procedures_max_steps` 로 막히는데 빈 실행에
+        # 한 단계씩 붙이는 이 길에는 아무 천장도 없었다. 초안 만들기가 단계 수의 제곱으로
+        # 자라므로(실측 120단계 10.8초) 길게 키운 실행 하나로 포털을 세울 수 있다.
+        if ix >= STEP_MAX:
+            raise RunnerError(f"한 실행의 단계 상한({STEP_MAX})을 넘었다 — "
+                              f"절차로 저장하고 새 실행에서 이어가라")
 
         scope = dict(scope or run.get("inputs") or {})
         # ⚠ **덮어쓴다, 양보하지 않는다.** `setdefault` 면 `inputs` 에 먼저 들어간 값이
@@ -353,11 +366,12 @@ class ProceduresRunner:
         pat = self.mint_pat(principal, run_id, 0)
         if not pat:
             raise RunnerError("사용자 명의 PAT 발급 실패")
-        try:
-            await sess.open(pat)
-            return await sess.list_tools(pat)
-        finally:
-            await sess.close(pat)
+        async with self.lookup_sem:
+            try:
+                await sess.open(pat)
+                return await sess.list_tools(pat)
+            finally:
+                await sess.close(pat)
 
     async def second_stage(self, principal, spec, run_id: str = "describe") -> dict:
         """2단 도구의 **두 번째 단 계약**을 받아 온다(PLAN §9-4·§9-5).
@@ -386,28 +400,29 @@ class ProceduresRunner:
         if not pat:
             raise RunnerError("사용자 명의 PAT 발급 실패")
         out: dict = {}
-        try:
-            await sess.open(pat)
-            for key, d, item in want:
-                alias = f"{d.backend.replace('-', '')}_{d.describe}"
-                try:
-                    res = await sess.call("invoke_tool",
-                                          {"name": alias, "arguments": {d.describe_arg: item}},
-                                          pat, 30.0)
-                except Exception:  # noqa: BLE001 — 계약을 못 받는 것이 저장을 막으면 안 된다
-                    logger.info("2단 계약 조회 실패 — 검사 건너뜀 %s/%s", d.tool, item)
-                    continue
-                # ⚠ `call` 은 **튜플** `(isError, content[])` 다(94행). 객체인 줄 알고
-                # `getattr(res,"content")` 로 읽던 동안 이 층 전체가 늘 None 을 냈고,
-                # 그것을 "검사할 게 없다" 로 읽어 **2단 계약 검사가 통째로 안 돌았다**.
-                is_error, content = res
-                text, _ = J.join_content(content)
-                body = J.judge(is_error=is_error, text=text).parsed
-                sch = dispatch.to_json_schema(body, d, item=item)
-                if sch:
-                    out[key] = sch
-        finally:
-            await sess.close(pat)
+        async with self.lookup_sem:
+            try:
+                await sess.open(pat)
+                for key, d, item in want:
+                    alias = f"{d.backend.replace('-', '')}_{d.describe}"
+                    try:
+                        res = await sess.call("invoke_tool",
+                                              {"name": alias, "arguments": {d.describe_arg: item}},
+                                              pat, 30.0)
+                    except Exception:  # noqa: BLE001 — 계약을 못 받는 것이 저장을 막으면 안 된다
+                        logger.info("2단 계약 조회 실패 — 검사 건너뜀 %s/%s", d.tool, item)
+                        continue
+                    # ⚠ `call` 은 **튜플** `(isError, content[])` 다(94행). 객체인 줄 알고
+                    # `getattr(res,"content")` 로 읽던 동안 이 층 전체가 늘 None 을 냈고,
+                    # 그것을 "검사할 게 없다" 로 읽어 **2단 계약 검사가 통째로 안 돌았다**.
+                    is_error, content = res
+                    text, _ = J.join_content(content)
+                    body = J.judge(is_error=is_error, text=text).parsed
+                    sch = dispatch.to_json_schema(body, d, item=item)
+                    if sch:
+                        out[key] = sch
+            finally:
+                await sess.close(pat)
         return out
 
     def _pick(self, run_id: str, ix: int, st: Step, v, scope: dict) -> dict | None:
@@ -515,16 +530,17 @@ class ProceduresRunner:
         pat = self.mint_pat(principal, run_id, 0)
         if not pat:
             raise RunnerError("사용자 명의 PAT 발급 실패")
-        try:
-            await sess.open(pat)
-            alias = f"{backend.replace('-', '')}_{tool}"
-            res = await sess.call("invoke_tool", {"name": alias, "arguments": args},
-                                  pat, 30.0)
-            is_error, content = res   # 튜플이다 — 377행과 같은 이유
-            text, _ = J.join_content(content)
-            return J.judge(is_error=is_error, text=text).parsed
-        finally:
-            await sess.close(pat)
+        async with self.lookup_sem:
+            try:
+                await sess.open(pat)
+                alias = f"{backend.replace('-', '')}_{tool}"
+                res = await sess.call("invoke_tool", {"name": alias, "arguments": args},
+                                      pat, 30.0)
+                is_error, content = res   # 튜플이다 — 위 second_stage 와 같은 이유
+                text, _ = J.join_content(content)
+                return J.judge(is_error=is_error, text=text).parsed
+            finally:
+                await sess.close(pat)
 
     async def _one(self, run_id, ix, st: Step, scope, principal, sess):
         """단계 하나 — 치환 → 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다."""
