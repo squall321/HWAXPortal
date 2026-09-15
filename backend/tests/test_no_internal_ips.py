@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # 사내 대역. 127.x(루프백)·0.0.0.0 은 뺀다 — 그건 내부 배치가 아니다.
 _IP = re.compile(r"\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\.?\d{0,3}\b")
 # 지금 있는 것(줄이는 방향으로만 바꾼다). 늘리려면 **먼저 왜 필요한지 적어라.**
-KNOWN_FILES = 15   # 실측(10/172.16-31/192.168 전부 포함)
+KNOWN_FILES = 15   # 실측 — 문서 1개가 더 있었다(CHAT-FIRST-AI-INTEGRATION.md)
 
 
 def _tracked() -> list[Path]:
@@ -27,6 +27,10 @@ def _tracked() -> list[Path]:
 def test_내부_IP_를_적은_추적_파일이_늘지_않았다():
     hits = {}
     for p in _tracked():
+        rel = str(p.relative_to(ROOT))
+        # 이 검사 파일 자신(예시 IP 를 적는다)과 lock 파일(패키지 해시에 숫자열이 섞인다)은 뺀다
+        if rel == "backend/tests/test_no_internal_ips.py" or rel.endswith("pnpm-lock.yaml"):
+            continue
         if not p.is_file() or p.suffix in (".png", ".jpg", ".ico", ".woff2", ".sif"):
             continue
         try:

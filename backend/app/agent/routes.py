@@ -971,7 +971,32 @@ async def upload_dispatch(
 
     ⚠ 목적지 권한을 **여기서 다시 판정한다** — /upload 응답의 destinations 는 참고용이고
     클라이언트가 destination 문자열을 바꿔 보낼 수 있다.
+
+    ⚠ **중간에 끊겨도 감사는 남는다.** 각 분기는 도구를 여러 번 부르고 마지막에 한 줄을
+    남기는데, 중간 호출이 502 를 던지면 그 줄에 못 닿는다. 그 시점에 **이미 일어난
+    부작용**이 있다 — DynaForge 세션 생성, RA 의 pptx 반입, StepForge 파일 첨부.
+    그러면 남의 앱에는 데이터가 있는데 우리 원장에는 아무것도 없다(= 관측 불가).
+    실패를 감싸 한 줄 남긴다 — `judge` 로 바꾸기 전에는 실패가 `created:true` 로
+    위장돼 (틀리게라도) 감사가 남았다(7차 감사).
     """
+    return await _dispatch_audited(request, body, principal, settings)
+
+
+async def _dispatch_audited(request, body, principal, settings) -> dict:
+    try:
+        return await _dispatch_inner(request, body, principal, settings)
+    except Exception as exc:  # noqa: BLE001 — 남기고 그대로 올린다
+        try:
+            _audit(request).record(
+                principal=principal.subject, event="upload_dispatch", status="failed",
+                meta={"destination": body.destination, "filename": body.filename,
+                      "error": f"{type(exc).__name__}: {exc}"[:300]})
+        except Exception:  # noqa: BLE001 — 감사 실패가 원래 오류를 가리면 안 된다
+            logger.warning("업로드 실패 감사 기록 실패", exc_info=True)
+        raise
+
+
+async def _dispatch_inner(request, body, principal, settings) -> dict:
     _upload.require_destination_group(settings, principal.groups, body.destination)
     audit = _audit(request)
     path = _upload.staged_path(settings, principal.subject, body.staging_id, body.filename)
