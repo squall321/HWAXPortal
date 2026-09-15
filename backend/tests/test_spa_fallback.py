@@ -83,18 +83,25 @@ print(json.dumps(out))
 
 
 @pytest.fixture(scope="module")
-def probe() -> dict:
+def probe(tmp_path_factory) -> dict:
     """`serve_frontend` 는 기본이 꺼짐이라 폴백이 아예 안 달린다 — 켜서 **따로** 세운다.
 
     같은 프로세스에서 reload 하면 다른 테스트가 쥔 앱과 섞인다. 자식 프로세스가 싸다.
+
+    ⚠ **빌드 산출물에 매지 않는다.** 예전엔 `frontend/dist/index.html` 이 없으면
+    skip 했는데, `dist` 는 gitignore 라 보통 없다 — 즉 이 파일의 세 검사(이게 이 리포에서
+    API 404 대 SPA 200 을 보는 **유일한** 자리다)가 평소엔 통째로 꺼져 있었다.
+    누가 `pnpm build` 를 돌렸는지에 따라 켜지고 꺼지는 검사는 검사가 아니다.
+    두 줄짜리 가짜 dist 를 만들어 쓴다 — 폴백이 보는 것은 파일의 **존재**이지 내용이 아니다.
     """
-    dist = BACKEND.parent / "frontend" / "dist"
-    if not (dist / "index.html").is_file():
-        pytest.skip("frontend/dist 가 없다 — `cd frontend && pnpm build` 뒤에 돈다")
+    dist = tmp_path_factory.mktemp("dist")
+    (dist / "assets").mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>stub</title>", encoding="utf-8")
     r = subprocess.run(
         [sys.executable, "-c", _PROBE],
         cwd=BACKEND,
-        env={"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "SERVE_FRONTEND": "true"},
+        env={"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "SERVE_FRONTEND": "true",
+             "FRONTEND_DIST": str(dist)},
         capture_output=True,
         text=True,
         timeout=120,

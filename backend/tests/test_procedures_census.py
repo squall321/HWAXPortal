@@ -65,8 +65,12 @@ def test_되돌리기_어려운_도구가_새로_생기지_않았나(census):
                    if n.startswith(GW_DENY_PREFIX) or n.endswith(GW_DENY_SUFFIX)}
     # 이름만으로 "되돌리기 어렵다" 를 판정할 수 없다(§9-7) — 그래서 **알려진 것만** 센다.
     known = MUST_GATE | WARN_EXACT | backstopped
-    suspicious = {n for n in have - known
-                  if any(n.startswith(p) for p in ("publish_", "trash_", "restore_", "unpublish_"))}
+    prefixes = ("publish_", "trash_", "restore_", "unpublish_")
+    prefixed = {n for n in have if any(n.startswith(p) for p in prefixes)}
+    # ⚠ **먼저 접두사가 살아 있는지 본다.** 오타 하나로 `prefixed` 가 0건이 되면
+    # `suspicious` 도 0건이 되어 **조용히 통과**한다 — 카나리가 죽은 줄 아무도 모른다.
+    assert prefixed, f"접두사 {prefixes} 에 걸리는 도구가 하나도 없다 — 목록이 죽었다"
+    suspicious = prefixed - known
     assert not suspicious, (
         f"되돌리기 어려워 보이는 새 도구: {sorted(suspicious)} — "
         "사람이 보고 MUST_GATE 에 넣을지 정한다")
@@ -88,17 +92,25 @@ def test_게이트웨이에서_베낀_상수가_아직_같다():
     src = _gateway_source()
     if src is None:
         pytest.skip("HWAXMcpGateway 리포가 이 박스에 없다")
+    # ⚠ **이름이 사라진 것도 어긋남이다.** 예전엔 여기서 `pytest.skip` 을 했는데,
+    # 그건 이 검사가 쫓는 바로 그 사건이 났을 때 **조용히 통과**한다는 뜻이다. 게다가
+    # skip 이 반복문 첫 바퀴에서 터지면 나머지 둘은 아예 안 본다. 모아서 끝에 따진다.
+    renamed, missing_all = [], []
     for name, ours in (("_CACHEABLE", CACHE_PREFIX),
                        ("_INVOKE_DENY_PREFIX", GW_DENY_PREFIX),
                        ("_INVOKE_DENY_SUFFIX", GW_DENY_SUFFIX)):
         i = src.find(f"{name} = ")
         if i < 0:
-            pytest.skip(f"게이트웨이에 {name} 이 없다 — 이름이 바뀌었나")
+            renamed.append(name)
+            continue
         blob = src[i:i + 900]
-        missing = [x for x in ours if f'"{x}"' not in blob]
-        assert not missing, (
-            f"{name} 에서 사라졌다: {missing} — 게이트웨이가 바뀌었다. "
-            "models.py 의 사본을 맞춰라")
+        gone = [x for x in ours if f'"{x}"' not in blob]
+        if gone:
+            missing_all.append(f"{name}: {gone}")
+    assert not renamed, (f"게이트웨이에서 이름이 사라졌다: {renamed} — 바뀐 이름을 찾아 "
+                         "이 검사와 models.py 의 사본을 맞춰라")
+    assert not missing_all, (f"사본이 어긋났다 — {' · '.join(missing_all)}. "
+                             "게이트웨이가 바뀌었다")
 
 
 def test_게이트웨이_호출_상한과의_관계가_아직_성립한다():
@@ -112,9 +124,18 @@ def test_게이트웨이_호출_상한과의_관계가_아직_성립한다():
         pytest.skip("HWAXMcpGateway 리포가 이 박스에 없다")
     import re as _re
 
-    m = _re.search(r"CALL_TIMEOUT_S\s*=\s*(?:float\()?[^\n]*?(\d+)", src)
-    assert m, "게이트웨이에서 CALL_TIMEOUT_S 를 못 읽었다 — 이름이 바뀌었나"
-    gw = float(m.group(1))
+    # ⚠ 앞에서부터 처음 나오는 숫자를 집으면 안 된다. 실물은
+    # `CALL_TIMEOUT_S = int(os.environ.get("GATEWAY_CALL_TIMEOUT", "120"))` 이라
+    # 환경변수 **이름 안의 숫자**나 `60 * 2` 의 `60` 을 집을 수 있다 — 지금 120 이
+    # 나오는 것은 운이다. 그 줄의 **마지막** 숫자(기본값 리터럴)를 본다.
+    line = _re.search(r"^CALL_TIMEOUT_S\s*=.*$", src, _re.M)
+    assert line, "게이트웨이에서 CALL_TIMEOUT_S 를 못 읽었다 — 이름이 바뀌었나"
+    nums = _re.findall(r"\d+(?:\.\d+)?", line.group(0))
+    assert nums, f"CALL_TIMEOUT_S 줄에 숫자가 없다: {line.group(0)}"
+    gw = float(nums[-1])
+    # ⚠ 이 값은 **배포된 게이트웨이의 값이 아니다** — GATEWAY_CALL_TIMEOUT 로 덮인다.
+    # 소스의 기본값끼리 비교하는 검사이고, 운영값이 다르면 이 관계는 보장되지 않는다.
+    assert 30 <= gw <= 600, f"읽은 값이 상한 같지 않다: {gw} ({line.group(0)})"
     assert max(EXPECT_TIMEOUT.values()) < gw, (
         f"단계 상한 {max(EXPECT_TIMEOUT.values())} 이 게이트웨이 {gw} 보다 짧지 않다")
     assert WARMUP_TIMEOUT > gw, (

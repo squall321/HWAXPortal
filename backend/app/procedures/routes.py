@@ -276,7 +276,10 @@ _SEED_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}$")
 
 def _seed_path(name: str) -> Path:
     """이름으로만 고른다 — 경로를 받지 않는다(디렉터리 탈출 차단)."""
-    if not _SEED_NAME.match(name):
+    # ⚠ `match` + `$` 는 **끝의 줄바꿈을 받아 준다**(`"laminate\n"` 이 통과했다).
+    # 구분자를 만들 수는 없어 악용되진 않지만, 통과한 이름이 파일로는 없어 404 가 나서
+    # "이름이 틀렸다" 가 "그런 씨앗이 없다" 로 둔갑한다. `fullmatch` 로 닫는다.
+    if not _SEED_NAME.fullmatch(name):
         raise AuthError("씨앗 이름이 아닙니다", status_code=400)
     p = SEED_DIR / f"{name}.yaml"
     if not p.is_file():
@@ -388,11 +391,13 @@ def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal) ->
     tools = [st.tool for st in spec.steps if st.backend == RA_BACKEND]
     if not tools:
         return []
-    store = getattr(request.app.state, "user_store", None)
-    if store is None:
+    # ⚠ 이름은 `users` 다 — 이 파일의 다른 곳에서 `store` 는 **절차 저장소**를 가리킨다.
+    # 한 이름으로 두 저장소를 부르면 읽는 사람도, 정적 가드도 헷갈린다(실제로 헷갈렸다).
+    users = getattr(request.app.state, "user_store", None)
+    if users is None:
         return []
     try:
-        conn = store.get_connection(email=principal.email, service=RA_BACKEND)
+        conn = users.get_connection(email=principal.email, service=RA_BACKEND)
     except Exception:  # noqa: BLE001 — 사전검사 실패가 실행을 막지 않는다
         logger.info("RA 사전검사 실패(건너뜀)", exc_info=True)
         return []

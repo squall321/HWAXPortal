@@ -97,14 +97,27 @@ def test_남길_것이_없으면_실행을_안_만든다(store):
     assert store.list_runs(owner_sub="u") == []
 
 
-def test_기록_실패가_챗을_막지_않는다():
-    """챗은 운영 경로다. 원장 쓰기가 터져도 예외가 올라가면 안 된다."""
+def test_기록_실패가_챗을_막지_않는다(caplog):
+    """챗은 운영 경로다. 원장 쓰기가 터져도 예외가 올라가면 안 된다.
+
+    ⚠ `record` 가 None 을 내는 길은 **둘**이다 — 남길 것이 없거나, 예외를 삼켰거나.
+    `is None` 만 보면 그 둘을 못 가른다. 실제로 `pair()` 가 빈 목록을 내면 저장소는
+    아예 안 불리는데도 이 검사는 통과했다. **삼켰다는 것까지** 확인한다.
+    """
     class Broken:
+        called = False
+
         def create_run(self, **kw):
+            Broken.called = True
             raise RuntimeError("디스크 꽉 참")
 
-    assert from_chat.record(Broken(), owner_sub="u", conversation_id="c",
-                            activity=[_start("r1", "t", "{}"), _end("r1", "t", "x")]) is None
+    with caplog.at_level("INFO"):
+        got = from_chat.record(Broken(), owner_sub="u", conversation_id="c",
+                               activity=[_start("r1", "t", "{}"), _end("r1", "t", "x")])
+    assert got is None
+    assert Broken.called, "저장소에 닿지도 않았다 — 다른 이유로 None 이다"
+    assert any("남기지 못했다" in r.message for r in caplog.records), \
+        "조용히 삼키면 운영에서 원장이 비는 이유를 알 길이 없다"
 
 
 def test_챗_실행은_재생용_판본이_없다(store):

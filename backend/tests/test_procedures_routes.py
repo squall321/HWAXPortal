@@ -250,11 +250,38 @@ def test_게이트_승인은_인자에_묶인다(user):
     assert st.gate_ack(rid, 0)["ack_by"]
 
 
-def test_취소는_소유자와_관리자만(user):
+def test_취소는_소유자와_관리자만(user, client):
+    """⚠ 이름은 규칙 **둘**인데 몸통은 소유자만 봤다 — 조건을 통째로 지워도 통과했다.
+
+    셋 다 본다. 소유자 ○ · 관리자 ○ · 그 밖의 정당한 사용자 ✗.
+    """
     c, h = user
+    st = app.state.procedures_store
+
     rid = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
     assert c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h).status_code == 200
-    assert app.state.procedures_store.get_run(rid)["state"] == "cancelled"
+    assert st.get_run(rid)["state"] == "cancelled"
+
+    # 관리자는 남의 실행도 세운다 — 폭주를 세울 길이 재기동뿐이면 안 된다
+    rid2 = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
+    hb = _login(c, "boss@corp.com")
+    assert c.post(f"{PREFIX}/runs/{rid2}/cancel", headers=hb).status_code == 200
+    assert st.get_run(rid2)["state"] == "cancelled"
+
+    # 권한은 있지만 남인 사람은 못 세운다 — 있는지조차 알려 주지 않는다(404)
+    # ⚠ 신원은 **쿠키**가 정한다 — 관리자 작업은 관리자로 로그인한 채로 해야 한다.
+    c.post("/auth/local/signup",
+           json={"email": "third@corp.com", "name": "T", "password": "pw123456"})
+    hb = _login(c, "boss@corp.com")
+    assert c.post("/auth/local/users/third@corp.com/approve",
+                  json={"groups": []}, headers=hb).status_code == 200
+    assert c.patch("/auth/access/users/third@corp.com",
+                   json={"grants": ["feat:procedures"]}, headers=hb).status_code == 200
+    h = _login(c, "user@corp.com")
+    rid3 = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
+    h3 = _login(c, "third@corp.com")
+    assert c.post(f"{PREFIX}/runs/{rid3}/cancel", headers=h3).status_code == 404
+    assert st.get_run(rid3)["state"] != "cancelled"
 
 
 def test_빈_실행은_재개하지_않는다(user):
@@ -300,15 +327,17 @@ def test_성공한_단계가_없으면_저장할_것이_없다(user):
 # ── SPA 폴백보다 위 ──────────────────────────────────────────────────────
 def test_API_접두사가_SPA_경로와_겹치지_않는다():
     """`/procedures-api` 와 SPA `/procedures/*` 를 가른 이유 — 겹치면 새로고침이 JSON 을 받는다."""
-    assert PREFIX == "/procedures-api"
     assert not any(getattr(r, "path", "").startswith("/procedures/") for r in app.routes)
 
 
 def test_라우터가_SPA_폴백보다_먼저_등록됐다(client):
-    """뒤에 두면 GET 이 index.html 로 먹힌다(200 text/html 로 조용히 실패)."""
-    r = client.get(f"{PREFIX}/health")
-    assert r.headers["content-type"].startswith("application/json")
-    assert json.loads(r.text)["ok"] is True
+    """⚠ **이 환경에는 폴백이 아예 없다.** `serve_frontend` 는 import 시점에 읽히므로
+    `dependency_overrides` 로 켤 수 없다. 그래서 '먼저 등록됐다' 를 여기서 증명할 수는
+    없고, 그 사실을 먼저 확인해 검사가 무엇을 안 보는지 드러낸다. 진짜 검증은
+    `test_spa_fallback.py` 의 별도 프로세스 프로브가 한다.
+    """
+    assert not any("{full_path" in getattr(r, "path", "") for r in app.routes), \
+        "폴백이 붙어 있다 — 이 검사의 전제가 바뀌었으니 순서를 실제로 확인하라"
 
 
 # ── 라우트가 부르는 이름이 실제로 있나 ──────────────────────────────────
@@ -328,7 +357,18 @@ _ROUTES_SRC = (Path(__file__).resolve().parents[1] / "app" / "procedures" /
 
 
 def _called(helper: str) -> set[str]:
-    return set(_re.findall(rf"{helper}\(request\)\.([a-zA-Z_][a-zA-Z0-9_]*)\(", _ROUTES_SRC))
+    """`routes.py` 가 부르는 메서드 이름들.
+
+    ⚠ **두 모양을 다 본다.** `_store(request).x()` 만 찾던 동안, 라우트가 흔히 쓰는
+    `store = _store(request)` → `store.x()` 형이 통째로 빠져 있었다. 실측으로 12개를
+    보고 5개를 놓쳤는데, 놓친 것이 하필 **가장 최근에 추가된 것들**이다
+    (`find_by_seed`·`merge_inputs`·`cancel_run`·`create_run`·`finish_step`).
+    이 가드가 존재하는 이유가 바로 그 재발 유형(W-30)이다.
+    """
+    var = helper.lstrip("_")
+    return set(_re.findall(
+        rf"(?:{helper}\(request\)|(?<![\w.]){var})\.([a-zA-Z_][a-zA-Z0-9_]*)\(",
+        _ROUTES_SRC))
 
 
 def test_every_runner_method_the_routes_call_exists():
@@ -342,9 +382,17 @@ def test_every_store_method_the_routes_call_exists():
 
 
 def test_the_guard_actually_finds_the_calls():
-    """가드가 0건을 훑고 통과하면 아무것도 안 지킨다 — 실제로 찾는지 본다."""
+    """가드가 0건을 훑고 통과하면 아무것도 안 지킨다 — 실제로 찾는지 본다.
+
+    ⚠ 하한은 **실측에 맞춰 올려 둔다.** `>= 6` 이던 동안 가드는 12개를 보고 5개를
+    놓치고 있었는데, 그 하한이 그걸 '충분하다' 고 통과시켰다 — 없는 확신을 준 셈이다.
+    """
     assert "catalog" in _called("_runner") and "step_once" in _called("_runner")
-    assert "get_run" in _called("_store") and len(_called("_store")) >= 6
+    got = _called("_store")
+    assert "get_run" in got and len(got) >= 15, sorted(got)
+    # 지역변수 형이 실제로 잡히는지 — 이 이름들이 그 형으로만 불린다
+    for n in ("merge_inputs", "find_by_seed", "create_run"):
+        assert n in got, f"`store = _store(request)` 형을 놓쳤다: {n}"
 
 
 # ── /tools 가 실제로 도는가 ─────────────────────────────────────────────
@@ -431,10 +479,34 @@ def test_imported_seed_is_a_normal_procedure(user):
 
 
 def test_seed_name_cannot_escape_the_directory(user):
+    """⚠ 이 검사는 한때 **가드를 통째로 지워도 통과**했다.
+
+    `../../etc/passwd`·`..`·`a/b` 는 `/` 가 더 있어 `/seeds/{name}/import` 에 아예
+    라우팅되지 않는다 — Starlette 가 핸들러 전에 404 를 낸다. 남은 둘은 가드가 없어도
+    `p.is_file()` 에서 404 가 나므로 허용 목록 `(400, 404, 422)` 를 그대로 만족했다.
+    그래서 **가드 자신의 신호**를 본다.
+    """
     c, h = user
-    for bad in ("../../etc/passwd", "..", "a/b", "Laminate", "x" * 80):
+    # 라우팅조차 안 되는 모양 — 막히기는 하는데 **가드 덕분이 아니다**
+    for bad in ("../../etc/passwd", "..", "a/b"):
+        assert c.post(f"{PREFIX}/seeds/{bad}/import",
+                      headers=h).status_code in (400, 404, 422), bad
+    # 가드에 닿는 모양 — 여기서는 가드의 문구가 나와야 한다
+    # (인코딩한 `%2F` 는 클라이언트가 먼저 풀어 역시 라우팅에서 걸린다 — 가드에 안 닿는다)
+    for bad in ("Laminate", "x" * 80, "has space", "dot.name"):
         r = c.post(f"{PREFIX}/seeds/{bad}/import", headers=h)
-        assert r.status_code in (400, 404, 422), f"{bad} 가 {r.status_code} 로 통과했다"
+        assert r.status_code == 400 and "씨앗 이름이 아닙니다" in r.text, \
+            f"{bad} -> {r.status_code} {r.text[:80]}"
+
+    # 가드 자체도 직접 친다 — 라우팅이 어떻게 바뀌든 이건 변하지 않는다
+    from app.auth.errors import AuthError
+    from app.procedures.routes import SEED_DIR, _seed_path
+
+    for bad in ("../../etc/passwd", "..", "a/b", "/etc/passwd", "laminate\n", ""):
+        with pytest.raises(AuthError) as e:
+            _seed_path(bad)
+        assert e.value.status_code == 400, bad
+    assert _seed_path("laminate-bend-life").parent == SEED_DIR
 
 
 def test_unknown_seed_is_404(user):
@@ -851,7 +923,10 @@ def test_후보_밖으로는_못_펼친다(user):
     r = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out",
                json={"values": ["PANEL_1", "남의부품"]}, headers=h)
     assert r.status_code == 422 and "후보 밖" in r.text
-    assert c.get(f"{PREFIX}/runs", headers=h).json()["runs"][0]["id"] == rid, "실행이 생겼다"
+    # ⚠ `runs[0]["id"] == rid` 로는 못 잡는다 — 목록이 `gated` 를 맨 앞으로 정렬하므로
+    # 실행이 몇 개 새든 이 실행이 첫 줄이다. **개수**를 센다.
+    runs = c.get(f"{PREFIX}/runs", headers=h).json()["runs"]
+    assert [x["id"] for x in runs] == [rid], f"실행이 샜다: {[x['id'] for x in runs]}"
 
 
 def test_일부만_골라_펼칠_수_있다(user):
