@@ -478,3 +478,28 @@ def test_비밀_검사가_목록_안도_본다():
     assert _scan_args({"urls": ["https://u:p@h/x"]}, "1단계")
     assert _scan_args({"token": "{{tok}}"}, "1단계") == [], "변수는 비밀이 아니다"
     assert _scan_args({"note": "평범한 값"}, "1단계") == []
+
+
+def test_예약_이름을_입력으로_위조할_수_없다():
+    """`inputs` 를 통째로 들고 가서 `setdefault` 로 신원을 심으면 **위조가 이긴다.**
+    `{{me.email}}` 을 보고서·태그에 찍는 절차가 남의 이름으로 돌고, 흔적은 그 실행의
+    inputs 뿐이다. 뒤 단계가 쓸 `save` 이름을 미리 심는 것도 같은 길이었다."""
+    from app.procedures.models import coerce_inputs
+
+    spec = ProcedureSpec.model_validate({"title": "t", "vars": [
+        {"key": "r", "label": "R", "type": "number"}], "steps": [
+        {"backend": "b", "tool": "t", "args": {"who": "{{me.email}}", "x": "{{r}}"}}]})
+    got = coerce_inputs(spec, {"r": "50", "me.email": "boss@corp",
+                               "run_id": "forged", "saved_id": "미리 심은 값"})
+    assert got == {"r": 50.0}, got
+
+
+def test_실행기가_신원을_양보하지_않는다():
+    """`coerce_inputs` 를 지나쳐 원장에 값이 들어가는 길(merge_inputs)도 있다 —
+    실행기가 덮어써야 최종적으로 막힌다."""
+    import inspect
+
+    from app.procedures import runner as R
+
+    src = inspect.getsource(R.ProceduresRunner.run)
+    assert 'scope["me.email"] =' in src and 'setdefault("me.email"' not in src

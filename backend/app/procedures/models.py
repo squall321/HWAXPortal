@@ -9,6 +9,7 @@ docs/procedures/PLAN.md 의 YAML 은 예시이고 이 파일이 정본이다.
 """
 
 import json
+import logging
 import re
 from typing import Any, Literal
 
@@ -61,6 +62,9 @@ DRY_RUN_TOOLS = frozenset({
 _KEY = re.compile(r"^[a-z_][a-z0-9_]*$")
 _TOOL = re.compile(r"^[a-z][a-z0-9_]*$")
 _BACKEND = re.compile(r"^[a-z][a-z0-9_-]*$")
+
+
+logger = logging.getLogger(__name__)
 
 
 class SpecError(ValueError):
@@ -257,7 +261,16 @@ def coerce_inputs(spec: ProcedureSpec, raw: dict) -> dict:
     빠진 필수 변수도 여기서 막는다. 안 막으면 그 변수를 쓰는 **단계에 가서야** 터지는데,
     그때는 앞 단계가 이미 게이트웨이를 부르고 난 뒤다 — 되돌릴 수 없는 것도 있다.
     """
-    out = dict(raw or {})
+    # ⚠ **선언한 변수만 입력이다.** 예전엔 받은 것을 통째로 들고 가서, 부르는 쪽이
+    # `me.email`·`run_id` 같은 예약 이름을 실어 보내면 그게 `inputs` 에 남았다. 실행기가
+    # `setdefault` 로 신원을 심으므로 **먼저 들어간 위조 값이 이겼고**, `{{me.email}}` 을
+    # 보고서·태그에 찍는 절차가 남의 이름으로 돌았다. 흔적은 그 실행의 inputs 뿐이다.
+    # 뒤 단계가 쓸 `save` 이름을 미리 심는 것도 같은 길이었다.
+    declared = {v.key for v in spec.vars}
+    dropped = sorted(set(raw or {}) - declared)
+    if dropped:
+        logger.info("선언 안 한 입력을 버렸다: %s", dropped)
+    out = {k: v for k, v in (raw or {}).items() if k in declared}
     missing: list[str] = []
     for v in spec.vars:
         if v.key not in out or out[v.key] is None or out[v.key] == "":

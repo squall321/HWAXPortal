@@ -170,9 +170,11 @@ class ProceduresRunner:
             raise RunnerError(f"실행이 없다: {run_id}")
         mode = run.get("mode") or "plan"
         scope = dict(scope or run.get("inputs") or {})
-        scope.setdefault("run_id", run_id)
-        scope.setdefault("me.email", getattr(principal, "email", "") or "")
-        scope.setdefault("me.sub", getattr(principal, "subject", "") or "")
+        # ⚠ **덮어쓴다, 양보하지 않는다.** `setdefault` 면 `inputs` 에 먼저 들어간 값이
+        # 이긴다 — 신원은 부르는 사람에게서 나와야 하고 입력이 정할 것이 아니다.
+        scope["run_id"] = run_id
+        scope["me.email"] = getattr(principal, "email", "") or ""
+        scope["me.sub"] = getattr(principal, "subject", "") or ""
 
         if mode == "plan":
             return self._plan(run_id, spec, scope)
@@ -214,6 +216,18 @@ class ProceduresRunner:
             if pending:
                 unknown.append(st.tool)
             known |= set((st.save or {}).keys())
+            # ⚠ **원장에 적는다.** 여태 이 목록을 계산해 놓고 반환만 했는데, 부르는 쪽은
+            # 전부 `_spawn(...)` 이라 반환값을 버린다. 그래서 `run["steps"]` 가 비고,
+            # 화면은 "무엇을 어떤 인자로 부를지 보여 준다" 고 해 놓고 **빈 페이지**를 띄웠다.
+            # 사람은 그걸 "이 절차는 단계가 없다" 로 읽는다. 실행과 섞이지 않게 `mode="plan"`
+            # 이고, 상태는 `skipped` 다 — **안 불렀다**는 뜻이지 성공이 아니다.
+            self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
+                                  schema_fp=st.schema_fp, expect=st.expect, mode="plan")
+            self.store.finish_step(
+                run_id, ix, ok=True, state="skipped",
+                stage="plan:unverified" if pending else "plan",
+                notes={"plan": {"alias": st.alias, "gate": st.gate,
+                                "unverified": pending}})
         self.store.set_run_state(run_id, "done", stage="plan", ended=True)
         return {"state": "done", "stage": "plan", "calls": calls, "unverified": unknown}
 
@@ -301,9 +315,11 @@ class ProceduresRunner:
             raise RunnerError("이미 도는 단계가 있다")
 
         scope = dict(scope or run.get("inputs") or {})
-        scope.setdefault("run_id", run_id)
-        scope.setdefault("me.email", getattr(principal, "email", "") or "")
-        scope.setdefault("me.sub", getattr(principal, "subject", "") or "")
+        # ⚠ **덮어쓴다, 양보하지 않는다.** `setdefault` 면 `inputs` 에 먼저 들어간 값이
+        # 이긴다 — 신원은 부르는 사람에게서 나와야 하고 입력이 정할 것이 아니다.
+        scope["run_id"] = run_id
+        scope["me.email"] = getattr(principal, "email", "") or ""
+        scope["me.sub"] = getattr(principal, "subject", "") or ""
 
         async with self.sem:
             sess = GatewaySession(self.gateway_url, self._client, corr=run_id)

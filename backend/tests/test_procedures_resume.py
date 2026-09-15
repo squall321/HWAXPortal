@@ -98,3 +98,21 @@ def test_재개가_실제로_끝까지_간다(store):
     calls = [a for a in seen if isinstance(a, dict) and "arguments" in a]
     assert calls[-1]["arguments"] == {"report_id": "R-77"}, \
         f"재개 단계가 받은 인자: {calls[-1]}"
+
+
+def test_계획_모드가_무엇을_부를지_원장에_적는다(store):
+    """화면은 "무엇을 어떤 인자로 부를지 보여 준다" 고 하는데 `run["steps"]` 가 비어
+    **빈 페이지**가 떴다. 사람은 그걸 '이 절차는 단계가 없다' 로 읽는다."""
+    seen: list = []
+    rid = store.create_run(owner_sub="u1", inputs={}, mode="plan")
+    got = asyncio.run(_runner(store, seen).run(run_id=rid, spec=SPEC, principal=_P()))
+    assert got["state"] == "done" and got["stage"] == "plan"
+    assert seen == [], "계획 모드가 게이트웨이를 불렀다"
+
+    steps = store.get_run(rid)["steps"]
+    assert len(steps) == 2, "계산해 놓고 버렸다"
+    assert [s["tool"] for s in steps] == ["find_reports", "add_report_tags"]
+    # **안 불렀다**는 뜻이지 성공이 아니다 — 실행과 섞이면 안 된다
+    assert all(s["state"] == "skipped" and s["mode"] == "plan" for s in steps), steps
+    # 아직 못 푸는 인자는 그렇다고 표시한다(앞 단계 save 를 기다린다)
+    assert steps[1]["stage"] == "plan:unverified", steps[1]

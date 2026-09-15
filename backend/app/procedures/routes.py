@@ -217,7 +217,7 @@ class ProcedureIn(BaseModel):
     derived_from_run: str | None = None
 
 
-async def _validated(request: Request, raw: dict,
+async def _checked(request: Request, raw: dict,
                      principal: Principal | None = None) -> tuple[ProcedureSpec, list[str]]:
     """저장 시점 검증. `principal` 을 주면 **게이트웨이 스키마 대조까지** 한다.
 
@@ -251,6 +251,12 @@ async def _validated(request: Request, raw: dict,
         else:
             errs.append("warn:게이트웨이에 못 물어봐 **도구 스키마 대조를 건너뛰었다** — "
                         "인자 오타가 실행 시점에야 드러날 수 있다")
+    return spec, errs
+
+
+async def _validated(request: Request, raw: dict, principal: Principal | None = None):
+    """저장 경로 — 딱딱한 오류가 있으면 **거절한다**. 경고만 돌려준다."""
+    spec, errs = await _checked(request, raw, principal)
     hard = [e for e in errs if not e.startswith("warn:")]
     if hard:
         raise AuthError("절차를 저장할 수 없습니다:\n- " + "\n- ".join(hard), status_code=422)
@@ -1051,20 +1057,12 @@ def stats(request: Request, principal: Principal = Depends(_me)) -> dict:
 async def validate(request: Request, body: ProcedureIn,
                    principal: Principal = Depends(_me)) -> dict:
     """거절 사유와 경고를 저장 **전에** 보여 준다. 스키마 대조는 게이트웨이가 붙었을 때만."""
-    spec = ProcedureSpec.model_validate(body.spec)
-    errs = validate_spec(
-        spec, max_steps=int(getattr(get_settings(), "procedures_max_steps", 30)))
-    schema_errs: list[str] = []
-    try:
-        runner = _runner(request)
-        cat = await runner.catalog(principal)
-        # 2단 도구는 **속 인자**까지 본다 — `run_operation(args=…)` 는 1단 스키마상 자유
-        # object 라 오타가 그냥 통과한다(PLAN §9-4). 못 받아 오면 그 항목만 안 본다.
-        second = await runner.second_stage(principal, spec)
-        schema_errs = check_against_schemas(spec, cat, second)
-    except Exception:  # noqa: BLE001 — 게이트웨이가 없어도 나머지 검증은 낸다
-        logger.info("검증 중 도구 카탈로그 조회 실패", exc_info=True)
+    # ⚠ **저장과 같은 길을 탄다.** 따로 두었더니 둘이 어긋났다 — 이 화면은 게이트웨이가
+    # 불통이면 대조를 건너뛰고도 **아무 말 없이 '깨끗하다'** 를 보였고(저장 경로는 그 사실을
+    # 경고로 남긴다), 카탈로그가 0건이면 반대로 **전 단계가 빨갛게** 떴다(저장은 통과시킨다).
+    # 저장 전에 진실을 보여 주는 것이 이 화면의 일이므로, 어긋나면 화면이 거짓말을 한다.
+    _spec, errs = await _checked(request, body.spec, principal)
     return {
-        "errors": [e for e in errs if not e.startswith("warn:")] + schema_errs,
+        "errors": [e for e in errs if not e.startswith("warn:")],
         "warnings": [e[5:] for e in errs if e.startswith("warn:")],
     }
