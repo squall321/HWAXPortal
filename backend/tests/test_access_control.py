@@ -477,3 +477,37 @@ def test_RA_토큰_신원_결속이_fail_open_이_아니다():
     src = inspect.getsource(C)
     assert "if not ra_email:" in src, "이메일이 없을 때 거절하지 않는다"
     assert "if ra_email and ra_email !=" not in src
+
+
+def test_정지는_게이트웨이_경로까지_막고_PAT_도_죽인다(client):
+    """6차는 정지 검사를 포털 `deps.entitled` 에만 넣었다. 그런데 게이트웨이는
+    `/internal/access/entitlements` 를 읽고, 그건 `compute()` 를 지나는데 `compute` 는
+    `status` 를 아예 안 봤다 — 정지 계정 PAT 로 **MCP·REST 둘 다 200** 이었다(실측).
+    그리고 정지가 **PAT 을 폐기하지 않아** 서명 자체는 계속 유효했다(7차 감사)."""
+    from app.access.policy import ADMIN_GROUP, AccessPolicy, compute
+    from app.config import Settings
+
+    pol = AccessPolicy(Settings()).get()
+    # ① 권한 계산의 **유일한 자리**에서 막힌다 — 포털도 게이트웨이도 여기를 지난다
+    e = compute(pol, groups=[], row={"status": "disabled", "groups": [ADMIN_GROUP]})
+    assert e.keys == set() and e.is_admin is False, "정지된 관리자가 권한을 유지했다"
+    assert compute(pol, groups=[], row={"status": "active", "grants": ["*"]}).keys
+
+    # ② 정지하면 그 사람 PAT 이 폐기된다
+    _setup_users(client)
+    hb0 = _login(client, "boss@corp.com")
+    assert client.patch("/auth/access/users/user@corp.com",
+                        json={"grants": ["feat:api-token"]}, headers=hb0).status_code == 200
+    h = _login(client, "user@corp.com")
+    r = client.post("/auth/pat", json={"name": "t", "audiences": ["mcp-gateway"],
+                                       "ttl_days": 30}, headers=h)
+    assert r.status_code in (200, 201), r.text
+    jti = r.json().get("jti") or r.json().get("id")
+    ts = client.app.state.token_store
+    assert jti not in set(ts.revoked_jtis())
+
+    hb = _login(client, "boss@corp.com")
+    got = client.post("/auth/local/users/user@corp.com/status",
+                      json={"status": "disabled"}, headers=hb)
+    assert got.status_code == 200 and got.json()["pats_revoked"] >= 1, got.text
+    assert jti in set(ts.revoked_jtis()), "정지했는데 PAT 이 살아 있다"

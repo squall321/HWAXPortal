@@ -177,6 +177,7 @@ def approve_user(
 
 @router.post("/users/{email}/status")
 def set_user_status(
+    request: Request,
     email: str,
     body: StatusIn,
     store: UserStore = Depends(_user_store),
@@ -185,8 +186,17 @@ def set_user_status(
 ) -> JSONResponse:
     if not store.set_status(email, body.status):
         raise AuthError("not found", status_code=404)
-    logger.info("local status: %s -> %s by %s", email, body.status, admin.email)
-    return JSONResponse({"ok": True})
+    # ⚠ **정지는 토큰까지 죽인다.** 권한 계산만 막으면(`compute` 가 0개) 서명 자체는
+    # 여전히 유효해서, 자격을 안 보는 경로가 생기는 순간 다시 뚫린다. 무기한 PAT 은
+    # 만료로 안 죽고 폐기로만 죽는다 — 정지가 절반만 듣던 자리다(7차 감사).
+    revoked = 0
+    if body.status == "disabled":
+        ts = getattr(request.app.state, "token_store", None)
+        if ts is not None:
+            revoked = ts.revoke_all_for(email)
+    logger.info("local status: %s -> %s by %s (PAT %d개 폐기)",
+                email, body.status, admin.email, revoked)
+    return JSONResponse({"ok": True, "pats_revoked": revoked})
 
 
 @router.post("/users/{email}/reset-password")

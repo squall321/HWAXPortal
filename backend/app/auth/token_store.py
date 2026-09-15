@@ -107,6 +107,22 @@ class TokenStore:
             self._conn.commit()
             return cur.rowcount > 0
 
+    def revoke_all_for(self, email: str) -> int:
+        """그 사람의 **살아 있는 PAT 을 전부** 폐기한다. 폐기한 개수를 돌려준다.
+
+        ⚠ 계정 정지가 토큰까지 죽이지 않으면 정지가 절반만 듣는다 — 권한 계산은 막혀도
+        (`compute` 가 정지면 0개) **서명 자체는 여전히 유효**해서, 자격을 안 보는 경로가
+        생기는 순간 다시 뚫린다. 무기한 토큰은 만료로 안 죽고 폐기로만 죽는다(7차 감사).
+        """
+        e = (email or "").strip().lower()
+        if not e:
+            return 0
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE pat SET revoked = 1 WHERE lower(email) = ? AND revoked = 0", (e,))
+            self._conn.commit()
+            return cur.rowcount
+
     def revoked_jtis(self) -> list[str]:
         """Non-expired revoked jtis — the denylist the REST gateway polls. GCs expired rows."""
         now = int(datetime.now(tz=UTC).timestamp())

@@ -164,6 +164,13 @@ def compute(policy: Policy, *, groups: list[str], row: dict | None) -> Entitleme
 
     groups 는 로그인 때 받은 값(IdP·로컬)이고, 합성 그룹은 여기서 버린다 — PAT·JWT 에 박힌 옛
     권한이 다시 들어오지 않게. 관리자 여부는 로그인 값이나 원장 값 어느 쪽이든 인정한다."""
+    # ⚠ **정지된 계정은 권한이 0이다.** 여기가 원장 행을 권한으로 바꾸는 **유일한** 자리다 —
+    # 포털 요청(`deps.entitled`)도, 게이트웨이가 읽는 `/internal/access/entitlements` 도
+    # 이 함수를 지난다. 정지 검사를 포털 쪽에만 두면 **게이트웨이로는 그대로 통과한다**
+    # (실측 2026-09-15: 정지 계정 PAT 로 MCP·REST 둘 다 200). 관리자 여부도 같이 내린다 —
+    # `set_status` 는 `groups` 를 안 건드려서 정지된 관리자가 `portal-admin` 을 유지했다.
+    if str((row or {}).get("status") or "") == "disabled":
+        return Entitlements(keys=set(), reasons={}, affiliation="", is_admin=False)
     base = [g for g in (groups or []) if not is_synthetic(g)]
     stored = list((row or {}).get("groups") or [])
     is_admin = ADMIN_GROUP in base or ADMIN_GROUP in stored
