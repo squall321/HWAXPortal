@@ -242,6 +242,13 @@ class ProceduresRunner:
         """도구에 판본이 없으니 **변화를 잡아 멈추는 것까지** 한다(PLAN §5-8)."""
         out = []
         for i, st in enumerate(spec.steps, 1):
+            # ⚠ 맨이름으로 물러서는 것의 **정확한 뜻**(2026-09-15 실측). 게이트웨이는 한 앱만
+            # 가진 도구를 맨이름으로, **겹치면 전부 앱 접두로** 낸다 — 겹칠 때 맨이름은
+            # 아예 사라진다(`whoami`·`list_reports` 확인). 그래서 "맨이름이 있다" 는
+            # **그 도구가 이 게이트웨이에 딱 하나 있다** 는 뜻이지, **우리 앱 것**이라는 뜻은
+            # 아니다. backend 를 잘못 적었으면 남의 앱 계약으로 검사하게 된다. 그 경우는
+            # `schema_fp` 가 안 맞아 드리프트로 멈추고(아래), 없으면 실행이 `unknown tool` 로
+            # 터진다 — 조용히 틀리지는 않는다. 지도 없이 여기서 더 가릴 방법은 없다.
             meta = catalog.get(st.alias) or catalog.get(st.tool)
             if meta is None:
                 out.append(f"{i}단계 {st.tool}: 게이트웨이에 없다({st.alias})")

@@ -913,15 +913,24 @@ async def save_as_procedure(request: Request, run_id: str, body: SaveAsIn,
     """
     run = _owned(request, principal, run_id)
     steps = body.steps
+    dropped: list[str] = []
     if steps is None:  # 표시 없이 저장하면 실행의 단계를 그대로 굳힌다
         steps = [{"backend": s["backend"], "tool": s["tool"], "args": s["args"],
                   "schema_fp": s["schema_fp"], "expect": s["expect"] or "fast"}
                  for s in run["steps"] if s["state"] == "done"]
+        # ⚠ **버린 것을 말한다.** 중간 단계가 실패·건너뜀·unknown 이면 조용히 빠지고
+        # 나머지가 번호만 다시 매겨진다 — 그러면 **한 번도 통째로 돌아 본 적 없는**
+        # 절차가 저장되고, 빠진 단계의 출력을 쓰던 뒷 단계는 그때의 값이 상수로 굳는다.
+        dropped = [f"{s['ix'] + 1}단계 {s['tool']}({s['state']})"
+                   for s in run["steps"] if s["state"] != "done"]
     if not steps:
         raise AuthError("저장할 단계가 없습니다 — 성공한 단계가 하나도 없습니다",
                         status_code=422)
     spec = {"title": body.title, "vars": body.vars, "steps": steps}
     _, warns = await _validated(request, spec, principal)
+    if dropped:
+        warns = warns + [f"성공하지 않은 단계를 빼고 굳혔습니다 — {', '.join(dropped[:6])}. "
+                         "이 절차는 **통째로 돌아 본 적이 없습니다**"]
     got = _store(request).create_procedure(
         owner_sub=principal.subject, spec=spec, title=body.title,
         visibility=body.visibility, derived_from_run=run_id)
@@ -953,10 +962,15 @@ async def save_draft(request: Request, run_id: str, body: DraftSaveIn,
                              tool_desc=tdesc)
     spec["title"] = body.title
     _, save_warns = await _validated(request, spec, principal)
+    # ⚠ **초안이 안 것을 버리지 않는다.** 여태 `gaps` 를 통째로 떨궜다. 인자가 잘린
+    # 미리보기라 구조가 아니었던 단계는 `args: {}` 로 굳는데, 그 도구에 필수 인자가
+    # 없으면 스키마 대조도 통과한다 — **인자 없이 부르는 단계**가 조용히 저장된다.
+    gap_warns = [f"{g.get('step') or '-'}단계 {g.get('tool') or ''}: {g.get('why') or g.get('kind')}"
+                 for g in (spec_draft.get("gaps") or [])]
     got = _store(request).create_procedure(
         owner_sub=principal.subject, spec=spec, title=body.title,
         visibility=body.visibility, derived_from_run=run_id)
-    return {**got, "warnings": warns + save_warns}
+    return {**got, "warnings": warns + save_warns + gap_warns}
 
 
 @router.get("/procedures/{procedure_id}/export")
