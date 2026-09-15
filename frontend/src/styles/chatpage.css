@@ -630,6 +630,14 @@
 }
 .act-tag.persona { border-color: rgba(112, 130, 255, 0.45); }
 .act-tools { display: flex; flex-direction: column; gap: 0.32rem; }
+/* 실패한 호출이 성공한 호출과 똑같이 보이면 안 된다 — 여태 `ok` 를 계산만 하고 안 썼다. */
+.act-tool.failed summary, .act-tool.plain.failed {
+  border-left: 2px solid var(--danger, #c2410c);
+}
+.act-fail {
+  color: var(--danger, #c2410c); font-size: 0.62rem; font-weight: 600;
+  margin-left: 0.3rem; letter-spacing: 0.02em;
+}
 .act-tool.plain,
 .act-tool summary {
   display: flex;

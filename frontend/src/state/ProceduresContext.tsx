@@ -36,6 +36,12 @@ export function ProceduresProvider({ children }: { children: ReactNode }) {
 
   const [runId, setRunId] = useState<string | null>(null);
   const [watched, setWatched] = useState<RunDetail | null>(null);
+  // ⚠ **지금 보고 있는 실행**을 동기로 들고 있는다. `refreshWatched` 가 렌더 시점의
+  // runId 를 가두면, 다시 돌리기처럼 `watch(새 id)` 직후에 부르는 자리에서 **옛 실행**을
+  // 받아 와 덮어쓴다. 새 실행이 곧장 게이트나 계획 완료로 앉으면 폴링이 한 번 돌고
+  // 멈추므로 그 덮어쓰기가 **영구**가 된다 — 주소는 새 실행인데 화면은 옛 실행이고,
+  // 거기서 '확인하고 계속' 을 누르면 옛 실행의 id·지문으로 승인이 나간다.
+  const runIdRef = useRef<string | null>(null);
 
   const reloadTools = useCallback(() => {
     if (Date.now() - fetchedAt.current < CATALOG_TTL_MS && tools.length) return;
@@ -51,15 +57,18 @@ export function ProceduresProvider({ children }: { children: ReactNode }) {
   }, [tools.length]);
 
   const refreshWatched = useCallback(async () => {
-    if (!runId) return;
+    const id = runIdRef.current;
+    if (!id) return;
     try {
-      setWatched(await getRun(runId));
+      const r = await getRun(id);
+      if (runIdRef.current === id) setWatched(r);   // 그새 옮겨 갔으면 버린다
     } catch {
       /* 폴링 실패는 조용히 넘긴다 — 다음 주기가 다시 본다 */
     }
-  }, [runId]);
+  }, []);
 
   const watch = useCallback((id: string | null) => {
+    runIdRef.current = id;   // 동기로 — 효과로 미루면 그 사이 호출이 옛 것을 본다
     setRunId(id);
     setWatched(null);
   }, []);

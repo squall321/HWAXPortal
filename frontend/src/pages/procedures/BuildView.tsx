@@ -175,7 +175,7 @@ function SaveAsProcedure({
   steps,
 }: {
   runId: string;
-  steps: { backend: string; tool: string; args: Record<string, unknown> }[];
+  steps: { ix: number; backend: string; tool: string; args: Record<string, unknown> }[];
 }) {
   const [title, setTitle] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
@@ -193,10 +193,10 @@ function SaveAsProcedure({
       const defs = Object.entries(vars)
         .filter(([, name]) => name.trim())
         .map(([, name]) => ({ key: name.trim(), label: name.trim(), type: 'string' as const, required: true }));
-      const patched: StepDef[] = steps.map((s, i) => ({
+      const patched: StepDef[] = steps.map((s) => ({
         backend: s.backend,
         tool: s.tool,
-        args: substituteLeaves(s.args, i, vars),
+        args: substituteLeaves(s.args, s.ix, vars),   // 표와 같은 열쇠로 — 위치가 아니다
       }));
       const r = await saveAsProcedure(runId, title || '이름 없는 절차', defs, patched);
       setMsg(`저장했습니다 — 판본 ${r.version_no}${r.warnings.length ? ` · 경고 ${r.warnings.length}건` : ''}`);
@@ -235,7 +235,7 @@ function SaveAsProcedure({
         <tbody>
           {leaves.map((l) => (
             <tr key={l.id}>
-              <td style={td}>{l.stepIx + 1}</td>
+              <td style={td}>{l.ord + 1}</td>
               <td style={td}>
                 <code>{l.path}</code>
               </td>
@@ -262,13 +262,17 @@ function SaveAsProcedure({
   );
 }
 
-type Leaf = { id: string; stepIx: number; path: string; value: unknown };
+type Leaf = { id: string; stepIx: number; ord: number; path: string; value: unknown };
 
 /** 인자 트리의 **문자열·수치 잎**만 변수 후보로 낸다. 치환도 잎 단위다(PLAN §2). */
-function collectLeaves(steps: { args: Record<string, unknown> }[]): Leaf[] {
+function collectLeaves(steps: { ix: number; args: Record<string, unknown> }[]): Leaf[] {
   const out: Leaf[] = [];
-  steps.forEach((s, ix) => {
-    walk(s.args, '', (path, value) => out.push({ id: `${ix}|${path}`, stepIx: ix, path, value }));
+  // ⚠ 열쇠는 **서버가 준 `ix`** 다. 배열 위치로 묶으면, 앞쪽 단계 하나가 사람이 타이핑하는
+  // 동안 `done` 이 되면서(1.5초 폴링·승인·고르기) 뒤 항목의 위치가 전부 밀리고 —
+  // 입력해 둔 변수 이름이 **말없이 다른 단계의 인자에** 붙는다.
+  steps.forEach((s, ord) => {
+    walk(s.args, '', (path, value) =>
+      out.push({ id: `${s.ix}|${path}`, stepIx: s.ix, ord, path, value }));
   });
   return out;
 }
@@ -366,9 +370,16 @@ function TwoStage({ tool }: { tool: ToolInfo }) {
   const [pickedItem, setPickedItem] = useState('');
   const [schema, setSchema] = useState<Record<string, unknown> | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // ⚠ **못 물어본 것과 없는 것을 안 섞는다.** 등록부를 못 받아 `[]` 로 두면 `d` 가
+  // undefined 가 되어 이 칸이 통째로 사라진다 — `run_operation` 이 평범한 도구 하나로
+  // 보이고, 사람은 `operation` 에 무엇을 적을지 알 길이 없어진다. 이 칸이 있는 이유가
+  // 바로 그것이다.
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    listDispatchers().then((r) => setReg(r.dispatchers)).catch(() => setReg([]));
+    listDispatchers()
+      .then((r) => setReg(r.dispatchers))
+      .catch((e: Error) => { setReg([]); setErr(e.message); });
   }, []);
 
   // 노출 이름은 앱이 겹치면 접두어가 붙는다 — 등록부의 tool 로 끝나는지로 본다
@@ -384,10 +395,18 @@ function TwoStage({ tool }: { tool: ToolInfo }) {
     if (!d) return;
     dispatcherItems(d.backend, d.tool)
       .then((r) => { setItems(r.items ?? []); setNote(r.note ?? null); })
-      .catch(() => setItems([]));
+      .catch((e: Error) => { setItems([]); setErr(e.message); });
   }, [d]);
 
-  if (!d) return null;
+  if (!d) {
+    // 등록부 자체를 못 받았으면 말한다 — 조용히 사라지면 2단이 아닌 것처럼 보인다.
+    if (!err) return null;
+    return (
+      <span style={{ color: '#d9a441', fontSize: '0.76rem' }}>
+        2단 등록부를 못 받았습니다 — {err}. 이 도구가 뒤에 여럿을 두고 있는지 알 수 없습니다.
+      </span>
+    );
+  }
 
   return (
     <section style={{ border: '1px solid #d9a441', borderRadius: 6, padding: '0.6rem',
@@ -400,7 +419,12 @@ function TwoStage({ tool }: { tool: ToolInfo }) {
         고르면 <b>그 계약</b>을 보여 주고, 저장할 때 <b>속 인자까지 검증</b>합니다.
       </span>
       {note && <span style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>{note}</span>}
-      {!items && <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>불러오는 중…</span>}
+      {!items && !err && <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>불러오는 중…</span>}
+      {err && (
+        <span style={{ color: '#d9a441', fontSize: '0.76rem' }}>
+          뒤에 무엇이 있는지 못 받았습니다 — {err} (없다는 뜻이 아닙니다)
+        </span>
+      )}
       {!!items?.length && (
         <select
           style={input}

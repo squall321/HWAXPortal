@@ -171,12 +171,24 @@ function YamlImport({ onImported }: { onImported: () => void }) {
 /** 씨앗은 리포와 함께 자란다 — 목록이 차 있어도 최신판을 받을 길이 있어야 한다. */
 function SeedRefresh({ onImported }: { onImported: () => void }) {
   const [seeds, setSeeds] = useState<SeedRow[] | null>(null);
+  const [seedErr, setSeedErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    listSeeds().then((r) => setSeeds(r.seeds.filter((x) => !x.broken))).catch(() => setSeeds([]));
+    // 못 받은 것은 **비어 있는 것과 다르다.** 조용히 []로 두면 정본 예제 칸이 통째로
+    // 사라져, 게이트웨이가 죽은 것과 "예제가 없다" 가 같은 모양이 된다.
+    listSeeds()
+      .then((r) => setSeeds(r.seeds.filter((x) => !x.broken)))
+      .catch((e: Error) => { setSeeds([]); setSeedErr(e.message); });
   }, []);
+  if (seedErr) {
+    return (
+      <p style={{ color: '#d9a441', fontSize: '0.78rem' }}>
+        정본 예제 목록을 못 받았습니다 — {seedErr} (예제가 없다는 뜻이 아닙니다)
+      </p>
+    );
+  }
   if (!seeds?.length) return null;
 
   const take = async (s: SeedRow) => {
@@ -305,10 +317,20 @@ function ProcedureDetail() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // ⚠ 절차를 갈아탈 때 **비운다.** 안 비우면 앞 절차에 입력한 값(`vals`)이 그대로 남아
+  // 새 절차 id 로 제출된다 — 같은 이름의 변수면 화면상 아무 표시도 없다. 늦게 온 응답이
+  // 새 절차를 덮어쓰는 것도 막는다(`alive`).
   useEffect(() => {
+    let alive = true;
+    setV(null);
+    setVals({});
+    setErr(null);
     getProcedure(id)
-      .then(setV)
-      .catch((e: Error) => setErr(e.message));
+      .then((got) => alive && setV(got))
+      .catch((e: Error) => alive && setErr(e.message));
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   const go = async (mode: 'plan' | 'live') => {
@@ -760,11 +782,27 @@ function DraftView({ runId }: { runId: string }) {
  */
 function ToolContract({ procedureId }: { procedureId: string }) {
   const [t, setT] = useState<ProcedureTool | null>(null);
+  const [tErr, setTErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
+  // ⚠ 절차가 바뀌면 다시 받는다. `!t` 로 막아 두면 A 의 스키마가 B 의 제목 아래 남는다.
   useEffect(() => {
-    if (open && !t) getProcedureTool(procedureId).then(setT).catch(() => setT(null));
-  }, [open, t, procedureId]);
+    setT(null);
+    setTErr(null);
+  }, [procedureId]);
+
+  useEffect(() => {
+    if (!open || t || tErr) return;
+    let alive = true;
+    getProcedureTool(procedureId)
+      .then((got) => alive && setT(got))
+      // ⚠ 조용히 null 로 두면 펴도 **아무것도 없는 칸**이 열린다 — 못 받은 것과
+      // 계약이 없는 것이 같은 모양이 된다. 왜 못 받았는지 말한다.
+      .catch((e: Error) => alive && setTErr(e.message));
+    return () => {
+      alive = false;
+    };
+  }, [open, t, tErr, procedureId]);
 
   const props = (t?.inputSchema.properties ?? {}) as Record<string, {
     type?: string; description?: string; enum?: string[]; examples?: unknown[];
@@ -782,6 +820,12 @@ function ToolContract({ procedureId }: { procedureId: string }) {
           절차의 변수가 곧 <b>입력 스키마</b>입니다.
         </span>
       </div>
+      {open && tErr && (
+        <p style={{ color: '#d9a441', fontSize: '0.8rem', margin: '0.5rem 0 0' }}>
+          도구 계약을 못 받았습니다 — {tErr}{' '}
+          <button type="button" style={tiny} onClick={() => setTErr(null)}>다시</button>
+        </p>
+      )}
       {open && t && (
         <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.6rem' }}>
           {t.human_gates.length > 0 && (

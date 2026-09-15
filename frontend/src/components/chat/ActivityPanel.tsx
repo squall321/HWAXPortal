@@ -38,6 +38,7 @@ const originOf = (tool: string) =>
   TOOL_ORIGIN[tool] ?? (tool.startsWith('slurm_') ? 'Smart Twin(슬럼)' : '게이트웨이');
 
 interface ToolInfo {
+  key: string;     // 호출 하나를 가리키는 값 — **이름이 아니다**(같은 도구를 N번 부른다)
   name: string;
   detail?: string; // 이 호출의 입력 요약
   result?: string; // 이 호출의 결과 요약
@@ -151,7 +152,7 @@ export function ActivityPanel({
         // 그 둘이 서로 다른 호출일 수 있다(실측: predict_sed 다섯 번의 프리뷰가 전부 같았다).
         // 이제 서버가 짝 키(call)를 보내므로 그걸로 묶는다. 없는 낡은 이벤트만 이름으로 묶는다.
         const key = it.call && it.tool === t ? `${t}\u0000${it.call}` : t;
-        const cur = map.get(key) ?? { name: t };
+        const cur = map.get(key) ?? { key, name: t };
         if (it.detail && it.tool === t) cur.detail = it.detail;
         if (it.result_preview && it.tool === t) cur.result = it.result_preview;
         if (typeof it.ok === 'boolean' && it.tool === t) cur.ok = it.ok;
@@ -198,9 +199,13 @@ export function ActivityPanel({
           <div className="act-tools">
             {tools.map((t) =>
               t.detail || t.result ? (
-                <details key={t.name} className="act-tool">
+                // ⚠ key 는 **호출**이다. 이름으로 주면 짝 키로 나눠 놓은 것을 React 가
+                // 다시 합쳐, 펼침 상태와 내용이 엉뚱한 호출에 붙는다(3번째를 펼치면
+                // 1번째 인자가 보인다).
+                <details key={t.key} className={`act-tool${t.ok === false ? ' failed' : ''}`}>
                   <summary>
                     <code>{t.name}</code>
+                    {t.ok === false && <span className="act-fail">실패</span>}
                     <span className="act-origin">{originOf(t.name)}</span>
                   </summary>
                   {t.detail && (
@@ -215,8 +220,9 @@ export function ActivityPanel({
                   )}
                 </details>
               ) : (
-                <div key={t.name} className="act-tool plain">
+                <div key={t.key} className={`act-tool plain${t.ok === false ? ' failed' : ''}`}>
                   <code>{t.name}</code>
+                  {t.ok === false && <span className="act-fail">실패</span>}
                   <span className="act-origin">{originOf(t.name)}</span>
                 </div>
               ),
