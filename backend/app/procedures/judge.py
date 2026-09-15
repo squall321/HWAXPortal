@@ -180,6 +180,43 @@ _NOTE_KEYS = ("warnings", "warning", "notes", "caveats", "status", "assumptions"
               "suspect_shared_values", "degenerate")
 _NOTE_MAX = 4096
 
+# 그중 **경고로 읽어야 할 것들.** 표의 경고 칸은 여기서 나온다.
+_WARN_KEYS = ("warnings", "warning", "caveats", "quality_flags",
+              "out_of_domain", "extrapolation", "degenerate")
+
+
+def warn_labels(notes: dict | None, *, limit: int = 8) -> list[str]:
+    """단계 노트에서 **사람이 볼 짧은 표식**을 모은다.
+
+    ⚠ 예전엔 `notes["warnings"]` 안의 dict 에서 `code` 만 봤다. 그런데 흔한 모양은
+    **문자열 목록**(`["W120: ply 제외"]`)이라 하나도 안 걸렸고, 값이 문자열 하나면
+    글자를 돌아 역시 0건이었다. 표의 경고 칸이 비면 사람은 '깨끗하다' 로 읽는다 —
+    '못 읽었다' 가 아니라. 이 칸이 있는 이유가 **결과는 정상인데 경고만이 유일한
+    신호인 자리**(W120)를 보이는 것이므로, 못 읽는 모양이 있으면 칸의 뜻이 없어진다.
+    `warnings` 말고 `quality_flags`·`out_of_domain` 처럼 같은 뜻인 칸도 함께 본다.
+    """
+    out: list[str] = []
+    for k in _WARN_KEYS:
+        v = (notes or {}).get(k)
+        if v in (None, "", [], {}, False):
+            continue
+        items = v if isinstance(v, list) else [v]
+        for it in items:
+            if isinstance(it, dict):
+                lab = str(it.get("code") or it.get("id") or it.get("name")
+                          or it.get("message") or json.dumps(it, ensure_ascii=False))
+            elif isinstance(it, bool):
+                lab = k          # `degenerate: true` 는 플래그 자체가 표식이다
+            else:
+                lab = str(it)
+            lab = lab.strip()[:60]
+            if lab and lab not in out:
+                out.append(lab)
+            if len(out) >= limit:
+                return out
+    return out
+
+
 
 def collect_notes(parsed: object) -> dict:
     """`notes` 칸에 올릴 경고·출처. W120(ply 제외)·합성 데이터 경고가 이 길로 남는다."""

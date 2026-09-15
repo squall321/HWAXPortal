@@ -31,6 +31,7 @@ from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import BACKEND_DIR, get_settings
 from app.deps import ensure, get_current_principal, require_csrf
+from app.procedures import judge as J
 from app.procedures.models import (
     ProcedureSpec,
     SpecError,
@@ -697,11 +698,10 @@ def batch(request: Request, batch_id: str, principal: Principal = Depends(_me)) 
                            "error": str(bad[0]["error"])[:200]} if bad else None)
         codes: list[str] = []
         for st in full.get("steps") or []:
-            for w in ((st.get("notes") or {}).get("warnings") or []):
-                c = w.get("code") if isinstance(w, dict) else None
-                if c and c not in codes:
-                    codes.append(str(c))
-        r["warnings"] = codes
+            for lab in J.warn_labels(st.get("notes")):
+                if lab not in codes:
+                    codes.append(lab)
+        r["warnings"] = codes[:12]
     return {"batch_id": batch_id, "count": len(rows), "columns": cols, "runs": rows}
 
 

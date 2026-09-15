@@ -450,3 +450,31 @@ def test_example_는_required_를_풀어_주지_않는다():
         coerce_inputs(spec, {})            # 예시가 있어도 자동으로 안 들어간다
     got = coerce_inputs(spec, {"laminate": '{"unit_system": "SI"}'})
     assert got["laminate"] == {"unit_system": "SI"}
+
+
+# ── 경고 표식 — 모양이 여럿인데 하나만 읽고 있었다(2026-09-15 감사) ─────────
+def test_경고가_문자열이어도_읽는다():
+    """흔한 모양은 **문자열 목록**인데 dict 의 `code` 만 봤다 — 표의 경고 칸이 늘 비었고,
+    빈 칸은 '깨끗하다' 로 읽힌다. '못 읽었다' 가 아니라."""
+    from app.procedures.judge import warn_labels
+
+    assert warn_labels({"warnings": ["W120: ply 제외", "W7"]}) == ["W120: ply 제외", "W7"]
+    assert warn_labels({"warnings": "W120 하나"}) == ["W120 하나"], "글자를 돌면 0건이 된다"
+    assert warn_labels({"warnings": [{"code": "W120"}]}) == ["W120"]
+    # `warnings` 말고도 같은 뜻인 칸이 있다
+    assert warn_labels({"quality_flags": ["synthetic"]}) == ["synthetic"]
+    assert warn_labels({"degenerate": True}) == ["degenerate"]
+    # 경고가 아닌 것을 경고로 만들지는 않는다
+    assert warn_labels({"notes": "그냥 메모"}) == []
+    assert warn_labels(None) == [] and warn_labels({"warnings": []}) == []
+
+
+def test_비밀_검사가_목록_안도_본다():
+    """검사 자리가 dict 를 도는 곳이라, 값이 **목록이면 키를 잃어** 아무 검사도 안 받았다.
+    `visibility` 기본이 `all`(공유)이라 그대로 유출이다."""
+    from app.procedures.models import _scan_args
+
+    assert _scan_args({"headers": {"Authorization": ["Bearer sk-live-abc"]}}, "1단계")
+    assert _scan_args({"urls": ["https://u:p@h/x"]}, "1단계")
+    assert _scan_args({"token": "{{tok}}"}, "1단계") == [], "변수는 비밀이 아니다"
+    assert _scan_args({"note": "평범한 값"}, "1단계") == []

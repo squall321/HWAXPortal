@@ -366,22 +366,29 @@ def _all_refs(spec: ProcedureSpec) -> set[str]:
     return out
 
 
-def _scan_args(args: Any, at: str, trail: str = "") -> list[str]:
+def _scan_args(args: Any, at: str, trail: str = "", key: str = "") -> list[str]:
+    """인자 트리에서 비밀·자격증명을 찾는다. **잎에서 판정한다.**
+
+    ⚠ 예전에는 dict 를 도는 자리에서만 봤다. 그래서 값이 **목록이면 그 안의 문자열은
+    아무 검사도 안 받았다** — 검사할 때 키 이름이 이미 사라졌기 때문이다. 실측:
+    `{"Authorization": "Bearer …"}` 는 막히는데 `{"Authorization": ["Bearer …"]}` 는
+    통과했고, `{"urls": ["https://u:p@h/x"]}` 도 통과했다. `visibility` 기본이 `all`,
+    즉 **공유가 기본**이라 그대로 유출이다. 목록은 그 키의 값이므로 키를 물려준다.
+    """
     errs: list[str] = []
     if isinstance(args, dict):
         for k, v in args.items():
-            here = f"{trail}.{k}" if trail else k
-            literal = isinstance(v, str) and "{{" not in v
-            if SECRET_KEY.search(k) and literal and v:
-                errs.append(f"{at}: 비밀로 보이는 인자를 상수로 저장할 수 없다 — {here}")
-            elif k in PATHY_KEY and literal and v:
-                errs.append(f"warn:{at}: 경로·URL 이 상수로 박힌다 — {here}")
-            if literal and USERINFO_URL.search(v):
-                errs.append(f"{at}: URL 에 계정·비밀번호가 들어 있다 — {here}")
-            errs += _scan_args(v, at, here)
+            errs += _scan_args(v, at, f"{trail}.{k}" if trail else k, k)
     elif isinstance(args, list):
         for i, v in enumerate(args):
-            errs += _scan_args(v, at, f"{trail}[{i}]")
+            errs += _scan_args(v, at, f"{trail}[{i}]", key)
+    elif isinstance(args, str) and args and "{{" not in args:
+        if SECRET_KEY.search(key):
+            errs.append(f"{at}: 비밀로 보이는 인자를 상수로 저장할 수 없다 — {trail}")
+        elif key in PATHY_KEY:
+            errs.append(f"warn:{at}: 경로·URL 이 상수로 박힌다 — {trail}")
+        if USERINFO_URL.search(args):
+            errs.append(f"{at}: URL 에 계정·비밀번호가 들어 있다 — {trail}")
     return errs
 
 

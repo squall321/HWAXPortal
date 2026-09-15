@@ -353,3 +353,63 @@ def test_설명_없는_인자는_한_줄로_모아_낸다():
     agg = [g for g in got["gaps"] if g["kind"] == "args_undocumented"]
     assert len(agg) == 1, f"인자마다 올렸다: {got['gaps']}"
     assert agg[0]["count"] == 3 and len(agg[0]["where"]) == 3
+
+
+# ── 우연한 일치를 값으로 착각하던 자리(2026-09-15 감사) ────────────────────
+def test_앞의_0_이_있는_번호는_같은_수가_아니다():
+    """`"0012"` 와 `12` — 로트·도면·파트 번호에서 앞의 0 은 뜻을 갖는다.
+
+    느슨하게 보면 초안이 "앞 결과의 `count` 에 같은 값이 있다" 며 체인을 만들고,
+    재생 때 정수 `12` 를 넣어 **다른 대상**을 부른다. 이유 문구는 같다고 단언한다.
+    """
+    got = derive.draft([
+        {"tool": "list_lots", "args": {}, "result": {"count": 12}},
+        {"tool": "get_lot", "args": {"lot": "0012"}, "result": {}},
+    ], tool_backend={"list_lots": "a", "get_lot": "a"})
+    assert "{{" not in str(got["spec"]["steps"][1]["args"]["lot"]), got["reasons"]
+    assert not got["spec"]["steps"][0].get("save")
+
+
+def test_같은_수를_같은_표기로_쓰면_이어진다():
+    """짝 검사 — 너무 세게 조이면 진짜 체인을 놓친다."""
+    got = derive.draft([
+        {"tool": "list_lots", "args": {}, "result": {"lot_id": 4210}},
+        {"tool": "get_lot", "args": {"lot": "4210"}, "result": {}},
+    ], tool_backend={"list_lots": "a", "get_lot": "a"})
+    assert got["spec"]["steps"][1]["args"]["lot"].startswith("{{")
+
+
+def test_사람_말_안의_조각_일치는_인정하지_않는다():
+    """`12.5` 가 `"2012.5월"` 안에서 잡혔다 — '사람이 쓴 말에 있다' 가 거짓이 된다."""
+    r = derive._where_from(12.5, [], "2012.5월에 측정했다")
+    assert r["kind"] == "constant", r
+    assert derive._where_from(12.5, [], "두께 12.5 mm 로")["kind"] == "asked"
+
+
+# ── 사람이 고른 이름이 말없이 바뀌던 자리 ─────────────────────────────────
+def _one_const():
+    return {"title": "t", "vars": [],
+            "steps": [{"backend": "a", "tool": "t1", "args": {"lot": "A-1000"}},
+                      {"backend": "a", "tool": "t2", "args": {"jig": "J-2000"}}]}
+
+
+def test_이름이_요청과_달라지면_전부_말한다():
+    spec, warns = derive.promote(_one_const(), [{"step": 2, "arg": "jig", "key": "지그2"}])
+    keys = [v["key"] for v in spec["vars"]]
+    assert warns, f"`지그2` 가 {keys} 로 바뀌었는데 아무 말이 없다"
+    assert any("지그2" in w for w in warns)
+
+
+def test_이미_있는_이름은_따로_만들되_말한다():
+    spec = _one_const()
+    spec["vars"] = [{"key": "lot", "label": "로트", "type": "string", "required": True}]
+    spec["steps"][0]["args"]["lot"] = "{{lot}}"
+    out, warns = derive.promote(spec, [{"step": 2, "arg": "jig", "key": "lot"}])
+    assert any("이미 있는 변수" in w for w in warns), warns
+    assert sorted(v["key"] for v in out["vars"]) == ["lot", "lot_2"]
+
+
+def test_그대로_쓸_수_있는_이름은_조용하다():
+    """짝 검사 — 아무 때나 경고하면 경고가 소음이 된다."""
+    _spec, warns = derive.promote(_one_const(), [{"step": 1, "arg": "lot", "key": "lot_no"}])
+    assert warns == [], warns

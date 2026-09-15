@@ -68,16 +68,31 @@ def _same(a: Any, b: Any) -> bool:
         return a == b
     sa, sb = (a if isinstance(a, str) else None), (b if isinstance(b, str) else None)
     if sa is not None and isinstance(b, (int, float)):
-        try:
-            return float(sa) == float(b)
-        except ValueError:
-            return False
+        return _num_text(b) is not None and sa in _num_text(b)
     if sb is not None and isinstance(a, (int, float)):
-        try:
-            return float(sb) == float(a)
-        except ValueError:
-            return False
+        return _num_text(a) is not None and sb in _num_text(a)
     return sa is not None and sb is not None and sa == sb
+
+
+def _num_text(n) -> set[str] | None:
+    """그 수를 **그대로 적은** 문자열들. 이 집합 밖은 같은 값이 아니다.
+
+    ⚠ 예전엔 `float(s) == float(n)` 로 봤다. 그러면 `"0012"` 와 `12` 가 같아진다 —
+    앞의 0 이 뜻을 갖는 자리가 있다(로트·도면·파트 번호). 유도기가 "앞 결과의 `count` 에
+    같은 값이 있다" 며 체인을 만들고, 재생 때 정수 `12` 를 넣어 **다른 대상**을 부른다.
+    게다가 이유 문구는 "값이 같다" 고 단언한다. `MIN_MATCH_LEN` 이 우연한 일치를 막으려고
+    있는데, 이 경로가 그 밑을 뚫고 있었다.
+    """
+    try:
+        f = float(n)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    out = {str(n)}
+    if f.is_integer():
+        out |= {str(int(f)), str(float(f))}
+    else:
+        out.add(str(f))
+    return out
 
 
 def _too_short(v: Any) -> bool:
@@ -178,6 +193,27 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
     }
 
 
+def _in_prose(needle: str, prose: str) -> bool:
+    """사람이 쓴 말 **안에 그 값이 통째로** 있나.
+
+    ⚠ 맨 `in` 은 조각 일치를 부른다 — `12.5` 가 `"2012.5월"` 안에서 잡힌다. 그러면
+    "사람이 쓴 말 안에 이 값이 있다" 는 이유가 거짓이 되고, 사람은 그 말을 믿고 변수로
+    올린다. 앞뒤가 숫자·문자로 이어지지 않는 자리에서만 인정한다.
+    """
+    if not needle:
+        return False
+    tail = needle[-1]
+    for m in re.finditer(re.escape(needle), prose):
+        lo, hi = m.start(), m.end()
+        before_ok = lo == 0 or not (prose[lo - 1].isalnum() or prose[lo - 1] in "._-")
+        after_ok = hi == len(prose) or not (
+            prose[hi].isalnum() if not tail.isdigit() else
+            (prose[hi].isdigit() or prose[hi] == "."))
+        if before_ok and after_ok:
+            return True
+    return False
+
+
 def _where_from(val: Any, before: list[dict], asked: str) -> dict:
     """이 값이 어디서 왔나 — chain(앞 결과) · asked(사람 말) · constant(모른다)."""
     if _too_short(val):
@@ -193,7 +229,7 @@ def _where_from(val: Any, before: list[dict], asked: str) -> dict:
                             "why": f"{ix + 1}단계 결과의 `{path}` 에 같은 값이 있다"}
             except Exception:  # noqa: BLE001 — 경로가 안 풀리면 체인이 아니다
                 pass
-    if asked and isinstance(val, (str, int, float)) and str(val) in asked:
+    if asked and isinstance(val, (str, int, float)) and _in_prose(str(val), asked):
         return {"kind": "asked", "why": "사람이 쓴 말 안에 이 값이 있다"}
     return {"kind": "constant",
             "why": "앞 결과에도 사람 말에도 없다 — 상수로 두었다. 변수인지 사람이 정한다"}
@@ -376,10 +412,13 @@ def _vkey(v: Any) -> str:
     if isinstance(v, (int, float)):
         return f"n:{float(v)}"
     if isinstance(v, str):
+        # `_same` 과 **같은 잣대**여야 한다 — 여기만 느슨하면 `"0012"` 와 `12` 가 한
+        # 변수로 합쳐져, 사람이 한 번 채운 값이 원래 다르던 두 단계로 같이 간다.
         try:
-            return f"n:{float(v)}"
+            f = float(v)
         except ValueError:
             return f"s:{v}"
+        return f"n:{f}" if v in (_num_text(f) or set()) else f"s:{v}"
     return "j:" + json.dumps(v, sort_keys=True, ensure_ascii=False, default=str)
 
 
@@ -414,15 +453,27 @@ def promote(spec: dict, picks: list[dict], *, tool_schemas: dict[str, dict] | No
             warns.append(f"{pick.get('step')}단계의 `{arg}` 는 이미 변수다 — 건너뛰었다")
             continue
 
-        # ⚠ 변수 이름은 소문자·숫자·밑줄만 된다(`Var._key`). 사람이 `지그` 라고 적으면
-        # 규칙상 쓸 글자가 하나도 안 남아 **조용히 `arg` 가 된다** — 그건 다른 이름이다.
-        # 그럴 땐 인자 이름을 쓰고 **그 사실을 말한다.**
+        # ⚠ 변수 이름은 소문자·숫자·밑줄만 된다(`Var._key`). 사람이 적은 이름이 그대로
+        # 안 되는 경우가 셋인데, 여태 **첫째만** 말하고 나머지는 조용했다.
+        #   ① 쓸 글자가 하나도 안 남는다(`지그`) → 인자 이름으로 대체
+        #   ② 일부만 남는다(`지그2` → `v_2`) — 사람이 고른 이름이 흔적도 없이 사라진다
+        #   ③ 이미 있는 이름이다(`lot` → `lot_2`) — 같은 변수로 묶으려던 것이 두 칸이 된다
+        # 규칙을 뒤집는다. **요청한 이름과 달라지면 무조건 말한다** — 이유를 붙여서.
         want = str(pick.get("key") or arg)
-        key = _var_name(want, {n: 1 for n in names})
-        if pick.get("key") and not re.search(r"[a-z0-9]", want.lower()):
-            key = _var_name(arg, {n: 1 for n in names})
-            warns.append(f"`{want}` 는 변수 이름으로 못 쓴다(소문자·숫자·밑줄만) — "
-                         f"`{key}` 로 저장했다. 보이는 이름은 그대로 쓴다")
+        taken = {n: 1 for n in names}
+        key = _var_name(want, taken)
+        if pick.get("key") and key != want:
+            if not re.search(r"[a-z0-9]", want.lower()):
+                key = _var_name(arg, taken)
+                warns.append(f"`{want}` 는 변수 이름으로 못 쓴다(소문자·숫자·밑줄만) — "
+                             f"`{key}` 로 저장했다. 보이는 이름은 그대로 쓴다")
+            elif want in names:
+                warns.append(f"`{want}` 는 이미 있는 변수라 `{key}` 로 따로 만들었다 — "
+                             f"같은 값으로 묶으려던 것이면 이 자리를 지우고 "
+                             f"`{{{{{want}}}}}` 를 직접 쓴다")
+            else:
+                warns.append(f"`{want}` 에서 쓸 수 있는 글자만 남겨 `{key}` 로 저장했다 — "
+                             f"보이는 이름은 그대로 쓴다")
         names.add(key)
         token = "{{%s}}" % key
         hit = 0
