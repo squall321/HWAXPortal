@@ -157,10 +157,19 @@ class ProceduresStore:
 
     def add_version(self, *, procedure_id: str, author_sub: str, spec: dict,
                     derived_from_run: str | None = None) -> dict:
+        """판본을 덧붙인다 — **주인만**. 없거나 남의 것이면 `KeyError`(라우트가 404 로 낸다).
+
+        ⚠ **공유는 읽기까지다.** `visibility='all'` 은 "남도 본다" 이지 "남도 고친다" 가
+        아니다. 게이트가 없던 동안, 아무나 남의 절차에 판본을 얹으면 그것이 최신이 되고
+        주인이 그것을 **자기 명의로** 돌렸다(실행 PAT 는 부르는 사람에게서 나온다).
+        제목은 그대로라 목록에서는 아무 일도 없어 보인다 — 이 리포가 쫓는 바로 그 모양이다.
+        남의 절차를 고치고 싶으면 **내보내기·들여오기로 자기 것을 만든다.**
+        """
         c = self._conn()
         with c:
-            row = c.execute("SELECT latest_version FROM procedures WHERE id=?",
-                            (procedure_id,)).fetchone()
+            row = c.execute("SELECT latest_version FROM procedures"
+                            " WHERE id=? AND owner_sub=?",
+                            (procedure_id, author_sub)).fetchone()
             if row is None:
                 raise KeyError(procedure_id)
             no = int(row["latest_version"]) + 1
@@ -176,6 +185,9 @@ class ProceduresStore:
         return {"id": procedure_id, "version_id": vid, "version_no": no}
 
     def get_version(self, version_id: str) -> dict | None:
+        """⚠ **게이트가 없다.** 이미 소유를 확인한 실행에서 그 실행이 돌린 판본을 꺼낼
+        때만 쓴다. 사람이 판본·절차 id 를 들고 들어오는 길에서는 `readable_version` 이다.
+        """
         row = self._conn().execute(
             "SELECT * FROM procedure_versions WHERE version_id=?", (version_id,)).fetchone()
         if row is None:
@@ -185,10 +197,31 @@ class ProceduresStore:
         return d
 
     def latest_version_of(self, procedure_id: str) -> dict | None:
+        """⚠ `get_version` 과 같이 **게이트가 없다**."""
         row = self._conn().execute(
             "SELECT version_id FROM procedure_versions WHERE procedure_id=?"
             " ORDER BY version_no DESC LIMIT 1", (procedure_id,)).fetchone()
         return self.get_version(row["version_id"]) if row else None
+
+    def readable_version(self, *, sub: str, procedure_id: str | None = None,
+                         version_id: str | None = None) -> dict | None:
+        """그 사람이 **볼 수 있는** 판본. 못 보면 None — 라우트가 404 로 낸다.
+
+        `visibility='all'` 이면 남의 것도 보인다(PLAN §1 — 절차는 공유 자산이다).
+        `private` 는 주인만이다. **없는 것과 못 보는 것을 같은 404 로 낸다** — 구분해
+        주면 id 를 넣어 보는 것만으로 남의 절차가 있는지 알 수 있다.
+
+        ⚠ 게이트는 `procedures` 행에 있는데 `version_id` 는 판본 표의 열쇠라, 판본에서
+        절차로 **거슬러 올라가 확인한다**. 판본만 보고 내주면 private 이 새어 나간다.
+        """
+        v = (self.get_version(version_id) if version_id
+             else self.latest_version_of(procedure_id or ""))
+        if v is None:
+            return None
+        row = self._conn().execute(
+            "SELECT 1 FROM procedures WHERE id=? AND (visibility='all' OR owner_sub=?)",
+            (v["procedure_id"], sub)).fetchone()
+        return v if row else None
 
     def list_procedures(self, *, owner_sub: str, limit: int = 100) -> list[dict]:
         """`visibility='all'` 이면 남의 것도 보인다 — 절차는 공유 자산이다(PLAN §1).

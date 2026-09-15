@@ -6,6 +6,7 @@
 # `search_tools` 로도 안 나오고 카탈로그에도 1로 세어진다.
 #
 # 아래 고정물은 **실물 응답 모양**이다(2026-09-14 게이트웨이 실호출에서 줄인 것).
+import asyncio
 import json
 from pathlib import Path
 
@@ -104,8 +105,30 @@ def test_다른_형식은_어댑터가_옮긴다(reg):
     assert sch["properties"]["parts"]["type"] == "array"
     assert sch["properties"]["max_fail_rate"]["type"] == "number"
     assert "캐시" in sch["properties"]["rebuild"]["description"]
-    # ⚠ 이 앱은 **모르는 키를 거절한다**(D-278) — 그 사실이 스키마로 넘어와야 저장에서 잡힌다
-    assert sch["additionalProperties"] is False
+    # ⚠ **닫으면 안 된다.** 앱이 받는 키가 이 표보다 넓다 — 공차는 `jobs` 밖 칸에 있고
+    # `pipeline` 은 중첩 블록도 받는다. 실측으로 `mesh` + `clearance_gap` 은 앱이
+    # 통과시키는데, 닫아 두면 우리가 저장 시점에 거절한다(모르는 것을 틀렸다고 말한 것).
+    assert "additionalProperties" not in sch
+
+
+def test_모르는_키를_우리가_먼저_거절하지_않는다(reg):
+    """실측 회귀 — StepForge 가 받는 공차 키를 우리가 막고 있었다(2026-09-15).
+
+    `clearance_gap` 은 `job_params_guide` 의 `jobs.mesh` 에 **없다**(딴 칸에 있다).
+    그런데 `check_job_params("mesh", {"clearance_gap": …})` 는 통과한다 — 실물로 확인.
+    """
+    d = reg[("heax-step_forge", "run_job")]
+    sch = dispatch.to_json_schema(GUIDE_MESH, d, item="mesh")
+    assert "clearance_gap" not in sch["properties"], "고정물 전제가 바뀌었다"
+    spec = ProcedureSpec.model_validate({
+        "title": "t", "vars": [],
+        "steps": [{"backend": "heax-step_forge", "tool": "run_job",
+                   "args": {"kind": "mesh", "params": {"clearance_gap": 0.05}}}]})
+    errs = check_against_schemas(
+        spec, {"heaxstep_forge_run_job": {"properties": {"kind": {"type": "string"},
+                                                         "params": {"type": "object"}}}},
+        {("heax-step_forge", "run_job", "mesh"): sch})
+    assert errs == [], f"앱이 받는 인자를 우리가 거절했다: {errs}"
 
 
 def test_못_옮기면_지어내지_않는다(reg):
@@ -278,3 +301,58 @@ def test_등록부에_확정된_것은_검출기도_밀_수_있어야_한다():
     assert not (should - found), f"민다고 적혀 있는데 못 민다: {sorted(should - found)}"
     assert not (known_miss & found), (
         f"못 민다고 적혀 있는데 민다: {sorted(known_miss & found)} — 등록부를 고쳐라")
+
+
+# ── 실제로 돌려 본다 ──────────────────────────────────────────────────────
+# ⚠ 여태 이 파일은 **메서드 이름이 있는지만** 봤다. 그 사이 `second_stage`·
+# `second_stage_one`·`dispatcher_items` 셋 다 늘 빈 값을 냈다 — `GatewaySession.call`
+# 이 튜플 `(isError, content[])` 인데 객체인 줄 알고 `getattr(res,"content")` 로
+# 읽었기 때문이다. 없는 것과 못 받은 것이 같은 모양이라 아무도 몰랐다(2026-09-15).
+def _runner_with(reply: dict):
+    """게이트웨이를 MockTransport 로 세운 실행기 — `tools/call` 에 `reply` 를 준다."""
+    import httpx
+
+    from app.config import Settings
+    from app.procedures.runner import ProceduresRunner
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content or b"{}") if req.content else {}
+        if body.get("method") == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {}},
+                                  headers={"mcp-session-id": "t"})
+        out = {"jsonrpc": "2.0", "id": 2, "result": {"isError": False, "content": [
+            {"type": "text", "text": json.dumps(reply, ensure_ascii=False)}]}}
+        return httpx.Response(200, text=f"data: {json.dumps(out)}\n\n",
+                              headers={"content-type": "text/event-stream"})
+
+    return ProceduresRunner(
+        settings=Settings(gateway_shared_token="t"), store=None,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=5.0),
+        mint_pat=lambda p, run, ix: "pat")
+
+
+class _P:
+    subject, email, groups = "u1", "u1@corp.com", ["feat:procedures"]
+
+
+def test_2단_계약을_실제로_받아_온다():
+    spec = ProcedureSpec.model_validate({
+        "title": "t", "vars": [],
+        "steps": [{"backend": "heax-step_forge", "tool": "run_job",
+                   "args": {"kind": "mesh", "params": {}}}]})
+    got = asyncio.run(_runner_with(GUIDE_MESH).second_stage(_P(), spec))
+    assert got, "계약을 못 받았다 — 빈 값은 '검사할 게 없다' 로 읽혀 검사가 통째로 꺼진다"
+    sch = got[("heax-step_forge", "run_job", "mesh")]
+    assert sch["properties"]["rebuild"]["type"] == "boolean"
+
+
+def test_한_항목_계약과_목록도_실제로_받아_온다(reg):
+    one = asyncio.run(_runner_with(GUIDE_MESH).second_stage_one(
+        _P(), reg[("heax-step_forge", "run_job")], "mesh"))
+    assert one and one["properties"]["rebuild"]["type"] == "boolean", \
+        "None 이면 라우트가 '이름이 틀렸거나 앱이 안 붙어 있다' 는 **오진**을 낸다"
+
+    items = asyncio.run(
+        _runner_with({"operations": [{"name": "matdb", "summary": "물성 교체"}]})
+        .dispatcher_items(_P(), reg[("heax-kooremapper_mcp", "run_operation")]))
+    assert [i["name"] for i in items] == ["matdb"], "목록이 비면 '뒤에 아무것도 없다' 로 보인다"

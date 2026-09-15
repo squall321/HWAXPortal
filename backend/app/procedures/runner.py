@@ -374,9 +374,12 @@ class ProceduresRunner:
                 except Exception:  # noqa: BLE001 — 계약을 못 받는 것이 저장을 막으면 안 된다
                     logger.info("2단 계약 조회 실패 — 검사 건너뜀 %s/%s", d.tool, item)
                     continue
-                text, _ = J.join_content(getattr(res, "content", None) or [])
-                body = J.judge(is_error=bool(getattr(res, "isError", False)),
-                               text=text).parsed
+                # ⚠ `call` 은 **튜플** `(isError, content[])` 다(94행). 객체인 줄 알고
+                # `getattr(res,"content")` 로 읽던 동안 이 층 전체가 늘 None 을 냈고,
+                # 그것을 "검사할 게 없다" 로 읽어 **2단 계약 검사가 통째로 안 돌았다**.
+                is_error, content = res
+                text, _ = J.join_content(content)
+                body = J.judge(is_error=is_error, text=text).parsed
                 sch = dispatch.to_json_schema(body, d, item=item)
                 if sch:
                     out[key] = sch
@@ -461,8 +464,9 @@ class ProceduresRunner:
             alias = f"{backend.replace('-', '')}_{tool}"
             res = await sess.call("invoke_tool", {"name": alias, "arguments": args},
                                   pat, 30.0)
-            text, _ = J.join_content(getattr(res, "content", None) or [])
-            return J.judge(is_error=bool(getattr(res, "isError", False)), text=text).parsed
+            is_error, content = res   # 튜플이다 — 377행과 같은 이유
+            text, _ = J.join_content(content)
+            return J.judge(is_error=is_error, text=text).parsed
         finally:
             await sess.close(pat)
 

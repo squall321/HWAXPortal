@@ -287,10 +287,32 @@ def test_run_records_version_and_inputs(store):
 
 def test_new_version_bumps_and_keeps_old(store):
     r = store.create_procedure(owner_sub="u1", spec={"n": 1}, title="t")
-    v2 = store.add_version(procedure_id=r["id"], author_sub="u2", spec={"n": 2})
+    v2 = store.add_version(procedure_id=r["id"], author_sub="u1", spec={"n": 2})
     assert v2["version_no"] == 2
     assert store.get_version(r["version_id"])["spec"] == {"n": 1}  # 판본은 불변
     assert store.latest_version_of(r["id"])["spec"] == {"n": 2}
+
+
+def test_판본은_주인만_덧붙인다(store):
+    """**공유는 읽기까지다.** 이 테스트는 원래 `author_sub="u2"` 로 남의 절차에 판본을
+    얹고 통과했다 — 게이트가 없다는 뜻이었고, 그대로 라우트까지 뚫려 있었다.
+    """
+    r = store.create_procedure(owner_sub="u1", spec={"n": 1}, title="t")
+    with pytest.raises(KeyError):
+        store.add_version(procedure_id=r["id"], author_sub="u2", spec={"n": 9})
+    assert store.latest_version_of(r["id"])["spec"] == {"n": 1}, "남이 얹은 것이 최신이 됐다"
+
+
+def test_볼_수_있는_판본만_내준다(store):
+    """`visibility` 는 목록에서만 걸리고 있었다 — id 만 알면 남의 private 이 열렸다."""
+    pub = store.create_procedure(owner_sub="u1", spec={"n": 1}, title="공개")
+    prv = store.create_procedure(owner_sub="u1", spec={"n": 2}, title="비공개",
+                                 visibility="private")
+    for who, want_pub, want_prv in (("u1", True, True), ("u2", True, False)):
+        assert bool(store.readable_version(sub=who, procedure_id=pub["id"])) is want_pub
+        assert bool(store.readable_version(sub=who, procedure_id=prv["id"])) is want_prv
+        # 판본 id 로 들어와도 같다 — 게이트는 절차 행에 있고 거슬러 올라가 확인한다
+        assert bool(store.readable_version(sub=who, version_id=prv["version_id"])) is want_prv
 
 
 def test_runs_are_owner_only(store):

@@ -306,10 +306,12 @@ async def create_procedure(request: Request, body: ProcedureIn,
 @router.get("/procedures/{procedure_id}")
 def get_procedure(request: Request, procedure_id: str,
                principal: Principal = Depends(_me)) -> dict:
-    v = _store(request).latest_version_of(procedure_id)
+    v = _store(request).readable_version(sub=principal.subject, procedure_id=procedure_id)
     if v is None:
         raise AuthError("절차를 찾을 수 없습니다", status_code=404)
-    return v
+    # `author_sub` 은 로컬 계정이면 **이메일**이다(app/auth/routes/local.py). 공유 절차를
+    # 남이 읽을 때 남의 주소가 딸려 나갈 이유가 없다 — 내보내기가 이미 떼고 있다.
+    return {k: val for k, val in v.items() if k != "author_sub"}
 
 
 @router.post("/procedures/{procedure_id}/versions", status_code=201,
@@ -375,8 +377,9 @@ async def start_run(request: Request, body: RunIn,
     store, runner = _store(request), _runner(request)
     version = None
     if body.version_id or body.procedure_id:
-        version = (store.get_version(body.version_id) if body.version_id
-                   else store.latest_version_of(body.procedure_id))
+        version = store.readable_version(
+            sub=principal.subject, version_id=body.version_id,
+            procedure_id=body.procedure_id)
         if version is None:
             raise AuthError("절차 판본을 찾을 수 없습니다", status_code=404)
 
@@ -799,7 +802,8 @@ def procedure_as_tool(request: Request, procedure_id: str,
     """
     from app.procedures import derive as _d
 
-    v = _store(request).latest_version_of(procedure_id)
+    v = _store(request).readable_version(
+        sub=principal.subject, procedure_id=procedure_id)
     if v is None:
         raise AuthError("절차를 찾을 수 없습니다", status_code=404)
     spec = v["spec"]
@@ -894,7 +898,8 @@ def export_procedure(request: Request, procedure_id: str, response: Response,
     받는 쪽은 `POST /procedures/import` 가 **사람이 만든 것과 똑같이** 검증한다 —
     내보낸 것이라고 통과시키지 않는다.
     """
-    v = _store(request).latest_version_of(procedure_id)
+    v = _store(request).readable_version(
+        sub=principal.subject, procedure_id=procedure_id)
     if v is None:
         raise AuthError("절차를 찾을 수 없습니다", status_code=404)
     spec = dict(v["spec"])

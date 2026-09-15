@@ -120,8 +120,13 @@ def _params_ko(body: dict, d: Dispatcher, item: str) -> dict | None:
         props[name] = p
     if not props:
         return None
-    # ⚠ 이 앱은 **모르는 키를 거절한다**(D-278). 그 사실이 스키마로 넘어가야 저장 시점에 잡힌다.
-    return {"type": "object", "properties": props, "additionalProperties": False}
+    # ⚠ **닫지 않는다.** 이 앱이 모르는 키를 거절하는 것은 맞지만, 앱이 받는 키는
+    # 이 표보다 **넓다** — 공차 키는 `jobs` 밖의 딴 칸에 있고 특정 종류만 받으며,
+    # `pipeline` 은 중첩 블록도 받는다. 실측(2026-09-15): `mesh` + `clearance_gap` 은
+    # StepForge 가 통과시키는데 우리가 닫아 두면 **저장 시점에 거절한다** — 모르는 것을
+    # 틀렸다고 말하는 꼴이고, 이 리포가 반복해서 고쳐 온 바로 그 오류다.
+    # 아는 키의 형은 여전히 본다. 모르는 키는 앱이 거절하며 쓸 수 있는 목록까지 알려 준다.
+    return {"type": "object", "properties": props}
 
 
 # ── 검출 — 후보를 밀 뿐 등재하지 않는다 ──────────────────────────────────
