@@ -170,14 +170,18 @@ def test_허용값이_있으면_고르는_칸이_된다():
 
 
 def test_설명_없는_인자는_결손으로_올린다():
-    """⚠ 설명 없는 인자는 **그 앱의 문서 결손**이다. 사람도 LLM 도 그 칸의 뜻을 알 수 없다."""
+    """⚠ 설명 없는 인자는 **그 앱의 문서 결손**이다. 사람도 LLM 도 그 칸의 뜻을 알 수 없다.
+    다만 인자마다가 아니라 **한 줄로 모아** 올린다(1%만 설명이 있어서 그러지 않으면
+    목록이 그것으로 덮인다)."""
     steps = [{"tool": "solve_prescribed_curvature",
               "args": {"bend_axis": "x축으로"}, "result": {}}]
     got = derive.draft(steps, tool_backend={"solve_prescribed_curvature": "x"},
                        asked="x축으로 굽혀", tool_schemas=SCHEMAS)
-    assert any(g["kind"] == "arg_undocumented" and g["arg"] == "bend_axis" for g in got["gaps"])
+    agg = [g for g in got["gaps"] if g["kind"] == "args_undocumented"]
+    assert agg and agg[0]["count"] == 1
+    assert any("bend_axis" in w for w in agg[0]["where"])
     v = got["spec"]["vars"][0]
-    assert "설명이 없다" in v["why"], "모르면서 아는 척하면 안 된다"
+    assert "어디에도 없다" in v["why"], "모르면서 아는 척하면 안 된다"
     assert "_undocumented" not in v, "내부 표식이 밖으로 샜다"
 
 
@@ -308,3 +312,44 @@ def test_못_쓰는_이름은_조용히_바꾸지_않고_말한다():
                                 tool_schemas=SCHEMAS)
     assert got["vars"][0]["key"] == "width", "인자 이름으로 안 떨어졌다"
     assert any("못 쓴다" in w for w in warns), f"조용히 바꿨다: {warns}"
+
+
+# ── 인자 설명이 없을 때 — 도구 산문에서 **인용**한다 ─────────────────────
+PROSE = {"find_parts": "조건으로 파트 찾기 — 이름 글롭·재질·부피 범위·메시 유무.\n\n"
+                       "    `name` 은 글롭이다(`bolt_*`). 규칙 파일과 같은 매칭을 쓴다."}
+
+
+def test_스키마에_없으면_도구_산문에서_인용한다():
+    """이 허브의 인자 설명은 1,348개 중 **15개(1%)** 뿐이다(실측). 대신 그 내용이 도구
+    산문에 있다 — `name` 이 글롭이라는 사실은 그 문장에만 있다."""
+    got = derive.draft([{"tool": "find_parts", "args": {"name": "*BRKT*"}, "result": {}}],
+                       tool_backend={"find_parts": "heax-step_forge"},
+                       asked="*BRKT* 로 찾아줘", tool_schemas={}, tool_desc=PROSE)
+    why = got["spec"]["vars"][0]["why"]
+    assert "글롭" in why, why
+    assert "(도구 설명에서)" in why, "인용이라는 사실을 안 밝혔다"
+
+
+def test_산문에도_없으면_없다고_한다():
+    got = derive.draft([{"tool": "find_parts", "args": {"material": "CFRP소재"}, "result": {}}],
+                       tool_backend={"find_parts": "x"}, asked="CFRP소재 로",
+                       tool_schemas={}, tool_desc=PROSE)
+    assert "어디에도 없다" in got["spec"]["vars"][0]["why"]
+
+
+def test_인용은_그_인자를_말하는_문장만_가져온다():
+    """⚠ 지어내지 않는다 — 인용이다. 아무 문장이나 붙이면 **틀린 설명**이 된다."""
+    assert derive.from_prose(PROSE["find_parts"], "zzz") == ""
+    assert "글롭" in derive.from_prose(PROSE["find_parts"], "name")
+
+
+def test_설명_없는_인자는_한_줄로_모아_낸다():
+    """⚠ **99%에서 울리는 검출기는 검출기가 아니다.** 인자마다 결손을 올리면 목록이
+    그것으로 덮여 진짜 결손이 묻힌다."""
+    steps = [{"tool": "t", "args": {"a": "긴값하나", "b": "다른긴값", "c": "또다른값"},
+              "result": {}}]
+    got = derive.draft(steps, tool_backend={"t": "x"},
+                       asked="긴값하나 다른긴값 또다른값", tool_schemas={}, tool_desc={})
+    agg = [g for g in got["gaps"] if g["kind"] == "args_undocumented"]
+    assert len(agg) == 1, f"인자마다 올렸다: {got['gaps']}"
+    assert agg[0]["count"] == 3 and len(agg[0]["where"]) == 3

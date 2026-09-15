@@ -893,3 +893,27 @@ def test_배치는_남의_것을_안_보여준다(user):
                  headers=h).json()["batch_id"]
     boss = _login(c, "boss@corp.com")
     assert c.get(f"{PREFIX}/batches/{bid}", headers=boss).json()["count"] == 0
+
+
+def test_비교표가_왜_실패했는지_싣는다(user):
+    """⚠ 상태만 보이면 "5건 중 2건 실패" 로 끝나고 사람이 실행을 하나씩 열어야 한다 —
+    표의 값어치가 거기서 사라진다(PLAN S5)."""
+    c, h = user
+    store = c.app.state.procedures_store
+    rid = _gated_pick_run(c, h)
+    got = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={}, headers=h).json()
+    a, b = [x["run_id"] for x in got["runs"]]
+
+    store.begin_step(a, 1, backend="x", tool="analyze_laminate", args={}, mode="live")
+    store.finish_step(a, 1, ok=False, error="E100 입력 스키마가 유효하지 않습니다")
+    store.set_run_state(a, "failed", ended=True)
+    store.begin_step(b, 1, backend="x", tool="estimate_fatigue_life", args={}, mode="live")
+    store.finish_step(b, 1, ok=True, notes={"warnings": [{"code": "W120"}]})
+
+    tbl = c.get(f"{PREFIX}/batches/{got['batch_id']}", headers=h).json()
+    by = {r["id"]: r for r in tbl["runs"]}
+    assert by[a]["failed_at"]["tool"] == "analyze_laminate"
+    assert "E100" in by[a]["failed_at"]["error"]
+    assert by[b]["failed_at"] is None
+    # 결과는 정상인데 경고만이 유일한 신호인 자리 — 표에 보여야 한다
+    assert by[b]["warnings"] == ["W120"]

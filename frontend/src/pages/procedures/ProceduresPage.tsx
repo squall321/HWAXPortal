@@ -16,6 +16,7 @@ import {
   importSeed,
   listSeeds,
   replayRun,
+  saveDraft,
   listProcedures,
   listRuns,
   replayProcedure,
@@ -446,6 +447,7 @@ function BatchView() {
               {t.columns.map((c) => (
                 <th key={c} style={{ padding: '0.3rem 0.6rem 0.3rem 0' }}>{c}</th>
               ))}
+              <th style={{ padding: '0.3rem 0.6rem 0.3rem 0' }}>왜 / 경고</th>
             </tr>
           </thead>
           <tbody>
@@ -467,6 +469,18 @@ function BatchView() {
                     {fmt(r.inputs?.[c])}
                   </td>
                 ))}
+                <td style={{ padding: '0.35rem 0', maxWidth: 340 }}>
+                  {r.failed_at && (
+                    <span style={{ color: '#e5534b' }}>
+                      {r.failed_at.ix + 1}단계 <code>{r.failed_at.tool}</code> — {r.failed_at.error}
+                    </span>
+                  )}
+                  {!!r.warnings?.length && (
+                    <span style={{ color: '#d9a441', marginLeft: r.failed_at ? '0.4rem' : 0 }}>
+                      {r.warnings.join(' ')}
+                    </span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -486,15 +500,22 @@ function fmt(v: unknown): string {
  * ⚠ 저장하지 않는다. 어느 인자가 변수이고 어느 것이 상수인지는 사람이 확정한다.
  */
 function DraftView({ runId }: { runId: string }) {
+  const nav = useNavigate();
   const [d, setD] = useState<RunDraft | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 어느 상수를 변수로 올릴지 — 키는 `단계|인자`, 값은 사람이 줄 변수 이름
+  const [promote, setPromote] = useState<Record<string, string>>({});
+  const [title, setTitle] = useState('');
+  const [saved, setSaved] = useState<string[] | null>(null);
 
   const look = async () => {
     setBusy(true);
     setErr(null);
     try {
-      setD(await getRunDraft(runId));
+      const got = await getRunDraft(runId);
+      setD(got);
+      setTitle((t) => t || got.spec.title || '');
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -539,16 +560,86 @@ function DraftView({ runId }: { runId: string }) {
               <b style={{ color: '#d9a441', fontSize: '0.86rem' }}>
                 사람이 정할 자리 {d.needs_human.length}곳
               </b>
-              <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem',
-                           color: 'var(--muted)', fontSize: '0.8rem' }}>
-                {d.needs_human.map((r, i) => (
-                  <li key={i}>
-                    {r.step}단계 <code style={{ color: 'var(--fg)' }}>{r.arg}</code> — {r.why}
-                  </li>
-                ))}
+              <p style={{ color: 'var(--muted)', fontSize: '0.78rem', margin: '0.2rem 0 0.4rem' }}>
+                코드는 이 값들이 어디서 왔는지 <b>모릅니다.</b> 과제마다 바뀌는 값이면 변수로
+                올리고, 이 절차의 성질이면 그대로 둡니다.
+              </p>
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid',
+                           gap: '0.35rem' }}>
+                {d.needs_human.map((r) => {
+                  const k = `${r.step}|${r.arg}`;
+                  return (
+                    <li key={k} style={{ display: 'flex', gap: '0.5rem', alignItems: 'baseline',
+                                         flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                      <label style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!promote[k]}
+                          onChange={(e) =>
+                            setPromote((p) => {
+                              const n = { ...p };
+                              if (e.target.checked) n[k] = r.arg;
+                              else delete n[k];
+                              return n;
+                            })
+                          }
+                        />
+                        <span style={{ color: 'var(--fg)' }}>변수로</span>
+                      </label>
+                      <span style={{ color: 'var(--muted)' }}>
+                        {r.step}단계 <code style={{ color: 'var(--fg)' }}>{r.arg}</code> — {r.why}
+                      </span>
+                      {promote[k] !== undefined && (
+                        <input
+                          style={{ ...inp, width: '10rem', padding: '0.2rem 0.4rem',
+                                   fontSize: '0.78rem' }}
+                          value={promote[k]}
+                          placeholder="변수 이름"
+                          onChange={(e) => setPromote((p) => ({ ...p, [k]: e.target.value }))}
+                        />
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
+
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              style={{ ...inp, flex: '1 1 16rem' }}
+              value={title}
+              placeholder="절차 이름"
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <button
+              type="button"
+              style={primary}
+              disabled={busy || !title.trim()}
+              onClick={async () => {
+                setBusy(true);
+                setErr(null);
+                try {
+                  const picks = Object.entries(promote).map(([k, name]) => {
+                    const [step, arg] = k.split('|');
+                    return { step: Number(step), arg, key: name || arg };
+                  });
+                  const got = await saveDraft(runId, title.trim(), picks);
+                  setSaved(got.warnings ?? []);
+                  nav(`/procedures/saved/${got.id}`);
+                } catch (e) {
+                  setErr((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? '굳히는 중…' : '절차로 굳히기'}
+            </button>
+            {!!saved?.length && (
+              <span style={{ color: '#d9a441', fontSize: '0.76rem' }}>{saved.join(' · ')}</span>
+            )}
+          </div>
 
           {d.gaps.length > 0 && (
             <div>

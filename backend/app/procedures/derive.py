@@ -89,7 +89,8 @@ def _too_short(v: Any) -> bool:
 
 # ── 초안 ─────────────────────────────────────────────────────────────────
 def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
-          asked: str = "", tool_schemas: dict[str, dict] | None = None) -> dict:
+          asked: str = "", tool_schemas: dict[str, dict] | None = None,
+          tool_desc: dict[str, str] | None = None) -> dict:
     """원장의 단계 목록 → 절차 초안 + **왜 그렇게 판단했나**.
 
     `steps` 는 `{tool, args, result}` 목록이다(`args`·`result` 는 파싱된 값이거나 원문 문자열).
@@ -98,6 +99,7 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
     """
     tb = tool_backend or {}
     ts = tool_schemas or {}
+    td = tool_desc or {}
     parsed = [{"tool": s.get("tool") or "", "args": _obj(s.get("args")),
                "result": _obj(s.get("result"))} for s in steps]
 
@@ -105,6 +107,7 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
     reasons: list[dict] = []
     gaps: list[dict] = []
     variables: dict[str, dict] = {}
+    undocumented: list[str] = []
     # 변수와 save 는 **같은 이름 공간**을 쓴다(둘 다 `{{이름}}` 으로 불린다).
     # 따로 세면 `part` 변수와 `part` save 가 겹쳐 뒤엣것이 앞엣것을 조용히 덮는다.
     names: dict[str, str] = {}
@@ -141,14 +144,9 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
                 by_value[(key, _vkey(val))] = name
                 variables[name] = describe_var(
                     name, key, val, tool=st["tool"], step=ix + 1,
-                    prop=_prop(ts.get(st["tool"]), key))
+                    prop=_prop(ts.get(st["tool"]), key), tool_desc=td.get(st["tool"], ""))
                 if variables[name].pop("_undocumented", False):
-                    # 인자에 설명이 없는 도구는 **그 앱의 문서 결손**이다. 절차를 쓰는 사람도
-                    # LLM 도 그 칸이 무엇인지 알 길이 없다 — 지어내지 말고 결손으로 올린다.
-                    gaps.append({"step": ix + 1, "tool": st["tool"], "kind": "arg_undocumented",
-                                 "arg": key,
-                                 "why": f"`{st['tool']}` 스키마에 `{key}` 설명이 없다 — "
-                                        "절차 변수의 뜻을 적을 근거가 없다"})
+                    undocumented.append(f"{ix + 1}단계 `{st['tool']}` 의 `{key}`")
                 args_out[key] = "{{%s}}" % name
             else:
                 args_out[key] = val
@@ -159,6 +157,16 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
     # 같은 값이 여러 단계에 쓰였으면 **어디 어디에 쓰이는지**를 설명에 모은다 —
     # 한 칸이 세 단계를 움직이는데 한 단계만 적혀 있으면 사람이 영향 범위를 오해한다.
     _spread(variables, out_steps, parsed, ts)
+
+    # ⚠ **99%에서 울리는 검출기는 검출기가 아니다.** 이 허브의 인자 설명은 1,348개 중
+    # 15개뿐이다(실측). 인자마다 결손을 올리면 목록이 그것으로 덮여 진짜 결손이 묻힌다.
+    # 한 줄로 모아 **얼마나인지**만 말한다 — 고칠 자리는 각 앱의 도구 설명이다.
+    if undocumented:
+        gaps.append({"step": 0, "tool": "", "kind": "args_undocumented",
+                     "count": len(undocumented), "where": undocumented[:12],
+                     "why": f"변수 {len(undocumented)}개가 **인자 설명 없이** 만들어졌다. "
+                            "스키마에 없으면 도구 산문에서 인용하지만, 그것도 없으면 "
+                            "그 칸의 뜻을 아무도 모른다 — 고칠 자리는 그 앱의 도구 설명이다"})
 
     return {
         "spec": {"title": (asked or "챗에서 뽑은 절차")[:80],
@@ -244,7 +252,29 @@ _SCHEMA_TYPE = {"string": "string", "integer": "number", "number": "number",
                 "boolean": "boolean", "object": "json", "array": "json"}
 
 
-def describe_var(name: str, key: str, val: Any, *, tool: str, step: int, prop: dict) -> dict:
+def from_prose(desc: str, arg: str) -> str:
+    """도구 **전체 설명**에서 그 인자를 말하는 문장을 찾아 인용한다.
+
+    이 허브의 도구는 인자 설명이 거의 없다(실측 2026-09-15 — 1,348개 중 15개, **1%**).
+    대신 그 내용이 도구 산문에 있다. `find_parts` 의 `name` 이 글롭이라는 사실은
+    *"`name` 은 글롭이다(`bolt_*`)"* 라는 문장에만 있다.
+
+    ⚠ **지어내지 않는다 — 인용이다.** 그 인자 이름이 실제로 나오는 문장만 가져오고,
+    없으면 빈 문자열이다. 그리고 인용이라는 사실을 호출부가 밝힌다.
+    """
+    if not desc or not arg:
+        return ""
+    for line in re.split(r"(?<=[.。])\s+|\n", desc):
+        t = line.strip(" -*`\t")
+        if not t or len(t) > 300:
+            continue
+        if re.search(r"[`'\"]?\b" + re.escape(arg) + r"\b[`'\"]?", t):
+            return t[:300]
+    return ""
+
+
+def describe_var(name: str, key: str, val: Any, *, tool: str, step: int, prop: dict,
+                 tool_desc: str = "") -> dict:
     """변수 하나를 **읽을 수 있게** 만든다 — 형·허용값·설명·쓰이는 자리.
 
     `_undocumented` 는 호출부가 결손으로 올리고 지운다.
@@ -261,7 +291,12 @@ def describe_var(name: str, key: str, val: Any, *, tool: str, step: int, prop: d
     if desc:
         out["why"] = f"{used} — {desc[:400]}"
     else:
-        out["why"] = f"{used}. ⚠ 도구 스키마에 이 인자 설명이 없다 — 뜻을 적을 근거가 없다."
+        quoted = from_prose(tool_desc, key)
+        if quoted:
+            # 스키마에는 없지만 도구 산문이 말한다 — **인용이라는 사실을 밝힌다.**
+            out["why"] = f"{used} — (도구 설명에서) {quoted}"
+        else:
+            out["why"] = f"{used}. ⚠ 이 인자를 설명하는 글이 도구 어디에도 없다."
         out["_undocumented"] = True
     if prop.get("default") is not None:
         out["why"] += f" (도구 기본값: {prop['default']})"
@@ -349,8 +384,8 @@ def _vkey(v: Any) -> str:
 
 
 # ── 사람이 확정한다 — 상수를 변수로 올린다 ───────────────────────────────
-def promote(spec: dict, picks: list[dict], *, tool_schemas: dict[str, dict] | None = None
-            ) -> tuple[dict, list[str]]:
+def promote(spec: dict, picks: list[dict], *, tool_schemas: dict[str, dict] | None = None,
+            tool_desc: dict[str, str] | None = None) -> tuple[dict, list[str]]:
     """초안의 **상수 몇 개를 변수로** 올린다. 확정은 사람이 하고 이 함수는 그 결정을 적용한다.
 
     `picks` 는 `[{step, arg, key?, label?, why?}]` — `step` 은 1부터다(화면이 보는 번호).
@@ -362,6 +397,7 @@ def promote(spec: dict, picks: list[dict], *, tool_schemas: dict[str, dict] | No
     돌려주는 것은 `(새 spec, 경고)` 다. 못 올린 것은 경고로 말한다 — 조용히 건너뛰지 않는다.
     """
     ts = tool_schemas or {}
+    td = tool_desc or {}
     out = json.loads(json.dumps(spec, ensure_ascii=False, default=str))  # 원본을 안 건드린다
     steps = out.get("steps") or []
     names = {v.get("key") for v in (out.get("vars") or [])}
@@ -396,7 +432,8 @@ def promote(spec: dict, picks: list[dict], *, tool_schemas: dict[str, dict] | No
                     st["args"][k] = token
                     hit += 1
         var = describe_var(key, arg, val, tool=steps[ix].get("tool") or "", step=ix + 1,
-                           prop=_prop(ts.get(steps[ix].get("tool")), arg))
+                           prop=_prop(ts.get(steps[ix].get("tool")), arg),
+                           tool_desc=td.get(steps[ix].get("tool"), ""))
         var.pop("_undocumented", None)
         if pick.get("label"):
             var["label"] = str(pick["label"])[:80]

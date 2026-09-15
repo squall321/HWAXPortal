@@ -567,13 +567,28 @@ def batch(request: Request, batch_id: str, principal: Principal = Depends(_me)) 
     ⚠ `inputs` 를 **그대로 열로 편다.** 단계 인자를 역파싱하면 치환된 뒤 값이라
     무엇이 달랐는지가 흐려진다.
     """
-    rows = _store(request).list_runs(owner_sub=principal.subject, batch_id=batch_id,
-                                     limit=BATCH_MAX)
+    store = _store(request)
+    rows = store.list_runs(owner_sub=principal.subject, batch_id=batch_id, limit=BATCH_MAX)
     cols: list[str] = []
     for r in rows:
         for k in r.get("inputs") or {}:
             if k not in cols:
                 cols.append(k)
+        # ⚠ **실패한 것을 건너뛰고 계속하되, 무엇이 왜 실패했는지 표에 싣는다**(PLAN S5).
+        # 상태만 보이면 "5건 중 2건 실패" 로 끝나고 사람이 실행을 하나씩 열어야 한다 —
+        # 표의 값어치가 거기서 사라진다. 경고도 같이 싣는다(W120 처럼 결과는 정상인데
+        # 경고만이 유일한 신호인 자리가 있다).
+        full = store.get_run(r["id"], owner_sub=principal.subject) or {}
+        bad = [s for s in (full.get("steps") or []) if s.get("ok") == 0 and s.get("error")]
+        r["failed_at"] = ({"ix": bad[0]["ix"], "tool": bad[0]["tool"],
+                           "error": str(bad[0]["error"])[:200]} if bad else None)
+        codes: list[str] = []
+        for st in full.get("steps") or []:
+            for w in ((st.get("notes") or {}).get("warnings") or []):
+                c = w.get("code") if isinstance(w, dict) else None
+                if c and c not in codes:
+                    codes.append(str(c))
+        r["warnings"] = codes
     return {"batch_id": batch_id, "count": len(rows), "columns": cols, "runs": rows}
 
 
@@ -658,12 +673,13 @@ async def run_draft(request: Request, run_id: str,
     ⚠ **저장하지 않는다.** 어느 인자가 변수이고 어느 것이 상수인지는 사람이 확정한다
     (PLAN §7 "자동 저장 금지"). `needs_human` 이 물어볼 자리다.
     """
-    got, _ = await _draft_of(request, principal, run_id)
+    got, _, _ = await _draft_of(request, principal, run_id)
     return {"run_id": run_id, **got}
 
 
-async def _draft_of(request: Request, principal: Principal, run_id: str) -> tuple[dict, dict]:
-    """실행 → 초안 + 그때 쓴 도구 스키마. `/draft` 와 `/draft/save` 가 **같은 것**을 쓴다."""
+async def _draft_of(request: Request, principal: Principal,
+                    run_id: str) -> tuple[dict, dict, dict]:
+    """실행 → 초안 + 그때 쓴 도구 스키마·산문. `/draft` 와 `/draft/save` 가 **같은 것**을 쓴다."""
     from app.procedures import derive as _d
 
     store = _store(request)
@@ -674,7 +690,7 @@ async def _draft_of(request: Request, principal: Principal, run_id: str) -> tupl
                       "args": (st.get("args") or {}).get("_text") or st.get("args") or {},
                       "result": store.step_result(run_id, st["ix"])})
     # 챗 기록에는 **어느 앱인지 없다**(PLAN §9-8). 도구 지도로 채운다 — 못 채우면 결손이다.
-    tmap, tschemas = {}, {}
+    tmap, tschemas, tdesc = {}, {}, {}
     try:
         tmap = (await _tools_map(request)).get("map") or {}
     except Exception:  # noqa: BLE001 — 지도가 없어도 초안은 낸다(그 단계가 결손으로 잡힌다)
@@ -684,12 +700,14 @@ async def _draft_of(request: Request, principal: Principal, run_id: str) -> tupl
         # 그 앱의 문서 결손으로 올라간다(PLAN §9-3 ①).
         cat = await _runner(request).catalog(principal)
         tschemas = {n: (m.get("inputSchema") or {}) for n, m in cat.items()}
+        # 인자 설명이 거의 없어(1,348개 중 15개) 도구 **산문**에서 인용해야 한다
+        tdesc = {n: str(m.get("description") or "") for n, m in cat.items()}
     except Exception:  # noqa: BLE001
         logger.info("초안 — 도구 스키마 조회 실패", exc_info=True)
     got = _d.draft(steps, tool_backend=tmap, asked=(run.get("title") or ""),
-                   tool_schemas=tschemas)
+                   tool_schemas=tschemas, tool_desc=tdesc)
     got["input_schema"] = _d.to_input_schema(got["spec"])
-    return got, tschemas
+    return got, tschemas, tdesc
 
 
 @router.get("/procedures/{procedure_id}/tool")
@@ -775,8 +793,9 @@ async def save_draft(request: Request, run_id: str, body: DraftSaveIn,
     """
     from app.procedures import derive as _d
 
-    spec_draft, tschemas = await _draft_of(request, principal, run_id)
-    spec, warns = _d.promote(spec_draft["spec"], body.promote, tool_schemas=tschemas)
+    spec_draft, tschemas, tdesc = await _draft_of(request, principal, run_id)
+    spec, warns = _d.promote(spec_draft["spec"], body.promote, tool_schemas=tschemas,
+                             tool_desc=tdesc)
     spec["title"] = body.title
     _, save_warns = await _validated(request, spec, principal)
     got = _store(request).create_procedure(

@@ -218,7 +218,13 @@ export type BatchTable = {
   batch_id: string;
   count: number;
   columns: string[];
-  runs: (RunSummary & { inputs: Record<string, unknown> })[];
+  runs: (RunSummary & {
+    inputs: Record<string, unknown>;
+    /** 어디서 왜 멈췄나 — 상태만으로는 표를 못 읽는다. */
+    failed_at: { ix: number; tool: string; error: string } | null;
+    /** 결과는 정상인데 경고만이 유일한 신호인 자리가 있다(W120 류). */
+    warnings: string[];
+  })[];
 };
 
 /** 룰이 고른 **전부**를 돌린다 — 하나를 고르는 대신. 기본은 계획 모드다. */
@@ -245,6 +251,20 @@ export function getProcedureTool(id: string) {
 /** 이 실행을 절차 **초안**으로 펴 본다. 저장하지 않는다 — 확정은 사람이 한다. */
 export function getRunDraft(runId: string) {
   return get<RunDraft>(`/runs/${runId}/draft`, '초안을 만들지 못했습니다.');
+}
+
+/** 초안을 **사람이 확정해** 절차로 굳힌다. 결정(어느 상수를 변수로)만 보낸다 —
+ *  초안 자체는 서버가 다시 뽑는다(화면이 만든 spec 을 그대로 받지 않는다). */
+export function saveDraft(
+  runId: string,
+  title: string,
+  promote: { step: number; arg: string; key?: string; label?: string; why?: string }[],
+) {
+  return post<{ id: string; version_no: number; warnings: string[] }>(
+    `/runs/${runId}/draft/save`,
+    { title, promote },
+    '절차로 굳히지 못했습니다.',
+  );
 }
 
 /** 지난 실행을 **그 값 그대로** 다시 돌린다. 기록 재생이 아니라 실제 재계산이다. */

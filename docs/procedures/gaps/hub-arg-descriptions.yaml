@@ -1,0 +1,47 @@
+# 결손 하나 = 파일 하나 (PLAN §9-6)
+id: hub-arg-descriptions
+title: 도구 **인자 설명**이 거의 없다 — 1,348개 중 15개(1%)
+
+flow: 모든 흐름. 절차 변수의 뜻·LLM 의 인자 선택이 여기에 걸린다
+step: 인자를 변수로 올릴 때 그 칸이 무엇인지 적는 자리
+kind: 1                       # ① 도구 없음 — 정확히는 **문서가 없음**
+owner_candidate: 전 앱        # ⚠ 한 앱의 일이 아니다
+
+measured:
+  date: 2026-09-15
+  how: "게이트웨이 tools/list 전수 — 각 도구 inputSchema.properties[].description 유무"
+  tools: 468
+  args: 1348
+  documented: 15
+  ratio: "1%"
+  worst:
+    - {tool: reportarchive_list_reports, args: 21, documented: 0}
+    - {tool: find_reports, args: 21, documented: 0}
+    - {tool: register_property, args: 18, documented: 0}
+    - {tool: search_reports, args: 15, documented: 0}
+    - {tool: deliberate_start, args: 14, documented: 0}
+
+why_it_matters:
+  - "절차 변수의 뜻을 적을 근거가 없다 — 받은 사람도, 그 절차를 부를 LLM 도 모른다"
+  - "LLM 이 인자를 고를 때 **도구 산문을 읽어 추론**해야 한다. 이 허브의 도구 설명이
+     유난히 긴 이유가 그것이다 — 인자 설명을 산문이 대신하고 있다"
+  - "`find_parts.name` 이 글롭이라는 사실이 스키마에 없다. 그 문장에만 있다"
+
+# 지금 우리가 하는 대처(요청을 대신하지는 않는다)
+workaround: >-
+  `derive.from_prose()` 가 도구 **전체 설명**에서 그 인자 이름이 나오는 문장을 찾아
+  **인용**한다. 지어내지 않고, 인용이라는 사실을 `why` 에 밝힌다("(도구 설명에서) …").
+  산문에도 없으면 "이 인자를 설명하는 글이 도구 어디에도 없다" 고 적는다.
+
+# ⚠ 검출기 눈금을 바꾼 이유
+detector_note: >-
+  인자마다 결손을 올리면 **99%에서 울린다.** 그건 검출기가 아니라 잡음이다.
+  초안 하나당 `args_undocumented` **한 줄**로 모아 몇 개인지만 말한다.
+
+want: >-
+  각 앱이 도구 인자에 `description` 을 채우는 것. 한 번에 다 할 일은 아니고,
+  **절차에 실제로 쓰이는 도구부터** 채우면 된다(지금은 R1 의 laminate_analyzer 계열과
+  StepForge find_parts·bend_profile).
+
+status: open
+confirmed_by: null
