@@ -10,6 +10,7 @@ import { useProcedures } from '../../state/ProceduresContext';
 import {
   cancelRun,
   getProcedure,
+  getBatch,
   getProcedureTool,
   getRunDraft,
   importSeed,
@@ -20,6 +21,7 @@ import {
   replayProcedure,
   resumeRun,
   type ProcedureRow,
+  type BatchTable,
   type ProcedureTool,
   type ProcedureVersion,
   type RunDraft,
@@ -53,6 +55,7 @@ export default function ProceduresPage() {
         <Route path="saved/:id" element={<ProcedureDetail />} />
         <Route path="runs" element={<RunList />} />
         <Route path="runs/:id" element={<RunDetailView />} />
+        <Route path="batches/:id" element={<BatchView />} />
       </Routes>
     </div>
   );
@@ -392,6 +395,90 @@ function ProcedureDetail() {
       <ProcedureRuns procedureId={id} />
     </div>
   );
+}
+
+/** 비교표 — 한 배치의 실행들을 나란히 본다(PLAN S5).
+ *
+ * ⚠ `inputs` 를 **그대로 열로 편다.** 단계 인자를 역파싱하면 치환된 뒤 값이라 무엇이
+ * 달랐는지가 흐려진다 — 비교표의 요점은 "무엇을 바꿨더니 무엇이 달라졌나" 다.
+ */
+function BatchView() {
+  const { id = '' } = useParams();
+  const [t, setT] = useState<BatchTable | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    getBatch(id).then(setT).catch((e: Error) => setErr(e.message));
+  }, [id]);
+  useEffect(() => load(), [load]);
+
+  if (err) return <ErrorBanner message={err} />;
+  if (!t) return <Spinner label="비교표를 불러오는 중…" />;
+
+  const done = t.runs.filter((r) => r.state === 'done').length;
+  const gated = t.runs.filter((r) => r.state === 'gated').length;
+  const failed = t.runs.filter((r) => r.state === 'failed').length;
+
+  return (
+    <div style={{ display: 'grid', gap: '1rem' }}>
+      <section style={rowCard}>
+        <div>
+          <strong style={{ color: 'var(--fg)' }}>배치 {t.count}건</strong>
+          <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+            {' '}· 끝남 {done} · 확인 대기 {gated} · 실패 {failed}
+          </span>
+        </div>
+        <button type="button" style={ghost} onClick={load}>새로 고침</button>
+      </section>
+
+      {gated > 0 && (
+        <p style={{ color: '#d9a441', fontSize: '0.84rem', margin: 0 }}>
+          사람 확인이 걸린 단계에서 <b>각자 멈춰 있습니다.</b> 표에서 골라 하나씩 이어갑니다 —
+          초안이 한꺼번에 {t.count}개 만들어지지 않습니다.
+        </p>
+      )}
+
+      <section style={{ ...rowCard, display: 'block', overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: '0.8rem', width: '100%' }}>
+          <thead>
+            <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
+              <th style={{ padding: '0.3rem 0.6rem 0.3rem 0' }}>상태</th>
+              {t.columns.map((c) => (
+                <th key={c} style={{ padding: '0.3rem 0.6rem 0.3rem 0' }}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {t.runs.map((r) => (
+              <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
+                <td style={{ padding: '0.35rem 0.6rem 0.35rem 0', whiteSpace: 'nowrap' }}>
+                  <NavLink to={`/procedures/runs/${r.id}`}
+                           style={{ color: r.state === 'gated' ? '#d9a441'
+                                    : r.state === 'failed' ? '#e5534b' : 'var(--fg)',
+                                    textDecoration: 'none' }}>
+                    {r.state === 'gated' ? '확인 대기' : r.state}
+                  </NavLink>
+                </td>
+                {t.columns.map((c) => (
+                  <td key={c} style={{ padding: '0.35rem 0.6rem 0.35rem 0',
+                                       color: 'var(--muted)', maxWidth: 280,
+                                       overflow: 'hidden', textOverflow: 'ellipsis',
+                                       whiteSpace: 'nowrap' }}>
+                    {fmt(r.inputs?.[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+function fmt(v: unknown): string {
+  if (v === undefined || v === null) return '';
+  return typeof v === 'object' ? JSON.stringify(v).slice(0, 120) : String(v);
 }
 
 /** 이 실행을 절차로 펴 본다 — **안 펴지는 칸이 곧 결손이다**(PLAN §9-2).

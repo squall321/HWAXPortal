@@ -818,3 +818,78 @@ def test_고르기는_남의_실행을_못_건드린다(user):
     boss = _login(c, "boss@corp.com")
     assert c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"value": "PANEL_1"},
                   headers=boss).status_code == 404
+
+
+# ── 룰이 고른 전부를 돌린다 (PLAN §10-1 · S5) ────────────────────────────
+def test_후보_전부를_펼쳐_배치로_돌린다(user):
+    """"디스플레이 패널에 해당하는 것" 처럼 **여럿이 답인** 물음이 있다.
+    하나만 고르면 나머지는 버려진다."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={"mode": "plan"}, headers=h)
+    assert r.status_code == 202, r.text
+    got = r.json()
+    assert got["count"] == 2 and len(got["runs"]) == 2
+    assert {x["value"] for x in got["runs"]} == {"PANEL_1", "PANEL_2"}
+
+    # 비교표 — inputs 를 **그대로 열로** 편다
+    tbl = c.get(f"{PREFIX}/batches/{got['batch_id']}", headers=h).json()
+    assert tbl["count"] == 2
+    assert "part" in tbl["columns"] and "project_id" in tbl["columns"]
+    assert sorted(x["inputs"]["part"] for x in tbl["runs"]) == ["PANEL_1", "PANEL_2"]
+    assert all(x["inputs"]["project_id"] == "p" for x in tbl["runs"]), "공통 변수가 안 물렸다"
+
+
+def test_후보_밖으로는_못_펼친다(user):
+    """⚠ 아무 값이나 받으면 룰을 우회한다 — 고르기(pick)와 같은 규율이다."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out",
+               json={"values": ["PANEL_1", "남의부품"]}, headers=h)
+    assert r.status_code == 422 and "후보 밖" in r.text
+    assert c.get(f"{PREFIX}/runs", headers=h).json()["runs"][0]["id"] == rid, "실행이 생겼다"
+
+
+def test_일부만_골라_펼칠_수_있다(user):
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    got = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out",
+                 json={"values": ["PANEL_2"], "mode": "plan"}, headers=h).json()
+    assert got["count"] == 1 and got["runs"][0]["value"] == "PANEL_2"
+
+
+def test_기본은_계획_모드다(user):
+    """N개를 live 로 던지는 것은 사람이 골라야 한다."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    got = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={}, headers=h).json()
+    assert got["mode"] == "plan"
+    run = c.get(f"{PREFIX}/runs/{got['runs'][0]['run_id']}", headers=h).json()
+    assert run["mode"] == "plan" and run["origin"] == "batch"
+
+
+def test_상한을_넘으면_룰을_좁히라고_말한다(user, monkeypatch):
+    from app.procedures import routes as _r
+
+    c, h = user
+    monkeypatch.setattr(_r, "BATCH_MAX", 1)
+    rid = _gated_pick_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={}, headers=h)
+    assert r.status_code == 422 and "좁혀" in r.text
+
+
+def test_고른_후보가_없는_단계는_못_펼친다(user):
+    c, h = user
+    rid = c.post(f"{PREFIX}/runs", json={"mode": "plan"}, headers=h).json()["run_id"]
+    c.app.state.procedures_store.begin_step(rid, 0, backend="b", tool="t", args={}, mode="live")
+    assert c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={},
+                  headers=h).status_code == 409
+
+
+def test_배치는_남의_것을_안_보여준다(user):
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    bid = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={},
+                 headers=h).json()["batch_id"]
+    boss = _login(c, "boss@corp.com")
+    assert c.get(f"{PREFIX}/batches/{bid}", headers=boss).json()["count"] == 0

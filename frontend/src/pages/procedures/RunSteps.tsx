@@ -3,8 +3,10 @@
 // 실패 카드는 포털 관례(client.ts errorDetail)를 따른다 — 한 줄로 추리고 원문은 접어 둔다.
 // pydantic 덤프를 그대로 띄우지 않고, 사용자가 넣은 값(input_value)은 화면에 안 쓴다.
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ackGate,
+  fanOut,
   pickCandidate,
   stepResult,
   type RunDetail,
@@ -61,6 +63,7 @@ function StepCard({
   onChanged: () => void;
 }) {
   const [body, setBody] = useState<string | null>(null);
+  const nav = useNavigate();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showArgs, setShowArgs] = useState(false);
@@ -139,7 +142,32 @@ function StepCard({
             하나를 고르면 <code>{into}</code> 에 담고 이어서 돕니다. 첫 번째를 자동으로 집지
             않습니다 — <b>엉뚱한 대상으로 돌아도 결과는 정상으로 나오기 때문입니다.</b>
           </p>
-          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* "해당하는 것 전부" 가 답인 물음이 있다 — 하나만 고르면 나머지는 버려진다 */}
+            <button
+              type="button"
+              disabled={busy}
+              style={{
+                background: 'rgba(217,164,65,0.18)', color: 'var(--fg)',
+                border: '1px solid #d9a441', borderRadius: 4,
+                padding: '0.3rem 0.7rem', cursor: 'pointer', fontSize: '0.82rem',
+              }}
+              onClick={async () => {
+                setBusy(true);
+                setErr(null);
+                try {
+                  const b = await fanOut(run.id, step.ix, 'plan');
+                  nav(`/procedures/batches/${encodeURIComponent(b.batch_id)}`);
+                } catch (e) {
+                  setErr((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {cands!.length}개 전부 돌리기 <span style={{ opacity: 0.7 }}>(계획)</span>
+            </button>
+            <span style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>또는 하나만 —</span>
             {cands!.map((c) => (
               <button
                 key={c.i}

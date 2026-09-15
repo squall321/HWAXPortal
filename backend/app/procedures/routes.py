@@ -15,6 +15,7 @@
 
 import asyncio
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -486,6 +487,94 @@ async def pick(request: Request, run_id: str, ix: int, body: PickIn,
     _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=ix + 1),
            f"resume {run_id}")
     return {"picked": body.value, "resumed": True}
+
+
+# 배치 상한 — 사람이 표로 볼 수 있는 크기까지만. 넘으면 룰을 좁히라고 말한다.
+BATCH_MAX = int(os.environ.get("PROCEDURES_BATCH_MAX", "50"))
+
+
+class FanOutIn(BaseModel):
+    values: list | None = None   # 안 주면 그 단계가 고른 후보 전부
+    mode: str = Field(default="plan", pattern="^(plan|live)$")
+
+
+@router.post("/runs/{run_id}/steps/{ix}/fan-out", status_code=202,
+             dependencies=[Depends(require_csrf)])
+async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
+                  principal: Principal = Depends(_me)) -> dict:
+    """룰이 고른 **전부**를 돌린다 — 하나를 고르는 대신(PLAN §10-1 · S5).
+
+    "디스플레이 패널에 해당하는 것" 처럼 **여럿이 답인** 물음이 있다. 하나만 고르면
+    나머지는 버려진다. 여기서는 후보마다 **실행을 하나씩** 만든다.
+
+    배치는 **새 실행 N개**다 — 기존 기계가 그대로 돈다(게이트·재개·다시 돌리기·도출).
+    그래서 사람 확인이 걸린 단계에서 **각자 알아서 멈춘다**. 초안 N개가 한꺼번에
+    만들어지는 일이 없다(PLAN S5 "배치는 첫 gate 직전까지").
+
+    ⚠ 기본이 **계획 모드**다. N개를 live 로 던지는 것은 사람이 골라야 한다.
+    """
+    store, runner = _store(request), _runner(request)
+    run = _owned(request, principal, run_id)
+    steps = {s["ix"]: s for s in run["steps"]}
+    if ix not in steps:
+        raise AuthError("그 단계가 없습니다", status_code=404)
+    notes = steps[ix].get("notes") or {}
+    cands, into = notes.get("candidates"), notes.get("pick_into")
+    if not cands or not into:
+        raise AuthError("이 단계는 고른 후보가 없습니다", status_code=409)
+    if not run.get("procedure_version_id"):
+        raise AuthError("빈 실행은 펼칠 절차가 없습니다", status_code=422)
+
+    allowed = [c.get("value") for c in cands]
+    want = body.values if body.values is not None else allowed
+    # ⚠ **보여 준 후보 안에서만** 펼친다 — 아무 값이나 받으면 룰을 우회한다(pick 과 같은 규율).
+    bad = [v for v in want if v not in allowed]
+    if bad:
+        raise AuthError(f"보여 준 후보 밖입니다: {bad[:3]}", status_code=422)
+    if not want:
+        raise AuthError("펼칠 대상이 없습니다", status_code=422)
+    if len(want) > BATCH_MAX:
+        raise AuthError(f"한 번에 {BATCH_MAX}개까지입니다 — 룰을 좁혀 주세요"
+                        f"(지금 {len(want)}개)", status_code=422)
+
+    version = store.get_version(run["procedure_version_id"])
+    if version is None:
+        raise AuthError("그 판본이 더 이상 없습니다", status_code=404)
+    spec = ProcedureSpec.model_validate(version["spec"])
+    declared = {v.key for v in spec.vars}
+    base = {k: v for k, v in (run.get("inputs") or {}).items() if k in declared}
+
+    batch_id = f"b-{run_id}-{ix}"
+    made = []
+    for val in want:
+        new_id = store.create_run(
+            owner_sub=principal.subject, run_by=principal.subject,
+            procedure_version_id=run["procedure_version_id"],
+            inputs={**base, into: val}, origin="batch", mode=body.mode,
+            title=f"{run.get('title') or spec.title} — {val}", batch_id=batch_id)
+        # 고른 값이 이미 범위에 있으니 **그 선택 단계 다음부터** 돈다.
+        _spawn(runner.run(run_id=new_id, spec=spec, principal=principal, start_at=ix + 1),
+               f"batch {new_id}")
+        made.append({"run_id": new_id, "value": val})
+    return {"batch_id": batch_id, "mode": body.mode, "count": len(made), "runs": made,
+            "poll": f"/procedures-api/batches/{batch_id}"}
+
+
+@router.get("/batches/{batch_id}")
+def batch(request: Request, batch_id: str, principal: Principal = Depends(_me)) -> dict:
+    """비교표 — 한 배치의 실행들을 나란히 본다(PLAN S5).
+
+    ⚠ `inputs` 를 **그대로 열로 편다.** 단계 인자를 역파싱하면 치환된 뒤 값이라
+    무엇이 달랐는지가 흐려진다.
+    """
+    rows = _store(request).list_runs(owner_sub=principal.subject, batch_id=batch_id,
+                                     limit=BATCH_MAX)
+    cols: list[str] = []
+    for r in rows:
+        for k in r.get("inputs") or {}:
+            if k not in cols:
+                cols.append(k)
+    return {"batch_id": batch_id, "count": len(rows), "columns": cols, "runs": rows}
 
 
 @router.post("/runs/{run_id}/steps/{ix}/ack", dependencies=[Depends(require_csrf)])

@@ -214,6 +214,29 @@ export function pickCandidate(runId: string, ix: number, value: unknown) {
   );
 }
 
+export type BatchTable = {
+  batch_id: string;
+  count: number;
+  columns: string[];
+  runs: (RunSummary & { inputs: Record<string, unknown> })[];
+};
+
+/** 룰이 고른 **전부**를 돌린다 — 하나를 고르는 대신. 기본은 계획 모드다. */
+export function fanOut(runId: string, ix: number, mode: 'plan' | 'live' = 'plan',
+                       values?: unknown[]) {
+  return post<{ batch_id: string; count: number; mode: string;
+                runs: { run_id: string; value: unknown }[] }>(
+    `/runs/${runId}/steps/${ix}/fan-out`,
+    values ? { mode, values } : { mode },
+    '전부 돌리지 못했습니다.',
+  );
+}
+
+/** 비교표 — 한 배치의 실행들을 나란히. `inputs` 를 그대로 열로 편다. */
+export function getBatch(batchId: string) {
+  return get<BatchTable>(`/batches/${encodeURIComponent(batchId)}`, '비교표를 불러오지 못했습니다.');
+}
+
 /** 이 절차의 **도구 계약** — 이름·설명·입력 스키마. 절차를 도구로 등록하는 다리다. */
 export function getProcedureTool(id: string) {
   return get<ProcedureTool>(`/procedures/${id}/tool`, '도구 계약을 불러오지 못했습니다.');

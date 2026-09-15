@@ -49,7 +49,7 @@ _DDL = (
         state TEXT NOT NULL DEFAULT 'queued', stage TEXT,
         started_at INTEGER NOT NULL, ended_at INTEGER,
         cancelled_by TEXT, cancelled_at INTEGER,
-        trigger_kind TEXT, trigger_ref TEXT)""",
+        trigger_kind TEXT, trigger_ref TEXT, batch_id TEXT)""",
     """CREATE TABLE IF NOT EXISTS run_steps (
         run_id TEXT NOT NULL, ix INTEGER NOT NULL,
         backend TEXT NOT NULL, tool TEXT NOT NULL, schema_fp TEXT, expect TEXT,
@@ -93,7 +93,8 @@ class ProceduresStore:
     # ⚠ `CREATE TABLE IF NOT EXISTS` 는 **이미 있는 표를 고치지 않는다.** 칼럼을 DDL 에만
     #    더하면 새 DB 에서는 되고 돌고 있는 DB 에서는 조용히 없다 — 그러면 그 칼럼을 읽는
     #    코드가 운영에서만 터진다. 더하는 칼럼은 여기 한 줄씩 적는다(멱등).
-    _ADD_COLUMNS = (("procedures", "from_seed", "TEXT"),)
+    _ADD_COLUMNS = (("procedures", "from_seed", "TEXT"),
+                    ("runs", "batch_id", "TEXT"))
 
     @classmethod
     def _migrate(cls, c: sqlite3.Connection) -> None:
@@ -203,17 +204,18 @@ class ProceduresStore:
     def create_run(self, *, owner_sub: str, run_by: str | None = None,
                    procedure_version_id: str | None = None, inputs: dict | None = None,
                    origin: str = "manual", mode: str = "plan", title: str | None = None,
-                   trigger_kind: str | None = None, trigger_ref: str | None = None) -> str:
+                   trigger_kind: str | None = None, trigger_ref: str | None = None,
+                   batch_id: str | None = None) -> str:
         """`procedure_version_id` 가 없으면 **빈 실행** — 도구를 한 단계씩 돌리는 절차다."""
         run_id, now = _uid(), _now()
         with self._conn() as c:
             c.execute(
                 "INSERT INTO runs (id, owner_sub, run_by, procedure_version_id, title,"
-                " inputs_json, origin, mode, state, started_at, trigger_kind, trigger_ref)"
-                " VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)",
+                " inputs_json, origin, mode, state, started_at, trigger_kind, trigger_ref,"
+                " batch_id) VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?,?)",
                 (run_id, owner_sub, run_by or owner_sub, procedure_version_id, title,
                  json.dumps(inputs or {}, ensure_ascii=False), origin, mode, now,
-                 trigger_kind, trigger_ref),
+                 trigger_kind, trigger_ref, batch_id),
             )
         return run_id
 
@@ -263,7 +265,7 @@ class ProceduresStore:
         return d
 
     def list_runs(self, *, owner_sub: str, limit: int = 50,
-                  procedure_id: str | None = None) -> list[dict]:
+                  procedure_id: str | None = None, batch_id: str | None = None) -> list[dict]:
         """확인 대기(`gated`)를 맨 위에 — 게이트에서 멈춘 실행의 표면이 이 목록이다.
 
         **어느 절차의 몇 판본에서 나왔는지**를 함께 낸다. 실행이 `procedure_version_id`
@@ -271,8 +273,8 @@ class ProceduresStore:
         보는 것 자체가 불가능했다. `procedure_id` 를 주면 그 절차의 이력만 낸다.
         """
         sql = ("SELECT r.id, r.title, r.state, r.stage, r.mode, r.origin,"
-               " r.procedure_version_id, r.started_at, r.ended_at,"
-               " v.procedure_id, v.version_no"
+               " r.procedure_version_id, r.started_at, r.ended_at, r.batch_id,"
+               " r.inputs_json, v.procedure_id, v.version_no"
                " FROM runs r LEFT JOIN procedure_versions v"
                "   ON v.version_id = r.procedure_version_id"
                " WHERE r.owner_sub=?")
@@ -280,9 +282,19 @@ class ProceduresStore:
         if procedure_id:
             sql += " AND v.procedure_id=?"
             args.append(procedure_id)
+        if batch_id:
+            sql += " AND r.batch_id=?"
+            args.append(batch_id)
         sql += " ORDER BY (r.state='gated') DESC, r.started_at DESC LIMIT ?"
         args.append(limit)
-        return [dict(r) for r in self._conn().execute(sql, args).fetchall()]
+        out = []
+        for r in self._conn().execute(sql, args).fetchall():
+            d = dict(r)
+            # ⚠ 비교표는 **`inputs_json` 을 그대로 열로 편다**(PLAN S5). 단계 인자를
+            # 역파싱하면 치환된 뒤 값이라 무엇이 달랐는지가 흐려진다.
+            d["inputs"] = json.loads(d.pop("inputs_json") or "{}")
+            out.append(d)
+        return out
 
     # ── 단계 ──────────────────────────────────────────────────────────────
     def begin_step(self, run_id: str, ix: int, *, backend: str, tool: str, args: dict,
