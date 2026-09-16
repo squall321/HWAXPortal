@@ -455,7 +455,10 @@ ODB++ 에서 좌표·치수를 뽑아 SED 를 판정하고 보고서로 남긴�
 
 체인 — `get_part_detail`(AP) · `get_part_detail`(PKG) · `get_interposer_result` → `sed_sample_from_odb`
 (응답 통째 `save: {x: "$"}` → 통째 치환 `"{{x}}"` 로 객체 형 그대로) → `predict_sed`. 변수는 ODB 에 **없는**
-여섯 — `odb_job`·`ap_refdes`·`pkg_refdes`·`pkg_type`·`ball_size`·`board_type`. 보고서 단계는 아직이다.
+여섯 — `odb_job`·`ap_refdes`·`pkg_refdes`·`pkg_type`·`ball_size`·`board_type`. 끝으로 `create_report_draft`(사람
+확인 게이트) → `suggest_report_tags`(후보만). **태그 적용은 절차에 없다** — 게이트는 인자 지문에 묶인 승인/거절뿐이고
+`select` 는 하나만 골라서, 사람이 후보 여럿을 고르는 길이 없다. 저장된 보고서 주소에서 RA 제안 칩으로 고른다.
+RA MCP 는 API 봉투를 **벗겨서** 준다 — save 경로에 `data.` 가 없다(R1 과 반대 방향 함정).
 
 > ⚠ 이 문서의 R2a·R2b YAML 에 있는 `id:`·`version:` 줄은 **절차 모델이 거부한다**(`ProcedureSpec` 는
 > `title`·`vars`·`steps` 만 받는다, extra=forbid). R3 를 씨앗으로 옮기며 드러났다 — S3 때 같은 방식으로 옮긴다.

@@ -1,5 +1,5 @@
 {
-  "_note": "R3 열충격 SED 절차 고정물(2026-09-16). odb_* 는 odb-hub 실측 표본(HWAXPortal docs/procedures/fixtures/odb-hub/reference.md §4.6·§4.12) — 단 ap_part 는 실측 AP 표본이 없어 **합성**이다(_synthetic). reduce·predict 는 ThermalShockMCP 코드를 **실제로 실행한 출력**이고 predict 모델은 실데이터 294건으로 임시 학습했다. schemas 는 ThermalShockMCP 도구의 실제 inputSchema.",
+  "_note": "R3 열충격 SED 절차 고정물(2026-09-16). odb_* 는 odb-hub 실측 표본(HWAXPortal docs/procedures/fixtures/odb-hub/reference.md §4.6·§4.12) — 단 ap_part 는 실측 AP 표본이 없어 **합성**이다(_synthetic). reduce·predict 는 ThermalShockMCP 코드를 **실제로 실행한 출력**이고 predict 모델은 실데이터 294건으로 임시 학습했다. schemas 는 ThermalShockMCP 도구의 실제 inputSchema. ra_create_dry_run 은 게이트웨이를 통해 **실제로 부른** dry_run 응답(2026-09-16, 아무것도 만들지 않음). ra_create·ra_suggest 는 실제 생성이 쓰기라 부르지 않고 ReportArchive 소스에서 모양을 옮겼다(_from_source) — 값은 자리표시. RA MCP 는 API 봉투를 벗긴다(mcp_server _unwrap).",
   "odb_ap_part": {
     "refdes": "U1000",
     "pkg_width": 11.5,
@@ -282,6 +282,82 @@
       ],
       "title": "sed_sample_from_odbArguments",
       "type": "object"
+    },
+    "create_report_draft": {
+      "properties": {
+        "block_sections": {},
+        "blocks": {},
+        "dry_run": {},
+        "entity_ids": {},
+        "extra_blocks": {},
+        "pages": {},
+        "report_date": {},
+        "report_type_id": {},
+        "tags": {},
+        "template_id": {},
+        "template_version": {},
+        "title": {}
+      },
+      "required": [
+        "template_id",
+        "template_version",
+        "title",
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "suggest_report_tags": {
+      "properties": {
+        "report_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "report_id"
+      ],
+      "type": "object"
     }
+  },
+  "ra_create_dry_run": {
+    "dry_run": true,
+    "title": "열충격 SED — U1005 (WLP, INT) OK",
+    "page_count": 1,
+    "pages": [
+      {
+        "page": 1,
+        "blocks": [
+          "basis",
+          "result"
+        ]
+      }
+    ],
+    "warnings": [],
+    "note": "만들지 않았습니다. 그대로 생성하려면 dry_run 없이 다시 호출하세요. warnings 가 있으면 먼저 고치세요 — 만든 뒤엔 되돌리기 번거롭습니다."
+  },
+  "ra_create": {
+    "_from_source": "ReportArchive backend/app/modules/reports/routes.py ai-draft created_response + mcp_server _unwrap",
+    "report_id": 12345,
+    "title": "열충격 SED — U1005 (WLP, INT) OK",
+    "page_count": 1,
+    "phase": "drafting",
+    "warnings": [],
+    "url": "/w/<workspace>/reports/12345"
+  },
+  "ra_suggest": {
+    "_from_source": "ReportArchive backend/app/modules/entities/autotag.py suggest_entities + mcp_server _unwrap",
+    "items": [
+      {
+        "id": 101,
+        "type_id": 3,
+        "type_slug": "<axis>",
+        "value": "<entity>",
+        "code": null,
+        "status": "active",
+        "source": "deterministic",
+        "score": 1.0
+      }
+    ],
+    "truncated": false,
+    "current": []
   }
 }

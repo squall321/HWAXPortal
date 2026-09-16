@@ -487,8 +487,12 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       를 context-notes 에 적는다
 - [ ] 워피지 — `copper_imbalance_pct`·`stackup_asymmetry`(산식은 dev 에서 정한다)·`board_thickness_mm` +
       선택 `diagonal_mm`·`peak_temp_c` 가 같은 다리로 열리는지
-- [ ] 보고서 경로 — `create_report_draft`(gate) → `suggest_report_tags`(후보만) → gate → `add_report_tags`.
+- [x] 보고서 경로 — `create_report_draft`(gate) → `suggest_report_tags`(후보만) → gate → `add_report_tags`.
       `create_report_from_run` 은 못 쓴다(적재 실행 `status=ready` 전용)
+      → 초안(게이트)·후보까지 씨앗에 붙였다. 위젯 형식은 **실제 dry_run** 으로 확인(warnings 0). RA MCP 가 봉투를
+      벗겨 save 경로에 `data.` 가 없다(소스 `_unwrap` + dry_run 응답으로 확인). **태그 적용은 절차 밖** — 아래 항목
+- [ ] (실행기) 게이트에서 사람이 후보 **여럿**을 고르는 길 — 지금은 게이트가 인자 지문 승인/거절뿐이고 `select` 는
+      하나만 골라 `add_report_tags` 를 절차에 못 넣는다. 생기기 전까지 태그는 RA 화면 제안 칩에서
 - [ ] `pcb_warpage_surrogate` 의 합성 데이터 경고를 `notes` 로
 - [x] HWAXRisk `odb-adapter-contract.md` 4도구와 이름이 다르면 계약 개정을 HWAXRisk 쪽 일감으로
       → 대조 완료(sed-mapping.md) — **넷 다 없다**. `odb_list_nets` 는 대응 도구 자체가 없고 `list_parts` 엔 좌표가 없다. 개정은 HWAXRisk 몫

@@ -8,8 +8,10 @@
 # `sed_sample_from_odb` 가 odb-hub 응답을 통째로 받아 SED 입력 15키로 요약하고, 못 읽은 칸은
 # 지어내지 않고 `needs_human` 으로 돌려준다. 남은 변수는 ODB 에 **없는 것**들이다.
 #
-# 보고서 단계(create_report_draft → suggest_report_tags → add_report_tags)는 아직 붙이지 않았다
-# — checklist S4 "보고서 경로".
+# 보고서 — 초안(사람 확인 게이트) → 축 태그 **후보**까지. 태그 적용(add_report_tags)은 절차에 넣지 않는다:
+# 실행기 게이트는 인자 지문에 묶인 승인/거절뿐이고 `select` 는 하나만 고른다 — 사람이 후보 **여럿**을
+# 골라 넘기는 길이 없다. 그래서 보고서 주소를 남기고, 태그는 RA 화면의 제안 칩에서 사람이 고른다.
+# ⚠ RA MCP 는 API 봉투(success·data)를 **벗겨서** 돌려준다(mcp_server `_unwrap`) — save 경로에 `data.` 가 없다.
 
 title: 열충격 SED 판정 (ODB++)
 
@@ -81,3 +83,38 @@ steps:
     args: {sample: "{{sample}}"}
     save: {sed: "data.sed_pred", judgement: "data.judgement.status"}
     note: SED 예측 — 2.0 초과 WARNING, 2.2 초과 FAIL
+
+  - backend: reportarchive
+    tool: create_report_draft
+    gate: human
+    args:
+      title: "열충격 SED — {{pkg_refdes}} ({{pkg_type}}, {{board_type}}) {{judgement}}"
+      template_id: __import_blank__
+      template_version: 1
+      blocks: {}
+      # 위젯 형식은 dry_run 으로 확인했다(2026-09-16, warnings 0) — 고치면 dry_run 을 다시 돌린다
+      extra_blocks:
+        - id: result
+          type: key_value
+          content:
+            판정: "{{judgement}}"
+            SED 예측: "{{sed}}"
+            ODB 잡: "{{odb_job}}"
+            AP: "{{ap_refdes}}"
+            PKG: "{{pkg_refdes}}"
+            패키지 분류: "{{pkg_type}}"
+            볼 지름/피치(µm): "{{ball_size}}"
+            보드 구분: "{{board_type}}"
+        - id: basis
+          type: rich_text
+          content:
+            - "입력은 odb-hub get_part_detail·get_interposer_result 응답을 ThermalShockMCP sed_sample_from_odb 가 SED 입력으로 환원해 만들었다."
+            - "칸마다 어떻게 읽었는지(basis)와 경고(notes)는 HWAX 포털 절차 실행 기록에 남는다."
+    save: {report_id: "report_id", report_url: "url"}   # 봉투를 벗긴 응답 — data. 가 없다
+    note: 보고서 초안 — 만들기 전에 사람이 확인한다. 위젯이 버려지면 warnings 로 올라온다
+
+  - backend: reportarchive
+    tool: suggest_report_tags
+    args: {report_id: "{{report_id}}"}
+    save: {tag_candidates: "items"}
+    note: 축 태그 후보만 — 저장하지 않는다. 적용은 RA 화면의 제안 칩에서 사람이 고른다
