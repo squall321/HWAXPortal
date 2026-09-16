@@ -468,7 +468,11 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       **단면/양면이 아니다**(HALF 46건 중 19건이 PKG 를 AP 밑 반대면에 둔다). INT 는 인터포저 수로 유도,
       HALF/FULL 은 보드 크기 경계값이 설 때까지 사람 확인. 틀린 원천 정의(ThermalShockMCP 도구 설명)도 고침
 - [ ] `board_type` 경계값 — cae00 라벨 대조: INT 혼동행렬 · HALF/FULL 보드 크기 분포 · 폰으로 보이는 FULL 4건 확인
-- [ ] cae00 반영 — ThermalShockMCP 재배포(도구 12종) → 게이트웨이 tools/list 에 `sed_sample_from_odb` 가 뜨는지
+- [x] dev 반영 — ThermalShockMCP 재배포(도구 12종) → 게이트웨이 tools/list 에 `sed_sample_from_odb` 가 뜬다(2026-09-16).
+      push 하면 HEAXHub 가 upstream 을 받아 SIF 를 **자동 빌드**하지만 떠 있는 인스턴스는 **안 바꾼다** — 중지 →
+      reconcile 로 갈아끼웠다. 게이트웨이 실호출로 환원·predict_sed(dev 활성 모델 SED 1.219 OK) 왕복 확인.
+      실호출에서 결함 하나(사람 값이 유도값과 같으면 유도 근거를 지움)를 잡아 고쳤다(ThermalShockMCP 6e6a6db)
+- [ ] cae00 반영 — ThermalShockMCP SIF 가 Drive 로 가서 도구 12종이 cae00 게이트웨이에 뜨는지
 - [ ] `pkg_x`·`pkg_y` 회전 기준 — 학습 데이터 PKG_X 가 보드 축인지 패키지 축인지(모델 담당 확인). 정해지면
       환원 도구의 ±90° 비정사각 `needs_human` 을 유도로 바꾼다
 - [ ] `pad` `r<N>` → µm 확인 — cae00 실물 PKG 하나로(학습 값 180~240 과 맞는지)
