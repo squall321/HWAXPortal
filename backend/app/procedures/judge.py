@@ -169,12 +169,25 @@ def _parse_json_multi(text: str) -> list | None:
     return out
 
 
+# 평문으로 실패를 알리는 머리. KooSlurm(smarttwin_*·slurm_*)은 실패를 `"error: …"` 평문으로 준다
+# (isError=false, 소스 14곳 이상). 첫 줄만 본다 — 본문 중간의 "error:" 는 로그 인용일 수 있다.
+_TEXT_FAIL = re.compile(r"^(error|오류)\s*[:：]", re.I)
+
+
+def _first_line(text: str) -> str:
+    for ln in (text or "").splitlines():
+        if ln.strip():
+            return ln.strip()
+    return ""
+
+
 def judge(*, is_error: bool, text: str, raw: bool = False,
-          unwrap: str | None = None) -> Verdict:
+          unwrap: str | None = None, ok_text: str | None = None) -> Verdict:
     """한 단계의 성공 여부. 네 조건이 **모두** 성립해야 성공이다.
 
     `raw=True` 는 결과가 JSON 이 아니라고 단계가 선언한 경우다(옵션 카탈로그 등) — 그때만
-    파싱 실패를 성공으로 본다.
+    파싱 실패를 성공으로 본다. 단 **평문 실패 머리**(`error:`)는 raw 여도 실패다. `ok_text` 를
+    준 raw 단계는 본문 앞머리가 그 정규식에 맞아야만 성공이다(머리 없는 실패 문구를 막는다).
     """
     # ① ② MCP 층
     if is_error:
@@ -186,7 +199,7 @@ def judge(*, is_error: bool, text: str, raw: bool = False,
 
     # ⑤ 빈 본문 — 0건과 실패가 같은 모양이다
     if text is None or text.strip() == "":
-        if raw:
+        if raw and not ok_text:
             return Verdict(True, "parse", "ok", parsed="")
         return Verdict(False, "parse", "empty",
                        error="빈 본문 — 0건인지 실패인지 구분되지 않는다. raw 를 선언하거나 "
@@ -223,7 +236,17 @@ def judge(*, is_error: bool, text: str, raw: bool = False,
                 if bad is not None:
                     return bad
             return Verdict(True, "parse", "ok", parsed=rows, notes=_notes_of_rows(rows))
+        # ⚠ **평문 실패를 raw 가 삼키지 않게** 먼저 본다. 예전엔 raw 단계가 파싱 실패를 무조건
+        #   성공으로 봐서 `smarttwin_submit` 의 `"error: 제출 실패(status=500)"` 가 **제출 성공으로**
+        #   기록될 자리였다(2026-09-16 KooSlurm 소스 + 프로세스 내 실호출로 확인 — isError=false).
+        head = _first_line(text)
+        if _TEXT_FAIL.match(head):
+            return Verdict(False, "text", "text_error", error=head[:300], retriable=False)
         if raw:
+            if ok_text and not re.match(ok_text, text.lstrip()):
+                return Verdict(False, "text", "text_unexpected",
+                               error=f"성공 표식과 다르다(ok_text) — 앞 200자: {text.lstrip()[:200]}",
+                               retriable=False)
             return Verdict(True, "parse", "ok", parsed=text)
         return Verdict(False, "parse", "not_json",
                        error=f"JSON 이 아니다(앞 200자): {text[:200]}", retriable=False)

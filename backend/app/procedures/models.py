@@ -226,6 +226,9 @@ class Step(BaseModel):
     gate: Literal["human"] | None = None
     raw: bool = False          # 결과가 JSON 이 아니다(텍스트 카탈로그 등)
     unwrap: str | None = None  # SmartTwin 류 이중 포장 — 그 필드를 한 번 더 파싱
+    # raw 단계의 **성공 표식**(정규식, 본문 앞머리 일치). 평문 도구는 실패도 평문이라, 머리에 `error:`
+    # 가 없는 실패 문구(예: "제출 응답 파싱 실패")는 표식으로만 가를 수 있다(judge.py _TEXT_FAIL 주석).
+    ok_text: str | None = None
     warmup: bool = False       # 한 번 먼저 부르고 버린다. 타임아웃이 나도 실패로 안 친다
     select: "Select | None" = None   # 룰로 고른다 — PLAN §10-1
     note: str | None = None
@@ -364,6 +367,16 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
         if _too_deep(st.args):
             errs.append(f"{at}: 인자가 너무 깊다({ARG_DEPTH_MAX}단 초과)")
             continue
+
+        # ⑤ ok_text — raw 단계에만 뜻이 있고, 정규식이 깨지면 실행에서야 터진다
+        if st.ok_text is not None:
+            if not st.raw:
+                errs.append(f"{at}: ok_text 는 raw 단계에만 쓴다 — JSON 결과는 봉투로 판정한다")
+            else:
+                try:
+                    re.compile(st.ok_text)
+                except re.error as exc:
+                    errs.append(f"{at}: ok_text 정규식이 깨졌다 — {exc}")
 
         # ④ dry_run — 스키마에 없는 도구에 얹으면 조용히 진짜 실행된다
         if "dry_run" in st.args and st.tool not in DRY_RUN_TOOLS:

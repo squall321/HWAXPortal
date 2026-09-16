@@ -1,0 +1,9 @@
+{
+  "_note": "KooSlurm(smart-twin-cluster) 평문 응답. dry_run_* 는 게이트웨이 실호출(앞머리만, 내부 주소 제외), error_real 은 MCP 프로세스 내 실호출, submit_ok·submit_parse_fail 은 소스(smarttwin_submit 반환문)에서 옮김.",
+  "dry_run_fullangle": "[DRY-RUN] 제출 계획 (실제 제출은 dry_run=False)\n[fullangle_drop] template=smarttwin-fullangle-drop\nmodel: /data/templates/MinimumModel.k (0.0MB → MinimumModel.k)\nscenario: base=프리셋 26direction + overrides 병합\nslurm_overrides: (없음)  job_name: procedure-seed-drop-dryrun\n--- 드라이버 잡 #SBATCH (backend preview) ---\n#SBATCH --job-name=procedure-seed-drop-dryrun\n#SBATCH --time=167:00:00",
+  "dry_run_impact": "[DRY-RUN] 제출 계획 (실제 제출은 dry_run=False)\n[partial_impact] template=smarttwin-partial-impact\nmodel: /data/templates/MinimumModel.k (0.0MB → MinimumModel.k)\nscenario: base=기본격자(5x5) + overrides 병합\nslurm_overrides: (없음)  job_name: procedure-seed-impact-dryrun\n--- 드라이버 잡 #SBATCH (backend preview) ---\n#SBATCH --job-name=procedure-seed-impact-dryrun\n#SBATCH --time=167:00:00",
+  "error_real": "error: sim_type 은 fullangle_drop | partial_impact 중 하나여야 합니다.",
+  "submit_ok": "✅ 제출 완료 — job_id=12345\n[fullangle_drop] template=smarttwin-fullangle-drop\nscript: /data/scripts/12345.sh\n결과 폴더: /data/single/<사용자>/procedure-seed-drop_12345/ (드라이버 잡 완료 후)",
+  "submit_parse_fail": "제출 응답 파싱 실패(원문): <html>502 Bad Gateway</html>",
+  "submit_http_fail": "error: 제출 실패(status=500): Internal Server Error"
+}

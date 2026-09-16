@@ -621,7 +621,7 @@ class ProceduresRunner:
 
         ms = int((time.perf_counter() - t0) * 1000)
         text, other = J.join_content(content)
-        v = J.judge(is_error=is_error, text=text, raw=st.raw, unwrap=st.unwrap)
+        v = J.judge(is_error=is_error, text=text, raw=st.raw, unwrap=st.unwrap, ok_text=st.ok_text)
 
         # `save` 는 저장·절단 **전에** 원문에서 한다. 프리뷰만 남은 뒤엔 값이 없다.
         if v.ok and st.save:

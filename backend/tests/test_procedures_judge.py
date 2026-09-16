@@ -369,3 +369,58 @@ def test_안_자른_것을_잘랐다고_하지_않는다():
     assert "truncated" not in _notes_of_rows([{"warnings": [f"W{i}" for i in range(50)]}])
     assert _notes_of_rows([{"warnings": [f"W{i}" for i in range(50)]},
                            {"warnings": ["W99"]}]).get("truncated") is True
+
+
+# ── 평문 결과(raw) — 실패도 평문으로 온다 (2026-09-16) ─────────────────────────────────────
+# KooSlurm(smarttwin_*·slurm_*)은 성공도 실패도 평문이고 isError=false 다. raw 단계가 파싱 실패를
+# 무조건 성공으로 보던 탓에 `"error: 제출 실패(status=500)"` 가 **제출 성공으로** 기록될 자리였다.
+import json as _json
+from pathlib import Path as _Path
+
+_SMT = _json.loads((_Path(__file__).parent / "fixtures" / "procedures"
+                    / "smarttwin_text_responses.json").read_text(encoding="utf-8"))
+_SUBMIT_OK = r"(\[DRY-RUN\]|✅ 제출 완료)"
+
+
+def test_raw_단계도_평문_error_머리는_실패다():
+    for key in ("error_real", "submit_http_fail"):
+        v = judge(is_error=False, text=_SMT[key], raw=True)
+        assert not v.ok and v.kind == "text_error", (key, v)
+        assert v.error.startswith("error:")
+    # raw 가 아니어도 not_json 이 아니라 **실제 사유**로 실패한다
+    v = judge(is_error=False, text=_SMT["error_real"])
+    assert not v.ok and v.kind == "text_error"
+
+
+def test_raw_단계의_정상_평문은_여전히_성공이다():
+    for key in ("dry_run_fullangle", "dry_run_impact", "submit_ok"):
+        assert judge(is_error=False, text=_SMT[key], raw=True).ok, key
+
+
+def test_ok_text_는_머리_없는_실패_문구를_잡는다():
+    """`제출 응답 파싱 실패` 는 `error:` 머리가 없다 — 성공 표식으로만 가를 수 있다."""
+    assert judge(is_error=False, text=_SMT["submit_parse_fail"], raw=True).ok  # 표식 없으면 못 잡는다
+    v = judge(is_error=False, text=_SMT["submit_parse_fail"], raw=True, ok_text=_SUBMIT_OK)
+    assert not v.ok and v.kind == "text_unexpected"
+    for key in ("dry_run_fullangle", "dry_run_impact", "submit_ok"):
+        assert judge(is_error=False, text=_SMT[key], raw=True, ok_text=_SUBMIT_OK).ok, key
+    # 빈 본문도 표식이 있으면 성공이 아니다
+    assert not judge(is_error=False, text="", raw=True, ok_text=_SUBMIT_OK).ok
+
+
+def test_본문_중간의_error_는_실패로_보지_않는다():
+    """첫 줄만 본다 — 카탈로그·로그 인용 안의 'error:' 로 멀쩡한 결과를 버리지 않게."""
+    text = "━━ 옵션 카탈로그 ━━\n- on_fail: error: 로 시작하는 줄을 남긴다"
+    assert judge(is_error=False, text=text, raw=True).ok
+
+
+def test_ok_text_는_저장_시점에_검사한다():
+    from app.procedures.models import ProcedureSpec, validate_spec
+    base = {"title": "t", "vars": [], "steps": [
+        {"backend": "smart-twin-cluster", "tool": "smarttwin_scenario_options",
+         "args": {"sim_type": "fullangle_drop"}, "raw": True, "ok_text": "("}]}
+    errs = validate_spec(ProcedureSpec.model_validate(base))
+    assert any("정규식이 깨졌다" in e for e in errs), errs
+    base["steps"][0].update(raw=False, ok_text="x")
+    errs = validate_spec(ProcedureSpec.model_validate(base))
+    assert any("raw 단계에만" in e for e in errs), errs
