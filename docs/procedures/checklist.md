@@ -428,7 +428,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       (`locations.mode` = grid|list|lhs|part_center, `impactor` Sphere|Cylinder)
       → **부분충격 완료**(2026-09-16) — 씨앗 `fixtures/partial-impact-submit.yaml`: 카탈로그 → 미리보기(리터럴
       `dry_run: true`) → 게이트 → 제출(앵커로 같은 인자). 임팩터 물성 명시·단위 label·`generation_mode` enum·
-      100mm 초과 경고. 테스트 11(`test_procedures_s3.py`, 되돌림 셋 확인). 전각도 판본은 다음
+      100mm 초과 경고. 테스트 11(`test_procedures_s3.py`, 되돌림 셋 확인)
+      → **전각도 완료** — 씨앗 `fixtures/fullangle-drop-submit.yaml`: 같은 틀, 프리셋 enum·바닥 종류 enum·
+      **바닥 물성으로 프리셋의 SI 값을 덮는다**·높이 100mm 이하 경고. 두 씨앗 공통 검사로 묶어 테스트 21(되돌림 둘 더)
 - [ ] **제출 갈래는 `smarttwin_submit` 만** 쓴다 — `fullangle_drop_simulation` 은 `lstc_license_ip`
       를 사람에게 묻고 부분충격 빌더가 없다
 - [ ] ⚠ **단위계가 실제로 섞여 있다** — 프리셋 `26direction` 은 SI(7850, 2e11), 부분충격 실제 잡은

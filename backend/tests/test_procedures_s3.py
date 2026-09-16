@@ -15,12 +15,21 @@ from app.procedures.models import ProcedureSpec, check_against_schemas, coerce_i
 
 ROOT = Path(__file__).resolve().parents[2]
 FIX = Path(__file__).parent / "fixtures" / "procedures"
-IMPACT = ROOT / "docs" / "procedures" / "fixtures" / "partial-impact-submit.yaml"
+SEEDS = ROOT / "docs" / "procedures" / "fixtures"
+# 씨앗 → (sim_type, 카탈로그 고정물, 미리보기 고정물)
+SUBMIT = {
+    "partial-impact-submit": ("partial_impact", "catalog_impact", "dry_run_impact"),
+    "fullangle-drop-submit": ("fullangle_drop", "catalog_drop", "dry_run_fullangle"),
+}
 
 
-@pytest.fixture(scope="module")
-def spec() -> ProcedureSpec:
-    return ProcedureSpec.model_validate(yaml.safe_load(IMPACT.read_text(encoding="utf-8")))
+def _load(name: str) -> ProcedureSpec:
+    return ProcedureSpec.model_validate(yaml.safe_load((SEEDS / f"{name}.yaml").read_text(encoding="utf-8")))
+
+
+@pytest.fixture(scope="module", params=sorted(SUBMIT))
+def seed(request) -> tuple[str, ProcedureSpec]:
+    return request.param, _load(request.param)
 
 
 @pytest.fixture(scope="module")
@@ -37,12 +46,18 @@ def _examples(spec: ProcedureSpec) -> dict:
     return {v.key: (v.example if v.example is not None else "/data/templates/MinimumModel.k") for v in spec.vars}
 
 
+def _params(spec: ProcedureSpec) -> dict:
+    return spec.steps[1].args["scenario_overrides"]["simulation_params"]
+
+
 # ── 저장될 수 있나 ───────────────────────────────────────────────────────────────────────
-def test_부분충격_씨앗이_경고_없이_저장된다(spec):
+def test_씨앗이_경고_없이_저장된다(seed):
     """미리보기 단계(리터럴 dry_run: true)는 잡을 안 만들므로 '게이트를 권한다' 경고도 없어야 한다."""
+    name, spec = seed
     assert validate_spec(spec) == []
     assert [(s.tool, s.gate) for s in spec.steps] == [
         ("smarttwin_scenario_options", None), ("smarttwin_submit", None), ("smarttwin_submit", "human")]
+    assert {s.args["sim_type"] for s in spec.steps} == {SUBMIT[name][0]}
 
 
 def test_템플릿_dry_run_은_여전히_게이트를_권한다():
@@ -55,74 +70,101 @@ def test_템플릿_dry_run_은_여전히_게이트를_권한다():
     assert any("게이트를 권한다" in e for e in validate_spec(s2))
 
 
-def test_인자가_실제_도구_스키마와_맞는다(spec, schemas):
+def test_인자가_실제_도구_스키마와_맞는다(seed, schemas):
+    _, spec = seed
     table = {st.alias: schemas[st.tool] for st in spec.steps}
     assert check_against_schemas(spec, table, missing_is_error=True) == []
 
 
-def test_미리보기와_제출은_dry_run_만_다르다(spec):
+def test_미리보기와_제출은_dry_run_만_다르다(seed):
     """앵커로 묶었다 — 사람이 게이트에서 대조한 scenario 와 실제로 나가는 scenario 가 달라지면 확인이 거짓이 된다."""
+    _, spec = seed
     preview, submit = spec.steps[1].args, spec.steps[2].args
     assert preview["dry_run"] is True and submit["dry_run"] is False
     assert {k: v for k, v in preview.items() if k != "dry_run"} == {k: v for k, v in submit.items() if k != "dry_run"}
 
 
-def test_디스패치_키와_잡_ID_save_가_없다(spec):
+def test_디스패치_키와_잡_ID_save_가_없다(seed):
     """mode·model_file·environment 는 서버가 고정한다(넣으면 버려진다). 반환이 평문이라 save 로 job_id 를 못 뽑는다(W-90)."""
+    _, spec = seed
     ov = spec.steps[1].args["scenario_overrides"]
     assert not ({"mode", "model_file", "output_dir", "project_name", "environment"} & set(ov))
     assert all(st.save is None for st in spec.steps)
 
 
 # ── 단위(W-91) ───────────────────────────────────────────────────────────────────────────
-def test_임팩터_물성은_늘_명시하고_label_에_단위가_있다(spec):
-    imp = spec.steps[1].args["scenario_overrides"]["simulation_params"]["impactor"]
-    assert {"density", "youngs_modulus", "poisson_ratio", "height", "radius"} <= set(imp)
-    labels = {v.key: v.label for v in spec.vars}
-    assert "tonne/mm³" in labels["impactor_density"] and "MPa" in labels["impactor_youngs_modulus"]
-    assert "(mm)" in labels["impact_height_mm"]
-
-
-def test_예시는_tonne_mm_값이고_단위계_선택_변수는_없다(spec):
-    """SI 예시(7850·2e11)는 무변환 기입돼 질량 10¹²배가 된다. 단위계 키가 KMM 에 없으니 고르는 변수는 가짜 스위치다."""
-    ex = {v.key: v.example for v in spec.vars}
-    assert isinstance(ex["impactor_density"], float) and ex["impactor_density"] < 1e-6
-    assert isinstance(ex["impactor_youngs_modulus"], float) and 1e4 < ex["impactor_youngs_modulus"] < 1e7
+def test_단위계_선택_변수는_없다(seed):
+    """단위계 키가 KMM 에 없으니 고르는 변수는 가짜 스위치다."""
+    _, spec = seed
     assert not any("unit" in v.key or "단위계" in v.label for v in spec.vars)
 
 
-def test_100mm_초과_초속_이중_합산을_경고한다(spec):
-    why = next(v.why for v in spec.vars if v.key == "impact_height_mm")
-    assert "100" in why and "2배" in why
+def test_물성_예시는_tonne_mm_값이고_label_에_단위가_있다(seed):
+    """SI 예시(7850·2e11)는 무변환 기입된다. 물성 변수마다 예시가 tonne-mm 범위이고 label 이 단위를 말한다."""
+    _, spec = seed
+    dens = [v for v in spec.vars if v.key.endswith("_density")]
+    mods = [v for v in spec.vars if v.key.endswith("_youngs_modulus")]
+    assert dens and mods
+    for v in dens:
+        assert isinstance(v.example, float) and v.example < 1e-6 and "tonne/mm³" in v.label, v.key
+    for v in mods:
+        assert isinstance(v.example, float) and 1e4 < v.example < 1e7 and "MPa" in v.label, v.key
+
+
+def test_부분충격은_임팩터_물성을_늘_명시한다():
+    imp = _params(_load("partial-impact-submit"))["impactor"]
+    assert {"density", "youngs_modulus", "poisson_ratio", "height", "radius"} <= set(imp)
+    why = next(v.why for v in _load("partial-impact-submit").vars if v.key == "impact_height_mm")
+    assert "100" in why and "2배" in why          # 초속 이중 합산
+
+
+def test_전각도는_프리셋의_SI_바닥_물성을_덮는다():
+    """프리셋 5종의 바닥 7850/2e11 은 기본 단위계에서 틀린 값이다 — 덮지 않으면 그 값으로 돈다."""
+    spec = _load("fullangle-drop-submit")
+    p = _params(spec)
+    assert {"density", "youngs_modulus", "poisson_ratio", "height"} <= set(p)
+    why = next(v.why for v in spec.vars if v.key == "drop_height_mm")
+    assert "100" in why and "9.81" in why         # 100 이하면 m 로 읽힌다
 
 
 # ── 도는 모양인가 ─────────────────────────────────────────────────────────────────────────
-def test_예시로_채우면_인자가_선언한_형으로_간다(spec):
-    """통째 치환이 수치·객체를 문자열로 만들면 서버가 조용히 다른 해석을 돌린다(W-85 류)."""
+def test_예시로_채우면_인자가_선언한_형으로_간다(seed):
+    """통째 치환이 수치·객체를 문자열로 만들면 서버가 조용히 다른 해석을 돌린다."""
+    name, spec = seed
     args = template.substitute(spec.steps[2].args, coerce_inputs(spec, _examples(spec)))
     sp = args["scenario_overrides"]["simulation_params"]
-    assert isinstance(sp["locations"], dict) and sp["locations"]["mode"] == "grid"
-    assert isinstance(sp["impactor"]["density"], float) and isinstance(sp["impactor"]["height"], int)
-    assert sp["generation_mode"] == "DampingSpring" and args["dry_run"] is False
+    assert args["dry_run"] is False and args["job_name"].isascii()
+    if name == "partial-impact-submit":
+        assert isinstance(sp["locations"], dict) and sp["locations"]["mode"] == "grid"
+        assert isinstance(sp["impactor"]["density"], float) and isinstance(sp["impactor"]["height"], int)
+    else:
+        assert isinstance(sp["density"], float) and isinstance(sp["height"], int)
+        assert sp["drop_surface"] == {"type": "Plane"} and args["angle_preset"] == "26direction"
 
 
-def test_단계별_판정이_실물_평문에서_맞다(spec, text):
+def test_단계별_판정이_실물_평문에서_맞다(seed, text):
+    name, spec = seed
+    _, cat_key, dry_key = SUBMIT[name]
     cat, preview, submit = spec.steps
 
     def ok(st, body):
         return judge(is_error=False, text=body, raw=st.raw, unwrap=st.unwrap, ok_text=st.ok_text)
 
-    assert ok(cat, text["catalog_impact"]).ok
-    assert ok(preview, text["dry_run_impact"]).ok
+    assert ok(cat, text[cat_key]).ok
+    assert ok(preview, text[dry_key]).ok
     assert ok(submit, text["submit_ok"]).ok
     # 실패는 실패로
     assert ok(submit, text["submit_http_fail"]).kind == "text_error"
     assert ok(submit, text["submit_parse_fail"]).kind == "text_unexpected"
     assert ok(cat, text["error_real"]).ok is False
+    # 다른 sim_type 의 카탈로그를 받으면 실패 — 인자가 엇갈렸다는 뜻이다
+    other = "catalog_drop" if cat_key == "catalog_impact" else "catalog_impact"
+    assert not ok(cat, text[other]).ok
 
 
-def test_단계가_엇갈린_응답을_성공으로_보지_않는다(spec, text):
+def test_단계가_엇갈린_응답을_성공으로_보지_않는다(seed, text):
     """제출 단계가 미리보기 응답을 받았다 = 아무것도 안 나갔다. 미리보기 단계가 제출 완료를 받았다 = dry_run 이 깨졌다."""
+    name, spec = seed
     _, preview, submit = spec.steps
-    assert not judge(is_error=False, text=text["dry_run_impact"], raw=True, ok_text=submit.ok_text).ok
+    assert not judge(is_error=False, text=text[SUBMIT[name][2]], raw=True, ok_text=submit.ok_text).ok
     assert not judge(is_error=False, text=text["submit_ok"], raw=True, ok_text=preview.ok_text).ok

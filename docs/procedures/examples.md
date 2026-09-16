@@ -215,6 +215,10 @@ DynaForge   결과 리포트 + attach_report_scenario 로 scenario.json 이 **�
 
 ### 절차
 
+> 씨앗 [`fixtures/fullangle-drop-submit.yaml`](fixtures/fullangle-drop-submit.yaml) 이 이 스케치를 대신한다 —
+> 미리보기·게이트 두 단계, 프리셋의 SI 바닥 물성(W-91)을 tonne-mm 로 덮는 변수, 평문이라 `save` 없음(W-90).
+> 아래는 처음 설계한 모양이다(`id:`·`version:` 줄은 절차 모델이 거부한다).
+
 ```yaml
 id: fullangle-drop-submit
 version: 1
