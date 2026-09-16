@@ -187,3 +187,20 @@ systems:
     integration_type: external-url
     url: http://10.252.38.121:8000/
     sort_order: 70
+
+  - id: knox-bridge
+    name: Knox Bridge
+    tagline: 사내 Knox 연계 — 나가기 전에 사람이 확인합니다
+    description: >-
+      포털 챗·심의에서 만든 내용을 사내 Knox 로 넘기는 연계 앱. 무엇도 바로 나가지 않고,
+      이 앱의 확인 화면에서 사람이 확정해야 나갑니다.
+    accent: sky
+    category: Collaboration
+    status: available
+    # proxy + url 없음 — 목적지는 박스에 있다: routes.local.env 의 `knox-bridge=`(nginx 라우트까지 생기는 실배선).
+    # SYS_KNOX_BRIDGE_URL 환경변수는 타일만 켜고 nginx 라우트는 안 만든다 — 시험용이다.
+    # 목적지가 없는 박스(사외·dev·미개통)에서는 registry 가 coming_soon 으로 내리고, 챗·심의 툴바의
+    # 메일 버튼(ChatActionBar)도 이 타일이 available 일 때만 뜬다 — 이것이 Knox 킬 스위치다(docs/chat-actions).
+    # 문구는 '메일' 을 약속하지 않는다 — 무엇을 보낼 수 있는지는 사내 앱이 정한다.
+    integration_type: proxy
+    sort_order: 75

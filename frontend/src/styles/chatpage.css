@@ -395,6 +395,14 @@
   z-index: 5;
   display: flex;
   gap: 0.35rem;
+  /* 버튼이 늘면(사내 연계 액션 바) 좁은 폭에서 왼쪽 밖으로 밀렸다 — 폭을 가두고 줄을 바꾼다 */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 0.9rem);
+}
+/* 사이드바를 접으면 좌상단 플로팅 컨트롤(.cx-mainbar) 자리를 비운다 — 안 비우면 '사이드바 열기'·'새 대화' 를 덮는다 */
+.cx-mainbar ~ .cx-thread > .cx-export {
+  max-width: calc(100% - 6.5rem);
 }
 .cx-export-btn {
   display: inline-flex;

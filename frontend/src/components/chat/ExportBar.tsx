@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { apiFetch, errorDetail } from '../../api/client';
 import { useChat } from '../../state/ChatContext';
 import { useCan } from '../../auth/useCan';
+import { ChatActionBar } from './ChatActionBar';
 import { conversationEvidence } from './handoff';
 import { HandoffBrief } from './HandoffBrief';
 import { downloadBlob, exportHtml, exportJson } from './exportChat';
@@ -71,6 +72,7 @@ export function ExportBar({ threadRef }: { threadRef: RefObject<HTMLDivElement |
   if (!conv || conv.messages.length === 0) return null;
   return (
     <div className="cx-export" role="toolbar" aria-label="대화 내보내기">
+      <ChatActionBar />
       <button type="button" className="cx-export-btn" onClick={onHtml} title="보이는 그대로 HTML 파일로 저장">
         <IconDownload width={13} height={13} />
         HTML
