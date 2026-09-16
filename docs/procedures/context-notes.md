@@ -2021,3 +2021,69 @@ Slurm 큐가 0→0 이었다. 그 dry_run 출력을 읽다 **프리셋 단위 �
 프리셋은 클러스터 데이터라 고치는 것은 소유자 결정이고, 절차가 그 기본값을 그대로 태울지는 사용자 결정이다.
 
 dry_run 출력에는 내부 라이선스 서버 주소가 실려 있어, 고정물에는 앞머리만 옮겼다.
+
+## W-91. 단위계는 KMM 이 **정하지 않는다** — 설정이 없으면 tonne-mm-s-MPa 라는 말은 "기본값이 그렇게 박혀 있다" 는 뜻이다
+
+사용자(2026-09-16): *"늘 저 단위계는 아니고 설정 안 했으면 저 단위계라고 보는 게 좋아 — KMM 을 잘 살펴보면 알 수 있다."*
+소스를 반박 검증까지 돌려 확인했다(pyKooCAE).
+
+- KMM 에는 낙하·충격 경로의 **단위계 키가 없다**. 덱의 `*CONTROL_UNITS` 도 안 읽는다. scenario 의 `density`·
+  `youngs_modulus` 는 `StepConfigBuilder.py` 가 무변환으로 쓰고(264~266행) KMM 이 그대로 `*MAT_ELASTIC` 에 넣는다
+  (`KooDynaAdvancedModification.py` 2062~2094행). 코드 기본값·주석이 tonne-mm-s-MPa(7.85e-9·2.0e5·높이 1500)다.
+- 단위를 **추정하는** 장치는 하나뿐이다 — 높이가 100 을 넘으면 g=9810(mm/s²), 아니면 9.81(2248~2251행). 그래서
+  시간 단위는 s 여야 하고, 다른 질량 단위 덱은 사람이 그 단위로 물성을 넣는 수밖에 없다.
+- 명시 단위 키는 THERMAL_LOAD 의 `unit_system` 하나다(입력 해석용, 출력은 늘 ton-mm-s).
+- 후처리(KooD3plotReader)는 반대로 덱 `*MAT` 밀도 중앙값으로 단위계를 추정한다 — 입력 쪽과 규칙이 다르다.
+
+그래서 **각도 프리셋 5종의 바닥 7850/2e11 은 틀린 값이다**(W-90 의 "혼재" 가 결론). 단위 키가 없으니 "이 프리셋은
+SI" 를 선언할 길이 없고, 같은 파일의 tFinal·dt 는 초, 속도는 g=9810 으로 만든다. 쓰이는 자리는 바닥판 한 파트다.
+물성을 덮어쓰지 않은 전각도 잡은 전부 이 값으로 돈다. 그런데 `smarttwin_scenario_options` 카탈로그는 기본값을
+7.85e-9/2.0e5 라고 적는다 — 카탈로그만 믿은 씨앗은 기본값이 맞다고 오판한다. 같은 SI 값이
+`pyKooCAE/Examples/drop_weight_impact/*.json`(부분충격 템플릿이 가리키는 예제 — 충격추 질량 10¹²배)과
+`SmartTwinMCP` scenario_builder 에도 있다. 고치는 곳은 각 리포·클러스터 데이터 소유자다.
+
+별개 결함 하나 — **부분충격 초속이 두 번 더해진다.** `DropWeightImpactWorkflow.py` 가 `InitialVelocityZ=-√(2·9810·h)`
+와 `Height,h` 를 함께 쓰고, KMM 이 `√(2·g·h)` 를 한 번 더 더한다(3508~3509행). h>100 이면 충돌속도 2배(에너지 4배).
+
+**S3 제출 씨앗의 규칙.** ① 물성은 늘 명시한다(전각도 `scenario_overrides.simulation_params.*`, 부분충격 `impactor.*`·
+`wall.*`), label 에 `tonne/mm³`·`MPa` 를 박는다. ② **단위계 선택 변수를 만들지 않는다** — 넘길 키가 없으니 가짜 스위치다.
+title·why 에 "tonne-mm-s-MPa 덱 전용" 이라 적는다. ③ dry_run 출력의 최종 scenario 를 사람이 대조한 뒤 제출한다.
+
+## W-92. 결과는 **`sphere_report.html` 이 생기는 데까지만** 자동으로 온다 — 그 뒤는 사람이다
+
+사용자(2026-09-16): *"실행해 놓으면 dynaforge 로 stcx 에서 결과가 돌아오게끔 하는 게 중요한 부분이고 맞지?"* — 맞다.
+지금 어디까지 있는지 네 리포(KooSlurm·pyKooCAE·KooRemapper·SmartTwinMCP)를 반박 검증까지 돌려 지도로 만들었다.
+
+| 단계 | 지금 |
+|---|---|
+| 제출 | `smarttwin_submit` → 드라이버 잡 1개. 반환은 평문 `제출 완료 — job_id=N` |
+| 해석·deep 리포트 | 자식 잡 안에서 자동(`Run_*/Output/report/`) |
+| 종합 리포트 | 전각도: 의존 잡이 `output/sphere_report.html`(약 10MB, JSON 없음). **부분충격: `impact_report.sh` 가 안 생겨 없음** |
+| 잡 종료 판정 | 후처리가 실패해도 `COMPLETED 0:0` — pre·main·post 를 `set -e` 없이 이어 붙이고 실패는 `\|\| echo WARN` 이 삼킨다 |
+| 완료 알림 | 없음 — `jobcomp/none`, Epilog 주석, 제출 기록 status 는 'submitted' 고정 |
+| 헤드노드 밖으로 | 밀어 보내는 코드 0건. 당길 수단 중 이 잡에 맞는 것은 대시보드 파일 REST 하나(토큰 없이 통과·소유 검사 없음 — KooSlurm 보안 결함) |
+| DynaForge 반입 | 사람이 REST intake(512MB). 경로로 반입하는 라우트 없음, 중복 방지·외부 잡 키 없음, 부분충격 scenario 첨부는 400 |
+
+**권장 설계(구현 전, 사용자 결정 대기).** 클러스터가 먼저 **귀환 매니페스트** 한 장을 쓴다 — post_exec 가 리포트 잡을
+기다린 뒤 `output/return_manifest.json`(잡 id·이름·사용자·sim_type·리포트별 경로·크기·sha256·있음/없음과 이유·후처리 rc).
+지금 `|| echo WARN` 이 삼키는 실패가 여기에 이유로 남는다. 그 위에서 **cae00 수집기가 당겨 와 같은 박스 DynaForge
+intake 로 올린다**(안 A). 확인된 망 방향(cae00→stcx)만 쓰고, 비밀이 공유 클러스터 FS 로 나가지 않으며, 실패가 드라이버와
+분리되고, prod 이전 때 DynaForge 와 함께 간다. 클러스터가 intake 로 미는 안(B)은 헤드노드·계산노드→cae00 연결이
+미확인이고 PAT 를 공유 FS 에 둬야 한다. DynaForge 가 공유 FS 를 직접 읽는 안(C)은 마운트 근거가 없다.
+
+**S3 회수 씨앗이 이것과 맞물리는 법.** 입력 키를 `report_id` 에서 **잡 키**로 옮긴다 — `find_reports(project=
+"{{job_name}}_{{slurm_job_id}}", kind=…)` 가 임베드 project_name 으로 잡는다. 그러려면 제출 씨앗의 잡 이름을 ASCII
+`[A-Za-z0-9._-]` 로 받아 폴더명 정제와 어긋나지 않게 한다. 여러 건이면 사람이 고르고 0건은 실패다(조회가 user_id 로만
+걸려 다른 명의로 반입된 리포트는 0건으로 보인다). 부분충격 판본은 pyKooCAE 가 `impact_report.sh` 를 만들기 전까지
+계약만 둔다.
+
+**틀렸던 우리 서술 둘을 고쳤다(examples.md R2b, gaps/dynaforge-postprocess.yaml).** ① 제출 뒤 `job_postprocess` 를
+두었는데 그 도구는 jobs.db 행이 필요해 `smarttwin_submit` 잡에 안 이어진다. ② "후처리가 DynaForge 로 오면 운반이 통째로
+사라진다" — 입력 d3plot 이 잡 하나 37~50GB(dev 실측)라 운반은 커진다. 사라지는 것은 DynaForge 가 클러스터에 후처리 잡을
+걸고 HTML 만 받는 모양일 때뿐이다. 그리고 KooRemapper 요청서(`REQUEST-postprocess-operation.md` §3②)의 "`mode="spehre"`
+가 조용히 통과한다" 도 틀렸다 — SmartTwinMCP 서버가 `args.schema.json` enum 을 실행 전에 검증한다. 맞는 것은 게이트웨이에
+보이는 시그니처가 자유 object 라 **절차 저장 시점에** 못 잡는다는 데까지다(그 리포 소유자에게 알릴 일).
+
+**물을 것.** ① "후처리를 DynaForge 로 옮긴다" 는 d3plot 을 나른다는 뜻인가, 클러스터에 잡을 걸고 HTML 만 받는다는 뜻인가.
+② cae00→stcx 로 대시보드 REST 와 ssh 중 무엇이 되는가, 헤드노드·계산노드→cae00 HTTPS 는 열려 있는가. ③ 자동 반입한
+리포트는 누구 명의여야 하는가(제출자 명의면 게이트웨이 시크릿을 수집기에 둬야 하고, 서비스 계정이면 조회에 공유 범위가 필요하다).

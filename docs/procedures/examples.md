@@ -302,27 +302,35 @@ Bearer $KR_PAT      전송 상한 512MB(압축) / 해제 2048MB
 > 2026-09-15 사용자: *"낙하 충격은 최신의 KooD3plot 쪽이 후처리 모듈을 DynaForge 에
 > 올려놓고 쓸 거잖아? 그걸 감안해서 잘 구성해 주면 좋을 것 같아."*
 
-**지금 사슬(실측 2026-09-15).**
+**지금 사슬(실측 2026-09-15, 소스·dev 잡으로 고침 2026-09-16 — context-notes W-92).**
 
 ```
-제출          smarttwin_submit / slurm_submit_job          (STC)
-  ↓ 잡
-후처리        job_postprocess(mode: all|deep|sphere)       (smart-twin-mcp)
-              → KooChainRun postprocess → KooD3plotReader
-              → Run_*/Output/report/ (deep) · sphere_report.html
-  ↓ **파일을 옮긴다** ← 여기가 아픈 자리
+제출          smarttwin_submit → 평문 "제출 완료 — job_id=N"          (STC)
+  ↓ 드라이버 잡 — prepare 가 리포트 sbatch(afterany)를 만든다
+해석·후처리   자식 잡 → Run_*/Output/report/ (deep, 잡 안에서)
+              → 의존 잡 → output/sphere_report.html                  ← 여기까지 자동
+              (부분충격은 impact_report.sh 가 안 생겨 리포트가 없다)
+  ↓ **파일을 옮긴다** ← 사람이 한다. 완료 알림도 없다
 반입          REST intake (512MB) 또는 ingest_report(작은 것만)   (DynaForge)
   ↓
 판독          report_summary · report_worst_cases · report_directional …
 ```
 
+⚠ 처음 적은 사슬은 제출 뒤에 `job_postprocess`(smart-twin-mcp)를 두었다. 그 도구는 jobs.db 에 등록된
+`single_drop_simulation`·`fullangle_drop_simulation` 잡만 받으므로 **`smarttwin_submit` 잡에는 이어지지 않는다**.
+후처리는 이미 잡 안에서 돈다. 그리고 후처리가 실패해도 드라이버는 `COMPLETED 0:0` 으로 끝난다.
+
 **후처리기의 실물** — `KooDynaPostProcessor`(Qt/VTK 바이너리, 오프스크린 가능).
 KooD3plotReader V1.3.0 의 `references/` 에 번들·standalone 로 들어 있다. **라이브러리가
 아니라 실행 파일**이라, 어디에 두든 "그 자리에서 돌린다" 가 된다.
 
-**옮겨지면 무엇이 달라지나.** 후처리가 리포트가 살 곳(DynaForge)에서 돌면 **운반이 통째로
-사라진다.** `sphere_report.html` 이 9.8MB, `impact_report.html` 이 7.9MB 인데 그걸 나르려고
-REST intake 를 쓰고 `report_id` 를 사람이 변수로 넣고 있다 — **그건 설계가 아니라 우회다.**
+**옮겨지면 무엇이 달라지나.** `sphere_report.html` 이 9.8MB, `impact_report.html` 이 7.9MB 인데 그걸
+나르려고 REST intake 를 쓰고 `report_id` 를 사람이 변수로 넣고 있다 — **그건 설계가 아니라 우회다.**
+
+⚠ 다만 "후처리가 DynaForge 에서 돌면 운반이 사라진다" 는 **틀렸다**(2026-09-16). 후처리의 입력은 d3plot 이고
+dev 실측으로 잡 하나가 37~50 GB 다 — 리포트 대신 그것을 나르게 된다. 운반이 사라지는 것은 DynaForge 의
+후처리 연산이 **클러스터에 잡을 걸고 HTML 만 받아 오는** 모양일 때뿐이고, 그때도 결과가 돌아오는 길은
+따로 필요하다(W-92).
 
 ```
 제출 → 잡 → [DynaForge 가 후처리하고 그 자리에 리포트가 생긴다] → 판독
@@ -403,8 +411,8 @@ steps:
 
 | `sim_type` | 산출 | 리포트 `kind` |
 |---|---|---|
-| `fullangle_drop` | `output/sphere_report.html` + `.json` | `sphere` |
-| `partial_impact` | `output/impact_report.html` + `.json` | `impact` |
+| `fullangle_drop` | `output/sphere_report.html`(JSON 은 안 생긴다 — `--format` 에 json 이 없다) | `sphere` |
+| `partial_impact` | `output/impact_report.html` + `.json` — **누적 경로에서만**. `smarttwin_submit` 부분충격 잡은 `impact_report.sh` 가 안 생겨 **리포트 0건** | `impact` |
 
 ### 함정
 
@@ -421,6 +429,9 @@ steps:
   **일부러 안 겹치게 했다**(충격 덱은 단위계가 다르다).
 - 과제 메타(`project`·`dev_rev`·`variation`·`doe`·`focus`)를 안 넣으면 `find_reports`·
   `report_facets` 로 **다시 못 찾는다.**
+- 위 YAML ① 의 `save: {state, exit_code}` 는 **안 풀린다** — `slurm_job_results` 가 평문이다(W-90). 풀려도
+  `COMPLETED 0:0` 은 후처리 성공을 뜻하지 않는다(W-92).
+- 단위 — 제출 물성은 늘 명시한다. 각도 프리셋 5종의 바닥 7850/2e11 은 기본 단위계(tonne-mm-s-MPa)에서 틀린 값이다(W-91).
 
 ### 이 묶음이 심의 좌석에 주는 도구다
 

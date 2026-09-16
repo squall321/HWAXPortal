@@ -19,7 +19,8 @@ request_doc: KooRemapper/platform/docs/REQUEST-postprocess-operation.md
 confirmed_by: null
 
 now:
-  - "후처리 — smart-twin-mcp `job_postprocess`(KooChainRun → KooD3plotReader)"
+  - "후처리 — 잡 안에서 돈다(deep 인라인 → 의존 잡 sphere_report). smart-twin-mcp `job_postprocess` 는
+     smarttwin_submit 잡에 안 이어진다(jobs.db 행이 필요) — 2026-09-16 고침, context-notes W-92"
   - "산출 — Run_*/Output/report/(deep) · sphere_report.html"
   - "반입 — REST intake(512MB) 또는 ingest_report(작은 것만)"
   - "판독 — DynaForge report_summary·report_worst_cases·report_directional …"
@@ -27,6 +28,8 @@ now:
 measured:
   - "sphere_report.html 9.8MB · impact_report.html 7.9MB — MCP 로 못 나른다"
   - "ingest_report 도구 설명이 직접 '대용량은 이 도구가 아니다' 라고 말한다"
+  - "2026-09-16 — 후처리 입력 d3plot 은 잡 하나 37~50GB(dev 실측). 후처리를 DynaForge 로 옮겨도 그것이
+     클러스터에 잡을 걸고 HTML 만 받는 모양이 아니면 운반은 커질 뿐이다. 결과 귀환 길은 따로 필요하다(W-92)"
   - "후처리기 실물은 KooDynaPostProcessor(Qt/VTK **실행 바이너리**, 오프스크린 가능).
      KooD3plotReader V1.3.0 references/ 에 번들·standalone 로 있다"
 

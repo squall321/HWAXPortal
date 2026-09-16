@@ -412,6 +412,10 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 - [x] 이음매를 문서에 박았다 — 얻는 쪽/읽는 쪽을 갈랐고 옮겨 올 때 필요한 것을 미리 적었다
 - [ ] 옮겨 온 뒤 — 연산으로 오면 등록부 그대로, 직접 도구로 오면 인자 스키마를 받아야 한다
+- [x] 결과 귀환 지도(2026-09-16, W-92) — 자동은 `sphere_report.html` 까지, 부분충격은 리포트 0건, 완료 알림·밀기 없음,
+      후처리 실패도 `COMPLETED 0:0`. 우리 서술 둘(`job_postprocess` 사슬·"운반이 사라진다")이 틀려 고쳤다
+- [ ] **결정 대기** — 귀환 설계(권장: 클러스터 귀환 매니페스트 + cae00 수집기 → DynaForge intake), 수집기 소유 리포,
+      자동 반입 명의, "후처리를 DynaForge 로" 의 뜻(W-92 물을 것 셋)
 
 
 절차 전문은 [examples.md#r2](examples.md). 여기서 처음 증명되는 것 — **잡 제출을 사람 확인
@@ -430,6 +434,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       E 2e11 · 바닥 Plane). pyKooCAE `StepConfigBuilder.py` 가 코드 기본은 tonne-mm(125~126행)인데 scenario 값을
       **변환 없이** 기입한다(264~265행). tonne-mm 덱이면 변형 바닥이 밀도 ~1e12배·강성 ~1e6배 — **결정 필요**
       (프리셋 데이터 수정은 클러스터 소유 · 절차는 바닥 물성을 늘 명시하게 할지)
+      → 2026-09-16 확정(W-91): KMM 에 단위 키가 없고 기본이 tonne-mm-s-MPa 라 **프리셋 값이 틀렸다**. 씨앗은 물성을
+      **늘 명시**하고 단위계 선택 변수는 만들지 않는다. 부분충격 초속 이중 합산(h>100 이면 2배)은 pyKooCAE 결함
 - [ ] ⚠ enum 저장 시점 검증 — `generation_mode` 오타는 **조용히 기본값 처리**된다
 - [ ] ⚠ 전각도 `scenario_overrides` 에 `mode` 키가 섞이면 **조용히 부분충격으로 오실행**(사고 `799`)
       → 제출 도구가 병합 뒤 `mode` 를 **뺀다**(KooSlurm smarttwin_submit, 소스 확인). 부분충격은 반대로 서버가
@@ -447,6 +453,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       `report_part_risk` → `report_findings` → `create_report_draft`(gate)
 - [ ] `report_id` 를 **변수로 받는다** — 리포트 HTML 이 8~10MB 라 MCP 로 못 나른다. 반입은 REST
       intake(512MB)이고 절차 밖이다
+      → 2026-09-16 제안(W-92): 입력 키를 **잡 키**로 — `find_reports(project="{{job_name}}_{{slurm_job_id}}")` 가
+      임베드 project_name 으로 잡는다. 제출 씨앗 잡 이름은 ASCII 로 받는다. 여러 건은 사람이 고르고 0건은 실패
+- [ ] ⚠ ① `slurm_job_results` 의 `save: {state, exit_code}` 는 평문이라 안 풀리고, `COMPLETED 0:0` 은 후처리 성공이 아니다
 - [ ] `sphere`/`impact` 는 리포트 `kind` — `sim_type` 과 짝이다. `ingest_report` 가 자동 판별한다
 - [ ] ⚠ **부분충격은 scenario 첨부를 생략**한다 — 파서가 `scenarios` 배열을 요구하는데 평탄
       구조라 `ScenarioParseError` 로 **인제스트 전체가 실패**한다
