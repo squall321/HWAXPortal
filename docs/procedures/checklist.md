@@ -426,10 +426,21 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       를 사람에게 묻고 부분충격 빌더가 없다
 - [ ] ⚠ **단위계가 실제로 섞여 있다** — 프리셋 `26direction` 은 SI(7850, 2e11), 부분충격 실제 잡은
       tonne-mm(7.85e-9, 2.0e5). `scenario_overrides` 물성은 **무변환 기입**된다. 변수 label 에 단위를 박는다
+      → 2026-09-16 재확인: 각도 프리셋 **5종 전부** 한 파일 안에서 섞였다(높이 1500 mm · 바닥 밀도 7850 ·
+      E 2e11 · 바닥 Plane). pyKooCAE `StepConfigBuilder.py` 가 코드 기본은 tonne-mm(125~126행)인데 scenario 값을
+      **변환 없이** 기입한다(264~265행). tonne-mm 덱이면 변형 바닥이 밀도 ~1e12배·강성 ~1e6배 — **결정 필요**
+      (프리셋 데이터 수정은 클러스터 소유 · 절차는 바닥 물성을 늘 명시하게 할지)
 - [ ] ⚠ enum 저장 시점 검증 — `generation_mode` 오타는 **조용히 기본값 처리**된다
 - [ ] ⚠ 전각도 `scenario_overrides` 에 `mode` 키가 섞이면 **조용히 부분충격으로 오실행**(사고 `799`)
+      → 제출 도구가 병합 뒤 `mode` 를 **뺀다**(KooSlurm smarttwin_submit, 소스 확인). 부분충격은 반대로 서버가
+      `mode`·`model_file` 을 고정한다. 씨앗은 둘 다 `mode` 를 넣지 않고 검사로 박는다
 - [ ] `model_path` 는 공유 FS 절대경로 — 파일 반입은 절차 밖(§4)
-- [ ] ⚠ 미확인 — `smarttwin_submit` 반환 모양(제출계라 안 불렀다). `save` 경로는 첫 실행에서 확정한다
+- [x] ⚠ 미확인 — `smarttwin_submit` 반환 모양(제출계라 안 불렀다). `save` 경로는 첫 실행에서 확정한다
+      → **평문이다**(KooSlurm 소스 + 게이트웨이 dry_run 실호출, 2026-09-16). 성공 `✅ 제출 완료 — job_id=N`,
+      미리보기 `[DRY-RUN] 제출 계획`, 실패 `error: …`(isError=false). **job_id 는 save 경로로 못 뽑는다** —
+      실행 기록 원문에 남는다. dry_run 은 `/api/jobs/preview` 만 부른다 — 호출 전후 큐 0→0 으로 확인
+- [x] 평문 결과 판정 — raw 단계가 `error: 제출 실패` 를 **성공으로** 볼 자리였다. 첫 줄 `error:` 는 실패,
+      단계 `ok_text`(성공 표식)로 머리 없는 실패도 막는다(포털 d3f7721 · 에이전트서버 챗 원장도 같은 구멍 88d2e94)
 
 ### R2b 회수 (cae00)
 - [ ] `slurm_job_results` → `report_summary` → `report_worst_cases` → `report_directional` →
