@@ -1,0 +1,287 @@
+{
+  "_note": "R3 열충격 SED 절차 고정물(2026-09-16). odb_* 는 odb-hub 실측 표본(HWAXPortal docs/procedures/fixtures/odb-hub/reference.md §4.6·§4.12) — 단 ap_part 는 실측 AP 표본이 없어 **합성**이다(_synthetic). reduce·predict 는 ThermalShockMCP 코드를 **실제로 실행한 출력**이고 predict 모델은 실데이터 294건으로 임시 학습했다. schemas 는 ThermalShockMCP 도구의 실제 inputSchema.",
+  "odb_ap_part": {
+    "refdes": "U1000",
+    "pkg_width": 11.5,
+    "pkg_length": 13.0,
+    "x": 12.32,
+    "y": -0.725,
+    "rotation": 0.0,
+    "pin_count": 4,
+    "pins": [
+      {
+        "pin_num": 0,
+        "pad": "r200",
+        "x": 7.32,
+        "y": -5.725
+      },
+      {
+        "pin_num": 1,
+        "pad": "r200",
+        "x": 17.32,
+        "y": -5.725
+      },
+      {
+        "pin_num": 2,
+        "pad": "r200",
+        "x": 17.32,
+        "y": 4.275
+      },
+      {
+        "pin_num": 3,
+        "pad": "r200",
+        "x": 7.32,
+        "y": 4.275
+      }
+    ],
+    "pins_truncated": false,
+    "_synthetic": true
+  },
+  "odb_pkg_part": {
+    "refdes": "U1005",
+    "pkg_name": "bga41f_W235L235_SB019_1_LT",
+    "pkg_width": 2.35,
+    "pkg_length": 2.35,
+    "x": 17.27,
+    "y": -53.815,
+    "rotation": -90.0,
+    "mirror": false,
+    "device_type": "Filter",
+    "type": "IC",
+    "pin_count": 41,
+    "pins": [
+      {
+        "pin_num": 0,
+        "name": "A1",
+        "net": "PRX_LNA_IN_B40_GBL",
+        "pad": "r190",
+        "x": 18.26,
+        "y": -52.825
+      }
+    ],
+    "pins_truncated": false,
+    "net_count": 29
+  },
+  "odb_interposer": {
+    "top": {
+      "count": 1,
+      "pcb_area_mm2": 1287.6553,
+      "interposer_area_mm2": 354.3813,
+      "ratio_pct": 27.52,
+      "items": [
+        {
+          "refdes": "INP100",
+          "area_mm2": 354.3813
+        }
+      ]
+    },
+    "bottom": {
+      "count": 0,
+      "ratio_pct": 0.0
+    }
+  },
+  "odb_interposer_none": {
+    "top": {
+      "count": 0,
+      "ratio_pct": 0.0
+    },
+    "bottom": {
+      "count": 0,
+      "ratio_pct": 0.0
+    }
+  },
+  "reduce": {
+    "ok": true,
+    "data": {
+      "for_sed_analysis": {
+        "pkg": "bga41f_W235L235_SB019_1_LT",
+        "board_type": "INT",
+        "ap_cx": 12.32,
+        "ap_cy": -0.725,
+        "pkg_cx": 17.27,
+        "pkg_cy": -53.815,
+        "pkg_type": "WLP",
+        "pkg_x": 2.35,
+        "pkg_y": 2.35,
+        "ap_x": 11.5,
+        "ap_y": 13.0,
+        "ap_type": "POP",
+        "ball_size": "147/250",
+        "pad_size": 190.0
+      },
+      "complete": true,
+      "missing": [],
+      "needs_human": {},
+      "basis": {
+        "ap_cx": "get_part_detail(U1000).x·y — 부품 원점(mm)",
+        "ap_cy": "get_part_detail(U1000).x·y — 부품 원점(mm)",
+        "pkg_cx": "get_part_detail(U1005).x·y — 부품 원점(mm)",
+        "pkg_cy": "get_part_detail(U1005).x·y — 부품 원점(mm)",
+        "pkg_x": "pkg pkg_width·pkg_length — 정사각이라 회전과 무관",
+        "pkg_y": "pkg pkg_width·pkg_length — 정사각이라 회전과 무관",
+        "ap_x": "ap pkg_width→X·pkg_length→Y (회전 0.0°)",
+        "ap_y": "ap pkg_width→X·pkg_length→Y (회전 0.0°)",
+        "pad_size": "PKG 핀 원형 패드 심볼 최빈값 r190 → 190µm (심볼 단위를 µm 로 봤다 — cae00 실물로 한 번 확인 전)",
+        "board_type": "사람이 채웠다",
+        "ap_type": "학습 데이터 294건이 전부 POP — 다른 값은 모델이 모른다",
+        "pkg": "PKG part_name/pkg_name(모델 입력 아님)",
+        "pkg_type": "사람이 채웠다",
+        "ball_size": "사람이 채웠다"
+      },
+      "notes": [
+        "AP·PKG 는 같은 잡(같은 보드 파일)에서 읽은 것이어야 한다 — 모델은 두 중심의 차만 쓴다. 인터포저 구조에서 AP 와 PKG 가 다른 보드 파일에 있으면 이 값은 뜻이 없다",
+        "PKG 핀 1/41 개만 보고 패드를 정했다",
+        "board_type=INT 규칙(인터포저 수>0)은 cae00 라벨 대조 전이다 — 인터포저 구조의 메인보드 쪽도 잡히는지 확인이 남았다"
+      ],
+      "center_check": {
+        "ap": {
+          "checked": true,
+          "agree": true,
+          "dist_mm": 0.0,
+          "pin_center": [
+            12.32,
+            -0.725
+          ]
+        },
+        "pkg": {
+          "checked": false,
+          "why": "핀 1/41 개만 있어 외접 사각형이 몸체를 대표하지 못한다"
+        }
+      },
+      "parts": {
+        "ap": {
+          "refdes": "U1000",
+          "rotation": 0.0,
+          "pkg_width": 11.5,
+          "pkg_length": 13.0,
+          "pin_count": 4,
+          "pins_seen": 4
+        },
+        "pkg": {
+          "refdes": "U1005",
+          "rotation": -90.0,
+          "pkg_width": 2.35,
+          "pkg_length": 2.35,
+          "pin_count": 41,
+          "pins_seen": 1
+        }
+      }
+    },
+    "errors": [],
+    "warnings": [
+      "AP·PKG 는 같은 잡(같은 보드 파일)에서 읽은 것이어야 한다 — 모델은 두 중심의 차만 쓴다. 인터포저 구조에서 AP 와 PKG 가 다른 보드 파일에 있으면 이 값은 뜻이 없다",
+      "PKG 핀 1/41 개만 보고 패드를 정했다",
+      "board_type=INT 규칙(인터포저 수>0)은 cae00 라벨 대조 전이다 — 인터포저 구조의 메인보드 쪽도 잡히는지 확인이 남았다"
+    ],
+    "server": {
+      "name": "thermal-shock-mcp",
+      "version": "0.1.0",
+      "model_version": null
+    }
+  },
+  "predict": {
+    "ok": true,
+    "data": {
+      "sed_pred": 1.2189749999999997,
+      "judgement": {
+        "status": "OK",
+        "message": "SED 1.21897이(가) 경고 기준 2.0 이하 — 기준을 만족합니다.",
+        "warn_threshold": 2.0,
+        "fail_threshold": 2.2
+      },
+      "uncertainty_std": 0.3960539096827602,
+      "out_of_range": [
+        "pkg_y",
+        "pkg_area",
+        "pkg_diag",
+        "abs_dy",
+        "dist"
+      ],
+      "model_version": "v20260916_160029"
+    },
+    "errors": [],
+    "warnings": [
+      "입력의 피처 ['pkg_y', 'pkg_area', 'pkg_diag', 'abs_dy', 'dist']가 학습 데이터 범위를 벗어남 — 외삽 예측이므로 신뢰도가 낮습니다."
+    ],
+    "server": {
+      "name": "thermal-shock-mcp",
+      "version": "0.1.0",
+      "model_version": "v20260916_160029"
+    }
+  },
+  "schemas": {
+    "predict_sed": {
+      "properties": {
+        "sample": {
+          "additionalProperties": true,
+          "title": "Sample",
+          "type": "object"
+        }
+      },
+      "required": [
+        "sample"
+      ],
+      "title": "predict_sedArguments",
+      "type": "object"
+    },
+    "sed_sample_from_odb": {
+      "properties": {
+        "ap_part": {
+          "additionalProperties": true,
+          "title": "Ap Part",
+          "type": "object"
+        },
+        "pkg_part": {
+          "additionalProperties": true,
+          "title": "Pkg Part",
+          "type": "object"
+        },
+        "interposer": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interposer"
+        },
+        "job": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job"
+        },
+        "human": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Human"
+        }
+      },
+      "required": [
+        "ap_part",
+        "pkg_part"
+      ],
+      "title": "sed_sample_from_odbArguments",
+      "type": "object"
+    }
+  }
+}

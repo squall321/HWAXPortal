@@ -451,12 +451,16 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 절차 전문은 [examples.md#r3](examples.md). 여기서 처음 증명되는 것 — **공급자 없는 값이
 사람이 채우는 칸으로 내려간다**(§5-1).
 
-- [ ] 고정물로 어댑터 작성 — odb-hub 산출 → `SedInput`. **키 15개(필수 10·선택 5) 외엔 `sample` 에 넣지
+- [x] 고정물로 어댑터 작성 — odb-hub 산출 → `SedInput`. **키 15개(필수 10·선택 5) 외엔 `sample` 에 넣지
       않는다** — 서버 `extra="forbid"`, ODB 에서 딸려 온 키 하나면 E100 통째 거부
+      → **환원 도구로** 만들었다(실행기는 계산하지 않는다, PLAN §10-2): ThermalShockMCP `sed_sample_from_odb`
+      (7667662). 못 읽은 칸은 `needs_human{why, candidates}`, 근거는 `basis`, 원점↔핀 중심 대조. 테스트 16 —
+      odb-hub 실측 표본 고정물 · 환원 결과를 `predict_sed` 로 끝까지 예측 · 되돌림 셋 확인
 - [x] 예외형인지 봉투형인지를 표본으로 정하고 봉투형이면 §5-6 규칙이 그것을 실패로 친다
       → **봉투형**(200 + `error`). 원문 표본을 판정기에 넣어 `ok=False, layer=envelope, kind=error_key` 확인
-- [ ] 품질 플래그(`warnings`·`has_eda`·`data_type` 류)를 선행 검사로 — 걸리면 값을 채우지 않고 사유를
-      `notes` 에
+- [x] 품질 플래그(`warnings`·`has_eda`·`data_type` 류)를 선행 검사로 — 걸리면 값을 채우지 않고 사유를
+      `notes` 에 → odb-hub 응답엔 그런 플래그가 **없다**(reference.md). 대신 환원 도구가 핀 일부만 옴·원점↔핀 중심
+      불일치·패드 혼재·INT 규칙 미검증·같은 잡 조건을 `warnings` 로 올리고, 실행 기록 `notes` 로 올라오는 것을 확인
 - [x] `pkg_type` 은 **영구 변수**(유도 불가). 선별 규칙이 없으면 `ap_refdes`·`pkg_refdes` 도 영구 변수.
       `why` 에 이유 → 확정(sed-mapping.md). 어휘 `WLP/FX/DIG` 가 `pkg_name` 접두사와 대응이 없다 — 원문 §5 의 "부분 가능" 은 틀렸다
 - [x] `board_type` — 어휘 대응·HALF/FULL 판정 규칙이 없으면 '사람이 채운다' 로 분류
@@ -464,6 +468,10 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       **단면/양면이 아니다**(HALF 46건 중 19건이 PKG 를 AP 밑 반대면에 둔다). INT 는 인터포저 수로 유도,
       HALF/FULL 은 보드 크기 경계값이 설 때까지 사람 확인. 틀린 원천 정의(ThermalShockMCP 도구 설명)도 고침
 - [ ] `board_type` 경계값 — cae00 라벨 대조: INT 혼동행렬 · HALF/FULL 보드 크기 분포 · 폰으로 보이는 FULL 4건 확인
+- [ ] cae00 반영 — ThermalShockMCP 재배포(도구 12종) → 게이트웨이 tools/list 에 `sed_sample_from_odb` 가 뜨는지
+- [ ] `pkg_x`·`pkg_y` 회전 기준 — 학습 데이터 PKG_X 가 보드 축인지 패키지 축인지(모델 담당 확인). 정해지면
+      환원 도구의 ±90° 비정사각 `needs_human` 을 유도로 바꾼다
+- [ ] `pad` `r<N>` → µm 확인 — cae00 실물 PKG 하나로(학습 값 180~240 과 맞는지)
 - [x] 단위 환산 — `ball_size` 는 µm 정수 문자열, 좌표·치수는 mm, 두 중심은 같은 좌표계
       → 좌표·치수 mm 확정. 모델은 `|dx|`·`|dy|`·`dist` 만 써서 원점 무관 — 대신 **AP·PKG 가 같은 잡**이어야 한다.
       `ball_size` 는 ODB 에 없어 사람 칸. ⚠ 남은 확인: 회전 ±90 부품의 `pkg_x`/`pkg_y` 뒤바뀜, `pad` `r190`→190
@@ -472,7 +480,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       못 쓴다. 게이트웨이가 상태·잡 조회(`task|status|progress|job`)와 봉투형 실패를 캐시하지 않게 했다
       (이미 붙은 앱에서도 7개가 5분씩 캐시되고 있었다). 포털 사본도 맞추고 대조 검사를 양방향으로
 - [ ] dev 완주 시험 — ODB 단계가 "사람이 채우는 칸" 으로 내려간 상태
-- [ ] 열충격 절차를 export 해 `docs/procedures/fixtures/` 에 커밋 → cae00 에서 import
+- [x] 열충격 절차를 export 해 `docs/procedures/fixtures/` 에 커밋 → cae00 에서 import
+      → 씨앗 `fixtures/thermal-shock-sed.yaml` + `test_procedures_r3.py`(저장 검증 · 도구 스키마 · 실물 응답 save
+      경로 · 경고 수집, 되돌림 셋 확인). cae00 가져오기는 실주행 항목에서
 - [ ] **cae00 실주행 검증** — 여기서만 진짜 확인된다. 허브가 사용자별 스코프면 "토큰 주인 시야로만 돈다"
       를 context-notes 에 적는다
 - [ ] 워피지 — `copper_imbalance_pct`·`stackup_asymmetry`(산식은 dev 에서 정한다)·`board_thickness_mm` +

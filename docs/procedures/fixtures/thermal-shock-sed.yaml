@@ -1,0 +1,83 @@
+# R3 — 열충격 SED 판정. ODB++ 보드에서 AP·PKG 를 읽어 SED 를 예측한다(cae00 전용 — dev 엔 odb-hub 가 없다).
+#
+# ⚠ 이 파일이 정본이 아니다. 정본은 저장소에 들어간 판본이고, 이것은 **가져다 쓰는 씨앗**이다.
+#    `backend/tests/test_procedures_r3.py` 가 이 파일을 읽어 검증하고, `save` 경로가 실제 응답에서
+#    풀리는지까지 본다(고정물: tests/fixtures/procedures/thermal_shock_responses.json).
+#
+# 형상 → SED 입력 요약은 **절차가 아니라 환원 도구**가 한다(PLAN §10-2). ThermalShockMCP
+# `sed_sample_from_odb` 가 odb-hub 응답을 통째로 받아 SED 입력 15키로 요약하고, 못 읽은 칸은
+# 지어내지 않고 `needs_human` 으로 돌려준다. 남은 변수는 ODB 에 **없는 것**들이다.
+#
+# 보고서 단계(create_report_draft → suggest_report_tags → add_report_tags)는 아직 붙이지 않았다
+# — checklist S4 "보고서 경로".
+
+title: 열충격 SED 판정 (ODB++)
+
+vars:
+  - key: odb_job
+    label: ODB 잡 ID
+    type: string
+    required: true
+    why: "odb-hub 보드(잡) — find_job(과제명) 으로 찾는다"
+  - key: ap_refdes
+    label: AP refdes
+    type: string
+    required: true
+    why: "odb-hub 는 부품 역할을 모른다(part_name 불투명·device_type 근거 부족). '가장 큰 IC 가 AP' 는 미검증"
+  - key: pkg_refdes
+    label: PKG refdes
+    type: string
+    required: true
+    why: "같다 — AP 와 같은 잡(같은 보드 파일)의 부품이어야 한다. 모델은 두 중심의 차만 쓴다"
+  - key: pkg_type
+    label: 패키지 분류
+    type: enum
+    values: [WLP, FX, DIG]
+    required: true
+    why: "SED 어휘가 ODB 에 없다 — 형상으로 유도할 수 없는 기술 분류다"
+  - key: ball_size
+    label: 볼 지름/피치(µm)
+    type: string
+    required: true
+    why: "패키지 볼 치수는 ODB++ 에 없다(PCB 랜드만 있다). \"147/250\" 형식 — 학습에 있던 값: 147/250·130/275·157/260·167/270·130/230"
+  - key: board_type
+    label: 보드 구분
+    type: enum
+    values: [INT, HALF, FULL]
+    required: true
+    why: "INT=인터포저 보드·HALF=인터포저 없는 모바일 크기·FULL=태블릿 등 큰 보드. 인터포저가 있는데 다르게 고르면 도구가 알린다"
+
+steps:
+  - backend: odb-hub
+    tool: get_part_detail
+    args: {job_id: "{{odb_job}}", refdes: "{{ap_refdes}}"}
+    save: {ap_part: "$"}                  # 응답 통째 — 환원 도구가 요약한다
+    note: AP 부품 상세(좌표·패키지 치수·핀)
+
+  - backend: odb-hub
+    tool: get_part_detail
+    args: {job_id: "{{odb_job}}", refdes: "{{pkg_refdes}}"}
+    save: {pkg_part: "$"}
+    note: PKG 부품 상세 — 핀 패드 심볼에서 pad_size 를 읽는다
+
+  - backend: odb-hub
+    tool: get_interposer_result
+    args: {job_id: "{{odb_job}}"}
+    save: {interposer: "$"}
+    note: 인터포저 수 — board_type=INT 대조용
+
+  - backend: heax-thermal_shock_mcp
+    tool: sed_sample_from_odb
+    args:
+      ap_part: "{{ap_part}}"             # 통째 치환이라 객체 형이 그대로 간다
+      pkg_part: "{{pkg_part}}"
+      interposer: "{{interposer}}"
+      human: {pkg_type: "{{pkg_type}}", ball_size: "{{ball_size}}", board_type: "{{board_type}}"}
+    save: {sample: "data.for_sed_analysis", needs_human: "data.needs_human"}
+    note: ODB 응답 → SED 입력 환원(못 읽은 칸은 needs_human, 근거는 basis)
+
+  - backend: heax-thermal_shock_mcp
+    tool: predict_sed
+    args: {sample: "{{sample}}"}
+    save: {sed: "data.sed_pred", judgement: "data.judgement.status"}
+    note: SED 예측 — 2.0 초과 WARNING, 2.2 초과 FAIL

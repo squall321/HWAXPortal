@@ -442,47 +442,45 @@ R2b 의 판독 도구가 그대로 **심의 좌석 도구 목록**이다 — 여
 <a id="r3"></a>
 ## R3 — 열충격 SED (cae00 전용)
 
-ODB++ 에서 좌표·치수를 뽑아 SED 를 판정하고 보고서로 남긴다. ODB 쪽 계약은 S0 수집 결과를
-받아야 확정된다 — [odb-request.md](odb-request.md).
+ODB++ 에서 좌표·치수를 뽑아 SED 를 판정하고 보고서로 남긴다. ODB 쪽 계약은 S0 로 받았다 —
+[fixtures/odb-hub/reference.md](fixtures/odb-hub/reference.md) · 대조표 [sed-mapping.md](fixtures/odb-hub/sed-mapping.md).
 
-```yaml
-id: thermal-shock-sed
-version: 1
-title: 열충격 SED 판정
-vars:
-  - {key: odb_job,  label: "ODB 잡 ID", type: string, required: true}
-  - {key: pkg_type, label: "패키지 분류", type: enum, values: [WLP, FX, DIG], required: true,
-     why: "형상 데이터로 유도할 수 없는 기술 분류다"}
-  - {key: ap_refdes, label: "AP refdes", type: string, required: true,
-     why: "부품 목록은 수천 개를 주지 '이 보드의 AP' 를 주지 않는다. 사내 규칙이 있으면 그때 상수로 내린다"}
-steps:
-  - backend: odb-hub                    # ⚠ 전부 S0 수집 뒤 확정
-    tool: "<S0 에서 받은 부품 목록 도구>"
-    args: {job_id: "{{odb_job}}"}
-    save: {ap_cx: "…", ap_cy: "…"}
-  - backend: heax-thermal_shock_mcp
-    tool: predict_sed
-    args: {sample: {board_type: "…", ap_cx: "{{ap_cx}}", …, pkg_type: "{{pkg_type}}"}}
-    save: {sed: "data.sed_pred"}
-  - backend: reportarchive
-    tool: create_report_draft
-    gate: human
-    args: {…}
-  - backend: reportarchive
-    tool: suggest_report_tags           # 후보만 — 저장하지 않는다
-    args: {report_id: "{{report_id}}"}
-  - backend: reportarchive
-    tool: add_report_tags               # ★실제 저장 — must-gate
-    gate: human
-    args: {report_id: "{{report_id}}", entity_ids: "{{chosen_tags}}"}
-```
+**형상 → SED 입력의 요약은 절차가 아니라 환원 도구가 한다**(PLAN §10-2). ThermalShockMCP
+`sed_sample_from_odb` 가 odb-hub 응답을 그대로 받아 SED 입력 15키로 요약하고, 못 읽은 칸은 지어내지
+않고 `needs_human` 으로 돌려준다(2026-09-16, ThermalShockMCP 7667662).
+
+**씨앗 절차는 [fixtures/thermal-shock-sed.yaml](fixtures/thermal-shock-sed.yaml)** 다. 이 문서에 YAML 을 다시 적지
+않는다 — 두 곳에 두면 어긋난다. `backend/tests/test_procedures_r3.py` 가 그 파일을 저장 시점 검증·실제 도구
+스키마·**실물 응답의 save 경로**로 검사한다(고정물은 ThermalShockMCP 코드를 실제로 실행한 출력, AP 표본만 합성).
+
+체인 — `get_part_detail`(AP) · `get_part_detail`(PKG) · `get_interposer_result` → `sed_sample_from_odb`
+(응답 통째 `save: {x: "$"}` → 통째 치환 `"{{x}}"` 로 객체 형 그대로) → `predict_sed`. 변수는 ODB 에 **없는**
+여섯 — `odb_job`·`ap_refdes`·`pkg_refdes`·`pkg_type`·`ball_size`·`board_type`. 보고서 단계는 아직이다.
+
+> ⚠ 이 문서의 R2a·R2b YAML 에 있는 `id:`·`version:` 줄은 **절차 모델이 거부한다**(`ProcedureSpec` 는
+> `title`·`vars`·`steps` 만 받는다, extra=forbid). R3 를 씨앗으로 옮기며 드러났다 — S3 때 같은 방식으로 옮긴다.
+
+### 환원 도구가 읽는 규칙
+
+| 입력 | 읽는 법 | 못 읽으면 |
+|---|---|---|
+| `ap_cx`·`ap_cy`·`pkg_cx`·`pkg_cy` | `get_part_detail.x·y`(부품 원점, mm). 핀 외접 사각형 중심과 대조 | 좌표가 없으면 **E100 으로 멈춘다**(odb-hub 계약이 바뀐 것) |
+| `pkg_x`·`pkg_y` | `pkg_width`·`pkg_length`. 정사각이거나 회전 0·180° 일 때만 | 회전 ±90° 비정사각 → `needs_human` + 후보 둘(보드 축·패키지 축) |
+| `pad_size` | PKG 핀 원형 패드 `r<N>` 최빈값을 µm 로 | 원형이 없거나 100~400 밖(mil 잡 의심) → `needs_human` |
+| `board_type` | 인터포저 count>0 → INT | 인터포저 없음 → HALF/FULL 은 사람. 절차는 늘 사람 값을 넘기고, 유도값과 다르면 도구가 `notes` 로 알린다 |
+| `ap_type` | 상수 POP(학습 294건 전부) | — |
+| `ap_x`·`ap_y` | PKG 와 같다 | 선택 입력이라 비우고 알리기만 한다(모델이 결측을 안다) |
 
 ### 함정
 
 - `predict_sed` 의 최상위 필수 인자는 **`sample` 하나**다. 10개는 그 안이고, 평탄하게 넘기면
   `sample Field required` 로 실패한다.
 - 서버가 `extra="forbid"` 다 — ODB 에서 딸려 온 키가 하나라도 섞이면 **E100 으로 통째 거부**.
-  게이트웨이 스키마의 `additionalProperties: true` 는 허상이다.
+  게이트웨이 스키마의 `additionalProperties: true` 는 허상이다. 환원 도구가 SedInput 키만 싣는 이유다.
+- 환원이 끝나도 `pad_size`·`pkg_x`·`pkg_y` 가 `needs_human` 이면 `predict_sed` 가 **필수 칸 없음**으로
+  실패한다. 이유는 저장된 `needs_human` 에 있다 — 그 칸을 변수로 올려 다시 돌린다.
+- AP 와 PKG 가 **다른 보드 파일**이면(인터포저 구조) 두 중심의 차가 뜻이 없다. 절차는 잡 하나만 받는다.
+- odb-hub 는 서비스 토큰 하나로 붙는다(`uploaded_by: anonymous`) — 호출자는 게이트웨이 감사에만 남는다.
 - `predict_sed_batch` 는 S5 일괄 재생에 쓰지 않는다 — 검증이 전부-아니면-전무라 한 건만 틀려도
   결과 0건이고 과제별 건너뛰기가 안 된다.
 
