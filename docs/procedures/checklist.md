@@ -318,6 +318,11 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] **② 환원 — 스택업** 결손을 장부에 등재 + **StepForge 에 요청서**를 냈다
       (`gaps/stepforge-stackup-profile.yaml` · `StepForge/docs/REQUEST-stackup-profile.md`)
 - [ ] StepForge 회신 대기 — "이미 되는 길이 있으면 알려 달라" 를 함께 물었다
+- [x] **DynaForge 에도 요청서를 보냈다**(2026-09-16) — `KooRemapper/platform/docs/
+      REQUEST-postprocess-operation.md`. 처음엔 "진행 중이니 요청할 것이 아니다" 로
+      뒀는데, **어떤 모양으로 오면 우리가 안 고치는지**는 그쪽이 알아야 정한다.
+      실측으로 아직 안 왔다(연산 47종 · 후처리 0건)
+- [ ] DynaForge 회신 대기 — 세 갈래 중 어느 쪽인지(연산 / 독립 도구 / 오래 걸림)
 - [ ] ② 두 번째 환원 도구가 `bend_profile` 과 **같은 모양인지** 보고 규약으로 올린다(§10-7)
 - [ ] **③ 보강 — 라미나 물성**(강도·피로) 조달 경로 → MaterialTwin ↔ 적층 해석기 결손
 - [x] S5 와 이었다 — `fan-out` 이 후보마다 실행을 하나씩 만든다(W-57)
