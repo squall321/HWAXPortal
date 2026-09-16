@@ -1,0 +1,25 @@
+{
+  "_note": "smart-twin-cluster(KooSlurm mcp_slurm) 도구의 실제 inputSchema — dev 게이트웨이 tools/list 에서 옮김(2026-09-16). 도구가 바뀌면 다시 옮긴다.",
+  "smarttwin_submit": {
+    "properties": {
+      "angle_preset": {"default": "", "title": "Angle Preset", "type": "string"},
+      "case_txt_path": {"default": "", "title": "Case Txt Path", "type": "string"},
+      "dry_run": {"default": true, "title": "Dry Run", "type": "boolean"},
+      "job_name": {"default": "", "title": "Job Name", "type": "string"},
+      "memory": {"default": "", "title": "Memory", "type": "string"},
+      "model_path": {"title": "Model Path", "type": "string"},
+      "scenario_overrides": {"anyOf": [{"additionalProperties": true, "type": "object"}, {"type": "null"}], "default": null, "title": "Scenario Overrides"},
+      "sim_type": {"title": "Sim Type", "type": "string"},
+      "time_limit": {"default": "", "title": "Time Limit", "type": "string"}
+    },
+    "required": ["sim_type", "model_path"],
+    "title": "smarttwin_submitArguments",
+    "type": "object"
+  },
+  "smarttwin_scenario_options": {
+    "properties": {"sim_type": {"title": "Sim Type", "type": "string"}},
+    "required": ["sim_type"],
+    "title": "smarttwin_scenario_optionsArguments",
+    "type": "object"
+  }
+}

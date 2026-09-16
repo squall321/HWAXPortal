@@ -1,0 +1,118 @@
+# R2a(부분충격) — 전위치 부분충격 해석을 제출한다. 결과 회수·부품 보고서는 다른 절차다(드라이버 walltime 167시간).
+#
+# ⚠ 이 파일이 정본이 아니다. 가져다 쓰는 씨앗이다. `backend/tests/test_procedures_s3.py` 가 읽어 검증한다
+#    (고정물: tests/fixtures/procedures/smarttwin_text_responses.json · smarttwin_schemas.json).
+#
+# 흐름 — 카탈로그 → **미리보기(dry_run)** → 사람 확인 → 실제 제출. 미리보기 출력 끝에 "업로드될 scenario.json"
+# 전체가 붙는다. 게이트에서 그 물성·높이·위치를 대조하고 승인한다. dev 는 게이트에서 거절한다(제출하지 않는다).
+# 미리보기와 제출은 앵커로 같은 인자를 쓴다 — dry_run 만 다르다.
+#
+# 단위(context-notes W-91) — KMM 에는 단위계 키가 없고 받은 숫자를 **무변환**으로 쓴다. 기본은 tonne·mm·s·MPa 다.
+# 그래서 임팩터 물성을 **늘 명시**하고 label 에 단위를 박는다. 단위계를 고르는 변수는 두지 않는다 — 넘길 키가 없어
+# 고른 척만 하는 스위치가 된다. 벽(바닥판) 물성은 pyKooCAE 가 tonne-mm 기본값을 명시 기입하므로 묻지 않는다.
+#
+# 제출 결과는 **평문**이다(W-90) — `✅ 제출 완료 — job_id=N`. save 로 잡 ID 를 뽑을 수 없어 실행 기록 원문에 남는다.
+# 회수 절차는 그 잡 ID 와 이 잡 이름으로 리포트를 찾는다(W-92).
+
+title: 전위치 부분충격 — 제출 (tonne-mm-s-MPa 덱)
+
+vars:
+  - key: model_path
+    label: 모델 경로(.k, 공유 FS 절대경로)
+    type: string
+    required: true
+    why: "클러스터 헤드노드가 보는 경로다(/data/…). 클라이언트 로컬 경로는 거부된다. DynaForge 세션 산출물이면 save_result_to_path 로 먼저 내린다"
+  - key: job_name
+    label: 잡 이름(영문·숫자·._- 31자 이하)
+    type: string
+    required: true
+    why: "결과 폴더 /data/single/<사용자>/<잡이름>_<잡ID>/ 와 리포트 project_name 이 된다. 한글·공백은 폴더명에서 _ 로 바뀌어 회수 절차가 이름으로 못 찾는다"
+    example: "impact-demo-01"
+  - key: locations
+    label: 충격 위치 DOE(JSON)
+    type: json
+    required: true
+    why: "mode = grid(x_count·y_count 또는 spacing mm, margin) · list(points [[x,y],…] mm) · lhs(n_samples) · part_center(pids·spacing·layers). 카탈로그 단계가 전체 키를 보여 준다"
+    example: {mode: grid, x_count: 5, y_count: 5, margin: 0.9}
+  - key: impact_height_mm
+    label: 낙하 높이 (mm)
+    type: number
+    required: true
+    why: "임팩터 크기가 아니라 낙하 높이다. ⚠ 100 을 넘기면 초속이 두 번 더해져 충돌속도가 2배가 된다(pyKooCAE 결함, W-91) — 고쳐지기 전까지 결과를 그렇게 읽는다"
+    example: 100
+  - key: impactor_type
+    label: 임팩터 형상
+    type: enum
+    values: [Sphere, Cylinder]
+    required: true
+    example: Sphere
+  - key: impactor_radius_mm
+    label: 임팩터 반경 (mm)
+    type: number
+    required: true
+    why: "Cylinder 는 이 값으로 앞·뒤 반경과 높이를 정한다(front_radius=radius, outer_radius=2·radius)"
+    example: 5.0
+  - key: impactor_density
+    label: 임팩터 밀도 (tonne/mm³)
+    type: number
+    required: true
+    why: "강철 7.85e-9. SI 값 7850 을 넣으면 무변환으로 들어가 임팩터 질량이 10¹²배가 된다"
+    example: 7.85e-9
+  - key: impactor_youngs_modulus
+    label: 임팩터 영률 (MPa)
+    type: number
+    required: true
+    why: "강철 200000. SI 값 2e11(Pa)을 넣으면 10⁶배 단단해진다"
+    example: 200000.0
+  - key: impactor_poisson_ratio
+    label: 임팩터 포아송비
+    type: number
+    required: true
+    example: 0.3
+  - key: generation_mode
+    label: 임팩터 결합 방식
+    type: enum
+    values: [DampingSpring, OutsideRigidPart, OutsideRigidElement]
+    required: true
+    why: "오타는 에러 없이 기본값(DampingSpring)으로 처리된다 — 허용값으로만 고르게 한다"
+    example: DampingSpring
+
+steps:
+  - backend: smart-twin-cluster
+    tool: smarttwin_scenario_options
+    args: {sim_type: partial_impact}
+    raw: true                               # 텍스트 카탈로그
+    ok_text: "━━ 전위치 부분충격"
+    note: 옵션 카탈로그 — 단위계 표준·위치 모드·임팩터 키를 사람이 본다
+
+  - backend: smart-twin-cluster
+    tool: smarttwin_submit
+    args: &submit_args
+      sim_type: partial_impact
+      model_path: "{{model_path}}"
+      job_name: "{{job_name}}"
+      scenario_overrides:
+        simulation_params:
+          generation_mode: "{{generation_mode}}"
+          impactor:
+            type: "{{impactor_type}}"
+            radius: "{{impactor_radius_mm}}"
+            height: "{{impact_height_mm}}"
+            density: "{{impactor_density}}"
+            youngs_modulus: "{{impactor_youngs_modulus}}"
+            poisson_ratio: "{{impactor_poisson_ratio}}"
+          locations: "{{locations}}"
+      dry_run: true
+    raw: true
+    ok_text: "\\[DRY-RUN\\]"                # 미리보기가 아니면(= 실제로 나갔으면) 실패다
+    note: 미리보기 — /api/jobs/preview 만 부른다. 출력 끝의 scenario.json 을 다음 게이트에서 대조한다
+
+  - backend: smart-twin-cluster
+    tool: smarttwin_submit
+    gate: human
+    args:
+      <<: *submit_args
+      dry_run: false
+    raw: true
+    ok_text: "✅ 제출 완료"                  # 머리 없는 실패(제출 응답 파싱 실패)도 여기서 걸린다
+    note: 실제 제출 — 앞 단계 scenario.json 의 물성(tonne-mm)·높이·위치를 확인하고 승인한다

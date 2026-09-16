@@ -1,9 +1,10 @@
 {
-  "_note": "KooSlurm(smart-twin-cluster) 평문 응답. dry_run_* 는 게이트웨이 실호출(앞머리만, 내부 주소 제외), error_real 은 MCP 프로세스 내 실호출, submit_ok·submit_parse_fail 은 소스(smarttwin_submit 반환문)에서 옮김.",
+  "_note": "KooSlurm(smart-twin-cluster) 평문 응답. dry_run_* 는 게이트웨이 실호출(앞머리만, 내부 주소 제외), error_real 은 MCP 프로세스 내 실호출, submit_ok·submit_parse_fail 은 소스(smarttwin_submit 반환문)에서 옮김. catalog_impact 는 소스(_IMPACT_OPTIONS_DOC)에서 앞 600자를 옮김.",
   "dry_run_fullangle": "[DRY-RUN] 제출 계획 (실제 제출은 dry_run=False)\n[fullangle_drop] template=smarttwin-fullangle-drop\nmodel: /data/templates/MinimumModel.k (0.0MB → MinimumModel.k)\nscenario: base=프리셋 26direction + overrides 병합\nslurm_overrides: (없음)  job_name: procedure-seed-drop-dryrun\n--- 드라이버 잡 #SBATCH (backend preview) ---\n#SBATCH --job-name=procedure-seed-drop-dryrun\n#SBATCH --time=167:00:00",
   "dry_run_impact": "[DRY-RUN] 제출 계획 (실제 제출은 dry_run=False)\n[partial_impact] template=smarttwin-partial-impact\nmodel: /data/templates/MinimumModel.k (0.0MB → MinimumModel.k)\nscenario: base=기본격자(5x5) + overrides 병합\nslurm_overrides: (없음)  job_name: procedure-seed-impact-dryrun\n--- 드라이버 잡 #SBATCH (backend preview) ---\n#SBATCH --job-name=procedure-seed-impact-dryrun\n#SBATCH --time=167:00:00",
   "error_real": "error: sim_type 은 fullangle_drop | partial_impact 중 하나여야 합니다.",
   "submit_ok": "✅ 제출 완료 — job_id=12345\n[fullangle_drop] template=smarttwin-fullangle-drop\nscript: /data/scripts/12345.sh\n결과 폴더: /data/single/<사용자>/procedure-seed-drop_12345/ (드라이버 잡 완료 후)",
   "submit_parse_fail": "제출 응답 파싱 실패(원문): <html>502 Bad Gateway</html>",
-  "submit_http_fail": "error: 제출 실패(status=500): Internal Server Error"
+  "submit_http_fail": "error: 제출 실패(status=500): Internal Server Error",
+  "catalog_impact": "━━ 전위치 부분충격 (partial_impact / smarttwin-partial-impact) scenario.json 옵션 카탈로그 ━━\n단위계 ★필수 확인★: LS-DYNA 덱과 동일해야 함. 표준은 [tonne, mm, s, MPa]\n  (강철: density=7.85e-9, youngs_modulus=2.0e5). 기본값도 이 단위계로 설정돼 있음 —\n  overrides 로 물성을 줄 때 SI 숫자(7850, 2e11)를 넣으면 무변환 기입되므로 주의.\n\n■ 최상위 (자동 설정 — 직접 넣지 말 것): mode=\"drop_weight_impact\"(디스패치 키),\n  model_file(업로드 모델 파일명), output_dir(\"output\"), project_name(잡 이름)\n- preserve_includes (list[string], 기본 []) — 보존할 *INCLUDE 패턴\n\n■ simulation_params\n- tFinal (float, s, 0.001) / dt (float, s, 1e-6)\n- generation_mode ∈ {DampingSpring(기본), OutsideRigidPart, OutsideRigidElemen"
 }

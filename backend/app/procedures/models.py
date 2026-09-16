@@ -347,7 +347,10 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
         if st.tool in MUST_GATE and st.gate != "human":
             errs.append(f"{at}: 되돌리기 어려운 도구라 gate: human 이 필수다")
         if st.tool in WARN_EXACT or st.tool.startswith(WARN_PREFIX):
-            if st.gate != "human":
+            # 자기 dry_run 을 가진 도구(DRY_RUN_TOOLS)에 **리터럴** `dry_run: true` 가 박힌 미리보기 단계는
+            # 아무것도 만들지 않는다. 템플릿(`"{{dry_run}}"`)은 실행 때 무엇이 올지 모르므로 계속 경고한다.
+            preview = st.tool in DRY_RUN_TOOLS and st.args.get("dry_run") is True
+            if st.gate != "human" and not preview:
                 errs.append(f"warn:{at}: 자원을 쓰거나 잡을 만든다 — 게이트를 권한다")
 
         # ② 게이트웨이 백스톱에 걸리는 이름은 애초에 못 부른다

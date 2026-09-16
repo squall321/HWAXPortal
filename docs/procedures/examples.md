@@ -253,6 +253,9 @@ steps:
 **부분충격은 `sim_type: "partial_impact"` 로 바꾼 판본이다.** 다만 `angle_preset` 대신
 `scenario_overrides.simulation_params.locations`(`grid`·`list`·`lhs`·`part_center`)와
 `impactor`(`Sphere`·`Cylinder`, `radius`, `height`=낙하높이)를 준다.
+→ 씨앗 [`fixtures/partial-impact-submit.yaml`](fixtures/partial-impact-submit.yaml). 위 스케치와 다른 점 셋 —
+미리보기(리터럴 `dry_run: true`)와 제출(게이트)을 **두 단계**로 갈라 사람이 최종 scenario.json 을 보고 승인하고,
+임팩터 물성을 **늘 명시**하며(W-91), 제출 결과가 평문이라 `save` 를 두지 않는다(W-90).
 
 ### 함정 — 전부 실측·소스 확인
 
