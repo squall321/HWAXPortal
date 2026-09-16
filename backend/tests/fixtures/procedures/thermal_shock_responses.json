@@ -122,7 +122,7 @@
         "ap_x": "ap pkg_width→X·pkg_length→Y (회전 0.0°)",
         "ap_y": "ap pkg_width→X·pkg_length→Y (회전 0.0°)",
         "pad_size": "PKG 핀 원형 패드 심볼 최빈값 r190 → 190µm (심볼 단위를 µm 로 봤다 — cae00 실물로 한 번 확인 전)",
-        "board_type": "사람이 채웠다",
+        "board_type": "사람이 채웠다 — 유도값과 같다(get_interposer_result top+bottom count=1>0 → INT)",
         "ap_type": "학습 데이터 294건이 전부 POP — 다른 값은 모델이 모른다",
         "pkg": "PKG part_name/pkg_name(모델 입력 아님)",
         "pkg_type": "사람이 채웠다",
