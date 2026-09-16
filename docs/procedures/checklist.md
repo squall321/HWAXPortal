@@ -16,17 +16,22 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 **실행 절차는 [odb-request.md](odb-request.md) 에 따로 있다.** 여기서는 완료 여부만 센다.
 
-- [ ] `fixtures/odb-hub/tools.json` — odb 도구 목록(앱 키로 고른 것) + `exposed_name`·`backend`·
+- [x] `fixtures/odb-hub/tools.json` — odb 도구 목록(앱 키로 고른 것) + `exposed_name`·`backend`·
       `original`·`args_schema`·`metadata`(annotations)·`collected_at`
+      → **`fixtures/odb-hub/reference.md` §2 로 대체**(2026-09-16, odb-hub 쪽에 맡겨 받음). 27개 이름·파라미터·기본값.
+      정확한 `args_schema` JSON 은 없다 — 절차는 실행 때 게이트웨이 스키마로 검증하므로 설계는 안 막힌다
 - [ ] `fixtures/odb-hub/apps.txt` — `map` 집계 + **`apps` 배열(tool_count·reachable)** +
       사용자 PAT 로 `list_tool_apps(app="odb-hub")` 결과 한 줄 + 허브 버전 한 줄
-- [ ] `fixtures/odb-hub/samples.json` — 읽기 게이트를 통과한 표본. 무인자 도구 전부 · 잡 정보 첫 호출 ·
+      → 허브 버전(`0.1.0`)·게이트웨이 등록은 reference.md §1 에 있다. **남은 것: 사용자 PAT 시야 한 줄**(cae00 실주행 전)
+- [x] `fixtures/odb-hub/samples.json` — 읽기 게이트를 통과한 표본. 무인자 도구 전부 · 잡 정보 첫 호출 ·
       IC 계열로 좁힌 부품 목록 · 고의 실패 2건 · 항목마다 `ms`·`bytes`·`is_error`
-- [ ] `fixtures/odb-hub/sed-mapping.md` — SED 필수 10 + 선택 5 + 워피지 5 대조(**"없다" 도 답이다**)
+      → **reference.md §4 로 대체** — 표본 17종(봉투형 실패 1건 포함). `ms`·`bytes` 와 두 번째 고의 실패는 없다
+- [x] `fixtures/odb-hub/sed-mapping.md` — SED 필수 10 + 선택 5 + 워피지 5 대조(**"없다" 도 답이다**)
       + AP/PKG refdes 행 + `board_type` 어휘 + 쓰기·파괴 도구 표 + HWAXRisk 4도구 대조
-- [ ] 메모 — 잡 수명·식별 · 파일 주는 법 · 오래 걸리는 도구와 상태 도구 이름 · 에러 코드 어휘 ·
+- [x] 메모 — 잡 수명·식별 · 파일 주는 법 · 오래 걸리는 도구와 상태 도구 이름 · 에러 코드 어휘 ·
       목록 상한 · 단위·면 · 시야·쓰기 명의 · resources 노출 여부
 - [ ] 지우기 게이트 `grep` 0건 → 파일 단위 `git add` → 커밋 → **push** 완료
+      → 원문에 내부 IP·잡 ID·관리계정명이 있어 지웠다(grep 0건 · `test_no_internal_ips` 통과) · 커밋. **push 대기**
 
 ## S1 · 절차 저장소 + 실행기 + 최소 화면 (가장 큰 덩어리)
 
@@ -448,14 +453,22 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 - [ ] 고정물로 어댑터 작성 — odb-hub 산출 → `SedInput`. **키 15개(필수 10·선택 5) 외엔 `sample` 에 넣지
       않는다** — 서버 `extra="forbid"`, ODB 에서 딸려 온 키 하나면 E100 통째 거부
-- [ ] 예외형인지 봉투형인지를 표본으로 정하고 봉투형이면 §5-6 규칙이 그것을 실패로 친다
+- [x] 예외형인지 봉투형인지를 표본으로 정하고 봉투형이면 §5-6 규칙이 그것을 실패로 친다
+      → **봉투형**(200 + `error`). 원문 표본을 판정기에 넣어 `ok=False, layer=envelope, kind=error_key` 확인
 - [ ] 품질 플래그(`warnings`·`has_eda`·`data_type` 류)를 선행 검사로 — 걸리면 값을 채우지 않고 사유를
       `notes` 에
-- [ ] `pkg_type` 은 **영구 변수**(유도 불가). 선별 규칙이 없으면 `ap_refdes`·`pkg_refdes` 도 영구 변수.
-      `why` 에 이유
-- [ ] `board_type` — 어휘 대응·HALF/FULL 판정 규칙이 없으면 '사람이 채운다' 로 분류
-- [ ] 단위 환산 — `ball_size` 는 µm 정수 문자열, 좌표·치수는 mm, 두 중심은 같은 좌표계
-- [ ] 상태 조회 단계가 캐시 접두 이름이면 저장 거절 — 비캐시 이름(`job_status` 류)만
+- [x] `pkg_type` 은 **영구 변수**(유도 불가). 선별 규칙이 없으면 `ap_refdes`·`pkg_refdes` 도 영구 변수.
+      `why` 에 이유 → 확정(sed-mapping.md). 어휘 `WLP/FX/DIG` 가 `pkg_name` 접두사와 대응이 없다 — 원문 §5 의 "부분 가능" 은 틀렸다
+- [x] `board_type` — 어휘 대응·HALF/FULL 판정 규칙이 없으면 '사람이 채운다' 로 분류
+      → 사람 칸. 원문 규칙(보드 전체 top/bottom)은 학습 데이터(HALF 48건·34과제)와 충돌 소지.
+      **검증 계획**(sed-mapping.md): 라벨 294건 × `find_job` 혼동행렬 — 재현되면 유도로 바꾼다(cae00)
+- [x] 단위 환산 — `ball_size` 는 µm 정수 문자열, 좌표·치수는 mm, 두 중심은 같은 좌표계
+      → 좌표·치수 mm 확정. 모델은 `|dx|`·`|dy|`·`dist` 만 써서 원점 무관 — 대신 **AP·PKG 가 같은 잡**이어야 한다.
+      `ball_size` 는 ODB 에 없어 사람 칸. ⚠ 남은 확인: 회전 ±90 부품의 `pkg_x`/`pkg_y` 뒤바뀜, `pad` `r190`→190
+- [x] ~~상태 조회 단계가 캐시 접두 이름이면 저장 거절 — 비캐시 이름(`job_status` 류)만~~
+      → **게이트웨이에서 풀었다**. odb-hub 상태 도구가 `get_task` 하나뿐이라 저장 거절로 막으면 비동기 단계를 아예
+      못 쓴다. 게이트웨이가 상태·잡 조회(`task|status|progress|job`)와 봉투형 실패를 캐시하지 않게 했다
+      (이미 붙은 앱에서도 7개가 5분씩 캐시되고 있었다). 포털 사본도 맞추고 대조 검사를 양방향으로
 - [ ] dev 완주 시험 — ODB 단계가 "사람이 채우는 칸" 으로 내려간 상태
 - [ ] 열충격 절차를 export 해 `docs/procedures/fixtures/` 에 커밋 → cae00 에서 import
 - [ ] **cae00 실주행 검증** — 여기서만 진짜 확인된다. 허브가 사용자별 스코프면 "토큰 주인 시야로만 돈다"
@@ -465,7 +478,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 보고서 경로 — `create_report_draft`(gate) → `suggest_report_tags`(후보만) → gate → `add_report_tags`.
       `create_report_from_run` 은 못 쓴다(적재 실행 `status=ready` 전용)
 - [ ] `pcb_warpage_surrogate` 의 합성 데이터 경고를 `notes` 로
-- [ ] HWAXRisk `odb-adapter-contract.md` 4도구와 이름이 다르면 계약 개정을 HWAXRisk 쪽 일감으로
+- [x] HWAXRisk `odb-adapter-contract.md` 4도구와 이름이 다르면 계약 개정을 HWAXRisk 쪽 일감으로
+      → 대조 완료(sed-mapping.md) — **넷 다 없다**. `odb_list_nets` 는 대응 도구 자체가 없고 `list_parts` 엔 좌표가 없다. 개정은 HWAXRisk 몫
 
 ## S5 · 일괄 재생 (S2~S4 중 하나만 서면 된다)
 
