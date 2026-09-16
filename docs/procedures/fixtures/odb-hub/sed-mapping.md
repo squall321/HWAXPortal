@@ -9,10 +9,10 @@
 ## 결론
 
 - 필수 10개 중 **refdes 두 개만 사람이 주면** 6개(`ap_cx`·`ap_cy`·`pkg_cx`·`pkg_cy`·`pkg_x`·`pkg_y`)는 odb-hub 가 준다.
-  `pad_size` 는 유력(확인 1건 남음).
-- **사람이 채우는 칸** — AP refdes · PKG refdes · `pkg_type` · `ball_size` · `board_type`(검증 전).
-- 원문 §5 의 두 추정은 틀렸다 — `pkg_type` 을 `pkg_name` 접두사로 유도할 수 없고, `board_type` 의 보드 전체
-  top/bottom 규칙은 실데이터와 충돌한다.
+  `pad_size` 는 유력(확인 1건 남음). `board_type` 은 INT 만 유도하고 HALF/FULL 은 경계값이 설 때까지 사람이 확인한다.
+- **사람이 채우는 칸** — AP refdes · PKG refdes · `pkg_type` · `ball_size`.
+- 원문 §5 의 추정 둘이 틀렸다 — `pkg_type` 은 `pkg_name` 접두사로 유도할 수 없고, `board_type` 을 단면/양면
+  실장으로 본 것은 **뜻부터 달랐다**(INT=인터포저·HALF=인터포저 없는 모바일·FULL=태블릿 등 큰 보드).
 
 ## 모델이 입력을 어떻게 쓰나 — 대조의 기준
 
@@ -34,7 +34,7 @@
 
 | 입력 | 필수 | odb-hub | 판정 | 근거·주의 |
 |---|---|---|---|---|
-| `board_type` | ✓ | `get_interposer_result` · `get_parts_summary` | **사람(검증 전)** | 원문 규칙(top/bottom 둘 다 >0 → FULL)을 보드 전체에 걸면 폰 보드는 거의 다 FULL 이다. 그런데 학습 데이터엔 HALF 가 48건·34과제다. 뜻이 "보드 전체 단면/양면" 이 아닐 가능성이 크다(예: PKG 자리의 반대면 실장). INT(인터포저 count>0)는 그럴듯하나 역시 미검증. 아래 **검증 계획** |
+| `board_type` | ✓ | INT: `get_interposer_result` · HALF/FULL: `get_volume_result.board` | **INT 유도 · HALF/FULL 은 경계값 전까지 사람 확인** | 뜻(사용자 확인) — INT=인터포저 보드, HALF=인터포저 없는 모바일 크기 보드, FULL=태블릿 등 큰 보드. **단면/양면이 아니다**(HALF 46건 중 19건이 PKG 를 AP 밑 반대면에 둔다). 규칙·경계값·이상 사례는 아래 절 |
 | `ap_cx`·`ap_cy` | ✓ | `get_part_detail(AP).x/.y` | **odb-hub**(refdes 는 사람) | AP 와 PKG 가 **같은 잡**일 때만 뜻이 있다. 인터포저 보드는 AP 와 PKG 가 서로 다른 잡에 있을 수 있다 → 그러면 거절 |
 | `pkg_cx`·`pkg_cy` | ✓ | `get_part_detail(PKG).x/.y` | **odb-hub**(refdes 는 사람) | 위와 같다 |
 | `pkg_type` | ✓ | — | **사람** | 어휘가 `WLP`/`FX`/`DIG` 다. `pkg_name` 접두사(`bga`·`qfn`·`dfn`·`wlp`·`fowlp`)와 대응이 없다(FX·DIG 에 해당하는 접두사가 없다). 영구 변수 |
@@ -54,17 +54,38 @@
 | `pkg_refdes` | 같다 | `list_parts(category="IC")` 중 `pkg_width`·`pkg_length` 가 학습 범위(2.35~6.4 × 2.4~6.05) 안 |
 | `pkg_type` | SED 어휘(WLP/FX/DIG)가 ODB 에 없다 | — |
 | `ball_size` | 패키지 볼 치수는 ODB 에 없다 | 학습 5종을 선택지로 준다(형식 오류를 원천 차단) |
-| `board_type` | 판정 규칙 미검증 | (검증되면 유도로 바꾼다) |
+| `board_type`(HALF/FULL) | 보드 크기 경계값이 아직 없다(INT 는 유도) | 유도값과 근거(보드 가로·세로·면적, 인터포저 수)를 보인다 — 경계값이 서면 확인을 뺀다 |
 
-## board_type 검증 계획 (cae00)
+## board_type — 뜻과 경계값
 
-라벨이 있는 데이터가 **이미 있다** — 학습 294건에 `project`·`board_type` 이 있다. odb-hub 에는 잡 108개에 `project` 가 있다.
+**뜻**(사용자 확인 2026-09-16, 과제 목록을 보고) — INT=인터포저 보드 · HALF=인터포저 없는 모바일 크기 보드 ·
+FULL=태블릿 등 큰 보드. 학습 데이터 과제 72개가 각각 **하나의** `board_type` 만 가진다(둘 이상 0건) — 보드 단위 성질이다.
 
-1. 294건의 `project` 로 `find_job(query=…)` → 잡을 찾는다(정확일치만 채택)
-2. 찾은 잡마다 원문 규칙을 건다 — 인터포저 count>0 → INT, top/bottom 둘 다 >0 → FULL, 아니면 HALF
-3. 라벨과 **혼동행렬**을 낸다. 규칙이 라벨을 재현하면 유도로, 못 하면 사람 칸으로 확정한다
+⚠ **단면/양면 실장이 아니다.** 원천인 ThermalShockMCP 스키마 설명이 "HALF(단면실장)/FULL(양면실장)" 이었고
+odb-hub 쪽 정리도 그 뜻으로 규칙을 세웠다. 데이터가 반박한다 — HALF 46건(AP 크기 있음) 중 **19건은 PKG 가
+AP 면적 안에 통째로** 들어간다(28건은 PKG 중심이 AP 안). 같은 면에 겹칠 수 없으니 반대면 실장이고 그 보드는
+양면이다. 스키마 설명은 ThermalShockMCP `2c8234d` 에서 고쳤다 — LLM 이 `predict_sed` 를 부를 때 읽는 설명이다.
 
-⚠ 과제명은 결과에 남기지 않는다(공개 리포). 혼동행렬 숫자만 커밋한다.
+**유도 규칙**
+
+1. `get_interposer_result` 의 top·bottom count 합 > 0 → **INT**
+2. 아니면 `get_volume_result.board`(`x_mm`·`y_mm`·`outline_area_mm2`)로 HALF/FULL — **경계값 미정**
+   - 체적 분석이 안 된 잡(`analyses_done` 에 `volume` 없음)은 크기를 모른다. `run_analysis(volume)` 은
+     비동기·덮어쓰기라 절차가 알아서 부르지 않는다 → 사람이 고른다
+   - **제품 종류(이름)로는 가를 수 없다** — 태블릿으로 보이는 과제 둘이 HALF 다
+
+**이상 사례 4건 — 폰으로 보이는데 FULL** (사용자 확인 대기). DOE 변형으로 보이는 과제 3건(AP 는 그대로,
+PKG 위치만 바뀐다)과, 같은 제품군·같은 PKG 의 다른 과제는 HALF 인데 혼자 FULL 이고 좌표가 전혀 다른 1건.
+시험용 큰 보드라면 "큰 보드" 뜻과 맞고, 아니면 라벨을 의심한다 — 경계값을 정할 때 이 넷을 빼고 본다.
+
+**경계값 정하기 (cae00)** — 라벨이 이미 있다(학습 294건의 `project`·`board_type`, odb-hub 잡 108개의 `project`).
+
+1. 라벨 과제를 `find_job(query=…)` 로 찾는다(정확일치만)
+2. INT 규칙의 혼동행렬 — 인터포저 구조의 **메인보드 쪽**도 count>0 으로 잡히는지가 관건
+3. HALF·FULL 과제의 보드 가로·세로·면적 분포 → 둘을 가르는 경계값. 분포가 겹치면 경계를 두지 않고 사람 칸으로 둔다
+4. FULL 192건 중 178건은 DOE(시험 설계, AP 가 원점)라 odb-hub 에 없을 수 있다 — 경계값은 실제품 FULL 과제로 정한다
+
+⚠ 과제명은 결과에 남기지 않는다(공개 리포). 분포·혼동행렬 숫자만 커밋한다.
 
 ## 워피지 입력 5개 (`pcb_warpage_surrogate`)
 
