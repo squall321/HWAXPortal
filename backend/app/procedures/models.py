@@ -45,9 +45,24 @@ USERINFO_URL = re.compile(r"://[^/\s:@]+:[^/\s@]+@")
 # 이 키의 값은 기본을 변수로 올린다(상수로 두려면 사람이 확인).
 PATHY_KEY = frozenset({"path", "local_path", "file_path", "url", "dest_path", "model_path"})
 
-# 게이트웨이가 결과를 300초 캐시하는 접두사(gateway.py:144). 상태 조회 단계로 쓰면
-# 낡은 '진행 중' 이 정상 응답처럼 온다.
-CACHE_PREFIX = ("list_", "get_", "search_", "find_", "query_", "describe_", "hybrid_")
+# 게이트웨이가 결과를 300초 캐시하는 규칙의 **사본**(gateway.py `_cache_key`). 세 조각이 모두
+# 같아야 한다 — 접두사 화이트리스트 · 이름 거부 · 낱말 거부. 상태 조회 단계가 캐시되면 낡은
+# '진행 중' 이 정상 응답처럼 온다.
+# ⚠ 이 사본은 한동안 **7개 접두뿐**이었다(게이트웨이는 27개). 대조 검사가 "우리 값이 저쪽에
+#   있는가" 한 방향만 봐서 통과했다 — 이제 양방향으로 본다(test_procedures_census).
+CACHE_PREFIX = ("list_", "get_", "search_", "find_", "query_", "describe_", "hybrid_",
+                "semantic_", "fts_", "material_", "property_", "database_", "catalog_",
+                "coverage_", "top_", "agent_search", "recommend_agents", "instrument_summary",
+                "section_contact_usage", "report_", "inspect_", "project_tree", "part_",
+                "compare_", "ashby_", "measurement_gaps", "how_to_measure")
+CACHE_DENY = ("report_ingest", "report_fragmentize", "get_agent_session")
+CACHE_DENY_WORDS = re.compile(r"(task|status|progress|job)")
+
+
+def gateway_caches(tool: str) -> bool:
+    """게이트웨이가 이 도구의 응답을 캐시하는가 — `gateway.py` `_cache_key` 와 같은 판정."""
+    return (tool.startswith(CACHE_PREFIX) and tool not in CACHE_DENY
+            and not CACHE_DENY_WORDS.search(tool))
 
 # 자기 dry_run 인자를 가진 도구(465종 중 16). 그 밖의 도구 args 에 dry_run 이 적혀 있으면
 # 백엔드가 조용히 버리고 **실제로 실행된다**.
@@ -236,7 +251,7 @@ class Step(BaseModel):
 
     @property
     def cacheable(self) -> bool:
-        return self.tool.startswith(CACHE_PREFIX)
+        return gateway_caches(self.tool)
 
 
 def normalized(spec: "ProcedureSpec") -> dict:

@@ -15,6 +15,8 @@ from pathlib import Path
 import pytest
 
 from app.procedures.models import (
+    CACHE_DENY,
+    CACHE_DENY_WORDS,
     CACHE_PREFIX,
     DRY_RUN_TOOLS,
     GW_DENY_PREFIX,
@@ -86,31 +88,64 @@ def _gateway_source() -> str | None:
     return None
 
 
+def _gateway_consts(src: str) -> dict:
+    """게이트웨이 소스의 모듈 최상위 상수를 **값으로** 읽는다(ast). 글자 찾기가 아니다 —
+    예전엔 이름 뒤 900자 안에 `"값"` 이 있는지 봤는데, 그건 튜플 경계도 순서도 모른다.
+    `re.compile(r"…")` 는 패턴 문자열로 꺼낸다."""
+    import ast
+
+    out: dict = {}
+    for node in ast.parse(src).body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            continue
+        v = node.value
+        try:
+            out[node.targets[0].id] = ast.literal_eval(v)
+        except ValueError:
+            if (isinstance(v, ast.Call) and getattr(v.func, "attr", "") == "compile"
+                    and v.args and isinstance(v.args[0], ast.Constant)):
+                out[node.targets[0].id] = ("re", v.args[0].value)
+    return out
+
+
 def test_게이트웨이에서_베낀_상수가_아직_같다():
-    """`CACHE_PREFIX`·`GW_DENY_*` 는 게이트웨이 소스의 **사본**이다. 그쪽이 바뀌면
+    """`CACHE_*`·`GW_DENY_*` 는 게이트웨이 소스의 **사본**이다. 그쪽이 바뀌면
     우리 판정이 조용히 틀린다 — 캐시 접두사가 늘면 상태 조회 단계가 낡은 값을 받는다."""
     src = _gateway_source()
     if src is None:
         pytest.skip("HWAXMcpGateway 리포가 이 박스에 없다")
-    # ⚠ **이름이 사라진 것도 어긋남이다.** 예전엔 여기서 `pytest.skip` 을 했는데,
-    # 그건 이 검사가 쫓는 바로 그 사건이 났을 때 **조용히 통과**한다는 뜻이다. 게다가
-    # skip 이 반복문 첫 바퀴에서 터지면 나머지 둘은 아예 안 본다. 모아서 끝에 따진다.
-    renamed, missing_all = [], []
-    for name, ours in (("_CACHEABLE", CACHE_PREFIX),
-                       ("_INVOKE_DENY_PREFIX", GW_DENY_PREFIX),
-                       ("_INVOKE_DENY_SUFFIX", GW_DENY_SUFFIX)):
-        i = src.find(f"{name} = ")
-        if i < 0:
-            renamed.append(name)
-            continue
-        blob = src[i:i + 900]
-        gone = [x for x in ours if f'"{x}"' not in blob]
-        if gone:
-            missing_all.append(f"{name}: {gone}")
+    gw = _gateway_consts(src)
+    pairs = (("_CACHEABLE", CACHE_PREFIX), ("_CACHE_DENY", CACHE_DENY),
+             ("_INVOKE_DENY_PREFIX", GW_DENY_PREFIX), ("_INVOKE_DENY_SUFFIX", GW_DENY_SUFFIX))
+    # ⚠ **이름이 사라진 것도 어긋남이다.** skip 하면 이 검사가 쫓는 사건이 났을 때 조용히 통과한다.
+    renamed = [n for n, _ in pairs if n not in gw] + (
+        [] if "_CACHE_DENY_WORDS" in gw else ["_CACHE_DENY_WORDS"])
     assert not renamed, (f"게이트웨이에서 이름이 사라졌다: {renamed} — 바뀐 이름을 찾아 "
                          "이 검사와 models.py 의 사본을 맞춰라")
-    assert not missing_all, (f"사본이 어긋났다 — {' · '.join(missing_all)}. "
-                             "게이트웨이가 바뀌었다")
+    # ⚠ **양방향**으로 본다. 예전엔 "우리 사본의 값이 게이트웨이에 있는가" 만 봤다 — 그래서
+    #    게이트웨이가 캐시 접두를 20개 **늘린** 것(사본 7 대 게이트웨이 27)을 통과시켰다.
+    #    위 docstring 이 경고하던 바로 그 방향이다(2026-09-16 odb-hub 대조에서 발견).
+    diffs = []
+    for name, ours in pairs:
+        theirs, mine = set(gw[name]), set(ours)
+        if theirs != mine:
+            diffs.append(f"{name}: 게이트웨이에만 {sorted(theirs - mine)} · 사본에만 {sorted(mine - theirs)}")
+    assert not diffs, "사본이 어긋났다 — " + " / ".join(diffs)
+    assert gw["_CACHE_DENY_WORDS"] == ("re", CACHE_DENY_WORDS.pattern), (
+        f"낱말 거부 패턴이 다르다: 게이트웨이 {gw['_CACHE_DENY_WORDS']} · 사본 {CACHE_DENY_WORDS.pattern!r}")
+
+
+def test_상태_조회는_캐시_판정에서_빠진다():
+    """odb-hub 는 `run_*` 뒤 `get_task` 로 폴링한다. 캐시된다고 판정하면 화면이 "재실행은
+    300초 캐시가 받는다" 고 거짓 안내한다(게이트웨이는 더는 캐시하지 않는다)."""
+    from app.procedures.models import gateway_caches
+
+    for name in ("get_task", "get_job", "get_job_details", "list_jobs", "describe_search_status",
+                 "report_ingest"):
+        assert not gateway_caches(name), name
+    for name in ("get_part_detail", "list_parts", "report_summary", "part_info", "compare_reports"):
+        assert gateway_caches(name), name
 
 
 def test_게이트웨이_호출_상한과의_관계가_아직_성립한다():
