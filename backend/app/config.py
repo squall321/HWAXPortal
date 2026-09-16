@@ -261,3 +261,43 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+# ── 기동 안전 검사 — 이대로 띄우면 **아무나 로그인되는** 설정인가 ─────────────────────────────
+# ⚠ 공개 리포의 `infra/.env.example` 이 `SESSION_SECRET=change-me-infra-dev` 를 담고 있었고, 그걸 복사한
+#   그대로인 박스가 **GitHub 에 공개된 키로 세션에 서명**하고 있었다(2026-09-16 dev 실측, 0.0.0.0 바인드).
+#   세션 토큰은 HS256 에 `sub`·`groups` 를 싣는다 — 키를 알면 아무 사용자·관리자로 토큰을 위조한다.
+#   그런데 아무것도 거부하지 않았다. 설정이 틀린 게 **정상 기동과 똑같이 생겼다.**
+# 공개 리포의 템플릿·코드에 적힌 자리표시·기본값 — 복사한 그대로 두면 **누구나 아는 키**다.
+# `REPLACE_WITH_openssl_rand_hex_32` 는 딱 32자라 길이 검사로는 안 걸린다 — 그래서 이름으로 막는다.
+# (infra/scripts/start.sh 의 같은 목록과 test_no_tracked_secrets 가 짝을 맞춘다)
+PUBLIC_SESSION_SECRETS = frozenset({
+    "change-me-dev-only",                  # 이 파일의 기본값
+    "change-me-infra-dev",                 # infra/.env.example · start.sh 폴백(둘 다 지웠다)
+    "REPLACE_WITH_openssl_rand_hex_32",    # .env.real(docker-compose 가 그대로 읽는다)
+    "@GENERATE_HEX32@",                    # env-kits 생성 표식 — 치환 안 된 채 들어오면 공개값이다
+})
+SESSION_SECRET_MIN_LEN = 32
+
+
+def startup_problems(s: Settings) -> list[str]:
+    """띄우면 안 되는 이유들. 비어 있으면 띄워도 된다.
+
+    실사용자가 로그인하는 구성(prod 이거나 mock 이 아닌 인증)에서만 본다 — 로컬 개발(dev + mock)은
+    막지 않는다. 막는 것은 둘이다.
+    - 공개됐거나 짧은 세션 키
+    - prod 의 mock 로그인 — 로그인 버튼만 누르면 `MOCK_USER_GROUPS`(기본 portal-admin) 로 들어간다.
+      데모 박스라면 prod 가 아니라고 **표시**하게 한다(`APP_ENV=dev`) — 몰래 열어 두지 않는다.
+    """
+    out: list[str] = []
+    secret = s.session_secret or ""
+    if s.app_env == "prod" or s.auth_provider != "mock":
+        if secret in PUBLIC_SESSION_SECRETS:
+            out.append("SESSION_SECRET 이 공개된 값이다 — 이 키를 아는 누구나 세션을 위조한다. "
+                       "`openssl rand -hex 32` 로 새로 만들어라(infra/scripts/start.sh 는 알아서 만든다)")
+        elif len(secret) < SESSION_SECRET_MIN_LEN:
+            out.append(f"SESSION_SECRET 이 {len(secret)}자다 — {SESSION_SECRET_MIN_LEN}자 이상이어야 한다")
+    if s.app_env == "prod" and s.auth_provider == "mock":
+        out.append(f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 {s.mock_user_groups!r} "
+                   "권한으로 들어간다. oidc/saml 로 바꾸거나, 데모 박스라면 APP_ENV=dev 로 표시하라")
+    return out

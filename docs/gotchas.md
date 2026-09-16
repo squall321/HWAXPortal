@@ -261,3 +261,23 @@ VITE_API_BASE_URL="/report-archive"  npx vite build --base="/report-archive/"
 
 같은 자리의 다른 함정 — `npm run build 2>&1 | tail -20` 은 **`tail` 의 종료코드**를 준다.
 빌드가 실패해도 `exit 0` 으로 보인다. 로그는 파일로 받고 종료코드를 따로 찍어라.
+
+## 14. `infra/.env.example` 을 복사한 그대로면 **공개된 키로 세션에 서명**한다
+
+2026-09-16 dev 실측 — 떠 있는 포털의 `SESSION_SECRET` 이 `change-me-infra-dev` 였다. 공개 리포의
+`infra/.env.example` 에 있던 값이고, `_common.sh` 가 "`cp infra/.env.example infra/.env`" 라고 안내한 그대로
+아무도 안 바꿨다. 인증은 oidc(실사용자), 바인드는 `0.0.0.0`. 세션 토큰은 HS256 에 `sub`·`groups` 를 실어서
+**키를 알면 아무 사용자·관리자로 로그인 토큰을 위조**할 수 있었다. `start.sh` 도 비어 있으면
+`${SESSION_SECRET:-change-me-infra-dev}` 로 **조용히** 채웠고, 포털은 아무 키나 받아 정상처럼 떴다.
+
+→ 이제 `start.sh` 가 비었거나 공개된 값이거나 32자 미만이면 `openssl rand -hex 32` 로 만들어 `infra/.env` 에
+저장한다(권한 600, 재기동에도 유지). 포털은 실사용자 구성(prod 이거나 mock 이 아닌 인증)에서 공개값·짧은 키면,
+그리고 prod 에서 `AUTH_PROVIDER=mock` 이면 **기동을 거부**한다(`config.startup_problems`). 공개값 목록은
+`config.PUBLIC_SESSION_SECRETS` 와 `start.sh` 의 case 줄이 같아야 한다(`test_no_tracked_secrets`).
+
+⚠ 새 키로 바뀌면 기존 로그인이 전부 풀린다 — 그게 정상이다. 떠 있는 포털은 **재기동해야** 새 키가 든다.
+
+덤 — `.env.real` 이 공개 리포에 있다는 지적은 **값이 자리표시**(`REPLACE_WITH_openssl_rand_hex_32`)라 비밀
+유출은 아니었다. 다만 그 자리표시도 딱 32자라 길이 검사로는 안 걸려서 공개값 목록에 이름으로 넣었다.
+조사하며 비밀 칸을 값을 안 보고 정규식으로 "실값 모양" 이라 짐작했다가 이 자리표시와 키트의
+`@GENERATE_HEX32@` 를 유출로 **잘못 보고했다** — 짐작 말고 허용 목록으로 본다.

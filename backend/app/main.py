@@ -36,7 +36,7 @@ from app.auth.token_store import TokenStore
 from app.auth.user_store import UserStore
 from app.catalog import routes as catalog_routes
 from app.catalog.registry import CatalogRegistry
-from app.config import get_settings
+from app.config import get_settings, startup_problems
 from app.deps import build_services
 from app.mail import routes as mail_routes
 from app.mail.service import build_mail_backend
@@ -49,6 +49,13 @@ _log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ⚠ 아무나 로그인되는 설정이면 **띄우지 않는다**(config.startup_problems 주석). 경고만 남기면
+    #   정상 기동과 똑같이 생겨 아무도 모른다 — 실제로 공개 키로 몇 주를 돌았다.
+    problems = startup_problems(settings)
+    if problems:
+        for p in problems:
+            _log.critical("기동 거부: %s", p)
+        raise RuntimeError("기동 거부 — " + " / ".join(problems))
     # Build the active auth provider + session token service + catalog once, from config.
     app.state.auth_provider, app.state.jwt_service = build_services(settings)
     app.state.catalog = CatalogRegistry(settings)

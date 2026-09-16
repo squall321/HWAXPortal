@@ -36,6 +36,28 @@ echo "✓ SPA ready (frontend/dist)"
 # 2. Generate nginx conf from routes.env
 "$(dirname "$0")/gen-nginx-conf.sh"
 
+# 2b. 세션 서명 키 — 비었거나 공개됐거나 짧으면 새로 만들어 infra/.env 에 **저장**한다(재기동에도 유지).
+# ⚠ infra/.env.example 을 복사한 그대로인 박스가 GitHub 에 공개된 키(change-me-infra-dev)로 세션에
+#   서명하고 있었다(2026-09-16 dev 실측). 이 키를 알면 아무 사용자·관리자로 로그인 토큰을 위조한다.
+#   예전엔 비어 있으면 그 공개 값으로 **조용히** 떴다. 포털도 이제 이런 키로는 기동을 거부한다
+#   (backend/app/config.py startup_problems — 공개값 목록은 그쪽 PUBLIC_SESSION_SECRETS 와 같아야 한다).
+_ss="${SESSION_SECRET:-}"
+case "$_ss" in change-me-dev-only|change-me-infra-dev|REPLACE_WITH_openssl_rand_hex_32|@GENERATE_HEX32@) _ss="" ;; esac
+if [ "${#_ss}" -lt 32 ]; then
+  SESSION_SECRET="$(openssl rand -hex 32 2>/dev/null || od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  export SESSION_SECRET
+  if grep -q '^SESSION_SECRET=' "$REPO_ROOT/infra/.env"; then
+    sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=${SESSION_SECRET}|" "$REPO_ROOT/infra/.env"
+  else
+    printf 'SESSION_SECRET=%s\n' "$SESSION_SECRET" >> "$REPO_ROOT/infra/.env"
+  fi
+  chmod 600 "$REPO_ROOT/infra/.env"   # 비밀이 든 파일이다 — 644 였다
+  echo "⚠ SESSION_SECRET 이 비었거나 공개된 값이라 새 키를 만들어 infra/.env 에 저장했다 — 로그인은 다시 해야 한다"
+  if instance_running "$INST_PORTAL"; then
+    echo "  ⚠ 포털은 아직 옛 키로 떠 있다 — 재기동해야 새 키가 든다: apptainer instance stop $INST_PORTAL && ./infra/scripts/start.sh"
+  fi
+fi
+
 # 3. Portal (single-origin: serves SPA + API). All config via --env (overrides backend/.env).
 if instance_running "$INST_PORTAL"; then
   echo "✓ $INST_PORTAL already running"
@@ -75,7 +97,7 @@ else
     --env "PUBLIC_BASE_URL=${PUBLIC_BASE_URL}" \
     --env "FRONTEND_URL=${PUBLIC_BASE_URL}" \
     --env "COOKIE_SECURE=${COOKIE_SECURE:-false}" \
-    --env "SESSION_SECRET=${SESSION_SECRET:-change-me-infra-dev}" \
+    --env "SESSION_SECRET=${SESSION_SECRET}" \
     --env "AUTH_PROVIDER=${AUTH_PROVIDER:-mock}" \
     --env "MOCK_USER_EMAIL=${MOCK_USER_EMAIL:-hwax.demo@samsung.com}" \
     --env "MOCK_USER_NAME=${MOCK_USER_NAME:-HWAX Demo User}" \
