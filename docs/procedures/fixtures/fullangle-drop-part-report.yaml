@@ -44,6 +44,10 @@ steps:
     tool: report_summary
     args: {report_id: "{{report_id}}"}
     save: {kind: "kind"}
+    assert:
+      - path: kind
+        equals: sphere
+        why: "잡 키가 겹치면 다른 해석의 리포트를 받는다 — 판독은 전부 성공하고 보고서만 엉뚱해진다"
     note: 무엇을 분석할 수 있는지 — kind·과제·해석 조건·파트 목록·전역 최악
 
   - backend: heax-kooremapper_mcp

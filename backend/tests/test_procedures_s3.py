@@ -236,7 +236,9 @@ def test_리포트를_report_id_가_아니라_잡_키로_찾는다(collect):
 def test_인자가_DynaForge_실제_스키마와_맞는다(collect):
     _, spec = collect
     table = {st.alias: DF["schemas"][st.tool] for st in spec.steps if st.tool in DF["schemas"]}
-    assert len(table) == 6, sorted(table)
+    # 스키마가 없는 단계는 **대조되지 않는다.** 개수를 박으면 단계를 늘렸을 때 조용히 빠지므로
+    # 빠진 것을 이름으로 적는다. create_report_draft 는 블록이 자유 형식이라 여기서 안 본다.
+    assert sorted({st.tool for st in spec.steps} - set(DF["schemas"])) == ["create_report_draft"]
     errs = check_against_schemas(spec, table, missing_is_error=False)
     hard = [e for e in errs if not e.startswith("warn:")]
     assert hard == [], hard
@@ -288,3 +290,68 @@ def test_보고서_초안_저장_이름이_리포트_ID_와_안_겹친다(collec
     assert set(draft.save) == {"ra_report_id", "ra_report_url"}
     tags = next(st for st in spec.steps if st.tool == "suggest_report_tags")
     assert tags.args == {"report_id": "{{ra_report_id}}"} and tags.gate is None
+
+
+# ── 축 태그 붙이기 씨앗(여럿을 골라 한 번에) ────────────────────────────────────────────────
+def test_태그_씨앗이_경고_없이_저장된다():
+    spec = _load("report-add-tags")
+    assert validate_spec(spec) == []
+    assert [(s.tool, s.gate) for s in spec.steps] == [
+        ("suggest_report_tags", None), ("add_report_tags", "human")]
+
+
+def test_태그는_펼치지_않고_고른_것을_한_번에_넘긴다():
+    """펼치면(fan-out) 태그 수만큼 실행이 생기고 **승인도 그만큼** 받는다. 태그는 한 번이 맞다."""
+    spec = _load("report-add-tags")
+    sel = spec.steps[0].select
+    assert sel.multi is True and sel.on_many == "ask", "여럿은 사람이 고른다"
+    assert (sel.from_, sel.save, sel.var, sel.label) == ("items", "id", "tag_ids", "value")
+    assert sel.on_none == "fail", "후보 0건은 기준정보가 없다는 뜻이다 — 조용히 넘어가지 않는다"
+    assert spec.steps[1].args["entity_ids"] == "{{tag_ids}}", "통째 치환이라 목록이 목록으로 간다"
+
+
+def test_태그_씨앗의_인자가_RA_실제_스키마와_맞는다():
+    spec = _load("report-add-tags")
+    table = {st.alias: DF["schemas"][st.tool] for st in spec.steps}
+    assert check_against_schemas(spec, table, missing_is_error=True) == []
+
+
+def test_태그_씨앗이_응답_모양에서_풀린다():
+    """후보의 `id` 를 고른다 — RA 가 주는 칸 이름이 그것이다(autotag.Suggestion)."""
+    spec = _load("report-add-tags")
+    v = judge(is_error=False, text=_text(DF["ra_suggest"]))
+    rows = template.extract(v.parsed, spec.steps[0].select.from_)
+    assert [r[spec.steps[0].select.save] for r in rows] == [812, 917, 933]
+    assert [r[spec.steps[0].select.label] for r in rows][0] == "drop-demo-01"
+    assert judge(is_error=False, text=_text(DF["ra_add"])).ok
+
+
+def test_고른_태그가_정수_목록으로_치환된다():
+    """`"{{tag_ids}}"` 는 **통째 치환**이라 형이 산다 — 문자열로 가면 RA 가 거절한다."""
+    spec = _load("report-add-tags")
+    args = template.substitute(spec.steps[1].args, {"report_id": 4210, "tag_ids": [812, 917]})
+    assert args == {"report_id": 4210, "entity_ids": [812, 917]}
+
+
+# ── 엉뚱한 해석의 리포트를 받으면 거기서 선다 ─────────────────────────────────────────────
+def test_회수_씨앗이_리포트_종류를_단언한다(collect):
+    """잡 키가 겹치면 다른 해석의 리포트가 온다. 판정기는 '도구가 실패했나' 만 보므로
+    판독은 전부 성공하고 **보고서만 다른 해석 위에서** 나온다 — 그 자리를 선언으로 막는다."""
+    name, spec = collect
+    summary = next(st for st in spec.steps if st.tool == "report_summary")
+    assert [(c.path, c.equals) for c in summary.asserts] == [("kind", COLLECT[name])]
+    # 단언은 save 보다 먼저 본다 — 어긋난 응답에서 값을 뽑아 다음 단계로 넘기지 않는다.
+    assert summary.save == {"kind": "kind"}
+
+
+def test_단언이_실제_응답_모양에서_돈다(collect):
+    name, spec = collect
+    summary = next(st for st in spec.steps if st.tool == "report_summary")
+    body = dict(DF["report_summary"], kind=COLLECT[name])
+    v = judge(is_error=False, text=_text(body))
+    for chk in summary.asserts:
+        assert chk.check(template.extract(v.parsed, chk.path)) is None
+    other = dict(body, kind="impact" if COLLECT[name] == "sphere" else "sphere")
+    v2 = judge(is_error=False, text=_text(other))
+    why = summary.asserts[0].check(template.extract(v2.parsed, "kind"))
+    assert why and "기대했다" in why, why

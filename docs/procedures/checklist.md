@@ -536,8 +536,12 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       `create_report_from_run` 은 못 쓴다(적재 실행 `status=ready` 전용)
       → 초안(게이트)·후보까지 씨앗에 붙였다. 위젯 형식은 **실제 dry_run** 으로 확인(warnings 0). RA MCP 가 봉투를
       벗겨 save 경로에 `data.` 가 없다(소스 `_unwrap` + dry_run 응답으로 확인). **태그 적용은 절차 밖** — 아래 항목
-- [ ] (실행기) 게이트에서 사람이 후보 **여럿**을 고르는 길 — 지금은 게이트가 인자 지문 승인/거절뿐이고 `select` 는
-      하나만 골라 `add_report_tags` 를 절차에 못 넣는다. 생기기 전까지 태그는 RA 화면 제안 칩에서
+- [x] (실행기) 게이트에서 사람이 후보 **여럿**을 고르는 길 — `select.multi` (W-97 ②)
+      → 고른 것을 **목록 하나**로 담아 다음 단계가 한 번 부른다(`select:ask_many` · `pick {values}` · `fan-out` 은 422).
+      씨앗은 `report-add-tags.yaml` 로 **따로** 뒀다 — 후보 0건이 보고서를 만든 절차를 빨갛게 만들면 안 된다
+- [x] (실행기) 값 단언 `assert` — 판정기는 '도구가 실패했나' 만 본다(W-97 ①). `save` 보다 먼저 보고, 경로가 안 풀려도
+      정지. 씨앗 둘의 `report_summary` 에 `kind == sphere|impact` 를 걸었다. ⚠ `not_empty` 는 숫자 0 을 빈 값으로 안 본다
+- [x] (실행기) 인자를 못 풀면 실행이 `running` 인 채 남던 사고 — 치환을 `_args()` 한 곳으로 모아 단계로 마감(W-97 ③)
 - [ ] `pcb_warpage_surrogate` 의 합성 데이터 경고를 `notes` 로
 - [x] HWAXRisk `odb-adapter-contract.md` 4도구와 이름이 다르면 계약 개정을 HWAXRisk 쪽 일감으로
       → 대조 완료(sed-mapping.md) — **넷 다 없다**. `odb_list_nets` 는 대응 도구 자체가 없고 `list_parts` 엔 좌표가 없다. 개정은 HWAXRisk 몫

@@ -465,6 +465,27 @@ R2b 의 판독 도구가 그대로 **심의 좌석 도구 목록**이다 — 여
 `report_corpus` → `{"reports": 0, "cases": 0, "note": "해석 결과 리포트가 아직 없다."}`,
 `report_facets` → 전 축 빈 배열. **②~⑥ 은 계약만 확인했고 실동작은 cae00 에서만 본다.**
 
+### R2c — 보고서 축 태그 붙이기 (`report-add-tags.yaml`)
+
+회수 절차는 **태그 후보만 받고 끝난다**(`suggest_report_tags`). 붙이는 일을 따로 뗀 절차가 R2c 다.
+축 태그가 없는 보고서는 `list_reports(entity=...)`·`aggregate_reports` 로 **찾히지 않는다** —
+온톨로지 검색에서 없는 것과 같다. 붙일 것을 사람이 고른다.
+
+```yaml
+- tool: suggest_report_tags          # RA 가 본문에서 뽑은 후보(저장 안 한다)
+  select: {from: items, save: id, as: tag_ids, label: value, multi: true, on_many: ask, on_none: fail}
+- tool: add_report_tags              # gate: human (must-gate)
+  args: {report_id: "{{report_id}}", entity_ids: "{{tag_ids}}"}
+```
+
+- **`multi: true` 가 셋째 길이다.** 하나 고르기도 펼치기도 아니다 — 고른 것을 **목록 하나**로 담아
+  다음 단계가 한 번 부른다. 펼치면 태그 수만큼 실행이 생기고 승인도 그만큼 받는다(실행기가 422 로 막는다).
+- **회수 절차에 붙이지 않은 이유** — 후보 0건은 "RA 기준정보에 이 과제 어휘가 없다" 는 실패인데,
+  그것이 보고서를 만든 절차를 빨갛게 만들면 안 된다. 태그만 하는 절차에서는 그 0건이 그 절차의 실패다.
+- **값만 보고 고르지 마라** — 앞 단계 결과의 `source` 가 신뢰도다(`deterministic` = 본문에 그대로 나왔다,
+  `similarity` = 임베딩 추정). 비슷한 이름이 여러 개 뜨면 중복 기준정보다.
+- `add_report_tags` 는 **더하기**다. `update_report_draft(entity_ids=...)` 는 전체 교체라 남의 태그를 날린다.
+
 ---
 
 <a id="r3"></a>

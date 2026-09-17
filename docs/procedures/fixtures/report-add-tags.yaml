@@ -1,0 +1,44 @@
+# R2c — 보고서에 **축 태그를 붙인다**(고른 것을 한 번에). 부품 보고서 절차의 다음 칸이다.
+#
+# ⚠ 이 파일이 정본이 아니다. 가져다 쓰는 씨앗이다. `backend/tests/test_procedures_s3.py` 가 읽어 검증한다.
+#
+# 축 태그가 없는 보고서는 `list_reports(entity=...)`·`aggregate_reports` 로 **찾히지 않는다** —
+# 온톨로지 검색에서 존재하지 않는 것과 같다(add_report_tags 도구 설명). 그래서 회수 절차가
+# 후보만 받아 두고 끝나던 자리를, 사람이 골라 붙이는 절차로 잇는다.
+#
+# 여럿을 **골라서 목록 하나로** 넘긴다(`select.multi`) — 하나 고르기도 펼치기도 아니다.
+# 펼치면 태그 수만큼 실행이 생기고 그때마다 승인을 받는다. 태그는 한 번에 붙이는 것이 맞다.
+#
+# ⚠ 무엇을 붙일지는 **값만 보고 정하지 마라.** 앞 단계 결과에 후보마다 `source` 가 있다 —
+# `deterministic` 은 본문에 그 값이 그대로 나온 것이고, `similarity` 는 임베딩 추정이다.
+# 비슷한 이름이 여러 개 뜨면(중복 데이터) 아무거나 고르면 남의 검색 결과가 틀어진다.
+#
+# 응답의 `added`(새로 늘어난 수)에 단언을 걸지 않는다. 앞 단계가 이미 **붙어 있는 것을 빼고**
+# 후보를 주므로 0 은 "그 사이 남이 먼저 붙였다" 뿐이고 끝 상태는 원하던 그대로다. 그걸 실패로
+# 만들면 멀쩡한 실행이 빨개진다(`not_empty` 는 숫자 0 을 빈 값으로 보지도 않는다).
+#
+# 후보가 0건이면 실패다 — 건너뛰지 않는다. RA 기준정보에 이 과제의 어휘가 없다는 뜻이고,
+# 그건 사람이 기준정보를 등록해야 풀린다(조용히 넘어가면 태그 없는 보고서가 그대로 쌓인다).
+
+title: 보고서 축 태그 붙이기 (고른 것만)
+
+vars:
+  - key: report_id
+    label: RA 보고서 번호
+    type: number
+    required: true
+    why: "보고서 주소 `/w/<워크스페이스>/r/<번호>` 의 그 숫자다. 회수 절차가 `ra_report_id` 로 남긴 값이기도 하다"
+    example: 4210
+
+steps:
+  - backend: reportarchive
+    tool: suggest_report_tags
+    args: {report_id: "{{report_id}}"}
+    select: {from: items, save: id, as: tag_ids, label: value, multi: true, on_many: ask, on_none: fail}
+    note: 서버가 본문에서 뽑은 후보 — 저장하지 않는다. 이 단계 결과에 source·score 가 있다
+
+  - backend: reportarchive
+    tool: add_report_tags
+    gate: human
+    args: {report_id: "{{report_id}}", entity_ids: "{{tag_ids}}"}
+    note: 더하기다(기존 태그를 지우지 않는다). update_report_draft 의 entity_ids 는 전체 교체라 남의 태그를 날린다
