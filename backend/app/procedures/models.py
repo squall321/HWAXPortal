@@ -410,8 +410,21 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
                 # 재개 뒤에는 진짜 값이 되어, 같은 `{{run_id}}` 가 때에 따라 다른 것을 가리킨다.
                 errs.append(f"{at}: save 이름이 예약어와 겹친다 — {key}")
             produced.add(key)
-        if st.save and st.raw:
-            errs.append(f"{at}: raw 단계는 JSON 이 아니라 save 로 못 뽑는다")
+        # 평문 결과는 JSON 경로로 못 뽑는다 — `re:` 정규식(첫 캡처 그룹)만. 거꾸로 `re:` 는 raw 단계에만.
+        text_paths = {k: p.strip()[len(template.TEXT_PATH):] for k, p in (st.save or {}).items()
+                      if p.strip().startswith(template.TEXT_PATH)}
+        if st.save and st.raw and len(text_paths) != len(st.save):
+            errs.append(f"{at}: raw 단계는 JSON 이 아니라 save 경로로 못 뽑는다 — 평문 정규식(re:…)만 쓴다")
+        if text_paths and not st.raw:
+            errs.append(f"{at}: re: 추출은 raw 단계에만 쓴다")
+        for key, pat in text_paths.items():
+            try:
+                groups = re.compile(pat).groups
+            except re.error as exc:
+                errs.append(f"{at}: save {key} 정규식이 깨졌다 — {exc}")
+                continue
+            if groups != 1:
+                errs.append(f"{at}: save {key} 정규식은 캡처 그룹이 정확히 하나여야 한다(뽑을 값) — 지금 {groups}개")
 
         # ⑧ 선택 — 룰로 고른다(PLAN §10-1). 0/1/N 정책이 이 검사의 요점이다.
         if st.select is not None:

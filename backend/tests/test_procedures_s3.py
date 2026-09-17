@@ -84,12 +84,17 @@ def test_미리보기와_제출은_dry_run_만_다르다(seed):
     assert {k: v for k, v in preview.items() if k != "dry_run"} == {k: v for k, v in submit.items() if k != "dry_run"}
 
 
-def test_디스패치_키와_잡_ID_save_가_없다(seed):
-    """mode·model_file·environment 는 서버가 고정한다(넣으면 버려진다). 반환이 평문이라 save 로 job_id 를 못 뽑는다(W-90)."""
+def test_디스패치_키가_없고_잡_ID_는_제출_단계만_평문에서_뽑는다(seed, text):
+    """mode·model_file·environment 는 서버가 고정한다(넣으면 버려진다). 반환이 평문이라 JSON 경로가 아니라
+    `re:` 정규식으로 뽑는다(W-90) — 미리보기에서 뽑으면 없는 잡 ID 를 찾다 멈춘다."""
     _, spec = seed
     ov = spec.steps[1].args["scenario_overrides"]
     assert not ({"mode", "model_file", "output_dir", "project_name", "environment"} & set(ov))
-    assert all(st.save is None for st in spec.steps)
+    assert [st.save for st in spec.steps] == [None, None, {"slurm_job_id": "re:job_id=(\\d+)"}]
+    got = template.extract(text["submit_ok"], spec.steps[2].save["slurm_job_id"])
+    assert got == "12345"
+    with pytest.raises(template.TemplateError):
+        template.extract(text["dry_run_impact"], spec.steps[2].save["slurm_job_id"])
 
 
 # ── 단위(W-91) ───────────────────────────────────────────────────────────────────────────
@@ -168,3 +173,26 @@ def test_단계가_엇갈린_응답을_성공으로_보지_않는다(seed, text)
     _, preview, submit = spec.steps
     assert not judge(is_error=False, text=text[SUBMIT[name][2]], raw=True, ok_text=submit.ok_text).ok
     assert not judge(is_error=False, text=text["submit_ok"], raw=True, ok_text=preview.ok_text).ok
+
+
+# ── 평문 추출(re:) — 제출 씨앗이 잡 ID 를 넘기는 길 ─────────────────────────────────────────
+def _raw_spec(save: dict, raw: bool = True) -> ProcedureSpec:
+    return ProcedureSpec.model_validate({"title": "t", "steps": [
+        {"backend": "smart-twin-cluster", "tool": "smarttwin_scenario_options", "raw": raw, "save": save}]})
+
+
+def test_평문_추출_경로의_저장_검증():
+    assert validate_spec(_raw_spec({"job": "re:job_id=(\\d+)"})) == []
+    assert any("re:" in e for e in validate_spec(_raw_spec({"job": "a.b"})))            # raw 인데 JSON 경로
+    assert any("raw 단계에만" in e for e in validate_spec(_raw_spec({"job": "re:(x)"}, raw=False)))
+    assert any("정확히 하나" in e for e in validate_spec(_raw_spec({"job": "re:job_id=\\d+"})))
+    assert any("정확히 하나" in e for e in validate_spec(_raw_spec({"job": "re:(a)(b)"})))
+    assert any("깨졌다" in e for e in validate_spec(_raw_spec({"job": "re:(unclosed"})))
+
+
+def test_평문_추출은_평문에서만_찾고_못_찾으면_멈춘다():
+    assert template.extract("✅ 제출 완료 — job_id=77\n…", "re:job_id=(\\d+)") == "77"
+    with pytest.raises(template.TemplateError, match="못 찾았다"):
+        template.extract("[DRY-RUN] 제출 계획", "re:job_id=(\\d+)")
+    with pytest.raises(template.TemplateError, match="평문"):
+        template.extract({"job_id": 1}, "re:job_id=(\\d+)")

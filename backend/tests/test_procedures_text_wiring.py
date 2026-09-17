@@ -23,11 +23,13 @@ class _P:
     subject, email, groups = "u1", "u1@corp.com", ["feat:procedures"]
 
 
-def _spec(ok_text: str | None) -> ProcedureSpec:
+def _spec(ok_text: str | None, save: dict | None = None) -> ProcedureSpec:
     step = {"backend": "smart-twin-cluster", "tool": "smarttwin_scenario_options",
             "args": {"sim_type": "fullangle_drop"}, "raw": True}
     if ok_text:
         step["ok_text"] = ok_text
+    if save:
+        step["save"] = save
     return ProcedureSpec.model_validate({"title": "평문 단계", "vars": [], "steps": [step]})
 
 
@@ -58,9 +60,10 @@ def store(tmp_path):
     return ProceduresStore(Settings(procedures_store_path=str(tmp_path / "wb.sqlite")))
 
 
-def _run(store, text: str, ok_text: str | None) -> dict:
+def _run(store, text: str, ok_text: str | None, save: dict | None = None) -> dict:
     rid = store.create_run(owner_sub="u1", inputs={}, mode="live")
-    return asyncio.run(_runner(store, text).run(run_id=rid, spec=_spec(ok_text), principal=_P()))
+    got = asyncio.run(_runner(store, text).run(run_id=rid, spec=_spec(ok_text, save), principal=_P()))
+    return {**got, "_inputs": store.get_run(rid).get("inputs") or {}}
 
 
 def test_평문_error_머리가_오면_실행이_실패로_멈춘다(store):
@@ -77,3 +80,15 @@ def test_ok_text_를_실행기가_실제로_넘긴다(store):
 def test_정상_평문은_끝까지_간다(store):
     got = _run(store, _SMT["dry_run_fullangle"], r"(\[DRY-RUN\]|✅ 제출 완료)")
     assert got["state"] != "failed", got
+
+
+def test_평문에서_뽑은_잡_ID_가_실행_입력에_남는다(store):
+    """`re:` 추출이 판정기 함수만이 아니라 실행기 저장 경로(원장 inputs)까지 닿는가 — 재개·다음 단계가 그 값을 쓴다."""
+    got = _run(store, _SMT["submit_ok"], r"✅ 제출 완료", {"slurm_job_id": r"re:job_id=(\d+)"})
+    assert got["state"] != "failed", got
+    assert got["_inputs"].get("slurm_job_id") == "12345", got
+
+
+def test_평문에서_못_찾으면_실행이_멈춘다(store):
+    got = _run(store, _SMT["dry_run_fullangle"], None, {"slurm_job_id": r"re:job_id=(\d+)"})
+    assert got["state"] == "failed" and got.get("kind") == "save_missing", got

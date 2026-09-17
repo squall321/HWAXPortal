@@ -86,12 +86,32 @@ def _compact(v):
     return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
 
 
+# 평문(raw) 결과에서 값을 뽑는 경로 — `re:<정규식>` 의 **첫 캡처 그룹**. 평문으로 답하는 도구(W-90)의
+# 결과를 다음 단계로 넘길 길이 이것뿐이다(예: `✅ 제출 완료 — job_id=12345` → `re:job_id=(\d+)`).
+TEXT_PATH = "re:"
+
+
+def _extract_text(data, pattern: str, path: str):
+    if not isinstance(data, str):
+        raise TemplateError(f"re: 경로는 평문(raw) 결과에만 쓴다: {path}")
+    try:
+        rx = re.compile(pattern)
+    except re.error as exc:
+        raise TemplateError(f"re: 정규식이 깨졌다: {path} — {exc}") from None
+    m = rx.search(data)
+    if not m:
+        raise TemplateError(f"평문에서 못 찾았다: {path}")
+    return m.group(1) if rx.groups else m.group(0)
+
+
 def extract(data, path: str):
     """`a.b[0].c` 로 값을 꺼낸다. 경로가 안 풀리면 TemplateError.
 
     v1 은 선행 `$.` 을 허용만 하고 의미는 없다 — 절차를 옮겨 적을 때 흔한 표기라서다.
     """
     p = path.strip()
+    if p.startswith(TEXT_PATH):
+        return _extract_text(data, p[len(TEXT_PATH):], path)
     if p.startswith("$."):
         p = p[2:]
     elif p == "$":
