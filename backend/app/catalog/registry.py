@@ -92,6 +92,8 @@ class CatalogRegistry:
             # nginx catch-all 이 SPA index.html 을 200 으로 돌려줘 조용히 깨진다
             # (실사고 2026-09-03: ste — routes.local.env 없는 박스에서 available 로 노출).
             s.status = "coming_soon"
+            if s.hide_unless_routed:
+                s.enabled = False  # visible_for 가 거른다 — 사내 전용 연계는 '곧 공개' 로도 안 보인다
 
     def reload(self) -> int:
         raw = yaml.safe_load(self._catalog_path.read_text(encoding="utf-8")) or {}
@@ -110,6 +112,10 @@ class CatalogRegistry:
 
     def all(self) -> list[LinkedSystem]:
         return list(self._systems)
+
+    def live_ids(self) -> set[str]:
+        """이 박스에서 실제로 열리는 타일 — 켜져 있고 목적지가 있다(권한 표의 플랫폼 숨김이 쓴다)."""
+        return {s.id for s in self._systems if s.enabled and s.status == "available"}
 
     def visible_for(self, groups: list[str]) -> list[LinkedSystem]:
         """Enabled systems the user may see (required_role gate against their groups)."""

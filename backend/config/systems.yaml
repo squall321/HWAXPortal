@@ -203,4 +203,5 @@ systems:
     # 메일 버튼(ChatActionBar)도 이 타일이 available 일 때만 뜬다 — 이것이 Knox 킬 스위치다(docs/chat-actions).
     # 문구는 '메일' 을 약속하지 않는다 — 무엇을 보낼 수 있는지는 사내 앱이 정한다.
     integration_type: proxy
+    hide_unless_routed: true              # 목적지 없는 박스에서는 '곧 공개' 로도 안 보인다(사용자 결정 2026-09-17)
     sort_order: 75

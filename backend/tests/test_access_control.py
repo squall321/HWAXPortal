@@ -275,6 +275,35 @@ def test_게이트웨이_내부_조회는_공유_시크릿으로만(client):
     assert "plat:stepforge" in adm["keys"], "토큰의 관리자 그룹은 인정한다"
 
 
+def test_Knox_가_없는_박스는_권한_표와_요청에서_Knox_연계를_숨긴다(client, monkeypatch):
+    """표시만 가린다 — 관리자·CAEG 의 권한 계산(plat:knoxbridge)과 게이트웨이 정책은 그대로다."""
+    _setup_users(client)
+    monkeypatch.delenv("SYS_KNOX_BRIDGE_URL", raising=False)
+    catalog = app.state.catalog
+    catalog.reload()
+    h = _login(client, "boss@corp.com")
+    auth = {"Authorization": "Bearer gw-test-secret"}
+    gw_before = client.get("/internal/access/policy", headers=auth).json()
+    try:
+        if "knox-bridge" in catalog.live_ids():
+            pytest.skip("이 박스 routes 파일에 knox-bridge 가 있다 — 숨김 검사를 할 수 없다")
+        assert "knox-bridge" not in {s["id"] for s in client.get("/systems").json()}
+        assert "plat:knoxbridge" not in {r["key"] for r in client.get("/auth/access").json()["platforms"]}
+        assert "plat:knoxbridge" not in {r["key"] for r in client.get("/auth/access/policy").json()["platforms"]}
+        r = client.post("/auth/access/requests", json={"key": "plat:knoxbridge"}, headers=h)
+        assert r.status_code == 404, r.text
+        assert "plat:knoxbridge" in client.get("/auth/me").json()["entitlements"], "권한 계산까지 지우면 안 된다"
+
+        monkeypatch.setenv("SYS_KNOX_BRIDGE_URL", "http://127.0.0.1:1/")
+        catalog.reload()
+        assert "knox-bridge" in {s["id"] for s in client.get("/systems").json()}
+        assert "plat:knoxbridge" in {r["key"] for r in client.get("/auth/access").json()["platforms"]}
+        assert "plat:knoxbridge" in {r["key"] for r in client.get("/auth/access/policy").json()["platforms"]}
+        assert client.get("/internal/access/policy", headers=auth).json() == gw_before
+    finally:
+        monkeypatch.delenv("SYS_KNOX_BRIDGE_URL", raising=False)
+        catalog.reload()
+
 # ── 챗·업로드 가드(단위) ──────────────────────────────────────────────────────
 def _p(*groups):
     return Principal(subject="u", email="u@corp.com", groups=list(groups))

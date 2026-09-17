@@ -25,6 +25,12 @@ def _policy(request: Request):
     return request.app.state.access.get()
 
 
+def _hidden(request: Request, policy) -> set[str]:
+    """이 박스에서 안 열리는 사내 전용 플랫폼(예: Knox 연계) — 권한 표·요청에서 뺀다. 표시만 가린다."""
+    catalog = getattr(request.app.state, "catalog", None)
+    return policy.hidden_keys(catalog.live_ids()) if catalog is not None else set()
+
+
 def _reason_text(reason: str, policy, affiliation: str) -> str:
     """사람에게 보일 허가 이유."""
     if reason == "admin":
@@ -42,7 +48,7 @@ def _reason_text(reason: str, policy, affiliation: str) -> str:
     return reason
 
 
-def _table(policy, ents, pending: dict[str, dict]) -> dict:
+def _table(policy, ents, pending: dict[str, dict], hidden: set[str]) -> dict:
     def row(i):
         allowed = i.key in ents.keys
         return {"key": i.key, "id": i.id, "label": i.label, "desc": i.desc, "allowed": allowed,
@@ -50,7 +56,7 @@ def _table(policy, ents, pending: dict[str, dict]) -> dict:
                            if allowed else ""),
                 "request": pending.get(i.key)}
     return {"features": [row(i) for i in policy.items if i.kind == "feature"],
-            "platforms": [row(i) for i in policy.items if i.kind == "platform"]}
+            "platforms": [row(i) for i in policy.items if i.kind == "platform" and i.key not in hidden]}
 
 
 @router.get("/auth/access")
@@ -66,7 +72,7 @@ def my_access(request: Request, principal: Principal = Depends(get_current_princ
                                  "created_at": r["created_at"]}
     aff = policy.affiliations.get(ents.affiliation)
     return {"affiliation": ents.affiliation, "affiliation_label": (aff or {}).get("label") or "",
-            "is_admin": ents.is_admin, **_table(policy, ents, pending)}
+            "is_admin": ents.is_admin, **_table(policy, ents, pending, _hidden(request, policy))}
 
 
 class AccessRequestIn(BaseModel):
@@ -79,7 +85,7 @@ def request_access(body: AccessRequestIn, request: Request,
                    principal: Principal = Depends(get_current_principal),
                    _csrf: None = Depends(require_csrf)) -> dict:
     policy = _policy(request)
-    if policy.item(body.key) is None:
+    if policy.item(body.key) is None or body.key in _hidden(request, policy):
         raise AuthError("모르는 권한입니다", status_code=404)
     if body.key in principal.groups:
         raise AuthError("이미 쓸 수 있는 권한입니다", status_code=409)
@@ -91,10 +97,11 @@ def request_access(body: AccessRequestIn, request: Request,
 def access_policy(request: Request, _p: Principal = Depends(get_current_principal)) -> dict:
     """정책 표(기능·플랫폼·소속) — 관리자 화면의 체크 목록과 내 권한 페이지의 머리말."""
     policy = _policy(request)
+    hidden = _hidden(request, policy)
     return {"features": [{"key": i.key, "label": i.label, "desc": i.desc,
                           "implies": list(i.implies)} for i in policy.items if i.kind == "feature"],
             "platforms": [{"key": i.key, "label": i.label, "desc": i.desc} for i in policy.items
-                          if i.kind == "platform"],
+                          if i.kind == "platform" and i.key not in hidden],
             "affiliations": [{"id": k, "label": v["label"], "grants": v["grants"]}
                              for k, v in policy.affiliations.items()],
             "default_grants": policy.default_grants}

@@ -9,7 +9,7 @@ launch (Phase 4) behaves:
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # external-url : tile opens the URL directly (new tab) — for services with their own real address.
 # proxy        : tile opens <portal>/<id>/ — nginx reverse-proxies to the routes.env destination,
@@ -38,6 +38,15 @@ class LinkedSystem(BaseModel):
     required_role: str | None = None  # gate: hide tile unless user has this group/role
     enabled: bool = True
     sort_order: int = 100
+    # 목적지(routes 파일·SYS_<ID>_URL)가 없는 박스에서는 '곧 공개' 로도 보이지 않게 **숨긴다** — 사내 전용 연계처럼
+    # 그 박스에서 영영 열릴 일이 없는 타일용(docs/chat-actions). proxy 타일만 목적지로 열리므로 proxy 에만 쓴다.
+    hide_unless_routed: bool = False
+
+    @model_validator(mode="after")
+    def _hide_needs_proxy(self):
+        if self.hide_unless_routed and self.integration_type != "proxy":
+            raise ValueError(f"{self.id}: hide_unless_routed 는 proxy 타일에만 쓴다")
+        return self
 
 
 class CatalogFile(BaseModel):

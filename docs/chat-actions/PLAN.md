@@ -48,7 +48,7 @@
 ```
 routes.local.env 의 knox-bridge=  ──→ nginx 라우트(gen-nginx-conf.sh) + 타일 available   ← 실제 배선
 SYS_KNOX_BRIDGE_URL 환경변수       ──→ 타일 available 만(nginx 라우트 없음 → 매니페스트가 SPA html → 버튼 0)
-둘 다 없음                         ──→ 타일 coming_soon
+둘 다 없음                         ──→ 타일 **숨김**(hide_unless_routed) + 권한 표·요청에서 'Knox 연계' 숨김
 
 ChatActionBar: /systems 에서 knox-bridge 가 available·proxy 인가?
    아니오 → 매니페스트 fetch 없음, 렌더 null (DOM 0, 콘솔 0)
@@ -79,12 +79,14 @@ ChatActionBar: /systems 에서 knox-bridge 가 available·proxy 인가?
 | `frontend/src/components/chat/ChatActionBar.tsx` (신규) | 게이트·fetch·사용자별 캐시·렌더 |
 | `frontend/src/components/chat/ExportBar.tsx` | import 1줄 + 툴바 첫 자식 `<ChatActionBar />` 1줄 |
 | `frontend/src/styles/chatpage.css` | `.cx-export` 폭 제한·줄바꿈, 사이드바 접힘 때 좌상단 컨트롤 자리 비우기 |
-| `backend/config/systems.yaml` | `knox-bridge` 타일(proxy, url 없음 → 목적지 없으면 coming_soon) |
-| `backend/config/access.yaml` | 플랫폼 `knoxbridge` — 타일 `knox-bridge` |
+| `backend/config/systems.yaml` | `knox-bridge` 타일(proxy, url 없음, `hide_unless_routed` → 목적지 없으면 안 보임) |
+| `backend/config/access.yaml` | 플랫폼 `knoxbridge` — 타일 `knox-bridge`, `hide_unless_routed` |
+| `backend/app/schemas/system.py`·`catalog/registry.py` | 타일 `hide_unless_routed` — 목적지 없으면 `enabled=False`(proxy 전용), `live_ids()` |
+| `backend/app/access/policy.py`·`access/routes.py` | 플랫폼 `hide_unless_routed` — 그 타일이 안 열리면 `/auth/access`·`/auth/access/policy` 행과 권한 요청에서 뺀다 |
 | `backend/config/routes.local.env.example` | 켜는 법 주석 |
 | `backend/tests/test_chat_actions_killswitch.py` (신규) | 목적지 없으면 coming_soon, 환경변수·routes 로 available, 추적 routes 파일에 목적지 없음 |
 
-포털 백엔드 **코드**는 바꾸지 않는다(설정 데이터만). CSS 는 툴바 두 규칙만 — 버튼이 늘면 좁은 폭에서 좌상단
+포털 백엔드 코드는 **숨김 표식 하나**만 더한다(사용자 결정 2026-09-17, A-12). CSS 는 툴바 두 규칙만 — 버튼이 늘면 좁은 폭에서 좌상단
 '사이드바 열기'·'새 대화' 를 덮거나 화면 밖으로 밀렸다(context-notes A-9-2).
 
 ## 보이는 변화
@@ -93,7 +95,7 @@ ChatActionBar: /systems 에서 knox-bridge 가 available·proxy 인가?
 |---|---|
 | Knox 개통 박스(routes 줄 + 사이드카 매니페스트) | `plat:knoxbridge` 가진 사람의 챗·심의 툴바에 버튼, `/apps` 에 Knox Bridge 타일 |
 | 모든 박스 | 좁은 폭에서 대화 툴바가 좌상단 컨트롤을 덮지 않고 **줄을 바꾼다**(원래 약 430px 미만에서 덮었다). 360~1400px 에서 가림·화면 밖 0 |
-| 그 밖(dev 등) | `/apps` 에 (`plat:knoxbridge` 보유자에게) **'Knox Bridge — 곧 공개' 카드**, '내 권한'·관리 화면에 **'Knox 연계' 플랫폼 행** |
+| 그 밖(dev 등) | **없다** — 타일·권한 행·권한 요청 모두 숨긴다. 권한 계산(CAEG `*` 의 `plat:knoxbridge`)과 게이트웨이 정책은 그대로 |
 
 ## 범위 밖 — 사이드카가 한다
 

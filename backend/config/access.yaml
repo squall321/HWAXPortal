@@ -87,6 +87,7 @@ platforms:
   - id: knoxbridge
     label: Knox 연계
     systems: [knox-bridge]
+    hide_unless_routed: true   # knox-bridge 가 안 열리는 박스에서는 권한 표·요청에서 뺀다(권한 계산은 그대로)
     # gateway 키(bridge 도구 백엔드)는 사내 gateway_config.json 에서 확인해 더한다 — 표에 없는 백엔드는
     # 게이트웨이가 권한 없이 연다 — 사이드카를 게이트웨이에 붙이기 전에 넣는다(docs/chat-actions A-8).
   - id: stepforge

@@ -152,3 +152,18 @@ need 타입 버림, 모르는 mode 는 fill / 같은 id 첫 것만 / need 권한
 - 붙인 문서(attachedDocs)가 `sendMessage` 뒤에 안 비워진다 — 비우게 고치면 원클릭 send 가 다음 질문용 문서를 가져가 지우므로,
   그때 ChatActionBar 강등 조건에 `attachedDocs.length === 0` 을 더한다.
 - `.cx-export-btn` 에 `:disabled` 규칙이 없어 기존 Word·핸드오프 버튼도 꺼져 있을 때 켜진 것처럼 보인다.
+
+## A-12. Knox 가 없는 박스에서는 숨긴다 — '곧 공개' 로도 보이지 않게(사용자 결정 2026-09-17)
+
+1라운드에서 남긴 가시 변화(미개통 박스의 'Knox Bridge — 곧 공개' 카드·'Knox 연계' 권한 행)를 사용자가 숨기기로 정했다.
+사내 전용 연계는 사외·dev 에서 **영영 열릴 일이 없어** '곧 공개' 가 거짓 약속이 된다.
+
+- **타일** — `systems.yaml` 의 `hide_unless_routed: true`. registry 가 목적지 없는 proxy 타일을 coming_soon 으로 내리면서
+  `enabled=False` 로도 둔다 → `visible_for` 가 거른다. proxy 가 아닌 타일에 쓰면 로드 때 거절한다(다른 타일은 목적지와
+  무관하게 열리므로 뜻이 없다). ste 처럼 표식이 없는 타일은 종전대로 '곧 공개' 로 남는다.
+- **플랫폼** — `access.yaml` 의 `hide_unless_routed: true`. 그 플랫폼의 타일이 이 박스에서 하나도 안 열리면(`catalog.live_ids()`)
+  `/auth/access` 표·`/auth/access/policy`(관리 화면 체크 목록) 행과 **권한 요청**에서 뺀다(요청은 404 '모르는 권한').
+  **표시만 가린다** — 권한 계산(CAEG `*`)·`filter_tiles`·게이트웨이 정책(`/internal/access/policy`)은 바꾸지 않는다.
+  숨긴 플랫폼도 게이트웨이 키가 있으면 도구는 계속 막혀야 하기 때문이다(테스트가 정책 응답이 같음을 본다).
+- 관리 화면에서 사용자 허가를 저장하면 기존 허가 전체에서 시작하므로 숨긴 키가 이미 있어도 지워지지 않는다.
+- 판정은 요청마다 카탈로그를 본다 — routes 줄을 넣고 `POST /systems/reload` 하면 타일·권한 행이 같이 나타난다.

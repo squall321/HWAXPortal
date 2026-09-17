@@ -65,3 +65,37 @@ def test_추적_routes_파일에는_knox_목적지가_없다():
 def test_타일은_knoxbridge_플랫폼_허가로만_보인다():
     pol = parse_policy(yaml.safe_load((_BACKEND / "config" / "access.yaml").read_text(encoding="utf-8")))
     assert pol.system_key("knox-bridge") == "plat:knoxbridge"
+
+
+# ── Knox 가 없는 박스에서는 숨긴다(사용자 결정 2026-09-17) ─────────────────────────────────────
+def test_목적지가_없으면_타일_목록에서_빠진다(tmp_path, monkeypatch):
+    """coming_soon 카드로도 안 보인다 — 그 박스에서는 영영 열릴 일이 없다. 권한 대조는 계속 표에 남는다."""
+    monkeypatch.delenv(_ENV, raising=False)
+    base = tmp_path / "routes.env"
+    base.write_text("", encoding="utf-8")
+    reg = CatalogRegistry(Settings(routes_path=str(base)))
+    admin = ["portal-admin"]
+    assert "knox-bridge" not in {s.id for s in reg.visible_for(admin)}
+    assert "knox-bridge" not in reg.live_ids()
+    monkeypatch.setenv(_ENV, "http://127.0.0.1:1/")
+    reg.reload()
+    assert "knox-bridge" in {s.id for s in reg.visible_for(admin)} and "knox-bridge" in reg.live_ids()
+
+
+def test_숨김은_proxy_타일과_타일_있는_플랫폼에만():
+    import pytest
+    from app.schemas.system import LinkedSystem
+
+    with pytest.raises(ValueError, match="proxy"):
+        LinkedSystem(id="x", name="x", integration_type="external-url", url="http://x", hide_unless_routed=True)
+    with pytest.raises(ValueError, match="systems"):
+        parse_policy({"platforms": [{"id": "p", "label": "p", "hide_unless_routed": True}]})
+
+
+def test_플랫폼_숨김은_표시만이고_게이트웨이_정책은_그대로다():
+    pol = parse_policy({"platforms": [
+        {"id": "kb", "label": "K", "systems": ["knox-bridge"], "gateway": ["bridge"], "hide_unless_routed": True},
+        {"id": "sf", "label": "S", "systems": ["step"], "gateway": ["heax-step_forge"]}]})
+    assert pol.hidden_keys(set()) == {"plat:kb"}            # 숨김 표식이 없는 플랫폼은 늘 보인다
+    assert pol.hidden_keys({"knox-bridge"}) == set()
+    assert pol.gateway_policy()["bridge"] == ["plat:kb"], "숨긴 플랫폼도 게이트웨이 권한은 계속 막아야 한다"

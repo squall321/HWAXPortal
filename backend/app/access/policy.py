@@ -39,6 +39,8 @@ class Item:
     implies: tuple[str, ...] = ()
     systems: tuple[str, ...] = ()   # 포털 타일 id
     gateway: tuple[str, ...] = ()   # 게이트웨이 백엔드 키
+    # 그 타일이 이 박스에서 하나도 안 열리면 권한 표·요청에서 숨긴다(표시만 — 권한 계산·게이트웨이 정책은 그대로).
+    hide_unless_routed: bool = False
 
 
 @dataclass
@@ -72,6 +74,11 @@ class Policy:
         item = self._by_key.get(key)
         return [k for k in (item.implies if item else ()) if k in self._by_key]
 
+    def hidden_keys(self, live_systems: set[str]) -> set[str]:
+        """이 박스에서 숨길 플랫폼 키 — `hide_unless_routed` 인데 그 타일이 하나도 안 열린다."""
+        return {i.key for i in self.items
+                if i.hide_unless_routed and not (set(i.systems) & live_systems)}
+
     def system_key(self, system_id: str) -> str | None:
         """포털 타일 → 그 타일을 여는 플랫폼 키."""
         return next((i.key for i in self.items if system_id in i.systems), None)
@@ -97,12 +104,15 @@ def parse_policy(raw: dict) -> Policy:
                 key=f"{prefix}{d['id']}", id=str(d["id"]), kind=kind,
                 label=str(d.get("label") or d["id"]),
                 desc=str(d.get("desc") or ""), implies=tuple(d.get("implies") or ()),
-                systems=tuple(d.get("systems") or ()), gateway=tuple(d.get("gateway") or ())))
+                systems=tuple(d.get("systems") or ()), gateway=tuple(d.get("gateway") or ()),
+                hide_unless_routed=bool(d.get("hide_unless_routed", False))))
     keys = [i.key for i in items]
     if len(keys) != len(set(keys)):
         raise ValueError("access.yaml: 같은 id 가 두 번 있다")
     known = set(keys)
     for i in items:
+        if i.hide_unless_routed and not i.systems:
+            raise ValueError(f"access.yaml: {i.key} hide_unless_routed 는 systems 가 있는 플랫폼에만 쓴다")
         bad = [k for k in i.implies if k not in known]
         if bad:
             raise ValueError(f"access.yaml: {i.key} implies 에 없는 키 {bad}")
