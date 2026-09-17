@@ -331,6 +331,9 @@ Bearer $KR_PAT      전송 상한 512MB(압축) / 해제 2048MB
 KooD3plotReader V1.3.0 의 `references/` 에 번들·standalone 로 들어 있다. **라이브러리가
 아니라 실행 파일**이라, 어디에 두든 "그 자리에서 돌린다" 가 된다.
 
+> **2026-09-17 결정(W-93)** — DynaForge 후처리 연산이 클러스터에 후처리 잡을 걸고 **HTML 만 받는다**(d3plot 은 나르지
+> 않는다). 클러스터 길은 대시보드 REST 기본·ssh 대체. 자동 반입 리포트의 명의는 선택지 다섯 중 결정 대기.
+
 **옮겨지면 무엇이 달라지나.** `sphere_report.html` 이 9.8MB, `impact_report.html` 이 7.9MB 인데 그걸
 나르려고 REST intake 를 쓰고 `report_id` 를 사람이 변수로 넣고 있다 — **그건 설계가 아니라 우회다.**
 

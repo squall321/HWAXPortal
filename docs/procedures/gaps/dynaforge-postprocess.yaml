@@ -39,6 +39,8 @@ our_part: >-
   파일 경로·postprocess 인자)을 절차에 박으면 옮겨진 뒤 그 절차가 전부 거짓말이 된다.
 
 when_it_lands:
+  - "2026-09-17 결정(W-93) — DynaForge 후처리 연산이 클러스터에 후처리 잡을 걸고 리포트 HTML 만 받는다. 클러스터 길은
+     대시보드 REST 기본·ssh 대체. 절차는 run_operation(postprocess) 한 단계 + 상태 조회. 리포트 명의는 결정 대기"
   - "DynaForge 연산으로 오면 — `run_operation(operation='postprocess')` + `describe_operation`
      이 계약을 준다. 등록부(dispatchers.yaml)에 DynaForge 가 이미 있어 **한 줄도 안 고친다**"
   - "직접 도구로 오면 — 인자 스키마가 필요하다. 지금 `job_postprocess` 는 `args` 자유
