@@ -418,7 +418,10 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       대체(REST 는 KooSlurm 파일 REST 인증·소유 검사가 선행). 수집기는 DynaForge 안으로 — 귀환 매니페스트는 여전히 필요
 - [x] **결정**(2026-09-17, W-93) — 자동 반입 리포트는 **② 예약자 명의 + 소속 단위 읽기 공유**(기준: 과제 간 비교).
       과제 키는 목록(AI DataHub 과제 코드)에서, 잡 하나에 리포트 하나(외부 잡 키 유일), 해석 조건을 메타로
-- [ ] 리포별 요청 — KooRemapper(§7 갱신) · KooSlurm · pyKooCAE · 소속 전달(포털·게이트웨이)
+- [x] 리포별 요청(2026-09-17) — KooRemapper `REQUEST-postprocess-operation.md` §7 · KooSlurm `docs/REQUEST-result-return.md`
+      (파일 REST 인증·귀환 매니페스트·후처리 잡 제출 경로 등 여섯) · pyKooCAE `docs/REQUEST-drop-impact-result-return.md`
+      (부분충격 리포트 미생성·초속 이중 합산 등 여섯). 초안은 현재 코드로 재확인 + 반박 검증 뒤 반영
+- [ ] 소속 전달 — DynaForge 가 소속 단위 읽기 공유를 하려면 게이트웨이 헤더 또는 포털 권한 조회에 소속이 필요하다(포털·게이트웨이)
 - [x] 포털 — 평문 결과에서 잡 ID 추출(W-94) — `save: {slurm_job_id: "re:job_id=(\\d+)"}`, 제출 씨앗 둘에 적용
 - [ ] 포털 — 과제 변수 목록 선택 · 제출 씨앗 예약 단계(연산이 오면) · 회수/부품 보고서 씨앗
 - [x] KooRemapper 요청서에 결정 반영(`REQUEST-postprocess-operation.md` §7)
