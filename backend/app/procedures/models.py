@@ -196,6 +196,9 @@ class Select(BaseModel):
     label: str | None = None           # 후보를 사람에게 보일 때 쓸 필드(기본 = save)
     on_many: Literal["ask", "first", "fail"] = "ask"
     on_none: Literal["fail", "skip"] = "fail"
+    # 여럿을 **골라 한 단계에 넘긴다**(태그 적용처럼 여럿이 답인 자리). 변수에 목록이 담긴다.
+    # 하나를 고르는 `pick`·전부를 각각 도는 `fan-out` 과 다른 셋째 길이다(PLAN §10-1).
+    multi: bool = False
 
     @property
     def var(self) -> str:
@@ -207,6 +210,57 @@ class Select(BaseModel):
         if not str(v).strip():
             raise ValueError("select 의 from·save 는 비울 수 없다")
         return v
+
+    @model_validator(mode="after")
+    def _multi_needs_ask(self):
+        # `first` 는 "하나를 조용히 집어라" 이고 `fail` 은 "여럿이면 멈춰라" 다 — 둘 다 여럿을
+        # 넘기는 것과 모순이다. 모순을 조용히 한쪽으로 해석하지 않는다.
+        if self.multi and self.on_many != "ask":
+            raise ValueError("select.multi 는 on_many: ask 에서만 쓴다(여럿을 사람이 고른다)")
+        return self
+
+
+class Check(BaseModel):
+    """결과의 한 칸이 **기대한 값인가**. 아니면 그 단계에서 멈춘다.
+
+    ⚠ 판정기(judge)는 "도구가 실패했나" 만 본다. 성공한 응답이 **엉뚱한 대상의 것**인 경우는
+    못 잡는다 — 전각도 회수 절차가 impact 리포트를 받아도 판독은 전부 성공하고, 보고서는
+    다른 해석 위에서 나온다. 그 자리를 절차가 선언으로 막는다(PLAN §5-6 의 빈 값 규율과 같은 결).
+    """
+    model_config = {"extra": "forbid", "populate_by_name": True}
+
+    path: str                                   # 결과에서 볼 칸 (`kind`·`parts[0].part_id`)
+    equals: Any | None = None                   # 이 값과 같아야 한다
+    one_of: list[Any] | None = Field(default=None, alias="in")   # 이 중 하나여야 한다
+    not_empty: bool = False                     # 비어 있지 않기만 하면 된다
+    why: str | None = None                      # 사람에게 보일 이유(실패 문구에 실린다)
+
+    @field_validator("path")
+    @classmethod
+    def _path(cls, v: str) -> str:
+        if not str(v).strip():
+            raise ValueError("assert 의 path 는 비울 수 없다")
+        return v
+
+    @model_validator(mode="after")
+    def _one_rule(self):
+        set_ = [self.equals is not None, self.one_of is not None, self.not_empty]
+        if sum(set_) != 1:
+            raise ValueError(f"assert {self.path}: equals·in·not_empty 중 **하나만** 쓴다")
+        if self.one_of is not None and not self.one_of:
+            raise ValueError(f"assert {self.path}: in 이 비었다")
+        return self
+
+    def check(self, got) -> str | None:
+        """어긋나면 사람이 읽을 이유, 맞으면 None."""
+        tail = f" — {self.why}" if self.why else ""
+        if self.not_empty:
+            from app.procedures import template as _t
+            return None if not _t.is_empty(got) else f"`{self.path}` 가 비었다{tail}"
+        if self.equals is not None:
+            return None if got == self.equals else f"`{self.path}` 가 {got!r} 다 — {self.equals!r} 를 기대했다{tail}"
+        return None if got in (self.one_of or []) else \
+            f"`{self.path}` 가 {got!r} 다 — {self.one_of!r} 중 하나를 기대했다{tail}"
 
 
 class Step(BaseModel):
@@ -230,6 +284,8 @@ class Step(BaseModel):
     # 가 없는 실패 문구(예: "제출 응답 파싱 실패")는 표식으로만 가를 수 있다(judge.py _TEXT_FAIL 주석).
     ok_text: str | None = None
     warmup: bool = False       # 한 번 먼저 부르고 버린다. 타임아웃이 나도 실패로 안 친다
+    # 값 단언 — 성공한 응답이 **기대한 대상의 것**인지 본다. 어긋나면 그 단계에서 멈춘다.
+    asserts: list[Check] = Field(default_factory=list, alias="assert")
     select: "Select | None" = None   # 룰로 고른다 — PLAN §10-1
     note: str | None = None
 
@@ -425,6 +481,20 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
                 continue
             if groups != 1:
                 errs.append(f"{at}: save {key} 정규식은 캡처 그룹이 정확히 하나여야 한다(뽑을 값) — 지금 {groups}개")
+
+        # ⑦-2 값 단언 — 경로 표기는 save 와 같은 규칙이다(평문은 re:, JSON 은 점 표기).
+        for chk in st.asserts:
+            is_text = chk.path.strip().startswith(template.TEXT_PATH)
+            if st.raw and not is_text:
+                errs.append(f"{at}: assert `{chk.path}` — raw 단계는 평문 정규식(re:…)으로만 본다")
+            if is_text and not st.raw:
+                errs.append(f"{at}: assert `{chk.path}` — re: 는 raw 단계에만 쓴다")
+            if is_text:
+                try:
+                    if re.compile(chk.path.strip()[len(template.TEXT_PATH):]).groups != 1:
+                        errs.append(f"{at}: assert `{chk.path}` 정규식은 캡처 그룹이 정확히 하나여야 한다")
+                except re.error as exc:
+                    errs.append(f"{at}: assert `{chk.path}` 정규식이 깨졌다 — {exc}")
 
         # ⑧ 선택 — 룰로 고른다(PLAN §10-1). 0/1/N 정책이 이 검사의 요점이다.
         if st.select is not None:

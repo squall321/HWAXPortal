@@ -221,6 +221,16 @@ export function pickCandidate(runId: string, ix: number, value: unknown) {
   );
 }
 
+/** 여럿이 한 인자인 자리(태그 적용 등) — 골라서 **목록 하나**로 넘긴다(select.multi).
+ *  하나 고르기와 섞으면 다음 단계가 목록 대신 스칼라를 받는다 — 서버가 형을 보고 거절한다. */
+export function pickCandidates(runId: string, ix: number, values: unknown[]) {
+  return post<{ picked: unknown[]; resumed: boolean }>(
+    `/runs/${runId}/steps/${ix}/pick`,
+    { values },
+    '후보를 고르지 못했습니다.',
+  );
+}
+
 export type BatchTable = {
   batch_id: string;
   count: number;

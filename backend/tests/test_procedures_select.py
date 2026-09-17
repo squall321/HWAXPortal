@@ -164,3 +164,39 @@ def test_고른_것의_값이_비면_다음_단계로_안_넘긴다():
     assert out["kind"] == "select_empty", out
     assert "part" not in scope and store.inputs == {}
     assert store.state == "failed"
+
+
+# ── 여럿을 골라 **한 단계에** 넘긴다(select.multi) ─────────────────────────────────────
+# 하나 고르기(pick)·전부 각각 돌리기(fan-out) 로는 안 되는 자리가 있다 — 태그 적용처럼
+# **여럿이 한 인자**인 경우다. 그때까지 절차는 후보만 보여 주고, 붙이는 일은 사람이 RA 화면에서 했다.
+_MULTI = {"from": "parts", "save": "id", "as": "tag_ids", "label": "value", "multi": True}
+
+
+def test_여럿_고르기는_사람에게_묻고_목록_자리를_비워_둔다():
+    out, scope, store = _pick([{"id": 11, "value": "A"}, {"id": 12, "value": "B"}], **_MULTI)
+    assert out is not None and out["kind"] == "select_ask_many", out
+    assert [c["value"] for c in out["candidates"]] == [11, 12]
+    assert [c["label"] for c in out["candidates"]] == ["A", "B"]
+    assert "tag_ids" not in scope, "사람이 고르기 전에는 담지 않는다"
+    notes = store.finished[-1]["notes"]
+    assert notes["pick_multi"] is True and notes["pick_into"] == "tag_ids"
+
+
+def test_후보가_하나면_묻지_않고_목록_하나로_담는다():
+    """여럿일 때만 사람에게 간다 — on_many 규율과 같다. 형은 언제나 목록이다."""
+    out, scope, store = _pick([{"id": 11, "value": "A"}], **_MULTI)
+    assert out is None and scope["tag_ids"] == [11], scope
+    assert store.inputs == {"tag_ids": [11]}, "재개·다시 돌리기용으로 기록에 남겨야 한다"
+
+
+def test_여럿_고르기에서_빈_칸은_멈춘다():
+    out, scope, _ = _pick([{"id": 11, "value": "A"}, {"id": None, "value": "B"}], **_MULTI)
+    assert out is not None and out["kind"] == "select_empty", out
+    assert "tag_ids" not in scope
+
+
+def test_multi_는_조용히_집는_설정과_같이_못_쓴다():
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError, match="on_many: ask"):
+        _spec({"from": "items", "save": "id", "as": "tag_ids", "multi": True, "on_many": "first"})

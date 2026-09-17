@@ -8,6 +8,7 @@ import {
   ackGate,
   fanOut,
   pickCandidate,
+  pickCandidates,
   stepResult,
   type RunDetail,
   type StepRow,
@@ -75,6 +76,11 @@ function StepCard({
     | { i: number; label: string; value: unknown }[]
     | null;
   const asking = run.state === 'gated' && step.stage === 'select:ask' && !!cands?.length;
+  // 여럿이 한 인자인 자리(태그 적용 등) — 고른 것을 **목록 하나**로 넘긴다. 펼치기(배치)와 다르다:
+  // 펼치기는 실행 N 개를 만들고, 이쪽은 한 실행이 한 번 부른다.
+  const askingMany =
+    run.state === 'gated' && step.stage === 'select:ask_many' && !!cands?.length;
+  const [chosen, setChosen] = useState<number[]>([]);
   const into = (step.notes?.pick_into ?? '') as string;
   const notes = step.notes ?? {};
   const warnings = (notes.warnings ?? notes.warning) as unknown;
@@ -198,6 +204,72 @@ function StepCard({
                 {c.label || String(c.value)}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {askingMany && (
+        <div
+          style={{
+            marginTop: '0.6rem',
+            padding: '0.7rem',
+            borderRadius: 6,
+            border: '1px solid #d9a441',
+            background: 'rgba(217,164,65,0.08)',
+          }}
+        >
+          <strong style={{ color: '#d9a441' }}>{cands!.length}개 중에서 고르세요</strong>
+          <p style={{ color: 'var(--muted)', fontSize: '0.82rem', margin: '0.3rem 0 0.5rem' }}>
+            고른 것을 <code>{into}</code> 에 <b>목록으로</b> 담아 다음 단계가 한 번에 부릅니다.
+            고르지 않은 것은 적용되지 않습니다.
+          </p>
+          <div style={{ display: 'flex', gap: '0.3rem 0.9rem', flexWrap: 'wrap' }}>
+            {cands!.map((c) => (
+              <label key={c.i} style={{ fontSize: '0.84rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={chosen.includes(c.i)}
+                  disabled={busy}
+                  onChange={() =>
+                    setChosen((prev) =>
+                      prev.includes(c.i) ? prev.filter((i) => i !== c.i) : [...prev, c.i],
+                    )
+                  }
+                />{' '}
+                {c.label || String(c.value)}
+              </label>
+            ))}
+          </div>
+          <div style={{ marginTop: '0.55rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              type="button"
+              disabled={busy || chosen.length === 0}
+              style={{
+                background: chosen.length ? 'rgba(217,164,65,0.18)' : 'var(--bg)',
+                color: 'var(--fg)', border: '1px solid #d9a441', borderRadius: 4,
+                padding: '0.3rem 0.8rem', fontSize: '0.82rem',
+                cursor: chosen.length ? 'pointer' : 'not-allowed',
+                opacity: chosen.length ? 1 : 0.5,
+              }}
+              onClick={async () => {
+                setBusy(true);
+                setErr(null);
+                try {
+                  const picked = cands!.filter((c) => chosen.includes(c.i)).map((c) => c.value);
+                  await pickCandidates(run.id, step.ix, picked);
+                  onChanged();
+                } catch (e) {
+                  setErr((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              고른 {chosen.length}개로 계속
+            </button>
+            <span style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>
+              다음 단계가 사람 확인을 받는 단계면 거기서 한 번 더 멈춥니다.
+            </span>
           </div>
         </div>
       )}

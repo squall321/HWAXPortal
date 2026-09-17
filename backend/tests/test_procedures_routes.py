@@ -1383,3 +1383,67 @@ def test_게이트웨이가_안_뜨면_502_에_연결_실패가_실린다(user):
         assert r.status_code == 502 and "연결 실패" in r.json()["detail"], r.text
     finally:
         app.state.procedures_runner = None
+
+
+# ── 여럿을 골라 한 단계에 넘긴다(select.multi) ────────────────────────────
+def _gated_multi_run(c, h):
+    """select:ask_many 로 멈춘 실행 — 태그 후보를 사람이 고르는 자리다."""
+    store = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spec = {"title": "태그 적용",
+            "vars": [{"key": "rid", "label": "보고서"}],
+            "steps": [{"backend": "reportarchive", "tool": "suggest_report_tags",
+                       "args": {"report_id": "{{rid}}"},
+                       "select": {"from": "items", "save": "id", "as": "tag_ids",
+                                  "label": "value", "multi": True}},
+                      {"backend": "reportarchive", "tool": "add_report_tags", "gate": "human",
+                       "args": {"report_id": "{{rid}}", "entity_ids": "{{tag_ids}}"}}]}
+    got = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec}, headers=h).json()
+    assert "version_id" in got, got
+    rid = store.create_run(owner_sub=me, run_by=me, procedure_version_id=got["version_id"],
+                           inputs={"rid": 4210}, origin="replay", mode="live")
+    store.begin_step(rid, 0, backend="reportarchive", tool="suggest_report_tags", args={}, mode="live")
+    store.finish_step(rid, 0, ok=False, state="pending", stage="select:ask_many", error=None,
+                      notes={"pick_into": "tag_ids", "pick_multi": True,
+                             "candidates": [{"i": 0, "label": "A22", "value": 101},
+                                            {"i": 1, "label": "낙하", "value": 102},
+                                            {"i": 2, "label": "PCB", "value": 103}]})
+    store.set_run_state(rid, "gated", stage="step:0")
+    return rid
+
+
+def test_여럿을_골라_목록으로_넘긴다(user):
+    c, h = user
+    rid = _gated_multi_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"values": [101, 103, 101]}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["picked"] == [101, 103], "같은 것을 두 번 고르면 도구가 같은 일을 두 번 한다"
+    run = c.get(f"{PREFIX}/runs/{rid}", headers=h).json()
+    assert run["inputs"]["tag_ids"] == [101, 103]
+
+
+def test_하나짜리와_여럿짜리를_섞지_않는다(user):
+    c, h = user
+    rid = _gated_multi_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"value": 101}, headers=h)
+    assert r.status_code == 422 and "values" in r.json()["detail"], r.text
+    rid2 = _gated_pick_run(c, h)
+    r2 = c.post(f"{PREFIX}/runs/{rid2}/steps/0/pick", json={"values": ["PANEL_1"]}, headers=h)
+    assert r2.status_code == 422 and "value" in r2.json()["detail"], r2.text
+
+
+def test_여럿_고르기도_보여_준_후보_안에서만(user):
+    c, h = user
+    rid = _gated_multi_run(c, h)
+    assert c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"values": [101, 999]},
+                  headers=h).status_code == 422
+    assert c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"values": []},
+                  headers=h).status_code == 422
+
+
+def test_여럿_고르기_단계는_펼치지_않는다(user):
+    """펼치면 실행마다 값 하나가 스칼라로 들어가고, 같은 보고서에 태그를 한 개씩 N 번 붙인다."""
+    c, h = user
+    rid = _gated_multi_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={"mode": "plan"}, headers=h)
+    assert r.status_code == 422 and "골라서 한 번에" in r.json()["detail"], r.text

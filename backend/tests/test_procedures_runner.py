@@ -569,3 +569,117 @@ def test_catalog_lists_tools_and_closes_the_session(kit):
         assert set(cat) == {"b_a"} and cat["b_a"]["description"] == "설명"
         assert g.deleted == ["s1"], "카탈로그 조회도 세션을 닫아야 한다"
     asyncio.run(go(*kit))
+
+
+# ── 값 단언 — 성공한 응답이 **기대한 대상의 것**인가 ─────────────────────────────────────────
+def test_값_단언이_어긋나면_그_단계에서_멈춘다(kit):
+    """판정기는 '도구가 실패했나' 만 본다. 전각도 회수 절차가 impact 리포트를 받아도 판독은 전부
+    성공하고 보고서만 다른 해석 위에서 나온다 — 그 자리를 절차가 선언으로 막는다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {"description": "d", "inputSchema": {}},
+                        "b_b": {"description": "d", "inputSchema": {}}},
+                 replies={"b_a": ok({"kind": "impact"}), "b_b": ok({})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "a",
+                       "assert": [{"path": "kind", "equals": "sphere", "why": "전각도 리포트여야 한다"}]},
+                      {"backend": "b", "tool": "b"}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "failed" and out["kind"] == "assert_failed", out
+        assert "sphere" in out["error"] and "전각도 리포트여야" in out["error"], out["error"]
+        assert [c["arguments"]["name"] for c in g.calls] == ["b_a"], "어긋난 뒤 단계는 부르지 않는다"
+    asyncio.run(go(*kit))
+
+
+def test_값_단언이_맞으면_그대로_간다(kit):
+    async def go(store, build):
+        g = Gate(tools={"b_a": {"description": "d", "inputSchema": {}}},
+                 replies={"b_a": ok({"kind": "sphere", "parts": [{"part_id": 3}]})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "a",
+                       "assert": [{"path": "kind", "in": ["sphere", "deep"]},
+                                  {"path": "parts[0].part_id", "not_empty": True}],
+                       "save": {"kind": "kind"}}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "done", out
+        assert store.get_run(rid)["inputs"]["kind"] == "sphere"
+    asyncio.run(go(*kit))
+
+
+def test_단언_경로가_안_풀리면_그것도_멈춘다(kit):
+    """'없는 칸' 을 '기대와 같다' 로 보면, 단언이 붙은 단계가 전부 무사통과한다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {"description": "d", "inputSchema": {}}}, replies={"b_a": ok({"other": 1})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "a", "assert": [{"path": "kind", "equals": "sphere"}]}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "failed" and out["kind"] == "assert_missing", out
+    asyncio.run(go(*kit))
+
+
+# ── 인자를 못 풀면 실행이 running 인 채 남았다(2026-09-17 재현) ─────────────
+def test_앞_단계가_건너뛰면_뒤_단계는_실행을_세우고_끝난다(kit):
+    """`TemplateError` 가 `_loop` 밖으로 나가면 실행은 **`running` 인 채 영원히** 남는다.
+
+    화면에는 도는 것으로 보이고, 끝나지 않으니 재개도 취소도 아니다. `select on_none: skip`
+    이 그 입구다 — 앞 단계가 건너뛰면 뒤 단계가 쓸 변수가 없다.
+    """
+    async def go(store, build):
+        g = Gate(tools={"b_find": {}, "b_use": {}},
+                 replies={"b_find": ok({"items": []}), "b_use": ok({"done": 1})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "find",
+                       "select": {"from": "items", "save": "id", "as": "ids", "on_none": "skip"}},
+                      {"backend": "b", "tool": "use", "args": {"ids": "{{ids}}"}}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "failed" and out["kind"] == "args_missing", out
+        run = store.get_run(rid)
+        assert run["state"] == "failed", "running 인 채 남으면 사람이 손댈 수 없다"
+        assert [(s["ix"], s["state"], s["stage"]) for s in run["steps"]] == [
+            (0, "skipped", "select:none"), (1, "failed", "args")]
+        assert "ids" in run["steps"][1]["error"], run["steps"][1]["error"]
+        assert [c["arguments"]["name"] for c in g.calls] == ["b_find"], "못 푼 인자로 부르지 않는다"
+    asyncio.run(go(*kit))
+
+
+def test_게이트_단계도_같은_자리에서_선다(kit):
+    """게이트는 치환을 **따로** 했다 — 거기서 터지면 승인 화면도 못 뜬 채 running 이었다."""
+    async def go(store, build):
+        g = Gate(tools={"b_find": {}, "b_use": {}},
+                 replies={"b_find": ok({"items": []}), "b_use": ok({"done": 1})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "find",
+                       "select": {"from": "items", "save": "id", "as": "ids", "on_none": "skip"}},
+                      {"backend": "b", "tool": "use", "gate": "human", "args": {"ids": "{{ids}}"}}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "failed" and out["kind"] == "args_missing", out
+        assert store.get_run(rid)["state"] == "failed"
+    asyncio.run(go(*kit))
+
+
+def test_승인한_인자_그대로_나간다(kit):
+    """게이트와 호출이 **각각** 치환했다 — 둘 사이에 범위가 바뀌면 승인한 것과 다른 것이 나간다."""
+    async def go(store, build):
+        g = Gate(tools={"b_w": {}}, replies={"b_w": ok({"done": 1})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "w", "gate": "human",
+                       "args": {"who": "{{me.email}}", "n": 1}}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        assert out["state"] == "gated", out
+        store.ack_gate(rid, 0, by="u1", args_sha256=out["args_sha256"])
+        out2 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL, start_at=0)
+        await r.aclose()
+        assert out2["state"] == "done", out2
+        sent = [c for c in g.calls if c["arguments"].get("name") == "b_w"]
+        assert sent and sent[0]["arguments"]["arguments"] == {"who": "u1@x.io", "n": 1}
+    asyncio.run(go(*kit))

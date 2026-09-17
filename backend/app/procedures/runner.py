@@ -280,9 +280,16 @@ class ProceduresRunner:
                 self.store.set_run_state(run_id, "failed", stage="owner_inactive", ended=True)
                 return {"state": "failed", "stage": "owner_inactive", "stopped_at": ix}
 
+            # 인자 치환은 **여기서 한 번**이다. 게이트가 따로 치환하면 승인한 지문과
+            # 실제로 나가는 인자가 다른 것을 셀 수 있다 — 같은 값을 아래로 내린다.
+            args, bad = self._args(run_id, ix, st, scope)
+            if bad is not None:
+                self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                return {"state": "failed", "stopped_at": ix, "kind": bad.kind,
+                        "error": J.short_error(bad)}
+
             # 게이트 — 승인이 없으면 여기서 멈춘다. 인자 지문에 묶인 1회용 승인이다.
             if st.gate == "human":
-                args = template.substitute(st.args, scope)
                 ack = self.store.gate_ack(run_id, ix)
                 want = _sha(args)
                 if ack is None or ack["args_sha256"] != want:
@@ -294,7 +301,7 @@ class ProceduresRunner:
                     self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
                     return {"state": "gated", "stopped_at": ix, "args_sha256": want}
 
-            v = await self._one(run_id, ix, st, scope, principal, sess)
+            v = await self._one(run_id, ix, st, scope, principal, sess, args=args)
             if v is None:  # warmup — 결과를 버린다
                 continue
             if not v.ok:
@@ -385,7 +392,12 @@ class ProceduresRunner:
             try:
                 await sess.open(pat)
                 self.store.set_run_state(run_id, "running")
-                v = await self._one(run_id, ix, step, scope, principal, sess)
+                args, bad = self._args(run_id, ix, step, scope)
+                if bad is not None:
+                    self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                    return {"ix": ix, "ok": False, "kind": bad.kind, "saved": {},
+                            "error": J.short_error(bad)}
+                v = await self._one(run_id, ix, step, scope, principal, sess, args=args)
                 if v is None:
                     return {"ix": ix, "state": "skipped"}
                 saved = {}
@@ -517,6 +529,33 @@ class ProceduresRunner:
             return {"state": "failed", "stopped_at": ix, "kind": "select_none",
                     "error": "룰이 아무것도 못 골랐다"}
 
+        if sel.multi:
+            # 여럿이 답인 자리 — 사람이 **골라서 한 단계에 넘긴다**(태그 적용 등). 하나뿐이면
+            # 묻지 않는다(on_many 규율과 같다 — 여럿일 때만 사람에게 간다).
+            values, empty = [], []
+            for r in rows:
+                val = r.get(sel.save)
+                (empty if template.is_empty(val) else values).append(val)
+            if empty:
+                self.store.finish_step(run_id, ix, ok=False, stage="select:empty",
+                                       error=f"후보 {len(empty)}개의 `{sel.save}` 가 빈 값이다 — "
+                                             f"빈 값을 다음 단계에 넘기지 않는다")
+                self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                return {"state": "failed", "stopped_at": ix, "kind": "select_empty",
+                        "error": f"`{sel.save}` 가 빈 값인 후보가 있다"}
+            if len(values) == 1:
+                scope[sel.var] = values
+                self.store.merge_inputs(run_id, {sel.var: values})
+                return None
+            shown = [{"i": i, "label": str(r.get(sel.label or sel.save, ""))[:120],
+                      "value": r.get(sel.save)} for i, r in enumerate(rows[:50])]
+            self.store.finish_step(run_id, ix, ok=False, state="pending", stage="select:ask_many",
+                                   error=None,
+                                   notes={"candidates": shown, "pick_into": sel.var, "pick_multi": True})
+            self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
+            return {"state": "gated", "stopped_at": ix, "kind": "select_ask_many",
+                    "candidates": shown}
+
         if len(rows) > 1 and sel.on_many != "first":
             shown = [{"i": i, "label": str(r.get(sel.label or sel.save, ""))[:120],
                       "value": r.get(sel.save)} for i, r in enumerate(rows[:50])]
@@ -585,9 +624,29 @@ class ProceduresRunner:
             finally:
                 await sess.close(pat)
 
-    async def _one(self, run_id, ix, st: Step, scope, principal, sess):
-        """단계 하나 — 치환 → 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다."""
-        args = template.substitute(st.args, scope)
+    def _args(self, run_id, ix, st: Step, scope) -> tuple[dict | None, "J.Verdict | None"]:
+        """인자 치환 — 못 풀면 **그 단계에서** 끝낸다. 예외를 밖으로 내보내지 않는다.
+
+        ⚠ 내보내면 `_loop` 도 `step_once` 도 그걸 안 잡아 실행이 **`running` 인 채 영원히**
+        남는다(2026-09-17 재현: 앞 단계가 `select on_none: skip` 으로 건너뛰면 뒤 단계가
+        쓸 변수가 없다). 화면에는 도는 것처럼 보이고, 끝나지 않으니 재개도 취소도 아니다 —
+        runner.py:309 가 적어 둔 그 사고의 **다른 입구**다.
+        """
+        try:
+            return template.substitute(st.args, scope), None
+        except template.TemplateError as exc:
+            self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=st.args,
+                                  schema_fp=st.schema_fp, expect=st.expect, mode="live")
+            self.store.finish_step(
+                run_id, ix, ok=False, stage="args",
+                error=f"{exc} — 앞 단계가 그 값을 안 냈다(건너뛰었거나 뽑지 못했다)")
+            return None, J.Verdict(False, "args", "args_missing", error=str(exc))
+
+    async def _one(self, run_id, ix, st: Step, scope, principal, sess, *, args: dict):
+        """단계 하나 — 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다.
+
+        인자는 이미 치환된 것을 받는다(`_args`) — 게이트가 승인한 지문 그대로 나간다.
+        """
         pat = self.mint_pat(principal, run_id, ix)
         timeout = WARMUP_TIMEOUT if st.warmup else EXPECT_TIMEOUT.get(st.expect, 30.0)
 
@@ -625,6 +684,20 @@ class ProceduresRunner:
         ms = int((time.perf_counter() - t0) * 1000)
         text, other = J.join_content(content)
         v = J.judge(is_error=is_error, text=text, raw=st.raw, unwrap=st.unwrap, ok_text=st.ok_text)
+
+        # 값 단언 — **save 보다 먼저** 본다. 엉뚱한 대상의 응답에서 값을 뽑아 다음 단계로
+        # 넘기면, 그 뒤 판독은 전부 성공하고 보고서만 다른 해석 위에서 나온다.
+        if v.ok and st.asserts:
+            for chk in st.asserts:
+                try:
+                    got = template.extract(v.parsed, chk.path)
+                except template.TemplateError as exc:
+                    v = J.Verdict(False, "assert", "assert_missing", parsed=v.parsed, error=str(exc))
+                    break
+                why = chk.check(got)
+                if why:
+                    v = J.Verdict(False, "assert", "assert_failed", parsed=v.parsed, error=why)
+                    break
 
         # `save` 는 저장·절단 **전에** 원문에서 한다. 프리뷰만 남은 뒤엔 값이 없다.
         if v.ok and st.save:

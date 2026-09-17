@@ -619,7 +619,8 @@ class AckIn(BaseModel):
 
 
 class PickIn(BaseModel):
-    value: Any   # 사람이 고른 후보의 값(목록의 `value`)
+    value: Any = None            # 하나 고르기 — 후보 목록의 `value`
+    values: list | None = None   # 여럿 고르기(select.multi) — 고른 값들
 
 
 @router.post("/runs/{run_id}/steps/{ix}/pick", dependencies=[Depends(require_csrf)])
@@ -643,20 +644,40 @@ async def pick(request: Request, run_id: str, ix: int, body: PickIn,
     into = notes.get("pick_into")
     if not cands or not into:
         raise AuthError("이 단계는 고를 것이 없습니다", status_code=409)
-    if not any(c.get("value") == body.value for c in cands):
-        raise AuthError("보여 준 후보 중에서 골라 주세요", status_code=422)
+    multi = bool(notes.get("pick_multi"))
+    # ⚠ 하나짜리와 여럿짜리를 **섞지 않는다.** 여럿 자리에 값 하나를 받아 넘기면 다음 단계는
+    # 목록을 기대하는데 스칼라가 오고, 하나 자리에 목록을 받으면 그 반대다. 둘 다 조용히 틀린다.
+    if multi and body.values is None:
+        raise AuthError("이 단계는 여럿을 고릅니다 — values 로 보내 주세요", status_code=422)
+    if not multi and body.values is not None:
+        raise AuthError("이 단계는 하나만 고릅니다 — value 로 보내 주세요", status_code=422)
 
-    store.merge_inputs(run_id, {into: body.value})
+    allowed = [c.get("value") for c in cands]
+    if multi:
+        picked: Any = []
+        for v in body.values:
+            if v not in allowed:
+                raise AuthError("보여 준 후보 중에서 골라 주세요", status_code=422)
+            if v not in picked:          # 같은 것을 두 번 고르면 도구가 같은 일을 두 번 한다
+                picked.append(v)
+        if not picked:
+            raise AuthError("하나 이상 골라 주세요", status_code=422)
+    else:
+        if body.value not in allowed:
+            raise AuthError("보여 준 후보 중에서 골라 주세요", status_code=422)
+        picked = body.value
+
+    store.merge_inputs(run_id, {into: picked})
     store.finish_step(run_id, ix, ok=True, state="done", stage="select:picked",
-                      notes={**notes, "picked": body.value})
+                      notes={**notes, "picked": picked})
     version = store.get_version(run["procedure_version_id"] or "")
     if version is None:
-        return {"picked": body.value, "resumed": False}
+        return {"picked": picked, "resumed": False}
     spec = ProcedureSpec.model_validate(version["spec"])
     _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=ix + 1),
            f"resume {run_id}",
            store=_store(request), run_id=run_id)
-    return {"picked": body.value, "resumed": True}
+    return {"picked": picked, "resumed": True}
 
 
 # 배치 상한 — 사람이 표로 볼 수 있는 크기까지만. 넘으면 룰을 좁히라고 말한다.
@@ -696,6 +717,10 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
         raise AuthError("이 단계는 고른 후보가 없습니다", status_code=409)
     if not run.get("procedure_version_id"):
         raise AuthError("빈 실행은 펼칠 절차가 없습니다", status_code=422)
+    if notes.get("pick_multi"):
+        # ⚠ 여럿 고르기 단계는 **목록 하나**를 다음 단계에 넘긴다(`entity_ids` 등). 펼치면 실행마다
+        # 값 하나가 스칼라로 들어가 형이 어긋나고, 같은 보고서에 태그를 한 개씩 N 번 붙이게 된다.
+        raise AuthError("여럿을 고르는 단계는 펼치지 않습니다 — 골라서 한 번에 넘깁니다", status_code=422)
 
     allowed = [c.get("value") for c in cands]
     raw_want = body.values if body.values is not None else allowed
