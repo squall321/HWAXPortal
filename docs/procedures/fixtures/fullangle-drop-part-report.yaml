@@ -1,0 +1,100 @@
+# R2b — 전각도 낙하 결과에서 **한 부품**의 보고서를 만든다(제출과 다른 절차다 — 드라이버 walltime 167시간).
+#
+# ⚠ 이 파일이 정본이 아니다. 가져다 쓰는 씨앗이다. `backend/tests/test_procedures_s3.py` 가 읽어 검증한다.
+#
+# 찾는 키가 report_id 가 아니라 **잡 키**다(W-93). 리포트에는 잡 폴더 이름이 project_name 으로 박혀 들어오므로
+# `<잡이름>_<잡ID>` 로 찾는다. 제출 씨앗이 그 둘을 남긴다 — 잡 이름은 변수로, 잡 ID 는 평문에서 뽑아
+# `slurm_job_id` 로(W-94). 사람이 report_id 를 옮겨 적지 않는다.
+#
+# ⚠ 리포트가 0건이면 **아직 DynaForge 에 반입되지 않은 것**이다. 지금은 사람이 REST intake 로 올린다(W-92).
+# 자동 귀환(예약자 명의 + 소속 단위 읽기 공유)이 서면 이 절차는 그대로 두고 앞 단계만 사라진다(W-93).
+#
+# 판독은 전부 읽기다 — 게이트는 보고서 초안 하나뿐이다. 태그는 후보만 받고 적용은 RA 화면에서 사람이 한다.
+
+title: 전각도 낙하 — 부품 보고서 (회수·판독)
+
+vars:
+  - key: job_name
+    label: 잡 이름(제출 때 넣은 그 이름)
+    type: string
+    required: true
+    why: "리포트의 project_name 이 `<잡이름>_<잡ID>` 다. 제출 씨앗이 ASCII 로 받게 한 이유가 이것이다"
+    example: "drop-demo-01"
+  - key: slurm_job_id
+    label: Slurm 잡 ID
+    type: string
+    required: true
+    why: "제출 단계가 평문 `✅ 제출 완료 — job_id=N` 에서 뽑아 실행 기록에 남긴 값이다"
+    example: "12345"
+  - key: part_id
+    label: 부품 ID(LS-DYNA part id)
+    type: number
+    required: true
+    why: "이름이 아니라 덱의 파트 번호다. 모르면 ② 요약의 parts 나 ③ 을 part_id 없이 한 번 돌려 고른다"
+    example: 3
+
+steps:
+  - backend: heax-kooremapper_mcp
+    tool: find_reports
+    args: {project: "{{job_name}}_{{slurm_job_id}}", kind: sphere, limit: 20}
+    select: {from: "$", save: id, as: report_id, label: label, on_many: ask, on_none: fail}
+    note: 잡 키로 리포트를 찾는다 — 0건이면 아직 반입 전이다(사람이 REST intake 로 올린다)
+
+  - backend: heax-kooremapper_mcp
+    tool: report_summary
+    args: {report_id: "{{report_id}}"}
+    save: {kind: "kind"}
+    note: 무엇을 분석할 수 있는지 — kind·과제·해석 조건·파트 목록·전역 최악
+
+  - backend: heax-kooremapper_mcp
+    tool: report_part_risk
+    args: {report_id: "{{report_id}}", part_id: "{{part_id}}"}
+    save: {part_name: "parts[0].part_name", worst_case: "parts[0].worst_stress.case_key"}
+    note: 이 부품의 최악값과 그게 난 케이스(각도) — 최소 안전율은 없을 수 있어 뽑지 않는다
+
+  - backend: heax-kooremapper_mcp
+    tool: report_directional
+    args: {report_id: "{{report_id}}", part_id: "{{part_id}}"}
+    note: 이 부품이 어느 방향(면·엣지·코너)에서 위험한가
+
+  - backend: heax-kooremapper_mcp
+    tool: report_part_series
+    args: {report_id: "{{report_id}}", case_key: "{{worst_case}}", part_id: "{{part_id}}"}
+    note: 최악 케이스의 시간이력 — 응력·G·변위
+
+  - backend: heax-kooremapper_mcp
+    tool: report_findings
+    args: {report_id: "{{report_id}}"}
+    note: 자동 판정된 위험 소견. 0건도 정상이라 save 로 뽑지 않는다(빈 값은 실행을 세운다)
+
+  - backend: reportarchive
+    tool: create_report_draft
+    gate: human
+    args:
+      title: "전각도 낙하 — {{part_name}} 부품 보고서 ({{job_name}})"
+      template_id: __import_blank__
+      template_version: 1
+      blocks: {}
+      extra_blocks:
+        - id: result
+          type: key_value
+          content:
+            해석: "전각도 낙하(sphere)"
+            잡 이름: "{{job_name}}"
+            Slurm 잡 ID: "{{slurm_job_id}}"
+            리포트: "{{report_id}}"
+            부품: "{{part_name}} (part_id {{part_id}})"
+            최악 케이스: "{{worst_case}}"
+        - id: basis
+          type: rich_text
+          content:
+            - "리포트는 잡 키(project_name = <잡이름>_<잡ID>)로 찾았다. 수치는 DynaForge report_* 판독 결과이고, 실행 기록에 단계별 원문이 남는다."
+            - "해석 조건(높이·바닥·프리셋·물성)은 제출 절차의 실행 기록에 있다. 조건이 다른 잡끼리는 비교하지 않는다."
+    save: {ra_report_id: "report_id", ra_report_url: "url"}
+    note: 보고서 초안 — 만들기 전에 사람이 확인한다. RA 는 봉투를 벗겨 주므로 save 경로에 data. 가 없다
+
+  - backend: reportarchive
+    tool: suggest_report_tags
+    args: {report_id: "{{ra_report_id}}"}
+    save: {tag_candidates: "items"}
+    note: 축 태그 후보만 — 적용은 RA 화면의 제안 칩에서 사람이 고른다

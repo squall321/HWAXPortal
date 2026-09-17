@@ -374,6 +374,13 @@ dev 실측으로 잡 하나가 37~50 GB 다 — 리포트 대신 그것을 나�
 
 ### 절차
 
+> 씨앗 둘이 이 스케치를 대신한다 — [`fixtures/fullangle-drop-part-report.yaml`](fixtures/fullangle-drop-part-report.yaml) ·
+> [`fixtures/partial-impact-part-report.yaml`](fixtures/partial-impact-part-report.yaml). 아래와 다른 점 넷 —
+> ① `report_id` 를 사람이 넣지 않고 **잡 키**(`{{job_name}}_{{slurm_job_id}}`)로 찾아 `select` 로 고른다(W-93),
+> ② **한 부품**을 기준으로 위험도·방향·최악 케이스 시계열까지 본다, ③ 빌 수 있는 칸(최소 안전율·소견)은 `save` 로
+> 뽑지 않는다, ④ `slurm_job_results` 단계를 뺐다 — 평문이라 `save` 가 안 풀리고 `COMPLETED 0:0` 은 후처리 성공이
+> 아니다(W-92).
+
 ```yaml
 id: drop-impact-collect
 version: 1

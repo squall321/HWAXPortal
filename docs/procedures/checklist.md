@@ -466,8 +466,12 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       단계 `ok_text`(성공 표식)로 머리 없는 실패도 막는다(포털 d3f7721 · 에이전트서버 챗 원장도 같은 구멍 88d2e94)
 
 ### R2b 회수 (cae00)
-- [ ] `slurm_job_results` → `report_summary` → `report_worst_cases` → `report_directional` →
-      `report_part_risk` → `report_findings` → `create_report_draft`(gate)
+- [x] **부품 보고서 씨앗 둘 완료**(2026-09-17) — `fixtures/{fullangle-drop,partial-impact}-part-report.yaml`:
+      `find_reports`(잡 키 + select) → `report_summary` → `report_part_risk`(part_id) → `report_directional` →
+      `report_part_series`(최악 케이스) → `report_findings` → `create_report_draft`(gate) → `suggest_report_tags`.
+      테스트 37(되돌림 넷 확인). `slurm_job_results` 단계는 뺐다(평문·`COMPLETED 0:0`)
+- [ ] cae00 실행 — 합성 고정물(`dynaforge_report_responses.json`)을 **실측으로 교체**한다. 부분충격은 리포트 생성이
+      먼저다(pyKooCAE 요청)
 - [ ] `report_id` 를 **변수로 받는다** — 리포트 HTML 이 8~10MB 라 MCP 로 못 나른다. 반입은 REST
       intake(512MB)이고 절차 밖이다
       → 2026-09-16 제안(W-92): 입력 키를 **잡 키**로 — `find_reports(project="{{job_name}}_{{slurm_job_id}}")` 가

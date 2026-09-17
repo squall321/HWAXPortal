@@ -1,0 +1,104 @@
+{
+  "_note": "⚠ 전부 **합성**이다(_synthetic). dev 에는 리포트가 0건이라(report_corpus 0) 실측을 못 뜬다. 모양은 KooRemapper 소스에서 유도했다 — find_reports=ReportListItem(schemas.py:41-56), part_risk=services.part_risk 반환(services.py:453-468), findings=routes 가 r.findings 리스트를 그대로(routes.py:561-572). MCP 는 {success,data} 봉투를 벗겨 준다(mcp_server _unwrap). cae00 실행 뒤 실측으로 갈아야 한다.",
+  "schemas": {
+    "find_reports": {
+      "properties": {"kind": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null},
+                     "project": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null},
+                     "limit": {"default": 100, "type": "integer"},
+                     "sort": {"default": "created_at", "type": "string"},
+                     "order": {"default": "desc", "type": "string"}},
+      "title": "find_reportsArguments", "type": "object"
+    },
+    "report_summary": {
+      "properties": {"report_id": {"type": "string"}}, "required": ["report_id"], "type": "object"
+    },
+    "report_part_risk": {
+      "properties": {"report_id": {"type": "string"},
+                     "part_id": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": null}},
+      "required": ["report_id"], "type": "object"
+    },
+    "report_directional": {
+      "properties": {"report_id": {"type": "string"},
+                     "part_id": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": null}},
+      "required": ["report_id"], "type": "object"
+    },
+    "report_part_series": {
+      "properties": {"report_id": {"type": "string"}, "case_key": {"type": "string"},
+                     "part_id": {"type": "integer"}},
+      "required": ["report_id", "case_key", "part_id"], "type": "object"
+    },
+    "report_findings": {
+      "properties": {"report_id": {"type": "string"},
+                     "severity": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null}},
+      "required": ["report_id"], "type": "object"
+    }
+  },
+  "find_reports": [
+    {
+      "_synthetic": true,
+      "id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9",
+      "kind": "sphere",
+      "label": "drop-demo-01 전각도 26방향",
+      "focus": null,
+      "project_name": "drop-demo-01_12345",
+      "doe_strategy": "cuboid_26",
+      "scenario_type": "cuboid_geometry",
+      "drop_height": 1500.0,
+      "worst_stress": 412.7,
+      "max_severity": "WARNING",
+      "source_kfile_id": null,
+      "eng_meta": null,
+      "n_cases": 26,
+      "created_at": "2026-09-17T02:00:00Z"
+    }
+  ],
+  "report_summary": {
+    "_synthetic": true,
+    "report_id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9",
+    "kind": "sphere",
+    "project_name": "drop-demo-01_12345",
+    "n_cases": 26,
+    "parts": [{"part_id": 3, "name": "BRKT_MAIN"}, {"part_id": 7, "name": "PCB"}],
+    "worst": {"stress": 412.7, "g": 8123.0}
+  },
+  "report_part_risk": {
+    "_synthetic": true,
+    "report_id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9",
+    "kind": "sphere",
+    "parts": [
+      {
+        "part_id": 3,
+        "part_name": "BRKT_MAIN",
+        "worst_stress": {"value": 412.7, "case_key": "Run_014/corner_xyz"},
+        "worst_g": {"value": 8123.0, "case_key": "Run_014/corner_xyz"},
+        "worst_disp": {"value": 1.82, "case_key": "Run_009/edge_xy"},
+        "min_safety_factor": null
+      }
+    ]
+  },
+  "report_directional": {
+    "_synthetic": true,
+    "report_id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9",
+    "kind": "sphere",
+    "part_id": 3,
+    "categories": [
+      {"category": "corner", "worst_stress": 412.7, "worst_g": 8123.0, "n_cases": 8},
+      {"category": "edge", "worst_stress": 351.2, "worst_g": 6410.0, "n_cases": 12},
+      {"category": "face", "worst_stress": 233.8, "worst_g": 4102.0, "n_cases": 6}
+    ]
+  },
+  "report_part_series": {
+    "_synthetic": true,
+    "report_id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9",
+    "case_key": "Run_014/corner_xyz",
+    "part_id": 3,
+    "series": {"t": [0.0, 0.0005, 0.001], "stress": [0.0, 388.1, 412.7], "g": [0.0, 7710.0, 8123.0]}
+  },
+  "report_findings": [
+    {"_synthetic": true, "severity": "WARNING", "part_id": 3, "case_key": "Run_014/corner_xyz",
+     "message": "항복 초과 — 최악 응력 412.7 MPa"}
+  ],
+  "ra_create": {"_synthetic": true, "report_id": 4210, "url": "/w/caeg/r/4210", "warnings": []},
+  "ra_suggest": {"_synthetic": true, "items": [{"axis": "제품", "value": "drop-demo-01"},
+                                               {"axis": "해석", "value": "전각도 낙하"}]}
+}

@@ -2199,3 +2199,24 @@ W-90 에서 `smarttwin_submit` 이 평문(`✅ 제출 완료 — job_id=N`)이�
   관문은 포털 `gate: human` 하나다. 닫으려면 게이트웨이와 실행기를 같은 커밋에서 함께 바꿔야 한다(사용자 결정 대기).
 - 포털 재기동이 만들던 **빈 실행**까지 `failed(restart)` 로 마감한다(표시만 틀어진다).
 - `/procedures-api` 에 nginx `proxy_read_timeout` 이 없어 2단 도구가 많은 저장은 60초에 걸릴 수 있다(씨앗 넷은 해당 없음).
+
+## W-96. 부품 보고서 씨앗 둘 — 찾는 키를 report_id 에서 **잡 키**로 옮겼다
+
+S3 의 남은 절반(전각도·부분충격 각각의 "특정 부품 보고서")을 씨앗으로 굳혔다. 설계에서 정한 것 넷.
+
+1. **입력이 잡 키다.** `find_reports(project="{{job_name}}_{{slurm_job_id}}", kind=sphere|impact)` 로 찾고 `select` 로 고른다
+   (여럿이면 사람이, 0건은 실패). 리포트에는 잡 폴더 이름이 `project_name` 으로 박혀 들어오고, 제출 씨앗이 잡 이름과
+   평문에서 뽑은 잡 ID 를 남긴다(W-94). 사람이 `report_id` 를 옮겨 적으면 오타 하나가 남의 잡을 가리킨다.
+2. **부품 하나를 끝까지 본다.** `report_part_risk(part_id)` 가 준 `parts[0].worst_stress.case_key` 를 그대로
+   `report_part_series(case_key, part_id)` 에 넘긴다 — 최악이 난 그 케이스의 시간이력이다. 방향 취약도도 같은 부품으로 좁힌다.
+3. **빌 수 있는 칸은 뽑지 않는다.** `min_safety_factor` 는 없을 수 있고 소견은 0건이 정상이다. `save` 로 뽑으면 빈 값이
+   실행을 세운다(PLAN §5-6). 그래서 두 곳 다 `save` 없이 기록만 남긴다.
+4. **RA 저장 이름을 갈랐다.** `report_id`(DynaForge 리포트)와 RA 보고서 번호가 같은 이름이면 뒤 단계가 엉뚱한 것을 가리킨다 —
+   `ra_report_id`·`ra_report_url` 로 둔다. 태그는 후보만 받고 적용은 RA 화면에서 사람이 한다(게이트가 여럿을 못 고른다).
+
+`slurm_job_results` 단계는 뺐다 — 평문이라 `save` 가 안 풀리고, `COMPLETED 0:0` 은 후처리 성공을 뜻하지 않는다(W-92).
+
+⚠ **고정물이 합성이다.** dev 는 `report_corpus` 가 0건이라 실측을 못 뜬다. `dynaforge_report_responses.json` 은 KooRemapper
+소스(schemas.ReportListItem·services.part_risk·routes.report_findings)에서 유도했고 `_synthetic` 표시를 달았다. cae00 에서 한 번
+돌린 뒤 실측으로 갈아야 한다 — R3 때도 그 차이에서 결함이 나왔다(W-89). 부분충격은 리포트 자체가 아직 안 생겨
+(pyKooCAE `impact_report.sh` 미생성) 계약만 세워 둔 상태다.

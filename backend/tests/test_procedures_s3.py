@@ -196,3 +196,95 @@ def test_평문_추출은_평문에서만_찾고_못_찾으면_멈춘다():
         template.extract("[DRY-RUN] 제출 계획", "re:job_id=(\\d+)")
     with pytest.raises(template.TemplateError, match="평문"):
         template.extract({"job_id": 1}, "re:job_id=(\\d+)")
+
+
+# ── 부품 보고서 씨앗 둘(회수·판독) ───────────────────────────────────────────────────────────
+COLLECT = {"fullangle-drop-part-report": "sphere", "partial-impact-part-report": "impact"}
+DF = json.loads((FIX / "dynaforge_report_responses.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module", params=sorted(COLLECT))
+def collect(request) -> tuple[str, ProcedureSpec]:
+    return request.param, _load(request.param)
+
+
+def _text(obj) -> str:
+    return json.dumps(obj, ensure_ascii=False, indent=2)
+
+
+def test_회수_씨앗이_경고_없이_저장된다(collect):
+    name, spec = collect
+    assert validate_spec(spec) == []
+    assert [s.tool for s in spec.steps] == [
+        "find_reports", "report_summary", "report_part_risk", "report_directional",
+        "report_part_series", "report_findings", "create_report_draft", "suggest_report_tags"]
+    assert [s.gate for s in spec.steps] == [None] * 6 + ["human", None], "게이트는 보고서 초안 하나뿐이다"
+    assert spec.steps[0].args["kind"] == COLLECT[name]
+
+
+def test_리포트를_report_id_가_아니라_잡_키로_찾는다(collect):
+    """사람이 report_id 를 옮겨 적으면 오타 하나가 남의 잡을 가리킨다 — 제출이 남긴 잡 키로 찾는다(W-93)."""
+    _, spec = collect
+    declared = {v.key for v in spec.vars}
+    assert declared == {"job_name", "slurm_job_id", "part_id"}, declared
+    assert spec.steps[0].args["project"] == "{{job_name}}_{{slurm_job_id}}"
+    sel = spec.steps[0].select
+    assert (sel.from_, sel.save, sel.var) == ("$", "id", "report_id")
+    assert (sel.on_many, sel.on_none) == ("ask", "fail"), "여럿이면 사람이 고르고 0건은 실패다"
+
+
+def test_인자가_DynaForge_실제_스키마와_맞는다(collect):
+    _, spec = collect
+    table = {st.alias: DF["schemas"][st.tool] for st in spec.steps if st.tool in DF["schemas"]}
+    assert len(table) == 6, sorted(table)
+    errs = check_against_schemas(spec, table, missing_is_error=False)
+    hard = [e for e in errs if not e.startswith("warn:")]
+    assert hard == [], hard
+
+
+def test_save_경로가_응답_모양에서_풀린다(collect):
+    """dev 에는 리포트가 0건이라 합성 고정물이다(소스에서 유도). cae00 실행 뒤 실측으로 간다."""
+    _, spec = collect
+    bodies = [DF["find_reports"], DF["report_summary"], DF["report_part_risk"], DF["report_directional"],
+              DF["report_part_series"], DF["report_findings"], DF["ra_create"], DF["ra_suggest"]]
+    scope: dict = {}
+    for st, body in zip(spec.steps, bodies, strict=True):
+        v = judge(is_error=False, text=_text(body), raw=st.raw, unwrap=st.unwrap)
+        assert v.ok, (st.tool, v.kind, v.error)
+        if st.select is not None:
+            rows = template.extract(v.parsed, st.select.from_)
+            assert isinstance(rows, list) and rows, st.tool
+            scope[st.select.var] = rows[0][st.select.save]
+        for key, path in (st.save or {}).items():
+            scope[key] = template.extract(v.parsed, path)
+            assert not template.is_empty(scope[key]), f"{st.tool} {key} 가 빈 값이다 — 실행이 선다"
+    assert scope["report_id"].startswith("01JAX7")
+    assert scope["part_name"] == "BRKT_MAIN" and scope["worst_case"] == "Run_014/corner_xyz"
+    assert scope["ra_report_id"] == 4210 and scope["ra_report_url"].startswith("/w/")
+    assert isinstance(scope["tag_candidates"], list)
+
+
+def test_없을_수_있는_칸은_뽑지_않는다(collect):
+    """최소 안전율·소견은 **정상적으로 빌 수 있다.** save 로 뽑으면 빈 값이 실행을 세운다(PLAN §5-6)."""
+    _, spec = collect
+    saved_paths = {p for st in spec.steps for p in (st.save or {}).values()}
+    assert not any("safety" in p for p in saved_paths), saved_paths
+    findings = next(st for st in spec.steps if st.tool == "report_findings")
+    assert findings.save is None
+    assert DF["report_part_risk"]["parts"][0]["min_safety_factor"] is None, "고정물이 그 경우를 담고 있어야 한다"
+
+
+def test_시계열은_앞_단계가_고른_최악_케이스로_돈다(collect):
+    _, spec = collect
+    series = next(st for st in spec.steps if st.tool == "report_part_series")
+    assert series.args == {"report_id": "{{report_id}}", "case_key": "{{worst_case}}",
+                           "part_id": "{{part_id}}"}
+
+
+def test_보고서_초안_저장_이름이_리포트_ID_와_안_겹친다(collect):
+    """`report_id`(DynaForge 리포트)와 RA 보고서 번호가 같은 이름이면 뒤 단계가 엉뚱한 것을 가리킨다."""
+    _, spec = collect
+    draft = next(st for st in spec.steps if st.tool == "create_report_draft")
+    assert set(draft.save) == {"ra_report_id", "ra_report_url"}
+    tags = next(st for st in spec.steps if st.tool == "suggest_report_tags")
+    assert tags.args == {"report_id": "{{ra_report_id}}"} and tags.gate is None
