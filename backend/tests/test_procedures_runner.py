@@ -431,6 +431,25 @@ def test_schema_drift_stops_before_any_step(kit):
         assert out["state"] == "failed" and out["stage"] == "schema_drift"
         assert "스키마가 바뀌었다" in out["detail"][0]
         assert g.calls == []
+        # ⚠ **원장에도 이유가 남아야 한다.** 예전엔 stage 가 `schema_drift` 한 낱말뿐이라, 화면에서
+        # 어느 단계의 어떤 도구가 문제인지 알 길이 없었다(2026-09-17 cae00 점검).
+        row = store.get_run(rid)
+        assert row["stage"].startswith("schema_drift: ") and "1단계 a" in row["stage"], row["stage"]
+    asyncio.run(go(*kit))
+
+
+def test_게이트웨이에_없는_도구도_어느_단계인지_원장에_남는다(kit):
+    """cae00 에서 앱이 안 붙어 있거나 권한 밖이면 이 경로로 선다 — 이유가 없으면 사람이 못 고친다."""
+    async def go(store, build):
+        g = Gate(tools={}, replies={})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "a"}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "failed" and out["stage"] == "schema_drift"
+        row = store.get_run(rid)
+        assert "게이트웨이에 없다" in row["stage"] and "1단계 a" in row["stage"], row["stage"]
     asyncio.run(go(*kit))
 
 

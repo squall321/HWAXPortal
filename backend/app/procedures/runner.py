@@ -199,7 +199,10 @@ class ProceduresRunner:
                 catalog = await sess.list_tools(pat)
                 drift = self._check_drift(spec, catalog)
                 if drift:
-                    self.store.set_run_state(run_id, "failed", stage="schema_drift",
+                    # ⚠ 이유를 stage 에 실어 원장에 남긴다. 예전엔 `schema_drift` 한 낱말뿐이라
+                    # 화면에서 **어느 단계의 어떤 도구가 없는지** 알 길이 없었다(cae00 점검).
+                    self.store.set_run_state(run_id, "failed",
+                                             stage=f"schema_drift: {' / '.join(drift)}"[:400],
                                              ended=True)
                     return {"state": "failed", "stage": "schema_drift", "detail": drift}
                 self.store.set_run_state(run_id, "running")

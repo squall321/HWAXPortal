@@ -26,6 +26,10 @@ cp "$PORTAL_SIF" "$NGINX_SIF" "$STAGE/"
 
 # Bundle the pre-built SPA too (so node-less servers don't need to build it).
 if [ -f "$REPO_ROOT/frontend/dist/index.html" ]; then
+  # 이 dist 가 **어느 소스로** 빌드됐는지를 박는다. 받는 쪽(update-all 헬스게이트)이 지금 체크아웃의
+  # frontend 트리 해시와 대조해 낡은 dist 를 잡는다 — 2026-09-14 개명 뒤 cae00 이 옛 화면으로
+  # 새 API 를 불러 조용히 깨졌고, 모든 게이트가 초록이었다.
+  git -C "$REPO_ROOT" rev-parse HEAD:frontend > "$REPO_ROOT/frontend/dist/.build-src" 2>/dev/null || true
   ( cd "$REPO_ROOT/frontend" && tar -czf "$STAGE/frontend-dist.tar.gz" dist )
   echo "  · included frontend/dist"
 fi

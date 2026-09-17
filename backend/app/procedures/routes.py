@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
 import yaml
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -142,6 +143,22 @@ def health(request: Request, response: Response) -> dict:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+async def _gw(coro, what: str):
+    """게이트웨이를 부르는 조회 — 실패를 **이유와 함께** 502 로 낸다.
+
+    ⚠ 이 자리가 없던 동안 게이트웨이가 사용자 PAT 를 거절하거나(401) 떠 있지 않으면, 화면은
+    `500 Internal Server Error` 평문만 받았다. 같은 순간 챗·심의는 서비스 계정으로 물러서서
+    멀쩡해 보이므로(에이전트서버), 사람에게는 "챗은 되는데 절차만 깨졌다" 로만 보였다.
+    """
+    try:
+        return await coro
+    except RunnerError as exc:
+        raise AuthError(f"{what}을 못 받았습니다 — {exc}"[:300], status_code=502) from None
+    except httpx.HTTPError as exc:
+        raise AuthError(f"{what}을 못 받았습니다 — 게이트웨이 연결 실패({type(exc).__name__})",
+                        status_code=502) from None
+
+
 # ── 도구 ─────────────────────────────────────────────────────────────────
 @router.get("/tools")
 async def tools(request: Request, principal: Principal = Depends(_me)) -> dict:
@@ -150,7 +167,7 @@ async def tools(request: Request, principal: Principal = Depends(_me)) -> dict:
     `/tools-map` 만 쓰면 이 사람이 **못 부르는 도구까지** 보여 골라서 실행하면 403 이고,
     스키마도 없다. 권한 필터의 정본은 `tools/list` 쪽이다.
     """
-    cat = await _runner(request).catalog(principal)
+    cat = await _gw(_runner(request).catalog(principal), "도구 목록")
     labels = await _tools_map(request)
     out = []
     for name, meta in sorted(cat.items()):
@@ -208,13 +225,13 @@ async def dispatcher_items(request: Request, backend: str, tool: str,
         raise AuthError("등록부에 없는 2단 도구입니다", status_code=404)
     runner = _runner(request)
     if name:
-        sch = (await runner.second_stage_one(principal, d, name))
+        sch = await _gw(runner.second_stage_one(principal, d, name), f"{tool} 항목 계약")
         if sch is None:
             # ⚠ 계약을 못 받은 것과 그 항목이 없는 것은 다르다 — 못 받았다고 말한다.
             return {"name": name, "schema": None,
                     "note": "그 항목의 계약을 못 받았습니다 — 이름이 틀렸거나 앱이 안 붙어 있습니다"}
         return {"name": name, "schema": sch}
-    items = await runner.dispatcher_items(principal, d)
+    items = await _gw(runner.dispatcher_items(principal, d), f"{tool} 항목 목록")
     return {"backend": backend, "tool": tool, "selector": d.selector,
             "payload": d.payload, "items": items, "note": d.note}
 

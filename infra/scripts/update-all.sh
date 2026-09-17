@@ -253,8 +253,12 @@ hr "4) update-sites (챗 스택: mcp-gateway·agent-server·signalforge-mcp)"
 # 6단계 헬스게이트가 'signalforge=DOWN' 을 찍었다(cae00 실측 — 게이트웨이 06:54:46 기동,
 # signalforge-mcp 는 06:54:51~54 재기동). _revive_loop 가 60초 안에 스스로 재편입하므로
 # 실제 장애는 아니었지만, 매 배포마다 가짜 DOWN 이 뜨면 진짜 장애와 구분이 안 된다.
-"$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server \
-  || echo "  ⚠ update-sites 일부 실패 — 아래에서 판정"
+# ⚠ 갱신 실패를 **실패로 센다.** 헬스게이트는 "떠 있나" 만 보므로, git pull 이 막혀 옛 코드로 떠도
+# 초록이었다(2026-09-17 cae00 점검 — 절차가 옛 게이트웨이에 걸려 있었다).
+if ! "$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server; then
+  bad "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다"
+  FAIL=1
+fi
 
 # ── 5) 게이트웨이 config 정합 — 기대 백엔드가 config에 아예 없으면 재프로비저닝 ──
 hr "5) 게이트웨이 config 정합(reconcile)"
@@ -514,6 +518,29 @@ probe "nginx          :8088" http://127.0.0.1:8088/health 1 "200"
 probe "agent-server   :9009" http://127.0.0.1:9009/health 1 "200"
 probe "gateway        :9110" http://127.0.0.1:9110/health 1 "200"
 probe "aidh           :8001" http://127.0.0.1:8001/api/system/health 0 "200"
+# 절차 모듈 — 상태코드로는 못 본다. 저장소가 안 열리면 포털은 뜨고 /health 는 200 인데 절차 API 만
+# 503 이고, 라우터 등록이 실패하면 SPA catch-all 이 200 HTML 을 돌려준다. 본문으로 판정한다
+# (2026-09-17 cae00: 절차가 안 보이는데 모든 게이트가 초록이었다).
+PROC_H="$(curl -s -m 4 http://127.0.0.1:8723/procedures-api/health 2>/dev/null || true)"
+if printf '%s' "$PROC_H" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  ok "절차 모듈 → $(printf '%s' "$PROC_H" | tr -d '{}"' | cut -c1-60)"
+else
+  bad "절차 모듈 미기동 — /procedures-api/health 가 ok:true 가 아니다: $(printf '%s' "$PROC_H" | cut -c1-120)"
+  FAIL=1
+fi
+# 서빙 중인 SPA 가 지금 소스로 빌드된 것인가 — dist 는 git 이 아니라 Drive 로 온다. 낡으면 화면이
+# 옛 API 를 불러 조용히 깨진다(2026-09-14 워크벤치→절차 개명 뒤 실제로 그랬다). 빌드 때 박아 둔
+# frontend 트리 해시와 지금 체크아웃의 트리 해시를 대조한다.
+_dist_src="$(cat "$SELF_REPO/frontend/dist/.build-src" 2>/dev/null || true)"
+_head_src="$(git -C "$SELF_REPO" rev-parse HEAD:frontend 2>/dev/null || true)"
+if [ -z "$_dist_src" ]; then
+  bad "SPA dist 에 빌드 표식(.build-src)이 없다 — dev 에서 images-to-drive.sh 를 다시 돌려 올린다(비치명)"
+elif [ -n "$_head_src" ] && [ "$_dist_src" != "$_head_src" ]; then
+  bad "SPA dist 가 지금 소스와 다르다(dist=${_dist_src:0:12} · HEAD=${_head_src:0:12}) — dev 에서 pnpm build + images-to-drive.sh 뒤 다시 배포한다"
+  FAIL=1
+else
+  ok "SPA dist 가 지금 소스와 같다 (${_head_src:0:12})"
+fi
 # aidh MCP 드리프트 스모크 — 코드는 최신인데 구버전 프로세스가 살아있는 경우를 감지(비치명 경고).
 # 판정 앵커: list_agents 스키마의 compact 파라미터(2026-07 additive 보강)가 tools/list 에 보이는가.
 mcpj() { curl -sk -m 4 -X POST http://127.0.0.1:8001/mcp/ \

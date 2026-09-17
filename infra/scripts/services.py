@@ -308,7 +308,13 @@ def update_one(svc: dict) -> str:
         return "skip (remote)"
     cmd = svc.get("update")
     if cmd is None:  # default: a safe fast-forward pull if it's a git repo
-        cmd = "git rev-parse --git-dir >/dev/null 2>&1 && git pull --ff-only || echo 'no-git'"
+        # ⚠ 예전 명령은 `… && git pull --ff-only || echo 'no-git'` 이었다. bash 의 `A && B || C` 는
+        # pull(B)이 실패해도 C 를 돌려 **rc 가 0** 이 된다. 그래서 로컬 수정·갈라진 이력·자격증명
+        # 문제로 pull 이 막혀도 "updated: no-git" 으로 보고했고, 옛 코드로 기동한 뒤 update-all 이
+        # 초록으로 끝났다(2026-09-17 cae00 점검 — 절차가 게이트웨이 옛 코드에 걸려 있었다).
+        # 이제 git 리포가 아니면 먼저 빠지고, pull 실패는 rc 그대로 올라온다.
+        cmd = ("git rev-parse --git-dir >/dev/null 2>&1 || { echo 'no-git'; exit 0; }; "
+               "GIT_TERMINAL_PROMPT=0 git pull --ff-only")
     if cmd is False or cmd == "":  # explicit opt-out (e.g. vllm: stateless)
         return "skip"
     wd = resolve_dir(svc)
@@ -363,7 +369,12 @@ def cmd_up(names: list[str], do_update: bool = False) -> int:
             continue
         if do_update:
             print(f"  ↻ {s['name']:<16} update …", flush=True)
-            print(f"  ↻ {s['name']:<16} {update_one(s)}", flush=True)
+            up = update_one(s)
+            # 갱신 실패는 **종료코드로** 올린다 — 기동은 그대로 하되(옛 코드라도 서비스는 떠 있어야
+            # 한다) 부르는 쪽(update-sites·update-all §4)이 초록으로 끝내지 않게 한다.
+            if up.startswith("FAIL"):
+                rc = 1
+            print(f"  {'✗' if up.startswith('FAIL') else '↻'} {s['name']:<16} {up}", flush=True)
         print(f"  ▷ {s['name']:<16} start + health …", flush=True)
         r = start_one(s)
         mark = "✓" if r in ("up", "already-up", "started (no health url)") else "✗"

@@ -1341,3 +1341,45 @@ def test_저장된_명세는_늘_모델_모양이다(user):
     assert r2.status_code == 201, r2.text
     got2 = c.get(f"{PREFIX}/procedures/{r2.json()['id']}", headers=h).json()["spec"]
     assert got2["vars"] == [], got2
+
+
+# ── 게이트웨이가 거절·불통일 때 — 원인이 화면까지 오는가(2026-09-17 cae00 점검) ─────────────
+def _runner_with(handler):
+    import httpx
+
+    from app.procedures.runner import ProceduresRunner
+
+    return ProceduresRunner(
+        settings=Settings(), store=app.state.procedures_store,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=5.0),
+        mint_pat=lambda p, run, ix: "pat-test")
+
+
+def test_게이트웨이가_PAT_를_거절하면_502_에_이유가_실린다(user):
+    """예전엔 500 평문 'Internal Server Error' 였다 — 챗은 서비스 계정으로 물러서서 멀쩡해 보이므로
+    사람에게는 '챗은 되는데 절차만 깨졌다' 로만 보였다."""
+    import httpx
+
+    c, h = user
+    app.state.procedures_runner = _runner_with(lambda req: httpx.Response(401, text="invalid token"))
+    try:
+        r = c.get(f"{PREFIX}/tools", headers=h)
+        assert r.status_code == 502, r.text
+        assert "401" in r.json()["detail"], r.json()
+    finally:
+        app.state.procedures_runner = None
+
+
+def test_게이트웨이가_안_뜨면_502_에_연결_실패가_실린다(user):
+    import httpx
+
+    def down(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=req)
+
+    c, h = user
+    app.state.procedures_runner = _runner_with(down)
+    try:
+        r = c.get(f"{PREFIX}/tools", headers=h)
+        assert r.status_code == 502 and "연결 실패" in r.json()["detail"], r.text
+    finally:
+        app.state.procedures_runner = None
