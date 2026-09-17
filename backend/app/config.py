@@ -280,24 +280,44 @@ PUBLIC_SESSION_SECRETS = frozenset({
 SESSION_SECRET_MIN_LEN = 32
 
 
+def _secret_problem(s: Settings) -> tuple[str, str] | None:
+    """세션 키가 공개됐거나 짧으면 (코드, 사람용 문장)."""
+    secret = s.session_secret or ""
+    if secret in PUBLIC_SESSION_SECRETS:
+        return ("public_session_secret",
+                "SESSION_SECRET 이 공개된 값이다 — 이 키를 아는 누구나 세션을 위조한다. "
+                "`openssl rand -hex 32` 로 새로 만들어라(infra/scripts/start.sh 는 알아서 만든다)")
+    if len(secret) < SESSION_SECRET_MIN_LEN:
+        return ("short_session_secret",
+                f"SESSION_SECRET 이 {len(secret)}자다 — {SESSION_SECRET_MIN_LEN}자 이상이어야 한다")
+    return None
+
+
 def startup_problems(s: Settings) -> list[str]:
     """띄우면 안 되는 이유들. 비어 있으면 띄워도 된다.
 
-    실사용자가 로그인하는 구성(prod 이거나 mock 이 아닌 인증)에서만 본다 — 로컬 개발(dev + mock)은
-    막지 않는다. 막는 것은 둘이다.
-    - 공개됐거나 짧은 세션 키
-    - prod 의 mock 로그인 — 로그인 버튼만 누르면 `MOCK_USER_GROUPS`(기본 portal-admin) 로 들어간다.
-      데모 박스라면 prod 가 아니라고 **표시**하게 한다(`APP_ENV=dev`) — 몰래 열어 두지 않는다.
+    **실사용자 인증(mock 이 아닌 oidc·saml)** 에서 공개됐거나 짧은 세션 키면 막는다 — 키를 알면 아무 사용자·관리자
+    토큰을 위조한다. mock 인증은 로그인 버튼만 누르면 누구나 들어오므로 키가 노출을 더 키우지 않는다 — 그쪽은
+    `startup_warnings` 가 **경고로** 다룬다. SAML 을 붙이는 순간(AUTH_PROVIDER=saml) 이 거부가 **저절로 다시 걸린다.**
     """
-    out: list[str] = []
-    secret = s.session_secret or ""
-    if s.app_env == "prod" or s.auth_provider != "mock":
-        if secret in PUBLIC_SESSION_SECRETS:
-            out.append("SESSION_SECRET 이 공개된 값이다 — 이 키를 아는 누구나 세션을 위조한다. "
-                       "`openssl rand -hex 32` 로 새로 만들어라(infra/scripts/start.sh 는 알아서 만든다)")
-        elif len(secret) < SESSION_SECRET_MIN_LEN:
-            out.append(f"SESSION_SECRET 이 {len(secret)}자다 — {SESSION_SECRET_MIN_LEN}자 이상이어야 한다")
-    if s.app_env == "prod" and s.auth_provider == "mock":
-        out.append(f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 {s.mock_user_groups!r} "
-                   "권한으로 들어간다. oidc/saml 로 바꾸거나, 데모 박스라면 APP_ENV=dev 로 표시하라")
+    if s.auth_provider == "mock":
+        return []
+    bad = _secret_problem(s)
+    return [bad[1]] if bad else []
+
+
+def startup_warnings(s: Settings) -> list[tuple[str, str]]:
+    """띄우되 **보이게** 남길 임시 허용 — (코드, 사람용 문장).
+
+    2026-09-17 사용자 결정 — cae00 은 SAML 이 붙기 전까지 몇 주간 prod + mock(+ 공개 키)으로 돌며 기능 점검을 한다.
+    전에는 prod + mock 을 기동 거부했는데, 그러면 재기동 점검 자체를 못 한다. 대신 조용히 두지 않는다 — 기동 로그에
+    CRITICAL 로 남기고 `/health/ready` 의 `temporary` 에 코드를 싣는다(docs/gotchas.md §14).
+    """
+    if not (s.app_env == "prod" and s.auth_provider == "mock"):
+        return []
+    out = [("prod_mock", f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 {s.mock_user_groups!r} "
+                         "권한으로 들어간다. SAML 이 붙기 전까지의 임시 구성이다")]
+    bad = _secret_problem(s)
+    if bad:
+        out.append((bad[0], bad[1] + " — mock 인증이라 지금은 기동하지만, SAML 로 바꾸면 기동을 거부한다"))
     return out

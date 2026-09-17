@@ -36,7 +36,7 @@ from app.auth.token_store import TokenStore
 from app.auth.user_store import UserStore
 from app.catalog import routes as catalog_routes
 from app.catalog.registry import CatalogRegistry
-from app.config import get_settings, startup_problems
+from app.config import get_settings, startup_problems, startup_warnings
 from app.deps import build_services
 from app.mail import routes as mail_routes
 from app.mail.service import build_mail_backend
@@ -56,6 +56,11 @@ async def lifespan(app: FastAPI):
         for p in problems:
             _log.critical("기동 거부: %s", p)
         raise RuntimeError("기동 거부 — " + " / ".join(problems))
+    # 임시 허용(prod + mock) — 띄우되 조용히 두지 않는다. 로그 CRITICAL + /health/ready 의 temporary.
+    warnings = startup_warnings(settings)
+    for code, text in warnings:
+        _log.critical("임시 허용(기동은 한다) [%s]: %s", code, text)
+    app.state.startup_warnings = [code for code, _ in warnings]
     # Build the active auth provider + session token service + catalog once, from config.
     app.state.auth_provider, app.state.jwt_service = build_services(settings)
     app.state.catalog = CatalogRegistry(settings)

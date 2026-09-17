@@ -20,4 +20,6 @@ def ready(request: Request) -> dict[str, object]:
         "auth_provider": getattr(state.auth_provider, "name", "unknown"),
         "systems": catalog_count,
         "mail_backend": getattr(state.mail_backend, "name", "unknown"),
+        # 임시로 허용한 구성(예: prod_mock) — 기능 점검 때 한눈에 보이게. 문장이 아니라 코드만 싣는다(무인증 경로).
+        "temporary": list(getattr(state, "startup_warnings", []) or []),
     }

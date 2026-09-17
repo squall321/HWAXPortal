@@ -271,9 +271,16 @@ VITE_API_BASE_URL="/report-archive"  npx vite build --base="/report-archive/"
 `${SESSION_SECRET:-change-me-infra-dev}` 로 **조용히** 채웠고, 포털은 아무 키나 받아 정상처럼 떴다.
 
 → 이제 `start.sh` 가 비었거나 공개된 값이거나 32자 미만이면 `openssl rand -hex 32` 로 만들어 `infra/.env` 에
-저장한다(권한 600, 재기동에도 유지). 포털은 실사용자 구성(prod 이거나 mock 이 아닌 인증)에서 공개값·짧은 키면,
-그리고 prod 에서 `AUTH_PROVIDER=mock` 이면 **기동을 거부**한다(`config.startup_problems`). 공개값 목록은
-`config.PUBLIC_SESSION_SECRETS` 와 `start.sh` 의 case 줄이 같아야 한다(`test_no_tracked_secrets`).
+저장한다(권한 600, 재기동에도 유지). 포털은 실사용자 인증(mock 이 아닌 oidc·saml)에서 공개값·짧은 키면
+**기동을 거부**한다(`config.startup_problems`). 공개값 목록은 `config.PUBLIC_SESSION_SECRETS` 와 `start.sh` 의
+case 줄이 같아야 한다(`test_no_tracked_secrets`).
+
+2026-09-17 개정 — 처음엔 prod + mock 도 거부했으나, cae00 은 SAML 이 붙기 전 몇 주를 prod + mock 으로 돌며 재기동·기능
+점검을 해야 한다(사용자 결정, 그 기간 공개 키도 감수). mock 은 로그인 버튼만 누르면 누구나 들어오므로 키가 노출을 더
+키우지 않는다. 그래서 prod + mock(과 그때의 약한 키)은 **기동하되 보이게** 한다 — 기동 로그 CRITICAL `임시 허용` 과
+`/health/ready` 의 `"temporary": ["prod_mock", …]`(`config.startup_warnings`). `AUTH_PROVIDER=saml` 로 바꾸는 순간
+공개·짧은 키 거부가 **저절로 다시 걸린다** — 되돌리기를 잊을 자리가 없다. ⚠ SAML 전환 때 `/health/ready` 의
+`temporary` 가 비었는지 확인한다.
 
 ⚠ 새 키로 바뀌면 기존 로그인이 전부 풀린다 — 그게 정상이다. 떠 있는 포털은 **재기동해야** 새 키가 든다.
 

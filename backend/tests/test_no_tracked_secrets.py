@@ -13,7 +13,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from app.config import PUBLIC_SESSION_SECRETS, SESSION_SECRET_MIN_LEN, Settings, startup_problems
+from app.config import PUBLIC_SESSION_SECRETS, SESSION_SECRET_MIN_LEN, Settings, startup_problems, startup_warnings
 
 ROOT = Path(__file__).resolve().parents[2]
 START_SH = ROOT / "infra" / "scripts" / "start.sh"
@@ -62,9 +62,23 @@ def test_로컬_개발_dev_mock_은_막지_않는다():
                                       session_secret="change-me-dev-only")) == []
 
 
-def test_prod_의_mock_로그인은_좋은_키여도_거부한다():
-    probs = startup_problems(_settings(app_env="prod", auth_provider="mock", session_secret=GOOD))
-    assert any("AUTH_PROVIDER=mock" in p for p in probs), probs
+def test_prod_의_mock_은_기동하되_경고_코드를_남긴다():
+    """2026-09-17 사용자 결정 — SAML 전 몇 주를 prod + mock(+ 공개 키)으로 돌며 재기동 점검을 한다(gotchas §14).
+    mock 은 누구나 로그인되니 키가 노출을 더 키우지 않는다. 거부 대신 **보이는** 경고다."""
+    for secret, codes in ((GOOD, ["prod_mock"]),
+                          ("change-me-infra-dev", ["prod_mock", "public_session_secret"]),
+                          ("x" * 5, ["prod_mock", "short_session_secret"])):
+        st = _settings(app_env="prod", auth_provider="mock", session_secret=secret)
+        assert startup_problems(st) == [], secret
+        assert [c for c, _ in startup_warnings(st)] == codes, secret
+    assert startup_warnings(_settings(app_env="dev", auth_provider="mock", session_secret="change-me-dev-only")) == []
+    assert startup_warnings(_settings(app_env="prod", auth_provider="saml", session_secret=GOOD)) == []
+
+
+def test_SAML_로_바꾸면_공개_키_거부가_저절로_다시_걸린다():
+    """임시 허용을 되돌리는 작업이 따로 없어야 잊지 않는다 — 인증 방식만 바뀌면 거부가 돌아온다."""
+    for secret in ("change-me-infra-dev", "x" * 5):
+        assert startup_problems(_settings(app_env="prod", auth_provider="saml", session_secret=secret)), secret
 
 
 # ── 짝 맞추기 — 같은 목록이 두 곳에 있다 ────────────────────────────────────────────────────
@@ -122,6 +136,20 @@ def test_추적_env_파일의_비밀_칸은_비었거나_표식이다():
 
 
 # ── 배선 — 검사 함수가 있어도 기동 경로가 안 부르면 소용없다 ─────────────────────────────────
+def test_prod_mock_은_실제로_기동하고_ready_에_임시_허용이_보인다(monkeypatch):
+    """경고가 로그에만 있으면 정상 기동과 똑같이 생겨 아무도 모른다 — 기동 경로가 /health/ready 까지 싣는지 본다."""
+    from fastapi.testclient import TestClient
+
+    import app.main as main
+
+    tmp = _settings(app_env="prod", auth_provider="mock", session_secret="change-me-infra-dev")
+    monkeypatch.setattr(main, "settings", tmp)
+    with TestClient(main.app) as c:
+        got = c.get("/health/ready").json()
+    assert got["temporary"] == ["prod_mock", "public_session_secret"], got
+    assert "SESSION_SECRET" not in str(got), "무인증 경로에 문장·키 이름을 싣지 않는다 — 코드만"
+
+
 def test_포털_기동이_공개_키를_실제로_거부한다(monkeypatch):
     """`startup_problems` 만 시험하면 main.py 에서 호출이 빠져도 초록이다. lifespan 을 실제로 태운다."""
     import pytest
