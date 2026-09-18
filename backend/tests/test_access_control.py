@@ -275,6 +275,55 @@ def test_게이트웨이_내부_조회는_공유_시크릿으로만(client):
     assert "plat:stepforge" in adm["keys"], "토큰의 관리자 그룹은 인정한다"
 
 
+def test_게이트웨이_내부_조회가_소속도_준다(client):
+    """앱이 **소속 단위 읽기 공유**를 하려면 이 값이 필요하다(DynaForge 자동 반입, W-93).
+
+    게이트웨이는 이 응답을 SSO 발급 헤더에 실어 앱에 넘긴다. 앱이 자기 원장에 소속을 적어
+    두므로, 여기서 새는 것과 낡는 것이 그대로 앱의 공유 범위가 된다.
+    """
+    _setup_users(client)
+    hb = _login(client, "boss@corp.com")
+    auth = {"Authorization": "Bearer gw-test-secret"}
+    url = "/internal/access/entitlements"
+
+    got = client.get(url, params={"email": "user@corp.com"}, headers=auth).json()
+    assert got["affiliation"] == "" and got["affiliation_label"] == ""
+
+    assert client.patch("/auth/access/users/user@corp.com", json={"affiliation": "CAEG"},
+                        headers=hb).status_code == 200
+    got = client.get(url, params={"email": "user@corp.com"}, headers=auth).json()
+    assert (got["affiliation"], got["affiliation_label"]) == ("CAEG", "CAE그룹")
+
+    # 정지된 계정은 권한이 0이고 **소속도 없다** — 권한만 거두고 소속이 남으면 앱은 그 사람을
+    # 계속 같은 소속의 독자로 본다(공유 범위가 정지를 안 따라간다).
+    assert client.post("/auth/local/users/user@corp.com/status",
+                       json={"status": "disabled"}, headers=hb).status_code == 200
+    got = client.get(url, params={"email": "user@corp.com"}, headers=auth).json()
+    assert got["keys"] == [] and got["affiliation"] == ""
+
+    # 모르는 사람은 소속도 빈 값이다(원장에 행이 없다).
+    got = client.get(url, params={"email": "nobody@corp.com"}, headers=auth).json()
+    assert got["affiliation"] == "" and got["keys"] == ["feat:chat"]
+
+
+def test_표에_없는_소속_id_는_내보내지_않는다(client, monkeypatch):
+    """조직 개편으로 access.yaml 에서 소속을 지워도 원장에는 옛 값이 남는다. 그걸 그대로 내면
+    앱은 **없어진 소속으로** 예전 구성원끼리 계속 서로의 문서를 읽는다 — 권한은 거둬졌는데
+    공유만 사는 상태다. `compute` 가 권한을 안 주는 것과 같은 판정을 id 에도 쓴다."""
+    _setup_users(client)
+    hb = _login(client, "boss@corp.com")
+    auth = {"Authorization": "Bearer gw-test-secret"}
+    url = "/internal/access/entitlements"
+    assert client.patch("/auth/access/users/user@corp.com", json={"affiliation": "CAEG"},
+                        headers=hb).status_code == 200
+
+    policy = app.state.access.get()
+    monkeypatch.setattr(policy, "affiliations", {})   # 표에서 CAEG 가 사라진 상태
+    got = client.get(url, params={"email": "user@corp.com"}, headers=auth).json()
+    assert got["affiliation"] == "", "표에 없는 소속을 내보내면 앱의 공유가 계속 산다"
+    assert got["keys"] == ["feat:chat"], "권한 쪽 판정은 그대로다(기본 권한만)"
+
+
 def test_Knox_가_없는_박스는_권한_표와_요청에서_Knox_연계를_숨긴다(client, monkeypatch):
     """표시만 가린다 — 관리자·CAEG 의 권한 계산(plat:knoxbridge)과 게이트웨이 정책은 그대로다."""
     _setup_users(client)

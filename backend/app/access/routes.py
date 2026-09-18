@@ -177,11 +177,24 @@ def internal_entitlements(request: Request, email: str = Query(min_length=3, max
                           groups: str = Query(default="", max_length=2000),
                           settings: Settings = Depends(get_settings)) -> dict:
     """이 사람의 **지금** 권한 — 게이트웨이가 PAT 에 박힌 옛 그룹 대신 쓴다(D-2).
-    groups 는 토큰이 가진 로그인 그룹(관리자 여부 판정용)이고 합성 그룹은 여기서 버린다."""
+    groups 는 토큰이 가진 로그인 그룹(관리자 여부 판정용)이고 합성 그룹은 여기서 버린다.
+
+    `affiliation` 도 함께 낸다 — 앱이 **소속 단위 읽기 공유**를 하려면 이 값이 필요하다
+    (DynaForge 자동 반입 리포트, W-93). 소속은 원장 한 곳(`users.affiliation`)에서만 나오고
+    정지된 계정은 `compute` 가 빈 값으로 내린다 — 권한과 같은 문을 지난다.
+    `label` 은 사람에게 보일 이름일 뿐이다. **범위 판정은 id 로 한다**(라벨은 바뀔 수 있다)."""
     _internal(request, settings)
+    policy = _policy(request)
     base = [g for g in groups.split(",") if g]
-    ents = compute(_policy(request), groups=base, row=_store(request).get(email))
-    return {"email": email, "keys": sorted(ents.keys)}
+    ents = compute(policy, groups=base, row=_store(request).get(email))
+    # ⚠ **표에 없는 소속 id 는 빈 값으로 내린다.** 조직 개편으로 access.yaml 에서 소속을 지워도
+    # 원장 `users.affiliation` 에는 옛 값이 남는다. 포털 권한은 그 순간 끊기는데(`compute` 의
+    # `aff in policy.affiliations`), 이 응답만 옛 id 를 계속 내면 앱은 **없어진 소속으로** 예전
+    # 구성원끼리 서로의 문서를 계속 읽는다 — 권한은 거둬졌는데 공유만 살아 있는 상태다.
+    known = policy.affiliations.get(ents.affiliation) or {}
+    aff = ents.affiliation if known else ""
+    return {"email": email, "keys": sorted(ents.keys), "affiliation": aff,
+            "affiliation_label": str(known.get("label") or "")}
 
 @router.get("/internal/org-taxonomy")
 def internal_org_taxonomy(request: Request, settings: Settings = Depends(get_settings)) -> dict:
