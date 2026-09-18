@@ -1447,3 +1447,20 @@ def test_여럿_고르기_단계는_펼치지_않는다(user):
     rid = _gated_multi_run(c, h)
     r = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={"mode": "plan"}, headers=h)
     assert r.status_code == 422 and "골라서 한 번에" in r.json()["detail"], r.text
+
+
+# ── 즉석 단계가 `gate: human` 을 조용히 무시하던 것(W-100, 2026-09-18 재현) ─────────────
+def test_즉석_단계는_사람_확인이_필요한_단계를_받지_않는다(user):
+    """즉석 단계에는 확인 화면이 없다. 받으면 `gate: human` 이 **조용히 무시된 채** 바로 나갔다 —
+    `trash_report` 가 게이트웨이까지 도달했다. 게이트웨이가 절차 호출에 파괴 도구 차단을
+    면제하는 근거("포털이 사람 확인을 받았다")가 이 입구에서 거짓이 된다."""
+    c, h = user
+    rid = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
+    for body in ({"backend": "reportarchive", "tool": "trash_report", "gate": "human",
+                  "args": {"report_id": 1}},
+                 {"backend": "reportarchive", "tool": "trash_report", "args": {"report_id": 1}},
+                 {"backend": "b", "tool": "harmless_read", "gate": "human"}):
+        r = c.post(f"{PREFIX}/runs/{rid}/steps", json=body, headers=h)
+        assert r.status_code == 422, (body, r.status_code, r.text)
+        assert "즉석으로 돌릴 수 없습니다" in r.json()["detail"], r.json()
+    assert app.state.procedures_store.list_steps(rid) == [], "거른 단계는 기록도 안 남긴다"

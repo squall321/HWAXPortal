@@ -683,3 +683,58 @@ def test_승인한_인자_그대로_나간다(kit):
         sent = [c for c in g.calls if c["arguments"].get("name") == "b_w"]
         assert sent and sent[0]["arguments"]["arguments"] == {"who": "u1@x.io", "n": 1}
     asyncio.run(go(*kit))
+
+
+# ── 사람 자리는 실행 시점에도 선다(W-100) ──────────────────────────────────
+def test_즉석_단계_실행기도_사람_자리를_거절한다(kit):
+    """라우트가 먼저 거르지만, 다른 호출부가 생겨도 뚫리지 않게 실행기가 한 번 더 막는다."""
+    async def go(store, build):
+        g = Gate(tools={"reportarchive_trash_report": {}},
+                 replies={"reportarchive_trash_report": ok({"trashed": 1})})
+        r = build(g)
+        rid = _run(store, None)
+        for st in (Step(backend="reportarchive", tool="trash_report", gate="human"),
+                   Step(backend="reportarchive", tool="trash_report")):
+            with pytest.raises(RunnerError, match="즉석으로 돌리지 않는다"):
+                await r.step_once(run_id=rid, step=st, principal=PRINCIPAL)
+        await r.aclose()
+        assert g.calls == [], f"게이트웨이까지 갔다: {g.calls}"
+    asyncio.run(go(*kit))
+
+
+def test_옛_판본의_MUST_GATE_단계도_실행_시점에_멈춘다(kit):
+    """판본은 불변이라 저장 검증을 다시 안 탄다. `publish_report_to_datahub` 는 09-15 에야 MUST_GATE 에
+    들었다 — 그 전에 `gate` 없이 저장된 단계가 오늘 확인 없이 지나가면 안 된다."""
+    async def go(store, build):
+        g = Gate(tools={"b_read": {}, "reportarchive_publish_report_to_datahub": {}},
+                 replies={"b_read": ok({"id": 7}),
+                          "reportarchive_publish_report_to_datahub": ok({"published": 1})})
+        r = build(g)
+        # validate_spec 을 거치지 않은 판본 — 저장 당시엔 MUST_GATE 가 아니었다
+        spec = ProcedureSpec(title="old", steps=[
+            Step(backend="b", tool="read", save={"rid": "id"}),
+            Step(backend="reportarchive", tool="publish_report_to_datahub", args={"id": "{{rid}}"})])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        assert out["state"] == "gated" and out["stopped_at"] == 1, out
+        assert [c["arguments"]["name"] for c in g.calls] == ["b_read"], "승인 전에 나갔다"
+
+        store.ack_gate(rid, 1, by="u1", args_sha256=out["args_sha256"])
+        out2 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL, start_at=1)
+        await r.aclose()
+        assert out2["state"] == "done", out2
+        assert [c["arguments"]["name"] for c in g.calls][-1] == "reportarchive_publish_report_to_datahub"
+    asyncio.run(go(*kit))
+
+
+def test_계획_모드는_실제로_멈출_자리를_보인다(kit):
+    """선언이 없어도 멈추는 단계를 계획에서 `gate: None` 으로 보이면 사람은 '확인 없이 간다' 로 읽는다."""
+    async def go(store, build):
+        r = build(Gate())
+        spec = ProcedureSpec(title="p", steps=[Step(backend="reportarchive", tool="trash_report")])
+        rid = store.create_run(owner_sub="u1", mode="plan", inputs={})
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        calls = out.get("calls") or []
+        assert calls and calls[0]["gate"] == "human", out
+    asyncio.run(go(*kit))

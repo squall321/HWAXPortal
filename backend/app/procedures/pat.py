@@ -14,6 +14,14 @@
 3. **`pat_name`·`jti` 로 챗과 구분한다.** 게이트웨이 감사는 이 클레임을 안 남기므로
    구분은 절차 자기 실행 기록이 맡지만(context-notes W-17), 토큰 자체에도 적어 둔다 —
    나중에 게이트웨이가 남기게 되면 그대로 갈린다.
+
+넷째가 2026-09-18 에 붙었다 — **`purpose: "procedure"`**. 게이트웨이가 `invoke_tool` 로 부를 수
+없게 막는 도구(MUST_GATE 와 같은 목록)를 **이 토큰일 때만** 통과시킨다. 절차는 늘 별칭으로 부르고
+그 별칭이 정확이름 차단을 우회하고 있었는데(W-100), 차단을 조이면 게이트를 통과한 절차까지 막힌다.
+
+⚠ **이 클레임은 사용자가 만들 수 없어야 뜻이 있다.** `/auth/pat` 은 사람이 준 문자열을 `pat_name`
+에만 넣고 클레임 집합은 코드가 고정한다 — `purpose` 를 넣는 자리는 이 파일 하나뿐이다. 그래서
+`pat_name: "procedures"` 로 흉내 내도 통과하지 않는다(그 검사를 `test_procedures_pat.py` 가 건다).
 """
 
 import logging
@@ -45,6 +53,9 @@ def mint(keystore, settings, principal, run_id: str, step_ix: int) -> str | None
             "scope": "api",
             "scopes": ["chat"],
             "pat_name": "procedures",
+            # 게이트웨이가 정확이름 차단을 이 토큰에만 면제한다(W-100). 사람이 만드는 PAT 에는
+            # 이 칸이 없다 — 있으면 누구나 파괴 도구를 범용 실행기로 부를 수 있게 된다.
+            "purpose": "procedure",
             "iat": now,
             "nbf": now - timedelta(seconds=SKEW_SEC),
             "exp": now + timedelta(minutes=LIFETIME_MIN),

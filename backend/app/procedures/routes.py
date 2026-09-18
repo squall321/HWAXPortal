@@ -19,7 +19,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import yaml
@@ -34,6 +34,7 @@ from app.config import BACKEND_DIR, get_settings
 from app.deps import ensure, get_current_principal, require_csrf
 from app.procedures import judge as J
 from app.procedures.models import (
+    MUST_GATE,
     ProcedureSpec,
     SpecError,
     Step,
@@ -492,6 +493,10 @@ class StepIn(BaseModel):
     backend: str
     tool: str
     args: dict = Field(default_factory=dict)
+    # ⚠ **받아서 거절한다.** 이 칸이 없을 땐 `gate: "human"` 을 보내도 pydantic 이 **말없이 버리고**
+    # 확인 없이 바로 실행했다 — 부른 쪽은 사람 확인을 요청했는데 202 가 왔다(W-100). 즉석 단계에는
+    # 확인 화면이 없으므로 받을 수는 없고, 버리지 않고 422 로 말한다.
+    gate: Literal["human"] | None = None
     save: dict[str, str] | None = None
     raw: bool = False
     unwrap: str | None = None
@@ -517,6 +522,12 @@ async def add_step(request: Request, run_id: str, body: StepIn,
                         f"새 실행에서 이어가세요", status_code=409)
 
     step = Step(**body.model_dump())
+    # 사람 확인이 필요한 단계는 여기서 받지 않는다 — 즉석 단계에는 확인 화면이 없다. 받으면
+    # `gate: human` 이 **조용히 무시된 채** 바로 나갔다(W-100 재현). 202 를 준 뒤 배경에서
+    # 실패시키면 쌓아 온 실행 기록이 통째로 붉게 마감되므로(위 상한과 같은 이유) 요청에서 거른다.
+    if step.gate == "human" or step.tool in MUST_GATE:
+        raise AuthError(f"'{step.tool}' 은 사람 확인이 필요한 단계라 즉석으로 돌릴 수 없습니다 — "
+                        f"절차로 저장해 실행하세요(확인 화면이 거기 있습니다)", status_code=422)
     one = ProcedureSpec(title="ad-hoc", steps=[step])
     hard = [e for e in validate_spec(one) if not e.startswith("warn:")]
     # 미지 변수는 빈 실행에서 정상이다(앞 단계가 실행 입력에 값을 합쳐 둔다)

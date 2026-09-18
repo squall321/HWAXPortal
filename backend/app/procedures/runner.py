@@ -21,7 +21,7 @@ import httpx
 from app.procedures import dispatch
 from app.procedures import judge as J
 from app.procedures import template
-from app.procedures.models import ProcedureSpec, Step, schema_fingerprint
+from app.procedures.models import MUST_GATE, ProcedureSpec, Step, schema_fingerprint
 from app.procedures.store import ProceduresStore
 
 logger = logging.getLogger(__name__)
@@ -224,7 +224,7 @@ class ProceduresRunner:
             except template.TemplateError:
                 args, pending = st.args, True
             calls.append({"ix": ix, "backend": st.backend, "tool": st.tool,
-                          "alias": st.alias, "gate": st.gate, "expect": st.expect,
+                          "alias": st.alias, "gate": _gate_of(st), "expect": st.expect,
                           "args": args, "unverified": pending})
             if pending:
                 unknown.append(st.tool)
@@ -239,7 +239,7 @@ class ProceduresRunner:
             self.store.finish_step(
                 run_id, ix, ok=True, state="skipped",
                 stage="plan:unverified" if pending else "plan",
-                notes={"plan": {"alias": st.alias, "gate": st.gate,
+                notes={"plan": {"alias": st.alias, "gate": _gate_of(st),
                                 "unverified": pending}})
         self.store.set_run_state(run_id, "done", stage="plan", ended=True)
         return {"state": "done", "stage": "plan", "calls": calls, "unverified": unknown}
@@ -289,7 +289,11 @@ class ProceduresRunner:
                         "error": J.short_error(bad)}
 
             # 게이트 — 승인이 없으면 여기서 멈춘다. 인자 지문에 묶인 1회용 승인이다.
-            if st.gate == "human":
+            # ⚠ `_gate_of` — 저장된 판본의 `gate` 만 보면 **MUST_GATE 가 나중에 늘었을 때** 옛 판본이
+            # 확인 없이 지나간다(`publish_report_to_datahub` 는 09-15 에야 들었다). 판본은 불변이라
+            # 저장 검증을 다시 안 탄다. 게이트웨이가 절차 호출에 파괴 도구 차단을 면제하는 근거가
+            # "포털이 사람 확인을 받았다" 이므로(W-100) 그 전제를 **여기서** 참으로 만든다.
+            if _gate_of(st) == "human":
                 ack = self.store.gate_ack(run_id, ix)
                 want = _sha(args)
                 if ack is None or ack["args_sha256"] != want:
@@ -364,6 +368,12 @@ class ProceduresRunner:
         세션을 열고 한 단계만 돌리고 닫는다. 여러 단계를 이어 붙이는 것은 사람이 화면에서
         한다 — 그 기록이 나중에 "절차로 저장" 의 재료가 된다.
         """
+        # ⚠ **여기는 게이트가 없다.** `gate: human` 을 달고 오면 검증은 통과하는데 실행은 확인 없이
+        # 바로 나갔다(2026-09-18 재현 — `trash_report` 가 게이트웨이까지 도달). 선언된 사람 자리가
+        # 조용히 무시되는 것이고, 게이트웨이 면제의 전제도 거짓이 된다. 라우트가 먼저 거르지만
+        # 다른 호출부가 생겨도 뚫리지 않게 여기서도 막는다.
+        if _gate_of(step) == "human":
+            raise RunnerError("사람 확인이 필요한 단계는 즉석으로 돌리지 않는다 — 절차로 저장해 실행하라")
         run = self.store.get_run(run_id)
         if run is None:
             raise RunnerError(f"실행이 없다: {run_id}")
@@ -741,6 +751,11 @@ def _sha(args: dict) -> str:
 
     blob = json.dumps(args, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _gate_of(st: Step) -> str | None:
+    """이 단계가 **실제로** 멈출 자리인가. 선언(`gate`)이 없어도 되돌리기 어려운 도구는 멈춘다."""
+    return "human" if (st.gate == "human" or st.tool in MUST_GATE) else st.gate
 
 
 def _resolvable(st: Step, known: set) -> bool:
