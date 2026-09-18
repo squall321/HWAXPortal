@@ -288,3 +288,26 @@ case 줄이 같아야 한다(`test_no_tracked_secrets`).
 유출은 아니었다. 다만 그 자리표시도 딱 32자라 길이 검사로는 안 걸려서 공개값 목록에 이름으로 넣었다.
 조사하며 비밀 칸을 값을 안 보고 정규식으로 "실값 모양" 이라 짐작했다가 이 자리표시와 키트의
 `@GENERATE_HEX32@` 를 유출로 **잘못 보고했다** — 짐작 말고 허용 목록으로 본다.
+
+## 15. 세션이 게이트웨이 재기동 창에 걸리면 MCP 가 **세션 내내** 죽어 있다
+
+2026-09-18 실측 — Claude 세션이 09:10:51 에 뜨고 게이트웨이가 09:14:42 에 떴다. 세션 시작 때 한 번
+붙어 보고 실패하면 그걸로 끝이라, 그 세션은 `hwax` MCP 도구를 **하나도** 못 쓴다. 표시는
+`ConnectionRefused` 인데 설정·토큰은 멀쩡하다. 아침 `update-all`·`restart.sh` 뒤에 세션을 열면 자주 걸린다.
+
+**고치는 법은 `/mcp` 로 재연결**(또는 세션 재시작)이다. 설정을 고칠 것이 없다.
+
+⚠ **`claude mcp list` 로 토큰 유효성을 판단하지 마라.** 토큰이 없어도, 빈 문자열이어도 `✓ Connected`
+로 나온다(실측). 도달성만 본다. 실제 자격은 게이트웨이에 `initialize` 를 쏴 봐야 안다.
+
+```bash
+# 값은 찍지 않는다 — 상태코드만 본다(200 이면 산 토큰)
+AUTH=$(python3 -c "import json,pathlib;d=json.loads((pathlib.Path.home()/'.claude.json').read_text());print(d['projects']['<리포절대경로>']['mcpServers']['hwax']['headers']['Authorization'],end='')")
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:9110/mcp \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -H "Authorization: $AUTH" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}'
+```
+
+리포의 `.mcp.json` 은 `${HWAX_GATEWAY_PAT}` 환경변수를 기대하지만, 이 박스는 `~/.claude.json` 의
+프로젝트별 등록에 토큰이 박혀 있어 그쪽으로 붙는다. 둘 중 하나만 살아 있으면 된다.
