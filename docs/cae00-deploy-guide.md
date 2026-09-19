@@ -338,3 +338,50 @@ ARP·ODB 페르소나의 사전 지식은 뼈대(매니페스트 설명 + 도구
 
 **4) 확인.** 권한이 없는 계정으로 로그인해 심의 메뉴가 **안 보이는지**, `/deliberate` 가 내 권한
 화면으로 가는지, 내 권한에서 요청→승인 뒤 새로고침 없이 메뉴가 뜨는지 본다.
+
+## 2026-09-19 반영분 — 한글 이름 앱 접속 · StepForge 관통 신호 · SignalForge 주소 드리프트
+
+**반영 순서는 포털 → 게이트웨이 → 허브(HEAXHub) → 앱 재배포**다. 포털이 먼저여야 게이트웨이가
+절차 PAT 의 `purpose` 클레임을 받는다(그 반대로 하면 승인한 절차 단계가 승인 **뒤에** 막힌다).
+
+```bash
+cd ~/Projects/HWAXPortal && git pull && (cd frontend && pnpm build)
+apptainer instance stop hwax_portal && ./infra/scripts/start.sh
+cd ../HWAXMcpGateway && git pull && ./start.sh restart
+cd ../HEAXHub && git pull && ./deploy/apptainer/start.sh      # rev 가 바뀌면 backend·celery 를 스스로 교체한다
+```
+
+**1) SignalForge 주소는 스스로 맞춰진다.** cae00 게이트웨이 설정이 8013 을 가리키는데 SignalForge 는
+8008 에서 돈다 — 키가 있어서 `calc_missing` 이 못 보던 자리다. 이제 `update-all` 이 **선언(그 서비스의
+`.env` 의 `MCP_PORT`)과 어긋난 주소**를 찾아 다시 프로비저닝한다.
+
+```bash
+cd ~/Projects/HWAXPortal && ./infra/scripts/update-all.sh
+# 확인 — 아무것도 안 나오면 어긋난 것이 없다(종료코드 0)
+cd ../HWAXMcpGateway && python3 provision_urls.py drift gateway_config.json "$(dirname "$PWD")"
+curl -s 127.0.0.1:9110/health | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['tools'], [k for k,v in d['backends'].items() if not v] or '전부 정상')"
+```
+
+**2) StepForge 공개 주소는 이 박스에서 한 줄을 넣어야 한다(1회).** 값의 정본이 gitignore 된 호스트
+`.env` 라 리포를 따라오지 않는다. 안 넣으면 앱이 내는 링크가 자리표시자로 나온다(앱은 "모른다"고
+말하는 쪽이라 조용히 틀리지는 않는다).
+
+```bash
+cd ~/Projects/HEAXHub
+echo 'APPTAINERENV_STEPFORGE_PUBLIC_BASE=<사용자가 실제로 접속하는 포털 주소>' >> .env
+./deploy/apptainer/redeploy-app.sh step_forge --rebuild
+# 들어갔는지는 컨테이너 프로세스로 본다(앱 헬스로는 안 보인다)
+tr '\0' '\n' < /proc/$(pgrep -f 'root-path /apps/step_forge' | head -1)/environ | grep STEPFORGE_PUBLIC_BASE
+```
+
+⚠ `redeploy-app.sh` 는 이제 **스스로 `.env` 를 싣는다**(HEAXHub e994243). 예전에는 셸에서 바로 부르면
+앱 env 가 조용히 빠진 채 멀쩡히 떴다 — dev 에서 실제로 났고, 컨테이너 environ 을 직접 보기 전까지
+아무 신호가 없었다.
+
+**3) 확인 — 화면이 아니라 도구 응답으로 본다.**
+
+```bash
+# 한글 이름 사용자로 로그인해 앱 화면(/apps/<앱>/)이 열리는지 — 예전에는 500 이었다
+# StepForge: 간섭이 있는 과제에서 inspect_report 응답에 아래 세 칸이 있으면 반영된 것이다
+#   tolerance_level_touching_candidates · tolerance_level_buried_suspects · worst_interference[].sliver_verdict
+```
