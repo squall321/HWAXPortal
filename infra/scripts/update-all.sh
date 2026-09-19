@@ -364,8 +364,26 @@ PY
     MISSING="hwax_risk_sso${MISSING:+ $MISSING}"
   fi
 
+  # 키는 있는데 **주소가 틀려서** 계속 죽는 백엔드 — calc_missing 은 '키 없음' 만 본다.
+  # ⚠ 2026-09-19 cae00: SignalForge MCP 는 8008 인데 게이트웨이는 8013 을 들고 있어
+  #   `signalforge: false` 가 09-18 부터 떠 있었다. 키가 있으니 여기(재프로비저닝)에 안 걸렸고,
+  #   아래 '다운 백엔드' 가 멀쩡한 서비스를 재기동만 반복했다 — 영원히 안 고쳐지는 모양.
+  #   형제 서비스가 자기 .env 에 선언한 포트와 config 의 로컬 주소를 비교한다(게이트웨이 리포의
+  #   provision_urls.py — 프로비저너와 **같은 판정**을 쓴다. 따로 쓰면 둘이 어긋난다).
+  DRIFT=""
+  if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/provision_urls.py" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
+    DRIFT="$(python3 "$GW_DIR/provision_urls.py" drift "$GW_DIR/gateway_config.json" "$(dirname "$GW_DIR")" 2>/dev/null || true)"
+    if [ -n "$DRIFT" ]; then
+      while IFS=$'\t' read -r _k _cur _want; do
+        [ -n "$_k" ] || continue
+        echo "  · 주소 드리프트: $_k — config 는 $_cur 인데 서비스는 $_want 로 선언했다"
+        MISSING="${MISSING:+$MISSING }$_k"
+      done <<< "$DRIFT"
+    fi
+  fi
+
   if [ -n "$MISSING" ]; then
-    echo "  · config에 없는 백엔드: $MISSING → 재프로비저닝"
+    echo "  · config에 없거나 주소가 어긋난 백엔드: $MISSING → 재프로비저닝"
     if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/provision-config.sh" ]; then
       # provision.env 는 `. ` 로 소싱만 하므로(export 아님) 자식 프로세스가 못 본다.
       # 그래서 여기서 하나하나 명시해 넘긴다 — ODB_HUB_* 를 빠뜨려서 cae00 에서
@@ -392,6 +410,11 @@ PY
         STILL="$(calc_missing "$H")"
         [ -z "$STILL" ] && ok "재프로비저닝으로 백엔드 정합 완료" \
           || bad "재프로비저닝 후에도 누락: $STILL (mxwp 토큰 민팅 실패 등 — 위 provision 출력 확인)"
+        if [ -n "$DRIFT" ]; then
+          _left="$(python3 "$GW_DIR/provision_urls.py" drift "$GW_DIR/gateway_config.json" "$(dirname "$GW_DIR")" 2>/dev/null || true)"
+          [ -z "$_left" ] && ok "주소 드리프트 해소" \
+            || bad "재프로비저닝 후에도 주소 드리프트: $(printf '%s' "$_left" | cut -f1 | xargs) — provision.env 의 *_MCP_URL 이 옛 주소를 박고 있지 않은지 확인"
+        fi
       fi
     else
       bad "HWAXMcpGateway 레포/provision-config.sh 없음 — 재프로비저닝 불가"
@@ -494,6 +517,19 @@ PY
     if [ -n "$UP_SVCS" ]; then
       echo "  · 등록됐지만 다운: $DOWN → 기동: $UP_SVCS (게이트웨이는 60s 내 자동 재편입)"
       "$SVC" up $UP_SVCS
+    fi
+    # 서비스를 띄운 뒤에도 **게이트웨이가 아는 주소**에 아무것도 없으면, 서비스가 아니라 주소가
+    # 틀린 것이다. 재기동을 반복해도 안 고쳐진다 — 그 사실을 사람이 볼 자리에 남긴다.
+    # (형제 .env 가 포트를 선언하는 백엔드는 위 드리프트 판정이 이미 자동으로 고쳤다.)
+    if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
+      for b in $DOWN; do
+        _u="$(python3 -c 'import json,sys;print((json.load(open(sys.argv[1])).get(sys.argv[2]) or {}).get("url") or "")' \
+               "$GW_DIR/gateway_config.json" "$b" 2>/dev/null)"
+        [ -n "$_u" ] || continue
+        if [ "$(http_code "$_u" 3)" = "000" ]; then
+          bad "$b: 게이트웨이 설정 주소 $_u 에 아무것도 없다(연결 실패) — 서비스가 다른 포트에 떠 있으면 재기동으로는 안 고쳐진다. 게이트웨이 provision.env 에 이 백엔드의 *_MCP_URL 을 명시하고 provision-config.sh --force"
+        fi
+      done
     fi
   fi
 fi

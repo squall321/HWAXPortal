@@ -311,3 +311,18 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:9110/mcp \
 
 리포의 `.mcp.json` 은 `${HWAX_GATEWAY_PAT}` 환경변수를 기대하지만, 이 박스는 `~/.claude.json` 의
 프로젝트별 등록에 토큰이 박혀 있어 그쪽으로 붙는다. 둘 중 하나만 살아 있으면 된다.
+
+## 16. 게이트웨이 백엔드 포트는 **그 서비스의 `.env` 가 정본**이다 — 박스마다 다르다
+
+2026-09-19 cae00 — SignalForge MCP 는 `SignalForge/.env` 의 `MCP_PORT=8008` 로 떠 있는데 게이트웨이
+config 는 `8013` 을 들고 있어 `/health` 의 `signalforge: false` 가 09-18 부터 떠 있었다. dev 는 `.env` 가
+우연히 8013 이라 멀쩡했다.
+
+원인은 두 겹이다. ① `provision-config.sh` 가 `env > 직전 .bak > 기본값` 순이라 **처음 한 번 박힌 기본값을
+`--force` 때마다 `.bak` 에서 물려받았다.** ② `update-all.sh` 5단계는 **키가 없는** 백엔드만 재프로비저닝했다.
+키는 있고 값만 `false` 인 이 경우는 '다운 백엔드' 로 분류돼 **멀쩡한 서비스를 재기동만 반복**했다.
+
+고친 것 — 형제 서비스가 자기 `.env` 에 포트를 선언하면 그것이 로컬 `.bak` 을 이긴다(게이트웨이 리포
+`provision_urls.py`, 원격 주소는 사람이 옮긴 것이라 존중). update-all 이 **같은 판정**으로 드리프트를 찾아
+재프로비저닝하고, 서비스를 띄운 뒤에도 설정 주소에 아무것도 없으면 "재기동으로는 안 고쳐진다" 고 크게 말한다.
+새 형제 서비스가 포트를 `.env` 에 선언하면 `provision_urls.SIBLING_PORTS` 에 한 줄 더한다.
