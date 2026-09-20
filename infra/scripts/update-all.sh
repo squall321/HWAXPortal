@@ -122,6 +122,18 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   fi
 fi
 
+# ── 1c) .env 옵션 동기화 — 새로 생긴 설정이 **이미 있는 .env** 에 없으면 채운다 ──────────
+# 왜 여기인가 — 배포·기동 **전**이어야 서비스가 새 설정을 들고 뜬다. 뒤에 두면 다음 회차까지 미반영이다.
+# 있는 값은 건드리지 않고 없는 것만 끝에 덧붙이며, 비밀·자리표시자·박스별 값은 **주석으로** 넣고 크게 알린다
+# (예시값을 그대로 켜면 "그럴듯하게 틀린 설정" 이 된다 — 09-19 StepForge 자리표시자 URL 이 그 모양이었다).
+# 밀린 양이 상한(HWAX_ENV_SYNC_MAX, 기본 10)을 넘으면 **자동으로 켜지 않고** 사람에게 넘긴다.
+hr "1c) .env 옵션 동기화"
+if [ -x "$SELF_REPO/infra/scripts/env-sync.sh" ]; then
+  "$SELF_REPO/infra/scripts/env-sync.sh" 2>&1 | sed 's/^/  /' || true
+else
+  echo "  · env-sync.sh 없음 — 건너뜀(구버전 체크아웃)"
+fi
+
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
 # 종료코드 3 = 소스 갱신 실패(git fetch/reset). 서비스는 떠 있어도 옛 코드라 가장 위험한
@@ -300,7 +312,13 @@ else
   # mxwp 기대 여부 — 프로비저너의 전제(mxwp_api 인스턴스)와 동일 조건 + MCP(:8765) 응답까지 확인.
   # (인스턴스 없이 :8765만 보면 매 실행 재프로비저닝 루프가 된다 — 민팅이 인스턴스 안에서 돌기 때문)
   MXWP_UP=0
-  if apptainer instance list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx mxwp_api; then
+  # pipefail + 조기종료(grep -q)는 SIGPIPE(141) 오판을 만든다 — 목록을 먼저 받는다(실측 14.7%).
+  _il="$(apptainer instance list 2>/dev/null || true)"
+  case $'\n'"$(printf '%s\n' "$_il" | awk 'NR>1{print $1}')"$'\n' in
+    *$'\n'mxwp_api$'\n'*) _mx_up=1 ;;
+    *) _mx_up=0 ;;
+  esac
+  if [ "$_mx_up" = "1" ]; then
     case "$(http_code http://127.0.0.1:8765/mcp 2)" in ''|000) ;; *) MXWP_UP=1 ;; esac
   fi
 
@@ -450,7 +468,9 @@ PY
           [ -x "$_appt" ] || _appt="$(command -v apptainer || true)"
           if [ -n "$_appt" ] \
              && [ "$(http_code http://127.0.0.1:8800/api/v1/healthz 3)" != "200" ] \
-             && "$_appt" instance list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx mxwp_api; then
+             && { _il2="$("$_appt" instance list 2>/dev/null || true)"; \
+                  case $'\n'"$(printf '%s\n' "$_il2" | awk 'NR>1{print $1}')"$'\n' in \
+                    *$'\n'mxwp_api$'\n'*) true ;; *) false ;; esac; }; then
             echo "  · mxwp_api 인스턴스는 있는데 API 가 응답 없음 — 껍데기 인스턴스를 먼저 내린다"
             "$_appt" instance stop mxwp_api >/dev/null 2>&1 || true
             sleep 2
