@@ -44,10 +44,13 @@ _routes_path="$(sed -n 's/^ROUTES_PATH=//p' "$SELF_REPO/infra/.env" 2>/dev/null 
 ROUTES_ENV="${ROUTES_ENV:-$SELF_REPO/backend/${_routes_path:-config/routes.env}}"
 hr() { printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
-bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
+# ⚠ **치명과 비치명을 눈으로 가른다.** 종전엔 둘 다 빨간 ✗ 라, 이 박스 대상도 아닌 서비스나
+# '비치명' 이라고 적힌 항목까지 실패처럼 보였다(2026-09-20 cae00: ✗ 넷 중 종료코드를 세운 것은
+# 하나도 없었는데 사람은 전부 고장으로 읽었다). 색이 판정과 어긋나면 사람은 로그를 안 믿게 된다.
+bad()  { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
 # bad 는 경고라 종료코드에 영향이 없다 — 앱이 깨져도 update-all 이 초록으로 끝나던 원인이다.
-# 배포 실패로 계상해야 하는 것은 fail 로 낸다(§6 헬스게이트의 FAIL 을 세운다).
-fail() { bad "$@"; FAIL=1; }
+# 배포 실패로 계상해야 하는 것은 fail 로 낸다(§6 헬스게이트의 FAIL 을 세우고, 끝에서 모아 보여 준다).
+fail() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; FAIL=1; FAIL_ITEMS="${FAIL_ITEMS:-}  · $1"$'\n'; }
 app_bad() { local c="$1"; shift; if [ "$c" = 1 ]; then fail "$@"; else bad "$@"; fi; }
 
 # HTTP 코드 프로브 — curl은 실패해도 -w로 '000'을 찍으므로 종료코드가 아니라 출력값으로만 판정한다.
@@ -268,8 +271,7 @@ hr "4) update-sites (챗 스택: mcp-gateway·agent-server·signalforge-mcp)"
 # ⚠ 갱신 실패를 **실패로 센다.** 헬스게이트는 "떠 있나" 만 보므로, git pull 이 막혀 옛 코드로 떠도
 # 초록이었다(2026-09-17 cae00 점검 — 절차가 옛 게이트웨이에 걸려 있었다).
 if ! "$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server; then
-  bad "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다"
-  FAIL=1
+  fail "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다"
 fi
 
 # ── 5) 게이트웨이 config 정합 — 기대 백엔드가 config에 아예 없으면 재프로비저닝 ──
@@ -565,7 +567,7 @@ probe() { # $1=라벨 $2=URL $3=critical(1/0) $4=허용코드(공백구분)
   local code; code="$(http_code "$2")"
   case " $4 " in
     *" ${code:-000} "*) ok "$1 → $code" ;;
-    *) bad "$1 → ${code:-000}  ($2)"; [ "$3" = 1 ] && FAIL=1 ;;
+    *) if [ "$3" = 1 ]; then fail "$1 → ${code:-000}  ($2)"; else bad "$1 → ${code:-000}  ($2)"; fi ;;
   esac
 }
 # 핵심 4종은 전부 무인증 /health — 정상이면 200 외의 코드가 나올 수 없다(401/302는 오설정 신호).
@@ -581,8 +583,7 @@ PROC_H="$(curl -s -m 4 http://127.0.0.1:8723/procedures-api/health 2>/dev/null |
 if printf '%s' "$PROC_H" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
   ok "절차 모듈 → $(printf '%s' "$PROC_H" | tr -d '{}"' | cut -c1-60)"
 else
-  bad "절차 모듈 미기동 — /procedures-api/health 가 ok:true 가 아니다: $(printf '%s' "$PROC_H" | cut -c1-120)"
-  FAIL=1
+  fail "절차 모듈 미기동 — /procedures-api/health 가 ok:true 가 아니다: $(printf '%s' "$PROC_H" | cut -c1-120)"
 fi
 # 서빙 중인 SPA 가 지금 소스로 빌드된 것인가 — dist 는 git 이 아니라 Drive 로 온다. 낡으면 화면이
 # 옛 API 를 불러 조용히 깨진다(2026-09-14 워크벤치→절차 개명 뒤 실제로 그랬다). 빌드 때 박아 둔
@@ -592,8 +593,7 @@ _head_src="$(git -C "$SELF_REPO" rev-parse HEAD:frontend 2>/dev/null || true)"
 if [ -z "$_dist_src" ]; then
   bad "SPA dist 에 빌드 표식(.build-src)이 없다 — dev 에서 images-to-drive.sh 를 다시 돌려 올린다(비치명)"
 elif [ -n "$_head_src" ] && [ "$_dist_src" != "$_head_src" ]; then
-  bad "SPA dist 가 지금 소스와 다르다(dist=${_dist_src:0:12} · HEAD=${_head_src:0:12}) — dev 에서 pnpm build + images-to-drive.sh 뒤 다시 배포한다"
-  FAIL=1
+  fail "SPA dist 가 지금 소스와 다르다(dist=${_dist_src:0:12} · HEAD=${_head_src:0:12}) — dev 에서 pnpm build + images-to-drive.sh 뒤 다시 배포한다"
 else
   ok "SPA dist 가 지금 소스와 같다 (${_head_src:0:12})"
 fi
@@ -666,10 +666,19 @@ probe "signalforge    :17370(프론트)" http://127.0.0.1:17370/ 0 "200 302 401"
 probe "signalforge    :18000(API)" http://127.0.0.1:18000/health 0 "200"
 # searxng — 종전엔 프로브도 복구도 없었다. 죽으면 웹 리서치가 조용히 멈추는데
 # update-all 은 아무 말도 안 했다(WEB_PROVIDER=searxng 일 때 앱이 이 주소로만 나간다).
-probe "searxng        :8888" http://127.0.0.1:8888/ 0 "200 302"
-if [ "$(http_code http://127.0.0.1:8888/ 4)" = "000" ]; then
-  echo "  · searxng 다운 → 기동"
-  "$SVC" up searxng || bad "searxng 기동 실패 — 웹 리서치가 막힌다(수동 확인)"
+# ⚠ **이 박스 대상인지 먼저 묻는다.** searxng 는 `only_on: smarttwincluster` 라 cae00 엔 없는데,
+# 검사 쪽이 그걸 안 보고 두드려 `✗ searxng → 000` 을 찍고 바로 다음 줄에서 복구 쪽이
+# "이 박스 대상 아님" 으로 건너뛰었다(2026-09-20 cae00 로그). 한 화면에서 같은 서비스를 두고
+# "죽었다" 와 "여기 얘기 아니다" 가 동시에 찍히면, 사람은 그걸 진짜 고장으로 읽는다.
+# 판정은 셸에 호스트명 비교를 복제하지 않고 **정본(services.yaml)에 묻는다**.
+if "$SVC" enabled searxng; then
+  probe "searxng        :8888" http://127.0.0.1:8888/ 0 "200 302"
+  if [ "$(http_code http://127.0.0.1:8888/ 4)" = "000" ]; then
+    echo "  · searxng 다운 → 기동"
+    "$SVC" up searxng || bad "searxng 기동 실패 — 웹 리서치가 막힌다(수동 확인)"
+  fi
+else
+  ok "searxng — 이 박스 대상 아님(services.yaml only_on). 검사하지 않는다."
 fi
 # Smart Twin Explorer — 백엔드가 이 박스에 없다(헤드노드에 있다). 그래서 둘 다 비치명이다:
 # 헤드노드가 꺼져 있거나 망이 닫힌 상태는 포털 배포의 실패가 아니다.
@@ -1135,12 +1144,11 @@ PY
 if [ "${CHAT_RES%%|*}" = "OK" ]; then
   ok "챗 응답 수신 — ${CHAT_RES#*|}"
 else
-  bad "챗 응답 실패 — ${CHAT_RES#*|}"
+  fail "챗 응답 실패 — ${CHAT_RES#*|}"
   echo "  --- agent-server 로그 꼬리 ---"
   tail -n 40 /tmp/hwax-services/agent-server.log 2>/dev/null \
     || tail -n 40 /tmp/agent-server.log 2>/dev/null \
     || echo "  (로그 파일 없음 — /tmp/hwax-services/agent-server.log 확인)"
-  FAIL=1
 fi
 # 챗 도구 바인딩 가시성 — TOOL_MAX 가 게이트웨이 도구를 캡하면 heax-hub 등 일부 도구가
 # 챗 에이전트에 안 실린다(프로드는 TOOL_MAX=0 무제한 권장 — 대형 컨텍스트 GLM 이라 전부 실림).
@@ -1161,7 +1169,11 @@ PY
 fi
 
 if [ "$FAIL" = 1 ]; then
-  bad "핵심 체인 실패 — 위의 ✗ 항목을 확인하세요 (재시도: 같은 명령 재실행)"
+  # ⚠ **무엇이 실패했는지 여기서 다시 말한다.** "위의 ✗ 를 보라" 는 수백 줄을 거슬러 올라가라는
+  # 뜻이라, 사람은 대개 안 올라간다(그리고 ⚠ 경고와 ✗ 실패를 섞어 읽는다). fail 이 모아 둔 목록을 낸다.
+  printf '  \033[1;31m✗\033[0m %s\n' "핵심 체인 실패 — 아래가 종료코드를 세운 항목이다(⚠ 경고는 포함되지 않는다)"
+  printf '%s' "${FAIL_ITEMS:-  · (목록이 비었다 — fail 을 거치지 않고 FAIL 이 세워졌다)}"
+  echo "  재시도: 같은 명령 재실행"
   exit 1
 fi
 ok "전체 최신화 완료 — 운영 준비 상태"

@@ -427,8 +427,25 @@ def cmd_down(names: list[str]) -> int:
     return 0
 
 
+def cmd_enabled(names: list[str]) -> int:
+    """이 박스가 그 서비스의 대상인가 — 종료코드로만 답한다(0=대상, 1=아님, 2=그런 서비스 없음).
+
+    왜 있나 — 호스트명 비교를 부르는 쪽마다 복제하면 정본이 둘이 된다. 실제로 헬스게이트가
+    `only_on` 을 안 보고 searxng 를 두드려, 같은 화면에서 "✗ 죽었다" 와 "이 박스 대상 아님" 이
+    나란히 찍혔다(2026-09-20 cae00). 사람이 읽고 진짜 고장으로 오해하는 자리다.
+    조용히 쓰라고 만든 것이라 출력이 없다 — 부르는 쪽이 자기 문구로 말한다."""
+    svcs = {s["name"]: s for s in load()}
+    for n in names:
+        svc = svcs.get(n)
+        if svc is None:
+            return 2
+        if not enabled_here(svc):
+            return 1
+    return 0
+
+
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled"):
         print(__doc__)
         return 2
     action = sys.argv[1]
@@ -437,6 +454,8 @@ def main() -> int:
     names = [a for a in args if not a.startswith("-")]
     if action == "up":
         return cmd_up(names, do_update=do_update)
+    if action == "enabled":  # 이 박스 대상인가(종료코드로만) — 헬스게이트가 only_on 을 보게 한다
+        return cmd_enabled(names)
     if action == "data":  # 데이터 경로 레지스트리 조회·검증(docs/data-migration)
         return cmd_data(names, check="--check" in args)
     return {"status": cmd_status, "down": cmd_down, "update": cmd_update}[action](names)
