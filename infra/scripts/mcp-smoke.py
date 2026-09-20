@@ -29,11 +29,22 @@ import re
 import sys
 
 # 부작용이 있을 수 있는 동사 — 애매하면 쓰기로 보고 호출하지 않는다.
+#
+# ⚠ **접두사 목록만으로는 샌다.** 실제로 샜다(2026-09-20 cae00 로그에서 드러남) —
+# `ingest_now`(paper_ingest)는 맨 앞 `ingest` 가 목록에 없어(`report_ingest` 만 있었다)
+# **읽기 도구로 뽑혀 매 update-all 마다 실제로 불렸다.** 그 도구는 드롭폴더 전량을 분류·증분색인·
+# 그라운딩하고, 게이트가 켜져 있으면 카드 적용까지 한다. 스모크는 "살아 있나" 를 묻는 것이지
+# 파이프라인을 돌리는 것이 아니다. cae00 에서는 그게 실패로 찍혀(경로가 dev 절대경로로 박혀 있다)
+# 오히려 드러났지만, dev 에서는 **조용히 성공**하고 있었다 — 그쪽이 더 나쁘다.
 WRITE = re.compile(
     r"^(create|delete|update|patch|insert|upload|submit|register|import|remove|move"
     r"|train|activate|cancel|bind|link|save|export|convert|add|set|start|close|run"
-    r"|recompute|prepare|fetch_|draft_|report_ingest|report_fragmentize|scenario_"
+    r"|recompute|prepare|ingest|gate_|fetch_|draft_|report_ingest|report_fragmentize|scenario_"
     r"|meeting_|qa_run|smarttwin_submit|slurm_submit|slurm_job_control|slurm_node_set)")
+
+# 이름 **어디든** 이 말이 들어 있으면 쓰기로 본다 — 접두사 규칙이 못 잡는 자리를 메운다
+# (예: `render_submit` 은 submit 으로 시작하지 않아 접두사 목록을 통과한다).
+WRITE_ANY = re.compile(r"(submit|ingest|reload|_now$|_apply$|purge|rebuild)")
 
 def _find_cfg() -> str:
     """게이트웨이 config 경로. 박스마다 리포 위치가 달라 하드코딩하면 안 된다.
@@ -101,12 +112,23 @@ def main() -> int:
                 # 전체를 한 덩어리로 본다(그래도 '전량 실패'는 잡힌다).
                 tmap = await _tools_map(url, headers)
                 by_be: dict[str, list] = {}
+                # ⚠ **검사를 못 돌린 것과 통과한 것은 다르다**(update-all §6 의 같은 규율).
+                # 쓰기 도구만 있는 백엔드는 부를 게 없어 결과에서 **통째로 사라진다** — 그러면
+                # 화면에는 아무 줄도 안 나오고, 읽는 사람은 문제없다고 읽는다. 그래서 그런 백엔드를
+                # 따로 세어 "무인자 읽기 도구 없음" 으로 **말한다**(초록도 빨강도 아니다).
+                seen_be: set[str] = set()
                 for t in tools:
-                    if WRITE.match(t.name):
+                    be = tmap.get(t.name, "?")
+                    seen_be.add(be)
+                    if WRITE.match(t.name) or WRITE_ANY.search(t.name):
                         continue
                     if (t.inputSchema or {}).get("required"):
                         continue
-                    by_be.setdefault(tmap.get(t.name, "?"), []).append(t.name)
+                    by_be.setdefault(be, []).append(t.name)
+                for be in sorted(seen_be - set(by_be) - {"_gateway", "?"}):
+                    result.setdefault(be, {"ok": 0, "err": 0, "probed": [],
+                                           "why": "무인자 읽기 도구가 없어 호출로는 확인 못 함",
+                                           "unprobed": True})
 
                 for be, names in sorted(by_be.items()):
                     if be == "_gateway":
@@ -178,6 +200,10 @@ def main() -> int:
                          ensure_ascii=False, indent=1))
     else:
         for be, r in sorted(result.items()):
+            if r.get("unprobed"):
+                # 초록도 빨강도 아니다 — **못 물어봤다**고 말한다(무음이 가장 나쁘다)
+                print(f"  ? {be:28} 검사 못 함 — {r['why']}")
+                continue
             mark = "✗" if be in dead else "·"
             print(f"  {mark} {be:28} 성공 {r['ok']}/{len(r['probed'])}"
                   + (f"   {r['why']}" if be in dead else ""))
