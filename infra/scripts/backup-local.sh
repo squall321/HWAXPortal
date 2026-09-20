@@ -87,7 +87,13 @@ pg_backup() {  # $1=서비스라벨 $2=인스턴스 $3=user $4=port $5=db $6=출
   local label="$1" inst="$2" user="$3" port="$4" db="$5" dir="$6" pw="${7:-}"
   mkdir -p "$dir"
   local out="$dir/${label}-${BOX}-${TS}.sql.gz"
-  if ! apptainer instance list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx "$inst"; then
+  # pipefail + 조기종료(grep -q)는 SIGPIPE(141) 오판을 만든다 — 목록을 먼저 받는다(실측 14.7%).
+  _il="$(apptainer instance list 2>/dev/null || true)"
+  case $'\n'"$(printf '%s\n' "$_il" | awk 'NR>1{print $1}')"$'\n' in
+    *$'\n'"$inst"$'\n'*) _inst_up=1 ;;
+    *) _inst_up=0 ;;
+  esac
+  if [ "$_inst_up" = "0" ]; then
     bad "$label: 인스턴스 $inst 미동작 — skip"; return 1
   fi
   if apptainer exec ${pw:+--env "PGPASSWORD=$pw"} "instance://$inst" pg_dump -h 127.0.0.1 -p "$port" -U "$user" -d "$db" 2>/dev/null | gzip -c > "$out"; then

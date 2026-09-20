@@ -52,7 +52,9 @@ table_counts() { # psql-prefix... -d DB → 'table=count' 줄들(정확 count)
 if [ "$MODE" = "--temp" ]; then
   # ── 같은 SIF 임시 인스턴스(/data, 별 포트) ──
   TPORT="${ARG:?--temp 는 포트 필요}"; TINST="rehearsal_${SVC}"; R="/data/hwax/.staging/rehearsal/$SVC"
-  ss -ltn 2>/dev/null | grep -q ":$TPORT " && { bad ":$TPORT 사용 중"; exit 1; }
+  # pipefail + 조기종료는 SIGPIPE(141) 오판을 만든다 — 목록을 먼저 받는다(실측 14.7%). `ss -ltn` 은 필터가 없어 출력이 크다.
+  _ports="$(ss -ltn 2>/dev/null || true)"
+  [ "${_ports#*:$TPORT }" != "$_ports" ] && { bad ":$TPORT 사용 중"; exit 1; }
   [ -f "$SIF" ] || { bad "SIF 없음: $SIF"; exit 1; }
   cleanup() { apptainer instance stop "$TINST" >/dev/null 2>&1 || true; rm -rf "$R"; echo "  · 정리: instance $TINST stop · $R 삭제"; }
   trap cleanup EXIT
