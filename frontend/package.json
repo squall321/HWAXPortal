@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "postbuild": "node -e \"const{execSync}=require('child_process');const fs=require('fs');try{fs.writeFileSync('dist/.build-src',execSync('git rev-parse HEAD:frontend',{cwd:'..'}).toString().trim()+'\\n')}catch(e){console.warn('build-src 표식 생략:',e.message)}\""
   },
   "dependencies": {
     "katex": "^0.18.1",

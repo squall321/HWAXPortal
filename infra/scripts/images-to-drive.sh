@@ -29,7 +29,11 @@ if [ -f "$REPO_ROOT/frontend/dist/index.html" ]; then
   # 이 dist 가 **어느 소스로** 빌드됐는지를 박는다. 받는 쪽(update-all 헬스게이트)이 지금 체크아웃의
   # frontend 트리 해시와 대조해 낡은 dist 를 잡는다 — 2026-09-14 개명 뒤 cae00 이 옛 화면으로
   # 새 API 를 불러 조용히 깨졌고, 모든 게이트가 초록이었다.
-  git -C "$REPO_ROOT" rev-parse HEAD:frontend > "$REPO_ROOT/frontend/dist/.build-src" 2>/dev/null || true
+  # ⚠ 표식은 **빌드 때** 박는 것이 정본이다(frontend/package.json 의 postbuild) — vite 가 outDir 를
+  # 비우므로 업로드 때만 박으면 그 뒤 빌드에서 사라진다. 여기서는 **없을 때만** 채운다(옛 산출물 구제).
+  # 2026-09-20 cae00 이 매 실행 "표식 없음" 경고를 낸 원인은 Drive 의 tar 가 이 기능보다 20시간 오래돼서였다.
+  [ -s "$REPO_ROOT/frontend/dist/.build-src" ] \
+    || git -C "$REPO_ROOT" rev-parse HEAD:frontend > "$REPO_ROOT/frontend/dist/.build-src" 2>/dev/null || true
   ( cd "$REPO_ROOT/frontend" && tar -czf "$STAGE/frontend-dist.tar.gz" dist )
   echo "  · included frontend/dist"
 fi
