@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# cae00 에서 STE(헤드노드 stc, 에어갭) 코드 갱신 배포를 트리거한다 — 메커니즘은 STE 소유
+# cae00 에서 ste 웹(ste 헤드노드, 에어갭) 코드 갱신 배포를 트리거한다 — 메커니즘은 STE 소유
 #
 #   infra/scripts/deploy-ste.sh                 # STE 배포(저장소 없으면 Drive 에서 받아와 클론까지)
 #   STE_REPO=~/SmartTwinExplorer deploy-ste.sh   # STE 레포 위치 지정(기본 ~/SmartTwinExplorer)
 #   STE_DRIVE_REMOTE=MyDrive: STE_STAGING_PATH=SmartTwinExplorer/staging deploy-ste.sh  # 리모트/경로 지정
 #
 # 의도적·비정기 작업이다(주 단위 코드 갱신). update-all 의 프로브 실행과 분리해 둔 이유는
-# 실제 stc 배포가 routine 프로브(크론 포함)에 섞여 발화하지 않게 하기 위함이다.
+# 실제 ste 배포가 routine 프로브(크론 포함)에 섞여 발화하지 않게 하기 위함이다.
 # 배포 로직 자체는 SmartTwinExplorer/deploy/refresh-code.sh(런북 §11)에 있다 — 여기선 트리거만 한다.
 # 저장소가 없으면(최초) Drive 스테이징 번들에서 rclone 으로 받아 git clone 한다 — 단 Teleport 접속
 # 설정(transport.env)만은 클러스터 비밀이라 자동 못 채우고, 한 번 채우라 안내하고 멈춘다(그 뒤 재실행).
@@ -24,7 +24,7 @@ DEPLOY="$STE_REPO/deploy/refresh-code.sh"
 SKIP_PULL=""
 
 # ── STE 저장소가 없으면 Drive 스테이징 번들에서 부트스트랩 ──────────────────────
-# STE 는 에어갭(헤드노드 stc)이라 코드가 github 이 아니라 dev→Drive 번들로 온다. 저장소가
+# ste 웹은 에어갭(ste 헤드노드)이라 코드가 github 이 아니라 dev→Drive 번들로 온다. 저장소가
 # 통째로 없는 cae00 에서도 이 스크립트 하나로 받아오게 한다(dev 가 pack-staging+push-to-drive 선행).
 if [ ! -x "$DEPLOY" ]; then
   printf '\033[1;36m▶ STE 저장소 없음(%s) — Drive 스테이징에서 부트스트랩\033[0m\n' "$STE_REPO"

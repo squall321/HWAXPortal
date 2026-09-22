@@ -7,7 +7,7 @@
 ## 0. 한 줄 요약
 
 - **`update-all` 한 방에 되는 것**: 포털·챗 스택·MCP 게이트웨이 배포 + **AIDataHub 데이터(전문가·카드) 병합** + 워크플로 사본 동기화 + 헬스 게이트.
-- **`update-all` 로 안 되는 것**: **STE(SmartTwinExplorer)**. 헤드노드 stc(에어갭)에 사는 별도 서비스라 프로브만 한다 — 배포는 `deploy-ste.sh` 를 따로 실행한다.
+- **`update-all` 로 안 되는 것**: **STE(SmartTwinExplorer)**. ste 헤드노드(에어갭)에 사는 별도 서비스라 프로브만 한다 — 배포는 `deploy-ste.sh` 를 따로 실행한다.
 - **dev 가 선행해야 하는 것**: 전문가/카드를 **dev AIDataHub 에 업로드 → `backup-to-drive`** (그래야 cae00 이 병합해 온다). STE 는 **`pack-staging + push-to-drive`**.
 
 ---
@@ -82,7 +82,7 @@ MCP 경로(Claude Code·게이트웨이)와 웹 경로(`/시뮬심의`) **둘 �
 
 ## 4. STE(SmartTwinExplorer) — 왜/어떻게 따로 배포하나
 
-STE 백엔드는 **cae00 가 아니라 에어갭 헤드노드 stc** 에 있다. cae00 은 stc 직결 경로가 없어 **Teleport SSH 터널**(루프백 127.0.0.1:15810, `ste-tunnel`)로 닿는다. 그래서 STE 는 `services.yaml` 에 없고 `update-all` 은 프로브만 한다.
+STE 백엔드는 **cae00 가 아니라 에어갭 ste 헤드노드** 에 있다. cae00 은 그 헤드노드 직결 경로가 없어 **Teleport SSH 터널**(루프백 127.0.0.1:15810, `ste-tunnel`)로 닿는다. 그래서 STE 는 `services.yaml` 에 없고 `update-all` 은 프로브만 한다.
 
 ### STE 는 3단계
 
@@ -108,7 +108,7 @@ STE 백엔드는 **cae00 가 아니라 에어갭 헤드노드 stc** 에 있다. 
 case " $* " in *" --with-ste "*) WITH_STE=1 ;; esac      # 상단
 [ "${WITH_STE:-0}" = 1 ] && "$SELF_REPO/infra/scripts/deploy-ste.sh"   # 배포 끝
 ```
-**기본은 분리 유지** — `--with-ste` 없이 도는 routine·크론 실행에 실 stc 에어갭 배포가 섞여 발화하지 않게. 명시적으로 줄 때만 STE 가 간다.
+**기본은 분리 유지** — `--with-ste` 없이 도는 routine·크론 실행에 실 ste 에어갭 배포가 섞여 발화하지 않게. 명시적으로 줄 때만 STE 가 간다.
 
 ---
 

@@ -701,7 +701,7 @@ fi
 STE_UP="$(printf '%s' "$_STE_URL" | sed -n 's|^http://\([^/]*\)/\?.*|\1|p')"
 if [ -n "$STE_UP" ]; then
   echo "  · ste 주소 출처: $_STE_SRC ($STE_UP)"
-  # R4 — cae00 은 stc 로 직결 경로가 없어 SSH 터널(127.0.0.1:15810)을 쓴다. 루프백이면 "직결"이
+  # R4 — cae00 은 ste 헤드노드로 직결 경로가 없어 SSH 터널(127.0.0.1:15810)을 쓴다. 루프백이면 "직결"이
   #   실경로를 오해시키므로 "터널 경유"로 라벨하고, 실패 시 터널 서비스 상태를 힌트로 붙인다.
   case "$STE_UP" in
     127.0.0.1:*|localhost:*|\[::1\]:*)
@@ -711,7 +711,7 @@ if [ -n "$STE_UP" ]; then
       else
         bad "ste 백엔드      터널 경유 → ${_stecode:-000}  (http://$STE_UP/api/health)"
         echo "    힌트: ste-tunnel = $(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown)"
-        echo "    배포: (cae00) infra/scripts/deploy-ste.sh — Drive 스테이징으로 stc 코드 갱신(런북 §11)"
+        echo "    배포: (cae00) infra/scripts/deploy-ste.sh — Drive 스테이징으로 ste 헤드노드 코드 갱신(런북 §11)"
       fi ;;
     *)
       probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200" ;;

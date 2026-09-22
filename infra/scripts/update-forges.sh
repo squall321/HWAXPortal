@@ -75,7 +75,7 @@ do_dynaforge() {
 do_ste() {
   hr "STE(SmartTwinExplorer) — $BOX 모드"
   if [ "$BOX" != cae00 ]; then
-    echo "· dev 스킵 — STE 웹은 헤드노드(stc) 배포라 deploy-ste 는 cae00 전용이다."
+    echo "· dev 스킵 — ste 웹은 ste 헤드노드 배포라 deploy-ste 는 cae00 전용이다."
     echo "  (dev 쪽 선행은 STE 리포의 pack-staging + push-to-drive — 가이드 §4 참조)"
     return
   fi

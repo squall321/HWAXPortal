@@ -29,6 +29,24 @@ Path(__file__).resolve().parents[2]                          # python
 
 형제 리포는 `../<Repo>` 로 닿는다. 절대경로를 박으면 cae00 에서 **조용히** 깨진다.
 
+## 클러스터는 둘이다 — `ste`(24대)와 `stcx`(356대)
+
+| 이름 | 무엇 | 쓰는 곳 |
+|---|---|---|
+| **ste** | **24대** 클러스터(`smart-twin-cluster-26`, 헤드 `icn401-0116-h01`) **이자** 그 위에 도는 SmartTwinExplorer 웹 | 웹 해석 시스템 |
+| **stcx** | **356대** 클러스터. 공개 호스트 `stcx.sec.samsung.net` | 전각도·단일 낙하(SmartTwinMCP) |
+| ~~stc~~ | ste 를 부르던 **옛 이름**. 클러스터 이름으로 쓰지 않는다 | `ssh stc` **접속 별칭**으로만 |
+
+규모가 판별 기준이다 — **24대면 `ste`, 356대면 `stcx`.** 이름이 한 글자 차이라 사람도
+에이전트도 틀리고, 틀리면 그 위에서 내린 설계 판단이 통째로 어긋난다(실제로 하루에 세 번
+뒤집혔다). 기계 가드는 `backend/tests/test_cluster_naming.py` 가 세 리포를 가로질러 본다.
+
+**면제 셋** — `ssh stc` 계열 접속 별칭(바꾸면 배포가 깨진다), `stc-` 잡 ID 접두사,
+그리고 날짜가 박힌 기록 파일(`context-notes.md`·`checklist.md`·심의 예제 — 그때의 사실을
+적은 로그라 다시 쓰면 기록을 위조하는 셈이다).
+
+배선 전모는 `docs/cluster-wiring/` 에 있다.
+
 ## 띄우기
 
 ```bash
