@@ -274,6 +274,25 @@ if ! "$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agen
   fail "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다"
 fi
 
+# ste 를 이 박스가 쓰는가 — **`ste=` 라우트가 설정돼 있으면 쓴다**(ARP_BASE 와 같은 신호 방식).
+# 주석(`#ste=`)은 세지 않는다. 아래 기대 백엔드 판정과 프로비저닝 인자 둘 다 이 값을 본다.
+_ste_routed() {
+  local f
+  for f in "$SELF_REPO/backend/config/routes.local.env" "$ROUTES_ENV"; do
+    [ -f "$f" ] || continue
+    grep -qE '^[[:space:]]*ste=[[:space:]]*[^[:space:]]' "$f" && { echo 1; return; }
+  done
+  echo 0
+}
+STE_ROUTED="$(_ste_routed)"
+# 시크릿은 infra/.env 에만 있다(update-all 은 그 파일을 통째로 소싱하지 않는다 — 필요한 키만 읽는다).
+# ⚠ 비밀에는 **기본값 확장**(`:-` 폴백)을 쓰지 않는다 — 명시적 if 로 본다. 그 관용구를 허용하면
+#   다음 사람이 거기 리터럴 값을 적어도 통과하고, 비어 있는 박스가 공개값으로 뜬다.
+#   `test_no_tracked_secrets` 가 그래서 그 꼴을 통째로 막는다(이 주석도 그 검사를 지나간다).
+if [ -z "${STE_SSO_SECRET:-}" ] && [ -f "$SELF_REPO/infra/.env" ]; then
+  STE_SSO_SECRET="$(sed -n 's/^STE_SSO_SECRET=//p' "$SELF_REPO/infra/.env" | tail -1 | tr -d '"'"'"' ')"
+fi
+
 # ── 5) 게이트웨이 config 정합 — 기대 백엔드가 config에 아예 없으면 재프로비저닝 ──
 hr "5) 게이트웨이 config 정합(reconcile)"
 gw_health() { curl -s -m 4 http://127.0.0.1:9110/health 2>/dev/null; }
@@ -285,7 +304,8 @@ if [ -n "$H" ] && ! json_ok "$H"; then
 fi
 
 calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공백 구분). heax는 config 파일로 별도 판정.
-  H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_BASE:-}" MXWP_UP="$MXWP_UP" python3 - <<'PY'
+  H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_BASE:-}" MXWP_UP="$MXWP_UP" \
+  STE_ROUTED="$STE_ROUTED" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
 # hwax-deliberation 은 agent-server(:9009/mcp) 내장이라 이 스택이면 항상 있어야 한다.
@@ -300,6 +320,11 @@ if os.environ.get("RAT"):           want.add("reportarchive")
 if os.environ.get("ODB"):           want.add("odb-hub")
 # ARP 도 cae00 전용이다. 토큰이 없는 서버라 '주소가 설정돼 있다'가 이 박스에서 쓴다는 신호다.
 if os.environ.get("ARP"):           want.add("arp")
+# ste(SmartTwinExplorer) MCP — **`ste=` 라우트가 설정된 박스에서만** 기대한다(ARP 와 같은 방식).
+# ⚠ 이게 없으면 ste 백엔드가 config 에서 빠져 있어도 "빠진 백엔드 없음" 초록을 받고
+#   재프로비저닝이 안 돈다. 그러면 도구 목록에 ste 가 통째로 안 보이는데 게이트는 전부 초록이다 —
+#   hwax-deliberation 을 기대 목록에 넣은 것과 정확히 같은 이유다.
+if os.environ.get("STE_ROUTED") == "1": want.add("ste")
 print(" ".join(sorted(want - have)))
 PY
 }
@@ -412,6 +437,10 @@ PY
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
           ARP_BASE="${ARP_BASE:-}" \
+          `# ste 위임 — 이 값이 없으면 per_user_sso["ste"] 가 아예 안 생기고,` \
+          `# ste 도구 호출이 서비스 계정으로 나가 잡 소유자가 한 명으로 뭉친다.` \
+          STE_SSO_SECRET="${STE_SSO_SECRET:-}" STE_MCP_URL="${STE_MCP_URL:-}" \
+          STE_SSO_URL="${STE_SSO_URL:-}" \
           bash provision-config.sh --force )
       "$SVC" down mcp-gateway agent-server 2>/dev/null
       "$SVC" up mcp-gateway agent-server
