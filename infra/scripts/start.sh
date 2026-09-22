@@ -58,6 +58,28 @@ if [ "${#_ss}" -lt 32 ]; then
   fi
 fi
 
+# 2c. ste 자격 중계 시크릿 — **없으면 만들어 infra/.env 에 저장한다**(SESSION_SECRET 과 같은 방식).
+#
+# 왜 만들어도 되나 — 이 값은 바깥이 정해 주는 것이 아니라 **우리 두 서비스(포털·ste) 사이에서만
+# 쓰는 난수**다. 그런 값은 비워 두는 것보다 만들어 두는 편이 낫다. 비어 있으면 기능이 조용히
+# 꺼지고(ste 는 404 로 답한다) 아무도 그 사실을 모른다.
+#
+# ⚠ 다만 **양쪽이 같아야 한다.** 그래서 여기서 만든 값을 ste 헤드노드로 옮기는 일까지가 한 벌이다
+#   — cae00 에서 `SmartTwinExplorer/deploy/refresh-code.sh` 가 그 값을 헤드 .env 에 넣는다.
+#   포털이 임의로 새 값을 만들어 덮으면 그 짝이 어긋나므로, **있으면 절대 건드리지 않는다.**
+if [ -z "${STE_SSO_SECRET:-}" ]; then
+  STE_SSO_SECRET="$(openssl rand -hex 32 2>/dev/null || od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  export STE_SSO_SECRET
+  if grep -q '^STE_SSO_SECRET=' "$REPO_ROOT/infra/.env"; then
+    sed -i "s|^STE_SSO_SECRET=.*|STE_SSO_SECRET=${STE_SSO_SECRET}|" "$REPO_ROOT/infra/.env"
+  else
+    printf 'STE_SSO_SECRET=%s\n' "$STE_SSO_SECRET" >> "$REPO_ROOT/infra/.env"
+  fi
+  chmod 600 "$REPO_ROOT/infra/.env"
+  echo "· STE_SSO_SECRET 이 없어 새로 만들어 infra/.env 에 저장했다"
+  echo "  → ste 헤드노드에도 **같은 값**이 있어야 한다: (cae00) SmartTwinExplorer/deploy/refresh-code.sh"
+fi
+
 # 3. Portal (single-origin: serves SPA + API). All config via --env (overrides backend/.env).
 if instance_running "$INST_PORTAL"; then
   echo "✓ $INST_PORTAL already running"
@@ -98,6 +120,7 @@ else
     --env "FRONTEND_URL=${PUBLIC_BASE_URL}" \
     --env "COOKIE_SECURE=${COOKIE_SECURE:-false}" \
     --env "SESSION_SECRET=${SESSION_SECRET}" \
+    --env "STE_SSO_SECRET=${STE_SSO_SECRET:-}" \
     --env "AUTH_PROVIDER=${AUTH_PROVIDER:-mock}" \
     --env "MOCK_USER_EMAIL=${MOCK_USER_EMAIL:-hwax.demo@samsung.com}" \
     --env "MOCK_USER_NAME=${MOCK_USER_NAME:-HWAX Demo User}" \

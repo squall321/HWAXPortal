@@ -424,3 +424,8 @@
   background: rgba(0, 0, 0, 0.22); white-space: pre-wrap; word-break: break-word;
   font-size: 0.84rem; line-height: 1.6; color: var(--fg, inherit);
 }
+
+.setup-requests .dflt { font-size: 0.72rem; color: var(--muted); }
+.setup-requests .dflt-auto,
+.setup-requests .dflt-generate { color: #7fd4a0; }
+.setup-requests .dflt-none { color: #e0a500; }

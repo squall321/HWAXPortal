@@ -56,6 +56,11 @@ def parse_requests(raw: Any) -> list[dict]:
             "severity": str(row.get("severity") or "important").strip(),
             "check": str(row.get("check") or "").strip() or None,
             "manual": bool(row.get("manual")),
+            # "셋업이 안 됐을 때 기본값이 들어가나" 에 대한 답. auto|generate|none.
+            # 모르는 값은 none 으로 본다 — **기본값이 있다고 잘못 말하는 쪽이 더 나쁘다.**
+            "default": (str(row.get("default") or "none").strip()
+                        if str(row.get("default") or "none").strip() in ("auto", "generate", "none")
+                        else "none"),
             "body": str(row.get("body") or "").strip(),
         })
     return out

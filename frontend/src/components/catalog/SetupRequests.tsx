@@ -16,6 +16,13 @@ const STATE_LABEL: Record<string, string> = {
   manual: '확인 필요',
   unknown: '확인 못 함',
 };
+// "기본값이 들어가나" — 사람이 반드시 손대야 하는 것과 그냥 한 번 돌리면 되는 것을 가른다.
+// 이 구분이 없으면 목록 전체가 "다 내가 해야 하는 일" 로 보여서 아무도 시작하지 않는다.
+const DEFAULT_LABEL: Record<string, string> = {
+  auto: '기본값 있음',
+  generate: '없으면 생성됨',
+  none: '값을 정해야 함',
+};
 
 export function SetupRequests() {
   const [items, setItems] = useState<SetupRequest[] | null>(null);
@@ -42,6 +49,7 @@ export function SetupRequests() {
               <span className={`sev sev-${it.severity}`}>{SEV_LABEL[it.severity] ?? it.severity}</span>
               <span className="title">{it.title}</span>
               {it.tag && <span className="tag">{it.tag}</span>}
+              <span className={`dflt dflt-${it.default}`}>{DEFAULT_LABEL[it.default] ?? ''}</span>
               <span className="state">{STATE_LABEL[it.state] ?? it.state}</span>
             </button>
             {open === it.id && <pre className="body">{it.body}</pre>}

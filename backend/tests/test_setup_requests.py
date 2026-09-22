@@ -8,6 +8,8 @@
   · **모르면 모른다고 한다** — 확인이 실패했을 때 ok 로 접으면, 이 화면이 거짓말을 한다.
   · **비밀은 값이 아니라 있고 없음만** 본다. 응답에 시크릿·내부 주소가 실리면 안 된다.
 """
+from pathlib import Path
+
 import httpx
 import pytest
 import yaml
@@ -184,3 +186,44 @@ def test_no_secret_value_leaks_into_the_response(client):
     c = client(ste_sso_secret=secret)
     _login(c)
     assert secret not in c.get("/setup/requests").text
+
+
+# ── "셋업이 안 되어 있으면 기본값이 들어가나" ────────────────────────────────
+#
+# 항목마다 답이 다르고, **그 차이를 화면이 말해야** 한다. 구분이 없으면 목록 전체가
+# "다 내가 손으로 해야 하는 일" 로 보여서 아무도 시작하지 않는다. 반대로 기본값이 없는데
+# 있다고 말하면 사람이 안 하고 넘어가 기능이 조용히 꺼진 채로 남는다.
+def test_default_policy_is_one_of_three(client):
+    import yaml as _yaml
+
+    from app.config import Settings
+
+    doc = _yaml.safe_load(
+        (Path(Settings().resolve("config/setup_requests.yaml"))).read_text("utf-8"))
+    for row in doc["requests"]:
+        assert row.get("default") in ("auto", "generate", "none"), row["id"]
+
+
+def test_an_unknown_default_is_read_as_none():
+    """**기본값이 있다고 잘못 말하는 쪽이 더 나쁘다** — 모르면 '값을 정해야 함' 으로 본다."""
+    rows = parse_requests({"requests": [
+        {"id": "a", "title": "A", "default": "마법"},
+        {"id": "b", "title": "B"},
+        {"id": "c", "title": "C", "default": "auto"},
+    ]})
+    assert [r["default"] for r in rows] == ["none", "none", "auto"]
+
+
+def test_credentials_never_claim_a_default(client):
+    """자격증명은 임의로 만들면 그 잡이 누구 것인지 알 수 없어진다."""
+    import yaml as _yaml
+
+    from app.config import Settings
+
+    doc = _yaml.safe_load(
+        (Path(Settings().resolve("config/setup_requests.yaml"))).read_text("utf-8"))
+    by_id = {r["id"]: r for r in doc["requests"]}
+    assert by_id["dynaforge-gateway-pat"]["default"] == "none"
+    assert by_id["ste-backend-route"]["default"] == "none", "주소는 찍으면 죽은 라우트가 된다"
+    # 우리 서비스끼리만 쓰는 난수는 만들어도 된다
+    assert by_id["ste-sso-secret"]["default"] == "generate"

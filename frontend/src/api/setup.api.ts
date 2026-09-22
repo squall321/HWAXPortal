@@ -8,6 +8,8 @@ export interface SetupRequest {
   title: string;
   tag: string;
   severity: string;
+  /** 셋업이 안 됐을 때 기본값이 들어가나 — auto(알아서 채움) | generate(없으면 만듦) | none(사람이 정해야 함) */
+  default: 'auto' | 'generate' | 'none';
   body: string;
   state: SetupState;
 }
