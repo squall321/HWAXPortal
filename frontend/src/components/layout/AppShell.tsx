@@ -4,6 +4,7 @@ import { AppHeader } from './AppHeader';
 import { ChangelogPopup } from './ChangelogPopup';
 import { ChatDock } from '../chat/ChatDock';
 import { SsoPrimer } from './SsoPrimer';
+import { StePrimer } from './StePrimer';
 
 export function AppShell({ children }: { children: ReactNode }) {
   // '/'(챗)과 '/deliberate'(심의)는 전체화면 챗형 UI라 플로팅 독이 중복 — 그 외 페이지에서만 보조로 띄운다.
@@ -13,6 +14,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <>
       {/* AppShell 은 ProtectedRoute 안에서만 그려진다 — 여기 닿았다는 것이 곧 포털 로그인 완료다. */}
       <SsoPrimer enabled />
+      {/* ste 는 자체 Bearer 로 인증한다(SSO 리다이렉트를 안 쓴다) — 자격을 받아 놓아 둔다. */}
+      <StePrimer enabled />
       {/* 아직 안 본 업데이트가 있으면 한 번 띄운다(없으면 아무것도 안 그린다). */}
       <ChangelogPopup />
       <AppHeader />

@@ -1,6 +1,8 @@
 import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { getMe, postLogout } from '../api/auth.api';
 import type { AuthStatus, User } from './types';
+import { revokeSteCredential } from '../api/ste.api';
+import { clearSteCredential } from '../components/layout/StePrimer';
 
 interface AuthState {
   user: User | null;
@@ -50,6 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // ste 자격 회수 — **서버 원장과 브라우저 사본을 둘 다** 끊어야 회수다.
+    // 브라우저만 지우면 토큰은 살아 있고(만료가 없다), 서버만 끊으면 다음 탭이 죽은
+    // 토큰으로 401 을 맞는다. 실패는 비치명이다 — 로그아웃을 막으면 사용자가 못 나간다.
+    await revokeSteCredential();
+    clearSteCredential();
     await postLogout();
     setUser(null);
     setStatus('unauthenticated');
