@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import changelog as changelog_routes
+from app import setup_requests as setup_routes
 from app import routes_health
 from app.access import routes as access_routes
 from app.access.policy import AccessPolicy
@@ -160,6 +161,7 @@ async def _auth_error_handler(_request: Request, exc: AuthError) -> JSONResponse
 
 app.include_router(routes_health.router)
 app.include_router(changelog_routes.router)
+app.include_router(setup_routes.router)
 app.include_router(auth_session.router)
 app.include_router(auth_local.router)
 app.include_router(access_routes.router)

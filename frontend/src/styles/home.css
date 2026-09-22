@@ -386,3 +386,41 @@
     animation: none;
   }
 }
+
+
+/* 배선 설정 — 안 된 것이 있을 때만 그려진다(없으면 DOM 에도 없다). */
+.setup-requests {
+  margin: 0 0 1.4rem;
+  border: 1px solid color-mix(in srgb, var(--warn, #e0a500) 42%, transparent);
+  background: color-mix(in srgb, var(--warn, #e0a500) 8%, transparent);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+.setup-requests > header {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.setup-requests > header .hint { color: var(--muted); font-size: 0.8rem; margin-left: auto; }
+.setup-requests ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.setup-requests li button {
+  width: 100%; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  background: transparent; border: 0; padding: 0.4rem 0.2rem; cursor: pointer;
+  color: inherit; text-align: left; font-size: 0.9rem;
+}
+.setup-requests li button:hover { background: rgba(255, 255, 255, 0.04); border-radius: 8px; }
+.setup-requests .title { font-weight: 560; }
+.setup-requests .tag,
+.setup-requests .state { color: var(--muted); font-size: 0.78rem; }
+.setup-requests .state { margin-left: auto; }
+.setup-requests .sev {
+  font-size: 0.72rem; padding: 0.1rem 0.42rem; border-radius: 999px;
+  border: 1px solid currentColor; opacity: 0.9;
+}
+.setup-requests .sev-blocker { color: #ff9b9b; }
+.setup-requests .sev-important { color: #e0a500; }
+.setup-requests .sev-request { color: var(--muted); }
+.setup-requests .body {
+  margin: 0.2rem 0 0.7rem; padding: 0.7rem 0.85rem; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22); white-space: pre-wrap; word-break: break-word;
+  font-size: 0.84rem; line-height: 1.6; color: var(--fg, inherit);
+}

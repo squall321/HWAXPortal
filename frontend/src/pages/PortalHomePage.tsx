@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { listSystems, type SystemTile } from '../api/systems.api';
 import { useAuth } from '../auth/useAuth';
 import { PlatformCard } from '../components/catalog/PlatformCard';
+import { SetupRequests } from '../components/catalog/SetupRequests';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { Spinner } from '../components/common/Spinner';
 import '../styles/home.css';
@@ -68,6 +69,9 @@ export default function PortalHomePage() {
       </section>
 
       <section className="home-wrap">
+        {/* 안 된 배선이 있으면 플랫폼 목록보다 **먼저** 말한다. 다 됐으면 아무것도 안 그린다. */}
+        <SetupRequests />
+
         <div className="section-head">
           <h2>플랫폼</h2>
           <p>원하는 시스템을 선택해 시작하세요</p>
