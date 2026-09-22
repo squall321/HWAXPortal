@@ -106,6 +106,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 전문가 조직도·HE팀 MCP 운영자·심층 보기 | `docs/org-chart/` |
 | 소속·허가 기반 접근(권한) | `docs/access-control/` |
 | 심의 UX 7건(좌석 조직도·도구 영역·VOC 먼저·되묻기·관계도·이어하기) | `docs/delib-ux/` (PLAN·checklist·context-notes) |
+| 클러스터 배선(ste=24대 웹·MCP, stcx=356대 낙하·DynaForge, 포털 SSO) | `docs/cluster-wiring/` (PLAN·checklist·context-notes) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
