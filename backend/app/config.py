@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     # /internal/connections 를 읽을 때 쓸 공유 시크릿(게이트웨이 GW_TOKEN 과 같은 값).
     ra_base_url: str = "http://127.0.0.1:3000"
     gateway_shared_token: str = ""
+    # ste(SmartTwinExplorer 웹) 신원 위임 — 포털에 로그인한 사람이 ste 에 따로 가입하거나
+    # PAT 를 옮겨 적지 않게 한다. 포털이 서버 간으로 ste 의 /api/auth/sso 를 부르고, 받은
+    # 토큰을 그 사람의 브라우저에 넘긴다(포털 DB 에는 저장하지 않는다).
+    #
+    # ⚠ ste_sso_secret 은 **ste 전용 값**이어야 한다. 프록시가 모든 요청에 주입하는 공용
+    #    시크릿을 재사용하면, 그 헤더를 볼 수 있는 아무나 남의 이메일로 토큰을 받아낸다.
+    #    빈 값이면 이 기능은 꺼진 것이다(ste 쪽도 빈 값이면 404 로 답한다).
+    ste_base_url: str = "http://127.0.0.1:8088/ste"   # 포털 프로세스가 ste 백엔드에 닿는 주소
+    ste_sso_secret: str = ""
 
     # ── Session token TTLs (HS256; downstream RS256 launch tokens land in Phase 4) ──
     jwt_issuer: str = "https://hwax.sec.samsung.net"
