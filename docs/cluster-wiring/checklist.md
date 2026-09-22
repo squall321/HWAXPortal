@@ -4,7 +4,9 @@
 
 ## 0. 전제 확인 (구현 전에 닫아야 하는 것)
 
-- [ ] **공유 NFS** — `/data`·`/data2` 가 ste·stcx 에서 **같은 경로**로 보이는가 (실박스). ③ 전체가 여기 걸려 있다
+- [ ] **착지 경로 실값** — 운영 ste 헤드의 `STE_SHARED` 가 `/srv/ste` 인가 `/data/SmartTwinExplorer` 인가 (실박스). 배포 설정은 전부 `/srv/ste` 다
+- [ ] **같은 볼륨인가** — 경로 이름이 같은 것과 같은 볼륨인 것은 다르다. 양쪽에 표식 파일을 만들고 `stat -c '%d:%i'` 로 대조 (실박스)
+- [ ] **:5013 정본 결정** — 도는 것은 `KooSlurmInstallAutomationRefactory/dashboard/smarttwin_mcp` 다(실측). `~/claude/SmartTwinMCP` 는 도는 코드가 아니다 — 어느 쪽을 고칠지 사용자 결정
 - [ ] 권한 — ste 계정이 만든 잡 디렉터리를 stcx 계정이 읽고/쓸 수 있는가 (실박스)
 - [ ] ste 의 결과 보관 만료가 그 디렉터리를 지워 버리지 않는가
 - [ ] DynaForge 컨테이너에 ssh/scp/rsync 가 있는가, ssh 별칭이 닿는가
