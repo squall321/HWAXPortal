@@ -68,7 +68,9 @@ platforms:
   - id: smarttwin
     label: SmartTwin 시뮬레이션
     systems: [smart-twin-cluster, ste]
-    gateway: [smart-twin-mcp, smart-twin-cluster]
+    # ⚠ 백엔드를 게이트웨이에 붙이기 **전에** 여기 적는다. 정책에 없는 백엔드는
+    #   "전체 공개" 로 판정되므로, 순서가 반대면 잠깐이지만 아무나 부를 수 있다.
+    gateway: [smart-twin-mcp, smart-twin-cluster, ste]
   - id: spdm
     label: SPDM
     systems: [spdm]
