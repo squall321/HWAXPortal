@@ -125,3 +125,57 @@ def test_the_secret_is_not_read_with_a_default_expansion():
     assert "${STE_SSO_SECRET:-$" not in SRC, "비밀에 기본값 확장을 썼다"
     assert re.search(r'if \[ -z "\$\{STE_SSO_SECRET:-\}" \]', SRC), \
         "빈 값 검사는 명시적 if 로 한다"
+
+
+# ── ste 자격 중계 판정 — **가짜 초록을 냈던 자리** ──────────────────────────
+#
+# 처음엔 "401 이면 설정됨" 으로 읽었다. 그런데 dev 의 옛 ste 는 그 경로를 몰라서 **인증
+# 미들웨어**가 401 을 냈고, 겉모습이 핸들러의 401 과 똑같았다 — 아직 배포도 안 된 상태를
+# "양쪽 설정됨" 초록으로 보고할 참이었다. 이 세션에서 내내 잡아 온 바로 그 모양이다.
+#
+# 가르는 근거는 `www-authenticate` 헤더다(실측: 미들웨어는 붙이고, HTTPException 은 안 붙인다).
+def _verdict(code: str, mw: str) -> str:
+    """update-all 의 case 문을 **원문 그대로** 떼어 돌린다(복제하면 뜻이 갈린다)."""
+    i = SRC.index('  case "${_ste_sso_code:-000}/$_ste_sso_mw" in')
+    block = SRC[i:SRC.index("\n  esac", i) + len("\n  esac")]
+    script = "\n".join([
+        'ok() { echo "OK:$*"; }', 'bad() { echo "BAD:$*"; }', 'fail() { echo "FAIL:$*"; }',
+        f'_ste_sso_code="{code}"', f'_ste_sso_mw="{mw}"', block,
+    ])
+    p = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                       env={"PATH": "/usr/bin:/bin"})
+    assert p.returncode == 0, p.stderr
+    return p.stdout.splitlines()[0].split(":", 1)[0]
+
+
+def test_only_a_handler_401_counts_as_configured():
+    """핸들러가 낸 401(헤더 없음)만 초록이다."""
+    assert _verdict("401", "0") == "OK"
+
+
+def test_a_middleware_401_is_not_green():
+    """**이 시험이 그 가짜 초록을 막는다** — 옛 판이 떠 있는 것을 설정됨으로 읽으면 안 된다."""
+    assert _verdict("401", "1") == "FAIL"
+
+
+def test_404_means_the_secret_is_unset_on_the_ste_side():
+    assert _verdict("404", "0") == "FAIL"
+    assert _verdict("404", "1") == "FAIL"
+
+
+def test_no_response_is_unknown_not_a_failure_of_this_feature():
+    """프록시가 죽은 것과 시크릿이 없는 것은 다르다 — 뭉개면 엉뚱한 곳을 고치게 된다."""
+    assert _verdict("000", "0") == "BAD"
+
+
+def test_an_unexpected_code_is_never_green():
+    for code in ("200", "403", "500"):
+        assert _verdict(code, "0") != "OK", code
+
+
+def test_the_probe_sends_no_real_secret():
+    """비밀을 알 필요도, 로그에 남길 필요도 없다 — 아무 값이나 보내 상태로만 판정한다."""
+    i = SRC.index("_ste_sso_hdr=")
+    block = SRC[i:SRC.index("_ste_sso_code=", i)]
+    assert "probe-not-a-secret" in block
+    assert "$STE_SSO_SECRET" not in block, "프로브에 실제 시크릿을 싣지 않는다"

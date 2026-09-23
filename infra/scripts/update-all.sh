@@ -745,6 +745,37 @@ if [ -n "$STE_UP" ]; then
     *)
       probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200" ;;
   esac
+  # ── ste 자격 중계가 **양쪽 다** 설정됐나 ────────────────────────────────
+  # 포털에 로그인하면 ste 도 열리는 기능은 **같은 시크릿을 양쪽이 쥐어야** 성립한다. 포털 쪽은
+  # start.sh 가 만들어 채우지만, ste 헤드노드 쪽은 `deploy-ste.sh`(refresh-code §8)가 심는다 —
+  # update-all 은 실배포를 안 하므로 **여기서는 그 상태를 확인만 한다.**
+  #
+  # 아무 값이나 보내 **상태코드와 헤더**로 판정한다(비밀을 알 필요도, 남길 필요도 없다).
+  #   · 404                         → 엔드포인트는 있는데 시크릿이 없다(그 경로가 꺼져 있다)
+  #   · 401 (www-authenticate 없음)  → 핸들러가 틀린 시크릿을 거절했다 = **설정됨**
+  #   · 401 (www-authenticate 있음)  → 인증 **미들웨어**가 낸 것이다. 그 경로를 모르는
+  #                                    옛 판이 떠 있다는 뜻 → 아직 배포 안 됨
+  #
+  # ⚠ 처음엔 401 을 그냥 "설정됨" 으로 읽었다가 **가짜 초록**을 낼 참이었다. dev 의 옛 ste 가
+  #   그 경로를 몰라 미들웨어 401 을 냈고, 겉모습이 똑같았다. 헤더로 갈라야 한다(실측 확인).
+  _ste_sso_hdr="$(curl -s -D - -o /dev/null -m 4 -X POST \
+      -H 'X-Heax-Gateway-Secret: probe-not-a-secret' -H 'X-Heax-User-Email: probe@invalid' \
+      "http://127.0.0.1:8088/ste/api/auth/sso" 2>/dev/null || true)"
+  _ste_sso_code="$(printf '%s' "$_ste_sso_hdr" | sed -n 's|^HTTP/[0-9.]* \([0-9]*\).*|\1|p' | tail -1)"
+  if printf '%s' "$_ste_sso_hdr" | grep -qi '^www-authenticate:'; then _ste_sso_mw=1; else _ste_sso_mw=0; fi
+  case "${_ste_sso_code:-000}/$_ste_sso_mw" in
+    401/0) ok "ste 자격중계    양쪽 설정됨 (핸들러가 틀린 시크릿을 거절했다)" ;;
+    401/1) fail "ste 자격중계    ste 에 **옛 판이 떠 있다** — /api/auth/sso 를 모른다(미들웨어가 401)"
+           echo "    (cae00) infra/scripts/deploy-ste.sh — Drive 스테이징의 새 코드를 헤드노드에 반영" ;;
+    404/*) fail "ste 자격중계    **ste 헤드노드에 시크릿이 없다**(404) — 포털 로그인으로 ste 가 열리지 않는다"
+           echo "    (cae00) SmartTwinExplorer/deploy/refresh-code.sh 가 포털 infra/.env 의 값을 헤드에 심는다" ;;
+    000/*) bad "ste 자격중계    확인 못 함(프록시 무응답) — 위 ste 라우트 항목을 먼저 본다" ;;
+    *)     bad "ste 자격중계    예상 못 한 응답 ${_ste_sso_code:-000} — 401/404 가 아니다" ;;
+  esac
+  if [ -z "${STE_SSO_SECRET:-}" ]; then
+    fail "ste 자격중계    **포털 쪽 시크릿이 비었다** — 포털을 재기동하면 start.sh 가 만든다"
+  fi
+
   # R1 — 프록시 프로브는 본문만 보면 서로 다른 실패(라우트 미반영 vs upstream 도달불가)를 한
   #   메시지로 뭉갠다. 상태코드로 분기해 오진을 막는다.
   STE_RESP="$(curl -s -m 4 -w '\n%{http_code}' http://127.0.0.1:8088/ste/api/health 2>/dev/null || true)"
