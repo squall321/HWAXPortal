@@ -5,9 +5,20 @@
 #   STE_REPO=~/SmartTwinExplorer deploy-ste.sh   # STE 레포 위치 지정(기본 ~/SmartTwinExplorer)
 #   STE_DRIVE_REMOTE=MyDrive: STE_STAGING_PATH=SmartTwinExplorer/staging deploy-ste.sh  # 리모트/경로 지정
 #
-# 의도적·비정기 작업이다(주 단위 코드 갱신). update-all 의 프로브 실행과 분리해 둔 이유는
-# 실제 ste 배포가 routine 프로브(크론 포함)에 섞여 발화하지 않게 하기 위함이다.
-# 배포 로직 자체는 SmartTwinExplorer/deploy/refresh-code.sh(런북 §11)에 있다 — 여기선 트리거만 한다.
+# **전송 방식이 경로를 가른다** — ste 리포의 `deploy/transport.env` 가 정본이다.
+#
+#   TRANSPORT_MODE=direct   : 같은 박스에서 ssh 로 닿는 ste 헤드(dev 의 libvirt VM).
+#                             Drive 를 거치지 않고 리포에서 **직접** rsync 한다. 싸고 멱등해서
+#                             update-all 이 매번 불러도 된다.
+#   TRANSPORT_MODE=teleport : 에어갭 운영 클러스터. Drive 스테이징 왕복 + 살아 있는 Teleport
+#                             세션이 필요하다. **명시 opt-in(STE_DEPLOY=1) 없이는 돌지 않는다** —
+#                             실제 운영 배포가 routine 프로브(크론 포함)에 섞여 발화하면 안 된다.
+#
+# 즉 "의도적·비정기" 라는 원칙은 **운영 클러스터에만** 적용한다. dev VM 을 최신으로 두는 것은
+# 위험이 없고, 오히려 낡은 채로 두면 "소스에는 있는데 박스에는 없다" 가 생긴다 —
+# 실제로 그 때문에 포털→ste 자격 중계가 조용히 죽어 있었다(2026-09-23, docs/one-token D-12).
+#
+# `--if-stale` 을 주면 원격과 리포를 대조해 **다를 때만** 배포한다(update-all 이 이걸 쓴다).
 # 저장소가 없으면(최초) Drive 스테이징 번들에서 rclone 으로 받아 git clone 한다 — 단 Teleport 접속
 # 설정(transport.env)만은 클러스터 비밀이라 자동 못 채우고, 한 번 채우라 안내하고 멈춘다(그 뒤 재실행).
 set -euo pipefail
@@ -18,10 +29,105 @@ ok()  { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*" >&2; }
 die() { bad "$*"; exit 1; }
 
-STE_REPO="${STE_REPO:-$HOME/SmartTwinExplorer}"
+# 리포 위치 — 형제 리포가 먼저다(박스마다 루트가 다르므로 절대경로를 박지 않는다).
+# dev 는 ~/claude/SmartTwinExplorer, cae00 은 ~/Projects/SmartTwinExplorer 이고 둘 다 `../` 로 닿는다.
+if [ -z "${STE_REPO:-}" ]; then
+  if [ -d "$SELF/../SmartTwinExplorer/deploy" ]; then
+    STE_REPO="$(cd "$SELF/../SmartTwinExplorer" && pwd)"
+  else
+    STE_REPO="$HOME/SmartTwinExplorer"
+  fi
+fi
 STAGING="${STE_STAGING:-$HOME/ste-staging}"
 DEPLOY="$STE_REPO/deploy/refresh-code.sh"
 SKIP_PULL=""
+IF_STALE=0
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --if-stale) IF_STALE=1 ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+set -- ${ARGS[@]+"${ARGS[@]}"}
+
+# 전송 방식을 먼저 읽는다 — 이것이 경로와 게이팅을 가른다.
+TRANSPORT_MODE=""
+_TENV="$STE_REPO/deploy/transport.env"
+# ⚠ `[ -f x ] && VAR=...` 로 쓰면 안 된다 — `set -e` 아래서 파일이 없을 때 그 && 리스트가
+#   0 이 아닌 상태를 돌려주고 스크립트가 **그 자리에서 죽는다**(고전적 함정).
+if [ -f "$_TENV" ]; then
+  TRANSPORT_MODE="$(sed -n 's/^[[:space:]]*TRANSPORT_MODE=[[:space:]]*//p' "$_TENV" | head -1 | tr -d '"'"'"' \r')"
+fi
+
+# ── 자동 호출(--if-stale)은 **있는 것만 최신화한다** ─────────────────────────
+# 리포가 없거나 접속 설정이 없으면 한 줄 말하고 끝낸다. 여기서 Drive 부트스트랩으로 넘어가면
+# update-all 한 번이 22MB 다운로드와 git clone 을 발화시킨다 — "routine 이 실배포를 발화" 의
+# 또 다른 얼굴이다(실측으로 잡았다: STE_REPO 를 없는 경로로 두고 --if-stale 을 주면 받기 시작했다).
+if [ "$IF_STALE" = 1 ]; then
+  if [ ! -x "$DEPLOY" ]; then
+    printf '  · ste 리포가 이 박스에 없다(%s) — 건너뛴다. 최초 반입은 infra/scripts/deploy-ste.sh 를 직접 부른다.\n' "$STE_REPO"
+    exit 0
+  fi
+  if [ -z "$TRANSPORT_MODE" ]; then
+    printf '  · ste 접속 설정이 없다(%s) — 건너뛴다. 채우면 그때부터 자동 최신화된다.\n' "$_TENV"
+    exit 0
+  fi
+fi
+
+# ── direct(같은 박스에서 ssh 로 닿는 ste 헤드) ────────────────────────────────
+# Drive 를 거치지 않는다. 리포가 곧 정본이라 rsync 한 번이면 끝이고, 그래서 멱등하다.
+if [ "$TRANSPORT_MODE" = direct ]; then
+  [ -x "$STE_REPO/deploy/deploy-backend.sh" ] || die "ste 리포에 deploy-backend.sh 가 없다: $STE_REPO"
+
+  # `--if-stale` — 원격과 리포가 같으면 아무것도 하지 않는다. rsync 자체는 멱등이지만
+  # **재기동은 아니다**. 매번 재기동하면 돌던 잡의 연결이 끊기고, update-all 이 자주 도는 박스에서
+  # 그것만으로 사용자에게 장애처럼 보인다. 그래서 "다를 때만" 을 여기서 판정한다.
+  if [ "$IF_STALE" = 1 ]; then
+    _man() {  # 배포 대상 트리의 내용 지문. 경로+sha256 만 본다(시각·권한은 무시 — 재배포마다 바뀐다).
+      ( cd "$1" 2>/dev/null && find . -type f \
+          ! -name '*.pyc' ! -path './__pycache__/*' ! -path '*/__pycache__/*' ! -path './.pytest_cache/*' \
+          -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2 ) | sha256sum | cut -d' ' -f1
+    }
+    _lsrc="$(_man "$STE_REPO/backend/src")"
+    _lweb="$(_man "$STE_REPO/frontend/dist")"
+    # 원격은 같은 계산을 원격 셸에서 한다 — 트리를 끌어오지 않으려고.
+    _remote_man="$(cd "$STE_REPO" && . deploy/lib/transport.sh >/dev/null 2>&1 && \
+      $SSH "$TARGET" 'for d in /opt/ste/backend/src /opt/ste/web; do
+          if [ -d "$d" ]; then (cd "$d" && find . -type f ! -name "*.pyc" ! -path "*/__pycache__/*" \
+             -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2) | sha256sum | cut -d" " -f1
+          else echo "-"; fi; done' 2>/dev/null || true)"
+    _rsrc="$(printf '%s\n' "$_remote_man" | sed -n 1p)"
+    _rweb="$(printf '%s\n' "$_remote_man" | sed -n 2p)"
+    # ⚠ 원격 지문을 못 읽었으면(접속 실패·빈 값) **같다고 보지 않는다.** 모름을 같음으로
+    #   읽으면 낡은 박스를 영원히 건너뛰면서 초록을 낸다 — 이 리포가 반복해서 당한 그 모양이다.
+    if [ -n "$_rsrc" ] && [ -n "$_rweb" ] && [ "$_rsrc" = "$_lsrc" ] && [ "$_rweb" = "$_lweb" ]; then
+      ok "ste 이미 최신 — 배포·재기동 생략 (backend/src·web 지문 일치)"
+      STE_SKIPPED=1
+    fi
+  fi
+
+  if [ "${STE_SKIPPED:-0}" != 1 ]; then
+    printf '\033[1;36m▶ ste 코드 갱신 (direct: 리포 → 헤드, Drive 경유 없음) — %s\033[0m\n' "$STE_REPO"
+    ( cd "$STE_REPO" && bash deploy/deploy-backend.sh ) || die "ste 백엔드 배포 실패"
+    # 프론트는 dist 가 있으면 그것을 보낸다. 빌드는 dev 에서만 되므로(cae00 은 npm 이 막혔다)
+    # 없으면 **조용히 넘기지 않고** 말한다 — 프론트가 낡으면 화면만 옛것이라 원인이 안 보인다.
+    if [ -f "$STE_REPO/frontend/dist/index.html" ]; then
+      ( cd "$STE_REPO" && bash deploy/deploy-frontend.sh --no-build ) || die "ste 프론트 전송 실패"
+    else
+      bad "ste frontend/dist 가 없다 — 프론트는 옛 채로 남는다 (dev 에서 deploy/deploy-frontend.sh 로 빌드)"
+    fi
+  fi
+
+  # 코드가 새것이어도 **시크릿이 없으면 자격 중계는 404** 다. 배포 경로가 둘이라
+  # 이 일을 refresh-code.sh 안에만 두면 이 경로에서 빠진다 — 그래서 떼어낸 것을 부른다.
+  if [ -x "$STE_REPO/deploy/sync-sso-secret.sh" ]; then
+    PORTAL_ENV="$SELF/infra/.env" bash "$STE_REPO/deploy/sync-sso-secret.sh" \
+      || bad "STE_SSO_SECRET 정합 실패 — 포털 로그인으로 ste 가 안 열린다(위 사유 참조)"
+  else
+    bad "ste 리포에 sync-sso-secret.sh 가 없다 — 자격 중계 시크릿이 안 맞을 수 있다"
+  fi
+else
 
 # ── STE 저장소가 없으면 Drive 스테이징 번들에서 부트스트랩 ──────────────────────
 # ste 웹은 에어갭(ste 헤드노드)이라 코드가 github 이 아니라 dev→Drive 번들로 온다. 저장소가
@@ -56,8 +162,17 @@ if [ ! -x "$DEPLOY" ]; then
   ok "부트스트랩 완료 — 배포로 진행"
 fi
 
-printf '\033[1;36m▶ STE 코드 갱신 배포 트리거 — %s\033[0m\n' "$STE_REPO"
-STE_STAGING="$STAGING" "$DEPLOY" $SKIP_PULL "$@" || die "STE 배포 실패 — 위 로그와 런북 §9(실패 대처) 참조"
+  # ⚠ **운영 클러스터는 명시 opt-in 없이 돌지 않는다.** Drive 왕복 + 살아 있는 Teleport 세션이
+  #   필요하고, 실제 운영 배포가 routine 프로브(크론 포함)에 섞여 발화하면 안 된다.
+  #   사람이 직접 부른 경우(STE_DEPLOY 미설정 + 터미널)와 자동 호출을 가르는 축이 이것이다.
+  if [ "$IF_STALE" = 1 ] && [ "${STE_DEPLOY:-0}" != 1 ]; then
+    printf '  · ste(%s) 는 자동 배포 대상이 아니다 — Drive 왕복·Teleport 세션이 필요하다.\n' "${TRANSPORT_MODE:-미설정}"
+    printf '    돌리려면: STE_DEPLOY=1 infra/scripts/deploy-ste.sh   (런북 §11)\n'
+    exit 0
+  fi
+  printf '\033[1;36m▶ STE 코드 갱신 배포 트리거 — %s\033[0m\n' "$STE_REPO"
+  STE_STAGING="$STAGING" "$DEPLOY" $SKIP_PULL "$@" || die "STE 배포 실패 — 위 로그와 런북 §9(실패 대처) 참조"
+fi
 
 # 포털 프록시 경유로 살아났는지 확인
 HTTP_PORT=8088

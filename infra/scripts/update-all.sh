@@ -211,6 +211,37 @@ else
   bad "AIDataHub sync-from-drive.sh 없음 — 건너뜀"
 fi
 
+# ── 2c) ste(SmartTwinExplorer) 코드 최신화 ───────────────────────────────────
+# ste 웹은 이 리포가 배포하는 사이트가 아니다 — 형제 리포(SmartTwinExplorer)가 자기 헤드노드에
+# 배포한다. 그래서 종전에는 update-all 이 **힌트 한 줄만** 찍었다. 그 결과 소스에는 기능이 있는데
+# 박스에는 없는 상태가 조용히 생겼다 — 포털→ste 자격 중계(/api/auth/sso)가 배포된 빌드에 아예
+# 없어서, 시크릿을 맞게 줘도 401 이었다(2026-09-23 실측, docs/one-token/context-notes.md D-12).
+# 게이트웨이의 ste per_user 위임도 같은 엔드포인트를 쓰므로 함께 죽어 있었다.
+#
+# 그래서 **최신화를 여기서 한다.** 단 위험이 다른 두 대상을 가른다(판정은 deploy-ste.sh 가 한다) —
+#   · direct(같은 박스 ssh, dev 의 ste VM) : 매번 대조해서 **다를 때만** 배포한다. Drive 왕복이
+#     없어 싸고, 재기동도 다를 때만 하므로 돌던 잡을 끊지 않는다.
+#   · teleport(에어갭 운영 클러스터)        : **STE_DEPLOY=1 없이는 안 돈다.** Drive 왕복과 살아
+#     있는 Teleport 세션이 필요하고, 실배포가 routine(크론 포함)에 섞여 발화하면 안 된다.
+# 리포나 접속 설정이 없는 박스에서는 한 줄 말하고 건너뛴다(부트스트랩을 발화시키지 않는다).
+#
+# ⚠ 여기서 실패해도 update-all 전체를 죽이지 않는다 — 다른 서비스 갱신까지 막을 이유가 없고,
+#   "됐다/안 됐다" 의 최종 판정은 §6 의 ste 헬스게이트(자격 중계 양쪽 확인)가 한다.
+hr "2c) ste 코드 최신화 (다를 때만)"
+if [ -x "$SELF_REPO/infra/scripts/deploy-ste.sh" ]; then
+  # ⚠ 상한을 둔다. ssh 쪽에도 ConnectTimeout 이 있지만 전송 자체가 늘어질 수 있고,
+  #   ste 하나 때문에 갱신 전체가 멈추면 안 된다. 900초면 코드 전송(수십 MB)에 충분하다.
+  if timeout 900 "$SELF_REPO/infra/scripts/deploy-ste.sh" --if-stale; then
+    :
+  elif [ $? = 124 ]; then
+    bad "ste 최신화 900초 초과 — 중단했다. 헤드노드 도달성을 확인하라(§6 ste 게이트 참조)"
+  else
+    bad "ste 최신화 실패 — §6 ste 게이트가 다시 판정한다(위 사유 참조)"
+  fi
+else
+  bad "deploy-ste.sh 없음 — ste 최신화 생략"
+fi
+
 # ── 3.5) agent-server .env 자동 보정 — 챗 스택 재기동 전에 vLLM 주소를 확정한다.
 #   ① .env 없으면 apply-envs 로 신규 생성(@FROM_RA 마커를 RA .env 의 LLM_* 값으로 치환)
 #   ② @FROM_RA 마커가 남아있으면(킷 raw 복사/수동편집 흔적 — apply-envs 는 기존키 보존이라 못 고침)
@@ -740,15 +771,17 @@ if [ -n "$STE_UP" ]; then
       else
         bad "ste 백엔드      터널 경유 → ${_stecode:-000}  (http://$STE_UP/api/health)"
         echo "    힌트: ste-tunnel = $(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown)"
-        echo "    배포: (cae00) infra/scripts/deploy-ste.sh — Drive 스테이징으로 ste 헤드노드 코드 갱신(런북 §11)"
+        echo "    코드 갱신: 2c) 가 direct 박스는 자동으로 한다. 에어갭(teleport)은 명시 실행이다 —"
+        echo "               STE_DEPLOY=1 infra/scripts/deploy-ste.sh  (Drive 스테이징 경유, 런북 §11)"
       fi ;;
     *)
       probe "ste 백엔드      직결" "http://$STE_UP/api/health" 0 "200" ;;
   esac
   # ── ste 자격 중계가 **양쪽 다** 설정됐나 ────────────────────────────────
   # 포털에 로그인하면 ste 도 열리는 기능은 **같은 시크릿을 양쪽이 쥐어야** 성립한다. 포털 쪽은
-  # start.sh 가 만들어 채우지만, ste 헤드노드 쪽은 `deploy-ste.sh`(refresh-code §8)가 심는다 —
-  # update-all 은 실배포를 안 하므로 **여기서는 그 상태를 확인만 한다.**
+  # start.sh 가 만들어 채우고, ste 헤드노드 쪽은 2c) 가 `sync-sso-secret.sh` 로 심는다.
+  # 여기는 **심은 결과를 판정하는 자리**다 — 심는 쪽과 판정하는 쪽을 갈라 둔다. 같은 코드가
+  # 심고 판정하면 "심었다고 했으니 됐다" 가 되고, 실제로 열리는지는 아무도 안 본다.
   #
   # 아무 값이나 보내 **상태코드와 헤더**로 판정한다(비밀을 알 필요도, 남길 필요도 없다).
   #   · 404                         → 엔드포인트는 있는데 시크릿이 없다(그 경로가 꺼져 있다)
