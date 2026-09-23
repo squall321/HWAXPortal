@@ -29,10 +29,15 @@
 - [x] `access.yaml` 에 `step-forge`·`dyna-forge` 추가 (`ste` 는 이미 있음)
 - [x] 시험 3건 + 변이 3건 (`HWAXMcpGateway/test_provision_urls.py`)
 
-## 반영 (남음 — 사람 손)
-- [ ] dev: `./provision-config.sh --force` → 게이트웨이 재기동 → `tools/list` 로 394개 확인
-- [ ] dev: 새 PAT 한 장으로 `rest_catalog` → `rest_call` 실호출 (ste·dyna-forge·step-forge)
-- [ ] 프론트 빌드 배포 (`pnpm build` → SPA dist)
+## 반영
+- [x] dev: `provision-config.sh --force` → 사이트 6개 · `audience_ok` 6개 · `per_user_sso` 에 ste
+- [x] dev: 게이트웨이 재기동 → `tools/list` **394개**(392 → +2), 두 도구 확인
+- [x] dev 실호출 — ai-data-hub 200 · step-forge 200 / 쓰기 405 · 없는 사이트 · 신원 없음 (D-12 표)
+- [x] 프론트 빌드 (`pnpm build`)
+- [ ] **ste 헤드노드 코드 갱신** — 떠 있는 빌드에 `/api/auth/sso` 가 없다(D-12).
+      `SmartTwinExplorer/deploy/refresh-code.sh` 를 **cae00 에서** 돌려야 한다.
+      그때까지 ste 는 REST 다리·MCP 위임 **둘 다** 실패로 떨어진다(사유는 보인다)
+- [ ] dev: 포털 PAT 한 장으로 `/mcp-gw/api/<site>/…` HTTP 경로도 통하는지 (MCP 경로만 확인했다)
 - [ ] cae00: `update-all` (provision 이 새 사이트를 만든다)
 
 ## 열기 전에 닫아야 할 것 (PLAN §3 — **미결**)
