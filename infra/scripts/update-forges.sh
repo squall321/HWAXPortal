@@ -74,13 +74,15 @@ do_dynaforge() {
 
 do_ste() {
   hr "STE(SmartTwinExplorer) — $BOX 모드"
-  if [ "$BOX" != cae00 ]; then
-    echo "· dev 스킵 — ste 웹은 ste 헤드노드 배포라 deploy-ste 는 cae00 전용이다."
-    echo "  (dev 쪽 선행은 STE 리포의 pack-staging + push-to-drive — 가이드 §4 참조)"
-    return
-  fi
-  # deploy-ste.sh → refresh-code.sh 체인 — transport.env 존재·헤드노드 도달 같은
-  # 런타임 게이트를 스스로 검사하고 명확한 메시지로 fail-fast 한다(가이드 §4).
+  # ⚠ **박스로 가르지 않는다.** 여기서 "dev 스킵 — deploy-ste 는 cae00 전용" 으로 막아 뒀는데
+  #   그게 틀렸다. 가르는 축은 박스가 아니라 **전송 방식**(ste 리포 deploy/transport.env)이다 —
+  #   dev 의 ste 는 같은 박스 위 libvirt VM(ste-head01)이라 ssh 로 직접 닿고 배포도 된다.
+  #   Drive·Teleport 가 필요한 것은 에어갭 운영 클러스터뿐이다. 박스로 막아 둔 탓에 dev 의 ste 가
+  #   낡은 채로 남아 포털→ste 자격 중계가 조용히 죽어 있었다(2026-09-23, docs/one-token D-13).
+  #   deploy-ste.sh 가 transport.env 를 읽어 스스로 경로를 고르므로 그대로 넘긴다.
+  #
+  # 인자 없이 부른다 = 사람이 "갱신해라" 고 한 것이다. 그래서 `--if-stale` 을 주지 않는다 —
+  # 지문이 같아도 유닛·venv·시크릿까지 다시 맞춘다(update-all 의 2c 가 쓰는 자동 경로와 다르다).
   if bash "$ROOT/infra/scripts/deploy-ste.sh"; then
     echo "✓ STE 코드 갱신 완료"
     c="$(curl -s -o /dev/null -w '%{http_code}' -m 6 "http://127.0.0.1:8088/ste/api/health" 2>/dev/null)" || true

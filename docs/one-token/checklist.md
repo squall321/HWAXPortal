@@ -34,11 +34,14 @@
 - [x] dev: 게이트웨이 재기동 → `tools/list` **394개**(392 → +2), 두 도구 확인
 - [x] dev 실호출 — ai-data-hub 200 · step-forge 200 / 쓰기 405 · 없는 사이트 · 신원 없음 (D-12 표)
 - [x] 프론트 빌드 (`pnpm build`)
-- [ ] **ste 헤드노드 코드 갱신** — 떠 있는 빌드에 `/api/auth/sso` 가 없다(D-12).
-      `SmartTwinExplorer/deploy/refresh-code.sh` 를 **cae00 에서** 돌려야 한다.
-      그때까지 ste 는 REST 다리·MCP 위임 **둘 다** 실패로 떨어진다(사유는 보인다)
+- [x] **ste 최신화 완료** — 대상이 dev VM(`ste-head01`)이라 여기서 됐다(D-13 이 D-12 를 정정).
+      소스 20개 지문 일치 · openapi 30→32 · 프론트 일치 · ste 테스트 102 통과 · 원장 무손상
+- [x] **update-all 이 앞으로 한다(2c)** — direct 는 다를 때만 자동, teleport 는 `STE_DEPLOY=1`
+- [x] ste 자격 중계 E2E — 게이트웨이가 본인 명의 PAT 로 `/api/auth/me` 200(계정 JIT 생성)
+- [x] §6 자격중계 게이트 초록(`401 + www-authenticate 없음` = 양쪽 설정됨)
 - [ ] dev: 포털 PAT 한 장으로 `/mcp-gw/api/<site>/…` HTTP 경로도 통하는지 (MCP 경로만 확인했다)
-- [ ] cae00: `update-all` (provision 이 새 사이트를 만든다)
+- [ ] cae00: `update-all` (provision 이 새 사이트를 만들고, 2c 가 ste 를 판정한다 —
+      운영 클러스터라 실배포는 `STE_DEPLOY=1` 을 줄 때만 돈다)
 
 ## 열기 전에 닫아야 할 것 (PLAN §3 — **미결**)
 - [ ] **`scope`(read/write)가 아무 데서도 검증되지 않는다.** 지금은 한 장 = 전권이다

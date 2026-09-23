@@ -126,8 +126,73 @@ dev 게이트웨이를 재기동해 실호출로 확인한 결과다. 여섯 사
 헤드노드가 갱신되기 전까지 둘 다 서비스 계정이 아니라 **실패**로 떨어진다(조용히 강등하지
 않게 만들어 뒀으므로 사유가 보인다).
 
-갱신은 `SmartTwinExplorer/deploy/refresh-code.sh` 인데 **cae00 에서 도는 것**이다(Drive →
-Teleport → 헤드노드). dev 에서 돌릴 스크립트가 아니라 여기서는 하지 않았다.
+**정정 — 위 문단에서 "cae00 에서만 된다" 고 적은 것은 이 박스에서는 틀렸다.**
+`192.168.130.10` 은 에어갭 운영 헤드노드가 아니라 **dev 박스 위의 libvirt VM `ste-head01`**
+이다(로컬 브리지 `virbr-ste`, `virsh list` 로 확인). ste 리포의 `deploy/transport.env` 가
+`TRANSPORT_MODE=direct` 라 dev 에서 ssh 로 직접 닿고 배포도 된다 — Drive·Teleport 가 필요 없다.
+운영 클러스터(teleport)만 cae00 경로다. 도달성은 대상이 무엇인지로 갈리고, 이름이 같아서
+헷갈린다.
+
+→ 그래서 **여기서 고쳤다.** D-13 참조.
+
+## D-13. ste 를 실제로 최신화하고, update-all 이 앞으로 하게 만들었다
+
+**지금 한 것.** VM 의 `/opt/ste/backend/src` 와 리포를 sha256 으로 대조해 **8개 파일이 다름**을
+확인하고(이번 세션에 고친 것 전부), `deploy-backend.sh` → `deploy-frontend.sh` 로 배포했다.
+결과: 소스 20개 지문 **완전 일치**, openapi 경로 30 → 32(`/api/auth/sso`·`/sso/revoke` 등장),
+프론트도 일치(에이전트 바이너리에 이번 세션 수정 둘이 들어 있다), ste 테스트 102개 통과.
+
+손대기 전에 **되돌릴 수 없는 것을 백업했다** — `/opt/ste/state`(SQLite 계정 원장)·`apps-web`·
+`.env` + 현 소스 스냅샷을 `/opt/ste/.pre-refresh-<시각>/` 에. 배포 후 원장은 그대로다
+(`users=1 pats=2 jobs=11 sessions=3` → 같음, 그 뒤 SSO 로 계정 하나가 정상 생성돼 users=2).
+
+**`rsync --delete` 범위를 먼저 직접 확인했다.** 대상은 `/opt/ste/backend/` 와 `/opt/ste/apps/`
+뿐이라 `state`·`apps-web` 은 그 밖이다(스크립트 주석의 주장이 코드와 맞았다). 단 `apps/` 는
+삭제 대상이므로 **VM 에만 있는 앱이 있으면 날아간다** — 대조해서 없음을 확인하고 돌렸다.
+다음 사람도 그 확인을 먼저 해야 한다.
+
+**시크릿 심기를 떼어냈다.** 이 일이 `refresh-code.sh`(Drive 경로) 안에만 있어서
+`deploy-backend.sh` 로 배포하면 코드는 새것인데 시크릿이 없어 자격 중계가 404 로 남았다.
+`deploy/sync-sso-secret.sh` 로 꺼내 **양쪽 경로가 같은 것을 부른다**(D-6 과 같은 이유).
+값은 원격 셸 **인자로 넘기지 않는다** — ps 에 보이고 히스토리에 남아서 stdin 으로 넣는다.
+
+**update-all 이 앞으로 한다(2c).** 종전에 안 했던 이유는 "실배포가 routine·크론에 섞여
+발화하면 안 된다" 였다. 그 의도를 **운영 클러스터에만** 남기고 축을 transport.env 로 잡았다 —
+`direct` 는 매 실행 지문 대조 후 다를 때만, `teleport` 는 `STE_DEPLOY=1` 명시 때만.
+심는 쪽(2c)과 판정하는 쪽(§6 헬스게이트)은 갈라 뒀다. 같은 코드가 심고 판정하면
+"심었다고 했으니 됐다" 가 되고 실제로 열리는지는 아무도 안 본다.
+
+**실측으로 잡아 막은 것 셋** (설계할 때 안 보였던 것들이다) —
+1. `--if-stale` 이 리포 없는 박스에서 **Drive 부트스트랩 22MB 다운로드를 시작했다.** update-all
+   한 번이 그걸 발화시키면 막으려던 바로 그 모양이다. 자동 호출은 있는 것만 최신화한다.
+2. **닿지 않는 헤드에 40초+ 매달렸다.** update-all 이 매 실행 이 경로를 타므로 헤드가 죽은
+   박스에서 갱신 전체가 멈춘다. ssh ConnectTimeout 10초 + update-all 쪽 900초 상한.
+3. 원격 지문을 못 읽었을 때 **"같다"로 읽으면** 낡은 박스를 영원히 건너뛰며 초록을 낸다.
+   못 읽으면 최신이라 하지 않는다(닿지 않는 헤드로 실측: "이미 최신" 안 나오고 종료코드 1).
+
+**끝에서 끝까지 확인했다.** 게이트웨이가 `mxcaegroup@gmail.com` 명의로 ste PAT 를 받아
+`/api/auth/me` 200(계정이 그 자리에서 생성, id=2)·`/api/jobs` 200. §6 자격중계 게이트도
+`401 + www-authenticate 없음` = 양쪽 설정됨으로 초록이다.
+
+**변이 검사에서 내 시험 하나가 약했다.** 리포 부재 가드를 떼도 뒤의 접속설정 가드가 같은
+"건너뛴다" 를 찍어 통과했다 — 사유 문구를 각각 못박도록 강화했다.
+
+**적대 조사가 내가 못 본 것 둘을 찾았다.**
+1. `update-forges.sh` 의 `do_ste()` 가 **박스로 갈라** dev 를 스킵했다("deploy-ste 는 cae00
+   전용이다" — 이제 거짓이다). 가르는 축은 박스가 아니라 **전송 방식**이다. 박스로 막아 둔 탓에
+   dev 의 ste 가 낡은 채로 남았다. 스킵을 뗐고 `deploy-ste.sh` 가 스스로 경로를 고르게 했다.
+2. dev 의 `routes.env` 는 `#ste=`(주석)이지만 **gitignore 된 `routes.local.env` 에 `ste=` 가
+   활성**이다. `_ste_routed()` 가 그 파일을 먼저 보므로 dev 에서도 `STE_ROUTED=1` 이고 §6
+   게이트가 돈다 — "dev 는 ste 를 안 쓴다" 고 읽으면 틀린다.
+
+조사가 확증해 준 것(내가 독립적으로도 확인한 것들) — `--delete` 범위는 `backend/`·`apps/`·
+`/opt/apps/ste/`·`web/` 넷이고 `state`·`apps-web` 은 그 **형제**라 안전하다. `refresh-code.sh`
+를 dev 에서 쓰면 안 되는 이유가 하나 더 있다 — 그것은 `git checkout <커밋>` 으로 **리포 HEAD 를
+고정**하고 `dist` 를 tar 로 덮는다. 저작 리포인 dev 에서 돌리면 작업 트리를 건드린다.
+그리고 `ste-mcp` 은 `ste` 패키지를 import 하지 않는다(httpx 로 REST 를 부르는 얇은 래퍼) —
+백엔드 소스만 바꿨으면 `ste-backend` 재기동만으로 충분하다.
+
+
 
 ## D-9. 이번에 고친 파일과 시험
 
