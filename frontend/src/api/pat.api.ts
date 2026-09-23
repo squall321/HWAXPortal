@@ -17,7 +17,9 @@ export interface PatCreated extends PatMeta {
 
 export interface PatCreateBody {
   name: string;
-  audiences: string[];
+  // 생략하면 서버 기본 청중(config.pat_default_audiences)이 실린다 — 토큰 하나가 MCP 도구와
+  // 하위 사이트 REST 를 함께 덮는다. 좁히려는 의도가 있을 때만 적는다.
+  audiences?: string[];
   scopes: string[];
   ttl_days?: number;
 }

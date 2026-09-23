@@ -94,10 +94,12 @@ platforms:
     # 게이트웨이가 권한 없이 연다 — 사이드카를 게이트웨이에 붙이기 전에 넣는다(docs/chat-actions A-8).
   - id: stepforge
     label: StepForge
-    gateway: [heax-step_forge]
+    # step-forge 는 게이트웨이 REST 다리의 사이트 키다(heax-step_forge 는 그 앱의 MCP 백엔드).
+    # ⚠ 표에 없는 키는 게이트웨이가 "전체 공개" 로 판정한다 — 사이트를 붙이기 **전에** 적는다.
+    gateway: [heax-step_forge, step-forge]
   - id: dynaforge
     label: DynaForge
-    gateway: [heax-kooremapper_mcp]
+    gateway: [heax-kooremapper_mcp, dyna-forge]
   - id: laminate
     label: Laminate Analyzer
     gateway: [heax-laminate_analyzer_mcp]

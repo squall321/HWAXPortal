@@ -643,10 +643,12 @@ export default function TokenPage() {
     setBusy(true);
     setError(null);
     try {
-      // AI 접근용 PAT: audiences에 반드시 mcp-gateway를 포함해야 챗·개인 Claude MCP 둘 다 된다.
+      // 청중(audiences)을 **보내지 않는다.** 서버 기본값(config.pat_default_audiences)이 실리고,
+      // 그 한 장이 MCP 도구와 하위 사이트 REST 를 함께 덮는다. 여기서 목록을 적으면 서버가
+      // 사이트를 늘려도 이 화면이 낸 토큰만 옛 범위에 갇힌다 — 종전에 `['mcp-gateway']` 를
+      // 박아 두어서 이미 살아 있던 REST 프록시를 아무도 쓸 수 없었다.
       const pat = await createPat({
         name: trimmed,
-        audiences: ['mcp-gateway'],
         scopes: ['read', 'write'],
         ttl_days: ttlDays,
       });

@@ -153,7 +153,14 @@ class Settings(BaseSettings):
     pat_never_ttl_days: int = 36500   # 100년
     # comma-separated allowlist. "mcp-gateway" = the AI surface (LLM chat + MCP tools): a PAT with
     # this audience can drive /agent/chat AND connect a personal Claude to the MCP gateway.
-    pat_default_audiences: str = "mx-white-paper,heax-hub,ai-data-hub,signalforge,mcp-gateway"
+    # ⚠ 이 값은 **허용목록이 아니라 기본값**이다(pat.py:94 `body.audiences or …`). 요청이 청중을
+    # 주면 그대로 실린다. 그래서 여기 늘리는 일의 뜻은 "아무 말 없이 발급하면 이만큼 덮는다" 다 —
+    # 발급 화면은 청중을 **보내지 않아** 이 목록을 그대로 받는다(토큰 하나로 하위 사이트 공용).
+    # 게이트웨이 REST 다리의 사이트 키와 같아야 한다(rest.<site> / portal.audience_ok).
+    # heax-hub 는 아직 소비처가 없다 — /apps/* 는 HEAXHub 자기 게이트가 막고 그쪽은 이 RS256
+    # 토큰을 안 본다. 지우지 않고 남긴다(그 배선을 여는 결정이 아직 안 났다).
+    pat_default_audiences: str = ("mx-white-paper,heax-hub,ai-data-hub,signalforge,"
+                                 "ste,dyna-forge,step-forge,mcp-gateway")
     pat_chat_audience: str = "mcp-gateway"   # audience a PAT must carry to use the chat / MCP surface
 
     # ── MCP chat (Phase 1: agent proxy + MCP registry; echo mode needs no remote) ──
