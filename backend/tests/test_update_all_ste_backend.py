@@ -15,6 +15,7 @@
 없으면 `per_user_sso["ste"]` 가 아예 안 생기고 ste 호출이 **서비스 계정**으로 나가,
 잡 소유자가 한 명으로 뭉친다.
 """
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -179,3 +180,51 @@ def test_the_probe_sends_no_real_secret():
     block = SRC[i:SRC.index("_ste_sso_code=", i)]
     assert "probe-not-a-secret" in block
     assert "$STE_SSO_SECRET" not in block, "프로브에 실제 시크릿을 싣지 않는다"
+
+
+# ── ste 주소를 라우트에서 유도한다 — 손으로 export 하지 않아도 위임이 안 깨지게 ─────────
+# 종전에는 STE_SSO_URL 을 환경변수로만 받았다. 그래서 export 없이 update-all 을 돌리면 provision 이
+# `127.0.0.1:15810` 기본값으로 **멀쩡하던 VM 주소를 덮어썼다**(dev 실측 2026-09-24 — 그 순간
+# ste 위임과 REST 다리가 함께 죽는다). 정본은 이 박스의 `ste=` 라우트 하나다.
+def _run_route_derivation(tmp_path, routes_local: str | None, env: dict) -> dict:
+    """update-all 에서 `_ste_route_url` + 유도 블록만 **그대로 떼어** 돌린다(사본을 시험하지 않는다)."""
+    m = re.search(r"(_ste_route_url\(\) \{.*?\n  fi\nfi\n)", SRC, re.S)
+    assert m, "update-all 에서 ste 주소 유도 블록을 못 찾았다 — 이 시험이 낡았다"
+    repo = tmp_path / "repo"
+    (repo / "backend/config").mkdir(parents=True, exist_ok=True)
+    if routes_local is not None:
+        (repo / "backend/config/routes.local.env").write_text(routes_local, encoding="utf-8")
+    script = (f'SELF_REPO="{repo}"; ROUTES_ENV="{repo}/backend/config/routes.env"\n'
+              + m.group(1)
+              + '\nprintf "SSO=%s\\nMCP=%s\\n" "${STE_SSO_URL:-}" "${STE_MCP_URL:-}"\n')
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                       env={"PATH": os.environ["PATH"], **env}, timeout=30)
+    assert r.returncode == 0, r.stderr
+    return dict(line.split("=", 1) for line in r.stdout.splitlines() if "=" in line)
+
+
+def test_ste_주소는_라우트에서_유도된다(tmp_path):
+    out = _run_route_derivation(tmp_path, "ste=http://192.168.130.10:15810/\n", {})
+    assert out["SSO"] == "http://192.168.130.10:15810/api/auth/sso"
+    assert out["MCP"] == "http://192.168.130.10:15812/mcp"          # 같은 호스트, MCP 기본 포트
+
+
+def test_provision_env_가_명시한_값이_유도보다_이긴다(tmp_path):
+    """포트를 바꾼 박스는 provision.env 가 정본이다 — 유도가 그것을 덮으면 안 된다."""
+    out = _run_route_derivation(tmp_path, "ste=http://192.168.130.10:15810/\n",
+                                {"STE_MCP_URL": "http://192.168.130.10:25812/mcp"})
+    assert out["MCP"] == "http://192.168.130.10:25812/mcp"
+    assert out["SSO"] == "http://192.168.130.10:15810/api/auth/sso"  # 이건 비어 있었으니 유도
+
+
+def test_라우트가_없으면_아무것도_채우지_않는다(tmp_path):
+    """비워 두면 provision 이 자기 규칙(직전값 → 기본값)으로 간다. 여기서 localhost 를 지어내면 안 된다."""
+    out = _run_route_derivation(tmp_path, None, {})
+    assert out.get("SSO", "") == "" and out.get("MCP", "") == ""
+    out = _run_route_derivation(tmp_path, "#ste=http://x/\n", {})       # 주석은 라우트가 아니다
+    assert out.get("SSO", "") == ""
+
+
+def test_접속_설정은_있는데_라우트가_없으면_말한다():
+    """VM 은 최신인데 포털 /ste 가 비어 있는 상태를 '안 쓰는 박스' 로 조용히 넘기지 않는다."""
+    assert "ste 접속 설정은 있는데" in SRC and "routes.local.env 에" in SRC

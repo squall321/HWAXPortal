@@ -316,10 +316,44 @@ _ste_routed() {
   echo 0
 }
 STE_ROUTED="$(_ste_routed)"
+# ste 가 **어디 있는지**의 정본은 이 박스의 `ste=` 라우트다(local 오버레이 우선 — §6 프로브와 같은
+# 우선순위). 자격 중계 sso_url 과 MCP url 을 여기서 유도한다. 종전에는 STE_SSO_URL 을 **환경변수로만**
+# 받아서, 손으로 export 하지 않고 update-all 을 돌리면 provision 이 `127.0.0.1:15810` 기본값으로
+# **멀쩡하던 주소를 덮어썼다**(dev 의 ste 는 VM 192.168.130.x 라 그 순간 위임·REST 다리가 함께 죽는다).
+# provision.env 에 명시한 값이 있으면 그것이 이긴다(아래 `${VAR:-}` 가 빈 값일 때만 채운다).
+_ste_route_url() {
+  local f u
+  for f in "$SELF_REPO/backend/config/routes.local.env" "$ROUTES_ENV"; do
+    [ -f "$f" ] || continue
+    u="$(sed -n 's|^[[:space:]]*ste=[[:space:]]*\(.*\)|\1|p' "$f" | head -1 | xargs)"
+    [ -n "$u" ] && { printf '%s' "$u"; return; }
+  done
+}
+_STE_ROUTE="$(_ste_route_url)"
+if [ -n "$_STE_ROUTE" ]; then
+  # 라우트는 웹 백엔드 자체다(예: http://192.168.130.10:15810/). origin 만 떼어 경로를 붙인다.
+  _STE_ORIGIN="$(printf '%s' "$_STE_ROUTE" | sed -n 's|^\(https\?://[^/]*\).*|\1|p')"
+  if [ -n "$_STE_ORIGIN" ]; then
+    [ -z "${STE_SSO_URL:-}" ] && STE_SSO_URL="$_STE_ORIGIN/api/auth/sso"
+    # MCP 는 같은 호스트의 STE_MCP_PORT(기본 15812)다. 포트를 바꾼 박스는 provision.env 의
+    # STE_MCP_URL 이 이긴다 — 여기서는 기본 관례만 채운다.
+    [ -z "${STE_MCP_URL:-}" ] && STE_MCP_URL="$(printf '%s' "$_STE_ORIGIN" | sed 's|:[0-9]*$||'):15812/mcp"
+    echo "  · ste 주소 유도: $_STE_ORIGIN → sso=$STE_SSO_URL · mcp=$STE_MCP_URL"
+  fi
+fi
 # 시크릿은 infra/.env 에만 있다(update-all 은 그 파일을 통째로 소싱하지 않는다 — 필요한 키만 읽는다).
 # ⚠ 비밀에는 **기본값 확장**(`:-` 폴백)을 쓰지 않는다 — 명시적 if 로 본다. 그 관용구를 허용하면
 #   다음 사람이 거기 리터럴 값을 적어도 통과하고, 비어 있는 박스가 공개값으로 뜬다.
 #   `test_no_tracked_secrets` 가 그래서 그 꼴을 통째로 막는다(이 주석도 그 검사를 지나간다).
+# 2c) 가 배포하는 대상(ste 리포 transport.env)과 포털이 프록시하는 대상(`ste=` 라우트)은 **따로 설정**된다.
+# 앞은 있고 뒤가 없으면 VM 은 최신인데 포털 /ste 와 게이트웨이 ste 백엔드는 비어 있다 — 조용히
+# "ste 를 안 쓰는 박스" 로 판정되므로 여기서 말한다(하드 실패는 아니다 — 정말 안 쓰는 박스일 수 있다).
+_STE_TENV="$SELF_REPO/../SmartTwinExplorer/deploy/transport.env"
+if [ "$STE_ROUTED" != 1 ] && [ -f "$_STE_TENV" ]; then
+  echo "  ⚠ ste 접속 설정은 있는데($_STE_TENV) 이 박스의 \`ste=\` 라우트가 없다 —"
+  echo "    2c) 는 헤드에 배포하지만 포털 /ste 와 게이트웨이 ste 백엔드는 생기지 않는다."
+  echo "    쓰려면 backend/config/routes.local.env 에 \`ste=http://<헤드>:15810/\` 을 적는다."
+fi
 if [ -z "${STE_SSO_SECRET:-}" ] && [ -f "$SELF_REPO/infra/.env" ]; then
   STE_SSO_SECRET="$(sed -n 's/^STE_SSO_SECRET=//p' "$SELF_REPO/infra/.env" | tail -1 | tr -d '"'"'"' ')"
 fi
