@@ -44,6 +44,26 @@ def certs(tmp_path_factory):
            .sign(ca_key, hashes.SHA256()))
     (d / "expired-fullchain.crt").write_bytes(exp.public_bytes(serialization.Encoding.PEM) + (d / "ca.crt").read_bytes())
     (d / "ca.der").write_bytes(ca_cert.public_bytes(serialization.Encoding.DER))
+    # root → intermediate → leaf2 (표준 사내 PKI 모양). nginx 는 leaf2+int 를 서빙하고 루트는 따로 있다.
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    int_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    int_cert = (x509.CertificateBuilder()
+                .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Private Intermediate CA")]))
+                .issuer_name(ca_cert.subject).public_key(int_key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=2))
+                .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+                .sign(ca_key, hashes.SHA256()))
+    leaf2 = (x509.CertificateBuilder()
+             .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "leaf2.example.test")]))
+             .issuer_name(int_cert.subject).public_key(leaf_key.public_key())
+             .serial_number(x509.random_serial_number())
+             .not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=1))
+             .sign(int_key, hashes.SHA256()))
+    pem = serialization.Encoding.PEM
+    (d / "int.crt").write_bytes(int_cert.public_bytes(pem))
+    (d / "leaf2-int.crt").write_bytes(leaf2.public_bytes(pem) + int_cert.public_bytes(pem))
+    (d / "leaf2-int-root.crt").write_bytes(leaf2.public_bytes(pem) + int_cert.public_bytes(pem) + (d / "ca.crt").read_bytes())
     return d
 
 
@@ -58,7 +78,7 @@ def _use(monkeypatch, cert, ca=None, bundle=None):
     monkeypatch.setattr(tlscert, "_CERT_PATH", cert)
     monkeypatch.setattr(tlscert, "_CA_PATH", ca)
     monkeypatch.setattr(tlscert, "_TRUST_BUNDLE", str(bundle) if bundle else None)
-    monkeypatch.setattr(tlscert, "_INFO_CACHE", {"key": None, "value": None})
+    monkeypatch.setattr(tlscert, "_CACHE", {"key": None, "at": 0.0, "value": None})
 
 
 def test_self_signed_needs_ca_and_serves_itself_as_ca(client, certs, monkeypatch):
@@ -148,10 +168,57 @@ def test_relative_env_paths_anchor_at_repo_root_like_nginx_does(monkeypatch):
     assert tlscert._REPO_ROOT.joinpath("infra", "tls").is_dir()
 
 
-def test_info_is_cached_by_file_mtime(client, certs, monkeypatch):
+def test_info_and_ca_share_one_cached_state(client, certs, monkeypatch):
     _use(monkeypatch, certs / "self.crt")
     calls = []
     real = tlscert._verify
     monkeypatch.setattr(tlscert, "_verify", lambda pem, b: (calls.append(1), real(pem, b))[1])
-    client.get("/tls/info"); client.get("/tls/info")
-    assert len(calls) == 2, "첫 요청의 공개루트 판정 + CA 후보 검증 뒤로는 서브프로세스가 없다"
+    client.get("/tls/info"); client.get("/tls/info"); client.get("/tls/ca.crt")
+    assert len(calls) == 2, "첫 요청의 공개루트 판정 + CA 후보 검증 뒤로는 서브프로세스가 없다(/tls/ca.crt 도 같은 상태)"
+    monkeypatch.setattr(tlscert, "_TTL_S", 0)                       # 시간이 가면 다시 판정한다(만료가 보이게)
+    client.get("/tls/info")
+    assert len(calls) == 4
+
+
+def test_transient_openssl_failure_is_not_cached(client, certs, monkeypatch):
+    """OOM·타임아웃으로 한 번 실패한 판정을 고정하면 사내 CA 포털이 '공개 CA 정상' 으로 굳는다(2라운드 검토)."""
+    _use(monkeypatch, certs / "fullchain.crt")
+    real = tlscert.subprocess.run
+    state = {"fail": True}
+    def flaky(*a, **k):
+        if state["fail"]:
+            state["fail"] = False
+            raise OSError("fork failed")
+        return real(*a, **k)
+    monkeypatch.setattr(tlscert.subprocess, "run", flaky)
+    first = client.get("/tls/info").json()
+    assert first["verified"] is False and "실행 실패" in first["verify_error"]
+    second = client.get("/tls/info").json()
+    assert second["verified"] is True and second["needs_ca"] is True and second["ca_available"] is True
+
+
+def test_server_sends_intermediate_and_root_is_in_tls_ca_path(client, certs, monkeypatch):
+    """표준 사내 PKI: nginx 가 leaf+int 를 서빙, 루트만 TLS_CA_PATH — Node 는 루트만 심으면 된다(검토 실측).
+    후보 검증이 서빙 체인을 -untrusted 로 안 주면 이 정상 구성을 '연결 불가' 로 판정한다(1라운드 수정의 회귀)."""
+    _use(monkeypatch, certs / "leaf2-int.crt", ca=certs / "ca.crt")
+    info = client.get("/tls/info").json()
+    assert info["needs_ca"] and info["ca_available"] and info["ca_verified"], info
+    assert client.get("/tls/ca.crt").text.strip() == (certs / "ca.crt").read_text().strip()
+    # 루트까지 붙은 fullchain 이면 TLS_CA_PATH 없이도 체인부(int+root)가 준비된다.
+    _use(monkeypatch, certs / "leaf2-int-root.crt")
+    info = client.get("/tls/info").json()
+    assert info["ca_available"] and info["ca_verified"]
+    served = client.get("/tls/ca.crt").text
+    assert served.strip() == ((certs / "int.crt").read_text() + (certs / "ca.crt").read_text()).strip(), "체인부 그대로(int+root)"
+    # 중간 CA 까지만 있고 루트가 없으면 Node 도 못 믿는다 — 안내가 '루트' 를 말한다.
+    _use(monkeypatch, certs / "leaf2-int.crt")
+    info = client.get("/tls/info").json()
+    assert info["ca_available"] is False and "루트" in info["ca_error"]
+    assert client.get("/tls/ca.crt").status_code == 404
+
+
+def test_expired_leaf_keeps_info_and_ca_endpoint_consistent(client, certs, monkeypatch):
+    _use(monkeypatch, certs / "expired-fullchain.crt", bundle=certs / "ca.crt")
+    info = client.get("/tls/info").json()
+    assert info["expired"] and info["ca_available"] is False and "expired" in info["ca_error"]
+    assert client.get("/tls/ca.crt").status_code == 404

@@ -91,6 +91,23 @@ else
   bad gateway "게이트웨이 /health 무응답(:9110)"
 fi
 
+# ── 4b) 포털 TLS — 사용자 PC 의 Claude(Node)가 이 포털을 믿을 수 있는가(/tls/info) ─────────
+# S0 의 "cae00 인증서 종류" 가 여기서 판정된다: 공개 CA 면 설치 불필요, 사설·자체서명이면 발급 CA 체인이
+# 있어야 배치파일이 심는다. 리프만 있는 사내 CA 발급은 연결 불가다(리프는 CA 를 대신하지 못한다 — 실측).
+TI="$(curl -s -m 4 "http://127.0.0.1:$HTTP_PORT/tls/info" 2>/dev/null || true)"
+if [ -n "$TI" ] && printf '%s' "$TI" | python3 -c 'import json,sys;json.load(sys.stdin)' 2>/dev/null; then
+  read -r tavail tver tneed tca texp <<<"$(TI="$TI" python3 -c 'import json,os;d=json.loads(os.environ["TI"]);print(*[int(bool(d.get(k))) for k in ("available","verified","needs_ca","ca_available","expired")])')"
+  terr="$(TI="$TI" python3 -c 'import json,os;d=json.loads(os.environ["TI"]);print((d.get("verify_error") or d.get("ca_error") or "")[:120])')"
+  if [ "$tavail" = 0 ]; then warn tls "포털 인증서 파일 없음(TLS 미설정 또는 TLS_CERT_PATH 오류)"
+  elif [ "$texp" = 1 ]; then bad tls "포털 인증서 만료 — CA 를 심어도 연결 안 됨, 갱신 필요"
+  elif [ "$tver" = 0 ]; then warn tls "체인 판정 못 함(모름≠정상) — $terr"
+  elif [ "$tneed" = 0 ]; then ok tls "공개 CA 체인 — 사용자 PC 에 인증서 설치 불필요"
+  elif [ "$tca" = 1 ]; then ok tls "사설·자체서명 — 발급 CA 체인 준비됨(/tls/ca.crt, 배치파일이 심는다)"
+  else bad tls "사설 CA 인데 발급 CA 체인 없음 — 개인 Claude 연결 불가: $terr"; fi
+else
+  warn tls "포털 /tls/info 무응답(:$HTTP_PORT) — 포털이 안 떠 있거나 옛 버전"
+fi
+
 # ── 5) 배포 신선도 — 헤드 마커 vs 리포 HEAD(direct) / Drive 커밋(teleport) ──────────────
 if [ -n "$TENV" ] && [ -d "$(dirname "$TENV")/.." ]; then
   STE_DIR="$(cd "$(dirname "$TENV")/.." && pwd)"

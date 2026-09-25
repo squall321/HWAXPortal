@@ -31,6 +31,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -55,7 +56,7 @@ _CA_PATH = _anchor(os.environ["TLS_CA_PATH"]) if os.environ.get("TLS_CA_PATH") e
 # 선택 — "공개 루트" 로 삼을 번들. 기본은 certifi(Mozilla 번들 = Node 가 쓰는 것과 같은 계열).
 # 박스의 /etc/ssl/certs 로 물러나지 않는다 — 거기 심어 둔 사설 CA 가 "공개" 로 읽히면 사용자 PC 의
 # Node 는 못 믿는 인증서를 여기서는 된다고 말한다.
-_TRUST_BUNDLE = os.environ.get("TLS_TRUST_BUNDLE") or None
+_TRUST_BUNDLE = str(_anchor(os.environ["TLS_TRUST_BUNDLE"])) if os.environ.get("TLS_TRUST_BUNDLE") else None
 
 _PEM_RE = re.compile(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", re.S)
 
@@ -157,42 +158,46 @@ def _reaches_public_root(pem: str) -> tuple[bool | None, str]:
     return _verify(pem, bundle)
 
 
-def _ca_bundle() -> tuple[str | None, str]:
-    """개인 Claude 에 심을 발급 CA 체인과, 없을 때의 이유(경로 없이).
+def _ca_bundle(pem: str) -> tuple[str | None, str, bool]:
+    """개인 Claude 에 심을 발급 CA 체인, 없을 때의 이유(경로 없이), 그 체인이 리프를 **검증했는가**.
 
-    후보 순서: TLS_CA_PATH > 리프 파일의 체인부 > 자체서명 리프 자신. 후보가 **리프를 실제로 검증**
-    할 때만 준다 — 엉뚱한 CA 를 "준비됨" 으로 내면 사용자는 심고도 같은 오류를 만난다."""
-    pem = _read_cert()
-    if not pem:
-        return None, "포털 인증서 파일이 없다"
+    후보 순서: TLS_CA_PATH > 리프 파일의 체인부 > 자체서명 리프 자신. 후보가 리프를 실제로 검증할 때만
+    준다 — 엉뚱한 CA 를 "준비됨" 으로 내면 사용자는 심고도 같은 오류를 만난다. 검증에는 리프 파일의
+    체인부(서버가 핸드셰이크로 보내는 중간 CA)를 -untrusted 로 같이 준다 — Node 도 그렇게 검증하므로
+    루트만 심으면 되는 표준 구성(leaf+int 서빙, TLS_CA_PATH=루트)이 통해야 한다(2라운드 검토 회귀).
+    판정 수단이 없으면(openssl 없음) 구조로 고른 후보를 검증 안 된 채로 준다 — verified=False 로 표시."""
     certs = _certs(pem)
     if not certs:
-        return None, "포털 인증서 파일에 인증서가 없다"
+        return None, "포털 인증서 파일에 인증서가 없다", False
     cands: list[tuple[str, str]] = []
     if _CA_PATH is not None:
         explicit = _read_pem(_CA_PATH)
         if explicit and _certs(explicit):
             cands.append(("TLS_CA_PATH", "\n".join(_certs(explicit)) + "\n"))
         else:
-            return None, "TLS_CA_PATH 를 읽지 못했다(파일 없음·PEM 아님·개인키 동봉)"
+            return None, "TLS_CA_PATH 를 읽지 못했다(파일 없음·PEM 아님·개인키 동봉)", False
     if len(certs) > 1:
         cands.append(("리프 파일의 체인부", "\n".join(certs[1:]) + "\n"))
     if _is_self_signed(pem):
         cands.append(("자체서명 리프", certs[0] + "\n"))
     if not cands:
-        return None, "리프만 있고 발급 CA 체인이 없다 — TLS_CERT_PATH 를 fullchain 으로 두거나 TLS_CA_PATH 를 준다"
+        return None, ("리프만 있고 발급 CA 체인이 없다 — TLS_CERT_PATH 를 루트 CA 까지 포함한 fullchain 으로 두거나 "
+                      "TLS_CA_PATH 로 루트 CA 를 준다"), False
     reasons = []
     for name, bundle in cands:
         with tempfile.NamedTemporaryFile("w", suffix=".pem", delete=False) as f:
             f.write(bundle)
         try:
-            ok, err = _verify(certs[0] + "\n", f.name)
+            ok, err = _verify(pem, f.name)
         finally:
             os.unlink(f.name)
         if ok:
-            return bundle, ""
-        reasons.append(f"{name}: {'판정 불가 — ' + err if ok is None else '리프를 검증하지 못한다 — ' + err}")
-    return None, "; ".join(reasons)
+            return bundle, "", True
+        if ok is None:
+            return bundle, "", False            # 판정 수단 없음 — 구조상 첫 후보를 검증 없이
+        reasons.append(f"{name}: 리프를 검증하지 못한다 — {err}")
+    hint = " (체인이 루트 CA 까지 닿아야 한다 — 중간 CA 만으로는 Node 도 검증하지 못한다)"
+    return None, "; ".join(reasons) + hint, False
 
 
 def _cert_response(pem: str, filename: str) -> Response:
@@ -218,15 +223,19 @@ def portal_cert() -> Response:
 @router.get("/tls/ca.crt")
 def portal_ca() -> Response:
     """개인 Claude(NODE_EXTRA_CA_CERTS)에 심을 **발급 CA 체인**. 없으면 404 와 이유(/tls/info 의 ca_error 와 같다)."""
-    ca, why = _ca_bundle()
-    if ca is None:
-        return Response(status_code=404, content=f"발급 CA 체인이 없습니다 — {why}", media_type="text/plain; charset=utf-8")
-    return _cert_response(ca, "hwax-portal-ca.crt")
+    st = _state()
+    if st["ca"] is None:
+        return Response(status_code=404, content=f"발급 CA 체인이 없습니다 — {st['info']['ca_error']}",
+                        media_type="text/plain; charset=utf-8")
+    return _cert_response(st["ca"], "hwax-portal-ca.crt")
 
 
 # openssl 서브프로세스는 요청마다 돌리지 않는다 — 무인증 엔드포인트라 증폭 표적이 된다.
-# 인증서·CA 파일의 mtime 이 같으면 직전 답을 그대로 낸다(교체하면 mtime 이 바뀐다).
-_INFO_CACHE: dict = {"key": None, "value": None}
+# 두 엔드포인트가 **같은 상태**를 본다(따로 계산하면 만료·일시 실패 때 서로 어긋난다 — 2라운드 검토).
+# 키는 인증서·CA 파일의 mtime 과 시간(TTL) — 파일이 안 바뀌어도 시간이 가면 만료가 보여야 한다.
+# 판정 수단이 없던 순간(openssl 일시 실패 포함)은 고정하지 않는다 — 다음 요청이 다시 판정한다.
+_TTL_S = int(os.environ.get("TLS_INFO_TTL", "60"))
+_CACHE: dict = {"key": None, "at": 0.0, "value": None}
 
 
 def _stat_key() -> tuple:
@@ -238,28 +247,36 @@ def _stat_key() -> tuple:
     return (st(_CERT_PATH), st(_CA_PATH), _TRUST_BUNDLE)
 
 
-def _info() -> dict:
-    key = _stat_key()
-    if _INFO_CACHE["key"] == key and _INFO_CACHE["value"] is not None:
-        return _INFO_CACHE["value"]
+def _compute() -> dict:
     pem = _read_cert()
     self_signed = bool(pem) and _is_self_signed(pem)
     expired = bool(pem) and _is_expired(pem)
     if pem:
         ok, err = _reaches_public_root(pem)
-        # 판정 수단이 없으면 옛 기준(자체서명)으로 — 사내 CA 를 못 잡지만 없는 것보다 낫다.
+        # 판정 수단이 없으면 옛 기준(자체서명)으로 — 사내 CA 를 못 잡지만 없는 것보다 낫다. verified 가 그 사실을 낸다.
         needs_ca = (not ok) if ok is not None else self_signed
         verified = ok is not None
+        ca, ca_err, ca_verified = _ca_bundle(pem)
     else:
         needs_ca, err, verified = False, "", False
-    ca, ca_err = _ca_bundle() if pem else (None, "포털 인증서 파일이 없다")
-    value = {
+        ca, ca_err, ca_verified = None, "포털 인증서 파일이 없다", False
+    info = {
         "available": pem is not None, "self_signed": self_signed,
         "needs_ca": needs_ca, "verified": verified, "verify_error": err,
         "expired": expired,
-        "ca_available": ca is not None, "ca_error": ca_err,
+        "ca_available": ca is not None, "ca_verified": ca_verified, "ca_error": ca_err,
     }
-    _INFO_CACHE.update(key=key, value=value)
+    return {"info": info, "ca": ca}
+
+
+def _state() -> dict:
+    key, now = _stat_key(), time.monotonic()
+    c = _CACHE
+    if c["value"] is not None and c["key"] == key and now - c["at"] < _TTL_S:
+        return c["value"]
+    value = _compute()
+    if value["info"]["verified"]:
+        _CACHE.update(key=key, at=now, value=value)
     return value
 
 
@@ -268,7 +285,7 @@ def portal_cert_info() -> JSONResponse:
     """프론트·doctor 가 안내를 띄울지 결정하는 데 쓴다.
 
     needs_ca     — 체인이 공개 루트에 안 닿는다(자체서명 또는 사내 CA) → 개인 Claude 에 CA 를 심어야 한다.
-    verified     — 그 판정을 실제로 했다(false 면 needs_ca 는 자체서명 기준의 추정이다).
+    verified     — 그 판정을 실제로 했다(false 면 needs_ca 는 자체서명 기준의 추정이다 — 화면은 '판정 못함' 으로 낸다).
     verify_error — needs_ca 의 근거 한 줄. expired — 리프가 만료됐다(CA 를 심어도 안 된다, 운영자 몫).
-    ca_available — /tls/ca.crt 가 내려 줄 체인이 있고 그 체인이 리프를 검증한다. ca_error — 없을 때의 이유."""
-    return JSONResponse(_info(), headers={"Cache-Control": "public, max-age=300"})
+    ca_available — /tls/ca.crt 가 내려 줄 체인이 있다. ca_verified — 그 체인이 리프를 검증했다. ca_error — 없을 때의 이유."""
+    return JSONResponse(_state()["info"], headers={"Cache-Control": "public, max-age=60"})

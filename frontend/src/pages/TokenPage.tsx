@@ -609,6 +609,9 @@ export default function TokenPage() {
   const [expired, setExpired] = useState(false);
   const [verifyError, setVerifyError] = useState('');
   const [caError, setCaError] = useState('');
+  // 판정을 못 한 이유 — null 이면 판정했다. "모름" 은 "정상" 과 같은 화면이면 안 된다(2라운드 검토):
+  // 사내 CA 포털에서 판정이 빠지면 인증서 없는 등록이 나가고 Node 는 그대로 죽는다.
+  const [tlsUnknown, setTlsUnknown] = useState<string | null>(null);
   // 내 권한 — "이 토큰으로 지금 열리는 플랫폼" 은 권한표에서 도구가 딸린 항목이다.
   const [access, setAccess] = useState<MyAccess | null>(null);
   const [batBusy, setBatBusy] = useState(false);
@@ -656,7 +659,10 @@ export default function TokenPage() {
     fetch(`${ORIGIN}/tls/info`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!d) return;
+        if (!d) {
+          setTlsUnknown('서버가 인증서 정보를 주지 않았습니다');
+          return;
+        }
         // 옛 백엔드(ca_available 없음)에는 /tls/ca.crt 가 없다 — 자체서명 리프를 그대로 쓴다.
         const legacy = d.ca_available === undefined;
         setNeedsCa(Boolean(legacy ? d.self_signed : d.needs_ca));
@@ -665,8 +671,13 @@ export default function TokenPage() {
         setExpired(Boolean(d.expired));
         setVerifyError(String(d.verify_error || ''));
         setCaError(String(d.ca_error || ''));
+        setTlsUnknown(
+          !legacy && d.verified === false
+            ? `서버가 인증서 체인을 판정하지 못했습니다${d.verify_error ? ` (${String(d.verify_error)})` : ''}`
+            : null,
+        );
       })
-      .catch(() => {});
+      .catch(() => setTlsUnknown('인증서 정보를 불러오지 못했습니다'));
     fetchMyAccess()
       .then(setAccess)
       .catch(() => {});
@@ -708,6 +719,10 @@ export default function TokenPage() {
       setError(err instanceof Error ? err.message : '토큰 폐기에 실패했습니다.');
     }
   };
+
+  // 운영자 조치 전에는 어떤 등록도 연결되지 않는 상태 — 배치파일·스니펫을 함께 잠근다. 잠근 채로
+  // 스니펫만 남기면 "연결 불가" 바로 아래에 존재하지 않을 인증서 경로를 든 명령이 나간다(2라운드 검토).
+  const blocked = expired || (needsCa && !caAvailable);
 
   // API 토큰 권한 없이 Report Archive 권한으로 들어온 사람 — PAT 발급부는 감추고 연결만 남긴다.
   // (이 페이지가 RA 연결·내 조직 선택을 함께 담고 있어서 열어 준 것이다.)
@@ -816,7 +831,14 @@ export default function TokenPage() {
           >
             <b>윈도우라면 이것만 받아서 실행하세요.</b> 인증서 설치와 Claude 등록을 한 번에
             끝냅니다. 이 파일에는 위 토큰이 들어 있어 <b>지금 이 화면에서만</b> 만들 수 있습니다.
-            {needsCa && (
+            {tlsUnknown && (
+              <div style={{ color: '#ffd27a', marginTop: '0.45rem' }}>
+                <b>인증서 판정을 못 했습니다</b> — {tlsUnknown}. 이 포털이 사내 CA·자체서명 인증서를 쓰면
+                아래 등록은 CA 없이 만들어져 Claude(Node)가 연결에 실패합니다. 잠시 뒤 이 화면을 새로 고쳐
+                다시 확인하세요.
+              </div>
+            )}
+            {needsCa && !expired && (
               <div style={{ color: 'var(--muted)', marginTop: '0.45rem' }}>
                 이 포털의 인증서는 공개 루트에 닿지 않습니다(자체서명 또는 사내 CA). 브라우저는
                 경고를 눌러 넘어갈 수 있지만 Claude(Node)는 그러지 못해, 인증서 없이 등록하면{' '}
@@ -855,8 +877,8 @@ export default function TokenPage() {
                 type="button"
                 className="btn-primary"
                 onClick={() => void downloadBat()}
-                disabled={batBusy || expired || (needsCa && !caAvailable)}
-                title={expired || (needsCa && !caAvailable) ? '운영자 조치 전에는 연결되지 않습니다' : undefined}
+                disabled={batBusy || blocked}
+                title={blocked ? '운영자 조치 전에는 연결되지 않습니다' : undefined}
               >
                 {batBusy ? '만드는 중…' : '설정 배치파일 내려받기 (.bat)'}
               </button>
@@ -870,18 +892,26 @@ export default function TokenPage() {
               <div style={{ color: '#ff9b9b', marginTop: '0.5rem' }}>{batError}</div>
             )}
           </div>
-          <CopyBlock
-            label={needsCa ? 'Claude Code (터미널 — 직접 실행할 때)' : 'Claude Code (터미널)'}
-            text={
-              needsCa
-                ? claudeCodeSnippetSelfSigned(created.token, '%USERPROFILE%\\.hwax\\hwax-portal.crt')
-                : claudeCodeSnippet(created.token)
-            }
-          />
-          <CopyBlock
-            label="Claude Desktop (claude_desktop_config.json)"
-            text={claudeDesktopSnippet(created.token, needsCa ? String.raw`%USERPROFILE%\.hwax\hwax-portal.crt` : null)}
-          />
+          {blocked ? (
+            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0.9rem 0 0' }}>
+              운영자 조치 뒤 이 화면을 다시 열면 등록 명령이 나옵니다. 지금 발급한 토큰은 그대로 쓸 수 있습니다.
+            </p>
+          ) : (
+            <>
+              <CopyBlock
+                label={needsCa ? 'Claude Code (터미널 — 직접 실행할 때)' : 'Claude Code (터미널)'}
+                text={
+                  needsCa
+                    ? claudeCodeSnippetSelfSigned(created.token, '%USERPROFILE%\\.hwax\\hwax-portal.crt')
+                    : claudeCodeSnippet(created.token)
+                }
+              />
+              <CopyBlock
+                label="Claude Desktop (claude_desktop_config.json)"
+                text={claudeDesktopSnippet(created.token, needsCa ? String.raw`%USERPROFILE%\.hwax\hwax-portal.crt` : null)}
+              />
+            </>
+          )}
 
           <h3 style={{ color: 'var(--fg)', fontSize: '0.95rem', margin: '1.4rem 0 0' }}>
             챗을 토큰으로 호출 (curl)
