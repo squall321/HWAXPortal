@@ -56,6 +56,25 @@ app_bad() { local c="$1"; shift; if [ "$c" = 1 ]; then fail "$@"; else bad "$@";
 # HTTP 코드 프로브 — curl은 실패해도 -w로 '000'을 찍으므로 종료코드가 아니라 출력값으로만 판정한다.
 http_code() { curl -sk -m "${2:-4}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null; }
 
+# ── 0a) 인자 — `--with-<name>` 는 무거운·외부 배포 단계를 **이번 실행에 한해** 강제한다 ───────
+# 첫 사용처는 ste(`--with-ste`: 에어갭 클러스터 코드 갱신). 규칙은 infra/scripts/lib/deploy-gate.sh 에
+# 있고 각 단계는 이름만 등록한다 — 새 옵션이 생겨도 여기와 그 단계 한 줄이면 끝난다(docs/ste-cae00 D-13).
+HWAX_WITH="${HWAX_WITH:-}"
+for _a in "$@"; do
+  case "$_a" in
+    --with-*) HWAX_WITH="${HWAX_WITH:+$HWAX_WITH }${_a#--with-}" ;;
+  esac
+done
+export HWAX_WITH
+# ── 0b) 잠금 — update-all 두 개가 겹치면 2c 배포 중 재기동·§5 provision --force·게이트웨이 down/up 이
+#   동시에 돈다(2026-09-24 적대 검토). 같은 리포 루트 기준 한 개만 돈다. 기다리지 않고 바로 알린다.
+_LOCK="${TMPDIR:-/tmp}/hwax-update-all.$(printf '%s' "$SELF_REPO" | md5sum | cut -c1-8).lock"
+exec 9>"$_LOCK"
+if ! flock -n 9; then
+  echo "✗ update-all 이 이미 돌고 있다($_LOCK) — 겹쳐 돌리지 않는다. 끝나면 다시 실행하라." >&2
+  exit 3
+fi
+
 # ── 0) git 자격증명 기본값 — private 레포 HTTPS pull 이 'Username for github' 를 반복해서 묻지
 #    않게 한다. 미설정일 때만 username=squall321 + credential.helper store 를 심는다(기존 설정
 #    보존). 토큰(PAT)은 보안상 스크립트에 넣지 않는다 — store 라 최초 1회만 입력하면
@@ -135,6 +154,24 @@ if [ -x "$SELF_REPO/infra/scripts/env-sync.sh" ]; then
   "$SELF_REPO/infra/scripts/env-sync.sh" 2>&1 | sed 's/^/  /' || true
 else
   echo "  · env-sync.sh 없음 — 건너뜀(구버전 체크아웃)"
+fi
+
+# ── 1d) ste 라우트 자동 기록 — teleport 박스는 값이 관례로 고정이다 ──────────────────────
+# `routes.local.env` 는 gitignore 라 새 클론에 없다. 없으면 STE_ROUTED=0 → §5 가 ste 를 기대하지 않고
+# /ste/ 라우트가 안 생기며 §6 은 "라우트 미설정 — 건너뜀" 초록이다(2026-09-03 /ste/ 두절 실사고).
+# 주소 자체는 박스마다 다르지만 **teleport 박스의 값은 관례가 고정**(SSH 터널 루프백 127.0.0.1:15810)이라
+# 안전하게 적을 수 있다. 사용자 결정(2026-09-25): 기본 켬, HWAX_STE_AUTOROUTE=0 으로만 끈다.
+# §2(deploy-all)가 nginx 를 다시 만들기 **전**에 적어야 라우트가 생긴다 — 그래서 여기다.
+# `ste=`(빈 값)은 "이 박스에서 서빙 안 함" 이라는 명시라 건드리지 않는다(활성·빈 값 모두 '있다').
+_STE_TENV="$SELF_REPO/../SmartTwinExplorer/deploy/transport.env"
+_ROUTES_LOCAL_W="$SELF_REPO/backend/config/routes.local.env"
+if [ "${HWAX_STE_AUTOROUTE:-1}" = 1 ] && [ -f "$_STE_TENV" ] \
+   && grep -qE '^[[:space:]]*TRANSPORT_MODE=[[:space:]]*teleport' "$_STE_TENV" \
+   && ! grep -qE '^[[:space:]]*ste=' "$_ROUTES_LOCAL_W" 2>/dev/null; then
+  hr "1d) ste 라우트 자동 기록"
+  [ -f "$_ROUTES_LOCAL_W" ] || printf '# 이 박스 전용 라우트 오버레이 — gitignore. 주소는 추적 파일에 적지 않는다.\n' > "$_ROUTES_LOCAL_W"
+  printf '# ste — teleport 박스는 SSH 터널(루프백) 경유. update-all 1d 가 적었다(HWAX_STE_AUTOROUTE=0 으로 끈다).\nste=http://127.0.0.1:15810/\n' >> "$_ROUTES_LOCAL_W"
+  ok "routes.local.env 에 ste=http://127.0.0.1:15810/ 를 적었다 — §2 가 nginx 를 다시 만든다"
 fi
 
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──

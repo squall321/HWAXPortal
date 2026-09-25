@@ -11,8 +11,9 @@
 #                             Drive 를 거치지 않고 리포에서 **직접** rsync 한다. 싸고 멱등해서
 #                             update-all 이 매번 불러도 된다.
 #   TRANSPORT_MODE=teleport : 에어갭 운영 클러스터. Drive 스테이징 왕복 + 살아 있는 Teleport
-#                             세션이 필요하다. **명시 opt-in(STE_DEPLOY=1) 없이는 돌지 않는다** —
-#                             실제 운영 배포가 routine 프로브(크론 포함)에 섞여 발화하면 안 된다.
+#                             세션이 필요하다. 자동 호출(--if-stale)에서는 **공용 게이트**(사람 호출 ∧
+#                             신선도 ∧ 세션, infra/scripts/lib/deploy-gate.sh)를 통과할 때만 돈다 —
+#                             routine·크론에서는 배포하지 않고, `update-all --with-ste` 나 STE_DEPLOY=1 이면 강제.
 #
 # 즉 "의도적·비정기" 라는 원칙은 **운영 클러스터에만** 적용한다. dev VM 을 최신으로 두는 것은
 # 위험이 없고, 오히려 낡은 채로 두면 "소스에는 있는데 박스에는 없다" 가 생긴다 —
@@ -89,20 +90,19 @@ if [ "$TRANSPORT_MODE" = direct ]; then
           ! -name '*.pyc' ! -path './__pycache__/*' ! -path '*/__pycache__/*' ! -path './.pytest_cache/*' \
           -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2 ) | sha256sum | cut -d' ' -f1
     }
-    _lsrc="$(_man "$STE_REPO/backend/src")"
-    _lweb="$(_man "$STE_REPO/frontend/dist")"
+    # ⚠ backend/src·web 만 보면 **MCP 서버(backend/mcp_server)와 앱 정의(apps)가 낡아도 "이미 최신"** 이다
+    #   (2026-09-24 적대 검토). 배포가 실제로 나르는 트리 넷을 전부 본다.
+    _lman="$(for d in backend/src backend/mcp_server apps frontend/dist; do _man "$STE_REPO/$d"; done | tr '\n' ' ')"
     # 원격은 같은 계산을 원격 셸에서 한다 — 트리를 끌어오지 않으려고.
-    _remote_man="$(cd "$STE_REPO" && . deploy/lib/transport.sh >/dev/null 2>&1 && \
-      $SSH "$TARGET" 'for d in /opt/ste/backend/src /opt/ste/web; do
+    _rman="$(cd "$STE_REPO" && . deploy/lib/transport.sh >/dev/null 2>&1 && \
+      $SSH "$TARGET" 'for d in /opt/ste/backend/src /opt/ste/backend/mcp_server /opt/ste/apps /opt/ste/web; do
           if [ -d "$d" ]; then (cd "$d" && find . -type f ! -name "*.pyc" ! -path "*/__pycache__/*" \
              -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2) | sha256sum | cut -d" " -f1
-          else echo "-"; fi; done' 2>/dev/null || true)"
-    _rsrc="$(printf '%s\n' "$_remote_man" | sed -n 1p)"
-    _rweb="$(printf '%s\n' "$_remote_man" | sed -n 2p)"
+          else echo "-"; fi; done' 2>/dev/null | tr '\n' ' ' || true)"
     # ⚠ 원격 지문을 못 읽었으면(접속 실패·빈 값) **같다고 보지 않는다.** 모름을 같음으로
     #   읽으면 낡은 박스를 영원히 건너뛰면서 초록을 낸다 — 이 리포가 반복해서 당한 그 모양이다.
-    if [ -n "$_rsrc" ] && [ -n "$_rweb" ] && [ "$_rsrc" = "$_lsrc" ] && [ "$_rweb" = "$_lweb" ]; then
-      ok "ste 이미 최신 — 배포·재기동 생략 (backend/src·web 지문 일치)"
+    if [ -n "$_rman" ] && [ "$(printf '%s' "$_rman" | wc -w)" = 4 ] && [ "$_rman" = "$_lman" ]; then
+      ok "ste 이미 최신 — 배포·재기동 생략 (backend/src·mcp_server·apps·web 지문 일치)"
       STE_SKIPPED=1
     fi
   fi
@@ -162,13 +162,38 @@ if [ ! -x "$DEPLOY" ]; then
   ok "부트스트랩 완료 — 배포로 진행"
 fi
 
-  # ⚠ **운영 클러스터는 명시 opt-in 없이 돌지 않는다.** Drive 왕복 + 살아 있는 Teleport 세션이
-  #   필요하고, 실제 운영 배포가 routine 프로브(크론 포함)에 섞여 발화하면 안 된다.
-  #   사람이 직접 부른 경우(STE_DEPLOY 미설정 + 터미널)와 자동 호출을 가르는 축이 이것이다.
-  if [ "$IF_STALE" = 1 ] && [ "${STE_DEPLOY:-0}" != 1 ]; then
-    printf '  · ste(%s) 는 자동 배포 대상이 아니다 — Drive 왕복·Teleport 세션이 필요하다.\n' "${TRANSPORT_MODE:-미설정}"
-    printf '    돌리려면: STE_DEPLOY=1 infra/scripts/deploy-ste.sh   (런북 §11)\n'
-    exit 0
+  # ── 운영 클러스터 게이트 — 명시 플래그 하나가 아니라 **세 신호**(사람 호출 ∧ 신선도 ∧ 세션) ──────
+  # 종전 `STE_DEPLOY=1` 게이트는 존재하지 않는 크론을 막느라 "update-all 한 번에 셋업" 을 깼다
+  # (리포·가이드에 update-all 크론이 없다 — 2026-09-24 조사). 규칙은 공용 lib 에 있고(ste 가 첫 사용처,
+  # 새 옵션은 이름만 더한다), 여기서는 ste 의 두 명령만 준다.
+  #   신선도: Drive 의 ste-code.commit(pack-staging 이 쓴다) ≠ 헤드의 /opt/ste/.deployed-commit(deploy-backend 가 쓴다)
+  #           → 0(바뀜) / 1(같음) / 2(모름 — 어느 한쪽을 못 읽음. 모름은 같음이 아니다)
+  #   전제  : Teleport 세션이 살아 있어 헤드에 닿는다(tr_run 'true', ConnectTimeout 10)
+  # 사람이 직접 부르면(--if-stale 없음) 게이트 없이 종전대로 간다.
+  if [ "$IF_STALE" = 1 ]; then
+    . "$SELF/infra/scripts/lib/deploy-gate.sh"
+    _fresh_cmd="$(cat <<'EOF'
+set -u
+RCLONE="$(command -v rclone || echo "$SELF/infra/bin/rclone")"; [ -x "$RCLONE" ] || exit 2
+REMOTE="${STE_DRIVE_REMOTE:-}"
+[ -z "$REMOTE" ] && "$RCLONE" listremotes 2>/dev/null | grep -qx 'ApptainerImages:' && REMOTE="ApptainerImages:"
+[ -z "$REMOTE" ] && REMOTE="$("$RCLONE" listremotes 2>/dev/null | head -1)"
+[ -n "$REMOTE" ] || exit 2
+drive="$("$RCLONE" cat "${REMOTE}${STE_STAGING_PATH:-SmartTwinExplorer/staging}/ste-code.commit" 2>/dev/null | tr -d '[:space:]')"
+[ -n "$drive" ] || exit 2
+head="$(cd "$STE_REPO" && . deploy/lib/transport.sh >/dev/null 2>&1 && tr_run 'cat /opt/ste/.deployed-commit 2>/dev/null' 2>/dev/null | tr -d '[:space:]')"
+[ -n "$head" ] || exit 2
+[ "$drive" != "$head" ]
+EOF
+)"
+    _precond_cmd='cd "$STE_REPO" && . deploy/lib/transport.sh >/dev/null 2>&1 && tr_run true >/dev/null 2>&1'
+    if SELF="$SELF" STE_REPO="$STE_REPO" hwax_gate ste --fresh "$_fresh_cmd" --precond "$_precond_cmd"; then
+      [ -n "${HWAX_GATE_REASON:-}" ] && printf '  · %s\n' "$HWAX_GATE_REASON"
+    else
+      printf '  · %s\n' "$HWAX_GATE_REASON"
+      printf '    지금 돌리려면: ./infra/scripts/update-all.sh --with-ste   또는   STE_DEPLOY=1 infra/scripts/deploy-ste.sh\n'
+      exit 0
+    fi
   fi
   printf '\033[1;36m▶ STE 코드 갱신 배포 트리거 — %s\033[0m\n' "$STE_REPO"
   STE_STAGING="$STAGING" "$DEPLOY" $SKIP_PULL "$@" || die "STE 배포 실패 — 위 로그와 런북 §9(실패 대처) 참조"

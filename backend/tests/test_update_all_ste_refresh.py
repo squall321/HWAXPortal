@@ -36,11 +36,15 @@ def test_ste_최신화_실패가_update_all_전체를_죽이지_않는다():
     assert "exit 1" not in block, "이 단계는 전체를 끊지 않는다"
 
 
-def test_에어갭은_명시_opt_in_없이_안_돈다():
-    assert 'STE_DEPLOY:-0}" != 1' in SRC, (
-        "teleport 경로가 STE_DEPLOY=1 을 요구해야 한다 — 실배포가 routine 에 섞이면 안 된다")
-    # 그 가드가 --if-stale(자동 호출)일 때만 걸린다 — 사람이 직접 부르면 그대로 돈다.
-    assert 'if [ "$IF_STALE" = 1 ] && [ "${STE_DEPLOY:-0}" != 1 ]' in SRC
+def test_에어갭은_공용_게이트를_통과할_때만_돈다():
+    """옛 단일 플래그(STE_DEPLOY=1 필수)는 존재하지 않는 크론을 막느라 "update-all 한 번에 셋업" 을
+    깼다(2026-09-24 조사, 사용자 결정 D-13). 지금은 공용 게이트(사람 호출 ∧ 신선도 ∧ 세션)다 —
+    routine 에서는 여전히 안 돌고, --with-ste 나 STE_DEPLOY=1 은 강제다. 규칙 자체는 test_deploy_gate 가 본다."""
+    assert "deploy-gate.sh" in SRC and "hwax_gate ste" in SRC
+    assert 'STE_DEPLOY:-0}" != 1 ]; then' not in SRC, "옛 단일 플래그 게이트가 남아 있으면 두 규칙이 겹친다"
+    # 게이트는 자동 호출(--if-stale)에서만 걸린다 — 사람이 직접 부르면 종전대로 곧장 간다.
+    i = SRC.index("hwax_gate ste")
+    assert 'if [ "$IF_STALE" = 1 ]; then' in SRC[i - 2500:i]
 
 
 def _run(env_extra, *args, timeout=60):

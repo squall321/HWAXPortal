@@ -288,17 +288,17 @@ def _run_route_derivation(tmp_path, routes_local: str | None, env: dict) -> dict
 
 
 def test_ste_주소는_라우트에서_유도된다(tmp_path):
-    out = _run_route_derivation(tmp_path, "ste=http://192.168.130.10:15810/\n", {})
-    assert out["SSO"] == "http://192.168.130.10:15810/api/auth/sso"
-    assert out["MCP"] == "http://192.168.130.10:15812/mcp"          # 같은 호스트, MCP 기본 포트
+    out = _run_route_derivation(tmp_path, "ste=http://203.0.113.10:15810/\n", {})
+    assert out["SSO"] == "http://203.0.113.10:15810/api/auth/sso"
+    assert out["MCP"] == "http://203.0.113.10:15812/mcp"          # 같은 호스트, MCP 기본 포트
 
 
 def test_provision_env_가_명시한_값이_유도보다_이긴다(tmp_path):
     """포트를 바꾼 박스는 provision.env 가 정본이다 — 유도가 그것을 덮으면 안 된다."""
-    out = _run_route_derivation(tmp_path, "ste=http://192.168.130.10:15810/\n",
-                                {"STE_MCP_URL": "http://192.168.130.10:25812/mcp"})
-    assert out["MCP"] == "http://192.168.130.10:25812/mcp"
-    assert out["SSO"] == "http://192.168.130.10:15810/api/auth/sso"  # 이건 비어 있었으니 유도
+    out = _run_route_derivation(tmp_path, "ste=http://203.0.113.10:15810/\n",
+                                {"STE_MCP_URL": "http://203.0.113.10:25812/mcp"})
+    assert out["MCP"] == "http://203.0.113.10:25812/mcp"
+    assert out["SSO"] == "http://203.0.113.10:15810/api/auth/sso"  # 이건 비어 있었으니 유도
 
 
 def test_라우트가_없으면_아무것도_채우지_않는다(tmp_path):

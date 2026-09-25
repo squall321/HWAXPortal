@@ -21,12 +21,12 @@
 - [x] 변이: 세 가드를 되돌리면 각각 해당 시험만 깨진다
 
 ## S2 — 셋업 자동화
-- [ ] `infra/systemd/ste-tunnel.service` 템플릿(-L 15810·15812, ExitOnForwardFailure, Restart=always) + `install-ste-tunnel.sh`(transport.env 읽기, linger)
-- [ ] `routes.local.env` `ste=` 부재 + teleport → `ste=http://127.0.0.1:15810/` 제안, `HWAX_STE_AUTOROUTE=1` 이면 기록·gen-nginx-conf
-- [ ] `deploy-backend.sh` 가 헤드 `/opt/ste/.deployed-commit` 기록 · `deploy-ste.sh` teleport 분기가 Drive `ste-code.commit` 과 대조
-- [ ] `--if-stale` 지문에 `backend/mcp_server`·`apps` 포함
-- [ ] `transport.sh` `tr_session_ok()`(tsh status 잔여 TTL) · 게이트 = 사람호출 ∧ 신선도 ∧ 세션 (STE_DEPLOY=1 은 ①② 를 강제로 참)
-- [ ] `update-all --with-ste` 플래그 · `flock` 잠금
+- [x] `infra/systemd/ste-tunnel.service` 템플릿(-L 15810·15812, ExitOnForwardFailure, Restart=always) + `install-ste-tunnel.sh`(transport.env 읽기, linger, `--check`; direct 는 무동작)
+- [x] update-all 1d — `routes.local.env` `ste=` 부재 + teleport → `ste=http://127.0.0.1:15810/` **기본 기록**(§2 가 nginx 재생성), `HWAX_STE_AUTOROUTE=0` 으로 끔. 빈 `ste=` 는 존중
+- [x] `deploy-backend.sh` 가 헤드 `/opt/ste/.deployed-commit` 기록(ste `86c32b0`, dev VM 확인) · `deploy-ste.sh` teleport 분기가 Drive `ste-code.commit` 과 대조(모름≠같음)
+- [x] `--if-stale` 지문에 `backend/mcp_server`·`apps` 포함(4트리, dev 실측 "이미 최신")
+- [x] 공용 게이트 `infra/scripts/lib/deploy-gate.sh` = 사람호출 ∧ 신선도 ∧ 전제(세션 = `tr_run true`) · `--with-ste`/`STE_DEPLOY=1` 은 ①② 강제 · 이름 무관(새 옵션은 등록만). tsh TTL 파싱은 S0 결과 뒤(dev 에 tsh 없음)
+- [x] `update-all --with-<name>` 플래그(HWAX_WITH) · `flock` 잠금(겹치면 rc=3)
 - [ ] dev `build-all-to-drive.sh` 가 `pack-staging + push-to-drive` 를 포함(clean tree 조건 유지)
 - [ ] `ste-doctor` — 터널 두 포트·시크릿 verify·인증서 TTL·게이트웨이 ste 세션·정책 적재를 한 화면에, §6 이 호출
 - [ ] 검증(dev direct): 신선도 같으면 무동작 · 다르면 배포 · 잠금 겹침 거부 · 세 신호 각각 거짓일 때 사유 한 줄

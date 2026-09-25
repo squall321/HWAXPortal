@@ -1,0 +1,25 @@
+# HWAX — ste 헤드노드로 가는 SSH 터널(루프백). 15810 = 웹/REST, 15812 = MCP.
+# 종전엔 이 유닛이 **어느 리포에도 없었다** — 손으로 만든 유저 유닛이라 15812 를 여는지 아무도
+# 몰랐고, 안 열리면 게이트웨이 ste 백엔드가 영구 DOWN 인데 헬스는 초록이었다(2026-09-24 적대 검토).
+# infra/scripts/install-ste-tunnel.sh 가 SmartTwinExplorer/deploy/transport.env 의 값으로 채워
+# ~/.config/systemd/user/ 에 설치한다. 박스 고유값은 여기 없다.
+[Unit]
+Description=HWAX ste head-node SSH tunnel (127.0.0.1:15810 web/REST, :15812 MCP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# ExitOnForwardFailure — 포트가 이미 점유돼 포워딩이 실패하면 **살아 있는 척하지 않고** 죽는다.
+# BatchMode — 인증서가 만료됐을 때 프롬프트를 띄우며 매달리지 않고 실패한다(systemd 가 재시도).
+ExecStart=/usr/bin/ssh -N -F __SSH_CONFIG__ \
+  -o ExitOnForwardFailure=yes -o BatchMode=yes \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=15 \
+  -L 127.0.0.1:15810:127.0.0.1:15810 \
+  -L 127.0.0.1:15812:127.0.0.1:15812 \
+  __TARGET__
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
