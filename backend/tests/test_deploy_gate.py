@@ -103,7 +103,7 @@ def _run_1d(tmp_path, *, mode: str | None, routes_local: str | None, env=None) -
     rl = repo / "backend/config/routes.local.env"; rl.unlink(missing_ok=True)
     if routes_local is not None:
         rl.write_text(routes_local, encoding="utf-8")
-    script = f'SELF_REPO="{repo}"\nhr() {{ :; }}; ok() {{ echo "OK:$*"; }}\n{block}'
+    script = f'SELF_REPO="{repo}"\nhr() {{ :; }}; ok() {{ echo "OK:$*"; }}; hwax_skip() {{ echo "SKIP:$1"; }}\n{block}'
     p = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
                        env={"PATH": os.environ["PATH"], **(env or {})}, timeout=20)
     assert p.returncode == 0, p.stderr
@@ -125,8 +125,9 @@ def test_autoroute_never_touches_direct_boxes_or_existing_lines(tmp_path):
 
 
 def test_autoroute_can_be_switched_off(tmp_path):
-    _, rl = _run_1d(tmp_path, mode="teleport", routes_local=None, env={"HWAX_STE_AUTOROUTE": "0"})
+    out, rl = _run_1d(tmp_path, mode="teleport", routes_local=None, env={"HWAX_STE_AUTOROUTE": "0"})
     assert rl == ""
+    assert "SKIP:ste 라우트 자동 기록" in out, "껐으면 껐다고 장부에 남는다 — 조용히 지나가지 않는다"
 
 
 # ── --if-stale 지문 범위 ──────────────────────────────────────────────────────

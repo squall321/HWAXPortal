@@ -32,6 +32,8 @@
 - [x] 검증(dev direct): 4트리 지문 같으면 무동작(실측) · 잠금 겹침 rc=3(시험) · 세 신호 각각 거짓일 때 사유 한 줄(시험 7건) · 변이 3건
 - [ ] 검증(cae00): `update-all --with-ste` 1회 → `ste-doctor` 전부 초록 → 평소 `update-all` 이 ste 를 건드리지 않되 빨강이면 명령을 안내
 
+- [x] "있는데 안 켠 기능" 장부 — 옵션·설정이 없어 건너뛴 단계(--with-ste·라우트·자동 라우트 끔·env 값 미정·리포 없음)를 ○ 로 즉시+요약에 전부(사용자 지시) — D-20
+
 ## S3 — 사용자 첫 성공
 - [x] ste `POST /api/uploads`(스트리밍 2GB, 사용자 명의 1회용 티켓) + MCP `prepare_upload` · `submit_job(upload_id)` — ste 3317f85·86c32b0
 - [x] MCP `get_job_file(job_id, path, tail|offset, ≤64KB)` · `get_job_result` 설명에서 `result.zip` 제거 — ste 3c3ce91

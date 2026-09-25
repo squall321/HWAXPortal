@@ -52,6 +52,10 @@ bad()  { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
 # 배포 실패로 계상해야 하는 것은 fail 로 낸다(§6 헬스게이트의 FAIL 을 세우고, 끝에서 모아 보여 준다).
 fail() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; FAIL=1; FAIL_ITEMS="${FAIL_ITEMS:-}  · $1"$'\n'; }
 app_bad() { local c="$1"; shift; if [ "$c" = 1 ]; then fail "$@"; else bad "$@"; fi; }
+# ○ "있는데 안 켠 기능" 장부 — 옵션·설정이 없어 건너뛴 단계는 즉시 한 줄 + 마지막 요약에 전부 다시 낸다.
+#   실패(✗)·경고(⚠)와 다른 표식이다. 자식 스크립트(deploy-ste·게이트 lib·env-sync)도 같은 파일에 적는다.
+. "$SELF_REPO/infra/scripts/lib/skip-ledger.sh"
+HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER
 
 # HTTP 코드 프로브 — curl은 실패해도 -w로 '000'을 찍으므로 종료코드가 아니라 출력값으로만 판정한다.
 http_code() { curl -sk -m "${2:-4}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null; }
@@ -153,7 +157,7 @@ hr "1c) .env 옵션 동기화"
 if [ -x "$SELF_REPO/infra/scripts/env-sync.sh" ]; then
   "$SELF_REPO/infra/scripts/env-sync.sh" 2>&1 | sed 's/^/  /' || true
 else
-  echo "  · env-sync.sh 없음 — 건너뜀(구버전 체크아웃)"
+  hwax_skip ".env 옵션 동기화" "env-sync.sh 가 없다(구버전 체크아웃)" "git pull 뒤 재실행"
 fi
 
 # ── 1d) ste 라우트 자동 기록 — teleport 박스는 값이 관례로 고정이다 ──────────────────────
@@ -165,13 +169,17 @@ fi
 # `ste=`(빈 값)은 "이 박스에서 서빙 안 함" 이라는 명시라 건드리지 않는다(활성·빈 값 모두 '있다').
 _STE_TENV="$SELF_REPO/../SmartTwinExplorer/deploy/transport.env"
 _ROUTES_LOCAL_W="$SELF_REPO/backend/config/routes.local.env"
-if [ "${HWAX_STE_AUTOROUTE:-1}" = 1 ] && [ -f "$_STE_TENV" ] \
+if [ -f "$_STE_TENV" ] \
    && grep -qE '^[[:space:]]*TRANSPORT_MODE=[[:space:]]*teleport' "$_STE_TENV" \
    && ! grep -qE '^[[:space:]]*ste=' "$_ROUTES_LOCAL_W" 2>/dev/null; then
   hr "1d) ste 라우트 자동 기록"
-  [ -f "$_ROUTES_LOCAL_W" ] || printf '# 이 박스 전용 라우트 오버레이 — gitignore. 주소는 추적 파일에 적지 않는다.\n' > "$_ROUTES_LOCAL_W"
-  printf '# ste — teleport 박스는 SSH 터널(루프백) 경유. update-all 1d 가 적었다(HWAX_STE_AUTOROUTE=0 으로 끈다).\nste=http://127.0.0.1:15810/\n' >> "$_ROUTES_LOCAL_W"
-  ok "routes.local.env 에 ste=http://127.0.0.1:15810/ 를 적었다 — §2 가 nginx 를 다시 만든다"
+  if [ "${HWAX_STE_AUTOROUTE:-1}" = 1 ]; then
+    [ -f "$_ROUTES_LOCAL_W" ] || printf '# 이 박스 전용 라우트 오버레이 — gitignore. 주소는 추적 파일에 적지 않는다.\n' > "$_ROUTES_LOCAL_W"
+    printf '# ste — teleport 박스는 SSH 터널(루프백) 경유. update-all 1d 가 적었다(HWAX_STE_AUTOROUTE=0 으로 끈다).\nste=http://127.0.0.1:15810/\n' >> "$_ROUTES_LOCAL_W"
+    ok "routes.local.env 에 ste=http://127.0.0.1:15810/ 를 적었다 — §2 가 nginx 를 다시 만든다"
+  else
+    hwax_skip "ste 라우트 자동 기록" "HWAX_STE_AUTOROUTE=0 으로 꺼 두어 routes.local.env 에 ste= 를 적지 않았다" "HWAX_STE_AUTOROUTE=1(기본) 로 재실행, 또는 routes.local.env 에 ste=http://127.0.0.1:15810/ 직접"
+  fi
 fi
 
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
@@ -245,7 +253,7 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
     bad "AIDH 데이터 merge 실패 또는 merge-from-drive 없음 — cae00 데이터는 무손상"
   fi
 else
-  bad "AIDataHub sync-from-drive.sh 없음 — 건너뜀"
+  hwax_skip "AIDataHub 동기화" "AIDataHub 리포 또는 sync-from-drive.sh 가 없다" "../AIDataHub 를 클론(update-all 이 다음 실행부터 동기화한다)"
 fi
 
 # ── 2c) ste(SmartTwinExplorer) 코드 최신화 ───────────────────────────────────
@@ -268,15 +276,15 @@ hr "2c) ste 코드 최신화 (다를 때만)"
 if [ -x "$SELF_REPO/infra/scripts/deploy-ste.sh" ]; then
   # ⚠ 상한을 둔다. ssh 쪽에도 ConnectTimeout 이 있지만 전송 자체가 늘어질 수 있고,
   #   ste 하나 때문에 갱신 전체가 멈추면 안 된다. 900초면 코드 전송(수십 MB)에 충분하다.
-  if timeout 900 "$SELF_REPO/infra/scripts/deploy-ste.sh" --if-stale; then
-    :
-  elif [ $? = 124 ]; then
-    bad "ste 최신화 900초 초과 — 중단했다. 헤드노드 도달성을 확인하라(§6 ste 게이트 참조)"
-  else
-    bad "ste 최신화 실패 — §6 ste 게이트가 다시 판정한다(위 사유 참조)"
-  fi
+  timeout 900 "$SELF_REPO/infra/scripts/deploy-ste.sh" --if-stale
+  case $? in
+    0)   : ;;
+    3)   : ;;   # 게이트가 막았다(옵션 없음·전제 미충족) — 사유는 위에 찍혔고 장부(○)에 적혔다. 실패가 아니다
+    124) bad "ste 최신화 900초 초과 — 중단했다. 헤드노드 도달성을 확인하라(§6 ste 게이트 참조)" ;;
+    *)   bad "ste 최신화 실패 — §6 ste 게이트가 다시 판정한다(위 사유 참조)" ;;
+  esac
 else
-  bad "deploy-ste.sh 없음 — ste 최신화 생략"
+  hwax_skip "ste 코드 최신화" "deploy-ste.sh 가 없다(구버전 체크아웃)" "git pull 뒤 재실행"
 fi
 
 # ── 3.5) agent-server .env 자동 보정 — 챗 스택 재기동 전에 vLLM 주소를 확정한다.
@@ -325,7 +333,7 @@ if [ -n "${AGENT_DIR:-}" ]; then
     ok "TOOL_MAX 미설정 → 기본 80(질의 관련도 상위 선택)"
   fi
 else
-  echo "  · HWAXAgentServer 레포 미발견 — 건너뜀"
+  hwax_skip "agent-server .env 보정" "HWAXAgentServer 리포가 없다(챗·심의 스택)" "../HWAXAgentServer 를 클론하고 재실행"
 fi
 
 # ── 4) 챗 스택만 pull+재기동 — 2)에서 이미 재기동한 사이트들을 다시 내리지 않는다
@@ -913,7 +921,7 @@ if [ -n "$STE_UP" ]; then
 elif [ "$_STE_SRC" = "routes.local.env" ]; then
   ok "ste — 이 박스에서는 서빙 안 함(routes.local.env 에서 비활성). 라우트도 만들지 않는다."
 else
-  ok "ste 라우트 미설정 — 건너뜀"
+  hwax_skip "ste(SmartTwinExplorer)" "라우트 미설정 — routes.local.env 에 ste= 가 없어 프록시·자격중계·MCP 위임을 셋업하지 않았다" "teleport 박스: 1d 자동 기록(HWAX_STE_AUTOROUTE=1 기본, transport.env 필요) · direct 박스: routes.local.env 에 ste=http://<헤드>:15810/ 를 적고 재실행"
 fi
 H="$(gw_health)"
 if [ -n "$H" ] && json_ok "$H"; then
@@ -1389,6 +1397,10 @@ except Exception:
 PY
 fi
 
+# ○ 옵션·설정이 없어 안 켠 기능은 성공·실패 어느 쪽 끝에서도 다시 말한다 — 조용히 지나가면 그 기능이
+#   있는 줄도 모른다(사용자 지시 2026-09-25). 실패 목록과 섞이지 않게 먼저, 다른 표식으로 낸다.
+hwax_skip_summary
+rm -f "$HWAX_SKIP_LEDGER"
 if [ "$FAIL" = 1 ]; then
   # ⚠ **무엇이 실패했는지 여기서 다시 말한다.** "위의 ✗ 를 보라" 는 수백 줄을 거슬러 올라가라는
   # 뜻이라, 사람은 대개 안 올라간다(그리고 ⚠ 경고와 ✗ 실패를 섞어 읽는다). fail 이 모아 둔 목록을 낸다.

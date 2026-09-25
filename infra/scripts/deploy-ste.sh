@@ -192,7 +192,7 @@ EOF
     else
       printf '  · %s\n' "$HWAX_GATE_REASON"
       printf '    지금 돌리려면: ./infra/scripts/update-all.sh --with-ste   또는   STE_DEPLOY=1 infra/scripts/deploy-ste.sh\n'
-      exit 0
+      exit 3   # 게이트가 막았다 — update-all 은 이 코드를 "안 켬(장부)" 으로 읽는다. 0 이면 배포됨과 구별이 안 된다
     fi
   fi
   printf '\033[1;36m▶ STE 코드 갱신 배포 트리거 — %s\033[0m\n' "$STE_REPO"

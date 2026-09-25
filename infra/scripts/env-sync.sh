@@ -21,6 +21,10 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # HWAXPortal 루트
+# "값을 정해야 한다" 로 남긴 키는 그 설정이 켜는 기능이 아직 꺼져 있다는 뜻이다 — update-all 의
+# "있는데 안 켠 기능" 장부(○)에도 적는다(HWAX_SKIP_LEDGER 가 있을 때만; 단독 실행이면 아무 일도 없다).
+_LEDGER_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/skip-ledger.sh"
+if [ -f "$_LEDGER_LIB" ]; then . "$_LEDGER_LIB"; else hwax_skip_record() { :; }; fi
 CHECK=0
 ARGS=()
 for a in "$@"; do
@@ -109,6 +113,8 @@ for DIR in $(discover); do
     echo "    한꺼번에 켜면 도는 서비스의 동작이 바뀐다. 목록만 낸다(적용은 HWAX_ENV_SYNC_MAX 를 올리거나 손으로)."
     for kv in "${add_active[@]}";    do echo "    ? ${kv%%=*}=${kv#*=}"; done
     for kv in "${add_commented[@]}"; do echo "    ⚠ ${kv%%=*} — 값을 정해야 한다"; done
+    hwax_skip_record "설정 ${DIR#"$ROOT/.."/}" "새 설정 $n_a 개가 상한(${HWAX_ENV_SYNC_MAX:-10})을 넘어 적용하지 않았다" "HWAX_ENV_SYNC_MAX 를 올리거나 .env 에 손으로 넣고 재실행"
+    for kv in "${add_commented[@]}"; do hwax_skip_record "설정 ${kv%%=*}" "값이 사람 몫(비밀·자리표시자)이라 켜지 않았다(${DIR#"$ROOT/.."/})" "${DIR#"$ROOT/.."/}/.env 에 ${kv%%=*} 값을 정하고 재실행"; done
     NEEDS=$((NEEDS + n_a + n_c))
     continue
   fi
@@ -117,6 +123,7 @@ for DIR in $(discover); do
   echo "· $rel — 새 설정 $((n_a + n_c))개(자동 $n_a · 사람이 정할 것 $n_c)"
   for kv in "${add_active[@]}";    do echo "    + ${kv%%=*}"; done
   for kv in "${add_commented[@]}"; do echo "    ⚠ ${kv%%=*} — 값을 정해야 한다"; done
+  for kv in "${add_commented[@]}"; do hwax_skip_record "설정 ${kv%%=*}" "값이 사람 몫(비밀·자리표시자)이라 주석으로만 넣었다 — 그 설정이 켜는 기능은 아직 꺼져 있다($rel)" "$rel/.env 에서 ${kv%%=*} 값을 정하고 재실행"; done
   ADDED=$((ADDED + n_a)); NEEDS=$((NEEDS + n_c))
   [ "$CHECK" = "1" ] && continue
 

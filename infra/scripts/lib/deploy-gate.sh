@@ -18,6 +18,9 @@
 #
 # 명시 강제 — HWAX_WITH 에 그 이름이 있으면 ①②를 참으로 본다(사람이 "지금 이거 해라" 고 한 것).
 # 결과 사유는 HWAX_GATE_REASON 에 남는다(호출자가 한 줄로 찍는다).
+# 건너뛴 사유는 update-all 의 "있는데 안 켠 기능" 장부에도 적는다(같은 디렉토리의 skip-ledger.sh).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/skip-ledger.sh"
+
 hwax_gate() {
   local name="$1"; shift
   local fresh="" precond=""
@@ -37,6 +40,7 @@ hwax_gate() {
 
   if [ "$human" != 1 ]; then
     HWAX_GATE_REASON="$name: 사람이 부른 실행이 아니다(터미널 아님·--with-$name 없음) — routine 에서는 배포하지 않는다"
+    hwax_skip_record "$name" "옵션 없이 routine 으로 돌아 배포하지 않았다" "./infra/scripts/update-all.sh --with-$name  (또는 ${upper}_DEPLOY=1)"
     return 1
   fi
   local freshness=0   # 0=바뀜 1=같음 2=모름
@@ -52,6 +56,7 @@ hwax_gate() {
   fi
   if [ -n "$precond" ] && ! bash -c "$precond" >/dev/null 2>&1; then
     HWAX_GATE_REASON="$name: 전제조건 실패 — $(printf '%s' "$precond" | cut -c1-60)"
+    hwax_skip_record "$name" "전제조건이 서 있지 않아 배포하지 않았다($(printf '%s' "$precond" | cut -c1-40))" "전제(예: Teleport 세션)를 세운 뒤 ./infra/scripts/update-all.sh --with-$name"
     return 1
   fi
   [ "$freshness" = 2 ] && HWAX_GATE_REASON="$name: 신선도를 못 쟀다(모름) — 사람이 불렀으니 진행한다"
