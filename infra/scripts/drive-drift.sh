@@ -21,7 +21,7 @@ PARENT="$(dirname "$SELF_REPO")"
 find_repo() { local n="$1"; for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/claude/$n"; do
   [ -d "$c" ] && { printf '%s' "$c"; return 0; }; done; return 0; }
 
-WANT="${*:-portal heax koorm}"
+WANT="${*:-portal heax koorm ste}"
 want() { printf '%s\n' $WANT | grep -qx "$1"; }
 command -v rclone >/dev/null 2>&1 || { echo "✗ rclone 없음 — 확인 불가"; exit 2; }
 
@@ -135,6 +135,31 @@ if want koorm; then
   fi
 fi
 
+# ── ste(SmartTwinExplorer): Drive 스테이징의 커밋이 이 박스의 HEAD 와 같은가 ──
+# 스테이징은 pack-staging 이 쓴 ste-code.commit 을 품는다. 그것이 HEAD 와 다르면 cae00 은 옛 코드를
+# 배포한다(그리고 sha256 은 맞으니 초록이다). 커밋 한 줄만 `rclone cat` 하므로 수 KB 다.
+if want ste; then
+  STE_DIR="$(find_repo SmartTwinExplorer)"
+  if [ -z "$STE_DIR" ] || [ ! -d "$STE_DIR/.git" ]; then
+    echo "· ste: SmartTwinExplorer 리포 없음 — 건너뜀"
+  else
+    _rem="${RCLONE_REMOTE:-}"
+    [ -z "$_rem" ] && rclone listremotes 2>/dev/null | grep -qx 'ApptainerImages:' && _rem="ApptainerImages:"
+    [ -z "$_rem" ] && _rem="$(rclone listremotes 2>/dev/null | head -1)"
+    _drive="$(rclone cat "${_rem}SmartTwinExplorer/staging/ste-code.commit" 2>/dev/null | tr -d '[:space:]')"
+    _head="$(git -C "$STE_DIR" rev-parse HEAD 2>/dev/null)"
+    if [ -z "$_drive" ]; then
+      echo "  ✗ ste 스테이징 — Drive 에 커밋 파일이 없다(${_rem}SmartTwinExplorer/staging) — 올린 적이 없거나 리모트가 다르다"; DRIFT=1
+    elif [ "$_drive" != "$_head" ]; then
+      echo "  ✗ ste 스테이징 — Drive ${_drive:0:12} ≠ dev HEAD ${_head:0:12} (cae00 은 옛 코드를 배포한다)"; DRIFT=1
+    elif [ -n "$(git -C "$STE_DIR" status --porcelain 2>/dev/null)" ]; then
+      echo "  ⚠ ste 스테이징 — 커밋은 같지만 dev 작업 트리가 dirty 다(pack-staging 은 clean tree 만 받는다)"
+    else
+      echo "  ✓ ste 스테이징 ${_head:0:12} 일치"
+    fi
+  fi
+fi
+
 if [ "$DRIFT" = 1 ]; then
   echo
   echo "→ 올려야 한다:"
@@ -142,6 +167,7 @@ if [ "$DRIFT" = 1 ]; then
   echo "    (HEAXHub 만)  cd \$HEAXHub && bash deploy/apptainer/dist-to-drive.sh"
   echo "    (app-data 만) cd \$HEAXHub && bash deploy/apptainer/appdata-to-drive.sh"
   echo "    (KooRemapper) cd \$KooRemapper && bash platform/infra/scripts/dist-to-drive.sh"
+    echo "    (ste)         ./infra/scripts/build-all-to-drive.sh ste   # pack-staging + push-to-drive"
   exit 1
 fi
 echo "✓ Drive 가 이 박스의 아티팩트와 일치한다"

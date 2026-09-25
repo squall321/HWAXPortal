@@ -7,7 +7,7 @@
 - [ ] 확정할 것: ste-tunnel 의 `-L` 포트(15810 만/15812 도) · `systemctl --user cat ste-tunnel`
 - [ ] 확정할 것: 포털 인증서 종류(`/tls/info` 의 `self_signed`, 체인이 공개 루트에 닿는가)
 - [ ] 확정할 것: 헤드 `/opt/ste/.env` 의 `STE_SSO_SECRET` 일치 여부·`STE_MCP_TOKEN` 유무
-- [ ] 확정할 것: Teleport 인증서 TTL·`port_forwarding` 허용·비대화식 만료 거동
+- [ ] 확정할 것: Teleport 인증서 TTL·`port_forwarding` 허용·비대화식 만료 거동 — `ste-doctor` 의 teleport 항목이 `tsh status` 를 읽는다(형식 미확인이라 못 읽으면 "모름")
 - [ ] 확정할 것: `provision.env` 의 `STE_MCP_URL`·`STE_SSO_URL` 명시 여부, `HEAX_MCP_TOKEN` 자동 발급 성공 여부
 - [ ] 확정할 것: Drive `SmartTwinExplorer/staging` 의 `ste-code.commit` 이 dev HEAD·헤드 배포본과 같은가
 
@@ -27,9 +27,9 @@
 - [x] `--if-stale` 지문에 `backend/mcp_server`·`apps` 포함(4트리, dev 실측 "이미 최신")
 - [x] 공용 게이트 `infra/scripts/lib/deploy-gate.sh` = 사람호출 ∧ 신선도 ∧ 전제(세션 = `tr_run true`) · `--with-ste`/`STE_DEPLOY=1` 은 ①② 강제 · 이름 무관(새 옵션은 등록만). tsh TTL 파싱은 S0 결과 뒤(dev 에 tsh 없음)
 - [x] `update-all --with-<name>` 플래그(HWAX_WITH) · `flock` 잠금(겹치면 rc=3)
-- [ ] dev `build-all-to-drive.sh` 가 `pack-staging + push-to-drive` 를 포함(clean tree 조건 유지)
-- [ ] `ste-doctor` — 터널 두 포트·시크릿 verify·인증서 TTL·게이트웨이 ste 세션·정책 적재를 한 화면에, §6 이 호출
-- [ ] 검증(dev direct): 신선도 같으면 무동작 · 다르면 배포 · 잠금 겹침 거부 · 세 신호 각각 거짓일 때 사유 한 줄
+- [x] dev `build-all-to-drive.sh` 가 `pack-staging + push-to-drive` 를 포함(기본 대상에 ste) · `drive-drift.sh` 가 Drive `ste-code.commit` 을 HEAD 와 대조 — 실측: Drive 가 하루 전 판(`1d456de`)이었고 올려서 `86c32b0` 일치
+- [x] `ste-doctor.sh` — 라우트·transport·web(15810)·mcp(15812)·터널 유닛·Teleport 잔여(tsh 있을 때)·시크릿 verify·게이트웨이 ste 세션·정책 적재·배포 신선도를 한 화면에(`--report` JSON, 읽기 전용). §6 은 ste 빨강 때 이것을 가리킨다
+- [x] 검증(dev direct): 4트리 지문 같으면 무동작(실측) · 잠금 겹침 rc=3(시험) · 세 신호 각각 거짓일 때 사유 한 줄(시험 7건) · 변이 3건
 - [ ] 검증(cae00): `update-all --with-ste` 1회 → `ste-doctor` 전부 초록 → 평소 `update-all` 이 ste 를 건드리지 않되 빨강이면 명령을 안내
 
 ## S3 — 사용자 첫 성공

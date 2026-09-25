@@ -965,6 +965,10 @@ PY
   if [ "$_pol" = "0" ]; then
     fail "권한 정책        게이트웨이에 포털 권한 정책이 **안 실렸다**(access_policy_loaded=0) — 전 백엔드가 전원에게 열린다"
     echo "    포털 /internal/access/policy 가 200 인지, 게이트웨이가 GATEWAY_SHARED_TOKEN 으로 그것을 받는지 본다(60초마다 재시도)"
+  fi
+  # ste 관련 빨강이 하나라도 있으면 한 화면 진단을 가리킨다 — 항목마다 어떻게 쟀는지까지 찍는다.
+  if [ "${STE_ROUTED:-0}" = 1 ] && printf '%s' "${FAIL_ITEMS:-}" | grep -q "ste"; then
+    echo "    진단 한 화면: ./infra/scripts/ste-doctor.sh   (--report 로 JSON)"
   elif [ "$_pol" != "-1" ]; then
     ok "권한 정책        게이트웨이에 백엔드 ${_pol}개분 적재됨"
   fi

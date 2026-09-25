@@ -25,7 +25,8 @@ MXWP_DIR="$(find_repo "${MXWP_DIR:-}" MXWhitePaper)"
 HEAX_DIR="$(find_repo "${HEAX_DIR:-}" HEAXHub)"
 SF_DIR="$(find_repo "${SF_DIR:-}" SignalForge)"
 KOOR_DIR="$(find_repo "${KOOR_DIR:-}" KooRemapper)"
-WANT="${*:-portal mxwp heax signalforge kooremapper}"
+STE_DIR="$(find_repo "${STE_DIR:-}" SmartTwinExplorer)"
+WANT="${*:-portal mxwp heax signalforge kooremapper ste}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
 
@@ -108,6 +109,17 @@ if want kooremapper && [ -n "$KOOR_DIR" ]; then
     bash platform/infra/scripts/build.sh            # 서비스 SIF(api/mcp/postgres/nginx, skip if present)
     bash platform/infra/scripts/build-cli.sh || echo "  ⚠ cli.sif 생략(비치명)"
     bash platform/infra/scripts/dist-to-drive.sh )  # bin+dist+*.sif → Drive
+fi
+
+# ste(SmartTwinExplorer): 에어갭 헤드노드라 코드가 github 이 아니라 **Drive 스테이징**으로 간다
+# (cae00 의 deploy-ste.sh 가 받는다). 종전엔 이 채널에 없어서 사람이 pack+push 를 기억해야 했고,
+# 잊으면 cae00 은 낡은 스테이징을 배포하고도 초록이었다(2026-09-24 조사). pack-staging 은 clean tree
+# 가 아니면 죽는다 — 반입본과 저장소가 어긋나면 나중에 추적이 안 되기 때문이고, 그 규칙은 그대로 둔다.
+if want ste && [ -n "$STE_DIR" ]; then
+  hr "SmartTwinExplorer(ste) — pack-staging(코드 번들+에이전트+dist) → Drive"
+  ( cd "$STE_DIR"
+    bash deploy/pack-staging.sh                      # var/staging: ste-code.bundle·.commit·dist tar·agent·wheel
+    STE_BUNDLE_DIR="$STE_DIR/var/staging" bash deploy/push-to-drive.sh --path SmartTwinExplorer/staging )
 fi
 
 # 올렸다고 끝이 아니다 — 부분 실행(이름 지정)이나 중간 실패로 Drive 가 dev 보다 뒤처진 채
