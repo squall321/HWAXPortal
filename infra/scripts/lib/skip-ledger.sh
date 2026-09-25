@@ -21,21 +21,25 @@ hwax_skip() {
   printf '  \033[1;35m○\033[0m %s — %s\n      켜려면: %s\n' "$1" "$2" "$3"
   hwax_skip_record "$1" "$2" "$3"
 }
+# 요약은 세 갈래다 — ① 기능(줄마다 사유·조치) ② 값을 정해야 켜지는 설정 ③ 선택 설정(예시 주석).
+# 설정을 줄마다 풀면 정작 기능 항목이 묻힌다(실측: env 키 28개가 ste 라우트 한 줄을 삼켰다).
+_hwax_keys() {   # $1 = 접두사. "접두사 KEY" 행에서 KEY 만, 중복 없이, 한 줄로.
+  awk -F'\t' -v p="$1 " 'index($1, p) == 1 { k = substr($1, length(p) + 1); if (!s[k]++) printf "%s%s", (n++ ? ", " : ""), k } END { if (n) print "" }' "$HWAX_SKIP_LEDGER"
+}
+_hwax_count() { [ -n "$1" ] && printf '%s\n' "$1" | awk -F', ' '{print NF}' || echo 0; }
+
 hwax_skip_summary() {
   [ -n "${HWAX_SKIP_LEDGER:-}" ] && [ -s "$HWAX_SKIP_LEDGER" ] || return 0
-  # 중복은 지운다(같은 키를 두 번 적는 경우가 있다). "설정 <키>" 항목은 env-sync 가 1c 에서 이미 키마다 한 줄씩
-  # 찍었으므로 여기서는 **키 이름만 한 줄로 접는다** — 실측에서 28개가 풀려 나와 정작 기능 항목(ste 라우트)이 묻혔다.
-  local body; body="$(awk -F'\t' '!seen[$0]++' "$HWAX_SKIP_LEDGER")"
-  local feats cfgs
-  feats="$(printf '%s\n' "$body" | awk -F'\t' '$1 !~ /^설정 /')"
-  cfgs="$(printf '%s\n' "$body" | awk -F'\t' '$1 ~ /^설정 / {sub(/^설정 /, "", $1); print $1}' | awk '!seen[$0]++')"
-  local n_f n_c; n_f="$(printf '%s' "$feats" | grep -c . || true)"; n_c="$(printf '%s' "$cfgs" | grep -c . || true)"
-  printf '  \033[1;35m○\033[0m 있는데 안 켠 기능 %s개 · 값 미정 설정 %s개 — 옵션·설정이 없어 이번 실행에서 셋업하지 않았다(실패가 아니다)\n' "$n_f" "$n_c"
+  local feats needval optional n_f
+  feats="$(awk -F'\t' '$1 !~ /^(설정값|선택설정) / && !s[$0]++' "$HWAX_SKIP_LEDGER")"
+  needval="$(_hwax_keys 설정값)"; optional="$(_hwax_keys 선택설정)"
+  n_f="$(printf '%s' "$feats" | grep -c . || true)"
+  printf '  \033[1;35m○\033[0m 있는데 안 켠 것 — 기능 %s · 값 미정 설정 %s · 선택 설정 %s (옵션·설정이 없어 이번 실행에서 셋업하지 않았다. 실패가 아니다)\n' \
+    "$n_f" "$(_hwax_count "$needval")" "$(_hwax_count "$optional")"
   [ -n "$feats" ] && printf '%s\n' "$feats" | while IFS="$(printf '\t')" read -r name why how; do
     printf '    · %s — %s\n        켜려면: %s\n' "$name" "$why" "$how"
   done
-  if [ -n "$cfgs" ]; then
-    printf '    · 값 미정 설정(주석으로만 들어감 — 그 설정이 켜는 기능은 꺼져 있다): %s\n' "$(printf '%s\n' "$cfgs" | paste -sd, - | sed 's/,/, /g')"
-    printf '        켜려면: 각 리포 .env 에서 값을 정하고 재실행 (어느 리포인지는 위 1c 의 ⚠ 줄)\n'
-  fi
+  [ -n "$needval" ] && printf '    · 값을 정해야 켜지는 설정: %s\n        켜려면: 각 리포 .env 에서 값을 정하고 재실행 (어느 리포인지는 위 1c 의 ⚠ 줄)\n' "$needval"
+  [ -n "$optional" ] && printf '    · 선택 설정(예시 주석으로만 있다): %s\n' "$optional"
+  return 0
 }
