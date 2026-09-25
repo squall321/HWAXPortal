@@ -39,6 +39,9 @@ def test_gateway_plaintext_is_classified_by_prefix():
 
     b = judge(is_error=True, text="forbidden: risk_add_finding")
     assert (b.ok, b.kind, b.retriable) == (False, "forbidden", False)
+    # 정책 미수신의 일시 거부는 재시도 가능으로 — 게이트웨이 _deny_text 의 실제 문구(3라운드 검토).
+    b = judge(is_error=True, text="forbidden: ste_submit_job — 게이트웨이가 포털 권한 정책을 아직 못 받았다(일시) — 잠시 뒤 다시 부르면 풀린다")
+    assert (b.ok, b.kind, b.retriable) == (False, "unavailable", True)
 
     c = judge(is_error=True, text="backend odb-hub unavailable: timeout after 120s")
     assert (c.ok, c.kind) == (False, "unavailable")

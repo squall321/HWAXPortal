@@ -159,6 +159,7 @@ def test_no_verifier_falls_back_to_self_signed_rule_and_says_so(client, certs, m
     monkeypatch.setattr(tlscert.shutil, "which", lambda _n: None)
     info = client.get("/tls/info").json()
     assert info["needs_ca"] is False and info["verified"] is False and "판정 수단" in info["verify_error"]
+    assert info["ca_available"] is False, "판정 못 한 후보를 '준비됨' 으로 내지 않는다(3라운드 회귀)"
 
 
 def test_relative_env_paths_anchor_at_repo_root_like_nginx_does(monkeypatch):
@@ -193,6 +194,7 @@ def test_transient_openssl_failure_is_not_cached(client, certs, monkeypatch):
     monkeypatch.setattr(tlscert.subprocess, "run", flaky)
     first = client.get("/tls/info").json()
     assert first["verified"] is False and "실행 실패" in first["verify_error"]
+    monkeypatch.setattr(tlscert, "_FAIL_TTL_S", 0)                 # 짧은 보류가 지난 뒤
     second = client.get("/tls/info").json()
     assert second["verified"] is True and second["needs_ca"] is True and second["ca_available"] is True
 
@@ -202,12 +204,12 @@ def test_server_sends_intermediate_and_root_is_in_tls_ca_path(client, certs, mon
     후보 검증이 서빙 체인을 -untrusted 로 안 주면 이 정상 구성을 '연결 불가' 로 판정한다(1라운드 수정의 회귀)."""
     _use(monkeypatch, certs / "leaf2-int.crt", ca=certs / "ca.crt")
     info = client.get("/tls/info").json()
-    assert info["needs_ca"] and info["ca_available"] and info["ca_verified"], info
+    assert info["needs_ca"] and info["ca_available"] and info["verified"], info
     assert client.get("/tls/ca.crt").text.strip() == (certs / "ca.crt").read_text().strip()
     # 루트까지 붙은 fullchain 이면 TLS_CA_PATH 없이도 체인부(int+root)가 준비된다.
     _use(monkeypatch, certs / "leaf2-int-root.crt")
     info = client.get("/tls/info").json()
-    assert info["ca_available"] and info["ca_verified"]
+    assert info["ca_available"] and info["verified"]
     served = client.get("/tls/ca.crt").text
     assert served.strip() == ((certs / "int.crt").read_text() + (certs / "ca.crt").read_text()).strip(), "체인부 그대로(int+root)"
     # 중간 CA 까지만 있고 루트가 없으면 Node 도 못 믿는다 — 안내가 '루트' 를 말한다.
@@ -222,3 +224,57 @@ def test_expired_leaf_keeps_info_and_ca_endpoint_consistent(client, certs, monke
     info = client.get("/tls/info").json()
     assert info["expired"] and info["ca_available"] is False and "expired" in info["ca_error"]
     assert client.get("/tls/ca.crt").status_code == 404
+
+
+def test_ca_candidate_check_failure_is_unknown_not_ready(client, certs, monkeypatch):
+    """공개루트 판정은 됐는데 CA 후보 검증(둘째 openssl)만 실패한 순간 — 검증 안 된 TLS_CA_PATH 를
+    '준비됨' 으로 60초 고정하던 3라운드 회귀. 이제 verified=false·ca_available=false 이고 곧 다시 판정한다."""
+    # 자체서명이 아닌 리프(자체서명이면 자기 자신이 다음 후보로 통해 버린다) + 엉뚱한 TLS_CA_PATH.
+    _use(monkeypatch, certs / "leaf.crt", ca=certs / "other.crt")
+    real = tlscert.subprocess.run
+    n = {"i": 0}
+    def second_fails(*a, **k):
+        n["i"] += 1
+        if n["i"] == 2:
+            raise tlscert.subprocess.TimeoutExpired(cmd="openssl", timeout=10)
+        return real(*a, **k)
+    monkeypatch.setattr(tlscert.subprocess, "run", second_fails)
+    first = client.get("/tls/info").json()
+    assert first["verified"] is False and first["ca_available"] is False and "판정 수단" in first["ca_error"]
+    assert client.get("/tls/ca.crt").status_code == 404
+    monkeypatch.setattr(tlscert, "_FAIL_TTL_S", 0)
+    second = client.get("/tls/info").json()
+    assert second["verified"] is True and second["ca_available"] is False, "엉뚱한 TLS_CA_PATH 는 판정 뒤에도 준비됨이 아니다"
+    assert "TLS_CA_PATH" in second["ca_error"]
+
+
+def test_persistent_failure_is_held_briefly_not_rerun_per_request(client, certs, monkeypatch):
+    _use(monkeypatch, certs / "self.crt")
+    calls = []
+    def dead(*a, **k):
+        calls.append(1); raise OSError("fork failed")
+    monkeypatch.setattr(tlscert.subprocess, "run", dead)
+    client.get("/tls/info"); client.get("/tls/info"); client.get("/tls/ca.crt")
+    assert len(calls) == 2, "첫 요청의 두 판정(공개루트·CA 후보) 뒤로는 실패가 이어져도 요청마다 되살리지 않는다(짧은 TTL)"
+
+
+def test_leaf_only_guidance_asks_for_the_issuing_chain_not_the_root_alone(client, certs, monkeypatch):
+    """리프만 서빙 + TLS_CA_PATH=루트 는 Node 도 못 믿는다(중간 CA 가 어디에도 없다) — 안내가 '루트' 를 시키면 안 된다."""
+    leaf2 = certs / "leaf2.crt"
+    leaf2.write_text((certs / "leaf2-int.crt").read_text().split("-----END CERTIFICATE-----")[0] + "-----END CERTIFICATE-----\n")
+    _use(monkeypatch, leaf2)
+    info = client.get("/tls/info").json()
+    assert info["ca_available"] is False and "중간 CA + 루트" in info["ca_error"] and "루트만으로는 안 된다" in info["ca_error"]
+    _use(monkeypatch, leaf2, ca=certs / "ca.crt")
+    info = client.get("/tls/info").json()
+    assert info["ca_available"] is False and "중간 CA 와 루트" in info["ca_error"]
+    int_root = certs / "int-root.crt"
+    int_root.write_text((certs / "int.crt").read_text() + (certs / "ca.crt").read_text())
+    _use(monkeypatch, leaf2, ca=int_root)
+    assert client.get("/tls/info").json()["ca_available"] is True
+
+
+def test_chain_expiry_counts_as_expired_and_gets_no_issuer_hint(client, certs, monkeypatch):
+    _use(monkeypatch, certs / "expired-fullchain.crt", bundle=certs / "ca.crt")
+    info = client.get("/tls/info").json()
+    assert info["expired"] is True and "루트" not in info["ca_error"], "만료에 '루트까지' 처방을 붙이지 않는다"

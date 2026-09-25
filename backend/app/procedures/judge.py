@@ -77,6 +77,10 @@ def _gw_kind(text: str) -> tuple[str, bool] | None:
     if low.startswith(GW_UNKNOWN):
         return "unknown_tool", False
     if low.startswith(GW_FORBIDDEN):
+        # 게이트웨이가 포털 권한 정책을 아직 못 받은 **일시** 거부는 재시도하면 풀린다 — 문구에 그렇게 적혀 온다
+        # (gateway._deny_text: policy_not_ready). 사람이 권한을 받아야 하는 거부와 같은 칸에 넣으면 절차가 죽는다.
+        if "policy_not_ready" in low or "잠시 뒤 다시" in text:
+            return "unavailable", True
         return "forbidden", False
     if GW_DENIED in text or "invoke-denied" in low:
         return "denied", False

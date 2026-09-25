@@ -71,7 +71,8 @@ fi
 # ── 3) 자격 중계 — 시크릿이 **같은 값**인가(verify, 실제 값은 루프백으로만) ────────────────
 if [ -z "$SECRET" ]; then bad sso-secret "포털 infra/.env 에 STE_SSO_SECRET 이 없다 — start.sh 가 만든다"
 else
-  v="$(curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST -H "X-Heax-Gateway-Secret: $SECRET" "http://127.0.0.1:$HTTP_PORT/ste/api/auth/sso/verify" 2>/dev/null || echo 000)"
+  # 시크릿은 argv 로 넘기지 않는다(ps 에 보인다) — curl 설정을 stdin 으로 준다(-K -).
+  v="$(printf 'header = "X-Heax-Gateway-Secret: %s"\n' "$SECRET" | curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST -K - "http://127.0.0.1:$HTTP_PORT/ste/api/auth/sso/verify" 2>/dev/null || echo 000)"
   case "$v" in
     204) ok sso-secret "양쪽 같은 값 (verify 204 via :$HTTP_PORT)" ;;
     401) bad sso-secret "양쪽 **다르다** (verify 401) — FORCE_SSO_SECRET=1 SmartTwinExplorer/deploy/sync-sso-secret.sh" ;;
@@ -97,13 +98,16 @@ fi
 TI="$(curl -s -m 4 "http://127.0.0.1:$HTTP_PORT/tls/info" 2>/dev/null || true)"
 if [ -n "$TI" ] && printf '%s' "$TI" | python3 -c 'import json,sys;json.load(sys.stdin)' 2>/dev/null; then
   read -r tavail tver tneed tca texp <<<"$(TI="$TI" python3 -c 'import json,os;d=json.loads(os.environ["TI"]);print(*[int(bool(d.get(k))) for k in ("available","verified","needs_ca","ca_available","expired")])')"
-  terr="$(TI="$TI" python3 -c 'import json,os;d=json.loads(os.environ["TI"]);print((d.get("verify_error") or d.get("ca_error") or "")[:120])')"
+  # 두 사유는 다른 질문에 답한다 — verify_error 는 "왜 공개 루트에 안 닿나", ca_error 는 "왜 체인을 못 쓰나".
+  # needs_ca 면 verify_error 는 늘 차 있으므로 or 로 고르면 ca_error 가 영영 안 보인다(3라운드 검토).
+  tverr="$(TI="$TI" python3 -c 'import json,os;d=json.loads(os.environ["TI"]);print((d.get("verify_error") or "")[:120])')"
+  tcaerr="$(TI="$TI" python3 -c 'import json,os;d=json.loads(os.environ["TI"]);print((d.get("ca_error") or "")[:160])')"
   if [ "$tavail" = 0 ]; then warn tls "포털 인증서 파일 없음(TLS 미설정 또는 TLS_CERT_PATH 오류)"
   elif [ "$texp" = 1 ]; then bad tls "포털 인증서 만료 — CA 를 심어도 연결 안 됨, 갱신 필요"
-  elif [ "$tver" = 0 ]; then warn tls "체인 판정 못 함(모름≠정상) — $terr"
+  elif [ "$tver" = 0 ]; then warn tls "체인 판정 못 함(모름≠정상) — ${tverr:-$tcaerr}"
   elif [ "$tneed" = 0 ]; then ok tls "공개 CA 체인 — 사용자 PC 에 인증서 설치 불필요"
   elif [ "$tca" = 1 ]; then ok tls "사설·자체서명 — 발급 CA 체인 준비됨(/tls/ca.crt, 배치파일이 심는다)"
-  else bad tls "사설 CA 인데 발급 CA 체인 없음 — 개인 Claude 연결 불가: $terr"; fi
+  else bad tls "사설 CA 인데 발급 CA 체인 없음 — 개인 Claude 연결 불가: $tcaerr"; fi
 else
   warn tls "포털 /tls/info 무응답(:$HTTP_PORT) — 포털이 안 떠 있거나 옛 버전"
 fi

@@ -722,7 +722,9 @@ export default function TokenPage() {
 
   // 운영자 조치 전에는 어떤 등록도 연결되지 않는 상태 — 배치파일·스니펫을 함께 잠근다. 잠근 채로
   // 스니펫만 남기면 "연결 불가" 바로 아래에 존재하지 않을 인증서 경로를 든 명령이 나간다(2라운드 검토).
-  const blocked = expired || (needsCa && !caAvailable);
+  // "모름"(판정 못 함·응답 없음)도 잠근다 — 모름 상태에서 낸 등록은 검증 안 된 인증서나 인증서 없는 등록이라
+  // 경고문과 실제 동작이 서로 반대였다(3라운드 검토). 판정이 되면 다시 열면 된다.
+  const blocked = tlsUnknown !== null || expired || (needsCa && !caAvailable);
 
   // API 토큰 권한 없이 Report Archive 권한으로 들어온 사람 — PAT 발급부는 감추고 연결만 남긴다.
   // (이 페이지가 RA 연결·내 조직 선택을 함께 담고 있어서 열어 준 것이다.)
@@ -833,12 +835,12 @@ export default function TokenPage() {
             끝냅니다. 이 파일에는 위 토큰이 들어 있어 <b>지금 이 화면에서만</b> 만들 수 있습니다.
             {tlsUnknown && (
               <div style={{ color: '#ffd27a', marginTop: '0.45rem' }}>
-                <b>인증서 판정을 못 했습니다</b> — {tlsUnknown}. 이 포털이 사내 CA·자체서명 인증서를 쓰면
-                아래 등록은 CA 없이 만들어져 Claude(Node)가 연결에 실패합니다. 잠시 뒤 이 화면을 새로 고쳐
-                다시 확인하세요.
+                <b>인증서 판정을 못 했습니다</b> — {tlsUnknown}. 판정이 될 때까지 연결 설정(배치파일·등록
+                명령)을 만들지 않습니다 — 모르는 채로 만든 등록은 인증서가 빠지거나 검증 안 된 것이 들어갑니다.
+                잠시 뒤 이 화면을 새로 고쳐 다시 확인하세요.
               </div>
             )}
-            {needsCa && !expired && (
+            {!tlsUnknown && needsCa && !expired && (
               <div style={{ color: 'var(--muted)', marginTop: '0.45rem' }}>
                 이 포털의 인증서는 공개 루트에 닿지 않습니다(자체서명 또는 사내 CA). 브라우저는
                 경고를 눌러 넘어갈 수 있지만 Claude(Node)는 그러지 못해, 인증서 없이 등록하면{' '}
@@ -858,7 +860,7 @@ export default function TokenPage() {
                 갱신해야 합니다. 그때까지 아래 배치파일은 만들지 않습니다.
               </div>
             )}
-            {needsCa && !caAvailable && !expired && (
+            {!tlsUnknown && needsCa && !caAvailable && !expired && (
               <div style={{ color: '#ff9b9b', marginTop: '0.45rem' }}>
                 <b>서버에 발급 CA 체인이 없어 개인 Claude(Node)는 지금 이 포털에 연결할 수 없습니다.</b>{' '}
                 사내 CA 가 발급한 리프 인증서는 신뢰 목록에 넣어도 Node 가 발급자를 요구해 실패하므로
@@ -878,7 +880,7 @@ export default function TokenPage() {
                 className="btn-primary"
                 onClick={() => void downloadBat()}
                 disabled={batBusy || blocked}
-                title={blocked ? '운영자 조치 전에는 연결되지 않습니다' : undefined}
+                title={blocked ? (tlsUnknown ? '인증서 판정이 될 때까지 만들지 않습니다' : '운영자 조치 전에는 연결되지 않습니다') : undefined}
               >
                 {batBusy ? '만드는 중…' : '설정 배치파일 내려받기 (.bat)'}
               </button>
@@ -894,7 +896,10 @@ export default function TokenPage() {
           </div>
           {blocked ? (
             <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0.9rem 0 0' }}>
-              운영자 조치 뒤 이 화면을 다시 열면 등록 명령이 나옵니다. 지금 발급한 토큰은 그대로 쓸 수 있습니다.
+              {tlsUnknown
+                ? '인증서 판정이 되면 이 화면을 다시 열어 등록 명령을 받으세요.'
+                : '운영자 조치 뒤 이 화면을 다시 열면 등록 명령이 나옵니다.'}{' '}
+              토큰 자체는 유효합니다 — 등록만 뒤로 미룹니다.
             </p>
           ) : (
             <>

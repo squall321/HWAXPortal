@@ -874,8 +874,9 @@ if [ -n "$STE_UP" ]; then
            # (2026-09-24 적대 검토). 그래서 2차로 **실제 값**을 verify 에 친다(루프백 8088 — 박스 밖으로
            # 안 나간다). 204 = 같다 · 401 = 다르다 · 404 = 헤드에 verify 가 없는 옛 판.
            if [ -n "${STE_SSO_SECRET:-}" ]; then
-             _ste_vfy="$(curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST \
-                 -H "X-Heax-Gateway-Secret: $STE_SSO_SECRET" \
+             # 시크릿은 argv 로 넘기지 않는다(ps 에 보인다) — curl 설정을 stdin 으로 준다(-K -).
+             _ste_vfy="$(printf 'header = "X-Heax-Gateway-Secret: %s"\n' "$STE_SSO_SECRET" \
+                 | curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST -K - \
                  "http://127.0.0.1:8088/ste/api/auth/sso/verify" 2>/dev/null || echo 000)"
              case "$_ste_vfy" in
                204) ok "ste 자격중계    양쪽 설정됨 **그리고 같은 값** (verify 204)" ;;
