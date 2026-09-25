@@ -114,6 +114,24 @@ teleport 는 커밋이 신선도 키라 경고가 맞다.
 `tr_run true`)는 lib 단위 시험과 정적 시험까지고, 실주행은 cae00 `update-all --with-ste` 1회가 S0/S2 끝에 있다.
 `ste-doctor` 의 `tsh status` 파싱은 dev 에 tsh 가 없어 형식을 못 봤다 — 못 읽으면 "모름" 으로 낸다.
 
+## D-15. S3 실주행에서 배운 것 (2026-09-25)
+
+**맨이름은 남의 도구를 맞힌다.** ste 의 `prepare_upload` 는 reportarchive 에 같은 이름이 있어 게이트웨이가
+`ste_prepare_upload` 로 노출한다. 첫 실주행에서 맨이름을 불렀더니 오류가 아니라 **다른 앱의 정상 응답**(JSON 아님)이
+돌아왔다 — "실패가 성공처럼 생겼다" 의 또 한 갈래다. 헤더 주석에 접두사 규칙을 적어 둔 것으로는 부족했다(모델은
+도구 설명만 본다). 업로드 사슬의 설명·`how` 문장이 서로를 접두사 이름으로 가리키게 했고, 계약 테스트는 설명 본문에서
+잡는다(ste 41709e6). 접두사가 붙는 넷: `ste_prepare_upload`·`ste_submit_job`·`ste_list_jobs`·`ste_cancel_job`.
+나머지 여덟(`cluster_info`·`list_apps`·`get_app_schema`·`get_job_status`·`get_job_result`·`get_job_file`·
+`get_sync_settings`·`set_job_sync`)은 오늘 맨이름이지만 **다른 앱이 같은 이름을 내는 순간 바뀐다** — 설명에
+두 이름을 다 적는 규칙은 그래서 전 도구에 적용한다.
+
+**실주행 결과(dev 게이트웨이, per_user PAT).** 티켓 발급 → curl PUT 81B → `ste_submit_job(upload_id)` PENDING →
+같은 티켓 재제출 **409** → COMPLETED exit 0 → `get_job_file(slurm.out, tail 3)` 138B·truncated=false →
+없는 파일 **404 를 isError 로** → `set_job_sync` 켬. 모델 컨텍스트를 지난 파일 바이트는 0(티켓과 curl 문장뿐).
+
+**게이트웨이 재기동이 반영 경로다.** MCP 서버 설명을 고쳐 VM 에 배포해도 게이트웨이는 기동 때 모은 도구 목록을
+들고 있다 — `start.sh restart` 뒤에 `list_tool_apps(app='ste')` 로 설명 본문을 다시 읽어 판정했다.
+
 ## F. cae00 실측 (S0 에서 채운다)
 _아직 비어 있다. `ste-doctor --report` 출력을 여기에 붙인다._
 

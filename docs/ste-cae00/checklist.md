@@ -33,13 +33,13 @@
 - [ ] 검증(cae00): `update-all --with-ste` 1회 → `ste-doctor` 전부 초록 → 평소 `update-all` 이 ste 를 건드리지 않되 빨강이면 명령을 안내
 
 ## S3 — 사용자 첫 성공
-- [ ] ste `POST /api/uploads`(스트리밍 2GB, 사용자 명의 1회용 티켓) + MCP `prepare_upload` · `submit_job(upload_id)`
-- [ ] MCP `get_job_file(job_id, path, tail|offset, ≤64KB)` · `get_job_result` 설명에서 `result.zip` 제거
-- [ ] 게이트웨이 `rest_call`·REST 프록시 응답 크기 상한(1MB) — zip/binary 는 스트림을 끊고 error
-- [ ] 도구 설명이 접두어 이름(`ste_submit_job`)을 가리킴 · `{'error':…}` → isError · `STE_MCP_TOKEN` 폴백 제거 · ste-sync 상태·토글 도구
+- [x] ste `POST /api/uploads`(스트리밍 2GB, 사용자 명의 1회용 티켓) + MCP `prepare_upload` · `submit_job(upload_id)` — ste 3317f85·86c32b0
+- [x] MCP `get_job_file(job_id, path, tail|offset, ≤64KB)` · `get_job_result` 설명에서 `result.zip` 제거 — ste 3c3ce91
+- [x] 게이트웨이 `rest_call`·REST 프록시 응답 크기 상한(1MB) — zip/binary 는 스트림을 끊고 error — 게이트웨이 d17ff29 (실측: result.zip 이 body 0 으로 오류)
+- [x] 도구 설명이 접두어 이름(`ste_submit_job`·**`ste_prepare_upload`**)을 가리킴 · `{'error':…}` → isError · `STE_MCP_TOKEN` 폴백 제거 · ste-sync 상태·토글 도구 — ste 3c3ce91·41709e6 (D-15)
 - [ ] TokenPage: `canToken=false` 안내 링크 · "이 토큰으로 열리는 플랫폼" 목록 · `list_tool_apps` 거부 앱 라벨 · `initialize` instructions 한 줄
 - [ ] `/tls/info` → `needs_ca` + 발급 CA 체인 내려주기 · Claude Code 는 settings.json env 경로 우선(S0 판정에 따라)
-- [ ] 검증(dev, Claude Code 실주행): "k파일 올려 돌리고 결과 받기" 끝까지 · 모델 출력에 파일 바이트 0 · 권한 없는 계정으로 안내 문구 확인
+- [~] 검증(dev, 게이트웨이 실호출): "파일 올려 돌리고 결과 받기" 끝까지 **통과**(티켓→PUT 81B→제출→재제출 409→COMPLETED→꼬리 3줄→없는 파일 404→sync 토글, D-15) · 모델 출력에 파일 바이트 0 · **남은 것**: 권한 없는 계정 안내 문구(TokenPage 항목 뒤)
 
 ## S4 — 무인화
 - [ ] tbot 봇·조인 토큰 관리자 요청(teleport-transport.md §7-1 조건) → `transport.env` 전환 · 스크립트 무변경 확인
