@@ -601,8 +601,14 @@ export default function TokenPage() {
   // 포털 인증서 체인이 공개 루트에 닿지 않는가(자체서명·사내 CA) — 그때만 인증서 안내를 띄운다.
   // 공개 CA 인증서로 교체되면 서버가 needs_ca=false 를 돌려주므로 이 블록은 저절로 사라진다.
   const [needsCa, setNeedsCa] = useState(false);
-  // 서버가 발급 CA 체인(/tls/ca.crt)을 갖고 있는가. 없으면 리프로 대신하고 그 사실을 말한다.
+  // 서버가 발급 CA 체인(/tls/ca.crt)을 갖고 있고 그 체인이 리프를 검증하는가. 없으면 **연결 불가**다 —
+  // 사내 CA 가 발급한 리프는 신뢰 목록에 넣어도 Node 가 발급자를 요구해 실패한다(실측). 리프로 대신하지 않는다.
   const [caAvailable, setCaAvailable] = useState(false);
+  // 심을 파일의 주소 — 새 백엔드는 /tls/ca.crt, 이 커밋 이전 백엔드(새 dist 가 먼저 뜬 창)는 리프뿐이다.
+  const [caUrl, setCaUrl] = useState(CERT_URL);
+  const [expired, setExpired] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
+  const [caError, setCaError] = useState('');
   // 내 권한 — "이 토큰으로 지금 열리는 플랫폼" 은 권한표에서 도구가 딸린 항목이다.
   const [access, setAccess] = useState<MyAccess | null>(null);
   const [batBusy, setBatBusy] = useState(false);
@@ -617,7 +623,8 @@ export default function TokenPage() {
     try {
       let pem: string | null = null;
       if (needsCa) {
-        const r = await fetch(caAvailable ? CA_URL : CERT_URL);
+        if (!caAvailable) throw new Error('서버에 발급 CA 체인이 없어 연결 설정을 만들 수 없습니다 — 운영자 조치가 필요합니다.');
+        const r = await fetch(caUrl);
         if (!r.ok) throw new Error(`인증서를 받지 못했습니다 (HTTP ${r.status}).`);
         pem = await r.text();
       }
@@ -649,8 +656,15 @@ export default function TokenPage() {
     fetch(`${ORIGIN}/tls/info`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        setNeedsCa(Boolean(d?.needs_ca ?? d?.self_signed));
-        setCaAvailable(Boolean(d?.ca_available ?? d?.self_signed));
+        if (!d) return;
+        // 옛 백엔드(ca_available 없음)에는 /tls/ca.crt 가 없다 — 자체서명 리프를 그대로 쓴다.
+        const legacy = d.ca_available === undefined;
+        setNeedsCa(Boolean(legacy ? d.self_signed : d.needs_ca));
+        setCaAvailable(Boolean(legacy ? d.self_signed : d.ca_available));
+        setCaUrl(legacy ? CERT_URL : CA_URL);
+        setExpired(Boolean(d.expired));
+        setVerifyError(String(d.verify_error || ''));
+        setCaError(String(d.ca_error || ''));
       })
       .catch(() => {});
     fetchMyAccess()
@@ -807,25 +821,47 @@ export default function TokenPage() {
                 이 포털의 인증서는 공개 루트에 닿지 않습니다(자체서명 또는 사내 CA). 브라우저는
                 경고를 눌러 넘어갈 수 있지만 Claude(Node)는 그러지 못해, 인증서 없이 등록하면{' '}
                 <code>SELF_SIGNED_CERT_IN_CHAIN</code>·<code>UNABLE_TO_VERIFY_LEAF_SIGNATURE</code> 로
-                연결이 실패합니다. 배치파일이 {caAvailable ? '발급 CA 체인을' : '인증서를'}{' '}
-                <code>%USERPROFILE%\.hwax</code> 에 심고 그 경로를 등록에 함께 넣습니다. 통신은
-                그대로 HTTPS 입니다.
-                {!caAvailable && (
+                연결이 실패합니다. 배치파일이 발급 CA 체인을 <code>%USERPROFILE%\.hwax</code> 에 심고
+                그 경로를 등록에 함께 넣습니다. 통신은 그대로 HTTPS 입니다.
+                {verifyError && (
+                  <div style={{ fontSize: '0.8rem', marginTop: '0.3rem' }}>
+                    판정 근거: <code>{verifyError}</code>
+                  </div>
+                )}
+              </div>
+            )}
+            {expired && (
+              <div style={{ color: '#ff9b9b', marginTop: '0.45rem' }}>
+                <b>포털 인증서가 만료됐습니다.</b> CA 를 심어도 연결되지 않습니다 — 운영자가 인증서를
+                갱신해야 합니다. 그때까지 아래 배치파일은 만들지 않습니다.
+              </div>
+            )}
+            {needsCa && !caAvailable && !expired && (
+              <div style={{ color: '#ff9b9b', marginTop: '0.45rem' }}>
+                <b>서버에 발급 CA 체인이 없어 개인 Claude(Node)는 지금 이 포털에 연결할 수 없습니다.</b>{' '}
+                사내 CA 가 발급한 리프 인증서는 신뢰 목록에 넣어도 Node 가 발급자를 요구해 실패하므로
+                리프로 대신하지 않습니다. 운영자가 <code>TLS_CERT_PATH</code> 를 fullchain 으로 두거나{' '}
+                <code>TLS_CA_PATH</code> 를 주면 이 화면이 CA 체인을 심는 배치파일을 냅니다.
+                {caError && (
                   <>
                     {' '}
-                    <b>서버에 발급 CA 체인이 없어 리프 인증서로 대신합니다</b> — 인증서를 갱신하면
-                    다시 심어야 합니다. 운영자가 <code>TLS_CERT_PATH</code> 를 fullchain 으로 두거나{' '}
-                    <code>TLS_CA_PATH</code> 를 주면 CA 체인으로 바뀝니다.
+                    서버 사유: <code>{caError}</code>
                   </>
                 )}
               </div>
             )}
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.7rem' }}>
-              <button type="button" className="btn-primary" onClick={() => void downloadBat()}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void downloadBat()}
+                disabled={batBusy || expired || (needsCa && !caAvailable)}
+                title={expired || (needsCa && !caAvailable) ? '운영자 조치 전에는 연결되지 않습니다' : undefined}
+              >
                 {batBusy ? '만드는 중…' : '설정 배치파일 내려받기 (.bat)'}
               </button>
-              {needsCa && (
-                <a href={caAvailable ? CA_URL : CERT_URL} download="hwax-portal.crt" style={{ fontSize: '0.82rem' }}>
+              {needsCa && caAvailable && (
+                <a href={caUrl} download="hwax-portal.crt" style={{ fontSize: '0.82rem' }}>
                   인증서만 따로 받기
                 </a>
               )}
@@ -857,7 +893,10 @@ export default function TokenPage() {
       {access &&
         (() => {
           // 도구가 딸린 항목만 — 타일뿐인 플랫폼은 토큰과 무관하다. 기능도 하나 있다(전문가 심의).
-          const rows = [...access.platforms, ...access.features].filter((r) => r.tools);
+          // tools 필드가 없으면(이 커밋 이전 백엔드가 새 dist 를 내는 창) '모름' 이다 — "없다" 로 단정하지 않는다.
+          const allRows = [...access.platforms, ...access.features];
+          if (!allRows.every((r) => typeof r.tools === 'boolean')) return null;
+          const rows = allRows.filter((r) => r.tools);
           const opened = rows.filter((r) => r.allowed);
           const closed = rows.filter((r) => !r.allowed);
           return (

@@ -166,6 +166,46 @@ S0 판정에 걸려 있고, 그 env 가 **Node 기동 전에** 적용되는지�
 **화면 실확인은 못 했다.** 권한 없는 계정으로 TokenPage 문구를 보려면 feat:api-token 없는 실계정이 필요한데 dev 에
 없다. 빌드(tsc)와 코드 경로만 확인했다 — 체크리스트에 그렇게 적었다.
 
+## D-17. 적대 검토 1라운드 — 확인 8·기각 0, 전부 수정 (2026-09-25)
+
+D-16 커밋 셋을 네 차원(정확성·보안·무음 실패·계약)으로 훑고 지적 20건 중 상위 8건을 반박 시도 → **8건 전부 재현**.
+빠진 12건은 low 였고 같은 파일에서 싸게 닫히는 것은 함께 넣었다.
+
+**(A) 백엔드가 TLS 경로를 CWD 기준으로 풀었다(high).** `_common.sh` 가 `infra/.env` 를 export 하고 apptainer 가 호스트
+env 를 그대로 넘기므로 `.env.example` 의 `TLS_CERT_PATH=infra/tls/hwax.crt` 는 컨테이너에서 `/workspace/backend/infra/…`
+로 풀려 없다고 판정됐다 — nginx(gen-nginx-conf)·gen-tls-cert 는 같은 값을 리포 루트 기준으로 읽어 **둘이 어긋났다**.
+dev 는 `infra/.env` 에 TLS_ 키가 없어 기본값으로 도망가 안 보였고, env-sync 가 다음 update-all 에 그 키를 채우면 dev 도
+같은 상태가 될 참이었다. 종전 `_CERT_PATH` 부터 있던 결함 위에 내가 `_CA_PATH` 를 같은 방식으로 얹고 "TLS_CA_PATH 를
+채우라" 고 안내했으니 이번 커밋 범위가 맞다. `_anchor()` — 상대값은 리포 루트 기준(nginx 계약과 동일). 컨테이너 안에서
+검토가 쓴 재현 명령 그대로 다시 돌려 `/workspace/infra/tls/hwax.crt` 로 풀리는 것을 확인.
+
+**(B) "리프로 대신한다" 는 거짓이었다(medium).** 사내 CA 가 발급한 리프는 NODE_EXTRA_CA_CERTS 에 넣어도 Node 가 발급자를
+요구해 `UNABLE_TO_VERIFY_LEAF_SIGNATURE` 로 죽는다(검토가 Node 20 + mcp-remote 로 실측: 리프=실패, CA=200, 자체서명=자기 자신으로 200).
+내가 D-16 에 "리프로 대신" 을 설계 의도로 적었던 것이 틀렸다. 이제 `needs_ca && !ca_available` 은 **연결 불가** 로 말하고
+배치 버튼을 잠근다. 같은 이유로 `ca_available` 은 후보 체인이 **리프를 실제로 검증할 때만** true(엉뚱한 `TLS_CA_PATH` 를
+"준비됨" 으로 내던 low 건도 여기서 닫힘). 후보: `TLS_CA_PATH` > fullchain 체인부 > 자체서명 리프 자신.
+
+**(C) 게이트웨이 거부 사유를 안 갈랐다(medium ×2 + low).** `_denied_entry` 가 `_ACCESS_POLICY` 만 봐서 게이트웨이 그룹으로
+막힌 사람에게 이미 가진 포털 권한을 청하라 했고, 정책 미수신(부팅 직후, 60초 뒤 풀림)을 "그룹 제한" 영구 상태처럼 말했다.
+`_backend_allowed` 의 규칙을 `_deny_reason`(gateway_group·policy_not_ready·portal_access)으로 옮기고 사유별 안내 —
+portal_access 만 needs·request, policy_not_ready 는 retry:true. 허용/거부 판정은 동치(테스트). 게이트웨이 4a8cf5e.
+
+**(D) 만료 등 다른 verify 실패가 "CA 심어라" 로 나갔다(medium).** `verify_error` 를 아무도 안 읽었다. 백엔드가 `expired`
+(cryptography not_valid_after)·`verified`(판정을 실제로 했는가) 를 내고, 화면이 `verify_error` 를 "판정 근거" 로 보이며
+만료면 CA 처방 대신 "운영자가 갱신해야 한다" 로 막는다.
+
+**(E) 옛 백엔드 + 새 dist 창(medium).** `tools` 필드가 없으면 전 행이 탈락해 "열리는 플랫폼이 없습니다" 를 사실처럼 냈다 —
+dist 는 디스크에서 바로 서빙되고 백엔드는 재기동 전이라 배포 때마다 생기는 창이다. 필드가 boolean 이 아니면 "모름" 이라
+섹션을 아예 안 낸다. 같은 창을 위해 `/tls/info` 도 `ca_available` 필드 유무로 옛 백엔드를 알아보고 `/tls/ca.crt` 대신 리프를 쓴다.
+
+**low 에서 같이 닫은 것** — `verify_error` 의 임시 경로·번들 경로 제거(무인증 엔드포인트), DER/PKCS#12 `TLS_CA_PATH` 가 500
+이던 것(UnicodeDecodeError), `TLS_CA_PATH` 못 읽으면 `ca_error` 로 이름 붙임, 요청마다 openssl 돌리던 것(파일 mtime 캐시),
+시스템 `/etc/ssl/certs` 폴백 제거(사설 CA 가 "공개" 로 읽히는 길). **안 닫은 것** — `/tls/info`·`/auth/access` fetch 실패를
+화면이 삼키는 것(이전과 같고, "모름" 으로 두는 편이 낫다고 봄).
+
+**배운 것.** 검토가 잡은 여덟 중 넷은 내가 D-16 에 "그렇게 했다" 고 적은 설계 자체가 틀린 경우다(리프 대체·거부 안내·
+verify_error 무소비·CWD). 내 설명이 자신 있게 읽힐수록 라운드가 필요하다.
+
 ## F. cae00 실측 (S0 에서 채운다)
 _아직 비어 있다. `ste-doctor --report` 출력을 여기에 붙인다._
 
