@@ -132,6 +132,40 @@ teleport 는 커밋이 신선도 키라 경고가 맞다.
 **게이트웨이 재기동이 반영 경로다.** MCP 서버 설명을 고쳐 VM 에 배포해도 게이트웨이는 기동 때 모은 도구 목록을
 들고 있다 — `start.sh restart` 뒤에 `list_tool_apps(app='ste')` 로 설명 본문을 다시 읽어 판정했다.
 
+## D-16. 권한 안내·TLS 판정 (2026-09-25)
+
+**"권한 없음" 과 "그런 앱 없음" 이 모델에게 같은 모양이었다.** `list_tool_apps` 는 권한 없는 앱을 목록에서
+빼고 숫자(`hidden_no_access`)만 냈다 — 도구 이름이 새면 모델이 계획에 넣어 실패로만 끝나던 것을 막은 결정이었고
+그건 유지한다. 대신 `denied_apps` 에 **라벨·필요 권한(`plat:`/`feat:`)·요청 경로(`/access?need=<키>`)** 만
+싣는다. 게이트웨이 그룹 제한(POLICY)뿐이면 `request` 는 None — 포털에서 청할 수 있는 것이 아니라서다.
+initialize instructions 9항이 "지어내거나 invoke_tool 로 우회하지 말고 요청을 안내하라" 를 박는다. 실호출
+(plat:smarttwin 만 가진 호출자): 열린 앱 3 + 거부 14, 각 거부에 라벨·요청 경로.
+
+**TokenPage 의 요청 경로는 `#api-token` 이 아니라 `?need=`.** 계획은 앵커로 적었지만 AccessPage 의 실제
+계약은 `RequireEntitlement` 가 쓰는 `/access?need=<키>`(해당 행 강조 + "권한이 없어 이 화면으로 왔습니다" 배너)다.
+같은 문을 쓴다. "이 토큰으로 지금 열리는 플랫폼" 은 `/auth/access` 행에 `tools`(게이트웨이 백엔드 유무) 한 필드를
+더해 **도구가 딸린 항목만** 센다 — HEAXHub 허브처럼 타일뿐인 플랫폼은 토큰과 무관하다. 전문가 심의는 기능이지만
+게이트웨이 백엔드(hwax-deliberation)가 있어 같은 목록에 든다.
+
+**`self_signed` 는 틀린 질문이었다.** Node 가 죽는 조건은 "자체서명" 이 아니라 **"체인이 공개 루트에 안 닿는다"**
+다 — 사내 CA 발급 인증서는 `self_signed=false` 라 안내가 안 뜨는데 Node 는 `UNABLE_TO_VERIFY_LEAF_SIGNATURE` 로
+똑같이 죽는다. `/tls/info` 가 `needs_ca` 를 낸다: `openssl verify -no-CApath -no-CAfile -CAfile <certifi>` —
+박스의 `/etc/ssl/certs` 를 **끄고** Mozilla 번들만 본다(사용자 PC 의 Node 와 같은 계열). 안 끄면 박스에 심어
+둔 사설 CA 가 "공개" 로 읽혀 여기서는 되고 사용자 PC 에서는 안 되는 판정이 난다. `verify_error` 한 줄을 같이 내
+만료 같은 다른 원인도 보이게 했다. 판정 수단이 없으면(openssl·번들 없음) 옛 기준(자체서명)으로 물러난다.
+
+**내려 주는 것은 리프가 아니라 발급 CA 체인(`/tls/ca.crt`).** 리프를 심으면 갱신 때마다 사용자 PC 를 다시 만진다.
+순서: `TLS_CA_PATH` > 리프 파일의 체인부(fullchain 이면 두 번째부터) > 자체서명 리프 자신. 리프만 있는 사내 CA
+발급이면 **체인을 지어내지 않고** 404 + `ca_available:false` — 화면이 "리프로 대신한다, 운영자가 fullchain 또는
+TLS_CA_PATH" 를 말한다. 개인키가 같은 파일에 있으면 어느 경로로도 안 낸다(테스트).
+
+**settings.json env 경로는 안 했다.** 계획 5번 후반(`~/.claude/settings.json` env 에 `NODE_EXTRA_CA_CERTS`)은
+S0 판정에 걸려 있고, 그 env 가 **Node 기동 전에** 적용되는지는 Windows 실측 없이는 모른다(NODE_EXTRA_CA_CERTS
+는 프로세스 시작 때 읽힌다 — 늦게 넣으면 무시될 가능성). 모르는 것을 "우선" 으로 적지 않는다. 체크리스트에 남겼다.
+
+**화면 실확인은 못 했다.** 권한 없는 계정으로 TokenPage 문구를 보려면 feat:api-token 없는 실계정이 필요한데 dev 에
+없다. 빌드(tsc)와 코드 경로만 확인했다 — 체크리스트에 그렇게 적었다.
+
 ## F. cae00 실측 (S0 에서 채운다)
 _아직 비어 있다. `ste-doctor --report` 출력을 여기에 붙인다._
 

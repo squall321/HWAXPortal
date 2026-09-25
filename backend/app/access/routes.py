@@ -54,7 +54,9 @@ def _table(policy, ents, pending: dict[str, dict], hidden: set[str]) -> dict:
         return {"key": i.key, "id": i.id, "label": i.label, "desc": i.desc, "allowed": allowed,
                 "reason": (_reason_text(ents.reasons[i.key], policy, ents.affiliation)
                            if allowed else ""),
-                "request": pending.get(i.key)}
+                "request": pending.get(i.key),
+                # 게이트웨이 백엔드가 딸린 항목 — PAT(개인 Claude) 로 열리는 것이 이것들이다(TokenPage).
+                "tools": bool(i.gateway)}
     return {"features": [row(i) for i in policy.items if i.kind == "feature"],
             "platforms": [row(i) for i in policy.items if i.kind == "platform" and i.key not in hidden]}
 

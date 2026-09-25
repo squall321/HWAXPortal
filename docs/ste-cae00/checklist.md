@@ -37,9 +37,10 @@
 - [x] MCP `get_job_file(job_id, path, tail|offset, ≤64KB)` · `get_job_result` 설명에서 `result.zip` 제거 — ste 3c3ce91
 - [x] 게이트웨이 `rest_call`·REST 프록시 응답 크기 상한(1MB) — zip/binary 는 스트림을 끊고 error — 게이트웨이 d17ff29 (실측: result.zip 이 body 0 으로 오류)
 - [x] 도구 설명이 접두어 이름(`ste_submit_job`·**`ste_prepare_upload`**)을 가리킴 · `{'error':…}` → isError · `STE_MCP_TOKEN` 폴백 제거 · ste-sync 상태·토글 도구 — ste 3c3ce91·41709e6 (D-15)
-- [ ] TokenPage: `canToken=false` 안내 링크 · "이 토큰으로 열리는 플랫폼" 목록 · `list_tool_apps` 거부 앱 라벨 · `initialize` instructions 한 줄
-- [ ] `/tls/info` → `needs_ca` + 발급 CA 체인 내려주기 · Claude Code 는 settings.json env 경로 우선(S0 판정에 따라)
-- [~] 검증(dev, 게이트웨이 실호출): "파일 올려 돌리고 결과 받기" 끝까지 **통과**(티켓→PUT 81B→제출→재제출 409→COMPLETED→꼬리 3줄→없는 파일 404→sync 토글, D-15) · 모델 출력에 파일 바이트 0 · **남은 것**: 권한 없는 계정 안내 문구(TokenPage 항목 뒤)
+- [x] TokenPage: `canToken=false` 안내 링크(`/access?need=feat:api-token`) · "이 토큰으로 지금 열리는 플랫폼" 목록(`/auth/access` 행의 `tools`) · `list_tool_apps` 거부 앱 라벨·필요 권한·요청 경로(`denied_apps`, 게이트웨이 bbfec74) · `initialize` instructions 9항 — D-16
+- [x] `/tls/info` → `needs_ca`(openssl verify, 공개 번들만)·`ca_available`·`verify_error` + `/tls/ca.crt` 발급 CA 체인(`TLS_CA_PATH` 선택) — D-16
+- [ ] Claude Code `~/.claude/settings.json` env 의 `NODE_EXTRA_CA_CERTS` 경로 — **S0 판정 뒤**(cae00 인증서 종류 + 그 env 가 Node 기동 전에 적용되는지 실측 필요, 여기서는 못 한다)
+- [~] 검증(dev, 게이트웨이 실호출): "파일 올려 돌리고 결과 받기" 끝까지 **통과**(티켓→PUT 81B→제출→재제출 409→COMPLETED→꼬리 3줄→없는 파일 404→sync 토글, D-15) · 모델 출력에 파일 바이트 0 · 권한 없는 호출자의 `list_tool_apps` 실호출(plat:smarttwin 만 → 거부 14개 라벨·요청 경로, D-16) · **화면으로 못 본 것**: 권한 없는 계정으로 TokenPage 문구(빌드·코드 경로만 확인, 실계정 없음)
 
 ## S4 — 무인화
 - [ ] tbot 봇·조인 토큰 관리자 요청(teleport-transport.md §7-1 조건) → `transport.env` 전환 · 스크립트 무변경 확인

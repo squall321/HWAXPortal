@@ -1,6 +1,8 @@
 // 홈에서 AI 토큰(PAT)을 발급하고 개인 Claude 등록 스니펫을 그 자리에서 복사하는 페이지
 import { type CSSProperties, type FormEvent, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { createPat, listPats, revokePat, type PatCreated, type PatMeta } from '../api/pat.api';
+import { fetchMyAccess, type MyAccess } from '../api/access.api';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { RaConnectionCard } from '../components/RaConnectionCard';
 import { useCan } from '../auth/useCan';
@@ -37,6 +39,16 @@ function fmtDate(sec: number): string {
 }
 
 const CERT_URL = `${ORIGIN}/tls/portal.crt`;
+// 발급 CA 체인 — 리프 대신 이것을 심으면 인증서를 갱신해도 사용자 PC 를 다시 안 만진다.
+const CA_URL = `${ORIGIN}/tls/ca.crt`;
+
+const chipStyle: CSSProperties = {
+  padding: '0.25rem 0.6rem',
+  borderRadius: 999,
+  border: '1px solid var(--border)',
+  background: 'var(--card)',
+  fontSize: '0.82rem',
+};
 
 function claudeCodeSnippet(token: string): string {
   return `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`;
@@ -586,9 +598,13 @@ export default function TokenPage() {
   const [created, setCreated] = useState<PatCreated | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pats, setPats] = useState<PatMeta[] | null>(null);
-  // 포털이 자체서명 인증서로 떠 있는가 — 그때만 인증서 안내를 띄운다. 사내 CA 인증서로
-  // 교체되면 서버가 self_signed=false 를 돌려주므로 이 블록은 저절로 사라진다.
-  const [selfSigned, setSelfSigned] = useState(false);
+  // 포털 인증서 체인이 공개 루트에 닿지 않는가(자체서명·사내 CA) — 그때만 인증서 안내를 띄운다.
+  // 공개 CA 인증서로 교체되면 서버가 needs_ca=false 를 돌려주므로 이 블록은 저절로 사라진다.
+  const [needsCa, setNeedsCa] = useState(false);
+  // 서버가 발급 CA 체인(/tls/ca.crt)을 갖고 있는가. 없으면 리프로 대신하고 그 사실을 말한다.
+  const [caAvailable, setCaAvailable] = useState(false);
+  // 내 권한 — "이 토큰으로 지금 열리는 플랫폼" 은 권한표에서 도구가 딸린 항목이다.
+  const [access, setAccess] = useState<MyAccess | null>(null);
   const [batBusy, setBatBusy] = useState(false);
   const [batError, setBatError] = useState<string | null>(null);
 
@@ -600,8 +616,8 @@ export default function TokenPage() {
     setBatError(null);
     try {
       let pem: string | null = null;
-      if (selfSigned) {
-        const r = await fetch(CERT_URL);
+      if (needsCa) {
+        const r = await fetch(caAvailable ? CA_URL : CERT_URL);
         if (!r.ok) throw new Error(`인증서를 받지 못했습니다 (HTTP ${r.status}).`);
         pem = await r.text();
       }
@@ -632,7 +648,13 @@ export default function TokenPage() {
     // 실패는 무시한다 — 안내가 안 뜰 뿐이고 토큰 발급 자체를 막을 이유가 없다.
     fetch(`${ORIGIN}/tls/info`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setSelfSigned(Boolean(d?.self_signed)))
+      .then((d) => {
+        setNeedsCa(Boolean(d?.needs_ca ?? d?.self_signed));
+        setCaAvailable(Boolean(d?.ca_available ?? d?.self_signed));
+      })
+      .catch(() => {});
+    fetchMyAccess()
+      .then(setAccess)
       .catch(() => {});
   }, []);
 
@@ -681,6 +703,10 @@ export default function TokenPage() {
         <h1 style={{ fontSize: '1.4rem', marginBottom: '0.4rem' }}>연결 설정</h1>
         <p style={{ color: 'var(--muted)', marginTop: 0, fontSize: '0.9rem' }}>
           Report Archive 계정을 연결하고, 보고서를 쌓을 내 조직(워크스페이스)을 고릅니다.
+        </p>
+        <p style={{ fontSize: '0.88rem', margin: '0.6rem 0 1rem' }}>
+          개인 Claude·스크립트용 API 토큰(PAT)은 <b>API 토큰 · MCP 개인 연결</b> 권한이 있어야
+          발급됩니다. <Link to="/access?need=feat:api-token">내 권한에서 요청 →</Link>
         </p>
         <RaConnectionCard />
       </div>
@@ -776,21 +802,30 @@ export default function TokenPage() {
           >
             <b>윈도우라면 이것만 받아서 실행하세요.</b> 인증서 설치와 Claude 등록을 한 번에
             끝냅니다. 이 파일에는 위 토큰이 들어 있어 <b>지금 이 화면에서만</b> 만들 수 있습니다.
-            {selfSigned && (
+            {needsCa && (
               <div style={{ color: 'var(--muted)', marginTop: '0.45rem' }}>
-                이 포털은 아직 자체서명 인증서를 씁니다. 브라우저는 경고를 눌러 넘어갈 수 있지만
-                Claude(Node)는 그러지 못해, 인증서 없이 등록하면{' '}
-                <code>SELF_SIGNED_CERT_IN_CHAIN</code> 으로 연결이 실패합니다. 배치파일이 인증서를{' '}
+                이 포털의 인증서는 공개 루트에 닿지 않습니다(자체서명 또는 사내 CA). 브라우저는
+                경고를 눌러 넘어갈 수 있지만 Claude(Node)는 그러지 못해, 인증서 없이 등록하면{' '}
+                <code>SELF_SIGNED_CERT_IN_CHAIN</code>·<code>UNABLE_TO_VERIFY_LEAF_SIGNATURE</code> 로
+                연결이 실패합니다. 배치파일이 {caAvailable ? '발급 CA 체인을' : '인증서를'}{' '}
                 <code>%USERPROFILE%\.hwax</code> 에 심고 그 경로를 등록에 함께 넣습니다. 통신은
                 그대로 HTTPS 입니다.
+                {!caAvailable && (
+                  <>
+                    {' '}
+                    <b>서버에 발급 CA 체인이 없어 리프 인증서로 대신합니다</b> — 인증서를 갱신하면
+                    다시 심어야 합니다. 운영자가 <code>TLS_CERT_PATH</code> 를 fullchain 으로 두거나{' '}
+                    <code>TLS_CA_PATH</code> 를 주면 CA 체인으로 바뀝니다.
+                  </>
+                )}
               </div>
             )}
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.7rem' }}>
               <button type="button" className="btn-primary" onClick={() => void downloadBat()}>
                 {batBusy ? '만드는 중…' : '설정 배치파일 내려받기 (.bat)'}
               </button>
-              {selfSigned && (
-                <a href={CERT_URL} download="hwax-portal.crt" style={{ fontSize: '0.82rem' }}>
+              {needsCa && (
+                <a href={caAvailable ? CA_URL : CERT_URL} download="hwax-portal.crt" style={{ fontSize: '0.82rem' }}>
                   인증서만 따로 받기
                 </a>
               )}
@@ -800,16 +835,16 @@ export default function TokenPage() {
             )}
           </div>
           <CopyBlock
-            label={selfSigned ? 'Claude Code (터미널 — 직접 실행할 때)' : 'Claude Code (터미널)'}
+            label={needsCa ? 'Claude Code (터미널 — 직접 실행할 때)' : 'Claude Code (터미널)'}
             text={
-              selfSigned
+              needsCa
                 ? claudeCodeSnippetSelfSigned(created.token, '%USERPROFILE%\\.hwax\\hwax-portal.crt')
                 : claudeCodeSnippet(created.token)
             }
           />
           <CopyBlock
             label="Claude Desktop (claude_desktop_config.json)"
-            text={claudeDesktopSnippet(created.token, selfSigned ? String.raw`%USERPROFILE%\.hwax\hwax-portal.crt` : null)}
+            text={claudeDesktopSnippet(created.token, needsCa ? String.raw`%USERPROFILE%\.hwax\hwax-portal.crt` : null)}
           />
 
           <h3 style={{ color: 'var(--fg)', fontSize: '0.95rem', margin: '1.4rem 0 0' }}>
@@ -818,6 +853,46 @@ export default function TokenPage() {
           <CopyBlock label="POST /agent/chat" text={chatCurlSnippet(created.token)} />
         </section>
       )}
+
+      {access &&
+        (() => {
+          // 도구가 딸린 항목만 — 타일뿐인 플랫폼은 토큰과 무관하다. 기능도 하나 있다(전문가 심의).
+          const rows = [...access.platforms, ...access.features].filter((r) => r.tools);
+          const opened = rows.filter((r) => r.allowed);
+          const closed = rows.filter((r) => !r.allowed);
+          return (
+            <section style={{ marginBottom: '1.75rem' }}>
+              <h2 style={{ fontSize: '1.05rem', marginBottom: '0.3rem' }}>
+                이 토큰으로 지금 열리는 플랫폼
+              </h2>
+              <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.6rem' }}>
+                토큰은 하나고 범위는 내 권한이 정합니다 — 권한이 늘면 이미 발급한 토큰에도 그대로
+                붙습니다.
+              </p>
+              {opened.length === 0 ? (
+                <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: 0 }}>
+                  지금은 열리는 플랫폼이 없습니다 — 토큰을 받아도 도구가 붙지 않습니다.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  {opened.map((r) => (
+                    <span key={r.key} title={r.reason} style={chipStyle}>
+                      {r.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {closed.length > 0 && (
+                <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0.6rem 0 0' }}>
+                  닫힌 것 {closed.length}개 — {closed.map((r) => r.label).join(' · ')}.{' '}
+                  <Link to={`/access?need=${encodeURIComponent(closed[0].key)}`}>
+                    내 권한에서 요청 →
+                  </Link>
+                </p>
+              )}
+            </section>
+          );
+        })()}
 
       <h2 style={{ fontSize: '1.05rem', marginBottom: '0.6rem' }}>내 토큰</h2>
       {pats === null ? (

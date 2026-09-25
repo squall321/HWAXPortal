@@ -589,3 +589,14 @@ def test_정지는_게이트웨이_경로까지_막고_PAT_도_죽인다(client)
                       json={"status": "disabled"}, headers=hb)
     assert got.status_code == 200 and got.json()["pats_revoked"] >= 1, got.text
     assert jti in set(ts.revoked_jtis()), "정지했는데 PAT 이 살아 있다"
+
+
+def test_access_rows_say_whether_a_pat_opens_tools_there(client):
+    """TokenPage 의 '이 토큰으로 지금 열리는 플랫폼' — 게이트웨이 백엔드가 딸린 항목만 센다.
+    타일만 있는 플랫폼(HEAXHub 허브)은 토큰과 무관하다."""
+    _setup_users(client)
+    _login(client, "boss@corp.com")          # 관리자 — 전부 allowed 지만 tools 는 권한과 무관한 사실이다
+    table = client.get("/auth/access").json()
+    plats = {r["key"]: r for r in table["platforms"]}
+    assert plats["plat:smarttwin"]["tools"] is True
+    assert plats["plat:heaxhub"]["tools"] is False

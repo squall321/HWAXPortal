@@ -11,6 +11,8 @@ export interface AccessRow {
   reason: string;
   /** 가장 최근 요청 — 없으면 null. */
   request: { id: number; status: 'pending' | 'approved' | 'rejected'; created_at: number } | null;
+  /** 게이트웨이 백엔드가 딸린 항목 — PAT(개인 Claude)로 열리는 것이 이것들이다. */
+  tools: boolean;
 }
 
 export interface MyAccess {
