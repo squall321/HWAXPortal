@@ -959,7 +959,9 @@ export default function TokenPage() {
               {closed.length > 0 && (
                 <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0.6rem 0 0' }}>
                   닫힌 것 {closed.length}개 — {closed.map((r) => r.label).join(' · ')}.{' '}
-                  <Link to={`/access?need=${encodeURIComponent(closed[0].key)}`}>
+                  {/* need= 는 그 행을 강조하고 "○○ 권한이 없어 이 화면으로 왔습니다" 배너를 띄운다 —
+                      닫힌 것이 여럿이면 첫 항목을 집어 주는 것은 거짓말이 된다(실측으로 봤다). 하나일 때만 집는다. */}
+                  <Link to={closed.length === 1 ? `/access?need=${encodeURIComponent(closed[0].key)}` : '/access'}>
                     내 권한에서 요청 →
                   </Link>
                 </p>

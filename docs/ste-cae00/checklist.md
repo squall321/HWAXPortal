@@ -45,7 +45,7 @@
 - [x] 적대 검토 2라운드 10건 수정(체인 -untrusted·공유 TTL 상태·모름 상태·스니펫 잠금·사유 전파·doctor tls 행) — D-18
 - [x] 적대 검토 3라운드 10건 수정(검증 안 된 후보 금지·모름이면 잠금·리프만 안내·체인 만료·doctor ca_error·시크릿 stdin·REST 403 사유·judge 재시도) — D-19
 - [ ] Claude Code `~/.claude/settings.json` env 의 `NODE_EXTRA_CA_CERTS` 경로 — **S0 판정 뒤**(cae00 인증서 종류 + 그 env 가 Node 기동 전에 적용되는지 실측 필요, 여기서는 못 한다)
-- [~] 검증(dev, 게이트웨이 실호출): "파일 올려 돌리고 결과 받기" 끝까지 **통과**(티켓→PUT 81B→제출→재제출 409→COMPLETED→꼬리 3줄→없는 파일 404→sync 토글, D-15) · 모델 출력에 파일 바이트 0 · 권한 없는 호출자의 `list_tool_apps` 실호출(plat:smarttwin 만 → 거부 14개 라벨·요청 경로, D-16) · **화면으로 못 본 것**: 권한 없는 계정으로 TokenPage 문구(빌드·코드 경로만 확인, 실계정 없음)
+- [x] 검증(dev, 게이트웨이 실호출): "파일 올려 돌리고 결과 받기" 끝까지 **통과**(티켓→PUT 81B→제출→재제출 409→COMPLETED→꼬리 3줄→없는 파일 404→sync 토글, D-15) · 모델 출력에 파일 바이트 0 · 권한 없는 호출자의 `list_tool_apps` 실호출(plat:smarttwin 만 → 거부 14개 라벨·요청 경로, D-16) · 권한 없는 계정으로 TokenPage 문구 **화면 확인 완료**(임시 포털·플레이라이트, D-21)
 
 ## S4 — 무인화
 - [ ] tbot 봇·조인 토큰 관리자 요청(teleport-transport.md §7-1 조건) → `transport.env` 전환 · 스크립트 무변경 확인

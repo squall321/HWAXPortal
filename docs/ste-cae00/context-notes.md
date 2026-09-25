@@ -303,6 +303,26 @@ nginx 가 leaf+int 를 서빙하고 `TLS_CA_PATH` 가 루트인 **표준 사내 
 **알고 둔 것.** env-sync 가 주석 문장을 키로 읽는 잡음(`Empty`·`provider`)이 목록에 섞인다 — env-sync 파서의 기존 동작이라
 여기서 안 고쳤다. 리포 경로가 절대경로로 찍히는 것도 env-sync 의 기존 표기다(로그에만 나온다).
 
+## D-21. TokenPage 권한 화면 — 실계정으로 보고 하나 고쳤다 (2026-09-25)
+
+D-16·D-17 에서 "실계정이 없어 빌드·코드 경로만 확인" 으로 남겨 둔 것을 닫았다. **실 DB 를 건드리지 않는 방법** —
+`USER_STORE_PATH` 를 임시 파일로 주고 `SERVE_FRONTEND=1` 로 빈 포트에 uvicorn 을 띄운다(`frontend/dist` 를 그대로
+서빙하므로 SPA 도 돈다). 계정을 만들어 권한을 `PATCH /auth/access/users/<email>` 로 바꿔 가며 플레이라이트로 본다.
+끝나면 프로세스·임시 파일을 지운다. 걸린 것 넷 — `.local`·`.test` 는 EmailStr 이 거부(예약 TLD, `@corp.com` 사용),
+`serve_frontend` 기본값이 false, SPA 경로는 `/token` 이 아니라 **`/tokens`**, `pkill -f "port 8792"` 는 **자기 명령줄**을
+맞혀 셸을 죽인다(exit 144 — 포트에서 PID 를 얻어 죽인다).
+
+**본 것 셋.**
+- `feat:api-token` 없고 `plat:reportarchive` 만: "연결 설정" 화면에 새 문장과 `/access?need=feat:api-token` 링크가 뜨고,
+  누르면 그 행이 강조되며 배너가 "API 토큰 · MCP 개인 연결 권한이 없어 이 화면으로 왔습니다" 라고 정확히 말한다.
+- 관리자(전부): "이 토큰으로 지금 열리는 플랫폼" 에 칩 17개(게이트웨이 백엔드가 있는 플랫폼 16 + 전문가 심의),
+  "닫힌 것" 줄 없음. 타일뿐인 HEAXHub 허브·SPDM·Knox 는 안 들어간다 — `tools` 필드 설계가 의도대로 동작한다.
+- `feat:api-token` + `plat:smarttwin` 만: 칩 1개, "닫힌 것 16개 — …" 목록.
+
+**고친 것(이 검증이 아니면 안 보였다).** 닫힌 것이 여럿일 때 링크가 `need=<첫 항목>` 으로 가서 `/access` 배너가
+"AI 데이터 허브 권한이 없어 이 화면으로 왔습니다" 라고 **사실과 다른** 말을 했다(사용자는 일반 링크를 눌렀을 뿐이다).
+하나일 때만 그 행을 집고, 여럿이면 `/access` 로 보낸다 — 실측 재확인: 16개→`/access`, 1개→`need=plat:mxwhitepaper`.
+
 ## F. cae00 실측 (S0 에서 채운다)
 _아직 비어 있다. `ste-doctor --report` 출력을 여기에 붙인다._
 
