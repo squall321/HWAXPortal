@@ -15,6 +15,7 @@
 없으면 `per_user_sso["ste"]` 가 아예 안 생기고 ste 호출이 **서비스 계정**으로 나가,
 잡 소유자가 한 명으로 뭉친다.
 """
+import json
 import os
 import re
 import subprocess
@@ -135,13 +136,17 @@ def test_the_secret_is_not_read_with_a_default_expansion():
 # "양쪽 설정됨" 초록으로 보고할 참이었다. 이 세션에서 내내 잡아 온 바로 그 모양이다.
 #
 # 가르는 근거는 `www-authenticate` 헤더다(실측: 미들웨어는 붙이고, HTTPException 은 안 붙인다).
-def _verdict(code: str, mw: str) -> str:
-    """update-all 의 case 문을 **원문 그대로** 떼어 돌린다(복제하면 뜻이 갈린다)."""
+def _verdict(code: str, mw: str, *, secret: str = "s3cr3t", verify: str = "204") -> str:
+    """update-all 의 case 문을 **원문 그대로** 떼어 돌린다(복제하면 뜻이 갈린다).
+
+    2차 verify 가 curl 로 루프백을 치므로 `curl` 을 셸 함수로 가짜화한다 — 시험이 실물 포털을 치면 안 된다.
+    """
     i = SRC.index('  case "${_ste_sso_code:-000}/$_ste_sso_mw" in')
     block = SRC[i:SRC.index("\n  esac", i) + len("\n  esac")]
     script = "\n".join([
         'ok() { echo "OK:$*"; }', 'bad() { echo "BAD:$*"; }', 'fail() { echo "FAIL:$*"; }',
-        f'_ste_sso_code="{code}"', f'_ste_sso_mw="{mw}"', block,
+        f'curl() {{ printf "%s" "{verify}"; }}',
+        f'STE_SSO_SECRET="{secret}"', f'_ste_sso_code="{code}"', f'_ste_sso_mw="{mw}"', block,
     ])
     p = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin"})
@@ -150,8 +155,87 @@ def _verdict(code: str, mw: str) -> str:
 
 
 def test_only_a_handler_401_counts_as_configured():
-    """핸들러가 낸 401(헤더 없음)만 초록이다."""
-    assert _verdict("401", "0") == "OK"
+    """핸들러가 낸 401(헤더 없음)이고 **verify 가 204** 여야 초록이다."""
+    assert _verdict("401", "0", verify="204") == "OK"
+
+
+# ── 2차 verify — "설정됨" 과 "같은 값" 은 다르다 ─────────────────────────────
+# 포털 start.sh 와 헤드 installer 가 각자 난수를 만든다. 둘이 다르면 로그인은 되는데 ste 만 401 인데,
+# 1차 프로브(아무 값 → 401)는 그 상태를 "설정됨" 초록으로 읽었다(2026-09-24 적대 검토).
+def test_mismatched_secret_is_a_hard_fail():
+    """**이 시험이 그 가짜 초록을 막는다** — 핸들러 401 이어도 verify 401 이면 fail."""
+    assert _verdict("401", "0", verify="401") == "FAIL"
+
+
+def test_old_head_without_verify_is_not_green():
+    """verify 를 모르는 옛 판(404)은 일치 여부를 모른다 — 초록이 아니라 경고다."""
+    assert _verdict("401", "0", verify="404") == "BAD"
+
+
+def test_empty_portal_secret_cannot_be_green():
+    assert _verdict("401", "0", secret="", verify="204") == "BAD"
+
+
+def test_the_verify_step_sends_the_real_secret_to_loopback_only():
+    """실제 값은 verify 호출에만, 그리고 127.0.0.1 로만 간다 — 박스 밖으로 안 나간다."""
+    i = SRC.index("_ste_vfy=")
+    block = SRC[i:SRC.index('case "$_ste_vfy"', i)]
+    assert "$STE_SSO_SECRET" in block and "127.0.0.1:8088/ste/api/auth/sso/verify" in block
+
+
+# ── 게이트웨이 ste 세션·15812·권한 정책 — "죽어도 초록" 이던 자리 ─────────────────
+def _run_block(start_marker: str, end_marker: str, *, env_lines: list[str], health: dict, curl_code: str = "000") -> str:
+    i = SRC.index(start_marker)
+    block = SRC[i:SRC.index(end_marker, i)]
+    script = "\n".join([
+        'ok() { echo "OK:$*"; }', 'bad() { echo "BAD:$*"; }', 'fail() { echo "FAIL:$*"; }',
+        f'curl() {{ printf "%s" "{curl_code}"; }}',
+        "H='" + json.dumps(health) + "'", *env_lines, block,
+    ])
+    p = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                       env={"PATH": "/usr/bin:/bin"})
+    assert p.returncode == 0, p.stderr
+    return p.stdout
+
+
+def _ste_gw(health: dict, curl_code: str = "000", routed: str = "1") -> str:
+    out = _run_block("  # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1)", "  # ── 포털 권한 정책이",
+                     env_lines=[f'STE_ROUTED="{routed}"', 'STE_MCP_URL="http://127.0.0.1:15812/mcp"'],
+                     health=health, curl_code=curl_code)
+    return out.splitlines()[0].split(":", 1)[0] if out.strip() else ""
+
+
+def test_gateway_ste_down_is_a_fail_when_routed():
+    """/health 는 DOWN 이어도 키를 남긴다 — 값을 봐야 한다(§5 는 키 유무만 본다)."""
+    assert _ste_gw({"backends": {"ste": True}}) == "OK"
+    assert _ste_gw({"backends": {"ste": False}}) == "FAIL"
+    assert _ste_gw({"backends": {}}) == "FAIL"                     # 아예 없어도 fail
+
+
+def test_gateway_ste_down_hint_points_at_the_tunnel_port():
+    """15812 가 안 열려 있으면 ste-tunnel 을 가리켜야 한다 — '매핑된 서비스 없음' 이 아니라."""
+    out = _run_block("  # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1)", "  # ── 포털 권한 정책이",
+                     env_lines=['STE_ROUTED="1"', 'STE_MCP_URL="http://127.0.0.1:15812/mcp"'],
+                     health={"backends": {"ste": False}}, curl_code="000")
+    assert "FAIL" in out and "15812" in out and "ste-tunnel" in out
+    # 포트는 살아 있는데 게이트웨이만 못 붙었으면 재기동을 가리킨다(dev 실측: 살아 있으면 406)
+    out = _run_block("  # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1)", "  # ── 포털 권한 정책이",
+                     env_lines=['STE_ROUTED="1"', 'STE_MCP_URL="http://127.0.0.1:15812/mcp"'],
+                     health={"backends": {"ste": False}}, curl_code="406")
+    assert "FAIL" in out and "재기동" in out
+
+
+def test_gateway_ste_is_not_judged_when_not_routed():
+    assert _ste_gw({"backends": {"ste": False}}, routed="0") == ""
+
+
+def test_unloaded_access_policy_is_a_fail():
+    """정책이 안 실리면 전 백엔드가 전원에게 열린다 — 초록으로 지나가면 안 된다."""
+    def pol(loaded):
+        return _run_block("  # ── 포털 권한 정책이", "\nfi\n",
+                          env_lines=[], health={"access_policy_loaded": loaded}).splitlines()[0].split(":", 1)[0]
+    assert pol(0) == "FAIL"
+    assert pol(7) == "OK"
 
 
 def test_a_middleware_401_is_not_green():

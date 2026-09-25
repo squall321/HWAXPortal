@@ -831,7 +831,25 @@ if [ -n "$STE_UP" ]; then
   _ste_sso_code="$(printf '%s' "$_ste_sso_hdr" | sed -n 's|^HTTP/[0-9.]* \([0-9]*\).*|\1|p' | tail -1)"
   if printf '%s' "$_ste_sso_hdr" | grep -qi '^www-authenticate:'; then _ste_sso_mw=1; else _ste_sso_mw=0; fi
   case "${_ste_sso_code:-000}/$_ste_sso_mw" in
-    401/0) ok "ste 자격중계    양쪽 설정됨 (핸들러가 틀린 시크릿을 거절했다)" ;;
+    401/0) # 1차: 핸들러가 살아 있고 시크릿이 **어떤 값이든** 설정돼 있다. 그런데 이것만으로는
+           # **포털과 같은 값인지** 모른다 — 포털 start.sh 와 헤드 installer 가 각자 난수를 만드므로
+           # 불일치는 정상 경로에서 생기고, 그 상태면 "로그인은 되는데 ste 만 401" 인 채로 초록이었다
+           # (2026-09-24 적대 검토). 그래서 2차로 **실제 값**을 verify 에 친다(루프백 8088 — 박스 밖으로
+           # 안 나간다). 204 = 같다 · 401 = 다르다 · 404 = 헤드에 verify 가 없는 옛 판.
+           if [ -n "${STE_SSO_SECRET:-}" ]; then
+             _ste_vfy="$(curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST \
+                 -H "X-Heax-Gateway-Secret: $STE_SSO_SECRET" \
+                 "http://127.0.0.1:8088/ste/api/auth/sso/verify" 2>/dev/null || echo 000)"
+             case "$_ste_vfy" in
+               204) ok "ste 자격중계    양쪽 설정됨 **그리고 같은 값** (verify 204)" ;;
+               401) fail "ste 자격중계    **양쪽 시크릿이 다르다**(verify 401) — 로그인은 되는데 ste 만 401 인 상태"
+                    echo "    맞추기: FORCE_SSO_SECRET=1 SmartTwinExplorer/deploy/sync-sso-secret.sh  (포털 값으로 덮는다)" ;;
+               404) bad "ste 자격중계    설정은 됐는데 헤드 판이 verify 를 모른다(404) — 일치 여부 미확인. 헤드 코드 갱신 뒤 다시 본다" ;;
+               *)   bad "ste 자격중계    verify 응답 $_ste_vfy — 일치 여부 미확인" ;;
+             esac
+           else
+             bad "ste 자격중계    핸들러는 살아 있는데 포털 쪽 값이 비어 일치 여부를 못 본다"
+           fi ;;
     401/1) fail "ste 자격중계    ste 에 **옛 판이 떠 있다** — /api/auth/sso 를 모른다(미들웨어가 401)"
            echo "    (cae00) infra/scripts/deploy-ste.sh — Drive 스테이징의 새 코드를 헤드노드에 반영" ;;
     404/*) fail "ste 자격중계    **ste 헤드노드에 시크릿이 없다**(404) — 포털 로그인으로 ste 가 열리지 않는다"
@@ -879,6 +897,40 @@ else:
     print("      heax-hub 백엔드(:4040)·DB 기동과 admin 유저 존재를 확인하라(provision-config.sh 로그의")
     print("      'heax MCP 토큰' 라인). 최후 수동: provision.env 에 HEAX_MCP_TOKEN 설정 후 재실행.")
 PY
+  # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1) 게이트웨이 ste 백엔드가 **떠 있어야** 한다 ──────
+  # /health.backends[k] 는 DOWN 이어도 **키는 남고 값만 false** 다. §5 는 키 유무만 봐서 "빠진 백엔드
+  # 없음" 을 내고, DOWN 분기는 "매핑된 서비스 없음(수동 확인)" 에 그친다 — 그래서 cae00 에서 ste MCP 가
+  # 죽어 있어도 exit 0 이었다(2026-09-24 적대 검토). 여기서 값을 보고 fail 을 세운다.
+  if [ "${STE_ROUTED:-0}" = 1 ]; then
+    _ste_gw="$(H="$H" python3 -c 'import json,os;b=(json.loads(os.environ["H"]).get("backends") or {});print("up" if b.get("ste") is True else ("absent" if "ste" not in b else "down"))' 2>/dev/null || echo unknown)"
+    case "$_ste_gw" in
+      up)     ok "ste MCP         게이트웨이가 ste 백엔드에 붙어 있다 (도구 8종)" ;;
+      down|absent)
+        # 원인 대부분은 게이트웨이가 ste MCP(:15812)에 못 닿는 것이다. cae00 은 SSH 터널이라
+        # 15810 만 열고 15812 를 안 열면 **정확히 이 모양**이다 — 그래서 포트를 직접 찔러 가른다.
+        # 살아 있으면 GET /mcp 가 406(Accept 없음) 또는 200, 죽었으면 000 (dev 실측).
+        _mcp_probe="$(curl -s -o /dev/null -w '%{http_code}' -m 4 "${STE_MCP_URL:-http://127.0.0.1:15812/mcp}" 2>/dev/null || echo 000)"
+        case "$_mcp_probe" in
+          200|405|406) fail "ste MCP         :15812 는 살아 있는데 게이트웨이 ste 백엔드가 $_ste_gw — 게이트웨이 재기동 필요(정적 백엔드는 /refresh 로 안 붙는다)" ;;
+          *) fail "ste MCP         ${STE_MCP_URL:-http://127.0.0.1:15812/mcp} 에 아무것도 없다($_mcp_probe) — ste 도구 8종이 통째로 안 뜬다"
+             case "${STE_MCP_URL:-}" in *127.0.0.1*|*localhost*)
+               echo "    (cae00) ste-tunnel 이 15810 만 열고 있을 가능성이 크다 — 유닛의 -L 에 127.0.0.1:15812:127.0.0.1:15812 를 더하고 재기동" ;;
+             esac ;;
+        esac ;;
+      *) bad "ste MCP         게이트웨이 /health 를 못 읽어 판정 불가" ;;
+    esac
+  fi
+  # ── 포털 권한 정책이 게이트웨이에 **실려 있어야** 한다 ────────────────────────────────
+  # 안 실리면 `_backend_allowed` 가 정책 없음 = 전원 허용으로 판정한다. 그 상태에서 per_user 백엔드
+  # (ste·kooremapper)를 부르면 시크릿을 쥔 게이트웨이가 **임의 이메일로 계정을 JIT 생성**한다.
+  # 새 클론(캐시 파일 없음)·옛 포털(404) 에서 생기고, 아무도 이 값을 안 봤다.
+  _pol="$(H="$H" python3 -c 'import json,os;print(int(json.loads(os.environ["H"]).get("access_policy_loaded") or 0))' 2>/dev/null || echo -1)"
+  if [ "$_pol" = "0" ]; then
+    fail "권한 정책        게이트웨이에 포털 권한 정책이 **안 실렸다**(access_policy_loaded=0) — 전 백엔드가 전원에게 열린다"
+    echo "    포털 /internal/access/policy 가 200 인지, 게이트웨이가 GATEWAY_SHARED_TOKEN 으로 그것을 받는지 본다(60초마다 재시도)"
+  elif [ "$_pol" != "-1" ]; then
+    ok "권한 정책        게이트웨이에 백엔드 ${_pol}개분 적재됨"
+  fi
 fi
 
 # heax-hub dist base 검증 — 앱 '열기'는 window.open(BASE_URL + '/apps/<id>/') 로 열린다.

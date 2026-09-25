@@ -12,13 +12,13 @@
 - [ ] 확정할 것: Drive `SmartTwinExplorer/staging` 의 `ste-code.commit` 이 dev HEAD·헤드 배포본과 같은가
 
 ## S1 — 시크릿 유출 차단 + 죽어도 초록인 자리 넷
-- [ ] `refresh-code.sh` §8 → `sync-sso-secret.sh` 호출로 교체(argv 에 시크릿 0건) · FORCE 분기도 stdin
+- [x] `refresh-code.sh` §8 → `sync-sso-secret.sh` 호출로 교체(argv 에 시크릿 0건) · FORCE 분기도 stdin — ste `41ef116`, dev VM ps 6,240줄 샘플에 값 0건
 - [ ] 이미 argv 판으로 배포된 회차가 있으면 시크릿 회전(`FORCE_SSO_SECRET=1`) — S0 결과에 따라
-- [ ] ste `POST /api/auth/sso/verify`(204/401, JIT 없음) + §6 이 포털 실제 값으로 판정 · "아무 값 401=설정됨" 폐기
-- [ ] §5/§6 이 `/health.backends.ste == true` 를 본다 · 15812 프로브 · STE_ROUTED=1 이고 DOWN 이면 fail
-- [ ] §6 `access_policy_loaded == 0` → fail · 게이트웨이 per_user 백엔드는 정책 미적재 = 거부
-- [ ] 검증: dev 에서 거짓 상태 넷(시크릿 다름·15812 차단·정책 캐시 삭제·ste 세션 끊김)을 만들어 빨강 확인
-- [ ] 변이: 각 가드를 되돌리면 해당 시험만 깨진다
+- [x] ste `POST /api/auth/sso/verify`(204/401, JIT 없음) + §6 이 포털 실제 값으로 2차 판정 — ste `3317f85`, 1차 프로브(옛 판·404 판별)는 유지
+- [x] §6 이 `/health.backends.ste == true` 를 본다 · 15812 프로브(살아 있으면 406/200) · STE_ROUTED=1 이고 DOWN 이면 fail + 터널 -L 15812 힌트
+- [~] §6 `access_policy_loaded == 0` → fail(완료) · 게이트웨이 per_user 백엔드 정책 미적재 = 거부(다음)
+- [x] 검증: 시험 하네스에서 거짓 상태 넷(verify 401·ste false/absent·15812 000·정책 0)을 만들어 빨강 확인 + dev 실물에서 셋 초록
+- [x] 변이: 세 가드를 되돌리면 각각 해당 시험만 깨진다
 
 ## S2 — 셋업 자동화
 - [ ] `infra/systemd/ste-tunnel.service` 템플릿(-L 15810·15812, ExitOnForwardFailure, Restart=always) + `install-ste-tunnel.sh`(transport.env 읽기, linger)
@@ -45,6 +45,6 @@
 - [ ] tbot 봇·조인 토큰 관리자 요청(teleport-transport.md §7-1 조건) → `transport.env` 전환 · 스크립트 무변경 확인
 - [ ] 그 전까지: 가이드에 "cae00 ste 는 사람 로그인 전제" 명문화 · `ste-doctor` 잔여 TTL 표시
 
-## 사용자 결정
-- [ ] §1 의 "셋업/갱신 분리 + 세 신호 게이트" 를 받아들일지 (대안: 현행 `STE_DEPLOY=1` 수동 유지 — ste 가 사람이 돌릴 때까지 낡고 §6 이 그 사실을 fail 로 말한다)
-- [ ] 자동 라우트 기록(`HWAX_STE_AUTOROUTE`)을 기본 켤지 제안만 할지
+## 사용자 결정 (2026-09-25 확정)
+- [x] 셋업/갱신 분리 + 세 신호 게이트 — **채택.** 새 옵션에도 쓰이게 **공용 함수**로(D-13)
+- [x] 자동 라우트 기록 — **기본 켬**(`HWAX_STE_AUTOROUTE=0` 으로만 끈다)
