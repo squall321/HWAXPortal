@@ -16,7 +16,7 @@
 - [ ] 이미 argv 판으로 배포된 회차가 있으면 시크릿 회전(`FORCE_SSO_SECRET=1`) — S0 결과에 따라
 - [x] ste `POST /api/auth/sso/verify`(204/401, JIT 없음) + §6 이 포털 실제 값으로 2차 판정 — ste `3317f85`, 1차 프로브(옛 판·404 판별)는 유지
 - [x] §6 이 `/health.backends.ste == true` 를 본다 · 15812 프로브(살아 있으면 406/200) · STE_ROUTED=1 이고 DOWN 이면 fail + 터널 -L 15812 힌트
-- [~] §6 `access_policy_loaded == 0` → fail(완료) · 게이트웨이 per_user 백엔드 정책 미적재 = 거부(다음)
+- [x] §6 `access_policy_loaded == 0` → fail · 게이트웨이 per_user 백엔드 정책 미적재 = 거부(`_deny_reason` → `policy_not_ready`, 테스트로 확인)
 - [x] 검증: 시험 하네스에서 거짓 상태 넷(verify 401·ste false/absent·15812 000·정책 0)을 만들어 빨강 확인 + dev 실물에서 셋 초록
 - [x] 변이: 세 가드를 되돌리면 각각 해당 시험만 깨진다
 
@@ -49,7 +49,7 @@
 
 ## S4 — 무인화
 - [ ] tbot 봇·조인 토큰 관리자 요청(teleport-transport.md §7-1 조건) → `transport.env` 전환 · 스크립트 무변경 확인
-- [ ] 그 전까지: 가이드에 "cae00 ste 는 사람 로그인 전제" 명문화 · `ste-doctor` 잔여 TTL 표시
+- [x] 그 전까지: 가이드에 "cae00 ste 는 사람 로그인 전제" 명문화 · `ste-doctor` 잔여 TTL 표시 — D-22(가이드 §4)
 
 ## 사용자 결정 (2026-09-25 확정)
 - [x] 셋업/갱신 분리 + 세 신호 게이트 — **채택.** 새 옵션에도 쓰이게 **공용 함수**로(D-13)

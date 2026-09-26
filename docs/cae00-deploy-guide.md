@@ -1,33 +1,66 @@
 # cae00 배포 가이드 — 무엇이 `update-all` 로 되고, 무엇이 따로인가
 
-> 이 문서는 실제 스크립트(update-all.sh · deploy-all-from-drive.sh · AIDataHub deploy · STE deploy · 심의 파이프라인)를
-> 라인 단위로 대조해 작성했다. 런타임(cae00 실행) 검증이 아니라 소스 검증이므로, 박스별 상태
-> (provision.env 토큰 · rclone remote · .env 포트)에 따라 결과가 달라질 수 있다(§끝 주의 참조).
+> **대조 시점 2026-09-26.** 실제 스크립트(update-all.sh · deploy-all-from-drive.sh · AIDataHub deploy ·
+> STE deploy · 심의 파이프라인)와 대조해 썼다. 런타임(cae00 실행) 검증이 아니라 소스 검증이므로, 박스별
+> 상태(provision.env 토큰 · rclone remote · .env 포트)에 따라 결과가 달라질 수 있다(§끝 주의 참조).
+>
+> ⚠ 근거는 **줄번호 대신 배너 문자열**로 가리킨다(`update-all.sh: hr "2c) …"`). update-all.sh 가 1,400여 줄로
+> 자라며 줄번호가 통째로 밀렸고, 옛 인용이 엉뚱한 코드를 가리켜 이 문서를 믿을 수 없게 만들었다(2026-09-26 감사).
 
 ## 0. 한 줄 요약
 
-- **`update-all` 한 방에 되는 것**: 포털·챗 스택·MCP 게이트웨이 배포 + **AIDataHub 데이터(전문가·카드) 병합** + 워크플로 사본 동기화 + 헬스 게이트.
-- **`update-all` 로 안 되는 것**: **STE(SmartTwinExplorer)**. ste 헤드노드(에어갭)에 사는 별도 서비스라 프로브만 한다 — 배포는 `deploy-ste.sh` 를 따로 실행한다.
-- **dev 가 선행해야 하는 것**: 전문가/카드를 **dev AIDataHub 에 업로드 → `backup-to-drive`** (그래야 cae00 이 병합해 온다). STE 는 **`pack-staging + push-to-drive`**.
+- **`update-all` 한 방에 되는 것**: 포털·챗 스택·MCP 게이트웨이 배포 + **AIDataHub 데이터(전문가·카드) 병합** +
+  워크플로 사본 동기화 + `.env` 새 옵션 채움(1c) + ste 라우트 자동 기록(1d) + `/data` 이관(2b) +
+  **ste 코드 최신화(2c)** + agent-server `.env` 보정(3.5) + 헬스 게이트(§6·6b) + 챗 스모크(§7).
+- **`update-all` 로 안 되는 것**(진짜 사람 몫 셋): ① ste **최초 반입**(번들·SIF·installer·토큰, 런북 §1~§8)
+  ② `ste-tunnel` 유닛 설치(`install-ste-tunnel.sh`) ③ **프론트 빌드** — cae00 은 npm 에 못 닿아 Drive 아티팩트를 받는다.
+- **dev 가 선행해야 하는 것**: 전문가/카드를 **dev AIDataHub 에 업로드 → `backup-to-drive`**(그래야 cae00 이 병합해
+  온다). 빌드 아티팩트·ste 코드는 **`./infra/scripts/build-all-to-drive.sh [대상…]`** → **`./infra/scripts/drive-drift.sh`**
+  로 Drive 가 dev 와 같은지 확인(0=일치·1=드리프트·2=확인불가). 안 올리면 cae00 은 그만큼 옛것을 받는다.
+- **로그 표식 셋을 가른다** — `✗` 만 종료코드를 세운다 · `⚠` 는 경고 · **`○` 는 "기능은 있는데 옵션·설정이 없어
+  이번 실행에서 셋업하지 않았다"** 로, 끝의 요약에 "켜려면" 과 함께 다시 나온다(실패가 아니다).
 
 ---
 
 ## 1. `git pull && update-all` 이 실제로 하는 일
 
-`update-all` 은 스스로 최신화한다 — 앞의 `git pull` 없이도 §1 이 포털 레포를 `fetch + reset --hard origin/<branch>` 후 새 버전으로 1회 재실행한다(`UPDATE_ALL_REEXEC` 가드로 딱 1번). 로컬 수정을 지키려면 `NO_GIT_RESET=1 update-all`(ff-only, reset 대신 stash).
+`update-all` 은 스스로 최신화한다 — 앞의 `git pull` 없이도 §1 이 포털 레포를 `fetch + reset --hard origin/<branch>` 후 새 버전으로 1회 재실행한다(`UPDATE_ALL_REEXEC` 가드로 딱 1번). 로컬 수정이 있으면 — **기본 경로가 `git stash push -u` 로 치운 뒤 `reset --hard origin/<branch>`** 한다(치운 것은
+`git stash pop` 으로 되돌린다). `NO_GIT_RESET=1` 은 **`merge --ff-only` 만** 하고 stash 는 하지 않는다(ff 불가면 현재
+체크아웃 유지). 즉 stash 는 기본 쪽이고, `NO_GIT_RESET=1` 은 "아무것도 건드리지 말고 앞으로만 감기" 다.
 
 | 단계 | 하는 일 | 근거 |
 |---|---|---|
-| §1 | 포털 레포 self-update(fetch+reset) → 1회 재실행 | update-all.sh:66-89 |
-| **§1a** | **워크플로 정본→런타임 사본 동기화** — `infra/pipeline/*.js`(meta 보유)를 gitignore 사본 `.claude/workflows/` 로 복사. 이름호출 런타임이 옛 사본 쓰는 갭 봉합 | update-all.sh:91-95 · sync-workflows.sh |
-| §1b | 배포 전 로컬 백업(/data/backups) + 일일 cron(03:30) 멱등 보장 | update-all.sh:97-115 |
-| §2 | **전 서비스 배포** — `deploy-all-from-drive`: `portal mxwp heax aidh signalforge kooremapper`. 각 서비스 git pull → Drive 에서 **미리 빌드된 아티팩트 반입**(cae00 은 빌드 불가) → START. 끝에 nginx conf 재생성+재기동 | deploy-all-from-drive.sh:145,2-6,374-400 |
-| **§3** | **AIDataHub 데이터 병합** — 아래 §2 참조. 비파괴 merge | update-all.sh:139-182 |
-| §4 | 챗 스택 pull+재기동 — `signalforge-mcp mcp-gateway agent-server`(백엔드→게이트웨이→소비자 순) | update-all.sh:233-242 |
-| §5 | 게이트웨이 config 정합 — 기대 백엔드 빠졌으면 `provision-config --force` 후 재기동·재검증 | update-all.sh:244-364 |
-| §6 | **헬스 게이트**(critical): portal:8723 · nginx:8088 · agent-server:9009 · gateway:9110 의 `/health→200`. 하나라도 실패면 `exit 1` | update-all.sh:402-420 |
+| **§0a** | `--with-<name>` 파싱 → `HWAX_WITH` — 무거운·외부 배포 단계를 이번 실행에 한해 강제(첫 사용처 `--with-ste`) | `hr` 없음(상단) · `lib/deploy-gate.sh` |
+| **§0b** | **flock 단일 실행 잠금** — 겹쳐 돌리면 기다리지 않고 **rc 3** 으로 즉시 끝난다(§2 의 rc 3 = 소스 갱신 실패와 다른 뜻) | update-all.sh 상단 |
+| §1 | 포털 레포 self-update(fetch+reset) → 1회 재실행 | `hr "1)"` |
+| **§1a** | **워크플로 정본→런타임 사본 동기화** — `infra/pipeline/*.js`(meta 보유)를 gitignore 사본 `.claude/workflows/` 로 복사. 이름호출 런타임이 옛 사본 쓰는 갭 봉합 | 배너 없음(§1 뒤) · sync-workflows.sh |
+| §1b | 배포 전 로컬 백업(/data/backups) + 일일 cron(03:30) 멱등 보장 | `hr "1b)"` |
+| **§1c** | **`.env` 옵션 동기화**(env-sync.sh) — `.env.example` 의 새 키를 기존 `.env` 에 덧붙인다. 비밀·자리표시자는 **주석으로만** 넣고 "값을 정해야 한다" 로 보고(그 설정이 켜는 기능은 꺼진 상태) | `hr "1c)"` |
+| **§1d** | **ste 라우트 자동 기록** — teleport 박스인데 `routes.local.env` 에 `ste=` 가 없으면 `ste=http://127.0.0.1:15810/` 를 적는다(§2 가 그 뒤에 nginx 를 다시 만든다). `HWAX_STE_AUTOROUTE=0` 으로만 끈다 | `hr "1d)"` |
+| §2 | **전 서비스 배포** — `deploy-all-from-drive`: `portal mxwp heax aidh signalforge kooremapper`. 각 서비스 git pull → Drive 에서 **미리 빌드된 아티팩트 반입**(cae00 은 빌드 불가) → START. 끝에 nginx conf 재생성+재기동 | deploy-all-from-drive.sh |
+| **§2b** | `/data` 이관 — `HWAX_DATA_ROOT` 가 있을 때만(멱등·자동 롤백) | `hr "2b)"` |
+| **§3** | **AIDataHub 데이터 병합** — 아래 §2 참조. 비파괴 merge | `hr "3)"` |
+| **§2c** | **ste 코드 최신화(다를 때만)** — `deploy-ste.sh --if-stale`(상한 900초). direct 박스는 지문이 다를 때만, teleport 박스는 공용 게이트 세 신호를 통과할 때만. 게이트가 막으면 rc 3 = "안 켬"(○ 장부) | `hr "2c)"` |
+| §4 | 챗 스택 pull+재기동 — `signalforge-mcp mcp-gateway agent-server`(백엔드→게이트웨이→소비자 순) | `hr "4)"` |
+| **§3.5** | agent-server `.env` 보정 — `@FROM_RA` 미치환 마커 제거·재치환, `VLLM_BASE_URL` 확정 | `hr "3.5)"` |
+| §5 | 게이트웨이 config 정합 — 기대 백엔드 빠졌으면 `provision-config --force` 후 재기동·재검증 | `hr "5)"` |
+| §6 | **헬스 게이트**(critical) — 아래 표 밖 설명 참조 | `hr "6)"` |
+| **§6b** | services.yaml 대조(기동·데이터 대상) | `hr "6b)"` |
+| **§7** | **챗 스모크**(critical) — `/chat` 에 실제 문장 하나를 보내 응답이 오는지. 실패면 agent-server 로그 꼬리를 함께 낸다 | 스크립트 끝 |
+| 끝 | **○ "있는데 안 켠 것" 요약** — 기능 N · 값 미정 설정 N · 선택 설정 N, 각각 "켜려면" 과 함께 | `hwax_skip_summary` |
 
-**STE 는 §6 에서 프로브만** 한다(백엔드가 이 박스가 아니라 헤드노드라 실패해도 비치명). 실패 시 `deploy-ste.sh` 를 **힌트로 안내만** 하고 호출하지 않는다(update-all.sh:485-486,516).
+**화면에 찍히는 실제 순서**(배너 문자열) — `1) · 1b) · 1c) · 1d) · 2) · 2b) · 3) · 2c) · 3.5) · 4) · 5) · 6) · 6b) · 7)`.
+번호가 순서와 어긋난 자리가 있다(2c 가 3 뒤, 3.5 가 2c 뒤) — 배너 문자열로 찾는 것이 안전하다.
+
+**§6 의 치명 항목**(하나라도 실패면 끝에서 `exit 1`, 그리고 무엇이 세웠는지 목록을 다시 낸다) — 무인증 `/health`
+넷(portal:8723 · nginx:8088 · agent-server:9009 · gateway:9110) · 절차 모듈(`/procedures-api/health` 의 본문 `ok:true`,
+상태코드로는 못 본다) · **SPA dist 대조**(`frontend/dist/.build-src` ≠ `HEAD:frontend` → dev 에서 빌드+Drive 발행이 필요
+하다는 뜻) · 게이트웨이 **권한 정책 적재**(`access_policy_loaded=0` 이면 전 백엔드가 열리고 위임 백엔드는 닫힌다) ·
+`ste=` 라우트가 있는 박스에서는 **ste 자격 중계**(시크릿 불일치 401 · 헤드에 시크릿 없음 404 · 포털 쪽 공백 · 옛 판)와
+**ste MCP :15812**(미부착·무응답 — ste 도구 8종이 통째로 안 뜬다). 비치명(`⚠`)은 백엔드 도달·프록시 본문 같은
+"이 박스 밖" 항목과 판정 불가 갈래다. **그리고 §2c 가 `deploy-ste.sh` 를 실제로 부른다** — 옛 문서의 "프로브만 한다 ·
+힌트로 안내만 하고 호출하지 않는다" 는 2026-09-23 이전 사실이다. ste 가 빨강이면 먼저
+`./infra/scripts/ste-doctor.sh`(한 화면 진단, `--report` 로 JSON) 를 본다.
 
 ---
 
@@ -57,7 +90,9 @@ ExpertAgents(저작)                    dev AIDataHub                Drive      
 §3 이 `merge-from-drive.sh` 로 Drive 최신 덤프를 **스테이징 DB 에 로드 후 병합**한다 — **dev 신규는 추가, cae00 자체 등록분은 보존(DROP 안 함, 운영 DB 가 순간도 안 빈다)**. 최신 덤프가 지난 병합분(`.last-merged`)과 같으면 생략(update-all.sh:170-182, merge-from-drive.sh:9).
 
 - 즉 **재기동만으로는 반영 안 된다**(레지스트리는 시작 스냅샷이지만 데이터는 Postgres 영속). **§3 병합**이 반영 지점이고, `update-all` 이 그걸 돈다.
-- `sync-from-drive.sh`(DROP+CREATE+restore, 파괴적 전체복원)는 **update-all/deploy-all 이 자동 호출하지 않는다** — 재해복구·초기시드용 별도 수동 명령이다. 일상 반영은 §3 merge 로 충분하다.
+- `sync-from-drive.sh`(DROP+CREATE+restore, 파괴적 전체복원)는 **복원을 자동으로 하지 않는다**. 단 §3 이 매 실행마다
+  `--dry-run --skip-git` 으로 한 번 부른다 — 스택·임베딩 모델 확보용이고 데이터는 건드리지 않는다. 파괴적 전체복원은
+  사람이 **인자 없이** 부를 때만이다(재해복구·초기시드). 일상 반영은 §3 merge 로 충분하다.
 
 ---
 
@@ -65,24 +100,37 @@ ExpertAgents(저작)                    dev AIDataHub                Drive      
 
 MCP 경로(Claude Code·게이트웨이)와 웹 경로(`/시뮬심의`) **둘 다 반영**돼 있다.
 
-- **수치 스파인 5석 고정 착석**(정식화·이산화·검증 + 리뷰어 2석) — 기본 ON.
-  - MCP: `hwax-sim-deliberate.js` `FIXED_CAE`(방법론 2 + 스파인 5 = 7석), `spine`/`spineReview` 플래그(기본 true).
-  - 웹: `deliberation.py` `_SIM_FIXED_CAE`, env `DELIB_SIM_SPINE`/`DELIB_SIM_SPINE_REVIEW`(기본 1).
+- **수치 스파인 고정 착석** — 기본 ON. 좌석 수가 두 경로에서 다르다(솔버 좌석 유무).
+  - MCP: `hwax-sim-deliberate.js` `FIXED_CAE` = 방법론 2(modeling·post) + `SPINE_CORE` **4**(정식화·이산화·**솔버**·검증)
+    + `SPINE_REVIEW` 2 + `SPINE_VALIDATION` 2 = **10석**. 플래그 `spine`/`spineReview`/`spineValidation`(기본 true).
+  - 웹: `deliberation.py` `_SIM_FIXED_CAE` = 방법론 2 + 코어 **3**(솔버 없음) + 리뷰 2 + 검증·UQ 2 = **9석**.
+    env `DELIB_SIM_SPINE`/`DELIB_SIM_SPINE_REVIEW`/`DELIB_SIM_SPINE_VALIDATION`(기본 1).
 - **카드 그라운딩** — 발언이 지식카드를 인용.
-  - MCP: `groundCards`(sim 기본 ON) → 각 좌석이 `get_context_bundle(agent_type)`·`semantic_search` 호출(hwax-deliberate.js:191-198).
-  - 웹: `DELIB_PERSONA_KNOWLEDGE`(기본 1) → 페르소나별 `agent_search` 결정적 RAG 주입(deliberation.py:1837) — 다른 메커니즘, 같은 AIDataHub 의존.
+  - MCP: `groundCards`(sim 기본 ON) → 각 좌석이 `get_context_bundle(agent_type)`·`semantic_search` 호출(`hwax-deliberate.js` 의 `groundCards`).
+  - 웹: `DELIB_PERSONA_KNOWLEDGE`(기본 1) → 페르소나별 `agent_search` 결정적 RAG 주입(`deliberation.py` 의 같은 이름 게이트) — 다른 메커니즘, 같은 AIDataHub 의존.
 - **전제(둘 다)**:
   1. **AIDataHub 에 해당 `xd-cae-*`(+발굴 대상) 전문가·records 가 동기화**돼 있어야 근거가 빈 값이 아니다 → §2 의 업로드+병합.
   2. **세션에 게이트웨이 MCP 연결** — 도구(get_context_bundle/agent_search/recommend_agents)가 노출돼야 한다. 미연결 시 MCP 는 페르소나 지식으로 발언(가법적·회귀 없음), 웹은 카드 주입 생략.
   3. **이름호출 최상위 워크플로**(hwax-sim-deliberate)는 `.claude/workflows/` 사본을 읽으므로 §1a 동기화가 선결(자식 hwax-deliberate 호출은 scriptPath 라 무관).
 
-**검증 방법**: cae00 재기동 후 `/시뮬심의` 1건 → 2단 좌석에 스파인 7석이 뜨는지 + 발언에 카드 출처가 붙는지.
+**검증 방법**: cae00 재기동 후 `/시뮬심의` 1건 → 고정 좌석 목록(방법론 2 + 코어 + 리뷰 2 + 검증·UQ 2)이 **다 앉았는지**
++ 발언에 카드 출처가 붙는지. 좌석 **수**로 판정하지 않는다 — MCP 10 · 웹 9 로 다르고 플래그로도 바뀐다.
 
 ---
 
 ## 4. STE(SmartTwinExplorer) — 왜/어떻게 따로 배포하나
 
-STE 백엔드는 **cae00 가 아니라 에어갭 ste 헤드노드** 에 있다. cae00 은 그 헤드노드 직결 경로가 없어 **Teleport SSH 터널**(루프백 127.0.0.1:15810, `ste-tunnel`)로 닿는다. 그래서 STE 는 `services.yaml` 에 없고 `update-all` 은 프로브만 한다.
+STE 백엔드는 **cae00 가 아니라 에어갭 ste 헤드노드** 에 있다. cae00 은 그 헤드노드 직결 경로가 없어 **Teleport SSH
+터널**(`ste-tunnel`)로 닿는데 **포트가 둘**이다 — 루프백 **15810**(웹·REST)과 **15812**(ste MCP). 15812 가 없으면 게이트웨이
+ste 백엔드가 영구 DOWN 이고 **ste 도구 8종이 통째로 안 뜬다**(§6 이 fail 로 잡는다). 유닛은 리포가 소유한다 —
+`infra/systemd/ste-tunnel.service` 템플릿 + `./infra/scripts/install-ste-tunnel.sh`(설치 · `--check` 로 두 포트 실측 ·
+`remove`, linger 포함, 값은 `transport.env` 에서 읽는다). STE 는 `services.yaml` 의 **기동·갱신 대상이 아니다**(데이터만
+`data_only:` 에 등록돼 `services.py data --check` 가 본다).
+
+**cae00 의 ste 는 무인화되어 있지 않다.** 배포·터널·사용자 위임이 모두 사람의 `tsh login` 인증서에 매달린다 — 만료되면
+§2c 는 전제조건 실패로 ○ 를 찍고(실패 아님) 터널은 죽는다. 잔여 시간은 `./infra/scripts/ste-doctor.sh` 의 `teleport` 행에서
+본다(형식을 못 읽으면 "모름" 으로 낸다 — 모름을 정상으로 읽지 않는다). 무인화(tbot·Machine ID)는 관리자 협조가 필요한
+별도 과제다(docs/ste-cae00 S4, 미착수).
 
 ### STE 는 3단계
 
@@ -90,25 +138,46 @@ STE 백엔드는 **cae00 가 아니라 에어갭 ste 헤드노드** 에 있다. 
 ① (1회) 최초 반입 — 런북 §1~§8 수동 (사람)
       Teleport·transport.env · cluster.prod.yaml(노드·계정·키·라이선스) · 번들 9.6GB + SIF · installer(설치·토큰) · 첫 서비스 배포
       ↳ 관리자 협조(계산노드 공개키 등록 등) 필요. 정본: SmartTwinExplorer/docs/03-runbook/cae00-staging.md
-② (이후) dev: deploy/pack-staging.sh
-              STE_BUNDLE_DIR=var/staging deploy/push-to-drive.sh --path SmartTwinExplorer/staging
-③ (이후) cae00: infra/scripts/deploy-ste.sh        # = STE deploy/refresh-code.sh(§11) 트리거
+      ↳ 터널 유닛(15810·15812): ./infra/scripts/install-ste-tunnel.sh   (--check 로 두 포트 확인)
+② (이후) dev: ./infra/scripts/build-all-to-drive.sh ste   # pack-staging + push-to-drive(Drive staging)
+              ./infra/scripts/drive-drift.sh              # Drive 가 dev HEAD 와 같은지 대조(0=일치)
+③ (이후) cae00: ./infra/scripts/update-all.sh --with-ste   # §2c 가 deploy-ste.sh 를 부른다(게이트 통과 시)
+              또는 ./infra/scripts/deploy-ste.sh           # 사람이 직접 = 게이트 없이 전면 갱신
 ```
 
-- `deploy-ste.sh` → `refresh-code.sh` 체인: pull-from-drive → sha256 → git 커밋 고정 → dist 전개 → (requirements 바뀐 회차만) wheel 병합 → deploy-frontend `--no-build` → deploy-backend. 배포 후 포털 프록시 `/ste/api/health` 본문에 `smart-twin-explorer` 있는지로 검증.
+- `deploy-ste.sh` → `refresh-code.sh` 체인(teleport 경로): pull-from-drive → sha256 → git 커밋 고정 → dist 전개 →
+  (requirements 바뀐 회차만) wheel 병합 → **`deploy-backend.sh` → `deploy-frontend.sh --no-build`**(back 이 먼저다 —
+  front 를 먼저 돌리면 첫 배포에서 `Unit ste-backend.service not found` 로 죽는다) → 에이전트용 **CA 번들**(실패해도 계속)
+  → **포털 자격 중계 시크릿**(`deploy/sync-sso-secret.sh`, 값은 stdin 으로만 넘긴다 — argv 는 Teleport 감사원장·`ps` 에 남는다).
+  배포 후 포털 프록시 `/ste/api/health` 본문에 `smart-twin-explorer` 있는지로 검증. 시크릿이 어긋나면
+  `FORCE_SSO_SECRET=1 ../SmartTwinExplorer/deploy/sync-sso-secret.sh`(포털 값으로 덮는다).
 - **런타임 게이트**(refresh-code.sh:27-33): transport.env 존재, `tr_run 'true'`로 헤드노드 도달(Teleport 세션 만료면 §9-A), 정체성 가드(cae00 자신 가리키면 §9-D). 조건 안 되면 fail-fast.
 - **최초 반입(①)은 자동화 밖** — refresh-code.sh 는 §11(코드 갱신)만 한다. 번들·SIF·토큰은 1회성이라 스크립트가 대신 안 한다.
 
-> **현재 상태 메모(2026-08-26)**: 클러스터측(Teleport·SIF·설치)은 완료, **cae00 에 staging 만 없음**. staging 은 `refresh-code.sh` 가 직접 당기므로 — **staging 이 Drive 에 있으면** cae00 에서 `deploy-ste.sh` 한 번이 첫 코드 배포가 된다. 없으면 dev 에서 ②(pack+push) 먼저.
+> **박스 상태는 날짜를 박아 적지 않는다** — 옛 메모("cae00 에 staging 만 없음", 2026-08-26)가 한 달 낡은 채 남아 사람을
+> 잘못 이끌었다. 지금 상태는 **재서 안다**: cae00 에서 `./infra/scripts/ste-doctor.sh --report` 한 번(라우트·전송 모드·
+> 15810·15812·터널 유닛·Teleport 잔여·시크릿 verify·게이트웨이 ste 세션·권한 정책·포털 TLS·배포 신선도). dev 에서는
+> `./infra/scripts/drive-drift.sh` 가 Drive staging 커밋과 dev HEAD 를 대조한다.
 
-### `--with-ste` (원하면 붙일 수 있음, 현재 미적용)
+### `--with-ste` — **구현됨**(셋업과 갱신을 가르는 공용 게이트)
 
-`update-all --with-ste` = 평소 배포 + 끝에 `deploy-ste.sh` 트리거. 구현은 플래그 파싱 2줄이면 된다.
-```sh
-case " $* " in *" --with-ste "*) WITH_STE=1 ;; esac      # 상단
-[ "${WITH_STE:-0}" = 1 ] && "$SELF_REPO/infra/scripts/deploy-ste.sh"   # 배포 끝
-```
-**기본은 분리 유지** — `--with-ste` 없이 도는 routine·크론 실행에 실 ste 에어갭 배포가 섞여 발화하지 않게. 명시적으로 줄 때만 STE 가 간다.
+`--with-<name>` 은 일반 규칙이다(§0a) — 이름을 `HWAX_WITH` 로 실어 그 단계를 이번 실행에 한해 강제한다. 판정은
+`infra/scripts/lib/deploy-gate.sh` 의 `hwax_gate` 하나이고, **세 신호가 모두 참일 때만** 배포한다.
+
+| 신호 | 참이 되는 조건 |
+|---|---|
+| ① 사람 호출 | 대화형 터미널(`[ -t 0 ]`) **또는** `--with-ste` **또는** `STE_DEPLOY=1`. 크론·파이프는 거짓 |
+| ② 신선도 | Drive `ste-code.commit` ≠ 헤드 `/opt/ste/.deployed-commit`(배포할 변경이 있다). 같으면 건너뜀. **못 재면 "모름" 이고 모름은 같음이 아니다** — 사람이 부른 경우만 진행하며 사유를 남긴다 |
+| ③ 전제조건 | `tr_run true` — Teleport 세션으로 헤드노드에 닿는다 |
+
+- 막히면 `deploy-ste.sh` 가 **rc 3** 을 돌려주고 update-all 은 그것을 "안 켬" 으로 읽어 **○ 장부**에 사유와 "켜려면
+  `--with-ste`" 를 적는다(실패가 아니다). 옛 문서의 스니펫을 손으로 넣으면 §2c 와 **이중 트리거**가 되니 넣지 않는다.
+- **대화형 실행은 그 자체로 ①을 만족한다** — cae00 에서 사람이 손으로 `./infra/scripts/update-all.sh` 를 치면 ②③이
+  참인 회차에는 ste 실배포가 그 안에서 돈다. 헤드를 건드리고 싶지 않은 회차라면 Drive 를 올리지 않아(②가 거짓) 두거나,
+  터미널이 아닌 경로(크론·파이프)로 돌린다.
+- `./infra/scripts/update-forges.sh`(무인자)에 딸려 오는 ste 는 **게이트 경유**다(2026-09-26 수정). 전면 갱신은 이름을
+  대야 한다 — `./infra/scripts/update-forges.sh ste` 는 지문이 같아도 유닛·venv·시크릿까지 다시 맞춘다(에어갭 박스에서는
+  Drive 왕복 + 헤드 재기동이라 "수 분" 이 아니다).
 
 ---
 
@@ -116,10 +185,14 @@ case " $* " in *" --with-ste "*) WITH_STE=1 ;; esac      # 상단
 
 ```sh
 # ── 포털·챗·MCP·AIDataHub 반영 (cae00) ──
-./infra/scripts/update-all.sh              # 자기 최신화 + 전서비스 + AIDH merge + 헬스게이트
-./infra/scripts/update-forges.sh           # ★경량 표적 갱신: stepforge+dynaforge+ste+chat(수 분)
+./infra/scripts/update-all.sh              # 자기 최신화 + 전서비스 + AIDH merge + ste(2c) + 헬스게이트 + 챗 스모크
+#   rc 3 = 다른 update-all 이 돌고 있다(0b flock — 겹쳐 돌리지 않는다). §2 의 rc 3(소스 갱신 실패)과 다른 뜻이다.
+#   끝의 ○ 줄은 실패가 아니라 "옵션·설정이 없어 안 켠 단계" 다 — "켜려면" 이 함께 나온다.
+./infra/scripts/update-all.sh --with-ste   # ste 를 이번 실행에 강제(에어갭 배포는 게이트 세 신호를 본다)
+./infra/scripts/ste-doctor.sh              # ★ste 한 화면 진단(--report 로 JSON). 라우트·15810·15812·터널·TTL·시크릿·TLS
+./infra/scripts/update-forges.sh           # ★경량 표적 갱신: stepforge+dynaforge+ste+chat — 딸려 온 ste 는 게이트 경유
 ./infra/scripts/update-forges.sh chat      # 챗·심의 스택만(포털+agent-server+게이트웨이)
-./infra/scripts/update-forges.sh ste       # STE 코드 갱신(deploy-ste 체인)  — 골라서 조합 가능
+./infra/scripts/update-forges.sh ste       # STE **전면** 갱신(이름을 댔다 = 지문 같아도 유닛·venv·시크릿까지)
 ./infra/scripts/update-forges.sh restart   # 갱신 없이 재시작만 — nginx 안 뜨면 자동 부검(conf -t·TLS cap 힌트)
 NO_GIT_RESET=1 ./infra/scripts/update-all.sh   # 로컬 수정 보존 모드
 
@@ -130,11 +203,15 @@ erag export-records   --upload --bind --url http://localhost:8001 --api-key <KEY
 bash deploy/apptainer/backup-to-drive.sh                                       # 덤프 → Drive
 # cae00: (update-all §3 이 자동 merge)
 
-# ── STE 배포 (별도) ──
-# dev:
-deploy/pack-staging.sh && STE_BUNDLE_DIR=var/staging deploy/push-to-drive.sh --path SmartTwinExplorer/staging
-# cae00:
-infra/scripts/deploy-ste.sh                # refresh-code.sh(§11) 트리거
+# ── 빌드 아티팩트·ste 코드를 Drive 로 (dev — 안 올리면 cae00 은 옛것을 받는다) ──
+./infra/scripts/build-all-to-drive.sh            # 전체(portal mxwp heax signalforge kooremapper ste)
+./infra/scripts/build-all-to-drive.sh portal ste # 골라서
+./infra/scripts/drive-drift.sh                   # Drive ↔ 이 박스 대조(0=일치·1=드리프트·2=확인불가)
+
+# ── STE 배포 (cae00) ──
+./infra/scripts/update-all.sh --with-ste   # 권장 — §2c 가 게이트를 통과할 때만 배포
+./infra/scripts/deploy-ste.sh              # 사람이 직접 = 게이트 없이 전면 갱신(refresh-code.sh §11 체인)
+./infra/scripts/install-ste-tunnel.sh --check   # 터널 15810·15812 실측(없으면 ste 도구 8종이 안 뜬다)
 
 # ── 재해복구: AIDataHub 를 Drive 덤프로 통째 교체(파괴적, 평소엔 불필요) ──
 bash deploy/apptainer/sync-from-drive.sh
@@ -145,7 +222,14 @@ bash deploy/apptainer/sync-from-drive.sh
 ## 6. 주의 — 소스 검증 기준(런타임 미확인)
 
 - 이 가이드는 **스크립트를 읽어** 검증했고, cae00 에서 실제로 돌려 확인한 것이 아니다. 종료코드·재프로비저닝·Drive 반입의 실제 성패는 박스 상태에 달렸다.
-- **박스별(gitignore) 미확인**: `provision.env` 토큰, rclone remote, AIDataHub `.env` 의 실제 API 포트, `routes.local.env` 의 ste= 값, ste-tunnel 서비스 구동 여부.
+- **박스별(gitignore) 값은 이제 재서 안다** — `routes.local.env` 의 `ste=` 는 §1d 가 teleport 박스에 자동으로 적고,
+  터널 구동은 `./infra/scripts/install-ste-tunnel.sh --check`(두 포트 실측)와 `./infra/scripts/ste-doctor.sh` 가 판정한다.
+  ste 전반은 **`./infra/scripts/ste-doctor.sh --report`** 한 번으로 한 화면에 나온다. 아직 눈으로 볼 것: `provision.env`
+  토큰, rclone remote, AIDataHub `.env` 의 실제 API 포트.
+- **표식 셋을 섞어 읽지 않는다** — `✗` 만 종료코드를 세우고 끝에서 목록으로 다시 나온다 · `⚠` 는 경고(이 박스 대상이
+  아닌 것·판정 불가) · `○` 는 "기능은 있는데 옵션·설정이 없어 안 켰다" 로 끝의 요약에 "켜려면" 과 함께 나온다.
+  §1c 가 `.env.example` 의 새 키를 기존 `.env` 에 덧붙이는데, 비밀·자리표시자는 **주석으로만** 넣고 "값을 정해야 한다" 로
+  보고한다 — 그 값이 비어 있는 동안 그 설정이 켜는 기능은 꺼져 있다.
 - **그라운딩의 실제 전제 미확인**: cae00 AIDataHub 에 `xd-cae-*`(스파인 7석 + 발굴 대상) 전문가·records 가 실제 동기화돼 있는지 — 이게 그라운딩이 "빈 근거"가 아니라 실제 인용으로 채워지는 배포측 조건이다. 재기동·업로드·병합 후 §3 검증 방법으로 확인할 것.
 - dev 에서 `backup-to-drive`/`export-*` 를 **크론으로 도는지 수동인지** 미확인 — 이 가이드는 명령만 정리했다.
 
@@ -154,7 +238,8 @@ bash deploy/apptainer/sync-from-drive.sh
 `git pull && update-all` 로 자동 반영되는 것.
 - 심의 파이프라인 절단·유실 수정 전체(워크플로 JS 는 §1a 동기화, agent-server·게이트웨이는 §4).
 - AIDataHub **데이터**(§3 병합) — `material-twin-analyst` 승격 페르소나, 물성 지식 41건 바인딩,
-  재료 카드 2,688건. dev 가 `export-to-drive.sh` 로 올린 sync JSONL 을 §3 이 머지한다.
+  재료 카드 2,688건. **dev 가 `backup-to-drive.sh` 로 올린 DB 덤프**(`AIDataHub/db-dumps` 의 `aidh-db-*.sql.gz`)를 §3 이
+  `merge-from-drive.sh` 로 머지한다. `export-to-drive.sh` 의 sync JSONL(`AIDataHub/sync`)은 update-all 이 타지 않는 별도 채널이다.
 
 1회 수동 조치(있다면).
 - **cae00 AIDataHub 자체의 materialtwin 동기화 소스**: dev 에서 `page_size 50 × max_pages 50 = 2,500`
@@ -174,6 +259,9 @@ bash deploy/apptainer/sync-from-drive.sh
 **STE 웹 복구(1회 수동).** 8/25 커밋(419b5ec)이 base routes.env 의 ste 를 끄고 오버레이
 방식으로 바꿨는데 cae00 에 오버레이가 없어, update-all 의 nginx conf 재생성 시점부터
 /ste/ 가 사라졌다(웹 접속 두절 — 실사고). 타일도 이때부터 '준비중'으로 뜬다.
+
+> **2026-09-25 이후 §1d 가 이 한 줄을 자동으로 적는다**(teleport 박스 · `HWAX_STE_AUTOROUTE=0` 으로만 끈다).
+> 아래는 `transport.env` 가 없는 박스·direct 박스·자동 기록을 끈 경우의 수동 경로다.
 
 ```bash
 cd ~/Projects/HWAXPortal
@@ -308,11 +396,11 @@ git pull && ./infra/scripts/data-migrate.sh plan   # 목표가 /data/... 절대�
 권한 정책을 받아 온다).
 
 ```bash
-cd ~/Projects/HWAXPortal && git pull && (cd frontend && pnpm build)
-apptainer instance stop hwax_portal && ./infra/scripts/start.sh
-cd ../HWAXAgentServer && git pull && ./start.sh -d
-cd ../HWAXMcpGateway && git pull && ./start.sh restart --bg
-curl -s 127.0.0.1:9110/health | python3 -m json.tool | head -20   # access_policy 에 백엔드가 보이면 정책이 붙은 것
+# ⚠ cae00 에서 `pnpm build` 를 돌리지 않는다 — npm 에 못 닿는다. 프론트는 dev 에서 빌드해 Drive 로 보낸 것을 받는다
+#    (dev: pnpm build → build-all-to-drive.sh portal). cae00 은 git pull + update-all 이면 된다.
+cd ~/Projects/HWAXPortal && git pull && ./infra/scripts/update-all.sh
+# 게이트웨이 권한 정책이 붙었는지 — 무인증 /health 는 access_policy 본문을 더 이상 내지 않는다(적재 수만 낸다)
+curl -s 127.0.0.1:9110/health | python3 -c 'import json,sys; d=json.load(sys.stdin); print("정책 백엔드", d["access_policy_loaded"], "· ready", d.get("access_policy_ready"))'
 ```
 
 **1) HE팀 페르소나 등록(ARP·ODB 포함).** cae00 게이트웨이에는 arp·odb-hub 가 붙어 있어 dev 에서
@@ -327,8 +415,11 @@ python3 infra/scripts/sync-he-personas.py --apply
 ARP·ODB 페르소나의 사전 지식은 뼈대(매니페스트 설명 + 도구 지도)다. 실제 도구를 보고
 `infra/personas/he-team.json` 의 workflow·pitfalls·key_tools 를 채운 뒤 다시 `--apply` 한다.
 
-**2) 소속 지정 — 안 하면 기존 사용자가 일반 챗만 쓴다.** 권한 모델을 켜면 소속이 없는 사용자는
-기본 권한(일반 챗)만 갖는다. 관리자로 로그인해 **사용자 관리** 화면 위쪽의
+**2) 소속 지정 — 안 하면 기존 사용자가 일반 챗만 쓴다.** 권한 표의 **정본은 `backend/config/access.yaml`** 이다
+(`default_grants: [feat:chat]` · 소속 `CAEG` 는 `grants: ["*"]` · `features`/`platforms`, 각 플랫폼의 `systems` 는 포털 타일,
+`gateway` 는 게이트웨이 백엔드 키). 요청마다 mtime 을 보므로 표를 고쳐도 재기동이 필요 없다. **새 게이트웨이 백엔드·
+타일·페르소나 앱은 이 표에 먼저 넣는다** — 표에 없는 백엔드는 "전체 공개" 로 판정된다. 권한 모델을 켜면 소속이 없는
+사용자는 기본 권한(일반 챗)만 갖는다. 관리자로 로그인해 **사용자 관리** 화면 위쪽의
 `소속 없는 활성 사용자 N명 → 모두 이 소속으로(CAE그룹)` 를 한 번 누른다. 다른 그룹(자주검증·
 실장솔루션) 사람이 섞여 있으면 그 사람만 소속을 빼고 개별 허가로 필요한 것만 켠다.
 
@@ -345,8 +436,8 @@ ARP·ODB 페르소나의 사전 지식은 뼈대(매니페스트 설명 + 도구
 절차 PAT 의 `purpose` 클레임을 받는다(그 반대로 하면 승인한 절차 단계가 승인 **뒤에** 막힌다).
 
 ```bash
-cd ~/Projects/HWAXPortal && git pull && (cd frontend && pnpm build)
-apptainer instance stop hwax_portal && ./infra/scripts/start.sh
+# ⚠ cae00 에서 `pnpm build` 는 돌리지 않는다(npm 미도달) — 프론트는 Drive 아티팩트로 온다
+cd ~/Projects/HWAXPortal && git pull && ./infra/scripts/update-all.sh   # 포털 dist 반입·재기동까지
 cd ../HWAXMcpGateway && git pull && ./start.sh restart
 cd ../HEAXHub && git pull && ./deploy/apptainer/start.sh      # rev 가 바뀌면 backend·celery 를 스스로 교체한다
 ```
@@ -385,3 +476,36 @@ tr '\0' '\n' < /proc/$(pgrep -f 'root-path /apps/step_forge' | head -1)/environ 
 # StepForge: 간섭이 있는 과제에서 inspect_report 응답에 아래 세 칸이 있으면 반영된 것이다
 #   tolerance_level_touching_candidates · tolerance_level_buried_suspects · worst_interference[].sliver_verdict
 ```
+
+## 2026-09-26 반영분 — ste × cae00 1회 셋업 · 포털 TLS 판정 · 로그의 ○ 표식
+
+앞선 절들과 달리 **이 절이 지금 기준이다**(그 위 날짜 절들은 그때의 기록이다). 배경은
+`docs/ste-cae00/`(PLAN · checklist · context-notes D-13~D-21).
+
+`git pull && update-all` 로 자동 반영되는 것.
+- **새 단계 여섯** — 0a(`--with-<name>`) · 0b(flock, 겹쳐 돌리면 rc 3) · 1c(`.env` 새 옵션 채움) ·
+  1d(ste 라우트 자동 기록) · 2c(ste 코드 최신화) · 3.5(agent-server `.env` 보정). §6 은 치명 항목이 늘었고
+  끝에 **○ "있는데 안 켠 것" 요약**이 붙는다(실패가 아니다 — "켜려면" 이 함께 나온다).
+- **ste 헬스게이트가 진짜로 판정한다** — 자격 중계는 시크릿 **실제 값**으로 `verify` 를 쳐서 204/401/404 를 가르고
+  (종전엔 아무 값 401 을 "설정됨" 으로 읽어 불일치를 못 잡았다), ste MCP :15812 를 프로브하며, 게이트웨이 권한 정책
+  미적재를 실패로 본다.
+- **포털 TLS 판정이 바뀌었다** — `GET /tls/info` 가 `self_signed` 가 아니라 **`needs_ca`**(체인이 공개 루트에 닿는가)를
+  낸다. 사내 CA 로 발급된 인증서도 개인 Claude(Node)는 못 믿으므로 같은 안내가 필요하다.
+
+1회 확인·조치(cae00).
+
+```bash
+cd ~/Projects/HWAXPortal
+./infra/scripts/install-ste-tunnel.sh          # 터널 유닛(15810·15812) 설치 — 이미 있으면 --check 만
+./infra/scripts/update-all.sh --with-ste       # 1회 셋업: ste 코드까지 함께
+./infra/scripts/ste-doctor.sh --report         # 한 화면 진단(JSON) — 출력을 docs/ste-cae00/context-notes.md §F 에 붙인다
+curl -s 127.0.0.1:8088/tls/info | python3 -m json.tool   # needs_ca·ca_available·expired·verified
+```
+
+- `tls` 행이 **사설 CA 인데 발급 CA 체인 없음** 이면 개인 Claude 연결이 불가다 — `TLS_CERT_PATH` 를 **루트까지 포함한
+  fullchain** 으로 두거나 `TLS_CA_PATH` 에 **발급 체인(중간 CA + 루트)** 을 준다. 리프 한 장이나 루트 하나만으로는 안 된다
+  (서버가 중간 CA 를 보내지 않으면 Node 가 발급자를 요구한다 — 실측).
+- 사용자의 개인 Claude 연결은 포털 **AI 토큰** 화면에서 끝낸다(토큰 + 배치파일). 판정이 안 되거나 체인이 없으면 그 화면이
+  **등록 명령을 만들지 않고** 이유를 말한다 — 모르는 채로 만든 등록은 인증서가 빠지거나 검증 안 된 것이 들어간다.
+- ste 도구가 보이지 않으면 순서대로: `ste-doctor.sh` 의 `mcp`(15812) → `gateway-ste` → `policy` → 사용자 권한
+  (`plat:smarttwin`·`feat:api-token`). 권한 없는 앱은 목록에 없고 `denied_apps` 에 라벨·필요 권한·요청 경로만 나온다.

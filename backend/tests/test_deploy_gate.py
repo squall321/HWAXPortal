@@ -142,3 +142,34 @@ def test_fingerprint_covers_every_tree_the_deploy_ships():
 def test_teleport_branch_uses_the_shared_gate():
     assert "deploy-gate.sh" in DEPLOY_STE and "hwax_gate ste" in DEPLOY_STE
     assert 'STE_DEPLOY:-0}" != 1 ]; then' not in DEPLOY_STE, "옛 단일 플래그 게이트가 남아 있다"
+
+
+# ── update-forges 의 ste 는 "이름을 댔는가" 로 갈린다 ─────────────────────────────
+UPDATE_FORGES = (ROOT / "infra/scripts/update-forges.sh").read_text(encoding="utf-8")
+
+
+def test_update_forges_routes_implicit_ste_through_the_gate():
+    """문서 감사(2026-09-26)에서 잡혔다 — '경량 표적 갱신(수 분)' 을 부른 사람이 기본 대상에 딸려 온
+    ste 때문에 에어갭 헤드 재배포·재기동을 무조건 받았다(게이트는 --if-stale 일 때만 켜진다).
+    이름을 댔으면(`update-forges.sh ste`) 종전대로 전면 갱신, 딸려 왔으면 게이트 경유."""
+    assert 'STE_NAMED=0' in UPDATE_FORGES and 'case "$_a" in ste) STE_NAMED=1' in UPDATE_FORGES
+    assert '[ "${STE_NAMED:-0}" = 1 ] || _stale="--if-stale"' in UPDATE_FORGES
+    assert 'deploy-ste.sh" $_stale' in UPDATE_FORGES
+
+
+def test_update_forges_ste_named_and_default_differ(tmp_path):
+    """실행으로 가른다 — 가짜 deploy-ste.sh 가 받은 인자를 적게 하고 두 경로를 비교한다."""
+    fake = tmp_path / "infra/scripts"
+    fake.mkdir(parents=True)
+    (fake / "deploy-ste.sh").write_text('#!/usr/bin/env bash\nprintf "%s\\n" "args=[$*]" >> "$ARGLOG"\n')
+    (fake / "deploy-ste.sh").chmod(0o755)
+    body = re.search(r"^do_ste\(\) \{.*?^\}", UPDATE_FORGES, re.S | re.M).group(0)
+    log = tmp_path / "args.log"
+    for args, want in ((["ste"], "args=[]"), ([], "args=[--if-stale]")):
+        log.write_text("")
+        named = "1" if "ste" in args else "0"
+        # ARGLOG 는 **export** 해야 한다 — 가짜 deploy-ste.sh 는 자식 bash 라 안 그러면 못 본다.
+        script = (f'ROOT="{tmp_path}"; export ARGLOG="{log}"; STE_NAMED={named}; FAIL=0\n'
+                  'hr() { :; }\ncurl() { echo 200; }\n' + body + '\ndo_ste >/dev/null 2>&1 || true\n')
+        subprocess.run(["bash", "-c", script], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        assert log.read_text().strip() == want, (args, log.read_text())

@@ -3,6 +3,7 @@
 # (이름은 역사적 — forge 2종으로 시작해 ste·chat 이 추가됐다.)
 #
 #   ./infra/scripts/update-forges.sh                 # 기본: stepforge dynaforge ste chat 전부
+#     (기본 실행의 ste 는 **게이트 경유**다 — 다를 때만·Teleport 세션 있을 때만. 전면 갱신은 이름을 댄다)
 #   ./infra/scripts/update-forges.sh dynaforge       # 골라서: stepforge|dynaforge|ste|chat
 #   ./infra/scripts/update-forges.sh chat            # 챗+심의 스택만(포털·agent-server·게이트웨이)
 #   ./infra/scripts/update-forges.sh restart         # 갱신 없이 전 서비스 재시작만(+nginx 부검)
@@ -81,9 +82,17 @@ do_ste() {
   #   낡은 채로 남아 포털→ste 자격 중계가 조용히 죽어 있었다(2026-09-23, docs/one-token D-13).
   #   deploy-ste.sh 가 transport.env 를 읽어 스스로 경로를 고르므로 그대로 넘긴다.
   #
-  # 인자 없이 부른다 = 사람이 "갱신해라" 고 한 것이다. 그래서 `--if-stale` 을 주지 않는다 —
-  # 지문이 같아도 유닛·venv·시크릿까지 다시 맞춘다(update-all 의 2c 가 쓰는 자동 경로와 다르다).
-  if bash "$ROOT/infra/scripts/deploy-ste.sh"; then
+  # **이름을 댔는가**로 가른다(2026-09-26 문서 감사에서 잡혔다).
+  #   · `update-forges.sh ste` — 사람이 ste 를 콕 집었다. `--if-stale` 없이 간다: 지문이 같아도
+  #     유닛·venv·시크릿까지 다시 맞춘다(deploy-ste.sh 는 인자 없으면 게이트도 안 본다).
+  #   · 인자 없는 기본 실행 — ste 는 "경량 표적 갱신" 에 **딸려 온 것**이다. 그런데 에어갭(teleport)
+  #     박스에서 그 길은 Drive 왕복 + 헤드 재배포·재기동이라 "수 분" 이 아니고, 돌던 잡을 끊는다.
+  #     그래서 `--if-stale` 을 줘 공용 게이트(사람 호출 ∧ 신선도 ∧ Teleport 세션)를 통과할 때만 간다.
+  #     dev(direct)는 지문 대조라 다를 때만 배포되고 — ste 를 기본 대상에 넣은 이유(낡은 채 방치되어
+  #     자격 중계가 조용히 죽던 2026-09-23 사고)는 그대로 지켜진다.
+  local _stale=""
+  [ "${STE_NAMED:-0}" = 1 ] || _stale="--if-stale"
+  if bash "$ROOT/infra/scripts/deploy-ste.sh" $_stale; then
     echo "✓ STE 코드 갱신 완료"
     c="$(curl -s -o /dev/null -w '%{http_code}' -m 6 "http://127.0.0.1:8088/ste/api/health" 2>/dev/null)" || true
     case "${c:-000}" in
@@ -188,6 +197,10 @@ do_restart() {
 }
 
 WANT="${*:-stepforge dynaforge ste chat}"
+# ste 를 **이름으로** 댔는지 기억한다 — do_ste 가 전면 갱신(이름 댐)과 게이트 경유(딸려 옴)를 가른다.
+STE_NAMED=0
+for _a in "$@"; do case "$_a" in ste) STE_NAMED=1 ;; esac; done
+export STE_NAMED
 for t in $WANT; do
   case "$t" in
     stepforge) do_stepforge ;;
