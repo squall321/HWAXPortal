@@ -53,7 +53,14 @@ if [ -n "$ORIGIN" ]; then
   m="$(code "$MCP_URL")"
   case "$m" in
     200|405|406) ok mcp "$MCP_URL → $m (살아 있음)" ;;
-    *) bad mcp "$MCP_URL → $m — ste 도구 8종이 안 뜨는 원인$([ "$HOST" = 127.0.0.1 ] && echo '. ste-tunnel 의 -L 에 15812 가 있나(install-ste-tunnel.sh --check)')" ;;
+    *) bad mcp "$MCP_URL → $m — ste 도구 8종이 안 뜨는 원인$([ "$HOST" = 127.0.0.1 ] && echo '. 터널이 15812 를 열고 있으면 헤드의 ste-mcp.service 가 죽은 것이다(아래 journal)')"
+       # 왜 죽었는지는 헤드에만 있다 — transport 가 있으면 상태와 journal 꼬리를 그대로 보여 준다(cae00 실측: active 라 찍히고도 000).
+       if [ -n "${TENV:-}" ] && [ -d "$(dirname "$TENV")/.." ]; then
+         _mcp_st="$(cd "$(dirname "$TENV")/.." && . deploy/lib/transport.sh >/dev/null 2>&1 && \
+           tr_run 'echo "ste-mcp: $(systemctl is-active ste-mcp 2>/dev/null || echo unknown) / listen: $(ss -ltn 2>/dev/null | grep -c ":15812 ")"; \
+                   journalctl -u ste-mcp -n 8 --no-pager -o cat 2>/dev/null || sudo -n journalctl -u ste-mcp -n 8 --no-pager -o cat 2>/dev/null' 2>/dev/null || true)"
+         [ -n "$_mcp_st" ] && printf '%s\n' "$_mcp_st" | sed 's/^/      헤드: /' || echo "      헤드 상태를 못 읽었다(transport 미설정 또는 접속 실패) — 헤드에서: systemctl status ste-mcp; journalctl -u ste-mcp -n 30"
+       fi ;;
   esac
 fi
 if [ "$MODE" = teleport ]; then

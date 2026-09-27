@@ -201,7 +201,10 @@ EOF
     fi
   fi
   printf '\033[1;36m▶ STE 코드 갱신 배포 트리거 — %s\033[0m\n' "$STE_REPO"
-  STE_STAGING="$STAGING" "$DEPLOY" $SKIP_PULL "$@" || die "STE 배포 실패 — 위 로그와 런북 §9(실패 대처) 참조"
+  # PORTAL_ENV — refresh-code §8 의 sync-sso-secret 은 포털을 형제 디렉터리(../HWAXPortal)로 찾는데 cae00 은 ~/SmartTwinExplorer 와
+  # ~/Projects/HWAXPortal 이라 못 찾고 "포털 쪽 값이 비어 있다" 로 빠져 헤드에 시크릿이 안 심겼다(cae00 실측 2026-09-27: 자격중계 404).
+  # direct 경로(위)는 넘기고 있었고 이 경로만 빠져 있었다 — 배포 경로가 둘이면 둘 다 넘긴다.
+  STE_STAGING="$STAGING" PORTAL_ENV="$SELF/infra/.env" "$DEPLOY" $SKIP_PULL "$@" || die "STE 배포 실패 — 위 로그와 런북 §9(실패 대처) 참조"
 fi
 
 # 포털 프록시 경유로 살아났는지 확인

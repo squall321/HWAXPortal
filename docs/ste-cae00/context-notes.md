@@ -465,6 +465,24 @@ bash …` 뒤 새 이미지의 0b 가 0 으로 다시 시작했다. §1(git fetc
 1.0초로. 시험 49(실프로세스), 변이 11/11, 스위트 793. 남긴 것(low): 중간 판(flock 부모)에서 오는 첫 회에 flock 에 TERM 이 가면 본문은 계속·잠금은
 해제(한 번뿐인 전환) · 기동 직후 ~10ms Ctrl-C 창 · `kill -INT <pid>` no-op.
 
+## D-28. cae00 두 번째 update-all — RA 는 끝났고, ste 빨강 둘의 뿌리는 경로 관례와 헤드 상태 (2026-09-27)
+
+사용자가 붙인 update-all 꼬리(새 0b 로 첫 실행 — 잠금 거부 없음). **RA 완료**: §5 가 "주소 드리프트: reportarchive — config 는 127.0.0.1 인데
+RA_HOST 는 <A>" 를 잡아 실제로 재프로비저닝했고(9월 22일 이후 처음), §6 의 RA 포털 로그인 콜백이 **303** — 라우트·RA 새 판·SSO 켜짐·도달
+네 조각이 다 섰다. RA MCP 도구 스모크 3/3. 사람이 RA 담당에게 넘길 숫자를 update-all 이 찍었다(portal-callback → 303 · 포털 JWKS 주소).
+챗 스모크 통과. hwax-deliberation 도구 8종이 카탈로그에 새로 들어왔다(508→516).
+
+**ste 빨강 둘.** ① `자격중계 404 — 헤드에 시크릿이 없다`: `deploy-ste.sh` 가 Drive 경로(refresh-code)를 부를 때 **PORTAL_ENV 를 안 넘겼다**
+(direct 경로는 넘기고 있었다). ste 쪽 `sync-sso-secret.sh` 는 포털을 형제 디렉터리 `../HWAXPortal` 로만 찾는데 cae00 은 `~/SmartTwinExplorer`
+와 `~/Projects/HWAXPortal` 이라 `/.env` 를 열려다 "포털 쪽 값이 비어 있다" 로 빠졌고 refresh-code §8 은 경고만 하고 완료로 끝났다 — 박스마다
+리포 루트가 다르다는 CLAUDE.md 의 그 함정. 고침: 포털 `deploy-ste.sh` 가 두 경로 모두 `PORTAL_ENV="$SELF/infra/.env"` 를 넘기고(시험), ste
+`sync-sso-secret.sh`(a28cf32) 는 관례 경로(형제 → ~/Projects → ~/claude)를 차례로 보고 못 찾으면 '못 찾았다(경로)' 로 말한다. 읽기 규칙도 포털
+독자와 같게(첫 줄·따옴표만 벗기던 것). Drive 스테이징 a28cf32 재발행 → 다음 update-all 2c 가 stale 로 보고 다시 배포하며 §8 이 시크릿을 심는다.
+② `ste MCP 15812 → 000`: deploy-ste 때 헤드는 `mcp : active` 였는데 게이트웨이는 터널로 못 붙는다 — 터널 유닛은 15812 를 열고 있으니(--check)
+헤드의 ste-mcp.service 가 기동 직후 죽은 것으로 본다(Restart=on-failure 루프 가능). 이유는 헤드 journal 에만 있다 → `ste-doctor` 의 mcp 행이
+빨강일 때 transport 로 `systemctl is-active ste-mcp`·`journalctl -u ste-mcp -n 8` 을 그대로 보여 주게 했고, update-all §6 의 힌트가 터널만
+탓하던 문구를 고쳤다. 다음 실측은 doctor 출력이다. (smart-twin-mcp :5013 DOWN·arp DOWN 은 이번 범위 밖 — 전자는 stcx MCP 별건, 후자는 원격.)
+
 ## F. cae00 실측 (S0)
 
 ### 2026-09-27 — 첫 `update-all` 뒤 `ste-doctor`(사용자 실행, 그대로)

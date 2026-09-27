@@ -113,3 +113,12 @@ def test_원격을_못_읽으면_같다고_보지_않는다(tmp_path):
     assert "이미 최신" not in r.stdout, "닿지도 못했는데 '최신' 이라고 했다 — 가짜 초록이다"
     assert r.returncode != 0, "닿지 못한 것은 실패로 알려야 한다"
     assert elapsed < 45, f"닿지 않는 헤드에 {elapsed:.0f}초 매달렸다 — 상한이 안 걸렸다"
+
+
+def test_deploy_ste_passes_portal_env_on_both_paths():
+    """cae00 실측(2026-09-27): Drive 경로(refresh-code §8)에 PORTAL_ENV 가 안 넘어가 ste 쪽 sync-sso-secret 이 포털을 형제 디렉터리로
+    찾다 못 찾고 시크릿을 안 심었다(자격중계 404). 박스마다 리포 루트가 다르다 — 배포 경로 둘 다 포털이 자기 .env 경로를 넘긴다."""
+    src = (ROOT / "infra/scripts/deploy-ste.sh").read_text(encoding="utf-8")
+    assert 'PORTAL_ENV="$SELF/infra/.env" bash "$STE_REPO/deploy/sync-sso-secret.sh"' in src, "direct 경로"
+    assert 'STE_STAGING="$STAGING" PORTAL_ENV="$SELF/infra/.env" "$DEPLOY"' in src, "Drive(refresh-code) 경로"
+

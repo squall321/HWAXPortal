@@ -1276,7 +1276,7 @@ PY
           200|405|406) fail "ste MCP         :15812 는 살아 있는데 게이트웨이 ste 백엔드가 $_ste_gw — 게이트웨이 재기동 필요(정적 백엔드는 /refresh 로 안 붙는다)" ;;
           *) fail "ste MCP         ${STE_MCP_URL:-http://127.0.0.1:15812/mcp} 에 아무것도 없다($_mcp_probe) — ste 도구 8종이 통째로 안 뜬다"
              case "${STE_MCP_URL:-}" in *127.0.0.1*|*localhost*)
-               echo "    (cae00) ste-tunnel 이 15810 만 열고 있을 가능성이 크다 — 유닛의 -L 에 127.0.0.1:15812:127.0.0.1:15812 를 더하고 재기동" ;;
+               echo "    (cae00) 터널이 15812 를 열고 있는데도 000 이면 헤드의 ste-mcp.service 가 죽은 것이다(install-ste-tunnel.sh --check 로 터널을, ste-doctor 가 헤드 journal 을 보여 준다)" ;;
              esac ;;
         esac ;;
       *) bad "ste MCP         게이트웨이 /health 를 못 읽어 판정 불가" ;;
