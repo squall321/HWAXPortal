@@ -354,8 +354,27 @@ cae00 에서 `pnpm build` 를 지우고(npm 미도달) Drive 아티팩트 경로
 줄번호는 밀리지만 `hr "2c) ste 코드 최신화"` 는 안 밀린다. 머리글에 **대조 시점**을 박아 다음 사람이 낡음을 판정할 수 있게 했다.
 박스 상태를 날짜 박아 적던 메모("cae00 에 staging 만 없음", 08-26)는 지웠다 — 상태는 적는 것이 아니라 `ste-doctor --report` 로 잰다.
 
-## F. cae00 실측 (S0 에서 채운다)
-_아직 비어 있다. `ste-doctor --report` 출력을 여기에 붙인다._
+## F. cae00 실측 (S0)
+
+### 2026-09-27 — 첫 `update-all` 뒤 `ste-doctor`(사용자 실행, 그대로)
+```
+✓ route          routes.local.env ste=http://127.0.0.1:15810/
+✓ transport      teleport (~/SmartTwinExplorer/deploy/transport.env)     ← 리포가 형제(~/Projects)가 아니라 ~ 에 있다
+✓ web            http://127.0.0.1:15810/api/health → 200 (터널 경유)
+✗ mcp            http://127.0.0.1:15812/mcp → 000 — ste 도구 8종이 안 뜨는 원인
+✓ tunnel-unit    active (리포 유닛)
+⚠ teleport       tsh status 에서 만료 시각을 못 읽었다 — 세션이 없거나 형식이 다르다
+✗ sso-secret     양쪽 다르다 (verify 401)                                    ← 오진: 옛 판의 미들웨어 401 (D-9)
+✗ gateway-ste    ste 백엔드 absent
+✓ policy         백엔드 21개분 적재됨 (ready=True)
+✓ tls            사설·자체서명 — 발급 CA 체인 준비됨(/tls/ca.crt)
+✗ https          :443 200 인데 설정이 어긋난다 — COOKIE_SECURE≠true
+⚠ deployed       헤드에 배포 커밋 마커가 없다(옛 deploy-backend 로 배포됨)
+```
+update-all 끝: 챗 스모크 ✓(TOOL_MAX=0, 게이트웨이 437개) · ○ 기능 0 / 값 미정 3(LLM_*) / 선택 2(RA_PORT·RA_MCP_PORT) ·
+✗ ste 자격중계(옛 판)·ste MCP(15812 000). **판정: 헤드에 옛 코드 — 2c 가 배포하지 않았다**(사유 미표시 → docs/ra-reconnect D-9 에서 고침).
+S0 확정 항목 중 여기서 답이 난 것: 인증서 = 자체서명(https 켜짐) · 터널 = 리포 유닛 active · 정책 적재 21 · 라우트 = 있음.
+남은 확정: 15812 가 터널에 있는가(`install-ste-tunnel.sh --check`) · Teleport TTL(형식) · 헤드 시크릿(코드 갱신 뒤) · Drive staging 대조.
 
 ## 확인된 마찰 19건 (검증 생존) — 원문은 `/tmp/claude-1000/ste_cae00_result.json`
 | # | 심각도 | 갈래 | 제목 |

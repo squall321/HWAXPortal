@@ -167,7 +167,14 @@ fi
 # 안전하게 적을 수 있다. 사용자 결정(2026-09-25): 기본 켬, HWAX_STE_AUTOROUTE=0 으로만 끈다.
 # §2(deploy-all)가 nginx 를 다시 만들기 **전**에 적어야 라우트가 생긴다 — 그래서 여기다.
 # `ste=`(빈 값)은 "이 박스에서 서빙 안 함" 이라는 명시라 건드리지 않는다(활성·빈 값 모두 '있다').
-_STE_TENV="$SELF_REPO/../SmartTwinExplorer/deploy/transport.env"
+# STE 리포 위치 — deploy-ste.sh 와 **같은 규칙**(형제 `../SmartTwinExplorer` → `~/SmartTwinExplorer`). cae00 실측(2026-09-27):
+# 리포가 ~/SmartTwinExplorer 에 있어 형제만 보던 1d 가 transport.env 를 못 찾았다(doctor·deploy-ste 는 찾았다).
+_ste_repo_dir() {
+  if [ -d "$SELF_REPO/../SmartTwinExplorer/deploy" ]; then (cd "$SELF_REPO/../SmartTwinExplorer" && pwd)
+  elif [ -d "$HOME/SmartTwinExplorer/deploy" ]; then printf '%s' "$HOME/SmartTwinExplorer"
+  else printf '%s' "$SELF_REPO/../SmartTwinExplorer"; fi
+}
+_STE_TENV="$(_ste_repo_dir)/deploy/transport.env"
 _ROUTES_LOCAL_W="$SELF_REPO/backend/config/routes.local.env"
 if [ -f "$_STE_TENV" ] \
    && grep -qE '^[[:space:]]*TRANSPORT_MODE=[[:space:]]*teleport' "$_STE_TENV" \
@@ -272,6 +279,7 @@ else
             else _failed="$_failed $_k"; fi
           done
           [ -n "$_failed" ] && fail "LLM 설정을 infra/.env 에 못 적었다($_failed ) — 권한·소유자를 보라(RA 설치본을 지우면 그 키들의 LLM 이 빈다)"
+          for _k in $_moved; do hwax_skip_forget "설정값 $_k"; done     # 1c 가 "값 미정" 으로 적은 것을 여기서 채웠다 — 장부에서 지운다
           if [ -z "$_absent" ] && [ -z "$_failed" ]; then
             ok "LLM 설정을 RA .env 에서 infra/.env 로 옮겼다($_moved ) — 이제 RA 설치본을 지워도 챗·심의·PaperIngest 의 LLM 이 비지 않는다"
           elif [ -n "$_absent" ]; then
@@ -281,6 +289,11 @@ else
           hwax_skip "LLM 설정 정본" "infra/.env 에 LLM_BASE_URL 이 없고 형제 ReportArchive/.env 에서도 못 읽었다 — env-kit 의 @FROM_RA 가 건너뛰어져 각 앱 기본값을 쓴다" "infra/.env 에 LLM_BASE_URL·LLM_MODEL·LLM_API_KEY 를 적고 재실행"
         fi
       fi
+      # RA MCP 도구(챗의 보고서 검색·저장)는 게이트웨이가 RAT_TOKEN 이 있을 때만 RA 백엔드를 기대한다(§5 calc_missing).
+      # RA_HOST 를 적은 박스에서 그 토큰이 없으면 RA 는 살아 있는데 챗에서 안 보인다 — 조용히 지나가지 않게 장부에.
+      _rat_now="${RAT_TOKEN:-}"
+      [ -z "$_rat_now" ] && [ -n "$GW_DIR" ] && _rat_now="$(sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?RAT_TOKEN=[[:space:]]*//p' "$GW_DIR/provision.env" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
+      [ -n "$_rat_now" ] || hwax_skip "RA MCP 도구(챗의 보고서 검색·저장)" "RAT_TOKEN 이 없어 게이트웨이가 RA 백엔드를 기대하지 않는다(RA 는 원격에 살아 있어도 챗에 안 붙는다)" "RA 에서 PAT(rat_…)를 발급해 HWAXMcpGateway/provision.env 에 RAT_TOKEN=<값> 을 적고 재실행(§5 가 재프로비저닝한다)"
       # RA 서버가 받아 갈 포털 JWKS 주소(요청서 §4-2) — RA 서버에서 닿는 주소라 포털이 확정할 수 없다. 후보와 로컬 프로브를 찍는다.
       _jw="$(http_code http://127.0.0.1:8088/.well-known/jwks.json 3)"
       _lan="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -505,7 +518,7 @@ fi
 # 2c) 가 배포하는 대상(ste 리포 transport.env)과 포털이 프록시하는 대상(`ste=` 라우트)은 **따로 설정**된다.
 # 앞은 있고 뒤가 없으면 VM 은 최신인데 포털 /ste 와 게이트웨이 ste 백엔드는 비어 있다 — 조용히
 # "ste 를 안 쓰는 박스" 로 판정되므로 여기서 말한다(하드 실패는 아니다 — 정말 안 쓰는 박스일 수 있다).
-_STE_TENV="$SELF_REPO/../SmartTwinExplorer/deploy/transport.env"
+_STE_TENV="$(_ste_repo_dir)/deploy/transport.env"
 if [ "$STE_ROUTED" != 1 ] && [ -f "$_STE_TENV" ]; then
   echo "  ⚠ ste 접속 설정은 있는데($_STE_TENV) 이 박스의 \`ste=\` 라우트가 없다 —"
   echo "    2c) 는 헤드에 배포하지만 포털 /ste 와 게이트웨이 ste 백엔드는 생기지 않는다."

@@ -67,7 +67,7 @@ def test_리포가_없으면_Drive_부트스트랩을_발화시키지_않는다(
     찍어서 시험이 통과한다(변이 검사에서 실제로 그랬다). 그래서 이 가드만 내는 문구를 본다.
     """
     r = _run({"STE_REPO": str(tmp_path / "nope")}, "--if-stale")
-    assert r.returncode == 0, r.stderr
+    assert r.returncode == 3, r.stderr      # 3 = 건너뜀(장부에 적혔다) — 0 이면 update-all 이 '배포됨' 과 못 가른다
     assert "ste 리포가 이 박스에 없다" in r.stdout, "리포 부재를 그 사유로 말해야 한다"
     assert _BOOTSTRAP not in r.stdout, "자동 호출이 Drive 부트스트랩으로 넘어갔다"
 
@@ -86,7 +86,7 @@ def test_접속_설정이_없으면_건너뛴다(tmp_path):
     rc.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     rc.chmod(0o755)
     r = _run({"STE_REPO": str(repo)}, "--if-stale")
-    assert r.returncode == 0, r.stderr
+    assert r.returncode == 3, r.stderr      # 3 = 건너뜀(장부에 적혔다) — 0 이면 update-all 이 '배포됨' 과 못 가른다
     assert "접속 설정이 없다" in r.stdout, "접속설정 부재를 그 사유로 말해야 한다"
     assert "ste 리포가 이 박스에 없다" not in r.stdout, "리포는 있다 — 사유가 뒤바뀌었다"
     assert _BOOTSTRAP not in r.stdout

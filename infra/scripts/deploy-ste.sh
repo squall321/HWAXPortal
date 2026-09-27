@@ -65,14 +65,19 @@ fi
 # 리포가 없거나 접속 설정이 없으면 한 줄 말하고 끝낸다. 여기서 Drive 부트스트랩으로 넘어가면
 # update-all 한 번이 22MB 다운로드와 git clone 을 발화시킨다 — "routine 이 실배포를 발화" 의
 # 또 다른 얼굴이다(실측으로 잡았다: STE_REPO 를 없는 경로로 두고 --if-stale 을 주면 받기 시작했다).
+# 건너뛰는 사유는 update-all 의 "있는데 안 켠 기능" 장부(○)에도 남긴다 — exit 0 만 하면 조용히 지나간다(cae00 실측 2026-09-27:
+# 2c 가 왜 배포하지 않았는지 끝 요약에 아무것도 없었다).
+if [ -f "$SELF/infra/scripts/lib/skip-ledger.sh" ]; then . "$SELF/infra/scripts/lib/skip-ledger.sh"; else hwax_skip_record() { :; }; fi   # SELF = 리포 루트
 if [ "$IF_STALE" = 1 ]; then
   if [ ! -x "$DEPLOY" ]; then
     printf '  · ste 리포가 이 박스에 없다(%s) — 건너뛴다. 최초 반입은 infra/scripts/deploy-ste.sh 를 직접 부른다.\n' "$STE_REPO"
-    exit 0
+    hwax_skip_record "ste 코드 최신화" "ste 리포가 이 박스에 없다($STE_REPO)" "SmartTwinExplorer 를 ../SmartTwinExplorer(또는 ~/SmartTwinExplorer)에 두고 최초 반입은 infra/scripts/deploy-ste.sh 를 직접"
+    exit 3
   fi
   if [ -z "$TRANSPORT_MODE" ]; then
     printf '  · ste 접속 설정이 없다(%s) — 건너뛴다. 채우면 그때부터 자동 최신화된다.\n' "$_TENV"
-    exit 0
+    hwax_skip_record "ste 코드 최신화" "ste 접속 설정(transport.env)이 없다" "$_TENV 를 채운다(TRANSPORT_MODE=direct|teleport …) — 그때부터 자동 최신화"
+    exit 3
   fi
 fi
 

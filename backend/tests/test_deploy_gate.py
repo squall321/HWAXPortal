@@ -93,7 +93,7 @@ def test_update_all_refuses_to_overlap(tmp_path):
 
 # ── 1d 자동 라우트 ────────────────────────────────────────────────────────────
 def _run_1d(tmp_path, *, mode: str | None, routes_local: str | None, env=None) -> tuple[str, str]:
-    i = UA_SRC.index('_STE_TENV="$SELF_REPO/../SmartTwinExplorer/deploy/transport.env"')
+    i = UA_SRC.index('_ste_repo_dir() {')
     block = UA_SRC[i:UA_SRC.index("# ── 2) 전 서비스 배포", i)]
     repo = tmp_path / "HWAXPortal"; (repo / "backend/config").mkdir(parents=True, exist_ok=True)
     ste = tmp_path / "SmartTwinExplorer/deploy"; ste.mkdir(parents=True, exist_ok=True)

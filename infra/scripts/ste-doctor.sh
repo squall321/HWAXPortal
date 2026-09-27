@@ -63,8 +63,19 @@ if [ "$MODE" = teleport ]; then
   fi
   # Teleport 세션 — tsh 가 있으면 잔여 시간을 읽는다(형식이 버전마다 달라 못 읽으면 '모름')
   if command -v tsh >/dev/null 2>&1; then
-    TH="$(envv TELEPORT_HOME "$TENV")"; st="$( ${TH:+TELEPORT_HOME=$TH} tsh status 2>/dev/null | grep -iE 'valid until|expires' | head -1)"
-    [ -n "$st" ] && ok teleport "$st" || warn teleport "tsh status 에서 만료 시각을 못 읽었다 — 세션이 없거나 형식이 다르다"
+    TH="$(envv TELEPORT_HOME "$TENV")"
+    # 먼저 JSON(최근 tsh) — valid_until 이 정확하다. 없으면 텍스트 grep. 그래도 못 읽으면 **원문 첫 줄들**을 보여 다음에 형식을 맞춘다
+    # (cae00 실측 2026-09-27: 터널은 살았는데 이 행이 '못 읽었다' 만 말해 판정 근거가 없었다).
+    st="$( ${TH:+TELEPORT_HOME=$TH} tsh status -f json 2>/dev/null | python3 -c 'import json,sys
+d=json.load(sys.stdin); a=d.get("active") or d
+v=a.get("valid_until") or a.get("expires") or ""
+print(("valid until " + v) if v else "")' 2>/dev/null)"
+    [ -n "$st" ] || st="$( ${TH:+TELEPORT_HOME=$TH} tsh status 2>/dev/null | grep -iE 'valid until|expires' | head -1)"
+    if [ -n "$st" ]; then ok teleport "$st"
+    else
+      raw="$( ${TH:+TELEPORT_HOME=$TH} tsh status 2>&1 | grep -v '^[[:space:]]*$' | head -3 | tr '\n' '|' | cut -c1-160)"
+      warn teleport "tsh status 에서 만료 시각을 못 읽었다 — 세션이 없거나 형식이 다르다. 원문: ${raw:-(출력 없음 — tsh 없거나 로그인 안 됨)}"
+    fi
   else
     warn teleport "tsh 없음 — 세션 잔여 시간을 여기서 못 본다(전제 검사는 배포 시 tr_run true 로 한다)"
   fi
@@ -74,8 +85,14 @@ fi
 if [ -z "$SECRET" ]; then bad sso-secret "포털 infra/.env 에 STE_SSO_SECRET 이 없다 — start.sh 가 만든다"
 else
   # 시크릿은 argv 로 넘기지 않는다(ps 에 보인다) — curl 설정을 stdin 으로 준다(-K -).
-  v="$(printf 'header = "X-Heax-Gateway-Secret: %s"\n' "$SECRET" | curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST -K - "http://127.0.0.1:$HTTP_PORT/ste/api/auth/sso/verify" 2>/dev/null || echo 000)"
+  # 401 은 둘이다 — 핸들러가 "시크릿이 다르다" 고 낸 401 과, 그 경로를 모르는 **옛 판**의 인증 미들웨어가 낸 401(WWW-Authenticate 헤더).
+  # update-all §6 이 헤더로 가른다 — doctor 만 "다르다" 로 읽으면 처방(FORCE_SSO_SECRET)이 틀린다(cae00 실측 2026-09-27).
+  hdr="$(curl -s -D - -o /dev/null -m 4 -X POST -H 'X-Heax-Gateway-Secret: probe-not-a-secret' -H 'X-Heax-User-Email: probe@invalid' "http://127.0.0.1:$HTTP_PORT/ste/api/auth/sso" 2>/dev/null || true)"
+  if printf '%s' "$hdr" | grep -qi '^www-authenticate:'; then v=mw; else
+    v="$(printf 'header = "X-Heax-Gateway-Secret: %s"\n' "$SECRET" | curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST -K - "http://127.0.0.1:$HTTP_PORT/ste/api/auth/sso/verify" 2>/dev/null || echo 000)"
+  fi
   case "$v" in
+    mw)  bad sso-secret "헤드에 **옛 판**이 떠 있다(/api/auth/sso 를 미들웨어가 401) — 시크릿 비교 이전 문제. 코드 갱신부터: ./infra/scripts/update-all.sh --with-ste 또는 infra/scripts/deploy-ste.sh" ;;
     204) ok sso-secret "양쪽 같은 값 (verify 204 via :$HTTP_PORT)" ;;
     401) bad sso-secret "양쪽 **다르다** (verify 401) — FORCE_SSO_SECRET=1 SmartTwinExplorer/deploy/sync-sso-secret.sh" ;;
     404) warn sso-secret "헤드 판이 verify 를 모른다(404) — 코드 갱신 뒤 다시(옛 판이거나 시크릿 미설정)" ;;

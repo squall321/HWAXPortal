@@ -113,3 +113,26 @@ shlex 제거)·`_ra_envv`·doctor `envv`·apply-envs `ra_env_value` 넷에 글�
 
 **교훈 둘.** ① 셸에서 **주석은 명령 위에만**, 대입어 사슬·파이프 안에 백틱 주석을 두지 않는다(이 리포에 두 번 들어갔고 둘 다 같은
 줄을 죽였다). ② "그 명령이 실행됐는가" 를 텍스트로 확인하는 시험은 확인이 아니다 — 스텁을 두고 **실행**해 마커를 본다.
+
+## D-9. cae00 첫 실측이 드러낸 것 (2026-09-27, 사용자가 update-all 꼬리·ste-doctor 를 붙여 줌)
+
+**ste 빨강 넷은 뿌리가 하나 — 헤드에 옛 코드.** `deployed` "마커 없음", 자격중계 "옛 판(미들웨어 401)", `mcp` 15812 → 000,
+`gateway-ste` absent. 즉 2c 가 이번 실행에서 배포하지 않았는데 **끝 요약(○)에 사유가 없었다** — `--if-stale` 의 초기 탈출 둘("리포
+없음"·"접속 설정 없음")이 `exit 0` 만 하고 장부에 안 적었다 → 이제 `exit 3` + 장부. 그리고 update-all 의 1d 는 STE 리포를 형제
+(`../SmartTwinExplorer`)에서만 찾는데 cae00 은 **`~/SmartTwinExplorer`** 다(doctor·deploy-ste 는 거기서 찾았다) → `_ste_repo_dir()`
+로 셋을 같은 규칙으로. 실제로 2c 가 왜 멈췄는지는 그 구간 로그가 없어 아직 모른다 — 사용자에게 `deploy-ste.sh` 직접 실행 로그를 부탁.
+
+**doctor 의 `sso-secret 다르다` 는 오진이었다.** 옛 판의 인증 미들웨어가 낸 401 을 "시크릿 다름" 으로 읽고 `FORCE_SSO_SECRET` 을 처방했다 —
+update-all §6 은 `WWW-Authenticate` 헤더로 가르는데 doctor 는 안 갈랐다. 같은 프로브를 넣어 "옛 판 — 코드 갱신부터" 로 낸다.
+
+**`teleport` 행이 형식을 못 읽었다.** 터널은 살아 있는데(web 200) 잔여 TTL 을 못 본 채 "모름". `tsh status -f json` 을 먼저 시도하고
+그래도 못 읽으면 **원문 첫 줄들**을 보여 다음 판에 형식을 맞춘다.
+
+**RA 쪽은 돌았다(사용자 몫이 이미 되어 있었다).** ○ 요약에 "RA 원격 재연결" 이 없으니 `RA_HOST` 가 있었고 1e 가 돌았다. 그런데 요약이
+`LLM_BASE_URL·LLM_MODEL·LLM_API_KEY` 를 "값 미정" 으로 냈다 — 1c(env-sync)가 적은 것을 1e 가 뒤에서 채워도 장부에 그대로 남는다 →
+`hwax_skip_forget` 로 1e 가 채운 키는 지운다. RA MCP 도구는 게이트웨이가 `RAT_TOKEN` 이 있을 때만 기대한다 — RA_HOST 는 있는데 토큰이
+없으면 챗에서 RA 가 조용히 빠지므로 장부에 남긴다. 사용자 run 은 §5 재프로비저닝 부활(0469734) **전**이라 게이트웨이 config 갱신은 다음
+실행부터다.
+
+**https 는 켜져 있었다.** `:443 200`, 인증서는 **자체서명**(`tls` 행) — 남은 것은 `COOKIE_SECURE=true` 한 줄. 사용자 PC 의 Claude 는
+배치파일이 `/tls/ca.crt` 를 심는다. RA 담당에게 줄 JWKS 는 사내망 http :8088 후보가 맞다(RA 쪽 CA 불필요).

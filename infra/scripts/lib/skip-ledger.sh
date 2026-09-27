@@ -28,6 +28,11 @@ _hwax_keys() {   # $1 = 접두사. "접두사 KEY" 행에서 KEY 만, 중복 없
 }
 _hwax_count() { [ -n "$1" ] && printf '%s\n' "$1" | awk -F', ' '{print NF}' || echo 0; }
 
+hwax_skip_forget() {  # <name> — 앞 단계가 "안 켬" 으로 적었지만 뒤 단계가 채운 항목(예: 1c 의 '설정값 LLM_*' 를 1e 가 이관)
+  [ -n "${HWAX_SKIP_LEDGER:-}" ] && [ -f "$HWAX_SKIP_LEDGER" ] || return 0
+  local tmp; tmp="$(mktemp)"
+  awk -F'\t' -v n="$1" '$1 != n' "$HWAX_SKIP_LEDGER" > "$tmp" && cat "$tmp" > "$HWAX_SKIP_LEDGER"; rm -f "$tmp"
+}
 hwax_skip_summary() {
   [ -n "${HWAX_SKIP_LEDGER:-}" ] && [ -s "$HWAX_SKIP_LEDGER" ] || return 0
   local feats needval optional n_f

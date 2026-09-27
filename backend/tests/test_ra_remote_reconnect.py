@@ -11,9 +11,16 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 UA = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
 GEN = (ROOT / "infra/scripts/gen-nginx-conf.sh").read_text(encoding="utf-8")
+LIB_LEDGER = ROOT / "infra/scripts/lib/skip-ledger.sh"
 APPLY = (ROOT / "infra/env-kits/apply-envs.sh").read_text(encoding="utf-8")
 APPLY_NOW = APPLY
 A = "203.0.113.10"
+
+
+def _bash(script: str, ledger: Path) -> str:
+    env = {**os.environ, "HWAX_SKIP_LEDGER": str(ledger)}
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+    return r.stdout + r.stderr
 
 
 def _services_mod():
@@ -448,3 +455,55 @@ def test_apply_envs_reads_the_last_active_line_and_strips_comments(tmp_path):
     script = f'ROOT="{portal}"\nfind_repo() {{ return 1; }}\n{fn}\nra_env_value LLM_BASE_URL'
     out = subprocess.run(["bash", "-c", script], capture_output=True, text=True).stdout.strip()
     assert out == "http://new/v1"
+
+
+# ── cae00 첫 실측(2026-09-27)이 드러낸 것 ─────────────────────────────────────
+def test_deploy_ste_if_stale_early_exits_land_in_the_ledger(tmp_path):
+    """2c 가 왜 배포하지 않았는지 끝 요약에 아무것도 없었다 — --if-stale 의 초기 탈출이 exit 0 만 했다."""
+    ledger = tmp_path / "ledger"
+    env = {**os.environ, "HWAX_SKIP_LEDGER": str(ledger), "STE_REPO": str(tmp_path / "nope"), "HOME": str(tmp_path)}
+    r = subprocess.run([str(ROOT / "infra/scripts/deploy-ste.sh"), "--if-stale"], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+    assert r.returncode == 3 and "ste 코드 최신화\t" in ledger.read_text() and "리포가 이 박스에 없다" in ledger.read_text()
+
+
+def test_update_all_finds_the_ste_repo_like_deploy_ste_does(tmp_path):
+    """cae00 은 리포가 ~/SmartTwinExplorer 에 있다 — 형제(../)만 보던 1d 는 transport.env 를 못 찾았다."""
+    fn = UA[UA.index("_ste_repo_dir() {"):]; fn = fn[:fn.index("\n}\n") + 3]
+    home = tmp_path / "home"; (home / "SmartTwinExplorer/deploy").mkdir(parents=True)
+    repo = tmp_path / "Projects/HWAXPortal"; repo.mkdir(parents=True)
+    out = subprocess.run(["bash", "-c", f'SELF_REPO="{repo}"; HOME="{home}"\n{fn}\n_ste_repo_dir'], capture_output=True, text=True).stdout
+    assert out == str(home / "SmartTwinExplorer")
+    (tmp_path / "Projects/SmartTwinExplorer/deploy").mkdir(parents=True)
+    out = subprocess.run(["bash", "-c", f'SELF_REPO="{repo}"; HOME="{home}"\n{fn}\n_ste_repo_dir'], capture_output=True, text=True).stdout
+    assert out.strip().endswith("Projects/SmartTwinExplorer"), "형제가 있으면 형제가 먼저다"   # (cd && pwd) 는 개행을 낸다 — $(…) 가 벗긴다
+
+
+def test_ledger_forget_removes_what_a_later_step_filled(tmp_path):
+    ledger = tmp_path / "ledger"
+    out = _bash(f'. "{LIB_LEDGER}"; hwax_skip_record "설정값 LLM_BASE_URL" a b; hwax_skip_record "설정값 LLM_MODEL" a b; hwax_skip_record "ste" a b; '
+                f'hwax_skip_forget "설정값 LLM_BASE_URL"; cat "$HWAX_SKIP_LEDGER"', ledger)
+    assert "LLM_BASE_URL" not in out and "LLM_MODEL" in out and "ste\t" in out
+
+
+def test_1e_forgets_llm_keys_it_migrated_and_flags_missing_rat_token(tmp_path):
+    ledger = tmp_path / "ledger"
+    repo = tmp_path / "HWAXPortal"; (repo / "backend/config").mkdir(parents=True); (repo / "infra").mkdir()
+    (repo / "infra/.env").write_text(f"RA_HOST={A}\n")
+    (tmp_path / "ReportArchive").mkdir(); (tmp_path / "ReportArchive/.env").write_text("LLM_BASE_URL=http://l/v1\nLLM_MODEL=m\nLLM_API_KEY=k\n")
+    gw = tmp_path / "HWAXMcpGateway"; gw.mkdir()
+    ledger.write_text("설정값 LLM_BASE_URL\t값 미정\t.env\n설정값 LLM_MODEL\t값 미정\t.env\n설정값 LLM_API_KEY\t값 미정\t.env\n")
+    stubs = ('hr() { :; }; ok() { echo "OK:$*"; }; bad() { echo "BAD:$*"; }; fail() { echo "FAIL:$*"; }\nhttp_code() { echo 200; }\n')
+    script = f'SELF_REPO="{repo}"\nGW_DIR="{gw}"\nexport HWAX_SKIP_LEDGER="{ledger}"\n. "{LIB_LEDGER}"\n{stubs}{_block()}\n'
+    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30).stdout
+    led = ledger.read_text()
+    assert "설정값 LLM_" not in led, "1e 가 채운 키는 장부에서 지워진다(1c 의 '값 미정' 이 남아 요약이 거짓말하던 것)"
+    assert "RA MCP 도구" in led and "RAT_TOKEN" in led, "RA_HOST 는 있는데 RAT_TOKEN 이 없으면 챗에 RA 가 안 붙는다 — 장부에"
+    (gw / "provision.env").write_text("RAT_TOKEN=rat_x\n"); ledger.write_text("")
+    subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    assert "RA MCP 도구" not in ledger.read_text()
+
+
+def test_doctor_tells_old_head_apart_from_secret_mismatch():
+    doc = (ROOT / "infra/scripts/ste-doctor.sh").read_text(encoding="utf-8")
+    assert "probe-not-a-secret" in doc and "www-authenticate" in doc.lower() and 'mw)  bad sso-secret "헤드에 **옛 판**' in doc
+    assert "tsh status -f json" in doc and "원문:" in doc
