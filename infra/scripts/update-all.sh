@@ -72,11 +72,40 @@ done
 export HWAX_WITH
 # ── 0b) 잠금 — update-all 두 개가 겹치면 2c 배포 중 재기동·§5 provision --force·게이트웨이 down/up 이
 #   동시에 돈다(2026-09-24 적대 검토). 같은 리포 루트 기준 한 개만 돈다. 기다리지 않고 바로 알린다.
+#   ⚠ 잠금 fd 를 자식에게 물려주지 않는다. 종전 `exec 9>lock; flock -n 9` 는 update-all 이 띄운 데몬(에이전트서버 nohup·apptainer
+#   instance 등)이 fd 9 를 물려받아 update-all 이 **끝난 뒤에도** 잠금을 쥐었다 — cae00 실측(2026-09-27): 첫 실행 뒤 모든 실행이
+#   "이미 돌고 있다" 로 거부됐다. 이제 flock(1) 이 부모로 남아 잠금을 쥐고(`-o`: 명령에는 fd 를 닫아 준다) 이 스크립트를 자식으로
+#   돈다 — §1 의 자기 재실행(exec)은 같은 PID 라 잠금이 이어지고, HWAX_UPDATE_ALL_LOCKED 로 다시 잡으려 들지 않는다.
+#   옛 판이 물려준 fd 를 쥔 데몬(보유자 중 flock 도 update-all 도 없다)은 잠금 파일을 새로 만들어 비켜 간다 — 그 데몬은 지워진
+#   inode 를 쥔 채 무해하다. 보유자가 안 보이면(다른 사용자) 모름이라 거부한다. 충돌 코드 75 는 이 스크립트가 쓰지 않는 값이다.
 _LOCK="${TMPDIR:-/tmp}/hwax-update-all.$(printf '%s' "$SELF_REPO" | md5sum | cut -c1-8).lock"
-exec 9>"$_LOCK"
-if ! flock -n 9; then
-  echo "✗ update-all 이 이미 돌고 있다($_LOCK) — 겹쳐 돌리지 않는다. 끝나면 다시 실행하라." >&2
-  exit 3
+if [ "${HWAX_UPDATE_ALL_LOCKED:-}" != "$_LOCK" ]; then
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "  ⚠ flock(util-linux) 이 없어 단일 실행 잠금 없이 진행한다 — 겹쳐 돌리지 마라" >&2
+  else
+    _lock_run() { HWAX_UPDATE_ALL_LOCKED="$_LOCK" flock -n -E 75 -o "$_LOCK" bash "${BASH_SOURCE[0]}" "$@"; }
+    _lock_run "$@" && _rc=0 || _rc=$?
+    if [ "$_rc" = 75 ]; then
+      _real=""; _stale=""
+      _lk="$(readlink -f "$_LOCK" | sed 's/[][*?\\]/\\&/g')"        # find -lname 은 글롭이다 — 경로의 특수문자를 이스케이프
+      for _p in $(find /proc/[0-9]*/fd -maxdepth 1 -lname "$_lk" -printf '%h\n' 2>/dev/null | cut -d/ -f3 | sort -u); do
+        _comm="$(cat "/proc/$_p/comm" 2>/dev/null)"
+        case "$_comm $(tr '\0' ' ' < "/proc/$_p/cmdline" 2>/dev/null | cut -c1-200)" in
+          flock*|*update-all*) _real="$_real $_p" ;;
+          *) _stale="$_stale $_p($_comm)" ;;      # pid·comm 만 — 남의 인자(토큰일 수 있다)는 로그에 안 적는다
+        esac
+      done
+      if [ -z "$_real" ] && [ -n "$_stale" ]; then
+        echo "  · 잠금을 쥔 것은 update-all 이 아니라 옛 판이 fd 를 물려준 데몬이다:$_stale — 잠금 파일을 새로 만들어 진행한다"
+        rm -f "$_LOCK"; _lock_run "$@" && _rc=0 || _rc=$?
+      fi
+      if [ "$_rc" = 75 ]; then
+        echo "✗ update-all 이 이미 돌고 있다($_LOCK) — 겹쳐 돌리지 않는다. 끝나면 다시 실행하라." >&2
+        exit 3
+      fi
+    fi
+    exit "$_rc"
+  fi
 fi
 
 # ── 0) git 자격증명 기본값 — private 레포 HTTPS pull 이 'Username for github' 를 반복해서 묻지

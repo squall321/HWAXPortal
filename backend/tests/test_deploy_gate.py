@@ -78,17 +78,82 @@ def test_update_all_parses_with_flags_generically():
     assert "export HWAX_WITH" in UA_SRC
 
 
+def _lock_block() -> str:
+    i = UA_SRC.index('_LOCK="${TMPDIR:-/tmp}/hwax-update-all.')
+    return UA_SRC[i:UA_SRC.index("# ── 0) git 자격증명", i)]
+
+
+def _fake_update_all(tmp_path, body: str, name: str = "update-all.sh"):
+    """0b 블록 + 본문으로 된 가짜 update-all — 파일로 둔다(0b 가 `bash "${BASH_SOURCE[0]}"` 로 자기를 다시 돈다)."""
+    f = tmp_path / name
+    f.write_text(f'#!/usr/bin/env bash\nSELF_REPO="{tmp_path}"; export TMPDIR="{tmp_path}"\n{_lock_block()}\n{body}\n')
+    return f
+
+
+def _lock_of(tmp_path):
+    import hashlib
+    return tmp_path / f"hwax-update-all.{hashlib.md5(str(tmp_path).encode()).hexdigest()[:8]}.lock"
+
+
+def _kill(pidfile):
+    import signal
+    try:
+        os.kill(int(pidfile.read_text().strip()), signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+
+
+def _free(lock) -> bool:
+    return subprocess.run(["flock", "-n", str(lock), "true"]).returncode == 0
+
+
 def test_update_all_refuses_to_overlap(tmp_path):
     """두 개가 겹치면 2c 배포 중 재기동·provision --force·게이트웨이 down/up 이 동시에 돈다."""
-    i = UA_SRC.index('_LOCK="${TMPDIR:-/tmp}/hwax-update-all.')
-    block = UA_SRC[i:UA_SRC.index("\nfi\n", i) + 4]
-    script = f'SELF_REPO="{tmp_path}"; TMPDIR="{tmp_path}"\n{block}\necho HELD; sleep 3'
-    first = subprocess.Popen(["bash", "-c", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    f = _fake_update_all(tmp_path, 'echo HELD; sleep 3')
+    first = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     import time; time.sleep(0.8)
-    second = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
+    second = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20)
     first.wait(timeout=20)
     assert "HELD" in first.stdout.read()
-    assert second.returncode == 3 and "이미 돌고 있다" in second.stderr
+    assert second.returncode == 3 and "이미 돌고 있다" in second.stderr and "HELD" not in second.stdout
+
+
+def test_update_all_lock_is_not_inherited_by_daemons_it_starts(tmp_path):
+    """cae00 실측(2026-09-27): 첫 update-all 이 띄운 데몬이 잠금 fd 를 물려받아, 끝난 뒤에도 모든 실행이 '이미 돌고 있다' 였다."""
+    pidfile = tmp_path / "daemon.pid"
+    f = _fake_update_all(tmp_path, f'( sleep 20 >/dev/null 2>&1 & echo $! > "{pidfile}" ); echo BODY; exit 0')
+    try:
+        r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20)
+        assert r.returncode == 0 and "BODY" in r.stdout, r.stdout + r.stderr
+        assert _free(_lock_of(tmp_path)), "데몬(sleep)이 살아 있어도 잠금은 자유여야 한다"
+        r2 = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20)
+        assert r2.returncode == 0 and "BODY" in r2.stdout and "이미 돌고 있다" not in r2.stderr
+    finally:
+        _kill(pidfile)
+
+
+def test_update_all_replaces_a_lock_held_only_by_an_orphaned_fd(tmp_path):
+    """옛 판(exec 9>lock; flock -n 9)이 fd 를 물려준 데몬만 잠금을 쥐고 있으면 — 진짜 update-all 은 없다 — 잠금 파일을 새로 만들어 진행한다."""
+    lock = _lock_of(tmp_path); pidfile = tmp_path / "daemon.pid"
+    old = tmp_path / "old.sh"
+    old.write_text(f'exec 9>"{lock}"; flock -n 9 || exit 9\n( sleep 20 >/dev/null 2>&1 & echo $! > "{pidfile}" )\nexit 0\n')
+    try:
+        assert subprocess.run(["bash", str(old)]).returncode == 0
+        assert not _free(lock), "옛 판 모양이면 데몬이 잠금을 쥔다(재현)"
+        f = _fake_update_all(tmp_path, 'echo BODY; exit 0')
+        r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20)
+        assert r.returncode == 0 and "BODY" in r.stdout, r.stdout + r.stderr
+        assert "옛 판이 fd 를 물려준 데몬이다" in r.stdout and "(sleep)" in r.stdout and "이미 돌고 있다" not in r.stderr
+        assert _free(lock), "새 잠금 파일은 자유다"
+    finally:
+        _kill(pidfile)
+
+
+def test_update_all_lock_passes_args_exit_code_and_survives_self_reexec(tmp_path):
+    """§1 이 새 버전으로 exec 재실행해도(같은 PID) 잠금은 이어지고 다시 잡으려 들지 않는다. 인자와 종료코드는 그대로 나온다."""
+    f = _fake_update_all(tmp_path, 'if [ "${UPDATE_ALL_REEXEC:-0}" != 1 ]; then exec env UPDATE_ALL_REEXEC=1 bash "$0" "$@"; fi\necho "REEXEC_OK:$*"; exit 7')
+    r = subprocess.run(["bash", str(f), "--with-ste"], capture_output=True, text=True, timeout=20)
+    assert r.returncode == 7 and r.stdout.count("REEXEC_OK:--with-ste") == 1 and "이미 돌고 있다" not in r.stderr, r.stdout + r.stderr
 
 
 # ── 1d 자동 라우트 ────────────────────────────────────────────────────────────

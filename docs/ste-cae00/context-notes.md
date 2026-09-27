@@ -354,6 +354,26 @@ cae00 에서 `pnpm build` 를 지우고(npm 미도달) Drive 아티팩트 경로
 줄번호는 밀리지만 `hr "2c) ste 코드 최신화"` 는 안 밀린다. 머리글에 **대조 시점**을 박아 다음 사람이 낡음을 판정할 수 있게 했다.
 박스 상태를 날짜 박아 적던 메모("cae00 에 staging 만 없음", 08-26)는 지웠다 — 상태는 적는 것이 아니라 `ste-doctor --report` 로 잰다.
 
+## D-23. 0b 잠금이 데몬에게 fd 를 물려줘 update-all 을 영구히 막았다 (2026-09-27, cae00 실측)
+
+deploy-ste 성공 직후 `update-all` 이 "✗ update-all 이 이미 돌고 있다(/tmp/hwax-update-all.….lock)" 로 거부됐다 — 돌고 있는 것은 없었다.
+0b 는 `exec 9>"$_LOCK"; flock -n 9` 였고, **fd 9 를 자식이 물려받는다.** update-all 이 띄운 데몬(에이전트서버 `nohup … &`·apptainer
+instance 등)이 그 fd 를 쥔 채 살아 있으면 update-all 이 끝나도 flock 은 풀리지 않는다. cae00 의 첫 실행(§F 09-27)이 데몬들을 띄웠고,
+그 뒤의 모든 실행이 거부될 판이었다. dev 에서 못 본 이유 — dev 는 09-25 실주행 한 번 뒤 다시 돌린 적이 없다(잠금 파일 자체가 없다).
+dev 재현: `bash -c 'exec 9>L; flock -n 9; (sleep 4 &)'` 뒤 `flock -n L true` → busy, 보유자는 `sleep`.
+
+고침(0b): flock(1) 을 **부모로 남긴다** — `HWAX_UPDATE_ALL_LOCKED=<lock> flock -n -E 75 -o "$_LOCK" bash "${BASH_SOURCE[0]}" "$@"`.
+`-o` 는 명령(이 스크립트)에 fd 를 닫아 넘기므로 데몬이 받을 fd 가 없고, 잠금은 flock 프로세스가 스크립트 수명만큼 쥔다(실측: 안에서 보유자
+comm=flock·busy, 데몬만 남은 밖에서 free, 명령 rc 전달, 충돌 rc 75). §1 의 `exec env UPDATE_ALL_REEXEC=1 bash update-all.sh` 재실행은
+같은 PID 라 잠금이 이어지고, 환경변수 가드로 다시 잡으려 들지 않는다. **자가치유**: 충돌(75)이면 `/proc/*/fd` 에서 잠금 파일을 연
+프로세스를 본다 — flock 도 update-all 도 없고 데몬만 있으면 옛 판이 물려준 fd 라 잠금 파일을 지우고 새 inode 로 다시 잡는다(옛 보유자는
+"(deleted)" inode 를 쥔 채 무해). 보유자가 하나도 안 보이면(다른 사용자) 모름이라 거부한다. 로그엔 pid·comm 만(남의 인자는 토큰일 수 있다).
+`flock` 이 없으면 잠금 없이 경고만 하고 진행한다(종전엔 command not found=rc 127 을 '이미 돌고 있다' 로 읽었다).
+
+시험은 텍스트가 아니라 **실제 프로세스**로: 겹침 거부(rc 3) · 데몬을 띄운 뒤에도 잠금 자유 · 옛 판 모양의 고아 fd 만 있으면 자가치유
+문구+진행 · 재실행(exec)·인자·종료코드 전달. 변이 4/4(−o 제거·자가치유 제거·가드 제거·잠금 제거 각각 해당 시험 실패). 스위트 761.
+교훈은 [[bash-flock-fd-inherited-by-daemons]] 로.
+
 ## F. cae00 실측 (S0)
 
 ### 2026-09-27 — 첫 `update-all` 뒤 `ste-doctor`(사용자 실행, 그대로)
