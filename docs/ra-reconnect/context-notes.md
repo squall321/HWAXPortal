@@ -136,3 +136,17 @@ update-all §6 은 `WWW-Authenticate` 헤더로 가르는데 doctor 는 안 갈�
 
 **https 는 켜져 있었다.** `:443 200`, 인증서는 **자체서명**(`tls` 행) — 남은 것은 `COOKIE_SECURE=true` 한 줄. 사용자 PC 의 Claude 는
 배치파일이 `/tls/ca.crt` 를 심는다. RA 담당에게 줄 JWKS 는 사내망 http :8088 후보가 맞다(RA 쪽 CA 불필요).
+
+## D-10. 2c 가 멈춘 자리 — refresh-code §3 체크아웃 (2026-09-27, 사용자가 deploy-ste.sh 직접 실행 로그를 붙여 줌)
+
+`install-ste-tunnel.sh --check`: 15810 → 200, **15812 → 000** — 터널은 둘 다 열려 있으니 헤드에 MCP 가 없는 것(옛 코드엔 `ste-mcp.service`
+가 없다. 그 유닛은 `deploy-backend.sh` 가 만든다). `deploy-ste.sh`: Drive 수신 33M ✓ · sha256 전부 ✓ · **§3 코드 커밋 고정에서
+"커밋 체크아웃 실패: 41709e6…"** — 번들 fetch 는 됐고(`HEAD -> FETCH_HEAD`) 체크아웃이 막혔다. 종전 §3 은 checkout 의 stderr 를
+`/dev/null` 로 보내 **git 이 왜 막았는지 아무도 못 봤다**. 유력한 원인은 배포용 사본(`~/SmartTwinExplorer`)의 더러운 작업트리
+(추적 파일의 로컬 수정, 또는 반입 커밋이 만드는 파일이 미추적으로 이미 있음) — 그러나 이건 추정이고, 고친 스크립트가 다음 실행에서
+git 의 문장을 보여 준다.
+
+고침(SmartTwinExplorer 6b7205e): §3 이 작업트리가 더러우면 목록을 찍고 `stash -u`(복구 가능)로 치운 뒤 `checkout --detach`,
+실패하면 git 의 마지막 문장을 붙여 die. 실제 git 저장소·번들로 두 경로를 시험(더러운 트리 통과 · 없는 커밋의 사유 표시). Drive
+staging 을 다시 발행해 cae00 의 다음 pull 이 이 판을 받게 했다. **닭과 달걀**: 고친 §3 은 새 판 안에 있는데 그것을 반입하는 것이
+옛 §3 이다 — 그래서 cae00 에서 한 번은 사람이 `stash` 를 손으로 하고 `deploy-ste.sh` 를 다시 돌린다(가이드에 적음). 그 뒤부터는 자동.

@@ -398,3 +398,11 @@ S0 확정 항목 중 여기서 답이 난 것: 인증서 = 자체서명(https �
 | 17 | medium | 사용자 | 게이트웨이→ste MCP 경로 미정의 — "권한 없음" 과 같은 모양 |
 | 18 | medium | 적대 | 정책 미적재면 전 백엔드가 열리고 임의 이메일로 JIT 계정 생성 |
 | 19 | medium | 적대 | 요구의 모순 — 셋업/갱신 분리로 푼다(D-2) |
+
+### 2026-09-27 — `install-ste-tunnel.sh --check` · `deploy-ste.sh` 직접 실행
+```
+✓ 유닛 설치됨(active) · ✓ 15810 → 200 · ✗ 15812 → 000   ← 터널은 열려 있다, 헤드에 MCP 가 없다(옛 코드)
+deploy-ste: 수신 33M ✓ · sha256 전부 OK ✓ · 3) 코드 커밋 고정: fetch OK → ✗ 커밋 체크아웃 실패: 41709e6…  → STE 배포 실패
+```
+판정: 2c 는 여기서 멈추고 있었다(docs/ra-reconnect D-10). 처방: `~/SmartTwinExplorer` 에서 `git status --short` 로 무엇이 더러운지 보고
+`git stash push -u -m manual` 뒤 `deploy-ste.sh` 재실행. 새 판(6b7205e)부터는 §3 이 스스로 치운다.
