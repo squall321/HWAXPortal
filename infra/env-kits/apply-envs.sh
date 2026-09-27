@@ -40,8 +40,14 @@ find_repo() {  # $1=디렉토리 이름 → 절대경로 or 실패
 
 # 형제 ReportArchive 의 .env 에서 키 값을 읽는다(없으면 빈값) — agent-server 가 RA 의 상암 LLM 설정을
 # '그대로' 상속하는 용도(@FROM_RA:KEY@ 마커). RA 는 읽기 전용(수정하지 않음).
-ra_env_value() {  # $1=RA .env 키 → stdout 값
-  local radir raenv; radir="$(find_repo ReportArchive)" || return 1
+ra_env_value() {  # $1=키(LLM_BASE_URL 등) → stdout 값
+  # 정본은 **포털 infra/.env** 다(2026-09-27). RA 가 포털 박스를 떠나 그 .env 는 관리되지 않는 사본이 됐고,
+  # 지우는 날 이 함수가 빈 값을 돌려 챗·심의·PaperIngest 의 LLM 이 조용히 비었을 것이다(RA 요청서 §3-5).
+  # update-all 1e 가 RA .env 에서 infra/.env 로 한 번 옮긴다. 형제 RA .env 는 그 전까지의 폴백(레거시)이다.
+  local v radir raenv
+  v="$(grep -E "^$1=" "$ROOT/infra/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  radir="$(find_repo ReportArchive)" || return 1
   for raenv in "$radir/backend/.env" "$radir/.env"; do
     [ -f "$raenv" ] || continue
     grep -E "^$1=" "$raenv" 2>/dev/null | head -1 | cut -d= -f2- && return 0

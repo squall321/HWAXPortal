@@ -25,7 +25,8 @@ mkdir -p "$(dirname "$NGINX_DIR")/data"
 #         큰 걸 받아도 여기서 먼저 잘린다. 업로드 실패가 앱 버그로 보이는 전형적인 자리다.
 loc_extras() { # $1=id
   case "$1" in
-    ste|apps|heax-hub)
+    # report-archive: 첨부 동영상 1GB·AI 작성 최대 10분·스트리밍 응답 — 없으면 413·504·「중단」 불능(RA 요청서 §3-3)
+    ste|apps|heax-hub|report-archive)
       cat <<'EOF'
             client_max_body_size 2048m;
             proxy_request_buffering off;

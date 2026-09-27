@@ -211,8 +211,12 @@ services:
     stop: bash scripts/down.sh
     tier: 10
 
+  # ⚠ RA 는 2026-09-26 부터 **다른 서버쌍**에서 돈다(RA 요청서 §3-1). infra/.env 에 RA_HOST 가 있는 박스(cae00)에서는
+  #   이 항목과 아래 reportarchive-mcp 가 "이 박스 대상 아님" 이다 — 안 그러면 스택 재기동이 헬스 실패를 보고
+  #   **구 RA 를 되살려** 두 DB 가 조용히 갈라진다. RA_HOST 가 없는 박스(dev)는 종전대로 같은 박스의 :3000.
   - name: report-archive
     host: local
+    unless_env: RA_HOST
     discover: ReportArchive
     update: false               # do NOT auto git-pull/touch the ReportArchive repo
     start: ./start.sh
@@ -275,6 +279,7 @@ services:
   # ── tier 15: real per-service MCP servers (the chat's tools; Agent Server consumes these) ──
   - name: reportarchive-mcp
     host: local
+    unless_env: RA_HOST                   # RA 가 원격이면 MCP 도 원격(:3002) — 게이트웨이 RA_MCP_URL 이 그쪽을 본다
     discover: ReportArchive
     update: false                         # shares the ReportArchive repo — don't auto-pull it
     start: ./mcp_server/run_dev.sh        # FastMCP :3002, forwards Authorization to the backend

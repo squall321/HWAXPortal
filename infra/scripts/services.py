@@ -181,6 +181,12 @@ def load() -> list[dict]:
 def enabled_here(svc: dict) -> bool:
     """`only_on: <hostname|[hostnames]>` — 그 박스에서만 다루는 서비스(예: dev 전용 로컬 vLLM).
     다른 박스에선 up/down/update 가 조용히 skip 한다(공유 manifest 하나로 박스별 차이 표현)."""
+    # `unless_env: <KEY>` — 그 설정이 **있는** 박스에서는 이 서비스가 다른 서버에서 돈다는 뜻이라 여기서 다루지
+    # 않는다(예: RA_HOST 가 있으면 Report Archive 는 원격 서버쌍 — 로컬 항목을 띄우면 이사 전 DB 를 되살린다).
+    # 박스 이름(only_on)이 아니라 사실(설정값)로 가른다 — cae00 호스트명이 바뀌거나 운영 박스가 늘어도 맞다.
+    unless = svc.get("unless_env")
+    if unless and _hwax_setting(str(unless)):
+        return False
     only = svc.get("only_on")
     if not only:
         return True

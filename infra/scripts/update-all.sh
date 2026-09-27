@@ -182,6 +182,86 @@ if [ -f "$_STE_TENV" ] \
   fi
 fi
 
+# ── 1e) Report Archive 재연결 — RA 가 다른 서버쌍으로 이사한 박스(cae00) ─────────────────────────
+# 운영자 값은 infra/.env 의 RA_HOST 하나다(RA 요청서 §1·§3 — ReportArchive/docs/[참고] HWAX포탈_연동_요청서.md).
+# 그 값으로 ① routes.local.env 의 report-archive=(끝 / = 접두어 STRIP) ② backend/.env 의 RA_BASE_URL
+# ③ 게이트웨이 provision.env 의 RA_MCP_URL 을 **유도해 적는다**(멱등 — 있으면 같은 값으로 바꾼다). 세 파일에
+# 주소를 손으로 각각 적게 하면 하나가 빠지고 그 하나가 조용히 옛 주소를 본다(ste 의 STE_SSO_URL 이 그렇게
+# 죽어 있었다 — docs/one-token D-12). services.yaml 의 로컬 RA 두 항목은 unless_env: RA_HOST 라 이 박스 대상이
+# 아니게 된다(구 RA 를 되살리지 않는다). ④ LLM 설정 정본을 RA .env 에서 포털 infra/.env 로 한 번 옮긴다 —
+# RA 가 떠난 뒤 그 .env 를 지우면 env-kit 의 @FROM_RA 마커가 조용히 건너뛰어져 챗·심의·PaperIngest 의 LLM 이
+# 빈다(요청서 §3-5). 비어 있으면(같은 박스에서 RA 가 도는 dev) 종전대로 — ○ 장부에 적고 넘어간다.
+# 주소는 추적 파일에 적지 않는다 — 셋 다 gitignore 파일이다. 2) 앞인 이유: §2 가 nginx 를 다시 만들고 3.5 가 apply-envs 를 돈다.
+_ra_envv() { sed -n "s/^[[:space:]]*$1=[[:space:]]*//p" "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' \r'; }
+_upsert_kv() {  # $1=파일 $2=키 $3=값 — 키가 있으면(주석 처리돼 있어도) 그 줄을 활성값으로 바꾸고, 없으면 덧붙인다
+  local f="$1" k="$2" v="$3"
+  [ -f "$f" ] || : > "$f"
+  if grep -qE "^[[:space:]]*#?[[:space:]]*$k=" "$f"; then
+    K="$k" V="$v" python3 - "$f" <<'PY'
+import os, re, sys, pathlib
+p, k, v = pathlib.Path(sys.argv[1]), os.environ["K"], os.environ["V"]
+out, done = [], False
+for ln in p.read_text(encoding="utf-8").splitlines(keepends=True):
+    if not done and re.match(r"^\s*#?\s*" + re.escape(k) + r"=", ln):
+        out.append(f"{k}={v}\n"); done = True
+    else:
+        out.append(ln)
+p.write_text("".join(out), encoding="utf-8")
+PY
+  else
+    printf '%s=%s\n' "$k" "$v" >> "$f"
+  fi
+}
+RA_HOST="$(_ra_envv RA_HOST)"; RA_PORT="$(_ra_envv RA_PORT)"; RA_MCP_PORT="$(_ra_envv RA_MCP_PORT)"
+RA_PORT="${RA_PORT:-3000}"; RA_MCP_PORT="${RA_MCP_PORT:-3002}"
+if [ -z "$RA_HOST" ]; then
+  hwax_skip "Report Archive 원격 재연결" "RA_HOST 미설정 — 이 박스는 RA 를 같은 박스의 :$RA_PORT 로 본다(dev 는 이것이 정상)" "RA 가 다른 서버로 이사한 박스는 infra/.env 에 RA_HOST=<RA 주 서버 주소>(RA 요청서 §1) 를 적고 재실행"
+else
+  hr "1e) Report Archive 재연결 (RA_HOST → 라우트·RA_BASE_URL·RA_MCP_URL 유도)"
+  case "$RA_HOST" in
+    *://*|*/*|*:*) fail "RA_HOST 는 호스트(또는 IP)만 적는다 — 스킴·포트·경로 없이(포트는 RA_PORT·RA_MCP_PORT): $RA_HOST" ;;
+    *)
+      RA_BASE_URL="http://$RA_HOST:$RA_PORT"
+      RA_MCP_URL="http://$RA_HOST:$RA_MCP_PORT/mcp"
+      _RL="$SELF_REPO/backend/config/routes.local.env"
+      [ -f "$_RL" ] || printf '# 이 박스 전용 라우트 오버레이 — gitignore. 주소는 추적 파일에 적지 않는다.\n' > "$_RL"
+      _upsert_kv "$_RL" report-archive "$RA_BASE_URL/"
+      ok "routes.local.env: report-archive=$RA_BASE_URL/  (끝 / = 접두어 STRIP — RA 화면이 그것을 기대한다. §2 가 nginx 를 다시 만든다)"
+      _upsert_kv "$SELF_REPO/backend/.env" RA_BASE_URL "$RA_BASE_URL"
+      ok "backend/.env: RA_BASE_URL=$RA_BASE_URL  (PAT 연결 검증·챗 PPT 가져오기 — 포털 재기동 때 읽는다)"
+      if [ -n "$GW_DIR" ]; then
+        _upsert_kv "$GW_DIR/provision.env" RA_MCP_URL "$RA_MCP_URL"
+        ok "게이트웨이 provision.env: RA_MCP_URL=$RA_MCP_URL  (§5 가 config 와 다르면 재프로비저닝한다)"
+      else
+        bad "HWAXMcpGateway 리포를 못 찾아 RA_MCP_URL 을 못 적었다 — 챗의 RA 도구가 옛 주소(같은 박스 :$RA_MCP_PORT)를 본다"
+      fi
+      # ④ LLM 정본 이관 — infra/.env 에 없고 RA .env 가 아직 있으면 한 번 가져온다. 이미 있으면 건드리지 않는다.
+      if [ -z "$(_ra_envv LLM_BASE_URL)" ]; then
+        _RA_ENV=""
+        for _c in "$SELF_REPO/../ReportArchive/backend/.env" "$SELF_REPO/../ReportArchive/.env"; do
+          [ -f "$_c" ] && { _RA_ENV="$_c"; break; }
+        done
+        if [ -n "$_RA_ENV" ] && grep -qE '^LLM_BASE_URL=.+' "$_RA_ENV"; then
+          for _k in LLM_BASE_URL LLM_MODEL LLM_API_KEY; do
+            _v="$(sed -n "s/^$_k=//p" "$_RA_ENV" | head -1)"
+            [ -n "$_v" ] && _upsert_kv "$SELF_REPO/infra/.env" "$_k" "$_v"
+          done
+          ok "LLM 설정을 RA .env 에서 infra/.env 로 옮겼다(정본 이관) — 이제 RA 설치본을 지워도 챗·심의·PaperIngest 의 LLM 이 비지 않는다"
+        else
+          hwax_skip "LLM 설정 정본" "infra/.env 에 LLM_BASE_URL 이 없고 형제 ReportArchive/.env 에서도 못 읽었다 — env-kit 의 @FROM_RA 가 건너뛰어져 각 앱 기본값을 쓴다" "infra/.env 에 LLM_BASE_URL·LLM_MODEL·LLM_API_KEY 를 적고 재실행"
+        fi
+      fi
+      # RA 서버가 받아 갈 포털 JWKS 주소(요청서 §4-2) — RA 서버에서 닿는 주소라 포털이 확정할 수 없다. 후보와 로컬 프로브를 찍는다.
+      _jw="$(http_code http://127.0.0.1:8088/.well-known/jwks.json 3)"
+      _lan="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      _pub="$(_ra_envv TLS_SERVER_NAME)"
+      echo "  · RA 담당에게 줄 JWKS 주소(요청서 §4-2, RA A·B 의 PORTAL_JWKS_URL) — 로컬 프로브 $_jw:"
+      echo "      사내망 http : http://${_lan:-<이 박스 주소>}:8088/.well-known/jwks.json   (RA 쪽 CA 불필요 — 요청서가 '더 간단' 이라 한 쪽)"
+      [ -n "$_pub" ] && echo "      공개 https  : https://$_pub/.well-known/jwks.json   (인증서가 사내 CA·자체서명이면 RA 서버에 http://127.0.0.1:8088/tls/ca.crt 의 체인을 둔다)"
+      ;;
+  esac
+fi
+
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
 # 종료코드 3 = 소스 갱신 실패(git fetch/reset). 서비스는 떠 있어도 옛 코드라 가장 위험한
@@ -539,6 +619,15 @@ PY
     fi
   fi
 
+  # RA 가 원격인 박스(RA_HOST)에서 config 의 reportarchive 주소가 다른 호스트를 가리키면 — 키가 있어 calc_missing 이
+  # 못 잡고, provision_urls 의 드리프트도 형제 .env 선언 기반이라 못 잡는다(RA 는 이제 형제가 아니다). 여기서 본다.
+  if [ -n "${RA_HOST:-}" ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
+    _ra_cfg_host="$(python3 -c 'import json,sys;from urllib.parse import urlparse;d=json.load(open(sys.argv[1]));print(urlparse(((d.get("reportarchive") or {}).get("url") or "")).hostname or "")' "$GW_DIR/gateway_config.json" 2>/dev/null)"
+    if [ -n "$_ra_cfg_host" ] && [ "$_ra_cfg_host" != "$RA_HOST" ]; then
+      echo "  · 주소 드리프트: reportarchive — config 는 $_ra_cfg_host 인데 RA_HOST 는 $RA_HOST 다(1e)"
+      MISSING="${MISSING:+$MISSING }reportarchive"
+    fi
+  fi
   if [ -n "$MISSING" ]; then
     echo "  · config에 없거나 주소가 어긋난 백엔드: $MISSING → 재프로비저닝"
     if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/provision-config.sh" ]; then
@@ -549,6 +638,8 @@ PY
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
           ARP_BASE="${ARP_BASE:-}" \
+          `# RA 가 원격이면(1e) 이 주소가 없을 때 provision 이 127.0.0.1:3002 기본값으로 덮는다.` \
+          RA_MCP_URL="${RA_MCP_URL:-}" RA_WORKSPACE_SLUG="${RA_WORKSPACE_SLUG:-}" \
           `# ste 위임 — 이 값이 없으면 per_user_sso["ste"] 가 아예 안 생기고,` \
           `# ste 도구 호출이 서비스 계정으로 나가 잡 소유자가 한 명으로 뭉친다.` \
           STE_SSO_SECRET="${STE_SSO_SECRET:-}" STE_MCP_URL="${STE_MCP_URL:-}" \
@@ -625,11 +716,20 @@ PY
         # 대신 MCP 만 띄우고 끝내지 않고, 백엔드가 죽어 있으면 크게 말한다. 안 그러면
         # ':3002 초록 + 호출 전량 실패' 로 끝나고 원인이 안 보인다.
         reportarchive)
-          if [ "$(http_code http://127.0.0.1:3000/api/health 3)" != "200" ]; then
-            bad "ReportArchive 백엔드(:3000)가 죽어 있다 — reportarchive-mcp 를 띄워도 호출은 전량 실패한다."
-            echo "      RA 는 hands-off 라 자동 기동하지 않는다. 살리려면: $SVC up report-archive"
-          fi
-          UP_SVCS="$UP_SVCS reportarchive-mcp" ;;
+          if [ -n "${RA_HOST:-}" ]; then
+            # RA 는 다른 서버쌍에서 돈다(1e) — 여기서 띄울 것이 없다(RA 요청서 §3-6). 도달성만 판정해 크게 말한다.
+            if [ "$(http_code "http://$RA_HOST:${RA_PORT:-3000}/api/health" 4)" != "200" ]; then
+              bad "ReportArchive(원격 $RA_HOST:${RA_PORT:-3000}) /api/health 불통 — 방화벽(:${RA_PORT:-3000}·:${RA_MCP_PORT:-3002})·RA 서버 상태를 RA 담당과 확인"
+            else
+              bad "RA 백엔드(원격)는 살았는데 게이트웨이가 MCP(:${RA_MCP_PORT:-3002})에 못 붙는다 — RA 서버의 MCP 프로세스·방화벽 :${RA_MCP_PORT:-3002}"
+            fi
+          else
+            if [ "$(http_code http://127.0.0.1:3000/api/health 3)" != "200" ]; then
+              bad "ReportArchive 백엔드(:3000)가 죽어 있다 — reportarchive-mcp 를 띄워도 호출은 전량 실패한다."
+              echo "      RA 는 hands-off 라 자동 기동하지 않는다. 살리려면: $SVC up report-archive"
+            fi
+            UP_SVCS="$UP_SVCS reportarchive-mcp"
+          fi ;;
         # STC MCP(:5012)는 services.yaml 밖이다 — systemd 데몬으로 상시 기동하며
         # dashboard-backend(:5010)를 Wants 한다. 여기서 sudo systemctl 을 부르지 않는다.
         # 할 일을 사람이 바로 알 수 있게 남긴다(전엔 '매핑된 서비스 없음' 만 찍혔다).

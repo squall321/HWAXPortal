@@ -509,3 +509,40 @@ curl -s 127.0.0.1:8088/tls/info | python3 -m json.tool   # needs_ca·ca_availabl
   **등록 명령을 만들지 않고** 이유를 말한다 — 모르는 채로 만든 등록은 인증서가 빠지거나 검증 안 된 것이 들어간다.
 - ste 도구가 보이지 않으면 순서대로: `ste-doctor.sh` 의 `mcp`(15812) → `gateway-ste` → `policy` → 사용자 권한
   (`plat:smarttwin`·`feat:api-token`). 권한 없는 앱은 목록에 없고 `denied_apps` 에 라벨·필요 권한·요청 경로만 나온다.
+
+## 2026-09-27 반영분 — Report Archive 재연결(RA 가 포털 박스를 떠났다)
+
+RA 가 새 서버쌍(A 주·B 대기)으로 이사했고 공개 주소는 `https://hwax.sec.samsung.net/report-archive/` 다(RA 요청서:
+RA 리포 `docs/[참고] HWAX포탈_연동_요청서.md`, 포털 쪽 답과 결정은 `docs/ra-reconnect/`). **포털 운영자가 할 일은 값 하나다.**
+
+```bash
+cd ~/Projects/HWAXPortal && git pull
+$EDITOR infra/.env            # RA_HOST=<RA 주(A) 서버 주소>   ← 요청서 §1. 호스트만(스킴·포트·경로 없이)
+./infra/scripts/update-all.sh
+```
+
+`update-all` 이 그 값으로 자동으로 한다(**1e** 단계).
+- `routes.local.env` 에 `report-archive=http://<RA_HOST>:3000/`(끝 `/` = 접두어 STRIP) → §2 가 nginx 를 다시 만든다.
+  `loc_extras` 에 `report-archive` 가 들어가 첨부 1GB·AI 작성 10분·스트리밍이 통한다(413·504 방지).
+- `backend/.env` 의 `RA_BASE_URL`, 게이트웨이 `provision.env` 의 `RA_MCP_URL` — §5 가 config 와 다르면 재프로비저닝한다.
+- `services.yaml` 의 로컬 RA 두 항목(`report-archive`·`reportarchive-mcp`)은 `RA_HOST` 가 있는 박스에서 **이 박스 대상이
+  아니다**(`unless_env`) — 스택 재기동이 **구 RA 를 되살리지 않는다**(두 DB 가 갈라지던 위험).
+- **LLM 설정 정본 이관** — 포털 챗·심의·PaperIngest 는 LLM 주소를 형제 `ReportArchive/.env` 에서 상속했다. 1e 가 그 값을
+  `infra/.env` 의 `LLM_BASE_URL·LLM_MODEL·LLM_API_KEY` 로 한 번 옮긴다. **이게 끝난 뒤에만** 구 RA 설치본을 지운다(RA 담당과 맞춘다).
+- 타일은 다른 앱과 같은 **jwt-handoff** 다(`systems.yaml` 세 줄) — 포털 코드 변경 없음.
+- 1e 가 끝에 **RA 담당에게 줄 JWKS 주소** 후보를 찍는다(요청서 §4-2, RA 의 `PORTAL_JWKS_URL`). 사내망 http(이 박스 :8088)가
+  간단하고, 공개 https 를 고르면 인증서가 사내 CA·자체서명일 때 RA 서버에 `http://127.0.0.1:8088/tls/ca.crt` 의 체인을 둔다.
+  인증서 종류는 `./infra/scripts/ste-doctor.sh` 의 `tls` 행 또는 `curl -s 127.0.0.1:8088/tls/info`.
+
+확인(요청서 §8).
+```bash
+./infra/scripts/services.sh enabled report-archive; echo $?      # 1 = 이 박스 대상 아님(맞다)
+curl -sI https://hwax.sec.samsung.net/report-archive/             # 200 text/html, 로그인 화면
+curl -s  https://hwax.sec.samsung.net/report-archive/api/health   # {"status":"ok",...}
+curl -s 127.0.0.1:9110/health | python3 -c 'import json,sys; print(json.load(sys.stdin)["backends"].get("reportarchive"))'   # True
+grep -c FROM_RA ../HWAXAgentServer/.env                          # 0 — 마커가 값으로 치환됐다
+```
+- 타일을 눌러 로그인 화면 없이 RA 로 들어가면 SSO 끝. 안 되면 RA 쪽 `PORTAL_JWKS_URL` 부터(요청서 §4-3).
+- **B 로 넘길 때**(요청서 §5): RA 담당이 B 의 DB 를 승격한 뒤, 포털은 `infra/.env` 의 `RA_HOST` 를 B 주소로 바꾸고
+  `update-all` — 라우트·`RA_BASE_URL`·`RA_MCP_URL` 셋이 함께 따라간다. 되돌리기도 그 한 줄이다.
+- `RA_HOST` 를 비워 두면 종전대로 "같은 박스의 :3000" 이고 ○ 요약에 "RA 원격 재연결 — RA_HOST 미설정" 이 남는다(dev 는 그것이 정상).
