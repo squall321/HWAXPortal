@@ -397,6 +397,15 @@ def update_one(svc: dict) -> str:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logp = LOG_DIR / f"{svc['name']}.log"
     lines: list[str] = []
+
+    def _head() -> str | None:  # git HEAD — 갱신 전/후를 비교해 '바뀌었나' 를 문자열("Already up to date")이 아니라 커밋으로 말한다
+        try:
+            r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(wd), capture_output=True, text=True, timeout=10)  # noqa: S603
+            return r.stdout.strip() or None if r.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+    h0 = _head()
     with open(logp, "a", encoding="utf-8") as lf:
         lf.write(f"\n=== update START: {cmd}\n")
         lf.flush()
@@ -413,6 +422,11 @@ def update_one(svc: dict) -> str:
         if rc != 0:
             lf.write(f"=== update FAILED (rc={rc})\n")
     tail = lines[-1].strip() if lines else ""
+    if rc == 0:
+        h1 = _head()
+        if h0 and h1:   # update-sites 가 이 마커로 재기동 생략을 정한다(docs/update-all-skip-unchanged D-5)
+            mark = f"unchanged ({h1[:7]})" if h0 == h1 else f"{h0[:7]}→{h1[:7]}"
+            return f"updated: {mark}" + (f" · {tail[:40]}" if tail else "")
     return ("updated" if rc == 0 else "FAIL") + (f": {tail[:60]}" if tail else "")
 
 

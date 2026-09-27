@@ -27,7 +27,10 @@ if ! "$RCLONE" lsf "$SRC/" 2>/dev/null | grep -q '^portal\.sif$'; then
 fi
 echo "→ source: $SRC"
 
-STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
+# 영구 캐시 — 임시 디렉터리에 받으면 rclone 이 비교할 것이 없어 매번 전량 전송이다(Drive ~2MB/s, SIF 수백 MB). 캐시에 받으면 안 바뀐
+# 파일은 전송 0 이고 modtime 이 원격 것으로 보존돼 아래 지문(deploy-all)이 안정된다. docs/update-all-skip-unchanged D-2.
+. "$(dirname "$0")/lib/change-detect.sh"
+STAGE="${HWAX_DRIVE_CACHE:-$APPT_DIR/.drive-cache}"; mkdir -p "$STAGE"
 "$RCLONE" copy --progress "$SRC/" "$STAGE/"
 
 # Verify integrity before staging.
@@ -42,18 +45,24 @@ fi
   || { echo "✗ portal.sif/nginx.sif missing in $SRC"; exit 1; }
 
 mkdir -p "$APPT_DIR"
-cp "$STAGE/portal.sif" "$STAGE/nginx.sif" "$APPT_DIR/"
-echo "  ✓ staged portal.sif + nginx.sif → $APPT_DIR"
+# 같은 내용이면 손대지 않는다 — 살아 있는 인스턴스 밑의 SIF 를 덮어쓰면 squashfs 가 깨지고(mxwp 실사고), cp 는 mtime 을 리셋해 지문이 매번 달라진다.
+for _f in portal.sif nginx.sif; do
+  if hwax_install_if_changed "$STAGE/$_f" "$APPT_DIR/$_f"; then echo "  ✓ staged $_f → $APPT_DIR"; else echo "  · $_f 같음 — 그대로"; fi
+done
 # SearxNG(일반 웹 검색) SIF — 올리는 쪽(images-to-drive)만 고치고 여기를 빼먹으면
 # "SIF 는 Drive 로 간다" 는 안내가 거짓이 된다. 없을 수도 있으므로 있을 때만 옮긴다.
 if [ -f "$STAGE/searxng-fixed.sif" ]; then
-  cp "$STAGE/searxng-fixed.sif" "$APPT_DIR/"
-  echo "  ✓ staged searxng-fixed.sif → $APPT_DIR"
+  if hwax_install_if_changed "$STAGE/searxng-fixed.sif" "$APPT_DIR/searxng-fixed.sif"; then echo "  ✓ staged searxng-fixed.sif → $APPT_DIR"; else echo "  · searxng-fixed.sif 같음 — 그대로"; fi
 fi
 
 if [ -f "$STAGE/frontend-dist.tar.gz" ]; then
-  ( cd "$REPO_ROOT/frontend" && tar -xzf "$STAGE/frontend-dist.tar.gz" )
-  echo "  ✓ extracted frontend/dist"
+  # 마지막으로 푼 tar 의 사본과 같으면 다시 풀지 않는다(수천 파일 rewrite 생략) — 다르면 풀고 사본을 갱신
+  if [ -f "$APPT_DIR/.frontend-dist.applied.tar.gz" ] && cmp -s "$STAGE/frontend-dist.tar.gz" "$APPT_DIR/.frontend-dist.applied.tar.gz"; then
+    echo "  · frontend/dist 같음 — 그대로"
+  else
+    ( cd "$REPO_ROOT/frontend" && tar -xzf "$STAGE/frontend-dist.tar.gz" ) && cp -p "$STAGE/frontend-dist.tar.gz" "$APPT_DIR/.frontend-dist.applied.tar.gz"
+    echo "  ✓ extracted frontend/dist"
+  fi
 fi
 
 echo

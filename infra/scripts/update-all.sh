@@ -548,6 +548,8 @@ fi
 #   ① .env 없으면 apply-envs 로 신규 생성(@FROM_RA 마커를 RA .env 의 LLM_* 값으로 치환)
 #   ② @FROM_RA 마커가 남아있으면(킷 raw 복사/수동편집 흔적 — apply-envs 는 기존키 보존이라 못 고침)
 #      그 줄을 지우고 재치환 → '@FROM_RA:LLM_BASE_URL@' 로 붙으려다 APIConnectionError 로 죽던 사고 차단.
+# §3.5 가 .env 를 고쳤으면 §4 는 그 서비스를 반드시 재기동해야 한다 — §4 가 '코드 변경 없음' 으로 건너뛰면 옛 env 로 계속 돈다(docs/update-all-skip-unchanged D-5)
+_ae0="$(sha256sum "${AGENT_DIR:-/nonexistent}/.env" 2>/dev/null | cut -c1-16)"
 hr "3.5) agent-server .env 보정 (@FROM_RA 치환 확인)"
 if [ -n "${AGENT_DIR:-}" ]; then
   AGENT_ENV="$AGENT_DIR/.env"
@@ -595,6 +597,11 @@ fi
 
 # ── 4) 챗 스택만 pull+재기동 — 2)에서 이미 재기동한 사이트들을 다시 내리지 않는다
 #      (mxwp-mcp는 deploy-all이 재기동, reportarchive-mcp는 RA 레포 공유라 update 금지 — 기동은 5에서) ──
+_ae1="$(sha256sum "${AGENT_DIR:-/nonexistent}/.env" 2>/dev/null | cut -c1-16)"
+if [ "$_ae0" != "$_ae1" ]; then
+  export HWAX_FORCE_RESTART="${HWAX_FORCE_RESTART:+$HWAX_FORCE_RESTART }agent-server"
+  echo "  · agent-server .env 가 §3.5 에서 바뀌었다 — §4 가 코드 변경이 없어도 재기동한다"
+fi
 hr "4) update-sites (챗 스택: mcp-gateway·agent-server·signalforge-mcp)"
 # 순서가 중요하다: 백엔드(signalforge-mcp) → 게이트웨이 → 소비자(agent-server).
 # 종전엔 게이트웨이를 먼저 올려서, 그 시점에 아직 내려가 있던 signalforge-mcp 에 붙지 못하고
