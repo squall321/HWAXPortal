@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 UA = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
 GEN = (ROOT / "infra/scripts/gen-nginx-conf.sh").read_text(encoding="utf-8")
 APPLY = (ROOT / "infra/env-kits/apply-envs.sh").read_text(encoding="utf-8")
+APPLY_NOW = APPLY
 A = "203.0.113.10"
 
 
@@ -47,7 +48,8 @@ def test_services_cli_reads_ra_host_from_the_file_like_the_boot_unit(tmp_path):
     lay = tmp_path / "HWAXPortal"; (lay / "infra/scripts").mkdir(parents=True)
     shutil.copy(ROOT / "infra/scripts/services.py", lay / "infra/scripts/services.py")
     shutil.copy(ROOT / "infra/services.yaml", lay / "infra/services.yaml")
-    py = str(ROOT / "backend/.venv/bin/python")
+    import sys
+    py = sys.executable
     def rc(env_text):
         (lay / "infra/.env").write_text(env_text)
         return subprocess.run(["env", "-i", f"PATH={os.environ['PATH']}", py, str(lay / "infra/scripts/services.py"), "enabled", "report-archive"],
@@ -281,12 +283,14 @@ def test_1e_strips_inline_comments_like_bash_does(tmp_path):
     assert "#" not in (repo / "backend/.env").read_text().split("RA_BASE_URL=")[1].splitlines()[0]
 
 
-def test_1e_rejects_anything_but_a_hostname_or_ipv4(tmp_path):
-    for bad in (f"{A}#x", f"{A}:3000", "http://ra", "ra host", "2001:db8::1"):
+def test_1e_rejects_anything_but_a_remote_hostname_or_ipv4(tmp_path):
+    """문자 집합만 보면 `-x`·`.`·`ra.` 가 통과해 nginx 가 [emerg] 로 죽고, localhost/127.x 는 로컬 RA 를 끄면서 자기 자신을 가리킨다(3라운드)."""
+    for bad in (f"{A}#x", f"{A}:3000", "http://ra", "ra host", "2001:db8::1", "-x", ".", "ra.", ".ra", "a..b", "localhost", "127.0.0.1"):
         out, repo, _ = _run_1e(tmp_path, f"RA_HOST={bad}\n")
         assert "FAIL:RA_HOST" in out and not (repo / "backend/config/routes.local.env").exists(), bad
-    out, repo, _ = _run_1e(tmp_path, "RA_HOST=ra-a.example.test\nLLM_BASE_URL=x\n")
-    assert "FAIL" not in out and "report-archive=http://ra-a.example.test:3000/" in (repo / "backend/config/routes.local.env").read_text()
+    for good in ("ra-a.example.test", A, "ra1"):
+        out, repo, _ = _run_1e(tmp_path, f"RA_HOST={good}\nLLM_BASE_URL=x\n")
+        assert "FAIL" not in out and f"report-archive=http://{good}:3000/" in (repo / "backend/config/routes.local.env").read_text(), good
 
 
 def test_1e_append_never_glues_onto_a_line_without_newline(tmp_path):
@@ -317,8 +321,24 @@ def test_1e_write_failure_is_a_fail_not_a_checkmark(tmp_path):
 
 def test_1e_partial_llm_migration_is_reported_not_celebrated(tmp_path):
     out, repo, _ = _run_1e(tmp_path, f"RA_HOST={A}\n", ra_env="LLM_BASE_URL=http://llm.example/v1\n")
-    assert "BAD:LLM 설정 일부만 옮겼다" in out and "OK:LLM 설정을 RA .env 에서" not in out
+    assert "BAD:LLM 설정 중 LLM_BASE_URL 만 옮겼다" in out and "LLM_MODEL LLM_API_KEY 가 없다" in out
+    assert "OK:LLM 설정을 RA .env 에서" not in out and "FAIL" not in out, "RA .env 에 없는 것은 고장이 아니다"
     assert "LLM_BASE_URL=http://llm.example/v1" in (repo / "infra/.env").read_text()
+
+
+def test_1e_llm_write_failure_is_fail_not_a_hint_to_edit_the_unwritable_file(tmp_path):
+    repo = tmp_path / "HWAXPortal"; (repo / "backend/config").mkdir(parents=True); (repo / "infra").mkdir()
+    (repo / "infra/.env").write_text(f"RA_HOST={A}\n"); (repo / "infra/.env").chmod(0o444)
+    (tmp_path / "ReportArchive").mkdir(); (tmp_path / "ReportArchive/.env").write_text("LLM_BASE_URL=http://l/v1\nLLM_MODEL=m\nLLM_API_KEY=k\n")
+    gw = tmp_path / "HWAXMcpGateway"; gw.mkdir()
+    stubs = ('hr() { :; }; ok() { echo "OK:$*"; }; bad() { echo "BAD:$*"; }; fail() { echo "FAIL:$*"; }\n'
+             'hwax_skip() { echo "SKIP:$1"; }; http_code() { echo 200; }\n')
+    script = f'SELF_REPO="{repo}"\nGW_DIR="{gw}"\n{stubs}{_block()}\n'
+    try:
+        out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30).stdout
+    finally:
+        (repo / "infra/.env").chmod(0o644)
+    assert "FAIL:LLM 설정을 infra/.env 에 못 적었다" in out and "OK:LLM 설정을" not in out and "BAD:LLM 설정 중" not in out
 
 
 def test_update_all_remote_ra_down_is_fatal_like_ste_mcp():
@@ -345,3 +365,86 @@ def test_tls_guard_also_refuses_parent_traversal():
 
 def test_apply_envs_dry_run_masks_secret_values():
     assert '(dry-run) + $key=****(가림)' in APPLY
+
+
+# ── 3라운드 검토가 잡은 것들 ────────────────────────────────────────────────────
+def _reprovision_cmd() -> str:
+    i = UA.index('( cd "$GW_DIR" && RAT_TOKEN=')
+    j = UA.index("--force )", i) + len("--force )")
+    return UA[i:j]
+
+
+def test_section5_reprovision_actually_executes_and_receives_the_values(tmp_path):
+    """2026-09-22 부터 §5 의 provision-config.sh --force 호출은 한 번도 돌지 않았다 — 대입어 사슬 안의 백틱 주석이 명령어 자리를
+    차지해 rc 127 로 끝나고, STILL 재검증은 키 존재만 봐 '✓ 재프로비저닝 완료' 를 찍었다(3라운드 검토). 텍스트가 아니라 **실행**으로 잡는다."""
+    gw = tmp_path / "gw"; gw.mkdir()
+    (gw / "provision-config.sh").write_text('#!/usr/bin/env bash\nprintf "%s|%s|%s\\n" "$RA_MCP_URL" "$STE_SSO_URL" "$*" > "$PWD/ran.marker"\n')
+    (gw / "provision-config.sh").chmod(0o755)
+    cmd = _reprovision_cmd()
+    assert not any(ln.lstrip().startswith("`") for ln in cmd.splitlines()), "대입어 사슬 안에 백틱 주석이 있으면 명령이 안 돈다"
+    script = f'GW_DIR="{gw}"; RA_MCP_URL="http://{A}:3002/mcp"; STE_SSO_URL="http://x/sso"\n{cmd}\necho rc=$?'
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    assert "rc=0" in r.stdout, r.stderr
+    assert (gw / "ran.marker").read_text().strip() == f"http://{A}:3002/mcp|http://x/sso|--force"
+
+
+def test_section5_treats_provision_failure_and_ra_drift_as_failures():
+    blk = UA[UA.index('if ( cd "$GW_DIR" && RAT_TOKEN='):UA.index("주소 드리프트 해소")]
+    assert "_prov_ok=0" in blk and 'fail "재프로비저닝(provision-config.sh --force) 자체가 실패했다' in blk
+    assert "_ra_after" in blk and 'reportarchive(주소 $_ra_after ≠ RA_HOST)' in blk
+    assert 'fail "재프로비저닝 후에도 누락/어긋남' in blk
+
+
+def test_export_prefix_is_read_the_same_by_services_and_update_all(tmp_path, monkeypatch):
+    """`export RA_HOST=…` 는 _common.sh(set -a 소싱)에 적법하다 — services.py 만 읽고 update-all 은 못 읽으면 로컬 RA 는 꺼지고
+    세 파일은 안 적혀 RA 가 그 박스에서 통째로 죽는다(3라운드)."""
+    out, repo, gw = _run_1e(tmp_path, f"export RA_HOST={A}\nLLM_BASE_URL=x\n")
+    assert f"report-archive=http://{A}:3000/" in (repo / "backend/config/routes.local.env").read_text()
+    m = _services_mod(); (tmp_path / "svc/infra").mkdir(parents=True)
+    monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path / "svc"); monkeypatch.delenv("RA_HOST", raising=False)
+    (tmp_path / "svc/infra/.env").write_text(f"export RA_HOST={A}\n")
+    assert m.enabled_here({"name": "report-archive", "unless_env": "RA_HOST"}) is False
+
+
+def test_infra_value_and_ra_envv_agree_on_awkward_lines(tmp_path, monkeypatch):
+    """두 독자가 같은 줄을 다르게 읽으면 한쪽은 'RA 원격', 한쪽은 '미설정' 이 된다 — 규칙을 글자 단위로 맞췄다(shlex 제거)."""
+    m = _services_mod(); (tmp_path / "svc/infra").mkdir(parents=True); monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path / "svc")
+    monkeypatch.delenv("RA_HOST", raising=False)
+    fn = UA[UA.index("_ra_envv() {"):]; fn = fn[:fn.index("\n}\n") + 3]
+    cases = [f"RA_HOST={A}   # 주석", f'RA_HOST="{A}"', f"export RA_HOST={A}", f"RA_HOST={A}#c", "RA_HOST=don't", f"RA_HOST={A}\nRA_HOST=", f"RA_HOST=\nRA_HOST={A}"]
+    for line in cases:
+        (tmp_path / "svc/infra/.env").write_text(line + "\n")
+        py = m._infra_value("RA_HOST") or ""
+        sh = subprocess.run(["bash", "-c", f'SELF_REPO="{tmp_path}/svc"\n{fn}\n_ra_envv RA_HOST'], capture_output=True, text=True).stdout.strip()
+        assert py == sh, (line, py, sh)
+
+
+def test_skip_reason_names_the_env_key_not_only_on(tmp_path):
+    import shutil, sys
+    lay = tmp_path / "HWAXPortal"; (lay / "infra/scripts").mkdir(parents=True)
+    shutil.copy(ROOT / "infra/scripts/services.py", lay / "infra/scripts/services.py")
+    shutil.copy(ROOT / "infra/services.yaml", lay / "infra/services.yaml")
+    (lay / "infra/.env").write_text(f"RA_HOST={A}\n")
+    r = subprocess.run(["env", "-i", f"PATH={os.environ['PATH']}", sys.executable, str(lay / "infra/scripts/services.py"), "status", "report-archive"],
+                       capture_output=True, text=True, timeout=60)
+    assert "unless_env=RA_HOST" in r.stdout and "only_on=None" not in r.stdout, r.stdout + r.stderr
+
+
+def test_unreadable_infra_env_fails_closed_for_unless_env(tmp_path, monkeypatch):
+    m = _services_mod(); (tmp_path / "svc/infra").mkdir(parents=True); monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path / "svc")
+    monkeypatch.delenv("RA_HOST", raising=False)
+    f = tmp_path / "svc/infra/.env"; f.write_text(f"RA_HOST={A}\n"); f.chmod(0)
+    try:
+        assert m.enabled_here({"name": "report-archive", "unless_env": "RA_HOST"}) is False, "모름은 대상이 아니다 — 못 읽은 채 구 RA 를 띄우지 않는다"
+        assert m.enabled_here({"name": "plain"}) is True
+    finally:
+        f.chmod(0o644)
+
+
+def test_apply_envs_reads_the_last_active_line_and_strips_comments(tmp_path):
+    portal = tmp_path / "HWAXPortal"; (portal / "infra").mkdir(parents=True)
+    (portal / "infra/.env").write_text('LLM_BASE_URL=http://old/v1\nLLM_BASE_URL="http://new/v1"   # 정본\n')
+    fn = APPLY_NOW[APPLY_NOW.index("ra_env_value() {"):]; fn = fn[:fn.index("\n}\n") + 3]
+    script = f'ROOT="{portal}"\nfind_repo() {{ return 1; }}\n{fn}\nra_env_value LLM_BASE_URL'
+    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True).stdout.strip()
+    assert out == "http://new/v1"

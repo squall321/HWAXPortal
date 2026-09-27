@@ -55,26 +55,63 @@ def _infra_env() -> dict[str, str]:
     return out
 
 
+class InfraEnvUnreadable(RuntimeError):
+    """infra/.env 가 있는데 못 읽는다 — '모름' 이다. unless_env 판정은 이것을 '대상 아님'(닫힘) 으로 다룬다."""
+
+
+_INLINE_COMMENT = re.compile(r"\s+#.*$")
+
+
 def _infra_value(key: str) -> str | None:
     """infra/.env 의 **임의 키** 하나. `unless_env` 가 가리키는 키(RA_HOST 등)는 위 HWAX_* 허용 목록 밖이라 _infra_env()
     가 싣지 않는다 — 그래서 파일에만 적은 RA_HOST 를 이 파일이 절대 못 보고 구 RA 를 되살렸다(2026-09-27 2라운드 검토 실측:
-    부팅 유닛·services.sh 어느 경로도 RA_HOST 를 env 로 넘기지 않는다). 파서 규칙은 _infra_env 와 같다 — 인라인 주석·따옴표,
-    빈 값=미설정, 마지막 줄이 이긴다. os.environ 에는 넣지 않는다."""
+    부팅 유닛·services.sh 어느 경로도 RA_HOST 를 env 로 넘기지 않는다).
+
+    규칙은 **update-all 의 `_ra_envv`(sed) 와 글자 단위로 같다** — `export KEY=` 허용, 공백 뒤 `#` 이후 제거, 양끝 공백 제거,
+    따옴표 문자(`"` `'`)·CR 제거, 마지막 줄이 이기고 빈 값은 미설정. shlex 를 쓰지 않는 이유: shlex 는 `x#y` 의 `#` 도 주석으로
+    잘라 `x` 를 돌리고 `don't` 는 예외로 줄을 버려, 같은 파일을 두 독자가 다르게 읽었다(3라운드 검토 — 그러면 services.py 는
+    'RA 원격' 인데 update-all 은 '미설정' 으로 로컬 RA 가 죽는다). os.environ 에는 넣지 않는다. 못 읽으면 InfraEnvUnreadable."""
     p = PORTAL_ROOT / "infra" / ".env"
     if not p.exists():
         return None
-    pat = re.compile(r"^\s*(?:export\s+)?" + re.escape(key) + r"=(.*)$")
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise InfraEnvUnreadable(f"{p}: {exc}") from exc
+    pat = re.compile(r"^\s*(?:export\s+)?" + re.escape(key) + r"=[ \t]*(.*)$")
     val: str | None = None
-    for ln in p.read_text(encoding="utf-8", errors="replace").splitlines():
+    for ln in text.splitlines():
         m = pat.match(ln)
         if not m:
             continue
-        try:
-            toks = shlex.split(m.group(1), comments=True)
-        except ValueError:
-            continue
-        val = toks[0].strip() if toks and toks[0].strip() else None
+        v = _INLINE_COMMENT.sub("", m.group(1)).strip().replace('"', "").replace("'", "").replace("\r", "")
+        val = v or None
     return val
+
+
+def skip_reason(svc: dict) -> str:
+    """status/up/down/update 가 '왜 건너뛰었나' 를 찍을 때 — only_on 만 알던 문구(`only_on=None`)로는 unless_env 로 꺼진
+    항목의 사유가 보이지 않았다(3라운드)."""
+    unless = svc.get("unless_env")
+    if unless and not _unless_env_allows(svc):
+        return f"unless_env={unless}(설정됨 — 이 서비스는 다른 서버에서 돈다)"
+    return f"only_on={svc.get('only_on')}"
+
+
+def _unless_env_allows(svc: dict) -> bool:
+    unless = svc.get("unless_env")
+    if not unless:
+        return True
+    k = str(unless)
+    v = os.environ.get(k)
+    if v is None or not v.strip():
+        try:
+            v = _infra_value(k)                 # _hwax_setting 은 HWAX_* 만 본다 — 여기는 임의 키
+        except InfraEnvUnreadable as exc:
+            # 모름은 '대상' 이 아니다 — 못 읽은 채 로컬 항목을 띄우면 이사 간 서비스를 되살린다. 닫고 말한다.
+            print(f"  ⚠ infra/.env 를 읽을 수 없어 {svc.get('name')} 을 이 박스 대상 아님으로 둔다({exc})", file=sys.stderr, flush=True)
+            return False
+    return not v
 
 
 def _hwax_setting(key: str) -> str | None:
@@ -206,14 +243,8 @@ def enabled_here(svc: dict) -> bool:
     # `unless_env: <KEY>` — 그 설정이 **있는** 박스에서는 이 서비스가 다른 서버에서 돈다는 뜻이라 여기서 다루지
     # 않는다(예: RA_HOST 가 있으면 Report Archive 는 원격 서버쌍 — 로컬 항목을 띄우면 이사 전 DB 를 되살린다).
     # 박스 이름(only_on)이 아니라 사실(설정값)로 가른다 — cae00 호스트명이 바뀌거나 운영 박스가 늘어도 맞다.
-    unless = svc.get("unless_env")
-    if unless:
-        k = str(unless)
-        v = os.environ.get(k)
-        if v is None or not v.strip():
-            v = _infra_value(k)                 # _hwax_setting 은 HWAX_* 만 본다 — 여기는 임의 키
-        if v:
-            return False
+    if not _unless_env_allows(svc):
+        return False
     only = svc.get("only_on")
     if not only:
         return True
@@ -380,7 +411,7 @@ def cmd_update(names: list[str]) -> int:
     rc = 0
     for s in svcs:
         if not enabled_here(s):
-            print(f"  · {s['name']:<16} skip (only_on={s.get('only_on')})")
+            print(f"  · {s['name']:<16} skip ({skip_reason(s)})")
             continue
         r = update_one(s)
         if r.startswith("FAIL"):
@@ -398,7 +429,7 @@ def cmd_up(names: list[str], do_update: bool = False) -> int:
             cur_tier = s.get("tier")
             print(f"── tier {cur_tier} ──", flush=True)
         if not enabled_here(s):
-            print(f"  · {s['name']:<16} skip (only_on={s.get('only_on')} — 이 박스 대상 아님)", flush=True)
+            print(f"  · {s['name']:<16} skip ({skip_reason(s)} — 이 박스 대상 아님)", flush=True)
             continue
         if do_update:
             print(f"  ↻ {s['name']:<16} update …", flush=True)
@@ -422,7 +453,7 @@ def cmd_status(names: list[str]) -> int:
     any_down = 0
     for s in svcs:
         if not enabled_here(s):
-            print(f"  {'· skip':<12} {s['name']:<16} only_on={s.get('only_on')}")
+            print(f"  {'· skip':<12} {s['name']:<16} {skip_reason(s)}")
             continue
         url = s.get("health", "")
         up = health_ok(url, expect=s.get("expect")) if url else None
@@ -441,7 +472,7 @@ def cmd_down(names: list[str]) -> int:
     for s in reversed(svcs):
         name = s["name"]
         if not enabled_here(s):
-            print(f"  · {name}: skip (only_on={s.get('only_on')})")
+            print(f"  · {name}: skip ({skip_reason(s)})")
             continue
         if s.get("stop"):
             wd = resolve_dir(s)

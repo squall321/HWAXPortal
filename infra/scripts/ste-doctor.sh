@@ -21,7 +21,7 @@ warn() { R["$1"]="warn:$2"; [ "$REPORT" = 1 ] || printf '  \033[1;33m⚠\033[0m 
 code() { curl -s -o /dev/null -w '%{http_code}' -m "${2:-4}" "$1" 2>/dev/null || echo 000; }
 # bash 가 읽는 것과 같게 — 인라인 주석(공백 뒤 #)·양끝 공백·따옴표·CR 을 벗긴다(`COOKIE_SECURE=true   # …` 가 `true#…` 로 읽혀 빨강이던 것).
 # LC_ALL=C — UTF-8 로케일의 GNU sed 가 한글 주석 줄에서 `.*$` 를 못 맞추는 경우가 있다(update-all _ra_envv 와 같은 이유).
-envv() { sed -n "s/^[[:space:]]*$1=[[:space:]]*//p" "$2" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'; }
+envv() { sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=[[:space:]]*//p" "$2" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'; }
 
 HTTP_PORT="$(envv HTTP_PORT "$ROOT/infra/.env")"; HTTP_PORT="${HTTP_PORT:-8088}"
 SECRET="$(envv STE_SSO_SECRET "$ROOT/infra/.env")"

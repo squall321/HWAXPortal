@@ -45,7 +45,8 @@ ra_env_value() {  # $1=키(LLM_BASE_URL 등) → stdout 값
   # 지우는 날 이 함수가 빈 값을 돌려 챗·심의·PaperIngest 의 LLM 이 조용히 비었을 것이다(RA 요청서 §3-5).
   # update-all 1e 가 RA .env 에서 infra/.env 로 한 번 옮긴다. 형제 RA .env 는 그 전까지의 폴백(레거시)이다.
   local v radir raenv
-  v="$(grep -E "^$1=" "$ROOT/infra/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+  # update-all 1e 의 _upsert_kv·_ra_envv 와 같은 줄을 본다 — 마지막 활성 줄, `export` 허용, 인라인 주석·따옴표 제거(LC_ALL=C: UTF-8 sed 함정)
+  v="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=[[:space:]]*//p" "$ROOT/infra/.env" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
   [ -n "$v" ] && { printf '%s' "$v"; return 0; }
   radir="$(find_repo ReportArchive)" || return 1
   for raenv in "$radir/backend/.env" "$radir/.env"; do

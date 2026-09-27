@@ -197,8 +197,8 @@ fi
 # env-sync 가 넣는 `# RA_HOST=   # ⚠ …` 줄의 `# ` 만 지우는 자연스러운 편집이 정확히 그 모양이다).
 # ⚠ LC_ALL=C — UTF-8 로케일의 GNU sed 는 한글 주석이 든 줄에서 `.*$` 를 못 맞추는 경우가 있다(실측 2026-09-27: 같은 명령이
 #   Bash 툴에선 벗겨지고 파이썬 자식 셸에선 안 벗겨졌다). 바이트 단위면 결정적이다.
-_ra_envv() {
-  sed -n "s/^[[:space:]]*$1=[[:space:]]*//p" "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 \
+_ra_envv() {   # `export KEY=` 도 같은 줄이다(_common.sh 가 set -a 로 소싱한다) — services.py _infra_value 와 같은 규칙
+  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=[[:space:]]*//p" "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 \
     | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'
 }
 _upsert_kv() {  # $1=파일 $2=키 $3=값 [$4=새 파일 권한, 기본 644] — 실패하면 0 이 아닌 값을 돌린다(호출자가 ✓ 를 찍지 않게).
@@ -230,10 +230,15 @@ if [ -z "$RA_HOST" ]; then
   hwax_skip "Report Archive 원격 재연결" "RA_HOST 미설정 — 이 박스는 RA 를 같은 박스의 :$RA_PORT 로 본다(dev 는 이것이 정상)" "RA 가 다른 서버로 이사한 박스는 infra/.env 에 RA_HOST=<RA 주 서버 주소>(RA 요청서 §1) 를 적고 재실행"
 else
   hr "1e) Report Archive 재연결 (RA_HOST → 라우트·RA_BASE_URL·RA_MCP_URL 유도)"
+  # 모양 검사 — 문자 집합만 보면 `-x`·`.`·`ra.` 가 통과해 nginx 가 [emerg] host not found 로 죽고, `localhost`/127.x 는 로컬 RA 를
+  # 끄면서 자기 자신을 가리켜 RA 가 죽는다(3라운드). IPv4 또는 라벨(영숫자, 안쪽 하이픈)을 점으로 이은 호스트명만. IPv6 미지원.
+  _ra_shape='^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$'
   case "$RA_HOST" in
-    # 허용 문자만 — 스킴·포트·경로·주석·공백이 섞이면 세 파일에 깨진 URL 이 적힌다. IPv6 리터럴은 지원하지 않는다(요청서 주소는 IPv4).
-    *[!A-Za-z0-9.-]*) fail "RA_HOST 는 IPv4 주소 또는 호스트명만 적는다(스킴·포트·경로·주석 없이. 포트는 RA_PORT·RA_MCP_PORT, IPv6 미지원): '$RA_HOST'" ;;
+    localhost|127.*) fail "RA_HOST 는 **원격** 주소여야 한다 — localhost/127.x 를 적으면 로컬 RA 항목은 꺼지고 주소는 자기 자신을 가리켜 RA 가 죽는다. 같은 박스에서 RA 가 돌면 RA_HOST 를 비운다: '$RA_HOST'" ;;
     *)
+      if [[ ! "$RA_HOST" =~ $_ra_shape ]]; then
+        fail "RA_HOST 는 IPv4 주소 또는 호스트명이어야 한다(스킴·포트·경로·주석 없이, 점으로 시작·끝나지 않고, IPv6 미지원. 포트는 RA_PORT·RA_MCP_PORT): '$RA_HOST'"
+      else
       RA_BASE_URL="http://$RA_HOST:$RA_PORT"
       RA_MCP_URL="http://$RA_HOST:$RA_MCP_PORT/mcp"
       _RL="$SELF_REPO/backend/config/routes.local.env"
@@ -258,15 +263,19 @@ else
           [ -f "$_c" ] && { _RA_ENV="$_c"; break; }
         done
         if [ -n "$_RA_ENV" ] && grep -qE '^LLM_BASE_URL=.+' "$_RA_ENV"; then
-          _moved=""; _missing=""
+          # "RA .env 에 없다"(키 없는 LLM 이면 정상)와 "infra/.env 에 못 썼다"(고장)는 다른 일이다 — 한 칸에 두지 않는다(3라운드).
+          _moved=""; _absent=""; _failed=""
           for _k in LLM_BASE_URL LLM_MODEL LLM_API_KEY; do
-            _v="$(sed -n "s/^$_k=//p" "$_RA_ENV" | head -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
-            if [ -n "$_v" ] && _upsert_kv "$SELF_REPO/infra/.env" "$_k" "$_v"; then _moved="$_moved $_k"; else _missing="$_missing $_k"; fi
+            _v="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$_k=[[:space:]]*//p" "$_RA_ENV" | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
+            if [ -z "$_v" ]; then _absent="$_absent $_k"
+            elif _upsert_kv "$SELF_REPO/infra/.env" "$_k" "$_v"; then _moved="$_moved $_k"
+            else _failed="$_failed $_k"; fi
           done
-          if [ -z "$_missing" ]; then
+          [ -n "$_failed" ] && fail "LLM 설정을 infra/.env 에 못 적었다($_failed ) — 권한·소유자를 보라(RA 설치본을 지우면 그 키들의 LLM 이 빈다)"
+          if [ -z "$_absent" ] && [ -z "$_failed" ]; then
             ok "LLM 설정을 RA .env 에서 infra/.env 로 옮겼다($_moved ) — 이제 RA 설치본을 지워도 챗·심의·PaperIngest 의 LLM 이 비지 않는다"
-          else
-            bad "LLM 설정 일부만 옮겼다(옮김:$_moved · 없음/실패:$_missing ) — 빠진 키는 infra/.env 에 직접 적는다(RA .env 에 없었거나 쓰기 실패)"
+          elif [ -n "$_absent" ]; then
+            bad "LLM 설정 중$_moved 만 옮겼다 — RA .env 에$_absent 가 없다(키 없는 LLM 이면 정상. 아니면 infra/.env 에 직접 적는다)"
           fi
         else
           hwax_skip "LLM 설정 정본" "infra/.env 에 LLM_BASE_URL 이 없고 형제 ReportArchive/.env 에서도 못 읽었다 — env-kit 의 @FROM_RA 가 건너뛰어져 각 앱 기본값을 쓴다" "infra/.env 에 LLM_BASE_URL·LLM_MODEL·LLM_API_KEY 를 적고 재실행"
@@ -279,7 +288,7 @@ else
       echo "  · RA 담당에게 줄 JWKS 주소(요청서 §4-2, RA A·B 의 PORTAL_JWKS_URL) — 로컬 프로브 $_jw:"
       echo "      사내망 http : http://${_lan:-<이 박스 주소>}:8088/.well-known/jwks.json   (RA 쪽 CA 불필요 — 요청서가 '더 간단' 이라 한 쪽)"
       [ -n "$_pub" ] && echo "      공개 https  : https://$_pub/.well-known/jwks.json   (인증서가 사내 CA·자체서명이면 RA 서버에 http://127.0.0.1:8088/tls/ca.crt 의 체인을 둔다)"
-      ;;
+      fi ;;
   esac
 fi
 
@@ -655,17 +664,25 @@ PY
       # provision.env 는 `. ` 로 소싱만 하므로(export 아님) 자식 프로세스가 못 본다.
       # 그래서 여기서 하나하나 명시해 넘긴다 — ODB_HUB_* 를 빠뜨려서 cae00 에서
       # ODB_HUB_TOKEN 이 설정돼 있는데도 provision 이 '미설정'으로 건너뛰었다(실측).
-      ( cd "$GW_DIR" && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
+      # ⚠ 대입어 사슬 **안에** 주석을 두지 않는다 — 백틱 주석(`# …`)은 bash 파서가 명령어 자리로 잡아, 그 뒤의 대입어가
+      #   명령 이름이 되어 `RA_MCP_URL=…: No such file or directory`(rc 127) 로 끝난다. 그 모양으로 2026-09-22 부터 이
+      #   호출이 **한 번도 실행되지 않았고** 아래 STILL 재검증은 키 존재만 봐 '✓ 재프로비저닝 완료' 를 찍었다(3라운드 검토).
+      #   주석은 여기 위에, 대입어는 붙여서, 명령은 마지막에. rc 도 본다.
+      #   · RA_MCP_URL — RA 가 원격이면(1e) 이 값이 없을 때 provision 이 127.0.0.1:3002 기본값으로 덮는다.
+      #   · STE_SSO_SECRET/STE_*_URL — 없으면 per_user_sso["ste"] 가 안 생겨 ste 도구 호출이 서비스 계정으로 나간다(잡 소유자가 한 명으로 뭉침).
+      if ( cd "$GW_DIR" && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
           ARP_BASE="${ARP_BASE:-}" \
-          `# RA 가 원격이면(1e) 이 주소가 없을 때 provision 이 127.0.0.1:3002 기본값으로 덮는다.` \
           RA_MCP_URL="${RA_MCP_URL:-}" RA_WORKSPACE_SLUG="${RA_WORKSPACE_SLUG:-}" \
-          `# ste 위임 — 이 값이 없으면 per_user_sso["ste"] 가 아예 안 생기고,` \
-          `# ste 도구 호출이 서비스 계정으로 나가 잡 소유자가 한 명으로 뭉친다.` \
           STE_SSO_SECRET="${STE_SSO_SECRET:-}" STE_MCP_URL="${STE_MCP_URL:-}" \
           STE_SSO_URL="${STE_SSO_URL:-}" \
-          bash provision-config.sh --force )
+          bash provision-config.sh --force ); then
+        _prov_ok=1
+      else
+        _prov_ok=0
+        fail "재프로비저닝(provision-config.sh --force) 자체가 실패했다(rc $?) — config 는 옛 값 그대로다. 위 provision 출력을 보라"
+      fi
       "$SVC" down mcp-gateway agent-server 2>/dev/null
       "$SVC" up mcp-gateway agent-server
 
@@ -681,8 +698,13 @@ PY
       sleep 2; H="$(gw_health)"
       if [ -n "$H" ] && json_ok "$H"; then
         STILL="$(calc_missing "$H")"
-        [ -z "$STILL" ] && ok "재프로비저닝으로 백엔드 정합 완료" \
-          || bad "재프로비저닝 후에도 누락: $STILL (mxwp 토큰 민팅 실패 등 — 위 provision 출력 확인)"
+        # RA 드리프트는 calc_missing 이 못 본다(키는 있다) — 재프로비저닝 뒤에도 config 의 RA 호스트가 옛 것이면 여기서 잡는다.
+        if [ -n "${RA_HOST:-}" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
+          _ra_after="$(python3 -c 'import json,sys;from urllib.parse import urlparse;d=json.load(open(sys.argv[1]));print(urlparse(((d.get("reportarchive") or {}).get("url") or "")).hostname or "")' "$GW_DIR/gateway_config.json" 2>/dev/null)"
+          [ -n "$_ra_after" ] && [ "$_ra_after" != "$(printf '%s' "$RA_HOST" | tr 'A-Z' 'a-z')" ] && STILL="${STILL:+$STILL }reportarchive(주소 $_ra_after ≠ RA_HOST)"
+        fi
+        if [ -z "$STILL" ] && [ "${_prov_ok:-1}" = 1 ]; then ok "재프로비저닝으로 백엔드 정합 완료"
+        else fail "재프로비저닝 후에도 누락/어긋남: ${STILL:-(provision 실패)} (mxwp 토큰 민팅 실패 등 — 위 provision 출력 확인)"; fi
         if [ -n "$DRIFT" ]; then
           _left="$(python3 "$GW_DIR/provision_urls.py" drift "$GW_DIR/gateway_config.json" "$(dirname "$GW_DIR")" 2>/dev/null || true)"
           [ -z "$_left" ] && ok "주소 드리프트 해소" \

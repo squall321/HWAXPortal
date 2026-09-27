@@ -16,6 +16,8 @@
 
 - [x] 2라운드 검토 8건 수정 — `unless_env` 파일 파싱·인라인 주석·개행·쓰기 실패·원격 RA fail·600·LLM 부분 이관·드리프트 소문자·`../`·dry-run 가림·시험 환경 독립 (D-7)
 
+- [x] 3라운드 6건 — §5 재프로비저닝 부활(백틱 주석·rc·RA 재검증)·두 독자 규칙 통일(export·`#`·따옴표)·RA_HOST 모양/루프백 가드·LLM 없음/실패 분리·skip 사유·못 읽으면 닫음 (D-8)
+
 ## cae00 (사용자)
 - [ ] `infra/.env` 에 `RA_HOST=<A 주소>`(요청서 §1) → `git pull && ./infra/scripts/update-all.sh`
 - [ ] 요청서 §8 여덟 줄 확인(구 :3000 안 뜸 · 공개 주소 화면 · 2MB 첨부 · 타일 SSO · RA 직접 접속 SSO · 챗 RA 도구가 새 데이터 · apply-envs 재실행에도 LLM 유지 · update-all 이 RA 죽었다고 경고 안 함)
