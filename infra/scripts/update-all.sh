@@ -193,20 +193,20 @@ fi
 # 빈다(요청서 §3-5). 비어 있으면(같은 박스에서 RA 가 도는 dev) 종전대로 — ○ 장부에 적고 넘어간다.
 # 주소는 추적 파일에 적지 않는다 — 셋 다 gitignore 파일이다. 2) 앞인 이유: §2 가 nginx 를 다시 만들고 3.5 가 apply-envs 를 돈다.
 _ra_envv() { sed -n "s/^[[:space:]]*$1=[[:space:]]*//p" "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' \r'; }
-_upsert_kv() {  # $1=파일 $2=키 $3=값 — 키가 있으면(주석 처리돼 있어도) 그 줄을 활성값으로 바꾸고, 없으면 덧붙인다
+_upsert_kv() {  # $1=파일 $2=키 $3=값 — 활성 줄이 있으면 **마지막 활성 줄**을 바꾸고(_ra_envv 가 읽는 줄과 같다), 없으면 주석 선언
+                #   (`# KEY=`, env-sync 가 넣은 것)을 활성값으로 바꾸고, 그것도 없으면 덧붙인다. 다른 줄은 그대로.
   local f="$1" k="$2" v="$3"
   [ -f "$f" ] || : > "$f"
   if grep -qE "^[[:space:]]*#?[[:space:]]*$k=" "$f"; then
     K="$k" V="$v" python3 - "$f" <<'PY'
 import os, re, sys, pathlib
 p, k, v = pathlib.Path(sys.argv[1]), os.environ["K"], os.environ["V"]
-out, done = [], False
-for ln in p.read_text(encoding="utf-8").splitlines(keepends=True):
-    if not done and re.match(r"^\s*#?\s*" + re.escape(k) + r"=", ln):
-        out.append(f"{k}={v}\n"); done = True
-    else:
-        out.append(ln)
-p.write_text("".join(out), encoding="utf-8")
+lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
+active = [i for i, ln in enumerate(lines) if re.match(r"^\s*" + re.escape(k) + r"=", ln)]
+commented = [i for i, ln in enumerate(lines) if re.match(r"^\s*#\s*" + re.escape(k) + r"=", ln)]
+idx = active[-1] if active else commented[0]          # 읽는 쪽(tail -1)과 같은 줄을 고친다
+lines[idx] = f"{k}={v}\n"
+p.write_text("".join(lines), encoding="utf-8")
 PY
   else
     printf '%s=%s\n' "$k" "$v" >> "$f"

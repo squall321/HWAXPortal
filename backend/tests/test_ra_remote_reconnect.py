@@ -237,3 +237,15 @@ def test_doctor_judges_https_termination_not_only_cert_kind():
 def test_routes_prod_env_no_longer_carries_a_stale_ra_address():
     rp = (ROOT / "backend/config/routes.prod.env").read_text(encoding="utf-8")
     assert "report.sec.samsung.net" not in rp and "RA_HOST" in rp
+
+
+def test_1e_upsert_edits_the_line_the_reader_reads(tmp_path):
+    """주석 선언(`# RA_BASE_URL=`, env-sync 가 넣는다)과 활성 줄이 공존하면 읽기(tail -1)와 쓰기가 같은 줄을 봐야 한다 —
+    첫 일치(주석)를 바꾸면 활성 줄이 둘 남고 어느 쪽이 이기는지 도구마다 달라진다."""
+    repo = tmp_path / "HWAXPortal"; (repo / "backend/config").mkdir(parents=True)
+    (repo / "backend/.env").write_text("# RA_BASE_URL=\nOTHER=1\nRA_BASE_URL=http://old.example:3000\n")
+    _, repo, _ = _run_1e(tmp_path, f"RA_HOST={A}\nLLM_BASE_URL=x\n")
+    be = (repo / "backend/.env").read_text()
+    assert be.count("RA_BASE_URL=") == 2 and be.count(f"RA_BASE_URL=http://{A}:3000") == 1, be
+    assert be.startswith("# RA_BASE_URL=\n"), "주석 선언은 그대로, 활성 줄만 바뀐다"
+    assert "old.example" not in be
