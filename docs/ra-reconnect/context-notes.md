@@ -150,3 +150,37 @@ git 의 문장을 보여 준다.
 실패하면 git 의 마지막 문장을 붙여 die. 실제 git 저장소·번들로 두 경로를 시험(더러운 트리 통과 · 없는 커밋의 사유 표시). Drive
 staging 을 다시 발행해 cae00 의 다음 pull 이 이 판을 받게 했다. **닭과 달걀**: 고친 §3 은 새 판 안에 있는데 그것을 반입하는 것이
 옛 §3 이다 — 그래서 cae00 에서 한 번은 사람이 `stash` 를 손으로 하고 `deploy-ste.sh` 를 다시 돌린다(가이드에 적음). 그 뒤부터는 자동.
+
+## D-11. 4라운드 — 3라운드 수정(0469734) 자체를 검토: 확인 6(고유 3)·기각 0·미검증 14 중 저비용 10 반영 (2026-09-27)
+
+**확인 ①(high, 회귀) 값 없이 주석만 있는 줄.** `RA_HOST=   # ⚠ 값을 운영자가 정해야 한다(…)` — env-sync 가 넣는 `# RA_HOST=   # ⚠ …` 의
+`# ` 만 지운 모양(D-7 이 "자연스러운 편집" 이라 부른 그 편집의 값-미기입 변형)이라 실제로 생긴다. bash 는 빈 값인데 **네 독자가 모두**
+주석 문구를 값으로 읽었다 — `=` 뒤 공백(`[[:space:]]*`·`[ \t]*`)을 먼저 먹어 `#` 앞 공백이 사라지고, 그 뒤의 `\s+#.*$` 가 안 걸린다.
+services.py 는 shlex 시절(6ccfa44) `None` 을 돌렸으니 3라운드가 만든 회귀. 결과: services.py 는 '원격 RA' 로 로컬 RA 를 끄고, 1e 는 주석문을
+호스트라며 FAIL, 같은 모양이 `RA_PORT` 에 오면 `report-archive=http://h:# ⚠ …/` 가 라우트에 ✓ 로 적혔다. **3라운드의 일치 시험이 이걸 통과시킨
+이유** — `py == sh` 만 단언해 둘이 같은 방향으로 틀리면 초록이다. 고침: 주석을 벗긴 **뒤에** 공백을 지운다(`=//p` → `s/[[:space:]]+#.*$//` →
+trim). update-all 의 독자를 `_envfile_value <파일> <키>` 하나로 모아 `_ra_envv`·RA .env 사전검사·이관 루프·RAT_TOKEN 이 같은 함수를 쓰고,
+doctor `envv`·apply-envs `ra_env_value`(RA .env 폴백도 같은 규칙 — 종전엔 `grep|head -1|cut` 로 첫 줄·따옴표 그대로였다, U7/U12)도 같게.
+파이썬은 `\s`·`strip()` 대신 **ASCII 공백만**(U9: NBSP·U+3000 을 `\s` 는 먹고 C-로케일 sed 는 안 먹어 두 독자가 갈린다). 시험은 값-없음+주석
+세 줄과 NBSP 를 더하고, **bash 를 오라클로**(`set -a; . file; printf %s "$RA_HOST"`) 댄다 — bash 가 못 읽는 줄(`don't`)만 제외.
+
+**확인 ②(medium) §5 실패 문구의 `(rc $?)` 는 늘 0.** `else _prov_ok=0; fail "…(rc $?)"` — 대입 뒤의 `$?` 는 0 이다. D-8 이 살리려던 rc 127 같은
+진단값이 정확히 이 줄에서 사라졌다. `_rc=$?` 를 else 의 **첫 명령**으로. 같은 자리(U5): provision 이 실패했는데도 게이트웨이·에이전트서버를 옛
+config 로 튕기고 STILL 분기가 같은 원인에 fail 을 한 줄 더 쌓았다 → `_prov_ok=1` 일 때만 재기동, 실패면 재검증은 참고 문구만. 시험은
+provision-config.sh 스텁을 rc 127/3/0 으로 **실행**해 문구의 rc 와 SVC 호출 기록을 본다(3라운드 시험은 텍스트 포함 검사였다).
+
+**확인 ③(medium) 못 읽음을 '설정됨' 으로.** `skip_reason` 이 `_unless_env_allows` 를 다시 불러 InfraEnvUnreadable 을 또 잡고(경고 2회) 그 False 를
+`(설정됨 — 다른 서버에서 돈다)` 로 찍었다 — `2>/dev/null` 로 부르는 자리(§5·deploy-all)에서는 거짓 문구만 남는다. `_unless_env_state(svc, warn)` 가
+(허용, 사유) 를 돌리고 사유가 '읽을 수 없음' 과 '설정됨' 을 가른다. `_infra_env()` 의 PermissionError 트레이스백은 그대로 둔다 — 소리 나는 실패다.
+
+**미검증 14 중 반영.** 루프백 가드 소문자 비교·별칭(`LOCALHOST`·`localhost.localdomain`·`0.0.0.0`·`ip6-localhost`, U2/U8/U11) · `_ra_shape` 문구에
+하이픈 규칙(U3) · `_upsert_kv` 가 `export KEY=` 줄을 활성 줄로 보고 접두어를 지킨다(U4 — 독자만 넓혀 생긴 불일치: 쓰기는 앞의 비-export 줄을
+고치고 bash 는 export 줄의 옛 값을 봤다) · LLM 이관 `_failed`∧`_absent` 동시·`_moved` 빈 문구(U6) · chmod 시험 `NOT_ROOT`(U10) · **거부한
+RA_HOST 는 비운다**(U13 — 남겨 두면 §5·§6 이 믿어 원인 하나에 ✗ 셋) · 가이드·PLAN 의 ○ 문구를 실제 제목 "Report Archive 원격 재연결" 로(U14).
+
+**반영 안 함(기록만).** `_ra_shape` 의 라벨 길이 63·숫자만인 이름(관찰 — nginx 가 잡는다) · `install-ste-tunnel.sh`·`deploy-ste.sh` 의
+transport.env 독자는 아직 `=[[:space:]]*//p`(다른 파일·다른 규칙, 같은 모양의 함정은 있다 — ste 쪽 작업에서).
+
+**변이 검사(감사 규율 ②).** 일곱 수정을 하나씩 되돌리자 새 시험이 각각 실패했다 — 독자 공백 순서(2 failed)·rc 순서(2)·실패 후 재기동(2)·
+거부값 잔존(1)·upsert export(1)·services 공백 순서(1)·못읽음 문구(1). 스위트 758.
+

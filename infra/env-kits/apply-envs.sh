@@ -44,14 +44,15 @@ ra_env_value() {  # $1=키(LLM_BASE_URL 등) → stdout 값
   # 정본은 **포털 infra/.env** 다(2026-09-27). RA 가 포털 박스를 떠나 그 .env 는 관리되지 않는 사본이 됐고,
   # 지우는 날 이 함수가 빈 값을 돌려 챗·심의·PaperIngest 의 LLM 이 조용히 비었을 것이다(RA 요청서 §3-5).
   # update-all 1e 가 RA .env 에서 infra/.env 로 한 번 옮긴다. 형제 RA .env 는 그 전까지의 폴백(레거시)이다.
-  local v radir raenv
-  # update-all 1e 의 _upsert_kv·_ra_envv 와 같은 줄을 본다 — 마지막 활성 줄, `export` 허용, 인라인 주석·따옴표 제거(LC_ALL=C: UTF-8 sed 함정)
-  v="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=[[:space:]]*//p" "$ROOT/infra/.env" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
-  [ -n "$v" ] && { printf '%s' "$v"; return 0; }
-  radir="$(find_repo ReportArchive)" || return 1
-  for raenv in "$radir/backend/.env" "$radir/.env"; do
-    [ -f "$raenv" ] || continue
-    grep -E "^$1=" "$raenv" 2>/dev/null | head -1 | cut -d= -f2- && return 0
+  local v radir f
+  # 두 출처를 **같은 규칙**으로 읽는다 — update-all 1e 의 _envfile_value 와 같은 줄: 마지막 활성 줄, `export` 허용, 인라인 주석(공백 뒤 #)·
+  # 따옴표·CR 제거(LC_ALL=C: UTF-8 sed 함정), 빈 값은 없는 것. `=` 뒤 공백은 주석을 벗긴 뒤에 지운다(`KEY=   # 설명` 의 주석이 값이 되던 것).
+  # 종전엔 RA .env 폴백만 `grep|head -1|cut` 이라 첫 줄·따옴표 그대로였다 — 1e 가 옮긴 값과 여기서 적는 값이 같은 파일에서 갈렸다(4라운드).
+  radir="$(find_repo ReportArchive 2>/dev/null)" || radir=""
+  for f in "$ROOT/infra/.env" ${radir:+"$radir/backend/.env" "$radir/.env"}; do
+    [ -f "$f" ] || continue
+    v="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$f" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
+    [ -n "$v" ] && { printf '%s' "$v"; return 0; }
   done
   return 1
 }

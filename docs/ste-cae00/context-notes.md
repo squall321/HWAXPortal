@@ -406,3 +406,20 @@ deploy-ste: 수신 33M ✓ · sha256 전부 OK ✓ · 3) 코드 커밋 고정: f
 ```
 판정: 2c 는 여기서 멈추고 있었다(docs/ra-reconnect D-10). 처방: `~/SmartTwinExplorer` 에서 `git status --short` 로 무엇이 더러운지 보고
 `git stash push -u -m manual` 뒤 `deploy-ste.sh` 재실행. 새 판(6b7205e)부터는 §3 이 스스로 치운다.
+
+### 2026-09-27 — `git -C ~/SmartTwinExplorer status --short` (사용자가 붙여 줌) → `stash push -u -m manual` → 다음 deploy-ste 전
+```
+ M apps/lsdyna/app.yaml
+ M backend/tests/test_core.py
+?? cluster.prod.yaml
+?? deploy/transport.env.bak.20260828082136
+```
+판정: D-10 의 추정이 맞았다 — 추적 파일 둘의 로컬 편집이 체크아웃을 막았다(두 파일은 리포에서 5048c2b 가 마지막으로 고친 것. cae00 에서 먼저
+손으로 고친 것이 뒤에 리포로 들어간 모양일 가능성 — `git stash show -p` 대조는 사용자 몫, 리포에 없는 것이면 리포로 옮긴다. 로컬 편집으로 두면
+또 막힌다). **그런데 `-u` 가 미추적 둘도 담았다.** `cluster.prod.yaml` 은 설치기(`installer/orchestrate.sh --config`) 입력 — 실제 노드 목록이다.
+배포 경로(refresh-code·deploy-backend·deploy-frontend)는 이 파일을 읽지 않아 이번 배포엔 지장이 없지만, 내가 6b7205e 에 넣은 §3 의 `stash -u` 는
+이 파일이 루트에 있는 한 **배포마다** stash 로 보낸다(복구는 되지만 매번 사라진다). → SmartTwinExplorer **f64fb8b**: 더러움 판정을
+`--untracked-files=no` 로, stash 에 `-u` 를 주지 않는다. 미추적 파일이 반입 커밋과 충돌하는 드문 경우는 checkout 이 그 파일 이름을 들어 실패하니
+사람이 치운다(시험 4). Drive 스테이징 재발행(f64fb8b 일치). `transport.env` 자체는 gitignore 라 `-u` 도 건드리지 않았다(`-a` 만 담는다).
+복구: 새 판이 cae00 에 앉은 뒤 `git -C ~/SmartTwinExplorer show 'stash@{0}^3:cluster.prod.yaml' > ~/SmartTwinExplorer/cluster.prod.yaml`
+(미추적 파일은 stash 커밋의 **세 번째 부모**에 있다). 옛 §3(그냥 checkout)이 돌 이번 한 번은 깨끗한 트리라 그대로 통과해야 한다.

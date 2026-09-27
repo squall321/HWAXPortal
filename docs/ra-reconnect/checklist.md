@@ -18,6 +18,8 @@
 
 - [x] 3라운드 6건 — §5 재프로비저닝 부활(백틱 주석·rc·RA 재검증)·두 독자 규칙 통일(export·`#`·따옴표)·RA_HOST 모양/루프백 가드·LLM 없음/실패 분리·skip 사유·못 읽으면 닫음 (D-8)
 
+- [x] 4라운드 — 값 없음+주석 줄(네 독자·bash 오라클·`_envfile_value` 하나로)·§5 `(rc $?)`·실패 시 재기동 안 함·못 읽음≠설정됨·루프백 별칭·upsert export·거부값 비움·NOT_ROOT (D-11)
+
 ## cae00 (사용자)
 - [ ] `infra/.env` 에 `RA_HOST=<A 주소>`(요청서 §1) → `git pull && ./infra/scripts/update-all.sh`
 - [ ] 요청서 §8 여덟 줄 확인(구 :3000 안 뜸 · 공개 주소 화면 · 2MB 첨부 · 타일 SSO · RA 직접 접속 SSO · 챗 RA 도구가 새 데이터 · apply-envs 재실행에도 LLM 유지 · update-all 이 RA 죽었다고 경고 안 함)

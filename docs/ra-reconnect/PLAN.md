@@ -35,7 +35,7 @@ RA 가 cae00(포털 박스)에서 새 서버쌍(A 주 · B 대기)으로 이사�
 ## 3. 검증
 
 - dev: 시험(1e 하네스 — TEST-NET 주소로 세 파일 upsert·멱등·LLM 이관, `unless_env`, loc_extras, 타일, §5 전달) + 전체 스위트.
-- dev 실주행: `RA_HOST` 없이 update-all 의 ○ 장부에 "RA 원격 재연결 — RA_HOST 미설정" 한 줄(dev 는 같은 박스라 정상).
+- dev 실주행: `RA_HOST` 없이 update-all 의 ○ 장부에 "Report Archive 원격 재연결 — RA_HOST 미설정" 한 줄(dev 는 같은 박스라 정상).
 - cae00(사용자): `infra/.env` 에 `RA_HOST=<A>` → `update-all` → 요청서 §8 체크리스트 8줄. 그리고 RA 담당에게 JWKS 주소 전달.
 
 ## 4. 하지 않는 것

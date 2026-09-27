@@ -204,10 +204,14 @@ fi
 # env-sync 가 넣는 `# RA_HOST=   # ⚠ …` 줄의 `# ` 만 지우는 자연스러운 편집이 정확히 그 모양이다).
 # ⚠ LC_ALL=C — UTF-8 로케일의 GNU sed 는 한글 주석이 든 줄에서 `.*$` 를 못 맞추는 경우가 있다(실측 2026-09-27: 같은 명령이
 #   Bash 툴에선 벗겨지고 파이썬 자식 셸에선 안 벗겨졌다). 바이트 단위면 결정적이다.
-_ra_envv() {   # `export KEY=` 도 같은 줄이다(_common.sh 가 set -a 로 소싱한다) — services.py _infra_value 와 같은 규칙
-  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=[[:space:]]*//p" "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 \
+# `=` 뒤 공백은 **주석을 벗긴 뒤에** 지운다 — 먼저 지우면 `KEY=   # 설명`(값 없이 주석만, env-sync 가 넣는 줄의 `# ` 만 지운
+# 모양)에서 `#` 앞 공백이 사라져 주석 문구가 값이 된다(4라운드: 네 독자가 모두 그렇게 읽어 일치 시험은 통과했다).
+_envfile_value() {  # $1=파일 $2=키 → 마지막 활성 줄의 값, 없거나 빈 값이면 빈 문자열. `export KEY=` 도 같은 줄이다(_common.sh 가 set -a 로 소싱).
+                    #   services.py _infra_value·ste-doctor envv·apply-envs ra_env_value 와 같은 규칙 — RA .env·provision.env 도 이것으로 읽는다.
+  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$2=//p" "$1" 2>/dev/null | tail -1 \
     | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'
 }
+_ra_envv() { _envfile_value "$SELF_REPO/infra/.env" "$1"; }
 _upsert_kv() {  # $1=파일 $2=키 $3=값 [$4=새 파일 권한, 기본 644] — 실패하면 0 이 아닌 값을 돌린다(호출자가 ✓ 를 찍지 않게).
                 #   활성 줄이 있으면 **마지막 활성 줄**을 바꾸고(_ra_envv 가 읽는 줄과 같다), 없으면 주석 선언(`# KEY=`, env-sync 가
                 #   넣은 것)을 활성값으로 바꾸고, 그것도 없으면 덧붙인다(끝에 개행이 없는 파일이면 먼저 개행 — 안 그러면
@@ -216,15 +220,16 @@ _upsert_kv() {  # $1=파일 $2=키 $3=값 [$4=새 파일 권한, 기본 644] —
   if [ ! -f "$f" ]; then
     ( umask 077; : > "$f" ) && chmod "$mode" "$f" || return 1     # 비밀 파일(backend/.env·provision.env)은 600 으로 태어난다
   fi
-  if grep -qE "^[[:space:]]*#?[[:space:]]*$k=" "$f"; then
+  if grep -qE "^[[:space:]]*#?[[:space:]]*(export[[:space:]]+)?$k=" "$f"; then
     K="$k" V="$v" python3 - "$f" <<'PY' || return 1
 import os, re, sys, pathlib
 p, k, v = pathlib.Path(sys.argv[1]), os.environ["K"], os.environ["V"]
 lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
-active = [i for i, ln in enumerate(lines) if re.match(r"^\s*" + re.escape(k) + r"=", ln)]
-commented = [i for i, ln in enumerate(lines) if re.match(r"^\s*#\s*" + re.escape(k) + r"=", ln)]
-idx = active[-1] if active else commented[0]          # 읽는 쪽(tail -1)과 같은 줄을 고친다
-lines[idx] = f"{k}={v}\n"
+active = [i for i, ln in enumerate(lines) if re.match(r"^\s*(export\s+)?" + re.escape(k) + r"=", ln)]
+commented = [i for i, ln in enumerate(lines) if re.match(r"^\s*#\s*(export\s+)?" + re.escape(k) + r"=", ln)]
+idx = active[-1] if active else commented[0]          # 읽는 쪽(tail -1, export 허용)과 같은 줄을 고친다 — 아니면 export 줄의 옛 값이 이긴다(4라운드)
+exp = "export " if re.match(r"^\s*#?\s*export\s", lines[idx]) else ""
+lines[idx] = f"{exp}{k}={v}\n"
 p.write_text("".join(lines), encoding="utf-8")
 PY
   else
@@ -240,11 +245,13 @@ else
   # 모양 검사 — 문자 집합만 보면 `-x`·`.`·`ra.` 가 통과해 nginx 가 [emerg] host not found 로 죽고, `localhost`/127.x 는 로컬 RA 를
   # 끄면서 자기 자신을 가리켜 RA 가 죽는다(3라운드). IPv4 또는 라벨(영숫자, 안쪽 하이픈)을 점으로 이은 호스트명만. IPv6 미지원.
   _ra_shape='^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$'
-  case "$RA_HOST" in
-    localhost|127.*) fail "RA_HOST 는 **원격** 주소여야 한다 — localhost/127.x 를 적으면 로컬 RA 항목은 꺼지고 주소는 자기 자신을 가리켜 RA 가 죽는다. 같은 박스에서 RA 가 돌면 RA_HOST 를 비운다: '$RA_HOST'" ;;
+  # 거부한 값은 **비운다** — 남겨 두면 §5(드리프트·재프로비저닝·재검증)·§6(원격 판정)이 `[ -n "$RA_HOST" ]` 로 그 값을 믿어
+  # 원인 하나에 ✗ 가 셋으로 분다(4라운드). 비교는 소문자로(LOCALHOST·Localhost 도 같은 것).
+  case "${RA_HOST,,}" in
+    localhost|localhost.*|127.*|0.0.0.0|ip6-localhost|ip6-loopback) fail "RA_HOST 는 **원격** 주소여야 한다 — localhost/127.x 를 적으면 로컬 RA 항목은 꺼지고 주소는 자기 자신을 가리켜 RA 가 죽는다. 같은 박스에서 RA 가 돌면 RA_HOST 를 비운다: '$RA_HOST'"; RA_HOST="" ;;
     *)
       if [[ ! "$RA_HOST" =~ $_ra_shape ]]; then
-        fail "RA_HOST 는 IPv4 주소 또는 호스트명이어야 한다(스킴·포트·경로·주석 없이, 점으로 시작·끝나지 않고, IPv6 미지원. 포트는 RA_PORT·RA_MCP_PORT): '$RA_HOST'"
+        fail "RA_HOST 는 IPv4 주소 또는 호스트명이어야 한다(스킴·포트·경로·주석 없이, 라벨은 영숫자로 시작·끝나고 하이픈은 안쪽만, 점으로 시작·끝나지 않고, IPv6 미지원. 포트는 RA_PORT·RA_MCP_PORT): '$RA_HOST'"; RA_HOST=""
       else
       RA_BASE_URL="http://$RA_HOST:$RA_PORT"
       RA_MCP_URL="http://$RA_HOST:$RA_MCP_PORT/mcp"
@@ -269,11 +276,11 @@ else
         for _c in "$SELF_REPO/../ReportArchive/backend/.env" "$SELF_REPO/../ReportArchive/.env"; do
           [ -f "$_c" ] && { _RA_ENV="$_c"; break; }
         done
-        if [ -n "$_RA_ENV" ] && grep -qE '^LLM_BASE_URL=.+' "$_RA_ENV"; then
+        if [ -n "$_RA_ENV" ] && [ -n "$(_envfile_value "$_RA_ENV" LLM_BASE_URL)" ]; then   # 사전검사도 루프와 같은 독자로(4라운드: grep 첫 줄 규칙이 달랐다)
           # "RA .env 에 없다"(키 없는 LLM 이면 정상)와 "infra/.env 에 못 썼다"(고장)는 다른 일이다 — 한 칸에 두지 않는다(3라운드).
           _moved=""; _absent=""; _failed=""
           for _k in LLM_BASE_URL LLM_MODEL LLM_API_KEY; do
-            _v="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$_k=[[:space:]]*//p" "$_RA_ENV" | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
+            _v="$(_envfile_value "$_RA_ENV" "$_k")"
             if [ -z "$_v" ]; then _absent="$_absent $_k"
             elif _upsert_kv "$SELF_REPO/infra/.env" "$_k" "$_v"; then _moved="$_moved $_k"
             else _failed="$_failed $_k"; fi
@@ -282,8 +289,8 @@ else
           for _k in $_moved; do hwax_skip_forget "설정값 $_k"; done     # 1c 가 "값 미정" 으로 적은 것을 여기서 채웠다 — 장부에서 지운다
           if [ -z "$_absent" ] && [ -z "$_failed" ]; then
             ok "LLM 설정을 RA .env 에서 infra/.env 로 옮겼다($_moved ) — 이제 RA 설치본을 지워도 챗·심의·PaperIngest 의 LLM 이 비지 않는다"
-          elif [ -n "$_absent" ]; then
-            bad "LLM 설정 중$_moved 만 옮겼다 — RA .env 에$_absent 가 없다(키 없는 LLM 이면 정상. 아니면 infra/.env 에 직접 적는다)"
+          elif [ -n "$_absent" ] && [ -z "$_failed" ]; then     # 못 적은 것은 위 fail 하나로 — '직접 적어라' 는 못 적는 파일에 할 말이 아니다(4라운드)
+            bad "LLM 설정 중 RA .env 에 없는 키가 있다:$_absent (키 없는 LLM 이면 정상. 아니면 infra/.env 에 직접 적는다)${_moved:+ — 옮긴 것:$_moved}"
           fi
         else
           hwax_skip "LLM 설정 정본" "infra/.env 에 LLM_BASE_URL 이 없고 형제 ReportArchive/.env 에서도 못 읽었다 — env-kit 의 @FROM_RA 가 건너뛰어져 각 앱 기본값을 쓴다" "infra/.env 에 LLM_BASE_URL·LLM_MODEL·LLM_API_KEY 를 적고 재실행"
@@ -292,7 +299,7 @@ else
       # RA MCP 도구(챗의 보고서 검색·저장)는 게이트웨이가 RAT_TOKEN 이 있을 때만 RA 백엔드를 기대한다(§5 calc_missing).
       # RA_HOST 를 적은 박스에서 그 토큰이 없으면 RA 는 살아 있는데 챗에서 안 보인다 — 조용히 지나가지 않게 장부에.
       _rat_now="${RAT_TOKEN:-}"
-      [ -z "$_rat_now" ] && [ -n "$GW_DIR" ] && _rat_now="$(sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?RAT_TOKEN=[[:space:]]*//p' "$GW_DIR/provision.env" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
+      [ -z "$_rat_now" ] && [ -n "$GW_DIR" ] && _rat_now="$(_envfile_value "$GW_DIR/provision.env" RAT_TOKEN)"
       [ -n "$_rat_now" ] || hwax_skip "RA MCP 도구(챗의 보고서 검색·저장)" "RAT_TOKEN 이 없어 게이트웨이가 RA 백엔드를 기대하지 않는다(RA 는 원격에 살아 있어도 챗에 안 붙는다)" "RA 에서 PAT(rat_…)를 발급해 HWAXMcpGateway/provision.env 에 RAT_TOKEN=<값> 을 적고 재실행(§5 가 재프로비저닝한다)"
       # RA 서버가 받아 갈 포털 JWKS 주소(요청서 §4-2) — RA 서버에서 닿는 주소라 포털이 확정할 수 없다. 후보와 로컬 프로브를 찍는다.
       _jw="$(http_code http://127.0.0.1:8088/.well-known/jwks.json 3)"
@@ -693,11 +700,15 @@ PY
           bash provision-config.sh --force ); then
         _prov_ok=1
       else
-        _prov_ok=0
-        fail "재프로비저닝(provision-config.sh --force) 자체가 실패했다(rc $?) — config 는 옛 값 그대로다. 위 provision 출력을 보라"
+        _rc=$?; _prov_ok=0     # 대입 뒤의 $? 는 0 이다 — rc 는 else 첫 명령으로 받아 둔다(4라운드: 매번 '(rc 0)' 으로 찍혔다)
+        fail "재프로비저닝(provision-config.sh --force) 자체가 실패했다(rc $_rc) — config 는 옛 값 그대로다. 위 provision 출력을 보라"
       fi
-      "$SVC" down mcp-gateway agent-server 2>/dev/null
-      "$SVC" up mcp-gateway agent-server
+      if [ "$_prov_ok" = 1 ]; then
+        "$SVC" down mcp-gateway agent-server 2>/dev/null
+        "$SVC" up mcp-gateway agent-server
+      else
+        echo "  · provision 이 실패해 게이트웨이·에이전트서버는 다시 띄우지 않는다 — 옛 config 로 튕겨 봐야 챗 도구 공백만 생긴다"
+      fi
 
       # 재검증 ① 게이트웨이-에이전트 토큰 정합(레포 배치가 어긋나면 agent가 옛 토큰으로 남는다)
       gwtok="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["_gateway"]["token"])' \
@@ -716,8 +727,9 @@ PY
           _ra_after="$(python3 -c 'import json,sys;from urllib.parse import urlparse;d=json.load(open(sys.argv[1]));print(urlparse(((d.get("reportarchive") or {}).get("url") or "")).hostname or "")' "$GW_DIR/gateway_config.json" 2>/dev/null)"
           [ -n "$_ra_after" ] && [ "$_ra_after" != "$(printf '%s' "$RA_HOST" | tr 'A-Z' 'a-z')" ] && STILL="${STILL:+$STILL }reportarchive(주소 $_ra_after ≠ RA_HOST)"
         fi
-        if [ -z "$STILL" ] && [ "${_prov_ok:-1}" = 1 ]; then ok "재프로비저닝으로 백엔드 정합 완료"
-        else fail "재프로비저닝 후에도 누락/어긋남: ${STILL:-(provision 실패)} (mxwp 토큰 민팅 실패 등 — 위 provision 출력 확인)"; fi
+        if [ "${_prov_ok:-1}" != 1 ]; then echo "  · provision 실패는 위 ✗ 하나로 계상한다 — 재검증은 참고만: ${STILL:-없음}"
+        elif [ -z "$STILL" ]; then ok "재프로비저닝으로 백엔드 정합 완료"
+        else fail "재프로비저닝 후에도 누락/어긋남: $STILL (mxwp 토큰 민팅 실패 등 — 위 provision 출력 확인)"; fi
         if [ -n "$DRIFT" ]; then
           _left="$(python3 "$GW_DIR/provision_urls.py" drift "$GW_DIR/gateway_config.json" "$(dirname "$GW_DIR")" 2>/dev/null || true)"
           [ -z "$_left" ] && ok "주소 드리프트 해소" \

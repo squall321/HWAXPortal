@@ -545,9 +545,9 @@ grep -c FROM_RA ../HWAXAgentServer/.env                          # 0 — 마커�
 - 타일을 눌러 로그인 화면 없이 RA 로 들어가면 SSO 끝. 안 되면 RA 쪽 `PORTAL_JWKS_URL` 부터(요청서 §4-3).
 - **B 로 넘길 때**(요청서 §5): RA 담당이 B 의 DB 를 승격한 뒤, 포털은 `infra/.env` 의 `RA_HOST` 를 B 주소로 바꾸고
   `update-all` — 라우트·`RA_BASE_URL`·`RA_MCP_URL` 셋이 함께 따라간다. 되돌리기도 그 한 줄이다.
-- `RA_HOST` 를 비워 두면 종전대로 "같은 박스의 :3000" 이고 ○ 요약에 "RA 원격 재연결 — RA_HOST 미설정" 이 남는다(dev 는 그것이 정상).
+- `RA_HOST` 를 비워 두면 종전대로 "같은 박스의 :3000" 이고 ○ 요약에 "Report Archive 원격 재연결 — RA_HOST 미설정" 이 남는다(dev 는 그것이 정상).
 - **ste 배포가 "커밋 체크아웃 실패" 로 멈추면**(2026-09-27 실측) — 배포용 사본 `~/SmartTwinExplorer` 의 작업트리가 더럽다.
-  `git -C ~/SmartTwinExplorer status --short` 로 보고 `git -C ~/SmartTwinExplorer stash push -u -m manual` 뒤 `./infra/scripts/deploy-ste.sh`
+  `git -C ~/SmartTwinExplorer status --short` 로 보고 `git -C ~/SmartTwinExplorer stash push -m manual`(추적 파일만 — `-u` 는 설치기 입력 `cluster.prod.yaml` 같은 미추적 운영 파일까지 담는다. 이미 담았으면 `git -C ~/SmartTwinExplorer show 'stash@{0}^3:cluster.prod.yaml' > ~/SmartTwinExplorer/cluster.prod.yaml` 로 꺼낸다) 뒤 `./infra/scripts/deploy-ste.sh`
   를 다시 돌린다(한 번뿐 — 새 판의 §3 은 스스로 치우고 git 의 사유를 보인다). 15812 가 000 인 것도 같은 원인이다(헤드의
   `ste-mcp.service` 는 배포가 만든다).
 - **HTTPS 자체는 포털 nginx 가 종단한다** — `infra/.env` 의 `ENABLE_TLS=true` 일 때만 :443 서버 블록이 생긴다(기본 false). 공개 https 로
