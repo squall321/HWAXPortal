@@ -36,9 +36,15 @@ if [ "${1:-}" = "remove" ]; then
   ok "removed ste-tunnel.service"; exit 0
 fi
 if [ "${1:-}" = "--check" ]; then
-  if [ -f "$UNIT" ]; then ok "유닛 설치됨: $UNIT ($(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown))"
+  if [ -f "$UNIT" ]; then
+    ok "유닛 설치됨: $UNIT ($(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown))"
+    # 파일이 있어도 옛 손 유닛이면 15810 만 연다 — -L 목록을 본다(cae00 실측 2026-09-27)
+    if grep -q -- '-L 127.0.0.1:15812:' "$UNIT"; then ok "유닛에 -L 15812 있음"
+    else bad "유닛에 -L 15812 포워딩이 없다(옛 손 유닛) — 인자 없이 다시 실행하면 리포 유닛으로 덮어쓰고 재기동한다"; fi
   else bad "유닛 없음: $UNIT"; fi
-  check_ports; exit $?
+  check_ports; _cp=$?
+  [ "$_cp" = 0 ] || { echo "  로컬 리스너: 15810=$(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15810 ') 15812=$(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15812 ')"; journalctl --user -u ste-tunnel -n 4 --no-pager -o cat 2>/dev/null | sed 's/^/  journal: /'; }
+  exit $_cp
 fi
 
 # ── transport.env 에서 값 읽기 ─────────────────────────────────────────────

@@ -54,5 +54,39 @@ def test_doctor_report_is_machine_readable_on_this_box():
 def test_doctor_is_read_only():
     src = DOCTOR.read_text(encoding="utf-8")
     body = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    body = re.sub(r"sudo -n journalctl ", "", body)     # 헤드 journal 읽기 — 읽기 전용이라 허용(mcp 가 죽은 이유를 보여 주는 자리)
     for forbidden in ("systemctl --user restart", "systemctl --user start", "rsync ", "sudo ", " > /opt", "sed -i"):
         assert forbidden not in body, f"진단 스크립트가 무엇을 바꾼다: {forbidden}"
+
+
+def _doctor_tunnel_block() -> str:
+    src = (ROOT / "infra/scripts/ste-doctor.sh").read_text(encoding="utf-8")
+    i = src.index('  _tu="$HOME/.config/systemd/user/ste-tunnel.service"')
+    return src[i:src.index("  # Teleport 세션", i)]
+
+
+def test_doctor_judges_the_tunnel_unit_by_its_forwards_not_by_file_presence(tmp_path):
+    """cae00 실측(2026-09-27): 헤드의 MCP 는 살아 15812 를 듣는데 cae00 의 15812 는 000 — 유닛 파일이 있다고 '리포 유닛' 으로 초록이었다.
+    옛 손 유닛은 15810 만 연다. -L 목록으로 가른다."""
+    unit = tmp_path / ".config/systemd/user/ste-tunnel.service"; unit.parent.mkdir(parents=True)
+    stubs = 'ok() { echo "OK:$1 $2"; }; bad() { echo "BAD:$1 $2"; }; warn() { echo "WARN:$1 $2"; }; systemctl() { echo active; }; ss() { :; }; journalctl() { :; }\n'
+    def run(unit_text, m):
+        unit.write_text(unit_text)
+        r = subprocess.run(["bash", "-c", f'HOME="{tmp_path}"; m="{m}"\n{stubs}{_doctor_tunnel_block()}'], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return r.stdout
+    old_hand = "ExecStart=/usr/bin/ssh -N -L 127.0.0.1:15810:127.0.0.1:15810 user@head\n"
+    out = run(old_hand, "000")
+    assert "BAD:tunnel-unit" in out and "15812 포워딩이 없다" in out and "install-ste-tunnel.sh" in out, out
+    assert "로컬 리스너" in out, "죽었으면 리스너 상태를 같이 보인다"
+    both = "ExecStart=/usr/bin/ssh -N -L 127.0.0.1:15810:127.0.0.1:15810 -L 127.0.0.1:15812:127.0.0.1:15812 user@head\n"
+    out = run(both, "406")
+    assert "OK:tunnel-unit" in out and "둘 다 있음" in out and "로컬 리스너" not in out, out
+
+
+def test_tunnel_installer_check_reads_the_unit_forwards_and_deploy_ste_waits_for_the_restarted_backend():
+    inst = (ROOT / "infra/scripts/install-ste-tunnel.sh").read_text(encoding="utf-8")
+    assert "grep -q -- '-L 127.0.0.1:15812:' \"$UNIT\"" in inst and "덮어쓰고 재기동" in inst
+    dep = (ROOT / "infra/scripts/deploy-ste.sh").read_text(encoding="utf-8")
+    assert "for _try in 1 2 3 4 5 6 7 8; do" in dep and "smart-twin-explorer' && break" in dep, "§8 재기동 직후의 502 를 실패로 읽지 않는다"
+

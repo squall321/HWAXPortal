@@ -213,8 +213,13 @@ HTTP_PORT=8088
 HTTP_PORT="${HTTP_PORT:-8088}"
 # 상태코드만 보면 안 된다 — /ste/ 라우트 미반영 시 포털 catch-all 이 SPA(index.html)를 200 으로
 # 돌려줘 배포 성공으로 오판한다(update-all.sh 가 실측·정리한 문제). 본문으로 백엔드 응답을 확인한다.
-resp="$(curl -sk -m 5 -w '\n%{http_code}' "http://127.0.0.1:$HTTP_PORT/ste/api/health" 2>/dev/null || true)"
-code="${resp##*$'\n'}"; body="${resp%$'\n'*}"
+# 직전 단계(§8 시크릿·§7 CA)가 ste-backend 를 재기동한 직후라 첫 프로브는 502 가 정상이다(cae00 실측 2026-09-27) — 최대 16초 기다린다.
+for _try in 1 2 3 4 5 6 7 8; do
+  resp="$(curl -sk -m 5 -w '\n%{http_code}' "http://127.0.0.1:$HTTP_PORT/ste/api/health" 2>/dev/null || true)"
+  code="${resp##*$'\n'}"; body="${resp%$'\n'*}"
+  printf '%s' "$body" | grep -q 'smart-twin-explorer' && break
+  sleep 2
+done
 if printf '%s' "$body" | grep -q 'smart-twin-explorer'; then
   ok "포털 프록시 :$HTTP_PORT/ste/api/health → 백엔드 응답 확인"
 else

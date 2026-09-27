@@ -64,8 +64,20 @@ if [ -n "$ORIGIN" ]; then
   esac
 fi
 if [ "$MODE" = teleport ]; then
-  if [ -f "$HOME/.config/systemd/user/ste-tunnel.service" ]; then
-    ok tunnel-unit "$(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown) (리포 유닛)"
+  # 파일이 있다고 '리포 유닛' 이 아니다 — 옛 손 유닛은 15810 만 연다(cae00 실측 2026-09-27: 헤드 MCP 는 살아 있는데 15812 만 000).
+  # 유닛의 -L 목록으로 판정하고, 15812 가 죽었으면 로컬 리스너와 유닛 journal 을 같이 보여 준다.
+  _tu="$HOME/.config/systemd/user/ste-tunnel.service"
+  if [ -f "$_tu" ]; then
+    _tu_state="$(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown)"
+    if grep -q -- '-L 127.0.0.1:15810:' "$_tu" && grep -q -- '-L 127.0.0.1:15812:' "$_tu"; then
+      ok tunnel-unit "$_tu_state · -L 15810·15812 둘 다 있음(리포 유닛)"
+    else
+      bad tunnel-unit "$_tu_state · 유닛에 15812 포워딩이 없다(옛 손 유닛: $(grep -o -- '-L [^ ]*' "$_tu" | tr '\n' ' ')) — ./infra/scripts/install-ste-tunnel.sh 로 덮어쓰고 재기동"
+    fi
+    if [ -n "${m:-}" ] && ! case "$m" in 200|405|406) true ;; *) false ;; esac; then
+      echo "      로컬 리스너: 15810=$(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15810 ') 15812=$(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15812 ') (0 이면 유닛이 그 포트를 안 연다)"
+      journalctl --user -u ste-tunnel -n 4 --no-pager -o cat 2>/dev/null | sed 's/^/      journal: /'
+    fi
   else
     warn tunnel-unit "리포 유닛이 없다 — 손으로 만든 터널이거나 미설치(install-ste-tunnel.sh)"
   fi

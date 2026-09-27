@@ -46,10 +46,12 @@ ROUTES_ENV="${ROUTES_ENV:-$SELF_REPO/backend/${_routes_path:-config/routes.env}}
 # 짝이 반으로 갈린다. 플래그는 **환경변수**다 — §1 의 exec 재실행이 셸 변수를 버려 §1 중 받은 kill 이 사라졔다(4라운드 검토).
 # 멈출 때 지금까지의 ✗ 와 ○ 요약을 내고 장부 파일을 지운다 — 안 그러면 '어디까지 했는지' 가 없이 끝난다.
 hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
-         echo "  · 종료 요청을 받아 여기서 멈춘다 — 진행 중이던 §는 끝냈고, '$*' 부터는 하지 않았다(0b)" >&2
-         [ -n "${FAIL_ITEMS:-}" ] && printf '  지금까지의 ✗:\n%s' "$FAIL_ITEMS" >&2
+         # 정지 요약은 완주 요약과 같은 stdout 으로 — stderr 로 내면 `> log` 로 남긴 로그에 ○ 요약만 있어 완주처럼 보인다(5라운드).
+         echo "  · 종료 요청을 받아 여기서 멈춘다 — 앞 §는 끝냈다(직전 머리: '${HWAX_UPDATE_ALL_LAST_HR:-없음}'). '$*' 머리에서 멈췄다(0b)"
+         [ -n "${FAIL_ITEMS:-}" ] && printf '  지금까지의 ✗:\n%s' "$FAIL_ITEMS"
          command -v hwax_skip_summary >/dev/null 2>&1 && hwax_skip_summary
          rm -f "${HWAX_SKIP_LEDGER:-}" 2>/dev/null; exit 143; fi
+       export HWAX_UPDATE_ALL_LAST_HR="$*"      # §1 exec 재실행을 넘어가야 하니 환경변수
        printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # ⚠ **치명과 비치명을 눈으로 가른다.** 종전엔 둘 다 빨간 ✗ 라, 이 박스 대상도 아닌 서비스나
@@ -115,18 +117,22 @@ _lock_is_body() {  # 이 판의 자식(PPID 대조) · 중간 판(flock -o 부�
   [ "${HWAX_UPDATE_ALL_LOCKED:-}" = "$_LOCK" ] && [ "$(cat "/proc/$PPID/comm" 2>/dev/null)" = flock ] && return 0
   return 1
 }
-if _lock_is_body; then
-  # 바깥이 넘긴 kill(TERM·HUP) — 즉시 죽지 않고 플래그만 세운다. 멈추는 자리는 **다음 § 머리(hr)** 다: 단순 명령 경계에서 죽으면 §5 의
-  # down→up·mxwp stop→up 같은 짝 명령이 반으로 갈려 서비스가 내려간 채 끝난다(3라운드 검토). 진행 중인 §는 끝까지 간다.
-  # 플래그는 환경변수 — §1 의 exec 재실행을 넘어가야 한다(셸 변수는 버려진다). 첫 진입(재실행 아님)에만 0 으로 시작한다.
-  [ "${UPDATE_ALL_REEXEC:-0}" = 1 ] || export HWAX_UPDATE_ALL_STOP=0
+_body_stop_traps() {  # 본문(자식)의 정지 규율 — 잠금이 있는 갈래와 flock 없는 갈래가 같이 쓴다(5라운드: 후자엔 하나도 없었다)
+  # 플래그는 환경변수 — §1 의 exec 재실행을 넘어가야 한다(셸 변수는 버려진다). '내 재실행' 판정은 PID 로(exec 는 PID 를 지킨다) —
+  # UPDATE_ALL_REEXEC=1 만 보면 그 값을 물려받은 데몬 후손에서 띄운 다른 update-all 이 STOP=1 을 쥔 채 첫 hr 에서 죽는다(5라운드).
+  [ "${HWAX_UPDATE_ALL_REEXEC_PID:-}" = "$$" ] || export HWAX_UPDATE_ALL_STOP=0
   trap 'echo "  · 종료 요청(TERM) 을 받아 두었다 — 진행 중인 §가 끝나면 멈춘다. 즉시 멈추려면 Ctrl-C" >&2; export HWAX_UPDATE_ALL_STOP=1' TERM
   trap 'echo "  · 종료 요청(HUP) 을 받아 두었다 — 진행 중인 §가 끝나면 멈춘다" >&2; export HWAX_UPDATE_ALL_STOP=1' HUP
   # Ctrl-C: 전경 단계가 INT 로 죽었으면($? = 130) 종전처럼 바로 죽는다. 단계가 INT 를 삼키고 정상 종료했으면(rsync rc 20·rclone) 종전엔
-  # 아무 표시 없이 다음 §로 이어졌다(4라운드) — 이제 받아 두고 다음 § 머리에서 멈춘다.
-  trap 'if [ $? = 130 ]; then exit 130; fi; echo "  · Ctrl-C — 단계가 신호를 삼키고 끝났다. 진행 중인 §가 끝나면 멈춘다" >&2; export HWAX_UPDATE_ALL_STOP=1' INT
+  # 아무 표시 없이 다음 §로 이어졌다(4라운드) — 이제 받아 두고 다음 § 머리에서 멈춘다. 두 번 눌러도 빨라지지 않는다 — bash 는 전경 단계가
+  # 끝나기 전엔 trap 을 미루고 신호는 쌓이지 않는다(실측). 삼키는 단계를 지금 끊으려면 그 단계 프로세스에 kill 을.
+  trap 'if [ $? = 130 ]; then exit 130; fi; echo "  · Ctrl-C — 단계가 신호를 삼켰거나 명령 사이였다. 진행 중인 §가 끝나면 멈춘다" >&2; export HWAX_UPDATE_ALL_STOP=1' INT
+}
+if _lock_is_body; then
+  _body_stop_traps
 elif ! command -v flock >/dev/null 2>&1; then
-  echo "  ⚠ flock(util-linux) 이 없어 단일 실행 잠금 없이 진행한다 — 겹쳐 돌리지 마라" >&2
+  echo "  ⚠ flock(util-linux) 이 없어 단일 실행 잠금 없이 진행한다 — 겹쳐 돌리지 마라(kill 은 § 머리에서, Ctrl-C 는 즉시 — 잠금만 없다)" >&2
+  _body_stop_traps
 else
   _lk="$(readlink -f "$_LOCK" 2>/dev/null | sed 's/[][*?\\]/\\&/g')"   # find -lname 은 글롭이다 — 경로의 특수문자를 이스케이프
   for _fd in $(find "/proc/$$/fd" -maxdepth 1 -lname "$_lk" -printf '%f\n' 2>/dev/null); do eval "exec $_fd>&-"; done
@@ -148,9 +154,16 @@ else
   _lock_bye() { echo "$1" >&2; rm -f "$HWAX_SKIP_LEDGER" 2>/dev/null; exit 3; }
   _lock_owner() { stat -c '%U' "$1" 2>/dev/null || echo '?'; }
   # 같은 리포를 sudo 로 한 번 돌리면 root 소유 파일이 남아 그 뒤 모든 실행이 여기서 막힌다(sticky /tmp 라 지우지도 못한다 — 4라운드).
-  exec 8>"$_HEAL" || _lock_bye "✗ 잠금 준비 실패 — $_HEAL 을 열 수 없다(소유자 $(_lock_owner "$_HEAL"), 나는 $(id -un)). 다른 사용자(sudo)로 돌린 흔적이면: sudo rm -f $_HEAL $_LOCK 뒤 재실행"
+  _lock_open_fail() {  # $1=파일 — 파일이 있으면 소유자(남의 것이면 **돌고 있는지 먼저**), 없으면 디렉터리 문제(5라운드: 없는 파일을 지우라 했다)
+    if [ -e "$1" ]; then
+      echo "✗ 잠금 파일을 열 수 없다 — $1(소유자 $(_lock_owner "$1"), 나는 $(id -un)). 먼저 'ps -ef | grep update-all' 로 그 사용자의 update-all 이 도는지 본다 — 돌면 기다린다. 끝난 흔적(sudo 로 한 번 돌림)이면: sudo rm -f $_HEAL $_LOCK 뒤 재실행"
+    else
+      echo "✗ 잠금 파일을 만들 수 없다 — $_LOCK_DIR 에 쓸 수 없다(없음·읽기전용·가득). 디렉터리를 보라(HWAX_LOCK_DIR 로 다른 곳을 줄 수 있다)"
+    fi
+  }
+  exec 8>"$_HEAL" || _lock_bye "$(_lock_open_fail "$_HEAL")"
   flock -w 15 8 || _lock_bye "✗ 다른 update-all 이 잠금 획득 단계에서 15초 넘게 멈춰 있다($_HEAL) — ps -ef | grep update-all 로 확인(그 실행에 Ctrl-Z/STOP 이 걸렸을 수 있다)"
-  exec 9>"$_LOCK" || _lock_bye "✗ 잠금 파일을 열 수 없다 — $_LOCK(소유자 $(_lock_owner "$_LOCK"), 나는 $(id -un)). 다른 사용자(sudo)로 돌린 흔적이면: sudo rm -f $_HEAL $_LOCK 뒤 재실행"
+  exec 9>"$_LOCK" || _lock_bye "$(_lock_open_fail "$_LOCK")"
   if ! flock -n 9; then
     _lock_holders
     if [ -z "$_real" ] && [ -n "$_stale" ]; then
@@ -182,7 +195,8 @@ signal.signal(signal.SIGINT, signal.SIG_DFL); signal.signal(signal.SIGQUIT, sign
   wait "$_child"; _rc=$?
   while kill -0 "$_child" 2>/dev/null; do wait "$_child"; _rc=$?; done   # 신호로 깨어났으면 자식이 끝날 때까지 다시 기다린다
   rm -f "$HWAX_SKIP_LEDGER" 2>/dev/null    # 바깥이 만든 장부는 쓰이지 않는다(본문이 자기 것을 만든다)
-  if [ "$_got_int" = 1 ] && [ "$_rc" = 130 ]; then trap - INT; kill -INT $$; fi   # 자식이 Ctrl-C 로 죽었다 — 우리도 신호로 죽어 체인이 끊긴다
+  # 자식이 Ctrl-C 로 죽었거나(130) Ctrl-C 를 받아 두고 § 머리에서 멈췄으면(143) 우리도 신호로 죽어 부른 쪽의 `;` 체인이 끊긴다 — TERM 으로 멈춘 143 은 _got_int=0.
+  if [ "$_got_int" = 1 ] && { [ "$_rc" = 130 ] || [ "$_rc" = 143 ]; }; then trap - INT; kill -INT $$; fi
   exit "$_rc"
 fi
 
@@ -221,7 +235,7 @@ if [ "${UPDATE_ALL_REEXEC:-0}" != "1" ]; then
     [ "$before" = "$after" ] && echo "  · git: 최신 ($after)" || echo "  · git: $before → $after" )
   # 스크립트 자신이 바뀌었을 수 있으므로 새 버전으로 1회 재실행
   rm -f "$HWAX_SKIP_LEDGER" 2>/dev/null     # 재실행 전의 장부 — 새 판이 자기 것을 만든다(안 지우면 실행마다 하나 남는다)
-  exec env UPDATE_ALL_REEXEC=1 bash "$SELF_REPO/infra/scripts/update-all.sh" "$@"
+  exec env UPDATE_ALL_REEXEC=1 HWAX_UPDATE_ALL_REEXEC_PID=$$ bash "$SELF_REPO/infra/scripts/update-all.sh" "$@"   # PID 결합 — 0b 가 '내 재실행' 을 이것으로 판정한다
 fi
 ok "포털 레포 최신 (재실행 완료)"
 

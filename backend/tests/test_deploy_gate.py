@@ -94,7 +94,7 @@ def _fake_update_all(tmp_path, body: str, name: str = "update-all.sh", lock_dir=
     f = tmp_path / name
     hr = UA_SRC[UA_SRC.index("hr() {"):]; hr = hr[:hr.index('"$*"; }\n') + len('"$*"; }\n')]     # 실 hr() 전체 — § 머리에서 종료 요청을 본다
     f.write_text(f'#!/usr/bin/env bash\nset -uo pipefail\nSELF_REPO="{tmp_path}"; export HWAX_LOCK_DIR="{lock_dir or tmp_path}"\n'
-                 f'HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER\n{hr}\n{_lock_block()}\n{body}\n')
+                 f'. "{ROOT}/infra/scripts/lib/skip-ledger.sh"\nHWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER\n{hr}\n{_lock_block()}\n{body}\n')
     return f
 
 
@@ -229,7 +229,9 @@ def test_update_all_kill_stops_at_the_next_section_and_holds_the_lock_until_then
     sub = tmp_path / "sub.log"; token = f"sub-{uuid.uuid4().hex[:10]}"     # 박스 전역 pgrep — pytest 세션을 가로질러 고유해야 한다(검토)
     f = _fake_update_all(tmp_path, f'hr "S1"; bash -c \'for i in $(seq 1 5); do echo "SUB $i" >> "{sub}"; sleep 0.3; done; echo SUBDONE >> "{sub}" # {token}\'; '
                                    f'bash -c \'echo UP_AFTER_DOWN\'; echo FINISHED_S1; hr "S2"; echo S2_RAN')
-    p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # nohup 아래(SIGHUP 무시)에서 띄운 러너면 자식이 무시를 물려받아 HUP trap 이 안 걸린다 — 기본 처리로 되돌려 띄운다(5라운드)
+    p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                         preexec_fn=lambda: [signal.signal(getattr(signal, "SIG" + s_), signal.SIG_DFL) for s_ in ("HUP", "INT", "TERM")])
     time.sleep(0.8)
     os.kill(p.pid, getattr(signal, "SIG" + sig))
     time.sleep(0.3)
@@ -237,7 +239,7 @@ def test_update_all_kill_stops_at_the_next_section_and_holds_the_lock_until_then
     assert not _free(_lock_of(tmp_path)), "단계가 도는 동안 잠금은 잡혀 있다 — 여기서 재실행하면 rc 3 이어야 한다"
     out, err = p.communicate(timeout=20)
     assert p.returncode == 143, (p.returncode, out, err)
-    assert f"{sig} 받음" in err and "종료 요청" in err and "여기서 멈춘다" in err, err
+    assert f"{sig} 받음" in err and "종료 요청" in err and "여기서 멈춘다" in out and "직전 머리: 'S1'" in out, out + err
     assert sub.read_text().splitlines()[-1] == "SUBDONE", "진행 중이던 단계는 끝까지 간다 — 고아로 남지 않는다"
     assert "UP_AFTER_DOWN" in out and "FINISHED_S1" in out, "같은 § 안의 짝 명령은 끝까지 간다(down 뒤 up)"
     assert "S2_RAN" not in out, "다음 § 머리에서 멈춘다"
@@ -250,13 +252,13 @@ def test_update_all_kill_during_section1_survives_the_self_reexec(tmp_path):
     환경변수로 넘긴다."""
     import time, signal
     f = _fake_update_all(tmp_path, 'if [ "${UPDATE_ALL_REEXEC:-0}" != 1 ]; then hr "1) 포털 레포 최신화"; sleep 1.5; echo S1_GIT_DONE; '
-                                   'exec env UPDATE_ALL_REEXEC=1 bash "$0" "$@"; fi\nhr "1) 포털 레포 최신화"; echo REEXEC_BODY; hr "2) deploy-all"; echo S2_RAN')
+                                   'exec env UPDATE_ALL_REEXEC=1 HWAX_UPDATE_ALL_REEXEC_PID=$$ bash "$0" "$@"; fi\nhr "1) 포털 레포 최신화"; echo REEXEC_BODY; hr "2) deploy-all"; echo S2_RAN')
     p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     time.sleep(0.6); os.kill(p.pid, signal.SIGTERM)
     out, err = p.communicate(timeout=20)
     assert p.returncode == 143, (p.returncode, out, err)
     assert "S1_GIT_DONE" in out and "S2_RAN" not in out, out
-    assert err.count("여기서 멈춘다") == 1 and "'1) 포털 레포 최신화' 부터는 하지 않았다" in err, err
+    assert out.count("여기서 멈춘다") == 1 and "'1) 포털 레포 최신화' 머리에서 멈췄다" in out, out + err
 
 
 def test_update_all_ctrl_c_swallowed_by_a_step_stops_at_the_next_section(tmp_path):
@@ -268,8 +270,8 @@ def test_update_all_ctrl_c_swallowed_by_a_step_stops_at_the_next_section(tmp_pat
     time.sleep(1.0); os.killpg(p.pid, signal.SIGINT)
     out, err = p.communicate(timeout=20)
     assert "AFTER_2C" in out and "S3_RAN" not in out, out
-    assert "Ctrl-C — 단계가 신호를 삼키고" in err and "여기서 멈춘다" in err, err
-    assert p.returncode == 143, p.returncode
+    assert "Ctrl-C — 단계가 신호를 삼켰거나" in err and "여기서 멈춘다" in out, out + err
+    assert p.returncode == -signal.SIGINT, (p.returncode, "Ctrl-C 로 멈췄으면 바깥도 신호로 죽어 ; 체인이 끊긴다(5라운드)")
 
 
 def test_update_all_stop_at_hr_reports_failures_so_far(tmp_path):
@@ -280,7 +282,7 @@ def test_update_all_stop_at_hr_reports_failures_so_far(tmp_path):
     time.sleep(0.5); os.kill(p.pid, signal.SIGTERM)
     out, err = p.communicate(timeout=20)
     assert p.returncode == 143 and "S2_RAN" not in out
-    assert "지금까지의 ✗" in err and "첫 실패" in err, err
+    assert "지금까지의 ✗" in out and "첫 실패" in out, out + err
 
 
 @NOT_ROOT_GATE
@@ -292,9 +294,48 @@ def test_update_all_unwritable_lock_files_name_the_owner_and_the_sudo_fix(tmp_pa
         f = _fake_update_all(tmp_path, 'echo BODY')
         r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20)
         assert r.returncode == 3 and "BODY" not in r.stdout
-        assert "소유자" in r.stderr and "sudo rm -f" in r.stderr and str(heal) in r.stderr, r.stderr
+        assert "소유자" in r.stderr and "sudo rm -f" in r.stderr and str(heal) in r.stderr and "도는지 본다" in r.stderr, r.stderr
     finally:
         heal.chmod(0o644)
+
+
+def test_update_all_stop_flag_leaked_to_a_daemon_does_not_stop_a_later_run(tmp_path):
+    """검토(5라운드): 종료 요청 뒤 같은 § 안에서 뜬 데몬은 UPDATE_ALL_REEXEC=1·HWAX_UPDATE_ALL_STOP=1 을 물려받는다. 그 환경에서 시작한
+    다른 update-all 이 '내 재실행' 으로 오판돼 첫 hr 에서 신호 없이 죽었다 — 재실행 판정은 PID 로."""
+    f = _fake_update_all(tmp_path, 'hr "1"; echo S1_RAN; hr "2"; echo S2_RAN')
+    r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20,
+                       env={**os.environ, "UPDATE_ALL_REEXEC": "1", "HWAX_UPDATE_ALL_STOP": "1", "HWAX_UPDATE_ALL_REEXEC_PID": "1"})
+    assert r.returncode == 0 and "S1_RAN" in r.stdout and "S2_RAN" in r.stdout and "멈춘다" not in r.stdout, r.stdout + r.stderr
+
+
+def test_update_all_without_flock_still_stops_at_the_next_section_on_kill(tmp_path):
+    """검토(5라운드): flock 없는 갈래에는 정지 기계가 하나도 없어 kill 이 옛 모양(즉사·단계 고아)이었다 — 두 갈래가 같은 함수를 쓴다."""
+    import time, signal
+    sub = tmp_path / "sub.log"
+    f = _fake_update_all(tmp_path, f'hr "S1"; bash -c \'for i in 1 2 3 4; do echo SUB >> "{sub}"; sleep 0.3; done; echo SUBDONE >> "{sub}"\'; hr "S2"; echo S2_RAN')
+    p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                         env={"PATH": str(_shim_path(tmp_path, without="flock")), "HOME": os.environ.get("HOME", "/tmp")})
+    time.sleep(0.5); os.kill(p.pid, signal.SIGTERM)
+    out, err = p.communicate(timeout=20)
+    assert p.returncode == 143 and "S2_RAN" not in out and sub.read_text().splitlines()[-1] == "SUBDONE", (p.returncode, out, err, sub.read_text())
+
+
+def test_update_all_stop_at_hr_prints_the_skip_ledger_summary(tmp_path):
+    """검토(5라운드): hr 정지 경로의 ○ 요약 호출은 시험 보호가 0 이었다(가짜가 장부 lib 를 source 하지 않았다)."""
+    import time, signal
+    f = _fake_update_all(tmp_path, 'hr "S1"; hwax_skip "어떤 기능" "옵션이 없다" "--with-x"; sleep 1.2; hr "S2"; echo S2_RAN')
+    p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    time.sleep(0.4); os.kill(p.pid, signal.SIGTERM)
+    out, err = p.communicate(timeout=20)
+    assert p.returncode == 143 and "있는데 안 켠 것" in out and "어떤 기능" in out, out + err
+
+
+def test_update_all_unwritable_lock_dir_points_at_the_directory_not_at_sudo_rm(tmp_path):
+    """검토(5라운드): 디렉터리가 못 쓰는 곳이면 파일이 없는데 '소유자 ?' 와 sudo rm 안내가 붙었다."""
+    f = _fake_update_all(tmp_path, 'echo BODY', lock_dir=tmp_path / "nope/none")
+    r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20)
+    assert r.returncode == 3 and "BODY" not in r.stdout
+    assert "에 쓸 수 없다" in r.stderr and "sudo rm" not in r.stderr, r.stderr
 
 
 def test_update_all_retries_the_lock_when_the_holder_vanished_during_the_scan(tmp_path):
@@ -471,7 +512,7 @@ def test_update_all_rollback_to_the_pre_lock_version_refuses_once(tmp_path):
 
 def test_update_all_lock_passes_args_exit_code_and_survives_self_reexec(tmp_path):
     """§1 이 새 버전으로 exec 재실행해도(같은 PID) 잠금은 이어지고 다시 잡으려 들지 않는다. 인자와 종료코드는 그대로 나온다. stdin 도 본문에 닿는다."""
-    f = _fake_update_all(tmp_path, 'if [ "${UPDATE_ALL_REEXEC:-0}" != 1 ]; then exec env UPDATE_ALL_REEXEC=1 bash "$0" "$@"; fi\nread -r line; echo "REEXEC_OK:$*:$line"; exit 7')
+    f = _fake_update_all(tmp_path, 'if [ "${UPDATE_ALL_REEXEC:-0}" != 1 ]; then exec env UPDATE_ALL_REEXEC=1 HWAX_UPDATE_ALL_REEXEC_PID=$$ bash "$0" "$@"; fi\nread -r line; echo "REEXEC_OK:$*:$line"; exit 7')
     r = subprocess.run(["bash", str(f), "--with-ste"], input="from-stdin\n", capture_output=True, text=True, timeout=20)
     assert r.returncode == 7 and r.stdout.count("REEXEC_OK:--with-ste:from-stdin") == 1 and "이미 돌고 있다" not in r.stderr, r.stdout + r.stderr
 
