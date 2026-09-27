@@ -63,7 +63,11 @@ Flask `SCRIPT_NAME`. — 포털은 이 값들을 env 로도 주입(`ROOT_PATH`, 
 
 ## 4. 포털에 등록 (2곳 + 리로드)
 
-**(a) 라우트** — `backend/config/routes.env` 에 한 줄:
+**(a) 라우트** — `backend/config/routes.env` 에 한 줄. **박스마다 주소가 다른 항목**(다른 서버에서 도는 앱: ste·report-archive)은
+추적 파일이 아니라 `backend/config/routes.local.env`(gitignore 오버레이, 같은 키를 덮어쓴다)에 적는다 — 추적 파일 수정은 배포의
+`git reset --hard` 가 지운다(§7). update-all 이 유도해 적어 주는 항목(1d ste · 1e report-archive)은 손대지 않아도 된다.
+
+기본 형태:
 ```
 <app>=http://127.0.0.1:<PORT>/
 ```

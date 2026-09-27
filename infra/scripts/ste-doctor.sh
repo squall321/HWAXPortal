@@ -112,6 +112,28 @@ else
   warn tls "포털 /tls/info 무응답(:$HTTP_PORT) — 포털이 안 떠 있거나 옛 버전"
 fi
 
+# ── 4c) 공개 https 종단 — 포털 nginx 가 https 를 실제로 내는가, 공개 주소 스킴·쿠키 Secure 가 맞는가 ─────
+# tls 행은 "어떤 인증서인가", 이 행은 "https 가 켜져서 응답하는가". 둘은 다른 질문이다(2026-09-27 RA 재연결 감사 —
+# RA 요청서의 공개 주소가 https 인데 ENABLE_TLS 기본값은 false 다).
+ETLS="$(envv ENABLE_TLS "$ROOT/infra/.env")"; HPORT="$(envv HTTPS_PORT "$ROOT/infra/.env")"; HPORT="${HPORT:-443}"
+PBU="$(envv PUBLIC_BASE_URL "$ROOT/infra/.env")"; CSEC="$(envv COOKIE_SECURE "$ROOT/infra/.env")"
+if [ "$ETLS" != true ]; then
+  case "$PBU" in
+    https://*) bad https "ENABLE_TLS 가 꺼져 있는데 PUBLIC_BASE_URL 이 https 다($PBU) — 공개 주소로 오는 접속이 없고 쿠키·SSO 리다이렉트가 어긋난다. infra/.env 에 ENABLE_TLS=true·TLS_CERT_PATH·COOKIE_SECURE=true" ;;
+    *)         warn https "꺼짐(ENABLE_TLS≠true) — 이 박스는 http :$HTTP_PORT 만 낸다. 공개 주소가 https 면 infra/.env 에 ENABLE_TLS=true·TLS_CERT_PATH(fullchain)·PUBLIC_BASE_URL=https://…·COOKIE_SECURE=true" ;;
+  esac
+else
+  hc="$(curl -sk -o /dev/null -w '%{http_code}' -m 4 "https://127.0.0.1:$HPORT/health" 2>/dev/null || echo 000)"
+  if [ "$hc" != 200 ]; then
+    bad https ":$HPORT 무응답($hc) — 인증서 경로(TLS_CERT_PATH, 리포 루트 상대)·rootless 저포트(grant-net-bind.sh)·nginx 로그"
+  else
+    _mm=""
+    case "$PBU" in https://*) : ;; *) _mm="PUBLIC_BASE_URL 이 https 가 아니다($PBU)" ;; esac
+    [ "$CSEC" = true ] || _mm="${_mm:+$_mm · }COOKIE_SECURE≠true(브라우저가 상태 쿠키를 SameSite=lax 로 남긴다)"
+    if [ -n "$_mm" ]; then bad https ":$HPORT 200 인데 설정이 어긋난다 — $_mm"; else ok https ":$HPORT 200 · PUBLIC_BASE_URL https · COOKIE_SECURE=true"; fi
+  fi
+fi
+
 # ── 5) 배포 신선도 — 헤드 마커 vs 리포 HEAD(direct) / Drive 커밋(teleport) ──────────────
 if [ -n "$TENV" ] && [ -d "$(dirname "$TENV")/.." ]; then
   STE_DIR="$(cd "$(dirname "$TENV")/.." && pwd)"

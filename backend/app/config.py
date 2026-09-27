@@ -331,10 +331,17 @@ def startup_warnings(s: Settings) -> list[tuple[str, str]]:
     전에는 prod + mock 을 기동 거부했는데, 그러면 재기동 점검 자체를 못 한다. 대신 조용히 두지 않는다 — 기동 로그에
     CRITICAL 로 남기고 `/health/ready` 의 `temporary` 에 코드를 싣는다(docs/gotchas.md §14).
     """
+    out: list[tuple[str, str]] = []
+    # 공개 주소 스킴과 쿠키 Secure 가 어긋나면 증상만 남는다 — https 인데 secure=false 면 상태 쿠키가 SameSite=lax 로
+    # 남아 외부 IdP 의 cross-site POST 에 안 실리고, http 인데 secure=true 면 브라우저가 쿠키를 전부 버려 로그인 루프다.
+    # (2026-09-27 RA 재연결 감사 — 공개 https 로 가면서 잡아야 할 자리)
+    if s.public_base_url.lower().startswith("https://") != bool(s.cookie_secure):
+        out.append(("cookie_scheme", f"PUBLIC_BASE_URL({s.public_base_url}) 의 스킴과 COOKIE_SECURE={s.cookie_secure} 가 어긋난다 — "
+                                     "https 면 COOKIE_SECURE=true, http 면 false 여야 한다"))
     if not (s.app_env == "prod" and s.auth_provider == "mock"):
-        return []
-    out = [("prod_mock", f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 {s.mock_user_groups!r} "
-                         "권한으로 들어간다. SAML 이 붙기 전까지의 임시 구성이다")]
+        return out
+    out.append(("prod_mock", f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 {s.mock_user_groups!r} "
+                             "권한으로 들어간다. SAML 이 붙기 전까지의 임시 구성이다"))
     bad = _secret_problem(s)
     if bad:
         out.append((bad[0], bad[1] + " — mock 인증이라 지금은 기동하지만, SAML 로 바꾸면 기동을 거부한다"))

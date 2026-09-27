@@ -546,3 +546,8 @@ grep -c FROM_RA ../HWAXAgentServer/.env                          # 0 — 마커�
 - **B 로 넘길 때**(요청서 §5): RA 담당이 B 의 DB 를 승격한 뒤, 포털은 `infra/.env` 의 `RA_HOST` 를 B 주소로 바꾸고
   `update-all` — 라우트·`RA_BASE_URL`·`RA_MCP_URL` 셋이 함께 따라간다. 되돌리기도 그 한 줄이다.
 - `RA_HOST` 를 비워 두면 종전대로 "같은 박스의 :3000" 이고 ○ 요약에 "RA 원격 재연결 — RA_HOST 미설정" 이 남는다(dev 는 그것이 정상).
+- **HTTPS 자체는 포털 nginx 가 종단한다** — `infra/.env` 의 `ENABLE_TLS=true` 일 때만 :443 서버 블록이 생긴다(기본 false). 공개 https 로
+  갈 박스는 넷을 같이 둔다: `ENABLE_TLS=true` · `TLS_CERT_PATH=infra/tls/<fullchain>.crt`(**리포 루트 상대경로** — 절대경로는 nginx 컨테이너에
+  안 보여 즉사, 생성기가 막는다) · `PUBLIC_BASE_URL=https://hwax.sec.samsung.net` · `COOKIE_SECURE=true`. 어긋나면 `/health/ready` 의
+  `temporary` 에 `cookie_scheme` 이 실리고 `ste-doctor` 의 `https` 행이 빨강이다. 인증서가 없으면 `start.sh` 가 **자체서명을 만들어 띄운다** —
+  정식(사내 CA) 발급본을 `infra/tls/` 에 넣고 재기동해야 `tls` 행이 "공개 CA" 또는 "체인 준비됨" 이 된다.

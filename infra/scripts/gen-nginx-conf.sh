@@ -198,6 +198,12 @@ EOF
 # Cert/key are under the repo, which is bind-mounted at /workspace inside the nginx container.
 tls_server=""
 if [ "${ENABLE_TLS:-false}" = "true" ]; then
+  # ⚠ 절대경로를 주면 `/workspace//etc/…` 가 되고, 그 전에 nginx 컨테이너에는 리포(/workspace)만 바인드돼 호스트 경로가
+  #   보이지도 않는다 — nginx 가 인증서를 못 열어 즉사한다. 백엔드(tlscert.py)는 절대경로를 받지만 여기는 못 받는다.
+  #   사내 발급본은 infra/tls/ 아래에 두고 리포 루트 상대경로로 적는다(2026-09-27 감사).
+  for _tp in "${TLS_CERT_PATH:-}" "${TLS_KEY_PATH:-}"; do
+    case "$_tp" in /*) echo "✗ TLS_CERT_PATH·TLS_KEY_PATH 는 리포 루트 **상대경로**여야 한다($_tp) — nginx 컨테이너에는 /workspace(리포)만 바인드된다. 인증서를 infra/tls/ 에 두라" >&2; exit 1 ;; esac
+  done
   CERT_C="/workspace/${TLS_CERT_PATH:-infra/tls/hwax.crt}"
   KEY_C="/workspace/${TLS_KEY_PATH:-infra/tls/hwax.key}"
   tls_server="$(cat <<EOF

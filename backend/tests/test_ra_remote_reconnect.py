@@ -170,3 +170,70 @@ def test_env_example_declares_the_operator_keys():
     for k in ("# RA_HOST=", "# LLM_BASE_URL=", "# LLM_MODEL=", "# LLM_API_KEY="):
         assert k in ex, k
     assert not re.search(r"^RA_HOST=\S", ex, re.M), "예시에 주소를 박지 않는다"
+
+
+# ── 4-1 회귀 보호 — jwt-handoff 타일은 라우트가 있어도 콜백 url·타입을 지킨다(메모리 hwax-sso-downstream 교차 함정 4) ──
+def _ra_tile(tmp_path, routes: str, local: str | None = None):
+    from app.catalog.registry import CatalogRegistry
+    from app.config import Settings
+    base = tmp_path / "routes.env"; base.write_text(routes, encoding="utf-8")
+    if local is not None:
+        (tmp_path / "routes.local.env").write_text(local, encoding="utf-8")
+    reg = CatalogRegistry(Settings(routes_path=str(base)))
+    return next(s for s in reg.all() if s.id == "report-archive")
+
+
+def test_ra_tile_keeps_callback_when_routed_and_when_not(tmp_path):
+    with_route = _ra_tile(tmp_path, "report-archive=http://127.0.0.1:3000/\n")
+    assert (with_route.integration_type, with_route.url, with_route.status) == (
+        "jwt-handoff", "/report-archive/api/auth/portal-callback", "available"), "라우트가 콜백 url 을 덮거나 proxy 로 강등하면 SSO 가 통째로 꺼진다"
+    overlay = _ra_tile(tmp_path, "# base 에 없음\n", local=f"report-archive=http://{A}:3000/\n")
+    assert (overlay.integration_type, overlay.url) == ("jwt-handoff", "/report-archive/api/auth/portal-callback")
+    unrouted = _ra_tile(tmp_path, "\n")
+    assert unrouted.integration_type == "jwt-handoff" and unrouted.url.endswith("/portal-callback")
+
+
+def test_launch_token_contract_for_ra_matches_the_request():
+    """요청서 §4: RS256 · aud=report-archive · scope=launch · 90초 · jti. 발행기는 systems.yaml 의 audience 를 그대로 쓴다."""
+    from app.auth.downstream import JwtDownstreamIssuer
+    from app.auth.keystore import KeyStore
+    from app.config import Settings
+    import inspect
+    src = inspect.getsource(JwtDownstreamIssuer.mint)
+    assert '"aud": audience' in src and '"scope": "launch"' in src and '"jti"' in src
+    s = Settings()
+    assert s.jwt_launch_ttl == 90
+
+
+# ── HTTPS 위생 ─────────────────────────────────────────────────────────────────
+def test_startup_warns_when_public_scheme_and_cookie_secure_disagree():
+    from app.config import Settings, startup_warnings
+    codes = lambda **kw: [c for c, _ in startup_warnings(Settings(**kw))]
+    assert "cookie_scheme" in codes(public_base_url="https://hwax.example", cookie_secure=False)
+    assert "cookie_scheme" in codes(public_base_url="http://127.0.0.1:8088", cookie_secure=True)
+    assert "cookie_scheme" not in codes(public_base_url="https://hwax.example", cookie_secure=True)
+    assert "cookie_scheme" not in codes(public_base_url="http://127.0.0.1:8088", cookie_secure=False)
+
+
+def test_nginx_generator_refuses_absolute_tls_paths():
+    """nginx 컨테이너에는 리포(/workspace)만 바인드된다 — 절대경로 인증서는 열리지 않아 즉사한다."""
+    assert 'case "$_tp" in /*)' in GEN and "상대경로" in GEN
+    guard = GEN[GEN.index('for _tp in "${TLS_CERT_PATH:-}" "${TLS_KEY_PATH:-}"'):]
+    guard = guard[:guard.index("done") + 4]
+    r = subprocess.run(["bash", "-c", f'TLS_CERT_PATH=/etc/ssl/x.crt TLS_KEY_PATH=infra/tls/x.key; {guard}; echo alive'],
+                       capture_output=True, text=True)
+    assert r.returncode == 1 and "alive" not in r.stdout and "상대경로" in r.stderr
+    r2 = subprocess.run(["bash", "-c", f'TLS_CERT_PATH=infra/tls/x.crt TLS_KEY_PATH=infra/tls/x.key; {guard}; echo alive'],
+                        capture_output=True, text=True)
+    assert r2.returncode == 0 and "alive" in r2.stdout
+
+
+def test_doctor_judges_https_termination_not_only_cert_kind():
+    doc = (ROOT / "infra/scripts/ste-doctor.sh").read_text(encoding="utf-8")
+    assert "4c) 공개 https 종단" in doc and 'ok https' in doc and 'bad https' in doc and 'warn https' in doc
+    assert "COOKIE_SECURE" in doc and "PUBLIC_BASE_URL" in doc
+
+
+def test_routes_prod_env_no_longer_carries_a_stale_ra_address():
+    rp = (ROOT / "backend/config/routes.prod.env").read_text(encoding="utf-8")
+    assert "report.sec.samsung.net" not in rp and "RA_HOST" in rp

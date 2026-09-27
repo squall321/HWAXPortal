@@ -228,7 +228,7 @@ else
       _upsert_kv "$_RL" report-archive "$RA_BASE_URL/"
       ok "routes.local.env: report-archive=$RA_BASE_URL/  (끝 / = 접두어 STRIP — RA 화면이 그것을 기대한다. §2 가 nginx 를 다시 만든다)"
       _upsert_kv "$SELF_REPO/backend/.env" RA_BASE_URL "$RA_BASE_URL"
-      ok "backend/.env: RA_BASE_URL=$RA_BASE_URL  (PAT 연결 검증·챗 PPT 가져오기 — 포털 재기동 때 읽는다)"
+      ok "backend/.env: RA_BASE_URL=$RA_BASE_URL  (PAT 연결 검증·챗 PPT 가져오기 — §2 가 포털을 stop→start 하며 읽는다)"
       if [ -n "$GW_DIR" ]; then
         _upsert_kv "$GW_DIR/provision.env" RA_MCP_URL "$RA_MCP_URL"
         ok "게이트웨이 provision.env: RA_MCP_URL=$RA_MCP_URL  (§5 가 config 와 다르면 재프로비저닝한다)"
