@@ -14,6 +14,8 @@
 - [x] HTTPS 위생 — `startup_warnings` `cookie_scheme` · `gen-nginx-conf.sh` 절대경로 가드 · `ste-doctor` 4c `https` 행 · routes.prod.env 낡은 주석 · 플레이북 routes.local.env (D-6)
 - [x] 4-1 회귀 시험(라우트가 있어도 jwt-handoff 콜백 유지) · launch 계약(aud·scope·90초)
 
+- [x] 2라운드 검토 8건 수정 — `unless_env` 파일 파싱·인라인 주석·개행·쓰기 실패·원격 RA fail·600·LLM 부분 이관·드리프트 소문자·`../`·dry-run 가림·시험 환경 독립 (D-7)
+
 ## cae00 (사용자)
 - [ ] `infra/.env` 에 `RA_HOST=<A 주소>`(요청서 §1) → `git pull && ./infra/scripts/update-all.sh`
 - [ ] 요청서 §8 여덟 줄 확인(구 :3000 안 뜸 · 공개 주소 화면 · 2MB 첨부 · 타일 SSO · RA 직접 접속 SSO · 챗 RA 도구가 새 데이터 · apply-envs 재실행에도 LLM 유지 · update-all 이 RA 죽었다고 경고 안 함)

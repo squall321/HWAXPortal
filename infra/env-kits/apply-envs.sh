@@ -88,7 +88,7 @@ apply_one() {  # $1=서비스명
         [ -n "$val" ] || { echo "   · $key: RA .env 에 $rak 없음 → 건너뜀(대상 앱의 자체 기본값을 쓴다)"; continue; } ;;
     esac
     if [ "$DRY" = 1 ]; then
-      echo "   (dry-run) + $key=$val"
+      case "$key" in *KEY*|*TOKEN*|*SECRET*|*PASSWORD*) echo "   (dry-run) + $key=****(가림)" ;; *) echo "   (dry-run) + $key=$val" ;; esac
     else
       printf '%s=%s\n' "$key" "$val" >> "$target"
     fi

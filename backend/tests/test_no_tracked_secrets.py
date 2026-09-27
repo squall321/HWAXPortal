@@ -34,6 +34,8 @@ def _tracked() -> list[str]:
 
 def _settings(**kw) -> Settings:
     # `_env_file=None` — 이 박스의 backend/.env 가 검사를 오염시키지 않게. 인자는 환경변수보다 우선한다.
+    # 스킴·쿠키는 정합인 값으로 고정 — 이 박스 환경변수(PUBLIC_BASE_URL·COOKIE_SECURE)가 cookie_scheme 을 끼워 넣지 않게.
+    kw.setdefault("public_base_url", "http://127.0.0.1:8088"); kw.setdefault("cookie_secure", False)
     return Settings(_env_file=None, **kw)
 
 

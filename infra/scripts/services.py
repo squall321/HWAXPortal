@@ -55,6 +55,28 @@ def _infra_env() -> dict[str, str]:
     return out
 
 
+def _infra_value(key: str) -> str | None:
+    """infra/.env 의 **임의 키** 하나. `unless_env` 가 가리키는 키(RA_HOST 등)는 위 HWAX_* 허용 목록 밖이라 _infra_env()
+    가 싣지 않는다 — 그래서 파일에만 적은 RA_HOST 를 이 파일이 절대 못 보고 구 RA 를 되살렸다(2026-09-27 2라운드 검토 실측:
+    부팅 유닛·services.sh 어느 경로도 RA_HOST 를 env 로 넘기지 않는다). 파서 규칙은 _infra_env 와 같다 — 인라인 주석·따옴표,
+    빈 값=미설정, 마지막 줄이 이긴다. os.environ 에는 넣지 않는다."""
+    p = PORTAL_ROOT / "infra" / ".env"
+    if not p.exists():
+        return None
+    pat = re.compile(r"^\s*(?:export\s+)?" + re.escape(key) + r"=(.*)$")
+    val: str | None = None
+    for ln in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = pat.match(ln)
+        if not m:
+            continue
+        try:
+            toks = shlex.split(m.group(1), comments=True)
+        except ValueError:
+            continue
+        val = toks[0].strip() if toks and toks[0].strip() else None
+    return val
+
+
 def _hwax_setting(key: str) -> str | None:
     """우선순위 os.environ > infra/.env, 빈 값 = 미설정. backup-local.sh 의 폴백과 같은 순서여야
     두 도구가 같은 박스 이름·경로를 본다."""
@@ -185,8 +207,13 @@ def enabled_here(svc: dict) -> bool:
     # 않는다(예: RA_HOST 가 있으면 Report Archive 는 원격 서버쌍 — 로컬 항목을 띄우면 이사 전 DB 를 되살린다).
     # 박스 이름(only_on)이 아니라 사실(설정값)로 가른다 — cae00 호스트명이 바뀌거나 운영 박스가 늘어도 맞다.
     unless = svc.get("unless_env")
-    if unless and _hwax_setting(str(unless)):
-        return False
+    if unless:
+        k = str(unless)
+        v = os.environ.get(k)
+        if v is None or not v.strip():
+            v = _infra_value(k)                 # _hwax_setting 은 HWAX_* 만 본다 — 여기는 임의 키
+        if v:
+            return False
     only = svc.get("only_on")
     if not only:
         return True

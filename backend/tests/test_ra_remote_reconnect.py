@@ -22,16 +22,38 @@ def _services_mod():
 
 
 # ── 3-1 구 RA 를 되살리지 않는다 — 박스 이름이 아니라 설정(RA_HOST)으로 가른다 ────────────────
-def test_unless_env_disables_local_ra_only_where_ra_is_remote(monkeypatch):
+def test_unless_env_disables_local_ra_only_where_ra_is_remote(monkeypatch, tmp_path):
+    """⚠ 파일 경로를 **실제로** 탄다 — 첫 판은 _infra_env 를 {} 로 패치하고 setenv 만 써서, infra/.env 에만 적은 RA_HOST 를
+    services.py 가 절대 못 보는 결함(_infra_env 가 HWAX_* 만 파싱)을 놓쳤다(2라운드 검토). 부팅 유닛·services.sh 는 env 를 안 넘긴다."""
     m = _services_mod()
-    monkeypatch.setattr(m, "_infra_env", lambda: {})
-    svc = {"name": "report-archive", "unless_env": "RA_HOST"}
+    (tmp_path / "infra").mkdir()
+    monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path)
     monkeypatch.delenv("RA_HOST", raising=False)
-    assert m.enabled_here(svc) is True, "RA_HOST 없는 박스(dev)는 종전대로 로컬 RA 를 다룬다"
-    monkeypatch.setenv("RA_HOST", A)
-    assert m.enabled_here(svc) is False, "RA_HOST 있는 박스(cae00)에서는 로컬 항목이 이 박스 대상이 아니다"
-    monkeypatch.setenv("RA_HOST", "   ")
+    svc = {"name": "report-archive", "unless_env": "RA_HOST"}
+    (tmp_path / "infra/.env").write_text("HWAX_BOX=x\n# RA_HOST=\n")
+    assert m.enabled_here(svc) is True, "주석 선언·없음 = dev, 종전대로 로컬 RA"
+    (tmp_path / "infra/.env").write_text(f"HWAX_BOX=x\nRA_HOST={A}   # RA 주(A)\n")
+    assert m.enabled_here(svc) is False, "파일에만 적은 RA_HOST 로도 꺼져야 한다(env 없이 — 부팅 유닛 경로)"
+    (tmp_path / "infra/.env").write_text("RA_HOST=   \n")
     assert m.enabled_here(svc) is True, "빈 값은 미설정과 같다"
+    monkeypatch.setenv("RA_HOST", A)
+    assert m.enabled_here(svc) is False, "환경변수도 그대로 먹는다"
+
+
+def test_services_cli_reads_ra_host_from_the_file_like_the_boot_unit(tmp_path):
+    """systemd 유닛과 같은 환경(env -i, infra/.env 파일만)에서 `services.py enabled report-archive` 가 1 을 내야 한다 —
+    cae00 가이드의 확인 명령이 바로 이것이다."""
+    import shutil
+    lay = tmp_path / "HWAXPortal"; (lay / "infra/scripts").mkdir(parents=True)
+    shutil.copy(ROOT / "infra/scripts/services.py", lay / "infra/scripts/services.py")
+    shutil.copy(ROOT / "infra/services.yaml", lay / "infra/services.yaml")
+    py = str(ROOT / "backend/.venv/bin/python")
+    def rc(env_text):
+        (lay / "infra/.env").write_text(env_text)
+        return subprocess.run(["env", "-i", f"PATH={os.environ['PATH']}", py, str(lay / "infra/scripts/services.py"), "enabled", "report-archive"],
+                              capture_output=True, text=True).returncode
+    assert rc("HWAX_BOX=x\n") == 0
+    assert rc(f"HWAX_BOX=x\nRA_HOST={A}   # 주석\n") == 1
 
 
 def test_services_yaml_marks_both_ra_entries():
@@ -161,7 +183,7 @@ def test_update_all_down_ra_branch_does_not_start_local_mcp_when_remote():
     i = UA.index("        reportarchive)\n")
     branch = UA[i:UA.index("        smart-twin-cluster)", i)]
     assert 'if [ -n "${RA_HOST:-}" ]' in branch
-    remote, local = branch.split("          else\n", 1)
+    remote, local = branch.split("\n          else\n", 1)          # 바깥 else(공백 10) — 안쪽 else(공백 12)와 가른다
     assert "UP_SVCS" not in remote and "reportarchive-mcp" in local
 
 
@@ -201,8 +223,7 @@ def test_launch_token_contract_for_ra_matches_the_request():
     import inspect
     src = inspect.getsource(JwtDownstreamIssuer.mint)
     assert '"aud": audience' in src and '"scope": "launch"' in src and '"jti"' in src
-    s = Settings()
-    assert s.jwt_launch_ttl == 90
+    assert Settings.model_fields["jwt_launch_ttl"].default == 90, "코드 기본값이 계약이다 — 이 박스 backend/.env 가 아니라"
 
 
 # ── HTTPS 위생 ─────────────────────────────────────────────────────────────────
@@ -217,7 +238,7 @@ def test_startup_warns_when_public_scheme_and_cookie_secure_disagree():
 
 def test_nginx_generator_refuses_absolute_tls_paths():
     """nginx 컨테이너에는 리포(/workspace)만 바인드된다 — 절대경로 인증서는 열리지 않아 즉사한다."""
-    assert 'case "$_tp" in /*)' in GEN and "상대경로" in GEN
+    assert 'case "$_tp" in /*|*../*)' in GEN and "상대경로" in GEN
     guard = GEN[GEN.index('for _tp in "${TLS_CERT_PATH:-}" "${TLS_KEY_PATH:-}"'):]
     guard = guard[:guard.index("done") + 4]
     r = subprocess.run(["bash", "-c", f'TLS_CERT_PATH=/etc/ssl/x.crt TLS_KEY_PATH=infra/tls/x.key; {guard}; echo alive'],
@@ -249,3 +270,78 @@ def test_1e_upsert_edits_the_line_the_reader_reads(tmp_path):
     assert be.count("RA_BASE_URL=") == 2 and be.count(f"RA_BASE_URL=http://{A}:3000") == 1, be
     assert be.startswith("# RA_BASE_URL=\n"), "주석 선언은 그대로, 활성 줄만 바뀐다"
     assert "old.example" not in be
+
+
+# ── 2라운드 검토가 잡은 것들 ────────────────────────────────────────────────────
+def test_1e_strips_inline_comments_like_bash_does(tmp_path):
+    """env-sync 가 넣은 `# RA_HOST=   # ⚠ …` 의 `# ` 만 지우는 자연스러운 편집 — 종전엔 `x#⚠…` 이 세 파일에 ✓ 로 적혔다."""
+    out, repo, gw = _run_1e(tmp_path, f"RA_HOST={A}   # ⚠ 값을 운영자가 정해야 한다\nLLM_BASE_URL=x\n")
+    assert f"report-archive=http://{A}:3000/" in (repo / "backend/config/routes.local.env").read_text()
+    assert f"RA_MCP_URL=http://{A}:3002/mcp\n" in (gw / "provision.env").read_text()
+    assert "#" not in (repo / "backend/.env").read_text().split("RA_BASE_URL=")[1].splitlines()[0]
+
+
+def test_1e_rejects_anything_but_a_hostname_or_ipv4(tmp_path):
+    for bad in (f"{A}#x", f"{A}:3000", "http://ra", "ra host", "2001:db8::1"):
+        out, repo, _ = _run_1e(tmp_path, f"RA_HOST={bad}\n")
+        assert "FAIL:RA_HOST" in out and not (repo / "backend/config/routes.local.env").exists(), bad
+    out, repo, _ = _run_1e(tmp_path, "RA_HOST=ra-a.example.test\nLLM_BASE_URL=x\n")
+    assert "FAIL" not in out and "report-archive=http://ra-a.example.test:3000/" in (repo / "backend/config/routes.local.env").read_text()
+
+
+def test_1e_append_never_glues_onto_a_line_without_newline(tmp_path):
+    """provision.env 끝에 개행이 없으면 `RAT_TOKEN=…RA_MCP_URL=…` 한 줄이 되고 §5 가 그 토큰을 소싱한다."""
+    gw = tmp_path / "HWAXMcpGateway"; gw.mkdir()
+    (gw / "provision.env").write_text("RAT_TOKEN=rat_secret")          # 개행 없음
+    _, _, gw = _run_1e(tmp_path, f"RA_HOST={A}\nLLM_BASE_URL=x\n")
+    lines = (gw / "provision.env").read_text().splitlines()
+    assert lines[0] == "RAT_TOKEN=rat_secret" and lines[1] == f"RA_MCP_URL=http://{A}:3002/mcp"
+
+
+def test_1e_new_secret_files_are_created_0600(tmp_path):
+    _, repo, gw = _run_1e(tmp_path, f"RA_HOST={A}\nLLM_BASE_URL=x\n")
+    assert oct((repo / "backend/.env").stat().st_mode & 0o777) == "0o600"
+    assert oct((gw / "provision.env").stat().st_mode & 0o777) == "0o600"
+    assert oct((repo / "backend/config/routes.local.env").stat().st_mode & 0o777) == "0o644"
+
+
+def test_1e_write_failure_is_a_fail_not_a_checkmark(tmp_path):
+    repo = tmp_path / "HWAXPortal"; (repo / "backend/config").mkdir(parents=True)
+    (repo / "backend/.env").write_text("OTHER=1\n"); (repo / "backend/.env").chmod(0o444)
+    try:
+        out, _, _ = _run_1e(tmp_path, f"RA_HOST={A}\nLLM_BASE_URL=x\n")
+    finally:
+        (repo / "backend/.env").chmod(0o644)
+    assert "FAIL:backend/.env" in out and "OK:backend/.env" not in out
+
+
+def test_1e_partial_llm_migration_is_reported_not_celebrated(tmp_path):
+    out, repo, _ = _run_1e(tmp_path, f"RA_HOST={A}\n", ra_env="LLM_BASE_URL=http://llm.example/v1\n")
+    assert "BAD:LLM 설정 일부만 옮겼다" in out and "OK:LLM 설정을 RA .env 에서" not in out
+    assert "LLM_BASE_URL=http://llm.example/v1" in (repo / "infra/.env").read_text()
+
+
+def test_update_all_remote_ra_down_is_fatal_like_ste_mcp():
+    i = UA.index("        reportarchive)\n")
+    branch = UA[i:UA.index("        smart-twin-cluster)", i)]
+    remote = branch.split("\n          else\n", 1)[0]
+    assert remote.count("fail ") == 2 and "bad " not in remote
+
+
+def test_doctor_envv_strips_inline_comment(tmp_path):
+    doc = (ROOT / "infra/scripts/ste-doctor.sh").read_text(encoding="utf-8")
+    fn = doc[doc.index("envv() {"):]; fn = fn[:fn.index("\n") + 1]
+    f = tmp_path / "e"; f.write_text('COOKIE_SECURE=true      # true for an https domain\nENABLE_TLS="true"\n')
+    out = subprocess.run(["bash", "-c", fn + f'echo "[$(envv COOKIE_SECURE {f})][$(envv ENABLE_TLS {f})]"'], capture_output=True, text=True).stdout.strip()
+    assert out == "[true][true]"
+
+
+def test_tls_guard_also_refuses_parent_traversal():
+    guard = GEN[GEN.index('for _tp in "${TLS_CERT_PATH:-}" "${TLS_KEY_PATH:-}"'):]
+    guard = guard[:guard.index("done") + 4]
+    r = subprocess.run(["bash", "-c", f'TLS_CERT_PATH=infra/../../etc/x.crt TLS_KEY_PATH=infra/tls/x.key; {guard}; echo alive'], capture_output=True, text=True)
+    assert r.returncode == 1 and "alive" not in r.stdout
+
+
+def test_apply_envs_dry_run_masks_secret_values():
+    assert '(dry-run) + $key=****(가림)' in APPLY

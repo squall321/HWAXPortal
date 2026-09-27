@@ -192,13 +192,25 @@ fi
 # RA 가 떠난 뒤 그 .env 를 지우면 env-kit 의 @FROM_RA 마커가 조용히 건너뛰어져 챗·심의·PaperIngest 의 LLM 이
 # 빈다(요청서 §3-5). 비어 있으면(같은 박스에서 RA 가 도는 dev) 종전대로 — ○ 장부에 적고 넘어간다.
 # 주소는 추적 파일에 적지 않는다 — 셋 다 gitignore 파일이다. 2) 앞인 이유: §2 가 nginx 를 다시 만들고 3.5 가 apply-envs 를 돈다.
-_ra_envv() { sed -n "s/^[[:space:]]*$1=[[:space:]]*//p" "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' \r'; }
-_upsert_kv() {  # $1=파일 $2=키 $3=값 — 활성 줄이 있으면 **마지막 활성 줄**을 바꾸고(_ra_envv 가 읽는 줄과 같다), 없으면 주석 선언
-                #   (`# KEY=`, env-sync 가 넣은 것)을 활성값으로 바꾸고, 그것도 없으면 덧붙인다. 다른 줄은 그대로.
-  local f="$1" k="$2" v="$3"
-  [ -f "$f" ] || : > "$f"
+# infra/.env 의 값 — **bash 가 읽는 것과 같게**: 인라인 주석(공백 뒤 `#`)·양끝 공백·따옴표·CR 을 벗기고 마지막 줄이 이긴다.
+# 종전엔 공백을 전부 지워 `RA_HOST=x   # 설명` 이 `x#설명` 이 됐고, 그 값이 세 파일에 ✓ 로 적혔다(2라운드 검토 실측 —
+# env-sync 가 넣는 `# RA_HOST=   # ⚠ …` 줄의 `# ` 만 지우는 자연스러운 편집이 정확히 그 모양이다).
+# ⚠ LC_ALL=C — UTF-8 로케일의 GNU sed 는 한글 주석이 든 줄에서 `.*$` 를 못 맞추는 경우가 있다(실측 2026-09-27: 같은 명령이
+#   Bash 툴에선 벗겨지고 파이썬 자식 셸에선 안 벗겨졌다). 바이트 단위면 결정적이다.
+_ra_envv() {
+  sed -n "s/^[[:space:]]*$1=[[:space:]]*//p" "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 \
+    | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'
+}
+_upsert_kv() {  # $1=파일 $2=키 $3=값 [$4=새 파일 권한, 기본 644] — 실패하면 0 이 아닌 값을 돌린다(호출자가 ✓ 를 찍지 않게).
+                #   활성 줄이 있으면 **마지막 활성 줄**을 바꾸고(_ra_envv 가 읽는 줄과 같다), 없으면 주석 선언(`# KEY=`, env-sync 가
+                #   넣은 것)을 활성값으로 바꾸고, 그것도 없으면 덧붙인다(끝에 개행이 없는 파일이면 먼저 개행 — 안 그러면
+                #   `RAT_TOKEN=…RA_MCP_URL=…` 한 줄이 되어 §5 가 그 토큰을 그대로 소싱한다). 다른 줄은 그대로.
+  local f="$1" k="$2" v="$3" mode="${4:-644}"
+  if [ ! -f "$f" ]; then
+    ( umask 077; : > "$f" ) && chmod "$mode" "$f" || return 1     # 비밀 파일(backend/.env·provision.env)은 600 으로 태어난다
+  fi
   if grep -qE "^[[:space:]]*#?[[:space:]]*$k=" "$f"; then
-    K="$k" V="$v" python3 - "$f" <<'PY'
+    K="$k" V="$v" python3 - "$f" <<'PY' || return 1
 import os, re, sys, pathlib
 p, k, v = pathlib.Path(sys.argv[1]), os.environ["K"], os.environ["V"]
 lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -209,7 +221,7 @@ lines[idx] = f"{k}={v}\n"
 p.write_text("".join(lines), encoding="utf-8")
 PY
   else
-    printf '%s=%s\n' "$k" "$v" >> "$f"
+    { [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ] && printf '\n' >> "$f"; printf '%s=%s\n' "$k" "$v" >> "$f"; } || return 1
   fi
 }
 RA_HOST="$(_ra_envv RA_HOST)"; RA_PORT="$(_ra_envv RA_PORT)"; RA_MCP_PORT="$(_ra_envv RA_MCP_PORT)"
@@ -219,19 +231,23 @@ if [ -z "$RA_HOST" ]; then
 else
   hr "1e) Report Archive 재연결 (RA_HOST → 라우트·RA_BASE_URL·RA_MCP_URL 유도)"
   case "$RA_HOST" in
-    *://*|*/*|*:*) fail "RA_HOST 는 호스트(또는 IP)만 적는다 — 스킴·포트·경로 없이(포트는 RA_PORT·RA_MCP_PORT): $RA_HOST" ;;
+    # 허용 문자만 — 스킴·포트·경로·주석·공백이 섞이면 세 파일에 깨진 URL 이 적힌다. IPv6 리터럴은 지원하지 않는다(요청서 주소는 IPv4).
+    *[!A-Za-z0-9.-]*) fail "RA_HOST 는 IPv4 주소 또는 호스트명만 적는다(스킴·포트·경로·주석 없이. 포트는 RA_PORT·RA_MCP_PORT, IPv6 미지원): '$RA_HOST'" ;;
     *)
       RA_BASE_URL="http://$RA_HOST:$RA_PORT"
       RA_MCP_URL="http://$RA_HOST:$RA_MCP_PORT/mcp"
       _RL="$SELF_REPO/backend/config/routes.local.env"
       [ -f "$_RL" ] || printf '# 이 박스 전용 라우트 오버레이 — gitignore. 주소는 추적 파일에 적지 않는다.\n' > "$_RL"
-      _upsert_kv "$_RL" report-archive "$RA_BASE_URL/"
-      ok "routes.local.env: report-archive=$RA_BASE_URL/  (끝 / = 접두어 STRIP — RA 화면이 그것을 기대한다. §2 가 nginx 를 다시 만든다)"
-      _upsert_kv "$SELF_REPO/backend/.env" RA_BASE_URL "$RA_BASE_URL"
-      ok "backend/.env: RA_BASE_URL=$RA_BASE_URL  (PAT 연결 검증·챗 PPT 가져오기 — §2 가 포털을 stop→start 하며 읽는다)"
+      if _upsert_kv "$_RL" report-archive "$RA_BASE_URL/"; then
+        ok "routes.local.env: report-archive=$RA_BASE_URL/  (끝 / = 접두어 STRIP — RA 화면이 그것을 기대한다. §2 가 nginx 를 다시 만든다)"
+      else fail "routes.local.env 에 report-archive= 를 못 적었다($_RL) — 권한·소유자를 보라"; fi
+      if _upsert_kv "$SELF_REPO/backend/.env" RA_BASE_URL "$RA_BASE_URL" 600; then
+        ok "backend/.env: RA_BASE_URL=$RA_BASE_URL  (PAT 연결 검증·챗 PPT 가져오기 — §2 가 포털을 stop→start 하며 읽는다)"
+      else fail "backend/.env 에 RA_BASE_URL 을 못 적었다 — 권한·소유자를 보라"; fi
       if [ -n "$GW_DIR" ]; then
-        _upsert_kv "$GW_DIR/provision.env" RA_MCP_URL "$RA_MCP_URL"
-        ok "게이트웨이 provision.env: RA_MCP_URL=$RA_MCP_URL  (§5 가 config 와 다르면 재프로비저닝한다)"
+        if _upsert_kv "$GW_DIR/provision.env" RA_MCP_URL "$RA_MCP_URL" 600; then
+          ok "게이트웨이 provision.env: RA_MCP_URL=$RA_MCP_URL  (§5 가 config 와 다르면 재프로비저닝한다)"
+        else fail "게이트웨이 provision.env 에 RA_MCP_URL 을 못 적었다 — 권한·소유자를 보라"; fi
       else
         bad "HWAXMcpGateway 리포를 못 찾아 RA_MCP_URL 을 못 적었다 — 챗의 RA 도구가 옛 주소(같은 박스 :$RA_MCP_PORT)를 본다"
       fi
@@ -242,11 +258,16 @@ else
           [ -f "$_c" ] && { _RA_ENV="$_c"; break; }
         done
         if [ -n "$_RA_ENV" ] && grep -qE '^LLM_BASE_URL=.+' "$_RA_ENV"; then
+          _moved=""; _missing=""
           for _k in LLM_BASE_URL LLM_MODEL LLM_API_KEY; do
-            _v="$(sed -n "s/^$_k=//p" "$_RA_ENV" | head -1)"
-            [ -n "$_v" ] && _upsert_kv "$SELF_REPO/infra/.env" "$_k" "$_v"
+            _v="$(sed -n "s/^$_k=//p" "$_RA_ENV" | head -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r')"
+            if [ -n "$_v" ] && _upsert_kv "$SELF_REPO/infra/.env" "$_k" "$_v"; then _moved="$_moved $_k"; else _missing="$_missing $_k"; fi
           done
-          ok "LLM 설정을 RA .env 에서 infra/.env 로 옮겼다(정본 이관) — 이제 RA 설치본을 지워도 챗·심의·PaperIngest 의 LLM 이 비지 않는다"
+          if [ -z "$_missing" ]; then
+            ok "LLM 설정을 RA .env 에서 infra/.env 로 옮겼다($_moved ) — 이제 RA 설치본을 지워도 챗·심의·PaperIngest 의 LLM 이 비지 않는다"
+          else
+            bad "LLM 설정 일부만 옮겼다(옮김:$_moved · 없음/실패:$_missing ) — 빠진 키는 infra/.env 에 직접 적는다(RA .env 에 없었거나 쓰기 실패)"
+          fi
         else
           hwax_skip "LLM 설정 정본" "infra/.env 에 LLM_BASE_URL 이 없고 형제 ReportArchive/.env 에서도 못 읽었다 — env-kit 의 @FROM_RA 가 건너뛰어져 각 앱 기본값을 쓴다" "infra/.env 에 LLM_BASE_URL·LLM_MODEL·LLM_API_KEY 를 적고 재실행"
         fi
@@ -623,7 +644,7 @@ PY
   # 못 잡고, provision_urls 의 드리프트도 형제 .env 선언 기반이라 못 잡는다(RA 는 이제 형제가 아니다). 여기서 본다.
   if [ -n "${RA_HOST:-}" ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
     _ra_cfg_host="$(python3 -c 'import json,sys;from urllib.parse import urlparse;d=json.load(open(sys.argv[1]));print(urlparse(((d.get("reportarchive") or {}).get("url") or "")).hostname or "")' "$GW_DIR/gateway_config.json" 2>/dev/null)"
-    if [ -n "$_ra_cfg_host" ] && [ "$_ra_cfg_host" != "$RA_HOST" ]; then
+    if [ -n "$_ra_cfg_host" ] && [ "$_ra_cfg_host" != "$(printf '%s' "$RA_HOST" | tr 'A-Z' 'a-z')" ]; then   # hostname 은 소문자로 온다
       echo "  · 주소 드리프트: reportarchive — config 는 $_ra_cfg_host 인데 RA_HOST 는 $RA_HOST 다(1e)"
       MISSING="${MISSING:+$MISSING }reportarchive"
     fi
@@ -718,10 +739,12 @@ PY
         reportarchive)
           if [ -n "${RA_HOST:-}" ]; then
             # RA 는 다른 서버쌍에서 돈다(1e) — 여기서 띄울 것이 없다(RA 요청서 §3-6). 도달성만 판정해 크게 말한다.
+            # 운영자가 RA_HOST 로 "RA 는 저기 있다" 고 선언한 박스다 — 게이트웨이가 못 붙으면 챗의 RA 도구가 전량 죽는다.
+            # ste MCP(15812)와 같은 등급으로 **fail** 이다(⚠ 로 두면 '✓ 전체 최신화 완료' 로 끝난다 — 2라운드 검토).
             if [ "$(http_code "http://$RA_HOST:${RA_PORT:-3000}/api/health" 4)" != "200" ]; then
-              bad "ReportArchive(원격 $RA_HOST:${RA_PORT:-3000}) /api/health 불통 — 방화벽(:${RA_PORT:-3000}·:${RA_MCP_PORT:-3002})·RA 서버 상태를 RA 담당과 확인"
+              fail "ReportArchive(원격 $RA_HOST:${RA_PORT:-3000}) /api/health 불통 — 방화벽(:${RA_PORT:-3000}·:${RA_MCP_PORT:-3002})·RA 서버 상태를 RA 담당과 확인"
             else
-              bad "RA 백엔드(원격)는 살았는데 게이트웨이가 MCP(:${RA_MCP_PORT:-3002})에 못 붙는다 — RA 서버의 MCP 프로세스·방화벽 :${RA_MCP_PORT:-3002}"
+              fail "RA 백엔드(원격)는 살았는데 게이트웨이가 MCP(:${RA_MCP_PORT:-3002})에 못 붙는다 — RA 서버의 MCP 프로세스·방화벽 :${RA_MCP_PORT:-3002}·provision.env 의 RA_MCP_URL"
             fi
           else
             if [ "$(http_code http://127.0.0.1:3000/api/health 3)" != "200" ]; then
