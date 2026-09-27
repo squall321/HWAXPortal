@@ -119,7 +119,10 @@ ETLS="$(envv ENABLE_TLS "$ROOT/infra/.env")"; HPORT="$(envv HTTPS_PORT "$ROOT/in
 PBU="$(envv PUBLIC_BASE_URL "$ROOT/infra/.env")"; CSEC="$(envv COOKIE_SECURE "$ROOT/infra/.env")"
 if [ "$ETLS" != true ]; then
   case "$PBU" in
-    https://*) bad https "ENABLE_TLS 가 꺼져 있는데 PUBLIC_BASE_URL 이 https 다($PBU) — 공개 주소로 오는 접속이 없고 쿠키·SSO 리다이렉트가 어긋난다. infra/.env 에 ENABLE_TLS=true·TLS_CERT_PATH·COOKIE_SECURE=true" ;;
+    # 앞단(사내 프록시)이 https 를 종단하고 포털엔 http 로 넘기는 구성이면 이 조합이 정상이다 — 포털은 URL 을 헤더가 아니라
+    # PUBLIC_BASE_URL 로 만들기 때문이다. 포털이 직접 종단할 박스면 ENABLE_TLS 를 켜야 한다. 어느 쪽인지는 사람이 안다 → 경고.
+    https://*) [ "$CSEC" = true ] && warn https "ENABLE_TLS 꺼짐 + PUBLIC_BASE_URL https($PBU) — 앞단이 https 를 종단하고 :$HTTP_PORT 로 넘기는 구성이면 정상. 포털이 직접 종단할 박스면 ENABLE_TLS=true·TLS_CERT_PATH" \
+                                  || bad  https "PUBLIC_BASE_URL 이 https($PBU) 인데 COOKIE_SECURE≠true — 외부 IdP 의 cross-site POST 에 상태 쿠키가 안 실린다. infra/.env 에 COOKIE_SECURE=true" ;;
     *)         warn https "꺼짐(ENABLE_TLS≠true) — 이 박스는 http :$HTTP_PORT 만 낸다. 공개 주소가 https 면 infra/.env 에 ENABLE_TLS=true·TLS_CERT_PATH(fullchain)·PUBLIC_BASE_URL=https://…·COOKIE_SECURE=true" ;;
   esac
 else
