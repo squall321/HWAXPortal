@@ -37,11 +37,11 @@
 | §1b | 배포 전 로컬 백업(/data/backups) + 일일 cron(03:30) 멱등 보장 | `hr "1b)"` |
 | **§1c** | **`.env` 옵션 동기화**(env-sync.sh) — `.env.example` 의 새 키를 기존 `.env` 에 덧붙인다. 비밀·자리표시자는 **주석으로만** 넣고 "값을 정해야 한다" 로 보고(그 설정이 켜는 기능은 꺼진 상태) | `hr "1c)"` |
 | **§1d** | **ste 라우트 자동 기록** — teleport 박스인데 `routes.local.env` 에 `ste=` 가 없으면 `ste=http://127.0.0.1:15810/` 를 적는다(§2 가 그 뒤에 nginx 를 다시 만든다). `HWAX_STE_AUTOROUTE=0` 으로만 끈다 | `hr "1d)"` |
-| §2 | **전 서비스 배포** — `deploy-all-from-drive`: `portal mxwp heax aidh signalforge kooremapper`. 각 서비스 git pull → Drive 에서 **미리 빌드된 아티팩트 반입**(cae00 은 빌드 불가) → START. 끝에 nginx conf 재생성+재기동 **바뀌지 않은 서비스는 재기동 생략** — 아티팩트는 영구 캐시에 받아 안 바뀐 파일은 전송 0, 지문(git HEAD·SIF·dist·.env)이 전후 같고 살아 있으면 stop/start 를 건너뛴다(줄로 보이고 Done 에서 모아 낸다). nginx 도 conf 지문이 같으면 bounce 생략. 전부 재기동: `HWAX_RESTART_ALL=1` | deploy-all-from-drive.sh |
+| §2 | **전 서비스 배포** — `deploy-all-from-drive`: `portal mxwp heax aidh signalforge kooremapper`. 각 서비스 git pull → Drive 에서 **미리 빌드된 아티팩트 반입**(cae00 은 빌드 불가) → START. 끝에 nginx conf 재생성+재기동 **바뀌지 않은 서비스는 재기동 생략** — 아티팩트는 영구 캐시에 받아 안 바뀐 파일은 전송 0, 지문(git HEAD·SIF·dist·.env)이 **마지막으로 띄운 시점**(`infra/.state/restart-fp/`)과 같고 살아 있으면 stop/start 를 건너뛴다(기동이 성공한 뒤에만 기록 — 실패한 기동은 기준이 안 된다)(줄로 보이고 Done 에서 모아 낸다). nginx 도 conf 지문이 같으면 bounce 생략. 전부 재기동: `HWAX_RESTART_ALL=1` | deploy-all-from-drive.sh |
 | **§2b** | `/data` 이관 — `HWAX_DATA_ROOT` 가 있을 때만(멱등·자동 롤백) | `hr "2b)"` |
 | **§3** | **AIDataHub 데이터 병합** — 아래 §2 참조. 비파괴 merge | `hr "3)"` |
 | **§2c** | **ste 코드 최신화(다를 때만)** — `deploy-ste.sh --if-stale`(상한 900초). direct 박스는 지문이 다를 때만, teleport 박스는 공용 게이트 세 신호를 통과할 때만. 게이트가 막으면 rc 3 = "안 켬"(○ 장부) | `hr "2c)"` |
-| §4 | 챗 스택 pull+재기동 — `signalforge-mcp mcp-gateway agent-server`(백엔드→게이트웨이→소비자 순) — **코드 변경 없음(git HEAD 동일)·살아 있음이면 down/up 생략**. §3.5 가 .env 를 고친 서비스는 예외(`HWAX_FORCE_RESTART`). 전부 재기동: `HWAX_RESTART_ALL=1` | `hr "4)"` |
+| §4 | 챗 스택 pull+재기동 — `signalforge-mcp mcp-gateway agent-server`(백엔드→게이트웨이→소비자 순) — **지문(git HEAD + .env)이 마지막 기동 시점과 같고 살아 있으면 down/up 생략**(.env 를 누가 언제 고쳤든 지문에 든다). 수동 강제: `HWAX_FORCE_RESTART="<이름> …"`. 전부 재기동: `HWAX_RESTART_ALL=1` | `hr "4)"` |
 | **§3.5** | agent-server `.env` 보정 — `@FROM_RA` 미치환 마커 제거·재치환, `VLLM_BASE_URL` 확정 | `hr "3.5)"` |
 | §5 | 게이트웨이 config 정합 — 기대 백엔드 빠졌으면 `provision-config --force` 후 재기동·재검증 | `hr "5)"` |
 | §6 | **헬스 게이트**(critical) — 아래 표 밖 설명 참조 | `hr "6)"` |

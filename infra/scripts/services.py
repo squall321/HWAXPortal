@@ -430,6 +430,40 @@ def update_one(svc: dict) -> str:
     return ("updated" if rc == 0 else "FAIL") + (f": {tail[:60]}" if tail else "")
 
 
+def service_fp(svc: dict) -> str:
+    """서비스 지문 — git HEAD + <dir>/.env 내용(+manifest `fp:` 경로들). update-sites 가 '마지막으로 띄운 시점' 의 지문과 비교해
+    재기동 생략을 정한다(docs/update-all-skip-unchanged). 디렉터리를 못 찾으면 그 사실이 지문이다(모름 → 재기동)."""
+    import hashlib
+    wd = resolve_dir(svc)
+    parts: list[str] = []
+    if not wd or not wd.is_dir():
+        parts.append("dir:missing")
+    else:
+        try:
+            r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(wd), capture_output=True, text=True, timeout=10)  # noqa: S603
+            parts.append("git:" + (r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "nogit"))
+        except (OSError, subprocess.TimeoutExpired):
+            parts.append("git:nogit")
+        for rel in [".env", *(svc.get("fp") or [])]:
+            q = wd / rel
+            if q.is_file():
+                st = q.stat()
+                parts.append(f"{rel}:{hashlib.sha256(q.read_bytes()).hexdigest()[:16]}" if st.st_size <= 32 * 1024 * 1024 else f"{rel}:{st.st_size}:{int(st.st_mtime)}")
+            elif q.is_dir():
+                for f in sorted(x for x in q.rglob("*") if x.is_file()):
+                    st = f.stat(); parts.append(f"{f.relative_to(wd)}:{st.st_size}:{int(st.st_mtime)}")
+            else:
+                parts.append(f"{rel}:missing")
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
+
+
+def cmd_fp(names: list[str]) -> int:
+    svcs = [s for s in load() if not names or s["name"] in names]
+    for s in svcs:
+        print(service_fp(s) if len(svcs) == 1 else f"{s['name']} {service_fp(s)}")
+    return 0 if svcs else 1
+
+
 def cmd_update(names: list[str]) -> int:
     svcs = [s for s in load() if not names or s["name"] in names]
     rc = 0
@@ -533,7 +567,7 @@ def cmd_enabled(names: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled", "fp"):
         print(__doc__)
         return 2
     action = sys.argv[1]
@@ -546,7 +580,7 @@ def main() -> int:
         return cmd_enabled(names)
     if action == "data":  # 데이터 경로 레지스트리 조회·검증(docs/data-migration)
         return cmd_data(names, check="--check" in args)
-    return {"status": cmd_status, "down": cmd_down, "update": cmd_update}[action](names)
+    return {"status": cmd_status, "down": cmd_down, "update": cmd_update, "fp": cmd_fp}[action](names)
 
 
 if __name__ == "__main__":

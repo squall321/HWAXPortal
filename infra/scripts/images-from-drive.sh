@@ -31,7 +31,7 @@ echo "→ source: $SRC"
 # 파일은 전송 0 이고 modtime 이 원격 것으로 보존돼 아래 지문(deploy-all)이 안정된다. docs/update-all-skip-unchanged D-2.
 . "$(dirname "$0")/lib/change-detect.sh"
 STAGE="${HWAX_DRIVE_CACHE:-$APPT_DIR/.drive-cache}"; mkdir -p "$STAGE"
-"$RCLONE" copy --progress "$SRC/" "$STAGE/"
+"$RCLONE" sync --progress "$SRC/" "$STAGE/"    # sync — 원격에서 뺀 파일이 캐시에 남아 옛 SIF 가 되살아나지 않게(SHA256SUMS 는 있는 것만 검사한다)
 
 # Verify integrity before staging.
 if [ -f "$STAGE/SHA256SUMS" ]; then
@@ -47,17 +47,19 @@ fi
 mkdir -p "$APPT_DIR"
 # 같은 내용이면 손대지 않는다 — 살아 있는 인스턴스 밑의 SIF 를 덮어쓰면 squashfs 가 깨지고(mxwp 실사고), cp 는 mtime 을 리셋해 지문이 매번 달라진다.
 for _f in portal.sif nginx.sif; do
-  if hwax_install_if_changed "$STAGE/$_f" "$APPT_DIR/$_f"; then echo "  ✓ staged $_f → $APPT_DIR"; else echo "  · $_f 같음 — 그대로"; fi
+  hwax_install_if_changed "$STAGE/$_f" "$APPT_DIR/$_f"; _rc=$?
+  case $_rc in 0) echo "  ✓ staged $_f → $APPT_DIR" ;; 1) echo "  · $_f 같음 — 그대로" ;; *) echo "✗ $_f 설치 실패 — 위 사유"; exit 1 ;; esac
 done
 # SearxNG(일반 웹 검색) SIF — 올리는 쪽(images-to-drive)만 고치고 여기를 빼먹으면
 # "SIF 는 Drive 로 간다" 는 안내가 거짓이 된다. 없을 수도 있으므로 있을 때만 옮긴다.
 if [ -f "$STAGE/searxng-fixed.sif" ]; then
-  if hwax_install_if_changed "$STAGE/searxng-fixed.sif" "$APPT_DIR/searxng-fixed.sif"; then echo "  ✓ staged searxng-fixed.sif → $APPT_DIR"; else echo "  · searxng-fixed.sif 같음 — 그대로"; fi
+  hwax_install_if_changed "$STAGE/searxng-fixed.sif" "$APPT_DIR/searxng-fixed.sif"; _rc=$?
+  case $_rc in 0) echo "  ✓ staged searxng-fixed.sif → $APPT_DIR" ;; 1) echo "  · searxng-fixed.sif 같음 — 그대로" ;; *) echo "✗ searxng-fixed.sif 설치 실패 — 위 사유"; exit 1 ;; esac
 fi
 
 if [ -f "$STAGE/frontend-dist.tar.gz" ]; then
   # 마지막으로 푼 tar 의 사본과 같으면 다시 풀지 않는다(수천 파일 rewrite 생략) — 다르면 풀고 사본을 갱신
-  if [ -f "$APPT_DIR/.frontend-dist.applied.tar.gz" ] && cmp -s "$STAGE/frontend-dist.tar.gz" "$APPT_DIR/.frontend-dist.applied.tar.gz"; then
+  if [ -f "$REPO_ROOT/frontend/dist/index.html" ] && [ -f "$APPT_DIR/.frontend-dist.applied.tar.gz" ] && cmp -s "$STAGE/frontend-dist.tar.gz" "$APPT_DIR/.frontend-dist.applied.tar.gz"; then   # dist 가 지워졌으면 같은 tar 라도 다시 푼다
     echo "  · frontend/dist 같음 — 그대로"
   else
     ( cd "$REPO_ROOT/frontend" && tar -xzf "$STAGE/frontend-dist.tar.gz" ) && cp -p "$STAGE/frontend-dist.tar.gz" "$APPT_DIR/.frontend-dist.applied.tar.gz"

@@ -71,3 +71,5 @@ backend/secrets
 # Drive 아티팩트 영구 캐시(images-from-drive) — 안 바뀐 파일은 전송 0
 infra/apptainer/.drive-cache/
 infra/apptainer/.frontend-dist.applied.tar.gz
+# 마지막 기동 지문(재기동 생략 판정) — 박스 상태
+infra/.state/

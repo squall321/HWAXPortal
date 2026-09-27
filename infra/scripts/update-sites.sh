@@ -7,6 +7,8 @@ export PYTHONUNBUFFERED=1   # tee 파이프로 넘겨도 진행 로그가 즉시
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SVC="$ROOT/infra/scripts/services.sh"
+. "$ROOT/infra/scripts/lib/change-detect.sh"
+HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$ROOT/infra/.state/restart-fp}"; export HWAX_RESTART_STATE_DIR
 SVCPY="$ROOT/infra/scripts/services.py"
 MANIFEST="$ROOT/infra/services.yaml"
 PY="$ROOT/backend/.venv/bin/python"; [ -x "$PY" ] || PY="$(command -v python3)"
@@ -145,22 +147,24 @@ show_cause() {
 
 # 한 서비스 재기동: down → up --update. 진행을 라이브(tee)로 흘려보내 어디서 멈추는지 바로 보이게 한다.
 # 출력을 변수에 모으지 않음 — 모으면 명령이 끝날 때까지 화면이 비어 hang을 못 본다. rc는 PIPESTATUS[0].
-# 바뀌지 않았으면 재기동하지 않는다 — update 를 먼저 돌려 커밋이 같고(services.py 가 `unchanged` 로 말한다) 살아 있고 강제 목록
-# (HWAX_FORCE_RESTART — update-all §3.5 가 .env 를 고친 서비스)에 없으면 down/up 을 건너뛴다. HWAX_RESTART_ALL=1 은 종전 동작.
-# docs/update-all-skip-unchanged D-5.
+# 바뀌지 않았으면 재기동하지 않는다 — update(git pull) 뒤 서비스 지문(`services.py fp`: git HEAD + .env 내용)을 **마지막으로 띄운 시점**의
+# 지문(상태 파일)과 비교해 같고 살아 있고 강제 목록(HWAX_FORCE_RESTART)에 없으면 down/up 을 건너뛴다. 'Already up to date' 문자열이나
+# 블록 전/후 비교가 아닌 이유: §2 가 이미 reset 한 리포(signalforge-mcp)·§1c 가 먼저 고친 .env 가 전후 비교엔 안 보인다(검토 실측).
+# 기동이 성공한 뒤에만 지문을 적는다. HWAX_RESTART_ALL=1 은 종전 동작. docs/update-all-skip-unchanged D-5·D-8.
 SKIPPED_RESTART=""
 restart_svc() {
-  local name="$1" rc tmp upd _upd_fail=0
+  local name="$1" rc tmp upd cur last _upd_fail=0
   tmp="$(mktemp)"
   echo "── $name ──  [$(date '+%H:%M:%S')]"
   echo "  · update (git pull) …"
   "$SVC" update "$name" 2>&1 | tee "$tmp"
   upd="$(tail -1 "$tmp")"
   printf '%s' "$upd" | grep -q '✗' && _upd_fail=1
-  if [ "$_upd_fail" = 0 ] && [ "${HWAX_RESTART_ALL:-0}" != 1 ] && printf '%s' "$upd" | grep -qE 'unchanged|no-git' \
+  cur="$("$SVC" fp "$name" 2>/dev/null | tail -1)"; last="$(hwax_last_fp "$name")"
+  if [ "$_upd_fail" = 0 ] && [ "${HWAX_RESTART_ALL:-0}" != 1 ] && [ -n "$cur" ] && [ "$cur" = "$last" ] \
      && ! printf ' %s ' "${HWAX_FORCE_RESTART:-}" | grep -q " $name " \
      && "$SVC" status "$name" 2>/dev/null | grep -q '✓ up'; then
-    echo "  · $name: 코드 변경 없음 · 살아 있음 → 재기동 생략 (전부 재기동: HWAX_RESTART_ALL=1)  [$(date '+%H:%M:%S')]"
+    echo "  · $name: 마지막 기동 뒤 변경 없음(지문 $cur) · 살아 있음 → 재기동 생략 (전부 재기동: HWAX_RESTART_ALL=1)  [$(date '+%H:%M:%S')]"
     SKIPPED_RESTART="$SKIPPED_RESTART $name"; rm -f "$tmp"; return 0
   fi
   echo "  · down (기존 인스턴스 정리) …"
@@ -168,6 +172,7 @@ restart_svc() {
   echo "  · up (build → start → health 대기) …"
   "$SVC" up "$name" 2>&1 | tee "$tmp"   # 화면+임시파일 동시 → 라이브 + 원인분석용 캡처
   rc=${PIPESTATUS[0]}
+  [ "$rc" = 0 ] && [ -n "$cur" ] && hwax_mark_started "$name" "$cur"     # 띄운 시점의 지문 — 다음 실행의 비교 기준
   [ "$_upd_fail" = 1 ] && rc=1     # 갱신 실패는 종료코드로 올린다(옛 코드로 떠 있어도 초록으로 끝내지 않는다)
   if [ "$rc" -ne 0 ]; then
     echo "  · ✗ $name 실패 (rc=$rc)  [$(date '+%H:%M:%S')]"
@@ -196,7 +201,7 @@ for s in $REST; do
 done
 
 echo
-[ -n "$SKIPPED_RESTART" ] && echo "▶ 재기동 생략(변경 없음·살아 있음):$SKIPPED_RESTART  — 전부 재기동하려면 HWAX_RESTART_ALL=1"
+[ -n "$SKIPPED_RESTART" ] && echo "▶ 재기동 생략(마지막 기동 뒤 변경 없음·살아 있음):$SKIPPED_RESTART  — 전부 재기동하려면 HWAX_RESTART_ALL=1"
 echo "▶ 최종 상태:"; "$SVC" status $TARGETS || true
 if [ -n "$FAILED" ]; then
   echo "▶ ⚠ 실패(포털 제외):$FAILED  — 포털은 정상. 개별 재시도:  $SVC up --update <이름>"

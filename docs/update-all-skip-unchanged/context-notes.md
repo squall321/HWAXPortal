@@ -58,3 +58,29 @@ agent-server `.env` 를 바꿨는데 코드가 안 바뀌었으면 §4 가 그 �
 - **dev 에서 실주행은 못 했다** — deploy-all-from-drive 는 dev 에서 돌리면 리포를 리셋한다(금지). 첫 실측은 cae00 의 다음 update-all 이다:
   §2 여섯 서비스에 "변경 없음 · 살아 있음 → 재기동 생략" 과 rclone `Transferred: 0`, §4 셋에 "코드 변경 없음 → 재기동 생략" 이 보여야 한다.
 
+## D-8. 1라운드 검토가 설계를 뒤집었다 — 기준은 '블록 전/후' 가 아니라 '마지막으로 띄운 시점' (2026-09-27)
+
+확인 5(high 4)·기각 1·미검증 22. 넷이 한 뿌리다: 지문 '전' 을 **블록 진입 시점**에 재니, 블록 밖에서 일어난 변경이 하나도 안 보인다.
+① update-all §1 이 포털 리포를 이미 `reset --hard` 하고 재실행하므로 §2 의 git_update 는 늘 "up to date" — **백엔드 커밋이 포털을 영원히
+재기동시키지 못한다**(바인드 마운트·--reload 없음이라 재기동 없이는 새 코드가 안 뜬다). ② §1c/1d/1e 가 §2 보다 앞서 .env·routes.local.env 를
+고치는데(§1e 는 "§2 가 포털을 stop→start 하며 읽는다" 고 ✓ 까지 찍는다) 그것도 블록 밖. 운영자가 "infra/.env 한 줄 고치고 update-all" 하는
+바로 그 사용법이 생략된다. ③ §4 의 `_ae0` 도 §3.5 직전에 찍혀 §1c 가 agent-server .env 에 넣은 키를 못 본다. ④ signalforge-mcp 는 §2 가 이미
+reset 한 리포를 쓰니 §4 의 HEAD 전/후가 늘 같다. 종전엔 무조건 재기동이라 전부 가려졌던 자리 — **생략 기능이 무음 결함을 만들 뻔했다.**
+
+재설계: 기준을 **마지막으로 띄운 시점의 지문**(상태 파일 `infra/.state/restart-fp/<서비스>`)으로. 받은 뒤 지문을 한 번 재서 그것과 비교하고,
+기동이 **성공한 뒤에만** 기록한다(실패한 기동은 기준이 되지 않아 다음 실행이 다시 시도한다 — 기각된 지적 R1 이 걱정한 '재기동 전에 죽은 뒤
+영구 생략' 도 이걸로 닫힌다). §4 는 `services.py fp <이름>`(git HEAD + .env 내용)을 같은 방식으로 — §3.5 전/후 창(`_ae0`)은 뗐다. 실 git 리포에
+포털 블록을 통째로 돌리는 시험이 "§1 이 먼저 당긴 커밋·§1e 가 먼저 쓴 .env·§1d 의 routes 가 재기동을 일으키는가" 를 못 박는다.
+
+함께 반영한 것: 인스턴스가 여럿인 서비스는 url 둘 다 답해야 생략(mxwp api+web·sf api+front·koorm api+mcp) · nginx 지문에 conf 가 경로로만
+가리키는 인증서·키를 넣는다(갱신된 인증서가 메모리에 남던 것) · heax 지문에서 캐시 디렉터리를 뺐다(재업로드만으로 전 인스턴스 재기동) ·
+heax SIF_DIR 판독은 작은따옴표도 벗긴다 · KooRemapper `BUILD_INFO.txt` 의 `cp -f`(mtime 리셋)와 heax mirror 의 node tarball `cp` 를 cmp 뒤 cp -p 로
+(koorm 은 매 회 재기동될 판이었다) · 캐시는 `rclone sync`(원격에서 뺀 파일이 캐시에 남아 되살아나지 않게) · 설치 실패는 '같음' 이 아니라
+✗ + rc 2(포털은 exit 1, 형제 리포는 set -e·SF 는 audit fail) · dist 가 지워졌으면 같은 tar 라도 다시 푼다 · `no-git` 은 unchanged 가 아니다(상태
+기준 fp 는 nogit 도 지문에 넣어 비교) · 장부 임시파일을 EXIT trap 에 · KooRemapper .gitignore 를 CRLF 로 되돌림(python write_text 가 줄끝을
+LF 로 갈아 208줄 diff 를 만들었다 — 파일 단위 커밋 규율 위반이었다).
+
+남긴 것(low, 기록): 캐시가 latest/ 를 한 벌 더 든다(dev 14GB, heax 가 대부분 — `*_DRIVE_CACHE` 로 위치 변경 가능, 정리 명령은 없다) ·
+update-sites 의 fp 는 .env 와 HEAD 만이라 custom update 가 아티팩트를 갈아 넣는 서비스(kooremapper 류)엔 §2 의 아티팩트 지문이 맡는다(§4 대상 셋은
+git pull 만) · 시험은 포털 블록만 통째로 돌린다(다른 다섯 블록은 텍스트 배선 검사).
+

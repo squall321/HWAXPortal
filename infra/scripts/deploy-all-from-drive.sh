@@ -162,18 +162,26 @@ DEPLOY_FAILED_FILE="$(mktemp /tmp/.hwax-deploy-failed.XXXXXX)"
 # 정리는 trap 으로 건다. 마지막 집계에서 rm 하지만 이 파일은 set -e 로 중간에 죽을 수 있는
 # 스크립트가 만드는 것이라(실제로 curl rc 로 중간사하는 경로가 있었다) 그 경로에서 그대로
 # 남는다. GIT_STALE_FLAG 도 같은 이유로 함께 건다 — mktemp -u 라 없으면 rm -f 가 무해하다.
-trap 'rm -f "$DEPLOY_FAILED_FILE" "$GIT_STALE_FLAG"' EXIT
+HWAX_RESTART_SKIPPED_FILE="$(mktemp)"; export HWAX_RESTART_SKIPPED_FILE
+trap 'rm -f "$DEPLOY_FAILED_FILE" "$GIT_STALE_FLAG" "$HWAX_RESTART_SKIPPED_FILE"' EXIT
 skip() { printf '  \033[1;33m⚠ skip:\033[0m %s\n' "$*"; printf '%s\n' "$*" >> "$DEPLOY_FAILED_FILE"; }
 
 # 비치명 항목 — 경고는 하되 종료코드를 올리지 않는다. skip 과 같이 쓰면 "실패해도 배포는
 # 진행된다"고 스스로 적어 둔 것까지 exit 4 가 되어, 호출자(update-all)가 멀쩡한 배포를
 # 실패로 보고한다. 그러면 exit 4 가 아무 의미도 없어진다 — 늘 켜져 있는 경보는 경보가 아니다.
 note() { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
-# 바뀌지 않은 서비스는 재기동하지 않는다 — 지문(git HEAD|아티팩트·설정)이 전/후 같고 살아 있으면 생략. HWAX_RESTART_ALL=1 이 종전 동작.
+# 바뀌지 않은 서비스는 재기동하지 않는다 — 지문(git HEAD|아티팩트·설정)이 **마지막으로 띄운 시점**의 것과 같고 살아 있으면 생략.
+# 기준을 '블록 전/후' 로 두면 update-all §1 의 git reset·§1c/1d/1e 의 .env·routes 기록·운영자 편집이 전부 블록 밖이라 안 보인다(검토 실측).
+# 마지막 기동 지문은 <포털>/infra/.state/restart-fp/<서비스> 에 있고 기동이 성공한 뒤에만 적는다. HWAX_RESTART_ALL=1 이 종전 동작.
 # 생략은 줄로 보이고 끝(Done)에 모아 다시 낸다. docs/update-all-skip-unchanged/.
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/change-detect.sh"
-HWAX_RESTART_SKIPPED_FILE="$(mktemp)"; export HWAX_RESTART_SKIPPED_FILE
+HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$PORTAL_DIR/infra/.state/restart-fp}"; export HWAX_RESTART_STATE_DIR
 _fp_git() { printf '%s|' "$(git rev-parse HEAD 2>/dev/null || echo nogit)"; }   # 서브셸 안에서: 지문 앞에 git HEAD
+_ngfp() {  # nginx 가 실제로 읽는 것 — conf 와 conf 가 경로로만 가리키는 인증서·키(내용이 바뀌어도 conf 는 한 글자 안 바뀐다)
+  local c k; c="$(sed -n 's/^TLS_CERT_PATH=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' ')"
+  k="$(sed -n 's/^TLS_KEY_PATH=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' ')"
+  hwax_fp "$PORTAL_DIR/infra/nginx/hwax.conf" "$PORTAL_DIR/${c:-infra/tls/hwax.crt}" "$PORTAL_DIR/${k:-infra/tls/hwax.key}"
+}
 
 # We RESTART each service (stop → start) so freshly pulled images / nginx conf / code actually take
 # effect. `start.sh` alone skips already-running instances, leaving stale config live (that's what
@@ -184,15 +192,16 @@ RESTART="${NO_RESTART:-0}"
 if want portal; then
   hr "HWAX Portal  ($PORTAL_DIR)"
   ( cd "$PORTAL_DIR"
-    _fpp() { _fp_git; hwax_fp infra/apptainer/*.sif frontend/dist infra/.env backend/.env backend/config/routes.local.env; }
-    _fp0="$(_fpp)"
     git_update
     [ -f infra/.env ] || cp infra/.env.example infra/.env
     set_remote infra/.env HWAX_DRIVE_REMOTE HWAXPortal/images
     ./infra/scripts/images-from-drive.sh      # portal.sif + nginx.sif + frontend/dist (영구 캐시 — 안 바뀐 파일은 전송 0)
-    if hwax_restart_needed portal "$_fp0" "$(_fpp)" http://127.0.0.1:8723/health; then
+    # 지문은 받은 **뒤** 한 번 — 마지막 기동 지문과 비교한다(§1 이 이미 당긴 커밋·§1c/1d/1e 가 쓴 .env·routes 도 여기 들어간다)
+    _cur="$(_fp_git; hwax_fp infra/apptainer/*.sif frontend/dist infra/.env backend/.env backend/config/routes.local.env)"
+    _hp="$(sed -n 's/^HTTP_PORT=//p' infra/.env 2>/dev/null | tail -1 | tr -d ' "')"
+    if hwax_restart_needed portal "$_cur" http://127.0.0.1:8723/health "http://127.0.0.1:${_hp:-8088}/health"; then
       [ "$RESTART" = 1 ] || ./infra/scripts/stop.sh 2>/dev/null || true   # stop → start = pick up new conf/images
-      HWAX_NO_BUILD=1 ./infra/scripts/start.sh
+      HWAX_NO_BUILD=1 ./infra/scripts/start.sh && hwax_mark_started portal "$_cur" && hwax_mark_started nginx "$(_ngfp)"   # start.sh 가 nginx 도 새 conf 로 띄웠다
     fi ) && ok "portal up" || skip "portal failed (see above)"
 fi
 
@@ -201,8 +210,6 @@ if want mxwp; then
   if [ -n "$MXWP_DIR" ]; then
     hr "MX White Paper  ($MXWP_DIR)"
     ( cd "$MXWP_DIR"
-      _fpm() { _fp_git; hwax_fp infra/apptainer/*.sif .env; }
-      _fp0="$(_fpm)"
       git_update
       [ -f .env ] || cp .env.example .env
       set_remote .env MXWP_IMAGES_REMOTE MXWhitePaper/images
@@ -221,12 +228,14 @@ if want mxwp; then
       # *.sif). A live instance whose SIF is overwritten underneath keeps a broken squashfs
       # mount — every exec inside dies with "error while loading shared libraries: libc.so.6"
       # (bit cae00's mxwp_api → mxwp-mcp). start.sh re-creates them cleanly from the new SIFs.
-      if hwax_restart_needed mxwp "$_fp0" "$(_fpm)" http://127.0.0.1:8800/api/v1/healthz; then
+      _cur="$(_fp_git; hwax_fp infra/apptainer/*.sif .env)"
+      if hwax_restart_needed mxwp "$_cur" http://127.0.0.1:8800/api/v1/healthz http://127.0.0.1:5173/; then   # api 와 web 둘 다 답해야 생략
         if [ "$RESTART" != 1 ]; then
           for _i in mxwp_web mxwp_api; do "$_appt" instance stop "$_i" 2>/dev/null || true; done
         fi
         ./infra/scripts/start.sh \
-          && { ./infra/scripts/migrate.sh || echo "  ⚠ mxwp migrate 실패(비치명) — 수동: (mxwp) ./infra/scripts/migrate.sh"; }
+          && { ./infra/scripts/migrate.sh || echo "  ⚠ mxwp migrate 실패(비치명) — 수동: (mxwp) ./infra/scripts/migrate.sh"; } \
+          && hwax_mark_started mxwp "$_cur"
       fi ) && ok "mxwp up" || skip "mxwp failed (see above)"
       # mxwp_api 를 재기동했으면 그 안에서 돌던 mxwp-mcp 도 다시 올린다(있으면).
       [ -x "$PORTAL_DIR/infra/scripts/services.sh" ] && \
@@ -239,9 +248,6 @@ if want heax; then
   if [ -n "$HEAX_DIR" ]; then
     hr "HEAX Hub  ($HEAX_DIR)"
     ( cd "$HEAX_DIR"
-      _sd="$(sed -n 's/^SIF_DIR=//p' .env 2>/dev/null | tail -1 | tr -d '"')"; _sd="${_sd:-$HOME/serviceApptainers}"
-      _fph() { _fp_git; hwax_fp frontend/dist var/sifs deploy/apptainer/cache .env "$_sd"/heaxhub_*.sif "$_sd"/base_*.sif; }
-      _fp0="$(_fph)"
       git_update
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
@@ -270,13 +276,17 @@ if want heax; then
       # 대용량 앱 모델 가중치(voice_recorder TTS 등)는 app-data tar 밖(별도 Drive models/) —
       # 각 앱 런타임 모델 dir 로 증분 동기(비치명).
       [ -f deploy/apptainer/models-from-drive.sh ] && bash deploy/apptainer/models-from-drive.sh || true
-      if hwax_restart_needed heax "$_fp0" "$(_fph)" http://localhost:4180/health; then
+      # SIF_DIR 판독은 dist-from-drive 의 env_get 과 같게(큰·작은따옴표 둘 다). 캐시 디렉터리(.drive-dist)는 지문에 넣지 않는다 — 원격 재업로드만으로 바뀐다.
+      _sd="$(sed -n 's/^SIF_DIR=//p' .env 2>/dev/null | tail -1 | tr -d '"'"'"' ')"; _sd="${_sd:-$HOME/serviceApptainers}"
+      _cur="$(_fp_git; hwax_fp frontend/dist var/sifs .env deploy/apptainer/cache/*.deb deploy/apptainer/cache/python-*-x86_64-linux.tar.gz deploy/apptainer/cache/node-*.tar.gz "$_sd"/heaxhub_*.sif "$_sd"/base_*.sif)"
+      if hwax_restart_needed heax "$_cur" http://localhost:4180/health; then
         [ "$RESTART" = 1 ] || bash deploy/apptainer/stop.sh 2>/dev/null || true
         if ! HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh; then
           echo "  ── last lines of var/logs/postgres-start.log (the hidden error) ──"
           tail -15 var/logs/postgres-start.log 2>/dev/null | sed 's/^/    /'
           exit 1
         fi
+        hwax_mark_started heax "$_cur"
       fi
       # 앱이 새 코드로 떴으니 마이그레이션이 적용됐다 — 스키마 때문에 실패했던 병합을 다시 한다.
       if [ "${_appdata_rc:-0}" != 0 ] && [ -f deploy/apptainer/appdata-merge-from-drive.sh ]; then
@@ -296,14 +306,13 @@ if want signalforge; then
   if [ -n "$SF_DIR" ]; then
     hr "SignalForge  ($SF_DIR)"
     ( cd "$SF_DIR"
-      _fps() { _fp_git; hwax_fp apptainer/sif .env; }
-      _fp0="$(_fps)"
       git_update
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }   # 최초엔 example → 시크릿은 별도 채움
       ./scripts/sync-from-drive.sh                # SIF(+.env.example) — Drive→apptainer/sif/ (SF 자체 remote 자동감지)
-      if hwax_restart_needed signalforge "$_fp0" "$(_fps)" http://127.0.0.1:18000/health; then
+      _cur="$(_fp_git; hwax_fp apptainer/sif .env)"
+      if hwax_restart_needed signalforge "$_cur" http://127.0.0.1:18000/health http://127.0.0.1:17370/; then   # API 와 프론트 둘 다
         [ "$RESTART" = 1 ] || bash scripts/down.sh 2>/dev/null || true
-        SF_MIGRATE=1 ./scripts/up.sh
+        SF_MIGRATE=1 ./scripts/up.sh && hwax_mark_started signalforge "$_cur"
       fi                # SIF 있으면 build skip; 배포라 alembic 멱등 실행(기존 DB 도 신규 마이그레이션 반영)
       # ── DATA: 기본 = 비파괴 MERGE(dev 신규 VOC 반영 + cae00 축적 유지, DROP 안 함).
       #    SF_RESTORE_DB=1 은 파괴적 통짜 복원(최초 시드/재구축용 오버라이드). ──
@@ -336,12 +345,11 @@ if want aidh; then
     #   실제로는 멀쩡하고 인덱스가 계속 만들어지고 있는 중이다.
     #   호출자가 이미 정했으면 그 값을 존중한다.
     ( cd "$AIDH_DIR"
-      _fpa() { _fp_git; hwax_fp .env api_server/.env; }
-      _fp0="$(_fpa)"
       git_update
-      if hwax_restart_needed aidh "$_fp0" "$(_fpa)" http://localhost:8001/; then
+      _cur="$(_fp_git; hwax_fp .env api_server/.env)"
+      if hwax_restart_needed aidh "$_cur" http://localhost:8001/; then
         AIDH_ROOT_PATH=/ai-data-hub AIDH_BOOT_HEALTH_TIMEOUT="${AIDH_BOOT_HEALTH_TIMEOUT:-600}" \
-          ./boot.sh --force
+          ./boot.sh --force && hwax_mark_started aidh "$_cur"
       fi ) && ok "aidh up" || skip "aidh failed (see above)"
     # VSCode extension(vsix) — 빌드 산출물이라 git 미추적 + cae00 은 npm 없어 빌드 불가.
     # dev 의 publish-ext.sh 가 Drive ext-downloads 에 게시한 것을 받아온다 (없으면 조용히 생략·비치명).
@@ -381,16 +389,15 @@ if want kooremapper; then
   if [ -n "$KOOR_DIR" ]; then
     hr "KooRemapper / DynaForge  ($KOOR_DIR)"
     ( cd "$KOOR_DIR"
-      _fpk() { _fp_git; hwax_fp platform/backend/bin platform/frontend/dist platform/infra/apptainer/*.sif platform/.env; }
-      _fp0="$(_fpk)"
       git_update
       [ -f platform/.env ] || { [ -f platform/.env.example ] && cp platform/.env.example platform/.env; }
       set_remote platform/.env KOORM_DRIVE_REMOTE KooRemapper/dist
       # 바이너리+dist+서비스 SIF 반입(없으면 skip — prod 빌드 가능 시 start 가 알아서 빌드).
       bash platform/infra/scripts/dist-from-drive.sh || note "koorm dist-from-drive 실패(비치명) — 로컬 아티팩트로 진행"
-      if hwax_restart_needed kooremapper "$_fp0" "$(_fpk)" http://127.0.0.1:8700/api/health; then
+      _cur="$(_fp_git; hwax_fp platform/backend/bin platform/frontend/dist platform/infra/apptainer/*.sif platform/.env)"
+      if hwax_restart_needed kooremapper "$_cur" http://127.0.0.1:8700/api/health http://127.0.0.1:8701/; then   # api·mcp 둘 다
         [ "$RESTART" = 1 ] || bash platform/infra/scripts/stop.sh 2>/dev/null || true
-        bash platform/infra/scripts/start.sh
+        bash platform/infra/scripts/start.sh && hwax_mark_started kooremapper "$_cur"
       fi
       # 자동 재기동 편입(리포트 2026-09-04 §4-①) — 감독자가 없으면 죽어도 되살릴 주체가
       # 없어 간헐 접속 불가가 된다. @reboot 크론 + supervisor 감시를 멱등 설치한다.
@@ -426,13 +433,13 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   NG_LOG="$(mktemp)"
   NG_PORT="$(sed -n 's/^HTTP_PORT=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1)"
   # conf 가 그대로고 nginx 가 살아 있으면 bounce 하지 않는다 — 종전엔 무조건 내렸다 올렸다(docs/update-all-skip-unchanged D-6)
-  _ng0="$(hwax_fp "$PORTAL_DIR/infra/nginx/hwax.conf")"
   ( cd "$PORTAL_DIR" && ./infra/scripts/gen-nginx-conf.sh ) >"$NG_LOG" 2>&1 || true
-  if hwax_restart_needed nginx "$_ng0" "$(hwax_fp "$PORTAL_DIR/infra/nginx/hwax.conf")" "http://127.0.0.1:${NG_PORT:-8088}/health"; then
+  _ngcur="$(_ngfp)"    # 새로 만든 conf + 인증서·키 — 마지막으로 nginx 를 띄운 시점의 것과 비교
+  if hwax_restart_needed nginx "$_ngcur" "http://127.0.0.1:${NG_PORT:-8088}/health"; then
   ( cd "$PORTAL_DIR"
     APPT="apptainer"; for c in infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && { APPT="$c"; break; }; done
     "$APPT" instance stop hwax_nginx 2>/dev/null || true
-    HWAX_NO_BUILD=1 ./infra/scripts/start.sh ) >>"$NG_LOG" 2>&1 || true
+    HWAX_NO_BUILD=1 ./infra/scripts/start.sh ) >>"$NG_LOG" 2>&1 && hwax_mark_started nginx "$_ngcur" || true
   fi
   # `|| true` 는 여기서만 안전하다 — 이 파일은 set -e 라 서브셸 실패가 배포 전체를 끊는다.
   # 종료코드를 판정에 쓰지 않고 바로 아래에서 실제 상태(/health)로 가르기 때문에,
@@ -479,9 +486,8 @@ want kooremapper && probe "koorm  /api/health" "http://127.0.0.1:8700/api/health
 
 hr "Done"
 if [ -s "$HWAX_RESTART_SKIPPED_FILE" ]; then
-  echo "  · 재기동 생략(변경 없음·살아 있음): $(tr '\n' ' ' < "$HWAX_RESTART_SKIPPED_FILE")— 전부 재기동하려면 HWAX_RESTART_ALL=1"
+  echo "  · 재기동 생략(마지막 기동 뒤 변경 없음·살아 있음): $(tr '\n' ' ' < "$HWAX_RESTART_SKIPPED_FILE")— 전부 재기동하려면 HWAX_RESTART_ALL=1 (기준 지문: $HWAX_RESTART_STATE_DIR)"
 fi
-rm -f "$HWAX_RESTART_SKIPPED_FILE"
 # 소스 갱신이 실패했으면 여기서 크게 말하고 종료코드로도 알린다. 화면에 한 줄 찍고
 # '✓ up / exit 0' 으로 끝내면 "up to date" 거짓말을 한 단계 위로 옮긴 것일 뿐이다 —
 # 호출자(update-all)는 종료코드를 보고 다음 단계를 정한다.
