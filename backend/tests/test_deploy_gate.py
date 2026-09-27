@@ -89,7 +89,9 @@ def _fake_update_all(tmp_path, body: str, name: str = "update-all.sh", lock_dir=
     """0b 블록 + 본문으로 된 가짜 update-all — 파일로 둔다(0b 가 `bash "${BASH_SOURCE[0]}"` 로 자기를 다시 돈다). 이름은 update-all.sh 여야
     한다(보유자 판별이 cmdline 의 'update-all' 을 본다)."""
     f = tmp_path / name
-    f.write_text(f'#!/usr/bin/env bash\nSELF_REPO="{tmp_path}"; export HWAX_LOCK_DIR="{lock_dir or tmp_path}"\n{_lock_block()}\n{body}\n')
+    hr = UA_SRC[UA_SRC.index("hr() {"):]; hr = hr[:hr.index("\n", hr.index("printf")) + 1]     # 실 hr() — § 머리에서 종료 요청을 본다
+    f.write_text(f'#!/usr/bin/env bash\nset -uo pipefail\nSELF_REPO="{tmp_path}"; export HWAX_LOCK_DIR="{lock_dir or tmp_path}"\n'
+                 f'HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER\n{hr}\n{_lock_block()}\n{body}\n')
     return f
 
 
@@ -182,19 +184,22 @@ def test_update_all_self_heal_never_lets_two_runs_through(tmp_path):
             assert sorted([a.returncode, b.returncode]) == [0, 3], (offset, a.returncode, b.returncode, ea, eb)
 
 
-def test_update_all_treats_an_orphaned_old_version_substep_as_a_real_run(tmp_path):
-    """검토: 옛 판 실행이 kill 되면 하위 단계(deploy-all-from-drive.sh 등)가 fd 9 를 물려받은 채 계속 도는데, 이름만 보면 '데몬' 이라
-    잠금을 지우고 겹쳐 돌았다. 하위 단계는 진짜다 — 거부하고 기다리게 한다."""
+@pytest.mark.parametrize("rel", ["deploy-all-from-drive.sh", "infra/scripts/update-sites.sh", "provision-config.sh", "deploy/apptainer/start.sh",
+                                 "scripts/sync-from-drive.sh", "deploy/apptainer/mirror-from-drive.sh", "data-migrate.sh", "scripts/up.sh", "boot.sh"])
+def test_update_all_treats_an_orphaned_old_version_substep_as_a_real_run(tmp_path, rel):
+    """검토: 옛 판 실행이 kill 되면 하위 단계(deploy-all 이 **상대경로**로 부르는 스크립트들)가 fd 9 를 물려받은 채 계속 도는데, 이름만 보면
+    '데몬' 이라 잠금을 지우고 겹쳐 돌았다. 하위 단계는 진짜다 — 거부하고 기다리게 한다."""
     import time, signal
     lock = _lock_of(tmp_path); pidfile = tmp_path / "sub.pid"
-    substep = tmp_path / "deploy-all-from-drive.sh"; substep.write_text('#!/usr/bin/env bash\necho $$ > "$1"; sleep 20\n'); substep.chmod(0o755)
-    old = tmp_path / "old-run.sh"; old.write_text(f'exec 9>"{lock}"; flock -n 9 || exit 9\nbash "{substep}" "{pidfile}"\n')
-    p = subprocess.Popen(["bash", str(old)]); time.sleep(0.6); os.kill(p.pid, signal.SIGTERM); p.wait(timeout=10)
+    substep = tmp_path / rel; substep.parent.mkdir(parents=True, exist_ok=True)
+    substep.write_text('#!/usr/bin/env bash\necho $$ > "$1"; sleep 20\n'); substep.chmod(0o755)
+    old = tmp_path / "old-run.sh"; old.write_text(f'exec 9>"{lock}"; flock -n 9 || exit 9\nbash {rel} "{pidfile}"\n')   # 상대경로 그대로
+    p = subprocess.Popen(["bash", str(old)], cwd=tmp_path); time.sleep(0.6); os.kill(p.pid, signal.SIGTERM); p.wait(timeout=10)
     try:
         assert not _free(lock), "고아 하위 단계가 fd 9 로 잠금을 쥔다(재현)"
         f = _fake_update_all(tmp_path, 'echo BODY; exit 0')
         r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=30)
-        assert r.returncode == 3 and "BODY" not in r.stdout and "이미 돌고 있다" in r.stderr, r.stdout + r.stderr
+        assert r.returncode == 3 and "BODY" not in r.stdout and "이미 돌고 있다" in r.stderr, (rel, r.stdout + r.stderr)
         assert not _free(lock), "하위 단계의 잠금을 지우지 않는다"
     finally:
         _kill(pidfile)
@@ -212,23 +217,44 @@ def test_update_all_body_started_by_the_flock_parent_version_proceeds(tmp_path):
     assert _free(lock)
 
 
-def test_update_all_kill_of_the_visible_pid_stops_after_the_current_step_and_holds_the_lock_until_then(tmp_path):
-    """검토(2라운드): 자식 bash 만 죽이면 그 순간 돌던 단계(deploy-all·provision --force)가 고아로 끝까지 돌고 잠금은 먼저 풀려 재실행이
-    겹쳤다. 이제 본문은 진행 중인 단계가 끝난 뒤 멈추고, 그때까지 바깥이 잠금을 쥔다."""
+@pytest.mark.parametrize("sig", ["TERM", "HUP"])
+def test_update_all_kill_stops_at_the_next_section_and_holds_the_lock_until_then(tmp_path, sig):
+    """검토(2·3라운드): 자식 bash 를 즉사시키면 전경 단계가 고아로 끝까지 돌고 잠금은 먼저 풀렸다. 단순 명령 경계에서 exit 하면 §5 의
+    down→up 이 반으로 갈렸다. 이제 kill 은 플래그만 세우고 **다음 § 머리(hr)** 에서 멈춘다 — 진행 중인 §는 짝 명령까지 끝까지 간다."""
     import time, signal
-    sub = tmp_path / "sub.log"
-    f = _fake_update_all(tmp_path, f'bash -c \'for i in $(seq 1 6); do echo "SUB $i" >> "{sub}"; sleep 0.3; done; echo SUBDONE >> "{sub}"\'; echo FINISHED')
+    sub = tmp_path / "sub.log"; token = f"sub-{tmp_path.name}"
+    f = _fake_update_all(tmp_path, f'hr "S1"; bash -c \'for i in $(seq 1 5); do echo "SUB $i" >> "{sub}"; sleep 0.3; done; echo SUBDONE >> "{sub}" # {token}\'; '
+                                   f'bash -c \'echo UP_AFTER_DOWN\'; echo FINISHED_S1; hr "S2"; echo S2_RAN')
     p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     time.sleep(0.8)
-    os.kill(p.pid, signal.SIGTERM)
+    os.kill(p.pid, getattr(signal, "SIG" + sig))
     time.sleep(0.3)
     assert p.poll() is None, "단계가 도는 동안 바깥은 기다린다"
     assert not _free(_lock_of(tmp_path)), "단계가 도는 동안 잠금은 잡혀 있다 — 여기서 재실행하면 rc 3 이어야 한다"
     out, err = p.communicate(timeout=20)
-    assert p.returncode == 143 and "FINISHED" not in out, (p.returncode, out, err)
+    assert p.returncode == 143, (p.returncode, out, err)
+    assert f"{sig} 받음" in err and "종료 요청" in err and "여기서 멈춘다" in err, err
     assert sub.read_text().splitlines()[-1] == "SUBDONE", "진행 중이던 단계는 끝까지 간다 — 고아로 남지 않는다"
+    assert "UP_AFTER_DOWN" in out and "FINISHED_S1" in out, "같은 § 안의 짝 명령은 끝까지 간다(down 뒤 up)"
+    assert "S2_RAN" not in out, "다음 § 머리에서 멈춘다"
     assert _free(_lock_of(tmp_path))
-    assert not subprocess.run(["pgrep", "-f", "seq 1 6"], capture_output=True).stdout, "떨어져 도는 단계가 없어야 한다"
+    assert not subprocess.run(["pgrep", "-f", token], capture_output=True).stdout, "떨어져 도는 단계가 없어야 한다"
+
+
+def test_update_all_ctrl_c_reaches_a_step_run_under_timeout_foreground(tmp_path):
+    """검토: GNU timeout 은 기본으로 명령을 새 프로세스 그룹에 넣어 Ctrl-C 가 닿지 않는다 — 2c 의 deploy-ste 가 900초 동안 Ctrl-C 무효였다.
+    --foreground 면 닿는다. 실 스크립트의 timeout 호출은 전부 --foreground 여야 한다."""
+    import time, signal
+    assert not re.search(r"(^|[^a-z_-])timeout +[0-9]", UA_SRC, re.M), "timeout 은 --foreground 없이 쓰지 않는다"
+    assert "timeout --foreground 900" in UA_SRC
+    marker = tmp_path / "after"
+    f = _fake_update_all(tmp_path, f'timeout --foreground 30 bash -c \'for i in $(seq 1 10); do echo T$i; sleep 0.5; done\'; echo AFTER > "{marker}"')
+    p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+                         preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+    time.sleep(1.0)
+    os.killpg(p.pid, signal.SIGINT)
+    out, _ = p.communicate(timeout=10)
+    assert not marker.exists() and p.returncode == -signal.SIGINT, (p.returncode, out)
 
 
 def test_update_all_ctrl_c_keeps_the_lock_while_the_body_still_runs(tmp_path):
@@ -285,11 +311,11 @@ def test_update_all_refuses_when_the_holder_is_invisible_and_does_not_delete_the
 
 def test_update_all_leaked_guard_variable_does_not_bypass_the_lock(tmp_path):
     """가드 변수는 데몬으로 새어 나간다(검토) — 값에 바깥 PID 가 들어가 PPID 가 다르면 잠금을 정상으로 잡는다."""
-    lock = _lock_of(tmp_path)
-    f = _fake_update_all(tmp_path, 'echo HELD; sleep 2')
+    leak = tmp_path / "leaked.env"
+    f = _fake_update_all(tmp_path, f'echo HELD; printf %s "$HWAX_UPDATE_ALL_LOCKED" > "{leak}"; sleep 2')   # 본문이 데몬에게 물려주는 바로 그 값
     first = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     import time; time.sleep(0.8)
-    r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20, env={**os.environ, "HWAX_UPDATE_ALL_LOCKED": f"{lock}:1"})
+    r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20, env={**os.environ, "HWAX_UPDATE_ALL_LOCKED": leak.read_text()})
     first.wait(timeout=20)
     assert r.returncode == 3 and "이미 돌고 있다" in r.stderr and "HELD" not in r.stdout
 
@@ -314,10 +340,15 @@ def test_update_all_without_flock_warns_and_runs_unlocked(tmp_path):
 
 def test_update_all_without_python3_warns_and_still_runs_the_body(tmp_path):
     """python3 는 Ctrl-C 복원용이다 — 없으면 본문이 안 도는 것(rc 127)이 아니라 경고 뒤 그대로 돈다(검토)."""
-    f = _fake_update_all(tmp_path, 'echo BODY; exit 0')
-    r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20, env={"PATH": str(_shim_path(tmp_path, without="python3")), "HOME": os.environ.get("HOME", "/tmp")})
-    assert r.returncode == 0 and "BODY" in r.stdout, r.stdout + r.stderr
-    assert "python3 이 없어" in r.stderr
+    pidfile = tmp_path / "daemon.pid"
+    f = _fake_update_all(tmp_path, f'( sleep 20 >/dev/null 2>&1 & echo $! > "{pidfile}" ); read -r l; echo "BODY:$l"; exit 0')
+    try:
+        r = subprocess.run(["bash", str(f)], input="from-stdin\n", capture_output=True, text=True, timeout=20, env={"PATH": str(_shim_path(tmp_path, without="python3")), "HOME": os.environ.get("HOME", "/tmp")})
+        assert r.returncode == 0 and "BODY:from-stdin" in r.stdout, r.stdout + r.stderr
+        assert "python3 이 없어" in r.stderr
+        assert _free(_lock_of(tmp_path)), "python3 없는 경로도 자식에 fd 를 닫아 넘겨야 한다(D-23 재발 방지)"
+    finally:
+        _kill(pidfile)
 
 
 def test_update_all_lock_survives_the_upgrade_from_the_old_fd9_style(tmp_path):

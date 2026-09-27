@@ -423,6 +423,24 @@ sync-from-drive·data-migrate)을 '진짜' 로 넣었다 — 그 경우 rc 3 으
 "통과" 로 나온 항목(flock 부모 인식 제거 → 초록)이 실은 이 결함 때문이었다 — 패턴을 고치자 그 변이도 빨갛게 됐다. 변이가 초록이면 시험이 아니라
 **시험이 타는 코드**부터 의심한다. 시험 16(실프로세스), 변이 10/10, 스위트 776.
 
+## D-26. 0b 잠금 4차 — 3라운드: timeout 이 Ctrl-C 를 삼킴·kill 이 짝 명령을 반으로 가름·상대경로 하위 단계 (2026-09-27)
+
+3라운드(504e42b 대상) 확인 6(고유 4)·기각 0. ① **`timeout 900 deploy-ste.sh` 에 Ctrl-C 가 닿지 않는다** — GNU timeout 은 `--foreground`
+없이 명령을 새 프로세스 그룹에 넣는다(setpgid). 터미널 INT 는 전경 그룹에만 가므로 deploy-ste 는 900초까지 그대로 돌고, 본문 bash 는 전경
+자식이 정상 종료했으니 '처리됐다' 로 보고 다음 §로 넘어가며, 바깥은 rc≠130 이라 정상 종료한다. 진짜 pty 에 ^C 를 써도 같았다. 갈 곳이 kill -9
+뿐이고 그러면 단계 고아+잠금 해제 = 겹침. → `timeout --foreground`(타임아웃 시 deploy-ste.sh 자체엔 TERM 이 간다). 시험이 실 스크립트의
+timeout 호출 전부에 --foreground 를 요구한다. ② **kill 이 '단계' 가 아니라 '단순 명령' 뒤에 멈춘다** — 본문의 `trap 'exit 143' TERM` 은 다음
+명령 경계에서 발화하므로 §5 `"$SVC" down` → `up`, mxwp `instance stop` → `up`, run_smoke `kill → 폴링 → start.sh --bg` 가 반으로 갈려
+게이트웨이·에이전트서버가 내려간 채 rc 143 으로 끝났다(재현: SVC_DOWN_DONE 뒤 SVC_UP 없음). → trap 은 **플래그**만 세우고(받은 즉시 한 줄
+찍음), 멈추는 자리는 **다음 § 머리 `hr()`** 다 — 진행 중인 §는 짝 명령까지 끝까지 간다. 바깥도 신호를 넘길 때 "받음 — 진행 중인 §가 끝나면
+멈춘다" 를 찍는다(수 분짜리 단계에서 반응 없음으로 읽고 kill -9 로 가던 것). ③ **상대경로 하위 단계** — 보유자 판별 `*/deploy/*.sh*` 는 앞
+슬래시를 요구해 deploy-all 이 실제로 쓰는 `bash deploy/apptainer/start.sh`·`./scripts/up.sh`·`./boot.sh`·`*-from-drive.sh` 를 데몬으로 봤다 →
+패턴을 상대경로·이름으로 넓히고 아홉 가지 이름을 parametrize 로 잰다. ④ kill 시험의 `pgrep -f "seq 1 6"` 이 박스 전역 매치라 병렬 실행에서
+빨갔다(변이 검사의 '죽였다' 오판까지) → tmp 이름 토큰으로 좁힘. 미검증 반영: 치유 잠금의 '열기 실패' 와 '15초 만료' 문구 분리 · 가짜 스크립트
+헤더에 `set -uo pipefail`·장부 mktemp·실 hr() 을 넣어 초기화 줄들의 보호를 세움 · 새어 나간 가드 시험이 본문이 실제로 흘리는 값을 캡처해 쓴다 ·
+python3 없는 경로도 데몬 비상속·stdin 을 잰다 · kill 시험 TERM/HUP parametrize. 남긴 것(low): 기동 직후 ~10ms 창의 Ctrl-C 유실(python3 shim 전) ·
+`kill -INT <pid>` 는 조용한 no-op(가이드에 TERM 을 쓰라고 적음). 시험 42(실프로세스), 변이 9/9(초기화 한 줄은 신호 창 문제라 재현 불가), 스위트 786.
+
 ## F. cae00 실측 (S0)
 
 ### 2026-09-27 — 첫 `update-all` 뒤 `ste-doctor`(사용자 실행, 그대로)

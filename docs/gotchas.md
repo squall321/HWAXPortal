@@ -326,3 +326,11 @@ config 는 `8013` 을 들고 있어 `/health` 의 `signalforge: false` 가 09-18
 `provision_urls.py`, 원격 주소는 사람이 옮긴 것이라 존중). update-all 이 **같은 판정**으로 드리프트를 찾아
 재프로비저닝하고, 서비스를 띄운 뒤에도 설정 주소에 아무것도 없으면 "재기동으로는 안 고쳐진다" 고 크게 말한다.
 새 형제 서비스가 포트를 `.env` 에 선언하면 `provision_urls.SIBLING_PORTS` 에 한 줄 더한다.
+
+## GNU `timeout` 은 Ctrl-C 를 삼킨다 — `--foreground` 없이 쓰지 않는다 (2026-09-27)
+
+`timeout 900 deploy-ste.sh` 처럼 스크립트 안에서 부르면 timeout 이 명령을 **새 프로세스 그룹**에 넣어 터미널 Ctrl-C(전경 그룹 INT)가
+그 단계에 닿지 않는다. 단계는 상한까지 돌고, 부른 bash 는 자식이 정상 종료했으니 '처리됐다' 로 보고 다음으로 넘어간다 — update-all 2c 에서
+900초 동안 Ctrl-C 가 무효였다(적대 검토 실측, 진짜 pty 에 ^C 를 써도 같음). `timeout --foreground N cmd` 로 쓴다(타임아웃 시 cmd 자체엔
+TERM 이 가고 cmd 의 자식은 안 죽인다). 시험 `test_update_all_ctrl_c_reaches_a_step_run_under_timeout_foreground` 가 실 스크립트 전체를 grep 한다.
+

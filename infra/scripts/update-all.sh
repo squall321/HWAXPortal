@@ -42,7 +42,9 @@ SVC="$SELF_REPO/infra/scripts/services.sh"
 # 하드코딩하지 말고 거기서 읽는다(_common.sh 와 같은 기본값 config/routes.env).
 _routes_path="$(sed -n 's/^ROUTES_PATH=//p' "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' ')"
 ROUTES_ENV="${ROUTES_ENV:-$SELF_REPO/backend/${_routes_path:-config/routes.env}}"
-hr() { printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
+# § 머리 — 0b 본문이 kill(TERM·HUP)을 받으면 여기서 멈춘다(진행 중인 §는 끝낸다). 단순 명령 경계에서 죽으면 down→up 같은 짝이 반으로 갈린다.
+hr() { if [ "${_stop_req:-0}" = 1 ]; then echo "  · 종료 요청(kill)을 받아 여기서 멈춘다 — 진행 중이던 §는 끝냈다(0b)" >&2; exit 143; fi
+       printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # ⚠ **치명과 비치명을 눈으로 가른다.** 종전엔 둘 다 빨간 ✗ 라, 이 박스 대상도 아닌 서비스나
 # '비치명' 이라고 적힌 항목까지 실패처럼 보였다(2026-09-20 cae00: ✗ 넷 중 종료코드를 세운 것은
@@ -98,13 +100,18 @@ _lock_is_body() {  # 이 판의 자식(PPID 대조) · 중간 판(flock -o 부�
   return 1
 }
 if _lock_is_body; then
-  trap 'exit 143' TERM; trap 'exit 129' HUP     # 바깥이 넘긴 kill — 진행 중인 단계(전경 자식)가 끝난 뒤 멈춘다(위 설계)
+  # 바깥이 넘긴 kill(TERM·HUP) — 즉시 죽지 않고 플래그만 세운다. 멈추는 자리는 **다음 § 머리(hr)** 다: 단순 명령 경계에서 죽으면 §5 의
+  # down→up·mxwp stop→up 같은 짝 명령이 반으로 갈려 서비스가 내려간 채 끝난다(3라운드 검토). 진행 중인 §는 끝까지 간다.
+  _stop_req=0
+  trap 'echo "  · 종료 요청(TERM) — 진행 중인 §가 끝나면 멈춘다. 즉시 멈추려면 Ctrl-C" >&2; _stop_req=1' TERM
+  trap 'echo "  · 종료 요청(HUP) — 진행 중인 §가 끝나면 멈춘다" >&2; _stop_req=1' HUP
 elif ! command -v flock >/dev/null 2>&1; then
   echo "  ⚠ flock(util-linux) 이 없어 단일 실행 잠금 없이 진행한다 — 겹쳐 돌리지 마라" >&2
 else
   _lk="$(readlink -f "$_LOCK" 2>/dev/null | sed 's/[][*?\\]/\\&/g')"   # find -lname 은 글롭이다 — 경로의 특수문자를 이스케이프
   for _fd in $(find "/proc/$$/fd" -maxdepth 1 -lname "$_lk" -printf '%f\n' 2>/dev/null); do eval "exec $_fd>&-"; done
   # 진짜 = update-all 자신·flock 부모·update-all 이 전경으로 돌리는 하위 단계(옛 판에선 fd 9 를 물려받은 채 돈다). 그 외는 고아(데몬).
+  # 하위 단계는 deploy-all 이 **상대경로**로 부른다(`bash deploy/apptainer/start.sh`·`./scripts/up.sh`·`./boot.sh`) — 앞 슬래시를 요구하면 못 잡는다(3라운드).
   # 패턴은 case 에 **직접** 쓴다 — 변수에 담으면 `|` 가 대안이 아니라 글자가 되어 아무것도 안 맞는다(실측: 진짜 보유자를 전부 고아로 봤다).
   _lock_holders() {  # 잠금 파일을 연 프로세스(자기 제외) → _real / _stale. pid·comm 만 적는다(남의 인자는 토큰일 수 있다)
     _real=""; _stale=""
@@ -113,13 +120,14 @@ else
       [ "$_p" = "$$" ] && continue
       _comm="$(cat "/proc/$_p/comm" 2>/dev/null)"; [ -n "$_comm" ] || continue     # 스캔 중 사라진 프로세스
       case "$_comm $(tr '\0' ' ' < "/proc/$_p/cmdline" 2>/dev/null | cut -c1-300)" in
-        flock*|*update-all*|*infra/scripts/*|*deploy-all-from-drive*|*provision-config*|*/deploy/*.sh*|*sync-from-drive*|*data-migrate*) _real="$_real $_p" ;;
+        flock*|*update-all*|*infra/scripts/*|*deploy-all-from-drive*|*provision-config*|*deploy/*.sh*|*-from-drive*|*data-migrate*|*scripts/up.sh*|*scripts/down.sh*|*boot.sh*) _real="$_real $_p" ;;
         *) _stale="$_stale $_p($_comm)" ;;
       esac
     done
   }
   _lock_bye() { echo "$1" >&2; rm -f "$HWAX_SKIP_LEDGER" 2>/dev/null; exit 3; }
-  exec 8>"$_HEAL" && flock -w 15 8 || _lock_bye "✗ 잠금 준비 실패($_HEAL) — $_LOCK_DIR 권한을 보라"
+  exec 8>"$_HEAL" || _lock_bye "✗ 잠금 준비 실패 — $_HEAL 을 열 수 없다($_LOCK_DIR 권한을 보라)"
+  flock -w 15 8 || _lock_bye "✗ 다른 update-all 이 잠금 획득 단계에서 15초 넘게 멈춰 있다($_HEAL) — ps -ef | grep update-all 로 확인(그 실행에 Ctrl-Z/STOP 이 걸렸을 수 있다)"
   exec 9>"$_LOCK" || _lock_bye "✗ 잠금 파일을 만들 수 없다($_LOCK)"
   if ! flock -n 9; then
     _lock_holders
@@ -137,7 +145,7 @@ else
   fi
   exec 8>&-
   _child=""; _got_int=0
-  _fwd() { [ -n "$_child" ] && kill -"$1" "$_child" 2>/dev/null; }
+  _fwd() { [ -n "$_child" ] && { echo "  · $1 받음 — 본문에 넘긴다. 진행 중인 §가 끝나면 멈춘다(즉시 멈추려면 Ctrl-C)" >&2; kill -"$1" "$_child" 2>/dev/null; }; }
   trap '_got_int=1' INT; trap '_fwd TERM' TERM; trap '_fwd HUP' HUP
   # `&` 로 띄운 자식은 job control 없는 셸이 INT·QUIT 를 **무시**로 물려준다(POSIX) — 그대로면 Ctrl-C 가 본문 어디에도 닿지 않는다
   # (실측: sleep 이 INT 를 받고도 살았다). python3 이 기본 처리로 되돌린 뒤 같은 PID 로 bash 를 exec 한다. <&0 은 & 의 /dev/null stdin 을 막는다.
@@ -486,7 +494,9 @@ hr "2c) ste 코드 최신화 (다를 때만)"
 if [ -x "$SELF_REPO/infra/scripts/deploy-ste.sh" ]; then
   # ⚠ 상한을 둔다. ssh 쪽에도 ConnectTimeout 이 있지만 전송 자체가 늘어질 수 있고,
   #   ste 하나 때문에 갱신 전체가 멈추면 안 된다. 900초면 코드 전송(수십 MB)에 충분하다.
-  timeout 900 "$SELF_REPO/infra/scripts/deploy-ste.sh" --if-stale
+  # --foreground — GNU timeout 은 기본으로 명령을 **새 프로세스 그룹**에 넣어 터미널 Ctrl-C 가 닿지 않는다(3라운드 실측: 900초 동안 Ctrl-C 무효,
+  #   그 뒤 본문은 '정상 종료' 로 읽어 끝까지 진행). --foreground 면 같은 그룹이라 Ctrl-C 가 닿고, 타임아웃 시 deploy-ste.sh 자체엔 TERM 이 간다.
+  timeout --foreground 900 "$SELF_REPO/infra/scripts/deploy-ste.sh" --if-stale
   case $? in
     0)   : ;;
     3)   : ;;   # 게이트가 막았다(옵션 없음·전제 미충족) — 사유는 위에 찍혔고 장부(○)에 적혔다. 실패가 아니다
