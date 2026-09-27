@@ -42,8 +42,14 @@ SVC="$SELF_REPO/infra/scripts/services.sh"
 # 하드코딩하지 말고 거기서 읽는다(_common.sh 와 같은 기본값 config/routes.env).
 _routes_path="$(sed -n 's/^ROUTES_PATH=//p' "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' ')"
 ROUTES_ENV="${ROUTES_ENV:-$SELF_REPO/backend/${_routes_path:-config/routes.env}}"
-# § 머리 — 0b 본문이 kill(TERM·HUP)을 받으면 여기서 멈춘다(진행 중인 §는 끝낸다). 단순 명령 경계에서 죽으면 down→up 같은 짝이 반으로 갈린다.
-hr() { if [ "${_stop_req:-0}" = 1 ]; then echo "  · 종료 요청(kill)을 받아 여기서 멈춘다 — 진행 중이던 §는 끝냈다(0b)" >&2; exit 143; fi
+# § 머리 — 0b 본문이 kill(TERM·HUP) 또는 삼켜진 Ctrl-C 를 받으면 여기서 멈춘다(진행 중인 §는 끝낸다). 단순 명령 경계에서 죽으면 down→up 같은
+# 짝이 반으로 갈린다. 플래그는 **환경변수**다 — §1 의 exec 재실행이 셸 변수를 버려 §1 중 받은 kill 이 사라졔다(4라운드 검토).
+# 멈출 때 지금까지의 ✗ 와 ○ 요약을 내고 장부 파일을 지운다 — 안 그러면 '어디까지 했는지' 가 없이 끝난다.
+hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
+         echo "  · 종료 요청을 받아 여기서 멈춘다 — 진행 중이던 §는 끝냈고, '$*' 부터는 하지 않았다(0b)" >&2
+         [ -n "${FAIL_ITEMS:-}" ] && printf '  지금까지의 ✗:\n%s' "$FAIL_ITEMS" >&2
+         command -v hwax_skip_summary >/dev/null 2>&1 && hwax_skip_summary
+         rm -f "${HWAX_SKIP_LEDGER:-}" 2>/dev/null; exit 143; fi
        printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # ⚠ **치명과 비치명을 눈으로 가른다.** 종전엔 둘 다 빨간 ✗ 라, 이 박스 대상도 아닌 서비스나
@@ -61,6 +67,16 @@ HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER
 
 # HTTP 코드 프로브 — curl은 실패해도 -w로 '000'을 찍으므로 종료코드가 아니라 출력값으로만 판정한다.
 http_code() { curl -sk -m "${2:-4}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null; }
+# 상한(timeout --foreground)에 걸려 죽은 단계가 남긴 자식들을 정리한다 — --foreground 는 명령 하나에만 TERM 을 주고 그 자식(rsync·ssh)은
+# 두므로, 그대로면 본문은 '중단했다' 고 찍고 잠금을 푼 뒤 재실행이 살아 있는 전송과 겹친다(4라운드). 단계를 띄울 때 HWAX_STEP_ID=<표식> 을
+# 환경에 실어 두고, 여기서 그 표식을 가진 살아 있는 프로세스를 /proc/*/environ 으로 찾아 TERM → 3초 → KILL 한다. 같은 사용자만 보인다.
+_reap_step() {  # $1=표식
+  local _pids
+  _pids="$(grep -lsz "HWAX_STEP_ID=$1" /proc/[0-9]*/environ 2>/dev/null | cut -d/ -f3 | grep -vx "$$" | tr '\n' ' ')"
+  [ -n "${_pids// /}" ] || return 0
+  echo "  · 상한에 걸린 단계가 남긴 프로세스를 정리한다: $_pids" >&2
+  kill -TERM $_pids 2>/dev/null; sleep 3; kill -KILL $_pids 2>/dev/null; return 0
+}
 
 # ── 0a) 인자 — `--with-<name>` 는 무거운·외부 배포 단계를 **이번 실행에 한해** 강제한다 ───────
 # 첫 사용처는 ste(`--with-ste`: 에어갭 클러스터 코드 갱신). 규칙은 infra/scripts/lib/deploy-gate.sh 에
@@ -102,9 +118,13 @@ _lock_is_body() {  # 이 판의 자식(PPID 대조) · 중간 판(flock -o 부�
 if _lock_is_body; then
   # 바깥이 넘긴 kill(TERM·HUP) — 즉시 죽지 않고 플래그만 세운다. 멈추는 자리는 **다음 § 머리(hr)** 다: 단순 명령 경계에서 죽으면 §5 의
   # down→up·mxwp stop→up 같은 짝 명령이 반으로 갈려 서비스가 내려간 채 끝난다(3라운드 검토). 진행 중인 §는 끝까지 간다.
-  _stop_req=0
-  trap 'echo "  · 종료 요청(TERM) — 진행 중인 §가 끝나면 멈춘다. 즉시 멈추려면 Ctrl-C" >&2; _stop_req=1' TERM
-  trap 'echo "  · 종료 요청(HUP) — 진행 중인 §가 끝나면 멈춘다" >&2; _stop_req=1' HUP
+  # 플래그는 환경변수 — §1 의 exec 재실행을 넘어가야 한다(셸 변수는 버려진다). 첫 진입(재실행 아님)에만 0 으로 시작한다.
+  [ "${UPDATE_ALL_REEXEC:-0}" = 1 ] || export HWAX_UPDATE_ALL_STOP=0
+  trap 'echo "  · 종료 요청(TERM) 을 받아 두었다 — 진행 중인 §가 끝나면 멈춘다. 즉시 멈추려면 Ctrl-C" >&2; export HWAX_UPDATE_ALL_STOP=1' TERM
+  trap 'echo "  · 종료 요청(HUP) 을 받아 두었다 — 진행 중인 §가 끝나면 멈춘다" >&2; export HWAX_UPDATE_ALL_STOP=1' HUP
+  # Ctrl-C: 전경 단계가 INT 로 죽었으면($? = 130) 종전처럼 바로 죽는다. 단계가 INT 를 삼키고 정상 종료했으면(rsync rc 20·rclone) 종전엔
+  # 아무 표시 없이 다음 §로 이어졌다(4라운드) — 이제 받아 두고 다음 § 머리에서 멈춘다.
+  trap 'if [ $? = 130 ]; then exit 130; fi; echo "  · Ctrl-C — 단계가 신호를 삼키고 끝났다. 진행 중인 §가 끝나면 멈춘다" >&2; export HWAX_UPDATE_ALL_STOP=1' INT
 elif ! command -v flock >/dev/null 2>&1; then
   echo "  ⚠ flock(util-linux) 이 없어 단일 실행 잠금 없이 진행한다 — 겹쳐 돌리지 마라" >&2
 else
@@ -126,9 +146,11 @@ else
     done
   }
   _lock_bye() { echo "$1" >&2; rm -f "$HWAX_SKIP_LEDGER" 2>/dev/null; exit 3; }
-  exec 8>"$_HEAL" || _lock_bye "✗ 잠금 준비 실패 — $_HEAL 을 열 수 없다($_LOCK_DIR 권한을 보라)"
+  _lock_owner() { stat -c '%U' "$1" 2>/dev/null || echo '?'; }
+  # 같은 리포를 sudo 로 한 번 돌리면 root 소유 파일이 남아 그 뒤 모든 실행이 여기서 막힌다(sticky /tmp 라 지우지도 못한다 — 4라운드).
+  exec 8>"$_HEAL" || _lock_bye "✗ 잠금 준비 실패 — $_HEAL 을 열 수 없다(소유자 $(_lock_owner "$_HEAL"), 나는 $(id -un)). 다른 사용자(sudo)로 돌린 흔적이면: sudo rm -f $_HEAL $_LOCK 뒤 재실행"
   flock -w 15 8 || _lock_bye "✗ 다른 update-all 이 잠금 획득 단계에서 15초 넘게 멈춰 있다($_HEAL) — ps -ef | grep update-all 로 확인(그 실행에 Ctrl-Z/STOP 이 걸렸을 수 있다)"
-  exec 9>"$_LOCK" || _lock_bye "✗ 잠금 파일을 만들 수 없다($_LOCK)"
+  exec 9>"$_LOCK" || _lock_bye "✗ 잠금 파일을 열 수 없다 — $_LOCK(소유자 $(_lock_owner "$_LOCK"), 나는 $(id -un)). 다른 사용자(sudo)로 돌린 흔적이면: sudo rm -f $_HEAL $_LOCK 뒤 재실행"
   if ! flock -n 9; then
     _lock_holders
     if [ -z "$_real" ] && [ -n "$_stale" ]; then
@@ -496,11 +518,12 @@ if [ -x "$SELF_REPO/infra/scripts/deploy-ste.sh" ]; then
   #   ste 하나 때문에 갱신 전체가 멈추면 안 된다. 900초면 코드 전송(수십 MB)에 충분하다.
   # --foreground — GNU timeout 은 기본으로 명령을 **새 프로세스 그룹**에 넣어 터미널 Ctrl-C 가 닿지 않는다(3라운드 실측: 900초 동안 Ctrl-C 무효,
   #   그 뒤 본문은 '정상 종료' 로 읽어 끝까지 진행). --foreground 면 같은 그룹이라 Ctrl-C 가 닿고, 타임아웃 시 deploy-ste.sh 자체엔 TERM 이 간다.
-  timeout --foreground 900 "$SELF_REPO/infra/scripts/deploy-ste.sh" --if-stale
+  _ste_step="ste-$$-$(date +%s%N)"
+  HWAX_STEP_ID="$_ste_step" timeout --foreground 900 "$SELF_REPO/infra/scripts/deploy-ste.sh" --if-stale
   case $? in
     0)   : ;;
     3)   : ;;   # 게이트가 막았다(옵션 없음·전제 미충족) — 사유는 위에 찍혔고 장부(○)에 적혔다. 실패가 아니다
-    124) bad "ste 최신화 900초 초과 — 중단했다. 헤드노드 도달성을 확인하라(§6 ste 게이트 참조)" ;;
+    124) bad "ste 최신화 900초 초과 — 중단했다. 헤드노드 도달성을 확인하라(§6 ste 게이트 참조)"; _reap_step "$_ste_step" ;;
     *)   bad "ste 최신화 실패 — §6 ste 게이트가 다시 판정한다(위 사유 참조)" ;;
   esac
 else
@@ -1692,6 +1715,7 @@ fi
 
 # ○ 옵션·설정이 없어 안 켠 기능은 성공·실패 어느 쪽 끝에서도 다시 말한다 — 조용히 지나가면 그 기능이
 #   있는 줄도 모른다(사용자 지시 2026-09-25). 실패 목록과 섞이지 않게 먼저, 다른 표식으로 낸다.
+[ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ] && echo "  · 종료 요청이 있었지만 남은 §가 없어 끝까지 갔다 — 아래 요약은 전부 실제로 한 것이다" >&2
 hwax_skip_summary
 rm -f "$HWAX_SKIP_LEDGER"
 if [ "$FAIL" = 1 ]; then

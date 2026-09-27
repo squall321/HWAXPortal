@@ -331,6 +331,7 @@ config 는 `8013` 을 들고 있어 `/health` 의 `signalforge: false` 가 09-18
 
 `timeout 900 deploy-ste.sh` 처럼 스크립트 안에서 부르면 timeout 이 명령을 **새 프로세스 그룹**에 넣어 터미널 Ctrl-C(전경 그룹 INT)가
 그 단계에 닿지 않는다. 단계는 상한까지 돌고, 부른 bash 는 자식이 정상 종료했으니 '처리됐다' 로 보고 다음으로 넘어간다 — update-all 2c 에서
-900초 동안 Ctrl-C 가 무효였다(적대 검토 실측, 진짜 pty 에 ^C 를 써도 같음). `timeout --foreground N cmd` 로 쓴다(타임아웃 시 cmd 자체엔
-TERM 이 가고 cmd 의 자식은 안 죽인다). 시험 `test_update_all_ctrl_c_reaches_a_step_run_under_timeout_foreground` 가 실 스크립트 전체를 grep 한다.
+900초 동안 Ctrl-C 가 무효였다(적대 검토 실측, 진짜 pty 에 ^C 를 써도 같음). `timeout --foreground N cmd` 로 쓴다. 단 --foreground 는 만료 시 cmd 하나에만 TERM 을 주고 **cmd 의 자식(rsync·ssh)은 남긴다** — 그대로면
+'중단했다' 고 찍고 잠금을 푼 뒤 재실행이 살아 있는 전송과 겹친다. update-all 은 단계에 `HWAX_STEP_ID=<표식>` 을 실어 띄우고 124 면 `_reap_step` 이
+`/proc/*/environ` 으로 그 표식을 가진 프로세스를 찾아 정리한다(같은 사용자만 보인다). 시험 `test_update_all_ctrl_c_reaches_a_step_run_under_timeout_foreground` 가 실 스크립트 전체를 grep 한다.
 
