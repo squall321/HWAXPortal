@@ -84,10 +84,13 @@ if [ "${HWAX_UPDATE_ALL_LOCKED:-}" != "$_LOCK" ]; then
     echo "  ⚠ flock(util-linux) 이 없어 단일 실행 잠금 없이 진행한다 — 겹쳐 돌리지 마라" >&2
   else
     _lock_run() { HWAX_UPDATE_ALL_LOCKED="$_LOCK" flock -n -E 75 -o "$_LOCK" bash "${BASH_SOURCE[0]}" "$@"; }
+    _lk="$(readlink -f "$_LOCK" 2>/dev/null | sed 's/[][*?\\]/\\&/g')"   # find -lname 은 글롭이다 — 경로의 특수문자를 이스케이프
+    # 옛 판(exec 9>lock; flock -n 9)이 §1 에서 이 판으로 exec 재실행한 **첫 회** — 그 fd 를 이 프로세스가 이미 쥐고 있어 아래 flock 이
+    # 자기 자신과 충돌한다(보유자 = 자기 PID, cmdline 에 update-all → '진짜' 로 보여 rc 3). 그 fd 를 닫고 정식으로 다시 잡는다.
+    for _fd in $(find "/proc/$$/fd" -maxdepth 1 -lname "$_lk" -printf '%f\n' 2>/dev/null); do eval "exec $_fd>&-"; done
     _lock_run "$@" && _rc=0 || _rc=$?
     if [ "$_rc" = 75 ]; then
       _real=""; _stale=""
-      _lk="$(readlink -f "$_LOCK" | sed 's/[][*?\\]/\\&/g')"        # find -lname 은 글롭이다 — 경로의 특수문자를 이스케이프
       for _p in $(find /proc/[0-9]*/fd -maxdepth 1 -lname "$_lk" -printf '%h\n' 2>/dev/null | cut -d/ -f3 | sort -u); do
         _comm="$(cat "/proc/$_p/comm" 2>/dev/null)"
         case "$_comm $(tr '\0' ' ' < "/proc/$_p/cmdline" 2>/dev/null | cut -c1-200)" in

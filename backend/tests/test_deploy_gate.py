@@ -149,6 +149,23 @@ def test_update_all_replaces_a_lock_held_only_by_an_orphaned_fd(tmp_path):
         _kill(pidfile)
 
 
+def test_update_all_lock_survives_the_upgrade_from_the_old_fd9_style(tmp_path):
+    """옛 판(exec 9>lock; flock -n 9)이 §1 에서 새 판으로 exec 재실행하는 첫 회 — 같은 PID 가 옛 fd 를 쥔 채 새 0b 가 돌면 자기 자신과
+    충돌해 '이미 돌고 있다'(rc 3) 가 된다. 옛 fd 를 닫고 다시 잡아야 하고, 그 뒤 띄운 데몬은 잠금을 물려받지 않아야 한다."""
+    lock = _lock_of(tmp_path); pidfile = tmp_path / "daemon.pid"
+    # 이름이 update-all.sh 여야 한다 — 자가치유는 보유자 cmdline 의 'update-all' 로 진짜를 가르므로, 다른 이름이면 자기 자신을 고아 fd 로 보고
+    # 잠금을 지워 통과해 버린다(첫 시험판이 그랬다: fd 닫기를 빼도 초록).
+    new = _fake_update_all(tmp_path, f'( sleep 20 >/dev/null 2>&1 & echo $! > "{pidfile}" ); echo "BODY:$*"; exit 0')
+    old = tmp_path / "old.sh"
+    old.write_text(f'exec 9>"{lock}"; flock -n 9 || exit 9\nexec env UPDATE_ALL_REEXEC=1 bash "{new}" "$@"\n')
+    try:
+        r = subprocess.run(["bash", str(old), "--with-ste"], capture_output=True, text=True, timeout=20)
+        assert r.returncode == 0 and "BODY:--with-ste" in r.stdout and "이미 돌고 있다" not in r.stderr, r.stdout + r.stderr
+        assert _free(lock), "옛 fd 를 닫고 -o 로 다시 잡았으면 데몬은 잠금을 못 쥔다"
+    finally:
+        _kill(pidfile)
+
+
 def test_update_all_lock_passes_args_exit_code_and_survives_self_reexec(tmp_path):
     """§1 이 새 버전으로 exec 재실행해도(같은 PID) 잠금은 이어지고 다시 잡으려 들지 않는다. 인자와 종료코드는 그대로 나온다."""
     f = _fake_update_all(tmp_path, 'if [ "${UPDATE_ALL_REEXEC:-0}" != 1 ]; then exec env UPDATE_ALL_REEXEC=1 bash "$0" "$@"; fi\necho "REEXEC_OK:$*"; exit 7')
