@@ -72,41 +72,69 @@ done
 export HWAX_WITH
 # ── 0b) 잠금 — update-all 두 개가 겹치면 2c 배포 중 재기동·§5 provision --force·게이트웨이 down/up 이
 #   동시에 돈다(2026-09-24 적대 검토). 같은 리포 루트 기준 한 개만 돈다. 기다리지 않고 바로 알린다.
-#   ⚠ 잠금 fd 를 자식에게 물려주지 않는다. 종전 `exec 9>lock; flock -n 9` 는 update-all 이 띄운 데몬(에이전트서버 nohup·apptainer
-#   instance 등)이 fd 9 를 물려받아 update-all 이 **끝난 뒤에도** 잠금을 쥐었다 — cae00 실측(2026-09-27): 첫 실행 뒤 모든 실행이
-#   "이미 돌고 있다" 로 거부됐다. 이제 flock(1) 이 부모로 남아 잠금을 쥐고(`-o`: 명령에는 fd 를 닫아 준다) 이 스크립트를 자식으로
-#   돈다 — §1 의 자기 재실행(exec)은 같은 PID 라 잠금이 이어지고, HWAX_UPDATE_ALL_LOCKED 로 다시 잡으려 들지 않는다.
-#   옛 판이 물려준 fd 를 쥔 데몬(보유자 중 flock 도 update-all 도 없다)은 잠금 파일을 새로 만들어 비켜 간다 — 그 데몬은 지워진
-#   inode 를 쥔 채 무해하다. 보유자가 안 보이면(다른 사용자) 모름이라 거부한다. 충돌 코드 75 는 이 스크립트가 쓰지 않는 값이다.
+#   설계(2026-09-27 cae00 실측 + 적대 검토 두 라운드):
+#   · 잠금은 **이 바깥 bash 가 fd 9 로** 쥐고, 본문은 자식(같은 스크립트)으로 돈다. 자식에겐 `9>&-` 로 fd 를 닫아 넘겨
+#     본문이 띄운 데몬(에이전트서버 nohup·apptainer instance)이 fd 를 물려받지 못한다 — 종전 `exec 9>lock; flock -n 9` 한
+#     프로세스 모양에선 데몬이 fd 9 를 쥐어 update-all 이 끝난 뒤에도 모든 실행이 "이미 돌고 있다" 였다.
+#   · 잠금 보유자 = 실행자의 부모라 **잠금 수명 = 본문 수명**이다. flock(1) 을 부모로 쓰면 Ctrl-C 에 flock 만 죽어 본문은
+#     도는데 잠금은 풀리고(자식이 INT 를 삼키는 rclone 류), `kill <pid>` 는 바깥만 죽여 본문이 떨어져 계속 돌았다(검토).
+#     바깥은 신호를 자식에게 넘기고 자식이 끝날 때까지 기다린다.
+#   · 옛 판이 물려준 fd 를 쥔 데몬만 잠금을 쥐고 있으면(보유자 중 update-all 도 flock 도 없다) 잠금 파일을 새로 만들어
+#     비켜 간다 — 그 데몬은 지워진 inode 를 쥔 채 무해. 스캔→rm 은 `.heal` 잠금 아래 하나씩 한다(둘이 동시에 치유하면
+#     서로의 새 파일을 지우고 둘 다 진행하던 경합, 검토 실측 10ms 창). 보유자가 안 보이면(다른 사용자) 모름이라 거부한다.
+#   · 옛 판(exec 9>lock)이 §1 에서 이 판으로 exec 재실행한 첫 회는 같은 PID 가 옛 fd 를 쥐고 있다 — 닫고 다시 잡는다.
+#   · 가드 값은 `<잠금경로>:<바깥 PID>` — 자식은 PPID 로 대조하므로 데몬에 새어 나간 변수로는 잠금을 건너뛰지 못한다.
 _LOCK="${TMPDIR:-/tmp}/hwax-update-all.$(printf '%s' "$SELF_REPO" | md5sum | cut -c1-8).lock"
-if [ "${HWAX_UPDATE_ALL_LOCKED:-}" != "$_LOCK" ]; then
+if [ "${HWAX_UPDATE_ALL_LOCKED:-}" != "$_LOCK:$PPID" ]; then
   if ! command -v flock >/dev/null 2>&1; then
     echo "  ⚠ flock(util-linux) 이 없어 단일 실행 잠금 없이 진행한다 — 겹쳐 돌리지 마라" >&2
   else
-    _lock_run() { HWAX_UPDATE_ALL_LOCKED="$_LOCK" flock -n -E 75 -o "$_LOCK" bash "${BASH_SOURCE[0]}" "$@"; }
     _lk="$(readlink -f "$_LOCK" 2>/dev/null | sed 's/[][*?\\]/\\&/g')"   # find -lname 은 글롭이다 — 경로의 특수문자를 이스케이프
-    # 옛 판(exec 9>lock; flock -n 9)이 §1 에서 이 판으로 exec 재실행한 **첫 회** — 그 fd 를 이 프로세스가 이미 쥐고 있어 아래 flock 이
-    # 자기 자신과 충돌한다(보유자 = 자기 PID, cmdline 에 update-all → '진짜' 로 보여 rc 3). 그 fd 를 닫고 정식으로 다시 잡는다.
     for _fd in $(find "/proc/$$/fd" -maxdepth 1 -lname "$_lk" -printf '%f\n' 2>/dev/null); do eval "exec $_fd>&-"; done
-    _lock_run "$@" && _rc=0 || _rc=$?
-    if [ "$_rc" = 75 ]; then
+    _lock_holders() {  # 잠금 파일을 연 프로세스(자기 제외) — 진짜(update-all·flock) 는 _real, 그 외는 _stale 에. pid·comm 만(남의 인자는 토큰일 수 있다)
       _real=""; _stale=""
-      for _p in $(find /proc/[0-9]*/fd -maxdepth 1 -lname "$_lk" -printf '%h\n' 2>/dev/null | cut -d/ -f3 | sort -u); do
-        _comm="$(cat "/proc/$_p/comm" 2>/dev/null)"
+      # 스캔 파이프는 fd 8·9 를 닫고 돈다 — 안 닫으면 find·cut·sort 자신이 잠금 파일을 연 프로세스로 잡힌다(첫 시험판 실측)
+      for _p in $(exec 8>&- 9>&-; find /proc/[0-9]*/fd -maxdepth 1 -lname "$_lk" -printf '%h\n' 2>/dev/null | cut -d/ -f3 | sort -u); do
+        [ "$_p" = "$$" ] && continue
+        _comm="$(cat "/proc/$_p/comm" 2>/dev/null)"; [ -n "$_comm" ] || continue     # 스캔 중 사라진 프로세스
         case "$_comm $(tr '\0' ' ' < "/proc/$_p/cmdline" 2>/dev/null | cut -c1-200)" in
           flock*|*update-all*) _real="$_real $_p" ;;
-          *) _stale="$_stale $_p($_comm)" ;;      # pid·comm 만 — 남의 인자(토큰일 수 있다)는 로그에 안 적는다
+          *) _stale="$_stale $_p($_comm)" ;;
         esac
       done
+    }
+    _lock_bye() { echo "$1" >&2; rm -f "$HWAX_SKIP_LEDGER" 2>/dev/null; exit 3; }
+    # 획득 단계(열기→시도→스캔→치유→재시도)는 `.heal` 잠금 아래 **하나씩** — 둘이 동시에 스캔·rm 하면 서로의 새 파일을 지우고
+    # 둘 다 진행했고(검토 실측, 10ms 창), 서로의 미획득 fd 를 '진짜' 로 보아 둘 다 물러나기도 한다. 획득이 끝나면 놓는다.
+    exec 8>"${_LOCK}.heal" && flock -w 15 8 || _lock_bye "✗ 잠금 준비 실패(${_LOCK}.heal) — TMPDIR 권한을 보라"
+    exec 9>"$_LOCK" || _lock_bye "✗ 잠금 파일을 만들 수 없다($_LOCK)"
+    if ! flock -n 9; then
+      _lock_holders
       if [ -z "$_real" ] && [ -n "$_stale" ]; then
-        echo "  · 잠금을 쥔 것은 update-all 이 아니라 옛 판이 fd 를 물려준 데몬이다:$_stale — 잠금 파일을 새로 만들어 진행한다"
-        rm -f "$_LOCK"; _lock_run "$@" && _rc=0 || _rc=$?
-      fi
-      if [ "$_rc" = 75 ]; then
-        echo "✗ update-all 이 이미 돌고 있다($_LOCK) — 겹쳐 돌리지 않는다. 끝나면 다시 실행하라." >&2
-        exit 3
+        echo "  · 잠금을 쥔 것은 update-all 이 아니라 옛 판이 fd 를 물려준 데몬이다:$_stale — 잠금 파일을 새로 만든다"
+        exec 9>&-; rm -f "$_LOCK"
+        exec 9>"$_LOCK" && flock -n 9 && echo "    → 잠금을 새로 잡았다 — 진행한다" \
+          || _lock_bye "✗ update-all 이 이미 돌고 있다($_LOCK) — 겹쳐 돌리지 않는다. 끝나면 다시 실행하라."
+      elif [ -z "$_real" ]; then
+        _lock_bye "✗ 잠금($_LOCK)이 잡혀 있는데 쥔 프로세스가 이 사용자에게 보이지 않는다(다른 사용자의 프로세스?) — 확인: sudo ls -l /proc/*/fd 2>/dev/null | grep hwax-update-all ; update-all 이 아니면 그 잠금 파일을 지우고 재실행"
+      else
+        _lock_bye "✗ update-all 이 이미 돌고 있다($_LOCK) — 겹쳐 돌리지 않는다. 끝나면 다시 실행하라."
       fi
     fi
+    exec 8>&-
+    # 본문은 자식으로 — `9>&-` 로 잠금 fd 를 닫아 넘겨 데몬이 물려받지 못한다. 바깥은 자식이 끝날 때까지 기다린다(잠금 수명 = 본문 수명).
+    # INT(Ctrl-C)는 그룹 전체에 이미 갔다 — 넘기지 않는다(두 번 받으면 자식이 INT 를 삼킨 뒤 bash 가 죽는다). 바깥은 살아서 잠금을 쥔다.
+    # TERM·HUP 은 바깥만 받으므로 자식에게 넘긴다 — `kill <pid>` 가 본문을 멈춘다(넘기지 않으면 본문이 떨어져 끝까지 돈다, 검토).
+    # `&` 로 띄운 자식은 job control 없는 셸이 INT·QUIT 를 **무시**로 물려준다(POSIX) — 그대로면 Ctrl-C 가 본문 어디에도 닿지 않는다
+    # (실측: sleep 이 INT 를 받고도 살았다). python3 이 기본 처리로 되돌린 뒤 같은 PID 로 bash 를 exec 한다. <&0 은 & 의 /dev/null stdin 을 막는다.
+    _fwd() { kill -"$1" "$_child" 2>/dev/null; }
+    trap ':' INT; trap '_fwd TERM' TERM; trap '_fwd HUP' HUP
+    HWAX_UPDATE_ALL_LOCKED="$_LOCK:$$" python3 -c 'import os, signal, sys
+signal.signal(signal.SIGINT, signal.SIG_DFL); signal.signal(signal.SIGQUIT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \
+      bash "${BASH_SOURCE[0]}" "$@" 9>&- <&0 & _child=$!
+    wait "$_child"; _rc=$?
+    while kill -0 "$_child" 2>/dev/null; do wait "$_child"; _rc=$?; done   # 신호로 깨어났으면 자식이 끝날 때까지 다시 기다린다
+    rm -f "$HWAX_SKIP_LEDGER" 2>/dev/null    # 바깥이 만든 장부는 쓰이지 않는다(본문이 자기 것을 만든다) — 실행마다 /tmp 에 남던 것
     exit "$_rc"
   fi
 fi

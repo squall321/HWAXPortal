@@ -132,21 +132,140 @@ def test_update_all_lock_is_not_inherited_by_daemons_it_starts(tmp_path):
         _kill(pidfile)
 
 
-def test_update_all_replaces_a_lock_held_only_by_an_orphaned_fd(tmp_path):
-    """옛 판(exec 9>lock; flock -n 9)이 fd 를 물려준 데몬만 잠금을 쥐고 있으면 — 진짜 update-all 은 없다 — 잠금 파일을 새로 만들어 진행한다."""
-    lock = _lock_of(tmp_path); pidfile = tmp_path / "daemon.pid"
-    old = tmp_path / "old.sh"
+def _orphan_holder(lock, pidfile):
+    """옛 판(exec 9>lock; flock -n 9) 모양 — fd 9 를 물려받은 sleep 만 잠금을 쥔다."""
+    old = lock.parent / "old-holder.sh"
     old.write_text(f'exec 9>"{lock}"; flock -n 9 || exit 9\n( sleep 20 >/dev/null 2>&1 & echo $! > "{pidfile}" )\nexit 0\n')
+    assert subprocess.run(["bash", str(old)]).returncode == 0
+    assert not _free(lock), "옛 판 모양이면 데몬이 잠금을 쥔다(재현)"
+
+
+def test_update_all_replaces_a_lock_held_only_by_an_orphaned_fd(tmp_path):
+    """옛 판이 fd 를 물려준 데몬만 잠금을 쥐고 있으면 — 진짜 update-all 은 없다 — 잠금 파일을 새로 만들어 진행한다."""
+    lock = _lock_of(tmp_path); pidfile = tmp_path / "daemon.pid"
     try:
-        assert subprocess.run(["bash", str(old)]).returncode == 0
-        assert not _free(lock), "옛 판 모양이면 데몬이 잠금을 쥔다(재현)"
+        _orphan_holder(lock, pidfile)
         f = _fake_update_all(tmp_path, 'echo BODY; exit 0')
-        r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20)
+        r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=30)
         assert r.returncode == 0 and "BODY" in r.stdout, r.stdout + r.stderr
-        assert "옛 판이 fd 를 물려준 데몬이다" in r.stdout and "(sleep)" in r.stdout and "이미 돌고 있다" not in r.stderr
+        assert "옛 판이 fd 를 물려준 데몬이다" in r.stdout and "(sleep)" in r.stdout and "진행한다" in r.stdout and "이미 돌고 있다" not in r.stderr
         assert _free(lock), "새 잠금 파일은 자유다"
     finally:
         _kill(pidfile)
+
+
+def test_update_all_self_heal_never_lets_two_runs_through(tmp_path):
+    """검토 실측: 고아 fd 상태에서 둘을 10ms 차로 띄우면 둘 다 stale 판정 → 서로의 새 잠금 파일을 지우고 **둘 다 진행**했다(8회 중 6회).
+    스캔→rm 을 .heal 잠금 아래 하나씩 하면 정확히 하나만 진행한다."""
+    import time
+    lock = _lock_of(tmp_path); pidfile = tmp_path / "daemon.pid"; ran = tmp_path / "ran.log"
+    f = _fake_update_all(tmp_path, f'echo "RUN:$1" >> "{ran}"; sleep 0.6; exit 0')
+    for offset in (0.0, 0.005, 0.01, 0.02, 0.05):
+        for _ in range(3):
+            ran.unlink(missing_ok=True)
+            try:
+                _orphan_holder(lock, pidfile)
+                a = subprocess.Popen(["bash", str(f), "A"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                time.sleep(offset)
+                b = subprocess.Popen(["bash", str(f), "B"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                oa, ea = a.communicate(timeout=40); ob, eb = b.communicate(timeout=40)
+            finally:
+                _kill(pidfile)
+            runs = ran.read_text().splitlines() if ran.exists() else []
+            assert len(runs) == 1, (offset, runs, oa, ea, ob, eb)
+            assert sorted([a.returncode, b.returncode]) == [0, 3], (offset, a.returncode, b.returncode, ea, eb)
+
+
+def test_update_all_kill_of_the_visible_pid_stops_the_run_and_frees_the_lock(tmp_path):
+    """검토: 잠금을 flock(1) 부모가 쥐면 `kill <pid>` 는 바깥만 죽여 본문이 떨어져 끝까지 돌았고 잠금은 BUSY 였다.
+    바깥 bash 가 쥐고 신호를 넘기면 본문이 멈추고, 자식이 끝난 뒤에 잠금이 풀린다."""
+    import time, signal
+    f = _fake_update_all(tmp_path, 'for i in $(seq 1 30); do echo "step $i"; sleep 0.2; done; echo FINISHED')
+    p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    time.sleep(1.0)
+    os.kill(p.pid, signal.SIGTERM)
+    out, err = p.communicate(timeout=20)
+    assert "FINISHED" not in out and out.count("step") < 12, out
+    assert p.returncode == 143, (p.returncode, err)
+    time.sleep(0.3)
+    assert _free(_lock_of(tmp_path)), "본문이 죽었으면 잠금도 풀려야 한다"
+    assert not subprocess.run(["pgrep", "-f", str(f)], capture_output=True).stdout, "떨어져 도는 본문이 없어야 한다"
+
+
+def test_update_all_ctrl_c_keeps_the_lock_while_the_body_still_runs(tmp_path):
+    """검토: 자식이 INT 를 삼키고 정상 종료하면(rclone 류) bash 본문은 계속 도는데 flock 부모는 죽어 잠금이 풀렸고,
+    프롬프트가 돌아와 바로 재실행하면 겹쳤다. 바깥 bash 가 쥐면 본문이 도는 동안 잠금은 BUSY 이고 바깥도 기다린다."""
+    import time, signal
+    marker = tmp_path / "after"
+    # `sleep 5; true` — sleep 이 마지막 명령이면 bash -c 가 exec 최적화로 sleep 자체가 되어 trap 이 사라진다(실측: 트리에 bash -c 가 없었다).
+    # preexec_fn — 이 시험을 띄운 셸이 SIGINT 를 무시(SIG_IGN)하고 있으면 자식 전부가 물려받아 Ctrl-C 가 아무 데도 닿지 않는다(비대화 셸의 & 규칙).
+    f = _fake_update_all(tmp_path, f'bash -c \'trap "exit 0" INT; sleep 5; true\'; echo AFTER > "{marker}"; sleep 1.5; echo DONE')
+    p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+                         preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+    time.sleep(1.0)
+    os.killpg(p.pid, signal.SIGINT)          # 터미널의 Ctrl-C 와 같다 — 그룹 전체에 INT
+    time.sleep(0.8)
+    assert marker.exists(), "INT 를 삼킨 자식 뒤로 본문이 이어서 돈다(재현 조건)"
+    assert p.poll() is None, "바깥은 본문이 끝날 때까지 살아 있어야 한다(프롬프트가 돌아오지 않는다)"
+    assert not _free(_lock_of(tmp_path)), "본문이 도는 동안 잠금은 잡혀 있어야 한다"
+    out, _ = p.communicate(timeout=20)
+    assert "DONE" in out and _free(_lock_of(tmp_path))
+
+
+def test_update_all_ctrl_c_stops_the_body_when_its_child_dies_of_int(tmp_path):
+    """`&` 로 띄운 자식은 INT 를 무시로 물려받는다(POSIX) — 그대로면 Ctrl-C 가 본문에 안 닿아 sleep 이 살아남았다(실측). 되돌려 놓았는지 본다."""
+    import time, signal
+    marker = tmp_path / "after"
+    f = _fake_update_all(tmp_path, f'sleep 5; echo AFTER > "{marker}"; echo DONE')
+    p = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+                         preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+    time.sleep(1.0)
+    os.killpg(p.pid, signal.SIGINT)
+    out, _ = p.communicate(timeout=10)
+    assert not marker.exists() and "DONE" not in out, "sleep 이 INT 로 죽었으면 본문도 거기서 멈춰야 한다"
+    assert p.returncode == 130, p.returncode
+    assert _free(_lock_of(tmp_path))
+
+
+def test_update_all_refuses_when_the_holder_is_invisible_and_does_not_delete_the_lock(tmp_path):
+    """'보유자가 안 보이면 거부' 조항은 시험 보호가 0 이었다(검토) — find 가 아무 보유자도 못 보는 상황을 만든다."""
+    lock = _lock_of(tmp_path); pidfile = tmp_path / "daemon.pid"
+    shim = tmp_path / "shim"; shim.mkdir()
+    (shim / "find").write_text("#!/usr/bin/env bash\nexit 0\n"); (shim / "find").chmod(0o755)
+    try:
+        _orphan_holder(lock, pidfile); ino = lock.stat().st_ino
+        f = _fake_update_all(tmp_path, 'echo BODY; exit 0')
+        r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=30, env={**os.environ, "PATH": f"{shim}:{os.environ['PATH']}"})
+        assert r.returncode == 3 and "BODY" not in r.stdout, r.stdout + r.stderr
+        assert "보이지 않는다" in r.stderr and "이미 돌고 있다" not in r.stderr, r.stderr
+        assert lock.stat().st_ino == ino, "보이지 않는 잠금은 지우지 않는다"
+    finally:
+        _kill(pidfile)
+
+
+def test_update_all_leaked_guard_variable_does_not_bypass_the_lock(tmp_path):
+    """가드 변수는 데몬으로 새어 나간다(검토) — 값에 바깥 PID 가 들어가 PPID 가 다르면 잠금을 정상으로 잡는다."""
+    lock = _lock_of(tmp_path)
+    f = _fake_update_all(tmp_path, 'echo HELD; sleep 2')
+    first = subprocess.Popen(["bash", str(f)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    import time; time.sleep(0.8)
+    r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20, env={**os.environ, "HWAX_UPDATE_ALL_LOCKED": f"{lock}:1"})
+    first.wait(timeout=20)
+    assert r.returncode == 3 and "이미 돌고 있다" in r.stderr and "HELD" not in r.stdout
+
+
+def test_update_all_without_flock_warns_and_runs_unlocked(tmp_path):
+    """flock 이 없는 박스는 잠금 없이 경고만 하고 진행한다 — 종전엔 command not found(rc 127) 를 '이미 돌고 있다' 로 읽었다. 시험 보호가 0 이었다(검토)."""
+    import shutil
+    shim = tmp_path / "bin"; shim.mkdir()
+    for tool in ("bash", "sed", "md5sum", "cut", "printf", "readlink", "find", "cat", "tr", "sort", "rm", "mktemp", "sleep", "echo", "kill", "pgrep", "seq"):
+        src = shutil.which(tool)
+        if src:
+            (shim / tool).symlink_to(src)
+    f = _fake_update_all(tmp_path, 'echo BODY; exit 0')
+    r = subprocess.run(["bash", str(f)], capture_output=True, text=True, timeout=20, env={"PATH": str(shim), "HOME": os.environ.get("HOME", "/tmp")})
+    assert r.returncode == 0 and "BODY" in r.stdout, r.stdout + r.stderr
+    assert "flock(util-linux) 이 없어" in r.stderr
 
 
 def test_update_all_lock_survives_the_upgrade_from_the_old_fd9_style(tmp_path):
@@ -161,16 +280,16 @@ def test_update_all_lock_survives_the_upgrade_from_the_old_fd9_style(tmp_path):
     try:
         r = subprocess.run(["bash", str(old), "--with-ste"], capture_output=True, text=True, timeout=20)
         assert r.returncode == 0 and "BODY:--with-ste" in r.stdout and "이미 돌고 있다" not in r.stderr, r.stdout + r.stderr
-        assert _free(lock), "옛 fd 를 닫고 -o 로 다시 잡았으면 데몬은 잠금을 못 쥔다"
+        assert _free(lock), "옛 fd 를 닫고 다시 잡았으면 데몬은 잠금을 못 쥔다"
     finally:
         _kill(pidfile)
 
 
 def test_update_all_lock_passes_args_exit_code_and_survives_self_reexec(tmp_path):
-    """§1 이 새 버전으로 exec 재실행해도(같은 PID) 잠금은 이어지고 다시 잡으려 들지 않는다. 인자와 종료코드는 그대로 나온다."""
-    f = _fake_update_all(tmp_path, 'if [ "${UPDATE_ALL_REEXEC:-0}" != 1 ]; then exec env UPDATE_ALL_REEXEC=1 bash "$0" "$@"; fi\necho "REEXEC_OK:$*"; exit 7')
-    r = subprocess.run(["bash", str(f), "--with-ste"], capture_output=True, text=True, timeout=20)
-    assert r.returncode == 7 and r.stdout.count("REEXEC_OK:--with-ste") == 1 and "이미 돌고 있다" not in r.stderr, r.stdout + r.stderr
+    """§1 이 새 버전으로 exec 재실행해도(같은 PID) 잠금은 이어지고 다시 잡으려 들지 않는다. 인자와 종료코드는 그대로 나온다. stdin 도 본문에 닿는다."""
+    f = _fake_update_all(tmp_path, 'if [ "${UPDATE_ALL_REEXEC:-0}" != 1 ]; then exec env UPDATE_ALL_REEXEC=1 bash "$0" "$@"; fi\nread -r line; echo "REEXEC_OK:$*:$line"; exit 7')
+    r = subprocess.run(["bash", str(f), "--with-ste"], input="from-stdin\n", capture_output=True, text=True, timeout=20)
+    assert r.returncode == 7 and r.stdout.count("REEXEC_OK:--with-ste:from-stdin") == 1 and "이미 돌고 있다" not in r.stderr, r.stdout + r.stderr
 
 
 # ── 1d 자동 라우트 ────────────────────────────────────────────────────────────
