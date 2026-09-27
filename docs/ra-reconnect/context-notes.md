@@ -184,3 +184,18 @@ transport.env 독자는 아직 `=[[:space:]]*//p`(다른 파일·다른 규칙, 
 **변이 검사(감사 규율 ②).** 일곱 수정을 하나씩 되돌리자 새 시험이 각각 실패했다 — 독자 공백 순서(2 failed)·rc 순서(2)·실패 후 재기동(2)·
 거부값 잔존(1)·upsert export(1)·services 공백 순서(1)·못읽음 문구(1). 스위트 758.
 
+## D-12. "update-all 만 하면 되게" — RA 담당의 진단표를 §6 이 찍는다 (2026-09-27)
+
+사용자가 RA 담당의 회신을 붙여 줬다: 포털 코드는 요청서대로 다 들어갔고, 남은 원인은 콜백에 아무 토큰이나 던진 **상태코드 한 숫자**로
+가려진다 — 200+HTML(라우트 없음, 포털 몫) · 405(RA 옛 판, RA 몫) · 404+JSON(RA 새 판인데 SSO 꺼짐 → RA .env `PORTAL_JWKS_URL`, RA 몫) ·
+502/504(불통, 방화벽) · 303(정상). 그리고 "그 숫자를 알려 달라" 고 했다. 사람이 curl 로 재서 옮겨 적는 일은 update-all 이 할 일이다 —
+§6 헬스게이트에 `_ra_cb_verdict` 를 두고 RA_HOST 가 있는 박스에서 루프백 8088 의 `/report-archive/api/auth/portal-callback` 에 가짜 토큰을
+POST 해 표대로 판정한다. **RA 몫은 ⚠(bad), 포털 몫·불통은 ✗(fail)** — 포털이 고칠 수 없는 것을 ✗ 로 두면 매 실행이 빨갛고, 그러면 사람이
+✗ 를 읽지 않게 된다. 404 는 본문 모양으로 둘을 가른다(nginx 404 는 HTML, RA 의 404 는 JSON). 마지막에 "RA 담당에게 줄 숫자: portal-callback →
+NNN · 포털 JWKS: http://<이 박스>:8088/.well-known/jwks.json" 한 줄을 찍어 그대로 전하면 되게 했다. RA 담당이 고른 JWKS 후보(사내망 http :8088)는
+1e 가 찍는 첫 후보와 같다.
+
+같은 날 사용자가 "잠금 파일을 지우면 되나, `git -C … show` 는 꼭 해야 하나, 그냥 update-all 만 하면 안 되나" 고 물었다 — 0b 잠금 결함
+(docs/ste-cae00 D-23)과 겹쳐 명령을 여럿 시킨 탓이다. 답: 잠금은 이번 한 번 `git pull`(또는 잠금 파일 삭제) 뒤 update-all, 그 뒤로는
+update-all 하나. `git … show 'stash@{0}^3:cluster.prod.yaml'` 은 설치기(노드 추가 등) 입력 복구라 update-all 과 무관 — 설치기를 돌릴 때만.
+

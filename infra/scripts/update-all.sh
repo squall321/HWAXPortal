@@ -928,6 +928,39 @@ if printf '%s' "$PROC_H" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
 else
   fail "절차 모듈 미기동 — /procedures-api/health 가 ok:true 가 아니다: $(printf '%s' "$PROC_H" | cut -c1-120)"
 fi
+# ── RA 포털 로그인(jwt-handoff) 콜백이 **끝까지** 열려 있나 — RA 가 원격인 박스(RA_HOST)만 ────────────────
+# 타일 SSO 는 포털 → nginx /report-archive/ → RA :3000 → RA 의 콜백 → 포털 JWKS 검증, 네 조각이 다 서야 한다. 어느 조각이 빠졌는지는
+# 콜백에 아무 토큰이나 던져 **상태코드와 본문 모양**으로 갈린다(RA 담당이 준 표, 2026-09-27 — 사람이 curl 로 재던 것을 여기서 찍는다):
+#   200 + HTML     → 라우트가 없어 요청이 포털 SPA 로 떨어졌다            (포털 몫: routes.local.env report-archive= · §2 nginx)
+#   404 + HTML     → nginx 가 냈다 — 라우트 경로가 어긋났다                 (포털 몫)
+#   405            → RA 가 옛 판(콜백 경로 없음)                            (RA 몫: -portal 번들로 RA 서버 update)
+#   404 + JSON     → RA 는 새 판인데 포털 SSO 가 꺼져 있다(JWKS 미설정)     (RA 몫: RA .env PORTAL_JWKS_URL=<포털 JWKS> 후 재시작)
+#   502/503/504/000→ 포털이 RA_HOST:3000 에 못 닿는다                      (방화벽 :3000 · RA 프로세스)
+#   3xx/400/401    → 콜백이 살아 있고 가짜 토큰을 거절했다 = 정상
+# RA 몫은 ⚠(bad) — 포털이 고칠 수 없는 것을 ✗ 로 두면 매 실행이 빨갛다. 포털 몫과 불통은 ✗(fail). 숫자는 RA 담당에게 그대로 전한다.
+_ra_cb_verdict() {  # $1=코드 $2=본문 파일 → "ok|bad|fail<TAB>문구"
+  local code="$1" body="$2" jwks="http://${_lan:-<이 박스 주소>}:8088/.well-known/jwks.json" html=0
+  grep -qiE '<!doctype html|<html' "$body" 2>/dev/null && html=1
+  case "$code/$html" in
+    30[1-8]/*|400/*|401/*) printf 'ok\tRA 포털 로그인 콜백 살아 있음(%s) — 라우트·RA 새 판·SSO 켜짐·도달 네 조각이 다 섰다\n' "$code" ;;
+    200/1) printf 'fail\tRA 포털 로그인 콜백이 **포털 SPA 로 떨어진다**(200 HTML) — nginx 에 report-archive 라우트가 없다. routes.local.env 의 report-archive= 와 §2 gen-nginx 출력을 보라\n' ;;
+    200/0) printf 'bad\tRA 포털 로그인 콜백이 200 을 냈다(리다이렉트가 아니다) — 표에 없는 모양. RA 담당에게 본문을 전한다: %s\n' "$(head -c 120 "$body" 2>/dev/null | tr -d '\n')" ;;
+    404/1) printf 'fail\tRA 라우트가 nginx 404 로 끝난다 — 경로가 어긋났다(routes.local.env 의 report-archive= 끝 / 와 §2 nginx 확인)\n' ;;
+    404/0) printf 'bad\tRA 는 새 판인데 **포털 SSO 가 꺼져 있다**(404) — RA 담당 몫: RA .env 에 PORTAL_JWKS_URL=%s 를 적고 재시작(그 주소가 RA 서버에서 닿는지 먼저)\n' "$jwks" ;;
+    405/*) printf 'bad\tRA 가 **옛 판**이다(콜백 경로 없음, 405) — RA 담당 몫: -portal 번들로 RA 서버 update. 포털은 할 일이 없다\n' ;;
+    502/*|503/*|504/*|000/*) printf 'fail\t포털이 RA(%s:%s)에 못 닿는다(%s) — RA 서버 방화벽 :%s · RA 프로세스 상태를 RA 담당과 확인\n' "${RA_HOST:-?}" "${RA_PORT:-3000}" "$code" "${RA_PORT:-3000}" ;;
+    *) printf 'bad\tRA 포털 로그인 콜백 응답 %s — 표에 없는 값. RA 담당에게 이 숫자를 전한다\n' "$code" ;;
+  esac
+}
+if [ -n "${RA_HOST:-}" ]; then
+  _lan="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  _ra_cb_body="$(mktemp)"
+  _ra_cb_code="$(curl -s -o "$_ra_cb_body" -w '%{http_code}' -m 8 -X POST "http://127.0.0.1:8088/report-archive/api/auth/portal-callback" -d token=probe-not-a-token 2>/dev/null || echo 000)"
+  IFS=$'\t' read -r _ra_cb_lvl _ra_cb_msg <<< "$(_ra_cb_verdict "${_ra_cb_code:-000}" "$_ra_cb_body")"
+  case "$_ra_cb_lvl" in ok) ok "$_ra_cb_msg" ;; bad) bad "$_ra_cb_msg" ;; *) fail "$_ra_cb_msg" ;; esac
+  echo "      RA 담당에게 줄 숫자: portal-callback → ${_ra_cb_code:-000} · 포털 JWKS: http://${_lan:-<이 박스 주소>}:8088/.well-known/jwks.json"
+  rm -f "$_ra_cb_body"
+fi
 # 서빙 중인 SPA 가 지금 소스로 빌드된 것인가 — dist 는 git 이 아니라 Drive 로 온다. 낡으면 화면이
 # 옛 API 를 불러 조용히 깨진다(2026-09-14 워크벤치→절차 개명 뒤 실제로 그랬다). 빌드 때 박아 둔
 # frontend 트리 해시와 지금 체크아웃의 트리 해시를 대조한다.

@@ -598,3 +598,36 @@ def test_doctor_tells_old_head_apart_from_secret_mismatch():
     doc = (ROOT / "infra/scripts/ste-doctor.sh").read_text(encoding="utf-8")
     assert "probe-not-a-secret" in doc and "www-authenticate" in doc.lower() and 'mw)  bad sso-secret "헤드에 **옛 판**' in doc
     assert "tsh status -f json" in doc and "원문:" in doc
+
+
+# ── §6 RA 포털 로그인 콜백 진단 — RA 담당의 표(200 HTML·405·404 JSON·502·303) 를 update-all 이 스스로 찍는다 ───────────
+def _ra_cb(code: str, body: str, tmp_path):
+    fn = UA[UA.index("_ra_cb_verdict() {"):]; fn = fn[:fn.index("\n}\n") + 3]
+    b = tmp_path / "body"; b.write_text(body)
+    r = subprocess.run(["bash", "-c", f'RA_HOST="{A}"; RA_PORT=3000; _lan="{A}"\n{fn}\n_ra_cb_verdict "{code}" "{b}"'], capture_output=True, text=True)
+    lvl, _, msg = r.stdout.rstrip("\n").partition("\t")
+    return lvl, msg
+
+
+def test_section6_ra_callback_table_maps_each_shape_to_the_right_owner(tmp_path):
+    assert _ra_cb("303", "", tmp_path)[0] == "ok"
+    assert _ra_cb("401", "", tmp_path)[0] == "ok" and _ra_cb("400", "", tmp_path)[0] == "ok"
+    lvl, msg = _ra_cb("200", "<!doctype html><html><head><title>HWAX</title>", tmp_path)
+    assert lvl == "fail" and "라우트" in msg, "포털 SPA 로 떨어졌다 = 포털 몫 = ✗"
+    lvl, msg = _ra_cb("404", '{"message":"not found"}', tmp_path)
+    assert lvl == "bad" and f"PORTAL_JWKS_URL=http://{A}:8088/.well-known/jwks.json" in msg, "RA SSO 꺼짐 = RA 몫 = ⚠ + 줄 주소"
+    lvl, msg = _ra_cb("404", "<html><head><title>404 Not Found</title></head>", tmp_path)
+    assert lvl == "fail" and "nginx" in msg
+    lvl, msg = _ra_cb("405", "", tmp_path)
+    assert lvl == "bad" and "옛 판" in msg
+    for c in ("502", "504", "000"):
+        lvl, msg = _ra_cb(c, "", tmp_path)
+        assert lvl == "fail" and f"{A}:3000" in msg, c
+    assert _ra_cb("418", "", tmp_path)[0] == "bad"
+
+
+def test_section6_ra_callback_probe_runs_only_with_ra_host_and_hands_the_number_to_ra():
+    i = UA.index("_ra_cb_verdict() {"); blk = UA[i:UA.index("# ── 6b)", i)]
+    assert 'if [ -n "${RA_HOST:-}" ]; then' in blk and "/report-archive/api/auth/portal-callback" in blk and "-d token=probe-not-a-token" in blk
+    assert "RA 담당에게 줄 숫자" in blk and "jwks.json" in blk
+
