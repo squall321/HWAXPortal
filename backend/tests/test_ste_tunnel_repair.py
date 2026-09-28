@@ -64,6 +64,10 @@ def test_stray_picks_only_our_own_ssh_tunnel_and_never_the_unit_itself():
     assert _stray({15810: ["111"], 15812: ["111"]}, "111", {"111": "ssh"}, {"111": ssh_cmd}) == ""
     # ③ ssh 가 아니면 고르지 않는다(그 포트를 쓰는 다른 서비스)
     assert _stray({15810: ["333"], 15812: []}, "222", {"333": "nginx"}, {"333": "nginx: worker"}) == ""
+    # ③' 명령줄이 **똑같아도** 이름이 ssh 가 아니면 고르지 않는다 — 위 ③ 은 명령줄 검사에 먼저 걸려 이름 규칙을 따로 못 봤다
+    #     (변이 실측: comm 검사를 빼도 통과했다). socat·autossh 같은 다른 도구가 같은 문자열을 인자로 가질 수 있다.
+    assert _stray({15810: ["777"], 15812: []}, "222", {"777": "socat"},
+                  {"777": "socat -L 127.0.0.1:15810:127.0.0.1:15810 TCP:h:15810"}) == ""
     # ④ ssh 라도 이 터널의 -L 이 아니면 고르지 않는다(남의 포워딩·일반 세션)
     assert _stray({15810: ["444"], 15812: []}, "222", {"444": "ssh"}, {"444": "ssh -L 127.0.0.1:9999:h:9999 u@h"}) == ""
     # ⑤ 두 포트를 같은 pid 가 쥐면 한 번만 나온다
@@ -120,3 +124,117 @@ def test_tunnel_unit_forwards_both_ports():
     unit = (ROOT / "infra/systemd/ste-tunnel.service").read_text(encoding="utf-8")
     assert "-L 127.0.0.1:15810:127.0.0.1:15810" in unit and "-L 127.0.0.1:15812:127.0.0.1:15812" in unit
     assert "ExitOnForwardFailure=yes" in unit, "포워딩이 실패하면 살아 있는 척하지 않는다"
+
+
+# ── 진입점 시험 — 진짜 스크립트를 **그 자신의 set -euo pipefail 아래서** 돌린다 ─────────────────────
+# 위의 함수 시험들은 함수를 떼어 set -e 없이 돌려서 이것을 못 봤다: `check_ports; _cp=$?` 가 set -e 로 그 자리에서 끝나
+# `--check` 의 진단(리스너·원인 분기·옛 터널)이 **한 번도 안 돌았다**(2026-09-28 dev 실측: rc 1 인데 진단 0줄).
+import shutil as _shutil
+import time as _time
+
+
+def _sandbox(tmp_path, mode: str, ss_lines: str = "", curl_rule: str = "000", extra_env_line: str = ""):
+    """tmp/HWAXPortal/infra/{scripts,systemd} + tmp/SmartTwinExplorer/deploy/transport.env + tmp/home.
+    ss·curl·systemctl·journalctl·sudo 는 **절대경로 셈**으로 막는다 — 실 터널·실 유닛을 절대 건드리지 않는다."""
+    portal = tmp_path / "HWAXPortal"; (portal / "infra/scripts").mkdir(parents=True); (portal / "infra/systemd").mkdir(parents=True)
+    _shutil.copy(TUN, portal / "infra/scripts/install-ste-tunnel.sh")
+    _shutil.copy(ROOT / "infra/systemd/ste-tunnel.service", portal / "infra/systemd/ste-tunnel.service")
+    ste = tmp_path / "SmartTwinExplorer/deploy"; ste.mkdir(parents=True)
+    cfg = tmp_path / "tp_ssh_config"; cfg.write_text("Host *\n")
+    (ste / "transport.env").write_text(
+        f"TRANSPORT_MODE={mode}\nREMOTE_USER=u\nHEAD_NODE=head\nTP_CLUSTER=example.teleport\nTELEPORT_SSH_CONFIG={cfg}\n{extra_env_line}\n")
+    home = tmp_path / "home"; home.mkdir()
+    shim = tmp_path / "shim"; shim.mkdir()
+    log = tmp_path / "calls.log"
+    (shim / "ss").write_text(
+        f"#!/usr/bin/env bash\necho \"ss $*\" >> '{log}'\n"
+        # 좀비는 cmdline 이 비어 있다 — /proc 파일은 크기가 0 이라 -s 로는 못 본다, 내용을 읽는다
+        "alive() { [ -n \"$(tr -d '\\0' < /proc/$1/cmdline 2>/dev/null)\" ]; }\n"
+        "case \"$*\" in\n"
+        "  *15810*) if [ -n \"${SS_15810_PID:-}\" ]; then alive \"$SS_15810_PID\" && echo \"LISTEN 0 128 127.0.0.1:15810 0.0.0.0:* users:((\\\"ssh\\\",pid=$SS_15810_PID,fd=3))\"; else printf '%s' \"${SS_15810:-}\"; fi ;;\n"
+        "  *15812*) printf '%s' \"${SS_15812:-}\" ;;\n"
+        "esac\nexit 0\n")
+    (shim / "curl").write_text(f"#!/usr/bin/env bash\necho \"curl $*\" >> '{log}'\n{curl_rule}\n")
+    (shim / "systemctl").write_text(f"#!/usr/bin/env bash\necho \"systemctl $*\" >> '{log}'\ncase \"$*\" in *MainPID*) echo 0 ;; *is-active*) echo active ;; esac\nexit 0\n")
+    (shim / "journalctl").write_text(f"#!/usr/bin/env bash\necho \"journalctl $*\" >> '{log}'\necho 'bind [127.0.0.1]:15810: Address already in use'\n")
+    (shim / "sudo").write_text(f"#!/usr/bin/env bash\necho \"SUDO $*\" >> '{log}'\nexit 97\n")
+    for f in shim.iterdir(): f.chmod(0o755)
+    def run(*args, **env):
+        # USER 를 **일부러 안 넘긴다** — cron·systemd 타이머처럼 축소된 환경에서도 set -u 로 죽지 않아야 한다
+        e = {"PATH": f"{shim}:{os.environ['PATH']}", "HOME": str(home), "XDG_RUNTIME_DIR": str(tmp_path),
+             "STE_TUNNEL_NONINTERACTIVE": "1", "SS_15810": ss_lines, "SS_15812": "", **env}
+        # 셈이 먼저 잡히는지 단언한 뒤에만 돈다(3라운드 사고: 셈을 잃은 하네스가 실 apptainer 로 dev nginx 를 내렸다)
+        guard = subprocess.run(["bash", "-c", "command -v ss curl systemctl journalctl sudo"], capture_output=True, text=True, env=e)
+        assert all(line.startswith(str(shim)) for line in guard.stdout.split()), guard.stdout
+        r = subprocess.run(["bash", str(portal / "infra/scripts/install-ste-tunnel.sh"), *args], capture_output=True, text=True, timeout=120, env=e)
+        return r, (log.read_text() if log.exists() else "")
+    return run, home
+
+
+def test_check_entrypoint_runs_its_diagnosis_under_set_e(tmp_path):
+    run, _ = _sandbox(tmp_path, "teleport")
+    r, calls = run("--check")
+    out = r.stdout + r.stderr
+    assert r.returncode == 1, out
+    assert "유닛 없음" in out and "15812 (MCP) → 000" in out
+    assert "아무도 듣지 않는다" in out, ("진단이 실제로 돈다 — set -e 가 check_ports 에서 끝내던 것", out)
+    assert "journal:" in out, "유닛 journal 꼬리도 보인다"
+
+
+def test_check_entrypoint_splits_listener_present_but_refused(tmp_path):
+    run, _ = _sandbox(tmp_path, "teleport")
+    r, _ = run("--check", SS_15812='LISTEN 0 128 127.0.0.1:15812 0.0.0.0:* users:(("ssh",pid=4242,fd=5))')
+    out = r.stdout + r.stderr
+    assert r.returncode == 1 and "포트는 열려 있는데 000" in out and "헤드에서 127.0.0.1:15812 로 가는 연결이 거부" in out, out
+
+
+def test_check_entrypoint_says_direct_boxes_need_no_tunnel(tmp_path):
+    """dev 실측: direct 박스인데 '유닛 없음·000·000' 빨강이었다."""
+    run, _ = _sandbox(tmp_path, "direct")
+    r, calls = run("--check")
+    assert r.returncode == 0 and "터널이 필요 없다" in r.stdout, r.stdout + r.stderr
+    assert "curl" not in calls, "직결 박스에서는 터널 포트를 찌르지도 않는다"
+
+
+def test_transport_mode_is_read_with_the_canonical_rule(tmp_path):
+    """종전 `_v` 는 첫 줄·주석 미처리라 `TRANSPORT_MODE=teleport  # 운영` 이 'teleport#운영' 으로 읽혀 '모른다' 로 죽었다.
+    transport.sh 는 bash 로 소싱해 teleport 로 읽는다 — 정본(마지막 줄 승·주석 제거)과 같아야 한다."""
+    run, _ = _sandbox(tmp_path, 'direct  # 처음엔 직결', extra_env_line='TRANSPORT_MODE="teleport"   # 운영 박스로 바꿈')
+    r, _ = run("--check")
+    out = r.stdout + r.stderr
+    assert "터널이 필요 없다" not in out and "유닛 없음" in out, ("마지막 줄(teleport)이 이긴다", out)
+
+
+def test_install_entrypoint_clears_a_stray_hand_made_tunnel_and_recovers(tmp_path):
+    """가장 흔한 뿌리 — 옛 손 터널이 15810 을 쥐면 리포 유닛의 -L 바인드가 실패해(ExitOnForwardFailure) 영원히 재시도하고,
+    사람 눈에는 '15810 은 되는데 15812 만 안 된다' 로 보인다. 진짜 프로세스(이름 ssh, cmdline 에 -L 127.0.0.1:15810)를
+    띄워 두고, 설치기가 **그것만** 내린 뒤 다시 세우는지 끝까지 본다."""
+    fake = tmp_path / "fakebin"; fake.mkdir()
+    # comm 이 'ssh' 이고 cmdline 에 이 터널의 -L 이 있는 **무해한 진짜 프로세스**. sleep 을 복사하면 뒤의 -L 인자를 거부하고
+    # **스스로 즉시 죽어서** '설치기가 내렸다' 단언이 헛돌았다(첫 판 실측). 인터프리터를 ssh 라는 이름의 링크로 부르면
+    # comm 은 링크 이름이 되고, -c 뒤 인자는 sys.argv 로 그대로 cmdline 에 남는다.
+    (fake / "ssh").symlink_to(os.path.realpath(_shutil.which("python3")))
+    stray = subprocess.Popen([str(fake / "ssh"), "-c", "import time; time.sleep(300)", "-L", "127.0.0.1:15810:127.0.0.1:15810"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    bystander = subprocess.Popen([_shutil.which("sleep"), "300"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        _time.sleep(0.5)
+        assert stray.poll() is None and open(f"/proc/{stray.pid}/comm").read().strip() == "ssh", "시험 전제: 옛 터널 흉내가 살아 있다"
+        # 셈 curl: 옛 터널이 살아 있는 동안은 15812 가 000, 내려가면 둘 다 정상 — 실물의 인과를 그대로 흉내 낸다
+        # ⚠ `kill -0` 으로 가르면 안 된다 — 내려간 옛 터널은 이 시험의 자식이라 **좀비**로 남고, kill -0 은 좀비에도 성공해
+        #   셈이 계속 '살아 있다' 고 했다(첫 판 실측). 좀비는 cmdline 이 비어 있다.
+        rule = (f'if [ -n "$(tr -d \'\\0\' < /proc/{stray.pid}/cmdline 2>/dev/null)" ]; then case "$*" in *15812*) printf 000 ;; *) printf 200 ;; esac\n'
+                f'else case "$*" in *15812*) printf 406 ;; *) printf 200 ;; esac; fi')
+        run, _ = _sandbox(tmp_path, "teleport", curl_rule=rule)
+        r, calls = run(SS_15810_PID=str(stray.pid))
+        out = r.stdout + r.stderr
+        stray.wait(timeout=15)
+        assert stray.returncode is not None, "옛 손 터널이 내려갔다"
+        assert bystander.poll() is None, "남의 프로세스는 건드리지 않는다"
+        assert r.returncode == 0 and "옛 터널을 걷어내고 두 포트 확인" in out, out
+        assert "SUDO" not in calls, "비대화식이면 sudo 를 부르지 않는다"
+        assert "systemctl --user restart ste-tunnel.service" in calls
+    finally:
+        for pr in (stray, bystander):
+            if pr.poll() is None:
+                pr.kill()

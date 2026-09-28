@@ -24,7 +24,7 @@ _code() { local c; c="$(curl -s -o /dev/null -w '%{http_code}' -m "${2:-4}" "$1"
 
 # 그 포트를 **누가** 듣고 있나 — 주소까지 보여 준다. 개수만 세면 '있다/없다' 만 알고 원인을 못 가른다.
 _port_line() { ss -ltnpH "sport = :$1" 2>/dev/null | sed "s/^/      :$1 /" ; }
-_port_pids() { ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u; }
+_port_pids() { ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u || true; }   # 무일치(=아무도 안 듣는다)는 실패가 아니다
 
 # 유닛이 아닌 **우리 소유 ssh 터널**이 그 포트를 잡고 있나. 이게 있으면 유닛의 -L 바인드가 실패하고
 # (ExitOnForwardFailure=yes) 유닛은 영원히 재시도한다 — 그동안 옛 프로세스가 15810 만 열고 있어
@@ -74,19 +74,40 @@ explain_15812() {
   journalctl --user -u ste-tunnel -n 8 --no-pager -o cat 2>/dev/null | sed 's/^/    journal: /'
 }
 
+# ── transport.env — --check 도 이것을 본다(direct 박스는 터널이 필요 없는데 '유닛 없음·000' 빨강을 냈다, 2026-09-28 dev 실측) ──
+TENV=""
+for c in "$ROOT/../SmartTwinExplorer/deploy/transport.env" "$HOME/SmartTwinExplorer/deploy/transport.env"; do
+  [ -f "$c" ] && { TENV="$c"; break; }
+done
+# 값 읽기는 **정본 규칙**(update-all `_envfile_value`·services.py `_infra_value`·ste-doctor `envv`)과 같다 — 마지막 줄이 이기고
+# `export `·인라인 주석·따옴표·CR 을 벗긴다. 종전 `_v` 는 첫 줄·주석 미처리라 `TRANSPORT_MODE=teleport  # 운영` 이
+# `teleport#운영` 으로 읽혀 "모른다" 로 죽었다(transport.sh 는 bash 로 소싱해 teleport 로 읽는다 — 두 독자가 달랐다).
+_v() {
+  [ -n "$TENV" ] || return 0
+  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$TENV" 2>/dev/null | tail -1 \
+    | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'
+}
+MODE="$(_v TRANSPORT_MODE)"
+
 if [ "${1:-}" = "remove" ]; then
   systemctl --user disable --now ste-tunnel.service 2>/dev/null || true
   rm -f "$UNIT"; systemctl --user daemon-reload
   ok "removed ste-tunnel.service"; exit 0
 fi
 if [ "${1:-}" = "--check" ]; then
+  if [ "$MODE" = direct ]; then
+    ok "transport 가 direct 다 — 포털이 헤드에 직결이라 터널이 필요 없다($TENV)"; exit 0
+  fi
   if [ -f "$UNIT" ]; then
     ok "유닛 설치됨: $UNIT ($(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown))"
     # 파일이 있어도 옛 손 유닛이면 15810 만 연다 — -L 목록을 본다(cae00 실측 2026-09-27)
     if grep -q -- '-L 127.0.0.1:15812:' "$UNIT"; then ok "유닛에 -L 15812 있음"
     else bad "유닛에 -L 15812 포워딩이 없다(옛 손 유닛) — 인자 없이 다시 실행하면 리포 유닛으로 덮어쓰고 재기동한다"; fi
   else bad "유닛 없음: $UNIT"; fi
-  check_ports; _cp=$?
+  # ⚠ `check_ports; _cp=$?` 로 쓰면 안 된다 — 이 스크립트는 set -e 라 check_ports 가 1 을 내는 순간 **여기서 끝나고**
+  #   아래 진단(리스너·원인 분기·옛 터널)이 한 번도 안 돌았다(2026-09-28 dev 실측: rc 1 인데 진단 0줄). 종전 판의
+  #   '로컬 리스너' 줄도 같은 이유로 죽은 코드였다.
+  _cp=0; check_ports || _cp=$?
   if [ "$_cp" != 0 ]; then
     explain_15812
     _st="$(_stray_pids)"
@@ -95,14 +116,8 @@ if [ "${1:-}" = "--check" ]; then
   exit $_cp
 fi
 
-# ── transport.env 에서 값 읽기 ─────────────────────────────────────────────
-TENV=""
-for c in "$ROOT/../SmartTwinExplorer/deploy/transport.env" "$HOME/SmartTwinExplorer/deploy/transport.env"; do
-  [ -f "$c" ] && { TENV="$c"; break; }
-done
+# ── 설치 — transport.env 가 있어야 한다(값은 위에서 읽었다) ─────────────────────────────
 [ -n "$TENV" ] || die "SmartTwinExplorer/deploy/transport.env 가 없다 — 런북 §4(접속 설정)가 먼저다"
-_v() { sed -n "s/^[[:space:]]*$1=[[:space:]]*//p" "$TENV" | head -1 | tr -d '"'"'"' \r'; }
-MODE="$(_v TRANSPORT_MODE)"
 case "$MODE" in
   direct)
     ok "transport 가 direct 다 — 포털이 헤드에 직결이라 터널이 필요 없다(아무것도 안 함)"; exit 0 ;;
@@ -119,14 +134,17 @@ SSH_CONFIG="${SSH_CONFIG/#\~/$HOME}"
 TARGET="$REMOTE_USER@$HEAD_NODE.$TP_CLUSTER"
 
 # ── 설치 ────────────────────────────────────────────────────────────────────
-if [ ! -e "/var/lib/systemd/linger/$USER" ]; then
+# $USER 는 로그인 셸이 세운다 — cron·systemd 타이머 같은 축소된 환경에는 없어서 set -u 가 여기서 스크립트를 죽였다
+# (2026-09-28 진입점 시험 실측: 'USER: unbound variable'). 이름은 id 로 직접 묻는다.
+_me="${USER:-$(id -un)}"
+if [ ! -e "/var/lib/systemd/linger/$_me" ]; then
   # 비대화식(update-all 안)에서는 sudo 프롬프트로 갱신을 매달지 않는다 — 건너뛰고 무엇이 남았는지 말한다.
   if [ -t 0 ] && [ "${STE_TUNNEL_NONINTERACTIVE:-0}" != 1 ]; then
     echo "→ linger 켜기(sudo, 1회) — 로그아웃·재부팅에도 터널이 산다"
-    sudo loginctl enable-linger "$USER"
+    sudo loginctl enable-linger "$_me"
   else
     echo "  ○ linger 미설정 — 지금은 건너뛴다(비대화식). 로그아웃·재부팅 뒤에도 터널이 살게 하려면 한 번:"
-    echo "      sudo loginctl enable-linger $USER"
+    echo "      sudo loginctl enable-linger $_me"
   fi
 fi
 mkdir -p "$UNIT_DIR"
