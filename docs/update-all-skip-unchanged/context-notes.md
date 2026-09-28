@@ -84,3 +84,30 @@ LF 로 갈아 208줄 diff 를 만들었다 — 파일 단위 커밋 규율 위�
 update-sites 의 fp 는 .env 와 HEAD 만이라 custom update 가 아티팩트를 갈아 넣는 서비스(kooremapper 류)엔 §2 의 아티팩트 지문이 맡는다(§4 대상 셋은
 git pull 만) · 시험은 포털 블록만 통째로 돌린다(다른 다섯 블록은 텍스트 배선 검사).
 
+## D-9. 2라운드 — '기동 성공' 이 거짓일 수 있다: 기록 조건은 rc 가 아니라 '새 프로세스가 답한다' (2026-09-27)
+
+확인 6(high 2). 뿌리 하나: start 스크립트(포털 start.sh·services.py up·mxwp/heax/sf/koorm 의 start)는 **떠 있는 인스턴스를 만나면 'already
+running' 으로 rc 0** 을 낸다. stop 이 실패했거나(권한·apptainer 오류) `NO_RESTART=1` 이면 옛 프로세스가 그대로인데, D-8 은 "기동이 성공한 뒤에만
+기록" 을 rc 0 으로 판정해 **새 지문을 적었다 → 그 서비스는 옛 코드로 영구 생략**. §2(deploy-all)와 §4(update-sites `already-up`) 둘 다.
+
+고침 — 기록 조건을 프로세스로: health 포트를 듣는 프로세스의 (pid, /proc 시작시각) 을 stop 전/start 후로 비교(`hwax_listener_ids`, `ss -ltnp`),
+**바뀌었을 때만** `hwax_mark_started`. 같으면 ✗ "재기동이 되지 않았다 — 같은 프로세스가 답한다" 로 블록 실패(rc 1), NO_RESTART=1 이면 · 로
+"기록하지 않는다"(다음 정상 실행이 재기동). start 가 rc 0 인데 아무도 안 들으면 ✗. 답은 하는데 pid 를 못 보면(ss 없음·다른 사용자 소유) ⚠ 무기록
+→ 매 회 재기동하되 보이게. `hwax_restart_cycle <이름> <지문> <stop> <start> <url…>` 하나로 묶어 여섯 블록·nginx·update-sites 가 같은 규율을 탄다.
+AIDH 는 `boot.sh --force` 가 스스로 uvicorn 을 갈아 끼우므로 stop 자리에 `:` — 이때 내려감 대기(최대 20초)를 건너뛴다(살아 있는 서비스 앞에서
+헛되이 세던 것).
+
+함께 확인된 것: ③ kooremapper `:8701/` 은 MCP 루트라 404 → 매 회 "죽었다 → 기동" 이었다(생략이 한 번도 안 됐다) → `/mcp`(406). ④ 인자 없는
+update-sites 는 portal 도 대상이라 §2 와 **같은 상태 파일**을 다른 형식의 지문으로 번갈아 덮어 핑퐁 재기동 → `restart-fp/sites/` 로 분리.
+⑤ aidh 지문이 `api_server/.env`(boot.sh 가 기동 때 다시 쓰는 파일)라 매 회 달랐다 → `deploy/apptainer/.env`. ⑥ 게이트웨이 fp 에 .env 가 없어
+`gateway_config.json`·`provision.env` 변경이 안 보였다 → 매니페스트 `data.identity` 의 비글롭 파일을 fp 에 넣는다. ⑦ `( … ) && ok || skip`
+안은 set -e 가 꺼져 있어 `*-from-drive.sh` 실패가 삼켜지고 옛 SIF 로 기동해 초록이었다 → `|| exit 1`. ⑧ 상태 파일을 못 적으면(sudo 로 한 번 돌려
+root 소유) 조용히 실패 → ⚠ + rc 0(재기동은 됐다).
+
+시험 규율(이 문서의 D-8 시험이 못 잡은 이유): 하네스의 start.sh 스텁이 "늘 새로 뜬다" 였다. 실물은 "떠 있으면 안 띄운다". 이번 하네스는 리스너를
+**진짜 프로세스**(lib 시험은 python http.server + 실제 curl·ss, 포털 블록은 sleep pid + ss/curl 셈)로 두고 start 스텁도 실물처럼 already-running
+을 낸다 — "stop 실패 → already running → 기록 없음 → 다음 정상 실행이 재기동·기록" 이 한 시험에 든다. 하네스가 띄운 백그라운드 프로세스는
+stdout 을 물면 subprocess 가 끝나지 않는다(실측 90초 timeout) — `>/dev/null 2>&1 </dev/null` 필수.
+
+남긴 것: `hwax_listener_ids` 는 가장 작은 pid 하나만 본다(nginx 워커 여럿) — pid 재사용으로 우연히 같아질 확률은 무시했다. `ss -p` 는 같은 사용자의
+프로세스만 보인다 — 다른 사용자로 띄운 서비스는 ⚠ 무기록(매 회 재기동, 보임). dev 실주행은 여전히 못 한다(deploy-all 은 dev 금지).

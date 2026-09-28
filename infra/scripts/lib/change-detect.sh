@@ -48,7 +48,61 @@ hwax_alive() {
 
 hwax_state_file() { printf '%s/%s' "${HWAX_RESTART_STATE_DIR:?HWAX_RESTART_STATE_DIR 미설정}" "$1"; }
 hwax_last_fp() { cat "$(hwax_state_file "$1")" 2>/dev/null || true; }
-hwax_mark_started() { mkdir -p "${HWAX_RESTART_STATE_DIR:?}" && printf '%s\n' "$2" > "$(hwax_state_file "$1")"; }
+hwax_mark_started() {  # 못 적어도 실패로 만들지 않는다 — 재기동은 이미 됐고, 기록이 없으면 다음 실행이 한 번 더 재기동할 뿐이다(sudo 로 한 번 돌려 root 소유가 된 상태 등)
+  if mkdir -p "${HWAX_RESTART_STATE_DIR:?}" 2>/dev/null && printf '%s\n' "$2" > "$(hwax_state_file "$1")" 2>/dev/null; then return 0; fi
+  echo "  ⚠ $1: 기준 지문을 기록하지 못했다($(hwax_state_file "$1"), 소유자 $(stat -c %U "$(hwax_state_file "$1")" 2>/dev/null || stat -c %U "${HWAX_RESTART_STATE_DIR}" 2>/dev/null || echo ?)) — 다음 실행도 재기동한다" >&2
+  return 0
+}
+
+# ── 재기동이 **실제로** 일어났는지는 프로세스로 확인한다 — start 스크립트는 떠 있는 인스턴스를 만나면 'already running' 으로 rc 0 을 낸다.
+#   stop 이 실패했거나 NO_RESTART=1 이면 옛 프로세스가 그대로인데 rc 0 이라, 그 rc 만 믿고 새 지문을 적으면 영구 생략이 된다(2라운드 검토).
+#   health url 의 포트를 듣는 프로세스(pid + /proc 시작시각)를 전/후로 비교해 **바뀌었을 때만** 기록한다. 자기 사용자의 프로세스만 보인다(ss -p).
+hwax_port_of_url() { local u="${1#*://}"; u="${u%%/*}"; case "$u" in *:*) printf '%s' "${u##*:}" ;; *) printf 80 ;; esac; }
+hwax_listener_ids() {  # $@=url… → "포트:pid:시작시각 …" (가장 작은 pid — nginx 워커 여럿의 순서에 흔들리지 않게). 못 보면 포트:?
+  local u p pid st out=""
+  for u in "$@"; do
+    p="$(hwax_port_of_url "$u")"
+    pid="$(ss -ltnpH "sport = :$p" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -n | head -1)"
+    if [ -n "$pid" ]; then st="$(awk '{print $22}' "/proc/$pid/stat" 2>/dev/null)"; out="$out $p:$pid:${st:-?}"; else out="$out $p:?"; fi
+  done
+  printf '%s' "${out# }"
+}
+hwax_wait_down() {  # $@=url… 최대 20초(HWAX_WAIT_DOWN_MAX — 시험용) — 전부 답하지 않게 되면 0
+  local i u alive
+  for i in $(seq 1 "${HWAX_WAIT_DOWN_MAX:-20}"); do
+    alive=0; for u in "$@"; do if hwax_alive "$u"; then alive=1; break; fi; done
+    [ "$alive" = 0 ] && return 0
+    sleep 1
+  done
+  return 1
+}
+# hwax_restart_cycle <이름> <지문> <stop 함수> <start 함수> <url…>
+#   생략 판정 → (RESTART!=1 이면) stop·내려갔는지 확인 → start → 리스너 프로세스가 바뀌었을 때만 기록. HWAX_RESTARTED=1 이면 실제로 새로 떴다.
+#   stop 함수 자리에 `:` 를 주면 start 가 스스로 옛 프로세스를 갈아 끼우는 서비스다(AIDH boot.sh --force) — 정지·내려감 대기를 건너뛴다.
+#   0 = 생략했거나 재기동했다(또는 NO_RESTART=1 로 start 만 했다 — 기록 없음) · 1 = start 실패, 재기동이 안 됐다(같은 프로세스가 답한다),
+#   또는 start 뒤에 아무것도 듣지 않는다.
+hwax_restart_cycle() {
+  local name="$1" cur="$2" stopf="$3" startf="$4" id0 id1 u; shift 4
+  HWAX_RESTARTED=0
+  hwax_restart_needed "$name" "$cur" "$@" || return 0
+  id0="$(hwax_listener_ids "$@")"
+  if [ "${RESTART:-0}" != 1 ] && [ "$stopf" != ":" ]; then
+    "$stopf" || true
+    hwax_wait_down "$@" || echo "  ✗ $name: 정지 뒤에도 답한다 — 옛 프로세스가 내려가지 않았다(stop 실패). start 는 'already running' 이 될 것이다" >&2
+  fi
+  "$startf" || return 1
+  id1="$(hwax_listener_ids "$@")"
+  case "$id1" in ""|*"?"*)
+    for u in "$@"; do
+      hwax_alive "$u" || { echo "  ✗ $name: start 는 성공이라는데 $u 가 답하지 않는다(리스너 없음) — 기준 지문을 기록하지 않는다" >&2; return 1; }
+    done
+    echo "  ⚠ $name: 답은 하는데 프로세스를 식별하지 못한다('${id1:-없음}' — ss 없음 또는 다른 사용자 소유) → 기준 지문을 기록하지 않는다. 다음 실행도 재기동한다" >&2; return 0 ;;
+  esac
+  if [ "$id1" != "$id0" ]; then HWAX_RESTARTED=1; hwax_mark_started "$name" "$cur"; return 0; fi
+  if [ "${RESTART:-0}" = 1 ]; then echo "  · $name: NO_RESTART=1 — start 만 했다(같은 프로세스). 기준 지문을 기록하지 않는다(다음 정상 실행이 재기동한다)"; return 0; fi
+  echo "  ✗ $name: 재기동이 되지 않았다 — 같은 프로세스가 답한다(stop 실패·already running). 기준 지문을 기록하지 않는다" >&2
+  return 1
+}
 
 hwax_restart_needed() {  # $1=이름 $2=지금 지문 $3…=health url
   local name="$1" cur="$2" last url; shift 2

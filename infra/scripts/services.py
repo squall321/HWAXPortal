@@ -444,7 +444,9 @@ def service_fp(svc: dict) -> str:
             parts.append("git:" + (r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "nogit"))
         except (OSError, subprocess.TimeoutExpired):
             parts.append("git:nogit")
-        for rel in [".env", *(svc.get("fp") or [])]:
+        # .env + 매니페스트 data.identity(글롭·백업 제외) — 게이트웨이는 .env 가 없고 gateway_config.json·provision.env 가 동작을 정한다(2라운드)
+        idents = [x for x in ((svc.get("data") or {}).get("identity") or []) if "*" not in str(x)]
+        for rel in dict.fromkeys([".env", *idents, *(svc.get("fp") or [])]):
             q = wd / rel
             if q.is_file():
                 st = q.stat()
@@ -455,6 +457,16 @@ def service_fp(svc: dict) -> str:
             else:
                 parts.append(f"{rel}:missing")
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
+
+
+def cmd_port(names: list[str]) -> int:
+    """health url 의 포트 — update-sites 가 '재기동이 실제로 됐나' 를 그 포트를 듣는 프로세스로 확인한다(2라운드: already-up 이 새 지문을 적었다)."""
+    from urllib.parse import urlparse
+    svcs = [s for s in load() if not names or s["name"] in names]
+    for s in svcs:
+        u = urlparse(str(s.get("health") or "")); port = u.port or (443 if u.scheme == "https" else 80 if u.scheme else "")
+        print(str(port) if len(svcs) == 1 else f"{s['name']} {port}")
+    return 0 if svcs else 1
 
 
 def cmd_fp(names: list[str]) -> int:
@@ -567,7 +579,7 @@ def cmd_enabled(names: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled", "fp"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled", "fp", "port"):
         print(__doc__)
         return 2
     action = sys.argv[1]
@@ -580,7 +592,7 @@ def main() -> int:
         return cmd_enabled(names)
     if action == "data":  # 데이터 경로 레지스트리 조회·검증(docs/data-migration)
         return cmd_data(names, check="--check" in args)
-    return {"status": cmd_status, "down": cmd_down, "update": cmd_update, "fp": cmd_fp}[action](names)
+    return {"status": cmd_status, "down": cmd_down, "update": cmd_update, "fp": cmd_fp, "port": cmd_port}[action](names)
 
 
 if __name__ == "__main__":
