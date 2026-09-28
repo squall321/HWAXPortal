@@ -127,6 +127,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 토큰 하나로 하위 전부(포털 권한으로 범위 결정)·REST→MCP | `docs/one-token/` (PLAN·checklist·context-notes) |
 | 클러스터 배선(ste=24대 웹·MCP, stcx=356대 낙하·DynaForge, 포털 SSO) | `docs/cluster-wiring/` (PLAN·checklist·context-notes) |
 | ste × cae00 운영(update-all 1회 셋업·사용자 PC Claude MCP 연결·터널·시크릿·파일 경로) | `docs/ste-cae00/` (PLAN·checklist·context-notes) |
+| ste(24대) 전각도 낙하 — 드라이버 앱·preflight·취소 전파 | `docs/ste-fullangle/` (PLAN·checklist·context-notes) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
