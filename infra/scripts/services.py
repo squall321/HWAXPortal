@@ -466,22 +466,45 @@ def service_fp(svc: dict) -> str:
 
 
 def cmd_port(names: list[str]) -> int:
-    """health url 의 포트 — update-sites 가 '재기동이 실제로 됐나' 를 그 포트를 듣는 프로세스로 확인한다(2라운드: already-up 이 새 지문을 적었다)."""
+    """이 서비스가 듣는 포트 전부(한 줄에 하나, service_urls 와 **같은 순서**) — update-sites 가 '재기동이 실제로 됐나' 를 그 포트를 듣는
+    프로세스로 확인한다(2라운드: already-up 이 새 지문을 적었다). 순서가 어긋나면 url↔리스너 짝이 밀린다."""
     from urllib.parse import urlparse
     svcs = [s for s in load() if not names or s["name"] in names]
     for s in svcs:
-        u = urlparse(str(s.get("health") or "")); port = u.port or (443 if u.scheme == "https" else 80 if u.scheme else "")
-        print(str(port) if len(svcs) == 1 else f"{s['name']} {port}")
+        for u in service_urls(s) or [""]:
+            q = urlparse(u); port = q.port or (443 if q.scheme == "https" else 80 if q.scheme else "")
+            print(str(port) if len(svcs) == 1 else f"{s['name']} {port}")
     return 0 if svcs else 1
 
 
+_URLVAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def service_urls(svc: dict) -> list[str]:
+    """이 서비스가 **듣는 url 전부** — `health` + 매니페스트 `urls`. 재기동이 됐는지는 이 전부가 새 프로세스여야 한다(5라운드:
+    하나만 갈렸는데 기록하면 그 인스턴스가 옛 코드로 영구 생략된다). `${KEY:-기본}` 은 infra/.env 를 정본 규칙(_infra_value)으로 푼다 —
+    포털의 nginx 포트(HTTP_PORT)처럼 박스마다 다른 값을 매니페스트에 박지 않기 위한 것이다."""
+    def _sub(m: "re.Match[str]") -> str:
+        try:
+            v = _infra_value(m.group(1))
+        except InfraEnvUnreadable:
+            v = None
+        return v if v else (m.group(2) or "")
+    out: list[str] = []
+    for u in [svc.get("health"), *(svc.get("urls") or [])]:
+        t = _URLVAR_RE.sub(_sub, str(u or "")).strip()
+        if t and t not in out:
+            out.append(t)
+    return out
+
+
 def cmd_health(names: list[str]) -> int:
-    """health url 그대로 — update-sites 가 내려감 대기·생존 판정에 쓴다. 포트만으로 루트(/)를 두드리면 루트가 404 인 서비스(agent-server)는
-    살아 있어도 '내려갔다' 로 읽혀 대기가 무효가 된다(3라운드). 리스너 식별은 `port`, 생존은 `health` 다."""
+    """이 서비스가 듣는 url 전부(한 줄에 하나) — update-sites 가 내려감 대기·생존·리스너 비교에 쓴다. 포트만으로 루트(/)를 두드리면
+    루트가 404 인 서비스(agent-server)는 살아 있어도 '내려갔다' 로 읽혀 대기가 무효가 된다(3라운드). 여러 이름을 주면 `<이름> <url>` 로 낸다."""
     svcs = [s for s in load() if not names or s["name"] in names]
     for s in svcs:
-        u = str(s.get("health") or "")
-        print(u if len(svcs) == 1 else f"{s['name']} {u}")
+        for u in service_urls(s) or [""]:
+            print(u if len(svcs) == 1 else f"{s['name']} {u}")
     return 0 if svcs else 1
 
 

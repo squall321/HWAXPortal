@@ -300,6 +300,24 @@ def test_cycle_does_not_record_when_the_listener_answers_but_cannot_be_identifie
     assert "rc=0 R=0" in r.stdout and "식별하지 못한다" in r.stderr and (st / "svc").read_text().strip() == "f1", (r.stdout, r.stderr)
 
 
+def test_cycle_token_pairing_is_not_disturbed_by_files_in_the_cwd(tmp_path, srv2):
+    """5라운드(low, latent): `$id0` 를 인용 없이 펼치면 `<포트>:?` 의 `?` 가 글롭이라 cwd 에 같은 이름의 파일이 여럿이면 토큰이
+    늘어나 url↔토큰 짝이 밀린다. 그러면 죽은 url 이 '같은 프로세스' 로, 갈린 url 이 '안 갈렸다' 로 읽힌다."""
+    (pa, pfa), (pb, pfb) = srv2
+    st = tmp_path / "state"; st.mkdir(exist_ok=True); (st / "svc").write_text("f1\n")
+    cwd = tmp_path / "cwd"; cwd.mkdir()
+    for suffix in ("x", "y"):                      # `<죽은 포트>:?` 가 이 둘로 펼쳐지면 토큰이 밀린다
+        (cwd / f"{pa}:{suffix}").write_text("")
+    r = _sh(f'{SRV_TOOLS}\ncd "{cwd}"\n_srv_start {pb} "{pfb}" || exit 9\n'   # A 는 죽어 있고 B 만 산다
+            f'_stop() {{ _srv_stop "{pfb}"; }}; _start() {{ _srv_start {pb} "{pfb}"; }}\n'
+            f'hwax_restart_cycle svc f2 _stop _start http://127.0.0.1:{pa}/ http://127.0.0.1:{pb}/; echo "rc=$?"',
+            HWAX_RESTART_STATE_DIR=str(st), **FAST)
+    out = r.stdout + r.stderr
+    assert "rc=1" in out and f"답하지 않는다(리스너 없음): http://127.0.0.1:{pa}/" in out, ("죽은 url 은 dead 로 읽혀야 한다", out)
+    assert "같은 프로세스가 답한다" not in out, ("글롭으로 토큰이 밀리면 이 문구가 나온다", out)
+    assert (st / "svc").read_text().strip() == "f1"
+
+
 def _cycle2(tmp_path, srv2, stop_body: str, start_body: str, cur="f2", state="f1", env=None):
     (pa, pfa), (pb, pfb) = srv2
     st = tmp_path / "state"; st.mkdir(exist_ok=True); (st / "svc").unlink(missing_ok=True)
@@ -366,7 +384,7 @@ def _portal_harness(tmp_path):
     write_stubs()
     shim = tmp_path / "bin"; _port_shims(shim, lst)
     fp_git = DEPLOY_ALL[DEPLOY_ALL.index("_fp_git() {"):]; fp_git = fp_git[:fp_git.index("\n") + 1]
-    ngfp = DEPLOY_ALL[DEPLOY_ALL.index("_ngfp() {"):]; ngfp = ngfp[:ngfp.index("\n}\n") + 3]
+    _i = DEPLOY_ALL.index("_ngfp() {"); ngfp = _envv_fn() + DEPLOY_ALL[_i:DEPLOY_ALL.index("\n}\n", _i) + 3]
     def run():
         script = (f'set -uo pipefail\nPORTAL_DIR="{repo}"; RESTART=0\n. "{LIB}"\nexport HWAX_RESTART_STATE_DIR="{tmp_path}/state" HWAX_RESTART_SKIPPED_FILE="{tmp_path}/skipped" HWAX_WAIT_DOWN_MAX=2 HWAX_WAIT_UP_MAX=2\n'
                   f'ok() {{ echo "OK:$*"; }}; skip() {{ echo "SKIP:$*"; }}; set_remote() {{ :; }}\n'
@@ -449,6 +467,11 @@ def test_portal_block_stops_at_a_failed_artifact_pull(portal):
 
 
 # ── deploy-all nginx 블록 — conf 재생성 → 지문 → 사이클, 실패는 skip 으로 집계 ─────────────────────────────
+def _envv_fn() -> str:
+    """deploy-all 의 .env 독자 — _ngfp·_hp·NG_PORT·SIF_DIR 넷이 같이 쓴다(5라운드). 블록 슬라이스 하네스는 이것도 함께 떼어 와야 한다."""
+    i = DEPLOY_ALL.index("_envv() {"); return DEPLOY_ALL[i:DEPLOY_ALL.index("\n}\n", i) + 3]
+
+
 def _nginx_block() -> str:
     i = DEPLOY_ALL.index('  NG_LOG="$(mktemp)"'); j = DEPLOY_ALL.index('  rm -f "$NG_LOG"\n', i) + len('  rm -f "$NG_LOG"\n')
     return DEPLOY_ALL[i:j]
@@ -468,7 +491,7 @@ def _nginx_harness(tmp_path):
     shim = tmp_path / "bin"; _port_shims(shim, lst)
     # 블록은 PORTAL_DIR 안의 infra/apptainer/bin-* 가 없으면 PATH 의 apptainer 를 쓴다 — 여기서는 이 셈이다(절대경로).
     (shim / "apptainer").write_text(f'#!/usr/bin/env bash\necho "apptainer $*" >> "{calls}"\n[ "${{NGSTOP_NOOP:-0}}" = 1 ] && exit 0\n{stop_lines}'); (shim / "apptainer").chmod(0o755)
-    ngfp = DEPLOY_ALL[DEPLOY_ALL.index("_ngfp() {"):]; ngfp = ngfp[:ngfp.index("\n}\n") + 3]
+    _i = DEPLOY_ALL.index("_ngfp() {"); ngfp = _envv_fn() + DEPLOY_ALL[_i:DEPLOY_ALL.index("\n}\n", _i) + 3]
     def run(env=None):
         script = (f'set -euo pipefail\nPORTAL_DIR="{repo}"\n. "{LIB}"\nexport HWAX_RESTART_STATE_DIR="{tmp_path}/state" HWAX_WAIT_DOWN_MAX=2 HWAX_WAIT_UP_MAX=2\n'
                   f'ok() {{ echo "OK:$*"; }}; skip() {{ echo "SKIP:$*"; }}\n{ngfp}\n{_nginx_block()}')
@@ -503,6 +526,8 @@ def test_nginx_block_bounces_on_conf_change_skips_otherwise_and_counts_a_failed_
     routes.write_text("ste=d\n")
     out, calls, rc = run(env={"GEN_FAIL": "1"})
     assert rc == 0 and "SKIP:nginx conf 생성 실패" in out and "TLS 경로가 리포 밖이다" in out and "OK:nginx reloaded" not in out and state() == third, ("생성 실패는 집계하고 사유를 보여 준다", out)
+    assert not any("instance stop" in c for c in calls) and "start.sh" not in calls, "생성이 실패했으면 살아 있는 nginx 를 건드리지 않는다(5라운드)"
+    assert "지금 /health → 200" in out, "단정하지 않고 실제로 잰 코드를 말한다"
     out, calls, rc = run(); assert "OK:nginx reloaded" in out and state() not in (None, third), "원인이 사라지면 다음 실행이 반영한다"
 
 
@@ -523,6 +548,23 @@ def test_deploy_all_wires_every_service_and_nginx_through_the_restart_cycle():
     assert "hwax_fp deploy/apptainer/.env" in DEPLOY_ALL and "hwax_fp .env api_server/.env" not in DEPLOY_ALL, "AIDH 의 실제 설정 파일(2라운드) — api_server/.env 는 boot.sh 가 기동 때 다시 쓴다"
     assert "_fp0" not in DEPLOY_ALL, "블록 진입 시점 기준은 버렸다"
     assert "infra/.state/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+
+def test_deploy_all_env_reader_matches_the_canonical_rule(tmp_path):
+    """4·5라운드: 한 파일 안에 .env 독자가 셋이라 `HTTP_PORT="8088"`·`'8088'`·인라인 주석에서 두 자리가 다른 값을 읽었다
+    (nginx 판정이 매 회 ✗ → skip → exit 4). 일치 시험은 둘 다 틀리면 통과하므로 **정본**(update-all `_envfile_value`)을 오라클로 댄다."""
+    canon = UPDATE_ALL[UPDATE_ALL.index("_envfile_value() {"):]
+    canon = canon[:canon.index("\n}\n") + 3].replace("_envfile_value()", "_canon()", 1)
+    cases = ['HTTP_PORT=8088', 'HTTP_PORT="8088"', "HTTP_PORT='8088'", 'HTTP_PORT=8088 # 포털', 'export HTTP_PORT=8088',
+             '  HTTP_PORT= 8088 ', 'HTTP_PORT=', 'HTTP_PORT=   # 설명', 'HTTP_PORT=8088\r', '#HTTP_PORT=8088',
+             'HTTP_PORT=1\nHTTP_PORT=2', 'export  HTTP_PORT="8088"  # c']
+    for c in cases:
+        f = tmp_path / "e.env"; f.write_text(c + "\n")
+        r = subprocess.run(["bash", "-c", _envv_fn() + canon + f'printf "[%s]|[%s]" "$(_envv "{f}" HTTP_PORT)" "$(_canon "{f}" HTTP_PORT)"'],
+                           capture_output=True, text=True, timeout=30)
+        a, b = r.stdout.split("|")
+        assert a == b, (c, a, b)
+    assert DEPLOY_ALL.count("_envv ") >= 4 and "sed -n 's/^HTTP_PORT=//p'" not in DEPLOY_ALL, "네 자리(_hp·NG_PORT·_ngfp 둘·SIF_DIR)가 한 독자를 쓴다"
 
 
 def test_images_from_drive_syncs_a_persistent_cache_and_fails_loudly():
@@ -557,6 +599,20 @@ def test_services_fp_tracks_head_env_and_identity_files_but_not_identity_dirs(tm
     assert m.service_fp({"name": "z", "dir": str(tmp_path / "nope")}) == m.service_fp({"name": "z", "dir": str(tmp_path / "nope")})
 
 
+def test_service_urls_lists_every_listener_and_expands_env_refs():
+    """5라운드(high): 인스턴스가 둘인 서비스에서 한쪽만 갈려도 기록돼 영구 생략됐다. 매니페스트가 듣는 url 전부를 들고,
+    박스마다 다른 값(포털 nginx 포트)은 `${KEY:-기본}` 으로 infra/.env 에서 푼다."""
+    m = _services_mod()
+    by = {s["name"]: s for s in m.load()}
+    for name, n in (("portal", 2), ("mx-white-paper", 2), ("signalforge", 2), ("kooremapper", 2), ("agent-server", 1)):
+        urls = m.service_urls(by[name])
+        assert len(urls) == n, (name, urls)
+        assert all(u and "${" not in u for u in urls), (name, urls)
+    assert m.service_urls(by["kooremapper"])[1].endswith("/mcp"), "MCP 루트는 404 라 /mcp 를 본다"
+    assert m.service_urls({"health": "http://h:1/a", "urls": ["http://h:${NO_SUCH_KEY_X:-9}/b", "http://h:1/a"]}) == \
+        ["http://h:1/a", "http://h:9/b"], "기본값을 쓰고 중복은 하나로"
+
+
 def test_services_port_and_health_print_from_the_real_manifest():
     py = ["python3", str(ROOT / "infra/scripts/services.py")]
     r = subprocess.run([*py, "port", "mcp-gateway"], capture_output=True, text=True, timeout=30)
@@ -565,6 +621,10 @@ def test_services_port_and_health_print_from_the_real_manifest():
     assert sorted(r.stdout.split()) == sorted(["mcp-gateway", "9110", "agent-server", "9009"]), r.stdout
     r = subprocess.run([*py, "health", "agent-server"], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0 and r.stdout.strip() == "http://localhost:9009/health", "생존·내려감 대기는 health 경로로(루트는 404 — 3라운드)"
+    r = subprocess.run([*py, "health", "portal"], capture_output=True, text=True, timeout=30)
+    assert r.stdout.split() == ["http://127.0.0.1:8723/health", "http://127.0.0.1:8088/health"], ("듣는 url 전부, 순서대로", r.stdout)
+    r = subprocess.run([*py, "port", "portal"], capture_output=True, text=True, timeout=30)
+    assert r.stdout.split() == ["8723", "8088"], ("포트도 같은 순서 — 어긋나면 url↔리스너 짝이 밀린다", r.stdout)
     assert subprocess.run([*py, "port", "no-such-service"], capture_output=True, text=True, timeout=30).returncode == 1
 
 
@@ -580,16 +640,17 @@ def _sites_harness(tmp_path, srv):
     log = tmp_path / "svc.log"; st = tmp_path / "state"; st.mkdir(exist_ok=True)
     svc = tmp_path / "svc.sh"
     svc.write_text(f'#!/usr/bin/env bash\n. "{LIB}"\n{SRV_TOOLS}\necho "$*" >> "{log}"\n'
-                   f'case "$1" in update) echo "$STUB_UPDATE";; fp) echo "$STUB_FP";; status) echo "  $STUB_STATUS x";;\n'
+                   f'case "$1" in update) printf "%b\\n" "$STUB_UPDATE";; fp) echo "$STUB_FP";; status) echo "  $STUB_STATUS x";;\n'
                    f'  port) [ "${{STUB_NO_HEALTH:-0}}" = 1 ] || echo {port};;\n'
                    f'  health) [ "${{STUB_NO_HEALTH:-0}}" = 1 ] || echo http://127.0.0.1:{port}/health;;\n'
                    f'  enabled) exit "${{STUB_ENABLED_RC:-0}}";;\n'
                    f'  down) [ "${{STUB_DOWN_NOOP:-0}}" = 1 ] || _srv_stop "{pf}";;\n'
                    f'  up) [ "${{STUB_UP_NOOP:-0}}" = 1 ] || hwax_alive http://127.0.0.1:{port}/health || _srv_start_health {port} "{pf}";; esac\nexit 0\n'); svc.chmod(0o755)
-    def run(fp, status, update="  · x  updated: unchanged (abc1234)", env=None, running=True):
+    def run(fp, status, update="  · x  updated: unchanged (abc1234)", env=None, running=True, name="x", show_cause=False):
         log.unlink(missing_ok=True)
         pre = f'{SRV_TOOLS}\n' + (f'hwax_alive http://127.0.0.1:{port}/health || _srv_start_health {port} "{pf}" || exit 9' if running else f'_srv_stop "{pf}"')
-        script = f'SVC="{svc}"\n. "{LIB}"\nexport HWAX_RESTART_STATE_DIR="{st}" HWAX_WAIT_DOWN_MAX=2\n{pre}\nshow_cause() {{ :; }}\n{_restart_svc_block()}\nrestart_svc x; echo "rc=$?"; echo "SKIPPED=[$SKIPPED_RESTART]"'
+        sc = 'show_cause() { echo "CAUSE:$2"; }' if show_cause else 'show_cause() { :; }'
+        script = f'SVC="{svc}"\n. "{LIB}"\nexport HWAX_RESTART_STATE_DIR="{st}" HWAX_WAIT_DOWN_MAX=2\n{pre}\n{sc}\n{_restart_svc_block()}\nrestart_svc "{name}"; echo "rc=$?"; echo "SKIPPED=[$SKIPPED_RESTART]"'
         e = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "STUB_FP": fp, "STUB_STATUS": status, "STUB_UPDATE": update, **(env or {})}
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=90, env=e)
         return r.stdout + r.stderr, (log.read_text().splitlines() if log.exists() else []), ((st / "x").read_text().strip() if (st / "x").exists() else None)
@@ -604,13 +665,13 @@ def sites(tmp_path, srv):
 
 def test_update_sites_uses_the_last_start_fingerprint_and_records_only_a_real_restart(sites):
     out, calls, state = sites("f1", "✓ up")
-    assert calls == ["enabled x", "update x", "fp x", "port x", "health x", "down x", "up x"] and state == "f1", ("처음(기록 없음)은 재기동하고 기록한다", out, calls)
+    assert calls == ["enabled x", "update x", "fp x", "health x", "down x", "up x"] and state == "f1", ("처음(기록 없음)은 재기동하고 기록한다", out, calls)
     out, calls, state = sites("f1", "✓ up")
     assert "재기동 생략" in out and calls == ["enabled x", "update x", "fp x", "status x"] and "SKIPPED=[ x]" in out and "rc=0" in out, (out, calls)
     out, calls, state = sites("f2", "✓ up")
     assert "down x" in calls and "up x" in calls and state == "f2" and "정지 뒤에도" not in out, "지문이 달라졌으면 재기동 — /health 로 내려감을 봐 진단 오탐이 없다"
     out, calls, state = sites("f2", "✗ down", running=False)
-    assert calls == ["enabled x", "update x", "fp x", "status x", "port x", "health x", "down x", "up x"] and "rc=0" in out and state == "f2", ("죽어 있으면 띄운다", out)
+    assert calls == ["enabled x", "update x", "fp x", "status x", "health x", "down x", "up x"] and "rc=0" in out and state == "f2", ("죽어 있으면 띄운다", out)
     out, calls, _ = sites("f2", "✓ up", env={"HWAX_FORCE_RESTART": "agent-server x"})
     assert "down x" in calls and "up x" in calls, "강제 목록"
     out, calls, _ = sites("f2", "✓ up", env={"HWAX_RESTART_ALL": "1"})
@@ -633,17 +694,15 @@ def test_update_sites_does_not_record_when_down_failed_and_up_said_already_up(si
     3라운드: 내려감 대기를 /health 로 하니 'down 실패' 진단도 이제 나온다(루트 404 서비스에서는 절대 안 나왔다)."""
     out, calls, state = sites("f1", "✓ up"); assert state == "f1"
     out, calls, state = sites("f2", "✓ up", env={"STUB_DOWN_NOOP": "1", "STUB_UP_NOOP": "1"})
-    assert "rc=1" in out and "재기동이 되지 않았다" in out and "정지 뒤에도" in out and "/health 가 답한다" in out and state == "f1", (out, calls)
+    assert "rc=1" in out and "재기동이 되지 않았다" in out and "정지 뒤에도 답한다" in out and "/health" in out and state == "f1", (out, calls)
     out, calls, state = sites("f2", "✓ up")
     assert "rc=0" in out and state == "f2", "다음 정상 실행이 재기동하고 그때 기록한다"
 
 
-def test_update_sites_fails_when_up_said_ok_but_nothing_answers_unless_not_enabled_here(sites):
-    """3라운드: `?` 갈래가 lib 와 달리 생존을 안 봐 up rc 0 뒤 아무도 안 들어도 '✓ 완료' rc 0 이었다. 이 박스 대상이 아닌 서비스(only_on)는 up 이 건너뜀 rc 0 이 맞다."""
+def test_update_sites_fails_when_up_said_ok_but_nothing_answers(sites):
+    """3라운드: `?` 갈래가 lib 와 달리 생존을 안 봐 up rc 0 뒤 아무도 안 들어도 '✓ 완료' rc 0 이었다."""
     out, calls, state = sites("f2", "✗ down", running=False, env={"STUB_UP_NOOP": "1"})
     assert "rc=1" in out and "답하지 않는다(리스너 없음)" in out and state is None, (out, calls)
-    out, calls, state = sites("f2", "✗ down", running=False, env={"STUB_UP_NOOP": "1", "STUB_ENABLED_RC": "1"})
-    assert "rc=0" in out and "⚠" in out and state is None, ("대상이 아니면 ⚠ 무기록·rc 0", out)
 
 
 def test_update_sites_refuses_a_name_that_is_not_in_the_manifest(sites):
@@ -655,7 +714,74 @@ def test_update_sites_refuses_a_name_that_is_not_in_the_manifest(sites):
 def test_update_sites_does_not_fail_a_service_that_has_no_health_url(sites):
     """4라운드: health 없는 서비스(services.py 는 'started (no health url)' 로 정상 지원)를 포트 0 루트로 두드려 매 회 ✗ rc 1 이었다 → 판정 불가면 ⚠."""
     out, calls, state = sites("f1", "? no-health", env={"STUB_NO_HEALTH": "1"})
-    assert "rc=0" in out and "식별하지 못해" in out and "답하지 않는다" not in out and state is None, (out, calls)
+    assert "rc=0" in out and "health url 이 없어 재기동을 확인할 수 없다" in out and "답하지 않는다" not in out and state is None, (out, calls)
+
+
+def test_update_sites_skips_a_service_this_box_does_not_own(sites):
+    """5라운드: 이 박스 대상이 아닌 서비스(only_on)를 down/up 태우고 내려감 대기 20초를 쓴 뒤 '같은 프로세스가 답한다' 오탐 ✗ 로
+    실행 전체를 실패로 만들었다. `?` 갈래는 이미 면제하고 있었는데 `*)` 갈래가 그 조건을 안 봤다(같은 파일 안의 규율 불일치)."""
+    out, calls, state = sites("f1", "✓ up", env={"STUB_ENABLED_RC": "1"})
+    assert "rc=0" in out and "이 박스 대상 아님" in out and calls == ["enabled x"] and state is None, (out, calls)
+
+
+def test_update_sites_refuses_a_flag_as_a_service_name(sites):
+    """5라운드(high→medium): services.py 는 `-` 로 시작하는 인자를 이름 목록에서 걸러 '이름 없음 = 전부' 로 읽는다. 그래서
+    `update-sites.sh --force` 가 14개 서비스를 통째로 update·down·up 했다(제외 약속된 report-archive 포함)."""
+    out, calls, state = sites("f1", "✓ up", name="--force")
+    assert "rc=1" in out and "서비스명이 아니다" in out and calls == [], (out, calls)
+
+
+def test_update_sites_rejects_an_unknown_flag_before_doing_anything():
+    """같은 뿌리의 다른 쪽 — 인식 못 한 플래그가 `TARGETS="$*"` 로 들어가지 못하게 한다."""
+    r = subprocess.run(["bash", str(ROOT / "infra/scripts/update-sites.sh"), "--force"], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 2 and "알 수 없는 옵션" in (r.stdout + r.stderr), (r.returncode, r.stdout + r.stderr)
+    r = subprocess.run(["bash", str(ROOT / "infra/scripts/update-sites.sh"), "--help"], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0 and "사용법" in r.stdout, "--help 는 그대로 동작한다"
+
+
+def test_update_sites_sees_a_pull_failure_that_is_not_on_the_last_line(sites):
+    """5라운드: `tail -1` 만 봐서 여러 줄이 나오면 첫 줄의 ✗ 가 밀려 갱신 실패가 통째로 삼켜졌다."""
+    out, calls, state = sites("f1", "✓ up", update="  ✗ x  FAIL: Could not resolve host\n  · y  updated: unchanged (abc)")
+    assert "rc=2" in out and "갱신(git pull)" in out, ("마지막 줄이 아니어도 ✗ 를 본다", out, calls)
+
+
+def test_update_sites_shows_the_pull_output_as_the_cause_of_a_pull_failure(sites):
+    """5라운드: rc 2 갈래가 up 출력(성공 로그)을 '실패 원인' 으로 보여 줬다 — 같은 임시파일을 up 이 덮었다."""
+    out, calls, state = sites("f2", "✓ up", update="  ✗ x  FAIL: Could not resolve host", show_cause=True)
+    assert "CAUSE:" in out and "Could not resolve host" in out.split("CAUSE:", 1)[1], ("사유는 pull 출력이어야 한다", out)
+
+
+def _sites2_harness(tmp_path, srv2):
+    """리스너 둘인 서비스(mxwp api+web·sf api+front·koorm api+mcp 꼴) — `health` 가 url 두 줄을 낸다."""
+    (pa, pfa), (pb, pfb) = srv2
+    log = tmp_path / "svc2.log"; st = tmp_path / "state2"; st.mkdir(exist_ok=True)
+    svc = tmp_path / "svc2.sh"
+    svc.write_text(f'#!/usr/bin/env bash\n. "{LIB}"\n{SRV_TOOLS}\necho "$*" >> "{log}"\n'
+                   f'case "$1" in update) echo "  · x  updated: unchanged (abc)";; fp) echo "$STUB_FP";; status) echo "  ✓ up  x";; enabled) exit 0;;\n'
+                   f'  health) echo http://127.0.0.1:{pa}/; echo http://127.0.0.1:{pb}/;;\n'
+                   f'  down) _srv_stop "{pfa}"; [ "${{STUB_KEEP_B:-0}}" = 1 ] || _srv_stop "{pfb}";;\n'
+                   f'  up) hwax_alive http://127.0.0.1:{pa}/ || _srv_start {pa} "{pfa}"; hwax_alive http://127.0.0.1:{pb}/ || _srv_start {pb} "{pfb}";; esac\nexit 0\n'); svc.chmod(0o755)
+    def run(fp, env=None):
+        log.unlink(missing_ok=True)
+        script = (f'SVC="{svc}"\n. "{LIB}"\nexport HWAX_RESTART_STATE_DIR="{st}" HWAX_WAIT_DOWN_MAX=2\n{SRV_TOOLS}\n'
+                  f'hwax_alive http://127.0.0.1:{pa}/ || _srv_start {pa} "{pfa}" || exit 9\n'
+                  f'hwax_alive http://127.0.0.1:{pb}/ || _srv_start {pb} "{pfb}" || exit 9\n'
+                  f'b0=$(cat "{pfb}")\nshow_cause() {{ :; }}\n{_restart_svc_block()}\nrestart_svc x; echo "rc=$? b=$([ "$(cat "{pfb}")" = "$b0" ] && echo same || echo new)"')
+        e = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "STUB_FP": fp, **(env or {})}
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=120, env=e)
+        return r.stdout + r.stderr, ((st / "x").read_text().strip() if (st / "x").exists() else None)
+    return run
+
+
+def test_update_sites_with_two_listeners_records_only_when_both_are_replaced(tmp_path, srv2):
+    """5라운드(high): 3라운드가 lib 를 url 별 비교로 고쳤는데 update-sites 는 그 규율을 손으로 다시 쓴 복사본이라 수정을 못 받았다.
+    인스턴스 둘 중 하나가 옛 프로세스로 남아도 기준 지문이 적혀 **영구 생략**됐다(mxwp·signalforge·kooremapper·portal 전부 해당)."""
+    pb = srv2[1][0]
+    run = _sites2_harness(tmp_path, srv2)
+    out, state = run("f1"); assert "rc=0" in out and state == "f1", ("처음엔 둘 다 갈리고 기록한다", out)
+    out, state = run("f2", env={"STUB_KEEP_B": "1"})     # down 이 B 를 놓친다 → up 은 B 를 '이미 떠 있다' 로 본다
+    assert "rc=1" in out and "b=same" in out and f"같은 프로세스가 답한다: http://127.0.0.1:{pb}/" in out and state == "f1", ("하나라도 옛 프로세스면 무기록", out)
+    out, state = run("f2"); assert "rc=0" in out and state == "f2", "다음 정상 실행이 둘 다 갈고 기록한다"
 
 
 def _sites_driver_block() -> str:
@@ -691,7 +817,17 @@ def test_update_sites_portal_pull_failure_does_not_abort_the_rest(tmp_path, srv)
 def test_update_sites_keeps_its_state_apart_from_deploy_all():
     """2라운드(C4): 인자 없는 update-sites 는 portal 도 대상 — §2 와 같은 상태 파일을 다른 형식의 지문으로 번갈아 덮으면 핑퐁 재기동."""
     assert 'HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$ROOT/infra/.state/restart-fp/sites}"' in UPDATE_SITES
-    assert '"$SVC" port "$name"' in UPDATE_SITES and '"$SVC" health "$name"' in UPDATE_SITES and "hwax_listener_ids" in UPDATE_SITES and 'hwax_wait_down "$_probe"' in UPDATE_SITES
+    assert 'mapfile -t _urls < <("$SVC" health "$name"' in UPDATE_SITES and 'hwax_verify_restarted "$name" "$cur" "$id0" "$id1" "${_urls[@]}"' in UPDATE_SITES, "판정은 lib 정본을 쓴다(5라운드)"
+    assert 'hwax_wait_down "${_urls[@]}"' in UPDATE_SITES
+
+
+def test_the_per_url_verdict_lives_in_one_place():
+    """5라운드(high): 3라운드가 lib 를 url 별 비교로 고쳤는데 update-sites 는 복사본이라 수정을 못 받았다 — 규율은 한 곳에만 있어야 한다."""
+    lib = LIB.read_text(encoding="utf-8")
+    assert "hwax_verify_restarted() {" in lib and lib.count("hwax_verify_restarted") >= 3, "정의·주석·사이클 호출"
+    assert "hwax_verify_restarted" in UPDATE_SITES, "update-sites 도 같은 함수를 쓴다"
+    for f in (UPDATE_SITES, DEPLOY_ALL):
+        assert 'if [ "$id1" != "$id0" ]' not in f, "손으로 다시 쓴 판정이 남아 있으면 다음 수정이 한쪽에만 들어간다"
 
 
 def test_update_all_no_longer_hand_wires_the_env_window():

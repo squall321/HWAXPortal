@@ -29,6 +29,10 @@ case "${1:-}" in
     echo "  방식       : 포털 먼저 down→up --update→health(실패 시 나머지 손대지 않고 중단),"
     echo "              이어서 나머지를 서비스별 순차 재기동(하나 실패해도 계속) → 요약."
     exit 0 ;;
+  # 인식 못 한 플래그를 그대로 두면 `TARGETS="$*"` 에 들어가고, services.py 가 `-` 로 시작하는 인자를 이름 목록에서 걸러
+  # **'이름 없음 = 전부'** 로 읽어 14개 서비스를 통째로 update·down·up 한다(제외 약속된 report-archive 포함. 5라운드 실측).
+  --) shift ;;
+  -?*) echo "알 수 없는 옵션: $1  (사용법: $(basename "$0") [-n|--dry-run] [서비스명...])" >&2; exit 2 ;;
 esac
 
 # ── 대상 산출: 인자가 있으면 그 목록, 없으면 매니페스트에서 자동 ──
@@ -154,19 +158,26 @@ show_cause() {
 # 기동이 성공한 뒤에만 지문을 적는다. HWAX_RESTART_ALL=1 은 종전 동작. docs/update-all-skip-unchanged D-5·D-8.
 SKIPPED_RESTART=""
 restart_svc() {
-  local name="$1" rc tmp upd cur last id0 id1 _port _url _hurl _probe _en _restart_fail=0 _upd_fail=0
+  local name="$1" rc tmp tmpu cur last id0 id1 _en _restart_fail=0 _upd_fail=0; local -a _urls=()
+  # 이름이 플래그면 여기서 끊는다 — services.py 는 `-` 로 시작하는 인자를 이름 목록에서 걸러 '이름 없음 = 전부' 로 읽는다(5라운드).
+  case "$name" in -*) echo "  ✗ $name: 서비스명이 아니다(옵션처럼 보인다) — 실행을 멈춘다" >&2; return 1 ;; esac
   # 매니페스트에 없는 이름이면 여기서 끊는다 — 종전엔 update·up 이 조용히 아무것도 안 하고 `fp` 가 빈 값이라 아래 검증 블록을 통째로
   # 건너뛴 뒤 "✓ 완료" · exit 0 으로 끝났다(4라운드 실측). 서비스를 하나도 건드리지 않은 실행이 '전부 최신화' 로 끝나면 안 된다.
   "$SVC" enabled "$name" >/dev/null 2>&1; _en=$?
   if [ "$_en" = 2 ]; then
     echo "  ✗ $name: services.yaml 에 없는 서비스다 — 이름을 확인하라($SVC status 로 목록)" >&2; return 1
   fi
-  tmp="$(mktemp)"
+  # 이 박스 대상이 아니면(only_on·unless_env) 아무것도 하지 않는다 — 종전엔 down/up 을 태우고 내려감 대기 20초를 쓴 뒤
+  # '같은 프로세스가 답한다' 오탐 ✗ 로 실행 전체를 실패로 만들었다(5라운드). `?` 갈래는 이미 면제하고 있었다(규율 불일치).
+  if [ "$_en" = 1 ]; then
+    echo "  · $name: 이 박스 대상 아님(services.yaml only_on/unless_env) → 건너뜀"; return 0
+  fi
+  tmp="$(mktemp)"; tmpu="$(mktemp)"    # tmpu = update 출력. 아래 tee 가 tmp 를 up 출력으로 덮으므로 '갱신 실패' 사유는 tmpu 에만 남는다(5라운드)
   echo "── $name ──  [$(date '+%H:%M:%S')]"
   echo "  · update (git pull) …"
-  "$SVC" update "$name" 2>&1 | tee "$tmp"
-  upd="$(tail -1 "$tmp")"
-  printf '%s' "$upd" | grep -q '✗' && _upd_fail=1
+  "$SVC" update "$name" 2>&1 | tee "$tmpu"
+  # 마지막 줄만 보면 안 된다 — 여러 줄이 나오는 경우 첫 줄의 ✗ 가 밀려 갱신 실패가 통째로 삼켜졌다(5라운드).
+  grep -qE '^[[:space:]]*✗' "$tmpu" && _upd_fail=1
   cur="$("$SVC" fp "$name" 2>/dev/null | tail -1)"; last="$(hwax_last_fp "$name")"
   # 갱신(git pull) 이 실패해도 지문이 같고 살아 있으면 재기동하지 않는다 — 같은 옛 코드를 내렸다 올려도 얻는 게 없고, GitHub 이 며칠 안 닿으면
   # update-all 마다 챗 스택이 끊긴다(3라운드). 실패는 종료코드로만 올린다(요약의 FAILED 에 든다).
@@ -174,7 +185,7 @@ restart_svc() {
      && ! printf ' %s ' "${HWAX_FORCE_RESTART:-}" | grep -q " $name " \
      && "$SVC" status "$name" 2>/dev/null | grep -q '✓ up'; then
     echo "  · $name: 마지막 기동 뒤 변경 없음(지문 $cur) · 살아 있음 → 재기동 생략 (전부 재기동: HWAX_RESTART_ALL=1)  [$(date '+%H:%M:%S')]"
-    SKIPPED_RESTART="$SKIPPED_RESTART $name"; rm -f "$tmp"
+    SKIPPED_RESTART="$SKIPPED_RESTART $name"; rm -f "$tmp" "$tmpu"
     # rc 2 = '갱신만 실패, 서비스는 정상·무변경'. rc 1 과 갈라야 한다 — 포털 게이트가 rc≠0 을 '재기동 실패' 로 읽어 나머지 전부를
     # 중단시켰다(무인자 실행에서 아홉 서비스가 손도 안 닿았고, 안내는 원인을 '포털 로그' 로 잘못 가리켰다. 4라운드 실측).
     if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 옛 코드 그대로 살아 있어 재기동은 생략, 종료코드만 올린다" >&2; return 2; fi
@@ -182,43 +193,42 @@ restart_svc() {
   fi
   # 재기동이 실제로 됐는지는 health 포트를 듣는 프로세스(pid·시작시각)로 본다 — down 이 실패해도 up 은 'already-up' 으로 rc 0 을 내고,
   # 그 rc 만 믿고 새 지문을 적으면 옛 프로세스가 영구 생략된다(2라운드 검토 실측).
-  # 리스너 식별은 포트로, 생존·내려감 대기는 매니페스트 health url 로 — 루트(/)가 404 인 서비스(agent-server)는 포트 루트를 두드리면
-  # 살아 있어도 '내려갔다' 로 읽혀 대기가 무효가 된다(3라운드).
-  _port="$("$SVC" port "$name" 2>/dev/null | tail -1)"; _url="http://127.0.0.1:${_port:-0}/"
-  _hurl="$("$SVC" health "$name" 2>/dev/null | tail -1)"; _probe="${_hurl:-$_url}"   # _hurl 이 비면(매니페스트에 health 없음) 생존을 **판정할 수 없다**
-  id0="$(hwax_listener_ids "$_url")"
+  # 이 서비스가 **듣는 url 전부**(health + 매니페스트 urls). 포트 루트가 아니라 매니페스트 경로를 쓴다 — 루트(/)가 404 인
+  # 서비스(agent-server)는 포트 루트를 두드리면 살아 있어도 '내려갔다' 로 읽혀 대기가 무효가 된다(3라운드).
+  mapfile -t _urls < <("$SVC" health "$name" 2>/dev/null | grep -v '^[[:space:]]*$')
+  if [ "${#_urls[@]}" -gt 0 ]; then id0="$(hwax_listener_ids "${_urls[@]}")"; else id0=""; fi
   echo "  · down (기존 인스턴스 정리) …"
   "$SVC" down "$name" >/dev/null 2>&1 || true
-  hwax_wait_down "$_probe" || echo "  ✗ $name: 정지 뒤에도 $_probe 가 답한다 — 옛 프로세스가 내려가지 않았다(down 실패)" >&2
+  if [ "${#_urls[@]}" -gt 0 ]; then
+    hwax_wait_down "${_urls[@]}" || echo "  ✗ $name: 정지 뒤에도 답한다(${_urls[*]}) — 옛 프로세스가 내려가지 않았다(down 실패)" >&2
+  fi
   echo "  · up (build → start → health 대기) …"
   "$SVC" up "$name" 2>&1 | tee "$tmp"   # 화면+임시파일 동시 → 라이브 + 원인분석용 캡처
   rc=${PIPESTATUS[0]}
   if [ "$rc" = 0 ] && [ -n "$cur" ]; then
-    id1="$(hwax_listener_ids "$_url")"
-    case "$id1" in ""|*"?"*)
-         # 이 박스 대상(only_on)인데 아무도 안 답하면 up 의 rc 0 은 거짓이다 — lib 사이클과 같은 규율(3라운드). 대상이 아닌 서비스는 up 이
-         # '건너뜀' rc 0 을 내는 게 맞으므로 ✗ 로 만들지 않는다.
-         # health url 이 없는 서비스(services.py 가 'started (no health url)' 로 정상 지원)는 살았는지 판정할 수 없다 → ✗ 로 만들지 않는다(4라운드).
-         if [ -n "$_hurl" ] && [ "$_en" = 0 ] && ! hwax_alive "$_hurl"; then
-           echo "  ✗ $name: up 은 성공이라는데 $_hurl 가 답하지 않는다(리스너 없음) — 기준 지문을 기록하지 않는다" >&2; rc=1
-         else echo "  ⚠ $name: 프로세스를 식별하지 못해('${id1:-없음}') 기준 지문을 기록하지 않는다 — 다음 실행도 재기동한다" >&2; fi ;;
-      *) if [ "$id1" != "$id0" ]; then hwax_mark_started "$name" "$cur"     # 띄운 시점의 지문 — 다음 실행의 비교 기준
-         else echo "  ✗ $name: 재기동이 되지 않았다 — 같은 프로세스가 답한다(down 실패·already-up). 기준 지문을 기록하지 않는다" >&2; rc=1; fi ;;
-    esac
+    if [ "${#_urls[@]}" = 0 ]; then
+      # health url 이 없는 서비스(services.py 가 'started (no health url)' 로 정상 지원)는 재기동을 **판정할 수 없다** → 기록하지 않는다(4라운드).
+      echo "  ⚠ $name: 매니페스트에 health url 이 없어 재기동을 확인할 수 없다 — 기준 지문을 기록하지 않는다(다음 실행도 재기동한다)" >&2
+    else
+      # url **마다** 전/후 리스너를 비교하는 정본(lib). 하나라도 옛 프로세스면 ✗ 무기록 — 이 규율을 여기서 손으로 다시 쓰면
+      # lib 의 다음 수정이 이쪽에 안 들어온다(5라운드에 실제로 갈라져 인스턴스 둘 중 하나가 영구 생략됐다).
+      id1="$(hwax_listener_ids "${_urls[@]}")"
+      hwax_verify_restarted "$name" "$cur" "$id0" "$id1" "${_urls[@]}" || rc=1
+    fi
   fi
   [ "$rc" -ne 0 ] && _restart_fail=1
   # 갱신 실패는 종료코드로 올린다(옛 코드로 떠 있어도 초록으로 끝내지 않는다). 재기동 자체는 됐으면 2 — 포털 게이트가 중단하지 않게.
   if [ "$_upd_fail" = 1 ]; then [ "$_restart_fail" = 1 ] && rc=1 || rc=2; fi
   if [ "$rc" = 2 ]; then
     echo "  · ✗ $name: 갱신(git pull) 실패 — 서비스 자체는 정상이다  [$(date '+%H:%M:%S')]"
-    show_cause "$name" "$(cat "$tmp")"
+    show_cause "$name" "$(cat "$tmpu")"   # 갱신 실패의 사유는 update 출력에 있다(tmp 는 성공한 up 출력으로 덮여 있다 — 5라운드)
   elif [ "$rc" -ne 0 ]; then
     echo "  · ✗ $name 실패 (rc=$rc)  [$(date '+%H:%M:%S')]"
     show_cause "$name" "$(cat "$tmp")"
   else
     echo "  · ✓ $name 완료  [$(date '+%H:%M:%S')]"
   fi
-  rm -f "$tmp"
+  rm -f "$tmp" "$tmpu"
   return "$rc"
 }
 

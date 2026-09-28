@@ -177,9 +177,17 @@ note() { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/change-detect.sh"
 HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$PORTAL_DIR/infra/.state/restart-fp}"; export HWAX_RESTART_STATE_DIR
 _fp_git() { printf '%s|' "$(git rev-parse HEAD 2>/dev/null || echo nogit)"; }   # 서브셸 안에서: 지문 앞에 git HEAD
+# .env 값 하나 — **정본 규칙**(update-all `_envfile_value` · services.py `_infra_value` · ste-doctor `envv` 와 글자 단위로 같다):
+#   `export KEY=` 허용, 공백 뒤 `#` 이후 제거, 양끝 공백 제거, 따옴표(" ')·CR 제거, 마지막 활성 줄이 이긴다.
+# 한 파일 안에서 표현을 따로 쓰면 두 자리가 다른 값을 읽는다 — HTTP_PORT="8088" 에서 포털 블록은 8088, nginx 블록은 `"8088"` 을
+# 읽어 매 회 ✗ + skip + exit 4 였다(4라운드). 홑따옴표·인라인 주석에서도 같은 일이 난다(5라운드) → 넷이 이 함수를 쓴다.
+_envv() {  # $1=파일 $2=키
+  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$2=//p" "$1" 2>/dev/null | tail -1 \
+    | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'
+}
+
 _ngfp() {  # nginx 가 실제로 읽는 것 — conf 와 conf 가 경로로만 가리키는 인증서·키(내용이 바뀌어도 conf 는 한 글자 안 바뀐다)
-  local c k; c="$(sed -n 's/^TLS_CERT_PATH=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' ')"
-  k="$(sed -n 's/^TLS_KEY_PATH=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' ')"
+  local c k; c="$(_envv "$PORTAL_DIR/infra/.env" TLS_CERT_PATH)"; k="$(_envv "$PORTAL_DIR/infra/.env" TLS_KEY_PATH)"
   hwax_fp "$PORTAL_DIR/infra/nginx/hwax.conf" "$PORTAL_DIR/${c:-infra/tls/hwax.crt}" "$PORTAL_DIR/${k:-infra/tls/hwax.key}"
 }
 
@@ -198,7 +206,7 @@ if want portal; then
     ./infra/scripts/images-from-drive.sh || exit 1      # portal.sif + nginx.sif + frontend/dist (영구 캐시). 설치 실패는 여기서 끊는다 — 서브셸 안은 set -e 가 꺼져 있다
     # 지문은 받은 **뒤** 한 번 — 마지막 기동 지문과 비교한다(§1 이 이미 당긴 커밋·§1c/1d/1e 가 쓴 .env·routes 도 여기 들어간다)
     _cur="$(_fp_git; hwax_fp infra/apptainer/*.sif frontend/dist infra/.env backend/.env backend/config/routes.local.env)"
-    _hp="$(sed -n 's/^HTTP_PORT=//p' infra/.env 2>/dev/null | tail -1 | tr -d ' "')"
+    _hp="$(_envv infra/.env HTTP_PORT)"
     _stop()  { ./infra/scripts/stop.sh 2>/dev/null || true; }          # stop → start = pick up new conf/images
     _start() { HWAX_NO_BUILD=1 ./infra/scripts/start.sh; }
     hwax_restart_cycle portal "$_cur" _stop _start http://127.0.0.1:8723/health "http://127.0.0.1:${_hp:-8088}/health" || exit 1
@@ -274,7 +282,7 @@ if want heax; then
       # 각 앱 런타임 모델 dir 로 증분 동기(비치명).
       [ -f deploy/apptainer/models-from-drive.sh ] && bash deploy/apptainer/models-from-drive.sh || true
       # SIF_DIR 판독은 dist-from-drive 의 env_get 과 같게(큰·작은따옴표 둘 다). 캐시 디렉터리(.drive-dist)는 지문에 넣지 않는다 — 원격 재업로드만으로 바뀐다.
-      _sd="$(sed -n 's/^SIF_DIR=//p' .env 2>/dev/null | tail -1 | tr -d '"'"'"' ')"; _sd="${_sd:-$HOME/serviceApptainers}"
+      _sd="$(_envv .env SIF_DIR)"; _sd="${_sd:-$HOME/serviceApptainers}"
       _cur="$(_fp_git; hwax_fp frontend/dist var/sifs .env deploy/apptainer/cache/*.deb deploy/apptainer/cache/python-*-x86_64-linux.tar.gz deploy/apptainer/cache/node-*.tar.gz "$_sd"/heaxhub_*.sif "$_sd"/base_*.sif)"
       _stop()  { bash deploy/apptainer/stop.sh 2>/dev/null || true; }
       _start() { if ! HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh; then
@@ -425,7 +433,7 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   NG_LOG="$(mktemp)"
   # `tr -d ' "'` 는 위 포털 블록의 _hp 와 **같은 표현**이다 — 한쪽만 인용을 벗기면 HTTP_PORT="8088" 에서 두 자리가 다른 포트를 본다
   # (실측: nginx 사이클이 http://127.0.0.1:"8088"/health 를 두드려 매 회 ✗ + skip + exit 4, 같은 실행의 포털 블록은 정상. 4라운드)
-  NG_PORT="$(sed -n 's/^HTTP_PORT=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1 | tr -d ' "')"
+  NG_PORT="$(_envv "$PORTAL_DIR/infra/.env" HTTP_PORT)"
   # conf 가 그대로고 nginx 가 살아 있으면 bounce 하지 않는다 — 종전엔 무조건 내렸다 올렸다(docs/update-all-skip-unchanged D-6)
   # conf 생성 rc 를 버리면 안 된다 — 실패하면 옛 conf 가 그대로 남고, 그 지문은 '마지막으로 띄운 시점' 과 **같아서** 사이클이 생략하고
   # /health 200 이라 "reloaded with current routes" 초록으로 끝난다. 유일한 사유가 NG_LOG 인데 성공 갈래는 그것을 tail 하지 않고 지운다
@@ -435,6 +443,9 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   ( cd "$PORTAL_DIR" && ./infra/scripts/gen-nginx-conf.sh ) >"$NG_LOG" 2>&1 || _genrc=$?
   _ngcur="$(_ngfp)"    # 새로 만든 conf + 인증서·키 — 마지막으로 nginx 를 띄운 시점의 것과 비교
   _ngrc=0
+  # gen 이 실패했으면 사이클을 **돌리지 않는다** — conf 를 잘라 낸 갈래(리다이렉션이 열린 뒤 실패)에서는 지문이 달라져
+  # 살아 있는 nginx 를 깨진 conf 로 갈아 끼우게 된다(5라운드).
+  [ "$_genrc" = 0 ] &&
   ( cd "$PORTAL_DIR"
     APPT="apptainer"; for c in infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && { APPT="$c"; break; }; done
     _stop()  { "$APPT" instance stop hwax_nginx >>"$NG_LOG" 2>&1 || true; }
@@ -445,7 +456,8 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   # "reloaded" 초록이 됐다(3라운드 실측: 옛 conf 로 돌면서 exit 0). /health 200 은 '떠 있다' 일 뿐 '새 conf 로 떴다' 가 아니다.
   NG_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:${NG_PORT:-8088}/health" 2>/dev/null)" || true
   if [ "$_genrc" != 0 ]; then
-    skip "nginx conf 생성 실패(rc=$_genrc) — 라우팅이 갱신되지 않았다(옛 conf 로 돈다). 아래는 사유다."
+    # '옛 conf 로 돈다' 고 단정하지 않는다 — gen 이 conf 를 잘라 낸 갈래도 있다. 아는 것만 말한다: 갱신 못 했다 + 지금 /health 코드.
+    skip "nginx conf 생성 실패(rc=$_genrc) — 라우팅을 갱신하지 못했다. nginx 는 건드리지 않았다(지금 /health → ${NG_CODE:-000}). 아래는 사유다."
     tail -12 "$NG_LOG" | sed 's/^/      /'
   elif [ "$_ngrc" != 0 ]; then
     skip "nginx 재기동 실패(rc=$_ngrc) — 같은 프로세스가 답하거나 뜨지 않았다. 옛 라우팅 conf 로 돌고 있을 수 있다. 아래는 마지막 로그다."

@@ -36,6 +36,10 @@ services:
     # 다른 서비스가 점유해 응답하면(health_ok 는 3xx/4xx 도 up 처리) "already-up" 오판 → 백엔드 미재기동.
     # 실제 사고: 재가동 틈에 wekan 스냅의 FerretDB 디버그 핸들러가 :8088 을 선점(303) → up 이 스킵.
     health: http://127.0.0.1:8723/health
+    # 이 서비스는 리스너가 둘이다(포털 백엔드 + nginx) — 재기동이 됐는지 판정할 때 **둘 다** 새 프로세스여야 한다.
+    # 하나만 갈렸는데 기록하면 그 인스턴스는 옛 코드로 영구 생략된다(5라운드). `${KEY:-기본}` 은 infra/.env 로 풀린다.
+    urls:
+      - http://127.0.0.1:${HTTP_PORT:-8088}/health
     # 데이터 경로 레지스트리(docs/data-migration/PLAN.md §5). HWAX_DATA_ROOT 없으면 무영향.
     # ⚠ classes 는 리스트(- name:) 가 아니라 매핑 — update-all §6b 가 '^\s+- name:' 를 grep 해 서비스 목록을 만든다.
     data:
@@ -65,6 +69,8 @@ services:
     # API 를 앵커로 삼는다(nginx 경유 금지 — 업스트림이 죽으면 502 인데 expect 없이는 up 이 된다).
     expect: 200
     health: http://127.0.0.1:8800/api/v1/healthz
+    urls:   # 리스너 둘 — api(위 health) + web. 둘 다 새 프로세스여야 재기동으로 인정한다(5라운드)
+      - http://127.0.0.1:5173/
     data:
       # 데이터 루트 env 없음(infra/scripts/_common.sh:44 DATA_DIR 고정) — 브리지 심링크로 잇는다(D2). 주입 안 함.
       backup_want: [mxwp]
@@ -192,6 +198,8 @@ services:
     # 실제 백엔드이고 /health 가 진짜 엔드포인트다({"status":"ok","service":"SignalForge API"}).
     expect: 200
     health: http://127.0.0.1:18000/health
+    urls:   # 리스너 둘 — API(위 health) + 프론트
+      - http://127.0.0.1:17370/
     data:
       # 데이터 루트 env 없음(scripts/_common.sh:10 DATA_DIR 고정) — 브리지 심링크로 잇는다(D2). 주입 안 함.
       backup_want: [signalforge]
@@ -248,6 +256,8 @@ services:
     # :8701(MCP)은 루트가 404 라 앵커로 못 쓴다 — 도구 수는 update-all 이 tools-map 으로 본다.
     expect: 200
     health: http://127.0.0.1:8700/api/health
+    urls:   # 리스너 둘 — API(위 health) + MCP. MCP 루트는 404 라 /mcp(406) 를 본다
+      - http://127.0.0.1:8701/mcp
     data:
       # 데이터 루트 env 없음(platform/infra/scripts/_common.sh:63 DATA_DIR 고정) — 브리지 심링크로 잇는다(D2). 주입 안 함.
       app_instance: koorm_api
