@@ -111,3 +111,39 @@ stdout 을 물면 subprocess 가 끝나지 않는다(실측 90초 timeout) — `
 
 남긴 것: `hwax_listener_ids` 는 가장 작은 pid 하나만 본다(nginx 워커 여럿) — pid 재사용으로 우연히 같아질 확률은 무시했다. `ss -p` 는 같은 사용자의
 프로세스만 보인다 — 다른 사용자로 띄운 서비스는 ⚠ 무기록(매 회 재기동, 보임). dev 실주행은 여전히 못 한다(deploy-all 은 dev 금지).
+
+## D-10. 3라운드 — 리스너가 여럿이면 **전부** 갈려야 기록, start 뒤 유예, nginx rc 집계, §4 의 health 경로 (2026-09-28)
+
+확인 17(중복 제거 열 갈래, high 3)·기각 1. 3라운드가 대상으로 삼은 것은 D-9 의 수정 자체다.
+
+- **(high) url 이 둘인 서비스에서 하나만 갈려도 기록됐다.** 식별자 문자열("포트:pid:시각 포트:pid:시각")을 통째로 비교해 한 항목만 달라도 "바뀌었다"
+  였다. 포털 stop.sh 가 hwax_nginx 만 못 내리면(인스턴스마다 `|| true`) start.sh 는 포털만 새로 띄우고 8088 은 옛 nginx 인데 새 지문 + nginx 기준 지문까지
+  적혀 다음 실행부터 영구 생략. mxwp·sf·koorm 도 같은 구조. → url 마다 비교해 **하나라도 같으면 ✗ rc 1·무기록**(NO_RESTART 면 · 무기록), 하나라도 `?` 면
+  답하는지 보고 답하면 ⚠ 무기록·안 답하면 ✗. 시험은 리스너 둘(진짜 http.server 둘)로 '하나만 갈림' 을 별도 케이스로 박았고, 포털 하네스의 ss·curl 셈은
+  **포트별** 리스너 파일로 바꿨다(포트를 무시하는 셈은 이 갈래를 원리적으로 못 본다).
+- **(high) nginx 블록이 사이클의 ✗ 를 `|| true` 로 삼켰다.** "같은 프로세스가 답한다" 인데 /health 200 만 보고 "reloaded" 초록·exit 0 — 옛 conf 로 돌면서
+  update-all 전체가 초록. → rc 를 `_ngrc` 로 받아 0 이 아니면 skip(DEPLOY_FAILED 집계). nginx 블록도 행동 시험을 얻었다(conf 변경→bounce·같음→생략·정지 실패→skip).
+- **start 뒤 유예 0.** start 가 포트 바인드 전에 돌아오는 스크립트(SignalForge up.sh 의 프론트 — instance start 뒤 배너만 찍고 끝)에서 정상 기동을
+  "답하지 않는다(리스너 없음)" ✗ 로 오탐 → 블록 skip·무기록·다음 실행 재기동. cae00 첫 실행의 "배포 항목 2건 skip" 이 이 모양일 가능성이 크다.
+  → `hwax_wait_up`(기본 10초, 전부 답하면 즉시) 을 id1 산출 전에 둔다.
+- **성공 갈래가 health 를 안 봤다**(medium→low 로 확인). 새 리스너가 404/502 여도 기록·✓. 반박 에이전트의 판정: 다음 실행의 생존 검사가 곧바로 다시
+  띄우므로 영구 생략은 아니고, 여기서 ✗ 로 막으면 늦게 뜨는 백엔드(heax caddy→업스트림)가 매 회 재기동된다. → 기록은 유지하고 ⚠ 로 표면화.
+- **§4 update-sites**: 내려감 대기·생존을 포트 루트(/)로 두드려 루트가 404 인 agent-server 는 살아 있어도 '내려갔다' — 'down 실패' 진단이 구조적으로
+  안 나왔다 → `services.py health <이름>` 을 두고 그 url 로 대기(리스너 식별은 `port`). `?` 갈래가 lib 와 달리 생존을 안 봐 죽은 서비스에 "✓ 완료" rc 0 →
+  이 박스 대상(`enabled`)인데 안 답하면 ✗ rc 1(대상 아닌 searxng 류는 ⚠ rc 0 유지 — 반박 에이전트가 이 함정을 미리 잡았다). 갱신(git pull) 실패 시
+  변경 없고 살아 있는 서비스도 down→up 을 탔다(GitHub 이 며칠 안 닿으면 update-all 마다 챗 스택 절단) → 생략하고 rc 1 만 올린다.
+- **(medium) services.py fp 가 identity 디렉터리를 넣었다.** heax-hub `var/integration_state` 는 celery 가 45초마다 다시 쓰는 런타임 상태라
+  `update-sites.sh heax-hub` 는 매 회 전체 스택 재기동이었다(update-all §4 대상 셋은 무영향). → identity 는 **파일만**, 디렉터리는 `fp:` 에 명시할 때만.
+- HEAXHub stop.sh 가 `_common.sh` 를 소싱하지 않아 `instance_running` 이 rc 127 → '모름' 갈래로 인프라 인스턴스 넷을 무조건 stop(결과는 무해, 가드가
+  죽은 코드). 배포 스크립트의 `2>/dev/null` 이 오류를 숨겼다. → 소싱 한 줄(형제 리포, 파일 단위 커밋).
+
+시험 36(28→36): 리스너 둘 사이클 3갈래 · 늦은 바인드 · start 실패인데 새 프로세스 · 미건강 새 프로세스 ⚠ 기록 · 포털 블록 '하나만 갈림'·아티팩트(SIF·dist)
+변경 · nginx 블록 행동 4갈래 · update-sites pull 실패 무바운스·`?`+무응답 ✗·대상 아님 ⚠ · identity 디렉터리 제외 · `health` 명령. 텍스트 단언은 `|| exit 1`
+까지 포함(3라운드 변이 5종이 전부 생존했던 자리).
+
+**사고(검토 중, dev).** 탐색 에이전트 하나가 nginx 블록 하네스를 상대경로로 불러 `$T` 가 상대경로가 됐고, 블록 안 `cd "$PORTAL_DIR"` 뒤 PATH 의 셈 항목이
+풀려 **실 `apptainer instance stop hwax_nginx` 가 dev 에서 실행됐다**(:8088 → 000). 멱등 `start.sh` 로 복구. 규칙: 하네스 경로는 전부 절대경로,
+PATH 셈은 `cd` 뒤에도 살아 있어야 하며, 실물 명령이 PATH 에 있는 하네스는 `command -v` 로 셈이 먼저 잡히는지 단언한다([[review-agents-leave-probes]]).
+
+남긴 것(low, 기록): `hwax_listener_ids` 는 포트당 최소 pid 하나 — nginx 워커 여럿·pid 재사용은 무시. `hwax_wait_up` 은 새 프로세스가 미건강하면 매 재기동에
+최대 10초를 더 쓴다(정상 기동엔 0). heax 블록의 start.sh 는 백엔드가 죽어도 rc 0 이라 'ok heax up' 이 되는 것은 이 작업 전부터의 모양 — 별건.

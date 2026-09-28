@@ -427,16 +427,20 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   # conf 가 그대로고 nginx 가 살아 있으면 bounce 하지 않는다 — 종전엔 무조건 내렸다 올렸다(docs/update-all-skip-unchanged D-6)
   ( cd "$PORTAL_DIR" && ./infra/scripts/gen-nginx-conf.sh ) >"$NG_LOG" 2>&1 || true
   _ngcur="$(_ngfp)"    # 새로 만든 conf + 인증서·키 — 마지막으로 nginx 를 띄운 시점의 것과 비교
+  _ngrc=0
   ( cd "$PORTAL_DIR"
     APPT="apptainer"; for c in infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && { APPT="$c"; break; }; done
     _stop()  { "$APPT" instance stop hwax_nginx >>"$NG_LOG" 2>&1 || true; }
     _start() { HWAX_NO_BUILD=1 ./infra/scripts/start.sh >>"$NG_LOG" 2>&1; }
-    hwax_restart_cycle nginx "$_ngcur" _stop _start "http://127.0.0.1:${NG_PORT:-8088}/health" ) || true
-  # `|| true` 로 rc 를 삼킨다 — 이 파일은 set -e 라 서브셸 실패가 배포 전체를 끊는데, 판정은 종료코드가 아니라
-  # 바로 아래 실제 상태(/health)로 하므로 삼켜도 실패가 사라지지 않는다(로그는 NG_LOG 에 남아 실패 분기에서 나온다).
-  # 안 삼키면 nginx 가 안 떠 있을 때 그 판정에 닿기 전에 여기서 죽어 skip·tail 로그·Health 요약·종료코드 집계가 통째로 빠진다.
+    hwax_restart_cycle nginx "$_ngcur" _stop _start "http://127.0.0.1:${NG_PORT:-8088}/health" ) || _ngrc=$?
+  # rc 를 변수로 받는다(`|| true` 로 버리지 않는다) — 이 파일은 set -e 라 서브셸 실패가 여기서 배포 전체를 끊으면 아래 skip·로그·
+  # Health 요약·종료코드 집계가 통째로 빠지고, 반대로 버리면 "같은 프로세스가 답한다(stop 실패)" 인데 /health 200 만 보고
+  # "reloaded" 초록이 됐다(3라운드 실측: 옛 conf 로 돌면서 exit 0). /health 200 은 '떠 있다' 일 뿐 '새 conf 로 떴다' 가 아니다.
   NG_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:${NG_PORT:-8088}/health" 2>/dev/null)" || true
-  if [ "${NG_CODE:-000}" = "200" ]; then
+  if [ "$_ngrc" != 0 ]; then
+    skip "nginx 재기동 실패(rc=$_ngrc) — 같은 프로세스가 답하거나 뜨지 않았다. 옛 라우팅 conf 로 돌고 있을 수 있다. 아래는 마지막 로그다."
+    tail -12 "$NG_LOG" | sed 's/^/      /'
+  elif [ "${NG_CODE:-000}" = "200" ]; then
     ok "nginx reloaded with current routes (/health → 200)"
   else
     skip "nginx refresh 실패 — /health → ${NG_CODE:-000}. 아래는 마지막 로그다."

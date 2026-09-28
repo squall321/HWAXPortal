@@ -7,6 +7,7 @@
 #                                          밑의 SIF 를 같은 내용으로 덮어쓰면 squashfs 가 깨지고, cp 는 mtime 을 리셋해 지문이 매번 달라진다.
 #   hwax_alive <url>                       0 이면 답한다(200 401 302 405 406). curl 은 rc 가 아니라 코드로 판정.
 #   hwax_last_fp <이름> / hwax_mark_started <이름> <지문>   마지막으로 **띄운** 시점의 지문(상태 파일). 기동이 성공한 뒤에만 적는다.
+#   hwax_restart_cycle …                 아래 함수 머리 참조 — 재기동·기록의 정본 경로.
 #   hwax_restart_needed <이름> <지금 지문> <url>…   0=재기동해야 한다 · 1=생략. 기준은 마지막 기동 지문이다 — '블록 전/후' 를 기준으로 삼으면
 #                                          블록 밖에서 일어난 변경(update-all §1 의 git reset·§1c/1d/1e 의 .env·routes 기록·운영자 편집)을 하나도
 #                                          못 봐 백엔드 커밋과 설정 변경이 재기동을 영원히 못 일으킨다(1라운드 검토 실측). 기록이 없으면 재기동.
@@ -76,13 +77,25 @@ hwax_wait_down() {  # $@=url… 최대 20초(HWAX_WAIT_DOWN_MAX — 시험용) �
   done
   return 1
 }
+hwax_wait_up() {  # $@=url… 최대 10초(HWAX_WAIT_UP_MAX) — 전부 답하면 0. start 가 포트 바인드 전에 돌아오는 스크립트(SF 프론트 up.sh 는
+  local i u ok   # instance start 뒤 배너만 찍고 끝난다)에 주는 유예다 — 없으면 정상 기동을 '답하지 않는다' ✗ 로 오탐한다(3라운드).
+  for i in $(seq 1 "${HWAX_WAIT_UP_MAX:-10}"); do
+    ok=1; for u in "$@"; do hwax_alive "$u" || { ok=0; break; }; done
+    [ "$ok" = 1 ] && return 0
+    sleep 1
+  done
+  return 1
+}
 # hwax_restart_cycle <이름> <지문> <stop 함수> <start 함수> <url…>
-#   생략 판정 → (RESTART!=1 이면) stop·내려갔는지 확인 → start → 리스너 프로세스가 바뀌었을 때만 기록. HWAX_RESTARTED=1 이면 실제로 새로 떴다.
+#   생략 판정 → (RESTART!=1 이면) stop·내려갔는지 확인 → start → 뜰 때까지 짧게 기다림 → **url 마다** 리스너 프로세스를 전/후로 비교.
+#   전부 바뀌었을 때만 기록(HWAX_RESTARTED=1). 하나라도 같으면 그 인스턴스는 옛 프로세스다 → ✗ rc 1·무기록(3라운드: 문자열 전체를 한 번에
+#   비교해 둘 중 하나만 갈려도 기록됐다 — 정지에 실패한 인스턴스가 옛 코드로 영구 생략될 판이었다). 하나라도 식별 불가('?')면 답하는지 보고
+#   답하면 ⚠ 무기록, 안 답하면 ✗ rc 1. 새 프로세스가 떴는데 health 가 아직 안 답하면 ⚠ 만 내고 기록한다(다음 실행의 생존 검사가 다시 띄운다 —
+#   여기서 ✗ 로 막으면 늦게 뜨는 백엔드가 매 회 재기동된다).
 #   stop 함수 자리에 `:` 를 주면 start 가 스스로 옛 프로세스를 갈아 끼우는 서비스다(AIDH boot.sh --force) — 정지·내려감 대기를 건너뛴다.
-#   0 = 생략했거나 재기동했다(또는 NO_RESTART=1 로 start 만 했다 — 기록 없음) · 1 = start 실패, 재기동이 안 됐다(같은 프로세스가 답한다),
-#   또는 start 뒤에 아무것도 듣지 않는다.
+#   0 = 생략했거나 재기동했다(또는 NO_RESTART=1 로 start 만 했다 — 기록 없음) · 1 = start 실패, 같은 프로세스가 답한다, 아무것도 듣지 않는다.
 hwax_restart_cycle() {
-  local name="$1" cur="$2" stopf="$3" startf="$4" id0 id1 u; shift 4
+  local name="$1" cur="$2" stopf="$3" startf="$4" id0 id1 u i a b same="" unk="" dead=""; shift 4
   HWAX_RESTARTED=0
   hwax_restart_needed "$name" "$cur" "$@" || return 0
   id0="$(hwax_listener_ids "$@")"
@@ -90,18 +103,25 @@ hwax_restart_cycle() {
     "$stopf" || true
     hwax_wait_down "$@" || echo "  ✗ $name: 정지 뒤에도 답한다 — 옛 프로세스가 내려가지 않았다(stop 실패). start 는 'already running' 이 될 것이다" >&2
   fi
-  "$startf" || return 1
+  "$startf" || { echo "  ✗ $name: start 가 실패했다(rc≠0) — 기준 지문을 기록하지 않는다" >&2; return 1; }
+  hwax_wait_up "$@" || true
   id1="$(hwax_listener_ids "$@")"
-  case "$id1" in ""|*"?"*)
-    for u in "$@"; do
-      hwax_alive "$u" || { echo "  ✗ $name: start 는 성공이라는데 $u 가 답하지 않는다(리스너 없음) — 기준 지문을 기록하지 않는다" >&2; return 1; }
-    done
-    echo "  ⚠ $name: 답은 하는데 프로세스를 식별하지 못한다('${id1:-없음}' — ss 없음 또는 다른 사용자 소유) → 기준 지문을 기록하지 않는다. 다음 실행도 재기동한다" >&2; return 0 ;;
-  esac
-  if [ "$id1" != "$id0" ]; then HWAX_RESTARTED=1; hwax_mark_started "$name" "$cur"; return 0; fi
-  if [ "${RESTART:-0}" = 1 ]; then echo "  · $name: NO_RESTART=1 — start 만 했다(같은 프로세스). 기준 지문을 기록하지 않는다(다음 정상 실행이 재기동한다)"; return 0; fi
-  echo "  ✗ $name: 재기동이 되지 않았다 — 같은 프로세스가 답한다(stop 실패·already running). 기준 지문을 기록하지 않는다" >&2
-  return 1
+  i=0
+  for u in "$@"; do
+    i=$((i+1)); a="$(printf '%s\n' $id0 | sed -n "${i}p")"; b="$(printf '%s\n' $id1 | sed -n "${i}p")"
+    case "$b" in
+      ""|*"?"*) if hwax_alive "$u"; then unk="$unk $u"; else dead="$dead $u"; fi ;;
+      *) [ "$b" = "$a" ] && same="$same $u" ;;
+    esac
+  done
+  if [ -n "$dead" ]; then echo "  ✗ $name: start 는 성공이라는데 답하지 않는다(리스너 없음):$dead — 기준 지문을 기록하지 않는다" >&2; return 1; fi
+  if [ -n "$same" ]; then
+    if [ "${RESTART:-0}" = 1 ]; then echo "  · $name: NO_RESTART=1 — start 만 했다(같은 프로세스:$same). 기준 지문을 기록하지 않는다(다음 정상 실행이 재기동한다)"; return 0; fi
+    echo "  ✗ $name: 재기동이 되지 않았다 — 같은 프로세스가 답한다:$same (stop 실패·already running). 기준 지문을 기록하지 않는다" >&2; return 1
+  fi
+  if [ -n "$unk" ]; then echo "  ⚠ $name: 답은 하는데 프로세스를 식별하지 못한다:$unk (ss 없음 또는 다른 사용자 소유) → 기준 지문을 기록하지 않는다. 다음 실행도 재기동한다" >&2; return 0; fi
+  for u in "$@"; do hwax_alive "$u" || echo "  ⚠ $name: 새 프로세스는 떴는데 $u 가 아직 답하지 않는다 — 기록은 하되 다음 실행이 살아 있는지 다시 본다" >&2; done
+  HWAX_RESTARTED=1; hwax_mark_started "$name" "$cur"; return 0
 }
 
 hwax_restart_needed() {  # $1=이름 $2=지금 지문 $3…=health url

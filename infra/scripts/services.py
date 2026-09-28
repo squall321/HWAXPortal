@@ -444,13 +444,19 @@ def service_fp(svc: dict) -> str:
             parts.append("git:" + (r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "nogit"))
         except (OSError, subprocess.TimeoutExpired):
             parts.append("git:nogit")
-        # .env + 매니페스트 data.identity(글롭·백업 제외) — 게이트웨이는 .env 가 없고 gateway_config.json·provision.env 가 동작을 정한다(2라운드)
+        # .env + 매니페스트 data.identity(글롭·백업 제외) — 게이트웨이는 .env 가 없고 gateway_config.json·provision.env 가 동작을 정한다(2라운드).
+        # identity 의 **디렉터리**는 넣지 않는다 — 이관용 신원 목록이라 런타임 상태 디렉터리(heax var/integration_state 는 celery 가 45초마다
+        # 다시 쓴다)가 들어 있고, 그것을 지문에 넣으면 '변경 없음' 이 영영 성립하지 않아 매 회 전체 스택을 내렸다 올린다(3라운드). 디렉터리 지문이
+        # 필요하면 매니페스트 `fp:` 에 명시한다(그쪽은 디렉터리도 rglob 로 넣는다).
         idents = [x for x in ((svc.get("data") or {}).get("identity") or []) if "*" not in str(x)]
-        for rel in dict.fromkeys([".env", *idents, *(svc.get("fp") or [])]):
+        fps = list(svc.get("fp") or [])
+        for rel in dict.fromkeys([".env", *idents, *fps]):
             q = wd / rel
             if q.is_file():
                 st = q.stat()
                 parts.append(f"{rel}:{hashlib.sha256(q.read_bytes()).hexdigest()[:16]}" if st.st_size <= 32 * 1024 * 1024 else f"{rel}:{st.st_size}:{int(st.st_mtime)}")
+            elif rel in idents and rel != ".env" and rel not in fps:
+                continue   # identity 항목은 파일일 때만 — 디렉터리·없는 경로는 지문에 흔적을 남기지 않는다(생기는 순간 한 번 바뀌는 것도 막는다)
             elif q.is_dir():
                 for f in sorted(x for x in q.rglob("*") if x.is_file()):
                     st = f.stat(); parts.append(f"{f.relative_to(wd)}:{st.st_size}:{int(st.st_mtime)}")
@@ -466,6 +472,16 @@ def cmd_port(names: list[str]) -> int:
     for s in svcs:
         u = urlparse(str(s.get("health") or "")); port = u.port or (443 if u.scheme == "https" else 80 if u.scheme else "")
         print(str(port) if len(svcs) == 1 else f"{s['name']} {port}")
+    return 0 if svcs else 1
+
+
+def cmd_health(names: list[str]) -> int:
+    """health url 그대로 — update-sites 가 내려감 대기·생존 판정에 쓴다. 포트만으로 루트(/)를 두드리면 루트가 404 인 서비스(agent-server)는
+    살아 있어도 '내려갔다' 로 읽혀 대기가 무효가 된다(3라운드). 리스너 식별은 `port`, 생존은 `health` 다."""
+    svcs = [s for s in load() if not names or s["name"] in names]
+    for s in svcs:
+        u = str(s.get("health") or "")
+        print(u if len(svcs) == 1 else f"{s['name']} {u}")
     return 0 if svcs else 1
 
 
@@ -579,7 +595,7 @@ def cmd_enabled(names: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled", "fp", "port"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled", "fp", "port", "health"):
         print(__doc__)
         return 2
     action = sys.argv[1]
@@ -592,7 +608,7 @@ def main() -> int:
         return cmd_enabled(names)
     if action == "data":  # 데이터 경로 레지스트리 조회·검증(docs/data-migration)
         return cmd_data(names, check="--check" in args)
-    return {"status": cmd_status, "down": cmd_down, "update": cmd_update, "fp": cmd_fp, "port": cmd_port}[action](names)
+    return {"status": cmd_status, "down": cmd_down, "update": cmd_update, "fp": cmd_fp, "port": cmd_port, "health": cmd_health}[action](names)
 
 
 if __name__ == "__main__":

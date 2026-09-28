@@ -154,7 +154,7 @@ show_cause() {
 # 기동이 성공한 뒤에만 지문을 적는다. HWAX_RESTART_ALL=1 은 종전 동작. docs/update-all-skip-unchanged D-5·D-8.
 SKIPPED_RESTART=""
 restart_svc() {
-  local name="$1" rc tmp upd cur last id0 id1 _port _url _upd_fail=0
+  local name="$1" rc tmp upd cur last id0 id1 _port _url _hurl _upd_fail=0
   tmp="$(mktemp)"
   echo "── $name ──  [$(date '+%H:%M:%S')]"
   echo "  · update (git pull) …"
@@ -162,25 +162,37 @@ restart_svc() {
   upd="$(tail -1 "$tmp")"
   printf '%s' "$upd" | grep -q '✗' && _upd_fail=1
   cur="$("$SVC" fp "$name" 2>/dev/null | tail -1)"; last="$(hwax_last_fp "$name")"
-  if [ "$_upd_fail" = 0 ] && [ "${HWAX_RESTART_ALL:-0}" != 1 ] && [ -n "$cur" ] && [ "$cur" = "$last" ] \
+  # 갱신(git pull) 이 실패해도 지문이 같고 살아 있으면 재기동하지 않는다 — 같은 옛 코드를 내렸다 올려도 얻는 게 없고, GitHub 이 며칠 안 닿으면
+  # update-all 마다 챗 스택이 끊긴다(3라운드). 실패는 종료코드로만 올린다(요약의 FAILED 에 든다).
+  if [ "${HWAX_RESTART_ALL:-0}" != 1 ] && [ -n "$cur" ] && [ "$cur" = "$last" ] \
      && ! printf ' %s ' "${HWAX_FORCE_RESTART:-}" | grep -q " $name " \
      && "$SVC" status "$name" 2>/dev/null | grep -q '✓ up'; then
     echo "  · $name: 마지막 기동 뒤 변경 없음(지문 $cur) · 살아 있음 → 재기동 생략 (전부 재기동: HWAX_RESTART_ALL=1)  [$(date '+%H:%M:%S')]"
-    SKIPPED_RESTART="$SKIPPED_RESTART $name"; rm -f "$tmp"; return 0
+    SKIPPED_RESTART="$SKIPPED_RESTART $name"; rm -f "$tmp"
+    if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 옛 코드 그대로 살아 있어 재기동은 생략, 종료코드만 올린다" >&2; return 1; fi
+    return 0
   fi
   # 재기동이 실제로 됐는지는 health 포트를 듣는 프로세스(pid·시작시각)로 본다 — down 이 실패해도 up 은 'already-up' 으로 rc 0 을 내고,
   # 그 rc 만 믿고 새 지문을 적으면 옛 프로세스가 영구 생략된다(2라운드 검토 실측).
+  # 리스너 식별은 포트로, 생존·내려감 대기는 매니페스트 health url 로 — 루트(/)가 404 인 서비스(agent-server)는 포트 루트를 두드리면
+  # 살아 있어도 '내려갔다' 로 읽혀 대기가 무효가 된다(3라운드).
   _port="$("$SVC" port "$name" 2>/dev/null | tail -1)"; _url="http://127.0.0.1:${_port:-0}/"
+  _hurl="$("$SVC" health "$name" 2>/dev/null | tail -1)"; _hurl="${_hurl:-$_url}"
   id0="$(hwax_listener_ids "$_url")"
   echo "  · down (기존 인스턴스 정리) …"
   "$SVC" down "$name" >/dev/null 2>&1 || true
-  hwax_wait_down "$_url" || echo "  ✗ $name: 정지 뒤에도 :${_port:-?} 가 답한다 — 옛 프로세스가 내려가지 않았다(down 실패)" >&2
+  hwax_wait_down "$_hurl" || echo "  ✗ $name: 정지 뒤에도 $_hurl 가 답한다 — 옛 프로세스가 내려가지 않았다(down 실패)" >&2
   echo "  · up (build → start → health 대기) …"
   "$SVC" up "$name" 2>&1 | tee "$tmp"   # 화면+임시파일 동시 → 라이브 + 원인분석용 캡처
   rc=${PIPESTATUS[0]}
   if [ "$rc" = 0 ] && [ -n "$cur" ]; then
     id1="$(hwax_listener_ids "$_url")"
-    case "$id1" in ""|*"?"*) echo "  ⚠ $name: 프로세스를 식별하지 못해('${id1:-없음}') 기준 지문을 기록하지 않는다 — 다음 실행도 재기동한다" >&2 ;;
+    case "$id1" in ""|*"?"*)
+         # 이 박스 대상(only_on)인데 아무도 안 답하면 up 의 rc 0 은 거짓이다 — lib 사이클과 같은 규율(3라운드). 대상이 아닌 서비스는 up 이
+         # '건너뜀' rc 0 을 내는 게 맞으므로 ✗ 로 만들지 않는다.
+         if "$SVC" enabled "$name" >/dev/null 2>&1 && ! hwax_alive "$_hurl"; then
+           echo "  ✗ $name: up 은 성공이라는데 $_hurl 가 답하지 않는다(리스너 없음) — 기준 지문을 기록하지 않는다" >&2; rc=1
+         else echo "  ⚠ $name: 프로세스를 식별하지 못해('${id1:-없음}') 기준 지문을 기록하지 않는다 — 다음 실행도 재기동한다" >&2; fi ;;
       *) if [ "$id1" != "$id0" ]; then hwax_mark_started "$name" "$cur"     # 띄운 시점의 지문 — 다음 실행의 비교 기준
          else echo "  ✗ $name: 재기동이 되지 않았다 — 같은 프로세스가 답한다(down 실패·already-up). 기준 지문을 기록하지 않는다" >&2; rc=1; fi ;;
     esac
