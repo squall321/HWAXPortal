@@ -108,13 +108,16 @@ def _desktop_block(bat: str) -> list[str]:
     return ls[a:b + 1]
 
 
-def test_desktop_resolves_the_real_roaming_path_not_just_appdata(gen):
-    """%APPDATA% 는 관리자 권한 실행(다른 프로필)·기업 폴더 리디렉션·축소된 환경에서 엉뚱한 곳을 가리키거나 비어 있다."""
+def test_desktop_validates_the_roaming_path_and_has_a_fallback(gen):
+    """%APPDATA% 는 축소된 환경에서 비어 있고(경로가 `\\Claude` 가 된다), 기업 폴더 리디렉션이 오프라인이면 설정돼 있어도 닿지 않는다.
+    둘 다 '폴더 없음' 으로 보인다 — 비었는지와 **있는지**를 둘 다 보고 아니면 프로필에서 직접 짚는다."""
     blk = "\n".join(_desktop_block(gen()))
-    assert "GetFolderPath('ApplicationData')" in blk, "알려진 폴더 API 로 다시 묻는다"
-    assert 'if not defined HWAX_ROAMING set "HWAX_ROAMING=%APPDATA%"' in blk, "PowerShell 이 막힌 PC 폴백"
-    assert 'if not defined HWAX_ROAMING set "HWAX_ROAMING=%USERPROFILE%\\AppData\\Roaming"' in blk, "둘째 폴백"
+    assert 'set "HWAX_ROAMING=%APPDATA%"' in blk
+    assert 'if not defined HWAX_ROAMING set "HWAX_ROAMING=%USERPROFILE%\\AppData\\Roaming"' in blk, "비었을 때"
+    assert 'if not exist "%HWAX_ROAMING%\\" set "HWAX_ROAMING=%USERPROFILE%\\AppData\\Roaming"' in blk, "닿지 않을 때"
     assert "echo      설정 파일: %HWAX_CFG%" in blk, "어느 경로를 봤는지 찍어야 사람이 원인을 찾을 수 있다"
+    # cmd 파싱 함정을 새로 들이지 않는다 — `for /f ... in (`cmd`)` 안의 괄호는 `in (` 를 먼저 닫는다.
+    assert "usebackq" not in blk and "for /f" not in blk, "실제 Windows 에서 재보지 않은 구문을 쓰지 않는다"
 
 
 def test_desktop_creates_the_config_folder_instead_of_skipping(gen):

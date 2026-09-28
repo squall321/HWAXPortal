@@ -365,14 +365,14 @@ export function makeSnippets(origin: string): Snippets {
     L.push(
       ':desktop',
       'echo  [3] Claude Desktop 확인...',
-      // ⚠ Roaming 경로를 %APPDATA% 하나로 믿지 않는다. 그 변수는 (a) 관리자 권한 실행에서 다른 프로필을
-      //   가리키고 (b) 기업 폴더 리디렉션에서 UNC 경로가 되며 (c) 축소된 환경에서 아예 비어 있을 수 있다.
-      //   GetFolderPath('ApplicationData') 는 리디렉션을 반영한 실제 경로를 준다. 폴백 둘을 둬서
-      //   PowerShell 이 막힌 PC 에서도 종전과 같게 동작한다.
-      'set "HWAX_ROAMING="',
-      'for /f "usebackq delims=" %%R in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "[Environment]::GetFolderPath(\'ApplicationData\')" 2^>nul`) do set "HWAX_ROAMING=%%R"',
-      'if not defined HWAX_ROAMING set "HWAX_ROAMING=%APPDATA%"',
+      // ⚠ Roaming 경로를 %APPDATA% **하나로만** 믿지 않는다 — 축소된 환경(서비스·일부 원격 도구)에서는 비어 있어
+      //   경로가 `\Claude` 가 되고, 기업 폴더 리디렉션이 오프라인이면 설정돼 있어도 닿지 않는다. 둘 다 '폴더 없음' 으로 보인다.
+      //   **존재까지 확인**하고 아니면 프로필에서 직접 짚는다. PowerShell 로 알려진 폴더를 묻는 방법도 있지만
+      //   `for /f ... in (\`…\`)` 안의 괄호는 cmd 의 `in (` 를 먼저 닫아 버리고, 임시파일로 우회하면 한글 사용자명이
+      //   코드페이지에서 깨질 수 있다 — 그 위험을 지려면 실제 Windows 에서 재봐야 하므로 지금은 쓰지 않는다.
+      'set "HWAX_ROAMING=%APPDATA%"',
       'if not defined HWAX_ROAMING set "HWAX_ROAMING=%USERPROFILE%\\AppData\\Roaming"',
+      'if not exist "%HWAX_ROAMING%\\" set "HWAX_ROAMING=%USERPROFILE%\\AppData\\Roaming"',
       'set "HWAX_DESKDIR=%HWAX_ROAMING%\\Claude"',
       'set "HWAX_CFG=%HWAX_DESKDIR%\\claude_desktop_config.json"',
       // 어디를 봤는지 반드시 찍는다 — 종전엔 '폴더 없음' 만 말해 어느 경로를 본 것인지 알 수 없었다.
