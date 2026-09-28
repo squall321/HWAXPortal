@@ -95,7 +95,7 @@ hwax_wait_up() {  # $@=url… 최대 10초(HWAX_WAIT_UP_MAX) — 전부 답하�
 #   stop 함수 자리에 `:` 를 주면 start 가 스스로 옛 프로세스를 갈아 끼우는 서비스다(AIDH boot.sh --force) — 정지·내려감 대기를 건너뛴다.
 #   0 = 생략했거나 재기동했다(또는 NO_RESTART=1 로 start 만 했다 — 기록 없음) · 1 = start 실패, 같은 프로세스가 답한다, 아무것도 듣지 않는다.
 hwax_restart_cycle() {
-  local name="$1" cur="$2" stopf="$3" startf="$4" id0 id1 u i a b same="" unk="" dead=""; shift 4
+  local name="$1" cur="$2" stopf="$3" startf="$4" id0 id1 u i a b same="" unk="" dead=""; local -a _A0 _A1; shift 4
   HWAX_RESTARTED=0
   hwax_restart_needed "$name" "$cur" "$@" || return 0
   id0="$(hwax_listener_ids "$@")"
@@ -106,9 +106,12 @@ hwax_restart_cycle() {
   "$startf" || { echo "  ✗ $name: start 가 실패했다(rc≠0) — 기준 지문을 기록하지 않는다" >&2; return 1; }
   hwax_wait_up "$@" || true
   id1="$(hwax_listener_ids "$@")"
+  # 토큰은 **배열로** 받는다 — `$id0` 를 인용 없이 펼치면 `<포트>:?` 의 `?` 가 글롭이라 cwd 에 같은 이름의 파일이 있으면
+  # 토큰이 늘어나 url↔토큰 짝이 밀린다(4라운드, latent). read -ra 는 글롭도 재분할도 하지 않는다.
+  read -ra _A0 <<<"$id0"; read -ra _A1 <<<"$id1"
   i=0
   for u in "$@"; do
-    i=$((i+1)); a="$(printf '%s\n' $id0 | sed -n "${i}p")"; b="$(printf '%s\n' $id1 | sed -n "${i}p")"
+    a="${_A0[i]:-}"; b="${_A1[i]:-}"; i=$((i+1))
     case "$b" in
       ""|*"?"*) if hwax_alive "$u"; then unk="$unk $u"; else dead="$dead $u"; fi ;;
       *) [ "$b" = "$a" ] && same="$same $u" ;;

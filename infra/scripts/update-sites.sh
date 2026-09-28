@@ -154,7 +154,13 @@ show_cause() {
 # 기동이 성공한 뒤에만 지문을 적는다. HWAX_RESTART_ALL=1 은 종전 동작. docs/update-all-skip-unchanged D-5·D-8.
 SKIPPED_RESTART=""
 restart_svc() {
-  local name="$1" rc tmp upd cur last id0 id1 _port _url _hurl _upd_fail=0
+  local name="$1" rc tmp upd cur last id0 id1 _port _url _hurl _probe _en _restart_fail=0 _upd_fail=0
+  # 매니페스트에 없는 이름이면 여기서 끊는다 — 종전엔 update·up 이 조용히 아무것도 안 하고 `fp` 가 빈 값이라 아래 검증 블록을 통째로
+  # 건너뛴 뒤 "✓ 완료" · exit 0 으로 끝났다(4라운드 실측). 서비스를 하나도 건드리지 않은 실행이 '전부 최신화' 로 끝나면 안 된다.
+  "$SVC" enabled "$name" >/dev/null 2>&1; _en=$?
+  if [ "$_en" = 2 ]; then
+    echo "  ✗ $name: services.yaml 에 없는 서비스다 — 이름을 확인하라($SVC status 로 목록)" >&2; return 1
+  fi
   tmp="$(mktemp)"
   echo "── $name ──  [$(date '+%H:%M:%S')]"
   echo "  · update (git pull) …"
@@ -169,7 +175,9 @@ restart_svc() {
      && "$SVC" status "$name" 2>/dev/null | grep -q '✓ up'; then
     echo "  · $name: 마지막 기동 뒤 변경 없음(지문 $cur) · 살아 있음 → 재기동 생략 (전부 재기동: HWAX_RESTART_ALL=1)  [$(date '+%H:%M:%S')]"
     SKIPPED_RESTART="$SKIPPED_RESTART $name"; rm -f "$tmp"
-    if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 옛 코드 그대로 살아 있어 재기동은 생략, 종료코드만 올린다" >&2; return 1; fi
+    # rc 2 = '갱신만 실패, 서비스는 정상·무변경'. rc 1 과 갈라야 한다 — 포털 게이트가 rc≠0 을 '재기동 실패' 로 읽어 나머지 전부를
+    # 중단시켰다(무인자 실행에서 아홉 서비스가 손도 안 닿았고, 안내는 원인을 '포털 로그' 로 잘못 가리켰다. 4라운드 실측).
+    if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 옛 코드 그대로 살아 있어 재기동은 생략, 종료코드만 올린다" >&2; return 2; fi
     return 0
   fi
   # 재기동이 실제로 됐는지는 health 포트를 듣는 프로세스(pid·시작시각)로 본다 — down 이 실패해도 up 은 'already-up' 으로 rc 0 을 내고,
@@ -177,11 +185,11 @@ restart_svc() {
   # 리스너 식별은 포트로, 생존·내려감 대기는 매니페스트 health url 로 — 루트(/)가 404 인 서비스(agent-server)는 포트 루트를 두드리면
   # 살아 있어도 '내려갔다' 로 읽혀 대기가 무효가 된다(3라운드).
   _port="$("$SVC" port "$name" 2>/dev/null | tail -1)"; _url="http://127.0.0.1:${_port:-0}/"
-  _hurl="$("$SVC" health "$name" 2>/dev/null | tail -1)"; _hurl="${_hurl:-$_url}"
+  _hurl="$("$SVC" health "$name" 2>/dev/null | tail -1)"; _probe="${_hurl:-$_url}"   # _hurl 이 비면(매니페스트에 health 없음) 생존을 **판정할 수 없다**
   id0="$(hwax_listener_ids "$_url")"
   echo "  · down (기존 인스턴스 정리) …"
   "$SVC" down "$name" >/dev/null 2>&1 || true
-  hwax_wait_down "$_hurl" || echo "  ✗ $name: 정지 뒤에도 $_hurl 가 답한다 — 옛 프로세스가 내려가지 않았다(down 실패)" >&2
+  hwax_wait_down "$_probe" || echo "  ✗ $name: 정지 뒤에도 $_probe 가 답한다 — 옛 프로세스가 내려가지 않았다(down 실패)" >&2
   echo "  · up (build → start → health 대기) …"
   "$SVC" up "$name" 2>&1 | tee "$tmp"   # 화면+임시파일 동시 → 라이브 + 원인분석용 캡처
   rc=${PIPESTATUS[0]}
@@ -190,15 +198,21 @@ restart_svc() {
     case "$id1" in ""|*"?"*)
          # 이 박스 대상(only_on)인데 아무도 안 답하면 up 의 rc 0 은 거짓이다 — lib 사이클과 같은 규율(3라운드). 대상이 아닌 서비스는 up 이
          # '건너뜀' rc 0 을 내는 게 맞으므로 ✗ 로 만들지 않는다.
-         if "$SVC" enabled "$name" >/dev/null 2>&1 && ! hwax_alive "$_hurl"; then
+         # health url 이 없는 서비스(services.py 가 'started (no health url)' 로 정상 지원)는 살았는지 판정할 수 없다 → ✗ 로 만들지 않는다(4라운드).
+         if [ -n "$_hurl" ] && [ "$_en" = 0 ] && ! hwax_alive "$_hurl"; then
            echo "  ✗ $name: up 은 성공이라는데 $_hurl 가 답하지 않는다(리스너 없음) — 기준 지문을 기록하지 않는다" >&2; rc=1
          else echo "  ⚠ $name: 프로세스를 식별하지 못해('${id1:-없음}') 기준 지문을 기록하지 않는다 — 다음 실행도 재기동한다" >&2; fi ;;
       *) if [ "$id1" != "$id0" ]; then hwax_mark_started "$name" "$cur"     # 띄운 시점의 지문 — 다음 실행의 비교 기준
          else echo "  ✗ $name: 재기동이 되지 않았다 — 같은 프로세스가 답한다(down 실패·already-up). 기준 지문을 기록하지 않는다" >&2; rc=1; fi ;;
     esac
   fi
-  [ "$_upd_fail" = 1 ] && rc=1     # 갱신 실패는 종료코드로 올린다(옛 코드로 떠 있어도 초록으로 끝내지 않는다)
-  if [ "$rc" -ne 0 ]; then
+  [ "$rc" -ne 0 ] && _restart_fail=1
+  # 갱신 실패는 종료코드로 올린다(옛 코드로 떠 있어도 초록으로 끝내지 않는다). 재기동 자체는 됐으면 2 — 포털 게이트가 중단하지 않게.
+  if [ "$_upd_fail" = 1 ]; then [ "$_restart_fail" = 1 ] && rc=1 || rc=2; fi
+  if [ "$rc" = 2 ]; then
+    echo "  · ✗ $name: 갱신(git pull) 실패 — 서비스 자체는 정상이다  [$(date '+%H:%M:%S')]"
+    show_cause "$name" "$(cat "$tmp")"
+  elif [ "$rc" -ne 0 ]; then
     echo "  · ✗ $name 실패 (rc=$rc)  [$(date '+%H:%M:%S')]"
     show_cause "$name" "$(cat "$tmp")"
   else
@@ -209,26 +223,33 @@ restart_svc() {
 }
 
 # 1) 포털 먼저 — 실패하면 나머지 손대지 않고 중단(프론트를 확인된 상태로 유지)
+PULL_FAILED=""
 if [ "$HAS_PORTAL" = 1 ]; then
-  if restart_svc "$PORTAL"; then
-    echo "  ✓ portal 재기동·health OK"
-  else
-    echo "  ✗ portal 재기동 실패 → 나머지($REST)는 건드리지 않고 중단. 포털 로그 확인 후 재시도하세요."
-    exit 1
-  fi
+  restart_svc "$PORTAL"; _prc=$?
+  case "$_prc" in
+    0) echo "  ✓ portal 재기동·health OK" ;;
+    # 2 = 갱신만 실패하고 포털은 정상이다. 이걸로 중단하면 GitHub 이 안 닿는 박스에서 나머지 서비스가 손도 닿지 않는다(4라운드).
+    2) echo "  ⚠ portal 갱신(git pull) 실패 — 포털 자체는 정상이라 나머지($REST)는 계속한다. 종료코드는 끝에서 올린다."
+       PULL_FAILED="$PULL_FAILED $PORTAL" ;;
+    *) echo "  ✗ portal 재기동 실패 → 나머지($REST)는 건드리지 않고 중단. 포털 로그 확인 후 재시도하세요."
+       exit 1 ;;
+  esac
 fi
 
 # 2) 나머지 — 하나 실패해도 계속, 끝에 요약(포털은 이미 확인됨)
 FAILED=""
 for s in $REST; do
-  restart_svc "$s" || FAILED="$FAILED $s"
+  restart_svc "$s"; _rc=$?
+  case "$_rc" in 0) ;; 2) PULL_FAILED="$PULL_FAILED $s" ;; *) FAILED="$FAILED $s" ;; esac
 done
 
 echo
 [ -n "$SKIPPED_RESTART" ] && echo "▶ 재기동 생략(마지막 기동 뒤 변경 없음·살아 있음):$SKIPPED_RESTART  — 전부 재기동하려면 HWAX_RESTART_ALL=1"
 echo "▶ 최종 상태:"; "$SVC" status $TARGETS || true
+[ -n "$PULL_FAILED" ] && echo "▶ ⚠ 갱신(git pull) 실패:$PULL_FAILED  — 서비스는 정상이다(옛 코드로 돈다). 네트워크·원격을 확인하고 다시 돌려라."
 if [ -n "$FAILED" ]; then
   echo "▶ ⚠ 실패(포털 제외):$FAILED  — 포털은 정상. 개별 재시도:  $SVC up --update <이름>"
   exit 1
 fi
+[ -n "$PULL_FAILED" ] && exit 1
 echo "▶ 완료 — report-archive 제외 전부 최신화·재기동."

@@ -41,7 +41,7 @@
 | **§2b** | `/data` 이관 — `HWAX_DATA_ROOT` 가 있을 때만(멱등·자동 롤백) | `hr "2b)"` |
 | **§3** | **AIDataHub 데이터 병합** — 아래 §2 참조. 비파괴 merge | `hr "3)"` |
 | **§2c** | **ste 코드 최신화(다를 때만)** — `deploy-ste.sh --if-stale`(상한 900초). direct 박스는 지문이 다를 때만, teleport 박스는 공용 게이트 세 신호를 통과할 때만. 게이트가 막으면 rc 3 = "안 켬"(○ 장부) | `hr "2c)"` |
-| §4 | 챗 스택 pull+재기동 — `signalforge-mcp mcp-gateway agent-server`(백엔드→게이트웨이→소비자 순) — **지문(git HEAD + .env + 매니페스트 identity 파일)이 마지막 기동 시점과 같고 살아 있으면 down/up 생략**(.env 를 누가 언제 고쳤든 지문에 든다). 재기동했으면 health 포트의 프로세스가 바뀐 것을 확인한 뒤에만 기록(같으면 ✗). 수동 강제: `HWAX_FORCE_RESTART="<이름> …"`. 전부 재기동: `HWAX_RESTART_ALL=1` | `hr "4)"` |
+| §4 | 챗 스택 pull+재기동 — `signalforge-mcp mcp-gateway agent-server`(백엔드→게이트웨이→소비자 순) — **지문(git HEAD + .env + 매니페스트 identity 파일)이 마지막 기동 시점과 같고 살아 있으면 down/up 생략**(.env 를 누가 언제 고쳤든 지문에 든다). 재기동했으면 health 포트의 프로세스가 바뀐 것을 확인한 뒤에만 기록(같으면 ✗). `git pull` 만 실패하고 서비스가 정상이면 재기동 없이 끝에서 `▶ ⚠ 갱신(git pull) 실패:<이름>` + 종료코드 1(포털이 그렇더라도 나머지는 계속한다). 수동 강제: `HWAX_FORCE_RESTART="<이름> …"`. 전부 재기동: `HWAX_RESTART_ALL=1` | `hr "4)"` |
 | **§3.5** | agent-server `.env` 보정 — `@FROM_RA` 미치환 마커 제거·재치환, `VLLM_BASE_URL` 확정 | `hr "3.5)"` |
 | §5 | 게이트웨이 config 정합 — 기대 백엔드 빠졌으면 `provision-config --force` 후 재기동·재검증 | `hr "5)"` |
 | §6 | **헬스 게이트**(critical) — 아래 표 밖 설명 참조 | `hr "6)"` |

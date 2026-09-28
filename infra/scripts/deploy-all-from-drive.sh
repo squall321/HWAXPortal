@@ -423,9 +423,16 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   # /dev/null 로 버려서 '왜 실패했는지'가 배포 로그에 남지도 않았다.
   # 종료코드 대신 실제 상태로 판정한다 — 다시 뜬 nginx 가 /health 에 200 을 주는가.
   NG_LOG="$(mktemp)"
-  NG_PORT="$(sed -n 's/^HTTP_PORT=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1)"
+  # `tr -d ' "'` 는 위 포털 블록의 _hp 와 **같은 표현**이다 — 한쪽만 인용을 벗기면 HTTP_PORT="8088" 에서 두 자리가 다른 포트를 본다
+  # (실측: nginx 사이클이 http://127.0.0.1:"8088"/health 를 두드려 매 회 ✗ + skip + exit 4, 같은 실행의 포털 블록은 정상. 4라운드)
+  NG_PORT="$(sed -n 's/^HTTP_PORT=//p' "$PORTAL_DIR/infra/.env" 2>/dev/null | tail -1 | tr -d ' "')"
   # conf 가 그대로고 nginx 가 살아 있으면 bounce 하지 않는다 — 종전엔 무조건 내렸다 올렸다(docs/update-all-skip-unchanged D-6)
-  ( cd "$PORTAL_DIR" && ./infra/scripts/gen-nginx-conf.sh ) >"$NG_LOG" 2>&1 || true
+  # conf 생성 rc 를 버리면 안 된다 — 실패하면 옛 conf 가 그대로 남고, 그 지문은 '마지막으로 띄운 시점' 과 **같아서** 사이클이 생략하고
+  # /health 200 이라 "reloaded with current routes" 초록으로 끝난다. 유일한 사유가 NG_LOG 인데 성공 갈래는 그것을 tail 하지 않고 지운다
+  # (4라운드 실측: 새 라우트가 반영되지 않았는데 배포 로그에 원인이 전무). 포털 블록이 도는 실행에서는 start.sh 가 같은 실패로 죽어 잡히지만,
+  # 포털 블록이 안 도는 실행(`deploy-all-from-drive.sh <다른 서비스>`)과 권한·디스크 원인에는 그 그물이 없다.
+  _genrc=0
+  ( cd "$PORTAL_DIR" && ./infra/scripts/gen-nginx-conf.sh ) >"$NG_LOG" 2>&1 || _genrc=$?
   _ngcur="$(_ngfp)"    # 새로 만든 conf + 인증서·키 — 마지막으로 nginx 를 띄운 시점의 것과 비교
   _ngrc=0
   ( cd "$PORTAL_DIR"
@@ -437,7 +444,10 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
   # Health 요약·종료코드 집계가 통째로 빠지고, 반대로 버리면 "같은 프로세스가 답한다(stop 실패)" 인데 /health 200 만 보고
   # "reloaded" 초록이 됐다(3라운드 실측: 옛 conf 로 돌면서 exit 0). /health 200 은 '떠 있다' 일 뿐 '새 conf 로 떴다' 가 아니다.
   NG_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:${NG_PORT:-8088}/health" 2>/dev/null)" || true
-  if [ "$_ngrc" != 0 ]; then
+  if [ "$_genrc" != 0 ]; then
+    skip "nginx conf 생성 실패(rc=$_genrc) — 라우팅이 갱신되지 않았다(옛 conf 로 돈다). 아래는 사유다."
+    tail -12 "$NG_LOG" | sed 's/^/      /'
+  elif [ "$_ngrc" != 0 ]; then
     skip "nginx 재기동 실패(rc=$_ngrc) — 같은 프로세스가 답하거나 뜨지 않았다. 옛 라우팅 conf 로 돌고 있을 수 있다. 아래는 마지막 로그다."
     tail -12 "$NG_LOG" | sed 's/^/      /'
   elif [ "${NG_CODE:-000}" = "200" ]; then
