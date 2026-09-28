@@ -78,10 +78,12 @@ def test_doctor_judges_the_tunnel_unit_by_its_forwards_not_by_file_presence(tmp_
     old_hand = "ExecStart=/usr/bin/ssh -N -L 127.0.0.1:15810:127.0.0.1:15810 user@head\n"
     out = run(old_hand, "000")
     assert "BAD:tunnel-unit" in out and "15812 포워딩이 없다" in out and "install-ste-tunnel.sh" in out, out
-    assert "로컬 리스너" in out, "죽었으면 리스너 상태를 같이 보인다"
+    # 5차 이후: 개수가 아니라 **포트마다 누가 듣는지**를 보인다 — 개수만으로는 '유닛이 안 연다' 와 '헤드가 거부한다' 를 못 가른다.
+    assert ":15810 리스너 없음" in out and ":15812 리스너 없음" in out, ("죽었으면 포트마다 리스너를 보인다", out)
+    assert "유닛 MainPID" in out, "유닛이 active 인데 남이 포트를 쥔 상태를 가르려면 MainPID 가 필요하다"
     both = "ExecStart=/usr/bin/ssh -N -L 127.0.0.1:15810:127.0.0.1:15810 -L 127.0.0.1:15812:127.0.0.1:15812 user@head\n"
     out = run(both, "406")
-    assert "OK:tunnel-unit" in out and "둘 다 있음" in out and "로컬 리스너" not in out, out
+    assert "OK:tunnel-unit" in out and "둘 다 있음" in out and "리스너 없음" not in out and "유닛 MainPID" not in out, out
 
 
 def test_tunnel_installer_check_reads_the_unit_forwards_and_deploy_ste_waits_for_the_restarted_backend():

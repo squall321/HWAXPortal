@@ -18,7 +18,8 @@ RED=0; declare -A R
 ok()   { R["$1"]="ok:$2";   [ "$REPORT" = 1 ] || printf '  \033[1;32m✓\033[0m %-14s %s\n' "$1" "$2"; }
 bad()  { R["$1"]="fail:$2"; RED=1; [ "$REPORT" = 1 ] || printf '  \033[1;31m✗\033[0m %-14s %s\n' "$1" "$2"; }
 warn() { R["$1"]="warn:$2"; [ "$REPORT" = 1 ] || printf '  \033[1;33m⚠\033[0m %-14s %s\n' "$1" "$2"; }
-code() { curl -s -o /dev/null -w '%{http_code}' -m "${2:-4}" "$1" 2>/dev/null || echo 000; }
+# ⚠ `|| echo 000` 을 붙이지 않는다 — curl 은 연결 실패에도 -w 로 이미 000 을 찍어 둘이 겹쳐 '000000' 이 됐다(사용자 화면 실측).
+code() { local c; c="$(curl -s -o /dev/null -w '%{http_code}' -m "${2:-4}" "$1" 2>/dev/null)" || true; printf '%s' "${c:-000}"; }
 # bash 가 읽는 것과 같게 — 인라인 주석(공백 뒤 #)·양끝 공백·따옴표·CR 을 벗긴다(`COOKIE_SECURE=true   # …` 가 `true#…` 로 읽혀 빨강이던 것).
 # LC_ALL=C — UTF-8 로케일의 GNU sed 가 한글 주석 줄에서 `.*$` 를 못 맞추는 경우가 있다(update-all _ra_envv 와 같은 이유).
 # `=` 뒤 공백은 주석을 벗긴 **뒤에** 지운다 — 먼저 지우면 `KEY=   # 설명` 의 주석 문구가 값이 된다(4라운드). update-all _envfile_value 와 같은 규칙.
@@ -56,8 +57,14 @@ if [ -n "$ORIGIN" ]; then
     *) bad mcp "$MCP_URL → $m — ste 도구 8종이 안 뜨는 원인$([ "$HOST" = 127.0.0.1 ] && echo '. 터널이 15812 를 열고 있으면 헤드의 ste-mcp.service 가 죽은 것이다(아래 journal)')"
        # 왜 죽었는지는 헤드에만 있다 — transport 가 있으면 상태와 journal 꼬리를 그대로 보여 준다(cae00 실측: active 라 찍히고도 000).
        if [ -n "${TENV:-}" ] && [ -d "$(dirname "$TENV")/.." ]; then
+         # ⚠ 개수(`grep -c`)만 세면 **주소**를 못 본다 — 0.0.0.0 이 아니라 ::1 이나 특정 IP 를 듣고 있으면
+         #   터널의 `-L …:127.0.0.1:15812` 목적지와 안 맞아 '헤드는 살아 있는데 000' 이 된다. 주소를 그대로 보여 준다.
+         # ⚠ 그리고 **헤드 자기 자신에서** 한 번 찔러 본다. 이 한 줄이 남은 두 경우를 완전히 가른다 —
+         #   헤드에서 406/200 이면 서비스는 정상이고 터널·포워딩 문제, 헤드에서도 000 이면 서비스가 실제로 안 섰다.
          _mcp_st="$(cd "$(dirname "$TENV")/.." && . deploy/lib/transport.sh >/dev/null 2>&1 && \
-           tr_run 'echo "ste-mcp: $(systemctl is-active ste-mcp 2>/dev/null || echo unknown) / listen: $(ss -ltn 2>/dev/null | grep -c ":15812 ")"; \
+           tr_run 'echo "ste-mcp: $(systemctl is-active ste-mcp 2>/dev/null || echo unknown)"; \
+                   echo "listen: $(ss -ltn 2>/dev/null | grep ":15812 " | tr -s " " | cut -d" " -f4 | paste -sd, - )"; \
+                   echo "헤드 자기 자신 curl /mcp: $(curl -s -o /dev/null -w "%{http_code}" -m 4 http://127.0.0.1:15812/mcp 2>/dev/null)"; \
                    journalctl -u ste-mcp -n 8 --no-pager -o cat 2>/dev/null || sudo -n journalctl -u ste-mcp -n 8 --no-pager -o cat 2>/dev/null' 2>/dev/null || true)"
          [ -n "$_mcp_st" ] && printf '%s\n' "$_mcp_st" | sed 's/^/      헤드: /' || echo "      헤드 상태를 못 읽었다(transport 미설정 또는 접속 실패) — 헤드에서: systemctl status ste-mcp; journalctl -u ste-mcp -n 30"
        fi ;;
@@ -75,8 +82,17 @@ if [ "$MODE" = teleport ]; then
       bad tunnel-unit "$_tu_state · 유닛에 15812 포워딩이 없다(옛 손 유닛: $(grep -o -- '-L [^ ]*' "$_tu" | tr '\n' ' ')) — ./infra/scripts/install-ste-tunnel.sh 로 덮어쓰고 재기동"
     fi
     if [ -n "${m:-}" ] && ! case "$m" in 200|405|406) true ;; *) false ;; esac; then
-      echo "      로컬 리스너: 15810=$(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15810 ') 15812=$(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15812 ') (0 이면 유닛이 그 포트를 안 연다)"
-      journalctl --user -u ste-tunnel -n 4 --no-pager -o cat 2>/dev/null | sed 's/^/      journal: /'
+      # 개수가 아니라 **누가** 듣는지. 유닛이 active 인데 포트를 쥔 pid 가 MainPID 가 아니면 옛 손 터널이
+      # 그 포트를 잡고 있고 유닛은 바인드 실패로 영원히 재시도하는 상태다(그때도 is-active 는 active/activating).
+      _tu_main="$(systemctl --user show -p MainPID --value ste-tunnel.service 2>/dev/null || echo 0)"
+      echo "      유닛 MainPID: ${_tu_main:-0}"
+      for _pp in 15810 15812; do
+        _ln="$(ss -ltnpH "sport = :$_pp" 2>/dev/null)"
+        [ -n "$_ln" ] && printf '      :%s %s\n' "$_pp" "$_ln" || echo "      :$_pp 리스너 없음 ← 유닛이 이 포트를 안 연다(옛 손 유닛) 또는 바인드 실패"
+      done
+      _stray="$(for _pp in 15810 15812; do ss -ltnpH "sport = :$_pp" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2; done | sort -u | grep -v "^${_tu_main:-0}$" | tr '\n' ' ')"
+      [ -n "${_stray// /}" ] && echo "      ⚠ 유닛이 아닌 pid 가 포트를 쥐고 있다: $_stray — ./infra/scripts/install-ste-tunnel.sh 가 내리고 다시 세운다"
+      journalctl --user -u ste-tunnel -n 6 --no-pager -o cat 2>/dev/null | sed 's/^/      journal: /'
     fi
   else
     warn tunnel-unit "리포 유닛이 없다 — 손으로 만든 터널이거나 미설치(install-ste-tunnel.sh)"
@@ -109,7 +125,8 @@ else
   # update-all §6 이 헤더로 가른다 — doctor 만 "다르다" 로 읽으면 처방(FORCE_SSO_SECRET)이 틀린다(cae00 실측 2026-09-27).
   hdr="$(curl -s -D - -o /dev/null -m 4 -X POST -H 'X-Heax-Gateway-Secret: probe-not-a-secret' -H 'X-Heax-User-Email: probe@invalid' "http://127.0.0.1:$HTTP_PORT/ste/api/auth/sso" 2>/dev/null || true)"
   if printf '%s' "$hdr" | grep -qi '^www-authenticate:'; then v=mw; else
-    v="$(printf 'header = "X-Heax-Gateway-Secret: %s"\n' "$SECRET" | curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST -K - "http://127.0.0.1:$HTTP_PORT/ste/api/auth/sso/verify" 2>/dev/null || echo 000)"
+    v="$(printf 'header = "X-Heax-Gateway-Secret: %s"\n' "$SECRET" | curl -s -o /dev/null -w '%{http_code}' -m 4 -X POST -K - "http://127.0.0.1:$HTTP_PORT/ste/api/auth/sso/verify" 2>/dev/null)" || true
+    v="${v:-000}"
   fi
   case "$v" in
     mw)  bad sso-secret "헤드에 **옛 판**이 떠 있다(/api/auth/sso 를 미들웨어가 401) — 시크릿 비교 이전 문제. 코드 갱신부터: ./infra/scripts/update-all.sh --with-ste 또는 infra/scripts/deploy-ste.sh" ;;
@@ -165,7 +182,8 @@ if [ "$ETLS" != true ]; then
     *)         warn https "꺼짐(ENABLE_TLS≠true) — 이 박스는 http :$HTTP_PORT 만 낸다. 공개 주소가 https 면 infra/.env 에 ENABLE_TLS=true·TLS_CERT_PATH(fullchain)·PUBLIC_BASE_URL=https://…·COOKIE_SECURE=true" ;;
   esac
 else
-  hc="$(curl -sk -o /dev/null -w '%{http_code}' -m 4 "https://127.0.0.1:$HPORT/health" 2>/dev/null || echo 000)"
+  hc="$(curl -sk -o /dev/null -w '%{http_code}' -m 4 "https://127.0.0.1:$HPORT/health" 2>/dev/null)" || true
+  hc="${hc:-000}"
   if [ "$hc" != 200 ]; then
     bad https ":$HPORT 무응답($hc) — 인증서 경로(TLS_CERT_PATH, 리포 루트 상대)·rootless 저포트(grant-net-bind.sh)·nginx 로그"
   else

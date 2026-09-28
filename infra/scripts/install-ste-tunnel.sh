@@ -18,16 +18,60 @@ ok()  { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*" >&2; }
 die() { bad "$*"; exit 1; }
 
+# ⚠ `|| echo 000` 을 붙이지 않는다 — curl 은 연결 실패에도 -w 로 이미 000 을 찍어서, 둘이 겹쳐 '000000' 이 됐다
+# (사용자 화면 실측). 값은 curl 이 찍은 것을 쓰고 rc 만 삼킨다.
+_code() { local c; c="$(curl -s -o /dev/null -w '%{http_code}' -m "${2:-4}" "$1" 2>/dev/null)" || true; printf '%s' "${c:-000}"; }
+
+# 그 포트를 **누가** 듣고 있나 — 주소까지 보여 준다. 개수만 세면 '있다/없다' 만 알고 원인을 못 가른다.
+_port_line() { ss -ltnpH "sport = :$1" 2>/dev/null | sed "s/^/      :$1 /" ; }
+_port_pids() { ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u; }
+
+# 유닛이 아닌 **우리 소유 ssh 터널**이 그 포트를 잡고 있나. 이게 있으면 유닛의 -L 바인드가 실패하고
+# (ExitOnForwardFailure=yes) 유닛은 영원히 재시도한다 — 그동안 옛 프로세스가 15810 만 열고 있어
+# "15810 은 200, 15812 는 000, 유닛은 active" 라는 정확히 헷갈리는 모양이 된다.
+# 판정을 좁게 잡는다(포트킬 오살 방지 규율): LISTEN · 그 루프백 포트 · comm=ssh · cmdline 에 -L 127.0.0.1:1581 · 유닛 MainPID 아님.
+# 아래 셋은 시험에서 바꿔 끼운다 — 고르는 규칙이 이 스크립트에서 가장 위험한 부분이라(남의 프로세스를
+# 죽이면 안 된다) 실제 프로세스 없이도 규칙을 검사할 수 있어야 한다.
+_unit_mainpid() { systemctl --user show -p MainPID --value ste-tunnel.service 2>/dev/null || echo 0; }
+_pid_comm()     { cat "/proc/$1/comm" 2>/dev/null; }
+_pid_cmdline()  { tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null; }
+_stray_pids() {
+  local main p out=""
+  main="$(_unit_mainpid)"
+  for p in $(_port_pids 15810) $(_port_pids 15812); do
+    [ "$p" = "${main:-0}" ] && continue
+    [ "$(_pid_comm "$p")" = ssh ] || continue
+    _pid_cmdline "$p" | grep -q -- '-L 127.0.0.1:1581' || continue
+    case " $out " in *" $p "*) ;; *) out="$out $p" ;; esac
+  done
+  printf '%s' "${out# }"
+}
+
 # 터널 두 포트가 실제로 답하나 — 살아 있으면 15810 /api/health 200, 15812 /mcp 406(Accept 없음) 또는 200.
 # 죽었으면 000. 유닛이 active 라도 포워딩이 안 된 상태를 여기서 가른다(dev 실측 기준).
 check_ports() {
   local h m
-  h="$(curl -s -o /dev/null -w '%{http_code}' -m 4 http://127.0.0.1:15810/api/health 2>/dev/null || echo 000)"
-  m="$(curl -s -o /dev/null -w '%{http_code}' -m 4 http://127.0.0.1:15812/mcp 2>/dev/null || echo 000)"
+  h="$(_code http://127.0.0.1:15810/api/health)"
+  m="$(_code http://127.0.0.1:15812/mcp)"
   [ "$h" = 200 ] && ok "15810 (웹/REST) → 200" || bad "15810 (웹/REST) → $h"
   case "$m" in 200|405|406) ok "15812 (MCP) → $m" ;; *) bad "15812 (MCP) → $m  ← 게이트웨이 ste 도구 8종이 안 뜨는 원인" ;; esac
   [ "$h" = 200 ] && case "$m" in 200|405|406) return 0 ;; esac
   return 1
+}
+
+# 15812 가 안 되는 두 가지를 가른다 — (a) 로컬에 리스너가 없다(유닛이 그 포트를 안 연다/못 연다)
+# (b) 리스너는 있는데 000(터널은 열렸고 **헤드 쪽 연결**이 거부됐다). 종전엔 둘 다 '000' 하나로 보였다.
+explain_15812() {
+  local n; n="$(_port_pids 15812 | wc -l)"
+  echo "    로컬 리스너:"; _port_line 15810; _port_line 15812
+  if [ "$n" = 0 ]; then
+    echo "    → 127.0.0.1:15812 를 **아무도 듣지 않는다**. 유닛이 그 포트를 안 열거나(옛 손 유닛) 바인드에 실패했다."
+  else
+    echo "    → 포트는 열려 있는데 000 이다. 터널은 섰고 **헤드에서 127.0.0.1:15812 로 가는 연결이 거부**된 것이다."
+    echo "       헤드에서 볼 것: systemctl is-active ste-mcp · ss -ltn | grep 15812 (주소가 0.0.0.0 인가) ·"
+    echo "       curl -o /dev/null -w '%{http_code}' http://127.0.0.1:15812/mcp  (헤드 자기 자신에서 406/200 이면 터널 문제다)"
+  fi
+  journalctl --user -u ste-tunnel -n 8 --no-pager -o cat 2>/dev/null | sed 's/^/    journal: /'
 }
 
 if [ "${1:-}" = "remove" ]; then
@@ -43,7 +87,11 @@ if [ "${1:-}" = "--check" ]; then
     else bad "유닛에 -L 15812 포워딩이 없다(옛 손 유닛) — 인자 없이 다시 실행하면 리포 유닛으로 덮어쓰고 재기동한다"; fi
   else bad "유닛 없음: $UNIT"; fi
   check_ports; _cp=$?
-  [ "$_cp" = 0 ] || { echo "  로컬 리스너: 15810=$(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15810 ') 15812=$(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15812 ')"; journalctl --user -u ste-tunnel -n 4 --no-pager -o cat 2>/dev/null | sed 's/^/  journal: /'; }
+  if [ "$_cp" != 0 ]; then
+    explain_15812
+    _st="$(_stray_pids)"
+    [ -n "$_st" ] && bad "유닛이 아닌 ssh 가 그 포트를 잡고 있다(pid $_st) — 인자 없이 실행하면 그것을 내리고 유닛으로 다시 세운다"
+  fi
   exit $_cp
 fi
 
@@ -72,8 +120,14 @@ TARGET="$REMOTE_USER@$HEAD_NODE.$TP_CLUSTER"
 
 # ── 설치 ────────────────────────────────────────────────────────────────────
 if [ ! -e "/var/lib/systemd/linger/$USER" ]; then
-  echo "→ linger 켜기(sudo, 1회) — 로그아웃·재부팅에도 터널이 산다"
-  sudo loginctl enable-linger "$USER"
+  # 비대화식(update-all 안)에서는 sudo 프롬프트로 갱신을 매달지 않는다 — 건너뛰고 무엇이 남았는지 말한다.
+  if [ -t 0 ] && [ "${STE_TUNNEL_NONINTERACTIVE:-0}" != 1 ]; then
+    echo "→ linger 켜기(sudo, 1회) — 로그아웃·재부팅에도 터널이 산다"
+    sudo loginctl enable-linger "$USER"
+  else
+    echo "  ○ linger 미설정 — 지금은 건너뛴다(비대화식). 로그아웃·재부팅 뒤에도 터널이 살게 하려면 한 번:"
+    echo "      sudo loginctl enable-linger $USER"
+  fi
 fi
 mkdir -p "$UNIT_DIR"
 sed -e "s#__SSH_CONFIG__#$SSH_CONFIG#g" -e "s#__TARGET__#$TARGET#g" "$UNIT_SRC" > "$UNIT"
@@ -84,8 +138,23 @@ systemctl --user restart ste-tunnel.service
 ok "ste-tunnel.service 설치·기동 (→ $TARGET, 15810·15812)"
 sleep 3
 if check_ports; then ok "터널 두 포트 확인"; else
-  bad "터널이 포트를 못 열었다 — Teleport 세션(tsh status)과 아래 로그를 본다"
-  journalctl --user -u ste-tunnel -n 8 --no-pager 2>/dev/null | sed 's/^/    /' || true
+  # 가장 흔한 뿌리를 여기서 직접 걷어낸다 — 옛 손 터널이 15810 을 쥐고 있으면 유닛은 바인드에 실패해
+  # 영원히 재시도하고, 사람 눈에는 "15810 은 되는데 15812 만 안 된다" 로 보인다(cae00 증상과 일치).
+  _st="$(_stray_pids)"
+  if [ -n "$_st" ] && [ "${STE_TUNNEL_NO_KILL:-0}" != 1 ]; then
+    bad "유닛이 아닌 ssh 터널이 포트를 쥐고 있다(pid $_st) — 내리고 유닛으로 다시 세운다"
+    ps -o pid,lstart,args -p $_st 2>/dev/null | sed 's/^/      /' || true
+    kill $_st 2>/dev/null || true
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+      [ -z "$(_stray_pids)" ] && break; sleep 1
+    done
+    systemctl --user restart ste-tunnel.service; sleep 3
+    if check_ports; then ok "옛 터널을 걷어내고 두 포트 확인"; echo "관리:  systemctl --user {status|restart|stop} ste-tunnel"; exit 0; fi
+  elif [ -n "$_st" ]; then
+    bad "유닛이 아닌 ssh 터널이 포트를 쥐고 있다(pid $_st) — STE_TUNNEL_NO_KILL=1 이라 손대지 않았다. 수동: kill $_st"
+  fi
+  bad "터널이 포트를 못 열었다 — Teleport 세션(tsh status)과 아래를 본다"
+  explain_15812
   exit 1
 fi
 echo "관리:  systemctl --user {status|restart|stop} ste-tunnel   로그: journalctl --user -u ste-tunnel -f"

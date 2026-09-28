@@ -212,12 +212,16 @@ def test_gateway_ste_down_is_a_fail_when_routed():
     assert _ste_gw({"backends": {}}) == "FAIL"                     # 아예 없어도 fail
 
 
-def test_gateway_ste_down_hint_points_at_the_tunnel_port():
-    """15812 가 안 열려 있으면 ste-tunnel 을 가리켜야 한다 — '매핑된 서비스 없음' 이 아니라."""
+def test_gateway_ste_down_hint_points_at_the_two_remaining_causes():
+    """15812 가 000 이면 남은 원인은 둘이다 — 터널이 그 포트를 못 열었나(로컬 리스너 0), 헤드가 연결을 거부하나(1).
+    §2d 가 이미 터널을 세우려 했으므로 '매핑된 서비스 없음' 이 아니라 그 둘을 가르는 말을 해야 한다(2026-09-28)."""
     out = _run_block("  # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1)", "  # ── 포털 권한 정책이",
                      env_lines=['STE_ROUTED="1"', 'STE_MCP_URL="http://127.0.0.1:15812/mcp"'],
                      health={"backends": {"ste": False}}, curl_code="000")
-    assert "FAIL" in out and "15812" in out and "ste-tunnel" in out
+    assert "FAIL" in out and "15812" in out
+    assert "0개면 터널이 그 포트를 못 열었다" in out and "1개면 헤드에서" in out, out
+    assert "ste-doctor.sh" in out, "남은 한 갈래는 헤드 쪽이라 진단 화면을 가리킨다"
+    assert "(000)" in out and "000000" not in out, "코드가 두 번 찍히지 않는다"
     # 포트는 살아 있는데 게이트웨이만 못 붙었으면 재기동을 가리킨다(dev 실측: 살아 있으면 406)
     out = _run_block("  # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1)", "  # ── 포털 권한 정책이",
                      env_lines=['STE_ROUTED="1"', 'STE_MCP_URL="http://127.0.0.1:15812/mcp"'],

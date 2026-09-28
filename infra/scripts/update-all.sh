@@ -544,6 +544,35 @@ else
   hwax_skip "ste 코드 최신화" "deploy-ste.sh 가 없다(구버전 체크아웃)" "git pull 뒤 재실행"
 fi
 
+# ── 2d) ste 터널 정합 — cae00(teleport)은 15810·15812 를 SSH 터널로 받는다. 그 터널을 **배포가 세운다**.
+# 종전엔 §6 이 "15812 에 아무것도 없다" 고 **보고만** 했다. 배포를 다시 돌려도 터널은 아무도 손대지 않으니
+# 같은 빨강이 매번 반복됐다(사용자 실측: "여전히 배포하면 …"). 자동 복구가 이 자리다 —
+# 읽기 검사(--check)가 통과하면 아무것도 건드리지 않고, 실패했을 때만 리포 유닛으로 다시 세운다.
+# 옛 손 터널이 15810 을 쥐고 있으면 유닛의 -L 바인드가 실패해 영원히 재시도하는데(ExitOnForwardFailure),
+# 사람 눈에는 "15810 은 되는데 15812 만 안 된다" 로 보인다 — install-ste-tunnel.sh 가 그것을 내리고 다시 세운다.
+hr "2d) ste 터널 정합 (teleport 박스만)"
+_tenv=""
+for _c in "$SELF_REPO/../SmartTwinExplorer/deploy/transport.env" "$HOME/SmartTwinExplorer/deploy/transport.env"; do
+  [ -f "$_c" ] && { _tenv="$_c"; break; }
+done
+_tmode=""; [ -n "$_tenv" ] && _tmode="$(_envfile_value "$_tenv" TRANSPORT_MODE)"
+if [ ! -x "$SELF_REPO/infra/scripts/install-ste-tunnel.sh" ]; then
+  hwax_skip "ste 터널 정합" "install-ste-tunnel.sh 가 없다(구버전 체크아웃)" "git pull 뒤 재실행"
+elif [ "$_tmode" != teleport ]; then
+  hwax_skip "ste 터널 정합" "이 박스는 teleport 가 아니다(transport=${_tmode:-설정 없음}) — 포털이 헤드에 직결이라 터널이 필요 없다" \
+    "teleport 박스라면 SmartTwinExplorer/deploy/transport.env 에 TRANSPORT_MODE=teleport (런북 §4)"
+elif STE_TUNNEL_NONINTERACTIVE=1 "$SELF_REPO/infra/scripts/install-ste-tunnel.sh" --check >/dev/null 2>&1; then
+  ok "ste 터널 15810·15812 둘 다 응답"
+else
+  echo "  · 터널 점검 실패 — 리포 유닛으로 다시 세운다(옛 손 터널이 포트를 쥐고 있으면 내린다)"
+  if STE_TUNNEL_NONINTERACTIVE=1 timeout --foreground 240 "$SELF_REPO/infra/scripts/install-ste-tunnel.sh"; then
+    ok "ste 터널 복구 — 15810·15812 둘 다 응답"
+  else
+    # 여기서 끊지 않는다. 남은 원인은 헤드 쪽(ste-mcp 미기동·Teleport 세션 만료)이라 위 출력이 그것을 가른다.
+    fail "ste 터널 복구 실패 — 위의 '로컬 리스너'·journal 을 보라. 진단 한 화면: ./infra/scripts/ste-doctor.sh"
+  fi
+fi
+
 # ── 3.5) agent-server .env 자동 보정 — 챗 스택 재기동 전에 vLLM 주소를 확정한다.
 #   ① .env 없으면 apply-envs 로 신규 생성(@FROM_RA 마커를 RA .env 의 LLM_* 값으로 치환)
 #   ② @FROM_RA 마커가 남아있으면(킷 raw 복사/수동편집 흔적 — apply-envs 는 기존키 보존이라 못 고침)
@@ -1286,12 +1315,19 @@ PY
         # 원인 대부분은 게이트웨이가 ste MCP(:15812)에 못 닿는 것이다. cae00 은 SSH 터널이라
         # 15810 만 열고 15812 를 안 열면 **정확히 이 모양**이다 — 그래서 포트를 직접 찔러 가른다.
         # 살아 있으면 GET /mcp 가 406(Accept 없음) 또는 200, 죽었으면 000 (dev 실측).
-        _mcp_probe="$(curl -s -o /dev/null -w '%{http_code}' -m 4 "${STE_MCP_URL:-http://127.0.0.1:15812/mcp}" 2>/dev/null || echo 000)"
+        # `|| echo 000` 을 붙이지 않는다 — curl 은 연결 실패에도 -w 로 이미 000 을 찍어 둘이 겹쳐 '000000' 이 됐다(사용자 화면 실측).
+        _mcp_probe="$(curl -s -o /dev/null -w '%{http_code}' -m 4 "${STE_MCP_URL:-http://127.0.0.1:15812/mcp}" 2>/dev/null)" || true
+        _mcp_probe="${_mcp_probe:-000}"
         case "$_mcp_probe" in
           200|405|406) fail "ste MCP         :15812 는 살아 있는데 게이트웨이 ste 백엔드가 $_ste_gw — 게이트웨이 재기동 필요(정적 백엔드는 /refresh 로 안 붙는다)" ;;
           *) fail "ste MCP         ${STE_MCP_URL:-http://127.0.0.1:15812/mcp} 에 아무것도 없다($_mcp_probe) — ste 도구 8종이 통째로 안 뜬다"
              case "${STE_MCP_URL:-}" in *127.0.0.1*|*localhost*)
-               echo "    (cae00) 터널이 15812 를 열고 있는데도 000 이면 헤드의 ste-mcp.service 가 죽은 것이다(install-ste-tunnel.sh --check 로 터널을, ste-doctor 가 헤드 journal 을 보여 준다)" ;;
+               # §2d 가 이미 터널을 세우려 시도했다. 그래도 000 이면 남은 원인은 로컬 리스너 유무로 갈린다 —
+               # 리스너가 없으면 터널이 그 포트를 못 열었고(§2d 출력), 있으면 헤드에서 15812 로 가는 연결이 거부된 것이다.
+               echo "    (cae00) §2d 가 터널을 세우려 했는데도 000 이다. 로컬 리스너: $(ss -ltn 2>/dev/null | grep -c '127.0.0.1:15812 ')개"
+               echo "    · 0개면 터널이 그 포트를 못 열었다 — 위 §2d 의 journal·'유닛이 아닌 pid' 줄을 보라"
+               echo "    · 1개면 헤드에서 127.0.0.1:15812 로 가는 연결이 거부됐다 — 진단 한 화면: ./infra/scripts/ste-doctor.sh"
+               echo "      (그 화면이 헤드의 listen 주소와 '헤드 자기 자신 curl /mcp' 결과를 같이 보여 준다)" ;;
              esac ;;
         esac ;;
       *) bad "ste MCP         게이트웨이 /health 를 못 읽어 판정 불가" ;;

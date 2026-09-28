@@ -41,6 +41,7 @@
 | **§2b** | `/data` 이관 — `HWAX_DATA_ROOT` 가 있을 때만(멱등·자동 롤백) | `hr "2b)"` |
 | **§3** | **AIDataHub 데이터 병합** — 아래 §2 참조. 비파괴 merge | `hr "3)"` |
 | **§2c** | **ste 코드 최신화(다를 때만)** — `deploy-ste.sh --if-stale`(상한 900초). direct 박스는 지문이 다를 때만, teleport 박스는 공용 게이트 세 신호를 통과할 때만. 게이트가 막으면 rc 3 = "안 켬"(○ 장부) | `hr "2c)"` |
+| **§2d** | **ste 터널 정합(teleport 박스만)** — `install-ste-tunnel.sh --check` 로 15810·15812 를 실측하고, 실패하면 리포 유닛으로 다시 세운다(옛 손 터널이 포트를 쥐고 있으면 내린다 — `STE_TUNNEL_NO_KILL=1` 로 끔). 종전엔 §6 이 **보고만** 해서 배포를 다시 돌려도 같은 빨강이 반복됐다(2026-09-28 사용자 실측). `sudo loginctl enable-linger` 는 비대화식이라 프롬프트 대신 한 줄 안내로 건너뛴다. teleport 가 아닌 박스는 ○ | `hr "2d)"` |
 | §4 | 챗 스택 pull+재기동 — `signalforge-mcp mcp-gateway agent-server`(백엔드→게이트웨이→소비자 순) — **지문(git HEAD + .env + 매니페스트 identity 파일)이 마지막 기동 시점과 같고 살아 있으면 down/up 생략**(.env 를 누가 언제 고쳤든 지문에 든다). 재기동했으면 health 포트의 프로세스가 바뀐 것을 확인한 뒤에만 기록(같으면 ✗). `git pull` 만 실패하고 서비스가 정상이면 재기동 없이 끝에서 `▶ ⚠ 갱신(git pull) 실패:<이름>` + 종료코드 1(포털이 그렇더라도 나머지는 계속한다). 수동 강제: `HWAX_FORCE_RESTART="<이름> …"`. 전부 재기동: `HWAX_RESTART_ALL=1` | `hr "4)"` |
 | **§3.5** | agent-server `.env` 보정 — `@FROM_RA` 미치환 마커 제거·재치환, `VLLM_BASE_URL` 확정 | `hr "3.5)"` |
 | §5 | 게이트웨이 config 정합 — 기대 백엔드 빠졌으면 `provision-config --force` 후 재기동·재검증 | `hr "5)"` |
@@ -49,7 +50,7 @@
 | **§7** | **챗 스모크**(critical) — `/chat` 에 실제 문장 하나를 보내 응답이 오는지. 실패면 agent-server 로그 꼬리를 함께 낸다 | 스크립트 끝 |
 | 끝 | **○ "있는데 안 켠 것" 요약** — 기능 N · 값 미정 설정 N · 선택 설정 N, 각각 "켜려면" 과 함께 | `hwax_skip_summary` |
 
-**화면에 찍히는 실제 순서**(배너 문자열) — `1) · 1b) · 1c) · 1d) · 2) · 2b) · 3) · 2c) · 3.5) · 4) · 5) · 6) · 6b) · 7)`.
+**화면에 찍히는 실제 순서**(배너 문자열) — `1) · 1b) · 1c) · 1d) · 2) · 2b) · 3) · 2c) · 2d) · 3.5) · 4) · 5) · 6) · 6b) · 7)`.
 번호가 순서와 어긋난 자리가 있다(2c 가 3 뒤, 3.5 가 2c 뒤) — 배너 문자열로 찾는 것이 안전하다.
 
 **§6 의 치명 항목**(하나라도 실패면 끝에서 `exit 1`, 그리고 무엇이 세웠는지 목록을 다시 낸다) — 무인증 `/health`
@@ -123,7 +124,8 @@ MCP 경로(Claude Code·게이트웨이)와 웹 경로(`/시뮬심의`) **둘 �
 STE 백엔드는 **cae00 가 아니라 에어갭 ste 헤드노드** 에 있다. cae00 은 그 헤드노드 직결 경로가 없어 **Teleport SSH
 터널**(`ste-tunnel`)로 닿는데 **포트가 둘**이다 — 루프백 **15810**(웹·REST)과 **15812**(ste MCP). 15812 가 없으면 게이트웨이
 ste 백엔드가 영구 DOWN 이고 **ste 도구 8종이 통째로 안 뜬다**(§6 이 fail 로 잡는다). 유닛은 리포가 소유한다 —
-`infra/systemd/ste-tunnel.service` 템플릿 + `./infra/scripts/install-ste-tunnel.sh`(설치 · `--check` 로 두 포트 실측 ·
+`infra/systemd/ste-tunnel.service` 템플릿 + `./infra/scripts/install-ste-tunnel.sh`(설치 · `--check` 로 두 포트 실측 · **update-all §2d 가 자동으로 부른다** ·
+15812 가 000 이면 두 원인을 갈라 준다 — 로컬 리스너가 **없으면** 유닛이 그 포트를 못 연 것이고(옛 손 터널이 15810 을 쥐면 `ExitOnForwardFailure` 로 유닛이 영원히 재시도한다), **있는데** 000 이면 헤드에서 `127.0.0.1:15812` 로 가는 연결이 거부된 것이다(`ste-doctor.sh` 가 헤드의 listen **주소**와 헤드 자기 자신의 `curl /mcp` 코드를 같이 보여 준다) ·
 `remove`, linger 포함, 값은 `transport.env` 에서 읽는다). STE 는 `services.yaml` 의 **기동·갱신 대상이 아니다**(데이터만
 `data_only:` 에 등록돼 `services.py data --check` 가 본다).
 
