@@ -87,9 +87,9 @@ export async function fetchHubApps(): Promise<HubApps> {
   return (await res.json()) as HubApps;
 }
 
-/** 끈 앱 목록을 통째로 저장한다 — 서버가 게이트웨이 캐시를 바로 깬다. */
-export async function saveHubApps(muted: string[]): Promise<HubApps> {
-  const res = await apiFetch('/auth/access/apps', {
+/** 앱 하나를 끄거나 켠다 — 목록을 통째로 보내지 않는다(두 탭이 서로의 선택을 덮지 않게). 서버가 게이트웨이 캐시를 바로 깬다. */
+export async function saveHubApp(app: string, muted: boolean): Promise<HubApps> {
+  const res = await apiFetch(`/auth/access/apps/${encodeURIComponent(app)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ muted }),

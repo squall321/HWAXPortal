@@ -1,6 +1,6 @@
 // 허브에 보일 앱 — 개인 Claude(Code·Desktop 등)의 허브 도구 목록·검색에서 관심 없는 앱을 끄는 표(docs/mcp-app-toggle)
 import { useEffect, useState } from 'react';
-import { fetchHubApps, saveHubApps, type HubApps } from '../api/access.api';
+import { fetchHubApps, saveHubApp, type HubApps } from '../api/access.api';
 
 export default function HubAppsPanel() {
   const [data, setData] = useState<HubApps | null>(null);
@@ -13,17 +13,18 @@ export default function HubAppsPanel() {
       .catch((e: Error) => setError(e.message));
   }, []);
 
-  const toggle = async (app: string) => {
+  const toggle = async (app: string, muted: boolean) => {
     if (!data || saving) return;
-    const muted = new Set(data.muted);
-    if (muted.has(app)) muted.delete(app);
-    else muted.add(app);
     setSaving(app);
     setError(null);
     try {
-      setData(await saveHubApps([...muted]));
+      setData(await saveHubApp(app, muted));
     } catch (e) {
       setError((e as Error).message);
+      // 실패하면 서버의 지금 상태로 다시 그린다 — 옛 화면을 들고 있으면 다른 탭에서 바꾼 것과 어긋난 채 남는다
+      fetchHubApps()
+        .then(setData)
+        .catch(() => {});
     } finally {
       setSaving(null);
     }
@@ -33,8 +34,8 @@ export default function HubAppsPanel() {
     <section style={{ marginBottom: '1.75rem' }}>
       <h2 style={{ fontSize: '1.05rem', marginBottom: '0.3rem' }}>허브에 보일 앱</h2>
       <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.6rem' }}>
-        관심 없는 앱을 끄면 개인 Claude 의 허브 도구 목록과 도구 검색에서 빠집니다. 권한과는 별개이고, 포털 웹 챗·심의에는 영향이
-        없습니다. 도구 검색은 바로 바뀌고, 열려 있는 Claude 의 도구 목록은 다시 연결해야 바뀝니다 — Claude Code 는 <code>/mcp</code>
+        관심 없는 앱을 끄면 개인 Claude 의 허브 도구 목록과 도구 검색에서 빠집니다. 권한과는 별개이고, 포털 웹 챗·웹 심의에는 영향이
+        없습니다(Claude Code 에서 돌리는 심의도 개인 Claude 라 끈 앱이 검색에서 빠집니다). 도구 검색은 바로 바뀌고, 열려 있는 Claude 의 도구 목록은 다시 연결해야 바뀝니다 — Claude Code 는 <code>/mcp</code>
         에서 hwax 재연결(또는 재시작), Desktop 은 완전히 종료한 뒤 다시 실행하세요.
       </p>
       {error && (
@@ -72,8 +73,11 @@ export default function HubAppsPanel() {
                         id={`hub-app-${a.app}`}
                         type="checkbox"
                         checked={!a.muted}
-                        disabled={saving !== null}
-                        onChange={() => toggle(a.app)}
+                        // 앱 이름을 붙인다 — 없으면 화면 낭독기가 스위치마다 '보임/꺼짐' 만 읽는다
+                        aria-label={`${a.label} 허브에 보이기`}
+                        // disabled 로 막으면 저장하는 동안 포커스가 사라진다 — 알리기만 하고 중복 저장은 toggle 이 막는다
+                        aria-disabled={saving !== null}
+                        onChange={() => toggle(a.app, !a.muted)}
                       />
                       {saving === a.app ? '저장 중…' : a.muted ? '꺼짐' : '보임'}
                     </label>
