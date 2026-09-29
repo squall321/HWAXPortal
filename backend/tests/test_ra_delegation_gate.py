@@ -72,11 +72,17 @@ def portal():
     srv.shutdown()
 
 
-def _run_gate(tmp_path, port: int, cfg: dict | None) -> str:
+NEW_GW = "class _ConnLookupError(Exception):\n    pass\n"     # 새 판 게이트웨이의 표식(게이트웨이 b9cc6e7)
+
+
+def _run_gate(tmp_path, port: int, cfg: dict | None, gateway_py: str = NEW_GW) -> str:
     gw = tmp_path / "HWAXMcpGateway"; gw.mkdir(exist_ok=True)
+    (gw / "gateway.py").write_text(gateway_py)
     if cfg is not None:
+        cfg = {"portal": {"jwks_url": f"http://127.0.0.1:{port}/.well-known/jwks.json"}, **cfg}
         (gw / "gateway_config.json").write_text(json.dumps(cfg))
-    blk = _gate_block().replace("127.0.0.1:8723", f"127.0.0.1:{port}")   # 시험 포털로만 돌린다
+    # 주소는 게이트웨이 config 에서 온다(jwks_url 을 시험 포털로) — 기본값 문자열이 쓰이면 진짜 :8723 에 닿으니 막는다
+    blk = _gate_block().replace("http://127.0.0.1:8723", "http://127.0.0.1:1")
     script = ("ok(){ echo \"OK $*\"; }\nfail(){ echo \"FAIL $*\"; }\n"
               "hwax_skip(){ echo \"SKIP $1\"; }\n"
               f"{_fn('_ra_conn_verdict')}\nGW_DIR={gw}\n{blk}")
@@ -143,3 +149,33 @@ def test_wire_는_없으면_덧붙인다(tmp_path):
     p = _wire_tree(tmp_path, "A=1")
     _wire(p, tmp_path)
     assert (p / "backend/.env").read_text().endswith("\nGATEWAY_SHARED_TOKEN=NEW\n")
+
+
+def test_점검은_게이트웨이와_같은_규칙으로_주소를_정한다(tmp_path, portal):
+    """api_base 가 있으면 그것, 없으면 jwks_url 의 origin — gateway.py _portal_api_base() 와 같다."""
+    _Portal.code = 404
+    out = _run_gate(tmp_path, portal, {"_gateway": {"token": "t"}, "reportarchive": {"url": "x"},
+                                       "portal": {"api_base": f"http://127.0.0.1:{portal}/"}})
+    assert out.startswith("OK") and _Portal.seen[0][0].startswith("/internal/connections/reportarchive")
+    _Portal.seen = []
+    out = _run_gate(tmp_path, portal, {"_gateway": {"token": "t"}, "reportarchive": {"url": "x"},
+                                       "portal": {"api_base": "http://127.0.0.1:1",
+                                                  "jwks_url": f"http://127.0.0.1:{portal}/.well-known/jwks.json"}})
+    assert out.startswith("FAIL") and _Portal.seen == [], "api_base 가 jwks 보다 먼저다(게이트웨이도 그렇다)"
+
+
+def test_짝이_맞아도_게이트웨이가_옛_판이면_통과가_아니다(tmp_path, portal):
+    """§4 가 게이트웨이 갱신에 실패해도 살아 있으면 재기동을 생략한다 — 옛 판은 못 물으면 공용 토큰으로 폴백한다."""
+    _Portal.code = 404
+    out = _run_gate(tmp_path, portal, {"_gateway": {"token": "t"}, "reportarchive": {"url": "x"}},
+                    gateway_py="async def _portal_connection(): ...\n")
+    assert out.startswith("FAIL") and "옛 판" in out
+
+
+def test_wire_는_포털처럼_등호_주변_공백과_줄끝_주석을_읽는다(tmp_path):
+    p = _wire_tree(tmp_path, "GATEWAY_SHARED_TOKEN=OLD1\nGATEWAY_SHARED_TOKEN = OLD2\n")
+    assert "갈아 끼웠다" in _wire(p, tmp_path)
+    assert (p / "backend/.env").read_text() == "GATEWAY_SHARED_TOKEN=OLD1\nGATEWAY_SHARED_TOKEN = NEW\n", \
+        "포털(dotenv)은 마지막 줄을 읽는다 — 그 줄을 갈아야 한다"
+    p2 = _wire_tree(tmp_path / "c", "GATEWAY_SHARED_TOKEN=NEW  # 게이트웨이 GW_TOKEN\n")
+    assert "이미 배선됨" in _wire(p2, tmp_path), "줄끝 주석을 값으로 읽어 헛된 재기동을 시켰다"

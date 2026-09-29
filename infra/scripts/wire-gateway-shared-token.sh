@@ -41,11 +41,12 @@ else:
 import re
 env_path = root / "backend" / ".env"
 txt = env_path.read_text() if env_path.exists() else ""
-line_re = re.compile(r"^([ \t]*(?:export[ \t]+)?GATEWAY_SHARED_TOKEN=)(.*)$", re.M)
+# 포털은 python-dotenv 로 읽는다 — `KEY = 값`(= 앞뒤 공백)도 받고, 따옴표 없는 값의 ` # 주석` 은 떼어 읽는다
+line_re = re.compile(r"^([ \t]*(?:export[ \t]+)?GATEWAY_SHARED_TOKEN[ \t]*=[ \t]*)(.*)$", re.M)
 m = None
 for m in line_re.finditer(txt):
     pass                                   # 마지막 활성 줄이 이긴다(.env 읽기 규칙)
-if m is not None and m.group(2).strip().strip('"').strip("'") == tok:
+if m is not None and re.split(r"[ \t]+#", m.group(2))[0].strip().strip('"').strip("'") == tok:
     print("  · 포털 GATEWAY_SHARED_TOKEN 이미 배선됨(게이트웨이 GW_TOKEN 과 같다)")
 elif m is not None:
     env_path.write_text(txt[:m.start(2)] + tok + txt[m.end(2):])

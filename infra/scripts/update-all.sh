@@ -1358,12 +1358,20 @@ PY
   # 공유 시크릿 짝(게이트웨이 GW_TOKEN = 포털 GATEWAY_SHARED_TOKEN)을 직접 본다. 없는 이메일로 물어 404 면 통과다.
   if [ -n "${GW_DIR:-}" ] && [ -f "$GW_DIR/gateway_config.json" ] \
      && python3 -c 'import json,sys;sys.exit(0 if "reportarchive" in json.load(open(sys.argv[1])) else 1)' "$GW_DIR/gateway_config.json" 2>/dev/null; then
+    # 게이트웨이가 실제로 묻는 주소 — gateway.py _portal_api_base() 와 같은 규칙(api_base, 없으면 jwks_url 의 origin)
+    _conn_base="$(python3 -c 'import json,re,sys;p=json.load(open(sys.argv[1])).get("portal") or {};b=p.get("api_base");m=re.match(r"^(https?://[^/]+)",p.get("jwks_url") or "");print(str(b).rstrip("/") if b else (m.group(1) if m else ""))' \
+                    "$GW_DIR/gateway_config.json" 2>/dev/null)"
     # 시크릿은 argv 에 싣지 않는다 — curl 설정을 stdin(-K -)으로 준다
     _conn_code="$(python3 -c 'import json,sys;print("header = \"Authorization: Bearer %s\"" % json.load(open(sys.argv[1]))["_gateway"]["token"])' \
                     "$GW_DIR/gateway_config.json" 2>/dev/null \
                   | curl -s -o /dev/null -w '%{http_code}' -m 5 -K - \
-                      'http://127.0.0.1:8723/internal/connections/reportarchive?email=hwax-probe%40invalid' 2>/dev/null)"
+                      "${_conn_base:-http://127.0.0.1:8723}/internal/connections/reportarchive?email=hwax-probe%40invalid" 2>/dev/null)"
     IFS=$'\t' read -r _cv _ct <<<"$(_ra_conn_verdict "${_conn_code:-000}")"
+    # 짝이 맞아도 떠 있는 게이트웨이가 옛 판이면(§4 의 갱신 실패 — 살아 있으면 재기동을 생략한다) 못 물을 때 조용히
+    # 공용 토큰으로 폴백한다. ✓ 는 두 조건이 다 설 때만 — §4 뒤에는 디스크 코드가 떠 있는 코드다(지문·리스너 판정).
+    if [ "$_cv" = ok ] && ! grep -q '_ConnLookupError' "$GW_DIR/gateway.py" 2>/dev/null; then
+      _cv=fail; _ct="RA 사용자 위임    공유 시크릿 짝은 맞지만 게이트웨이가 옛 판이다(못 물으면 공용 토큰으로 폴백) — §4 의 mcp-gateway 갱신 실패부터 고친다"
+    fi
     case "$_cv" in ok) ok "$_ct" ;; *) fail "$_ct" ;; esac
   else
     hwax_skip "RA 사용자 위임 점검" "게이트웨이 config 에 reportarchive 백엔드가 없다(또는 게이트웨이 리포를 못 찾았다)" "RA 에서 PAT(rat_…)를 발급해 HWAXMcpGateway/provision.env 에 RAT_TOKEN=<값> 을 적고 재실행(§5)"
