@@ -9,7 +9,7 @@
 | 무엇 | 어디 |
 |---|---|
 | 끈 앱 목록 저장(사용자별, 권한과 따로) | 포털 `users.hub_muted_apps`(JSON 배열) |
-| 내 앱 표·스위치 API | 포털 `GET/PUT /auth/access/apps` — 앱 목록은 게이트웨이 `/tools-map` 에서 서버가 만든다 |
+| 내 앱 표·스위치 API | 포털 `GET /auth/access/apps`(표) · `PUT /auth/access/apps/{key}` `{muted: bool}`(앱 하나씩 — 저장소가 잠금 안에서 읽고-고쳐-쓴다, D-6) — 앱 목록은 게이트웨이 `/tools-map` 에서 서버가 만든다 |
 | 게이트웨이로 전달 | 포털 `/internal/access/entitlements` 응답에 `muted_apps` 한 칸(기존 60초 캐시를 그대로 탄다) |
 | 숨김 | 게이트웨이 PAT 분기가 `x-hwax-muted-apps` 헤더를 싣고, `tools/list`·`search_tools`·`list_tool_apps`·`by='area'` 가 거른다 |
 | 즉시 반영 | 스위치를 바꾸면 포털이 게이트웨이 `/conn-invalidate` 를 부르고, 게이트웨이는 그 사람의 권한 캐시도 비운다 |
