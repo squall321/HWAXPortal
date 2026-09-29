@@ -444,8 +444,12 @@ const roundLabels = []  // 회의록용 라운드 제목
 phase('초기입장')
 // RA(Report Archive)는 70개짜리 저작 워크플로 API 라 좌석이 입구에서 헤맨다(비슷한 이름
 // 다수·21인자 조회). 지도 도구(get_guide)와 조회 입구를 고정해 준다 — 챗·웹 심의와 파리티.
+// 이 워크플로는 사용자의 **개인 PAT** 로 돈다 — 사용자가 포털 '허브에 보일 앱' 에서 끈 앱은 도구 목록·search_tools 에서
+// 빠진다(숨김만, HWAXPortal docs/mcp-app-toggle D-2 정정). 심의가 기대는 도구는 이름으로 부르게 해 저장·근거가 끊기지 않게 한다.
+const BY_NAME = `도구 목록에 없으면 invoke_tool(name='<도구 이름>', arguments={…}) 로 불러라 — 사용자가 허브에서 그 앱을 ` +
+  `꺼 둔 경우다(목록에서만 빠지고 이름으로는 된다). `
 const RA_HINT = `과거 보고서 조회는 search_reports/get_reports_digest 부터, Report Archive ` +
-  `도구가 낯설면 get_guide 로 사용법을 먼저 보라(list_reports 의 수십 개 인자를 추측으로 채우지 마라). `
+  `도구가 낯설면 get_guide 로 사용법을 먼저 보라(list_reports 의 수십 개 인자를 추측으로 채우지 마라). ${BY_NAME}`
 const R1_INSTRUCTION = CONT
   ? `이 논의는 이어하기 라운드다. 위 [이전 심의 요약]을 읽어라(당신이 이전에 참여했다면 거기 당신의 이전 입장도 있을 것이다). [인간 검토자 의견]이 있다면 반드시 정면으로 다뤄라. 당신의 도메인 관점에서: (1) 이전 논의·인간 의견에 대한 구체적 반응(동의/반박/보완, 구체 인용), (2) 갱신되었거나 새로 형성한 권장안, (3) 이 시점에 당신 도메인이 놓치고 있는 것/리스크. 수치엔 (도구)/(경험칙) 표기. 영역 밖은 아는 척 금지. ${RA_HINT}`
   : `당신의 도메인 관점에서만: (1) 이 근거가 당신 관심사에 무엇을 의미하는지 구체 인용해 해석, (2) 권장안, (3) 이 분석이 당신 도메인에서 놓치는 것/리스크. 수치엔 (도구)/(경험칙) 표기. 영역 밖은 아는 척 금지. ${RA_HINT}`
@@ -465,10 +469,10 @@ const groundBlock = (k, first) => !GROUND ? ''
     `불러오고, 필요하면 semantic_search(q: 쟁점, agent_type: "${k}") 로 쟁점 관련 근거를 찾아라. ` +
     `수치·임계·정리를 인용할 땐 카드/섹션 출처를 붙이고, 카드에 없어 일반지식으로 답하면 ` +
     `(경험칙)/(expert-judgement)로 표기하라. 도구가 실패하면 그 사실을 한 줄로 남기고 페르소나 ` +
-    `지식으로 답하되 과단정하지 마라.\n\n`
+    `지식으로 답하되 과단정하지 마라. ${BY_NAME}\n\n`
   : `[근거 그라운딩] 네 지식카드는 앞 라운드에서 이미 읽었다 — get_context_bundle 을 다시 ` +
     `부르지 마라(같은 결과다). 쟁점이 앞 라운드에서 옮겨가 새 근거가 필요할 때만 ` +
-    `semantic_search(q: 그 쟁점, agent_type: "${k}") 로 좁혀 찾아라. 인용·표기 규칙은 그대로다.\n\n`
+    `semantic_search(q: 그 쟁점, agent_type: "${k}") 로 좁혀 찾아라. 인용·표기 규칙은 그대로다. ${BY_NAME}\n\n`
 // 페르소나 정규화 — LLM이 persona 필드에 긴 역할 설명을 붙여 반환하면 포털 저장(persona ≤120자
 // 검증)이 배치째 422로 거부된다(전기박리 심의 대화 유실 사고의 원인). 정본 키로 강제한다.
 const withKey = (k) => (o) => (o ? { ...o, persona: k } : o)
@@ -814,9 +818,10 @@ if (A.saveReport === true) {
     const raInstruction = APPEND_TO
       ? `기존 Report Archive 보고서에 이번 심의 결과를 새 페이지로 이어붙여라.\n` +
         `순서: (1) get_report(report_id=${APPEND_TO}) 로 현재 pages 배열 길이를 확인, (2) update_report_draft(report_id=${APPEND_TO}, page=<pages 길이+1>, blocks=${JSON.stringify(blocks)}) 호출.\n` +
+        `- ${BY_NAME}\n` +
         `- report_id 가 없거나(Report Archive 미가용) 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
         `- 성공하면 "${APPEND_TO}" 한 줄만 반환(붙인 보고서 번호).`
-      : `create_report_draft 도구가 사용 가능하면 호출해 아래 심의 결과를 Report Archive 에 저장하라.\n` +
+      : `create_report_draft 를 호출해 아래 심의 결과를 Report Archive 에 저장하라. ${BY_NAME}\n` +
         `인자: template_id="deliberation", template_version=1, title="심의 — ${Q.slice(0, 50)}",\n` +
         `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(blocks)}\n` +
         `- 도구가 없거나(Report Archive 미가용) 저장이 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
@@ -852,7 +857,7 @@ if (A.saveReport === true) {
       const failed = []
       for (let i = 0; i < pages.length; i++) {
         const r = await agent(
-          `update_report_draft(report_id=${rid}, page=${startPage + i}, blocks=${JSON.stringify(pages[i])}) 를 호출하라.\n` +
+          `update_report_draft(report_id=${rid}, page=${startPage + i}, blocks=${JSON.stringify(pages[i])}) 를 호출하라. ${BY_NAME}\n` +
           `- blocks 값은 **한 글자도 바꾸지 말고 그대로** 인자로 넘겨라(요약·의역 금지).\n` +
           `- 실패하면 재시도 없이 "PAGE_FAILED" 한 줄만 반환. 성공하면 "OK" 한 줄만.`,
           { label: `ra-page${startPage + i}`, phase: 'Report' })
@@ -868,7 +873,7 @@ if (A.saveReport === true) {
     if (APPEND_TO) {
       // 현재 페이지 수를 먼저 묻는다 — 서술형 응답에서도 숫자만 뽑는다.
       const pcRaw = await agent(
-        `get_report(report_id=${APPEND_TO}) 를 호출해 pages 배열의 **길이 숫자만** 한 줄로 반환하라.\n` +
+        `get_report(report_id=${APPEND_TO}) 를 호출해 pages 배열의 **길이 숫자만** 한 줄로 반환하라. ${BY_NAME}\n` +
         `- 도구가 없거나 실패하면 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.`,
         { label: 'ra-pagecount', phase: 'Report' })
       if (/RA_UNAVAILABLE/i.test(String(pcRaw || '')) ) {
@@ -882,7 +887,7 @@ if (A.saveReport === true) {
     } else if (JSON.stringify(blocks).length > RA_PAGE_BUDGET) {
       log(`RA 저장 — 분량이 커서 ${pages.length}쪽으로 나눠 넣는다(한 쪽 ${RA_PAGE_BUDGET}자 예산)`)
       report = await agent(
-        `create_report_draft 도구로 아래 심의 결과를 Report Archive 에 저장하라.\n` +
+        `create_report_draft 도구로 아래 심의 결과를 Report Archive 에 저장하라. ${BY_NAME}\n` +
         `인자: template_id="deliberation", template_version=1, title="심의 — ${Q.slice(0, 50)}",\n` +
         `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(pages[0])}\n` +
         `- 도구가 없거나 실패하면 재시도 없이 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
