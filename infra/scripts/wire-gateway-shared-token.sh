@@ -37,7 +37,7 @@ else:
 
 # ② 포털 backend/.env 에 GATEWAY_SHARED_TOKEN (없으면 파일째 생성, 있으면 덧붙임, **다르면 갈아 끼움**)
 # 종전엔 '있기만 하면' 건너뛰었다 — GW_TOKEN 이 회전되면(provision-config ROTATE_GW_TOKEN·.bak 없음) 두 값이 어긋난 채
-# 남아 포털이 403 을 주고, 게이트웨이는 사용자별 RA 위임을 못 해 RA 쓰기를 거부한다(update-all §6 'RA 사용자 위임').
+# 남아 포털이 403 을 주고, 게이트웨이는 사용자별 RA 위임을 못 해 RA 호출을 거부한다(update-all §6 'RA 사용자 위임').
 import re
 env_path = root / "backend" / ".env"
 txt = env_path.read_text() if env_path.exists() else ""

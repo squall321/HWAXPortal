@@ -1066,8 +1066,8 @@ fi
 _ra_conn_verdict() {
   case "$1" in
     404) printf 'ok\tRA 사용자 위임    게이트웨이가 포털 연결 조회에 통과(공유 시크릿 짝 맞음) — 등록한 사람은 본인 명의로 쓴다\n' ;;
-    403) printf 'fail\tRA 사용자 위임    게이트웨이 GW_TOKEN ≠ 포털 GATEWAY_SHARED_TOKEN(403) — 지금 RA 쓰기는 거부된다. ./infra/scripts/wire-gateway-shared-token.sh 후 포털 재기동\n' ;;
-    503) printf 'fail\tRA 사용자 위임    포털에 GATEWAY_SHARED_TOKEN 이 없다(503) — 지금 RA 쓰기는 거부된다. ./infra/scripts/wire-gateway-shared-token.sh 후 포털 재기동\n' ;;
+    403) printf 'fail\tRA 사용자 위임    게이트웨이 GW_TOKEN ≠ 포털 GATEWAY_SHARED_TOKEN(403) — 지금 신원 있는 RA 호출(읽기·쓰기)이 전부 거부된다. ./infra/scripts/wire-gateway-shared-token.sh 후 포털 재기동\n' ;;
+    503) printf 'fail\tRA 사용자 위임    포털에 GATEWAY_SHARED_TOKEN 이 없다(503) — 지금 신원 있는 RA 호출(읽기·쓰기)이 전부 거부된다. ./infra/scripts/wire-gateway-shared-token.sh 후 포털 재기동\n' ;;
     *)   printf 'fail\tRA 사용자 위임    포털 연결 조회 응답 %s — 포털(:8723)이 떠 있는지·이 라우트가 있는지 확인\n' "$1" ;;
   esac
 }
@@ -1354,7 +1354,7 @@ PY
   fi
   # ── RA 사용자 위임 — 게이트웨이가 포털에 '이 사람의 RA 토큰' 을 물을 수 있어야 한다 ───────────────
   # 못 물으면 연결을 등록한 사람의 RA 글도 서비스 토큰 주인 명의로 올라갔다(2026-09-29 — config 의 portal.api_base 가
-  # --force 로 사라져 게이트웨이가 묻지도 않았다). 지금 게이트웨이는 못 물으면 RA **쓰기를 거부**한다 — 그래서 배포가
+  # --force 로 사라져 게이트웨이가 묻지도 않았다). 지금 게이트웨이는 못 물으면 RA 호출을 **거부**한다 — 그래서 배포가
   # 공유 시크릿 짝(게이트웨이 GW_TOKEN = 포털 GATEWAY_SHARED_TOKEN)을 직접 본다. 없는 이메일로 물어 404 면 통과다.
   if [ -n "${GW_DIR:-}" ] && [ -f "$GW_DIR/gateway_config.json" ] \
      && python3 -c 'import json,sys;sys.exit(0 if "reportarchive" in json.load(open(sys.argv[1])) else 1)' "$GW_DIR/gateway_config.json" 2>/dev/null; then

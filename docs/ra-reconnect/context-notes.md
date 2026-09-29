@@ -220,6 +220,12 @@ RA 쓰기는 거부**(읽기는 폴백하되 `note=conn-lookup-error`). 교체 �
 '같은지' 를 본다. ④ update-all §6 'RA 사용자 위임': 게이트웨이 GW_TOKEN 으로 포털 `/internal/connections` 에 없는 이메일을 물어 404 면 통과
 (403 불일치·503 미설정은 ✗). 토큰은 argv 가 아니라 `curl -K -`.
 
-**남긴 결정(사용자)** — 미등록 사용자의 RA 쓰기는 여전히 서비스 계정으로 간다(게이트웨이 설계 '등록은 점진 전환'). 막을지, 서비스 계정을
-사람이 아닌 전용 RA 계정으로 바꿀지는 사용자 결정. 이미 서비스 명의로 올라간 보고서의 소유 이전은 RA 담당 몫(RA 리포 hands-off) —
-게이트웨이 감사의 `mode=service`·`note=no-connection`·`caller` 가 실제 작성자 목록이다.
+**실제 VOC(사용자가 붙여 줌)** — 고광은 님이 본인 PAT(ke707_claude)로 붙자 `whoami` 는 본인(ke707.go)인데 `reportarchive_list_reports(mine=true)`·
+보고서 생성이 `personal-5`(박국진 님 공간)로 갔다. 본인 공간은 `personal-70`. RA MCP 에는 whoami 가 없다 — 본 것은 per_user_sso 가 살아 있는
+다른 앱의 whoami 였고, RA 호출만 서비스 토큰(박국진 님 rat_, home personal-5)으로 나갔다.
+
+**결정(사용자, 2026-09-29) — 신원이 있는 RA 호출은 본인 토큰으로만.** 미등록이거나 확인이 안 되면 **읽기·쓰기 모두 거부**하고 등록을
+안내한다. 종전 '미등록 → 서비스 계정 폴백(점진 전환)' 은 실제 사람의 RA 토큰 행세였다 — 글이 그 사람 개인 공간에 쌓이고 그 사람의
+비공개 '내 글' 이 남에게 보였다. 서비스 계정은 신원 없는 내부 호출에만 남는다(`note=no-identity`). 등록 전까지 챗·심의의 RA 검색도 막힌다.
+서비스 토큰을 사람이 아닌 전용 RA 계정으로 바꾸는 것은 여전히 권장(내부 호출 몫) — 사람 몫. 이미 서비스 명의로 올라간 보고서의 소유 이전은
+RA 담당 몫(RA 리포 hands-off) — 게이트웨이 감사의 `mode=service`·`note=no-connection`·`caller` 가 실제 작성자 목록이다.
