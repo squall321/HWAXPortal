@@ -35,11 +35,21 @@ else:
     cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
     print("  ✓ 게이트웨이 portal.api_base = http://127.0.0.1:8723 추가 — 게이트웨이 재기동 필요")
 
-# ② 포털 backend/.env 에 GATEWAY_SHARED_TOKEN (없으면 파일째 생성, 있으면 덧붙임)
+# ② 포털 backend/.env 에 GATEWAY_SHARED_TOKEN (없으면 파일째 생성, 있으면 덧붙임, **다르면 갈아 끼움**)
+# 종전엔 '있기만 하면' 건너뛰었다 — GW_TOKEN 이 회전되면(provision-config ROTATE_GW_TOKEN·.bak 없음) 두 값이 어긋난 채
+# 남아 포털이 403 을 주고, 게이트웨이는 사용자별 RA 위임을 못 해 RA 쓰기를 거부한다(update-all §6 'RA 사용자 위임').
+import re
 env_path = root / "backend" / ".env"
 txt = env_path.read_text() if env_path.exists() else ""
-if "GATEWAY_SHARED_TOKEN=" in txt:
-    print("  · 포털 GATEWAY_SHARED_TOKEN 이미 배선됨")
+line_re = re.compile(r"^([ \t]*(?:export[ \t]+)?GATEWAY_SHARED_TOKEN=)(.*)$", re.M)
+m = None
+for m in line_re.finditer(txt):
+    pass                                   # 마지막 활성 줄이 이긴다(.env 읽기 규칙)
+if m is not None and m.group(2).strip().strip('"').strip("'") == tok:
+    print("  · 포털 GATEWAY_SHARED_TOKEN 이미 배선됨(게이트웨이 GW_TOKEN 과 같다)")
+elif m is not None:
+    env_path.write_text(txt[:m.start(2)] + tok + txt[m.end(2):])
+    print("  ✓ 포털 GATEWAY_SHARED_TOKEN 이 게이트웨이 GW_TOKEN 과 달라 갈아 끼웠다 — 포털 재기동 필요")
 else:
     with env_path.open("a") as f:
         if txt and not txt.endswith("\n"):

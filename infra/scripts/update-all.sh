@@ -1061,6 +1061,16 @@ fi
 #   502/503/504/000→ 포털이 RA_HOST:3000 에 못 닿는다                      (방화벽 :3000 · RA 프로세스)
 #   3xx/400/401    → 콜백이 살아 있고 가짜 토큰을 거절했다 = 정상
 # RA 몫은 ⚠(bad) — 포털이 고칠 수 없는 것을 ✗ 로 두면 매 실행이 빨갛다. 포털 몫과 불통은 ✗(fail). 숫자는 RA 담당에게 그대로 전한다.
+# RA 사용자 위임 점검의 판정 — 포털 /internal/connections 가 게이트웨이 GW_TOKEN 에 준 코드 → "ok|fail<TAB>문구".
+# 포털 쪽 정본: backend/app/auth/routes/connections.py internal_connection(503 미설정 · 403 불일치 · 404 미등록).
+_ra_conn_verdict() {
+  case "$1" in
+    404) printf 'ok\tRA 사용자 위임    게이트웨이가 포털 연결 조회에 통과(공유 시크릿 짝 맞음) — 등록한 사람은 본인 명의로 쓴다\n' ;;
+    403) printf 'fail\tRA 사용자 위임    게이트웨이 GW_TOKEN ≠ 포털 GATEWAY_SHARED_TOKEN(403) — 지금 RA 쓰기는 거부된다. ./infra/scripts/wire-gateway-shared-token.sh 후 포털 재기동\n' ;;
+    503) printf 'fail\tRA 사용자 위임    포털에 GATEWAY_SHARED_TOKEN 이 없다(503) — 지금 RA 쓰기는 거부된다. ./infra/scripts/wire-gateway-shared-token.sh 후 포털 재기동\n' ;;
+    *)   printf 'fail\tRA 사용자 위임    포털 연결 조회 응답 %s — 포털(:8723)이 떠 있는지·이 라우트가 있는지 확인\n' "$1" ;;
+  esac
+}
 _ra_cb_verdict() {  # $1=코드 $2=본문 파일 → "ok|bad|fail<TAB>문구"
   local code="$1" body="$2" jwks="http://${_lan:-<이 박스 주소>}:8088/.well-known/jwks.json" html=0
   grep -qiE '<!doctype html|<html' "$body" 2>/dev/null && html=1
@@ -1341,6 +1351,22 @@ PY
   if [ "$_pol" = "0" ]; then
     fail "권한 정책        게이트웨이에 포털 권한 정책이 **안 실렸다**(access_policy_loaded=0) — 전 백엔드가 전원에게 열린다"
     echo "    포털 /internal/access/policy 가 200 인지, 게이트웨이가 GATEWAY_SHARED_TOKEN 으로 그것을 받는지 본다(60초마다 재시도)"
+  fi
+  # ── RA 사용자 위임 — 게이트웨이가 포털에 '이 사람의 RA 토큰' 을 물을 수 있어야 한다 ───────────────
+  # 못 물으면 연결을 등록한 사람의 RA 글도 서비스 토큰 주인 명의로 올라갔다(2026-09-29 — config 의 portal.api_base 가
+  # --force 로 사라져 게이트웨이가 묻지도 않았다). 지금 게이트웨이는 못 물으면 RA **쓰기를 거부**한다 — 그래서 배포가
+  # 공유 시크릿 짝(게이트웨이 GW_TOKEN = 포털 GATEWAY_SHARED_TOKEN)을 직접 본다. 없는 이메일로 물어 404 면 통과다.
+  if [ -n "${GW_DIR:-}" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+     && python3 -c 'import json,sys;sys.exit(0 if "reportarchive" in json.load(open(sys.argv[1])) else 1)' "$GW_DIR/gateway_config.json" 2>/dev/null; then
+    # 시크릿은 argv 에 싣지 않는다 — curl 설정을 stdin(-K -)으로 준다
+    _conn_code="$(python3 -c 'import json,sys;print("header = \"Authorization: Bearer %s\"" % json.load(open(sys.argv[1]))["_gateway"]["token"])' \
+                    "$GW_DIR/gateway_config.json" 2>/dev/null \
+                  | curl -s -o /dev/null -w '%{http_code}' -m 5 -K - \
+                      'http://127.0.0.1:8723/internal/connections/reportarchive?email=hwax-probe%40invalid' 2>/dev/null)"
+    IFS=$'\t' read -r _cv _ct <<<"$(_ra_conn_verdict "${_conn_code:-000}")"
+    case "$_cv" in ok) ok "$_ct" ;; *) fail "$_ct" ;; esac
+  else
+    hwax_skip "RA 사용자 위임 점검" "게이트웨이 config 에 reportarchive 백엔드가 없다(또는 게이트웨이 리포를 못 찾았다)" "RA 에서 PAT(rat_…)를 발급해 HWAXMcpGateway/provision.env 에 RAT_TOKEN=<값> 을 적고 재실행(§5)"
   fi
   # ste 관련 빨강이 하나라도 있으면 한 화면 진단을 가리킨다 — 항목마다 어떻게 쟀는지까지 찍는다.
   if [ "${STE_ROUTED:-0}" = 1 ] && printf '%s' "${FAIL_ITEMS:-}" | grep -q "ste"; then
