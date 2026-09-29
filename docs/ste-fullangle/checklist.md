@@ -12,7 +12,9 @@
 - [x] 커밋(ste 3a420db 템플릿 대기 · 9f53c2c 앱) — 푸시는 검토 뒤
 - [x] 적대적 검토 1차 — 확인 4건(render 주입 high, 올라온 jobs.json·deep_report 판정 medium) + 미검증 low 4건 중
       재현되는 것 반영(제출 중 리포트 잡, 시험이 진짜 slurm 에 닿을 길, 취소 경로 규칙). ste 4637d25·465305e
-- [ ] 적대적 검토 2차(1차 수정 자체가 대상)
+- [x] 적대적 검토 2차(1차 수정 자체가 대상) — 확인 0건으로 수렴. render 가 binds·env 안의 {x} 를 더는 안 훑는 차이는
+      반박됨(그 재스캔이 주입 경로) → 문법만 docstring 에 명시(ste 커밋). 판정 경로 Output/report 는 소스로 확정
+- [x] 푸시(ste·HWAXPortal)
 
 ## 사용자 (실박스)
 
