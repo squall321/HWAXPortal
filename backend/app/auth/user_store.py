@@ -87,6 +87,10 @@ class UserStore:
             self._conn.execute("ALTER TABLE users ADD COLUMN affiliation TEXT NOT NULL DEFAULT ''")
         with contextlib.suppress(sqlite3.OperationalError):
             self._conn.execute("ALTER TABLE users ADD COLUMN grants TEXT NOT NULL DEFAULT '[]'")
+        # 허브에서 끈 앱(게이트웨이 앱 키 JSON 배열) — 본인이 고른다. 도구를 **덜 보게만** 하므로 본인이 바꿔도 되지만
+        # 권한(grants)과 섞지 않는다(docs/mcp-app-toggle D-5). 게이트웨이가 개인 MCP 시야에서 숨긴다.
+        with contextlib.suppress(sqlite3.OperationalError):
+            self._conn.execute("ALTER TABLE users ADD COLUMN hub_muted_apps TEXT NOT NULL DEFAULT '[]'")
         # 허가 요청 — 사용자가 내 권한 페이지에서 보내고 관리자가 승인·거절한다.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS access_requests ("
@@ -125,6 +129,7 @@ class UserStore:
             d = dict(zip(cols, row, strict=True))
             d["groups"] = json.loads(d.get("groups") or "[]")
             d["grants"] = json.loads(d.get("grants") or "[]")
+            d["hub_muted_apps"] = json.loads(d.get("hub_muted_apps") or "[]")
         if self._row_ttl > 0:
             self._row_cache[key] = (time.monotonic(), self._epoch, d)
         return copy.deepcopy(d)
@@ -259,6 +264,15 @@ class UserStore:
         if not row:
             return None
         return {"tail": row[0][-4:], "workspace": row[1], "created_at": row[2]}
+
+    def set_hub_muted_apps(self, email: str, apps: list[str]) -> bool:
+        """허브에서 끈 앱 — 통째로 바꾼다(스위치 하나를 바꿔도 화면이 전체 목록을 보낸다)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE users SET hub_muted_apps = ? WHERE email = ?",
+                (json.dumps(sorted(set(apps))), norm_email(email)))
+            self._commit()
+            return cur.rowcount > 0
 
     def set_groups(self, email: str, groups: list[str]) -> bool:
         with self._lock:
