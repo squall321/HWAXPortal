@@ -760,6 +760,7 @@ const decisionFull = plain
 // 대신 그 report_id 에 새 페이지로 이어붙인다(get_report 로 현재 페이지 수 확인 → page=마지막+1).
 let report = null
 let reportPagesFailed = []   // RA 페이지 저장 실패 목록 — 빈 배열이면 전부 성공
+let reportError = null       // RA 저장 실패 사유(도구가 준 문구) — 등록 안내 등이 여기로 온다
 // ⚠ 기본이 **꺼짐**이다(saveReport:true 를 줄 때만 저장). 2026-09-02 솔더볼 심의 실측 —
 //   심의 본체 3시간에 RA 저장이 1시간 반이었다. 페이지마다 에이전트를 띄워 blocks JSON 을
 //   통째로 인자로 넘기는 구조라 그렇다(24000자 예산 × 25쪽 이상). 탐색적으로 돌리는 심의까지
@@ -813,12 +814,12 @@ if (A.saveReport === true) {
     const raInstruction = APPEND_TO
       ? `기존 Report Archive 보고서에 이번 심의 결과를 새 페이지로 이어붙여라.\n` +
         `순서: (1) get_report(report_id=${APPEND_TO}) 로 현재 pages 배열 길이를 확인, (2) update_report_draft(report_id=${APPEND_TO}, page=<pages 길이+1>, blocks=${JSON.stringify(blocks)}) 호출.\n` +
-        `- report_id 가 없거나(Report Archive 미가용) 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE" 한 줄만 반환.\n` +
+        `- report_id 가 없거나(Report Archive 미가용) 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
         `- 성공하면 "${APPEND_TO}" 한 줄만 반환(붙인 보고서 번호).`
       : `create_report_draft 도구가 사용 가능하면 호출해 아래 심의 결과를 Report Archive 에 저장하라.\n` +
         `인자: template_id="deliberation", template_version=1, title="심의 — ${Q.slice(0, 50)}",\n` +
         `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(blocks)}\n` +
-        `- 도구가 없거나(Report Archive 미가용) 저장이 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE" 한 줄만 반환.\n` +
+        `- 도구가 없거나(Report Archive 미가용) 저장이 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
         `- 성공하면 반환된 report.id(보고서 번호)만 한 줄로.`
 
     // ⚠ 이 에이전트는 blocks 를 **도구 인자로 그대로 되받아 적어야** 한다. 그래서 blocks 가 크면
@@ -868,10 +869,10 @@ if (A.saveReport === true) {
       // 현재 페이지 수를 먼저 묻는다 — 서술형 응답에서도 숫자만 뽑는다.
       const pcRaw = await agent(
         `get_report(report_id=${APPEND_TO}) 를 호출해 pages 배열의 **길이 숫자만** 한 줄로 반환하라.\n` +
-        `- 도구가 없거나 실패하면 "RA_UNAVAILABLE" 한 줄만 반환.`,
+        `- 도구가 없거나 실패하면 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.`,
         { label: 'ra-pagecount', phase: 'Report' })
       if (/RA_UNAVAILABLE/i.test(String(pcRaw || '')) ) {
-        report = 'RA_UNAVAILABLE'
+        report = String(pcRaw)            // 사유째 — 아래에서 reportError 로 올린다
       } else {
         const pc = parseInt(pickRid(pcRaw) || '0', 10)
         log(`RA 이어붙이기 — 보고서 ${APPEND_TO} 의 ${pc}쪽 뒤에 ${pages.length}쪽 추가`)
@@ -884,7 +885,7 @@ if (A.saveReport === true) {
         `create_report_draft 도구로 아래 심의 결과를 Report Archive 에 저장하라.\n` +
         `인자: template_id="deliberation", template_version=1, title="심의 — ${Q.slice(0, 50)}",\n` +
         `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(pages[0])}\n` +
-        `- 도구가 없거나 실패하면 재시도 없이 "RA_UNAVAILABLE" 한 줄만 반환.\n` +
+        `- 도구가 없거나 실패하면 재시도 없이 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
         `- 성공하면 반환된 report.id 만 한 줄로.`,
         { label: 'ra-save', phase: 'Report' })
       const rid = pickRid(/RA_UNAVAILABLE/i.test(String(report || '')) ? '' : report)
@@ -899,7 +900,10 @@ if (A.saveReport === true) {
       if (report === null) log('⚠ RA 저장 에이전트가 응답 없이 죽었다(API 오류) — 저장 여부 불명')
     }
     if (typeof report === 'string' && /RA_UNAVAILABLE|FAILED|not available|unavailable/i.test(report)) {
-      log('Report Archive 미가용 — 저장 건너뜀(심의 결과는 반환됨)')
+      // 사유를 버리지 않는다 — 게이트웨이는 RA 토큰 미등록자를 '포털 API 토큰 페이지에서 등록하라' 로 거부한다.
+      // 종전엔 '미가용' 한 줄만 남아 다시 시도해도 소용없는 것을 알 수 없었다(검토 2026-09-29).
+      reportError = report.replace(/^\s*RA_UNAVAILABLE:?\s*/i, '').trim().slice(0, 500) || 'Report Archive 미가용(사유 없음)'
+      log(`Report Archive 저장 실패 — ${reportError} (심의 결과는 반환됨)`)
       report = null
     }
   } catch (e) {
@@ -987,6 +991,7 @@ return {
   report,
   conversationSkipped,   // 대화 저장을 건너뛴 사유(용량) — save-delib-conversation.py 로 저장 가능.
   reportPagesFailed,   // RA 저장 실패 쪽 번호 — 비어 있지 않으면 그 쪽이 보고서에서 빠져 있다.
+  reportError,         // RA 저장 실패 사유(report 가 null 일 때). 'RA 토큰을 등록하라' 면 사람이 할 일이다.
   plainPartial,        // true 면 쉬운 설명이 결정문 일부(머리+꼬리)만 보고 쓰였다.
   citationAudit,       // 결정문 수치 ↔ 근거·발언 원문 결정적 대조 결과(원장 (3) — unmatched 는 사람이 훑을 목록)
   conversation,
