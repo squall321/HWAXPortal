@@ -21,8 +21,9 @@ export default function HubAppsPanel() {
       setData(await saveHubApp(app, muted));
     } catch (e) {
       setError((e as Error).message);
-      // 실패하면 서버의 지금 상태로 다시 그린다 — 옛 화면을 들고 있으면 다른 탭에서 바꾼 것과 어긋난 채 남는다
-      fetchHubApps()
+      // 실패하면 서버의 지금 상태로 다시 그린다 — 옛 화면을 들고 있으면 다른 탭에서 바꾼 것과 어긋난 채 남는다.
+      // 다시 읽기가 끝날 때까지 스위치를 잠가 둔다(안 기다리면 그 사이 누른 스위치를 늦게 온 옛 표가 되돌린다).
+      await fetchHubApps()
         .then(setData)
         .catch(() => {});
     } finally {
