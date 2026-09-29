@@ -61,6 +61,43 @@ export async function requestAccess(key: string, note: string): Promise<void> {
   if (!res.ok) throw await detail(res, '요청을 보내지 못했습니다.');
 }
 
+/** 허브에 보일 앱 — 게이트웨이 앱 하나. 끄면 개인 Claude 의 허브 도구 목록·검색에서 빠진다(docs/mcp-app-toggle). */
+export interface HubApp {
+  app: string;
+  label: string;
+  description: string;
+  tool_count: number;
+  reachable: boolean;
+  /** 포털 권한 표 기준 — 권한이 없는 앱은 끄지 않아도 안 보인다. */
+  allowed: boolean;
+  muted: boolean;
+  /** 꺼 둔 앱이 지금 게이트웨이에 없다(잠시 내려감 등). */
+  absent?: boolean;
+}
+
+export interface HubApps {
+  apps: HubApp[];
+  muted: string[];
+  note: string;
+}
+
+export async function fetchHubApps(): Promise<HubApps> {
+  const res = await apiFetch('/auth/access/apps');
+  if (!res.ok) throw await detail(res, '앱 목록을 불러오지 못했습니다.');
+  return (await res.json()) as HubApps;
+}
+
+/** 끈 앱 목록을 통째로 저장한다 — 서버가 게이트웨이 캐시를 바로 깬다. */
+export async function saveHubApps(muted: string[]): Promise<HubApps> {
+  const res = await apiFetch('/auth/access/apps', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ muted }),
+  });
+  if (!res.ok) throw await detail(res, '저장하지 못했습니다.');
+  return (await res.json()) as HubApps;
+}
+
 export async function fetchAccessPolicy(): Promise<AccessPolicy> {
   const res = await apiFetch('/auth/access/policy');
   if (!res.ok) throw await detail(res, '권한 정책을 불러오지 못했습니다.');

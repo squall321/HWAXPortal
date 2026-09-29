@@ -3,6 +3,7 @@ import { type CSSProperties, type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { createPat, listPats, revokePat, type PatCreated, type PatMeta } from '../api/pat.api';
 import { fetchMyAccess, type MyAccess } from '../api/access.api';
+import HubAppsPanel from '../components/HubAppsPanel';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { RaConnectionCard } from '../components/RaConnectionCard';
 import { useCan } from '../auth/useCan';
@@ -466,6 +467,8 @@ export default function TokenPage() {
             </section>
           );
         })()}
+
+      <HubAppsPanel />
 
       <h2 style={{ fontSize: '1.05rem', marginBottom: '0.6rem' }}>내 토큰</h2>
       {pats === null ? (
