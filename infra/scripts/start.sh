@@ -101,8 +101,15 @@ else
            PROCEDURES_STORE_PATH PROCEDURES_ARTIFACT_ROOT; do
     [ -n "${!k:-}" ] && DATA_ENVS+=(--env "$k=${!k}")
   done
+  # SAML_* 는 **명시해서** 넘긴다 — 호스트 env 상속에만 기대면 --cleanenv 나 다른 기동 경로에서 운영 SAML 설정이 통째로
+  # 코드 기본값(mock IdP 메타데이터·entityId .../sp·추적 sp.crt)으로 조용히 되돌아간다(4차 변경 요청 §4(2)).
+  # SAML_MOCK_IDP_ENABLED 는 아래에서 false 로 고정하므로 뺀다.
+  SAML_ENVS=()
+  for k in $(compgen -e | grep '^SAML_' || true); do
+    [ "$k" = SAML_MOCK_IDP_ENABLED ] || SAML_ENVS+=(--env "$k=${!k}")
+  done
   "$APPTAINER" instance start \
-    ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} \
+    ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} ${SAML_ENVS[@]+"${SAML_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \

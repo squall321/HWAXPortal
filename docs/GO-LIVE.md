@@ -16,10 +16,16 @@ never knows which one ran. This was proven end-to-end in dev with a real signing
    ```
    https://hwax.sec.samsung.net/auth/saml/metadata
    ```
-2. The **ACS URL** (where AD posts the signed response):
+2. The **ACS URL** (where AD posts the signed response) — `PUBLIC_BASE_URL` + `SAML_ACS_PATH`
+   (default `/auth/saml/acs`). **cae00's AD-SSO registration is `/auth/callback`** (dev and prod), so
+   cae00 sets `SAML_ACS_PATH=/auth/callback`:
    ```
-   https://hwax.sec.samsung.net/auth/saml/acs
+   https://hwax.sec.samsung.net/auth/callback
    ```
+   ⚠ The registered value and the portal's value must match **character for character**. ADFS does
+   not check the ACS before authentication — a mismatch ends in a generic ADFS error page *after* sign-in,
+   and the portal never receives a request (silent failure). Both `/auth/saml/acs` and `/auth/callback`
+   accept the SAML POST; any other path logs a `saml_acs_route` startup warning.
 3. The **SP EntityID**: `https://hwax.sec.samsung.net/sp`
 
 The SP signing cert is in `backend/config/saml/sp.crt` (regenerate a prod pair with
@@ -56,11 +62,15 @@ Then restart the backend. That's it — no code edits.
 2. Set `AUTH_PROVIDER=saml`.
 3. Set the three `SAML_ATTR_*` names to match what AD releases.
 4. Confirm `PUBLIC_BASE_URL=https://hwax.sec.samsung.net` (so the derived ACS/SLS URLs and
-   SAML `Destination` validation use the real host).
+   SAML `Destination` validation use the real host), and `SAML_ACS_PATH` equals the registered
+   Endpoint Url path (cae00: `/auth/callback`). Put `SAML_*` in `infra/.env` — `start.sh` passes every
+   `SAML_*` to the portal container explicitly.
 5. Restart. Visit the portal → "Sign in" now bounces to the real Samsung AD login.
 
 ## Verify after the switch
-- `GET /auth/saml/metadata` returns the SP metadata (200).
+- `GET /auth/saml/metadata` returns the SP metadata (200) and its `AssertionConsumerService Location`
+  equals the registered Endpoint Url:
+  `curl -sS --noproxy '*' http://127.0.0.1:8723/auth/saml/metadata | grep -o 'AssertionConsumerService[^>]*Location="[^"]*"'`
 - Click "Sign in with Samsung AD" → you land on the real AD login → back at the portal home,
   signed in as **your** AD identity (not the demo user).
 - `GET /auth/me` shows your real email + AD groups.

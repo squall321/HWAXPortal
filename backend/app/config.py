@@ -7,7 +7,9 @@ Phase 0: app identity + CORS only.
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/  (parent of the app package) — anchor .env here so it loads regardless of CWD.
@@ -72,7 +74,7 @@ class Settings(BaseSettings):
 
     # ── SAML SP (used when AUTH_PROVIDER=saml). Paths are relative to backend/. ──
     # GO-LIVE: only the IdP metadata file/URL + attribute map below change — no code edits.
-    # ACS/SLS URLs are DERIVED from public_base_url (see properties) so dev/prod differ by
+    # ACS/SLS URLs are DERIVED from public_base_url + saml_acs_path/saml_sls_path (see properties) so dev/prod differ by
     # one env var, and entityId is a stable logical id (need not be a reachable URL).
     saml_sp_entity_id: str = "https://hwax.sec.samsung.net/sp"
     saml_sp_cert_path: str = "config/saml/sp.crt"
@@ -84,6 +86,12 @@ class Settings(BaseSettings):
     saml_attr_email: str = "email"
     saml_attr_name: str = "displayName"
     saml_attr_groups: str = "memberOf"
+    # ACS/SLS 경로 — AD-SSO 에 등록한 Endpoint Url 과 **글자 단위로** 같아야 한다(4차 변경 요청, 2026-09-29).
+    # ⚠ ADFS 는 이 값을 인증 *전에* 검증하지 않는다 — 어긋나면 인증을 통과한 뒤 일반 오류 페이지로 끝나고 SP 에는
+    #   아무 요청도 오지 않는다(조용한 실패). cae00 등록값은 개발·운영 모두 `/auth/callback` 이다 → .env SAML_ACS_PATH.
+    #   SAML POST 를 받는 라우트는 둘이다 — /auth/saml/acs(SAML 전용)·/auth/callback(범용). 다른 값이면 기동 경고.
+    saml_acs_path: str = "/auth/saml/acs"
+    saml_sls_path: str = "/auth/saml/sls"
 
     # ── Dev-only mock SAML IdP (a real, signing IdP fixture that exercises the SP) ──
     saml_mock_idp_enabled: bool = True
@@ -208,13 +216,21 @@ class Settings(BaseSettings):
     graph_client_secret: str | None = None
 
     # Derived SAML URLs — single source of truth = public_base_url.
+    @field_validator("saml_acs_path", "saml_sls_path")
+    @classmethod
+    def _saml_path(cls, v: str) -> str:
+        # 호스트는 PUBLIC_BASE_URL 이 정한다 — '/' 없이 쓰면 'https://hostauth/callback' 같은 주소가 조용히 나간다
+        if not v.startswith("/") or "://" in v or any(c.isspace() for c in v):
+            raise ValueError(f"'/' 로 시작하는 경로만 쓴다(호스트는 PUBLIC_BASE_URL): {v!r}")
+        return v
+
     @property
     def saml_acs_url(self) -> str:
-        return f"{self.public_base_url}/auth/saml/acs"
+        return f"{self.public_base_url}{self.saml_acs_path}"
 
     @property
     def saml_sls_url(self) -> str:
-        return f"{self.public_base_url}/auth/saml/sls"
+        return f"{self.public_base_url}{self.saml_sls_path}"
 
     @property
     def saml_mock_idp_entity_id(self) -> str:
@@ -311,6 +327,10 @@ def _secret_problem(s: Settings) -> tuple[str, str] | None:
     return None
 
 
+# SAML POST 를 처리하는 라우트(routes/saml.py acs · routes/session.py callback — 둘 다 provider.handle_callback).
+SAML_ACS_ROUTES = ("/auth/saml/acs", "/auth/callback")
+
+
 def startup_problems(s: Settings) -> list[str]:
     """띄우면 안 되는 이유들. 비어 있으면 띄워도 된다.
 
@@ -338,6 +358,15 @@ def startup_warnings(s: Settings) -> list[tuple[str, str]]:
     if s.public_base_url.lower().startswith("https://") != bool(s.cookie_secure):
         out.append(("cookie_scheme", f"PUBLIC_BASE_URL({s.public_base_url}) 의 스킴과 COOKIE_SECURE={s.cookie_secure} 가 어긋난다 — "
                                      "https 면 COOKIE_SECURE=true, http 면 false 여야 한다"))
+    # SAML 응답을 받을 라우트가 없는 ACS 경로 — IdP 가 거기로 POST 하면 404/405 로 끝난다(4차 변경 요청)
+    if s.auth_provider == "saml" and s.saml_acs_path not in SAML_ACS_ROUTES:
+        out.append(("saml_acs_route", f"SAML_ACS_PATH={s.saml_acs_path} 를 받는 라우트가 없다 — "
+                                      f"{' 또는 '.join(SAML_ACS_ROUTES)} 중 하나여야 한다(AD-SSO 등록값과 같게)"))
+    # 운영인데 브라우저를 localhost 로 보낸다 — SAML 로그인이 성공해도 complete_login 이 그리로 보내고 CORS 도 그쪽만 연다.
+    # start.sh 는 FRONTEND_URL=PUBLIC_BASE_URL 로 띄우므로 다른 기동 경로에서 생긴다(4차 변경 요청 §4(1)).
+    if s.app_env == "prod" and (urlparse(s.frontend_url).hostname or "") in ("localhost", "127.0.0.1", "::1"):
+        out.append(("frontend_localhost", f"APP_ENV=prod 인데 FRONTEND_URL={s.frontend_url} 이다 — 로그인 뒤 브라우저가 "
+                                          "localhost 로 간다. FRONTEND_URL(보통 PUBLIC_BASE_URL 과 같다)을 채울 것"))
     if not (s.app_env == "prod" and s.auth_provider == "mock"):
         return out
     out.append(("prod_mock", f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 {s.mock_user_groups!r} "
