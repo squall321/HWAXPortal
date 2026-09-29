@@ -42,6 +42,10 @@ export const meta = {
 }
 
 const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
+// 이 워크플로는 사용자의 **개인 PAT** 로 돈다 — 포털 '허브에 보일 앱' 에서 끈 앱은 도구 목록·search_tools 에서 빠진다
+// (숨김만, HWAXPortal docs/mcp-app-toggle D-7). 꼭 필요한 도구는 이름으로 부르게 한다(hwax-deliberate.js 와 같은 문장).
+const BY_NAME = `도구 목록에 없으면 invoke_tool(name='<도구 이름>', arguments={…}) 로 불러라 — 사용자가 허브에서 그 앱을 ` +
+  `꺼 둔 경우다(목록에서만 빠지고 이름으로는 된다). `
 const TARGET = String(A.targetKey || '').trim()
 if (!TARGET) throw new Error('targetKey 가 비어 있음 — 심사 대상 과제 키가 필요하다')
 // brief_token 은 읽기 범위를 여는 유일한 열쇠다(계획 §8.2.5) — 없이 부르면 앱이 brief_token_invalid 를
@@ -178,7 +182,8 @@ const brief = await agent(
   `인자: target_key="${TARGET}", brief_token="${BRIEF_TOKEN}", tier="${TIER}"\n` +
   `- 결과를 요약·가공하지 말고 스키마 필드에 그대로 옮겨라. 근거(evidence)의 result 문자열은 원문 그대로다.\n` +
   `- 응답에 error 가 있으면 error 에 그 코드를 넣고 panels 는 빈 배열로 둬라.\n` +
-  `- 도구가 없거나 호출이 실패하면 error="brief_unavailable" 로 두고 panels 는 빈 배열로 둬라. 재시도하지 마라.`,
+  `- ${BY_NAME}\n` +
+  `- 이름으로도 부를 수 없거나 호출이 실패하면 error="brief_unavailable" 로 두고 panels 는 빈 배열로 둬라. 재시도하지 마라.`,
   { label: 'brief', phase: '브리프', schema: BRIEF_SCHEMA })
 
 // agent() 는 API 오류·취소 시 null 이다(계약) — 가드 밖 .trim() 은 TypeError 즉사였다(감사 1-F).
@@ -322,6 +327,7 @@ for (const p of panels) {
       `  decision_text = ${JSON.stringify(String(result.decision))}\n` +
       `- turns 는 위 JSON 배열 그대로다(객체 목록이지 개수가 아니다). 항목을 줄이거나 요약하지 마라.\n` +
       `- decision_text 는 위 문자열 그대로다. 요약·재작성·펜스 제거를 하지 마라.\n` +
+      `- ${BY_NAME}\n` +
       `- 실패하면 재시도하지 말고 ok=false 와 detail 에 오류를 담아라.`,
       { label: `submit:${p.panel_id}`, phase: '회수', schema: SUBMIT_SCHEMA })
   } catch (e) {

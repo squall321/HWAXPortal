@@ -30,6 +30,10 @@ export const meta = {
 }
 
 const A = args || {}
+// 이 워크플로는 사용자의 **개인 PAT** 로 돈다 — 포털 '허브에 보일 앱' 에서 끈 앱은 도구 목록·search_tools 에서 빠진다
+// (숨김만, HWAXPortal docs/mcp-app-toggle D-7). 꼭 필요한 도구는 이름으로 부르게 한다(hwax-deliberate.js 와 같은 문장).
+const BY_NAME = `도구 목록에 없으면 invoke_tool(name='<도구 이름>', arguments={…}) 로 불러라 — 사용자가 허브에서 그 앱을 ` +
+  `꺼 둔 경우다(목록에서만 빠지고 이름으로는 된다). `
 const QUESTION = String(A.question || '').trim()
 if (!QUESTION) throw new Error('args.question 이 필요하다 — 확보하려는 물성·성능을 적을 것')
 
@@ -61,14 +65,14 @@ if (!evidence) {
   phase('근거조회')
   evidence = await agent(
     `MaterialTwin 도구로 아래 목적에 걸리는 물성 근거 현황을 조회해 요약하라. 목적: ${QUESTION}\n\n` +
-    `호출할 것(있는 것만, 실패는 건너뛴다):\n` +
+    `호출할 것(${BY_NAME}이름으로도 실패한 것만 건너뛴다):\n` +
     `- database_summary — 물성 DB 전체 현황\n` +
     `- coverage_gaps — 요구 대비 공백(미보유·근거 부족). 시험 후보 목록의 1차 입력이다\n` +
     `- property_distribution — 출처 등급 분포. '채움률은 높은데 실측이 낮은' 상태를 드러낸다\n` +
     `- list_materials(query=목적 키워드, limit=5) — 질문에 걸리는 재료의 보유 물성(중복 측정 방지 근거)\n` +
     `- list_property_definitions — 물성 항목 정의(있으면)\n\n` +
     `출력은 '[물성 근거 현황]' 으로 시작하는 텍스트 요약. 숫자는 조회값을 그대로 쓰고 추정하지 마라.\n` +
-    `도구가 하나도 없으면 "물성 근거 현황: 조회 불가(MaterialTwin 도구 없음)" 한 줄만 반환하라.`,
+    `이름으로도 하나도 못 부르면 "물성 근거 현황: 조회 불가(MaterialTwin 도구 없음)" 한 줄만 반환하라.`,
     { label: 'evidence:물성근거', phase: '근거조회' })
   // agent() 는 API 오류·취소 시 null 이다(계약) — 무감지로 통과하면 심의가 근거 0 으로 완주하고
   // 결과만 봐서는 '근거가 원래 없었는지'와 구분이 안 된다(감사 1-F 치명). 명시 표식으로 바꾼다.

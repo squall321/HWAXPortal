@@ -57,6 +57,10 @@ export const meta = {
 }
 
 const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
+// 이 워크플로는 사용자의 **개인 PAT** 로 돈다 — 포털 '허브에 보일 앱' 에서 끈 앱은 도구 목록·search_tools 에서 빠진다
+// (숨김만, HWAXPortal docs/mcp-app-toggle D-7). 꼭 필요한 도구는 이름으로 부르게 한다(hwax-deliberate.js 와 같은 문장).
+const BY_NAME = `도구 목록에 없으면 invoke_tool(name='<도구 이름>', arguments={…}) 로 불러라 — 사용자가 허브에서 그 앱을 ` +
+  `꺼 둔 경우다(목록에서만 빠지고 이름으로는 된다). `
 const Q = A.question || '(질문 미지정)'
 const CTX = A.context || ''
 const PERS = A.personas || []
@@ -210,7 +214,7 @@ const seatPick = GIVEN.length
   `[1단 참여 좌석]\n${PERS.map(p => p.key).join(', ')}\n\n` +
   `순서: (1) 결론에서 해석 물리 축을 2~3개 뽑아라 — '확산 반응 수치해석', '낙하 충격 구조해석' 처럼 ` +
   `전문가 검색에 쓸 짧은 명사구다. 현상 이름이 아니라 계산의 성격을 써라. ` +
-  `(2) 각 축으로 recommend_agents 를 호출해 CAE 전문가를 발굴하라. 이미 1단에 앉은 키와 ` +
+  `(2) 각 축으로 recommend_agents 를 호출해 CAE 전문가를 발굴하라. ${BY_NAME}이미 1단에 앉은 키와 ` +
   `${JSON.stringify(FIXED_CAE)} 는 제외하고, 축당 1명씩 최대 3명을 cae_seats 로 낸다. ` +
   `이때 축 하나는 반드시 **실행 도구축**으로 잡아라 — 이 해석을 실제로 어떤 솔버로 올리는가다. ` +
   `그 축으로 검색하면 사내 솔버 전문가(xd-lsdyna 등)와 오픈소스 솔버 좌석(oss-* 계열: ` +
@@ -221,7 +225,7 @@ const seatPick = GIVEN.length
   `접촉 알고리즘·시간증분 등 5건을 '주인 없이 들어갔다'고 자백했다. 2026-09-01) ` +
   `(3) 1단 참여자 중 메커니즘을 가장 강하게 주장했거나 그 물리를 가장 잘 아는 ${CARRY}명을 ` +
   `carry_seats 로 골라라 — 해석이 물리에서 떠나는 것을 막는 역할이다.\n` +
-  `도구를 못 쓰면 cae_seats 는 빈 배열로 두고 reason 에 사유를 적어라. 지어내지 마라.`,
+  `invoke_tool 로도 못 부르면 cae_seats 는 빈 배열로 두고 reason 에 사유를 적어라. 지어내지 마라.`,
   { label: 'seat-pick', phase: '좌석전환', schema: SEAT_SCHEMA })
 
 const roleOf = k => (GIVEN.find(x => x.key === k) || PERS.find(p => p.key === k) || {}).role || FIXED_ROLES[k] || ''
@@ -238,6 +242,8 @@ FIXED_CAE.forEach(k => push(k, 'new'))
 if (!seatPick) log('⚠ 2단 좌석 발굴 실패(API 오류·취소) — 고정 스파인 + 강제 유임만으로 진행한다. 발굴 축·신규 CAE 좌석 없음.')
 const _cae = (seatPick && seatPick.cae_seats) || []
 const _car = (seatPick && seatPick.carry_seats) || []
+// 발굴이 돌았는데 0명이면 도구를 못 부른 것일 수 있다(허브에서 앱을 끈 사용자 — D-7) — 사유를 보인다.
+if (seatPick && !_cae.length) log(`⚠ 발굴 CAE 좌석 0명 — 사유: ${seatPick.reason || '(없음)'}`)
 if (_cae.length > 3) log(`발굴 CAE 좌석 ${_cae.length}명 중 3명만 착석 — 탈락: ${_cae.slice(3).join(', ')}`)
 if (_car.length > CARRY) log(`유임 후보 ${_car.length}명 중 ${CARRY}명만 착석 — 탈락: ${_car.slice(CARRY).join(', ')}`)
 _cae.slice(0, 3).forEach(k => push(k, 'new'))
