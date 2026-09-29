@@ -10,11 +10,13 @@
 - [x] 실제 KooChainRun 대조 — prepare(scenario 형식)·submit(기록만 하는 sbatch)으로 runner_config·jobs.json·submit.log·잡 머리 확인
 - [x] ste 전체 시험 160건 + HWAX 클러스터 표기 가드
 - [x] 커밋(ste 3a420db 템플릿 대기 · 9f53c2c 앱) — 푸시는 검토 뒤
-- [ ] 적대적 검토
+- [x] 적대적 검토 1차 — 확인 4건(render 주입 high, 올라온 jobs.json·deep_report 판정 medium) + 미검증 low 4건 중
+      재현되는 것 반영(제출 중 리포트 잡, 시험이 진짜 slurm 에 닿을 길, 취소 경로 규칙). ste 4637d25·465305e
+- [ ] 적대적 검토 2차(1차 수정 자체가 대상)
 
 ## 사용자 (실박스)
 
 - [ ] ste 배포(`update-all` 이 ste 를 반영하는 경로 그대로)
 - [ ] HWAX 에서 `ste_submit_job(app="fullangle-drop", params={"mode":"preflight"}, files=[아무 .k])` → `preflight.json` 확인
-- [ ] preflight 가 전부 ✓ 면 작은 모델로 `num_angles=2` 실주행 → `fullangle_verdict.json` 확인
+- [ ] preflight 가 전부 ✓ 면 작은 모델로 `angles=2` 실주행 → `fullangle_verdict.json` 확인
 - [ ] `sbatch` 항목이 ✗ 면: ste 에서는 하지 않는다(사용자 결정). 앱을 지우거나 두고 stcx 만 쓴다
