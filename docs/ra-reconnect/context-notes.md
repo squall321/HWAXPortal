@@ -199,3 +199,27 @@ NNN · 포털 JWKS: http://<이 박스>:8088/.well-known/jwks.json" 한 줄을 �
 (docs/ste-cae00 D-23)과 겹쳐 명령을 여럿 시킨 탓이다. 답: 잠금은 이번 한 번 `git pull`(또는 잠금 파일 삭제) 뒤 update-all, 그 뒤로는
 update-all 하나. `git … show 'stash@{0}^3:cluster.prod.yaml'` 은 설치기(노드 추가 등) 입력 복구라 update-all 과 무관 — 설치기를 돌릴 때만.
 
+
+## D-13. 연결을 등록한 사람의 RA 글이 서비스 토큰 주인 이름으로 올라갔다 (2026-09-29, 사용자 보고)
+
+**증상** — "포털에서 토큰 받아 RA 연결해 쓴 사람들 글이 본인 RA 계정이 아니라 koo.park 로 올라간다".
+
+**원인(dev 에서 재현·확인)** — 게이트웨이 `_portal_connection` 이 포털 주소를 `portal.api_base` **하나에서만** 읽었다(다른 포털 조회는
+`_portal_api_base()` 로 jwks_url 에서 유도한다). 그런데 `provision-config.sh --force` 는 portal 블록을 그 키 **없이** 다시 쓰고(MANAGED),
+그 키를 넣는 곳은 손으로 1회 돌리는 `wire-gateway-shared-token.sh` 뿐이었다. update-all §5 는 RA_HOST 가 바뀌면(D-2 의 이사) reportarchive 를
+빠진 것으로 보고 `--force` 를 돈다 — 이사 뒤 첫 update-all 이 api_base 를 지웠다. 그 뒤로 게이트웨이는 **포털에 묻지도, 로그를 남기지도 않고**
+전원을 '미등록' 으로 보고 서비스 세션(`RAT_TOKEN`, 사람이 한 번 넣은 rat_ 가 _carry 로 계속 이어진다)으로 RA 를 불렀다. RA MCP 는 받은
+Authorization 을 그대로 넘기므로(`mcp_server/server.py` 168-172) 글쓴이 = RAT_TOKEN 주인. dev 는 09-24 --force 로 같은 상태였다(주인 dev@hwax.local).
+
+**`koo.park` 자동화가 있나** — 없다. 코드·스크립트에 koo.park 가 박힌 곳은 없고, 포털이 찍는 PAT 는 전부 본인 이메일이다. 다만 RA 서비스
+토큰(`RAT_TOKEN`)은 자동 발급이 아니라 **사람이 한 번 넣고 계속 이어받는다** — cae00 에 koo.park 의 rat_ 를 넣었다면 지금도 그것이다.
+
+**고친 것** — ① 게이트웨이: 연결 조회도 `_portal_api_base()`, '미등록(404)' 과 '모름(주소 없음·403·503·타임아웃)' 을 가르고, **모름이면
+RA 쓰기는 거부**(읽기는 폴백하되 `note=conn-lookup-error`). 교체 실패 경로가 이미 따르던 원칙(서비스 계정으로 강등하면 오귀속 재발)을
+그 앞 단계에도 적용했다. ② 프로비저너: `api_base` 를 쓰고 손으로 바꾼 값은 이어받는다. ③ wire 스크립트: 공유 시크릿이 '있는지' 가 아니라
+'같은지' 를 본다. ④ update-all §6 'RA 사용자 위임': 게이트웨이 GW_TOKEN 으로 포털 `/internal/connections` 에 없는 이메일을 물어 404 면 통과
+(403 불일치·503 미설정은 ✗). 토큰은 argv 가 아니라 `curl -K -`.
+
+**남긴 결정(사용자)** — 미등록 사용자의 RA 쓰기는 여전히 서비스 계정으로 간다(게이트웨이 설계 '등록은 점진 전환'). 막을지, 서비스 계정을
+사람이 아닌 전용 RA 계정으로 바꿀지는 사용자 결정. 이미 서비스 명의로 올라간 보고서의 소유 이전은 RA 담당 몫(RA 리포 hands-off) —
+게이트웨이 감사의 `mode=service`·`note=no-connection`·`caller` 가 실제 작성자 목록이다.
