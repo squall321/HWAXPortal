@@ -219,9 +219,15 @@ class Settings(BaseSettings):
     @field_validator("saml_acs_path", "saml_sls_path")
     @classmethod
     def _saml_path(cls, v: str) -> str:
-        # 호스트는 PUBLIC_BASE_URL 이 정한다 — '/' 없이 쓰면 'https://hostauth/callback' 같은 주소가 조용히 나간다
-        if not v.startswith("/") or "://" in v or any(c.isspace() for c in v):
-            raise ValueError(f"'/' 로 시작하는 경로만 쓴다(호스트는 PUBLIC_BASE_URL): {v!r}")
+        # 호스트는 PUBLIC_BASE_URL 이 정한다 — '/' 없이 쓰면 'https://hostauth/callback' 같은 주소가 조용히 나간다.
+        # 기동을 거부하므로 사람이 무엇을 고칠지 바로 알게 경우를 가른다(한 문장으로 뭉치면 CRLF 줄끝이 "'/' 로 시작하라"
+        # 로 보여 헷갈렸다 — cae00 2026-09-29).
+        if "://" in v:
+            raise ValueError(f"주소 전체가 아니라 경로만 쓴다(앞부분은 PUBLIC_BASE_URL) — 예: /auth/callback. 받은 값 {v!r}")
+        if any(c.isspace() for c in v):
+            raise ValueError(f"공백이나 줄끝 문자(윈도우에서 편집한 \\r 등)가 섞였다 — .env 의 이 줄을 다시 쓸 것. 받은 값 {v!r}")
+        if not v.startswith("/"):
+            raise ValueError(f"'/' 로 시작하는 경로여야 한다 — 예: /auth/callback. 받은 값 {v!r}")
         return v
 
     @property

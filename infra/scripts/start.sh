@@ -137,6 +137,20 @@ else
     "$PORTAL_SIF" "$INST_PORTAL"
 fi
 
+# 안 뜬 이유를 배포 출력에 바로 보인다 — 종전엔 "로그를 보라" 로 끝나 사람이 로그 위치를 찾아야 했고, deploy-all 에는
+# 'portal failed (see above)' 한 줄만 남았다(SAML_ACS_PATH 오입력으로 기동 거부된 cae00 2026-09-29).
+# apptainer 인스턴스 로그: ~/.apptainer/instances/logs/<호스트>/<사용자>/<인스턴스>.err
+_instance_log_tail() {  # $1=인스턴스 이름 $2=줄 수(기본 25)
+  local f
+  f="$(ls -t "$HOME"/.apptainer/instances/logs/*/"$(id -un)"/"$1".err 2>/dev/null | head -1 || true)"
+  if [ -n "$f" ] && [ -s "$f" ]; then
+    echo "    ── $f 끝 ${2:-25}줄 ──"
+    tail -n "${2:-25}" "$f" | sed 's/^/    /'
+  else
+    echo "    (인스턴스 로그를 못 찾았다: ~/.apptainer/instances/logs/*/$(id -un)/$1.err)"
+  fi
+}
+
 echo "→ waiting for portal…"
 ok=0
 for _ in $(seq 1 30); do
@@ -145,7 +159,8 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
-[ "$ok" = 1 ] || echo "  ⚠ portal not ready in 30s — check: $APPTAINER instance list / logs $INST_PORTAL"
+[ "$ok" = 1 ] || { echo "  ⚠ portal not ready in 30s — check: $APPTAINER instance list / logs $INST_PORTAL"
+                   _instance_log_tail "$INST_PORTAL" 25; }
 
 # 4. nginx (path-routing). When TLS is on: ensure the cert exists and that :HTTPS_PORT is
 #    bindable rootless (else print the one-time sudo hint instead of a cryptic nginx failure).

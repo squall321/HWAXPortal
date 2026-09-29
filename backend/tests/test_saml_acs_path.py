@@ -34,9 +34,15 @@ def test_경로를_설정으로_바꾼다():
     assert s.saml_acs_url == "https://hwax.example/auth/callback" and s.saml_sls_url == "https://hwax.example/auth/logout"
 
 
-@pytest.mark.parametrize("bad", ["auth/callback", "https://evil.example/auth/callback", "/auth/ callback", ""])
-def test_경로가_아닌_값은_기동에서_막는다(bad):
-    with pytest.raises(ValueError):
+@pytest.mark.parametrize("bad,why", [
+    ("https://hwax.sec.samsung.net/auth/callback", "주소 전체가 아니라 경로만"),   # 등록값을 주소째 붙여 넣은 경우
+    ("/auth/callback\r", "줄끝 문자"),                                          # 윈도우에서 편집한 CRLF 줄
+    ("/auth/ callback", "공백"),
+    ("auth/callback", "'/' 로 시작"),
+    ("", "'/' 로 시작"),
+])
+def test_경로가_아닌_값은_기동에서_막고_무엇을_고칠지_말한다(bad, why):
+    with pytest.raises(ValueError, match=why):
         _s(saml_acs_path=bad)
 
 
@@ -129,3 +135,26 @@ def test_mock_IdP_로_callback_경로에서_끝까지_로그인된다(tmp_path):
     assert out["status"] in (302, 303), out
     assert out["location"].startswith("http://localhost:5283"), out
     assert out["cookies"], f"세션 쿠키가 안 실렸다: {out}"
+
+
+# ── start.sh: 포털이 안 뜨면 이유(인스턴스 로그 끝)를 배포 출력에 바로 보인다 ─────────────────────────
+def _log_tail_fn() -> str:
+    i = START.index("_instance_log_tail() {")
+    return START[i:START.index("\n}\n", i) + 3]
+
+
+def test_포털이_안_뜨면_인스턴스_로그_끝을_찍는다(tmp_path):
+    user = subprocess.run(["id", "-un"], capture_output=True, text=True).stdout.strip()
+    logs = tmp_path / ".apptainer/instances/logs/somehost" / user; logs.mkdir(parents=True)
+    (logs / "hwax_portal.err").write_text("부팅\n" * 40 + "Value error, 주소 전체가 아니라 경로만 쓴다\n")
+    script = "set -euo pipefail\n" + _log_tail_fn() + '_instance_log_tail hwax_portal 5\necho END\n'
+    r = subprocess.run(["bash", "-c", script], env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)},
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "주소 전체가 아니라 경로만" in r.stdout and r.stdout.count("부팅") == 4 and r.stdout.rstrip().endswith("END")
+    r2 = subprocess.run(["bash", "-c", script], env={"PATH": os.environ["PATH"], "HOME": str(tmp_path / "none")},
+                        capture_output=True, text=True)
+    assert r2.returncode == 0 and "인스턴스 로그를 못 찾았다" in r2.stdout and r2.stdout.rstrip().endswith("END"), \
+        "로그가 없어도 set -e 로 start.sh 가 죽으면 안 된다(nginx 기동이 뒤에 있다)"
+    wait = START[START.index('echo "→ waiting for portal…"'):START.index("# 4. nginx")]
+    assert '_instance_log_tail "$INST_PORTAL"' in wait, "대기 실패 분기가 로그를 찍어야 한다"
