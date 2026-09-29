@@ -99,11 +99,12 @@ def request_access(body: AccessRequestIn, request: Request,
 
 # ── 허브에 보일 앱(개인 MCP 시야에서 끄기 — docs/mcp-app-toggle) ─────────────────────
 # 끄기는 권한이 아니라 선호다: 게이트웨이가 **개인 PAT** 의 tools/list·search_tools·list_tool_apps 에서만 숨기고,
-# 이름을 주면 invoke_tool 로는 여전히 부른다(D-3). 웹 챗·절차·심의는 영향 없다(D-2).
+# 이름을 주면 invoke_tool 로는 여전히 부른다(D-3). 웹 챗·웹 심의·절차는 영향 없다(D-2). Claude Code 에서 돌리는 심의
+# 워크플로는 개인 PAT 라 적용된다 — 파이프라인이 필수 도구(보고서 저장·근거 조회)는 이름으로 부른다(D-7).
 _APP_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 _HUB_NOTE = ("끈 앱은 개인 Claude(Code·Desktop 등)의 허브 도구 목록과 search_tools 에서 빠진다. search_tools 는 바로, "
              "열려 있는 Claude 세션의 도구 목록은 재연결해야 바뀐다(Claude Code: /mcp 에서 hwax 재연결 또는 재시작 · "
-             "Desktop: 완전히 종료 후 다시 실행). 포털 웹 챗·심의에는 영향이 없다.")
+             "Desktop: 완전히 종료 후 다시 실행). 포털 웹 챗·웹 심의에는 영향이 없다.")
 
 
 async def _gateway_apps(settings: Settings) -> list[dict] | None:
@@ -153,38 +154,36 @@ async def my_hub_apps(request: Request, principal: Principal = Depends(get_curre
     return _hub_apps_view(policy, ents, apps, set(row.get("hub_muted_apps") or []))
 
 
-class HubAppsIn(BaseModel):
-    muted: list[str] = Field(default_factory=list, max_length=64)
+class HubAppIn(BaseModel):
+    muted: bool
 
 
-@router.put("/auth/access/apps")
-async def set_hub_apps(body: HubAppsIn, request: Request,
-                       principal: Principal = Depends(get_current_principal),
-                       settings: Settings = Depends(get_settings),
-                       _csrf: None = Depends(require_csrf)) -> dict:
-    """끈 앱 목록을 통째로 바꾼다. 게이트웨이 캐시를 바로 깨서 search_tools 에 즉시 반영한다."""
-    store = _store(request)
-    row = store.get(principal.email)
-    if row is None:
-        raise AuthError("계정 원장에 없는 사용자입니다 — 로그아웃 후 다시 로그인하세요", status_code=404)
+@router.put("/auth/access/apps/{key}")
+async def set_hub_app(key: str, body: HubAppIn, request: Request,
+                      principal: Principal = Depends(get_current_principal),
+                      settings: Settings = Depends(get_settings),
+                      _csrf: None = Depends(require_csrf)) -> dict:
+    """앱 **하나**를 끄거나 켠다(두 탭이 서로의 선택을 덮지 않게 — 저장소가 잠금 안에서 한 번에 고친다).
+    끌 때는 지금 게이트웨이에 있는 앱만 받고, 켤 때는 언제든 받는다 — 게이트웨이에서 빠진 앱의 끈 기록도 지울 수 있게.
+    바꾼 뒤 게이트웨이 캐시를 바로 깨서 search_tools 에 즉시 반영한다."""
+    if key == "_gateway":
+        raise AuthError("허브 자체 도구(_gateway)는 끌 수 없습니다", status_code=400)
+    if not _APP_KEY.match(key):
+        raise AuthError(f"모르는 앱입니다: {key[:80]}", status_code=400)
     apps = await _gateway_apps(settings)
     if apps is None:
         raise AuthError("게이트웨이에 닿지 못해 앱을 확인할 수 없습니다 — 잠시 뒤 다시 시도하세요", status_code=502)
-    # 지금 게이트웨이에 있는 앱 + 이미 꺼 둔 앱(잠시 내려간 앱을 끈 채 두는 경우)만 받는다
-    known = {str(a["app"]) for a in apps} | set(row.get("hub_muted_apps") or [])
-    want: list[str] = []
-    for k in body.muted:
-        k = str(k).strip()
-        if k == "_gateway":
-            raise AuthError("허브 자체 도구(_gateway)는 끌 수 없습니다", status_code=400)
-        if not _APP_KEY.match(k) or k not in known:
-            raise AuthError(f"모르는 앱입니다: {k[:80]}", status_code=400)
-        want.append(k)
-    store.set_hub_muted_apps(principal.email, want)
+    if body.muted and key not in {str(a["app"]) for a in apps}:
+        raise AuthError(f"모르는 앱입니다: {key[:80]}", status_code=400)
+    store = _store(request)
+    new = store.set_hub_app_muted(principal.email, key, body.muted)
+    if new is None:
+        raise AuthError("계정 원장에 없는 사용자입니다 — 로그아웃 후 다시 로그인하세요", status_code=404)
     await _invalidate_gateway_cache(settings, principal.email)
     policy = _policy(request)
-    ents = getattr(request.state, "entitlements", None) or compute(policy, groups=principal.groups, row=row)
-    return _hub_apps_view(policy, ents, apps, set(want))
+    ents = getattr(request.state, "entitlements", None) or compute(
+        policy, groups=principal.groups, row=store.get(principal.email))
+    return _hub_apps_view(policy, ents, apps, set(new))
 
 
 # ── 관리자 ──────────────────────────────────────────────────────────────────

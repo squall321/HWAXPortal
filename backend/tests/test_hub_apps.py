@@ -88,44 +88,62 @@ def test_앱_표는_게이트웨이_목록에서_허브_자체_도구를_빼고_
     assert {r["app"]: r for r in c.get("/auth/access/apps").json()["apps"]}["heax-step_forge"]["allowed"] is True
 
 
+def _put(c, h, app, muted):
+    return c.put(f"/auth/access/apps/{app}", json={"muted": muted}, headers=h)
+
+
 def test_끄면_저장되고_게이트웨이_캐시를_깨고_게이트웨이가_읽는_응답에_실린다(env):
     c, gw = env
     h = _login(c, "user@corp.com")
     assert _ent(c, "user@corp.com")["muted_apps"] == []
-    r = c.put("/auth/access/apps", json={"muted": ["signalforge", "heax-step_forge"]}, headers=h)
+    r = _put(c, h, "signalforge", True)
     assert r.status_code == 200, r.text
-    assert {x["app"] for x in r.json()["apps"] if x["muted"]} == {"signalforge", "heax-step_forge"}
+    assert {x["app"] for x in r.json()["apps"] if x["muted"]} == {"signalforge"}
     assert ("POST", "/conn-invalidate", {"email": "user@corp.com"}) in gw.calls, "안 깨면 최대 60초 늦게 먹는다"
+    assert _put(c, h, "heax-step_forge", True).status_code == 200
     assert _ent(c, "user@corp.com")["muted_apps"] == ["heax-step_forge", "signalforge"]
     assert _ent(c, "boss@corp.com")["muted_apps"] == [], "남의 설정에 섞이지 않는다"
-    assert c.put("/auth/access/apps", json={"muted": []}, headers=h).status_code == 200
-    assert _ent(c, "user@corp.com")["muted_apps"] == [], "다시 켜기"
+    assert _put(c, h, "signalforge", False).status_code == 200
+    assert _ent(c, "user@corp.com")["muted_apps"] == ["heax-step_forge"], "다시 켜기 — 다른 앱은 그대로"
 
 
-@pytest.mark.parametrize("muted,code", [(["_gateway"], 400), (["no-such-app"], 400), (["bad key!"], 400)])
-def test_모르는_앱과_허브_자체는_끌_수_없다(env, muted, code):
+def test_두_탭이_앱_하나씩_바꿔도_서로를_덮지_않는다(env):
+    """종전엔 화면이 자기 옛 목록 전체를 보내 다른 탭의 선택을 조용히 되돌렸다(검토 2026-09-29)."""
     c, _ = env
     h = _login(c, "user@corp.com")
-    assert c.put("/auth/access/apps", json={"muted": muted}, headers=h).status_code == code
+    tab_a = c.get("/auth/access/apps").json()      # 두 탭 모두 '아무것도 안 끔' 을 보고 있다
+    tab_b = c.get("/auth/access/apps").json()
+    assert tab_a["muted"] == tab_b["muted"] == []
+    _put(c, h, "signalforge", True)                 # 탭 A
+    _put(c, h, "heax-step_forge", True)             # 탭 B — 옛 화면에서 눌렀어도 A 의 선택을 지우지 않는다
+    assert _ent(c, "user@corp.com")["muted_apps"] == ["heax-step_forge", "signalforge"]
+
+
+@pytest.mark.parametrize("app,code", [("_gateway", 400), ("no-such-app", 400), ("bad key!", 400)])
+def test_모르는_앱과_허브_자체는_끌_수_없다(env, app, code):
+    c, _ = env
+    h = _login(c, "user@corp.com")
+    assert _put(c, h, app, True).status_code == code
     assert _ent(c, "user@corp.com")["muted_apps"] == []
 
 
 def test_CSRF_없이는_못_바꾼다(env):
     c, _ = env
     _login(c, "user@corp.com")
-    assert c.put("/auth/access/apps", json={"muted": ["signalforge"]}).status_code == 403
+    assert c.put("/auth/access/apps/signalforge", json={"muted": True}).status_code == 403
     assert _ent(c, "user@corp.com")["muted_apps"] == []
 
 
-def test_잠시_내려간_앱을_끈_기록은_사라지지_않는다(env):
+def test_게이트웨이에서_빠진_앱의_끈_기록은_보이고_켜서_지울_수_있다(env):
     c, gw = env
     h = _login(c, "user@corp.com")
-    c.put("/auth/access/apps", json={"muted": ["signalforge"]}, headers=h)
+    _put(c, h, "signalforge", True)
     gw.apps = [a for a in APPS if a["app"] != "signalforge"]          # 게이트웨이에서 잠시 빠졌다
     rows = {r["app"]: r for r in c.get("/auth/access/apps").json()["apps"]}
     assert rows["signalforge"]["muted"] and rows["signalforge"].get("absent") is True
-    r = c.put("/auth/access/apps", json={"muted": ["signalforge", "heax-step_forge"]}, headers=h)
-    assert r.status_code == 200, "이미 꺼 둔 앱은 지금 목록에 없어도 끈 채로 둘 수 있다"
+    assert _put(c, h, "signalforge", True).status_code == 400, "지금 없는 앱을 새로 끌 수는 없다"
+    assert _put(c, h, "signalforge", False).status_code == 200, "빠진 앱의 끈 기록은 켜서 지울 수 있다(막히면 화면이 그 앱 때문에 계속 실패한다)"
+    assert _ent(c, "user@corp.com")["muted_apps"] == []
 
 
 def test_게이트웨이에_못_닿으면_모름이지_빈_목록이_아니다(env):
@@ -133,7 +151,7 @@ def test_게이트웨이에_못_닿으면_모름이지_빈_목록이_아니다(e
     h = _login(c, "user@corp.com")
     gw.down = True
     assert c.get("/auth/access/apps").status_code == 502
-    assert c.put("/auth/access/apps", json={"muted": ["signalforge"]}, headers=h).status_code == 502
+    assert _put(c, h, "signalforge", True).status_code == 502
     assert _ent(c, "user@corp.com")["muted_apps"] == []
 
 
@@ -149,6 +167,9 @@ def test_옛_DB_에도_칸이_생긴다(tmp_path):
     con.commit(); con.close()
     st = UserStore(Settings(user_store_path=str(db)))
     assert st.get("old@corp.com")["hub_muted_apps"] == []
-    assert st.set_hub_muted_apps("old@corp.com", ["b", "a", "a"]) is True
-    assert st.get("old@corp.com")["hub_muted_apps"] == ["a", "b"]
-    assert st.set_hub_muted_apps("nobody@corp.com", ["a"]) is False
+    assert st.set_hub_app_muted("old@corp.com", "b", True) == ["b"]
+    assert st.set_hub_app_muted("old@corp.com", "a", True) == ["a", "b"]
+    assert st.set_hub_app_muted("old@corp.com", "a", True) == ["a", "b"], "두 번 꺼도 한 번"
+    assert st.set_hub_app_muted("old@corp.com", "b", False) == ["a"]
+    assert st.get("old@corp.com")["hub_muted_apps"] == ["a"]
+    assert st.set_hub_app_muted("nobody@corp.com", "a", True) is None

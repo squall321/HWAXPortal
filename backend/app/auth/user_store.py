@@ -265,14 +265,23 @@ class UserStore:
             return None
         return {"tail": row[0][-4:], "workspace": row[1], "created_at": row[2]}
 
-    def set_hub_muted_apps(self, email: str, apps: list[str]) -> bool:
-        """허브에서 끈 앱 — 통째로 바꾼다(스위치 하나를 바꿔도 화면이 전체 목록을 보낸다)."""
+    def set_hub_app_muted(self, email: str, app: str, muted: bool) -> list[str] | None:
+        """허브에서 앱 **하나**를 끄거나 켠다 — 읽고-고쳐-쓰기를 잠금 안에서 한 번에. 목록을 통째로 받던 때는 두 탭이
+        각자 옛 목록을 보내 서로의 선택을 조용히 되돌렸다(검토 2026-09-29). 행이 없으면 None, 있으면 새 목록."""
+        key = norm_email(email)
         with self._lock:
-            cur = self._conn.execute(
-                "UPDATE users SET hub_muted_apps = ? WHERE email = ?",
-                (json.dumps(sorted(set(apps))), norm_email(email)))
+            row = self._conn.execute("SELECT hub_muted_apps FROM users WHERE email = ?", (key,)).fetchone()
+            if row is None:
+                return None
+            cur = set(json.loads(row[0] or "[]"))
+            if muted:
+                cur.add(app)
+            else:
+                cur.discard(app)
+            new = sorted(cur)
+            self._conn.execute("UPDATE users SET hub_muted_apps = ? WHERE email = ?", (json.dumps(new), key))
             self._commit()
-            return cur.rowcount > 0
+            return new
 
     def set_groups(self, email: str, groups: list[str]) -> bool:
         with self._lock:
