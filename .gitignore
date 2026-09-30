@@ -73,3 +73,5 @@ infra/apptainer/.drive-cache/
 infra/apptainer/.frontend-dist.applied.tar.gz
 # 마지막 기동 지문(재기동 생략 판정) — 박스 상태
 infra/.state/
+# 박스별 타일 덮어쓰기 — 외부 타일의 사내 주소(docs/access-history)
+backend/config/systems.local.yaml

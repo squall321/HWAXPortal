@@ -148,7 +148,8 @@ systems:
     status: available
     # 자체 주소를 가진 사내 서비스 — 프록시가 아니라 직결 링크다. 사내망에서만 열린다.
     integration_type: external-url
-    url: http://10.252.38.97:3001/
+    # 직결 주소는 사내 IP 라 여기 적지 않는다 — backend/config/systems.local.yaml(gitignore)의 `arp: {url: ...}`.
+    # 없으면 '곧 공개' 로 뜬다(docs/access-history).
     sort_order: 65
 
   - id: hwax-risk
@@ -187,7 +188,8 @@ systems:
     category: Design Automation
     status: available
     integration_type: external-url
-    url: http://10.252.38.121:8000/
+    # 직결 주소는 사내 IP 라 여기 적지 않는다 — backend/config/systems.local.yaml(gitignore)의 `odb-hub: {url: ...}`.
+    # 없으면 '곧 공개' 로 뜬다(docs/access-history).
     sort_order: 70
 
   - id: knox-bridge

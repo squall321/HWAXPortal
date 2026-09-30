@@ -7,6 +7,7 @@ up is "set one line, done": that tile flips to clickable and opens its URL. Vali
 load (fail fast); `reload()` re-reads both files without a restart.
 """
 
+import logging
 import os
 from pathlib import Path
 
@@ -14,6 +15,14 @@ import yaml
 
 from app.config import Settings
 from app.schemas.system import CatalogFile, LinkedSystem
+
+
+log = logging.getLogger(__name__)
+
+# 박스별 타일 덮어쓰기(gitignore) — 지금은 `url` 한 칸만. 외부 타일의 직결 주소는 사내 IP 라 추적 파일(systems.yaml)에
+# 적지 않는다(리포 규칙, docs/access-history). routes.local.env 에 적으면 프록시로 승격되므로 그 파일을 쓰지 않는다.
+LOCAL_OVERLAY = "systems.local.yaml"
+_OVERLAY_KEYS = {"url"}
 
 
 def _env_key(system_id: str) -> str:
@@ -77,6 +86,13 @@ class CatalogRegistry:
                 s.integration_type = "proxy"
             s.status = "available"
             return
+        if s.integration_type == "external-url" and not from_route:
+            # 주소 없는 외부 타일은 정직하게 끈다 — 두면 화면이 `/<id>/` 로 열어 SPA 로 떨어지고 조용히 깨진다.
+            # 사내 주소는 systems.local.yaml(gitignore)에 둔다 — 새 박스·새 클론에서 여기로 온다.
+            s.status = "coming_soon"
+            log.warning("외부 타일 %s 에 주소가 없다 — backend/config/%s 에 '%s: {url: ...}' 를 적어라(곧 공개로 둔다)",
+                        s.id, LOCAL_OVERLAY, s.id)
+            return
         url = from_route or s.url
         if url:
             s.url = url
@@ -99,16 +115,31 @@ class CatalogRegistry:
         raw = yaml.safe_load(self._catalog_path.read_text(encoding="utf-8")) or {}
         catalog = CatalogFile.model_validate(raw)  # raises on malformed entries
         routes = self._load_routes()
+        overlay = self._load_local_overlay()
 
         seen: set[str] = set()
         for s in catalog.systems:
             if s.id in seen:
                 raise ValueError(f"duplicate system id in catalog: {s.id}")
             seen.add(s.id)
+            for k, v in (overlay.get(s.id) or {}).items():
+                if k in _OVERLAY_KEYS and v:
+                    setattr(s, k, str(v))
             self._apply_route(s, routes)
+        for unknown in set(overlay) - seen:
+            log.warning("%s 의 '%s' 는 카탈로그에 없는 타일이다 — 오타인지 보라", LOCAL_OVERLAY, unknown)
 
         self._systems = sorted(catalog.systems, key=lambda s: (s.sort_order, s.name))
         return len(self._systems)
+
+    def _load_local_overlay(self) -> dict[str, dict]:
+        p = self._catalog_path.with_name(LOCAL_OVERLAY)
+        if not p.exists():
+            return {}
+        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        if not isinstance(raw, dict):
+            raise ValueError(f"{p}: '<타일 id>: {{url: ...}}' 모양이어야 한다")
+        return {str(k): v for k, v in raw.items() if isinstance(v, dict)}
 
     def all(self) -> list[LinkedSystem]:
         return list(self._systems)
