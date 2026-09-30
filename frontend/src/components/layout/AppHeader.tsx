@@ -97,6 +97,11 @@ export function AppHeader() {
                 사용자 관리
               </NavLink>
             )}
+            {user.groups.includes('portal-admin') && (
+              <NavLink to="/admin/access" style={navLinkStyle}>
+                접속 이력
+              </NavLink>
+            )}
           </nav>
         )}
       </div>

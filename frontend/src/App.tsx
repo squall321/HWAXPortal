@@ -14,6 +14,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import PortalHomePage from './pages/PortalHomePage';
 import TokenPage from './pages/TokenPage';
 import RiskLaunchPage from './pages/risk/RiskLaunchPage';
+import AccessHistoryPage from './pages/admin/AccessHistoryPage';
 import UsersAdminPage from './pages/admin/UsersAdminPage';
 import ProceduresPage from './pages/procedures/ProceduresPage';
 import { ProceduresProvider } from './state/ProceduresContext';
@@ -115,6 +116,16 @@ const router = createBrowserRouter([
       <ProtectedRoute>
         <AppShell>
           <UsersAdminPage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin/access',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <AccessHistoryPage />
         </AppShell>
       </ProtectedRoute>
     ),

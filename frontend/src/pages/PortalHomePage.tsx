@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { noteTileOpen } from '../api/launch.api';
 import { listSystems, type SystemTile } from '../api/systems.api';
 import { useAuth } from '../auth/useAuth';
 import { PlatformCard } from '../components/catalog/PlatformCard';
@@ -31,6 +32,8 @@ export default function PortalHomePage() {
       navigate(`/launch/${s.id}`); // token handoff (Phase 4)
       return;
     }
+    // 이 두 갈래는 토큰 발급 없이 곧장 연다 — 접속 원장에는 클릭만 남긴다(docs/access-history).
+    noteTileOpen(s.id);
     if (s.integration_type === 'external-url' && s.url) {
       window.open(s.url, '_blank', 'noopener'); // service has its own address (own domain/port)
       return;
