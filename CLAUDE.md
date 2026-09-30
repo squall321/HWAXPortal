@@ -128,6 +128,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 클러스터 배선(ste=24대 웹·MCP, stcx=356대 낙하·DynaForge, 포털 SSO) | `docs/cluster-wiring/` (PLAN·checklist·context-notes) |
 | ste × cae00 운영(update-all 1회 셋업·사용자 PC Claude MCP 연결·터널·시크릿·파일 경로) | `docs/ste-cae00/` (PLAN·checklist·context-notes) |
 | ste(24대) 전각도 낙하 — 드라이버 앱·preflight·취소 전파 | `docs/ste-fullangle/` (PLAN·checklist·context-notes) |
+| 서비스별 접속 이력(로그인·타일 진입 원장, 정문 요청을 계정과 잇는 연결 ID, 관리자 '접속 이력') | `docs/access-history/` (PLAN·checklist·context-notes) |
 | 게이트웨이 감사에 호출 IP·자격(via) — 누가 어디서 어떤 도구를 불렀나 | `docs/gateway-audit-ip/` (PLAN·checklist·context-notes) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
