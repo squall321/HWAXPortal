@@ -11,6 +11,9 @@ const FLAG = 'hwax.sso.primed';
 const PRIME_TTL_MS = 45 * 60 * 1000;
 // 탭을 켜 둔 채 시간이 흐르는 경우를 위해 주기적으로도 확인한다.
 const CHECK_MS = 5 * 60 * 1000;
+// 실패가 이어지면 간격을 두 배씩 늘린다(최대 1시간). 세션이 끊긴 채 열어 둔 탭이 5분마다·탭 전환마다 다시 불러
+// 엿새 동안 401 이 6천여 건 쌓였다(2026-09-30 조사, docs/access-history). 성공하면 되돌린다.
+const MAX_BACKOFF_MS = 60 * 60 * 1000;
 
 interface Pending {
   systemId: string;
@@ -32,16 +35,20 @@ export function SsoPrimer({ enabled }: { enabled: boolean }) {
   const [pending, setPending] = useState<Pending | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const busyRef = useRef(false);
+  const failsRef = useRef(0);
+  const retryAtRef = useRef(0);
 
   const prime = useCallback(() => {
-    if (!enabled || busyRef.current) return;
+    if (!enabled || busyRef.current || Date.now() < retryAtRef.current) return;
     const primed = readPrimed();
     const now = Date.now();
     const next = PRIME_SYSTEMS.find((id) => !(primed[id] > now - PRIME_TTL_MS));
     if (!next) return;
     busyRef.current = true;
-    launchSystem(next)
+    launchSystem(next, { via: 'primer' })
       .then((handoff) => {
+        failsRef.current = 0;
+        retryAtRef.current = 0;
         // redirect 방식은 주소창을 옮겨야 해서 조용히 태울 수 없다 — 그런 시스템은 건너뛴다.
         if (handoff.mode !== 'auto_post') {
           busyRef.current = false;
@@ -50,7 +57,9 @@ export function SsoPrimer({ enabled }: { enabled: boolean }) {
         setPending({ systemId: next, handoff });
       })
       .catch(() => {
-        // 실패해도 화면은 그대로다. 다음 주기에 다시 시도한다.
+        // 실패해도 화면은 그대로다. 다음 시도는 실패가 이어질수록 늦춘다.
+        failsRef.current += 1;
+        retryAtRef.current = Date.now() + Math.min(CHECK_MS * 2 ** (failsRef.current - 1), MAX_BACKOFF_MS);
         busyRef.current = false;
       });
   }, [enabled]);
