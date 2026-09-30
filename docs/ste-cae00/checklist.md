@@ -48,7 +48,9 @@
 - [x] 검증(dev, 게이트웨이 실호출): "파일 올려 돌리고 결과 받기" 끝까지 **통과**(티켓→PUT 81B→제출→재제출 409→COMPLETED→꼬리 3줄→없는 파일 404→sync 토글, D-15) · 모델 출력에 파일 바이트 0 · 권한 없는 호출자의 `list_tool_apps` 실호출(plat:smarttwin 만 → 거부 14개 라벨·요청 경로, D-16) · 권한 없는 계정으로 TokenPage 문구 **화면 확인 완료**(임시 포털·플레이라이트, D-21)
 
 ## S4 — 무인화
-- [ ] tbot 봇·조인 토큰 관리자 요청(teleport-transport.md §7-1 조건) → `transport.env` 전환 · 스크립트 무변경 확인
+- [x] tbot 봇·조인 토큰 — 2026-09-30 사용자 보고: cae00 에서 tbot 이 갱신 중(D-31)
+- [x] `ste-doctor` teleport 행이 **터널이 쓰는 ssh_config 의 인증서**를 본다(tbot 인지·남은 시간·만료면 빨강) + `tunnel-cfg`(유닛이 같은 파일을 쓰는가) — D-31
+- [ ] cae00 확인: `ste-doctor` 의 `teleport` 가 "tbot 인증서 유효", `tunnel-cfg` 가 "(tbot)" 인가 — 아니면 `transport.env` 전환·`install-ste-tunnel.sh`
 - [x] 그 전까지: 가이드에 "cae00 ste 는 사람 로그인 전제" 명문화 · `ste-doctor` 잔여 TTL 표시 — D-22(가이드 §4)
 
 ## S5 — 사용자 토큰 경로 실확인 (2026-09-30)

@@ -129,10 +129,13 @@ ste 백엔드가 영구 DOWN 이고 **ste 도구 8종이 통째로 안 뜬다**(
 `remove`, linger 포함, 값은 `transport.env` 에서 읽는다). STE 는 `services.yaml` 의 **기동·갱신 대상이 아니다**(데이터만
 `data_only:` 에 등록돼 `services.py data --check` 가 본다).
 
-**cae00 의 ste 는 무인화되어 있지 않다.** 배포·터널·사용자 위임이 모두 사람의 `tsh login` 인증서에 매달린다 — 만료되면
-§2c 는 전제조건 실패로 ○ 를 찍고(실패 아님) 터널은 죽는다. 잔여 시간은 `./infra/scripts/ste-doctor.sh` 의 `teleport` 행에서
-본다(형식을 못 읽으면 "모름" 으로 낸다 — 모름을 정상으로 읽지 않는다). 무인화(tbot·Machine ID)는 관리자 협조가 필요한
-별도 과제다(docs/ste-cae00 S4, 미착수).
+**cae00 → ste 헤드의 모든 경로(배포·터널·사용자 위임)는 Teleport 인증서 하나에 매달린다** — `SmartTwinExplorer/deploy/transport.env`
+의 `TELEPORT_SSH_CONFIG` 가 가리키는 ssh_config 의 인증서다. 사람의 `tsh login`(→ `tsh config`)이면 그 세션이 끝날 때, tbot(Machine ID)이면
+tbot 이 갱신을 멈출 때 끊긴다 — §2c 는 전제조건 실패로 ○ 를 찍고(실패 아님) 터널은 죽는다. tbot 으로 무인화하려면
+`TELEPORT_SSH_CONFIG` 를 tbot destination 의 `ssh_config` 로 바꾸고 `./infra/scripts/install-ste-tunnel.sh` 로 터널을 다시 세운다(스크립트 무변경).
+**지금 이 박스가 어느 쪽인지는 여기 적지 않는다** — `./infra/scripts/ste-doctor.sh` 의 `teleport` 행(그 ssh_config 인증서의 남은 시간,
+tbot 여부)과 `tunnel-cfg` 행(터널 유닛이 같은 파일을 쓰는가)으로 본다. 못 읽으면 "모름" 으로 낸다 — 모름을 정상으로 읽지 않는다.
+2026-09-30 사용자 보고: cae00 에서 tbot 이 인증서를 갱신 중(docs/ste-cae00 D-31).
 
 ### STE 는 3단계
 

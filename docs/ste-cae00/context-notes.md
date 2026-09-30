@@ -518,6 +518,17 @@ REEXEC=1·STOP=1 을 물려받고 그 후손에서 띄운 다른 update-all 이 
   캐시 수명(12시간) 동안 계속 썼다.
 사용자 결정: 점검 보강(2)과 재발급(3)을 한다(S5). tbot 무인화는 S4 그대로 사람 몫.
 
+## D-31. tbot 으로 무인화 — 무엇이 정본인가 (2026-09-30)
+
+사용자 보고: cae00 에서 tbot 이 인증서를 갱신 중이고, 외부 타일 주소 이관(systems.local.yaml)·챗 LLM 연결 오류도 해결됐다. 스크립트는 처음부터 tbot 을
+`transport.env` 의 `TELEPORT_SSH_CONFIG` 한 줄로 받게 짜여 있었다(ProxyCommand 가 tbot 이면 tsh 는 필수가 아니다) — 코드 변경은 없다.
+다만 `ste-doctor` 의 teleport 행이 **사람 tsh 세션**(`tsh status`)만 읽어서 tbot 만 쓰는 박스에서는 "만료 시각을 못 읽었다" 경고를 내고,
+터널이 tbot 파일을 실제로 쓰는지(유닛의 `-F`)는 아무것도 안 봤다 — tbot 으로 바꿨는데 유닛이 옛 tsh 파일을 물고 있으면 사람 세션이
+끝날 때 끊기는데 그 상태도 초록이었다. 그래서 teleport 행은 **그 ssh_config 가 가리키는 인증서**(CertificateFile, 없으면 IdentityFile-cert.pub)의
+유효 기간을 `ssh-keygen -L` 로 읽고(만료면 빨강 — tbot 이면 "갱신을 멈췄다"), `tunnel-cfg` 행이 유닛의 `-F` 와 대조한다. tsh 행은 tbot
+박스에서 건너뛴다. 시험은 진짜 인증서를 서명해(유효·만료·이름 다른 인증서) 가른다. 가이드의 "무인화되어 있지 않다" 는 박스 상태를
+문서에 박은 문장이라 지웠다 — 어느 쪽인지는 ste-doctor 로 본다.
+
 ## F. cae00 실측 (S0)
 
 ### 2026-09-27 — 첫 `update-all` 뒤 `ste-doctor`(사용자 실행, 그대로)
