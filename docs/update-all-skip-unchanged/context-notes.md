@@ -230,3 +230,28 @@ rc 0 이고 새 dist 가 풀리는가 · 쓰기 실패는 여전히 멈추는가
 
 **교훈.** 반환값으로 '상태' 를 말하는 함수(0 이 아닌 값이 오류가 아닌 것)는 set -e 스크립트에서 **맨 문장으로 부르면 안 된다.**
 그리고 "처음 한 번" 만 시험하면 이 모양은 안 잡힌다 — 이 기능의 요점은 **두 번째 실행**이다.
+
+## D-14. 같은 부류 전수 점검 — update-all·deploy-all 이 실제로 부르는 스크립트 전부 (2026-09-30)
+
+D-13 뒤에 "set -e·pipefail 아래서 **정상인** 0 아닌 값이 스크립트를 말없이 끝내는 자리" 를 update-all → deploy-all 이 부르는
+스크립트 전부(포털·앱 다섯·게이트웨이·에이전트 서버·ste)에서 찾았다(세 갈래 + 갈래마다 반증 재현, 읽기 전용·scratch 셈).
+
+**고친 것(정상 경로에서 난다).**
+- 포털 `_common.sh:instance_running` — `instance list | grep -q` 가 줄 이음(`\`)으로 나뉘어 09-19 정비와 가드 시험을 둘 다
+  빠져나가 남아 있었다. 목록이 파이프 용량보다 크면 떠 있는 인스턴스를 '없다' 로 읽어 **start.sh 가 떠 있는 포털을 다시 띄우려다
+  'already exists' 로 죽고(nginx 가 안 뜬다), stop.sh 는 멈추지 않는다** — 이것도 'portal failed' 를 낸다(셈 재현). 출력을 먼저 받는다.
+  가드 시험(test_shell_pipe_guard)은 이제 이어진 줄(`\`·끝의 `|`)을 합쳐서 본다 — 옛 코드를 넣으면 잡는 것을 확인했다.
+- AIDataHub `_aidh_runtime_autotune` — 마지막 문장 `[[ … ]] && echo` 가 거짓이면(linger 는 이미 켜졌고 subuid·apparmor 만 필요) 함수가 1,
+  맨몸 호출 → start_postgres.sh 가 안내 한 줄 뒤 말없이 끝났다. `return 0`(안내 전용 함수다).
+- (경로 밖·실패 경로지만 값쌈) deploy-ste.sh 없는 트리 지문(direct 박스·새 클론)과 부트스트랩 리모트 목록(`| head -1`),
+  images-from-drive.sh 의 latest 목록 판정(`lsf | grep -q` → 조용히 옛 images-<TS>/ 로), SignalForge sync-from-drive 의 db-dumps 목록
+  (폴더 없으면 [WARN] 대신 말없이 끝), ste deploy-frontend·deploy-backend 의 curl 코드(안 떴을 때 사유·journal 덤프 없이 끝),
+  make-agent-ca 의 인증서 수(`ls` 2 → 사유 없이 끝) — 전부 "출력 먼저 받기" 또는 `|| true` 로.
+
+**고치지 않은 것(다른 부류 — 사람에게 알렸다).** MXWP build.sh 는 web.sif 가 있어도 `apps/web/dist` 가 없으면 **명시** exit 1(새 클론·새
+서버쌍에서만) · update-all 의 AIDH `sync-from-drive --dry-run` 호출은 DRY 게이트 때문에 주석이 말하는 '스택 보장·임베딩 모델 확보' 를
+한 번도 안 했다(출력 /dev/null·rc 삼킴) — 행동을 바꾸는 일이라 사용자 결정.
+
+**재현 방식.** 경합을 기다리지 않고 셈이 목록을 **두 조각**(첫 줄 → 잠깐 쉼 → 큰 나머지)으로 쓰게 해 읽는 쪽이 첫 줄에서 닫으면 늘
+SIGPIPE 가 난다. 첫 조각이 줄바꿈으로 끝나야 한다(grep 은 줄을 다 읽어야 맞춘다 — 처음에 줄바꿈 없이 짜서 대조군이 틀렸다).
+대조군(옛 모양이 같은 셈에서 실제로 틀린다)을 시험에 같이 둔다.

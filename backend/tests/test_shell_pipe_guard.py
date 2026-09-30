@@ -46,11 +46,19 @@ def _hits() -> dict[str, list[str]]:
                 lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
             except OSError:
                 continue
-            for n, line in enumerate(lines, 1):
+            # 이어진 줄을 한 줄로 합쳐서 본다 — `\` 줄 이음이나 끝의 `|` 로 나뉜 파이프를 한 줄씩 보면 못 잡는다.
+            # 포털 `_common.sh:instance_running` 이 바로 그 모양으로 09-19 정비를 빠져나가 남아 있었다(D-14).
+            i = 0
+            while i < len(lines):
+                start, line = i, lines[i]
+                while i + 1 < len(lines) and (line.rstrip().endswith("\\") or line.rstrip().endswith("|")):
+                    i += 1
+                    line = line.rstrip().rstrip("\\") + " " + lines[i]
+                i += 1
                 if line.lstrip().startswith("#"):
                     continue                      # 주석은 설명이다(이 파일도 그 문구를 인용한다)
                 if PATTERN.search(line):
-                    found.setdefault(repo, []).append(f"{f.relative_to(base)}:{n}: {line.strip()[:90]}")
+                    found.setdefault(repo, []).append(f"{f.relative_to(base)}:{start + 1}: {line.strip()[:90]}")
     return found
 
 

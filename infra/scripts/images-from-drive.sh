@@ -17,7 +17,9 @@ REMOTE="${REMOTE%/}"
 
 # Source = latest/ if it has the images, else the newest images-<TS>/ dir.
 SRC="$REMOTE/latest"
-if ! "$RCLONE" lsf "$SRC/" 2>/dev/null | grep -q '^portal\.sif$'; then
+# 목록은 먼저 받는다 — `lsf | grep -q` 는 grep 이 먼저 닫으면 pipefail 로 '없다' 가 되어 조용히 옛 images-<TS>/ 로 넘어간다(D-14).
+_ls="$("$RCLONE" lsf "$SRC/" 2>/dev/null || true)"
+if ! grep -qxF 'portal.sif' <<<"$_ls"; then
   NEWEST="$("$RCLONE" lsf --dirs-only "$REMOTE/" 2>/dev/null \
     | sed 's#/$##' | grep -E '^images-' | sort | tail -n 1 || true)"
   [ -n "$NEWEST" ] \

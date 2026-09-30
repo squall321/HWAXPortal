@@ -53,6 +53,11 @@ require_apptainer() {
 }
 
 instance_running() {
-  "$APPTAINER" instance list --json 2>/dev/null \
-    | grep -q "\"instance\": *\"$1\"" || return 1
+  # 출력을 **먼저 받고** 본다. `list | grep -q` 는 pipefail 아래서 grep 이 일치 즉시 파이프를 닫아 apptainer 가 SIGPIPE(141)를
+  # 받으면 **떠 있는 인스턴스를 '없다'** 로 읽는다(목록이 파이프 용량보다 크면 — dev 실측 14.7%, 09-19). 그러면 start.sh 가 떠 있는
+  # 포털을 다시 띄우려다 'already exists' 로 set -e 에 죽어 nginx 가 안 뜨고, stop.sh 는 '안 떠 있다' 며 멈추지 않는다.
+  # 09-19 에 다른 자리는 고쳤는데 여기는 줄 이음(\) 때문에 가드 시험을 빠져나갔다(docs/update-all-skip-unchanged D-14).
+  local _il
+  _il="$("$APPTAINER" instance list --json 2>/dev/null)" || return 1
+  grep -q "\"instance\": *\"$1\"" <<<"$_il"
 }

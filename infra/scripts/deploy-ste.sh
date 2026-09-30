@@ -91,6 +91,9 @@ if [ "$TRANSPORT_MODE" = direct ]; then
   # 그것만으로 사용자에게 장애처럼 보인다. 그래서 "다를 때만" 을 여기서 판정한다.
   if [ "$IF_STALE" = 1 ]; then
     _man() {  # 배포 대상 트리의 내용 지문. 경로+sha256 만 본다(시각·권한은 무시 — 재배포마다 바뀐다).
+      # 없는 트리는 '-' — 원격 쪽과 같은 표기. 안 그러면 cd 실패가 pipefail 로 대입까지 번져 set -e 가 **말없이** 끝냈다
+      # (frontend/dist 는 gitignore 라 새 클론에서 없는 게 정상이고, 아래 'dist 가 없다' 안내가 그 경우를 따로 말한다 — D-14).
+      [ -d "$1" ] || { echo "-"; return 0; }
       ( cd "$1" 2>/dev/null && find . -type f \
           ! -name '*.pyc' ! -path './__pycache__/*' ! -path '*/__pycache__/*' ! -path './.pytest_cache/*' \
           -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort -k2 ) | sha256sum | cut -d' ' -f1
@@ -143,8 +146,11 @@ if [ ! -x "$DEPLOY" ]; then
   [ -x "$RCLONE" ] || die "rclone 이 없다 (HWAXPortal infra/bin/rclone 또는 PATH)"
   # 리모트: STE_DRIVE_REMOTE 우선, 없으면 pull-from-drive 와 같은 규칙(ApptainerImages: → 첫 리모트)
   REMOTE="${STE_DRIVE_REMOTE:-}"
-  [ -z "$REMOTE" ] && "$RCLONE" listremotes 2>/dev/null | grep -qx 'ApptainerImages:' && REMOTE="ApptainerImages:"
-  [ -z "$REMOTE" ] && REMOTE="$("$RCLONE" listremotes 2>/dev/null | head -1)"
+  # 목록은 먼저 받는다 — `listremotes | head -1` 은 head 가 먼저 닫아 rclone 이 SIGPIPE 를 받으면 pipefail·set -e 로 말없이 끝났다(D-14).
+  if [ -z "$REMOTE" ]; then
+    _rl="$("$RCLONE" listremotes 2>/dev/null || true)"
+    if grep -qxF 'ApptainerImages:' <<<"$_rl"; then REMOTE="ApptainerImages:"; else REMOTE="${_rl%%$'\n'*}"; fi
+  fi
   [ -n "$REMOTE" ] || die "rclone remote 가 없다 — STE_DRIVE_REMOTE 로 지정하라"
   STE_PATH="${STE_STAGING_PATH:-SmartTwinExplorer/staging}"
   echo "  Drive: ${REMOTE}${STE_PATH} → $STAGING"
