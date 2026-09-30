@@ -3,6 +3,8 @@
 #
 #   ./infra/scripts/ste-doctor.sh            # 사람용 한 화면
 #   ./infra/scripts/ste-doctor.sh --report   # 기계용 JSON 한 줄(S0 실측을 context-notes 에 붙일 때)
+#   ./infra/scripts/ste-doctor.sh --as <이메일>   # + 그 사람 신분으로 ste 도구 실호출(토큰 경로·slurm 경로)
+#     (--as 가 없으면 infra/.env 의 HWAX_STE_PROBE_EMAIL. 둘 다 없으면 그 행은 건너뛴다고 말한다)
 #
 # 왜 — cae00 에서 ste 가 죽어 있어도 초록으로 가려지던 자리가 넷이었다(2026-09-24 적대 검토):
 # 터널 15812 부재·시크릿 불일치·게이트웨이 ste DOWN·권한 정책 미적재. update-all §6 이 이제 그것을
@@ -12,7 +14,14 @@
 # 종료코드: 0 = 전부 초록 · 1 = 빨강 있음 · 2 = ste 를 안 쓰는 박스(라우트·접속설정 없음)
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REPORT=0; [ "${1:-}" = "--report" ] && REPORT=1
+REPORT=0; PROBE_AS=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --report) REPORT=1 ;;
+    --as) PROBE_AS="${2:-}"; shift ;;
+  esac
+  shift
+done
 RED=0; declare -A R
 
 ok()   { R["$1"]="ok:$2";   [ "$REPORT" = 1 ] || printf '  \033[1;32m✓\033[0m %-14s %s\n' "$1" "$2"; }
@@ -146,6 +155,41 @@ if [ -n "$H" ] && printf '%s' "$H" | python3 -c 'import json,sys;json.load(sys.s
   if [ "$gpol" = 0 ]; then bad policy "권한 정책 미적재(0) — 전 백엔드가 전원에게 열리고 위임 백엔드는 닫힌다"; else ok policy "백엔드 ${gpol}개분 적재됨 (ready=$gready)"; fi
 else
   bad gateway "게이트웨이 /health 무응답(:9110)"
+fi
+
+# ── 4a) 게이트웨이의 ste 사용자 위임 — config 에 있는가·게이트웨이가 **쥔** 시크릿을 헤드가 받는가(docs/ste-cae00 D-30) ──
+# 위 sso-secret 행은 **포털**의 값이다. 게이트웨이는 provision 때 복사한 값을 쥔다 — 위임이 없으면 ste 를 토큰 없이 불러
+# REST 가 401("Error executing tool …")인데, 그 상태에서도 위 행들은 전부 초록이었다.
+GWCHK="$ROOT/infra/scripts/ste-gateway-check.py"
+dj="$(python3 "$GWCHK" deleg --json 2>/dev/null)"; drc=$?
+dd="$(printf '%s' "$dj" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("detail",""))' 2>/dev/null)"
+case "$drc" in
+  0) ok gw-deleg "게이트웨이 설정에 ste 위임 있음 · ${dd}" ;;
+  1) bad gw-deleg "${dd:-판정 실패}" ;;
+  *) warn gw-deleg "판정 불가 — ${dd:-ste-gateway-check.py 출력 없음}" ;;
+esac
+
+# ── 4a-2) 사용자 신분 실호출 — 잡 목록(토큰 경로)·cluster_info(slurm 경로). 그 사람 명의로 ste 토큰을 받으므로 이메일이 있어야 한다 ──
+[ -n "$PROBE_AS" ] || PROBE_AS="$(envv HWAX_STE_PROBE_EMAIL "$ROOT/infra/.env")"
+MCPPY=""; for c in "$ROOT/../HWAXAgentServer/.venv/bin/python" "$HOME/Projects/HWAXAgentServer/.venv/bin/python" "$HOME/claude/HWAXAgentServer/.venv/bin/python"; do [ -x "$c" ] && { MCPPY="$c"; break; }; done
+if [ -z "$PROBE_AS" ]; then
+  warn user-call "건너뜀 — 이메일이 없다. 켜려면 --as <ste 권한이 있는 본인 이메일> 또는 infra/.env 에 HWAX_STE_PROBE_EMAIL=<이메일>"
+elif [ -z "$MCPPY" ]; then
+  warn user-call "건너뜀 — mcp 모듈이 있는 python(HWAXAgentServer/.venv)을 못 찾았다"
+else
+  pj="$("$MCPPY" "$GWCHK" probe --as "$PROBE_AS" --json 2>/dev/null)"; prc=$?
+  while IFS=$'\t' read -r pk pv pd; do
+    [ -n "$pk" ] || continue
+    if [ "$pv" = ok ]; then ok "$pk" "$PROBE_AS 신분 실호출 성공 ${pd}"; else bad "$pk" "$PROBE_AS 신분 — $pv: $pd"; fi
+  done <<<"$(printf '%s' "$pj" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+if d.get("error"): print("user-call\tfail\t"+d["error"][:300])
+for s in d.get("steps",[]):
+    print(("user-token" if s["what"]=="token" else "user-slurm")+"\t"+s["verdict"]+"\t"+(s.get("detail") or "").replace("\t"," ")[:300])
+if d.get("groups")=="service": print("user-perm\tunknown\t포털에서 권한을 못 읽어 권한 판정 없이 불렀다")
+' 2>/dev/null)"
+  [ -n "$pj" ] || bad user-call "ste-gateway-check.py probe 출력 없음(rc $prc)"
 fi
 
 # ── 4b) 포털 TLS — 사용자 PC 의 Claude(Node)가 이 포털을 믿을 수 있는가(/tls/info) ─────────

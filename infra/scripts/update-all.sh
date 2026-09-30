@@ -833,6 +833,18 @@ PY
       MISSING="${MISSING:+$MISSING }reportarchive"
     fi
   fi
+  # ste 사용자 위임 — 게이트웨이 config 에 없거나 시크릿이 infra/.env 와 다르면 재프로비저닝(docs/ste-cae00 D-30).
+  # 키(ste)는 있으니 calc_missing 이 못 잡는다. 위임이 한 번 빠지면(예: heax 토큰 자동 발급 실패로 옛 provision 이 통째로 생략)
+  # 게이트웨이가 ste 를 토큰 없이 불러 REST 가 401 인 채 남았다 — 도구는 "Error executing tool …", 점검은 전부 초록.
+  if [ "${STE_ROUTED:-0}" = 1 ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] && [ -n "${STE_SSO_SECRET:-}" ]; then
+    _ste_deleg="$(STE_SSO_SECRET="$STE_SSO_SECRET" GATEWAY_CONFIG="$GW_DIR/gateway_config.json" \
+                  python3 "$SELF_REPO/infra/scripts/ste-gateway-check.py" deleg --no-verify --json 2>/dev/null \
+                  | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))' 2>/dev/null)"
+    case "$_ste_deleg" in
+      missing) echo "  · 사용자 위임 드리프트: ste — 게이트웨이 설정에 위임이 없다(토큰 없이 부르고 있다)"; MISSING="${MISSING:+$MISSING }ste" ;;
+      stale)   echo "  · 사용자 위임 드리프트: ste — 게이트웨이가 쥔 시크릿이 infra/.env 와 다르다"; MISSING="${MISSING:+$MISSING }ste" ;;
+    esac
+  fi
   if [ -n "$MISSING" ]; then
     echo "  · config에 없거나 주소가 어긋난 백엔드: $MISSING → 재프로비저닝"
     if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/provision-config.sh" ]; then
@@ -1342,6 +1354,41 @@ PY
         esac ;;
       *) bad "ste MCP         게이트웨이 /health 를 못 읽어 판정 불가" ;;
     esac
+    # ── 게이트웨이의 ste 사용자 위임·사람 신분 실호출(docs/ste-cae00 D-30) ────────────────────────────
+    # 위 '자격중계' 는 **포털**의 시크릿이다. 게이트웨이는 provision 때 복사한 값을 쥔다 — 위임이 없거나 값이 갈리면
+    # ste 도구가 "Error executing tool …" 로 실패하는데 위 항목은 전부 초록이었다. 실호출은 그 사람 명의로 ste 토큰을
+    # 받으므로 이메일이 있어야 한다 — 없으면 안 켠 기능으로 남긴다.
+    if [ "$_ste_gw" = up ]; then
+      _dj="$(STE_SSO_SECRET="${STE_SSO_SECRET:-}" GATEWAY_CONFIG="${GW_DIR:-/nonexistent}/gateway_config.json" \
+             python3 "$SELF_REPO/infra/scripts/ste-gateway-check.py" deleg --json 2>/dev/null)"; _drc=$?
+      _dd="$(printf '%s' "$_dj" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("detail",""))' 2>/dev/null)"
+      case "$_drc" in
+        0) ok "ste 사용자 위임  게이트웨이 설정 있음 · $_dd" ;;
+        1) fail "ste 사용자 위임  $_dd" ;;
+        *) bad "ste 사용자 위임  판정 불가 — ${_dd:-ste-gateway-check.py 출력 없음}" ;;
+      esac
+      _probe_as="$(_ra_envv HWAX_STE_PROBE_EMAIL)"
+      _mcppy="${AGENT_DIR:+$AGENT_DIR/.venv/bin/python}"
+      if [ -z "$_probe_as" ]; then
+        hwax_skip "ste 사람 신분 실호출" "infra/.env 에 HWAX_STE_PROBE_EMAIL 이 없어 잡 목록·cluster_info 를 사람 명의로 불러 보지 않았다(토큰 경로·slurm 경로 미확인)" "infra/.env 에 HWAX_STE_PROBE_EMAIL=<ste 권한이 있는 본인 이메일>"
+      elif [ ! -x "${_mcppy:-/nonexistent}" ]; then
+        bad "ste 사람 신분   mcp 모듈이 있는 python(${_mcppy:-HWAXAgentServer/.venv})을 못 찾아 실호출을 못 했다"
+      else
+        _pj="$(GATEWAY_CONFIG="${GW_DIR:-/nonexistent}/gateway_config.json" "$_mcppy" "$SELF_REPO/infra/scripts/ste-gateway-check.py" probe --as "$_probe_as" --json 2>/dev/null)"
+        while IFS=$'\t' read -r _pk _pv _pd; do
+          [ -n "$_pk" ] || continue
+          if [ "$_pv" = ok ]; then ok "ste 사람 신분   $_pk — $_probe_as 로 실호출 성공 $_pd"
+          else fail "ste 사람 신분   $_pk — $_probe_as: $_pv $_pd"; fi
+        done <<<"$(printf '%s' "$_pj" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+if d.get("error"): print("접속\tfail\t"+d["error"][:300])
+for s in d.get("steps",[]):
+    print(("토큰 경로" if s["what"]=="token" else "slurm 경로")+"\t"+s["verdict"]+"\t"+(s.get("detail") or "").replace("\t"," ")[:300])
+' 2>/dev/null)"
+        [ -n "$_pj" ] || fail "ste 사람 신분   ste-gateway-check.py probe 가 아무것도 내지 않았다"
+      fi
+    fi
   fi
   # ── 포털 권한 정책이 게이트웨이에 **실려 있어야** 한다 ────────────────────────────────
   # 안 실리면 `_backend_allowed` 가 정책 없음 = 전원 허용으로 판정한다. 그 상태에서 per_user 백엔드
