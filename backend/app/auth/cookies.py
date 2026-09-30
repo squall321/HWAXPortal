@@ -15,6 +15,9 @@ STATE_COOKIE = "hwax_authstate"  # httpOnly login-flow binding (scoped to /auth)
 # 로그인 연결 ID — 자격이 아니다(아무것도 열지 않는다). nginx 가 로그에 적어 정문 요청을 계정과 잇는다
 # (docs/access-history D-5). 세션 JWT·CSRF 값을 로그에 남기면 자격증명이 로그에 쌓이므로 따로 둔다.
 UID_COOKIE = "hwax_uid"
+# 연결 ID 수명 — 로그인(8h)이 아니라 **하위 서비스 세션**만큼 산다. 포털 로그인이 끝나도 AIDataHub 키·RA refresh 는 30일이라
+# 그 사이 정문 요청을 그 사람에게 이으려면 쿠키가 그만큼 살아 있어야 한다(검토 1차). 로그아웃하면 지운다.
+UID_MAX_AGE = 30 * 86400
 
 _REFRESH_PATH = "/auth"
 _STATE_PATH = "/auth"
@@ -75,10 +78,9 @@ def clear_state_cookie(response: Response, settings: Settings) -> None:
 
 
 def set_uid_cookie(response: Response, settings: Settings, *, uid: str) -> None:
-    # 로그인 하나의 수명(refresh 토큰과 같다 — refresh 는 세션만 갱신한다)만큼.
     response.set_cookie(
         UID_COOKIE, uid, httponly=True, path="/",
-        max_age=settings.jwt_refresh_ttl, **_base(settings),
+        max_age=UID_MAX_AGE, **_base(settings),
     )
 
 

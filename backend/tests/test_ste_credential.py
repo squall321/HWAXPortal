@@ -190,3 +190,15 @@ def test_revoke_survives_a_dead_ste(make):
     c = make(_FakeSte(0))
     r = c.post("/systems/ste/credential/revoke", headers=_boss(c))
     assert r.status_code == 200 and r.json()["revoked"] is False
+
+
+def test_자격_중계는_접속_원장에_자동_갱신으로_남는다(make):
+    """이 중계를 부르는 것은 화면의 StePrimer(로그인 뒤 저절로) 하나다 — 사람의 진입으로 적으면 기본 화면이
+    로그인마다 'ste 진입' 으로 덮인다(접속 이력 검토 1차)."""
+    fake = _FakeSte(200, {"access_token": STE_TOKEN, "expires_in": 43200})
+    c = make(fake)
+    h = _boss(c)
+    assert c.post("/systems/ste/credential", headers=h).status_code == 200
+    rows = app.state.agent_audit.query_access(email="boss@corp.com", service="ste", since=0, include_auto=True)
+    assert rows and rows[0]["detail"] == "primer"
+    assert not app.state.agent_audit.query_access(email="boss@corp.com", service="ste", since=0)

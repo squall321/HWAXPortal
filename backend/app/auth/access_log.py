@@ -7,6 +7,7 @@ IP 는 `request.client.host` 다. nginx 뒤의 uvicorn 이 X-Forwarded-For 로 �
 
 import ipaddress
 import logging
+import re
 import secrets
 
 from fastapi import Request
@@ -30,8 +31,18 @@ def clean_ip(host) -> str:
     return str(a)
 
 
+_UID = re.compile(r"[A-Za-z0-9_-]{16}")
+
+
 def new_uid() -> str:
-    return secrets.token_urlsafe(12)
+    return secrets.token_urlsafe(12)          # 16자 — _UID 와 짝이다
+
+
+def _cookie_uid(request: Request) -> str | None:
+    """요청의 연결 ID — 우리가 준 모양(16자)일 때만. 쿠키는 클라이언트 값이라 로그인 없이도 수 KB 를 실어
+    무기한 원장에 쌓을 수 있었다(검토 1차, docs/access-history D-9)."""
+    v = request.cookies.get(cookies.UID_COOKIE) or ""
+    return v if _UID.fullmatch(v) else None
 
 
 def note(request: Request, *, email: str, event: str, service: str | None = None,
@@ -43,7 +54,7 @@ def note(request: Request, *, email: str, event: str, service: str | None = None
             email=email, event=event, service=service,
             ip=clean_ip(getattr(request.client, "host", None)),
             ua=request.headers.get("user-agent"),
-            uid=uid or request.cookies.get(cookies.UID_COOKIE),
+            uid=uid or _cookie_uid(request),
             detail=detail)
     except Exception as exc:  # noqa: BLE001 — 부기록이다. 다만 조용히 삼키지 않는다(INFO 는 버려진다, WARNING 은 남는다)
         log.warning("access log write failed (%s %s %s): %r", event, service, email, exc)

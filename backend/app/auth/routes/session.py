@@ -76,8 +76,14 @@ def complete_login(
     if request is not None:
         uid = access_log.new_uid()
         cookies.set_uid_cookie(response, settings, uid=uid)
-        access_log.note(request, email=getattr(principal, "email", "") or getattr(principal, "subject", ""),
-                        event="login", service="portal", detail="sso", uid=uid)
+        who = getattr(principal, "email", "") or getattr(principal, "subject", "")
+        # 정지된 계정도 IdP 는 통과시키고 세션도 받지만 모든 요청이 403 이다(deps) — 로컬 경로처럼 실패로 적는다(검토 1차).
+        disabled = False
+        if user_store is not None and who:
+            with contextlib.suppress(Exception):
+                disabled = (user_store.get(who) or {}).get("status") == "disabled"
+        access_log.note(request, email=who, event="login_fail" if disabled else "login", service="portal",
+                        detail="sso:disabled" if disabled else "sso", uid=uid)
     return response
 
 

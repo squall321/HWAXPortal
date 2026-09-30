@@ -10,12 +10,14 @@
 import gzip
 import re
 import time
+import zlib
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.access.policy import ADMIN_GROUP
+from app.auth.cookies import UID_MAX_AGE
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
 from app.deps import require_role
@@ -76,13 +78,14 @@ def requests_for(
 ) -> dict:
     now = time.time()
     since = now - days * 86400
-    # 창 시작 전에 로그인한 연결 ID 도 창 안에서 쓰일 수 있다 — 로그인 하나의 수명만큼 더 거슬러 찾는다.
-    uids = request.app.state.agent_audit.uids_for(email, int(since - settings.jwt_refresh_ttl))
+    # 창 시작 전에 로그인한 연결 ID 도 창 안에서 쓰일 수 있다 — 쿠키 수명만큼 더 거슬러 찾는다.
+    uids = request.app.state.agent_audit.uids_for(email, int(since - UID_MAX_AGE))
     files = _log_files(Path(settings.resolve(settings.nginx_access_log_path)), since)
     ids = {s.id for s in request.app.state.catalog.all()} | {"mcp-gw"}
     svc: dict[str, dict] = {}
     recent: list[dict] = []
     uid_column = False                                # 정문 로그에 연결 ID 칸이 있기는 한가(nginx 재기동 전이면 없다)
+    failed = 0                                        # 읽다 깨진 파일(압축 중인 회전본 등) — 전체를 500 으로 만들지 않고 센다
     for f in files:
         opener = gzip.open if f.suffix == ".gz" else open
         try:
@@ -108,7 +111,8 @@ def requests_for(
                     row["ips"].add(ip)
                     recent.append({"ts": int(ts), "ip": ip, "method": method, "path": path[:200],
                                    "status": int(status), "service": name})
-        except OSError:
+        except (OSError, EOFError, zlib.error, UnicodeDecodeError):
+            failed += 1
             continue
     recent.sort(key=lambda r: r["ts"], reverse=True)
     services = sorted(svc.values(), key=lambda r: r["requests"], reverse=True)
@@ -120,5 +124,7 @@ def requests_for(
         note = "이 기간에 이 계정의 로그인 기록(연결 ID)이 없다 — 원장이 생기기 전이거나 PAT·MCP 로만 썼다."
     elif not uid_column:
         note = "정문 로그에 연결 ID 칸이 아직 없다 — nginx 가 새 설정으로 재기동되기 전이다."
+    if failed:
+        note = (note + " · " if note else "") + f"로그 파일 {failed}개를 끝까지 못 읽었다(압축 중이거나 깨진 회전본) — 그만큼 빠졌을 수 있다."
     return {"email": email.strip().lower(), "days": days, "services": services, "recent": recent[:RECENT],
-            "logins": len(uids), "files": len(files), "uid_column": uid_column, "note": note}
+            "logins": len(uids), "files": len(files), "files_failed": failed, "uid_column": uid_column, "note": note}

@@ -122,7 +122,13 @@ class CatalogRegistry:
             if s.id in seen:
                 raise ValueError(f"duplicate system id in catalog: {s.id}")
             seen.add(s.id)
-            for k, v in (overlay.get(s.id) or {}).items():
+            ov = overlay.get(s.id) or {}
+            if ov and s.integration_type != "external-url":
+                # 핸드오프 타일의 url 은 **서명된 로그인 토큰을 보내는 곳**이다 — 추적되지 않는 파일로 바꾸게 두지 않는다
+                # (routes 파일도 그 url 은 못 덮는다). 이 덮어쓰기는 외부 직결 주소 전용이다(검토 1차).
+                log.warning("%s 의 '%s' 는 외부 타일이 아니라 무시한다(%s)", LOCAL_OVERLAY, s.id, s.integration_type)
+                ov = {}
+            for k, v in ov.items():
                 if k in _OVERLAY_KEYS and v:
                     setattr(s, k, str(v))
             self._apply_route(s, routes)

@@ -96,7 +96,9 @@ async def ste_credential(
     if not token:
         raise AuthError("ste returned no token", status_code=502)
     log.info("ste credential relayed for %s", principal.email)
-    access_log.note(request, email=principal.email, event="launch", service=SYSTEM_ID, detail="credential")
+    # 이 중계를 부르는 것은 화면의 StePrimer(로그인 뒤 저절로) 하나다 — 사람이 들어간 것이 아니라 자동 갱신으로 적는다.
+    # 사람의 ste 진입은 타일 클릭(open)과 정문 요청(/ste/)에 남는다(검토 1차, docs/access-history D-9).
+    access_log.note(request, email=principal.email, event="launch", service=SYSTEM_ID, detail="primer")
     return SteCredential(token=token, expires_in=int(body.get("expires_in") or 43200))
 
 

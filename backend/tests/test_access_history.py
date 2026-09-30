@@ -173,3 +173,71 @@ def test_시험은_운영_감사_원장에_쓰지_않는다():
     """conftest 가 기동 경로를 임시 파일로 돌린다 — 없으면 시험 로그인이 운영 접속 이력에 섞인다."""
     path = get_settings().resolve(get_settings().agent_audit_log_path)
     assert "hwax-test-audit-" in path and "/data/" not in os.path.realpath(path)
+
+
+# ── 검토 1차(D-9) ────────────────────────────────────────────────────────────
+def test_연결_ID_쿠키는_우리가_준_모양일_때만_적는다(env):
+    """쿠키는 클라이언트 값이다 — 로그인 없이도 수 KB 를 실어 무기한 원장에 쌓을 수 있었다."""
+    c, _, _ = env
+    c.cookies.set("hwax_uid", "A" * 7000)
+    c.post("/auth/local/login", json={"email": "user@corp.com", "password": "wrong-pass"})
+    assert _rows(event="login_fail")[0]["uid"] is None
+    c.cookies.set("hwax_uid", "Ab3_-" * 3 + "Z")                      # 16자, 우리 모양
+    c.post("/auth/local/login", json={"email": "user@corp.com", "password": "wrong-pass"})
+    assert _rows(event="login_fail")[0]["uid"] == "Ab3_-" * 3 + "Z"
+
+
+def test_연결_ID_쿠키는_하위_서비스_세션만큼_산다(env):
+    c, _, _ = env
+    r = c.post("/auth/local/login", json={"email": "user@corp.com", "password": "pw123456"})
+    sc = [h for h in r.headers.get_list("set-cookie") if h.startswith("hwax_uid=")][0]
+    assert "Max-Age=2592000" in sc and "HttpOnly" in sc, sc
+
+
+def test_미리_로그인_표시는_화면이_실제로_미리_로그인하는_시스템에만(env):
+    """클라이언트가 붙이는 값이라 아무 진입에나 붙여 기본 화면에서 숨길 수 있었다."""
+    c, _, _ = env
+    h = _login(c, "boss@corp.com")
+    assert c.post("/systems/signalforge/launch?via=primer", headers=h).status_code == 200
+    assert _rows(email="boss@corp.com", event="launch")[0]["detail"] is None
+
+
+def test_서버의_미리_로그인_목록이_화면과_같다():
+    from app.auth.routes.launch import PRIMER_SYSTEMS
+    import re
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "frontend/src/components/layout/SsoPrimer.tsx").read_text()
+    front = set(re.findall(r"'([^']+)'", re.search(r"PRIME_SYSTEMS = \[([^\]]*)\]", src).group(1)))
+    assert front == set(PRIMER_SYSTEMS)
+
+
+def test_정지된_계정의_SSO_로그인은_실패로_남는다(env):
+    """IdP 는 통과시키고 세션도 받지만 모든 요청이 403 이다 — 로컬 경로처럼 실패로 적는다."""
+    c, s, _ = env
+    from starlette.requests import Request
+
+    from app.auth.provider import Principal
+    from app.auth.routes.session import complete_login
+    h = _login(c, "boss@corp.com")
+    assert c.post("/auth/local/users/user@corp.com/status", json={"status": "disabled"}, headers=h).status_code == 200
+    req = Request({"type": "http", "method": "POST", "path": "/auth/callback", "headers": [], "query_string": b"",
+                   "app": app, "client": PC})
+    complete_login(principal=Principal(subject="user@corp.com", email="user@corp.com", display_name="U", groups=[]),
+                   expected_state=None, settings=s, jwt_service=app.state.jwt_service,
+                   user_store=app.state.user_store, request=req)
+    row = _rows(email="user@corp.com")[0]
+    assert (row["event"], row["detail"]) == ("login_fail", "sso:disabled")
+
+
+def test_깨진_회전본이_있어도_조회는_된다(env):
+    """압축 중이거나 깨진 .gz 하나가 EOFError 로 조회 전체를 500 으로 만들었다."""
+    c, _, tmp = env
+    _login(c, "user@corp.com")
+    uid = c.cookies.get("hwax_uid")
+    (tmp / "logs" / "nginx-access.log").write_text(_nginx_line(datetime.now(timezone.utc), "203.0.113.5", "/ste/", uid))
+    good = gzip.compress(_nginx_line(datetime.now(timezone.utc), "203.0.113.5", "/", uid).encode())
+    (tmp / "logs" / "nginx-access.log-20260929.gz").write_bytes(good[: len(good) // 2])    # 잘린 gzip
+    _login(c, "boss@corp.com")
+    r = c.get("/auth/admin/access/requests", params={"email": "user@corp.com"})
+    assert r.status_code == 200 and r.json()["files_failed"] == 1 and "못 읽었다" in r.json()["note"]
+    assert any(s["service"] == "ste" for s in r.json()["services"]), "읽을 수 있는 파일은 그대로 센다"

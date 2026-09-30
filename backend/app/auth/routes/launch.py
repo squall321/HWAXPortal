@@ -19,6 +19,10 @@ from app.deps import get_catalog, get_current_principal, require_csrf
 
 router = APIRouter(prefix="/systems", tags=["launch"])
 
+# 화면이 저절로 미리 로그인하는 시스템 — frontend SsoPrimer 의 PRIME_SYSTEMS 와 같아야 한다(시험이 대조한다).
+# 여기 없는 시스템의 `via=primer` 는 무시한다 — 클라이언트가 붙이는 값이라 아무 진입이나 기본 화면에서 숨길 수 있었다(검토 1차).
+PRIMER_SYSTEMS = frozenset({"heax-hub"})
+
 
 @router.post("/{system_id}/launch", response_model=HandoffPayload)
 def launch(
@@ -41,7 +45,7 @@ def launch(
     # 접속 원장(docs/access-history). 화면의 SSO 미리 로그인(SsoPrimer)은 45분마다 저절로 부르므로 표시해 둔다 —
     # 관리자 화면은 기본으로 그 줄을 숨긴다. 발급이지 하위 서비스의 수락은 아니다.
     access_log.note(request, email=principal.email or principal.subject, event="launch", service=system_id,
-                    detail="primer" if via == "primer" else None)
+                    detail="primer" if via == "primer" and system_id in PRIMER_SYSTEMS else None)
     return payload
 
 

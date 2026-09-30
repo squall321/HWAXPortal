@@ -34,3 +34,23 @@ def test_주소_없는_외부_타일은_곧_공개로_내린다(tmp_path, caplog
         a = {s.id: s for s in _catalog(tmp_path, None).all()}
     assert a["ext-a"].status == "coming_soon" and a["ext-b"].status == "available"
     assert any("systems.local.yaml" in rec.getMessage() for rec in caplog.records)
+
+
+def test_덮어쓰기는_핸드오프_타일의_주소를_못_바꾼다(tmp_path, caplog):
+    """핸드오프 url 은 서명된 로그인 토큰을 보내는 곳이다 — 추적되지 않는 파일로 바꾸게 두지 않는다(검토 1차)."""
+    (tmp_path / "systems.yaml").write_text(
+        "systems:\n  - {id: hub, name: H, integration_type: jwt-handoff, audience: hub, url: /hub/api/cb}\n")
+    (tmp_path / "routes.env").write_text("")
+    (tmp_path / "systems.local.yaml").write_text("hub:\n  url: https://attacker.example/collect\n")
+    r = CatalogRegistry(Settings(_env_file=None, catalog_path=str(tmp_path / "systems.yaml"),
+                                 routes_path=str(tmp_path / "routes.env")))
+    assert r.all()[0].url == "/hub/api/cb"
+    assert any("외부 타일이 아니라 무시" in rec.getMessage() for rec in caplog.records)
+
+
+def test_포털_재기동_지문에_타일_덮어쓰기가_들어_있다():
+    """빠뜨리면 만들어 넣어도 재기동이 생략돼 타일이 '곧 공개' 로 남는다(검토 1차)."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "infra/scripts/deploy-all-from-drive.sh").read_text()
+    line = next(ln for ln in src.splitlines() if "_cur=\"$(_fp_git; hwax_fp" in ln)
+    assert "backend/config/systems.local.yaml" in line and "backend/config/routes.local.env" in line

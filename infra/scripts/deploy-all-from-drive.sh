@@ -205,7 +205,8 @@ if want portal; then
     set_remote infra/.env HWAX_DRIVE_REMOTE HWAXPortal/images
     ./infra/scripts/images-from-drive.sh || exit 1      # portal.sif + nginx.sif + frontend/dist (영구 캐시). 설치 실패는 여기서 끊는다 — 서브셸 안은 set -e 가 꺼져 있다
     # 지문은 받은 **뒤** 한 번 — 마지막 기동 지문과 비교한다(§1 이 이미 당긴 커밋·§1c/1d/1e 가 쓴 .env·routes 도 여기 들어간다)
-    _cur="$(_fp_git; hwax_fp infra/apptainer/*.sif frontend/dist infra/.env backend/.env backend/config/routes.local.env)"
+    # systems.local.yaml — 외부 타일 주소(gitignore). 빠뜨리면 만들어 넣어도 재기동이 생략돼 타일이 '곧 공개' 로 남는다(검토 1차).
+    _cur="$(_fp_git; hwax_fp infra/apptainer/*.sif frontend/dist infra/.env backend/.env backend/config/routes.local.env backend/config/systems.local.yaml)"
     _hp="$(_envv infra/.env HTTP_PORT)"
     _stop()  { ./infra/scripts/stop.sh 2>/dev/null || true; }          # stop → start = pick up new conf/images
     _start() { HWAX_NO_BUILD=1 ./infra/scripts/start.sh; }
