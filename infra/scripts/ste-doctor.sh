@@ -106,8 +106,50 @@ if [ "$MODE" = teleport ]; then
   else
     warn tunnel-unit "리포 유닛이 없다 — 손으로 만든 터널이거나 미설치(install-ste-tunnel.sh)"
   fi
-  # Teleport 세션 — tsh 가 있으면 잔여 시간을 읽는다(형식이 버전마다 달라 못 읽으면 '모름')
-  if command -v tsh >/dev/null 2>&1; then
+  # Teleport 인증서 — **터널이 실제로 쓰는** ssh_config(transport.env TELEPORT_SSH_CONFIG)의 인증서를 본다.
+  # tbot(무인화)이면 그 파일의 ProxyCommand 가 tbot 이고 인증서는 tbot 이 계속 갈아 끼운다 — tsh 세션이 없어도 정상이다.
+  # 그래서 tsh status 보다 인증서 파일의 유효 기간이 정본이다(tsh config 로 만든 파일이면 아래 tsh 경로도 본다).
+  SSHCFG="$(envv TELEPORT_SSH_CONFIG "$TENV")"; SSHCFG="${SSHCFG/#\~/$HOME}"
+  if [ -n "$SSHCFG" ] && [ -f "$SSHCFG" ]; then
+    _tbot=0; grep -qiE '^[[:space:]]*ProxyCommand[[:space:]].*tbot' "$SSHCFG" && _tbot=1
+    _cert="$(sed -n -E 's/^[[:space:]]*CertificateFile[[:space:]]+"?([^"]+)"?[[:space:]]*$/\1/Ip' "$SSHCFG" | head -1)"
+    if [ -z "$_cert" ]; then
+      _idf="$(sed -n -E 's/^[[:space:]]*IdentityFile[[:space:]]+"?([^"]+)"?[[:space:]]*$/\1/Ip' "$SSHCFG" | head -1)"
+      [ -n "$_idf" ] && _cert="${_idf}-cert.pub"
+    fi
+    _cert="${_cert/#\~/$HOME}"
+    _left=""
+    if [ -n "$_cert" ] && [ -f "$_cert" ]; then
+      # "Valid: from 2026-09-30T12:00:00 to 2026-09-30T13:00:00" — 로컬 시각이다. 남은 분을 센다.
+      _left="$(ssh-keygen -L -f "$_cert" 2>/dev/null | sed -n -E 's/^[[:space:]]*Valid: from [^ ]+ to ([^ ]+).*/\1/p' | head -1 | python3 -c '
+import sys,datetime
+t=sys.stdin.read().strip()
+try: print(int((datetime.datetime.fromisoformat(t)-datetime.datetime.now()).total_seconds()//60), t)
+except ValueError: print("")' 2>/dev/null)"
+    fi
+    _who="$([ "$_tbot" = 1 ] && echo "tbot" || echo "tsh config")"
+    if [ -n "$_left" ]; then
+      _min="${_left%% *}"; _until="${_left#* }"
+      if [ "$_min" -gt 0 ]; then ok teleport "$_who 인증서 유효 — 남은 ${_min}분(~$_until) · $SSHCFG"
+      elif [ "$_tbot" = 1 ]; then bad teleport "tbot 인증서가 **만료됐다**(~$_until) — tbot 이 갱신을 멈췄다(tbot 서비스·조인 토큰). 터널·ste 전부가 끊긴다"
+      else bad teleport "인증서가 **만료됐다**(~$_until) — tsh login 뒤 tsh config > $SSHCFG, 또는 tbot 으로 무인화(runbook §4)"; fi
+    else
+      warn teleport "$_who ssh_config($SSHCFG)의 인증서 유효 기간을 못 읽었다(인증서: ${_cert:-파일 안에 CertificateFile·IdentityFile 없음}) — 모름≠정상"
+    fi
+    # 터널 유닛이 **같은** ssh_config 로 떠 있는가 — tbot 으로 바꾸고 유닛은 옛 tsh 파일을 물고 있으면 사람 세션이 끝날 때 끊긴다.
+    if [ -f "${_tu:-}" ]; then
+      _ucfg="$(grep -oE -- '-F [^ \\]+' "$_tu" | head -1 | cut -d' ' -f2)"
+      if [ -n "$_ucfg" ] && [ "$_ucfg" != "$SSHCFG" ]; then
+        bad tunnel-cfg "터널 유닛은 $_ucfg 로 떠 있는데 transport.env 는 $SSHCFG 다 — ./infra/scripts/install-ste-tunnel.sh 로 다시 세운다"
+      elif [ -n "$_ucfg" ]; then ok tunnel-cfg "터널 유닛이 같은 ssh_config 를 쓴다$([ "$_tbot" = 1 ] && echo ' (tbot)')"; fi
+    fi
+  elif [ -n "$TENV" ]; then
+    bad teleport "transport.env 의 TELEPORT_SSH_CONFIG 파일이 없다(${SSHCFG:-비어 있음}) — tbot 이면 그 destination 의 ssh_config 를 가리킨다"
+  fi
+  # Teleport 세션 — tsh 가 있으면 잔여 시간을 읽는다(형식이 버전마다 달라 못 읽으면 '모름'). tbot 박스에서는 참고용이다.
+  if [ "${_tbot:-0}" = 1 ]; then
+    :   # tbot 이 인증서를 쥔다 — 사람 tsh 세션은 없어도 된다(위 teleport 행이 정본)
+  elif command -v tsh >/dev/null 2>&1; then
     TH="$(envv TELEPORT_HOME "$TENV")"
     # 먼저 JSON(최근 tsh) — valid_until 이 정확하다. 없으면 텍스트 grep. 그래도 못 읽으면 **원문 첫 줄들**을 보여 다음에 형식을 맞춘다
     # (cae00 실측 2026-09-27: 터널은 살았는데 이 행이 '못 읽었다' 만 말해 판정 근거가 없었다).
@@ -116,13 +158,13 @@ d=json.load(sys.stdin); a=d.get("active") or d
 v=a.get("valid_until") or a.get("expires") or ""
 print(("valid until " + v) if v else "")' 2>/dev/null)"
     [ -n "$st" ] || st="$( ${TH:+TELEPORT_HOME=$TH} tsh status 2>/dev/null | grep -iE 'valid until|expires' | head -1)"
-    if [ -n "$st" ]; then ok teleport "$st"
+    if [ -n "$st" ]; then ok tsh "$st"
     else
       raw="$( ${TH:+TELEPORT_HOME=$TH} tsh status 2>&1 | grep -v '^[[:space:]]*$' | head -3 | tr '\n' '|' | cut -c1-160)"
-      warn teleport "tsh status 에서 만료 시각을 못 읽었다 — 세션이 없거나 형식이 다르다. 원문: ${raw:-(출력 없음 — tsh 없거나 로그인 안 됨)}"
+      warn tsh "tsh status 에서 만료 시각을 못 읽었다 — 세션이 없거나 형식이 다르다. 원문: ${raw:-(출력 없음 — tsh 없거나 로그인 안 됨)}"
     fi
   else
-    warn teleport "tsh 없음 — 세션 잔여 시간을 여기서 못 본다(전제 검사는 배포 시 tr_run true 로 한다)"
+    warn tsh "tsh 없음 — 세션 잔여 시간을 여기서 못 본다(전제 검사는 배포 시 tr_run true 로 한다)"
   fi
 fi
 
