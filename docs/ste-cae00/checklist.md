@@ -51,6 +51,14 @@
 - [ ] tbot 봇·조인 토큰 관리자 요청(teleport-transport.md §7-1 조건) → `transport.env` 전환 · 스크립트 무변경 확인
 - [x] 그 전까지: 가이드에 "cae00 ste 는 사람 로그인 전제" 명문화 · `ste-doctor` 잔여 TTL 표시 — D-22(가이드 §4)
 
+## S5 — 사용자 토큰 경로 실확인 (2026-09-30)
+- [x] 게이트웨이: ste 토큰 거절 결과(REST 401)면 1회 재발급·재시도 + 시험 — 게이트웨이 1f9a883
+- [x] provision: ste 위임을 HEAX 토큰과 떼기 + 시험 — 게이트웨이 8c7021d
+- [x] `ste-gateway-check.py` — `deleg`(위임 유무·게이트웨이 시크릿 대조·`--no-verify`) · `probe --as`(포털 권한 그대로, 잡 목록·cluster_info 실호출, 이름은 tools-map 에서)
+- [x] ste-doctor 행(gw-deleg · user-token · user-slurm, `--as`) · update-all §5 드리프트 · §6 점검(이메일 없으면 ○) · `.env.example` 에 `HWAX_STE_PROBE_EMAIL`
+- [x] 시험(게이트웨이 118 · 포털 신규 22) · 변이 10건 전부 사망 · dev 실검증(게이트웨이 재기동 뒤 probe·ste-doctor 전부 초록, 권한 없는 계정은 forbidden 으로 토큰 발급 전에 막힘)
+- [ ] 푸시 · cae00: `ste-doctor.sh --as <본인 이메일>` 로 원인 확정(토큰 경로 ✗ 면 update-all 이 재프로비저닝, slurm 경로 ✗ 면 헤드 slurm)
+
 ## 사용자 결정 (2026-09-25 확정)
 - [x] 셋업/갱신 분리 + 세 신호 게이트 — **채택.** 새 옵션에도 쓰이게 **공용 함수**로(D-13)
 - [x] 자동 라우트 기록 — **기본 켬**(`HWAX_STE_AUTOROUTE=0` 으로만 끈다)

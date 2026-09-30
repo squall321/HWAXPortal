@@ -72,6 +72,18 @@ cae00 의 실상태를 **숫자로** 받는다. 여기서 갈리는 것이 많�
 - tbot(Machine ID) 봇·조인 토큰을 클러스터 관리자에게 요청(SmartTwinExplorer `docs/01-plan/teleport-transport.md` §7-1 조건). `transport.env` 의 `TELEPORT_SSH_CONFIG` 를 tbot 생성 파일로 바꾸면 **스크립트 무변경**이다.
 - 그 전까지 계획서에 명문화: **cae00 의 ste 는 사람 로그인이 전제**이고, `ste-doctor` 가 잔여 TTL 을 보여 준다.
 
+### S5 — 사용자 토큰 경로를 **실제로** 확인한다 (2026-09-30 추가, 게이트웨이·HWAXPortal)
+cae00 에서 `cluster_info` 가 "Error executing tool cluster_info" 로 실패했다(사용자 보고). 그 문구는 헤드의 ste MCP 가 내는 것이라
+터널·토큰 발급은 지나갔다는 뜻인데, 무엇이 실패했는지 가를 점검이 없었다 — ste-doctor·update-all §6 이 전부 초록이어도
+① 게이트웨이 설정에 ste 사용자 위임이 **없어** 토큰 없이 부르거나 ② 게이트웨이가 쥔 시크릿이 헤드와 다르거나 ③ 폐기된 캐시 토큰을
+12시간 들고 있을 수 있다(조사 D-30).
+- 게이트웨이: ste 가 **토큰을 거절한 결과**(REST 401 → isError)면 토큰을 1회 다시 받아 재시도(예외에만 하던 것).
+- provision: ste 위임이 HEAX 토큰 유무에 묶여 있던 것을 뗀다(HEAX 토큰 발급이 실패하면 ste 위임까지 사라졌다).
+- update-all §5: 게이트웨이의 ste 위임이 없거나 시크릿이 infra/.env 와 다르면 재프로비저닝.
+- 점검(`infra/scripts/ste-gateway-check.py`): 게이트웨이가 쥔 시크릿을 헤드에 대조 · **사용자 신분 실호출**(잡 목록 = 토큰 경로,
+  cluster_info = slurm 경로). ste-doctor 와 update-all §6 이 부른다. 실호출은 이메일이 있어야 한다(`--as`, `HWAX_STE_PROBE_EMAIL`).
+- tbot(S4)은 그대로 사람 몫 — 이 단계는 "터널이 살아 있을 때 그 안이 맞는가" 를 본다.
+
 ## 3. 하지 않는 것
 - StepForge·DynaForge 관련(별도 요청서).
 - `routes.local.env`·`transport.env`·`provision.env` 를 git 에 넣는 것 — 박스 비밀·주소다. **제안·검증까지만** 자동화한다.
