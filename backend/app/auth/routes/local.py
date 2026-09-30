@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 
-from app.auth import cookies
+from app.auth import access_log, cookies
 from app.auth.errors import AuthError
 from app.auth.jwt_service import JWTService
 from app.auth.provider import Principal
@@ -108,6 +108,9 @@ def login(
         u = store.verify_login(email=body.email, password=body.password)
     except ValueError as exc:
         logger.info("local login fail: %s (%s) ip=%s", body.email, exc, _client_ip(request))
+        # 실패도 원장에 — 누가 어디서 두드렸나. 이메일은 **시도한** 값이다(주장일 뿐, docs/access-history).
+        access_log.note(request, email=str(body.email), event="login_fail", service="portal",
+                        detail=f"local:{exc}")
         msg = ("account locked, retry later" if str(exc) == "locked"
                else "pending approval" if str(exc) == "not active"
                else "invalid email or password")
@@ -121,6 +124,10 @@ def login(
         session=jwt_service.issue_session(principal),
         refresh=jwt_service.issue_refresh(principal))
     cookies.set_csrf_cookie(response, settings, token=secrets.token_urlsafe(24))
+    # 로그인 연결 ID — nginx 가 정문 요청마다 적어 계정과 잇는다(docs/access-history D-5).
+    uid = access_log.new_uid()
+    cookies.set_uid_cookie(response, settings, uid=uid)
+    access_log.note(request, email=u["email"], event="login", service="portal", detail="local", uid=uid)
     logger.info("local login ok: %s ip=%s", u["email"], _client_ip(request))
     return response
 

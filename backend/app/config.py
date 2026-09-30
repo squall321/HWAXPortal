@@ -199,6 +199,9 @@ class Settings(BaseSettings):
     agent_request_timeout: float = 30.0                # per-call timeout to remote services (s)
     max_concurrent_chats: int = 64                     # SSE connections hold a worker → cap + 429
     agent_audit_log_path: str = "secrets/agent_audit.sqlite"  # who/when/which tool (Phase 1)
+    # 정문 nginx 접근 로그(회전본은 같은 이름 뒤에 붙는다) — 관리자 접속 이력이 계정별 요청을 찾는다(docs/access-history).
+    # 컨테이너에서는 리포가 /workspace 라 backend 기준 상대경로로 닿는다.
+    nginx_access_log_path: str = "../infra/data/nginx-access.log"
     # 대화 의미검색용 임베더. AIDataHub 가 이미 같은 모델을 /api/embed 로 서비스한다 —
     # 두 벌을 두면 임베딩 공간이 갈라져 코사인이 의미를 잃는다. 그래서 새로 안 띄우고 빌린다.
     embed_base_url: str = "http://127.0.0.1:8001"

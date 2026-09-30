@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.access.policy import is_synthetic
-from app.auth import cookies
+from app.auth import access_log, cookies
 from app.auth.errors import AuthError
 from app.auth.jwt_service import JWTService
 from app.auth.provider import AuthProvider
@@ -43,6 +43,7 @@ def complete_login(
     settings: Settings,
     jwt_service: JWTService,
     user_store=None,
+    request: Request | None = None,
 ) -> RedirectResponse:
     """Issue the portal session and bounce the browser back to where it wanted to go.
 
@@ -71,6 +72,12 @@ def complete_login(
     )
     cookies.set_csrf_cookie(response, settings, token=secrets.token_urlsafe(24))
     cookies.clear_state_cookie(response, settings)
+    # 접속 원장 + 로그인 연결 ID(docs/access-history). 요청이 없으면(옛 호출부) 둘 다 건너뛴다.
+    if request is not None:
+        uid = access_log.new_uid()
+        cookies.set_uid_cookie(response, settings, uid=uid)
+        access_log.note(request, email=getattr(principal, "email", "") or getattr(principal, "subject", ""),
+                        event="login", service="portal", detail="sso", uid=uid)
     return response
 
 
@@ -105,6 +112,7 @@ async def callback(
         settings=settings,
         jwt_service=jwt_service,
         user_store=getattr(request.app.state, "user_store", None),
+        request=request,
     )
 
 

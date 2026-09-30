@@ -116,11 +116,12 @@ print(json.dumps(out))
 
 @pytest.mark.skipif(not ((BACKEND / "secrets/saml/sp.key").exists() and (BACKEND / "secrets/saml/idp.key").exists()),
                     reason="개발용 SAML 키(backend/secrets/saml/*.key)가 없다 — 추적 파일이 아니다(scripts/gen_dev_certs.py)")
-def test_mock_IdP_로_callback_경로에서_끝까지_로그인된다(tmp_path):
+@pytest.mark.parametrize("acs", ["/auth/callback", "/auth/saml/acs"])   # 두 라우트가 다른 함수다 — 둘 다 원장에 남아야 한다
+def test_mock_IdP_로_callback_경로에서_끝까지_로그인된다(tmp_path, acs):
     env = {**os.environ,
            "AUTH_PROVIDER": "saml", "APP_ENV": "dev", "SAML_MOCK_IDP_ENABLED": "true",
            "PUBLIC_BASE_URL": "http://localhost:5283", "FRONTEND_URL": "http://localhost:5283",
-           "SAML_ACS_PATH": "/auth/callback", "SESSION_SECRET": "t" * 48, "COOKIE_SECURE": "false",
+           "SAML_ACS_PATH": acs, "SESSION_SECRET": "t" * 48, "COOKIE_SECURE": "false",
            # 기동이 실 저장소를 건드리지 않게 전부 임시로
            "USER_STORE_PATH": str(tmp_path / "users.sqlite"), "TOKEN_STORE_PATH": str(tmp_path / "tok.sqlite"),
            "CONV_STORE_PATH": str(tmp_path / "conv.sqlite"), "PROCEDURES_STORE_PATH": str(tmp_path / "proc.sqlite"),
@@ -130,11 +131,17 @@ def test_mock_IdP_로_callback_경로에서_끝까지_로그인된다(tmp_path):
     r = subprocess.run([sys.executable, "-c", _E2E], cwd=BACKEND, env=env, capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stderr[-2000:]
     out = json.loads(r.stdout.strip().splitlines()[-1])
-    assert out["metadata_acs"] == "http://localhost:5283/auth/callback", "메타데이터가 등록값을 광고해야 한다"
-    assert out["posted_to"] == "http://localhost:5283/auth/callback", "AuthnRequest 의 ACS 가 설정 경로여야 한다"
+    assert out["metadata_acs"] == f"http://localhost:5283{acs}", "메타데이터가 등록값을 광고해야 한다"
+    assert out["posted_to"] == f"http://localhost:5283{acs}", "AuthnRequest 의 ACS 가 설정 경로여야 한다"
     assert out["status"] in (302, 303), out
     assert out["location"].startswith("http://localhost:5283"), out
     assert out["cookies"], f"세션 쿠키가 안 실렸다: {out}"
+    # 접속 원장(docs/access-history) — SSO 로그인도 연결 ID 쿠키를 받고 원장에 한 줄 남는다
+    import sqlite3
+    assert "hwax_uid" in out["cookies"], out
+    rows = sqlite3.connect(str(tmp_path / "audit.sqlite")).execute(
+        "SELECT event, service, detail, uid FROM access_log").fetchall()
+    assert [(e, sv, d) for e, sv, d, _ in rows] == [("login", "portal", "sso")] and rows[0][3], rows
 
 
 # ── start.sh: 포털이 안 뜨면 이유(인스턴스 로그 끝)를 배포 출력에 바로 보인다 ─────────────────────────

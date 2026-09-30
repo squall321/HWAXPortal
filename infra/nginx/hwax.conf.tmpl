@@ -15,9 +15,11 @@ http {
     # 통째로 안 세졌다). 쿼리 스트링은 일부러 뺀다($uri) — /auth/callback?code=… 의 자격
     # 코드가 로그에 남으면 안 된다. 위치는 /workspace(레포 바인드)의 gitignore 영역이라
     # 재기동에도 남고 커밋되진 않는다. 집계는 infra/scripts/usage-report.sh.
+    # 끝 칸은 로그인 연결 ID(hwax_uid 쿠키 — 자격이 아니다)다. 포털 원장의 login 행과 이어 정문 요청을 계정에 붙인다
+    # (docs/access-history). 칸은 **끝에만** 더한다 — 앞 칸 위치로 읽는 집계(usage-report ①)가 그대로 돈다.
     log_format hwax_access '$remote_addr "$http_x_forwarded_for" [$time_iso8601] '
                            '"$request_method $uri" $status $body_bytes_sent '
-                           '"$http_user_agent"';
+                           '"$http_user_agent" "$cookie_hwax_uid"';
     access_log /workspace/infra/data/nginx-access.log hwax_access buffer=16k flush=5s;
     sendfile on;
     server_tokens off;

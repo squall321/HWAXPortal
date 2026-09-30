@@ -27,6 +27,7 @@ import httpx
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from app.auth import access_log
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.catalog.registry import CatalogRegistry
@@ -95,6 +96,7 @@ async def ste_credential(
     if not token:
         raise AuthError("ste returned no token", status_code=502)
     log.info("ste credential relayed for %s", principal.email)
+    access_log.note(request, email=principal.email, event="launch", service=SYSTEM_ID, detail="credential")
     return SteCredential(token=token, expires_in=int(body.get("expires_in") or 43200))
 
 

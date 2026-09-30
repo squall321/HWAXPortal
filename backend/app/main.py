@@ -25,6 +25,7 @@ from app.agent.conv_store import ConversationStore
 from app.auth.downstream import JwtDownstreamIssuer
 from app.auth.errors import AuthError
 from app.auth.keystore import KeyStore
+from app.auth.routes import access_history as auth_access_history
 from app.auth.routes import jwks as auth_jwks
 from app.auth.routes import launch as auth_launch
 from app.auth.routes import ste_credential as auth_ste_credential
@@ -172,6 +173,7 @@ app.include_router(auth_jwks.router)
 app.include_router(auth_tlscert.router)
 app.include_router(catalog_routes.router)
 app.include_router(auth_launch.router)
+app.include_router(auth_access_history.router)
 app.include_router(auth_ste_credential.router)
 app.include_router(auth_pat.router)
 app.include_router(mail_routes.router)

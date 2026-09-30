@@ -12,6 +12,9 @@ SESSION_COOKIE = "hwax_session"  # httpOnly access token
 REFRESH_COOKIE = "hwax_refresh"  # httpOnly refresh token (scoped to /auth)
 CSRF_COOKIE = "hwax_csrf"        # readable by JS for double-submit CSRF
 STATE_COOKIE = "hwax_authstate"  # httpOnly login-flow binding (scoped to /auth)
+# 로그인 연결 ID — 자격이 아니다(아무것도 열지 않는다). nginx 가 로그에 적어 정문 요청을 계정과 잇는다
+# (docs/access-history D-5). 세션 JWT·CSRF 값을 로그에 남기면 자격증명이 로그에 쌓이므로 따로 둔다.
+UID_COOKIE = "hwax_uid"
 
 _REFRESH_PATH = "/auth"
 _STATE_PATH = "/auth"
@@ -71,7 +74,16 @@ def clear_state_cookie(response: Response, settings: Settings) -> None:
     response.delete_cookie(STATE_COOKIE, path=_STATE_PATH, **_base(settings))
 
 
+def set_uid_cookie(response: Response, settings: Settings, *, uid: str) -> None:
+    # 로그인 하나의 수명(refresh 토큰과 같다 — refresh 는 세션만 갱신한다)만큼.
+    response.set_cookie(
+        UID_COOKIE, uid, httponly=True, path="/",
+        max_age=settings.jwt_refresh_ttl, **_base(settings),
+    )
+
+
 def clear_session_cookies(response: Response, settings: Settings) -> None:
+    response.delete_cookie(UID_COOKIE, path="/", **_base(settings))
     response.delete_cookie(SESSION_COOKIE, path="/", **_base(settings))
     response.delete_cookie(REFRESH_COOKIE, path=_REFRESH_PATH, **_base(settings))
     response.delete_cookie(CSRF_COOKIE, path="/", **_base(settings))
