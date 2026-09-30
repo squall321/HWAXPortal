@@ -583,6 +583,45 @@ def test_update_forges_routes_implicit_ste_through_the_gate():
     assert 'deploy-ste.sh" $_stale' in UPDATE_FORGES
 
 
+def test_update_forges_dynaforge_probes_health_not_root():
+    """루트 프로브는 두 가지로 거짓말한다 — `:8700/` 은 SPA 라 백엔드가 고장나도 200 이고
+    (떠 있지만 고장난 상태가 합격한다), `:8701/` 은 MCP 루트라 404 다(매 회 죽은 것처럼 보였다).
+    `deploy-all-from-drive.sh` 는 이미 `/api/health`·`/mcp` 짝을 쓴다(test_skip_unchanged 가 그것을
+    지킨다). update-forges 의 dynaforge 도 같은 짝을 써야 한다."""
+    body = re.search(r"^do_dynaforge\(\) \{.*?^\}", UPDATE_FORGES, re.S | re.M).group(0)
+    assert '"8700 /api/health"' in body and '"8701 /mcp"' in body, "프로브가 관례를 안 따른다"
+    assert 'http://127.0.0.1:$p/' not in body, "루트 프로브가 남아 있다"
+    # 살아 있음 판정 — MCP 는 406, 게이트웨이 경유는 401 이 정상이다.
+    assert "200|302|401|405|406)" in body, "산 것으로 볼 코드 집합이 좁다"
+
+
+def test_update_forges_dynaforge_reports_what_went_live():
+    """'재기동했다' 는 근거가 아니다 — 어느 빌드가 도는지 말해야 한다(dev 경로)."""
+    body = re.search(r"^do_dynaforge\(\) \{.*?^\}", UPDATE_FORGES, re.S | re.M).group(0)
+    assert "revision_matches_binary" in body, "반입이 반쪽인 상태를 말하지 않는다"
+
+
+def test_update_forges_dynaforge_delegates_to_update_all_on_cae00():
+    """이 함수는 update-all 의 kooremapper 절을 **손으로 베낀 축약판**이었고, 그래서 뒤처졌다 —
+    `set_remote`·`platform/.env` 부트스트랩·지문 기반 재기동이 없고 프로브는 루트를 봤다.
+    베끼지 말고 위임한다. 그래야 update-all 에서 설정한 것이 여기서도 같게 돈다."""
+    body = re.search(r"^do_dynaforge\(\) \{.*?^\}", UPDATE_FORGES, re.S | re.M).group(0)
+    assert 'deploy-all-from-drive.sh" kooremapper' in body, "cae00 이 정본에 위임하지 않는다"
+    assert "git pull --ff-only" not in body, "cae00 경로에 베낀 git 갱신이 남아 있다"
+
+
+def test_update_forges_dynaforge_never_delegates_on_dev():
+    """dev 로 위임하면 안 된다 — `git_update` 가 `git stash push -u` + `git reset --hard` 를 해서
+    타 세션 WIP 를 날리고 공용 stash 스택까지 건드린다. dev 는 프론트만 정식 이중 빌드한다."""
+    body = re.search(r"^do_dynaforge\(\) \{.*?^\}", UPDATE_FORGES, re.S | re.M).group(0)
+    delegate = body.index('deploy-all-from-drive.sh" kooremapper')
+    guard = body.index('if [ "$BOX" = cae00 ]')
+    assert guard < delegate, "위임이 cae00 판정 밖에 있다"
+    assert "build-frontend.sh" in body, "dev 가 포털용 이중 빌드를 하지 않는다"
+    # `pnpm build` 만 쓰면 index.portal.html 이 없어 포털 경유가 깨진다(실사고).
+    assert "pnpm build" not in body.replace("plain 'pnpm build'", "")
+
+
 def test_update_forges_ste_named_and_default_differ(tmp_path):
     """실행으로 가른다 — 가짜 deploy-ste.sh 가 받은 인자를 적게 하고 두 경로를 비교한다."""
     fake = tmp_path / "infra/scripts"

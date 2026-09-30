@@ -18,10 +18,21 @@
 #   stepforge : HEAXHub redeploy-app.sh step_forge --rebuild
 #               (--rebuild 가 upstream git fetch→SIF 빌드→재기동까지. 게이트웨이는
 #                지문 감지가 60초 내 자동 재집계 — 재기동 불필요)
-#   dynaforge : [cae00] KooRemapper git pull --ff-only + dist-from-drive(비치명)
-#               [dev]   build-frontend.sh (⚠ plain 'pnpm build' 는 포털용
-#                       index.portal.html 을 안 만들어 포털 경유가 깨진다 — 실사고)
-#               → stop/start → install-autostart(멱등) → :8700/:8701 프로브
+#   dynaforge : [cae00] **update-all 의 kooremapper 절에 위임**
+#                       (`deploy-all-from-drive.sh kooremapper`) — clone·git_update·
+#                       `platform/.env` 부트스트랩·`set_remote`·Drive 반입·지문 기반 재기동·
+#                       autostart·프로브까지 정본 하나로 돈다. 예전에는 이 함수가 그것을 손으로
+#                       베낀 축약판이어서 뒤처졌다(루트 프로브·`set_remote` 누락·지문 없음).
+#               [dev]   build-frontend.sh → stop/start → install-autostart (⚠ plain 'pnpm build'
+#                       는 포털용 index.portal.html 을 안 만들어 포털 경유가 깨진다 — 실사고)
+#                       ⚠ dev 는 **위임하지 않는다** — `git_update` 가 `git stash push -u` +
+#                         `git reset --hard origin/<branch>` 를 해서 타 세션 WIP 를 날린다.
+#                       프로브는 `:8700/api/health` · `:8701/mcp` 다(루트가 아니다 — 루트는 SPA 라
+#                       백엔드가 고장나도 200 이고 MCP 루트는 404 다). 끝에 **무엇이 올라갔는지**
+#                       (revision·published·gmsh) 찍는다 — "재기동했다" 는 근거가 아니다.
+#               ⚠ `start.sh` 가 postgres → alembic upgrade head → api 순서라 스키마가 API 보다
+#                 먼저 선다. 반입만 하고 `start.sh` 를 부르는 **수동** 경로는 살아 있는 api 를
+#                 건너뛰므로 `dist-from-drive.sh --restart` 를 써야 한다.
 set -uo pipefail
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다(실사고). 바깥용 http_proxy 는 그대로 두고 로컬만 우회.
@@ -48,29 +59,60 @@ do_stepforge() {
 
 do_dynaforge() {
   hr "DynaForge(KooRemapper) — $BOX 모드"
+  if [ "$BOX" = cae00 ]; then
+    # ⚠ **흉내내지 않고 위임한다.** update-all(§2) 의 `if want kooremapper` 절이 정본이고, 이
+    #   함수는 그것을 손으로 베낀 축약판이었다 — 그래서 실제로 뒤처졌다. 베낀 쪽에 없던 것:
+    #   리포 없으면 clone · `platform/.env` 부트스트랩 · `set_remote KOORM_DRIVE_REMOTE` ·
+    #   **지문 기반 재기동**(안 바뀌면 내리지 않는다) · 반입 실패를 `mark_stale` 로 판정에 남기기.
+    #   프로브도 루트(`:8700/`·`:8701/`)를 봐서 '떠 있지만 고장난' 상태가 합격했다.
+    #   `deploy-all-from-drive.sh` 는 대상 선택(`want`)을 지원하므로 kooremapper 만 고른다 —
+    #   이제 update-all 에서 설정한 것이 여기서도 **같게** 돈다(두 벌이 갈릴 자리가 없다).
+    if bash "$ROOT/infra/scripts/deploy-all-from-drive.sh" kooremapper; then
+      echo "✓ DynaForge — update-all 의 kooremapper 절을 그대로 돌렸다"
+    else
+      echo "✗ DynaForge 갱신 실패 — 위 ✗/skip 항목 확인"; FAIL=1
+    fi
+    return
+  fi
+  # ── dev — 위임하지 않는다 ────────────────────────────────────────────────────
+  # `git_update` 가 기본으로 `git stash push -u` + `git reset --hard origin/<branch>` 를 한다
+  # (`NO_GIT_RESET=1` 이 escape hatch). dev 는 타 세션 WIP 가 있는 작업 트리이고 stash 스택도
+  # 공용이라, 그것을 여기서 걸면 안 된다. 그래서 dev 는 프론트만 정식 이중 빌드로 갱신한다.
   local koor; koor="$(find_repo KooRemapper)"
   [ -n "$koor" ] || { echo "✗ KooRemapper 리포 없음"; FAIL=1; return; }
   ( cd "$koor"
-    if [ "$BOX" = cae00 ]; then
-      git pull --ff-only || { echo "✗ git pull 실패(로컬 변경?) — 수동 확인 필요"; exit 1; }
-      bash platform/infra/scripts/dist-from-drive.sh \
-        || echo "  ⚠ dist-from-drive 실패(비치명) — 로컬 아티팩트로 진행"
-    else
-      # dev: pull 하지 않는다(타 세션 WIP 보호). 프론트만 정식 이중 빌드로 갱신.
-      bash platform/infra/scripts/build-frontend.sh
-    fi
+    # ⚠ plain 'pnpm build' 는 포털용 index.portal.html 을 안 만들어 포털 경유가 깨진다 — 실사고.
+    bash platform/infra/scripts/build-frontend.sh
     bash platform/infra/scripts/stop.sh 2>/dev/null || true
     bash platform/infra/scripts/start.sh
     bash platform/infra/scripts/install-autostart.sh || echo "  ⚠ autostart 설치 실패(비치명)"
   ) || { FAIL=1; return; }
   # 업스트림 생존 — rc 가 아니라 출력값으로 판정한다(000 폴백 덧붙임 함정, deploy-all 주석 참조).
-  for p in 8700 8701; do
-    c="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:$p/" 2>/dev/null)" || true
+  #
+  # ⚠ **루트를 보지 않는다.** 예전엔 `:8700/` 과 `:8701/` 을 보고 000 만 아니면 통과했는데 둘 다
+  #    틀렸다 — `:8700/` 은 SPA 라 백엔드가 고장나도 200 을 주므로 "떠 있지만 고장난" 상태가
+  #    합격하고, `:8701/` 은 MCP 루트라 404 여서 매 회 죽은 것처럼 보였다.
+  #    `deploy-all-from-drive.sh:402` 이 이미 쓰는 짝(`/api/health` · `/mcp`)을 그대로 쓴다.
+  for pp in "8700 /api/health" "8701 /mcp"; do
+    set -- $pp
+    c="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:$1$2" 2>/dev/null)" || true
     case "${c:-000}" in
-      000) echo "✗ :$p 무응답 — /apps/kooremapper* 는 502 가 된다"; FAIL=1 ;;
-      *)   echo "✓ :$p → $c" ;;
+      200|302|401|405|406) echo "✓ :$1$2 → $c" ;;
+      *) echo "✗ :$1$2 → ${c:-000} — /apps/kooremapper* 가 깨진다"; FAIL=1 ;;
     esac
   done
+  # **무엇이 올라갔는지** 말한다. "재기동했다" 는 근거가 아니다 — 이 빌드가 돈다는 것이 근거다.
+  curl -s -m 5 "http://127.0.0.1:8700/api/health" 2>/dev/null | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin).get('data', {})
+except Exception:
+    sys.exit(0)
+print('    revision %s · published %s · gmsh %s' % (
+    (d.get('revision') or '?')[:12], d.get('published_utc'), (d.get('gmsh') or {}).get('version')))
+if d.get('revision_matches_binary') is False:
+    print('    ⚠ BUILD_INFO 와 실제 바이너리가 어긋난다 — revision 을 믿을 수 없다(반입이 반쪽이다).')
+" || true
 }
 
 do_ste() {
