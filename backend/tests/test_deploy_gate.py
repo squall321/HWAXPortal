@@ -622,6 +622,32 @@ def test_update_forges_dynaforge_never_delegates_on_dev():
     assert "pnpm build" not in body.replace("plain 'pnpm build'", "")
 
 
+def test_update_forges_opens_the_canonical_vocabulary():
+    """대상 어휘가 두 벌이면 운영자가 어느 스크립트에 어느 이름이 있는지를 외워야 한다 — 그래서
+    '포털만' 이 필요할 때 전체 배포를 돌리게 된다. 정본(update-all §2)이 소유한 이름을 여기서도
+    댈 수 있어야 하고, 그때는 베끼지 않고 위임해야 한다."""
+    assert re.search(r"^\s*portal\)\s*if \[ \"\$BOX\" = cae00 \]", UPDATE_FORGES, re.M), \
+        "portal 대상이 없다 — 가장 자주 쓰는 부분 갱신이다"
+    assert "mxwp|heax|aidh|signalforge) do_delegate" in UPDATE_FORGES, "정본 어휘가 안 열렸다"
+    assert "dynaforge|kooremapper) do_dynaforge" in UPDATE_FORGES, "kooremapper 별칭이 없다"
+    # 모르는 이름을 댔을 때 가능한 목록을 알려 줘야 한다(외우게 하지 않는다).
+    assert "경량 표적 :" in UPDATE_FORGES and "정본 위임 :" in UPDATE_FORGES
+
+
+def test_update_forges_delegate_refuses_on_dev(tmp_path):
+    """실행으로 가른다 — dev 에서 위임하면 deploy-all 의 `git_update` 가 `git stash push -u` +
+    `git reset --hard` 를 해서 그 리포의 WIP 를 날린다(공용 stash 스택까지 건드린다)."""
+    body = re.search(r"^do_delegate\(\) \{.*?^\}", UPDATE_FORGES, re.S | re.M).group(0)
+    for box, want, unwanted in (("dev", "위임을 하지 않는다", "DELEGATE_CALLED"),
+                                ("cae00", "DELEGATE_CALLED", "위임을 하지 않는다")):
+        script = (f'ROOT="{tmp_path}"; BOX={box}; FAIL=0\nhr() {{ :; }}\n'
+                  'bash() { echo DELEGATE_CALLED "$@"; }\n' + body + '\ndo_delegate portal\n')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        assert want in r.stdout, f"BOX={box}: {want!r} 가 없다 — {r.stdout!r}"
+        assert unwanted not in r.stdout, f"BOX={box}: {unwanted!r} 가 나왔다 — {r.stdout!r}"
+
+
 def test_update_forges_ste_named_and_default_differ(tmp_path):
     """실행으로 가른다 — 가짜 deploy-ste.sh 가 받은 인자를 적게 하고 두 경로를 비교한다."""
     fake = tmp_path / "infra/scripts"

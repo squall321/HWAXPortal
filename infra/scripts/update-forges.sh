@@ -4,12 +4,23 @@
 #
 #   ./infra/scripts/update-forges.sh                 # 기본: stepforge dynaforge ste chat 전부
 #     (기본 실행의 ste 는 **게이트 경유**다 — 다를 때만·Teleport 세션 있을 때만. 전면 갱신은 이름을 댄다)
-#   ./infra/scripts/update-forges.sh dynaforge       # 골라서: stepforge|dynaforge|ste|chat
-#   ./infra/scripts/update-forges.sh chat            # 챗+심의 스택만(포털·agent-server·게이트웨이)
+#   ./infra/scripts/update-forges.sh portal          # ★ 포털만 — 가장 자주 쓰는 부분 갱신
+#   ./infra/scripts/update-forges.sh dynaforge       # 경량 표적: stepforge|dynaforge|ste|chat
+#   ./infra/scripts/update-forges.sh portal chat     # 여러 개 나열 가능
 #   ./infra/scripts/update-forges.sh restart         # 갱신 없이 전 서비스 재시작만(+nginx 부검)
 #
-# 포함하지 않는 것 — 포털 외 서비스(mxwp·heax·aidh·signalforge)와 AIDataHub 데이터 병합.
-# 그건 update-all §2·§3 의 몫이다.
+# 대상 어휘는 **한 벌**이다. update-all(§2) 이 소유한 서비스
+# (portal·mxwp·heax·aidh·signalforge·kooremapper)도 여기서 이름을 대면 되고, 그때는 흉내내지 않고
+# `deploy-all-from-drive.sh <이름>` 에 **위임**한다 — 지문 기반 재기동 생략·영구 캐시·`set_remote`
+# 까지 정본 하나로 돈다. 예전에는 이 스크립트가 dynaforge 절을 손으로 베낀 축약판이어서 뒤처졌다.
+# `dynaforge` 는 `kooremapper` 의 별칭으로 남긴다(기존 문서·습관 보호).
+#
+# ⚠ **dev 에서는 위임하지 않는다.** deploy-all 의 `git_update` 가 `git stash push -u` +
+#   `git reset --hard origin/<branch>` 를 해서 그 리포의 WIP 를 날린다. dev 에 로컬 경로가 있는 것은
+#   `portal`(프런트 빌드+재기동)과 `dynaforge`(이중 빌드+재기동)뿐이고, 나머지는 그 사실을 말하고
+#   건너뛴다(조용히 넘기지 않는다).
+#
+# 포함하지 않는 것 — AIDataHub 데이터 병합(update-all §3 의 몫).
 #
 # 박스 자동 감지 — 리포 루트가 */Projects/* 면 cae00(운영: git pull + Drive 반입),
 # 아니면 dev(로컬 소스 그대로 — 타 세션 WIP 를 pull/reset 으로 건드리지 않는다).
@@ -43,6 +54,46 @@ find_repo() { for c in "$PARENT/$1" "$HOME/Projects/$1" "$HOME/claude/$1"; do [ 
 case "$ROOT" in */Projects/*) BOX=cae00 ;; *) BOX=dev ;; esac
 hr() { printf '\n\033[1;36m── %s ─────────────────────\033[0m\n' "$*"; }
 FAIL=0
+
+# update-all(§2) 이 **소유한** 서비스 — 여기서는 위임만 한다. 베끼면 갈라지고, 갈라진 쪽이
+# 하필 초록을 찍는다(노트: dynaforge 축약판이 `set_remote` 누락·루트 프로브로 뒤처져 있었다).
+DELEGATED="portal mxwp heax aidh signalforge kooremapper"
+
+do_delegate() {   # $1 = deploy-all 대상 이름
+  local tgt="$1"
+  hr "$tgt — update-all(§2) 의 해당 절에 위임"
+  # ⚠ **dev 에서는 위임하지 않는다.** `git_update` 가 기본으로 `git stash push -u` +
+  #   `git reset --hard origin/<branch>` 를 한다(`NO_GIT_RESET=1` 이 escape hatch) — 그 리포에
+  #   타 세션 WIP 가 있으면 날아가고 공용 stash 스택까지 건드린다. 조용히 넘기지 않고 말한다.
+  if [ "$BOX" != cae00 ]; then
+    echo "· dev 에서는 $tgt 위임을 하지 않는다 — deploy-all 의 git_update 가 reset --hard 를 한다."
+    echo "  cae00 에서 하거나, 정말 원하면: NO_GIT_RESET=1 bash infra/scripts/deploy-all-from-drive.sh $tgt"
+    return 0
+  fi
+  if bash "$ROOT/infra/scripts/deploy-all-from-drive.sh" "$tgt"; then
+    echo "✓ $tgt 갱신 완료"
+  else
+    echo "✗ $tgt 갱신 실패 — 위 ✗/skip 항목 확인"; FAIL=1
+  fi
+}
+
+do_portal_dev() {
+  hr "포털 — dev 모드(프런트 빌드 + 재기동)"
+  # do_chat 의 포털 부분과 같은 동작이다 — 새 동작을 발명하지 않는다.
+  ( cd "$ROOT/frontend" && pnpm build ) || { echo "✗ 프론트 빌드 실패"; FAIL=1; return; }
+  apptainer instance stop hwax_portal >/dev/null 2>&1 || true
+  bash "$ROOT/infra/scripts/start.sh" >/dev/null || { echo "✗ 포털 재기동 실패"; FAIL=1; return; }
+  sleep 3
+  local hp; hp="$(sed -n 's/^HTTP_PORT=//p' "$ROOT/infra/.env" 2>/dev/null | tail -1)"
+  for pp in "8723 /health 포털" "${hp:-8088} /health nginx"; do
+    set -- $pp
+    c="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://127.0.0.1:$1$2" 2>/dev/null)" || true
+    case "${c:-000}" in
+      200) echo "✓ $3 :$1 → 200" ;;
+      *)   echo "✗ $3 :$1 → ${c:-000}"; FAIL=1 ;;
+    esac
+  done
+}
 
 do_stepforge() {
   hr "StepForge — upstream fetch + SIF 리빌드 + 재기동"
@@ -246,11 +297,17 @@ export STE_NAMED
 for t in $WANT; do
   case "$t" in
     stepforge) do_stepforge ;;
-    dynaforge) do_dynaforge ;;
+    dynaforge|kooremapper) do_dynaforge ;;
+    # 포털은 자주 이것만 올린다 — cae00 은 정본에 위임, dev 는 빌드+재기동.
+    portal)    if [ "$BOX" = cae00 ]; then do_delegate portal; else do_portal_dev; fi ;;
+    mxwp|heax|aidh|signalforge) do_delegate "$t" ;;
     ste)       do_ste ;;
     chat|delib) do_chat ;;
     restart|bounce) do_restart ;;
-    *) echo "✗ 모르는 대상: $t (stepforge|dynaforge|ste|chat|restart)"; FAIL=1 ;;
+    *) echo "✗ 모르는 대상: $t"
+       echo "   경량 표적 : stepforge | dynaforge(=kooremapper) | ste | chat | restart"
+       echo "   정본 위임 : $DELEGATED"
+       FAIL=1 ;;
   esac
 done
 

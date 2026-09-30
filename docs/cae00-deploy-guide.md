@@ -196,6 +196,9 @@ tbot 여부)과 `tunnel-cfg` 행(터널 유닛이 같은 파일을 쓰는가)으
 ./infra/scripts/update-all.sh --with-ste   # ste 를 이번 실행에 강제(에어갭 배포는 게이트 세 신호를 본다)
 ./infra/scripts/ste-doctor.sh              # ★ste 한 화면 진단(--report 로 JSON). 라우트·15810·15812·터널·TTL·시크릿·TLS
 ./infra/scripts/update-forges.sh           # ★경량 표적 갱신: stepforge+dynaforge+ste+chat — 딸려 온 ste 는 게이트 경유
+./infra/scripts/update-forges.sh portal    # ★★포털만 — 포털 빌드만 새로 올린 경우. update-all 을 다 돌릴 필요가 없다
+./infra/scripts/update-forges.sh portal chat   # 여러 개 나열 가능
+./infra/scripts/update-forges.sh mxwp      # 정본 어휘(portal·mxwp·heax·aidh·signalforge·kooremapper)를 그대로 쓴다 — §2 에 위임된다
 ./infra/scripts/update-forges.sh chat      # 챗·심의 스택만(포털+agent-server+게이트웨이)
 ./infra/scripts/update-forges.sh ste       # STE **전면** 갱신(이름을 댔다 = 지문 같아도 유닛·venv·시크릿까지)
 ./infra/scripts/update-forges.sh restart   # 갱신 없이 재시작만 — nginx 안 뜨면 자동 부검(conf -t·TLS cap 힌트)
