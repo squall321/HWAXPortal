@@ -46,14 +46,17 @@ fi
 
 mkdir -p "$APPT_DIR"
 # 같은 내용이면 손대지 않는다 — 살아 있는 인스턴스 밑의 SIF 를 덮어쓰면 squashfs 가 깨지고(mxwp 실사고), cp 는 mtime 을 리셋해 지문이 매번 달라진다.
+# ⚠ `f; _rc=$?` 로 받지 않는다 — 이 스크립트는 set -e 라 f 가 1("같음")을 돌려주는 순간 **아무 말 없이 여기서 끝난다**.
+#   Drive 의 SIF 가 안 바뀐 날마다 portal 단계가 사유 없이 'portal failed' 였고, 아래 frontend/dist 도 안 풀렸다(cae00 2026-09-30).
+#   `|| _rc=$?` 는 조건 문맥이라 set -e 가 끊지 않는다.
 for _f in portal.sif nginx.sif; do
-  hwax_install_if_changed "$STAGE/$_f" "$APPT_DIR/$_f"; _rc=$?
+  _rc=0; hwax_install_if_changed "$STAGE/$_f" "$APPT_DIR/$_f" || _rc=$?
   case $_rc in 0) echo "  ✓ staged $_f → $APPT_DIR" ;; 1) echo "  · $_f 같음 — 그대로" ;; *) echo "✗ $_f 설치 실패 — 위 사유"; exit 1 ;; esac
 done
 # SearxNG(일반 웹 검색) SIF — 올리는 쪽(images-to-drive)만 고치고 여기를 빼먹으면
 # "SIF 는 Drive 로 간다" 는 안내가 거짓이 된다. 없을 수도 있으므로 있을 때만 옮긴다.
 if [ -f "$STAGE/searxng-fixed.sif" ]; then
-  hwax_install_if_changed "$STAGE/searxng-fixed.sif" "$APPT_DIR/searxng-fixed.sif"; _rc=$?
+  _rc=0; hwax_install_if_changed "$STAGE/searxng-fixed.sif" "$APPT_DIR/searxng-fixed.sif" || _rc=$?
   case $_rc in 0) echo "  ✓ staged searxng-fixed.sif → $APPT_DIR" ;; 1) echo "  · searxng-fixed.sif 같음 — 그대로" ;; *) echo "✗ searxng-fixed.sif 설치 실패 — 위 사유"; exit 1 ;; esac
 fi
 

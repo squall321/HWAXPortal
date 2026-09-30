@@ -33,6 +33,8 @@ hwax_fp() {
   } | sha256sum | cut -c1-12
 }
 
+# 돌려주는 값: 0 = 설치함 · 1 = 같음(오류 아님) · 2 = 설치 실패. ⚠ set -e 스크립트에서는 `_rc=0; hwax_install_if_changed … || _rc=$?`
+#   로 받아라 — 맨 문장(`f; _rc=$?`)이면 '같음' 에서 스크립트가 조용히 끝난다(images-from-drive 실사고 2026-09-30).
 hwax_install_if_changed() {  # $1=src $2=dst
   if [ -f "$2" ] && cmp -s "$1" "$2"; then return 1; fi
   if cp -p "$1" "$2"; then return 0; fi
