@@ -189,6 +189,8 @@ def _run_block(start_marker: str, end_marker: str, *, env_lines: list[str], heal
     block = SRC[i:SRC.index(end_marker, i)]
     script = "\n".join([
         'ok() { echo "OK:$*"; }', 'bad() { echo "BAD:$*"; }', 'fail() { echo "FAIL:$*"; }',
+        # 블록이 쓰는 update-all 도우미 — 사람 신분 실호출(D-30)이 infra/.env 를 읽고 안 켠 기능을 장부에 적는다
+        '_ra_envv() { printf "%s" "${PROBE_EMAIL:-}"; }', 'hwax_skip() { echo "SKIP:$1"; }',
         f'curl() {{ printf "%s" "{curl_code}"; }}',
         "H='" + json.dumps(health) + "'", *env_lines, block,
     ])
@@ -236,8 +238,9 @@ def test_gateway_ste_is_not_judged_when_not_routed():
 def test_unloaded_access_policy_is_a_fail():
     """정책이 안 실리면 전 백엔드가 전원에게 열린다 — 초록으로 지나가면 안 된다."""
     def pol(loaded):
-        return _run_block("  # ── 포털 권한 정책이", "\nfi\n",
-                          env_lines=[], health={"access_policy_loaded": loaded}).splitlines()[0].split(":", 1)[0]
+        out = _run_block("  # ── 포털 권한 정책이", "\nfi\n", env_lines=[], health={"access_policy_loaded": loaded})
+        # 같은 블록의 RA 점검이 '안 켠 기능' 줄(SKIP)을 먼저 낼 수 있다 — 판정 줄만 본다
+        return [ln for ln in out.splitlines() if not ln.startswith("SKIP:")][0].split(":", 1)[0]
     assert pol(0) == "FAIL"
     assert pol(7) == "OK"
 
@@ -316,3 +319,17 @@ def test_라우트가_없으면_아무것도_채우지_않는다(tmp_path):
 def test_접속_설정은_있는데_라우트가_없으면_말한다():
     """VM 은 최신인데 포털 /ste 가 비어 있는 상태를 '안 쓰는 박스' 로 조용히 넘기지 않는다."""
     assert "ste 접속 설정은 있는데" in SRC and "routes.local.env 에" in SRC
+
+
+def test_사람_신분_실호출은_이메일이_없으면_안_켠_기능으로_남긴다():
+    """이메일 없이 조용히 넘어가면 '토큰 경로·slurm 경로 미확인' 이 초록 아래 숨는다(docs/ste-cae00 D-30)."""
+    out = _run_block("  # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1)", "  # ── 포털 권한 정책이",
+                     env_lines=['STE_ROUTED="1"', 'SELF_REPO="/nonexistent"', 'GW_DIR="/nonexistent"'],
+                     health={"backends": {"ste": True}})
+    assert "SKIP:ste 사람 신분 실호출" in out
+    assert "BAD:ste 사용자 위임" in out, "게이트웨이 config 를 못 읽으면 판정 불가라고 말한다(초록이 아니다)"
+    out2 = _run_block("  # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1)", "  # ── 포털 권한 정책이",
+                      env_lines=['STE_ROUTED="1"', 'SELF_REPO="/nonexistent"', 'PROBE_EMAIL="u@x.io"',
+                                 'AGENT_DIR="/nonexistent"'],
+                      health={"backends": {"ste": True}})
+    assert "SKIP:" not in out2 and "mcp 모듈이 있는 python" in out2, "이메일은 있는데 실호출을 못 하면 그렇다고 말한다"
