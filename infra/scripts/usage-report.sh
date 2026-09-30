@@ -17,12 +17,17 @@ hr() { printf '\n\033[1;36m── %s ──────────────�
 
 hr "① 포털 정문 nginx (:8088) — 최근 ${DAYS}일 실IP"
 NLOG="$ROOT/infra/data/nginx-access.log"
+# 회전본(.gz 포함)까지 읽는다 — logrotate 가 매일 돌리므로 현재 파일만 읽으면 'N일' 이 실제로는 하루치도 안 됐다
+# (2026-09-30 조사, docs/access-history). 창 밖 줄은 아래 awk 가 시각으로 거른다. 깨진 회전본 하나로 전체가 죽지 않게 한다.
+NLOGS=()
+for _f in "$NLOG"-* "$NLOG"; do [ -s "$_f" ] && NLOGS+=("$_f"); done
+_ncat() { local f; for f in ${NLOGS[@]+"${NLOGS[@]}"}; do case "$f" in *.gz) gzip -dc -- "$f" 2>/dev/null || true ;; *) cat -- "$f" ;; esac; done; }
 # SSO 전면 전에는 여러 명이 데모 계정 하나를 공유하므로, 사람 수 근사의 주 원천은
 # 신원(③)이 아니라 여기 IP 다. 스캐너와 실사용을 가르기 위해 '앱 경로'(auth/agent/
 # api/systems 에 4xx 미만)를 접촉한 IP 를 따로 세고, IP×브라우저(UA) 조합으로
 # 같은 IP(사내 NAT) 뒤의 기기 수를 근사한다.
 _ngx() {  # $1: table(앱 IP 별 히트) | sum(요약 수치)
-  awk -F'"' -v since="$SINCE" -v mode="$1" '
+  _ncat | awk -F'"' -v since="$SINCE" -v mode="$1" '
     {
       ip=$1; sub(/ +$/, "", ip)
       # XFF 는 remote 가 내부망(우리 앞단 프록시)일 때만 신뢰 — 외부인의 XFF 위조 방지.
@@ -41,9 +46,9 @@ _ngx() {  # $1: table(앱 IP 별 히트) | sum(요약 수치)
       if (mode == "table") { for (i in app) printf "%d %s\n", app[i], i }
       else printf "  고유 IP %d (그중 앱 경로 접촉 %d) · IP×브라우저 조합 %d (앱 %d — 대략 기기 수)\n", \
                   length(hits), length(app), length(combo), length(appcombo)
-    }' "$NLOG"
+    }'
 }
-if [ -s "$NLOG" ]; then
+if [ ${#NLOGS[@]} -gt 0 ]; then
   T="$(_ngx table | sort -rn | head -20 | awk '{printf "  %6d  %s\n", $1, $2}')"
   [ -n "$T" ] && { echo "  [앱 경로 접촉 IP — 실사용 근사]"; echo "$T"; } \
               || echo "  (앱 경로 접촉 IP 없음)"
