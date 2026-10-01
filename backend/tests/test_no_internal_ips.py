@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # 사내 대역. 127.x(루프백)·0.0.0.0 은 뺀다 — 그건 내부 배치가 아니다.
 _IP = re.compile(r"\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\.?\d{0,3}\b")
 # 지금 있는 것(줄이는 방향으로만 바꾼다). 늘리려면 **먼저 왜 필요한지 적어라.**
-KNOWN_FILES = 14   # 실측 — 문서 1개가 더 있었다(CHAT-FIRST-AI-INTEGRATION.md). 09-30 systems.yaml 을 뺐다(docs/access-history)
+KNOWN_FILES = 13   # 실측 — 문서 1개가 더 있었다(CHAT-FIRST-AI-INTEGRATION.md). 09-30 systems.yaml·10-01 update-all.sh 주석을 뺐다
 
 
 def _tracked() -> list[Path]:

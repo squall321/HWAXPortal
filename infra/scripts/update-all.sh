@@ -19,8 +19,8 @@
 #   ~/Projects/HWAXMcpGateway/provision.env  (chmod 600, gitignore)
 #     RAT_TOKEN=rat_xxx            # ReportArchive PAT (심의 보고서 저장)
 #     HEAX_MCP_TOKEN=heax_xxx      # heax MCP 앱 자동연동(materialtwin·laminate)
-#     ODB_HUB_TOKEN=xxxx           # ODB 자동화 허브(10.252.38.121:8000) — cae00 에서만 도달
-#     ARP_BASE=http://10.252.38.97:3001  # AI Ready Portal — 무인증, cae00 에서만 도달
+#     ODB_HUB_TOKEN=xxxx           # ODB 자동화 허브(<ODB 서버>:8000) — cae00 에서만 도달
+#     ARP_BASE=http://<ARP 서버>:3001  # AI Ready Portal(MCP 무인증) — cae00 에서만 도달. infra/.env ARP_HOST 가 있으면 1f 가 채운다
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
@@ -434,6 +434,78 @@ else
   esac
 fi
 
+# ── 1f) AI Ready Portal(ARP) 연결 — ARP_HOST 하나로 타일 주소·게이트웨이 ARP_BASE 를 같이 맞춘다 ─────────────
+# 같은 ARP 서버 주소가 두 곳(포털 타일 backend/config/systems.local.yaml · 게이트웨이 provision.env ARP_BASE)에 손으로 있었다.
+# 1e(RA_HOST)와 같은 방식 — 값은 infra/.env(gitignore)에만, 추적 파일에는 적지 않는다(docs/arp-binding).
+# 타일은 **직결 링크** 그대로다(systems.local.yaml). 포털 경유(/arp/)는 ARP 가 절대경로로 이동해 보류다(D-1) — routes 파일에 쓰지 않는다.
+_upsert_tile_url() {  # $1=타일 id $2=url — systems.local.yaml 의 `<id>:` 블록만 새로 쓰고 다른 타일은 그대로. 같으면 안 쓴다.
+  TILE="$1" URL="$2" F="$SELF_REPO/backend/config/systems.local.yaml" python3 - <<'PY'
+import os, re
+f, tile, url = os.environ["F"], os.environ["TILE"], os.environ["URL"]
+head = "# 이 박스 전용 타일 덮어쓰기 — gitignore. 사내 주소는 추적 파일에 적지 않는다(docs/access-history).\n"
+try:
+    old = open(f, encoding="utf-8").read()
+except FileNotFoundError:
+    old = head
+block = [f"{tile}:", f"  url: {url}"]
+out, skip, put = [], False, False
+for ln in old.splitlines():
+    if re.fullmatch(rf"{re.escape(tile)}:\s*", ln):
+        if not put:
+            out += block          # 그 자리에 — 순서가 바뀌면 내용이 같아도 '바뀜' 이 되어 포털이 괜히 재기동한다
+            put = True
+        skip = True
+        continue
+    if skip and ln[:1] in (" ", "\t"):
+        continue                  # 그 타일의 들여쓴 줄(덮어쓰기 칸은 url 하나뿐이라 통째로 바꿔도 잃는 것이 없다)
+    skip = False
+    out.append(ln)
+if not put:
+    while out and not out[-1].strip():
+        out.pop()
+    out += block
+new = "\n".join(out) + "\n"
+if new != old:
+    os.makedirs(os.path.dirname(f), exist_ok=True)
+    tmp = f + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(new)
+    os.replace(tmp, f)
+    print("changed")
+else:
+    print("same")
+PY
+}
+ARP_HOST="$(_ra_envv ARP_HOST)"; ARP_PORT="$(_ra_envv ARP_PORT)"; ARP_PORT="${ARP_PORT:-3001}"
+if [ -z "$ARP_HOST" ]; then
+  hwax_skip "AI Ready Portal 주소 묶기" "infra/.env 에 ARP_HOST 가 없다 — 타일 주소(backend/config/systems.local.yaml)와 게이트웨이 ARP_BASE(HWAXMcpGateway/provision.env)를 손으로 둔 그대로 쓴다" "infra/.env 에 ARP_HOST=<ARP 서버 주소>(포트가 3001 이 아니면 ARP_PORT) 를 적으면 update-all 이 둘을 같이 맞춘다"
+else
+  hr "1f) AI Ready Portal 연결 (ARP_HOST → 타일 주소·게이트웨이 ARP_BASE)"
+  # 모양 검사는 1e(RA_HOST)와 같은 규칙 — IPv4 또는 라벨(영숫자, 안쪽 하이픈)을 점으로 이은 호스트명만. 거부한 값은 비운다.
+  _arp_shape='^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$'
+  case "${ARP_HOST,,}" in
+    localhost|localhost.*|127.*|0.0.0.0|ip6-localhost|ip6-loopback)
+      fail "ARP_HOST 는 ARP 서버 주소여야 한다(localhost/127.x 아님): '$ARP_HOST'"; ARP_HOST="" ;;
+    *) if [[ ! "$ARP_HOST" =~ $_arp_shape ]] || [[ ! "$ARP_PORT" =~ ^[0-9]{1,5}$ ]]; then
+         fail "ARP_HOST 는 IPv4 주소 또는 호스트명, ARP_PORT 는 숫자여야 한다(스킴·경로·주석 없이): '$ARP_HOST' / '$ARP_PORT'"; ARP_HOST=""
+       fi ;;
+  esac
+  if [ -n "$ARP_HOST" ]; then
+    ARP_BASE="http://$ARP_HOST:$ARP_PORT"
+    if _arp_t="$(_upsert_tile_url arp "$ARP_BASE/")"; then
+      [ "$_arp_t" = changed ] && ok "systems.local.yaml: arp → $ARP_BASE/  (§2 가 포털을 재기동한다 — 재기동 지문에 이 파일이 있다)" \
+                              || ok "systems.local.yaml: arp → $ARP_BASE/ (그대로)"
+    else fail "backend/config/systems.local.yaml 에 arp 주소를 못 적었다 — 권한·소유자를 보라"; fi
+    if [ -n "$GW_DIR" ]; then
+      if _upsert_kv "$GW_DIR/provision.env" ARP_BASE "$ARP_BASE" 600; then
+        ok "게이트웨이 provision.env: ARP_BASE=$ARP_BASE  (§5 가 config 와 다르면 재프로비저닝한다)"
+      else fail "게이트웨이 provision.env 에 ARP_BASE 를 못 적었다 — 권한·소유자를 보라"; fi
+    else
+      bad "HWAXMcpGateway 리포를 못 찾아 ARP_BASE 를 못 적었다 — 챗의 ARP 도구가 옛 주소를 본다"
+    fi
+  fi
+fi
+
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
 # 종료코드 3 = 소스 갱신 실패(git fetch/reset). 서비스는 떠 있어도 옛 코드라 가장 위험한
@@ -663,7 +735,7 @@ _ste_route_url() {
 }
 _STE_ROUTE="$(_ste_route_url)"
 if [ -n "$_STE_ROUTE" ]; then
-  # 라우트는 웹 백엔드 자체다(예: http://192.168.130.10:15810/). origin 만 떼어 경로를 붙인다.
+  # 라우트는 웹 백엔드 자체다(예: http://<헤드 주소>:15810/). origin 만 떼어 경로를 붙인다.
   _STE_ORIGIN="$(printf '%s' "$_STE_ROUTE" | sed -n 's|^\(https\?://[^/]*\).*|\1|p')"
   if [ -n "$_STE_ORIGIN" ]; then
     [ -z "${STE_SSO_URL:-}" ] && STE_SSO_URL="$_STE_ORIGIN/api/auth/sso"
@@ -831,6 +903,14 @@ PY
     if [ -n "$_ra_cfg_host" ] && [ "$_ra_cfg_host" != "$(printf '%s' "$RA_HOST" | tr 'A-Z' 'a-z')" ]; then   # hostname 은 소문자로 온다
       echo "  · 주소 드리프트: reportarchive — config 는 $_ra_cfg_host 인데 RA_HOST 는 $RA_HOST 다(1e)"
       MISSING="${MISSING:+$MISSING }reportarchive"
+    fi
+  fi
+  # ARP — 키(arp)는 있으니 calc_missing 이 못 잡는다. ARP_HOST(1f)와 config 의 주소가 다르면 재프로비저닝(docs/arp-binding).
+  if [ -n "${ARP_HOST:-}" ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
+    _arp_cfg="$(python3 -c 'import json,sys;from urllib.parse import urlparse;u=urlparse(((json.load(open(sys.argv[1])).get("arp") or {}).get("url") or ""));print(f"{u.hostname}:{u.port}" if u.hostname else "")' "$GW_DIR/gateway_config.json" 2>/dev/null)"
+    if [ -n "$_arp_cfg" ] && [ "$_arp_cfg" != "$(printf '%s' "$ARP_HOST" | tr 'A-Z' 'a-z'):$ARP_PORT" ]; then
+      echo "  · 주소 드리프트: arp — config 는 $_arp_cfg 인데 ARP_HOST:ARP_PORT 는 $ARP_HOST:$ARP_PORT 다(1f)"
+      MISSING="${MISSING:+$MISSING }arp"
     fi
   fi
   # ste 사용자 위임 — 게이트웨이 config 에 없거나 시크릿이 infra/.env 와 다르면 재프로비저닝(docs/ste-cae00 D-30).
