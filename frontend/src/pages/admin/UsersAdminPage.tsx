@@ -94,7 +94,7 @@ export default function UsersAdminPage() {
               <Fragment key={r.email}>
               <tr>
                 <td style={cell}>{r.email}</td>
-                <td style={cell}>{r.name}</td>
+                <td style={cell}>{r.name || '—'}</td>
                 <td style={cell}>{r.department || '—'}</td>
                 <td style={cell}>
                   <AffiliationSelect policy={policy} row={r} onSaved={reload} onError={setError} />
