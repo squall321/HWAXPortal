@@ -1479,6 +1479,29 @@ for s in d.get("steps",[]):
     fail "권한 정책        게이트웨이에 포털 권한 정책이 **안 실렸다**(access_policy_loaded=0) — 전 백엔드가 전원에게 열린다"
     echo "    포털 /internal/access/policy 가 200 인지, 게이트웨이가 GATEWAY_SHARED_TOKEN 으로 그것을 받는지 본다(60초마다 재시도)"
   fi
+  # ── 이 박스의 게이트웨이 백엔드가 **전부** 권한 표(access.yaml)에 있어야 한다 ─────────────────────
+  # 표에 없는 백엔드는 allowed_groups 가 비면 **아무나**, 있으면 그 키를 발급할 수 없어 **아무도** 못 쓴다(2026-10-01 cae00:
+  # simflow 도구 21개 전원 공개 · plm-defect 전원 차단, 5차 요청 §2). CI 시험은 dev 백엔드만 본다 — cae00 에만 있는 백엔드는 여기서만
+  # 잡힌다. 대조 상대는 게이트웨이의 60초 캐시가 아니라 **포털의 지금 표**다(방금 표를 고친 실행이 옛 캐시로 빨개지지 않게).
+  if [ -n "${GW_DIR:-}" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
+    # 시크릿은 argv 에 싣지 않는다 — curl 설정을 stdin(-K -)으로 준다
+    _apol="$(python3 -c 'import json,sys;print("header = \"Authorization: Bearer %s\"" % json.load(open(sys.argv[1]))["_gateway"]["token"])' \
+               "$GW_DIR/gateway_config.json" 2>/dev/null \
+             | curl -s -m 5 -K - http://127.0.0.1:8723/internal/access/policy 2>/dev/null || true)"
+    _unlisted="$(H="$H" P="$_apol" python3 -c '
+import json, os
+pol = (json.loads(os.environ["P"]) or {}).get("backends")
+if not isinstance(pol, dict): raise SystemExit(1)
+print(" ".join(sorted(set(json.loads(os.environ["H"]).get("backends") or {}) - set(pol))))' 2>/dev/null)" || _unlisted="?"
+    case "$_unlisted" in
+      "?") bad "권한 표 대조     포털 /internal/access/policy 를 못 읽었다(공유 시크릿·포털 상태) — 표에 없는 백엔드를 못 본다" ;;
+      "")  ok "권한 표 대조     게이트웨이 백엔드가 전부 access.yaml 에 있다" ;;
+      *)   fail "권한 표 구멍     access.yaml 에 없는 게이트웨이 백엔드: $_unlisted — 아무나 쓰거나 아무도 못 쓴다"
+           echo "    backend/config/access.yaml 의 플랫폼 gateway: 에 더한다(재기동 불필요 — 게이트웨이가 60초 안에 받는다)" ;;
+    esac
+  else
+    hwax_skip "권한 표 대조" "게이트웨이 리포(gateway_config.json)를 못 찾았다 — 공유 시크릿 없이는 포털 정책을 못 읽는다" "HWAXMcpGateway 를 형제 리포로 두고 재실행"
+  fi
   # ── RA 사용자 위임 — 게이트웨이가 포털에 '이 사람의 RA 토큰' 을 물을 수 있어야 한다 ───────────────
   # 못 물으면 연결을 등록한 사람의 RA 글도 서비스 토큰 주인 명의로 올라갔다(2026-09-29 — config 의 portal.api_base 가
   # --force 로 사라져 게이트웨이가 묻지도 않았다). 지금 게이트웨이는 못 물으면 RA 호출을 **거부**한다 — 그래서 배포가

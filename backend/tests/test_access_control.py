@@ -44,6 +44,44 @@ def test_HE팀_페르소나_앱이_모두_플랫폼에_속한다():
         assert pol.keys_for_gateway(p["apps"]), f"{p['key']} 의 앱 {p['apps']} 이 플랫폼 표에 없다"
 
 
+# 게이트웨이 백엔드 키 — dev·cae00 에서 실측한 것(`/health` 의 backends). gateway_config.json 의 `_gateway`·`heax_registry`·
+# `portal`·`rest` 는 **설정 절**이라 백엔드가 아니다(/health 에 안 나온다). 새 백엔드를 붙이면 여기와 access.yaml 에 같이 적는다.
+KNOWN_GATEWAY_BACKENDS = [
+    "ai-data-hub", "arp", "hwax-deliberation", "knox-bridge", "mx-white-paper", "odb-hub", "plm-defect",
+    "reportarchive", "signalforge", "simflow", "smart-twin-cluster", "smart-twin-mcp", "ste",
+    "heax-hwax_risk", "heax-kooremapper_mcp", "heax-laminate_analyzer_mcp", "heax-materialtwin_web",
+    "heax-paper_ingest", "heax-step_forge", "heax-thermal_shock_mcp", "heax-web_design_agents",
+    "heax-web_research_mcp", "step-forge", "dyna-forge",
+]
+
+
+def test_알려진_게이트웨이_백엔드가_모두_권한_표에_있다():
+    """5차 요청 §2 — 표에 없는 백엔드는 allowed_groups 가 비면 **전원 공개**(simflow 21개 도구), 있으면 그 키를 발급할 수 없어
+    **전원 차단**(plm-defect)이었다. access.yaml 이 가리키던 대조 시험은 없는 파일이라 아무도 몰랐다."""
+    missing = [b for b in KNOWN_GATEWAY_BACKENDS if b not in _policy().gateway_policy()]
+    assert not missing, f"권한 표에 없는 게이트웨이 백엔드 — 아무나 쓰거나 아무도 못 쓴다: {missing}"
+
+
+def test_떠_있는_게이트웨이의_백엔드도_모두_권한_표에_있다():
+    """고정 목록은 새 백엔드를 모른다 — 이 박스의 게이트웨이가 닿으면 실제 백엔드로도 본다(운영 박스는 update-all §6 이 본다)."""
+    import httpx
+    try:
+        backends = httpx.get("http://127.0.0.1:9110/health", timeout=3).json()["backends"]
+    except Exception as exc:  # noqa: BLE001 — 게이트웨이가 없는 곳(CI 컨테이너)
+        pytest.skip(f"게이트웨이 무응답: {type(exc).__name__}")
+    missing = sorted(set(backends) - set(_policy().gateway_policy()))
+    assert not missing, f"권한 표에 없는 게이트웨이 백엔드: {missing} — access.yaml 플랫폼의 gateway: 에 더한다"
+
+
+def test_access_yaml_이_가리키는_시험_파일이_실제로_있다():
+    """§2-d — 대조자로 지목된 test_access_policy.py 가 존재하지 않았다. 가리키는 이름이 틀리면 대조가 있다고 믿게 된다."""
+    import re
+    text = (_BACKEND / "config" / "access.yaml").read_text(encoding="utf-8")
+    named = re.findall(r"backend/tests/(test_\w+\.py)", text)
+    assert named, "access.yaml 이 대조 시험을 가리키지 않는다"
+    assert all((_BACKEND / "tests" / n).is_file() for n in named), named
+
+
 def test_CAEG_는_전부_기본은_일반_챗():
     pol = _policy()
     assert pol.affiliations["CAEG"]["grants"] == ["*"]

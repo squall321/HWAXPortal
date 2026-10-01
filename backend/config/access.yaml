@@ -7,8 +7,9 @@
 #   · "*" 는 표에 있는 모든 기능·플랫폼이다.
 #   · platforms[].systems 는 포털 타일 id(systems.yaml), gateway 는 게이트웨이 백엔드 키다 — 타일은
 #     그 플랫폼 허가가 있어야 보이고, 게이트웨이 백엔드는 그 플랫폼 허가가 있어야 도구가 붙는다.
-#   · 모든 포털 타일·게이트웨이 백엔드·HE팀 페르소나 앱은 어느 플랫폼에든 속해야 한다
-#     (backend/tests/test_access_policy.py 가 대조한다 — 표에 없으면 아무도 못 쓰거나 아무나 쓴다).
+#   · 모든 포털 타일·게이트웨이 백엔드·HE팀 페르소나 앱은 어느 플랫폼에든 속해야 한다 — 표에 없으면 아무도 못 쓰거나
+#     아무나 쓴다. 대조는 둘이다: backend/tests/test_access_control.py(알려진 백엔드 목록 + 닿으면 실제 게이트웨이)와
+#     update-all §6(그 박스의 실제 게이트웨이 백엔드 — cae00 에만 있는 백엔드는 시험이 못 본다, 5차 요청 §2).
 #   · 이 파일은 요청마다 mtime 을 본다. 고쳐도 재기동이 필요 없다.
 
 default_grants: [feat:chat]
@@ -89,9 +90,8 @@ platforms:
   - id: knoxbridge
     label: Knox 연계
     systems: [knox-bridge]
+    gateway: [knox-bridge]     # cae00 실측 백엔드 키(5차 요청 §2-c) — allowed_groups 는 provision 이 다시 써 정본이 아니다
     hide_unless_routed: true   # knox-bridge 가 안 열리는 박스에서는 권한 표·요청에서 뺀다(권한 계산은 그대로)
-    # gateway 키(bridge 도구 백엔드)는 사내 gateway_config.json 에서 확인해 더한다 — 표에 없는 백엔드는
-    # 게이트웨이가 권한 없이 연다 — 사이드카를 게이트웨이에 붙이기 전에 넣는다(docs/chat-actions A-8).
   - id: stepforge
     label: StepForge
     # step-forge 는 게이트웨이 REST 다리의 사이트 키다(heax-step_forge 는 그 앱의 MCP 백엔드).
@@ -118,3 +118,11 @@ platforms:
   - id: paperingest
     label: Paper Ingest
     gateway: [heax-paper_ingest]
+  # 아래 둘은 cae00 게이트웨이에만 있는 백엔드다(5차 요청 §2 — 실측 키). 표에 없을 때 simflow 는 allowed_groups 가 비어
+  # 도구 21개가 **전원 공개**였고, plm-defect 는 allowed_groups 가 plat:plmdefect 를 요구하는데 그 키가 표에 없어 **전원 차단**이었다.
+  - id: simflow
+    label: SimFlow
+    gateway: [simflow]
+  - id: plmdefect              # id 는 바꾸지 않는다 — 게이트웨이 allowed_groups 가 plat:plmdefect 를 요구한다
+    label: PLM 결함 검색
+    gateway: [plm-defect]
