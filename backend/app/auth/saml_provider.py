@@ -21,6 +21,18 @@ def _first(values: list[str] | None) -> str | None:
     return values[0] if values else None
 
 
+def _subject(source: str, *, email: str, nameid: str | None, attrs: dict) -> str:
+    """식별자 — 기본은 이메일로 고정(config `saml_subject_source`). 다른 출처를 골랐는데 Assertion 에 없으면 **거절한다** —
+    이메일로 몰래 떨어지면 로그인마다 키가 바뀌어 한 사람이 둘로 갈린다(종전 `nameid or email` 의 지뢰와 같은 모양)."""
+    if source == "email":
+        return email
+    got = nameid if source == "nameid" else _first(attrs.get(source))
+    if not (got or "").strip():
+        raise AuthError(f"SAML assertion has no subject source {source!r} (SAML_SUBJECT_SOURCE) — "
+                        "refusing to fall back to email", status_code=400)
+    return got.strip()
+
+
 class SamlProvider:
     name = "saml"
 
@@ -71,11 +83,15 @@ class SamlProvider:
         nameid = auth.get_nameid()
         # 원장·로컬 계정과 같은 정규화 — subject 가 곧 이메일인 사람(NameID 없는 운영 ADFS)이 'Koo.Park@…' 로 오면 로컬 계정 시절의
         # 소문자 subject 와 갈라져 대화·PAT·절차가 통째로 안 보인다(로컬 계정 브리지의 승계 약속, 6차 요청 검토).
-        email = norm_email(_first(attrs.get(s.saml_attr_email)) or nameid or "")
+        # 이메일은 **지정한 Claim(SAML_ATTR_EMAIL)에서만** 잡는다. 종전엔 없으면 NameID 로 떨어져, IdP 가 NameID(LoginId 등)를 켠 날
+        # SAML_ATTR_EMAIL 이 어긋나 있으면 subject·원장 키가 말없이 'kpark01' 이 되어 빈 새 계정이 생겼다 — subject 를 못박은 것과 같은
+        # 지뢰다(6차 검토 2차). 없으면 거절하고 받은 Claim **이름**을 알려 준다(값은 안 싣는다).
+        email = norm_email(_first(attrs.get(s.saml_attr_email)) or "")
         if not email:
-            raise AuthError("SAML assertion missing email/NameID", status_code=400)
+            raise AuthError(f"SAML assertion has no email claim {s.saml_attr_email!r} (SAML_ATTR_EMAIL) — "
+                            f"received claims: {sorted(attrs)}", status_code=400)
         return Principal(
-            subject=nameid or email,
+            subject=_subject(s.saml_subject_source, email=email, nameid=nameid, attrs=attrs),
             email=email,
             display_name=_first(attrs.get(s.saml_attr_name)),
             groups=attrs.get(s.saml_attr_groups, []),

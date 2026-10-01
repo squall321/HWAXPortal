@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # python3-saml 은 이 값이 참이면 NameID 부재를 검증 실패로 친다(서명·시간·Audience 를 다 통과한 Assertion 이 400).
     # 끄면 식별은 Claim 으로 한다(SAML_ATTR_EMAIL). 기본은 종전대로 참(6차 요청 §2).
     saml_want_nameid: bool = True
+    # 사용자 식별자(subject — JWT sub·PAT·대화·절차 소유권)를 어디서 잡나 — "email" | "nameid" | "<Claim 이름(전체 URI)>".
+    # ⚠ 기본 "email" 로 **못박는다.** 종전 `nameid or email` 은 IdP 가 NameID 를 나중에 켜는 순간 식별자가 말없이 바뀌어 기존 소유가
+    # 전부 끊겼다(cae00 pat 65행이 전부 이메일형, 6차 요청 §3). 다른 값은 데이터 이전 계획과 함께 **의도적으로** 바꾼다 — 그 출처가
+    # Assertion 에 없으면 이메일로 몰래 바꾸지 않고 로그인을 거절한다(로그인마다 키가 바뀌면 같은 지뢰다).
+    saml_subject_source: str = "email"
     # ACS/SLS 경로 — AD-SSO 에 등록한 Endpoint Url 과 **글자 단위로** 같아야 한다(4차 변경 요청, 2026-09-29).
     # ⚠ ADFS 는 이 값을 인증 *전에* 검증하지 않는다 — 어긋나면 인증을 통과한 뒤 일반 오류 페이지로 끝나고 SP 에는
     #   아무 요청도 오지 않는다(조용한 실패). cae00 등록값은 개발·운영 모두 `/auth/callback` 이다 → .env SAML_ACS_PATH.

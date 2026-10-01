@@ -1,7 +1,8 @@
-# 운영 ADFS 모양의 Assertion(NameID 없음·URI Claim 다섯 개)으로 끝까지 로그인한다(6차 요청 §2)
+# 운영 ADFS 모양의 Assertion(NameID 없음·URI Claim 다섯 개)으로 끝까지 로그인한다(6차 요청 §2·§3·§4-B)
 """운영 ADFS(sts.secsso.net)는 NameID 를 보내지 않고 Claim 은 LoginId·CompId·DeptId·Sabun·Mail 다섯 개뿐이다(2026-10-01
 SSO 운영팀 실측). python3-saml 은 wantNameId 가 참이면 NameID 부재를 검증 실패로 쳐서, 서명·시간·Audience 를 다 통과한 Assertion 이
-400 이었다. dev mock IdP 가 실제로 서명한 Assertion 에서 NameID 를 빼고 Claim 을 운영 모양으로 바꿔(서명 **전에**) 실제 SP 검증 경로로 돌린다.
+막혔다. dev mock IdP 가 실제로 서명한 Assertion 을 서명 **전에** 운영 모양으로 바꿔(NameID 빼거나 다른 값으로, Claim 다섯 + 선택 Claim)
+실제 SP 검증 경로로 끝까지 돌린다. 시나리오는 JSON 한 덩이로 넘긴다.
 """
 import json
 import os
@@ -23,7 +24,7 @@ import app.auth.routes.mock_idp as mock_idp
 from app.main import app
 
 CLAIM = "http://schemas.sec.com/2018/05/identity/claims/"
-MAIL = sys.argv[1]
+SPEC = json.loads(sys.argv[1])
 _real_sign = OneLogin_Saml2_Utils.add_sign
 
 def _attr(name, value):
@@ -31,15 +32,18 @@ def _attr(name, value):
             '</saml:AttributeValue></saml:Attribute>')
 
 class _AdfsShape(OneLogin_Saml2_Utils):
-    """서명 직전의 Assertion 을 운영 모양으로 — NameID 를 빼고 Claim 을 다섯 개로(이름·그룹 Claim 없음)."""
+    """서명 직전의 Assertion 을 운영 모양으로 — NameID 는 빼거나(기본) SPEC 값으로, Claim 은 다섯 + SPEC.extra."""
     @staticmethod
     def add_sign(xml, *a, **kw):
-        xml = re.sub(r"<saml:NameID[^>]*>[^<]*</saml:NameID>", "", xml)
-        attrs = "".join(_attr(n, v) for n, v in (("LoginId", "kpark01"), ("CompId", "C100"), ("DeptId", "D2001"),
-                                                 ("Sabun", "1234567"), ("Mail", MAIL)))
+        nid = SPEC.get("nameid")
+        xml = re.sub(r"(<saml:NameID[^>]*>)[^<]*(</saml:NameID>)",
+                     (lambda m: m.group(1) + nid + m.group(2)) if nid else "", xml)
+        claims = [("LoginId", "kpark01"), ("CompId", "C100"), ("DeptId", "D2001"), ("Sabun", "1234567"),
+                  ("Mail", SPEC.get("mail", "koo.park@example.com")), *SPEC.get("extra", {}).items()]
+        attrs = "".join(_attr(n, v) for n, v in claims)
         xml = re.sub(r"<saml:AttributeStatement>.*</saml:AttributeStatement>",
                      f"<saml:AttributeStatement>{attrs}</saml:AttributeStatement>", xml, flags=re.S)
-        assert "NameID" not in xml
+        assert ("NameID" in xml) == bool(nid)
         return _real_sign(xml, *a, **kw)
 
 mock_idp.OneLogin_Saml2_Utils = _AdfsShape
@@ -51,6 +55,12 @@ out = {}
 with TestClient(app, base_url="http://localhost:5283") as c:
     # 로컬 계정 시절의 대화 — subject 는 정규화된 이메일이다(local.py: subject=u["email"])
     app.state.conv_store.create(owner_sub="koo.park@example.com", title="로컬 계정 시절 대화")
+    us = app.state.user_store
+    for row in SPEC.get("seed", []):          # 로컬 계정 시절 원장 행(이름·부서·소속)
+        us.signup(email=row["email"], name=row["name"], password="pw123456",
+                  bootstrap_admins=[] if row.get("pending") else [row["email"]], department=row.get("department", ""))
+        if row.get("affiliation"):
+            us.set_access(row["email"], affiliation=row["affiliation"], grants=None)
     r = c.get("/auth/login", follow_redirects=False)
     r2 = c.get(path(r.headers["location"]), follow_redirects=False)
     html = r2.text.replace("&amp;", "&")
@@ -67,11 +77,13 @@ with TestClient(app, base_url="http://localhost:5283") as c:
         out["me_status"] = me.status_code
         out["me"] = me.json() if me.status_code == 200 else me.text[:300]
         out["convs"] = [x["title"] for x in c.get("/agent/conversations").json().get("conversations", [])]
+        out["row"] = {k: v for k, v in (us.get(out["me"]["email"]) or {}).items()
+                      if k in ("name", "department", "affiliation", "groups", "grants", "status")}
 print(json.dumps(out, ensure_ascii=False))
 '''
 
 
-def _run(tmp_path, *, want_nameid: str | None, mail: str = "koo.park@example.com") -> dict:
+def _run(tmp_path, *, want_nameid: str | None = "false", env_extra: dict | None = None, **spec) -> dict:
     env = {**os.environ,
            "AUTH_PROVIDER": "saml", "APP_ENV": "dev", "SAML_MOCK_IDP_ENABLED": "true",
            "PUBLIC_BASE_URL": "http://localhost:5283", "FRONTEND_URL": "http://localhost:5283",
@@ -83,13 +95,15 @@ def _run(tmp_path, *, want_nameid: str | None, mail: str = "koo.park@example.com
            "AGENT_AUDIT_LOG_PATH": str(tmp_path / "audit.sqlite"), "JWT_KEYS_DIR": str(tmp_path / "jwt"),
            "JWT_AUTOGEN_KEYS": "true", "PROCEDURES_ARTIFACT_ROOT": str(tmp_path / "art"),
            "DELIB_ARCHIVE_ROOT": str(tmp_path / "delib"), "UPLOAD_STAGING_DIR": str(tmp_path / "stage")}
-    env.pop("SAML_WANT_NAMEID", None)
+    for k in ("SAML_WANT_NAMEID", "SAML_SUBJECT_SOURCE", "SAML_ATTR_NAME", "SAML_ATTR_DEPARTMENT"):
+        env.pop(k, None)
     if want_nameid is not None:
         env["SAML_WANT_NAMEID"] = want_nameid
-    r = subprocess.run([sys.executable, "-c", _E2E, mail], cwd=BACKEND, env=env, capture_output=True, text=True,
-                       timeout=120)
+    env.update(env_extra or {})
+    r = subprocess.run([sys.executable, "-c", _E2E, json.dumps(spec)], cwd=BACKEND, env=env, capture_output=True,
+                       text=True, timeout=120)
     assert r.returncode == 0, r.stderr[-2000:]
-    return json.loads(r.stdout.strip().splitlines()[-1])
+    return {**json.loads(r.stdout.strip().splitlines()[-1]), "stderr": r.stderr}
 
 
 needs_keys = pytest.mark.skipif(
@@ -97,6 +111,7 @@ needs_keys = pytest.mark.skipif(
     reason="개발용 SAML 키(backend/secrets/saml/*.key)가 없다 — 추적 파일이 아니다(scripts/gen_dev_certs.py)")
 
 
+# ── §2 NameID 없음 ──────────────────────────────────────────────────────────────────────────
 @needs_keys
 def test_기본값_그대로면_NameID_없는_Assertion_은_400_이다(tmp_path):
     """**운영에서 막던 그 줄의 재현** — 기본값을 바꾸지 않았다는 것도 같이 고정한다."""
@@ -106,7 +121,7 @@ def test_기본값_그대로면_NameID_없는_Assertion_은_400_이다(tmp_path)
 
 @needs_keys
 def test_NameID_를_요구하지_않으면_Mail_Claim_으로_로그인된다(tmp_path):
-    out = _run(tmp_path, want_nameid="false")
+    out = _run(tmp_path)
     assert out["status"] in (302, 303), out
     me = out["me"]
     assert out["me_status"] == 200, out
@@ -119,7 +134,41 @@ def test_NameID_를_요구하지_않으면_Mail_Claim_으로_로그인된다(tmp
 def test_Mail_Claim_의_대소문자가_달라도_로컬_계정_시절_소유가_이어진다(tmp_path):
     """AD 의 mail 값은 'Koo.Park@…' 처럼 대문자가 섞인다. 로컬 계정은 소문자로 저장되고 subject 가 곧 그 이메일이라, 정규화하지 않으면
     SAML 로 넘어온 같은 사람이 **다른 subject** 가 되어 대화·PAT·절차가 통째로 안 보인다(로컬 계정 브리지의 승계 약속이 깨진다)."""
-    out = _run(tmp_path, want_nameid="false", mail="Koo.Park@Example.COM ")
+    out = _run(tmp_path, mail="Koo.Park@Example.COM ")
     assert out["status"] in (302, 303), out
     assert out["me"]["email"] == "koo.park@example.com" and out["me"]["subject"] == "koo.park@example.com", out["me"]
     assert out["convs"] == ["로컬 계정 시절 대화"], out
+
+
+# ── §3 subject 고정 ─────────────────────────────────────────────────────────────────────────
+@needs_keys
+def test_IdP_가_NameID_를_켜도_식별자는_이메일_그대로다(tmp_path):
+    """**지뢰 제거** — 종전 `nameid or email` 은 NameID 가 오는 순간 식별자가 말없이 바뀌어 PAT·대화 소유가 끊겼다."""
+    out = _run(tmp_path, nameid="kpark01")
+    assert out["status"] in (302, 303), out
+    assert out["me"]["subject"] == "koo.park@example.com", out["me"]
+    assert out["convs"] == ["로컬 계정 시절 대화"], out
+
+
+@needs_keys
+def test_식별자_출처를_Claim_으로_고르면_그_값이다(tmp_path):
+    out = _run(tmp_path, env_extra={"SAML_SUBJECT_SOURCE": CLAIM + "LoginId"})
+    assert out["status"] in (302, 303), out
+    assert out["me"]["subject"] == "kpark01" and out["me"]["email"] == "koo.park@example.com", out["me"]
+
+
+@needs_keys
+def test_고른_식별자_출처가_없으면_이메일로_몰래_바꾸지_않고_거절한다(tmp_path):
+    """'nameid' 를 골랐는데 NameID 가 없다 — 이메일로 떨어지면 로그인마다 키가 바뀌어 한 사람이 둘로 갈린다."""
+    for source in ("nameid", CLAIM + "NoSuchClaim"):
+        out = _run(tmp_path, env_extra={"SAML_SUBJECT_SOURCE": source})
+        assert out["status"] == 400 and "SAML_SUBJECT_SOURCE" in out["body"], (source, out)
+
+
+# ── 검토 2차 ───────────────────────────────────────────────────────────────────────────────
+@needs_keys
+def test_Mail_Claim_이_없으면_NameID_로_몰래_떨어지지_않고_거절한다(tmp_path):
+    """IdP 가 NameID 를 켠 날 SAML_ATTR_EMAIL 이 어긋나 있으면(짧은 이름·URI 변경) 종전엔 subject·원장 키가 NameID 가 됐다."""
+    out = _run(tmp_path, nameid="kpark01", env_extra={"SAML_ATTR_EMAIL": "Mail"})
+    assert out["status"] == 400 and "SAML_ATTR_EMAIL" in out["body"] and CLAIM + "Mail" in out["body"], out
+    assert "koo.park@example.com" not in out["body"], "Claim 값은 응답에 안 싣는다"
