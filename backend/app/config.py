@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     # 전부 끊겼다(cae00 pat 65행이 전부 이메일형, 6차 요청 §3). 다른 값은 데이터 이전 계획과 함께 **의도적으로** 바꾼다 — 그 출처가
     # Assertion 에 없으면 이메일로 몰래 바꾸지 않고 로그인을 거절한다(로그인마다 키가 바뀌면 같은 지뢰다).
     saml_subject_source: str = "email"
+    # 부서(조직명) Claim — 비우면 안 받는다. 받으면 원장 `department`(표시용)를 IdP 값으로 덮는다. 권한 입력인 `affiliation`·groups·
+    # grants·status 는 **절대 안 건드린다** — 모르는 소속 값은 조용히 버려져 CAEG 사용자가 기본 권한으로 떨어진다(6차 요청 §4-B-4).
+    saml_attr_department: str = ""
     # ACS/SLS 경로 — AD-SSO 에 등록한 Endpoint Url 과 **글자 단위로** 같아야 한다(4차 변경 요청, 2026-09-29).
     # ⚠ ADFS 는 이 값을 인증 *전에* 검증하지 않는다 — 어긋나면 인증을 통과한 뒤 일반 오류 페이지로 끝나고 SP 에는
     #   아무 요청도 오지 않는다(조용한 실패). cae00 등록값은 개발·운영 모두 `/auth/callback` 이다 → .env SAML_ACS_PATH.

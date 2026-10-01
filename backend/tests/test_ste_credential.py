@@ -234,3 +234,35 @@ def test_헤더_인코딩이_터져도_500_이_아니라_502(make, monkeypatch):
     monkeypatch.setattr(mod, "_header_name", lambda name: name)
     c = make(_FakeSte(200, {"access_token": STE_TOKEN, "expires_in": 43200}))
     assert c.post("/systems/ste/credential", headers=_login(c, "boss@corp.com", name="홍길동")).status_code == 502
+
+
+# ── 이름 대체 사슬(6차 요청 §4-B-1) — 운영 ADFS 는 이름 Claim 이 없다 ─────────────────────────
+def test_세션에_이름이_없으면_원장_이름이_ste_로_건너간다(make):
+    """세션 JWT 가 이름을 박아 들고 다닌다 — /auth/me 만 고치면 ste 헤더는 빈 값으로 갔다. 요청마다 원장을 읽는 자리(deps.entitled)에서
+    대체하면 ste 헤더도 같이 따라온다(재로그인 불필요)."""
+    from urllib.parse import unquote
+
+    from app.auth.cookies import SESSION_COOKIE
+    from app.auth.provider import Principal
+    fake = _FakeSte(200, {"access_token": STE_TOKEN, "expires_in": 43200})
+    c = make(fake)
+    h = _login(c, "boss@corp.com", name="홍길동")                    # 원장 이름 = 홍길동
+    no_name = Principal(subject="boss@corp.com", email="boss@corp.com", display_name=None, groups=["portal-admin"])
+    c.cookies.set(SESSION_COOKIE, app.state.jwt_service.issue_session(no_name))   # SAML 처럼 이름 없는 세션
+    assert c.post("/systems/ste/credential", headers=h).status_code == 200
+    assert unquote(fake.calls[-1][1]["x-heax-user-name"]) == "홍길동"
+
+
+def test_이름_자리에_이메일이_박힌_토큰도_원장_이름으로_낫는다(make):
+    """PAT 은 이름이 없으면 이메일을 박는다(pat_verify) — 그 값이 진리값이라 원장 이름에 닿지 못했다(6차 검토 2차)."""
+    from urllib.parse import unquote
+
+    from app.auth.cookies import SESSION_COOKIE
+    from app.auth.provider import Principal
+    fake = _FakeSte(200, {"access_token": STE_TOKEN, "expires_in": 43200})
+    c = make(fake)
+    h = _login(c, "boss@corp.com", name="홍길동")
+    as_email = Principal(subject="boss@corp.com", email="boss@corp.com", display_name="Boss@Corp.com", groups=[])
+    c.cookies.set(SESSION_COOKIE, app.state.jwt_service.issue_session(as_email))
+    assert c.post("/systems/ste/credential", headers=h).status_code == 200
+    assert unquote(fake.calls[-1][1]["x-heax-user-name"]) == "홍길동"

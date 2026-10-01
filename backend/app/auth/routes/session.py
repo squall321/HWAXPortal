@@ -54,8 +54,13 @@ def complete_login(
     # 생성. 계정 행은 SSO 전환 후에도 남는다(로컬 계정 브리지의 승계 보장). 실패해도
     # 로그인은 막지 않는다 — 원장은 부기록이다.
     if user_store is not None and getattr(principal, "email", None):
+        # 부서는 여기서 수확해 원장에 적어야 한다 — 원시 Claim(principal.attributes)은 세션 JWT 에 안 실려 콜백을 벗어나면
+        # 사라진다(6차 요청 §4-B-2). 이름은 적지 않아도 읽을 때 대체한다(deps.entitled) — 원장 이름이 비었을 때만 채운다.
+        dept_vals = (getattr(principal, "attributes", None) or {}).get(settings.saml_attr_department) \
+            if settings.saml_attr_department else None
         with contextlib.suppress(Exception):
-            user_store.note_sso_login(email=principal.email, name=principal.display_name)
+            user_store.note_sso_login(email=principal.email, name=principal.display_name,
+                                      department=(dept_vals or [None])[0])
     return_to = "/"
     if expected_state:
         try:

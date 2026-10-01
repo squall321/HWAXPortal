@@ -402,20 +402,31 @@ class UserStore:
         return u
 
     # ── SSO 연동(미래) ──────────────────────────────────────────────────────
-    def note_sso_login(self, *, email: str, name: str | None) -> None:
+    def note_sso_login(self, *, email: str, name: str | None, department: str | None = None) -> None:
         """SSO 콜백 훅 — 같은 이메일 행이 있으면 연결(auth_source 갱신), 없으면 원장에
-        생성(active — IdP 가 이미 신원을 보증). 계정·비밀번호 해시는 남는다."""
+        생성(active — IdP 가 이미 신원을 보증). 계정·비밀번호 해시는 남는다.
+
+        이름은 **비어 있을 때만** 채운다 — 사람이 적은 이름을 보존하고, IdP 가 이름을 안 주는 동안 들어온 사람도 나중에 Claim 이
+        오면 스스로 낫는다. 예전엔 새 행에 이메일을 이름으로 박고 UPDATE 는 이름을 안 건드려 영구히 이메일로 굳었다 — 그래서
+        이름이 이메일과 같은 행도 빈 것으로 본다(6차 요청 §4-B-3). 읽을 때의 대체는 deps.entitled 가 한다.
+        부서는 IdP 값이 있으면 덮는다(사람 입력 표기가 21종으로 갈려 있다), 없으면 그대로 둔다.
+        ⚠ affiliation·groups·grants·status 는 **절대 안 건드린다** — 권한 입력이다(§4-B-4)."""
         email = norm_email(email)
+        name = (name or "").strip()[:80]
+        dept = (department or "").strip()[:80] or None
         now = _now()
         with self._lock:
             if self.get(email) is None:
                 self._conn.execute(
                     "INSERT INTO users (email, name, groups, status, auth_source, created_at, "
-                    "approved_at, approved_by, last_login_at) "
-                    "VALUES (?, ?, '[]', 'active', 'sso', ?, ?, 'sso', ?)",
-                    (email, (name or email)[:80], now, now, now))
+                    "approved_at, approved_by, last_login_at, department) "
+                    "VALUES (?, ?, '[]', 'active', 'sso', ?, ?, 'sso', ?, ?)",
+                    (email, name, now, now, now, dept or ""))
             else:
                 self._conn.execute(
-                    "UPDATE users SET auth_source = 'sso', last_login_at = ? WHERE email = ?",
-                    (now, email))
+                    "UPDATE users SET auth_source = 'sso', last_login_at = ?, "
+                    "name = CASE WHEN ? <> '' AND (TRIM(name) = '' OR lower(TRIM(name)) = lower(email)) "
+                    "THEN ? ELSE name END, "
+                    "department = COALESCE(?, department) WHERE email = ?",
+                    (now, name, name, dept, email))
             self._commit()

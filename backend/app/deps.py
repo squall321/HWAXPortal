@@ -67,7 +67,19 @@ def entitled(request: Request, principal: Principal) -> Principal:
         raise AuthError("이 계정은 정지되었습니다 — 관리자에게 문의하세요", status_code=403)
     ents = compute(access.get(), groups=principal.groups, row=row)
     request.state.entitlements = ents
-    return principal.model_copy(update={"groups": with_entitlements(principal.groups, ents)})
+    # 이름 대체 사슬 — IdP 이름 → 원장 이름 → 이메일(6차 요청 §4-B-1). 운영 ADFS 는 이름 Claim 을 안 준다. 세션 JWT 가 이름을
+    # 박아 들고 다니므로 /auth/me 만 고치면 화면만 낫는다 — 요청마다 원장 행을 이미 읽는 이 자리에서 고치면 PAT·하위 서비스
+    # 토큰·ste 헤더가 같이 따라오고 재로그인이 필요 없다. ⚠ 진리값으로 본다 — 값 없는 Claim 은 None 이 아니라 "" 다.
+    # 원장 이름은 **active 행에서만** — pending 행의 이름은 누구나(비로그인) 남의 이메일로 가입해 정할 수 있고, 그 사람이 SSO 로
+    # 들어오면 서명된 하위 토큰·PAT 에 실렸다(6차 검토 2차). active 는 관리자 승인·부트스트랩·SSO 생성이다. 들고 온 이름이 이메일과
+    # 같으면 빈 것으로 본다 — PAT 은 이름이 없으면 이메일을 박는다(pat_verify), 그래도 원장 이름으로 낫게.
+    given = principal.display_name
+    if given and principal.email and given.strip().lower() == principal.email.strip().lower():
+        given = None
+    ledger = (row or {}).get("name") if (row or {}).get("status") == "active" else None
+    name = given or ledger or principal.email or None
+    return principal.model_copy(update={"groups": with_entitlements(principal.groups, ents),
+                                        "display_name": name})
 
 
 def ensure(principal: Principal, *keys: str, any_of: bool = False) -> None:

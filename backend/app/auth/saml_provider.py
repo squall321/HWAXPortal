@@ -5,6 +5,8 @@ SAMLResponse at the ACS (callback). Maps the assertion attributes to a Principal
 configurable attribute names. Selected by AUTH_PROVIDER=saml.
 """
 
+import logging
+
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
@@ -15,6 +17,8 @@ from app.auth.provider import Principal
 from app.auth.saml_sp import build_saml_settings, prepare_request, prepare_static_request
 from app.auth.user_store import norm_email
 from app.config import Settings
+
+log = logging.getLogger("hwax.saml")
 
 
 def _first(values: list[str] | None) -> str | None:
@@ -90,6 +94,11 @@ class SamlProvider:
         if not email:
             raise AuthError(f"SAML assertion has no email claim {s.saml_attr_email!r} (SAML_ATTR_EMAIL) — "
                             f"received claims: {sorted(attrs)}", status_code=400)
+        # 지정한 Claim 이 Assertion 에 없으면 한 줄 남긴다 — 이름 Claim 이 릴리즈됐는데 이름이 대소문자·형식(`displayName` 대
+        # `…/DisplayName`)이 어긋나면 대체 사슬이 조용히 원장으로 떨어지고 아무도 모른다(6차 요청 §4-B-5). Claim **이름만** 적는다.
+        for env_key, claim in (("SAML_ATTR_NAME", s.saml_attr_name), ("SAML_ATTR_DEPARTMENT", s.saml_attr_department)):
+            if claim and claim not in attrs:
+                log.warning("SAML: %s=%r 이 Assertion 에 없다 — 받은 Claim: %s", env_key, claim, sorted(attrs))
         return Principal(
             subject=_subject(s.saml_subject_source, email=email, nameid=nameid, attrs=attrs),
             email=email,

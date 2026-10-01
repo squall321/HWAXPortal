@@ -165,7 +165,63 @@ def test_고른_식별자_출처가_없으면_이메일로_몰래_바꾸지_않�
         assert out["status"] == 400 and "SAML_SUBJECT_SOURCE" in out["body"], (source, out)
 
 
+# ── §4-B 이름·부서 대체 사슬 ────────────────────────────────────────────────────────────────
+SEED = [{"email": "koo.park@example.com", "name": "박구", "department": "옛 표기 부서", "affiliation": "CAEG"}]
+
+
+@needs_keys
+def test_이름_Claim_이_없으면_원장_이름이_나온다(tmp_path):
+    out = _run(tmp_path, seed=SEED)
+    assert out["me"]["display_name"] == "박구", out["me"]
+
+
+@needs_keys
+def test_원장에도_없는_새_사용자는_이메일이_이름이다_그리고_원장_이름은_비워_둔다(tmp_path):
+    """원장에 이메일을 이름으로 박으면 나중에 Claim 이 와도 영구히 안 고쳐진다(§4-B-3) — 비워 두고 읽을 때 대체한다."""
+    out = _run(tmp_path)
+    assert out["me"]["display_name"] == "koo.park@example.com", out["me"]
+    assert out["row"]["name"] == "", out["row"]
+
+
+@needs_keys
+def test_이름_Claim_이_오면_그것이_이긴다_원장은_보존한다(tmp_path):
+    out = _run(tmp_path, seed=SEED, extra={"DisplayName": "Park Koo"},
+               env_extra={"SAML_ATTR_NAME": CLAIM + "DisplayName"})
+    assert out["me"]["display_name"] == "Park Koo", out["me"]
+    assert out["row"]["name"] == "박구", "사람이 적은 원장 이름은 IdP 값으로 덮지 않는다"
+
+
+@needs_keys
+def test_부서_Claim_은_원장_부서를_덮고_소속은_건드리지_않는다(tmp_path):
+    """§4-B-4 — 부서는 표시용이라 IdP 값으로 덮는다. 소속(affiliation)은 권한 입력이라 IdP 가 건드리면 CAEG 가 기본 권한으로 떨어진다."""
+    out = _run(tmp_path, seed=SEED, extra={"DeptName": "재료시험팀"},
+               env_extra={"SAML_ATTR_DEPARTMENT": CLAIM + "DeptName"})
+    assert out["me"]["department"] == "재료시험팀", out["me"]
+    assert out["row"]["affiliation"] == "CAEG" and out["me"]["affiliation"] == "CAEG", out
+    assert out["row"]["status"] == "active" and out["row"]["groups"] == ["portal-admin"], out["row"]
+
+
+@needs_keys
+def test_지정한_Claim_이_없으면_첫_로그인에_경고를_남긴다_값은_안_남긴다(tmp_path):
+    """§4-B-5 — 이름 Claim 이 릴리즈됐는데 대소문자·형식이 어긋나면 대체 사슬이 조용히 원장으로 떨어진다. 이름만 적고 값은 안 적는다."""
+    out = _run(tmp_path, mail="secret.value@example.com", env_extra={
+        "SAML_ATTR_NAME": "displayName", "SAML_ATTR_DEPARTMENT": CLAIM + "DeptName"})
+    assert out["status"] in (302, 303), out
+    err = out["stderr"]
+    assert "SAML_ATTR_NAME='displayName'" in err and "SAML_ATTR_DEPARTMENT=" in err, err[-1500:]
+    assert CLAIM + "Mail" in err, "받은 Claim 이름 목록이 있어야 .env 를 확정할 수 있다"
+    assert "secret.value" not in err, "Claim 값(개인정보)은 로그에 안 남긴다"
+
+
 # ── 검토 2차 ───────────────────────────────────────────────────────────────────────────────
+@needs_keys
+def test_승인_안_된_가입_행의_이름은_대체_사슬에_안_쓴다(tmp_path):
+    """비로그인 가입은 남의 이메일로도 된다(승인 대기). 그 행의 이름이 진짜 주인의 SSO 세션·서명된 하위 토큰·PAT 에 실리면 안 된다."""
+    out = _run(tmp_path, seed=[{"email": "koo.park@example.com", "name": "가로챈 이름", "pending": True}])
+    assert out["status"] in (302, 303), out
+    assert out["me"]["display_name"] == "koo.park@example.com", out["me"]
+
+
 @needs_keys
 def test_Mail_Claim_이_없으면_NameID_로_몰래_떨어지지_않고_거절한다(tmp_path):
     """IdP 가 NameID 를 켠 날 SAML_ATTR_EMAIL 이 어긋나 있으면(짧은 이름·URI 변경) 종전엔 subject·원장 키가 NameID 가 됐다."""
