@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     saml_attr_email: str = "email"
     saml_attr_name: str = "displayName"
     saml_attr_groups: str = "memberOf"
+    # NameID 를 요구하는가. 운영 ADFS(2026-10-01 SSO 운영팀 실측 nameIdPresent=false)는 NameID 를 **보내지 않는다** —
+    # python3-saml 은 이 값이 참이면 NameID 부재를 검증 실패로 친다(서명·시간·Audience 를 다 통과한 Assertion 이 400).
+    # 끄면 식별은 Claim 으로 한다(SAML_ATTR_EMAIL). 기본은 종전대로 참(6차 요청 §2).
+    saml_want_nameid: bool = True
     # ACS/SLS 경로 — AD-SSO 에 등록한 Endpoint Url 과 **글자 단위로** 같아야 한다(4차 변경 요청, 2026-09-29).
     # ⚠ ADFS 는 이 값을 인증 *전에* 검증하지 않는다 — 어긋나면 인증을 통과한 뒤 일반 오류 페이지로 끝나고 SP 에는
     #   아무 요청도 오지 않는다(조용한 실패). cae00 등록값은 개발·운영 모두 `/auth/callback` 이다 → .env SAML_ACS_PATH.

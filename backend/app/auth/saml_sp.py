@@ -61,7 +61,7 @@ def build_saml_settings(settings: Settings) -> dict:
         "security": {
             "wantAssertionsSigned": True,
             "wantMessagesSigned": False,
-            "wantNameId": True,
+            "wantNameId": settings.saml_want_nameid,   # 운영 ADFS 는 NameID 가 없다 — config 주석·6차 요청 §2
             "requestedAuthnContext": False,
             "signatureAlgorithm": OneLogin_Saml2_Constants.RSA_SHA256,
             "digestAlgorithm": OneLogin_Saml2_Constants.SHA256,

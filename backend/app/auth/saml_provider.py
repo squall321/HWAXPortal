@@ -8,10 +8,12 @@ configurable attribute names. Selected by AUTH_PROVIDER=saml.
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
+from onelogin.saml2.errors import OneLogin_Saml2_Error, OneLogin_Saml2_ValidationError
 
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.auth.saml_sp import build_saml_settings, prepare_request, prepare_static_request
+from app.auth.user_store import norm_email
 from app.config import Settings
 
 
@@ -42,7 +44,13 @@ class SamlProvider:
         form = await request.form()
         post_data = {k: str(v) for k, v in form.items()}
         auth = self._auth(request, post_data)
-        auth.process_response()
+        # python3-saml 은 검증 실패를 두 길로 낸다 — get_errors() 와 **예외**. is_valid() 를 통과한 뒤 store_valid_response() 가
+        # NameID 를 꺼내다 던지는 것(wantNameId 참 + NameID 없음 — 운영 ADFS 모양)과 SAMLResponse 없는 POST 는 예외라, 잡지 않으면
+        # 핸들링 없는 500 트레이스백이 됐다(6차 요청 §2 를 재현하다 발견 — 요청서는 400 으로 읽었다). 실패는 400 과 사유로 낸다.
+        try:
+            auth.process_response()
+        except (OneLogin_Saml2_Error, OneLogin_Saml2_ValidationError) as exc:
+            raise AuthError(f"SAML response invalid: {exc}", status_code=400) from exc
 
         errors = auth.get_errors()
         if errors:
@@ -61,7 +69,9 @@ class SamlProvider:
         attrs = auth.get_attributes()
         s = self._settings
         nameid = auth.get_nameid()
-        email = _first(attrs.get(s.saml_attr_email)) or nameid
+        # 원장·로컬 계정과 같은 정규화 — subject 가 곧 이메일인 사람(NameID 없는 운영 ADFS)이 'Koo.Park@…' 로 오면 로컬 계정 시절의
+        # 소문자 subject 와 갈라져 대화·PAT·절차가 통째로 안 보인다(로컬 계정 브리지의 승계 약속, 6차 요청 검토).
+        email = norm_email(_first(attrs.get(s.saml_attr_email)) or nameid or "")
         if not email:
             raise AuthError("SAML assertion missing email/NameID", status_code=400)
         return Principal(
