@@ -1192,7 +1192,7 @@ fi
 _dist_src="$(cat "$SELF_REPO/frontend/dist/.build-src" 2>/dev/null || true)"
 _head_src="$(git -C "$SELF_REPO" rev-parse HEAD:frontend 2>/dev/null || true)"
 if [ -z "$_dist_src" ]; then
-  bad "SPA dist 에 빌드 표식(.build-src)이 없다 — dev 에서 images-to-drive.sh 를 다시 돌려 올린다(비치명)"
+  bad "SPA dist 에 빌드 표식(.build-src)이 없다 — dev 에서 ./infra/scripts/build-all-to-drive.sh portal 로 다시 빌드해 올린다(비치명)"
 elif [ -n "$_head_src" ] && [ "$_dist_src" != "$_head_src" ]; then
   fail "SPA dist 가 지금 소스와 다르다(dist=${_dist_src:0:12} · HEAD=${_head_src:0:12}) — dev 에서 pnpm build + images-to-drive.sh 뒤 다시 배포한다"
 else
