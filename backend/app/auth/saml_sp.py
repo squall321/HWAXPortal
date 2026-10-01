@@ -31,7 +31,7 @@ def _pem_body(pem: str) -> str:
 def build_saml_settings(settings: Settings) -> dict:
     if settings.saml_idp_metadata_url:
         idp_data = OneLogin_Saml2_IdPMetadataParser.parse_remote(
-            settings.saml_idp_metadata_url, validate_cert=False
+            settings.saml_idp_metadata_url, validate_cert=settings.saml_idp_metadata_validate_cert
         )
     else:
         idp_data = OneLogin_Saml2_IdPMetadataParser.parse(

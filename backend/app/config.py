@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     saml_sp_key_path: str = "secrets/saml/sp.key"
     saml_idp_metadata_path: str = "config/saml/dev/mock_idp_metadata.xml"  # DEV: mock IdP
     saml_idp_metadata_url: str | None = None  # PROD: real Samsung AD metadata URL (overrides path)
+    # 그 URL 의 TLS 를 검증한다 — 메타데이터에 **IdP 서명 인증서**가 들어 있어, 중간자가 갈아끼우면 위조 Assertion 이 통과한다
+    # (5차 요청 §4, 예전엔 무조건 검증 안 함). 사내 CA 면 끄지 말고 SSL_CERT_FILE 로 그 CA 를 준다 — 끄는 것은 최후 수단이다.
+    saml_idp_metadata_validate_cert: bool = True
     # Attribute mapping: which SAML assertion attribute fills which Principal field.
     # GO-LIVE: set these to the names Samsung AD actually emits.
     saml_attr_email: str = "email"
