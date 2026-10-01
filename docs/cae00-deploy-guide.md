@@ -533,6 +533,9 @@ $EDITOR infra/.env            # RA_HOST=<RA 주(A) 서버 주소>   ← 요청�
 - `routes.local.env` 에 `report-archive=http://<RA_HOST>:3000/`(끝 `/` = 접두어 STRIP) → §2 가 nginx 를 다시 만든다.
   `loc_extras` 에 `report-archive` 가 들어가 첨부 1GB·AI 작성 10분·스트리밍이 통한다(413·504 방지).
 - `backend/.env` 의 `RA_BASE_URL`, 게이트웨이 `provision.env` 의 `RA_MCP_URL` — §5 가 config 와 다르면 재프로비저닝한다.
+- **AI Ready Portal(ARP)** 도 같은 방식이다 — `infra/.env` 에 `ARP_HOST=<ARP 서버 주소>`(포트가 3001 이 아니면 `ARP_PORT`)를 두면
+  **1f** 가 포털 타일 주소(`backend/config/systems.local.yaml` 의 `arp`)와 게이트웨이 `provision.env` 의 `ARP_BASE` 를 같이 적는다
+  (§5 가 게이트웨이 config 의 arp 주소가 다르면 재프로비저닝). 타일은 직결 링크 그대로다 — 포털 경유(`/arp/`)는 보류(docs/arp-binding).
 - `services.yaml` 의 로컬 RA 두 항목(`report-archive`·`reportarchive-mcp`)은 `RA_HOST` 가 있는 박스에서 **이 박스 대상이
   아니다**(`unless_env`) — 스택 재기동이 **구 RA 를 되살리지 않는다**(두 DB 가 갈라지던 위험).
 - **LLM 설정 정본 이관** — 포털 챗·심의·PaperIngest 는 LLM 주소를 형제 `ReportArchive/.env` 에서 상속했다. 1e 가 그 값을
