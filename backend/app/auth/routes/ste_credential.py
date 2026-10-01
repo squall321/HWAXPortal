@@ -22,6 +22,8 @@
 from __future__ import annotations
 
 import logging
+import string
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -42,6 +44,14 @@ SYSTEM_ID = "ste"
 # ste 쪽 시한(15초)은 넉넉하다 — 계정 생성 + PAT 발급뿐이라 원래 수십 ms 다. 길게 잡는
 # 이유는 SSH 터널 경유일 때의 첫 연결 지연이고, 그래도 브라우저를 매달아 둘 수는 없다.
 TIMEOUT_S = 15.0
+# 이름 헤더에서 그대로 두는 문자 — 출력 가능한 ASCII 에서 `%` 만 뺀다. httpx 는 헤더 값을 ascii 로 인코딩해 한글 이름이면
+# UnicodeEncodeError 로 터졌다(cae00 145회, 5차 요청서 §1). 비ASCII 와 `%` 만 퍼센트 인코딩하면 ASCII 이름은 한 글자도 안 바뀌어
+# 옛 판 ste 도 그대로 읽고, 새 ste 는 unquote 한다 — 게이트웨이의 x-hwax-user 와 같은 규칙(docs/change-request-5 D-1).
+_NAME_SAFE = "".join(c for c in string.printable if c not in "%\t\n\r\x0b\x0c")
+
+
+def _header_name(name: str) -> str:
+    return quote(name or "", safe=_NAME_SAFE)
 
 
 class SteCredential(BaseModel):
@@ -72,13 +82,15 @@ async def ste_credential(
     headers = {
         "X-Heax-Gateway-Secret": settings.ste_sso_secret,
         "X-Heax-User-Email": principal.email,
-        "X-Heax-User-Name": principal.display_name or "",
+        "X-Heax-User-Name": _header_name(principal.display_name or ""),
         "X-Heax-Client": "hwax-portal",
     }
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
             r = await client.post(url, headers=headers)
-    except httpx.HTTPError as exc:
+    # UnicodeEncodeError 는 httpx.HTTPError 의 하위가 아니다(ValueError 쪽) — 헤더 값이 비ASCII 면 여기를 빠져나가 핸들링 없는 500
+    # 트레이스백이 됐다(cae00 145회). 이름은 위에서 인코딩하지만, 다른 값이 비ASCII 가 되는 날을 위한 방어선이다(5차 §1-b).
+    except (httpx.HTTPError, UnicodeEncodeError) as exc:
         # **조용히 빈 토큰을 돌려주지 않는다.** 그러면 브라우저는 자격을 받은 줄 알고
         # ste 로 갔다가 로그인 화면을 보고, 원인은 아무 데도 안 남는다.
         log.warning("ste sso call failed: %s", type(exc).__name__)

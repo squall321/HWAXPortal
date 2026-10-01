@@ -66,8 +66,9 @@ def make(tmp_path, monkeypatch):
     app.dependency_overrides.pop(get_settings, None)
 
 
-def _login(c, email, *, admin=False):
-    c.post("/auth/local/signup", json={"email": email, "name": email, "password": "pw123456"})
+def _login(c, email, *, admin=False, name=None):
+    # 이름 기본값이 이메일(ASCII)이라 비ASCII 이름 경로를 한 번도 안 탔다 — 한글 이름 사용자만 500 이었다(5차 §1-c).
+    c.post("/auth/local/signup", json={"email": email, "name": name or email, "password": "pw123456"})
     assert c.post("/auth/local/login",
                   json={"email": email, "password": "pw123456"}).status_code == 200
     return {"X-CSRF-Token": c.cookies.get("hwax_csrf")}
@@ -202,3 +203,34 @@ def test_자격_중계는_접속_원장에_자동_갱신으로_남는다(make):
     rows = app.state.agent_audit.query_access(email="boss@corp.com", service="ste", since=0, include_auto=True)
     assert rows and rows[0]["detail"] == "primer"
     assert not app.state.agent_audit.query_access(email="boss@corp.com", service="ste", since=0)
+
+
+# ── 한글 이름(5차 요청서 §1 — cae00 145회 500) ─────────────────────────────────
+def test_한글_이름_사용자도_자격을_받고_이름이_그대로_건너간다(make):
+    """httpx 는 헤더 값을 ascii 로 인코딩한다 — 한글 이름이면 UnicodeEncodeError 로 500 이었다. 이름은 퍼센트 인코딩해 보내고
+    ste 가 되푼다(docs/change-request-5 D-1)."""
+    from urllib.parse import unquote
+    fake = _FakeSte(200, {"access_token": STE_TOKEN, "expires_in": 43200})
+    c = make(fake)
+    r = c.post("/systems/ste/credential", headers=_login(c, "boss@corp.com", name="홍길동"))
+    assert r.status_code == 200, r.text
+    sent = fake.calls[-1][1]["x-heax-user-name"]
+    assert sent.isascii() and unquote(sent) == "홍길동"
+
+
+def test_ASCII_이름은_한_글자도_안_바뀐다(make):
+    """옛 판 ste(unquote 없음)가 남아 있어도 ASCII 이름 사용자에게는 아무 변화가 없어야 한다."""
+    fake = _FakeSte(200, {"access_token": STE_TOKEN, "expires_in": 43200})
+    c = make(fake)
+    assert c.post("/systems/ste/credential",
+                  headers=_login(c, "boss@corp.com", name="Koo Park (CAE) a&b")).status_code == 200
+    assert fake.calls[-1][1]["x-heax-user-name"] == "Koo Park (CAE) a&b"
+
+
+def test_헤더_인코딩이_터져도_500_이_아니라_502(make, monkeypatch):
+    """§1-b — UnicodeEncodeError 는 httpx.HTTPError 가 아니라 except 를 빠져나가 핸들링 없는 500 이 됐다.
+    이름 인코딩을 일부러 끄고(다른 헤더 값이 비ASCII 가 되는 날의 모양) 설계대로 502 인지 본다."""
+    from app.auth.routes import ste_credential as mod
+    monkeypatch.setattr(mod, "_header_name", lambda name: name)
+    c = make(_FakeSte(200, {"access_token": STE_TOKEN, "expires_in": 43200}))
+    assert c.post("/systems/ste/credential", headers=_login(c, "boss@corp.com", name="홍길동")).status_code == 502
