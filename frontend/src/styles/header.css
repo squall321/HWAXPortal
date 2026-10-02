@@ -1,0 +1,229 @@
+/* 앱 헤더와 드롭다운 메뉴 — 토큰만 쓴다. 링크는 줄바꿈하지 않는다(종전엔 1280px 에서 '심/의' 'Sign/out' 으로 쪼개졌다). */
+.app-header {
+  position: relative;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  height: var(--hdr-h);
+  padding: 0 var(--sp-5);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  color: var(--fg);
+  font-weight: 700;
+  font-size: var(--fs-15);
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.app-brand-mark {
+  width: 24px;
+  height: 24px;
+}
+.app-brand-sub {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.app-nav a,
+.hdr-sheet a {
+  flex: none;
+  padding: 6px var(--sp-3);
+  border-radius: var(--r-md);
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+.app-nav a:hover,
+.hdr-sheet a:hover {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.app-nav a.active,
+.hdr-sheet a.active {
+  color: var(--fg);
+  font-weight: 600;
+  background: var(--surface-2);
+}
+
+.app-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  flex: none;
+}
+
+/* ── 드롭다운 메뉴 ── */
+.menu {
+  position: relative;
+}
+.menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.menu-btn:hover,
+.menu-btn[aria-expanded='true'] {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.menu-chev {
+  width: 14px;
+  height: 14px;
+  opacity: 0.7;
+}
+.menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 220px;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-3);
+  z-index: 60;
+  animation: menu-in 0.12s ease-out;
+}
+.menu-pop [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-14);
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.menu-pop [role='menuitem']:hover,
+.menu-pop [role='menuitem']:focus-visible,
+.menu-pop [role='menuitem'].active {
+  background: var(--surface-3);
+  outline: none;
+}
+.menu-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+}
+.menu-head {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 4px;
+}
+.menu-head strong {
+  font-size: var(--fs-14);
+}
+.menu-head span {
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-pop {
+    animation: none;
+  }
+}
+
+/* ── 계정 버튼 ── */
+.hdr-account .menu-btn {
+  padding-left: 4px;
+}
+.hdr-avatar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+  font-size: var(--fs-12);
+  font-weight: 700;
+}
+.hdr-name {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 좁은 화면 — 이름을 숨기고(1100 미만), 주 메뉴·관리를 시트로 접는다(900 미만) ── */
+.hdr-burger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+.hdr-burger svg {
+  width: 18px;
+  height: 18px;
+}
+.hdr-sheet {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--e-2);
+}
+@media (max-width: 1099px) {
+  .hdr-name {
+    display: none;
+  }
+}
+@media (max-width: 899px) {
+  .app-header {
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4);
+  }
+  .app-nav,
+  .hdr-admin {
+    display: none;
+  }
+  .hdr-burger {
+    display: inline-flex;
+  }
+}

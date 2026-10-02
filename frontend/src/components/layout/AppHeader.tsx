@@ -1,117 +1,144 @@
+// 앱 헤더 — [브랜드] 주 메뉴(챗·심의·앱·절차) …… [관리 ▾](관리자) [계정 ▾]. 좁으면 주 메뉴를 시트로 접는다(docs/ui-refresh 단계 2)
 import { useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { listSystems, type SystemTile } from '../../api/systems.api';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
+import { Menu, MenuSep } from '../ui/Menu';
+import '../../styles/header.css';
 
-// 화면 전환마다 AppShell 이 재마운트돼 카탈로그를 다시 받지 않게 모듈 수준에서 한 번만 받는다.
-let catalogOnce: Promise<SystemTile[]> | null = null;
-function loadCatalogOnce(): Promise<SystemTile[]> {
-  if (!catalogOnce) {
-    catalogOnce = listSystems().catch((err) => {
-      catalogOnce = null; // 실패는 캐시하지 않는다.
-      throw err;
-    });
-  }
-  return catalogOnce;
+type Item = { to: string; label: string; end?: boolean };
+
+function BrandMark() {
+  return (
+    <svg className="app-brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="var(--primary)" />
+      <path d="M10 9v14M22 9v14M10 16h12" stroke="#fff" strokeWidth="3" strokeLinecap="round" fill="none" />
+    </svg>
+  );
 }
 
-const navLinkStyle = ({ isActive }: { isActive: boolean }) => ({
-  color: isActive ? 'var(--fg)' : 'var(--muted)',
-  textDecoration: 'none',
-  fontSize: '0.9rem',
-  fontWeight: isActive ? 700 : 500,
-  padding: '0.32rem 0.72rem',
-  borderRadius: '8px',
-  background: isActive ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-});
+function Chevron() {
+  return (
+    <svg className="menu-chev" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export function AppHeader() {
   const { user, logout } = useAuth();
   // 권한이 없는 메뉴는 비활성으로 두지 않고 아예 숨긴다(사용자 요구 — docs/access-control).
   const can = useCan();
-  // '리스크 심사' 는 카탈로그에 hwax-risk 타일이 보이는 사용자에게만 뜬다(env 플래그 없음).
-  const [hasRiskTile, setHasRiskTile] = useState(false);
-  useEffect(() => {
-    if (!user) return;
-    loadCatalogOnce()
-      .then((systems) => setHasRiskTile(systems.some((s) => s.id === 'hwax-risk')))
-      .catch(() => setHasRiskTile(false));
-  }, [user]);
+  const [sheet, setSheet] = useState(false);
+  const { pathname } = useLocation();
+  useEffect(() => setSheet(false), [pathname]);
+
+  if (!user) {
+    return (
+      <header className="app-header">
+        <span className="app-brand">
+          <BrandMark />
+          HWAX <span className="app-brand-sub">Portal</span>
+        </span>
+      </header>
+    );
+  }
+
+  const isAdmin = user.groups.includes('portal-admin');
+  // 같은 페이지가 PAT 발급과 Report Archive 연결(내 조직 선택)을 담는다 — 토큰 권한이 없어도 RA 를 쓰는 사람은 들어가야 한다.
+  const canTokens = can('feat:api-token') || can('plat:reportarchive');
+  const primary: Item[] = [
+    { to: '/', label: '챗', end: true },
+    ...(can('feat:deliberation') ? [{ to: '/deliberate', label: '심의' }] : []),
+    { to: '/apps', label: '앱' },
+    ...(can('feat:procedures') ? [{ to: '/procedures', label: '절차' }] : []),
+  ];
+  const admin: Item[] = isAdmin
+    ? [
+        { to: '/admin/users', label: '사용자 관리' },
+        { to: '/admin/access', label: '접속 이력' },
+      ]
+    : [];
+  const account: Item[] = [
+    { to: '/access', label: '내 권한' },
+    ...(canTokens ? [{ to: '/tokens', label: can('feat:api-token') ? '개인 토큰' : '연결 설정' }] : []),
+    { to: '/updates', label: '업데이트 이력' },
+  ];
+  const name = (user.display_name || '').trim() || user.email.split('@')[0];
+
   return (
-    <header
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        // 전체화면 챗('/')이 calc(100dvh - var(--hdr-h))로 정확히 채우도록 높이를 토큰에 고정.
-        height: 'var(--hdr-h)',
-        padding: '0 1.5rem',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--card)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
-        <strong style={{ color: 'var(--fg)' }}>HWAX Portal</strong>
-        <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>hwax.sec.samsung.net</span>
-        {user && (
-          <nav style={{ display: 'flex', gap: '0.25rem' }}>
-            {/* 챗이 메인('/'), 앱 카탈로그가 보조('/apps'). */}
-            <NavLink to="/" style={navLinkStyle} end>
-              챗
-            </NavLink>
-            {can('feat:deliberation') && (
-              <NavLink to="/deliberate" style={navLinkStyle}>
-                심의
+    <header className="app-header">
+      <NavLink to="/" end className="app-brand" aria-label="HWAX Portal — 챗으로">
+        <BrandMark />
+        HWAX <span className="app-brand-sub">Portal</span>
+      </NavLink>
+
+      <nav className="app-nav" aria-label="주 메뉴">
+        {primary.map((i) => (
+          <NavLink key={i.to} to={i.to} end={i.end}>
+            {i.label}
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className="app-right">
+        {admin.length > 0 && (
+          <Menu className="hdr-admin" label={<>관리<Chevron /></>}>
+            {admin.map((i) => (
+              <NavLink key={i.to} to={i.to} role="menuitem">
+                {i.label}
               </NavLink>
-            )}
-            <NavLink to="/apps" style={navLinkStyle}>
-              앱
-            </NavLink>
-            {can('feat:procedures') && (
-              <NavLink to="/procedures" style={navLinkStyle}>
-                절차
-              </NavLink>
-            )}
-            {/* 같은 페이지가 PAT 발급과 Report Archive 연결(내 조직 선택)을 담는다 — 토큰 권한이
-                없어도 RA 를 쓰는 사람은 들어갈 수 있어야 한다(못 들어가면 조직을 못 고른다). */}
-            {(can('feat:api-token') || can('plat:reportarchive')) && (
-              <NavLink to="/tokens" style={navLinkStyle}>
-                {can('feat:api-token') ? 'API 토큰' : '연결 설정'}
-              </NavLink>
-            )}
-            {/* 매일 무엇이 바뀌었는지 아무 때나 볼 수 있는 자리 — 팝업은 새 것만 알려 준다. */}
-            <NavLink to="/updates" style={navLinkStyle}>
-              업데이트
-            </NavLink>
-            <NavLink to="/access" style={navLinkStyle}>
-              내 권한
-            </NavLink>
-            {hasRiskTile && (
-              <NavLink to="/risk" style={navLinkStyle}>
-                리스크 심사
-              </NavLink>
-            )}
-            {user.groups.includes('portal-admin') && (
-              <NavLink to="/admin/users" style={navLinkStyle}>
-                사용자 관리
-              </NavLink>
-            )}
-            {user.groups.includes('portal-admin') && (
-              <NavLink to="/admin/access" style={navLinkStyle}>
-                접속 이력
-              </NavLink>
-            )}
-          </nav>
+            ))}
+          </Menu>
         )}
-      </div>
-      {user && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{user.email}</span>
-          <button onClick={() => void logout()} className="btn-secondary">
+        <Menu
+          className="hdr-account"
+          ariaLabel={`계정 메뉴 — ${user.email}`}
+          label={
+            <>
+              <span className="hdr-avatar" aria-hidden="true">{name.slice(0, 1)}</span>
+              <span className="hdr-name">{name}</span>
+              <Chevron />
+            </>
+          }
+        >
+          <div className="menu-head">
+            <strong>{name}</strong>
+            <span>{user.email}</span>
+          </div>
+          <MenuSep />
+          {account.map((i) => (
+            <NavLink key={i.to} to={i.to} role="menuitem">
+              {i.label}
+            </NavLink>
+          ))}
+          <MenuSep />
+          <button type="button" role="menuitem" onClick={() => void logout()}>
             로그아웃
           </button>
-        </div>
+        </Menu>
+        <button
+          type="button"
+          className="hdr-burger"
+          aria-label="메뉴"
+          aria-expanded={sheet}
+          aria-controls="hdr-sheet"
+          onClick={() => setSheet((s) => !s)}
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      {sheet && (
+        <nav className="hdr-sheet" id="hdr-sheet" aria-label="전체 메뉴">
+          {[...primary, ...admin].map((i) => (
+            <NavLink key={i.to} to={i.to} end={i.end}>
+              {i.label}
+            </NavLink>
+          ))}
+        </nav>
       )}
     </header>
   );
