@@ -225,7 +225,7 @@
 .cx-backdrop {
   position: fixed;
   inset: var(--hdr-h) 0 0 0;
-  z-index: var(--z-drawer);
+  z-index: var(--z-backdrop);
   background: rgba(0, 0, 0, 0.5);
   opacity: 0;
   pointer-events: none;
