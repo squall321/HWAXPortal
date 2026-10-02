@@ -14,8 +14,7 @@ import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
 import { AccessRequestsPanel, AffiliationSelect, BulkAffiliation, GrantEditor } from './AccessAdmin';
 import { SetupRequests } from '../../components/admin/SetupRequests';
-
-const cell: React.CSSProperties = { padding: '0.5rem 0.7rem', borderBottom: '1px solid var(--border)' };
+import '../../styles/admin.css';
 
 function when(ts: number | null): string {
   return ts ? new Date(ts * 1000).toLocaleString() : '—';
@@ -86,33 +85,33 @@ export default function UsersAdminPage() {
       <SetupRequests />
       <AccessRequestsPanel policy={policy} onChanged={reload} />
       <BulkAffiliation policy={policy} rows={rows} onChanged={reload} /> 
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+      <div className="adm-table-wrap">
+        <table className="adm-table">
           <thead>
-            <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
-              <th style={cell}>이메일</th>
-              <th style={cell}>이름</th>
-              <th style={cell}>부서</th>
-              <th style={cell}>소속</th>
-              <th style={cell}>개별 허가</th>
-              <th style={cell}>상태</th>
-              <th style={cell}>역할</th>
-              <th style={cell}>로그인 수단</th>
-              <th style={cell}>마지막 로그인</th>
-              <th style={cell}>작업</th>
+            <tr>
+              <th>이메일</th>
+              <th>이름</th>
+              <th>부서</th>
+              <th>소속</th>
+              <th>개별 허가</th>
+              <th>상태</th>
+              <th>역할</th>
+              <th>로그인 수단</th>
+              <th>마지막 로그인</th>
+              <th>작업</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <Fragment key={r.email}>
               <tr>
-                <td style={cell}>{r.email}</td>
-                <td style={cell}>{r.name || '—'}</td>
-                <td style={cell}>{r.department || '—'}</td>
-                <td style={cell}>
+                <td>{r.email}</td>
+                <td>{r.name || '—'}</td>
+                <td>{r.department || '—'}</td>
+                <td>
                   <AffiliationSelect policy={policy} row={r} onSaved={reload} onError={setError} />
                 </td>
-                <td style={cell}>
+                <td>
                   {(r.grants ?? []).length}건{' '}
                   {policy && (
                     <button className="btn-secondary" onClick={() => setEditing(editing === r.email ? null : r.email)}>
@@ -120,14 +119,14 @@ export default function UsersAdminPage() {
                     </button>
                   )}
                 </td>
-                <td style={cell}>
+                <td>
                   {STATUS_LABEL[r.status]}
                   {r.locked_until * 1000 > Date.now() && ' · 잠금'}
                 </td>
-                <td style={cell}>{r.groups.join(', ') || '—'}</td>
-                <td style={cell}>{r.auth_source === 'sso' ? 'SSO' : '이메일'}</td>
-                <td style={cell}>{when(r.last_login_at)}</td>
-                <td style={cell}>
+                <td>{r.groups.join(', ') || '—'}</td>
+                <td>{r.auth_source === 'sso' ? 'SSO' : '이메일'}</td>
+                <td>{when(r.last_login_at)}</td>
+                <td>
                   {r.status === 'pending' && (
                     <>
                       <button
@@ -186,7 +185,7 @@ export default function UsersAdminPage() {
               </tr>
               {editing === r.email && policy && (
                 <tr>
-                  <td style={cell} colSpan={10}>
+                  <td colSpan={10}>
                     <GrantEditor policy={policy} row={r} onSaved={reload} onClose={() => setEditing(null)} />
                   </td>
                 </tr>

@@ -10,9 +10,7 @@ import {
 import { useAuth } from '../../auth/useAuth';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
-
-const cell: React.CSSProperties = { padding: '0.45rem 0.7rem', borderBottom: '1px solid var(--border)' };
-const num: React.CSSProperties = { ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
+import '../../styles/admin.css';
 
 function when(ts: number): string {
   return new Date(ts * 1000).toLocaleString();
@@ -103,14 +101,13 @@ export default function AccessHistoryPage() {
           e.preventDefault();
           search();
         }}
-        style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', alignItems: 'center', margin: '0.8rem 0' }}
+        className="adm-filter"
       >
         <input
           id="access-email"
           placeholder="계정(이메일)"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={{ minWidth: '16rem' }}
         />
         <input
           id="access-service"
@@ -125,7 +122,7 @@ export default function AccessHistoryPage() {
             </option>
           ))}
         </select>
-        <label style={{ fontSize: '0.9rem' }}>
+        <label>
           <input
             id="access-auto"
             type="checkbox"
@@ -145,31 +142,31 @@ export default function AccessHistoryPage() {
       </form>
 
       {reqs && (
-        <div style={{ margin: '1rem 0 1.6rem' }}>
-          <h3 style={{ fontSize: '1rem' }}>
+        <div className="adm-sec">
+          <h3>
             {reqs.email} — 정문 요청 최근 {reqs.days}일 (로그인 {reqs.logins}회)
           </h3>
-          {reqs.note && <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{reqs.note}</p>}
+          {reqs.note && <p className="adm-hint">{reqs.note}</p>}
           {reqs.services.length > 0 && (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <div className="adm-table-wrap">
+              <table className="adm-table">
                 <thead>
-                  <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
-                    <th style={cell}>서비스</th>
-                    <th style={{ ...cell, textAlign: 'right' }}>요청</th>
-                    <th style={cell}>처음</th>
-                    <th style={cell}>마지막</th>
-                    <th style={cell}>IP</th>
+                  <tr>
+                    <th>서비스</th>
+                    <th className="adm-num">요청</th>
+                    <th>처음</th>
+                    <th>마지막</th>
+                    <th>IP</th>
                   </tr>
                 </thead>
                 <tbody>
                   {reqs.services.map((s) => (
                     <tr key={s.service}>
-                      <td style={cell}>{s.service}</td>
-                      <td style={num}>{s.requests.toLocaleString()}</td>
-                      <td style={cell}>{when(s.first)}</td>
-                      <td style={cell}>{when(s.last)}</td>
-                      <td style={cell}>{s.ips.join(', ')}</td>
+                      <td>{s.service}</td>
+                      <td className="adm-num">{s.requests.toLocaleString()}</td>
+                      <td>{when(s.first)}</td>
+                      <td>{when(s.last)}</td>
+                      <td>{s.ips.join(', ')}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -177,52 +174,52 @@ export default function AccessHistoryPage() {
             </div>
           )}
           {reqs.services.length === 0 && !reqs.note && (
-            <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>이 기간에 정문을 지난 요청이 없습니다.</p>
+            <p className="adm-hint">이 기간에 정문을 지난 요청이 없습니다.</p>
           )}
         </div>
       )}
 
       {!ledger && !error && <Spinner label="접속 이력 불러오는 중…" />}
       {ledger && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+        <div className="adm-table-wrap">
+          <table className="adm-table">
             <thead>
-              <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
-                <th style={cell}>시각</th>
-                <th style={cell}>계정</th>
-                <th style={cell}>무엇</th>
-                <th style={cell}>서비스</th>
-                <th style={cell}>IP</th>
-                <th style={cell}>비고</th>
+              <tr>
+                <th>시각</th>
+                <th>계정</th>
+                <th>무엇</th>
+                <th>서비스</th>
+                <th>IP</th>
+                <th>비고</th>
               </tr>
             </thead>
             <tbody>
               {ledger.rows.map((r, i) => (
                 <tr key={`${r.ts}-${i}`}>
-                  <td style={{ ...cell, whiteSpace: 'nowrap' }}>{when(r.ts)}</td>
-                  <td style={cell}>
+                  <td className="adm-nowrap">{when(r.ts)}</td>
+                  <td>
                     <button
                       type="button"
-                      style={{ background: 'none', border: 0, padding: 0, color: 'inherit', textDecoration: 'underline', cursor: 'pointer' }}
+                      className="adm-linkbtn"
                       onClick={() => pick(r.email)}
                       aria-label={`${r.email} 만 보기`}
                     >
                       {r.email}
                     </button>
                   </td>
-                  <td style={cell}>{EVENT_LABEL[r.event] ?? r.event}</td>
-                  <td style={cell}>{r.service ?? '—'}</td>
-                  <td style={cell}>{r.ip ?? '—'}</td>
-                  <td style={{ ...cell, color: 'var(--muted)' }}>{detailText(r.detail)}</td>
+                  <td>{EVENT_LABEL[r.event] ?? r.event}</td>
+                  <td>{r.service ?? '—'}</td>
+                  <td>{r.ip ?? '—'}</td>
+                  <td className="adm-muted-cell">{detailText(r.detail)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {ledger.rows.length === 0 && (
-            <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>이 조건의 기록이 없습니다.</p>
+            <p className="adm-hint">이 조건의 기록이 없습니다.</p>
           )}
           {ledger.truncated && (
-            <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+            <p className="adm-hint">
               최근 {ledger.rows.length}건까지만 보입니다 — 계정이나 서비스로 좁혀 보세요.
             </p>
           )}

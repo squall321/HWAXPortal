@@ -1,0 +1,144 @@
+/* 관리 화면(pages/admin — 사용자 관리·접속 이력) — 인라인 스타일을 토큰 이름으로 옮긴 것(docs/ui-refresh 단계 3) */
+
+/* 상자 — 권한 요청 대기열·소속 일괄 지정·개별 허가 편집 */
+.adm-box {
+  margin: var(--sp-3) 0;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.adm-box.is-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.adm-box.is-tight {
+  margin: var(--sp-1) 0;
+}
+.adm-muted {
+  color: var(--fg-muted);
+}
+.adm-note {
+  margin: var(--sp-1) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.adm-meta {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.adm-err {
+  color: var(--danger);
+}
+span.adm-err {
+  margin-left: var(--sp-2);
+}
+.adm-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+.adm-reqs {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.adm-reqs > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.adm-reqs .adm-actions {
+  margin-left: auto;
+}
+
+/* 개별 허가 체크 묶음 — 소속이 이미 주는 것은 흐리게(표시만) */
+.adm-grants {
+  margin: var(--sp-2) 0;
+  padding: 0;
+  border: 0;
+}
+.adm-grants legend {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.adm-grants-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+}
+.adm-grants-list label {
+  font-size: var(--fs-14);
+}
+.adm-grants-list label.is-from-aff {
+  opacity: 0.55;
+}
+
+/* 표 — 사용자 목록·접속 이력 */
+.adm-table-wrap {
+  overflow-x: auto;
+}
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-14);
+}
+.adm-table th {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-weight: 500;
+  text-align: left;
+}
+.adm-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.adm-table .adm-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.adm-table .adm-nowrap {
+  white-space: nowrap;
+}
+.adm-table .adm-muted-cell {
+  color: var(--fg-muted);
+}
+
+/* 접속 이력 — 조회 줄·정문 요청 묶음 */
+.adm-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+.adm-filter #access-email {
+  min-width: 16rem;
+}
+.adm-filter label {
+  font-size: var(--fs-14);
+}
+.adm-sec {
+  margin: var(--sp-4) 0 var(--sp-6);
+}
+.adm-sec h3 {
+  font-size: var(--fs-15);
+}
+.adm-hint {
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+/* 계정 이름을 눌러 그 계정만 — 표 안의 글자 버튼 */
+.adm-linkbtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

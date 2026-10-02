@@ -220,3 +220,57 @@
     margin-left: 0;
   }
 }
+
+/* Report Archive 연결(components/RaConnectionCard) — 입력칸·고르기는 클래스 없이 두어 전역 폼 기본값(36px·가라앉은 바탕)을 받는다 */
+.ra-card {
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.ra-card h2 {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-18);
+  font-weight: 600;
+}
+.ra-lead {
+  margin: 0 0 var(--sp-3);
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.ra-status {
+  font-size: var(--fs-14);
+}
+.ra-status .tok-btn-sm {
+  margin-left: var(--sp-2);
+}
+.ra-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.ra-row label {
+  font-size: var(--fs-14);
+}
+.ra-paste {
+  flex-wrap: nowrap;
+}
+.ra-paste input {
+  flex: 1;
+  min-width: 0; /* 기본 min-width:auto 라 좁은 화면에서 줄지 않아 '등록' 버튼을 밖으로 밀었다 */
+}
+.ra-hint {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.ra-below {
+  margin: var(--sp-2) 0 0;
+}
+.ra-msg {
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.ra-msg.is-err {
+  color: var(--danger);
+}

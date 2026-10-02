@@ -8,14 +8,7 @@ import {
   type AccessRequest,
 } from '../../api/access.api';
 import type { LocalUserRow } from '../../api/auth.api';
-
-const box: React.CSSProperties = {
-  border: '1px solid var(--border)',
-  borderRadius: 10,
-  padding: '0.8rem 1rem',
-  margin: '0.8rem 0',
-  background: 'var(--card)',
-};
+import '../../styles/admin.css';
 
 function labelOf(policy: AccessPolicy | null, key: string): string {
   if (!policy) return key;
@@ -48,22 +41,22 @@ export function AccessRequestsPanel({ policy, onChanged }: { policy: AccessPolic
   };
   if (!reqs) return null;
   return (
-    <div style={box}>
+    <div className="adm-box">
       <strong>권한 요청 {reqs.length}건</strong>
-      {err && <span style={{ color: 'var(--danger-fg, #f28b82)', marginLeft: 8 }}>⚠ {err}</span>}
+      {err && <span className="adm-err">⚠ {err}</span>}
       {reqs.length === 0 ? (
-        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0.3rem 0 0' }}>대기 중인 요청이 없습니다.</p>
+        <p className="adm-note">대기 중인 요청이 없습니다.</p>
       ) : (
-        <ul style={{ listStyle: 'none', padding: 0, margin: '0.5rem 0 0', display: 'grid', gap: 6 }}>
+        <ul className="adm-reqs">
           {reqs.map((r) => (
-            <li key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <li key={r.id}>
               <span>{r.email}</span>
               <b>{labelOf(policy, r.key)}</b>
-              <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+              <span className="adm-meta">
                 {new Date(r.created_at * 1000).toLocaleString()}
               </span>
-              {r.note && <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>— {r.note}</span>}
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              {r.note && <span className="adm-meta">— {r.note}</span>}
+              <span className="adm-actions">
                 <button className="btn-primary" disabled={busy === r.id} onClick={() => void decide(r.id, true)}>
                   승인
                 </button>
@@ -109,7 +102,7 @@ export function BulkAffiliation({
     onChanged();
   };
   return (
-    <div style={{ ...box, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="adm-box is-inline">
       <span>
         소속이 없는 활성 사용자 <b>{targets.length}명</b> — 기본 권한(일반 챗)만 씁니다.
       </span>
@@ -123,7 +116,7 @@ export function BulkAffiliation({
       <button className="btn-secondary" onClick={() => void run()}>
         모두 이 소속으로
       </button>
-      {msg && <span style={{ color: 'var(--muted)' }}>{msg}</span>}
+      {msg && <span className="adm-muted">{msg}</span>}
     </div>
   );
 }
@@ -196,11 +189,11 @@ export function GrantEditor({
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : '저장 실패'));
   const group = (title: string, items: { key: string; label: string }[]) => (
-    <fieldset style={{ border: 'none', padding: 0, margin: '0.4rem 0' }}>
-      <legend style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>{title}</legend>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem 0.9rem' }}>
+    <fieldset className="adm-grants">
+      <legend>{title}</legend>
+      <div className="adm-grants-list">
         {items.map((i) => (
-          <label key={i.key} style={{ fontSize: '0.85rem', opacity: fromAff.has(i.key) ? 0.55 : 1 }}>
+          <label key={i.key} className={fromAff.has(i.key) ? 'is-from-aff' : undefined}>
             <input
               type="checkbox"
               checked={fromAff.has(i.key) || sel.has(i.key)}
@@ -215,12 +208,12 @@ export function GrantEditor({
     </fieldset>
   );
   return (
-    <div style={{ ...box, margin: '0.3rem 0' }}>
+    <div className="adm-box is-tight">
       <strong>{row.email} — 개별 허가</strong>
       {group('기능', policy.features.filter((f) => !policy.default_grants.includes(f.key)))}
       {group('플랫폼', policy.platforms)}
-      {err && <p style={{ color: 'var(--danger-fg, #f28b82)' }}>⚠ {err}</p>}
-      <div style={{ display: 'flex', gap: 6 }}>
+      {err && <p className="adm-err">⚠ {err}</p>}
+      <div className="adm-actions">
         <button className="btn-primary" onClick={save}>
           저장
         </button>

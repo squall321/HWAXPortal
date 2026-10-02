@@ -1,6 +1,7 @@
 // Report Archive 연결 카드 — RA 에서 발급한 PAT 를 등록하면 챗·심의의 보고서가 내 명의로 저장된다.
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../api/client';
+import '../styles/tokenpage.css';
 
 interface RaMeta {
   tail: string;
@@ -130,44 +131,30 @@ export function RaConnectionCard() {
 
   if (!loaded) return null;
   return (
-    <div
-      style={{
-        padding: '1rem 1.2rem',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        background: 'var(--card)',
-      }}
-    >
-      <h2 style={{ fontSize: '1.05rem', margin: '0 0 0.35rem' }}>Report Archive 연결</h2>
-      <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: 0 }}>
+    <div className="ra-card">
+      <h2>Report Archive 연결</h2>
+      <p className="ra-lead">
         Report Archive에서 발급한 토큰(<code>rat_…</code>)을 등록하면, 챗·심의가 만드는 보고서가
         공용 계정이 아니라 <b>내 RA 계정 명의</b>로 저장됩니다. RA 프로필 → 토큰 발급에서 만들어
         붙여넣으세요. 같은 이메일의 RA 계정이어야 합니다.
       </p>
       {meta ? (
         <>
-          <p style={{ fontSize: '0.9rem' }}>
+          <p className="ra-status">
             연결됨 — 토큰 끝자리 <code>…{meta.tail}</code> ·{' '}
             {new Date(meta.created_at * 1000).toLocaleDateString()}{' '}
-            <button className="btn-secondary" style={{ marginLeft: '0.6rem' }} onClick={() => void remove()} disabled={busy}>
+            <button className="btn-secondary tok-btn-sm" onClick={() => void remove()} disabled={busy}>
               해제
             </button>
           </p>
           {/* 어디로 저장되는지 늘 한 줄로 보인다 — '지정 안 함'과 '조직 지정'은 다른 상태다. */}
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: '0.85rem' }} htmlFor="ra-ws">보고서를 저장할 조직</label>
+          <div className="ra-row">
+            <label htmlFor="ra-ws">보고서를 저장할 조직</label>
             <select
               id="ra-ws"
               value={meta.workspace}
               disabled={busy || spaces === null}
               onChange={(e) => void changeWorkspace(e.target.value)}
-              style={{
-                padding: '0.35rem 0.5rem',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                background: 'var(--bg)',
-                color: 'var(--fg)',
-              }}
             >
               <option value="">지정 안 함 (RA 기본 워크스페이스)</option>
               {/* 저장된 값이 후보에 없으면(부서에서 나갔거나 RA 쪽이 바뀐 경우) 그 사실을 보인다.
@@ -182,30 +169,23 @@ export function RaConnectionCard() {
               ))}
             </select>
             {spaces === null && (
-              <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>목록 불러오는 중…</span>
+              <span className="ra-hint">목록 불러오는 중…</span>
             )}
           </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '0.4rem 0 0' }}>
+          <p className="ra-hint ra-below">
             {meta.workspace
               ? '챗·심의가 만드는 보고서가 이 조직의 게시판에 쌓입니다.'
               : '조직을 지정하지 않으면 RA 계정의 기본 워크스페이스(대개 개인함)로 갑니다.'}
           </p>
         </>
       ) : (
-        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+        <div className="ra-row ra-paste">
           <input
+            id="ra-token"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder="rat_ 로 시작하는 RA 토큰 붙여넣기"
-            style={{
-              flex: 1,
-              minWidth: 0, // 기본 min-width:auto 라 좁은 화면에서 줄지 않아 '등록' 버튼을 밖으로 밀었다
-              padding: '0.5rem 0.65rem',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              background: 'var(--bg)',
-              color: 'var(--fg)',
-            }}
+            aria-label="RA 토큰"
           />
           <button className="btn-primary" onClick={() => void save()} disabled={busy || !token.trim()}>
             {busy ? '검증 중…' : '등록'}
@@ -215,14 +195,14 @@ export function RaConnectionCard() {
       {/* 조직 선택 칸은 등록 뒤에 생긴다 — 후보를 그 토큰으로 RA 에 물어와야 하기 때문이다.
           그 사실을 안 적어 두면 "워크스페이스 고르는 데가 없는데?" 가 된다(실제 질문). */}
       {loaded && !meta && (
-        <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '0.5rem 0 0' }}>
+        <p className="ra-hint ra-below">
           등록하면 바로 아래에 <b>보고서를 저장할 조직</b>을 고르는 칸이 생깁니다 — 고를 수 있는
           조직 목록을 이 토큰으로 RA 에 물어오기 때문에 등록이 먼저입니다.
           안 고르면 RA 계정의 기본 워크스페이스(대개 개인함)로 갑니다.
         </p>
       )}
       {msg && (
-        <p style={{ fontSize: '0.85rem', color: msg.ok ? 'var(--muted)' : 'var(--danger-fg, #b91c1c)' }}>
+        <p className={`ra-msg${msg.ok ? '' : ' is-err'}`}>
           {msg.text}
         </p>
       )}
