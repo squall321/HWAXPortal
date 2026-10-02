@@ -10,7 +10,7 @@ import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
 import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
 import { fetchDeliberateExperts, type ExpertsResponse } from '../api/chat.api';
-import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, type JobId } from '../components/chat/delibTaxonomy';
+import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, jobsByGroup, type JobId } from '../components/chat/delibTaxonomy';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
 import '../styles/chat.css';
 import '../styles/chatpage.css';
@@ -219,11 +219,11 @@ export default function DeliberatePage() {
                           aria-selected={job === j.id}
                           className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
                           onClick={() => setJob(j.id)}
-                          title={`산출: ${j.out}`}
+                          title={`산출: ${j.out} · 방법: ${j.engine}`}
                         >
                           <span className="cx-brief-job-top">
                             <span className="cx-brief-job-name">{j.name}</span>
-                            <span className="cx-brief-job-eng">{j.engine}</span>
+                            {j.engine !== j.id && <span className="cx-brief-job-eng">{j.engine}</span>}
                           </span>
                           <span className="cx-brief-job-when">{j.when}</span>
                         </button>
@@ -238,37 +238,22 @@ export default function DeliberatePage() {
                     className={`cx-brief-job cx-job-free${job === j.id ? ' is-on' : ''}`}
                     onClick={() => setJob(j.id)}
                     aria-pressed={job === j.id}
-                    title={`산출: ${j.out}`}
+                    title={`산출: ${j.out} · 방법: ${j.engine}`}
                   >
                     <span className="cx-brief-job-top">
                       <span className="cx-brief-job-name">{j.name}</span>
-                      <span className="cx-brief-job-eng">{j.engine}</span>
+                      {j.engine !== j.id && <span className="cx-brief-job-eng">{j.engine}</span>}
                     </span>
                     <span className="cx-brief-job-when">{j.when} · {j.note}</span>
                   </button>
                 ))}
-                <div className="cx-brief-mods cx-mods-wide">
-                  <span className="cx-mods-label">얹을 층:</span>
-                  {MODIFIERS.map((m) => (
-                    <button
-                      type="button"
-                      key={m.id}
-                      className={`cx-brief-mod${mods.has(m.id) ? ' is-on' : ''}`}
-                      onClick={() => toggleMod(m.id)}
-                      aria-pressed={mods.has(m.id)}
-                      title={m.when}
-                    >
-                      {m.name}
-                    </button>
-                  ))}
-                </div>
                 <Composer
                   ref={composerRef}
                   autoFocus
                   placeholder={JOB_BY_ID[job].placeholder}
                   onSubmitText={startPicking}
                 />
-                <DelibOptsPanel />
+                <DelibOptsPanel mods={{ on: mods, toggle: toggleMod }} />
                 <div className="cx-chips">
                   {SUGGESTIONS_BY_JOB(job).map((p) => (
                     <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>

@@ -1,8 +1,9 @@
 // 심의 관계도 — 누가 누구의 어떤 말을 반박했는지를 네트워크로 본다(회의록은 시간순이라 안 보인다)
 import { useMemo, useState } from 'react';
 import type { DelibData } from '../../types/chat';
-import { colorOf, shortName } from './personaColor';
+import { colorOf } from './personaColor';
 import { TextBlock } from './renderers/TextBlock';
+import { usePersonaName } from './usePersonaPool';
 
 /** 좌석 키 → mermaid 노드 id. 하이픈·점이 들어가면 mermaid 가 파싱을 못 한다. */
 const nodeId = (key: string) => 'n' + key.replace(/[^0-9A-Za-z]/g, '_');
@@ -30,6 +31,8 @@ function resolveTarget(raw: string, seats: string[]): string | null {
 
 export function DelibGraph({ d }: { d: DelibData }) {
   const [open, setOpen] = useState(false);
+  // 라벨은 사람 이름(회의록과 같게) — 이름이 아직 안 왔으면 받은 값(키)을 축약해 쓴다
+  const nameOf = usePersonaName();
 
   const { edges, seats } = useMemo(() => {
     const turns = d.turns ?? [];
@@ -56,7 +59,7 @@ export function DelibGraph({ d }: { d: DelibData }) {
     const lines = ['graph LR'];
     for (const s of seats) {
       if (!engaged.has(s)) continue; // 반박에 참여하지 않은 좌석은 고립점이라 뺀다
-      lines.push(`  ${nodeId(s)}["${safeLabel(shortName(s))}"]`);
+      lines.push(`  ${nodeId(s)}["${safeLabel(nameOf(s))}"]`);
       lines.push(`  style ${nodeId(s)} fill:${colorOf(s)}22,stroke:${colorOf(s)},color:#e6e8eb`);
     }
     edges.forEach((e, i) => {
@@ -64,7 +67,7 @@ export function DelibGraph({ d }: { d: DelibData }) {
       void i;
     });
     return lines.join('\n');
-  }, [edges, seats, engaged]);
+  }, [edges, seats, engaged, nameOf]);
 
   // 반박이 하나도 없으면 그릴 관계가 없다. 빈 상자를 내밀지 않는다.
   if (edges.length === 0) return null;
@@ -86,9 +89,9 @@ export function DelibGraph({ d }: { d: DelibData }) {
             {edges.map((e, i) => (
               <li key={i}>
                 <span className="dg-round">R{e.round}</span>
-                <b style={{ color: colorOf(e.from) }}>{shortName(e.from)}</b>
+                <b style={{ color: colorOf(e.from) }}>{nameOf(e.from)}</b>
                 <span className="dg-arrow">→</span>
-                <b style={{ color: colorOf(e.to) }}>{shortName(e.to)}</b>
+                <b style={{ color: colorOf(e.to) }}>{nameOf(e.to)}</b>
                 {e.quote && <span className="dg-quote">“{e.quote}”</span>}
                 <span className="dg-counter">{e.counter}</span>
                 {e.basis && <span className="dg-basis">근거 {e.basis}</span>}

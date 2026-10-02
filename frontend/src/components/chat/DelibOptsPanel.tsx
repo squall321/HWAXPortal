@@ -1,6 +1,8 @@
 // 심의 손잡이(깊이 회복 옵션) 웹 토글 패널 — env 재시작 없이 심의마다 옵션을 바꿔 A/B 한다
 import { useChat } from '../../state/ChatContext';
 import type { DelibOpts } from '../../types/chat';
+import { MODIFIERS } from './delibTaxonomy';
+import { IconSliders } from './icons';
 
 // 표시 순서 = 권장 A/B 순서(GLM 리뷰 §5). heavy=부하 큰 옵션(경고 표식).
 const FLAGS: { key: keyof DelibOpts; label: string; hint: string; heavy?: boolean }[] = [
@@ -16,7 +18,9 @@ const FLAGS: { key: keyof DelibOpts; label: string; hint: string; heavy?: boolea
 const CHECKPOINT_HINT =
   '초기 입장만 듣고 멈춘다. 빠진 관점을 의견으로 보태 이어가면 좌석 재심사가 그 방향의 도메인을 불러온다';
 
-export function DelibOptsPanel() {
+// mods — 심의 첫 화면만 준다: '얹을 층'(방법 보강)은 새 심의를 시작할 때만 쓰여, 이어 묻는 화면에는 없다.
+// 종전엔 첫 화면 한가운데 칩 줄로 나와 목적 카드·입력창 사이를 갈랐다(docs/ui-refresh 단계 4).
+export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; toggle: (id: string) => void } } = {}) {
   const { delibOpts, setDelibOpts } = useChat();
 
   const setFlag = (key: keyof DelibOpts, on: boolean) =>
@@ -27,18 +31,36 @@ export function DelibOptsPanel() {
   const active =
     FLAGS.filter((f) => delibOpts[f.key]).length +
     (delibOpts.chair_bestof && delibOpts.chair_bestof > 1 ? 1 : 0) +
-    (delibOpts.stop_after_round === 1 ? 1 : 0);
+    (delibOpts.stop_after_round === 1 ? 1 : 0) +
+    (mods?.on.size ?? 0);
 
   return (
     // ⚠ SourcePanel(인터넷 검색 토글)을 여기서 렌더하지 않는다 — Composer 가 이미 그린다.
     // 이 패널은 언제나 Composer 와 함께 놓이므로 같은 토글이 화면에 두 번 나왔다.
     <details className="do-panel">
       <summary className="do-summary">
-        <span className="do-gear" aria-hidden="true">⚙</span>
+        <IconSliders className="do-gear" width={15} height={15} aria-hidden="true" />
         심의 옵션
         {active > 0 && <span className="do-count">{active}개 켜짐</span>}
       </summary>
       <div className="do-body">
+        {mods && (
+          <>
+            <p className="do-section">방법 보강 — 고른 심의 목적 위에 덧붙입니다</p>
+            <ul className="do-list">
+              {MODIFIERS.map((m) => (
+                <li key={m.id} className="do-item">
+                  <label className="do-toggle">
+                    <input type="checkbox" checked={mods.on.has(m.id)} onChange={() => mods.toggle(m.id)} />
+                    <span className="do-label">{m.name}</span>
+                  </label>
+                  <span className="do-hint">{m.when}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="do-section">진행</p>
+          </>
+        )}
         <ul className="do-list">
           <li className="do-item">
             <label className="do-toggle">

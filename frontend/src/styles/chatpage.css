@@ -825,7 +825,14 @@
   list-style: none;
 }
 .do-summary::-webkit-details-marker { display: none; }
-.do-gear { color: var(--muted); }
+.do-gear { color: var(--muted); flex: none; }
+.do-section {
+  margin: 12px 0 8px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 .do-count {
   margin-left: auto;
   font-size: 11px;
@@ -1039,7 +1046,18 @@
 }
 .cx-ep-browse:hover { border-color: var(--cx-accent); color: var(--cx-accent); }
 .cx-ep-role { font-size: 0.8rem; color: var(--muted); line-height: 1.45; }
-.cx-ep-why { font-size: 0.74rem; color: var(--muted); opacity: 0.8; font-family: var(--cx-mono); }
+/* 관련도 3단계(ExpertPicker relLevel) — 높음은 상태색 ok, 보통은 강조색, 낮음은 무채 */
+.cx-ep-rel {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cx-ep-rel.hi { color: var(--ok); background: var(--ok-bg); }
+.cx-ep-rel.mid { color: var(--accent-fg); background: var(--accent-soft); }
+.cx-ep-rel.lo { color: var(--fg-muted); background: var(--surface-3); }
 
 .cx-ep-search {
   width: 100%;
@@ -1328,13 +1346,11 @@
 .upl-actions.upl-dests { flex-wrap: wrap; }
 .upl-actions.upl-dests .upl-go { flex: 1 1 240px; text-align: left; }
 
-/* 심의 목적(Job) 그리드 · 얹을 층 — DeliberatePage 히어로. method-picker 클래스(.cx-brief-*) 재사용 */
+/* 심의 목적(Job) 그리드 — DeliberatePage 히어로(얹을 층은 심의 옵션 안으로 옮겼다). method-picker 클래스(.cx-brief-*) 재사용 */
 .cx-jobgroup-wide { width: 100%; margin-top: 10px; text-align: left; }
 .cx-jobgroup-wide .cx-brief-jobs { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); margin-top: 8px; }
 .cx-job-free { width: 100%; margin-top: 10px; text-align: left; }
 .cx-hero-clarify { font-size: 13px; color: var(--muted); margin: 6px 0 0; line-height: 1.5; }
-.cx-mods-wide { justify-content: center; align-items: center; width: 100%; margin-top: 8px; }
-.cx-mods-label { font-size: 12px; color: var(--muted); margin-right: 2px; }
 
 /* ── 현재 전문가 칸 — 상태 바 바로 아래. 활동이 없어도 여기는 남는다 ────────────────────── */
 .act-persona {

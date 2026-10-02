@@ -1,6 +1,7 @@
 // 전문가 전체 풀 로더 — 명부(키·이름)를 먼저 받아 조직도를 그리고, 태그는 뒤에서 받아 얹는다
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchDeliberateExperts, type PoolExpert } from '../../api/chat.api';
+import { shortName } from './personaColor';
 
 // 풀은 780명 규모라 화면을 열 때마다 다시 받으면 낭비다. 세션 안에서는 한 번만 받는다
 // (전문가 등록은 AIDataHub 관리 화면에서 일어나므로 대화 중 바뀌는 값이 아니다).
@@ -74,4 +75,22 @@ export function usePersonaPool(): { pool: PoolExpert[]; loading: boolean; failed
   }, []);
 
   return { pool, loading, failed };
+}
+
+/** 키 → 표시 이름. 회의록·관계도가 기계 키(`pcb-warpage`) 대신 사람 이름을 쓰게 한다(docs/ui-refresh 단계 4).
+ *  명부(가벼운 호출, 세션에 한 번)만 받는다. 못 받았거나 명부에 없는 키(이미 이름으로 온 발언 포함)면 받은 값 그대로. */
+export function usePersonaName(): (key: string) => string {
+  const [list, setList] = useState<PoolExpert[]>(() => cache ?? roster ?? []);
+  useEffect(() => {
+    if (list.length) return;
+    let alive = true;
+    void loadRoster()
+      .then((p) => alive && p.length > 0 && setList(p))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [list.length]);
+  const byKey = useMemo(() => new Map(list.map((p) => [p.key, p.name])), [list]);
+  return useCallback((k: string) => shortName(byKey.get(k) ?? k), [byKey]);
 }

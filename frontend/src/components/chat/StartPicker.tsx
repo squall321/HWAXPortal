@@ -15,6 +15,7 @@ import { PersonaBrowser } from './PersonaBrowser';
 import { shortName } from './personaColor';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
+import { InlineMd } from './renderers/TextBlock';
 
 const MAX_TOOLS = 12; // 챗 pinned_tools 상한
 const MAX_APPS = 3;   // 챗 pinned_apps 상한 — 앱 하나가 도구 20~30개다
@@ -279,7 +280,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
           ) : detail ? (
             <>
               <div className="sp-detail-name">👤 {detail.name}</div>
-              {detail.role && <p className="sp-detail-role">{detail.role}</p>}
+              {detail.role && <p className="sp-detail-role"><InlineMd text={detail.role} /></p>}
               {detail.tags.length > 0 && (
                 <p className="sp-dim">태그: {detail.tags.slice(0, 12).join(' · ')}</p>
               )}

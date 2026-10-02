@@ -12,7 +12,7 @@ import {
 } from '../../api/chat.api';
 import { OperatorApps } from './AgentFacts';
 import { colorOf, initialOf } from './personaColor';
-import { TextBlock } from './renderers/TextBlock';
+import { InlineMd, TextBlock } from './renderers/TextBlock';
 
 const PAGE = 50;
 
@@ -218,7 +218,7 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
             {detail?.error && <p className="pv-empty">설명을 불러오지 못했습니다({detail.error}).</p>}
             {detail && (
               <>
-                {detail.role && <p className="dv-desc">{detail.role}</p>}
+                {detail.role && <p className="dv-desc"><InlineMd text={detail.role} /></p>}
                 {detail.tags.length > 0 && (
                   <div className="dv-tags">
                     {detail.tags.map((t) => (

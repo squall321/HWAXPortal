@@ -1921,9 +1921,10 @@ body.dock-open .page-wide {
 .cx-brief-job.is-on { border-color: var(--cx-accent); background: var(--cx-accent-soft); }
 .cx-brief-job-top { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
 .cx-brief-job-name { font-size: 13px; font-weight: 600; color: var(--fg); }
-.cx-brief-job-eng { font-family: var(--cx-mono); font-size: 10px; color: var(--muted); }
+/* 방법론 이름(FTA↔FMEA·Pugh …) — 내부 ID(sim-plan …)는 화면에 안 내고 툴팁에만(docs/ui-refresh 단계 4) */
+.cx-brief-job-eng { font-size: var(--fs-12); color: var(--fg-subtle); }
 .cx-brief-job.is-on .cx-brief-job-eng { color: var(--cx-accent); }
-.cx-brief-job-when { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.cx-brief-job-when { font-size: var(--fs-12); color: var(--muted); line-height: 1.4; }
 
 .cx-brief-mods { display: flex; flex-wrap: wrap; gap: 6px; }
 .cx-brief-mod {

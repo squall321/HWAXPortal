@@ -8,6 +8,7 @@ import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
 import { ClarifyPanel } from './ClarifyPanel';
 import { splitTopic } from './clarify';
 import { vocEvidence } from './vocEvidence';
+import { InlineMd } from './renderers/TextBlock';
 
 export interface Persona {
   key: string;
@@ -43,6 +44,11 @@ const POOL_LIMIT = 30; // 결과 표시 상한
 const MAX_TOOLS = 6; // 심의 계약(delib_opts.tools) 상한 — 도구당 인자구성+호출 비용이 있어 보수적
 const MAX_APPS = 3;  // 심의 계약(delib_opts.apps) 상한 — 자유 조회 범위 제한용(전량 호출 아님)
 const TOOL_LIST_LIMIT = 20;
+const REL = {
+  hi: { text: '높음', cls: 'hi' },
+  mid: { text: '보통', cls: 'mid' },
+  lo: { text: '낮음', cls: 'lo' },
+} as const;
 
 interface AddRow {
   key: string;
@@ -117,10 +123,15 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
     return m;
   }, [ranked]);
 
-  // 관련도 표시 — recommend 점수는 확률이 아니라 상대값 → 최상위 대비 % 로 환산.
+  // 관련도 3단계 — recommend 점수는 확률이 아니라 상대값이다. 종전의 '최상위 대비 %' 는 1등이 늘 100% 라
+  // 맞는 사람이 없을 때도 '100%' 가 떴다. 최상위 대비 비율로 세 칸만 가르고, 서버가 자신 없다고 하면(low_confidence) 전부 낮음.
   const topScore = ranked[0]?.score ?? 0;
-  const relPct = (s?: number | null): number | null =>
-    typeof s === 'number' && topScore > 0 ? Math.round((s / topScore) * 100) : null;
+  const relLevel = (s?: number | null): (typeof REL)[keyof typeof REL] | null => {
+    if (typeof s !== 'number' || topScore <= 0) return null;
+    if (experts?.low_confidence) return REL.lo;
+    const r = s / topScore;
+    return r >= 0.8 ? REL.hi : r >= 0.5 ? REL.mid : REL.lo;
+  };
 
   const topPicks = ranked.slice(0, autoCount);
 
@@ -278,7 +289,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
             {topPicks.length ? (
               <ul className="cx-ep-list">
                 {topPicks.map((r) => {
-                  const pct = relPct(r.score);
+                  const lv = relLevel(r.score);
                   return (
                     <li key={r.key} className="cx-ep-item">
                       <label className="cx-ep-check">
@@ -286,10 +297,18 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
                         <span className="cx-ep-body">
                           <span className="cx-ep-name">
                             {r.name}
-                            {pct !== null && <span className="cx-ep-score">관련도 {pct}%</span>}
+                            {/* 추천 근거(의미검색 섹션 수·어휘 매칭률)는 진단용이라 본문에 늘어놓지 않고 툴팁으로 */}
+                            {lv && (
+                              <span className={`cx-ep-rel ${lv.cls}`} title={r.why || undefined}>
+                                관련 {lv.text}
+                              </span>
+                            )}
                           </span>
-                          {r.role && <span className="cx-ep-role">{r.role}</span>}
-                          {r.why && <span className="cx-ep-why">{r.why}</span>}
+                          {r.role && (
+                            <span className="cx-ep-role">
+                              <InlineMd text={r.role} />
+                            </span>
+                          )}
                         </span>
                       </label>
                     </li>
@@ -331,12 +350,12 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
                 <li className="cx-ep-empty">{query.trim() ? '일치하는 전문가가 없습니다.' : '추가할 관련 후보가 없습니다.'}</li>
               ) : (
                 results.map((a) => {
-                  const pct = relPct(a.score);
+                  const lv = relLevel(a.score);
                   return (
                     <li key={a.key} className="cx-ep-result">
                       <button type="button" className="cx-ep-add" onClick={() => add(a)} disabled={full}>
                         <span className="cx-ep-name">{a.name}</span>
-                        {pct !== null && <span className="cx-ep-score">관련도 {pct}%</span>}
+                        {lv && <span className={`cx-ep-rel ${lv.cls}`}>관련 {lv.text}</span>}
                         {a.tags?.length ? <span className="cx-ep-tags">{a.tags.slice(0, 4).join(' · ')}</span> : null}
                         <span className="cx-ep-plus" aria-hidden="true">＋</span>
                       </button>

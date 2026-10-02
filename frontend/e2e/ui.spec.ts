@@ -91,6 +91,20 @@ test.beforeAll(async ({ browser }) => {
       body: JSON.stringify({ title: '열충격 해석 결과 검토 — U12 솔더' }) })).json();
     for (const [role, content] of [['user', '지난주 열충격 해석 결과에서 위험한 솔더 조인트를 정리해 줘'], ['assistant', answer]])
       await fetch(`/agent/conversations/${c.id}/messages`, { method: 'POST', headers: h, body: JSON.stringify({ role, content }) });
+    // 저장된 심의 하나 — 서버 저장본에서 되살린 회의록(진행 표시·화자 이름)을 본다
+    const dc = await (await fetch('/agent/conversations', { method: 'POST', headers: h,
+      body: JSON.stringify({ title: '배터리 스웰링 대응 심의', kind: 'deliberation' }) })).json();
+    const say = (persona: string, round: number, content: string, stance: string) =>
+      fetch(`/agent/conversations/${dc.id}/messages`, { method: 'POST', headers: h,
+        body: JSON.stringify({ role: 'persona', persona, round, content, meta: { stance } }) });
+    await fetch(`/agent/conversations/${dc.id}/messages`, { method: 'POST', headers: h,
+      body: JSON.stringify({ role: 'user', content: '배터리 스웰링 불량 — 셀 적층 설계에서 어떤 대응이 우선인가' }) });
+    await say('battery-cell', 1, '**가스 발생**이 지배적입니다. 전해액 분해 온도 마진부터 확인해야 합니다.', '조건부');
+    await say('cae-structure', 1, '파우치 구속 강성을 올리면 두께 증가를 30% 줄일 수 있습니다.', '동의');
+    await say('battery-cell', 3, '구속 강성 보강에 동의하되 전해액 첨가제 검토를 병행합니다.', '동의');
+    await say('cae-structure', 3, '보강안으로 수렴합니다.', '동의');
+    await fetch(`/agent/conversations/${dc.id}/messages`, { method: 'POST', headers: h,
+      body: JSON.stringify({ role: 'assistant', content: '## 의사결정\n1. 파우치 구속 강성 보강을 우선한다.\n2. 전해액 첨가제 검토를 병행한다.' }) });
   }, ANSWER);
   await page.context().close();
 });
@@ -203,6 +217,26 @@ test('개인 토큰 — 발급 직후(한 번만 보이는 상자)', async ({ br
     await page.waitForTimeout(400);
     await page.screenshot({ path: join(SHOTS, `${w}_tokens_created.png`), fullPage: true });
     expect.soft(await defects(page, w), `발급 직후 @${w}px`).toEqual([]);
+    await page.context().close();
+  }
+});
+
+test('저장된 심의 — 진행 표시는 완료, 화자는 이름', async ({ browser }) => {
+  for (const w of [1440, 390]) {
+    const page = await login(browser, w);
+    await page.goto('/deliberate');
+    await page.waitForLoadState('networkidle');
+    test.skip((await page.getByText('어떤 판단이 필요하세요?').count()) === 0, '이 권한 층은 심의가 없다');
+    if (w < 900) await page.getByRole('button', { name: '사이드바 열기' }).click();
+    // 좁은 화면에선 서랍 위 항목을 실제로 누른다 — 배경이 서랍과 같은 층이라 클릭을 가로채던 회귀를 여기서 잡았다
+    await page.getByText('배터리 스웰링 대응 심의').first().click({ timeout: 10000 });
+    await page.waitForTimeout(800);
+    // 되살린 심의는 단계를 못 찾아 전부 빈 점이었다 — 이제 남은 단계가 모두 완료다
+    const steps = page.locator('.dv-step');
+    expect(await steps.count()).toBeGreaterThan(0);
+    expect(await page.locator('.dv-step:not(.done)').count()).toBe(0);
+    await page.screenshot({ path: join(SHOTS, `${w}_delib-saved.png`), fullPage: true });
+    expect.soft(await defects(page, w), `저장된 심의 @${w}px`).toEqual([]);
     await page.context().close();
   }
 });

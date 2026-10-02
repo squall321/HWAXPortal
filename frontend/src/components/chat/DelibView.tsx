@@ -6,7 +6,8 @@ import type { DelibData, DelibTurn, Message } from '../../types/chat';
 import { DelibGraph } from './DelibGraph';
 import { RosterEditor, type Seat } from './RosterEditor';
 import { colorOf, initialOf } from './personaColor';
-import { TextBlock } from './renderers/TextBlock';
+import { InlineMd, TextBlock } from './renderers/TextBlock';
+import { usePersonaName } from './usePersonaPool';
 
 // 색·이니셜은 공용 모듈에서 온다 — 챗 페르소나 말풍선이 같은 함수를 써야
 // 같은 전문가가 심의와 챗에서 같은 색으로 보인다.
@@ -35,8 +36,14 @@ function stageList(total: number, seen: string[]): { id: string; label: string }
 function Stepper({ d, live }: { d: DelibData; live: boolean }) {
   const seen = d.stages ?? [];
   const cur = d.stage;
-  const list = stageList(d.totalRounds ?? 3, seen);
-  const curIdx = list.findIndex((s) => s.id === cur);
+  // 서버 저장본에서 되살린 심의는 stage·outcome 이 없다(conversations.api) — 결정문이 있으면 끝난 심의다.
+  // 종전엔 현재 단계를 못 찾아(-1) 끝난 심의의 모든 단계가 '할 일' 빈 점으로 보였다(docs/ui-refresh 단계 4).
+  // 그때는 일어났다고 알 수 있는 단계만 남겨 전부 완료로 — 쉬운 설명은 본문이 있을 때, 보고는 보고서 번호가 있을 때.
+  const restored = !live && !cur && Boolean(d.decision);
+  const list = stageList(d.totalRounds ?? 3, seen).filter(
+    (s) => !restored || ((s.id !== 'explain' || Boolean(d.plain)) && (s.id !== 'report' || d.outcome?.report_id != null)),
+  );
+  const curIdx = restored ? list.length : list.findIndex((s) => s.id === cur);
   // 현재 라운드 발언 진행률(분자=이 라운드 turn 수, 분모=패널 수)
   const roundNo = roundNoOf(cur);
   const spoken = roundNo ? (d.turns ?? []).filter((t) => t.round === roundNo).length : 0;
@@ -96,6 +103,7 @@ const ORIGIN_LABEL: Record<string, { text: string; cls: string }> = {
 };
 
 function PersonaIntro({ d }: { d: DelibData }) {
+  const nameOf = usePersonaName();
   const personas = d.personas ?? [];
   if (!personas.length) return null;
   const domains = new Set(personas.map((p) => (p.key.includes('-') ? p.key.split('-')[0] : p.key)));
@@ -108,16 +116,16 @@ function PersonaIntro({ d }: { d: DelibData }) {
         {personas.map((p) => (
           <li key={p.key} className="dv-intro-item">
             <span className="dv-intro-avatar" style={{ background: colorOf(p.key) }} aria-hidden="true">
-              {initialOf(p.key)}
+              {initialOf(nameOf(p.key))}
             </span>
             <div className="dv-intro-body">
-              <span className="dv-intro-key">
-                {p.key}
+              <span className="dv-intro-key" title={p.key}>
+                {nameOf(p.key)}
                 {p.origin && ORIGIN_LABEL[p.origin] && (
                   <span className={`dv-seat ${ORIGIN_LABEL[p.origin].cls}`}>{ORIGIN_LABEL[p.origin].text}</span>
                 )}
               </span>
-              {p.role && <span className="dv-intro-role">{p.role}</span>}
+              {p.role && <span className="dv-intro-role"><InlineMd text={p.role} /></span>}
             </div>
           </li>
         ))}
@@ -158,6 +166,7 @@ function stanceClass(s?: string): string {
 }
 
 function Meeting({ d, live }: { d: DelibData; live: boolean }) {
+  const nameOf = usePersonaName();
   const turns = d.turns ?? [];
   if (turns.length === 0 && !live) return null;
   const rounds: Record<number, DelibTurn[]> = {};
@@ -179,12 +188,13 @@ function Meeting({ d, live }: { d: DelibData; live: boolean }) {
             </div>
             {(rounds[r] ?? []).map((t, i) => (
               <div key={`${r}-${t.persona}-${i}`} className="dv-turn">
-                <span className="dv-av" style={{ background: colorOf(t.persona) }}>
-                  {initialOf(t.persona)}
+                <span className="dv-av" style={{ background: colorOf(t.persona) }} aria-hidden="true">
+                  {initialOf(nameOf(t.persona))}
                 </span>
                 <div className="dv-turn-body">
-                  <div className="dv-who">
-                    {t.persona}
+                  {/* 화자는 사람 이름으로 — 기계 키(pcb-warpage)는 툴팁에(docs/ui-refresh 단계 4) */}
+                  <div className="dv-who" title={t.persona}>
+                    {nameOf(t.persona)}
                     {t.stance && <span className={`dv-stance ${stanceClass(t.stance)}`}>{t.stance}</span>}
                   </div>
                   <div className="dv-bub" style={{ borderLeftColor: colorOf(t.persona) }}>
@@ -211,6 +221,7 @@ function Meeting({ d, live }: { d: DelibData; live: boolean }) {
 }
 
 function Convergence({ d }: { d: DelibData }) {
+  const nameOf = usePersonaName();
   const r1 = (d.turns ?? []).filter((t) => t.round === 1 && t.position);
   // 마지막(수렴) 라운드 = totalRounds. 종전 3 고정이라 rounds=4 면 심화 라운드를 수렴으로 읽었다.
   const r3 = (d.turns ?? []).filter((t) => t.round === (d.totalRounds ?? 3) && t.position);
@@ -242,8 +253,8 @@ function Convergence({ d }: { d: DelibData }) {
           const first = r1.find((x) => x.persona === t.persona);
           return (
             <div key={t.persona} className="dv-conv-row">
-              <span className="dv-av sm" style={{ background: colorOf(t.persona) }}>
-                {initialOf(t.persona)}
+              <span className="dv-av sm" style={{ background: colorOf(t.persona) }} title={nameOf(t.persona)}>
+                {initialOf(nameOf(t.persona))}
               </span>
               <span className="dv-conv-pos from" title={first?.position}>
                 {first?.position ?? '—'}

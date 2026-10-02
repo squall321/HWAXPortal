@@ -9,6 +9,7 @@ import { AgentDeepView } from './AgentDeepView';
 import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
 import { agentPath, useOrgNav } from './orgNav';
 import { usePersonaPool } from './usePersonaPool';
+import { InlineMd } from './renderers/TextBlock';
 
 function AgentCard({
   agent,
@@ -267,7 +268,7 @@ export function PersonaBrowser({
                 {detailLoading && <p className="pv-empty">상세 불러오는 중…</p>}
                 {detail && (
                   <>
-                    {detail.role && <p className="pv-detail-role">{detail.role}</p>}
+                    {detail.role && <p className="pv-detail-role"><InlineMd text={detail.role} /></p>}
                     {detail.tags.length > 0 && (
                       <p className="pv-dim pv-detail-tags">{detail.tags.slice(0, 14).join(' · ')}</p>
                     )}
