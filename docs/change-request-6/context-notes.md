@@ -75,3 +75,6 @@ WARNING 은 남긴다 — 그래서 warning 이다. 매 로그인마다 찍히�
 - (기존 결함 · 이번에 안 고침) ① user_store.get 캐시가 쓰기 직전 읽은 행을 쓰기 뒤 epoch 로 저장할 수 있다(최대 3초 낡음 → 첫 SSO
   로그인 동시 두 번이면 INSERT 가 IntegrityError 로 조용히 건너뜀). ② 남의 이메일로 해 둔 pending 가입을 관리자가 승인하면 그 비밀번호로
   로그인된다 — SSO 와 무관하게 전부터 있던 길이다. 둘 다 별건으로 보고만 한다.
+
+**정정(2026-10-02, 7차).** D-4('NameIDFormat 은 바꾸지 않는다 — ADFS 가 받아 준다는 것이 4차 실측')의 전제가 틀렸다. 그 실측은 인증 전만
+본 것이었고, 운영 ADFS 는 인증 뒤 InvalidNameIDPolicy 로 거절했다. 해법도 형식 값이 아니라 NameIDPolicy 요소 생략이다 — 7차 D-3.
