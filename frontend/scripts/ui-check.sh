@@ -3,6 +3,7 @@
 #
 #   ./frontend/scripts/ui-check.sh              # 빌드 → 관리자·기본 권한 두 층 점검
 #   UI_TIERS=admin UI_SKIP_BUILD=1 ./frontend/scripts/ui-check.sh
+#   ./frontend/scripts/ui-check.sh -g '/tokens'   # 나머지 인자는 playwright test 로 넘긴다(한 화면만 다시 보기)
 #
 # 실 저장소는 하나도 안 건드린다 — 포털이 쓰는 경로를 전부 임시 디렉토리로 돌린다(docs/ui-refresh D-1).
 # 포털 프로세스는 이 스크립트가 띄운 PID 로만 내린다(pkill -f 금지 — 자기 명령줄을 맞힌다).
@@ -44,7 +45,7 @@ for tier in $TIERS; do
   done
   [ -n "$_up" ] || { echo "✗ 임시 포털이 안 떴다($tier) — 로그 끝:" >&2; tail -20 "$D/portal.log" >&2; exit 2; }
   echo "── 권한 층: $tier ──────────────────────────────"
-  (cd "$FE" && UI_BASE="http://127.0.0.1:$PORT" UI_TIER="$tier" pnpm exec playwright test) || rc=1
+  (cd "$FE" && UI_BASE="http://127.0.0.1:$PORT" UI_TIER="$tier" pnpm exec playwright test "$@") || rc=1
   kill "$PID" 2>/dev/null || true
   wait "$PID" 2>/dev/null || true
   PID=""

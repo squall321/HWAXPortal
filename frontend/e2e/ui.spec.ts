@@ -40,7 +40,15 @@ async function defects(page: Page, width: number): Promise<string[]> {
   return page.evaluate((w) => {
     const out: string[] = [];
     const doc = document.documentElement;
-    if (doc.scrollWidth > window.innerWidth + 1) out.push(`가로 넘침 ${doc.scrollWidth}px > ${window.innerWidth}px`);
+    if (doc.scrollWidth > window.innerWidth + 1) {
+      // 범인을 같이 적는다 — 화면 오른쪽 밖으로 나간 요소 중 가장 바깥 셋(가로 스크롤 상자 안쪽은 뺀다)
+      const sticking = Array.from(document.querySelectorAll<HTMLElement>('body *'))
+        .filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1)
+        .filter((el) => !el.parentElement?.closest('[style*="overflow-x: auto"], [style*="overflow: auto"], pre, .md-table-wrap'))
+        .slice(0, 3)
+        .map((el) => `${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ')[0] : ''}→${Math.round(el.getBoundingClientRect().right)}`);
+      out.push(`가로 넘침 ${doc.scrollWidth}px > ${window.innerWidth}px [${sticking.join(', ')}]`);
+    }
     const lum = (c: string) => {
       const m = c.match(/rgba?\(([^)]+)\)/);
       if (!m) return { l: 0, a: 0 };
