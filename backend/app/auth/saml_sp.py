@@ -50,10 +50,6 @@ def build_saml_settings(settings: Settings) -> dict:
                 "url": settings.saml_acs_url,
                 "binding": OneLogin_Saml2_Constants.BINDING_HTTP_POST,
             },
-            "singleLogoutService": {
-                "url": settings.saml_sls_url,
-                "binding": OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
-            },
             "NameIDFormat": OneLogin_Saml2_Constants.NAMEID_EMAIL_ADDRESS,
             "x509cert": _pem_body(sp_cert),
             "privateKey": _pem_body(sp_key),
@@ -67,6 +63,12 @@ def build_saml_settings(settings: Settings) -> dict:
             "digestAlgorithm": OneLogin_Saml2_Constants.SHA256,
         },
     }
+    # SLO 는 광고할 때만 블록을 둔다 — url 만 비우면 빈 주소로 광고된다(config saml_advertise_slo, 7차 요청 §2).
+    if settings.saml_advertise_slo:
+        saml_settings["sp"]["singleLogoutService"] = {
+            "url": settings.saml_sls_url,
+            "binding": OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
+        }
     # Take only the parsed "idp" block. (The metadata parser also returns an "sp" block
     # carrying the IdP's advertised NameIDFormat — a blind .update() would clobber our SP config.)
     saml_settings["idp"] = idp_data["idp"]

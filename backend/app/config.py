@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     # 이쪽은 '요청에서 요구하지 않는다'. ⚠ NameIDFormat 값을 바꾸는 것으로는 안 된다 — python3-saml 1.16 은 login(set_nameid_policy=)
     # 플래그로만 요소를 생략한다(authn_request.py `if set_nameid_policy:`). 요구해야 하는 IdP 도 있어 기본은 참(종전 동작).
     saml_send_nameid_policy: bool = True
+    # SP 메타데이터에 SingleLogoutService 를 광고하는가. 광고하면 다른 RP 가 전역 로그아웃을 개시할 때 IdP 가 /auth/saml/sls 로
+    # LogoutRequest 를 보내는데 그 라우트는 GET 501 스텁(POST 405)이다 — 사용자는 전역 로그아웃했다고 믿지만 포털 세션은 남는다
+    # (7차 요청 §2). SLO 를 구현하기 전까지는 끈다. url 을 비우는 것으로는 안 된다 — 빈 URL 로 그대로 광고된다. 기본 참(종전 동작).
+    saml_advertise_slo: bool = True
     # 사용자 식별자(subject — JWT sub·PAT·대화·절차 소유권)를 어디서 잡나 — "email" | "nameid" | "<Claim 이름(전체 URI)>".
     # ⚠ 기본 "email" 로 **못박는다.** 종전 `nameid or email` 은 IdP 가 NameID 를 나중에 켜는 순간 식별자가 말없이 바뀌어 기존 소유가
     # 전부 끊겼다(cae00 pat 65행이 전부 이메일형, 6차 요청 §3). 다른 값은 데이터 이전 계획과 함께 **의도적으로** 바꾼다 — 그 출처가

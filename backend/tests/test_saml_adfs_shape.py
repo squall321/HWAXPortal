@@ -238,7 +238,7 @@ def test_Mail_Claim_이_없으면_NameID_로_몰래_떨어지지_않고_거절�
 
 
 
-# ── 7차 — 요청에서 NameID 형식을 요구하지 않는다 ───────────────────────
+# ── 7차 — 요청에서 NameID 형식을 요구하지 않는다 · 없는 SLO 를 광고하지 않는다 ───────────────────────
 def _req_fields(xml: str) -> dict:
     import re
     return {k: (re.search(rf'{k}="([^"]+)"', xml) or [None, None])[1] for k in ("Destination", "AssertionConsumerServiceURL")} | \
@@ -246,9 +246,10 @@ def _req_fields(xml: str) -> dict:
 
 
 @needs_keys
-def test_기본값은_종전_그대로_NameIDPolicy_를_싣는다(tmp_path):
+def test_기본값은_종전_그대로_NameIDPolicy_를_싣고_SLO_를_광고한다(tmp_path):
     out = _run(tmp_path)
     assert "NameIDPolicy" in out["authn"], out["authn"]
+    assert out["md_status"] == 200 and out["md"].count("SingleLogoutService") == 1, out["md"]
 
 
 @needs_keys
@@ -261,3 +262,12 @@ def test_NameIDPolicy_를_끄면_그_요소만_빠지고_로그인된다(tmp_pat
     assert _req_fields(off["authn"]) == _req_fields(on["authn"]) and all(_req_fields(on["authn"]).values()), \
         (_req_fields(on["authn"]), _req_fields(off["authn"]))
     assert off["status"] in (302, 303) and off["me"]["email"] == "koo.park@example.com", off
+
+
+@needs_keys
+def test_SLO_광고를_끄면_메타데이터에서_빠지고_메타데이터는_유효하다(tmp_path):
+    """미구현 SLO(/auth/saml/sls 는 501)를 광고하면 다른 RP 의 전역 로그아웃이 포털에서 조용히 실패한다 — 사용자는 로그아웃했다고 믿는다."""
+    out = _run(tmp_path, env_extra={"SAML_ADVERTISE_SLO": "false"})
+    assert out["md_status"] == 200 and "SingleLogoutService" not in out["md"], out["md"]
+    assert "AssertionConsumerService" in out["md"]
+    assert out["status"] in (302, 303), "SLO 블록이 없어도 로그인 검증은 그대로다"
