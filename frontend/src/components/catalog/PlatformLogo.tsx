@@ -1,19 +1,7 @@
-import type { Accent } from '../../api/systems.api';
-
-const GRAD: Record<Accent, [string, string]> = {
-  violet: ['#a78bfa', '#6d28d9'],
-  cyan: ['#22d3ee', '#0891b2'],
-  amber: ['#fbbf24', '#d97706'],
-  emerald: ['#34d399', '#059669'],
-  sky: ['#38bdf8', '#2563eb'],
-  rose: ['#fb7185', '#e11d48'],
-  indigo: ['#818cf8', '#4f46e5'],
-  teal: ['#2dd4bf', '#0d9488'],
-};
 
 const stroke = {
   fill: 'none',
-  stroke: '#fff',
+  stroke: 'currentColor',
   strokeWidth: 2,
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
@@ -122,27 +110,12 @@ function Glyph({ id }: { id: string }) {
   }
 }
 
-export function PlatformLogo({
-  id,
-  accent,
-  size = 58,
-}: {
-  id: string;
-  accent: Accent;
-  size?: number;
-}) {
-  const [c1, c2] = GRAD[accent];
-  const gid = `pl-${accent}`;
+/** 앱 글리프 타일 — 앱마다 다른 그라디언트(8색) 대신 중립 바탕 + 강조색 선 하나(docs/ui-refresh PLAN §3 타일 색).
+ *  색이 분류도 상태도 뜻하지 않아 화면만 소란했다. 글리프 모양이 앱을 가른다. */
+export function PlatformLogo({ id, size = 44 }: { id: string; size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 56 56" className="plogo" aria-hidden="true">
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor={c1} />
-          <stop offset="1" stopColor={c2} />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="52" height="52" rx="15" fill={`url(#${gid})`} />
-      <rect x="2" y="2" width="52" height="27" rx="15" fill="#fff" opacity="0.14" />
+    <svg width={size} height={size} viewBox="0 0 56 56" className="plogo" aria-hidden="true" style={{ color: 'var(--accent-fg)' }}>
+      <rect x="1" y="1" width="54" height="54" rx="14" style={{ fill: 'var(--accent-soft)', stroke: 'var(--border)' }} />
       <Glyph id={id} />
     </svg>
   );
