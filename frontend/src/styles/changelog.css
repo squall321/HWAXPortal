@@ -57,7 +57,7 @@
   color: #cdd6ff;
   font-size: 1rem;
 }
-.cl-title { margin: 0; font-size: 1rem; font-weight: 680; color: var(--fg); }
+.cl-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--fg); }
 .cl-sub { margin: 0.2rem 0 0; font-size: 0.76rem; color: var(--muted); }
 .cl-x {
   margin-left: auto;
@@ -97,7 +97,7 @@
 .cl-entry-title {
   margin: 0 0 0.35rem;
   font-size: 0.88rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--fg);
   text-wrap: balance;
 }
@@ -109,7 +109,7 @@
   margin-bottom: 0.28rem;
 }
 .cl-items li::marker { color: var(--muted); }
-.cl-items b { font-weight: 650; }
+.cl-items b { font-weight: 600; }
 
 .cl-foot {
   display: flex;
@@ -208,7 +208,7 @@
   background: var(--muted);
   box-shadow: 0 0 0 3px var(--bg);
 }
-.clp-day-date { display: block; font-size: 0.82rem; font-weight: 650; color: var(--fg); }
+.clp-day-date { display: block; font-size: 0.82rem; font-weight: 600; color: var(--fg); }
 .clp-dow { color: var(--muted); font-weight: 400; }
 .clp-today {
   display: inline-block;
@@ -229,7 +229,7 @@
 .clp-entry-title {
   margin: 0 0 0.45rem;
   font-size: 0.95rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--fg);
   text-wrap: balance;
   display: flex;

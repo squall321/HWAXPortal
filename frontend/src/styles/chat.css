@@ -1014,7 +1014,7 @@ body.dock-open .page-wide {
 .dv-av { flex: none; width: 30px; height: 30px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 0.78rem; display: grid; place-items: center; margin-top: 2px; }
 .dv-av.sm { width: 20px; height: 20px; font-size: 0.62rem; }
 .dv-turn-body { min-width: 0; }
-.dv-who { font-size: 0.72rem; font-weight: 640; color: var(--fg); margin: 0 0 0.22rem 2px; display: flex; align-items: center; gap: 0.4rem; }
+.dv-who { font-size: 0.72rem; font-weight: 600; color: var(--fg); margin: 0 0 0.22rem 2px; display: flex; align-items: center; gap: 0.4rem; }
 .dv-stance { font-size: 0.62rem; font-weight: 600; padding: 0.06rem 0.4rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
 .dv-stance.agree { color: #4ade80; border-color: rgba(74, 222, 128, 0.4); }
 .dv-stance.cond { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
@@ -2016,7 +2016,7 @@ body.dock-open .page-wide {
   place-items: center;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
 }
-.msg-who-name { font-weight: 650; color: var(--fg); }
+.msg-who-name { font-weight: 600; color: var(--fg); }
 .msg-who-key {
   font-family: var(--cx-mono);
   font-size: 0.66rem;
@@ -2038,7 +2038,7 @@ body.dock-open .page-wide {
   padding: 0.7rem 0.8rem 0.6rem;
 }
 .ac-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-.ac-title { font-size: 0.82rem; font-weight: 650; color: var(--fg); }
+.ac-title { font-size: 0.82rem; font-weight: 600; color: var(--fg); }
 .ac-dim, .ac-desc { color: var(--muted); font-weight: 400; }
 .ac-browse {
   margin-left: auto;
@@ -2140,7 +2140,7 @@ body.dock-open .page-wide {
   padding: 0.8rem;
 }
 .pp-head { display: flex; align-items: center; margin-bottom: 0.5rem; }
-.pp-title { font-size: 0.88rem; font-weight: 650; color: var(--fg); }
+.pp-title { font-size: 0.88rem; font-weight: 600; color: var(--fg); }
 .pp-x {
   margin-left: auto;
   background: transparent;
@@ -2166,7 +2166,7 @@ body.dock-open .page-wide {
   flex: 1;
   min-width: 0;
   color: var(--fg);
-  font-weight: 620;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2273,7 +2273,7 @@ body.dock-open .page-wide {
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
 }
-.pv-title { margin: 0; font-size: 0.95rem; font-weight: 650; color: var(--fg); }
+.pv-title { margin: 0; font-size: 0.95rem; font-weight: 600; color: var(--fg); }
 .pv-count { font-size: 0.72rem; color: var(--muted); }
 .pv-search {
   margin-left: auto;
@@ -2308,7 +2308,7 @@ body.dock-open .page-wide {
   border-radius: 8px;
   color: var(--fg);
   font-size: 0.8rem;
-  font-weight: 650;
+  font-weight: 600;
   padding: 0.32rem 0.45rem;
   cursor: pointer;
 }
@@ -2420,7 +2420,7 @@ body.dock-open .page-wide {
 }
 .pv-dom:hover { border-color: var(--accent); transform: translateY(-1px); }
 .pv-dom-head { display: flex; align-items: baseline; gap: 0.4rem; }
-.pv-dom-name { font-size: 0.83rem; font-weight: 650; }
+.pv-dom-name { font-size: 0.83rem; font-weight: 600; }
 .pv-dom-n {
   margin-left: auto;
   font-size: 0.75rem;
@@ -2502,7 +2502,7 @@ body.dock-open .page-wide {
 .pv-detail { border-left: 1px solid var(--border); overflow-y: auto; padding: 0.8rem; }
 .pv-detail-hint { margin-top: 2rem; text-align: center; }
 .pv-detail-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
-.pv-detail-name { font-size: 0.85rem; font-weight: 650; color: var(--fg); line-height: 1.3; }
+.pv-detail-name { font-size: 0.85rem; font-weight: 600; color: var(--fg); line-height: 1.3; }
 .pv-apply {
   width: 100%;
   border: 1px solid var(--accent);
@@ -2587,14 +2587,14 @@ body.dock-open .page-wide {
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.2rem;
 }
-.ot-cat-name { font-weight: 650; }
+.ot-cat-name { font-weight: 600; }
 .ot-cat.is-on { background: rgba(20, 40, 160, 0.22); }
 .ot-doms { margin-left: 10px; }
 .ot-sec { margin-top: 1.3rem; }
 .ot-sec-h {
   margin: 0 0 0.5rem;
   font-size: 0.9rem;
-  font-weight: 750;
+  font-weight: 700;
   color: var(--fg);
   border-bottom: 1px solid var(--border);
   padding-bottom: 0.3rem;
@@ -2608,7 +2608,7 @@ body.dock-open .page-wide {
   color: var(--fg);
   font: inherit;
   font-size: 0.82rem;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
 }
 .ot-cat-h:hover { color: var(--cx-accent); }
@@ -2812,7 +2812,7 @@ body.dock-open .page-wide {
 .dv-name {
   margin: 0;
   font-size: 1.05rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--fg);
   white-space: nowrap;
   overflow: hidden;
@@ -2881,7 +2881,7 @@ body.dock-open .page-wide {
   overflow: hidden;
 }
 
-.dv-rec-title { margin: 0 0 0.35rem; font-size: 1rem; font-weight: 650; color: var(--fg); line-height: 1.45; }
+.dv-rec-title { margin: 0 0 0.35rem; font-size: 1rem; font-weight: 600; color: var(--fg); line-height: 1.45; }
 .dv-rec-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin-bottom: 0.35rem; }
 .dv-rec-tags { font-size: 0.7rem; line-height: 1.6; margin: 0 0 0.4rem; }
 .dv-rec-summary { font-size: 0.8rem; color: var(--fg); line-height: 1.65; margin: 0 0 0.5rem; }
