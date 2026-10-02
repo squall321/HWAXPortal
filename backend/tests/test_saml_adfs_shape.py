@@ -62,6 +62,12 @@ with TestClient(app, base_url="http://localhost:5283") as c:
         if row.get("affiliation"):
             us.set_access(row["email"], affiliation=row["affiliation"], grants=None)
     r = c.get("/auth/login", follow_redirects=False)
+    # 보낸 AuthnRequest(디코드)와 SP 메타데이터 — NameIDPolicy·SLO 광고를 본다(7차 요청)
+    from urllib.parse import parse_qs
+    raw = OneLogin_Saml2_Utils.decode_base64_and_inflate(parse_qs(urlsplit(r.headers["location"]).query)["SAMLRequest"][0])
+    out["authn"] = raw.decode() if isinstance(raw, bytes) else raw
+    md = c.get("/auth/saml/metadata")
+    out["md_status"], out["md"] = md.status_code, md.text
     r2 = c.get(path(r.headers["location"]), follow_redirects=False)
     html = r2.text.replace("&amp;", "&")
     action = re.search(r'action="([^"]+)"', html).group(1)
@@ -95,7 +101,8 @@ def _run(tmp_path, *, want_nameid: str | None = "false", env_extra: dict | None 
            "AGENT_AUDIT_LOG_PATH": str(tmp_path / "audit.sqlite"), "JWT_KEYS_DIR": str(tmp_path / "jwt"),
            "JWT_AUTOGEN_KEYS": "true", "PROCEDURES_ARTIFACT_ROOT": str(tmp_path / "art"),
            "DELIB_ARCHIVE_ROOT": str(tmp_path / "delib"), "UPLOAD_STAGING_DIR": str(tmp_path / "stage")}
-    for k in ("SAML_WANT_NAMEID", "SAML_SUBJECT_SOURCE", "SAML_ATTR_NAME", "SAML_ATTR_DEPARTMENT"):
+    for k in ("SAML_WANT_NAMEID", "SAML_SUBJECT_SOURCE", "SAML_ATTR_NAME", "SAML_ATTR_DEPARTMENT",
+              "SAML_SEND_NAMEID_POLICY", "SAML_ADVERTISE_SLO"):
         env.pop(k, None)
     if want_nameid is not None:
         env["SAML_WANT_NAMEID"] = want_nameid
@@ -228,3 +235,29 @@ def test_Mail_Claim_이_없으면_NameID_로_몰래_떨어지지_않고_거절�
     out = _run(tmp_path, nameid="kpark01", env_extra={"SAML_ATTR_EMAIL": "Mail"})
     assert out["status"] == 400 and "SAML_ATTR_EMAIL" in out["body"] and CLAIM + "Mail" in out["body"], out
     assert "koo.park@example.com" not in out["body"], "Claim 값은 응답에 안 싣는다"
+
+
+
+# ── 7차 — 요청에서 NameID 형식을 요구하지 않는다 ───────────────────────
+def _req_fields(xml: str) -> dict:
+    import re
+    return {k: (re.search(rf'{k}="([^"]+)"', xml) or [None, None])[1] for k in ("Destination", "AssertionConsumerServiceURL")} | \
+        {"Issuer": (re.search(r"<saml:Issuer>([^<]+)</saml:Issuer>", xml) or [None, None])[1]}
+
+
+@needs_keys
+def test_기본값은_종전_그대로_NameIDPolicy_를_싣는다(tmp_path):
+    out = _run(tmp_path)
+    assert "NameIDPolicy" in out["authn"], out["authn"]
+
+
+@needs_keys
+def test_NameIDPolicy_를_끄면_그_요소만_빠지고_로그인된다(tmp_path):
+    """운영 ADFS 는 형식을 요구하면 **인증을 통과한 뒤** InvalidNameIDPolicy 로 거절한다(2026-10-02 실측). 플래그는 그 요소만 지워야
+    한다 — Destination·ACS·Issuer 가 같아야 진단 앱(성공한 정답지)과 같은 모양이다."""
+    on = _run(tmp_path / "on")
+    off = _run(tmp_path / "off", env_extra={"SAML_SEND_NAMEID_POLICY": "false"})
+    assert "NameIDPolicy" not in off["authn"], off["authn"]
+    assert _req_fields(off["authn"]) == _req_fields(on["authn"]) and all(_req_fields(on["authn"]).values()), \
+        (_req_fields(on["authn"]), _req_fields(off["authn"]))
+    assert off["status"] in (302, 303) and off["me"]["email"] == "koo.park@example.com", off

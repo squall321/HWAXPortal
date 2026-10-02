@@ -53,7 +53,8 @@ class SamlProvider:
         req = prepare_static_request(self._settings, path="/auth/login")
         auth = OneLogin_Saml2_Auth(req, old_settings=self._saml_settings)
         # return_to becomes RelayState — round-trips our signed login state to the ACS.
-        url = auth.login(return_to=state)
+        # NameIDPolicy 를 안 실을 수 있게 — 운영 ADFS 는 형식을 요구하면 InvalidNameIDPolicy 로 거절한다(config saml_send_nameid_policy).
+        url = auth.login(return_to=state, set_nameid_policy=self._settings.saml_send_nameid_policy)
         return RedirectResponse(url, status_code=302)
 
     async def handle_callback(self, request: Request, *, expected_state: str | None) -> Principal:

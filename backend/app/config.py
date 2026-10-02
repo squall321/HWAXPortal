@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # python3-saml 은 이 값이 참이면 NameID 부재를 검증 실패로 친다(서명·시간·Audience 를 다 통과한 Assertion 이 400).
     # 끄면 식별은 Claim 으로 한다(SAML_ATTR_EMAIL). 기본은 종전대로 참(6차 요청 §2).
     saml_want_nameid: bool = True
+    # AuthnRequest 에 <samlp:NameIDPolicy> 를 싣는가. 운영 ADFS 는 이 RP 에 NameID 를 발급하지 않아 형식을 요구하면 인증을 통과한 뒤
+    # Requester/InvalidNameIDPolicy 로 거절한다(2026-10-02 운영 실측, 7차 요청 §1). saml_want_nameid 와 짝 — 그쪽은 '응답에 없어도 받는다',
+    # 이쪽은 '요청에서 요구하지 않는다'. ⚠ NameIDFormat 값을 바꾸는 것으로는 안 된다 — python3-saml 1.16 은 login(set_nameid_policy=)
+    # 플래그로만 요소를 생략한다(authn_request.py `if set_nameid_policy:`). 요구해야 하는 IdP 도 있어 기본은 참(종전 동작).
+    saml_send_nameid_policy: bool = True
     # 사용자 식별자(subject — JWT sub·PAT·대화·절차 소유권)를 어디서 잡나 — "email" | "nameid" | "<Claim 이름(전체 URI)>".
     # ⚠ 기본 "email" 로 **못박는다.** 종전 `nameid or email` 은 IdP 가 NameID 를 나중에 켜는 순간 식별자가 말없이 바뀌어 기존 소유가
     # 전부 끊겼다(cae00 pat 65행이 전부 이메일형, 6차 요청 §3). 다른 값은 데이터 이전 계획과 함께 **의도적으로** 바꾼다 — 그 출처가
