@@ -22,6 +22,7 @@ import httpx
 import yaml
 from fastapi import APIRouter, Depends, Request
 
+from app.access.policy import ADMIN_GROUP
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
 from app.deps import get_current_principal
@@ -136,6 +137,10 @@ async def list_requests(
     principal: Principal = Depends(get_current_principal),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    # 운영자 할 일이다 — 일반 사용자에게는 앱 목록보다 먼저 '필수 3' 노란 상자가 보였다(docs/ui-refresh 단계 1).
+    # 403 이 아니라 빈 목록: 화면은 '다 됐으면 아무것도 안 그린다' 로 이미 그 경우를 안다.
+    if ADMIN_GROUP not in (principal.groups or []):
+        return {"items": [], "pending": 0}
     rows = _load(settings)
     access = getattr(request.app.state, "access", None)
 

@@ -227,3 +227,16 @@ def test_credentials_never_claim_a_default(client):
     assert by_id["ste-backend-route"]["default"] == "none", "주소는 찍으면 죽은 라우트가 된다"
     # 우리 서비스끼리만 쓰는 난수는 만들어도 된다
     assert by_id["ste-sso-secret"]["default"] == "generate"
+
+
+def test_운영자_할_일은_관리자에게만_보인다(client):
+    """일반 사용자 홈에 '배선 설정 · 필수 3' 상자가 앱 목록보다 먼저 떴다 — 운영자 할 일이다(docs/ui-refresh 단계 1)."""
+    c = client(ste_sso_secret="")
+    _login(c)                                                    # 부트스트랩 관리자
+    assert c.get("/setup/requests").json()["items"], "전제 — 관리자에게는 할 일이 보인다"
+    h = {"X-CSRF-Token": c.cookies.get("hwax_csrf")}
+    c.post("/auth/local/signup", json={"email": "plain@corp.com", "name": "P", "password": "pw123456"})
+    assert c.post("/auth/local/users/plain@corp.com/approve", json={"groups": []}, headers=h).status_code == 200
+    c.post("/auth/local/logout", headers=h)
+    assert c.post("/auth/local/login", json={"email": "plain@corp.com", "password": "pw123456"}).status_code == 200
+    assert c.get("/setup/requests").json() == {"items": [], "pending": 0}
