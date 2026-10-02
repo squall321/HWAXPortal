@@ -17,9 +17,11 @@ body {
   line-height: var(--lh-body);
   font-size: var(--fs-15);
   -webkit-font-smoothing: antialiased;
-  /* 한국어는 어절 단위로 줄을 바꾼다 — 없으면 '홍/길/동', '로/그/인' 처럼 음절에서 끊긴다. */
+  /* 한국어는 어절 단위로 줄을 바꾼다 — 없으면 '홍/길/동', '로/그/인' 처럼 음절에서 끊긴다.
+     anywhere — keep-all 은 공백 없는 긴 한글·파일명·ID 를 못 끊어 칩·표 칸이 밖으로 넘쳤다(검토 2차). 끊을 곳이 없을 때만 아무 데서나 끊고,
+     최소 폭 계산도 낮춰 표 칸이 스크롤 상자를 밀어내지 않는다. 어절 경계가 있으면 그대로 어절에서 끊는다. */
   word-break: keep-all;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* 클래스 없는 본문 링크 — 기본값(#1428a0·브라우저 보라)은 어두운 바탕에서 안 보였다. */
@@ -29,8 +31,9 @@ body {
 }
 
 /* 폼 컨트롤 기본값 — 클래스·스타일 없는 입력칸이 브라우저 기본(회색 채움·모서리 0·높이 20px)으로 그려졌다(관리 화면).
-   :where 로 명시도 0 — 기존에 스타일을 준 입력칸은 그대로 이긴다. */
-:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select, textarea) {
+   **클래스 없는 컨트롤에만** — 자기 클래스로 크기를 정한 것(심의 옵션의 작은 숫자칸 등)에 36px 높이가 덧씌워졌다(검토 2차).
+   인라인 스타일은 여전히 이긴다(:where 라 명시도 0). */
+:where(input:not([class], [type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select:not([class]), textarea:not([class])) {
   font: inherit;
   font-size: var(--fs-14);
   color: var(--fg);
@@ -39,10 +42,10 @@ body {
   border-radius: var(--r-md);
   padding: 0 var(--sp-3);
 }
-:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select) {
+:where(input:not([class], [type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select:not([class])) {
   height: var(--control-h);
 }
-:where(textarea) {
+:where(textarea:not([class])) {
   padding: var(--sp-2) var(--sp-3);
   line-height: var(--lh-body);
 }
@@ -53,8 +56,9 @@ body {
   accent-color: var(--primary);
 }
 
-/* 키보드 포커스는 어디서나 보이게 */
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+/* 키보드 포커스는 어디서나 보이게 — 선택자 전체를 :where 로 묶어 명시도 0. :focus-visible 을 밖에 두면 (0,1,0) 이 되어
+   자기 포커스 모양을 정한 컨트롤(사이드바 검색·이름 바꾸기의 outline:none + 테두리)에 이중 링이 씌워졌다(검토 2차). */
+:where(a, button, input, select, textarea, summary, [tabindex]):where(:focus-visible) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }

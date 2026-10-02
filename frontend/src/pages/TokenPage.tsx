@@ -261,29 +261,13 @@ export default function TokenPage() {
           onChange={(e) => setName(e.target.value)}
           placeholder="토큰 이름 (예: my-laptop-claude)"
           maxLength={80}
-          style={{
-            flex: '1 1 14rem',
-            minWidth: 0,
-            padding: '0.55rem 0.8rem',
-            background: 'var(--card)',
-            color: 'var(--fg)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            fontSize: '0.9rem',
-          }}
+          style={{ flex: '1 1 14rem', minWidth: 0 }}
         />
         <select
           value={ttlDays}
           onChange={(e) => setTtlDays(Number(e.target.value))}
           title="토큰 수명"
-          style={{
-            padding: '0.55rem 0.6rem',
-            background: 'var(--card)',
-            color: 'var(--fg)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            fontSize: '0.9rem',
-          }}
+
         >
           <option value={30}>30일</option>
           <option value={90}>90일</option>

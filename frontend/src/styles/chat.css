@@ -717,7 +717,10 @@ body.dock-open .chatdock {
 /* Dock open → main content reserves the dock width so cards never hide behind it. */
 body.dock-open .home-wrap,
 body.dock-open .hero-inner,
-body.dock-open .container {
+body.dock-open .container,
+body.dock-open .page-read,
+body.dock-open .page-wide {
+  /* 페이지 뼈대(.page-read·.page-wide)도 — 빠지면 토큰 화면의 발급 버튼·표가 독 밑에 깔렸다(검토 2차) */
   padding-right: calc(var(--dock-w) + 1.5rem);
 }
 .home-wrap,
@@ -813,7 +816,9 @@ body.dock-open .container {
   /* Dock covers the whole screen → no content padding needed. */
   body.dock-open .home-wrap,
   body.dock-open .hero-inner,
-  body.dock-open .container {
+  body.dock-open .container,
+  body.dock-open .page-read,
+  body.dock-open .page-wide {
     padding-right: 1.5rem;
   }
 }

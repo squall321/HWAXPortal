@@ -125,7 +125,7 @@ export default function UsersAdminPage() {
                 <td style={cell}>{r.groups.join(', ') || '—'}</td>
                 <td style={cell}>{r.auth_source === 'sso' ? 'SSO' : '이메일'}</td>
                 <td style={cell}>{when(r.last_login_at)}</td>
-                <td style={{ ...cell, whiteSpace: 'nowrap' }}>
+                <td style={cell}>
                   {r.status === 'pending' && (
                     <>
                       <button

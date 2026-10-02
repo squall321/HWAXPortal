@@ -3,6 +3,7 @@
 // 루트는 `.container` 다 — AppShell 의 ChatDock 이 열릴 때 자리를 비켜 주는 클래스다.
 // 우하단은 비워 둔다(닫힌 독의 💬 FAB 가 거기 고정이라 겹친다).
 import { NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { ChangelogBold as Bold } from '../../components/layout/ChangelogBold';
 import { Page, PageHeader } from '../../components/ui/Page';
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
@@ -278,7 +279,7 @@ function EmptyWithSeeds({ onImported }: { onImported: () => void }) {
                                color: 'var(--muted)', fontSize: '0.78rem' }}>
                     {s.vars.filter((v) => v.why).slice(0, 3).map((v) => (
                       <li key={v.key}>
-                        <b style={{ color: 'var(--fg)' }}>{v.label}</b> — {v.why}
+                        <b style={{ color: 'var(--fg)' }}>{v.label}</b> — <Bold text={v.why ?? ''} />
                       </li>
                     ))}
                   </ul>
@@ -368,7 +369,7 @@ function ProcedureDetail() {
       )}
 
       {(v.spec.vars?.length ?? 0) > 0 && (
-        <section style={rowCard}>
+        <section style={{ ...rowCard, display: 'block' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap',
                         margin: '0 0 0.6rem' }}>
             <h3 style={{ color: 'var(--fg)', margin: 0, fontSize: '0.95rem' }}>이번에 채울 값</h3>
@@ -416,7 +417,7 @@ function ProcedureDetail() {
                 ) : (
                   <input style={inp} value={vals[d.key] ?? ''} onChange={(e) => setVals({ ...vals, [d.key]: e.target.value })} />
                 )}
-                {d.why && <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>{d.why}</span>}
+                {d.why && <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}><Bold text={d.why} /></span>}
                 {d.example !== undefined && d.example !== null && (
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <button type="button" style={tiny}
@@ -434,7 +435,7 @@ function ProcedureDetail() {
         </section>
       )}
 
-      <section style={rowCard}>
+      <section style={{ ...rowCard, display: 'block' }}>
         <h3 style={{ color: 'var(--fg)', margin: '0 0 0.5rem', fontSize: '0.95rem' }}>단계 {v.spec.steps.length}개</h3>
         <ol style={{ margin: 0, paddingLeft: '1.2rem', color: 'var(--muted)', fontSize: '0.85rem' }}>
           {v.spec.steps.map((s, i) => (

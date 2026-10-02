@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Page } from '../components/ui/Page';
+import { Page, PageHeader } from '../components/ui/Page';
 import { launchSystem, type HandoffPayload } from '../api/launch.api';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { Spinner } from '../components/common/Spinner';
@@ -34,7 +34,15 @@ export default function LaunchPage() {
   if (error) {
     return (
       <Page>
-        <ErrorBanner message={error} />
+        <PageHeader title="앱을 열 수 없습니다" />
+        {/* 서버 원문(영문)을 그대로 보이지 않는다 — 흔한 경우는 한국어로, 나머지는 원문을 함께 */}
+        <ErrorBanner
+          message={
+            /system not found/i.test(error)
+              ? '없는 앱이거나 주소가 바뀌었습니다. 앱 목록에서 다시 여세요.'
+              : `앱을 여는 중 문제가 생겼습니다 — ${error}`
+          }
+        />
         <button className="btn-secondary" onClick={() => navigate('/apps')}>
           앱 목록으로
         </button>
