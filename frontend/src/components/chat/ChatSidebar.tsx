@@ -1,5 +1,6 @@
 // 대화 이력 사이드바 — 시간대별 그룹핑(오늘/어제/…), 새 대화·이름변경·2단계 삭제, 접기 토글
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
 import { IconCheck, IconPanel, IconPencil, IconPlus, IconTrash } from './icons';
@@ -133,6 +134,7 @@ export function ChatSidebar({
   onNavigate?: () => void;
 }) {
   const { conversations, activeId, newConversation } = useChat();
+  const { pathname } = useLocation();
   const [query, setQuery] = useState('');
 
   // 검색 — 제목 또는 발언 내용에 질의가 포함된 대화만(대소문자 무시). 쌓인 심의/대화 찾기용.
@@ -163,7 +165,8 @@ export function ChatSidebar({
     <aside className={`cx-sidebar${open ? ' open' : ''}`} aria-label="대화 이력" aria-hidden={!open}>
       <div className="sb-inner">
         <div className="sb-head">
-          <span className="sb-brand">HWAX</span>
+          {/* 헤더에 브랜드가 이미 있다 — 여기는 지금 보는 이력의 종류 */}
+          <span className="sb-brand">{pathname.startsWith('/deliberate') ? '심의' : '대화'}</span>
           <button
             type="button"
             className="sb-icon sb-collapse"

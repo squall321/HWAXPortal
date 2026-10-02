@@ -136,13 +136,10 @@ export function ChatActionBar() {
           <button
             key={a.id}
             type="button"
-            className="cx-export-btn"
+            className="cx-threadbar-btn"
             data-hwax-action={a.id}
             onClick={() => onClick(a)}
             disabled={!!why}
-            // .cx-export-btn 에 :disabled 규칙이 없어 꺼진 버튼이 켜진 것과 똑같이 보인다. 색을 인라인으로 박아
-            // :hover 의 밝아짐도 누른다(기존 Word·핸드오프 버튼의 모양은 건드리지 않는다).
-            style={why ? { opacity: 0.45, cursor: 'not-allowed', color: 'var(--muted)', borderColor: 'var(--border)' } : undefined}
             title={title}
           >
             {a.label}

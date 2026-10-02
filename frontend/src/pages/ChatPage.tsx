@@ -9,22 +9,62 @@ import { Composer, type ComposerHandle } from '../components/chat/Composer';
 import { StartPicker } from '../components/chat/StartPicker';
 import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
-import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
+import {
+  IconBook,
+  IconCalc,
+  IconGrid,
+  IconLink,
+  IconPanel,
+  IconPlus,
+  IconSliders,
+  IconSpark,
+  IconUsers,
+} from '../components/chat/icons';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
 import '../styles/chat.css';
 import '../styles/chatpage.css';
 
-const EXAMPLE_PROMPTS = [
-  '이 포털에서 무엇을 할 수 있는지, 어떤 도구가 있는지 알려줘',
-  '이 포털 사용법을 알려줘 — 내 Claude에 연결하려면?',
-  '/심의 FPCB 적층 동박을 두껍게 vs 얇게 — 전문가 다중 라운드 심의',
-  '복합재 적층 구성의 ABD 행렬·중립축을 계산해줘 (공학해석 도구)',
-  '배터리 스웰링 관련 백서 내용을 정리해줘',
-  '시험 신호 데이터의 전처리 방법을 추천해줘',
+// 시작 카드 — 문장 길이 칩 6개가 들쭉날쭉 쌓이던 것을 짧은 제목·한 줄 설명의 카드 넷으로(docs/ui-refresh 단계 4).
+// need 가 있는 카드는 그 권한이 있을 때만 보인다 — 눌러도 막히는 것을 권하지 않는다. 앞에서부터 넷을 쓴다.
+const STARTS: {
+  icon: (p: { width: number; height: number }) => JSX.Element;
+  title: string;
+  sub: string;
+  prompt: string;
+  need?: string;
+}[] = [
+  {
+    icon: IconGrid,
+    title: '도구 둘러보기',
+    sub: '이 포털에서 할 수 있는 일과 쓸 수 있는 도구',
+    prompt: '이 포털에서 무엇을 할 수 있는지, 어떤 도구가 있는지 알려줘',
+  },
+  {
+    icon: IconLink,
+    title: '내 Claude 에 연결',
+    sub: 'Claude Code·Desktop 을 HWAX 에 붙이는 방법',
+    prompt: '이 포털 사용법을 알려줘 — 내 Claude에 연결하려면?',
+  },
+  {
+    icon: IconUsers,
+    title: '전문가 심의',
+    sub: 'FPCB 동박 두께 — 여러 라운드로 토의해 결정',
+    prompt: '/심의 FPCB 적층 동박을 두껍게 vs 얇게 — 전문가 다중 라운드 심의',
+    need: 'feat:deliberation',
+  },
+  {
+    icon: IconCalc,
+    title: '공학 계산',
+    sub: '복합재 적층의 ABD 행렬·중립축',
+    prompt: '복합재 적층 구성의 ABD 행렬·중립축을 계산해줘 (공학해석 도구)',
+  },
+  {
+    icon: IconBook,
+    title: '문헌 정리',
+    sub: '배터리 스웰링 관련 백서 요약',
+    prompt: '배터리 스웰링 관련 백서 내용을 정리해줘',
+  },
 ];
-
-// "/심의 <질문>" → 다중 라운드 전문가 심의 모드(agent-server deliberation). 챗 입력 안내에 노출.
-const DELIBERATE_HINT = '/심의 <질문> — 관련 전문가들이 여러 라운드로 토의해 의사결정문을 만듭니다';
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -111,29 +151,50 @@ export default function ChatPage() {
                 {user?.display_name ? `, ${user.display_name}님` : ''}
               </p>
               <h1 className="cx-hero-title">무엇을 도와드릴까요?</h1>
-              <Composer ref={composerRef} autoFocus showHint />
+              <Composer
+                ref={composerRef}
+                autoFocus
+                showHint
+                showExpert
+                placeholder={
+                  can('feat:deliberation')
+                    ? '무엇이든 물어보세요 — /심의 로 시작하면 전문가 심의'
+                    : undefined
+                }
+              />
               {/* 시작 전 구성 — 전문가(페르소나)·도구를 직접 고르고 대화 시작(심의 선정과 같은 구조). */}
               {picker ? (
                 <StartPicker onClose={() => setPicker(false)} />
               ) : (
-                <div className="cx-chips">
-                  <button type="button" className="cx-chip cx-chip-accent" onClick={() => setPicker(true)}>
-                    {can('feat:expert-chat') ? '🎛 전문가·도구 고르고 시작' : '🎛 도구 고르고 시작'}
+                <>
+                  <div className="cx-starts">
+                    {STARTS.filter((c) => !c.need || can(c.need))
+                      .slice(0, 4)
+                      .map((c) => (
+                        <button
+                          type="button"
+                          key={c.title}
+                          className="cx-start"
+                          onClick={() => fillPrompt(c.prompt)}
+                        >
+                          <span className="cx-start-ic" aria-hidden="true">
+                            <c.icon width={17} height={17} />
+                          </span>
+                          <span className="cx-start-text">
+                            <b>{c.title}</b>
+                            <span>{c.sub}</span>
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                  <button type="button" className="cx-pick" onClick={() => setPicker(true)}>
+                    <IconSliders width={15} height={15} />
+                    {can('feat:expert-chat')
+                      ? '전문가·도구를 직접 고르고 시작'
+                      : '도구를 직접 고르고 시작'}
                   </button>
-                </div>
+                </>
               )}
-              <div className="cx-chips">
-                {/* 권한이 없는 기능의 예시는 보이지 않는다 — 눌러도 막히는 것을 권하지 않는다. */}
-                {EXAMPLE_PROMPTS.filter((p) => !p.startsWith('/심의') || can('feat:deliberation')).map((p) => (
-                  <button type="button" key={p} className="cx-chip" onClick={() => fillPrompt(p)}>
-                    {p}
-                  </button>
-                ))}
-              </div>
-              {can('feat:deliberation') && <p className="cx-hero-hint">{DELIBERATE_HINT}</p>}
-              <p className="cx-hero-sub">
-                요청을 이해해 알맞은 플랫폼으로 연결하고 결과를 대화로 돌려드립니다.
-              </p>
             </div>
           </div>
         ) : (
@@ -143,7 +204,13 @@ export default function ChatPage() {
               <MessageList messages={messages} />
             </div>
             <div className="cx-composer-dock">
-              <Composer ref={composerRef} autoFocus showHint placeholder="답장을 입력하세요…" />
+              <Composer
+                ref={composerRef}
+                autoFocus
+                showHint
+                showExpert
+                placeholder="답장을 입력하세요…"
+              />
             </div>
           </div>
         )}

@@ -333,18 +333,91 @@
 }
 .cx-hero .composer-box {
   border-radius: 20px;
-  padding: 0.5rem 0.55rem 0.5rem 1.15rem;
+  padding: var(--sp-3) var(--sp-3) var(--sp-2) var(--sp-5);
   box-shadow: 0 14px 44px rgba(0, 0, 0, 0.42);
 }
 .cx-hero .composer-box textarea {
   font-size: 1.02rem;
-  padding: 0.8rem 0;
+  padding: var(--sp-1) 0 var(--sp-2);
+  min-height: 3.2em;
   max-height: 240px;
 }
-.cx-hero .composer-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 13px;
+.cx-hero .composer-tools {
+  margin-left: calc(-1 * var(--sp-3));
+}
+
+/* 시작 카드(빈 화면) — 칩 더미 대신 2×2. 왼쪽 정렬·짧은 제목·한 줄 설명(docs/ui-refresh 단계 4) */
+.cx-starts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 640px;
+  margin: var(--sp-5) auto 0;
+  text-align: left;
+}
+.cx-start {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  color: var(--fg);
+  text-align: left;
+  line-height: var(--lh-tight);
+  transition: border-color 0.12s, background 0.12s, transform 0.08s;
+}
+.cx-start:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.cx-start:active {
+  transform: translateY(1px);
+}
+.cx-start-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+.cx-start-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.cx-start-text b {
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+.cx-start-text span {
+  font-size: var(--fs-13);
+  color: var(--fg-muted);
+  line-height: 1.45;
+}
+.cx-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-4);
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--r-md);
+  color: var(--accent-fg);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.cx-pick:hover {
+  background: var(--accent-soft);
+}
+@media (max-width: 600px) {
+  .cx-starts {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cx-chips {
@@ -388,38 +461,68 @@
   flex-direction: column;
 }
 /* 내보내기 툴바 — 스레드 우상단에 조용히 떠 있는 고스트 버튼 */
-.cx-export {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.9rem;
-  z-index: 5;
+/* 스레드 머리 줄 — 제목 · 사내 연계 · 심의로 넘기기 · 내보내기 ▾ (흐름 안, 본문을 덮지 않는다) */
+.cx-threadbar {
   display: flex;
-  gap: 0.35rem;
-  /* 버튼이 늘면(사내 연계 액션 바) 좁은 폭에서 왼쪽 밖으로 밀렸다 — 폭을 가두고 줄을 바꾼다 */
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: calc(100% - 0.9rem);
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  min-height: 48px;
+  padding: 6px var(--sp-4);
+  border-bottom: 1px solid var(--border);
 }
-/* 사이드바를 접으면 좌상단 플로팅 컨트롤(.cx-mainbar) 자리를 비운다 — 안 비우면 '사이드바 열기'·'새 대화' 를 덮는다 */
-.cx-mainbar ~ .cx-thread > .cx-export {
-  max-width: calc(100% - 6.5rem);
+/* 사이드바를 접으면 좌상단 플로팅 컨트롤(.cx-mainbar) 자리를 비운다 */
+.cx-mainbar ~ .cx-thread > .cx-threadbar {
+  padding-left: 6.25rem;
 }
-.cx-export-btn {
+.cx-threadbar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--fg);
+}
+.cx-threadbar-btn,
+.cx-export-menu .menu-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.28rem 0.6rem;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  color: var(--muted);
-  font-size: 0.72rem;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
+  border-radius: var(--r-md);
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+  white-space: nowrap;
 }
-.cx-export-btn:hover {
+.cx-threadbar-btn:hover,
+.cx-export-menu .menu-btn:hover {
   color: var(--fg);
-  border-color: var(--muted);
+  background: var(--surface-2);
+}
+.cx-threadbar-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--fg-muted);
+}
+.cx-export-menu .menu-pop {
+  min-width: 240px;
+}
+.cx-export-menu .menu-pop [role='menuitem']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (max-width: 600px) {
+  .cx-threadbar-title {
+    display: none;
+  }
+  .cx-threadbar {
+    justify-content: flex-end;
+  }
 }
 
 /* 메시지 컬럼을 중앙 780px로 — 독(.chatdock)은 전체 폭 그대로 */
@@ -1170,7 +1273,8 @@
 /* 물성 파일 업로드 패널 — 챗 입력 위 인라인. */
 .composer-attach {
   /* 보조 행동 — 전송보다 가볍게(종전엔 브라우저 기본 회색 덩어리) */
-  background: transparent; color: var(--muted); border: 1px solid var(--border);
+  background: transparent; color: var(--fg-muted); border: 1px solid var(--border);
+  border-radius: var(--r-pill); width: 30px; height: 30px;
 }
 .composer-attach:hover { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
 .upl-panel {
@@ -1407,4 +1511,13 @@
   margin: 10px 0 0; padding: 8px 10px; border-radius: 7px; font-size: 12px; line-height: 1.6;
   background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, #2563eb) 22%, transparent);
+}
+
+/* 글 블록만 읽기 좋은 폭으로 — 열은 표·그림을 위해 넓게 두되(종전 결정), 문단 한 줄이 한글 90자까지 늘어나던 것을 막는다.
+   표 숫자는 자리 맞춤(docs/ui-refresh 단계 4). */
+.cx-main .chat-col :is(.md-p, .md-list, .md-h, .md-quote) {
+  max-width: 46rem;
+}
+.cx-main .md-table td {
+  font-variant-numeric: tabular-nums;
 }
