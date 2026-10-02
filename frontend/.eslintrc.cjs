@@ -14,5 +14,23 @@ module.exports = {
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
   },
   // 화면 점검·검사 스크립트는 node 에서 돈다(브라우저 앱 코드가 아니다)
-  overrides: [{ files: ['e2e/**/*.ts', 'scripts/**/*.mjs', 'playwright.config.ts'], env: { node: true, browser: true } }],
+  overrides: [
+    { files: ['e2e/**/*.ts', 'scripts/**/*.mjs', 'playwright.config.ts'], env: { node: true, browser: true } },
+    // 인라인 스타일을 토큰 CSS 로 옮긴 곳 — 다시 늘지 않게 막는다(docs/ui-refresh 단계 3). 옮기는 대로 여기 더한다.
+    {
+      files: [
+        'src/pages/admin/**/*.tsx',
+        'src/components/admin/**/*.tsx',
+        'src/pages/TokenPage.tsx',
+        'src/components/RaConnectionCard.tsx',
+        'src/components/HubAppsPanel.tsx',
+      ],
+      rules: {
+        'no-restricted-syntax': [
+          'error',
+          { selector: "JSXAttribute[name.name='style']", message: '인라인 style 대신 토큰 CSS 클래스를 쓴다(docs/ui-refresh 단계 3).' },
+        ],
+      },
+    },
+  ],
 };
