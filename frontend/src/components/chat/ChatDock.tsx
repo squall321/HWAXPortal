@@ -3,6 +3,7 @@ import { useChat } from '../../state/ChatContext';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
 import '../../styles/chat.css';
+import { IconChat } from './icons';
 
 export function ChatDock() {
   const { open, messages, openDock, closeDock } = useChat();
@@ -24,7 +25,7 @@ export function ChatDock() {
     <>
       {!open && (
         <button ref={fab} className="chat-fab" onClick={openDock} aria-label="채팅 열기">
-          💬
+          <IconChat width={24} height={24} />
         </button>
       )}
       {/* 닫힌 독은 화면에 없지만 Tab 순서에는 남아 보이지 않는 정지점 5개가 됐다 — inert 로 통째로 뺀다(React 18 은 문자열 속성). */}

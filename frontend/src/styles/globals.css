@@ -233,3 +233,10 @@ button {
     align-items: flex-start;
   }
 }
+
+/* 글 줄 안의 선 아이콘(components/chat/icons + className="ico") — 글자 기준선에 맞춘다. 이모지 아이콘을 걷고 들인 것(docs/ui-refresh 단계 3) */
+.ico {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.15em;
+}

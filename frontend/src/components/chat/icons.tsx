@@ -220,3 +220,40 @@ export function IconUser(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function IconChat(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12Z" />
+    </svg>
+  );
+}
+
+export function IconFile(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  );
+}
+
+export function IconWrench(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-3-3 6.7-6.7a4 4 0 0 1-5-5L13 5l1.7 1.3Z" />
+    </svg>
+  );
+}
+
+/** 조직도 — 위 하나에서 아래 셋으로 갈라지는 나무 */
+export function IconOrg(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <rect x="9" y="3" width="6" height="5" rx="1" />
+      <rect x="3" y="16" width="6" height="5" rx="1" />
+      <rect x="15" y="16" width="6" height="5" rx="1" />
+      <path d="M12 8v4M6 16v-4h12v4" />
+    </svg>
+  );
+}

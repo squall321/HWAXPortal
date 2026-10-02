@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { SeatBrowser } from './SeatBrowser';
 import { colorOf, initialOf, shortName } from './personaColor';
 import { usePersonaPool } from './usePersonaPool';
+import { IconOrg } from './icons';
 
 export type Seat = { key: string; role: string };
 
@@ -54,7 +55,7 @@ export function RosterEditor({
       </ul>
       <div className="re-foot">
         <button type="button" className="re-add" onClick={() => setBrowsing(true)} disabled={loading}>
-          🗂 조직도에서 더하기{loading ? ' (불러오는 중…)' : ''}
+          <IconOrg className="ico" width={14} height={14} /> 조직도에서 더하기{loading ? ' (불러오는 중…)' : ''}
         </button>
         <span className="re-count">{roster.length}석</span>
       </div>

@@ -72,7 +72,7 @@ export function VocFirstPanel({ topic, onChange }: { topic: string; onChange: (c
         }}
         disabled={!topic.trim()}
       >
-        📡 VOC 먼저 보기 — 화두로 고객 불만을 찾아 골라 넣습니다
+        VOC 먼저 보기 — 화두로 고객 불만을 찾아 골라 넣습니다
       </button>
     );
   }

@@ -16,6 +16,7 @@ import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
 import { ClarifyPanel } from './ClarifyPanel';
 import { mergeEvidence, vocEvidence } from './vocEvidence';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob, type JobId } from './delibTaxonomy';
+import { IconOrg } from './icons';
 
 const DEFAULT_SEATS = 6; // 추천 좌석 기본 선택 수(심의가 스파인 좌석은 자동 추가)
 const MIN_SEATS = 2;  // 서버 심의는 좌석 2명 이상 필요
@@ -344,7 +345,7 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
               : `— ${checked.size}/${MAX_SEATS}석 선택${seatFull ? ' · 가득' : ''} · 심의가 스파인 좌석 자동 추가`}
             {!loading && experts?.pool?.length ? (
               <button type="button" className="cx-brief-browse" onClick={() => setBrowsing(true)}>
-                🗂 조직도에서 고르기
+                <IconOrg className="ico" width={14} height={14} /> 조직도에서 고르기
               </button>
             ) : null}
           </span>

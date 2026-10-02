@@ -944,7 +944,10 @@ body.dock-open .page-wide {
   background: var(--accent);
   color: #fff;
   border: none;
-  font-size: 22px;
+  /* 선 아이콘(IconChat)을 가운데에 — 전역 button 의 좌우 여백이 54px 안을 좁혔다 */
+  display: grid;
+  place-items: center;
+  padding: 0;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }

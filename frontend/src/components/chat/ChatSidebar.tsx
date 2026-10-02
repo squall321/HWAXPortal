@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useLocation } from 'react-router-dom';
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
-import { IconCheck, IconPanel, IconPencil, IconPlus, IconTrash } from './icons';
+import { IconCheck, IconPanel, IconPencil, IconPlus, IconTrash, IconUser } from './icons';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -92,7 +92,7 @@ function SidebarItem({
       >
         {conv.title}
         {/* 어느 전문가와 나눈 대화인지 — 목록에서 안 보이면 열어 봐야만 안다. */}
-        {agentLabel && <span className="sb-item-agent">👤 {agentLabel}</span>}
+        {agentLabel && <span className="sb-item-agent"><IconUser className="ico" width={12} height={12} /> {agentLabel}</span>}
       </button>
       <div className="sb-item-actions">
         <button

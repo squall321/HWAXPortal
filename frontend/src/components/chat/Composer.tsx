@@ -15,7 +15,7 @@ import { shortName } from './personaColor';
 import { SearchToggle } from './SourcePanel';
 import { ThinkToggle } from './ThinkPanel';
 import { ExpertToggle } from './ExpertToggle';
-import { IconPlus, IconSend, IconStop } from './icons';
+import { IconFile, IconPlus, IconSend, IconStop, IconUser } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
@@ -177,7 +177,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               className="composer-pin composer-pin-agent"
               title={`지정 전문가 페르소나 — ${pinnedAgent}`}
             >
-              👤 {shortName(pinnedAgentName || pinnedAgent)}
+              <IconUser className="ico" width={14} height={14} /> {shortName(pinnedAgentName || pinnedAgent)}
               <button
                 type="button"
                 className="composer-pin-x"
@@ -257,7 +257,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               className="doc-chip"
               title={`${d.chars.toLocaleString()}자`}
             >
-              📄 {d.name}
+              <IconFile className="ico" width={14} height={14} /> {d.name}
               <em>
                 {[kindLabel(d.meta), unitsLabel(d.meta), `${d.chars.toLocaleString()}자`]
                   .filter(Boolean)

@@ -39,7 +39,7 @@ interface Destination {
 const DESTINATIONS: Destination[] = [
   {
     key: 'delib',
-    label: '⚖ 심의 걸기',
+    label: '심의 걸기',
     title: '판단이 갈리는 것을 전문가 좌석으로 수렴시킨다',
     need: 'feat:deliberation',
     text: ({ one, names }) =>
@@ -48,7 +48,7 @@ const DESTINATIONS: Destination[] = [
   },
   {
     key: 'read',
-    label: '📖 요약·쟁점 뽑기',
+    label: '요약·쟁점 뽑기',
     title: '아무 데도 등록하지 않고 내용만 읽는다',
     text: ({ one }) =>
       `붙인 ${one ? '문서' : '문서들'}을 읽고 ① 핵심 결론 ② 근거가 약한 대목 `
@@ -57,7 +57,7 @@ const DESTINATIONS: Destination[] = [
   },
   {
     key: 'card',
-    label: '📚 지식카드로 등록',
+    label: '지식카드로 등록',
     need: 'plat:aidatahub',
     title: (deck) => (deck
       ? '발표자료엔 드물지만 교육자료·회의록·설계사양서라면 여기다 — 이후 검색·심의 근거로 재사용된다'
@@ -73,7 +73,7 @@ const DESTINATIONS: Destination[] = [
   },
   {
     key: 'report',
-    label: '📄 Report Archive 에 올리기',
+    label: 'Report Archive 에 올리기',
     need: 'plat:reportarchive',
     title: '보고서 초안으로 남긴다 — 템플릿은 내가 고른다',
     // 긴 문서를 한 번의 도구 호출에 다 담으려 하면 출력 토큰 상한에 걸려 중간에서 끊긴다.
@@ -103,7 +103,7 @@ const DESTINATIONS: Destination[] = [
   },
   {
     key: 'wiki',
-    label: '📘 MX 백서에 싣기',
+    label: 'MX 백서에 싣기',
     need: 'plat:mxwhitepaper',
     title: '사내 업무 백서(위키)에 문서를 만든다 — 노하우·가이드가 여기 쌓인다',
     // import_file(path) 는 서버가 파일을 읽어 DRM 에서 막힌다 — 추출문으로 같은 일을 한다.
@@ -117,7 +117,7 @@ const DESTINATIONS: Destination[] = [
   },
   {
     key: 'paper',
-    label: '🔬 논문 코퍼스에 넣기',
+    label: '논문 코퍼스에 넣기',
     need: 'plat:paperingest',
     title: '외부 논문·특허라면 — 분류·색인·그라운딩을 거쳐 전문가 지식카드의 근거가 된다',
     text: ({ one }) =>
@@ -129,7 +129,7 @@ const DESTINATIONS: Destination[] = [
   },
   {
     key: 'dyna',
-    label: '💥 DynaForge 세션으로',
+    label: 'DynaForge 세션으로',
     need: 'plat:dynaforge',
     onlyKinds: ['html'],   // ingest_report 가 받는 것이 바로 이 형식이다
     title: '낙하·충격 해석 리포트라면 — 세션에 넣어 부품별 에너지·위험도를 본다',

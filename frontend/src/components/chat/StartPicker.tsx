@@ -16,6 +16,7 @@ import { shortName } from './personaColor';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
 import { InlineMd } from './renderers/TextBlock';
+import { IconOrg, IconUser, IconWrench } from './icons';
 
 const MAX_TOOLS = 12; // 챗 pinned_tools 상한
 const MAX_APPS = 3;   // 챗 pinned_apps 상한 — 앱 하나가 도구 20~30개다
@@ -177,7 +178,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             {/* 전문가는 조직도에서만 고른다 — 여기 있던 목록(추천 10명)은 더미 질의 결과인데다
                 이름이 한 줄을 넘겨, 시작 화면을 길게 만들면서 고르는 데는 도움이 안 됐다. */}
             <button type="button" className="sp-browse" onClick={() => setBrowse('lead')}>
-              🗂 조직도에서 고르기 <span className="sp-dim">— 분야·그룹으로 훑어보기</span>
+              <IconOrg className="ico" width={14} height={14} /> 조직도에서 고르기 <span className="sp-dim">— 분야·그룹으로 훑어보기</span>
             </button>
             {agentSel && (
               <>
@@ -279,7 +280,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             <p className="sp-empty">상세 로딩 중…</p>
           ) : detail ? (
             <>
-              <div className="sp-detail-name">👤 {detail.name}</div>
+              <div className="sp-detail-name"><IconUser className="ico" width={14} height={14} /> {detail.name}</div>
               {detail.role && <p className="sp-detail-role"><InlineMd text={detail.role} /></p>}
               {detail.tags.length > 0 && (
                 <p className="sp-dim">태그: {detail.tags.slice(0, 12).join(' · ')}</p>
@@ -314,8 +315,8 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
 
       <div className="sp-foot">
         <span className="sp-summary">
-          {agentSel ? `👤 ${agentSel}` : '전문가 미지정'}
-          {toolSel.size > 0 && ` · 🔧 ${toolSel.size}개`}
+          {agentSel ? <><IconUser className="ico" width={14} height={14} /> {agentSel}</> : '전문가 미지정'}
+          {toolSel.size > 0 && <> · <IconWrench className="ico" width={14} height={14} /> {toolSel.size}개</>}
         </span>
         <button type="button" className="sp-apply" onClick={apply}>
           적용하고 대화 시작

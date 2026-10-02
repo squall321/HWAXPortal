@@ -9,6 +9,7 @@ import { ClarifyPanel } from './ClarifyPanel';
 import { splitTopic } from './clarify';
 import { vocEvidence } from './vocEvidence';
 import { InlineMd } from './renderers/TextBlock';
+import { IconOrg, IconUser, IconWrench } from './icons';
 
 export interface Persona {
   key: string;
@@ -326,7 +327,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
               {poolCount > 0 && <span className="cx-ep-badge">{poolCount}명 풀</span>}
               {poolCount > 0 && (
                 <button type="button" className="cx-ep-browse" onClick={() => setBrowsing(true)}>
-                  🗂 조직도에서 고르기
+                  <IconOrg className="ico" width={14} height={14} /> 조직도에서 고르기
                 </button>
               )}
             </h3>
@@ -424,7 +425,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
                           />
                           <span className="cx-ep-name">{t.name}</span>
                           {t.agents && t.agents.length > 0 && (
-                            <span className="cx-ep-score">👤 {t.agents.slice(0, 2).join(', ')}</span>
+                            <span className="cx-ep-score"><IconUser className="ico" width={14} height={14} /> {t.agents.slice(0, 2).join(', ')}</span>
                           )}
                           <span className="cx-ep-tags">{t.desc}</span>
                         </label>
@@ -499,7 +500,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
                 <div className="cx-ep-chips">
                   {[...toolSel].map((n) => (
                     <span key={n} className="cx-ep-chip">
-                      🔧 {n}
+                      <IconWrench className="ico" width={14} height={14} /> {n}
                       <button
                         type="button"
                         className="cx-ep-chip-x"

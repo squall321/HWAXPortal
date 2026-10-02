@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import type { Message, ThinkSeat } from '../../types/chat';
 import { TextBlock } from './renderers/TextBlock';
+import { IconLightbulb } from './icons';
 
 // 좌석 → 고정 색(이름 해시). DelibView 와 같은 계열이라 두 모드의 아바타가 같은 사람으로 읽힌다.
 const PALETTE = ['#c0673a', '#3f7d80', '#7a5aa6', '#4a7a3c', '#b08a2a', '#a24a5e', '#3a6ea0', '#6b8e23'];
@@ -55,7 +56,7 @@ export function ThinkView({ msg }: { msg: Message }) {
   return (
     <div className="tv">
       <header className="tv-head">
-        <span className="tv-title">🧠 Thinking</span>
+        <span className="tv-title"><IconLightbulb className="ico" width={14} height={14} /> Thinking</span>
         <span className="tv-counts">
           {answered.length > 0 && <b className="tv-c-ok">{answered.length}명 답변</b>}
           {passed.length > 0 && <span className="tv-c-pass">{passed.length}명 기권</span>}

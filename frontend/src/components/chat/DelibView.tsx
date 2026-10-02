@@ -8,6 +8,7 @@ import { RosterEditor, type Seat } from './RosterEditor';
 import { colorOf, initialOf } from './personaColor';
 import { InlineMd, TextBlock } from './renderers/TextBlock';
 import { usePersonaName } from './usePersonaPool';
+import { IconChat, IconOrg } from './icons';
 
 // 색·이니셜은 공용 모듈에서 온다 — 챗 페르소나 말풍선이 같은 함수를 써야
 // 같은 전문가가 심의와 챗에서 같은 색으로 보인다.
@@ -285,14 +286,14 @@ function OutcomeCards({ d }: { d: DelibData }) {
           target="_blank"
           rel="noreferrer"
         >
-          <span className="dv-card-k">📄 Report Archive</span>
+          <span className="dv-card-k">Report Archive</span>
           <span className="dv-card-t">{o.title || '심의 보고서'}</span>
           <span className="dv-card-s">보고서 #{o.report_id} — 열어보기 ↗</span>
         </a>
       )}
       {o.tally && (
         <div className={`dv-card verdict${o.unanimous ? ' unanimous' : ''}`}>
-          <span className="dv-card-k">{o.unanimous ? '🤝 만장일치' : '⚖ 다수결'}</span>
+          <span className="dv-card-k">{o.unanimous ? '만장일치' : '다수결'}</span>
           <span className="dv-card-t">
             동의 {o.tally.agree} · 조건부 {o.tally.conditional} · 반대 {o.tally.oppose}
             {o.tally.abstain ? ` · 미표명 ${o.tally.abstain}` : ''}
@@ -352,9 +353,9 @@ function ContinueBar({ d }: { d: DelibData }) {
   return (
     <section className="dv-continue">
       <div className="dv-continue-head">
-        💬 의견을 넣어 이어가기 — {edited ? `고른 ${seats.length}석으로` : '같은 전문가들이'} 이 방향으로 다시 토론합니다
+        <IconChat className="ico" width={14} height={14} /> 의견을 넣어 이어가기 — {edited ? `고른 ${seats.length}석으로` : '같은 전문가들이'} 이 방향으로 다시 토론합니다
         <button type="button" className="dv-roster-btn" onClick={() => setEditing((v) => !v)} disabled={streaming}>
-          {editing ? '좌석 조정 닫기' : `🗂 좌석 조정 (${seats.length}석)`}
+          {editing ? '좌석 조정 닫기' : <><IconOrg className="ico" width={14} height={14} /> 좌석 조정 ({seats.length}석)</>}
         </button>
       </div>
       {editing && <RosterEditor current={current} roster={seats} onChange={setRoster} />}

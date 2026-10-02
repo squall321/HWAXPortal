@@ -200,7 +200,7 @@ export function PersonaBrowser({
             {sem && (
               <section className="pv-sem-box">
                 <div className="pv-crumb">
-                  🧭 ‘{sem.q}’ 의미 검색 —{' '}
+                  ‘{sem.q}’ 의미 검색 —{' '}
                   {sem.loading ? '찾는 중…' : `${sem.rows.length}명 (주제 관련도순)`}
                   <button type="button" className="pv-crumb-btn" onClick={() => setSem(null)}>닫기</button>
                 </div>

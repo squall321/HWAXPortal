@@ -8,7 +8,7 @@ import { DelibOptsPanel } from '../components/chat/DelibOptsPanel';
 import { ExpertPicker, type DelibExtra, type Persona } from '../components/chat/ExpertPicker';
 import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
-import { IconPanel, IconPlus, IconSpark } from '../components/chat/icons';
+import { IconFile, IconPanel, IconPencil, IconPlus, IconSpark } from '../components/chat/icons';
 import { fetchDeliberateExperts, type ExpertsResponse } from '../api/chat.api';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, jobsByGroup, type JobId } from '../components/chat/delibTaxonomy';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
@@ -283,7 +283,7 @@ export default function DeliberatePage() {
                     onClick={() => sendMessage(RA_SAVE_PROMPT)}
                     title="이 대화의 심의 내용·결론을 Report Archive 보고서로 저장"
                   >
-                    📄 RA 보고서로 저장
+                    <IconFile className="ico" width={14} height={14} /> RA 보고서로 저장
                   </button>
                   <button
                     type="button"
@@ -291,7 +291,7 @@ export default function DeliberatePage() {
                     onClick={() => sendMessage(RA_TIDY_PROMPT)}
                     title="대화를 결론·근거·미결로 정리해 Report Archive 보고서로 저장 (LLM, 수십 초)"
                   >
-                    🧾 RA 정리본으로 저장
+                    <IconPencil className="ico" width={14} height={14} /> RA 정리본으로 저장
                   </button>
                 </div>
               )}
