@@ -4,28 +4,8 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { localLogin, localSignup } from '../api/auth.api';
 import { useAuth } from '../auth/useAuth';
 import { Spinner } from '../components/common/Spinner';
-
-const linkBtn: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  padding: 0,
-  color: 'var(--accent-fg)',
-  cursor: 'pointer',
-  fontSize: 'inherit',
-  textDecoration: 'underline',
-};
-
-const field: React.CSSProperties = {
-  display: 'block',
-  width: '100%',
-  padding: '0.55rem 0.7rem',
-  marginTop: '0.6rem',
-  border: '1px solid var(--border)',
-  borderRadius: '6px',
-  background: 'var(--bg)',
-  color: 'var(--fg)',
-  fontSize: '0.95rem',
-};
+import { BrandMark } from '../components/ui/BrandMark';
+import '../styles/login.css';
 
 export default function LoginPage() {
   const { status, login, refresh } = useAuth();
@@ -41,6 +21,8 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // 이메일 로그인은 접어 둔다 — 운영 SSO 가 열려 주 경로가 SSO 다(2026-10-02). 가입·오류·안내가 있으면 펼친 채로.
+  const [localOpen, setLocalOpen] = useState(false);
 
   if (status === 'loading') return <Spinner label="로그인 확인 중…" />;
   if (status === 'authenticated') return <Navigate to="/" replace />;
@@ -73,86 +55,119 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="app-shell" style={{ textAlign: 'center', paddingTop: '5rem' }}>
-      <h1>HWAX Portal</h1>
-      <p style={{ color: 'var(--muted)' }}>
-        {mode === 'login'
-          ? '이메일 계정으로 로그인하세요. 회사 이메일 그대로 쓰면 SSO 전환 후에도 계정이 이어집니다.'
-          : '회사 이메일로 가입을 신청하세요. 관리자 승인 후 사용할 수 있습니다.'}
-      </p>
+    <main className="login">
+      <div className="login-card">
+        <div className="login-brand">
+          <BrandMark size={36} />
+          <span>
+            HWAX <span className="login-brand-sub">Portal</span>
+          </span>
+        </div>
+        <p className="login-sub">사내 AI·해석 플랫폼을 한 곳에서 — 회사 계정으로 들어갑니다.</p>
 
-      <form onSubmit={submit} style={{ maxWidth: '20rem', margin: '1.5rem auto 0', textAlign: 'left' }}>
-        <input
-          style={field}
-          type="email"
-          placeholder="이메일 (회사 계정)"
-          value={email}
-          autoComplete="username"
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        {mode === 'signup' && (
-          <>
-            <input
-              style={field}
-              type="text"
-              placeholder="이름"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-            <input
-              style={field}
-              type="text"
-              placeholder="부서 (선택 — Report Archive 연결 시 자동 채움)"
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-            />
-          </>
-        )}
-        <input
-          style={field}
-          type="password"
-          placeholder={mode === 'signup' ? '비밀번호 (8자 이상)' : '비밀번호'}
-          value={password}
-          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          minLength={mode === 'signup' ? 8 : undefined}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {error && (
-          <p style={{ color: 'var(--danger-fg)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{error}</p>
-        )}
-        {notice && (
-          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{notice}</p>
-        )}
-        <button className="btn-primary" style={{ width: '100%', marginTop: '0.9rem' }} disabled={busy}>
-          {busy ? '처리 중…' : mode === 'login' ? '로그인' : '가입 신청'}
+        <button type="button" className="btn-primary login-sso" onClick={() => login(returnTo)}>
+          삼성 AD 계정으로 로그인
         </button>
-      </form>
 
-      <p style={{ marginTop: '0.9rem', fontSize: '0.9rem' }}>
-        {mode === 'login' ? (
-          <>
-            계정이 없나요?{' '}
-            <button style={linkBtn} type="button" onClick={() => { setMode('signup'); setError(null); }}>
-              가입 신청
+        <details
+          className="login-local"
+          open={localOpen || mode === 'signup' || Boolean(error) || Boolean(notice)}
+          onToggle={(e) => setLocalOpen((e.target as HTMLDetailsElement).open)}
+        >
+          <summary>SSO 를 쓸 수 없나요? 이메일 계정으로 로그인</summary>
+          <p className="login-local-note">
+            {mode === 'login'
+              ? '회사 이메일 그대로 만든 계정이면 SSO 로 들어와도 같은 계정입니다.'
+              : '회사 이메일로 가입을 신청하세요. 관리자 승인 후 사용할 수 있습니다.'}
+          </p>
+          <form onSubmit={submit} className="login-form">
+            <label className="login-field">
+              <span>이메일</span>
+              <input
+                type="email"
+                placeholder="회사 계정"
+                value={email}
+                autoComplete="username"
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </label>
+            {mode === 'signup' && (
+              <>
+                <label className="login-field">
+                  <span>이름</span>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </label>
+                <label className="login-field">
+                  <span>부서 (선택)</span>
+                  <input
+                    type="text"
+                    placeholder="Report Archive 연결 시 자동 채움"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                  />
+                </label>
+              </>
+            )}
+            <label className="login-field">
+              <span>비밀번호</span>
+              <input
+                type="password"
+                placeholder={mode === 'signup' ? '8자 이상' : undefined}
+                value={password}
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                minLength={mode === 'signup' ? 8 : undefined}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </label>
+            {error && (
+              <p className="login-msg login-msg-err" role="alert">
+                {error}
+              </p>
+            )}
+            {notice && <p className="login-msg">{notice}</p>}
+            <button className="btn-secondary login-submit" disabled={busy}>
+              {busy ? '처리 중…' : mode === 'login' ? '이메일로 로그인' : '가입 신청'}
             </button>
-          </>
-        ) : (
-          <>
-            이미 계정이 있나요?{' '}
-            <button style={linkBtn} type="button" onClick={() => { setMode('login'); setError(null); }}>
-              로그인
-            </button>
-          </>
-        )}
-      </p>
-
-      <div style={{ margin: '1.6rem auto 0', maxWidth: '20rem', borderTop: '1px solid var(--border)', paddingTop: '1.1rem' }}>
-        <button className="btn-secondary" style={{ width: '100%' }} onClick={() => login(returnTo)}>
-          삼성 AD 계정으로 로그인 (SSO)
-        </button>
+          </form>
+          <p className="login-switch">
+            {mode === 'login' ? (
+              <>
+                계정이 없나요?{' '}
+                <button
+                  type="button"
+                  className="login-link"
+                  onClick={() => {
+                    setMode('signup');
+                    setError(null);
+                  }}
+                >
+                  가입 신청
+                </button>
+              </>
+            ) : (
+              <>
+                이미 계정이 있나요?{' '}
+                <button
+                  type="button"
+                  className="login-link"
+                  onClick={() => {
+                    setMode('login');
+                    setError(null);
+                  }}
+                >
+                  로그인
+                </button>
+              </>
+            )}
+          </p>
+        </details>
       </div>
     </main>
   );

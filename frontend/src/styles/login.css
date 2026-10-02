@@ -1,0 +1,114 @@
+/* 로그인 — 가운데 카드: 브랜드 · 한 줄 설명 · SSO 주 버튼 · 접힌 이메일 로그인(docs/ui-refresh 단계 4) */
+.login {
+  display: grid;
+  place-items: start center;
+  min-height: 100vh;
+  padding: 12vh var(--sp-4) var(--sp-10);
+  background:
+    radial-gradient(60rem 30rem at 50% -10%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 70%),
+    var(--bg);
+}
+.login-card {
+  width: min(400px, 100%);
+  padding: var(--sp-8) var(--sp-8) var(--sp-6);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: var(--surface-1);
+  box-shadow: var(--e-3);
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-24);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.login-brand-sub {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.login-sub {
+  margin: var(--sp-3) 0 var(--sp-6);
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.login-sso {
+  width: 100%;
+  height: 44px;
+  font-size: var(--fs-15);
+}
+.login-local {
+  margin-top: var(--sp-5);
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-4);
+}
+.login-local > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+  list-style: none;
+}
+.login-local > summary::-webkit-details-marker {
+  display: none;
+}
+.login-local > summary::before {
+  content: '›';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+}
+.login-local[open] > summary::before {
+  transform: rotate(90deg);
+}
+.login-local > summary:hover {
+  color: var(--fg);
+}
+.login-local-note {
+  margin: var(--sp-3) 0 0;
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+.login-form {
+  display: grid;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.login-field {
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-13);
+  color: var(--fg-muted);
+}
+.login-field input {
+  width: 100%;
+}
+.login-msg {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.login-msg-err {
+  color: var(--danger);
+}
+.login-submit {
+  width: 100%;
+  height: 38px;
+}
+.login-switch {
+  margin: var(--sp-3) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.login-link {
+  padding: 0;
+  border: 0;
+  color: var(--accent-fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+@media (max-width: 480px) {
+  .login-card {
+    padding: var(--sp-6) var(--sp-5) var(--sp-5);
+  }
+}
