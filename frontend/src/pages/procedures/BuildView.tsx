@@ -78,38 +78,38 @@ export default function BuildView() {
   const done = watched?.steps.filter((s) => s.state === 'done') ?? [];
 
   return (
-    <div style={{ display: 'grid', gap: '1.2rem' }}>
+    <div className="pr-stack pr-stack-lg">
       {err && <ErrorBanner message={err} />}
       {toolsError && <ErrorBanner message={toolsError} />}
 
       {!runId ? (
-        <section style={card}>
-          <h2 style={h2}>도구를 한 단계씩 돌립니다</h2>
-          <p style={{ color: 'var(--muted)', marginTop: 0 }}>
+        <section className="pr-panel">
+          <h2 className="pr-h2">도구를 한 단계씩 돌립니다</h2>
+          <p className="pr-muted pr-mt-0">
             절차가 없어도 시작할 수 있습니다. 절차 기능이 <b>과정을 전부 기록</b>하고, 끝나면
             그대로 절차로 굳혀 다음 과제에서 값만 바꿔 재생합니다.
           </p>
-          <button type="button" onClick={begin} style={primary}>
+          <button type="button" onClick={begin} className="btn-primary pr-btn pr-start">
             시작하기
           </button>
         </section>
       ) : (
         <>
-          <section style={card}>
-            <h2 style={h2}>단계 추가</h2>
-            <div style={{ display: 'grid', gap: '0.7rem' }}>
-              <label style={{ display: 'grid', gap: '0.25rem' }}>
-                <span style={lbl}>
-                  도구 {toolsLoading && <span style={{ color: 'var(--muted)' }}>불러오는 중…</span>}
-                  <span style={{ color: 'var(--muted)' }}> · 내가 부를 수 있는 것만 보입니다</span>
+          <section className="pr-panel">
+            <h2 className="pr-h2">단계 추가</h2>
+            <div className="pr-form">
+              <label className="pr-field">
+                <span className="pr-label">
+                  도구 {toolsLoading && <span className="pr-muted">불러오는 중…</span>}
+                  <span className="pr-muted"> · 내가 부를 수 있는 것만 보입니다</span>
                 </span>
                 <input
-                  style={input}
+                  className="pr-input"
                   placeholder="이름·앱으로 검색"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
-                <select style={input} value={picked} onChange={(e) => { setPicked(e.target.value); setArgs(emptyArgs()); }}>
+                <select className="pr-input" value={picked} onChange={(e) => { setPicked(e.target.value); setArgs(emptyArgs()); }}>
                   <option value="">({tools.length}종 중에서 고르세요)</option>
                   {hits.map((t) => (
                     <option key={t.name} value={t.name}>
@@ -123,42 +123,42 @@ export default function BuildView() {
 
               <ArgsForm tool={tool} state={args} onChange={setArgs} />
 
-              <label style={{ display: 'grid', gap: '0.25rem' }}>
-                <span style={lbl}>
-                  결과에서 뽑기 <span style={{ color: 'var(--muted)' }}>선택 · 한 줄에 <code>이름 = 경로</code></span>
+              <label className="pr-field">
+                <span className="pr-label">
+                  결과에서 뽑기 <span className="pr-muted">선택 · 한 줄에 <code>이름 = 경로</code></span>
                 </span>
                 <textarea
                   rows={2}
-                  style={{ ...input, fontFamily: 'var(--cx-mono, monospace)' }}
+                  className="pr-input pr-mono"
                   placeholder={'loads = equivalent_loads\nparts = parts[0].name'}
                   value={saveMap}
                   onChange={(e) => setSaveMap(e.target.value)}
                 />
-                <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>
+                <span className="pr-note">
                   뽑은 값은 다음 단계에서 <code>{'{{이름}}'}</code> 으로 씁니다.
                 </span>
               </label>
 
-              <button type="button" onClick={execute} disabled={busy || !tool} style={primary}>
+              <button type="button" onClick={execute} disabled={busy || !tool} className="btn-primary pr-btn pr-start">
                 {busy ? '실행 중…' : '이 단계 실행'}
               </button>
             </div>
           </section>
 
-          <section style={card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <h2 style={h2}>기록</h2>
-              <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+          <section className="pr-panel">
+            <div className="pr-panel-head">
+              <h2 className="pr-h2">기록</h2>
+              <span className="pr-meta">
                 {watched?.state ?? '…'} · 단계 {watched?.steps.length ?? 0}
               </span>
             </div>
             {watched && <RunSteps run={watched} onChanged={refreshWatched} />}
             {Object.keys(watched?.inputs ?? {}).length > 0 && (
-              <details style={{ marginTop: '0.7rem' }}>
-                <summary style={{ color: 'var(--muted)', fontSize: '0.8rem', cursor: 'pointer' }}>
+              <details className="pr-mt-3">
+                <summary className="pr-meta pr-summary">
                   뽑아 둔 값
                 </summary>
-                <pre style={pre}>{JSON.stringify(watched?.inputs, null, 2)}</pre>
+                <pre className="pr-pre">{JSON.stringify(watched?.inputs, null, 2)}</pre>
               </details>
             )}
           </section>
@@ -208,43 +208,43 @@ function SaveAsProcedure({
   };
 
   return (
-    <section style={card}>
-      <h2 style={h2}>절차로 저장</h2>
-      <p style={{ color: 'var(--muted)', marginTop: 0, fontSize: '0.85rem' }}>
+    <section className="pr-panel">
+      <h2 className="pr-h2">절차로 저장</h2>
+      <p className="pr-muted pr-fs-14 pr-mt-0">
         성공한 단계 {steps.length}개를 절차로 굳힙니다. <b>과제마다 바뀌는 값에 이름을 붙이면</b>{' '}
         다음에는 그 값만 채워 한 번에 재생합니다. 이름을 안 붙인 인자는 <b>상수로 박힙니다</b> —
         과제 ID·보고서 본문이 그대로 공유됩니다.
       </p>
       {err && <ErrorBanner message={err} />}
-      {msg && <p style={{ color: '#4caf7d', fontSize: '0.85rem' }}>{msg}</p>}
+      {msg && <p className="pr-ok pr-fs-14">{msg}</p>}
 
-      <label style={{ display: 'grid', gap: '0.25rem', marginBottom: '0.7rem' }}>
-        <span style={lbl}>절차 이름</span>
-        <input style={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 적층 굴곡 수명" />
+      <label className="pr-field pr-mb-3">
+        <span className="pr-label">절차 이름</span>
+        <input className="pr-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 적층 굴곡 수명" />
       </label>
 
-      <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+      <table className="pr-table pr-save">
         <thead>
-          <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
-            <th style={th}>단계</th>
-            <th style={th}>인자</th>
-            <th style={th}>값</th>
-            <th style={th}>변수 이름(비우면 상수)</th>
+          <tr>
+            <th>단계</th>
+            <th>인자</th>
+            <th>값</th>
+            <th>변수 이름(비우면 상수)</th>
           </tr>
         </thead>
         <tbody>
           {leaves.map((l) => (
             <tr key={l.id}>
-              <td style={td}>{l.ord + 1}</td>
-              <td style={td}>
+              <td>{l.ord + 1}</td>
+              <td>
                 <code>{l.path}</code>
               </td>
-              <td style={{ ...td, color: 'var(--muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <td className="pr-save-val">
                 {String(l.value).slice(0, 60)}
               </td>
-              <td style={td}>
+              <td>
                 <input
-                  style={{ ...input, padding: '0.25rem 0.4rem' }}
+                  className="pr-input pr-input-tight"
                   value={vars[l.id] ?? ''}
                   placeholder="예: project_id"
                   onChange={(e) => setVars({ ...vars, [l.id]: e.target.value })}
@@ -255,7 +255,7 @@ function SaveAsProcedure({
         </tbody>
       </table>
 
-      <button type="button" onClick={save} disabled={busy} style={{ ...primary, marginTop: '0.8rem' }}>
+      <button type="button" onClick={save} disabled={busy} className="btn-primary pr-btn pr-start pr-mt-3">
         {busy ? '저장 중…' : '절차로 저장'}
       </button>
     </section>
@@ -320,45 +320,6 @@ function parseSave(text: string): Record<string, string> | null {
   return Object.keys(out).length ? out : null;
 }
 
-const card: React.CSSProperties = {
-  border: '1px solid var(--border)',
-  borderRadius: 6,
-  background: 'var(--card)',
-  padding: '1rem 1.1rem',
-};
-const h2: React.CSSProperties = { color: 'var(--fg)', fontSize: '1.02rem', margin: '0 0 0.5rem' };
-const lbl: React.CSSProperties = { fontSize: '0.8rem', color: 'var(--fg)' };
-const input: React.CSSProperties = {
-  width: '100%',
-  background: 'var(--bg)',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  padding: '0.4rem 0.55rem',
-  fontSize: '0.85rem',
-};
-const primary: React.CSSProperties = {
-  background: 'var(--accent)',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 4,
-  padding: '0.45rem 1rem',
-  cursor: 'pointer',
-  fontSize: '0.88rem',
-  justifySelf: 'start',
-};
-const pre: React.CSSProperties = {
-  background: 'var(--bg)',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  padding: '0.5rem',
-  fontSize: '0.78rem',
-  overflowX: 'auto',
-  color: 'var(--fg)',
-};
-const th: React.CSSProperties = { padding: '0.3rem 0.4rem', borderBottom: '1px solid var(--border)' };
-const td: React.CSSProperties = { padding: '0.3rem 0.4rem', borderBottom: '1px solid var(--border)', color: 'var(--fg)' };
-
 /** 이 도구가 **2단**이면 뒤에 무엇이 있는지 보여 준다(PLAN §9-4).
  *
  * `run_operation` 하나 뒤에 연산 47개가 있는데 화면에는 도구 하나로만 보인다. 그러면
@@ -402,32 +363,31 @@ function TwoStage({ tool }: { tool: ToolInfo }) {
     // 등록부 자체를 못 받았으면 말한다 — 조용히 사라지면 2단이 아닌 것처럼 보인다.
     if (!err) return null;
     return (
-      <span style={{ color: '#d9a441', fontSize: '0.76rem' }}>
+      <span className="pr-warn pr-fs-12">
         2단 등록부를 못 받았습니다 — {err}. 이 도구가 뒤에 여럿을 두고 있는지 알 수 없습니다.
       </span>
     );
   }
 
   return (
-    <section style={{ border: '1px solid #d9a441', borderRadius: 6, padding: '0.6rem',
-                      background: 'rgba(217,164,65,0.07)', display: 'grid', gap: '0.4rem' }}>
-      <strong style={{ color: '#d9a441', fontSize: '0.86rem' }}>
+    <section className="pr-callout pr-twostage">
+      <strong className="pr-warn pr-fs-14">
         이 도구는 뒤에 여럿이 있습니다{items ? ` — ${items.length}개` : ''}
       </strong>
-      <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>
+      <span className="pr-note">
         <code>{d.selector}</code> 로 고르고 <code>{d.payload}</code> 에 그 인자를 넣습니다.
         고르면 <b>그 계약</b>을 보여 주고, 저장할 때 <b>속 인자까지 검증</b>합니다.
       </span>
-      {note && <span style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>{note}</span>}
-      {!items && !err && <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>불러오는 중…</span>}
+      {note && <span className="pr-note">{note}</span>}
+      {!items && !err && <span className="pr-note">불러오는 중…</span>}
       {err && (
-        <span style={{ color: '#d9a441', fontSize: '0.76rem' }}>
+        <span className="pr-warn pr-fs-12">
           뒤에 무엇이 있는지 못 받았습니다 — {err} (없다는 뜻이 아닙니다)
         </span>
       )}
       {!!items?.length && (
         <select
-          style={input}
+          className="pr-input"
           value={pickedItem}
           onChange={(e) => {
             const n = e.target.value;
@@ -448,16 +408,16 @@ function TwoStage({ tool }: { tool: ToolInfo }) {
         </select>
       )}
       {pickedItem && (
-        <div style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>
+        <div className="pr-note">
           {schema ? (
             <>
-              <b style={{ color: 'var(--fg)' }}>{pickedItem} 의 인자</b> —{' '}
+              <b className="pr-fg">{pickedItem} 의 인자</b> —{' '}
               {Object.keys((schema.properties as Record<string, unknown>) ?? {}).map((k) => (
-                <code key={k} style={{ marginRight: '0.3rem' }}>
+                <code key={k} className="pr-mr-1">
                   {k}{((schema.required as string[]) ?? []).includes(k) ? '*' : ''}
                 </code>
               ))}
-              <div style={{ marginTop: '0.2rem' }}>
+              <div className="pr-mt-1">
                 <code>{d.payload}</code> 칸에 이 키들로 JSON 을 넣으세요.
               </div>
             </>

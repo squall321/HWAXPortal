@@ -9,7 +9,7 @@ const WIDTHS = [1440, 1280, 1024, 768, 390];
 const SHOTS = join(dirname(fileURLToPath(import.meta.url)), '.shots', TIER);
 mkdirSync(SHOTS, { recursive: true });
 
-const ROUTES = ['/', '/apps', '/deliberate', '/procedures', '/tokens', '/tokens?tab=apps', '/tokens?tab=connect', '/updates', '/access', '/risk', '/no-such-page',
+const ROUTES = ['/', '/apps', '/deliberate', '/procedures', '/procedures/saved', '/procedures/runs', '/tokens', '/tokens?tab=apps', '/tokens?tab=connect', '/updates', '/access', '/risk', '/no-such-page',
   ...(TIER === 'admin' ? ['/admin/users', '/admin/access'] : [])];
 
 const ANSWER = [

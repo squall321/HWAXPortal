@@ -1,0 +1,470 @@
+/* 절차 화면(pages/procedures) — 인라인 스타일을 토큰 이름으로 옮긴 것(docs/ui-refresh 단계 3) */
+
+/* 폭·높이 리터럴(280px·10rem·5rem 등)은 칸 크기라 맞는 토큰이 없어 그대로 둔다. */
+
+/* ── 탭(만들기·절차·실행 이력) — 현재 탭은 NavLink 가 붙이는 aria-current 로 칠한다 ── */
+.pr-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+.pr-tab {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+  text-decoration: none;
+}
+.pr-tab[aria-current='page'] {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+/* ── 줄 카드(목록 항목·절차 상세의 각 칸) — 가로로 늘어놓고 넘치면 접는다 ── */
+.pr-card {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.pr-card-block {
+  display: block;
+}
+.pr-card-stack {
+  display: grid;
+  gap: var(--sp-2);
+}
+.pr-card-top {
+  align-items: flex-start;
+}
+.pr-card-baseline {
+  align-items: baseline;
+}
+.pr-card-tight {
+  gap: var(--sp-2);
+}
+.pr-card-scroll {
+  overflow-x: auto;
+}
+.pr-card-warn {
+  border-color: var(--warn);
+}
+
+/* ── 상자 카드(만들기 화면의 각 칸) ── */
+.pr-panel {
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.pr-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+/* 노란 안내 상자 — 사람 확인·고르기·2단 도구 */
+.pr-callout {
+  padding: var(--sp-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-md);
+  background: var(--warn-bg);
+}
+.pr-twostage {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+/* ── 실행 단계 카드 — 왼쪽 굵은 선의 색은 단계 상태라 인라인(STATE_COLOR)이 정한다 ── */
+.pr-step {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+}
+
+/* ── 배치 ── */
+.pr-stack {
+  display: grid;
+  gap: var(--sp-4);
+}
+.pr-stack-lg {
+  gap: var(--sp-5);
+}
+.pr-list {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pr-list-tight {
+  gap: var(--sp-1);
+}
+.pr-form {
+  display: grid;
+  gap: var(--sp-3);
+}
+.pr-fields {
+  display: grid;
+  gap: var(--sp-2);
+}
+.pr-field {
+  display: grid;
+  gap: var(--sp-1);
+}
+.pr-col {
+  display: grid;
+  gap: var(--sp-1);
+  flex: 1 1 300px;
+  min-width: 0;
+}
+.pr-col-wide {
+  flex-basis: 320px;
+}
+.pr-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.pr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.pr-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.pr-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+.pr-run-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.pr-grow {
+  flex: 1 1 16rem;
+}
+
+/* ── 글자 ── */
+.pr-h2 {
+  margin: 0 0 var(--sp-2);
+  color: var(--fg);
+  font-size: var(--fs-18);
+}
+.pr-h3 {
+  margin: 0;
+  color: var(--fg);
+  font-size: var(--fs-15);
+}
+.pr-subhead {
+  color: var(--fg);
+  font-size: var(--fs-14);
+}
+.pr-label {
+  color: var(--fg);
+  font-size: var(--fs-13);
+}
+.pr-meta {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.pr-note {
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+}
+.pr-bullets {
+  margin: 0;
+  padding-left: var(--sp-5);
+  color: var(--fg-muted);
+}
+.pr-link {
+  color: var(--fg);
+  text-decoration: none;
+}
+.pr-summary {
+  cursor: pointer;
+}
+
+/* 고르기 — 체크박스 줄 */
+.pr-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.pr-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-13);
+}
+.pr-cands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+}
+.pr-cand {
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+
+/* ── 표 ── */
+.pr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+.pr-table thead tr {
+  color: var(--fg-muted);
+  text-align: left;
+}
+/* 배치 비교표 */
+.pr-batch th,
+.pr-batch td {
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) 0;
+}
+.pr-batch tbody tr {
+  border-top: 1px solid var(--border);
+}
+.pr-batch-state {
+  white-space: nowrap;
+}
+.pr-batch-val {
+  max-width: 280px;
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-batch td.pr-batch-why {
+  max-width: 340px;
+  padding: var(--sp-1) 0;
+}
+/* 도구로 보기 — 입력 스키마 */
+.pr-contract tr {
+  border-top: 1px solid var(--border);
+}
+.pr-contract td {
+  vertical-align: top;
+}
+.pr-contract-key {
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) 0;
+  white-space: nowrap;
+}
+.pr-contract-desc {
+  padding: var(--sp-1) 0;
+  color: var(--fg-muted);
+}
+/* 절차로 저장 — 인자 표 */
+.pr-save th,
+.pr-save td {
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.pr-save td {
+  color: var(--fg);
+}
+.pr-save td.pr-save-val {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+}
+
+/* ── 코드 상자 ── */
+.pr-pre {
+  padding: var(--sp-2);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.pr-step-pre {
+  max-height: 220px;
+  margin: var(--sp-2) 0 0;
+}
+.pr-pre-tall {
+  max-height: 360px;
+}
+
+/* ── 입력칸 — 클래스가 붙으면 globals.css 의 클래스 없는 컨트롤 기본값이 빠지므로 같은 모양을 여기서 다시 준다 ── */
+.pr-input {
+  width: 100%;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-14);
+}
+input.pr-input,
+select.pr-input {
+  height: var(--control-h);
+}
+textarea.pr-input {
+  padding: var(--sp-2) var(--sp-3);
+  line-height: var(--lh-body);
+}
+.pr-input-tight {
+  padding: 0 var(--sp-2);
+}
+.pr-input-sm {
+  width: 10rem;
+  font-size: var(--fs-12);
+}
+.pr-mono {
+  font-family: var(--font-mono);
+}
+.pr-mono-sm {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.pr-minh-5 {
+  min-height: 5rem;
+}
+.pr-minh-9 {
+  min-height: 9rem;
+}
+.pr-minh-11 {
+  min-height: 11rem;
+}
+
+/* ── 버튼 — 색은 globals.css 의 .btn-primary / .btn-secondary, 크기만 여기서 ── */
+.pr-btn {
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-md);
+  font-size: var(--fs-14);
+}
+/* 작은 버튼 — <a>(YAML 로 내려받기)에도 쓰여 button 기본값(테두리·여백)을 직접 준다 */
+.pr-btn-sm {
+  align-self: flex-start;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-12);
+  text-decoration: none;
+}
+.pr-btn-xs {
+  padding: calc(var(--sp-1) / 2) var(--sp-2);
+}
+/* 입력칸처럼 생긴 버튼(원문 JSON ↔ 폼 전환) */
+.pr-box-btn {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  color: var(--fg);
+  font-size: var(--fs-14);
+}
+.pr-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  text-decoration: underline;
+}
+/* 고르기 상자 안의 버튼 — 전부 돌리기·고른 것으로 계속(노랑) · 후보 하나(바탕색) */
+.pr-warn-btn {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-md);
+  background: var(--warn-bg);
+  color: var(--fg);
+  font-size: var(--fs-13);
+}
+.pr-cand-btn {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: var(--fs-13);
+}
+
+/* ── 낱개 유틸 — 위 규칙을 덮어야 하므로 파일 끝에 둔다(명시도가 같으면 뒤가 이긴다) ── */
+.pr-fg {
+  color: var(--fg);
+}
+.pr-muted {
+  color: var(--fg-muted);
+}
+.pr-warn {
+  color: var(--warn);
+}
+.pr-danger {
+  color: var(--danger);
+}
+.pr-ok {
+  color: var(--ok);
+}
+.pr-strong {
+  font-weight: 600;
+}
+.pr-fs-12 {
+  font-size: var(--fs-12);
+}
+.pr-fs-13 {
+  font-size: var(--fs-13);
+}
+.pr-fs-14 {
+  font-size: var(--fs-14);
+}
+.pr-dim {
+  opacity: 0.7;
+}
+.pr-prewrap {
+  white-space: pre-wrap;
+}
+.pr-start {
+  justify-self: start;
+}
+.pr-m-0 {
+  margin: 0;
+}
+.pr-mt-0 {
+  margin-top: 0;
+}
+.pr-mt-1 {
+  margin-top: var(--sp-1);
+}
+.pr-mt-2 {
+  margin-top: var(--sp-2);
+}
+.pr-mt-3 {
+  margin-top: var(--sp-3);
+}
+.pr-mb-1 {
+  margin-bottom: var(--sp-1);
+}
+.pr-mb-2 {
+  margin-bottom: var(--sp-2);
+}
+.pr-mb-3 {
+  margin-bottom: var(--sp-3);
+}
+.pr-mr-1 {
+  margin-right: var(--sp-1);
+}

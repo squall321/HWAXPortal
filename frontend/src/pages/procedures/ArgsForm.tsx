@@ -64,17 +64,6 @@ function coerce(key: string, raw: string, sch: JsonSchema): unknown {
   return raw; // 문자열은 {{var}} 도 그대로 통과시킨다 — 치환은 서버가 한다
 }
 
-const box: React.CSSProperties = {
-  width: '100%',
-  background: 'var(--bg)',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  padding: '0.4rem 0.55rem',
-  fontSize: '0.85rem',
-};
-const mono = { ...box, fontFamily: 'var(--cx-mono, monospace)' };
-
 export function ArgsForm({
   tool,
   state,
@@ -89,28 +78,21 @@ export function ArgsForm({
   const required = useMemo(() => new Set(tool?.inputSchema?.required ?? []), [tool]);
   const hasForm = Object.keys(props).length > 0;
 
-  if (!tool) return <p style={{ color: 'var(--muted)' }}>도구를 먼저 고르세요.</p>;
+  if (!tool) return <p className="pr-muted">도구를 먼저 고르세요.</p>;
 
   return (
-    <div style={{ display: 'grid', gap: '0.7rem' }}>
+    <div className="pr-form">
       {tool.description && (
-        <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+        <div className="pr-meta">
           <button
             type="button"
             onClick={() => setOpenDesc((v) => !v)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--muted)',
-              cursor: 'pointer',
-              padding: 0,
-              textDecoration: 'underline',
-            }}
+            className="pr-link-btn"
           >
             {openDesc ? '설명 접기' : '도구 설명 보기'}
           </button>
           {openDesc && (
-            <p style={{ whiteSpace: 'pre-wrap', marginTop: '0.4rem' }}>{tool.description}</p>
+            <p className="pr-prewrap pr-mt-2">{tool.description}</p>
           )}
         </div>
       )}
@@ -121,18 +103,18 @@ export function ArgsForm({
             const k = kindOf(sch);
             const structural = k === 'object' || k === 'array';
             return (
-              <label key={key} style={{ display: 'grid', gap: '0.25rem' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--fg)' }}>
+              <label key={key} className="pr-field">
+                <span className="pr-label">
                   <code>{key}</code>
-                  {required.has(key) && <span style={{ color: '#f0a' }}> *</span>}
-                  <span style={{ color: 'var(--muted)' }}> · {k}</span>
+                  {required.has(key) && <span className="pr-danger"> *</span>}
+                  <span className="pr-muted"> · {k}</span>
                   {structural && (
-                    <span style={{ color: 'var(--muted)' }}> — 원문 JSON 으로 넣습니다</span>
+                    <span className="pr-muted"> — 원문 JSON 으로 넣습니다</span>
                   )}
                 </span>
                 {k === 'enum' ? (
                   <select
-                    style={box}
+                    className="pr-input"
                     value={state.values[key] ?? ''}
                     onChange={(e) => onChange({ ...state, values: { ...state.values, [key]: e.target.value } })}
                   >
@@ -145,7 +127,7 @@ export function ArgsForm({
                   </select>
                 ) : k === 'boolean' ? (
                   <select
-                    style={box}
+                    className="pr-input"
                     value={state.values[key] ?? ''}
                     onChange={(e) => onChange({ ...state, values: { ...state.values, [key]: e.target.value } })}
                   >
@@ -156,14 +138,14 @@ export function ArgsForm({
                 ) : structural ? (
                   <textarea
                     rows={4}
-                    style={mono}
+                    className="pr-input pr-mono"
                     placeholder={k === 'array' ? '[]' : '{}'}
                     value={state.values[key] ?? ''}
                     onChange={(e) => onChange({ ...state, values: { ...state.values, [key]: e.target.value } })}
                   />
                 ) : (
                   <input
-                    style={box}
+                    className="pr-input"
                     value={state.values[key] ?? ''}
                     placeholder={sch.description?.slice(0, 60) ?? ''}
                     onChange={(e) => onChange({ ...state, values: { ...state.values, [key]: e.target.value } })}
@@ -175,25 +157,25 @@ export function ArgsForm({
           <button
             type="button"
             onClick={() => onChange({ ...state, useRaw: true })}
-            style={{ ...box, cursor: 'pointer', width: 'auto', justifySelf: 'start' }}
+            className="pr-box-btn"
           >
             원문 JSON 으로 쓰기
           </button>
         </>
       ) : (
-        <label style={{ display: 'grid', gap: '0.25rem' }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--fg)' }}>
+        <label className="pr-field">
+          <span className="pr-label">
             인자(JSON)
             {!hasForm && (
-              <span style={{ color: 'var(--muted)' }}> — 이 도구는 스키마에 속성이 없습니다</span>
+              <span className="pr-muted"> — 이 도구는 스키마에 속성이 없습니다</span>
             )}
           </span>
-          <textarea rows={8} style={mono} value={state.raw} onChange={(e) => onChange({ ...state, raw: e.target.value })} />
+          <textarea rows={8} className="pr-input pr-mono" value={state.raw} onChange={(e) => onChange({ ...state, raw: e.target.value })} />
           {hasForm && (
             <button
               type="button"
               onClick={() => onChange({ ...state, useRaw: false })}
-              style={{ ...box, cursor: 'pointer', width: 'auto', justifySelf: 'start' }}
+              className="pr-box-btn"
             >
               폼으로 돌아가기
             </button>
