@@ -1,6 +1,5 @@
 // 전문가 조직도 — 전창으로 전체 분류(분야→그룹→사람)를 펼쳐 보고, 누르면 설명이 뜨고 거기서 고른다
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useRef, useState } from 'react';
 import { fetchAgentDetail, fetchDeliberateExperts, type AgentDetail, type PoolExpert } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import { colorOf, initialOf, shortName } from './personaColor';
@@ -10,6 +9,7 @@ import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
 import { agentPath, useOrgNav } from './orgNav';
 import { usePersonaPool } from './usePersonaPool';
 import { InlineMd } from './renderers/TextBlock';
+import { Modal } from '../ui/Modal';
 
 function AgentCard({
   agent,
@@ -100,18 +100,7 @@ export function PersonaBrowser({
     });
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
+  // Esc·뒤 문서 스크롤 잠금·포커스 가둠은 Modal(<dialog>)이 한다
 
   const pick = (a: PoolExpert) => {
     if (onPick) onPick(a);
@@ -148,177 +137,178 @@ export function PersonaBrowser({
     </>
   );
 
-  return createPortal(
-    <div className="pv-overlay" role="dialog" aria-modal="true" aria-label="전문가 조직도">
-      <div className="pv-win">
-        <header className="pv-head">
-          {onBack && (
-            <button type="button" className="pv-icon" onClick={onBack} aria-label="간단 선택으로">
-              ←
+  return (
+    <Modal onClose={onClose} label="전문가 조직도">
+      <div className="pv-overlay">
+        <div className="pv-win">
+          <header className="pv-head">
+            {onBack && (
+              <button type="button" className="pv-icon" onClick={onBack} aria-label="간단 선택으로">
+                ←
+              </button>
+            )}
+            <h2 className="pv-title">전문가 조직도</h2>
+            <span className="pv-count">
+              {loading ? '불러오는 중…' : `${pool.length}명 · ${nav.domainCount}개 분야`}
+            </span>
+            <input
+              className="pv-search"
+              type="text"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  void runSemantic(q);
+                }
+              }}
+              placeholder="이름·키·태그로 찾기 · Enter = 의미로 찾기"
+              aria-label="전문가 검색"
+            />
+            <button type="button" className="pv-icon pv-sem" onClick={() => void runSemantic(q)}
+                    disabled={q.trim().length < 2} title="주제·의미로 찾기(글자가 달라도 찾는다)">
+              의미 검색
             </button>
-          )}
-          <h2 className="pv-title">전문가 조직도</h2>
-          <span className="pv-count">
-            {loading ? '불러오는 중…' : `${pool.length}명 · ${nav.domainCount}개 분야`}
-          </span>
-          <input
-            className="pv-search"
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                void runSemantic(q);
-              }
-            }}
-            placeholder="이름·키·태그로 찾기 · Enter = 의미로 찾기"
-            aria-label="전문가 검색"
-          />
-          <button type="button" className="pv-icon pv-sem" onClick={() => void runSemantic(q)}
-                  disabled={q.trim().length < 2} title="주제·의미로 찾기(글자가 달라도 찾는다)">
-            의미 검색
-          </button>
-          <button type="button" className="pv-icon pv-close" onClick={onClose} aria-label="닫기">
-            ×
-          </button>
-        </header>
+            <button type="button" className="pv-icon pv-close" onClick={onClose} aria-label="닫기">
+              ×
+            </button>
+          </header>
 
-        <div className="pv-body">
-          {/* ── 왼쪽: 조직도 트리(루트→분류→도메인→그룹). 접혀 있어도 인원이 다 보인다 ── */}
-          <OrgTreeNav nav={nav} total={pool.length} />
+          <div className="pv-body">
+            {/* ── 왼쪽: 조직도 트리(루트→분류→도메인→그룹). 접혀 있어도 인원이 다 보인다 ── */}
+            <OrgTreeNav nav={nav} total={pool.length} />
 
-          {/* ── 가운데: 조직도 개요 또는 선택한 갈래의 사람들 ── */}
-          <main className="pv-main">
-            {failed && <p className="pv-empty">전문가 목록을 불러오지 못했습니다 — 잠시 후 다시 열어 보세요.</p>}
-            {loading && <p className="pv-empty">조직도를 불러오는 중…</p>}
+            {/* ── 가운데: 조직도 개요 또는 선택한 갈래의 사람들 ── */}
+            <main className="pv-main">
+              {failed && <p className="pv-empty">전문가 목록을 불러오지 못했습니다 — 잠시 후 다시 열어 보세요.</p>}
+              {loading && <p className="pv-empty">조직도를 불러오는 중…</p>}
 
-            {!loading && !q.trim() && !nav.node && <OrgOverview nav={nav} total={pool.length} />}
+              {!loading && !q.trim() && !nav.node && <OrgOverview nav={nav} total={pool.length} />}
 
-            {/* 의미 검색 결과 — 문자열 일치와 **따로** 보여 준다. 임베딩(e5)은 무관한 문장끼리도
-                코사인 0.87~0.90 이라 점수를 섞어 한 줄로 세우면 난수를 순위로 읽게 된다. */}
-            {sem && (
-              <section className="pv-sem-box">
-                <div className="pv-crumb">
-                  ‘{sem.q}’ 의미 검색 —{' '}
-                  {sem.loading ? '찾는 중…' : `${sem.rows.length}명 (주제 관련도순)`}
-                  <button type="button" className="pv-crumb-btn" onClick={() => setSem(null)}>닫기</button>
-                </div>
-                {!sem.loading && (
-                  <p className="pv-dim pv-sem-note">
-                    {sem.axes.length > 0
-                      ? `질문을 이렇게 쪼개 찾았습니다 — ${sem.axes.join(' / ')}`
-                      : '질문 그대로 찾았습니다(도메인 분해 없음) — 일상어보다 전문 용어로 물으면 잘 찾습니다.'}
-                    {sem.weak && ' ⚠ 이 주제를 맡을 전문가가 풀에 없을 수 있습니다.'}
-                  </p>
-                )}
-                {!sem.loading && sem.rows.length === 0 && (
-                  <p className="pv-empty">주제로도 찾지 못했습니다 — 다른 말로 물어보세요.</p>
-                )}
-                {sem.rows.length > 0 && (
-                  <ul className="pv-cards">
-                    {sem.rows.slice(0, 24).map((a) => (
-                      <AgentCard key={a.key} agent={a} active={sel?.key === a.key} onOpen={() => openAgent(a)} />
-                    ))}
-                  </ul>
-                )}
-              </section>
-            )}
-
-            {!loading && (q.trim() || nav.node) && (
-              <>
-                <OrgCrumb nav={nav} />
-                {shown.length === 0 ? (
-                  <p className="pv-empty">일치하는 전문가가 없습니다.</p>
-                ) : (
-                  <ul className="pv-cards">
-                    {shown.map((a) => (
-                      <AgentCard
-                        key={a.key}
-                        agent={a}
-                        active={sel?.key === a.key}
-                        onOpen={() => openAgent(a)}
-                      />
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-          </main>
-
-          {/* ── 오른쪽: 누른 사람의 설명. 여기서 바로 고른다 ── */}
-          <aside className={`pv-detail${sel ? ' is-open' : ''}`} aria-label="전문가 상세">
-            {!sel ? (
-              <p className="pv-empty pv-detail-hint">전문가를 누르면 역할·보유 지식이 여기 보입니다.</p>
-            ) : (
-              <>
-                <div className="pv-detail-head">
-                  <span className="pv-card-av" style={{ background: colorOf(sel.name) }}>
-                    {initialOf(sel.name)}
-                  </span>
-                  <div>
-                    <div className="pv-detail-name" title={sel.name}>{shortName(sel.name)}</div>
-                    <div className="pv-card-key">{sel.key}</div>
+              {/* 의미 검색 결과 — 문자열 일치와 **따로** 보여 준다. 임베딩(e5)은 무관한 문장끼리도
+                  코사인 0.87~0.90 이라 점수를 섞어 한 줄로 세우면 난수를 순위로 읽게 된다. */}
+              {sem && (
+                <section className="pv-sem-box">
+                  <div className="pv-crumb">
+                    ‘{sem.q}’ 의미 검색 —{' '}
+                    {sem.loading ? '찾는 중…' : `${sem.rows.length}명 (주제 관련도순)`}
+                    <button type="button" className="pv-crumb-btn" onClick={() => setSem(null)}>닫기</button>
                   </div>
-                </div>
-                {pickBtn(sel)}
-                <button type="button" className="pv-deep" onClick={() => setDeep(true)}>
-                  ⤢ 전체 화면으로 보기 — 설명 전문·지식카드 전체
-                </button>
-                {detailLoading && <p className="pv-empty">상세 불러오는 중…</p>}
-                {detail && (
-                  <>
-                    {detail.role && <p className="pv-detail-role"><InlineMd text={detail.role} /></p>}
-                    {detail.tags.length > 0 && (
-                      <p className="pv-dim pv-detail-tags">{detail.tags.slice(0, 14).join(' · ')}</p>
-                    )}
-                    <OperatorApps detail={detail} />
-                    {detail.samples.length > 0 && (
-                      <>
-                        <h4 className="pv-detail-h">이런 걸 물을 수 있어요 — 누르면 입력창에 들어갑니다</h4>
-                        <ul className="pv-detail-list pv-samples">
-                          {detail.samples.slice(0, 4).map((s, i) => (
-                            <li key={i}>
-                              <button type="button" className="pv-sample" onClick={() => askSample(sel, s)}>
-                                {s}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-                    {detail.records.length > 0 && (
-                      <>
-                        <RecordsHeading detail={detail} onMore={() => setDeep(true)} />
-                        <ul className="pv-detail-list pv-detail-scroll">
-                          {detail.records.map((r) => (
-                            <li key={r.id || r.title}>
-                              {r.title}
-                              {r.data_type && <span className="pv-dim"> [{r.data_type}]</span>}
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-                    {detail.error && <p className="pv-empty">상세를 불러오지 못했습니다({detail.error}).</p>}
-                  </>
-                )}
-              </>
-            )}
-          </aside>
+                  {!sem.loading && (
+                    <p className="pv-dim pv-sem-note">
+                      {sem.axes.length > 0
+                        ? `질문을 이렇게 쪼개 찾았습니다 — ${sem.axes.join(' / ')}`
+                        : '질문 그대로 찾았습니다(도메인 분해 없음) — 일상어보다 전문 용어로 물으면 잘 찾습니다.'}
+                      {sem.weak && ' ⚠ 이 주제를 맡을 전문가가 풀에 없을 수 있습니다.'}
+                    </p>
+                  )}
+                  {!sem.loading && sem.rows.length === 0 && (
+                    <p className="pv-empty">주제로도 찾지 못했습니다 — 다른 말로 물어보세요.</p>
+                  )}
+                  {sem.rows.length > 0 && (
+                    <ul className="pv-cards">
+                      {sem.rows.slice(0, 24).map((a) => (
+                        <AgentCard key={a.key} agent={a} active={sel?.key === a.key} onOpen={() => openAgent(a)} />
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
+
+              {!loading && (q.trim() || nav.node) && (
+                <>
+                  <OrgCrumb nav={nav} />
+                  {shown.length === 0 ? (
+                    <p className="pv-empty">일치하는 전문가가 없습니다.</p>
+                  ) : (
+                    <ul className="pv-cards">
+                      {shown.map((a) => (
+                        <AgentCard
+                          key={a.key}
+                          agent={a}
+                          active={sel?.key === a.key}
+                          onOpen={() => openAgent(a)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </main>
+
+            {/* ── 오른쪽: 누른 사람의 설명. 여기서 바로 고른다 ── */}
+            <aside className={`pv-detail${sel ? ' is-open' : ''}`} aria-label="전문가 상세">
+              {!sel ? (
+                <p className="pv-empty pv-detail-hint">전문가를 누르면 역할·보유 지식이 여기 보입니다.</p>
+              ) : (
+                <>
+                  <div className="pv-detail-head">
+                    <span className="pv-card-av" style={{ background: colorOf(sel.name) }}>
+                      {initialOf(sel.name)}
+                    </span>
+                    <div>
+                      <div className="pv-detail-name" title={sel.name}>{shortName(sel.name)}</div>
+                      <div className="pv-card-key">{sel.key}</div>
+                    </div>
+                  </div>
+                  {pickBtn(sel)}
+                  <button type="button" className="pv-deep" onClick={() => setDeep(true)}>
+                    ⤢ 전체 화면으로 보기 — 설명 전문·지식카드 전체
+                  </button>
+                  {detailLoading && <p className="pv-empty">상세 불러오는 중…</p>}
+                  {detail && (
+                    <>
+                      {detail.role && <p className="pv-detail-role"><InlineMd text={detail.role} /></p>}
+                      {detail.tags.length > 0 && (
+                        <p className="pv-dim pv-detail-tags">{detail.tags.slice(0, 14).join(' · ')}</p>
+                      )}
+                      <OperatorApps detail={detail} />
+                      {detail.samples.length > 0 && (
+                        <>
+                          <h4 className="pv-detail-h">이런 걸 물을 수 있어요 — 누르면 입력창에 들어갑니다</h4>
+                          <ul className="pv-detail-list pv-samples">
+                            {detail.samples.slice(0, 4).map((s, i) => (
+                              <li key={i}>
+                                <button type="button" className="pv-sample" onClick={() => askSample(sel, s)}>
+                                  {s}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                      {detail.records.length > 0 && (
+                        <>
+                          <RecordsHeading detail={detail} onMore={() => setDeep(true)} />
+                          <ul className="pv-detail-list pv-detail-scroll">
+                            {detail.records.map((r) => (
+                              <li key={r.id || r.title}>
+                                {r.title}
+                                {r.data_type && <span className="pv-dim"> [{r.data_type}]</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                      {detail.error && <p className="pv-empty">상세를 불러오지 못했습니다({detail.error}).</p>}
+                    </>
+                  )}
+                </>
+              )}
+            </aside>
+          </div>
         </div>
+        {deep && sel && (
+          <AgentDeepView
+            agent={sel}
+            path={agentPath(nav.tree, sel.key)}
+            initialDetail={detail}
+            actions={pickBtn(sel)}
+            onAsk={(s) => askSample(sel, s)}
+            onClose={() => setDeep(false)}
+          />
+        )}
       </div>
-      {deep && sel && (
-        <AgentDeepView
-          agent={sel}
-          path={agentPath(nav.tree, sel.key)}
-          initialDetail={detail}
-          actions={pickBtn(sel)}
-          onAsk={(s) => askSample(sel, s)}
-          onClose={() => setDeep(false)}
-        />
-      )}
-    </div>,
-    document.body,
+    </Modal>
   );
 }

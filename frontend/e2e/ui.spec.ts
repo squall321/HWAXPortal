@@ -296,3 +296,32 @@ test('업데이트 본 날짜 — 브라우저 저장소가 비어도 서버 원
   }
   await page.context().close();
 });
+
+test('대화상자 — 네이티브 dialog: 열면 안으로 포커스, Esc 로 닫으면 연 버튼으로 돌아오고 스크롤 잠금이 풀린다', async ({ browser }) => {
+  const page = await login(browser, 1440);
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  const pill = page.getByRole('button', { name: '전문가', exact: true });
+  test.skip((await pill.count()) === 0, '이 권한 층은 전문가 챗이 없다');
+  await pill.click();
+  const picker = page.getByRole('dialog', { name: '전문가 고르기' });
+  await expect(picker).toBeVisible();
+  expect(await page.evaluate(() => !!document.activeElement?.closest('dialog[open]'))).toBe(true);
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await expect(pill).toBeFocused();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+
+  // 고르기 → 전체 조직도로 갈아타고 Esc — 남는 대화상자·잠금이 없어야 한다
+  await pill.click();
+  await page.getByRole('button', { name: /전체 조직도 열기/ }).click();
+  await expect(page.getByRole('dialog', { name: '전문가 조직도' })).toBeVisible();
+  await expect(page.locator('dialog[open]')).toHaveCount(1);
+  await page.waitForTimeout(500); // 나타나기 애니메이션(0.18s)이 끝난 뒤
+  await page.screenshot({ path: join(SHOTS, '1440_dialog-org.png') });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+  await page.context().close();
+});

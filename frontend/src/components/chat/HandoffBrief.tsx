@@ -17,6 +17,7 @@ import { ClarifyPanel } from './ClarifyPanel';
 import { mergeEvidence, vocEvidence } from './vocEvidence';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob, type JobId } from './delibTaxonomy';
 import { IconOrg } from './icons';
+import { Modal } from '../ui/Modal';
 
 const DEFAULT_SEATS = 6; // 추천 좌석 기본 선택 수(심의가 스파인 좌석은 자동 추가)
 const MIN_SEATS = 2;  // 서버 심의는 좌석 2명 이상 필요
@@ -207,188 +208,151 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
   };
 
   return (
-    <div className="cx-brief-overlay" role="dialog" aria-modal="true" aria-label="심의 브리프" onClick={onClose}>
-      <div className="cx-brief" onClick={(e) => e.stopPropagation()}>
-        <div className="cx-brief-head">
-          <strong>심의 브리프</strong>
-          <span className="cx-brief-sub">AI 제안을 확인·수정하고 심의를 시작합니다</span>
-          <button type="button" className="cx-brief-x" onClick={onClose} aria-label="닫기">
-            ✕
-          </button>
-        </div>
+    <Modal onClose={onClose} label="심의 브리프">
+      <div className="cx-brief-overlay" onClick={onClose}>
+        <div className="cx-brief" onClick={(e) => e.stopPropagation()}>
+          <div className="cx-brief-head">
+            <strong>심의 브리프</strong>
+            <span className="cx-brief-sub">AI 제안을 확인·수정하고 심의를 시작합니다</span>
+            <button type="button" className="cx-brief-x" onClick={onClose} aria-label="닫기">
+              ✕
+            </button>
+          </div>
 
-        <label className="cx-brief-field">
-          <span>
-            질문 (편집 가능)
-            {topicBusy && <em className="cx-brief-note"> · 대화를 읽어 화두를 뽑는 중…</em>}
-          </span>
-          <textarea value={topic} rows={3}
-            onChange={(e) => { touched.current = true; setTopic(e.target.value); }} />
-        </label>
-        {suggested && !topicBusy && (
-          <div className="cx-brief-topic">
-            {suggested.why && <p className="cx-brief-why">{suggested.why}</p>}
-            <div className="cx-brief-alts">
-              {suggested.options.map((o) => (
-                <button key={o} type="button" title="이 화두로 바꾸기"
-                  onClick={() => { touched.current = true; setTopic(o); }}>{o}</button>
-              ))}
-              {derived && topic.trim() !== derived && (
-                <button type="button" className="cx-brief-raw" title="대화에서 뽑지 않고 첫 발화 그대로"
-                  onClick={() => { touched.current = true; setTopic(derived); }}>
-                  ↩ 첫 발화 그대로
+          <label className="cx-brief-field">
+            <span>
+              질문 (편집 가능)
+              {topicBusy && <em className="cx-brief-note"> · 대화를 읽어 화두를 뽑는 중…</em>}
+            </span>
+            <textarea value={topic} rows={3}
+              onChange={(e) => { touched.current = true; setTopic(e.target.value); }} />
+          </label>
+          {suggested && !topicBusy && (
+            <div className="cx-brief-topic">
+              {suggested.why && <p className="cx-brief-why">{suggested.why}</p>}
+              <div className="cx-brief-alts">
+                {suggested.options.map((o) => (
+                  <button key={o} type="button" title="이 화두로 바꾸기"
+                    onClick={() => { touched.current = true; setTopic(o); }}>{o}</button>
+                ))}
+                {derived && topic.trim() !== derived && (
+                  <button type="button" className="cx-brief-raw" title="대화에서 뽑지 않고 첫 발화 그대로"
+                    onClick={() => { touched.current = true; setTopic(derived); }}>
+                    ↩ 첫 발화 그대로
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 되묻기 — 대화에 이미 있는 건 안 묻는다(서버가 대화까지 원문 대조). 보강하면 좌석을 다시 찾는다. */}
+          <ClarifyPanel topic={topic} job={job} history={history} onApply={setTopic} />
+
+          {suggestion && (
+            <div className="cx-brief-rec">
+              <span className="cx-brief-rec-badge">이 대화 기반 제안</span>
+              <div className="cx-brief-rec-line">
+                <strong>{JOB_BY_ID[suggestion.id].name}</strong>
+                <span className="cx-brief-rec-eng">{JOB_BY_ID[suggestion.id].engine}</span>
+              </div>
+              <p className="cx-brief-rec-why">{suggestion.why} · 다르면 아래에서 고르세요</p>
+            </div>
+          )}
+
+          <div className="cx-brief-field">
+            <span>무엇을 하는 심의인가 — 하나 고르세요 (산출은 결정 문서입니다)</span>
+            {JOB_GROUPS.map((g) => (
+              <div className="cx-jobgroup" key={g.id}>
+                <div className="cx-jobgroup-label">
+                  <b>{g.label}</b>
+                  <span>{g.hint}</span>
+                </div>
+                <div className="cx-brief-jobs">
+                  {jobsByGroup(g.id).map((j) => (
+                    <button
+                      type="button"
+                      key={j.id}
+                      className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
+                      onClick={() => setJob(j.id)}
+                      aria-pressed={job === j.id}
+                      title={`산출: ${j.out}`}
+                    >
+                      <span className="cx-brief-job-top">
+                        <span className="cx-brief-job-name">{j.name}</span>
+                        <span className="cx-brief-job-eng">{j.engine}</span>
+                      </span>
+                      <span className="cx-brief-job-when">{j.when}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="cx-brief-field">
+            <span>얹을 층 — 선택 (여럿 가능)</span>
+            <div className="cx-brief-mods">
+              {MODIFIERS.map((m) => (
+                <button
+                  type="button"
+                  key={m.id}
+                  className={`cx-brief-mod${mods.has(m.id) ? ' is-on' : ''}`}
+                  onClick={() => toggleMod(m.id)}
+                  aria-pressed={mods.has(m.id)}
+                  title={m.when}
+                >
+                  {m.name}
                 </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 축 — 대화 전체를 읽고 풀의 도메인 분류에서 고른 것. 왜 이 좌석인지의 근거다.
+              비어 있으면 화두 한 줄로만 추천했다는 뜻이라, 그렇게 말해 준다. */}
+          {!loading && (
+            <div className="cx-brief-field">
+              <span>
+                {axes.length
+                  ? `대화에서 잡은 축 ${axes.length}개 — 축마다 따로 좌석을 찾았습니다`
+                  : '축 없음 — 화두 한 줄로만 추천했습니다'}
+              </span>
+              {axes.length > 0 && (
+                <div className="cx-brief-axes">
+                  {axes.map((a) => (
+                    <div key={a.domain} className="cx-brief-axis">
+                      <span className="cx-brief-axis-dom">{a.domain}</span>
+                      <span className="cx-brief-axis-phrase">{a.phrase}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 되묻기 — 대화에 이미 있는 건 안 묻는다(서버가 대화까지 원문 대조). 보강하면 좌석을 다시 찾는다. */}
-        <ClarifyPanel topic={topic} job={job} history={history} onApply={setTopic} />
+          {/* 추천은 관련도가 낮아도 늘 채워 내놓는다 — 서버가 '자신 없음'을 말하면 화면이 그대로
+              옮겨야 한다. ExpertPicker 에만 있고 여기엔 없어서, 같은 실수를 브리프 경로에서는
+              계속 할 수 있었다. */}
+          {!loading && experts?.low_confidence && (
+            <p className="cx-brief-lowconf">
+              이 주제를 맡을 전문가가 풀에 없을 수 있습니다 — 아래 추천은 관련도가 낮습니다.
+              조직도에서 직접 고르시거나, 질문을 더 구체적인 용어로 바꿔 보세요.
+            </p>
+          )}
 
-        {suggestion && (
-          <div className="cx-brief-rec">
-            <span className="cx-brief-rec-badge">이 대화 기반 제안</span>
-            <div className="cx-brief-rec-line">
-              <strong>{JOB_BY_ID[suggestion.id].name}</strong>
-              <span className="cx-brief-rec-eng">{JOB_BY_ID[suggestion.id].engine}</span>
-            </div>
-            <p className="cx-brief-rec-why">{suggestion.why} · 다르면 아래에서 고르세요</p>
-          </div>
-        )}
-
-        <div className="cx-brief-field">
-          <span>무엇을 하는 심의인가 — 하나 고르세요 (산출은 결정 문서입니다)</span>
-          {JOB_GROUPS.map((g) => (
-            <div className="cx-jobgroup" key={g.id}>
-              <div className="cx-jobgroup-label">
-                <b>{g.label}</b>
-                <span>{g.hint}</span>
-              </div>
-              <div className="cx-brief-jobs">
-                {jobsByGroup(g.id).map((j) => (
-                  <button
-                    type="button"
-                    key={j.id}
-                    className={`cx-brief-job${job === j.id ? ' is-on' : ''}`}
-                    onClick={() => setJob(j.id)}
-                    aria-pressed={job === j.id}
-                    title={`산출: ${j.out}`}
-                  >
-                    <span className="cx-brief-job-top">
-                      <span className="cx-brief-job-name">{j.name}</span>
-                      <span className="cx-brief-job-eng">{j.engine}</span>
-                    </span>
-                    <span className="cx-brief-job-when">{j.when}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="cx-brief-field">
-          <span>얹을 층 — 선택 (여럿 가능)</span>
-          <div className="cx-brief-mods">
-            {MODIFIERS.map((m) => (
-              <button
-                type="button"
-                key={m.id}
-                className={`cx-brief-mod${mods.has(m.id) ? ' is-on' : ''}`}
-                onClick={() => toggleMod(m.id)}
-                aria-pressed={mods.has(m.id)}
-                title={m.when}
-              >
-                {m.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 축 — 대화 전체를 읽고 풀의 도메인 분류에서 고른 것. 왜 이 좌석인지의 근거다.
-            비어 있으면 화두 한 줄로만 추천했다는 뜻이라, 그렇게 말해 준다. */}
-        {!loading && (
           <div className="cx-brief-field">
-            <span>
-              {axes.length
-                ? `대화에서 잡은 축 ${axes.length}개 — 축마다 따로 좌석을 찾았습니다`
-                : '축 없음 — 화두 한 줄로만 추천했습니다'}
+            <span className="cx-brief-seatlabel">
+              좌석 제안{' '}
+              {loading
+                ? '(발굴 중…)'
+                : `— ${checked.size}/${MAX_SEATS}석 선택${seatFull ? ' · 가득' : ''} · 심의가 스파인 좌석 자동 추가`}
+              {!loading && experts?.pool?.length ? (
+                <button type="button" className="cx-brief-browse" onClick={() => setBrowsing(true)}>
+                  <IconOrg className="ico" width={14} height={14} /> 조직도에서 고르기
+                </button>
+              ) : null}
             </span>
-            {axes.length > 0 && (
-              <div className="cx-brief-axes">
-                {axes.map((a) => (
-                  <div key={a.domain} className="cx-brief-axis">
-                    <span className="cx-brief-axis-dom">{a.domain}</span>
-                    <span className="cx-brief-axis-phrase">{a.phrase}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 추천은 관련도가 낮아도 늘 채워 내놓는다 — 서버가 '자신 없음'을 말하면 화면이 그대로
-            옮겨야 한다. ExpertPicker 에만 있고 여기엔 없어서, 같은 실수를 브리프 경로에서는
-            계속 할 수 있었다. */}
-        {!loading && experts?.low_confidence && (
-          <p className="cx-brief-lowconf">
-            이 주제를 맡을 전문가가 풀에 없을 수 있습니다 — 아래 추천은 관련도가 낮습니다.
-            조직도에서 직접 고르시거나, 질문을 더 구체적인 용어로 바꿔 보세요.
-          </p>
-        )}
-
-        <div className="cx-brief-field">
-          <span className="cx-brief-seatlabel">
-            좌석 제안{' '}
-            {loading
-              ? '(발굴 중…)'
-              : `— ${checked.size}/${MAX_SEATS}석 선택${seatFull ? ' · 가득' : ''} · 심의가 스파인 좌석 자동 추가`}
-            {!loading && experts?.pool?.length ? (
-              <button type="button" className="cx-brief-browse" onClick={() => setBrowsing(true)}>
-                <IconOrg className="ico" width={14} height={14} /> 조직도에서 고르기
-              </button>
-            ) : null}
-          </span>
-          <div className="cx-brief-seats">
-            {rec.map((e) => (
-              <label key={e.key} className="cx-brief-seat">
-                <input
-                  type="checkbox"
-                  checked={checked.has(e.key)}
-                  disabled={seatFull && !checked.has(e.key)}
-                  onChange={() => toggle(e.key)}
-                />
-                <span className="cx-brief-seat-name">{e.name}</span>
-                {e.axes?.length ? (
-                  <span className="cx-brief-seat-axis">{e.axes.join(' · ')}</span>
-                ) : null}
-                {e.why && <span className="cx-brief-seat-why">{e.why}</span>}
-              </label>
-            ))}
-            {manual.map((e) =>
-              e ? (
-                <label key={e.key} className="cx-brief-seat">
-                  <input type="checkbox" checked onChange={() => toggle(e.key)} />
-                  <span className="cx-brief-seat-name">{e.name}</span>
-                  <span className="cx-brief-seat-axis">직접 추가</span>
-                </label>
-              ) : null,
-            )}
-            {!loading && rec.length === 0 && manual.length === 0 && (
-              <span className="cx-brief-empty">추천 좌석 없음 — 심의가 자동 발굴합니다</span>
-            )}
-          </div>
-
-          {/* 추천 밖에서 직접 앉히기 — 추천 5명이 전부가 아니다. 후보(관련도순) 다음 전체 풀. */}
-          <input
-            className="cx-brief-seatsearch"
-            value={seatQuery}
-            onChange={(e) => setSeatQuery(e.target.value)}
-            placeholder={`전문가 직접 찾기 — 이름·키로 검색 (풀 ${experts?.pool?.length ?? 0}명)`}
-          />
-          {seatQuery.trim() && (
-            <div className="cx-brief-seats cx-brief-hits">
-              {searchHits.map((e) => (
+            <div className="cx-brief-seats">
+              {rec.map((e) => (
                 <label key={e.key} className="cx-brief-seat">
                   <input
                     type="checkbox"
@@ -397,61 +361,100 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
                     onChange={() => toggle(e.key)}
                   />
                   <span className="cx-brief-seat-name">{e.name}</span>
-                  <span className="cx-brief-seat-axis">{e.key}</span>
+                  {e.axes?.length ? (
+                    <span className="cx-brief-seat-axis">{e.axes.join(' · ')}</span>
+                  ) : null}
+                  {e.why && <span className="cx-brief-seat-why">{e.why}</span>}
                 </label>
               ))}
-              {searchHits.length === 0 && <span className="cx-brief-empty">일치하는 전문가 없음</span>}
+              {manual.map((e) =>
+                e ? (
+                  <label key={e.key} className="cx-brief-seat">
+                    <input type="checkbox" checked onChange={() => toggle(e.key)} />
+                    <span className="cx-brief-seat-name">{e.name}</span>
+                    <span className="cx-brief-seat-axis">직접 추가</span>
+                  </label>
+                ) : null,
+              )}
+              {!loading && rec.length === 0 && manual.length === 0 && (
+                <span className="cx-brief-empty">추천 좌석 없음 — 심의가 자동 발굴합니다</span>
+              )}
             </div>
+
+            {/* 추천 밖에서 직접 앉히기 — 추천 5명이 전부가 아니다. 후보(관련도순) 다음 전체 풀. */}
+            <input
+              className="cx-brief-seatsearch"
+              value={seatQuery}
+              onChange={(e) => setSeatQuery(e.target.value)}
+              placeholder={`전문가 직접 찾기 — 이름·키로 검색 (풀 ${experts?.pool?.length ?? 0}명)`}
+            />
+            {seatQuery.trim() && (
+              <div className="cx-brief-seats cx-brief-hits">
+                {searchHits.map((e) => (
+                  <label key={e.key} className="cx-brief-seat">
+                    <input
+                      type="checkbox"
+                      checked={checked.has(e.key)}
+                      disabled={seatFull && !checked.has(e.key)}
+                      onChange={() => toggle(e.key)}
+                    />
+                    <span className="cx-brief-seat-name">{e.name}</span>
+                    <span className="cx-brief-seat-axis">{e.key}</span>
+                  </label>
+                ))}
+                {searchHits.length === 0 && <span className="cx-brief-empty">일치하는 전문가 없음</span>}
+              </div>
+            )}
+          </div>
+
+          <div className="cx-brief-field">
+            <VocFirstPanel topic={topic} onChange={setVoc} />
+          </div>
+
+          <div className="cx-brief-field">
+            <span>
+              원천 근거 {Math.min(12, vocEv.length + evidence.length)}건
+              {vocEv.length > 0 && ` (고른 VOC ${vocEv.length} + 대화 ${evidence.length - droppedConv})`} — 검증 대상이지
+              결론이 아닙니다
+              {droppedConv > 0 && ` · 대화 근거 ${droppedConv}건은 12건 상한으로 빠집니다`}
+            </span>
+            <div className="cx-brief-ev">
+              {evidence.map((ev, i) => (
+                <div key={i} className="cx-brief-ev-item">
+                  <span className="cx-brief-ev-src">
+                    {ev.source}
+                    {ev.tool ? ` · ${ev.tool}` : ''}
+                  </span>
+                  <span className="cx-brief-ev-res">{ev.result.slice(0, 200)}</span>
+                </div>
+              ))}
+              {evidence.length === 0 && <span className="cx-brief-empty">추출된 원천 근거 없음</span>}
+            </div>
+          </div>
+
+          <div className="cx-brief-actions">
+            <button type="button" className="cx-brief-cancel" onClick={onClose}>
+              취소
+            </button>
+            <button type="button" className="cx-brief-go" onClick={confirm} disabled={!topic.trim() || streaming}>
+              {JOB_BY_ID[job].name} 심의 시작 · {checked.size}석{mods.size ? ` · 얹을 층 ${mods.size}` : ''} · 근거{' '}
+              {Math.min(12, vocEv.length + evidence.length)}
+            </button>
+          </div>
+
+          {browsing && experts && (
+            <SeatBrowser
+              pool={experts.pool}
+              candidates={experts.candidates?.length ? experts.candidates : rec}
+              selected={seatSelected}
+              onToggle={(r) => toggle(r.key)}
+              min={MIN_SEATS}
+              max={MAX_SEATS}
+              onClose={() => setBrowsing(false)}
+            />
           )}
         </div>
-
-        <div className="cx-brief-field">
-          <VocFirstPanel topic={topic} onChange={setVoc} />
-        </div>
-
-        <div className="cx-brief-field">
-          <span>
-            원천 근거 {Math.min(12, vocEv.length + evidence.length)}건
-            {vocEv.length > 0 && ` (고른 VOC ${vocEv.length} + 대화 ${evidence.length - droppedConv})`} — 검증 대상이지
-            결론이 아닙니다
-            {droppedConv > 0 && ` · 대화 근거 ${droppedConv}건은 12건 상한으로 빠집니다`}
-          </span>
-          <div className="cx-brief-ev">
-            {evidence.map((ev, i) => (
-              <div key={i} className="cx-brief-ev-item">
-                <span className="cx-brief-ev-src">
-                  {ev.source}
-                  {ev.tool ? ` · ${ev.tool}` : ''}
-                </span>
-                <span className="cx-brief-ev-res">{ev.result.slice(0, 200)}</span>
-              </div>
-            ))}
-            {evidence.length === 0 && <span className="cx-brief-empty">추출된 원천 근거 없음</span>}
-          </div>
-        </div>
-
-        <div className="cx-brief-actions">
-          <button type="button" className="cx-brief-cancel" onClick={onClose}>
-            취소
-          </button>
-          <button type="button" className="cx-brief-go" onClick={confirm} disabled={!topic.trim() || streaming}>
-            {JOB_BY_ID[job].name} 심의 시작 · {checked.size}석{mods.size ? ` · 얹을 층 ${mods.size}` : ''} · 근거{' '}
-            {Math.min(12, vocEv.length + evidence.length)}
-          </button>
-        </div>
-
-        {browsing && experts && (
-          <SeatBrowser
-            pool={experts.pool}
-            candidates={experts.candidates?.length ? experts.candidates : rec}
-            selected={seatSelected}
-            onToggle={(r) => toggle(r.key)}
-            min={MIN_SEATS}
-            max={MAX_SEATS}
-            onClose={() => setBrowsing(false)}
-          />
-        )}
       </div>
-    </div>
+    </Modal>
   );
 }

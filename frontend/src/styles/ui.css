@@ -48,3 +48,25 @@
 .tab-panel:focus-visible {
   outline: none;
 }
+
+/* ── 대화상자 틀(components/ui/Modal) — 화면 전체를 덮는 투명한 top layer. 배경·카드는 각 대화상자 CSS 가 그린다 ── */
+dialog.modal {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
+  color: inherit;
+}
+dialog.modal::backdrop {
+  background: transparent;
+}
+dialog.modal:focus-visible {
+  outline: none;
+}

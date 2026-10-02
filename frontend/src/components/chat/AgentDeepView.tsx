@@ -1,6 +1,5 @@
 // 전문가 심층 보기 — 한 명을 전체 화면으로: 설명·역할 문서 전문·예시·운영 앱, 지식카드 전체(검색·쪽), 카드 본문
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import {
   fetchAgentDetail,
   fetchAgentRecords,
@@ -13,6 +12,7 @@ import {
 import { OperatorApps } from './AgentFacts';
 import { colorOf, initialOf } from './personaColor';
 import { InlineMd, TextBlock } from './renderers/TextBlock';
+import { Modal } from '../ui/Modal';
 
 const PAGE = 50;
 
@@ -170,17 +170,8 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
     if (selRef.current === null && page && page.items.length > 0) openRecord(page.items[0].id);
   }, [page, openRecord]);
 
-  // Esc 는 이 화면만 닫는다. 뒤에 깔린 조직도도 window keydown 으로 닫히므로, 캡처 단계에서 먼저
-  // 받아 전파를 끊는다(같은 window 의 버블 리스너까지 멈춘다).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      onClose();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  // Esc 는 이 화면만 닫는다 — 뒤에 깔린 조직도와 함께 Modal(<dialog>)이라 top layer 맨 위인 이것만 cancel 을 받는다
+  // (종전엔 둘 다 window keydown 이라 캡처 단계에서 전파를 끊어 막았다).
 
   const total = page && !page.error ? page.total : (detail?.records_total ?? null);
   const items = page?.items ?? [];
@@ -188,155 +179,156 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
   const noCards = !listLoading && !query && !!page && !page.error && page.total === 0;
   const name = detail?.name || agent.name;
 
-  return createPortal(
-    <div className="dv-overlay" role="dialog" aria-modal="true" aria-label={`${name} 심층 보기`}>
-      <div className="dv-win">
-        <header className="dv-head">
-          <button type="button" className="pv-icon" onClick={onClose} aria-label="조직도로 돌아가기">
-            ←
-          </button>
-          <span className="pv-card-av dv-av" style={{ background: colorOf(agent.name) }}>
-            {initialOf(agent.name)}
-          </span>
-          <div className="dv-id">
-            <h2 className="dv-name" title={name}>{name}</h2>
-            <div className="dv-sub">
-              <span className="pv-card-key">{agent.key}</span>
-              {path && path.length > 0 && <span className="pv-dim"> · {path.join(' / ')}</span>}
-            </div>
-          </div>
-          {actions && <div className="dv-actions">{actions}</div>}
-          <button type="button" className="pv-icon pv-close" onClick={onClose} aria-label="닫기">
-            ×
-          </button>
-        </header>
-
-        <div className={`dv-body${noCards ? ' is-nocards' : ''}`}>
-          {/* ── 프로필: 무엇을 하는 사람인가 ── */}
-          <aside className="dv-col dv-profile" aria-label="전문가 설명">
-            {!detail && <p className="pv-empty">설명 불러오는 중…</p>}
-            {detail?.error && <p className="pv-empty">설명을 불러오지 못했습니다({detail.error}).</p>}
-            {detail && (
-              <>
-                {detail.role && <p className="dv-desc"><InlineMd text={detail.role} /></p>}
-                {detail.tags.length > 0 && (
-                  <div className="dv-tags">
-                    {detail.tags.map((t) => (
-                      <span key={t} className="pv-chip">{t}</span>
-                    ))}
-                  </div>
-                )}
-                <OperatorApps detail={detail} />
-                {detail.samples.length > 0 && (
-                  <>
-                    <h4 className="pv-detail-h">
-                      이런 걸 물을 수 있어요{onAsk ? ' — 누르면 이 전문가와 대화를 시작합니다' : ''}
-                    </h4>
-                    <ul className="pv-detail-list pv-samples">
-                      {detail.samples.map((s, i) => (
-                        <li key={i}>
-                          {onAsk ? (
-                            <button type="button" className="pv-sample" onClick={() => onAsk(s)}>{s}</button>
-                          ) : (
-                            <span className="pv-sample is-static">{s}</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-                <h4 className="pv-detail-h">역할 문서 — 이 전문가가 받는 지시 전문</h4>
-                {detail.prompt ? (
-                  <div className="dv-doc">
-                    <TextBlock text={detail.prompt} />
-                  </div>
-                ) : (
-                  <p className="pv-empty">따로 쓴 역할 문서가 없습니다 — 위 설명이 전부입니다.</p>
-                )}
-              </>
-            )}
-          </aside>
-
-          {/* ── 지식카드 전체: 검색·쪽 ── */}
-          <section className="dv-col dv-list" aria-label="지식카드 목록">
-            <div className="dv-list-head">
-              <h3 className="dv-list-title">
-                지식카드 {total !== null ? <b>{nf.format(total)}건</b> : ''}
-                {query && page && !page.error && <span className="pv-dim"> · ‘{query}’ 검색</span>}
-              </h3>
-              {!noCards && (
-                <input
-                  className="pv-search dv-search"
-                  type="text"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="카드 제목·요약으로 찾기"
-                  aria-label="지식카드 검색"
-                  autoFocus
-                />
-              )}
-            </div>
-            {page && !page.error && page.total > 0 && (
-              <div className="dv-pager">
-                <span className="pv-dim">
-                  {nf.format(offset + 1)}–{nf.format(offset + items.length)} / {nf.format(page.total)}
-                </span>
-                <button type="button" className="pv-chip pv-chip-btn" disabled={offset === 0 || listLoading}
-                  onClick={() => setOffset(Math.max(0, offset - PAGE))}>
-                  ◀ 이전
-                </button>
-                <button type="button" className="pv-chip pv-chip-btn"
-                  disabled={offset + items.length >= page.total || listLoading}
-                  onClick={() => setOffset(offset + PAGE)}>
-                  다음 ▶
-                </button>
+  return (
+    <Modal onClose={onClose} label={`${name} 심층 보기`}>
+      <div className="dv-overlay">
+        <div className="dv-win">
+          <header className="dv-head">
+            <button type="button" className="pv-icon" onClick={onClose} aria-label="조직도로 돌아가기">
+              ←
+            </button>
+            <span className="pv-card-av dv-av" style={{ background: colorOf(agent.name) }}>
+              {initialOf(agent.name)}
+            </span>
+            <div className="dv-id">
+              <h2 className="dv-name" title={name}>{name}</h2>
+              <div className="dv-sub">
+                <span className="pv-card-key">{agent.key}</span>
+                {path && path.length > 0 && <span className="pv-dim"> · {path.join(' / ')}</span>}
               </div>
-            )}
-            {listLoading && <p className="pv-empty">지식카드 불러오는 중…</p>}
-            {!listLoading && page?.error && (
-              <p className="pv-empty">
-                지식카드를 불러오지 못했습니다({page.error}) — 보유 지식이 없다는 뜻이 아닙니다.
-              </p>
-            )}
-            {!listLoading && page && !page.error && page.total === 0 && (
-              <p className="pv-empty">
-                {query
-                  ? `‘${query}’ 에 맞는 카드가 없습니다.`
-                  : detail?.operator
-                    ? '지식카드가 없습니다 — 이 전문가는 지식카드가 아니라 앱 도구를 직접 호출해 답합니다.'
-                    : '연결된 지식카드가 없습니다.'}
-              </p>
-            )}
-            {!listLoading && items.length > 0 && (
-              <ul className="dv-items">
-                {items.map((r) => (
-                  <li key={r.id}>
-                    <button type="button" className={`dv-item${selId === r.id ? ' is-on' : ''}`}
-                      onClick={() => openRecord(r.id)}>
-                      <span className="dv-item-title">{r.title || r.id}</span>
-                      <span className="dv-item-meta">
-                        {[r.doc_type, r.data_type, r.year].filter(Boolean).join(' · ')}
-                      </span>
-                      {r.summary && r.summary !== r.title && <span className="dv-item-sum">{r.summary}</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+            </div>
+            {actions && <div className="dv-actions">{actions}</div>}
+            <button type="button" className="pv-icon pv-close" onClick={onClose} aria-label="닫기">
+              ×
+            </button>
+          </header>
 
-          {/* ── 읽기: 고른 카드의 본문 ── */}
-          {!noCards && (
-            <article className="dv-col dv-reader" aria-label="지식카드 본문">
-              {!selId && !listLoading && <p className="pv-empty">가운데에서 카드를 고르면 본문이 여기 보입니다.</p>}
-              {recLoading && <p className="pv-empty">카드 불러오는 중…</p>}
-              {rec?.error && <p className="pv-empty">카드를 불러오지 못했습니다({rec.error}).</p>}
-              {rec && !rec.error && <RecordReader rec={rec} />}
-            </article>
-          )}
+          <div className={`dv-body${noCards ? ' is-nocards' : ''}`}>
+            {/* ── 프로필: 무엇을 하는 사람인가 ── */}
+            <aside className="dv-col dv-profile" aria-label="전문가 설명">
+              {!detail && <p className="pv-empty">설명 불러오는 중…</p>}
+              {detail?.error && <p className="pv-empty">설명을 불러오지 못했습니다({detail.error}).</p>}
+              {detail && (
+                <>
+                  {detail.role && <p className="dv-desc"><InlineMd text={detail.role} /></p>}
+                  {detail.tags.length > 0 && (
+                    <div className="dv-tags">
+                      {detail.tags.map((t) => (
+                        <span key={t} className="pv-chip">{t}</span>
+                      ))}
+                    </div>
+                  )}
+                  <OperatorApps detail={detail} />
+                  {detail.samples.length > 0 && (
+                    <>
+                      <h4 className="pv-detail-h">
+                        이런 걸 물을 수 있어요{onAsk ? ' — 누르면 이 전문가와 대화를 시작합니다' : ''}
+                      </h4>
+                      <ul className="pv-detail-list pv-samples">
+                        {detail.samples.map((s, i) => (
+                          <li key={i}>
+                            {onAsk ? (
+                              <button type="button" className="pv-sample" onClick={() => onAsk(s)}>{s}</button>
+                            ) : (
+                              <span className="pv-sample is-static">{s}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <h4 className="pv-detail-h">역할 문서 — 이 전문가가 받는 지시 전문</h4>
+                  {detail.prompt ? (
+                    <div className="dv-doc">
+                      <TextBlock text={detail.prompt} />
+                    </div>
+                  ) : (
+                    <p className="pv-empty">따로 쓴 역할 문서가 없습니다 — 위 설명이 전부입니다.</p>
+                  )}
+                </>
+              )}
+            </aside>
+
+            {/* ── 지식카드 전체: 검색·쪽 ── */}
+            <section className="dv-col dv-list" aria-label="지식카드 목록">
+              <div className="dv-list-head">
+                <h3 className="dv-list-title">
+                  지식카드 {total !== null ? <b>{nf.format(total)}건</b> : ''}
+                  {query && page && !page.error && <span className="pv-dim"> · ‘{query}’ 검색</span>}
+                </h3>
+                {!noCards && (
+                  <input
+                    className="pv-search dv-search"
+                    type="text"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="카드 제목·요약으로 찾기"
+                    aria-label="지식카드 검색"
+                    autoFocus
+                  />
+                )}
+              </div>
+              {page && !page.error && page.total > 0 && (
+                <div className="dv-pager">
+                  <span className="pv-dim">
+                    {nf.format(offset + 1)}–{nf.format(offset + items.length)} / {nf.format(page.total)}
+                  </span>
+                  <button type="button" className="pv-chip pv-chip-btn" disabled={offset === 0 || listLoading}
+                    onClick={() => setOffset(Math.max(0, offset - PAGE))}>
+                    ◀ 이전
+                  </button>
+                  <button type="button" className="pv-chip pv-chip-btn"
+                    disabled={offset + items.length >= page.total || listLoading}
+                    onClick={() => setOffset(offset + PAGE)}>
+                    다음 ▶
+                  </button>
+                </div>
+              )}
+              {listLoading && <p className="pv-empty">지식카드 불러오는 중…</p>}
+              {!listLoading && page?.error && (
+                <p className="pv-empty">
+                  지식카드를 불러오지 못했습니다({page.error}) — 보유 지식이 없다는 뜻이 아닙니다.
+                </p>
+              )}
+              {!listLoading && page && !page.error && page.total === 0 && (
+                <p className="pv-empty">
+                  {query
+                    ? `‘${query}’ 에 맞는 카드가 없습니다.`
+                    : detail?.operator
+                      ? '지식카드가 없습니다 — 이 전문가는 지식카드가 아니라 앱 도구를 직접 호출해 답합니다.'
+                      : '연결된 지식카드가 없습니다.'}
+                </p>
+              )}
+              {!listLoading && items.length > 0 && (
+                <ul className="dv-items">
+                  {items.map((r) => (
+                    <li key={r.id}>
+                      <button type="button" className={`dv-item${selId === r.id ? ' is-on' : ''}`}
+                        onClick={() => openRecord(r.id)}>
+                        <span className="dv-item-title">{r.title || r.id}</span>
+                        <span className="dv-item-meta">
+                          {[r.doc_type, r.data_type, r.year].filter(Boolean).join(' · ')}
+                        </span>
+                        {r.summary && r.summary !== r.title && <span className="dv-item-sum">{r.summary}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* ── 읽기: 고른 카드의 본문 ── */}
+            {!noCards && (
+              <article className="dv-col dv-reader" aria-label="지식카드 본문">
+                {!selId && !listLoading && <p className="pv-empty">가운데에서 카드를 고르면 본문이 여기 보입니다.</p>}
+                {recLoading && <p className="pv-empty">카드 불러오는 중…</p>}
+                {rec?.error && <p className="pv-empty">카드를 불러오지 못했습니다({rec.error}).</p>}
+                {rec && !rec.error && <RecordReader rec={rec} />}
+              </article>
+            )}
+          </div>
         </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

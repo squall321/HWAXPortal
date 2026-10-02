@@ -1,6 +1,5 @@
 // 심의 좌석 조직도 — 분야→그룹→사람으로 훑으며 **여러 명**을 고른다(챗 조직도의 다중선택판)
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchAgentDetail, type AgentDetail, type PoolExpert, type RecommendedExpert } from '../../api/chat.api';
 import { colorOf, initialOf, shortName } from './personaColor';
 import { OperatorApps, RecordsHeading } from './AgentFacts';
@@ -9,6 +8,7 @@ import { findDomain } from './personaCatalog';
 import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
 import { agentPath, useOrgNav } from './orgNav';
 import { InlineMd } from './renderers/TextBlock';
+import { Modal } from '../ui/Modal';
 
 export interface SeatBrowserProps {
   pool: PoolExpert[];
@@ -67,18 +67,7 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
     });
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
+  // Esc·뒤 문서 스크롤 잠금·포커스 가둠은 Modal(<dialog>)이 한다
 
   const count = Object.keys(selected).length;
   const full = count >= max;
@@ -128,138 +117,139 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
     );
   };
 
-  return createPortal(
-    <div className="pv-overlay" role="dialog" aria-modal="true" aria-label="심의 좌석 조직도">
-      <div className="pv-win">
-        <header className="pv-head">
-          <h2 className="pv-title">좌석 조직도</h2>
-          <span className="pv-count">
-            {pool.length}명 · {nav.domainCount}개 분야
-          </span>
-          <span className={`sb-chosen${full ? ' is-full' : ''}`}>
-            선정 {count}/{max}
-            {full && ' — 가득'}
-          </span>
-          <input
-            className="pv-search"
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="이름·키·태그로 찾기"
-            aria-label="전문가 검색"
-          />
-          <button type="button" className="pv-icon pv-close" onClick={onClose} aria-label="닫기">
-            ×
-          </button>
-        </header>
-
-        <div className="pv-body">
-          <OrgTreeNav nav={nav} total={pool.length} badge={pickedBadge} />
-
-          <main className="pv-main">
-            {!q.trim() && !nav.node && <OrgOverview nav={nav} total={pool.length} badge={pickedBadge} />}
-
-            {(q.trim() || nav.node) && (
-              <>
-                <OrgCrumb nav={nav} />
-                {shown.length === 0 ? (
-                  <p className="pv-empty">일치하는 전문가가 없습니다.</p>
-                ) : (
-                  <ul className="pv-cards sb-cards">{shown.map(card)}</ul>
-                )}
-              </>
-            )}
-          </main>
-
-          <aside className={`pv-detail${sel ? ' is-open' : ''}`} aria-label="전문가 상세">
-            {!sel ? (
-              <p className="pv-empty pv-detail-hint">전문가를 누르면 역할·보유 지식이 여기 보입니다.</p>
-            ) : (
-              <>
-                <div className="pv-detail-head">
-                  <span className="pv-card-av" style={{ background: colorOf(sel.name) }}>
-                    {initialOf(sel.name)}
-                  </span>
-                  <div>
-                    <div className="pv-detail-name" title={sel.name}>
-                      {shortName(sel.name)}
-                    </div>
-                    <div className="pv-card-key">{sel.key}</div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="pv-apply"
-                  onClick={() => toggle(sel)}
-                  disabled={!selected[sel.key] && full}
-                >
-                  {selected[sel.key]
-                    ? '좌석에서 제외'
-                    : full
-                      ? `${max}석이 찼습니다`
-                      : '이 전문가를 좌석에'}
-                </button>
-                <button type="button" className="pv-deep" onClick={() => setDeep(true)}>
-                  ⤢ 전체 화면으로 보기 — 설명 전문·지식카드 전체
-                </button>
-                {detailLoading && <p className="pv-empty">상세 불러오는 중…</p>}
-                {detail && (
-                  <>
-                    {detail.role && <p className="pv-detail-role"><InlineMd text={detail.role} /></p>}
-                    {detail.tags.length > 0 && (
-                      <p className="pv-dim pv-detail-tags">{detail.tags.slice(0, 14).join(' · ')}</p>
-                    )}
-                    <OperatorApps detail={detail} />
-                    {detail.records.length > 0 && (
-                      <>
-                        <RecordsHeading detail={detail} onMore={() => setDeep(true)} />
-                        <ul className="pv-detail-list pv-detail-scroll">
-                          {detail.records.map((r) => (
-                            <li key={r.id || r.title}>{r.title}</li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-          </aside>
-        </div>
-
-        <footer className="sb-foot">
-          <span className="sb-foot-list">
-            {count === 0
-              ? '아직 고른 좌석이 없습니다.'
-              : Object.values(selected)
-                  .map((p) => shortName(p.name))
-                  .join(' · ')}
-          </span>
-          {/* 0석은 '서버가 알아서 발굴' 이라 정상이다. 1석만 남기는 것이 사고다 —
-              엔진이 2석 미만이면 no_personas 로 죽는다(deliberation.py). */}
-          {count > 0 && count < min && (
-            <span className="sb-warn">{min}석 미만은 심의가 시작되지 않습니다.</span>
-          )}
-          <button type="button" className="sb-done" onClick={onClose}>
-            선택 완료
-          </button>
-        </footer>
-      </div>
-      {deep && sel && (
-        <AgentDeepView
-          agent={sel}
-          path={agentPath(nav.tree, sel.key)}
-          initialDetail={detail}
-          actions={
-            <button type="button" className="pv-apply" onClick={() => toggle(sel)}
-              disabled={!selected[sel.key] && full}>
-              {selected[sel.key] ? '좌석에서 제외' : full ? `${max}석이 찼습니다` : '이 전문가를 좌석에'}
+  return (
+    <Modal onClose={onClose} label="심의 좌석 조직도">
+      <div className="pv-overlay">
+        <div className="pv-win">
+          <header className="pv-head">
+            <h2 className="pv-title">좌석 조직도</h2>
+            <span className="pv-count">
+              {pool.length}명 · {nav.domainCount}개 분야
+            </span>
+            <span className={`sb-chosen${full ? ' is-full' : ''}`}>
+              선정 {count}/{max}
+              {full && ' — 가득'}
+            </span>
+            <input
+              className="pv-search"
+              type="text"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="이름·키·태그로 찾기"
+              aria-label="전문가 검색"
+            />
+            <button type="button" className="pv-icon pv-close" onClick={onClose} aria-label="닫기">
+              ×
             </button>
-          }
-          onClose={() => setDeep(false)}
-        />
-      )}
-    </div>,
-    document.body,
+          </header>
+
+          <div className="pv-body">
+            <OrgTreeNav nav={nav} total={pool.length} badge={pickedBadge} />
+
+            <main className="pv-main">
+              {!q.trim() && !nav.node && <OrgOverview nav={nav} total={pool.length} badge={pickedBadge} />}
+
+              {(q.trim() || nav.node) && (
+                <>
+                  <OrgCrumb nav={nav} />
+                  {shown.length === 0 ? (
+                    <p className="pv-empty">일치하는 전문가가 없습니다.</p>
+                  ) : (
+                    <ul className="pv-cards sb-cards">{shown.map(card)}</ul>
+                  )}
+                </>
+              )}
+            </main>
+
+            <aside className={`pv-detail${sel ? ' is-open' : ''}`} aria-label="전문가 상세">
+              {!sel ? (
+                <p className="pv-empty pv-detail-hint">전문가를 누르면 역할·보유 지식이 여기 보입니다.</p>
+              ) : (
+                <>
+                  <div className="pv-detail-head">
+                    <span className="pv-card-av" style={{ background: colorOf(sel.name) }}>
+                      {initialOf(sel.name)}
+                    </span>
+                    <div>
+                      <div className="pv-detail-name" title={sel.name}>
+                        {shortName(sel.name)}
+                      </div>
+                      <div className="pv-card-key">{sel.key}</div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="pv-apply"
+                    onClick={() => toggle(sel)}
+                    disabled={!selected[sel.key] && full}
+                  >
+                    {selected[sel.key]
+                      ? '좌석에서 제외'
+                      : full
+                        ? `${max}석이 찼습니다`
+                        : '이 전문가를 좌석에'}
+                  </button>
+                  <button type="button" className="pv-deep" onClick={() => setDeep(true)}>
+                    ⤢ 전체 화면으로 보기 — 설명 전문·지식카드 전체
+                  </button>
+                  {detailLoading && <p className="pv-empty">상세 불러오는 중…</p>}
+                  {detail && (
+                    <>
+                      {detail.role && <p className="pv-detail-role"><InlineMd text={detail.role} /></p>}
+                      {detail.tags.length > 0 && (
+                        <p className="pv-dim pv-detail-tags">{detail.tags.slice(0, 14).join(' · ')}</p>
+                      )}
+                      <OperatorApps detail={detail} />
+                      {detail.records.length > 0 && (
+                        <>
+                          <RecordsHeading detail={detail} onMore={() => setDeep(true)} />
+                          <ul className="pv-detail-list pv-detail-scroll">
+                            {detail.records.map((r) => (
+                              <li key={r.id || r.title}>{r.title}</li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </aside>
+          </div>
+
+          <footer className="sb-foot">
+            <span className="sb-foot-list">
+              {count === 0
+                ? '아직 고른 좌석이 없습니다.'
+                : Object.values(selected)
+                    .map((p) => shortName(p.name))
+                    .join(' · ')}
+            </span>
+            {/* 0석은 '서버가 알아서 발굴' 이라 정상이다. 1석만 남기는 것이 사고다 —
+                엔진이 2석 미만이면 no_personas 로 죽는다(deliberation.py). */}
+            {count > 0 && count < min && (
+              <span className="sb-warn">{min}석 미만은 심의가 시작되지 않습니다.</span>
+            )}
+            <button type="button" className="sb-done" onClick={onClose}>
+              선택 완료
+            </button>
+          </footer>
+        </div>
+        {deep && sel && (
+          <AgentDeepView
+            agent={sel}
+            path={agentPath(nav.tree, sel.key)}
+            initialDetail={detail}
+            actions={
+              <button type="button" className="pv-apply" onClick={() => toggle(sel)}
+                disabled={!selected[sel.key] && full}>
+                {selected[sel.key] ? '좌석에서 제외' : full ? `${max}석이 찼습니다` : '이 전문가를 좌석에'}
+              </button>
+            }
+            onClose={() => setDeep(false)}
+          />
+        )}
+      </div>
+    </Modal>
   );
 }

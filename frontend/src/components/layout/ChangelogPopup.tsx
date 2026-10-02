@@ -1,12 +1,12 @@
 // 로그인 직후 '아직 안 본 업데이트'를 한 번 띄운다 — 닫으면 그 날짜까지 봤다고 기록한다
 import { useCallback, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { fetchChangelog, type ChangelogEntry } from '../../api/changelog.api';
 import { useAuth } from '../../auth/useAuth';
 import { ChangelogBold as Bold } from './ChangelogBold';
 import { dayLabel, loadSeen, writeSeen } from './changelogShared';
 import '../../styles/changelog.css';
+import { Modal } from '../ui/Modal';
 
 // 한 탭에서 한 번만 뜬다. AppShell 은 라우트마다 다시 마운트되므로, 이게 없으면 사용자가
 // 닫자마자 페이지를 옮길 때 또 뜬다(저장이 막힌 브라우저에서는 매번 뜬다).
@@ -52,83 +52,71 @@ export function ChangelogPopup() {
     setEntries([]);
   }, [user?.email, latest]);
 
-  useEffect(() => {
-    if (entries.length === 0) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [entries.length, close]);
+  // Esc·포커스 가둠·포커스 복귀는 Modal(<dialog>)이 한다
 
   if (entries.length === 0) return null;
 
   const isToday = Boolean(today) && entries[0].date === today;
   const hidden = Math.max(0, total - entries.length);
 
-  return createPortal(
-    <div className="cl-backdrop" onClick={close}>
-      <div
-        className="cl-card"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cl-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="cl-head">
-          <span className="cl-spark" aria-hidden="true">
-            ✦
-          </span>
-          <div>
-            <h2 className="cl-title" id="cl-title">
-              {isToday ? '오늘 업데이트되었습니다' : '그동안 달라진 것'}
-            </h2>
-            <p className="cl-sub">
-              {isToday
-                ? '이번에 바뀐 내용입니다.'
-                : `마지막으로 보신 뒤 ${total}건이 올라왔습니다.`}
-            </p>
+  return (
+    <Modal onClose={close} labelledBy="cl-title">
+      <div className="cl-backdrop" onClick={close}>
+        <div className="cl-card" onClick={(e) => e.stopPropagation()}>
+          <div className="cl-head">
+            <span className="cl-spark" aria-hidden="true">
+              ✦
+            </span>
+            <div>
+              <h2 className="cl-title" id="cl-title">
+                {isToday ? '오늘 업데이트되었습니다' : '그동안 달라진 것'}
+              </h2>
+              <p className="cl-sub">
+                {isToday
+                  ? '이번에 바뀐 내용입니다.'
+                  : `마지막으로 보신 뒤 ${total}건이 올라왔습니다.`}
+              </p>
+            </div>
+            <button type="button" className="cl-x" onClick={close} aria-label="닫기">
+              ×
+            </button>
           </div>
-          <button type="button" className="cl-x" onClick={close} aria-label="닫기">
-            ×
-          </button>
-        </div>
 
-        <div className="cl-body">
-          {entries.map((e, i) => (
-            <section className="cl-entry" key={`${e.date}-${i}`}>
-              <div className="cl-entry-head">
-                <span className="cl-date">{dayLabel(e.date, today)}</span>
-                {e.tag && <span className={`cl-tag cl-tag-${e.tag}`}>{e.tag}</span>}
-              </div>
-              <h3 className="cl-entry-title"><Bold text={e.title} /></h3>
-              {e.items.length > 0 && (
-                <ul className="cl-items">
-                  {e.items.map((it, j) => (
-                    <li key={j}>
-                      <Bold text={it} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ))}
-          {hidden > 0 && (
-            <p className="cl-more-note">…그 밖에 {hidden}건이 더 있습니다.</p>
-          )}
-        </div>
+          <div className="cl-body">
+            {entries.map((e, i) => (
+              <section className="cl-entry" key={`${e.date}-${i}`}>
+                <div className="cl-entry-head">
+                  <span className="cl-date">{dayLabel(e.date, today)}</span>
+                  {e.tag && <span className={`cl-tag cl-tag-${e.tag}`}>{e.tag}</span>}
+                </div>
+                <h3 className="cl-entry-title"><Bold text={e.title} /></h3>
+                {e.items.length > 0 && (
+                  <ul className="cl-items">
+                    {e.items.map((it, j) => (
+                      <li key={j}>
+                        <Bold text={it} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
+            {hidden > 0 && (
+              <p className="cl-more-note">…그 밖에 {hidden}건이 더 있습니다.</p>
+            )}
+          </div>
 
-        <div className="cl-foot">
-          {/* 팝업을 닫아도 언제든 다시 볼 수 있어야 한다 — 지난 이력으로 가는 길. */}
-          <Link className="cl-link" to="/updates" onClick={close}>
-            이전 이력 모두 보기 →
-          </Link>
-          <button type="button" className="cl-ok" onClick={close}>
-            확인
-          </button>
+          <div className="cl-foot">
+            {/* 팝업을 닫아도 언제든 다시 볼 수 있어야 한다 — 지난 이력으로 가는 길. */}
+            <Link className="cl-link" to="/updates" onClick={close}>
+              이전 이력 모두 보기 →
+            </Link>
+            <button type="button" className="cl-ok" onClick={close}>
+              확인
+            </button>
+          </div>
         </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
