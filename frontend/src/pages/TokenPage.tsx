@@ -402,10 +402,8 @@ export default function TokenPage() {
                           ? 'Claude Desktop (claude_desktop_config.json — 인증서 경로를 본인 것으로 바꾸세요)'
                           : 'Claude Desktop (claude_desktop_config.json)'
                       }
-                      text={SNIP.claudeDesktopSnippet(
-                        created.token,
-                        needsCa ? String.raw`C:\Users\<사용자>\.hwax\hwax-portal.crt` : null,
-                      )}
+                      // 한 줄로 둔다 — test_setup_bat 가 이 호출을 소스에서 그대로 찾아 자리표시자를 확인한다
+                      text={SNIP.claudeDesktopSnippet(created.token, needsCa ? String.raw`C:\Users\<사용자>\.hwax\hwax-portal.crt` : null)}
                     />
                   </>
                 )}

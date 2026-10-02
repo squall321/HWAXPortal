@@ -1072,7 +1072,8 @@ def test_RA_연결이_없으면_시작_전에_말한다(user):
                                        "vars": {"t": "보고서"}}, headers=h)
     assert r.status_code == 202, r.text
     w = " ".join(r.json().get("warnings") or [])
-    assert "Report Archive 연결이 없습니다" in w and "토큰 페이지" in w, r.json()
+    # 어디서 등록하는지까지 말한다 — 토큰 화면이 탭으로 나뉘어 RA 연결은 '외부 연결' 탭이다(docs/ui-refresh D-16)
+    assert "Report Archive 연결이 없습니다" in w and "/tokens?tab=connect" in w, r.json()
 
 
 def test_사전검사는_막지_않는다(user):
