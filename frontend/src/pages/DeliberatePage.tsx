@@ -320,7 +320,7 @@ export default function DeliberatePage() {
           </div>
         )}
       </section>
-      {!empty && <ActivityPanel messages={messages} showPersona={false} />}
+      {!empty && <ActivityPanel messages={messages} />}
     </div>
   );
 }

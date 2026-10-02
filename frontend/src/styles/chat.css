@@ -552,13 +552,14 @@ ol.md-list li.md-li-d2 {
   gap: 0.35rem;
 }
 .composer-box {
+  /* 입력창 v2 — 글 칸 위, 도구 줄(첨부·검색·Thinking … 전송) 아래(docs/ui-refresh 단계 4) */
   display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 0.45rem 0.45rem 0.45rem 0.95rem;
+  flex-direction: column;
+  gap: var(--sp-1);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xl);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .composer-box:focus-within {
@@ -566,8 +567,10 @@ ol.md-list li.md-li-d2 {
   box-shadow: 0 0 0 3px var(--cx-accent-soft);
 }
 .composer-box textarea {
-  flex: 1;
+  width: 100%;
   min-width: 0;
+  height: auto;
+  padding-right: var(--sp-2);
   background: transparent;
   border: none;
   outline: none;
@@ -584,13 +587,22 @@ ol.md-list li.md-li-d2 {
   color: var(--muted);
   opacity: 0.85;
 }
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: calc(-1 * var(--sp-2)); /* 글 칸의 왼쪽 여백만큼 당겨 도구가 상자 모서리에 맞게 */
+}
+.composer-tools-gap {
+  flex: 1;
+}
 .composer-btn {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border: none;
-  border-radius: 11px;
+  border-radius: var(--r-md);
   display: grid;
   place-items: center;
   transition: filter 0.15s, background 0.15s, transform 0.08s;
@@ -599,11 +611,11 @@ ol.md-list li.md-li-d2 {
   transform: scale(0.95);
 }
 .composer-send {
-  background: var(--accent);
-  color: #fff;
+  background: var(--primary);
+  color: var(--on-primary);
 }
 .composer-send:hover:not(:disabled) {
-  filter: brightness(1.35);
+  background: var(--primary-hover);
 }
 .composer-send:disabled {
   background: rgba(255, 255, 255, 0.07);
@@ -618,6 +630,143 @@ ol.md-list li.md-li-d2 {
 .composer-stop:hover {
   background: rgba(251, 113, 133, 0.24);
 }
+/* 도구 알약 — 꺼짐은 조용히, 켜짐은 강조색으로 */
+.tool-wrap {
+  position: relative;
+}
+.tool-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.tool-pill:hover {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.tool-pill.is-on {
+  color: var(--accent-fg);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent-fg) 35%, transparent);
+}
+.tool-pill.is-warn {
+  color: var(--warn-fg);
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+}
+.tool-pill-text {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-av {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-pill);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+.tool-expert {
+  display: inline-flex;
+  align-items: center;
+}
+.tool-x {
+  width: 22px;
+  height: 22px;
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+.tool-x:hover {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.tool-chev {
+  opacity: 0.7;
+}
+.tool-pop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  width: min(360px, 86vw);
+  padding: var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-3);
+  text-align: left;
+}
+.tool-pop-title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--fg);
+}
+.tool-pop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-1);
+}
+.tool-opt {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  padding: var(--sp-2);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.tool-opt:hover {
+  background: var(--surface-3);
+}
+.tool-opt input {
+  margin-top: 3px;
+}
+.tool-opt b {
+  display: block;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--fg);
+}
+.tool-opt.is-off {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.tool-opt-hint {
+  display: block;
+  font-size: var(--fs-12);
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+.tool-opt-hint em {
+  font-style: normal;
+  color: var(--warn-fg);
+}
+.tool-pop-note {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-12);
+  color: var(--fg-subtle);
+  line-height: 1.5;
+}
+
 .composer-hint {
   min-height: 1em;
   font-size: 0.7rem;
