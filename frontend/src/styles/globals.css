@@ -5,6 +5,21 @@
   --accent: #1428a0; /* Samsung blue */
   --card: #1a1d24;
   --border: #2a2f3a;
+  /* 쓰이는데 정의가 없던 변수 — 폴백이 라이트 테마 값(#fff·#f6f7f9)이라 첨부 패널이 흰 상자에 흰 글씨였다(docs/ui-refresh 단계 1).
+     scripts/check-css-vars.mjs 가 빌드에서 다시 빠지는 것을 막는다. */
+  --surface: var(--card);
+  --surface-2: #20242c;
+  --card-bg: var(--card);
+  --panel: #20242c;
+  --line: var(--border);
+  --cx-code-bg: rgba(127, 127, 127, 0.08);
+  --danger: #f28b82;
+  --danger-fg: #f28b82;
+  --warn: #e0a500;
+  --warn-fg: #f0c04a;
+  /* 글자·링크·포커스용 강조 — #1428a0 은 어두운 바탕 위 글자로 1.66:1 이라 못 쓴다(채움 전용). #98a8ff 는 8.4:1. */
+  --accent-fg: #98a8ff;
+  --focus: #98a8ff;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   /* 다크 전용 앱 — 네이티브 폼 컨트롤(select 옵션 팝업·스크롤바 등)도 다크로 렌더.
      미선언 시 브라우저가 옵션 팝업을 기본(흰 배경)으로 그려 --fg(밝은색) 글자가 흰-흰이 됐다. */
@@ -19,6 +34,22 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
+  line-height: 1.55;
+  /* 한국어는 어절 단위로 줄을 바꾼다 — 없으면 '홍/길/동', '로/그/인' 처럼 음절에서 끊긴다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 클래스 없는 본문 링크 — 기본값(#1428a0·브라우저 보라)은 어두운 바탕에서 안 보였다. */
+:where(a:not([class])) {
+  color: var(--accent-fg);
+  text-underline-offset: 2px;
+}
+
+/* 키보드 포커스는 어디서나 보이게 */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .app-shell {
@@ -39,7 +70,10 @@ body {
 
 button {
   font: inherit;
+  line-height: 1.25;
   color: inherit; /* never fall back to the UA default (black) on dark cards */
+  /* 배경을 안 준 버튼이 브라우저 기본 회색(ButtonFace)으로 그려졌다 — 입력창 '+' 가 가장 무거운 컨트롤이 됐다. */
+  background: transparent;
   cursor: pointer;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -130,6 +164,6 @@ button {
   padding: 0.1rem 0.5rem;
 }
 .tile-tag-type {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent-fg);
 }

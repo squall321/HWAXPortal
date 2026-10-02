@@ -109,7 +109,7 @@ export function AppHeader() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{user.email}</span>
           <button onClick={() => void logout()} className="btn-secondary">
-            Sign out
+            로그아웃
           </button>
         </div>
       )}

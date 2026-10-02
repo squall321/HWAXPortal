@@ -141,7 +141,7 @@ export default function ChangelogPage() {
                   {g.rows.map((e, i) => (
                     <article className="clp-entry" key={`${e.date}-${i}`}>
                       <h2 className="clp-entry-title">
-                        {e.title}
+                        <Bold text={e.title} />
                         {e.tag && <span className={`cl-tag cl-tag-${e.tag}`}>{e.tag}</span>}
                       </h2>
                       {e.items.length > 0 && (

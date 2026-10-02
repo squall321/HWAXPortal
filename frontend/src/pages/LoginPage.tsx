@@ -9,7 +9,7 @@ const linkBtn: React.CSSProperties = {
   background: 'none',
   border: 'none',
   padding: 0,
-  color: 'var(--accent, #2563eb)',
+  color: 'var(--accent-fg)',
   cursor: 'pointer',
   fontSize: 'inherit',
   textDecoration: 'underline',
@@ -121,7 +121,7 @@ export default function LoginPage() {
           required
         />
         {error && (
-          <p style={{ color: 'var(--danger-fg, #b91c1c)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{error}</p>
+          <p style={{ color: 'var(--danger-fg)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{error}</p>
         )}
         {notice && (
           <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{notice}</p>
@@ -151,7 +151,7 @@ export default function LoginPage() {
 
       <div style={{ margin: '1.6rem auto 0', maxWidth: '20rem', borderTop: '1px solid var(--border)', paddingTop: '1.1rem' }}>
         <button className="btn-secondary" style={{ width: '100%' }} onClick={() => login(returnTo)}>
-          Sign in with Samsung AD (SSO)
+          삼성 AD 계정으로 로그인 (SSO)
         </button>
       </div>
     </main>

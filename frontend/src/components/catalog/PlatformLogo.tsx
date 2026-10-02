@@ -69,6 +69,54 @@ function Glyph({ id }: { id: string }) {
           <path d="M40.5 22.5V29h-6.5" />
         </g>
       );
+    case 'signalforge': // 퍼지는 신호(VOC 수집)
+      return (
+        <g {...stroke}>
+          <circle cx="21" cy="35" r="2.5" />
+          <path d="M21 27a8 8 0 0 1 8 8" />
+          <path d="M21 20a15 15 0 0 1 15 15" />
+          <path d="M21 13a22 22 0 0 1 22 22" opacity="0.55" />
+        </g>
+      );
+    case 'ste': // 클러스터로 올려 보내는 잡
+      return (
+        <g {...stroke}>
+          <path d="M28 33V17M21.5 23.5 28 17l6.5 6.5" />
+          <path d="M17 32v5a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2v-5" />
+        </g>
+      );
+    case 'hwax-risk': // 방패 + 경고
+      return (
+        <g {...stroke}>
+          <path d="M28 14l10 4v8c0 7-4.4 11.6-10 14-5.6-2.4-10-7-10-14v-8z" />
+          <path d="M28 21v7M28 33v.5" />
+        </g>
+      );
+    case 'arp': // AI Ready 데이터(적층) + 반짝임
+      return (
+        <g {...stroke}>
+          <ellipse cx="24" cy="20" rx="8" ry="3" />
+          <path d="M16 20v12c0 1.7 3.6 3 8 3s8-1.3 8-3V20" />
+          <path d="M16 26c0 1.7 3.6 3 8 3s8-1.3 8-3" opacity="0.55" />
+          <path d="M39 27v8M35 31h8" />
+        </g>
+      );
+    case 'odb-hub': // PCB 배선 + 비아
+      return (
+        <g {...stroke}>
+          <path d="M15 21h10l5 5h6" />
+          <path d="M15 35h8l5-5h8" />
+          <circle cx="39" cy="26" r="2.5" />
+          <circle cx="39" cy="30" r="2.5" opacity="0.55" />
+        </g>
+      );
+    case 'knox-bridge': // 두 시스템을 잇는 고리
+      return (
+        <g {...stroke}>
+          <rect x="14" y="24" width="15" height="8" rx="4" />
+          <rect x="27" y="24" width="15" height="8" rx="4" />
+        </g>
+      );
     default:
       return <circle cx="28" cy="28" r="8" {...stroke} />;
   }

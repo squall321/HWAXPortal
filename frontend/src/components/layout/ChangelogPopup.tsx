@@ -23,8 +23,16 @@ export function ChangelogPopup() {
   useEffect(() => {
     if (!user?.email || shownThisSession) return;
     let alive = true;
-    void fetchChangelog({ since: readSeen(user.email) || undefined }).then((r) => {
-      if (!alive || r.entries.length === 0) return;
+    const seen = readSeen(user.email);
+    void fetchChangelog({ since: seen || undefined }).then((r) => {
+      if (!alive) return;
+      // 처음 온 사람에게 '마지막으로 보신 뒤 59건' 은 소음이다 — 지금까지를 본 것으로 적고 띄우지 않는다.
+      // 다음 업데이트부터 뜬다. 지난 이력은 '업데이트 이력' 화면에 그대로 있다.
+      if (!seen) {
+        if (r.latest) writeSeen(user.email, r.latest);
+        return;
+      }
+      if (r.entries.length === 0) return;
       shownThisSession = true;
       setEntries(r.entries);
       setLatest(r.latest);
@@ -92,7 +100,7 @@ export function ChangelogPopup() {
                 <span className="cl-date">{dayLabel(e.date, today)}</span>
                 {e.tag && <span className={`cl-tag cl-tag-${e.tag}`}>{e.tag}</span>}
               </div>
-              <h3 className="cl-entry-title">{e.title}</h3>
+              <h3 className="cl-entry-title"><Bold text={e.title} /></h3>
               {e.items.length > 0 && (
                 <ul className="cl-items">
                   {e.items.map((it, j) => (

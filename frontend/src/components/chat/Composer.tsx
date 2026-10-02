@@ -14,7 +14,7 @@ import { useChat } from '../../state/ChatContext';
 import { shortName } from './personaColor';
 import { SourcePanel } from './SourcePanel';
 import { ThinkPanel } from './ThinkPanel';
-import { IconSend, IconStop } from './icons';
+import { IconPlus, IconSend, IconStop } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
@@ -230,7 +230,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               onChange={(e) => void onPick(e.target.files?.[0] ?? undefined)} />
             <button type="button" className="composer-btn composer-attach"
               onClick={() => fileRef.current?.click()}
-              aria-label="파일 붙이기" title="파일 붙이기 — 문서(PPT·Word·PDF) · 물성 CSV · STEP·MSH·ZIP · K파일">+</button>
+              aria-label="파일 붙이기" title="파일 붙이기 — 문서(PPT·Word·PDF) · 물성 CSV · STEP·MSH·ZIP · K파일"><IconPlus /></button>
           </>
         )}
         {streaming ? (

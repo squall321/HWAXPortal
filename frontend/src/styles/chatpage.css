@@ -277,16 +277,18 @@
   min-height: 0;
   overflow-y: auto;
   display: flex;
-  align-items: center;
+  /* center 로 두면 내용이 넘칠 때 위가 잘려 스크롤로도 못 닿았다(심의 제목이 안 보임). auto 마진은 넘치면 0 이 된다.
+     아래 여백을 더 줘서 무게중심을 살짝 위로(종전 margin-top:-4vh 의 역할 — 음수 마진은 넘칠 때 잘린다). */
+  align-items: flex-start;
   justify-content: center;
-  padding: 2rem 1.25rem;
+  padding: 2rem 1.25rem calc(2rem + 6vh);
   animation: cx-fade 0.35s ease;
 }
 .cx-hero-inner {
   width: 100%;
   max-width: 680px;
   text-align: center;
-  margin-top: -4vh;
+  margin-block: auto;
 }
 .cx-hero-mark {
   color: var(--cx-accent);
@@ -318,10 +320,8 @@
   margin: 1.2rem auto 0;
   max-width: 520px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   line-height: 1.5;
-  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
-  letter-spacing: 0.01em;
   opacity: 0.9;
 }
 
@@ -740,8 +740,9 @@
 .do-label { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-weight: 500; }
 .do-heavy {
   font-size: 10px;
-  color: #b45309;
-  background: #fef3c7;
+  /* 다크 전용 앱 — 라이트 OS 사용자에게 크림색 칩이 나가던 media 분기를 걷고 다크 값을 기본으로 */
+  color: #fcd34d;
+  background: rgba(180, 83, 9, 0.25);
   padding: 1px 5px;
   border-radius: 5px;
   font-weight: 600;
@@ -766,9 +767,6 @@
 .do-timeout { display: inline-flex; align-items: center; gap: 6px; }
 .do-unit { color: var(--muted); font-size: 12px; }
 
-@media (prefers-color-scheme: dark) {
-  .do-heavy { color: #fcd34d; background: rgba(180, 83, 9, 0.25); }
-}
 
 /* ════ 심의 전 전문가 선정 패널 (ExpertPicker) ════ */
 
@@ -1170,7 +1168,11 @@
 }
 
 /* 물성 파일 업로드 패널 — 챗 입력 위 인라인. */
-.composer-attach { font-size: 20px; font-weight: 600; line-height: 1; }
+.composer-attach {
+  /* 보조 행동 — 전송보다 가볍게(종전엔 브라우저 기본 회색 덩어리) */
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+}
+.composer-attach:hover { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
 .upl-panel {
   margin: 8px 0; padding: 12px 14px; border-radius: 10px;
   background: var(--surface-2, #f6f7f9);

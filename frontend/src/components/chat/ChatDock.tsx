@@ -21,7 +21,8 @@ export function ChatDock() {
           💬
         </button>
       )}
-      <aside className="chatdock" aria-hidden={!open}>
+      {/* 닫힌 독은 화면에 없지만 Tab 순서에는 남아 보이지 않는 정지점 5개가 됐다 — inert 로 통째로 뺀다(React 18 은 문자열 속성). */}
+      <aside className="chatdock" aria-hidden={!open} {...(!open ? { inert: '' } : {})}>
         <div className="chat-hd">
           <b>HWAX Assistant</b>
           <button className="chat-x" onClick={closeDock} aria-label="채팅 닫기">
