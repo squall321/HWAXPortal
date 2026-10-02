@@ -4,7 +4,6 @@ import { listSystems, type SystemTile } from '../api/systems.api';
 import { useAuth } from '../auth/useAuth';
 import { GROUP_ORDER, groupOf } from '../components/catalog/appGroups';
 import { PlatformCard } from '../components/catalog/PlatformCard';
-import { SetupRequests } from '../components/catalog/SetupRequests';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { Spinner } from '../components/common/Spinner';
 import { Page, PageHeader } from '../components/ui/Page';
@@ -80,8 +79,7 @@ export default function PortalHomePage() {
         }
       />
 
-      {/* 안 된 배선이 있으면 앱 목록보다 **먼저** 말한다(관리자만). 다 됐으면 아무것도 안 그린다. */}
-      {user?.groups.includes('portal-admin') && <SetupRequests />}
+      {/* 배선 설정 상자는 사용자 관리 맨 위로 옮겼다(헤더 '관리' 에 건수) — 모든 사람이 여는 앱 목록에 운영자 할 일을 두지 않는다 */}
 
       {groups.length > 1 && (
         <div className="apps-filters" role="group" aria-label="분류">

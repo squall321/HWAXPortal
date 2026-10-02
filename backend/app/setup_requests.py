@@ -23,9 +23,10 @@ import yaml
 from fastapi import APIRouter, Depends, Request
 
 from app.access.policy import ADMIN_GROUP
+from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
-from app.deps import get_current_principal
+from app.deps import get_current_principal, require_csrf, require_role
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -143,12 +144,49 @@ async def list_requests(
         return {"items": [], "pending": 0}
     rows = _load(settings)
     access = getattr(request.app.state, "access", None)
+    store = getattr(request.app.state, "user_store", None)
+    acks = store.setup_acks() if store is not None else {}
 
-    out = []
+    out, acked = [], []
     for row in rows:
-        state = "manual" if row["manual"] or not row["check"] else \
-            await run_check(row["check"], settings, access)
+        manual = row["manual"] or not row["check"]
+        # 사람이 '확인함' 한 manual 항목은 상자에서 빠지고 접힌 목록으로 간다 — 되돌릴 수 있게.
+        # 포털이 확인하는 항목(check)은 확인함이 없다 — 고쳐지면 저절로 사라진다.
+        if manual and row["id"] in acks:
+            acked.append({"id": row["id"], "title": row["title"], **acks[row["id"]]})
+            continue
+        state = "manual" if manual else await run_check(row["check"], settings, access)
         if state == "ok":
             continue                      # 된 것은 화면에서 사라진다
         out.append({**row, "state": state})
-    return {"items": out, "pending": len(out)}
+    return {"items": out, "pending": len(out), "acked": acked}
+
+
+def _manual_row(settings: Settings, rid: str) -> dict:
+    row = next((r for r in _load(settings) if r["id"] == rid), None)
+    if row is None or not (row["manual"] or not row["check"]):
+        raise AuthError("확인함은 포털이 스스로 확인할 수 없는(manual) 항목에만 씁니다", status_code=404)
+    return row
+
+
+@router.post("/requests/{rid}/ack", dependencies=[Depends(require_csrf)])
+def ack_request(
+    rid: str,
+    request: Request,
+    principal: Principal = Depends(require_role(ADMIN_GROUP)),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    _manual_row(settings, rid)
+    request.app.state.user_store.ack_setup(rid, by=principal.email or principal.subject)
+    return {"ok": True}
+
+
+@router.delete("/requests/{rid}/ack", dependencies=[Depends(require_csrf)])
+def unack_request(
+    rid: str,
+    request: Request,
+    principal: Principal = Depends(require_role(ADMIN_GROUP)),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    _manual_row(settings, rid)
+    return {"ok": request.app.state.user_store.unack_setup(rid)}

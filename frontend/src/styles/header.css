@@ -139,6 +139,24 @@
   color: var(--accent-fg);
   font-weight: 600;
 }
+/* 할 일 건수(관리 ▾ 옆 · 메뉴 항목 끝) — 경고색 알약. 숫자만 보이고 뜻은 aria-label·title 이 말한다 */
+.hdr-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.menu-pop [role='menuitem'] .hdr-badge {
+  margin-left: auto;
+}
+.menu-pop [role='menuitem']:has(.hdr-badge) {
+  gap: var(--sp-3);
+}
 .menu-sep {
   height: 1px;
   margin: 6px 4px;

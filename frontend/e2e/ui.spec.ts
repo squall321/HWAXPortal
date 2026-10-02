@@ -240,3 +240,31 @@ test('저장된 심의 — 진행 표시는 완료, 화자는 이름', async ({ 
     await page.context().close();
   }
 });
+
+test('배선 설정 — 앱 목록이 아니라 사용자 관리 맨 위, 헤더 관리 옆에 건수', async ({ browser }) => {
+  test.skip(TIER !== 'admin', '관리자만');
+  const page = await login(browser, 1440);
+  await page.goto('/apps');
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.setup-requests')).toHaveCount(0);
+  const n = (await (await page.request.get('/setup/requests')).json()).items.length as number;
+  test.skip(n === 0, '임시 포털에 남은 배선이 없다');
+  await expect(page.locator('.hdr-admin .hdr-badge')).toHaveText(String(n));
+  await page.goto('/admin/users');
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.setup-requests')).toBeVisible();
+  // manual 항목 하나를 펴서 '확인함' — 상자에서 빠지고 헤더 건수가 하나 준다
+  const manual = page.locator('.setup-requests li').filter({ hasText: '확인 필요' }).first();
+  if (await manual.count()) {
+    await manual.locator('button').first().click();
+    await page.getByRole('button', { name: '했습니다 — 확인함' }).click();
+    await expect(page.locator('.hdr-admin .hdr-badge')).toHaveText(String(n - 1));
+    await expect(page.getByText(/확인한 항목 \d+건/)).toBeVisible();
+    await page.screenshot({ path: join(SHOTS, '1440_setup-acked.png'), fullPage: true });
+    // 되돌려 둔다 — 같은 임시 포털로 다른 시험이 이어 돈다
+    await page.getByText(/확인한 항목 \d+건/).click();
+    await page.getByRole('button', { name: '되돌리기' }).first().click();
+    await expect(page.locator('.hdr-admin .hdr-badge')).toHaveText(String(n));
+  }
+  await page.context().close();
+});

@@ -240,3 +240,46 @@ def test_운영자_할_일은_관리자에게만_보인다(client):
     c.post("/auth/local/logout", headers=h)
     assert c.post("/auth/local/login", json={"email": "plain@corp.com", "password": "pw123456"}).status_code == 200
     assert c.get("/setup/requests").json() == {"items": [], "pending": 0}
+
+
+def test_manual_항목은_확인함으로_상자에서_빠지고_되돌릴_수_있다(client):
+    """포털이 확인할 수 없는 항목은 영원히 남아 '늘 노란 상자' 가 됐다 — 사람이 했다고 표시해야 빠진다(docs/ui-refresh 단계 4)."""
+    c = client(ste_sso_secret="")
+    _login(c)
+    h = {"X-CSRF-Token": c.cookies.get("hwax_csrf")}
+    ids = lambda: [i["id"] for i in c.get("/setup/requests").json()["items"]]  # noqa: E731
+    assert "by-hand" in ids(), "전제 — manual 항목이 상자에 있다"
+
+    assert c.post("/setup/requests/by-hand/ack", headers=h).status_code == 200
+    body = c.get("/setup/requests").json()
+    assert "by-hand" not in [i["id"] for i in body["items"]]
+    assert body["pending"] == len(body["items"])
+    (acked,) = body["acked"]
+    assert acked["id"] == "by-hand" and acked["by"] == "boss@corp.com" and acked["at"] > 0
+
+    assert c.delete("/setup/requests/by-hand/ack", headers=h).status_code == 200
+    assert "by-hand" in ids()
+    assert c.get("/setup/requests").json()["acked"] == []
+
+
+def test_포털이_확인하는_항목은_확인함으로_덮을_수_없다(client):
+    """check 가 있는 항목은 고쳐지면 저절로 사라진다 — 사람이 '됐다' 고 눌러 안 된 것을 숨기면 이 상자가 거짓말을 한다."""
+    c = client(ste_sso_secret="")
+    _login(c)
+    h = {"X-CSRF-Token": c.cookies.get("hwax_csrf")}
+    assert c.post("/setup/requests/needs-secret/ack", headers=h).status_code == 404
+    assert c.post("/setup/requests/no-such/ack", headers=h).status_code == 404
+    assert "needs-secret" in [i["id"] for i in c.get("/setup/requests").json()["items"]]
+
+
+def test_확인함은_관리자만_CSRF_와_함께(client):
+    c = client(ste_sso_secret="")
+    _login(c)
+    assert c.post("/setup/requests/by-hand/ack").status_code == 403, "CSRF 없이는 안 된다"
+    h = {"X-CSRF-Token": c.cookies.get("hwax_csrf")}
+    c.post("/auth/local/signup", json={"email": "plain@corp.com", "name": "P", "password": "pw123456"})
+    assert c.post("/auth/local/users/plain@corp.com/approve", json={"groups": []}, headers=h).status_code == 200
+    c.post("/auth/local/logout", headers=h)
+    assert c.post("/auth/local/login", json={"email": "plain@corp.com", "password": "pw123456"}).status_code == 200
+    h = {"X-CSRF-Token": c.cookies.get("hwax_csrf")}
+    assert c.post("/setup/requests/by-hand/ack", headers=h).status_code == 403

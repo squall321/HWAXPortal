@@ -13,6 +13,7 @@ import { useAuth } from '../../auth/useAuth';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
 import { AccessRequestsPanel, AffiliationSelect, BulkAffiliation, GrantEditor } from './AccessAdmin';
+import { SetupRequests } from '../../components/admin/SetupRequests';
 
 const cell: React.CSSProperties = { padding: '0.5rem 0.7rem', borderBottom: '1px solid var(--border)' };
 
@@ -82,6 +83,7 @@ export default function UsersAdminPage() {
         }
       />
       {error && <ErrorBanner message={error} />}
+      <SetupRequests />
       <AccessRequestsPanel policy={policy} onChanged={reload} />
       <BulkAffiliation policy={policy} rows={rows} onChanged={reload} /> 
       <div style={{ overflowX: 'auto' }}>

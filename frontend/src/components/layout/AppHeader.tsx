@@ -1,13 +1,14 @@
 // 앱 헤더 — [브랜드] 주 메뉴(챗·심의·앱·절차) …… [관리 ▾](관리자) [계정 ▾]. 좁으면 주 메뉴를 시트로 접는다(docs/ui-refresh 단계 2)
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { listSetupRequests, SETUP_CHANGED } from '../../api/setup.api';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { BrandMark } from '../ui/BrandMark';
 import { Menu, MenuSep } from '../ui/Menu';
 import '../../styles/header.css';
 
-type Item = { to: string; label: string; end?: boolean };
+type Item = { to: string; label: string; end?: boolean; badge?: number };
 
 
 function Chevron() {
@@ -27,6 +28,17 @@ export function AppHeader() {
   const burger = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLElement>(null);
   useEffect(() => setSheet(false), [pathname]);
+  const isAdmin = Boolean(user?.groups.includes('portal-admin'));
+  // 안 된 배선 건수 — 상자는 사용자 관리 맨 위에 있고, 여기 '관리' 옆 숫자가 그 상자로 부른다(안 본 곳에 둔 할 일은 없는 셈이다).
+  // 세션에 한 번 + 상자에서 '확인함' 을 누를 때(SETUP_CHANGED). 확인이 2초 걸릴 수 있어 화면 이동마다 다시 묻지 않는다.
+  const [setupN, setSetupN] = useState(0);
+  useEffect(() => {
+    if (!isAdmin) return;
+    const load = () => void listSetupRequests().then((r) => setSetupN(r.items.length));
+    load();
+    window.addEventListener(SETUP_CHANGED, load);
+    return () => window.removeEventListener(SETUP_CHANGED, load);
+  }, [isAdmin]);
   // 시트 — Esc(버거로 포커스 복귀)·바깥 탭이면 닫고, 창을 넓혀 시트가 필요 없어지면(900px 이상) 닫는다
   useEffect(() => {
     if (!sheet) return;
@@ -63,7 +75,6 @@ export function AppHeader() {
     );
   }
 
-  const isAdmin = user.groups.includes('portal-admin');
   // 같은 페이지가 PAT 발급과 Report Archive 연결(내 조직 선택)을 담는다 — 토큰 권한이 없어도 RA 를 쓰는 사람은 들어가야 한다.
   const canTokens = can('feat:api-token') || can('plat:reportarchive');
   const primary: Item[] = [
@@ -74,7 +85,7 @@ export function AppHeader() {
   ];
   const admin: Item[] = isAdmin
     ? [
-        { to: '/admin/users', label: '사용자 관리' },
+        { to: '/admin/users', label: '사용자 관리', badge: setupN },
         { to: '/admin/access', label: '접속 이력' },
       ]
     : [];
@@ -104,10 +115,22 @@ export function AppHeader() {
 
       <div className="app-right">
         {admin.length > 0 && (
-          <Menu className="hdr-admin" active={inside(admin)} label={<>관리<Chevron /></>}>
+          <Menu
+            className="hdr-admin"
+            active={inside(admin)}
+            ariaLabel={setupN > 0 ? `관리 — 배선 설정 ${setupN}건 남음` : undefined}
+            label={
+              <>
+                관리
+                {setupN > 0 && <span className="hdr-badge" aria-hidden="true">{setupN}</span>}
+                <Chevron />
+              </>
+            }
+          >
             {admin.map((i) => (
               <NavLink key={i.to} to={i.to} role="menuitem" tabIndex={-1}>
                 {i.label}
+                {!!i.badge && <span className="hdr-badge" title={`배선 설정 ${i.badge}건`}>배선 {i.badge}</span>}
               </NavLink>
             ))}
           </Menu>
@@ -160,6 +183,7 @@ export function AppHeader() {
             // 지금 화면의 링크를 눌러도(경로가 안 바뀌어도) 닫힌다
             <NavLink key={i.to} to={i.to} end={i.end} onClick={() => setSheet(false)}>
               {i.label}
+              {!!i.badge && <span className="hdr-badge">배선 {i.badge}</span>}
             </NavLink>
           ))}
         </nav>

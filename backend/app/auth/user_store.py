@@ -106,6 +106,12 @@ class UserStore:
             "workspace TEXT NOT NULL DEFAULT '', "   # RA 부서(워크스페이스) slug — 호출 헤더용
             "created_at INTEGER NOT NULL, PRIMARY KEY (email, service))"
         )
+        # 배선 설정의 '확인함' — 포털이 스스로 확인할 수 없는 항목(manual)은 사람이 했다고 표시해야 상자에서
+        # 빠진다. 종전엔 영원히 남아 '늘 노란 상자' 가 됐다(docs/ui-refresh 단계 4). 누가·언제를 같이 남긴다.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS setup_acks ("
+            "id TEXT PRIMARY KEY, by TEXT NOT NULL, at INTEGER NOT NULL)"
+        )
         self._commit()
 
     def _commit(self) -> None:
@@ -282,6 +288,27 @@ class UserStore:
             self._conn.execute("UPDATE users SET hub_muted_apps = ? WHERE email = ?", (json.dumps(new), key))
             self._commit()
             return new
+
+    # ── 배선 설정 '확인함' ──────────────────────────────────────────────────
+    def setup_acks(self) -> dict[str, dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT id, by, at FROM setup_acks").fetchall()
+        return {r[0]: {"by": r[1], "at": r[2]} for r in rows}
+
+    def ack_setup(self, rid: str, *, by: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO setup_acks (id, by, at) VALUES (?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET by = excluded.by, at = excluded.at",
+                (rid, norm_email(by), int(time.time())),
+            )
+            self._commit()
+
+    def unack_setup(self, rid: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM setup_acks WHERE id = ?", (rid,))
+            self._commit()
+        return cur.rowcount > 0
 
     def set_groups(self, email: str, groups: list[str]) -> bool:
         with self._lock:
