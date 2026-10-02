@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { createPat, listPats, revokePat, type PatCreated, type PatMeta } from '../api/pat.api';
 import { fetchMyAccess, type MyAccess } from '../api/access.api';
 import HubAppsPanel from '../components/HubAppsPanel';
+import { Page, PageHeader } from '../components/ui/Page';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { RaConnectionCard } from '../components/RaConnectionCard';
 import { useCan } from '../auth/useCan';
@@ -226,33 +227,34 @@ export default function TokenPage() {
   // (이 페이지가 RA 연결·내 조직 선택을 함께 담고 있어서 열어 준 것이다.)
   if (!canToken) {
     return (
-      <div className="container">
-        <h1 style={{ fontSize: '1.4rem', marginBottom: '0.4rem' }}>연결 설정</h1>
-        <p style={{ color: 'var(--muted)', marginTop: 0, fontSize: '0.9rem' }}>
-          Report Archive 계정을 연결하고, 보고서를 쌓을 내 조직(워크스페이스)을 고릅니다.
-        </p>
+      <Page>
+        <PageHeader title="연결 설정" desc="Report Archive 계정을 연결하고, 보고서를 쌓을 내 조직(워크스페이스)을 고릅니다." />
         <p style={{ fontSize: '0.88rem', margin: '0.6rem 0 1rem' }}>
           개인 Claude·스크립트용 API 토큰(PAT)은 <b>API 토큰 · MCP 개인 연결</b> 권한이 있어야
           발급됩니다. <Link to="/access?need=feat:api-token">내 권한에서 요청 →</Link>
         </p>
         <RaConnectionCard />
-      </div>
+      </Page>
     );
   }
 
   return (
-    <div className="container">
-      <h1 style={{ fontSize: '1.4rem', marginBottom: '0.4rem' }}>AI 토큰 (PAT)</h1>
-      <p style={{ color: 'var(--muted)', marginTop: 0, fontSize: '0.9rem' }}>
-        개인 Claude(Claude Code · Claude Desktop)와 챗을 HWAX에 연결할 개인 접근 토큰을 발급합니다.
-        토큰은 발급 직후 <b>한 번만</b> 표시되니 그 자리에서 복사해 두세요.
-      </p>
+    <Page>
+      <PageHeader
+        title="개인 토큰"
+        desc={
+          <>
+            개인 Claude(Claude Code · Claude Desktop)와 챗을 HWAX에 연결할 개인 접근 토큰(PAT)을 발급합니다.
+            토큰은 발급 직후 <b>한 번만</b> 표시되니 그 자리에서 복사해 두세요.
+          </>
+        }
+      />
 
       {error && <ErrorBanner message={error} />}
 
       <form
         onSubmit={onCreate}
-        style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', margin: '1.25rem 0' }}
+        style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', alignItems: 'center', margin: '1.25rem 0' }}
       >
         <input
           value={name}
@@ -260,7 +262,8 @@ export default function TokenPage() {
           placeholder="토큰 이름 (예: my-laptop-claude)"
           maxLength={80}
           style={{
-            flex: 1,
+            flex: '1 1 14rem',
+            minWidth: 0,
             padding: '0.55rem 0.8rem',
             background: 'var(--card)',
             color: 'var(--fg)',
@@ -532,7 +535,7 @@ export default function TokenPage() {
         </div>
       )}
       <RaConnectionCard />
-    </div>
+    </Page>
   );
 }
 

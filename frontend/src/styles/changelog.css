@@ -141,9 +141,10 @@
 .cl-more-note { margin: 0.6rem 0 0; font-size: 0.75rem; color: var(--muted); text-align: center; }
 
 /* ── 업데이트 이력 페이지 ──────────────────────────────────────────────────── */
-.clp-wrap { max-width: 860px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-.clp-head { margin-bottom: 1.4rem; }
-.clp-title { margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--fg); }
+/* 폭·여백·제목은 공통 페이지 뼈대(.page-read · .page-header)와 같게 — 메뉴를 옮길 때 제목이 튀지 않게 */
+.clp-wrap { max-width: calc(var(--w-read) + 2 * var(--sp-6)); margin: 0 auto; padding: var(--sp-8) var(--sp-6) var(--sp-12); }
+.clp-head { margin-bottom: var(--sp-6); }
+.clp-title { margin: 0; font-size: var(--fs-24); font-weight: 700; line-height: var(--lh-tight); letter-spacing: -0.01em; color: var(--fg); }
 .clp-sub {
   margin: 0.45rem 0 0;
   font-size: 0.85rem;

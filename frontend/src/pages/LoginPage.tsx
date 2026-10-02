@@ -42,7 +42,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  if (status === 'loading') return <Spinner label="Checking sign-in…" />;
+  if (status === 'loading') return <Spinner label="로그인 확인 중…" />;
   if (status === 'authenticated') return <Navigate to="/" replace />;
 
   const submit = async (e: FormEvent) => {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Page } from '../components/ui/Page';
 import { launchSystem, type HandoffPayload } from '../api/launch.api';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { Spinner } from '../components/common/Spinner';
@@ -32,18 +33,18 @@ export default function LaunchPage() {
 
   if (error) {
     return (
-      <div className="container">
+      <Page>
         <ErrorBanner message={error} />
-        <button className="btn-secondary" onClick={() => navigate('/')}>
-          Back to portal
+        <button className="btn-secondary" onClick={() => navigate('/apps')}>
+          앱 목록으로
         </button>
-      </div>
+      </Page>
     );
   }
 
   return (
-    <div className="container">
-      <Spinner label="Launching…" />
+    <Page>
+      <Spinner label="앱을 여는 중…" />
       {handoff?.mode === 'auto_post' && (
         <form ref={formRef} method="POST" action={handoff.action} style={{ display: 'none' }}>
           {Object.entries(handoff.fields).map(([k, v]) => (
@@ -51,6 +52,6 @@ export default function LaunchPage() {
           ))}
         </form>
       )}
-    </div>
+    </Page>
   );
 }

@@ -1,5 +1,6 @@
 // HEAX 앱 hwax_risk(리스크 심사) 를 여는 얇은 셸 — HEAX SSO 1단, 앱 새 탭 2단
 import { useEffect, useState } from 'react';
+import { Page, PageHeader } from '../../components/ui/Page';
 import { useNavigate } from 'react-router-dom';
 import { listSystems, type SystemTile } from '../../api/systems.api';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
@@ -34,12 +35,8 @@ export default function RiskLaunchPage() {
   const disabledStyle = ready ? undefined : { opacity: 0.45, cursor: 'not-allowed' };
 
   return (
-    <div className="container" style={{ maxWidth: 720, margin: '0 auto', padding: '2rem 1.5rem' }}>
-      <h1 style={{ color: 'var(--fg)', marginBottom: '0.25rem' }}>리스크 심사</h1>
-      <p style={{ color: 'var(--muted)', marginTop: 0 }}>
-        설계 IR·diff 위에서 전문가 패널이 리스크·개선·성격을 판정합니다. 이 화면은 앱 창을 여는
-        역할만 합니다.
-      </p>
+    <Page>
+      <PageHeader title="리스크 심사" desc="설계 IR·diff 위에서 전문가 패널이 리스크·개선·성격을 판정합니다. 이 화면은 앱 창을 여는 역할만 합니다." />
 
       {error && <ErrorBanner message={error} />}
 
@@ -89,6 +86,6 @@ export default function RiskLaunchPage() {
       >
         HEAX 연결 다시 하기
       </button>
-    </div>
+    </Page>
   );
 }

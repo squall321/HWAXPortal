@@ -1,5 +1,6 @@
 // 접속 이력(관리자 전용) — 누가(이메일) 어디서(IP) 언제 어느 서비스에 들어갔나(docs/access-history)
 import { useCallback, useEffect, useState } from 'react';
+import { Page, PageHeader } from '../../components/ui/Page';
 import {
   fetchAccessLedger,
   fetchAccountRequests,
@@ -78,12 +79,16 @@ export default function AccessHistoryPage() {
   };
 
   return (
-    <section style={{ maxWidth: '78rem', margin: '0 auto', padding: '1.5rem' }}>
-      <h2>접속 이력</h2>
-      <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-        포털 로그인과 타일로 서비스에 들어간 기록입니다. IP 는 포털이 본 주소이고 사람과 1:1 이 아닙니다(사내 NAT).
-        각 서비스 안에서 다시 들어온 것은 여기 없고, 계정을 고르면 <b>정문 요청(최근 14일)</b>으로 봅니다.
-      </p>
+    <Page width="wide">
+      <PageHeader
+        title="접속 이력"
+        desc={
+          <>
+            포털 로그인과 타일로 서비스에 들어간 기록입니다. IP 는 포털이 본 주소이고 사람과 1:1 이 아닙니다(사내 NAT).
+            각 서비스 안에서 다시 들어온 것은 여기 없고, 계정을 고르면 <b>정문 요청(최근 14일)</b>으로 봅니다.
+          </>
+        }
+      />
       {error && <ErrorBanner message={error} />}
 
       <form
@@ -216,6 +221,6 @@ export default function AccessHistoryPage() {
           )}
         </div>
       )}
-    </section>
+    </Page>
   );
 }

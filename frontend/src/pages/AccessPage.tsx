@@ -1,5 +1,6 @@
 // 내 권한 — 모든 기능·플랫폼에 대해 쓸 수 있나·왜·요청(없는 것은 여기서 청하고 관리자가 승인한다)
 import { useCallback, useEffect, useState } from 'react';
+import { Page, PageHeader } from '../components/ui/Page';
 import { Link, useSearchParams } from 'react-router-dom';
 import { fetchMyAccess, requestAccess, type AccessRow, type MyAccess } from '../api/access.api';
 import { useAuth } from '../auth/useAuth';
@@ -126,21 +127,16 @@ export default function AccessPage() {
   );
 
   return (
-    <section style={{ maxWidth: '52rem', margin: '0 auto', padding: '1.5rem' }}>
-      <h2 style={{ marginBottom: '0.3rem' }}>내 권한</h2>
-      <p style={{ color: 'var(--muted)', margin: 0 }}>
-        {data.is_admin
+    <Page>
+      <PageHeader
+        title="내 권한"
+        desc={data.is_admin
           ? '관리자 — 모든 기능과 플랫폼을 씁니다.'
           : data.affiliation
             ? `소속 ${data.affiliation_label || data.affiliation} — 소속 기본 권한에 개별 허가가 더해집니다.`
             : '소속이 지정되지 않았습니다 — 기본 권한(일반 챗)만 씁니다. 필요한 것을 아래에서 요청하세요.'}
-        {data.is_admin && (
-          <>
-            {' '}
-            <Link to="/admin/users">사용자 관리에서 요청 승인 →</Link>
-          </>
-        )}
-      </p>
+        actions={data.is_admin ? <Link to="/admin/users">사용자 관리에서 요청 승인 →</Link> : undefined}
+      />
       {needRow && !needRow.allowed && (
         <div
           role="status"
@@ -157,6 +153,6 @@ export default function AccessPage() {
       )}
       {section('기능', '에이전트 기능 — 심의·Thinking·전문가와 대화 등.', data.features)}
       {section('플랫폼', '앱 타일과 챗 도구 — 허가된 플랫폼의 도구만 챗에 붙습니다.', data.platforms)}
-    </section>
+    </Page>
   );
 }

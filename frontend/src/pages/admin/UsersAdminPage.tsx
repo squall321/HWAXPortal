@@ -1,5 +1,6 @@
 // 사용자 관리(관리자 전용) — 가입 승인·비활성·비밀번호 재설정·소속과 권한. SSO 지연 브리지의 운영 화면.
 import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Page, PageHeader } from '../../components/ui/Page';
 import { fetchAccessPolicy, type AccessPolicy } from '../../api/access.api';
 import {
   approveLocalUser,
@@ -64,12 +65,16 @@ export default function UsersAdminPage() {
   const pending = rows.filter((r) => r.status === 'pending');
 
   return (
-    <section style={{ maxWidth: '78rem', margin: '0 auto', padding: '1.5rem' }}>
-      <h2>사용자 관리</h2>
-      <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-        가입은 승인제입니다. 관리자 역할은 다음 로그인부터, <b>소속·권한은 곧바로</b> 반영됩니다.
-        {pending.length > 0 && <strong> 승인 대기 {pending.length}건.</strong>}
-      </p>
+    <Page width="wide">
+      <PageHeader
+        title="사용자 관리"
+        desc={
+          <>
+            가입은 승인제입니다. 관리자 역할은 다음 로그인부터, <b>소속·권한은 곧바로</b> 반영됩니다.
+            {pending.length > 0 && <strong> 승인 대기 {pending.length}건.</strong>}
+          </>
+        }
+      />
       {error && <ErrorBanner message={error} />}
       <AccessRequestsPanel policy={policy} onChanged={reload} />
       <BulkAffiliation policy={policy} rows={rows} onChanged={reload} /> 
@@ -183,6 +188,6 @@ export default function UsersAdminPage() {
           </tbody>
         </table>
       </div>
-    </section>
+    </Page>
   );
 }

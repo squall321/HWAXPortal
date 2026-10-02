@@ -3,6 +3,7 @@
 // 루트는 `.container` 다 — AppShell 의 ChatDock 이 열릴 때 자리를 비켜 주는 클래스다.
 // 우하단은 비워 둔다(닫힌 독의 💬 FAB 가 거기 고정이라 겹친다).
 import { NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Page, PageHeader } from '../../components/ui/Page';
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
@@ -37,13 +38,8 @@ import { RunSteps } from './RunSteps';
 
 export default function ProceduresPage() {
   return (
-    <div className="container" style={{ maxWidth: 1080, margin: '0 auto', padding: '1.6rem 1.5rem 4rem' }}>
-      <header style={{ marginBottom: '1.1rem' }}>
-        <h1 style={{ color: 'var(--fg)', margin: '0 0 0.2rem', fontSize: '1.5rem' }}>절차</h1>
-        <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
-          한 번 해낸 일을 절차로 굳혀 두었다가, 대상만 바꿔 다시 돌립니다.
-        </p>
-      </header>
+    <Page width="wide">
+      <PageHeader title="절차" desc="한 번 해낸 일을 절차로 굳혀 두었다가, 대상만 바꿔 다시 돌립니다." />
 
       <nav style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.1rem', flexWrap: 'wrap' }}>
         <Tab to="/procedures" end>
@@ -61,7 +57,7 @@ export default function ProceduresPage() {
         <Route path="runs/:id" element={<RunDetailView />} />
         <Route path="batches/:id" element={<BatchView />} />
       </Routes>
-    </div>
+    </Page>
   );
 }
 

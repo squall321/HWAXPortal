@@ -200,6 +200,7 @@ export function RaConnectionCard() {
             placeholder="rat_ 로 시작하는 RA 토큰 붙여넣기"
             style={{
               flex: 1,
+              minWidth: 0, // 기본 min-width:auto 라 좁은 화면에서 줄지 않아 '등록' 버튼을 밖으로 밀었다
               padding: '0.5rem 0.65rem',
               border: '1px solid var(--border)',
               borderRadius: 6,

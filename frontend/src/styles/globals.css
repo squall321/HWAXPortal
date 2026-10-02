@@ -181,3 +181,51 @@ button {
   border-color: var(--accent-fg);
 }
 
+/* ── 페이지 뼈대(components/ui/Page) — 폭 두 등급, 같은 위·옆 여백, 같은 제목 ── */
+.page-read,
+.page-wide {
+  margin: 0 auto;
+  padding: var(--sp-8) var(--sp-6) var(--sp-12);
+}
+.page-read {
+  max-width: calc(var(--w-read) + 2 * var(--sp-6));
+}
+.page-wide {
+  max-width: calc(var(--w-wide) + 2 * var(--sp-6));
+}
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+}
+.page-header h1 {
+  margin: 0;
+  font-size: var(--fs-24);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+.page-header p {
+  margin: var(--sp-2) 0 0;
+  max-width: 72ch;
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.page-header-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex: none;
+}
+@media (max-width: 600px) {
+  .page-read,
+  .page-wide {
+    padding: var(--sp-6) var(--sp-4) var(--sp-10);
+  }
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
