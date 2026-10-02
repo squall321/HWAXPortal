@@ -1,6 +1,7 @@
 // 허브에 보일 앱 — 개인 Claude(Code·Desktop 등)의 허브 도구 목록·검색에서 관심 없는 앱을 끄는 표(docs/mcp-app-toggle)
 import { useEffect, useState } from 'react';
 import { fetchHubApps, saveHubApp, type HubApps } from '../api/access.api';
+import '../styles/tokenpage.css';
 
 export default function HubAppsPanel() {
   const [data, setData] = useState<HubApps | null>(null);
@@ -32,44 +33,44 @@ export default function HubAppsPanel() {
   };
 
   return (
-    <section style={{ marginBottom: '1.75rem' }}>
-      <h2 style={{ fontSize: '1.05rem', marginBottom: '0.3rem' }}>허브에 보일 앱</h2>
-      <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.6rem' }}>
+    <section className="tok-sec">
+      {/* 제목은 토큰 화면의 탭 이름('허브에 보일 앱')이 대신한다. 표 모양은 같은 화면의 '내 토큰' 표(tokenpage.css)를 쓴다 */}
+      <p className="tok-muted hub-lead">
         관심 없는 앱을 끄면 개인 Claude 의 허브 도구 목록과 도구 검색에서 빠집니다. 권한과는 별개이고, 포털 웹 챗·웹 심의에는 영향이
         없습니다(Claude Code 에서 돌리는 심의도 개인 Claude 라 끈 앱이 검색에서 빠집니다). 도구 검색은 바로 바뀌고, 열려 있는 Claude 의 도구 목록은 다시 연결해야 바뀝니다 — Claude Code 는 <code>/mcp</code>
         에서 hwax 재연결(또는 재시작), Desktop 은 완전히 종료한 뒤 다시 실행하세요.
       </p>
       {error && (
-        <p role="alert" style={{ color: 'var(--danger, #b42318)', fontSize: '0.88rem', margin: '0 0 0.5rem' }}>
+        <p role="alert" className="tok-danger">
           {error}
         </p>
       )}
       {!data ? (
-        !error && <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>불러오는 중…</p>
+        !error && <p className="tok-muted">불러오는 중…</p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+        <div className="tok-table-wrap">
+          <table className="tok-table hub-apps">
             <thead>
-              <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
-                <th style={cell}>앱</th>
-                <th style={{ ...cell, textAlign: 'right' }}>도구</th>
-                <th style={cell}>상태</th>
-                <th style={cell}>허브에 보이기</th>
+              <tr>
+                <th>앱</th>
+                <th className="hub-num">도구</th>
+                <th>상태</th>
+                <th>허브에 보이기</th>
               </tr>
             </thead>
             <tbody>
               {data.apps.map((a) => (
-                <tr key={a.app} style={{ borderTop: '1px solid var(--border, #e4e4e7)' }}>
-                  <td style={cell} title={a.description || a.app}>
+                <tr key={a.app}>
+                  <td title={a.description || a.app}>
                     {a.label}
-                    <span style={{ color: 'var(--muted)', fontSize: '0.78rem', marginLeft: '0.4rem' }}>{a.app}</span>
+                    <span className="hub-key">{a.app}</span>
                   </td>
-                  <td style={{ ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{a.tool_count}</td>
-                  <td style={{ ...cell, color: 'var(--muted)' }}>
+                  <td className="hub-num">{a.tool_count}</td>
+                  <td className="hub-state">
                     {a.absent ? '지금 없음' : !a.allowed ? '권한 없음' : a.reachable ? '연결됨' : '연결 끊김'}
                   </td>
-                  <td style={cell}>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                  <td>
+                    <label className="hub-switch">
                       <input
                         id={`hub-app-${a.app}`}
                         type="checkbox"
@@ -92,5 +93,3 @@ export default function HubAppsPanel() {
     </section>
   );
 }
-
-const cell = { padding: '0.35rem 0.5rem' } as const;

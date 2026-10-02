@@ -9,7 +9,7 @@ const WIDTHS = [1440, 1280, 1024, 768, 390];
 const SHOTS = join(dirname(fileURLToPath(import.meta.url)), '.shots', TIER);
 mkdirSync(SHOTS, { recursive: true });
 
-const ROUTES = ['/', '/apps', '/deliberate', '/procedures', '/tokens', '/updates', '/access', '/risk', '/no-such-page',
+const ROUTES = ['/', '/apps', '/deliberate', '/procedures', '/tokens', '/tokens?tab=apps', '/tokens?tab=connect', '/updates', '/access', '/risk', '/no-such-page',
   ...(TIER === 'admin' ? ['/admin/users', '/admin/access'] : [])];
 
 const ANSWER = [
@@ -102,7 +102,7 @@ for (const route of ROUTES) {
       await page.goto(route);
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(600);
-      const slug = route.replace(/\//g, '_').replace(/^_$/, '_home');
+      const slug = route.replace(/[/?=]/g, '_').replace(/^_$/, '_home');
       await page.screenshot({ path: join(SHOTS, `${w}${slug}.png`), fullPage: true });
       expect.soft(await defects(page, w), `${route} @${w}px`).toEqual([]);
       await page.context().close();
@@ -169,5 +169,40 @@ test('로그인 화면 — SSO 실패로 돌아왔을 때', async ({ browser }) 
     await page.screenshot({ path: join(SHOTS, `${w}_login_sso_fail.png`), fullPage: true });
     expect.soft(await defects(page, w), `로그인 실패 @${w}px`).toEqual([]);
     await ctx.close();
+  }
+});
+
+test('개인 토큰 — 탭을 화살표로 옮기면 그 탭이 열리고 주소에 남는다', async ({ browser }) => {
+  const page = await login(browser, 1440);
+  await page.goto('/tokens');
+  await page.waitForLoadState('networkidle');
+  const tabs = page.getByRole('tab');
+  test.skip((await tabs.count()) === 0, '이 권한 층은 토큰 탭이 없다(연결 설정만)');
+  await tabs.first().focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: '허브에 보일 앱' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: '허브에 보일 앱' })).toBeFocused();
+  expect(page.url()).toContain('tab=apps');
+  await page.keyboard.press('End');
+  await expect(page.getByRole('tabpanel')).toContainText('Report Archive 연결');
+  await page.keyboard.press('Home');
+  await expect(page.getByRole('tabpanel')).toContainText('내 토큰');
+  await page.context().close();
+});
+
+test('개인 토큰 — 발급 직후(한 번만 보이는 상자)', async ({ browser }) => {
+  for (const w of [1440, 390]) {
+    const page = await login(browser, w);
+    await page.goto('/tokens');
+    await page.waitForLoadState('networkidle');
+    const name = page.getByRole('textbox', { name: '토큰 이름' });
+    test.skip((await name.count()) === 0, '이 권한 층은 토큰을 발급하지 않는다');
+    await name.fill(`ui-check-${w}`);
+    await page.getByRole('button', { name: '토큰 발급' }).click();
+    await expect(page.getByText('지금만 보이는 토큰')).toBeVisible();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: join(SHOTS, `${w}_tokens_created.png`), fullPage: true });
+    expect.soft(await defects(page, w), `발급 직후 @${w}px`).toEqual([]);
+    await page.context().close();
   }
 });

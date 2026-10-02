@@ -1013,7 +1013,7 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
             email=principal.email or principal.subject, service="reportarchive")
         if not conn or not conn.get("token"):
             raise AuthError(
-                "Report Archive 연결이 없습니다 — 포털 'API 토큰' 에서 RA 토큰을 먼저 등록하세요.",
+                "Report Archive 연결이 없습니다 — 포털 '개인 토큰 › 외부 연결'(/tokens?tab=connect)에서 RA 토큰을 먼저 등록하세요.",
                 status_code=400)
         hdrs = {"Authorization": f"Bearer {conn['token']}"}
         if conn.get("workspace"):

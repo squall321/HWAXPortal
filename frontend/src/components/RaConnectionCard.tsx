@@ -132,7 +132,6 @@ export function RaConnectionCard() {
   return (
     <div
       style={{
-        marginTop: '2rem',
         padding: '1rem 1.2rem',
         border: '1px solid var(--border)',
         borderRadius: 8,

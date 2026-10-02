@@ -444,7 +444,7 @@ def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal) ->
             return [f"Report Archive 연결은 있는데 **워크스페이스를 안 골랐습니다** — "
                     f"보고서가 개인함에 쌓입니다(단계: {', '.join(tools[:3])})"]
         return []
-    return [f"Report Archive 연결이 없습니다 — 포털 **토큰 페이지**에서 등록하세요. "
+    return [f"Report Archive 연결이 없습니다 — 포털 **개인 토큰 › 외부 연결**(/tokens?tab=connect)에서 등록하세요. "
             f"없으면 서비스 계정으로 내려앉아 **남의 함에 쓰거나 401** 이 납니다"
             f"(단계: {', '.join(tools[:3])})"]
 

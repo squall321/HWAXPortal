@@ -1,0 +1,222 @@
+/* 개인 토큰 화면(pages/TokenPage) — 인라인 스타일 44곳을 토큰 이름으로 옮겼다(docs/ui-refresh 단계 3·4) */
+.tok-page h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-18);
+  font-weight: 600;
+  color: var(--fg);
+}
+.tok-page h3 {
+  margin: var(--sp-6) 0 0;
+  font-size: var(--fs-15);
+  font-weight: 600;
+  color: var(--fg);
+}
+.tok-sec {
+  margin-bottom: var(--sp-8);
+}
+.tok-note {
+  margin: var(--sp-2) 0 var(--sp-4);
+  font-size: var(--fs-14);
+}
+.tok-muted {
+  margin: var(--sp-2) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.tok-small {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-13);
+}
+.tok-hint {
+  margin: var(--sp-2) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.tok-warn,
+.tok-danger {
+  margin-top: var(--sp-2);
+}
+.tok-warn {
+  color: var(--warn);
+}
+.tok-danger {
+  color: var(--danger);
+}
+.tok-btn-sm {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-13);
+}
+
+.tok-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.tok-form input {
+  flex: 1 1 14rem;
+  min-width: 0; /* 기본 min-width:auto 라 390px 에서 줄지 않아 발급 버튼을 밖으로 밀었다 */
+}
+
+/* 방금 발급한 토큰 — 이 화면에서만 보인다는 경고 상자 */
+.tok-created {
+  margin-bottom: var(--sp-8);
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-lg);
+  background: var(--warn-bg);
+}
+.tok-created-title {
+  color: var(--warn);
+  font-weight: 600;
+}
+.tok-setup {
+  margin: var(--sp-3) 0 var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  color: var(--fg);
+  font-size: var(--fs-14);
+}
+.tok-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+  margin-top: var(--sp-3);
+}
+
+.tok-copy {
+  margin-top: var(--sp-4);
+}
+.tok-copy-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.tok-copy pre {
+  margin: 0;
+  padding: var(--sp-3);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  white-space: pre;
+}
+
+/* 내 토큰 표 */
+.tok-table-wrap {
+  overflow-x: auto;
+}
+.tok-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-14);
+}
+.tok-table th {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-align: left;
+}
+.tok-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+.tok-table tr.is-revoked td {
+  color: var(--fg-subtle);
+}
+.tok-jti {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  word-break: break-all;
+}
+.tok-cell-act {
+  text-align: right;
+  white-space: nowrap;
+}
+.tok-badge {
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--r-pill);
+  color: var(--danger);
+  font-size: var(--fs-12);
+}
+
+/* 빈 상태 — 다음 행동을 함께 */
+.tok-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-lg);
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.tok-empty > b {
+  color: var(--fg);
+}
+
+.tok-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.tok-chip {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-1);
+  font-size: var(--fs-13);
+}
+
+/* 허브에 보일 앱(components/HubAppsPanel) — 숫자·상태·스위치는 쪼개지 않는다(390px 에서 '13/6', '연결/됨' 으로 갈라졌다) */
+.hub-lead {
+  margin: 0 0 var(--sp-3);
+}
+.hub-apps th,
+.hub-num,
+.hub-state,
+.hub-switch {
+  white-space: nowrap;
+}
+.hub-apps th.hub-num,
+.hub-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hub-state {
+  color: var(--fg-muted);
+}
+.hub-key {
+  margin-left: var(--sp-2);
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+.hub-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  .hub-key {
+    display: block;
+    margin-left: 0;
+  }
+}
