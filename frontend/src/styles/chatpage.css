@@ -1350,7 +1350,7 @@
   padding: 4px 10px; border-radius: 7px; font-size: 12px; text-decoration: none;
   background: color-mix(in srgb, var(--accent, #2563eb) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, #2563eb) 32%, transparent);
-  color: var(--accent, #2563eb);
+  color: var(--accent-fg);
 }
 .doc-hint-dl a:hover { background: color-mix(in srgb, var(--accent, #2563eb) 20%, transparent); }
 .doc-hint-note { margin: 10px 0 0; font-size: 11.5px; opacity: 0.62; line-height: 1.6; }

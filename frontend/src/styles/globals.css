@@ -1,26 +1,6 @@
 :root {
-  --bg: #0f1115;
-  --fg: #e6e8eb;
-  --muted: #9aa0a6;
-  --accent: #1428a0; /* Samsung blue */
-  --card: #1a1d24;
-  --border: #2a2f3a;
-  /* 쓰이는데 정의가 없던 변수 — 폴백이 라이트 테마 값(#fff·#f6f7f9)이라 첨부 패널이 흰 상자에 흰 글씨였다(docs/ui-refresh 단계 1).
-     scripts/check-css-vars.mjs 가 빌드에서 다시 빠지는 것을 막는다. */
-  --surface: var(--card);
-  --surface-2: #20242c;
-  --card-bg: var(--card);
-  --panel: #20242c;
-  --line: var(--border);
-  --cx-code-bg: rgba(127, 127, 127, 0.08);
-  --danger: #f28b82;
-  --danger-fg: #f28b82;
-  --warn: #e0a500;
-  --warn-fg: #f0c04a;
-  /* 글자·링크·포커스용 강조 — #1428a0 은 어두운 바탕 위 글자로 1.66:1 이라 못 쓴다(채움 전용). #98a8ff 는 8.4:1. */
-  --accent-fg: #98a8ff;
-  --focus: #98a8ff;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* 색·글꼴·간격은 tokens.css 가 정본이다(먼저 import 된다). 여기에는 문서 전체 기본값만 둔다. */
+  font-family: var(--font-sans);
   /* 다크 전용 앱 — 네이티브 폼 컨트롤(select 옵션 팝업·스크롤바 등)도 다크로 렌더.
      미선언 시 브라우저가 옵션 팝업을 기본(흰 배경)으로 그려 --fg(밝은색) 글자가 흰-흰이 됐다. */
   color-scheme: dark;
@@ -34,7 +14,9 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  line-height: 1.55;
+  line-height: var(--lh-body);
+  font-size: var(--fs-15);
+  -webkit-font-smoothing: antialiased;
   /* 한국어는 어절 단위로 줄을 바꾼다 — 없으면 '홍/길/동', '로/그/인' 처럼 음절에서 끊긴다. */
   word-break: keep-all;
   overflow-wrap: break-word;
@@ -44,6 +26,31 @@ body {
 :where(a:not([class])) {
   color: var(--accent-fg);
   text-underline-offset: 2px;
+}
+
+/* 폼 컨트롤 기본값 — 클래스·스타일 없는 입력칸이 브라우저 기본(회색 채움·모서리 0·높이 20px)으로 그려졌다(관리 화면).
+   :where 로 명시도 0 — 기존에 스타일을 준 입력칸은 그대로 이긴다. */
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select, textarea) {
+  font: inherit;
+  font-size: var(--fs-14);
+  color: var(--fg);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 0 var(--sp-3);
+}
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), select) {
+  height: var(--control-h);
+}
+:where(textarea) {
+  padding: var(--sp-2) var(--sp-3);
+  line-height: var(--lh-body);
+}
+:where(input, select, textarea)::placeholder {
+  color: var(--fg-subtle);
+}
+:where(input[type='checkbox'], input[type='radio']) {
+  accent-color: var(--primary);
 }
 
 /* 키보드 포커스는 어디서나 보이게 */
@@ -81,9 +88,10 @@ button {
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
+  font-weight: 600;
 }
 
 .btn-secondary {
@@ -92,7 +100,12 @@ button {
 }
 
 .btn-primary:hover {
-  filter: brightness(1.1);
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .btn-secondary:hover {
   background: var(--border);
@@ -167,3 +180,4 @@ button {
   color: var(--accent-fg);
   border-color: var(--accent-fg);
 }
+

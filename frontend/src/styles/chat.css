@@ -1795,7 +1795,7 @@ body.dock-open .container {
 .tv-c-ok { color: #4ade80; }
 .tv-c-pass { color: var(--muted); }
 .tv-c-err { color: #fbbf24; }
-.tv-c-live { color: var(--accent); }
+.tv-c-live { color: var(--accent-fg); }
 
 /* 아무도 답하지 못한 경우 — 오류가 아니라 판정 결과임을 화면이 말해야 한다. */
 .tv-none { margin: 0; padding: 0.7rem 0.85rem; border: 1px solid rgba(251, 191, 36, 0.35);
