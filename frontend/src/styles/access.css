@@ -1,0 +1,137 @@
+/* 내 권한(/access) — 요약 줄 · 쓸 수 있는 것은 칩 · 요청할 것만 줄(docs/ui-refresh 단계 4) */
+.acc-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin: 0 0 var(--sp-2);
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.acc-summary b {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.acc-need {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid color-mix(in srgb, var(--accent-fg) 40%, transparent);
+  border-radius: var(--r-lg);
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-size: var(--fs-14);
+}
+.acc-sec {
+  margin-top: var(--sp-8);
+}
+.acc-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.acc-sec-head h2 {
+  margin: 0;
+  font-size: var(--fs-18);
+  font-weight: 700;
+}
+.acc-count {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+}
+.acc-hint {
+  margin: var(--sp-1) 0 var(--sp-3);
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.acc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  list-style: none;
+}
+.acc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--r-pill);
+  background: var(--ok-bg);
+  color: var(--fg);
+  font-size: var(--fs-13);
+  cursor: default;
+}
+.acc-chip svg {
+  color: var(--ok);
+}
+.acc-list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--border);
+}
+.acc-row {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-1);
+}
+.acc-row.is-focus {
+  background: color-mix(in srgb, var(--accent-fg) 8%, var(--surface-1));
+  box-shadow: inset 3px 0 0 var(--accent-fg);
+}
+.acc-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.acc-row-text {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.acc-row-text strong {
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+.acc-row-desc {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.acc-st {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.acc-st-pending {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+.acc-st-rejected {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.acc-req {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+}
+.acc-req-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.acc-err {
+  color: var(--danger);
+  font-size: var(--fs-13);
+}

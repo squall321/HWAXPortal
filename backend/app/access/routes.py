@@ -51,10 +51,20 @@ def _reason_text(reason: str, policy, affiliation: str) -> str:
     return reason
 
 
-def _table(policy, ents, pending: dict[str, dict], hidden: set[str]) -> dict:
+def _taglines(request: Request) -> dict[str, str]:
+    """앱 타일 id → 한 줄 소개(systems.yaml tagline). 권한 표의 플랫폼 줄에 설명이 없어 무엇을 요청하는지 알 수 없었다
+    (docs/ui-refresh 단계 4) — access.yaml 에 desc 가 없으면 그 플랫폼 타일의 소개를 빌린다."""
+    catalog = getattr(request.app.state, "catalog", None)
+    if catalog is None:
+        return {}
+    return {s.id: s.tagline for s in catalog.all() if getattr(s, "tagline", None)}
+
+
+def _table(policy, ents, pending: dict[str, dict], hidden: set[str], taglines: dict[str, str] | None = None) -> dict:
     def row(i):
         allowed = i.key in ents.keys
-        return {"key": i.key, "id": i.id, "label": i.label, "desc": i.desc, "allowed": allowed,
+        desc = i.desc or next((taglines[s] for s in i.systems if s in (taglines or {})), "")
+        return {"key": i.key, "id": i.id, "label": i.label, "desc": desc, "allowed": allowed,
                 "reason": (_reason_text(ents.reasons[i.key], policy, ents.affiliation)
                            if allowed else ""),
                 "request": pending.get(i.key),
@@ -77,7 +87,7 @@ def my_access(request: Request, principal: Principal = Depends(get_current_princ
                                  "created_at": r["created_at"]}
     aff = policy.affiliations.get(ents.affiliation)
     return {"affiliation": ents.affiliation, "affiliation_label": (aff or {}).get("label") or "",
-            "is_admin": ents.is_admin, **_table(policy, ents, pending, _hidden(request, policy))}
+            "is_admin": ents.is_admin, **_table(policy, ents, pending, _hidden(request, policy), _taglines(request))}
 
 
 class AccessRequestIn(BaseModel):

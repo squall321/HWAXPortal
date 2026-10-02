@@ -6,17 +6,18 @@ import { fetchMyAccess, requestAccess, type AccessRow, type MyAccess } from '../
 import { useAuth } from '../auth/useAuth';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { Spinner } from '../components/common/Spinner';
+import { IconCheck } from '../components/chat/icons';
+import '../styles/access.css';
 
-const chip = (bg: string, fg: string): React.CSSProperties => ({
-  fontSize: '0.75rem',
-  padding: '0.1rem 0.5rem',
-  borderRadius: 999,
-  background: bg,
-  color: fg,
-  whiteSpace: 'nowrap',
-});
-
-function Row({ row, focus, onRequested }: { row: AccessRow; focus: boolean; onRequested: () => void }) {
+function Row({
+  row,
+  focus,
+  onRequested,
+}: {
+  row: AccessRow;
+  focus: boolean;
+  onRequested: () => void;
+}) {
   const [open, setOpen] = useState(focus);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
@@ -36,39 +37,29 @@ function Row({ row, focus, onRequested }: { row: AccessRow; focus: boolean; onRe
     }
   };
   return (
-    <li
-      id={row.key}
-      style={{
-        display: 'grid',
-        gap: '0.25rem',
-        padding: '0.7rem 0.9rem',
-        border: `1px solid ${focus ? 'var(--accent)' : 'var(--border)'}`,
-        borderRadius: 10,
-        background: 'var(--card)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-        <strong style={{ color: 'var(--fg)' }}>{row.label}</strong>
-        {row.allowed ? (
-          <span style={chip('rgba(76, 175, 80, 0.16)', '#8fd694')}>✓ 쓸 수 있음 · {row.reason}</span>
-        ) : req?.status === 'pending' ? (
-          <span style={chip('rgba(255, 193, 7, 0.16)', '#ffd666')}>
+    <li id={row.key} className={`acc-row${focus ? ' is-focus' : ''}`}>
+      <div className="acc-row-main">
+        <div className="acc-row-text">
+          <strong>{row.label}</strong>
+          {row.desc && <span className="acc-row-desc">{row.desc}</span>}
+        </div>
+        {req?.status === 'pending' ? (
+          <span className="acc-st acc-st-pending">
             요청 대기 중 · {new Date(req.created_at * 1000).toLocaleDateString()}
           </span>
         ) : (
-          <span style={chip('rgba(255, 255, 255, 0.06)', 'var(--muted)')}>
-            권한 없음{req?.status === 'rejected' ? ' · 지난 요청 거절됨' : ''}
-          </span>
+          req?.status === 'rejected' && (
+            <span className="acc-st acc-st-rejected">지난 요청 거절됨</span>
+          )
         )}
-        {!row.allowed && req?.status !== 'pending' && !open && (
-          <button className="btn-secondary" style={{ marginLeft: 'auto' }} onClick={() => setOpen(true)}>
+        {req?.status !== 'pending' && !open && (
+          <button className="btn-secondary acc-req" onClick={() => setOpen(true)}>
             {req?.status === 'rejected' ? '다시 요청' : '요청'}
           </button>
         )}
       </div>
-      {row.desc && <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{row.desc}</span>}
-      {open && !row.allowed && req?.status !== 'pending' && (
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
+      {open && req?.status !== 'pending' && (
+        <div className="acc-req-form">
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -83,7 +74,11 @@ function Row({ row, focus, onRequested }: { row: AccessRow; focus: boolean; onRe
           <button className="btn-secondary" onClick={() => setOpen(false)}>
             취소
           </button>
-          {err && <span style={{ color: 'var(--danger-fg, #f28b82)' }}>⚠ {err}</span>}
+          {err && (
+            <span className="acc-err" role="alert">
+              {err}
+            </span>
+          )}
         </div>
       )}
     </li>
@@ -106,53 +101,97 @@ export default function AccessPage() {
     void refresh(); // 방금 승인됐을 수 있다 — 메뉴도 같이 따라가게
   }, [load, refresh]);
 
-  if (error && !data) return <ErrorBanner message={error} />;
+  if (error && !data)
+    return (
+      <Page>
+        <PageHeader title="내 권한" />
+        <ErrorBanner message={error} />
+      </Page>
+    );
   if (!data) return <Spinner label="권한 불러오는 중…" />;
 
   const needRow = [...data.features, ...data.platforms].find((r) => r.key === need);
-  const section = (title: string, hint: string, rows: AccessRow[]) => (
-    <section style={{ marginTop: '1.4rem' }}>
-      <h3 style={{ margin: '0 0 0.2rem' }}>
-        {title} <span style={{ color: 'var(--muted)', fontSize: '0.85rem', fontWeight: 400 }}>
-          {rows.filter((r) => r.allowed).length}/{rows.length}
-        </span>
-      </h3>
-      <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.6rem' }}>{hint}</p>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.5rem' }}>
-        {rows.map((r) => (
-          <Row key={r.key} row={r} focus={r.key === need} onRequested={load} />
-        ))}
-      </ul>
-    </section>
-  );
+  // 쓸 수 있는 것은 칩 한 줄로(이유는 툴팁) — 종전엔 '✓ 쓸 수 있음 · 관리자' 카드가 27개 반복됐다. 요청할 것만 줄로 남긴다.
+  const section = (title: string, hint: string, rows: AccessRow[]) => {
+    const ok = rows.filter((r) => r.allowed);
+    const rest = rows.filter((r) => !r.allowed);
+    return (
+      <section className="acc-sec">
+        <header className="acc-sec-head">
+          <h2>{title}</h2>
+          <span className="acc-count">
+            {ok.length}/{rows.length} 사용 가능
+          </span>
+        </header>
+        <p className="acc-hint">{hint}</p>
+        {ok.length > 0 && (
+          <ul className="acc-chips" aria-label={`${title} — 쓸 수 있음`}>
+            {ok.map((r) => (
+              <li
+                key={r.key}
+                id={r.key}
+                className="acc-chip"
+                title={[r.desc, `허가: ${r.reason}`].filter(Boolean).join(' — ')}
+              >
+                <IconCheck width={13} height={13} />
+                {r.label}
+              </li>
+            ))}
+          </ul>
+        )}
+        {rest.length > 0 && (
+          <ul className="acc-list" aria-label={`${title} — 요청할 수 있음`}>
+            {rest.map((r) => (
+              <Row key={r.key} row={r} focus={r.key === need} onRequested={load} />
+            ))}
+          </ul>
+        )}
+      </section>
+    );
+  };
+  const all = [...data.features, ...data.platforms];
+  const pending = all.filter((r) => !r.allowed && r.request?.status === 'pending').length;
 
   return (
     <Page>
       <PageHeader
         title="내 권한"
-        desc={data.is_admin
-          ? '관리자 — 모든 기능과 플랫폼을 씁니다.'
-          : data.affiliation
-            ? `소속 ${data.affiliation_label || data.affiliation} — 소속 기본 권한에 개별 허가가 더해집니다.`
-            : '소속이 지정되지 않았습니다 — 기본 권한(일반 챗)만 씁니다. 필요한 것을 아래에서 요청하세요.'}
-        actions={data.is_admin ? <Link to="/admin/users">사용자 관리에서 요청 승인 →</Link> : undefined}
+        desc={
+          data.is_admin
+            ? '관리자 — 모든 기능과 플랫폼을 씁니다.'
+            : data.affiliation
+              ? `소속 ${data.affiliation_label || data.affiliation} — 소속 기본 권한에 개별 허가가 더해집니다.`
+              : '소속이 지정되지 않았습니다 — 기본 권한(일반 챗)만 씁니다. 필요한 것을 아래에서 요청하세요.'
+        }
+        actions={
+          data.is_admin ? <Link to="/admin/users">사용자 관리에서 요청 승인 →</Link> : undefined
+        }
       />
+      <p className="acc-summary">
+        <span>
+          쓸 수 있음 <b>{all.filter((r) => r.allowed).length}</b>
+        </span>
+        {pending > 0 && (
+          <span>
+            요청 대기 <b>{pending}</b>
+          </span>
+        )}
+        <span>
+          요청 가능 <b>{all.filter((r) => !r.allowed && r.request?.status !== 'pending').length}</b>
+        </span>
+      </p>
       {needRow && !needRow.allowed && (
-        <div
-          role="status"
-          style={{
-            marginTop: '0.9rem',
-            padding: '0.6rem 0.9rem',
-            borderRadius: 10,
-            border: '1px solid var(--accent)',
-            color: 'var(--fg)',
-          }}
-        >
-          <b>{needRow.label}</b> 권한이 없어 이 화면으로 왔습니다. 아래에서 요청하면 관리자가 승인합니다.
+        <div role="status" className="acc-need">
+          <b>{needRow.label}</b> 권한이 없어 이 화면으로 왔습니다. 아래에서 요청하면 관리자가
+          승인합니다.
         </div>
       )}
       {section('기능', '에이전트 기능 — 심의·Thinking·전문가와 대화 등.', data.features)}
-      {section('플랫폼', '앱 타일과 챗 도구 — 허가된 플랫폼의 도구만 챗에 붙습니다.', data.platforms)}
+      {section(
+        '플랫폼',
+        '앱 타일과 챗 도구 — 허가된 플랫폼의 도구만 챗에 붙습니다.',
+        data.platforms,
+      )}
     </Page>
   );
 }

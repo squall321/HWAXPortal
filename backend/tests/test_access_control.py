@@ -638,3 +638,19 @@ def test_access_rows_say_whether_a_pat_opens_tools_there(client):
     plats = {r["key"]: r for r in table["platforms"]}
     assert plats["plat:smarttwin"]["tools"] is True
     assert plats["plat:heaxhub"]["tools"] is False
+
+
+def test_플랫폼_줄에_설명이_없으면_그_앱_타일의_소개를_빌린다(client):
+    """권한 표의 플랫폼 줄이 이름만 있어 무엇을 요청하는지 알 수 없었다(docs/ui-refresh 단계 4). access.yaml 의 desc 가 우선이다."""
+    _setup_users(client)
+    _login(client, "boss@corp.com")
+    rows = {r["key"]: r for r in client.get("/auth/access").json()["platforms"]}
+    tiles = {s["id"]: s for s in client.get("/systems").json()}
+    pol = _policy()
+    for item in pol.items:
+        if item.kind != "platform" or item.key not in rows:
+            continue
+        tile = next((tiles[s] for s in item.systems if s in tiles and tiles[s].get("tagline")), None)
+        want = item.desc or (tile["tagline"] if tile else "")
+        assert rows[item.key]["desc"] == want, item.key
+    assert any(r["desc"] for r in rows.values()), "소개를 빌린 줄이 하나도 없다 — 시험이 비었다"
