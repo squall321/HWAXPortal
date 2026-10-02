@@ -76,6 +76,9 @@ test.beforeAll(async ({ browser }) => {
   await page.evaluate(async (answer) => {
     const csrf = decodeURIComponent((document.cookie.match(/hwax_csrf=([^;]+)/) || [])[1] || '');
     const h = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf };
+    // 실패하면 Playwright 가 워커를 다시 띄워 beforeAll 이 또 돈다 — 이미 있으면 다시 만들지 않는다
+    const have = await (await fetch('/agent/conversations')).json();
+    if ((have.conversations ?? []).some((x: { title?: string }) => x.title?.startsWith('열충격 해석 결과 검토'))) return;
     const c = await (await fetch('/agent/conversations', { method: 'POST', headers: h,
       body: JSON.stringify({ title: '열충격 해석 결과 검토 — U12 솔더' }) })).json();
     for (const [role, content] of [['user', '지난주 열충격 해석 결과에서 위험한 솔더 조인트를 정리해 줘'], ['assistant', answer]])

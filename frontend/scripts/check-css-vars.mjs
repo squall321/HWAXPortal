@@ -2,8 +2,10 @@
 // 사용: node scripts/check-css-vars.mjs  (종료코드 1 = 정의 안 된 변수 있음). docs/ui-refresh 단계 0 · D-6.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SRC = new URL('../src/', import.meta.url).pathname;
+// fileURLToPath — URL.pathname 은 한글 등 비ASCII 경로를 퍼센트 인코딩한 채 돌려줘 readdir 이 실패한다
+const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 
 function walk(dir) {
   return readdirSync(dir).flatMap((n) => {
