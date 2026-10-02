@@ -21,6 +21,9 @@ backend/secrets/
 node_modules/
 frontend/dist/
 frontend/.vite/
+# 화면 점검(frontend/scripts/ui-check.sh) 산출물 — 사내 화면 캡처라 리포에 안 넣는다
+frontend/e2e/.shots/
+frontend/e2e/.results/
 
 # Editor / OS
 .DS_Store
