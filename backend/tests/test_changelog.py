@@ -164,3 +164,41 @@ def test_route_requires_login_and_filters_by_since(tmp_path):
         app.dependency_overrides.pop(get_settings, None)
         app.dependency_overrides.pop(get_current_principal, None)
         changelog._cache["mtime"] = None
+
+
+def test_본_날짜는_서버에_남고_앞으로만_간다(tmp_path):
+    """브라우저 저장소에만 두면 새 PC·캐시 삭제 뒤 첫 로그인이 '처음 온 사람' 이 된다(docs/ui-refresh 단계 4).
+    옛 탭이 늦게 옛 날짜를 적어도 되돌아가지 않는다. 원장에 행이 없는 사람도 오류가 아니다."""
+    from fastapi.testclient import TestClient
+
+    from app.auth.provider import Principal
+    from app.auth.user_store import UserStore
+    from app.config import get_settings
+    from app.deps import get_current_principal
+    from app.main import app
+
+    s = Settings(user_store_path=str(tmp_path / "u.sqlite"))
+    app.dependency_overrides[get_settings] = lambda: s
+    try:
+        with TestClient(app) as c:
+            store = UserStore(s)
+            app.state.user_store = store
+            store.note_sso_login(email="u1@hwax.local", name="U")
+            app.dependency_overrides[get_current_principal] = lambda: Principal(
+                subject="u1@hwax.local", email="u1@hwax.local", display_name="U", groups=[])
+            c.cookies.set("hwax_csrf", "t")
+            h = {"X-CSRF-Token": "t"}
+            assert c.get("/changelog/seen").json() == {"seen": ""}
+            assert c.post("/changelog/seen", json={"date": "2026-09-09"}).status_code == 403, "CSRF 없이는 안 된다"
+            assert c.post("/changelog/seen", json={"date": "2026-09-09"}, headers=h).json()["moved"] is True
+            assert c.post("/changelog/seen", json={"date": "2026-09-01"}, headers=h).json()["moved"] is False
+            assert c.get("/changelog/seen").json() == {"seen": "2026-09-09"}
+            assert c.post("/changelog/seen", json={"date": "9월 9일"}, headers=h).status_code == 422
+
+            app.dependency_overrides[get_current_principal] = lambda: Principal(
+                subject="ghost@hwax.local", email="ghost@hwax.local", display_name="G", groups=[])
+            assert c.post("/changelog/seen", json={"date": "2026-09-09"}, headers=h).json() == {"ok": True, "moved": False}
+            assert c.get("/changelog/seen").json() == {"seen": ""}
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+        app.dependency_overrides.pop(get_current_principal, None)

@@ -268,3 +268,31 @@ test('배선 설정 — 앱 목록이 아니라 사용자 관리 맨 위, 헤더
   }
   await page.context().close();
 });
+
+test('업데이트 본 날짜 — 브라우저 저장소가 비어도 서버 원장으로 판정한다', async ({ browser }) => {
+  const page = await login(browser, 1440, { suppressPopup: false });
+  const csrf = (await page.context().cookies()).find((c) => c.name === 'hwax_csrf')?.value ?? '';
+  let seen = (await (await page.request.get('/changelog/seen')).json()).seen as string;
+  if (!seen) {
+    await page.request.post('/changelog/seen', { data: { date: '2026-01-01' }, headers: { 'X-CSRF-Token': csrf } });
+    seen = '2026-01-01';
+  }
+  const latest = (await (await page.request.get('/changelog?limit=1')).json()).latest as string;
+  const me = await (await page.request.get('/auth/me')).json();
+  // 새 PC 처럼 — 이 브라우저의 기록을 지우고 다시 연다
+  await page.evaluate(() => {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('hwax.changelog.seen')) localStorage.removeItem(k);
+  });
+  await page.goto('/apps');
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  if (seen < latest) {
+    // 서버에 옛 날짜가 있으니 그 뒤 것이 뜬다(종전: 처음 온 사람으로 보고 안 띄웠다)
+    await expect(page.locator('.cl-card')).toBeVisible();
+  } else {
+    // 다 봤으면 안 뜨고, '처음 온 사람' 경로(브라우저에 latest 를 적는 것)도 타지 않는다
+    await expect(page.locator('.cl-card')).toHaveCount(0);
+    expect(await page.evaluate((e) => localStorage.getItem(`hwax.changelog.seen.${e}`), me.email)).toBeNull();
+  }
+  await page.context().close();
+});

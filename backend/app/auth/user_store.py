@@ -91,6 +91,10 @@ class UserStore:
         # 권한(grants)과 섞지 않는다(docs/mcp-app-toggle D-5). 게이트웨이가 개인 MCP 시야에서 숨긴다.
         with contextlib.suppress(sqlite3.OperationalError):
             self._conn.execute("ALTER TABLE users ADD COLUMN hub_muted_apps TEXT NOT NULL DEFAULT '[]'")
+        # 업데이트 이력 '본 날짜'(ISO) — 종전엔 브라우저 저장소에만 있어 새 PC·캐시 삭제 뒤 첫 로그인에
+        # '마지막으로 보신 뒤' 가 비어 처음 온 사람처럼 다뤄졌다(docs/ui-refresh 단계 4). 앞으로만 간다.
+        with contextlib.suppress(sqlite3.OperationalError):
+            self._conn.execute("ALTER TABLE users ADD COLUMN changelog_seen TEXT NOT NULL DEFAULT ''")
         # 허가 요청 — 사용자가 내 권한 페이지에서 보내고 관리자가 승인·거절한다.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS access_requests ("
@@ -222,6 +226,21 @@ class UserStore:
             cur = self._conn.execute(
                 "UPDATE users SET department = ? WHERE email = ?",
                 (department.strip()[:80], norm_email(email)))
+            self._commit()
+            return cur.rowcount > 0
+
+    def changelog_seen(self, email: str) -> str:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT changelog_seen FROM users WHERE email = ?", (norm_email(email),)).fetchone()
+        return (row[0] or "") if row else ""
+
+    def mark_changelog_seen(self, email: str, date: str) -> bool:
+        """본 날짜를 **앞으로만** 옮긴다 — 옛 탭이 늦게 옛 날짜를 적어도 되돌아가지 않는다(ISO 는 문자열 비교로 순서가 맞다)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE users SET changelog_seen = ? WHERE email = ? AND changelog_seen < ?",
+                (date, norm_email(email), date))
             self._commit()
             return cur.rowcount > 0
 

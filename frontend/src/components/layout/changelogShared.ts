@@ -1,5 +1,6 @@
 // 업데이트 이력 공용 헬퍼 — 팝업과 이력 페이지가 같은 '본 날짜'·같은 날짜 표기를 쓴다
 // (컴포넌트는 여기 두지 않는다 — 한 파일이 컴포넌트만 export 해야 Fast Refresh 가 산다)
+import { apiFetch } from '../../api/client';
 
 const SEEN_PREFIX = 'hwax.changelog.seen';
 
@@ -21,6 +22,25 @@ export function writeSeen(email: string, date: string): void {
     localStorage.setItem(seenKey(email), date);
   } catch {
     /* 사생활 모드 등 — 저장이 막혀도 화면은 정상 동작한다 */
+  }
+  // 서버 원장에도 — 브라우저 저장소만으로는 새 PC·캐시 삭제 뒤 '처음 온 사람' 이 됐다. 실패는 조용히(브라우저 값으로 산다).
+  void apiFetch('/changelog/seen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date }),
+  }).catch(() => {});
+}
+
+/** 본 날짜 — 서버 원장과 이 브라우저 중 **늦은 쪽**(ISO 라 문자열 비교로 순서가 맞다).
+ *  서버를 못 물으면 브라우저 값만. */
+export async function loadSeen(email: string): Promise<string> {
+  const local = readSeen(email);
+  try {
+    const res = await apiFetch('/changelog/seen');
+    const server = res.ok ? String(((await res.json()) as { seen?: string }).seen ?? '') : '';
+    return server > local ? server : local;
+  } catch {
+    return local;
   }
 }
 

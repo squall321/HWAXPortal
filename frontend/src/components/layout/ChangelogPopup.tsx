@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { fetchChangelog, type ChangelogEntry } from '../../api/changelog.api';
 import { useAuth } from '../../auth/useAuth';
 import { ChangelogBold as Bold } from './ChangelogBold';
-import { dayLabel, readSeen, writeSeen } from './changelogShared';
+import { dayLabel, loadSeen, writeSeen } from './changelogShared';
 import '../../styles/changelog.css';
 
 // 한 탭에서 한 번만 뜬다. AppShell 은 라우트마다 다시 마운트되므로, 이게 없으면 사용자가
@@ -23,13 +23,14 @@ export function ChangelogPopup() {
   useEffect(() => {
     if (!user?.email || shownThisSession) return;
     let alive = true;
-    const seen = readSeen(user.email);
-    void fetchChangelog({ since: seen || undefined }).then((r) => {
+    const email = user.email;
+    void loadSeen(email).then(async (seen) => {
+      const r = await fetchChangelog({ since: seen || undefined });
       if (!alive) return;
       // 처음 온 사람에게 '마지막으로 보신 뒤 59건' 은 소음이다 — 지금까지를 본 것으로 적고 띄우지 않는다.
       // 다음 업데이트부터 뜬다. 지난 이력은 '업데이트 이력' 화면에 그대로 있다.
       if (!seen) {
-        if (r.latest) writeSeen(user.email, r.latest);
+        if (r.latest) writeSeen(email, r.latest);
         return;
       }
       if (r.entries.length === 0) return;

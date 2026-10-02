@@ -19,11 +19,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel, Field
 
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
-from app.deps import get_current_principal
+from app.deps import get_current_principal, require_csrf
 
 router = APIRouter(prefix="/changelog", tags=["changelog"])
 
@@ -123,3 +124,26 @@ def get_changelog(
         "has_more": offset + len(picked) < total,
         "entries": picked,
     }
+
+
+# ── '본 날짜' — 사람 단위로 서버에(브라우저 저장소는 새 PC·캐시 삭제에 사라진다) ──────────────────
+class SeenIn(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _who(principal: Principal) -> str:
+    return principal.email or principal.subject
+
+
+@router.get("/seen")
+def get_seen(request: Request, principal: Principal = Depends(get_current_principal)) -> dict:
+    store = getattr(request.app.state, "user_store", None)
+    return {"seen": store.changelog_seen(_who(principal)) if store is not None else ""}
+
+
+@router.post("/seen", dependencies=[Depends(require_csrf)])
+def mark_seen(body: SeenIn, request: Request, principal: Principal = Depends(get_current_principal)) -> dict:
+    store = getattr(request.app.state, "user_store", None)
+    # 원장에 없는 사람(외부 IdP 만 있고 행이 없는 경우)은 브라우저 저장소로만 산다 — 오류로 만들지 않는다
+    moved = store.mark_changelog_seen(_who(principal), body.date) if store is not None else False
+    return {"ok": True, "moved": moved}
