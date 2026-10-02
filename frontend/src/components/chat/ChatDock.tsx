@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useChat } from '../../state/ChatContext';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
@@ -6,6 +6,12 @@ import '../../styles/chat.css';
 
 export function ChatDock() {
   const { open, messages, openDock, closeDock } = useChat();
+  const fab = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (wasOpen.current && !open) fab.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
 
   // Toggle a body class so the main content (.home-wrap / .hero-inner) can reserve
   // space for the fixed dock — the .pgrid auto-fill grid doesn't know about it.
@@ -17,7 +23,7 @@ export function ChatDock() {
   return (
     <>
       {!open && (
-        <button className="chat-fab" onClick={openDock} aria-label="채팅 열기">
+        <button ref={fab} className="chat-fab" onClick={openDock} aria-label="채팅 열기">
           💬
         </button>
       )}

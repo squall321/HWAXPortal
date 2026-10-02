@@ -1,7 +1,7 @@
 /* 앱 헤더와 드롭다운 메뉴 — 토큰만 쓴다. 링크는 줄바꿈하지 않는다(종전엔 1280px 에서 '심/의' 'Sign/out' 으로 쪼개졌다). */
 .app-header {
   position: relative;
-  z-index: 50;
+  z-index: var(--z-header);
   display: flex;
   align-items: center;
   gap: var(--sp-5);
@@ -90,9 +90,13 @@
   white-space: nowrap;
 }
 .menu-btn:hover,
-.menu-btn[aria-expanded='true'] {
+.menu-btn[aria-expanded='true'],
+.menu-btn.is-active {
   color: var(--fg);
   background: var(--surface-2);
+}
+.menu-btn.is-active {
+  font-weight: 600;
 }
 .menu-chev {
   width: 14px;
@@ -122,15 +126,22 @@
   background: transparent;
   color: var(--fg);
   font-size: var(--fs-14);
+  line-height: var(--lh-body); /* 링크·버튼(로그아웃) 행 높이를 같게 — 전역 button 은 1.25 */
   text-align: left;
   text-decoration: none;
   white-space: nowrap;
 }
 .menu-pop [role='menuitem']:hover,
-.menu-pop [role='menuitem']:focus-visible,
-.menu-pop [role='menuitem'].active {
+.menu-pop [role='menuitem']:focus-visible {
   background: var(--surface-3);
-  outline: none;
+}
+/* 키보드 포커스는 전역 링을 안쪽으로 — '현재 화면' 표시와 다르게 보여야 한다 */
+.menu-pop [role='menuitem']:focus-visible {
+  outline-offset: -2px;
+}
+.menu-pop [role='menuitem'].active {
+  color: var(--accent-fg);
+  font-weight: 600;
 }
 .menu-sep {
   height: 1px;
@@ -211,6 +222,11 @@
 }
 @media (max-width: 1099px) {
   .hdr-name {
+    display: none;
+  }
+}
+@media (min-width: 900px) {
+  .hdr-sheet {
     display: none;
   }
 }

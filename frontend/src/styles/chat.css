@@ -703,7 +703,7 @@ ol.md-list li.md-li-d2 {
   height: calc(100vh - var(--hdr-h));
   background: var(--card);
   border-left: 1px solid var(--border);
-  z-index: 100;
+  z-index: var(--z-dock);
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
@@ -805,6 +805,7 @@ body.dock-open .container {
     height: 100vh;
     border-left: none;
     transform: translateY(100%);
+    z-index: var(--z-dock-full);
   }
   body.dock-open .chatdock {
     transform: none;
@@ -1289,7 +1290,7 @@ body.dock-open .container {
 .lb-overlay {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: var(--z-lightbox);
   display: flex;
   flex-direction: column;
   background: rgba(8, 10, 14, 0.88);
@@ -1455,7 +1456,7 @@ body.dock-open .container {
 .cx-brief-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1961,7 +1962,7 @@ body.dock-open .container {
 .pp-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: var(--z-modal);
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(2px);
   display: grid;
@@ -2090,7 +2091,7 @@ body.dock-open .container {
 .pv-overlay {
   position: fixed;
   inset: 0;
-  z-index: 95;
+  z-index: var(--z-modal);
   background: rgba(0, 0, 0, 0.62);
   backdrop-filter: blur(3px);
   padding: clamp(0.5rem, 3vw, 2rem);
@@ -2625,7 +2626,7 @@ body.dock-open .container {
 .dv-overlay {
   position: fixed;
   inset: 0;
-  z-index: 110;
+  z-index: var(--z-modal-2);
   background: rgba(0, 0, 0, 0.55);
   padding: clamp(0.4rem, 1.6vw, 1.2rem);
   animation: cx-msg-in 0.16s ease;

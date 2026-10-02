@@ -1,5 +1,5 @@
 // 앱 헤더 — [브랜드] 주 메뉴(챗·심의·앱·절차) …… [관리 ▾](관리자) [계정 ▾]. 좁으면 주 메뉴를 시트로 접는다(docs/ui-refresh 단계 2)
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
@@ -31,7 +31,33 @@ export function AppHeader() {
   const can = useCan();
   const [sheet, setSheet] = useState(false);
   const { pathname } = useLocation();
+  const burger = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
   useEffect(() => setSheet(false), [pathname]);
+  // 시트 — Esc(버거로 포커스 복귀)·바깥 탭이면 닫고, 창을 넓혀 시트가 필요 없어지면(900px 이상) 닫는다
+  useEffect(() => {
+    if (!sheet) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSheet(false);
+        burger.current?.focus();
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!sheetRef.current?.contains(t) && !burger.current?.contains(t)) setSheet(false);
+    };
+    const wide = window.matchMedia('(min-width: 900px)');
+    const onWide = () => wide.matches && setSheet(false);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    wide.addEventListener('change', onWide);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+      wide.removeEventListener('change', onWide);
+    };
+  }, [sheet]);
 
   if (!user) {
     return (
@@ -65,6 +91,8 @@ export function AppHeader() {
     { to: '/updates', label: '업데이트 이력' },
   ];
   const name = (user.display_name || '').trim() || user.email.split('@')[0];
+  // 메뉴 안으로 옮긴 화면에 있을 때 그 메뉴 버튼에 '현재 위치' 를 표시한다(주 메뉴 링크의 active 와 같은 모양)
+  const inside = (items: Item[]) => items.some((i) => pathname === i.to || pathname.startsWith(`${i.to}/`));
 
   return (
     <header className="app-header">
@@ -83,9 +111,9 @@ export function AppHeader() {
 
       <div className="app-right">
         {admin.length > 0 && (
-          <Menu className="hdr-admin" label={<>관리<Chevron /></>}>
+          <Menu className="hdr-admin" active={inside(admin)} label={<>관리<Chevron /></>}>
             {admin.map((i) => (
-              <NavLink key={i.to} to={i.to} role="menuitem">
+              <NavLink key={i.to} to={i.to} role="menuitem" tabIndex={-1}>
                 {i.label}
               </NavLink>
             ))}
@@ -93,6 +121,7 @@ export function AppHeader() {
         )}
         <Menu
           className="hdr-account"
+          active={inside(account)}
           ariaLabel={`계정 메뉴 — ${user.email}`}
           label={
             <>
@@ -108,16 +137,17 @@ export function AppHeader() {
           </div>
           <MenuSep />
           {account.map((i) => (
-            <NavLink key={i.to} to={i.to} role="menuitem">
+            <NavLink key={i.to} to={i.to} role="menuitem" tabIndex={-1}>
               {i.label}
             </NavLink>
           ))}
           <MenuSep />
-          <button type="button" role="menuitem" onClick={() => void logout()}>
+          <button type="button" role="menuitem" tabIndex={-1} onClick={() => void logout()}>
             로그아웃
           </button>
         </Menu>
         <button
+          ref={burger}
           type="button"
           className="hdr-burger"
           aria-label="메뉴"
@@ -132,9 +162,10 @@ export function AppHeader() {
       </div>
 
       {sheet && (
-        <nav className="hdr-sheet" id="hdr-sheet" aria-label="전체 메뉴">
+        <nav className="hdr-sheet" id="hdr-sheet" aria-label="전체 메뉴" ref={sheetRef}>
           {[...primary, ...admin].map((i) => (
-            <NavLink key={i.to} to={i.to} end={i.end}>
+            // 지금 화면의 링크를 눌러도(경로가 안 바뀌어도) 닫힌다
+            <NavLink key={i.to} to={i.to} end={i.end} onClick={() => setSheet(false)}>
               {i.label}
             </NavLink>
           ))}

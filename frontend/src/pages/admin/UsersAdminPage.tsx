@@ -58,8 +58,14 @@ export default function UsersAdminPage() {
   };
 
   const isAdmin = user?.groups.includes('portal-admin');
-  if (!isAdmin) return <ErrorBanner message="관리자(portal-admin)만 볼 수 있는 페이지입니다." />;
-  if (error && !rows) return <ErrorBanner message={error} />;
+  // 페이지 틀 안에서 — 화면 끝까지 붙은 오류 띠만 덩그러니 보였다
+  if (!isAdmin || (error && !rows))
+    return (
+      <Page width="wide">
+        <PageHeader title="사용자 관리" />
+        <ErrorBanner message={!isAdmin ? '관리자(portal-admin)만 볼 수 있는 페이지입니다.' : (error as string)} />
+      </Page>
+    );
   if (!rows) return <Spinner label="사용자 목록 불러오는 중…" />;
 
   const pending = rows.filter((r) => r.status === 'pending');

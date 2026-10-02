@@ -225,7 +225,7 @@
 .cx-backdrop {
   position: fixed;
   inset: var(--hdr-h) 0 0 0;
-  z-index: 110;
+  z-index: var(--z-drawer);
   background: rgba(0, 0, 0, 0.5);
   opacity: 0;
   pointer-events: none;
@@ -483,7 +483,7 @@
     left: 0;
     top: var(--hdr-h);
     bottom: 0;
-    z-index: 120;
+    z-index: var(--z-drawer);
     width: 288px;
     border-right: 1px solid var(--border);
     transform: translateX(-100%);

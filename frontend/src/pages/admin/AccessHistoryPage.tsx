@@ -62,7 +62,14 @@ export default function AccessHistoryPage() {
   useEffect(() => load({ email: '', service: '', days: 7, includeAuto: false }), [load]);
 
   const isAdmin = user?.groups.includes('portal-admin');
-  if (!isAdmin) return <ErrorBanner message="관리자(portal-admin)만 볼 수 있는 페이지입니다." />;
+  // 페이지 틀 안에서 — 화면 끝까지 붙은 오류 띠만 덩그러니 보였다
+  if (!isAdmin)
+    return (
+      <Page width="wide">
+        <PageHeader title="접속 이력" />
+        <ErrorBanner message="관리자(portal-admin)만 볼 수 있는 페이지입니다." />
+      </Page>
+    );
 
   const search = () => load({ email, service, days, includeAuto });
   const pick = (e: string) => {
