@@ -33,6 +33,34 @@
   color: var(--fg-muted);
   font-size: var(--fs-14);
 }
+.login-fail {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--r-md);
+  background: var(--danger-bg);
+  color: var(--fg);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.login-fail details {
+  margin-top: var(--sp-2);
+}
+.login-fail summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+.login-fail code {
+  display: block;
+  margin-top: var(--sp-1);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .login-sso {
   width: 100%;
   height: 44px;

@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 
 from app.auth import cookies
+from app.auth.errors import AuthError
 from app.auth.jwt_service import JWTService
 from app.auth.provider import AuthProvider
-from app.auth.routes.session import complete_login
+from app.auth.routes.session import complete_login, login_failed
 from app.auth.saml_sp import build_saml_settings
 from app.config import Settings, get_settings
 from app.deps import get_auth_provider, get_jwt_service
@@ -27,7 +28,10 @@ async def acs(
     jwt_service: JWTService = Depends(get_jwt_service),
 ):
     expected_state = request.cookies.get(cookies.STATE_COOKIE)
-    principal = await provider.handle_callback(request, expected_state=expected_state)
+    try:
+        principal = await provider.handle_callback(request, expected_state=expected_state)
+    except AuthError as exc:
+        return login_failed(settings, exc)  # 흰 JSON 화면 대신 로그인 화면 + '자세히'(session.login_failed)
     return complete_login(
         principal=principal,
         expected_state=expected_state,

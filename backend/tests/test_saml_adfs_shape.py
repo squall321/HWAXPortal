@@ -78,7 +78,13 @@ with TestClient(app, base_url="http://localhost:5283") as c:
     r3 = c.post(path(action), data=data, follow_redirects=False)
     out["status"] = r3.status_code
     out["body"] = r3.text[:400]
-    if r3.status_code in (302, 303):
+    out["location"] = r3.headers.get("location", "")
+    # 실패는 로그인 화면으로 돌아간다(흰 JSON 화면 대신) — 원인은 detail 로 함께 간다
+    if "/login?error=" in out["location"]:
+        from urllib.parse import parse_qs as _pq
+        q = _pq(urlsplit(out["location"]).query)
+        out["failed"] = q.get("detail", [""])[0]
+    elif r3.status_code in (302, 303):
         me = c.get("/auth/me")
         out["me_status"] = me.status_code
         out["me"] = me.json() if me.status_code == 200 else me.text[:300]
@@ -113,6 +119,13 @@ def _run(tmp_path, *, want_nameid: str | None = "false", env_extra: dict | None 
     return {**json.loads(r.stdout.strip().splitlines()[-1]), "stderr": r.stderr}
 
 
+def _failed(out: dict) -> str:
+    """실패한 로그인 — 로그인 화면(/login?error=sso)으로 돌아갔고 원인 원문이 detail 로 갔는지. 원인 문자열을 돌려준다."""
+    assert out["status"] in (302, 303) and "/login?error=sso" in out["location"], out
+    assert out.get("failed"), f"원인(detail)이 비었다 — 운영 진단 단서가 사라진다: {out}"
+    return out["failed"]
+
+
 needs_keys = pytest.mark.skipif(
     not ((BACKEND / "secrets/saml/sp.key").exists() and (BACKEND / "secrets/saml/idp.key").exists()),
     reason="개발용 SAML 키(backend/secrets/saml/*.key)가 없다 — 추적 파일이 아니다(scripts/gen_dev_certs.py)")
@@ -120,10 +133,10 @@ needs_keys = pytest.mark.skipif(
 
 # ── §2 NameID 없음 ──────────────────────────────────────────────────────────────────────────
 @needs_keys
-def test_기본값_그대로면_NameID_없는_Assertion_은_400_이다(tmp_path):
-    """**운영에서 막던 그 줄의 재현** — 기본값을 바꾸지 않았다는 것도 같이 고정한다."""
+def test_기본값_그대로면_NameID_없는_Assertion_은_로그인_실패다(tmp_path):
+    """**운영에서 막던 그 줄의 재현** — 기본값을 바꾸지 않았다는 것도 같이 고정한다. 실패는 로그인 화면으로, 원인은 detail 로."""
     out = _run(tmp_path, want_nameid=None)
-    assert out["status"] == 400 and "NameID" in out["body"], out
+    assert "NameID" in _failed(out), out
 
 
 @needs_keys
@@ -169,7 +182,7 @@ def test_고른_식별자_출처가_없으면_이메일로_몰래_바꾸지_않�
     """'nameid' 를 골랐는데 NameID 가 없다 — 이메일로 떨어지면 로그인마다 키가 바뀌어 한 사람이 둘로 갈린다."""
     for source in ("nameid", CLAIM + "NoSuchClaim"):
         out = _run(tmp_path, env_extra={"SAML_SUBJECT_SOURCE": source})
-        assert out["status"] == 400 and "SAML_SUBJECT_SOURCE" in out["body"], (source, out)
+        assert "SAML_SUBJECT_SOURCE" in _failed(out), (source, out)
 
 
 # ── §4-B 이름·부서 대체 사슬 ────────────────────────────────────────────────────────────────
@@ -233,8 +246,9 @@ def test_승인_안_된_가입_행의_이름은_대체_사슬에_안_쓴다(tmp_
 def test_Mail_Claim_이_없으면_NameID_로_몰래_떨어지지_않고_거절한다(tmp_path):
     """IdP 가 NameID 를 켠 날 SAML_ATTR_EMAIL 이 어긋나 있으면(짧은 이름·URI 변경) 종전엔 subject·원장 키가 NameID 가 됐다."""
     out = _run(tmp_path, nameid="kpark01", env_extra={"SAML_ATTR_EMAIL": "Mail"})
-    assert out["status"] == 400 and "SAML_ATTR_EMAIL" in out["body"] and CLAIM + "Mail" in out["body"], out
-    assert "koo.park@example.com" not in out["body"], "Claim 값은 응답에 안 싣는다"
+    detail = _failed(out)
+    assert "SAML_ATTR_EMAIL" in detail and CLAIM + "Mail" in detail, out
+    assert "koo.park@example.com" not in out["location"], "Claim 값은 리다이렉트 주소에 안 싣는다"
 
 
 
@@ -271,3 +285,14 @@ def test_SLO_광고를_끄면_메타데이터에서_빠지고_메타데이터는
     assert out["md_status"] == 200 and "SingleLogoutService" not in out["md"], out["md"]
     assert "AssertionConsumerService" in out["md"]
     assert out["status"] in (302, 303), "SLO 블록이 없어도 로그인 검증은 그대로다"
+
+
+
+# ── SSO 실패 화면 — 흰 JSON 원문 대신 로그인 화면(docs/ui-refresh 단계 4 · D-11) ─────────────────────
+@needs_keys
+def test_SSO_실패는_로그인_화면으로_돌아가고_원인은_서버_로그에도_남는다(tmp_path):
+    """원인(예: InvalidNameIDPolicy)은 운영 진단의 단서다 — 화면 '자세히' 와 WARNING 로그(포털은 INFO 를 버린다) 둘 다에 남는다."""
+    out = _run(tmp_path, want_nameid=None)
+    detail = _failed(out)
+    assert out["location"].startswith("http://localhost:5283/login?"), out["location"]
+    assert "SSO 콜백 실패" in out["stderr"] and detail[:40] in out["stderr"], out["stderr"][-1500:]

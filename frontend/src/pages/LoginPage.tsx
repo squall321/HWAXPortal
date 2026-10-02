@@ -1,6 +1,6 @@
 // 로그인 페이지 — 이메일 로컬 계정(가입 신청 포함) + SSO 버튼. SSO 지연 브리지.
 import { useState, type FormEvent } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { localLogin, localSignup } from '../api/auth.api';
 import { useAuth } from '../auth/useAuth';
 import { Spinner } from '../components/common/Spinner';
@@ -23,6 +23,10 @@ export default function LoginPage() {
   const [notice, setNotice] = useState<string | null>(null);
   // 이메일 로그인은 접어 둔다 — 운영 SSO 가 열려 주 경로가 SSO 다(2026-10-02). 가입·오류·안내가 있으면 펼친 채로.
   const [localOpen, setLocalOpen] = useState(false);
+  // SSO 콜백 실패 — 서버가 흰 JSON 화면 대신 이리 돌려보낸다(/login?error=sso&detail=원인). 원인은 접어 둔 '자세히' 에.
+  const [params] = useSearchParams();
+  const ssoError = params.get('error') === 'sso';
+  const ssoDetail = params.get('detail') ?? '';
 
   if (status === 'loading') return <Spinner label="로그인 확인 중…" />;
   if (status === 'authenticated') return <Navigate to="/" replace />;
@@ -65,8 +69,20 @@ export default function LoginPage() {
         </div>
         <p className="login-sub">사내 AI·해석 플랫폼을 한 곳에서 — 회사 계정으로 들어갑니다.</p>
 
+        {ssoError && (
+          <div className="login-fail" role="alert">
+            <b>SSO 로그인을 마치지 못했습니다.</b> 잠시 뒤 다시 시도하세요. 계속되면 아래 내용을
+            포털 관리자에게 알려 주세요.
+            {ssoDetail && (
+              <details>
+                <summary>자세히</summary>
+                <code>{ssoDetail}</code>
+              </details>
+            )}
+          </div>
+        )}
         <button type="button" className="btn-primary login-sso" onClick={() => login(returnTo)}>
-          삼성 AD 계정으로 로그인
+          {ssoError ? '삼성 AD 계정으로 다시 로그인' : '삼성 AD 계정으로 로그인'}
         </button>
 
         <details

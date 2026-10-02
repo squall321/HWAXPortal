@@ -6,7 +6,9 @@ for mock and SAML alike.
 """
 
 import contextlib
+import logging
 import secrets
+from urllib.parse import quote
 
 import jwt
 from fastapi import APIRouter, Depends, Request
@@ -27,6 +29,19 @@ from app.deps import (
 from app.schemas.auth import UserProfile
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+log = logging.getLogger("hwax.auth")
+
+
+def login_failed(settings: Settings, exc: AuthError) -> RedirectResponse:
+    """브라우저 SSO 콜백 실패를 로그인 화면으로 보낸다 — 종전엔 흰 바탕에 JSON 원문 한 줄로 끝났다(docs/ui-refresh 단계 4).
+
+    원인은 버리지 않는다: 서버 로그(WARNING — 포털은 INFO 를 버린다)와 로그인 화면의 '자세히' 둘 다에 남긴다. 운영 SSO 를
+    열 때 요청자가 바로 이 원문(InvalidNameIDPolicy 등)으로 원인을 찾았다(D-11). 원문은 검증 사유뿐이라 비밀이 없다.
+    길이는 1000자에서 자른다 — 300자로 자르면 '받은 Claim 이름 목록' 이 잘려 진단 단서가 사라졌다(시험이 잡았다).
+    """
+    log.warning("SSO 콜백 실패(HTTP %s): %s", exc.status_code, exc.message)
+    detail = quote(exc.message[:1000], safe="")
+    return RedirectResponse(f"{settings.frontend_url}/login?error=sso&detail={detail}", status_code=302)
 
 
 def _safe_return_to(raw: str | None) -> str:
@@ -116,7 +131,10 @@ async def callback(
     jwt_service: JWTService = Depends(get_jwt_service),
 ) -> RedirectResponse:
     expected_state = request.cookies.get(cookies.STATE_COOKIE)
-    principal = await provider.handle_callback(request, expected_state=expected_state)
+    try:
+        principal = await provider.handle_callback(request, expected_state=expected_state)
+    except AuthError as exc:
+        return login_failed(settings, exc)
     return complete_login(
         principal=principal,
         expected_state=expected_state,

@@ -156,3 +156,18 @@ test('로그인 화면(로그아웃 상태)', async ({ browser }) => {
     await ctx.close();
   }
 });
+
+test('로그인 화면 — SSO 실패로 돌아왔을 때', async ({ browser }) => {
+  for (const w of [1440, 390]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 900 } });
+    const page = await ctx.newPage();
+    const detail = encodeURIComponent('SAML 응답에 사번(Mail) 클레임이 없습니다. 받은 클레임: http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name, http://schemas.microsoft.com/ws/2008/06/identity/claims/groups');
+    await page.goto(`/login?error=sso&detail=${detail}`);
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('alert')).toContainText('SSO 로그인을 마치지 못했습니다');
+    await page.getByText('자세히').click();
+    await page.screenshot({ path: join(SHOTS, `${w}_login_sso_fail.png`), fullPage: true });
+    expect.soft(await defects(page, w), `로그인 실패 @${w}px`).toEqual([]);
+    await ctx.close();
+  }
+});
