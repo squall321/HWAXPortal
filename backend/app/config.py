@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     #    빈 값이면 이 기능은 꺼진 것이다(ste 쪽도 빈 값이면 404 로 답한다).
     ste_base_url: str = "http://127.0.0.1:8088/ste"   # 포털 프로세스가 ste 백엔드에 닿는 주소
     ste_sso_secret: str = ""
+    # RA 사람별 위임(ste 방식, docs/sso-delegation) — 포털이 RA 를 직접 부르는 곳(PPT 가져오기)이 같은 비밀로 그 사람
+    # RA 토큰을 받는다. 빈 값이면 종전 '토큰 등록' 방식이다. ⚠ RA 전용 값 — ste·TestScope 와 같은 값으로 묶지 않는다.
+    # 자동으로 만들지 않는다 — RA 쪽이 준비되기 전에 생기면 게이트웨이가 위임으로만 불러 RA 호출이 거부된다.
+    ra_sso_secret: str = ""
+    ra_sso_url: str = ""   # 빈 값 = ra_base_url + /api/auth/sso
 
     # ── Session token TTLs (HS256; downstream RS256 launch tokens land in Phase 4) ──
     jwt_issuer: str = "https://hwax.sec.samsung.net"

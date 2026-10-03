@@ -98,6 +98,22 @@ async def test_a_missing_secret_is_todo_and_a_present_one_is_ok():
 
 
 @pytest.mark.anyio
+async def test_ra_sso_is_todo_until_the_secret_is_set():
+    """RA 사람별 위임(docs/sso-delegation) — 포털이 아는 것은 비밀의 있고 없음뿐이다. 공백만이면 없는 것이다."""
+    for v in ("", "   "):
+        assert await run_check("ra_sso", Settings(_env_file=None, ra_sso_secret=v), None) == "todo"
+    assert await run_check("ra_sso", Settings(_env_file=None, ra_sso_secret="x" * 32), None) == "ok"
+
+
+def test_ra_sso_row_never_claims_a_default_and_says_what_to_do():
+    """포털이 비밀을 만들면 RA 쪽이 준비되기 전에 게이트웨이가 위임으로만 불러 RA 호출이 전부 거부된다 — 기본값이 없어야 한다."""
+    doc = yaml.safe_load(Path(Settings().resolve("config/setup_requests.yaml")).read_text("utf-8"))
+    (row,) = [r for r in parse_requests(doc) if r["check"] == "ra_sso"]
+    assert (row["default"], row["severity"], row["tag"]) == ("none", "request", "연결")
+    assert "ra-request.md" in row["body"] and "RA_SSO_SECRET" in row["body"]
+
+
+@pytest.mark.anyio
 async def test_an_unknown_check_never_says_ok():
     """**모르는 것을 됐다고 말하지 않는다** — 이 화면이 거짓말하면 존재 이유가 없어진다."""
     assert await run_check("이런_검사는_없다", Settings(), None) == "unknown"

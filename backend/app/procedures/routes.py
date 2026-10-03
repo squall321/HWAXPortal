@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.access.policy import ADMIN_GROUP
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
-from app.config import BACKEND_DIR, get_settings
+from app.config import BACKEND_DIR, Settings, get_settings
 from app.deps import ensure, get_current_principal, require_csrf
 from app.procedures import judge as J
 from app.procedures.models import (
@@ -414,13 +414,14 @@ class RunIn(BaseModel):
     title: str | None = None
 
 
-# ReportArchive 는 **사용자별 연결 토큰**으로 돈다(포털 토큰 페이지에서 등록). 등록이
-# 없으면 게이트웨이가 서비스 계정으로 내려앉아 **남의 함에 쓰거나 401 이 난다** — 어느
-# 쪽이든 그 단계에 가서야 안다. 시작 전에 본다.
+# ReportArchive 는 **그 사람 명의**로 돈다. RA_SSO_SECRET 이 있으면 게이트웨이가 호출마다 그 사람 토큰을 받고
+# (ste 방식, docs/sso-delegation — 등록할 것이 없다), 없으면 포털 '외부 연결' 에 등록한 토큰이다. 등록이 없으면
+# 게이트웨이가 그 단계를 **거부한다**(공용 계정으로 대신 부르지 않는다, 2026-09-29) — 그 단계에 가서야 안다. 시작 전에 본다.
 RA_BACKEND = "reportarchive"
 
 
-def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal) -> list[str]:
+def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal,
+                 settings: Settings) -> list[str]:
     """RA 단계가 있는데 연결이 없으면 **시작 전에** 말한다(PLAN S1).
 
     ⚠ 막지는 않는다. 계획 모드로 무엇을 부를지만 보려는 경우가 있고, 관리자가 남의
@@ -428,6 +429,9 @@ def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal) ->
     """
     tools = [st.tool for st in spec.steps if st.backend == RA_BACKEND]
     if not tools:
+        return []
+    if settings.ra_sso_secret:
+        # 사람별 위임이 켜진 박스 — 등록할 것이 없고 부서는 RA 가 그 사람 홈 부서로 정한다. 여기서 '연결 없음' 을 말하면 거짓 경고다.
         return []
     # ⚠ 이름은 `users` 다 — 이 파일의 다른 곳에서 `store` 는 **절차 저장소**를 가리킨다.
     # 한 이름으로 두 저장소를 부르면 읽는 사람도, 정적 가드도 헷갈린다(실제로 헷갈렸다).
@@ -444,14 +448,15 @@ def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal) ->
             return [f"Report Archive 연결은 있는데 **워크스페이스를 안 골랐습니다** — "
                     f"보고서가 개인함에 쌓입니다(단계: {', '.join(tools[:3])})"]
         return []
-    return [f"Report Archive 연결이 없습니다 — 포털 **개인 토큰 › 외부 연결**(/tokens?tab=connect)에서 등록하세요. "
-            f"없으면 서비스 계정으로 내려앉아 **남의 함에 쓰거나 401** 이 납니다"
-            f"(단계: {', '.join(tools[:3])})"]
+    return [f"Report Archive 연결이 없습니다 — 연결 없이 부르는 RA 단계는 게이트웨이가 **거부합니다**"
+            f"(공용 계정으로 대신 부르지 않는다). 포털 **개인 토큰 › 외부 연결**(/tokens?tab=connect)에서 "
+            f"RA 토큰을 등록하세요(단계: {', '.join(tools[:3])})"]
 
 
 @router.post("/runs", status_code=202, dependencies=[Depends(require_csrf)])
 async def start_run(request: Request, body: RunIn,
-                    principal: Principal = Depends(_me)) -> dict:
+                    principal: Principal = Depends(_me),
+                    settings: Settings = Depends(get_settings)) -> dict:
     """`procedure_id` 가 없으면 **빈 실행** — 도구를 한 단계씩 돌리는 절차다."""
     store, runner = _store(request), _runner(request)
     version = None
@@ -473,7 +478,7 @@ async def start_run(request: Request, body: RunIn,
         except SpecError as exc:
             raise AuthError(str(exc), status_code=422) from None
 
-    notes = _ra_precheck(request, spec, principal) if spec is not None else []
+    notes = _ra_precheck(request, spec, principal, settings) if spec is not None else []
 
     run_id = store.create_run(
         owner_sub=principal.subject, run_by=principal.subject,

@@ -238,6 +238,16 @@
   color: var(--fg-muted);
   font-size: var(--fs-14);
 }
+/* 위임(sso) — 할 일이 없다는 안내라 경고가 아닌 '됨' 색으로 둔다 */
+.ra-auto {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--r-md);
+  background: var(--ok-bg);
+  color: var(--fg);
+  font-size: var(--fs-14);
+}
 .ra-status {
   font-size: var(--fs-14);
 }

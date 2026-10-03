@@ -16,6 +16,7 @@
 #   gateway          — 게이트웨이가 응답하나
 #   gateway_ste      — 게이트웨이 도구 목록에 ste 백엔드가 올라와 있나
 #   access_ste       — access.yaml 의 smarttwin 허가에 ste 가 들어 있나
+#   ra_sso           — 포털에 RA 사람별 위임 비밀(RA_SSO_SECRET)이 있나
 
 requests:
   - id: ste-sso-secret
@@ -87,6 +88,25 @@ requests:
       `backend/config/access.yaml` 의 `smarttwin` 항목 `gateway:` 에 `ste` 를 넣습니다.
       **백엔드를 붙이기 전에** 적어야 합니다 — 정책에 없는 백엔드는 "전체 공개" 로
       판정되므로, 순서가 반대면 잠깐이지만 아무나 부를 수 있습니다.
+
+  - id: ra-sso-secret
+    title: RA 사람별 위임 — RA 쪽이 준비되면 같은 비밀을 양쪽에
+    tag: 연결
+    severity: request
+    check: ra_sso
+    default: none
+    body: |
+      **포털이 만들지 않습니다.** RA 는 남의 서버라 포털이 값을 심을 수 없고, 포털에 비밀이
+      먼저 생기면 게이트웨이가 RA 를 사람별 위임으로만 불러 RA 쪽이 준비되기 전의 RA 호출이
+      전부 거부됩니다.
+
+      1. RA 담당이 `docs/sso-delegation/ra-request.md` 대로 RA 를 고칩니다(옛 `/api/auth/sso`
+         되살리기 + 부서 헤더가 없으면 홈 부서) — RA 서버 `.env` 에 `HEAX_SSO_SECRET`.
+      2. **같은 값**을 이 박스 `infra/.env` 의 `RA_SSO_SECRET=` 에 넣습니다(비밀은 메신저 평문 말고 안전한 경로로).
+      3. `./infra/scripts/update-all.sh` — 포털 재기동(비밀 전달)·게이트웨이 재프로비저닝(`per_user_sso.reportarchive`).
+
+      그 전까지는 종전 '토큰 등록'(개인 토큰 › 외부 연결) 방식이 그대로 돕니다. 확인 방법은
+      `docs/sso-delegation/server-setup.md` A 절입니다.
 
   - id: dynaforge-gateway-pat
     title: DynaForge 에 게이트웨이 PAT 를 넣는다

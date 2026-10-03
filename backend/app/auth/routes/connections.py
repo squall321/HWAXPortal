@@ -222,10 +222,15 @@ async def set_ra_workspace(
 @router.get("/auth/connections")
 def list_connections(
     request: Request,
+    settings: Settings = Depends(get_settings),
     principal: Principal = Depends(principal_pat_or_session),
 ) -> dict:
     store = _store(request)
-    return {s: store.connection_meta(email=principal.email, service=s) for s in SERVICES}
+    out: dict = {s: store.connection_meta(email=principal.email, service=s) for s in SERVICES}
+    # 화면이 RA 카드를 가른다 — "sso" 면 포털 로그인으로 본인 명의(등록할 것 없음), "token" 이면 종전 토큰 등록
+    # (docs/sso-delegation). 값은 비밀의 있고 없음뿐이다.
+    out["reportarchive_mode"] = "sso" if settings.ra_sso_secret else "token"
+    return out
 
 
 @router.delete("/auth/connections/reportarchive")

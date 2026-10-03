@@ -98,6 +98,10 @@ async def run_check(name: str, settings: Settings, access: Any) -> str:
         # 값은 보지 않는다. 있고 없음만.
         return "ok" if (settings.ste_sso_secret or "").strip() else "todo"
 
+    if name == "ra_sso":
+        # RA 사람별 위임 — 포털이 아는 것은 비밀의 있고 없음뿐이다(RA 쪽이 켜졌는지는 RA 담당 몫, docs/sso-delegation).
+        return "ok" if (settings.ra_sso_secret or "").strip() else "todo"
+
     if name == "access_ste":
         # 정책 원장에 직접 묻는다 — 파일을 다시 파싱하면 두 곳이 어긋날 수 있다.
         try:

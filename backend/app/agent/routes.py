@@ -36,6 +36,7 @@ from app.access.policy import is_synthetic
 from app.agent import conv_search
 from app.agent.audit import AuditLog
 from app.agent.sse import sse_event
+from app.auth import ra_sso
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
@@ -1007,26 +1008,49 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
     if body.destination == "reportarchive":
         # ── Report Archive ────────────────────────────────────────────
         # **RA 의 파서를 그대로 쓴다**(포털에 python-pptx 를 넣지 않는다). RA 의 웹 '가져오기'
-        # 와 같은 엔드포인트라 그림·표까지 위젯으로 들어온다. 사용자 rat_ PAT 로 부르므로
-        # 권한·워크스페이스가 그 사람 것이다.
-        conn = request.app.state.user_store.get_connection(
-            email=principal.email or principal.subject, service="reportarchive")
-        if not conn or not conn.get("token"):
+        # 와 같은 엔드포인트라 그림·표까지 위젯으로 들어온다. 그 사람 명의 토큰으로 부르므로
+        # 권한·워크스페이스가 그 사람 것이다 — RA_SSO_SECRET 이 있으면 포털이 그 자리에서 받고
+        # (ste 방식, docs/sso-delegation), 없거나 못 받으면 '외부 연결' 에 등록해 둔 토큰이다.
+        email = principal.email or principal.subject
+        conn = request.app.state.user_store.get_connection(email=email, service="reportarchive") or {}
+        token = None
+        if settings.ra_sso_secret:
+            token = await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
+        via_sso = bool(token)
+        token = token or conn.get("token")
+        if not token:
+            if settings.ra_sso_secret:
+                raise AuthError(
+                    "Report Archive 가 본인 명의 토큰을 내주지 않았습니다(포털 위임) — RA 쪽 위임 상태"
+                    "(HEAX_SSO_SECRET·그 계정)를 RA 담당에게 확인하세요. 포털 서버 로그 hwax.ra_sso 에 이유가 있습니다.",
+                    status_code=502)
             raise AuthError(
                 "Report Archive 연결이 없습니다 — 포털 '개인 토큰 › 외부 연결'(/tokens?tab=connect)에서 RA 토큰을 먼저 등록하세요.",
                 status_code=400)
-        hdrs = {"Authorization": f"Bearer {conn['token']}"}
-        if conn.get("workspace"):
-            hdrs["X-Workspace-Slug"] = conn["workspace"]
-        try:
+
+        async def _post_pptx(tok: str) -> httpx.Response:
+            hdrs = {"Authorization": f"Bearer {tok}"}
+            # 부서는 RA 가 그 사람의 홈 부서로 정한다(ra-request §3) — 사람이 '외부 연결' 에서 고른 조직이 있을 때만 싣는다.
+            if conn.get("workspace"):
+                hdrs["X-Workspace-Slug"] = conn["workspace"]
             async with httpx.AsyncClient(timeout=600) as cli:
                 with path.open("rb") as fh:
-                    r = await cli.post(
+                    return await cli.post(
                         settings.ra_base_url.rstrip("/") + "/api/imports/pptx",
                         headers=hdrs,
                         files={"file": (body.filename, fh,
                                         "application/vnd.openxmlformats-officedocument."
                                         "presentationml.presentation")})
+
+        try:
+            r = await _post_pptx(token)
+            if r.status_code == 401 and via_sso:
+                # 캐시해 둔 위임 토큰을 RA 가 거절했다(회수·비밀 교체). 인증에서 끊겨 아무것도 안 했으니 한 번만
+                # 새로 받아 다시 보낸다 — 게이트웨이와 같은 규칙. 안 그러면 캐시 수명(최대 11시간) 동안 계속 401 이다.
+                ra_sso.forget(email)
+                fresh = await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
+                if fresh:
+                    r = await _post_pptx(fresh)
         except httpx.HTTPError as exc:
             return {"stage": "failed", "error": f"Report Archive 에 연결하지 못했습니다({exc.__class__.__name__})."}
         if r.status_code >= 400:

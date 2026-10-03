@@ -1,4 +1,4 @@
-// Report Archive 연결 카드 — RA 에서 발급한 PAT 를 등록하면 챗·심의의 보고서가 내 명의로 저장된다.
+// Report Archive 연결 카드 — 위임(sso)이면 포털 로그인으로 본인 명의라 안내만, 아니면 RA PAT 를 등록해 챗·심의의 보고서를 내 명의로 저장한다.
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../api/client';
 import '../styles/tokenpage.css';
@@ -17,6 +17,10 @@ interface RaWorkspace {
   role?: string;
 }
 
+/** sso = 포털·게이트웨이가 공유 비밀로 그 사람의 RA 토큰을 그때그때 받는다(ste 방식) — 붙여넣을 것이 없다.
+ *  필드가 없으면(이 커밋 이전 백엔드) token 이다 — 위임이 켜졌다고 단정하면 등록 칸이 사라진다. */
+type RaMode = 'sso' | 'token';
+
 export function RaConnectionCard() {
   const [meta, setMeta] = useState<RaMeta | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -24,6 +28,7 @@ export function RaConnectionCard() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [spaces, setSpaces] = useState<RaWorkspace[] | null>(null);
+  const [mode, setMode] = useState<RaMode>('token');
 
   // 후보는 **저장된 토큰으로** 서버가 RA 에 물어 온다 — 조직만 바꾸려고 PAT 를 다시
   // 붙여넣게 하지 않는다. 연결이 없으면 404 라 조용히 비운다.
@@ -41,9 +46,16 @@ export function RaConnectionCard() {
     apiFetch('/auth/connections')
       .then(async (r) => {
         if (r.ok) {
-          const conn = ((await r.json()) as { reportarchive: RaMeta | null }).reportarchive;
+          const b = (await r.json()) as {
+            reportarchive: RaMeta | null;
+            reportarchive_mode?: RaMode;
+          };
+          const conn = b.reportarchive;
+          const m: RaMode = b.reportarchive_mode === 'sso' ? 'sso' : 'token';
+          setMode(m);
           setMeta(conn);
-          if (conn) loadSpaces();
+          // 위임이면 조직 고르기를 보이지 않으니 후보도 RA 에 묻지 않는다.
+          if (conn && m === 'token') loadSpaces();
           else setSpaces(null);
         }
         setLoaded(true);
@@ -122,7 +134,8 @@ export function RaConnectionCard() {
     setMsg(null);
     try {
       await apiFetch('/auth/connections/reportarchive', { method: 'DELETE' });
-      setMsg({ ok: true, text: '연결을 해제했습니다.' });
+      // 위임에서 '연결을 해제했습니다' 라고 하면 RA 가 끊긴 것으로 읽힌다 — 지운 것은 옛 토큰뿐이다.
+      setMsg({ ok: true, text: mode === 'sso' ? '예전 토큰을 지웠습니다.' : '연결을 해제했습니다.' });
       reload();
     } finally {
       setBusy(false);
@@ -130,6 +143,31 @@ export function RaConnectionCard() {
   };
 
   if (!loaded) return null;
+  // 위임 — 붙여넣기·조직 고르기를 숨긴다. 부서는 RA 가 그 사람 프로필(홈 부서)로 정한다(docs/sso-delegation).
+  if (mode === 'sso')
+    return (
+      <div className="ra-card">
+        <h2>Report Archive 연결</h2>
+        <p className="ra-auto">
+          Report Archive 는 <b>포털 로그인으로 본인 명의</b>로 연결됩니다 — 등록할 것이 없습니다.
+          보고서는 RA 에서 고른 내 부서에 쌓입니다(부서는 RA 에서 바꿉니다).
+        </p>
+        {/* 옛 토큰이 남아 있으면 그 사실을 보인다 — 안 보이면 '아직 그 토큰으로 부르나?' 를 알 길이 없다. */}
+        {meta ? (
+          <p className="ra-status">
+            예전에 등록한 토큰(<code>…{meta.tail}</code>) — 지금은 쓰지 않습니다
+            <button className="btn-secondary tok-btn-sm" onClick={() => void remove()} disabled={busy}>
+              해제
+            </button>
+          </p>
+        ) : (
+          <p className="ra-hint ra-below">
+            RA 토큰(<code>rat_…</code>)을 붙여 넣던 예전 방식은 쓰지 않습니다.
+          </p>
+        )}
+        {msg && <p className={`ra-msg${msg.ok ? '' : ' is-err'}`}>{msg.text}</p>}
+      </div>
+    );
   return (
     <div className="ra-card">
       <h2>Report Archive 연결</h2>

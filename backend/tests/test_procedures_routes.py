@@ -1064,8 +1064,8 @@ def _ra_procedure(c, h) -> str:
 
 
 def test_RA_연결이_없으면_시작_전에_말한다(user):
-    """⚠ 연결이 없으면 게이트웨이가 **서비스 계정으로 내려앉아** 남의 함에 쓰거나 401 이
-    난다 — 어느 쪽이든 그 단계에 가서야 안다."""
+    """⚠ 연결이 없으면 게이트웨이가 그 RA 단계를 **거부한다**(공용 계정 폴백 없음, 2026-09-29) —
+    그 단계에 가서야 안다."""
     c, h = user
     pid = _ra_procedure(c, h)
     r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan",
@@ -1074,6 +1074,22 @@ def test_RA_연결이_없으면_시작_전에_말한다(user):
     w = " ".join(r.json().get("warnings") or [])
     # 어디서 등록하는지까지 말한다 — 토큰 화면이 탭으로 나뉘어 RA 연결은 '외부 연결' 탭이다(docs/ui-refresh D-16)
     assert "Report Archive 연결이 없습니다" in w and "/tokens?tab=connect" in w, r.json()
+
+
+def test_사람별_위임이_켜진_박스에서는_연결_없음을_말하지_않는다(user):
+    """RA_SSO_SECRET 이 있으면 게이트웨이가 호출마다 그 사람 토큰을 받는다(ste 방식, docs/sso-delegation) — 등록할 것이
+    없으니 '연결이 없습니다' 는 거짓 경고다. 부서도 RA 가 홈 부서로 정하므로 '워크스페이스를 안 골랐다' 도 말하지 않는다."""
+    c, h = user
+    s = app.dependency_overrides[get_settings]()
+    app.dependency_overrides[get_settings] = lambda: s.model_copy(update={"ra_sso_secret": "x" * 32})
+    me = c.get("/auth/me", headers=h).json()
+    pid = _ra_procedure(c, h)
+    for conn in (None, {"token": "tok", "workspace": ""}):
+        if conn:
+            c.app.state.user_store.set_connection(email=me["email"], service="reportarchive", **conn)
+        r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan",
+                                           "vars": {"t": "보고서"}}, headers=h)
+        assert r.status_code == 202 and "warnings" not in r.json(), (conn, r.json())
 
 
 def test_사전검사는_막지_않는다(user):
