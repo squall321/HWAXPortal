@@ -93,6 +93,25 @@ systems:
     url: /report-archive/api/auth/portal-callback   # launch 토큰이 여기로 자동 POST(nginx STRIP → RA /api/auth/portal-callback)
     sort_order: 40
 
+  - id: testscope
+    name: TestScope
+    tagline: 시험 항목 지도 — 물성·시험·장비
+    description: >-
+      물성·시험·장비를 잇는 시험 항목 지도. 어떤 물성을 어떤 시험으로, 어느 장비에서 얻는지
+      한 자리에서 찾습니다.
+    accent: cyan
+    category: Testing
+    status: available
+    # TestScope 는 그 박스에 있을 때만 켠다 — 목적지는 routes.local.env 의 `testscope=`(nginx /testscope/ 가 함께 생긴다).
+    # 라우트가 없으면 registry 가 coming_soon + 숨김으로 내린다 — 콜백 url 만으로 켜면 없는 서비스로 로그인 토큰을 보낸다.
+    # Claude·챗의 TestScope 호출은 이 타일과 따로 — 게이트웨이가 사람별로 위임한다(infra/.env 의 TESTSCOPE_SSO_SECRET,
+    # ste 방식). 포털은 TestScope 토큰을 쥐지 않는다(docs/sso-delegation/server-setup.md B).
+    integration_type: jwt-handoff
+    audience: testscope                        # token `aud`; TestScope PORTAL_AUDIENCE 와 같아야 한다
+    url: /testscope/api/auth/portal-callback   # launch 토큰이 여기로 자동 POST(nginx STRIP → TestScope /api/auth/portal-callback)
+    hide_unless_routed: true
+    sort_order: 45
+
   - id: smart-twin-cluster
     name: Smart Twin Cluster
     tagline: 시뮬레이션 자동화 & AI 분석

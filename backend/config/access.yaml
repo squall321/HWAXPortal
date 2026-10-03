@@ -66,6 +66,13 @@ platforms:
     label: Report Archive
     systems: [report-archive]
     gateway: [reportarchive]
+  - id: testscope
+    label: TestScope
+    systems: [testscope]
+    # ⚠ 게이트웨이에 testscope 백엔드를 붙이기 **전에** 여기 적는다(표에 없는 백엔드는 '전체 공개') — update-all 이
+    #   TESTSCOPE_SSO_SECRET 과 `testscope=` 라우트가 있는 박스에서 그 백엔드를 붙인다(docs/sso-delegation).
+    gateway: [testscope]
+    hide_unless_routed: true   # TestScope 가 안 열리는 박스에서는 권한 표·요청에서 뺀다(권한 계산은 그대로)
   - id: smarttwin
     label: SmartTwin 시뮬레이션
     systems: [smart-twin-cluster, ste]

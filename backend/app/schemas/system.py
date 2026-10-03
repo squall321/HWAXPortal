@@ -39,13 +39,14 @@ class LinkedSystem(BaseModel):
     enabled: bool = True
     sort_order: int = 100
     # 목적지(routes 파일·SYS_<ID>_URL)가 없는 박스에서는 '곧 공개' 로도 보이지 않게 **숨긴다** — 사내 전용 연계처럼
-    # 그 박스에서 영영 열릴 일이 없는 타일용(docs/chat-actions). proxy 타일만 목적지로 열리므로 proxy 에만 쓴다.
+    # 그 박스에서 영영 열릴 일이 없는 타일용(docs/chat-actions). 목적지로 열리는 proxy 와, 콜백 url 이 있어도 라우트가
+    # 있을 때만 켜는 jwt-handoff(박스마다 있고 없는 서비스, docs/sso-delegation)에만 쓴다.
     hide_unless_routed: bool = False
 
     @model_validator(mode="after")
     def _hide_needs_proxy(self):
-        if self.hide_unless_routed and self.integration_type != "proxy":
-            raise ValueError(f"{self.id}: hide_unless_routed 는 proxy 타일에만 쓴다")
+        if self.hide_unless_routed and self.integration_type not in ("proxy", "jwt-handoff"):
+            raise ValueError(f"{self.id}: hide_unless_routed 는 proxy·jwt-handoff 타일에만 쓴다")
         return self
 
 

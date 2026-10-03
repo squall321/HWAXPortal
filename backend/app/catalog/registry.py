@@ -73,6 +73,15 @@ class CatalogRegistry:
         # overwrite the callback url. Flip the tile live when it's routed (proxied) or already
         # carries a callback url.
         if s.integration_type in ("jwt-handoff", "saml-handoff"):
+            if s.hide_unless_routed:
+                # 박스마다 있고 없는 서비스(testscope) — 콜백 url 은 늘 있으므로 라우트로만 켠다. url 로 켜면 없는
+                # 서비스로 로그인 토큰을 보내고 nginx 가 SPA 를 200 으로 돌려 조용히 깨진다(docs/sso-delegation).
+                if from_route:
+                    s.status = "available"
+                else:
+                    s.status = "coming_soon"
+                    s.enabled = False
+                return
             if from_route or s.url:
                 s.status = "available"
             return
