@@ -131,6 +131,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | AI Ready Portal 연결(ARP_HOST 한 줄 → 타일 주소·게이트웨이 ARP_BASE, 포털 경유는 보류) | `docs/arp-binding/` (PLAN·checklist·context-notes) |
 | 서비스별 접속 이력(로그인·타일 진입 원장, 정문 요청을 계정과 잇는 연결 ID, 관리자 '접속 이력') | `docs/access-history/` (PLAN·checklist·context-notes) |
 | 게이트웨이 감사에 호출 IP·자격(via) — 누가 어디서 어떤 도구를 불렀나 | `docs/gateway-audit-ip/` (PLAN·checklist·context-notes) |
+| 하위 서비스 계정·토큰 자동 연결(RA·TestScope — 포털 로그인으로 개인 토큰 발급·갱신·회수, TestScope 요구사항·서버 설정) | `docs/conn-autolink/` (PLAN·checklist·context-notes·testscope-requirements·server-setup) |
 | 포털 UI 개선('세련되지 못하다' 원인 넷·결정·단계 0~4, 리뷰 방법은 임시 포털 캡처) | `docs/ui-refresh/` (PLAN·checklist·context-notes) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
