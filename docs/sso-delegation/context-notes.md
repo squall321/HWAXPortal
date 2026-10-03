@@ -107,3 +107,12 @@ TestScope 에는 **없는 것만**(포털 로그인 받기 — 브라우저 콜�
 무시 대상 `frontend/node_modules`·`backend/logs` — 기준 시험과 `npm ci` 가 만든 것). RA 는 처음부터 손대지 않았다(추적 안 되는 셋은 6월 운영 파일).
 그쪽에 필요한 것은 `testscope-request.md`·`ra-request.md` — 조사로 확인한 그쪽 코드 위치(d900254·v0.167.0 기준)를 같이 적어, 받는 쪽이 다시 찾지 않게.
 포털·게이트웨이는 그 계약대로 준비해 두고, 서버 설정(비밀 한 줄)으로 켠다. 시험용 임시 PostgreSQL(55432)·TestScope 가상환경은 스크래치에만 있었다.
+
+## D-15. TestScope 는 구 RA 방식(토큰 등록) — 다른 조직의 포털이라 (2026-10-03, 사용자)
+"TestScope 가 다른 조직의 포털이라 그렇게(구 RA 방식으로) 연결해야 할 것 같다, 다른 주소로 노출되는 거라." 맞다 — 자기 주소로 서는 남의 포털을
+우리 nginx 아래(`/testscope/`)로 끌어오거나 우리 SSO·공유 비밀을 그쪽에 심을 이유가 없다. 그쪽에는 이미 개인 토큰(`tsc_pat_`, 범위)과 토큰 주인을
+돌려주는 `GET /api/auth/me` 가 있어 **그쪽 코드 수정 없이** 붙는다. 사람이 그쪽 토큰을 포털 '외부 연결' 에 등록 → 포털이 `TESTSCOPE_BASE_URL` 로
+주인 이메일을 확인(포털 이메일과 다르면 거절 — RA 와 같은 fail-closed) → 게이트웨이 `PORTAL_CONN_BACKENDS` 가 본인 토큰으로만 부른다(없으면 거부).
+타일은 그쪽 주소로 바로 여는 외부 링크(`systems.local.yaml`). 방금 커밋한 TestScope ste 방식 준비분(`TESTSCOPE_SSO_SECRET`·`per_user_sso.testscope`·
+`testscope=` 라우트 유도·jwt-handoff 타일·testscope-request.md)을 걷었다. RA 는 그대로 — 토큰 등록이 지금도 돌고, RA 쪽이 준비되면 `RA_SSO_SECRET` 로 넘어간다.
+⚠ 다른 조직이라 계정 이메일이 포털과 다를 수 있다 — 그러면 등록이 거절된다. 실제로 그러면 '연결 ID 대응표' 같은 완화가 필요하다(지금은 하지 않음).

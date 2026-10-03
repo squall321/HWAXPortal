@@ -46,7 +46,7 @@
 1. `HEAX_SSO_SECRET` 없이 `POST /api/auth/sso` → **404**.
 2. 넣고 비밀 없이 → **401**, 맞는 비밀 + `X-Heax-User-Email: <있는 사람>` → 200 + `access_token`.
 3. 그 토큰 + `X-Workspace-Slug` 없이 `GET /api/reports?mine=true`(또는 MCP `list_reports`) → 그 사람 홈 부서 기준 결과.
-4. 포털 운영자에게 **같은 비밀 값**을 주세요(포털 `infra/.env` 의 `RA_SSO_SECRET`). 비밀은 메신저 평문 말고 안전한 경로로.
+4. 비밀은 **포털 운영자가 만들어 한 번 전달**합니다(`openssl rand -hex 32`) — 받은 값을 RA `backend/.env` 의 `HEAX_SSO_SECRET` 에 넣어 주세요. 포털은 같은 값을 `infra/.env` 의 `RA_SSO_SECRET` 에 둡니다. 메신저 평문 말고 안전한 경로로.
 
 ## 5. 포털 쪽은 이미 준비돼 있습니다
 

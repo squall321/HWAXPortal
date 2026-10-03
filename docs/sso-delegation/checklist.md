@@ -3,13 +3,13 @@
 ## 코드(이 박스)
 - [x] 이전안(포털이 토큰을 발급·저장·갱신) 걷기 — 엔진·암호화·로그인 훅·서비스별 연결 화면(D-13)
 - [x] 게이트웨이 `strip_headers` · 옛 페이지 이름 문구
-- [ ] 게이트웨이 provision — RA_SSO_SECRET·TESTSCOPE_SSO_SECRET → per_user_sso · testscope 백엔드 · expires_in 반영 캐시
-- [ ] 포털 — RA_SSO_SECRET·ra_sso.py · PPT 가져오기 · 사전검사 · 연결 화면 모드 · 배선 설정 항목 · start.sh·update-all
+- [x] 게이트웨이 provision — RA_SSO_SECRET·TESTSCOPE_SSO_SECRET → per_user_sso · testscope 백엔드 · expires_in 반영 캐시
+- [x] 포털 — RA_SSO_SECRET·ra_sso.py · PPT 가져오기 · 사전검사 · 연결 화면 모드 · 배선 설정 항목 · start.sh·update-all
 - [x] 포털 — TestScope 타일(라우트 있을 때만) · plat:testscope
-- [ ] 포털 화면 — RA 카드 sso 모드 · 데스크톱 안 Claude Code 안내
-- [ ] 배치파일 — CLI 없어도 Claude Code 사용자 설정에 등록(D-9), 자리는 Claude Code 규칙(D-11) · 시험
-- [ ] TestScope — /api/auth/sso(기계 자격) · portal-callback · 접두 경로 · 로그인 오류 · 접속 이력 · ADR 0010 · 문서 · 0.50.0 · 생성물
-- [ ] 검토(반박 검증) → 고침 → 시험
+- [x] 포털 화면 — RA 카드 sso 모드 · 데스크톱 안 Claude Code 안내
+- [x] 배치파일 — CLI 없어도 Claude Code 사용자 설정에 등록(D-9), 자리는 Claude Code 규칙(D-11) · 시험
+- [x] TestScope — 토큰 등록(구 RA 방식, D-15): 외부 연결 카드 · 주인 확인 · 게이트웨이 PORTAL_CONN · 외부 링크 타일 · ste 방식 준비분 걷기
+- [ ] 검토(반박 검증) — 사용자 요청으로 생략, 전체 시험으로 대신(포털 1117 · 게이트웨이 137)
 
 ## 문서
 - [x] PLAN(ste 방식으로 다시) · ra-request(RA 담당용) · server-setup · context-notes D-9~D-13
