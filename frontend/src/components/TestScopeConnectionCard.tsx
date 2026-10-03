@@ -1,4 +1,4 @@
-// TestScope 연결 카드 — 다른 조직의 포털이라 그쪽 개인 토큰(tsc_pat_…)을 등록해 Claude·챗이 TestScope 를 내 명의로 부르게 한다.
+// TestScope 연결 카드 — 위임(sso)이면 포털 로그인으로 본인 명의라 안내만, 아니면 다른 조직 포털의 개인 토큰(tsc_pat_…)을 등록해 Claude·챗이 TestScope 를 내 명의로 부르게 한다.
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch, errorDetail } from '../api/client';
 import '../styles/tokenpage.css';
@@ -8,6 +8,10 @@ interface TsMeta {
   created_at: number;
 }
 
+/** sso = 게이트웨이가 공유 비밀로 그 사람의 TestScope 토큰을 그때그때 받는다(ste 방식, RA 와 같은 갈래) — 붙여넣을 것이 없다.
+ *  필드가 없으면(이 커밋 이전 백엔드) token 이다 — 위임이 켜졌다고 단정하면 등록 칸이 사라진다. */
+type TsMode = 'sso' | 'token';
+
 export function TestScopeConnectionCard() {
   const [meta, setMeta] = useState<TsMeta | null>(null);
   // 켜진 박스에서만 보인다 — 필드가 없으면(이 커밋 이전 백엔드) 꺼진 것으로 읽는다.
@@ -15,13 +19,19 @@ export function TestScopeConnectionCard() {
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [mode, setMode] = useState<TsMode>('token');
 
   const reload = useCallback(() => {
     apiFetch('/auth/connections')
       .then(async (r) => {
         if (!r.ok) return;
-        const b = (await r.json()) as { testscope?: TsMeta | null; testscope_enabled?: boolean };
+        const b = (await r.json()) as {
+          testscope?: TsMeta | null;
+          testscope_enabled?: boolean;
+          testscope_mode?: TsMode;
+        };
         setEnabled(b.testscope_enabled === true);
+        setMode(b.testscope_mode === 'sso' ? 'sso' : 'token');
         setMeta(b.testscope ?? null);
       })
       .catch(() => {});
@@ -60,7 +70,8 @@ export function TestScopeConnectionCard() {
         const b = (await r.json().catch(() => ({}))) as { detail?: unknown };
         throw new Error(errorDetail(b.detail, '해제에 실패했습니다.'));
       }
-      setMsg({ ok: true, text: '연결을 해제했습니다.' });
+      // 위임에서 '연결을 해제했습니다' 라고 하면 TestScope 가 끊긴 것으로 읽힌다 — 지운 것은 옛 토큰뿐이다.
+      setMsg({ ok: true, text: mode === 'sso' ? '예전 토큰을 지웠습니다.' : '연결을 해제했습니다.' });
       reload();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : '해제에 실패했습니다.' });
@@ -70,6 +81,30 @@ export function TestScopeConnectionCard() {
   };
 
   if (!enabled) return null;
+  // 위임 — 붙여넣기를 숨긴다(docs/sso-delegation).
+  if (mode === 'sso')
+    return (
+      <div className="ra-card">
+        <h2>TestScope 연결</h2>
+        <p className="ra-auto">
+          TestScope 는 <b>포털 로그인으로 본인 명의</b>로 연결됩니다 — 등록할 것이 없습니다.
+        </p>
+        {/* 옛 토큰이 남아 있으면 그 사실을 보인다 — 안 보이면 '아직 그 토큰으로 부르나?' 를 알 길이 없다. */}
+        {meta ? (
+          <p className="ra-status">
+            예전에 등록한 토큰(<code>…{meta.tail}</code>) — 지금은 쓰지 않습니다
+            <button className="btn-secondary tok-btn-sm" onClick={() => void remove()} disabled={busy}>
+              해제
+            </button>
+          </p>
+        ) : (
+          <p className="ra-hint ra-below">
+            TestScope 토큰(<code>tsc_pat_…</code>)을 붙여 넣던 예전 방식은 쓰지 않습니다.
+          </p>
+        )}
+        {msg && <p className={`ra-msg${msg.ok ? '' : ' is-err'}`}>{msg.text}</p>}
+      </div>
+    );
   return (
     <div className="ra-card">
       <h2>TestScope 연결</h2>

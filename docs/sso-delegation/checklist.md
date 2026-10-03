@@ -9,16 +9,19 @@
 - [x] 포털 화면 — RA 카드 sso 모드 · 데스크톱 안 Claude Code 안내
 - [x] 배치파일 — CLI 없어도 Claude Code 사용자 설정에 등록(D-9), 자리는 Claude Code 규칙(D-11) · 시험
 - [x] TestScope — 토큰 등록(구 RA 방식, D-15): 외부 연결 카드 · 주인 확인 · 게이트웨이 PORTAL_CONN · 외부 링크 타일 · ste 방식 준비분 걷기
-- [ ] 검토(반박 검증) — 사용자 요청으로 생략, 전체 시험으로 대신(포털 1117 · 게이트웨이 137)
+- [x] TestScope 두 방식(D-16) — `TESTSCOPE_SSO_SECRET` → `per_user_sso.testscope` · `testscope_mode` · 카드 sso 모드 · start.sh·update-all
+- [x] 되돌리기 실제로 — 비밀을 비우면 update-all 이 `PER_USER_SSO_OFF` 로 게이트웨이 위임을 지운다(D-17)
+- [ ] 검토(반박 검증) — 사용자 요청으로 생략, 전체 시험으로 대신(포털 1126 · 게이트웨이 144)
 
 ## 문서
 - [x] PLAN(ste 방식으로 다시) · ra-request(RA 담당용) · server-setup · context-notes D-9~D-13
-- [ ] 업데이트 이력 · CLAUDE.md 표(했다)
+- [x] CLAUDE.md 표 · testscope-request(선택) · server-setup B-2 · context-notes D-14~D-17
+- [x] 업데이트 이력
 
 ## 배포
 - [ ] 커밋(의미 단위) · push(포털·게이트웨이·TestScope — TestScope 는 push 가 릴리스를 만든다, 확인 후) · 빌드 · Drive · dev 재기동
 
 ## 서버(사람 몫 — server-setup.md)
 - [ ] RA 담당 — ra-request(heax.py 되살리기 + 홈 부서) · HEAX_SSO_SECRET
-- [ ] cae00 — RA_SSO_SECRET · TESTSCOPE_SSO_SECRET · routes.local.env testscope= · update-all
-- [ ] TestScope 서버 — v0.50.0 · HEAX_SSO_SECRET · PORTAL_JWKS_URL · MCP 도달
+- [ ] cae00 — RA_SSO_SECRET · TESTSCOPE_BASE_URL · systems.local.yaml testscope · provision.env TESTSCOPE_MCP_URL · (선택) TESTSCOPE_SSO_SECRET · update-all
+- [ ] TestScope 서버 — MCP(:8022) 도달 · (선택, B-2) `/api/auth/sso` + HEAX_SSO_SECRET

@@ -1,4 +1,4 @@
-# update-all 이 RA 사람별 위임(ste 방식) 값을 infra/.env 에서 읽어 게이트웨이 프로비저닝까지 나르는지(+ TestScope 기대 여부)
+# update-all 이 RA·TestScope 사람별 위임(ste 방식) 값을 infra/.env 에서 읽어 게이트웨이 프로비저닝까지 나르는지(+ TestScope 기대 여부)
 """docs/sso-delegation PLAN §2-2. 운영자가 할 일은 infra/.env 에 비밀 한 줄뿐이어야 한다.
 그 한 줄이 조용히 안 닿는 길이 셋 있었다 — 그것을 고정한다.
 
@@ -8,7 +8,8 @@
   3. 전달 — provision.env 는 소싱만 되므로 자식이 못 본다. 대입어 사슬로 하나씩 넘긴다(백틱 주석 금지 — 3라운드 실사고).
 
 그리고 **만들지 않는다**(start.sh 2d) — RA 쪽이 준비되기 전에 비밀이 생기면 게이트웨이가 RA 호출을 전부 거부한다.
-TestScope 는 다른 조직의 포털이라 위임이 아니라 토큰 등록이다 — 기대 신호는 게이트웨이 provision.env 의 TESTSCOPE_MCP_URL 이다.
+TestScope 도 RA 와 같은 두 갈래다 — TESTSCOPE_SSO_SECRET 이 비면 토큰 등록, 있으면 위임(주소는 backend/.env 의 TESTSCOPE_BASE_URL 에서).
+백엔드 기대 신호는 위임과 따로, 게이트웨이 provision.env 의 TESTSCOPE_MCP_URL 이다.
 블록은 원문 그대로 떼어 돌린다(복제하면 뜻이 갈린다).
 """
 import json
@@ -49,7 +50,8 @@ def _derive(tmp_path: Path, *, infra_env: str = "", backend_env: str | None = No
         (tmp_path / "gw").mkdir(exist_ok=True)
         (tmp_path / "gw/provision.env").write_text(gw_env, encoding="utf-8")
         gw = str(tmp_path / "gw")
-    keys = ("RA_SSO_SECRET", "RA_SSO_URL", "TESTSCOPE_MCP_URL", "TESTSCOPE_EXPECTED")
+    keys = ("RA_SSO_SECRET", "RA_SSO_URL", "TESTSCOPE_MCP_URL", "TESTSCOPE_EXPECTED",
+            "TESTSCOPE_SSO_SECRET", "TESTSCOPE_SSO_URL")
     script = "\n".join([
         "set -uo pipefail",                      # update-all 과 같은 셸 옵션 — 미정의 변수가 터지는지도 함께 본다
         f'SELF_REPO="{repo}"; ROUTES_ENV="{base_f}"; GW_DIR="{gw}"', pre,
@@ -122,7 +124,7 @@ def test_an_exported_testscope_mcp_url_wins(tmp_path):
 
 
 def test_testscope_is_not_expected_without_its_mcp_url_and_says_so(tmp_path):
-    """안 쓰는 박스가 보통이다 — 그래도 '안 켠 기능' 으로 한 줄 남긴다(켜려면 무엇). 옛 위임 비밀·라우트는 더는 신호가 아니다."""
+    """안 쓰는 박스가 보통이다 — 그래도 '안 켠 기능' 으로 한 줄 남긴다(켜려면 무엇). 위임 비밀·라우트는 백엔드 기대 신호가 아니다."""
     off = _derive(tmp_path / "a", infra_env="TESTSCOPE_SSO_SECRET=x\n", local="testscope=http://ts:8020/\n",
                   gw_env="# TESTSCOPE_MCP_URL=\n")
     assert off["TESTSCOPE_EXPECTED"] == "0" and off["TESTSCOPE_MCP_URL"] == ""
@@ -131,9 +133,62 @@ def test_testscope_is_not_expected_without_its_mcp_url_and_says_so(tmp_path):
     assert no_gw["TESTSCOPE_EXPECTED"] == "0", "게이트웨이 리포가 없어도 set -u 아래 안 터진다"
 
 
-def test_no_testscope_delegation_is_left():
-    """TestScope 는 위임 비밀을 쓰지 않는다 — 남은 독자·전달·드리프트가 있으면 반쯤 걷힌 것이다."""
-    assert "TESTSCOPE_SSO" not in UA and "_testscope_route_url" not in UA
+# ── TestScope 위임(두 갈래) — RA 와 같은 독자, 주소는 backend/.env 의 TESTSCOPE_BASE_URL ─────────────────
+TS_SECRET = "ts-secret-0123456789abcdef0123456789"
+
+
+def test_testscope_secret_is_read_like_the_ra_one(tmp_path):
+    got = _derive(tmp_path, infra_env=f'TESTSCOPE_SSO_SECRET="{TS_SECRET}"   # TestScope 운영과 같은 값\n')
+    assert got["TESTSCOPE_SSO_SECRET"] == TS_SECRET
+    got = _derive(tmp_path / "commented", infra_env="# TESTSCOPE_SSO_SECRET=   # ⚠ 값을 정해야 한다\n")
+    assert got["TESTSCOPE_SSO_SECRET"] == ""
+    got = _derive(tmp_path / "env", infra_env=f"TESTSCOPE_SSO_SECRET={TS_SECRET}\n", pre='TESTSCOPE_SSO_SECRET="from-env"')
+    assert got["TESTSCOPE_SSO_SECRET"] == "from-env", "내보낸 값이 이긴다"
+    blk = _derive_block()
+    assert ('if [ -z "${TESTSCOPE_SSO_SECRET:-}" ]; then TESTSCOPE_SSO_SECRET="$(_ra_envv TESTSCOPE_SSO_SECRET)"; fi'
+            in blk)
+    assert not re.search(r"\$\{TESTSCOPE_SSO_SECRET:-[^}]", UA), "리터럴 기본값 금지 — 만들지 않는다"
+
+
+def test_testscope_sso_url_comes_from_its_base_url(tmp_path):
+    got = _derive(tmp_path, infra_env=f"TESTSCOPE_SSO_SECRET={TS_SECRET}\n",
+                  backend_env='TESTSCOPE_BASE_URL="http://ts.example:8020/"   # 그쪽 웹\n')
+    assert got["TESTSCOPE_SSO_URL"] == "http://ts.example:8020/api/auth/sso", "주석·따옴표·끝 / 를 벗긴다"
+    assert "TestScope 위임 주소 유도" in got["_log"]
+    got = _derive(tmp_path / "exp", infra_env=f"TESTSCOPE_SSO_SECRET={TS_SECRET}\n",
+                  backend_env="TESTSCOPE_BASE_URL=http://file:8020\n", pre='TESTSCOPE_BASE_URL="http://env:8020"')
+    assert got["TESTSCOPE_SSO_URL"] == "http://env:8020/api/auth/sso", "내보낸 TESTSCOPE_BASE_URL 이 이긴다(RA_BASE_URL 과 같다)"
+
+
+def test_testscope_sso_url_is_left_alone_when_set_or_when_off(tmp_path):
+    got = _derive(tmp_path, infra_env=f"TESTSCOPE_SSO_SECRET={TS_SECRET}\n", backend_env="TESTSCOPE_BASE_URL=http://b:8020\n",
+                  pre='TESTSCOPE_SSO_URL="http://given/sso"')
+    assert got["TESTSCOPE_SSO_URL"] == "http://given/sso", "명시한 값이 이긴다"
+    got = _derive(tmp_path / "off", backend_env="TESTSCOPE_BASE_URL=http://b:8020\n")
+    assert got["TESTSCOPE_SSO_URL"] == "", "비밀이 없으면 유도하지 않는다 — 토큰 등록 그대로"
+    assert "TestScope 위임" not in got["_log"]
+
+
+def test_testscope_secret_without_an_address_says_so(tmp_path):
+    """게이트웨이에 TestScope 기본 호스트가 없다 — 조용히 비워 두면 위임이 안 생긴 채 초록으로 보인다."""
+    got = _derive(tmp_path, infra_env=f"TESTSCOPE_SSO_SECRET={TS_SECRET}\n", backend_env="TESTSCOPE_BASE_URL=\n")
+    assert got["TESTSCOPE_SSO_URL"] == ""
+    assert "⚠ TESTSCOPE_SSO_SECRET" in got["_log"] and "TESTSCOPE_BASE_URL" in got["_log"]
+    said = [ln for ln in got["_log"].splitlines() if not re.match(r"^[A-Z_]+=", ln)]   # 시험이 덧붙인 값 덤프는 뺀다
+    assert said and not any(TS_SECRET in ln for ln in said), "비밀은 출력에 안 남는다"
+
+
+def test_ra_and_testscope_delegation_do_not_mix(tmp_path):
+    """서비스마다 따로 — 한쪽 비밀이 다른 쪽 주소를 유도하거나 기대 여부를 바꾸지 않는다."""
+    got = _derive(tmp_path, infra_env=f"RA_SSO_SECRET={SECRET}\n",
+                  backend_env="RA_BASE_URL=http://ra:3000\nTESTSCOPE_BASE_URL=http://ts:8020\n")
+    assert got["RA_SSO_URL"] == "http://ra:3000/api/auth/sso"
+    assert got["TESTSCOPE_SSO_SECRET"] == "" and got["TESTSCOPE_SSO_URL"] == ""
+    got = _derive(tmp_path / "ts", infra_env=f"TESTSCOPE_SSO_SECRET={TS_SECRET}\n",
+                  backend_env="RA_BASE_URL=http://ra:3000\nTESTSCOPE_BASE_URL=http://ts:8020\n")
+    assert got["RA_SSO_SECRET"] == "" and got["RA_SSO_URL"] == ""
+    assert got["TESTSCOPE_SSO_URL"] == "http://ts:8020/api/auth/sso"
+    assert got["TESTSCOPE_EXPECTED"] == "0", "위임 비밀은 백엔드 기대 신호가 아니다(백엔드는 TESTSCOPE_MCP_URL)"
 
 
 def _calc_missing(have: list[str], env: dict) -> list[str]:
@@ -157,10 +212,11 @@ def test_calc_missing_expects_testscope_only_when_flagged():
 
 
 # ── 2. 방아쇠 — config 에 위임이 없거나 비밀이 다르면 재프로비저닝 ───────────────
-def _drift(tmp_path: Path, cfg, *, ra="") -> str:
+def _drift(tmp_path: Path, cfg, *, ra="", ts="", ts_x="1") -> str:
     f = tmp_path / "gateway_config.json"
     f.write_text(cfg if isinstance(cfg, str) else json.dumps(cfg), encoding="utf-8")
-    script = f'RA_SSO_SECRET="{ra}"; TESTSCOPE_EXPECTED="1"\n{_fn("_sso_deleg_drift")}\n_sso_deleg_drift "{f}"'
+    script = (f'RA_SSO_SECRET="{ra}"; TESTSCOPE_SSO_SECRET="{ts}"; TESTSCOPE_EXPECTED="{ts_x}"\n'
+              f'{_fn("_sso_deleg_drift")}\n_sso_deleg_drift "{f}"')
     p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
     assert p.returncode == 0, p.stderr
     return p.stdout.strip()
@@ -177,23 +233,50 @@ def test_missing_or_stale_ra_delegation_triggers_reprovisioning(tmp_path):
     assert _drift(tmp_path, {}, ra="") == "", "안 켠 박스는 조용하다"
 
 
-def test_testscope_is_never_a_delegation_drift(tmp_path):
-    """TestScope 가 기대돼도(TESTSCOPE_EXPECTED=1) 위임은 보지 않는다 — 보면 매 실행 헛된 재프로비저닝을 돈다."""
-    assert _drift(tmp_path, _cfg(reportarchive=SECRET), ra=SECRET) == ""
-    assert "testscope" not in _fn("_sso_deleg_drift").lower()
+def test_testscope_delegation_drift_when_its_secret_is_set(tmp_path):
+    TS = "ts-secret-0123456789abcdef0123456789"
+    assert _drift(tmp_path, {}, ts=TS) == "testscope_sso", "비밀을 넣었는데 config 에 위임이 없다"
+    assert _drift(tmp_path, _cfg(testscope="old"), ts=TS) == "testscope_sso", "비밀을 바꿨다"
+    assert _drift(tmp_path, _cfg(testscope=TS), ts=TS) == ""
+    assert _drift(tmp_path, {}, ra=SECRET, ts=TS) == "reportarchive_sso testscope_sso", "둘 다 — 키 이름만, 정렬"
+    assert _drift(tmp_path, _cfg(reportarchive=SECRET), ra=SECRET) == "", "비밀이 없으면 토큰 등록이다 — 보지 않는다"
+
+
+def test_testscope_delegation_is_not_checked_without_its_backend(tmp_path):
+    """백엔드를 기대하지 않는 박스(TESTSCOPE_MCP_URL 없음) — 위임이 할 일이 없고, 보면 매 실행 헛된 재프로비저닝을 돈다."""
+    TS = "ts-secret-0123456789abcdef0123456789"
+    assert _drift(tmp_path, {}, ts=TS, ts_x="0") == ""
+    assert _drift(tmp_path, {}, ra=SECRET, ts=TS, ts_x="0") == "reportarchive_sso", "RA 는 그대로 본다"
+    assert 'TS_X="${TESTSCOPE_EXPECTED:-0}"' in _fn("_sso_deleg_drift")
+
+
+def test_emptied_secret_with_a_leftover_delegation_triggers_turning_it_off(tmp_path):
+    """되돌리기 — infra/.env 에서 비밀을 비우면 포털 화면은 바로 '토큰 등록' 인데, 게이트웨이 위임은 provision 이 이어받아 남았다.
+    남은 위임이 재프로비저닝의 방아쇠다(provision 이 PER_USER_SSO_OFF 로 지운다). 안 켠 박스는 여전히 조용하다."""
+    TS = "ts-secret-0123456789abcdef0123456789"
+    assert _drift(tmp_path, _cfg(reportarchive="old")) == "reportarchive_sso_off"
+    assert _drift(tmp_path, _cfg(testscope="old")) == "testscope_sso_off"
+    assert _drift(tmp_path, _cfg(testscope="old"), ts_x="0") == "testscope_sso_off", "백엔드가 없어도 남은 위임은 지운다"
+    assert _drift(tmp_path, _cfg(reportarchive=SECRET, testscope="old"), ra=SECRET) == "testscope_sso_off", "하나만 끈다"
+    assert _drift(tmp_path, _cfg(reportarchive="old"), ts=TS) == "reportarchive_sso_off testscope_sso"
+    assert _drift(tmp_path, _cfg(ste="x")) == "", "ste 등 다른 위임은 이 점검의 대상이 아니다"
+    i = UA.index('for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do')
+    assert "*_sso_off)" in UA[i:UA.index("done", i)], "끄기는 끄기라고 알린다"
 
 
 def test_drift_check_survives_odd_configs_and_keeps_secrets_off_argv(tmp_path):
     assert _drift(tmp_path, "{not json", ra=SECRET) == ""
     assert _drift(tmp_path, {"heax_registry": {"per_user_sso": {"reportarchive": "str"}}}, ra=SECRET) == "reportarchive_sso"
     fn = _fn("_sso_deleg_drift")
-    assert 'python3 - "$1"' in fn and "$RA_SSO_SECRET\"" not in fn.split("python3", 1)[1].splitlines()[0]
+    argv = fn.split("python3", 1)[1].splitlines()[0]
+    assert 'python3 - "$1"' in fn and "$RA_SSO_SECRET\"" not in argv and "TESTSCOPE_SSO_SECRET" not in argv
+    assert 'TS_S="${TESTSCOPE_SSO_SECRET:-}"' in fn.split("python3", 1)[0], "비밀은 환경변수로만 넘긴다"
 
 
 def test_drift_feeds_missing_and_the_post_check():
     i = UA.index('for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do')
     assert UA.index("calc_missing \"$H\")\"") < i < UA.index('if [ -n "$MISSING" ]; then', i)
-    assert 'MISSING="${MISSING:+$MISSING }$_k"' in UA[i:i + 400]
+    assert 'MISSING="${MISSING:+$MISSING }$_k"' in UA[i:UA.index("done", i)]
     post = UA[UA.index('STILL="$(calc_missing "$H")"'):UA.index("주소 드리프트 해소")]
     assert '_sso_left="$(_sso_deleg_drift "$GW_DIR/gateway_config.json")"' in post, "재프로비저닝 뒤에도 어긋나면 ✗ 다"
 
@@ -208,12 +291,13 @@ def test_the_provisioner_actually_receives_the_values(tmp_path):
     """텍스트가 아니라 **실행**으로 본다 — 대입어 사슬이 깨지면 provision 이 아예 안 돈다(3라운드 실사고)."""
     gw = tmp_path / "gw"
     gw.mkdir()
-    keys = ("RA_SSO_SECRET", "RA_SSO_URL", "TESTSCOPE_MCP_URL")
+    keys = ("RA_SSO_SECRET", "RA_SSO_URL", "TESTSCOPE_MCP_URL", "TESTSCOPE_SSO_SECRET", "TESTSCOPE_SSO_URL")
     (gw / "provision-config.sh").write_text(
         "#!/usr/bin/env bash\n" + "".join(f'printf "%s=%s\\n" {k} "${k}" >> "$PWD/ran.marker"\n' for k in keys))
     cmd = _reprovision_cmd()
     assert not any(ln.lstrip().startswith("`") for ln in cmd.splitlines())
-    vals = {"RA_SSO_SECRET": SECRET, "RA_SSO_URL": "http://ra/api/auth/sso", "TESTSCOPE_MCP_URL": "http://ts:8022/mcp"}
+    vals = {"RA_SSO_SECRET": SECRET, "RA_SSO_URL": "http://ra/api/auth/sso", "TESTSCOPE_MCP_URL": "http://ts:8022/mcp",
+            "TESTSCOPE_SSO_SECRET": "ts-secret-xyz", "TESTSCOPE_SSO_URL": "http://ts:8020/api/auth/sso"}
     # 부모 셸 변수일 뿐 export 하지 않는다 — update-all 도 export 하지 않는다(사슬이 넘겨야 자식이 본다)
     script = f'set -u; GW_DIR="{gw}"\n' + "".join(f'{k}="{v}"\n' for k, v in vals.items()) + f"{cmd}\necho rc=$?"
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
@@ -222,17 +306,34 @@ def test_the_provisioner_actually_receives_the_values(tmp_path):
     assert got == vals
 
 
+def test_the_provisioner_is_told_which_delegations_to_turn_off(tmp_path):
+    """비밀이 빈 서비스만 PER_USER_SSO_OFF 로 — 실행으로 본다(대입어 사슬)."""
+    gw = tmp_path / "gw"
+    gw.mkdir()
+    (gw / "provision-config.sh").write_text('#!/usr/bin/env bash\nprintf "%s" "$PER_USER_SSO_OFF" > "$PWD/off.marker"\n')
+    i = UA.index('_sso_off="$(')
+    pre = UA[i:UA.index("\n", i)]
+    cmd = _reprovision_cmd()
+    for ra, ts, want in (("", "", "reportarchive testscope"), (SECRET, "", "testscope"),
+                         ("", "ts-s", "reportarchive "), (SECRET, "ts-s", "")):
+        script = f'set -u; GW_DIR="{gw}"; RA_SSO_SECRET="{ra}"; TESTSCOPE_SSO_SECRET="{ts}"\n{pre}\n{cmd}\necho rc=$?'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+        assert "rc=0" in r.stdout, r.stderr
+        assert (gw / "off.marker").read_text() == want, (ra, ts)
+
+
 # ── 만들지 않는다 ────────────────────────────────────────────────────────────
-def test_start_sh_passes_the_ra_secret_but_never_generates_it():
-    """RA 는 남의 서버라 포털이 값을 심을 수 없다 — 먼저 생기면 게이트웨이가 RA 호출을 전부 거부한다."""
-    assert '--env "RA_SSO_SECRET=${RA_SSO_SECRET:-}"' in START
-    k = "RA_SSO_SECRET"
-    assert not re.search(rf"^\s*{k}=\"\$\(", START, re.M), f"{k} 를 만들지 않는다"
-    assert not re.search(rf"printf '{k}=", START) and f"s|^{k}=" not in START, f"{k} 를 infra/.env 에 쓰지 않는다"
-    assert "TESTSCOPE_SSO_SECRET" not in START, "TestScope 는 토큰 등록이다 — 위임 비밀이 없다"
+def test_start_sh_passes_the_secrets_but_never_generates_them():
+    """RA·TestScope 는 남의 서버라 포털이 값을 심을 수 없다 — 먼저 생기면 게이트웨이가 그 서비스 호출을 전부 거부한다.
+    포털은 TestScope 쪽 비밀을 화면 갈래(testscope_mode)로만 쓰지만, 넘기지 않으면 카드가 늘 '토큰 등록' 으로 보인다."""
+    for k in ("RA_SSO_SECRET", "TESTSCOPE_SSO_SECRET"):
+        assert f'--env "{k}=${{{k}:-}}"' in START
+        assert not re.search(rf"^\s*{k}=\"\$\(", START, re.M), f"{k} 를 만들지 않는다"
+        assert not re.search(rf"printf '{k}=", START) and f"s|^{k}=" not in START, f"{k} 를 infra/.env 에 쓰지 않는다"
 
 
-def test_env_example_declares_the_ra_secret_empty_and_no_testscope_secret():
+def test_env_example_declares_both_secrets_empty():
     lines = (ROOT / "infra/.env.example").read_text(encoding="utf-8").splitlines()
     assert "RA_SSO_SECRET=" in lines
-    assert not any("TESTSCOPE_SSO_SECRET" in ln for ln in lines)
+    assert "TESTSCOPE_SSO_SECRET=" in lines
+    assert not [ln for ln in lines if re.match(r"^(RA|TESTSCOPE)_SSO_SECRET=.", ln)], "값을 적어 두지 않는다"

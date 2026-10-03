@@ -235,6 +235,9 @@ def list_connections(
     out["reportarchive_mode"] = "sso" if settings.ra_sso_secret else "token"
     # TestScope 가 없는 박스에서는 화면이 카드를 안 그린다 — 주소의 있고 없음만 준다.
     out["testscope_enabled"] = bool((settings.testscope_base_url or "").strip())
+    # TestScope 도 RA 와 같은 두 갈래다 — "sso" 면 게이트웨이가 그 사람 토큰을 받는다(등록할 것 없음), "token" 이면 토큰 등록.
+    # 등록·해제(PUT/DELETE)는 어느 갈래든 열어 둔다 — 위임으로 넘어간 뒤에도 옛 토큰을 지울 수 있어야 한다.
+    out["testscope_mode"] = "sso" if settings.testscope_sso_secret else "token"
     return out
 
 

@@ -24,6 +24,8 @@
 RA 호출이 `mode=as-user-pat` 로 남는다.
 
 되돌리기: cae00 `infra/.env` 의 `RA_SSO_SECRET` 을 비우고 update-all — 종전 '토큰 등록' 방식으로 돌아간다(등록해 둔 토큰은 그대로 남아 있다).
+update-all 출력에 '사람별 위임 끄기: reportarchive' 가 찍히고 게이트웨이 설정의 위임이 지워진다(D-17). `provision-config.sh` 를 손으로 돌리면
+위임을 이어받으니 되돌리기는 update-all 로 한다.
 
 ## B. TestScope — 토큰 등록(구 RA 방식, D-15)
 
@@ -43,6 +45,19 @@ TestScope 카드에 붙여 넣기. TestScope 계정 이메일이 포털 계정 �
 
 확인: ① TestScope 카드에 '연결됨 — 끝자리 …'. ② Claude Code 에서 TestScope 도구(`list_conditions` 등)가 결과를 낸다. ③ 등록하지 않은 사람이 부르면
 'TestScope 연결이 없습니다 … 외부 연결에서 등록' 으로 거부된다(공용 계정으로 대신 부르지 않는다).
+
+### B-2. (선택) TestScope 도 ste 방식으로 — 사람이 토큰을 등록하는 수고를 없앨 때
+
+TestScope 쪽이 [testscope-request.md](testscope-request.md) 의 `/api/auth/sso` 를 넣은 **뒤에만**:
+
+| # | 어디 | 무엇 | 누가 |
+|---|---|---|---|
+| B2-1 | TestScope 서버 `backend\.env` | `HEAX_SSO_SECRET=<비밀>` → 재시작 | TestScope 운영 |
+| B2-2 | cae00 `infra/.env` | `TESTSCOPE_SSO_SECRET=<같은 비밀>` — 위임 주소는 `backend/.env` 의 `TESTSCOPE_BASE_URL` 에서 유도된다 | 포털 운영자 |
+| B2-3 | cae00 | `./infra/scripts/update-all.sh` | 포털 운영자 |
+
+확인: TestScope 카드가 '포털 로그인으로 본인 명의 — 등록할 것 없음'. 되돌리기: `TESTSCOPE_SSO_SECRET` 을 비우고 update-all — 토큰 등록으로 돌아간다(출력에 '사람별 위임 끄기: testscope', D-17).
+⚠ TestScope 가 `/api/auth/sso` 를 넣기 **전에** 비밀을 넣으면 TestScope 호출이 전부 거부된다(게이트웨이가 위임으로만 부른다).
 
 ## C. 함께 보는 곳
 

@@ -5,6 +5,8 @@
   · 거부 사유를 사람 말로 — 401 은 만료·폐기·잘못 복사, 403 은 'read' 범위 없음.
   · 주소(TESTSCOPE_BASE_URL)가 없는 박스는 연결을 내지 않는다 — 화면은 testscope_enabled 로 카드를 가린다.
   · 게이트웨이는 /internal/connections/testscope 로 그 토큰을 읽는다.
+  · RA 와 같은 두 갈래 — TESTSCOPE_SSO_SECRET 이 있으면 testscope_mode 가 "sso"(게이트웨이 위임, 등록할 것 없음), 없으면 "token".
+    값은 비밀의 있고 없음뿐이고, 등록·해제는 어느 갈래든 열려 있다(위임으로 넘어간 뒤 옛 토큰을 지울 수 있게).
 """
 import httpx
 import pytest
@@ -160,7 +162,7 @@ def test_list_carries_testscope_and_whether_it_is_offered(portal, monkeypatch):
     _mock_ts(monkeypatch, _me())
     c = portal()
     body = c.get("/auth/connections").json()
-    assert set(body) == {"reportarchive", "testscope", "reportarchive_mode", "testscope_enabled"}
+    assert set(body) == {"reportarchive", "testscope", "reportarchive_mode", "testscope_enabled", "testscope_mode"}
     assert body["testscope"] is None and body["testscope_enabled"] is True
     assert _put(c).status_code == 200
     got = c.get("/auth/connections")
@@ -180,3 +182,39 @@ def test_the_gateway_reads_the_testscope_token(portal, monkeypatch):
     assert c.get(url, headers={"Authorization": "Bearer nope"}).status_code == 403
     assert c.get("/internal/connections/nope?email=boss@corp.com",
                  headers={"Authorization": f"Bearer {GW}"}).status_code == 404
+
+
+# ── 두 갈래 — 위임 비밀이 있으면 "sso", 없으면 "token" ─────────────────────────────
+TS_SECRET = "ts-sso-test-secret-0123456789abcdef"
+
+
+def test_list_carries_the_testscope_mode_in_both_settings(portal, monkeypatch):
+    _mock_ts(monkeypatch, _me())
+    on = portal(testscope_sso_secret=TS_SECRET).get("/auth/connections")
+    assert on.status_code == 200
+    body = on.json()
+    assert body["testscope_mode"] == "sso"
+    assert body["testscope_enabled"] is True and body["testscope"] is None, "기존 키·모양은 그대로다"
+    assert body["reportarchive_mode"] == "token", "RA 갈래와 섞이지 않는다 — 비밀은 서비스마다 따로"
+    off = portal(testscope_sso_secret="").get("/auth/connections").json()
+    assert off["testscope_mode"] == "token"
+    assert portal().get("/auth/connections").json()["testscope_mode"] == "token", "기본은 토큰 등록"
+
+
+def test_register_and_clear_still_work_in_sso_mode_and_the_secret_never_leaks(portal, monkeypatch):
+    """위임으로 넘어간 박스에서도 옛 등록 토큰을 지울 수 있어야 한다. 비밀은 어떤 응답에도 실리지 않는다."""
+    seen = _mock_ts(monkeypatch, _me())
+    c = portal(testscope_sso_secret=TS_SECRET)
+    texts = []
+    r = _put(c)
+    assert r.status_code == 200, r.text
+    texts.append(r.text)
+    assert _stored(c) == {"token": TOKEN, "workspace": ""}
+    for path in ("/auth/connections", "/internal/connections/testscope?email=boss@corp.com"):
+        texts.append(c.get(path, headers={"Authorization": f"Bearer {GW}"} if "internal" in path else {}).text)
+    r = c.delete("/auth/connections/testscope", headers={"X-CSRF-Token": c.cookies.get("hwax_csrf")})
+    assert r.status_code == 200 and _stored(c) is None
+    texts.append(r.text)
+    texts.append(c.get("/auth/connections").text)
+    assert all(TS_SECRET not in t for t in texts), "값은 비밀의 있고 없음뿐이다"
+    assert all(TS_SECRET not in str(q.headers) + str(q.url) for q in seen), "포털은 TestScope 를 이 비밀로 부르지 않는다"

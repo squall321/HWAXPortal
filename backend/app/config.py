@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     # TestScope(다른 조직 포털, 그쪽 주소로 노출) — RA 처럼 '토큰 등록' 으로 잇는다. 포털 서버가 붙여 넣은 토큰의 주인을
     # 확인할 때 부르는 API origin 이다. 빈 값이면 이 박스는 TestScope 연결을 내지 않는다(docs/sso-delegation).
     testscope_base_url: str = ""
+    # TestScope 사람별 위임(ste 방식) — RA_SSO_SECRET 과 같은 두 갈래다. 값이 있으면 게이트웨이가 per_user_sso.testscope 로
+    # 그 사람 토큰을 TestScope /api/auth/sso 에서 받고(등록할 것 없음), 비면 위 '토큰 등록' 그대로다. 포털은 TestScope 를 이 비밀로
+    # 부르지 않는다 — **화면 갈래(testscope_mode)를 정하는 표지로만** 쓴다. ⚠ TestScope 전용 값(RA·ste 와 묶지 않는다).
+    # 자동으로 만들지 않는다 — TestScope 쪽이 /api/auth/sso 를 켜기 전에 생기면 게이트웨이가 위임으로만 불러 호출이 거부된다.
+    testscope_sso_secret: str = ""
 
     # ── Session token TTLs (HS256; downstream RS256 launch tokens land in Phase 4) ──
     jwt_issuer: str = "https://hwax.sec.samsung.net"

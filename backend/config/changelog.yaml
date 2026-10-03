@@ -24,7 +24,7 @@ entries:
     items:
       - "개인 토큰 화면의 설정 배치파일이 claude 명령을 따로 설치하지 않은 PC 에서도 Claude Code 사용자 설정에 HWAX 를 등록합니다. 데스크톱 앱 안의 Claude Code 는 데스크톱 설정이 아니라 이 파일을 읽어서, 그동안 데스크톱 채팅에만 보이고 Code 에는 안 보였습니다."
       - "Report Archive 를 SmartTwin(ste)처럼 **포털 로그인 그대로 본인 명의로** 쓰는 연결을 준비했습니다. Report Archive 쪽 설정이 끝나면 켜지고, 그때부터 토큰을 붙여 넣을 필요가 없습니다(그 전까지는 지금처럼 등록)."
-      - "'개인 토큰 › 외부 연결' 에 **TestScope** 카드가 생겼습니다(TestScope 가 연결된 서버에서). TestScope 에서 발급한 개인 토큰을 붙여 넣으면 Claude·챗이 TestScope 를 내 계정으로 씁니다."
+      - "'개인 토큰 › 외부 연결' 에 **TestScope** 카드가 생겼습니다(TestScope 가 연결된 서버에서). TestScope 에서 발급한 개인 토큰을 붙여 넣으면 Claude·챗이 TestScope 를 내 계정으로 씁니다. TestScope 쪽이 준비되면 Report Archive 처럼 등록 없이 포털 로그인으로도 연결할 수 있습니다."
   - date: 2026-10-02
     title: "포털 화면을 **새로 정돈**했습니다 — 메뉴 위치가 바뀌었습니다"
     tag: 수정

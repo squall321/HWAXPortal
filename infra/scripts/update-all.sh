@@ -772,7 +772,7 @@ if [ -n "${RA_SSO_SECRET:-}" ] && [ -z "${RA_SSO_URL:-}" ]; then
   _ra_base="${RA_BASE_URL:-$(_envfile_value "$SELF_REPO/backend/.env" RA_BASE_URL)}"
   [ -n "$_ra_base" ] && RA_SSO_URL="${_ra_base%/}/api/auth/sso" && echo "  · RA 위임 주소 유도: $RA_SSO_URL"
 fi
-# TestScope(다른 조직 포털) — 위임이 아니라 사람이 '외부 연결' 에 등록한 그쪽 토큰으로 부른다(RA 와 같은 토큰 등록, docs/sso-delegation).
+# TestScope(다른 조직 포털) — 기본은 사람이 '외부 연결' 에 등록한 그쪽 토큰으로 부른다(RA 와 같은 토큰 등록, 위임 갈래는 아래, docs/sso-delegation).
 # 이 박스가 TestScope 를 쓰는 신호는 게이트웨이 provision.env 의 TESTSCOPE_MCP_URL 이다(ARP_BASE 와 같은 방식 — 주소가 있다 = 쓴다).
 # §5 가 그 파일을 나중에 소싱하지만 기대 여부(calc_missing)는 여기서 정한다 — 안 보면 백엔드가 빠져도 초록이다.
 if [ -z "${TESTSCOPE_MCP_URL:-}" ] && [ -n "$GW_DIR" ]; then TESTSCOPE_MCP_URL="$(_envfile_value "$GW_DIR/provision.env" TESTSCOPE_MCP_URL)"; fi
@@ -781,6 +781,19 @@ if [ -n "${TESTSCOPE_MCP_URL:-}" ]; then
   TESTSCOPE_EXPECTED=1
 else
   hwax_skip "TestScope MCP 도구" "게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 없어 게이트웨이가 TestScope 를 기대하지 않는다(다른 조직 포털 — 안 쓰는 박스가 보통이다)" "TestScope 를 쓰는 박스는 HWAXMcpGateway/provision.env 에 TESTSCOPE_MCP_URL=<TestScope MCP 주소> 를 적고 재실행(§5 가 재프로비저닝한다)"
+fi
+# TestScope 사람별 위임(ste 방식) — RA 와 같은 두 갈래다(docs/sso-delegation). 비밀이 없으면 위 토큰 등록 그대로, 있으면 게이트웨이가
+# per_user_sso.testscope 로 그 사람 토큰을 TestScope 의 /api/auth/sso 에서 받는다. RA 와 같은 독자로 읽되 **만들지 않는다**(start.sh 2d).
+if [ -z "${TESTSCOPE_SSO_SECRET:-}" ]; then TESTSCOPE_SSO_SECRET="$(_ra_envv TESTSCOPE_SSO_SECRET)"; fi
+# 위임 주소 — 포털이 토큰 주인을 확인할 때 부르는 TestScope 주소(backend/.env 의 TESTSCOPE_BASE_URL)에 /api/auth/sso.
+# RA 와 달리 게이트웨이에 기본 호스트가 없다 — 유도하지 못하면 provision 이 직전 config 값을 잇고, 그것도 없으면 위임을 못 만든다.
+if [ -n "${TESTSCOPE_SSO_SECRET:-}" ] && [ -z "${TESTSCOPE_SSO_URL:-}" ]; then
+  _ts_base="${TESTSCOPE_BASE_URL:-$(_envfile_value "$SELF_REPO/backend/.env" TESTSCOPE_BASE_URL)}"
+  if [ -n "$_ts_base" ]; then
+    TESTSCOPE_SSO_URL="${_ts_base%/}/api/auth/sso"; echo "  · TestScope 위임 주소 유도: $TESTSCOPE_SSO_URL"
+  else
+    echo "  ⚠ TESTSCOPE_SSO_SECRET 은 있는데 TestScope 위임 주소를 모른다 — backend/.env 에 TESTSCOPE_BASE_URL 을 적는다(server-setup.md)."
+  fi
 fi
 
 # ── 5) 게이트웨이 config 정합 — 기대 백엔드가 config에 아예 없으면 재프로비저닝 ──
@@ -821,18 +834,25 @@ print(" ".join(sorted(want - have)))
 PY
 }
 
-# RA 사람별 위임이 게이트웨이 config 에 **이 비밀 그대로** 있나(docs/sso-delegation). heax_registry 안의 항목이라 /health 에
+# RA·TestScope 사람별 위임이 게이트웨이 config 에 **이 비밀 그대로** 있나(docs/sso-delegation). heax_registry 안의 항목이라 /health 에
 # 안 나오고 calc_missing 이 못 본다 — infra/.env 에 비밀을 넣고 돌려도 빠진 백엔드가 없으면 재프로비저닝이 안 돌아 위임이 영영 안
-# 켜진다(비밀을 바꿨을 때도 같다). 비밀은 argv 가 아니라 환경변수로 넘기고, 출력은 키 이름뿐이다.
+# 켜진다(비밀을 바꿨을 때도 같다). 비밀은 argv 가 아니라 환경변수로 넘기고, 출력은 키 이름뿐이다. TestScope 는 백엔드를 기대할 때만
+# 본다(TESTSCOPE_EXPECTED) — 백엔드가 없는 박스에서는 위임이 할 일이 없고, provision 이 만들지 않으면 매 실행 헛된 재프로비저닝을 돈다.
+# 거꾸로 비밀을 비웠는데 위임이 남아 있으면 `<키>_sso_off` — 되돌리기(토큰 등록으로)도 재프로비저닝이 있어야 반영된다.
 _sso_deleg_drift() {  # $1=gateway_config.json → 어긋난 위임(공백 구분, 예: reportarchive_sso). 읽지 못하면 빈 값.
-  RA_S="${RA_SSO_SECRET:-}" python3 - "$1" <<'PY' 2>/dev/null || true
+  RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" python3 - "$1" <<'PY' 2>/dev/null || true
 import json, os, sys
 try: d = json.load(open(sys.argv[1]))
 except Exception: raise SystemExit(0)
 pu = (d.get("heax_registry") or {}).get("per_user_sso") or {}
-want = {"reportarchive": os.environ.get("RA_S") or ""}
-print(" ".join(f"{k}_sso" for k, s in sorted(want.items())
-               if s and (pu.get(k) if isinstance(pu.get(k), dict) else {}).get("secret") != s))
+out = []
+for k, s in sorted({"reportarchive": os.environ.get("RA_S") or "", "testscope": os.environ.get("TS_S") or ""}.items()):
+    cur = pu.get(k) if isinstance(pu.get(k), dict) else None
+    if not s:
+        if cur is not None: out.append(f"{k}_sso_off")   # 비밀을 비웠는데 위임이 남았다 — provision 이 PER_USER_SSO_OFF 로 지운다
+    elif (k != "testscope" or os.environ.get("TS_X") == "1") and (cur or {}).get("secret") != s:
+        out.append(f"{k}_sso")
+print(" ".join(out))
 PY
 }
 
@@ -965,7 +985,10 @@ PY
   fi
   if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
     for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do
-      echo "  · 사람별 위임 드리프트: ${_k%_sso} — 게이트웨이 설정에 위임이 없거나 비밀이 infra/.env 와 다르다"
+      case "$_k" in
+        *_sso_off) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — infra/.env 의 비밀이 비었는데 게이트웨이는 아직 위임으로 부른다(토큰 등록으로 되돌린다)" ;;
+        *) echo "  · 사람별 위임 드리프트: ${_k%_sso} — 게이트웨이 설정에 위임이 없거나 비밀이 infra/.env 와 다르다" ;;
+      esac
       MISSING="${MISSING:+$MISSING }$_k"
     done
   fi
@@ -982,7 +1005,11 @@ PY
       #   · RA_MCP_URL — RA 가 원격이면(1e) 이 값이 없을 때 provision 이 127.0.0.1:3002 기본값으로 덮는다.
       #   · STE_SSO_SECRET/STE_*_URL — 없으면 per_user_sso["ste"] 가 안 생겨 ste 도구 호출이 서비스 계정으로 나간다(잡 소유자가 한 명으로 뭉침).
       #   · RA_SSO_* — RA 사람별 위임(docs/sso-delegation). 비면 provision 이 직전 config 를 이어받는다.
-      #   · TESTSCOPE_MCP_URL — TestScope 백엔드 주소(토큰 등록 방식, provision.env 에서 읽은 값).
+      #   · TESTSCOPE_MCP_URL — TestScope 백엔드 주소(provision.env 에서 읽은 값).
+      #   · TESTSCOPE_SSO_* — TestScope 사람별 위임(RA 와 같은 두 갈래). 비면 토큰 등록 그대로, provision 이 직전 config 를 이어받는다.
+      #   · PER_USER_SSO_OFF — 비밀이 빈 RA·TestScope. provision 의 이어받기는 비밀을 못 읽은 실행용이라, 이것 없이는 infra/.env 에서
+      #     비밀을 비워도 위임이 남아 포털 화면('토큰 등록')과 게이트웨이가 어긋났다. 여기서는 infra/.env 를 읽었으니 빈 값이 곧 '끔' 이다.
+      _sso_off="$([ -n "${RA_SSO_SECRET:-}" ] || printf 'reportarchive ')$([ -n "${TESTSCOPE_SSO_SECRET:-}" ] || printf 'testscope')"
       if ( cd "$GW_DIR" && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
@@ -991,7 +1018,8 @@ PY
           STE_SSO_SECRET="${STE_SSO_SECRET:-}" STE_MCP_URL="${STE_MCP_URL:-}" \
           STE_SSO_URL="${STE_SSO_URL:-}" \
           RA_SSO_SECRET="${RA_SSO_SECRET:-}" RA_SSO_URL="${RA_SSO_URL:-}" \
-          TESTSCOPE_MCP_URL="${TESTSCOPE_MCP_URL:-}" \
+          TESTSCOPE_SSO_SECRET="${TESTSCOPE_SSO_SECRET:-}" TESTSCOPE_SSO_URL="${TESTSCOPE_SSO_URL:-}" \
+          TESTSCOPE_MCP_URL="${TESTSCOPE_MCP_URL:-}" PER_USER_SSO_OFF="${_sso_off:-}" \
           bash provision-config.sh --force ); then
         _prov_ok=1
       else

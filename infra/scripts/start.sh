@@ -80,10 +80,12 @@ if [ -z "${STE_SSO_SECRET:-}" ]; then
   echo "  → ste 헤드노드에도 **같은 값**이 있어야 한다: (cae00) SmartTwinExplorer/deploy/refresh-code.sh"
 fi
 
-# 2d. RA 사람별 위임 비밀(RA_SSO_SECRET, docs/sso-delegation) — **만들지 않는다**(2c 와 다른 점).
+# 2d. RA·TestScope 사람별 위임 비밀(RA_SSO_SECRET·TESTSCOPE_SSO_SECRET, docs/sso-delegation) — **만들지 않는다**(2c 와 다른 점).
 #   ste 는 우리가 같은 값을 헤드에 심지만 RA 는 남의 서버라 심을 수 없다. 그런데 이 박스에 비밀이 먼저 생기면
 #   게이트웨이가 RA 를 사람별 위임으로만 불러, RA 쪽이 준비되기 전의 호출이 **전부 거부된다**. RA 담당이 켠 뒤
 #   사람이 infra/.env 에 같은 값을 넣는다. 포털 프로세스도 쓴다(PPT 가져오기) — 아래 --env 로 넘긴다.
+#   TestScope 도 같다(TESTSCOPE_SSO_SECRET — RA 와 다른 값, 그쪽 HEAX_SSO_SECRET 과 같은 값). 비면 종전 '토큰 등록', 있으면 위임.
+#   포털은 TestScope 를 이 비밀로 부르지 않는다 — '외부 연결' 화면의 갈래(testscope_mode)를 정하는 데만 쓴다(그래서 넘긴다).
 
 # 3. Portal (single-origin: serves SPA + API). All config via --env (overrides backend/.env).
 if instance_running "$INST_PORTAL"; then
@@ -134,6 +136,7 @@ else
     --env "SESSION_SECRET=${SESSION_SECRET}" \
     --env "STE_SSO_SECRET=${STE_SSO_SECRET:-}" \
     --env "RA_SSO_SECRET=${RA_SSO_SECRET:-}" \
+    --env "TESTSCOPE_SSO_SECRET=${TESTSCOPE_SSO_SECRET:-}" \
     --env "AUTH_PROVIDER=${AUTH_PROVIDER:-mock}" \
     --env "MOCK_USER_EMAIL=${MOCK_USER_EMAIL:-hwax.demo@samsung.com}" \
     --env "MOCK_USER_NAME=${MOCK_USER_NAME:-HWAX Demo User}" \

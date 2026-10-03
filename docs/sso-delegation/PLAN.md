@@ -46,6 +46,9 @@
 - 게이트웨이 `PORTAL_CONN_BACKENDS` 에 testscope — 등록된 본인 토큰으로만 부르고, 없으면 거부·연결 안내(조직 헤더 없음). 백엔드는 `TESTSCOPE_MCP_URL`(provision.env)로 만든다.
 - 타일은 그쪽 주소로 바로 여는 외부 링크 — 주소는 `backend/config/systems.local.yaml` 의 `testscope: {url: …}`, 없으면 숨긴다.
 - TestScope 쪽에 필요한 것은 코드가 아니라 운영 설정뿐 — 게이트웨이 박스에서 MCP(:8022)에 닿게(server-setup B).
+- **두 방식 선택(개정, D-16)** — RA 와 같은 틀. `TESTSCOPE_SSO_SECRET` 이 비면 토큰 등록, 넣으면 ste 방식(게이트웨이 `per_user_sso.testscope`,
+  위임 주소는 `TESTSCOPE_BASE_URL` + `/api/auth/sso`, 카드는 `testscope_mode`). ste 방식은 TestScope 쪽이 `/api/auth/sso` 를 넣어야 한다 —
+  그쪽 코드는 여기서 고치지 않고 **선택** 요청서로만 넘긴다([testscope-request.md](testscope-request.md)).
 
 ## 3. 서버 쪽(사람) — [server-setup.md](server-setup.md)
 
