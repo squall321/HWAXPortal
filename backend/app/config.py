@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # 자동으로 만들지 않는다 — RA 쪽이 준비되기 전에 생기면 게이트웨이가 위임으로만 불러 RA 호출이 거부된다.
     ra_sso_secret: str = ""
     ra_sso_url: str = ""   # 빈 값 = ra_base_url + /api/auth/sso
+    # TestScope(다른 조직 포털, 그쪽 주소로 노출) — RA 처럼 '토큰 등록' 으로 잇는다. 포털 서버가 붙여 넣은 토큰의 주인을
+    # 확인할 때 부르는 API origin 이다. 빈 값이면 이 박스는 TestScope 연결을 내지 않는다(docs/sso-delegation).
+    testscope_base_url: str = ""
 
     # ── Session token TTLs (HS256; downstream RS256 launch tokens land in Phase 4) ──
     jwt_issuer: str = "https://hwax.sec.samsung.net"

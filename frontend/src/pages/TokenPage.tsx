@@ -8,6 +8,7 @@ import { Page, PageHeader } from '../components/ui/Page';
 import { Tabs } from '../components/ui/Tabs';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { RaConnectionCard } from '../components/RaConnectionCard';
+import { TestScopeConnectionCard } from '../components/TestScopeConnectionCard';
 import { useCan } from '../auth/useCan';
 import { makeSnippets } from '../lib/setupBat';
 import '../styles/tokenpage.css';
@@ -217,6 +218,7 @@ export default function TokenPage() {
           발급됩니다. <Link to="/access?need=feat:api-token">내 권한에서 요청 →</Link>
         </p>
         <RaConnectionCard />
+        <TestScopeConnectionCard />
       </Page>
     );
   }
@@ -248,7 +250,12 @@ export default function TokenPage() {
         ]}
       >
         {tab === 'apps' && <HubAppsPanel />}
-        {tab === 'connect' && <RaConnectionCard />}
+        {tab === 'connect' && (
+          <>
+            <RaConnectionCard />
+            <TestScopeConnectionCard />
+          </>
+        )}
         {tab === 'tokens' && (
           <>
             {error && <ErrorBanner message={error} />}

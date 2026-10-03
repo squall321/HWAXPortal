@@ -6,6 +6,9 @@
 포털이 RA /api/users/me 로 검증(이메일 일치 강제)하고 부서(home_workspace_slug)까지 얻어
 저장 → 게이트웨이가 RA 호출 시 /internal/connections 로 조회해 그 토큰+부서 헤더로 호출.
 SSO 가 연동되면 RA 쪽 자동 계정 등록으로 대체될 브리지다 — 그날 이 등록부는 자연 소멸.
+
+TestScope(다른 조직 포털)도 같은 등록부를 쓴다 — 그쪽 개인 토큰(tsc_pat_…)을 TestScope /api/auth/me 로
+확인(이메일 일치 강제)해 저장한다. 조직(워크스페이스) 개념은 없다(docs/sso-delegation).
 """
 import hmac
 import logging
@@ -24,7 +27,7 @@ from app.deps import principal_pat_or_session, require_csrf
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["connections"])
 
-SERVICES = ("reportarchive",)
+SERVICES = ("reportarchive", "testscope")
 
 
 def _store(request: Request) -> UserStore:
@@ -230,6 +233,8 @@ def list_connections(
     # 화면이 RA 카드를 가른다 — "sso" 면 포털 로그인으로 본인 명의(등록할 것 없음), "token" 이면 종전 토큰 등록
     # (docs/sso-delegation). 값은 비밀의 있고 없음뿐이다.
     out["reportarchive_mode"] = "sso" if settings.ra_sso_secret else "token"
+    # TestScope 가 없는 박스에서는 화면이 카드를 안 그린다 — 주소의 있고 없음만 준다.
+    out["testscope_enabled"] = bool((settings.testscope_base_url or "").strip())
     return out
 
 
@@ -242,6 +247,71 @@ async def delete_ra_connection(
 ) -> JSONResponse:
     _store(request).delete_connection(email=principal.email, service="reportarchive")
     # 해제도 즉시 반영해야 한다 — 안 그러면 해제한 토큰으로 최대 TTL 동안 계속 부른다.
+    await _invalidate_gateway_cache(settings, principal.email)
+    return JSONResponse({"ok": True})
+
+
+# ── TestScope — 다른 조직 포털, RA 와 같은 '토큰 등록' ──────────────────────────
+async def _testscope_owner(settings: Settings, token: str) -> str:
+    """TestScope 토큰의 주인 이메일(소문자) — 실패는 AuthError(사용자에게 보여줄 문구)로 승격."""
+    base = (settings.testscope_base_url or "").strip().rstrip("/")
+    if not base:
+        raise AuthError("TestScope 연결이 이 박스에 설정돼 있지 않습니다.", status_code=404)
+    try:
+        async with httpx.AsyncClient(timeout=8) as cli:
+            resp = await cli.get(base + "/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    except httpx.HTTPError as exc:
+        raise AuthError(f"TestScope 에 연결하지 못했습니다({exc.__class__.__name__}). "
+                        "서비스가 떠 있는지 확인하세요.", status_code=502) from exc
+    if resp.status_code == 401:
+        raise AuthError("TestScope 가 이 토큰을 거부했습니다 — 만료·폐기됐거나 잘못 복사된 토큰입니다.",
+                        status_code=400)
+    if resp.status_code == 403:
+        # 본인 확인(/api/auth/me)에 'read' 범위가 필요하다 — 쓰기 범위만 준 토큰이 여기서 걸린다.
+        raise AuthError("TestScope 가 이 토큰으로 본인 확인을 거부했습니다 — 토큰에 'read' 범위가 있어야 합니다. "
+                        "TestScope 에서 'read' 를 포함해 다시 발급하세요.", status_code=400)
+    if resp.status_code != 200:
+        raise AuthError(f"TestScope 검증 실패(HTTP {resp.status_code}).", status_code=400)
+    # 봉투 없는 맨 모델 {id, email, …}. 200 인데 JSON 이 아니면(주소가 엉뚱한 SPA 등) 이메일 없음과 같게 닫는다.
+    try:
+        me = resp.json()
+    except ValueError:
+        me = None
+    return str((me if isinstance(me, dict) else {}).get("email") or "").strip().lower()
+
+
+@router.put("/auth/connections/testscope")
+async def set_testscope_connection(
+    body: ConnectionIn,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    principal: Principal = Depends(principal_pat_or_session),
+) -> JSONResponse:
+    token = body.token.strip()
+    ts_email = await _testscope_owner(settings, token)
+    # 확인 못 한 것을 확인한 것으로 치지 않는다(RA 와 같은 fail-closed) — 남의 토큰이면 그 사람 명의로 쓰인다.
+    if not ts_email:
+        raise AuthError(
+            "TestScope 가 계정 이메일을 주지 않아 이 토큰이 누구 것인지 확인할 수 없습니다 — "
+            "등록하지 않습니다. TestScope 쪽 응답 모양이 바뀌었거나 주소가 틀렸을 수 있습니다.", status_code=502)
+    if ts_email != principal.email.lower():
+        raise AuthError(
+            f"TestScope 계정 이메일({ts_email})이 포털 계정({principal.email})과 다릅니다. "
+            "같은 이메일의 TestScope 계정에서 발급한 토큰을 등록하세요.", status_code=400)
+    _store(request).set_connection(email=principal.email, service="testscope", token=token, workspace="")
+    await _invalidate_gateway_cache(settings, principal.email)
+    logger.info("connection set: testscope for %s", principal.email)
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/auth/connections/testscope")
+async def delete_testscope_connection(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    principal: Principal = Depends(principal_pat_or_session),
+    _: None = Depends(require_csrf),
+) -> JSONResponse:
+    _store(request).delete_connection(email=principal.email, service="testscope")
     await _invalidate_gateway_cache(settings, principal.email)
     return JSONResponse({"ok": True})
 

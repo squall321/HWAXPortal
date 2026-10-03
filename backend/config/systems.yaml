@@ -102,13 +102,11 @@ systems:
     accent: cyan
     category: Testing
     status: available
-    # TestScope 는 그 박스에 있을 때만 켠다 — 목적지는 routes.local.env 의 `testscope=`(nginx /testscope/ 가 함께 생긴다).
-    # 라우트가 없으면 registry 가 coming_soon + 숨김으로 내린다 — 콜백 url 만으로 켜면 없는 서비스로 로그인 토큰을 보낸다.
-    # Claude·챗의 TestScope 호출은 이 타일과 따로 — 게이트웨이가 사람별로 위임한다(infra/.env 의 TESTSCOPE_SSO_SECRET,
-    # ste 방식). 포털은 TestScope 토큰을 쥐지 않는다(docs/sso-delegation/server-setup.md B).
-    integration_type: jwt-handoff
-    audience: testscope                        # token `aud`; TestScope PORTAL_AUDIENCE 와 같아야 한다
-    url: /testscope/api/auth/portal-callback   # launch 토큰이 여기로 자동 POST(nginx STRIP → TestScope /api/auth/portal-callback)
+    # 다른 조직의 포털이라 그쪽 주소로 바로 여는 직결 링크다(로그인 토큰을 넘기지 않는다). 주소는 여기 적지 않는다 —
+    # backend/config/systems.local.yaml(gitignore)의 `testscope: {url: ...}`. 없으면 '곧 공개' 로도 안 보이게 숨긴다.
+    # Claude·챗의 TestScope 호출은 이 타일과 따로 — 사람이 '개인 토큰 › 외부 연결' 에 등록한 그쪽 토큰으로 부른다
+    # (RA 와 같은 토큰 등록, docs/sso-delegation).
+    integration_type: external-url
     hide_unless_routed: true
     sort_order: 45
 

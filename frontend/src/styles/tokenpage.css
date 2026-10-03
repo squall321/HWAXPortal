@@ -284,3 +284,7 @@
 .ra-msg.is-err {
   color: var(--danger);
 }
+/* TestScope 연결(components/TestScopeConnectionCard)도 같은 틀을 쓴다 — 두 카드가 붙지 않게 띄운다 */
+.ra-card + .ra-card {
+  margin-top: var(--sp-4);
+}

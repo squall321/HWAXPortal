@@ -1,9 +1,11 @@
-# TestScope 타일 — `testscope=` 라우트가 있는 박스에서만 켜고, 없으면 '곧 공개' 로도 안 보인다(docs/sso-delegation)
-"""jwt-handoff 타일은 콜백 url(`/testscope/api/auth/portal-callback`)이 yaml 에 늘 있다. 종전 규칙(라우트 또는 url 이면 켠다)
-그대로면 TestScope 가 없는 박스에서도 타일이 열리고, 누르면 없는 서비스로 서명된 로그인 토큰을 보낸다 — nginx catch-all 이
-SPA 를 200 으로 돌려 조용히 깨진다. 그래서 `hide_unless_routed` 를 jwt-handoff 에도 쓰고, 그때는 **라우트로만** 켠다.
-다른 핸드오프 타일(report-archive 등)의 규칙은 그대로다.
+# TestScope 타일 — 다른 조직 포털이라 그쪽 주소로 여는 직결 링크, 주소(systems.local.yaml)가 없는 박스에서는 숨긴다(docs/sso-delegation)
+"""TestScope 는 그쪽 주소로 노출되는 남의 포털이다 — 로그인 토큰을 넘기는 핸드오프가 아니라 external-url 이다. 주소는 사내
+주소라 추적 파일에 적지 않고 박스별 systems.local.yaml 에 둔다. 없는 박스가 정상이므로 '곧 공개' 카드로도 안 보이게 숨기고,
+경고 대신 안내 한 줄만 남긴다. 다른 타일의 규칙은 그대로다.
+
+주소는 문서용 예약 대역(TEST-NET)만 쓴다 — 이 리포는 GitHub 에 있다.
 """
+import logging
 from pathlib import Path
 
 import pytest
@@ -15,69 +17,70 @@ from app.config import Settings
 from app.schemas.system import LinkedSystem
 
 _BACKEND = Path(__file__).resolve().parents[1]
-_ENV = "SYS_TESTSCOPE_URL"
-_CALLBACK = "/testscope/api/auth/portal-callback"
+_SYSTEMS = _BACKEND / "config" / "systems.yaml"
+_ADDR = "http://192.0.2.20:8020/"
 
 
-def _reg(tmp_path: Path, routes: str = "", local: str | None = None) -> CatalogRegistry:
-    base = tmp_path / "routes.env"
-    base.write_text(routes, encoding="utf-8")
-    if local is not None:
-        (tmp_path / "routes.local.env").write_text(local, encoding="utf-8")
-    return CatalogRegistry(Settings(routes_path=str(base)))
-
-
-def _ts(reg: CatalogRegistry) -> LinkedSystem:
-    return reg.get("testscope")
+def _reg(tmp_path: Path, overlay: str | None = None) -> CatalogRegistry:
+    """추적된 systems.yaml 그대로, 덮어쓰기만 시험이 정한다(이 박스의 실제 local 파일을 읽지 않는다)."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "systems.yaml").write_text(_SYSTEMS.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "routes.env").write_text("", encoding="utf-8")
+    if overlay is not None:
+        (tmp_path / "systems.local.yaml").write_text(overlay, encoding="utf-8")
+    return CatalogRegistry(Settings(_env_file=None, catalog_path=str(tmp_path / "systems.yaml"),
+                                    routes_path=str(tmp_path / "routes.env")))
 
 
 @pytest.fixture(autouse=True)
 def _no_env_route(monkeypatch):
-    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.delenv("SYS_TESTSCOPE_URL", raising=False)
 
 
-def test_unrouted_testscope_is_hidden_not_coming_soon(tmp_path):
-    reg = _reg(tmp_path, "report-archive=http://127.0.0.1:3000/\n", local="# testscope=http://x:8020/\n")
-    t = _ts(reg)
+def test_tracked_entry_is_an_external_link_without_address_or_handoff_bits():
+    """주소는 박스별 파일에 — 추적 파일에 사내 주소를 적지 않는다. 로그인 토큰을 넘기지 않으므로 audience 도 없다."""
+    raw = yaml.safe_load(_SYSTEMS.read_text(encoding="utf-8"))
+    (ts,) = [s for s in raw["systems"] if s["id"] == "testscope"]
+    assert ts["integration_type"] == "external-url" and ts.get("hide_unless_routed") is True
+    assert "url" not in ts and "audience" not in ts
+
+
+def test_without_an_address_testscope_is_hidden_not_coming_soon(tmp_path, caplog):
+    with caplog.at_level(logging.INFO, logger="app.catalog.registry"):
+        reg = _reg(tmp_path)
+    t = reg.get("testscope")
     assert (t.status, t.enabled) == ("coming_soon", False)
     assert "testscope" not in {s.id for s in reg.visible_for(["portal-admin"])}, "'곧 공개' 카드로도 안 보인다"
     assert "testscope" not in reg.live_ids()
+    mine = [r for r in caplog.records if "testscope" in r.getMessage()]
+    assert len(mine) == 1 and mine[0].levelno == logging.INFO, "없는 박스가 정상 — 경고가 아니라 안내 한 줄"
+    assert "systems.local.yaml" in mine[0].getMessage(), "켜는 법을 말한다"
 
 
-@pytest.mark.parametrize("where", ["local", "base", "env"])
-def test_routed_testscope_is_available_and_keeps_its_callback(tmp_path, monkeypatch, where):
-    """라우트는 nginx 프록시 목적지일 뿐이다 — 로그인 토큰을 보내는 콜백 url 을 덮지 않고, 모드도 그대로 jwt-handoff 다."""
-    route = "testscope=http://127.0.0.1:8020/\n"
-    if where == "env":
-        monkeypatch.setenv(_ENV, "http://127.0.0.1:8020/")
-        reg = _reg(tmp_path)
-    else:
-        reg = _reg(tmp_path, route if where == "base" else "", local=route if where == "local" else None)
-    t = _ts(reg)
-    assert (t.status, t.enabled, t.integration_type, t.url) == ("available", True, "jwt-handoff", _CALLBACK)
+def test_an_overlay_address_makes_it_an_available_external_link(tmp_path):
+    reg = _reg(tmp_path, f"testscope:\n  url: {_ADDR}\n")
+    t = reg.get("testscope")
+    assert (t.status, t.enabled, t.integration_type, t.url) == ("available", True, "external-url", _ADDR)
     assert "testscope" in reg.live_ids()
+    assert "testscope" in {s.id for s in reg.visible_for(["portal-admin"])}
 
 
-def test_an_empty_route_value_is_not_a_route(tmp_path):
-    assert _ts(_reg(tmp_path, local="testscope=\n")).status == "coming_soon"
-
-
-def test_other_handoff_tiles_are_unchanged(tmp_path):
-    """report-archive 는 라우트가 없어도 콜백 url 로 켜진다 — 숨김 규칙이 다른 핸드오프 타일로 번지지 않는다."""
-    reg = _reg(tmp_path)
-    ra = reg.get("report-archive")
+def test_other_tiles_are_unchanged(tmp_path):
+    """TestScope 주소를 넣고 빼도 다른 타일의 상태·모드·주소는 그대로다 — 숨김 규칙이 번지지 않는다."""
+    def snap(reg):
+        return {s.id: (s.status, s.enabled, s.integration_type, s.url) for s in reg.all() if s.id != "testscope"}
+    assert snap(_reg(tmp_path / "a")) == snap(_reg(tmp_path / "b", f"testscope:\n  url: {_ADDR}\n"))
+    ra = _reg(tmp_path / "c").get("report-archive")
     assert ra.integration_type == "jwt-handoff" and not ra.hide_unless_routed
-    assert (ra.status, ra.enabled) == ("available", True)
-    others = [s for s in reg.all() if s.integration_type in ("jwt-handoff", "saml-handoff") and s.id != "testscope"]
-    assert others and all(not s.hide_unless_routed for s in others), "숨김 표식은 testscope 에만 있다"
-    assert all(s.status == "available" for s in others if s.url)
+    assert (ra.status, ra.enabled) == ("available", True), "핸드오프 타일은 콜백 url 로 켜진다"
 
 
-def test_hide_unless_routed_is_only_for_proxy_and_jwt_handoff():
-    LinkedSystem(id="a", name="a", integration_type="jwt-handoff", url="/a/cb", hide_unless_routed=True)
-    for kind in ("external-url", "saml-handoff"):
-        with pytest.raises(ValueError, match="jwt-handoff"):
-            LinkedSystem(id="x", name="x", integration_type=kind, url="http://x", hide_unless_routed=True)
+def test_hide_unless_routed_is_only_for_proxy_and_external_url():
+    LinkedSystem(id="a", name="a", integration_type="external-url", hide_unless_routed=True)
+    LinkedSystem(id="b", name="b", integration_type="proxy", hide_unless_routed=True)
+    for kind in ("jwt-handoff", "saml-handoff"):
+        with pytest.raises(ValueError, match="external-url"):
+            LinkedSystem(id="x", name="x", integration_type=kind, url="/x/cb", hide_unless_routed=True)
 
 
 def test_testscope_is_gated_by_its_own_platform():

@@ -73,15 +73,6 @@ class CatalogRegistry:
         # overwrite the callback url. Flip the tile live when it's routed (proxied) or already
         # carries a callback url.
         if s.integration_type in ("jwt-handoff", "saml-handoff"):
-            if s.hide_unless_routed:
-                # 박스마다 있고 없는 서비스(testscope) — 콜백 url 은 늘 있으므로 라우트로만 켠다. url 로 켜면 없는
-                # 서비스로 로그인 토큰을 보내고 nginx 가 SPA 를 200 으로 돌려 조용히 깨진다(docs/sso-delegation).
-                if from_route:
-                    s.status = "available"
-                else:
-                    s.status = "coming_soon"
-                    s.enabled = False
-                return
             if from_route or s.url:
                 s.status = "available"
             return
@@ -99,6 +90,12 @@ class CatalogRegistry:
             # 주소 없는 외부 타일은 정직하게 끈다 — 두면 화면이 `/<id>/` 로 열어 SPA 로 떨어지고 조용히 깨진다.
             # 사내 주소는 systems.local.yaml(gitignore)에 둔다 — 새 박스·새 클론에서 여기로 온다.
             s.status = "coming_soon"
+            if s.hide_unless_routed:
+                # 박스마다 있고 없는 남의 서비스(testscope) — 없는 박스가 정상이라 경고가 아니라 안내 한 줄로 숨긴다.
+                s.enabled = False
+                log.info("외부 타일 %s 는 주소가 없어 숨긴다 — 쓰려면 backend/config/%s 에 '%s: {url: ...}'",
+                         s.id, LOCAL_OVERLAY, s.id)
+                return
             log.warning("외부 타일 %s 에 주소가 없다 — backend/config/%s 에 '%s: {url: ...}' 를 적어라(곧 공개로 둔다)",
                         s.id, LOCAL_OVERLAY, s.id)
             return

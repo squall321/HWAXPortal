@@ -23,6 +23,7 @@ module.exports = {
         'src/components/admin/**/*.tsx',
         'src/pages/TokenPage.tsx',
         'src/components/RaConnectionCard.tsx',
+        'src/components/TestScopeConnectionCard.tsx',
         'src/components/HubAppsPanel.tsx',
         // 절차 — 상태에 따라 색이 바뀌는 9곳이 남은 ProceduresPage·RunSteps 는 넣지 않는다
         'src/pages/procedures/BuildView.tsx',

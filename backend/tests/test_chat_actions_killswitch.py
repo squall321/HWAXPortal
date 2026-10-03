@@ -86,8 +86,9 @@ def test_숨김은_proxy_타일과_타일_있는_플랫폼에만():
     import pytest
     from app.schemas.system import LinkedSystem
 
+    # 주소로 여는 external-url 도 허용된다(박스마다 있고 없는 남의 서비스, docs/sso-delegation) — 핸드오프는 여전히 안 된다.
     with pytest.raises(ValueError, match="proxy"):
-        LinkedSystem(id="x", name="x", integration_type="external-url", url="http://x", hide_unless_routed=True)
+        LinkedSystem(id="x", name="x", integration_type="jwt-handoff", url="/x/cb", hide_unless_routed=True)
     with pytest.raises(ValueError, match="systems"):
         parse_policy({"platforms": [{"id": "p", "label": "p", "hide_unless_routed": True}]})
 
