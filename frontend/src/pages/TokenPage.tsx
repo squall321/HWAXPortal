@@ -301,6 +301,13 @@ export default function TokenPage() {
                   <b>윈도우라면 이것만 받아서 실행하세요.</b> 인증서 설치와 Claude 등록을 한 번에
                   끝냅니다. 이 파일에는 위 토큰이 들어 있어 <b>지금 이 화면에서만</b> 만들 수
                   있습니다.
+                  {/* 한쪽에만 등록하면 다른 쪽에 안 보인다 — 데스크톱 앱의 Code 탭만 쓰는 사람이 빠졌었다(docs/sso-delegation D-9·D-11). */}
+                  <div className="tok-hint">
+                    데스크톱 앱 안의 Claude Code 는 데스크톱 설정(<code>claude_desktop_config.json</code>)이
+                    아니라 Claude Code 사용자 설정(보통 <code>%USERPROFILE%\.claude.json</code> —{' '}
+                    <code>CLAUDE_CONFIG_DIR</code> 이 있으면 그 아래)을 씁니다 — 배치파일이 둘 다
+                    등록합니다(<code>claude</code> 명령이 없어도).
+                  </div>
                   {tlsUnknown && (
                     <div className="tok-warn">
                       <b>인증서 판정을 못 했습니다</b> — {tlsUnknown}. 판정이 될 때까지 연결

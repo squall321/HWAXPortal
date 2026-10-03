@@ -250,7 +250,66 @@ export function makeSnippets(origin: string): Snippets {
     // 괄호 안에 PowerShell 한 줄처럼 (, ), | 가 섞인 긴 명령을 넣으면 cmd 의 괄호 매칭이
     // 어긋나 "예기치 않음" 으로 죽는 사고가 잦다. 라벨 방식이 장황해도 깨지지 않는다.
 
-    // ── Claude Code (CLI) — 있을 때만 ──────────────────────────────────────────
+    // ── Claude Code 사용자 설정(~/.claude.json) — claude 명령이 없을 때 직접 쓴다 ──────────
+    // 데스크톱 앱 안에서 도는 Claude Code 는 Desktop 설정이 아니라 Claude Code 사용자 설정의 mcpServers 를 읽는다
+    // (docs/sso-delegation D-9). 앱만 깐 사람은 PATH 에 claude 가 없어서 종전 판은 Code 등록을 건너뛰었다.
+    // 항목 모양은 `claude mcp add -s user` 가 쓰는 것과 같게 한다(type 이 있는 것이 Desktop 항목과 다르다).
+    //
+    // 자리는 하나로 단정하지 않는다(D-11). Claude Code CLI(2.0.74 바이너리에서 확인)와 같은 규칙이다.
+    //   폴더 D = CLAUDE_CONFIG_DIR, 없으면 <홈>\.claude. D\.config.json 이 있으면 그 파일(옛 위치),
+    //   아니면 (CLAUDE_CONFIG_DIR, 없으면 <홈>)\.claude.json.
+    // <홈> 은 %USERPROFILE% 를 그대로 믿지 않고 GetFolderPath('UserProfile') 로 묻는다(축소·관리자 환경 전례), 비면 %USERPROFILE%.
+    // Claude Code 의 homedir 는 USERPROFILE 을 먼저 본다 — 이 창에서 둘이 다르면 그 사실을 찍는다(앱은 보통 프로필 폴더 쪽이다).
+    // 이 판정을 cmd 에서 하지 않고 병합하는 PowerShell 안에서 한다 — 값을 cmd 로 되돌려 받으려면 `for /f … in (…)` 나
+    // 임시 파일이 필요한데, 둘 다 Desktop 쪽에서 일부러 뺀 함정이다(괄호 파싱·한글 사용자명 코드페이지, bba1bd8).
+    const ccjEntry = pem
+      ? `$e=[pscustomobject]@{type='stdio';command='npx';args=@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}');env=[pscustomobject]@{AUTH=$env:HWAX_AUTH;NODE_EXTRA_CA_CERTS=$env:HWAX_CERT}};`
+      : `$e=[pscustomobject]@{type='http';url='${MCP_URL}';headers=[pscustomobject]@{Authorization=$env:HWAX_AUTH}};`;
+    const ccjAuth = pem ? '$v.mcpServers.hwax.env.AUTH' : '$v.mcpServers.hwax.headers.Authorization';
+    // Desktop 병합과 같은 방식(경로·토큰은 환경변수, 조립은 PowerShell, Stop + exit 1)에 넷을 더한다.
+    // 이 파일은 Claude Code 의 큰 전역 상태라 깨지면 잃는 것이 많다.
+    //   ① 읽기를 UTF-8 로 못 박는다 — 5.1 의 Get-Content 는 BOM 없는 파일을 ANSI 로 읽어 한글 경로 키를 깨뜨린 채 다시 쓴다.
+    //      쓰기는 BOM 없는 UTF-8(Desktop 쪽과 같다) — Claude Code 가 JSON 으로 읽는 파일이다(2.0.74 는 BOM 을 떼고 읽지만 다른 판까지 믿지 않는다).
+    //   ② 깊이는 100(5.1 의 상한) — 기본값 2 면 projects 아래가 문자열로 잘려 저장된다.
+    //   ③ 임시 파일에 쓰고 되읽어 확인(최상위 키 수·토큰)한 뒤에야 원본을 바꾼다 — 실패하면 원본은 그대로다.
+    //      5.1 의 ConvertFrom-Json 은 대소문자만 다른 키(projects 의 C:/… 와 c:/…)를 중복으로 보고 실패하는데, 그때도 읽기에서 멈춘다.
+    //   ④ 예외 메시지를 찍지 않는다 — 5.1 의 ConvertFrom-Json 은 파싱 오류에 입력 전체를 붙여, 파일 속 토큰이 콘솔에 나온다.
+    //      어느 단계에서 무슨 종류로 실패했는지만 찍는다. 화면에 나가는 것은 경로·판단·단계뿐이다.
+    const ccjPs = [
+      "$ErrorActionPreference='Stop';",
+      "$s='path';$t=$null;$b=$null;",
+      'try{',
+      "$h=[Environment]::GetFolderPath('UserProfile');if(-not $h){$h=$env:USERPROFILE};",
+      "$o=$h;$d=[System.IO.Path]::Combine($h,'.claude');",
+      "if($env:CLAUDE_CONFIG_DIR){$o=$env:CLAUDE_CONFIG_DIR;$d=$o;Write-Host '          CLAUDE_CONFIG_DIR 가 있어 그 아래를 씁니다.'}",
+      "elseif($env:USERPROFILE -and $env:USERPROFILE -ne $h){Write-Host ('          USERPROFILE('+$env:USERPROFILE+') 이 프로필 폴더와 달라 프로필 폴더 쪽을 씁니다.')};",
+      "$c=[System.IO.Path]::Combine($d,'.config.json');",
+      "if(Test-Path -LiteralPath $c){$w='옛 위치(.config.json)가 있어 Claude Code 가 그 파일을 읽습니다.'}",
+      "else{$c=[System.IO.Path]::Combine($o,'.claude.json');",
+      "if(Test-Path -LiteralPath $c){$w='있는 파일에 hwax 만 더합니다(다른 설정은 그대로).'}",
+      "elseif(Test-Path -LiteralPath $d){$w='파일은 없고 .claude 폴더가 있어 새로 만듭니다.'}",
+      "else{$w='Claude Code 를 쓴 흔적이 없어 새로 만듭니다 - 처음 켤 때 이 파일을 읽습니다.'}};",
+      "Write-Host ('          설정 파일: '+$c);Write-Host ('          '+$w);",
+      "$t=$c+'.hwax-tmp';$u=New-Object System.Text.UTF8Encoding($false);$s='read';",
+      ccjEntry,
+      "if(Test-Path -LiteralPath $c){$s='backup';$b=$c+'.hwax-bak';Copy-Item -LiteralPath $c -Destination $b -Force;Write-Host ('          백업: '+$b);$s='read';$j=[System.IO.File]::ReadAllText($c,$u) | ConvertFrom-Json}else{$j=[pscustomobject]@{}};",
+      'if(-not $j.mcpServers){$j | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) -Force};',
+      '$j.mcpServers | Add-Member -NotePropertyName hwax -NotePropertyValue $e -Force;',
+      "$n=@($j.PSObject.Properties).Count;$s='write';",
+      '[System.IO.File]::WriteAllText($t, ($j | ConvertTo-Json -Depth 100), $u);',
+      "$s='verify';$v=[System.IO.File]::ReadAllText($t,$u) | ConvertFrom-Json;",
+      `if(@($v.PSObject.Properties).Count -ne $n -or ${ccjAuth} -cne $env:HWAX_AUTH){throw 'mismatch'};`,
+      // 바꿔 넣은 뒤의 임시 파일 정리는 실패로 치지 않는다 — 이미 바뀌었는데 '실패' 라고 하면 거짓이다.
+      "$s='replace';[System.IO.File]::Copy($t,$c,$true);Remove-Item -LiteralPath $t -Force -EA SilentlyContinue;",
+      // $t 가 아직 없으면(자리 판정에서 실패) 지우지 않는다 — null 로 Remove-Item 을 부르면 catch 안에서 또 던져 아래 안내가 안 나간다.
+      // 바꿔 넣기(Copy) 중에 멈췄을 때만 원본이 덜 바뀌었을 수 있다 — 그때는 '그대로' 라고 하지 않고 백업 자리를 준다.
+      "exit 0}catch{if($t){Remove-Item -LiteralPath $t -Force -EA SilentlyContinue};",
+      "Write-Host ('     '+$s+' failed: '+$_.Exception.GetType().Name);",
+      "if($s -eq 'replace'){Write-Host '     파일을 바꾸다 멈췄을 수 있습니다.';if($b){Write-Host ('     원래 내용: '+$b)}}",
+      "else{Write-Host '     원본 파일은 바꾸지 않았습니다.'};exit 1}",
+    ].join(' ');
+
+    // ── Claude Code — CLI 가 있으면 claude mcp add, 없으면 ~/.claude.json 에 직접 ─────────
     L.push(
       'echo  [2] Claude Code (CLI) 확인...',
       // ⚠ `where` 는 **PATH 에 있는 것만** 찾는다. 설치 프로그램은 실행 파일을 사용자 PATH 에
@@ -319,17 +378,33 @@ export function makeSnippets(origin: string): Snippets {
       'echo      [X] Claude Code 등록 실패',
       'goto :desktop',
       ':no_cli',
-      // 예전엔 여기서 "정상" 이라고 했다. 설치해 둔 사용자에게는 거짓이다 — 무엇을 확인했고
-      // 무엇을 모르는지 말하고, 다음에 할 일을 준다. 토큰은 절대 화면에 찍지 않는다.
-      'echo      Claude Code 를 찾지 못해 이 단계만 건너뜁니다.',
+      // 예전엔 여기서 "Claude Desktop 만 쓰신다면 이대로 정상" 이라고 하고 건너뛰었다. 데스크톱 앱 안의 Code 탭을 쓰는
+      // 사람에게는 거짓이다 — 그 Code 는 이 파일을 읽는다(위 ccjPs 주석). 그래서 CLI 대신 파일에 직접 넣는다.
+      // 터미널용 CLI 도 같은 파일의 사용자 범위를 읽으므로, 나중에 설치해도 다시 등록할 필요가 없다.
+      // 토큰은 절대 화면에 찍지 않는다 — 환경변수로만 PowerShell 에 넘긴다.
+      'echo      claude 명령을 찾지 못했습니다 - 설정 파일에 직접 등록합니다.',
       'echo          PATH 와 아래 위치를 모두 확인했습니다:',
       'echo            %USERPROFILE%\\.local\\bin\\claude.exe',
       'echo            %APPDATA%\\npm\\claude.cmd ^| claude.exe',
-      'echo          Claude Desktop 만 쓰신다면 이대로 정상입니다.',
-      'echo          Claude Code 를 쓰신다면 둘 중 하나입니다:',
-      'echo            1^) 아직 설치 전 - https://claude.ai/install.ps1 로 설치',
-      'echo            2^) 설치했는데 이 창의 PATH 에 아직 반영 안 됨',
-      'echo               ^> 새 터미널을 열고, 토큰 페이지의 Claude Code 명령을 붙여넣으세요.',
+      // 어느 파일에 왜 쓰는지(설정 파일·판단·백업)는 PowerShell 이 고른 뒤 찍는다 — 위 ccjPs 주석.
+      'echo          Claude Desktop 안에서 쓰는 Claude Code 는 Desktop 설정이 아니라 아래 파일을 읽습니다.',
+      `set "HWAX_AUTH=Bearer ${token}"`,
+      ...(pem ? [`set "HWAX_CERT=${certFile}"`] : []),
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "${ccjPs}"`,
+      'if errorlevel 1 goto :ccj_fail',
+      'set HWAX_DONE=1',
+      'echo      Claude Code 사용자 설정에 등록 완료',
+      'echo          터미널용 Claude Code 를 나중에 설치해도 같은 파일을 읽어 hwax 가 그대로 보입니다.',
+      // 켜져 있는 앱은 종료하면서 자기 메모리의 설정으로 이 파일을 덮어쓸 수 있다 — Desktop 설정과 같은 이유다.
+      'echo          Claude Desktop 이나 Claude Code 가 켜져 있으면 완전히 종료한 뒤 다시 실행하세요.',
+      'echo          ^(켜 둔 채 종료하면 예전 내용으로 덮일 수 있습니다 - 그때는 끈 상태에서 이 파일을 다시 실행하세요.^)',
+      'goto :desktop',
+      ':ccj_fail',
+      // 원본이 그대로인지는 PowerShell 이 멈춘 단계로 말한다 — 여기서 단정하지 않는다.
+      'echo      [X] Claude Code 사용자 설정 등록 실패 - 위 메시지 확인',
+      'echo          Claude Desktop 과 Claude Code 를 완전히 종료한 뒤 이 파일을 다시 실행하세요.',
+      'echo          그래도 안 되면 터미널용 Claude Code 를 설치하고^(https://claude.ai/install.ps1^)',
+      'echo          새 터미널에서 토큰 페이지의 Claude Code 명령을 붙여넣으세요.',
       '',
     );
 
