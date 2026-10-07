@@ -19,6 +19,7 @@ import logging
 import re
 import os
 import shutil
+import sqlite3
 from pathlib import Path
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -1526,36 +1527,44 @@ async def chat(
         finally:
             sem.release()  # released even on client disconnect (Starlette aclose()s the gen)
             if store is not None and cid:
-                # ⚠ 머리 60 이면 잘리는 쪽이 뒤 = 수렴 라운드의 최종 입장이다(감사 C41).
-                #   캡은 서버 생성 상한(200)에 맞추고 꼬리를 지킨다 — 초기입장보다 최종입장이
-                #   이어가기·재열람에 더 값나간다. 잘리면 로그를 남긴다.
-                if len(turns) > 199:
-                    logger.warning("심의 발언 %d건 중 뒤 199건만 저장(cid=%s)", len(turns), cid)
-                for t in turns[-199:]:  # 심의 발언 수 캡(폭주 방어) — 꼬리 유지
-                    # meta 는 이미 있는 칸이라 스키마 변경이 필요 없다. 관계는 target·round 만
-                    # 있으면 그려지므로 본문은 짧게 자른다(원문은 content 에 이미 있다).
-                    _m: dict = {}
-                    if t.get("stance"):
-                        _m["stance"] = str(t["stance"])[:40]
-                    if t.get("non_negotiable"):
-                        _m["non_negotiable"] = str(t["non_negotiable"])[:1200]
-                    if isinstance(t.get("rebut"), list) and t["rebut"]:
-                        _m["rebut"] = [
-                            {"target": str(r.get("target") or "")[:60],
-                             "quote": str(r.get("quote") or "")[:80],
-                             "counter": str(r.get("counter") or "")[:160],
-                             "basis": str(r.get("basis") or "")[:60]}
-                            for r in t["rebut"][:4] if isinstance(r, dict)
-                        ]
-                    store.append(conversation_id=cid, owner_sub=owner, role="persona",
-                                 content=str(t["content"])[:20000],
-                                 persona=(str(t["persona"])[:120] if t.get("persona") else None),
-                                 round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
-                                 meta=(_m or None))
-                reply = final if final is not None else (decision or "".join(acc))
-                if reply:
-                    store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
-                                 meta=({"activity": activity[:60]} if activity else None))
+                # ⚠ 저장이 실패하면 **로그로 말한다.** 여기는 스트림이 닫힌 뒤라 예외가 나도 화면에 갈 길이 없고,
+                #   로그가 없으면 몇 시간 돈 심의의 서버 사본이 빠진 것을 아무도 모른다(브라우저 사본만 남는다).
+                #   첫 실패에서 멈춘다 — 잠긴 DB 에 발언마다 다시 기다리면 199건 × 잠금 대기가 된다.
+                try:
+                    # ⚠ 머리 60 이면 잘리는 쪽이 뒤 = 수렴 라운드의 최종 입장이다(감사 C41).
+                    #   캡은 서버 생성 상한(200)에 맞추고 꼬리를 지킨다 — 초기입장보다 최종입장이
+                    #   이어가기·재열람에 더 값나간다. 잘리면 로그를 남긴다.
+                    if len(turns) > 199:
+                        logger.warning("심의 발언 %d건 중 뒤 199건만 저장(cid=%s)", len(turns), cid)
+                    for t in turns[-199:]:  # 심의 발언 수 캡(폭주 방어) — 꼬리 유지
+                        # meta 는 이미 있는 칸이라 스키마 변경이 필요 없다. 관계는 target·round 만
+                        # 있으면 그려지므로 본문은 짧게 자른다(원문은 content 에 이미 있다).
+                        _m: dict = {}
+                        if t.get("stance"):
+                            _m["stance"] = str(t["stance"])[:40]
+                        if t.get("non_negotiable"):
+                            _m["non_negotiable"] = str(t["non_negotiable"])[:1200]
+                        if isinstance(t.get("rebut"), list) and t["rebut"]:
+                            _m["rebut"] = [
+                                {"target": str(r.get("target") or "")[:60],
+                                 "quote": str(r.get("quote") or "")[:80],
+                                 "counter": str(r.get("counter") or "")[:160],
+                                 "basis": str(r.get("basis") or "")[:60]}
+                                for r in t["rebut"][:4] if isinstance(r, dict)
+                            ]
+                        store.append(conversation_id=cid, owner_sub=owner, role="persona",
+                                     content=str(t["content"])[:20000],
+                                     persona=(str(t["persona"])[:120] if t.get("persona") else None),
+                                     round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
+                                     meta=(_m or None))
+                    reply = final if final is not None else (decision or "".join(acc))
+                    if reply:
+                        store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
+                                     meta=({"activity": activity[:60]} if activity else None))
+                except sqlite3.Error as exc:
+                    logger.warning("대화 저장 실패 — %s(잠금 대기 CONV_STORE_BUSY_TIMEOUT_S=%s초), cid=%s · 심의 발언 %d건과 "
+                                   "최종 응답 중 일부가 서버 대화에 없다", exc, settings.conv_store_busy_timeout_s, cid,
+                                   len(turns))
                 # 이 턴의 도구 호출을 **절차 원장**에도 남긴다 — 하나의 원장, 세 생산자
                 # (PLAN §9-9). 대화 저장과 별개이고, 실패해도 챗을 막지 않는다.
                 _pstore = getattr(request.app.state, "procedures_store", None)

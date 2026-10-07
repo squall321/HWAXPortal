@@ -31,6 +31,9 @@ class ConversationStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
+        # 잠금 대기(CONV_STORE_BUSY_TIMEOUT_S) — 절차 저장소(procedures/store.py)와 같은 방식. 끝난 심의의 유일한 서버 사본을
+        # 쓰는 자리라 sqlite3 기본 5초는 짧다(백업이 이 DB 를 연다). 그래도 유한하다 — 넘으면 저장하는 쪽이 로그로 알린다.
+        self._conn.execute(f"PRAGMA busy_timeout={int(settings.conv_store_busy_timeout_s * 1000)}")
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS conversations ("
             "id TEXT PRIMARY KEY, owner_sub TEXT NOT NULL, title TEXT, "
