@@ -94,6 +94,60 @@ def test_knox_리포나_설정이_없는_박스에서는_기대하지_않고_안
     assert missing == [] and "○ Knox 브리지" in out, "리포만 있고 config/secrets.yaml 이 없으면 아직 안 쓰는 박스다"
 
 
+def _after_calc(fake_missing: str, start: str, end: str, pre: str = "") -> str:
+    """§5 에서 calc_missing 을 부른 줄부터 그 결과를 다듬는 줄들까지 원문 그대로 돌린다(calc_missing 은 대역)."""
+    i = UA.index(start)
+    block = UA[i:UA.index(end, i) + len(end)]
+    script = "\n".join([
+        "set -uo pipefail", 'fail() { echo "FAIL:$*"; }; ok() { echo "OK:$*"; }; H="{}"',
+        f'calc_missing() {{ printf "%s" "{fake_missing}"; }}', pre, block,
+        "printf 'MISSING=[%s] STILL=[%s] KNOX=[%s]\\n' \"${MISSING-}\" \"${STILL-}\" \"${KNOX_MISSING-}\"",
+    ])
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    return r.stdout
+
+
+def test_knox_브리지가_빠져도_재프로비저닝을_돌리지_않고_알리기만_한다():
+    """provision 은 knox-bridge 를 만들지 못한다(사람이 붙인 키를 보존만 한다). 빠졌다고 재프로비저닝 방아쇠로 삼으면 되살아나지는
+    않으면서 **매 실행** 게이트웨이·에이전트서버가 내려갔다 올라온다 — 도는 챗·심의가 그때마다 끊긴다. 요청의 목적은 '조용히 넘어가지
+    않는 것' 이었다(UPSTREAM-ASKS §2: "재프로비저닝으로 되살아나지는 않고 보고만 됩니다")."""
+    out = _after_calc("knox-bridge", '  MISSING="$(calc_missing "$H")"', "\n  esac\n")
+    assert "MISSING=[] " in out and "KNOX=[1]" in out, "재프로비저닝 대상이 아니다"
+    fails = [ln for ln in out.splitlines() if ln.startswith("FAIL:")]
+    assert len(fails) == 1 and "knox-bridge" in fails[0], "✗ 는 한 번, 그 자리에서"
+    assert "gateway_config.json" in fails[0] and "재프로비저닝으로는" in fails[0], "무엇을 해야 되살아나는지 말한다"
+    assert "mxwp" not in fails[0], "엉뚱한 곳(토큰 민팅)을 가리키지 않는다"
+
+
+def test_knox_브리지와_함께_빠진_다른_백엔드는_그대로_재프로비저닝한다():
+    out = _after_calc("arp knox-bridge signalforge", '  MISSING="$(calc_missing "$H")"', "\n  esac\n")
+    assert "MISSING=[arp signalforge] " in out and "KNOX=[1]" in out
+    out = _after_calc("arp signalforge", '  MISSING="$(calc_missing "$H")"', "\n  esac\n")
+    assert "MISSING=[arp signalforge] " in out and "KNOX=[0]" in out and "FAIL:" not in out
+
+
+def test_knox_브리지는_재검증에서_다시_세지_않는다():
+    """다른 백엔드 때문에 재프로비저닝이 돈 실행 — 재검증의 '재프로비저닝 후에도 누락' 에 knox-bridge 가 또 실리면 ✗ 가 둘이 되고
+    두 번째는 'mxwp 토큰 민팅 실패 등' 이라는 엉뚱한 안내를 단다."""
+    end = "\n        STILL=\"${STILL% }\"\n"
+    out = _after_calc("knox-bridge", '        STILL="$(calc_missing "$H")"', end)
+    assert "STILL=[] " in out and "FAIL:" not in out
+    out = _after_calc("arp knox-bridge", '        STILL="$(calc_missing "$H")"', end)
+    assert "STILL=[arp] " in out
+
+
+def test_knox_브리지만_빠진_실행을_정합이라고_말하지_않는다():
+    """✗ 바로 아래에 '✓ config 정합(빠진 백엔드 없음)' 이 찍히면 로그가 스스로 어긋난다."""
+    i = UA.index('ok "config 정합 (빠진 백엔드 없음)"')
+    line = UA[UA.rindex("\n", 0, i) + 1:UA.index("\n", i)]
+    for knox, shown in (("1", False), ("0", True)):
+        r = subprocess.run(["bash", "-c", f'set -uo pipefail; ok() {{ echo "OK:$*"; }}; KNOX_MISSING={knox}\n{line}\necho end'],
+                           capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+        assert r.returncode == 0 and not r.stderr and "end" in r.stdout, r.stderr
+        assert ("OK:config 정합" in r.stdout) is shown
+
+
 # ── #10 ARP — 인증이 켜진 뒤(2026-10-01)로는 주소와 토큰이 **둘 다** 있어야 게이트웨이가 등재한다 ─────────────
 ARP_ENV = "ARP_BASE=http://203.0.113.20:3001\nARP_TOKEN=arp-test-token\n"
 

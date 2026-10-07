@@ -803,7 +803,7 @@ else
 fi
 # Knox 브리지(사내 사이드카 — 챗의 메일·메신저 도구) — 형제 리포와 그 설정(config/secrets.yaml, gitignore)이 있는 박스에서만 기대한다.
 # 게이트웨이 config 의 knox-bridge 는 사람이 붙인 키다 — provision 은 만들지 않고 보존만 한다. 그래서 빠지면 재프로비저닝으로
-# 되살아나지 않고 §5 재검증이 ✗ 로 남는다. 조용히 넘어가지 않는 것이 목적이다(UPSTREAM-ASKS §2).
+# 되살아나지 않는다 — §5 가 재프로비저닝 없이 ✗ 로 알린다. 조용히 넘어가지 않는 것이 목적이다(UPSTREAM-ASKS §2).
 KNOX_BRIDGE_UP=0
 if [ -n "${KNOX_DIR:-}" ] && [ -f "$KNOX_DIR/config/secrets.yaml" ]; then
   KNOX_BRIDGE_UP=1
@@ -966,6 +966,15 @@ else
   fi
 
   MISSING="$(calc_missing "$H")"
+  # knox-bridge 는 사람이 config 에 붙인 키다 — provision 은 만들지 못하고 보존만 한다. 빠졌다고 재프로비저닝 방아쇠로 삼으면 되살아나지는
+  # 않으면서 **매 실행** 게이트웨이·에이전트서버만 내려갔다 올라온다(도는 챗·심의가 그때마다 끊긴다). 그래서 방아쇠에서 빼고 여기서
+  # ✗ 로 알린다 — 기대 목록에 넣은 목적은 '빠져도 초록' 을 막는 것이다(UPSTREAM-ASKS §2: 되살아나지 않고 보고만 된다).
+  KNOX_MISSING=0
+  case " $MISSING " in *" knox-bridge "*)
+    KNOX_MISSING=1
+    MISSING="$(for _k in $MISSING; do [ "$_k" = knox-bridge ] || printf '%s ' "$_k"; done)"; MISSING="${MISSING% }"
+    fail "knox-bridge 백엔드가 게이트웨이 config 에 없다 — 챗의 메일·메신저 도구가 빠져 있다. 재프로비저닝으로는 되살아나지 않는다(provision 은 이 키를 만들지 않는다): HWAXKnoxBridge 리포의 안내대로 HWAXMcpGateway/gateway_config.json 에 knox-bridge 항목을 다시 붙이고 게이트웨이를 재기동한다" ;;
+  esac
   # kr_ PAT 는 백엔드가 아니라 heax_registry 안의 예외표라 calc_missing 이 못 본다.
   # 이게 없으면 DynaForge MCP 는 '연결됨·도구 22개'인 채로 호출만 전량 실패한다.
   #
@@ -1145,6 +1154,9 @@ PY
       sleep 2; H="$(gw_health)"
       if [ -n "$H" ] && json_ok "$H"; then
         STILL="$(calc_missing "$H")"
+        # knox-bridge 는 위에서 이미 ✗ 로 알렸다 — 재프로비저닝이 만들 수 없는 키를 '재프로비저닝 후에도 누락' 으로 다시 세지 않는다.
+        STILL="$(for _k in $STILL; do [ "$_k" = knox-bridge ] || printf '%s ' "$_k"; done)"
+        STILL="${STILL% }"
         # RA 드리프트는 calc_missing 이 못 본다(키는 있다) — 재프로비저닝 뒤에도 config 의 RA 호스트가 옛 것이면 여기서 잡는다.
         if [ -n "${RA_HOST:-}" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
           _ra_after="$(python3 -c 'import json,sys;from urllib.parse import urlparse;d=json.load(open(sys.argv[1]));print(urlparse(((d.get("reportarchive") or {}).get("url") or "")).hostname or "")' "$GW_DIR/gateway_config.json" 2>/dev/null)"
@@ -1172,7 +1184,7 @@ PY
       bad "HWAXMcpGateway 레포/provision-config.sh 없음 — 재프로비저닝 불가"
     fi
   else
-    ok "config 정합 (빠진 백엔드 없음)"
+    if [ "${KNOX_MISSING:-0}" != 1 ]; then ok "config 정합 (빠진 백엔드 없음)"; fi
   fi
 
   # 등록됐지만 죽어 있는(false) 백엔드 → 해당 서비스만 지정 기동(전 스택 무인자 up 금지 —
