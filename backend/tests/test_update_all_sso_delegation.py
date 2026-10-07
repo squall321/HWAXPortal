@@ -384,6 +384,8 @@ def test_no_generic_list_means_nothing_extra_is_exported(tmp_path):
     ("콜론없음 :NOKEY nopfx: bad:9X bad2:A-B bad3:A:B ok:OK_1", "OK_1_SSO_SECRET OK_1_SSO_URL"),
     ("reportarchive:RA testscope:TS ste:STE hwax_risk:HR kooremapper_mcp:KR", ""),   # 게이트웨이가 직접 만드는 다섯 — 순회로 덮지 않는다
     ("*:STAR 'q:Q $(id):X", ""),                                                      # 키가 이름 꼴이 아니면 다루지 않는다
+    ("dup:FOO dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL"),                                # 한 키를 두 번 — 먼저 적힌 쌍만
+    ("dup:9X dup:FOO other:O dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL O_SSO_SECRET O_SSO_URL"),   # 못 읽은 쌍은 '먼저' 가 아니다
     ("", ""),
 ])
 def test_generic_pairs_are_read_with_the_gateway_rule(tmp_path, apps, names):
@@ -499,6 +501,76 @@ def test_the_trigger_agrees_with_what_the_gateway_would_build(tmp_path, apps, en
     # 재프로비저닝 뒤에는 조용해야 한다(수렴) — 게이트웨이가 만든 config 로 다시 본다
     after = _drift(tmp_path, {"heax_registry": {"per_user_sso": per_user}}, box=box).split()
     assert [t for t in after if t.endswith("_sso")] == [], after
+
+
+# ── 한 키를 두 번 적은 목록 ──────────────────────────────────────────────────────
+# per_user 키 하나에 위임은 하나다. `dup:FOO dup:BAR` 처럼 두 번 적으면 쌍마다 따로 판정해 서로 맞을 수가 없었다 — 비밀이 한쪽에만
+# 있으면 방아쇠(dup_sso)와 끄기(PER_USER_SSO_OFF=dup)가 한 실행에서 같이 나가, 게이트웨이는 위임을 만들고 곧바로 지운다. 다음
+# 실행도 같다: 매 실행 재프로비저닝 → 게이트웨이·에이전트서버 재기동 → '재프로비저닝 후에도 누락: dup_sso (mxwp 토큰 민팅 실패 등…)'.
+def _gateway_sso_block():
+    """게이트웨이 프로비저너의 일반 앱 순회 **와 끄기**(`_GENERIC_SSO = {}` 부터 per_user 를 config 에 싣기 직전까지)."""
+    prov = ROOT.parent / "HWAXMcpGateway" / "provision-config.sh"
+    if not prov.exists():
+        pytest.skip("게이트웨이 리포가 옆에 없다")
+    src = prov.read_text(encoding="utf-8")
+    if "_GENERIC_SSO = {}" not in src:
+        pytest.skip("옆의 게이트웨이가 아직 PER_USER_SSO_APPS 를 모르는 판이다")
+    i = src.index("_GENERIC_SSO = {}")
+    return src[i:src.index("\nif per_user:", i)]
+
+
+def _one_run(tmp_path: Path, box: str, prev: dict) -> dict:
+    """update-all 한 번 — 어긋났다고 보면 끌 목록을 세워 게이트웨이의 순회·끄기(원문)를 **update-all 이 넘기는 값만으로** 돌린다.
+    돌려주는 것은 그 뒤의 per_user_sso(재프로비저닝이 안 돌았으면 그대로)."""
+    cfg = {"heax_registry": {"per_user_sso": prev}}
+    if not any(t.endswith(("_sso", "_sso_off")) for t in _drift(tmp_path, cfg, box=box).split()):
+        return prev
+    script = (f'set -uo pipefail; RA_SSO_SECRET="{SECRET}"; TESTSCOPE_SSO_SECRET="ts-s"\n{box}\n{_generic_fns()}{_sso_off_lines()}\n'
+              'printf "OFF=%s\n" "$_sso_off"\nfor n in PER_USER_SSO_APPS $(_sso_generic_names); do printf "ENV=%s=%s\n" "$n" "${!n:-}"; done')
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    e = {"PER_USER_SSO_OFF": next(ln[4:] for ln in r.stdout.splitlines() if ln.startswith("OFF="))}
+    e.update(ln[4:].split("=", 1) for ln in r.stdout.splitlines() if ln.startswith("ENV="))
+    per_user = json.loads(json.dumps(prev))
+    exec(_gateway_sso_block(), {"e": {k: v for k, v in e.items() if v}, "per_user": per_user, "re": re,  # noqa: S102 — 옆 리포의 추적 파일 발췌
+                                "print": lambda *a, **k: None})
+    return per_user
+
+
+@pytest.mark.parametrize("apps,env,want_secret", [
+    ("dup:FOO dup:BAR", {"FOO_SSO_SECRET": "s-foo", "FOO_SSO_URL": "http://f/sso"}, "s-foo"),     # 비밀이 앞 쌍에만
+    ("dup:BAR dup:FOO", {"FOO_SSO_SECRET": "s-foo", "FOO_SSO_URL": "http://f/sso"}, None),        # 비밀이 뒤 쌍에만 — 앞 쌍이 이긴다
+    ("dup:FOO dup:BAR", {"FOO_SSO_SECRET": "s-foo", "FOO_SSO_URL": "http://f/sso",
+                         "BAR_SSO_SECRET": "s-bar", "BAR_SSO_URL": "http://b/sso"}, "s-foo"),       # 둘 다 있고 서로 다르다
+    ("dup:FOO dup:FOO", {"FOO_SSO_SECRET": "s-foo", "FOO_SSO_URL": "http://f/sso"}, "s-foo"),     # 같은 쌍을 두 번(대조)
+    ("dup:FOO", {"FOO_SSO_SECRET": "s-foo", "FOO_SSO_URL": "http://f/sso"}, "s-foo"),             # 한 번(대조)
+])
+def test_a_key_listed_twice_converges_after_one_reprovision(tmp_path, apps, env, want_secret):
+    """**이 구획의 이유다** — 재프로비저닝이 한 번 돈 뒤에는 조용해야 한다. 종전엔 앞의 세 경우가 실행마다 다시 어긋났다."""
+    box = f"PER_USER_SSO_APPS={json.dumps(apps)}\n" + "".join(f'{k}="{v}"\n' for k, v in env.items())
+    after = _one_run(tmp_path, box, {})
+    assert (after.get("dup") or {}).get("secret") == want_secret, after
+    left = [t for t in _drift(tmp_path, {"heax_registry": {"per_user_sso": after}}, box=box).split()
+            if t.endswith(("_sso", "_sso_off"))]
+    assert left == [], f"한 번 돈 뒤에도 어긋나 있다 — 매 실행 재프로비저닝이 돈다: {left}"
+    assert _one_run(tmp_path, box, after) == after, "두 번째 실행은 아무것도 바꾸지 않는다"
+
+
+def test_a_key_listed_twice_is_reported_and_is_not_a_trigger(tmp_path):
+    """앞 쌍에 비밀이 없으면 위임이 안 만들어지고 재프로비저닝도 안 돈다 — 조용하면 '적었는데 왜 안 켜지나' 를 찾을 길이 없다.
+    §5 의 그 줄들을 원문 그대로 돌린다. 쌍점 뒤(접두)는 찍지 않는다 — 비밀을 잘못 적었을 수 있다(D-10 #8)."""
+    i = UA.index("  # 한 키를 두 번 적은 PER_USER_SSO_APPS")
+    block = UA[i:UA.index("\n  done\n", i) + len("\n  done\n")]
+    for apps, want in (("dup:FOO dup:BAR other:O dup:BAZ two:A two:B", ["dup", "two"]), ("dup:FOO other:O", []), ("", [])):
+        script = (f'set -uo pipefail; MISSING="signalforge"; PER_USER_SSO_APPS={json.dumps(apps)}\n'
+                  f'bad() {{ echo "BAD:$*"; }}\n{_generic_fns()}{block}\nprintf "MISSING=[%s]\n" "$MISSING"')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+        assert r.returncode == 0 and not r.stderr, r.stderr
+        bads = [ln for ln in r.stdout.splitlines() if ln.startswith("BAD:")]
+        assert [b.split()[2].rstrip(":") for b in bads] == want, r.stdout
+        assert all("PER_USER_SSO_APPS" in b and "provision.env" in b for b in bads)
+        assert not any(x in r.stdout for x in ("FOO", "BAR", "BAZ")), "접두는 찍지 않는다"
+        assert "MISSING=[signalforge]" in r.stdout, "알리기만 한다 — 방아쇠가 아니다"
 
 
 # ── 만들지 않는다 ────────────────────────────────────────────────────────────

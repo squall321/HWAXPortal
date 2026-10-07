@@ -897,14 +897,24 @@ PY
 # 달라 아래 대입어 사슬에 이름을 적을 수 없다 — 넘기지 않으면 '적었는데 손으로 돌릴 때만 켜지는' 설정이 된다. 방아쇠·끄기 규칙은
 # RA·TestScope 와 같다. 쌍을 읽는 규칙은 게이트웨이와 같다(콜론이 있고 접두는 환경변수 이름 꼴, 게이트웨이가 직접 만드는 다섯은
 # 건너뛴다). 키는 이름 꼴(영숫자·_·.·-)만 다룬다 — 아래에서 따옴표 없이 도는 목록에 실린다. 못 읽은 쌍은 게이트웨이 provision 이 말한다.
-_sso_generic_pairs() {  # → 줄마다 "<per_user 키> <ENV 접두>"
-  local pairs pair k p
+# 한 키는 **먼저 적힌 쌍 하나만** 쓴다 — per_user 키 하나에 위임은 하나다. `dup:FOO dup:BAR` 처럼 두 번 적힌 것을 쌍마다 따로 판정하면
+# 서로 맞을 수가 없다: 비밀이 한쪽에만 있으면 방아쇠(dup_sso)와 끄기(PER_USER_SSO_OFF=dup)가 한 실행에 같이 나가 게이트웨이가 위임을
+# 만들고 곧바로 지우고, 다음 실행도 같다 — 매 실행 재프로비저닝·게이트웨이·에이전트서버 재기동에 '재프로비저닝 후에도 누락' ✗ 까지
+# 붙었다(사본에서 세 실행 연속 재현). 못 읽은 쌍은 '먼저' 로 치지 않는다(게이트웨이도 읽은 쌍만 그 키의 것으로 삼는다).
+# 인자 dups 를 주면 쌍 대신 **두 번 이상 적힌 키**를 한 번씩 낸다 — §5 가 알리는 데 쓴다.
+_sso_generic_pairs() {  # → 줄마다 "<per_user 키> <ENV 접두>"  ($1=dups 면 줄마다 겹친 키)
+  local pairs pair k p seen=" " dup=" "
   read -ra pairs <<<"$(printf '%s' "${PER_USER_SSO_APPS:-}" | tr '\t\n' '  ')"
   for pair in ${pairs[@]+"${pairs[@]}"}; do
     k="${pair%%:*}"; p="${pair#*:}"
     [ "$p" != "$pair" ] && [[ "$k" =~ ^[A-Za-z0-9_.-]+$ ]] && [[ "$p" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     case "$k" in kooremapper_mcp|hwax_risk|ste|reportarchive|testscope) continue ;; esac
-    printf '%s %s\n' "$k" "$p"
+    case "$seen" in *" $k "*)
+      case "$dup" in *" $k "*) ;; *) dup="$dup$k "; if [ "${1:-}" = dups ]; then printf '%s\n' "$k"; fi ;; esac
+      continue ;;
+    esac
+    seen="$seen$k "
+    if [ "${1:-}" != dups ]; then printf '%s %s\n' "$k" "$p"; fi
   done
 }
 _sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다) — 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL
@@ -1153,6 +1163,12 @@ PY
       stale)   echo "  · 사용자 위임 드리프트: ste — 게이트웨이가 쥔 시크릿이 infra/.env 와 다르다"; MISSING="${MISSING:+$MISSING }ste" ;;
     esac
   fi
+  # 한 키를 두 번 적은 PER_USER_SSO_APPS — 먼저 적힌 쌍만 쓴다(_sso_generic_pairs). 방아쇠로 삼지 않고 알리기만 한다: 앞 쌍에 비밀이
+  # 없으면 위임이 안 만들어지고 재프로비저닝도 안 돌아, 조용하면 '적었는데 왜 안 켜지나' 를 로그에서 찾을 수 없다. 키만 찍는다 —
+  # 쌍점 뒤는 비밀을 잘못 적은 것일 수 있다(docs/change-request-8-10 D-10 #8).
+  for _k in $(_sso_generic_pairs dups); do
+    bad "사람별 위임 $_k: PER_USER_SSO_APPS 에 두 번 적혔다 — 먼저 적힌 쌍만 쓴다(뒤 쌍의 비밀·주소는 보지 않는다). HWAXMcpGateway/provision.env 에서 한 쌍만 남긴다"
+  done
   if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
     for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do
       case "$_k" in
