@@ -1048,6 +1048,11 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         async def _post_pptx(tok: str) -> httpx.Response:
             hdrs = {"Authorization": f"Bearer {tok}"}
             # 부서는 RA 가 그 사람의 홈 부서로 정한다(ra-request §3) — 사람이 '외부 연결' 에서 고른 조직이 있을 때만 싣는다.
+            # ⚠ 위임 토큰(via_sso)으로 부를 때도 싣는 것은 **일부러 둔 것**이다(9차 요청 §6 의 질문, docs/change-request-8-10 D-7).
+            #   게이트웨이가 같은 상황에서 이 헤더를 지우는 것(strip_headers)과 대상이 다르다 — 거기서 지우는 것은 설정에 박힌
+            #   **서비스 계정**의 부서이고, 여기서 싣는 것은 **그 사람**의 연결에 저장된 부서다(고른 값이거나 등록 때 '조직 먼저' 로
+            #   채워진 값). 지금 빼면 RA 의 홈이 개인함인 사람의 PPT 가 개인함으로 가거나 400 이 된다. RA 가 '헤더가 없으면 홈 부서' 를
+            #   보장하는 것이 확인되면 위임일 때는 뺀다 — 지금 동작은 test_ra_sso 가 고정한다.
             if conn.get("workspace"):
                 hdrs["X-Workspace-Slug"] = conn["workspace"]
             async with httpx.AsyncClient(timeout=600) as cli:
