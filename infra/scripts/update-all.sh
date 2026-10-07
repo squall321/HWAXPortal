@@ -508,6 +508,23 @@ else
   fi
 fi
 
+# ── 1g) 내부 목적지를 NO_PROXY 에 더한다 — 이 뒤에 뜨는 서비스(§2 포털 · §4·§5 게이트웨이·에이전트서버)가 물려받는다 ──────
+# RA·ARP 는 사내망의 다른 서버다. 이 셸에 http_proxy 가 있으면(git·rclone 용) 서비스의 httpx 가 그 호출까지 프록시로 보내고 상대의
+# IP 허용목록에 걸린다 — RA 사람별 위임이 그렇게 403 이었다(2026-10-03 cae00 실측, 9차 요청 §4-(2)). 운영자 ~/.bashrc 의 임시 블록에
+# 기대면 새 박스·cron 에서 다시 뚫린다. 값은 1e·1f 가 방금 읽어 모양을 본 것이다(거부한 값은 비워 두었다) — 있는 것만 더한다.
+# 있던 항목·순서는 그대로 두고 없는 것만 뒤에 붙인다(no_proxy 는 맨 위에서 NO_PROXY 와 같게 맞춰 두었다). 주소는 찍지 않는다.
+# ⚠ 목록에는 **위에서 값을 읽어 둔 변수만** 적는다 — ODB_HOST·TESTSCOPE_HOST 는 리포 어디에서도 읽지 않는다. 값은 `${!k:-}` 로
+#   읽는다(미정의는 빈 값) — `$ODB_HOST` 처럼 그대로 쓰면 set -u 라 그 줄에서 실행이 통째로 죽는다.
+#   update-all 밖에서 뜨는 포털(restart.sh·부팅 유닛)은 이 export 를 못 받는다 — start.sh 가 infra/.env 의 같은 두 값을 직접 더한다.
+_np_added=""
+for _np_k in RA_HOST ARP_HOST; do
+  _np_h="${!_np_k:-}"
+  [ -n "$_np_h" ] || continue
+  case ",${NO_PROXY:-}," in *",$_np_h,"*) ;; *) NO_PROXY="${NO_PROXY:+$NO_PROXY,}$_np_h"; _np_added="$_np_added $_np_k" ;; esac
+done
+export NO_PROXY="${NO_PROXY:-}"; export no_proxy="$NO_PROXY"
+if [ -n "$_np_added" ]; then echo "  · NO_PROXY 에 내부 목적지를 더했다:$_np_added (이 뒤에 뜨는 서비스가 물려받는다)"; fi
+
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
 # 종료코드 3 = 소스 갱신 실패(git fetch/reset). 서비스는 떠 있어도 옛 코드라 가장 위험한

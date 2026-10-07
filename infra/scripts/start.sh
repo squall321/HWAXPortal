@@ -120,8 +120,10 @@ else
   # 두 철자를 **합쳐**(중복 없이) 같은 값으로 넘긴다 — 대문자만 읽어 넘기면 소문자(no_proxy)만 둔 박스에서 빈 값이 넘어가고,
   # apptainer 는 명시한 값이 있으면 호스트 값을 물려주지 않아(실측 1.3.6) 있던 우회까지 지운다.
   # read -a 로 쪼갠다 — 따옴표 없는 for 는 `*`(전부 우회)를 현재 디렉터리의 파일 이름으로 푼다.
+  # RA_HOST·ARP_HOST(infra/.env — _common.sh 가 소싱했다)도 여기서 더한다. update-all 은 1g 에서 더해 물려주지만, restart.sh·부팅
+  # 유닛으로 띄운 포털은 그 export 를 못 받는다 — 운영자 셸에 두 주소가 없으면 RA 호출이 다시 프록시를 탄다(9차 요청 §4-(2)).
   _np=""
-  IFS=', ' read -ra _np_parts <<<"${NO_PROXY:-},${no_proxy:-}"
+  IFS=', ' read -ra _np_parts <<<"${NO_PROXY:-},${no_proxy:-},${RA_HOST:-},${ARP_HOST:-}"
   for _h in ${_np_parts[@]+"${_np_parts[@]}"}; do
     [ -n "$_h" ] || continue
     case ",$_np," in *",$_h,"*) ;; *) _np="${_np:+$_np,}$_h" ;; esac
