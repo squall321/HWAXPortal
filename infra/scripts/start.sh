@@ -115,6 +115,14 @@ else
   for k in $(compgen -e | grep '^SAML_' || true); do
     [ "$k" = SAML_MOCK_IDP_ENABLED ] || SAML_ENVS+=(--env "$k=${!k}")
   done
+  # 신원·권한 설정도 **명시해서** 넘긴다 — 위 SAML 과 같은 이유다(8·9·10차 요청 #1·#5). 접두가 SAML_ 이 아니라 위 순회에 걸리지 않는다.
+  # 상속이 끊기면 고정 관리자(PORTAL_ADMIN_EMAILS)가 조용히 일반 사용자가 되고 SSO 기본 소속(SSO_DEFAULT_AFFILIATION)이 조용히 꺼진다 —
+  # infra/.env 에는 값이 적혀 있어 켜진 줄 안다. **값이 있을 때만** 넘긴다(위 DATA_ENVS 와 같다): `--env` 는 backend/.env 를 이기므로
+  # 빈 값을 명시하면 그 파일에 적어 둔 값까지 덮어 끈다.
+  IDENT_ENVS=()
+  for k in PORTAL_ADMIN_EMAILS SSO_DEFAULT_AFFILIATION; do
+    [ -n "${!k:-}" ] && IDENT_ENVS+=(--env "$k=${!k}")
+  done
   # NO_PROXY 도 **명시해서** 넘긴다 — 위 SAML 과 같은 이유다(9차 변경 요청 §4-(5)). 상속이 끊기면 포털의 RA·TestScope 호출이 사내
   # 프록시를 타고 상대의 IP 허용목록에 걸린다(게이트웨이는 그 모양으로 사람별 위임이 403 이었다 — 2026-10-03 실측).
   # 두 철자를 **합쳐**(중복 없이) 같은 값으로 넘긴다 — 대문자만 읽어 넘기면 소문자(no_proxy)만 둔 박스에서 빈 값이 넘어가고,
@@ -132,6 +140,7 @@ else
   done
   "$APPTAINER" instance start \
     ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} ${SAML_ENVS[@]+"${SAML_ENVS[@]}"} \
+    ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \
