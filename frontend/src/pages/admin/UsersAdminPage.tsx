@@ -41,7 +41,13 @@ export default function UsersAdminPage() {
 
   const reload = useCallback(() => {
     listLocalUsers()
-      .then(setRows)
+      .then((r) => {
+        setRows(r);
+        // 미지정이 0명이 되면 필터 값도 끈다. 표만 전체로 돌리고 값을 켜 둔 채면(체크박스는 그때 잠겨 끌 수도 없다), 나중에 누가
+        // 미지정이 되는 순간(대기 가입자 승인·관리자 해제·'없음'·새 SSO 사용자) 손대지 않은 필터가 다시 걸려 표가 그 한 줄로 접힌다.
+        // 여기서 끈다 — 효과(useEffect)로 끄려면 아래 조기 반환보다 위에 둬야 해서 rows 가 없을 때를 또 갈라야 한다.
+        if (!r.some(isUnassigned)) setOnlyUnassigned(false);
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : '불러오기 실패'));
   }, []);
   useEffect(() => reload(), [reload]);
