@@ -354,3 +354,43 @@ def test_알릴_것이_없는_패널은_종전과_같다():
     out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}]))
     assert out["result"]["submitted"][0]["flags"]["inputNotices"] == []
     assert _submit_arg(out, "evidence_omitted") == []
+
+
+# ── 원장에 가는 좌석 발언 — 줄인 글이 아니라 좌석이 낸 원문이다 ─────────────────────────────────────
+def test_원장에_가는_발언은_좌석이_낸_원문이다():
+    """엔진 MCP 길의 deliberate_transcript 는 기본이 화면용으로 줄인 발언이라, 그 글을 제출하면 잘린 뒤쪽의 인용이 사라진다
+    (그 길은 full=true 로 받는다). 이 워크플로는 자식 심의가 돌려준 구조화 원문에서 옮긴다 — 다음 라운드용 요약
+    (summarize 는 한 줄 입장을 160자, 근거 해석을 600자에서 끊는다)을 옮기면 같은 사고가 난다. 뒤쪽 인용이 원장까지 가는지 본다."""
+    rec = "권장 " + "나" * 1500 + " 끝 인용 [e:3|E3]"
+    fin = "최종 " + "다" * 1700 + " 끝 인용 [c:CK-9]"
+    out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}]),
+                seat={"lens": "관점 한 줄", "recommendation": rec, "concerns": ["우려 하나"], "final_position": fin})
+    turns = _submit_arg(out, "turns")
+    first = next(t for t in turns if t["round"] == 1 and t["persona"] == "mech-a")
+    assert rec in first["say"] and first["say"].endswith("우려 하나"), "1라운드 — 관점·권장·우려가 줄지 않고 이어진다"
+    assert first["position"] == rec
+    last = next(t for t in turns if t["round"] == 2 and t["persona"] == "mech-a")
+    assert fin in last["say"] and "[c:CK-9]" in last["say"], "최종 입장의 뒤쪽 인용이 남는다"
+    assert "…[총" not in first["say"] + last["say"], "원장 열의 상한(2,000자) 안이면 손대지 않는다"
+
+
+def test_원장_열의_상한을_넘는_발언만_표식을_달고_줄인다():
+    """줄이는 곳은 원장 열의 상한 하나뿐이다(앱도 같은 자리에서 자른다) — 무표식으로 자르면 잘린 발언이 완결로 읽힌다."""
+    out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}]), seat={"recommendation": "라" * 2600})
+    first = next(t for t in _submit_arg(out, "turns") if t["round"] == 1)
+    assert len(first["say"]) <= 2000 and re.search(r"…\[총 \d+자\]$", first["say"]), first["say"][-40:]
+
+
+def test_엔진_길로_손수_돌릴_때는_full_로_받으라고_적혀_있다():
+    """그 길에서 발언을 모아 제출하는 것은 사람이나 에이전트다 — 읽는 자리(워크플로 설명)에 적혀 있어야 한다. 도구가 그 인자를
+    실제로 받는지는 옆 리포의 서명에서 본다(이름이 바뀌면 이 안내가 거짓이 된다)."""
+    src = (_ROOT / _RISK).read_text(encoding="utf-8")
+    when = re.search(r"whenToUse: '([^']+)'", src).group(1)
+    assert "deliberate_transcript(full=true)" in when and "risk_submit_panel_result" in when
+    tool_src = _ENGINE / "mcp_server.py"
+    if not tool_src.exists():
+        pytest.skip("HWAXAgentServer 리포가 옆에 없다")
+    fn = next((n for n in ast.walk(ast.parse(tool_src.read_text(encoding="utf-8")))
+               if isinstance(n, ast.AsyncFunctionDef) and n.name == "deliberate_transcript"), None)
+    assert fn is not None, "deliberate_transcript 도구가 없어졌다 — 워크플로 설명을 다시 맞춘다"
+    assert "full" in {a.arg for a in fn.args.args + fn.args.kwonlyargs}, "도구가 full 인자를 받지 않는다"
