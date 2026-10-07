@@ -28,9 +28,10 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext } from '__FE__/src/auth/AuthContext';
 import UsersAdminPage from '__FE__/src/pages/admin/UsersAdminPage';
+import AccessHistoryPage from '__FE__/src/pages/admin/AccessHistoryPage';
 import LoginPage from '__FE__/src/pages/LoginPage';
 
-const PAGES = { users: UsersAdminPage, login: LoginPage } as const;
+const PAGES = { users: UsersAdminPage, history: AccessHistoryPage, login: LoginPage } as const;
 type Name = keyof typeof PAGES;
 (window as unknown as { __mount: (name: Name, url: string, signedIn: boolean) => void }).__mount = (name, url, signedIn) => {
   const Page = PAGES[name];
@@ -76,6 +77,8 @@ _STUB = r"""
   window.__db = [];
   window.__calls = [];
   window.__refuse = {};
+  window.__ledger = [];
+  window.__policy_down = false;
   const policy = {
     features: [{ key: 'feat:chat', label: '챗', desc: '', implies: [] }], platforms: [{ key: 'plat:x', label: 'X', desc: '' }],
     affiliations: [{ id: 'CAEG', label: 'CAE그룹', grants: ['*'] }, { id: 'LAB', label: '시험실', grants: [] }],
@@ -91,7 +94,8 @@ _STUB = r"""
     if (window.__refuse[key]) { const detail = window.__refuse[key]; delete window.__refuse[key]; return json({ detail }, 409); }
     let m;
     if (u === '/auth/local/users') return json(window.__db.map((r) => ({ ...r })));
-    if (u === '/auth/access/policy') return json(policy);
+    if (u === '/auth/access/policy') return window.__policy_down ? json({ detail: 'down' }, 503) : json(policy);
+    if (u.startsWith('/auth/admin/access?')) return json({ rows: window.__ledger, truncated: false, days: 7 });
     if (u.startsWith('/auth/access/requests')) return json([]);
     if (u === '/setup/requests') return json({ items: [], pending: 0 });
     if ((m = u.match(/^\/auth\/local\/users\/([^/]+)\/approve$/))) {
@@ -225,6 +229,22 @@ const SCENARIOS = {
     }
     return out;
   },
+  // 접속 이력 — SSO 로 처음 생긴 사람에게 포털이 넣은 소속을 어떻게 보이는가(권한 표를 못 받았을 때도)
+  async history(browser) {
+    const row = (n, detail) => `{ ts: ${n}, email: 'new${n}@corp.example', event: 'login', service: 'portal', ip: null, ua: null, uid: null, detail: '${detail}' }`;
+    const seed = `window.__ledger = [${row(1, 'sso:aff:map:CAEG')}, ${row(2, 'sso:aff:default:LAB')}, ${row(3, 'sso:aff:map:GONE')}]`;
+    const cells = (page) => page.evaluate(() => Array.from(document.querySelectorAll('.adm-table tbody tr > td:last-child')).map((td) => td.textContent));
+    const page = await open(browser, 'history', '/admin/access', { seed });
+    await page.getByText('new1@corp.example').waitFor();
+    await page.waitForFunction(() => window.__calls.some((c) => c.key === 'GET /auth/access/policy'));
+    await page.waitForTimeout(100);
+    const with_policy = await cells(page);
+    const down = await open(browser, 'history', '/admin/access', { seed: seed + '; window.__policy_down = true' });
+    await down.getByText('new1@corp.example').waitFor();
+    await down.waitForTimeout(100);
+    return { with_policy, policy_down: await cells(down), banner: await down.locator('[role=alert]').count(),
+             errors: [...page.__errors, ...down.__errors] };
+  },
 };
 
 (async () => {
@@ -325,3 +345,14 @@ def test_정지로_거절된_사람에게_로그인_화면이_정지라고_말�
     # 문장은 코드가 고른다 — 모르는 코드는 일반 실패로, error=sso 없이 온 코드는 아무것도 띄우지 않는다
     assert "마치지 못했습니다" in s["unknown_reason"]["alert"] and s["unknown_reason"]["details"] == 1
     assert s["reason_without_error"]["alert"] is None and s["plain"]["alert"] is None
+
+
+def test_접속_이력은_자동_지정된_소속을_라벨과_함께_보인다(seen):
+    """문장을 만드는 함수는 test_admin_screen_units 가 본다 — 여기서는 페이지가 권한 표의 라벨을 받아 그 함수에 넘기는지,
+    못 받아도 원장은 그대로 보이는지 본다(라벨은 덤이다 — 그것 때문에 화면이 오류로 바뀌면 안 된다)."""
+    s = seen("history")
+    a, b, c = s["with_policy"]
+    assert "CAE그룹(CAEG)" in a and "시험실(LAB)" in b and "GONE" in c, s["with_policy"]
+    assert all("자동 지정" in x for x in (a, b, c))
+    assert [("CAEG" in x) for x in s["policy_down"][:1]] == [True] and "CAE그룹" not in s["policy_down"][0], s["policy_down"]
+    assert len(s["policy_down"]) == 3 and s["banner"] == 0, "권한 표를 못 받아도 원장은 뜨고 오류 띠는 없다"

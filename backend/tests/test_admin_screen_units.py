@@ -42,7 +42,7 @@ const req = JSON.parse(fs.readFileSync(0, 'utf8'));
 process.stdout.write(JSON.stringify({
   unassigned: req.rows.map((r) => isUnassigned(r)),
   toggle: req.toggles.map(([r, self]) => renderToStaticMarkup(createElement(AdminToggle, { row: r, self, onSaved() {}, onError() {} }))),
-  detail: req.details.map((d) => detailText(d)),
+  detail: req.details.map((d) => (req.labels ? detailText(d, req.labels) : detailText(d))),
 }));
 """
 
@@ -57,9 +57,9 @@ def screen(tmp_path_factory):
     out = tmp_path_factory.mktemp("adminscreen")
     (out / "drive.cjs").write_text(_DRIVER, encoding="utf-8")
 
-    def run(rows=(), toggles=(), details=()) -> dict:
+    def run(rows=(), toggles=(), details=(), labels=None) -> dict:
         r = subprocess.run(["node", "drive.cjs", str(FE / "src")], cwd=str(out), capture_output=True, text=True, timeout=120,
-                           input=json.dumps({"rows": list(rows), "toggles": list(toggles), "details": list(details)}),
+                           input=json.dumps({"rows": list(rows), "toggles": list(toggles), "details": list(details), "labels": labels}),
                            env={"PATH": "/usr/bin:/bin:" + str(Path(shutil.which("node")).parent),
                                 "NODE_PATH": str(FE / "node_modules")})
         assert r.returncode == 0, r.stdout + r.stderr
@@ -103,3 +103,19 @@ def test_접속_이력의_사유_코드는_문장으로_나온다(screen):
     assert got["sso:disabled"] != got["sso:disabled:sabun"]
     assert (got["sso"], got[None]) == ("SSO", "") and got["local:bad-password"].endswith("bad-password")
     assert screen(details=["no-such-code"])["detail"] == ["no-such-code"], "모르는 코드는 숨기지 않고 그대로 보인다"
+
+
+def test_자동_지정된_소속은_라벨로_보이고_id_도_남는다(screen):
+    """접속 이력의 이 줄만 소속을 id 원문(CAEG)으로 보였다 — 바로 옆 사용자 관리 화면은 같은 소속을 라벨(CAE그룹)로만 보인다.
+    id 는 지우지 않는다: 서버 로그와 박스 파일(access.local.yaml · SSO_DEFAULT_AFFILIATION)이 id 로 적혀 있어 규칙을 찾는 열쇠다."""
+    labels = {"CAEG": "CAE그룹", "SAME": "SAME"}
+    by_map, by_default, unknown, same = screen(
+        details=["sso:aff:map:CAEG", "sso:aff:default:CAEG", "sso:aff:map:GONE", "sso:aff:default:SAME"], labels=labels)["detail"]
+    assert "CAE그룹(CAEG)" in by_map and "CAE그룹(CAEG)" in by_default
+    assert "GONE" in unknown and "(GONE)" not in unknown, "표에 없는 소속은 id 그대로다(라벨을 지어내지 않는다)"
+    assert "SAME" in same and "SAME(SAME)" not in same
+    for text in (by_map, by_default, unknown):
+        assert "소속" in text and "자동 지정" in text, "배선 설정의 안내가 이 말로 이 줄을 가리킨다"
+    assert "기본 소속" in by_default and "기본 소속" not in by_map
+    # 라벨 표를 아직 못 받았어도(또는 못 받아도) 줄은 뜬다 — id 로
+    assert "CAEG" in screen(details=["sso:aff:map:CAEG"])["detail"][0]

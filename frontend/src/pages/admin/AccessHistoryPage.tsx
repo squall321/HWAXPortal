@@ -1,6 +1,7 @@
 // 접속 이력(관리자 전용) — 누가(이메일) 어디서(IP) 언제 어느 서비스에 들어갔나(docs/access-history)
 import { useCallback, useEffect, useState } from 'react';
 import { Page, PageHeader } from '../../components/ui/Page';
+import { fetchAccessPolicy } from '../../api/access.api';
 import {
   fetchAccessLedger,
   fetchAccountRequests,
@@ -34,6 +35,13 @@ export default function AccessHistoryPage() {
   const [reqs, setReqs] = useState<AccountRequests | null>(null);
   const [loadingReqs, setLoadingReqs] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 소속 id → 라벨(자동 지정 줄에 쓴다). 못 받아도 원장은 보여야 한다 — 오류로 올리지 않고 id 로 보인다.
+  const [affLabels, setAffLabels] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetchAccessPolicy()
+      .then((p) => setAffLabels(Object.fromEntries(p.affiliations.map((a) => [a.id, a.label]))))
+      .catch(() => undefined);
+  }, []);
 
   const load = useCallback(
     (q: { email: string; service: string; days: number; includeAuto: boolean }) => {
@@ -198,7 +206,7 @@ export default function AccessHistoryPage() {
                   <td>{EVENT_LABEL[r.event] ?? r.event}</td>
                   <td>{r.service ?? '—'}</td>
                   <td>{r.ip ?? '—'}</td>
-                  <td className="adm-muted-cell">{detailText(r.detail)}</td>
+                  <td className="adm-muted-cell">{detailText(r.detail, affLabels)}</td>
                 </tr>
               ))}
             </tbody>
