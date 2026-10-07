@@ -79,6 +79,20 @@ def test_엔진_기본값도_같다():
            "포털이 엔진 기본값보다 넓다 — 포털을 통과한 초과분을 엔진이 죈다(알림은 카드 한 장뿐이다)."))
 
 
+def test_안내문이_말하는_서버_기본값이_엔진_기본값이다():
+    """입력칸 안내문은 '비우면 서버 기본 N초' 라고 말한다. 엔진 기본값(DELIB_TIMEOUT_S)의 다섯 번째 사본이다 — 엔진만
+    바꾸면 화면이 옛 수를 말한다. 박스가 환경값으로 덮었을 때는 어긋날 수 있다(그래서 '기본' 이라고 적는다)."""
+    m = re.search(r"비우면 서버 기본 (\d+)초", _PANEL.read_text(encoding="utf-8"))
+    assert m, "DelibOptsPanel 의 안내문에서 서버 기본값을 못 찾았다 — 문구가 바뀌었으면 이 시험도 고쳐라"
+    if not (_ENGINE_DIR / "app.py").exists():
+        pytest.skip(f"형제 리포 없음: {_ENGINE_DIR}")
+    e = re.search(r"""["']DELIB_TIMEOUT_S["']\s*,\s*["']?(\d+(?:\.\d+)?)""", (_ENGINE_DIR / "app.py").read_text(encoding="utf-8"))
+    assert e, "엔진 app.py 에서 DELIB_TIMEOUT_S 의 기본값을 못 찾았다 — 줄 모양이 바뀌었으면 이 시험도 고쳐라"
+    assert float(m.group(1)) == float(e.group(1)), (
+        f"안내문은 서버 기본 {m.group(1)}초라고 말하는데 엔진 기본값은 {float(e.group(1)):.0f}초다")
+    assert float(e.group(1)) < _portal_cap(), "기본값은 요청 상한보다 작다 — 같거나 크면 화면에서 더 늘릴 길이 없다"
+
+
 def test_포털은_상한까지_받고_넘으면_소리_내_막는다():
     """포털이 더 좁은 쪽이어도 되는 전제 — 초과는 422 로 드러난다. 그리고 그 본문이 **어느 칸이 얼마를 넘었는지** 말한다
     (화면은 이 loc·msg 를 읽어 보인다)."""
