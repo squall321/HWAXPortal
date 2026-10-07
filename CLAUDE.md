@@ -117,7 +117,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 챗 업로드 목적지 라우팅 | `docs/upload/` (PLAN·checklist·context-notes) |
 | 심의 품질·방법 메뉴 | `docs/deliberation-quality/` |
 | 띵킹 모드(답할 수 있는 전문가만 각자 답한다) | `docs/thinking-mode/` |
-| 설계 리스크 심사 | `docs/design-risk-review/` |
+| 설계 리스크 심사(계획·결정, **심사용 ECAD·MCAD 능력 정리** `cad-capabilities.md`·전체 카탈로그) | `docs/design-risk-review/` |
 | 데이터 /data 통합·경로 레지스트리·DB 동기화 | `docs/data-migration/` (PLAN·checklist·context-notes) |
 | 업데이트 이력(팝업·`/updates` 페이지, 항목 추가법) | `docs/changelog.md` |
 | 전문가 페르소나 챗 | `docs/persona-chat/` (PLAN·checklist·context-notes) |
@@ -132,6 +132,8 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 서비스별 접속 이력(로그인·타일 진입 원장, 정문 요청을 계정과 잇는 연결 ID, 관리자 '접속 이력') | `docs/access-history/` (PLAN·checklist·context-notes) |
 | 게이트웨이 감사에 호출 IP·자격(via) — 누가 어디서 어떤 도구를 불렀나 | `docs/gateway-audit-ip/` (PLAN·checklist·context-notes) |
 | 하위 서비스 사람별 연결(RA·TestScope 둘 다 토큰 등록 ↔ ste 방식 위임을 설정 한 줄로 고른다 — 비밀이 비면 토큰 등록; RA·TestScope 요청서·서버 설정) | `docs/sso-delegation/` (PLAN·checklist·context-notes·ra-request·testscope-request·server-setup) |
+| 심의 엔진 변경(S26U 실사용 피드백 24건 — 버린 근거를 숨기지 않는다·봉인 심사·의장 전사 상한·대기 큐, 결정 D-1~D-16) | `docs/delib-engine-feedback/` (PLAN·checklist·context-notes) |
+| 8·9·10차 변경 요청(SSO 소속 매핑·관리자는 원장만·`access.local.yaml`·ARP 타일 핸드오프·NO_PROXY·게이트웨이 조건부 등재, 결정 D-1~D-13) | `docs/change-request-8-10/` (PLAN·checklist·context-notes) |
 | 포털 UI 개선('세련되지 못하다' 원인 넷·결정·단계 0~4, 리뷰 방법은 임시 포털 캡처) | `docs/ui-refresh/` (PLAN·checklist·context-notes) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
