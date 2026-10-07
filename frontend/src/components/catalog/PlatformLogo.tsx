@@ -80,7 +80,7 @@ function Glyph({ id }: { id: string }) {
           <path d="M28 21v7M28 33v.5" />
         </g>
       );
-    case 'arp': // AI Ready 데이터(적층) + 반짝임
+    case 'aireadyportal': // AI Ready 데이터(적층) + 반짝임
       return (
         <g {...stroke}>
           <ellipse cx="24" cy="20" rx="8" ry="3" />

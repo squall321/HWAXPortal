@@ -161,7 +161,7 @@ systems:
     sort_order: 60
 
 
-  - id: arp
+  - id: aireadyportal
     name: AI Ready Portal
     tagline: 개발·시뮬레이션 AI Ready Data 허브
     description: >-
@@ -171,10 +171,14 @@ systems:
     accent: amber
     category: AI Platform
     status: available
-    # 자체 주소를 가진 사내 서비스 — 프록시가 아니라 직결 링크다. 사내망에서만 열린다.
-    integration_type: external-url
-    # 직결 주소는 사내 IP 라 여기 적지 않는다 — backend/config/systems.local.yaml(gitignore)의 `arp: {url: ...}`.
-    # 없으면 '곧 공개' 로 뜬다(docs/access-history).
+    # 포털 경유 프록시 + 타일 클릭 SSO. 목적지는 routes.local.env 의 `aireadyportal=`(gitignore, 손으로 적는다).
+    # 아래 url 은 프록시 목적지가 아니라 launch 콜백 주소다 — routes 값은 이걸 덮지 않고(registry `_apply_route`),
+    # systems.local.yaml 덮어쓰기도 핸드오프 타일에는 무시된다(registry `reload`).
+    # ⚠ 타일 id 는 2026-10-07 에 arp 에서 바꿨다(포털 경로 접두어 /aireadyportal/ 와 같아야 한다). 권한 표의 플랫폼 id 와
+    #   게이트웨이 백엔드 키는 arp 그대로다(access.yaml). 박스에 남은 systems.local.yaml 의 `arp:` 는 고아라 지운다.
+    integration_type: jwt-handoff
+    audience: aireadyportal          # ARP .env 의 ARP_PORTAL_AUDIENCE 와 글자 단위로 같아야 한다
+    url: /aireadyportal/api/auth/portal-callback
     sort_order: 65
 
   - id: hwax-risk

@@ -89,7 +89,8 @@ platforms:
     gateway: [heax-hwax_risk]
   - id: arp
     label: AI Ready Portal
-    systems: [arp]
+    systems: [aireadyportal]       # 타일 id 개명(2026-10-07). 플랫폼 id 는 arp 로 둔다 —
+                                   # plat:arp 가 게이트웨이 allowed_groups 의 값이라 바꾸면 전원 차단이다
     gateway: [arp]
   - id: odbhub
     label: ECAD Automation Hub
