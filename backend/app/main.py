@@ -50,6 +50,12 @@ settings = get_settings()
 _log = logging.getLogger(__name__)
 
 
+def _agent_timeout(s) -> httpx.Timeout:
+    """에이전트 서버로 가는 공유 클라이언트의 한도. read 만 따로다 — AGENT_STREAM_IDLE_TIMEOUT_S(침묵 한도), 0 이하는 끔(무제한)."""
+    idle = s.agent_stream_idle_timeout_s
+    return httpx.Timeout(s.agent_request_timeout, read=idle if idle > 0 else None)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ⚠ 아무나 로그인되는 설정이면 **띄우지 않는다**(config.startup_problems 주석). 경고만 남기면
@@ -103,9 +109,10 @@ async def lifespan(app: FastAPI):
     app.state.conv_store = ConversationStore(settings)
     app.state.agent_semaphore = asyncio.Semaphore(settings.max_concurrent_chats)
     # One shared httpx client for relaying to the Agent Server — pooled keep-alive, not a
-    # fresh TCP+TLS per request. read=None so token streaming isn't cut by the total timeout.
+    # fresh TCP+TLS per request. connect/write/pool 은 짧게(죽거나 포화한 서버를 실행 전에 알아챈다), read 는
+    # 침묵 한도다(_agent_timeout) — 바이트 사이 간격만 재므로 신호를 내는 스트림은 길이와 무관하게 끊기지 않는다.
     app.state.agent_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.agent_request_timeout, read=None),
+        timeout=_agent_timeout(settings),
         limits=httpx.Limits(max_connections=settings.max_concurrent_chats,
                             max_keepalive_connections=20),
     )

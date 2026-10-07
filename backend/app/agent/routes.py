@@ -533,6 +533,23 @@ async def _relay_stream(
             async for chunk in r.aiter_raw():
                 if chunk:
                     yield chunk
+    except httpx.ReadTimeout:
+        # 침묵 한도(AGENT_STREAM_IDLE_TIMEOUT_S) — 연결은 살아 있는데 에이전트 서버가 그 시간 동안 한 바이트도 안 냈다.
+        # '연결 못 함' 과 가른다: 사람이 할 일이 다르다(이쪽은 서버에서 심의가 아직 돌 수 있어, 곧바로 다시 시작하면
+        # 두 번째 심의가 나란히 돈다). 엔진 ping 은 그대로 넘기고 여기서 따로 만들지 않는다 — 릴레이가 만들면
+        # 멈춘 엔진이 바깥에서 살아 있는 것으로 보인다.
+        idle = client.timeout.read
+        audit.record(principal=principal.subject, event="chat_error", chat_id=chat_id,
+                     status="error", meta={"reason": "agent_stream_idle", "idle_s": idle})
+        logger.warning("에이전트 서버 스트림이 %s초 동안 조용해 구독을 끊었다(AGENT_STREAM_IDLE_TIMEOUT_S) sub=%s",
+                       idle, principal.subject)
+        yield sse_event("error", {
+            "code": "agent_stream_idle",
+            "message": (f"에이전트 서버가 {idle:.0f}초 동안 아무 신호도 보내지 않아 구독을 끊었다"
+                        "(AGENT_STREAM_IDLE_TIMEOUT_S). 심의는 서버에서 계속 돌 수 있다 — 다시 시작하기 전에 "
+                        "Report Archive 와 대화 목록을 확인하라")})
+        yield sse_event("done", {})
+        return
     except httpx.HTTPError as exc:
         audit.record(principal=principal.subject, event="chat_error", chat_id=chat_id,
                      status="error", meta={"reason": "agent_unreachable", "exc": str(exc)})

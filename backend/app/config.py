@@ -260,6 +260,13 @@ class Settings(BaseSettings):
     mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
     agent_token_audience: str = "agent-server"         # aud for the RS256 handoff token
     agent_request_timeout: float = 30.0                # per-call timeout to remote services (s)
+    # 에이전트 서버 SSE(챗·심의 릴레이, docx 정리본)의 **침묵** 한도(초) — 바이트 사이 간격이지 전체 시간이 아니다. 0 = 끔.
+    # 종전에는 무제한이라 멈춘 에이전트 서버를 로그 한 줄 없이 영영 기다리며 동시 실행 퍼밋 하나를 쥐었다.
+    # 엔진이 15초마다 ping 을 내므로(DELIB_HEARTBEAT_S) 살아 있는 심의에서는 걸리지 않는 마지막 그물이다. 크게 잡은 이유 —
+    # heartbeat 없는 옛 엔진이 섞여 돌아도 요청 상한 호출 1회(2×14400+8초)를 넘어야 하고, 리스크 패널 벽시계(43200초)보다
+    # 커야 벽시계가 먼저 구체적인 문구로 걸린다. 침묵 한도 셋 중 가장 안쪽이라 nginx /agent/(NGINX_AGENT_READ_TIMEOUT 50400s)
+    # 와 리스크 앱(HWAXRISK_ENGINE_READ_TIMEOUT_S 54000)보다 **작아야** 한다 — 뒤집히면 바깥이 사유 없이 먼저 끊는다.
+    agent_stream_idle_timeout_s: float = 46800.0       # 13시간
     max_concurrent_chats: int = 64                     # SSE connections hold a worker → cap + 429
     agent_audit_log_path: str = "secrets/agent_audit.sqlite"  # who/when/which tool (Phase 1)
     # 정문 nginx 접근 로그(회전본은 같은 이름 뒤에 붙는다) — 관리자 접속 이력이 계정별 요청을 찾는다(docs/access-history).
