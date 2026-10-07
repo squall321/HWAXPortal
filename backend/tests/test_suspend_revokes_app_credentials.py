@@ -196,3 +196,55 @@ def test_로그아웃_때의_ste_회수는_종전대로_본인_것만_한다(box
     assert ste.headers["x-heax-user-email"] == "boss@corp.com" and ste.headers["x-heax-client"] == "hwax-portal"
     net.broken["ste.test"] = "refuse"
     assert c.post("/systems/ste/credential/revoke", headers=h).json() == {"ok": True, "revoked": False}
+
+
+# ── 권한을 거둘 때도 — 관리자 해제·소속·개별 허가 ─────────────────────────────────────────────────
+# 게이트웨이는 그 사람의 권한(keys·is_admin)을 60초 캐시한다(GATEWAY_ACCESS_ENT_TTL). 정지는 그 캐시를 깨는데 관리자 해제와
+# 소속·허가 변경은 깨지 않았다 — 포털 화면에서는 바로 거둬졌는데 개인 Claude(PAT) 길로는 한동안 옛 권한으로 도구가 불린다.
+def _patch(c, h, email="user@corp.com", **body):
+    return c.patch(f"/auth/access/users/{email}", json=body, headers=h)
+
+
+def test_관리자를_해제하면_게이트웨이의_그_사람_캐시를_깬다(box):
+    c, net, h = box()
+    app.state.user_store.set_groups("user@corp.com", ["portal-admin"])
+    assert _patch(c, h, admin=False).status_code == 200
+    (req,) = net.to("gw.test")
+    assert (req.method, req.url.path, req.url.params["email"]) == ("POST", "/conn-invalidate", "user@corp.com")
+    assert req.headers["authorization"] == f"Bearer {GW_SECRET}"
+    assert net.to("ste.test") == [], "ste 원장의 토큰은 건드리지 않는다 — 계정은 살아 있다(정지와 다르다)"
+    assert "user-pat" in app.state.token_store.revoked_jtis(), "해제는 종전대로 PAT 도 죽인다"
+
+
+def test_소속과_허가를_바꿔도_게이트웨이의_그_사람_캐시를_깬다(box):
+    c, net, h = box()
+    assert _patch(c, h, email="USER@corp.com", grants=[]).status_code == 200
+    assert [r.url.params["email"] for r in net.to("gw.test")] == ["user@corp.com"], "원장의 주소(소문자)로 부른다"
+    assert _patch(c, h, affiliation="").status_code == 200
+    assert len(net.to("gw.test")) == 2
+
+
+@pytest.mark.parametrize("how", ["refuse", "boom", "500"])
+def test_게이트웨이가_고장_나도_권한_변경은_적용된다(box, how):
+    """best-effort 다 — 못 깨면 최대 60초 늦게 반영될 뿐이다. 그 때문에 관리자의 저장이 실패하면 안 된다."""
+    c, net, h = box()
+    net.broken["gw.test"] = how
+    app.state.user_store.set_groups("user@corp.com", ["portal-admin"])
+    r = _patch(c, h, admin=False, grants=[])
+    assert r.status_code == 200 and r.json()["admin"] is False, r.text
+    assert app.state.user_store.get("user@corp.com")["groups"] == []
+
+
+def test_거절된_권한_변경은_게이트웨이를_부르지_않는다(box):
+    c, net, h = box()
+    assert _patch(c, h, email="boss@corp.com", admin=False).status_code == 409, "자기 자신 해제"
+    assert _patch(c, h, email="nobody@corp.com", grants=[]).status_code == 404
+    assert _patch(c, h, grants=["plat:no-such"]).status_code == 422
+    assert net.to("gw.test") == []
+
+
+def test_게이트웨이를_안_쓰는_박스에서는_부르지_않는다(box):
+    c, net, h = box(gateway_shared_token="")
+    assert _patch(c, h, grants=[]).status_code == 200
+    assert net.calls == []
+

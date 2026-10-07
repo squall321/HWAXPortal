@@ -282,11 +282,13 @@ def _set_admin(request: Request, settings: Settings, by: Principal, row: dict, o
 
 
 @router.patch("/auth/access/users/{email}")
-def set_user_access(email: str, body: UserAccessIn, request: Request,
-                    admin: Principal = Depends(require_role(ADMIN_GROUP)),
-                    settings: Settings = Depends(get_settings),
-                    _csrf: None = Depends(require_csrf)) -> dict:
-    """소속·개별 허가·관리자 지정 편집. 표에 없는 키·소속은 거절한다 — 오타가 권한이 되지 않게."""
+async def set_user_access(email: str, body: UserAccessIn, request: Request,
+                          admin: Principal = Depends(require_role(ADMIN_GROUP)),
+                          settings: Settings = Depends(get_settings),
+                          _csrf: None = Depends(require_csrf)) -> dict:
+    """소속·개별 허가·관리자 지정 편집. 표에 없는 키·소속은 거절한다 — 오타가 권한이 되지 않게.
+    바꾼 뒤 게이트웨이의 그 사람 캐시를 깬다 — 게이트웨이는 권한(keys·is_admin)을 60초 들고 있어, 포털에서 거둔 권한이
+    개인 Claude(PAT) 길로는 그동안 그대로 통했다(정지는 이미 깬다 — auth/routes/local.py). best-effort 다."""
     policy = _policy(request)
     if body.affiliation and body.affiliation not in policy.affiliations:
         raise AuthError(f"모르는 소속입니다: {body.affiliation}", status_code=422)
@@ -301,6 +303,7 @@ def set_user_access(email: str, body: UserAccessIn, request: Request,
     # 관리자 쪽을 먼저 한다 — 거절되면 소속·허가도 쓰지 않는다(반만 저장된 요청을 만들지 않는다).
     revoked = _set_admin(request, settings, admin, row, body.admin) if body.admin is not None else 0
     store.set_access(email, affiliation=body.affiliation, grants=body.grants)
+    await _invalidate_gateway_cache(settings, row["email"])
     u = store.get(email) or {}
     return {"email": u.get("email"), "affiliation": u.get("affiliation") or "",
             "grants": u.get("grants") or [], "admin": ADMIN_GROUP in (u.get("groups") or []),
