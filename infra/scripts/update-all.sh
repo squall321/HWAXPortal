@@ -470,6 +470,21 @@ else
   if [ -n "$ARP_HOST" ]; then
     ARP_BASE="http://$ARP_HOST:$ARP_PORT"
     ok "타일 주소는 routes.local.env 의 aireadyportal= 이 정본이다 — systems.local.yaml 에 쓰지 않는다"
+    # 그 라우트는 손으로 적는다 — ARP 서버 주소가 infra/.env(ARP_HOST)와 라우트 파일 두 곳에 있다. 한쪽만 고치거나 라우트를 빼먹어도
+    # 오류가 나지 않는다: 없으면 타일이 켜진 채 클릭이 포털 쪽으로 떨어지고, 다르면 타일과 챗의 ARP 도구가 서로 다른 서버를 본다.
+    # 여기서 적어 주지는 않는다(적을지는 정하지 않았다) — 어긋나거나 없으면 말한다. local 이 base 를 이긴다(gen-nginx-conf 와 같다).
+    _arp_route=""
+    for _f in "$SELF_REPO/backend/config/routes.local.env" "${ROUTES_ENV:-}"; do
+      [ -n "$_f" ] && [ -f "$_f" ] || continue
+      _arp_route="$(sed -n 's|^[[:space:]]*aireadyportal=[[:space:]]*\(.*\)|\1|p' "$_f" | tail -1 | tr -d '[:space:]')"
+      [ -n "$_arp_route" ] && break
+    done
+    _arp_route_host="$(printf '%s' "$_arp_route" | sed -n 's|^[A-Za-z][A-Za-z0-9+.-]*://\([^/:]*\).*|\1|p' | tr 'A-Z' 'a-z')"
+    if [ -z "$_arp_route" ]; then
+      bad "ARP 타일 라우트가 없다 — backend/config/routes.local.env 에 aireadyportal=$ARP_BASE/ 를 적는다(없으면 타일이 켜진 채 클릭이 포털 쪽으로 떨어진다)"
+    elif [ "$_arp_route_host" != "${ARP_HOST,,}" ]; then
+      bad "ARP 주소가 두 곳에서 다르다 — infra/.env 의 ARP_HOST 와 라우트 파일의 aireadyportal= 이 다른 서버를 가리킨다(타일과 챗의 ARP 도구가 갈린다). ARP 서버가 이사했으면 둘 다 고친다"
+    fi
     if [ -n "$GW_DIR" ]; then
       if _upsert_kv "$GW_DIR/provision.env" ARP_BASE "$ARP_BASE" 600; then
         ok "게이트웨이 provision.env: ARP_BASE=$ARP_BASE  (§5 가 config 와 다르면 재프로비저닝한다)"

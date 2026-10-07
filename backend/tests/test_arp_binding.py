@@ -38,8 +38,8 @@ def box(tmp_path):
 
     def run(env_text: str) -> str:
         (repo / "infra/.env").write_text(env_text)
-        script = "\n".join([STUBS, _fn("_envfile_value"), _fn("_ra_envv"), _fn("_upsert_kv"),
-                            f'SELF_REPO="{repo}"', f'GW_DIR="{gw}"',
+        script = "\n".join(["set -uo pipefail", STUBS, _fn("_envfile_value"), _fn("_ra_envv"), _fn("_upsert_kv"),
+                            f'SELF_REPO="{repo}"', f'GW_DIR="{gw}"', f'ROUTES_ENV="{repo}/backend/config/routes.env"',
                             _block("# ── 1f) AI Ready Portal(ARP) 연결", "# ── 2) 전 서비스 배포")])
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)})
@@ -89,6 +89,62 @@ def test_없으면_손으로_둔_그대로_쓰고_안_켠_기능으로_남긴다
     out = run("# ARP_HOST=\n")
     assert "SKIP:AI Ready Portal 주소 묶기" in out
     assert f.read_text() == "arp:\n  url: http://198.51.100.1:3001/\n" and not (gw / "provision.env").exists()
+
+
+# ── 타일 라우트 — ARP 주소는 두 곳에 있다(infra/.env 의 ARP_HOST · 라우트 파일의 aireadyportal=) ─────────────
+# 1f 는 라우트를 적지 않는다(손으로 적는다). 그래서 한쪽만 고치거나 라우트를 빼먹을 수 있고, 둘 다 오류 없이 지나간다 —
+# 라우트가 없으면 타일이 켜진 채 클릭이 포털 쪽으로 떨어지고, 다르면 타일과 챗의 ARP 도구가 서로 다른 서버를 본다.
+def _routes(repo, *, local: str | None = None, base: str | None = None) -> None:
+    for name, text in (("routes.local.env", local), ("routes.env", base)):
+        f = repo / "backend/config" / name
+        if text is None:
+            f.unlink(missing_ok=True)
+        else:
+            f.write_text(text)
+
+
+def _bad(out: str) -> list[str]:
+    return [ln for ln in out.splitlines() if ln.startswith("BAD:")]
+
+
+def test_타일_라우트가_없으면_알린다(box):
+    repo, _gw, run = box
+    (warn,) = _bad(run("ARP_HOST=203.0.113.20\n"))
+    assert "aireadyportal=" in warn and "routes.local.env" in warn, "무엇을 어디에 적는지 말한다"
+    _routes(repo, local="# aireadyportal=http://203.0.113.20:3001/\nste=http://198.51.100.7:15810/\n")
+    assert len(_bad(run("ARP_HOST=203.0.113.20\n"))) == 1, "주석 줄은 라우트가 아니다"
+
+
+@pytest.mark.parametrize("route", ["http://203.0.113.20:3001/", "http://203.0.113.20:3001", "  http://203.0.113.20:3001/  ",
+                                   "https://203.0.113.20/"])
+def test_타일_라우트가_같은_서버를_가리키면_조용하다(box, route):
+    repo, _gw, run = box
+    _routes(repo, local=f"aireadyportal={route}\n")
+    assert _bad(run("ARP_HOST=203.0.113.20\n")) == []
+
+
+def test_타일_라우트가_다른_서버를_가리키면_알린다(box):
+    """ARP 서버가 이사했는데 한쪽만 고쳤다."""
+    repo, _gw, run = box
+    _routes(repo, local="aireadyportal=http://198.51.100.1:3001/\n")
+    (warn,) = _bad(run("ARP_HOST=203.0.113.20\n"))
+    assert "ARP_HOST" in warn and "aireadyportal=" in warn and "둘 다" in warn
+
+
+def test_타일_라우트는_local_이_base_를_이기고_호스트명은_대소문자를_가리지_않는다(box):
+    repo, _gw, run = box
+    _routes(repo, base="aireadyportal=http://198.51.100.1:3001/\n")
+    assert len(_bad(run("ARP_HOST=203.0.113.20\n"))) == 1, "base 의 옛 주소"
+    _routes(repo, base="aireadyportal=http://198.51.100.1:3001/\n", local="aireadyportal=http://203.0.113.20:3001/\n")
+    assert _bad(run("ARP_HOST=203.0.113.20\n")) == [], "nginx 는 local 을 쓴다(gen-nginx-conf 와 같은 우선순위)"
+    _routes(repo, local="aireadyportal=http://ARP.Corp.Example:3001/\n")
+    assert _bad(run("ARP_HOST=arp.corp.example\n")) == []
+
+
+def test_ARP_HOST_가_없거나_거부되면_라우트를_보지_않는다(box):
+    repo, _gw, run = box
+    assert _bad(run("# ARP_HOST=\n")) == [], "안 쓰는 박스(dev)에 경고를 내지 않는다"
+    assert _bad(run("ARP_HOST=localhost\n")) == [], "거부된 값은 위의 ✗ 하나로 끝난다"
 
 
 # ── §5 — 게이트웨이 config 의 arp 주소가 ARP_HOST 와 다르면 재프로비저닝 ─────────────────────
