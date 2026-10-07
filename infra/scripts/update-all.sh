@@ -20,7 +20,8 @@
 #     RAT_TOKEN=rat_xxx            # ReportArchive PAT (심의 보고서 저장)
 #     HEAX_MCP_TOKEN=heax_xxx      # heax MCP 앱 자동연동(materialtwin·laminate)
 #     ODB_HUB_TOKEN=xxxx           # ODB 자동화 허브(<ODB 서버>:8000) — cae00 에서만 도달
-#     ARP_BASE=http://<ARP 서버>:3001  # AI Ready Portal(MCP 무인증) — cae00 에서만 도달. infra/.env ARP_HOST 가 있으면 1f 가 채운다
+#     ARP_BASE=http://<ARP 서버>:3001  # AI Ready Portal — cae00 에서만 도달. infra/.env ARP_HOST 가 있으면 1f 가 채운다
+#     ARP_TOKEN=xxxx                   # ARP MCP 서비스 토큰(2026-10-01 부터 인증) — 없으면 arp 백엔드만 빠진다
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
@@ -751,7 +752,7 @@ if [ -n "${RA_SSO_SECRET:-}" ] && [ -z "${RA_SSO_URL:-}" ]; then
   [ -n "$_ra_base" ] && RA_SSO_URL="${_ra_base%/}/api/auth/sso" && echo "  · RA 위임 주소 유도: $RA_SSO_URL"
 fi
 # TestScope(다른 조직 포털) — 기본은 사람이 '외부 연결' 에 등록한 그쪽 토큰으로 부른다(RA 와 같은 토큰 등록, 위임 갈래는 아래, docs/sso-delegation).
-# 이 박스가 TestScope 를 쓰는 신호는 게이트웨이 provision.env 의 TESTSCOPE_MCP_URL 이다(ARP_BASE 와 같은 방식 — 주소가 있다 = 쓴다).
+# 이 박스가 TestScope 를 쓰는 신호는 게이트웨이 provision.env 의 TESTSCOPE_MCP_URL 이다(주소가 있다 = 쓴다).
 # §5 가 그 파일을 나중에 소싱하지만 기대 여부(calc_missing)는 여기서 정한다 — 안 보면 백엔드가 빠져도 초록이다.
 if [ -z "${TESTSCOPE_MCP_URL:-}" ] && [ -n "$GW_DIR" ]; then TESTSCOPE_MCP_URL="$(_envfile_value "$GW_DIR/provision.env" TESTSCOPE_MCP_URL)"; fi
 TESTSCOPE_EXPECTED=0
@@ -760,6 +761,16 @@ if [ -n "${TESTSCOPE_MCP_URL:-}" ]; then
 else
   hwax_skip "TestScope MCP 도구" "게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 없어 게이트웨이가 TestScope 를 기대하지 않는다(다른 조직 포털 — 안 쓰는 박스가 보통이다)" "TestScope 를 쓰는 박스는 HWAXMcpGateway/provision.env 에 TESTSCOPE_MCP_URL=<TestScope MCP 주소> 를 적고 재실행(§5 가 재프로비저닝한다)"
 fi
+# ARP(AI Ready Portal) MCP — 주소(ARP_BASE)는 있는데 토큰(ARP_TOKEN)이 없으면 게이트웨이가 arp 를 등재하지 않는다(2026-10-01 부터 인증,
+# docs/change-request-8-10 D-5). 조용히 빠지지 않게 장부에 남긴다 — RA 의 RAT_TOKEN(1e)과 같은 자리다. §5 가 provision.env 를
+# 소싱하기 전이라 파일에서 읽는다. 기대 여부 자체는 calc_missing 이 소싱된 값으로 정한다.
+_arp_b="${ARP_BASE:-}"; _arp_t="${ARP_TOKEN:-}"
+if [ -z "$_arp_b" ] && [ -n "$GW_DIR" ]; then _arp_b="$(_envfile_value "$GW_DIR/provision.env" ARP_BASE)"; fi
+if [ -z "$_arp_t" ] && [ -n "$GW_DIR" ]; then _arp_t="$(_envfile_value "$GW_DIR/provision.env" ARP_TOKEN)"; fi
+if [ -n "$_arp_b" ] && [ -z "$_arp_t" ]; then
+  hwax_skip "ARP MCP 도구(챗의 AI Ready Portal)" "ARP 주소는 있는데 ARP_TOKEN 이 없어 게이트웨이가 arp 백엔드를 등재하지 않는다(ARP 는 2026-10-01 부터 인증이 켜져 있다)" "ARP 담당에게 MCP 서비스 토큰을 받아 HWAXMcpGateway/provision.env 에 ARP_TOKEN=<값> 을 적고 재실행(§5 가 재프로비저닝한다)"
+fi
+unset _arp_t
 # Knox 브리지(사내 사이드카 — 챗의 메일·메신저 도구) — 형제 리포와 그 설정(config/secrets.yaml, gitignore)이 있는 박스에서만 기대한다.
 # 게이트웨이 config 의 knox-bridge 는 사람이 붙인 키다 — provision 은 만들지 않고 보존만 한다. 그래서 빠지면 재프로비저닝으로
 # 되살아나지 않고 §5 재검증이 ✗ 로 남는다. 조용히 넘어가지 않는 것이 목적이다(UPSTREAM-ASKS §2).
@@ -794,7 +805,7 @@ if [ -n "$H" ] && ! json_ok "$H"; then
 fi
 
 calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공백 구분). heax는 config 파일로 별도 판정.
-  H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_BASE:-}" MXWP_UP="$MXWP_UP" \
+  H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_TOKEN:+${ARP_BASE:-}}" MXWP_UP="$MXWP_UP" \
   KNOX_BRIDGE_UP="${KNOX_BRIDGE_UP:-0}" STE_ROUTED="$STE_ROUTED" TESTSCOPE_EXPECTED="${TESTSCOPE_EXPECTED:-0}" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
@@ -808,7 +819,9 @@ if os.environ.get("RAT"):           want.add("reportarchive")
 # ODB 자동화 허브는 cae00 에서만 도달한다(dev 는 포트 차단 — 실측). 토큰이 있는 박스에서만
 # 기대 목록에 넣는다 — RAT_TOKEN 과 같은 방식이라 dev 에서 가짜 DOWN 이 뜨지 않는다.
 if os.environ.get("ODB"):           want.add("odb-hub")
-# ARP 도 cae00 전용이다. 토큰이 없는 서버라 '주소가 설정돼 있다'가 이 박스에서 쓴다는 신호다.
+# ARP 도 cae00 전용이다. 인증이 켜져 있어(2026-10-01) 주소와 토큰이 둘 다 있어야 이 박스에서 쓴다는 신호다.
+# ⚠ 게이트웨이 provision-config.sh 의 등재 조건(ARP_BASE 와 ARP_TOKEN 둘 다)과 **같아야 한다** — 여기만 주소로 기대하면
+#   토큰 없는 박스가 매 실행 arp 를 '빠짐' 으로 보고 재프로비저닝을 헛돌린다(docs/change-request-8-10 D-5).
 if os.environ.get("ARP"):           want.add("arp")
 # ste(SmartTwinExplorer) MCP — **`ste=` 라우트가 설정된 박스에서만** 기대한다(ARP 와 같은 방식).
 # ⚠ 이게 없으면 ste 백엔드가 config 에서 빠져 있어도 "빠진 백엔드 없음" 초록을 받고
@@ -992,6 +1005,7 @@ PY
       #   호출이 **한 번도 실행되지 않았고** 아래 STILL 재검증은 키 존재만 봐 '✓ 재프로비저닝 완료' 를 찍었다(3라운드 검토).
       #   주석은 여기 위에, 대입어는 붙여서, 명령은 마지막에. rc 도 본다.
       #   · RA_MCP_URL — RA 가 원격이면(1e) 이 값이 없을 때 provision 이 127.0.0.1:3002 기본값으로 덮는다.
+      #   · ARP_TOKEN — ARP MCP 서비스 토큰(provision.env). 빠뜨리면 토큰을 적어도 arp 가 등재되지 않는데 위 calc_missing 은 기대해, 매 실행 재프로비저닝이 헛돈다.
       #   · STE_SSO_SECRET/STE_*_URL — 없으면 per_user_sso["ste"] 가 안 생겨 ste 도구 호출이 서비스 계정으로 나간다(잡 소유자가 한 명으로 뭉침).
       #   · RA_SSO_* — RA 사람별 위임(docs/sso-delegation). 비면 provision 이 직전 config 를 이어받는다.
       #   · TESTSCOPE_MCP_URL — TestScope 백엔드 주소(provision.env 에서 읽은 값).
@@ -1002,7 +1016,7 @@ PY
       if ( cd "$GW_DIR" && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
-          ARP_BASE="${ARP_BASE:-}" \
+          ARP_BASE="${ARP_BASE:-}" ARP_TOKEN="${ARP_TOKEN:-}" \
           RA_MCP_URL="${RA_MCP_URL:-}" RA_WORKSPACE_SLUG="${RA_WORKSPACE_SLUG:-}" \
           STE_SSO_SECRET="${STE_SSO_SECRET:-}" STE_MCP_URL="${STE_MCP_URL:-}" \
           STE_SSO_URL="${STE_SSO_URL:-}" \

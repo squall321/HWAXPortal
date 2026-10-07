@@ -1,4 +1,4 @@
-# update-all §5 의 기대 백엔드 — 게이트웨이가 그 박스에서 등재하는 것만, 등재하는 것은 빠짐없이 기대하는지(8·9·10차 요청 #9)
+# update-all §5 의 기대 백엔드 — 게이트웨이가 그 박스에서 등재하는 것만, 등재하는 것은 빠짐없이 기대하는지(8·9·10차 요청 #9·#10)
 """왜 — `gateway_config.json` 은 gitignore 라 pull 로 오지 않는다. update-all 의 기대 목록에 없는 백엔드는 config 에서 빠져도
 "빠진 백엔드 없음" 초록이고, 거꾸로 게이트웨이가 등재하지 않을 백엔드를 기대하면 매 실행 재프로비저닝을 헛돌린다
 (게이트웨이·에이전트서버가 그때마다 내려갔다 올라온다). 두 방향을 모두 고정한다.
@@ -87,3 +87,63 @@ def test_knox_리포나_설정이_없는_박스에서는_기대하지_않고_안
     assert missing == [] and "○ Knox 브리지" in out and "켜려면" in out
     missing, out = _expect(tmp_path / "nocfg", have=BASE, siblings={"HWAXKnoxBridge/README.md": "x"})
     assert missing == [] and "○ Knox 브리지" in out, "리포만 있고 config/secrets.yaml 이 없으면 아직 안 쓰는 박스다"
+
+
+# ── #10 ARP — 인증이 켜진 뒤(2026-10-01)로는 주소와 토큰이 **둘 다** 있어야 게이트웨이가 등재한다 ─────────────
+ARP_ENV = "ARP_BASE=http://203.0.113.20:3001\nARP_TOKEN=arp-test-token\n"
+
+
+def test_arp_는_주소와_토큰이_둘_다_있는_박스에서만_기대한다(tmp_path):
+    missing, out = _expect(tmp_path / "both", have=BASE, prov_env=ARP_ENV)
+    assert missing == ["arp"]
+    assert "arp-test-token" not in out, "토큰은 화면에 남지 않는다"
+    assert _expect(tmp_path / "have", have=BASE + ["arp"], prov_env=ARP_ENV)[0] == []
+
+
+def test_arp_토큰이_없으면_기대하지_않는다(tmp_path):
+    """**짝이 어긋나던 자리** — 게이트웨이는 토큰 없이는 arp 를 등재하지 않는다. 주소만 보고 기대하면 ARP_BASE 가 있는 박스가
+    매 실행 arp 를 '빠짐' 으로 보고 재프로비저닝을 헛돌린다(게이트웨이·에이전트서버가 그때마다 내려갔다 올라온다)."""
+    assert _expect(tmp_path / "base", have=BASE, prov_env="ARP_BASE=http://203.0.113.20:3001\n")[0] == []
+    assert _expect(tmp_path / "token", have=BASE, prov_env="ARP_TOKEN=arp-test-token\n")[0] == [], "주소가 없어도 등재하지 않는다"
+    assert _expect(tmp_path / "empty", have=BASE, prov_env="ARP_BASE=http://203.0.113.20:3001\nARP_TOKEN=\n")[0] == []
+
+
+def test_arp_주소만_있고_토큰이_없으면_안_켠_기능으로_남긴다(tmp_path):
+    """토큰이 없으면 arp 백엔드가 조용히 빠진다 — 무엇을 적으면 켜지는지와 함께 장부에 남는다(RA 의 RAT_TOKEN 과 같다)."""
+    _, out = _expect(tmp_path / "base", have=BASE, prov_env="ARP_BASE=http://203.0.113.20:3001\n")
+    assert "○ ARP MCP 도구" in out and "ARP_TOKEN=<값>" in out
+    _, out = _expect(tmp_path / "1f", have=BASE, pre='ARP_BASE="http://203.0.113.20:3001"')
+    assert "○ ARP MCP 도구" in out, "1f 가 ARP_HOST 로 주소를 세운 박스도 같다"
+    for name, env in (("both", ARP_ENV), ("none", ""), ("token", "ARP_TOKEN=arp-test-token\n")):
+        _, out = _expect(tmp_path / name, have=BASE, prov_env=env)
+        assert "ARP MCP 도구" not in out, name
+
+
+def test_arp_주소는_1f_가_ARP_HOST_로_정한_값이어도_된다(tmp_path):
+    """1f 는 ARP_BASE 를 셸 변수로 세운다(provision.env 에 못 적은 박스에서도 남는다). 토큰은 provision.env 에서 온다."""
+    missing, _ = _expect(tmp_path, have=BASE, prov_env="ARP_TOKEN=arp-test-token\n", pre='ARP_BASE="http://203.0.113.20:3001"')
+    assert missing == ["arp"]
+
+
+def _reprovision_cmd() -> str:
+    i = UA.index('( cd "$GW_DIR" && RAT_TOKEN=')
+    return UA[i:UA.index("--force )", i) + len("--force )")]
+
+
+def _provisioner_sees(tmp_path: Path, vals: dict) -> dict:
+    """§5 의 재프로비저닝 호출을 원문 그대로 돌려, 대역 provision-config.sh 가 **자식 프로세스로서** 본 값을 돌려준다."""
+    gw = tmp_path / "gw"; gw.mkdir()
+    (gw / "provision-config.sh").write_text(
+        "#!/usr/bin/env bash\n" + "".join(f'printf "%s=%s\\n" {k} "${{{k}-<unset>}}" >> "$PWD/ran.marker"\n' for k in vals))
+    # 부모 셸 변수일 뿐 export 하지 않는다 — provision.env 는 소싱만 되므로 사슬이 넘겨야 자식이 본다
+    script = f'set -u; GW_DIR="{gw}"\n' + "".join(f'{k}="{v}"\n' for k, v in vals.items()) + f"{_reprovision_cmd()}\necho rc=$?"
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert "rc=0" in r.stdout, r.stderr
+    return dict(ln.split("=", 1) for ln in (gw / "ran.marker").read_text().splitlines())
+
+
+def test_재프로비저닝이_ARP_토큰을_게이트웨이에_넘긴다(tmp_path):
+    """provision-config.sh 는 provision.env 를 스스로 읽지 않는다. 넘기지 않으면 토큰을 적어도 arp 가 등재되지 않고,
+    update-all 은 기대하므로 매 실행 재프로비저닝 → '재프로비저닝 후에도 누락' 이 된다(ODB_HUB_TOKEN 이 그렇게 빠졌었다)."""
+    vals = {"ARP_BASE": "http://203.0.113.20:3001", "ARP_TOKEN": "arp-test-token"}
+    assert _provisioner_sees(tmp_path, vals) == vals
