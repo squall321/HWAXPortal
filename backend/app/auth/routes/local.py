@@ -6,6 +6,7 @@
 로그인·가입은 CSRF 면제(로그인 전엔 CSRF 쿠키가 없다 — 자격증명 자체가 증명),
 대신 IP rate-limit 과 계정 잠금(user_store)이 막는다. 정문이 인터넷 노출이라 필수다.
 """
+import asyncio
 import logging
 import secrets
 import threading
@@ -15,11 +16,13 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 
-from app.auth import access_log, cookies
+from app.auth import access_log, cookies, ra_sso
 from app.auth.errors import AuthError
 from app.auth.jwt_service import JWTService
 from app.auth.provider import Principal
-from app.auth.user_store import UserStore
+from app.auth.routes import ste_credential
+from app.auth.routes.connections import _invalidate_gateway_cache
+from app.auth.user_store import UserStore, norm_email
 from app.config import Settings, get_settings
 from app.deps import get_current_principal, get_jwt_service, require_csrf, require_role
 
@@ -186,12 +189,53 @@ def approve_user(
     return JSONResponse({"ok": True})
 
 
+async def _revoke_app_credentials(settings: Settings, email: str) -> dict[str, str]:
+    """정지된 사람의 **앱 쪽 자격**을 회수한다(8차 요청 §7). 정지가 포털 PAT 만 폐기하던 때는 이 셋이 만료까지 남았다.
+      · ste — 그 사람이 포털을 거쳐 받은 ste 토큰(12시간). ste 원장에서 죽인다.
+      · reportarchive — 포털이 메모리에 든 그 사람의 RA 위임 토큰(최대 11시간). RA 가 회수 엔드포인트를 내주면 여기에 더한다.
+      · gateway — 게이트웨이가 든 그 사람 명의 토큰과 연결·응답·권한 캐시.
+
+    **best-effort 다.** 셋을 따로 시도하고 하나가 실패해도(던져도) 나머지는 간다. 부르는 쪽은 정지를 원장에 적은 **뒤에** 이것을
+    부른다 — 여기서 무엇이 실패하든 매달리든 정지는 이미 걸려 있고, 포털·게이트웨이의 새 호출은 권한 0 으로 막힌다. 회수는
+    그 위에 남은 토큰의 수명을 줄이는 일이다.
+    돌려주는 것: 앱 → "ok" | "failed" | "off"(그 연동이 이 박스에 꺼져 있어 부르지 않았다). 실패는 WARNING 으로 남긴다 —
+    포털은 INFO 를 버리고, 회수 실패가 흔적 없이 지나가면 '정지했으니 끊겼다' 고 믿게 된다. 꺼진 것은 실패로 적지 않는다.
+    """
+    async def ste() -> bool | None:
+        return await ste_credential.revoke_for(settings, email)
+
+    async def reportarchive() -> bool | None:
+        ra_sso.forget(email)
+        return True
+
+    async def gateway() -> bool | None:
+        return await _invalidate_gateway_cache(settings, email)
+
+    steps = (ste, reportarchive, gateway)
+    # 동시에 — ste 는 SSH 터널 뒤라 응답이 늦을 수 있다(TIMEOUT_S). 차례로 부르면 그만큼 관리자의 화면이 매달린다.
+    results = await asyncio.gather(*(step() for step in steps), return_exceptions=True)
+    out: dict[str, str] = {}
+    for step, got in zip(steps, results, strict=True):
+        name = step.__name__
+        if got is None:
+            out[name] = "off"
+        elif got is True:
+            out[name] = "ok"
+        else:
+            out[name] = "failed"
+            why = type(got).__name__ if isinstance(got, BaseException) else "닿지 못했거나 거절됐다"
+            logger.warning("정지 %s — %s 쪽 자격 회수 실패(%s). 정지는 적용됐다 — 그 앱이 이미 내준 토큰은 만료까지 남을 수 있다",
+                           email, name, why)
+    return out
+
+
 @router.post("/users/{email}/status")
-def set_user_status(
+async def set_user_status(
     request: Request,
     email: str,
     body: StatusIn,
     store: UserStore = Depends(_user_store),
+    settings: Settings = Depends(get_settings),
     admin: Principal = Depends(require_role("portal-admin")),
     _: None = Depends(require_csrf),
 ) -> JSONResponse:
@@ -201,13 +245,17 @@ def set_user_status(
     # 여전히 유효해서, 자격을 안 보는 경로가 생기는 순간 다시 뚫린다. 무기한 PAT 은
     # 만료로 안 죽고 폐기로만 죽는다 — 정지가 절반만 듣던 자리다(7차 감사).
     revoked = 0
+    apps: dict[str, str] = {}
     if body.status == "disabled":
         ts = getattr(request.app.state, "token_store", None)
         if ts is not None:
             revoked = ts.revoke_all_for(email)
+        # 포털 밖에 나가 있는 자격도 거둔다 — 원장의 정지와 PAT 폐기가 **끝난 뒤**다(순서가 뒤집히면 앱 호출이 매달린 동안
+        # 그 사람이 정지되지 않은 채 남는다).
+        apps = await _revoke_app_credentials(settings, norm_email(email))
     logger.info("local status: %s -> %s by %s (PAT %d개 폐기)",
                 email, body.status, admin.email, revoked)
-    return JSONResponse({"ok": True, "pats_revoked": revoked})
+    return JSONResponse({"ok": True, "pats_revoked": revoked, "app_revocations": apps})
 
 
 @router.post("/users/{email}/reset-password")

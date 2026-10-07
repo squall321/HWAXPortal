@@ -67,17 +67,21 @@ async def _ra_profile(settings: Settings, token: str) -> dict:
     return me["data"] if isinstance(me, dict) and isinstance(me.get("data"), dict) else me
 
 
-async def _invalidate_gateway_cache(settings: Settings, email: str) -> None:
+async def _invalidate_gateway_cache(settings: Settings, email: str) -> bool | None:
     """게이트웨이의 연결 캐시를 깬다 — 안 부르면 바뀐 값이 최대 5분(PORTAL_CONN_TTL_S) 안 먹는다.
 
     방금 조직을 바꾼 사용자의 보고서가 옛 워크스페이스로 조용히 가는 것을 막는다. 실패는
     비치명이다 — TTL 이 지나면 어차피 반영되므로, 여기서 예외를 올려 설정 변경 자체를
     실패시키지는 않는다. 대신 로그로 남겨 '왜 늦게 반영됐나' 를 나중에 추적할 수 있게 한다.
+
+    게이트웨이는 이 호출에서 그 사람의 연결·응답·권한 캐시와 **그 사람 명의로 받아 둔 토큰**(ste·RA 등)을 함께 비운다 —
+    계정 정지가 이것을 부르는 이유다(auth/routes/local.py). 돌려주는 것: True(비웠다) · False(닿지 못했거나 거절) ·
+    None(공유 시크릿·주소가 없어 부르지 않았다). 종전 호출부는 값을 보지 않는다.
     """
     tok = settings.gateway_shared_token
     base = (getattr(settings, "mcp_gateway_url", "") or "").rstrip("/")
     if not (tok and base):
-        return
+        return None
     try:
         async with httpx.AsyncClient(timeout=5) as cli:
             r = await cli.post(f"{base}/conn-invalidate", params={"email": email},
@@ -85,8 +89,11 @@ async def _invalidate_gateway_cache(settings: Settings, email: str) -> None:
         if r.status_code != 200:
             logger.warning("gateway conn-invalidate → HTTP %s (반영이 최대 TTL 만큼 늦어진다)",
                            r.status_code)
+            return False
+        return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("gateway conn-invalidate 실패(%r) — 반영이 최대 TTL 만큼 늦어진다", exc)
+        return False
 
 
 def _workspace_options(me: dict) -> list[dict]:

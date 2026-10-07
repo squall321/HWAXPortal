@@ -114,6 +114,30 @@ async def ste_credential(
     return SteCredential(token=token, expires_in=int(body.get("expires_in") or 43200))
 
 
+async def revoke_for(settings: Settings, email: str) -> bool | None:
+    """ste 원장에서 그 사람의 **포털 발급** 토큰을 죽인다 — 로그아웃 훅과 계정 정지(auth/routes/local.py)가 같이 쓴다.
+
+    돌려주는 것: True(회수됐다) · False(닿지 못했거나 ste 가 거절했다) · None(이 박스에 ste 위임이 꺼져 있다 — 부르지 않았다).
+    이메일만 싣는다(이름 헤더 없음). X-Heax-Client 는 발급 때와 같은 hwax-portal 이다 — ste 는 발급도 회수도 클라이언트별로
+    하므로, 게이트웨이(gateway)가 그 사람 명의로 받아 둔 토큰은 이 호출로 죽지 않는다(서로 회수하지 않게 갈라 둔 것이다).
+    """
+    if not settings.ste_sso_secret or not email:
+        return None
+    url = settings.ste_base_url.rstrip("/") + "/api/auth/sso/revoke"
+    headers = {
+        "X-Heax-Gateway-Secret": settings.ste_sso_secret,
+        "X-Heax-User-Email": email,
+        "X-Heax-Client": "hwax-portal",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+            r = await client.post(url, headers=headers)
+    except (httpx.HTTPError, UnicodeEncodeError) as exc:
+        log.warning("ste sso revoke failed: %s", type(exc).__name__)
+        return False
+    return r.status_code == 200
+
+
 @router.post("/ste/credential/revoke")
 async def ste_credential_revoke(
     request: Request,
@@ -126,18 +150,4 @@ async def ste_credential_revoke(
 
     실패는 **비치명**이다. 회수가 안 됐다고 로그아웃을 막으면 사용자가 나갈 수 없다.
     """
-    if not settings.ste_sso_secret or not principal.email:
-        return {"ok": True, "revoked": False}
-    url = settings.ste_base_url.rstrip("/") + "/api/auth/sso/revoke"
-    headers = {
-        "X-Heax-Gateway-Secret": settings.ste_sso_secret,
-        "X-Heax-User-Email": principal.email,
-        "X-Heax-Client": "hwax-portal",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
-            r = await client.post(url, headers=headers)
-        return {"ok": True, "revoked": r.status_code == 200}
-    except httpx.HTTPError as exc:
-        log.warning("ste sso revoke failed: %s", type(exc).__name__)
-        return {"ok": True, "revoked": False}
+    return {"ok": True, "revoked": bool(await revoke_for(settings, principal.email))}

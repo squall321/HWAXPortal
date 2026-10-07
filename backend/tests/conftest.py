@@ -16,3 +16,9 @@ os.environ.setdefault(
 os.environ.setdefault(
     "USER_STORE_PATH",
     os.path.join(tempfile.mkdtemp(prefix="hwax-test-users-"), "users.sqlite"))
+# 사용자를 정지하면 앱 쪽 자격도 회수한다(8차 요청 §7 — 게이트웨이 `/conn-invalidate` · ste `/api/auth/sso/revoke`). 그대로 두면 시험이
+# 사용자를 정지할 때마다 이 박스에 **떠 있는** 게이트웨이를 backend/.env 의 실제 공유 시크릿으로 부른다 — 시험은 공유 서비스를 치면
+# 안 된다(test_procedures_routes 의 같은 경고). 게이트웨이 기본 주소를 닫힌 포트로 돌리고 ste 위임은 끈다. 이 호출을 보는 시험은
+# Settings 에 주소·비밀을 직접 주고 HTTP 대역을 건다(test_suspend_revokes_app_credentials).
+os.environ.setdefault("MCP_GATEWAY_URL", "http://127.0.0.1:9")
+os.environ.setdefault("STE_SSO_SECRET", "")
