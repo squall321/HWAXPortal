@@ -926,6 +926,18 @@ PY
   )
 }
 
+# ARP 토큰이 게이트웨이 config 의 arp 항목에 **이 토큰 그대로** 실려 있나 — 아니면 0(어긋남), 맞거나 판정할 수 없으면 1.
+# 키(arp)가 config 에 없는 것은 calc_missing 이 본다. 토큰은 argv 가 아니라 환경변수로 넘기고 아무것도 찍지 않는다.
+_arp_token_drift() {  # $1=gateway_config.json  (ARP_TOKEN 을 읽는다)
+  ARP_T="${ARP_TOKEN:-}" python3 - "$1" <<'PY' 2>/dev/null
+import json, os, sys
+try: arp = json.load(open(sys.argv[1])).get("arp")
+except Exception: raise SystemExit(1)
+if not isinstance(arp, dict) or not os.environ.get("ARP_T"): raise SystemExit(1)
+raise SystemExit(0 if ((arp.get("headers") or {}).get("Authorization") or "") != "Bearer " + os.environ["ARP_T"] else 1)
+PY
+}
+
 if [ -z "$H" ]; then
   bad "게이트웨이 :9110 무응답/판정불가 — $SVC up mcp-gateway 후 재시도"
 else
@@ -1041,6 +1053,15 @@ PY
       MISSING="${MISSING:+$MISSING }arp"
     fi
   fi
+  # ARP 토큰 — 키(arp)가 있으면 calc_missing 은 '빠짐 없음' 으로 본다. 옛 프로비저너는 arp 를 토큰 없이 등재했고 그 항목이 config 에
+  # 남아 있다(cae00). 거기서 ARP_TOKEN 을 처음 적어도, 토큰을 바꿔 적어도 방아쇠가 없어 arp 가 401(가짜 DOWN)인 채 남았다 —
+  # "토큰을 적고 update-all" 이 통하지 않았다. 기대하는 박스(주소·토큰 둘 다)에서 config 의 arp 가 이 토큰을 싣고 있지 않으면
+  # 재프로비저닝한다(게이트웨이는 env 의 토큰으로 고쳐 쓴다 — 그 뒤에는 조용하다).
+  if [ -n "${ARP_TOKEN:-}" ] && [ -n "${ARP_BASE:-}" ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+     && _arp_token_drift "$GW_DIR/gateway_config.json"; then
+    echo "  · 토큰 드리프트: arp — 게이트웨이 config 의 arp 가 provision.env 의 ARP_TOKEN 을 싣고 있지 않다(토큰 없이 등재됐거나 토큰을 바꿨다)"
+    case " $MISSING " in *" arp "*) ;; *) MISSING="${MISSING:+$MISSING }arp" ;; esac
+  fi
   # ste 사용자 위임 — 게이트웨이 config 에 없거나 시크릿이 infra/.env 와 다르면 재프로비저닝(docs/ste-cae00 D-30).
   # 키(ste)는 있으니 calc_missing 이 못 잡는다. 위임이 한 번 빠지면(예: heax 토큰 자동 발급 실패로 옛 provision 이 통째로 생략)
   # 게이트웨이가 ste 를 토큰 없이 불러 REST 가 401 인 채 남았다 — 도구는 "Error executing tool …", 점검은 전부 초록.
@@ -1128,6 +1149,10 @@ PY
         if [ -n "${RA_HOST:-}" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
           _ra_after="$(python3 -c 'import json,sys;from urllib.parse import urlparse;d=json.load(open(sys.argv[1]));print(urlparse(((d.get("reportarchive") or {}).get("url") or "")).hostname or "")' "$GW_DIR/gateway_config.json" 2>/dev/null)"
           [ -n "$_ra_after" ] && [ "$_ra_after" != "$(printf '%s' "$RA_HOST" | tr 'A-Z' 'a-z')" ] && STILL="${STILL:+$STILL }reportarchive(주소 $_ra_after ≠ RA_HOST)"
+        fi
+        # ARP 토큰도 calc_missing 이 못 본다(키는 있다) — 재프로비저닝 뒤에도 안 실렸으면 게이트웨이가 ARP_TOKEN 을 모르는 옛 판이다.
+        if [ -n "${ARP_TOKEN:-}" ] && [ -n "${ARP_BASE:-}" ] && _arp_token_drift "$GW_DIR/gateway_config.json"; then
+          STILL="${STILL:+$STILL }arp(토큰 미반영 — 게이트웨이 리포가 ARP_TOKEN 을 싣는 판인지 보라)"
         fi
         # 사람별 위임도 calc_missing 이 못 본다 — 재프로비저닝 뒤에도 어긋나 있으면 여기서 잡는다.
         _sso_left="$(_sso_deleg_drift "$GW_DIR/gateway_config.json")"
