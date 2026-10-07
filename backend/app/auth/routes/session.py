@@ -282,9 +282,16 @@ def logout(
     try:
         if not _has_session:
             raise RuntimeError("no session — 목록 비공개")
+        routed = request.app.state.catalog.routed_prefixes()
         for sysm in request.app.state.catalog.all():
             u = getattr(sysm, "url", "") or ""
             if "/portal-callback" not in u:
+                continue
+            # 이 박스에 라우트가 없는 타일은 뺀다 — nginx 에 /<접두어>/ location 이 없으면 그 POST 는 포털 자신이 받아 405 로
+            # 확정 실패한다(아래의 '늘 울리는 경보'). aireadyportal 은 콜백 url 이 추적 파일에 있고 라우트는 박스 파일에 손으로
+            # 적는 첫 핸드오프 타일이라, 라우트가 없는 박스(dev·새 박스)에서 매 로그아웃마다 그랬다. 타일 id 가 아니라 콜백의
+            # 첫 경로 마디로 본다 — 리스크 심사 타일은 /heax-hub/ 의 콜백을 쓰고, 화면과 API 가 갈린 서비스의 키는 `<id>/api` 다.
+            if u.startswith("/") and u.split("/")[1] not in routed:
                 continue
             base = u.rsplit("/", 1)[0]
             # ⚠ 경로를 유도만 하고 존재를 확인하지 않으면 안 된다 — 실측으로 4개 중
@@ -305,7 +312,12 @@ def logout(
             # revoke 하는 경로가 필요하다(재로그인 때는 portal_sso 가 이전 키를 폐기한다).
             if "/ai-data-hub/" in u:
                 continue
-            outs.append(base + ("/logout-session" if "/heax-hub/" in u else "/logout"))
+            # ⚠ aireadyportal 의 /api/auth/logout 은 있는지 확인된 적이 없다(요청서는 /api/auth/me 와 portal-callback 만 말한다).
+            # 라우트가 있는 박스에서는 그래도 친다 — 빼면 '확실히 못 끊고 조용하다' 가 된다. 그 박스에서 재 본 뒤 없으면
+            # ai-data-hub 처럼 사유와 함께 뺀다.
+            _out = base + ("/logout-session" if "/heax-hub/" in u else "/logout")
+            if _out not in outs:      # 리스크 심사 타일이 heax-hub 의 콜백을 같이 쓴다 — 같은 주소를 두 번 치지 않는다
+                outs.append(_out)
     except Exception:  # noqa: BLE001 — 목록을 못 읽어도 포털 로그아웃 자체는 되어야 한다
         outs = []
     response = JSONResponse({"status": "logged_out", "downstream_logout": outs})

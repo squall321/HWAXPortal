@@ -36,6 +36,7 @@ class CatalogRegistry:
         self._catalog_path = Path(settings.resolve(settings.catalog_path))
         self._routes_path = Path(settings.resolve(settings.routes_path))
         self._systems: list[LinkedSystem] = []
+        self._routed: set[str] = set()
         self.reload()
 
     def _load_routes(self) -> dict[str, str]:
@@ -123,6 +124,9 @@ class CatalogRegistry:
         raw = yaml.safe_load(self._catalog_path.read_text(encoding="utf-8")) or {}
         catalog = CatalogFile.model_validate(raw)  # raises on malformed entries
         routes = self._load_routes()
+        # 이 박스의 nginx 에 location 이 생기는 경로 접두어 — 라우트 파일(routes.env + routes.local.env) 키의 첫 마디다
+        # (`mx-white-paper/api` → mx-white-paper). SYS_<ID>_URL 은 타일은 켜도 location 은 만들지 않아 세지 않는다.
+        self._routed = {k.split("/")[0] for k in routes}
         overlay = self._load_local_overlay()
 
         seen: set[str] = set()
@@ -188,6 +192,10 @@ class CatalogRegistry:
 
     def all(self) -> list[LinkedSystem]:
         return list(self._systems)
+
+    def routed_prefixes(self) -> set[str]:
+        """이 박스에 리버스 프록시 라우트가 있는 경로 접두어(/<접두어>/…) — 로그아웃이 하위 서비스 목록을 고를 때 쓴다."""
+        return set(self._routed)
 
     def live_ids(self) -> set[str]:
         """이 박스에서 실제로 열리는 타일 — 켜져 있고 목적지가 있다(권한 표의 플랫폼 숨김이 쓴다)."""
