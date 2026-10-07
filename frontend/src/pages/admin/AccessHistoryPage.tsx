@@ -28,6 +28,9 @@ const DETAIL_LABEL: Record<string, string> = {
   sso: 'SSO',
   primer: '자동 갱신',
   credential: '자격 중계',
+  // 정지된 계정이 SSO 로 들어왔다(사번을 안 받는 박스에서는 세션은 나가고 요청마다 403 이다 — 그래서 '거절' 이라 적지 않는다).
+  // 종전엔 라벨이 없어 이 줄만 코드 원문(sso:disabled)으로 나왔다
+  'sso:disabled': 'SSO — 정지된 계정',
   // 정지된 사람이 다른 Mail 로 들어오려다 사번으로 걸렸다(SAML_ATTR_SABUN) — 제 이메일의 정지(sso:disabled)와 다른 줄이다
   'sso:disabled:sabun': 'SSO — 거절(같은 사번의 정지된 계정이 있음)',
 };

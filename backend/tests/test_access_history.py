@@ -241,3 +241,24 @@ def test_깨진_회전본이_있어도_조회는_된다(env):
     r = c.get("/auth/admin/access/requests", params={"email": "user@corp.com"})
     assert r.status_code == 200 and r.json()["files_failed"] == 1 and "못 읽었다" in r.json()["note"]
     assert any(s["service"] == "ste" for s in r.json()["services"]), "읽을 수 있는 파일은 그대로 센다"
+
+
+# ── 화면 — 원장의 사유 코드를 원문 그대로 보이지 않는다 ───────────────────────────────────────────
+def test_SSO_정지_사유는_둘_다_화면에_라벨이_있다():
+    """접속 이력 화면은 사유 코드를 라벨로 바꿔 보인다. 사번으로 걸린 줄(sso:disabled:sabun)에만 라벨을 붙여, 제 이메일이 정지된
+    사람의 줄(sso:disabled)은 코드 원문으로 나왔다 — 같은 표에서 한 줄은 문장, 한 줄은 코드다. 백엔드가 적는 두 코드를 소스에서
+    읽어 화면의 라벨 표와 맞춘다(프론트에 단위 시험 러너가 없어 표를 읽는다)."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    written = set(re.findall(r'"(sso:disabled(?::[a-z]+)?)"',
+                             (root / "backend/app/auth/routes/session.py").read_text(encoding="utf-8")))
+    assert written == {"sso:disabled", "sso:disabled:sabun"}, "전제 — 콜백이 적는 정지 사유는 이 둘이다"
+    page = (root / "frontend/src/pages/admin/AccessHistoryPage.tsx").read_text(encoding="utf-8")
+    table = page[page.index("const DETAIL_LABEL"):page.index("};", page.index("const DETAIL_LABEL"))]
+    labels = dict(re.findall(r"^\s*'?([a-z:_]+)'?:\s*'([^']+)',?\s*$", table, re.M))
+    for code in sorted(written):
+        assert code in labels, f"{code} 가 화면에 코드 원문으로 나온다"
+    assert labels["sso:disabled"] != labels["sso:disabled:sabun"], "두 줄은 다른 일이다 — 뒤쪽이 관리자가 알아야 할 줄이다"
+
