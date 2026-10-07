@@ -19,6 +19,7 @@
 #   ra_sso           — 포털에 RA 사람별 위임 비밀(RA_SSO_SECRET)이 있나
 #   access_overlay   — 권한 표 박스 오버레이(access.local.yaml)를 탈 없이 읽었나(없는 박스는 통과). 사유는 화면에 함께 뜬다
 #   sso_default_affiliation — SSO 기본 소속(SSO_DEFAULT_AFFILIATION)이 표에 있는 값이고 전권 소속이 아닌가(꺼져 있으면 통과)
+#   tiles_in_access_table — 포털 타일이 전부 권한 표의 어느 플랫폼에든 속하나(박스 파일로 붙인 타일 포함). 빠진 타일 id 가 화면에 함께 뜬다
 
 requests:
   - id: ste-sso-secret
@@ -108,6 +109,24 @@ requests:
       ⚠ **파일이 깨져 있는 동안은 직전에 읽은 정책이 그대로 쓰입니다** — 방금 고친 내용은 반영되지 않았습니다.
       이 상태로 포털이 재기동되면 정책을 읽지 못해 모든 요청이 실패하므로, 재기동 전에 고치세요.
       버려진 `sso_affiliation_map` 행은 없는 행과 같습니다 — 몇 번째 행이 왜 버려졌는지는 위 사유에 있습니다.
+
+  - id: tiles-outside-access-table
+    title: 권한 표의 어느 플랫폼에도 없는 타일이 있다 — 모두에게 보인다
+    tag: 권한
+    severity: blocker
+    check: tiles_in_access_table
+    default: none
+    body: |
+      **위에 적힌 타일은 권한과 무관하게 로그인한 모두에게 보입니다.** 포털 타일은 그 타일을 여는 플랫폼 허가가 있는 사람에게만
+      보이는데, 어느 플랫폼에도 속하지 않은 타일은 막을 표가 없어 그대로 보입니다. 고치면 이 항목은 저절로 사라집니다.
+
+      · 이 박스의 `backend/config/systems.local.yaml` 로 만든 타일이면 — `backend/config/access.local.yaml` 의 `platforms:` 에
+        그 타일을 여는 플랫폼을 같이 적습니다(`- {id: <플랫폼 id>, label: <이름>, systems: [<타일 id>]}`). 재기동은 필요 없습니다.
+      · 추적 파일 `systems.yaml` 의 타일이면 — `access.yaml` 의 맞는 플랫폼 `systems:` 에 그 타일 id 를 넣습니다.
+      · 방금 리포를 갱신한 박스라면 — 권한 표는 바로 새로 읽히고 타일 목록은 포털 재기동 때 읽힙니다. 이름이 바뀐 옛 타일이
+        그 사이에 여기 보일 수 있습니다. 포털을 다시 띄우면 사라집니다.
+
+      모두에게 보여도 되는 타일이라도 플랫폼 하나에 넣어 두는 편이 낫습니다 — 그래야 나중에 닫을 수 있습니다.
 
   - id: sso-default-affiliation
     title: SSO 기본 소속(SSO_DEFAULT_AFFILIATION)을 다시 본다

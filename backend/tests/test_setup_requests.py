@@ -19,7 +19,8 @@ from app.access.policy import AccessPolicy
 from app.auth.user_store import UserStore
 from app.config import Settings, get_settings
 from app.main import app
-from app.setup_requests import parse_requests, run_check
+from app.catalog.registry import CatalogRegistry
+from app.setup_requests import check_notes, parse_requests, run_check
 
 YAML_DOC = """
 requests:
@@ -153,6 +154,89 @@ def test_the_access_item_disappears_on_a_live_portal(client, tmp_path):
         assert c.get("/setup/requests").json()["items"] == [], "표에 있으면 사라진다"
     finally:
         app.state.access = keep
+
+
+# ── 어느 플랫폼에도 없는 타일 — 권한과 무관하게 모두에게 보인다 ─────────────────────────────────────
+# 타일은 그것을 여는 플랫폼 허가가 있는 사람에게만 보이는데(policy.filter_tiles), 표에 없는 타일은 막지 않는다. 추적 파일끼리는
+# 시험(test_access_control)이 대조하지만, 박스 파일(systems.local.yaml)로 붙인 타일은 그 박스에서 시험을 돌려야만 드러났다 —
+# 운영 박스는 시험을 돌리지 않는다. 떠 있는 포털이 제 카탈로그와 제 권한 표를 대조해 관리자에게 말한다.
+def _catalog_box(tmp_path: Path, *, local_tile: bool, local_platform: bool) -> tuple[CatalogRegistry, AccessPolicy]:
+    (tmp_path / "systems.yaml").write_text(
+        "systems:\n  - {id: known, name: Known, integration_type: external-url, url: 'https://known.example'}\n", encoding="utf-8")
+    (tmp_path / "routes.env").write_text("")
+    (tmp_path / "access.yaml").write_text("platforms:\n  - {id: known, label: Known, systems: [known]}\n", encoding="utf-8")
+    for name, on, body in (("systems.local.yaml", local_tile, "box-lab:\n  name: 실험실 장비\n  url: http://192.0.2.30:9000/\n"),
+                           ("access.local.yaml", local_platform, "platforms:\n  - {id: lab, label: 실험실, systems: [box-lab]}\n")):
+        if on:
+            (tmp_path / name).write_text(body, encoding="utf-8")
+        else:
+            (tmp_path / name).unlink(missing_ok=True)
+    s = Settings(_env_file=None, catalog_path=str(tmp_path / "systems.yaml"), routes_path=str(tmp_path / "routes.env"),
+                 access_path=str(tmp_path / "access.yaml"))
+    return CatalogRegistry(s), AccessPolicy(s)
+
+
+@pytest.mark.anyio
+async def test_a_tile_outside_every_platform_is_reported_with_its_id(tmp_path):
+    """**이 시험이 이 구획의 이유다** — 박스 파일로 타일만 붙이고 플랫폼을 안 붙였다."""
+    cat, acc = _catalog_box(tmp_path, local_tile=True, local_platform=False)
+    assert await run_check("tiles_in_access_table", Settings(), acc, cat) == "todo"
+    notes = check_notes("tiles_in_access_table", Settings(), acc, cat)
+    assert len(notes) == 1 and "box-lab" in notes[0] and "known" not in notes[0], notes
+    assert "192.0.2.30" not in " ".join(notes), "타일의 사내 주소를 응답에 싣지 않는다"
+
+
+@pytest.mark.anyio
+async def test_tiles_that_all_belong_to_a_platform_are_ok(tmp_path):
+    for tile, plat in ((False, False), (True, True), (False, True)):
+        cat, acc = _catalog_box(tmp_path, local_tile=tile, local_platform=plat)
+        assert await run_check("tiles_in_access_table", Settings(), acc, cat) == "ok", (tile, plat)
+        assert check_notes("tiles_in_access_table", Settings(), acc, cat) == []
+
+
+@pytest.mark.anyio
+async def test_the_tile_check_says_unknown_when_it_cannot_look(tmp_path):
+    cat, acc = _catalog_box(tmp_path, local_tile=True, local_platform=False)
+    assert await run_check("tiles_in_access_table", Settings(), acc, None) == "unknown", "카탈로그를 못 받았다 — 됐다고 하지 않는다"
+    assert await run_check("tiles_in_access_table", Settings(), None, cat) == "unknown"
+
+
+@pytest.mark.anyio
+async def test_the_tracked_catalog_has_no_tile_outside_the_tracked_table(tmp_path):
+    """추적 파일끼리는 늘 맞아야 한다 — 어긋나면 새 박스가 첫 화면부터 이 항목을 본다. 이 박스의 local 파일에는 기대지 않는다."""
+    cfg = Path(Settings().resolve("config/systems.yaml")).parent
+    for name in ("systems.yaml", "access.yaml"):
+        (tmp_path / name).write_text((cfg / name).read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "routes.env").write_text("")
+    s = Settings(_env_file=None, catalog_path=str(tmp_path / "systems.yaml"), routes_path=str(tmp_path / "routes.env"),
+                 access_path=str(tmp_path / "access.yaml"))
+    assert await run_check("tiles_in_access_table", Settings(), AccessPolicy(s), CatalogRegistry(s)) == "ok"
+
+
+def test_the_shipped_list_asks_the_tile_question_and_says_how_to_fix_it():
+    doc = yaml.safe_load(Path(Settings().resolve("config/setup_requests.yaml")).read_text("utf-8"))
+    (row,) = [r for r in parse_requests(doc) if r["check"] == "tiles_in_access_table"]
+    assert row["severity"] == "blocker" and row["default"] == "none" and not row["manual"]
+    assert "access.local.yaml" in row["body"] and "systems:" in row["body"]
+
+
+def test_the_admin_sees_the_unlisted_tile_and_it_clears_without_a_restart(client, tmp_path):
+    """화면까지 — 라우트가 떠 있는 카탈로그·권한 표를 넘긴다. 플랫폼을 붙이면 재기동 없이 사라진다(권한 표는 요청마다 파일 시각을 본다)."""
+    (tmp_path / "setup_requests.yaml").write_text(
+        "requests:\n  - {id: tiles, title: 표에 없는 타일, severity: blocker, check: tiles_in_access_table, body: x}\n", encoding="utf-8")
+    box = tmp_path / "box"; box.mkdir()
+    cat, acc = _catalog_box(box, local_tile=True, local_platform=False)
+    c = client()
+    _login(c)
+    keep = (app.state.catalog, app.state.access)
+    try:
+        app.state.catalog, app.state.access = cat, acc
+        (item,) = c.get("/setup/requests").json()["items"]
+        assert item["state"] == "todo" and any("box-lab" in n for n in item["notes"]), item
+        (box / "access.local.yaml").write_text("platforms:\n  - {id: lab, label: 실험실, systems: [box-lab]}\n", encoding="utf-8")
+        assert c.get("/setup/requests").json()["items"] == [], "플랫폼을 붙였는데 항목이 남아 있다"
+    finally:
+        app.state.catalog, app.state.access = keep
 
 
 @pytest.mark.anyio
