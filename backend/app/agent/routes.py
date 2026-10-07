@@ -145,6 +145,16 @@ class DelibOpts(BaseModel):
     free_tools: int | None = Field(default=None, ge=0, le=1)
     # 자유 조회 1인당 라운드 호출 상한. 엔진이 1~6 으로 재클램프한다(deliberation.py _resolve_opts).
     tool_budget: int | None = Field(default=None, ge=1, le=6)
+    # ⚠ 아래 둘은 엔진이 요청 키로 받게 된 날(2026-10-07) 여기 선언이 없었다 — 포털을 거치는 길(웹 · 리스크 앱
+    #   러너)에서만 말없이 사라지고 MCP 로는 됐다. 엔진에 새 요청 키가 생기면 tests/test_delib_opts_contract 가 묻는다.
+    #
+    # 좌석 지식카드 자동 조회를 이 요청만 끈다(0)·켠다(1). None=엔진 기본(DELIB_PERSONA_KNOWLEDGE).
+    # 그 시점 자료만으로 다시 심사하는 소급 검증은 꺼야 한다 — 카드는 오늘의 카드다.
+    persona_knowledge: int | None = Field(default=None, ge=0, le=1)
+    # 봉인 실행(소급 검증) — 1이면 엔진이 심의 도중 바깥에서 자료를 가져오는 길을 한꺼번에 닫고 결정문에 표식을
+    # 찍는다(무엇을 닫는지는 엔진이 쥔다 — deliberation._SEALED_CLOSE). 화면에 입구는 없다. 선언해 두는 이유는
+    # 하나다 — 누가 보냈을 때 여기서 떨어지면 봉인을 청한 심의가 **열린 채** 돌고 청한 쪽은 봉인된 줄 안다.
+    sealed: int | None = Field(default=None, ge=0, le=1)
 
 
 class ChatDocument(BaseModel):
