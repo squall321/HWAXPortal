@@ -267,6 +267,11 @@ class Settings(BaseSettings):
     # 커야 벽시계가 먼저 구체적인 문구로 걸린다. 침묵 한도 셋 중 가장 안쪽이라 nginx /agent/(NGINX_AGENT_READ_TIMEOUT 50400s)
     # 와 리스크 앱(HWAXRISK_ENGINE_READ_TIMEOUT_S 54000)보다 **작아야** 한다 — 뒤집히면 바깥이 사유 없이 먼저 끊는다.
     agent_stream_idle_timeout_s: float = 46800.0       # 13시간
+    # 에이전트 서버의 **비스트리밍** 응답(심의 전 도우미 — 좌석 발굴·화두 제안·되묻기·VOC 미리보기 — 와 전문가 카탈로그)을
+    # 기다리는 한도(초). 0 = 끔. 종전에는 위 SSE 클라이언트를 같이 써서 무제한이었고, 브리프의 스피너가 nginx 절단(1시간)까지
+    # 돌았다. 도는 22석 패널 뒤에 줄 선 도우미는 몇 분이 정당하게 걸리므로 넉넉히 잡되, 도우미가 브리프를 붙들지는 않게 한다.
+    # 만료는 실패가 아니라 **기본값으로 진행**이다(첫 발화가 화두, 좌석은 심의가 자동 발굴) — 응답의 error 가 agent_timeout 이다.
+    agent_unary_timeout_s: float = 600.0
     max_concurrent_chats: int = 64                     # SSE connections hold a worker → cap + 429
     agent_audit_log_path: str = "secrets/agent_audit.sqlite"  # who/when/which tool (Phase 1)
     # 정문 nginx 접근 로그(회전본은 같은 이름 뒤에 붙는다) — 관리자 접속 이력이 계정별 요청을 찾는다(docs/access-history).

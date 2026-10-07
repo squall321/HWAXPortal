@@ -455,6 +455,24 @@ def _agent_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.agent_client
 
 
+def _unary_timeout(settings: Settings) -> httpx.Timeout:
+    """비스트리밍 프록시(심의 전 도우미·전문가 카탈로그)의 요청별 한도 — read 만 AGENT_UNARY_TIMEOUT_S(0 이하는 끔).
+
+    공유 클라이언트의 read 는 SSE 침묵 한도(13시간)라, 요청마다 따로 주지 않으면 도우미 하나가 그만큼 매달린다."""
+    t = settings.agent_unary_timeout_s
+    return httpx.Timeout(settings.agent_request_timeout, read=t if t > 0 else None)
+
+
+def _unary_fail(exc: httpx.HTTPError, settings: Settings, what: str) -> dict:
+    """비스트리밍 프록시가 실패했을 때 폴백에 얹는 칸. 시간 초과를 '연결 못 함' 과 가른다 — 서버는 살아 있고 느린 것이다."""
+    if isinstance(exc, httpx.ReadTimeout):
+        t = settings.agent_unary_timeout_s
+        logger.warning("에이전트 서버 %s 응답이 %s초 안에 오지 않았다(AGENT_UNARY_TIMEOUT_S) — 기본값으로 진행한다", what, t)
+        return {"error": "agent_timeout",
+                "message": f"도우미 응답이 {t:.0f}초 안에 오지 않아 기본값으로 진행한다(AGENT_UNARY_TIMEOUT_S)"}
+    return {"error": "agent_unreachable"}
+
+
 async def _echo_stream(message: str, principal: Principal, audit: AuditLog) -> AsyncIterator[bytes]:
     """Local echo: emits the §5 SSE contract (status → token×N → result → done)."""
     chat_id = "echo"
@@ -574,13 +592,14 @@ async def get_artifact(
         return Response(status_code=404)
     client = _agent_client(request)
     try:
-        r = await client.get(f"{settings.agent_server_url}/artifacts/{name}")
+        r = await client.get(f"{settings.agent_server_url}/artifacts/{name}", timeout=_unary_timeout(settings))
         if r.status_code != 200:
             return Response(status_code=404)
         return Response(content=r.content,
                         media_type=r.headers.get("content-type", "application/octet-stream"),
                         headers={"Cache-Control": "private, max-age=86400"})
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        _unary_fail(exc, settings, "artifacts")   # 그림이라 실을 본문이 없다 — 시간 초과면 로그만 남긴다
         return Response(status_code=502)
 
 
@@ -599,11 +618,11 @@ async def catalog_agent(
     ensure(principal, "feat:deliberation", "feat:expert-chat", any_of=True)
     client = _agent_client(request)
     try:
-        r = await client.post(f"{settings.agent_server_url}/catalog/agent",
+        r = await client.post(f"{settings.agent_server_url}/catalog/agent", timeout=_unary_timeout(settings),
                               json={"key": body.key, "groups": principal.groups})
         return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}"}
-    except httpx.HTTPError:
-        return {"error": "agent_unreachable"}
+    except httpx.HTTPError as exc:
+        return _unary_fail(exc, settings, "catalog/agent")
 
 
 class CatalogRecordsRequest(BaseModel):
@@ -624,11 +643,11 @@ async def catalog_agent_records(
     ensure(principal, "feat:deliberation", "feat:expert-chat", any_of=True)
     client = _agent_client(request)
     try:
-        r = await client.post(f"{settings.agent_server_url}/catalog/agent/records",
+        r = await client.post(f"{settings.agent_server_url}/catalog/agent/records", timeout=_unary_timeout(settings),
                               json={**body.model_dump(), "groups": principal.groups})
         return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}", "total": 0, "items": []}
-    except httpx.HTTPError:
-        return {"error": "agent_unreachable", "total": 0, "items": []}
+    except httpx.HTTPError as exc:
+        return {"total": 0, "items": [], **_unary_fail(exc, settings, "catalog/agent/records")}
 
 
 class CatalogRecordRequest(BaseModel):
@@ -646,11 +665,11 @@ async def catalog_record(
     ensure(principal, "feat:deliberation", "feat:expert-chat", any_of=True)
     client = _agent_client(request)
     try:
-        r = await client.post(f"{settings.agent_server_url}/catalog/record",
+        r = await client.post(f"{settings.agent_server_url}/catalog/record", timeout=_unary_timeout(settings),
                               json={"id": body.id, "groups": principal.groups})
         return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}", "id": body.id}
-    except httpx.HTTPError:
-        return {"error": "agent_unreachable", "id": body.id}
+    except httpx.HTTPError as exc:
+        return {"id": body.id, **_unary_fail(exc, settings, "catalog/record")}
 
 
 class ExpertsRequest(BaseModel):
@@ -1274,7 +1293,8 @@ async def deliberate_experts(
                # ⚠ 이 줄이 없으면 프론트가 대화를 보내도 여기서 버려져 축이 안 나온다.
                "history": [m.model_dump() for m in body.history]}
     try:
-        r = await client.post(f"{settings.agent_server_url}/deliberate/experts", json=payload)
+        r = await client.post(f"{settings.agent_server_url}/deliberate/experts", json=payload,
+                              timeout=_unary_timeout(settings))
         if r.status_code != 200:
             return {"recommended": [], "pool": [], "error": f"agent_{r.status_code}"}
         # 못 쓰는 HE팀 운영자는 조직도에 안 보인다(골라도 403 인 사람을 보이면 고장으로 읽힌다).
@@ -1282,8 +1302,8 @@ async def deliberate_experts(
         if not experts_ok:
             data = {**data, "recommended": [], "candidates": [], "pool": [], "experts_hidden": True}
         return data
-    except httpx.HTTPError:
-        return {"recommended": [], "pool": [], "error": "agent_unreachable"}
+    except httpx.HTTPError as exc:
+        return {"recommended": [], "pool": [], **_unary_fail(exc, settings, "deliberate/experts")}
 
 
 @router.post("/deliberate/clarify")
@@ -1301,12 +1321,13 @@ async def deliberate_clarify(
     payload = {"message": body.message, "job": body.job,
                "history": [m.model_dump() for m in body.history]}
     try:
-        r = await client.post(f"{settings.agent_server_url}/deliberate/clarify", json=payload)
+        r = await client.post(f"{settings.agent_server_url}/deliberate/clarify", json=payload,
+                              timeout=_unary_timeout(settings))
         if r.status_code != 200:
             return {"applicable": False, "slots": [], "ask": [], "error": f"agent_{r.status_code}"}
         return r.json()
-    except httpx.HTTPError:
-        return {"applicable": False, "slots": [], "ask": [], "error": "agent_unreachable"}
+    except httpx.HTTPError as exc:
+        return {"applicable": False, "slots": [], "ask": [], **_unary_fail(exc, settings, "deliberate/clarify")}
 
 
 class TopicRequest(BaseModel):
@@ -1334,12 +1355,13 @@ async def deliberate_topic(
                "fallback": body.fallback, "job": body.job}
     fail = {"topic": body.fallback, "why": "", "options": []}
     try:
-        r = await client.post(f"{settings.agent_server_url}/deliberate/topic", json=payload)
+        r = await client.post(f"{settings.agent_server_url}/deliberate/topic", json=payload,
+                              timeout=_unary_timeout(settings))
         if r.status_code != 200:
             return {**fail, "error": f"agent_{r.status_code}"}
         return r.json()
-    except httpx.HTTPError:
-        return {**fail, "error": "agent_unreachable"}
+    except httpx.HTTPError as exc:
+        return {**fail, **_unary_fail(exc, settings, "deliberate/topic")}
 
 
 @router.post("/deliberate/voc")
@@ -1357,12 +1379,13 @@ async def deliberate_voc(
     payload = {"message": body.message, "groups": principal.groups,
                "keywords": [k.strip()[:40] for k in body.keywords if k and k.strip()]}
     try:
-        r = await client.post(f"{settings.agent_server_url}/deliberate/voc-preview", json=payload)
+        r = await client.post(f"{settings.agent_server_url}/deliberate/voc-preview", json=payload,
+                              timeout=_unary_timeout(settings))
         if r.status_code != 200:
             return {"items": [], "keywords": [], "error": f"agent_{r.status_code}"}
         return r.json()
-    except httpx.HTTPError:
-        return {"items": [], "keywords": [], "error": "agent_unreachable"}
+    except httpx.HTTPError as exc:
+        return {"items": [], "keywords": [], **_unary_fail(exc, settings, "deliberate/voc")}
 
 
 @router.post("/chat")
