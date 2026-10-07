@@ -161,6 +161,30 @@ const SCENARIOS = {
     await unassignedIs(page, 1);
     return { on, one_left, emptied, later: await filterBox(page), errors: page.__errors };
   },
+  // 긴 표의 아래쪽 줄에서 관리자 스위치·소속 칸이 거절됐을 때 — 사유가 어디에 뜨고, 다음 저장이 성공하면 사라지는가
+  async refusal(browser) {
+    const page = await open(browser, 'users', '/admin/users', { seed: `window.__db = [__mk('root@corp.example', { groups: ['portal-admin'] }),
+      ...Array.from({ length: 80 }, (_, i) => __mk('user-' + String(i).padStart(2, '0') + '@corp.example', { affiliation: 'CAEG' }))];
+      window.__refuse['PATCH /auth/access/users/user-70@corp.example'] = '지금은 바꿀 수 없습니다(시험용 거절)';` });
+    const sw = (n) => page.locator(`input[aria-label="user-${n}@corp.example 관리자"]`);
+    const alerts = () => page.evaluate(() => Array.from(document.querySelectorAll('[role=alert]')).map((el) => {
+      const box = el.getBoundingClientRect(), tr = el.closest('tr');
+      return { text: el.textContent, inViewport: box.bottom > 0 && box.top < window.innerHeight,
+               under: tr && tr.previousElementSibling ? tr.previousElementSibling.querySelector('td').textContent : null };
+    }));
+    await sw(70).scrollIntoViewIfNeeded();
+    await sw(70).click();
+    await page.getByText('시험용 거절').first().waitFor();
+    const after_refusal = await alerts();
+    await sw(71).click();
+    await page.waitForFunction(() => document.querySelector('input[aria-label="user-71@corp.example 관리자"]').checked);
+    const after_next_save = await alerts();
+    // 소속 칸도 같은 길이다
+    await page.evaluate(() => { window.__refuse['PATCH /auth/access/users/user-72@corp.example'] = '소속을 바꿀 수 없습니다(시험용 거절)'; });
+    await page.locator('select[aria-label="user-72@corp.example 소속"]').selectOption('LAB');
+    await page.getByText('소속을 바꿀 수 없습니다').first().waitFor();
+    return { after_refusal, after_next_save, affiliation_refusal: await alerts(), errors: page.__errors };
+  },
 };
 
 (async () => {
@@ -212,3 +236,16 @@ def test_소속_미지정만_보기는_미지정이_0명이_되면_꺼지고_나
     assert s["emptied"] == {"rows": ALL, "checked": False, "disabled": True}, "0명이 되면 전체로 돌아간다(종전부터)"
     assert s["later"] == {"rows": ALL, "checked": False, "disabled": False}, (
         "미지정이 다시 생겼을 때 표가 그 한 줄로 접혔다 — 필터 값이 켜진 채 남아 있었다")
+
+
+def test_표_안의_스위치가_거절되면_사유가_그_줄_아래에_뜨고_다음_저장이_성공하면_사라진다(seen):
+    """관리자 스위치와 소속 칸은 실패를 페이지 머리의 오류 띠로만 알렸다. 사용자가 여든 명이면 그 띠는 화면 밖 7,000px 위에 있다 —
+    아래쪽 줄의 스위치를 눌러 거절되면 눌린 자리 근처에는 아무 표시가 없었다(체크박스는 애초에 바뀌지 않는다). 그리고 그 띠는
+    지워지지 않아, 다음 저장이 성공해도 앞의 거절 사유가 남아 방금 한 일이 실패한 것처럼 읽혔다."""
+    s = seen("refusal")
+    (a,) = s["after_refusal"]
+    assert "시험용 거절" in a["text"] and a["under"] == "user-70@corp.example", "사유는 그 줄 바로 아래에 뜬다"
+    assert a["inViewport"], "눌린 자리에서 보이는 곳이어야 한다"
+    assert s["after_next_save"] == [], "다음 저장이 성공하면 앞의 거절 사유는 사라진다"
+    (b,) = s["affiliation_refusal"]
+    assert "소속을 바꿀 수 없습니다" in b["text"] and b["under"] == "user-72@corp.example" and b["inViewport"]

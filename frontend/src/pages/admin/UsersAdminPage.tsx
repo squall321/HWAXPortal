@@ -35,6 +35,9 @@ export default function UsersAdminPage() {
   const [policy, setPolicy] = useState<AccessPolicy | null>(null);
   const [editing, setEditing] = useState<string | null>(null); // 개별 허가를 펼친 이메일
   const [onlyUnassigned, setOnlyUnassigned] = useState(false); // 소속 미지정만 보기
+  // 표 안의 관리자 스위치·소속 칸이 거절된 사유 — 그 줄 바로 아래에 보인다. 페이지 머리의 오류 띠는 사용자가 수십 명이면 화면 밖
+  // 한참 위라, 아래쪽 줄을 눌러 거절돼도 눌린 자리에는 아무 표시가 없었다(체크박스는 애초에 바뀌지 않는다).
+  const [rowError, setRowError] = useState<{ email: string; msg: string } | null>(null);
   useEffect(() => {
     fetchAccessPolicy().then(setPolicy).catch(() => setPolicy(null));
   }, []);
@@ -52,9 +55,16 @@ export default function UsersAdminPage() {
   }, []);
   useEffect(() => reload(), [reload]);
 
+  // 저장이 성공하면 앞의 거절 사유를 지운다 — 남겨 두면 방금 한 일이 실패한 것처럼 읽힌다(머리의 띠는 그래서 지워지지 않았다).
+  const rowSaved = () => {
+    setRowError(null);
+    reload();
+  };
+
   const run = async (email: string, fn: () => Promise<void>) => {
     setBusy(email);
     setError(null);
+    setRowError(null);
     try {
       await fn();
       reload();
@@ -136,7 +146,12 @@ export default function UsersAdminPage() {
                   {r.dept_id && <span className="adm-meta"> {r.dept_id}</span>}
                 </td>
                 <td>
-                  <AffiliationSelect policy={policy} row={r} onSaved={reload} onError={setError} />
+                  <AffiliationSelect
+                    policy={policy}
+                    row={r}
+                    onSaved={rowSaved}
+                    onError={(msg) => setRowError({ email: r.email, msg })}
+                  />
                 </td>
                 <td>
                   {(r.grants ?? []).length}건{' '}
@@ -151,7 +166,12 @@ export default function UsersAdminPage() {
                   {r.locked_until * 1000 > Date.now() && ' · 잠금'}
                 </td>
                 <td>
-                  <AdminToggle row={r} self={r.email === user?.email} onSaved={reload} onError={setError} />
+                  <AdminToggle
+                    row={r}
+                    self={r.email === user?.email}
+                    onSaved={rowSaved}
+                    onError={(msg) => setRowError({ email: r.email, msg })}
+                  />
                   {r.groups.some((g) => g !== 'portal-admin') && (
                     <span className="adm-meta"> {r.groups.filter((g) => g !== 'portal-admin').join(', ')}</span>
                   )}
@@ -216,6 +236,13 @@ export default function UsersAdminPage() {
                   )}
                 </td>
               </tr>
+              {rowError?.email === r.email && (
+                <tr>
+                  <td colSpan={11} className="adm-err" role="alert">
+                    ⚠ {rowError.msg}
+                  </td>
+                </tr>
+              )}
               {editing === r.email && policy && (
                 <tr>
                   <td colSpan={11}>
