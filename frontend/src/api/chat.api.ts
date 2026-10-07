@@ -178,6 +178,8 @@ export interface ExpertsResponse {
   /** 대화에서 고른 도메인 축. 빈 배열이면 화두 한 줄로만 추천했다는 뜻이다. */
   axes?: SeatAxis[];
   error?: string;
+  /** error 의 사람용 사유 — agent_timeout 이면 포털이 초와 손잡이(AGENT_UNARY_TIMEOUT_S)를 말한다. */
+  message?: string;
 }
 
 /** 화두로 추천 전문가 + 전체 풀을 받아온다(비스트리밍). 수동 선정 패널이 사용. */
@@ -228,7 +230,7 @@ export interface ClarifyResult {
 }
 
 /** 챗 대화 → 심의 화두 제안. 실패는 **fallback 그대로**다 — 브리프가 못 열리면 안 된다. */
-export interface TopicSuggestion { topic: string; why: string; options: string[]; error?: string }
+export interface TopicSuggestion { topic: string; why: string; options: string[]; error?: string; message?: string }
 
 export async function fetchDeliberateTopic(
   history: HistoryMessage[],
@@ -247,7 +249,11 @@ export async function fetchDeliberateTopic(
     });
     if (!res.ok) return none;
     const b = (await res.json()) as Partial<TopicSuggestion>;
-    return { topic: (b.topic || fallback).trim() || fallback, why: b.why ?? '', options: b.options ?? [] };
+    return {
+      topic: (b.topic || fallback).trim() || fallback, why: b.why ?? '', options: b.options ?? [],
+      // 서버가 폴백으로 답한 사유(agent_timeout 등) — 버리면 '왜 첫 발화 그대로인지' 를 화면이 말할 수 없다.
+      ...(b.error ? { error: b.error } : {}), ...(b.message ? { message: b.message } : {}),
+    };
   } catch {
     return none;   // 취소·네트워크 실패 — 첫 발화로 연다
   }

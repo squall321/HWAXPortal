@@ -30,6 +30,7 @@ import { AuthContext } from '__FE__/src/auth/AuthContext';
 import { ChatProvider, useChat } from '__FE__/src/state/ChatContext';
 import { MessageList } from '__FE__/src/components/chat/MessageList';
 import { ActivityPanel } from '__FE__/src/components/chat/ActivityPanel';
+import { HandoffBrief } from '__FE__/src/components/chat/HandoffBrief';
 
 function Probe() {
   const { messages, sendMessage, streaming, stop } = useChat();
@@ -43,7 +44,12 @@ function Probe() {
     </>
   );
 }
-(window as unknown as { __mount: () => void }).__mount = () => {
+// 챗 → 심의 브리프(핸드오프) — 열리자마자 화두 제안과 좌석 발굴 도우미를 부른다
+const CONV = {
+  id: 'c1', title: 't', createdAt: 0, updatedAt: 0,
+  messages: [{ id: 'm1', role: 'user' as const, text: '힌지가 왜 깨지나' }, { id: 'm2', role: 'assistant' as const, text: '응력 집중입니다' }],
+};
+(window as unknown as { __mount: (what?: string) => void }).__mount = (what) => {
   const user = { subject: 'u1@corp.example', email: 'u1@corp.example', display_name: 'U', groups: [] };
   createRoot(document.getElementById('root')!).render(
     <AuthContext.Provider
@@ -51,7 +57,7 @@ function Probe() {
     >
       <MemoryRouter>
         <ChatProvider storagePrefix="hwax.delib" sendPrefix="/심의 ">
-          <Probe />
+          {what === 'brief' ? <HandoffBrief conv={CONV} onClose={() => undefined} /> : <Probe />}
         </ChatProvider>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -96,6 +102,14 @@ _STUB = r"""
       } });
       return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
     }
+    // 도우미 경로 — __helpers[이름] 이 'hang' 이면 답하지 않고 매달린다(중단 신호에만 풀린다). 객체면 그 답을 준다.
+    const helper = (u.match(/^\/agent\/deliberate\/(experts|topic|clarify|voc)/) || [])[1];
+    if (helper && window.__helpers && window.__helpers[helper] === 'hang')
+      return new Promise((_, rej) => init.signal && init.signal.addEventListener('abort', () =>
+        rej(new DOMException('aborted', 'AbortError'))));
+    if (helper && window.__helpers && window.__helpers[helper]) return json(window.__helpers[helper]);
+    if (helper === 'topic') return json({ topic: '', why: '', options: [] });
+    if (helper === 'clarify') return json({ applicable: false, slots: [], ask: [] });
     if (u.startsWith('/agent/deliberate/experts')) return json({ recommended: [], pool: [] });
     return json({ detail: 'stub: no route ' + u }, 404);
   };
@@ -112,7 +126,7 @@ const { chromium } = createRequire(path.join(FE, 'package.json'))('@playwright/t
 const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 const PING = frame('ping', { idle_s: 15, ts: 1 });
 
-async function open(browser, { seed = '' } = {}) {
+async function open(browser, { seed = '', what = '' } = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.setDefaultTimeout(10000);
   page.__errors = [];
@@ -125,7 +139,7 @@ async function open(browser, { seed = '' } = {}) {
   await page.addScriptTag({ path: path.join(OUT, 'stub.js') });
   if (seed) await page.evaluate(seed);
   await page.addScriptTag({ path: path.join(OUT, 'bundle.js') });
-  await page.evaluate(() => window.__mount());
+  await page.evaluate((w) => window.__mount(w), what);
   return page;
 }
 const push = (page, text) => page.evaluate((t) => window.__push(t), text);
@@ -220,6 +234,38 @@ const SCENARIOS = {
     out.rejected = await box(page);
     out.errors.push(...page.__errors);
     return out;
+  },
+  // 심의 브리프의 도우미(화두 제안·좌석 발굴)가 오래 걸릴 때 — 몇 초째인지 보이고, 기다리지 않고 넘길 수 있다
+  async brief(browser) {
+    const look = (page) => page.evaluate(() => ({
+      topic_busy: (document.querySelector('.cx-brief-note') || {}).textContent || '',
+      seat_label: document.querySelector('.cx-brief-seatlabel').textContent,
+      skips: Array.from(document.querySelectorAll('.cq-skip')).map((b) => b.textContent),
+      topic: document.querySelector('.cx-brief textarea').value,
+      empty: (document.querySelector('.cx-brief-empty') || {}).textContent || '',
+      notice: Array.from(document.querySelectorAll('.cx-brief-lowconf')).map((el) => el.textContent),
+      can_start: !document.querySelector('.cx-brief-go').disabled,
+    }));
+    const page = await open(browser, { what: 'brief', seed: `window.__helpers = { topic: 'hang', experts: 'hang' }` });
+    await page.locator('.cx-brief-seatlabel').waitFor();
+    await forward(page, 600);                          // 좌석 발굴은 500ms 뒤에 나간다(입력 디바운스)
+    await forward(page, 90000);
+    const waiting = await look(page);
+    await page.locator('.cx-brief-note .cq-skip').click();
+    await page.waitForFunction(() => !document.querySelector('.cx-brief-note'));
+    const topic_skipped = await look(page);
+    await page.locator('.cx-brief-seatlabel .cq-skip').click();
+    await page.waitForFunction(() => !document.querySelector('.cq-skip'));
+    const seats_skipped = await look(page);
+    // 포털 한도가 걸려 폴백으로 온 경우 — 사유를 말한다
+    const msg = '도우미 응답이 600초 안에 오지 않아 기본값으로 진행한다(AGENT_UNARY_TIMEOUT_S)';
+    const late = await open(browser, { what: 'brief', seed: `window.__helpers = {
+      topic: { topic: '힌지가 왜 깨지나', why: '', options: [], error: 'agent_timeout', message: '${msg}' },
+      experts: { recommended: [], pool: [], error: 'agent_timeout', message: '${msg}' } }` });
+    await late.locator('.cx-brief-seatlabel').waitFor();
+    await forward(late, 700);
+    await late.waitForFunction(() => !document.querySelector('.cq-skip'));
+    return { waiting, topic_skipped, seats_skipped, timed_out: await look(late), errors: [...page.__errors, ...late.__errors] };
   },
 };
 
@@ -316,3 +362,21 @@ def test_한도가_걸리면_화면이_무엇이_걸렸고_어디를_볼지_말�
     assert "delib_opts.timeout_s: Input should be less than or equal to 14400" in rej["hint"]
     assert rej["retry"] is False, "같은 값으로 다시 보내면 같은 거절이다"
     assert cut["retry"] and idle["retry"] and llm["retry"]
+
+
+def test_브리프의_도우미가_오래_걸리면_몇_초째인지_보이고_건너뛸_수_있다(seen):
+    """화두 제안과 좌석 발굴은 도는 패널 뒤에 줄을 서면 몇 분이 걸린다. 종전에는 '뽑는 중…' · '(발굴 중…)' 이 경과 표시도
+    넘어갈 길도 없이 돌았다. 브라우저 타임아웃은 여전히 없다 — 한도는 포털 한 곳(AGENT_UNARY_TIMEOUT_S)이다."""
+    s = seen("brief")
+    w = s["waiting"]
+    assert "뽑는 중… 90초" in w["topic_busy"] and "(발굴 중… 90초)" in w["seat_label"], w
+    assert w["skips"] == ["건너뛰기", "건너뛰기"] and w["can_start"], "기다리는 동안에도 심의는 시작할 수 있다"
+    t = s["topic_skipped"]
+    assert t["topic_busy"] == "" and t["topic"] == "힌지가 왜 깨지나", "넘기면 서버가 실패했을 때와 같은 폴백 — 첫 발화 그대로"
+    assert t["skips"] == ["건너뛰기"] and "발굴 중" in t["seat_label"], "화두만 넘겼다 — 좌석 발굴은 계속 돈다"
+    z = s["seats_skipped"]
+    assert z["skips"] == [] and "추천 좌석 없음 — 심의가 자동 발굴합니다" in z["empty"] and z["can_start"]
+    late = s["timed_out"]
+    assert len(late["notice"]) == 1 and "600초" in late["notice"][0] and "AGENT_UNARY_TIMEOUT_S" in late["notice"][0]
+    assert "첫 발화 그대로" in late["notice"][0]
+    assert "AGENT_UNARY_TIMEOUT_S" in late["empty"] and "심의가 자동 발굴합니다" in late["empty"], late

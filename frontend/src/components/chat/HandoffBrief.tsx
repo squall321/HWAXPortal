@@ -17,6 +17,7 @@ import { ClarifyPanel } from './ClarifyPanel';
 import { mergeEvidence, vocEvidence } from './vocEvidence';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob, type JobId } from './delibTaxonomy';
 import { IconOrg } from './icons';
+import { useElapsed } from './useElapsed';
 import { Modal } from '../ui/Modal';
 
 const DEFAULT_SEATS = 6; // 추천 좌석 기본 선택 수(심의가 스파인 좌석은 자동 추가)
@@ -65,9 +66,17 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
   const [loading, setLoading] = useState(false);
   const [browsing, setBrowsing] = useState(false); // 전창 좌석 조직도
   const [voc, setVoc] = useState<VocChoice>({ used: false, picked: [], note: '' });
+  // 도우미(화두 제안·좌석 발굴)는 도는 패널 뒤에 줄을 서면 몇 분이 걸린다. 기다리는 동안 몇 초째인지 보이고,
+  // 기다리지 않고 넘어갈 수 있게 한다 — 넘기면 서버가 실패했을 때와 같은 폴백이다(첫 발화 · 심의의 자동 발굴).
+  // 브라우저 타임아웃은 두지 않는다. 한도는 포털 한 곳(AGENT_UNARY_TIMEOUT_S)이다.
+  const topicCtrl = useRef<AbortController | null>(null);
+  const seatCtrl = useRef<AbortController | null>(null);
+  const topicSec = useElapsed(topicBusy);
+  const seatSec = useElapsed(loading);
 
   useEffect(() => {
     const ctrl = new AbortController();
+    topicCtrl.current = ctrl;
     setTopicBusy(true);
     void fetchDeliberateTopic(history, derived, job, ctrl.signal).then((r) => {
       setSuggested(r);
@@ -92,6 +101,7 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
     }
     setLoading(true);
     const ctrl = new AbortController();
+    seatCtrl.current = ctrl;
     const h = setTimeout(() => {
       void fetchDeliberateExperts(t, ctrl.signal, history)
         .then((r) => {
@@ -222,11 +232,22 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
           <label className="cx-brief-field">
             <span>
               질문 (편집 가능)
-              {topicBusy && <em className="cx-brief-note"> · 대화를 읽어 화두를 뽑는 중…</em>}
+              {topicBusy && (
+                <em className="cx-brief-note">
+                  {' '}· 대화를 읽어 화두를 뽑는 중… {topicSec}초{' '}
+                  <button type="button" className="cq-skip" onClick={() => topicCtrl.current?.abort()}>
+                    건너뛰기
+                  </button>
+                </em>
+              )}
             </span>
             <textarea value={topic} rows={3}
               onChange={(e) => { touched.current = true; setTopic(e.target.value); }} />
           </label>
+          {/* 서버 한도가 걸려 폴백으로 온 것이면 그렇게 말한다 — 말이 없으면 제안이 왜 없는지 알 수 없다. */}
+          {!topicBusy && suggested?.error === 'agent_timeout' && (
+            <p className="cx-brief-lowconf">{suggested.message} — 화두는 첫 발화 그대로입니다.</p>
+          )}
           {suggested && !topicBusy && (
             <div className="cx-brief-topic">
               {suggested.why && <p className="cx-brief-why">{suggested.why}</p>}
@@ -343,8 +364,13 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
             <span className="cx-brief-seatlabel">
               좌석 제안{' '}
               {loading
-                ? '(발굴 중…)'
+                ? `(발굴 중… ${seatSec}초)`
                 : `— ${checked.size}/${MAX_SEATS}석 선택${seatFull ? ' · 가득' : ''} · 심의가 스파인 좌석 자동 추가`}
+              {loading && (
+                <button type="button" className="cq-skip" onClick={() => seatCtrl.current?.abort()}>
+                  건너뛰기
+                </button>
+              )}
               {!loading && experts?.pool?.length ? (
                 <button type="button" className="cx-brief-browse" onClick={() => setBrowsing(true)}>
                   <IconOrg className="ico" width={14} height={14} /> 조직도에서 고르기
@@ -377,7 +403,10 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
                 ) : null,
               )}
               {!loading && rec.length === 0 && manual.length === 0 && (
-                <span className="cx-brief-empty">추천 좌석 없음 — 심의가 자동 발굴합니다</span>
+                <span className="cx-brief-empty">
+                  {experts?.error === 'agent_timeout' && experts.message ? `${experts.message} — ` : ''}
+                  추천 좌석 없음 — 심의가 자동 발굴합니다
+                </span>
               )}
             </div>
 
