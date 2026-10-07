@@ -3,9 +3,11 @@
 //               continueFrom:{summary, roundsSoFar}, humanNote, appendToReportId }
 //   - question        : 심의 주제(문자열)
 //   - context         : 정량 근거/분석 결과(도구로 산출한 데이터의 텍스트 요약)
-//   - evidence        : 원천 근거 항목 [{source, tool, args, result}] — 좌석에 '검증 대상' 으로 싣는다(최대 12건·합계 11,000자).
+//   - evidence        : 원천 근거 항목 [{source, tool, args, result, key?}] — 좌석에 '검증 대상' 으로 싣는다(최대 12건·합계 11,000자).
 //                       본문은 result 에 넣는다. 없으면 text·content·excerpt·summary·body·output·data 를 차례로 찾고,
 //                       문자열이 아니면 JSON 으로 싣는다. 어디에도 본문이 없는 항목은 버린다.
+//                       key(선택, ^[A-Za-z0-9_.-]{1,24}$)를 주면 좌석이 보는 표지가 [e:N|KEY] 가 된다 — 번호 N 은 버려진
+//                       항목을 건너뛰고 매겨지므로, 결정문의 인용을 제 원장과 맞춰 보려면 키를 실어 보낸다.
 //   - options         : 후보/선택지 목록(JSON 문자열 또는 배열)
 //   - personas        : [{key, role, origin?}] 참여 전문 페르소나(호출자가 recommend_agents로 발굴해 전달).
 //                       origin — 'primary'(주 도메인, 기본) | 'counter'(반대 도메인) | 'carry'(이어하기 유임) |
@@ -162,9 +164,19 @@ const evBody = it => {
   }
   return ''
 }
-// 본문을 한 번 정해 `result` 에 둔다 — 아래 좌석 블록과 인용 후검증(_citCorpus)이 같은 본문을 본다.
+// 근거 항목의 선택 키(`key`) — 호출자가 제 번호(E3·E1-CH-015)를 실어 보내면 표지를 `[e:N|KEY]` 로 찍는다.
+// 번호 N 은 버려진 항목을 건너뛰고 매겨져 호출자의 번호와 어긋난다 — 키가 있어야 결정문의 인용을 호출자가
+// 제 원장과 맞춰 본다(S26U 피드백 3-2). 표지 안에 찍히므로 `]`·`|`·공백이 섞이면 표지가 깨진다 — 형식 밖은 버린다.
+// ⚠ 형식은 엔진(deliberation.py _EVID_KEY_RE)·리스크 앱(HWAXRisk brief.py)과 함께 못박은 것이다
+//   (docs/delib-engine-feedback D-4). 바꾸려면 셋을 같이 바꾼다.
+const EV_KEY_RE = /^[A-Za-z0-9_.-]{1,24}$/
+// 인용 표지 — 좌석·의장에게는 `[e:N]` 을 적으라고 하지만, 줄에 찍힌 `[e:N|KEY]` 를 그대로 옮겨 적기도 한다.
+// 둘 다 항목 N 이다(deliberation.py _EV_CITE_RE 와 같은 식).
+const EV_CITE_RE = /\[e:(\d+)(?:\|[A-Za-z0-9_.-]{1,24})?\]/g
+// 본문·키를 한 번 정해 둔다 — 아래 좌석 블록과 인용 후검증(_citCorpus)이 같은 값을 본다.
 const EV = (Array.isArray(A.evidence) ? A.evidence : [])
-  .map(e => (e && typeof e === 'object' && !Array.isArray(e)) ? { ...e, result: evBody(e) } : null)
+  .map(e => (e && typeof e === 'object' && !Array.isArray(e))
+    ? { ...e, result: evBody(e), key: (typeof e.key === 'string' && EV_KEY_RE.test(e.key)) ? e.key : '' } : null)
   .filter(e => e && e.result)
   .slice(0, 12)
 let EV_BLOCK = ''
@@ -179,7 +191,8 @@ if (EV.length) {
     // 항목 안 절단도 표시한다 — 무표시로 자르면 좌석이 잘린 수치를 완결 데이터로 읽는다(감사 C5).
     const body = raw.length > 2000 ? raw.slice(0, 2000) + ` …[${raw.length}자 중 2,000자]` : raw
     // [e:N] 안정 id — 의장·좌석이 근거 항목을 지목해 인용할 참조 체계(감사 원장 (3)).
-    const line = `· [e:${++evId}] [${src}${meta}] ${body}`
+    // 호출자 키가 있으면 [e:N|KEY] — 인용은 종전대로 [e:N] 이고 어느 쪽으로 적어도 같은 항목이다.
+    const line = `· [e:${++evId}${e.key ? '|' + e.key : ''}] [${src}${meta}] ${body}`
     if (evBudget + line.length > 11000 && evItems.length) break
     evItems.push(line)
     evBudget += line.length
@@ -742,10 +755,12 @@ decText = decText.replace(/〔결정문 끝〕\s*$/, '').trimEnd()
 const _numRe = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+\.\d+|\d{3,}/g
 const _normNum = (s) => String(s).replace(/,/g, '')
 const _citCorpus = _normNum([
-  ...EV.map(e => `${e.source || ''} ${e.tool || ''} ${e.args || ''} ${e.result || ''}`),
+  ...EV.map(e => `${e.key} ${e.source || ''} ${e.tool || ''} ${e.args || ''} ${e.result || ''}`),
   CTX, Q, OPTS, JSON.stringify(roundsData),
 ].join('\n'))
-const _decNums = [...new Set((decText.match(_numRe) || []).map(_normNum))]
+// 근거 표지 [e:N]·[e:N|KEY] 는 인용이지 수치가 아니다 — 떼고 센다. 안 떼면 표지 속 숫자(e:120 의 120,
+// 키 E1-CH-015 의 015)가 '어느 원문에도 없는 수치' 로 올라와 진짜 환각을 묻는다(deliberation.py 4a-2 와 같다).
+const _decNums = [...new Set((decText.replace(EV_CITE_RE, ' ').match(_numRe) || []).map(_normNum))]
   .filter(n => !/^(19|20)\d{2}$/.test(n))   // 연도 잡음 제외
 const _unmatchedNums = _decNums.filter(n => !_citCorpus.includes(n))
 const citationAudit = {

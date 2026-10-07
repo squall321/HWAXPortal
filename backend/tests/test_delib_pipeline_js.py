@@ -194,3 +194,44 @@ def test_폴백_키의_본문도_수치_대조_출처다():
     """대조 말뭉치도 `e.result` 만 읽었다 — text 에 든 수치를 의장이 옮기면 '어느 원문에도 없는 수치' 로 올라온다."""
     assert _unmatched("하중은 4567.8 N 이다.", [{"source": "s", "text": "하중 4567.8 N"}]) == []
     assert _unmatched("하중은 4567.8 N 이다.", [{"source": "s", "text": "하중 9999.9 N"}]) == ["4567.8"]
+
+
+# ── 근거 키 표지 [e:N|KEY] — docs/delib-engine-feedback D-4(엔진·이 스크립트·리스크 앱이 같은 형식) ──────
+def test_근거_키가_있으면_표지에_찍는다():
+    """엔진 번호 N 은 버려진 항목을 건너뛰고 매겨져 호출자의 번호와 어긋난다 — 키가 있어야 결정문의 인용을
+    호출자가 제 원장(E3·E1-CH-015)과 맞춰 본다."""
+    prompt = _seat_prompt(_delib([
+        {"key": "E0", "source": "스코프", "result": "가"},
+        {"key": "E1-CH-015", "source": "변경", "tool": "diff", "args": "a=1", "result": "나"},
+        {"source": "키없음", "result": "다"},
+    ]))
+    assert "· [e:1|E0] [스코프] 가" in prompt
+    assert "· [e:2|E1-CH-015] [변경 · diff(a=1)] 나" in prompt
+    assert "· [e:3] [키없음] 다" in prompt, "키가 없으면 종전 표기 그대로다"
+
+
+@pytest.mark.parametrize("bad", ["E 3", "a]b", "a|b", "x" * 25, "", "한글키", "E3\n", 3, None, ["E3"]])
+def test_형식_밖_키는_버린다(bad):
+    """표지 안에 찍히므로 `]`·`|`·공백이 섞이면 표지가 깨진다 — 형식(^[A-Za-z0-9_.-]{1,24}$) 밖은 키 없는 것으로 친다."""
+    prompt = _seat_prompt(_delib([{"key": bad, "source": "s", "result": "본문"}]))
+    assert "· [e:1] [s] 본문" in prompt
+
+
+def test_형식_안_키는_경계까지_받는다():
+    prompt = _seat_prompt(_delib([{"key": "x" * 24, "source": "s", "result": "본문"},
+                                  {"key": "a_b.c-9", "source": "t", "result": "본문"}]))
+    assert f"· [e:1|{'x' * 24}] [s] 본문" in prompt and "· [e:2|a_b.c-9] [t] 본문" in prompt
+
+
+def test_인용_표지_속_숫자는_수치로_세지_않는다():
+    """표지는 인용이지 수치가 아니다. 안 떼면 [e:120] 의 120, 키 ZZ-777 의 777 이 '어느 원문에도 없는 수치' 로
+    올라와 진짜 환각(999.9)을 묻는다. 두 표기([e:N]·[e:N|KEY]) 모두 뗀다 — 어느 쪽으로 적어도 같은 항목이다."""
+    got = _unmatched("[e:1|ZZ-777] 과 [e:120] 에 따르면 값은 1,234.5 다. 출처 없는 값 999.9.",
+                     [{"key": "E1", "source": "s", "result": "측정값 1234.5"}])
+    assert got == ["999.9"]
+
+
+def test_근거_키에_든_숫자는_출처로_본다():
+    """의장이 표지 밖에서 키를 그대로 부르기도 한다('E1-CH-015 항목에 따르면') — 그 015 는 환각이 아니다."""
+    assert _unmatched("E1-CH-015 항목이 지배적이다.",
+                      [{"key": "E1-CH-015", "source": "s", "result": "본문"}]) == []
