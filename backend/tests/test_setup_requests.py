@@ -15,6 +15,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from app.access.policy import AccessPolicy
 from app.auth.user_store import UserStore
 from app.config import Settings, get_settings
 from app.main import app
@@ -119,19 +120,39 @@ async def test_an_unknown_check_never_says_ok():
     assert await run_check("이런_검사는_없다", Settings(), None) == "unknown"
 
 
+def _access(tmp_path: Path, gateway: str) -> AccessPolicy:
+    """임시 권한 표로 만든 **실물** 정책 로더 — 라우트가 넘기는 app.state.access 와 같은 종류다."""
+    f = tmp_path / "access.yaml"
+    f.write_text(f"platforms:\n  - {{id: smarttwin, label: SmartTwin, gateway: [{gateway}]}}\n", encoding="utf-8")
+    return AccessPolicy(Settings(_env_file=None, access_path=str(f)))
+
+
 @pytest.mark.anyio
-async def test_access_check_reads_the_live_policy_not_the_file():
-    class _Item:
-        def __init__(self, gw):
-            self.gateway = gw
-
-    class _Acc:
-        def __init__(self, gw):
-            self.items = [_Item(gw)]
-
-    assert await run_check("access_ste", Settings(), _Acc(("ste",))) == "ok"
-    assert await run_check("access_ste", Settings(), _Acc(("other",))) == "todo"
+async def test_access_check_reads_the_live_policy_not_the_file(tmp_path):
+    """**실물로 본다.** 라우트는 app.state.access(AccessPolicy — 표를 캐시하는 로더)를 넘기는데 확인은 그 객체에 없는 `.items` 를
+    읽었다. 예외가 삼켜져 떠 있는 포털에서는 늘 'unknown' 이었고 — 표에 ste 가 있어도 '필수' 항목이 영영 사라지지 않았다.
+    종전 시험은 `.items` 를 가진 대역을 넣어 초록이었다(대역이 틀린 모양을 굳혔다)."""
+    assert await run_check("access_ste", Settings(), _access(tmp_path, "ste, smart-twin-mcp")) == "ok"
+    assert await run_check("access_ste", Settings(), _access(tmp_path, "other")) == "todo"
     assert await run_check("access_ste", Settings(), None) == "unknown"
+
+
+def test_the_access_item_disappears_on_a_live_portal(client, tmp_path):
+    """화면까지 — 표에 ste 가 있으면 관리자의 배선 설정에서 그 항목이 사라진다(라우트가 넘기는 실물 객체로)."""
+    (tmp_path / "setup_requests.yaml").write_text(
+        "requests:\n  - {id: access-policy-ste, title: ste 를 smarttwin 허가에 넣는다, severity: blocker, check: access_ste, body: x}\n",
+        encoding="utf-8")
+    c = client()
+    _login(c)
+    keep = app.state.access
+    try:
+        app.state.access = _access(tmp_path, "other")
+        got = {i["id"]: i["state"] for i in c.get("/setup/requests").json()["items"]}
+        assert got == {"access-policy-ste": "todo"}, "표에 없으면 하라고 말한다(모른다고 하지 않는다)"
+        app.state.access = _access(tmp_path, "ste")
+        assert c.get("/setup/requests").json()["items"] == [], "표에 있으면 사라진다"
+    finally:
+        app.state.access = keep
 
 
 @pytest.mark.anyio

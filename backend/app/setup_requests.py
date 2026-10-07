@@ -104,8 +104,10 @@ async def run_check(name: str, settings: Settings, access: Any) -> str:
 
     if name == "access_ste":
         # 정책 원장에 직접 묻는다 — 파일을 다시 파싱하면 두 곳이 어긋날 수 있다.
+        # access 는 표를 캐시하는 로더(AccessPolicy)다 — 표는 get() 으로 꺼낸다. 로더에서 곧바로 `.items` 를 읽던 때는 예외가 삼켜져
+        # 떠 있는 포털에서 늘 unknown 이었다(표에 ste 가 있어도 이 항목이 사라지지 않았다).
         try:
-            backends = {b for item in access.items for b in (item.gateway or ())}
+            backends = {b for item in access.get().items for b in (item.gateway or ())}
         except Exception:
             return "unknown"
         return "ok" if "ste" in backends else "todo"
