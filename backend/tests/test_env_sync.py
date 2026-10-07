@@ -65,6 +65,21 @@ def test_it_is_idempotent(tmp_path):
     assert (d / ".env").read_text(encoding="utf-8") == first, "두 번째 실행이 또 붙였다"
 
 
+def test_a_declared_key_is_never_added_again_however_long_the_env_is(tmp_path):
+    """**박스가 정한 값이 예시 기본값으로 뒤집히던 자리.** 선언 여부를 `printf … | grep -qx` 로 봤다 — bash 의 printf 는 줄마다
+    따로 쓰고 grep -q 는 첫 일치에서 닫으므로, 목록이 길면 printf 가 SIGPIPE(141)로 죽고 pipefail 이 그것을 '선언 안 됨' 으로
+    읽는다. 그러면 이미 있는 키를 예시 값으로 **끝에 한 번 더** 붙인다 — 소싱하면 뒤의 줄이 이겨 박스의 값이 조용히 바뀐다.
+    실측(2026-10-07 dev): 키 50개에 40회 중 1회, 5,000개에 40회 중 40회. 여기서는 늘 터지는 크기로 본다."""
+    env = "AAA_FIRST=box-value\n" + "".join(f"K{i:05d}=1\n" for i in range(5000))
+    d = _repo(tmp_path, "AAA_FIRST=example-default\n", env)
+    r = _run(d)
+    assert r.returncode == 0, r.stdout + r.stderr
+    body = (d / ".env").read_text(encoding="utf-8")
+    assert "AAA_FIRST=example-default" not in body, "선언된 키를 예시 값으로 또 붙였다 — 뒤의 줄이 이긴다"
+    assert body == env, "빠진 설정이 없으면 아무것도 쓰지 않는다"
+    assert "자동 추가 0" in r.stdout
+
+
 def test_existing_values_are_never_touched(tmp_path):
     d = _repo(tmp_path, "PORT=8080\n", "PORT=9999\n")
     _run(d)

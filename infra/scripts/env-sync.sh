@@ -101,7 +101,10 @@ for DIR in $(discover); do
     #   이 리포군의 실제 키는 전부 그렇다(전 리포 .env.example 전수 확인). 소문자 키를 쓰는 리포가
     #   생기면 여기를 고친다 — 조용히 흘리지 말고.
     case "$key" in *[!A-Z0-9_]*|'') continue ;; esac
-    printf '%s\n' "$declared" | grep -qx "$key" && continue
+    # 선언 여부는 **파이프 없이** 본다. `printf … | grep -qx` 는 grep 이 첫 일치에서 닫는 순간 아직 쓰던 printf 가 SIGPIPE(141)로
+    # 죽고(bash 의 printf 는 줄마다 따로 쓴다), pipefail 이 그것을 '선언 안 됨' 으로 읽는다 — 이미 있는 키를 예시 값으로 끝에 또
+    # 붙여, 소싱하면 박스가 정한 값이 조용히 뒤집힌다(2026-10-07 dev 실측: 키 50개에 40회 중 1회 · 5,000개에 40회 중 40회).
+    grep -qx "$key" <<<"$declared" && continue
     val="${line#*=}"
     # 값이 필요한가(비밀·자리표시자·빈 값)를 **먼저** 본다 — 주석으로 적힌 비밀은 둘 다 참인데,
     # 사람이 할 일은 "값을 정한다" 쪽이다(예시니까 놔둬도 된다고 읽히면 안 된다).
