@@ -27,6 +27,9 @@
 //         failed:[{panel_id, error}], partials:[{panel_id, decision?, rounds, …}], error? }
 //   - submitted[].turns 는 원장에 넘긴 발언 레코드 수다(라운드 수가 아니다).
 //   - submitted[].report_id 는 정수 또는 null 이다(rr_panels.report_id 가 INTEGER).
+//   - submitted[].flags 와 partials[] 에는 좌석에 못 간 근거가 실린다 — evidenceOmitted(자식 심의가 버린 것:
+//     [{source,count,text}]) · briefEvidenceDropped(앱이 칸을 넘겨 뺀 근거 키) · userMemoCut({chars,kept} 또는 null).
+//     ⚠ 앱 원장(패널 quality)에는 아직 안 적힌다 — 제출 도구에 받을 인자가 없다. 이 반환이 유일한 기록이다.
 //   - partials 는 제출되지 못한 패널의 심의 데이터 보존분이다(결정문 절단·페이로드 초과·
 //     제출 실패·no_decision) — 자식의 부분 반환 원칙을 부모도 지킨다(감사 1-F). 여기 있는
 //     데이터로 결정적 재제출·전사 복원·continueFrom 재의결이 가능하다.
@@ -159,6 +162,9 @@ const BRIEF_SCHEMA = {
             items: {
               type: 'object',
               properties: {
+                // 근거 키(E0·E3·M …) — 여기 선언이 없으면 구조화 출력이 버려서, 앱이 실어 보내도 좌석 표지가
+                // [e:N|KEY] 가 되지 못한다(docs/delib-engine-feedback D-4). 형식 검사는 자식 심의가 한다.
+                key: { type: 'string', description: '항목의 key(E0·E3·M 등) 그대로. 없으면 빈 문자열' },
                 source: { type: 'string' },
                 tool: { type: 'string' },
                 args: { type: 'string' },
@@ -166,6 +172,15 @@ const BRIEF_SCHEMA = {
               },
               required: ['source', 'result'],
             },
+          },
+          // 앱이 브리프를 조립하며 좌석에 못 실은 것 — 패널 옆에 적어 보낸다(HWAXRisk routes.brief_payload).
+          // MCP 경로에서 이걸 받는 것은 이 워크플로뿐이라, 여기서 버리면 아무에게도 안 닿는다.
+          evidence_dropped: { type: 'array', items: { type: 'string' },
+            description: '패널의 evidence_dropped(칸을 넘겨 빠진 근거 키 목록) 그대로. 없으면 빈 배열' },
+          user_memo_cut: {
+            type: 'object',
+            description: '패널의 user_memo_cut(사용자 메모를 다 못 실었을 때) 그대로. 없으면 chars·kept 를 0 으로',
+            properties: { chars: { type: 'number' }, kept: { type: 'number' } },
           },
         },
         required: ['panel_id', 'seats'],
@@ -181,6 +196,7 @@ const brief = await agent(
   // 대조가 정하고, 토큰이 틀리거나 만료면 앱이 {error:'brief_token_invalid'} 를 돌려준다(§8.2.5).
   `인자: target_key="${TARGET}", brief_token="${BRIEF_TOKEN}", tier="${TIER}"\n` +
   `- 결과를 요약·가공하지 말고 스키마 필드에 그대로 옮겨라. 근거(evidence)의 result 문자열은 원문 그대로다.\n` +
+  `- 근거 항목의 key 도 그대로 옮기고, 패널에 evidence_dropped·user_memo_cut 이 있으면 그것도 그대로 옮겨라.\n` +
   `- 응답에 error 가 있으면 error 에 그 코드를 넣고 panels 는 빈 배열로 둬라.\n` +
   `- ${BY_NAME}\n` +
   `- 이름으로도 부를 수 없거나 호출이 실패하면 error="brief_unavailable" 로 두고 panels 는 빈 배열로 둬라. 재시도하지 마라.`,
@@ -221,8 +237,18 @@ const failed = []
 // 제출 못 한 패널의 심의 데이터 보존(감사 1-F) — 자식의 "의장이 죽어도 라운드는 돌려준다"
 // 원칙을 부모도 지킨다. 수 시간 심의가 제출 한 홉의 실패로 증발하지 않게 한다.
 const partials = []
+// 좌석에 못 간 근거 — 자식 심의가 버린 것(evidenceOmitted: 본문 없음·12건 초과·11,000자 초과)과 앱이 브리프를
+// 조립하며 뺀 것(칸 초과 키·메모 절단)을 한데 모은다. 구조화 출력은 없는 값을 0 으로 채우기도 해서 chars 가
+// 0 이면 절단이 없는 것으로 읽는다.
+const evidenceLoss = (p, result) => ({
+  evidenceOmitted: (result && Array.isArray(result.evidenceOmitted)) ? result.evidenceOmitted : [],
+  briefEvidenceDropped: Array.isArray(p.evidence_dropped) ? p.evidence_dropped.filter(Boolean).map(String) : [],
+  userMemoCut: (p.user_memo_cut && Number(p.user_memo_cut.chars) > 0)
+    ? { chars: Number(p.user_memo_cut.chars), kept: Number(p.user_memo_cut.kept) || 0 } : null,
+})
 const keepPartial = (p, result, why) => partials.push({
   panel_id: p.panel_id, why,
+  ...evidenceLoss(p, result),
   decision: result && result.decision ? String(result.decision) : null,
   decisionTruncated: result ? result.decisionTruncated : undefined,
   rounds: (result && result.rounds) || [],
@@ -261,6 +287,17 @@ for (const p of panels) {
     failed.push({ panel_id: p.panel_id, error: String(e).slice(0, 300) })
     log(`패널 ${p.panel_id} 심의 실패 — 제출하지 않는다(앱 재시도 규칙이 처리)`)
     continue
+  }
+  // 좌석에 못 간 근거를 패널 이름과 함께 남긴다 — 종전엔 자식의 로그 한 줄뿐이라 어느 패널 것인지도 몰랐다.
+  // 아래 제출 기록(flags)과 보존분(partials)에도 같은 것을 싣는다(S26U 피드백 3-3).
+  const loss = evidenceLoss(p, result)
+  {
+    const bits = [
+      ...loss.evidenceOmitted.map(x => `${String(x.source).replace('사전 근거 ', '')} ${x.count}건`),
+      ...(loss.briefEvidenceDropped.length ? [`앱 브리프 칸 초과 ${loss.briefEvidenceDropped.join('·')}`] : []),
+      ...(loss.userMemoCut ? [`사용자 메모 ${loss.userMemoCut.chars}자 중 ${loss.userMemoCut.kept}자만 실림`] : []),
+    ]
+    if (bits.length) log(`⚠ 패널 ${p.panel_id} 근거 일부가 좌석에 못 갔다 — ${bits.join(' · ')}`)
   }
   if (!result || !result.decision) {
     failed.push({ panel_id: p.panel_id, error: 'no_decision' })
@@ -313,6 +350,11 @@ for (const p of panels) {
         `의역 변조된다(실측). 제출 생략, 반환 partials 의 원문으로 결정적 제출이 필요하다`)
     continue
   }
+  // ⚠ 좌석에 못 간 근거(loss)는 이 제출에 싣지 못한다 — risk_submit_panel_result 에 그걸 받을 인자가 없다
+  //   (REST complete_panel 은 events[] 를 받아 engine_withheld 로 적지만, MCP 도구는 events=None 으로 고정돼 있다).
+  //   도구가 모르는 인자를 얹어 보내면 말없이 버려지므로 얹지 않는다 — 실린 줄 알게 된다. 그 대신 이 워크플로의
+  //   반환(submitted[].flags · partials)과 로그에 남긴다. 도구에 자리가 생기면 항목마다
+  //   {kind:'evidence', source, included:false, note:text} 로 옮긴다(text 는 그 필드 상한 200자 안쪽이다).
   let ack = null
   try {
     ack = await agent(
@@ -344,6 +386,8 @@ for (const p of panels) {
         droppedTurns,
         citationUnmatched: (result.citationAudit && result.citationAudit.unmatched
                             ? result.citationAudit.unmatched.length : null),
+        // 좌석에 못 간 근거 — 비어 있지 않으면 이 패널의 좌석은 브리프의 일부만 보고 판정했다.
+        ...loss,
       },
     })
     log(`패널 ${p.panel_id} 제출 완료 — 발언 ${turns.length}건${droppedTurns ? `(+드롭 ${droppedTurns})` : ''}, ` +

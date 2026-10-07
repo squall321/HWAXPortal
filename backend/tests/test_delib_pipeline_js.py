@@ -319,3 +319,46 @@ def test_표지를_받은_항목_수는_실제로_실린_수다():
     """citationAudit.evidenceIds 가 예산으로 빠진 항목까지 세면, 호출자는 보낸 수와 같다고 읽는다."""
     out = _delib([{"source": f"s{i}", "result": "가" * 3000} for i in range(1, 9)], stopAfterRound=0, rounds=2)
     assert out["result"]["citationAudit"]["evidenceIds"] == 5
+
+
+# ── 리스크 심사 오케스트레이터 — 키를 자식 심의까지 넘기고, 자식·앱이 버린 것을 결과에 남긴다 ─────────
+def test_리스크_심사가_근거_키를_자식_심의까지_넘긴다():
+    """브리프 옮겨 적기 스키마에 key 가 없으면 구조화 출력이 그 필드를 버린다 — 앱이 실어 보내도(HWAXRisk c0b1a65)
+    좌석에 안 닿는다."""
+    out = _risk(_brief([{"key": "E0", "source": "scope", "tool": "brief", "args": "T1", "result": "스코프"},
+                        {"key": "M", "source": "user_memo", "result": "메모"}]))
+    assert [e.get("key") for e in out["childArgs"][0]["evidence"]] == ["E0", "M"]
+    assert "· [e:1|E0] [scope · brief(T1)] 스코프" in _seat_prompt(out)
+    assert out["result"]["submitted"][0]["flags"]["evidenceOmitted"] == []
+
+
+def test_자식_심의가_버린_근거를_제출_기록에_남긴다():
+    out = _risk(_brief([{"key": f"E{i}", "source": f"s{i}", "result": f"본문 {i}"} for i in range(14)]))
+    sub = out["result"]["submitted"]
+    assert len(sub) == 1, out["result"]
+    notes = sub[0]["flags"]["evidenceOmitted"]
+    assert [(n["source"], n["count"]) for n in notes] == [("사전 근거 건수 초과", 2)]
+    assert any("P1" in line and "건수 초과 2건" in line for line in out["logs"]), "사람이 보는 로그에도 패널 이름과 함께"
+
+
+def test_제출하지_못한_패널의_보존분에도_남긴다():
+    # 머리가 '##' 가 아니면 절단으로 판정돼 제출하지 않고 partials 에 보존한다.
+    out = _risk(_brief([{"source": f"s{i}", "result": f"본문 {i}"} for i in range(14)]),
+                decision="제목 없이 시작한 결정문")
+    assert out["result"]["submitted"] == [] and out["result"]["failed"][0]["error"] == "decision_truncated"
+    assert [(n["source"], n["count"]) for n in out["result"]["partials"][0]["evidenceOmitted"]] \
+        == [("사전 근거 건수 초과", 2)]
+
+
+def test_앱이_칸을_넘겨_뺀_근거와_메모_절단을_넘긴다():
+    """앱은 브리프 응답의 패널 옆에 evidence_dropped·user_memo_cut 을 적는다(HWAXRisk routes.brief_payload).
+    MCP 경로에서 그걸 받는 것은 이 오케스트레이터뿐이다 — 스키마가 버리면 아무에게도 안 닿는다."""
+    out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}],
+                       evidence_dropped=["E8", "E9"], user_memo_cut={"chars": 1500, "kept": 266}))
+    flags = out["result"]["submitted"][0]["flags"]
+    assert flags["briefEvidenceDropped"] == ["E8", "E9"]
+    assert flags["userMemoCut"] == {"chars": 1500, "kept": 266}
+    assert any("P1" in line and "E8" in line and "1500" in line for line in out["logs"])
+    # 없으면 빈 값이다 — 필드가 없는 것과 '빠진 것이 없다' 를 구분한다.
+    flags = _risk(_brief([{"source": "scope", "result": "스코프"}]))["result"]["submitted"][0]["flags"]
+    assert flags["briefEvidenceDropped"] == [] and flags["userMemoCut"] is None
