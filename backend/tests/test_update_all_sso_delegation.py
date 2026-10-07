@@ -485,7 +485,13 @@ def test_the_trigger_agrees_with_what_the_gateway_would_build(tmp_path, apps, en
     e = {"PER_USER_SSO_APPS": apps, **env}
     per_user = json.loads(json.dumps(prev))
     exec(loop, {"e": e, "per_user": per_user, "re": re, "print": lambda *a, **k: None})  # noqa: S102 — 옆 리포의 추적 파일 발췌
-    changed = sorted(k for k in per_user if per_user[k] != prev.get(k))
+    # 게이트웨이는 순회가 쓴 항목에 `managed_by` 표지를 남긴다(HWAXMcpGateway cff32c3 — 목록에서 뺀 앱을 끄는 데 쓴다. 동작에는
+    # 영향이 없다). 표지만 새로 붙는 것은 '바뀜' 이 아니다 — 그것 하나로 재프로비저닝을 돌리면 표지 없는 옛 항목이 있는 박스가
+    # 게이트웨이·에이전트서버를 한 번 괜히 내렸다 올린다. 표지는 다음에 비밀과 함께 도는 실행에서 붙는다.
+    def _wo_mark(v):
+        return {k: x for k, x in v.items() if k != "managed_by"} if isinstance(v, dict) else v
+
+    changed = sorted(k for k in per_user if _wo_mark(per_user[k]) != _wo_mark(prev.get(k)))
     box = f"PER_USER_SSO_APPS={json.dumps(apps)}\n" + "".join(f'{k}="{v}"\n' for k, v in env.items())
     cfg = {"heax_registry": {"per_user_sso": prev}}
     flagged = sorted(t[:-len("_sso")] for t in _drift(tmp_path, cfg, box=box).split() if t.endswith("_sso"))
