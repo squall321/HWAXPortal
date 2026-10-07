@@ -28,7 +28,8 @@
 //   - submitted[].turns 는 원장에 넘긴 발언 레코드 수다(라운드 수가 아니다).
 //   - submitted[].report_id 는 정수 또는 null 이다(rr_panels.report_id 가 INTEGER).
 //   - submitted[].flags 와 partials[] 에는 좌석에 못 간 근거가 실린다 — evidenceOmitted([{source,count,text}],
-//     자식 심의가 버린 것) · briefEvidenceDropped(앱이 칸을 넘겨 뺀 근거 키) · userMemoCut({chars,kept} 또는 null).
+//     자식 심의가 버린 것) · inputNotices(같은 모양 — 자식 심의가 항목 상한에서 줄였거나 본문 후보 하나만 실은 근거, 키가 없어
+//     앉히지 못한 좌석) · briefEvidenceDropped(앱이 칸을 넘겨 뺀 근거 키) · userMemoCut({chars,kept} 또는 null).
 //     같은 것을 제출 도구의 evidence_omitted 로도 보낸다 — 앱이 패널 quality 의 engine_withheld 와 통합 보고서의
 //     [품질 플래그] 에 적는다. 제출하지 못한 패널은 partials 가 유일한 기록이다.
 //   - partials 는 제출되지 못한 패널의 심의 데이터 보존분이다(결정문 절단·페이로드 초과·
@@ -243,6 +244,9 @@ const partials = []
 // 0 이면 절단이 없는 것으로 읽는다.
 const evidenceLoss = (p, result) => ({
   evidenceOmitted: (result && Array.isArray(result.evidenceOmitted)) ? result.evidenceOmitted : [],
+  // 자식 심의가 받은 입력을 그대로 쓰지 못한 것(항목 상한에서 줄인 근거 · 본문 후보가 여럿이던 근거 · 키 없는 좌석) — 브리프 근거는
+  // 길다(E1 변경 원장·E3 선례). 2,000자에서 앞부분만 실려도 종전엔 이 패널의 어느 기록에도 안 남았다.
+  inputNotices: (result && Array.isArray(result.inputNotices)) ? result.inputNotices : [],
   briefEvidenceDropped: Array.isArray(p.evidence_dropped) ? p.evidence_dropped.filter(Boolean).map(String) : [],
   userMemoCut: (p.user_memo_cut && Number(p.user_memo_cut.chars) > 0)
     ? { chars: Number(p.user_memo_cut.chars), kept: Number(p.user_memo_cut.kept) || 0 } : null,
@@ -258,8 +262,10 @@ const keepPartial = (p, result, why) => partials.push({
   nextRoundOffset: result ? result.nextRoundOffset : undefined,
 })
 for (const p of panels) {
-  const seats = (p.seats || []).filter(s => s && s.key).map(s => ({
-    key: String(s.key),
+  // 키 없는 좌석을 여기서 걸러내지 않는다 — 종전엔 `.filter(s => s.key)` 가 말없이 버려, 편성된 좌석 하나가 빠진 패널이 원장에
+  // '전원 착석' 으로 들어갔다. 빈 키로 넘기면 자식 심의가 앉히지 않고 inputNotices('지정 좌석 키 없음')로 알린다.
+  const seats = (p.seats || []).filter(s => s && typeof s === 'object').map(s => ({
+    key: String(s.key || '').trim(),
     // 좌석 역할은 엔진이 좌석 계약을 접미로 붙인다(RISK_SEAT_CONTRACT). 여기서는 이 실행이
     // 도구 없는 경로임을 한 줄로 알린다 — 계약의 evidence_only 절이 이를 받는다.
     role: `${String(s.role || '')}\n${EVIDENCE_ONLY_NOTE}`.trim(),
@@ -295,6 +301,7 @@ for (const p of panels) {
   {
     const bits = [
       ...loss.evidenceOmitted.map(x => `${String(x.source).replace('사전 근거 ', '')} ${x.count}건`),
+      ...loss.inputNotices.map(x => `${String(x.source).replace('사전 근거 ', '')} ${x.count}건`),
       ...(loss.briefEvidenceDropped.length ? [`앱 브리프 칸 초과 ${loss.briefEvidenceDropped.join('·')}`] : []),
       ...(loss.userMemoCut ? [`사용자 메모 ${loss.userMemoCut.chars}자 중 ${loss.userMemoCut.kept}자만 실림`] : []),
     ]
@@ -362,6 +369,7 @@ for (const p of panels) {
   const clip200 = (s) => { const v = String(s); return v.length > 200 ? v.slice(0, 199) + '…' : v }
   const omitted = [
     ...loss.evidenceOmitted.map(x => ({ source: String(x.source), text: clip200(x.text) })),
+    ...loss.inputNotices.map(x => ({ source: String(x.source), text: clip200(x.text) })),
     ...(loss.briefEvidenceDropped.length
       ? [{ source: '앱 브리프 칸 초과',
            text: clip200(`근거 ${loss.briefEvidenceDropped.join('·')} 는 브리프 칸을 넘겨 좌석에 주지 않았다.`) }] : []),

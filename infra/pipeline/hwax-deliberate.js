@@ -10,6 +10,8 @@
 //                       항목을 건너뛰고 매겨지므로, 결정문의 인용을 제 원장과 맞춰 보려면 키를 실어 보낸다.
 //   - options         : 후보/선택지 목록(JSON 문자열 또는 배열)
 //   - personas        : [{key, role, origin?}] 참여 전문 페르소나(호출자가 recommend_agents로 발굴해 전달).
+//                       key 는 전문가 키다 — recommend_agents 가 돌려주는 agent_type 값이고, 그 이름(agent_type)으로 와도 받는다.
+//                       키가 없는 항목은 앉히지 않고 inputNotices 로 알린다(전부 그러면 시작하지 않는다).
 //                       origin — 'primary'(주 도메인, 기본) | 'counter'(반대 도메인) | 'carry'(이어하기 유임) |
 //                       'new'(이어하기 신규). 결정문이 커버리지를 기록하고, origin:'new' 좌석은 1라운드에서
 //                       이전 요약을 받지 않는다(앵커링 차단).
@@ -53,6 +55,9 @@
 //   — stopAfterRound:1 이면 decision/report/conversation 이 null 이고 checkpoint{stage,seats,positions,ask} 가 붙는다.
 //   — evidenceOmitted:[{source,count,text}] 는 좌석에 주지 않은 근거다(본문 없음 · 건수 12건 초과 · 예산 11,000자 초과).
 //     빈 배열이 아니면 좌석은 보낸 근거의 일부만 보고 발언한 것이다 — 어느 반환에나 붙는다.
+//   — inputNotices:[{source,count,text}] 는 받은 입력을 **그대로 쓰지 못한** 것이다 — 항목 상한(2,000자)에서 앞부분만 실은 근거 ·
+//     본문이 든 키가 둘 이상이라 앞선 하나만 실은 근거 · 키가 없어 앉히지 못한 좌석. evidenceOmitted 가 비어 있어도 이것이
+//     비어 있지 않으면 좌석은 보낸 것의 일부만 보았거나 지정한 패널 그대로가 아니다 — 어느 반환에나 붙는다.
 //   — 호출자가 viz_module + Report Archive로 보고서화. nextRoundOffset 은 다음 이어하기 호출의
 //   continueFrom.roundsSoFar 로 그대로 넘기면 라운드 번호가 끊기지 않는다.
 //
@@ -92,9 +97,49 @@ const OPT_LIST = (() => {
   return []
 })()
 const HAS_CHOICES = OPT_LIST.length >= 2
-const PERS = Array.isArray(A.personas) ? A.personas.slice() : []  // 사본 — 지정 좌석 push 가 호출자 배열을 오염시키지 않게
+// 받은 입력을 그대로 쓰지 못한 것 — 사유마다 한 줄로 **반환값에** 남긴다(inputNotices). 엔진(deliberation.py)이 카드로 알리는
+// 것과 같은 세 가지를 같은 source 낱말로 적는다(리스크 앱이 같은 낱말로 읽는다): 키 없는 좌석(바로 아래) · 항목 상한에서 줄인
+// 근거 · 본문 후보가 여럿이던 근거(둘은 근거 블록 뒤). 종전엔 셋 다 어디에도 안 남았다. text 는 200자 안쪽으로 쓴다
+// (앱 원장의 줄 상한 — HWAXRisk routes.EVENT_FIELD_MAX). evidenceOmitted 와 가른 까닭 — 그쪽은 좌석에 **통째로** 못 간 근거다.
+const INPUT_NOTICES = []
+const clipNote = (v, n) => { const t = String(v); return t.length <= n ? t : t.slice(0, n - 1) + '…' }
+// 사유 한 줄을 200자 안에 맞춘다 — 낱개를 들어가는 만큼 적고 나머지는 '외 N건' 으로 센다(중간에서 자르면 표지가 깨진다).
+const fitNote = (head, parts, tail) => {
+  let shown = 0
+  const build = n => head + parts.slice(0, n).join(' / ') +
+    (parts.length > n ? `${n ? ' ' : ''}외 ${parts.length - n}건` : '') + tail
+  while (shown < parts.length && build(shown + 1).length <= 200) shown++
+  return build(shown)
+}
+// 좌석 키 — 정본은 `key` 다. 추천 도구(recommend_agents)는 좌석 키를 `agent_type` 으로 돌려주므로 그 이름으로 온 것도 받는다
+// (deliberation.py _seat_key 와 같은 규칙 — 같은 좌석 목록이 웹 길과 MCP 길에서 같은 패널이 된다).
+// 키가 없는 항목은 앉힐 수 없다. 종전엔 걸러내지 않아 "undefined" 라는 이름의 좌석이 끝까지 돌았고(역할을 못 찾아 그 낱말이
+// 곧 역할이었다) 결정문은 그 좌석을 한 도메인으로 셌다. 객체가 아닌 항목(null)은 워크플로를 통째로 죽였다.
+const seatKey = p => (p && typeof p === 'object' && !Array.isArray(p)) ? String(p.key || p.agent_type || '').trim() : ''
+const _persIn = Array.isArray(A.personas) ? A.personas : []
+const PERS = _persIn.filter(p => seatKey(p)).map(p => ({ ...p, key: seatKey(p) }))  // 사본 — 지정 좌석 push 가 호출자 배열을 오염시키지 않게
 const pk = PERS.map(p => p.key)
-if (!pk.length) throw new Error('personas 가 비어 있음 — 호출자가 recommend_agents 로 발굴해 전달해야 함')
+{
+  const bad = _persIn.filter(p => !seatKey(p))
+  // 처음 그런 항목이 들고 온 필드 이름 — 무엇을 key 로 착각했는지(name·id·persona)를 호출자가 바로 본다.
+  const b0 = bad[0]
+  const fields = !bad.length ? ''
+    : (b0 && typeof b0 === 'object' && !Array.isArray(b0))
+      ? (Object.keys(b0).slice(0, 8).map(k => String(k).slice(0, 30)).join(', ') || '없음')
+      : `객체가 아님(${b0 === null ? 'null' : Array.isArray(b0) ? 'array' : typeof b0})`
+  const what = `(받은 필드: ${clipNote(fields, 60)}). 항목은 {key, role} 이고 key 는 recommend_agents 의 agent_type 값이다.`
+  if (!pk.length) {
+    throw new Error(bad.length
+      ? `personas ${bad.length}석 전부 좌석 키(key)가 없다${what}`
+      : 'personas 가 비어 있음 — 호출자가 recommend_agents 로 발굴해 전달해야 함')
+  }
+  if (bad.length) {
+    INPUT_NOTICES.push({ source: '지정 좌석 키 없음', count: bad.length,
+      text: `지정 좌석 ${_persIn.length}석 중 ${bad.length}석은 좌석 키(key)가 없어 앉히지 못했다${what} 키가 있는 좌석만 앉혔다.` })
+    log(`⚠ 지정 좌석 ${_persIn.length}석 중 ${bad.length}석은 키가 없어 앉히지 못했다(받은 필드: ${fields}) — ` +
+        `${pk.length}석으로 돈다(반환값 inputNotices 에 남긴다)`)
+  }
+}
 
 const CONT = A.continueFrom || null           // { summary, roundsSoFar } — 이어하기 모드
 const HUMAN_NOTE = A.humanNote || ''          // 인간 검토자 의견(있으면 매 라운드 프롬프트에 강제 주입)
@@ -156,15 +201,19 @@ const EV_BODY_KEYS = ['result', 'text', 'content', 'excerpt', 'summary', 'body',
 // 문자열이 아닌 값(표·목록)은 JSON 으로 싣는다 — String() 은 객체를 '[object Object]' 로 만들어 좌석이 수치를
 // 못 읽는다. 참·거짓은 본문이 아니다 — `{result: true, data: …}` 의 result 는 성패 표시라, 그걸 본문으로
 // 집으면 진짜 본문(data)을 가린다(deliberation.py _ev_body 와 같은 규칙).
-const evBody = it => {
+// 후보를 **전부** 돌려준다([[키, 본문]…], 쓰는 것은 맨 앞 하나 — deliberation.py _ev_bodies 와 같다). 둘 이상이면 뒤엣것은 좌석에
+// 안 가는데 그 사실이 어디에도 안 남았다({summary: 한 줄, body: 본문} 은 한 줄만 실린다). 어느 것이 진짜 본문인지 여기서 짐작해
+// 고르지는 않는다 — 뺀 후보를 알린다(아래 inputNotices '사전 근거 본문 후보 여럿').
+const evBodies = it => {
+  const out = []
   for (const k of EV_BODY_KEYS) {
     const v = it[k]
     const body = typeof v === 'string' ? v.trim()
       : (v == null || typeof v === 'boolean' || (typeof v === 'object' && !Object.keys(v).length)) ? ''
       : JSON.stringify(v)
-    if (body) return body
+    if (body) out.push([k, body])
   }
-  return ''
+  return out
 }
 // 근거 항목의 선택 키(`key`) — 호출자가 제 번호(E3·E1-CH-015)를 실어 보내면 표지를 `[e:N|KEY]` 로 찍는다.
 // 번호 N 은 버려진 항목을 건너뛰고 매겨져 호출자의 번호와 어긋난다 — 키가 있어야 결정문의 인용을 호출자가
@@ -175,19 +224,29 @@ const EV_KEY_RE = /^[A-Za-z0-9_.-]{1,24}$/
 // 인용 표지 — 좌석·의장에게는 `[e:N]` 을 적으라고 하지만, 줄에 찍힌 `[e:N|KEY]` 를 그대로 옮겨 적기도 한다.
 // 둘 다 항목 N 이다(deliberation.py _EV_CITE_RE 와 같은 식).
 const EV_CITE_RE = /\[e:(\d+)(?:\|[A-Za-z0-9_.-]{1,24})?\]/g
-// 좌석 블록의 상한 — 건수와 합계 글자. 아래 드롭 고지가 이 값을 읽어 적는다(숫자를 문구에 따로 박지 않는다).
+// 좌석 블록의 상한 — 건수와 합계 글자, 항목 하나의 글자. 아래 드롭·절단 고지가 이 값을 읽어 적는다(숫자를 문구에 따로 박지 않는다).
 const EV_MAX_ITEMS = 12
 const EV_BUDGET = 11000
+const EV_ITEM_MAX = 2000
 // 본문·키를 한 번 정해 둔다 — 아래 좌석 블록과 인용 후검증(_citCorpus)이 같은 값을 본다.
 // 들어온 것(_evIn)·본문 있는 것(_evValid)·건수 상한 안의 것(EV)을 따로 쥔다 — 버린 수를 사유별로 세려면 셋이 다 필요하다.
 const _evIn = Array.isArray(A.evidence) ? A.evidence : []
 const _evValid = _evIn
-  .map(e => (e && typeof e === 'object' && !Array.isArray(e))
-    ? { ...e, result: evBody(e), key: (typeof e.key === 'string' && EV_KEY_RE.test(e.key)) ? e.key : '' } : null)
+  .map(e => {
+    if (!e || typeof e !== 'object' || Array.isArray(e)) return null
+    const cands = evBodies(e)
+    return { ...e, result: cands.length ? cands[0][1] : '', cands,
+             key: (typeof e.key === 'string' && EV_KEY_RE.test(e.key)) ? e.key : '' }
+  })
   .filter(e => e && e.result)
 const EV = _evValid.slice(0, EV_MAX_ITEMS)
 let EV_BLOCK = ''
 let EV_SHOWN = 0   // 실제로 좌석에 실린 항목 수 = [e:N] 표지를 받은 수(예산으로 빠진 것은 세지 않는다)
+// **실린** 항목 가운데 좌석이 일부만 본 것 — 항목 상한에서 앞부분만 실은 것과, 본문 후보가 여럿이라 앞선 하나만 실은 것.
+// 예산을 넘겨 통째로 빠진 항목은 여기 적지 않는다(evidenceOmitted 가 말한다 — 두 번 세지 않는다).
+const _evCut = []
+const _evShadow = []
+const _n = v => v.toLocaleString('en-US')
 if (EV.length) {
   const evItems = []
   let evBudget = 0
@@ -197,13 +256,20 @@ if (EV.length) {
     const meta = (e.tool ? ` · ${String(e.tool).slice(0, 80)}` : '') + (e.args ? `(${String(e.args).slice(0, 400)})` : '')
     const raw = String(e.result)
     // 항목 안 절단도 표시한다 — 무표시로 자르면 좌석이 잘린 수치를 완결 데이터로 읽는다(감사 C5).
-    const body = raw.length > 2000 ? raw.slice(0, 2000) + ` …[${raw.length}자 중 2,000자]` : raw
+    const body = raw.length > EV_ITEM_MAX ? raw.slice(0, EV_ITEM_MAX) + ` …[${raw.length}자 중 ${_n(EV_ITEM_MAX)}자]` : raw
     // [e:N] 안정 id — 의장·좌석이 근거 항목을 지목해 인용할 참조 체계(감사 원장 (3)).
     // 호출자 키가 있으면 [e:N|KEY] — 인용은 종전대로 [e:N] 이고 어느 쪽으로 적어도 같은 항목이다.
     const line = `· [e:${++evId}${e.key ? '|' + e.key : ''}] [${src}${meta}] ${body}`
     if (evBudget + line.length > EV_BUDGET && evItems.length) break
     evItems.push(line)
     evBudget += line.length
+    // 좌석은 본문 끝의 표식으로 절단을 알지만 호출자는 몰랐다 — '12건 보냈고 12건 실렸다' 로 읽히는데 긴 항목은 앞 2,000자뿐이다.
+    const tag = `[e:${evId}${e.key ? '|' + e.key : ''}]`
+    if (raw.length > EV_ITEM_MAX) _evCut.push(`${tag} 원문 ${_n(raw.length)}자`)
+    if (e.cands.length > 1) {
+      _evShadow.push(`${tag} ${e.cands[0][0]} ${_n(e.cands[0][1].length)}자를 싣고 ` +
+        `${e.cands.slice(1).map(([k, b]) => `${k} ${_n(b.length)}자`).join(', ')}는 뺐다`)
+    }
   }
   EV_SHOWN = evItems.length
   const _evDropped = _evIn.length - evItems.length
@@ -233,6 +299,23 @@ const EV_OMITTED = []
     log(`⚠ 근거 ${_evIn.length}건 중 ${EV_SHOWN}건만 주입 — ` +
         `${EV_OMITTED.map(x => `${x.source.replace('사전 근거 ', '')} ${x.count}건`).join(' · ')} (반환값 evidenceOmitted 에 남긴다)`)
   }
+}
+// 실린 근거 가운데 좌석이 일부만 본 것(위 _evCut · _evShadow) — 엔진의 카드와 같은 source 낱말로 inputNotices 에 남긴다.
+if (_evCut.length) {
+  INPUT_NOTICES.push({ source: '사전 근거 항목 상한 초과', count: _evCut.length,
+    text: fitNote(`근거 ${_evCut.length}건은 항목 하나의 상한(${_n(EV_ITEM_MAX)}자)을 넘어 앞부분만 실었다 — `, _evCut,
+                  `. 뒤쪽은 좌석이 보지 못했다.`) })
+}
+if (_evShadow.length) {
+  INPUT_NOTICES.push({ source: '사전 근거 본문 후보 여럿', count: _evShadow.length,
+    text: fitNote(`근거 ${_evShadow.length}건은 본문이 든 키가 둘 이상이라 앞선 키 하나만 실었다 — `, _evShadow,
+                  `. 본문은 'result' 하나에 넣는다.`) })
+}
+if (_evCut.length || _evShadow.length) {
+  log(`⚠ 근거 일부만 좌석에 실렸다 — ` +
+      [_evCut.length ? `항목 상한 초과 ${_evCut.length}건(${_evCut.slice(0, 4).join(' / ')}${_evCut.length > 4 ? ' …' : ''})` : '',
+       _evShadow.length ? `본문 후보 여럿 ${_evShadow.length}건(${_evShadow.slice(0, 2).join(' / ')}${_evShadow.length > 2 ? ' …' : ''})` : '']
+        .filter(Boolean).join(' · ') + ` (반환값 inputNotices 에 남긴다)`)
 }
 // 얹을 층(2층 Modifier) — chairTemplate(무엇을 산출)과 직교하는 "어떻게 굴리나" 오버레이.
 // deliberation.py _MODIFIER_BLOCKS 와 키·취지 정합. BASE/BASE_BLIND 에 실어 좌석·의장 전체에 적용.
@@ -568,7 +651,7 @@ if (STOP_AFTER === 1) {
   return {
     question: Q, rounds: roundsData, roundLabels, decision: null, explain: null,
     report: null, conversation: null, nextRoundOffset: rn(1),
-    evidenceOmitted: EV_OMITTED,
+    evidenceOmitted: EV_OMITTED, inputNotices: INPUT_NOTICES,
     checkpoint: {
       stage: 'after-initial',
       seats: SEAT_NOTE,
@@ -758,7 +841,7 @@ if (!decText) {
     question: Q, rounds: roundsData.map(rd => rd.filter(Boolean)), roundLabels,
     decision: null, decisionFailed: true, decisionTruncated: false, seatLoss,
     plain: null, report: null, conversation: null, nextRoundOffset: finalRoundNo,
-    evidenceOmitted: EV_OMITTED,
+    evidenceOmitted: EV_OMITTED, inputNotices: INPUT_NOTICES,
   }
 }
 // 절단 감지 — 양방향. (a) 머리: 여러 턴에 나눠 쓰면 마지막 턴만 반환돼 제목 없이 시작한다.
@@ -1071,6 +1154,9 @@ return {
   // [{source, count, text}] — 좌석에 주지 않은 근거(본문 없음·건수 초과·예산 초과). 빈 배열이면 보낸 근거가 전부 실렸다.
   // 로그로만 알리면 호출자가 놓친다 — 계약으로 올린다(체크포인트·의장 실패 반환에도 같은 필드가 있다).
   evidenceOmitted: EV_OMITTED,
+  // [{source, count, text}] — 받은 입력을 그대로 쓰지 못한 것(항목 상한에서 줄인 근거 · 본문 후보가 여럿이던 근거 · 키 없는 좌석).
+  // 빈 배열이면 실린 근거는 전문이고 지정한 좌석이 전부 앉았다. 세 반환 자리에 같은 필드가 있다.
+  inputNotices: INPUT_NOTICES,
   plain,
   report,
   conversationSkipped,   // 대화 저장을 건너뛴 사유(용량) — save-delib-conversation.py 로 저장 가능.
