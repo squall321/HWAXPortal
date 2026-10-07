@@ -146,8 +146,10 @@ function EvidenceCard({ d }: { d: DelibData }) {
           <summary>
             <span className="dv-ev-badge">근거</span>
             {ev.source}
+            {/* included=false 는 '무관해서 뺀 자료' 만이 아니다 — 엔진이 버린 것을 알리는 카드(사전 근거 예산 초과·
+                본문 없음·지식카드 조회 강등 …)도 같은 깃발로 온다. 딱지는 깃발의 뜻만 말하고 사유는 제목·본문에 둔다. */}
             <span className={`dv-ev-flag${ev.included ? ' in' : ''}`}>
-              {ev.included ? '심의에 포함' : '직접 연관 없음'}
+              {ev.included ? '심의에 포함' : '좌석에 주지 않음'}
             </span>
           </summary>
           <pre className="dv-ev-body">{ev.text}</pre>
