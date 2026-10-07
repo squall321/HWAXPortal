@@ -181,13 +181,13 @@ export function AdminToggle({
   // 지정은 활성 계정에만 한다(승인 대기는 '관리자로 승인'). 표지가 남아 있는 줄은 상태와 무관하게 뗄 수 있어야 한다.
   if (row.status !== 'active' && !on) return <span className="adm-muted">—</span>;
   const save = () => {
-    if (
-      on &&
-      !window.confirm(
-        `${row.email} 의 관리자 권한을 해제합니다. 그 사람의 개인 토큰(PAT)도 모두 폐기됩니다. 계속할까요?`,
-      )
-    )
-      return;
+    // 지정도 묻는다 — 종전엔 해제만 물었다. 스위치를 한 번 잘못 누르면 그 사람이 곧바로 전권을 받고, 되돌리는 길(해제)은 그 사람의
+    // 개인 토큰(PAT)을 전부 폐기한다. 잘못 누른 것을 바로잡는 값이 그 사람의 Claude·MCP 연결이라, 지정 쪽에서 먼저 막는다.
+    const ask = on
+      ? `${row.email} 의 관리자 권한을 해제합니다. 그 사람의 개인 토큰(PAT)도 모두 폐기됩니다. 계속할까요?`
+      : `${row.email} 을(를) 관리자로 지정합니다. 모든 기능·플랫폼과 사용자 관리 권한을 곧바로 받습니다. ` +
+        '되돌리려면 해제해야 하고, 그때 그 사람의 개인 토큰(PAT)이 모두 폐기됩니다. 계속할까요?';
+    if (!window.confirm(ask)) return;
     void setUserAccess(row.email, { admin: !on })
       .then(onSaved)
       .catch((err: unknown) => onError(err instanceof Error ? err.message : '저장 실패'));

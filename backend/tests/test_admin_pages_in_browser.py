@@ -185,6 +185,26 @@ const SCENARIOS = {
     await page.getByText('소속을 바꿀 수 없습니다').first().waitFor();
     return { after_refusal, after_next_save, affiliation_refusal: await alerts(), errors: page.__errors };
   },
+  // 관리자 지정(스위치를 켬)과 해제(끔)를 확인창에서 취소했을 때와 받아들였을 때 — 요청이 나갔는가
+  async admin_confirm(browser) {
+    const seed = `window.__db = [__mk('root@corp.example', { groups: ['portal-admin'] }), __mk('u1@corp.example', { affiliation: 'CAEG' }),
+      __mk('adm@corp.example', { groups: ['portal-admin'] })]`;
+    const out = {};
+    for (const [name, who, dialog] of [['promote_cancel', 'u1', 'dismiss'], ['promote_ok', 'u1', 'accept'],
+                                       ['demote_cancel', 'adm', 'dismiss'], ['demote_ok', 'adm', 'accept']]) {
+      const page = await open(browser, 'users', '/admin/users', { seed, dialog });
+      const sw = page.locator(`input[aria-label="${who}@corp.example 관리자"]`);
+      const before = await sw.isChecked();
+      await sw.click();
+      if (dialog === 'accept') await page.waitForFunction(([w, b]) =>
+        document.querySelector(`input[aria-label="${w}@corp.example 관리자"]`).checked !== b, [who, before]);
+      else await page.waitForTimeout(200);
+      out[name] = { asked: [...page.__dialogs], checked: await sw.isChecked(), errors: page.__errors,
+                    sent: await page.evaluate(() => window.__calls.filter((c) => c.key.startsWith('PATCH ')).map((c) => c.body)) };
+    }
+    out.errors = Object.values(out).flatMap((x) => x.errors);
+    return out;
+  },
 };
 
 (async () => {
@@ -249,3 +269,21 @@ def test_표_안의_스위치가_거절되면_사유가_그_줄_아래에_뜨고
     assert s["after_next_save"] == [], "다음 저장이 성공하면 앞의 거절 사유는 사라진다"
     (b,) = s["affiliation_refusal"]
     assert "소속을 바꿀 수 없습니다" in b["text"] and b["under"] == "user-72@corp.example" and b["inViewport"]
+
+
+def test_관리자_지정도_확인창을_거치고_취소하면_요청이_나가지_않는다(seen):
+    """확인은 해제(스위치를 끔)에만 있었다. 아무 활성 사용자 줄의 '관리자' 스위치를 한 번 잘못 누르면 그 사람이 곧바로 전권을
+    받고, 되돌리는 길(해제)은 그 사람의 개인 토큰(PAT)을 전부 폐기한다 — 잘못 누른 것을 바로잡는 값이 그 사람의 Claude·MCP
+    연결이다. 지정 쪽이 그 비용으로 들어가는 싼 입구였다."""
+    s = seen("admin_confirm")
+    cancel = s["promote_cancel"]
+    assert len(cancel["asked"]) == 1 and cancel["sent"] == [] and cancel["checked"] is False, cancel
+    said = cancel["asked"][0]
+    assert "u1@corp.example" in said and "관리자로 지정" in said, said
+    assert "PAT" in said and "폐기" in said, "되돌릴 때 무엇을 잃는지 말한다 — 확인을 묻는 이유가 그것이다"
+    ok = s["promote_ok"]
+    assert len(ok["asked"]) == 1 and ok["sent"] == [{"admin": True}] and ok["checked"] is True, ok
+    # 해제는 종전 그대로다
+    assert len(s["demote_cancel"]["asked"]) == 1 and s["demote_cancel"]["sent"] == [] and s["demote_cancel"]["checked"] is True
+    assert "해제" in s["demote_cancel"]["asked"][0]
+    assert s["demote_ok"]["sent"] == [{"admin": False}] and s["demote_ok"]["checked"] is False
