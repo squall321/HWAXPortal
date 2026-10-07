@@ -114,9 +114,16 @@ def _engine_request_keys() -> set[str]:
     body = src[src.index("def _resolve_opts("):]
     body = body[: body.index("\n    return o\n")]
     keys = set(re.findall(r'req_opts\.get\("([a-z_]+)"\)', body))
-    loop = re.search(r"for k in \(([^)]*)\):\s*\n\s*v = req_opts\.get\(k\)", body)
+    # 루프가 도는 목록은 그 자리의 튜플이거나 모듈 최상위의 이름 붙인 튜플이다(엔진 386740a 가 `_INT_KEYS` 로 올렸다 — 켜고 끄는
+    # 손잡이 표와 나란히 두려고). 옮겨 간 뒤 이 추출이 그 자리의 튜플만 찾아, 계약 시험이 '루프를 못 찾았다' 로 죽어 있었다.
+    loop = re.search(r"for k in (\([^)]*\)|[A-Za-z_][A-Za-z0-9_]*):\s*\n\s*v = req_opts\.get\(k\)", body)
     assert loop, "엔진의 정수 손잡이 루프를 못 찾았다 — 모양이 바뀌었으면 이 추출도 고쳐라"
-    return keys | set(re.findall(r'"([a-z_]+)"', loop.group(1)))
+    listed = loop.group(1)
+    if not listed.startswith("("):
+        named = re.search(rf"^{listed} = \(([^)]*)\)", src, re.M)
+        assert named, f"엔진의 정수 손잡이 목록 {listed} 을 모듈 최상위에서 못 찾았다 — 모양이 바뀌었으면 이 추출도 고쳐라"
+        listed = named.group(1)
+    return keys | set(re.findall(r'"([a-z_]+)"', listed))
 
 
 def test_엔진이_요청으로_받는_키는_포털이_중계하거나_알고_남겨_둔_것이다():
