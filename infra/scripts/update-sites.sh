@@ -30,6 +30,8 @@ case "${1:-}" in
     echo "              있으나 origin 미설정이면 remote 지정(경로 하드코딩 없이 discover 위치 사용)."
     echo "  방식       : 포털 먼저 down→up --update→health(실패 시 나머지 손대지 않고 중단),"
     echo "              이어서 나머지를 서비스별 순차 재기동(하나 실패해도 계속) → 요약."
+    echo "  심의 보호  : agent-server 는 도는·줄 선 심의가 있으면 재기동하지 않고 ○ 로 남긴다(종료코드 3)."
+    echo "              그래도 재기동하려면 AGENT_RESTART_FORCE=1 을 준다(심의가 전부 끊긴다)."
     exit 0 ;;
   # 인식 못 한 플래그를 그대로 두면 `TARGETS="$*"` 에 들어가고, services.py 가 `-` 로 시작하는 인자를 이름 목록에서 걸러
   # **'이름 없음 = 전부'** 로 읽어 14개 서비스를 통째로 update·down·up 한다(제외 약속된 report-archive 포함. 5라운드 실측).

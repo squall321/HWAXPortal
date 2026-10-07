@@ -261,3 +261,12 @@ def test_미룬_실행을_정합이라고_말하지_않는다(deferred, shown):
     r = _sh(f'set -uo pipefail; ok() {{ echo "OK:$*"; }}; KNOX_MISSING=0; _reprov_deferred="{deferred}"\n{line}\necho end')
     assert r.returncode == 0 and not r.stderr and "end" in r.stdout, r.stderr
     assert ("OK:config 정합" in r.stdout) is shown
+
+
+# ── 손잡이는 이웃들이 적힌 자리에 적는다 ──────────────────────────────────────────────────────
+def test_강행_손잡이가_사용법에_적혀_있다():
+    """건너뛴 줄(○)을 본 사람이 다음에 찾는 곳이 사용법이다 — update-all 은 머리의 실행 예, update-sites 는 --help."""
+    r = subprocess.run(["bash", str(ROOT / "infra/scripts/update-sites.sh"), "--help"], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0 and "AGENT_RESTART_FORCE=1" in r.stdout and "종료코드 3" in r.stdout, r.stdout
+    head = UA[:UA.index("set -uo pipefail")]
+    assert "AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh" in head and "○" in head

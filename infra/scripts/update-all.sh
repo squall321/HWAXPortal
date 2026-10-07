@@ -4,6 +4,8 @@
 #   ./infra/scripts/update-all.sh                # 전부 (표준 운영 최신화)
 #   SF_RESTORE_DB=1 ./infra/scripts/update-all.sh   # SignalForge DB를 Drive 최신 덤프로 시드/갱신
 #   NO_GIT_RESET=1  ./infra/scripts/update-all.sh   # 로컬 수정 보존(soft pull) 모드
+#   AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh   # 도는·줄 선 심의가 있어도 에이전트 서버를 재기동(심의가 전부 끊긴다)
+#       기본은 그 반대다 — 심의가 있으면 에이전트 서버 재기동(§4)과 게이트웨이 재프로비저닝(§5)을 건너뛰고 ○ 로 남긴다.
 #
 # 순서:
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
