@@ -144,6 +144,64 @@ def test_프롬프트_상한이_에이전트서버와_같다():
     )
 
 
+# ── 다른 앱과 이름이 겹치는 도구 — 게이트웨이가 내놓는 이름으로 적는다 ───────────────────────────────
+# 게이트웨이는 붙어 있는 두 백엔드가 같은 도구 이름을 내놓으면 **양쪽 다** `<백엔드 키에서 하이픈을 뺀 것>_<이름>` 으로
+# 노출한다(HWAXMcpGateway `_aggregate`). 동기화 스크립트는 정본의 이름을 그 노출 이름(/tools-map)과 대조하고, 에이전트
+# 서버도 key_tools 를 같은 표에서 찾아 묶는다 — 겹치는 도구를 맨 이름으로 적으면 묶이지 않고 모델은 없는 도구를 부른다.
+# ste 가 게이트웨이에 붙으면서 list_jobs·submit_job·prepare_upload 가 맨 이름으로 안 나오게 됐는데 정본 세 곳이 맨 이름으로
+# 남아, 동기화 미리보기가 '이 앱에 없는 도구' 로 멈췄다(2026-10-07). ste 는 페르소나가 없어 정본에서는 겹침이 안 보인다 —
+# 그래서 그쪽 이름을 여기 적어 둔다(dev 게이트웨이 /tools-map 실측). ste 가 도구를 더 내놓으면 이 목록에 더한다.
+_STE_NATIVE = frozenset({"list_jobs", "submit_job", "prepare_upload", "cancel_job"})
+_TOOL_FIELDS = ("key_tools", "writes", "confirm")
+
+
+def _native(name: str, apps: list[str]) -> str:
+    """노출 이름 → 그 앱이 원래 내놓는 이름. 접두(앱 키에서 하이픈을 뺀 것 + '_')가 붙어 있으면 뗀다."""
+    for app in apps:
+        prefix = app.replace("-", "") + "_"
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return name
+
+
+def test_다른_앱과_이름이_겹치는_도구는_접두_이름으로_적는다():
+    personas = _load()["personas"]
+    assert len({tuple(p["apps"]) for p in personas}) == len(personas), "앱 묶음을 같이 쓰는 페르소나가 생겼다 — 아래 판정을 다시 본다"
+    owners: dict[str, set[str]] = {}
+    for p in personas:
+        for fld in _TOOL_FIELDS:
+            for name in p[fld]:
+                owners.setdefault(_native(name, p["apps"]), set()).add(p["key"])
+    # 겹치는 이름 = 두 페르소나(= 서로 다른 앱)가 같이 적은 이름 + ste 가 내놓는 이름
+    shared = {n for n, who in owners.items() if len(who) > 1} | _STE_NATIVE
+    bare = [f"{p['key']}.{fld}: {name}" for p in personas for fld in _TOOL_FIELDS for name in p[fld]
+            if name in shared and _native(name, p["apps"]) == name]
+    assert not bare, ("다른 앱과 겹치는 도구를 맨 이름으로 적었다 — 게이트웨이는 `<앱 키에서 하이픈 뺀 것>_<이름>` 으로 내놓는다"
+                      f"(예: heaxstep_forge_list_jobs). {bare}")
+    # 그 세 자리 — 이 박스 게이트웨이가 실제로 내놓는 이름이다(mcp list_tool_apps · /tools-map 으로 확인)
+    by_key = {p["key"]: p for p in personas}
+    assert "heaxstep_forge_list_jobs" in by_key["he-cad-stepforge"]["key_tools"]
+    assert "smarttwinmcp_submit_job" in by_key["he-sim-smarttwin"]["writes"]
+    assert "reportarchive_prepare_upload" in by_key["he-doc-reportarchive"]["writes"]
+
+
+def test_맨_이름으로_적으면_동기화가_멈춘다():
+    """검증기는 느슨하게 하지 않는다 — 노출 이름과 다르면 묶이지 않으므로 멈추는 것이 맞다. ste 가 붙은 게이트웨이의 표를
+    흉내 내 정본의 접두 이름은 통과하고 맨 이름으로 되돌린 사본은 걸리는지 본다."""
+    sync = _sync()
+    one = _one("he-doc-reportarchive")
+    persona = one["personas"][0]
+    names = {n for fld in _TOOL_FIELDS for n in persona[fld]}
+    tmap = {"map": {**dict.fromkeys(names, "reportarchive"), "ste_prepare_upload": "ste"}, "areas": {}, "area_meta": [],
+            "apps": [{"app": "reportarchive", "label": "리포트 아카이브"}, {"app": "ste", "label": "ste"}]}
+    _rows, skipped, errors = sync.plan(one, tmap)
+    assert not errors and not skipped, (errors, skipped)
+    back = {**one, "personas": [{**persona, "writes": [n.replace("reportarchive_prepare_upload", "prepare_upload")
+                                                       for n in persona["writes"]]}]}
+    _rows, _skipped, errors = sync.plan(back, tmap)
+    assert errors and "prepare_upload" in errors[0] and "writes" in errors[0]
+
+
 # ── 심의 운영자 — 엔진이 바꾼 계약을 안내문이 따라간다 ─────────────────────────────────────────────
 # 이 페르소나의 안내문은 모델이 심의 도구를 모는 법이다. 엔진(HWAXAgentServer)이 대기열을 넣고(상한에 걸리면 거절이 아니라
 # status=queued) 남의 심의를 접지 못하게 한 뒤에도 안내문은 옛 계약을 말했다 — 그대로면 모델이 줄 선 심의를 실패로 읽고 같은

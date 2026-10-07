@@ -30,7 +30,7 @@
         "처음 받은 판이면 형상 위생부터 본다 — inspect_report → identify_parts → assembly_check(다중 STEP 이면 file_distances) → geometry_health.",
         "무엇을 잴지 헷갈리면 measurement_guide 를 먼저 본다. 스택업 층간 간극은 axis_gap, 방향 없는 최소거리는 measure_distance 다.",
         "잡을 걸기 전에 job_params_guide(kind)로 받는 키를 확인하고, 메시는 mesh_forecast 로 규모를 먼저 센다.",
-        "run_job 은 job_id 만 즉시 준다 — heaxstep_forge_job_status·job_log 로 진행을 보고, 잃어버린 id 는 list_jobs 로 찾는다.",
+        "run_job 은 job_id 만 즉시 준다 — heaxstep_forge_job_status·job_log 로 진행을 보고, 잃어버린 id 는 heaxstep_forge_list_jobs 로 찾는다.",
         "덱을 넘기기 전 check_deck(형식)·resolve_materials(재질)·contact_preview(접촉)를 본다."
       ],
       "concepts": [
@@ -47,7 +47,7 @@
         "view_3d 는 사람용 링크다. 형상을 직접 봐야 하면 render_3d(이미지)를 쓴다.",
         "rename_part 는 관계·메시 등록부·접촉 YAML 의 이름 키까지 함께 바꾼다."
       ],
-      "key_tools": ["list_projects", "get_project_meta", "measurement_guide", "job_params_guide", "part_info", "find_parts", "inspect_report", "heaxstep_forge_job_status", "list_jobs", "upload_instructions"],
+      "key_tools": ["list_projects", "get_project_meta", "measurement_guide", "job_params_guide", "part_info", "find_parts", "inspect_report", "heaxstep_forge_job_status", "heaxstep_forge_list_jobs", "upload_instructions"],
       "writes": ["intake", "create_project", "upload_step", "import_archive", "run_job", "set_project_meta", "set_part_metadata", "apply_naming_rules", "set_file_transform", "transform_instance", "set_part_rules", "set_interface", "remesh_parts", "export_step", "build_cavity", "register_materials", "register_materials_csv", "heaxstep_forge_register_material"],
       "confirm": ["delete_project", "heaxstep_forge_cancel_job", "rename_part", "remove_part", "confirm_interfaces"],
       "samples": [
@@ -120,7 +120,7 @@
         "d3plot·binout 은 바이너리라 slurm_job_results 는 파일 목록만 준다. 수치 분석은 DynaForge 리포트 도구 몫이다."
       ],
       "key_tools": ["smarttwin_scenario_options", "smarttwin_submit", "list_recent_jobs", "smarttwinmcp_job_status", "get_job_details", "job_diagnose", "slurm_list_jobs", "slurm_job_results", "slurm_job_log"],
-      "writes": ["smarttwin_submit", "fullangle_drop_simulation", "single_drop_simulation", "submit_job", "submit_lsdyna_job", "slurm_submit_job", "job_rerun", "job_postprocess", "job_collect", "catalog_run"],
+      "writes": ["smarttwin_submit", "fullangle_drop_simulation", "single_drop_simulation", "smarttwinmcp_submit_job", "submit_lsdyna_job", "slurm_submit_job", "job_rerun", "job_postprocess", "job_collect", "catalog_run"],
       "confirm": ["job_stop", "slurm_job_control", "slurm_node_set_state"],
       "samples": [
         "이 모델로 26방향 전각도 낙하 dry-run 해줘",
@@ -437,10 +437,10 @@
         "개수는 직접 세지 말고 aggregate_reports 로 받는다.",
         "publish_report 는 preview_publish 의 confirm_token 이 필요하고 10분 뒤 만료된다.",
         "resolve_thread 는 사용자가 닫으라고 할 때만 부르고, reply_comment 에는 무엇을 고쳤는지 구체적으로 적는다.",
-        "로컬 파일은 prepare_upload(셸 curl), 웹 파일은 upload_from_url 로 올린다. upload_file(base64)은 최후수단이다."
+        "로컬 파일은 reportarchive_prepare_upload(셸 curl), 웹 파일은 upload_from_url 로 올린다. upload_file(base64)은 최후수단이다."
       ],
       "key_tools": ["get_guide", "search_reports", "reportarchive_list_reports", "get_report_outline", "get_reports_digest", "describe_template", "create_report_draft", "update_report_draft", "list_analysis_runs", "get_analysis_summary"],
-      "writes": ["create_report_draft", "create_report_from_preset", "create_report_from_run", "update_report_draft", "append_rows", "patch_cells", "copy_report", "save_report_as_preset", "add_report_tags", "set_report_folders", "link_reports", "reply_comment", "request_composite_item", "upload_from_url", "prepare_upload"],
+      "writes": ["create_report_draft", "create_report_from_preset", "create_report_from_run", "update_report_draft", "append_rows", "patch_cells", "copy_report", "save_report_as_preset", "add_report_tags", "set_report_folders", "link_reports", "reply_comment", "request_composite_item", "upload_from_url", "reportarchive_prepare_upload"],
       "confirm": ["publish_report", "request_unpublish", "restore_version", "trash_report", "remove_rows", "resolve_thread", "map_analysis_part"],
       "samples": [
         "지난 4주 주간보고 모아서 월간보고 초안 써줘",
