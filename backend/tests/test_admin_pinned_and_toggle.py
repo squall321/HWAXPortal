@@ -10,6 +10,7 @@
 
 원장·토큰 저장소는 전부 임시 폴더에 만든다. 주소는 지어낸 값이다.
 """
+import logging
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -410,3 +411,25 @@ def test_마지막_관리자_정지_거절이_화면에_사유로_간다(box, mo
     r = _suspend(c, hb, "user@corp.com")
     assert r.status_code == 409 and "마지막 관리자" in r.json()["detail"], r.text
 
+
+def test_정지와_재활성화는_누가_누구를_했는지_로그에_남는다(box, caplog):
+    """포털은 INFO 를 버린다 — 종전 줄은 INFO 라 어디에도 남지 않았다(관리자 지정·해제는 WARNING 으로 남는다)."""
+    c, _s = box
+    hb = _login(c, "boss@corp.com")
+    caplog.set_level(logging.WARNING)
+    for status in ("disabled", "active"):
+        caplog.clear()
+        assert c.post(f"{USERS}/user@corp.com/status", json={"status": status}, headers=hb).status_code == 200
+        lines = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING and "user@corp.com" in r.getMessage()
+                 and "boss@corp.com" in r.getMessage()]
+        assert any(status in ln for ln in lines), (status, [r.getMessage() for r in caplog.records])
+
+
+def test_관리자로_승인한_것도_로그에_남는다(box, caplog):
+    """승인하면서 역할(portal-admin)을 주는 것이 관리자를 만드는 또 하나의 길이다 — 지정 화면만 남기면 이쪽은 흔적이 없다."""
+    c, _s = box
+    hb = _login(c, "boss@corp.com")
+    caplog.set_level(logging.WARNING)
+    assert c.post(f"{USERS}/wait@corp.com/approve", json={"groups": [ADMIN_GROUP]}, headers=hb).status_code == 200
+    lines = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING and "wait@corp.com" in r.getMessage()]
+    assert any("boss@corp.com" in ln and ADMIN_GROUP in ln for ln in lines), [r.getMessage() for r in caplog.records]

@@ -185,7 +185,9 @@ def approve_user(
 ) -> JSONResponse:
     if not store.approve(email, by=admin.email, groups=body.groups):
         raise AuthError("not found or not pending", status_code=404)
-    logger.info("local approve: %s by %s", email, admin.email)
+    # 누가 누구를 승인했는지(역할을 줬으면 그것까지)는 남긴다 — WARNING 이어야 남는다(포털은 INFO 를 버린다). 승인하면서
+    # portal-admin 을 주는 것이 관리자를 만드는 또 하나의 길인데, 지정 화면(access/routes._set_admin)만 흔적을 남겼다.
+    logger.warning("local approve: %s by %s (groups=%s)", email, admin.email, body.groups or [])
     return JSONResponse({"ok": True})
 
 
@@ -264,8 +266,9 @@ async def set_user_status(
         # 포털 밖에 나가 있는 자격도 거둔다 — 원장의 정지와 PAT 폐기가 **끝난 뒤**다(순서가 뒤집히면 앱 호출이 매달린 동안
         # 그 사람이 정지되지 않은 채 남는다).
         apps = await _revoke_app_credentials(settings, norm_email(email))
-    logger.info("local status: %s -> %s by %s (PAT %d개 폐기)",
-                email, body.status, admin.email, revoked)
+    # 누가 누구를 정지·재활성화했는지는 남긴다 — WARNING 이어야 남는다(포털은 INFO 를 버린다). 종전엔 INFO 라 어디에도 없었다.
+    logger.warning("local status: %s -> %s by %s (PAT %d개 폐기)",
+                   email, body.status, admin.email, revoked)
     return JSONResponse({"ok": True, "pats_revoked": revoked, "app_revocations": apps})
 
 
