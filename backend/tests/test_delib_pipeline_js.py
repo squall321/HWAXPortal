@@ -372,3 +372,65 @@ def test_앱이_칸을_넘겨_뺀_근거와_메모_절단을_넘긴다():
     flags = _risk(_brief([{"source": "scope", "result": "스코프"}], evidence_dropped=[],
                          user_memo_cut={"chars": 0, "kept": 0}))["result"]["submitted"][0]["flags"]
     assert flags["userMemoCut"] is None
+
+
+# ── 좌석에 못 간 근거를 원장에도 보낸다(risk_submit_panel_result 의 evidence_omitted) ───────────────
+def _submit_arg(out: dict, name: str):
+    """제출 프롬프트가 도구 인자로 넘기라고 적은 값 — `  name = <JSON>` 한 줄."""
+    prompt = next(c for c in out["calls"] if c["label"].startswith("submit:"))["prompt"]
+    line = next((ln.strip() for ln in prompt.split("\n") if ln.strip().startswith(f"{name} = ")), None)
+    return None if line is None else json.loads(line[len(name) + 3:])
+
+
+def test_좌석에_못_간_근거를_제출_도구에_실어_보낸다():
+    """앱의 risk_submit_panel_result 는 evidence_omitted=[{source, text}] 를 받아 패널 quality 의 engine_withheld 로
+    적는다(HWAXRisk 1c11432). 받는 자리만 생기고 보내는 쪽이 없었다 — 이 워크플로는 유실을 제 반환값(flags)에만
+    남겼고, 원장과 통합 보고서의 [품질 플래그] 는 비어 좌석이 브리프를 전부 본 것으로 읽혔다(2026-10-07)."""
+    out = _risk(_brief([{"key": f"E{i}", "source": f"s{i}", "result": f"본문 {i}"} for i in range(14)],
+                       evidence_dropped=["E8", "E9"], user_memo_cut={"chars": 1500, "kept": 266}))
+    sent = _submit_arg(out, "evidence_omitted")
+    assert sent is not None, "제출 프롬프트에 evidence_omitted 가 없다"
+    # 앱은 항목의 source·text 만 읽고 200자에서 자른다 — 그 안쪽으로, 빈 줄 없이 보낸다.
+    assert all(set(x) == {"source", "text"} and 0 < len(x["text"]) <= 200 for x in sent), sent
+    by = {x["source"]: x["text"] for x in sent}
+    assert "건수 상한" in by["사전 근거 건수 초과"]                            # 자식 심의가 버린 것 — 문구 그대로
+    assert "E8" in by["앱 브리프 칸 초과"] and "E9" in by["앱 브리프 칸 초과"]   # 앱이 칸을 넘겨 뺀 키
+    assert "1500" in by["사용자 메모 절단"] and "266" in by["사용자 메모 절단"]
+    # 원장에 보낸 것과 반환값이 같은 사실을 말한다.
+    assert len(sent) == len(out["result"]["submitted"][0]["flags"]["evidenceOmitted"]) + 2
+    # 빠진 것이 없으면 빈 배열이다 — 지어낸 줄을 보내지 않는다.
+    assert _submit_arg(_risk(_brief([{"source": "scope", "result": "스코프"}])), "evidence_omitted") == []
+    # 구조화 출력이 0 으로 채워 온 메모 절단은 절단이 아니다.
+    assert _submit_arg(_risk(_brief([{"source": "scope", "result": "스코프"}], evidence_dropped=[],
+                                    user_memo_cut={"chars": 0, "kept": 0})), "evidence_omitted") == []
+
+
+def test_제출하는_근거_유실_사유는_앱_상한_안쪽으로_자른다():
+    """칸을 넘긴 키가 많으면 한 줄이 200자를 넘는다 — 앱은 거절하지 않고 자르지만(HWAXRisk _omitted_lines),
+    어디서 잘렸는지 모르게 잘리느니 여기서 말줄임표를 붙여 자른다."""
+    keys = [f"E1-CH-{i:03d}" for i in range(40)]
+    out = _risk(_brief([{"source": "scope", "result": "스코프"}], evidence_dropped=keys))
+    (item,) = _submit_arg(out, "evidence_omitted")
+    assert item["source"] == "앱 브리프 칸 초과" and len(item["text"]) == 200 and item["text"].endswith("…")
+    assert "E1-CH-000" in item["text"]
+
+
+def test_제출_프롬프트의_인자는_앱_도구가_받는_이름이다():
+    """도구가 모르는 인자는 **말없이 버려진다**(오류가 아니다) — 이름이 한 글자만 어긋나도 보낸 줄 알고 원장은 빈다.
+    옆 리포(HWAXRisk)의 도구 서명을 읽어, 제출 프롬프트가 적는 인자 이름이 전부 거기 있는지 본다."""
+    import ast
+
+    tool_src = _ROOT.parent / "HWAXRisk" / "backend" / "app" / "mcp_server.py"
+    if not tool_src.exists():
+        pytest.skip("HWAXRisk 리포가 옆에 없다")
+    fn = next((n for n in ast.walk(ast.parse(tool_src.read_text(encoding="utf-8")))
+               if isinstance(n, ast.FunctionDef) and n.name == "risk_submit_panel_result"), None)
+    assert fn is not None, "risk_submit_panel_result 도구가 없어졌다 — 제출 프롬프트를 다시 맞춘다"
+    accepts = {a.arg for a in fn.args.args + fn.args.kwonlyargs}
+    if "evidence_omitted" not in accepts:
+        pytest.skip("옆의 HWAXRisk 가 아직 evidence_omitted 를 받지 않는 판이다")
+    out = _risk(_brief([{"source": "scope", "result": "스코프"}]))
+    prompt = next(c for c in out["calls"] if c["label"].startswith("submit:"))["prompt"]
+    sent = {ln.strip().split(" = ", 1)[0] for ln in prompt.split("\n") if ln.startswith("  ") and " = " in ln}
+    assert {"panel_id", "engine", "turns", "decision_text", "evidence_omitted"} <= sent, sent
+    assert sent <= accepts, f"앱 도구가 모르는 인자를 보낸다(말없이 버려진다): {sorted(sent - accepts)}"

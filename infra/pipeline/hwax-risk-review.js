@@ -29,7 +29,8 @@
 //   - submitted[].report_id 는 정수 또는 null 이다(rr_panels.report_id 가 INTEGER).
 //   - submitted[].flags 와 partials[] 에는 좌석에 못 간 근거가 실린다 — evidenceOmitted([{source,count,text}],
 //     자식 심의가 버린 것) · briefEvidenceDropped(앱이 칸을 넘겨 뺀 근거 키) · userMemoCut({chars,kept} 또는 null).
-//     ⚠ 앱 원장(패널 quality)에는 아직 안 적힌다 — 제출 도구에 받을 인자가 없다. 이 반환이 유일한 기록이다.
+//     같은 것을 제출 도구의 evidence_omitted 로도 보낸다 — 앱이 패널 quality 의 engine_withheld 와 통합 보고서의
+//     [품질 플래그] 에 적는다. 제출하지 못한 패널은 partials 가 유일한 기록이다.
 //   - partials 는 제출되지 못한 패널의 심의 데이터 보존분이다(결정문 절단·페이로드 초과·
 //     제출 실패·no_decision) — 자식의 부분 반환 원칙을 부모도 지킨다(감사 1-F). 여기 있는
 //     데이터로 결정적 재제출·전사 복원·continueFrom 재의결이 가능하다.
@@ -350,11 +351,24 @@ for (const p of panels) {
         `의역 변조된다(실측). 제출 생략, 반환 partials 의 원문으로 결정적 제출이 필요하다`)
     continue
   }
-  // ⚠ 좌석에 못 간 근거(loss)는 이 제출에 싣지 못한다 — risk_submit_panel_result 에 그걸 받을 인자가 없다
-  //   (REST complete_panel 은 events[] 를 받아 engine_withheld 로 적지만, MCP 도구는 events=None 으로 고정돼 있다).
-  //   도구가 모르는 인자를 얹어 보내면 말없이 버려지므로 얹지 않는다 — 실린 줄 알게 된다. 그 대신 이 워크플로의
-  //   반환(submitted[].flags · partials)과 로그에 남긴다. 도구에 자리가 생기면 항목마다
-  //   {kind:'evidence', source, included:false, note:text} 로 옮긴다(text 는 그 필드 상한 200자 안쪽이다).
+  // 좌석에 못 간 근거(loss)를 원장에도 남긴다 — risk_submit_panel_result 의 evidence_omitted=[{source, text}]
+  // (HWAXRisk 1c11432). 앱은 항목마다 '<source> — <text>' 한 줄로 패널 quality 의 engine_withheld 에 적는다.
+  // 받는 자리가 생긴 뒤에도 여기서 안 보내, 원장과 통합 보고서의 [품질 플래그] 는 비어 좌석이 브리프를 전부 본
+  // 것으로 읽혔다(2026-10-07). 이 워크플로의 반환(flags)은 원장이 아니다 — 남이 읽는 것은 원장과 보고서다.
+  // ⚠ events[] 로 옮기지 않는다 — events 를 주면 앱이 좌석 귀속을 다시 세어, 도구 없는 이 길의 used_tool 이
+  //   '모름' 에서 '안 썼다' 로 바뀐다. text 는 앱의 줄 상한(200자) 안쪽으로 여기서 자른다(앱은 거절하지 않고
+  //   말없이 자른다). 앱이 뺀 것(칸 초과 키 · 메모 절단)은 MCP 도구에 받을 칸이 따로 없어 같은 줄로 싣는다.
+  //   옛 앱(인자를 모르는 판)은 이 인자를 말없이 버린다 — 반영 여부는 게이트웨이 tools/list 로 본다.
+  const clip200 = (s) => { const v = String(s); return v.length > 200 ? v.slice(0, 199) + '…' : v }
+  const omitted = [
+    ...loss.evidenceOmitted.map(x => ({ source: String(x.source), text: clip200(x.text) })),
+    ...(loss.briefEvidenceDropped.length
+      ? [{ source: '앱 브리프 칸 초과',
+           text: clip200(`근거 ${loss.briefEvidenceDropped.join('·')} 는 브리프 칸을 넘겨 좌석에 주지 않았다.`) }] : []),
+    ...(loss.userMemoCut
+      ? [{ source: '사용자 메모 절단',
+           text: `사용자 메모 ${loss.userMemoCut.chars}자 중 ${loss.userMemoCut.kept}자만 좌석에 실렸다.` }] : []),
+  ]
   let ack = null
   try {
     ack = await agent(
@@ -367,8 +381,10 @@ for (const p of panels) {
       `  report_id = ${reportNo === null ? 'null' : reportNo}\n` +
       `  turns = ${JSON.stringify(turns)}\n` +
       `  decision_text = ${JSON.stringify(String(result.decision))}\n` +
+      `  evidence_omitted = ${JSON.stringify(omitted)}\n` +
       `- turns 는 위 JSON 배열 그대로다(객체 목록이지 개수가 아니다). 항목을 줄이거나 요약하지 마라.\n` +
       `- decision_text 는 위 문자열 그대로다. 요약·재작성·펜스 제거를 하지 마라.\n` +
+      `- evidence_omitted 는 위 JSON 배열 그대로다(빈 배열이면 빈 배열로). 항목을 빼거나 고쳐 쓰지 마라.\n` +
       `- ${BY_NAME}\n` +
       `- 실패하면 재시도하지 말고 ok=false 와 detail 에 오류를 담아라.`,
       { label: `submit:${p.panel_id}`, phase: '회수', schema: SUBMIT_SCHEMA })
