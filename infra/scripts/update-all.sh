@@ -1241,6 +1241,21 @@ probe "nginx          :8088" http://127.0.0.1:8088/health 1 "200"
 probe "agent-server   :9009" http://127.0.0.1:9009/health 1 "200"
 probe "gateway        :9110" http://127.0.0.1:9110/health 1 "200"
 probe "aidh           :8001" http://127.0.0.1:8001/api/system/health 0 "200"
+# ── 내부 목적지가 프록시를 타지 않는가(9차 요청 §4-(4)) — 이 셸의 NO_PROXY 가 이번 실행이 띄운 서비스가 물려받은 값이다 ──────
+# RA·ARP 는 1g 가 더했다. 그 밖에 이 박스가 부르는 다른 서버(라우트의 원격 호스트 · TestScope)가 빠져 있으면 그 호출만 사내 프록시로
+# 새 상대의 IP 허용목록에 걸린다 — 기능 하나가 403·Connection error 인데 위 프로브는 전부 초록이다. 목적지는 check-egress.sh 가
+# 리포가 아는 설정에서 유도하고 이름으로만 말한다(주소를 여기 적지도, 찍지도 않는다). --internal 은 네트워크를 건드리지 않는다 —
+# 상한은 그 약속이 깨졌을 때를 위한 것이다. **경고**다(bad) — 점검이 깨져도 배포 판정(FAIL)은 건드리지 않는다.
+if [ -x "$SELF_REPO/infra/scripts/check-egress.sh" ]; then
+  _eg_rc=0; _eg="$(timeout --foreground 20 "$SELF_REPO/infra/scripts/check-egress.sh" --internal 2>/dev/null)" || _eg_rc=$?
+  case "$_eg_rc" in
+    0) ok "프록시 우회      ${_eg:-내부 목적지가 NO_PROXY 에 있다}" ;;
+    1) bad "프록시 우회      NO_PROXY 에 없는 내부 목적지: ${_eg:-?} — 그 호출이 사내 프록시로 샌다(상대의 IP 허용목록에 걸리면 403). 운영자 셸의 NO_PROXY 에 그 호스트를 더하고 부르는 서비스를 재기동한다(비치명)" ;;
+    *) bad "프록시 우회      check-egress.sh --internal 이 rc $_eg_rc 로 끝나 판정하지 못했다(비치명)" ;;
+  esac
+else
+  hwax_skip "프록시 우회 점검" "check-egress.sh 가 없다(구버전 체크아웃)" "git pull 뒤 재실행"
+fi
 # 절차 모듈 — 상태코드로는 못 본다. 저장소가 안 열리면 포털은 뜨고 /health 는 200 인데 절차 API 만
 # 503 이고, 라우터 등록이 실패하면 SPA catch-all 이 200 HTML 을 돌려준다. 본문으로 판정한다
 # (2026-09-17 cae00: 절차가 안 보이는데 모든 게이트가 초록이었다).
