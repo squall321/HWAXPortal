@@ -220,6 +220,28 @@ class UserStore:
             self._commit()
             return cur.rowcount > 0
 
+    def suspend(self, email: str, *, pinned: frozenset[str] = frozenset()) -> str:
+        """정지 — "set"(정지했다) · "missing"(행이 없다) · "last"(이 사람이 마지막 활성 관리자다 — 안 했다).
+
+        정지된 관리자는 권한이 0 이다(policy.compute) — 마지막 관리자가 정지되면 관리자 화면을 열 사람이 없고 되돌리는 길이 박스의
+        셸뿐이다. 관리자 해제(set_admin)는 그것을 거절하는데 정지는 같은 결과를 내면서 거절하지 않았다.
+        판정과 쓰기를 잠금 안에서 한 번에 한다 — 따로 하면 두 관리자가 서로를 동시에 정지할 때 각자 '상대가 남는다' 로 보고 둘 다
+        통과한다. 남는 관리자를 세는 법은 set_admin 과 같다(**활성 행**의 표지 또는 고정 목록 pinned). 정지는 고정 목록보다 먼저라
+        고정 관리자도 정지하면 관리자가 아니다 — 그래서 고정 관리자도 마지막이면 거절한다."""
+        key = norm_email(email)
+        with self._lock:
+            row = self._conn.execute("SELECT groups, status FROM users WHERE email = ?", (key,)).fetchone()
+            if row is None:
+                return "missing"
+            if row[1] == "active" and (ADMIN_GROUP in json.loads(row[0] or "[]") or key in pinned):
+                others = self._conn.execute(
+                    "SELECT email, groups FROM users WHERE status = 'active' AND email <> ?", (key,)).fetchall()
+                if not any(ADMIN_GROUP in json.loads(g or "[]") or e in pinned for e, g in others):
+                    return "last"
+            self._conn.execute("UPDATE users SET status = 'disabled' WHERE email = ?", (key,))
+            self._commit()
+            return "set"
+
     def set_password(self, email: str, password: str) -> bool:
         with self._lock:
             cur = self._conn.execute(

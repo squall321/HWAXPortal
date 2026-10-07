@@ -352,3 +352,61 @@ def test_사용자_목록이_고정_관리자인지_알려_준다(box):
     _login(c, "boss@corp.com")
     rows = {u["email"]: u["admin_pinned"] for u in c.get(USERS).json()}
     assert rows == {"boss@corp.com": False, "user@corp.com": False, "pin@corp.com": True, "wait@corp.com": False}
+
+
+# ── 정지 — 관리자 해제와 같은 구멍의 다른 문 ──────────────────────────────────────────────────────────
+# 해제는 본인·마지막 관리자를 거절한다. 그런데 **정지**는 거절하지 않았다(화면만 본인 줄의 버튼을 숨겼다) — 정지된 관리자는 권한이
+# 0 이라, 마지막 관리자가 자기를 정지하는 요청 한 번이면 관리자 화면을 열 사람이 없어지고 되돌리는 길은 박스의 셸뿐이다.
+def _suspend(c, h, email: str):
+    return c.post(f"{USERS}/{email}/status", json={"status": "disabled"}, headers=h)
+
+
+def _status(email: str) -> str:
+    return app.state.user_store.get(email)["status"]
+
+
+def test_자기_자신은_정지할_수_없다(box):
+    c, _s = box
+    hb = _login(c, "boss@corp.com")
+    r = _suspend(c, hb, "boss@corp.com")
+    assert r.status_code == 409 and "자기 자신" in r.json()["detail"], r.text
+    assert _status("boss@corp.com") == "active" and c.get(USERS).status_code == 200, "여전히 관리자다"
+    assert _suspend(c, hb, "BOSS@corp.com").status_code == 409, "대소문자만 바꾼 주소도 본인이다"
+
+
+def test_다른_관리자는_정지할_수_있고_정지는_토큰까지_죽인다(box):
+    """막는 것은 본인과 마지막 관리자뿐이다 — 관리자 한 명을 정지하는 평소의 일은 그대로 된다."""
+    c, _s = box
+    app.state.user_store.set_groups("user@corp.com", [ADMIN_GROUP])
+    hb = _login(c, "boss@corp.com")
+    r = _suspend(c, hb, "user@corp.com")
+    assert r.status_code == 200 and _status("user@corp.com") == "disabled", r.text
+    assert _suspend(c, hb, "nobody@corp.com").status_code == 404
+    assert c.post(f"{USERS}/user@corp.com/status", json={"status": "active"}, headers=hb).status_code == 200
+    assert _status("user@corp.com") == "active", "다시 활성화는 종전대로"
+
+
+def test_저장소는_마지막_활성_관리자의_정지를_잠금_안에서_거절한다(box):
+    """라우트는 본인만 막으면 된다고 볼 수 있다 — 부른 사람이 남으니까. 두 관리자가 **서로를 동시에** 정지하면 각자 '상대가 남는다'
+    로 보고 둘 다 통과한다. 판정과 쓰기를 저장소의 잠금 안에서 한 번에 한다(관리자 해제의 set_admin 과 같은 셈법)."""
+    _c, _s = box
+    store = app.state.user_store
+    assert store.suspend("boss@corp.com") == "last" and _status("boss@corp.com") == "active"
+    assert store.suspend("user@corp.com") == "set", "관리자가 아닌 사람은 언제나 정지된다"
+    assert store.suspend("nobody@corp.com") == "missing"
+    # 고정 목록의 활성 관리자가 남으면 원장 관리자를 정지할 수 있다 — 목록에만 있고 승인 대기인 주소는 세지 않는다
+    assert store.suspend("boss@corp.com", pinned=frozenset({"wait@corp.com", "ghost@corp.com"})) == "last"
+    assert store.suspend("boss@corp.com", pinned=frozenset({"pin@corp.com"})) == "set"
+    # 이제 pin 이 마지막 활성 관리자다(고정 목록) — 정지는 고정보다 먼저라 정지하면 관리자가 0 이다
+    assert store.suspend("pin@corp.com", pinned=frozenset({"pin@corp.com"})) == "last" and _status("pin@corp.com") == "active"
+    assert store.suspend("pin@corp.com") == "set", "목록에서 빠진 사람은 관리자가 아니다 — 그냥 정지된다"
+
+
+def test_마지막_관리자_정지_거절이_화면에_사유로_간다(box, monkeypatch):
+    c, _s = box
+    app.state.user_store.set_groups("user@corp.com", [ADMIN_GROUP])
+    hb = _login(c, "boss@corp.com")
+    monkeypatch.setattr(app.state.user_store, "suspend", lambda *a, **k: "last")      # 경합에서만 나는 갈래 — 저장소가 그렇게 답했다 치고
+    r = _suspend(c, hb, "user@corp.com")
+    assert r.status_code == 409 and "마지막 관리자" in r.json()["detail"], r.text
+
