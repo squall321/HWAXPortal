@@ -215,7 +215,11 @@ const briefError = String((brief && brief.error) || '').trim()
 if (briefError) {
   // tier_a_web_only 는 정상 응답이다 — 대표 패널은 웹 러너만 돌린다. 그대로 보고하고 멈춘다.
   // brief_token_invalid 는 토큰이 다르거나 만료(기본 900 s)라는 뜻이다 — 앱 화면에서 다시 받아야 한다.
-  if (briefError === 'brief_token_invalid') log('브리프 토큰이 만료·불일치다 — 앱 화면에서 다시 받아 오세요')
+  // 수명을 정하는 손잡이를 같이 말한다 — 화면에서 복사한 뒤 15분을 넘겨 시작하는 일이 잦으면 운영자가 늘릴 값이다.
+  if (briefError === 'brief_token_invalid') {
+    log('브리프 토큰이 만료됐거나 맞지 않는다 — 앱 화면에서 다시 받아 오세요' +
+        '(토큰은 발급 뒤 기본 900초만 살고 한 번 쓴다 · 앱의 HWAXRISK_BRIEF_TOKEN_TTL_S)')
+  }
   log(`브리프 중단 — ${briefError}${brief.reason ? ` (${brief.reason})` : ''}`)
   return { targetKey: TARGET, tier: TIER, submitted: [], failed: [], error: briefError,
            reason: String((brief && brief.reason) || '') }

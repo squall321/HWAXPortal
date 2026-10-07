@@ -394,3 +394,18 @@ def test_엔진_길로_손수_돌릴_때는_full_로_받으라고_적혀_있다(
                if isinstance(n, ast.AsyncFunctionDef) and n.name == "deliberate_transcript"), None)
     assert fn is not None, "deliberate_transcript 도구가 없어졌다 — 워크플로 설명을 다시 맞춘다"
     assert "full" in {a.arg for a in fn.args.args + fn.args.kwonlyargs}, "도구가 full 인자를 받지 않는다"
+
+
+# ── 단명 인계 토큰 — 만료를 알릴 때 그 수명을 정하는 손잡이를 말한다 ─────────────────────────────────
+def test_브리프_토큰_만료는_손잡이_이름과_함께_알린다():
+    """브리프 토큰은 화면에서 복사해 워크플로 인자로 넘기는 한 번짜리 열쇠다(기본 900초). 만료를 '다시 받아 오라' 로만 알리면
+    매번 늦게 시작하는 사람은 왜 그런지, 운영자는 무엇을 늘려야 하는지 모른다. 값은 그대로 짧게 둔다 — 실행 길이를 재는 값이 아니다."""
+    out = _run(_RISK, {"targetKey": "T1", "briefToken": "tok", "tier": "B"}, brief={"error": "brief_token_invalid", "panels": []})
+    assert out["result"]["error"] == "brief_token_invalid" and out["result"]["submitted"] == []
+    line = next(ln for ln in out["logs"] if "브리프 토큰" in ln)
+    assert "HWAXRISK_BRIEF_TOKEN_TTL_S" in line and "900초" in line and "다시 받아" in line
+    cfg = _ROOT.parent / "HWAXRisk" / "backend" / "app" / "config.py"
+    if not cfg.exists():
+        pytest.skip("HWAXRisk 리포가 옆에 없다")
+    m = re.search(r'"HWAXRISK_BRIEF_TOKEN_TTL_S"\s*,\s*"?(\d+)', cfg.read_text(encoding="utf-8"))
+    assert m and m.group(1) == "900", "앱의 기본값이 바뀌었으면 이 문구의 숫자도 고친다"
