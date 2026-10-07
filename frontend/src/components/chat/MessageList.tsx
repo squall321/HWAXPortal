@@ -9,6 +9,7 @@ import { ThinkView } from './ThinkView';
 import { ToolCatalogBlock } from './ToolCatalogBlock';
 import { IconArrowDown, IconCheck, IconCopy } from './icons';
 import { colorOf, initialOf, shortName } from './personaColor';
+import { StreamPulse } from './StreamPulse';
 import { TextBlock } from './renderers/TextBlock';
 
 // 원문 오류를 사용자용 안내(원인+다음 행동)로 변환 — 막다른 원문 대신 뭘 해야 할지 알려준다.
@@ -132,6 +133,8 @@ function Row({ msg }: { msg: Message }) {
             )}
           </div>
         )}
+        {/* 도는 턴 아래의 생존 표시 — 진행이 멎었을 때만 말한다(살아 있음 / 신호 없음). 스트림은 끊지 않는다. */}
+        {msg.streaming && <StreamPulse />}
         {emptyDone && <div className="msg-status-text">(응답이 없습니다)</div>}
         {msg.warn && (
           <div className="msg-warn" role="status">⚠ {msg.warn}</div>

@@ -25,6 +25,7 @@ import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, Deli
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import { mergeEvidence } from '../components/chat/vocEvidence';
+import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import {
   delibOptsToWire,
   loadActiveId,
@@ -97,6 +98,9 @@ interface ChatContextValue {
   attachedDocs: AttachedDoc[];
   setAttachedDocs: (list: AttachedDoc[]) => void;
   stop: () => void;
+  /** 지금 도는 스트림의 생존 신호(마지막 프레임·마지막 진행 시각). 돌지 않으면 null. 상태가 아니라 읽는 함수다 —
+   *  토큰마다 다시 그리지 않고, 보여 주는 쪽(StreamPulse)이 1초마다 읽는다. */
+  streamLive: () => StreamLive | null;
   newConversation: () => void;
   selectConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
@@ -364,6 +368,9 @@ export function ChatProvider({
   const abortRef = useRef<AbortController | null>(null);
   // 스트리밍 중인 대화 id — 그 대화가 삭제되면 스트림도 중단하기 위해 추적.
   const streamConvRef = useRef<string | null>(null);
+  // 도는 스트림의 생존 신호 — 프레임이 올 때마다 시각만 적는다. 여기서 스트림을 끊지 않는다(표시용).
+  const liveRef = useRef<StreamLive | null>(null);
+  const streamLive = useCallback(() => liveRef.current, []);
   // 대화 시작 전(랜딩) 선택한 전문가·도구 — 다음 '새 대화' 생성 시 대화에 옮겨 심는다.
   // ref 는 sendMessage 전송 시점 읽기용(스테일 방지 — delibOpts 패턴과 동일).
   // 새로고침에 날아가면 사용자는 **여전히 골라 둔 줄** 알고 첫 발화를 던진다(entry-F7).
@@ -582,6 +589,7 @@ export function ChatProvider({
 
       setInput('');
       setStreaming(true);
+      liveRef.current = startLive(now);
       const controller = new AbortController();
       abortRef.current = controller;
       streamConvRef.current = convId;
@@ -684,9 +692,13 @@ export function ChatProvider({
           })),
         onWarning: (e) => patch(cid, botId, (m) => ({ ...m, warn: e.message })),
         onError: (e) => patch(cid, botId, (m) => ({ ...m, error: e.message, status: undefined })),
+        onSignal: (ev) => {
+          if (liveRef.current) noteFrame(liveRef.current, ev, Date.now());
+        },
         onDone: () => {
           patch(cid, botId, (m) => ({ ...m, streaming: false, status: undefined }));
           setStreaming(false);
+          liveRef.current = null;
           abortRef.current = null;
           streamConvRef.current = null;
         },
@@ -710,6 +722,7 @@ export function ChatProvider({
           }));
         }
         setStreaming(false);
+        liveRef.current = null;
         abortRef.current = null;
         streamConvRef.current = null;
       });
@@ -982,6 +995,7 @@ export function ChatProvider({
         thinking,
         setThinking,
         stop,
+        streamLive,
         newConversation,
         selectConversation,
         deleteConversation,

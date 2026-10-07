@@ -1,0 +1,254 @@
+# 심의·챗 스트림 화면을 헤드리스 브라우저에 실제로 올려, 오래 걸리는 실행이 어떻게 보이는지 본다 — 서버는 띄우지 않는다(가짜 fetch · 가짜 시계)
+"""왜 — 긴 심의에서 화면이 하는 일은 대부분 '시간이 흐르는 동안' 일어난다. 신호가 15초마다 오는 동안 무엇을 보이는가,
+45초 끊기면 무엇으로 바뀌는가, 몇 시간이 지나도 스트림을 스스로 끊지 않는가. 타입 검사·린트로는 안 잡히고, 순수 함수 시험
+(test_stream_liveness_units)은 판정까지만 본다 — 그 판정이 실제 화면에 붙어 있는지는 여기서 본다.
+
+실제 컴포넌트(ChatProvider · MessageList · ActivityPanel)를 esbuild 로 한 파일로 묶어 빈 문서에 올리고, fetch 는 시험이
+한 프레임씩 밀어 넣는 스트림으로, 시계는 playwright 의 가짜 시계로 바꾼다(test_admin_pages_in_browser 와 같은 길).
+도구는 프론트가 이미 가진 것만 쓴다. 없으면 건너뛴다(운영 박스).
+"""
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+FE = ROOT / "frontend"
+
+pytestmark = pytest.mark.skipif(
+    not shutil.which("node") or not (FE / "node_modules/@playwright/test").exists() or not (FE / "node_modules/vite").exists(),
+    reason="node 또는 frontend node_modules(@playwright/test · vite) 가 없다 — 화면을 올려 볼 수 없다",
+)
+
+# 심의 페이지의 뼈대만 — 보내기·중지 버튼과 실제 메시지 목록·활동 패널. `__FE__` 는 이 리포의 frontend 절대경로로 바꿔 쓴다.
+_HARNESS = r"""
+import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+import { AuthContext } from '__FE__/src/auth/AuthContext';
+import { ChatProvider, useChat } from '__FE__/src/state/ChatContext';
+import { MessageList } from '__FE__/src/components/chat/MessageList';
+import { ActivityPanel } from '__FE__/src/components/chat/ActivityPanel';
+
+function Probe() {
+  const { messages, sendMessage, streaming, stop } = useChat();
+  return (
+    <>
+      <button id="send" type="button" onClick={() => sendMessage('힌지 파손 원인')}>send</button>
+      <button id="stop" type="button" onClick={stop}>stop</button>
+      <span id="streaming">{String(streaming)}</span>
+      <MessageList messages={messages} />
+      <ActivityPanel messages={messages} />
+    </>
+  );
+}
+(window as unknown as { __mount: () => void }).__mount = () => {
+  const user = { subject: 'u1@corp.example', email: 'u1@corp.example', display_name: 'U', groups: [] };
+  createRoot(document.getElementById('root')!).render(
+    <AuthContext.Provider
+      value={{ user, status: 'authenticated', login: () => undefined, logout: async () => undefined, refresh: async () => undefined }}
+    >
+      <MemoryRouter>
+        <ChatProvider storagePrefix="hwax.delib" sendPrefix="/심의 ">
+          <Probe />
+        </ChatProvider>
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+};
+"""
+
+# esbuild 는 vite 의 의존성이라 최상위 node_modules 에 없다(pnpm) — vite 자리에서 찾는다. CSS·글꼴은 비운다(동작만 본다).
+_BUILD = r"""
+const { createRequire } = require('module');
+const path = require('path');
+const [FE, OUT] = process.argv.slice(2);
+const fe = createRequire(path.join(FE, 'package.json'));
+const esbuild = createRequire(fe.resolve('vite/package.json'))('esbuild');
+esbuild.buildSync({
+  entryPoints: [path.join(OUT, 'harness.tsx')], bundle: true, format: 'iife', outfile: path.join(OUT, 'bundle.js'),
+  jsx: 'automatic', nodePaths: [path.join(FE, 'node_modules')], logLevel: 'error',
+  loader: { '.css': 'empty', '.svg': 'dataurl', '.png': 'dataurl', '.woff2': 'empty', '.woff': 'empty' },
+  define: { 'import.meta.env': '{}', 'process.env.NODE_ENV': '"development"' },
+});
+"""
+
+# 가짜 백엔드 — /agent/chat 은 시험이 __push 로 한 프레임씩 밀어 넣는 스트림을 준다. __chat 으로 다른 응답(422 등)을 줄 수 있다.
+_STUB = r"""
+(() => {
+  window.__calls = [];
+  window.__aborted = false;
+  window.__chat = null;
+  const enc = new TextEncoder();
+  const json = (body, status = 200) =>
+    Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
+  window.fetch = (url, init = {}) => {
+    const u = String(url);
+    window.__calls.push({ url: u, body: init.body ? JSON.parse(init.body) : null });
+    if (u.startsWith('/agent/chat')) {
+      if (window.__chat) return window.__chat();
+      if (init.signal) init.signal.addEventListener('abort', () => { window.__aborted = true; });
+      const body = new ReadableStream({ start(c) {
+        window.__push = (text) => c.enqueue(enc.encode(text));
+        window.__end = () => c.close();
+        window.__break = (msg) => c.error(new TypeError(msg));
+      } });
+      return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
+    }
+    if (u.startsWith('/agent/deliberate/experts')) return json({ recommended: [], pool: [] });
+    return json({ detail: 'stub: no route ' + u }, 404);
+  };
+})();
+"""
+
+# 시나리오 구동기 — 묶은 화면을 빈 문서에 올리고 프레임을 밀어 넣으며 시계를 돌린다. 시나리오마다 새 탭이다.
+_DRIVE = r"""
+const { createRequire } = require('module');
+const path = require('path');
+const [FE, OUT] = process.argv.slice(2);
+const { chromium } = createRequire(path.join(FE, 'package.json'))('@playwright/test');
+
+const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+const PING = frame('ping', { idle_s: 15, ts: 1 });
+
+async function open(browser, { seed = '' } = {}) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  page.setDefaultTimeout(10000);
+  page.__errors = [];
+  page.on('pageerror', (e) => page.__errors.push(String(e)));
+  // 가로챈 주소로 빈 문서를 준다 — about:blank 에서는 document.cookie 가 막혀 apiFetch 의 CSRF 읽기가 던진다(서버는 여전히 없다)
+  await page.route('http://harness.invalid/**', (r) =>
+    r.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body><div id="root"></div></body></html>' }));
+  await page.clock.install({ time: new Date('2026-10-08T00:00:00Z') });
+  await page.goto('http://harness.invalid/');
+  await page.addScriptTag({ path: path.join(OUT, 'stub.js') });
+  if (seed) await page.evaluate(seed);
+  await page.addScriptTag({ path: path.join(OUT, 'bundle.js') });
+  await page.evaluate(() => window.__mount());
+  return page;
+}
+const push = (page, text) => page.evaluate((t) => window.__push(t), text);
+// 화면 아래(메시지)와 활동 패널의 생존 표시 — [{ state, text }]
+const pulse = (page) => page.evaluate(() =>
+  Array.from(document.querySelectorAll('[data-live]')).map((el) => ({ state: el.dataset.live, text: el.textContent })));
+const state = (page) => page.evaluate(() => ({ streaming: document.getElementById('streaming').textContent, aborted: window.__aborted }));
+async function start(page) {
+  await page.locator('#send').click();
+  await page.waitForFunction(() => typeof window.__push === 'function');
+  await push(page, frame('status', { step: '1라운드 발언 대기', tool: null }));
+  await page.getByText('1라운드 발언 대기').first().waitFor();
+}
+// 시계를 돌린 뒤 화면이 따라올 틈을 준다(가짜 시계라 실제로는 수 밀리초다)
+async function forward(page, ms) { await page.clock.fastForward(ms); await page.waitForTimeout(60); }
+
+const SCENARIOS = {
+  // heartbeat 가 오는 서버 — 오는 동안, 끊겼을 때, 다시 왔을 때, 끝났을 때
+  async heartbeat(browser) {
+    const page = await open(browser);
+    await start(page);
+    const just_started = await pulse(page);
+    await forward(page, 14000); await push(page, PING);
+    await forward(page, 15000); await push(page, PING);
+    await forward(page, 3000);
+    const alive = await pulse(page);
+    await forward(page, 50000);                       // ping 세 번이 빠졌다
+    const silent = await pulse(page);
+    const while_silent = await state(page);
+    await push(page, PING); await forward(page, 2000);
+    const back = await pulse(page);
+    await push(page, frame('delib', { kind: 'turn', round: 1, persona: 'mech-a', say: '초기 입장' }));
+    await forward(page, 2000);
+    const after_progress = await pulse(page);
+    await push(page, frame('done', {})); await page.evaluate(() => window.__end());
+    await page.waitForFunction(() => document.getElementById('streaming').textContent === 'false');
+    return { just_started, alive, silent, while_silent, back, after_progress, done: await pulse(page), errors: page.__errors };
+  },
+  // heartbeat 가 없는 옛 서버 — LLM 호출 한 번이 통째로 조용하다. 침묵을 끊김으로 읽으면 건강한 심의를 죽었다고 말한다.
+  async old_server(browser) {
+    const page = await open(browser);
+    await start(page);
+    await forward(page, 10 * 60000);
+    return { ten_min: await pulse(page), st: await state(page), errors: page.__errors };
+  },
+  // 몇 시간이 지나도 브라우저가 스스로 끊지 않는다 — heartbeat 가 오든, 끊겼든
+  async never_cuts(browser) {
+    const page = await open(browser);
+    await start(page);
+    await push(page, PING);
+    for (let h = 0; h < 6; h++) { await forward(page, 3600000); }
+    const six_hours_silent = { st: await state(page), pulse: await pulse(page) };
+    await push(page, frame('delib', { kind: 'stage', stage: 'decide' }));
+    await push(page, frame('delib', { kind: 'decision', text: '여섯 시간 뒤의 결정문' }));
+    await push(page, frame('done', {})); await page.evaluate(() => window.__end());
+    await page.getByText('여섯 시간 뒤의 결정문').first().waitFor();
+    const chat_calls = await page.evaluate(() => window.__calls.filter((c) => c.url.startsWith('/agent/chat')).length);
+    return { six_hours_silent, st: await state(page), chat_calls, errors: page.__errors };
+  },
+};
+
+(async () => {
+  let browser;
+  try { browser = await chromium.launch(); } catch (e) { process.stdout.write(JSON.stringify({ skip: String(e).slice(0, 300) })); return; }
+  const out = {};
+  try {
+    for (const [name, run] of Object.entries(SCENARIOS)) {
+      try { out[name] = await run(browser); } catch (e) { out[name] = { failed: String((e && e.stack) || e).slice(0, 1500) }; }
+    }
+  } finally { await browser.close(); }
+  process.stdout.write(JSON.stringify(out));
+})().catch((e) => { process.stderr.write(String((e && e.stack) || e)); process.exit(1); });
+"""
+
+
+@pytest.fixture(scope="module")
+def seen(tmp_path_factory):
+    """화면을 한 번 묶고 시나리오를 한 번에 돌려, 시나리오 이름 → 본 것을 돌려준다(브라우저를 시험마다 띄우지 않는다)."""
+    out = tmp_path_factory.mktemp("stream")
+    (out / "harness.tsx").write_text(_HARNESS.replace("__FE__", str(FE)), encoding="utf-8")
+    for name, text in (("build.cjs", _BUILD), ("stub.js", _STUB), ("drive.cjs", _DRIVE)):
+        (out / name).write_text(text, encoding="utf-8")
+    r = subprocess.run(["node", "build.cjs", str(FE), str(out)], cwd=str(out), capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, "화면을 묶지 못했다:\n" + r.stdout + r.stderr
+    r = subprocess.run(["node", "drive.cjs", str(FE), str(out)], cwd=str(out), capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stdout + r.stderr
+    got = json.loads(r.stdout)
+    if "skip" in got:
+        pytest.skip("헤드리스 브라우저를 띄우지 못했다(playwright 브라우저 미설치) — " + got["skip"])
+
+    def scenario(name: str) -> dict:
+        assert "failed" not in got[name], f"시나리오 {name} 이 끝까지 돌지 못했다:\n{got[name].get('failed')}"
+        assert not got[name].get("errors"), f"화면이 예외를 던졌다: {got[name]['errors']}"
+        return got[name]
+    return scenario
+
+
+def test_신호가_오는_동안은_살아_있다고_끊기면_신호_없음이라고_보인다(seen):
+    """깜박이는 점과 마지막 상태줄뿐이던 자리다 — 한 시간 전에 죽은 스트림과 생각 중인 좌석이 똑같이 보였다.
+    표시는 두 곳에 같이 뜬다(도는 턴 아래 · 활동 패널 머리)."""
+    s = seen("heartbeat")
+    assert s["just_started"] == [], "진행이 방금 있었으면 말하지 않는다"
+    assert [p["state"] for p in s["alive"]] == ["alive", "alive"], s["alive"]
+    assert all(p["text"] == "서버 살아 있음 · 마지막 진행 32초 전" for p in s["alive"]), s["alive"]
+    assert [p["state"] for p in s["silent"]] == ["silent", "silent"], "ping 세 번(45초)이 빠지면 바뀐다"
+    assert all(p["text"].startswith("신호 없음 53초 — 연결이 끊겼을 수") for p in s["silent"]), s["silent"]
+    assert s["while_silent"] == {"streaming": "true", "aborted": False}, "신호가 끊겨도 스트림을 끊지 않는다 — 표시만 한다"
+    assert [p["state"] for p in s["back"]] == ["alive", "alive"], "신호가 다시 오면 돌아온다"
+    assert s["after_progress"] == [] and s["done"] == [], "진행이 다시 흐르거나 끝나면 표시는 사라진다"
+
+
+def test_heartbeat_가_없는_옛_서버의_침묵을_끊김으로_읽지_않는다(seen):
+    """재기동을 건너뛴 박스에서는 옛 엔진이 새 화면과 섞여 돈다. 거기서는 LLM 호출 한 번이 통째로 조용하다."""
+    s = seen("old_server")
+    assert s["ten_min"] == [{"state": "unknown", "text": "마지막 진행 10분 전"}] * 2, s["ten_min"]
+    assert s["st"] == {"streaming": "true", "aborted": False}
+
+
+def test_몇_시간이_지나도_화면이_스트림을_스스로_끊지_않는다(seen):
+    """브라우저에는 타임아웃도 자동 중단도 없다 — 끊을지는 중지 버튼을 쥔 사람이 정한다. 여섯 시간 조용한 뒤에 온 결정문도 받는다."""
+    s = seen("never_cuts")
+    assert s["six_hours_silent"]["st"] == {"streaming": "true", "aborted": False}
+    assert [p["state"] for p in s["six_hours_silent"]["pulse"]] == ["silent", "silent"]
+    assert "신호 없음 6시간" in s["six_hours_silent"]["pulse"][0]["text"]
+    assert s["st"] == {"streaming": "false", "aborted": False}, "끝까지 받고 정상으로 닫힌다"
+    assert s["chat_calls"] == 1, "다시 보내지 않는다 — 재시도는 두 번째 심의를 나란히 돌린다"

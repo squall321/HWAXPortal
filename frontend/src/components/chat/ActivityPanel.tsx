@@ -2,6 +2,7 @@
 // 넓은 화면(≥1180px)은 우측 레일, 좁은 화면은 플로팅 버튼 → 드로어. 도구 항목은 클릭 시 입력/결과 요약.
 import { useEffect, useMemo, useState } from 'react';
 import type { ActivityItem, Message } from '../../types/chat';
+import { StreamPulse } from './StreamPulse';
 
 // 도구명 → 소속 서비스 라벨(알려진 것만, 나머지는 게이트웨이로 표기).
 const TOOL_ORIGIN: Record<string, string> = {
@@ -97,7 +98,8 @@ export function ActivityPanel({ messages }: { messages: Message[] }) {
           ×
         </button>
       </div>
-
+      {/* '진행 중' 점만으로는 한 시간 전에 죽은 스트림과 생각 중인 좌석이 똑같이 보인다 — 생존 신호를 한 줄로 */}
+      {live && <StreamPulse />}
 
       {personas.length > 0 && (
         <section className="act-sec">

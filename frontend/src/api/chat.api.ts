@@ -26,6 +26,8 @@ export interface StreamHandlers {
   /** 치명적이지 않은 경고(SSE warning) — 자격증명 강등 등. 응답은 계속된다. */
   onWarning?: (e: { code?: string; message: string }) => void;
   onDone?: () => void;
+  /** 프레임이 하나 올 때마다(이벤트 이름) — 서버 heartbeat(`ping`)를 포함한다. 내용이 아니라 '살아 있다' 는 신호다. */
+  onSignal?: (event: string) => void;
   signal?: AbortSignal;
 }
 
@@ -47,6 +49,9 @@ function parseFrame(block: string): SseFrame | null {
 }
 
 function dispatch(frame: SseFrame, h: StreamHandlers): void {
+  // 프레임이 왔다는 사실이 먼저다 — 내용을 읽기 전에 알린다. 엔진 heartbeat(`ping`)는 여기로만 지나간다:
+  // 아래 switch 에 자리가 없어 모르는 이벤트와 같이 조용히 버려지고, 화면의 내용은 하나도 안 바뀐다.
+  h.onSignal?.(frame.event);
   let payload: unknown;
   try {
     payload = frame.data ? JSON.parse(frame.data) : {};
