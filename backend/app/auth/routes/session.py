@@ -65,6 +65,36 @@ def complete_login(
     Shared by the mock callback and the SAML ACS — everything from a verified Principal
     onward is IdP-independent.
     """
+    # ── 정지를 사번으로도 본다(10차 요청 §6) ─────────────────────────────────────────────────────
+    # 정지 검사는 이메일 행 하나만 봤다(deps.entitled). 정지된 사람이 다른 Mail Claim 으로 들어오면 원장에 없는 이메일이라 아래
+    # note_sso_login 이 active 새 행을 만들고 그대로 로그인됐다. 같은 사번의 정지된 행이 있으면 여기서 끝낸다 — 새 행을 만들기 전,
+    # 세션을 내기 전이다. 사번 Claim 을 안 받는 박스(SAML_ATTR_SABUN 빈 값)와 사번이 없는 로그인은 이 판정을 지나지 않는다.
+    # ⚠ 이 판정은 아래의 '원장은 부기록이라 실패해도 로그인은 막지 않는다' 갈래(except·suppress) **밖**에 둔다. 그 안에서 거절하면
+    #   삼켜져 그대로 로그인된다. 판정을 **못 해도** 들여보내지 않는다 — 원장이 고장 난 동안 정지가 통째로 풀리면 안 된다.
+    # ⚠ 요청마다 보는 검사(deps.entitled)는 여전히 이메일 행만 본다 — 정지 전에 다른 Mail 로 이미 만든 행의 세션·PAT 는 그 행을
+    #   따로 정지해야 끊긴다. 여기서 막는 것은 **새로 들어오는 길**이다.
+    who = getattr(principal, "email", "") or getattr(principal, "subject", "")
+    sabun_vals = ((getattr(principal, "attributes", None) or {}).get(settings.saml_attr_sabun)
+                  if settings.saml_attr_sabun else None)
+    sabun = str((sabun_vals or [""])[0] or "").strip()
+    if user_store is not None and sabun:
+        try:
+            suspended = user_store.disabled_by_sabun(sabun)
+            # 제 이메일의 행이 정지된 사람과, 다른 Mail 로 온 사람을 접속 원장에서 가른다 — 뒤쪽이 관리자가 알아야 할 줄이다.
+            own = suspended and bool(who) and (user_store.get(who) or {}).get("status") == "disabled"
+        except Exception:  # noqa: BLE001 — 못 읽은 것을 '정지 아님' 으로 읽지 않는다
+            log.warning("SSO 로그인 거절(%s) — 정지 여부(사번)를 원장에서 확인하지 못했다", who, exc_info=True)
+            return login_failed(settings, AuthError("정지 여부를 확인하지 못해 로그인을 중단했습니다 — 관리자에게 문의하세요",
+                                                    status_code=503))
+        if suspended:
+            # 사번 값은 어디에도 남기지 않는다(개인 식별자다).
+            log.warning("SSO 로그인 거절(%s) — %s", who,
+                        "정지된 계정이다" if own else "같은 사번의 정지된 계정이 있다(다른 Mail 로 들어왔다)")
+            if request is not None:
+                access_log.note(request, email=who, event="login_fail", service="portal",
+                                detail="sso:disabled" if own else "sso:disabled:sabun")
+            return login_failed(settings, AuthError("이 계정은 정지되었습니다 — 관리자에게 문의하세요", status_code=403))
+
     # SSO 연동 훅 — 같은 이메일의 로컬 계정이 있으면 연결(auth_source 갱신), 없으면 원장에
     # 생성. 계정 행은 SSO 전환 후에도 남는다(로컬 계정 브리지의 승계 보장). 실패해도
     # 로그인은 막지 않는다 — 원장은 부기록이다.
@@ -90,7 +120,8 @@ def complete_login(
         try:
             created = user_store.note_sso_login(email=principal.email, name=principal.display_name,
                                                 department=(dept_vals or [None])[0],
-                                                dept_id=(dept_id_vals or [None])[0], affiliation=aff)
+                                                dept_id=(dept_id_vals or [None])[0], affiliation=aff,
+                                                sabun=sabun)
         except Exception:  # noqa: BLE001 — 원장은 부기록이라 로그인은 막지 않는다
             # 다만 조용히 삼키지 않는다. 종전엔 흔적이 없었다 — 새 사람은 행 없이(소속도 없이) 들어와 관리자 목록에도 안 보인다.
             # 원장의 칸 추가가 기동 때 실패한 박스에서 이 쓰기가 로그인마다 실패한다(칸 추가는 실패를 삼킨다 — user_store).
@@ -119,7 +150,6 @@ def complete_login(
     if request is not None:
         uid = access_log.new_uid()
         cookies.set_uid_cookie(response, settings, uid=uid)
-        who = getattr(principal, "email", "") or getattr(principal, "subject", "")
         # 정지된 계정도 IdP 는 통과시키고 세션도 받지만 모든 요청이 403 이다(deps) — 로컬 경로처럼 실패로 적는다(검토 1차).
         disabled = False
         if user_store is not None and who:

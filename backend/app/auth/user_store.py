@@ -99,6 +99,9 @@ class UserStore:
         # 부서 코드(IdP 의 DeptId) — 표시용 department 와 따로 둔다. 한 칸에 받으면 사람이 적은 부서명이 코드로 덮인다(10차 요청 §7).
         with contextlib.suppress(sqlite3.OperationalError):
             self._conn.execute("ALTER TABLE users ADD COLUMN dept_id TEXT NOT NULL DEFAULT ''")
+        # 사번(IdP 의 Sabun) — 정지를 이메일뿐 아니라 사번으로도 본다(disabled_by_sabun). 이메일이 바뀌어도 같은 사람이다(10차 요청 §6).
+        with contextlib.suppress(sqlite3.OperationalError):
+            self._conn.execute("ALTER TABLE users ADD COLUMN sabun TEXT NOT NULL DEFAULT ''")
         # 허가 요청 — 사용자가 내 권한 페이지에서 보내고 관리자가 승인·거절한다.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS access_requests ("
@@ -482,7 +485,7 @@ class UserStore:
 
     # ── SSO 연동(미래) ──────────────────────────────────────────────────────
     def note_sso_login(self, *, email: str, name: str | None, department: str | None = None,
-                       dept_id: str | None = None, affiliation: str = "") -> bool:
+                       dept_id: str | None = None, affiliation: str = "", sabun: str | None = None) -> bool:
         """SSO 콜백 훅 — 같은 이메일 행이 있으면 연결(auth_source 갱신), 없으면 원장에
         생성(active — IdP 가 이미 신원을 보증). 계정·비밀번호 해시는 남는다.
 
@@ -491,6 +494,8 @@ class UserStore:
         이름이 이메일과 같은 행도 빈 것으로 본다(6차 요청 §4-B-3). 읽을 때의 대체는 deps.entitled 가 한다.
         부서는 IdP 값이 있으면 덮는다(사람 입력 표기가 21종으로 갈려 있다), 없으면 그대로 둔다.
         부서 **코드**(dept_id)도 같은 규칙이되 제 칸에만 적는다 — 표시용 부서는 코드로 덮지 않는다(10차 요청 §7).
+        사번(sabun)도 같은 규칙이다 — IdP 값이 있으면 적고 없으면 그대로 둔다. **정지된 행에도 적는다**: 사번을 받기 전에 정지된
+        사람이 제 Mail 로 들어온 그때 적혀야, 그다음에 다른 Mail 로 오는 것을 사번으로 잡는다(10차 요청 §6).
         ⚠ affiliation·groups·grants·status 는 **절대 안 건드린다** — 권한 입력이다(§4-B-4).
         단 하나, 행을 **처음 만들 때만** `affiliation` 을 넣는다(10차 요청 §2 — Claim 매핑·기본 소속, 값은 호출부가 권한 표로
         거른다). 있던 행에는 주어도 쓰지 않는다 — 로그인 때마다 채우면 관리자가 일부러 비운 소속이 되살아난다.
@@ -499,21 +504,33 @@ class UserStore:
         name = (name or "").strip()[:80]
         dept = (department or "").strip()[:80] or None
         did = (dept_id or "").strip()[:80] or None
+        sab = (sabun or "").strip()[:80] or None
         now = _now()
         with self._lock:
             created = self.get(email) is None
             if created:
                 self._conn.execute(
                     "INSERT INTO users (email, name, groups, status, auth_source, created_at, "
-                    "approved_at, approved_by, last_login_at, department, dept_id, affiliation) "
-                    "VALUES (?, ?, '[]', 'active', 'sso', ?, ?, 'sso', ?, ?, ?, ?)",
-                    (email, name, now, now, now, dept or "", did or "", (affiliation or "").strip()[:40]))
+                    "approved_at, approved_by, last_login_at, department, dept_id, affiliation, sabun) "
+                    "VALUES (?, ?, '[]', 'active', 'sso', ?, ?, 'sso', ?, ?, ?, ?, ?)",
+                    (email, name, now, now, now, dept or "", did or "", (affiliation or "").strip()[:40], sab or ""))
             else:
                 self._conn.execute(
                     "UPDATE users SET auth_source = 'sso', last_login_at = ?, "
                     "name = CASE WHEN ? <> '' AND (TRIM(name) = '' OR lower(TRIM(name)) = lower(email)) "
                     "THEN ? ELSE name END, "
-                    "department = COALESCE(?, department), dept_id = COALESCE(?, dept_id) WHERE email = ?",
-                    (now, name, name, dept, did, email))
+                    "department = COALESCE(?, department), dept_id = COALESCE(?, dept_id), "
+                    "sabun = COALESCE(?, sabun) WHERE email = ?",
+                    (now, name, name, dept, did, sab, email))
             self._commit()
         return created
+
+    def disabled_by_sabun(self, sabun: str | None) -> bool:
+        """이 사번을 가진 행 중 **정지된 것**이 있나 — 이메일이 달라도 같은 사람이다(10차 요청 §6).
+        빈 사번은 아무와도 맞지 않는다: 사번 없이 정지된 행 하나가 사번 Claim 이 없는 사람 전부를 막으면 안 된다."""
+        sab = (sabun or "").strip()[:80]
+        if not sab:
+            return False
+        with self._lock:
+            return self._conn.execute(
+                "SELECT 1 FROM users WHERE sabun = ? AND status = 'disabled' LIMIT 1", (sab,)).fetchone() is not None

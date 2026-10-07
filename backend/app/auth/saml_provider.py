@@ -97,8 +97,9 @@ class SamlProvider:
                             f"received claims: {sorted(attrs)}", status_code=400)
         # 지정한 Claim 이 Assertion 에 없으면 한 줄 남긴다 — 이름 Claim 이 릴리즈됐는데 이름이 대소문자·형식(`displayName` 대
         # `…/DisplayName`)이 어긋나면 대체 사슬이 조용히 원장으로 떨어지고 아무도 모른다(6차 요청 §4-B-5). Claim **이름만** 적는다.
+        # 사번은 더하다 — 이름이 어긋나면 '정지를 사번으로도 본다' 가 켜진 줄 알고 있는 동안 한 번도 돌지 않는다(10차 요청 §6).
         for env_key, claim in (("SAML_ATTR_NAME", s.saml_attr_name), ("SAML_ATTR_DEPARTMENT", s.saml_attr_department),
-                               ("SAML_ATTR_DEPT_ID", s.saml_attr_dept_id)):
+                               ("SAML_ATTR_DEPT_ID", s.saml_attr_dept_id), ("SAML_ATTR_SABUN", s.saml_attr_sabun)):
             if claim and claim not in attrs:
                 log.warning("SAML: %s=%r 이 Assertion 에 없다 — 받은 Claim: %s", env_key, claim, sorted(attrs))
         return Principal(

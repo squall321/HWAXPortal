@@ -28,6 +28,8 @@ const DETAIL_LABEL: Record<string, string> = {
   sso: 'SSO',
   primer: '자동 갱신',
   credential: '자격 중계',
+  // 정지된 사람이 다른 Mail 로 들어오려다 사번으로 걸렸다(SAML_ATTR_SABUN) — 제 이메일의 정지(sso:disabled)와 다른 줄이다
+  'sso:disabled:sabun': 'SSO — 거절(같은 사번의 정지된 계정이 있음)',
 };
 
 function detailText(d: string | null): string {

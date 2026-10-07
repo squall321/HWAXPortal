@@ -61,6 +61,10 @@ with TestClient(app, base_url="http://localhost:5283") as c:
                   bootstrap_admins=[] if row.get("pending") else [row["email"]], department=row.get("department", ""))
         if row.get("affiliation"):
             us.set_access(row["email"], affiliation=row["affiliation"], grants=None)
+        if row.get("sabun"):                  # 전에 SSO 로 들어와 사번이 적힌 행
+            us.note_sso_login(email=row["email"], name=None, sabun=row["sabun"])
+        if row.get("disabled"):
+            us.set_status(row["email"], "disabled")
     r = c.get("/auth/login", follow_redirects=False)
     # 보낸 AuthnRequest(디코드)와 SP 메타데이터 — NameIDPolicy·SLO 광고를 본다(7차 요청)
     from urllib.parse import parse_qs
@@ -111,7 +115,7 @@ def _run(tmp_path, *, want_nameid: str | None = "false", env_extra: dict | None 
            "JWT_AUTOGEN_KEYS": "true", "PROCEDURES_ARTIFACT_ROOT": str(tmp_path / "art"),
            "DELIB_ARCHIVE_ROOT": str(tmp_path / "delib"), "UPLOAD_STAGING_DIR": str(tmp_path / "stage")}
     for k in ("SAML_WANT_NAMEID", "SAML_SUBJECT_SOURCE", "SAML_ATTR_NAME", "SAML_ATTR_DEPARTMENT", "SAML_ATTR_DEPT_ID",
-              "SAML_SEND_NAMEID_POLICY", "SAML_ADVERTISE_SLO", "SSO_DEFAULT_AFFILIATION", "ACCESS_PATH"):
+              "SAML_ATTR_SABUN", "SAML_SEND_NAMEID_POLICY", "SAML_ADVERTISE_SLO", "SSO_DEFAULT_AFFILIATION", "ACCESS_PATH"):
         env.pop(k, None)
     if want_nameid is not None:
         env["SAML_WANT_NAMEID"] = want_nameid
@@ -254,6 +258,35 @@ def test_부서_코드_Claim_이름이_어긋나면_적지_않고_경고를_남�
     assert out["status"] in (302, 303) and out["row"]["dept_id"] == "", out
     assert "SAML_ATTR_DEPT_ID=" in out["stderr"] and CLAIM + "DeptId" in out["stderr"], out["stderr"][-1500:]
     assert "D2001" not in out["stderr"], "Claim 값은 로그에 안 남긴다"
+
+
+# ── 10차 §6 정지를 사번으로도 ───────────────────────────────────────────────────────────────
+# 정지된 사람의 옛 행 — 다른 Mail 로 가입돼 있고, 전에 SSO 로 들어와 사번(운영 모양 Assertion 의 Sabun)이 적혀 있다.
+SUSPENDED = [{"email": "k.park.old@example.com", "name": "박 구", "sabun": "1234567", "disabled": True}]
+
+
+@needs_keys
+def test_정지된_사람이_다른_Mail_로_오면_서명된_Assertion_이어도_거절한다(tmp_path):
+    """끝까지 — 서명·시간·Audience 를 다 통과한 Assertion 이다. 정지는 이메일 행만 봐서 Mail 이 다르면 active 새 행이 생겼다."""
+    out = _run(tmp_path, seed=SUSPENDED, env_extra={"SAML_ATTR_SABUN": CLAIM + "Sabun"})
+    assert "정지" in _failed(out), out
+    assert "me" not in out and "1234567" not in out["stderr"], "사번 값은 로그에 안 남긴다"
+
+
+@needs_keys
+def test_사번을_안_받는_박스는_종전대로_들어온다(tmp_path):
+    """기본은 꺼짐이다 — 같은 원장·같은 Assertion 인데 SAML_ATTR_SABUN 이 없으면 사번을 보지 않는다(위 시험의 대조군)."""
+    out = _run(tmp_path, seed=SUSPENDED)
+    assert out["status"] in (302, 303) and out["me_status"] == 200 and out["me"]["email"] == "koo.park@example.com", out
+
+
+@needs_keys
+def test_사번_Claim_이름이_어긋나면_경고를_남긴다(tmp_path):
+    """켰는데 이름이 틀리면 사번 검사가 한 번도 돌지 않는다 — 켜 둔 줄 아는 동안 정지된 사람이 그대로 들어온다."""
+    out = _run(tmp_path, seed=SUSPENDED, env_extra={"SAML_ATTR_SABUN": CLAIM + "EmpNo"})
+    assert out["status"] in (302, 303) and out["me_status"] == 200, out
+    assert "SAML_ATTR_SABUN=" in out["stderr"] and CLAIM + "Sabun" in out["stderr"], out["stderr"][-1500:]
+    assert "1234567" not in out["stderr"], "Claim 값은 로그에 안 남긴다"
 
 
 # ── 10차 §2 SSO 로 처음 생기는 사람의 소속 ──────────────────────────────────────────────────
