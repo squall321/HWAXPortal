@@ -56,7 +56,7 @@ deliberate_jobs()                       # 심의 9종 메뉴 · modifier · 옵�
 deliberate_start(question, job, …)      # 즉시 job_id 반환, 심의는 뒤에서 계속
 deliberate_status(job_id)               # 단계·라운드·좌석
 deliberate_result(job_id)               # 결정 문서 전문 + 좌석·적용 옵션
-deliberate_transcript(job_id, …)        # 좌석 발언 원문(페이지)
+deliberate_transcript(job_id, …)        # 좌석 발언 전사(페이지) — 기본은 화면용으로 줄인 글, 원문은 full=true
 deliberate_continue(previous_job_id, human_note, …)   # 이어하기 — 결정문·좌석 자동 승계
 deliberate_cancel(job_id)               # 진행 중인 심의 접기
 deliberate_list(limit)                  # 최근 잡
@@ -77,15 +77,22 @@ deliberate_list(limit)                  # 최근 잡
 | `build-plan` | 구축 계획서 | 3단 · P1~P4 게이트 |
 | `default` | 의사결정문 | 자유 |
 
+**전사는 기본이 줄인 글이다.** `deliberate_transcript` 는 한 쪽에 40턴씩 주고, 긴 발언은 화면에 뜨는 길이로 줄여
+`say_clipped` 표식과 온전한 길이(`say_full_chars`)를 붙인다 — 전량을 한 번에 주면 클라이언트 컨텍스트가 터진다.
+**좌석이 쓴 글 전체가 필요하면 `deliberate_transcript(job_id, full=true)`** 로 받는다(한 쪽이 몇 배로 커지므로
+`limit` 을 줄인다). 줄인 글을 원문으로 알고 옮기면 발언의 일부가 빠진 채 간다. `full=true` 로 받았는데도
+`say_clipped` 가 붙은 턴은 엔진의 저장 상한(`DELIB_TRANSCRIPT_CLIP`)에서 잘린 것이다 — 온전한 길이는 `say_full_chars` 다.
+
 **옵션은 웹 토글과 같은 것을 전부 받는다** — `modifiers`(voi·premortem·toulmin·eliminative·anon1r) ·
 `evidence`(원천 근거 주입 ≤12) · `personas`(좌석 지정 ≤12) · `tools`/`apps`(근거 조회 범위) ·
 `human_note` · `stop_after_round`(체크포인트) · `search_sources` · `advanced`(품질 손잡이 통과).
 검증·클램프는 전부 엔진(`_resolve_opts`)이 한다.
 
 **리스크 심사를 MCP 로 끝까지** — `risk_get_brief` 로 브리프를 받아 `evidence` 로 넘기고
-`job="risk-review"` 로 돌린 뒤 `deliberate_transcript` 로 전사를 뽑아 `risk_submit_panel_result`
-로 원장에 되돌린다. 원장 왕복을 한 도구로 묶는 러너는 아직 없다(Claude Code 의
-`hwax-risk-review.js` 가 그 자리다).
+`job="risk-review"` 로 돌린 뒤 `deliberate_transcript(job_id, full=true)` 로 전사를 뽑아
+`risk_submit_panel_result` 로 원장에 되돌린다. **원장에는 좌석 발언 전문이 들어가야 한다** — `full=true` 없이
+받은 전사는 화면용으로 줄인 글이라(`say_clipped`), 그대로 제출하면 원장의 좌석 발언이 중간에서 끊긴 채 남는다.
+원장 왕복을 한 도구로 묶는 러너는 아직 없다(Claude Code 의 `hwax-risk-review.js` 가 그 자리다).
 
 **배선.** `HWAXAgentServer/mcp_server.py`(FastMCP) 를 `app.py` 가 `/mcp` 로 mount 하고,
 게이트웨이가 `hwax-deliberation` 백엔드(`:9009/mcp/`)로 문다. 잡 원장은 `delib_jobs.py`,
