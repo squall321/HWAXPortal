@@ -173,9 +173,32 @@ def test_arp_주소만_있고_토큰이_없으면_안_켠_기능으로_남긴다
     assert "○ ARP MCP 도구" in out and "ARP_TOKEN=<값>" in out
     _, out = _expect(tmp_path / "1f", have=BASE, pre='ARP_BASE="http://203.0.113.20:3001"')
     assert "○ ARP MCP 도구" in out, "1f 가 ARP_HOST 로 주소를 세운 박스도 같다"
-    for name, env in (("both", ARP_ENV), ("none", ""), ("token", "ARP_TOKEN=arp-test-token\n")):
+    for name, env in (("both", ARP_ENV), ("none", "")):
         _, out = _expect(tmp_path / name, have=BASE, prov_env=env)
         assert "ARP MCP 도구" not in out, name
+
+
+def test_arp_토큰만_있고_주소를_모르면_그것도_안_켠_기능으로_남긴다(tmp_path):
+    """**거꾸로 된 반쪽** — 토큰을 적은 사람은 됐다고 읽는다. 그런데 update-all 은 주소를 모르면 arp 를 기대하지 않는다(위
+    test_arp_토큰이_없으면_기대하지_않는다 의 'token' 줄) — 항목이 빠져도, 토큰을 바꿔도 재프로비저닝이 돌지 않는데 아무 말이 없었다.
+    게이트웨이는 주소를 직전 config 에서 이을 수 있어 그 박스의 arp 는 붙어 있기도 하다 — 그래서 더 안 보인다."""
+    missing, out = _expect(tmp_path / "file", have=BASE, prov_env="ARP_TOKEN=arp-test-token\n")
+    assert missing == [], "기대 목록은 그대로다 — 알리기만 한다(게이트웨이의 등재 조건과 어긋나면 매 실행 헛돈다)"
+    line = next(ln for ln in out.splitlines() if "○ ARP MCP 도구" in ln)
+    assert "ARP_TOKEN 은 있는데" in line and "기대하지 않아" in line
+    assert "ARP_HOST=" in line and "ARP_BASE=" in line and "infra/.env" in line and "provision.env" in line, "어디에 무엇을 적으면 켜지는지"
+    assert "arp-test-token" not in out, "토큰은 화면에 남지 않는다"
+    _, out = _expect(tmp_path / "env", have=BASE, pre='ARP_TOKEN="arp-test-token"')
+    assert "ARP_TOKEN 은 있는데" in out, "운영자 셸에서 준 토큰도 같다"
+    assert out.count("○ ARP MCP 도구") == 1, "두 반쪽이 한 실행에 같이 나오지 않는다"
+
+
+@pytest.mark.parametrize("prov_env,pre", [(ARP_ENV, ""), ("ARP_TOKEN=arp-test-token\n", 'ARP_BASE="http://203.0.113.20:3001"'),
+                                          ("ARP_TOKEN=\n", ""), ("# ARP_TOKEN=arp-test-token\n", ""), ("", "")])
+def test_arp_주소를_알거나_토큰이_없으면_그_줄은_없다(tmp_path, prov_env, pre):
+    """주소는 provision.env 의 ARP_BASE 여도, 1f 가 ARP_HOST 로 세운 값이어도 된다. 빈 토큰·주석 줄은 토큰이 아니다."""
+    _, out = _expect(tmp_path, have=BASE, prov_env=prov_env, pre=pre)
+    assert "ARP_TOKEN 은 있는데" not in out, out
 
 
 def test_arp_주소는_1f_가_ARP_HOST_로_정한_값이어도_된다(tmp_path):

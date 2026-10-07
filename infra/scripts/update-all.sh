@@ -816,6 +816,11 @@ if [ -z "$_arp_b" ] && [ -n "$GW_DIR" ]; then _arp_b="$(_envfile_value "$GW_DIR/
 if [ -z "$_arp_t" ] && [ -n "$GW_DIR" ]; then _arp_t="$(_envfile_value "$GW_DIR/provision.env" ARP_TOKEN)"; fi
 if [ -n "$_arp_b" ] && [ -z "$_arp_t" ]; then
   hwax_skip "ARP MCP 도구(챗의 AI Ready Portal)" "ARP 주소는 있는데 ARP_TOKEN 이 없어 게이트웨이가 arp 백엔드를 등재하지 않는다(ARP 는 2026-10-01 부터 인증이 켜져 있다 — 토큰 없이 등재된 옛 항목이 config 에 남아 있으면 §5 가 걷어낸다)" "ARP 담당에게 MCP 서비스 토큰을 받아 HWAXMcpGateway/provision.env 에 ARP_TOKEN=<값> 을 적고 재실행(§5 가 재프로비저닝한다)"
+elif [ -z "$_arp_b" ] && [ -n "$_arp_t" ]; then
+  # 거꾸로 — 토큰은 적었는데 update-all 이 아는 ARP 주소가 없다(1f 의 ARP_HOST 도, provision.env 의 ARP_BASE 도 없다). 게이트웨이는 주소를
+  # 직전 config 에서 이을 수 있어 arp 가 붙어 있기도 하지만, update-all 은 주소를 모르면 arp 를 **기대하지 않는다**(calc_missing) —
+  # 그 항목이 빠져도, 토큰을 바꿔 적어도 재프로비저닝이 돌지 않는다. '토큰까지 적었으니 됐다' 로 읽히는 자리라 장부에 남긴다.
+  hwax_skip "ARP MCP 도구(챗의 AI Ready Portal)" "ARP_TOKEN 은 있는데 update-all 이 아는 ARP 주소가 없다(infra/.env 의 ARP_HOST 도, 게이트웨이 provision.env 의 ARP_BASE 도 없다) — arp 백엔드를 기대하지 않아, 빠져 있어도 토큰을 바꿔도 재프로비저닝하지 않는다" "infra/.env 에 ARP_HOST=<ARP 서버 주소> 를 적거나(1f 가 게이트웨이 ARP_BASE 를 적는다) HWAXMcpGateway/provision.env 에 ARP_BASE=http://<ARP 서버>:3001 을 적고 재실행(§5 가 재프로비저닝한다)"
 fi
 unset _arp_t
 # SmartTwinMCP(해석 잡 제출·후처리·수집 도구) — 게이트웨이는 주소가 **설정된** 박스에서만 smart-twin-mcp 를 등재한다
