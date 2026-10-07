@@ -92,8 +92,10 @@ class DelibOpts(BaseModel):
     # 사람이 이미 골랐으면 off 로 보낸다(자동 환기가 사람이 뺀 VOC 를 다시 넣지 않게).
     voc: Literal["auto", "off", "always"] | None = None
     continue_summary: str | None = Field(default=None, max_length=24000)
-    # 좌석 상한 — 엔진 MAX_REQ_SEATS·ExpertPicker·HandoffBrief 와 같은 값이어야 한다
+    # 좌석 상한 — 엔진 MAX_REQ_SEATS **기본값**·ExpertPicker·HandoffBrief·RosterEditor 와 같은 값이어야 한다
     # (tests/test_seat_cap_contract.py). 넘으면 422 로 막는다 — 엔진까지 가면 잘려서 사라진다.
+    # 엔진은 환경값(DELIB_MAX_SEATS)으로 더 앉힐 수 있지만 그 길은 MCP·리스크 앱 것이다(포털 스키마를
+    # 안 거친다) — 웹은 여기 수까지다(docs/delib-engine-feedback D-3).
     personas: list[dict] | None = Field(default=None, max_length=20)
     # ⚠ 아래 넷은 **엔진에 이미 구현돼 있는데 여기 선언이 없어 웹에서만 죽어 있던** 것이다
     #   (2026-09-11 조사). 선언 안 된 키는 model_dump(exclude_none=True) 에서 조용히 사라지고
