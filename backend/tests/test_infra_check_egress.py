@@ -90,14 +90,18 @@ def test_라우트는_원격_호스트만_본다_루프백_주석_끈_라우트�
 @pytest.mark.parametrize("np_list,covered", [
     (ALL, True),
     ("*", True),                                                     # 전부 우회
-    ("203.0.113.0/24, 198.51.100.0/24", True),                       # 대역 표기 · 쉼표 뒤 공백
+    ("203.0.113.0/24, 198.51.100.0/24", False),                      # 대역 — httpx 는 슬래시 앞 한 주소로만 읽는다(9차 §5 · D-9)
+    (f"{RA} , {ARP},\t{ODB}, {TS}", True),                           # 쉼표 둘레의 공백은 뗀다
+    (f"{RA} {ARP} {ODB} {TS}", False),                               # 공백으로만 나누면 httpx 는 통째로 한 항목으로 읽는다
+    (f"{RA}/32,{ARP}/24,{ODB}/8,{TS}/16", True),                     # 슬래시 앞이 그 주소 자신이면 덮인다(httpx 가 그렇게 읽는다)
     (f"{RA}:3000,{ARP},{ODB},{TS}", True),                           # 포트가 붙은 항목
-    ("203.0.113.0/28,198.51.100.40", False),                         # /28 은 .0~.15 — RA(.10)만 덮는다
+    ("203.0.113.0/28,198.51.100.40", False),                         # 대역 안에 있어도(RA 는 .10) 덮이지 않는다
     (f"113.10,{ARP},{ODB},{TS}", False),                             # IP 는 꼬리 일치로 보지 않는다
     (f"{RA},{ARP},{ODB}", False),                                    # TestScope 가 빠졌다
 ])
 def test_NO_PROXY_가_받는_모양(box, np_list, covered):
-    """가짜 경고가 매 실행 뜨면 진짜 경고가 묻힌다 — curl·httpx·requests 가 받는 모양(대역·`*`·포트)을 넓게 인정한다."""
+    """서비스가 부를 때 쓰는 httpx 가 읽는 대로만 덮인 것으로 본다 — 초록이 거짓이면 이 점검은 없느니만 못하다. 종전엔 대역 안의
+    주소를 덮였다고 봤는데, httpx 0.28.1 은 대역을 한 주소로만 읽어 그 호출이 프록시로 샜다(운영자 셸이 /24 인 박스가 초록이었다)."""
     _, run, _ = box
     r = run("--internal", http_proxy=PROXY, NO_PROXY=np_list)
     assert (r.returncode == 0) is covered, (np_list, r.stdout, r.stderr)
@@ -111,9 +115,14 @@ def test_호스트명은_도메인_꼬리로도_덮인다(box):
     (repo / "backend/config/routes.env").write_text("")
     assert run("--internal", https_proxy=PROXY, NO_PROXY=".corp.example").returncode == 0
     assert run("--internal", https_proxy=PROXY, NO_PROXY="corp.example").returncode == 0
-    assert run("--internal", https_proxy=PROXY, NO_PROXY="*.corp.example").returncode == 0
+    r = run("--internal", https_proxy=PROXY, NO_PROXY="*.corp.example")
+    assert r.returncode == 1 and "RA_HOST" in r.stdout, "`*.도메인` 은 httpx 가 별표를 글자로 읽어 아무것도 덮지 않는다"
+    assert run("--internal", https_proxy=PROXY, NO_PROXY="ra-a.corp.example,arp.corp.example").returncode == 0
     r = run("--internal", https_proxy=PROXY, NO_PROXY="rp.example,other.example")
     assert r.returncode == 1 and "RA_HOST" in r.stdout and "ARP_HOST" in r.stdout, "점 경계가 아닌 꼬리는 덮지 않는다"
+    (repo / "infra/.env").write_text("RA_HOST=corp.example\n")
+    assert run("--internal", https_proxy=PROXY, NO_PROXY="corp.example").returncode == 0
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=".corp.example").returncode == 1, "`.도메인` 은 하위만 덮는다(자신은 아니다)"
 
 
 def test_소문자_no_proxy_만_둔_박스도_읽는다(box):
@@ -198,3 +207,100 @@ def test_update_all_은_점검이_깨져도_실패로_세지_않는다(box):
     (repo / "infra/scripts/check-egress.sh").unlink()
     out = _gate(repo)
     assert "SKIP:프록시 우회 점검" in out and "FAIL=0" in out, out
+
+
+# ── httpx 가 읽지 않는 NO_PROXY 항목(대역 · `*.도메인` · 공백으로 나눈 항목) — 9차 §5 · docs/change-request-8-10 D-9 ──────────
+CIDRS = "127.0.0.1,localhost,203.0.113.0/24,198.51.100.0/24"
+
+
+def test_대역으로만_덮인_목적지는_빠졌다고_하고_대역이_죽은_값이라고_알린다(box):
+    """**이 구획의 이유다** — 운영자 셸의 NO_PROXY 가 /24 인 박스(9차 §5)에서 이 점검이 '전부 NO_PROXY 에 있다' 초록이었다.
+    같은 값으로 httpx 는 그 대역의 호스트를 프록시로 보낸다(대역의 첫 주소 하나만 직결). 빠졌다고만 하면 운영자는 NO_PROXY 에
+    대역이 있는 것을 보고 점검이 틀렸다고 읽는다 — 그 항목이 왜 안 듣는지를 같은 줄에서 말한다."""
+    _, run, calls = box
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=CIDRS)
+    assert r.returncode == 1, r.stdout + r.stderr
+    for label in ("RA_HOST", "ARP_HOST", "라우트 odb-hub", "TESTSCOPE_BASE_URL"):
+        assert label in r.stdout, r.stdout
+    assert "대역" in r.stdout and "2개" in r.stdout and "httpx" in r.stdout, r.stdout
+    assert len(r.stdout.strip().splitlines()) == 1, "update-all 이 이 한 줄을 그대로 싣는다"
+    for secret in (RA, ARP, ODB, TS, "203.0.113.0", "198.51.100.0", "/24", "pw-not-real"):
+        assert secret not in r.stdout + r.stderr, f"주소·대역이 출력에 샜다: {secret}"
+    assert not calls.exists()
+
+
+def test_글자_그대로_다_있으면_초록이고_죽은_항목은_같이_알린다(box):
+    _, run, _ = box
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=ALL + ",203.0.113.0/24,*.corp.example")
+    assert r.returncode == 0 and "전부 NO_PROXY 에 있다" in r.stdout and "2개" in r.stdout and "httpx" in r.stdout, r.stdout
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=ALL + f",{RA}/32")
+    assert r.returncode == 0 and "httpx" not in r.stdout, "/32 는 그 주소 하나로 읽힌다 — 죽은 값이 아니다"
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=ALL)
+    assert r.returncode == 0 and "httpx" not in r.stdout, "죽은 항목이 없으면 안내도 없다"
+
+
+def test_전체_진단도_죽은_항목을_경고한다(box):
+    _, run, _ = box
+    r = run(https_proxy=PROXY, NO_PROXY=CIDRS, EGRESS_TIMEOUT="2")
+    assert "httpx" in r.stdout and "2개" in r.stdout and "TESTSCOPE_BASE_URL" in r.stdout, r.stdout
+    assert "httpx" not in run(https_proxy=PROXY, NO_PROXY=ALL, EGRESS_TIMEOUT="2").stdout
+
+
+def test_update_all_은_대역으로만_덮인_박스를_초록으로_보지_않는다(box):
+    """1g 가 RA·ARP 를 글자 그대로 더한 뒤의 모양 — 나머지(라우트·TestScope)는 운영자의 대역뿐이다."""
+    repo, _, _ = box
+    out = _gate(repo, https_proxy=PROXY, NO_PROXY=f"{CIDRS},{RA},{ARP}")
+    (line,) = [ln for ln in out.splitlines() if ln.startswith("BAD:")]
+    assert "라우트 odb-hub" in line and "TESTSCOPE_BASE_URL" in line and "RA_HOST" not in line and "대역" in line, out
+    assert "FAIL=0" in out and "203.0.113.0" not in out and ODB not in out
+
+
+def _httpx_direct(monkeypatch, np: str, url: str) -> bool:
+    """같은 NO_PROXY 로 httpx 가 그 주소를 직결로 부르는가 — 네트워크는 건드리지 않는다(어느 전송을 고르는지만 본다)."""
+    import httpx
+
+    for k in ("NO_PROXY", "no_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.example:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:8080")
+    monkeypatch.setenv("NO_PROXY", np)
+    with httpx.Client() as c:
+        return c._transport_for_url(httpx.URL(url)) is c._transport
+
+
+def _one_dest(box, host: str):
+    repo, run, _ = box
+    (repo / "infra/.env").write_text(f"RA_HOST={host}\n")
+    for f in ("backend/.env", "backend/config/routes.env", "backend/config/routes.local.env"):
+        (repo / f).write_text("")
+    return run
+
+
+@pytest.mark.parametrize("entry,host", [
+    ("203.0.113.0/24", "203.0.113.10"), ("203.0.113.0/24", "203.0.113.0"), ("203.0.113.10/32", "203.0.113.10"),
+    ("203.0.113.10", "203.0.113.10"), ("203.0.113.1", "203.0.113.10"),
+    ("*.corp.example", "ra.corp.example"), ("*corp.example", "ra.corp.example"),
+    (".corp.example", "ra.corp.example"), (".corp.example", "corp.example"),
+    ("corp.example", "ra.corp.example"), ("corp.example", "corp.example"), ("rp.example", "ra.corp.example"),
+    ("CORP.Example", "ra.corp.example"), ("corp.example.", "ra.corp.example"),
+    ("*", "203.0.113.10"), ("other.example,*", "ra.corp.example"),
+    (" 203.0.113.10 ", "203.0.113.10"), ("203.0.113.10 203.0.113.20", "203.0.113.10"),
+])
+def test_판정이_httpx_가_실제로_고르는_길과_같다(box, monkeypatch, entry, host):
+    """일치 시험은 둘 다 틀리면 통과한다 — 서비스가 실제로 쓰는 httpx 를 오라클로 댄다. 스크립트와 이 파일의 기대표가 같은
+    오해(대역은 덮는다)를 나눠 가져 초록이었다."""
+    run = _one_dest(box, host)
+    np = f"127.0.0.1,localhost,{entry}"
+    covered = run("--internal", https_proxy=PROXY, NO_PROXY=np).returncode == 0
+    direct = _httpx_direct(monkeypatch, np, f"http://{host}:3000/")
+    assert covered == direct, (f"NO_PROXY 항목 {entry!r} · 호스트 {host!r} — 점검은 {'덮였다' if covered else '빠졌다'}, "
+                               f"httpx 는 {'직결' if direct else '프록시'}")
+
+
+@pytest.mark.parametrize("entry,host", [("113.10", "203.0.113.10"), ("corp.example/24", "ra.corp.example")])
+def test_드문_모양은_빠졌다고_보는_쪽으로_틀린다(box, monkeypatch, entry, host):
+    """httpx 는 이런 항목도 꼬리 일치로 받는다. 점검은 받지 않는다 — 일부러 적을 모양이 아니고, 틀려도 '덮였다' 쪽으로는 틀리지 않는다."""
+    run = _one_dest(box, host)
+    np = f"127.0.0.1,localhost,{entry}"
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=np).returncode == 1
+    assert _httpx_direct(monkeypatch, np, f"http://{host}:3000/") is True

@@ -96,29 +96,52 @@ _ip4() {  # 점 네 칸 십진 주소 → 정수. 아니면 실패
   for x in "${a:-}" "${b:-}" "${c:-}" "${d:-}"; do [[ "$x" =~ ^[0-9]{1,3}$ ]] && [ "$((10#$x))" -le 255 ] || return 1; done
   printf '%s' $(( (10#$a << 24) | (10#$b << 16) | (10#$c << 8) | 10#$d ))
 }
-# 가짜 경고가 매 실행 뜨면 진짜 경고가 묻힌다 — curl·httpx·requests 가 받는 모양을 넓게 인정한다:
-# 같은 이름 · `*`(전부) · 도메인 꼬리(.corp · corp · *.corp, 점 경계에서만) · IPv4 대역(a.b.c.d/n) · 포트가 붙은 항목.
-np_covers() {  # $1=호스트 $2=NO_PROXY 목록 → 0 이면 프록시를 타지 않는다
-  local h="${1,,}" e hi ni bits mask
+# 초록이 거짓이면 이 점검은 없느니만 못하다 — 이 NO_PROXY 를 물려받는 서비스(포털·게이트웨이·에이전트서버)가 부를 때 쓰는
+# **httpx 가 읽는 대로만** 덮인 것으로 본다. 종전엔 "curl·httpx·requests 가 받는 모양을 넓게" 인정해 대역 안의 주소를 덮였다고
+# 봤는데, httpx 0.28.1 은 대역을 대역으로 읽지 않는다(9차 요청 §5 실측, docs/change-request-8-10 D-9) — 운영자 셸의 NO_PROXY 가
+# /24 인 박스에서 그 호출은 여전히 프록시로 새는데 이 점검만 초록이었다. curl 은 대역·공백을 읽지만 서비스는 curl 로 부르지 않는다.
+#   덮는다     — 같은 주소·이름 · `*` 하나(전부) · 도메인 꼬리(`corp` 는 자신과 하위, `.corp` 는 하위만 — 점 경계에서만) · 포트가 붙은 항목.
+#   덮지 않는다 — 대역 `a.b.c.d/n`(슬래시 앞 `a.b.c.d` 한 주소로만 읽힌다) · `*.corp`(별표를 글자로 읽어 아무것과도 안 맞는다) ·
+#                공백으로만 나눈 항목(쉼표로만 나눈다 — `a b` 는 통째로 한 항목이다).
+# 주소인 호스트는 꼬리로 맞추지 않는다(httpx 는 `113.10` 같은 항목도 꼬리로 받지만 일부러 적을 모양이 아니다 — 틀려도 '빠졌다' 쪽이다).
+_np_entries() {  # $1=NO_PROXY 목록 → 항목을 줄마다(소문자, 쉼표로 나누고 둘레 공백을 뗀다 — httpx 가 나누는 방식 그대로)
+  local e
   local -a _es=()
-  IFS=', ' read -ra _es <<<"${2,,}"        # read 로 쪼갠다 — 따옴표 없는 for 는 `*` 를 파일 이름으로 푼다
+  IFS=',' read -ra _es <<<"${1,,}"         # read 로 쪼갠다 — 따옴표 없는 for 는 `*` 를 파일 이름으로 푼다
   for e in ${_es[@]+"${_es[@]}"}; do
-    [ -n "$e" ] || continue
-    [ "$e" = "*" ] && return 0
-    if [[ "$e" == */* ]]; then
-      bits="${e#*/}"
-      if hi="$(_ip4 "$h")" && ni="$(_ip4 "${e%/*}")" && [[ "$bits" =~ ^[0-9]{1,2}$ ]] && [ "$bits" -le 32 ]; then
-        mask=$(( bits == 0 ? 0 : (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
-        [ $(( hi & mask )) -eq $(( ni & mask )) ] && return 0
-      fi
-      continue
-    fi
-    [[ "$e" =~ ^[^:]+:[0-9]+$ ]] && e="${e%:*}"
-    e="${e#\*}"; e="${e#.}"
-    [ "$h" = "$e" ] && return 0
-    _ip4 "$h" >/dev/null || { [[ "$h" == *".$e" ]] && return 0; }
+    e="${e#"${e%%[![:space:]]*}"}"; e="${e%"${e##*[![:space:]]}"}"
+    [ -n "$e" ] && printf '%s\n' "$e"
   done
+  return 0
+}
+np_covers() {  # $1=호스트 $2=NO_PROXY 목록 → 0 이면 프록시를 타지 않는다
+  local h="${1,,}" e
+  while IFS= read -r e; do
+    [ "$e" = "*" ] && return 0
+    case "$e" in
+      \**) continue ;;
+      */*) [ "$h" = "${e%%/*}" ] && return 0; continue ;;
+    esac
+    [[ "$e" =~ ^[^:]+:[0-9]+$ ]] && e="${e%:*}"
+    [ "$h" = "$e" ] && return 0
+    _ip4 "$h" >/dev/null || { [[ "$h" == *".${e#.}" ]] && return 0; }
+  done < <(_np_entries "$2")
   return 1
+}
+# 덮지 못하는 모양의 항목이 몇 개인가 — 빠졌다고만 하면 운영자는 NO_PROXY 에 대역이 있는 것을 보고 점검이 틀렸다고 읽는다.
+# 값은 내지 않는다(주소다 — 이 출력은 update-all 로그에 남는다). `/32` 는 그 주소 하나로 읽히므로 세지 않는다.
+np_dead_note() {  # $1=NO_PROXY 목록 → 안내 한 구절(없으면 빈 값)
+  local e n=0
+  while IFS= read -r e; do
+    case "$e" in
+      \*) ;;
+      \**|*[[:space:]]*) n=$((n + 1)) ;;
+      */32) ;;
+      */*) _ip4 "${e%%/*}" >/dev/null && n=$((n + 1)) ;;
+    esac
+  done < <(_np_entries "$1")
+  [ "$n" -gt 0 ] && printf 'NO_PROXY 의 항목 %s개는 httpx 가 읽지 못하는 모양이다(대역 a.b.c.d/n · *.도메인 · 공백으로 나눈 항목) — 쉼표로 나눠 주소·이름을 그대로 적는다' "$n"
+  return 0
 }
 internal_missing() {  # $1=NO_PROXY 목록 → 목록이 덮지 못하는 내부 목적지의 이름(", " 로 이음). 다 덮이면 빈 값.
   local name host out=""
@@ -135,9 +158,11 @@ if [ "$INTERNAL" = 1 ]; then
   # 계정이 섞여 있을 수 있다). 종료코드: 0 = 볼 것이 없거나 전부 덮였다 · 1 = 덮이지 않은 목적지가 있다(이름을 stdout 한 줄로).
   if [ -z "$PROXY" ]; then echo "프록시 환경변수 없음 — 직결 구성이라 볼 것이 없다"; exit 0; fi
   _miss="$(internal_missing "${NO_PROXY:-${no_proxy:-}}")"
-  if [ -n "$_miss" ]; then echo "$_miss"; exit 1; fi
+  # 읽지 못하는 항목은 덮였든 빠졌든 같은 줄 끝에 붙인다(stdout 은 한 줄이다 — update-all 이 그대로 싣는다). 종료코드는 바꾸지 않는다.
+  _note="$(np_dead_note "${NO_PROXY:-${no_proxy:-}}")"; _note="${_note:+ ($_note)}"
+  if [ -n "$_miss" ]; then echo "$_miss$_note"; exit 1; fi
   _n="$(internal_dests | grep -c . || true)"
-  if [ "${_n:-0}" = 0 ]; then echo "이 박스의 설정에 다른 서버의 내부 목적지가 없다"; else echo "내부 목적지 ${_n}곳이 전부 NO_PROXY 에 있다"; fi
+  if [ "${_n:-0}" = 0 ]; then echo "이 박스의 설정에 다른 서버의 내부 목적지가 없다$_note"; else echo "내부 목적지 ${_n}곳이 전부 NO_PROXY 에 있다$_note"; fi
   exit 0
 fi
 
@@ -154,6 +179,8 @@ if [ -n "$PROXY" ]; then
     # 다른 서버의 내부 목적지(RA·ARP·라우트의 원격 호스트·TestScope) — 이름만 낸다
     _miss="$(internal_missing "$NP")"
     [ -n "$_miss" ] && warn "NO_PROXY 에 없는 내부 목적지: $_miss — 그 호출이 프록시로 샌다(상대의 IP 허용목록에 걸리면 403)"
+    _note="$(np_dead_note "$NP")"
+    [ -n "$_note" ] && warn "$_note"
   else
     warn "NO_PROXY 없음 — 내부 IP 요청도 프록시로 흘러 Connection error 가 난다(cae00 실사고 패턴)"
   fi
