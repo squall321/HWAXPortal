@@ -171,3 +171,48 @@ def test_사용자_목록_API_가_부서_코드를_준다(tmp_path):
         app.dependency_overrides.pop(get_settings, None)
     assert rows["sso@corp.com"]["dept_id"] == "D12345" and rows["boss@corp.com"]["dept_id"] == ""
     assert json.dumps(rows)  # 직렬화되는 값만 실린다
+
+
+# ── 칸 추가가 실패하면 — 조용히 넘어가지 않는다 ───────────────────────────────────────────────────
+def test_칸을_더하지_못하면_원장을_연_척하지_않는다(tmp_path, monkeypatch):
+    """칸 추가는 `OperationalError` 를 통째로 삼켰다('이미 있는 칸' 을 넘기려던 것). 그 예외에는 'database is locked' 도 있다 —
+    다른 프로세스가 쓰기 잠금을 쥔 채 포털이 뜨면 칸이 안 생긴 채 기동이 '성공' 하고, 그 칸을 읽는 사용자 목록은 요청마다 500,
+    SSO 원장 쓰기는 로그인마다 실패한다(재기동할 때까지). 못 더했으면 여기서 던진다 — 기동이 멈추고 start.sh 가 로그 끝을 보인다."""
+    import app.auth.user_store as mod
+
+    db = tmp_path / "u.sqlite"
+    # 지금 박스들의 원장 모양 — 표는 전부 있고(허가 요청·연결·확인함 포함) users 에 dept_id·sabun 만 아직 없다.
+    # users 표만 있는 파일로는 이 결함이 안 보인다: 없는 표를 만드는 쓰기가 먼저 잠금에 걸려 (삼키지 않는 자리에서) 던진다.
+    UserStore(Settings(_env_file=None, user_store_path=str(db)))._conn.close()
+    seed = sqlite3.connect(str(db))
+    for col in ("sabun", "dept_id"):
+        seed.execute(f"ALTER TABLE users DROP COLUMN {col}")
+    seed.execute("INSERT INTO users (email, name, groups, status, auth_source, created_at, affiliation) "
+                 "VALUES ('boss@corp.com', '관리자', '[\"portal-admin\"]', 'active', 'local', 1700000000, 'CAEG')")
+    seed.commit()
+    seed.close()
+    assert not {"dept_id", "sabun"} & set(_dump(db)["boss@corp.com"]), "전제 — 두 칸이 없는 원장"
+    real = sqlite3.connect
+    monkeypatch.setattr(mod.sqlite3, "connect", lambda path, **kw: real(path, timeout=0.05, **kw))   # 잠금 대기를 짧게
+    other = real(str(db))
+    other.execute("BEGIN IMMEDIATE")                  # 다른 프로세스가 쓰는 중
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            UserStore(Settings(_env_file=None, user_store_path=str(db)))
+    finally:
+        other.rollback()
+        other.close()
+    # 잠금이 풀린 뒤 다시 띄우면 칸이 생기고 있던 행은 그대로다
+    store = UserStore(Settings(_env_file=None, user_store_path=str(db)))
+    assert {"dept_id", "sabun"} <= set(_dump(db)["boss@corp.com"]), "다음 기동이 스스로 낫는다"
+    assert store.get("boss@corp.com")["affiliation"] == "CAEG"
+
+
+def test_이미_있는_칸은_여전히_조용히_넘어간다(tmp_path):
+    """좁힌 것은 '이미 있는 칸' 이 아닌 실패뿐이다 — 같은 원장을 두 번 열어도(재기동) 죽지 않는다."""
+    db = tmp_path / "u.sqlite"
+    _old_db(db, columns_added=2)
+    for _ in range(3):
+        UserStore(Settings(_env_file=None, user_store_path=str(db)))
+    assert {"department", "affiliation", "grants", "hub_muted_apps", "changelog_seen", "dept_id", "sabun"} <= set(_dump(db)["boss@corp.com"])
+

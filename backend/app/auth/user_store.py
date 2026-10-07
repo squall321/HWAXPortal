@@ -6,7 +6,6 @@ conv_store 와 같은 패턴(stdlib sqlite3 + threading.Lock). 이메일이 영�
 수단(auth_source)만 갱신한다. 비밀번호는 stdlib scrypt(의존성 無).
 """
 import base64
-import contextlib
 import copy
 import hashlib
 import hmac
@@ -80,28 +79,21 @@ class UserStore:
             "locked_until INTEGER NOT NULL DEFAULT 0)"
         )
         # 부서 — 가입 폼 입력(또는 RA 연동 시 자동 채움). 기존 DB 는 컬럼 추가 마이그레이션.
-        with contextlib.suppress(sqlite3.OperationalError):  # 이미 있으면 무시
-            self._conn.execute("ALTER TABLE users ADD COLUMN department TEXT NOT NULL DEFAULT ''")
+        self._add_column("department", "TEXT NOT NULL DEFAULT ''")
         # 소속·개별 허가 — 권한 계산의 입력(docs/access-control). 소속은 관리자만 정한다 — 부서(자유
         # 텍스트, 본인 입력)와 따로 둔다. 본인이 바꿀 수 있는 값이 권한이 되면 스스로 올릴 수 있다.
-        with contextlib.suppress(sqlite3.OperationalError):
-            self._conn.execute("ALTER TABLE users ADD COLUMN affiliation TEXT NOT NULL DEFAULT ''")
-        with contextlib.suppress(sqlite3.OperationalError):
-            self._conn.execute("ALTER TABLE users ADD COLUMN grants TEXT NOT NULL DEFAULT '[]'")
+        self._add_column("affiliation", "TEXT NOT NULL DEFAULT ''")
+        self._add_column("grants", "TEXT NOT NULL DEFAULT '[]'")
         # 허브에서 끈 앱(게이트웨이 앱 키 JSON 배열) — 본인이 고른다. 도구를 **덜 보게만** 하므로 본인이 바꿔도 되지만
         # 권한(grants)과 섞지 않는다(docs/mcp-app-toggle D-5). 게이트웨이가 개인 MCP 시야에서 숨긴다.
-        with contextlib.suppress(sqlite3.OperationalError):
-            self._conn.execute("ALTER TABLE users ADD COLUMN hub_muted_apps TEXT NOT NULL DEFAULT '[]'")
+        self._add_column("hub_muted_apps", "TEXT NOT NULL DEFAULT '[]'")
         # 업데이트 이력 '본 날짜'(ISO) — 종전엔 브라우저 저장소에만 있어 새 PC·캐시 삭제 뒤 첫 로그인에
         # '마지막으로 보신 뒤' 가 비어 처음 온 사람처럼 다뤄졌다(docs/ui-refresh 단계 4). 앞으로만 간다.
-        with contextlib.suppress(sqlite3.OperationalError):
-            self._conn.execute("ALTER TABLE users ADD COLUMN changelog_seen TEXT NOT NULL DEFAULT ''")
+        self._add_column("changelog_seen", "TEXT NOT NULL DEFAULT ''")
         # 부서 코드(IdP 의 DeptId) — 표시용 department 와 따로 둔다. 한 칸에 받으면 사람이 적은 부서명이 코드로 덮인다(10차 요청 §7).
-        with contextlib.suppress(sqlite3.OperationalError):
-            self._conn.execute("ALTER TABLE users ADD COLUMN dept_id TEXT NOT NULL DEFAULT ''")
+        self._add_column("dept_id", "TEXT NOT NULL DEFAULT ''")
         # 사번(IdP 의 Sabun) — 정지를 이메일뿐 아니라 사번으로도 본다(disabled_by_sabun). 이메일이 바뀌어도 같은 사람이다(10차 요청 §6).
-        with contextlib.suppress(sqlite3.OperationalError):
-            self._conn.execute("ALTER TABLE users ADD COLUMN sabun TEXT NOT NULL DEFAULT ''")
+        self._add_column("sabun", "TEXT NOT NULL DEFAULT ''")
         # 허가 요청 — 사용자가 내 권한 페이지에서 보내고 관리자가 승인·거절한다.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS access_requests ("
@@ -124,6 +116,18 @@ class UserStore:
             "id TEXT PRIMARY KEY, by TEXT NOT NULL, at INTEGER NOT NULL)"
         )
         self._commit()
+
+    def _add_column(self, name: str, decl: str) -> None:
+        """users 표에 칸을 더한다 — **이미 있는 칸만** 조용히 넘어간다(재기동마다 지나는 자리다).
+
+        종전엔 `OperationalError` 를 통째로 삼켰다. 그 예외에는 'database is locked' 도 있다 — 다른 프로세스가 쓰기 잠금을 쥔 채
+        포털이 뜨면 칸이 안 생긴 채 기동이 성공하고, 그 칸을 읽는 사용자 목록은 요청마다 500, SSO 원장 쓰기는 로그인마다 실패한다
+        (재기동할 때까지). 못 더했으면 던진다 — 기동이 멈추고 start.sh 가 인스턴스 로그 끝을 보인다. 다시 띄우면 스스로 낫는다."""
+        try:
+            self._conn.execute(f"ALTER TABLE users ADD COLUMN {name} {decl}")  # noqa: S608 — 칸 이름·선언은 이 파일의 고정 문자열
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
 
     def _commit(self) -> None:
         """쓰기 확정 — 행 캐시도 함께 버린다. 쓰기가 이 함수를 안 거치면 캐시가 낡은 권한을
