@@ -72,6 +72,16 @@ async def lifespan(app: FastAPI):
     app.state.downstream_issuer = JwtDownstreamIssuer(settings, app.state.keystore)
     app.state.token_store = TokenStore(settings)
     app.state.user_store = UserStore(settings)
+    # 활성 관리자가 0명인 채 뜨는 것을 조용히 두지 않는다. 관리자는 원장의 표지와 PORTAL_ADMIN_EMAILS 만 본다(D-3) — 관리자를 IdP
+    # 그룹으로 받던 박스(mock·oidc)는 그 판정으로 올라온 순간 관리자 화면을 열 사람이 없어지는데, 첫 증상이 '메뉴가 사라졌다' 였고
+    # 로그·/health/ready·update-all 어디에도 흔적이 없었다. 막지는 않는다(로그인·챗은 된다). 주소는 싣지 않는다.
+    # /health/ready 는 이 값을 기동 때가 아니라 요청 때 다시 센다(routes_health) — 재기동 없이 풀리는 상태다.
+    try:
+        if app.state.user_store.no_active_admin(settings.portal_admin_email_set):
+            _log.critical("활성 관리자 0명 [no_active_admin] — 원장에 사람은 있는데 관리자 화면을 열 사람이 없다. 관리자로 둘 사람의 "
+                          "로그인 이메일을 PORTAL_ADMIN_EMAILS(infra/.env)에 적고 포털을 다시 띄운다(mock 박스면 MOCK_USER_EMAIL 의 주소)")
+    except Exception:  # noqa: BLE001 — 세지 못해도 기동은 종전대로 간다
+        _log.warning("활성 관리자 수를 원장에서 세지 못했다", exc_info=True)
     # 소속·허가 정책(access.yaml) — 요청마다 권한을 계산하는 입력(docs/access-control).
     app.state.access = AccessPolicy(settings)
     # SSO 기본 소속(SSO_DEFAULT_AFFILIATION) — 표에 없는 값이면 적용되지 않고, 전권 소속이면 IdP 를 통과한 누구나 전권이다.

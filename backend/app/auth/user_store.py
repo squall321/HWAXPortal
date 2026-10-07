@@ -182,6 +182,18 @@ class UserStore:
             return self._conn.execute(
                 "SELECT COUNT(*) FROM users WHERE pw_hash IS NOT NULL").fetchone()[0]
 
+    def no_active_admin(self, pinned: frozenset[str] = frozenset()) -> bool:
+        """원장에 사람은 있는데 관리자 화면을 열 사람이 없나 — 관리자를 IdP 그룹으로 받던 박스(mock·oidc)가 원장 전용 판정
+        (docs/change-request-8-10 D-3)으로 올라온 직후가 이 모양이다. 관리자 지정은 관리자만 할 수 있어 화면으로는 못 푼다.
+        세는 법은 set_admin·suspend 의 '마지막 관리자' 보호와 같다 — **활성 행**의 표지 또는 고정 목록(pinned). 목록에만 있고 원장에
+        행이 없는 주소는 세지 않는다.
+        빈 원장은 '아니다' 로 답한다 — 처음 뜬 박스는 아직 아무도 들어오지 않았다(첫 관리자는 부트스트랩 가입이나 고정 목록의 첫
+        로그인으로 생긴다). 그것까지 알리면 새 박스마다 뜨는 소음이 된다."""
+        with self._lock:
+            total = self._conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            rows = self._conn.execute("SELECT email, groups FROM users WHERE status = 'active'").fetchall()
+        return total > 0 and not any(ADMIN_GROUP in json.loads(g or "[]") or e in pinned for e, g in rows)
+
     # ── 가입·승인 ───────────────────────────────────────────────────────────
     def signup(self, *, email: str, name: str, password: str,
                bootstrap_admins: list[str], department: str = "") -> dict:

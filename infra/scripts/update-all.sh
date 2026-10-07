@@ -1406,6 +1406,15 @@ probe "nginx          :8088" http://127.0.0.1:8088/health 1 "200"
 probe "agent-server   :9009" http://127.0.0.1:9009/health 1 "200"
 probe "gateway        :9110" http://127.0.0.1:9110/health 1 "200"
 probe "aidh           :8001" http://127.0.0.1:8001/api/system/health 0 "200"
+# ── 관리자 화면을 열 사람이 있는가 — 포털 /health/ready 의 temporary 에 no_active_admin 이 실리면 0명이다 ─────────────────────
+# 관리자는 원장의 표지와 PORTAL_ADMIN_EMAILS 만 본다(docs/change-request-8-10 D-3). 관리자를 IdP 그룹으로 받던 박스(mock·oidc)는 이
+# 배포로 올라온 순간 관리자 화면을 열 사람이 없어지는데, 위 프로브는 전부 초록이고 배선 설정은 관리자에게만 보인다 — 아무도 모른다.
+# **경고**다(bad) — 로그인·챗은 되는 박스라 배포 판정(FAIL)은 건드리지 않는다. 포털이 안 떴거나 응답을 못 읽으면 조용하다
+# (위 프로브가 이미 말했다 — 여기서 '0명' 을 지어내지 않는다). 본문은 환경변수로 넘긴다(파이프는 pipefail 아래서 판정을 흔든다).
+_rdy="$(curl -s -m 4 http://127.0.0.1:8723/health/ready 2>/dev/null || true)"
+if RDY="$_rdy" python3 -c 'import json,os,sys; sys.exit(0 if "no_active_admin" in (json.loads(os.environ["RDY"]).get("temporary") or []) else 1)' 2>/dev/null; then
+  bad "포털 관리자      활성 관리자 0명 — 관리자 화면을 열 사람이 없다(원장에 사람은 있다). infra/.env 의 PORTAL_ADMIN_EMAILS 에 관리자로 둘 사람의 로그인 이메일을 적고 포털을 다시 띄운다(비치명)"
+fi
 # ── 내부 목적지가 프록시를 타지 않는가(9차 요청 §4-(4)) — 이 셸의 NO_PROXY 가 이번 실행이 띄운 서비스가 물려받은 값이다 ──────
 # RA·ARP 는 1g 가 더했다. 그 밖에 이 박스가 부르는 다른 서버(라우트의 원격 호스트 · TestScope)가 빠져 있으면 그 호출만 사내 프록시로
 # 새 상대의 IP 허용목록에 걸린다 — 기능 하나가 403·Connection error 인데 위 프로브는 전부 초록이다. 목적지는 check-egress.sh 가
