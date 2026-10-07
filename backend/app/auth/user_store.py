@@ -224,24 +224,36 @@ class UserStore:
             self._commit()
             return cur.rowcount > 0
 
-    def suspend(self, email: str, *, pinned: frozenset[str] = frozenset()) -> str:
-        """정지 — "set"(정지했다) · "missing"(행이 없다) · "last"(이 사람이 마지막 활성 관리자다 — 안 했다).
+    def suspend(self, email: str, *, pinned: frozenset[str] = frozenset(), actor: str = "",
+                by_sabun: bool = False) -> str:
+        """정지 — "set"(정지했다) · "missing"(행이 없다) · "last"(마지막 활성 관리자가 막힌다 — 안 했다) ·
+        "self"(정지하는 사람 자신이 함께 막힌다 — 안 했다).
 
         정지된 관리자는 권한이 0 이다(policy.compute) — 마지막 관리자가 정지되면 관리자 화면을 열 사람이 없고 되돌리는 길이 박스의
         셸뿐이다. 관리자 해제(set_admin)는 그것을 거절하는데 정지는 같은 결과를 내면서 거절하지 않았다.
         판정과 쓰기를 잠금 안에서 한 번에 한다 — 따로 하면 두 관리자가 서로를 동시에 정지할 때 각자 '상대가 남는다' 로 보고 둘 다
         통과한다. 남는 관리자를 세는 법은 set_admin 과 같다(**활성 행**의 표지 또는 고정 목록 pinned). 정지는 고정 목록보다 먼저라
-        고정 관리자도 정지하면 관리자가 아니다 — 그래서 고정 관리자도 마지막이면 거절한다."""
+        고정 관리자도 정지하면 관리자가 아니다 — 그래서 고정 관리자도 마지막이면 거절한다.
+
+        by_sabun(사번을 보는 박스 — SAML_ATTR_SABUN) — 이 쓰기 뒤에는 **같은 사번의 활성 행 전부**가 다음 SSO 로그인에서 거절된다
+        (disabled_by_sabun). 종전엔 대상 행 하나만 세어, 주소가 둘인 관리자가 안 쓰는 쪽 행을 정리 삼아 정지하면 본인·마지막 관리자
+        보호를 지나 제 SSO 로그인을 막았다. 그래서 '함께 막히는 행' 을 한 묶음으로 센다 — 그 안에 정지하는 사람(actor)의 다른 행이
+        있으면 "self", 활성 관리자가 그 묶음 밖에 하나도 안 남으면 "last". 같은 사번이 같은 사람이라는 주장이 아니다(사번이 회사를
+        넘어 유일한지는 확인된 적이 없다 — config 주석) — 콜백이 실제로 막는 범위를 그대로 따를 뿐이다. 빈 사번은 아무와도 묶지 않는다."""
         key = norm_email(email)
         with self._lock:
-            row = self._conn.execute("SELECT groups, status FROM users WHERE email = ?", (key,)).fetchone()
+            row = self._conn.execute("SELECT groups, status, sabun FROM users WHERE email = ?", (key,)).fetchone()
             if row is None:
                 return "missing"
-            if row[1] == "active" and (ADMIN_GROUP in json.loads(row[0] or "[]") or key in pinned):
-                others = self._conn.execute(
-                    "SELECT email, groups FROM users WHERE status = 'active' AND email <> ?", (key,)).fetchall()
-                if not any(ADMIN_GROUP in json.loads(g or "[]") or e in pinned for e, g in others):
-                    return "last"
+            active = self._conn.execute("SELECT email, groups, sabun FROM users WHERE status = 'active'").fetchall()
+            sab = (row[2] or "").strip() if by_sabun else ""
+            hit = {key} | ({e for e, _g, s in active if (s or "") == sab} if sab else set())
+            me = norm_email(actor)
+            if me and me != key and me in hit:
+                return "self"
+            admins = [e for e, g, _s in active if ADMIN_GROUP in json.loads(g or "[]") or e in pinned]
+            if any(e in hit for e in admins) and all(e in hit for e in admins):
+                return "last"
             self._conn.execute("UPDATE users SET status = 'disabled' WHERE email = ?", (key,))
             self._commit()
             return "set"

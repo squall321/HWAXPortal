@@ -247,11 +247,18 @@ async def set_user_status(
         # 종전엔 화면이 본인 줄의 버튼을 숨길 뿐 이 라우트는 그대로 받았다.
         if norm_email(email) == norm_email(admin.email or ""):
             raise AuthError("자기 자신은 정지할 수 없습니다 — 다른 관리자에게 요청하세요", status_code=409)
-        got = store.suspend(email, pinned=settings.portal_admin_email_set)
+        # 사번을 보는 박스에서는 같은 사번의 활성 행이 함께 막힌다(SSO 콜백의 disabled_by_sabun) — 위의 이메일 비교만으로는 본인의
+        # 다른 주소 행을 정지해 제 SSO 로그인을 막는 길이 남는다. 그 셈은 저장소가 잠금 안에서 한다(suspend 주석).
+        got = store.suspend(email, pinned=settings.portal_admin_email_set, actor=admin.email or "",
+                            by_sabun=bool(settings.saml_attr_sabun))
         if got == "missing":
             raise AuthError("not found", status_code=404)
+        if got == "self":
+            raise AuthError("이 계정은 지금 로그인한 관리자와 사번이 같습니다 — 정지하면 본인의 SSO 로그인도 막힙니다. "
+                            "다른 관리자에게 요청하세요", status_code=409)
         if got == "last":
-            raise AuthError("마지막 관리자는 정지할 수 없습니다 — 먼저 다른 활성 사용자를 관리자로 지정하세요", status_code=409)
+            raise AuthError("마지막 관리자는 정지할 수 없습니다(사번이 같은 관리자 계정은 함께 막힙니다) — "
+                            "먼저 다른 활성 사용자를 관리자로 지정하세요", status_code=409)
     elif not store.set_status(email, body.status):
         raise AuthError("not found", status_code=404)
     # ⚠ **정지는 토큰까지 죽인다.** 권한 계산만 막으면(`compute` 가 0개) 서명 자체는

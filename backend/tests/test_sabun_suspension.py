@@ -17,7 +17,7 @@ import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth.cookies import SESSION_COOKIE
+from app.auth.cookies import CSRF_COOKIE, SESSION_COOKIE
 from app.auth.provider import Principal
 from app.auth.user_store import UserStore
 from app.config import Settings, get_settings
@@ -234,3 +234,82 @@ def test_정지_여부를_확인하지_못하면_들여보내지_않는다(box, 
     r = box.sso("a@corp.com", "S0001")
     assert _refused(r) and not box.logged_in(), f"{r.status_code} {r.headers.get('location')}"
     assert box.sso("d@corp.com", None).status_code == 302 and box.logged_in(), "사번이 없는 로그인은 그 판정을 지나지 않는다"
+
+
+# ── 같은 사번의 다른 행을 정지할 때 — 본인·마지막 관리자 보호가 사번까지 본다 ─────────────────────────────────
+# 정지의 본인·마지막 관리자 보호(9e94162)는 이메일 행 하나만 봤다. 그런데 사번을 보는 박스에서는 한 행을 정지하면 **같은 사번의
+# 활성 행 전부**가 다음 SSO 로그인에서 거절된다(위 판정). 주소가 둘인 관리자가 안 쓰는 쪽 행을 정리 삼아 정지하면 — 이 화면에는
+# 삭제가 없어 정지가 유일한 정리다 — 보호를 지나 제 SSO 로그인을 막았다. 마지막 관리자였으면 세션이 끝난 뒤 관리자 화면을 열
+# 사람이 없다.
+def _suspend_as(box, admin_email: str, admin_sabun: str | None, target: str):
+    """그 관리자가 SSO 로 들어와 사용자 관리에서 target 을 정지한다."""
+    assert box.sso(admin_email, admin_sabun).status_code == 302 and box.logged_in()
+    return box.c.post(f"/auth/local/users/{target}/status", json={"status": "disabled"},
+                      headers={"X-CSRF-Token": box.c.cookies.get(CSRF_COOKIE)})
+
+
+def test_주소가_둘인_혼자_남은_관리자가_안_쓰는_주소를_정지하지_못한다(box):
+    """**이 구획의 이유다** — 종전엔 200 이었고, 그 뒤 a@corp.com 의 SSO 로그인이 sso:disabled:sabun 으로 거절됐다."""
+    box.sso("a@corp.com", "S0001"); box.sso("a.old@corp.com", "S0001")
+    box.settings.portal_admin_emails = "a@corp.com,a.old@corp.com"       # 주소가 둘인 사람은 둘 다 적는다(config 주석)
+    r = _suspend_as(box, "a@corp.com", "S0001", "a.old@corp.com")
+    assert r.status_code == 409 and "사번" in r.json()["detail"], r.text
+    assert "S0001" not in r.text, "사번 값은 응답에 싣지 않는다"
+    assert box.store.get("a.old@corp.com")["status"] == "active"
+    assert box.sso("a@corp.com", "S0001").status_code == 302 and box.logged_in(), "관리자가 여전히 SSO 로 들어온다"
+
+
+def test_원장_관리자가_같은_사번의_일반_행을_정지해도_거절한다(box):
+    """대상 행이 관리자가 아니어도 같다 — 종전의 마지막 관리자 셈은 대상 행의 표지만 봐서 이 갈래를 아예 세지 않았다."""
+    box.sso("a@corp.com", "S0001"); box.sso("a.old@corp.com", "S0001")
+    assert box.store.set_admin("a@corp.com", True) == "set"
+    r = _suspend_as(box, "a@corp.com", "S0001", "a.old@corp.com")
+    assert r.status_code == 409 and "사번" in r.json()["detail"], r.text
+    assert box.store.disabled_by_sabun("S0001") is False
+
+
+def test_다른_관리자가_남아_있으면_같은_사번의_행을_정지할_수_있고_그_사람은_사번으로_막힌다(box):
+    """10차 §6 의 설계는 그대로다 — 정지된 사람이 다른 Mail 로 들어오는 길을 막는 것. 거절하는 것은 본인과 마지막 관리자뿐이다."""
+    box.sso("a@corp.com", "S0001"); box.sso("a.old@corp.com", "S0001"); box.sso("boss@corp.com", "S0009")
+    for admin in ("a@corp.com", "boss@corp.com"):
+        assert box.store.set_admin(admin, True) == "set"
+    r = _suspend_as(box, "boss@corp.com", "S0009", "a.old@corp.com")
+    assert r.status_code == 200, r.text
+    assert _refused(box.sso("a@corp.com", "S0001")) and box.last("a@corp.com")["detail"] == "sso:disabled:sabun"
+
+
+def test_사번을_보지_않는_박스에서는_종전_그대로_정지된다(box):
+    """꺼져 있으면 같은 사번의 행이 함께 막히지 않는다 — 막을 이유가 없다."""
+    box.sso("a@corp.com", "S0001"); box.sso("a.old@corp.com", "S0001")
+    box.store.set_admin("a@corp.com", True)
+    box.settings.saml_attr_sabun = ""
+    r = _suspend_as(box, "a@corp.com", None, "a.old@corp.com")
+    assert r.status_code == 200, r.text
+    assert box.sso("a@corp.com", "S0001").status_code == 302 and box.logged_in()
+
+
+def test_저장소는_같은_사번의_관리자_행이_함께_막히는_것을_마지막_관리자로_센다(tmp_path):
+    """두 관리자가 서로의 다른 주소를 동시에 정지하는 경합은 라우트의 본인 확인을 지난다 — 판정을 저장소의 잠금 안에서 한다.
+    남는 관리자는 '이 쓰기 뒤에도 SSO 로 들어올 수 있는 활성 관리자' 다."""
+    s = _store(tmp_path)
+    for email, sabun in (("a@x.com", "S0001"), ("a.old@x.com", "S0001"), ("u@x.com", "S0002"), ("none@x.com", None)):
+        s.note_sso_login(email=email, name=None, sabun=sabun)
+    for admin in ("a@x.com", "a.old@x.com"):
+        s.set_admin(admin, True)
+    assert s.suspend("a.old@x.com", by_sabun=True) == "last" and s.get("a.old@x.com")["status"] == "active"
+    assert s.suspend("a.old@x.com", by_sabun=True, actor="a@x.com") == "self"
+    assert s.suspend("a.old@x.com", by_sabun=True, actor="A@X.com ") == "self", "주소는 소문자·공백을 다듬어 견준다"
+    # 본인 행 그 자체는 라우트가 먼저 막는다 — 저장소는 종전 셈(마지막 관리자)으로 답한다
+    assert s.suspend("a@x.com", by_sabun=True, actor="a@x.com") == "last"
+    # 사번이 다른 관리자가 남으면 된다
+    s.set_admin("u@x.com", True)
+    assert s.suspend("a.old@x.com", by_sabun=True, actor="u@x.com") == "set"
+    # 사번이 빈 행은 아무와도 묶이지 않는다(빈 사번끼리 같은 사람으로 보지 않는다)
+    s.note_sso_login(email="none2@x.com", name=None)
+    assert s.suspend("none@x.com", by_sabun=True, actor="none2@x.com") == "set"
+    # 사번을 보지 않으면(기본) 종전과 같다
+    s2 = _store(tmp_path / "off")
+    for email in ("a@x.com", "a.old@x.com"):
+        s2.note_sso_login(email=email, name=None, sabun="S0001")
+    s2.set_admin("a@x.com", True)
+    assert s2.suspend("a.old@x.com", actor="a@x.com") == "set"
