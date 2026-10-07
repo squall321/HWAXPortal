@@ -10,7 +10,7 @@ import {
 } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
-import { conversationEvidence } from './handoff';
+import { conversationEvidence, EVID_ITEMS } from './handoff';
 import { SeatBrowser } from './SeatBrowser';
 import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
 import { ClarifyPanel } from './ClarifyPanel';
@@ -79,7 +79,7 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
     // job 이 바뀌면 다시 뽑는다(무엇을 판단할지가 달라진다). history·derived 는 대화 고정.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job]);
-  // 원천 근거 = 고른 VOC(앞) + 대화 근거, 합쳐 12건 — 화면 수와 실제 실릴 수가 같아야 한다.
+  // 원천 근거 = 고른 VOC(앞) + 대화 근거, 합쳐 포털 상한(EVID_ITEMS)까지 — 화면 수와 실제 실릴 수가 같아야 한다.
   const vocEv = useMemo(() => vocEvidence(voc.picked), [voc.picked]);
   const { droppedConv } = useMemo(() => mergeEvidence(vocEv, evidence), [vocEv, evidence]);
 
@@ -413,10 +413,10 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
 
           <div className="cx-brief-field">
             <span>
-              원천 근거 {Math.min(12, vocEv.length + evidence.length)}건
+              원천 근거 {Math.min(EVID_ITEMS, vocEv.length + evidence.length)}건
               {vocEv.length > 0 && ` (고른 VOC ${vocEv.length} + 대화 ${evidence.length - droppedConv})`} — 검증 대상이지
               결론이 아닙니다
-              {droppedConv > 0 && ` · 대화 근거 ${droppedConv}건은 12건 상한으로 빠집니다`}
+              {droppedConv > 0 && ` · 대화 근거 ${droppedConv}건은 ${EVID_ITEMS}건 상한으로 빠집니다`}
             </span>
             <div className="cx-brief-ev">
               {evidence.map((ev, i) => (
@@ -438,7 +438,7 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
             </button>
             <button type="button" className="cx-brief-go" onClick={confirm} disabled={!topic.trim() || streaming}>
               {JOB_BY_ID[job].name} 심의 시작 · {checked.size}석{mods.size ? ` · 얹을 층 ${mods.size}` : ''} · 근거{' '}
-              {Math.min(12, vocEv.length + evidence.length)}
+              {Math.min(EVID_ITEMS, vocEv.length + evidence.length)}
             </button>
           </div>
 

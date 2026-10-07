@@ -787,7 +787,7 @@ export function ChatProvider({
       apps?: string[];
       trigger?: string;
       extraOpts?: Record<string, unknown>;
-      /** 브리프에서 사람이 고른 추가 원천(예: 'VOC 먼저 보기'). 대화 근거 **앞**에 두고 합쳐 12건. */
+      /** 브리프에서 사람이 고른 추가 원천(예: 'VOC 먼저 보기'). 대화 근거 **앞**에 두고 합쳐 포털 상한(EVID_ITEMS)까지. */
       extraEvidence?: HandoffEvidence[];
     }) => {
       if (streaming) return;
@@ -798,7 +798,7 @@ export function ChatProvider({
         .replace(/^\/(심의|deliberate|토의)\s*/, '')
         .trim();
       if (!topic) return;
-      // 사람이 고른 것(extraEvidence)을 앞에 — DelibOpts.evidence 는 max_length=12 라 넘치면 422 다.
+      // 사람이 고른 것(extraEvidence)을 앞에 — DelibOpts.evidence 의 max_length(EVID_ITEMS)를 넘기면 422 다.
       const { merged: evidence } = mergeEvidence(opts?.extraEvidence ?? [], conversationEvidence(conv));
       const extra: Record<string, unknown> = {};
       if (evidence.length) extra.evidence = evidence;
