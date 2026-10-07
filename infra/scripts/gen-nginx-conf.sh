@@ -26,12 +26,25 @@ mkdir -p "$(dirname "$NGINX_DIR")/data"
 loc_extras() { # $1=id
   case "$1" in
     # report-archive: 첨부 동영상 1GB·AI 작성 최대 10분·스트리밍 응답 — 없으면 413·504·「중단」 불능(RA 요청서 §3-3)
-    ste|apps|heax-hub|report-archive)
+    # odb-hub: ODB++ 수십~수백 MB · MCP streamable-http 스트리밍 · 뷰어 기하 요청 수십 초
+    ste|apps|heax-hub|report-archive|odb-hub)
       cat <<'EOF'
             client_max_body_size 2048m;
             proxy_request_buffering off;
             proxy_buffering off;
             proxy_read_timeout 600s;
+EOF
+      ;;
+    # aireadyportal: 해석결과 업로드 최대 6GB · Abaqus 추출 동기 요청 최대 40분.
+    # ⚠ proxy_request_buffering off 가 핵심이다 — 없으면 6GB 가 /tmp 에 쌓여 디스크를 채운다.
+    # 상한은 **이 location 에서만** 푼다(0 = 무제한). 템플릿의 전역 상한(2048m)을 0 으로 올리면 버퍼링이 켜진 다른 경로
+    # (/agent/ · /mcp-gw/ · 포털 `/` · arm 이 없는 라우트)의 본문도 제한 없이 /tmp 에 쌓인다 — / 파티션이 95% 찬 박스가 있다.
+    aireadyportal)
+      cat <<'EOF'
+            client_max_body_size 0;
+            proxy_request_buffering off;
+            proxy_buffering off;
+            proxy_read_timeout 3600s;
 EOF
       ;;
   esac
