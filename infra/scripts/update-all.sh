@@ -795,13 +795,13 @@ _arp_b="${ARP_BASE:-}"; _arp_t="${ARP_TOKEN:-}"
 if [ -z "$_arp_b" ] && [ -n "$GW_DIR" ]; then _arp_b="$(_envfile_value "$GW_DIR/provision.env" ARP_BASE)"; fi
 if [ -z "$_arp_t" ] && [ -n "$GW_DIR" ]; then _arp_t="$(_envfile_value "$GW_DIR/provision.env" ARP_TOKEN)"; fi
 if [ -n "$_arp_b" ] && [ -z "$_arp_t" ]; then
-  hwax_skip "ARP MCP 도구(챗의 AI Ready Portal)" "ARP 주소는 있는데 ARP_TOKEN 이 없어 게이트웨이가 arp 백엔드를 등재하지 않는다(ARP 는 2026-10-01 부터 인증이 켜져 있다)" "ARP 담당에게 MCP 서비스 토큰을 받아 HWAXMcpGateway/provision.env 에 ARP_TOKEN=<값> 을 적고 재실행(§5 가 재프로비저닝한다)"
+  hwax_skip "ARP MCP 도구(챗의 AI Ready Portal)" "ARP 주소는 있는데 ARP_TOKEN 이 없어 게이트웨이가 arp 백엔드를 등재하지 않는다(ARP 는 2026-10-01 부터 인증이 켜져 있다 — 토큰 없이 등재된 옛 항목이 config 에 남아 있으면 §5 가 걷어낸다)" "ARP 담당에게 MCP 서비스 토큰을 받아 HWAXMcpGateway/provision.env 에 ARP_TOKEN=<값> 을 적고 재실행(§5 가 재프로비저닝한다)"
 fi
 unset _arp_t
 # SmartTwinMCP(해석 잡 제출·후처리·수집 도구) — 게이트웨이는 주소가 **설정된** 박스에서만 smart-twin-mcp 를 등재한다
 # (docs/change-request-8-10 D-4): provision.env 의 SMARTTWIN_MCP_URL, 또는 지금 config 에 든 **기본값이 아닌** 주소.
 # 기본값(같은 박스 :5013)은 설정이 아니라 옛 프로비저너가 무조건 박던 값이다 — cae00 은 그 포트를 듣는 것이 없어 가짜 DOWN 이
-# 계속 떠 있었고(2026-10-01·10-08 실측), 게이트웨이는 다음 재프로비저닝에서 그 항목을 뺀다.
+# 계속 떠 있었고(2026-10-01·10-08 실측), 게이트웨이는 다음 재프로비저닝에서 그 항목을 뺀다(그 재프로비저닝은 §5 의 _gw_stale 이 당긴다).
 # ⚠ 이 조건은 게이트웨이 provision-config.sh 의 등재 조건과 **글자까지 같아야 한다**. 여기만 기대하면 매 실행 재프로비저닝이
 #   헛돌고, 여기만 기대하지 않으면 주소를 적은 박스(dev)에서 config 에서 빠져도 초록이다.
 _ST_DEFAULT="http://127.0.0.1:5013/mcp"
@@ -814,7 +814,7 @@ SMARTTWIN_EXPECTED=0
 if [ -n "${SMARTTWIN_MCP_URL:-}" ] || { [ -n "$_st_cfg" ] && [ "$_st_cfg" != "$_ST_DEFAULT" ]; }; then
   SMARTTWIN_EXPECTED=1
 elif [ -n "$_st_cfg" ]; then
-  hwax_skip "SmartTwinMCP 도구(해석 잡 제출·후처리)" "게이트웨이 config 에 옛 기본 주소로만 등재돼 있다($_ST_DEFAULT) — 설정한 주소가 아니라서 다음 재프로비저닝에서 이 백엔드가 빠진다" "이 박스에서 SmartTwinMCP 를 쓰면 HWAXMcpGateway/provision.env 에 SMARTTWIN_MCP_URL=<SmartTwinMCP 주소>(같은 박스면 $_ST_DEFAULT) 를 적는다"
+  hwax_skip "SmartTwinMCP 도구(해석 잡 제출·후처리)" "게이트웨이 config 에 옛 기본 주소로만 등재돼 있다($_ST_DEFAULT) — 설정한 주소가 아니다. 그 주소에 듣는 것이 없으면 §5 가 이번 실행에서 걷어내고(가짜 DOWN), 듣고 있으면 그대로 두되 다음 재프로비저닝에서 이 백엔드가 빠진다" "이 박스에서 SmartTwinMCP 를 쓰면 HWAXMcpGateway/provision.env 에 SMARTTWIN_MCP_URL=<SmartTwinMCP 주소>(같은 박스면 $_ST_DEFAULT) 를 적는다"
 else
   hwax_skip "SmartTwinMCP 도구(해석 잡 제출·후처리)" "게이트웨이 provision.env 에 SMARTTWIN_MCP_URL 이 없어 게이트웨이가 smart-twin-mcp 를 등재하지 않는다(띄운 적 없는 박스가 보통이다)" "SmartTwinMCP 를 쓰는 박스는 HWAXMcpGateway/provision.env 에 SMARTTWIN_MCP_URL=<SmartTwinMCP 주소> 를 적고 재실행(§5 가 재프로비저닝한다)"
 fi
@@ -955,6 +955,46 @@ raise SystemExit(0 if ((arp.get("headers") or {}).get("Authorization") or "") !=
 PY
 }
 
+# 걷어낼 옛 항목 — 게이트웨이가 재프로비저닝 때 **빼는** 관리 키 둘이 config 에 남아 있나. 기대 목록(calc_missing)과 드리프트 판정들은
+# '있어야 할 것이 없다·다르다' 만 본다. **없어야 할 것이 남은** 박스에는 방아쇠가 없었다 — #10·#11 이 겨냥한 그 박스(cae00)에서 반영 뒤에도
+# 재프로비저닝이 한 번도 안 돌아 가짜 DOWN 둘(arp 401 · smart-twin-mcp 연결 실패)이 그대로였고, 매 실행 "다운 백엔드 … *_MCP_URL 을
+# 명시하고 --force" 라는 거꾸로 된 안내가 붙었다(그 주소를 적으면 가짜 DOWN 이 기대값으로 굳는다).
+#   smart-twin-mcp — SMARTTWIN_MCP_URL 이 없고 config 의 주소가 옛 기본값이며 **그 주소에 듣는 것이 없을 때**. 듣고 있으면(주소를 안 적은
+#     dev 가 그렇게 돈다) 가짜 DOWN 이 아니다 — 여기서 걷어내면 update-all 이 멀쩡한 도구 18종을 제 손으로 뺀다. /health 가 아니라 그
+#     주소를 직접 찔러 본다(§4 가 게이트웨이를 막 다시 띄웠으면 /health 는 잠깐 false 다).
+#   arp — ARP_TOKEN 이 없고 config 의 arp 가 Authorization 없이 등재돼 있을 때(옛 프로비저너의 모양 — ARP 는 2026-10-01 부터 인증이다).
+#     ARP 주소(ARP_BASE)가 provision.env·1f 어디에도 없으면 걷어내지 않고 `arp-keep` 으로 알리기만 한다 — 게이트웨이는 주소를 직전
+#     config 의 그 항목에서 잇는다. 유일한 사본을 빼면 나중에 토큰을 적어도 arp 가 등재되지 않는다.
+# ⚠ 옆의 provision-config.sh 가 **그 항목을 빼는 판일 때만** 낸다(조건식의 글자를 본다). update-sites 가 게이트웨이를 못 당긴 박스의
+#   옛 프로비저너는 둘 다 되살린다 — 방아쇠를 당기면 매 실행 재프로비저닝이 헛돌고 게이트웨이·에이전트서버가 그때마다 내려갔다 올라온다.
+# ⚠ config 는 **부를 때마다 다시 읽는다** — §5 앞에서 읽어 둔 _st_cfg 는 재프로비저닝 뒤에도 옛 주소다(재검증에 쓰면 방금 걷어낸
+#   항목을 '남았다' 고 한다). 토큰·주소는 넘기지 않는다(있고 없음만).
+_gw_stale() {  # $1=gateway_config.json $2=provision-config.sh → 걷어낼 키(공백 구분 — arp-keep 은 알리기만). 판정할 수 없으면 빈 값.
+  local k cand out=""
+  cand="$(ST_ENV="${SMARTTWIN_MCP_URL:+1}" ST_DEFAULT="$_ST_DEFAULT" ARP_T="${ARP_TOKEN:+1}" ARP_B="${ARP_BASE:+1}" python3 - "$1" <<'PY' 2>/dev/null || true
+import json, os, sys
+try: d = json.load(open(sys.argv[1]))
+except Exception: raise SystemExit(0)
+out = []
+st = d.get("smart-twin-mcp")
+if not os.environ.get("ST_ENV") and isinstance(st, dict) and st.get("url") == os.environ["ST_DEFAULT"]:
+    out.append("smart-twin-mcp")
+arp = d.get("arp")
+if not os.environ.get("ARP_T") and isinstance(arp, dict) and arp.get("url") and not (arp.get("headers") or {}).get("Authorization"):
+    out.append("arp" if os.environ.get("ARP_B") else "arp-keep")
+print(" ".join(out))
+PY
+)"
+  for k in $cand; do
+    case "$k" in
+      smart-twin-mcp) grep -qF '_ST_PREV != _ST_DEFAULT' "$2" 2>/dev/null && [ "$(http_code "$_ST_DEFAULT" 3)" = "000" ] || continue ;;
+      arp|arp-keep)   grep -qF 'if _ARP_BASE and _ARP:' "$2" 2>/dev/null || continue ;;
+    esac
+    out="${out:+$out }$k"
+  done
+  printf '%s' "$out"
+}
+
 if [ -z "$H" ]; then
   bad "게이트웨이 :9110 무응답/판정불가 — $SVC up mcp-gateway 후 재시도"
 else
@@ -1088,6 +1128,19 @@ PY
     echo "  · 토큰 드리프트: arp — 게이트웨이 config 의 arp 가 provision.env 의 ARP_TOKEN 을 싣고 있지 않다(토큰 없이 등재됐거나 토큰을 바꿨다)"
     case " $MISSING " in *" arp "*) ;; *) MISSING="${MISSING:+$MISSING }arp" ;; esac
   fi
+  # 걷어낼 옛 항목(위 _gw_stale) — 키가 있으니 calc_missing 은 '빠짐 없음' 이고, 기대하지 않는 박스라 위의 어느 드리프트 판정도 보지
+  # 않는다. 한 번 재프로비저닝하면 그 항목이 사라져 다음 실행부터 조용하다. 기대 목록(calc_missing 의 want)에는 넣지 않는다 — 게이트웨이가
+  # 등재하지 않을 것을 기대하면 매 실행 헛돈다(docs/change-request-8-10 D-4·D-5).
+  if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] && [ -f "$GW_DIR/provision-config.sh" ]; then
+    for _k in $(_gw_stale "$GW_DIR/gateway_config.json" "$GW_DIR/provision-config.sh"); do
+      if [ "$_k" = arp-keep ]; then
+        echo "  · 옛 항목 arp(토큰 없이 등재)는 걷어내지 않는다 — ARP 주소가 게이트웨이 config 에만 있어 빼면 주소까지 잃는다. infra/.env 에 ARP_HOST 를 적으면(1f 가 ARP_BASE 를 적는다) 다음 실행이 걷어낸다"
+        continue
+      fi
+      echo "  · 옛 항목 걷어내기: $_k — 게이트웨이가 더는 등재하지 않는 항목이 config 에 남아 가짜 DOWN 을 낸다"
+      MISSING="${MISSING:+$MISSING }${_k}_stale"
+    done
+  fi
   # ste 사용자 위임 — 게이트웨이 config 에 없거나 시크릿이 infra/.env 와 다르면 재프로비저닝(docs/ste-cae00 D-30).
   # 키(ste)는 있으니 calc_missing 이 못 잡는다. 위임이 한 번 빠지면(예: heax 토큰 자동 발급 실패로 옛 provision 이 통째로 생략)
   # 게이트웨이가 ste 를 토큰 없이 불러 REST 가 401 인 채 남았다 — 도구는 "Error executing tool …", 점검은 전부 초록.
@@ -1183,6 +1236,10 @@ PY
         if [ -n "${ARP_TOKEN:-}" ] && [ -n "${ARP_BASE:-}" ] && _arp_token_drift "$GW_DIR/gateway_config.json"; then
           STILL="${STILL:+$STILL }arp(토큰 미반영 — 게이트웨이 리포가 ARP_TOKEN 을 싣는 판인지 보라)"
         fi
+        # 걷어낼 옛 항목도 calc_missing 이 못 본다(키가 **남은** 것이라) — 재프로비저닝 뒤에도 남았으면 말한다. 조용하면 매 실행 헛돈다.
+        for _k in $(_gw_stale "$GW_DIR/gateway_config.json" "$GW_DIR/provision-config.sh"); do
+          [ "$_k" = arp-keep ] || STILL="${STILL:+$STILL }$_k(옛 항목이 남았다)"
+        done
         # 사람별 위임도 calc_missing 이 못 본다 — 재프로비저닝 뒤에도 어긋나 있으면 여기서 잡는다.
         _sso_left="$(_sso_deleg_drift "$GW_DIR/gateway_config.json")"
         # 주소가 없어 만들지 못하는 일반 앱(…_sso_nourl)은 위에서 이미 알렸다 — 재프로비저닝이 고칠 수 없는 것을 '누락' 으로 다시 세지 않는다.

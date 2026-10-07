@@ -421,3 +421,182 @@ def test_기대_조건이_게이트웨이의_등재_조건과_같다(tmp_path, e
     missing, _ = _expect(tmp_path, have=BASE, gw_config=cfg,
                          prov_env=None if env_url is None else f"SMARTTWIN_MCP_URL={env_url}\n")
     assert (ST_NAME in missing) is registers, (env_url, prev_url, expr)
+
+
+# ── #10·#11 의 뒷면 — 게이트웨이가 **빼는** 옛 항목이 config 에 남은 박스 ─────────────────────────────────────────
+# 기대 목록과 드리프트 판정은 '있어야 할 것이 없다·다르다' 만 본다. 옛 기본 주소의 smart-twin-mcp 와 토큰 없는 arp 가 남은 박스
+# (#10·#11 이 겨냥한 cae00)에서는 기대하지 않으므로 방아쇠가 없어, 반영 뒤에도 재프로비저닝이 한 번도 안 돌고 가짜 DOWN 둘이
+# 그대로였다 — 매 실행 "다운 백엔드 … *_MCP_URL 을 명시하고 --force" 라는 거꾸로 된 안내와 함께.
+_NEW_GW = "_ST_URL = e.get(X) or (_ST_PREV if _ST_PREV != _ST_DEFAULT else None)\nif _ARP_BASE and _ARP:\n    pass\n"
+_OLD_GW = 'cfg["smart-twin-mcp"] = {"url": _url("SMARTTWIN_MCP_URL", 5013)}\nif _ARP_BASE:\n    pass\n'
+_STALE_CFG = {ST_NAME: {"url": ST_DEFAULT, "transport": "streamable_http"}, **{"arp": {"url": "http://203.0.113.20:3001/mcp"}}}
+_ARP_BASE_ENV = "ARP_BASE=http://203.0.113.20:3001\n"
+
+
+def _stale_box(tmp_path: Path, cfg, prov: str | None) -> Path:
+    gw = tmp_path / "gw"; gw.mkdir(parents=True, exist_ok=True)
+    f = gw / "gateway_config.json"
+    if cfg is None:
+        f.unlink(missing_ok=True)
+    else:
+        f.write_text(cfg if isinstance(cfg, str) else json.dumps(cfg))
+    if prov is None:
+        (gw / "provision-config.sh").unlink(missing_ok=True)
+    else:
+        (gw / "provision-config.sh").write_text(prov)
+    return gw
+
+
+def _stale_script(gw: Path, env: str, http: str, body: str) -> str:
+    return "\n".join([
+        "set -uo pipefail", f'GW_DIR="{gw}"', _between('_ST_DEFAULT="', "\n"), env,
+        f'http_code() {{ printf "%s\\n" "$1" >> "{gw}/probed"; printf "%s" "{http}"; }}',
+        _fn("_gw_stale"), body,
+    ])
+
+
+def _stale_trigger(tmp_path: Path, cfg, *, env: str = _ARP_BASE_ENV, prov: str | None = _NEW_GW, http: str = "000",
+                   missing: str = "") -> tuple[str, str]:
+    """§5 의 '걷어낼 옛 항목' 블록을 원문 그대로 돌린다 — (그 뒤의 MISSING, 화면 출력)."""
+    gw = _stale_box(tmp_path, cfg, prov)
+    script = _stale_script(gw, env, http, "\n".join([
+        f'MISSING="{missing}"', _between("  # 걷어낼 옛 항목(위 _gw_stale)", "\n  fi\n"),
+        "printf 'MISSING=[%s]\\n' \"$MISSING\""]))
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    line = [ln for ln in r.stdout.splitlines() if ln.startswith("MISSING=[")]
+    return line[0][len("MISSING=["):-1], r.stdout
+
+
+def test_옛_항목이_남은_박스에서_재프로비저닝이_한_번_돈다(tmp_path):
+    """**이 구획의 이유다** — §5 가 '무엇을 재프로비저닝할지' 정하는 줄들(calc_missing 부터 그 판정 직전까지)을 원문 그대로 돌린다.
+    종전엔 이 박스에서 MISSING 이 비어 '✓ config 정합' 이었다."""
+    gw = _stale_box(tmp_path, _STALE_CFG, _NEW_GW)
+    i = UA.index('  MISSING="$(calc_missing "$H")"')
+    span = UA[i:UA.index('  if [ -n "$MISSING" ]; then\n    echo "  · config에 없거나', i)]
+    script = _stale_script(gw, _ARP_BASE_ENV, "000", "\n".join([
+        f'SELF_REPO="{tmp_path}/HWAXPortal"; H="{{}}"; FAIL=0',
+        'fail() { echo "FAIL:$*"; }; bad() { echo "BAD:$*"; }; ok() { echo "OK:$*"; }',
+        "find_repo() { printf ''; }; calc_missing() { printf ''; }",
+        _fn("_sso_generic_pairs"), _fn("_sso_generic_names"), _fn("_sso_deleg_drift"), _fn("_arp_token_drift"),
+        span, "printf 'MISSING=[%s]\\n' \"$MISSING\""]))
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
+    assert r.returncode == 0 and "unbound variable" not in r.stderr, r.stderr
+    assert f"MISSING=[{ST_NAME}_stale arp_stale]" in r.stdout, r.stdout
+    assert r.stdout.count("옛 항목 걷어내기") == 2 and "FAIL:" not in r.stdout
+
+
+def test_옛_항목_방아쇠는_게이트웨이가_빼는_것만_당긴다(tmp_path):
+    missing, out = _stale_trigger(tmp_path / "both", _STALE_CFG)
+    assert missing == f"{ST_NAME}_stale arp_stale" and "203.0.113.20" not in out
+    assert (tmp_path / "both/gw/probed").read_text().split() == [ST_DEFAULT], "옛 기본 주소를 직접 찔러 본다"
+    # 이미 다른 이유로 도는 실행에는 덧붙기만 한다
+    assert _stale_trigger(tmp_path / "more", _STALE_CFG, missing="signalforge")[0] == f"signalforge {ST_NAME}_stale arp_stale"
+    # 주소를 적었거나(기대하는 박스) 기본값이 아닌 주소면 smart-twin-mcp 는 걷어낼 것이 아니다
+    for name, cfg, env in (("env", _STALE_CFG, f"SMARTTWIN_MCP_URL={ST_DEFAULT}\n"),
+                           ("moved", {ST_NAME: {"url": "http://203.0.113.40:5013/mcp"}}, ""),
+                           ("slash", {ST_NAME: {"url": ST_DEFAULT + "/"}}, "")):
+        assert ST_NAME not in _stale_trigger(tmp_path / name, cfg, env=env + _ARP_BASE_ENV)[0], name
+    # 토큰이 실린 arp 는 게이트웨이가 이어받는다. 토큰을 적은 박스는 위 'ARP 토큰' 블록의 몫이다
+    assert _stale_trigger(tmp_path / "carried", _arp_cfg("old-token"))[0] == ""
+    assert _stale_trigger(tmp_path / "token", _arp_cfg(), env=ARP_ENV)[0] == ""
+
+
+def test_옛_기본_주소에_듣는_것이_있으면_smart_twin_mcp_를_걷어내지_않는다(tmp_path):
+    """dev 의 모양 — provision.env 에 주소를 안 적은 채 같은 박스 :5013 에서 SmartTwinMCP 가 돈다. 가짜 DOWN 이 아니다. 여기서
+    방아쇠를 당기면 update-all 이 멀쩡한 도구 18종을 제 손으로 뺀다(주소를 적으라는 ○ 안내만 남긴다)."""
+    for code in ("200", "406", "404"):
+        missing, out = _stale_trigger(tmp_path / code, {ST_NAME: {"url": ST_DEFAULT}}, env="", http=code)
+        assert missing == "" and "걷어내기" not in out, code
+
+
+def test_옆의_게이트웨이가_옛_판이면_옛_항목_방아쇠를_당기지_않는다(tmp_path):
+    """update-sites 가 게이트웨이를 못 당긴 박스 — 옛 프로비저너는 두 항목을 무조건 되살린다. 방아쇠를 당기면 매 실행 재프로비저닝이
+    헛돌고 게이트웨이·에이전트서버가 그때마다 내려갔다 올라온다(되살아나므로 수렴하지 않는다)."""
+    assert _stale_trigger(tmp_path / "old", _STALE_CFG, prov=_OLD_GW)[0] == ""
+    assert _stale_trigger(tmp_path / "none", _STALE_CFG, prov=None)[0] == "", "프로비저너가 없으면 어차피 못 돌린다"
+    half = _NEW_GW.replace("if _ARP_BASE and _ARP:", "if _ARP_BASE:")
+    assert _stale_trigger(tmp_path / "half", _STALE_CFG, prov=half)[0] == f"{ST_NAME}_stale", "키마다 따로 본다"
+
+
+def test_ARP_주소가_config_에만_있으면_토큰_없는_arp_를_걷어내지_않고_알린다(tmp_path):
+    """게이트웨이는 ARP 주소를 env 에서, 없으면 직전 config 의 arp 에서 잇는다. 주소가 provision.env 에 없는 박스에서 그 항목을
+    걷어내면 주소의 유일한 사본이 사라져, 나중에 토큰을 적어도 arp 가 등재되지 않는다."""
+    missing, out = _stale_trigger(tmp_path, _arp_cfg(), env="")
+    assert missing == "" and "걷어내지 않는다" in out and "ARP_HOST" in out and "203.0.113.20" not in out
+
+
+def test_옛_항목_판정은_config_가_없거나_깨져도_죽지_않는다(tmp_path):
+    for n, cfg in enumerate((None, "{깨진 json", {}, {"arp": "str", ST_NAME: "str"}, {"arp": {"url": "x", "headers": "str"}},
+                             {"arp": {"headers": {}}}, [1, 2])):
+        missing, out = _stale_trigger(tmp_path / str(n), cfg)
+        assert missing == "" and out.strip() == "MISSING=[]", (cfg, out)
+
+
+def _gw_would_build(env: dict, prev: dict) -> dict:
+    """게이트웨이 프로비저너의 등재 규칙 둘(원문)을 같은 입력으로 돌려, 재프로비저닝 뒤 config 에 남을 두 키를 만든다."""
+    got = _gateway_rule()
+    if got is None:
+        pytest.skip("옆의 게이트웨이가 아직 smart-twin-mcp 를 무조건 등재하는 판이다")
+    default, expr = got
+    out: dict = {}
+    url = eval(expr, {"__builtins__": {}}, {"e": env, "_ST_PREV": (prev.get(ST_NAME) or {}).get("url"), "_ST_DEFAULT": default})  # noqa: S307
+    if url:
+        out[ST_NAME] = {"url": url}
+    arp = _gateway_arp(env, prev)
+    if arp is not None:
+        out["arp"] = arp
+    return out
+
+
+@pytest.mark.parametrize("st_env", [None, ST_DEFAULT])
+@pytest.mark.parametrize("st_prev", [None, ST_DEFAULT, "http://203.0.113.40:5013/mcp"])
+@pytest.mark.parametrize("arp_env", [{}, {"ARP_BASE": _B}, {"ARP_TOKEN": _T}, {"ARP_BASE": _B, "ARP_TOKEN": _T}],
+                         ids=["없음", "주소만", "토큰만", "둘다"])
+@pytest.mark.parametrize("arp_prev", [None, _arp_cfg(), _arp_cfg("old-token")], ids=["없음", "토큰없이", "토큰있이"])
+def test_옛_항목_방아쇠가_게이트웨이의_등재와_맞물린다(tmp_path, st_env, st_prev, arp_env, arp_prev):
+    """**정본은 게이트웨이다** — 그 등재 규칙을 원문에서 꺼내 같은 입력(env · 직전 config)으로 돌려 맞춰 본다.
+      ① 방아쇠가 '걷어낼 것' 이라 한 키를 게이트웨이는 등재하지 않는다(등재하면 매 실행 재프로비저닝이 헛돈다).
+      ② 게이트웨이가 만든 config 로 다시 판정하면 조용하다(한 번에 수렴한다)."""
+    prev = {**({ST_NAME: {"url": st_prev}} if st_prev else {}), **(arp_prev or {})}
+    env = {**({"SMARTTWIN_MCP_URL": st_env} if st_env else {}), **arp_env}
+    prov_env = "".join(f"{k}={v}\n" for k, v in env.items())
+    real = (ROOT.parent / "HWAXMcpGateway" / "provision-config.sh").read_text(encoding="utf-8")
+    built = _gw_would_build(env, prev)
+    fired = _stale_trigger(tmp_path / "before", prev, env=prov_env, prov=real)[0].split()
+    for token in fired:
+        assert token.removesuffix("_stale") not in built, f"① {token} — 게이트웨이는 이 키를 다시 등재한다"
+    assert _stale_trigger(tmp_path / "after", built, env=prov_env, prov=real)[0] == "", "② 수렴"
+
+
+def test_옛_항목_방아쇠의_판_확인_글자가_옆의_게이트웨이에_있다():
+    """방아쇠는 옆 프로비저너의 조건식 **글자**로 '빼는 판' 인지 본다. 게이트웨이가 그 줄을 고쳐 쓰면 방아쇠가 조용히 꺼진다 —
+    그때 여기서 걸려야 한다."""
+    prov = ROOT.parent / "HWAXMcpGateway" / "provision-config.sh"
+    if not prov.exists():
+        pytest.skip("게이트웨이 리포가 옆에 없다")
+    src = prov.read_text(encoding="utf-8")
+    body = _fn("_gw_stale")
+    literals = re.findall(r"grep -qF '([^']+)'", body)
+    assert len(literals) == 2, body
+    for lit in literals:
+        assert lit in src, f"게이트웨이 프로비저너에 '{lit}' 가 없다 — update-all 의 _gw_stale 과 맞춘다"
+
+
+@pytest.mark.parametrize("cfg,left", [
+    (_STALE_CFG, [f"{ST_NAME}(옛 항목이 남았다)", "arp(옛 항목이 남았다)"]),      # 재프로비저닝이 못 걷어냈다
+    ({}, []),                                                                    # 걷어냈다
+    ({ST_NAME: {"url": ST_DEFAULT}}, [f"{ST_NAME}(옛 항목이 남았다)"]),
+])
+def test_옛_항목이_재프로비저닝_뒤에도_남으면_누락으로_센다(tmp_path, cfg, left):
+    """조용하면 매 실행 재프로비저닝이 헛돌 뿐 아무도 모른다. config 는 **다시 읽는다** — §5 앞에서 읽어 둔 값으로 보면
+    방금 걷어낸 항목을 '남았다' 고 한다."""
+    gw = _stale_box(tmp_path, cfg, _NEW_GW)
+    post = UA[UA.index('STILL="$(calc_missing "$H")"'):UA.index("주소 드리프트 해소")]
+    i = post.index("        # 걷어낼 옛 항목도 calc_missing 이 못 본다")
+    block = post[i:post.index("\n        done\n", i) + len("\n        done\n")]
+    script = _stale_script(gw, _ARP_BASE_ENV, "000", "\n".join([
+        f'STILL="signalforge"; _st_cfg="{ST_DEFAULT}"; SMARTTWIN_EXPECTED=0', block, "printf 'STILL=[%s]\\n' \"$STILL\""]))
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    assert f"STILL=[{' '.join(['signalforge', *left])}]" in r.stdout, r.stdout
