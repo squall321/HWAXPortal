@@ -175,3 +175,57 @@ def test_예시_파일이_두_손잡이를_기본값과_함께_선언한다():
     for key, default in (("NGINX_AGENT_READ_TIMEOUT", "50400s"), ("NGINX_MCP_READ_TIMEOUT", "1h")):
         lines = [ln for ln in example.splitlines() if re.match(rf"^[ \t]*#?[ \t]*{key}=", ln)]
         assert lines == [f"# {key}={default}"], f"{key}: {lines}"
+
+
+# ── update-all 로만 도는 박스 — deploy-all 의 nginx 구획이 생성기의 ✗·⚠ 를 화면에 올린다 ───────────────────────
+def _deploy_all_nginx_block(tmp_path: Path, infra_env: str) -> str:
+    """deploy-all-from-drive.sh 의 nginx 구획을 원문 그대로 돌린다 — 생성기는 실물(임시 리포의 사본), nginx 재기동·health 는 대역."""
+    deploy = (ROOT / "infra/scripts/deploy-all-from-drive.sh").read_text(encoding="utf-8")
+    i = deploy.index('  NG_LOG="$(mktemp)"'); j = deploy.index('  rm -f "$NG_LOG"\n', i) + len('  rm -f "$NG_LOG"\n')
+    repo = tmp_path / "HWAXPortal"
+    (repo / "infra/scripts").mkdir(parents=True); (repo / "infra/nginx").mkdir(); (repo / "backend/config").mkdir(parents=True)
+    for f in ("gen-nginx-conf.sh", "_common.sh"):
+        shutil.copy(ROOT / "infra/scripts" / f, repo / "infra/scripts" / f)
+    shutil.copy(ROOT / "infra/nginx/hwax.conf.tmpl", repo / "infra/nginx/hwax.conf.tmpl")
+    (repo / "infra/.env").write_text("HTTP_PORT=8088\nPORTAL_PORT=8723\n" + infra_env)
+    (repo / "backend/config/routes.env").write_text("ai-data-hub=http://127.0.0.1:8001/\n")
+    script = "\n".join([
+        "set -euo pipefail", f'PORTAL_DIR="{repo}"', 'ok() { echo "OK:$*"; }; skip() { echo "SKIP:$*"; }',
+        "_envv() { echo 8088; }; _ngfp() { echo fp; }; hwax_restart_cycle() { return 0; }; curl() { printf 200; }",
+        deploy[i:j], "echo end"])
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
+                       env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)})
+    assert r.returncode == 0 and "end" in r.stdout, r.stdout + r.stderr
+    return r.stdout + r.stderr
+
+
+def test_update_all_로_도는_박스에서도_버린_손잡이_값이_화면에_나온다(tmp_path):
+    """deploy-all 은 생성기의 출력을 임시 파일로 받고, conf 가 만들어지면 그 파일을 지웠다 — update-all 로만 도는 박스(cae00)에서는
+    '값을 버리고 기본값으로 만들었다' 와 '침묵 한도의 순서가 뒤집혔다' 가 한 번도 화면에 안 나온다."""
+    out = _deploy_all_nginx_block(tmp_path / "bad", "NGINX_AGENT_READ_TIMEOUT=0\n")
+    assert "OK:nginx reloaded" in out
+    assert any("✗" in ln and "NGINX_AGENT_READ_TIMEOUT" in ln and "기본값" in ln for ln in out.splitlines()), out
+    out = _deploy_all_nginx_block(tmp_path / "order", "NGINX_AGENT_READ_TIMEOUT=1h\n")
+    assert any("⚠" in ln and "AGENT_STREAM_IDLE_TIMEOUT_S" in ln for ln in out.splitlines()), out
+
+
+def test_알릴_것이_없는_박스의_출력은_종전_그대로다(tmp_path):
+    out = _deploy_all_nginx_block(tmp_path, "")
+    assert [ln for ln in out.splitlines() if ln.strip()] == ["OK:nginx reloaded with current routes (/health → 200)", "end"], out
+
+
+def test_backend_env_를_못_읽어도_conf_는_만들어진다(tmp_path):
+    """순서 알림은 참고다 — 포털 값을 읽다 실패했다고 생성이 죽으면(set -e·pipefail) 정문 conf 가 안 만들어진다."""
+    repo = tmp_path / "HWAXPortal"
+    conf, out = _generate(tmp_path, backend_env="AGENT_STREAM_IDLE_TIMEOUT_S=90000\n")
+    env_file = repo / "backend/.env"
+    env_file.chmod(0o000)
+    try:
+        if os.access(env_file, os.R_OK):
+            pytest.skip("권한을 무시하는 사용자(root)로 돈다")
+        r = subprocess.run(["bash", str(repo / "infra/scripts/gen-nginx-conf.sh")], capture_output=True, text=True, timeout=60,
+                           env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)})
+    finally:
+        env_file.chmod(0o600)
+    assert r.returncode == 0 and "generated" in r.stdout, r.stdout + r.stderr
+    assert not _order_warning(r.stdout + r.stderr), "못 읽으면 기본값(46800초)으로 견준다 — 기본 nginx 값은 그보다 크다"

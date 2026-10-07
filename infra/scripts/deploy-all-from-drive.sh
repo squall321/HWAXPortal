@@ -475,6 +475,9 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
     tail -12 "$NG_LOG" | sed 's/^/      /'
   elif [ "${NG_CODE:-000}" = "200" ]; then
     ok "nginx reloaded with current routes (/health → 200)"
+    # conf 는 만들어졌어도 생성기가 남긴 ✗·⚠ 는 사람이 봐야 한다(모양이 틀려 버린 NGINX_*_READ_TIMEOUT · 침묵 한도의 순서가 뒤집혔다 ·
+    # 중복 라우트). 이 갈래는 NG_LOG 를 그대로 지워, update-all 로만 도는 박스에서는 그 줄들이 한 번도 화면에 안 나왔다.
+    grep -E '^[[:space:]]*(✗|⚠)' "$NG_LOG" | sed 's/^/      /' || true
   else
     skip "nginx refresh 실패 — /health → ${NG_CODE:-000}. 아래는 마지막 로그다."
     tail -12 "$NG_LOG" | sed 's/^/      /'

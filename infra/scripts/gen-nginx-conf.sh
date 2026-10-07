@@ -207,7 +207,8 @@ MCP_READ_TIMEOUT="$(_nginx_time NGINX_MCP_READ_TIMEOUT 1h)"
 # 없으면 코드 기본값이다. 포털 쪽을 0(끔)으로 둔 박스는 nginx 가 유일한 한도라 보지 않는다. 알리기만 한다(conf 는 그대로 만든다).
 _idle="${AGENT_STREAM_IDLE_TIMEOUT_S:-}"
 if [ -z "$_idle" ] && [ -f "$REPO_ROOT/backend/.env" ]; then
-  _idle="$(sed -n 's/^[[:space:]]*AGENT_STREAM_IDLE_TIMEOUT_S=[[:space:]]*//p' "$REPO_ROOT/backend/.env" | tail -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"'"'"' \r')"
+  # 못 읽어도(권한) 생성은 계속한다 — 이 스크립트는 set -e·pipefail 이라 맨 대입이면 여기서 조용히 끝나 정문 conf 가 안 만들어진다.
+  _idle="$(sed -n 's/^[[:space:]]*AGENT_STREAM_IDLE_TIMEOUT_S=[[:space:]]*//p' "$REPO_ROOT/backend/.env" 2>/dev/null | tail -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"'"'"' \r')" || _idle=""
 fi
 _idle="${_idle:-46800}"; _idle="${_idle%%.*}"
 if [[ "$_idle" =~ ^[0-9]+$ ]] && [ "$((10#$_idle))" -gt 0 ] && [ "$(_nginx_secs "$AGENT_READ_TIMEOUT")" -le "$((10#$_idle))" ]; then
