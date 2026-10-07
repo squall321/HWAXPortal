@@ -175,7 +175,16 @@ class CatalogRegistry:
         raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise ValueError(f"{p}: '<타일 id>: {{url: ...}}' 모양이어야 한다")
-        return {str(k): v for k, v in raw.items() if isinstance(v, dict)}
+        out: dict[str, dict] = {}
+        for k, v in raw.items():
+            if isinstance(v, dict):
+                out[str(k)] = v
+                continue
+            # `<id>: <주소>` 처럼 값에 바로 적은 항목 — 종전엔 경고 없이 사라져 '적었는데 왜 안 뜨나' 를 찾을 수 없었다.
+            # 값은 싣지 않는다(박스 파일의 주소는 사내 주소다) — 어느 id 인지와 맞는 모양만 말한다.
+            log.warning("%s 의 '%s' 는 읽지 않는다 — 값이 매핑이 아니다. 한 단 들여 `url: <주소>`(새 타일이면 name 도)로 적는다",
+                        LOCAL_OVERLAY, k)
+        return out
 
     def all(self) -> list[LinkedSystem]:
         return list(self._systems)

@@ -38,6 +38,22 @@ def test_외부_타일_주소는_박스별_덮어쓰기에서_온다(tmp_path, c
     assert any("nope" in rec.getMessage() for rec in caplog.records), "오타난 타일 id 를 조용히 넘기지 않는다"
 
 
+def test_매핑이_아닌_항목은_버리되_조용히_버리지_않는다(tmp_path, caplog):
+    """타일을 적다가 가장 내기 쉬운 실수 — `<id>: <주소>` 처럼 값에 주소를 바로 적는다. 종전엔 그 항목이 경고 없이 사라져
+    '적었는데 왜 안 뜨나' 를 로그에서 찾을 수 없었다. 어느 id 인지와 맞는 모양을 말하되 **값(사내 주소)은 싣지 않는다**."""
+    with caplog.at_level(logging.WARNING):
+        r = _catalog(tmp_path, "ext-a: http://192.0.2.10:3001/\nbox-lab: [name, url]\nempty:\n"
+                               "ext-b:\n  url: http://192.0.2.20:3002/\n")
+    a = {s.id: s for s in r.all()}
+    assert a["ext-a"].status == "coming_soon", "값이 매핑이 아니면 덮어쓰기가 아니다"
+    assert a["ext-b"].url == "http://192.0.2.20:3002/", "옆의 바른 항목은 그대로 읽는다"
+    said = " ".join(rec.getMessage() for rec in caplog.records if rec.levelno >= logging.WARNING)
+    for bad in ("ext-a", "box-lab", "empty"):
+        assert f"'{bad}'" in said, f"{bad} 를 버린 것을 말하지 않았다"
+    assert "url:" in said, "어떤 모양으로 적어야 하는지 말한다"
+    assert "192.0.2.10" not in said, "버린 값(사내 주소)을 로그에 싣지 않는다"
+
+
 def test_주소_없는_외부_타일은_곧_공개로_내린다(tmp_path, caplog):
     """두면 화면이 `/<id>/` 로 열어 SPA 로 떨어지고 조용히 깨진다 — 새 박스에서 덮어쓰기를 안 만들었을 때."""
     with caplog.at_level(logging.WARNING):
