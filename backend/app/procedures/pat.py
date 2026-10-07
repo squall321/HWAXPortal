@@ -29,6 +29,8 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 
+from app.access.policy import login_groups
+
 logger = logging.getLogger(__name__)
 
 LIFETIME_MIN = 15   # 한 호출에만 쓴다. 길 이유가 없다.
@@ -48,7 +50,8 @@ def mint(keystore, settings, principal, run_id: str, step_ix: int) -> str | None
             "sub": principal.subject,
             "email": principal.email,
             "name": getattr(principal, "display_name", None),
-            "groups": list(principal.groups or []),
+            # 로그인 그룹만 — 관리자 표지·권한 키는 게이트웨이가 포털의 지금 값으로 붙인다(`/auth/pat` 과 같은 규칙).
+            "groups": login_groups(principal.groups),
             "aud": [settings.pat_chat_audience],
             "scope": "api",
             "scopes": ["chat"],

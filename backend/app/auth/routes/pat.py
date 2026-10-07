@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.access.policy import login_groups
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
@@ -60,7 +61,9 @@ def _mint_pat(request: Request, settings: Settings, principal: Principal, *,
         "sub": principal.subject,
         "email": principal.email,
         "name": principal.display_name,
-        "groups": principal.groups,
+        # 로그인 그룹만 박는다 — 관리자 표지·권한 키는 쓰는 쪽(포털·게이트웨이)이 호출마다 원장으로 다시 정한다.
+        # 박아 두면 무기한 PAT 가 발급 때의 `portal-admin` 을 100년 들고 다닌다(10차 요청 §4).
+        "groups": login_groups(principal.groups),
         "aud": audiences,        # array — the gateway checks the target site is a member
         "scope": "api",          # distinguishes a PAT from a 90s "launch" token
         "scopes": scopes,

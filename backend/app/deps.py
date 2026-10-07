@@ -49,8 +49,8 @@ def get_current_principal(
 def entitled(request: Request, principal: Principal) -> Principal:
     """권한을 요청마다 원장으로 다시 계산해 합성 그룹(feat:·plat:)으로 얹는다(access-control D-2).
 
-    세션 JWT·PAT 에 박힌 합성 그룹은 버린다 — 거둔 권한이 토큰 수명 동안 남지 않게. 계산 결과는
-    request.state 에 두어 같은 요청의 '내 권한' 표가 다시 계산하지 않는다."""
+    세션 JWT·PAT 에 박힌 합성 그룹과 관리자 표지(portal-admin)는 버린다 — 거둔 권한·해제한 관리자가 토큰 수명 동안
+    남지 않게. 계산 결과는 request.state 에 두어 같은 요청의 '내 권한' 표가 다시 계산하지 않는다."""
     access = getattr(request.app.state, "access", None)
     if access is None:
         return principal

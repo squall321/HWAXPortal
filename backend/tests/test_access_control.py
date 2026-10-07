@@ -93,7 +93,7 @@ def test_CAEG_는_전부_기본은_일반_챗():
 # ── 권한 계산 ────────────────────────────────────────────────────────────────
 def test_계산_관리자·소속·개별·함의_그리고_들어온_합성그룹은_버린다():
     pol = _policy()
-    admin = compute(pol, groups=["portal-admin"], row=None)
+    admin = compute(pol, groups=[], row={"groups": ["portal-admin"]})     # 관리자는 원장만(test_admin_ledger_only)
     assert admin.keys == set(pol.keys) and admin.is_admin
     caeg = compute(pol, groups=[], row={"affiliation": "CAEG", "grants": [], "groups": []})
     assert caeg.keys == set(pol.keys) and caeg.reasons["feat:deliberation"] == "affiliation"
@@ -309,7 +309,9 @@ def test_게이트웨이_내부_조회는_공유_시크릿으로만(client):
         params={"email": "x@corp.com", "groups": "portal-admin"},
         headers=auth,
     ).json()
-    assert "plat:stepforge" in adm["keys"], "토큰의 관리자 그룹은 인정한다"
+    assert adm["keys"] == ["feat:chat"] and adm["is_admin"] is False, "토큰의 관리자 그룹은 인정하지 않는다 — 원장만 본다"
+    boss = client.get("/internal/access/entitlements", params={"email": "boss@corp.com"}, headers=auth).json()
+    assert "plat:stepforge" in boss["keys"] and boss["is_admin"] is True
 
 
 def test_게이트웨이_내부_조회가_소속도_준다(client):

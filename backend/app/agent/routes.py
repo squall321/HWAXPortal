@@ -32,7 +32,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.access.agent_guard import check_chat, filter_experts
-from app.access.policy import is_synthetic
+from app.access.policy import is_synthetic, login_groups
 from app.agent import conv_search
 from app.agent.audit import AuditLog
 from app.agent.sse import sse_event
@@ -277,7 +277,8 @@ def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | 
             "sub": principal.subject,
             "email": principal.email,
             "name": principal.display_name,
-            "groups": principal.groups,
+            # 로그인 그룹만 — `/auth/pat`·절차 PAT 과 같은 규칙. 관리자 표지·권한 키는 게이트웨이가 포털의 지금 값으로 붙인다.
+            "groups": login_groups(principal.groups),
             "aud": [settings.pat_chat_audience],
             "scope": "api",
             "scopes": ["chat"],

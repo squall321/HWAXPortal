@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 
+from app.access.policy import login_groups
 from app.auth.provider import Principal
 from app.config import Settings
 
@@ -64,13 +65,15 @@ class JWTService:
 
     # ── session (access) ────────────────────────────────────────────────────
     def issue_session(self, principal: Principal) -> str:
+        # 관리자 표지·합성 그룹은 박지 않는다(login_groups). 포털은 요청마다 원장으로 다시 정하므로 박아도 읽지 않는데,
+        # refresh 가 제 그룹을 새 세션에 그대로 옮겨 적어 '박힌 값' 이 8시간을 돌았다 — 읽지 않을 값은 싣지도 않는다.
         return self._encode(
             {
                 "sub": principal.subject,
                 "aud": SESSION_AUDIENCE,
                 "email": principal.email,
                 "name": principal.display_name,
-                "groups": principal.groups,
+                "groups": login_groups(principal.groups),
             },
             ttl=self._session_ttl,
             typ="session",
@@ -88,7 +91,7 @@ class JWTService:
                 "aud": SESSION_AUDIENCE,
                 "email": principal.email,
                 "name": principal.display_name,
-                "groups": principal.groups,
+                "groups": login_groups(principal.groups),
             },
             ttl=self._refresh_ttl,
             typ="refresh",

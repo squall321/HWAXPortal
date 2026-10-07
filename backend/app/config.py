@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     auth_provider: Literal["mock", "saml", "oidc"] = "mock"
     mock_user_email: str = "hong.gildong@samsung.com"
     mock_user_name: str = "Hong Gil Dong"
+    # ⚠ 여기 `portal-admin` 을 적어도 **관리자가 되지 않는다** — 관리자는 원장(users.groups)만 본다(10차 요청 §4). IdP 가 보낸
+    #   그룹으로 관리자를 인정하던 때, 해제해도 그 사람의 세션·PAT 가 계속 관리자였다. 기본값은 그런 그룹을 보내는 IdP 를 흉내 낸다.
     mock_user_groups: str = "portal-admin,mes-user"  # comma-separated
 
     # ── Local email accounts (SSO 지연 브리지 — 승인제 가입, subject=이메일 영구 키) ──
@@ -424,8 +426,8 @@ def startup_warnings(s: Settings) -> list[tuple[str, str]]:
                                           "localhost 로 간다. FRONTEND_URL(보통 PUBLIC_BASE_URL 과 같다)을 채울 것"))
     if not (s.app_env == "prod" and s.auth_provider == "mock"):
         return out
-    out.append(("prod_mock", f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 {s.mock_user_groups!r} "
-                             "권한으로 들어간다. SAML 이 붙기 전까지의 임시 구성이다"))
+    out.append(("prod_mock", f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 누구나 {s.mock_user_email!r} "
+                             "계정으로 들어간다(그 계정이 원장에서 관리자면 관리자로). SAML 이 붙기 전까지의 임시 구성이다"))
     bad = _secret_problem(s)
     if bad:
         out.append((bad[0], bad[1] + " — mock 인증이라 지금은 기동하지만, SAML 로 바꾸면 기동을 거부한다"))

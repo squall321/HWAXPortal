@@ -29,6 +29,14 @@ def is_synthetic(group: str) -> bool:
     return group.startswith(FEAT) or group.startswith(PLAT)
 
 
+def login_groups(groups: list[str] | None) -> list[str]:
+    """로그인 때 받은 그룹(IdP·로컬)만 — 관리자 표지와 합성 그룹을 뺀 나머지. 토큰에 박는 것도, 토큰에서 믿는 것도 이것뿐이다.
+
+    뺀 둘은 요청마다 원장으로 다시 정한다(`compute`). 박아 두면 그 값이 토큰 수명만큼 산다 — 관리자이던 때 받은 PAT(최대
+    36,500일)의 `portal-admin` 이 해제 뒤에도 관리자로 통했고, 게이트웨이를 거쳐 하위 백엔드까지 내려갔다(10차 요청 §4)."""
+    return [g for g in (groups or []) if g != ADMIN_GROUP and not is_synthetic(g)]
+
+
 @dataclass(frozen=True)
 class Item:
     key: str                     # feat:deliberation · plat:stepforge
@@ -356,8 +364,10 @@ class Entitlements:
 def compute(policy: Policy, *, groups: list[str], row: dict | None) -> Entitlements:
     """유효 권한 = 기본 ∪ 소속 ∪ 개별 허가 (+ 함의). portal-admin 은 전부.
 
-    groups 는 로그인 때 받은 값(IdP·로컬)이고, 합성 그룹은 여기서 버린다 — PAT·JWT 에 박힌 옛
-    권한이 다시 들어오지 않게. 관리자 여부는 로그인 값이나 원장 값 어느 쪽이든 인정한다."""
+    **입력은 원장 행(row)뿐이다.** groups(세션·PAT 이 들고 온 값)는 권한에도 관리자 판정에도 쓰지 않는다 — 호출부 서명을
+    지키려 받기만 한다. 예전엔 "로그인 값이나 원장 값 어느 쪽이든" 관리자로 인정해서, 원장에서 관리자를 해제해도 그 사람이
+    들고 있던 세션(8시간)·PAT(최대 36,500일)이 계속 관리자였다(10차 요청 §4). IdP 그룹으로 관리자를 받던 박스(mock·oidc-mock)는
+    원장에 적어야 한다(docs/change-request-8-10 D-3)."""
     # ⚠ **정지된 계정은 권한이 0이다.** 여기가 원장 행을 권한으로 바꾸는 **유일한** 자리다 —
     # 포털 요청(`deps.entitled`)도, 게이트웨이가 읽는 `/internal/access/entitlements` 도
     # 이 함수를 지난다. 정지 검사를 포털 쪽에만 두면 **게이트웨이로는 그대로 통과한다**
@@ -365,9 +375,8 @@ def compute(policy: Policy, *, groups: list[str], row: dict | None) -> Entitleme
     # `set_status` 는 `groups` 를 안 건드려서 정지된 관리자가 `portal-admin` 을 유지했다.
     if str((row or {}).get("status") or "") == "disabled":
         return Entitlements(keys=set(), reasons={}, affiliation="", is_admin=False)
-    base = [g for g in (groups or []) if not is_synthetic(g)]
     stored = list((row or {}).get("groups") or [])
-    is_admin = ADMIN_GROUP in base or ADMIN_GROUP in stored
+    is_admin = ADMIN_GROUP in stored          # 관리자는 원장만 — 세션·PAT 에 박힌 값은 믿지 않는다
     aff = str((row or {}).get("affiliation") or "")
     reasons: dict[str, str] = {}
 
@@ -390,17 +399,15 @@ def compute(policy: Policy, *, groups: list[str], row: dict | None) -> Entitleme
 
 
 def with_entitlements(groups: list[str], ents: Entitlements) -> list[str]:
-    """principal.groups 에 얹을 값 — 들어온 합성 그룹은 버리고 계산값으로 바꾼다.
+    """principal.groups 에 얹을 값 — 들어온 합성 그룹과 관리자 표지는 버리고 계산값으로 바꾼다.
 
-    ⚠ **관리자 표시를 되돌려 놓는다.** `compute` 는 "로그인 값이나 원장 값 어느 쪽이든"
-    관리자로 인정하는데, 여기서 들어온 그룹만 되살리다 보니 **원장에만 관리자인 사람**은
-    `portal-admin` 을 잃었다. 그런 사람은 기능 키는 전부 받으면서
-    `ensure(principal, ADMIN_GROUP)` 같은 관리자 검사는 못 통과한다 — 앞뒤가 안 맞고,
-    막히는 쪽이라 조용하다(아무도 신고하지 않는다). 새 승격이 아니다: `is_admin` 이
-    이미 참일 때만 붙는다.
+    ⚠ **관리자 표지는 들어온 값을 살리지 않고 `is_admin` 으로만 붙인다.** `require_role`·`ensure(principal, ADMIN_GROUP)` 는
+    이 목록을 본다 — `compute` 만 고치고 여기서 토큰의 `portal-admin` 을 그대로 두면 판정은 '아니다' 인데 문은 열린다
+    (10차 요청 §4). 반대쪽도 여기서 맞춘다: 토큰에 표지가 없는 **원장 관리자**에게 붙여 주지 않으면 기능 키는 전부 받으면서
+    관리자 검사는 못 통과한다 — 막히는 쪽이라 조용하다(아무도 신고하지 않는다).
     """
-    out = [g for g in (groups or []) if not is_synthetic(g)] + sorted(ents.keys)
-    if ents.is_admin and ADMIN_GROUP not in out:
+    out = login_groups(groups) + sorted(ents.keys)
+    if ents.is_admin:
         out.append(ADMIN_GROUP)
     return out
 

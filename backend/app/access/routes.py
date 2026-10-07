@@ -281,7 +281,11 @@ def internal_entitlements(request: Request, email: str = Query(min_length=3, max
                           groups: str = Query(default="", max_length=2000),
                           settings: Settings = Depends(get_settings)) -> dict:
     """이 사람의 **지금** 권한 — 게이트웨이가 PAT 에 박힌 옛 그룹 대신 쓴다(D-2).
-    groups 는 토큰이 가진 로그인 그룹(관리자 여부 판정용)이고 합성 그룹은 여기서 버린다.
+    groups 는 토큰이 가진 로그인 그룹인데 **판정에 쓰지 않는다** — 관리자 여부도 원장만 본다(10차 요청 §4). 게이트웨이가
+    계속 보내므로 받기만 한다.
+
+    `is_admin` 은 게이트웨이가 하위로 넘기는 그룹에 `portal-admin` 을 붙일지 정하는 값이다. 게이트웨이는 PAT 에 박힌 표지를
+    떼고 이 칸이 **불리언 참**일 때만 다시 붙인다 — 칸 이름을 바꾸면 관리자 표지가 하위로 가지 않는다(같은 배포로 나간다).
 
     `affiliation` 도 함께 낸다 — 앱이 **소속 단위 읽기 공유**를 하려면 이 값이 필요하다
     (DynaForge 자동 반입 리포트, W-93). 소속은 원장 한 곳(`users.affiliation`)에서만 나오고
@@ -300,6 +304,7 @@ def internal_entitlements(request: Request, email: str = Query(min_length=3, max
     aff = ents.affiliation if known else ""
     return {"email": email, "keys": sorted(ents.keys), "affiliation": aff,
             "affiliation_label": str(known.get("label") or ""),
+            "is_admin": ents.is_admin,
             # 허브에서 끈 앱 — 게이트웨이가 개인 PAT 시야에서 숨긴다(docs/mcp-app-toggle). 권한과 무관한 선호다.
             "muted_apps": sorted((row or {}).get("hub_muted_apps") or [])}
 
