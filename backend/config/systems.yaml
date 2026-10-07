@@ -179,6 +179,8 @@ systems:
     integration_type: jwt-handoff
     audience: aireadyportal          # ARP .env 의 ARP_PORTAL_AUDIENCE 와 글자 단위로 같아야 한다
     url: /aireadyportal/api/auth/portal-callback
+    # 라우트(aireadyportal=)가 없는 박스에서는 숨긴다 — 켜 두면 클릭이 포털 자신에게 떨어져 405 가 뜬다(ARP 는 붙인 박스에만 있다).
+    hide_unless_routed: true
     sort_order: 65
 
   - id: hwax-risk

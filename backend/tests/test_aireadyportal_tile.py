@@ -29,14 +29,16 @@ _CONFIG = _ROOT / "backend" / "config"
 _FE = _ROOT / "frontend"
 _TSC = _FE / "node_modules/.bin/tsc"
 _CALLBACK = "/aireadyportal/api/auth/portal-callback"
+_ROUTE = "aireadyportal=http://203.0.113.20:3001/\n"
 
 
 @pytest.fixture()
 def box(tmp_path):
-    """추적된 systems.yaml·access.yaml 을 베낀 임시 박스 — 이 박스의 실제 local 파일에 기대지 않는다."""
+    """추적된 systems.yaml·access.yaml 을 베낀 임시 박스 — 이 박스의 실제 local 파일에 기대지 않는다.
+    ARP 가 붙은 박스의 모양이다(라우트가 있다). 없는 박스는 아래 '라우트가 없는 박스' 시험이 따로 본다."""
     for name in ("systems.yaml", "access.yaml"):
         shutil.copy(_CONFIG / name, tmp_path / name)
-    (tmp_path / "routes.env").write_text("")
+    (tmp_path / "routes.env").write_text(_ROUTE)
     return tmp_path
 
 
@@ -126,6 +128,39 @@ def test_타일을_누르면_ARP_청중의_토큰이_콜백으로_간다(portal)
     claims = jwt.decode(body["fields"]["token"], options={"verify_signature": False})
     assert claims["aud"] == "aireadyportal", "ARP 의 ARP_PORTAL_AUDIENCE 와 글자 단위로 같아야 받는다"
     assert (claims["email"], claims["scope"]) == ("user@corp.com", "launch")
+
+
+# ── 라우트가 없는 박스 — 타일을 켜 두지 않는다 ─────────────────────────────────
+def test_라우트가_없는_박스에서는_타일을_숨기고_열리지도_않는다(portal, box):
+    """콜백 url 은 추적 파일에 늘 있다 — url 만 보고 켜면 라우트가 없는 박스(dev·새 박스)에서 plat:arp 를 가진 사람에게 타일이
+    열린 채 보이고, 누르면 로그인 토큰이 든 POST 를 포털 자신이 받아 새 탭에 405 JSON 한 줄이 뜬다(nginx 에 /aireadyportal/
+    location 이 없다). 이름을 바꾸기 전의 arp 타일은 같은 박스에서 '곧 공개' 였다. 박스마다 있고 없는 타일(testscope·knox-bridge)과
+    같이 숨긴다."""
+    c = portal
+    ha = _login(c, "boss@corp.com")
+    assert c.patch("/auth/access/users/user@corp.com", json={"grants": ["plat:arp"]}, headers=ha).status_code == 200
+    h = _login(c, "user@corp.com")
+    assert [t["id"] for t in c.get("/systems").json()] == ["aireadyportal"], "전제 — 라우트가 있으면 보인다"
+
+    (box / "routes.env").write_text("")
+    app.state.catalog.reload()
+    t = app.state.catalog.get("aireadyportal")
+    assert (t.status, t.enabled) == ("coming_soon", False)
+    assert c.get("/systems").json() == [], "허가가 있어도 이 박스에서는 없는 타일이다"
+    assert c.post("/systems/aireadyportal/launch", headers=h).status_code == 404, "토큰을 내지도 않는다"
+
+    (box / "routes.env").write_text(_ROUTE)
+    app.state.catalog.reload()
+    assert [t["id"] for t in c.get("/systems").json()] == ["aireadyportal"], "라우트를 적으면 다시 열린다(재기동 없이 reload 로)"
+
+
+def test_다른_핸드오프_타일은_라우트가_없어도_종전대로_켜져_있다(box):
+    """숨김은 표식(hide_unless_routed)을 단 타일에만 건다 — 나머지 핸드오프 타일의 계약은 바꾸지 않는다."""
+    (box / "routes.env").write_text("")
+    reg = _reg(box)
+    for tile_id in ("heax-hub", "ai-data-hub", "mx-white-paper", "signalforge"):
+        t = reg.get(tile_id)
+        assert (t.integration_type, t.status, t.enabled) == ("jwt-handoff", "available", True), tile_id
 
 
 # ── 로고(7-5) — 타일 id 로 고른다 ─────────────────────────────────────────────

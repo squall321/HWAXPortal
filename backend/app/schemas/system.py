@@ -40,13 +40,15 @@ class LinkedSystem(BaseModel):
     sort_order: int = 100
     # 목적지(routes 파일·SYS_<ID>_URL)가 없는 박스에서는 '곧 공개' 로도 보이지 않게 **숨긴다** — 사내 전용 연계처럼
     # 그 박스에서 영영 열릴 일이 없는 타일용(docs/chat-actions). 목적지로 열리는 proxy 와, 주소(systems.local.yaml)가
-    # 있는 박스에서만 여는 external-url(박스마다 있고 없는 남의 서비스, docs/sso-delegation)에만 쓴다.
+    # 있는 박스에서만 여는 external-url(박스마다 있고 없는 남의 서비스, docs/sso-delegation)에 쓴다.
+    # jwt-handoff 에도 쓴다 — 핸드오프 타일은 콜백 url 이 추적 파일에 늘 있어 url 만으로는 '이 박스에 붙었는지' 를 모른다.
+    # 표식을 달면 **라우트가 있을 때만** 켠다(registry._apply_route — 라우트를 박스 파일에 손으로 적는 aireadyportal).
     hide_unless_routed: bool = False
 
     @model_validator(mode="after")
     def _hide_needs_proxy(self):
-        if self.hide_unless_routed and self.integration_type not in ("proxy", "external-url"):
-            raise ValueError(f"{self.id}: hide_unless_routed 는 proxy·external-url 타일에만 쓴다")
+        if self.hide_unless_routed and self.integration_type not in ("proxy", "external-url", "jwt-handoff"):
+            raise ValueError(f"{self.id}: hide_unless_routed 는 proxy·external-url·jwt-handoff 타일에만 쓴다")
         return self
 
 

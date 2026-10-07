@@ -75,12 +75,13 @@ def test_other_tiles_are_unchanged(tmp_path):
     assert (ra.status, ra.enabled) == ("available", True), "핸드오프 타일은 콜백 url 로 켜진다"
 
 
-def test_hide_unless_routed_is_only_for_proxy_and_external_url():
+def test_hide_unless_routed_is_only_for_tiles_lit_by_a_box_destination():
     LinkedSystem(id="a", name="a", integration_type="external-url", hide_unless_routed=True)
     LinkedSystem(id="b", name="b", integration_type="proxy", hide_unless_routed=True)
-    for kind in ("jwt-handoff", "saml-handoff"):
-        with pytest.raises(ValueError, match="external-url"):
-            LinkedSystem(id="x", name="x", integration_type=kind, url="/x/cb", hide_unless_routed=True)
+    # jwt-handoff 도 된다 — 콜백 url 이 추적 파일에 늘 있어 라우트로만 켜야 하는 타일(aireadyportal)이 생겼다.
+    LinkedSystem(id="c", name="c", integration_type="jwt-handoff", url="/c/cb", hide_unless_routed=True)
+    with pytest.raises(ValueError, match="external-url"):
+        LinkedSystem(id="x", name="x", integration_type="saml-handoff", url="/x/cb", hide_unless_routed=True)
 
 
 def test_testscope_is_gated_by_its_own_platform():

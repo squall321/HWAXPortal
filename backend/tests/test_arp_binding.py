@@ -93,7 +93,7 @@ def test_없으면_손으로_둔_그대로_쓰고_안_켠_기능으로_남긴다
 
 # ── 타일 라우트 — ARP 주소는 두 곳에 있다(infra/.env 의 ARP_HOST · 라우트 파일의 aireadyportal=) ─────────────
 # 1f 는 라우트를 적지 않는다(손으로 적는다). 그래서 한쪽만 고치거나 라우트를 빼먹을 수 있고, 둘 다 오류 없이 지나간다 —
-# 라우트가 없으면 타일이 켜진 채 클릭이 포털 쪽으로 떨어지고, 다르면 타일과 챗의 ARP 도구가 서로 다른 서버를 본다.
+# 라우트가 없으면 포털이 타일을 숨기고(ARP 를 붙인 박스인데 타일만 안 보인다), 다르면 타일과 챗의 ARP 도구가 서로 다른 서버를 본다.
 def _routes(repo, *, local: str | None = None, base: str | None = None) -> None:
     for name, text in (("routes.local.env", local), ("routes.env", base)):
         f = repo / "backend/config" / name

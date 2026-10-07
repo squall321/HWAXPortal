@@ -27,3 +27,15 @@ D-1 의 보류 사유(ARP 가 `/login.html` 같은 절대경로로 이동해 접
 ⚠ 1f 는 `aireadyportal=` 라우트를 **적지 않는다**(1e 가 `report-archive=` 를 적는 것과 다르다). ARP 서버 주소는 `infra/.env` 의
 `ARP_HOST` 와 `routes.local.env` 의 `aireadyportal=` 두 곳에 손으로 있다 — 이사하면 둘 다 고친다.
 박스에서 할 일은 7-3 이 들어온 뒤 `systems.local.yaml` 의 `arp:` 블록을 지우는 것 하나다(1f 는 이제 그 파일을 읽지도 쓰지도 않는다).
+
+**D-4 라우트(`aireadyportal=`)가 없는 박스에서는 타일을 숨기고, 로그아웃 목록에도 싣지 않는다(2026-10-08, 검토 뒤 수정).**
+핸드오프 타일은 콜백 url 이 추적 파일에 늘 있어 url 만으로는 '이 박스에 ARP 가 붙었는지' 를 모른다. D-3 뒤로 라우트가 없는 박스
+(dev·새 박스)에서 `plat:arp` 를 가진 사람에게 타일이 열린 채 보였고, 누르면 로그인 토큰이 든 POST 를 포털 자신이 받아 새 탭에 405 가
+떴다. 로그아웃 때도 `/aireadyportal/api/auth/logout` 이 매번 실려 같은 405 가 났다(늘 울리는 경보).
+- 타일 — `systems.yaml` 의 `hide_unless_routed: true`(이제 jwt-handoff 에도 쓴다). 라우트가 없으면 '곧 공개' 로도 안 보인다
+  (testscope·knox-bridge 와 같다). 표식이 없는 다른 핸드오프 타일의 계약은 그대로다 — 그 라우트들은 추적 파일에 있다.
+- 권한 표의 플랫폼 `arp` 에는 숨김을 걸지 않았다 — 그 줄은 게이트웨이 `arp` 백엔드도 막는데, 그 백엔드는 `ARP_BASE`·`ARP_TOKEN` 으로
+  따로 붙는다(타일 라우트와 무관).
+- 로그아웃 — 콜백의 첫 경로 마디가 라우트 파일에 있는 타일만 싣는다. ⚠ ARP 가 쿠키만으로 받는 `POST /api/auth/logout` 을 내는지는
+  **확인된 적이 없다**(요청서는 `/api/auth/me` · `portal-callback` 만 말한다). 라우트가 있는 박스에서는 그래도 친다 — 빼면 '못 끊고
+  조용하다' 가 된다. cae00 에서 재 본 뒤 없으면 ai-data-hub 처럼 사유와 함께 뺀다(세션이 브라우저 저장소면 `postLogout()` 의 정리 목록에 넣는다).

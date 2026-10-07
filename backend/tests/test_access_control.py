@@ -652,12 +652,14 @@ def test_플랫폼_줄에_설명이_없으면_그_앱_타일의_소개를_빌린
     _setup_users(client)
     _login(client, "boss@corp.com")
     rows = {r["key"]: r for r in client.get("/auth/access").json()["platforms"]}
-    tiles = {s["id"]: s for s in client.get("/systems").json()}
+    # 소개는 카탈로그 전체에서 빌린다 — 이 박스에서 숨긴 타일(라우트 없는 aireadyportal)의 플랫폼 줄에도 설명은 있다.
+    # 보이는 타일(/systems)로 견주면 그 타일이 숨는 박스에서만 이 시험이 깨진다.
+    tiles = {s.id: s for s in app.state.catalog.all()}
     pol = _policy()
     for item in pol.items:
         if item.kind != "platform" or item.key not in rows:
             continue
-        tile = next((tiles[s] for s in item.systems if s in tiles and tiles[s].get("tagline")), None)
-        want = item.desc or (tile["tagline"] if tile else "")
+        tile = next((tiles[s] for s in item.systems if s in tiles and tiles[s].tagline), None)
+        want = item.desc or (tile.tagline if tile else "")
         assert rows[item.key]["desc"] == want, item.key
     assert any(r["desc"] for r in rows.values()), "소개를 빌린 줄이 하나도 없다 — 시험이 비었다"

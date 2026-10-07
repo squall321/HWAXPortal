@@ -76,6 +76,16 @@ class CatalogRegistry:
         # overwrite the callback url. Flip the tile live when it's routed (proxied) or already
         # carries a callback url.
         if s.integration_type in ("jwt-handoff", "saml-handoff"):
+            if s.hide_unless_routed and not from_route:
+                # 콜백 url 은 추적 파일에 늘 있다 — url 만 보고 켜면 라우트가 없는 박스에서 타일이 열린 채 보이고, 누르면 로그인
+                # 토큰이 든 POST 를 포털 자신이 받아 새 탭에 405 JSON 한 줄이 뜬다(nginx 에 그 location 이 없다 — aireadyportal,
+                # 2026-10-07). 박스마다 있고 없는 타일이라 '곧 공개' 로도 보이지 않게 숨긴다(아래 external-url·proxy 와 같다).
+                # 표식이 없는 핸드오프 타일은 종전 그대로다 — 그 타일들의 라우트는 추적 파일에 있다.
+                s.status = "coming_soon"
+                s.enabled = False
+                log.info("핸드오프 타일 %s 는 라우트가 없어 숨긴다 — 쓰려면 backend/config/routes.local.env 에 '%s=<주소>'",
+                         s.id, s.id)
+                return
             if from_route or s.url:
                 s.status = "available"
             return
