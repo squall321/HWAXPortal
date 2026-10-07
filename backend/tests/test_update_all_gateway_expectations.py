@@ -1,4 +1,4 @@
-# update-all §5 의 기대 백엔드 — 게이트웨이가 그 박스에서 등재하는 것만, 등재하는 것은 빠짐없이 기대하는지(8·9·10차 요청 #9·#10)
+# update-all §5 의 기대 백엔드 — 게이트웨이가 그 박스에서 등재하는 것만, 등재하는 것은 빠짐없이 기대하는지(8·9·10차 요청 #9·#10·#11)
 """왜 — `gateway_config.json` 은 gitignore 라 pull 로 오지 않는다. update-all 의 기대 목록에 없는 백엔드는 config 에서 빠져도
 "빠진 백엔드 없음" 초록이고, 거꾸로 게이트웨이가 등재하지 않을 백엔드를 기대하면 매 실행 재프로비저닝을 헛돌린다
 (게이트웨이·에이전트서버가 그때마다 내려갔다 올라온다). 두 방향을 모두 고정한다.
@@ -8,8 +8,11 @@
 """
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 UA = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
@@ -27,7 +30,7 @@ def _between(start: str, end: str) -> str:
 
 
 def _expect(tmp_path: Path, *, have: list[str], siblings: dict | None = None, prov_env: str | None = None,
-            pre: str = "") -> tuple[list[str], str]:
+            gw_config: dict | None = None, pre: str = "") -> tuple[list[str], str]:
     """update-all 이 하는 순서 그대로 — 형제 리포 찾기 → 판정 블록 → (§5) provision.env 소싱 → calc_missing.
     돌려주는 것은 (빠졌다고 본 백엔드, 화면 출력)."""
     parent = tmp_path / "box"
@@ -38,6 +41,8 @@ def _expect(tmp_path: Path, *, have: list[str], siblings: dict | None = None, pr
     gw = parent / "HWAXMcpGateway"; gw.mkdir(exist_ok=True)
     if prov_env is not None:
         (gw / "provision.env").write_text(prov_env)
+    if gw_config is not None:
+        (gw / "gateway_config.json").write_text(json.dumps(gw_config))
     for rel, text in (siblings or {}).items():
         f = parent / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(text)
     h = json.dumps({"backends": dict.fromkeys(have, True)})
@@ -147,3 +152,61 @@ def test_재프로비저닝이_ARP_토큰을_게이트웨이에_넘긴다(tmp_pa
     update-all 은 기대하므로 매 실행 재프로비저닝 → '재프로비저닝 후에도 누락' 이 된다(ODB_HUB_TOKEN 이 그렇게 빠졌었다)."""
     vals = {"ARP_BASE": "http://203.0.113.20:3001", "ARP_TOKEN": "arp-test-token"}
     assert _provisioner_sees(tmp_path, vals) == vals
+
+
+# ── #11 SmartTwinMCP — 게이트웨이는 주소가 **설정된** 박스에서만 등재한다(docs/change-request-8-10 D-4) ─────────────
+# 등재 조건: provision.env 의 SMARTTWIN_MCP_URL, 또는 지금 config 에 든 기본값이 아닌 주소. 기본값은 옛 프로비저너가 무조건 박던 값이다.
+ST_DEFAULT = "http://127.0.0.1:5013/mcp"
+ST_NAME = "smart-twin-mcp"
+
+
+def test_smarttwin_주소를_적은_박스에서_빠지면_빠졌다고_한다(tmp_path):
+    """dev 의 모양 — 같은 박스 :5013 에서 듣고 있고 provision.env 에 그 주소를 적었다. 기대하지 않으면 config 에서 빠져도
+    (도구 18종이 통째로 사라져도) 초록이다."""
+    env = f"SMARTTWIN_MCP_URL={ST_DEFAULT}\n"
+    missing, out = _expect(tmp_path / "gone", have=BASE, prov_env=env)
+    assert missing == [ST_NAME] and "SmartTwinMCP" not in out
+    assert _expect(tmp_path / "have", have=BASE + [ST_NAME], prov_env=env, gw_config={ST_NAME: {"url": ST_DEFAULT}})[0] == []
+
+
+def test_smarttwin_옛_기본_주소로만_남은_박스에서는_기대하지_않는다(tmp_path):
+    """cae00 의 모양 — 띄운 적이 없는데 옛 프로비저너가 기본 주소로 등재해 가짜 DOWN 이 떠 있었다. 게이트웨이는 다음
+    재프로비저닝에서 이 항목을 뺀다. 여기서 기대하면 그 뒤로 매 실행 '빠짐' → 재프로비저닝이 헛돈다."""
+    cfg = {ST_NAME: {"url": ST_DEFAULT, "transport": "streamable_http"}}
+    missing, out = _expect(tmp_path / "before", have=BASE + [ST_NAME], gw_config=cfg)
+    assert missing == []
+    assert "○ SmartTwinMCP" in out and "다음 재프로비저닝에서" in out and "SMARTTWIN_MCP_URL=" in out, "빠질 것을 미리, 켜는 법과 함께 알린다"
+    missing, _ = _expect(tmp_path / "after", have=BASE, gw_config={})      # 게이트웨이가 뺀 뒤
+    assert missing == []
+
+
+def test_smarttwin_config_에_기본값이_아닌_주소가_있으면_기대한다(tmp_path):
+    """사람이 config 에 직접 옮겨 적은 주소는 게이트웨이가 이어받는다 — 그 박스에서 빠지면 빠졌다고 해야 한다."""
+    cfg = {ST_NAME: {"url": "http://203.0.113.40:5013/mcp"}}
+    missing, out = _expect(tmp_path, have=BASE, gw_config=cfg)
+    assert missing == [ST_NAME] and "SmartTwinMCP" not in out
+
+
+def test_smarttwin_설정이_전혀_없는_박스는_안_켠_기능으로_남긴다(tmp_path):
+    for name, cfg in (("nocfg", None), ("empty", {}), ("broken", None)):
+        if name == "broken":
+            d = tmp_path / name / "box/HWAXMcpGateway"; d.mkdir(parents=True); (d / "gateway_config.json").write_text("{깨진 json")
+        missing, out = _expect(tmp_path / name, have=BASE, gw_config=cfg)
+        assert missing == [] and "○ SmartTwinMCP" in out and "켜려면" in out, name
+
+
+def test_재프로비저닝이_SmartTwinMCP_주소를_게이트웨이에_넘긴다(tmp_path):
+    """넘기지 않으면 provision.env 에 적어도 게이트웨이는 못 보고(직전 config 의 기본 주소는 이어받지 않는다) 백엔드를 뺀다 —
+    update-all 은 기대하므로 매 실행 재프로비저닝이 헛돈다."""
+    vals = {"SMARTTWIN_MCP_URL": ST_DEFAULT}
+    assert _provisioner_sees(tmp_path, vals) == vals
+
+
+def test_기본_주소는_게이트웨이_프로비저너가_아는_그_값이다():
+    """두 리포가 같은 글자를 '기본값' 으로 봐야 조건이 같다 — 한쪽만 바뀌면 기대와 등재가 갈린다."""
+    assert f'_ST_DEFAULT="{ST_DEFAULT}"' in UA
+    prov = ROOT.parent / "HWAXMcpGateway" / "provision-config.sh"
+    if not prov.exists():
+        pytest.skip("게이트웨이 리포가 옆에 없다")
+    near = [ln for ln in prov.read_text(encoding="utf-8").splitlines() if re.search(r"smart-twin-mcp|SMARTTWIN_MCP_URL|_ST_", ln)]
+    assert any(ST_DEFAULT in ln for ln in near), "게이트웨이 프로비저너의 smart-twin-mcp 기본 주소가 바뀌었다 — update-all 의 _ST_DEFAULT 와 맞춘다"

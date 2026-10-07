@@ -771,6 +771,26 @@ if [ -n "$_arp_b" ] && [ -z "$_arp_t" ]; then
   hwax_skip "ARP MCP 도구(챗의 AI Ready Portal)" "ARP 주소는 있는데 ARP_TOKEN 이 없어 게이트웨이가 arp 백엔드를 등재하지 않는다(ARP 는 2026-10-01 부터 인증이 켜져 있다)" "ARP 담당에게 MCP 서비스 토큰을 받아 HWAXMcpGateway/provision.env 에 ARP_TOKEN=<값> 을 적고 재실행(§5 가 재프로비저닝한다)"
 fi
 unset _arp_t
+# SmartTwinMCP(해석 잡 제출·후처리·수집 도구) — 게이트웨이는 주소가 **설정된** 박스에서만 smart-twin-mcp 를 등재한다
+# (docs/change-request-8-10 D-4): provision.env 의 SMARTTWIN_MCP_URL, 또는 지금 config 에 든 **기본값이 아닌** 주소.
+# 기본값(같은 박스 :5013)은 설정이 아니라 옛 프로비저너가 무조건 박던 값이다 — cae00 은 그 포트를 듣는 것이 없어 가짜 DOWN 이
+# 계속 떠 있었고(2026-10-01·10-08 실측), 게이트웨이는 다음 재프로비저닝에서 그 항목을 뺀다.
+# ⚠ 이 조건은 게이트웨이 provision-config.sh 의 등재 조건과 **글자까지 같아야 한다**. 여기만 기대하면 매 실행 재프로비저닝이
+#   헛돌고, 여기만 기대하지 않으면 주소를 적은 박스(dev)에서 config 에서 빠져도 초록이다.
+_ST_DEFAULT="http://127.0.0.1:5013/mcp"
+if [ -z "${SMARTTWIN_MCP_URL:-}" ] && [ -n "$GW_DIR" ]; then SMARTTWIN_MCP_URL="$(_envfile_value "$GW_DIR/provision.env" SMARTTWIN_MCP_URL)"; fi
+_st_cfg=""
+if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
+  _st_cfg="$(python3 -c 'import json,sys;print((json.load(open(sys.argv[1])).get("smart-twin-mcp") or {}).get("url") or "")' "$GW_DIR/gateway_config.json" 2>/dev/null || true)"
+fi
+SMARTTWIN_EXPECTED=0
+if [ -n "${SMARTTWIN_MCP_URL:-}" ] || { [ -n "$_st_cfg" ] && [ "$_st_cfg" != "$_ST_DEFAULT" ]; }; then
+  SMARTTWIN_EXPECTED=1
+elif [ -n "$_st_cfg" ]; then
+  hwax_skip "SmartTwinMCP 도구(해석 잡 제출·후처리)" "게이트웨이 config 에 옛 기본 주소로만 등재돼 있다($_ST_DEFAULT) — 설정한 주소가 아니라서 다음 재프로비저닝에서 이 백엔드가 빠진다" "이 박스에서 SmartTwinMCP 를 쓰면 HWAXMcpGateway/provision.env 에 SMARTTWIN_MCP_URL=<SmartTwinMCP 주소>(같은 박스면 $_ST_DEFAULT) 를 적는다"
+else
+  hwax_skip "SmartTwinMCP 도구(해석 잡 제출·후처리)" "게이트웨이 provision.env 에 SMARTTWIN_MCP_URL 이 없어 게이트웨이가 smart-twin-mcp 를 등재하지 않는다(띄운 적 없는 박스가 보통이다)" "SmartTwinMCP 를 쓰는 박스는 HWAXMcpGateway/provision.env 에 SMARTTWIN_MCP_URL=<SmartTwinMCP 주소> 를 적고 재실행(§5 가 재프로비저닝한다)"
+fi
 # Knox 브리지(사내 사이드카 — 챗의 메일·메신저 도구) — 형제 리포와 그 설정(config/secrets.yaml, gitignore)이 있는 박스에서만 기대한다.
 # 게이트웨이 config 의 knox-bridge 는 사람이 붙인 키다 — provision 은 만들지 않고 보존만 한다. 그래서 빠지면 재프로비저닝으로
 # 되살아나지 않고 §5 재검증이 ✗ 로 남는다. 조용히 넘어가지 않는 것이 목적이다(UPSTREAM-ASKS §2).
@@ -806,6 +826,7 @@ fi
 
 calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공백 구분). heax는 config 파일로 별도 판정.
   H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_TOKEN:+${ARP_BASE:-}}" MXWP_UP="$MXWP_UP" \
+  SMARTTWIN_EXPECTED="${SMARTTWIN_EXPECTED:-0}" \
   KNOX_BRIDGE_UP="${KNOX_BRIDGE_UP:-0}" STE_ROUTED="$STE_ROUTED" TESTSCOPE_EXPECTED="${TESTSCOPE_EXPECTED:-0}" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
@@ -830,6 +851,8 @@ if os.environ.get("ARP"):           want.add("arp")
 if os.environ.get("STE_ROUTED") == "1": want.add("ste")
 # TestScope MCP — 게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 있는 박스에서만 기대한다(ARP 와 같은 방식, docs/sso-delegation).
 if os.environ.get("TESTSCOPE_EXPECTED") == "1": want.add("testscope")
+# SmartTwinMCP — 주소가 설정된 박스에서만(위 판정, 게이트웨이의 등재 조건과 같다). 무조건 기대하면 띄운 적 없는 박스가 매 실행 재프로비저닝한다.
+if os.environ.get("SMARTTWIN_EXPECTED") == "1": want.add("smart-twin-mcp")
 # Knox 브리지 — gateway_config.json 은 gitignore 라 pull 로 오지 않는다. 사라지면 챗의 메일·메신저 도구 6개가 통째로 없어진다.
 if os.environ.get("KNOX_BRIDGE_UP") == "1": want.add("knox-bridge")
 print(" ".join(sorted(want - have)))
@@ -1009,6 +1032,7 @@ PY
       #   · STE_SSO_SECRET/STE_*_URL — 없으면 per_user_sso["ste"] 가 안 생겨 ste 도구 호출이 서비스 계정으로 나간다(잡 소유자가 한 명으로 뭉침).
       #   · RA_SSO_* — RA 사람별 위임(docs/sso-delegation). 비면 provision 이 직전 config 를 이어받는다.
       #   · TESTSCOPE_MCP_URL — TestScope 백엔드 주소(provision.env 에서 읽은 값).
+      #   · SMARTTWIN_MCP_URL — SmartTwinMCP 주소(provision.env 에서 읽은 값). 빠뜨리면 게이트웨이가 직전 config 의 기본 주소를 이어받지 않아 백엔드를 뺀다.
       #   · TESTSCOPE_SSO_* — TestScope 사람별 위임(RA 와 같은 두 갈래). 비면 토큰 등록 그대로, provision 이 직전 config 를 이어받는다.
       #   · PER_USER_SSO_OFF — 비밀이 빈 RA·TestScope. provision 의 이어받기는 비밀을 못 읽은 실행용이라, 이것 없이는 infra/.env 에서
       #     비밀을 비워도 위임이 남아 포털 화면('토큰 등록')과 게이트웨이가 어긋났다. 여기서는 infra/.env 를 읽었으니 빈 값이 곧 '끔' 이다.
@@ -1022,7 +1046,7 @@ PY
           STE_SSO_URL="${STE_SSO_URL:-}" \
           RA_SSO_SECRET="${RA_SSO_SECRET:-}" RA_SSO_URL="${RA_SSO_URL:-}" \
           TESTSCOPE_SSO_SECRET="${TESTSCOPE_SSO_SECRET:-}" TESTSCOPE_SSO_URL="${TESTSCOPE_SSO_URL:-}" \
-          TESTSCOPE_MCP_URL="${TESTSCOPE_MCP_URL:-}" PER_USER_SSO_OFF="${_sso_off:-}" \
+          TESTSCOPE_MCP_URL="${TESTSCOPE_MCP_URL:-}" SMARTTWIN_MCP_URL="${SMARTTWIN_MCP_URL:-}" PER_USER_SSO_OFF="${_sso_off:-}" \
           bash provision-config.sh --force ); then
         _prov_ok=1
       else
