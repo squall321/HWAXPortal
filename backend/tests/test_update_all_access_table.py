@@ -47,6 +47,12 @@ def test_표에_없는_백엔드는_이름을_대고_실패한다(tmp_path):
     assert first.startswith("FAIL:권한 표 구멍") and "plm-defect simflow" in first, out
 
 
+def test_구멍을_메울_자리로_박스_오버레이도_알린다(tmp_path):
+    """그 박스에만 있는 백엔드를 추적 파일에 적게만 이끌면 박스 사정이 모든 박스의 표에 들어간다 — 오버레이를 함께 알린다."""
+    out, _ = _run(tmp_path, backends=["ste", "simflow"], policy=_pol("ste"))
+    assert "backend/config/access.yaml" in out and "backend/config/access.local.yaml" in out, out
+
+
 def test_정책을_못_읽으면_초록이_아니라_경고(tmp_path):
     for bad_body in ("", "000", '{"detail":"forbidden"}', "not json"):
         out, _ = _run(tmp_path, backends=["simflow"], policy=bad_body)

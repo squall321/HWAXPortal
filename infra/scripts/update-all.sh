@@ -1619,7 +1619,8 @@ print(" ".join(sorted(set(json.loads(os.environ["H"]).get("backends") or {}) - s
       "?") bad "권한 표 대조     포털 /internal/access/policy 를 못 읽었다(공유 시크릿·포털 상태) — 표에 없는 백엔드를 못 본다" ;;
       "")  ok "권한 표 대조     게이트웨이 백엔드가 전부 access.yaml 에 있다" ;;
       *)   fail "권한 표 구멍     access.yaml 에 없는 게이트웨이 백엔드: $_unlisted — 아무나 쓰거나 아무도 못 쓴다"
-           echo "    backend/config/access.yaml 의 플랫폼 gateway: 에 더한다(재기동 불필요 — 게이트웨이가 60초 안에 받는다)" ;;
+           echo "    backend/config/access.yaml 의 플랫폼 gateway: 에 더한다(재기동 불필요 — 게이트웨이가 60초 안에 받는다)"
+           echo "    이 박스에만 있는 백엔드면 추적 파일 대신 backend/config/access.local.yaml(gitignore 오버레이)에 적는다" ;;
     esac
   else
     hwax_skip "권한 표 대조" "게이트웨이 리포(gateway_config.json)를 못 찾았다 — 공유 시크릿 없이는 포털 정책을 못 읽는다" "HWAXMcpGateway 를 형제 리포로 두고 재실행"
