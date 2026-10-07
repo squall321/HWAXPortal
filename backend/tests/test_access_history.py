@@ -255,7 +255,8 @@ def test_SSO_정지_사유는_둘_다_화면에_라벨이_있다():
     written = set(re.findall(r'"(sso:disabled(?::[a-z]+)?)"',
                              (root / "backend/app/auth/routes/session.py").read_text(encoding="utf-8")))
     assert written == {"sso:disabled", "sso:disabled:sabun"}, "전제 — 콜백이 적는 정지 사유는 이 둘이다"
-    page = (root / "frontend/src/pages/admin/AccessHistoryPage.tsx").read_text(encoding="utf-8")
+    # 표는 페이지에서 떼어 낸 모듈에 있다(node 로 돌려 보려고 — test_admin_screen_units 가 실제로 돌린다)
+    page = (root / "frontend/src/lib/accessDetail.ts").read_text(encoding="utf-8")
     table = page[page.index("const DETAIL_LABEL"):page.index("};", page.index("const DETAIL_LABEL"))]
     labels = dict(re.findall(r"^\s*'?([a-z:_]+)'?:\s*'([^']+)',?\s*$", table, re.M))
     for code in sorted(written):
