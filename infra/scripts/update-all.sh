@@ -436,53 +436,16 @@ else
   esac
 fi
 
-# ── 1f) AI Ready Portal(ARP) 연결 — ARP_HOST 하나로 타일 주소·게이트웨이 ARP_BASE 를 같이 맞춘다 ─────────────
-# 같은 ARP 서버 주소가 두 곳(포털 타일 backend/config/systems.local.yaml · 게이트웨이 provision.env ARP_BASE)에 손으로 있었다.
+# ── 1f) AI Ready Portal(ARP) 연결 — ARP_HOST 로 게이트웨이 ARP_BASE 를 맞춘다 ─────────────
 # 1e(RA_HOST)와 같은 방식 — 값은 infra/.env(gitignore)에만, 추적 파일에는 적지 않는다(docs/arp-binding).
-# 타일은 **직결 링크** 그대로다(systems.local.yaml). 포털 경유(/arp/)는 ARP 가 절대경로로 이동해 보류다(D-1) — routes 파일에 쓰지 않는다.
-_upsert_tile_url() {  # $1=타일 id $2=url — systems.local.yaml 의 `<id>:` 블록만 새로 쓰고 다른 타일은 그대로. 같으면 안 쓴다.
-  TILE="$1" URL="$2" F="$SELF_REPO/backend/config/systems.local.yaml" python3 - <<'PY'
-import os, re
-f, tile, url = os.environ["F"], os.environ["TILE"], os.environ["URL"]
-head = "# 이 박스 전용 타일 덮어쓰기 — gitignore. 사내 주소는 추적 파일에 적지 않는다(docs/access-history).\n"
-try:
-    old = open(f, encoding="utf-8").read()
-except FileNotFoundError:
-    old = head
-block = [f"{tile}:", f"  url: {url}"]
-out, skip, put = [], False, False
-for ln in old.splitlines():
-    if re.fullmatch(rf"{re.escape(tile)}:\s*", ln):
-        if not put:
-            out += block          # 그 자리에 — 순서가 바뀌면 내용이 같아도 '바뀜' 이 되어 포털이 괜히 재기동한다
-            put = True
-        skip = True
-        continue
-    if skip and ln[:1] in (" ", "\t"):
-        continue                  # 그 타일의 들여쓴 줄(덮어쓰기 칸은 url 하나뿐이라 통째로 바꿔도 잃는 것이 없다)
-    skip = False
-    out.append(ln)
-if not put:
-    while out and not out[-1].strip():
-        out.pop()
-    out += block
-new = "\n".join(out) + "\n"
-if new != old:
-    os.makedirs(os.path.dirname(f), exist_ok=True)
-    tmp = f + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(new)
-    os.replace(tmp, f)
-    print("changed")
-else:
-    print("same")
-PY
-}
+# 타일은 2026-10-07 부터 포털 경유(/aireadyportal/)다. D-1(「ARP 가 절대경로로 이동해 보류」)은 ARP 가 그 이동을
+# 고쳐(arp_base.js 신규 · stripMiddleware · go() 접두어 부착, 2026-09-28~10-06) 해소됐다. 목적지는 routes.local.env 의
+# `aireadyportal=` 이고 systems.local.yaml 에는 쓰지 않는다 — 타일 id 가 aireadyportal 이라 `arp:` 는 고아 항목이 된다.
 ARP_HOST="$(_ra_envv ARP_HOST)"; ARP_PORT="$(_ra_envv ARP_PORT)"; ARP_PORT="${ARP_PORT:-3001}"
 if [ -z "$ARP_HOST" ]; then
-  hwax_skip "AI Ready Portal 주소 묶기" "infra/.env 에 ARP_HOST 가 없다 — 타일 주소(backend/config/systems.local.yaml)와 게이트웨이 ARP_BASE(HWAXMcpGateway/provision.env)를 손으로 둔 그대로 쓴다" "infra/.env 에 ARP_HOST=<ARP 서버 주소>(포트가 3001 이 아니면 ARP_PORT) 를 적으면 update-all 이 둘을 같이 맞춘다"
+  hwax_skip "AI Ready Portal 주소 묶기" "infra/.env 에 ARP_HOST 가 없다 — 게이트웨이 ARP_BASE(HWAXMcpGateway/provision.env)를 손으로 둔 그대로 쓴다(타일 목적지는 routes.local.env 의 aireadyportal=)" "infra/.env 에 ARP_HOST=<ARP 서버 주소>(포트가 3001 이 아니면 ARP_PORT) 를 적으면 update-all 이 게이트웨이 ARP_BASE 를 맞춘다"
 else
-  hr "1f) AI Ready Portal 연결 (ARP_HOST → 타일 주소·게이트웨이 ARP_BASE)"
+  hr "1f) AI Ready Portal 연결 (ARP_HOST → 게이트웨이 ARP_BASE)"
   # 모양 검사는 1e(RA_HOST)와 같은 규칙 — IPv4 또는 라벨(영숫자, 안쪽 하이픈)을 점으로 이은 호스트명만. 거부한 값은 비운다.
   _arp_shape='^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$'
   case "${ARP_HOST,,}" in
@@ -494,10 +457,7 @@ else
   esac
   if [ -n "$ARP_HOST" ]; then
     ARP_BASE="http://$ARP_HOST:$ARP_PORT"
-    if _arp_t="$(_upsert_tile_url arp "$ARP_BASE/")"; then
-      [ "$_arp_t" = changed ] && ok "systems.local.yaml: arp → $ARP_BASE/  (§2 가 포털을 재기동한다 — 재기동 지문에 이 파일이 있다)" \
-                              || ok "systems.local.yaml: arp → $ARP_BASE/ (그대로)"
-    else fail "backend/config/systems.local.yaml 에 arp 주소를 못 적었다 — 권한·소유자를 보라"; fi
+    ok "타일 주소는 routes.local.env 의 aireadyportal= 이 정본이다 — systems.local.yaml 에 쓰지 않는다"
     if [ -n "$GW_DIR" ]; then
       if _upsert_kv "$GW_DIR/provision.env" ARP_BASE "$ARP_BASE" 600; then
         ok "게이트웨이 provision.env: ARP_BASE=$ARP_BASE  (§5 가 config 와 다르면 재프로비저닝한다)"

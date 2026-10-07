@@ -1,4 +1,4 @@
-# ARP_HOST 한 줄로 포털 타일 주소와 게이트웨이 ARP_BASE 를 같이 맞춘다 — update-all 1f·§5 드리프트(docs/arp-binding)
+# ARP_HOST 한 줄로 게이트웨이 ARP_BASE 를 맞춘다(타일은 routes.local.env 의 aireadyportal=, 2026-10-07) — update-all 1f·§5 드리프트(docs/arp-binding)
 #
 # 주소는 문서용 예약 대역(TEST-NET)만 쓴다 — 이 리포는 GitHub 에 있다.
 import json
@@ -48,27 +48,24 @@ def box(tmp_path):
     return repo, gw, run
 
 
-def test_한_줄로_타일과_게이트웨이를_같이_적는다(box):
+def test_한_줄로_게이트웨이를_적고_타일_덮어쓰기는_안_쓴다(box):
     repo, gw, run = box
     out = run("ARP_HOST=203.0.113.20\n")
-    tiles = (repo / "backend/config/systems.local.yaml").read_text()
-    assert "arp:\n  url: http://203.0.113.20:3001/\n" in tiles
     assert (gw / "provision.env").read_text().strip() == "ARP_BASE=http://203.0.113.20:3001"
     assert stat.S_IMODE((gw / "provision.env").stat().st_mode) == 0o600, "게이트웨이 provision.env 는 비밀 파일이다"
-    assert "OK:systems.local.yaml: arp → http://203.0.113.20:3001/  (§2" in out
+    assert "systems.local.yaml 에 쓰지 않는다" in out
+    assert not (repo / "backend/config/systems.local.yaml").exists()
 
 
-def test_다른_타일은_그대로이고_자리도_안_바뀐다(box):
-    """자리가 바뀌면 내용이 같아도 '바뀜' 이 되어 포털이 괜히 재기동한다(재기동 지문은 내용 해시)."""
+def test_손으로_둔_타일_덮어쓰기를_건드리지_않는다(box):
+    """systems.local.yaml 은 재기동 지문에 들어 있다 — 1f 가 건드리면 포털이 괜히 재기동한다."""
     repo, gw, run = box
     f = repo / "backend/config/systems.local.yaml"
-    f.write_text("# 손으로 만든 머리\narp:\n  url: http://198.51.100.1:3001/\nodb-hub:\n  url: http://198.51.100.2:8000/\n")
+    f.write_text("# 손으로 만든 머리\nodb-hub:\n  url: http://198.51.100.2:8000/\n")
+    before, mtime = f.read_text(), f.stat().st_mtime_ns
     run("ARP_HOST=203.0.113.20\nARP_PORT=4001\n")
-    assert f.read_text() == ("# 손으로 만든 머리\narp:\n  url: http://203.0.113.20:4001/\n"
-                             "odb-hub:\n  url: http://198.51.100.2:8000/\n")
-    before = f.stat().st_mtime_ns
-    out = run("ARP_HOST=203.0.113.20\nARP_PORT=4001\n")
-    assert "(그대로)" in out and f.stat().st_mtime_ns == before, "같으면 쓰지 않는다"
+    assert f.read_text() == before and f.stat().st_mtime_ns == mtime
+    assert (gw / "provision.env").read_text().strip() == "ARP_BASE=http://203.0.113.20:4001"
 
 
 @pytest.mark.parametrize("host", ["http://203.0.113.20", "localhost", "127.0.0.1", "203.0.113.20/x", "-bad"])
