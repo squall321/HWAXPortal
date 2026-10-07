@@ -139,7 +139,9 @@ def load_raw(path: Path) -> dict:
     고쳐야 했다(8차 요청 §4-(1)). 정책을 읽는 곳은 **전부 이 함수를 지난다** — 시험이 추적 파일만 읽으면 오버레이로 붙인
     백엔드를 '표에 없다' 고 보고 조용히 갈라진다.
     `sso_affiliation_map` 은 반대로 **박스 파일에서만** 받는다 — 매핑 키(회사·부서 코드)가 사내 식별자다.
-    읽지 않은 것은 조용히 넘기지 않고 메모로 넘긴다(parse_policy 가 warnings 에 싣는다)."""
+    읽지 않은 것은 조용히 넘기지 않고 메모로 넘긴다(parse_policy 가 warnings 에 싣는다).
+    ⚠ 같은 id 의 플랫폼은 **합치지 않고 통째로 바꾼다** — 박스 파일의 그 항목에 systems·gateway 를 다시 적지 않으면 추적 파일의 것이
+    사라진다. 그렇게 어느 플랫폼에도 안 남은 타일·백엔드도 메모로 넘긴다(아래)."""
     raw = _read_yaml(path) or {}
     local = local_path(path)
     notes: list[str] = []
@@ -149,10 +151,32 @@ def load_raw(path: Path) -> dict:
         ov = _read_yaml(local) or {}
         if not isinstance(ov, dict):
             raise ValueError(f"{local.name}: 'platforms:' · 'sso_affiliation_map:' 절을 가진 매핑이어야 한다")
-        by_id = {str(d["id"]): d for d in raw.get("platforms") or []}
+        tracked = {str(d["id"]): d for d in raw.get("platforms") or []}
+        by_id = dict(tracked)
         for d in ov.get("platforms") or []:
             by_id[str(d["id"])] = d
         raw["platforms"] = list(by_id.values())
+        # 바꿔 쓰며 떨군 것 — "박스 전용 백엔드를 붙이려고" 추적 플랫폼의 id 에 gateway 한 줄만 적으면 추적 파일의 systems·gateway 가
+        # 사라진다. 표에 없는 타일은 모두에게 보이고(filter_tiles), 게이트웨이는 표에 없는 백엔드를 전체 공개로 본다 — 허가 0개인
+        # 사람에게 ste 타일이 보이고 ste 자격 중계의 유일한 문(visible_systems)이 열렸다(사본 재현, 2026-10-07). 그런데 읽지 않은
+        # 절·버린 행과 달리 이것만 조용했다. 바꿔 쓰기 자체는 그대로 둔다(타일·백엔드를 다른 플랫폼으로 옮기는 길이기도 하다) —
+        # **어느 항목에도 안 남은 것**만 말한다. 기능도 같은 백엔드를 쥘 수 있어 기능·플랫폼을 함께 본다(gateway_policy 가 그렇게 모은다).
+        for pid, was in tracked.items():
+            if by_id[pid] is was or not isinstance(was, dict):
+                continue
+            gone, open_to = [], []
+            for field, what, effect in (("systems", "타일", "그 타일은 모두에게 보인다"),
+                                        ("gateway", "게이트웨이 백엔드", "게이트웨이는 표에 없는 백엔드를 전체 공개로 본다")):
+                still = {str(m) for sec in ("features", "platforms") for d in raw.get(sec) or []
+                         if isinstance(d, dict) for m in d.get(field) or ()}
+                lost = [str(m) for m in was.get(field) or () if str(m) not in still]
+                if lost:
+                    gone.append(f"{what} {', '.join(lost)}")
+                    open_to.append(effect)
+            if gone:
+                notes.append(f"{local.name} 의 플랫폼 항목 '{pid}' 이 {path.name} 의 같은 플랫폼을 바꿔 쓰면서 표에서 빠진 것 — "
+                             f"{' · '.join(gone)}. 같은 id 는 합치지 않고 통째로 바꾼다. 빠진 것은 어느 플랫폼에도 없어 허가와 "
+                             f"무관하게 열린다({' · '.join(open_to)}). {local.name} 의 그 항목에 systems·gateway 를 다시 적는다")
         if "sso_affiliation_map" in ov:
             raw["sso_affiliation_map"] = ov["sso_affiliation_map"]
         ignored = sorted(str(k) for k in set(ov) - set(LOCAL_SECTIONS))

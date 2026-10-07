@@ -74,6 +74,54 @@ def test_플랫폼은_id_로_더하고_바꾼다(box):
     assert not pol.warnings
 
 
+# ── 같은 id 를 바꿔 쓰면서 추적 파일의 타일·백엔드를 떨군 박스 파일 ─────────────────────────────────────────
+# 같은 id 는 합치지 않고 **통째로 바꾼다**. "박스 전용 백엔드를 붙이려고" 추적 플랫폼의 id 에 gateway 한 줄만 적으면 추적 파일의
+# systems·gateway 가 사라진다 — 그 타일은 표에 없어 모두에게 보이고, 게이트웨이는 표에 없는 백엔드를 전체 공개로 본다
+# (사본에서: 허가 0개인 사람에게 ste 타일이 보이고 ste 자격 중계의 유일한 문이 열렸다). 그런데 warnings 는 비어 있었다.
+def test_같은_id_로_바꾸며_추적_파일의_타일과_백엔드를_떨구면_알린다(box):
+    base, local = box
+    _write(local, "platforms:\n  - {id: alpha, label: Alpha, gateway: [alpha-box]}\n")
+    pol = parse_policy(load_raw(base))
+    assert pol.system_key("alpha") is None and "alpha" not in pol.gateway_policy(), "바꿔 쓰는 규칙 자체는 그대로다"
+    assert pol.gateway_policy()["alpha-box"] == ["plat:alpha"]
+    (note,) = pol.warnings
+    assert "access.local.yaml" in note and "alpha" in note, note
+    assert "타일" in note and "게이트웨이" in note, "무엇이 빠졌는지 종류와 함께 말한다"
+    assert "통째로" in note, "왜 빠졌는지(합치지 않는다)와 무엇을 해야 하는지 말한다"
+
+
+def test_타일_없는_플랫폼의_백엔드만_떨궈도_알린다(box):
+    """타일이 없는 백엔드(대부분의 플랫폼이 그렇다)는 '표 밖의 타일' 확인에도 안 걸려, 실행 중에 알릴 자리가 여기뿐이다."""
+    base, local = box
+    _write(local, "platforms:\n  - {id: beta, label: B}\n")
+    pol = parse_policy(load_raw(base))
+    assert "beta" not in pol.gateway_policy()
+    (note,) = pol.warnings
+    assert "beta" in note and "게이트웨이" in note and "타일" not in note
+
+
+@pytest.mark.parametrize("overlay", [
+    "platforms:\n  - {id: alpha, label: Alpha(박스), systems: [alpha], gateway: [alpha, alpha-box]}\n",      # 다시 적었다
+    "platforms:\n  - {id: alpha, label: Alpha}\n  - {id: moved, label: M, systems: [alpha], gateway: [alpha]}\n",   # 다른 플랫폼으로 옮겼다
+    "platforms:\n  - {id: gamma, label: Gamma, gateway: [gamma]}\n",                                         # 새 id 만 더했다
+], ids=["다시_적음", "옮김", "더하기만"])
+def test_떨군_것이_없으면_조용하다(box, overlay):
+    """어느 플랫폼으로든 표에 남아 있으면 막힌 채다 — 바꿔 쓰기는 타일·백엔드를 다른 플랫폼으로 옮기는 길이기도 하다."""
+    base, local = box
+    _write(local, overlay)
+    pol = parse_policy(load_raw(base))
+    assert not pol.warnings, pol.warnings
+    assert pol.system_key("alpha") is not None and "alpha" in pol.gateway_policy()
+
+
+def test_기능이_같은_백엔드를_쥐고_있으면_떨군_것이_아니다(tmp_path):
+    """게이트웨이 정책은 기능·플랫폼을 가리지 않고 모은다 — 기능 쪽에 남아 있는 백엔드는 여전히 표 안이다."""
+    base = _write(tmp_path / "access.yaml", BASE.replace("{id: chat, label: 일반 챗}", "{id: chat, label: 일반 챗, gateway: [beta]}"))
+    _write(tmp_path / "access.local.yaml", "platforms:\n  - {id: beta, label: B}\n")
+    pol = parse_policy(load_raw(base))
+    assert pol.gateway_policy()["beta"] == ["feat:chat"] and not pol.warnings
+
+
 def test_플랫폼_밖의_절은_추적_파일_것이고_박스_파일에_적으면_알린다(box):
     """소속·기본 허가를 박스 파일로 바꿀 수 있으면 추적되지 않는 파일 한 줄이 전원의 권한이 된다. 읽지 않되 **말한다** —
     적었는데 아무 일도 없으면 사람은 오타를 찾는다."""
@@ -254,3 +302,7 @@ def test_관리자_화면은_멀쩡하면_조용하고_깨지면_무엇이_문�
     item = _overlay_item(c)
     assert item and any("1번째" in n and "NOPE" in n for n in item["notes"]), item
     assert "C999" not in str(item)
+    # 추적 플랫폼을 바꿔 쓰며 타일 없는 백엔드를 떨궜다 — '표 밖의 타일' 확인에는 안 걸리는 경우다
+    _write(local, "platforms:\n  - {id: beta, label: B}\n", tick=15)
+    item = _overlay_item(c)
+    assert item and item["state"] == "todo" and any("beta" in n and "게이트웨이" in n for n in item["notes"]), item

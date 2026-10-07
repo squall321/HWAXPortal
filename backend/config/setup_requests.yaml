@@ -103,6 +103,8 @@ requests:
 
       `backend/config/access.local.yaml` 은 이 박스에만 있는 것을 권한 표에 더하는 파일입니다(git 에 올라가지 않습니다).
       · `platforms:` — 추적 파일 `access.yaml` 의 플랫폼에 id 기준으로 더하거나 바꿉니다(박스 전용 게이트웨이 백엔드).
+        ⚠ 같은 id 는 그 항목을 **통째로 바꿉니다**(합치지 않습니다). `access.yaml` 에 있는 플랫폼에 백엔드를 더하려면 그 플랫폼의
+        `systems`·`gateway` 를 전부 다시 적으세요 — 빠뜨린 타일·백엔드는 표에서 사라져 허가와 무관하게 열립니다(위 사유에 뜹니다).
       · `sso_affiliation_map:` — SSO Claim → 소속 표. 모양은 `access.yaml` 끝의 예시를 보세요.
       소속·기본 허가·기능은 `access.yaml` 에서만 읽습니다.
 
@@ -123,6 +125,8 @@ requests:
       · 이 박스의 `backend/config/systems.local.yaml` 로 만든 타일이면 — `backend/config/access.local.yaml` 의 `platforms:` 에
         그 타일을 여는 플랫폼을 같이 적습니다(`- {id: <플랫폼 id>, label: <이름>, systems: [<타일 id>]}`). 재기동은 필요 없습니다.
       · 추적 파일 `systems.yaml` 의 타일이면 — `access.yaml` 의 맞는 플랫폼 `systems:` 에 그 타일 id 를 넣습니다.
+        `access.yaml` 에 이미 있는데도 여기 보이면 — `access.local.yaml` 이 그 플랫폼을 같은 id 로 바꿔 쓰며 `systems:` 를
+        빠뜨린 것입니다(같은 id 는 통째로 바뀝니다). 박스 파일의 그 항목에 다시 적습니다.
       · 방금 리포를 갱신한 박스라면 — 권한 표는 바로 새로 읽히고 타일 목록은 포털 재기동 때 읽힙니다. 이름이 바뀐 옛 타일이
         그 사이에 여기 보일 수 있습니다. 포털을 다시 띄우면 사라집니다.
 
