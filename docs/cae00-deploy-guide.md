@@ -536,6 +536,8 @@ $EDITOR infra/.env            # RA_HOST=<RA 주(A) 서버 주소>   ← 요청�
 - **AI Ready Portal(ARP)** 도 같은 방식이다 — `infra/.env` 에 `ARP_HOST=<ARP 서버 주소>`(포트가 3001 이 아니면 `ARP_PORT`)를 두면
   **1f** 가 포털 타일 주소(`backend/config/systems.local.yaml` 의 `arp`)와 게이트웨이 `provision.env` 의 `ARP_BASE` 를 같이 적는다
   (§5 가 게이트웨이 config 의 arp 주소가 다르면 재프로비저닝). 타일은 직결 링크 그대로다 — 포털 경유(`/arp/`)는 보류(docs/arp-binding).
+  ⚠ **2026-10-08 — 이 문단의 타일 부분은 대체됐다.** 1f 는 더는 `systems.local.yaml` 에 쓰지 않고(그 `arp:` 블록은 쓰이지 않는다), 타일은
+  포털 경유(`/aireadyportal/`)다. 게이트웨이 `ARP_BASE` 를 적는 것은 그대로다. 지금 기준은 아래 「2026-10-08 반영분」이다.
 - `services.yaml` 의 로컬 RA 두 항목(`report-archive`·`reportarchive-mcp`)은 `RA_HOST` 가 있는 박스에서 **이 박스 대상이
   아니다**(`unless_env`) — 스택 재기동이 **구 RA 를 되살리지 않는다**(두 DB 가 갈라지던 위험).
 - **LLM 설정 정본 이관** — 포털 챗·심의·PaperIngest 는 LLM 주소를 형제 `ReportArchive/.env` 에서 상속했다. 1e 가 그 값을
@@ -566,3 +568,15 @@ grep -c FROM_RA ../HWAXAgentServer/.env                          # 0 — 마커�
   안 보여 즉사, 생성기가 막는다) · `PUBLIC_BASE_URL=https://hwax.sec.samsung.net` · `COOKIE_SECURE=true`. 어긋나면 `/health/ready` 의
   `temporary` 에 `cookie_scheme` 이 실리고 `ste-doctor` 의 `https` 행이 빨강이다. 인증서가 없으면 `start.sh` 가 **자체서명을 만들어 띄운다** —
   정식(사내 CA) 발급본을 `infra/tls/` 에 넣고 재기동해야 `tls` 행이 "공개 CA" 또는 "체인 준비됨" 이 된다.
+
+## 2026-10-08 반영분 — 심의 엔진 변경 · 8·9·10차 변경 요청
+
+단계별 절차는 [change-request-8-10/server-setup.md](change-request-8-10/server-setup.md) 다. 이 절은 무엇이 왔는지와 건너뛰면 아픈 것 둘만 적는다.
+
+- **온 것** — 심의 엔진(근거 합계 예산 · 동시 실행 대기 줄 · 봉인 실행), 관리자 판정을 원장과 `PORTAL_ADMIN_EMAILS` 로만, SSO 첫 로그인의 소속
+  자동 지정(`access.local.yaml`), 부서 코드·사번 Claim, 내부 목적지 `NO_PROXY` 자동 더하기, 게이트웨이의 옛 항목 걷어내기, ARP 타일의 포털 경유 로그인.
+- **반영은 `update-all` 한 번이지만, 돌리기 전에 절차서 §1 의 확인 아홉을 먼저 한다.** 실행 뒤에 읽으면 늦다 — 도는 심의가 끊기고
+  (에이전트서버가 다시 뜬다), 깨진 `access.local.yaml` 은 포털이 뜬 뒤 요청을 전부 실패시키며, ARP 주소가 게이트웨이 설정에만 있으면
+  주소째 지워지고, 토큰에 박힌 관리자 표지로만 전권이던 옛 토큰은 권한을 잃는다.
+- **ARP 는 시각을 맞춘다.** `routes.local.env` 에 `aireadyportal=` 줄이 있는 채 포털이 다시 뜨는 순간부터 타일 클릭이 ARP 로 로그인
+  토큰을 보낸다. ARP 쪽이 준비되기 전이면 그 줄을 빼고 반영한다(타일이 숨는다). 종전의 직결 타일은 어느 쪽이든 사라진다.
