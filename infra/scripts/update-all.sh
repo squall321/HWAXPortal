@@ -82,6 +82,8 @@ app_bad() { local c="$1"; shift; if [ "$c" = 1 ]; then fail "$@"; else bad "$@";
 #   실패(✗)·경고(⚠)와 다른 표식이다. 자식 스크립트(deploy-ste·게이트 lib·env-sync)도 같은 파일에 적는다.
 . "$SELF_REPO/infra/scripts/lib/skip-ledger.sh"
 HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER
+# 도는·줄 선 심의가 있으면 에이전트 서버를 재기동하지 않는다(§4 는 update-sites 가, §5 는 재프로비저닝 앞에서 묻는다).
+. "$SELF_REPO/infra/scripts/lib/delib-busy.sh"
 
 # HTTP 코드 프로브 — curl은 실패해도 -w로 '000'을 찍으므로 종료코드가 아니라 출력값으로만 판정한다.
 http_code() { curl -sk -m "${2:-4}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null; }
@@ -727,9 +729,13 @@ hr "4) update-sites (챗 스택: mcp-gateway·agent-server·signalforge-mcp)"
 # 실제 장애는 아니었지만, 매 배포마다 가짜 DOWN 이 뜨면 진짜 장애와 구분이 안 된다.
 # ⚠ 갱신 실패를 **실패로 센다.** 헬스게이트는 "떠 있나" 만 보므로, git pull 이 막혀 옛 코드로 떠도
 # 초록이었다(2026-09-17 cae00 점검 — 절차가 옛 게이트웨이에 걸려 있었다).
-if ! "$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server; then
-  fail "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다"
-fi
+# 3 은 실패가 아니다 — 도는·줄 선 심의가 있어 에이전트 서버 재기동을 미뤘다(update-sites 가 사유를 찍고 장부 ○ 에 적었다).
+# 몇 시간 돈 패널을 배포 한 번이 말없이 지우지 않게 한다. 강행은 AGENT_RESTART_FORCE=1 을 주고 재실행.
+"$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server; _us_rc=$?
+case "$_us_rc" in
+  0|3) ;;
+  *) fail "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다" ;;
+esac
 
 # ste 를 이 박스가 쓰는가 — **`ste=` 라우트가 설정돼 있으면 쓴다**(ARP_BASE 와 같은 신호 방식).
 # 주석(`#ste=`)은 세지 않는다. 아래 기대 백엔드 판정과 프로비저닝 인자 둘 다 이 값을 본다.
@@ -1194,6 +1200,14 @@ PY
       MISSING="${MISSING:+$MISSING }$_k"
     done
   fi
+  # 도는·줄 선 심의가 있으면 이번 실행에서는 재프로비저닝하지 않는다 — 재프로비저닝은 게이트웨이·에이전트서버 재기동까지가 한 벌이고
+  # (토큰이 두 설정 파일에 같이 적힌다), 그 재기동이 몇 시간 돈 패널과 줄 선 심의를 말없이 지운다. config 만 고치고 재기동을 빼면
+  # 떠 있는 프로세스와 파일이 갈린다 — 통째로 미루고 ○ 로 남긴다. 다음 실행이 같은 어긋남을 다시 본다.
+  _reprov_deferred=""
+  if [ -n "$MISSING" ] && _dbusy="$(hwax_delib_busy http://127.0.0.1:9009/health)"; then
+    hwax_skip "게이트웨이 재프로비저닝 건너뜀" "심의 ${_dbusy% *}건 진행 중, ${_dbusy#* }건 대기 — 고칠 것($MISSING)은 게이트웨이·에이전트서버를 재기동해야 반영되는데 재기동하면 심의가 전부 끊긴다" "심의가 끝난 뒤 update-all 을 다시 돌린다 · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
+    _reprov_deferred="$MISSING"; MISSING=""
+  fi
   if [ -n "$MISSING" ]; then
     echo "  · config에 없거나 주소가 어긋난 백엔드: $MISSING → 재프로비저닝"
     if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/provision-config.sh" ]; then
@@ -1288,7 +1302,7 @@ PY
       bad "HWAXMcpGateway 레포/provision-config.sh 없음 — 재프로비저닝 불가"
     fi
   else
-    if [ "${KNOX_MISSING:-0}" != 1 ]; then ok "config 정합 (빠진 백엔드 없음)"; fi
+    if [ "${KNOX_MISSING:-0}" != 1 ] && [ -z "${_reprov_deferred:-}" ]; then ok "config 정합 (빠진 백엔드 없음)"; fi
   fi
 
   # 등록됐지만 죽어 있는(false) 백엔드 → 해당 서비스만 지정 기동(전 스택 무인자 up 금지 —

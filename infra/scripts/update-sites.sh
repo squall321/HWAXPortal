@@ -8,6 +8,8 @@ export PYTHONUNBUFFERED=1   # tee 파이프로 넘겨도 진행 로그가 즉시
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SVC="$ROOT/infra/scripts/services.sh"
 . "$ROOT/infra/scripts/lib/change-detect.sh"
+. "$ROOT/infra/scripts/lib/skip-ledger.sh"    # ○ 장부 — update-all 이 물려준 HWAX_SKIP_LEDGER 가 있으면 같은 파일에 적는다(단독 실행이면 화면에만)
+. "$ROOT/infra/scripts/lib/delib-busy.sh"     # 도는·줄 선 심의가 있으면 에이전트 서버를 내리지 않는다
 # deploy-all(§2) 과 다른 형식의 지문이라 **하위 디렉터리**를 따로 쓴다 — 같은 파일을 두 형식이 번갈아 덮으면 핑퐁 재기동이 난다(2라운드: 인자 없는 update-sites 는 portal 도 대상)
 HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$ROOT/infra/.state/restart-fp/sites}"; export HWAX_RESTART_STATE_DIR
 SVCPY="$ROOT/infra/scripts/services.py"
@@ -157,8 +159,9 @@ show_cause() {
 # 블록 전/후 비교가 아닌 이유: §2 가 이미 reset 한 리포(signalforge-mcp)·§1c 가 먼저 고친 .env 가 전후 비교엔 안 보인다(검토 실측).
 # 기동이 성공한 뒤에만 지문을 적는다. HWAX_RESTART_ALL=1 은 종전 동작. docs/update-all-skip-unchanged D-5·D-8.
 SKIPPED_RESTART=""
+DEFERRED_RESTART=""   # 도는·줄 선 심의 때문에 재기동을 미룬 서비스(지금은 agent-server 뿐) — 옛 프로세스가 그대로 돈다
 restart_svc() {
-  local name="$1" rc tmp tmpu cur last id0 id1 _en _restart_fail=0 _upd_fail=0; local -a _urls=()
+  local name="$1" rc tmp tmpu cur last id0 id1 _en _restart_fail=0 _upd_fail=0 _busy _brc; local -a _urls=()
   # 이름이 플래그면 여기서 끊는다 — services.py 는 `-` 로 시작하는 인자를 이름 목록에서 걸러 '이름 없음 = 전부' 로 읽는다(5라운드).
   case "$name" in -*) echo "  ✗ $name: 서비스명이 아니다(옵션처럼 보인다) — 실행을 멈춘다" >&2; return 1 ;; esac
   # 매니페스트에 없는 이름이면 여기서 끊는다 — 종전엔 update·up 이 조용히 아무것도 안 하고 `fp` 가 빈 값이라 아래 검증 블록을 통째로
@@ -197,6 +200,21 @@ restart_svc() {
   # 서비스(agent-server)는 포트 루트를 두드리면 살아 있어도 '내려갔다' 로 읽혀 대기가 무효가 된다(3라운드).
   mapfile -t _urls < <("$SVC" health "$name" 2>/dev/null | grep -v '^[[:space:]]*$')
   if [ "${#_urls[@]}" -gt 0 ]; then id0="$(hwax_listener_ids "${_urls[@]}")"; else id0=""; fi
+  # 도는·줄 선 심의가 있으면 에이전트 서버를 내리지 않는다(lib/delib-busy.sh) — 그 서버의 재기동은 2초 유예 뒤 강제 종료라 몇 시간 돈
+  # 패널과 줄 선 심의가 말없이 사라진다(재개가 없다). 지문은 적지 않는다 — 다음 실행이 다시 보고, 그때 비어 있으면 재기동한다.
+  # 묻는 것은 이 서비스뿐이다. 답하지 않으면(내려가 있다) 끊을 심의가 없으니 그대로 띄운다. 강행은 AGENT_RESTART_FORCE=1.
+  if [ "$name" = agent-server ] && [ "${#_urls[@]}" -gt 0 ]; then
+    _busy="$(hwax_delib_busy "${_urls[0]}")"; _brc=$?
+    if [ "$_brc" = 0 ]; then
+      hwax_skip "agent-server 재기동 건너뜀" "심의 ${_busy% *}건 진행 중, ${_busy#* }건 대기 — 재기동하면 전부 끊긴다(재개가 없다). 새 코드·설정은 아직 반영되지 않았다(옛 프로세스가 돈다)" "심의가 끝난 뒤 다시 돌리거나 HWAXAgentServer 에서 ./start.sh -d · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
+      DEFERRED_RESTART="$DEFERRED_RESTART $name"; rm -f "$tmp" "$tmpu"
+      if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 종료코드만 올린다" >&2; return 2; fi
+      return 0
+    fi
+    if [ "$_brc" = 2 ] && hwax_alive "${_urls[0]}"; then
+      echo "  · $name: /health 가 도는 심의 수(delib_active·delib_queued)를 싣지 않는다(옛 판) — 묻지 못하고 재기동한다"
+    fi
+  fi
   echo "  · down (기존 인스턴스 정리) …"
   "$SVC" down "$name" >/dev/null 2>&1 || true
   if [ "${#_urls[@]}" -gt 0 ]; then
@@ -255,6 +273,7 @@ done
 
 echo
 [ -n "$SKIPPED_RESTART" ] && echo "▶ 재기동 생략(마지막 기동 뒤 변경 없음·살아 있음):$SKIPPED_RESTART  — 전부 재기동하려면 HWAX_RESTART_ALL=1"
+[ -n "$DEFERRED_RESTART" ] && echo "▶ ○ 재기동 미룸(심의가 돌거나 줄 서 있다):$DEFERRED_RESTART  — 옛 프로세스가 돈다. 심의가 끝난 뒤 다시 돌린다(강행: AGENT_RESTART_FORCE=1)"
 echo "▶ 최종 상태:"; "$SVC" status $TARGETS || true
 [ -n "$PULL_FAILED" ] && echo "▶ ⚠ 갱신(git pull) 실패:$PULL_FAILED  — 서비스는 정상이다(옛 코드로 돈다). 네트워크·원격을 확인하고 다시 돌려라."
 if [ -n "$FAILED" ]; then
@@ -262,4 +281,6 @@ if [ -n "$FAILED" ]; then
   exit 1
 fi
 [ -n "$PULL_FAILED" ] && exit 1
+# 3 = 실패는 없고 재기동만 미뤘다 — 0 이면 '전부 재기동됐다' 와 구별이 안 된다(deploy-ste 의 게이트와 같은 약속. update-all §4 가 읽는다).
+if [ -n "$DEFERRED_RESTART" ]; then echo "▶ 완료 — 단, 재기동을 미룬 서비스가 있다(위 ○)."; exit 3; fi
 echo "▶ 완료 — report-archive 제외 전부 최신화·재기동."
