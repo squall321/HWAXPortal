@@ -22,6 +22,8 @@
 #     ODB_HUB_TOKEN=xxxx           # ODB 자동화 허브(<ODB 서버>:8000) — cae00 에서만 도달
 #     ARP_BASE=http://<ARP 서버>:3001  # AI Ready Portal — cae00 에서만 도달. infra/.env ARP_HOST 가 있으면 1f 가 채운다
 #     ARP_TOKEN=xxxx                   # ARP MCP 서비스 토큰(2026-10-01 부터 인증) — 없으면 arp 백엔드만 빠진다
+#     SMARTTWIN_MCP_URL=http://127.0.0.1:5013/mcp   # SmartTwinMCP 를 쓰는 박스만(dev) — 없으면 게이트웨이가 smart-twin-mcp 를 등재하지 않는다
+#     PER_USER_SSO_APPS="<per_user 키>:<ENV 접두> …" # 여섯 번째 앱부터의 사람별 위임 — <접두>_SSO_SECRET · <접두>_SSO_URL 과 함께 적는다
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
