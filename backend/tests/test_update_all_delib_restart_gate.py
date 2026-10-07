@@ -270,3 +270,30 @@ def test_강행_손잡이가_사용법에_적혀_있다():
     assert r.returncode == 0 and "AGENT_RESTART_FORCE=1" in r.stdout and "종료코드 3" in r.stdout, r.stdout
     head = UA[:UA.index("set -uo pipefail")]
     assert "AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh" in head and "○" in head
+
+
+# ── update-forges — 에이전트 서버의 start.sh 가 스스로 건너뛴 것(3)을 실패로 세지 않는다 ─────────────────────
+FORGES = (ROOT / "infra/scripts/update-forges.sh").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("rc,failed,said", [(0, "0", ""), (3, "0", "○"), (1, "1", "✗"), (127, "1", "✗")])
+def test_update_forges_는_건너뛴_재기동을_실패로_세지_않는다(tmp_path, rc, failed, said):
+    """짝 — HWAXAgentServer 의 start.sh 는 도는·줄 선 심의가 있으면 인스턴스를 내리지 않고 3 으로 나간다. update-forges(chat ·
+    restart)는 그 스크립트를 직접 부른다 — 3 을 실패로 세면 '○ 재기동 건너뜀' 바로 아래에 '✗ 재기동 실패' 가 찍히고 실행이 실패로 끝난다."""
+    i = FORGES.index("restart_agent() {")
+    fn = FORGES[i:FORGES.index("\n}\n", i) + 3]
+    agent = tmp_path / "HWAXAgentServer"; agent.mkdir()
+    (agent / "start.sh").write_text(f'#!/usr/bin/env bash\necho "ARG:$1" > "{tmp_path}/called"\nexit {rc}\n'); (agent / "start.sh").chmod(0o755)
+    r = _sh(f'set -uo pipefail\nFAIL=0\n{fn}\nrestart_agent "{agent}"\necho "FAIL=$FAIL"')
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    assert (tmp_path / "called").read_text().strip() == "ARG:-d", "백그라운드로 띄운다(종전 그대로)"
+    assert f"FAIL={failed}" in r.stdout, r.stdout
+    assert (said in r.stdout) if said else (r.stdout.strip() == "FAIL=0"), r.stdout
+    if rc == 3:
+        assert "✗" not in r.stdout and "그대로 둔다" in r.stdout
+
+
+def test_update_forges_의_에이전트_재기동은_전부_그_함수를_지난다():
+    """재기동 자리가 둘이다(chat · restart) — 한 곳만 고치면 다른 길에서 같은 거짓 실패가 난다."""
+    assert FORGES.count('restart_agent "$aserver"') == 2
+    assert FORGES.count("./start.sh -d") == 1, "start.sh 를 직접 부르는 곳은 그 함수 하나다"

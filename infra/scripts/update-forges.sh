@@ -64,6 +64,18 @@ find_repo() { for c in "$PARENT/$1" "$HOME/Projects/$1" "$HOME/claude/$1"; do [ 
 case "$ROOT" in */Projects/*) BOX=cae00 ;; *) BOX=dev ;; esac
 hr() { printf '\n\033[1;36m── %s ─────────────────────\033[0m\n' "$*"; }
 FAIL=0
+# agent-server 재기동 — 그쪽 start.sh 는 도는·줄 선 심의가 있으면 떠 있는 인스턴스를 내리지 않고 **3 으로 나간다**(몇 시간 돈 패널을
+# 재기동 한 번이 말없이 지우지 않게. 사유와 강행법 AGENT_RESTART_FORCE=1 은 그 스크립트가 찍는다). 3 을 실패로 세면 그 '○ 재기동
+# 건너뜀' 바로 아래에 '✗ 재기동 실패' 가 찍히고 실행 전체가 실패로 끝난다 — 건너뛴 것은 건너뛴 것으로 말한다.
+restart_agent() {  # $1 = HWAXAgentServer 리포
+  local rc=0
+  ( cd "$1" && ./start.sh -d ) || rc=$?
+  case "$rc" in
+    0) ;;
+    3) echo "○ agent-server 는 그대로 둔다 — 도는·줄 선 심의가 있다(위 줄). 새 코드·설정은 그 심의가 끝난 뒤 다시 돌려야 반영된다" ;;
+    *) echo "✗ agent-server 재기동 실패"; FAIL=1 ;;
+  esac
+}
 
 # update-all(§2) 이 **소유한** 서비스 — 여기서는 위임만 한다. 베끼면 갈라지고, 갈라진 쪽이
 # 하필 초록을 찍는다(노트: dynaforge 축약판이 `set_remote` 누락·루트 프로브로 뒤처져 있었다).
@@ -233,7 +245,7 @@ do_chat() {
     ( cd "$gw" && ./start.sh restart ) || { echo "✗ 게이트웨이 재기동 실패"; FAIL=1; }
   fi
   if [ -n "$aserver" ]; then
-    ( cd "$aserver" && ./start.sh -d ) || { echo "✗ agent-server 재기동 실패"; FAIL=1; }
+    restart_agent "$aserver"
   fi
   sleep 3
   for pp in "8723 /health 포털" "9009 /health agent-server" "9110 /health 게이트웨이"; do
@@ -280,7 +292,7 @@ do_restart() {
   local gw aserver
   gw="$(find_repo HWAXMcpGateway)"; aserver="$(find_repo HWAXAgentServer)"
   [ -n "$gw" ] && { ( cd "$gw" && ./start.sh restart ) || { echo "✗ 게이트웨이 재기동 실패"; FAIL=1; }; }
-  [ -n "$aserver" ] && { ( cd "$aserver" && ./start.sh -d ) || { echo "✗ agent-server 재기동 실패"; FAIL=1; }; }
+  [ -n "$aserver" ] && restart_agent "$aserver"
   # ③ DynaForge 스택(갱신 없이 stop/start) + StepForge 인스턴스(리빌드 없이 전환)
   local koor heax
   koor="$(find_repo KooRemapper)"
