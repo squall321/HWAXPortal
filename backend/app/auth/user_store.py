@@ -95,6 +95,9 @@ class UserStore:
         # '마지막으로 보신 뒤' 가 비어 처음 온 사람처럼 다뤄졌다(docs/ui-refresh 단계 4). 앞으로만 간다.
         with contextlib.suppress(sqlite3.OperationalError):
             self._conn.execute("ALTER TABLE users ADD COLUMN changelog_seen TEXT NOT NULL DEFAULT ''")
+        # 부서 코드(IdP 의 DeptId) — 표시용 department 와 따로 둔다. 한 칸에 받으면 사람이 적은 부서명이 코드로 덮인다(10차 요청 §7).
+        with contextlib.suppress(sqlite3.OperationalError):
+            self._conn.execute("ALTER TABLE users ADD COLUMN dept_id TEXT NOT NULL DEFAULT ''")
         # 허가 요청 — 사용자가 내 권한 페이지에서 보내고 관리자가 승인·거절한다.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS access_requests ("
@@ -147,7 +150,7 @@ class UserStore:
     def list_users(self) -> list[dict]:
         with self._lock:
             cur = self._conn.execute(
-                "SELECT email, name, department, affiliation, grants, groups, status, auth_source, "
+                "SELECT email, name, department, dept_id, affiliation, grants, groups, status, auth_source, "
                 "created_at, approved_at, last_login_at, locked_until FROM users "
                 "ORDER BY created_at DESC")
             cols = [c[0] for c in cur.description]
@@ -448,7 +451,8 @@ class UserStore:
         return u
 
     # ── SSO 연동(미래) ──────────────────────────────────────────────────────
-    def note_sso_login(self, *, email: str, name: str | None, department: str | None = None) -> None:
+    def note_sso_login(self, *, email: str, name: str | None, department: str | None = None,
+                       dept_id: str | None = None) -> None:
         """SSO 콜백 훅 — 같은 이메일 행이 있으면 연결(auth_source 갱신), 없으면 원장에
         생성(active — IdP 가 이미 신원을 보증). 계정·비밀번호 해시는 남는다.
 
@@ -456,23 +460,25 @@ class UserStore:
         오면 스스로 낫는다. 예전엔 새 행에 이메일을 이름으로 박고 UPDATE 는 이름을 안 건드려 영구히 이메일로 굳었다 — 그래서
         이름이 이메일과 같은 행도 빈 것으로 본다(6차 요청 §4-B-3). 읽을 때의 대체는 deps.entitled 가 한다.
         부서는 IdP 값이 있으면 덮는다(사람 입력 표기가 21종으로 갈려 있다), 없으면 그대로 둔다.
+        부서 **코드**(dept_id)도 같은 규칙이되 제 칸에만 적는다 — 표시용 부서는 코드로 덮지 않는다(10차 요청 §7).
         ⚠ affiliation·groups·grants·status 는 **절대 안 건드린다** — 권한 입력이다(§4-B-4)."""
         email = norm_email(email)
         name = (name or "").strip()[:80]
         dept = (department or "").strip()[:80] or None
+        did = (dept_id or "").strip()[:80] or None
         now = _now()
         with self._lock:
             if self.get(email) is None:
                 self._conn.execute(
                     "INSERT INTO users (email, name, groups, status, auth_source, created_at, "
-                    "approved_at, approved_by, last_login_at, department) "
-                    "VALUES (?, ?, '[]', 'active', 'sso', ?, ?, 'sso', ?, ?)",
-                    (email, name, now, now, now, dept or ""))
+                    "approved_at, approved_by, last_login_at, department, dept_id) "
+                    "VALUES (?, ?, '[]', 'active', 'sso', ?, ?, 'sso', ?, ?, ?)",
+                    (email, name, now, now, now, dept or "", did or ""))
             else:
                 self._conn.execute(
                     "UPDATE users SET auth_source = 'sso', last_login_at = ?, "
                     "name = CASE WHEN ? <> '' AND (TRIM(name) = '' OR lower(TRIM(name)) = lower(email)) "
                     "THEN ? ELSE name END, "
-                    "department = COALESCE(?, department) WHERE email = ?",
-                    (now, name, name, dept, email))
+                    "department = COALESCE(?, department), dept_id = COALESCE(?, dept_id) WHERE email = ?",
+                    (now, name, name, dept, did, email))
             self._commit()

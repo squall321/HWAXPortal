@@ -90,7 +90,7 @@ with TestClient(app, base_url="http://localhost:5283") as c:
         out["me"] = me.json() if me.status_code == 200 else me.text[:300]
         out["convs"] = [x["title"] for x in c.get("/agent/conversations").json().get("conversations", [])]
         out["row"] = {k: v for k, v in (us.get(out["me"]["email"]) or {}).items()
-                      if k in ("name", "department", "affiliation", "groups", "grants", "status")}
+                      if k in ("name", "department", "dept_id", "affiliation", "groups", "grants", "status")}
 print(json.dumps(out, ensure_ascii=False))
 '''
 
@@ -107,7 +107,7 @@ def _run(tmp_path, *, want_nameid: str | None = "false", env_extra: dict | None 
            "AGENT_AUDIT_LOG_PATH": str(tmp_path / "audit.sqlite"), "JWT_KEYS_DIR": str(tmp_path / "jwt"),
            "JWT_AUTOGEN_KEYS": "true", "PROCEDURES_ARTIFACT_ROOT": str(tmp_path / "art"),
            "DELIB_ARCHIVE_ROOT": str(tmp_path / "delib"), "UPLOAD_STAGING_DIR": str(tmp_path / "stage")}
-    for k in ("SAML_WANT_NAMEID", "SAML_SUBJECT_SOURCE", "SAML_ATTR_NAME", "SAML_ATTR_DEPARTMENT",
+    for k in ("SAML_WANT_NAMEID", "SAML_SUBJECT_SOURCE", "SAML_ATTR_NAME", "SAML_ATTR_DEPARTMENT", "SAML_ATTR_DEPT_ID",
               "SAML_SEND_NAMEID_POLICY", "SAML_ADVERTISE_SLO"):
         env.pop(k, None)
     if want_nameid is not None:
@@ -231,6 +231,26 @@ def test_지정한_Claim_이_없으면_첫_로그인에_경고를_남긴다_값�
     assert "SAML_ATTR_NAME='displayName'" in err and "SAML_ATTR_DEPARTMENT=" in err, err[-1500:]
     assert CLAIM + "Mail" in err, "받은 Claim 이름 목록이 있어야 .env 를 확정할 수 있다"
     assert "secret.value" not in err, "Claim 값(개인정보)은 로그에 안 남긴다"
+
+
+# ── 10차 §7 부서 코드는 제 칸에 ─────────────────────────────────────────────────────────────
+@needs_keys
+def test_부서_코드_Claim_은_dept_id_칸에만_적고_직접_적은_부서명은_그대로다(tmp_path):
+    """운영 ADFS 의 부서 Claim 은 코드(DeptId) 하나뿐이다. 그것을 SAML_ATTR_DEPARTMENT 로 받으면 사람이 적은 부서명이 로그인하는 순간
+    코드로 바뀐다 — 코드는 SAML_ATTR_DEPT_ID 로 따로 받는다. 권한 칸은 이쪽도 안 건드린다."""
+    out = _run(tmp_path, seed=SEED, env_extra={"SAML_ATTR_DEPT_ID": CLAIM + "DeptId"})
+    assert out["row"]["dept_id"] == "D2001" and out["row"]["department"] == "옛 표기 부서", out["row"]
+    assert out["me"]["department"] == "옛 표기 부서", out["me"]
+    assert out["row"]["affiliation"] == "CAEG" and out["row"]["groups"] == ["portal-admin"], out["row"]
+
+
+@needs_keys
+def test_부서_코드_Claim_이름이_어긋나면_적지_않고_경고를_남긴다(tmp_path):
+    """켰는데 이름이 틀리면 칸이 조용히 비어 있다 — 이름·부서 Claim 과 같은 한 줄을 남긴다(§4-B-5 와 같은 자리)."""
+    out = _run(tmp_path, env_extra={"SAML_ATTR_DEPT_ID": CLAIM + "DeptCode"})
+    assert out["status"] in (302, 303) and out["row"]["dept_id"] == "", out
+    assert "SAML_ATTR_DEPT_ID=" in out["stderr"] and CLAIM + "DeptId" in out["stderr"], out["stderr"][-1500:]
+    assert "D2001" not in out["stderr"], "Claim 값은 로그에 안 남긴다"
 
 
 # ── 검토 2차 ───────────────────────────────────────────────────────────────────────────────

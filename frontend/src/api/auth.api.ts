@@ -12,6 +12,8 @@ export interface LocalUserRow {
   email: string;
   name: string;
   department: string;
+  /** 부서 코드(IdP 의 DeptId) — 표시용 부서명과 따로 온다. SAML_ATTR_DEPT_ID 를 켠 박스에서만 채워진다. */
+  dept_id?: string;
   /** 소속(관리자 지정)·개별 허가 — docs/access-control. */
   affiliation?: string;
   grants?: string[];

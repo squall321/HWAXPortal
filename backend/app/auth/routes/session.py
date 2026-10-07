@@ -71,11 +71,14 @@ def complete_login(
     if user_store is not None and getattr(principal, "email", None):
         # 부서는 여기서 수확해 원장에 적어야 한다 — 원시 Claim(principal.attributes)은 세션 JWT 에 안 실려 콜백을 벗어나면
         # 사라진다(6차 요청 §4-B-2). 이름은 적지 않아도 읽을 때 대체한다(deps.entitled) — 원장 이름이 비었을 때만 채운다.
-        dept_vals = (getattr(principal, "attributes", None) or {}).get(settings.saml_attr_department) \
-            if settings.saml_attr_department else None
+        attrs = getattr(principal, "attributes", None) or {}
+        dept_vals = attrs.get(settings.saml_attr_department) if settings.saml_attr_department else None
+        # 부서 코드(DeptId)는 부서명과 다른 칸으로 — 같은 칸에 받으면 사람이 적은 부서명이 코드로 덮인다(10차 요청 §7).
+        dept_id_vals = attrs.get(settings.saml_attr_dept_id) if settings.saml_attr_dept_id else None
         with contextlib.suppress(Exception):
             user_store.note_sso_login(email=principal.email, name=principal.display_name,
-                                      department=(dept_vals or [None])[0])
+                                      department=(dept_vals or [None])[0],
+                                      dept_id=(dept_id_vals or [None])[0])
     return_to = "/"
     if expected_state:
         try:

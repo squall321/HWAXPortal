@@ -91,7 +91,7 @@ export default function UsersAdminPage() {
             <tr>
               <th>이메일</th>
               <th>이름</th>
-              <th>부서</th>
+              <th>부서 · 코드</th>
               <th>소속</th>
               <th>개별 허가</th>
               <th>상태</th>
@@ -107,7 +107,10 @@ export default function UsersAdminPage() {
               <tr>
                 <td>{r.email}</td>
                 <td>{r.name || '—'}</td>
-                <td>{r.department || '—'}</td>
+                <td>
+                  {r.department || (r.dept_id ? '' : '—')}
+                  {r.dept_id && <span className="adm-meta"> {r.dept_id}</span>}
+                </td>
                 <td>
                   <AffiliationSelect policy={policy} row={r} onSaved={reload} onError={setError} />
                 </td>

@@ -123,6 +123,10 @@ class Settings(BaseSettings):
     # 부서(조직명) Claim — 비우면 안 받는다. 받으면 원장 `department`(표시용)를 IdP 값으로 덮는다. 권한 입력인 `affiliation`·groups·
     # grants·status 는 **절대 안 건드린다** — 모르는 소속 값은 조용히 버려져 CAEG 사용자가 기본 권한으로 떨어진다(6차 요청 §4-B-4).
     saml_attr_department: str = ""
+    # 부서 **코드** Claim(DeptId) — 비우면 안 받는다. 표시용 `department` 를 덮지 않고 원장 `dept_id` 칸에만 적는다. 운영 ADFS 가
+    # 주는 부서 Claim 은 코드 하나뿐이라, 그것을 위 saml_attr_department 로 받으면 사람이 직접 적은 부서명이 로그인하는 순간
+    # 코드로 바뀐다(10차 요청 §7). 권한 칸은 이쪽도 안 건드린다.
+    saml_attr_dept_id: str = ""
     # ACS/SLS 경로 — AD-SSO 에 등록한 Endpoint Url 과 **글자 단위로** 같아야 한다(4차 변경 요청, 2026-09-29).
     # ⚠ ADFS 는 이 값을 인증 *전에* 검증하지 않는다 — 어긋나면 인증을 통과한 뒤 일반 오류 페이지로 끝나고 SP 에는
     #   아무 요청도 오지 않는다(조용한 실패). cae00 등록값은 개발·운영 모두 `/auth/callback` 이다 → .env SAML_ACS_PATH.

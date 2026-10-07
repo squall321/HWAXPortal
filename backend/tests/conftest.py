@@ -1,4 +1,4 @@
-# 시험이 운영 감사 원장(/data 의 agent_audit.sqlite)에 쓰지 않게 — 포털 기동(lifespan)이 get_settings() 로 경로를 읽는다
+# 시험이 운영 감사 원장·계정 원장(/data 의 agent_audit.sqlite · users.sqlite)을 건드리지 않게 — 포털 기동(lifespan)이 get_settings() 로 경로를 읽는다
 #
 # get_settings() 는 lru_cache 라 **처음 불리기 전에** 환경을 정해야 한다 — 시험 모듈보다 먼저 읽히는 이 파일에서.
 # 이게 없어서 dev 실원장 agent_audit 814줄 중 622줄이 시험 계정(user@corp.com)의 챗 기록이었다(2026-09-30 실측).
@@ -10,3 +10,9 @@ import tempfile
 os.environ.setdefault(
     "AGENT_AUDIT_LOG_PATH",
     os.path.join(tempfile.mkdtemp(prefix="hwax-test-audit-"), "agent_audit.sqlite"))
+# 계정 원장도 같은 이유로 — 시험이 `TestClient(app)` 로 포털을 띄우면 기동(lifespan)이 원장을 열고 **스키마 이관을 돌린다.**
+# 칸을 더하는 변경(dept_id, 10차 요청 §7)을 넣자, 시험을 돌린 것만으로 그 박스의 실 원장(/data 의 users.sqlite)에 칸이 생기게 됐다
+# — 재기동 전의 떠 있는 포털 밑에서. 시험마다 `app.state.user_store` 를 임시 원장으로 바꾸는 것은 기동 **뒤**라 이것을 못 막는다.
+os.environ.setdefault(
+    "USER_STORE_PATH",
+    os.path.join(tempfile.mkdtemp(prefix="hwax-test-users-"), "users.sqlite"))
