@@ -229,6 +229,37 @@ def test_게이트웨이_조회가_is_admin_을_원장만으로_준다(box):
     assert off["is_admin"] is False and off["keys"] == [], "정지가 관리자보다 먼저다"
 
 
+def test_게이트웨이가_읽는_식으로_봐도_관리자는_원장만이다(box):
+    """게이트웨이는 포털 응답의 `is_admin` 이 **불리언 참**일 때만 하위로 넘기는 그룹에 portal-admin 을 붙인다(게이트웨이 3f6bb28).
+    그 판정식을 게이트웨이 원문에서 꺼내 포털의 **실제 응답**에 돌린다 — 칸 이름이나 값의 꼴이 한쪽에서만 바뀌면 관리자 표지가
+    하위로 가지 않거나(이름이 갈렸다) 문자열 'false' 가 참이 된다(꼴이 갈렸다). 두 리포는 같은 배포로 나간다."""
+    from pathlib import Path
+
+    gw = Path(__file__).resolve().parents[3] / "HWAXMcpGateway" / "gateway.py"
+    if not gw.exists():
+        pytest.skip("게이트웨이 리포가 옆에 없다")
+    m = re.search(r"^\s*if _ent is not None and (_ent\.get\(\"is_admin\"\)[^:\n]*):\s*$", gw.read_text(encoding="utf-8"), re.M)
+    if m is None:
+        pytest.skip("옆의 게이트웨이가 아직 포털의 is_admin 을 읽지 않는 판이다")
+
+    def gateway_says(ent: dict) -> bool:
+        return bool(eval(m.group(1), {"__builtins__": {}}, {"_ent": ent}))  # noqa: S307 — 옆 리포의 추적 파일에서 꺼낸 판정식
+
+    c, _s = box
+    url = "/internal/access/entitlements"
+
+    def ask(email, groups=""):
+        return c.get(url, params={"email": email, "groups": groups}, headers=GW).json()
+
+    assert gateway_says(ask("boss@corp.com")) is True, "원장 관리자 — 표지가 하위로 간다"
+    assert gateway_says(ask("user@corp.com", ADMIN_GROUP)) is False, "토큰에 박힌 표지 — 포털이 보증하지 않는다"
+    assert gateway_says(ask("ghost@corp.com", ADMIN_GROUP)) is False, "원장에 없는 신원"
+    app.state.user_store.set_status("boss@corp.com", "disabled")
+    assert gateway_says(ask("boss@corp.com", ADMIN_GROUP)) is False, "정지된 관리자"
+    # 값의 꼴 — 게이트웨이는 참 같은 값(문자열·숫자)을 받지 않는다. 포털이 불리언을 내는 동안만 맞물린다.
+    assert gateway_says({"is_admin": "true"}) is False and gateway_says({"is_admin": 1}) is False and gateway_says({}) is False
+
+
 # ── 개발 박스(mock IdP) ──────────────────────────────────────────────────────
 def test_mock_IdP_가_준_관리자_그룹은_원장에_없으면_관리자가_아니다(box):
     """mock·oidc-mock 박스는 관리자를 IdP 그룹(MOCK_USER_GROUPS)으로 받아 왔다 — 이제 원장에 적어야 한다.
