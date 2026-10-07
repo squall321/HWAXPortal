@@ -185,7 +185,46 @@ const SCENARIOS = {
     const chat_calls = await page.evaluate(() => window.__calls.filter((c) => c.url.startsWith('/agent/chat')).length);
     return { six_hours_silent, st: await state(page), chat_calls, errors: page.__errors };
   },
+  // 한도가 걸렸을 때 화면이 하는 말 — 응답 도중 절단, 포털 릴레이의 침묵 한도, 엔진의 LLM 호출 한도, 범위를 넘은 값(422)
+  async errors(browser) {
+    const out = { errors: [] };
+    const box = (page) => page.evaluate(() => {
+      const el = document.querySelector('.chat-error');
+      return el && { title: el.querySelector('.chat-error-title').textContent.replace(/^⚠\s*/, ''),
+                     hint: (el.querySelector('.chat-error-hint') || {}).textContent || '',
+                     retry: Boolean(el.querySelector('.chat-error-retry')),
+                     kept: document.body.textContent.includes('초기 입장'),
+                     streaming: document.getElementById('streaming').textContent };
+    });
+    const turn = frame('delib', { kind: 'turn', round: 1, persona: 'mech-a', say: '초기 입장' });
+    for (const [name, finish] of [
+      ['cut', (page) => page.evaluate(() => window.__break('network error'))],
+      ['idle', async (page) => { await push(page, frame('error', { code: 'agent_stream_idle', message: IDLE })); await push(page, frame('done', {})); await page.evaluate(() => window.__end()); }],
+      ['llm', async (page) => { await push(page, frame('error', { code: 'deliberation_error', message: '심의 처리 중 오류: Request timed out.' })); await push(page, frame('done', {})); await page.evaluate(() => window.__end()); }],
+    ]) {
+      const page = await open(browser);
+      await start(page);
+      await push(page, frame('delib', { kind: 'stage', stage: 'r1', n: 2 }));
+      await push(page, turn);
+      await page.getByText('초기 입장').first().waitFor();
+      await finish(page);
+      await page.locator('.chat-error').waitFor();
+      out[name] = await box(page);
+      out.errors.push(...page.__errors);
+    }
+    const page = await open(browser, { seed: `window.__chat = () => Promise.resolve(new Response(JSON.stringify({ detail: [
+      { loc: ['body', 'delib_opts', 'timeout_s'], msg: 'Input should be less than or equal to 14400', type: 'less_than_equal' }] }),
+      { status: 422, headers: { 'Content-Type': 'application/json' } }))` });
+    await page.locator('#send').click();
+    await page.locator('.chat-error').waitFor();
+    out.rejected = await box(page);
+    out.errors.push(...page.__errors);
+    return out;
+  },
 };
+
+const IDLE = '에이전트 서버가 46800초 동안 아무 신호도 보내지 않아 구독을 끊었다(AGENT_STREAM_IDLE_TIMEOUT_S). ' +
+  '심의는 서버에서 계속 돌 수 있다 — 다시 시작하기 전에 Report Archive 와 대화 목록을 확인하라';
 
 (async () => {
   let browser;
@@ -252,3 +291,28 @@ def test_몇_시간이_지나도_화면이_스트림을_스스로_끊지_않는�
     assert "신호 없음 6시간" in s["six_hours_silent"]["pulse"][0]["text"]
     assert s["st"] == {"streaming": "false", "aborted": False}, "끝까지 받고 정상으로 닫힌다"
     assert s["chat_calls"] == 1, "다시 보내지 않는다 — 재시도는 두 번째 심의를 나란히 돌린다"
+
+
+def test_한도가_걸리면_화면이_무엇이_걸렸고_어디를_볼지_말한다(seen):
+    """종전 — 절단은 원문 'TypeError: network error', LLM 한도는 '라운드 수를 줄이거나 무거운 옵션을 끄라', 422 는
+    'Request failed (422)'. 셋 다 손잡이를 말하지 않았고, 어느 경우든 '다시 시도' 가 심의 전체를 새로 돌렸다."""
+    s = seen("errors")
+    cut = s["cut"]
+    assert cut["title"] == "스트림이 끊겼습니다" and cut["kept"] and cut["streaming"] == "false", cut
+    assert "NGINX_AGENT_READ_TIMEOUT" in cut["hint"] and "서버에서 계속 돌 수" in cut["hint"] and "두 번째 심의" in cut["hint"]
+    assert "TypeError" not in cut["title"], "원문이 제목으로 뜨던 자리다"
+
+    idle = s["idle"]
+    assert idle["title"] == "에이전트 서버의 신호가 끊겨 구독을 닫았습니다" and idle["kept"]
+    assert "46800초" in idle["hint"] and "AGENT_STREAM_IDLE_TIMEOUT_S" in idle["hint"], "포털이 준 문구를 그대로 보인다"
+
+    llm = s["llm"]
+    assert llm["title"] == "LLM 호출이 제한 시간에 걸렸습니다", llm
+    assert "timeout_s" in llm["hint"] and "DELIB_TIMEOUT_S" in llm["hint"] and "14400초" in llm["hint"]
+    assert "줄이거나" not in llm["hint"] and "끄고" not in llm["hint"], "줄이라고 권하지 않는다"
+
+    rej = s["rejected"]
+    assert rej["title"] == "요청 값이 허용 범위를 벗어났습니다" and rej["streaming"] == "false", rej
+    assert "delib_opts.timeout_s: Input should be less than or equal to 14400" in rej["hint"]
+    assert rej["retry"] is False, "같은 값으로 다시 보내면 같은 거절이다"
+    assert cut["retry"] and idle["retry"] and llm["retry"]

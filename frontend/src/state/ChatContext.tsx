@@ -412,7 +412,8 @@ export function ChatProvider({
     saveActiveId(activeId, scopedPrefix);
   }, [activeId, scopedPrefix]);
 
-  // 진행 중 이탈 경고 — 심의/챗은 스트림이 끊기면 서버가 진행을 취소해 결과가 통째로 유실된다.
+  // 진행 중 이탈 경고 — 탭을 닫으면 이 화면은 남은 진행을 다시 받지 못한다. 심의는 구독이 끊겨도 서버에서 끝까지
+  // 돌지만(분리 태스크) 결과는 Report Archive 와 서버 대화에만 남고, 일반 챗은 응답이 통째로 유실된다.
   // streaming 동안만 beforeunload 를 걸어 실수로 탭을 닫는 걸 막는다(완료 시 자동 해제).
   useEffect(() => {
     if (!streaming) return;

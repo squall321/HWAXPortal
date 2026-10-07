@@ -1,4 +1,5 @@
 import { apiFetch } from './client';
+import { rejectedMessage, streamCutMessage } from '../lib/chatErrors';
 import type { AgentCatalog, DelibEvent, ErrorEvent, ResultBlock, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
@@ -489,7 +490,10 @@ export async function streamChat(
   });
 
   if (!res.ok || !res.body) {
-    handlers.onError?.({ code: `http_${res.status}`, message: `Request failed (${res.status})` });
+    // 422 는 본문이 어느 칸이 무엇을 어겼는지 말한다(loc·msg) — 읽어서 보인다. 종전에는 'Request failed (422)' 뿐이라
+    // 범위를 넘은 옵션 하나로 심의가 시작조차 안 됐는데 화면은 이유를 말하지 못했다.
+    const body = res.status === 422 ? await res.json().catch(() => null) : null;
+    handlers.onError?.({ code: `http_${res.status}`, message: rejectedMessage(res.status, body) });
     handlers.onDone?.();
     return;
   }
@@ -528,6 +532,11 @@ export async function streamChat(
     // Flush any trailing frame without a closing blank line.
     const frame = parseFrame(buffer);
     if (frame) dispatch(frame, guarded);
+  } catch (err) {
+    // 중지(AbortError)는 그대로 올린다 — 호출부가 '취소됨' 으로 적는다. 나머지는 응답이 흐르던 **중의** 절단이다
+    // (프록시의 침묵 한도, 서버 재기동). 연결조차 못 한 것과 다르다 — 심의는 서버에서 계속 돌 수 있다.
+    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    guarded.onError?.({ code: 'stream_cut', message: streamCutMessage(String(err)) });
   } finally {
     reader.releaseLock();
     guarded.onDone?.();

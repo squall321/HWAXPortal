@@ -29,7 +29,8 @@ pytestmark = pytest.mark.skipif(
 _DRIVER = r"""
 const ts = require('typescript'); const fs = require('fs'); const path = require('path');
 const SRC = process.argv[2];
-for (const rel of ['api/chat.api.ts', 'lib/streamLive.ts']) {
+// chat.api.ts 가 값으로 끌어오는 파일까지 옮겨 적는다(lib/chatErrors → state/chatStore)
+for (const rel of ['api/chat.api.ts', 'lib/streamLive.ts', 'lib/chatErrors.ts', 'state/chatStore.ts']) {
   const js = ts.transpileModule(fs.readFileSync(path.join(SRC, rel), 'utf8'), { fileName: rel, compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } });
   const dst = path.join(__dirname, rel.replace(/\.ts$/, '.js'));
