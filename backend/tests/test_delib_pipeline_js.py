@@ -138,7 +138,7 @@ def test_에이전트_호출은_프롬프트와_옵션_둘만_넘긴다(kind):
 
 
 # ── 사전 근거 — 본문 키 폴백(엔진 _EVID_BODY_KEYS 와 같은 순서) ─────────────────────────
-# 엔진에서 고친 것과 같은 결함이 여기에도 있었다(2026-10-07 S26U 실사용 피드백, docs/delib-engine-feedback 1-2):
+# 엔진에서 고친 것과 같은 결함이 여기에도 있었다(2026-10-07 S26U 실사용 피드백, docs/delib-engine-feedback 1-2).
 # 필터가 `e.result != null` 만 봐서, 본문을 다른 키에 넣은 근거가 통째로 사라졌다.
 _BODY_KEYS = ["result", "text", "content", "excerpt", "summary", "body", "output", "data"]
 

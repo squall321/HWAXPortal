@@ -27,8 +27,8 @@
 //         failed:[{panel_id, error}], partials:[{panel_id, decision?, rounds, …}], error? }
 //   - submitted[].turns 는 원장에 넘긴 발언 레코드 수다(라운드 수가 아니다).
 //   - submitted[].report_id 는 정수 또는 null 이다(rr_panels.report_id 가 INTEGER).
-//   - submitted[].flags 와 partials[] 에는 좌석에 못 간 근거가 실린다 — evidenceOmitted(자식 심의가 버린 것:
-//     [{source,count,text}]) · briefEvidenceDropped(앱이 칸을 넘겨 뺀 근거 키) · userMemoCut({chars,kept} 또는 null).
+//   - submitted[].flags 와 partials[] 에는 좌석에 못 간 근거가 실린다 — evidenceOmitted([{source,count,text}],
+//     자식 심의가 버린 것) · briefEvidenceDropped(앱이 칸을 넘겨 뺀 근거 키) · userMemoCut({chars,kept} 또는 null).
 //     ⚠ 앱 원장(패널 quality)에는 아직 안 적힌다 — 제출 도구에 받을 인자가 없다. 이 반환이 유일한 기록이다.
 //   - partials 는 제출되지 못한 패널의 심의 데이터 보존분이다(결정문 절단·페이로드 초과·
 //     제출 실패·no_decision) — 자식의 부분 반환 원칙을 부모도 지킨다(감사 1-F). 여기 있는
