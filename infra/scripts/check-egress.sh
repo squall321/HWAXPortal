@@ -66,12 +66,23 @@ _url_host() {  # URL → 호스트(소문자). 스킴·계정·포트·경로를
   local u="${1#*://}"; u="${u%%/*}"; u="${u##*@}"; u="${u%%:*}"
   printf '%s' "${u,,}"
 }
-internal_dests() {  # "<이름>|<호스트>" 줄들. 루프백은 뺀다(아래에서 따로 본다). 같은 호스트는 먼저 나온 이름 하나로.
-  local k h f line _rp
-  declare -A _route=() _seen=()
-  local -a _order=()
+_url_port() {  # URL → 적힌 포트(없으면 빈 값). 스킴의 기본 포트(http 80 · https 443)는 빈 값이다 — httpx 가 '포트 없음' 으로 다룬다
+  local scheme="" u="$1" port=""
+  case "$u" in *://*) scheme="${u%%://*}"; u="${u#*://}" ;; esac
+  u="${u%%/*}"; u="${u##*@}"
+  if [[ "$u" =~ :([0-9]+)$ ]]; then port="${BASH_REMATCH[1]}"; fi
+  case "${scheme,,}:$port" in http:80|https:443) port="" ;; esac
+  printf '%s' "$port"
+}
+# 포트는 그 설정이 주소에 적은 것만 안다(라우트·TESTSCOPE_BASE_URL). RA_HOST·ARP_HOST 는 포트가 없다 — update-all 1e 가 RA_HOST 한 줄에서
+# :3000 과 :3002 를 함께 만든다. 같은 호스트가 다른 포트로 또 나오면 포트를 비운다 — 포트 하나를 적은 NO_PROXY 항목으로는 둘을 못 덮는다.
+internal_dests() {  # "<이름>|<호스트>|<포트>" 줄들. 루프백은 뺀다(아래에서 따로 본다). 같은 호스트는 먼저 나온 이름 하나로.
+  local k h f line _rp _v
+  declare -A _route=() _rport=() _seen=() _port=()
+  local -a _order=() _hosts=()
   _add() { case "$2" in ''|localhost|127.*|0.0.0.0|::1|\[*) return 0 ;; esac
-           [ -n "${_seen[$2]:-}" ] || { _seen[$2]=1; printf '%s|%s\n' "$1" "$2"; }; }
+           if [ -n "${_seen[$2]:-}" ]; then [ "${_port[$2]}" = "${3:-}" ] || _port[$2]=""; return 0; fi
+           _seen[$2]="$1"; _port[$2]="${3:-}"; _hosts+=("$2"); }
   for k in RA_HOST ARP_HOST; do h="$(envv "$k" "$ROOT/infra/.env")"; _add "$k" "${h,,}"; done
   # 라우트 — 추적 파일 위에 박스 오버레이가 같은 키를 덮는다(gen-nginx-conf.sh 와 같다). 빈 값은 '이 박스에서 끔' 이다.
   _rp="$(envv ROUTES_PATH "$ROOT/infra/.env")"
@@ -82,11 +93,13 @@ internal_dests() {  # "<이름>|<호스트>" 줄들. 루프백은 뺀다(아래�
       case "$line" in ''|\#*) continue ;; *=*) ;; *) continue ;; esac
       k="${line%%=*}"; k="${k%"${k##*[![:space:]]}"}"
       [ -n "${_route[$k]+x}" ] || _order+=("$k")
-      _route[$k]="$(_url_host "$(printf '%s' "${line#*=}" | tr -d '[:space:]')")"
+      _v="$(printf '%s' "${line#*=}" | tr -d '[:space:]')"
+      _route[$k]="$(_url_host "$_v")"; _rport[$k]="$(_url_port "$_v")"
     done < "$f"
   done
-  for k in ${_order[@]+"${_order[@]}"}; do _add "라우트 $k" "${_route[$k]}"; done
-  h="$(envv TESTSCOPE_BASE_URL "$ROOT/backend/.env")"; [ -n "$h" ] && _add TESTSCOPE_BASE_URL "$(_url_host "$h")"
+  for k in ${_order[@]+"${_order[@]}"}; do _add "라우트 $k" "${_route[$k]}" "${_rport[$k]}"; done
+  h="$(envv TESTSCOPE_BASE_URL "$ROOT/backend/.env")"; [ -n "$h" ] && _add TESTSCOPE_BASE_URL "$(_url_host "$h")" "$(_url_port "$h")"
+  for h in ${_hosts[@]+"${_hosts[@]}"}; do printf '%s|%s|%s\n' "${_seen[$h]}" "$h" "${_port[$h]}"; done
   return 0
 }
 _ip4() {  # 점 네 칸 십진 주소 → 정수. 아니면 실패
@@ -100,7 +113,8 @@ _ip4() {  # 점 네 칸 십진 주소 → 정수. 아니면 실패
 # **httpx 가 읽는 대로만** 덮인 것으로 본다. 종전엔 "curl·httpx·requests 가 받는 모양을 넓게" 인정해 대역 안의 주소를 덮였다고
 # 봤는데, httpx 0.28.1 은 대역을 대역으로 읽지 않는다(9차 요청 §5 실측, docs/change-request-8-10 D-9) — 운영자 셸의 NO_PROXY 가
 # /24 인 박스에서 그 호출은 여전히 프록시로 새는데 이 점검만 초록이었다. curl 은 대역·공백을 읽지만 서비스는 curl 로 부르지 않는다.
-#   덮는다     — 같은 주소·이름 · `*` 하나(전부) · 도메인 꼬리(`corp` 는 자신과 하위, `.corp` 는 하위만 — 점 경계에서만) · 포트가 붙은 항목.
+#   덮는다     — 같은 주소·이름 · `*` 하나(전부) · 도메인 꼬리(`corp` 는 자신과 하위, `.corp` 는 하위만 — 점 경계에서만).
+#                포트가 붙은 항목(`호스트:포트`)은 **그 포트로 가는 호출만** 덮는다 — 목적지의 포트를 모르거나 다르면 덮지 않는다.
 #   덮지 않는다 — 대역 `a.b.c.d/n`(슬래시 앞 `a.b.c.d` 한 주소로만 읽힌다) · `*.corp`(별표를 글자로 읽어 아무것과도 안 맞는다) ·
 #                공백으로만 나눈 항목(쉼표로만 나눈다 — `a b` 는 통째로 한 항목이다).
 # 주소인 호스트는 꼬리로 맞추지 않는다(httpx 는 `113.10` 같은 항목도 꼬리로 받지만 일부러 적을 모양이 아니다 — 틀려도 '빠졌다' 쪽이다).
@@ -114,7 +128,7 @@ _np_entries() {  # $1=NO_PROXY 목록 → 항목을 줄마다(소문자, 쉼표�
   done
   return 0
 }
-np_covers() {  # $1=호스트 $2=NO_PROXY 목록 → 0 이면 프록시를 타지 않는다
+np_covers() {  # $1=호스트 $2=NO_PROXY 목록 $3=목적지 포트(모르면 빈 값) → 0 이면 프록시를 타지 않는다
   local h="${1,,}" e
   while IFS= read -r e; do
     [ "$e" = "*" ] && return 0
@@ -122,7 +136,10 @@ np_covers() {  # $1=호스트 $2=NO_PROXY 목록 → 0 이면 프록시를 타�
       \**) continue ;;
       */*) [ "$h" = "${e%%/*}" ] && return 0; continue ;;
     esac
-    [[ "$e" =~ ^[^:]+:[0-9]+$ ]] && e="${e%:*}"
+    if [[ "$e" =~ ^[^:]+:([0-9]+)$ ]]; then
+      [ -n "${3:-}" ] && [ "${BASH_REMATCH[1]}" = "$3" ] || continue
+      e="${e%:*}"
+    fi
     [ "$h" = "$e" ] && return 0
     _ip4 "$h" >/dev/null || { [[ "$h" == *".${e#.}" ]] && return 0; }
   done < <(_np_entries "$2")
@@ -144,22 +161,31 @@ np_dead_note() {  # $1=NO_PROXY 목록 → 안내 한 구절(없으면 빈 값)
   return 0
 }
 internal_missing() {  # $1=NO_PROXY 목록 → 목록이 덮지 못하는 내부 목적지의 이름(", " 로 이음). 다 덮이면 빈 값.
-  local name host out=""
-  while IFS='|' read -r name host; do
+  local name host port out=""
+  while IFS='|' read -r name host port; do
     [ -n "$host" ] || continue
-    np_covers "$host" "$1" || out="${out:+$out, }$name"
+    np_covers "$host" "$1" "$port" || out="${out:+$out, }$name"
   done < <(internal_dests)
   printf '%s' "$out"
 }
 
 PROXY="${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}"
+# NO_PROXY 는 **소문자를 먼저** 읽는다 — 파이썬(urllib·httpx)과 curl 이 그렇게 읽고, 파이썬은 '있지만 빈' 소문자가 대문자를 지운다
+# (그래서 `:-` 가 아니라 `-` 다). 종전엔 대문자를 먼저 읽어, 손으로 돌릴 때 두 값이 다르면 서비스가 읽는 것과 다른 목록으로 판정했다.
+# update-all 안에서는 두 철자를 같게 맞춰 두므로 그 게이트의 출력은 달라지지 않는다. 값은 찍지 않는다.
+NP_EFF="${no_proxy-${NO_PROXY-}}"
+NP_SPLIT=""
+if [ -n "${NO_PROXY+x}" ] && [ -n "${no_proxy+x}" ] && [ "$NO_PROXY" != "$no_proxy" ]; then
+  NP_SPLIT="NO_PROXY 와 no_proxy 가 다르다 — 파이썬·curl 이 읽는 소문자(no_proxy)로 판정한다. 둘을 같게 맞춘다"
+fi
 if [ "$INTERNAL" = 1 ]; then
   # update-all §6 이 매 실행 부른다 — 네트워크를 건드리지 않고(멈출 일이 없다), 프록시·NO_PROXY 값도 찍지 않는다(프록시 주소에
   # 계정이 섞여 있을 수 있다). 종료코드: 0 = 볼 것이 없거나 전부 덮였다 · 1 = 덮이지 않은 목적지가 있다(이름을 stdout 한 줄로).
   if [ -z "$PROXY" ]; then echo "프록시 환경변수 없음 — 직결 구성이라 볼 것이 없다"; exit 0; fi
-  _miss="$(internal_missing "${NO_PROXY:-${no_proxy:-}}")"
+  [ -z "$NP_SPLIT" ] || echo "$NP_SPLIT" >&2      # stdout 은 한 줄이다(update-all 이 그대로 싣는다) — 이 말은 stderr 로
+  _miss="$(internal_missing "$NP_EFF")"
   # 읽지 못하는 항목은 덮였든 빠졌든 같은 줄 끝에 붙인다(stdout 은 한 줄이다 — update-all 이 그대로 싣는다). 종료코드는 바꾸지 않는다.
-  _note="$(np_dead_note "${NO_PROXY:-${no_proxy:-}}")"; _note="${_note:+ ($_note)}"
+  _note="$(np_dead_note "$NP_EFF")"; _note="${_note:+ ($_note)}"
   if [ -n "$_miss" ]; then echo "$_miss$_note"; exit 1; fi
   _n="$(internal_dests | grep -c . || true)"
   if [ "${_n:-0}" = 0 ]; then echo "이 박스의 설정에 다른 서버의 내부 목적지가 없다$_note"; else echo "내부 목적지 ${_n}곳이 전부 NO_PROXY 에 있다$_note"; fi
@@ -169,7 +195,8 @@ fi
 sec "1) 프록시 환경"
 if [ -n "$PROXY" ]; then
   ok "프록시 설정됨: $PROXY"
-  NP="${NO_PROXY:-${no_proxy:-}}"
+  NP="$NP_EFF"
+  [ -z "$NP_SPLIT" ] || warn "$NP_SPLIT"
   if [ -n "$NP" ]; then
     ok "NO_PROXY: $NP"
     # 내부 목적지가 프록시로 새면 사내 LLM·게이트웨이 호출이 통째로 깨진다(실사고 기록 있음).

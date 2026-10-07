@@ -94,7 +94,10 @@ def test_라우트는_원격_호스트만_본다_루프백_주석_끈_라우트�
     (f"{RA} , {ARP},\t{ODB}, {TS}", True),                           # 쉼표 둘레의 공백은 뗀다
     (f"{RA} {ARP} {ODB} {TS}", False),                               # 공백으로만 나누면 httpx 는 통째로 한 항목으로 읽는다
     (f"{RA}/32,{ARP}/24,{ODB}/8,{TS}/16", True),                     # 슬래시 앞이 그 주소 자신이면 덮인다(httpx 가 그렇게 읽는다)
-    (f"{RA}:3000,{ARP},{ODB},{TS}", True),                           # 포트가 붙은 항목
+    (f"{RA}:3000,{ARP},{ODB},{TS}", False),                          # RA_HOST 한 줄에서 :3000·:3002 두 주소가 나온다 — 포트 하나로는 못 덮는다
+    (f"{RA},{ARP},{ODB}:8000,{TS}:8020", True),                      # 포트가 붙은 항목은 설정이 적은 그 포트만 덮는다
+    (f"{RA},{ARP},{ODB}:9999,{TS}", False),                          # 다른 포트
+    (f"{RA},{ARP},{ODB},{TS}:9999", False),
     ("203.0.113.0/28,198.51.100.40", False),                         # 대역 안에 있어도(RA 는 .10) 덮이지 않는다
     (f"113.10,{ARP},{ODB},{TS}", False),                             # IP 는 꼬리 일치로 보지 않는다
     (f"{RA},{ARP},{ODB}", False),                                    # TestScope 가 빠졌다
@@ -128,6 +131,24 @@ def test_호스트명은_도메인_꼬리로도_덮인다(box):
 def test_소문자_no_proxy_만_둔_박스도_읽는다(box):
     _, run, _ = box
     assert run("--internal", https_proxy=PROXY, no_proxy=ALL).returncode == 0
+
+
+def test_두_철자가_다르면_소문자로_판정하고_다르다고_말한다(box):
+    """파이썬(urllib·httpx)과 curl 은 소문자를 먼저 읽는다. 종전엔 대문자를 먼저 읽어, 손으로 돌릴 때 두 값이 다르면 서비스가
+    읽는 것과 다른 목록으로 판정했다(update-all 안에서는 두 철자를 같게 맞춰 두므로 그 게이트의 출력은 그대로다)."""
+    _, run, _ = box
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=ALL, no_proxy="127.0.0.1")
+    assert r.returncode == 1 and "RA_HOST" in r.stdout and "no_proxy" in r.stderr, r.stdout + r.stderr
+    assert len(r.stdout.strip().splitlines()) == 1, "stdout 은 한 줄 그대로다 — 다르다는 말은 stderr 로"
+    for secret in (RA, ARP, ODB, TS, "127.0.0.1"):
+        assert secret not in r.stderr, "값은 찍지 않는다"
+    assert run("--internal", https_proxy=PROXY, NO_PROXY="127.0.0.1", no_proxy=ALL).returncode == 0
+    # 파이썬은 '있지만 빈' 소문자가 대문자를 지운다
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=ALL, no_proxy="").returncode == 1
+    same = run("--internal", https_proxy=PROXY, NO_PROXY=ALL, no_proxy=ALL)
+    assert same.returncode == 0 and same.stderr == "", "같으면 조용하다"
+    full = run(https_proxy=PROXY, NO_PROXY=ALL, no_proxy="127.0.0.1", EGRESS_TIMEOUT="2")
+    assert "no_proxy" in full.stdout and "RA_HOST" in full.stdout, "전체 진단도 소문자로 판정하고 다르다고 말한다"
 
 
 def test_설정_파일이_없는_박스에서도_죽지_않는다(box):
@@ -304,3 +325,37 @@ def test_드문_모양은_빠졌다고_보는_쪽으로_틀린다(box, monkeypat
     np = f"127.0.0.1,localhost,{entry}"
     assert run("--internal", https_proxy=PROXY, NO_PROXY=np).returncode == 1
     assert _httpx_direct(monkeypatch, np, f"http://{host}:3000/") is True
+
+
+# ── 포트가 붙은 항목 — httpx 는 그 포트만 우회한다 ───────────────────────────────────────────
+@pytest.mark.parametrize("ts_url,entry", [
+    (f"http://{TS}:8020/", f"{TS}:8020"), (f"http://{TS}:8020/", f"{TS}:9999"), (f"http://{TS}:8020/", TS),
+    (f"http://{TS}/", f"{TS}:80"), (f"http://{TS}:80/", f"{TS}:80"), (f"https://{TS}/", f"{TS}:443"),
+    (f"https://{TS}:443/", f"{TS}:443"), (f"https://{TS}:8443/", f"{TS}:8443"), (f"http://{TS}:443/", f"{TS}:443"),
+    ("http://ts.corp.example:8020/", "corp.example:8020"), ("http://ts.corp.example:8020/", "corp.example:1"),
+])
+def test_포트_판정이_httpx_가_실제로_고르는_길과_같다(box, monkeypatch, ts_url, entry):
+    """종전엔 항목의 포트를 떼고 호스트만 맞췄다 — `<호스트>:9999` 가 :8020 으로 가는 호출도 덮었다고 봤다. httpx 는 그 포트만
+    우회하고, 기본 포트(http 80 · https 443)는 '포트 없음' 으로 다뤄 `:80` 항목은 아무것도 덮지 않는다."""
+    repo, run, _ = box
+    (repo / "infra/.env").write_text("")
+    (repo / "backend/config/routes.env").write_text("")
+    (repo / "backend/config/routes.local.env").write_text("")
+    (repo / "backend/.env").write_text(f"TESTSCOPE_BASE_URL={ts_url}\n")
+    np = f"127.0.0.1,localhost,{entry}"
+    covered = run("--internal", https_proxy=PROXY, NO_PROXY=np).returncode == 0
+    direct = _httpx_direct(monkeypatch, np, ts_url)
+    assert covered == direct, f"항목 {entry!r} · 목적지 {ts_url} — 점검은 {'덮였다' if covered else '빠졌다'}, httpx 는 {'직결' if direct else '프록시'}"
+
+
+def test_한_호스트를_두_포트로_부르면_포트_붙은_항목_하나로는_덮이지_않는다(box):
+    """라우트와 TestScope 가 같은 호스트의 다른 포트다 — 어느 포트 하나를 적은 항목은 다른 쪽 호출을 못 덮는다."""
+    repo, run, _ = box
+    (repo / "infra/.env").write_text("")
+    (repo / "backend/config/routes.env").write_text("")
+    (repo / "backend/config/routes.local.env").write_text(f"odb-hub=http://{ODB}:8000/\n")
+    (repo / "backend/.env").write_text(f"TESTSCOPE_BASE_URL=http://{ODB}:8020/\n")
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=f"{ODB}:8000").returncode == 1
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=ODB).returncode == 0
+    (repo / "backend/.env").write_text(f"TESTSCOPE_BASE_URL=http://{ODB}:8000/api\n")
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=f"{ODB}:8000").returncode == 0, "같은 포트면 한 항목으로 덮인다"
