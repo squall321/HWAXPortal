@@ -189,3 +189,17 @@ def test_심의_운영자는_근거_상한을_숫자로_박아_두지_않는다(
     if _ENGINE_MCP.exists():
         assert '"limits"' in _ENGINE_MCP.read_text(encoding="utf-8"), "deliberate_jobs 가 limits 를 더는 내지 않는다 — 안내문을 다시 맞춘다"
 
+
+def test_심의_운영자는_좌석_상한을_숫자로_박아_두지_않는다():
+    """같은 낡음이 바로 아랫줄에 남아 있었다 — '직접 지정은 최대 20석'. 엔진의 좌석 상한은 이제 env 손잡이다(DELIB_MAX_SEATS,
+    docs/delib-engine-feedback D-3). 22석으로 올린 박스에서 이 안내문은 20 이라 말하고 도구는 22 라 답해, 운영자 페르소나가
+    21·22석 패널을 줄이거나 거절하게 이끈다. '2석 미만' 은 코드에 박힌 하한이라 그대로 둔다."""
+    spec = _one("he-expert-deliberation")["personas"][0]
+    line = next(c for c in spec["concepts"] if c.startswith("personas"))
+    assert not re.search(r"최대\s*\d+\s*석", line), line
+    assert "deliberate_jobs" in line and "limits.seats" in line
+    assert "2석 미만" in line
+    if _ENGINE_MCP.exists():
+        assert '"seats": _engine.MAX_REQ_SEATS' in _ENGINE_MCP.read_text(encoding="utf-8"), (
+            "deliberate_jobs 가 limits.seats 를 더는 엔진 상수에서 내지 않는다 — 안내문을 다시 맞춘다")
+
