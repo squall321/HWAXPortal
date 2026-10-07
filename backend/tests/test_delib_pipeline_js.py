@@ -117,11 +117,16 @@ def test_의장은_출력_형식_지시를_받는다():
     assert chair["label"] == "decision", "옵션 객체가 셋째 인자로 밀려 라벨도 버려졌다"
 
 
-@pytest.mark.parametrize("kind", ["심의", "심의+저장", "리스크 심사"])
+@pytest.mark.parametrize("kind", ["심의", "심의+저장", "리스크 심사", "시험 계획", "시뮬 심의"])
 def test_에이전트_호출은_프롬프트와_옵션_둘만_넘긴다(kind):
-    """같은 실수(문자열 이음표 대신 쉼표)를 어디서든 잡는다 — 셋째 인자는 런타임이 버리고, 문자열 옵션은 통째로 무시된다."""
+    """같은 실수(문자열 이음표 대신 쉼표)를 어디서든 잡는다 — 셋째 인자는 런타임이 버리고, 문자열 옵션은 통째로 무시된다.
+    파이프라인 스크립트 넷을 전부 끝까지 돌린다(자식 심의를 부르는 둘은 자식의 호출까지 같이 본다)."""
     if kind == "리스크 심사":
         out = _risk(_brief([{"source": "scope", "result": "스코프"}]))
+    elif kind in ("시험 계획", "시뮬 심의"):
+        script = "infra/pipeline/hwax-test-plan.js" if kind == "시험 계획" else "infra/pipeline/hwax-sim-deliberate.js"
+        out = _run(script, {"question": "화두", "personas": _SEATS, "rounds": 2, "saveConversation": False})
+        assert out["childArgs"], "자식 심의를 부르지 않았다"
     else:
         save = kind == "심의+저장"
         out = _delib(stopAfterRound=0, rounds=3, saveReport=save, saveConversation=save)
