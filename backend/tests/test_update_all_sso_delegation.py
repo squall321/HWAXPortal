@@ -215,8 +215,8 @@ def test_calc_missing_expects_testscope_only_when_flagged():
 
 # ── 2. 방아쇠 — config 에 위임이 없거나 비밀이 다르면 재프로비저닝 ───────────────
 def _generic_fns() -> str:
-    """일반 앱(PER_USER_SSO_APPS) 목록을 읽는 두 함수 — 방아쇠·끄기 목록·전달이 같이 쓴다."""
-    return _fn("_sso_generic_pairs") + _fn("_sso_generic_names")
+    """일반 앱(PER_USER_SSO_APPS) 목록을 읽는 세 함수 — 방아쇠·끄기 목록·전달이 같이 쓴다."""
+    return _fn("_sso_generic_pairs") + _fn("_sso_generic_names") + _fn("_sso_generic_unlisted")
 
 
 def _drift(tmp_path: Path, cfg, *, ra="", ts="", ts_x="1", box: str = "") -> str:
@@ -316,9 +316,9 @@ def test_the_provisioner_actually_receives_the_values(tmp_path):
 
 
 def _sso_off_lines() -> str:
-    """끌 위임 목록을 세우는 줄들 — RA·TestScope 한 줄과 일반 앱 한 줄."""
+    """끌 위임 목록을 세우는 줄들 — RA·TestScope 한 줄, 비밀을 비운 일반 앱 한 줄, 목록에서 뺀 일반 앱 한 줄."""
     i = UA.index('_sso_off="$(')
-    j = UA.index('_sso_off="$_sso_off$(', i)
+    j = UA.rindex('_sso_off="$_sso_off$(', i, UA.index('if ( cd "$GW_DIR" && export PER_USER_SSO_APPS ', i))
     return UA[i:UA.index("\n", j)]
 
 
@@ -327,7 +327,7 @@ def test_the_provisioner_is_told_which_delegations_to_turn_off(tmp_path):
     gw = tmp_path / "gw"
     gw.mkdir()
     (gw / "provision-config.sh").write_text('#!/usr/bin/env bash\nprintf "%s" "$PER_USER_SSO_OFF" > "$PWD/off.marker"\n')
-    pre = _sso_off_lines()
+    pre = _generic_fns() + _sso_off_lines()
     cmd = _reprovision_cmd()
     for ra, ts, want in (("", "", "reportarchive testscope"), (SECRET, "", "testscope"),
                          ("", "ts-s", "reportarchive "), (SECRET, "ts-s", "")):
@@ -525,7 +525,8 @@ def _one_run(tmp_path: Path, box: str, prev: dict) -> dict:
     cfg = {"heax_registry": {"per_user_sso": prev}}
     if not any(t.endswith(("_sso", "_sso_off")) for t in _drift(tmp_path, cfg, box=box).split()):
         return prev
-    script = (f'set -uo pipefail; RA_SSO_SECRET="{SECRET}"; TESTSCOPE_SSO_SECRET="ts-s"\n{box}\n{_generic_fns()}{_sso_off_lines()}\n'
+    # 끌 목록은 지금 config 도 읽는다(목록에서 뺀 앱) — 위 _drift 가 같은 자리에 적어 둔 그 파일이다
+    script = (f'set -uo pipefail; GW_DIR="{tmp_path}"; RA_SSO_SECRET="{SECRET}"; TESTSCOPE_SSO_SECRET="ts-s"\n{box}\n{_generic_fns()}{_sso_off_lines()}\n'
               'printf "OFF=%s\n" "$_sso_off"\nfor n in PER_USER_SSO_APPS $(_sso_generic_names); do printf "ENV=%s=%s\n" "$n" "${!n:-}"; done')
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0 and not r.stderr, r.stderr
@@ -571,6 +572,126 @@ def test_a_key_listed_twice_is_reported_and_is_not_a_trigger(tmp_path):
         assert all("PER_USER_SSO_APPS" in b and "provision.env" in b for b in bads)
         assert not any(x in r.stdout for x in ("FOO", "BAR", "BAZ")), "접두는 찍지 않는다"
         assert "MISSING=[signalforge]" in r.stdout, "알리기만 한다 — 방아쇠가 아니다"
+
+
+# ── 목록에서 뺀 일반 앱 ─────────────────────────────────────────────────────────
+# 앱을 걷을 때 사람은 PER_USER_SSO_APPS 의 쌍과 <접두>_SSO_* 줄을 지운다. 그러면 그 앱은 쌍 목록에 없어 방아쇠도 끄기도 그 위임을
+# 보지 못했고(위 test_generic_delegation_drift_follows_the_ra_rule 의 마지막 줄들), 게이트웨이는 옛 비밀로 그 앱에 계속 사람별 토큰을
+# 청했다. 게이트웨이는 순회가 쓴 항목에 `"managed_by": "PER_USER_SSO_APPS"` 표지를 남기고(HWAXMcpGateway cff32c3), 표지가 있고 이번
+# 목록의 어느 쌍도 그 이름이 아닌 항목은 PER_USER_SSO_OFF 에 이름이 오면 지운다 — 그 이름을 넘기는 것이 update-all 의 몫이다.
+STAMP = "PER_USER_SSO_APPS"
+
+
+def _pu(**entries) -> dict:
+    """per_user_sso 를 지어낸다 — 값이 True 면 순회가 쓴 항목(표지 있음), False 면 표지 없는 항목, 그 밖은 그대로."""
+    def one(v):
+        if isinstance(v, bool):
+            return {"sso_url": "http://x/sso", "secret": "old", "client": "gateway", **({"managed_by": STAMP} if v else {})}
+        return v
+    return {"heax_registry": {"per_user_sso": {k: one(v) for k, v in entries.items()}}}
+
+
+def _unlisted(tmp_path: Path, cfg, apps: str) -> list[str]:
+    f = tmp_path / "gateway_config.json"
+    f.write_text(cfg if isinstance(cfg, str) else json.dumps(cfg), encoding="utf-8")
+    r = subprocess.run(["bash", "-c", f'set -uo pipefail\n{_generic_fns()}_sso_generic_unlisted "{f}"'], capture_output=True,
+                       text=True, env={"PATH": "/usr/bin:/bin", "PER_USER_SSO_APPS": apps})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    return r.stdout.split()
+
+
+@pytest.mark.parametrize("apps,want", [
+    ("", ["gone"]),                                   # 목록을 통째로 비웠다
+    ("other:OTHER_APP", ["gone"]),                    # 다른 앱만 남겼다
+    ("gone:GONE", []),                                # 아직 목록에 있다 — 비밀을 비운 것이면 쌍 목록 쪽이 끈다
+    ("gone:9X", []),                                  # 접두를 잘못 적었다 — '뺐다' 가 아니다(이름은 콜론 앞)
+    ("gone", []),                                     # 콜론을 빠뜨렸다 — 마찬가지
+    ("x:X\tgone:GONE\nother:O", []),                  # 탭·줄바꿈으로 갈라 적어도 쌍이다
+    ("gone2:GONE", ["gone"]),                         # 앞부분만 같은 이름은 다른 앱이다
+])
+def test_표지가_있고_목록에_없는_위임만_낸다(tmp_path, apps, want):
+    """**이 구획의 이유다** — 게이트웨이가 끄는 조건과 글자까지 같아야 한다. 더 넓으면 매 실행 재프로비저닝이 헛돌고(게이트웨이가
+    안 지운다), 더 좁으면 걷어낸 앱의 위임이 옛 비밀로 남는다."""
+    assert _unlisted(tmp_path, _pu(gone=True, ste=False, hwax_risk=False), apps) == want
+
+
+def test_표지_없는_위임과_이름_꼴이_아닌_키는_내지_않는다(tmp_path):
+    """표지 없는 위임(ste·hwax_risk·손으로 붙인 것)은 비밀 출처를 이 실행이 모른다. 이름 꼴이 아닌 키는 따옴표 없이 도는 목록과
+    공백으로 가르는 PER_USER_SSO_OFF 에 실을 수 없다 — 글롭이 풀리거나 다른 이름으로 쪼개진다."""
+    cfg = _pu(ste=False, manual=False, **{"a b": True, "x;y": True, "별표*": True, "ok-1.app_2": True, "str": "문자열",
+                                          "other_mark": {"secret": "s", "managed_by": "손으로"}})
+    assert _unlisted(tmp_path, cfg, "") == ["ok-1.app_2"]
+    for odd in ("{not json", json.dumps({"heax_registry": {"per_user_sso": ["목록"]}}), json.dumps([1, 2]), "{}"):
+        assert _unlisted(tmp_path, odd, "") == [], odd
+
+
+def test_목록에서_뺀_앱의_남은_위임이_끄기_방아쇠다(tmp_path):
+    cfg = _pu(gone=True, ste=False)
+    assert _drift(tmp_path, cfg) == "gone_sso_off", "목록이 없는 박스 — 종전에는 조용했다(끌 길이 없었다)"
+    assert _drift(tmp_path, cfg, box='PER_USER_SSO_APPS="other:OTHER_APP"') == "gone_sso_off"
+    assert _drift(tmp_path, cfg, box='PER_USER_SSO_APPS="gone:9X"') == "", "접두를 잘못 적은 것은 뺀 것이 아니다"
+    assert _drift(tmp_path, _pu(gone=False)) == "", "표지 없는 항목은 이 점검의 대상이 아니다(표지는 비밀과 함께 한 번 돌면 붙는다)"
+    on = f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\nNEWAPP_SSO_URL="http://x/sso"\n'
+    assert _drift(tmp_path, _pu(gone=True), ra=SECRET, box=on) == "reportarchive_sso newapp_sso gone_sso_off", \
+        "RA·TestScope → 목록의 일반 앱 → 목록에서 뺀 앱 순서"
+    listed_empty = _pu(newapp=True)        # 목록에 남기고 비밀만 비운 앱 — 한 번만 낸다
+    assert _drift(tmp_path, listed_empty, box=GEN_APPS) == "newapp_sso_off"
+
+
+def test_목록에서_뺀_앱의_이름이_끌_목록에_실려_간다(tmp_path):
+    """실행으로 본다 — 게이트웨이는 **이름이 와야** 끈다(목록이 비었다고 스스로 지우지 않는다)."""
+    gw = tmp_path / "gw"; gw.mkdir()
+    (gw / "provision-config.sh").write_text('#!/usr/bin/env bash\nprintf "%s" "$PER_USER_SSO_OFF" > "$PWD/off.marker"\n')
+    for cfg, box, want in ((_pu(gone=True, ste=False), "", ["gone"]),
+                           (_pu(gone=True, also=True), 'PER_USER_SSO_APPS="other:OTHER_APP"\n', ["other", "also", "gone"]),
+                           (_pu(gone=True), 'PER_USER_SSO_APPS="gone:GONE"\nGONE_SSO_SECRET="s"\n', []),
+                           (_pu(ste=False), "", [])):
+        (gw / "gateway_config.json").write_text(json.dumps(cfg))
+        script = (f'set -uo pipefail; GW_DIR="{gw}"; RA_SSO_SECRET="{SECRET}"; TESTSCOPE_SSO_SECRET="ts-s"\n{box}'
+                  f'{_generic_fns()}{_sso_off_lines()}\n{_reprovision_cmd()}\necho rc=$?')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+        assert "rc=0" in r.stdout and not r.stderr, r.stdout + r.stderr
+        assert (gw / "off.marker").read_text().split() == want, (cfg, box)
+
+
+@pytest.mark.parametrize("apps,env,gone_after", [
+    ("", {}, False),                                                                  # 목록을 통째로 비웠다
+    ("other:OTHER_APP", {"OTHER_APP_SSO_SECRET": "o", "OTHER_APP_SSO_URL": "http://o/sso"}, False),
+    ("gone:9X", {}, True),                                                            # 접두 오타 — 게이트웨이도 끄지 않는다
+    ("gone:GONE", {"GONE_SSO_SECRET": "old"}, True),                                  # 그대로 쓰는 앱(대조)
+])
+def test_목록에서_뺀_앱은_한_번의_재프로비저닝으로_꺼지고_그_뒤에는_조용하다(tmp_path, apps, env, gone_after):
+    """**정본은 게이트웨이다** — 그 순회와 끄기를 원문에서 꺼내 update-all 이 넘기는 값만으로 돌린다(_one_run). 걷어낸 앱은 꺼지고,
+    표지 없는 위임(ste)은 그대로이며, 두 번째 실행은 아무것도 하지 않는다 — 수렴하지 않으면 매 실행 게이트웨이·에이전트서버가 내려간다."""
+    prev = _pu(gone=True, ste=False)["heax_registry"]["per_user_sso"]
+    box = f"PER_USER_SSO_APPS={json.dumps(apps)}\n" + "".join(f'{k}="{v}"\n' for k, v in env.items())
+    after = _one_run(tmp_path, box, json.loads(json.dumps(prev)))
+    assert ("gone" in after) is gone_after, after
+    assert after["ste"] == prev["ste"], "표지 없는 위임은 건드리지 않는다"
+    left = [t for t in _drift(tmp_path, {"heax_registry": {"per_user_sso": after}}, box=box).split()
+            if t.endswith(("_sso", "_sso_off"))]
+    assert left == [], f"한 번 돈 뒤에도 어긋나 있다 — 매 실행 재프로비저닝이 돈다: {left}"
+    assert _one_run(tmp_path, box, after) == after, "두 번째 실행은 아무것도 바꾸지 않는다"
+
+
+def test_일반_앱의_끄기는_infra_env_와_토큰_등록을_말하지_않는다():
+    """일반 앱의 비밀은 게이트웨이 provision.env 에 있고, 포털 등록 토큰 길이 없어 끄면 서비스 계정으로 나간다. RA·TestScope 의
+    문구('infra/.env 의 비밀이 비었는데 … 토큰 등록으로 되돌린다')를 그대로 찍으면 없는 값을 infra/.env 에서 찾게 한다."""
+    i = UA.index('for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do')
+    loop = UA[i:UA.index("\n    done\n", i)]
+    script = "\n".join([
+        "set -uo pipefail", 'bad() { echo "BAD:$*"; }', "MISSING=''", 'GW_DIR="/nonexistent"',
+        '_sso_deleg_drift() { echo "reportarchive_sso_off testscope_sso_off gone_sso_off"; }',
+        loop, "    done", 'echo "MISSING=[$MISSING]"'])
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    said = {ln.split("끄기: ")[1].split(" ")[0]: ln for ln in r.stdout.splitlines() if "사람별 위임 끄기" in ln}
+    assert set(said) == {"reportarchive", "testscope", "gone"}, r.stdout
+    for k in ("reportarchive", "testscope"):
+        assert "infra/.env" in said[k] and "토큰 등록" in said[k]
+    assert "infra/.env" not in said["gone"] and "토큰 등록" not in said["gone"], said["gone"]
+    assert "provision.env" in said["gone"] and "PER_USER_SSO_APPS" in said["gone"] and "서비스 계정" in said["gone"]
+    assert "MISSING=[reportarchive_sso_off testscope_sso_off gone_sso_off]" in r.stdout, "셋 다 재프로비저닝 방아쇠다"
 
 
 # ── 만들지 않는다 ────────────────────────────────────────────────────────────

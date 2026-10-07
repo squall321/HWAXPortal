@@ -943,11 +943,31 @@ _sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다�
     if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL ' "$p" "$p"; fi
   done <<<"$(_sso_generic_pairs)"
 }
+# 목록에서 **뺀** 일반 앱 — 앱을 걷을 때 사람은 PER_USER_SSO_APPS 의 쌍과 <접두>_SSO_* 줄을 지운다. 그러면 위 쌍 목록에 그 앱이 없어
+# 방아쇠도 끄기도 그 위임을 보지 못했고, 게이트웨이는 옛 비밀로 그 앱에 계속 사람별 토큰을 청했다 — 끌 길이 없었다.
+# 게이트웨이는 순회가 쓴 항목에 `"managed_by": "PER_USER_SSO_APPS"` 표지를 남기고(HWAXMcpGateway cff32c3), 표지가 있고 이번 목록의
+# 어느 쌍도 그 이름이 아닌 항목은 PER_USER_SSO_OFF 에 **이름이 오면** 지운다. 스스로는 지우지 않는다 — 그 스크립트는 provision.env 를
+# 읽지 않아, 손으로 돌린 --force 에는 목록이 없다. '목록에 없다 = 껐다' 는 provision.env 를 읽은 이쪽이 판정해 이름을 넘긴다.
+# 규칙은 게이트웨이 provision-config.sh 와 같아야 한다(더 넓으면 매 실행 재프로비저닝이 헛돌고, 더 좁으면 꺼지지 않는다):
+#   · 이름은 쌍의 콜론 앞이다 — **못 읽은 쌍도** 센다(접두를 잘못 적은 것을 '뺐다' 로 읽어 위임을 끄지 않게).
+#   · 표지 없는 항목은 내지 않는다(ste·hwax_risk·손으로 붙인 위임 — 그 비밀의 출처를 이 실행이 모른다).
+#   · 키는 이름 꼴(영숫자·_·.·-)만 — 아래에서 따옴표 없이 도는 목록과, 공백으로 가르는 PER_USER_SSO_OFF 에 실린다.
+_sso_generic_unlisted() {  # $1=gateway_config.json → 목록에서 빠졌는데 위임이 남은 일반 앱의 키(공백 구분). 읽지 못하면 빈 값.
+  APPS="${PER_USER_SSO_APPS:-}" python3 - "$1" <<'PY' 2>/dev/null || true
+import json, os, re, sys
+try: d = json.load(open(sys.argv[1]))
+except Exception: raise SystemExit(0)
+pu = (d.get("heax_registry") or {}).get("per_user_sso") or {}
+listed = {t.partition(":")[0] for t in (os.environ.get("APPS") or "").split()}
+print(" ".join(k for k in sorted(pu) if isinstance(pu[k], dict) and pu[k].get("managed_by") == "PER_USER_SSO_APPS"
+               and k not in listed and re.fullmatch(r"[A-Za-z0-9_.-]+", k)))
+PY
+}
 # 일반 앱의 비밀은 이름이 정해져 있지 않아 대입어로 못 넘긴다 — 서브셸 안에서만 export 한다(이 뒤에 뜨는 서비스가 물려받지 않게).
 # 주소가 없어 게이트웨이가 만들지 못하는 일반 앱은 `<키>_sso_nourl` 로 따로 표지한다 — 방아쇠로 삼으면 매 실행 재프로비저닝이 헛돈다.
 _sso_deleg_drift() {  # $1=gateway_config.json → 어긋난 위임(공백 구분, 예: reportarchive_sso). 읽지 못하면 빈 값.
   ( export PER_USER_SSO_APPS $(_sso_generic_names)
-  RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" GEN="$(_sso_generic_pairs)" python3 - "$1" <<'PY' 2>/dev/null || true
+  RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" GEN="$(_sso_generic_pairs)" UNL="$(_sso_generic_unlisted "$1")" python3 - "$1" <<'PY' 2>/dev/null || true
 import json, os, sys
 try: d = json.load(open(sys.argv[1]))
 except Exception: raise SystemExit(0)
@@ -968,6 +988,8 @@ for k, p in sorted(ln.split() for ln in (os.environ.get("GEN") or "").splitlines
         out.append(f"{k}_sso_nourl")   # 주소는 env 가 먼저고 없으면 게이트웨이가 지금 config 의 것을 잇는다. 둘 다 없으면 만들지 못한다
     elif (cur or {}).get("secret") != s or (u and (cur or {}).get("sso_url") != u):
         out.append(f"{k}_sso")         # 위임이 없거나 비밀이 다르다, 또는 주소를 바꿨다(게이트웨이가 env 의 주소로 고쳐 쓴다)
+# 목록에서 뺀 일반 앱(_sso_generic_unlisted) — 비밀도 접두도 이 실행에는 없다. 표지가 붙은 채 남은 위임이 곧 방아쇠다.
+out += [t for t in (f"{k}_sso_off" for k in (os.environ.get("UNL") or "").split()) if t not in out]
 print(" ".join(out))
 PY
   )
@@ -1194,7 +1216,14 @@ PY
       case "$_k" in
         *_sso_nourl) bad "사람별 위임 ${_k%_sso_nourl}: 비밀은 있는데 위임 주소가 없어 게이트웨이가 만들지 못한다 — HWAXMcpGateway/provision.env 에 그 앱의 <접두>_SSO_URL 을 적는다(PER_USER_SSO_APPS 의 접두)"
                      continue ;;
-        *_sso_off) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — infra/.env 의 비밀이 비었는데 게이트웨이는 아직 위임으로 부른다(토큰 등록으로 되돌린다)" ;;
+        # 끄기의 사유와 되돌아가는 곳은 앱마다 다르다. RA·TestScope 의 비밀은 infra/.env 에 있고 끄면 '토큰 등록' 으로 돌아간다. 일반 앱의
+        # 비밀은 게이트웨이 provision.env 에 있고, 포털 등록 토큰 길이 없어 끄면 서비스 계정으로 나간다 — 한 문구로 묶으면 일반 앱을 끈
+        # 사람이 없는 값을 infra/.env 에서 찾고, 사람별 호출이 서비스 계정으로 바뀐 것을 모른다.
+        *_sso_off)
+          case "${_k%_sso_off}" in
+            reportarchive|testscope) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — infra/.env 의 비밀이 비었는데 게이트웨이는 아직 위임으로 부른다(토큰 등록으로 되돌린다)" ;;
+            *) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — HWAXMcpGateway/provision.env 에서 그 앱의 비밀을 비웠거나 PER_USER_SSO_APPS 에서 뺐는데 게이트웨이는 아직 위임으로 부른다(일반 앱은 사람별 호출이 서비스 계정으로 되돌아간다)" ;;
+          esac ;;
         *) echo "  · 사람별 위임 드리프트: ${_k%_sso} — 게이트웨이 설정에 위임이 없거나 비밀이 infra/.env 와 다르다(일반 앱은 provision.env 의 비밀·주소)" ;;
       esac
       MISSING="${MISSING:+$MISSING }$_k"
@@ -1230,9 +1259,11 @@ PY
       #   · PER_USER_SSO_APPS 와 그 접두들의 <접두>_SSO_SECRET·_SSO_URL — 일반 앱의 사람별 위임(위 _sso_generic_names). 이름이 박스마다
       #     달라 대입어로 못 적는다 — 서브셸 안에서 export 표지만 붙인다(값을 argv 에 싣지 않는다 — ps 에 보인다). `export` 뒤에는 언제나
       #     PER_USER_SSO_APPS 가 온다 — 인자 없는 export 는 환경 전체(비밀 포함)를 이 로그에 찍는다. 목록에 남기고 비밀만 비운 앱은
-      #     RA·TestScope 처럼 PER_USER_SSO_OFF 에 더한다(게이트웨이는 목록에 있는 앱만 끈다).
+      #     RA·TestScope 처럼 PER_USER_SSO_OFF 에 더한다. 목록에서 **뺀** 앱(_sso_generic_unlisted — 순회가 쓴 표지가 붙은 채 남은
+      #     위임)의 이름도 더한다 — 게이트웨이는 이름이 와야 끈다(목록이 비었다고 스스로 지우지 않는다).
       _sso_off="$([ -n "${RA_SSO_SECRET:-}" ] || printf 'reportarchive ')$([ -n "${TESTSCOPE_SSO_SECRET:-}" ] || printf 'testscope')"
       _sso_off="$_sso_off$(while read -r _gk _gp; do _gv="${_gp:+${_gp}_SSO_SECRET}"; if [ -n "$_gv" ] && [ -z "${!_gv:-}" ]; then printf ' %s' "$_gk"; fi; done <<<"$(_sso_generic_pairs)")"
+      _sso_off="$_sso_off$(for _gk in $(_sso_generic_unlisted "$GW_DIR/gateway_config.json"); do printf ' %s' "$_gk"; done)"
       if ( cd "$GW_DIR" && export PER_USER_SSO_APPS $(_sso_generic_names) && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \

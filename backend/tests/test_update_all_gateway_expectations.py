@@ -478,7 +478,10 @@ def test_옛_항목이_남은_박스에서_재프로비저닝이_한_번_돈다(
         f'SELF_REPO="{tmp_path}/HWAXPortal"; H="{{}}"; FAIL=0',
         'fail() { echo "FAIL:$*"; }; bad() { echo "BAD:$*"; }; ok() { echo "OK:$*"; }',
         "find_repo() { printf ''; }; calc_missing() { printf ''; }",
-        _fn("_sso_generic_pairs"), _fn("_sso_generic_names"), _fn("_sso_deleg_drift"), _fn("_arp_token_drift"),
+        # 구획 끝의 '도는 심의가 있으면 미룬다' 는 실물 에이전트 서버를 묻는다 — 여기서는 '심의 없음' 으로 세운다
+        "hwax_delib_busy() { return 1; }; hwax_skip() { echo \"SKIP:$*\"; }",
+        _fn("_sso_generic_pairs"), _fn("_sso_generic_names"), _fn("_sso_generic_unlisted"), _fn("_sso_deleg_drift"),
+        _fn("_arp_token_drift"),
         span, "printf 'MISSING=[%s]\\n' \"$MISSING\""]))
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
     assert r.returncode == 0 and "unbound variable" not in r.stderr, r.stderr
