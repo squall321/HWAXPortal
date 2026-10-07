@@ -235,3 +235,87 @@ def test_근거_키에_든_숫자는_출처로_본다():
     """의장이 표지 밖에서 키를 그대로 부르기도 한다('E1-CH-015 항목에 따르면') — 그 015 는 환각이 아니다."""
     assert _unmatched("E1-CH-015 항목이 지배적이다.",
                       [{"key": "E1-CH-015", "source": "s", "result": "본문"}]) == []
+
+
+# ── 좌석에 주지 않은 근거는 반환값에 남는다(evidenceOmitted) ─────────────────────────────
+# 종전엔 log() 한 줄이 전부였다 — 워크플로 로그는 호출자가 받는 결과가 아니고, 근거가 전부 버려지면
+# 그 로그조차 없었다. 엔진 잡 원장의 evidence_omitted 와 같은 이름·같은 사유 문구로 남긴다.
+def _omitted(out: dict, source: str) -> dict | None:
+    return next((x for x in out["result"]["evidenceOmitted"] if x["source"] == source), None)
+
+
+def test_본문_없는_항목은_버리되_센다():
+    empties = [{"source": "빈것"}, "문자열", None, {"source": "공백", "result": "  "},
+               {"result": False}, {"result": []}, {"result": {}}]
+    out = _delib(empties + [{"source": "멀쩡", "result": "본문"}])
+    note = _omitted(out, "사전 근거 본문 없음")
+    assert note and note["count"] == 7, out["result"]["evidenceOmitted"]
+    assert "8건" in note["text"] and "7건" in note["text"]
+    assert "'result'" in note["text"] and "text" in note["text"], "어디에 넣어야 하는지도 말해야 한다"
+
+
+def test_전부_버려져도_말한다():
+    """근거 0건으로 도는 가장 나쁜 경우다. 종전엔 근거 블록에 아예 안 들어가 로그 한 줄도 없었다."""
+    out = _delib([{"source": "a", "본문": "키가 틀렸다"}, {"source": "b"}])
+    assert "원천 데이터" not in _seat_prompt(out)
+    note = _omitted(out, "사전 근거 본문 없음")
+    assert note and note["count"] == 2
+    assert any("본문 없음 2건" in line for line in out["logs"])
+
+
+def test_건수_상한을_넘긴_근거를_결과에_남긴다():
+    out = _delib([{"source": f"s{i}", "result": f"본문 {i}"} for i in range(1, 15)])
+    prompt = _seat_prompt(out)
+    assert "· [e:12] [s12] 본문 12" in prompt and "[e:13]" not in prompt
+    note = _omitted(out, "사전 근거 건수 초과")
+    assert note and note["count"] == 2, out["result"]["evidenceOmitted"]
+    for want in ("14건", "2건", "12건"):
+        assert want in note["text"], (want, note["text"])
+    assert _omitted(out, "사전 근거 예산 초과") is None and _omitted(out, "사전 근거 본문 없음") is None
+
+
+def test_예산을_넘긴_근거를_결과에_남긴다():
+    # 항목은 2,000자에서 잘려 한 줄이 2,000여 자다 — 11,000자 예산에 다섯 줄이 들어간다.
+    out = _delib([{"source": f"s{i}", "result": "가" * 3000} for i in range(1, 9)])
+    prompt = _seat_prompt(out)
+    assert "· [e:5] [s5]" in prompt and "[e:6]" not in prompt
+    note = _omitted(out, "사전 근거 예산 초과")
+    assert note and note["count"] == 3, out["result"]["evidenceOmitted"]
+    assert "8건" in note["text"] and "3건" in note["text"] and "11,000자" in note["text"]
+
+
+def test_세_사유가_겹치면_사유마다_따로_센다():
+    ev = ([{"source": "빈것"}] * 2                                             # 본문 없음 2
+          + [{"source": f"s{i}", "result": "가" * 3000} for i in range(1, 15)])  # 14건 → 건수 2 → 예산 7
+    out = _delib(ev)
+    got = {x["source"]: x["count"] for x in out["result"]["evidenceOmitted"]}
+    assert got == {"사전 근거 본문 없음": 2, "사전 근거 건수 초과": 2, "사전 근거 예산 초과": 7}
+    assert "원근거 16건 중 5건만 표시됨" in _seat_prompt(out), "좌석도 전부가 아님을 안다(종전부터)"
+    assert any("16건 중 5건만 주입" in line and "본문 없음 2건" in line and "건수 초과 2건" in line
+               and "예산 초과 7건" in line for line in out["logs"]), out["logs"]
+    # 리스크 앱 원장의 events[] 는 문자열 필드가 200자를 넘으면 422 다(HWAXRisk routes.EVENT_FIELD_MAX) —
+    # 나중에 그대로 옮겨 실을 수 있게 그 안쪽으로 쓴다.
+    assert all(len(x["text"]) <= 200 for x in out["result"]["evidenceOmitted"])
+
+
+def test_버린_것이_없으면_빈_목록이다():
+    """필드가 없는 것(옛 스크립트)과 '빠진 것이 없다' 를 구분한다 — seatLoss 와 같은 규약."""
+    assert _delib([{"source": "s", "result": "본문"}])["result"]["evidenceOmitted"] == []
+    assert _delib([])["result"]["evidenceOmitted"] == []
+    assert _delib(None)["result"]["evidenceOmitted"] == []
+
+
+def test_끝까지_돈_심의와_의장_실패_반환에도_실린다():
+    """반환 자리가 셋이다(체크포인트·의장 실패·정상) — 한 곳이라도 빠지면 그 경로에서는 다시 조용해진다."""
+    ev = [{"source": f"s{i}", "result": f"본문 {i}"} for i in range(1, 15)]
+    full = _delib(ev, stopAfterRound=0, rounds=2)
+    assert full["result"]["decision"] and _omitted(full, "사전 근거 건수 초과")["count"] == 2
+    failed = _delib(ev, stopAfterRound=0, rounds=2, decisionFails=True)
+    assert failed["result"]["decisionFailed"] is True
+    assert _omitted(failed, "사전 근거 건수 초과")["count"] == 2
+
+
+def test_표지를_받은_항목_수는_실제로_실린_수다():
+    """citationAudit.evidenceIds 가 예산으로 빠진 항목까지 세면, 호출자는 보낸 수와 같다고 읽는다."""
+    out = _delib([{"source": f"s{i}", "result": "가" * 3000} for i in range(1, 9)], stopAfterRound=0, rounds=2)
+    assert out["result"]["citationAudit"]["evidenceIds"] == 5

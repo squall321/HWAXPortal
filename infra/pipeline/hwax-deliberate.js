@@ -51,6 +51,8 @@
 //   - appendToReportId: 지정 시 새 RA 보고서를 만들지 않고 이 report_id 에 새 페이지로 결과를 이어붙인다.
 // 출력: { question, rounds:[페르소나별 라운드결과 배열...], roundLabels, decision, report, conversation, nextRoundOffset }
 //   — stopAfterRound:1 이면 decision/report/conversation 이 null 이고 checkpoint{stage,seats,positions,ask} 가 붙는다.
+//   — evidenceOmitted:[{source,count,text}] 는 좌석에 주지 않은 근거다(본문 없음 · 건수 12건 초과 · 예산 11,000자 초과).
+//     빈 배열이 아니면 좌석은 보낸 근거의 일부만 보고 발언한 것이다 — 어느 반환에나 붙는다.
 //   — 호출자가 viz_module + Report Archive로 보고서화. nextRoundOffset 은 다음 이어하기 호출의
 //   continueFrom.roundsSoFar 로 그대로 넘기면 라운드 번호가 끊기지 않는다.
 //
@@ -173,13 +175,19 @@ const EV_KEY_RE = /^[A-Za-z0-9_.-]{1,24}$/
 // 인용 표지 — 좌석·의장에게는 `[e:N]` 을 적으라고 하지만, 줄에 찍힌 `[e:N|KEY]` 를 그대로 옮겨 적기도 한다.
 // 둘 다 항목 N 이다(deliberation.py _EV_CITE_RE 와 같은 식).
 const EV_CITE_RE = /\[e:(\d+)(?:\|[A-Za-z0-9_.-]{1,24})?\]/g
+// 좌석 블록의 상한 — 건수와 합계 글자. 아래 드롭 고지가 이 값을 읽어 적는다(숫자를 문구에 따로 박지 않는다).
+const EV_MAX_ITEMS = 12
+const EV_BUDGET = 11000
 // 본문·키를 한 번 정해 둔다 — 아래 좌석 블록과 인용 후검증(_citCorpus)이 같은 값을 본다.
-const EV = (Array.isArray(A.evidence) ? A.evidence : [])
+// 들어온 것(_evIn)·본문 있는 것(_evValid)·건수 상한 안의 것(EV)을 따로 쥔다 — 버린 수를 사유별로 세려면 셋이 다 필요하다.
+const _evIn = Array.isArray(A.evidence) ? A.evidence : []
+const _evValid = _evIn
   .map(e => (e && typeof e === 'object' && !Array.isArray(e))
     ? { ...e, result: evBody(e), key: (typeof e.key === 'string' && EV_KEY_RE.test(e.key)) ? e.key : '' } : null)
   .filter(e => e && e.result)
-  .slice(0, 12)
+const EV = _evValid.slice(0, EV_MAX_ITEMS)
 let EV_BLOCK = ''
+let EV_SHOWN = 0   // 실제로 좌석에 실린 항목 수 = [e:N] 표지를 받은 수(예산으로 빠진 것은 세지 않는다)
 if (EV.length) {
   const evItems = []
   let evBudget = 0
@@ -193,15 +201,38 @@ if (EV.length) {
     // [e:N] 안정 id — 의장·좌석이 근거 항목을 지목해 인용할 참조 체계(감사 원장 (3)).
     // 호출자 키가 있으면 [e:N|KEY] — 인용은 종전대로 [e:N] 이고 어느 쪽으로 적어도 같은 항목이다.
     const line = `· [e:${++evId}${e.key ? '|' + e.key : ''}] [${src}${meta}] ${body}`
-    if (evBudget + line.length > 11000 && evItems.length) break
+    if (evBudget + line.length > EV_BUDGET && evItems.length) break
     evItems.push(line)
     evBudget += line.length
   }
-  const _evDropped = (Array.isArray(A.evidence) ? A.evidence.length : 0) - evItems.length
-  if (_evDropped > 0) log(`근거 ${A.evidence.length}건 중 ${evItems.length}건만 주입 — ${_evDropped}건 드롭(항목 12·예산 11KB)`)
+  EV_SHOWN = evItems.length
+  const _evDropped = _evIn.length - evItems.length
   EV_BLOCK = `[챗 워크스페이스가 정리한 원천 데이터 — 검증 대상이지 결론이 아니다. 각 수치·주장을 ` +
     `당신 도메인으로 재검토하고, 부족하면 도구로 더 확인하라. 이 항목의 수치·주장을 발언·결정문에 ` +
-    `쓸 때는 해당 [e:N] 표지를 함께 적어라${_evDropped > 0 ? ` · 원근거 ${A.evidence.length}건 중 ${evItems.length}건만 표시됨` : ''}]\n${evItems.join('\n')}\n\n`
+    `쓸 때는 해당 [e:N] 표지를 함께 적어라${_evDropped > 0 ? ` · 원근거 ${_evIn.length}건 중 ${evItems.length}건만 표시됨` : ''}]\n${evItems.join('\n')}\n\n`
+}
+// 좌석에 주지 않은 근거 — 사유마다 한 줄로 **반환값에** 남긴다(evidenceOmitted). 종전엔 log() 한 줄이 전부였는데,
+// 워크플로 로그는 호출자가 받는 결과가 아니라 '12건 보냈으니 12건 봤다' 로 읽혔다(S26U 피드백 3-3).
+// ⚠ 위 블록 **밖**이다. 전부 버려지면 EV 가 비어 그 블록에 아예 안 들어간다 — 근거 0건으로 도는 가장
+//   나쁜 경우에 가장 조용해진다(종전엔 그 로그조차 없었다).
+// source·문구는 엔진의 제외 카드(deliberation.py '사전 근거 …')·잡 원장 evidence_omitted 와 맞춘다 — 리스크 앱이
+// 같은 낱말로 읽는다. text 는 200자 안쪽으로 쓴다(앱 원장 events[] 의 필드 상한 — HWAXRisk routes.EVENT_FIELD_MAX).
+const EV_OMITTED = []
+{
+  const empty = _evIn.length - _evValid.length
+  const over = _evValid.length - EV.length
+  const budget = EV.length - EV_SHOWN
+  if (empty) EV_OMITTED.push({ source: '사전 근거 본문 없음', count: empty,
+    text: `근거 ${_evIn.length}건 중 ${empty}건은 본문이 없어(또는 항목이 객체가 아니어서) 좌석에 주지 않았다. ` +
+          `본문은 'result' 에 넣는다(${EV_BODY_KEYS.slice(1).join('·')} 도 차례로 찾는다).` })
+  if (over) EV_OMITTED.push({ source: '사전 근거 건수 초과', count: over,
+    text: `본문이 있는 근거 ${_evValid.length}건 중 뒤쪽 ${over}건은 건수 상한(${EV_MAX_ITEMS}건)을 넘겨 좌석에 주지 않았다.` })
+  if (budget) EV_OMITTED.push({ source: '사전 근거 예산 초과', count: budget,
+    text: `근거 ${EV.length}건 중 뒤쪽 ${budget}건은 예산(${EV_BUDGET.toLocaleString('en-US')}자)을 넘겨 좌석에 주지 않았다.` })
+  if (EV_OMITTED.length) {
+    log(`⚠ 근거 ${_evIn.length}건 중 ${EV_SHOWN}건만 주입 — ` +
+        `${EV_OMITTED.map(x => `${x.source.replace('사전 근거 ', '')} ${x.count}건`).join(' · ')} (반환값 evidenceOmitted 에 남긴다)`)
+  }
 }
 // 얹을 층(2층 Modifier) — chairTemplate(무엇을 산출)과 직교하는 "어떻게 굴리나" 오버레이.
 // deliberation.py _MODIFIER_BLOCKS 와 키·취지 정합. BASE/BASE_BLIND 에 실어 좌석·의장 전체에 적용.
@@ -537,6 +568,7 @@ if (STOP_AFTER === 1) {
   return {
     question: Q, rounds: roundsData, roundLabels, decision: null, explain: null,
     report: null, conversation: null, nextRoundOffset: rn(1),
+    evidenceOmitted: EV_OMITTED,
     checkpoint: {
       stage: 'after-initial',
       seats: SEAT_NOTE,
@@ -725,6 +757,7 @@ if (!decText) {
     question: Q, rounds: roundsData.map(rd => rd.filter(Boolean)), roundLabels,
     decision: null, decisionFailed: true, decisionTruncated: false, seatLoss,
     plain: null, report: null, conversation: null, nextRoundOffset: finalRoundNo,
+    evidenceOmitted: EV_OMITTED,
   }
 }
 // 절단 감지 — 양방향. (a) 머리: 여러 턴에 나눠 쓰면 마지막 턴만 반환돼 제목 없이 시작한다.
@@ -767,7 +800,7 @@ const citationAudit = {
   numbersChecked: _decNums.length,
   matched: _decNums.length - _unmatchedNums.length,
   unmatched: _unmatchedNums.slice(0, 40),
-  evidenceIds: EV.length,   // [e:N] 참조 체계가 몇 항목에 부여됐나
+  evidenceIds: EV_SHOWN,   // [e:N] 참조 체계가 몇 항목에 부여됐나 — 좌석에 실린 수다(예산으로 빠진 항목은 표지가 없다)
   note: '결정문 수치를 근거(전문)·정량 근거·전 라운드 발언 원문과 결정적으로 대조. ' +
         'unmatched = 어느 원문에도 없는 수치(의장 신규 산술 또는 환각 — 사람이 훑을 목록).',
 }
@@ -1034,6 +1067,9 @@ return {
   //   복원: 트랜스크립트 디렉터리의 agent-*.jsonl 에서 assistant 텍스트 블록을 순서대로 이어붙인다.
   decisionTruncated,
   seatLoss,   // [{round, lost:[key]}] — API 오류로 빠진 좌석. 빈 배열이면 전원 발언.
+  // [{source, count, text}] — 좌석에 주지 않은 근거(본문 없음·건수 초과·예산 초과). 빈 배열이면 보낸 근거가 전부 실렸다.
+  // 로그로만 알리면 호출자가 놓친다 — 계약으로 올린다(체크포인트·의장 실패 반환에도 같은 필드가 있다).
+  evidenceOmitted: EV_OMITTED,
   plain,
   report,
   conversationSkipped,   // 대화 저장을 건너뛴 사유(용량) — save-delib-conversation.py 로 저장 가능.
