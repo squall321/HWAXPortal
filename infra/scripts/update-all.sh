@@ -475,11 +475,15 @@ else
     # 그 라우트는 손으로 적는다 — ARP 서버 주소가 infra/.env(ARP_HOST)와 라우트 파일 두 곳에 있다. 한쪽만 고치거나 라우트를 빼먹어도
     # 오류가 나지 않는다 — 없으면 타일이 숨어 ARP 를 붙인 박스인데 타일만 안 보이고, 다르면 타일과 챗의 ARP 도구가 서로 다른 서버를 본다.
     # 여기서 적어 주지는 않는다(적을지는 정하지 않았다) — 어긋나거나 없으면 말한다. local 이 base 를 이긴다(gen-nginx-conf 와 같다).
+    # 키도 gen-nginx-conf 가 읽는 대로 읽는다 — 키 둘레의 공백을 떼고(`aireadyportal = …` 도 라우트다), 박스 파일이 그 키를 **정의했으면**
+    # 값이 비어도 추적 파일로 넘어가지 않는다(빈 값은 '이 박스에서 끔' 이고 생성기는 그 키의 추적 줄을 버린다). 종전엔 붙여 적은
+    # 줄만 읽어, 라우트가 멀쩡한 박스에서 매 실행 '라우트가 없다' 가 떴다. 파일을 직접 읽는다(파이프가 아니다 — pipefail 과 무관).
     _arp_route=""
     for _f in "$SELF_REPO/backend/config/routes.local.env" "${ROUTES_ENV:-}"; do
       [ -n "$_f" ] && [ -f "$_f" ] || continue
-      _arp_route="$(sed -n 's|^[[:space:]]*aireadyportal=[[:space:]]*\(.*\)|\1|p' "$_f" | tail -1 | tr -d '[:space:]')"
-      [ -n "$_arp_route" ] && break
+      grep -qE '^[[:space:]]*aireadyportal[[:space:]]*=' "$_f" || continue
+      _arp_route="$(sed -n 's|^[[:space:]]*aireadyportal[[:space:]]*=[[:space:]]*\(.*\)|\1|p' "$_f" | tail -1 | tr -d '[:space:]')"
+      break
     done
     _arp_route_host="$(printf '%s' "$_arp_route" | sed -n 's|^[A-Za-z][A-Za-z0-9+.-]*://\([^/:]*\).*|\1|p' | tr 'A-Z' 'a-z')"
     if [ -z "$_arp_route" ]; then
