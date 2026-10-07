@@ -87,6 +87,29 @@ def test_예시_파일의_기본은_꺼짐이고_실제_값을_싣지_않는다(
     assert value == "" or re.fullmatch(r"<[^<>]+>", value), f"{key} 의 예시 값은 비우거나 <자리표시> 여야 한다: {value!r}"
 
 
+def test_env_sync_가_기존_박스의_env_에_네_설정을_주석으로_알린다(tmp_path):
+    """이미 배포된 박스의 infra/.env 는 예시 파일을 다시 복사하지 않는다 — update-all 1c 의 env-sync 가 없는 키를 덧붙여 알린다.
+    실제 예시 파일과 '이 변경 전' 모양의 .env 로 env-sync 를 **그대로 돌린다**. 넷 다 주석으로(꺼진 채) 들어가야 한다:
+    활성 줄로 들어가면 빈 값이 export 되어 backend/.env 에 적어 둔 값을 덮는다."""
+    import subprocess
+
+    box = tmp_path / "HWAXPortal" / "infra"
+    box.mkdir(parents=True)
+    (box / ".env.example").write_text(EXAMPLE, encoding="utf-8")
+    # 이 변경 전의 박스 — 예시 파일에서 네 설정의 줄만 뺀 것을 그 박스의 .env 로 삼는다
+    old_env = "\n".join(ln for ln in EXAMPLE.splitlines() if not any(re.match(rf"^[ \t]*#?[ \t]*{k}=", ln) for k in VALUES)) + "\n"
+    (box / ".env").write_text(old_env, encoding="utf-8")
+    r = subprocess.run(["bash", str(ROOT / "infra/scripts/env-sync.sh"), str(box.parent)], capture_output=True, text=True,
+                       timeout=60, env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)})
+    assert r.returncode == 0, r.stdout + r.stderr
+    added = (box / ".env").read_text(encoding="utf-8")[len(old_env):]
+    for key in VALUES:
+        assert re.search(rf"^# {key}=", added, re.M), f"{key} 가 기존 박스의 .env 에 알려지지 않았다\n{r.stdout}"
+        assert not re.search(rf"^{key}=", added, re.M), f"{key} 가 켜진 줄로 들어갔다"
+        assert key in r.stdout, "무엇이 새로 생겼는지 실행 출력에도 나온다"
+    assert _declared(added).keys() == set(VALUES), "이 넷 말고는 덧붙이지 않는다(예시 파일의 다른 줄은 이미 있다)"
+
+
 def test_전권_소속_경고가_기본_소속_옆에_있다():
     """기본 소속에 전권 소속(grants '*')을 적으면 IdP 를 통과한 누구나 전권이다 — 값을 적는 자리에서 읽혀야 한다."""
     i = EXAMPLE.index("SSO_DEFAULT_AFFILIATION=")
