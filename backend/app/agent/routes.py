@@ -87,6 +87,9 @@ class DelibOpts(BaseModel):
     rounds: int | None = Field(default=None, ge=2, le=8)
     timeout_s: float | None = Field(default=None, ge=10, le=1800)
     # 이어하기(사람 개입 스티어링) — 사람 의견 + 이전 심의 요약 + 전문가 재사용(발굴 생략)
+    # human_note 8,000 은 바깥 경계다 — 좌석에 싣는 길이는 엔진이 정하고(DELIB_HUMAN_NOTE_MAX, 기본 2,000),
+    # 잘랐으면 엔진이 카드로 알린다. 엔진 **기본값**이 이 값을 넘으면 안 된다
+    # (tests/test_human_note_cap_contract.py, docs/delib-engine-feedback D-7).
     human_note: str | None = Field(default=None, max_length=8000)
     # 불량 환기 — auto(질문에 불량 단어가 있을 때만, 엔진 종전) | off | always. 'VOC 먼저 보기' 에서
     # 사람이 이미 골랐으면 off 로 보낸다(자동 환기가 사람이 뺀 VOC 를 다시 넣지 않게).
