@@ -130,8 +130,9 @@ class DelibOpts(BaseModel):
     # 챗 워크스페이스가 정리해 넘긴 원천 근거(도구결과+출처). 심의는 '검증 대상·결론 아님'으로
     # 좌석에 주입한다(요약 아닌 날것) — 핸드오프 P1. agent-server 가 항목 필드를 재클램프한다.
     # 상한은 프론트 handoff.ts EVID_ITEMS·엔진 _EVID_ITEMS 와 같은 값이어야 한다
-    # (tests/test_evidence_budget_contract.py). 종전 12 는 문서 한 건도 못 실었다.
-    evidence: list[dict] | None = Field(default=None, max_length=40)
+    # (tests/test_evidence_budget_contract.py). 종전 12 는 문서 한 건도 못 실었고, 40 은 근거 41~49건짜리
+    # 패널(S26U 잠재리스크 심사)을 422 로 막았다 — 합계 예산(500,000자 ÷ 건당 ≈4,000자)이 담는 건수에 맞춘다.
+    evidence: list[dict] | None = Field(default=None, max_length=120)
     # 웹 리서치 소스 토글(심의) — 켜지 않은 소스는 자유 조회에 바인딩되지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
     # 자유 조회 — 좌석이 발언 전 읽기 도구를 직접 호출하는 단계의 on/off(엔진 DELIB_FREE_TOOLS).

@@ -6,7 +6,7 @@
   엔진   HWAXAgentServer/deliberation.py          _EVID_ITEMS / _EVID_ITEM_MAX    → 넘으면 잘라 버린다
 
 좌석 상한(test_seat_cap_contract)과 달리 이쪽은 **어긋나도 아무 신호가 없다.** 프론트가
-항목을 12건만 만들면 포털이 40 을 받아도 12건만 오고, 엔진이 2,000자에서 자르면 발표자료
+항목을 12건만 만들면 포털이 120 을 받아도 12건만 오고, 엔진이 2,000자에서 자르면 발표자료
 한 장 분량만 좌석에 간다 — 심의는 정상적으로 돌고 결론도 나온다. 틀린 줄 모른 채로.
 
 실제로 그랬다. 종전 값(12항목 · 항목당 2,000자 · 합계 11,000자)은 챗 도구결과 몇 건을
@@ -15,6 +15,8 @@
 """
 import re
 from pathlib import Path
+
+import pytest
 
 from app.agent.routes import DelibOpts
 
@@ -50,6 +52,20 @@ def test_근거_항목수_상한이_세_곳에서_같다():
         f"항목수 상한 불일치 — 프론트 {front} · 포털 {portal} · 엔진 {engine}. "
         "작은 쪽에서 잘리고 잘린 사실은 아무 데도 안 남는다."
     )
+
+
+def test_실사용_패널의_근거_건수가_들어간다():
+    """S26U 잠재리스크 심사 패널은 근거가 41~49건이다(2026-10-07 실사용 피드백 4-1). 종전 40 이면
+    웹 경로는 422 로 시작도 못 하고, MCP 경로는 엔진이 41번째부터 버렸다."""
+    from pydantic import ValidationError
+
+    cap = _portal_items()
+    items = [{"source": f"E{i}", "result": f"본문 {i}"} for i in range(49)]
+    got = DelibOpts(evidence=items).model_dump(exclude_none=True)["evidence"]
+    assert len(got) == 49 and got[-1]["result"] == "본문 48", "49건이 그대로 중계돼야 한다"
+    # 상한 자체는 남는다 — 폭주 방지선이다. 넘으면 조용히 자르지 않고 422 다.
+    with pytest.raises(ValidationError):
+        DelibOpts(evidence=[{"source": "s", "result": "r"}] * (cap + 1))
 
 
 def test_항목당_글자_상한이_프론트와_엔진에서_같다():
