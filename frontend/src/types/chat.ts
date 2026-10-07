@@ -68,7 +68,9 @@ export interface DelibData {
   personas?: { key: string; role?: string; origin?: 'primary' | 'counter' | 'adversary' | 'carry' | 'new' }[];
   // 근거 카드 — 한 심의에 복수 출처가 올 수 있어 배열(SignalForge 환기 + 정량 근거 선주입).
   // 과거 저장분은 단일 객체일 수 있어 소비처는 배열/객체 양쪽을 허용한다.
-  evidence?: { source: string; text: string; included: boolean }[];
+  // notice — 근거가 아니라 **알림**인 카드(의장 전사를 줄였다 · 좌석이 유실됐다 · 앱 범위를 못 좁혔다). included=false 로
+  // 오지만 '좌석에 주지 않은 근거' 가 아니다(좌석은 전부 받았다) — 엔진이 깃발로 가른다. 과거 저장분에는 없다.
+  evidence?: { source: string; text: string; included: boolean; notice?: boolean }[];
   turns?: DelibTurn[];
   decision?: string;
   /** 쉬운 설명 — 비전문가용 정리(정식 심의 단계 'explain' 산출물). */

@@ -164,6 +164,8 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
           source: String(e.source ?? ''),
           text: String(e.text ?? ''),
           included: Boolean(e.included),
+          // 알림 카드 깃발 — 여기서 안 옮기면 화면이 알림을 '좌석에 주지 않은 근거' 로 부른다.
+          ...(e.notice ? { notice: true } : {}),
         },
       ];
       break;

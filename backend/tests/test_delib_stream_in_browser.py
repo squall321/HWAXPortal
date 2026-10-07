@@ -235,6 +235,21 @@ const SCENARIOS = {
     out.errors.push(...page.__errors);
     return out;
   },
+  // 근거 카드의 딱지 — 포함된 근거 · 좌석에 주지 않은 근거 · 근거가 아닌 알림(엔진 notice=true)
+  async evidence(browser) {
+    const page = await open(browser);
+    await start(page);
+    await push(page, frame('delib', { kind: 'stage', stage: 'r1', n: 2 }));
+    const card = (source, extra) => frame('delib', { kind: 'evidence', source, text: source + ' 본문', ...extra });
+    await push(page, card('SignalForge 환기', { included: true }));
+    await push(page, card('사전 근거 예산 초과', { included: false }));
+    await push(page, card('의장 전사 상한 초과', { included: false, notice: true }));
+    await push(page, card('좌석 유실', { included: false, notice: true }));
+    await page.getByText('좌석 유실').first().waitFor();
+    const flags = await page.evaluate(() => Array.from(document.querySelectorAll('.dv-evidence summary')).map((el) =>
+      [el.childNodes[1].textContent, el.querySelector('.dv-ev-flag').textContent]));
+    return { flags, errors: page.__errors };
+  },
   // 심의 브리프의 도우미(화두 제안·좌석 발굴)가 오래 걸릴 때 — 몇 초째인지 보이고, 기다리지 않고 넘길 수 있다
   async brief(browser) {
     const look = (page) => page.evaluate(() => ({
@@ -380,3 +395,14 @@ def test_브리프의_도우미가_오래_걸리면_몇_초째인지_보이고_�
     assert len(late["notice"]) == 1 and "600초" in late["notice"][0] and "AGENT_UNARY_TIMEOUT_S" in late["notice"][0]
     assert "첫 발화 그대로" in late["notice"][0]
     assert "AGENT_UNARY_TIMEOUT_S" in late["empty"] and "심의가 자동 발굴합니다" in late["empty"], late
+
+
+def test_근거가_아닌_알림_카드는_알림이라고_뜬다(seen):
+    """엔진은 알림(의장 전사를 줄였다 · 좌석이 유실됐다)도 included=false 근거 카드로 보낸다. 그 카드에 '좌석에 주지 않음' 이
+    붙으면 '의장 입력을 줄였다' 가 '좌석이 못 받았다' 로 읽힌다 — 좌석은 전부 받았다. 엔진이 notice=true 로 가른다."""
+    assert seen("evidence")["flags"] == [
+        ["SignalForge 환기", "심의에 포함"],
+        ["사전 근거 예산 초과", "좌석에 주지 않음"],
+        ["의장 전사 상한 초과", "알림"],
+        ["좌석 유실", "알림"],
+    ]
