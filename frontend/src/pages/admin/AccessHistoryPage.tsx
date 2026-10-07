@@ -33,6 +33,9 @@ const DETAIL_LABEL: Record<string, string> = {
 function detailText(d: string | null): string {
   if (!d) return '';
   if (d.startsWith('local:')) return `이메일 로그인 — ${d.slice(6)}`;
+  // SSO 로 처음 생긴 행에 포털이 소속을 넣었다(sso:aff:map|default:<소속>) — 사람이 정한 값이 아니라는 흔적이다
+  const aff = /^sso:aff:(map|default):(.+)$/.exec(d);
+  if (aff) return `SSO — 첫 로그인, 소속 ${aff[2]} 자동 지정(${aff[1] === 'map' ? 'Claim 매핑' : '기본 소속'})`;
   return DETAIL_LABEL[d] ?? d;
 }
 

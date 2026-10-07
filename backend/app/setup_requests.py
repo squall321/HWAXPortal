@@ -22,7 +22,7 @@ import httpx
 import yaml
 from fastapi import APIRouter, Depends, Request
 
-from app.access.policy import ADMIN_GROUP
+from app.access.policy import ADMIN_GROUP, sso_default_problems
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
@@ -118,6 +118,13 @@ async def run_check(name: str, settings: Settings, access: Any) -> str:
         except Exception:
             return "unknown"
 
+    if name == "sso_default_affiliation":
+        # SSO 기본 소속 — 표에 없는 값(적용 안 됨)이거나 전권 소속(누구나 전권)이면 안 된 것이다. 꺼져 있으면 ok.
+        try:
+            return "todo" if sso_default_problems(access.get(), settings.sso_default_affiliation) else "ok"
+        except Exception:
+            return "unknown"
+
     if name == "ste_backend":
         base = (settings.ste_base_url or "").rstrip("/")
         return "ok" if base and await _probe(base + "/api/health") else "todo"
@@ -151,6 +158,11 @@ def check_notes(name: str, settings: Settings, access: Any) -> list[str]:
     if name == "access_overlay":
         try:
             return list(access.problems())
+        except Exception:
+            return []
+    if name == "sso_default_affiliation":
+        try:
+            return [text for _code, text in sso_default_problems(access.get(), settings.sso_default_affiliation)]
         except Exception:
             return []
     return []

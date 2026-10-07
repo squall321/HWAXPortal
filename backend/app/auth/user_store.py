@@ -452,7 +452,7 @@ class UserStore:
 
     # ── SSO 연동(미래) ──────────────────────────────────────────────────────
     def note_sso_login(self, *, email: str, name: str | None, department: str | None = None,
-                       dept_id: str | None = None) -> None:
+                       dept_id: str | None = None, affiliation: str = "") -> bool:
         """SSO 콜백 훅 — 같은 이메일 행이 있으면 연결(auth_source 갱신), 없으면 원장에
         생성(active — IdP 가 이미 신원을 보증). 계정·비밀번호 해시는 남는다.
 
@@ -461,19 +461,23 @@ class UserStore:
         이름이 이메일과 같은 행도 빈 것으로 본다(6차 요청 §4-B-3). 읽을 때의 대체는 deps.entitled 가 한다.
         부서는 IdP 값이 있으면 덮는다(사람 입력 표기가 21종으로 갈려 있다), 없으면 그대로 둔다.
         부서 **코드**(dept_id)도 같은 규칙이되 제 칸에만 적는다 — 표시용 부서는 코드로 덮지 않는다(10차 요청 §7).
-        ⚠ affiliation·groups·grants·status 는 **절대 안 건드린다** — 권한 입력이다(§4-B-4)."""
+        ⚠ affiliation·groups·grants·status 는 **절대 안 건드린다** — 권한 입력이다(§4-B-4).
+        단 하나, 행을 **처음 만들 때만** `affiliation` 을 넣는다(10차 요청 §2 — Claim 매핑·기본 소속, 값은 호출부가 권한 표로
+        거른다). 있던 행에는 주어도 쓰지 않는다 — 로그인 때마다 채우면 관리자가 일부러 비운 소속이 되살아난다.
+        새 행을 만들었으면 True 를 돌려준다(호출부가 '넣었다' 는 흔적을 남길 때 쓴다)."""
         email = norm_email(email)
         name = (name or "").strip()[:80]
         dept = (department or "").strip()[:80] or None
         did = (dept_id or "").strip()[:80] or None
         now = _now()
         with self._lock:
-            if self.get(email) is None:
+            created = self.get(email) is None
+            if created:
                 self._conn.execute(
                     "INSERT INTO users (email, name, groups, status, auth_source, created_at, "
-                    "approved_at, approved_by, last_login_at, department, dept_id) "
-                    "VALUES (?, ?, '[]', 'active', 'sso', ?, ?, 'sso', ?, ?, ?)",
-                    (email, name, now, now, now, dept or "", did or ""))
+                    "approved_at, approved_by, last_login_at, department, dept_id, affiliation) "
+                    "VALUES (?, ?, '[]', 'active', 'sso', ?, ?, 'sso', ?, ?, ?, ?)",
+                    (email, name, now, now, now, dept or "", did or "", (affiliation or "").strip()[:40]))
             else:
                 self._conn.execute(
                     "UPDATE users SET auth_source = 'sso', last_login_at = ?, "
@@ -482,3 +486,4 @@ class UserStore:
                     "department = COALESCE(?, department), dept_id = COALESCE(?, dept_id) WHERE email = ?",
                     (now, name, name, dept, did, email))
             self._commit()
+        return created

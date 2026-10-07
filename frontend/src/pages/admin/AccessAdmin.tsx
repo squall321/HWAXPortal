@@ -7,7 +7,7 @@ import {
   type AccessPolicy,
   type AccessRequest,
 } from '../../api/access.api';
-import type { LocalUserRow } from '../../api/auth.api';
+import { isUnassigned, type LocalUserRow } from '../../api/auth.api';
 import '../../styles/admin.css';
 
 function labelOf(policy: AccessPolicy | null, key: string): string {
@@ -84,7 +84,7 @@ export function BulkAffiliation({
 }) {
   const [aff, setAff] = useState('CAEG');
   const [msg, setMsg] = useState('');
-  const targets = rows.filter((r) => r.status === 'active' && !r.affiliation && !r.groups.includes('portal-admin'));
+  const targets = rows.filter(isUnassigned);
   if (!policy || policy.affiliations.length === 0 || targets.length === 0) return null;
   const run = async () => {
     const label = policy.affiliations.find((a) => a.id === aff)?.label ?? aff;

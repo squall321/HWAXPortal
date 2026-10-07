@@ -223,6 +223,66 @@ def parse_policy(raw: dict) -> Policy:
                   sso_affiliation_map=tuple(rules), warnings=tuple(notes))
 
 
+# ── SSO 로 처음 생기는 사람의 소속 ────────────────────────────────────────────
+# SSO 신규 가입자는 소속 없이 생겨 기본 권한(일반 챗)만 받았고, 관리자가 찾아 지정할 때까지 막혀 있었다(10차 요청 §2 —
+# 2026-10-07 실측 16명). 처음 생길 때 Claim 으로 소속을 정한다. ⚠ 여기서 정하는 것은 **넣을 값**뿐이다 — 넣는 자리는
+# 원장의 최초 INSERT 하나다(user_store.note_sso_login). 이미 있는 행에 다시 계산해 넣으면 관리자가 거둔 소속이 되살아난다.
+def claim_values(attrs: dict, claim: str) -> list[str]:
+    """Assertion 속성(이름 → 값 목록)에서 이 Claim 의 값들. 없으면 [].
+
+    이름은 **정확한 키**가 먼저다 — SAML_ATTR_* 설정과 같은 규칙이고 모호할 수가 없다(운영 ADFS 는 전체 URI 를 준다).
+    '/' 도 ':' 도 없는 짧은 이름(CompId)은 마지막 경로 조각이 통째로 같은 속성이 그 Assertion 에 **하나뿐일 때만** 잇는다.
+    둘 이상이면 고르지 않는다 — 다른 네임스페이스의 같은 이름이 소속을 정하면 안 된다. 그때는 전체 이름으로 적는다."""
+    if claim in attrs:
+        return [str(v) for v in attrs[claim] or []]
+    if "/" in claim or ":" in claim:
+        return []
+    hits = sorted(k for k in attrs if "/" in str(k) and str(k).rsplit("/", 1)[-1] == claim)
+    if len(hits) > 1:
+        # Claim **이름**만 적는다 — 값은 사내 코드·개인정보다.
+        logger.warning("SSO 소속 매핑: 짧은 Claim 이름 %r 에 맞는 속성이 둘 이상이라 고르지 않는다 — "
+                       "access.local.yaml 에 전체 이름으로 적을 것: %s", claim, hits)
+        return []
+    return [str(v) for v in attrs[hits[0]] or []] if hits else []
+
+
+def first_sso_affiliation(policy: Policy, attrs: dict, default: str = "") -> tuple[str, str, str]:
+    """SSO 로 **처음** 생기는 사람에게 넣을 (소속 id, 출처, 사람용 근거). 출처는 'map' | 'default' | ''(안 넣는다).
+
+    표(sso_affiliation_map)를 파일 순서대로 보아 처음 맞는 행이 이긴다. 값은 앞뒤 공백만 떼고 글자 그대로 견준다.
+    맞는 행이 없을 때만 기본 소속(SSO_DEFAULT_AFFILIATION)이다. 어느 쪽이든 **표에 있는 소속만** 돌려준다 — 표의 행은 읽을 때
+    걸렀고(parse_policy), 기본 소속은 여기서 본다. 모르는 값이 원장에 들어가면 권한 계산이 조용히 버려 다시 '막힌 사람' 이 된다."""
+    for n, rule in enumerate(policy.sso_affiliation_map, 1):
+        if any(v.strip() == rule.value for v in claim_values(attrs, rule.claim)):
+            return rule.affiliation, "map", f"sso_affiliation_map {n}번째 행 · Claim {rule.claim}"
+    default = (default or "").strip()
+    if not default:
+        return "", "", ""
+    if default not in policy.affiliations:
+        logger.warning("SSO_DEFAULT_AFFILIATION=%r 는 권한 표의 affiliations 에 없다 — 적용하지 않았다(소속 없이 생긴다)", default)
+        return "", "", ""
+    return default, "default", "SSO_DEFAULT_AFFILIATION"
+
+
+def sso_default_problems(policy: Policy, default: str) -> list[tuple[str, str]]:
+    """기본 소속 설정의 문제 — (코드, 사람용 문장). 기동 로그와 관리자의 배선 설정이 같은 문장을 쓴다.
+
+    `unknown` 은 오타다(적용되지 않는다). `wildcard` 는 **막지 않는다** — 운영자의 결정일 수 있다. 다만 grants 가 '*' 인 소속을
+    기본으로 주면 IdP 를 통과한 누구나 처음 로그인하는 순간 전권이라, 조용히 두지 않는다."""
+    default = (default or "").strip()
+    if not default:
+        return []
+    aff = policy.affiliations.get(default)
+    if aff is None:
+        return [("unknown", f"SSO_DEFAULT_AFFILIATION={default!r} 는 권한 표의 affiliations 에 없다 — 적용되지 않는다"
+                            f"(SSO 로 처음 들어온 사람은 소속 없이 생긴다). 쓸 수 있는 값: {', '.join(sorted(policy.affiliations))}")]
+    if WILDCARD in aff["grants"]:
+        return [("wildcard", f"SSO_DEFAULT_AFFILIATION={default!r} 는 전권 소속이다(grants 에 '*') — IdP 를 통과한 사람은 "
+                             "누구나 처음 로그인하는 순간 모든 기능·플랫폼을 받는다. 일부에게만 줄 것이면 값을 비우고 "
+                             "access.local.yaml 의 sso_affiliation_map(Claim → 소속)을 쓴다")]
+    return []
+
+
 def _brief(exc: Exception) -> str:
     """읽기 실패를 관리자 화면에 실을 한 줄로. YAML 오류 원문은 그 줄의 **내용**을 인용한다 — 박스 파일에는 사내 코드가
     있어 어느 파일 몇 행인지만 말한다."""

@@ -26,6 +26,10 @@ export interface LocalUserRow {
   locked_until: number;
 }
 
+/** 소속 미지정 — 활성인데 소속이 없고 관리자도 아닌 사람(기본 권한만 쓴다). 사용자 관리의 배너 수와 '소속 미지정만 보기' 가 같은 사람을 센다. */
+export const isUnassigned = (r: LocalUserRow): boolean =>
+  r.status === 'active' && !r.affiliation && !r.groups.includes('portal-admin');
+
 export async function localLogin(email: string, password: string): Promise<void> {
   const res = await apiFetch('/auth/local/login', {
     method: 'POST',

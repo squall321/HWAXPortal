@@ -127,6 +127,11 @@ class Settings(BaseSettings):
     # 주는 부서 Claim 은 코드 하나뿐이라, 그것을 위 saml_attr_department 로 받으면 사람이 직접 적은 부서명이 로그인하는 순간
     # 코드로 바뀐다(10차 요청 §7). 권한 칸은 이쪽도 안 건드린다.
     saml_attr_dept_id: str = ""
+    # SSO 로 **처음** 생기는 행의 소속 id(access.yaml affiliations) — 비우면 종전대로 소속 없이 생긴다. Claim → 소속 표
+    # (access.local.yaml 의 sso_affiliation_map)가 먼저고, 맞는 행이 없을 때만 이 값이다. 이미 있는 행은 안 건드린다(10차 요청 §2).
+    # ⚠ 전권 소속(grants "*" — 지금 CAEG)을 주면 IdP 를 통과한 **사내 누구나** 전권을 받는다. 막지는 않고 기동 로그(CRITICAL)와
+    #   관리자 화면 '배선 설정' 에 경고가 남는다. 표에 없는 값은 적용하지 않고 같은 자리에 알린다.
+    sso_default_affiliation: str = ""
     # ACS/SLS 경로 — AD-SSO 에 등록한 Endpoint Url 과 **글자 단위로** 같아야 한다(4차 변경 요청, 2026-09-29).
     # ⚠ ADFS 는 이 값을 인증 *전에* 검증하지 않는다 — 어긋나면 인증을 통과한 뒤 일반 오류 페이지로 끝나고 SP 에는
     #   아무 요청도 오지 않는다(조용한 실패). cae00 등록값은 개발·운영 모두 `/auth/callback` 이다 → .env SAML_ACS_PATH.

@@ -14,7 +14,7 @@ import jwt
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from app.access.policy import is_synthetic
+from app.access.policy import first_sso_affiliation, is_synthetic
 from app.auth import access_log, cookies
 from app.auth.errors import AuthError
 from app.auth.jwt_service import JWTService
@@ -68,6 +68,7 @@ def complete_login(
     # SSO 연동 훅 — 같은 이메일의 로컬 계정이 있으면 연결(auth_source 갱신), 없으면 원장에
     # 생성. 계정 행은 SSO 전환 후에도 남는다(로컬 계정 브리지의 승계 보장). 실패해도
     # 로그인은 막지 않는다 — 원장은 부기록이다.
+    sso_detail = "sso"     # 접속 원장의 로그인 줄 — 새 행에 소속을 넣었으면 그 출처가 붙는다(sso:aff:map|default:<소속>)
     if user_store is not None and getattr(principal, "email", None):
         # 부서는 여기서 수확해 원장에 적어야 한다 — 원시 Claim(principal.attributes)은 세션 JWT 에 안 실려 콜백을 벗어나면
         # 사라진다(6차 요청 §4-B-2). 이름은 적지 않아도 읽을 때 대체한다(deps.entitled) — 원장 이름이 비었을 때만 채운다.
@@ -75,10 +76,29 @@ def complete_login(
         dept_vals = attrs.get(settings.saml_attr_department) if settings.saml_attr_department else None
         # 부서 코드(DeptId)는 부서명과 다른 칸으로 — 같은 칸에 받으면 사람이 적은 부서명이 코드로 덮인다(10차 요청 §7).
         dept_id_vals = attrs.get(settings.saml_attr_dept_id) if settings.saml_attr_dept_id else None
-        with contextlib.suppress(Exception):
-            user_store.note_sso_login(email=principal.email, name=principal.display_name,
-                                      department=(dept_vals or [None])[0],
-                                      dept_id=(dept_id_vals or [None])[0])
+        # 소속 — **처음 생기는 행에만** 넣는다(10차 요청 §2). Claim → 소속 표가 먼저, 안 맞으면 기본 소속이고 둘 다 권한 표에 있는
+        # 소속만 나온다. 입력은 셋뿐이다: IdP 가 서명한 Assertion 의 Claim, 박스 파일의 표, 박스 env 의 기본값 — 요청(본문·쿼리·
+        # 헤더·쿠키)에서 오는 값은 없다. 권한 표를 못 읽으면 넣지 않는다(검증 못 한 소속을 원장에 쓰지 않는다).
+        # 이미 있는 사람은 계산도 하지 않는다 — 어차피 쓰지 않고, 계산이 남기는 경고('적용하지 않았다')가 로그인마다 쌓인다.
+        aff, aff_src, aff_why = "", "", ""
+        access = getattr(request.app.state, "access", None) if request is not None else None
+        if access is not None:
+            with contextlib.suppress(Exception):
+                if user_store.get(principal.email) is None:
+                    aff, aff_src, aff_why = first_sso_affiliation(access.get(), attrs, settings.sso_default_affiliation)
+        created = False
+        try:
+            created = user_store.note_sso_login(email=principal.email, name=principal.display_name,
+                                                department=(dept_vals or [None])[0],
+                                                dept_id=(dept_id_vals or [None])[0], affiliation=aff)
+        except Exception:  # noqa: BLE001 — 원장은 부기록이라 로그인은 막지 않는다
+            # 다만 조용히 삼키지 않는다. 종전엔 흔적이 없었다 — 새 사람은 행 없이(소속도 없이) 들어와 관리자 목록에도 안 보인다.
+            # 원장의 칸 추가가 기동 때 실패한 박스에서 이 쓰기가 로그인마다 실패한다(칸 추가는 실패를 삼킨다 — user_store).
+            log.warning("SSO 원장 기록 실패(%s) — 로그인은 계속한다", principal.email, exc_info=True)
+        if created and aff:
+            # 사람이 정하지 않은 소속이다 — 누가 넣었는지 남긴다. 서버 로그(WARNING — INFO 는 버려진다)와 아래 접속 원장 둘 다.
+            log.warning("SSO 신규 계정 %s — 소속 %s 를 넣었다(%s)", principal.email, aff, aff_why)
+            sso_detail = f"sso:aff:{aff_src}:{aff}"
     return_to = "/"
     if expected_state:
         try:
@@ -106,7 +126,7 @@ def complete_login(
             with contextlib.suppress(Exception):
                 disabled = (user_store.get(who) or {}).get("status") == "disabled"
         access_log.note(request, email=who, event="login_fail" if disabled else "login", service="portal",
-                        detail="sso:disabled" if disabled else "sso", uid=uid)
+                        detail="sso:disabled" if disabled else sso_detail, uid=uid)
     return response
 
 

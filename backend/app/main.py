@@ -18,7 +18,7 @@ from app import changelog as changelog_routes
 from app import setup_requests as setup_routes
 from app import routes_health
 from app.access import routes as access_routes
-from app.access.policy import AccessPolicy
+from app.access.policy import AccessPolicy, sso_default_problems
 from app.agent import routes as agent_routes
 from app.agent.audit import AuditLog
 from app.agent.conv_store import ConversationStore
@@ -74,6 +74,15 @@ async def lifespan(app: FastAPI):
     app.state.user_store = UserStore(settings)
     # 소속·허가 정책(access.yaml) — 요청마다 권한을 계산하는 입력(docs/access-control).
     app.state.access = AccessPolicy(settings)
+    # SSO 기본 소속(SSO_DEFAULT_AFFILIATION) — 표에 없는 값이면 적용되지 않고, 전권 소속이면 IdP 를 통과한 누구나 전권이다.
+    # 둘 다 막지는 않는다(config 주석). 대신 조용히 두지 않는다 — 여기 로그와 관리자의 배선 설정(setup_requests)에 남긴다.
+    # 정책은 원래 첫 요청 때 읽는다 — 값이 있을 때만 여기서 당겨 읽고, 못 읽어도 기동은 종전대로 간다.
+    if settings.sso_default_affiliation.strip():
+        try:
+            for code, text in sso_default_problems(app.state.access.get(), settings.sso_default_affiliation):
+                _log.log(logging.CRITICAL if code == "wildcard" else logging.WARNING, "SSO 기본 소속 [%s]: %s", code, text)
+        except Exception:  # noqa: BLE001
+            _log.warning("SSO 기본 소속(SSO_DEFAULT_AFFILIATION)을 권한 표와 대조하지 못했다", exc_info=True)
     # Mail backend (console in dev; smtp/graph via MAIL_BACKEND env).
     app.state.mail_backend = build_mail_backend(settings)
     # MCP chat (Phase 1): server registry (PR-managed yaml), audit log (compliance), and a

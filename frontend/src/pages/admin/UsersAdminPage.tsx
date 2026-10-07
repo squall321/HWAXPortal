@@ -4,6 +4,7 @@ import { Page, PageHeader } from '../../components/ui/Page';
 import { fetchAccessPolicy, type AccessPolicy } from '../../api/access.api';
 import {
   approveLocalUser,
+  isUnassigned,
   listLocalUsers,
   resetLocalUserPassword,
   setLocalUserStatus,
@@ -33,6 +34,7 @@ export default function UsersAdminPage() {
   const [busy, setBusy] = useState<string | null>(null); // 작업 중인 이메일
   const [policy, setPolicy] = useState<AccessPolicy | null>(null);
   const [editing, setEditing] = useState<string | null>(null); // 개별 허가를 펼친 이메일
+  const [onlyUnassigned, setOnlyUnassigned] = useState(false); // 소속 미지정만 보기
   useEffect(() => {
     fetchAccessPolicy().then(setPolicy).catch(() => setPolicy(null));
   }, []);
@@ -69,6 +71,10 @@ export default function UsersAdminPage() {
   if (!rows) return <Spinner label="사용자 목록 불러오는 중…" />;
 
   const pending = rows.filter((r) => r.status === 'pending');
+  // 한 사람씩 소속을 정할 때 — 일괄 지정으로는 누가 그 소속 사람인지 가릴 수 없다. 마지막 한 명을 지정해 0명이 되면 전체로 돌아간다
+  // (필터가 켜진 채 빈 표만 남지 않게).
+  const unassigned = rows.filter(isUnassigned);
+  const shown = onlyUnassigned && unassigned.length > 0 ? unassigned : rows;
 
   return (
     <Page width="wide">
@@ -85,6 +91,17 @@ export default function UsersAdminPage() {
       <SetupRequests />
       <AccessRequestsPanel policy={policy} onChanged={reload} />
       <BulkAffiliation policy={policy} rows={rows} onChanged={reload} /> 
+      <div className="adm-filter">
+        <label>
+          <input
+            type="checkbox"
+            checked={onlyUnassigned && unassigned.length > 0}
+            disabled={unassigned.length === 0}
+            onChange={(e) => setOnlyUnassigned(e.target.checked)}
+          />{' '}
+          소속 미지정만 보기({unassigned.length}명)
+        </label>
+      </div>
       <div className="adm-table-wrap">
         <table className="adm-table">
           <thead>
@@ -97,12 +114,13 @@ export default function UsersAdminPage() {
               <th>상태</th>
               <th>역할</th>
               <th>로그인 수단</th>
+              <th>생성</th>
               <th>마지막 로그인</th>
               <th>작업</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {shown.map((r) => (
               <Fragment key={r.email}>
               <tr>
                 <td>{r.email}</td>
@@ -128,6 +146,7 @@ export default function UsersAdminPage() {
                 </td>
                 <td>{r.groups.join(', ') || '—'}</td>
                 <td>{r.auth_source === 'sso' ? 'SSO' : '이메일'}</td>
+                <td className="adm-nowrap">{when(r.created_at)}</td>
                 <td>{when(r.last_login_at)}</td>
                 <td>
                   {r.status === 'pending' && (
@@ -188,7 +207,7 @@ export default function UsersAdminPage() {
               </tr>
               {editing === r.email && policy && (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={11}>
                     <GrantEditor policy={policy} row={r} onSaved={reload} onClose={() => setEditing(null)} />
                   </td>
                 </tr>

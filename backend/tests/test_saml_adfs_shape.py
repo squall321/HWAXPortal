@@ -91,6 +91,9 @@ with TestClient(app, base_url="http://localhost:5283") as c:
         out["convs"] = [x["title"] for x in c.get("/agent/conversations").json().get("conversations", [])]
         out["row"] = {k: v for k, v in (us.get(out["me"]["email"]) or {}).items()
                       if k in ("name", "department", "dept_id", "affiliation", "groups", "grants", "status")}
+        # 접속 원장의 이번 로그인 줄 — 포털이 소속을 넣었으면 그 출처가 붙는다(10차 요청 §2)
+        out["login_detail"] = app.state.agent_audit.query_access(
+            since=0, include_auto=True, email=out["me"]["email"], event="login")[0]["detail"]
 print(json.dumps(out, ensure_ascii=False))
 '''
 
@@ -108,7 +111,7 @@ def _run(tmp_path, *, want_nameid: str | None = "false", env_extra: dict | None 
            "JWT_AUTOGEN_KEYS": "true", "PROCEDURES_ARTIFACT_ROOT": str(tmp_path / "art"),
            "DELIB_ARCHIVE_ROOT": str(tmp_path / "delib"), "UPLOAD_STAGING_DIR": str(tmp_path / "stage")}
     for k in ("SAML_WANT_NAMEID", "SAML_SUBJECT_SOURCE", "SAML_ATTR_NAME", "SAML_ATTR_DEPARTMENT", "SAML_ATTR_DEPT_ID",
-              "SAML_SEND_NAMEID_POLICY", "SAML_ADVERTISE_SLO"):
+              "SAML_SEND_NAMEID_POLICY", "SAML_ADVERTISE_SLO", "SSO_DEFAULT_AFFILIATION", "ACCESS_PATH"):
         env.pop(k, None)
     if want_nameid is not None:
         env["SAML_WANT_NAMEID"] = want_nameid
@@ -251,6 +254,51 @@ def test_부서_코드_Claim_이름이_어긋나면_적지_않고_경고를_남�
     assert out["status"] in (302, 303) and out["row"]["dept_id"] == "", out
     assert "SAML_ATTR_DEPT_ID=" in out["stderr"] and CLAIM + "DeptId" in out["stderr"], out["stderr"][-1500:]
     assert "D2001" not in out["stderr"], "Claim 값은 로그에 안 남긴다"
+
+
+# ── 10차 §2 SSO 로 처음 생기는 사람의 소속 ──────────────────────────────────────────────────
+def _access(d: Path, *rows: str) -> dict:
+    """추적된 권한 표의 사본 + 박스 파일(Claim → 소속 표)을 임시 폴더에 두고 ACCESS_PATH 로 가리킨다 — 리포의 config 는 안 건드린다."""
+    d.mkdir(parents=True)
+    (d / "access.yaml").write_text((BACKEND / "config" / "access.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    (d / "access.local.yaml").write_text("sso_affiliation_map:\n" + "".join(f"  - {r}\n" for r in rows), encoding="utf-8")
+    return {"ACCESS_PATH": str(d / "access.yaml")}
+
+
+@needs_keys
+def test_운영_모양_Assertion_의_Claim_으로_새_사용자의_소속이_정해진다(tmp_path):
+    """운영 ADFS 는 Claim 이름을 전체 URI 로 준다 — 박스 파일에 짧은 이름(CompId)으로 적은 표가 **진짜 서명된 Assertion** 에서
+    맞는지 끝까지 본다. 소속이 들어가면 그 사람은 첫 요청부터 그 소속의 권한이고, 접속 원장에 포털이 넣었다는 흔적이 남는다."""
+    out = _run(tmp_path, env_extra=_access(tmp_path / "acc", '{claim: CompId, value: "C100", affiliation: CAEG}'))
+    assert out["status"] in (302, 303), out
+    assert out["row"]["affiliation"] == "CAEG" and out["me"]["affiliation"] == "CAEG", out
+    assert out["row"]["groups"] == [] and out["row"]["grants"] == [] and out["row"]["status"] == "active", out["row"]
+    assert "feat:deliberation" in out["me"]["entitlements"], out["me"]
+    assert out["login_detail"] == "sso:aff:map:CAEG", out["login_detail"]
+    assert "C100" not in out["stderr"], "Claim 값(회사 코드)은 로그에 안 남긴다"
+
+
+@needs_keys
+def test_표가_안_맞는_새_사용자는_소속_없이_생긴다(tmp_path):
+    out = _run(tmp_path, env_extra=_access(tmp_path / "acc", '{claim: CompId, value: "C999", affiliation: CAEG}',
+                                           '{claim: "' + CLAIM + 'DeptId", value: "D2001 x", affiliation: CAEG}'))
+    assert out["row"]["affiliation"] == "" and out["me"]["affiliation"] == "", out
+    assert out["me"]["entitlements"] == ["feat:chat"] and out["login_detail"] == "sso", out
+
+
+@needs_keys
+def test_이미_있는_사람은_표가_맞아도_기본_소속이_있어도_그대로다(tmp_path):
+    """D-2 — 최초 INSERT 때만이다. 소속이 빈 기존 행을 로그인 때 채우면 관리자가 일부러 비운 사람이 되살아나고, 승인 대기 행
+    (남의 이메일로도 만들 수 있다)이 SSO 로그인으로 소속을 얻는다."""
+    env = {**_access(tmp_path / "acc", '{claim: CompId, value: "C100", affiliation: CAEG}'), "SSO_DEFAULT_AFFILIATION": "CAEG"}
+    old = _run(tmp_path / "old", seed=[{"email": "koo.park@example.com", "name": "박구"}], env_extra=env)
+    assert old["row"]["affiliation"] == "" and old["login_detail"] == "sso", old
+    wait = _run(tmp_path / "wait", seed=[{"email": "koo.park@example.com", "name": "가입 대기", "pending": True}], env_extra=env)
+    assert wait["row"]["affiliation"] == "" and wait["row"]["status"] == "pending", wait["row"]
+    assert wait["me"]["entitlements"] == ["feat:chat"], wait["me"]
+    # 같은 설정에서 원장에 없던 사람은 받는다 — 위 둘이 '설정이 안 먹어서' 통과한 것이 아니다
+    new = _run(tmp_path / "new", mail="new.person@example.com", env_extra=env)
+    assert new["row"]["affiliation"] == "CAEG", new["row"]
 
 
 # ── 검토 2차 ───────────────────────────────────────────────────────────────────────────────
