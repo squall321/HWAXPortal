@@ -609,17 +609,17 @@
       ],
       "workflow": [
         "상황에 맞는 job 을 고른다 — 원인 불명은 diagnosis, 안이 2개 이상이면 option-select(options 에 후보), 해석·결정 신뢰는 credibility, 설계 변경 위험은 risk-review, 지배 물리는 mechanism, 계산 계획은 sim-plan, 측정 계획은 test-plan, 반복 해석 모듈은 build-plan, 나머지는 default.",
-        "deliberate_start 는 job_id 를 즉시 돌려준다. 기다리지 말고 job_id 를 사용자에게 알린다.",
+        "deliberate_start 는 job_id 를 즉시 돌려준다. 기다리지 말고 job_id 를 사용자에게 알린다. status 가 queued 면 동시 실행 상한이 차서 줄을 선 것이다 — 자리가 나면 스스로 시작하니 다시 시작하지 말고 순번(queue.position)을 알린다.",
         "진행은 deliberate_status 로 보고, 끝나면 deliberate_result 의 결정문을 요약한다. 근거가 더 필요하면 deliberate_transcript 를 본다.",
         "사람이 새 관측을 주면 처음부터 다시 돌리지 말고 deliberate_continue(previous_job_id, human_note)로 잇는다."
       ],
       "concepts": [
         "층(modifiers) — voi(교착 정산)·premortem(사전부검)·toulmin(논증 엄밀)·eliminative(완결 기준)·anon1r(익명 1R).",
-        "evidence 에는 이미 뽑아 둔 도구 결과의 원천만 넣는다(최대 12). 결론을 넣으면 좌석이 검증 없이 따라간다.",
+        "evidence 에는 이미 뽑아 둔 도구 결과의 원천만 넣는다(건수·길이 상한은 deliberate_jobs 의 limits 가 지금 값으로 알려 준다). 결론을 넣으면 좌석이 검증 없이 따라간다.",
         "personas 를 비우면 서버가 좌석을 발굴한다. 직접 지정은 최대 20석이고 2석 미만이면 시작되지 않는다."
       ],
       "pitfalls": [
-        "동시 실행 상한이 있다. 막히면 deliberate_list 로 진행 중인 것을 보고, 필요 없는 것을 사용자 확인 뒤 deliberate_cancel 한다.",
+        "동시 실행 상한이 있다. 걸리면 거절되지 않고 줄을 선다(queued) — 같은 심의를 다시 시작하면 두 번 줄을 선다. 접을 수 있는 것은 내 심의뿐이다(남의 심의는 deliberate_cancel 이 거절한다) — deliberate_list 로 보고 내 것 중 필요 없는 것만 사용자 확인 뒤 접는다.",
         "save_report=False 가 아니면 결정문이 Report Archive 에 저장된다. 탐색용 심의면 끄자고 제안한다.",
         "meeting_* 도구는 발표자료용 디자인 회의체다. 공학 심의에 쓰지 않는다."
       ],

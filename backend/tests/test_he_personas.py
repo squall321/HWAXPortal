@@ -142,3 +142,50 @@ def test_프롬프트_상한이_에이전트서버와_같다():
     assert int(m.group(1)) == _sync().PROMPT_MAX, (
         "동기화가 허락한 길이를 에이전트서버가 자르면 역할 뒤쪽이 사라진다"
     )
+
+
+# ── 심의 운영자 — 엔진이 바꾼 계약을 안내문이 따라간다 ─────────────────────────────────────────────
+# 이 페르소나의 안내문은 모델이 심의 도구를 모는 법이다. 엔진(HWAXAgentServer)이 대기열을 넣고(상한에 걸리면 거절이 아니라
+# status=queued) 남의 심의를 접지 못하게 한 뒤에도 안내문은 옛 계약을 말했다 — 그대로면 모델이 줄 선 심의를 실패로 읽고 같은
+# 심의를 다시 시작하고(두 번 줄을 선다), 막히면 남의 심의를 접으라고 사용자에게 권한다(거절된다).
+_DELIB_TOOLS = ("deliberate_jobs", "deliberate_start", "deliberate_status", "deliberate_result", "deliberate_transcript",
+                "deliberate_continue", "deliberate_list", "deliberate_cancel")
+_DELIB_MAP = {"map": dict.fromkeys(_DELIB_TOOLS, "hwax-deliberation"), "areas": {}, "area_meta": [],
+              "apps": [{"app": "hwax-deliberation", "label": "HWAX 심의"}]}
+_ENGINE_MCP = _ROOT.parent / "HWAXAgentServer" / "mcp_server.py"
+_ENGINE = _ROOT.parent / "HWAXAgentServer" / "deliberation.py"
+
+
+def _delib_prompt() -> str:
+    rows, skipped, errors = _sync().plan(_one("he-expert-deliberation"), _DELIB_MAP)
+    assert not errors and not skipped, (errors, skipped)       # 길이 상한(PROMPT_MAX)을 넘겨도 여기서 걸린다
+    return rows[0]["system_prompt"]
+
+
+def test_심의_운영자는_줄_선_심의를_다시_시작하지_않는다():
+    prompt = _delib_prompt()
+    assert "queued" in prompt and "queue.position" in prompt, "줄을 섰다는 응답(status=queued)과 순번을 읽는 법이 없다"
+    assert "다시 시작하지" in prompt, "줄 선 심의를 실패로 읽으면 같은 심의를 또 시작한다"
+    if _ENGINE_MCP.exists():
+        src = _ENGINE_MCP.read_text(encoding="utf-8")
+        assert "queued" in src and "queue.position" in src, "엔진의 대기열 계약이 바뀌었다 — 이 안내문을 다시 맞춘다"
+
+
+def test_심의_운영자는_남의_심의를_접으라고_권하지_않는다():
+    """엔진은 신원이 다른 사람의 심의를 접지 못하게 한다. '막히면 필요 없는 것을 접으라' 는 옛 안내는 남의 심의를 가리킨다."""
+    spec = _one("he-expert-deliberation")["personas"][0]
+    said = " ".join(spec["pitfalls"] + spec["workflow"])
+    assert "필요 없는 것을 사용자 확인 뒤 deliberate_cancel" not in said
+    assert "내 심의" in said and "deliberate_cancel" in spec["confirm"]
+
+
+def test_심의_운영자는_근거_상한을_숫자로_박아_두지_않는다():
+    """안내문에 적어 둔 '최대 12' 는 엔진 값(지금 120, env 로 바뀐다)과 달랐다 — 숫자를 고쳐 적으면 같은 일이 또 난다.
+    지금 값은 deliberate_jobs 의 limits 가 알려 준다."""
+    spec = _one("he-expert-deliberation")["personas"][0]
+    line = next(c for c in spec["concepts"] if c.startswith("evidence"))
+    assert not re.search(r"최대\s*\d+", line), line
+    assert "deliberate_jobs" in line and "limits" in line
+    if _ENGINE_MCP.exists():
+        assert '"limits"' in _ENGINE_MCP.read_text(encoding="utf-8"), "deliberate_jobs 가 limits 를 더는 내지 않는다 — 안내문을 다시 맞춘다"
+
