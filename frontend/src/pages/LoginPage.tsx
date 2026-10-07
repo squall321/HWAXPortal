@@ -24,9 +24,12 @@ export default function LoginPage() {
   // 이메일 로그인은 접어 둔다 — 운영 SSO 가 열려 주 경로가 SSO 다(2026-10-02). 가입·오류·안내가 있으면 펼친 채로.
   const [localOpen, setLocalOpen] = useState(false);
   // SSO 콜백 실패 — 서버가 흰 JSON 화면 대신 이리 돌려보낸다(/login?error=sso&detail=원인). 원인은 접어 둔 '자세히' 에.
+  // 정지로 **일부러 거절한** 경우는 사유 코드가 같이 온다(reason=disabled) — 그때는 '잠시 뒤 다시 시도' 가 아니라 정지라고 말한다.
+  // 문장은 코드로 고른다. detail 의 글을 머리로 올리지 않는다 — URL 이라 누구나 바꿔 넣을 수 있다.
   const [params] = useSearchParams();
   const ssoError = params.get('error') === 'sso';
   const ssoDetail = params.get('detail') ?? '';
+  const ssoDisabled = ssoError && params.get('reason') === 'disabled';
 
   if (status === 'loading') return <Spinner label="로그인 확인 중…" />;
   if (status === 'authenticated') return <Navigate to="/" replace />;
@@ -69,7 +72,12 @@ export default function LoginPage() {
         </div>
         <p className="login-sub">사내 AI·해석 플랫폼을 한 곳에서 — 회사 계정으로 들어갑니다.</p>
 
-        {ssoError && (
+        {ssoDisabled && (
+          <div className="login-fail" role="alert">
+            <b>이 계정은 정지되었습니다.</b> 포털 관리자에게 문의하세요.
+          </div>
+        )}
+        {ssoError && !ssoDisabled && (
           <div className="login-fail" role="alert">
             <b>SSO 로그인을 마치지 못했습니다.</b> 잠시 뒤 다시 시도하세요. 계속되면 아래 내용을
             포털 관리자에게 알려 주세요.
@@ -82,7 +90,7 @@ export default function LoginPage() {
           </div>
         )}
         <button type="button" className="btn-primary login-sso" onClick={() => login(returnTo)}>
-          {ssoError ? '삼성 AD 계정으로 다시 로그인' : '삼성 AD 계정으로 로그인'}
+          {ssoError && !ssoDisabled ? '삼성 AD 계정으로 다시 로그인' : '삼성 AD 계정으로 로그인'}
         </button>
 
         <details

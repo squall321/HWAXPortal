@@ -28,8 +28,9 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext } from '__FE__/src/auth/AuthContext';
 import UsersAdminPage from '__FE__/src/pages/admin/UsersAdminPage';
+import LoginPage from '__FE__/src/pages/LoginPage';
 
-const PAGES = { users: UsersAdminPage } as const;
+const PAGES = { users: UsersAdminPage, login: LoginPage } as const;
 type Name = keyof typeof PAGES;
 (window as unknown as { __mount: (name: Name, url: string, signedIn: boolean) => void }).__mount = (name, url, signedIn) => {
   const Page = PAGES[name];
@@ -205,6 +206,25 @@ const SCENARIOS = {
     out.errors = Object.values(out).flatMap((x) => x.errors);
     return out;
   },
+  // 로그인 화면 — SSO 콜백이 돌려보낸 사유를 어떻게 보이는가
+  async login(browser) {
+    const out = { errors: [] };
+    const detail = encodeURIComponent('이 계정은 정지되었습니다 — 관리자에게 문의하세요');
+    for (const [name, url] of [['disabled', `/login?error=sso&reason=disabled&detail=${detail}`],
+                               ['protocol', '/login?error=sso&detail=InvalidNameIDPolicy'],
+                               ['unknown_reason', `/login?error=sso&reason=whatever&detail=${detail}`],
+                               ['reason_without_error', '/login?reason=disabled'], ['plain', '/login']]) {
+      const page = await open(browser, 'login', url, { signedIn: false });
+      await page.locator('.login-sso').waitFor();
+      out[name] = await page.evaluate(() => {
+        const a = document.querySelector('.login-fail');
+        return { alert: a ? a.textContent : null, details: a ? a.querySelectorAll('details').length : 0,
+                 button: document.querySelector('.login-sso').textContent };
+      });
+      out.errors.push(...page.__errors);
+    }
+    return out;
+  },
 };
 
 (async () => {
@@ -287,3 +307,21 @@ def test_관리자_지정도_확인창을_거치고_취소하면_요청이_나�
     assert len(s["demote_cancel"]["asked"]) == 1 and s["demote_cancel"]["sent"] == [] and s["demote_cancel"]["checked"] is True
     assert "해제" in s["demote_cancel"]["asked"][0]
     assert s["demote_ok"]["sent"] == [{"admin": False}] and s["demote_ok"]["checked"] is False
+
+
+def test_정지로_거절된_사람에게_로그인_화면이_정지라고_말한다(seen):
+    """사번으로 거절된(또는 제 계정이 정지된) 사람은 SSO 프로토콜 실패와 같은 화면을 받았다 — "SSO 로그인을 마치지 못했습니다.
+    잠시 뒤 다시 시도하세요" 와 '다시 로그인' 버튼, 진짜 사유는 접힌 '자세히' 안. 정지된 사람이 일시 장애로 읽고 다시 누르고,
+    누를 때마다 접속 이력에 login_fail 줄이 쌓였다. 서버가 사유 코드(reason=disabled)를 같이 보내고 화면은 그 코드로 문장을 고른다."""
+    s = seen("login")
+    d = s["disabled"]
+    assert d["alert"] and "정지" in d["alert"] and "관리자" in d["alert"], d
+    assert "다시 시도" not in d["alert"] and d["details"] == 0, "일시 장애처럼 읽히는 말과 접힌 '자세히' 가 없어야 한다"
+    assert d["button"] == "삼성 AD 계정으로 로그인", "다시 눌러 보라고 권하지 않는다"
+    # 프로토콜 실패는 종전 그대로다 — 원인 원문은 접어 둔 '자세히' 에(운영 SSO 를 열 때 그 원문으로 원인을 찾았다)
+    p = s["protocol"]
+    assert "마치지 못했습니다" in p["alert"] and "InvalidNameIDPolicy" in p["alert"] and p["details"] == 1
+    assert p["button"] == "삼성 AD 계정으로 다시 로그인"
+    # 문장은 코드가 고른다 — 모르는 코드는 일반 실패로, error=sso 없이 온 코드는 아무것도 띄우지 않는다
+    assert "마치지 못했습니다" in s["unknown_reason"]["alert"] and s["unknown_reason"]["details"] == 1
+    assert s["reason_without_error"]["alert"] is None and s["plain"]["alert"] is None

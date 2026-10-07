@@ -181,6 +181,8 @@ def test_정지된_사람이_다른_Mail_로_들어오면_거절한다(box, rout
         r = box.sso("a.other@corp.com", "S0001", route)
     assert _refused(r), f"{r.status_code} {r.headers.get('location')} {r.headers.get_list('set-cookie')}"
     assert "%EC%A0%95%EC%A7%80" in r.headers["location"], "로그인 화면이 '정지' 사유를 보인다"
+    # 사유 코드가 같이 간다 — 화면은 이것으로 '잠시 뒤 다시 시도' 가 아니라 정지라고 말한다(문장을 URL 의 detail 에서 가져오지 않는다)
+    assert "reason=disabled" in r.headers["location"].split("?", 1)[1].split("&"), r.headers["location"]
     assert not box.logged_in(), "거절이 삼켜져 그대로 로그인됐다"
     assert box.store.get("a.other@corp.com") is None, "거절한 사람의 active 새 행을 만들지 않는다"
     last = box.last("a.other@corp.com")
@@ -189,7 +191,9 @@ def test_정지된_사람이_다른_Mail_로_들어오면_거절한다(box, rout
     assert said, "누가 왜 거절됐는지 서버 로그에 남는다"
     assert not any("S0001" in rec.getMessage() for rec in caplog.records), "사번 값은 로그에 싣지 않는다"
     # 제 Mail 로 와도 이제 콜백에서 끝난다(종전엔 세션을 받고 요청마다 403). 접속 원장에는 종전 표기 그대로 남는다.
-    assert _refused(box.sso("a@corp.com", "S0001", route)) and not box.logged_in()
+    own = box.sso("a@corp.com", "S0001", route)
+    assert _refused(own) and not box.logged_in()
+    assert "reason=disabled" in own.headers["location"], "제 Mail 로 온 정지된 사람에게도 같은 사유 코드다"
     assert box.last("a@corp.com")["detail"] == "sso:disabled"
 
 
@@ -233,6 +237,7 @@ def test_정지_여부를_확인하지_못하면_들여보내지_않는다(box, 
     monkeypatch.setattr(box.store, "disabled_by_sabun", broken)
     r = box.sso("a@corp.com", "S0001")
     assert _refused(r) and not box.logged_in(), f"{r.status_code} {r.headers.get('location')}"
+    assert "reason=" not in r.headers["location"], "확인하지 못한 것은 정지가 아니다 — '잠시 뒤 다시 시도' 가 맞는 안내다"
     assert box.sso("d@corp.com", None).status_code == 302 and box.logged_in(), "사번이 없는 로그인은 그 판정을 지나지 않는다"
 
 

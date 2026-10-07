@@ -32,16 +32,22 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger("hwax.auth")
 
 
-def login_failed(settings: Settings, exc: AuthError) -> RedirectResponse:
+def login_failed(settings: Settings, exc: AuthError, *, reason: str = "") -> RedirectResponse:
     """브라우저 SSO 콜백 실패를 로그인 화면으로 보낸다 — 종전엔 흰 바탕에 JSON 원문 한 줄로 끝났다(docs/ui-refresh 단계 4).
 
     원인은 버리지 않는다: 서버 로그(WARNING — 포털은 INFO 를 버린다)와 로그인 화면의 '자세히' 둘 다에 남긴다. 운영 SSO 를
     열 때 요청자가 바로 이 원문(InvalidNameIDPolicy 등)으로 원인을 찾았다(D-11). 원문은 검증 사유뿐이라 비밀이 없다.
     길이는 1000자에서 자른다 — 300자로 자르면 '받은 Claim 이름 목록' 이 잘려 진단 단서가 사라졌다(시험이 잡았다).
+
+    reason — **일부러 거절한** 경우의 사유 코드(지금은 `disabled` 하나). 화면은 프로토콜 실패에 "잠시 뒤 다시 시도하세요" 와
+    '다시 로그인' 을 보이는데, 정지로 거절된 사람도 같은 화면을 받아 일시 장애로 읽고 다시 눌렀다(누를 때마다 접속 이력에
+    login_fail 이 쌓였다). 화면은 이 코드로 문장을 고른다 — detail 의 글을 머리로 올리지 않는다(URL 로 누구나 바꿔 넣을 수 있다).
+    `error=sso` 는 그대로 둔다: 옛 dist 가 떠 있는 동안에도 종전 화면으로는 보인다(값을 바꾸면 그동안 아무 안내도 안 뜬다).
     """
     log.warning("SSO 콜백 실패(HTTP %s): %s", exc.status_code, exc.message)
     detail = quote(exc.message[:1000], safe="")
-    return RedirectResponse(f"{settings.frontend_url}/login?error=sso&detail={detail}", status_code=302)
+    why = f"&reason={quote(reason, safe='')}" if reason else ""
+    return RedirectResponse(f"{settings.frontend_url}/login?error=sso{why}&detail={detail}", status_code=302)
 
 
 def _safe_return_to(raw: str | None) -> str:
@@ -93,7 +99,8 @@ def complete_login(
             if request is not None:
                 access_log.note(request, email=who, event="login_fail", service="portal",
                                 detail="sso:disabled" if own else "sso:disabled:sabun")
-            return login_failed(settings, AuthError("이 계정은 정지되었습니다 — 관리자에게 문의하세요", status_code=403))
+            return login_failed(settings, AuthError("이 계정은 정지되었습니다 — 관리자에게 문의하세요", status_code=403),
+                                reason="disabled")
 
     # SSO 연동 훅 — 같은 이메일의 로컬 계정이 있으면 연결(auth_source 갱신), 없으면 원장에
     # 생성. 계정 행은 SSO 전환 후에도 남는다(로컬 계정 브리지의 승계 보장). 실패해도
