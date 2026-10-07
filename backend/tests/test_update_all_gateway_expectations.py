@@ -210,3 +210,37 @@ def test_기본_주소는_게이트웨이_프로비저너가_아는_그_값이�
         pytest.skip("게이트웨이 리포가 옆에 없다")
     near = [ln for ln in prov.read_text(encoding="utf-8").splitlines() if re.search(r"smart-twin-mcp|SMARTTWIN_MCP_URL|_ST_", ln)]
     assert any(ST_DEFAULT in ln for ln in near), "게이트웨이 프로비저너의 smart-twin-mcp 기본 주소가 바뀌었다 — update-all 의 _ST_DEFAULT 와 맞춘다"
+
+
+def _gateway_rule():
+    """게이트웨이 프로비저너의 등재 조건 두 줄(`_ST_DEFAULT = …` · `_ST_URL = …`)을 원문에서 꺼낸다. 아직 조건부 등재가 아닌 판이면 None."""
+    prov = ROOT.parent / "HWAXMcpGateway" / "provision-config.sh"
+    if not prov.exists():
+        pytest.skip("게이트웨이 리포가 옆에 없다")
+    src = prov.read_text(encoding="utf-8")
+    default = re.search(r'^_ST_DEFAULT = "([^"]+)"$', src, re.M)
+    rule = re.search(r"^_ST_URL = (.+)$", src, re.M)
+    if not (default and rule):
+        return None
+    return default.group(1), rule.group(1)
+
+
+@pytest.mark.parametrize("env_url,prev_url", [
+    (None, None), (None, ""), (None, ST_DEFAULT), (None, "http://203.0.113.40:5013/mcp"),
+    (ST_DEFAULT, None), (ST_DEFAULT, ST_DEFAULT), ("http://203.0.113.40:5013/mcp", ST_DEFAULT),
+    (None, ST_DEFAULT + "/"),                    # 글자가 다르면 두 쪽 모두 '설정한 주소' 로 본다
+])
+def test_기대_조건이_게이트웨이의_등재_조건과_같다(tmp_path, env_url, prev_url):
+    """**정본은 게이트웨이다** — 그 조건식을 원문에서 꺼내 같은 입력으로 돌려, update-all 의 셸 판정과 맞춰 본다.
+    한쪽만 기대하면 매 실행 재프로비저닝이 헛돌고, 한쪽만 등재하면 빠져도 초록이다."""
+    got = _gateway_rule()
+    if got is None:
+        pytest.skip("옆의 게이트웨이가 아직 smart-twin-mcp 를 무조건 등재하는 판이다")
+    default, expr = got
+    assert default == ST_DEFAULT
+    env = {"SMARTTWIN_MCP_URL": env_url} if env_url is not None else {}
+    registers = bool(eval(expr, {"__builtins__": {}}, {"e": env, "_ST_PREV": prev_url, "_ST_DEFAULT": default}))  # noqa: S307
+    cfg = None if prev_url is None else {ST_NAME: {"url": prev_url}}
+    missing, _ = _expect(tmp_path, have=BASE, gw_config=cfg,
+                         prov_env=None if env_url is None else f"SMARTTWIN_MCP_URL={env_url}\n")
+    assert (ST_NAME in missing) is registers, (env_url, prev_url, expr)
