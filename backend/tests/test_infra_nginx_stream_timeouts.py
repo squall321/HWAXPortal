@@ -128,14 +128,17 @@ def test_포털_쪽을_끈_박스와_읽지_못한_값은_조용하다(tmp_path)
 
 
 # ── 세 리포의 기본값 — 포털 릴레이 < nginx < 리스크 앱, 그리고 셋 다 LLM 논리 호출 1회의 최악보다 크다 ─────────────────
-def _sibling_default(repo: str, rel: str, pattern: str) -> int:
+def _sibling_default(repo: str, rel: str, *patterns: str) -> int:
+    """형제 리포 소스에서 기본값을 읽는다 — 식을 차례로 대 본다(환경값 옆의 리터럴, 또는 따로 둔 기본값 상수)."""
     f = ROOT.parent / repo / rel
     if not f.exists():
         pytest.skip(f"형제 리포 없음: {f}")
-    m = re.search(pattern, f.read_text(encoding="utf-8"))
-    if not m:
-        pytest.skip(f"{repo} 가 아직 그 손잡이를 모르는 판이다({pattern})")
-    return int(float(m.group(1)))
+    src = f.read_text(encoding="utf-8")
+    for pattern in patterns:
+        m = re.search(pattern, src, re.M)
+        if m:
+            return int(float(m.group(1)))
+    pytest.skip(f"{repo} 가 아직 그 손잡이를 모르는 판이다({patterns[0]})")
 
 
 def test_nginx_기본값은_포털_릴레이_기본값보다_크다(tmp_path):
@@ -151,7 +154,8 @@ def test_nginx_기본값은_리스크_앱의_읽기_한도보다_작다(tmp_path
     """가장 바깥(클라이언트)이 리스크 앱이다 — nginx 가 먼저 걸려야 'nginx 가 끊었다' 가 가려진다. 한쪽만 바꾸면 순서가 뒤집힌다."""
     conf, _ = _generate(tmp_path)
     nginx = _secs(_read_timeouts(conf, "/agent/")[0])
-    risk = _sibling_default("HWAXRisk", "backend/app/config.py", r'HWAXRISK_ENGINE_READ_TIMEOUT_S"\s*,\s*"?([0-9.]+)')
+    risk = _sibling_default("HWAXRisk", "backend/app/config.py", r'HWAXRISK_ENGINE_READ_TIMEOUT_S"\s*,\s*"?([0-9.]+)',
+                            r"^DEFAULT_ENGINE_READ_TIMEOUT_S\s*=\s*([0-9.]+)")
     assert nginx < risk, f"nginx {nginx}초 · 리스크 앱 {risk}초"
 
 
