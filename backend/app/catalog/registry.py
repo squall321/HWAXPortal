@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 import yaml
+from pydantic import ValidationError
 
 from app.config import Settings
 from app.schemas.system import CatalogFile, LinkedSystem
@@ -19,8 +20,9 @@ from app.schemas.system import CatalogFile, LinkedSystem
 
 log = logging.getLogger(__name__)
 
-# 박스별 타일 덮어쓰기(gitignore) — 지금은 `url` 한 칸만. 외부 타일의 직결 주소는 사내 IP 라 추적 파일(systems.yaml)에
+# 박스별 타일 덮어쓰기(gitignore) — 있는 타일은 `url` 한 칸만. 외부 타일의 직결 주소는 사내 IP 라 추적 파일(systems.yaml)에
 # 적지 않는다(리포 규칙, docs/access-history). routes.local.env 에 적으면 프록시로 승격되므로 그 파일을 쓰지 않는다.
+# 카탈로그에 없는 id 는 name 이 있으면 이 박스에만 있는 **새 외부 타일**이다(reload — 8차 요청 §4-(3)).
 LOCAL_OVERLAY = "systems.local.yaml"
 _OVERLAY_KEYS = {"url"}
 
@@ -138,8 +140,30 @@ class CatalogRegistry:
                 if k in _OVERLAY_KEYS and v:
                     setattr(s, k, str(v))
             self._apply_route(s, routes)
-        for unknown in set(overlay) - seen:
-            log.warning("%s 의 '%s' 는 카탈로그에 없는 타일이다 — 오타인지 보라", LOCAL_OVERLAY, unknown)
+        # 카탈로그에 없는 id 는 경고만 하고 버렸다 — 박스에만 있는 서비스의 바로가기 하나를 붙이려면 추적 파일을 고쳐야 했다
+        # (8차 요청 §4-(3)). ⚠ 새 타일은 권한 표의 어느 플랫폼에도 없다. access.local.yaml 에 그 플랫폼(systems: [<id>])을
+        # 같이 적지 않으면 권한과 무관하게 모두에게 보인다(filter_tiles 는 표에 없는 타일을 막지 않는다).
+        for unknown in sorted(set(overlay) - seen):
+            spec = {**overlay[unknown], "id": unknown}
+            # url 한 칸만 있으면 오타일 가능성이 크다 — 지금처럼 경고만(name 이 있어야 새 타일로 본다)
+            if "name" not in spec:
+                log.warning("%s 의 '%s' 는 카탈로그에 없는 타일이다 — 오타인지 보라(새 타일이면 name 을 적는다)",
+                            LOCAL_OVERLAY, unknown)
+                continue
+            # 핸드오프 타일은 서명된 로그인 토큰을 보내는 곳 — 추적되지 않는 파일로 새로 만들게 두지 않는다(위의 덮어쓰기 금지와 같은 이유)
+            if spec.get("integration_type", "external-url") != "external-url":
+                log.warning("%s 의 '%s' 는 external-url 만 새로 만들 수 있다 — 무시한다(%s)",
+                            LOCAL_OVERLAY, unknown, spec.get("integration_type"))
+                continue
+            try:
+                s = LinkedSystem.model_validate(spec)
+            except ValidationError as exc:
+                # 틀린 칸의 이름만 말한다 — pydantic 원문은 그 칸의 값을 인용하는데 박스 파일의 주소는 사내 주소다.
+                bad = sorted({".".join(str(p) for p in e["loc"]) for e in exc.errors()})
+                log.warning("%s 의 '%s' 를 타일로 읽지 못했다 — 무시한다(틀린 칸: %s)", LOCAL_OVERLAY, unknown, ", ".join(bad))
+                continue
+            self._apply_route(s, routes)
+            catalog.systems.append(s)
 
         self._systems = sorted(catalog.systems, key=lambda s: (s.sort_order, s.name))
         return len(self._systems)

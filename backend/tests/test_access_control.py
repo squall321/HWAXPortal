@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 from fastapi.testclient import TestClient
 
 from app.access import agent_guard
@@ -11,6 +10,7 @@ from app.access.policy import compute, load_raw, parse_policy
 from app.agent import upload as up
 from app.auth.provider import Principal
 from app.auth.user_store import UserStore
+from app.catalog.registry import CatalogRegistry
 from app.config import Settings, get_settings
 from app.main import app
 
@@ -23,17 +23,23 @@ def _policy():
     return parse_policy(load_raw(_BACKEND / "config" / "access.yaml"))
 
 
+def _tiles():
+    # 타일도 합친 것을 본다 — 추적된 systems.yaml 에 이 박스의 systems.local.yaml 이 새로 만든 타일까지(8차 요청 §4-(3)).
+    # 추적 파일만 읽으면 박스에서 붙인 타일이 플랫폼 없이(= 모두에게 보이게) 떠 있어도 아래 대조가 초록이다.
+    cfg = _BACKEND / "config"
+    reg = CatalogRegistry(Settings(_env_file=None, catalog_path=str(cfg / "systems.yaml"),
+                                   routes_path=str(cfg / "routes.env")))
+    return [s.id for s in reg.all()]
+
+
 # ── 정책 대조 ────────────────────────────────────────────────────────────────
 def test_모든_포털_타일이_어느_플랫폼에든_속한다():
     pol = _policy()
-    tiles = [
-        s["id"]
-        for s in yaml.safe_load((_BACKEND / "config" / "systems.yaml").read_text(encoding="utf-8"))[
-            "systems"
-        ]
-    ]
-    missing = [t for t in tiles if pol.system_key(t) is None]
-    assert not missing, f"플랫폼 표에 없는 타일 — 권한과 무관하게 모두에게 보인다: {missing}"
+    missing = [t for t in _tiles() if pol.system_key(t) is None]
+    assert not missing, (
+        f"플랫폼 표에 없는 타일 — 권한과 무관하게 모두에게 보인다: {missing}"
+        " (systems.local.yaml 로 만든 타일이면 access.local.yaml 의 platforms 에 systems: 로 적는다)"
+    )
 
 
 def test_HE팀_페르소나_앱이_모두_플랫폼에_속한다():
