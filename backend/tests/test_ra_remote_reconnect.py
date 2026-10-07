@@ -382,7 +382,7 @@ def test_apply_envs_dry_run_masks_secret_values():
 
 # ── 3라운드 검토가 잡은 것들 ────────────────────────────────────────────────────
 def _reprovision_cmd() -> str:
-    i = UA.index('( cd "$GW_DIR" && RAT_TOKEN=')
+    i = UA.index('( cd "$GW_DIR" && export PER_USER_SSO_APPS ')
     j = UA.index("--force )", i) + len("--force )")
     return UA[i:j]
 
@@ -402,7 +402,7 @@ def test_section5_reprovision_actually_executes_and_receives_the_values(tmp_path
 
 
 def test_section5_treats_provision_failure_and_ra_drift_as_failures():
-    blk = UA[UA.index('if ( cd "$GW_DIR" && RAT_TOKEN='):UA.index("주소 드리프트 해소")]
+    blk = UA[UA.index('if ( cd "$GW_DIR" && export PER_USER_SSO_APPS '):UA.index("주소 드리프트 해소")]
     assert "_prov_ok=0" in blk and 'fail "재프로비저닝(provision-config.sh --force) 자체가 실패했다' in blk
     assert "_ra_after" in blk and 'reportarchive(주소 $_ra_after ≠ RA_HOST)' in blk
     assert 'fail "재프로비저닝 후에도 누락/어긋남' in blk
@@ -476,7 +476,7 @@ def test_upsert_edits_the_export_line_the_readers_see(tmp_path):
 
 
 def _section5_provision_block() -> str:
-    i = UA.index('if ( cd "$GW_DIR" && RAT_TOKEN=')
+    i = UA.index('if ( cd "$GW_DIR" && export PER_USER_SSO_APPS ')
     end = '옛 config 로 튕겨 봐야 챗 도구 공백만 생긴다"\n      fi\n'
     return UA[i:UA.index(end, i) + len(end)]
 

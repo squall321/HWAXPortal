@@ -131,7 +131,7 @@ def test_arp_주소는_1f_가_ARP_HOST_로_정한_값이어도_된다(tmp_path):
 
 
 def _reprovision_cmd() -> str:
-    i = UA.index('( cd "$GW_DIR" && RAT_TOKEN=')
+    i = UA.index('( cd "$GW_DIR" && export PER_USER_SSO_APPS ')
     return UA[i:UA.index("--force )", i) + len("--force )")]
 
 

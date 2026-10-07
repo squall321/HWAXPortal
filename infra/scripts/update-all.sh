@@ -874,8 +874,33 @@ PY
 # 켜진다(비밀을 바꿨을 때도 같다). 비밀은 argv 가 아니라 환경변수로 넘기고, 출력은 키 이름뿐이다. TestScope 는 백엔드를 기대할 때만
 # 본다(TESTSCOPE_EXPECTED) — 백엔드가 없는 박스에서는 위임이 할 일이 없고, provision 이 만들지 않으면 매 실행 헛된 재프로비저닝을 돈다.
 # 거꾸로 비밀을 비웠는데 위임이 남아 있으면 `<키>_sso_off` — 되돌리기(토큰 등록으로)도 재프로비저닝이 있어야 반영된다.
+#
+# 일반 앱(게이트웨이 PER_USER_SSO_APPS="<per_user 키>:<ENV 접두> …", 8차 요청 §4-(2)) — 게이트웨이는 여섯 번째 앱부터 이 목록으로 위임을
+# 만든다(<접두>_SSO_SECRET·<접두>_SSO_URL). 그 값들은 게이트웨이 provision.env 에 있고 여기서는 그 파일을 소싱만 한다. 접두가 박스마다
+# 달라 아래 대입어 사슬에 이름을 적을 수 없다 — 넘기지 않으면 '적었는데 손으로 돌릴 때만 켜지는' 설정이 된다. 방아쇠·끄기 규칙은
+# RA·TestScope 와 같다. 쌍을 읽는 규칙은 게이트웨이와 같다(콜론이 있고 접두는 환경변수 이름 꼴, 게이트웨이가 직접 만드는 다섯은
+# 건너뛴다). 키는 이름 꼴(영숫자·_·.·-)만 다룬다 — 아래에서 따옴표 없이 도는 목록에 실린다. 못 읽은 쌍은 게이트웨이 provision 이 말한다.
+_sso_generic_pairs() {  # → 줄마다 "<per_user 키> <ENV 접두>"
+  local pairs pair k p
+  read -ra pairs <<<"$(printf '%s' "${PER_USER_SSO_APPS:-}" | tr '\t\n' '  ')"
+  for pair in ${pairs[@]+"${pairs[@]}"}; do
+    k="${pair%%:*}"; p="${pair#*:}"
+    [ "$p" != "$pair" ] && [[ "$k" =~ ^[A-Za-z0-9_.-]+$ ]] && [[ "$p" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    case "$k" in kooremapper_mcp|hwax_risk|ste|reportarchive|testscope) continue ;; esac
+    printf '%s %s\n' "$k" "$p"
+  done
+}
+_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다): 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL
+  local _k p
+  while read -r _k p; do
+    if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL ' "$p" "$p"; fi
+  done <<<"$(_sso_generic_pairs)"
+}
+# 일반 앱의 비밀은 이름이 정해져 있지 않아 대입어로 못 넘긴다 — 서브셸 안에서만 export 한다(이 뒤에 뜨는 서비스가 물려받지 않게).
+# 주소가 없어 게이트웨이가 만들지 못하는 일반 앱은 `<키>_sso_nourl` 로 따로 표지한다 — 방아쇠로 삼으면 매 실행 재프로비저닝이 헛돈다.
 _sso_deleg_drift() {  # $1=gateway_config.json → 어긋난 위임(공백 구분, 예: reportarchive_sso). 읽지 못하면 빈 값.
-  RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" python3 - "$1" <<'PY' 2>/dev/null || true
+  ( export PER_USER_SSO_APPS $(_sso_generic_names)
+  RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" GEN="$(_sso_generic_pairs)" python3 - "$1" <<'PY' 2>/dev/null || true
 import json, os, sys
 try: d = json.load(open(sys.argv[1]))
 except Exception: raise SystemExit(0)
@@ -887,8 +912,18 @@ for k, s in sorted({"reportarchive": os.environ.get("RA_S") or "", "testscope": 
         if cur is not None: out.append(f"{k}_sso_off")   # 비밀을 비웠는데 위임이 남았다 — provision 이 PER_USER_SSO_OFF 로 지운다
     elif (k != "testscope" or os.environ.get("TS_X") == "1") and (cur or {}).get("secret") != s:
         out.append(f"{k}_sso")
+for k, p in sorted(ln.split() for ln in (os.environ.get("GEN") or "").splitlines() if ln.strip()):
+    s, u = os.environ.get(f"{p}_SSO_SECRET") or "", os.environ.get(f"{p}_SSO_URL") or ""
+    cur = pu.get(k) if isinstance(pu.get(k), dict) else None
+    if not s:
+        if cur is not None: out.append(f"{k}_sso_off")
+    elif not (u or (cur or {}).get("sso_url")):
+        out.append(f"{k}_sso_nourl")   # 주소는 env 가 먼저고 없으면 게이트웨이가 지금 config 의 것을 잇는다. 둘 다 없으면 만들지 못한다
+    elif (cur or {}).get("secret") != s or (u and (cur or {}).get("sso_url") != u):
+        out.append(f"{k}_sso")         # 위임이 없거나 비밀이 다르다, 또는 주소를 바꿨다(게이트웨이가 env 의 주소로 고쳐 쓴다)
 print(" ".join(out))
 PY
+  )
 }
 
 if [ -z "$H" ]; then
@@ -1021,8 +1056,10 @@ PY
   if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
     for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do
       case "$_k" in
+        *_sso_nourl) bad "사람별 위임 ${_k%_sso_nourl}: 비밀은 있는데 위임 주소가 없어 게이트웨이가 만들지 못한다 — HWAXMcpGateway/provision.env 에 그 앱의 <접두>_SSO_URL 을 적는다(PER_USER_SSO_APPS 의 접두)"
+                     continue ;;
         *_sso_off) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — infra/.env 의 비밀이 비었는데 게이트웨이는 아직 위임으로 부른다(토큰 등록으로 되돌린다)" ;;
-        *) echo "  · 사람별 위임 드리프트: ${_k%_sso} — 게이트웨이 설정에 위임이 없거나 비밀이 infra/.env 와 다르다" ;;
+        *) echo "  · 사람별 위임 드리프트: ${_k%_sso} — 게이트웨이 설정에 위임이 없거나 비밀이 infra/.env 와 다르다(일반 앱은 provision.env 의 비밀·주소)" ;;
       esac
       MISSING="${MISSING:+$MISSING }$_k"
     done
@@ -1046,8 +1083,13 @@ PY
       #   · TESTSCOPE_SSO_* — TestScope 사람별 위임(RA 와 같은 두 갈래). 비면 토큰 등록 그대로, provision 이 직전 config 를 이어받는다.
       #   · PER_USER_SSO_OFF — 비밀이 빈 RA·TestScope. provision 의 이어받기는 비밀을 못 읽은 실행용이라, 이것 없이는 infra/.env 에서
       #     비밀을 비워도 위임이 남아 포털 화면('토큰 등록')과 게이트웨이가 어긋났다. 여기서는 infra/.env 를 읽었으니 빈 값이 곧 '끔' 이다.
+      #   · PER_USER_SSO_APPS 와 그 접두들의 <접두>_SSO_SECRET·_SSO_URL — 일반 앱의 사람별 위임(위 _sso_generic_names). 이름이 박스마다
+      #     달라 대입어로 못 적는다: 서브셸 안에서 export 표지만 붙인다(값을 argv 에 싣지 않는다 — ps 에 보인다). `export` 뒤에는 언제나
+      #     PER_USER_SSO_APPS 가 온다 — 인자 없는 export 는 환경 전체(비밀 포함)를 이 로그에 찍는다. 목록에 남기고 비밀만 비운 앱은
+      #     RA·TestScope 처럼 PER_USER_SSO_OFF 에 더한다(게이트웨이는 목록에 있는 앱만 끈다).
       _sso_off="$([ -n "${RA_SSO_SECRET:-}" ] || printf 'reportarchive ')$([ -n "${TESTSCOPE_SSO_SECRET:-}" ] || printf 'testscope')"
-      if ( cd "$GW_DIR" && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
+      _sso_off="$_sso_off$(while read -r _gk _gp; do _gv="${_gp:+${_gp}_SSO_SECRET}"; if [ -n "$_gv" ] && [ -z "${!_gv:-}" ]; then printf ' %s' "$_gk"; fi; done <<<"$(_sso_generic_pairs)")"
+      if ( cd "$GW_DIR" && export PER_USER_SSO_APPS $(_sso_generic_names) && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
           ARP_BASE="${ARP_BASE:-}" ARP_TOKEN="${ARP_TOKEN:-}" \
@@ -1089,6 +1131,8 @@ PY
         fi
         # 사람별 위임도 calc_missing 이 못 본다 — 재프로비저닝 뒤에도 어긋나 있으면 여기서 잡는다.
         _sso_left="$(_sso_deleg_drift "$GW_DIR/gateway_config.json")"
+        # 주소가 없어 만들지 못하는 일반 앱(…_sso_nourl)은 위에서 이미 알렸다 — 재프로비저닝이 고칠 수 없는 것을 '누락' 으로 다시 세지 않는다.
+        _sso_left="$(for _k in $_sso_left; do case "$_k" in *_sso_nourl) ;; *) printf '%s ' "$_k" ;; esac; done)"; _sso_left="${_sso_left% }"
         [ -n "$_sso_left" ] && STILL="${STILL:+$STILL }$_sso_left"
         if [ "${_prov_ok:-1}" != 1 ]; then echo "  · provision 실패는 위 ✗ 하나로 계상한다 — 재검증은 참고만: ${STILL:-없음}"
         elif [ -z "$STILL" ]; then ok "재프로비저닝으로 백엔드 정합 완료"

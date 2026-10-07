@@ -17,6 +17,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 UA = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
 START = (ROOT / "infra/scripts/start.sh").read_text(encoding="utf-8")
@@ -212,13 +214,19 @@ def test_calc_missing_expects_testscope_only_when_flagged():
 
 
 # ── 2. 방아쇠 — config 에 위임이 없거나 비밀이 다르면 재프로비저닝 ───────────────
-def _drift(tmp_path: Path, cfg, *, ra="", ts="", ts_x="1") -> str:
+def _generic_fns() -> str:
+    """일반 앱(PER_USER_SSO_APPS) 목록을 읽는 두 함수 — 방아쇠·끄기 목록·전달이 같이 쓴다."""
+    return _fn("_sso_generic_pairs") + _fn("_sso_generic_names")
+
+
+def _drift(tmp_path: Path, cfg, *, ra="", ts="", ts_x="1", box: str = "") -> str:
+    """box = provision.env 를 소싱한 뒤의 셸 변수(일반 앱의 목록·비밀·주소). export 하지 않는다 — update-all 도 소싱만 한다."""
     f = tmp_path / "gateway_config.json"
     f.write_text(cfg if isinstance(cfg, str) else json.dumps(cfg), encoding="utf-8")
-    script = (f'RA_SSO_SECRET="{ra}"; TESTSCOPE_SSO_SECRET="{ts}"; TESTSCOPE_EXPECTED="{ts_x}"\n'
-              f'{_fn("_sso_deleg_drift")}\n_sso_deleg_drift "{f}"')
+    script = (f'set -uo pipefail\nRA_SSO_SECRET="{ra}"; TESTSCOPE_SSO_SECRET="{ts}"; TESTSCOPE_EXPECTED="{ts_x}"\n{box}\n'
+              f'{_generic_fns()}{_fn("_sso_deleg_drift")}\n_sso_deleg_drift "{f}"')
     p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
-    assert p.returncode == 0, p.stderr
+    assert p.returncode == 0 and not p.stderr, p.stderr
     return p.stdout.strip()
 
 
@@ -283,8 +291,8 @@ def test_drift_feeds_missing_and_the_post_check():
 
 # ── 3. 전달 ──────────────────────────────────────────────────────────────────
 def _reprovision_cmd() -> str:
-    i = UA.index('( cd "$GW_DIR" && RAT_TOKEN=')
-    return UA[i:UA.index("--force )", i) + len("--force )")]
+    i = UA.index('( cd "$GW_DIR" && export PER_USER_SSO_APPS ')
+    return _generic_fns() + UA[i:UA.index("--force )", i) + len("--force )")]
 
 
 def test_the_provisioner_actually_receives_the_values(tmp_path):
@@ -296,6 +304,7 @@ def test_the_provisioner_actually_receives_the_values(tmp_path):
         "#!/usr/bin/env bash\n" + "".join(f'printf "%s=%s\\n" {k} "${k}" >> "$PWD/ran.marker"\n' for k in keys))
     cmd = _reprovision_cmd()
     assert not any(ln.lstrip().startswith("`") for ln in cmd.splitlines())
+    assert '&& RAT_TOKEN="${RAT_TOKEN:-}"' in cmd, "대입어 사슬은 export 뒤에 그대로 이어진다"
     vals = {"RA_SSO_SECRET": SECRET, "RA_SSO_URL": "http://ra/api/auth/sso", "TESTSCOPE_MCP_URL": "http://ts:8022/mcp",
             "TESTSCOPE_SSO_SECRET": "ts-secret-xyz", "TESTSCOPE_SSO_URL": "http://ts:8020/api/auth/sso"}
     # 부모 셸 변수일 뿐 export 하지 않는다 — update-all 도 export 하지 않는다(사슬이 넘겨야 자식이 본다)
@@ -306,13 +315,19 @@ def test_the_provisioner_actually_receives_the_values(tmp_path):
     assert got == vals
 
 
+def _sso_off_lines() -> str:
+    """끌 위임 목록을 세우는 줄들 — RA·TestScope 한 줄과 일반 앱 한 줄."""
+    i = UA.index('_sso_off="$(')
+    j = UA.index('_sso_off="$_sso_off$(', i)
+    return UA[i:UA.index("\n", j)]
+
+
 def test_the_provisioner_is_told_which_delegations_to_turn_off(tmp_path):
     """비밀이 빈 서비스만 PER_USER_SSO_OFF 로 — 실행으로 본다(대입어 사슬)."""
     gw = tmp_path / "gw"
     gw.mkdir()
     (gw / "provision-config.sh").write_text('#!/usr/bin/env bash\nprintf "%s" "$PER_USER_SSO_OFF" > "$PWD/off.marker"\n')
-    i = UA.index('_sso_off="$(')
-    pre = UA[i:UA.index("\n", i)]
+    pre = _sso_off_lines()
     cmd = _reprovision_cmd()
     for ra, ts, want in (("", "", "reportarchive testscope"), (SECRET, "", "testscope"),
                          ("", "ts-s", "reportarchive "), (SECRET, "ts-s", "")):
@@ -320,6 +335,164 @@ def test_the_provisioner_is_told_which_delegations_to_turn_off(tmp_path):
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
         assert "rc=0" in r.stdout, r.stderr
         assert (gw / "off.marker").read_text() == want, (ra, ts)
+
+
+# ── 일반 앱 — 게이트웨이 PER_USER_SSO_APPS="<per_user 키>:<ENV 접두> …"(8차 요청 §4-(2)) ─────────────────────────────
+# 게이트웨이는 여섯 번째 앱부터 provision-config.sh 를 고치지 않고 이 목록으로 위임을 만든다. 그 값들은 게이트웨이 provision.env 에
+# 있고 update-all 은 그 파일을 소싱만 한다 — 접두가 박스마다 달라 대입어 사슬에 이름을 적을 수 없으므로, 넘기지 않으면
+# '적었는데 손으로 돌릴 때만 켜지는' 설정이 된다. 방아쇠(없거나 비밀이 다르다)·끄기(비밀을 비웠다)도 RA·TestScope 와 같은 규칙이다.
+GEN_APPS = 'PER_USER_SSO_APPS="newapp:NEWAPP other:OTHER_APP"'
+GEN_SECRET = "newapp-secret-0123456789abcdef"
+
+
+def test_generic_apps_reach_the_provisioner_and_nothing_else_does(tmp_path):
+    """**이 시험이 이 구획의 이유다** — 목록과, 목록의 접두마다 비밀·주소가 자식(provision)에게 간다. 실행으로 본다."""
+    gw = tmp_path / "gw"; gw.mkdir()
+    seen = ("PER_USER_SSO_APPS", "NEWAPP_SSO_SECRET", "NEWAPP_SSO_URL", "OTHER_APP_SSO_SECRET", "OTHER_APP_SSO_URL",
+            "UNLISTED_SSO_SECRET")
+    (gw / "provision-config.sh").write_text(
+        "#!/usr/bin/env bash\n" + "".join(f'printf "%s=%s\\n" {k} "${{{k}-<unset>}}" >> "$PWD/ran.marker"\n' for k in seen)
+        + 'printf "ARGV=%s\\n" "$*" >> "$PWD/ran.marker"\n')
+    box = (f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\nNEWAPP_SSO_URL="http://newapp.example:8300/api/auth/sso"\n'
+           'OTHER_APP_SSO_SECRET="other-secret"\nUNLISTED_SSO_SECRET="목록에 없는 앱"\n')
+    script = (f'set -uo pipefail; GW_DIR="{gw}"\n{box}{_reprovision_cmd()}\necho rc=$?\n'
+              """bash -c 'printf "AFTER=%s\\n" "${NEWAPP_SSO_SECRET-<unset>}"'""")
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert "rc=0" in r.stdout and not r.stderr, r.stdout + r.stderr
+    got = dict(ln.split("=", 1) for ln in (gw / "ran.marker").read_text().splitlines())
+    assert got == {"PER_USER_SSO_APPS": "newapp:NEWAPP other:OTHER_APP", "NEWAPP_SSO_SECRET": GEN_SECRET,
+                   "NEWAPP_SSO_URL": "http://newapp.example:8300/api/auth/sso", "OTHER_APP_SSO_SECRET": "other-secret",
+                   "OTHER_APP_SSO_URL": "<unset>", "UNLISTED_SSO_SECRET": "<unset>", "ARGV": "--force"}, \
+        "목록의 값만, 환경으로만(비밀이 argv 에 실리면 ps 에 보인다)"
+    assert "AFTER=<unset>" in r.stdout, "export 는 재프로비저닝 서브셸 안에서만 — 뒤에 뜨는 서비스가 남의 비밀을 물려받지 않는다"
+
+
+def test_no_generic_list_means_nothing_extra_is_exported(tmp_path):
+    """목록이 없는 박스(지금 전부) — 종전과 같다. bare `export` 로 떨어지면 환경 전체(비밀 포함)가 로그에 찍힌다."""
+    gw = tmp_path / "gw"; gw.mkdir()
+    (gw / "provision-config.sh").write_text('#!/usr/bin/env bash\nprintf "%s" "${PER_USER_SSO_APPS-<unset>}" > "$PWD/apps.marker"\n')
+    script = f'set -uo pipefail; GW_DIR="{gw}"; RAT_TOKEN="rat-test-token"\n{_reprovision_cmd()}\necho rc=$?'
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert "rc=0" in r.stdout and not r.stderr, r.stdout + r.stderr
+    assert (gw / "apps.marker").read_text() == "<unset>"
+    assert "declare -x" not in r.stdout and "rat-test-token" not in r.stdout
+
+
+@pytest.mark.parametrize("apps,names", [
+    ("newapp:NEWAPP", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL"),
+    ("  newapp:NEWAPP\tother:OTHER_APP ", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL OTHER_APP_SSO_SECRET OTHER_APP_SSO_URL"),
+    ("콜론없음 :NOKEY nopfx: bad:9X bad2:A-B bad3:A:B ok:OK_1", "OK_1_SSO_SECRET OK_1_SSO_URL"),
+    ("reportarchive:RA testscope:TS ste:STE hwax_risk:HR kooremapper_mcp:KR", ""),   # 게이트웨이가 직접 만드는 다섯 — 순회로 덮지 않는다
+    ("*:STAR 'q:Q $(id):X", ""),                                                      # 키가 이름 꼴이 아니면 다루지 않는다
+    ("", ""),
+])
+def test_generic_pairs_are_read_with_the_gateway_rule(tmp_path, apps, names):
+    (tmp_path / "cwd").mkdir(); (tmp_path / "cwd/어떤파일").write_text("x")     # 글롭이 풀리면 이 이름이 섞인다
+    script = f"set -uo pipefail\n{_generic_fns()}_sso_generic_names"
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, cwd=str(tmp_path / "cwd"),
+                       env={"PATH": "/usr/bin:/bin", "PER_USER_SSO_APPS": apps})      # 값을 글자 그대로(탭·따옴표·$ 포함) 준다
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    assert r.stdout.split() == names.split()
+
+
+def test_generic_delegation_drift_follows_the_ra_rule(tmp_path):
+    on = f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\nNEWAPP_SSO_URL="http://x/sso"\n'      # 주소는 _cfg 가 쓰는 것과 같다
+    assert _drift(tmp_path, {}, box=on) == "newapp_sso", "비밀을 넣었는데 config 에 위임이 없다 — 재프로비저닝해야 켜진다"
+    assert _drift(tmp_path, _cfg(newapp="old"), box=on) == "newapp_sso", "비밀을 바꿨다"
+    assert _drift(tmp_path, _cfg(newapp=GEN_SECRET), box=on) == ""
+    assert _drift(tmp_path, _cfg(newapp=GEN_SECRET), box=on.replace("http://x/sso", "http://moved.example/sso")) == "newapp_sso", \
+        "주소를 옮겼다 — 게이트웨이는 env 의 주소로 고쳐 쓴다"
+    assert _drift(tmp_path, _cfg(newapp=GEN_SECRET), box=f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\n') == "", \
+        "주소를 안 적은 박스 — config 의 주소를 잇는다"
+    assert _drift(tmp_path, _cfg(newapp="old"), box=GEN_APPS) == "newapp_sso_off", "비밀을 비웠는데 위임이 남았다"
+    assert _drift(tmp_path, {}, box=GEN_APPS) == "", "목록에만 있고 켜지 않은 앱은 조용하다"
+    assert _drift(tmp_path, _cfg(newapp="old")) == "", "목록에 없는 앱의 위임은 이 점검의 대상이 아니다(어느 변수가 그 비밀인지 모른다)"
+    assert _drift(tmp_path, _cfg(reportarchive=SECRET, newapp="old"), ra=SECRET, box=on) == "newapp_sso"
+    assert _drift(tmp_path, {}, ra=SECRET, box=on) == "reportarchive_sso newapp_sso", "RA·TestScope 가 먼저, 일반 앱은 뒤에"
+    assert GEN_SECRET not in _fn("_sso_deleg_drift")
+
+
+def test_a_generic_secret_without_an_address_is_reported_not_reprovisioned(tmp_path):
+    """게이트웨이는 주소가 없으면 위임을 만들지 않는다(기본 호스트가 없다). 그 앱을 방아쇠로 삼으면 매 실행 재프로비저닝이
+    헛돌고 그때마다 게이트웨이·에이전트서버가 내려갔다 올라온다 — 따로 표지해 알리기만 한다."""
+    box = f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\n'
+    assert _drift(tmp_path, {}, box=box) == "newapp_sso_nourl"
+    # 주소는 지금 config 에 남은 것을 게이트웨이가 이어받는다 — 그때는 만들 수 있으니 방아쇠다
+    assert _drift(tmp_path, _cfg(newapp="old"), box=box) == "newapp_sso"
+    i = UA.index('for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do')
+    loop = UA[i:UA.index("\n    done\n", i)]
+    script = "\n".join([
+        "set -uo pipefail", 'bad() { echo "BAD:$*"; }', "MISSING=''",
+        '_sso_deleg_drift() { echo "reportarchive_sso newapp_sso_nourl other_sso_off"; }', 'GW_DIR="/nonexistent"',
+        loop, "    done", 'echo "MISSING=[$MISSING]"'])
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    assert "MISSING=[reportarchive_sso other_sso_off]" in r.stdout, "주소 없는 앱은 재프로비저닝 방아쇠가 아니다"
+    assert "BAD:" in r.stdout and "newapp" in r.stdout and "_SSO_URL" in r.stdout, "무엇을 적으면 켜지는지와 함께 알린다"
+    post = UA[UA.index('_sso_left="$(_sso_deleg_drift "$GW_DIR/gateway_config.json")"'):UA.index("주소 드리프트 해소")]
+    script = "\n".join([
+        "set -uo pipefail", '_sso_deleg_drift() { echo "newapp_sso_nourl testscope_sso other_sso_nourl"; }', 'GW_DIR="/nonexistent"',
+        post[:post.index("\n", post.index('STILL="${STILL:+$STILL }$_sso_left"'))].replace("        ", "", 1), 'echo "STILL=[${STILL:-}]"'])
+    r = subprocess.run(["bash", "-c", "STILL=''\n" + script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    assert "STILL=[testscope_sso]" in r.stdout, "재프로비저닝이 고칠 수 없는 것을 '재프로비저닝 후에도 누락' 으로 다시 세지 않는다"
+
+
+def test_an_emptied_generic_secret_is_passed_as_off(tmp_path):
+    """되돌리기 — 목록에 남기고 비밀만 비운 앱은 PER_USER_SSO_OFF 로 간다(게이트웨이는 목록에 있는 앱만 끈다)."""
+    gw = tmp_path / "gw"; gw.mkdir()
+    (gw / "provision-config.sh").write_text('#!/usr/bin/env bash\nprintf "%s" "$PER_USER_SSO_OFF" > "$PWD/off.marker"\n')
+    for box, want in ((f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\n', ["other"]),
+                      (f'{GEN_APPS}\n', ["newapp", "other"]),
+                      (f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\nOTHER_APP_SSO_SECRET="o"\n', [])):
+        script = (f'set -uo pipefail; GW_DIR="{gw}"; RA_SSO_SECRET="{SECRET}"; TESTSCOPE_SSO_SECRET="ts-s"\n{box}'
+                  f'{_generic_fns()}{_sso_off_lines()}\n{_reprovision_cmd()}\necho rc=$?')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+        assert "rc=0" in r.stdout and not r.stderr, r.stdout + r.stderr
+        assert (gw / "off.marker").read_text().split() == want, box
+
+
+def _gateway_generic_loop():
+    """게이트웨이 프로비저너의 일반 앱 순회(`_GENERIC_SSO = {}` 부터 끄기 주석 앞까지)를 원문에서 꺼낸다. 아직 없는 판이면 None."""
+    prov = ROOT.parent / "HWAXMcpGateway" / "provision-config.sh"
+    if not prov.exists():
+        pytest.skip("게이트웨이 리포가 옆에 없다")
+    src = prov.read_text(encoding="utf-8")
+    if "_GENERIC_SSO = {}" not in src:
+        return None
+    i = src.index("_GENERIC_SSO = {}")
+    return src[i:src.index("\n# 끄기 —", i)]
+
+
+@pytest.mark.parametrize("apps,env,prev", [
+    ("newapp:NEWAPP", {"NEWAPP_SSO_SECRET": "s1", "NEWAPP_SSO_URL": "http://n/sso"}, {}),
+    ("newapp:NEWAPP", {"NEWAPP_SSO_SECRET": "s1"}, {}),                                         # 주소 없음 — 만들지 못한다
+    ("newapp:NEWAPP", {"NEWAPP_SSO_SECRET": "s1"}, {"newapp": {"sso_url": "http://n/sso", "secret": "old", "client": "gateway"}}),
+    ("newapp:NEWAPP", {"NEWAPP_SSO_SECRET": "s1"}, {"newapp": {"sso_url": "http://n/sso", "secret": "s1", "client": "gateway"}}),
+    ("newapp:NEWAPP", {"NEWAPP_SSO_SECRET": "s1", "NEWAPP_SSO_URL": "http://moved/sso"},      # 주소만 바꿨다 — 아래 주석
+     {"newapp": {"sso_url": "http://n/sso", "secret": "s1", "client": "gateway"}}),
+    ("newapp:NEWAPP", {}, {"newapp": {"sso_url": "http://n/sso", "secret": "old", "client": "gateway"}}),   # 비밀 없는 실행 — 이어받는다(끄기는 따로)
+    ("newapp:NEWAPP other:OTHER_APP", {"OTHER_APP_SSO_SECRET": "o", "OTHER_APP_SSO_URL": "http://o/sso"}, {}),
+    ("reportarchive:NEWAPP bad:9X nocolon ok:OK_1", {"NEWAPP_SSO_SECRET": "s1", "NEWAPP_SSO_URL": "http://n/sso",
+                                                     "OK_1_SSO_SECRET": "k", "OK_1_SSO_URL": "http://k/sso"}, {}),
+])
+def test_the_trigger_agrees_with_what_the_gateway_would_build(tmp_path, apps, env, prev):
+    """**정본은 게이트웨이다** — 그 순회를 원문에서 꺼내 같은 입력으로 돌린다. update-all 이 '어긋났다' 고 보는 앱은 정확히
+    게이트웨이가 재프로비저닝으로 **바꿔 놓을** 앱이어야 한다: 더 넓으면 매 실행 헛돌고, 더 좁으면 적어도 안 켜진다."""
+    loop = _gateway_generic_loop()
+    if loop is None:
+        pytest.skip("옆의 게이트웨이가 아직 PER_USER_SSO_APPS 를 모르는 판이다")
+    e = {"PER_USER_SSO_APPS": apps, **env}
+    per_user = json.loads(json.dumps(prev))
+    exec(loop, {"e": e, "per_user": per_user, "re": re, "print": lambda *a, **k: None})  # noqa: S102 — 옆 리포의 추적 파일 발췌
+    changed = sorted(k for k in per_user if per_user[k] != prev.get(k))
+    box = f"PER_USER_SSO_APPS={json.dumps(apps)}\n" + "".join(f'{k}="{v}"\n' for k, v in env.items())
+    cfg = {"heax_registry": {"per_user_sso": prev}}
+    flagged = sorted(t[:-len("_sso")] for t in _drift(tmp_path, cfg, box=box).split() if t.endswith("_sso"))
+    assert flagged == changed, (apps, env, prev)
+    # 재프로비저닝 뒤에는 조용해야 한다(수렴) — 게이트웨이가 만든 config 로 다시 본다
+    after = _drift(tmp_path, {"heax_registry": {"per_user_sso": per_user}}, box=box).split()
+    assert [t for t in after if t.endswith("_sso")] == [], after
 
 
 # ── 만들지 않는다 ────────────────────────────────────────────────────────────
