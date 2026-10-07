@@ -119,10 +119,12 @@ def _fn(name: str) -> str:
     return UA[i:UA.index("\n}\n", i) + 3]
 
 
-def _top_export() -> str:
-    """update-all 맨 위의 그 한 줄 — 루프백을 앞에 붙이고 no_proxy 를 NO_PROXY 와 같게 맞춘다."""
-    i = UA.index('export NO_PROXY="127.0.0.1,localhost,::1')
-    return UA[i:UA.index("\n", i) + 1]
+def _top_export(src: str = UA) -> str:
+    """스크립트 머리의 그 블록 — 루프백을 앞에 두고 두 철자(NO_PROXY·no_proxy)를 합쳐 같은 값으로 내보낸다."""
+    i = src.index('IFS=\', \' read -ra _np_parts <<<"127.0.0.1,localhost,::1,')
+    i = src.rindex("\n", 0, i) + 1
+    j = src.index('export NO_PROXY="$_np"', i)
+    return src[i:src.index("\n", j) + 1]
 
 
 def _run_1f_and_after(tmp_path, *, infra_env: str = "", pre: str = "", **env) -> tuple[str, str]:
@@ -180,3 +182,59 @@ def test_update_all_은_없는_값을_더하지_않고_죽지도_않는다(tmp_p
 def test_update_all_은_1f_가_거부한_값을_더하지_않는다(tmp_path, arp):
     child, out = _run_1f_and_after(tmp_path, infra_env=f"ARP_HOST={arp}\n", pre='RA_HOST=""')
     assert "FAIL:ARP_HOST" in out and child == f"CHILD=[{LO}][{LO}]"
+
+
+# ── 스크립트 머리 — 루프백을 더하면서 운영자의 목록을 버리지 않는다(update-all · deploy-all · update-forges 가 같은 블록을 쓴다) ──
+# ⚠ deploy-all-from-drive.sh 는 **돌리지 않는다**(dev 에서 돌리면 리포가 리셋된다 — docs/gotchas.md §3). 머리 블록의 글자만 떼어 돌린다.
+HEADS = {name: (ROOT / "infra/scripts" / name).read_text(encoding="utf-8")
+         for name in ("update-all.sh", "deploy-all-from-drive.sh", "update-forges.sh")}
+
+
+def _head(name: str, *, times: int = 1, **env) -> tuple[str, str]:
+    """머리 블록을 times 번 지난 뒤 **자식 프로세스**가 본 (NO_PROXY, no_proxy)."""
+    script = "set -euo pipefail\n" + _top_export(HEADS[name]) * times + \
+        """bash -c 'printf "%s\\n%s\\n" "${NO_PROXY-unset}" "${no_proxy-unset}"'\n"""
+    (cwd := Path(env.pop("_cwd"))).mkdir(exist_ok=True)
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30, cwd=str(cwd),
+                       env={"PATH": os.environ["PATH"], **env})
+    assert r.returncode == 0, r.stderr
+    upper, lower = r.stdout.split("\n")[:2]
+    return upper, lower
+
+
+@pytest.mark.parametrize("name", sorted(HEADS))
+def test_머리가_소문자만_둔_박스의_우회_목록을_버리지_않는다(tmp_path, name):
+    """**이 시험이 이 구획의 이유다** — 종전 머리는 대문자만 읽어 `no_proxy` 를 그 값으로 덮었다. 소문자만 둔 박스에서는 운영자의
+    우회 목록이 그 실행 내내(그 실행이 띄운 게이트웨이·에이전트서버까지) 사라졌다 — start.sh 가 포털에 대해 막은 것과 같은 모양이다."""
+    upper, lower = _head(name, _cwd=str(tmp_path / "cwd"), no_proxy="198.51.100.9,.corp.example")
+    assert upper == f"{LO},198.51.100.9,.corp.example" and lower == upper
+
+
+@pytest.mark.parametrize("name", sorted(HEADS))
+def test_머리가_두_철자를_합치고_있던_순서를_지킨다(tmp_path, name):
+    upper, lower = _head(name, _cwd=str(tmp_path / "cwd"), NO_PROXY="198.51.100.9, localhost", no_proxy="203.0.113.7,198.51.100.9")
+    assert upper == f"{LO},198.51.100.9,203.0.113.7" and lower == upper
+    upper, lower = _head(name, _cwd=str(tmp_path / "cwd"))
+    assert (upper, lower) == (LO, LO), "둘 다 없는 박스 — set -u 아래에서 죽지 않고 루프백만"
+
+
+@pytest.mark.parametrize("name", sorted(HEADS))
+def test_머리를_여러_번_지나도_목록이_불지_않는다(tmp_path, name):
+    """update-all 은 바깥 bash → 본문 → §1 재실행 → deploy-all 로 이 머리를 여러 번 지난다. 종전엔 지날 때마다 루프백 셋이
+    앞에 또 붙었다 — 두 철자를 합치기만 하고 중복을 안 걷으면 지날 때마다 목록이 배로 분다."""
+    once = _head(name, _cwd=str(tmp_path / "cwd"), NO_PROXY="198.51.100.9", no_proxy="203.0.113.7")
+    assert _head(name, times=4, _cwd=str(tmp_path / "cwd"), NO_PROXY="198.51.100.9", no_proxy="203.0.113.7") == once
+    assert once[0].count("127.0.0.1") == 1
+
+
+@pytest.mark.parametrize("name", sorted(HEADS))
+def test_머리가_별표를_파일_이름으로_풀지_않는다(tmp_path, name):
+    (tmp_path / "cwd").mkdir(); (tmp_path / "cwd/어떤파일").write_text("x")
+    upper, _ = _head(name, _cwd=str(tmp_path / "cwd"), NO_PROXY="*,203.0.113.0/24")
+    assert upper == f"{LO},*,203.0.113.0/24"
+
+
+def test_세_스크립트의_머리_블록은_글자까지_같다():
+    """같은 블록이 세 곳에 있다(머리는 리포 위치를 알기 전이라 lib 를 소싱하지 않는다) — 한 곳만 고치면 그 스크립트로 띄운 서비스만 다르게 돈다."""
+    blocks = {name: _top_export(src) for name, src in HEADS.items()}
+    assert len(set(blocks.values())) == 1, blocks

@@ -25,7 +25,17 @@
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
-export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"; export no_proxy="$NO_PROXY"
+# 두 철자(NO_PROXY·no_proxy)를 **합쳐** 같은 값으로 둔다 — 순서를 지키고 이미 있는 항목은 다시 붙이지 않는다. 종전엔 대문자만 읽어
+# 소문자를 그 값으로 덮었다: 소문자만 둔 박스에서는 운영자의 우회 목록이 이 실행 내내(이 실행이 띄운 서비스까지) 사라졌고,
+# 이 머리를 지날 때마다(update-all 은 바깥 bash → 본문 → §1 재실행 → deploy-all 로 여러 번 지난다) 루프백 셋이 앞에 또 붙었다.
+# read -a 로 쪼갠다 — 따옴표 없는 for 는 `*`(전부 우회)를 현재 디렉터리의 파일 이름으로 푼다. 같은 블록이 update-all ·
+# deploy-all-from-drive · update-forges 머리에 있다(리포 위치를 알기 전이라 lib 를 소싱하지 않는다) — 고치면 셋 다 고친다.
+_np=""; IFS=', ' read -ra _np_parts <<<"127.0.0.1,localhost,::1,${NO_PROXY:-},${no_proxy:-}"
+for _h in ${_np_parts[@]+"${_np_parts[@]}"}; do
+  [ -n "$_h" ] || continue
+  case ",$_np," in *",$_h,"*) ;; *) _np="${_np:+$_np,}$_h" ;; esac
+done
+export NO_PROXY="$_np"; export no_proxy="$_np"; unset _np _np_parts _h
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
