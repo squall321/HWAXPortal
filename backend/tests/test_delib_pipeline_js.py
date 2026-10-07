@@ -362,3 +362,7 @@ def test_앱이_칸을_넘겨_뺀_근거와_메모_절단을_넘긴다():
     # 없으면 빈 값이다 — 필드가 없는 것과 '빠진 것이 없다' 를 구분한다.
     flags = _risk(_brief([{"source": "scope", "result": "스코프"}]))["result"]["submitted"][0]["flags"]
     assert flags["briefEvidenceDropped"] == [] and flags["userMemoCut"] is None
+    # 구조화 출력은 없는 값을 0 으로 채워 오기도 한다(스키마 설명이 그렇게 시킨다) — 그건 절단이 아니다.
+    flags = _risk(_brief([{"source": "scope", "result": "스코프"}], evidence_dropped=[],
+                         user_memo_cut={"chars": 0, "kept": 0}))["result"]["submitted"][0]["flags"]
+    assert flags["userMemoCut"] is None
