@@ -508,7 +508,8 @@ fi
 # 있던 항목·순서는 그대로 두고 없는 것만 뒤에 붙인다(no_proxy 는 맨 위에서 NO_PROXY 와 같게 맞춰 두었다). 주소는 찍지 않는다.
 # ⚠ 목록에는 **위에서 값을 읽어 둔 변수만** 적는다 — ODB_HOST·TESTSCOPE_HOST 는 리포 어디에서도 읽지 않는다. 값은 `${!k:-}` 로
 #   읽는다(미정의는 빈 값) — `$ODB_HOST` 처럼 그대로 쓰면 set -u 라 그 줄에서 실행이 통째로 죽는다.
-#   update-all 밖에서 뜨는 포털(restart.sh·부팅 유닛)은 이 export 를 못 받는다 — start.sh 가 infra/.env 의 같은 두 값을 직접 더한다.
+#   update-all 밖에서 뜨는 포털(restart.sh·부팅 유닛)은 이 export 를 못 받는다 — start.sh 가 infra/.env 의 같은 두 값을 직접 더한다
+#   (그쪽은 파일을 다시 소싱하므로 1e·1f 와 같은 식으로 모양을 다시 본다 — 여기서 거부한 값이 그리로 돌아오면 포털이 안 뜬다).
 _np_added=""
 for _np_k in RA_HOST ARP_HOST; do
   _np_h="${!_np_k:-}"

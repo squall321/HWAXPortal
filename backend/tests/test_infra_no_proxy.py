@@ -50,6 +50,7 @@ def start_portal(tmp_path):
         assert r.returncode == 0, r.stderr
         assert argv.exists(), "대역 apptainer 가 불리지 않았다 — 블록이 기동 갈래를 타지 않았다"
         args = argv.read_text().split("\n")
+        run.stdout = r.stdout                    # 블록이 화면에 남긴 말(경고)을 보는 시험용
         return dict(args[i + 1].split("=", 1) for i, a in enumerate(args[:-1]) if a == "--env")
     return run
 
@@ -123,6 +124,50 @@ def test_이미_있는_호스트는_두_번_넣지_않고_있던_항목도_그�
 def test_주석으로만_있는_호스트는_더하지_않는다(start_portal):
     envs = start_portal("# RA_HOST=   # ⚠ 값을 정해야 한다\n# ARP_HOST=\n", NO_PROXY="127.0.0.1")
     assert envs["NO_PROXY"] == LO
+
+
+# ── 모양이 틀린 RA_HOST·ARP_HOST — 더하지 않는다 ───────────────────────────────────────────
+# update-all 1e·1f 는 주소 모양이 아닌 값을 ✗ 로 거부하고 제 변수에서 비운다. 그런데 start.sh 는 _common.sh 로 infra/.env 를 다시
+# 소싱해 그 값을 그대로 NO_PROXY 에 붙였다. httpx 는 NO_PROXY 의 항목 하나를 못 읽으면 **클라이언트를 만들 때** 던지고, 포털은
+# 기동하면서 클라이언트를 만든다(main.py agent_client) — 주소 한 줄의 오타로 포털이 아예 뜨지 않았다. NO_PROXY 에 더하기 전에는
+# 1e 의 ✗ 하나로 끝나던 값이다.
+@pytest.mark.parametrize("infra_env,good", [
+    ("RA_HOST='[fd00::7]'\nARP_HOST=203.0.113.20\n", "203.0.113.20"),                 # 대괄호 IPv6
+    ("RA_HOST=203.0.113.10:3000:1\nARP_HOST=203.0.113.20\n", "203.0.113.20"),         # 쌍점이 둘
+    ("RA_HOST=203.0.113.10\nARP_HOST=arp.corp.example:http\n", "203.0.113.10"),       # 포트 자리에 글자
+    ("RA_HOST=203.0.113.10\u200b\nARP_HOST=203.0.113.20\n", "203.0.113.20"),          # 붙여 넣다 딸려 온 폭 없는 공백
+    ('RA_HOST="ra.corp.example (주)"\nARP_HOST=203.0.113.20\n', "203.0.113.20"),      # 설명을 값에 붙여 적었다
+    ("RA_HOST=http://203.0.113.10:3000/\nARP_HOST=203.0.113.20\n", "203.0.113.20"),   # 주소가 아니라 URL
+], ids=["대괄호IPv6", "쌍점둘", "글자포트", "폭없는공백", "설명붙임", "URL"])
+def test_모양이_틀린_호스트는_NO_PROXY_에_더하지_않고_알린다(start_portal, monkeypatch, infra_env, good):
+    """**오라클은 httpx 다** — 넘긴 값으로 클라이언트가 만들어져야 한다. 정규식이 통과시켰는지가 아니라 포털이 뜨는지를 본다."""
+    import httpx
+
+    envs = start_portal(infra_env)
+    assert envs["NO_PROXY"] == f"{LO},{good}" and envs["no_proxy"] == envs["NO_PROXY"], envs["NO_PROXY"]
+    bad_key = "ARP_HOST" if good == "203.0.113.10" else "RA_HOST"
+    said = [ln for ln in start_portal.stdout.splitlines() if "NO_PROXY" in ln and bad_key in ln]
+    assert len(said) == 1, start_portal.stdout
+    assert "fd00" not in said[0] and "203.0.113" not in said[0] and "corp.example" not in said[0], "값은 찍지 않는다(주소다)"
+    for k in ("NO_PROXY", "no_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("NO_PROXY", envs["NO_PROXY"]); monkeypatch.setenv("no_proxy", envs["no_proxy"])
+    httpx.Client(timeout=1).close()
+
+
+def test_모양이_맞는_호스트는_종전대로_더하고_조용하다(start_portal):
+    envs = start_portal("RA_HOST=ra-a.corp.example\nARP_HOST=203.0.113.20\n")
+    assert envs["NO_PROXY"] == f"{LO},ra-a.corp.example,203.0.113.20"
+    assert "NO_PROXY" not in start_portal.stdout
+
+
+def test_호스트_모양_검사는_update_all_의_것과_같은_식이다():
+    """update-all 1e·1f 와 start.sh 가 같은 값을 다르게 판정하면 한쪽은 거부하고 한쪽은 붙인다 — 식의 글자를 맞댄다."""
+    import re
+
+    shapes = set(re.findall(r"^\s*_(?:ra|arp)_shape='([^']+)'$", UA, re.M))
+    assert len(shapes) == 1, "update-all 의 1e·1f 가 서로 다른 식을 쓴다"
+    assert f"'{shapes.pop()}'" in _portal_block(), "start.sh 의 포털 블록이 다른 식으로 본다"
 
 
 # ── update-all — 1f 가 닫힌 뒤 RA·ARP 호스트를 NO_PROXY 에 더한다(뒤에 뜨는 서비스가 물려받는다) ─────────────────────

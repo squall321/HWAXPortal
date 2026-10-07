@@ -135,8 +135,26 @@ else
   # 루프백도 여기서 더한다 — update-all·deploy-all 의 머리는 더해서 물려주지만 restart.sh·부팅 유닛은 그 머리를 지나지 않는다. 운영자 셸에
   # http_proxy 만 있고 NO_PROXY 에 루프백이 없으면 포털이 에이전트서버(:9009)·게이트웨이(:9110)를 사내 프록시로 부른다(프록시는 이 박스의
   # 루프백에 닿지 못한다) — 띄운 길에 따라 챗이 되고 안 되고가 갈린다. 그 머리와 같은 셋을 같은 자리(앞)에 둔다.
+  # ⚠ 두 주소는 **모양을 보고** 더한다. update-all 1e·1f 는 주소 모양이 아닌 값을 ✗ 로 거부하고 제 변수에서 비우지만, 여기는
+  #   _common.sh 가 infra/.env 를 다시 소싱해 그 값이 그대로 돌아온다. httpx 는 NO_PROXY 의 항목 하나를 못 읽으면 클라이언트를
+  #   만들 때 던지고(`[fd00::7]` · 쌍점이 둘 · 폭 없는 공백 — InvalidURL), 포털은 기동하면서 클라이언트를 만든다(main.py agent_client).
+  #   주소 한 줄의 오타로 포털이 아예 안 떴고, 로그의 httpx.InvalidURL 은 NO_PROXY 도 RA_HOST 도 말하지 않는다. NO_PROXY 에 더하기
+  #   전에는 1e 의 ✗ 하나로 끝나던 값이다. 식은 1e(_ra_shape)·1f(_arp_shape)와 같은 글자다(IPv4 또는 점으로 이은 호스트명).
+  #   쪼개기 **전에** 값 통째로 본다 — 쪼갠 뒤에는 `호스트 (설명)` 이 이미 여러 항목으로 흩어져 있다. 값은 찍지 않는다(주소다).
+  #   운영자 셸의 NO_PROXY·APPTAINERENV_NO_PROXY 는 거르지 않는다 — 이 변경 전부터 물려주던 값이다.
+  _np_shape='^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$'
+  _np_hosts=""
+  for _k in RA_HOST ARP_HOST; do
+    _h="${!_k:-}"
+    [ -n "$_h" ] || continue
+    if [[ "$_h" =~ $_np_shape ]]; then
+      _np_hosts="$_np_hosts,$_h"
+    else
+      echo "  ⚠ infra/.env 의 $_k 가 IPv4 주소·호스트명 모양이 아니라 NO_PROXY 에 더하지 않는다 — 그 서버로 가는 호출은 프록시 설정을 그대로 따른다(스킴·포트·주석 없이 주소만 적는다)"
+    fi
+  done
   _np=""
-  IFS=', ' read -ra _np_parts <<<"127.0.0.1,localhost,::1,${APPTAINERENV_NO_PROXY:-},${APPTAINERENV_no_proxy:-},${NO_PROXY:-},${no_proxy:-},${RA_HOST:-},${ARP_HOST:-}"
+  IFS=', ' read -ra _np_parts <<<"127.0.0.1,localhost,::1,${APPTAINERENV_NO_PROXY:-},${APPTAINERENV_no_proxy:-},${NO_PROXY:-},${no_proxy:-}${_np_hosts}"
   for _h in ${_np_parts[@]+"${_np_parts[@]}"}; do
     [ -n "$_h" ] || continue
     case ",$_np," in *",$_h,"*) ;; *) _np="${_np:+$_np,}$_h" ;; esac
