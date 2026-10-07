@@ -34,6 +34,7 @@ GW_DIR="$(find_repo HWAXMcpGateway)"
 AGENT_DIR="$(find_repo HWAXAgentServer)"
 AIDH_DIR="$(find_repo AIDataHub)"
 HEAX_DIR="$(find_repo HEAXHub)"   # §5 의 앱 단위 재배포에 필요 — 경로 하드코딩 금지
+KNOX_DIR="$(find_repo HWAXKnoxBridge)"   # Knox 브리지(사내 사이드카) — 있는 박스에서만 §5 가 knox-bridge 백엔드를 기대한다
 SVC="$SELF_REPO/infra/scripts/services.sh"
 # 포털 라우팅 표. §6 의 ste 프로브가 $REPO_ROOT/$ROUTES_PATH 를 참조했는데 이 스크립트는
 # _common.sh 를 source 하지도, infra/.env 를 읽지도 않아 둘 다 미정의였다 — set -u 라 그
@@ -759,6 +760,15 @@ if [ -n "${TESTSCOPE_MCP_URL:-}" ]; then
 else
   hwax_skip "TestScope MCP 도구" "게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 없어 게이트웨이가 TestScope 를 기대하지 않는다(다른 조직 포털 — 안 쓰는 박스가 보통이다)" "TestScope 를 쓰는 박스는 HWAXMcpGateway/provision.env 에 TESTSCOPE_MCP_URL=<TestScope MCP 주소> 를 적고 재실행(§5 가 재프로비저닝한다)"
 fi
+# Knox 브리지(사내 사이드카 — 챗의 메일·메신저 도구) — 형제 리포와 그 설정(config/secrets.yaml, gitignore)이 있는 박스에서만 기대한다.
+# 게이트웨이 config 의 knox-bridge 는 사람이 붙인 키다 — provision 은 만들지 않고 보존만 한다. 그래서 빠지면 재프로비저닝으로
+# 되살아나지 않고 §5 재검증이 ✗ 로 남는다. 조용히 넘어가지 않는 것이 목적이다(UPSTREAM-ASKS §2).
+KNOX_BRIDGE_UP=0
+if [ -n "${KNOX_DIR:-}" ] && [ -f "$KNOX_DIR/config/secrets.yaml" ]; then
+  KNOX_BRIDGE_UP=1
+else
+  hwax_skip "Knox 브리지 MCP 도구(챗의 메일·메신저)" "형제 리포 HWAXKnoxBridge 와 그 config/secrets.yaml 이 없어 게이트웨이의 knox-bridge 백엔드를 기대하지 않는다(사내 박스 전용 사이드카)" "HWAXKnoxBridge 를 형제 리포로 두고 config/secrets.yaml 을 채운 뒤 재실행(게이트웨이 config 의 knox-bridge 항목은 그 리포의 안내대로 붙인다)"
+fi
 # TestScope 사람별 위임(ste 방식) — RA 와 같은 두 갈래다(docs/sso-delegation). 비밀이 없으면 위 토큰 등록 그대로, 있으면 게이트웨이가
 # per_user_sso.testscope 로 그 사람 토큰을 TestScope 의 /api/auth/sso 에서 받는다. RA 와 같은 독자로 읽되 **만들지 않는다**(start.sh 2d).
 if [ -z "${TESTSCOPE_SSO_SECRET:-}" ]; then TESTSCOPE_SSO_SECRET="$(_ra_envv TESTSCOPE_SSO_SECRET)"; fi
@@ -785,7 +795,7 @@ fi
 
 calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공백 구분). heax는 config 파일로 별도 판정.
   H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_BASE:-}" MXWP_UP="$MXWP_UP" \
-  STE_ROUTED="$STE_ROUTED" TESTSCOPE_EXPECTED="${TESTSCOPE_EXPECTED:-0}" python3 - <<'PY'
+  KNOX_BRIDGE_UP="${KNOX_BRIDGE_UP:-0}" STE_ROUTED="$STE_ROUTED" TESTSCOPE_EXPECTED="${TESTSCOPE_EXPECTED:-0}" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
 # hwax-deliberation 은 agent-server(:9009/mcp) 내장이라 이 스택이면 항상 있어야 한다.
@@ -807,6 +817,8 @@ if os.environ.get("ARP"):           want.add("arp")
 if os.environ.get("STE_ROUTED") == "1": want.add("ste")
 # TestScope MCP — 게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 있는 박스에서만 기대한다(ARP 와 같은 방식, docs/sso-delegation).
 if os.environ.get("TESTSCOPE_EXPECTED") == "1": want.add("testscope")
+# Knox 브리지 — gateway_config.json 은 gitignore 라 pull 로 오지 않는다. 사라지면 챗의 메일·메신저 도구 6개가 통째로 없어진다.
+if os.environ.get("KNOX_BRIDGE_UP") == "1": want.add("knox-bridge")
 print(" ".join(sorted(want - have)))
 PY
 }
