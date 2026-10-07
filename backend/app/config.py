@@ -233,6 +233,13 @@ class Settings(BaseSettings):
     pat_default_audiences: str = ("mx-white-paper,heax-hub,ai-data-hub,signalforge,"
                                  "ste,dyna-forge,step-forge,mcp-gateway")
     pat_chat_audience: str = "mcp-gateway"   # audience a PAT must carry to use the chat / MCP surface
+    # 포털이 챗·심의 요청마다 찍어 에이전트 서버에 넘기는 사용자 PAT 의 수명(초) — exp = 30분 창의 시작 + 이 값이라
+    # 시작 시점에 남는 수명은 최소 (이 값 − 1800)이다. 에이전트 서버는 시작할 때 받은 토큰을 그 실행 **끝까지** 쓴다
+    # (좌석 조회, 마지막 Report Archive 저장). 종전 60분은 이 경로에서 가장 짧은 한도였다 — 30~60분을 넘긴 심의가
+    # 좌석 조회를 잃고 보고서 저장에 실패했는데 사유는 어디에도 안 나왔다. 자격은 누적 시간 한도라 허용하는 가장 긴
+    # 실행(리스크 패널 벽시계 43200초 + RA 저장 660초)보다 길어야 한다 — 줄이더라도 46800(13시간) 밑으로는 내리지 않는다.
+    # 토큰은 에이전트 서버 메모리에만 있고 scope 가 chat 이며, 창마다 jti 가 정해져 있어 폐기 목록으로 막을 수 있다.
+    chat_pat_ttl_s: int = 86400              # 24시간
 
     # ── MCP chat (Phase 1: agent proxy + MCP registry; echo mode needs no remote) ──
     # The portal is a thin proxy + auth gate: real LLM/LangGraph/MCP fan-out lives in the

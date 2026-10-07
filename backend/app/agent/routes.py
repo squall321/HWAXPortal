@@ -255,7 +255,7 @@ async def search_capability(
 
 
 def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | None:
-    """이 챗 한 번을 위한 단명 PAT. agent-server 가 이걸로 게이트웨이에 붙는다.
+    """이 챗·심의 한 번을 위한 PAT. agent-server 가 이걸로 게이트웨이에 붙는다.
 
     왜 필요한가 — agent-server 는 지금까지 서비스 계정(GW_TOKEN)으로 게이트웨이에 붙고
     사용자는 X-HWAX-User 헤더로만 알렸다. 그러면 게이트웨이가 "호출자 신원"을 요구하는
@@ -268,9 +268,12 @@ def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | 
 
     ⚠ 30분 창(window)에 맞춰 결정적으로 발급한다 — 같은 사용자·같은 창이면 토큰이 완전히
     같다. 매번 새로 찍으면 agent-server 의 에이전트 캐시가 첫 요청의 토큰을 물고 계속
-    재사용해서, 이후에 보낸 새 토큰은 무시되고 60분 뒤 그 하나가 만료되며 도구가 조용히
-    죽는다. 창을 맞춰 두면 캐시는 그대로 맞고 자격증명은 30분마다 갱신된다(남은 유효기간
-    항상 30분 이상).
+    재사용해서, 이후에 보낸 새 토큰은 무시되고 그 하나가 만료되며 도구가 조용히
+    죽는다. 창을 맞춰 두면 캐시는 그대로 맞고 자격증명은 30분마다 갱신된다.
+
+    수명은 창의 시작 + CHAT_PAT_TTL_S(기본 24시간)다 — 남은 유효기간은 항상 (그 값 − 30분) 이상이다.
+    종전에는 창의 시작 + 60분이라 30~60분이 남았는데, 심의는 시작할 때 받은 이 토큰을 **끝까지** 쓴다.
+    그보다 오래 돈 심의가 좌석 조회를 잃고 마지막 Report Archive 저장에 실패했다(사유 없이).
     """
     try:
         now = datetime.now(tz=UTC)
@@ -287,7 +290,7 @@ def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | 
             "scope": "api",
             "scopes": ["chat"],
             "pat_name": "chat-session",
-            "iat": issued, "nbf": issued, "exp": issued + timedelta(minutes=60),
+            "iat": issued, "nbf": issued, "exp": issued + timedelta(seconds=settings.chat_pat_ttl_s),
             # jti 도 결정적이어야 토큰이 바이트 단위로 같아진다. 서명된 토큰이라 예측
             # 가능성 자체는 위험이 아니고, 폐기 목록에 이 값을 넣으면 그 창이 막힌다.
             "jti": f"chat-{principal.subject}-{win}",
