@@ -85,7 +85,11 @@ class DelibOpts(BaseModel):
     chair_bestof: int | None = Field(default=None, ge=1, le=5)
     chair_cite: int | None = Field(default=None, ge=0, le=1)
     rounds: int | None = Field(default=None, ge=2, le=8)
-    timeout_s: float | None = Field(default=None, ge=10, le=1800)
+    # LLM 호출 **1회**의 제한이다(심의 전체 시간이 아니다). 상한은 엔진 DELIB_TIMEOUT_MAX_S **기본값**·프론트
+    # chatStore DELIB_TIMEOUT_MAX_S(보내기 전 클램프·입력칸 max)와 같은 수여야 한다(tests/test_delib_timeout_cap_contract.py).
+    # 종전 1800 은 20석 넘는 패널이 공유 LLM 에 줄을 서는 시간을 못 담았고, 엔진만 아는 호출자는 여기서 요청 전체가
+    # 422 로 떨어졌다. 넘는 값은 지금처럼 422 로 소리 내 막는다 — 엔진까지 가면 말없이 죄인다.
+    timeout_s: float | None = Field(default=None, ge=10, le=14400)
     # 이어하기(사람 개입 스티어링) — 사람 의견 + 이전 심의 요약 + 전문가 재사용(발굴 생략)
     # human_note 8,000 은 바깥 경계다 — 좌석에 싣는 길이는 엔진이 정하고(DELIB_HUMAN_NOTE_MAX, 기본 2,000),
     # 잘랐으면 엔진이 카드로 알린다. 엔진 **기본값**이 이 값을 넘으면 안 된다

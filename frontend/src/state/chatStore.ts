@@ -259,6 +259,11 @@ export function saveDelibOpts(opts: DelibOpts, prefix: string = DEFAULT_PREFIX):
   }
 }
 
+// 호출당 타임아웃(timeout_s)의 요청 상한(초) — LLM 호출 1회 기준이고 심의 전체 시간이 아니다.
+// 포털 DelibOpts.timeout_s 의 le · 엔진 DELIB_TIMEOUT_MAX_S 기본값과 같은 수여야 한다
+// (backend/tests/test_delib_timeout_cap_contract.py). 입력칸 max(DelibOptsPanel)도 이 상수를 쓴다.
+export const DELIB_TIMEOUT_MAX_S = 14400;
+
 // 손잡이 상태 → 서버 전송용(켠 것만). 나머지는 agent-server env 기본값 유지.
 export function delibOptsToWire(o: DelibOpts): Record<string, number> {
   const w: Record<string, number> = {};
@@ -268,9 +273,9 @@ export function delibOptsToWire(o: DelibOpts): Record<string, number> {
   if (o.chair_bestof && o.chair_bestof > 1) w.chair_bestof = Math.min(5, Math.max(1, o.chair_bestof));
   // 라운드 수 — 기본 3과 다를 때만 전송(같으면 서버 기본값). [2,8] 클램프(포털 DelibOpts 거부 방지).
   if (o.rounds != null && o.rounds !== 3) w.rounds = Math.min(8, Math.max(2, o.rounds));
-  // 타임아웃은 여기서 [10,1800] 클램프 — 포털 DelibOpts 는 범위를 '거부'(422)하므로(agent-server 는
-  // 클램프) HTML min/max 를 우회한 키보드 입력(5·5000 등)이 심의 전체를 422 로 죽이는 것 방지.
-  if (o.timeout_s != null && o.timeout_s > 0) w.timeout_s = Math.min(1800, Math.max(10, o.timeout_s));
+  // 타임아웃은 여기서 [10, 상한] 클램프 — 포털 DelibOpts 는 범위를 '거부'(422)하므로(agent-server 는
+  // 클램프) HTML min/max 를 우회한 키보드 입력(5·50000 등)이 심의 전체를 422 로 죽이는 것 방지.
+  if (o.timeout_s != null && o.timeout_s > 0) w.timeout_s = Math.min(DELIB_TIMEOUT_MAX_S, Math.max(10, o.timeout_s));
   // 인간 체크포인트 — 1이면 초기 라운드에서 멈춘다. 패널 토글이라 **이 관문과 백엔드
   // DelibOpts 둘 다** 통과해야 한다. 한쪽만 있으면 에러 없이 조용히 사라진다(실제로
   // 그래서 이 토글이 죽어 있었다 — docs/delib-ux/context-notes.md D-1).

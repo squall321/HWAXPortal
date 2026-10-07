@@ -1,5 +1,6 @@
 // 심의 손잡이(깊이 회복 옵션) 웹 토글 패널 — env 재시작 없이 심의마다 옵션을 바꿔 A/B 한다
 import { useChat } from '../../state/ChatContext';
+import { DELIB_TIMEOUT_MAX_S } from '../../state/chatStore';
 import type { DelibOpts } from '../../types/chat';
 import { MODIFIERS } from './delibTaxonomy';
 import { IconSliders } from './icons';
@@ -134,7 +135,7 @@ export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; tog
                 type="number"
                 className="do-num"
                 min={10}
-                max={1800}
+                max={DELIB_TIMEOUT_MAX_S}
                 step={30}
                 placeholder="기본"
                 value={delibOpts.timeout_s ?? ''}
@@ -144,7 +145,10 @@ export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; tog
               />
               <span className="do-unit">초</span>
             </span>
-            <span className="do-hint">LLM 호출당 제한. 무거운 옵션엔 600 권장 (비우면 서버 기본값)</span>
+            {/* 짧은 값을 권하지 않는다 — 좌석이 많은 패널은 공유 LLM 에 줄을 서는 시간까지 이 시계에 들어간다. */}
+            <span className="do-hint">
+              LLM 호출 1회의 제한입니다(심의 전체가 아닙니다). 비우면 서버 기본 1800초 · 최대 {DELIB_TIMEOUT_MAX_S}초
+            </span>
           </li>
         </ul>
       </div>
