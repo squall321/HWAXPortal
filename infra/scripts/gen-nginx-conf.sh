@@ -180,6 +180,40 @@ if [ -f "$ROUTES_MERGED" ]; then
   done < "$ROUTES_MERGED"
 fi
 
+# 스트리밍 두 경로의 침묵 한도(proxy_read_timeout) — infra/.env 의 손잡이 둘. 템플릿(HTTP 서버)과 아래 TLS 사본은 같은 토큰을
+# 쓰고 값은 맨 끝의 sed 한 곳에서 들어간다. 종전엔 `1h` 리터럴이 두 파일에 따로 박혀 손으로 맞췄다.
+#   NGINX_AGENT_READ_TIMEOUT (기본 50400s = 14시간) — /agent/ (챗·심의 SSE). 침묵 한도라 신호를 내는 심의는 끊지 않는다. 1시간이던
+#     동안은 좌석 20석 넘는 패널의 LLM 호출 한 번(재시도 포함 3608초)이 조용한 사이에 끊겼고, 심의는 서버에서 계속 도는데
+#     화면의 '다시 시도' 가 두 번째 심의를 나란히 돌렸다. 포털 릴레이(AGENT_STREAM_IDLE_TIMEOUT_S, 기본 46800초)보다 커야 한다.
+#   NGINX_MCP_READ_TIMEOUT   (기본 1h) — /mcp-gw/ (개인 Claude 의 MCP). 게이트웨이의 도구 호출 1건 바깥 기한(660초)보다 커야 한다.
+# 값은 숫자에 단위 하나(s·m·h·d, 없으면 초)만 받는다. 모양이 틀린 값을 그대로 넣으면 nginx 가 [emerg] 로 즉사해 정문이 000 이 되고,
+# `/`·`&` 가 섞이면 맨 끝의 sed 치환부터 깨진다 — 버리고 기본값으로 만든다(손잡이 한 줄의 오타로 정문이 내려가지 않게).
+# ⚠ 0 은 '끔' 이 아니다 — nginx 는 0 을 '즉시 끊는다' 로 읽는다(다른 손잡이들의 0=끔 과 반대다). 끄는 값은 없다 — 크게 적는다.
+_nginx_time() {  # $1=손잡이 이름 $2=기본값 → 쓸 값
+  local v="${!1:-}"
+  if [ -z "$v" ]; then printf '%s' "$2"; return; fi
+  if [[ "$v" =~ ^[0-9]+[smhd]?$ ]] && [[ ! "$v" =~ ^0+[smhd]?$ ]]; then printf '%s' "$v"; return; fi
+  echo "  ✗ $1 값('$v')을 쓰지 않는다 — 숫자에 단위 하나(s·m·h·d)만 받고 0 은 받지 않는다(nginx 의 0 은 '끔' 이 아니라 '즉시 끊는다'). 기본값 $2 로 만든다" >&2
+  printf '%s' "$2"
+}
+_nginx_secs() {  # $1=위 모양의 값 → 초(10# — 앞자리 0 을 8진수로 읽지 않게)
+  local n="${1%[smhd]}"
+  case "$1" in *m) echo $((10#$n * 60)) ;; *h) echo $((10#$n * 3600)) ;; *d) echo $((10#$n * 86400)) ;; *) echo $((10#$n)) ;; esac
+}
+AGENT_READ_TIMEOUT="$(_nginx_time NGINX_AGENT_READ_TIMEOUT 50400s)"
+MCP_READ_TIMEOUT="$(_nginx_time NGINX_MCP_READ_TIMEOUT 1h)"
+# 침묵 한도의 순서 — 포털 릴레이 < nginx /agent/. 뒤집히면 nginx 가 먼저 끊어, 포털이 낼 문구(손잡이 이름·'심의는 계속 돈다')
+# 대신 화면에 사유 없는 'network error' 만 남는다. 포털 값은 start.sh 가 넘기는 infra/.env 가 먼저고 없으면 backend/.env, 그것도
+# 없으면 코드 기본값이다. 포털 쪽을 0(끔)으로 둔 박스는 nginx 가 유일한 한도라 보지 않는다. 알리기만 한다(conf 는 그대로 만든다).
+_idle="${AGENT_STREAM_IDLE_TIMEOUT_S:-}"
+if [ -z "$_idle" ] && [ -f "$REPO_ROOT/backend/.env" ]; then
+  _idle="$(sed -n 's/^[[:space:]]*AGENT_STREAM_IDLE_TIMEOUT_S=[[:space:]]*//p' "$REPO_ROOT/backend/.env" | tail -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"'"'"' \r')"
+fi
+_idle="${_idle:-46800}"; _idle="${_idle%%.*}"
+if [[ "$_idle" =~ ^[0-9]+$ ]] && [ "$((10#$_idle))" -gt 0 ] && [ "$(_nginx_secs "$AGENT_READ_TIMEOUT")" -le "$((10#$_idle))" ]; then
+  echo "  ⚠ NGINX_AGENT_READ_TIMEOUT($AGENT_READ_TIMEOUT)이 포털의 AGENT_STREAM_IDLE_TIMEOUT_S(${_idle}초)보다 크지 않다 — 조용한 심의를 nginx 가 먼저 끊어 화면에 사유가 안 나간다. nginx 값을 더 크게 적는다(infra/.env)" >&2
+fi
+
 # Streaming locations (chat SSE + MCP streamable-http). The HTTP server has these hardcoded in
 # the template; the TLS server (built here) MUST carry the same, or /agent (chat) and /mcp-gw
 # (personal-Claude MCP) would fall through to the buffered catch-all over HTTPS. Keep in sync
@@ -188,7 +222,7 @@ stream_locations="$(cat <<'EOF'
         location /agent/ {
             proxy_pass http://127.0.0.1:{{PORTAL_PORT}};
             proxy_buffering off; proxy_cache off; gzip off;
-            proxy_read_timeout 1h; proxy_connect_timeout 300s;
+            proxy_read_timeout {{AGENT_READ_TIMEOUT}}; proxy_connect_timeout 10s;
         }
         # ⚠ **무인증 진단 엔드포인트는 밖으로 열지 않는다.** 게이트웨이의 `/health`·
         # `/tools-map` 은 Bearer 를 안 본다(오케스트레이터가 싸게 프로브하라고 그렇게 뒀다).
@@ -202,7 +236,7 @@ stream_locations="$(cat <<'EOF'
         location /mcp-gw/ {
             proxy_pass http://127.0.0.1:9110/;
             proxy_buffering off; proxy_cache off; gzip off;
-            proxy_read_timeout 1h; proxy_connect_timeout 300s;
+            proxy_read_timeout {{MCP_READ_TIMEOUT}}; proxy_connect_timeout 10s;
         }
 EOF
 )"
@@ -248,6 +282,8 @@ TMP1="$(mktemp)"; trap 'rm -f "$TMP1"' EXIT
   | sed -e "s/{{HTTP_PORT}}/${HTTP_PORT}/g" \
         -e "s/{{PORTAL_PORT}}/${PORTAL_PORT}/g" \
         -e "s/{{HTTPS_PORT}}/${HTTPS_PORT:-443}/g" \
+        -e "s/{{AGENT_READ_TIMEOUT}}/${AGENT_READ_TIMEOUT}/g" \
+        -e "s/{{MCP_READ_TIMEOUT}}/${MCP_READ_TIMEOUT}/g" \
         -e "s/{{TLS_SERVER_NAME}}/${TLS_SERVER_NAME:-_}/g" > "$OUT"
 
 tls_note=""; [ "${ENABLE_TLS:-false}" = "true" ] && tls_note=" + TLS :${HTTPS_PORT:-443}"

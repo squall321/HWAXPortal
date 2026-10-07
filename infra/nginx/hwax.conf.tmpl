@@ -73,13 +73,19 @@ http {
         # `gzip on` chunk-buffers it, proxy_buffering(on) holds the whole body, and the
         # default proxy_read_timeout(60s) drops a quiet stream. Scoped to /agent/ so nothing
         # else changes. X-Accel-Buffering:no is also set per-response by the backend.
+        # proxy_read_timeout 은 **침묵** 한도다(바이트 사이 간격 — 벽시계가 아니다). 값은 gen-nginx-conf.sh 가 infra/.env 의
+        # NGINX_AGENT_READ_TIMEOUT(기본 50400s = 14시간)으로 채운다. 1h 리터럴이던 동안은 좌석 20석 넘는 심의의 LLM 호출 한 번
+        # (재시도 포함 3608초)이 조용한 사이에 여기서 끊겼다 — 심의는 서버에서 계속 도는데 화면에는 'network error' 만 남았다.
+        # 포털 릴레이의 침묵 한도(AGENT_STREAM_IDLE_TIMEOUT_S, 기본 46800초)보다 **커야** 한다 — 포털이 먼저 걸려야 손잡이
+        # 이름이 든 문구가 화면에 간다(nginx 는 문구를 못 낸다 — error 로그의 'upstream timed out' 뿐이다).
+        # proxy_connect_timeout 은 죽은 상대만 잡는 값이라 짧게 둔다(300s 는 nginx 가 실제로 쓰는 범위 약 75초 밖이었다).
         location /agent/ {
             proxy_pass http://127.0.0.1:{{PORTAL_PORT}};
             proxy_buffering off;
             proxy_cache off;
             gzip off;
-            proxy_read_timeout 1h;
-            proxy_connect_timeout 300s;
+            proxy_read_timeout {{AGENT_READ_TIMEOUT}};
+            proxy_connect_timeout 10s;
         }
         # ── MCP gateway (streamable-http) — a personal Claude connects here with a portal PAT.
         # STRIPs /mcp-gw/ → gateway sees /mcp (which authenticates the Bearer PAT itself). Same
@@ -94,13 +100,15 @@ http {
         location ~ ^/mcp-gw/(health|tools-map|refresh|conn-invalidate) {
             return 404;
         }
+        # 침묵 한도는 NGINX_MCP_READ_TIMEOUT(기본 1h) — 게이트웨이의 도구 호출 1건 바깥 기한(660초)보다 커야 한다.
+        # MCP 심의는 잡(deliberate_start → status 폴링)이라 교환 하나가 길지 않고, 게이트웨이가 15초마다 ping 을 싣는다.
         location /mcp-gw/ {
             proxy_pass http://127.0.0.1:9110/;
             proxy_buffering off;
             proxy_cache off;
             gzip off;
-            proxy_read_timeout 1h;
-            proxy_connect_timeout 300s;
+            proxy_read_timeout {{MCP_READ_TIMEOUT}};
+            proxy_connect_timeout 10s;
         }
         # ── portal (hero + API): catch-all ──
         location / {
