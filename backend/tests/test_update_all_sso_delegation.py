@@ -478,7 +478,7 @@ def _gateway_generic_loop():
 ])
 def test_the_trigger_agrees_with_what_the_gateway_would_build(tmp_path, apps, env, prev):
     """**정본은 게이트웨이다** — 그 순회를 원문에서 꺼내 같은 입력으로 돌린다. update-all 이 '어긋났다' 고 보는 앱은 정확히
-    게이트웨이가 재프로비저닝으로 **바꿔 놓을** 앱이어야 한다: 더 넓으면 매 실행 헛돌고, 더 좁으면 적어도 안 켜진다."""
+    게이트웨이가 재프로비저닝으로 **바꿔 놓을** 앱이어야 한다 — 더 넓으면 매 실행 헛돌고, 더 좁으면 적어도 안 켜진다."""
     loop = _gateway_generic_loop()
     if loop is None:
         pytest.skip("옆의 게이트웨이가 아직 PER_USER_SSO_APPS 를 모르는 판이다")

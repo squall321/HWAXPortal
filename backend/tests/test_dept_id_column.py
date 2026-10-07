@@ -182,7 +182,7 @@ def test_칸을_더하지_못하면_원장을_연_척하지_않는다(tmp_path, 
 
     db = tmp_path / "u.sqlite"
     # 지금 박스들의 원장 모양 — 표는 전부 있고(허가 요청·연결·확인함 포함) users 에 dept_id·sabun 만 아직 없다.
-    # users 표만 있는 파일로는 이 결함이 안 보인다: 없는 표를 만드는 쓰기가 먼저 잠금에 걸려 (삼키지 않는 자리에서) 던진다.
+    # users 표만 있는 파일로는 이 결함이 안 보인다 — 없는 표를 만드는 쓰기가 먼저 잠금에 걸려 (삼키지 않는 자리에서) 던진다.
     UserStore(Settings(_env_file=None, user_store_path=str(db)))._conn.close()
     seed = sqlite3.connect(str(db))
     for col in ("sabun", "dept_id"):

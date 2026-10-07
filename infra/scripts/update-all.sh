@@ -26,7 +26,7 @@ set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 �
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
 # 두 철자(NO_PROXY·no_proxy)를 **합쳐** 같은 값으로 둔다 — 순서를 지키고 이미 있는 항목은 다시 붙이지 않는다. 종전엔 대문자만 읽어
-# 소문자를 그 값으로 덮었다: 소문자만 둔 박스에서는 운영자의 우회 목록이 이 실행 내내(이 실행이 띄운 서비스까지) 사라졌고,
+# 소문자를 그 값으로 덮었다 — 소문자만 둔 박스에서는 운영자의 우회 목록이 이 실행 내내(이 실행이 띄운 서비스까지) 사라졌고,
 # 이 머리를 지날 때마다(update-all 은 바깥 bash → 본문 → §1 재실행 → deploy-all 로 여러 번 지난다) 루프백 셋이 앞에 또 붙었다.
 # read -a 로 쪼갠다 — 따옴표 없는 for 는 `*`(전부 우회)를 현재 디렉터리의 파일 이름으로 푼다. 같은 블록이 update-all ·
 # deploy-all-from-drive · update-forges 머리에 있다(리포 위치를 알기 전이라 lib 를 소싱하지 않는다) — 고치면 셋 다 고친다.
@@ -471,7 +471,7 @@ else
     ARP_BASE="http://$ARP_HOST:$ARP_PORT"
     ok "타일 주소는 routes.local.env 의 aireadyportal= 이 정본이다 — systems.local.yaml 에 쓰지 않는다"
     # 그 라우트는 손으로 적는다 — ARP 서버 주소가 infra/.env(ARP_HOST)와 라우트 파일 두 곳에 있다. 한쪽만 고치거나 라우트를 빼먹어도
-    # 오류가 나지 않는다: 없으면 타일이 켜진 채 클릭이 포털 쪽으로 떨어지고, 다르면 타일과 챗의 ARP 도구가 서로 다른 서버를 본다.
+    # 오류가 나지 않는다 — 없으면 타일이 켜진 채 클릭이 포털 쪽으로 떨어지고, 다르면 타일과 챗의 ARP 도구가 서로 다른 서버를 본다.
     # 여기서 적어 주지는 않는다(적을지는 정하지 않았다) — 어긋나거나 없으면 말한다. local 이 base 를 이긴다(gen-nginx-conf 와 같다).
     _arp_route=""
     for _f in "$SELF_REPO/backend/config/routes.local.env" "${ROUTES_ENV:-}"; do
@@ -905,7 +905,7 @@ _sso_generic_pairs() {  # → 줄마다 "<per_user 키> <ENV 접두>"
     printf '%s %s\n' "$k" "$p"
   done
 }
-_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다): 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL
+_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다) — 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL
   local _k p
   while read -r _k p; do
     if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL ' "$p" "$p"; fi
@@ -988,7 +988,7 @@ else
   case " $MISSING " in *" knox-bridge "*)
     KNOX_MISSING=1
     MISSING="$(for _k in $MISSING; do [ "$_k" = knox-bridge ] || printf '%s ' "$_k"; done)"; MISSING="${MISSING% }"
-    fail "knox-bridge 백엔드가 게이트웨이 config 에 없다 — 챗의 메일·메신저 도구가 빠져 있다. 재프로비저닝으로는 되살아나지 않는다(provision 은 이 키를 만들지 않는다): HWAXKnoxBridge 리포의 안내대로 HWAXMcpGateway/gateway_config.json 에 knox-bridge 항목을 다시 붙이고 게이트웨이를 재기동한다" ;;
+    fail "knox-bridge 백엔드가 게이트웨이 config 에 없다 — 챗의 메일·메신저 도구가 빠져 있다. 재프로비저닝으로는 되살아나지 않는다(provision 은 이 키를 만들지 않는다) — HWAXKnoxBridge 리포의 안내대로 HWAXMcpGateway/gateway_config.json 에 knox-bridge 항목을 다시 붙이고 게이트웨이를 재기동한다" ;;
   esac
   # kr_ PAT 는 백엔드가 아니라 heax_registry 안의 예외표라 calc_missing 이 못 본다.
   # 이게 없으면 DynaForge MCP 는 '연결됨·도구 22개'인 채로 호출만 전량 실패한다.
@@ -1129,7 +1129,7 @@ PY
       #   · PER_USER_SSO_OFF — 비밀이 빈 RA·TestScope. provision 의 이어받기는 비밀을 못 읽은 실행용이라, 이것 없이는 infra/.env 에서
       #     비밀을 비워도 위임이 남아 포털 화면('토큰 등록')과 게이트웨이가 어긋났다. 여기서는 infra/.env 를 읽었으니 빈 값이 곧 '끔' 이다.
       #   · PER_USER_SSO_APPS 와 그 접두들의 <접두>_SSO_SECRET·_SSO_URL — 일반 앱의 사람별 위임(위 _sso_generic_names). 이름이 박스마다
-      #     달라 대입어로 못 적는다: 서브셸 안에서 export 표지만 붙인다(값을 argv 에 싣지 않는다 — ps 에 보인다). `export` 뒤에는 언제나
+      #     달라 대입어로 못 적는다 — 서브셸 안에서 export 표지만 붙인다(값을 argv 에 싣지 않는다 — ps 에 보인다). `export` 뒤에는 언제나
       #     PER_USER_SSO_APPS 가 온다 — 인자 없는 export 는 환경 전체(비밀 포함)를 이 로그에 찍는다. 목록에 남기고 비밀만 비운 앱은
       #     RA·TestScope 처럼 PER_USER_SSO_OFF 에 더한다(게이트웨이는 목록에 있는 앱만 끈다).
       _sso_off="$([ -n "${RA_SSO_SECRET:-}" ] || printf 'reportarchive ')$([ -n "${TESTSCOPE_SSO_SECRET:-}" ] || printf 'testscope')"

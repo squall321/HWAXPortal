@@ -84,12 +84,12 @@ def test_예시_파일의_기본은_꺼짐이고_실제_값을_싣지_않는다(
     line = next(ln for ln in EXAMPLE.splitlines() if re.match(rf"^[ \t]*#?[ \t]*{key}=", ln))
     assert line.lstrip().startswith("#"), f"{key} 가 예시 파일에서 켜져 있다"
     value = _declared(EXAMPLE)[key].split("#")[0].strip()
-    assert value == "" or re.fullmatch(r"<[^<>]+>", value), f"{key} 의 예시 값은 비우거나 <자리표시> 여야 한다: {value!r}"
+    assert value == "" or re.fullmatch(r"<[^<>]+>", value), f"{key} 의 예시 값은 비우거나 <자리표시> 여야 한다 — 받은 값 {value!r}"
 
 
 def test_env_sync_가_기존_박스의_env_에_네_설정을_주석으로_알린다(tmp_path):
     """이미 배포된 박스의 infra/.env 는 예시 파일을 다시 복사하지 않는다 — update-all 1c 의 env-sync 가 없는 키를 덧붙여 알린다.
-    실제 예시 파일과 '이 변경 전' 모양의 .env 로 env-sync 를 **그대로 돌린다**. 넷 다 주석으로(꺼진 채) 들어가야 한다:
+    실제 예시 파일과 '이 변경 전' 모양의 .env 로 env-sync 를 **그대로 돌린다**. 넷 다 주석으로(꺼진 채) 들어가야 한다 —
     활성 줄로 들어가면 빈 값이 export 되어 backend/.env 에 적어 둔 값을 덮는다."""
     import subprocess
 
