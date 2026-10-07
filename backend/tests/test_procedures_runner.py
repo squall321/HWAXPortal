@@ -387,6 +387,36 @@ def test_warmup_discards_result_and_survives_timeout(kit):
     asyncio.run(go(*kit))
 
 
+def test_워밍업_호출은_단계_상한이_아니라_워밍업_한도로_나간다(kit):
+    """워밍업 한도는 게이트웨이가 스스로 포기할 때까지 기다리는 값이다(게이트웨이 상한 600 + 바깥 기한 60 + 여유).
+    단계 상한(110초)으로 나가면 콜드스타트를 흡수하기 전에 우리가 먼저 끊는다."""
+    from app.procedures.runner import EXPECT_TIMEOUT, WARMUP_TIMEOUT
+
+    async def go(store, build):
+        g = Gate(tools={"b_search_catalog_property": {}, "b_use_it": {}},
+                 replies={"b_search_catalog_property": ok({}), "b_use_it": ok({"found": 1})})
+        r = build(g)
+        seen: dict[str, float] = {}
+        inner = r._client._transport.handler
+
+        async def spy(req: httpx.Request) -> httpx.Response:
+            body = json.loads(req.content) if req.content else {}
+            if body.get("method") == "tools/call":
+                seen[body["params"]["arguments"]["name"]] = req.extensions["timeout"]["read"]
+            return await inner(req)
+
+        r._client._transport.handler = spy
+        spec = _spec([{"backend": "b", "tool": "search_catalog_property", "warmup": True},
+                      {"backend": "b", "tool": "use_it", "expect": "slow"}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "done"
+        assert seen == {"b_search_catalog_property": WARMUP_TIMEOUT, "b_use_it": EXPECT_TIMEOUT["slow"]}
+        assert WARMUP_TIMEOUT == 690.0 and EXPECT_TIMEOUT["slow"] == 110.0
+    asyncio.run(go(*kit))
+
+
 def test_slow_steps_serialise_per_backend(kit):
     """느린 단계 중 같은 백엔드를 또 치면 재연결이 다른 실행까지 끊는다."""
     async def go(store, build):
