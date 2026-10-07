@@ -3,6 +3,9 @@
 //               continueFrom:{summary, roundsSoFar}, humanNote, appendToReportId }
 //   - question        : 심의 주제(문자열)
 //   - context         : 정량 근거/분석 결과(도구로 산출한 데이터의 텍스트 요약)
+//   - evidence        : 원천 근거 항목 [{source, tool, args, result}] — 좌석에 '검증 대상' 으로 싣는다(최대 12건·합계 11,000자).
+//                       본문은 result 에 넣는다. 없으면 text·content·excerpt·summary·body·output·data 를 차례로 찾고,
+//                       문자열이 아니면 JSON 으로 싣는다. 어디에도 본문이 없는 항목은 버린다.
 //   - options         : 후보/선택지 목록(JSON 문자열 또는 배열)
 //   - personas        : [{key, role, origin?}] 참여 전문 페르소나(호출자가 recommend_agents로 발굴해 전달).
 //                       origin — 'primary'(주 도메인, 기본) | 'counter'(반대 도메인) | 'carry'(이어하기 유임) |
@@ -142,8 +145,27 @@ const HUMAN_BLOCK = HUMAN_NOTE ? `[인간 검토자 의견 — 이번 라운드�
 // 챗 워크스페이스 핸드오프 원천 근거(deliberation.py 와 정합) — 요약이 아니라 날것 도구결과+출처를
 // 좌석에 준다. '검증 대상, 결론 아님'으로 프레이밍해 좌석이 재검토하게 한다(브리프 결론이 심의를
 // 오염 못 하게). 예산 ≈11KB 초과분은 중간절단 없이 항목 통째 드롭.
+// 근거 본문을 찾는 키 — 순서가 우선순위다(deliberation.py _EVID_BODY_KEYS 와 같은 순서). 정본은 `result` 다.
+// 종전엔 `e.result` 만 읽어서, 본문을 다른 키에 넣은 호출자의 근거가 **통째로 조용히** 사라졌다
+// (실사용: 25건을 넣은 심의가 근거 0건으로 끝까지 돌았다 — 2026-10-07 S26U 피드백 1-2).
+const EV_BODY_KEYS = ['result', 'text', 'content', 'excerpt', 'summary', 'body', 'output', 'data']
+// 문자열이 아닌 값(표·목록)은 JSON 으로 싣는다 — String() 은 객체를 '[object Object]' 로 만들어 좌석이 수치를
+// 못 읽는다. 참·거짓은 본문이 아니다 — `{result: true, data: …}` 의 result 는 성패 표시라, 그걸 본문으로
+// 집으면 진짜 본문(data)을 가린다(deliberation.py _ev_body 와 같은 규칙).
+const evBody = it => {
+  for (const k of EV_BODY_KEYS) {
+    const v = it[k]
+    const body = typeof v === 'string' ? v.trim()
+      : (v == null || typeof v === 'boolean' || (typeof v === 'object' && !Object.keys(v).length)) ? ''
+      : JSON.stringify(v)
+    if (body) return body
+  }
+  return ''
+}
+// 본문을 한 번 정해 `result` 에 둔다 — 아래 좌석 블록과 인용 후검증(_citCorpus)이 같은 본문을 본다.
 const EV = (Array.isArray(A.evidence) ? A.evidence : [])
-  .filter(e => e && e.result != null && String(e.result).trim())
+  .map(e => (e && typeof e === 'object' && !Array.isArray(e)) ? { ...e, result: evBody(e) } : null)
+  .filter(e => e && e.result)
   .slice(0, 12)
 let EV_BLOCK = ''
 if (EV.length) {

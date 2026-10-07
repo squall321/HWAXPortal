@@ -129,3 +129,68 @@ def test_에이전트_호출은_프롬프트와_옵션_둘만_넘긴다(kind):
     bad = [(c["label"] or c["prompt"][:30], c["argc"], c["optsType"]) for c in out["calls"]
            if c["argc"] > 2 or c["optsType"] not in ("object", "none")]
     assert not bad, f"agent(prompt, opts) 서명을 벗어난 호출: {bad}"
+
+
+# ── 사전 근거 — 본문 키 폴백(엔진 _EVID_BODY_KEYS 와 같은 순서) ─────────────────────────
+# 엔진에서 고친 것과 같은 결함이 여기에도 있었다(2026-10-07 S26U 실사용 피드백, docs/delib-engine-feedback 1-2):
+# 필터가 `e.result != null` 만 봐서, 본문을 다른 키에 넣은 근거가 통째로 사라졌다.
+_BODY_KEYS = ["result", "text", "content", "excerpt", "summary", "body", "output", "data"]
+
+
+def _seat_prompt(out: dict) -> str:
+    """첫 좌석이 1라운드에 받은 프롬프트 — 근거 블록이 여기 실린다."""
+    return next(c["prompt"] for c in out["calls"] if c["label"].startswith("r1:"))
+
+
+def test_본문이_result_아닌_키에_있어도_좌석에_간다():
+    prompt = _seat_prompt(_delib([{"source": f"출처-{k}", k: f"본문-{k}"} for k in _BODY_KEYS]))
+    for i, k in enumerate(_BODY_KEYS, start=1):
+        assert f"· [e:{i}] [출처-{k}] 본문-{k}" in prompt, f"'{k}' 에 든 본문이 좌석에 안 갔다"
+
+
+@pytest.mark.parametrize("i", range(len(_BODY_KEYS) - 1))
+def test_본문_키는_앞의_것이_이긴다(i):
+    """순서가 우선순위다 — 엔진과 다르면 같은 근거가 경로마다 다른 본문으로 실린다."""
+    first, second = _BODY_KEYS[i], _BODY_KEYS[i + 1]
+    prompt = _seat_prompt(_delib([{"source": "s", second: "뒤-본문", first: "앞-본문"}]))
+    assert "앞-본문" in prompt and "뒤-본문" not in prompt
+
+
+def test_빈_앞_키는_건너뛰고_참거짓은_본문이_아니다():
+    prompt = _seat_prompt(_delib([
+        {"source": "빈result", "result": "   ", "summary": "요약-본문"},
+        # `{"result": true, "data": …}` 의 result 는 성패 표시다 — 그걸 본문으로 집으면 진짜 본문을 가린다.
+        {"source": "성패", "result": True, "data": "진짜-본문"},
+    ]))
+    assert "· [e:1] [빈result] 요약-본문" in prompt
+    assert "· [e:2] [성패] 진짜-본문" in prompt
+
+
+def test_문자열이_아닌_본문은_JSON_으로_싣는다():
+    """종전엔 String() 이라 객체가 '[object Object]' 로 실렸다 — 좌석이 수치를 읽지 못한다."""
+    prompt = _seat_prompt(_delib([
+        {"source": "표", "data": {"행": [1, 2.5], "단위": "MPa"}},
+        {"source": "수", "result": 12.5},
+        {"source": "객체result", "result": {"값": 3}},
+    ]))
+    assert '· [e:1] [표] {"행":[1,2.5],"단위":"MPa"}' in prompt
+    assert "· [e:2] [수] 12.5" in prompt
+    assert '· [e:3] [객체result] {"값":3}' in prompt and "[object Object]" not in prompt
+
+
+def test_본문_없는_항목은_번호를_먹지_않는다():
+    empties = [{"source": "빈것"}, "문자열", None, {"source": "공백", "result": "  "},
+               {"result": False}, {"result": []}, {"result": {}}, ["배열"]]
+    prompt = _seat_prompt(_delib(empties + [{"source": "멀쩡", "result": "본문"}]))
+    assert "· [e:1] [멀쩡] 본문" in prompt and "[e:2]" not in prompt
+
+
+def _unmatched(decision: str, evidence: list) -> list:
+    out = _delib(evidence, stopAfterRound=0, rounds=2, decision=f"## 의사결정문\n{decision}\n〔결정문 끝〕")
+    return out["result"]["citationAudit"]["unmatched"]
+
+
+def test_폴백_키의_본문도_수치_대조_출처다():
+    """대조 말뭉치도 `e.result` 만 읽었다 — text 에 든 수치를 의장이 옮기면 '어느 원문에도 없는 수치' 로 올라온다."""
+    assert _unmatched("하중은 4567.8 N 이다.", [{"source": "s", "text": "하중 4567.8 N"}]) == []
+    assert _unmatched("하중은 4567.8 N 이다.", [{"source": "s", "text": "하중 9999.9 N"}]) == ["4567.8"]
