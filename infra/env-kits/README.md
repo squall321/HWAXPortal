@@ -35,6 +35,11 @@ bash infra/env-kits/apply-envs.sh        # 적용 — 없는 키만 추가, 기�
 - **agent-server 는 기본 목록에 없다**: `bash apply-envs.sh agent-server` 로 인자를 명시해야
   적용되고, 적용 후 agent-server 재시작이 필요하다. `DELIB_REASONING_EFFORT` 는 상암 vLLM
   reasoning parser 선확인 전까지 킷에서 주석 상태다(agent-server.env 내 절차 주석 참조).
+- **agent-server 의 주석 손잡이를 옮길 때는 `KEY=값` 까지만**: 킷의 주석 줄(`# DELIB_…=값   # 설명`)을 대상 `.env` 로 옮길 때
+  줄 끝 설명을 같이 복사하지 않는다 — 에이전트 서버의 `start.sh` 는 `=` 뒤를 통째로 값으로 읽어, 설명이 붙은 값은 숫자로 못 읽히고
+  기본값으로 돈다. 시간 한도 구획(`DELIB_TIMEOUT_MAX_S`·`DELIB_HEARTBEAT_S`·`MCP_CALL_TIMEOUT_S`·`DELIB_SER_CLIP` 등)은 값 줄에 설명을 붙이지 않았다.
+- **옛 킷이 심은 `DELIB_TIMEOUT_S=600`**: 킷 값은 1800 으로 올랐지만 이미 박힌 값은 건드리지 않는다. 그 줄을 지우면 코드 기본값이
+  걸린다(update-all 3.5 가 짧게 박힌 박스를 알린다).
 - 레포 위치는 포털의 형제 디렉토리에서 자동 탐색(`<portal 상위>/`, `~/Projects/`, `~/claude/`).
 - MCP 게이트웨이/에이전트의 시크릿 config 는 별도:
   `HWAXMcpGateway/provision-config.sh` (GW_TOKEN·서비스 토큰 자동 발급).

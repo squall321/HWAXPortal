@@ -703,6 +703,15 @@ if [ -n "${AGENT_DIR:-}" ]; then
   else
     ok "TOOL_MAX 미설정 → 기본 80(질의 관련도 상위 선택)"
   fi
+  # 옛 킷이 심은 심의 호출 타임아웃 — 킷은 없는 키만 더하므로, DELIB_TIMEOUT_S=600 이 박힌 박스는 킷 값을 올려도(1800) 그대로다.
+  # 좌석 20석 넘는 패널은 공유 LLM 의 큐 대기가 호출 시계에 들어가 그 600초에 좌석이 빠진다 — 한도를 넉넉히 올린 것이 그 박스에서만
+  # 조용히 안 먹는다. 고쳐 쓰지는 않는다(박스가 일부러 정한 값일 수 있다) — 킷의 값(코드 기본값과 같다)보다 짧으면 알린다.
+  # 줄 끝 설명이 붙은 값은 숫자가 아니라 여기서 보지 않는다(서버가 경고와 함께 기본값으로 돈다).
+  _dto="$(sed -n 's/^DELIB_TIMEOUT_S=//p' "$AGENT_ENV" 2>/dev/null | tail -1 | tr -d '"'"'"' \r')"; _dto="${_dto%%.*}"
+  _dto_kit="$(sed -n 's/^DELIB_TIMEOUT_S=//p' "$SELF_REPO/infra/env-kits/agent-server.env" 2>/dev/null | tail -1)"
+  if [[ "$_dto" =~ ^[0-9]+$ ]] && [[ "$_dto_kit" =~ ^[0-9]+$ ]] && [ "$((10#$_dto))" -lt "$((10#$_dto_kit))" ]; then
+    bad "agent-server .env 의 DELIB_TIMEOUT_S=$_dto 는 권장값(${_dto_kit}초)보다 짧다 — 좌석이 많은 심의에서 LLM 호출이 이 값에 걸려 좌석이 빠진다. 옛 킷이 심은 값이면 $AGENT_ENV 에서 그 줄을 지우고(코드 기본값이 걸린다) agent-server 를 재기동한다"
+  fi
 else
   hwax_skip "agent-server .env 보정" "HWAXAgentServer 리포가 없다(챗·심의 스택)" "../HWAXAgentServer 를 클론하고 재실행"
 fi
