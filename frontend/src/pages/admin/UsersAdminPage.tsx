@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../../auth/useAuth';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
-import { AccessRequestsPanel, AffiliationSelect, BulkAffiliation, GrantEditor } from './AccessAdmin';
+import { AccessRequestsPanel, AdminToggle, AffiliationSelect, BulkAffiliation, GrantEditor } from './AccessAdmin';
 import { SetupRequests } from '../../components/admin/SetupRequests';
 import '../../styles/admin.css';
 
@@ -82,7 +82,7 @@ export default function UsersAdminPage() {
         title="사용자 관리"
         desc={
           <>
-            가입은 승인제입니다. 관리자 역할은 다음 로그인부터, <b>소속·권한은 곧바로</b> 반영됩니다.
+            가입은 승인제입니다. <b>관리자 지정·해제와 소속·권한은 곧바로</b> 반영됩니다(다시 로그인할 필요가 없습니다).
             {pending.length > 0 && <strong> 승인 대기 {pending.length}건.</strong>}
           </>
         }
@@ -144,7 +144,12 @@ export default function UsersAdminPage() {
                   {STATUS_LABEL[r.status]}
                   {r.locked_until * 1000 > Date.now() && ' · 잠금'}
                 </td>
-                <td>{r.groups.join(', ') || '—'}</td>
+                <td>
+                  <AdminToggle row={r} self={r.email === user?.email} onSaved={reload} onError={setError} />
+                  {r.groups.some((g) => g !== 'portal-admin') && (
+                    <span className="adm-meta"> {r.groups.filter((g) => g !== 'portal-admin').join(', ')}</span>
+                  )}
+                </td>
                 <td>{r.auth_source === 'sso' ? 'SSO' : '이메일'}</td>
                 <td className="adm-nowrap">{when(r.created_at)}</td>
                 <td>{when(r.last_login_at)}</td>

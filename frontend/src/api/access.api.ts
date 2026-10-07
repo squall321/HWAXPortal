@@ -119,15 +119,28 @@ export async function decideAccessRequest(id: number, approve: boolean): Promise
   if (!res.ok) throw await detail(res, '요청을 처리하지 못했습니다.');
 }
 
+/** admin — 관리자 지정(true)·해제(false). 해제하면 서버가 그 사람의 개인 토큰도 폐기한다(pats_revoked). */
 export async function setUserAccess(
   email: string,
-  patch: { affiliation?: string; grants?: string[] },
-): Promise<{ email: string; affiliation: string; grants: string[] }> {
+  patch: { affiliation?: string; grants?: string[]; admin?: boolean },
+): Promise<{
+  email: string;
+  affiliation: string;
+  grants: string[];
+  admin: boolean;
+  pats_revoked: number;
+}> {
   const res = await apiFetch(`/auth/access/users/${encodeURIComponent(email)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw await detail(res, '권한을 저장하지 못했습니다.');
-  return (await res.json()) as { email: string; affiliation: string; grants: string[] };
+  return (await res.json()) as {
+    email: string;
+    affiliation: string;
+    grants: string[];
+    admin: boolean;
+    pats_revoked: number;
+  };
 }

@@ -163,9 +163,13 @@ class StatusIn(BaseModel):
 @router.get("/users")
 def list_users(
     store: UserStore = Depends(_user_store),
+    settings: Settings = Depends(get_settings),
     _admin: Principal = Depends(require_role("portal-admin")),
 ) -> list[dict]:
-    return store.list_users()
+    # 고정 관리자(PORTAL_ADMIN_EMAILS)는 원장 groups 에 안 보인다 — 따로 알려 주지 않으면 화면이 그 사람을 일반 사용자로 그리고,
+    # 눌러도 해제되지 않는 스위치를 내놓는다. 원장 행의 이메일과 글자 그대로 견준다(권한 계산과 같은 규칙).
+    pinned = settings.portal_admin_email_set
+    return [{**u, "admin_pinned": u["email"] in pinned} for u in store.list_users()]
 
 
 @router.post("/users/{email}/approve")

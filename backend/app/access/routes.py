@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -14,9 +15,11 @@ from app.access.policy import ADMIN_GROUP, compute
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.auth.routes.connections import _invalidate_gateway_cache
+from app.auth.user_store import norm_email
 from app.config import Settings, get_settings
 from app.deps import get_current_principal, require_csrf, require_role
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["access"])
 
 
@@ -75,11 +78,13 @@ def _table(policy, ents, pending: dict[str, dict], hidden: set[str], taglines: d
 
 
 @router.get("/auth/access")
-def my_access(request: Request, principal: Principal = Depends(get_current_principal)) -> dict:
+def my_access(request: Request, principal: Principal = Depends(get_current_principal),
+              settings: Settings = Depends(get_settings)) -> dict:
     """내 권한 — 모든 기능·플랫폼에 대해 쓸 수 있나, 왜, 요청했으면 그 상태."""
     policy = _policy(request)
     ents = getattr(request.state, "entitlements", None) or compute(
-        policy, groups=principal.groups, row=_store(request).get(principal.email))
+        policy, groups=principal.groups, row=_store(request).get(principal.email),
+        admin_emails=settings.portal_admin_email_set)
     pending = {}
     for r in _store(request).list_requests(email=principal.email, limit=500):
         if r["key"] not in pending:           # 최신순 — 키마다 가장 최근 요청만
@@ -157,7 +162,8 @@ async def my_hub_apps(request: Request, principal: Principal = Depends(get_curre
     """허브에 보일 앱 — 앱마다 도구 수·연결·권한·끔 여부."""
     policy = _policy(request)
     row = _store(request).get(principal.email) or {}
-    ents = getattr(request.state, "entitlements", None) or compute(policy, groups=principal.groups, row=row or None)
+    ents = getattr(request.state, "entitlements", None) or compute(
+        policy, groups=principal.groups, row=row or None, admin_emails=settings.portal_admin_email_set)
     apps = await _gateway_apps(settings)
     if apps is None:
         raise AuthError("게이트웨이에 닿지 못해 앱 목록을 만들 수 없습니다 — 잠시 뒤 다시 여세요", status_code=502)
@@ -192,7 +198,8 @@ async def set_hub_app(key: str, body: HubAppIn, request: Request,
     await _invalidate_gateway_cache(settings, principal.email)
     policy = _policy(request)
     ents = getattr(request.state, "entitlements", None) or compute(
-        policy, groups=principal.groups, row=store.get(principal.email))
+        policy, groups=principal.groups, row=store.get(principal.email),
+        admin_emails=settings.portal_admin_email_set)
     return _hub_apps_view(policy, ents, apps, set(new))
 
 
@@ -234,13 +241,52 @@ def decide_access_request(req_id: int, body: DecideIn, request: Request,
 class UserAccessIn(BaseModel):
     affiliation: str | None = Field(default=None, max_length=40)
     grants: list[str] | None = Field(default=None, max_length=100)
+    # 관리자 지정(true)·해제(false) — 안 주면 안 건드린다. 원장 groups 의 portal-admin 을 붙이거나 뗀다.
+    admin: bool | None = None
+
+
+def _set_admin(request: Request, settings: Settings, by: Principal, row: dict, on: bool) -> int:
+    """관리자 지정·해제(10차 요청 §3) — 종전엔 활성 사용자의 관리자 여부를 바꾸는 라우트가 없었다. 폐기한 PAT 수를 돌려준다.
+
+    거절하는 것 넷. 전부 **쓰기 전에** 본다(마지막 관리자만 저장소가 잠금 안에서 쓰기와 함께 본다).
+      · 자기 자신 해제 — 실수 한 번으로 화면에서 스스로를 내보낸다.
+      · 고정 관리자 해제 — PORTAL_ADMIN_EMAILS 는 박스 설정이라 원장을 고쳐도 그대로 관리자다. 됐다고 답하면 '해제했는데
+        여전히 관리자' 가 된다 — 어디서 바꾸는지 말하고 거절한다.
+      · 마지막 관리자 해제 — 아무도 이 화면을 못 열게 되면 되돌리는 길이 박스의 셸뿐이다.
+      · 활성이 아닌 계정 지정 — 승인 대기는 '관리자로 승인' 으로, 정지는 다시 활성화한 뒤에.
+    """
+    target = row["email"]
+    pinned = settings.portal_admin_email_set
+    if on and row.get("status") != "active":
+        raise AuthError("활성 계정만 관리자로 지정할 수 있습니다 — 승인 대기는 '관리자로 승인' 을 쓰고, "
+                        "정지된 계정은 다시 활성화한 뒤에 지정하세요", status_code=409)
+    if not on and target == norm_email(by.email or ""):
+        raise AuthError("자기 자신의 관리자 권한은 해제할 수 없습니다 — 다른 관리자에게 요청하세요", status_code=409)
+    if not on and target in pinned:
+        raise AuthError("고정 관리자입니다 — 박스 설정 PORTAL_ADMIN_EMAILS 에 있는 주소라 화면에서 해제할 수 없습니다. "
+                        "그 값에서 빼고 포털을 다시 띄워야 합니다", status_code=409)
+    got = _store(request).set_admin(target, on, pinned=pinned)
+    if got == "last":
+        raise AuthError("마지막 관리자는 해제할 수 없습니다 — 먼저 다른 활성 사용자를 관리자로 지정하세요", status_code=409)
+    if got != "set":
+        return 0
+    # ⚠ 해제는 그 사람의 PAT 까지 죽인다 — 정지 때와 같은 자리다(auth/routes/local.py). 관리자이던 때 받은 토큰에는 표지가
+    # 박혀 있고(이 변경 전 발급분), 포털은 이제 그 표지를 안 믿지만 표지를 그대로 믿는 하위가 남아 있을 수 있다.
+    revoked = 0
+    if not on:
+        ts = getattr(request.app.state, "token_store", None)
+        revoked = ts.revoke_all_for(target) if ts is not None else 0
+    # 누가 누구를 관리자로 만들거나 내렸는지는 남긴다 — WARNING 이어야 남는다(포털은 INFO 를 버린다).
+    logger.warning("관리자 %s: %s by %s (PAT %d개 폐기)", "지정" if on else "해제", target, by.email, revoked)
+    return revoked
 
 
 @router.patch("/auth/access/users/{email}")
 def set_user_access(email: str, body: UserAccessIn, request: Request,
-                    _admin: Principal = Depends(require_role(ADMIN_GROUP)),
+                    admin: Principal = Depends(require_role(ADMIN_GROUP)),
+                    settings: Settings = Depends(get_settings),
                     _csrf: None = Depends(require_csrf)) -> dict:
-    """소속·개별 허가 편집. 표에 없는 키·소속은 거절한다 — 오타가 권한이 되지 않게."""
+    """소속·개별 허가·관리자 지정 편집. 표에 없는 키·소속은 거절한다 — 오타가 권한이 되지 않게."""
     policy = _policy(request)
     if body.affiliation and body.affiliation not in policy.affiliations:
         raise AuthError(f"모르는 소속입니다: {body.affiliation}", status_code=422)
@@ -249,12 +295,16 @@ def set_user_access(email: str, body: UserAccessIn, request: Request,
         if bad:
             raise AuthError(f"모르는 권한입니다: {', '.join(bad)}", status_code=422)
     store = _store(request)
-    if store.get(email) is None:
+    row = store.get(email)
+    if row is None:
         raise AuthError("사용자가 없습니다", status_code=404)
+    # 관리자 쪽을 먼저 한다 — 거절되면 소속·허가도 쓰지 않는다(반만 저장된 요청을 만들지 않는다).
+    revoked = _set_admin(request, settings, admin, row, body.admin) if body.admin is not None else 0
     store.set_access(email, affiliation=body.affiliation, grants=body.grants)
     u = store.get(email) or {}
     return {"email": u.get("email"), "affiliation": u.get("affiliation") or "",
-            "grants": u.get("grants") or []}
+            "grants": u.get("grants") or [], "admin": ADMIN_GROUP in (u.get("groups") or []),
+            "pats_revoked": revoked}
 
 
 # ── 게이트웨이 내부 조회 — 공유 시크릿으로만 연다(connections 와 같은 문) ─────────────
@@ -295,7 +345,7 @@ def internal_entitlements(request: Request, email: str = Query(min_length=3, max
     policy = _policy(request)
     base = [g for g in groups.split(",") if g]
     row = _store(request).get(email)
-    ents = compute(policy, groups=base, row=row)
+    ents = compute(policy, groups=base, row=row, admin_emails=settings.portal_admin_email_set)
     # ⚠ **표에 없는 소속 id 는 빈 값으로 내린다.** 조직 개편으로 access.yaml 에서 소속을 지워도
     # 원장 `users.affiliation` 에는 옛 값이 남는다. 포털 권한은 그 순간 끊기는데(`compute` 의
     # `aff in policy.affiliations`), 이 응답만 옛 id 를 계속 내면 앱은 **없어진 소속으로** 예전

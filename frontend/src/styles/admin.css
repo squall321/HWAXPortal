@@ -142,3 +142,17 @@ span.adm-err {
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* 역할 칸 — 관리자 지정 스위치와 '고정' 표시(박스 설정이라 화면에서 못 바꾸는 관리자). 쪼개지지 않게 한 줄로 */
+.adm-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.adm-pin {
+  color: var(--fg-muted);
+  white-space: nowrap;
+  cursor: help;
+}

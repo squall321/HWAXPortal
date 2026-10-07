@@ -361,13 +361,18 @@ class Entitlements:
     is_admin: bool
 
 
-def compute(policy: Policy, *, groups: list[str], row: dict | None) -> Entitlements:
+def compute(policy: Policy, *, groups: list[str], row: dict | None,
+            admin_emails: frozenset[str] = frozenset()) -> Entitlements:
     """유효 권한 = 기본 ∪ 소속 ∪ 개별 허가 (+ 함의). portal-admin 은 전부.
 
-    **입력은 원장 행(row)뿐이다.** groups(세션·PAT 이 들고 온 값)는 권한에도 관리자 판정에도 쓰지 않는다 — 호출부 서명을
-    지키려 받기만 한다. 예전엔 "로그인 값이나 원장 값 어느 쪽이든" 관리자로 인정해서, 원장에서 관리자를 해제해도 그 사람이
-    들고 있던 세션(8시간)·PAT(최대 36,500일)이 계속 관리자였다(10차 요청 §4). IdP 그룹으로 관리자를 받던 박스(mock·oidc-mock)는
-    원장에 적어야 한다(docs/change-request-8-10 D-3)."""
+    **입력은 원장 행(row)과 박스 설정(admin_emails)뿐이다.** groups(세션·PAT 이 들고 온 값)는 권한에도 관리자 판정에도 쓰지
+    않는다 — 호출부 서명을 지키려 받기만 한다. 예전엔 "로그인 값이나 원장 값 어느 쪽이든" 관리자로 인정해서, 원장에서 관리자를
+    해제해도 그 사람이 들고 있던 세션(8시간)·PAT(최대 36,500일)이 계속 관리자였다(10차 요청 §4). IdP 그룹으로 관리자를 받던
+    박스(mock·oidc-mock)는 원장이나 고정 목록에 적어야 한다(docs/change-request-8-10 D-3).
+
+    admin_emails 는 언제나 관리자인 주소다(PORTAL_ADMIN_EMAILS — 소문자, 호출부가 settings.portal_admin_email_set 을 넘긴다).
+    **원장 행의 이메일**과 글자 그대로 견준다. 행이 없는 신원은 목록에 있어도 관리자가 아니다 — 요청이 들고 온 이메일로 견주면
+    원장에 없는 신원이 관리자가 되는 길이 생긴다. 안 넘긴 호출부는 고정 관리자를 일반 사용자로 본다(잊으면 닫히는 쪽)."""
     # ⚠ **정지된 계정은 권한이 0이다.** 여기가 원장 행을 권한으로 바꾸는 **유일한** 자리다 —
     # 포털 요청(`deps.entitled`)도, 게이트웨이가 읽는 `/internal/access/entitlements` 도
     # 이 함수를 지난다. 정지 검사를 포털 쪽에만 두면 **게이트웨이로는 그대로 통과한다**
@@ -376,7 +381,10 @@ def compute(policy: Policy, *, groups: list[str], row: dict | None) -> Entitleme
     if str((row or {}).get("status") or "") == "disabled":
         return Entitlements(keys=set(), reasons={}, affiliation="", is_admin=False)
     stored = list((row or {}).get("groups") or [])
-    is_admin = ADMIN_GROUP in stored          # 관리자는 원장만 — 세션·PAT 에 박힌 값은 믿지 않는다
+    # 관리자는 원장의 표지, 또는 원장 행의 이메일이 고정 목록에 있을 때 — 세션·PAT 에 박힌 값은 믿지 않는다.
+    # 정지는 위에서 이미 걸렀다(정지된 고정 관리자는 권한이 0이다).
+    email = str((row or {}).get("email") or "").strip().lower()
+    is_admin = ADMIN_GROUP in stored or bool(email and email in admin_emails)
     aff = str((row or {}).get("affiliation") or "")
     reasons: dict[str, str] = {}
 

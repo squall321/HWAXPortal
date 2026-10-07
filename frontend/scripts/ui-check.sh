@@ -24,14 +24,16 @@ trap cleanup EXIT
 
 rc=0
 for tier in $TIERS; do
-  groups=""
-  [ "$tier" = admin ] && groups="portal-admin"
+  # 관리자 층은 고정 목록(PORTAL_ADMIN_EMAILS)으로 만든다. 포털은 IdP 가 준 그룹으로는 관리자를 인정하지 않는다(원장과 이 목록만
+  # 본다) — 종전처럼 MOCK_USER_GROUPS=portal-admin 만 주면 관리자 층이 조용히 기본 권한으로 돌아 관리 화면을 한 번도 안 본다.
+  admins=""
+  [ "$tier" = admin ] && admins="hong.gildong@corp.com"
   D="$TMP/$tier"
   mkdir -p "$D/stage"
   (cd "$ROOT/backend" && exec env AUTH_PROVIDER=mock APP_ENV=dev SERVE_FRONTEND=1 \
       PUBLIC_BASE_URL="http://127.0.0.1:$PORT" FRONTEND_URL="http://127.0.0.1:$PORT" \
       SESSION_SECRET="ui-check-session-secret-not-a-real-one-000000" COOKIE_SECURE=false \
-      MOCK_USER_EMAIL=hong.gildong@corp.com MOCK_USER_NAME=홍길동 MOCK_USER_GROUPS="$groups" \
+      MOCK_USER_EMAIL=hong.gildong@corp.com MOCK_USER_NAME=홍길동 MOCK_USER_GROUPS="" PORTAL_ADMIN_EMAILS="$admins" \
       USER_STORE_PATH="$D/users.sqlite" TOKEN_STORE_PATH="$D/tok.sqlite" CONV_STORE_PATH="$D/conv.sqlite" \
       PROCEDURES_STORE_PATH="$D/proc.sqlite" AGENT_AUDIT_LOG_PATH="$D/audit.sqlite" JWT_KEYS_DIR="$D/jwt" \
       JWT_AUTOGEN_KEYS=true PROCEDURES_ARTIFACT_ROOT="$D/art" DELIB_ARCHIVE_ROOT="$D/delib" UPLOAD_STAGING_DIR="$D/stage" \

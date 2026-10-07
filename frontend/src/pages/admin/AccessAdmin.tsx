@@ -1,4 +1,4 @@
-// 사용자 관리의 권한 조각 — 허가 요청 대기열, 사용자별 소속·개별 허가 편집, 소속 일괄 지정
+// 사용자 관리의 권한 조각 — 허가 요청 대기열, 사용자별 소속·개별 허가 편집, 소속 일괄 지정, 관리자 지정·해제
 import { useEffect, useMemo, useState } from 'react';
 import {
   decideAccessRequest,
@@ -151,6 +151,62 @@ export function AffiliationSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+/** 표의 역할 칸 — 관리자 지정·해제. 관리자 여부도 요청마다 원장으로 정하므로 바꾸면 그 사람에게 곧바로 먹는다.
+ *  고정 관리자(박스 설정 PORTAL_ADMIN_EMAILS)는 여기서 못 바꾼다 — 눌러도 안 되는 스위치 대신 그 상태를 보인다. */
+export function AdminToggle({
+  row,
+  self,
+  onSaved,
+  onError,
+}: {
+  row: LocalUserRow;
+  /** 지금 화면을 보는 관리자 본인의 줄 — 스스로는 해제하지 못한다(서버도 거절한다). */
+  self: boolean;
+  onSaved: () => void;
+  onError: (m: string) => void;
+}) {
+  const on = row.groups.includes('portal-admin');
+  if (row.admin_pinned)
+    return (
+      <span
+        className="adm-pin"
+        title="박스 설정(PORTAL_ADMIN_EMAILS)에 있는 주소라 언제나 관리자입니다. 여기서는 해제할 수 없고, 그 설정에서 빼야 합니다."
+      >
+        관리자 · 고정{row.status === 'disabled' && ' (정지 중에는 권한 없음)'}
+      </span>
+    );
+  // 지정은 활성 계정에만 한다(승인 대기는 '관리자로 승인'). 표지가 남아 있는 줄은 상태와 무관하게 뗄 수 있어야 한다.
+  if (row.status !== 'active' && !on) return <span className="adm-muted">—</span>;
+  const save = () => {
+    if (
+      on &&
+      !window.confirm(
+        `${row.email} 의 관리자 권한을 해제합니다. 그 사람의 개인 토큰(PAT)도 모두 폐기됩니다. 계속할까요?`,
+      )
+    )
+      return;
+    void setUserAccess(row.email, { admin: !on })
+      .then(onSaved)
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : '저장 실패'));
+  };
+  return (
+    <label
+      className="adm-switch"
+      title={self && on ? '자기 자신의 관리자 권한은 해제할 수 없습니다 — 다른 관리자에게 요청하세요.' : undefined}
+    >
+      <input
+        type="checkbox"
+        checked={on}
+        disabled={self && on}
+        // 이메일을 붙인다 — 없으면 화면 낭독기가 줄마다 '관리자' 만 읽는다
+        aria-label={`${row.email} 관리자`}
+        onChange={save}
+      />
+      관리자
+    </label>
   );
 }
 

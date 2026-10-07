@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     mock_user_name: str = "Hong Gil Dong"
     # ⚠ 여기 `portal-admin` 을 적어도 **관리자가 되지 않는다** — 관리자는 원장(users.groups)만 본다(10차 요청 §4). IdP 가 보낸
     #   그룹으로 관리자를 인정하던 때, 해제해도 그 사람의 세션·PAT 가 계속 관리자였다. 기본값은 그런 그룹을 보내는 IdP 를 흉내 낸다.
+    #   mock 박스에서 관리자가 필요하면 그 주소를 PORTAL_ADMIN_EMAILS 에 적는다(아래).
     mock_user_groups: str = "portal-admin,mes-user"  # comma-separated
 
     # ── Local email accounts (SSO 지연 브리지 — 승인제 가입, subject=이메일 영구 키) ──
@@ -54,6 +55,13 @@ class Settings(BaseSettings):
     user_store_path: str = "data/users.sqlite"
     # 테이블이 비어 있을 때 이 명단의 이메일이 가입하면 즉시 active+portal-admin(첫 관리자).
     local_bootstrap_admins: str = "hwax.demo@samsung.com"
+    # 언제나 관리자인 이메일(콤마) — 원장 groups 와 **매 요청** OR 한다(10차 요청 §3). 관리자가 원장 값 하나로만 유지돼, 그 값이
+    # 지워지면 화면으로 되돌릴 길이 없었다(위 부트스트랩은 로컬 계정이 0개일 때 한 번뿐이고 SSO 경로에서는 읽히지 않는다).
+    # 정지(status=disabled)가 이것보다 먼저다. 원장에 행이 없는 주소는 목록에 있어도 관리자가 아니다 — 로그인해 행이 생긴 뒤부터다.
+    # ⚠ 주소는 **글자 그대로** 견준다(대소문자만 무시). 별칭 도메인을 같은 사람으로 보지 않는다 — 같은 로컬파트를 쓰는 다른 법인의
+    #   **다른 사람**이 관리자가 된다. 주소가 둘인 사람은 둘 다 적는다.
+    # ⚠ 여기 적힌 사람은 관리자 화면에서 해제할 수 없다(화면은 '고정' 으로 보인다). 빼려면 이 값을 고치고 포털을 다시 띄운다.
+    portal_admin_emails: str = ""
     # 외부 서비스 연결 토큰(RA PAT 등록) — 검증에 부를 RA 주소와, 게이트웨이가
     # /internal/connections 를 읽을 때 쓸 공유 시크릿(게이트웨이 GW_TOKEN 과 같은 값).
     ra_base_url: str = "http://127.0.0.1:3000"
@@ -345,6 +353,10 @@ class Settings(BaseSettings):
         return [e.strip().lower() for e in self.local_bootstrap_admins.split(",") if e.strip()]
 
     @property
+    def portal_admin_email_set(self) -> frozenset[str]:
+        return frozenset(e.strip().lower() for e in self.portal_admin_emails.split(",") if e.strip())
+
+    @property
     def pat_default_audience_list(self) -> list[str]:
         return [a.strip() for a in self.pat_default_audiences.split(",") if a.strip()]
 
@@ -427,7 +439,7 @@ def startup_warnings(s: Settings) -> list[tuple[str, str]]:
     if not (s.app_env == "prod" and s.auth_provider == "mock"):
         return out
     out.append(("prod_mock", f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 누구나 {s.mock_user_email!r} "
-                             "계정으로 들어간다(그 계정이 원장에서 관리자면 관리자로). SAML 이 붙기 전까지의 임시 구성이다"))
+                             "계정으로 들어간다(그 계정이 원장이나 PORTAL_ADMIN_EMAILS 로 관리자면 관리자로). SAML 이 붙기 전까지의 임시 구성이다"))
     bad = _secret_problem(s)
     if bad:
         out.append((bad[0], bad[1] + " — mock 인증이라 지금은 기동하지만, SAML 로 바꾸면 기동을 거부한다"))

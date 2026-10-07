@@ -19,6 +19,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.access.policy import ADMIN_GROUP
 from app.config import Settings
 
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**14, 8, 1
@@ -339,6 +340,35 @@ class UserStore:
                 (json.dumps(list(groups)), norm_email(email)))
             self._commit()
             return cur.rowcount > 0
+
+    def set_admin(self, email: str, on: bool, *, pinned: frozenset[str] = frozenset()) -> str:
+        """관리자 표지(groups 의 portal-admin)를 붙이거나 뗀다 — 다른 그룹은 그대로 둔다(10차 요청 §3).
+
+        돌려주는 것: "set"(바꿨다) · "same"(이미 그 상태) · "missing"(행이 없다) · "last"(떼면 관리자가 한 명도 안 남는다 — 안 뗐다).
+        읽고-고쳐-쓰기와 '마지막 관리자' 판정을 잠금 안에서 한 번에 한다. 따로 하면 두 관리자가 서로를 동시에 해제할 때 각자
+        '상대가 남는다' 로 보고 둘 다 통과한다.
+        남는 관리자로 세는 것은 **활성 행**의 관리자다 — 원장에 표지가 있거나 고정 목록(pinned, PORTAL_ADMIN_EMAILS)에 있는 사람.
+        목록에만 있고 원장에 없는 주소, 승인 대기·정지인 행은 세지 않는다. 그 사람이 들어와 이 화면을 열 수 있는지 확인된 적이
+        없다 — 세면 설정의 오타나 떠난 사람의 주소 하나를 믿고 마지막으로 일하던 관리자를 해제하게 된다."""
+        key = norm_email(email)
+        with self._lock:
+            row = self._conn.execute("SELECT groups FROM users WHERE email = ?", (key,)).fetchone()
+            if row is None:
+                return "missing"
+            groups = list(json.loads(row[0] or "[]"))
+            if (ADMIN_GROUP in groups) == on:
+                return "same"
+            if on:
+                groups.append(ADMIN_GROUP)
+            else:
+                others = self._conn.execute(
+                    "SELECT email, groups FROM users WHERE status = 'active' AND email <> ?", (key,)).fetchall()
+                if not any(ADMIN_GROUP in json.loads(g or "[]") or e in pinned for e, g in others):
+                    return "last"
+                groups = [g for g in groups if g != ADMIN_GROUP]
+            self._conn.execute("UPDATE users SET groups = ? WHERE email = ?", (json.dumps(groups), key))
+            self._commit()
+            return "set"
 
     # ── 소속·개별 허가·허가 요청(docs/access-control) ──────────────────────────
     def set_access(self, email: str, *, affiliation: str | None = None,

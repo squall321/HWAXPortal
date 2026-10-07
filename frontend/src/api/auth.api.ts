@@ -18,6 +18,8 @@ export interface LocalUserRow {
   affiliation?: string;
   grants?: string[];
   groups: string[];
+  /** 고정 관리자 — 박스 설정(PORTAL_ADMIN_EMAILS)에 있는 주소라 원장 groups 와 무관하게 관리자다. 화면에서 해제할 수 없다. */
+  admin_pinned?: boolean;
   status: 'pending' | 'active' | 'disabled';
   auth_source: 'local' | 'sso';
   created_at: number;
@@ -28,7 +30,7 @@ export interface LocalUserRow {
 
 /** 소속 미지정 — 활성인데 소속이 없고 관리자도 아닌 사람(기본 권한만 쓴다). 사용자 관리의 배너 수와 '소속 미지정만 보기' 가 같은 사람을 센다. */
 export const isUnassigned = (r: LocalUserRow): boolean =>
-  r.status === 'active' && !r.affiliation && !r.groups.includes('portal-admin');
+  r.status === 'active' && !r.affiliation && !r.groups.includes('portal-admin') && !r.admin_pinned;
 
 export async function localLogin(email: string, password: string): Promise<void> {
   const res = await apiFetch('/auth/local/login', {

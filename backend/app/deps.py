@@ -34,6 +34,7 @@ def build_services(settings: Settings) -> tuple[AuthProvider, JWTService]:
 def get_current_principal(
     request: Request,
     jwt_service: JWTService = Depends(get_jwt_service),
+    settings: Settings = Depends(get_settings),
 ) -> Principal:
     """Resolve the logged-in user from the httpOnly session cookie. 401 if absent/invalid."""
     token = request.cookies.get(SESSION_COOKIE)
@@ -43,10 +44,10 @@ def get_current_principal(
         claims = jwt_service.verify_session(token)
     except jwt.PyJWTError as exc:
         raise AuthError("invalid or expired session", status_code=401) from exc
-    return entitled(request, jwt_service.principal_from_claims(claims))
+    return entitled(request, jwt_service.principal_from_claims(claims), settings.portal_admin_email_set)
 
 
-def entitled(request: Request, principal: Principal) -> Principal:
+def entitled(request: Request, principal: Principal, admin_emails: frozenset[str] = frozenset()) -> Principal:
     """권한을 요청마다 원장으로 다시 계산해 합성 그룹(feat:·plat:)으로 얹는다(access-control D-2).
 
     세션 JWT·PAT 에 박힌 합성 그룹과 관리자 표지(portal-admin)는 버린다 — 거둔 권한·해제한 관리자가 토큰 수명 동안
@@ -65,7 +66,7 @@ def entitled(request: Request, principal: Principal) -> Principal:
     # 행이 없으면 **막지 않는다** — 원장에 없는 것과 정지된 것은 다르다.
     if row is not None and row.get("status") == "disabled":
         raise AuthError("이 계정은 정지되었습니다 — 관리자에게 문의하세요", status_code=403)
-    ents = compute(access.get(), groups=principal.groups, row=row)
+    ents = compute(access.get(), groups=principal.groups, row=row, admin_emails=admin_emails)
     request.state.entitlements = ents
     # 이름 대체 사슬 — IdP 이름 → 원장 이름 → 이메일(6차 요청 §4-B-1). 운영 ADFS 는 이름 Claim 을 안 준다. 세션 JWT 가 이름을
     # 박아 들고 다니므로 /auth/me 만 고치면 화면만 낫는다 — 요청마다 원장 행을 이미 읽는 이 자리에서 고치면 PAT·하위 서비스
@@ -141,8 +142,8 @@ def principal_pat_or_session(
         except Exception as exc:  # noqa: BLE001 — any verify failure is a 401
             raise AuthError("invalid or expired PAT", status_code=401) from exc
         # PAT 에 박힌 그룹은 발급 때 값이다(최대 100년) — 권한은 지금 원장으로 다시 계산한다.
-        return entitled(request, principal)
-    principal = get_current_principal(request, jwt_service)
+        return entitled(request, principal, settings.portal_admin_email_set)
+    principal = get_current_principal(request, jwt_service, settings)
     # CSRF 는 상태 변경 요청에만 의미가 있다 — 대화 목록/상세 GET 은 세션만으로 허용.
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         require_csrf(request, settings)
