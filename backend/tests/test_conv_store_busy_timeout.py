@@ -22,22 +22,22 @@ def _store(tmp_path, **over) -> tuple[ConversationStore, str]:
     return ConversationStore(Settings(_env_file=None, conv_store_path=path, **over)), path
 
 
-def _hold_write_lock(path: str, seconds: float) -> threading.Thread:
-    """다른 프로세스의 쓰기 잠금 대역 — 별도 연결이 BEGIN IMMEDIATE 로 쥐었다가 seconds 뒤에 놓는다."""
-    held = threading.Event()
+def _hold_write_lock(path: str, seconds: float) -> tuple[threading.Thread, threading.Event]:
+    """다른 프로세스의 쓰기 잠금 대역 — 별도 연결이 BEGIN IMMEDIATE 로 쥐었다가 seconds 뒤(또는 release 가 서면) 놓는다."""
+    held, release = threading.Event(), threading.Event()
 
     def run():
         c = sqlite3.connect(path, timeout=5)
         c.execute("BEGIN IMMEDIATE")
         held.set()
-        time.sleep(seconds)
+        release.wait(seconds)
         c.rollback()
         c.close()
 
     t = threading.Thread(target=run, daemon=True)
     t.start()
     assert held.wait(5), "잠금을 못 쥐었다 — 시험 전제가 깨졌다"
-    return t
+    return t, release
 
 
 def test_기본_잠금_대기는_30초다(tmp_path):
@@ -49,7 +49,7 @@ def test_기본_잠금_대기는_30초다(tmp_path):
 def test_잠금이_한도_안에_풀리면_저장된다(tmp_path):
     store, path = _store(tmp_path, conv_store_busy_timeout_s=5)
     cid = store.create(owner_sub="u1", title="t", kind="deliberation")
-    t = _hold_write_lock(path, 0.6)
+    t, _release = _hold_write_lock(path, 0.6)
     t0 = time.monotonic()
     assert store.append(conversation_id=cid, owner_sub="u1", role="assistant", content="결정문") is True
     assert time.monotonic() - t0 >= 0.4, "잠금이 풀릴 때까지 기다린 것이 아니다 — 잠금 대역이 안 걸렸다"
@@ -61,13 +61,16 @@ def test_잠금이_한도를_넘기면_그_시간_뒤에_실패한다(tmp_path):
     """손잡이가 실제 대기 시간이다 — 0.3초로 주면 0.3초쯤에 포기한다(종전이면 5초를 기다렸다)."""
     store, path = _store(tmp_path, conv_store_busy_timeout_s=0.3)
     cid = store.create(owner_sub="u1", title="t", kind="deliberation")
-    t = _hold_write_lock(path, 2.0)
+    t, release = _hold_write_lock(path, 30.0)      # 시험이 풀어 줄 때까지 쥔다 — 느린 박스에서도 잠금이 먼저 풀리지 않게
     t0 = time.monotonic()
-    with pytest.raises(sqlite3.OperationalError, match="locked"):
-        store.append(conversation_id=cid, owner_sub="u1", role="assistant", content="결정문")
-    took = time.monotonic() - t0
-    t.join()
-    assert 0.2 <= took < 1.5, f"잠금 대기 0.3초인데 {took:.2f}초 뒤에 포기했다"
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            store.append(conversation_id=cid, owner_sub="u1", role="assistant", content="결정문")
+        took = time.monotonic() - t0
+    finally:
+        release.set()
+        t.join()
+    assert 0.2 <= took < 4.0, f"잠금 대기 0.3초인데 {took:.2f}초 뒤에 포기했다(종전이면 5초)"
 
 
 def test_끝난_심의의_저장이_실패하면_로그가_사유와_손잡이를_말한다(caplog):

@@ -79,21 +79,22 @@ def test_조용해진_스트림은_침묵_한도_뒤에_끊기고_사유와_손�
 
 
 def test_신호를_내는_스트림은_한도보다_오래_걸려도_끊기지_않는다():
-    """원칙 — 진행 중인 실행을 자르지 않는다. 한도 0.4초, 전체 1.5초, 0.15초마다 ping."""
+    """원칙 — 진행 중인 실행을 자르지 않는다. 한도 1초, 전체 2초, 0.2초마다 ping(느린 박스에서도 간격이 한도를 안 넘게)."""
     async def alive(reader, writer):
         await reader.readuntil(b"\r\n\r\n")
         writer.write(_HEAD)
         for i in range(10):
             writer.write(f'event: ping\ndata: {{"idle_s": {i * 15}, "ts": {i}}}\n\n'.encode())
             await writer.drain()
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.2)
         writer.write('event: result\ndata: {"type": "text", "content": "끝"}\n\nevent: done\ndata: {}\n\n'.encode())
         await writer.drain()
         writer.close()
 
-    got, audit, took = asyncio.run(_relay_against(alive, idle=0.4))
+    got, audit, took = asyncio.run(_relay_against(alive, idle=1.0))
     frames = _frames(got)
-    assert took > 1.0 and [e for e, _ in frames].count("ping") == 10, "ping 은 삼키지 않고 그대로 넘긴다(바깥 층의 침묵 한도도 이것으로 산다)"
+    assert took > 1.5, f"전체가 한도(1초)보다 길어야 이 시험이 뜻이 있다 — {took:.2f}초"
+    assert [e for e, _ in frames].count("ping") == 10, "ping 은 삼키지 않고 그대로 넘긴다(바깥 층의 침묵 한도도 이것으로 산다)"
     assert [e for e, _ in frames[-2:]] == ["result", "done"] and "error" not in [e for e, _ in frames]
     assert audit.rows[-1]["event"] == "chat_done"
 

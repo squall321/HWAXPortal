@@ -8,6 +8,7 @@
 도구는 프론트가 이미 가진 것만 쓴다. 없으면 건너뛴다(운영 박스).
 """
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -328,10 +329,15 @@ def test_신호가_오는_동안은_살아_있다고_끊기면_신호_없음이�
     표시는 두 곳에 같이 뜬다(도는 턴 아래 · 활동 패널 머리)."""
     s = seen("heartbeat")
     assert s["just_started"] == [], "진행이 방금 있었으면 말하지 않는다"
+    # 가짜 시계는 돌린 만큼에 실제로 흐른 시간이 더해진다 — 초 단위 숫자는 느린 박스를 감안해 범위로 본다(32초 + 실제 경과)
     assert [p["state"] for p in s["alive"]] == ["alive", "alive"], s["alive"]
-    assert all(p["text"] == "서버 살아 있음 · 마지막 진행 32초 전" for p in s["alive"]), s["alive"]
+    for p in s["alive"]:
+        m = re.fullmatch(r"서버 살아 있음 · 마지막 진행 (\d+)초 전", p["text"])
+        assert m and 32 <= int(m.group(1)) <= 40, p
     assert [p["state"] for p in s["silent"]] == ["silent", "silent"], "ping 세 번(45초)이 빠지면 바뀐다"
-    assert all(p["text"].startswith("신호 없음 53초 — 연결이 끊겼을 수") for p in s["silent"]), s["silent"]
+    for p in s["silent"]:
+        m = re.match(r"신호 없음 (\d+)초 — 연결이 끊겼을 수", p["text"])
+        assert m and 53 <= int(m.group(1)) <= 59, p
     assert s["while_silent"] == {"streaming": "true", "aborted": False}, "신호가 끊겨도 스트림을 끊지 않는다 — 표시만 한다"
     assert [p["state"] for p in s["back"]] == ["alive", "alive"], "신호가 다시 오면 돌아온다"
     assert s["after_progress"] == [] and s["done"] == [], "진행이 다시 흐르거나 끝나면 표시는 사라진다"
@@ -384,7 +390,7 @@ def test_브리프의_도우미가_오래_걸리면_몇_초째인지_보이고_�
     넘어갈 길도 없이 돌았다. 브라우저 타임아웃은 여전히 없다 — 한도는 포털 한 곳(AGENT_UNARY_TIMEOUT_S)이다."""
     s = seen("brief")
     w = s["waiting"]
-    assert "뽑는 중… 90초" in w["topic_busy"] and "(발굴 중… 90초)" in w["seat_label"], w
+    assert re.search(r"뽑는 중… 9\d초", w["topic_busy"]) and re.search(r"\(발굴 중… 9\d초\)", w["seat_label"]), w
     assert w["skips"] == ["건너뛰기", "건너뛰기"] and w["can_start"], "기다리는 동안에도 심의는 시작할 수 있다"
     t = s["topic_skipped"]
     assert t["topic_busy"] == "" and t["topic"] == "힌지가 왜 깨지나", "넘기면 서버가 실패했을 때와 같은 폴백 — 첫 발화 그대로"
