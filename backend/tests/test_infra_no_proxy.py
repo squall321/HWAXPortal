@@ -72,6 +72,15 @@ def test_두_철자가_다르면_합친다_중복_없이(start_portal):
     assert envs["no_proxy"] == envs["NO_PROXY"]
 
 
+def test_APPTAINERENV_로_넘기던_박스의_값을_덮지_않는다(start_portal):
+    """apptainer 는 `--env` > `APPTAINERENV_*` > 호스트 env 순이다(실측 1.3.6). 컨테이너용 값을 APPTAINERENV_NO_PROXY 로만 주던
+    박스는 종전엔 그 값이 들어갔다 — 합치지 않으면 명시한 `--env` 가 그것을 조용히 덮는다."""
+    envs = start_portal(APPTAINERENV_NO_PROXY="198.51.100.7,127.0.0.1", NO_PROXY="127.0.0.1,203.0.113.7",
+                        APPTAINERENV_no_proxy="198.51.100.8")
+    assert set(envs["NO_PROXY"].split(",")) == {"198.51.100.7", "127.0.0.1", "203.0.113.7", "198.51.100.8"}
+    assert envs["NO_PROXY"].count("127.0.0.1") == 1 and envs["no_proxy"] == envs["NO_PROXY"]
+
+
 def test_별표와_대역_표기는_글자_그대로_간다(start_portal):
     """목록을 따옴표 없이 돌리면 `*` 가 현재 디렉터리의 파일 이름으로 풀린다."""
     envs = start_portal(NO_PROXY="*,203.0.113.0/24,*.corp.example")

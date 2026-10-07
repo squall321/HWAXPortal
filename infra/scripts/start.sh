@@ -119,11 +119,13 @@ else
   # 프록시를 타고 상대의 IP 허용목록에 걸린다(게이트웨이는 그 모양으로 사람별 위임이 403 이었다 — 2026-10-03 실측).
   # 두 철자를 **합쳐**(중복 없이) 같은 값으로 넘긴다 — 대문자만 읽어 넘기면 소문자(no_proxy)만 둔 박스에서 빈 값이 넘어가고,
   # apptainer 는 명시한 값이 있으면 호스트 값을 물려주지 않아(실측 1.3.6) 있던 우회까지 지운다.
+  # APPTAINERENV_NO_PROXY 로 컨테이너용 값을 따로 주던 박스도 합친다 — apptainer 는 `--env` > `APPTAINERENV_*` > 호스트 env 순이라
+  # (실측 1.3.6) 합치지 않으면 여기서 명시한 값이 그 박스의 값을 조용히 덮는다.
   # read -a 로 쪼갠다 — 따옴표 없는 for 는 `*`(전부 우회)를 현재 디렉터리의 파일 이름으로 푼다.
   # RA_HOST·ARP_HOST(infra/.env — _common.sh 가 소싱했다)도 여기서 더한다. update-all 은 1g 에서 더해 물려주지만, restart.sh·부팅
   # 유닛으로 띄운 포털은 그 export 를 못 받는다 — 운영자 셸에 두 주소가 없으면 RA 호출이 다시 프록시를 탄다(9차 요청 §4-(2)).
   _np=""
-  IFS=', ' read -ra _np_parts <<<"${NO_PROXY:-},${no_proxy:-},${RA_HOST:-},${ARP_HOST:-}"
+  IFS=', ' read -ra _np_parts <<<"${APPTAINERENV_NO_PROXY:-},${APPTAINERENV_no_proxy:-},${NO_PROXY:-},${no_proxy:-},${RA_HOST:-},${ARP_HOST:-}"
   for _h in ${_np_parts[@]+"${_np_parts[@]}"}; do
     [ -n "$_h" ] || continue
     case ",$_np," in *",$_h,"*) ;; *) _np="${_np:+$_np,}$_h" ;; esac
