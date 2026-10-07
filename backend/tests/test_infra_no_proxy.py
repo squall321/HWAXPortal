@@ -19,6 +19,9 @@ START = (ROOT / "infra/scripts/start.sh").read_text(encoding="utf-8")
 UA = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
 
 
+LO = "127.0.0.1,localhost,::1"     # 스크립트가 늘 앞에 두는 루프백 셋
+
+
 def _portal_block() -> str:
     i = START.index("# 3. Portal (single-origin")
     return START[i:START.index("# 안 뜬 이유를 배포 출력에 바로 보인다", i)]
@@ -54,7 +57,7 @@ def start_portal(tmp_path):
 def test_NO_PROXY_를_두_철자_모두_명시해서_넘긴다(start_portal):
     """**이 시험이 이 파일의 이유다** — 종전엔 `--env` 목록에 아예 없었다."""
     envs = start_portal(NO_PROXY="127.0.0.1,localhost,203.0.113.7")
-    assert envs["NO_PROXY"] == "127.0.0.1,localhost,203.0.113.7"
+    assert envs["NO_PROXY"] == f"{LO},203.0.113.7"
     assert envs["no_proxy"] == envs["NO_PROXY"], "httpx·curl 은 소문자를 먼저 본다 — 둘이 다르면 소문자가 이긴다"
 
 
@@ -62,13 +65,13 @@ def test_소문자만_둔_박스의_값을_빈_값으로_덮지_않는다(start_
     """요청서의 두 줄(`no_proxy=${NO_PROXY:-}`)을 그대로 넣으면 소문자만 둔 박스에서 `no_proxy=` 빈 값이 넘어가고,
     apptainer 는 명시한 값이 있으면 호스트 값을 물려주지 않는다(실측 1.3.6) — 있던 우회까지 지운다."""
     envs = start_portal(no_proxy="203.0.113.7,.corp.example")
-    assert envs["no_proxy"] == "203.0.113.7,.corp.example"
+    assert envs["no_proxy"] == f"{LO},203.0.113.7,.corp.example"
     assert envs["NO_PROXY"] == envs["no_proxy"]
 
 
 def test_두_철자가_다르면_합친다_중복_없이(start_portal):
     envs = start_portal(NO_PROXY="127.0.0.1,203.0.113.7", no_proxy="203.0.113.7, 198.51.100.4")
-    assert envs["NO_PROXY"] == "127.0.0.1,203.0.113.7,198.51.100.4"
+    assert envs["NO_PROXY"] == f"{LO},203.0.113.7,198.51.100.4"
     assert envs["no_proxy"] == envs["NO_PROXY"]
 
 
@@ -77,28 +80,37 @@ def test_APPTAINERENV_로_넘기던_박스의_값을_덮지_않는다(start_port
     박스는 종전엔 그 값이 들어갔다 — 합치지 않으면 명시한 `--env` 가 그것을 조용히 덮는다."""
     envs = start_portal(APPTAINERENV_NO_PROXY="198.51.100.7,127.0.0.1", NO_PROXY="127.0.0.1,203.0.113.7",
                         APPTAINERENV_no_proxy="198.51.100.8")
-    assert set(envs["NO_PROXY"].split(",")) == {"198.51.100.7", "127.0.0.1", "203.0.113.7", "198.51.100.8"}
+    assert set(envs["NO_PROXY"].split(",")) == {*LO.split(","), "198.51.100.7", "203.0.113.7", "198.51.100.8"}
     assert envs["NO_PROXY"].count("127.0.0.1") == 1 and envs["no_proxy"] == envs["NO_PROXY"]
 
 
 def test_별표와_대역_표기는_글자_그대로_간다(start_portal):
     """목록을 따옴표 없이 돌리면 `*` 가 현재 디렉터리의 파일 이름으로 풀린다."""
     envs = start_portal(NO_PROXY="*,203.0.113.0/24,*.corp.example")
-    assert envs["NO_PROXY"] == "*,203.0.113.0/24,*.corp.example"
+    assert envs["NO_PROXY"] == f"{LO},*,203.0.113.0/24,*.corp.example"
 
 
 def test_둘_다_없는_박스에서도_기동이_죽지_않는다(start_portal):
     """set -u 아래다 — 미정의 변수를 그대로 읽으면 포털이 안 뜬다."""
     envs = start_portal()
-    assert envs["NO_PROXY"] == "" and envs["no_proxy"] == ""
+    assert envs["NO_PROXY"] == LO and envs["no_proxy"] == LO
     assert envs["SESSION_SECRET"] == "s" * 40, "다른 --env 는 그대로다"
+
+
+def test_루프백은_운영자_셸에_없어도_들어간다(start_portal):
+    """update-all·deploy-all 이 띄운 포털은 머리가 더한 루프백을 물려받는다. restart.sh·부팅 유닛으로 띄우면 운영자 셸의 값만 본다 —
+    그 셸에 http_proxy 는 있고(git·rclone 용) NO_PROXY 에 루프백이 없으면 포털이 에이전트서버(:9009)·게이트웨이(:9110)를
+    사내 프록시로 부른다. 프록시는 이 박스의 루프백에 닿지 못한다 — 띄운 길에 따라 챗이 되고 안 되고가 갈린다."""
+    envs = start_portal(NO_PROXY="198.51.100.9")
+    assert envs["NO_PROXY"] == f"{LO},198.51.100.9" and envs["no_proxy"] == envs["NO_PROXY"]
+    assert start_portal(NO_PROXY=f"198.51.100.9,{LO}")["NO_PROXY"] == f"{LO},198.51.100.9", "이미 있으면 두 번 넣지 않는다"
 
 
 # ── update-all 밖에서 뜨는 포털(restart.sh·부팅 유닛) — infra/.env 의 RA_HOST·ARP_HOST 를 start.sh 가 직접 더한다 ─────────
 def test_update_all_밖에서_띄워도_RA_ARP_호스트가_들어간다(start_portal):
     """update-all 의 export 는 그 실행이 띄운 프로세스만 받는다. restart.sh 로 띄운 포털은 운영자 셸의 값만 본다."""
     envs = start_portal("RA_HOST=203.0.113.10   # RA 주(A)\nARP_HOST=203.0.113.20\n")
-    assert envs["NO_PROXY"] == "203.0.113.10,203.0.113.20" and envs["no_proxy"] == envs["NO_PROXY"]
+    assert envs["NO_PROXY"] == f"{LO},203.0.113.10,203.0.113.20" and envs["no_proxy"] == envs["NO_PROXY"]
 
 
 def test_이미_있는_호스트는_두_번_넣지_않고_있던_항목도_그대로다(start_portal):
@@ -110,7 +122,7 @@ def test_이미_있는_호스트는_두_번_넣지_않고_있던_항목도_그�
 
 def test_주석으로만_있는_호스트는_더하지_않는다(start_portal):
     envs = start_portal("# RA_HOST=   # ⚠ 값을 정해야 한다\n# ARP_HOST=\n", NO_PROXY="127.0.0.1")
-    assert envs["NO_PROXY"] == "127.0.0.1"
+    assert envs["NO_PROXY"] == LO
 
 
 # ── update-all — 1f 가 닫힌 뒤 RA·ARP 호스트를 NO_PROXY 에 더한다(뒤에 뜨는 서비스가 물려받는다) ─────────────────────
@@ -150,9 +162,6 @@ def _run_1f_and_after(tmp_path, *, infra_env: str = "", pre: str = "", **env) ->
     child = [ln for ln in r.stdout.splitlines() if ln.startswith("CHILD=")]
     assert len(child) == 1, r.stdout + r.stderr
     return child[0], r.stdout
-
-
-LO = "127.0.0.1,localhost,::1"
 
 
 def test_update_all_이_RA_ARP_호스트를_더하고_자식이_물려받는다(tmp_path):

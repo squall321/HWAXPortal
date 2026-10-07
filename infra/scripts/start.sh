@@ -132,8 +132,11 @@ else
   # read -a 로 쪼갠다 — 따옴표 없는 for 는 `*`(전부 우회)를 현재 디렉터리의 파일 이름으로 푼다.
   # RA_HOST·ARP_HOST(infra/.env — _common.sh 가 소싱했다)도 여기서 더한다. update-all 은 1g 에서 더해 물려주지만, restart.sh·부팅
   # 유닛으로 띄운 포털은 그 export 를 못 받는다 — 운영자 셸에 두 주소가 없으면 RA 호출이 다시 프록시를 탄다(9차 요청 §4-(2)).
+  # 루프백도 여기서 더한다 — update-all·deploy-all 의 머리는 더해서 물려주지만 restart.sh·부팅 유닛은 그 머리를 지나지 않는다. 운영자 셸에
+  # http_proxy 만 있고 NO_PROXY 에 루프백이 없으면 포털이 에이전트서버(:9009)·게이트웨이(:9110)를 사내 프록시로 부른다(프록시는 이 박스의
+  # 루프백에 닿지 못한다) — 띄운 길에 따라 챗이 되고 안 되고가 갈린다. 그 머리와 같은 셋을 같은 자리(앞)에 둔다.
   _np=""
-  IFS=', ' read -ra _np_parts <<<"${APPTAINERENV_NO_PROXY:-},${APPTAINERENV_no_proxy:-},${NO_PROXY:-},${no_proxy:-},${RA_HOST:-},${ARP_HOST:-}"
+  IFS=', ' read -ra _np_parts <<<"127.0.0.1,localhost,::1,${APPTAINERENV_NO_PROXY:-},${APPTAINERENV_no_proxy:-},${NO_PROXY:-},${no_proxy:-},${RA_HOST:-},${ARP_HOST:-}"
   for _h in ${_np_parts[@]+"${_np_parts[@]}"}; do
     [ -n "$_h" ] || continue
     case ",$_np," in *",$_h,"*) ;; *) _np="${_np:+$_np,}$_h" ;; esac
