@@ -7,7 +7,9 @@
 스텁으로 넣는다. 좌석·의장 스텁은 스키마에 맞는 고정 답을 돌려주고, 받은 호출을 전부 적어 둔다 —
 '좌석이 무엇을 받았는가' 를 프롬프트에서 직접 본다.
 """
+import ast
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,6 +19,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 _DELIB = "infra/pipeline/hwax-deliberate.js"
 _RISK = "infra/pipeline/hwax-risk-review.js"
+_ENGINE = _ROOT.parent / "HWAXAgentServer" / "deliberation.py"
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node 가 없다")
 
@@ -146,6 +149,62 @@ _BODY_KEYS = ["result", "text", "content", "excerpt", "summary", "body", "output
 def _seat_prompt(out: dict) -> str:
     """첫 좌석이 1라운드에 받은 프롬프트 — 근거 블록이 여기 실린다."""
     return next(c["prompt"] for c in out["calls"] if c["label"].startswith("r1:"))
+
+
+# ── 엔진(deliberation.py)과의 계약 — 본문 키 순서와 근거 키 형식(docs/delib-engine-feedback D-4) ─────────────────
+# 이 파일은 "엔진과 같은 순서" 라고 적어 놓고 JS 를 **제 목록(_BODY_KEYS)** 과만 견줬다. 엔진의 순서를 바꾸거나 키 길이 상한을
+# 24 에서 30 으로 올려도 세 리포의 시험이 전부 초록이었다(사본에서 변이로 확인, 2026-10-07) — 같은 근거가 웹 길과 MCP 길에서
+# 다른 본문으로 실리고, 25~30자 키는 엔진만 `[e:N|KEY]` 로 찍는다. 엔진을 import 하지 않고 소스에서 읽는다(그 리포의 의존성과
+# 환경변수를 끌어오지 않게).
+def _engine_consts() -> dict:
+    """엔진 모듈 최상위의 근거 상수 넷 — `_EVID_BODY_KEYS` · `_EVID_KEY_MAX` · `_EVID_KEY_RE` · `_EV_CITE_RE`."""
+    if not _ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {_ENGINE}")
+    want = ("_EVID_BODY_KEYS", "_EVID_KEY_MAX", "_EVID_KEY_RE", "_EV_CITE_RE")
+    ns: dict = {"re": re}
+    for node in ast.parse(_ENGINE.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", None) in want:
+            # 뒤의 둘은 앞의 값으로 만든 식이다(f-string) — 같은 이름 공간에서 차례로 푼다. 옆 리포의 추적 파일 발췌다.
+            ns[node.targets[0].id] = eval(compile(ast.Expression(body=node.value), str(_ENGINE), "eval"), ns)  # noqa: S307
+    missing = [k for k in want if k not in ns]
+    if missing:
+        pytest.fail(f"deliberation.py 에서 {missing} 을 못 찾았다 — 이름이 바뀌었으면 이 계약 시험도 고친다")
+    return ns
+
+
+def _js_const(name: str) -> str:
+    m = re.search(rf"^const {name} = (.+)$", (_ROOT / _DELIB).read_text(encoding="utf-8"), re.M)
+    assert m, f"hwax-deliberate.js 에서 {name} 을 못 찾았다"
+    return m.group(1).strip()
+
+
+def test_본문_키_순서가_엔진과_같다():
+    """아래 `test_본문_키는_앞의_것이_이긴다` 가 JS 의 동작을 _BODY_KEYS 의 이웃 쌍마다 고정한다 — 여기서 그 목록을 엔진의 것과
+    맞대면 엔진 → JS 가 이어진다."""
+    engine = list(_engine_consts()["_EVID_BODY_KEYS"])
+    assert engine == _BODY_KEYS, f"엔진 {engine} · 이 시험이 JS 에 요구하는 순서 {_BODY_KEYS}"
+    assert re.findall(r"'([a-z]+)'", _js_const("EV_BODY_KEYS")) == engine
+
+
+@pytest.mark.parametrize("shape", ["상한", "상한+1", "a_b.c-9", "E 3", "a|b", "a]b", "a/b", "a:b", "a+b", "한글키", "E3\n", ""])
+def test_근거_키를_받는_형식이_엔진과_같다(shape):
+    """엔진의 식(_EVID_KEY_RE)을 오라클로 댄다 — 엔진이 받는 키는 JS 도 표지에 찍고, 엔진이 버리는 키는 JS 도 버린다."""
+    eng = _engine_consts()
+    n = eng["_EVID_KEY_MAX"]
+    key = {"상한": "x" * n, "상한+1": "x" * (n + 1)}.get(shape, shape)
+    accepts = eng["_EVID_KEY_RE"].fullmatch(key) is not None
+    prompt = _seat_prompt(_delib([{"key": key, "source": "s", "result": "본문"}]))
+    shown = f"· [e:1|{key}] [s] 본문" in prompt
+    assert shown is accepts, f"키 {key!r} — 엔진은 {'받고' if accepts else '버리고'} JS 는 {'찍는다' if shown else '버린다'}"
+    assert shown or "· [e:1] [s] 본문" in prompt
+
+
+def test_근거_키와_인용_표지의_식이_엔진과_글자까지_같다():
+    """동작 시험이 못 훑는 자리(인용을 떼는 식)까지 — 엔진의 두 식과 JS 의 두 식이 같은 글자다. 리스크 앱도 같은 식을 쓴다
+    (그쪽 리포의 시험이 본다)."""
+    eng = _engine_consts()
+    assert _js_const("EV_KEY_RE") == f"/^{eng['_EVID_KEY_RE'].pattern}$/"
+    assert _js_const("EV_CITE_RE") == f"/{eng['_EV_CITE_RE'].pattern}/g"
 
 
 def test_본문이_result_아닌_키에_있어도_좌석에_간다():
@@ -418,8 +477,6 @@ def test_제출하는_근거_유실_사유는_앱_상한_안쪽으로_자른다(
 def test_제출_프롬프트의_인자는_앱_도구가_받는_이름이다():
     """도구가 모르는 인자는 **말없이 버려진다**(오류가 아니다) — 이름이 한 글자만 어긋나도 보낸 줄 알고 원장은 빈다.
     옆 리포(HWAXRisk)의 도구 서명을 읽어, 제출 프롬프트가 적는 인자 이름이 전부 거기 있는지 본다."""
-    import ast
-
     tool_src = _ROOT.parent / "HWAXRisk" / "backend" / "app" / "mcp_server.py"
     if not tool_src.exists():
         pytest.skip("HWAXRisk 리포가 옆에 없다")
