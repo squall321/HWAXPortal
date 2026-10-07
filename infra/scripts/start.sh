@@ -123,6 +123,13 @@ else
   for k in PORTAL_ADMIN_EMAILS SSO_DEFAULT_AFFILIATION; do
     [ -n "${!k:-}" ] && IDENT_ENVS+=(--env "$k=${!k}")
   done
+  # 챗·심의 경로의 시간 한도 넷도 **명시해서** 넘긴다 — 같은 이유다. 상속이 끊기면 infra/.env 에 늘려 적은 값이 조용히 코드 기본값으로
+  # 돌아가고, 몇 시간 돈 심의가 그 한도에 걸린 뒤에야 안다. **값이 있을 때만** 넘긴다(빈 값은 backend/.env 의 값을 덮어 끈다).
+  # 넷 다 코드 기본값이 넉넉하다(릴레이 침묵 46800초 · 도우미 600초 · chat PAT 24시간 · 대화 저장 잠금 30초) — 안 적어도 된다.
+  TIME_ENVS=()
+  for k in AGENT_STREAM_IDLE_TIMEOUT_S AGENT_UNARY_TIMEOUT_S CHAT_PAT_TTL_S CONV_STORE_BUSY_TIMEOUT_S; do
+    [ -n "${!k:-}" ] && TIME_ENVS+=(--env "$k=${!k}")
+  done
   # NO_PROXY 도 **명시해서** 넘긴다 — 위 SAML 과 같은 이유다(9차 변경 요청 §4-(5)). 상속이 끊기면 포털의 RA·TestScope 호출이 사내
   # 프록시를 타고 상대의 IP 허용목록에 걸린다(게이트웨이는 그 모양으로 사람별 위임이 403 이었다 — 2026-10-03 실측).
   # 두 철자를 **합쳐**(중복 없이) 같은 값으로 넘긴다 — 대문자만 읽어 넘기면 소문자(no_proxy)만 둔 박스에서 빈 값이 넘어가고,
@@ -161,7 +168,7 @@ else
   done
   "$APPTAINER" instance start \
     ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} ${SAML_ENVS[@]+"${SAML_ENVS[@]}"} \
-    ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} \
+    ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} ${TIME_ENVS[@]+"${TIME_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \
