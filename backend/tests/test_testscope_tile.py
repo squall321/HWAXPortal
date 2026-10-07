@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.access.policy import parse_policy
+from app.access.policy import load_raw, parse_policy
 from app.catalog.registry import CatalogRegistry
 from app.config import Settings
 from app.schemas.system import LinkedSystem
@@ -85,7 +85,7 @@ def test_hide_unless_routed_is_only_for_proxy_and_external_url():
 
 def test_testscope_is_gated_by_its_own_platform():
     """게이트웨이 testscope 백엔드는 이 권한으로 막힌다 — 표에 없는 백엔드는 '전체 공개' 다."""
-    pol = parse_policy(yaml.safe_load((_BACKEND / "config" / "access.yaml").read_text(encoding="utf-8")))
+    pol = parse_policy(load_raw(_BACKEND / "config" / "access.yaml"))
     assert pol.system_key("testscope") == "plat:testscope"
     assert pol.gateway_policy()["testscope"] == ["plat:testscope"]
     assert pol.hidden_keys(set()) >= {"plat:testscope"}, "TestScope 가 없는 박스에서는 권한 표에서도 뺀다"

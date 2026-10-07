@@ -90,6 +90,13 @@ export function SetupRequests() {
               </button>
               {open === it.id && (
                 <div className="setup-body">
+                  {(it.notes ?? []).length > 0 && (
+                    <ul className="setup-notes">
+                      {(it.notes ?? []).map((n) => (
+                        <li key={n}>{n}</li>
+                      ))}
+                    </ul>
+                  )}
                   <pre className="body">{it.body}</pre>
                   {it.state === 'manual' && (
                     <button

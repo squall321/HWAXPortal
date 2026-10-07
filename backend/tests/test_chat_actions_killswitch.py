@@ -4,9 +4,7 @@
 # 그래서 이 판정이 곧 "Knox 연결 설정이 없는 환경에서는 꺼진다" 의 실행부다(docs/chat-actions A-1).
 from pathlib import Path
 
-import yaml
-
-from app.access.policy import parse_policy
+from app.access.policy import load_raw, parse_policy
 from app.catalog.registry import CatalogRegistry
 from app.config import Settings
 
@@ -63,7 +61,7 @@ def test_추적_routes_파일에는_knox_목적지가_없다():
 
 
 def test_타일은_knoxbridge_플랫폼_허가로만_보인다():
-    pol = parse_policy(yaml.safe_load((_BACKEND / "config" / "access.yaml").read_text(encoding="utf-8")))
+    pol = parse_policy(load_raw(_BACKEND / "config" / "access.yaml"))
     assert pol.system_key("knox-bridge") == "plat:knoxbridge"
 
 

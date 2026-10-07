@@ -134,3 +134,19 @@ platforms:
   - id: plmdefect              # id 는 바꾸지 않는다 — 게이트웨이 allowed_groups 가 plat:plmdefect 를 요구한다
     label: PLM 결함 검색
     gateway: [plm-defect]
+
+# ── 박스 파일 access.local.yaml(gitignore, 이 파일 옆) ─────────────────────────────────────────────────────
+# 이 박스에만 있는 것은 추적 파일을 고치지 말고 거기에 적는다. 읽는 절은 둘뿐이다(나머지는 이 파일에서만 읽는다).
+#   · platforms            위 표에 id 기준으로 더하거나 바꾼다 — 박스 전용 게이트웨이 백엔드를 붙일 때.
+#   · sso_affiliation_map  SSO Claim → 소속 표. 한 행은 {claim, value, affiliation} 이고 affiliation 은 위 affiliations 의 id 다.
+#     ⚠ Claim 값(회사·부서 코드)은 사내 식별자다 — **이 파일에 적지 않는다.** 여기 풀어 적은 표는 읽지 않고 경고만 낸다.
+#     ⚠ 값은 따옴표로 감싼다 — 따옴표 없는 0123 은 숫자 83 으로 읽혀 영영 안 맞는다(그런 행은 버리고 관리자 화면에 알린다).
+# 깨졌거나 버려진 행이 있으면 관리자 화면 '배선 설정' 에 뜬다. 아래는 지어낸 값의 예시다.
+#
+#   platforms:
+#     - id: boxonly
+#       label: 이 박스 전용 앱
+#       gateway: [box-only-backend]
+#   sso_affiliation_map:
+#     - {claim: CompId, value: "C999", affiliation: CAEG}
+#     - {claim: "http://idp.example/claims/DeptId", value: "D12345", affiliation: CAEG}

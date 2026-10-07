@@ -12,6 +12,8 @@ export interface SetupRequest {
   default: 'auto' | 'generate' | 'none';
   body: string;
   state: SetupState;
+  /** 포털이 확인한 항목이 '안 됐다' 고 말하는 구체 사유(박스마다 다르다) — 고정 안내(body) 위에 띄운다 */
+  notes?: string[];
 }
 
 /** 사람이 '확인함' 한 manual 항목 — 상자에서 빠지고 접힌 목록에 남는다(되돌릴 수 있게) */

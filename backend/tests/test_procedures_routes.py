@@ -112,8 +112,9 @@ def _users(c, grants=None):
 def test_기능이_access_yaml_에_선언돼_있다():
     from pathlib import Path
 
-    d = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "access.yaml")
-                       .read_text(encoding="utf-8"))
+    from app.access.policy import load_raw
+
+    d = load_raw(Path(__file__).resolve().parents[1] / "config" / "access.yaml")
     ids = [f["id"] for f in d["features"]]
     assert "procedures" in ids
 

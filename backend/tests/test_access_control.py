@@ -7,7 +7,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from app.access import agent_guard
-from app.access.policy import compute, parse_policy
+from app.access.policy import compute, load_raw, parse_policy
 from app.agent import upload as up
 from app.auth.provider import Principal
 from app.auth.user_store import UserStore
@@ -19,9 +19,8 @@ _ROOT = _BACKEND.parent
 
 
 def _policy():
-    return parse_policy(
-        yaml.safe_load((_BACKEND / "config" / "access.yaml").read_text(encoding="utf-8"))
-    )
+    # 박스 오버레이(access.local.yaml)까지 합친 표를 본다 — 추적 파일만 읽으면 오버레이로 붙인 백엔드를 '표에 없다' 고 거짓 실패한다.
+    return parse_policy(load_raw(_BACKEND / "config" / "access.yaml"))
 
 
 # ── 정책 대조 ────────────────────────────────────────────────────────────────

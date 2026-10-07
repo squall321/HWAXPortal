@@ -43,11 +43,23 @@ class Item:
     hide_unless_routed: bool = False
 
 
+@dataclass(frozen=True)
+class SsoAffiliationRule:
+    """SSO 로 **처음** 생기는 사람의 소속을 Claim 으로 정하는 한 줄 — 이 Claim 이 이 값이면 이 소속."""
+    claim: str
+    value: str
+    affiliation: str
+
+
 @dataclass
 class Policy:
     items: list[Item]
     affiliations: dict[str, dict]        # id → {label, grants}
     default_grants: list[str]
+    # 박스 파일(access.local.yaml)에서만 온다 — Claim 값이 사내 식별자라 추적 파일에 적지 않는다. 파일에 적힌 순서 그대로다.
+    sso_affiliation_map: tuple[SsoAffiliationRule, ...] = ()
+    # 읽다가 버린 것(틀린 행·읽지 않는 절) — 관리자의 배선 설정에 뜬다(AccessPolicy.problems).
+    warnings: tuple[str, ...] = ()
     _by_key: dict[str, Item] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -96,6 +108,69 @@ class Policy:
         return sorted({i.key for i in self.items for b in backends if b in i.gateway})
 
 
+# 박스 파일에서 읽는 절은 이 둘뿐이다. 소속·기본 허가·기능까지 받으면 추적되지 않는 파일 한 줄이 전원의 권한을 바꾼다.
+LOCAL_SECTIONS = ("platforms", "sso_affiliation_map")
+_NOTES = "_load_notes"      # load_raw → parse_policy 로 넘기는 '읽지 않은 것' 메모
+
+
+def local_path(path: Path) -> Path:
+    """access.yaml → 옆의 access.local.yaml(gitignore, 박스별)."""
+    return path.with_name(path.stem + ".local" + path.suffix)
+
+
+def _read_yaml(path: Path):
+    # 문자열이 아니라 파일로 넘긴다 — 문법 오류의 위치 표시에 파일 이름이 실려 어느 파일이 깨졌는지 말할 수 있다(_brief).
+    with path.open(encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def load_raw(path: Path) -> dict:
+    """access.yaml + 옆의 access.local.yaml(gitignore). platforms 는 id 기준 추가·치환, 나머지 절은 본 파일 그대로.
+
+    systems.local.yaml·routes.local.env 는 오버레이가 있는데 권한 표에만 없어서, 박스에만 있는 앱을 붙일 때마다 추적 파일을
+    고쳐야 했다(8차 요청 §4-(1)). 정책을 읽는 곳은 **전부 이 함수를 지난다** — 시험이 추적 파일만 읽으면 오버레이로 붙인
+    백엔드를 '표에 없다' 고 보고 조용히 갈라진다.
+    `sso_affiliation_map` 은 반대로 **박스 파일에서만** 받는다 — 매핑 키(회사·부서 코드)가 사내 식별자다.
+    읽지 않은 것은 조용히 넘기지 않고 메모로 넘긴다(parse_policy 가 warnings 에 싣는다)."""
+    raw = _read_yaml(path) or {}
+    local = local_path(path)
+    notes: list[str] = []
+    if raw.pop("sso_affiliation_map", None) is not None:
+        notes.append(f"{path.name} 의 sso_affiliation_map 은 읽지 않는다 — Claim 값은 사내 식별자라 {local.name} 에만 적는다")
+    if local.exists():
+        ov = _read_yaml(local) or {}
+        if not isinstance(ov, dict):
+            raise ValueError(f"{local.name}: 'platforms:' · 'sso_affiliation_map:' 절을 가진 매핑이어야 한다")
+        by_id = {str(d["id"]): d for d in raw.get("platforms") or []}
+        for d in ov.get("platforms") or []:
+            by_id[str(d["id"])] = d
+        raw["platforms"] = list(by_id.values())
+        if "sso_affiliation_map" in ov:
+            raw["sso_affiliation_map"] = ov["sso_affiliation_map"]
+        ignored = sorted(str(k) for k in set(ov) - set(LOCAL_SECTIONS))
+        if ignored:
+            notes.append(f"{local.name} 의 {', '.join(ignored)} 절은 읽지 않는다 — 박스 파일은 "
+                         f"{' · '.join(LOCAL_SECTIONS)} 만 받는다(나머지는 {path.name})")
+    if notes:
+        raw[_NOTES] = notes
+    return raw
+
+
+def _bad_sso_row(row: object, affiliations: dict[str, dict]) -> str | None:
+    """sso_affiliation_map 한 행이 못 쓸 행이면 그 이유. ⚠ Claim **값**은 이유에 싣지 않는다 — 관리자 화면·로그로 나간다."""
+    if not isinstance(row, dict):
+        return "'{claim, value, affiliation}' 모양이 아니다"
+    for k in ("claim", "value", "affiliation"):
+        v = row.get(k)
+        # 따옴표 없는 코드는 YAML 이 숫자로 읽는다(0123 → 83) — 문자열로 바꿔 받으면 영영 안 맞는 행이 조용히 남는다.
+        if not isinstance(v, str) or not v.strip():
+            return f"{k} 가 비었거나 문자열이 아니다(코드는 따옴표로 감싼다 — 숫자로 읽히면 앞자리 0 이 사라진다)"
+    aff = row["affiliation"].strip()
+    if aff not in affiliations:
+        return f"모르는 소속 {aff!r}(affiliations 에 없다)"
+    return None
+
+
 def parse_policy(raw: dict) -> Policy:
     items: list[Item] = []
     for kind, prefix, section in (("feature", FEAT, "features"), ("platform", PLAT, "platforms")):
@@ -127,33 +202,82 @@ def parse_policy(raw: dict) -> Policy:
     bad = [g for g in default if g != WILDCARD and g not in known]
     if bad:
         raise ValueError(f"access.yaml: default_grants 에 없는 키 {bad}")
-    return Policy(items=items, affiliations=affs, default_grants=default)
+    # SSO Claim → 소속 표. 위의 절들과 달리 틀린 행은 **던지지 않고 버린다** — 박스 파일의 오타 한 줄이 권한 표 전체를 멈추면
+    # 안 된다. 대신 조용히 버리지 않는다: 모르는 소속으로 가는 행이 남으면 그 사람은 소속 없이(기본 권한) 생기고 아무도 모른다.
+    notes = [str(n) for n in raw.get(_NOTES) or []]
+    rows = raw.get("sso_affiliation_map") or []
+    if not isinstance(rows, list):
+        notes.append("sso_affiliation_map 이 목록이 아니다 — 통째로 버렸다('- {claim: …, value: …, affiliation: …}' 를 줄마다)")
+        rows = []
+    rules: list[SsoAffiliationRule] = []
+    for n, row in enumerate(rows, 1):
+        why = _bad_sso_row(row, affs)
+        if why:
+            notes.append(f"sso_affiliation_map {n}번째 행을 버렸다 — {why}")
+            continue
+        rules.append(SsoAffiliationRule(claim=row["claim"].strip(), value=row["value"].strip(),
+                                        affiliation=row["affiliation"].strip()))
+    for note in notes:
+        logger.warning("권한 표: %s", note)
+    return Policy(items=items, affiliations=affs, default_grants=default,
+                  sso_affiliation_map=tuple(rules), warnings=tuple(notes))
+
+
+def _brief(exc: Exception) -> str:
+    """읽기 실패를 관리자 화면에 실을 한 줄로. YAML 오류 원문은 그 줄의 **내용**을 인용한다 — 박스 파일에는 사내 코드가
+    있어 어느 파일 몇 행인지만 말한다."""
+    mark = getattr(exc, "problem_mark", None)
+    if isinstance(exc, yaml.YAMLError) and mark is not None:
+        return f"YAML 문법 오류({Path(str(mark.name)).name} {mark.line + 1}행)"
+    if isinstance(exc, yaml.YAMLError):
+        return "YAML 문법 오류"
+    return f"{type(exc).__name__}: {exc}"[:200]
 
 
 class AccessPolicy:
-    """access.yaml 을 mtime 으로 캐시한다 — 고치면 다음 요청부터 새 정책(재기동 불필요).
-    고친 파일이 깨졌으면 직전 정책을 계속 쓰고 로그에 남긴다(권한이 통째로 사라지지 않게)."""
+    """access.yaml(+ access.local.yaml)을 mtime 으로 캐시한다 — 고치면 다음 요청부터 새 정책(재기동 불필요).
+    고친 파일이 깨졌으면 직전 정책을 계속 쓰고 로그에 남긴다(권한이 통째로 사라지지 않게). 그 상태는 `problems()` 로
+    관리자 화면에도 뜬다 — 깨진 박스 파일이 '오버레이가 없는 것' 과 똑같이 보이면 그 박스의 백엔드가 표에서 빠진 줄 아무도 모른다.
+    ⚠ 직전 정책이 **없을 때**(기동 뒤 첫 읽기) 깨져 있으면 던진다. 추적 파일만으로 넘어가지 않는다 — 박스 전용 백엔드가
+    표에서 빠지고, 게이트웨이는 표에 없는 백엔드를 전체 공개로 본다."""
 
     def __init__(self, settings: Settings) -> None:
         self._path = Path(settings.resolve(settings.access_path))
         self._lock = threading.Lock()
-        self._mtime: float | None = None
+        self._mtime: tuple[float, float | None] | None = None   # (본 파일, 박스 파일 — 없으면 None)
         self._policy: Policy | None = None
+        self._stale: str | None = None      # 직전 정책을 쓰는 중이면 그 사유
+
+    def _mtimes(self) -> tuple[float, float | None]:
+        try:
+            local = local_path(self._path).stat().st_mtime
+        except OSError:
+            local = None
+        return (self._path.stat().st_mtime, local)
 
     def get(self) -> Policy:
-        mtime = self._path.stat().st_mtime
+        mtime = self._mtimes()
         with self._lock:
             if self._policy is None or mtime != self._mtime:
                 try:
-                    raw = yaml.safe_load(self._path.read_text(encoding="utf-8")) or {}
-                    self._policy = parse_policy(raw)
+                    self._policy = parse_policy(load_raw(self._path))
                     self._mtime = mtime
-                except Exception:
+                    self._stale = None
+                except Exception as exc:
                     if self._policy is None:
                         raise
-                    logger.exception("access.yaml 을 읽지 못해 직전 정책을 계속 쓴다")
+                    logger.exception("%s(또는 %s)을 읽지 못해 직전 정책을 계속 쓴다",
+                                     self._path.name, local_path(self._path).name)
                     self._mtime = mtime
+                    self._stale = (f"{self._path.name}(또는 {local_path(self._path).name})을 읽지 못해 "
+                                   f"직전 정책을 계속 쓴다 — {_brief(exc)}")
             return self._policy
+
+    def problems(self) -> list[str]:
+        """관리자에게 보일 정책 읽기 문제 — 깨진 파일 때문에 직전 정책을 쓰는 중인가, 읽다가 버린 것이 있나.
+        배선 설정(setup_requests 의 access_overlay)이 띄운다. 비어 있으면 문제없다."""
+        policy = self.get()
+        return ([self._stale] if self._stale else []) + list(policy.warnings)
 
 
 # ── 유효 권한 ────────────────────────────────────────────────────────────────

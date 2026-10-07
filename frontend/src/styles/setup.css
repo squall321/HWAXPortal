@@ -104,6 +104,11 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* 포털이 확인한 항목의 구체 사유(몇 번째 행이 왜 버려졌나) — 고정 안내 위에 */
+.setup-notes {
+  color: var(--danger);
+  font-size: var(--fs-13);
+}
 .setup-ack {
   padding: var(--sp-1) var(--sp-3);
   font-size: var(--fs-13);

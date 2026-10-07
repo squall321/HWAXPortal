@@ -110,6 +110,14 @@ async def run_check(name: str, settings: Settings, access: Any) -> str:
             return "unknown"
         return "ok" if "ste" in backends else "todo"
 
+    if name == "access_overlay":
+        # 권한 표의 박스 오버레이(access.local.yaml) — 깨져서 직전 정책을 쓰는 중이거나 읽다가 버린 행이 있으면 안 된 것이다.
+        # 파일이 없는 박스는 ok 다(오버레이는 선택이다). 무엇이 문제인지는 check_notes 가 싣는다.
+        try:
+            return "todo" if access.problems() else "ok"
+        except Exception:
+            return "unknown"
+
     if name == "ste_backend":
         base = (settings.ste_base_url or "").rstrip("/")
         return "ok" if base and await _probe(base + "/api/health") else "todo"
@@ -134,6 +142,18 @@ async def run_check(name: str, settings: Settings, access: Any) -> str:
         return "ok" if "ste" in str(body) else "todo"
 
     return "unknown"
+
+
+def check_notes(name: str, settings: Settings, access: Any) -> list[str]:
+    """`todo` 인 확인이 **무엇 때문인지** — 고정 안내(body) 위에 그대로 뜬다. 박스마다 사유가 달라 YAML 에 적어 둘 수 없는 것만.
+
+    여기 싣는 문장도 응답으로 나간다 — 비밀·내부 주소·사내 코드를 넣지 않는다(정책 로더가 값 대신 행 번호를 적는다)."""
+    if name == "access_overlay":
+        try:
+            return list(access.problems())
+        except Exception:
+            return []
+    return []
 
 
 @router.get("/requests")
@@ -162,7 +182,8 @@ async def list_requests(
         state = "manual" if manual else await run_check(row["check"], settings, access)
         if state == "ok":
             continue                      # 된 것은 화면에서 사라진다
-        out.append({**row, "state": state})
+        out.append({**row, "state": state,
+                    "notes": [] if manual else check_notes(row["check"], settings, access)})
     return {"items": out, "pending": len(out), "acked": acked}
 
 

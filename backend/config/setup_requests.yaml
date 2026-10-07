@@ -17,6 +17,7 @@
 #   gateway_ste      — 게이트웨이 도구 목록에 ste 백엔드가 올라와 있나
 #   access_ste       — access.yaml 의 smarttwin 허가에 ste 가 들어 있나
 #   ra_sso           — 포털에 RA 사람별 위임 비밀(RA_SSO_SECRET)이 있나
+#   access_overlay   — 권한 표 박스 오버레이(access.local.yaml)를 탈 없이 읽었나(없는 박스는 통과). 사유는 화면에 함께 뜬다
 
 requests:
   - id: ste-sso-secret
@@ -88,6 +89,24 @@ requests:
       `backend/config/access.yaml` 의 `smarttwin` 항목 `gateway:` 에 `ste` 를 넣습니다.
       **백엔드를 붙이기 전에** 적어야 합니다 — 정책에 없는 백엔드는 "전체 공개" 로
       판정되므로, 순서가 반대면 잠깐이지만 아무나 부를 수 있습니다.
+
+  - id: access-local-overlay
+    title: 권한 표의 박스 파일(access.local.yaml)에 읽지 못한 것이 있다
+    tag: 권한
+    severity: blocker
+    check: access_overlay
+    default: none
+    body: |
+      **위에 적힌 사유를 고치면 이 항목은 저절로 사라집니다**(재기동 불필요 — 요청마다 파일 시각을 봅니다).
+
+      `backend/config/access.local.yaml` 은 이 박스에만 있는 것을 권한 표에 더하는 파일입니다(git 에 올라가지 않습니다).
+      · `platforms:` — 추적 파일 `access.yaml` 의 플랫폼에 id 기준으로 더하거나 바꿉니다(박스 전용 게이트웨이 백엔드).
+      · `sso_affiliation_map:` — SSO Claim → 소속 표. 모양은 `access.yaml` 끝의 예시를 보세요.
+      소속·기본 허가·기능은 `access.yaml` 에서만 읽습니다.
+
+      ⚠ **파일이 깨져 있는 동안은 직전에 읽은 정책이 그대로 쓰입니다** — 방금 고친 내용은 반영되지 않았습니다.
+      이 상태로 포털이 재기동되면 정책을 읽지 못해 모든 요청이 실패하므로, 재기동 전에 고치세요.
+      버려진 `sso_affiliation_map` 행은 없는 행과 같습니다 — 몇 번째 행이 왜 버려졌는지는 위 사유에 있습니다.
 
   - id: ra-sso-secret
     title: RA 사람별 위임 — RA 쪽이 준비되면 같은 비밀을 양쪽에
