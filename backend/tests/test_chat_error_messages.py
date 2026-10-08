@@ -175,6 +175,12 @@ _ENGINE = ROOT.parent / "HWAXAgentServer"
 # 엔진 app.py 가 챗(심의가 아닌) LLM 호출 한도에서 내는 error 글 — 걸린 값과 손잡이(LLM_TIMEOUT_S)를 엔진이 싣는다.
 _CHAT_LIMIT = ("LLM 응답이 900초 안에 오지 않았습니다(LLM_TIMEOUT_S · 3회 시도) — LLM 이 밀려 있거나 멈췄습니다. "
                "잠시 후 다시 시도해 주세요 — 질문을 바꿔도 해결되지 않습니다.")
+# 엔진 deliberation.py 가 의장이 끝내 실패했을 때 내는 error(code chair_failed) 글 — 머리 + 사유 + 이 꼬리.
+_CHAIR_HEAD = "의장이 결정문을 내지 못했다 — "
+_CHAIR_TAIL = (" (의장 호출 2번). 라운드 발언은 버리지 않았다 — 좌석별 마지막 입장을 결과로 내렸고 회의록·전사가 남아 있다. "
+               "호출당 타임아웃을 늘려 이어하기로 다시 수렴시키면 결정문을 받는다.")
+_WHY_LIMIT = "LLM 호출이 1,800초 안에 끝나지 않았다(2회 시도 · APITimeoutError) — 호출당 타임아웃을 늘린다"
+_WHY_CONN = "LLM 서버에 연결하지 못했다(APIConnectionError) — LLM 서버 주소와 상태를 확인하라"
 
 
 def test_챗의_LLM_한도는_엔진이_말한_손잡이를_그대로_보인다(front):
@@ -184,6 +190,29 @@ def test_챗의_LLM_한도는_엔진이_말한_손잡이를_그대로_보인다(
     (got,) = front(friendly=[_CHAT_LIMIT])["friendly"]
     assert got == {"title": "LLM 응답이 제한 시간 안에 오지 않았습니다", "hint": _CHAT_LIMIT, "retry": True}
     assert "DELIB_TIMEOUT_S" not in got["hint"] and "timeout_s" not in got["hint"] and "좌석" not in got["hint"]
+
+
+def test_결정문_없이_끝난_심의는_연결_실패나_도구_실패로_보이지_않는다(front):
+    """의장이 끝내 실패하면 엔진은 error(chair_failed)로 끝내되 좌석별 마지막 입장과 회의록을 남기고 그렇게 말한다. 그 글이 사유에 든
+    글자로 다른 갈래에 새면 그 말이 사라진다 — LLM 서버가 죽어 의장만 실패한 심의가 '서버에 연결하지 못했습니다 · 네트워크를
+    확인하세요' 로, LLM 앞단의 502 Bad Gateway 가 '도구 서버에 연결하지 못했습니다' 로 보였다."""
+    raws = {
+        "conn": _CHAIR_HEAD + _WHY_CONN + _CHAIR_TAIL,
+        "conn_timeout": _CHAIR_HEAD + "LLM 서버에 10초 안에 연결하지 못했다(APITimeoutError) — LLM 서버 주소와 상태를 확인하라" + _CHAIR_TAIL,
+        "bad_gateway": _CHAIR_HEAD + "InternalServerError: Error code: 502 - Bad Gateway" + _CHAIR_TAIL,
+        "limit": _CHAIR_HEAD + _WHY_LIMIT + _CHAIR_TAIL,
+        "sim": "1단 메커니즘 심의가 결정문을 내지 못해 해석 설계로 넘어갈 수 없습니다. — " + _WHY_CONN,
+        "sim_limit": "1단 메커니즘 심의가 결정문을 내지 못해 해석 설계로 넘어갈 수 없습니다. — " + _WHY_LIMIT,
+    }
+    got = dict(zip(raws, front(friendly=list(raws.values()))["friendly"], strict=True))
+    for k, g in got.items():
+        assert g["title"] == "심의가 결정문을 내지 못했습니다" and g["retry"] is True, (k, g)
+        assert raws[k] in g["hint"], f"{k}: 엔진이 한 말(사유 · 남아 있는 것)을 그대로 보인다"
+    for k in ("limit", "sim_limit"):
+        h = got[k]["hint"]
+        assert "timeout_s" in h and f"{_CAP}초" in h and "DELIB_TIMEOUT_S" in h, "LLM 호출 한도면 늘릴 손잡이 둘과 상한을 말한다"
+    for k in ("conn", "conn_timeout", "bad_gateway", "sim"):
+        assert got[k]["hint"] == raws[k], f"{k}: 한도가 아닌 사유에 한도 손잡이를 덧붙이지 않는다(닿지 않는 것은 늘려서 풀리지 않는다)"
 
 
 def _engine_src(name: str) -> str:
@@ -199,3 +228,18 @@ def test_챗_LLM_한도의_글자를_엔진이_아직_그렇게_말한다():
     assert '"오지 않았습니다(LLM_TIMEOUT_S"' in app_src and '"LLM 응답이 "' in app_src, (
         "엔진의 챗 LLM 한도 글이 바뀌었다 — chatErrors.ts 의 LLM_TIMEOUT_S 갈래와 이 파일의 _CHAT_LIMIT 을 맞춘다")
     assert "r.includes('LLM_TIMEOUT_S')" in (FE / "src/lib/chatErrors.ts").read_text(encoding="utf-8")
+
+
+def test_결정문_없이_끝난_심의의_글자를_엔진이_아직_그렇게_말한다():
+    """화면은 엔진의 글자를 보고 '결정문 없이 끝났다' 와 그 사유가 LLM 호출 한도인지를 가른다 — 엔진이 문구를 고쳐 쓰면 화면은
+    조용히 옛 갈래('서버에 연결하지 못했습니다')로 돌아간다. 엔진 소스에 그 글자가 그대로 있는지 본다."""
+    delib_src = _engine_src("deliberation.py")
+    errors = (FE / "src/lib/chatErrors.ts").read_text(encoding="utf-8")
+    m = re.search(r"^const NO_DECISION = '([^']+)';", errors, re.M)
+    assert m, "chatErrors.ts 에서 NO_DECISION 을 못 찾았다 — 이름이 바뀌었으면 이 시험도 고쳐라"
+    for code, head in (("chair_failed", _CHAIR_HEAD), ("sim_no_mechanism", "1단 메커니즘 심의가 결정문을 내지 못해 ")):
+        assert f'"code": "{code}"' in delib_src and head in delib_src, f"엔진의 {code} 글이 바뀌었다 — 이 파일의 글과 맞춘다"
+        assert m.group(1) in head, f"화면은 '{m.group(1)}' 로 알아보는데 엔진의 {code} 글에는 그 글자가 없다"
+    lim = re.search(r"^const LLM_LIMIT_WHY = '([^']+)';", errors, re.M)
+    assert lim and lim.group(1) in _WHY_LIMIT and f'"{lim.group(1)}("' in delib_src, (
+        "엔진이 LLM 호출 한도를 말하는 글자가 바뀌었다 — 화면은 이것으로 '닿지 않는다' 와 '한도에 걸렸다' 를 가른다")
