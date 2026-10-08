@@ -205,6 +205,7 @@ class Settings(BaseSettings):
     # 서버 대화 저장소의 SQLite 잠금 대기(초). 종전에는 sqlite3 기본 5초였다 — 다른 프로세스(백업 backup-local.sh 가 이 DB 를
     # 연다)가 5초 넘게 잠그면 몇 시간 돈 심의의 발언·결정문 저장이 'database is locked' 로 끊기는데, 스트림이 이미 닫힌
     # 뒤라 화면에는 아무것도 안 뜬다. 여전히 짧고 유한하다 — 넘으면 저장하는 쪽이 경고 로그를 남긴다.
+    # 저장소는 이제 WAL 이다(conv_store.py) — 읽기만 하는 백업은 저장을 막지 않고, 이 대기는 다른 연결이 **쓰는** 동안에만 걸린다.
     conv_store_busy_timeout_s: float = 30.0
 
     # 절차(업무 절차 인벤토리) — 챗과 자원을 공유하지 않는 격리 모듈(docs/procedures/PLAN.md §3).

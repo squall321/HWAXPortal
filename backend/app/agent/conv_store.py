@@ -6,6 +6,7 @@ SQLite 로 재시작 내구성을 얻는다(멀티 인스턴스면 같은 인터
 소유권: 모든 조회/변경은 owner_sub == 현재 principal 을 강제한다(타인 대화 접근 차단).
 """
 import json
+import logging
 import sqlite3
 import threading
 import uuid
@@ -13,6 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> int:
@@ -32,8 +35,22 @@ class ConversationStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         # 잠금 대기(CONV_STORE_BUSY_TIMEOUT_S) — 절차 저장소(procedures/store.py)와 같은 방식. 끝난 심의의 유일한 서버 사본을
-        # 쓰는 자리라 sqlite3 기본 5초는 짧다(백업이 이 DB 를 연다). 그래도 유한하다 — 넘으면 저장하는 쪽이 로그로 알린다.
+        # 쓰는 자리라 sqlite3 기본 5초는 짧다. 그래도 유한하다 — 넘으면 저장하는 쪽이 로그로 알린다. 아래 WAL 에서 이 대기가
+        # 걸리는 것은 다른 연결이 **쓰는** 동안뿐이다(읽는 쪽은 막지 않는다).
         self._conn.execute(f"PRAGMA busy_timeout={int(settings.conv_store_busy_timeout_s * 1000)}")
+        # WAL — 읽는 쪽이 쓰기를 막지 않게 한다. 백업(backup-local.sh)은 이 DB 를 mode=ro 로 통째로 읽는 동안 읽기 잠금을 쥐는데,
+        # 종전 저널(delete)에서는 그 동안 append 의 commit 이 위 잠금 대기만큼 멈췄다. 잠금 대기를 5초에서 30초로 늘린 뒤로는 그
+        # 멈춤이 최대 30초가 됐다(사본 실측 — 1.3GB DB 의 백업 15초 동안 저장도 15초 멈췄다). 절차 저장소가 같은 백업을 같은
+        # 방식으로 견딘다. 한 번 바뀌면 파일에 남는다(옆에 -wal·-shm 이 생긴다 — 지우지 않는다).
+        # 잠금 대기를 **먼저** 건다 — 바꾸는 순간 다른 연결이 쥐고 있으면 기다렸다가 바꾼다. 그래도 못 바꾸면 기동을 막지 않는다
+        # (포털은 SSO 허브다). 종전 모드로 돌고 다음 기동이 다시 바꾼다.
+        try:
+            mode = self._conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+        except sqlite3.OperationalError as exc:
+            mode = f"실패 — {exc}"
+        if str(mode).lower() != "wal":
+            logger.warning("대화 저장소를 WAL 로 바꾸지 못했다(%s) — 이번 기동은 종전 저널 모드로 돈다. 읽는 쪽(백업)이 DB 를 쥔 동안 "
+                           "저장이 CONV_STORE_BUSY_TIMEOUT_S 만큼 기다린다. 다음 기동이 다시 바꾼다 · %s", mode, path)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS conversations ("
             "id TEXT PRIMARY KEY, owner_sub TEXT NOT NULL, title TEXT, "

@@ -73,6 +73,51 @@ def test_잠금이_한도를_넘기면_그_시간_뒤에_실패한다(tmp_path):
     assert 0.2 <= took < 4.0, f"잠금 대기 0.3초인데 {took:.2f}초 뒤에 포기했다(종전이면 5초)"
 
 
+def _hold_read_lock(path: str) -> sqlite3.Connection:
+    """백업의 읽기 잠금 대역 — backup-local.sh 가 여는 그 모양(mode=ro)으로 읽기 트랜잭션을 쥔다. 놓으려면 close() 한다."""
+    c = sqlite3.connect(f"file:{path}?mode=ro", uri=True, isolation_level=None)
+    c.execute("BEGIN")
+    c.execute("SELECT count(*) FROM messages").fetchone()
+    return c
+
+
+def test_읽기_잠금은_저장을_막지_않는다(tmp_path):
+    """백업은 DB 를 통째로 읽는 동안 읽기 잠금을 쥔다. 종전 저널(delete)에서는 그 동안 append 의 commit 이 잠금 대기만큼 멈췄다 —
+    그 대기가 포털의 이벤트 루프 위라 로그인과 다른 사람의 릴레이가 같이 멈춘다. WAL 에서는 읽는 쪽이 쓰기를 막지 않는다."""
+    store, path = _store(tmp_path, conv_store_busy_timeout_s=2)
+    cid = store.create(owner_sub="u1", title="t", kind="deliberation")
+    reader = _hold_read_lock(path)
+    t0 = time.monotonic()
+    try:
+        assert store.append(conversation_id=cid, owner_sub="u1", role="assistant", content="결정문") is True
+        took = time.monotonic() - t0
+    finally:
+        reader.close()
+    assert took < 1.0, f"읽는 쪽이 쥔 동안 저장이 {took:.2f}초 기다렸다"
+    assert [m["content"] for m in store.get(cid, "u1")["messages"]] == ["결정문"]
+    assert store._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_WAL_로_못_바꿔도_기동은_하고_로그로_말한다(tmp_path, caplog):
+    """저널 모드를 바꾸는 순간 다른 연결이 DB 를 쥐고 있으면 sqlite 가 'database is locked' 를 던진다. 포털은 SSO 허브다 —
+    대화 저장소 하나 때문에 기동을 못 하면 로그인이 같이 내려간다. 종전 모드로 돌고, 다음 기동이 다시 바꾼다."""
+    before, path = _store(tmp_path)
+    before._conn.execute("PRAGMA journal_mode=DELETE")      # 이 변경 전에 만들어진 DB 의 모양(저널 delete)으로 되돌려 둔다
+    before._conn.close()
+    reader = _hold_read_lock(path)
+    try:
+        with caplog.at_level(logging.WARNING, logger="app.agent.conv_store"):
+            store = ConversationStore(Settings(_env_file=None, conv_store_path=path, conv_store_busy_timeout_s=0.3))
+    finally:
+        reader.close()
+    assert store._conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete", "시험 전제 — 쥔 연결 때문에 못 바꿨다"
+    (line,) = [rec.getMessage() for rec in caplog.records if "WAL" in rec.getMessage()]
+    assert "database is locked" in line and "다음 기동" in line
+    store._conn.close()
+    again = ConversationStore(Settings(_env_file=None, conv_store_path=path))
+    assert again._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal", "쥔 연결이 없으면 다음 기동이 바꾼다"
+
+
 def test_끝난_심의의_저장이_실패하면_로그가_사유와_손잡이를_말한다(caplog):
     """스트림은 정상으로 끝나고(화면은 다 받았다) 서버 사본만 빠진다 — 그 사실이 로그 한 줄로 남아야 한다."""
     from fastapi.testclient import TestClient

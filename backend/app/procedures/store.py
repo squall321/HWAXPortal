@@ -5,7 +5,8 @@
 1. **스레드별 연결** — 포털 4곳은 연결 1개 + Lock 이라 `to_thread` 로 감싸면 트랜잭션 경계가
    스레드 사이에서 섞인다. S5 일괄 재생(실행 N개 동시)에서 바로 난다.
 2. **WAL + busy_timeout=5000** — `backup-local.sh`·이관기가 `mode=ro` 로 동시에 여는 순간을
-   견딘다. 포털 sqlite 4곳은 디스크 실측이 전부 `journal_mode=delete` 다.
+   견딘다. 포털 sqlite 4곳은 디스크 실측이 전부 `journal_mode=delete` 였다 — 그 가운데 대화
+   저장소(`conv_store`)는 같은 이유로 뒤에 WAL 로 옮겼다. 나머지 셋은 그대로다.
 3. **append-only** — 단계 기록에 수정·삭제 API 가 없다. 게이트웨이 원장은 MCP 경로에서
    호출자를 안 적으므로(context-notes W-17) 이 표가 유일한 사람 단위 흔적이다.
 """

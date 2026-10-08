@@ -271,7 +271,7 @@ def store(tmp_path):
 
 
 def test_wal_is_on(store):
-    """포털 sqlite 4곳은 디스크 실측이 전부 journal_mode=delete 다. 여기는 아니어야 한다."""
+    """포털 sqlite 4곳은 디스크 실측이 전부 journal_mode=delete 였다(대화 저장소는 뒤에 WAL 로 옮겼다). 여기는 아니어야 한다."""
     assert store.health()["journal_mode"].lower() == "wal"
 
 
