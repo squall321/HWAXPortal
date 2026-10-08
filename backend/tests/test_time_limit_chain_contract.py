@@ -86,8 +86,12 @@ def _risk() -> dict[str, float]:
         return rf"^{name}\s*=\s*(\d+)"
     c = "backend/app/config.py"
     panel = _val(RISK, c, const("DEFAULT_PANEL_TIMEOUT_S"))
-    assert "(panel_timeout_s(cfg) or DEFAULT_PANEL_TIMEOUT_S) + ENGINE_BUSY_ALLOWANCE_S + CREDENTIAL_SLACK_S" in _src(RISK, c), (
+    # 429 몫은 러너가 실제로 기다리는 예산(HWAXRISK_ENGINE_BUSY_MAX_WAIT_S)이고, 그 손잡이의 기본값이 ENGINE_BUSY_ALLOWANCE_S 다
+    # (리스크 앱 c4f0852 — 종전에는 식이 그 상수를 직접 더했다). 식과 기본값 자리를 둘 다 본다 — 아래 margin 은 기본값끼리의 셈이다.
+    assert "(panel_timeout_s(cfg) or DEFAULT_PANEL_TIMEOUT_S) + engine_busy_max_wait_s(cfg) + CREDENTIAL_SLACK_S" in _src(RISK, c), (
         "리스크 앱의 자격 여유 식이 바뀌었다 — 아래 margin 을 그 식대로 고쳐라")
+    assert 'env.get("HWAXRISK_ENGINE_BUSY_MAX_WAIT_S", str(ENGINE_BUSY_ALLOWANCE_S))' in _src(RISK, c), (
+        "리스크 앱의 429 대기 예산 기본값이 ENGINE_BUSY_ALLOWANCE_S 가 아니게 됐다 — 아래 margin 이 읽는 상수를 고쳐라")
     return {"panel": panel, "read": _val(RISK, c, const("DEFAULT_ENGINE_READ_TIMEOUT_S")),
             "margin": panel + _val(RISK, c, const("ENGINE_BUSY_ALLOWANCE_S")) + _val(RISK, c, const("CREDENTIAL_SLACK_S")),
             "pat_floor": _val(RISK, "backend/app/routes.py", const("PAT_MIN_REMAINING_S"))}
