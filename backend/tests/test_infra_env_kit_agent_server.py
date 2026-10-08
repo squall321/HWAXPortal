@@ -157,8 +157,9 @@ def test_킷의_값이_엔진_기본값과_같다(knob):
     if not ENGINE.exists():
         pytest.skip(f"형제 리포 없음: {ENGINE}")
     got = _engine_default(knob)
-    if got is None:
-        pytest.skip(f"옆의 에이전트 서버가 아직 {knob} 를 모르는 판이다")
+    # 건너뛰지 않는다 — 엔진이 이름을 바꾸면 킷은 아무도 안 읽는 손잡이를 적은 채 남고, 그것을 보고 적은 박스의 값은 조용히 안 먹는다.
+    # (두 리포를 나란히 고치던 동안에는 '아직 모르는 판' 으로 건너뛰었다 — 이제 양쪽이 다 들어와 있다.)
+    assert got is not None, f"엔진 소스에서 {knob} 의 기본값을 못 찾았다 — 엔진이 이름을 바꿨거나 줄 모양이 달라졌다. 킷과 위 식을 맞춘다"
     assert float(got) == float(_knobs()[knob]), f"{knob}: 엔진 {got} · 킷 {_knobs()[knob]}"
 
 
