@@ -32,11 +32,11 @@
 
 ## 게이트웨이 뒤처리(구현 단위가 남긴 것)
 - [x] 포털 update-all 이 `PER_USER_SSO_APPS`·`<접두>_SSO_*` 를 provision 에 넘긴다(#8 짝)
-- [ ] 엔진 `_AREA_HINT` 에 `quality`(#20 짝)
-- [ ] `provision-config.sh` 의 ODB 허브 기본 주소(사내 IP 가 추적 파일에 박혀 있다 — 종전부터) 걷기
+- [x] 엔진 `_AREA_HINT` 에 `quality`(#20 짝)
+- [x] `provision-config.sh` 의 ODB 허브 기본 주소(사내 IP 가 추적 파일에 박혀 있다 — 종전부터) 걷기
 
 ## 검증·반영(심의 엔진 변경과 함께)
 - [x] 반박 검토 → 확정분 수정 → 전체 시험(D-13)
-- [ ] dev 선행 — `provision.env` 에 `SMARTTWIN_MCP_URL` · `infra/.env` 에 `PORTAL_ADMIN_EMAILS`
-- [ ] push · 빌드 · Drive · dev 재기동 · `/health/ready` 에 `no_active_admin` 없음
-- [ ] 업데이트 이력 · CLAUDE.md 표
+- [x] dev 선행 — `provision.env` 에 `SMARTTWIN_MCP_URL` · `infra/.env` 에 `PORTAL_ADMIN_EMAILS`
+- [x] push · 빌드 · Drive · dev 재기동 · `/health/ready` 에 `no_active_admin` 없음
+- [x] 업데이트 이력 · CLAUDE.md 표

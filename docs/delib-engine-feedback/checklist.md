@@ -45,12 +45,12 @@
 ## 검증·반영
 - [x] 반박 검토(8·9·10차와 함께, 렌즈 여덟) → 확정분 수정(D-16)
 - [x] 리포별 전체 시험
-- [ ] push · agent-server 재기동 · AIDataHub 재기동 · 포털 빌드·Drive·재기동 · sync-workflows
-- [ ] 업데이트 이력 · CLAUDE.md 표
+- [x] push · agent-server 재기동 · AIDataHub 재기동 · 포털 빌드·Drive·재기동 · sync-workflows
+- [x] 업데이트 이력 · CLAUDE.md 표
 
 ## 시간 제한(D-17)
 - [x] 경로 전수 조사(149건) → 통합 표(바꿈 60 · 그대로 89)
 - [x] 엔진 heartbeat·LLM 제한·의장 실패 폴백 · 게이트웨이 호출 600초 · 포털 릴레이·nginx·토큰 · 리스크 앱 벽시계 12시간 · AIDataHub 워치독
 - [x] 층 순서 검토 → 확정 26건 수정 → 전체 시험
-- [ ] push · hwax-risk SIF · Drive · dev 재기동 · 서버 절차서 갱신
+- [x] push · hwax-risk SIF · Drive · dev 재기동 · 서버 절차서 갱신
 - [ ] (미룸) 웹 심의 잡 원장(engine-26) · KooRemapper·HEAXHub 네 건 · 리스크 앱 화면의 마지막 신호
