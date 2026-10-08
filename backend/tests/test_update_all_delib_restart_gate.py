@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -25,12 +26,15 @@ LIBS = f'. "{LIBDIR}/change-detect.sh"\n. "{LIBDIR}/skip-ledger.sh"\n. "{BUSY_LI
 
 @pytest.fixture()
 def health():
-    """지어낸 에이전트 서버 /health — state['body'] 를 그대로 답하고(문자열이면 그대로, None 이면 404) 요청 수를 센다."""
-    state = {"body": {"status": "ok"}, "hits": 0}
+    """지어낸 에이전트 서버 /health — state['body'] 를 그대로 답하고(문자열이면 그대로, None 이면 404) 요청 수를 센다.
+    state['delay'] 에 초를 적으면 요청마다 앞에서부터 하나씩 꺼내 그만큼 늦게 답한다(이벤트 루프가 막힌 순간의 서버)."""
+    state = {"body": {"status": "ok"}, "hits": 0, "delay": []}
 
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             state["hits"] += 1
+            if state["delay"]:
+                time.sleep(state["delay"].pop(0))
             body = state["body"]
             if body is None or self.path != "/health":
                 self.send_response(404); self.end_headers(); return
@@ -100,6 +104,43 @@ def test_운영자_셸의_프록시를_타지_않는다(health):
     assert _busy(health["url"], http_proxy=dead, HTTP_PROXY=dead, no_proxy="", NO_PROXY="") == (0, "1 0")
 
 
+# ── 늦게 답한 서버는 '모름' 이 아니다 — 거절과 시간 초과를 가른다 ────────────────────────────────────
+# 에이전트 서버의 이벤트 루프는 동기 조회로 몇 초씩 막힌다(게이트웨이가 매달린 순간의 /tools-map 5초 · LLM 서버가 매달린 순간의
+# /models 5초). 그 순간에 한 번 물어 4초를 넘기면 종전에는 '모름' 이었고 모름은 재기동이다 — 살아서 10시간짜리 패널을 돌리는
+# 서버가 죽은 서버와 같은 취급을 받았다. 탐침 4초는 그대로 두고(죽은 상대를 재는 값이다) 시간 초과만 연속으로 세어 본다.
+LATE = 5        # 탐침 한도(4초)를 넘기는 응답 지연
+
+
+def test_한_번_늦게_답한_서버를_모름으로_읽지_않는다(health):
+    health["body"] = {"status": "ok", "delib_active": 2, "delib_queued": 1}
+    health["delay"] = [LATE]
+    assert _busy(health["url"], HWAX_DELIB_PROBE_GAP_S="0") == (0, "2 1")
+    assert health["hits"] == 2, "시간 초과면 다시 묻는다 — 답을 받았으면 더 묻지 않는다"
+
+
+def test_내려간_서버는_다시_묻지_않는다():
+    """거절(curl 7)은 내려가 있다는 뜻이다 — 다시 묻거나 쉬면 죽은 서버를 띄우는 일만 늦어진다."""
+    t0 = time.monotonic()
+    assert _busy("http://127.0.0.1:9/health", HWAX_DELIB_PROBE_GAP_S="5") == (2, "")
+    assert time.monotonic() - t0 < 3, "거절에 재시도·대기를 썼다"
+
+
+def test_연속으로_시간_초과면_매달린_것이다(health):
+    """듣고는 있는데 내리 답이 없다 — 4. 2(내려갔다·옛 판)와 갈라야 부르는 쪽이 사유를 사실대로 적는다. 건너뛰는 값은 아니다
+    (매달린 서버를 무인 경로가 다시 띄울 수 있어야 한다)."""
+    health["body"] = {"status": "ok", "delib_active": 2, "delib_queued": 1}
+    health["delay"] = [LATE, LATE]
+    assert _busy(health["url"], HWAX_DELIB_PROBE_STRIKES="2", HWAX_DELIB_PROBE_GAP_S="0") == (4, "")
+    assert health["hits"] == 2
+
+
+@pytest.mark.parametrize("strikes", ["0", "-1", "많이", ""])
+def test_횟수를_잘못_적어도_묻기는_한다(health, strikes):
+    """0 은 '묻지 않는다' 가 아니다 — 한 번도 안 묻고 '매달렸다' 로 읽으면 도는 심의가 있어도 재기동한다. 기본값으로 읽는다."""
+    health["body"] = {"status": "ok", "delib_active": 1, "delib_queued": 0}
+    assert _busy(health["url"], HWAX_DELIB_PROBE_STRIKES=strikes) == (0, "1 0")
+
+
 # ── §4 update-sites — 에이전트 서버를 내리기 전에 묻는다 ────────────────────────────────────────
 def _restart_svc_block() -> str:
     i = UPDATE_SITES.index('SKIPPED_RESTART=""')
@@ -150,6 +191,25 @@ def test_심의가_없거나_옛_판이면_종전대로_재기동한다(tmp_path
     assert "건너뜀" not in out and ledger == ""
     said_old = "묻지 못하고 재기동한다" in out
     assert said_old is ("delib_active" not in body), "수를 싣지 않는 옛 판이면 묻지 못했다고 말한다 — 조용하면 물은 줄 안다"
+
+
+def test_늦게_답한_순간에도_에이전트_서버를_내리지_않는다(tmp_path, health):
+    health["body"] = {"status": "ok", "delib_active": 2, "delib_queued": 1}
+    health["delay"] = [LATE]
+    out, calls, state, ledger = _restart(tmp_path, health["url"], HWAX_DELIB_PROBE_GAP_S="0")
+    assert "down agent-server" not in calls and "up agent-server" not in calls, (calls, out)
+    assert "DEFERRED=[ agent-server]" in out and "agent-server 재기동 건너뜀" in ledger and state is None
+    assert "옛 판" not in out, "늦게 답한 새 판을 옛 판이라고 말하지 않는다"
+
+
+def test_매달린_서버는_재기동하되_옛_판이라고_말하지_않는다(tmp_path, health):
+    """종전에는 이 갈래가 '/health 가 도는 심의 수를 싣지 않는다(옛 판)' 로 찍혔다 — 수를 싣는 새 판이 늦게 답했을 뿐인데."""
+    health["body"] = {"status": "ok", "delib_active": 2, "delib_queued": 1}
+    health["delay"] = [LATE]
+    out, calls, _, ledger = _restart(tmp_path, health["url"], HWAX_DELIB_PROBE_STRIKES="1", HWAX_DELIB_PROBE_GAP_S="0")
+    assert "down agent-server" in calls and "up agent-server" in calls, (calls, out)
+    assert "옛 판" not in out and "연속" in out and "답하지 않았다" in out, out
+    assert "건너뜀" not in out and ledger == ""
 
 
 def test_강행하면_심의가_돌아도_재기동한다(tmp_path, health):

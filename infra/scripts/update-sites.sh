@@ -213,7 +213,11 @@ restart_svc() {
       if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 종료코드만 올린다" >&2; return 2; fi
       return 0
     fi
-    if [ "$_brc" = 2 ] && hwax_alive "${_urls[0]}"; then
+    # 4 = 듣고는 있는데 내리 시간 초과다(매달렸다). '옛 판' 과 갈라 적는다 — 수를 싣는 새 판이 답을 못 했을 뿐이다. 재기동은 한다
+    # (매달린 서버를 무인 경로가 다시 띄울 수 있어야 한다). 도는 심의가 있었는지는 모른다 — 그 사실을 그대로 말한다.
+    if [ "$_brc" = 4 ]; then
+      echo "  · $name: /health 가 연속으로 4초 안에 답하지 않았다(듣고는 있다 — 매달린 것으로 본다). 도는 심의 수를 확인하지 못한 채 재기동한다"
+    elif [ "$_brc" = 2 ] && hwax_alive "${_urls[0]}"; then
       echo "  · $name: /health 가 도는 심의 수(delib_active·delib_queued)를 싣지 않는다(옛 판) — 묻지 못하고 재기동한다"
     fi
   fi
