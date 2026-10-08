@@ -84,18 +84,23 @@ class ConversationStore:
         )
         self._conn.commit()
 
+    # ⚠ 쓰기는 전부 `with self._lock, self._conn:` 이다 — 연결 문맥이 끝에서 commit 하고, **도중에 실패하면 rollback 한다.**
+    #   되돌리지 않으면 잠금 대기가 다 찬 INSERT 가 파이썬이 먼저 연 BEGIN 을 남긴다. 연결이 하나라 그 뒤의 읽기가 그 트랜잭션
+    #   안에서 스냅샷을 쥐고, WAL 에서는 다른 연결이 한 번이라도 커밋하면 그 스냅샷이 낡는다 — 이 연결의 쓰기는 기다리지도 않고
+    #   'database is locked' 로 실패하고 읽기는 옛 내용만 본다. 포털을 다시 띄울 때까지다(사본 재현). 종전 저널에서는 남은
+    #   읽기 잠금이 다른 연결의 commit 을 막았다.
+
     # ── 생성 ────────────────────────────────────────────────────────────────
     def create(self, *, owner_sub: str, title: str, kind: str = "chat",
                source: str = "web", conv_id: str | None = None) -> str:
         cid = conv_id or _uid()
         now = _now()
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute(
                 "INSERT OR IGNORE INTO conversations (id, owner_sub, title, kind, source, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (cid, owner_sub, title[:200], kind, source, now, now),
             )
-            self._conn.commit()
         return cid
 
     def create_with_messages(self, *, owner_sub: str, title: str, kind: str,
@@ -121,7 +126,7 @@ class ConversationStore:
                meta: dict | None = None) -> bool:
         """메시지 1건 추가. 소유자만. 대화 없으면 실패(False)."""
         now = _now()
-        with self._lock:
+        with self._lock, self._conn:
             if not self._owns(conversation_id, owner_sub):
                 return False
             cur = self._conn.execute(
@@ -138,7 +143,6 @@ class ConversationStore:
             self._conn.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id)
             )
-            self._conn.commit()
         return True
 
     # ── 조회 ────────────────────────────────────────────────────────────────
@@ -174,22 +178,20 @@ class ConversationStore:
                 "created_at": head[4], "updated_at": head[5], "messages": msgs}
 
     def delete(self, cid: str, owner_sub: str) -> bool:
-        with self._lock:
+        with self._lock, self._conn:
             if not self._owns(cid, owner_sub):
                 return False
             self._conn.execute("DELETE FROM messages WHERE conversation_id = ?", (cid,))
             self._conn.execute("DELETE FROM message_vectors WHERE conversation_id = ?", (cid,))
             self._conn.execute("DELETE FROM conversations WHERE id = ?", (cid,))
-            self._conn.commit()
         return True
 
     def rename(self, cid: str, owner_sub: str, title: str) -> bool:
-        with self._lock:
+        with self._lock, self._conn:
             cur = self._conn.execute(
                 "UPDATE conversations SET title = ? WHERE id = ? AND owner_sub = ?",
                 (title[:200], cid, owner_sub),
             )
-            self._conn.commit()
             return cur.rowcount > 0
 
     # ── 의미검색 인덱스 ──────────────────────────────────────────────────────
@@ -229,7 +231,7 @@ class ConversationStore:
         if not rows:
             return 0
         now = _now()
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.executemany(
                 "INSERT OR REPLACE INTO message_vectors "
                 "(message_id, chunk_ix, conversation_id, owner_sub, text, model, dim, vec, ts) "
@@ -237,7 +239,6 @@ class ConversationStore:
                 [(r["message_id"], r["chunk_ix"], r["conversation_id"], r["owner_sub"],
                   r["text"], r["model"], r["dim"], r["vec"], now) for r in rows],
             )
-            self._conn.commit()
         return len(rows)
 
     def vectors_for(self, owner_sub: str, model: str) -> list[tuple]:

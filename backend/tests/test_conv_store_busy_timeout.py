@@ -118,6 +118,31 @@ def test_WAL_로_못_바꿔도_기동은_하고_로그로_말한다(tmp_path, ca
     assert again._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal", "쥔 연결이 없으면 다음 기동이 바꾼다"
 
 
+def test_잠금에_걸린_쓰기가_연결을_열린_트랜잭션에_남기지_않는다(tmp_path):
+    """저장소는 연결 하나를 계속 쓴다. 잠금 대기가 다 찬 INSERT 는 파이썬이 먼저 연 BEGIN 을 남기는데, 되돌리지 않으면 그 연결의
+    다음 읽기가 그 트랜잭션 안에서 스냅샷을 쥔다. WAL 에서는 그 뒤 다른 연결이 한 번이라도 커밋하면 스냅샷이 낡아, 이 연결의
+    쓰기는 **기다리지도 않고** 'database is locked' 로 실패하고 읽기는 옛 내용만 본다 — 포털을 다시 띄울 때까지(사본 재현)."""
+    store, path = _store(tmp_path, conv_store_busy_timeout_s=0.3)
+    cid = store.create(owner_sub="u1", title="t", kind="deliberation")
+    other = sqlite3.connect(path, isolation_level=None, timeout=5)      # 다른 프로세스의 쓰기 — 쥐고 있다가 커밋한다
+    other.execute("BEGIN IMMEDIATE")
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            store.append(conversation_id=cid, owner_sub="u1", role="assistant", content="잠긴 동안")
+        assert store._conn.in_transaction is False, "실패한 쓰기가 연 트랜잭션이 그대로 남았다"
+        assert [c["id"] for c in store.list_for_owner("u1")] == [cid]    # 그 사이의 읽기 — 남은 트랜잭션이면 여기서 스냅샷이 박힌다
+        other.execute("INSERT INTO conversations (id, owner_sub, title, kind, source, created_at, updated_at) "
+                      "VALUES ('other', 'u1', '다른 연결', 'chat', 'web', 1, 1)")
+        other.execute("COMMIT")
+    finally:
+        other.close()
+    t0 = time.monotonic()
+    assert store.append(conversation_id=cid, owner_sub="u1", role="assistant", content="풀린 뒤") is True
+    assert time.monotonic() - t0 < 2.0
+    assert {c["id"] for c in store.list_for_owner("u1")} == {cid, "other"}, "읽기가 옛 스냅샷에 갇혔다"
+    assert [m["content"] for m in store.get(cid, "u1")["messages"]] == ["풀린 뒤"], "실패한 쓰기는 뒤늦게 들어가지 않는다"
+
+
 def test_끝난_심의의_저장이_실패하면_로그가_사유와_손잡이를_말한다(caplog):
     """스트림은 정상으로 끝나고(화면은 다 받았다) 서버 사본만 빠진다 — 그 사실이 로그 한 줄로 남아야 한다."""
     from fastapi.testclient import TestClient
