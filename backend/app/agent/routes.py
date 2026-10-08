@@ -26,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import quote
 
+import anyio
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
@@ -236,6 +237,21 @@ def _conv(request: Request):
     return request.app.state.conv_store
 
 
+# ⚠ 대화 저장소는 **이벤트 루프 밖에서만** 부른다. 동기 sqlite3 라 잠금을 기다리는 동안(최대 CONV_STORE_BUSY_TIMEOUT_S, 30초)
+#   부른 스레드가 멈추는데, 포털은 uvicorn 프로세스 하나에 루프 하나다 — 루프 위에서 부르면 로그인, 다른 사람의 릴레이와 그
+#   ping, 게이트웨이·리스크 앱이 포털에 거는 3~8초짜리 조회가 같이 멈춘다(사본 실측 — 12초 잠금에 무관한 GET /health 가
+#   12.1초). 그래서 아래 대화 REST 는 `def`(FastAPI 가 스레드풀에서 돌린다)이고, async 인 /chat·검색은 to_thread 로 넘긴다.
+#   **하나라도 루프에 남기면 안 된다** — 스레드가 잠금을 기다리는 동안 저장소의 Lock 을 쥐고 있어, 루프에서 부른 쪽이 그
+#   Lock 에서 같이 멈춘다. 저장소는 메서드마다 Lock 을 commit 까지 쥐므로 스레드를 오가도 트랜잭션이 섞이지 않는다.
+
+
+def _store_busy(exc: sqlite3.OperationalError) -> AuthError:
+    """대화 쓰기가 sqlite 에서 막혔다 → 503. 리스크 앱이 패널 전에 대화를 만드는 자리라(POST /agent/conversations), 사유 없는
+    500 이면 그쪽 로그에 '대화 생성 거부: HTTP 500' 만 남는다 — 무엇을 기다리다 포기했는지와 손잡이를 말한다."""
+    return AuthError(f"대화 저장소에 쓰지 못했습니다 — {exc}(잠금 대기 CONV_STORE_BUSY_TIMEOUT_S="
+                     f"{get_settings().conv_store_busy_timeout_s:g}초). 잠시 뒤 다시 시도하세요", status_code=503)
+
+
 @router.get("/search-capability")
 async def search_capability(
     request: Request,
@@ -305,7 +321,7 @@ def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | 
 
 
 @router.get("/conversations")
-async def list_conversations(
+def list_conversations(
     request: Request,
     principal: Principal = Depends(principal_pat_or_session),
 ) -> dict:
@@ -313,26 +329,29 @@ async def list_conversations(
 
 
 @router.post("/conversations")
-async def create_conversation(
+def create_conversation(
     request: Request,
     body: ConvCreate,
     principal: Principal = Depends(principal_pat_or_session),
 ) -> dict:
-    if body.messages:
-        cid = _conv(request).create_with_messages(
-            owner_sub=principal.subject, title=body.title, kind=body.kind,
-            source=body.source,
-            messages=[m.model_dump() for m in body.messages],
-        )
-    else:
-        cid = _conv(request).create(
-            owner_sub=principal.subject, title=body.title, kind=body.kind, source=body.source
-        )
+    try:
+        if body.messages:
+            cid = _conv(request).create_with_messages(
+                owner_sub=principal.subject, title=body.title, kind=body.kind,
+                source=body.source,
+                messages=[m.model_dump() for m in body.messages],
+            )
+        else:
+            cid = _conv(request).create(
+                owner_sub=principal.subject, title=body.title, kind=body.kind, source=body.source
+            )
+    except sqlite3.OperationalError as exc:
+        raise _store_busy(exc) from exc
     return {"id": cid}
 
 
 @router.get("/conversations/{cid}")
-async def get_conversation(
+def get_conversation(
     cid: str,
     request: Request,
     principal: Principal = Depends(principal_pat_or_session),
@@ -344,23 +363,26 @@ async def get_conversation(
 
 
 @router.post("/conversations/{cid}/messages")
-async def append_conversation_message(
+def append_conversation_message(
     cid: str,
     request: Request,
     body: ConvMessageIn,
     principal: Principal = Depends(principal_pat_or_session),
 ) -> dict:
-    ok = _conv(request).append(
-        conversation_id=cid, owner_sub=principal.subject, role=body.role,
-        content=body.content, persona=body.persona, round=body.round, meta=body.meta,
-    )
+    try:
+        ok = _conv(request).append(
+            conversation_id=cid, owner_sub=principal.subject, role=body.role,
+            content=body.content, persona=body.persona, round=body.round, meta=body.meta,
+        )
+    except sqlite3.OperationalError as exc:
+        raise _store_busy(exc) from exc
     if not ok:
         raise AuthError("conversation not found", status_code=404)
     return {"ok": True}
 
 
 @router.delete("/conversations/{cid}")
-async def delete_conversation(
+def delete_conversation(
     cid: str,
     request: Request,
     principal: Principal = Depends(principal_pat_or_session),
@@ -375,7 +397,7 @@ class ConvRename(BaseModel):
 
 
 @router.patch("/conversations/{cid}")
-async def rename_conversation(
+def rename_conversation(
     cid: str,
     request: Request,
     body: ConvRename,
@@ -415,7 +437,7 @@ async def search_conversations(
     # 아직 남은 색인 분량을 반드시 실어 보낸다 — 게으른 색인은 한 번에 상한까지만 처리하므로,
     # 큰 대화 이력에서는 첫 검색이 '부분 색인 위의 결과' 다. 그 사실을 숨기면 못 찾은 것이
     # 없는 것으로 읽힌다.
-    left = store.remaining(principal.subject, conv_search.MODEL)
+    left = await asyncio.to_thread(store.remaining, principal.subject, conv_search.MODEL)
     # 짧은 질의는 점수로 관련성을 가릴 수 없다(온토픽·오프토픽 분포가 겹친다). 결과를
     # 주되 그 사실을 함께 낸다 — 못 가르는 것을 가른 척하면 사용자가 무관한 결과를
     # 관련 있는 것으로 읽는다.
@@ -423,7 +445,7 @@ async def search_conversations(
             "문장으로 풀어 쓰면 정확해집니다.") if conv_search.short_query(body.query) else ""
     return {"query": body.query, "results": hits,
             "low_confidence": bool(warn), "note": warn,
-            "index": {**store.index_stats(principal.subject, conv_search.MODEL),
+            "index": {**(await asyncio.to_thread(store.index_stats, principal.subject, conv_search.MODEL)),
                       "just_indexed": idx["indexed"], "too_short": idx["too_short"],
                       "not_indexed_yet": left,
                       "partial": bool(left)}}
@@ -1445,8 +1467,8 @@ async def chat(
             if body.pinned_agents:
                 _pin["pinned_agents"] = list(body.pinned_agents)
             # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
-            if store.append(conversation_id=cid, owner_sub=owner, role="user", content=body.message,
-                            meta=_pin or None):
+            if await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
+                                       role="user", content=body.message, meta=_pin or None):
                 pass
             else:
                 store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
@@ -1527,44 +1549,52 @@ async def chat(
         finally:
             sem.release()  # released even on client disconnect (Starlette aclose()s the gen)
             if store is not None and cid:
-                # ⚠ 저장이 실패하면 **로그로 말한다.** 여기는 스트림이 닫힌 뒤라 예외가 나도 화면에 갈 길이 없고,
-                #   로그가 없으면 몇 시간 돈 심의의 서버 사본이 빠진 것을 아무도 모른다(브라우저 사본만 남는다).
-                #   첫 실패에서 멈춘다 — 잠긴 DB 에 발언마다 다시 기다리면 199건 × 잠금 대기가 된다.
-                try:
-                    # ⚠ 머리 60 이면 잘리는 쪽이 뒤 = 수렴 라운드의 최종 입장이다(감사 C41).
-                    #   캡은 서버 생성 상한(200)에 맞추고 꼬리를 지킨다 — 초기입장보다 최종입장이
-                    #   이어가기·재열람에 더 값나간다. 잘리면 로그를 남긴다.
-                    if len(turns) > 199:
-                        logger.warning("심의 발언 %d건 중 뒤 199건만 저장(cid=%s)", len(turns), cid)
-                    for t in turns[-199:]:  # 심의 발언 수 캡(폭주 방어) — 꼬리 유지
-                        # meta 는 이미 있는 칸이라 스키마 변경이 필요 없다. 관계는 target·round 만
-                        # 있으면 그려지므로 본문은 짧게 자른다(원문은 content 에 이미 있다).
-                        _m: dict = {}
-                        if t.get("stance"):
-                            _m["stance"] = str(t["stance"])[:40]
-                        if t.get("non_negotiable"):
-                            _m["non_negotiable"] = str(t["non_negotiable"])[:1200]
-                        if isinstance(t.get("rebut"), list) and t["rebut"]:
-                            _m["rebut"] = [
-                                {"target": str(r.get("target") or "")[:60],
-                                 "quote": str(r.get("quote") or "")[:80],
-                                 "counter": str(r.get("counter") or "")[:160],
-                                 "basis": str(r.get("basis") or "")[:60]}
-                                for r in t["rebut"][:4] if isinstance(r, dict)
-                            ]
-                        store.append(conversation_id=cid, owner_sub=owner, role="persona",
-                                     content=str(t["content"])[:20000],
-                                     persona=(str(t["persona"])[:120] if t.get("persona") else None),
-                                     round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
-                                     meta=(_m or None))
-                    reply = final if final is not None else (decision or "".join(acc))
-                    if reply:
-                        store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
-                                     meta=({"activity": activity[:60]} if activity else None))
-                except sqlite3.Error as exc:
-                    logger.warning("대화 저장 실패 — %s(잠금 대기 CONV_STORE_BUSY_TIMEOUT_S=%s초), cid=%s · 심의 발언 %d건과 "
-                                   "최종 응답 중 일부가 서버 대화에 없다", exc, settings.conv_store_busy_timeout_s, cid,
-                                   len(turns))
+                # 저장은 스레드에서 한다 — 루프 위에서 하면 잠금을 기다리는 동안 포털 전체가 멈춘다(대화 REST 머리의 ⚠).
+                # ⚠ 가려야(shield) 한다. 브라우저가 도중에 떠나면 Starlette 가 이 태스크를 취소하고, 취소된 채로 만난 await 는
+                #   곧바로 CancelledError 다 — 가리지 않으면 떠난 사람의 심의는 받은 발언이 하나도 저장되지 않는다(사본 재현:
+                #   ['user', 'persona'] 가 ['user'] 로). 긴 심의일수록 사람은 창을 닫고 떠난다.
+                def _save() -> None:
+                    # ⚠ 저장이 실패하면 **로그로 말한다.** 여기는 스트림이 닫힌 뒤라 예외가 나도 화면에 갈 길이 없고,
+                    #   로그가 없으면 몇 시간 돈 심의의 서버 사본이 빠진 것을 아무도 모른다(브라우저 사본만 남는다).
+                    #   첫 실패에서 멈춘다 — 잠긴 DB 에 발언마다 다시 기다리면 199건 × 잠금 대기가 된다.
+                    try:
+                        # ⚠ 머리 60 이면 잘리는 쪽이 뒤 = 수렴 라운드의 최종 입장이다(감사 C41).
+                        #   캡은 서버 생성 상한(200)에 맞추고 꼬리를 지킨다 — 초기입장보다 최종입장이
+                        #   이어가기·재열람에 더 값나간다. 잘리면 로그를 남긴다.
+                        if len(turns) > 199:
+                            logger.warning("심의 발언 %d건 중 뒤 199건만 저장(cid=%s)", len(turns), cid)
+                        for t in turns[-199:]:  # 심의 발언 수 캡(폭주 방어) — 꼬리 유지
+                            # meta 는 이미 있는 칸이라 스키마 변경이 필요 없다. 관계는 target·round 만
+                            # 있으면 그려지므로 본문은 짧게 자른다(원문은 content 에 이미 있다).
+                            _m: dict = {}
+                            if t.get("stance"):
+                                _m["stance"] = str(t["stance"])[:40]
+                            if t.get("non_negotiable"):
+                                _m["non_negotiable"] = str(t["non_negotiable"])[:1200]
+                            if isinstance(t.get("rebut"), list) and t["rebut"]:
+                                _m["rebut"] = [
+                                    {"target": str(r.get("target") or "")[:60],
+                                     "quote": str(r.get("quote") or "")[:80],
+                                     "counter": str(r.get("counter") or "")[:160],
+                                     "basis": str(r.get("basis") or "")[:60]}
+                                    for r in t["rebut"][:4] if isinstance(r, dict)
+                                ]
+                            store.append(conversation_id=cid, owner_sub=owner, role="persona",
+                                         content=str(t["content"])[:20000],
+                                         persona=(str(t["persona"])[:120] if t.get("persona") else None),
+                                         round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
+                                         meta=(_m or None))
+                        reply = final if final is not None else (decision or "".join(acc))
+                        if reply:
+                            store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
+                                         meta=({"activity": activity[:60]} if activity else None))
+                    except sqlite3.Error as exc:
+                        logger.warning("대화 저장 실패 — %s(잠금 대기 CONV_STORE_BUSY_TIMEOUT_S=%s초), cid=%s · 심의 발언 %d건과 "
+                                       "최종 응답 중 일부가 서버 대화에 없다", exc, settings.conv_store_busy_timeout_s, cid,
+                                       len(turns))
+
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(_save)
                 # 이 턴의 도구 호출을 **절차 원장**에도 남긴다 — 하나의 원장, 세 생산자
                 # (PLAN §9-9). 대화 저장과 별개이고, 실패해도 챗을 막지 않는다.
                 _pstore = getattr(request.app.state, "procedures_store", None)

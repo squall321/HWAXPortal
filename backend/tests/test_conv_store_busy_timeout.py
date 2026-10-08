@@ -5,10 +5,13 @@
 
 잠금은 다른 연결이 실제로 쥔다 — PRAGMA 값만 읽으면 '설정은 됐는데 안 걸리는' 경우를 못 본다.
 """
+import asyncio
+import json
 import logging
 import sqlite3
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import pytest
@@ -185,3 +188,189 @@ def test_끝난_심의의_저장이_실패하면_로그가_사유와_손잡이�
     assert [m["role"] for m in saved] == ["user"], "시험 전제 — 끝의 저장이 실제로 실패했다"
     (line,) = [rec.getMessage() for rec in caplog.records if "대화 저장 실패" in rec.getMessage()]
     assert "database is locked" in line and "CONV_STORE_BUSY_TIMEOUT_S" in line and cid in line
+
+
+# ── 저장은 이벤트 루프 밖에서 한다 — 포털은 uvicorn 프로세스 하나, 이벤트 루프 하나다 ─────────────────────────────
+# 저장소는 동기 sqlite3 다. async 핸들러가 그대로 부르면 잠금을 기다리는 동안(최대 CONV_STORE_BUSY_TIMEOUT_S 30초) 루프가 통째로
+# 멈춘다 — 로그인, 다른 사람의 릴레이와 그 ping, 게이트웨이·리스크 앱이 포털에 거는 3~8초짜리 조회까지. 잠금 대기를 5초에서
+# 30초로 늘리면서 그 최악이 30초가 됐다. 아래는 저장소 자리를 대역으로 바꾸지 않고, 다른 연결이 실제로 쥔 잠금으로 본다.
+class _Deliberation(httpx.AsyncByteStream):
+    """발언 하나와 결정문으로 끝나는 심의 스트림. hang 이 있으면 발언을 낸 뒤 그만큼 조용하다(끝나지 않은 심의)."""
+
+    def __init__(self, hang: float = 0.0) -> None:
+        self.hang = hang
+
+    async def __aiter__(self):
+        yield 'event: delib\ndata: {"kind": "turn", "round": 1, "persona": "mech-a", "say": "초기 입장"}\n\n'.encode()
+        if self.hang:
+            await asyncio.sleep(self.hang)
+        yield 'event: delib\ndata: {"kind": "decision", "text": "결정문"}\n\nevent: done\ndata: {}\n\n'.encode()
+
+
+@pytest.fixture()
+def portal():
+    """u1 로 들어온 포털 → (TestClient, app, 대화 DB 경로). 에이전트 서버 자리(app.state.agent_client)는 시험이 바꿔 끼우고 여기서 되돌린다."""
+    from fastapi.testclient import TestClient
+
+    from app.auth.provider import Principal
+    from app.config import get_settings
+    from app.deps import principal_pat_or_session
+    from app.main import app
+
+    app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
+        subject="u1", email="u1@hwax.local", display_name="U", groups=["feat:deliberation"])
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            real_client = app.state.agent_client
+            try:
+                yield c, app, get_settings().resolve(get_settings().conv_store_path)
+            finally:
+                app.state.agent_client = real_client
+    finally:
+        app.dependency_overrides.pop(principal_pat_or_session, None)
+
+
+def _agent(app, stream, on_call=lambda: None) -> None:
+    def upstream(req):
+        on_call()
+        return httpx.Response(200, stream=stream, headers={"content-type": "text/event-stream"})
+    app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+
+
+def _roles(c, cid: str) -> list[str]:
+    return [m["role"] for m in c.get(f"/agent/conversations/{cid}").json()["messages"]]
+
+
+def test_잠긴_저장소를_기다리는_동안_다른_요청은_답한다(portal):
+    """**이 시험이 이 구획의 이유다.** 끝난 심의의 저장이 3초짜리 잠금을 기다리는 사이에 무관한 GET /health 가 곧바로 답한다.
+    고치기 전에는 그 요청이 잠금이 풀릴 때까지(2.8초) 같이 멈췄다."""
+    c, app, path = portal
+    cid = c.post("/agent/conversations", json={"title": "t", "kind": "deliberation"}).json()["id"]
+    locks: list = []
+    # 에이전트 서버가 불리는 때는 사용자 발화가 저장된 뒤다 — 여기서 잠그면 걸리는 것은 끝의 저장이다
+    _agent(app, _Deliberation(), on_call=lambda: locks.append(_hold_write_lock(path, 3.0)))
+    with ThreadPoolExecutor(1) as pool:
+        relay = pool.submit(c.post, "/agent/chat", json={"message": "/심의 x", "conversation_id": cid})
+        for _ in range(500):
+            if locks:
+                break
+            time.sleep(0.01)
+        assert locks, "시험 전제 — 릴레이가 에이전트 서버를 부르지 않았다"
+        time.sleep(0.3)                             # 릴레이가 스트림을 다 읽고 끝의 저장에서 잠금을 기다리는 중이다
+        t0 = time.monotonic()
+        health = c.get("/health").status_code
+        took = time.monotonic() - t0
+        r = relay.result(timeout=60)
+    locks[0][0].join()
+    assert health == 200 and took < 1.0, f"대화 저장소의 잠금 대기가 이벤트 루프를 멈췄다 — 무관한 GET /health 가 {took:.2f}초 걸렸다"
+    assert r.status_code == 200 and "결정문" in r.text
+    assert _roles(c, cid) == ["user", "persona", "assistant"], "잠금이 풀린 뒤 끝의 저장이 끝까지 됐다"
+
+
+def _health_while(c, start) -> tuple[float, httpx.Response]:
+    """start 를 다른 스레드에서 걸어 놓고 0.3초 뒤 무관한 GET /health 가 얼마 만에 답하는지 → (걸린 초, start 의 응답)."""
+    with ThreadPoolExecutor(1) as pool:
+        job = pool.submit(start)
+        time.sleep(0.3)
+        t0 = time.monotonic()
+        assert c.get("/health").status_code == 200
+        took = time.monotonic() - t0
+        return took, job.result(timeout=60)
+
+
+@pytest.mark.parametrize("what", ["대화 생성", "챗의 사용자 발화"])
+def test_요청_길의_쓰기가_잠금을_기다려도_다른_요청은_답한다(portal, what):
+    """끝의 저장만이 아니다 — 같은 잠금 대기가 요청 길에도 걸린다. 리스크 앱이 패널 전에 거는 대화 생성과, 챗을 시작할 때의
+    사용자 발화 저장이다. 하나라도 루프에 남으면 그 요청 하나가 포털 전체를 세운다."""
+    c, app, path = portal
+    cid = c.post("/agent/conversations", json={"title": "t"}).json()["id"]
+    _agent(app, _Deliberation())
+    start = {"대화 생성": lambda: c.post("/agent/conversations", json={"title": "리스크 패널", "kind": "risk-review"}),
+             "챗의 사용자 발화": lambda: c.post("/agent/chat", json={"message": "안녕", "conversation_id": cid})}[what]
+    t, _release = _hold_write_lock(path, 2.0)
+    took, r = _health_while(c, start)
+    t.join()
+    assert took < 1.0, f"{what} — 잠금을 기다리는 동안 이벤트 루프가 멈췄다. 무관한 GET /health 가 {took:.2f}초 걸렸다"
+    assert r.status_code == 200, "잠금이 풀린 뒤 그 요청은 끝까지 됐다"
+
+
+def test_검색의_색인_통계가_저장소의_Lock_을_기다려도_다른_요청은_답한다(portal, monkeypatch):
+    """스레드가 sqlite 잠금을 기다리는 동안에는 저장소의 Lock 도 쥐고 있다 — 루프에서 부른 **읽기** 하나가 그 Lock 에서 같이
+    멈춘다. 검색 응답에 싣는 색인 통계 둘이 루프에 남아 있던 자리다(색인·순위는 이미 스레드였다). 임베더는 대역이고,
+    Lock 은 순위가 끝난 직후(통계를 읽기 직전)에 다른 스레드가 2초 쥔다."""
+    from app.agent import conv_search
+
+    c, app, _path = portal
+    lock = app.state.conv_store._lock
+
+    async def reindex(*_a, **_k):
+        return {"indexed": 0, "messages": 0, "too_short": 0}
+
+    async def search(*_a, **_k):
+        lock.acquire()
+        threading.Timer(2.0, lock.release).start()
+        return []
+
+    monkeypatch.setattr(conv_search, "reindex", reindex)
+    monkeypatch.setattr(conv_search, "search", search)
+    took, r = _health_while(c, lambda: c.post("/agent/conversations/search", json={"query": "배터리 스웰링 판단"}))
+    assert took < 1.0, f"검색이 저장소의 Lock 을 기다리는 동안 이벤트 루프가 멈췄다 — 무관한 GET /health 가 {took:.2f}초 걸렸다"
+    assert r.status_code == 200 and {"messages", "indexed", "not_indexed_yet"} <= set(r.json()["index"]), r.text
+
+
+def test_브라우저가_도중에_끊겨도_받은_발언은_저장된다(portal):
+    """끝의 저장을 스레드로 넘기면 await 가 생긴다. 브라우저가 스트림 도중에 떠나면 Starlette 가 그 태스크를 취소하는데(uvicorn 의
+    ASGI spec 2.3 갈래), 취소된 채로 만난 await 는 곧바로 CancelledError 다 — 가리지(shield) 않으면 저장이 통째로 건너뛰어진다.
+    긴 심의일수록 사람은 창을 닫고 떠난다. uvicorn 과 같은 scope 로 앱을 직접 불러 첫 프레임 뒤에 끊는다."""
+    c, app, _path = portal
+    cid = c.post("/agent/conversations", json={"title": "t", "kind": "deliberation"}).json()["id"]
+    _agent(app, _Deliberation(hang=30))             # 발언 하나를 낸 뒤 계속 도는 심의 — 그 사이에 끊긴다
+
+    async def run():
+        gone, first = asyncio.Event(), [True]
+        body = json.dumps({"message": "/심의 x", "conversation_id": cid}).encode()
+
+        async def receive():
+            if first[0]:
+                first[0] = False
+                return {"type": "http.request", "body": body, "more_body": False}
+            await gone.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(msg):
+            if msg["type"] == "http.response.body" and msg.get("body"):
+                gone.set()                          # 첫 프레임을 받은 직후 브라우저가 떠난다
+
+        scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"}, "http_version": "1.1", "method": "POST",
+                 "scheme": "http", "path": "/agent/chat", "raw_path": b"/agent/chat", "query_string": b"", "root_path": "",
+                 "client": ("127.0.0.1", 1), "server": ("testserver", 80), "app": app, "state": {},
+                 "headers": [(b"host", b"testserver"), (b"content-type", b"application/json"),
+                             (b"content-length", str(len(body)).encode())]}
+        await asyncio.wait_for(app(scope, receive, send), 20)
+
+    c.portal.call(run)
+    assert _roles(c, cid) == ["user", "persona"], "끊기기 전에 받은 발언이 서버 대화에 없다"
+
+
+def test_잠금_대기가_다_찬_대화_쓰기는_503_으로_손잡이를_말한다(portal):
+    """리스크 앱은 패널을 돌리기 전에 포털에 대화를 만든다(POST /agent/conversations). 잠금 대기가 다 차면 종전에는 사유 없는
+    HTTP 500 이라 그쪽 로그에 '대화 생성 거부: HTTP 500' 만 남았다 — 무엇을 기다리다 포기했는지, 어느 손잡이인지 말한다."""
+    from app.config import get_settings
+
+    c, app, path = portal
+    conn = app.state.conv_store._conn
+    cid = c.post("/agent/conversations", json={"title": "t", "kind": "deliberation"}).json()["id"]
+    conn.execute("PRAGMA busy_timeout=300")         # 떠 있는 저장소의 대기만 줄인다(기본 30초를 그대로 기다리지 않게)
+    t, release = _hold_write_lock(path, 30.0)
+    try:
+        made = c.post("/agent/conversations", json={"title": "리스크 패널", "kind": "risk-review"})
+        added = c.post(f"/agent/conversations/{cid}/messages", json={"role": "assistant", "content": "발언"})
+    finally:
+        release.set()
+        t.join()
+        conn.execute(f"PRAGMA busy_timeout={int(get_settings().conv_store_busy_timeout_s * 1000)}")
+    for r in (made, added):
+        assert r.status_code == 503, (r.status_code, r.text)
+        assert "CONV_STORE_BUSY_TIMEOUT_S" in r.json()["detail"] and "database is locked" in r.json()["detail"]
+    assert _roles(c, cid) == [], "실패한 쓰기는 뒤늦게 들어가지 않는다"
+    assert c.post("/agent/conversations", json={"title": "풀린 뒤"}).status_code == 200
