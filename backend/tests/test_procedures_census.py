@@ -150,8 +150,10 @@ def test_상태_조회는_캐시_판정에서_빠진다():
 
 def test_게이트웨이_호출_상한과의_관계가_아직_성립한다():
     """우리 단계 상한은 게이트웨이 상한(`CALL_TIMEOUT_S`)과 **관계로** 정해져 있다 —
-    그보다 짧게 둬야 우리가 먼저 끊고 기록을 남긴다. 그쪽이 바뀌면 그 관계가 조용히
-    뒤집혀, 게이트웨이가 먼저 끊고 우리에겐 `unknown` 만 남는다."""
+    그보다 짧게 둬야 우리가 먼저 끊고 `unknown`(실행 여부를 모른다)으로 기록을 남긴다. 그쪽이 바뀌면
+    그 관계가 조용히 뒤집혀 게이트웨이가 먼저 끊는다 — 그때 단계는 `failed/tool_error` 로 남고,
+    쓰기 단계의 재개가 사람 확인 없이 다시 보낸다. 상한이 **실제로** 걸리는지는 값의 순서로는 알 수
+    없다(test_procedures_runner 가 ping 이 흐르는 소켓으로 본다)."""
     from app.procedures.runner import EXPECT_TIMEOUT, WARMUP_TIMEOUT
 
     src = _gateway_source()

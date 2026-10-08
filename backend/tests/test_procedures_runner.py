@@ -5,6 +5,7 @@
 # tools/call, 응답은 SSE `data:` 줄.
 import asyncio
 import json
+import time
 import types
 
 import httpx
@@ -368,6 +369,79 @@ def test_timeout_is_unknown_not_failed(kit):
         assert st["state"] == "unknown" and st["stage"] == "timeout"   # 단계는 unknown
         assert "실행 여부를 모른다" in st["error"]
     asyncio.run(go(*kit))
+
+
+async def _pinging_gateway(tool_s: float, ping_s: float):
+    """게이트웨이처럼 답하는 **진짜 소켓** — tools/call 응답에 `: ping` 을 ping_s 마다 싣고 tool_s 뒤에 결과를 낸다(chunked).
+    MockTransport 는 시간 한도를 적용하지 않아, 한도가 실제로 걸리는지는 소켓으로만 본다."""
+    async def handle(reader, writer):
+        head = await reader.readuntil(b"\r\n\r\n")
+        n = next((int(ln.split(b":")[1]) for ln in head.split(b"\r\n") if ln.lower().startswith(b"content-length")), 0)
+        body = json.loads(await reader.readexactly(n)) if n else {}
+        m = body.get("method")
+
+        def plain(payload: dict, extra: bytes = b"") -> None:
+            raw = json.dumps(payload).encode()
+            writer.write(b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n" + extra
+                         + b"content-length: %d\r\n\r\n" % len(raw) + raw)
+
+        try:
+            if m == "tools/call":
+                writer.write(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n"
+                             b"transfer-encoding: chunked\r\n\r\n")
+                t0 = time.monotonic()
+                while time.monotonic() - t0 < tool_s:
+                    await asyncio.sleep(ping_s)
+                    writer.write(b"%x\r\n%s\r\n" % (len(b": ping\r\n\r\n"), b": ping\r\n\r\n"))
+                    await writer.drain()
+                last = ("event: message\r\ndata: " + json.dumps({"jsonrpc": "2.0", "id": 2, "result": ok({"made": 1})})
+                        + "\r\n\r\n").encode()
+                writer.write(b"%x\r\n%s\r\n0\r\n\r\n" % (len(last), last))
+            elif m == "tools/list":
+                plain({"jsonrpc": "2.0", "id": 3, "result": {"tools": [
+                    {"name": "b_create_thing", "description": "", "inputSchema": {}}]}})
+            elif m == "initialize":
+                plain({"jsonrpc": "2.0", "id": 1, "result": {}}, b"mcp-session-id: s1\r\n")
+            else:
+                plain({})
+            await writer.drain()
+            writer.close()
+        except (ConnectionError, OSError):      # 실행기가 기한에 먼저 끊었다 — 이 시험이 보려는 바로 그 일이다
+            pass
+    return await asyncio.start_server(handle, "127.0.0.1", 0)
+
+
+def test_ping_이_흐르는_응답에도_단계_상한은_벽시계로_걸린다(tmp_path, monkeypatch):
+    """게이트웨이는 응답에 15초마다 ping 을 싣는다. httpx 한도는 바이트 사이 간격이라 ping 이 올 때마다 되감긴다 — 단계 상한이
+    그 한도뿐이면 살아 있는 게이트웨이 앞에서는 한 번도 안 걸린다. 그러면 '빠름(30초)' 으로 적은 단계가 게이트웨이 상한(600초)까지
+    기다리고, 게이트웨이가 끊은 쓰기는 `unknown` 이 아니라 `failed` 로 남아 재개가 **확인 없이** 다시 보낸다.
+    같은 비율로 줄여 본다 — 상한 0.3초 · ping 0.1초 · 도구 1.5초. 고치기 전에는 1.5초 뒤 done 이었다."""
+    from app.procedures import runner as R
+
+    monkeypatch.setitem(R.EXPECT_TIMEOUT, "fast", 0.3)
+
+    async def go():
+        srv = await _pinging_gateway(tool_s=1.5, ping_s=0.1)
+        port = srv.sockets[0].getsockname()[1]
+        s = Settings(procedures_store_path=str(tmp_path / "wb.sqlite"), mcp_gateway_url=f"http://127.0.0.1:{port}")
+        store = ProceduresStore(s)
+        r = ProceduresRunner(settings=s, store=store, mint_pat=lambda p, run, ix: "pat")
+        spec = _spec([{"backend": "b", "tool": "create_thing"}])
+        rid = _run(store, spec)
+        t0 = time.perf_counter()
+        try:
+            await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+            took = time.perf_counter() - t0
+            st = store.list_steps(rid)[0]
+        finally:
+            await r.aclose()
+            store.close()
+            srv.close()
+            await srv.wait_closed()
+        assert (st["state"], st["stage"]) == ("unknown", "timeout"), (st["state"], st["stage"], f"{took:.2f}초")
+        assert "실행 여부를 모른다" in st["error"]
+        assert took < 1.0, f"단계 상한 0.3초가 {took:.2f}초에야 걸렸다 — 도구가 끝나기를 기다렸다"
+    asyncio.run(go())
 
 
 def test_warmup_discards_result_and_survives_timeout(kit):

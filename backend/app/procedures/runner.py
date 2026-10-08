@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 # (httpx 한도는 바이트 사이 간격이고 게이트웨이는 응답에 15초마다 ping 을 싣는다).
 CLIENT_TIMEOUT = 260.0
 # 단계 자체의 상한. 게이트웨이 상한(600초)보다 짧게 둬 우리가 먼저 끊고 기록을 남긴다.
+# ⚠ **벽시계 기한**이다(`_one` 이 wait_for 로 건다). httpx 에 넘기는 같은 값은 바이트 사이 간격이라, 15초마다 ping 을 싣는
+#   살아 있는 게이트웨이 앞에서는 한 번도 안 걸린다 — 그것만 있던 동안 '빠름 30초' 단계가 게이트웨이 상한(600초)까지 기다렸고,
+#   게이트웨이가 끊은 쓰기는 `unknown` 이 아니라 `failed/tool_error` 로 남아 재개가 확인 없이 다시 보냈다.
 EXPECT_TIMEOUT = {"fast": 30.0, "slow": 110.0, "job": 110.0}
 # 워밍업은 게이트웨이가 스스로 포기할 때까지 기다린다 — 콜드스타트를 한 번 버리는 호출이라 먼저 끊으면 흡수를 못 한다.
 # 게이트웨이 호출 상한 600초 + 단발 세션 바깥 기한 60초 = 660초, 거기에 30초 여유. 게이트웨이 상한이 120초이던 때는 125초였다.
@@ -681,8 +684,9 @@ class ProceduresRunner:
         lock = self._blk(st.backend) if st.expect == "slow" else _NULL_LOCK
         try:
             async with lock:
-                is_error, content = await sess.call(
-                    "invoke_tool", {"name": st.alias, "arguments": args}, pat, timeout)
+                # 기한은 잠금 **안**에서 센다 — 잠금을 기다린 시간은 이 단계의 몫이 아니고, 기한이 차면 잠금도 같이 놓는다.
+                is_error, content = await asyncio.wait_for(sess.call(
+                    "invoke_tool", {"name": st.alias, "arguments": args}, pat, timeout), timeout)
         except (httpx.TimeoutException, asyncio.TimeoutError):
             ms = int((time.perf_counter() - t0) * 1000)
             # 클라이언트가 먼저 포기했다 — 쓰기는 그 뒤 완료됐을 수 있다. failed 가 아니다.
