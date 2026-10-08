@@ -69,7 +69,7 @@ export function friendlyError(raw: string): { title: string; hint?: string; retr
       retry: false,
     };
   // 결정문 없이 끝난 심의 — 라운드는 끝까지 돌았고 좌석별 마지막 입장과 회의록이 서버에 남아 있다(엔진 글이 그렇게 말한다).
-  // 그 글을 그대로 보인다. 사유에 든 글자로 아래 갈래에 새면 그 말이 사라진다: LLM 서버가 죽어 의장만 실패한 심의가
+  // 그 글을 그대로 보인다. 사유에 든 글자로 아래 갈래에 새면 그 말이 사라진다 — LLM 서버가 죽어 의장만 실패한 심의가
   // '서버에 연결하지 못했습니다 · 네트워크를 확인하세요' 로, LLM 앞단의 502 Bad Gateway 가 '도구 서버' 탓으로 보였다.
   if (r.includes(NO_DECISION))
     return {
