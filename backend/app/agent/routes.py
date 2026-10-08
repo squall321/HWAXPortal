@@ -41,7 +41,7 @@ from app.agent.sse import sse_event
 from app.auth import ra_sso
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
-from app.config import Settings, get_settings
+from app.config import Settings, chat_pat_ttl_s, get_settings
 from app.agent import upload as _upload
 from app.deps import ensure, principal_pat_or_session
 
@@ -307,7 +307,8 @@ def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | 
             "scope": "api",
             "scopes": ["chat"],
             "pat_name": "chat-session",
-            "iat": issued, "nbf": issued, "exp": issued + timedelta(seconds=settings.chat_pat_ttl_s),
+            # 수명은 손잡이를 그대로 쓰지 않는다 — 창보다 길지 않은 값(0 포함)이면 찍자마자 만료라 기본값으로 읽는다(config.chat_pat_ttl_s)
+            "iat": issued, "nbf": issued, "exp": issued + timedelta(seconds=chat_pat_ttl_s(settings)),
             # jti 도 결정적이어야 토큰이 바이트 단위로 같아진다. 서명된 토큰이라 예측
             # 가능성 자체는 위험이 아니고, 폐기 목록에 이 값을 넣으면 그 창이 막힌다.
             "jti": f"chat-{principal.subject}-{win}",

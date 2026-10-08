@@ -244,6 +244,8 @@ class Settings(BaseSettings):
     # 좌석 조회를 잃고 보고서 저장에 실패했는데 사유는 어디에도 안 나왔다. 자격은 누적 시간 한도라 허용하는 가장 긴
     # 실행(리스크 패널 벽시계 43200초 + RA 저장 660초)보다 길어야 한다 — 줄이더라도 46800(13시간) 밑으로는 내리지 않는다.
     # 토큰은 에이전트 서버 메모리에만 있고 scope 가 chat 이며, 창마다 jti 가 정해져 있어 폐기 목록으로 막을 수 있다.
+    # ⚠ 0 은 '끔'(만료 없음)이 **아니다** — 1800(발급 창) 이하는 쓰지 않고 이 기본값으로 읽는다(아래 chat_pat_ttl_s()).
+    #   46800 밑이면 쓰기는 하되 기동 때 알린다(startup_warnings 의 chat_pat_ttl).
     chat_pat_ttl_s: int = 86400              # 24시간
 
     # ── MCP chat (Phase 1: agent proxy + MCP registry; echo mode needs no remote) ──
@@ -430,6 +432,22 @@ def _secret_problem(s: Settings) -> tuple[str, str] | None:
 # SAML POST 를 처리하는 라우트(routes/saml.py acs · routes/session.py callback — 둘 다 provider.handle_callback).
 SAML_ACS_ROUTES = ("/auth/saml/acs", "/auth/callback")
 
+# chat PAT 은 이 길이의 창마다 한 번 찍고(agent/routes._chat_user_pat — 같은 창이면 토큰이 바이트 단위로 같다) 수명을 창의
+# **시작**에서 센다. 그래서 CHAT_PAT_TTL_S 가 창보다 길지 않으면 찍자마자 만료됐거나 곧 만료될 토큰이 나간다 — 0 이면 어느
+# 시점에 찍어도 이미 만료다. 게이트웨이는 401 을 주고 엔진은 조회와 보고서 저장을 서비스 계정으로 한다(경고 한 줄뿐이다).
+# 예시 파일에서 바로 위의 두 손잡이가 '0 = 끔' 이라 '만료 없음' 을 뜻하려고 0 을 넣기 쉽다.
+CHAT_PAT_WINDOW_S = 1800
+# 이 밑으로는 내리지 않는다던 값(13시간 — 리스크 패널 벽시계 43200 + 보고서 저장을 창 끝에서 받아도 감싼다). 주석뿐이었다.
+CHAT_PAT_TTL_MIN_S = 46800
+
+
+def chat_pat_ttl_s(s: Settings) -> int:
+    """chat PAT 을 찍을 때 쓰는 수명(초). 창보다 길지 않은 값은 **쓰지 않고** 코드 기본값으로 읽는다 — 기동은 막지 않는다
+    (포털은 SSO 허브다. 챗 손잡이 하나가 로그인을 내리면 안 된다). 버린 사실은 `startup_warnings` 가 알린다."""
+    if s.chat_pat_ttl_s > CHAT_PAT_WINDOW_S:
+        return s.chat_pat_ttl_s
+    return int(Settings.model_fields["chat_pat_ttl_s"].default)
+
 
 def startup_problems(s: Settings) -> list[str]:
     """띄우면 안 되는 이유들. 비어 있으면 띄워도 된다.
@@ -467,6 +485,14 @@ def startup_warnings(s: Settings) -> list[tuple[str, str]]:
     if s.app_env == "prod" and (urlparse(s.frontend_url).hostname or "") in ("localhost", "127.0.0.1", "::1"):
         out.append(("frontend_localhost", f"APP_ENV=prod 인데 FRONTEND_URL={s.frontend_url} 이다 — 로그인 뒤 브라우저가 "
                                           "localhost 로 간다. FRONTEND_URL(보통 PUBLIC_BASE_URL 과 같다)을 채울 것"))
+    # chat PAT 수명 — 틀린 값이 정상 기동과 똑같이 생겼다(위 CHAT_PAT_WINDOW_S). prod+mock 판정보다 **앞**이어야 모든 박스에서 본다.
+    if s.chat_pat_ttl_s <= CHAT_PAT_WINDOW_S:
+        out.append(("chat_pat_ttl", f"CHAT_PAT_TTL_S={s.chat_pat_ttl_s} 를 쓰지 않는다 — 발급 창({CHAT_PAT_WINDOW_S}초)보다 길지 않아 "
+                                    "찍자마자 만료된 토큰이 나간다(0 은 '끔' 이 아니다). 기본값 "
+                                    f"{chat_pat_ttl_s(s)}초로 찍는다"))
+    elif s.chat_pat_ttl_s < CHAT_PAT_TTL_MIN_S:
+        out.append(("chat_pat_ttl", f"CHAT_PAT_TTL_S={s.chat_pat_ttl_s} 가 {CHAT_PAT_TTL_MIN_S}초(리스크 패널 벽시계 + 보고서 저장)보다 "
+                                    "짧다 — 그보다 오래 돈 심의는 도는 중에 요청자 자격이 끝나 서비스 계정으로 조회·저장한다"))
     if not (s.app_env == "prod" and s.auth_provider == "mock"):
         return out
     out.append(("prod_mock", f"APP_ENV=prod 인데 AUTH_PROVIDER=mock 이다 — 로그인만 누르면 누구나 {s.mock_user_email!r} "
