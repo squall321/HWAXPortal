@@ -10,6 +10,9 @@
 system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친다. 바뀐 칸만 PATCH 한다 —
 안 바뀐 것까지 쓰면 에이전트 이력(history)이 매번 쌓인다.
 
+다른 앱과 이름이 겹치는 도구는 정본에 접두 이름(`<앱 키에서 하이픈을 뺀 것>_<이름>`)으로 적는다. 게이트웨이가 언제나 받는
+이름이라 겹치는 상대가 붙어 있든 아니든 통과한다(plan 의 주석).
+
 앱이 게이트웨이에 없으면 그 페르소나는 건너뛴다(dev 의 arp·odb-hub). cae00 에서 같은 명령을 돌리면
 그 박스 게이트웨이에 붙은 앱으로 만들어진다.
 
@@ -104,8 +107,15 @@ def plan(spec: dict, tmap: dict) -> tuple[list[dict], list[str], list[str]]:
             skipped.append(f"{key}: 이 게이트웨이에 앱이 없다({', '.join(missing)}) — 붙어 있는 박스에서 돌리면 생긴다")
             continue
         tools = sorted(t for a in p["apps"] for t in by_app[a])
+        # 정본의 이름은 노출 이름이거나 **접두 별칭**(`<앱 키에서 하이픈을 뺀 것>_<이름>`)이면 맞다. 게이트웨이는 지금 붙은 백엔드끼리
+        # 이름이 겹칠 때만 접두를 붙여 내놓으므로, 같은 도구의 노출 이름이 **다른 앱이 붙어 있느냐**로 뒤집힌다(ste 가 없는 박스는
+        # list_jobs 를 맨 이름으로 낸다). 별칭은 겹치든 말든 게이트웨이가 언제나 받는다(gateway `alias_route`) — 노출 이름과만
+        # 대조하면 겹치는 상대가 빠진 박스에서 동기화가 통째로 멈췄다. 반대 방향은 받지 않는다 — 접두로 노출된 도구를 맨 이름으로
+        # 적으면 그 이름은 정말 `unknown tool` 이다.
+        callable_names = set(tools) | {f"{a.replace('-', '')}_{t}" for a in p["apps"] for t in by_app[a]
+                                       if not t.startswith(a.replace("-", "") + "_")}
         for fld in ("key_tools", "writes", "confirm"):
-            bad = [n for n in p[fld] if n not in tools]
+            bad = [n for n in p[fld] if n not in callable_names]
             if bad:
                 errors.append(f"{key}: {fld} 에 이 앱에 없는 도구 — {', '.join(bad)}")
         both = sorted(set(p["writes"]) & set(p["confirm"]))

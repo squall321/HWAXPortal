@@ -144,10 +144,12 @@ def test_프롬프트_상한이_에이전트서버와_같다():
     )
 
 
-# ── 다른 앱과 이름이 겹치는 도구 — 게이트웨이가 내놓는 이름으로 적는다 ───────────────────────────────
+# ── 다른 앱과 이름이 겹치는 도구 — 접두 이름으로 적는다 ───────────────────────────────────────────
 # 게이트웨이는 붙어 있는 두 백엔드가 같은 도구 이름을 내놓으면 **양쪽 다** `<백엔드 키에서 하이픈을 뺀 것>_<이름>` 으로
 # 노출한다(HWAXMcpGateway `_aggregate`). 동기화 스크립트는 정본의 이름을 그 노출 이름(/tools-map)과 대조하고, 에이전트
 # 서버도 key_tools 를 같은 표에서 찾아 묶는다 — 겹치는 도구를 맨 이름으로 적으면 묶이지 않고 모델은 없는 도구를 부른다.
+# 접두 이름으로 적는 이유는 '이 박스가 그렇게 내놓아서' 가 아니다 — 그 이름이 **언제나 부를 수 있는 별칭**이라서다. 노출 이름은
+# 겹치는 상대가 붙어 있느냐로 뒤집히지만(ste 가 없는 박스는 list_jobs 를 맨 이름으로 낸다) 별칭은 어느 박스에서나 받는다.
 # ste 가 게이트웨이에 붙으면서 list_jobs·submit_job·prepare_upload 가 맨 이름으로 안 나오게 됐는데 정본 세 곳이 맨 이름으로
 # 남아, 동기화 미리보기가 '이 앱에 없는 도구' 로 멈췄다(2026-10-07). ste 는 페르소나가 없어 정본에서는 겹침이 안 보인다 —
 # 그래서 그쪽 이름을 여기 적어 둔다(dev 게이트웨이 /tools-map 실측). ste 가 도구를 더 내놓으면 이 목록에 더한다.
@@ -178,7 +180,7 @@ def test_다른_앱과_이름이_겹치는_도구는_접두_이름으로_적는�
             if name in shared and _native(name, p["apps"]) == name]
     assert not bare, ("다른 앱과 겹치는 도구를 맨 이름으로 적었다 — 게이트웨이는 `<앱 키에서 하이픈 뺀 것>_<이름>` 으로 내놓는다"
                       f"(예: heaxstep_forge_list_jobs). {bare}")
-    # 그 세 자리 — 이 박스 게이트웨이가 실제로 내놓는 이름이다(mcp list_tool_apps · /tools-map 으로 확인)
+    # 그 세 자리 — 게이트웨이가 언제나 받는 별칭이다(ste 가 붙은 박스에서는 노출 이름이기도 하다 — /tools-map 으로 확인)
     by_key = {p["key"]: p for p in personas}
     assert "heaxstep_forge_list_jobs" in by_key["he-cad-stepforge"]["key_tools"]
     assert "smarttwinmcp_submit_job" in by_key["he-sim-smarttwin"]["writes"]
@@ -186,8 +188,8 @@ def test_다른_앱과_이름이_겹치는_도구는_접두_이름으로_적는�
 
 
 def test_맨_이름으로_적으면_동기화가_멈춘다():
-    """검증기는 느슨하게 하지 않는다 — 노출 이름과 다르면 묶이지 않으므로 멈추는 것이 맞다. ste 가 붙은 게이트웨이의 표를
-    흉내 내 정본의 접두 이름은 통과하고 맨 이름으로 되돌린 사본은 걸리는지 본다."""
+    """이 방향은 느슨하게 하지 않는다 — 접두로 노출된 도구를 맨 이름으로 적으면 그 이름은 정말 없는 도구라 멈추는 것이 맞다.
+    ste 가 붙은 게이트웨이의 표를 흉내 내 정본의 접두 이름은 통과하고 맨 이름으로 되돌린 사본은 걸리는지 본다."""
     sync = _sync()
     one = _one("he-doc-reportarchive")
     persona = one["personas"][0]
@@ -200,6 +202,28 @@ def test_맨_이름으로_적으면_동기화가_멈춘다():
                                                        for n in persona["writes"]]}]}
     _rows, _skipped, errors = sync.plan(back, tmap)
     assert errors and "prepare_upload" in errors[0] and "writes" in errors[0]
+
+
+def test_접두_이름은_겹치는_앱이_빠진_게이트웨이에서도_통과한다():
+    """노출 이름은 **붙어 있는 다른 백엔드**에 따라 뒤집힌다 — 게이트웨이는 지금 붙은 백엔드끼리 이름이 겹칠 때만 접두를 붙인다.
+    ste 가 없는 박스(또는 ste 가 한동안 안 닿은 dev)는 list_jobs·submit_job·prepare_upload 를 맨 이름으로 내놓고,
+    smart-twin-mcp 가 없는 박스(cae00 기본)는 job_status 를 맨 이름으로 내놓는다. 정본의 접두 이름을 노출 이름과만 대조하면
+    그 박스에서 동기화가 '이 앱에 없는 도구' 로 통째로 멈춘다(한 명이 걸리면 아무도 안 올라간다) — 어느 정본도 두 박스를
+    같이 통과하지 못했다. 접두 이름은 게이트웨이가 **언제나** 받는 호출 전용 별칭이라 그 표에서도 맞는 이름이다."""
+    sync = _sync()
+    for key in ("he-doc-reportarchive", "he-cad-stepforge", "he-sim-smarttwin"):
+        one = _one(key)
+        persona = one["personas"][0]
+        names = {n for fld in _TOOL_FIELDS for n in persona[fld]}
+        assert any(_native(n, persona["apps"]) != n for n in names), f"{key}: 접두 이름이 없다 — 이 시험이 아무것도 안 본다"
+        # 겹치는 상대가 하나도 안 붙은 게이트웨이 — 이 앱의 도구가 전부 원래 이름으로 나온다
+        app = persona["apps"][0]
+        tmap = {"map": dict.fromkeys({_native(n, persona["apps"]) for n in names}, app), "areas": {}, "area_meta": [],
+                "apps": [{"app": a, "label": a} for a in persona["apps"]]}
+        tmap["map"].update({f"{a}-ping": a for a in persona["apps"][1:]})      # 둘째 앱도 붙어는 있다(없으면 건너뛴다)
+        rows, skipped, errors = sync.plan(one, tmap)
+        assert not errors and not skipped, (key, errors, skipped)
+        assert rows[0]["response_config"]["key_tools"] == persona["key_tools"], "올리는 값은 정본 그대로다 — 박스마다 바뀌면 AIDataHub 사본이 출렁인다"
 
 
 # ── 심의 운영자 — 엔진이 바꾼 계약을 안내문이 따라간다 ─────────────────────────────────────────────

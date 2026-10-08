@@ -1,5 +1,5 @@
 {
-  "_doc": "HE팀 MCP 운영자 페르소나 정본. infra/scripts/sync-he-personas.py 가 이 파일로 AIDataHub 에이전트를 만들거나 고친다(기본은 미리보기, --apply 로 반영). 키는 he-<묶음>-<앱>이고 묶음 라벨은 frontend personaCatalog.ts 의 HE_GROUP_LABEL 과 같아야 한다(test_he_personas.py 가 대조한다). key_tools·writes·confirm 에 적은 도구 이름은 동기화 때 게이트웨이 도구 목록과 대조해 없는 이름이면 멈춘다. apps 의 앱이 게이트웨이에 없으면(dev 의 arp·odb-hub) 그 페르소나는 건너뛴다.",
+  "_doc": "HE팀 MCP 운영자 페르소나 정본. infra/scripts/sync-he-personas.py 가 이 파일로 AIDataHub 에이전트를 만들거나 고친다(기본은 미리보기, --apply 로 반영). 키는 he-<묶음>-<앱>이고 묶음 라벨은 frontend personaCatalog.ts 의 HE_GROUP_LABEL 과 같아야 한다(test_he_personas.py 가 대조한다). key_tools·writes·confirm 에 적은 도구 이름은 동기화 때 게이트웨이 도구 목록과 대조해 없는 이름이면 멈춘다. 다른 앱과 이름이 겹치는 도구는 접두 이름(<앱 키에서 하이픈을 뺀 것>_<이름>, 예: heaxstep_forge_list_jobs)으로 적는다 — 게이트웨이가 언제나 받는 호출 별칭이라 겹치는 상대(ste 등)가 붙어 있지 않은 박스에서도 맞는 이름이다. apps 의 앱이 게이트웨이에 없으면(dev 의 arp·odb-hub) 그 페르소나는 건너뛴다.",
   "groups": {
     "cad": "설계 데이터(CAD·ECAD)",
     "sim": "시뮬레이션·해석 결과",
