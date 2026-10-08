@@ -223,6 +223,37 @@ def test_게이트웨이가_실제로_보내는_문구를_본다():
             f"호출자는 그 문자열을 절대 못 받고, 그 갈래는 죽은 코드다")
 
 
+def test_게이트웨이의_시간_초과_문구를_다시_보낼_것과_아닌_것으로_가른다():
+    """게이트웨이가 기한을 넘긴 호출에 돌려주는 글은 넷이고(`_late_text`), 판정기는 그 **머리**로 재시도 여부를 가른다.
+    죽은 상대(세션을 못 열었다 · 안 돌아왔다)는 `backend … unavailable:` 이라 다시 해 볼 만하다. **느린 도구**(호출 한도 600초)와
+    탐침이 풀어 준 호출에는 그 머리가 없다 — 도구는 아직 돌고 있을 수 있어, 다시 보내면 쓰기가 두 번 실행된다.
+    한쪽만 고치면 조용히 뒤집힌다: 판정기가 `backend` 로 시작하는 글을 전부 불통으로 읽게 되거나, 게이트웨이가 느린 도구에도
+    그 머리를 붙이면 절차가 600초짜리 쓰기를 다시 보낸다. 게이트웨이의 그 함수를 원문에서 꺼내 돌려 실제 글로 판정한다."""
+    import re as _re
+    import types
+
+    from app.procedures.judge import judge
+
+    src = _gateway_source()
+    if src is None:
+        pytest.skip("HWAXMcpGateway 리포가 이 박스에 없다")
+    m = _re.search(r"^def _late_text\(.*?(?=^\S)", src, _re.S | _re.M)
+    assert m, "게이트웨이에서 _late_text 를 못 찾았다 — 이름이 바뀌었으면 이 시험도 고쳐라"
+    ns: dict = {"RECONNECT_TIMEOUT_S": 30.0, "CALL_TIMEOUT_S": 600, "_Late": object}
+    exec(m.group(0), ns)  # noqa: S102 — 옆 리포의 추적 파일 발췌(문구를 만드는 순수 함수)
+
+    def verdict(what: str) -> tuple[str, bool]:
+        text = ns["_late_text"](types.SimpleNamespace(what=what, why="세션을 갈았다"), "ai-data-hub", "agent_search")
+        v = judge(is_error=True, text=text)
+        assert v.ok is False and v.error == text, text
+        return v.kind, v.retriable
+
+    assert verdict("handshake") == ("unavailable", True)
+    assert verdict("reconnect") == ("unavailable", True)
+    assert verdict("call") == ("tool_error", False), "느린 도구를 불통으로 읽으면 같은 쓰기를 다시 보낸다"
+    assert verdict("released") == ("tool_error", False), "실행 여부를 모르는 호출도 다시 보내지 않는다"
+
+
 def test_게이트웨이_파괴_관문이_MUST_GATE_와_같다():
     """게이트웨이는 `invoke_tool`(범용 실행기)로 못 부르는 목록을 따로 들고 있다.
     그 목록이 포털 `MUST_GATE` 와 어긋나면 **어긋난 쪽이 늘 느슨한 쪽**이다 —
