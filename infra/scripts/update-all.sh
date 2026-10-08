@@ -4,8 +4,9 @@
 #   ./infra/scripts/update-all.sh                # 전부 (표준 운영 최신화)
 #   SF_RESTORE_DB=1 ./infra/scripts/update-all.sh   # SignalForge DB를 Drive 최신 덤프로 시드/갱신
 #   NO_GIT_RESET=1  ./infra/scripts/update-all.sh   # 로컬 수정 보존(soft pull) 모드
-#   AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh   # 도는·줄 선 심의가 있어도 에이전트 서버를 재기동(심의가 전부 끊긴다)
-#       기본은 그 반대다 — 심의가 있으면 에이전트 서버 재기동(§4)과 게이트웨이 재프로비저닝(§5)을 건너뛰고 ○ 로 남긴다.
+#   AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh   # 도는·줄 선 심의가 있어도 포털·nginx·에이전트 서버를 재기동(심의가 전부 끊긴다)
+#       기본은 그 반대다 — 심의가 있으면 포털·nginx 재기동(§2), 에이전트 서버 재기동(§4), 게이트웨이 재프로비저닝(§5)을
+#       건너뛰고 ○ 로 남긴다. 포털은 그 동안 새 이미지·frontend/dist 도 받지 않는다(옛 프로세스가 그대로 돈다).
 #
 # 순서:
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
@@ -734,6 +735,8 @@ hr "4) update-sites (챗 스택: mcp-gateway·agent-server·signalforge-mcp)"
 # 초록이었다(2026-09-17 cae00 점검 — 절차가 옛 게이트웨이에 걸려 있었다).
 # 3 은 실패가 아니다 — 도는·줄 선 심의가 있어 에이전트 서버 재기동을 미뤘다(update-sites 가 사유를 찍고 장부 ○ 에 적었다).
 # 몇 시간 돈 패널을 배포 한 번이 말없이 지우지 않게 한다. 강행은 AGENT_RESTART_FORCE=1 을 주고 재실행.
+# 같은 보호가 §2 에도 있다 — deploy-all 이 포털·nginx 를 내리기 전에 같은 물음을 묻는다(그쪽을 내리면 구독이 끊겨, 여기서
+# 에이전트 서버를 살려 둬도 리스크 패널은 이미 멈춘 뒤다).
 "$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server; _us_rc=$?
 case "$_us_rc" in
   0|3) ;;

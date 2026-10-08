@@ -256,6 +256,164 @@ def test_미루기만_한_실행은_3으로_끝난다(tmp_path, health):
     assert _driver(idle, health["url"]).returncode != 3, "심의가 없으면 미룬 것이 없다"
 
 
+# ── §2 deploy-all-from-drive — 포털·nginx 를 내리기 전에도 묻는다 ─────────────────────────────────
+# 웹 심의도 리스크 패널도 nginx → 포털 릴레이를 거쳐 에이전트 서버의 스트림을 구독한다. 에이전트 서버만 보호하던 동안에는
+# 포털 커밋이 하나라도 있는 update-all 이 §2 에서 포털·nginx 를 내려 구독을 전부 끊었다 — 리스크 잡은 engine_stream_cut 으로 멈춰
+# 사람이 재개해야 하고, 엔진이 끝까지 돌린 심의의 결과는 원장에 못 들어가 패널을 처음부터 다시 돌린다. 그런 뒤 §4 는 구독자를
+# 이미 잃은 심의를 보고 '재기동하면 전부 끊긴다' 며 에이전트 서버를 건너뛰었다.
+#
+# 구획을 **원문 그대로** 임시 포털 리포에서 돌린다. stop·start·images-from-drive·gen-nginx-conf 와 apptainer 는 부른 사실만 적는
+# 대역이다. ⚠ 실물을 건드리면 안 된다(상대경로 하네스가 실 apptainer 로 dev nginx 를 내린 사고가 있었다 — 2026-09-28).
+#   · 하네스는 임시 디렉터리에서 돌고(cd 가 실패해도 상대경로가 실 리포로 가지 않는다) 경로는 전부 절대경로다.
+#   · apptainer 가 대역으로 잡히는지 구획을 돌리기 **전에** 확인하고, 아니면 97 로 멈춘다.
+#   · 포털·nginx·에이전트 서버의 주소(8723·8088·9009)는 지어낸 서버로 바꾼다 — 안 바뀌면 시험이 그 자리에서 실패한다.
+DEPLOY = (ROOT / "infra/scripts/deploy-all-from-drive.sh").read_text(encoding="utf-8")
+_PORTAL_HEALTH, _AGENT_HEALTH = "http://127.0.0.1:8723/health", "http://127.0.0.1:9009/health"
+DEAD = "http://127.0.0.1:9/health"
+
+
+def _deploy_common() -> str:
+    """지문·설정 읽기·묻는 함수 — lib 소싱 줄 바로 아래부터 포털 구획 앞까지(lib 는 하네스가 절대경로로 소싱한다)."""
+    i = DEPLOY.index('HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-')
+    return DEPLOY[i:DEPLOY.index("# ── 1. Portal (the hub)", i)]
+
+
+def _portal_block() -> str:
+    i = DEPLOY.index("if want portal; then\n")
+    return DEPLOY[i:DEPLOY.index("# ── 2. MX White Paper", i)]
+
+
+def _nginx_block() -> str:
+    i = DEPLOY.index('if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then\n')
+    return DEPLOY[i:DEPLOY.index("# ── Health summary", i)]
+
+
+def _deploy(tmp_path: Path, block: str, agent_url: str, portal_url: str, nginx_port: int, last_fp: dict[str, str], **env):
+    """deploy-all 의 한 구획을 임시 포털 리포에서 돌린다 → (화면, 대역이 받은 호출, 남은 기준 지문, 장부, skip 으로 센 줄)."""
+    repo = tmp_path / "portal"; scripts = repo / "infra/scripts"; scripts.mkdir(parents=True, exist_ok=True)
+    (repo / "infra/nginx").mkdir(exist_ok=True)
+    log = tmp_path / "calls.log"; log.write_text("")
+    ledger = tmp_path / "ledger"; ledger.write_text("")
+    failed = tmp_path / "failed"; failed.write_text("")
+    st = tmp_path / "state"; st.mkdir(exist_ok=True)
+    for name, fp in last_fp.items():
+        (st / name).write_text(fp + "\n")
+    (repo / "infra/.env").write_text(f"HTTP_PORT={nginx_port}\n")
+    for name in ("images-from-drive.sh", "stop.sh", "start.sh"):
+        (scripts / name).write_text(f'#!/usr/bin/env bash\necho "{name}" >> "{log}"\nexit 0\n'); (scripts / name).chmod(0o755)
+    # conf 생성기 대역 — 새 conf 를 쓴다. NG_SAME=1 이면 '마지막으로 띄운 뒤 conf 가 그대로' 인 박스를 만든다(그 지문을 기준으로 적는다)
+    (scripts / "gen-nginx-conf.sh").write_text(
+        f'#!/usr/bin/env bash\necho "gen-nginx-conf.sh" >> "{log}"\necho "conf $RANDOM" > "{repo}/infra/nginx/hwax.conf"\n'
+        f'if [ "${{NG_SAME:-0}}" = 1 ]; then . "{LIBDIR}/change-detect.sh"\n'
+        f'  hwax_fp "{repo}/infra/nginx/hwax.conf" "{repo}/infra/tls/hwax.crt" "{repo}/infra/tls/hwax.key" > "{st}/nginx"; fi\n')
+    (scripts / "gen-nginx-conf.sh").chmod(0o755)
+    stubbin = tmp_path / "bin"; stubbin.mkdir(exist_ok=True)
+    (stubbin / "apptainer").write_text(f'#!/usr/bin/env bash\necho "apptainer $*" >> "{log}"\nexit 0\n'); (stubbin / "apptainer").chmod(0o755)
+    body = (_deploy_common() + 'RESTART="${NO_RESTART:-0}"\n' + block)
+    assert _AGENT_HEALTH in body, "심의 수를 묻는 주소는 에이전트 서버의 health 다"
+    body = body.replace(_AGENT_HEALTH, agent_url).replace(_PORTAL_HEALTH, portal_url)
+    assert "127.0.0.1:8723" not in body and "127.0.0.1:9009" not in body, "실물 주소가 남았다 — 하네스가 떠 있는 서비스를 두드린다"
+    script = (f'set -euo pipefail\ncd "{tmp_path}"\n'
+              f'[ "$(command -v apptainer)" = "{stubbin}/apptainer" ] || {{ echo "HARNESS: apptainer 가 대역이 아니다" >&2; exit 97; }}\n'
+              f'PORTAL_DIR="{repo}"; DEPLOY_FAILED_FILE="{failed}"\n'
+              f'[ "$(cd "$PORTAL_DIR" && pwd)" = "{repo}" ] || {{ echo "HARNESS: 임시 리포로 못 들어간다" >&2; exit 97; }}\n'
+              f'[ "$(sed -n "s/^HTTP_PORT=//p" "$PORTAL_DIR/infra/.env")" = "{nginx_port}" ] || exit 97\n'
+              'want() { true; }; hr() { echo "── $*"; }; ok() { echo "OK:$*"; }\n'
+              'skip() { echo "SKIP:$*"; printf "%s\\n" "$*" >> "$DEPLOY_FAILED_FILE"; }\n'
+              'git_update() { echo "  · git: aaa → bbb (reset to origin/main)"; }; set_remote() { :; }\n'
+              f'{LIBS}export HWAX_RESTART_STATE_DIR="{st}" HWAX_SKIP_LEDGER="{ledger}" HWAX_WAIT_DOWN_MAX=1 HWAX_WAIT_UP_MAX=1\n'
+              f'{body}\necho "END"\n')
+    r = _sh(script, PATH=f'{stubbin}:{os.environ["PATH"]}', **env)
+    assert r.returncode != 97, r.stderr
+    assert "END" in r.stdout, r.stdout + r.stderr
+    state = {f.name: f.read_text().strip() for f in st.iterdir()}
+    return r.stdout + r.stderr, log.read_text().splitlines(), state, ledger.read_text(), failed.read_text()
+
+
+def _port(url: str) -> int:
+    return int(url.split(":")[2].split("/")[0])
+
+
+def test_심의가_돌면_포털과_nginx_를_내리지_않는다(tmp_path, health):
+    """**이 시험이 이 구획의 이유다** — 지문이 바뀌었어도(포털 커밋) stop·start 가 불리지 않는다. 이미지도 받지 않는다 —
+    받으면 떠 있는 인스턴스 밑의 SIF 가 제자리에서 덮이고 옛 백엔드가 새 SPA 를 낸다. 지문은 그대로라 다음 실행이 다시 본다."""
+    health["body"] = {"status": "ok", "delib_active": 1, "delib_queued": 2}
+    out, calls, state, ledger, failed = _deploy(tmp_path, _portal_block(), health["url"], health["url"], _port(health["url"]),
+                                                {"portal": "old-fp"})
+    assert calls == [], f"대역이 불렸다 — {calls}"
+    line = next(ln for ln in out.splitlines() if "○" in ln)
+    assert "포털·nginx 재기동 건너뜀" in line and "심의 1건 진행 중, 2건 대기" in line and "engine_stream_cut" in line
+    assert "AGENT_RESTART_FORCE=1" in out
+    assert "포털·nginx 재기동 건너뜀" in ledger, "update-all 의 마지막 요약에도 다시 나온다"
+    assert state == {"portal": "old-fp"}, "미룬 재기동의 지문을 적으면 새 코드가 영영 안 올라간다"
+    assert "OK:portal up" not in out, "올라왔다고 말하지 않는다"
+    assert "SKIP:" not in out and failed == "", "실패가 아니다 — skip 으로 세면 deploy-all 이 4 로 끝나고 update-all 이 실패로 적는다"
+
+
+@pytest.mark.parametrize("case", ["심의 없음", "옛 판(수를 싣지 않는다)", "강행", "포털이 내려가 있다", "내리지 않고 띄우기만(NO_RESTART=1)"])
+def test_심의가_없거나_모르거나_강행하면_포털을_종전대로_재기동한다(tmp_path, health, case):
+    health["body"] = {"심의 없음": {"status": "ok", "delib_active": 0, "delib_queued": 0},
+                      "옛 판(수를 싣지 않는다)": {"status": "ok"}}.get(case, {"delib_active": 2, "delib_queued": 1})
+    env = {"강행": {"AGENT_RESTART_FORCE": "1"}, "내리지 않고 띄우기만(NO_RESTART=1)": {"NO_RESTART": "1"}}.get(case, {})
+    portal = DEAD if case == "포털이 내려가 있다" else health["url"]      # 내려가 있으면 끊을 구독이 없다 — 띄워야 한다
+    out, calls, _, ledger, _ = _deploy(tmp_path, _portal_block(), health["url"], portal, _port(health["url"]), {"portal": "old-fp"}, **env)
+    want = ["images-from-drive.sh", "start.sh"] if case.startswith("내리지 않고") else ["images-from-drive.sh", "stop.sh", "start.sh"]
+    assert calls == want, (calls, out)
+    assert "○" not in out and ledger == "", out
+
+
+def test_심의가_돌면_conf_가_바뀌어도_nginx_를_내리지_않는다(tmp_path, health):
+    """리스크 앱은 nginx 를 거쳐 포털에 붙는다 — 포털 구획이 안 도는 실행(`deploy-all-from-drive.sh <다른 서비스>`)에서도
+    끝의 라우팅 갱신이 nginx 를 내린다. conf 는 만들어 두고(nginx 는 뜰 때만 읽는다) 내리는 것만 미룬다."""
+    health["body"] = {"delib_active": 1, "delib_queued": 0}
+    out, calls, state, ledger, failed = _deploy(tmp_path, _nginx_block(), health["url"], health["url"], _port(health["url"]),
+                                                {"nginx": "old-fp"})
+    assert calls == ["gen-nginx-conf.sh"], f"conf 는 만들고 nginx 는 건드리지 않는다 — {calls}"
+    line = next(ln for ln in out.splitlines() if "○" in ln)
+    assert "nginx 재기동 건너뜀" in line and "심의 1건 진행 중, 0건 대기" in line and "nginx 재기동 건너뜀" in ledger
+    assert state == {"nginx": "old-fp"} and "reloaded" not in out and "SKIP:" not in out and failed == ""
+
+
+@pytest.mark.parametrize("body,env", [({"delib_active": 0, "delib_queued": 0}, {}), ({"status": "ok"}, {}),
+                                      ({"delib_active": 1, "delib_queued": 0}, {"AGENT_RESTART_FORCE": "1"})])
+def test_심의가_없거나_모르거나_강행하면_nginx_를_종전대로_내렸다_올린다(tmp_path, health, body, env):
+    health["body"] = body
+    out, calls, _, ledger, _ = _deploy(tmp_path, _nginx_block(), health["url"], health["url"], _port(health["url"]),
+                                       {"nginx": "old-fp"}, **env)
+    assert calls == ["gen-nginx-conf.sh", "apptainer instance stop hwax_nginx", "start.sh"], (calls, out)
+    assert "○" not in out and ledger == ""
+
+
+def test_conf_가_그대로면_심의가_돌아도_미뤘다고_말하지_않는다(tmp_path, health):
+    """갈아 끼울 것이 없으면 사이클이 스스로 생략한다 — 그때까지 ○ 를 찍으면 심의가 도는 동안의 모든 실행이 '미뤘다' 고 말한다."""
+    health["body"] = {"delib_active": 3, "delib_queued": 0}
+    out, calls, _, ledger, failed = _deploy(tmp_path, _nginx_block(), health["url"], health["url"], _port(health["url"]),
+                                            {}, NG_SAME="1")
+    assert calls == ["gen-nginx-conf.sh"] and "○" not in out and ledger == "" and failed == "", (calls, out)
+    assert "재기동 생략" in out
+
+
+def test_deploy_all_의_포털과_nginx_재기동은_전부_심의를_묻고_난_뒤다():
+    """재기동 자리가 둘이다(포털 구획 · 끝의 nginx 갱신) — 한 곳만 묻으면 다른 길에서 같은 절단이 난다. 셋째 자리가 생기면 여기서 걸린다."""
+    import re
+
+    sites = [m.start() for m in re.finditer(r"hwax_restart_cycle (?:portal|nginx) ", DEPLOY)]
+    assert len(sites) == 2, "포털·nginx 를 내리는 자리가 늘었다 — 그 자리도 _delib_hold 를 지나게 하고 이 수를 고친다"
+    for block, name in ((_portal_block(), "portal"), (_nginx_block(), "nginx")):
+        assert block.index("_delib_hold ") < block.index(f"hwax_restart_cycle {name} "), f"{name}: 내리기 전에 묻지 않는다"
+    pb = _portal_block()
+    assert pb.index("_delib_hold ") < pb.index("./infra/scripts/images-from-drive.sh"), (
+        "묻는 자리는 이미지를 받기 전이어야 한다 — 받은 뒤에 미루면 떠 있는 인스턴스 밑의 SIF 가 이미 덮였다")
+    assert DEPLOY.index("lib/delib-busy.sh") < DEPLOY.index("_delib_hold() {") and DEPLOY.index("lib/skip-ledger.sh") < DEPLOY.index("_delib_hold() {")
+
+
+def test_deploy_all_의_강행_손잡이가_사용법에_적혀_있다():
+    head = DEPLOY[:DEPLOY.index("set -euo pipefail")]
+    assert "AGENT_RESTART_FORCE=1 ./infra/scripts/deploy-all-from-drive.sh" in head and "○" in head
+    ua_head = UA[:UA.index("set -uo pipefail")]
+    assert "§2" in ua_head and "포털·nginx" in ua_head, "update-all 의 사용법이 §2 도 건너뛴다는 것을 말한다"
+
+
 # ── update-all §4 — update-sites 의 3 은 실패가 아니다 ─────────────────────────────────────────
 @pytest.mark.parametrize("rc,failed", [(0, False), (3, False), (1, True), (2, True)])
 def test_update_all_은_미룬_재기동을_실패로_세지_않는다(tmp_path, rc, failed):

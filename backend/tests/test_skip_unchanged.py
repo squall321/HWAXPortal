@@ -343,8 +343,17 @@ def test_cycle_with_two_listeners_records_only_when_both_are_replaced(tmp_path, 
 
 # ── deploy-all 포털 블록 — 실 git 리포 + 스텁으로 통째로 돈다 ─────────────────────────────
 def _portal_block() -> str:
-    i = DEPLOY_ALL.index('  ( cd "$PORTAL_DIR"\n    git_update'); j = DEPLOY_ALL.index('skip "portal failed (see above)"', i) + len('skip "portal failed (see above)"')
+    end = 'skip "portal failed (see above)" ;; esac\n'
+    i = DEPLOY_ALL.index('  _prc=0\n  ( cd "$PORTAL_DIR"\n    git_update'); j = DEPLOY_ALL.index(end, i) + len(end)
     return DEPLOY_ALL[i:j]
+
+
+def _delib_hold_fn() -> str:
+    """포털·nginx 구획이 내리기 전에 부르는 물음(도는 심의가 있으면 미룬다)과 그것이 쓰는 lib 둘 — 구획을 떼어 돌리는 하네스는 이것도
+    함께 가져와야 한다. 여기 하네스들은 curl 이 대역이라 에이전트 서버의 답이 '모름' 이고, 모름은 미루지 않는다(종전 동작 그대로).
+    미루는 쪽은 test_update_all_delib_restart_gate 가 본다."""
+    i = DEPLOY_ALL.index("_delib_hold() {")
+    return f'. "{LIB.parent}/skip-ledger.sh"\n. "{LIB.parent}/delib-busy.sh"\n' + DEPLOY_ALL[i:DEPLOY_ALL.index("\n}\n", i) + 3]
 
 
 def _port_shims(shim: Path, lst: Path):
@@ -384,7 +393,7 @@ def _portal_harness(tmp_path):
     write_stubs()
     shim = tmp_path / "bin"; _port_shims(shim, lst)
     fp_git = DEPLOY_ALL[DEPLOY_ALL.index("_fp_git() {"):]; fp_git = fp_git[:fp_git.index("\n") + 1]
-    _i = DEPLOY_ALL.index("_ngfp() {"); ngfp = _envv_fn() + DEPLOY_ALL[_i:DEPLOY_ALL.index("\n}\n", _i) + 3]
+    _i = DEPLOY_ALL.index("_ngfp() {"); ngfp = _envv_fn() + DEPLOY_ALL[_i:DEPLOY_ALL.index("\n}\n", _i) + 3] + _delib_hold_fn()
     def run():
         script = (f'set -uo pipefail\nPORTAL_DIR="{repo}"; RESTART=0\n. "{LIB}"\nexport HWAX_RESTART_STATE_DIR="{tmp_path}/state" HWAX_RESTART_SKIPPED_FILE="{tmp_path}/skipped" HWAX_WAIT_DOWN_MAX=2 HWAX_WAIT_UP_MAX=2\n'
                   f'ok() {{ echo "OK:$*"; }}; skip() {{ echo "SKIP:$*"; }}; set_remote() {{ :; }}\n'
@@ -491,7 +500,7 @@ def _nginx_harness(tmp_path):
     shim = tmp_path / "bin"; _port_shims(shim, lst)
     # 블록은 PORTAL_DIR 안의 infra/apptainer/bin-* 가 없으면 PATH 의 apptainer 를 쓴다 — 여기서는 이 셈이다(절대경로).
     (shim / "apptainer").write_text(f'#!/usr/bin/env bash\necho "apptainer $*" >> "{calls}"\n[ "${{NGSTOP_NOOP:-0}}" = 1 ] && exit 0\n{stop_lines}'); (shim / "apptainer").chmod(0o755)
-    _i = DEPLOY_ALL.index("_ngfp() {"); ngfp = _envv_fn() + DEPLOY_ALL[_i:DEPLOY_ALL.index("\n}\n", _i) + 3]
+    _i = DEPLOY_ALL.index("_ngfp() {"); ngfp = _envv_fn() + DEPLOY_ALL[_i:DEPLOY_ALL.index("\n}\n", _i) + 3] + _delib_hold_fn()
     def run(env=None):
         script = (f'set -euo pipefail\nPORTAL_DIR="{repo}"\n. "{LIB}"\nexport HWAX_RESTART_STATE_DIR="{tmp_path}/state" HWAX_WAIT_DOWN_MAX=2 HWAX_WAIT_UP_MAX=2\n'
                   f'ok() {{ echo "OK:$*"; }}; skip() {{ echo "SKIP:$*"; }}\n{ngfp}\n{_nginx_block()}')

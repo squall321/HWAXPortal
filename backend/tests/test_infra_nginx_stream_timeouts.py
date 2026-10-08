@@ -192,6 +192,8 @@ def _deploy_all_nginx_block(tmp_path: Path, infra_env: str) -> str:
     script = "\n".join([
         "set -euo pipefail", f'PORTAL_DIR="{repo}"', 'ok() { echo "OK:$*"; }; skip() { echo "SKIP:$*"; }',
         "_envv() { echo 8088; }; _ngfp() { echo fp; }; hwax_restart_cycle() { return 0; }; curl() { printf 200; }",
+        # 구획은 conf 가 바뀌었을 때만 도는 심의를 묻는다 — 여기서는 '그대로' 라 묻지 않는다(그 물음은 test_update_all_delib_restart_gate 가 본다)
+        "hwax_last_fp() { echo fp; }; _delib_hold() { return 1; }",
         deploy[i:j], "echo end"])
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                        env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)})
