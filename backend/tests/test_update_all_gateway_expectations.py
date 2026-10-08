@@ -626,3 +626,100 @@ def test_옛_항목이_재프로비저닝_뒤에도_남으면_누락으로_센�
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
     assert r.returncode == 0 and not r.stderr, r.stderr
     assert f"STILL=[{' '.join(['signalforge', *left])}]" in r.stdout, r.stdout
+
+
+# ── ODB 자동화 허브 — 게이트웨이는 토큰과 **주소**가 둘 다 있어야 odb-hub 를 등재한다(HWAXMcpGateway c5a9787) ───────────
+# 프로비저너에 기본값으로 박혀 있던 사내 주소가 걷혔다. 주소는 provision.env 의 ODB_HUB_BASE, 없으면 지금 config 의 odb-hub 주소다.
+# update-all 은 토큰만 보고 기대했다 — 주소를 모르는 박스에서는 게이트웨이가 만들지 않는데 여기는 기대해, 매 실행 재프로비저닝이
+# 헛돌고 게이트웨이·에이전트서버가 그때마다 내려갔다 올라온다(ARP D-5 와 같은 모양).
+ODB_ENV = "ODB_HUB_TOKEN=odb-test-token\nODB_HUB_BASE=http://203.0.113.30:8000\n"
+ODB_CFG = {"odb-hub": {"url": "http://203.0.113.30:8000/mcp?token=odb-test-token", "transport": "streamable_http"}}
+
+
+def test_odb_hub_는_토큰과_주소가_둘_다_있는_박스에서_빠지면_빠졌다고_한다(tmp_path):
+    missing, out = _expect(tmp_path / "gone", have=BASE, prov_env=ODB_ENV)
+    assert missing == ["odb-hub"]
+    assert "odb-test-token" not in out and "203.0.113.30" not in out, "토큰도 사내 주소도 화면에 남지 않는다"
+    assert _expect(tmp_path / "have", have=BASE + ["odb-hub"], prov_env=ODB_ENV)[0] == []
+
+
+def test_odb_hub_토큰만_있고_주소를_모르면_기대하지_않는다(tmp_path):
+    """**이 시험이 이 구획의 이유다** — 게이트웨이는 주소 없이는 odb-hub 를 만들지 않는다. 토큰만 보고 기대하면 그 박스가 매 실행
+    odb-hub 를 '빠짐' 으로 보고 재프로비저닝을 돌리고('재프로비저닝 후에도 누락' ✗ 까지), 도는 심의가 없을 때마다 게이트웨이와
+    에이전트서버를 내렸다 올린다."""
+    missing, out = _expect(tmp_path / "file", have=BASE, prov_env="ODB_HUB_TOKEN=odb-test-token\n")
+    assert missing == []
+    line = next(ln for ln in out.splitlines() if "○ ODB 자동화 허브" in ln)
+    assert "ODB_HUB_TOKEN 은 있는데" in line and "ODB_HUB_BASE=" in line and "provision.env" in line, "무엇을 어디에 적으면 켜지는지"
+    assert "odb-test-token" not in out, "토큰은 화면에 남지 않는다"
+    missing, out = _expect(tmp_path / "shell", have=BASE, pre='ODB_HUB_TOKEN="odb-test-token"')
+    assert missing == [] and "○ ODB 자동화 허브" in out, "운영자 셸에서 준 토큰도 같다"
+
+
+def test_odb_hub_주소가_지금_config_에_있으면_기대한다(tmp_path):
+    """cae00 의 모양 — 주소를 어디에도 적은 적이 없고 옛 프로비저너가 기본값으로 config 에 넣었다. 게이트웨이는 그 주소를 이어받으니
+    그 박스에서 odb-hub 가 떠 있는 게이트웨이에서 빠지면 빠졌다고 해야 한다(안 켠 기능으로 적지도 않는다)."""
+    missing, out = _expect(tmp_path / "gone", have=BASE, prov_env="ODB_HUB_TOKEN=odb-test-token\n", gw_config=ODB_CFG)
+    assert missing == ["odb-hub"] and "ODB 자동화 허브" not in out
+    missing, out = _expect(tmp_path / "have", have=BASE + ["odb-hub"], prov_env="ODB_HUB_TOKEN=odb-test-token\n", gw_config=ODB_CFG)
+    assert missing == [] and "ODB 자동화 허브" not in out
+
+
+@pytest.mark.parametrize("prov_env", ["", "ODB_HUB_BASE=http://203.0.113.30:8000\n", "ODB_HUB_TOKEN=\n", "# ODB_HUB_TOKEN=odb-test-token\n"])
+def test_odb_hub_토큰이_없는_박스는_종전처럼_조용하다(tmp_path, prov_env):
+    """dev 는 그 허브에 닿지 않는다(포트 차단) — 토큰 없는 박스에서 기대도 ○ 줄도 늘지 않는다. 빈 토큰·주석 줄은 토큰이 아니다."""
+    missing, out = _expect(tmp_path, have=BASE, prov_env=prov_env)
+    assert missing == [] and "ODB 자동화 허브" not in out
+
+
+def test_odb_hub_판정은_config_가_깨져도_죽지_않는다(tmp_path):
+    for name, cfg in (("str", {"odb-hub": "str"}), ("nourl", {"odb-hub": {}}), ("broken", None)):
+        if name == "broken":
+            d = tmp_path / name / "box/HWAXMcpGateway"; d.mkdir(parents=True); (d / "gateway_config.json").write_text("{깨진 json")
+        missing, out = _expect(tmp_path / name, have=BASE, prov_env="ODB_HUB_TOKEN=odb-test-token\n", gw_config=cfg)
+        assert missing == [] and "○ ODB 자동화 허브" in out, name
+
+
+def _gateway_odb(env: dict, prev: dict | None):
+    """게이트웨이 프로비저너의 odb-hub 등재 블록(`_carry` 정의 · `_ODB = …` · `if _ODB:` 부터 ARP 앞까지)을 원문에서 꺼내 돌린다
+    → 만든 항목(없으면 None)."""
+    prov = ROOT.parent / "HWAXMcpGateway" / "provision-config.sh"
+    if not prov.exists():
+        pytest.skip("게이트웨이 리포가 옆에 없다")
+    src = prov.read_text(encoding="utf-8")
+    if "odb-hub 생략" not in src:
+        pytest.skip("옆의 게이트웨이가 아직 odb-hub 를 기본 주소로 등재하는 판이다")
+    carry = src[src.index("def _carry("):src.index("\n_RAT = _carry(")]
+    i = src.index('_ODB = _carry("ODB_HUB_TOKEN"')
+    token = src[i:src.index("\n\n", i)]
+    j = src.index("\nif _ODB:\n")
+    block = src[j:src.index("\n# AI Ready Portal(ARP)", j)]
+    cfg: dict = {}
+    ns = {"e": env, "cfg": cfg, "re": re, "print": lambda *a, **k: None,
+          "_prev": lambda key, field="url": ((prev or {}).get(key) or {}).get(field)}
+    exec(carry + "\n" + token + "\n" + block, ns)  # noqa: S102 — 옆 리포의 추적 파일 발췌
+    return cfg.get("odb-hub")
+
+
+@pytest.mark.parametrize("base", [None, "http://203.0.113.30:8000"])
+@pytest.mark.parametrize("token", [None, "odb-test-token"])
+@pytest.mark.parametrize("prev", [None, ODB_CFG, {"odb-hub": {"url": "http://198.51.100.9:8000/mcp?token=old"}}], ids=["없음", "같은주소", "옛주소"])
+def test_odb_hub_기대가_게이트웨이의_등재와_맞물린다(tmp_path, base, token, prev):
+    """**정본은 게이트웨이다** — 그 등재 블록을 원문에서 꺼내 같은 입력(env · 직전 config)으로 돌려 update-all 의 판정과 맞춰 본다.
+      ① update-all 이 기대하면 게이트웨이는 반드시 등재한다(아니면 매 실행 재프로비저닝이 헛돈다).
+      ② 토큰을 적은 박스에서는 두 조건이 같다. 게이트웨이는 직전 config 의 **토큰**도 이어받아 더 넓다 — 그쪽은 기대하지 않아도
+         무해하다(등재돼 있을 뿐이다)."""
+    env = {k: v for k, v in (("ODB_HUB_BASE", base), ("ODB_HUB_TOKEN", token)) if v}
+    built = _gateway_odb(env, prev)
+    prov_env = "".join(f"{k}={v}\n" for k, v in env.items())
+    expects = "odb-hub" in _expect(tmp_path, have=BASE, prov_env=prov_env, gw_config=prev)[0]
+    assert not expects or built is not None, "①"
+    if token:
+        assert expects is (built is not None), "②"
+
+
+def test_재프로비저닝이_ODB_허브_주소를_게이트웨이에_넘긴다(tmp_path):
+    """넘기지 않으면 provision.env 에 주소를 적어도 게이트웨이는 못 보고(직전 config 에도 없으면) odb-hub 를 만들지 않는다 —
+    update-all 은 기대하므로 매 실행 재프로비저닝이 헛돈다."""
+    vals = {"ODB_HUB_TOKEN": "odb-test-token", "ODB_HUB_BASE": "http://203.0.113.30:8000"}
+    assert _provisioner_sees(tmp_path, vals) == vals

@@ -22,6 +22,7 @@
 #     RAT_TOKEN=rat_xxx            # ReportArchive PAT (심의 보고서 저장)
 #     HEAX_MCP_TOKEN=heax_xxx      # heax MCP 앱 자동연동(materialtwin·laminate)
 #     ODB_HUB_TOKEN=xxxx           # ODB 자동화 허브(<ODB 서버>:8000) — cae00 에서만 도달
+#     ODB_HUB_BASE=http://<ODB 서버>:8000  # 그 허브의 주소 — 토큰과 둘 다 있어야 odb-hub 가 등재된다(이미 붙은 박스는 config 의 주소를 잇는다)
 #     ARP_BASE=http://<ARP 서버>:3001  # AI Ready Portal — cae00 에서만 도달. infra/.env ARP_HOST 가 있으면 1f 가 채운다
 #     ARP_TOKEN=xxxx                   # ARP MCP 서비스 토큰(2026-10-01 부터 인증) — 없으면 arp 백엔드만 빠진다
 #     SMARTTWIN_MCP_URL=http://127.0.0.1:5013/mcp   # SmartTwinMCP 를 쓰는 박스만(dev) — 없으면 게이트웨이가 smart-twin-mcp 를 등재하지 않는다
@@ -825,6 +826,26 @@ elif [ -z "$_arp_b" ] && [ -n "$_arp_t" ]; then
   hwax_skip "ARP MCP 도구(챗의 AI Ready Portal)" "ARP_TOKEN 은 있는데 update-all 이 아는 ARP 주소가 없다(infra/.env 의 ARP_HOST 도, 게이트웨이 provision.env 의 ARP_BASE 도 없다) — arp 백엔드를 기대하지 않아, 빠져 있어도 토큰을 바꿔도 재프로비저닝하지 않는다" "infra/.env 에 ARP_HOST=<ARP 서버 주소> 를 적거나(1f 가 게이트웨이 ARP_BASE 를 적는다) HWAXMcpGateway/provision.env 에 ARP_BASE=http://<ARP 서버>:3001 을 적고 재실행(§5 가 재프로비저닝한다)"
 fi
 unset _arp_t
+# ODB 자동화 허브 MCP — 게이트웨이는 토큰과 **주소**가 둘 다 있을 때만 odb-hub 를 등재한다. 주소는 provision.env 의 ODB_HUB_BASE,
+# 없으면 지금 config 에 든 odb-hub 의 주소다(HWAXMcpGateway c5a9787 — 프로비저너에 기본값으로 박혀 있던 사내 주소를 걷었다).
+# 종전에는 토큰만 보고 기대했다. 주소를 모르는 박스에서는 게이트웨이가 만들지 않는데 여기는 기대해, 매 실행 재프로비저닝이 헛돌고
+# '재프로비저닝 후에도 누락' ✗ 가 붙는다 — 게이트웨이·에이전트서버가 그때마다 내려갔다 올라온다(ARP D-5 와 같은 모양).
+# 이미 붙어 있는 박스(cae00)는 config 가 주소를 알고 있어 달라지는 것이 없다. §5 가 provision.env 를 소싱하기 전이라 파일에서 읽는다.
+# ⚠ 이 조건은 게이트웨이 provision-config.sh 의 등재 조건과 같아야 한다(시험이 그 블록을 원문에서 꺼내 맞춰 본다).
+_odb_t="${ODB_HUB_TOKEN:-}"; _odb_b="${ODB_HUB_BASE:-}"
+if [ -z "$_odb_t" ] && [ -n "$GW_DIR" ]; then _odb_t="$(_envfile_value "$GW_DIR/provision.env" ODB_HUB_TOKEN)"; fi
+if [ -z "$_odb_b" ] && [ -n "$GW_DIR" ]; then _odb_b="$(_envfile_value "$GW_DIR/provision.env" ODB_HUB_BASE)"; fi
+if [ -z "$_odb_b" ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ]; then
+  _odb_b="$(python3 -c 'import json,sys;print((json.load(open(sys.argv[1])).get("odb-hub") or {}).get("url") or "")' "$GW_DIR/gateway_config.json" 2>/dev/null || true)"
+fi
+ODB_HUB_EXPECTED=0
+if [ -n "$_odb_t" ] && [ -n "$_odb_b" ]; then
+  ODB_HUB_EXPECTED=1
+elif [ -n "$_odb_t" ]; then
+  # 주소는 찍지 않는다(사내 주소다 — 이 출력은 로그에 남는다). 토큰도 찍지 않는다.
+  hwax_skip "ODB 자동화 허브 MCP 도구" "ODB_HUB_TOKEN 은 있는데 허브 주소를 모른다(게이트웨이 provision.env 의 ODB_HUB_BASE 도, 지금 config 의 odb-hub 항목도 없다) — 게이트웨이가 odb-hub 백엔드를 등재하지 않는다" "HWAXMcpGateway/provision.env 에 ODB_HUB_BASE=http://<ODB 자동화 허브 서버>:<포트> 를 적고 재실행(§5 가 재프로비저닝한다)"
+fi
+unset _odb_t _odb_b
 # SmartTwinMCP(해석 잡 제출·후처리·수집 도구) — 게이트웨이는 주소가 **설정된** 박스에서만 smart-twin-mcp 를 등재한다
 # (docs/change-request-8-10 D-4): provision.env 의 SMARTTWIN_MCP_URL, 또는 지금 config 에 든 **기본값이 아닌** 주소.
 # 기본값(같은 박스 :5013)은 설정이 아니라 옛 프로비저너가 무조건 박던 값이다 — cae00 은 그 포트를 듣는 것이 없어 가짜 DOWN 이
@@ -879,8 +900,8 @@ if [ -n "$H" ] && ! json_ok "$H"; then
 fi
 
 calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공백 구분). heax는 config 파일로 별도 판정.
-  H="$1" RAT="${RAT_TOKEN:-}" ODB="${ODB_HUB_TOKEN:-}" ARP="${ARP_TOKEN:+${ARP_BASE:-}}" MXWP_UP="$MXWP_UP" \
-  SMARTTWIN_EXPECTED="${SMARTTWIN_EXPECTED:-0}" \
+  H="$1" RAT="${RAT_TOKEN:-}" ARP="${ARP_TOKEN:+${ARP_BASE:-}}" MXWP_UP="$MXWP_UP" \
+  SMARTTWIN_EXPECTED="${SMARTTWIN_EXPECTED:-0}" ODB_HUB_EXPECTED="${ODB_HUB_EXPECTED:-0}" \
   KNOX_BRIDGE_UP="${KNOX_BRIDGE_UP:-0}" STE_ROUTED="$STE_ROUTED" TESTSCOPE_EXPECTED="${TESTSCOPE_EXPECTED:-0}" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
@@ -893,7 +914,8 @@ if os.environ.get("MXWP_UP") == "1": want.add("mx-white-paper")
 if os.environ.get("RAT"):           want.add("reportarchive")
 # ODB 자동화 허브는 cae00 에서만 도달한다(dev 는 포트 차단 — 실측). 토큰이 있는 박스에서만
 # 기대 목록에 넣는다 — RAT_TOKEN 과 같은 방식이라 dev 에서 가짜 DOWN 이 뜨지 않는다.
-if os.environ.get("ODB"):           want.add("odb-hub")
+# 토큰만으로는 모자라다 — 게이트웨이는 허브 주소도 알아야 등재한다(위 판정, 게이트웨이의 등재 조건과 같다).
+if os.environ.get("ODB_HUB_EXPECTED") == "1": want.add("odb-hub")
 # ARP 도 cae00 전용이다. 인증이 켜져 있어(2026-10-01) 주소와 토큰이 둘 다 있어야 이 박스에서 쓴다는 신호다.
 # ⚠ 게이트웨이 provision-config.sh 의 등재 조건(ARP_BASE 와 ARP_TOKEN 둘 다)과 **같아야 한다** — 여기만 주소로 기대하면
 #   토큰 없는 박스가 매 실행 arp 를 '빠짐' 으로 보고 재프로비저닝을 헛돌린다(docs/change-request-8-10 D-5).
