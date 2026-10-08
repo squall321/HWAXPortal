@@ -162,6 +162,27 @@ def test_킷의_값이_엔진_기본값과_같다(knob):
     assert float(got) == float(_knobs()[knob]), f"{knob}: 엔진 {got} · 킷 {_knobs()[knob]}"
 
 
+def test_엔진이_시간_한도로_적은_손잡이가_킷에_빠짐없이_있다():
+    """엔진 README 의 'Time limits' 표가 그 서버의 시간 한도 손잡이 목록이다. 엔진에 손잡이가 생겼는데 킷에 없으면, 킷을 보고 박스를
+    맞추는 사람은 그 손잡이가 있는 줄 모른다 — 재기동 전에 심의 수를 묻는 한도(AGENT_HEALTH_PROBE_S)가 그렇게 빠져 있었다
+    (킷을 적은 뒤에 엔진에 생겼다)."""
+    readme = ENGINE / "README.md"
+    if not readme.exists():
+        pytest.skip(f"형제 리포 없음: {ENGINE}")
+    text = readme.read_text(encoding="utf-8")
+    assert "\n### Time limits\n" in text, "엔진 README 의 시간 한도 표를 못 찾았다 — 제목이 바뀌었으면 이 시험도 고쳐라"
+    table = text[text.index("\n### Time limits\n"):]
+    names = re.findall(r"^\| `([A-Z][A-Z0-9_]*)` \|", table[:table.index("\n## ")], re.M)
+    assert len(names) >= 15, names
+    kit = _knobs()
+    for name in names:
+        if name == "AGENT_RESTART_FORCE":
+            # 박스의 .env 에 적는 값이 아니다(적으면 보호가 늘 꺼진다) — 이름과 그 말이 구획에 있으면 된다
+            assert name in _time_block() and "이 파일에 적는 값이 아니다" in _time_block()
+            continue
+        assert name in kit, f"엔진의 시간 한도 손잡이 {name} 가 킷(infra/env-kits/agent-server.env)에 없다 — 기본값과 함께 적는다"
+
+
 # ── 층 — 킷의 수치로 안쪽 < 바깥이 성립한다 ───────────────────────────────────────────────────
 def test_킷의_수치로_안쪽_한도가_바깥보다_작다():
     """한 값만 고치면 순서가 뒤집힌다. 포털 릴레이의 침묵 한도는 heartbeat 가 꺼진(또는 없는 옛) 엔진에서도 LLM 논리 호출 1회의
