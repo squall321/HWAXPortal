@@ -10,6 +10,7 @@
 test_delib_stream_in_browser 가 본다.
 """
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -167,3 +168,34 @@ def test_화면이_하는_말(front):
     assert "줄이거나" not in got["delib_other"]["hint"], "한도와 무관한 오류에도 줄이라고 권하던 문구다"
     assert got["no_response"]["title"] == got["unreachable"]["title"] == "서버에 연결하지 못했습니다"
     assert got["stopped"]["title"] == "중단되었습니다" and got["unknown"]["title"] == "뭔가 다른 오류"
+
+
+# ── 엔진이 실제로 보내는 글 — 화면의 갈래는 엔진의 글자에 걸려 있다 ───────────────────────────────────────────────
+_ENGINE = ROOT.parent / "HWAXAgentServer"
+# 엔진 app.py 가 챗(심의가 아닌) LLM 호출 한도에서 내는 error 글 — 걸린 값과 손잡이(LLM_TIMEOUT_S)를 엔진이 싣는다.
+_CHAT_LIMIT = ("LLM 응답이 900초 안에 오지 않았습니다(LLM_TIMEOUT_S · 3회 시도) — LLM 이 밀려 있거나 멈췄습니다. "
+               "잠시 후 다시 시도해 주세요 — 질문을 바꿔도 해결되지 않습니다.")
+
+
+def test_챗의_LLM_한도는_엔진이_말한_손잡이를_그대로_보인다(front):
+    """심의가 아닌 챗에서 LLM 응답이 한도에 걸리면 엔진이 걸린 값과 손잡이(LLM_TIMEOUT_S)를 글에 싣는다. 그 이름 안의 'TIMEOUT'
+    이라는 글자 때문에 심의 한도 문구로 새면, 챗 사용자에게 '호출 타임아웃(timeout_s)·DELIB_TIMEOUT_S 를 올려라, 라운드 수나 좌석을
+    줄일 일이 아니다' 라고 말한다 — 걸린 것과 다른 손잡이다."""
+    (got,) = front(friendly=[_CHAT_LIMIT])["friendly"]
+    assert got == {"title": "LLM 응답이 제한 시간 안에 오지 않았습니다", "hint": _CHAT_LIMIT, "retry": True}
+    assert "DELIB_TIMEOUT_S" not in got["hint"] and "timeout_s" not in got["hint"] and "좌석" not in got["hint"]
+
+
+def _engine_src(name: str) -> str:
+    if not (_ENGINE / name).exists():
+        pytest.skip(f"형제 리포 없음: {_ENGINE}")
+    return (_ENGINE / name).read_text(encoding="utf-8")
+
+
+def test_챗_LLM_한도의_글자를_엔진이_아직_그렇게_말한다():
+    """화면은 엔진 글에 든 손잡이 이름(LLM_TIMEOUT_S)으로 이 갈래를 알아본다 — 엔진이 그 이름을 글에서 빼면(다른 글들처럼 knob
+    칸으로 옮기면) 화면은 조용히 심의 한도 문구로 돌아가 엉뚱한 손잡이를 말한다."""
+    app_src = _engine_src("app.py")
+    assert '"오지 않았습니다(LLM_TIMEOUT_S"' in app_src and '"LLM 응답이 "' in app_src, (
+        "엔진의 챗 LLM 한도 글이 바뀌었다 — chatErrors.ts 의 LLM_TIMEOUT_S 갈래와 이 파일의 _CHAT_LIMIT 을 맞춘다")
+    assert "r.includes('LLM_TIMEOUT_S')" in (FE / "src/lib/chatErrors.ts").read_text(encoding="utf-8")
