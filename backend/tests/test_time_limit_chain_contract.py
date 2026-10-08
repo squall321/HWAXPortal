@@ -13,6 +13,7 @@
   도구 호출      게이트웨이 재연결 < 호출 < 전송 read·단발 세션 바깥 기한 < 그것을 감싸는 셋(엔진 · 포털 절차 워밍업 · nginx /mcp-gw/)
   지식카드       AIDataHub 연결 < 풀 대기 · 풀 대기 + 검색 문장 < 엔진의 지식카드 한도
   자격           패널 벽시계 + 보고서 저장 < chat PAT 의 최소 잔여 · 패널 벽시계 < 리스크 자격 여유 < PAT 등록 하한
+  대화 생성      포털 대화 저장소 잠금 대기 ≤ 리스크 앱의 대화 생성 호출(지금은 같은 값이다 — 그 시험의 ⚠)
 """
 import re
 from pathlib import Path
@@ -94,7 +95,8 @@ def _risk() -> dict[str, float]:
         "리스크 앱의 429 대기 예산 기본값이 ENGINE_BUSY_ALLOWANCE_S 가 아니게 됐다 — 아래 margin 이 읽는 상수를 고쳐라")
     return {"panel": panel, "read": _val(RISK, c, const("DEFAULT_ENGINE_READ_TIMEOUT_S")),
             "margin": panel + _val(RISK, c, const("ENGINE_BUSY_ALLOWANCE_S")) + _val(RISK, c, const("CREDENTIAL_SLACK_S")),
-            "pat_floor": _val(RISK, "backend/app/routes.py", const("PAT_MIN_REMAINING_S"))}
+            "pat_floor": _val(RISK, "backend/app/routes.py", const("PAT_MIN_REMAINING_S")),
+            "portal_call": _val(RISK, c, const("DEFAULT_PORTAL_CALL_TIMEOUT_S"))}
 
 
 def _nginx_default(knob: str) -> float:
@@ -112,7 +114,7 @@ def _portal() -> dict[str, float]:
     return {"relay": default("agent_stream_idle_timeout_s"), "unary": default("agent_unary_timeout_s"),
             "pat_left": default("chat_pat_ttl_s") - window, "nginx_agent": _nginx_default("NGINX_AGENT_READ_TIMEOUT"),
             "nginx_mcp": _nginx_default("NGINX_MCP_READ_TIMEOUT"), "warmup": float(WARMUP_TIMEOUT),
-            "step": float(max(EXPECT_TIMEOUT.values()))}
+            "step": float(max(EXPECT_TIMEOUT.values())), "conv_busy": default("conv_store_busy_timeout_s")}
 
 
 def _ascending(chain: list[tuple[str, float]]) -> None:
@@ -192,6 +194,22 @@ def test_자격이_가장_긴_실행보다_오래_산다():
                 ("chat PAT 의 최소 잔여(CHAT_PAT_TTL_S − 30분 창)", p["pat_left"])])
     _ascending([("리스크 패널 벽시계(HWAXRISK_PANEL_TIMEOUT_S)", r["panel"]), ("리스크 자격 여유(벽시계 + 429 대기 + 600)", r["margin"]),
                 ("리스크 PAT 등록 하한(PAT_MIN_REMAINING_S)", r["pat_floor"])])
+
+
+def test_리스크_앱의_대화_생성_호출이_포털의_잠금_대기보다_먼저_포기하지_않는다():
+    """리스크 앱은 패널을 돌리기 전에 포털에 대화를 만든다(POST /agent/conversations). 포털은 그 안에서 대화 저장소의 SQLite 잠금을
+    CONV_STORE_BUSY_TIMEOUT_S 만큼 기다리고, 다 차면 503 으로 사유와 손잡이를 답한다. 리스크 앱의 호출 한도
+    (HWAXRISK_PORTAL_CALL_TIMEOUT_S)가 그보다 짧으면 그 답을 못 듣고 먼저 포기한다 — 패널은 포털 대화 없이 몇 시간 돌고,
+    포털이 뒤늦게 만든 대화는 주인 없이 남는다. 두 값을 잇는 시험이 없어 한쪽만 바꿔도 초록이었다.
+
+    ⚠ 지금은 둘 다 30 이라 **같은 것까지 통과시킨다.** 원칙(안쪽 < 바깥)대로면 리스크 앱 쪽이 커야 한다 — 그 기본값은 다른
+    리포라 이 변경에서 올리지 못했다(45 를 권고했다). 그쪽이 오르면 이 단언을 `_ascending` 으로 바꾼다. 그때까지 이 시험이
+    막는 것은 더 나빠지는 쪽이다(포털만 올리거나 리스크 앱만 내리는 변경)."""
+    p, r = _portal(), _risk()
+    assert p["conv_busy"] <= r["portal_call"], (
+        f"리스크 앱이 포털보다 먼저 포기한다 — 포털 대화 저장소 잠금 대기(CONV_STORE_BUSY_TIMEOUT_S) {p['conv_busy']:g}초 > "
+        f"리스크 앱 대화 생성 호출(HWAXRISK_PORTAL_CALL_TIMEOUT_S) {r['portal_call']:g}초. 포털의 503(사유·손잡이)이 나가기 전에 "
+        "리스크 앱이 끊고 패널이 포털 대화 없이 돈다. 한쪽을 바꿨으면 다른 쪽을 같이 본다")
 
 
 def test_심의_전_도우미는_nginx_가_끊기_전에_기본값으로_넘어간다():
