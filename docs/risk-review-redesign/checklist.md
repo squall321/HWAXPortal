@@ -14,7 +14,7 @@
 
 ## M0 재고와 실측
 
-- [ ] M0-a cae00 재고(사용자) — 모델 창을 읽은 방식, 출력 상한·시간 한도, 변경 비교 타깃 수와 타깃별 변경 수, 패널 수, `UNIQUE constraint failed: rr_seat_opinions` 로그 유무
+- [ ] M0-a cae00 재고(사용자, `./infra/scripts/risk-review-inventory.sh`) — 모델 창을 읽은 방식, 출력 상한·시간 한도, 변경 비교 타깃 수와 타깃별 변경 수, 패널 수, `UNIQUE constraint failed: rr_seat_opinions` 로그 유무
 - [ ] C0 옛 타깃 얼리기(`7248651` 코드로 v2 DB·골든 픽스처)
 - [ ] M0-b 탐침 스크립트(LLM 직결 60~100회) — 호출 초·글자/토큰 비·절단·행 누락·K
 - [ ] M0-c 단위 순수 핵심을 실제 `diff_json` 에 — 변경 수·단위 수·줄 분포
