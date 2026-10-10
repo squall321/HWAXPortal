@@ -37,6 +37,10 @@
 //   - partials 는 제출되지 못한 패널의 심의 데이터 보존분이다(결정문 절단·페이로드 초과·
 //     제출 실패·no_decision) — 자식의 부분 반환 원칙을 부모도 지킨다(감사 1-F). 여기 있는
 //     데이터로 결정적 재제출·전사 복원·continueFrom 재의결이 가능하다.
+//   - error(브리프 단계에서 멈춘 까닭) — 앱이 돌려준 코드(tier_a_web_only·brief_token_invalid …) 외에 이 워크플로가 가르는 넷:
+//     no_planned_panel(앱 응답에 패널이 정말 없다) · brief_echo_failed(옮겨 적는 에이전트가 아무것도 못 돌려줬다 — 패널이 없다는 뜻이
+//     아니다) · brief_echo_mismatch(옮겨 적은 근거 길이가 앱이 알린 원문 길이와 다르다 — echoMismatch 에 항목) · brief_too_large(결과가
+//     Claude Code 의 MCP 결과 상한을 넘어 파일로 저장됐는데 끝까지 옮기지 못했다 — MAX_MCP_OUTPUT_TOKENS).
 export const meta = {
   name: 'hwax-risk-review',
   description: '리스크 심사 패널을 앱 원장에서 받아 심의로 돌리고 결과를 되돌린다 — L2 오케스트레이터',
@@ -188,6 +192,9 @@ const BRIEF_SCHEMA = {
                 tool: { type: 'string' },
                 args: { type: 'string' },
                 result: { type: 'string' },
+                // 앱이 실은 원문 길이(앞뒤 공백을 뗀 result 의 파이썬 len — 코드포인트 수). 옮겨 적은 result 와 아래에서 견준다(줄여
+                // 옮기거나 바꿔 옮긴 근거로 좌석을 앉히지 않는다). 옛 앱은 싣지 않는다 — 그때는 0 이고 대조하지 못했다고 남긴다.
+                result_chars: { type: 'number', description: '항목에 result_chars 가 있으면 그 수 그대로(세지 말고 옮겨라). 없으면 0' },
               },
               required: ['source', 'result'],
             },
@@ -216,14 +223,33 @@ const brief = await agent(
   `인자: target_key="${TARGET}", brief_token="${BRIEF_TOKEN}", tier="${TIER}"\n` +
   `- 결과를 요약·가공하지 말고 스키마 필드에 그대로 옮겨라. 근거(evidence)의 result 문자열은 원문 그대로다.\n` +
   `- 근거 항목의 key 도 그대로 옮기고, 패널에 evidence_dropped·user_memo_cut 이 있으면 그것도 그대로 옮겨라.\n` +
+  `- 근거 항목에 result_chars 가 있으면 그 수를 그대로 옮겨라(세지 마라) — 이 워크플로가 옮겨 적은 result 와 견준다.\n` +
   `- 응답에 error 가 있으면 error 에 그 코드를 넣고 panels 는 빈 배열로 둬라.\n` +
+  // Claude Code 는 MCP 결과가 MAX_MCP_OUTPUT_TOKENS(기본 25,000토큰)를 넘으면 본문 대신 파일 저장 안내를 일반 결과로 준다(검토 GA-1).
+  // 'Error:' 로 시작해 아래 '실패' 규칙으로 읽히면 브리프가 큰 타깃만 brief_unavailable 로 닫힌다. Read 는 2,000자 넘는 줄을 잘라 보여
+  // 주므로(근거 result 는 한 줄에 수천~수만 자다) 그대로 읽으면 앞부분만 옮겨진다 — 그 절단은 위 result_chars 대조가 잡는다.
+  `- 도구 결과가 'Error: result (… characters) exceeds maximum allowed tokens. Output has been saved to <경로>' 로 오면 실패가 아니다 — ` +
+  `결과가 커서 그 파일에 저장된 것이다. 그 파일을 읽어 위와 똑같이 옮겨라. Read 도구는 2,000자가 넘는 줄을 잘라 보여 주므로 근거 result ` +
+  `같은 긴 문자열은 jq 나 python 으로 필드를 꺼내 끝까지 읽어라. 끝까지 읽지 못했으면 옮기지 말고 error="brief_too_large" 로 두고 ` +
+  `panels 는 빈 배열로 둬라.\n` +
   `- ${BY_NAME}\n` +
   `- 이름으로도 부를 수 없거나 호출이 실패하면 error="brief_unavailable" 로 두고 panels 는 빈 배열로 둬라. 재시도하지 마라.`,
   { label: 'brief', phase: '브리프', schema: BRIEF_SCHEMA })
 
 // agent() 는 API 오류·취소 시 null 이다(계약) — 가드 밖 .trim() 은 TypeError 즉사였다(감사 1-F).
+// null 은 '앱에 패널이 없다' 가 아니다 — 옮겨 적기가 실패한 것이다(출력 상한·API 오류·취소). 종전엔 panels=[] 로 떨어져
+// '편성된 패널이 없다 — 앱에서 먼저 편성하라'(no_planned_panel)는 틀린 진단으로 멈췄다(검토 P-1).
+if (brief == null) {
+  log('브리프 중단 — 브리프를 옮겨 적는 에이전트가 아무것도 돌려주지 않았다(출력 상한·API 오류·취소). 앱에 패널이 없다는 뜻이 아니다 — ' +
+      '같은 인자로 다시 돌린다(토큰이 만료됐으면 앱 화면에서 새로 받는다). 되풀이되면 그 타깃의 브리프가 옮겨 적기에 너무 큰 것이다')
+  return { targetKey: TARGET, tier: TIER, submitted: [], failed: [], error: 'brief_echo_failed', reason: '' }
+}
 const briefError = String((brief && brief.error) || '').trim()
 if (briefError) {
+  if (briefError === 'brief_too_large') {
+    log('브리프가 Claude Code 의 MCP 결과 상한을 넘어 파일로 저장됐는데 끝까지 옮기지 못했다 — 상한은 이 Claude Code 를 띄운 셸의 ' +
+        'MAX_MCP_OUTPUT_TOKENS(기본 25,000토큰)다. 올려(예 120000) Claude Code 를 다시 띄운 뒤 돌린다')
+  }
   // tier_a_web_only 는 정상 응답이다 — 대표 패널은 웹 러너만 돌린다. 그대로 보고하고 멈춘다.
   // brief_token_invalid 는 토큰이 다르거나 만료(기본 900 s)라는 뜻이다 — 앱 화면에서 다시 받아야 한다.
   // 수명을 정하는 손잡이를 같이 말한다 — 화면에서 복사한 뒤 15분을 넘겨 시작하는 일이 잦으면 운영자가 늘릴 값이다.
@@ -252,6 +278,34 @@ if (!panels.length) {
   log('편성된 패널이 없다 — 앱에서 먼저 패널을 편성해야 한다')
   return { targetKey: TARGET, tier: TIER, submitted: [], failed: [], error: 'no_planned_panel',
            reason: String((brief && brief.reason) || '') }
+}
+// 옮겨 적기 대조(검토 P-1·GA-1) — 근거 result 는 해시·부품 이름 같은 고엔트로피 글이고 수천~수만 자다. 에이전트가 줄이거나 바꿔
+// 옮겨도(의역 · Read 의 2,000자 줄 절단) 지금까지 잡을 장치가 없었다. 그러면 좌석은 동결 브리프와 다른 글을 인용하고 앱의 인용 대조가
+// 말없이 어긋난다. 앱이 항목마다 원문 길이(result_chars — 앞뒤 공백을 뗀 result 의 파이썬 len, 코드포인트 수)를 실으면 견주고, 다르면
+// 심의를 돌리지 않는다. JS 의 .length 는 UTF-16 단위라 BMP 밖 글자에서 두 배가 된다 — 코드포인트로 센다. 앞뒤 공백은 세지 않는다 —
+// 옮겨 적으며 끝 줄바꿈이 빠지는 것은 근거가 바뀐 것이 아니고(자식 심의도 앞뒤를 떼고 싣는다), 그것까지 막으면 헛멈춤이다.
+{
+  const mismatch = []
+  let unchecked = 0
+  for (const p of panels) {
+    for (const e of (p.evidence || [])) {
+      const want = Number(e && e.result_chars)
+      if (!(want > 0)) { unchecked += 1; continue }
+      const got = [...String((e && e.result) || '').trim()].length
+      if (got !== want) mismatch.push({ panel_id: String(p.panel_id), key: String(e.key || e.source || ''), want, got })
+    }
+  }
+  if (mismatch.length) {
+    log(`⚠ 브리프 중단 — 옮겨 적은 근거가 앱의 원문과 길이가 다르다(줄여 옮겼거나 바꿔 옮겼다): ` +
+        mismatch.map(x => `${x.panel_id}/${x.key} 원문 ${x.want.toLocaleString()}자 → ${x.got.toLocaleString()}자`).join(' · ') +
+        ` — 바뀐 근거로 좌석을 앉히지 않는다. 같은 인자로 다시 돌린다`)
+    return { targetKey: TARGET, tier: TIER, submitted: [], failed: [], error: 'brief_echo_mismatch', echoMismatch: mismatch,
+             reason: String((brief && brief.reason) || '') }
+  }
+  if (unchecked) {
+    log(`· 근거 ${unchecked}항목은 앱이 원문 길이(result_chars)를 싣지 않아 옮겨 적기를 대조하지 못했다(옛 앱) — ` +
+        `좌석이 받은 근거가 앱의 동결 브리프와 같은지 이 실행은 보증하지 않는다`)
+  }
 }
 log(`패널 ${panels.length}건 — target=${TARGET} tier=${TIER} actor=${ACTOR || '(미지정)'} model=${MODEL}`)
 
