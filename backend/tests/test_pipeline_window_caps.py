@@ -200,3 +200,16 @@ def test_결정적_대화_저장_스크립트도_meta_와_인용을_자르지_�
     assert ("인용 " * 50).strip() in mod._item(rebut[0])
     chunks = list(mod._chunks("나" * 40_000, "발언"))
     assert len(chunks) == 3 and "".join(c.split("\n", 1)[1] for c in chunks) == "나" * 40_000, "나누되 버리지 않는다(종전 그대로)"
+
+
+# ── 근거 곁 필드(출처·도구·인자) — 엔진과 같은 상한, 끊으면 원문 길이 ─────────────────────────────
+def test_근거_곁_필드는_엔진과_같은_상한에서_끊고_원문_길이를_남긴다():
+    """엔진(deliberation._cut_mark — 출처 200·도구 80·인자 DELIB_EVID_ARGS_MAX 1,200)과 같은 값·같은 표식이다. 종전 JS 는 출처 120·
+    인자 400 에서 말없이 끊어, 같은 근거가 웹 길과 Claude 길에서 다른 출처·인자로 좌석에 갔다."""
+    src, args = "변경 원장 " + "가" * 250, '{"q": "' + "P" * 1500 + '"}'
+    line = next(ln for ln in _prompt(_delib([{"key": "E1", "source": src, "tool": "risk_get_diff", "args": args,
+                                             "result": "본문"}]), "r1:").split("\n") if "[e:1|E1]" in ln)
+    assert f"…[{len(src):,}자 중 앞 200자]" in line and src[:200] in line
+    assert f"…[{len(args):,}자 중 앞 1,200자]" in line and args[:1200] in line
+    short = _delib([{"key": "E1", "source": "scope", "tool": "brief", "args": "T1", "result": "스코프"}])
+    assert "· [e:1|E1] [scope · brief(T1)] 스코프" in _prompt(short, "r1:"), "상한 안이면 종전과 같다"

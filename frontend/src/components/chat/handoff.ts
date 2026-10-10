@@ -32,10 +32,11 @@ export function conversationEvidence(conv: Conversation): HandoffEvidence[] {
       const key = `${a.tool}|${result.slice(0, 80)}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      // 곁 필드(출처·도구·인자)도 미리 자르지 않는다 — 엔진이 같은 상한(200·80·1,200)에서 끊고 원문 길이를 남긴다.
       out.push({
-        source: (a.step || a.tool).slice(0, 200),
-        tool: a.tool.slice(0, 80),
-        args: (a.detail ?? '').trim().slice(0, 1200) || undefined,
+        source: a.step || a.tool,
+        tool: a.tool,
+        args: (a.detail ?? '').trim() || undefined,
         result,
       });
     }
@@ -71,8 +72,8 @@ export function priorGatheredEvidence(
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({
-      source: `이전 회차 · ${seat}`.slice(0, 200),
-      tool: tool.slice(0, 80),
+      source: `이전 회차 · ${seat}`,
+      tool,
       result,
     });
   }

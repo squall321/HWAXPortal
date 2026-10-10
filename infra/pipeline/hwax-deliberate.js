@@ -267,13 +267,17 @@ let EV_SHOWN = 0   // 실제로 좌석에 실린 항목 수 = [e:N] 표지를 �
 const _evCut = []
 const _evShadow = []
 const _n = v => v.toLocaleString('en-US')
+// 근거 곁 필드(출처·도구·인자)의 상한과 표식 — 엔진 deliberation._cut_mark·_EVID_ARGS_MAX 와 같은 값·같은 표식이다. 종전엔 출처 120·
+// 인자 400 에서 말없이 끊어, 같은 근거가 웹 길과 Claude 길에서 다른 출처·인자로 좌석에 갔다.
+const EV_SRC_MAX = 200, EV_TOOL_MAX = 80, EV_ARGS_MAX = 1200
+const cutMark = (s, n) => { const t = String(s); return t.length <= n ? t : t.slice(0, n).trimEnd() + ` …[${_n(t.length)}자 중 앞 ${_n(n)}자]` }
 if (EV.length) {
   const evItems = []
   let evBudget = 0
   let evId = 0
   for (const e of EV) {
-    const src = String(e.source || '챗').slice(0, 120)
-    const meta = (e.tool ? ` · ${String(e.tool).slice(0, 80)}` : '') + (e.args ? `(${String(e.args).slice(0, 400)})` : '')
+    const src = cutMark(e.source || '챗', EV_SRC_MAX)
+    const meta = (e.tool ? ` · ${cutMark(e.tool, EV_TOOL_MAX)}` : '') + (e.args ? `(${cutMark(e.args, EV_ARGS_MAX)})` : '')
     const raw = String(e.result)
     // 항목 안 절단도 표시한다 — 무표시로 자르면 좌석이 잘린 수치를 완결 데이터로 읽는다(감사 C5).
     const body = raw.length > EV_ITEM_MAX ? raw.slice(0, EV_ITEM_MAX) + ` …[${raw.length}자 중 ${_n(EV_ITEM_MAX)}자]` : raw

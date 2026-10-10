@@ -182,3 +182,14 @@ def test_열면_줄인_칸을_서버_정본으로_되채운다():
     assert mismatch is None, "모양이 다르면 손대지 않는다"
     ctx = (_SRC / "state/ChatContext.tsx").read_text(encoding="utf-8")
     assert "conv.cacheTrimmed" in ctx and "fillTrimmed(" in ctx, "열 때 되채우는 자리가 없다"
+
+
+def test_근거_곁_필드를_프론트에서_미리_자르지_않는다():
+    """출처·도구·인자는 엔진이 같은 상한(200·80·1,200)에서 끊고 원문 길이를 남긴다 — 프론트가 같은 값으로 먼저 끊으면 그 표식이 영영 안 붙는다."""
+    step = "조회 — " + "가" * 300
+    conv = {"id": "c", "title": "t", "createdAt": 0, "updatedAt": 0,
+            "messages": [_msg("assistant", "답", activity=[{"ts": 0, "step": step, "tool": "list_materials",
+                                                          "detail": "인자 " * 700, "result_full": "결과"}])]}
+    got = _node(["components/chat/handoff.ts"],
+                "const h = require('./components/chat/handoff.js'); out(h.conversationEvidence(input));", conv)
+    assert got[0]["source"] == step and len(got[0]["args"]) == len(("인자 " * 700).strip())
