@@ -300,12 +300,14 @@ if want heax; then
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
       # 도는·줄 선 심의가 있으면 여기서 멈춘다(위 _delib_hold) — 리스크 앱과 좌석이 부르는 허브 앱 도구가 전부 이 허브에 산다.
-      # 묻는 자리는 dist-from-drive **앞**이어야 한다 — 그 스크립트가 떠 있는 인스턴스 밑의 앱 SIF 를 제자리에서 덮어쓴다.
-      # 지문도 적지 않는다 — 다음 실행이 같은 차이를 다시 본다.
+      # 묻기는 두 번이다. 여기(아무것도 받기 전)와 아래 dist-from-drive 바로 앞 — 그 스크립트가 떠 있는 인스턴스 밑의 앱 SIF 를 제자리에서
+      # 덮어쓰고, 덮은 뒤에는 미룰 수 없다(덮인 squashfs 위에서 허브가 돈다). 종전엔 여기서 한 번만 묻고 받기·미러·병합·모델(수 분~수십 분)을
+      # 다 돈 뒤 허브를 내려, 그 사이 시작한 심의와 리스크 패널이 restart 로 닫혔다(검토 P-5). 그래서 떠 있는 허브를 내리지 않아도 되는 일
+      # (미러·앱 데이터 병합·모델)을 먼저 하고, 덮기와 재기동 바로 앞에서 한 번 더 묻는다. 남는 창은 dist-from-drive 의 받기 시간(바뀐 SIF)
+      # 하나다 — 받기와 덮기를 가르려면 HEAXHub 의 dist-from-drive 를 나눠야 한다. 지문도 적지 않는다 — 다음 실행이 같은 차이를 다시 본다.
       if _delib_hold http://localhost:4180/health "heax 재기동 건너뜀" \
            "새 앱 SIF·frontend/dist 를 받지 않았고 앱 데이터 병합도 하지 않았다. 리포의 코드는 당겼지만 허브와 앱은 옛 것 그대로다" \
            "내리면 리스크 앱이 같이 내려가 도는 패널이 restart 로 닫히고(사람이 재개해야 한다) 좌석이 부르는 허브 앱 도구가 그 순간 실패한다."; then exit 3; fi
-      ./deploy/apptainer/dist-from-drive.sh || exit 1   # frontend/dist + 런타임 + base/서비스 + per-app SIF
       # 폐쇄망 pip/npm 미러(var/pkg-mirror) — 서버가 SIF 를 직접 빌드할 때의 의존성 소스.
       # 미리 받은 SIF(dist-from-drive)로 도는 앱엔 불필요하나, git 소스 빌드 앱엔 필요. 비치명적.
       # 가드는 -f 다 — 어차피 `bash <파일>` 로 부르므로 실행비트는 무의미하고, -x 로 두면
@@ -330,6 +332,11 @@ if want heax; then
       # 대용량 앱 모델 가중치(voice_recorder TTS 등)는 app-data tar 밖(별도 Drive models/) —
       # 각 앱 런타임 모델 dir 로 증분 동기(비치명).
       [ -f deploy/apptainer/models-from-drive.sh ] && bash deploy/apptainer/models-from-drive.sh || true
+      # 두 번째 묻기 — 위의 받기·병합이 도는 동안 시작한 심의가 있으면 덮기 전에 멈춘다(위 첫 묻기의 주석).
+      if _delib_hold http://localhost:4180/health "heax 재기동 건너뜀" \
+           "앱 데이터 병합·모델·미러는 받았지만(받는 사이에 심의가 시작됐다) 새 앱 SIF·frontend/dist 는 받지 않았고 허브도 내리지 않았다. 허브와 앱은 옛 것 그대로다" \
+           "내리면 리스크 앱이 같이 내려가 도는 패널이 restart 로 닫히고(사람이 재개해야 한다) 좌석이 부르는 허브 앱 도구가 그 순간 실패한다."; then exit 3; fi
+      ./deploy/apptainer/dist-from-drive.sh || exit 1   # frontend/dist + 런타임 + base/서비스 + per-app SIF — 떠 있는 인스턴스 밑에서 덮는다
       # SIF_DIR 판독은 dist-from-drive 의 env_get 과 같게(큰·작은따옴표 둘 다). 캐시 디렉터리(.drive-dist)는 지문에 넣지 않는다 — 원격 재업로드만으로 바뀐다.
       _sd="$(_envv .env SIF_DIR)"; _sd="${_sd:-$HOME/serviceApptainers}"
       _cur="$(_fp_git; hwax_fp frontend/dist var/sifs .env deploy/apptainer/cache/*.deb deploy/apptainer/cache/python-*-x86_64-linux.tar.gz deploy/apptainer/cache/node-*.tar.gz "$_sd"/heaxhub_*.sif "$_sd"/base_*.sif)"

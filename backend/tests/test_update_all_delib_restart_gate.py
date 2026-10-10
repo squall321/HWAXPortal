@@ -27,8 +27,9 @@ LIBS = f'. "{LIBDIR}/change-detect.sh"\n. "{LIBDIR}/skip-ledger.sh"\n. "{BUSY_LI
 @pytest.fixture()
 def health():
     """지어낸 에이전트 서버 /health — state['body'] 를 그대로 답하고(문자열이면 그대로, None 이면 404) 요청 수를 센다.
-    state['delay'] 에 초를 적으면 요청마다 앞에서부터 하나씩 꺼내 그만큼 늦게 답한다(이벤트 루프가 막힌 순간의 서버)."""
-    state = {"body": {"status": "ok"}, "hits": 0, "delay": []}
+    state['delay'] 에 초를 적으면 요청마다 앞에서부터 하나씩 꺼내 그만큼 늦게 답한다(이벤트 루프가 막힌 순간의 서버).
+    state['flip'] = (파일, body) 면 그 파일이 생긴 뒤부터 body 로 답한다 — 대역 스크립트가 파일을 만들어 '배포 도중에 심의가 시작됐다' 를 흉내 낸다."""
+    state = {"body": {"status": "ok"}, "hits": 0, "delay": [], "flip": None}
 
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -36,6 +37,8 @@ def health():
             if state["delay"]:
                 time.sleep(state["delay"].pop(0))
             body = state["body"]
+            if state["flip"] and Path(state["flip"][0]).exists():
+                body = state["flip"][1]
             if body is None or self.path != "/health":
                 self.send_response(404); self.end_headers(); return
             raw = (body if isinstance(body, str) else json.dumps(body)).encode()
@@ -426,8 +429,10 @@ def _heax_block() -> str:
     return DEPLOY[i:DEPLOY.index("# ── 3b. SignalForge", i)]
 
 
-def _deploy_heax(tmp_path: Path, agent_url: str, hub_url: str, last_fp: dict[str, str], dist_rc: int = 0, **env):
-    """deploy-all 의 heax 구획을 임시 허브 리포에서 돌린다 → (화면, 대역이 받은 호출, 남은 기준 지문, 장부, skip 으로 센 줄)."""
+def _deploy_heax(tmp_path: Path, agent_url: str, hub_url: str, last_fp: dict[str, str], dist_rc: int = 0,
+                 during: dict[str, str] | None = None, **env):
+    """deploy-all 의 heax 구획을 임시 허브 리포에서 돌린다 → (화면, 대역이 받은 호출, 남은 기준 지문, 장부, skip 으로 센 줄).
+    during = {대역 이름: 셸 한 줄} — 그 대역이 불릴 때 함께 돈다(예: 받는 도중에 심의가 시작됐다는 표식 파일 만들기)."""
     hub = tmp_path / "heax"; dep = hub / "deploy/apptainer"; dep.mkdir(parents=True, exist_ok=True)
     sifs = tmp_path / "sifs"; sifs.mkdir(exist_ok=True)
     log = tmp_path / "calls.log"; log.write_text("")
@@ -441,7 +446,8 @@ def _deploy_heax(tmp_path: Path, agent_url: str, hub_url: str, last_fp: dict[str
     # 부른 사실만 적는 대역. mirror·models-from-drive 는 만들지 않는다(구획이 -f 로 가드한다).
     for name in ("dist-from-drive.sh", "appdata-merge-from-drive.sh", "stop.sh", "start.sh"):
         rc = dist_rc if name == "dist-from-drive.sh" else 0
-        (dep / name).write_text(f'#!/usr/bin/env bash\necho "{name}" >> "{log}"\nexit {rc}\n'); (dep / name).chmod(0o755)
+        extra = (during or {}).get(name, ":")
+        (dep / name).write_text(f'#!/usr/bin/env bash\necho "{name}" >> "{log}"\n{extra}\nexit {rc}\n'); (dep / name).chmod(0o755)
     stubbin = tmp_path / "bin"; stubbin.mkdir(exist_ok=True)
     (stubbin / "apptainer").write_text(f'#!/usr/bin/env bash\necho "apptainer $*" >> "{log}"\nexit 0\n'); (stubbin / "apptainer").chmod(0o755)
     block = _heax_block()
@@ -484,13 +490,34 @@ def test_심의가_돌면_허브를_내리지_않고_새_SIF_도_받지_않는�
 
 
 def test_deploy_all_의_heax_재기동도_심의를_묻고_난_뒤다():
-    """묻기 → 받기 → 내렸다 올리기 순서다. 받은 뒤에 물으면 떠 있는 인스턴스 밑의 앱 SIF 가 이미 덮였다."""
+    """묻기 → 받기 → 내렸다 올리기 순서다. 받은 뒤에 물으면 떠 있는 인스턴스 밑의 앱 SIF 가 이미 덮였다. 마지막 묻기는 덮기 바로 앞이다 —
+    허브를 내리지 않아도 되는 일(미러·앱 데이터 병합·모델)이 그 사이에 끼면 그동안 시작한 심의가 재기동에 끊긴다(검토 P-5)."""
     import re
 
     assert len(re.findall(r"hwax_restart_cycle heax ", DEPLOY)) == 1, "허브를 내리는 자리가 늘었다 — 그 자리도 _delib_hold 를 지나게 한다"
     hb = _heax_block()
     assert "_delib_hold " in hb, "heax 구획이 도는 심의를 묻지 않는다"
-    assert hb.index("_delib_hold ") < hb.index("./deploy/apptainer/dist-from-drive.sh") < hb.index("hwax_restart_cycle heax ")
+    dist = hb.index("./deploy/apptainer/dist-from-drive.sh")
+    assert hb.index("_delib_hold ") < dist < hb.index("hwax_restart_cycle heax ")
+    last_ask = hb.rindex("_delib_hold ", 0, dist)
+    for step in ("mirror-from-drive.sh", "appdata-merge-from-drive.sh", "models-from-drive.sh"):
+        assert hb.index(step) < last_ask, f"{step} 가 마지막 묻기와 덮기 사이에 있다 — 그 사이 시작한 심의가 끊긴다"
+
+
+def test_받기와_병합_사이에_심의가_시작되면_SIF_를_덮지_않고_허브를_내리지_않는다(tmp_path, health):
+    """**P-5 의 이유다** — 처음 물을 때는 0건이었는데, 앱 데이터 병합(수 분~수십 분)이 도는 사이에 웹 심의나 리스크 패널이 시작됐다.
+    종전엔 한 번만 물어 그대로 받고 허브를 내려 그 패널이 restart 로 닫혔다. 덮기 바로 앞에서 다시 묻고 멈춘다 — 덮은 뒤에는 미룰 수
+    없다(덮인 squashfs 위에서 허브가 돈다). 미룬 것은 ○ 한 줄이고 실패가 아니다."""
+    health["body"] = {"status": "ok", "delib_active": 0, "delib_queued": 0}
+    started = tmp_path / "delib-started"
+    health["flip"] = (str(started), {"status": "ok", "delib_active": 1, "delib_queued": 0})
+    out, calls, state, ledger, failed = _deploy_heax(tmp_path, health["url"], health["url"], {"heax": "old-fp"},
+                                                     during={"appdata-merge-from-drive.sh": f'touch "{started}"'})
+    assert calls == ["appdata-merge-from-drive.sh"], f"덮었거나 내렸다 — {calls}"
+    line = next(ln for ln in out.splitlines() if "○" in ln)
+    assert "heax 재기동 건너뜀" in line and "심의 1건 진행 중" in line and "병합" in line and "SIF" in line, line
+    assert "heax 재기동 건너뜀" in ledger and state == {"heax": "old-fp"}
+    assert "OK:heax up" not in out and "SKIP:" not in out and failed == ""
 
 
 @pytest.mark.parametrize("case", ["심의 없음", "옛 판(수를 싣지 않는다)", "강행", "허브가 내려가 있다", "내리지 않고 띄우기만(NO_RESTART=1)"])
@@ -501,7 +528,8 @@ def test_심의가_없거나_모르거나_강행하면_허브를_종전대로_�
     hub = DEAD if case == "허브가 내려가 있다" else health["url"]          # 내려가 있으면 닫을 패널이 없다 — 띄워야 한다
     out, calls, _, ledger, _ = _deploy_heax(tmp_path, health["url"], hub, {"heax": "old-fp"}, **env)
     stop = [] if case.startswith("내리지 않고") else ["stop.sh"]
-    assert calls == ["dist-from-drive.sh", "appdata-merge-from-drive.sh", *stop, "start.sh"], (calls, out)
+    # 허브를 내리지 않아도 되는 병합을 먼저, 덮기(dist-from-drive)는 재기동 바로 앞에 — 검토 P-5
+    assert calls == ["appdata-merge-from-drive.sh", "dist-from-drive.sh", *stop, "start.sh"], (calls, out)
     assert "○" not in out and ledger == "", out
 
 
@@ -509,7 +537,7 @@ def test_허브_구획이_진짜로_실패하면_종전대로_skip_으로_센다
     """끝의 case 가 3 만 삼키고 진짜 실패(1)는 그대로 skip 으로 센다 — 받기에 실패한 실행이 초록으로 끝나면 옛 허브가 말없이 남는다."""
     health["body"] = {"status": "ok", "delib_active": 0, "delib_queued": 0}
     out, calls, state, ledger, failed = _deploy_heax(tmp_path, health["url"], health["url"], {"heax": "old-fp"}, dist_rc=1)
-    assert calls == ["dist-from-drive.sh"], (calls, out)
+    assert calls == ["appdata-merge-from-drive.sh", "dist-from-drive.sh"], (calls, out)
     assert "SKIP:heax failed" in out and len(failed.splitlines()) == 1, out
     assert "OK:heax up" not in out and "○" not in out and ledger == "" and state == {"heax": "old-fp"}
 
