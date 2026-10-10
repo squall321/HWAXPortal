@@ -249,3 +249,30 @@ def test_MCP_가_저장한_발언은_종전대로_본문이_버블이다():
                       {"role": "assistant", "persona": None, "round": None, "content": "결정문", "meta": None, "ts": 2}])
     (t,) = local[-1]["delib"]["turns"]
     assert t["say"] == "발언 본문" and "sayFull" not in t and "evidence" not in local[-1]["delib"]
+
+
+@pytest.mark.parametrize("nn_len", [2_228, 29_077])
+def test_되살린_긴_조항이_든_대화를_Word_로_내보낼_수_있다(run, nn_len):
+    """엔진은 넓은 창에서 양보 불가 조항을 _summary_max()(1M 창 29,077자)까지 보내고(종전 1,200자), 서버 사본은 자르지 않고
+    남기고, 웹은 그것을 그대로 되살려 내보내기에 싣는다. Word 요청 모델이 조항을 2,000자에서 막으면 그 대화는 전문·정리본
+    둘 다 422 다 — 다른 기기에서 열어도 같다(검토 X-1). 입력은 엔진 프레임 → 서버 저장 → 웹 복원의 실제 함수로 만든다."""
+    from app.agent.routes import DocxRequest
+
+    t = _turn_template()
+    nn = ("양보 불가 — " + "힌지 간극 0.2 mm 이하에서는 반드시 마모 시험을 먼저 한다. " * 1000)[:nn_len]
+    local = _restore(run([("delib", {**t, "round": 3, "display_round": 3, "non_negotiable": nn})]))
+    (turn,) = local[-1]["delib"]["turns"]
+    assert turn["nonNegotiable"] == nn
+    for mode in ("transcript", "report"):
+        body = DocxRequest.model_validate({"conversation": {"title": "심의", "messages": local}, "mode": mode})
+        assert body.conversation.messages[-1].delib.turns[0].nonNegotiable == nn
+
+
+def test_Word_요청_모델의_글_칸_상한은_총량과_같다():
+    """칸마다 따로 작게 두면 총량 안의 대화가 422 다 — 엔진의 상한이 커질 때마다 여기서 막힌다(say·sayFull 과 같은 칸)."""
+    from app.agent.routes import DocxTurn
+
+    def cap(name: str) -> int:
+        return [m.max_length for m in DocxTurn.model_fields[name].metadata if getattr(m, "max_length", None)][0]
+
+    assert cap("nonNegotiable") == cap("say") == cap("sayFull") == 4_000_000

@@ -135,3 +135,25 @@ def test_작은_창에서도_종전_바닥_아래로_줄이지_않는다(export)
     """dev 16K 창 — 창에서 유도한 값이 종전 60,000자보다 작으면 종전 값을 쓴다(종전 동작이 깨지지 않게)."""
     _msg, meta, _text = export(_conv("버블", None, "가" * 70_000), {"context_tokens": 16_384})
     assert meta["tx_sent"] == 60_000 and meta["window"] == "server"
+
+
+def test_총량은_렌더하는_칸만_센다():
+    """렌더(_say)는 sayFull 이 있으면 say(버블)를 쓰지 않는다. 둘 다 세면 버블이 이중으로 세어져, 렌더할 글이 400만 자 안인데도
+    422 다(검토 P-4). 좌석 2,000건 × (발언 1,900자 + 버블 600자) — 렌더는 380만 자, 둘 다 세면 500만 자."""
+    from app.agent.routes import DocxRequest
+
+    turn = {"round": 1, "persona": "mech-a", "say": "버" * 600, "sayFull": "발" * 1_900}
+    msgs = [{"role": "user", "text": "/심의 x"}] + [
+        {"role": "assistant", "text": "결정문", "delib": {"turns": [dict(turn) for _ in range(400)]}} for _ in range(5)]
+    body = DocxRequest.model_validate({"conversation": {"title": "심의", "messages": msgs}, "mode": "transcript"})
+    t0 = body.conversation.messages[1].delib.turns[0]
+    assert t0.sayFull == "발" * 1_900 and dx._say(t0.model_dump()) == "발" * 1_900, "렌더할 글은 그대로다"
+
+
+def test_버블만_있는_턴은_종전대로_say_를_센다():
+    from pydantic import ValidationError
+
+    from app.agent.routes import DocxRequest
+
+    with pytest.raises(ValidationError, match="총량"):
+        DocxRequest(conversation=_conv("가" * 3_999_990, None, "결정문 열두 자보다 길다"))

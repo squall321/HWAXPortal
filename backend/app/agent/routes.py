@@ -32,7 +32,7 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from app.access.agent_guard import check_chat, filter_experts
 from app.access.policy import is_synthetic, login_groups
@@ -771,7 +771,17 @@ class DocxTurn(BaseModel):
     sayFull: str = Field(default="", max_length=4_000_000)  # noqa: N815 — 프론트 필드명
     position: str = Field(default="", max_length=2_000)
     stance: str = Field(default="", max_length=120)
-    nonNegotiable: str = Field(default="", max_length=2_000)  # noqa: N815 — 프론트 필드명
+    # 양보 불가 조항도 같은 칸이다 — 엔진이 넓은 창에서 _summary_max()(1M 창 29,077자, 종전 1,200자)까지 보내고 서버 사본은 자르지
+    # 않는다. 2,000자에서 막으면 그 대화는 전문·정리본 둘 다 422 였다(다른 기기에서 열어도 같다). position 은 엔진이 90자에서 끊는다.
+    nonNegotiable: str = Field(default="", max_length=4_000_000)  # noqa: N815 — 프론트 필드명
+
+    @model_validator(mode="after")
+    def _drop_unrendered_bubble(self) -> "DocxTurn":
+        """렌더(docx_export._say)는 sayFull 이 있으면 say(회의 버블)를 쓰지 않는다. 들고 있으면 총량(_total_budget)이 버블을
+        이중으로 세어, 렌더할 글이 상한 안인 대화가 422 였다 — 웹은 턴마다 둘을 함께 보낸다."""
+        if self.sayFull:
+            self.say = ""
+        return self
 
 
 class DocxDelib(BaseModel):
