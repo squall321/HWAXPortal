@@ -36,10 +36,25 @@ def test_좌석_발언은_줄이지_않은_글을_쓴다():
     assert "[mech-a R1] 버블이 아니라 줄이지 않은 발언 전체" in tx
 
 
-def test_상한을_주지_않으면_자르지_않는다():
+def test_상한을_비우면_자르지_않는다():
     decision = "(1) 결론 " + "가" * 90_000 + " (7) 신뢰도 — 중간"
-    tx = dx.transcript_text(_conv("버블", None, decision))
+    tx = dx.transcript_text(_conv("버블", None, decision), limit=None)
     assert tx.endswith("(7) 신뢰도 — 중간"), "결정문 뒤쪽이 잘렸다"
+
+
+def test_인자_없이_부르는_옛_호출부는_종전_상한을_받는다():
+    """배포 중 보류된 옛 포털 프로세스는 이 모듈을 함수 안에서 처음 쓸 때 import 하고 `transcript_text(conv)` 로 부른다(origin/main
+    routes.py). 바인드 마운트라 그때 집는 것은 새 파일이다 — 기본값이 '무제한' 이면 그 섞인 판만 상한도 표식도 없이 원문 전체를
+    에이전트로 보낸다(검토 P-6). 기본값은 종전 60,000자로 두고 새 호출부가 상한을 명시한다."""
+    decision = "가" * 70_000
+    tx = dx.transcript_text(_conv("버블", None, decision))
+    assert "중 앞 60,000자만 전달했다" in tx and len(tx) < 61_000
+    import inspect
+
+    from app.agent import routes as R
+
+    src = inspect.getsource(R._export_docx_inner)
+    assert "dx.transcript_text, conv, None" in src, "새 호출부는 상한을 명시한다(창에서 유도한 값으로 따로 자른다)"
 
 
 def test_잘랐으면_원문_길이를_표식에_넣는다():

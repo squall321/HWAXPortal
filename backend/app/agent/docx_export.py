@@ -259,11 +259,13 @@ def build_report(title: str, markdown: str, source_note: str) -> bytes:
     return buf.getvalue()
 
 
-def transcript_text(conv: dict[str, Any], limit: int | None = None) -> str:
-    """LLM 에 넘길 대화 원문. limit 을 주면 넘는 만큼 뒤를 자르고 원문 길이와 함께 잘랐다는 사실을 남긴다.
+def transcript_text(conv: dict[str, Any], limit: int | None = 60_000) -> str:
+    """LLM 에 넘길 대화 원문. limit 을 넘는 만큼 뒤를 자르고 원문 길이와 함께 잘랐다는 사실을 남긴다. None 이면 자르지 않는다.
 
-    상한은 부르는 쪽이 모델 창에서 정한다(routes._report_tx_limit) — 종전 기본값 60,000자는 16K·128K 창 시절 값이라
-    1M 창에서 심의 대화의 결정문(발언 뒤에 쌓인다)을 잘랐다."""
+    상한은 부르는 쪽이 모델 창에서 정한다(routes._report_tx_limit) — 종전 60,000자는 16K·128K 창 시절 값이라 1M 창에서
+    심의 대화의 결정문(발언 뒤에 쌓인다)을 잘랐다. 그래도 기본값은 종전 값으로 둔다 — 배포 중 보류된 옛 포털 프로세스가
+    이 모듈을 처음 쓸 때 새 파일을 import 해 인자 없이 부른다(바인드 마운트). 기본값이 '무제한' 이면 그 섞인 판만 상한도
+    표식도 없이 원문 전체를 보낸다. 새 호출부는 상한을 명시한다."""
     out = []
     for m in conv.get("messages") or []:
         # 좌석 발언도 넣는다. 빼면 LLM 이 근거 없이 결론만 보고 '결론과 근거' 절을 쓰게 된다 —

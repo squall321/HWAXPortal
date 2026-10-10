@@ -940,7 +940,7 @@ async def _export_docx_inner(request, body, principal, settings, audit, conv, ti
         # 퍼밋이 영구히 새고, 상한만큼 쌓이면 챗 전체가 429 로 고정된다(실측 재현).
         # 대화 전체(총량 상한 400만자)를 문자열로 조립하는 동기 작업이다. 모델 창을 넘는 만큼만 뒤를 자르고, 잘랐으면
         # 받는 사람의 문서 머리와 감사 기록에 원문 길이를 남긴다(종전엔 모델만 '(…이후 생략)' 을 봤다).
-        _full = await asyncio.to_thread(dx.transcript_text, conv)
+        _full = await asyncio.to_thread(dx.transcript_text, conv, None)   # 원문 전체 — 창에서 유도한 상한은 아래에서 따로 건다
         _limit, _window = await _report_tx_limit(request, settings)
         _tx = _full if len(_full) <= _limit else dx.transcript_text(conv, limit=_limit)
         _sent = min(len(_full), _limit)
