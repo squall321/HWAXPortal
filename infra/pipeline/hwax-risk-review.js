@@ -13,7 +13,7 @@
 // 로 기록한다(웹 러너의 C2 strong 비율 분모에서 빠진다). Tier A 대표 패널과 무인 배치는 웹 러너
 // 전용이라 tier:'A' 를 요청하면 앱이 {error:'tier_a_web_only'} 를 돌려주고 여기서 멈춘다.
 //
-// 입력(args): { targetKey, briefToken, tier, panels?, actor?, model?, deliberateScript? }
+// 입력(args): { targetKey, briefToken, tier, panels?, actor?, model?, deliberateScript?, ctxTokens? }
 //   - targetKey : 심사 대상 과제 키(앱 원장의 target_key)
 //   - briefToken: 앱 화면(GET /targets/{key}/brief)이 발급한 1건짜리 브리프 토큰. 읽기 범위를 여는 유일한
 //                 열쇠라 필수다 — 없으면 앱을 부르기 전에 멈춘다(계획 §8.2.5)
@@ -21,6 +21,8 @@
 //   - panels    : 이번 실행에서 돌릴 패널 수(기본 1, 1~4). 브리프가 더 줘도 앞에서부터 이만큼만
 //   - actor     : 결과 제출자 이메일(앱은 actor_verified:false 로 표기 — 검증 신원이 아니다)
 //   - model     : 이 워크플로를 돌리는 LLM 모델명 신고값(없으면 'unknown', caller_reported 등급)
+//   - ctxTokens : 이 워크플로를 돌리는 Claude 서브에이전트의 창(토큰). 자식 심의(hwax-deliberate)에 그대로 넘겨 근거·직전 라운드
+//                 상한을 그 창에서 유도하게 한다(없으면 자식 기본 200,000).
 //   - deliberateScript : 자식 심의 워크플로 경로(기본 'infra/pipeline/hwax-deliberate.js').
 //                        workflow() 는 이름으로 .claude/workflows/ 를 못 찾으므로 경로로 부른다.
 // 출력: { targetKey, tier, submitted:[{panel_id, report_id, turns, decisionChars, flags}],
@@ -76,10 +78,12 @@ const EVIDENCE_ONLY_NOTE = '이 실행에는 도구 호출 경로가 없다 — 
 //   버블용으로 **줄인** 발언이라, 그 글을 그대로 제출하면 잘린 뒤쪽의 인용이 원장에서 사라진다. 그 길은
 //   deliberate_transcript(job_id, full=true) 로 받는다(HWAXAgentServer mcp_server 의 도구 설명). 이 워크플로는 엔진 잡을
 //   띄우지 않아(job_id 가 없다) 그 도구를 부를 자리가 없다 — 위 원문이 같은 구실을 한다.
-// hwax-deliberate 의 라운드 스키마는 셋이다 — 1라운드 {lens, recommendation, concerns},
+// hwax-deliberate 의 라운드 스키마는 셋이다 — 1라운드 {lens, reads, recommendation, concerns},
 // 중간 {concede, rebut, deepen}, 마지막 {final_position, non_negotiable, vote}.
+// 두 상한은 이 길의 바깥 한도다(창이 아니다) — 원장에 내는 것은 에이전트가 도구 인자로 되받아 적어야 해서(아래 SUBMIT_BUDGET)
+// 건수와 길이를 묶는다. 넘으면 표식을 달고, 몇 건을 줄였는지 원장(evidence_omitted)과 반환(flags)에 남긴다.
 const TURN_CAP = 60          // 저장 상한(계획 §0.6 turns 60/대화)
-const SAY_CAP = 2000         // seat_opinion.say_excerpt 상한
+const SAY_CAP = 2000         // seat_opinion.say_excerpt 상한(앱 HWAXRisk narrative.SAY_EXCERPT_MAX 와 같다)
 // 캡 절단에 표식을 남긴다(감사 1-F) — 무표식 절단은 좌석이 잘린 발언을 완결로 읽게 한다.
 // 표식 포함 총길이가 캡을 넘지 않게 안쪽에서 자른다(원장 열 상한이 캡 기준일 수 있다).
 const capMark = (s) => {
@@ -93,12 +97,14 @@ const joinList = v => (Array.isArray(v) ? v.filter(Boolean).map(String) : [])
 const rebutList = v => (Array.isArray(v) ? v.filter(Boolean).map(r => {
   if (typeof r !== 'object') return String(r)
   const q = String(r.quote || '').replace(/\s+/g, ' ').trim()
-  const head = (r.target ? `${r.target}의 ` : '') + (q ? `'${q.slice(0, 80)}' 에 대해 —` : '')
+  // 인용을 80자에서 끊지 않는다(hwax-deliberate rebutText 와 같다 — 반쪽 인용이 완결로 읽힌다).
+  const head = (r.target ? `${r.target}의 ` : '') + (q ? `'${q}' 에 대해 —` : '')
   return [head.trim(), String(r.counter || '').trim(), r.basis ? `(근거: ${r.basis})` : ''].filter(Boolean).join(' ')
 }) : [])
 function toTurns(roundsData) {
-  if (!Array.isArray(roundsData)) return { turns: [], dropped: 0 }
+  if (!Array.isArray(roundsData)) return { turns: [], dropped: 0, sayCut: 0 }
   const out = []
+  const cutAt = new Set()   // 발언(say)을 상한에서 줄인 자리 — 원장에 내는 것만 센다
   const last = roundsData.length - 1
   roundsData.forEach((rd, i) => {
     const isFirst = i === 0
@@ -108,7 +114,9 @@ function toTurns(roundsData) {
       let say = ''
       let position = ''
       if (isFirst) {
-        say = [o.lens, o.recommendation, ...joinList(o.concerns)].filter(Boolean).join('\n')
+        // 근거 해석(reads)을 빼지 않는다 — 좌석 계약이 요구하는 [e:]/[c:] 인용이 여기 있다. 종전엔 1라운드 발언에서 통째로 빠져
+        // 원장이 센 1라운드 인용은 늘 0 이었다(주석은 '엔진이 낸 필드만 옮긴다' 였는데 필드 하나가 없었다).
+        say = [o.lens, ...joinList(o.reads), o.recommendation, ...joinList(o.concerns)].filter(Boolean).join('\n')
         position = String(o.recommendation || '')
       } else if (isLast) {
         say = [o.final_position, o.non_negotiable, o.vote].filter(Boolean).join('\n')
@@ -117,6 +125,7 @@ function toTurns(roundsData) {
         say = [...joinList(o.concede), ...rebutList(o.rebut), o.deepen].filter(Boolean).join('\n')
         position = String(o.deepen || '')
       }
+      if (say.length > SAY_CAP) cutAt.add(out.length)
       const t = { round: i + 1, persona: String(o.persona), say: capMark(say) }
       if (position) t.position = capMark(position)
       if (isLast && o.non_negotiable) t.non_negotiable = capMark(o.non_negotiable)
@@ -131,7 +140,9 @@ function toTurns(roundsData) {
     log(`⚠ 발언 ${out.length}건 중 앞라운드 ${dropped}건 드롭(TURN_CAP ${TURN_CAP}) — ` +
         `최종 라운드를 보존했다. 전체 발언은 반환 partials/자식 결과에 있다.`)
   }
-  return { turns: out.slice(-TURN_CAP), dropped }
+  // 줄인 발언 수는 원장에 내는 것만 센다(앞에서 버린 건수는 dropped 가 말한다).
+  const sayCut = [...cutAt].filter(ix => ix >= out.length - Math.min(out.length, TURN_CAP)).length
+  return { turns: out.slice(-TURN_CAP), dropped, sayCut }
 }
 
 // ── 브리프 ───────────────────────────────────────────────────────────────────
@@ -236,6 +247,7 @@ if (_validPanels.length > MAX_PANELS) {
       `나머지는 다음 실행에서`)
 }
 const panels = _validPanels.slice(0, MAX_PANELS)
+const panelsRemaining = _validPanels.slice(MAX_PANELS).map(p => String(p.panel_id))   // 이번 실행에서 돌리지 않은 패널 — 반환에도 남긴다
 if (!panels.length) {
   log('편성된 패널이 없다 — 앱에서 먼저 패널을 편성해야 한다')
   return { targetKey: TARGET, tier: TIER, submitted: [], failed: [], error: 'no_planned_panel',
@@ -299,6 +311,7 @@ for (const p of panels) {
       rounds,
       saveReport: true,
       saveConversation: false,
+      ...(A.ctxTokens ? { ctxTokens: A.ctxTokens } : {}),
     })
   } catch (e) {
     failed.push({ panel_id: p.panel_id, error: String(e).slice(0, 300) })
@@ -340,7 +353,7 @@ for (const p of panels) {
 
   // 회수 — 결정문 원문을 그대로 앱에 넘긴다. 파싱·병합은 앱 한 곳에서 한다.
   phase('회수')
-  const { turns, dropped: droppedTurns } = toTurns(result.rounds)
+  const { turns, dropped: droppedTurns, sayCut } = toTurns(result.rounds)
   // 보고서 번호는 원장 열이 INTEGER 다(rr_panels.report_id) — 에이전트가 한 줄로 돌려주는
   // 보고서 번호에서 숫자만 뽑고, 없으면 null 로 보내 열을 건드리지 않는다.
   const reportNo = (() => {
@@ -386,6 +399,13 @@ for (const p of panels) {
     ...(loss.userMemoCut
       ? [{ source: '사용자 메모 절단',
            text: `사용자 메모 ${loss.userMemoCut.chars}자 중 ${loss.userMemoCut.kept}자만 좌석에 실렸다.` }] : []),
+    // 이 길이 원장에 내며 줄인 발언 — 종전엔 로그와 반환(flags)뿐이라 원장에서는 전원 발언이 온전히 들어온 것으로 읽혔다.
+    ...(droppedTurns
+      ? [{ source: '발언 건수 상한 초과',
+           text: clip200(`발언 ${turns.length + droppedTurns}건 중 앞 라운드 ${droppedTurns}건은 상한(${TURN_CAP}건)을 넘겨 내지 않았다. 전문은 워크플로 반환에 있다.`) }] : []),
+    ...(sayCut
+      ? [{ source: '발언 길이 상한 초과',
+           text: clip200(`발언 ${sayCut}건은 원장 칸 상한(${SAY_CAP}자)을 넘어 앞부분만 냈다(끝에 '…[총 N자]' 표식).`) }] : []),
   ]
   let ack = null
   try {
@@ -418,6 +438,7 @@ for (const p of panels) {
         decisionTruncated: result.decisionTruncated || false,   // 'marker-missing' 이면 그 문자열
         seatLoss: (result.seatLoss || []).length,
         droppedTurns,
+        sayCut,
         citationUnmatched: (result.citationAudit && result.citationAudit.unmatched
                             ? result.citationAudit.unmatched.length : null),
         // 좌석에 못 간 근거 — 비어 있지 않으면 이 패널의 좌석은 브리프의 일부만 보고 판정했다.
@@ -434,4 +455,4 @@ for (const p of panels) {
 }
 
 log(`완료 — 제출 ${submitted.length}건 / 실패 ${failed.length}건 / 보존 ${partials.length}건`)
-return { targetKey: TARGET, tier: TIER, submitted, failed, partials }
+return { targetKey: TARGET, tier: TIER, submitted, failed, partials, panelsRemaining }

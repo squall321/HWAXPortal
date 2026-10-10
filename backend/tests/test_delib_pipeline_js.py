@@ -83,11 +83,16 @@ def _run(script: str, args: dict, **extra) -> dict:
     return json.loads(r.stdout)
 
 
+# 이 파일의 시험은 근거 상한의 **바닥**(작은 창 — ctxTokens 16,384)에서 돈다. 바닥은 종전 고정값(12건·11,000자·2,000자)
+# 그대로라 알림 장치를 그 숫자로 본다. 창에서 유도한 값은 tests/test_pipeline_window_caps.py 가 본다.
+_FLOOR_CTX = 16384
+
+
 def _delib(evidence=None, **kw) -> dict:
     """심의 한 건 — 기본은 1라운드 체크포인트까지만(좌석 프롬프트와 반환값을 보는 데는 그걸로 충분하다)."""
     extra = {k: kw.pop(k) for k in ("decision", "decisionFails") if k in kw}
     args = {"question": "화두", "personas": _SEATS, "evidence": evidence or [], "stopAfterRound": 1,
-            "saveConversation": False, **kw}
+            "saveConversation": False, "ctxTokens": _FLOOR_CTX, **kw}
     return _run(_DELIB, args, **extra)
 
 
@@ -100,7 +105,7 @@ def _brief(evidence, **panel) -> dict:
 
 def _risk(brief: dict, **extra) -> dict:
     extra.setdefault("decision", "## 리스크 심사 보고서\n판정.\n〔결정문 끝〕")
-    return _run(_RISK, {"targetKey": "T1", "briefToken": "tok", "tier": "B"}, brief=brief, **extra)
+    return _run(_RISK, {"targetKey": "T1", "briefToken": "tok", "tier": "B", "ctxTokens": _FLOOR_CTX}, brief=brief, **extra)
 
 
 def _chair(out: dict) -> dict:

@@ -152,13 +152,27 @@ const parseSimSpec = text => {
 // 결정문 승계용 발췌 — 머리만 자르면 받는 쪽이 완결 문서로 읽는다(감사 C17: 뒤쪽의
 // (4)미지 파라미터·(5)반증 관측이 2단에 안 닿았다). 예산을 넘으면 머리+꼬리를 주고
 // **중략을 명시**한다 — 받는 쪽 프롬프트가 '아는 척'하지 않게.
-const excerpt = (text, headN, tailN) => {
+// 상한은 이 워크플로를 돌리는 Claude 서브에이전트의 창(args.ctxTokens, 기본 200,000 토큰)에서 유도한다 — 자식(hwax-deliberate)과
+// 같은 셈이다(1자 ≈ 1토큰, 출력 몫 32,000 토큰을 뺀 프롬프트 몫). 종전 고정값(좌석 발굴 4,500+1,500 · 2단 9,000+3,000 · 3단
+// 14,000+6,000)은 바닥으로 남는다 — 작은 창(16,384)에서는 종전과 같다.
+const CTX_TOKENS = Math.max(16384, Math.round(Number(A.ctxTokens) || 200000))
+const PROMPT_ROOM = Math.max(0, CTX_TOKENS - 32000)
+const span = (frac, floor) => Math.max(floor, Math.floor(PROMPT_ROOM * frac))
+// 발췌가 실제로 일어난 자리 — 프롬프트 안 표식만으로는 호출자가 모른다. 반환값 handoffExcerpts 에 남긴다.
+const EXCERPTS = []
+const excerpt = (text, headN, tailN, where) => {
   const t = String(text || '')
   if (t.length <= headN + tailN + 200) return t
+  EXCERPTS.push({ where, chars: t.length, head: headN, tail: tailN })
   return t.slice(0, headN) +
     `\n\n…[중략 — 전문 ${t.length.toLocaleString()}자 중 앞 ${headN.toLocaleString()}·뒤 ${tailN.toLocaleString()}자만 발췌. ` +
     `중략 구간의 내용을 아는 척하지 말고, 필요하면 '원문 확인 필요' 로 표기하라]…\n\n` + t.slice(-tailN)
 }
+// 발췌할 글은 결정문만이다 — 자식이 돌려주는 decision 은 결정문 뒤에 '■ 쉬운 설명' 을 붙인 것이라, 꼬리 발췌가 결정문 뒤쪽
+// 항목((7)식별성·(8)검증·(9)규모·(10)한계) 대신 비전문가용 요약을 집었다(감사 C17 수정이 반쯤 무효였다). 옛 자식이면 decision.
+const decOnly = st => (st && (st.decisionText || st.decision)) || ''
+// 단계 사이 발췌의 몫 — 좌석 발굴 25%(바닥 6,000), 2단·3단 이어하기 요약 각 20%(바닥 12,000·20,000). 머리 대 꼬리 비는 종전 그대로.
+const excerptTo = (text, max, headFrac, where) => excerpt(text, Math.floor(max * headFrac), max - Math.floor(max * headFrac), where)
 
 const DELIB = { scriptPath: A.deliberateScript || 'infra/pipeline/hwax-deliberate.js' }
 if (!A.deliberateScript) {
@@ -183,12 +197,14 @@ const mech = await workflow(DELIB, {
   groundCards: GROUND,
   saveReport: false,       // 최종 저장은 2단 종료 후 한 번만 — 중간 산출물로 RA 를 어지럽히지 않는다
   saveConversation: false,
+  ctxTokens: CTX_TOKENS,
 })
 if (!mech || !mech.decision) throw new Error('1단 메커니즘 심의가 결정문을 내지 못했다 — 2단 입력이 없다')
 
-// 1단의 양보 불가 조항 — 2단이 물리 제약을 조용히 버리지 못하게 승계한다.
+// 1단의 양보 불가 조항 — 2단이 물리 제약을 조용히 버리지 못하게 승계한다. 건수로 자르지 않는다 — 자식이 상한에서 줄이고
+// 반환값(inputNotices)에 남긴다. 종전엔 여기서 먼저 12건으로 조용히 잘라 자식의 알림이 영영 안 떴다.
 const mechFinal = (mech.rounds && mech.rounds[mech.rounds.length - 1]) || []
-const NN = mechFinal.filter(Boolean).map(o => o.non_negotiable).filter(Boolean).slice(0, 12)
+const NN = mechFinal.filter(Boolean).map(o => o.non_negotiable).filter(Boolean)
 
 // ── 좌석 전환 ────────────────────────────────────────────────────────────────
 phase('좌석전환')
@@ -210,7 +226,7 @@ const seatPick = GIVEN.length
       reason: '호출자가 2단 CAE 좌석을 직접 지정해 발굴을 건너뛰었다.' }
   : await agent(
   `아래 메커니즘 결론을 읽고, 이 물리를 계산으로 확인할 해석 설계 심의의 좌석을 구성하라.\n\n` +
-  `[메커니즘 결론]\n${excerpt(mech.decision, 4500, 1500)}\n\n` +
+  `[메커니즘 결론]\n${excerptTo(decOnly(mech), span(0.25, 6000), 0.75, '좌석 발굴')}\n\n` +
   `[1단 참여 좌석]\n${PERS.map(p => p.key).join(', ')}\n\n` +
   `순서: (1) 결론에서 해석 물리 축을 2~3개 뽑아라 — '확산 반응 수치해석', '낙하 충격 구조해석' 처럼 ` +
   `전문가 검색에 쓸 짧은 명사구다. 현상 이름이 아니라 계산의 성격을 써라. ` +
@@ -269,12 +285,14 @@ const sim = await workflow(DELIB, {
   chairTemplate: 'sim-plan',
   modifiers: MODS,
   groundCards: GROUND,
-  continueFrom: { summary: excerpt(mech.decision, 9000, 3000), roundsSoFar: R1, nonNegotiables: NN },
+  continueFrom: { summary: excerptTo(decOnly(mech), span(0.2, 12000), 0.75, '2단 승계'),
+                  roundsSoFar: R1, nonNegotiables: NN },
   humanNote: '사내 보유 도구를 우선 검토하라. 파라미터 식별성 판정과 이 해석이 답할 수 없는 것을 비워두지 마라.',
   // 3단이 켜지면 최종 저장(RA 보고서·대화)은 3단이 한 번만 — 2단은 중간 산출물로 남기지 않는다.
   saveReport: DO_BUILD ? false : (A.saveReport === true),
   saveConversation: DO_BUILD ? false : (A.saveConversation !== false),
   appendToReportId: DO_BUILD ? undefined : A.appendToReportId,
+  ctxTokens: CTX_TOKENS,
 })
 
 // 2단 규격 — 변수·산출·모델·자원의 기계판독 sim_spec. 구축 단계가 산문 재파싱 대신 이걸 승계한다.
@@ -287,7 +305,7 @@ let build = null
 if (DO_BUILD) {
   phase('구축설계')
   const simFinal = (sim.rounds && sim.rounds[sim.rounds.length - 1]) || []
-  const buildNN = simFinal.filter(Boolean).map(o => o.non_negotiable).filter(Boolean).slice(0, 12)
+  const buildNN = simFinal.filter(Boolean).map(o => o.non_negotiable).filter(Boolean)   // 자르지 않는다(위 NN 과 같다)
   // 3단 좌석 — 구축 실전문가 고정 + 2단에서 선택된 솔버(oss-*)·물리 유임을 carry 로 이어받는다.
   const bSeen = new Set(); const buildSeats = []
   const bpush = (k, origin, role) => { if (!k || bSeen.has(k)) return; bSeen.add(k); buildSeats.push({ key: k, role: role || '', origin }) }
@@ -308,11 +326,13 @@ if (DO_BUILD) {
     groundCards: GROUND,
     // 3단 (2)는 2단 계획서 10항목 전부를 승계·분류하므로 요약 상한을 2단(12000)보다 올린다 —
     // 상세 해석 계획서가 길어 후미 항목((8)검증·(9)규모·(10)한계)이 잘리는 것을 완화. 조항은 buildNN 별도 승계.
-    continueFrom: { summary: excerpt(sim.decision, 14000, 6000), roundsSoFar: R1 + R2, nonNegotiables: buildNN },
+    continueFrom: { summary: excerptTo(decOnly(sim), span(0.2, 20000), 0.7, '3단 승계'),
+                    roundsSoFar: R1 + R2, nonNegotiables: buildNN },
     humanNote: '사내 자산(KooD3plotReader·StepForge·gmsh·oss-*·export_dyna_cards)을 우선 재사용하라. 최소입력 계약과 모델 IR 수렴·dry_run 매핑오류 게이트·페이즈별 수치 게이트를 비워두지 마라.',
     saveReport: A.saveReport === true,
     saveConversation: A.saveConversation !== false,
     appendToReportId: A.appendToReportId,
+    ctxTokens: CTX_TOKENS,
   })
 }
 
@@ -342,6 +362,9 @@ const flags = (st) => st ? {
   seatLoss: st.seatLoss || [], plainPartial: !!st.plainPartial,
   conversationSkipped: st.conversationSkipped || null,
   reportPagesFailed: st.reportPagesFailed || [],
+  // 자식이 좌석에 주지 않은 근거·그대로 쓰지 못한 입력·수치 대조 — 종전엔 여기서 떨어져 부모 호출자에게 안 닿았다.
+  evidenceOmitted: st.evidenceOmitted || [], inputNotices: st.inputNotices || [],
+  citationAudit: st.citationAudit || null,
 } : null
 return {
   question: Q,
@@ -353,4 +376,5 @@ return {
   buildFailed,   // DO_BUILD 였는데 3단이 죽음 — 저장이 어디에도 안 된 상태(위 log 참조).
   report: (build && build.report) || (sim && sim.report),
   conversation: (build && build.conversation) || (sim && sim.conversation),
+  handoffExcerpts: EXCERPTS,   // [{where, chars, head, tail}] — 단계 사이에 결정문을 발췌해 넘긴 자리. 빈 배열이면 전문이 넘어갔다.
 }

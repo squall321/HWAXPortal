@@ -3,7 +3,8 @@
 //               continueFrom:{summary, roundsSoFar}, humanNote, appendToReportId }
 //   - question        : 심의 주제(문자열)
 //   - context         : 정량 근거/분석 결과(도구로 산출한 데이터의 텍스트 요약)
-//   - evidence        : 원천 근거 항목 [{source, tool, args, result, key?}] — 좌석에 '검증 대상' 으로 싣는다(최대 12건·합계 11,000자).
+//   - evidence        : 원천 근거 항목 [{source, tool, args, result, key?}] — 좌석에 '검증 대상' 으로 싣는다(건수·합계·항목 상한은
+//                       좌석 창에서 유도한다 — 아래 ctxTokens. 기본 창 200,000 토큰이면 120건·합계 50,400자·항목 15,120자).
 //                       본문은 result 에 넣는다. 없으면 text·content·excerpt·summary·body·output·data 를 차례로 찾고,
 //                       문자열이 아니면 JSON 으로 싣는다. 어디에도 본문이 없는 항목은 버린다.
 //                       key(선택, ^[A-Za-z0-9_.-]{1,24}$)를 주면 좌석이 보는 표지가 [e:N|KEY] 가 된다 — 번호 N 은 버려진
@@ -27,7 +28,9 @@
 //                       한 줄 입장만 준다 — 끄면 전원 텍스트를 전원에게 줘서 프롬프트가 좌석 수의 제곱으로 자란다.
 //                       deliberation.py(DELIB_CROSS_EXAM)와 같은 알고리즘이다(용어 겹침 IDF + 커버리지 보정).
 //   - crossTargets    : 좌석당 반박 표적 수(기본 2). 1명이면 반박이 한 갈래로 끝나 교착이 안 드러난다.
-//   - seatCtx         : 좌석에게 싣는 직전 라운드 텍스트 상한(자, 기본 48000, 0=무제한). 넘치면 좌석마다
+//   - ctxTokens       : 이 워크플로를 돌리는 Claude 서브에이전트의 창(토큰, 기본 200000). 근거·직전 라운드·이어하기 요약·쉬운 설명
+//                       입력의 상한을 이 창에서 유도한다. 1M 창 모델로 돌리면 1000000 을 준다. 작은 값(16384)이면 종전 고정값 그대로다.
+//   - seatCtx         : 좌석에게 싣는 직전 라운드 텍스트 상한(자, 기본은 창의 30% · 바닥 48000, 0=무제한). 넘치면 좌석마다
 //                       같은 몫으로 줄인다. 수렴 라운드는 교차심문과 무관하게 전문을 주므로 이 선이 유일한 방어다.
 //   - continueFrom    : 이전 심의를 이어갈 때만 지정. { summary: 이전 심의 요약(결정문+라운드 하이라이트, 호출자가
 //                       구성해 전달), roundsSoFar: 이전까지 이미 진행된 라운드 수(라운드 번호 이어붙이기용),
@@ -53,10 +56,10 @@
 //   - appendToReportId: 지정 시 새 RA 보고서를 만들지 않고 이 report_id 에 새 페이지로 결과를 이어붙인다.
 // 출력: { question, rounds:[페르소나별 라운드결과 배열...], roundLabels, decision, report, conversation, nextRoundOffset }
 //   — stopAfterRound:1 이면 decision/report/conversation 이 null 이고 checkpoint{stage,seats,positions,ask} 가 붙는다.
-//   — evidenceOmitted:[{source,count,text}] 는 좌석에 주지 않은 근거다(본문 없음 · 건수 12건 초과 · 예산 11,000자 초과).
+//   — evidenceOmitted:[{source,count,text}] 는 좌석에 주지 않은 근거다(본문 없음 · 건수 상한 초과 · 합계 예산 초과).
 //     빈 배열이 아니면 좌석은 보낸 근거의 일부만 보고 발언한 것이다 — 어느 반환에나 붙는다.
-//   — inputNotices:[{source,count,text}] 는 받은 입력을 **그대로 쓰지 못한** 것이다 — 항목 상한(2,000자)에서 앞부분만 실은 근거 ·
-//     본문이 든 키가 둘 이상이라 앞선 하나만 실은 근거 · 키가 없어 앉히지 못한 좌석. evidenceOmitted 가 비어 있어도 이것이
+//   — inputNotices:[{source,count,text}] 는 받은 입력을 **그대로 쓰지 못한** 것이다 — 항목 상한에서 앞부분만 실은 근거 ·
+//     본문이 든 키가 둘 이상이라 앞선 하나만 실은 근거 · 키가 없어 앉히지 못한 좌석 · 상한을 넘은 양보 불가 조항. evidenceOmitted 가 비어 있어도 이것이
 //     비어 있지 않으면 좌석은 보낸 것의 일부만 보았거나 지정한 패널 그대로가 아니다 — 어느 반환에나 붙는다.
 //   — 호출자가 viz_module + Report Archive로 보고서화. nextRoundOffset 은 다음 이어하기 호출의
 //   continueFrom.roundsSoFar 로 그대로 넘기면 라운드 번호가 끊기지 않는다.
@@ -172,20 +175,34 @@ const ROUNDS = Math.min(8, Math.max(2, Math.round(Number(A.rounds) || 3)))
 const MID_ROUNDS = ROUNDS - 2   // 초기(1)·수렴(1)을 뺀 중간 심화 라운드 수(0이면 심화 생략, 초기→바로 수렴)
 const ROUND_OFFSET = CONT ? Math.max(0, Math.round(Number(CONT.roundsSoFar) || 0)) : 0
 const rn = localNo => ROUND_OFFSET + localNo   // 라운드 번호를 이전 회차 이후로 이어붙임
-// 교차심문·좌석 프롬프트 상한 — deliberation.py 의 DELIB_CROSS_EXAM·DELIB_CROSS_TARGETS·DELIB_SEAT_CTX 와 같은 기본값.
+// 좌석·의장·저장을 맡는 것은 이 세션의 **Claude 서브에이전트**다(GLM 이 아니다). 그래서 상한은 GLM 의 1M 창이 아니라 그 서브에이전트의
+// 창에서 유도한다 — args.ctxTokens(기본 200,000 토큰). 글자 환산은 한국어 기준 1자 ≈ 1토큰으로 보수적으로 잡고 출력 몫 32,000 토큰을
+// 먼저 뺀다. 종전 고정값(근거 합 11,000자·항목 2,000자, 직전 라운드 48,000자, 쉬운 설명 입력 16,000자 …)은 16K·128K 시절 값이라
+// 바닥으로 남는다 — 작은 창(16,384)에서는 종전과 글자까지 같다(docs/risk-review-redesign D-21).
+const CTX_TOKENS = Math.max(16384, Math.round(Number(A.ctxTokens) || 200000))
+const PROMPT_ROOM = Math.max(0, CTX_TOKENS - 32000)
+const roomShare = (frac, floor) => Math.max(floor, Math.floor(PROMPT_ROOM * frac))
+// 교차심문·좌석 프롬프트 상한 — 알고리즘은 deliberation.py 의 DELIB_CROSS_EXAM·DELIB_CROSS_TARGETS·DELIB_SEAT_CTX 와 같다.
+// 직전 라운드 몫의 기본값만 위 창에서 유도한다(엔진은 GLM 창을 쓴다 — 값이 다른 것이 맞다).
 const CROSS = A.crossExam !== false
 const CROSS_K = Math.max(1, Math.round(Number(A.crossTargets) || 2))
 const SEAT_CTX = (A.seatCtx === undefined || A.seatCtx === null || A.seatCtx === '')
-  ? 48000 : Math.max(0, Math.round(Number(A.seatCtx) || 0))
+  ? roomShare(0.3, 48000) : Math.max(0, Math.round(Number(A.seatCtx) || 0))
 
 const CONT_BLOCK = CONT ? `[이전 심의 요약 — 지금까지 ${ROUND_OFFSET}라운드 진행됨]\n${CONT.summary}\n\n` : ''
 // 양보 불가 조항 승계 — 요약 문자열에만 의존하면 조항이 소실되고 결정이 소리 없이 되돌아간다.
 // 중복을 먼저 접는다(여러 좌석이 같은 조항을 낸다) — 그 뒤에도 상한을 넘으면 **몇 건이
 // 잘렸는지 말한다**. 실측 최종라운드에서 좌석 20/20 이 non_negotiable 을 냈다 — 12 상한이면
-// 9건이 무기록 소실이었다(감사 C8). 조항은 한 줄짜리라 상한을 20 으로 올려도 비용이 작다.
+// 9건이 무기록 소실이었다(감사 C8). 상한은 한 회차가 낼 수 있는 수(좌석 20 × 라운드 8 — 포털 DelibOpts.non_negotiables 와 같다)다.
+// 넘으면 로그만이 아니라 반환값(inputNotices)에도 남긴다 — 종전 20 상한은 21석 패널에서 1건을 로그 한 줄로만 버렸다.
+const NN_MAX = 160
 const _nnAll = [...new Set((CONT && Array.isArray(CONT.nonNegotiables) ? CONT.nonNegotiables : []).filter(Boolean).map(x => String(x).trim()))]
-const NN = _nnAll.slice(0, 20)
-if (_nnAll.length > NN.length) log(`⚠ 양보 불가 조항 ${_nnAll.length}건 중 ${NN.length}건만 승계 — ${_nnAll.length - NN.length}건 탈락(상한 20)`)
+const NN = _nnAll.slice(0, NN_MAX)
+if (_nnAll.length > NN.length) {
+  INPUT_NOTICES.push({ source: '양보 불가 조항 상한 초과', count: _nnAll.length - NN.length,
+    text: `이어받은 양보 불가 조항 ${_nnAll.length}건 중 뒤쪽 ${_nnAll.length - NN.length}건은 상한(${NN_MAX}건)을 넘겨 승계하지 않았다.` })
+  log(`⚠ 양보 불가 조항 ${_nnAll.length}건 중 ${NN.length}건만 승계 — ${_nnAll.length - NN.length}건 탈락(상한 ${NN_MAX}, 반환값 inputNotices 에 남긴다)`)
+}
 const NN_BLOCK = NN.length
   ? `[이전 심의의 양보 불가 조항 — 이번 라운드에서도 구속력을 가진다]\n${NN.map(x => `- ${x}`).join('\n')}\n` +
     `이 조항을 뒤집으려면 어떤 새 근거 때문인지 반드시 명시하라. 근거 없는 폐기는 불인정.\n\n`
@@ -193,7 +210,7 @@ const NN_BLOCK = NN.length
 const HUMAN_BLOCK = HUMAN_NOTE ? `[인간 검토자 의견 — 이번 라운드에서 반드시 정면으로 다룰 것]\n${HUMAN_NOTE}\n\n` : ''
 // 챗 워크스페이스 핸드오프 원천 근거(deliberation.py 와 정합) — 요약이 아니라 날것 도구결과+출처를
 // 좌석에 준다. '검증 대상, 결론 아님'으로 프레이밍해 좌석이 재검토하게 한다(브리프 결론이 심의를
-// 오염 못 하게). 예산 ≈11KB 초과분은 중간절단 없이 항목 통째 드롭.
+// 오염 못 하게). 합계 예산 초과분은 중간절단 없이 항목 통째 드롭(알린다 — evidenceOmitted).
 // 근거 본문을 찾는 키 — 순서가 우선순위다(deliberation.py _EVID_BODY_KEYS 와 같은 순서). 정본은 `result` 다.
 // 종전엔 `e.result` 만 읽어서, 본문을 다른 키에 넣은 호출자의 근거가 **통째로 조용히** 사라졌다
 // (실사용: 25건을 넣은 심의가 근거 0건으로 끝까지 돌았다 — 2026-10-07 S26U 피드백 1-2).
@@ -225,9 +242,12 @@ const EV_KEY_RE = /^[A-Za-z0-9_.-]{1,24}$/
 // 둘 다 항목 N 이다(deliberation.py _EV_CITE_RE 와 같은 식).
 const EV_CITE_RE = /\[e:(\d+)(?:\|[A-Za-z0-9_.-]{1,24})?\]/g
 // 좌석 블록의 상한 — 건수와 합계 글자, 항목 하나의 글자. 아래 드롭·절단 고지가 이 값을 읽어 적는다(숫자를 문구에 따로 박지 않는다).
-const EV_MAX_ITEMS = 12
-const EV_BUDGET = 11000
-const EV_ITEM_MAX = 2000
+// 합계는 좌석 창의 30%(바닥 종전 11,000), 항목 하나는 합계의 30%(바닥 종전 2,000) — 엔진의 항목 천장·합계 천장 비(150,000 / 500,000)와
+// 같은 꼴이다. 건수는 바닥 위에서는 엔진·포털·프론트의 사전 근거 건수(120)와 같고, 바닥(작은 창)에서는 종전 12건이다. 종전 12건·
+// 11,000자·2,000자는 엔진(120건·500,000자)과 40배 넘게 어긋나, 같은 브리프가 웹 길에서는 다 실리고 Claude 길에서는 열세 번째부터 빠졌다.
+const EV_BUDGET = roomShare(0.3, 11000)
+const EV_ITEM_MAX = roomShare(0.09, 2000)   // = 합계 몫(30%)의 30%
+const EV_MAX_ITEMS = EV_BUDGET > 11000 ? 120 : 12
 // 본문·키를 한 번 정해 둔다 — 아래 좌석 블록과 인용 후검증(_citCorpus)이 같은 값을 본다.
 // 들어온 것(_evIn)·본문 있는 것(_evValid)·건수 상한 안의 것(EV)을 따로 쥔다 — 버린 수를 사유별로 세려면 셋이 다 필요하다.
 const _evIn = Array.isArray(A.evidence) ? A.evidence : []
@@ -455,7 +475,9 @@ const rebutText = r => {
   const q = String(r.quote || '').replace(/\s+/g, ' ').trim()
   const c = String(r.counter || '').trim()
   const b = String(r.basis || '').trim()
-  const head = (tgt ? `${tgt}의 ` : '') + (q ? `'${q.slice(0, 80)}' 에 대해 —` : '')
+  // 인용은 자르지 않는다 — 좌석이 '20자 이상 그대로 복사한 문구' 로 낸 것이라 80자에서 끊으면 다음 라운드·의장·회의록이
+  // 반쪽 인용을 완결로 읽는다.
+  const head = (tgt ? `${tgt}의 ` : '') + (q ? `'${q}' 에 대해 —` : '')
   return [head.trim(), c, b ? `(근거: ${b})` : ''].filter(Boolean).join(' ')
 }
 const clip = (s, n) => {
@@ -546,8 +568,10 @@ const seatView = (round, isFirst) => {
   return `[직전 라운드 ${full.toLocaleString()}자 — 좌석당 ${share.toLocaleString()}자로 줄임. 잘린 부분을 아는 척하지 마라]\n${body}`
 }
 
+// ⚠ 1라운드 근거 해석(reads)을 자르지 않는다. 종전엔 600자에서 표식 없이 끊어 다음 라운드와 의장이 뒤쪽 인용을 못 봤다 —
+//   주석은 '압축하되 버리지 않는다' 였다. 좌석 몫이 넘치면 seatView·ctxFor 의 fitRows 가 좌석마다 같은 몫으로 줄이고 표식을 단다.
 const summarize = (isFirst, isLast, o) => {
-  if (isFirst) return `관점[${o.lens}] 근거[${(o.reads || []).join('; ').slice(0, 600)}] 권장[${o.recommendation}] 우려[${(o.concerns || []).join('; ')}]`
+  if (isFirst) return `관점[${o.lens}] 근거[${(o.reads || []).join('; ')}] 권장[${o.recommendation}] 우려[${(o.concerns || []).join('; ')}]`
   if (isLast) return `${o.final_position || ''} — 최종권장: ${o.vote || ''}`
   return `수용[${(o.concede || []).join('; ')}] 반박[${(o.rebut || []).map(rebutText).join('; ')}] 심화:${o.deepen}`
 }
@@ -571,16 +595,16 @@ const readable = (isFirst, isLast, o) => {
   return parts.join('\n\n')
 }
 
-// 대화 저장 meta — 웹 경로(backend/app/agent/routes.py 발언 저장)와 **같은 모양·같은 자르기**다.
-// 포털 프론트가 m.meta 에서 관계도(rebut)와 이어하기 조항(non_negotiable)을 되살린다. 관계는
-// target 만 있으면 그려지므로 본문은 짧게 — 원문은 content 에 이미 있다.
+// 대화 저장 meta — 웹 경로(backend/app/agent/routes.py 발언 저장)와 **같은 모양**이고, 그쪽처럼 자르지 않는다.
+// 포털 프론트가 m.meta 에서 관계도(rebut)와 이어하기 조항(non_negotiable)을 되살린다 — 조항을 1,200자에서 끊으면
+// 이어하기가 반쪽 조항을 승계한다(종전 값이 그랬다).
 const turnMeta = o => {
   const m = {}
-  if (o.non_negotiable) m.non_negotiable = String(o.non_negotiable).slice(0, 1200)
+  if (o.non_negotiable) m.non_negotiable = String(o.non_negotiable)
   if (Array.isArray(o.rebut) && o.rebut.length) {
-    const rb = o.rebut.filter(r => r && typeof r === 'object').slice(0, 4).map(r => ({
-      target: String(r.target || '').slice(0, 60), quote: String(r.quote || '').slice(0, 80),
-      counter: String(r.counter || '').slice(0, 160), basis: String(r.basis || '').slice(0, 60),
+    const rb = o.rebut.filter(r => r && typeof r === 'object').map(r => ({
+      target: String(r.target || ''), quote: String(r.quote || ''),
+      counter: String(r.counter || ''), basis: String(r.basis || ''),
     }))
     if (rb.length) m.rebut = rb
   }
@@ -797,7 +821,8 @@ const DECISION_CONT_NOTE = CONT
 {
   const _chairSize = BASE.length + allRoundsText.length + JSON.stringify(rFinal.filter(Boolean)).length
   log(`의장 프롬프트 ≈ ${_chairSize.toLocaleString()}자 (BASE ${BASE.length.toLocaleString()} + 라운드요약 ${allRoundsText.length.toLocaleString()} + 최종상세)`)
-  if (_chairSize > 400000) log(`⚠ 의장 프롬프트가 40만자를 넘는다 — 컨텍스트 초과로 null(결정 실패) 가능성. 좌석·라운드를 줄이거나 이어하기로 나눠라`)
+  // 경고 선은 의장(이 세션의 Claude 서브에이전트)의 프롬프트 몫이다 — 종전 40만 자는 기본 창(200,000 토큰)보다 커서 경고가 늦었다.
+  if (_chairSize > PROMPT_ROOM) log(`⚠ 의장 프롬프트 ${_chairSize.toLocaleString()}자가 창의 프롬프트 몫(${PROMPT_ROOM.toLocaleString()}자 — ctxTokens ${CTX_TOKENS.toLocaleString()})을 넘는다 — 컨텍스트 초과로 null(결정 실패) 가능성. 큰 창 모델이면 ctxTokens 를 올리고, 아니면 좌석·라운드를 줄이거나 이어하기로 나눠라`)
 }
 const decision = await agent(
   `당신은 심의체 의장. 이번 호출분 ${ROUNDS}라운드 토론(${rn(1)}~${finalRoundNo}라운드, 초기 1${MID_ROUNDS > 0 ? ` + 심화 ${MID_ROUNDS}` : ''} + 수렴 1)을 종합해 의사결정문을 한국어 엔지니어링 톤으로 작성하라.\n\n${BASE}\n\n` +
@@ -883,7 +908,7 @@ const _unmatchedNums = _decNums.filter(n => !_citCorpus.includes(n))
 const citationAudit = {
   numbersChecked: _decNums.length,
   matched: _decNums.length - _unmatchedNums.length,
-  unmatched: _unmatchedNums.slice(0, 40),
+  unmatched: _unmatchedNums,   // 전부 — 종전 40건에서 끊어, 호출자(리스크 심사)가 센 미대조 수가 40 에 묶였다
   evidenceIds: EV_SHOWN,   // [e:N] 참조 체계가 몇 항목에 부여됐나 — 좌석에 실린 수다(예산으로 빠진 항목은 표지가 없다)
   note: '결정문 수치를 근거(전문)·정량 근거·전 라운드 발언 원문과 결정적으로 대조. ' +
         'unmatched = 어느 원문에도 없는 수치(의장 신규 산술 또는 환각 — 사람이 훑을 목록).',
@@ -900,10 +925,14 @@ if (_unmatchedNums.length) {
 phase('Explain')
 // ⚠ 머리 12,000자만 주면 실측 6만자 결정문에서 (5)뒤집힘·(7)신뢰도·(8)수렴경과 같은 **뒤쪽
 //   항목이 요약에서 구조적으로 빠진다**(감사 C4 — 전문 요약처럼 붙는데 19.6%만 본 요약이었다).
-//   16,000자까지는 전문, 넘으면 머리 10k + 꼬리 6k 를 주고 부분 요약임을 표시한다.
-const plainPartial = decText.length > 16000
+//   창의 절반(바닥 종전 16,000자)까지는 전문, 넘으면 머리 5/8 + 꼬리 3/8 을 주고 부분 요약임을 표시한다.
+//   기본 창(200,000 토큰)이면 84,000자 — 실측 최대 결정문(75,373자)이 전문으로 들어간다.
+const PLAIN_MAX = roomShare(0.5, 16000)
+const PLAIN_HEAD = Math.floor(PLAIN_MAX * 0.625)
+const PLAIN_TAIL = PLAIN_MAX - PLAIN_HEAD
+const plainPartial = decText.length > PLAIN_MAX
 const plainInput = plainPartial
-  ? decText.slice(0, 10000) + `\n\n…[중략 — 전문 ${decText.length}자 중 앞 10,000자·뒤 6,000자만 발췌. 중략 구간을 아는 척하지 마라]…\n\n` + decText.slice(-6000)
+  ? decText.slice(0, PLAIN_HEAD) + `\n\n…[중략 — 전문 ${decText.length}자 중 앞 ${_n(PLAIN_HEAD)}자·뒤 ${_n(PLAIN_TAIL)}자만 발췌. 중략 구간을 아는 척하지 마라]…\n\n` + decText.slice(-PLAIN_TAIL)
   : decText
 const plain = await agent(
   `당신은 어려운 기술 결정을 비전문가에게 설명하는 사람이다. 쉬운 말로, 과장 없이.\n\n` +
@@ -1076,9 +1105,20 @@ if (A.saveReport === true) {
   }
 }
 
-// 포털 ConvMessageIn.content 의 서버 캡과 맞춘다(routes.py: Field(max_length=20000)).
+// 대화 저장의 한 메시지 크기. 포털 ConvMessageIn.content 는 이제 창에서 유도한 값(4,194,304)이지만 종전 포털·게이트웨이(20,000)
+// 에도 들어가게 이 크기로 **나눈다** — 자르지 않는다(infra/scripts/save-delib-conversation.py _chunks 와 같은 머리말).
 // 여유를 조금 두는 이유 — 앞에 붙는 "(결정문 n/N)" 머리말도 같은 항목에 들어간다.
 const CONV_ITEM_MAX = 19500
+const convChunks = (text, label) => {
+  const t = String(text || '')
+  const total = Math.max(1, Math.ceil(t.length / CONV_ITEM_MAX))
+  const out = []
+  for (let i = 0; i < total; i++) {
+    const part = t.slice(i * CONV_ITEM_MAX, (i + 1) * CONV_ITEM_MAX)
+    out.push(total > 1 ? `(${label} ${i + 1}/${total})\n${part}` : part)
+  }
+  return out
+}
 
 // 서버 대화 저장 — 심의의 "대화 전개"를 포털 웹 챗에도 남긴다(GLM 이어가기·직접 결론용).
 // 게이트웨이 save_conversation 도구가 호출자 PAT 를 포털에 포워딩해 owner 귀속.
@@ -1095,18 +1135,16 @@ if (A.saveConversation !== false) {
     const isLast = idx === roundsData.length - 1
     rd.filter(Boolean).forEach(o => {
       const meta = turnMeta(o)
-      msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: readable(isFirst, isLast, o).slice(0, CONV_ITEM_MAX), ...(meta ? { meta } : {}) })
+      // 종전엔 19,500자에서 표식 없이 잘랐다. 나눠 싣고 meta 는 첫 조각에만 단다(조각마다 실으면 관계도가 같은 반박을 여러 번 그린다).
+      convChunks(readable(isFirst, isLast, o), '발언').forEach((c, ci) => {
+        msgs.push({ role: 'persona', persona: o.persona, round: rn(idx + 1), content: c, ...(meta && ci === 0 ? { meta } : {}) })
+      })
     })
   })
   // 결정문은 서버 항목 캡(20000자)을 넘기 일쑤다 — 실측 61,956자. 잘라 버리면 '전문이
   // 어디에도 없는' 상태가 되므로 **쪼개서 전부** 넣는다(항목 캡 200개라 여유가 크다).
   const _dec = String(decisionFull)
-  for (let i = 0; i < _dec.length; i += CONV_ITEM_MAX) {
-    const part = _dec.slice(i, i + CONV_ITEM_MAX)
-    const n = Math.floor(i / CONV_ITEM_MAX) + 1
-    const total = Math.ceil(_dec.length / CONV_ITEM_MAX)
-    msgs.push({ role: 'assistant', content: total > 1 ? `(결정문 ${n}/${total})\n${part}` : part })
-  }
+  if (_dec) for (const c of convChunks(_dec, '결정문')) msgs.push({ role: 'assistant', content: c })
   // ⚠ 저장 에이전트는 msgs 를 **도구 인자로 되받아 적어야** 한다. 페이로드가 크면 두 가지가
   //   실측으로 확인됐다(감사 C37/C50) — (a) 출력 상한(~7.5만자)에서 통째 실패, (b) 더 나쁘게는
   //   모델이 발언을 **요약·의역해 넣고 성공 id 를 돌려준다**(무음 변조 — 전사에서 확인).
@@ -1146,6 +1184,9 @@ return {
   rounds: roundsData.map(rd => rd.filter(Boolean)),
   roundLabels,
   decision: decisionFull,
+  // 결정문만(쉬운 설명을 붙이기 전) — 다단 워크플로가 다음 단계에 결정문을 발췌해 넘길 때 쓴다. decision 의 꼬리는 '쉬운 설명' 이라
+  // 꼬리 발췌가 결정문 뒤쪽 항목 대신 비전문가용 요약을 집었다(hwax-sim-deliberate).
+  decisionText: decText,
   // ⚠ true 면 의장이 여러 턴에 나눠 써서 **반환값에 앞부분이 없다**(실측 2026-09-02:
   //   61,246자 중 709자만 반환됐다). 로그로만 알리면 호출자가 놓친다 — 계약으로 올린다.
   //   복원: 트랜스크립트 디렉터리의 agent-*.jsonl 에서 assistant 텍스트 블록을 순서대로 이어붙인다.

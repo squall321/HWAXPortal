@@ -103,6 +103,7 @@ const result = await workflow(DELIB, {
   humanNote: [BASE_NOTE, String(A.humanNote || '').trim()].filter(Boolean).join('\n\n'),
   saveReport: A.saveReport,
   saveConversation: A.saveConversation,
+  ...(A.ctxTokens ? { ctxTokens: A.ctxTokens } : {}),   // 자식이 근거·직전 라운드 상한을 이 창에서 유도한다
 })
 
 return { ...result, mode: 'test-plan', evidence }

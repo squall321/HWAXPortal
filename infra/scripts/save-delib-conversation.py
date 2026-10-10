@@ -17,7 +17,9 @@ import os
 import sys
 import urllib.request
 
-ITEM_MAX = 19500      # 서버 ConvMessageIn.content 캡(20000) 안쪽 — "(결정문 n/N)" 머리말 여유
+# 한 메시지 크기 — 나눌 뿐 버리지 않는다. 포털 ConvMessageIn.content 는 이제 창에서 유도한 값(4,194,304)이지만 종전 포털(20,000)에도
+# 들어가게 이 크기로 둔다("(결정문 n/N)" 머리말 여유).
+ITEM_MAX = 19500
 CREATE_MAX = 200      # ConvCreate.messages 상한 — 넘는 분량은 append 로 잇는다
 
 
@@ -44,19 +46,21 @@ def _item(x) -> str:
     if not isinstance(x, dict):
         return str(x)
     q = " ".join(str(x.get("quote") or "").split())
-    head = (f"{x['target']}의 " if x.get("target") else "") + (f"'{q[:80]}' 에 대해 —" if q else "")
+    # 인용은 자르지 않는다(워크플로 rebutText 와 같다 — 80자에서 끊으면 반쪽 인용이 완결로 읽힌다).
+    head = (f"{x['target']}의 " if x.get("target") else "") + (f"'{q}' 에 대해 —" if q else "")
     return " ".join(p for p in (head.strip(), str(x.get("counter") or "").strip(),
                                 f"(근거: {x['basis']})" if x.get("basis") else "") if p)
 
 
 def _meta(o: dict) -> dict | None:
-    """발언 meta — 포털이 관계도·양보 불가 조항을 되살린다. 웹 경로(routes.py)와 같은 자르기."""
+    """발언 meta — 포털이 관계도·양보 불가 조항을 되살린다. 웹 경로(routes.py)·워크플로(turnMeta)와 같은 모양이고 자르지 않는다
+    (조항을 1,200자·반박을 4건에서 끊으면 이어하기가 반쪽 조항을 승계한다)."""
     m: dict = {}
     if o.get("non_negotiable"):
-        m["non_negotiable"] = str(o["non_negotiable"])[:1200]
-    rb = [{"target": str(r.get("target") or "")[:60], "quote": str(r.get("quote") or "")[:80],
-           "counter": str(r.get("counter") or "")[:160], "basis": str(r.get("basis") or "")[:60]}
-          for r in (o.get("rebut") or [])[:4] if isinstance(r, dict)]
+        m["non_negotiable"] = str(o["non_negotiable"])
+    rb = [{"target": str(r.get("target") or ""), "quote": str(r.get("quote") or ""),
+           "counter": str(r.get("counter") or ""), "basis": str(r.get("basis") or "")}
+          for r in (o.get("rebut") or []) if isinstance(r, dict)]
     if rb:
         m["rebut"] = rb
     return m or None

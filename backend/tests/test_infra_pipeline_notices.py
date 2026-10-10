@@ -48,11 +48,13 @@ async function agent(prompt, opts) {
   if (label === 'brief') return project(inp.brief, o.schema);
   if (label.startsWith('submit:')) return { ok: true, detail: '' };
   if (props.lens) return { lens: seat.lens || '관점', reads: seat.reads || [], recommendation: seat.recommendation || '권장', concerns: seat.concerns || [] };
-  if (props.deepen) return { concede: [], rebut: [], deepen: seat.deepen || '심화' };
-  if (props.final_position) return { final_position: seat.final_position || '최종', vote: seat.vote || '찬성' };
+  if (props.deepen) return { concede: [], rebut: seat.rebut || [], deepen: seat.deepen || '심화' };
+  if (props.final_position) return { final_position: seat.final_position || '최종', vote: seat.vote || '찬성',
+                                      ...(seat.non_negotiable ? { non_negotiable: seat.non_negotiable } : {}) };
   if (String(prompt).startsWith('당신은 심의체 의장')) return inp.decisionFails ? null : (inp.decision || '## 의사결정문\n결정.\n〔결정문 끝〕');
   if (label === 'explain') return '쉬운 설명';
   if (label === 'ra-save') return '77';
+  if (label === 'conv-save') return 'conv-1';
   return null;
 }
 const parallel = fns => Promise.all(fns.map(f => f()));
@@ -81,11 +83,16 @@ def _run(script: str, args: dict, **extra) -> dict:
     return json.loads(r.stdout)
 
 
+# 근거 상한의 **바닥**(작은 창 — ctxTokens 16,384)에서 돈다. 바닥은 종전 고정값(항목 2,000자)이라 알림을 그 숫자로 본다.
+# 창에서 유도한 값은 tests/test_pipeline_window_caps.py 가 본다.
+_FLOOR_CTX = 16384
+
+
 def _delib(evidence=None, personas=None, **kw) -> dict:
     """심의 한 건 — 기본은 1라운드 체크포인트까지만."""
     extra = {k: kw.pop(k) for k in ("decision", "decisionFails", "seat") if k in kw}
     args = {"question": "화두", "personas": _SEATS if personas is None else personas, "evidence": evidence or [],
-            "stopAfterRound": 1, "saveConversation": False, **kw}
+            "stopAfterRound": 1, "saveConversation": False, "ctxTokens": _FLOOR_CTX, **kw}
     return _run(_DELIB, args, **extra)
 
 
@@ -310,7 +317,7 @@ def _brief(evidence, seats=None, **panel) -> dict:
 
 def _risk(brief: dict, **extra) -> dict:
     extra.setdefault("decision", "## 리스크 심사 보고서\n판정.\n〔결정문 끝〕")
-    return _run(_RISK, {"targetKey": "T1", "briefToken": "tok", "tier": "B"}, brief=brief, **extra)
+    return _run(_RISK, {"targetKey": "T1", "briefToken": "tok", "tier": "B", "ctxTokens": _FLOOR_CTX}, brief=brief, **extra)
 
 
 def _submit_arg(out: dict, name: str):
