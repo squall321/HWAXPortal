@@ -104,7 +104,6 @@ _NOT_RELAYED = {
     "continue_non_negotiables",   # non_negotiables 의 옛 이름 — 엔진이 둘 다 읽고 포털은 새 이름만 싣는다
     "options",                    # 후보안 목록 — MCP deliberate_start 의 인자다. 웹·러너는 보내지 않는다
     "parse_retries",              # JSON 재시도 횟수 — 운영 손잡이(DELIB_PARSE_RETRIES)다. 요청으로 보내는 곳이 없다
-    "save_report",                # 보고서 저장 끄기 — MCP deliberate_start 의 인자다. 웹·러너는 보내지 않는다
 }
 
 
@@ -150,3 +149,57 @@ def test_지식카드_끄기와_봉인이_포털을_지나_살아_나온다():
     assert wire.get("sealed") == 1, "봉인 요청이 포털에서 사라졌다 — 열린 채 돈다"
     # 안 보내면 안 나간다 — None 을 0 으로 바꿔 보내면 엔진 기본값을 덮는다.
     assert "sealed" not in ChatRequest(message="/심의 화두", delib_opts={}).delib_opts.model_dump(exclude_none=True)
+
+
+def test_지식카드_검색어와_보고서_저장_끄기가_포털을_지나_살아_나온다():
+    """리스크 앱 러너가 실어 보낼 좌석 검색어(문자열 또는 좌석별 사전)와 '저장 끄기' 가 엔진에 닿는가.
+
+    선언이 없으면 model_dump(exclude_none=True) 에서 오류 없이 사라진다 — 검색어를 준 패널이 화두로 찾고,
+    저장을 끈 줄 아는 심의가 보고서를 만든다."""
+    from app.agent.routes import ChatRequest
+
+    one = "C-12 리브 두께 0.8→0.6 mm · 커넥터 간극 축소"
+    wire = ChatRequest(message="/심의 화두", delib_opts={"knowledge_query": one, "save_report": 0}) \
+        .delib_opts.model_dump(exclude_none=True)
+    assert wire.get("knowledge_query") == one, "좌석 검색어(문자열)가 포털에서 사라졌다 — 엔진이 화두로 찾는다"
+    assert wire.get("save_report") == 0, "보고서 저장 끄기가 포털에서 사라졌다 — 엔진 기본(저장)으로 돈다"
+
+    by_seat = {"mech-a": "리브 두께 감소 강성", "*": "커넥터 간극 축소"}
+    wire = ChatRequest(message="/심의 화두", delib_opts={"knowledge_query": by_seat}) \
+        .delib_opts.model_dump(exclude_none=True)
+    assert wire.get("knowledge_query") == by_seat, "좌석별 검색어 사전이 포털에서 사라졌거나 모양이 바뀌었다"
+
+    # 경계값은 지나간다 — 600자 하나, 64항목 사전, 빈 사전.
+    edge = "가" * 600
+    assert ChatRequest(message="/심의 화두", delib_opts={"knowledge_query": edge}) \
+        .delib_opts.model_dump(exclude_none=True)["knowledge_query"] == edge
+    full = {f"seat-{i}": "q" for i in range(64)}
+    assert ChatRequest(message="/심의 화두", delib_opts={"knowledge_query": full}) \
+        .delib_opts.model_dump(exclude_none=True)["knowledge_query"] == full
+    assert ChatRequest(message="/심의 화두", delib_opts={"knowledge_query": {}}) \
+        .delib_opts.model_dump(exclude_none=True)["knowledge_query"] == {}
+
+    # 안 보내면 안 나간다 — None 을 0 이나 빈 값으로 바꿔 보내면 엔진 기본값을 덮는다.
+    silent = ChatRequest(message="/심의 화두", delib_opts={}).delib_opts.model_dump(exclude_none=True)
+    assert "knowledge_query" not in silent and "save_report" not in silent
+
+
+@pytest.mark.parametrize("bad", [
+    {"knowledge_query": "가" * 601},                              # 값 하나가 엔진 상한을 넘는다
+    {"knowledge_query": {"mech-a": "가" * 601}},                  # 사전의 값이 넘는다
+    {"knowledge_query": {"": "q"}},                               # 좌석 키가 비었다
+    {"knowledge_query": ["리브", "간극"]},                         # 목록
+    {"knowledge_query": 3},                                       # 수
+    {"knowledge_query": {"mech-a": 3}},                           # 값이 수인 사전
+    {"knowledge_query": {f"seat-{i}": "q" for i in range(65)}},   # 사전 항목이 엔진 상한을 넘는다
+    {"save_report": 2},
+    {"save_report": "off"},
+], ids=["str601", "dict-val601", "empty-key", "list", "int", "dict-int", "dict65", "save2", "save-off"])
+def test_검색어_모양이_틀리면_소리_내_막는다(bad):
+    """넘거나 틀린 값은 422(ValidationError)로 막는다 — 말없이 잘라 보내면 보낸 쪽은 다 실린 줄 안다."""
+    from pydantic import ValidationError
+
+    from app.agent.routes import ChatRequest
+
+    with pytest.raises(ValidationError):
+        ChatRequest(message="/심의 화두", delib_opts=bad)

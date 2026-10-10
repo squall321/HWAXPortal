@@ -23,7 +23,7 @@ import sqlite3
 from pathlib import Path
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
 import anyio
@@ -31,7 +31,7 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from app.access.agent_guard import check_chat, filter_experts
 from app.access.policy import is_synthetic, login_groups
@@ -74,6 +74,13 @@ SSE_HEADERS = {
 class ChatHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(max_length=24000)  # per-item cap — no unbounded input (DoS)
+
+
+# 좌석 지식카드 검색어(DelibOpts.knowledge_query)의 모양 — 값 하나 600자 · 좌석 키 120자 · 사전 64항목.
+# 600·64 는 엔진 _KNOWLEDGE_Q_MAX · _KNOWLEDGE_Q_KEYS_MAX 와 같은 수여야 한다(tests/test_delib_opts_contract.py).
+_KnowledgeQ = Annotated[str, StringConstraints(max_length=600)]
+_KnowledgeQSeat = Annotated[str, StringConstraints(min_length=1, max_length=120)]
+_KnowledgeQBySeat = Annotated[dict[_KnowledgeQSeat, _KnowledgeQ], Field(max_length=64)]
 
 
 class DelibOpts(BaseModel):
@@ -161,6 +168,12 @@ class DelibOpts(BaseModel):
     # 찍는다(무엇을 닫는지는 엔진이 쥔다 — deliberation._SEALED_CLOSE). 화면에 입구는 없다. 선언해 두는 이유는
     # 하나다 — 누가 보냈을 때 여기서 떨어지면 봉인을 청한 심의가 **열린 채** 돌고 청한 쪽은 봉인된 줄 안다.
     sealed: int | None = Field(default=None, ge=0, le=1)
+    # 좌석 지식카드 검색어 — 문자열 하나(전 좌석 공통)이거나 {좌석 키: 검색어, "*": 기본} 사전이다. None=엔진이 화두로 찾는다.
+    # 리스크 앱 러너가 변경 요지를 실어 보내는 자리다. 넘는 값은 422 로 소리 내 막는다 — 보내는 쪽이 상한 안으로 만들어 보낸다.
+    knowledge_query: _KnowledgeQ | _KnowledgeQBySeat | None = None
+    # 보고서 저장 끄기(0)·켜기(1). None=엔진 기본(저장). 쟁점 패널이 패널마다 RA 보고서를 만들지 않게 하려는 자리다 —
+    # 여기서 떨어지면 저장을 끈 줄 아는 심의가 보고서를 만든다. 지금은 보내는 곳이 없다(선언만 한다).
+    save_report: int | None = Field(default=None, ge=0, le=1)
 
 
 class ChatDocument(BaseModel):
