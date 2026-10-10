@@ -9,10 +9,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { streamChat, type HistoryMessage } from '../api/chat.api';
+import { streamChat } from '../api/chat.api';
 import {
   createServerConversation,
   deleteServerConversation,
+  fillTrimmed,
   getServerConversation,
   listServerConversations,
   renameServerConversation,
@@ -24,7 +25,7 @@ import { useCan } from '../auth/useCan';
 import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
-import { mergeEvidence } from '../components/chat/vocEvidence';
+import { buildHistory } from '../components/chat/history';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import {
   delibOptsToWire,
@@ -115,30 +116,7 @@ interface ChatContextValue {
 // eslint-disable-next-line react-refresh/only-export-components
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
-// 포털 ChatRequest.history(160항목 · 항목당 24,000자) 안에서 자른다 — 넘으면 422.
-// ⚠ 여기서 먼저 버리면 **서버가 압축할 것조차 없다.** 서버는 모델 컨텍스트를 알고 오래된
-// 턴을 발췌 압축본으로 남기는데(app._compact_turns), 프론트가 미리 떨어뜨리면 그 턴은
-// 존재 자체가 사라진다. 그래서 넉넉히 보내고 줄이는 일은 컨텍스트를 아는 서버가 한다.
-// cae00 운영 GLM-5-2 는 1M 창이라 이력에 40만 자를 써도 문서 자리가 남는다.
-const HISTORY_MAX_ITEMS = 160;
-const HISTORY_MAX_ITEM_CHARS = 24000;
-const HISTORY_MAX_TOTAL_CHARS = 600000;
-
-/** 멀티턴 history: 활성 대화의 기존 메시지 → 계약 형식(오래된 것→최신 순, 이번 발화 제외). */
-function buildHistory(messages: Message[]): HistoryMessage[] {
-  const items = messages
-    .filter((m) => !m.error && m.text.trim() !== '')
-    .map((m) => ({ role: m.role, content: m.text.slice(0, HISTORY_MAX_ITEM_CHARS) }));
-  // 최근 것 우선 — 뒤에서부터 개수/총량 예산만큼 담고, 다시 시간순으로 뒤집는다.
-  const out: HistoryMessage[] = [];
-  let total = 0;
-  for (let i = items.length - 1; i >= 0 && out.length < HISTORY_MAX_ITEMS; i--) {
-    if (total + items[i].content.length > HISTORY_MAX_TOTAL_CHARS) break;
-    total += items[i].content.length;
-    out.push(items[i]);
-  }
-  return out.reverse();
-}
+// 멀티턴 이력은 components/chat/history.ts(buildHistory)가 만든다 — 심의 브리프(HandoffBrief)도 같은 함수를 쓴다.
 
 /** 심의 delib 이벤트를 메시지의 DelibData 로 병합 — kind 별 리듀서. */
 function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
@@ -213,12 +191,12 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
  *  '무엇을 두고 갈렸는지' 가 지워진다 — 다음 회차가 같은 논점을 처음부터 다시 판다.
  *  반박은 라운드를 거쳐 좁혀진 쟁점이므로 승계 가치가 가장 높은 부분이다.
  *
- *  결정문을 밀어내지 않는다 — 남는 예산 안에서만 붙인다. */
-function priorIssueBlock(turns: DelibTurn[] | undefined, budget: number): string {
-  if (budget < 200) return '';
+ *  결정문을 밀어내지 않는다 — 결정문 **뒤에** 붙인다. 엔진이 요약 상한에서 머리부터 실으므로 넘치면 이 블록이 먼저 빠지고,
+ *  엔진이 그 사실을 카드로 알린다. 종전엔 여기서 결정문과 합쳐 8,000자 예산을 따로 셈해, 엔진이 받을 때는 이미 안이었다. */
+function priorIssueBlock(turns: DelibTurn[] | undefined): string {
   const seen = new Set<string>();
   const lines: string[] = [];
-  // 뒤 라운드가 더 좁혀진 쟁점이다 — 예산이 모자라면 앞(초기)을 버린다.
+  // 뒤 라운드가 더 좁혀진 쟁점이다 — 뒤 라운드부터 적는다(엔진이 상한에서 꼬리를 빼면 앞(초기) 쟁점이 먼저 빠진다).
   for (const t of [...(turns ?? [])].reverse()) {
     for (const r of t.rebut ?? []) {
       const counter = (r.counter || '').trim();
@@ -233,12 +211,7 @@ function priorIssueBlock(turns: DelibTurn[] | undefined, budget: number): string
   if (lines.length === 0) return '';
   const head = '\n\n[이전 회차에서 갈렸던 쟁점 — 결론이 아니라 **아직 다툰 자리**다. ' +
     '이번 회차에서 정면으로 다루고, 해소됐으면 무엇이 근거였는지 밝혀라]\n';
-  let out = head;
-  for (const l of lines) {
-    if (out.length + l.length + 1 > budget) break;
-    out += l + '\n';
-  }
-  return out.length > head.length ? out : '';
+  return head + lines.map((l) => l + '\n').join('');
 }
 
 /** 띵킹 think 이벤트를 메시지의 ThinkData 로 병합 — 좌석 키로 한 행을 계속 채워 나간다. */
@@ -505,6 +478,36 @@ export function ChatProvider({
     // conversations 를 deps 에 넣으면 교체 직후 재실행되지만 stale 판정이 false 라 루프 없음.
   }, [serverKind, activeId, conversations, refreshFromServer]);
 
+  // 브라우저 사본을 저장 한도(쿼터)로 줄여 둔 대화 — 열 때 서버 정본에서 줄인 칸(도구 날것·심의 발언·근거)만 되채운다. 이걸 안
+  // 하면 새로고침 뒤 심의로 넘기기·이어하기·내보내기가 줄인 판(날것 대신 미리보기, 발언 45건, 근거 4건)으로 만들어진다.
+  // 통째로 바꾸지 않는다 — 서버 사본에 없는 칸(보고서 번호·쉬운 설명·좌석 명단)은 브라우저 것이 맞다(fillTrimmed).
+  useEffect(() => {
+    if (!serverKind || !activeId) return;
+    const conv = conversations.find((c) => c.id === activeId);
+    const sid = conv?.serverId;
+    if (!conv || !sid || !conv.cacheTrimmed || streamConvRef.current === conv.id) return;
+    if (detailLoadingRef.current.has(sid)) return;
+    detailLoadingRef.current.add(sid);
+    void getServerConversation(sid)
+      .then((detail) => {
+        if (!detail) return;
+        const fresh = serverConvToLocal(detail);
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id !== conv.id || streamConvRef.current === c.id) return c;
+            const filled = fillTrimmed(c.messages, fresh.messages);
+            return { ...c, cacheTrimmed: false, ...(filled ? { messages: filled } : {}) };
+          }),
+        );
+      })
+      .catch(() => {
+        /* 서버 미가용 — 줄인 사본으로 계속(비치명적) */
+      })
+      .finally(() => {
+        detailLoadingRef.current.delete(sid);
+      });
+  }, [serverKind, activeId, conversations]);
+
   const patch = useCallback((convId: string, msgId: string, fn: (m: Message) => Message) => {
     setConversations((prev) =>
       prev.map((c) =>
@@ -546,6 +549,14 @@ export function ChatProvider({
 
       // 붙인 문서 — 이 발화에만 실린다. 본문은 대화에 남기지 않고(쿼터) 이름·길이만 남긴다.
       const docs = attachedDocsRef.current;
+      // 사전 근거 — 붙인 문서(앞, 사람이 방금 고른 것) + 일회성 extra(핸드오프·이어하기)의 근거. 포털 상한(EVID_ITEMS — 엔진과
+      // 같은 수)을 넘으면 422 라 여기 **한 자리**에서 끊고, 넘친 수를 이 답의 근거 카드(알림)로 남긴다 — 엔진은 받은 것만 알아
+      // 이 절단을 알릴 수 없다. 종전엔 대화 근거·이어하기 승계 근거·문서 병합이 저마다 말없이 120건에서 끊었다.
+      const evAll = [
+        ...docsAsEvidence(docs),
+        ...(Array.isArray(extraDelibOpts?.evidence) ? (extraDelibOpts?.evidence as HandoffEvidence[]) : []),
+      ];
+      const evDropped = Math.max(0, evAll.length - EVID_ITEMS);
       const userMsg: Message = {
         id: newId(), role: 'user', text, ts: now,
         ...(docs.length ? { docs: docs.map((d) => ({ name: d.name, chars: d.chars, kind: d.meta?.kind })) } : {}),
@@ -560,6 +571,18 @@ export function ChatProvider({
         ts: now,
         streaming: true,
         ...(effPinnedAgent ? { persona: { key: effPinnedAgent, name: effPinnedAgentName } } : {}),
+        ...(evDropped
+          ? {
+              delib: {
+                evidence: [{
+                  source: '사전 근거 건수 초과',
+                  text: `근거 ${evAll.length}건 중 뒤쪽 ${evDropped}건은 상한(${EVID_ITEMS}건)을 넘겨 심의에 보내지 않았다.`,
+                  included: false,
+                  notice: true,
+                }],
+              },
+            }
+          : {}),
       };
 
       // 활성 대화가 없으면(랜딩/새 대화) 첫 전송 시점에 대화를 생성한다.
@@ -649,23 +672,21 @@ export function ChatProvider({
                       search_sources: effSources, ...(extraDelibOpts ?? {}) };
           // 붙인 문서는 심의에도 **원천 근거 채널**로 넣는다 — 엔진이 이미 '검증 대상이지
           // 결론이 아니다' 로 프레이밍해 좌석에 주므로 별도 통로를 팔 이유가 없다.
-          // 문서를 앞에 둔다(사람이 방금 고른 것 = 더 관련).
-          if (docs.length) {
-            const prev = Array.isArray(w.evidence) ? (w.evidence as HandoffEvidence[]) : [];
-            w.evidence = [...docsAsEvidence(docs), ...prev].slice(0, EVID_ITEMS);
-          }
+          // 문서를 앞에 둔다(사람이 방금 고른 것 = 더 관련). 넘친 수는 위 evDropped 가 알린다.
+          if (evAll.length) w.evidence = evAll.slice(0, EVID_ITEMS);
           return Object.keys(w).length > 0 ? { delibOpts: w } : {};
         })(),
         onStatus: (e) =>
           patch(cid, botId, (m) => {
-            // 활동 패널용 누적 — 같은 step 연속 중복은 스킵, 60건 캡(영속 크기 통제).
+            // 활동 패널용 누적 — 같은 step 연속 중복은 스킵. 건수로 버리지 않는다 — 종전 60건 캡은 도구를 30번 넘게 부른
+            // 답에서 앞쪽 호출을 지워 심의로 넘길 근거(conversationEvidence)가 줄었다. 영속 크기는 저장(chatStore)이 따로 줄인다.
             const prev = m.activity ?? [];
             const last = prev[prev.length - 1];
             const activity =
               last && last.step === e.step
                 ? prev
                 : [
-                    ...prev.slice(-59),
+                    ...prev,
                     {
                       ts: Date.now(),
                       step: e.step,
@@ -746,14 +767,16 @@ export function ChatProvider({
       const topic = (firstUser?.text ?? '').replace(/^\/(심의|deliberate|토의)\s*/, '').trim();
       if (!topic) return;
       // 양보 불가 조항 승계 — 결정문 요약에만 의존하면 조항이 빠져도 아무도 모르고, 그러면
-      // 이전 심의가 조항으로 못박은 제약이 이어하기에서 조용히 되돌아간다.
+      // 이전 심의가 조항으로 못박은 제약이 이어하기에서 조용히 되돌아간다. 건수로 자르지 않는다 — 좌석에 싣는 수는 엔진이
+      // 정하고 넘으면 카드로 알린다(종전 12건 컷은 엔진 상한과 같은 수라 그 카드가 영영 안 떴다). 한 회차가 낼 수 있는 수는
+      // 포털 상한(좌석 20 × 라운드 8) 안이다.
       const nonNegotiables = [
         ...new Set(
           (prior.turns ?? [])
             .map((t) => (t.nonNegotiable ?? '').trim())
             .filter(Boolean),
         ),
-      ].slice(0, 12);
+      ];
       // 이전 회차까지 실제로 돈 라운드 수 — 없으면 회의록이 매 회차 '1R 초기입장' 으로
       // 되돌아가 몇 번째 논의인지 알 수 없다. 발언의 최대 round 가 실측값이다
       // (totalRounds 는 '계획된' 수라 체크포인트로 일찍 멈추면 과대평가된다).
@@ -774,10 +797,9 @@ export function ChatProvider({
       sendMessage('/심의 ' + topic, {
         human_note: note,
         ...(gathered.length ? { evidence: gathered } : {}),
-        // 결정문이 우선이고, 남는 예산으로 쟁점을 붙인다(둘 다 같은 8000자 칸이다).
-        continue_summary:
-          (prior.decision ?? '').slice(0, 8000) +
-          priorIssueBlock(prior.turns, 8000 - Math.min(8000, (prior.decision ?? '').length)),
+        // 결정문 전문 + 쟁점(뒤). 좌석에 싣는 길이는 엔진이 정하고(머리부터 — 결정문이 우선이다) 줄였으면 카드로 알린다.
+        // 종전엔 여기서 8,000자로 잘라 보내 결정문 뒤쪽((5)뒤집힘·(7)신뢰도·risk_spec)이 말없이 빠졌다.
+        continue_summary: (prior.decision ?? '') + priorIssueBlock(prior.turns),
         personas: seats,
         ...(roster?.length ? { rescreen: 0 } : {}),
         ...(nonNegotiables.length ? { non_negotiables: nonNegotiables } : {}),
@@ -816,8 +838,9 @@ export function ChatProvider({
         .replace(/^\/(심의|deliberate|토의)\s*/, '')
         .trim();
       if (!topic) return;
-      // 사람이 고른 것(extraEvidence)을 앞에 — DelibOpts.evidence 의 max_length(EVID_ITEMS)를 넘기면 422 다.
-      const { merged: evidence } = mergeEvidence(opts?.extraEvidence ?? [], conversationEvidence(conv));
+      // 사람이 고른 것(extraEvidence)을 앞에. 포털 상한(EVID_ITEMS)은 sendMessage 가 한 자리에서 걸고 넘친 수를 알린다
+      // (브리프도 같은 수를 미리 보인다 — mergeEvidence).
+      const evidence = [...(opts?.extraEvidence ?? []), ...conversationEvidence(conv)];
       const extra: Record<string, unknown> = {};
       if (evidence.length) extra.evidence = evidence;
       if (opts?.personas?.length) extra.personas = opts.personas;

@@ -27,6 +27,8 @@ interface StoredConversation {
   createdAt: number;
   updatedAt: number;
   serverId?: string; // 서버 정본 id — 캐시 재로드 후에도 서버 병합·이어쓰기가 이어지게 영속
+  // 아래 저장 한도로 무엇이든 줄였으면 true — 열 때 서버 정본에서 되채운다. 표식 없이 줄이면 줄인 판이 원본처럼 쓰인다.
+  cacheTrimmed?: true;
   // 지정 앱·도구·전문가 — 영속하지 않으면 새로고침에 조용히 풀려, 사용자는 여전히 지정된 줄 안다.
   pinnedApps?: string[];
   pinnedTools?: string[];
@@ -73,6 +75,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
         updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
         ...(typeof c.serverId === 'string' ? { serverId: c.serverId } : {}),
+        ...(c.cacheTrimmed ? { cacheTrimmed: true } : {}),
         ...(Array.isArray(c.pinnedApps) ? { pinnedApps: c.pinnedApps.filter((x) => typeof x === 'string') } : {}),
         ...(Array.isArray(c.pinnedTools) ? { pinnedTools: c.pinnedTools.filter((x) => typeof x === 'string') } : {}),
         ...(typeof c.pinnedAgent === 'string' ? { pinnedAgent: c.pinnedAgent } : {}),
@@ -106,10 +109,15 @@ function trimThink(t: ThinkData): ThinkData {
   };
 }
 
-/** 심의 데이터 저장 트림 — turns/evidence 캡으로 localStorage 누적 증가를 통제한다. */
-function trimDelib(d: DelibData): DelibData {
+/** 심의 데이터 저장 트림 — turns/evidence 캡으로 localStorage 누적 증가를 통제한다. 줄였으면 cut.any 를 세운다. */
+function trimDelib(d: DelibData, cut: { any: boolean }): DelibData {
   // evidence 는 배열(과거 저장분은 단일 객체) — 최근 4개, 항목당 2000자 캡.
   const evList = Array.isArray(d.evidence) ? d.evidence : d.evidence ? [d.evidence] : [];
+  if ((d.turns?.length ?? 0) > 45 || evList.length > 4 || evList.some((e) => e.text.length > 2000) ||
+      (d.turns ?? []).some((t) => t.sayFull || (t.rebut ?? []).length > 4 ||
+        (t.rebut ?? []).some((r) => r.quote.length > 80 || r.counter.length > 160 || r.basis.length > 60))) {
+    cut.any = true;
+  }
   return {
     ...d,
     // 반박은 **관계만** 남긴다. quote·counter 원문은 say 안에 이미 있으므로(엔진이 산문으로도
@@ -149,13 +157,14 @@ const HANDOFF_STORE_BUDGET = 14_000;
 
 /** 예산 안에서만 `result_full` 을 남긴다. 예산을 넘긴 항목은 **날것만** 떨어뜨리고
  *  활동 기록 자체(step·tool·미리보기)는 그대로 둔다 — 패널 표시가 망가지면 안 된다. */
-function keepHandoffBudget(acts: ActivityItem[], budget: { left: number }): ActivityItem[] {
+function keepHandoffBudget(acts: ActivityItem[], budget: { left: number }, cut: { any: boolean }): ActivityItem[] {
   return acts.map((a) => {
     if (!a.result_full) return a;
     if (budget.left >= a.result_full.length) {
       budget.left -= a.result_full.length;
       return a;
     }
+    cut.any = true;
     const { result_full: _drop, ...rest } = a;
     return rest;
   });
@@ -165,35 +174,42 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
   try {
     const stored: StoredConversation[] = convs.slice(0, MAX_CONVERSATIONS).map((c) => {
       // 예산은 **대화 단위**다 — 한 대화가 전체를 먹지 않게. 오래된 활동부터 채운다
-      // (핸드오프가 앞에서부터 12건을 뜨므로 앞쪽이 살아야 한다).
+      // (핸드오프가 앞에서부터 뜨므로 앞쪽이 살아야 한다).
       const budget = { left: HANDOFF_STORE_BUDGET };
+      // 무엇이든 줄였으면 표식을 남긴다(cacheTrimmed) — 열 때 서버 정본에서 되채운다.
+      const cut = { any: false };
+      const messages = c.messages
+        // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
+        // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).
+        .filter((m) => m.text || m.error || m.delib || m.think || m.role === 'user')
+        .map((m) => {
+          if ((m.activity?.length ?? 0) > 60) cut.any = true;
+          return {
+            role: m.role,
+            content: m.text,
+            ts: m.ts ?? c.updatedAt,
+            ...(m.error ? { error: m.error } : {}),
+            ...(m.activity && m.activity.length > 0
+              ? { activity: keepHandoffBudget(m.activity.slice(-60), budget, cut) }
+              : {}),
+            ...(m.delib ? { delib: trimDelib(m.delib, cut) } : {}),
+            ...(m.think ? { think: trimThink(m.think) } : {}),
+            ...(m.persona ? { persona: m.persona } : {}),
+          };
+        });
       return {
       id: c.id,
       title: c.title,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
       ...(c.serverId ? { serverId: c.serverId } : {}),
+      ...(cut.any ? { cacheTrimmed: true as const } : {}),
       ...(c.pinnedApps?.length ? { pinnedApps: c.pinnedApps } : {}),
       ...(c.pinnedTools?.length ? { pinnedTools: c.pinnedTools } : {}),
       ...(c.pinnedAgent ? { pinnedAgent: c.pinnedAgent } : {}),
       ...(c.pinnedAgentName ? { pinnedAgentName: c.pinnedAgentName } : {}),
       ...(c.pinnedHelpers?.length ? { pinnedHelpers: c.pinnedHelpers } : {}),
-      messages: c.messages
-        // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
-        // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).
-        .filter((m) => m.text || m.error || m.delib || m.think || m.role === 'user')
-        .map((m) => ({
-          role: m.role,
-          content: m.text,
-          ts: m.ts ?? c.updatedAt,
-          ...(m.error ? { error: m.error } : {}),
-          ...(m.activity && m.activity.length > 0
-            ? { activity: keepHandoffBudget(m.activity.slice(-60), budget) }
-            : {}),
-          ...(m.delib ? { delib: trimDelib(m.delib) } : {}),
-          ...(m.think ? { think: trimThink(m.think) } : {}),
-          ...(m.persona ? { persona: m.persona } : {}),
-        })),
+      messages,
       };
     });
     try {

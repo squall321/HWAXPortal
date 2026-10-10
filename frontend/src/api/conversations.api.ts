@@ -140,6 +140,26 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
   return out;
 }
 
+/** 브라우저 사본이 저장 한도로 줄인 칸(도구 활동·날것·심의 발언·근거)을 서버 정본으로 되채운다. 메시지 배열의 모양(개수·역할)이
+ *  다르면 손대지 않는다(null) — 어긋난 자리에 다른 메시지의 기록을 붙이지 않게. 서버 사본에 없는 칸(보고서 번호·쉬운 설명·
+ *  좌석 명단 등)은 브라우저 사본을 그대로 둔다. */
+export function fillTrimmed(local: Message[], fresh: Message[]): Message[] | null {
+  if (local.length !== fresh.length || local.some((m, i) => m.role !== fresh[i].role)) return null;
+  return local.map((m, i) => {
+    const f = fresh[i];
+    const out: Message = { ...m };
+    if (f.activity?.length && f.activity.length >= (m.activity?.length ?? 0)) out.activity = f.activity;
+    if (m.delib && f.delib) {
+      out.delib = {
+        ...m.delib,
+        ...(f.delib.turns?.length ? { turns: f.delib.turns } : {}),
+        ...(f.delib.evidence?.length ? { evidence: f.delib.evidence } : {}),
+      };
+    }
+    return out;
+  });
+}
+
 /** 서버 대화(메시지 포함) → 로컬 Conversation. id 는 서버 id 그대로(재로드 시 중복 병합 안정). */
 export function serverConvToLocal(
   conv: ServerConvMeta & { messages: ServerMessage[] },

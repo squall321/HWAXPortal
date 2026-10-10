@@ -3,6 +3,8 @@ import type { Conversation } from '../../types/chat';
 
 // 사전 근거 상한 — 포털 DelibOpts.evidence(max_length)·엔진 _EVID_ITEMS/_EVID_ITEM_MAX 와 **같은 값**
 // 이어야 한다. 세 계층 중 하나만 작으면 거기서 잘리고, 잘린 사실은 아무 데도 안 남는다.
+// 건수는 보내기 직전 한 자리(ChatContext sendMessage)에서 걸고 넘친 수를 알린다. 항목 길이는 엔진이 걸고 카드로 알린다 —
+// 여기서 미리 자르면 엔진은 자른 줄을 모른다.
 export const EVID_ITEMS = 120;
 export const EVID_ITEM_MAX = 150000;
 
@@ -34,9 +36,8 @@ export function conversationEvidence(conv: Conversation): HandoffEvidence[] {
         source: (a.step || a.tool).slice(0, 200),
         tool: a.tool.slice(0, 80),
         args: (a.detail ?? '').trim().slice(0, 1200) || undefined,
-        result: result.slice(0, EVID_ITEM_MAX),
+        result,
       });
-      if (out.length >= EVID_ITEMS) return out; // 백엔드 상한과 동일 — 앞쪽(먼저 호출한 것)을 남긴다
     }
   }
   return out;
@@ -72,9 +73,8 @@ export function priorGatheredEvidence(
     out.push({
       source: `이전 회차 · ${seat}`.slice(0, 200),
       tool: tool.slice(0, 80),
-      result: result.slice(0, EVID_ITEM_MAX),
+      result,
     });
-    if (out.length >= EVID_ITEMS) break;
   }
   return out;
 }

@@ -270,6 +270,8 @@ export interface Conversation {
   // 서버 대화 저장소 정본 id — 있으면 /agent/chat 이 이 대화에 user+assistant 를 서버 저장.
   // 서버에서 로드된 대화(MCP 심의 포함)는 id === serverId. 웹 생성분은 전송 시 발급받아 채움.
   serverId?: string;
+  /** 브라우저 사본을 저장 한도(쿼터)로 줄였다 — 열 때 서버 정본에서 줄인 칸을 되채운다(ChatContext · fillTrimmed). */
+  cacheTrimmed?: boolean;
   // 사용자 지정 우선 도구 — 도구 카탈로그에서 선택. 이 대화의 이후 발화에 pinned_tools 로 실린다.
   pinnedTools?: string[];
   // 사용자 지정 우선 앱 — 앱을 고르면 그 앱의 도구 전체가 우선 사용된다(서버가 펼침).

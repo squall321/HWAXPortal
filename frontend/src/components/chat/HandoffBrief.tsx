@@ -4,13 +4,13 @@ import {
   fetchDeliberateExperts,
   fetchDeliberateTopic,
   type ExpertsResponse,
-  type HistoryMessage,
   type RecommendedExpert,
   type TopicSuggestion,
 } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
 import { conversationEvidence, EVID_ITEMS } from './handoff';
+import { buildHistory } from './history';
 import { SeatBrowser } from './SeatBrowser';
 import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
 import { ClarifyPanel } from './ClarifyPanel';
@@ -41,14 +41,8 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
 
   // 좌석 추천의 입력 — 화두 한 줄이 아니라 오간 대화 전체다. 서버가 이걸 도메인 축으로
   // 쪼갠 뒤 축마다 짧은 질의로 검색한다(통째로 임베딩에 던지면 추천이 오히려 나빠진다).
-  const history = useMemo<HistoryMessage[]>(
-    () =>
-      conv.messages
-        .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim())
-        .slice(-40)
-        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text.slice(0, 4000) })),
-    [conv],
-  );
+  // 챗과 같은 이력이다 — 종전엔 따로 40건 × 4,000자로 잘라, 결정문이 든 대화의 화두 제안이 결정문 머리만 봤다.
+  const history = useMemo(() => buildHistory(conv.messages), [conv]);
 
   const [topic, setTopic] = useState(derived);
   // 화두는 **첫 발화가 아니라 오간 내용 전체**에서 뽑는다. 대화는 움직인다 — 처음엔 "왜 부족하냐"
