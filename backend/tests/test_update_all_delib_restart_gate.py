@@ -412,6 +412,106 @@ def test_deploy_all_의_강행_손잡이가_사용법에_적혀_있다():
     assert "AGENT_RESTART_FORCE=1 ./infra/scripts/deploy-all-from-drive.sh" in head and "○" in head
     ua_head = UA[:UA.index("set -uo pipefail")]
     assert "§2" in ua_head and "포털·nginx" in ua_head, "update-all 의 사용법이 §2 도 건너뛴다는 것을 말한다"
+    assert "heax 구획" in head and "허브" in ua_head, "허브 재기동(새 앱 SIF 받기 포함)도 미룬다는 것을 사용법이 말한다"
+
+
+# ── deploy-all — heax 구획(허브와 그 위의 리스크 앱) ─────────────────────────────────────────────
+# 허브를 내리면 리스크 앱이 같이 내려가 도는 패널이 restart 로 닫히고, 좌석이 부르는 허브 앱 도구가 그 순간 실패한다. 게다가
+# dist-from-drive 가 떠 있는 인스턴스 밑의 앱 SIF 를 제자리에서 덮는다 — 묻는 자리는 받기 전이다. 하네스 규율은 _deploy 와 같다.
+_HUB_HEALTH = "http://localhost:4180/health"
+
+
+def _heax_block() -> str:
+    i = DEPLOY.index("if want heax; then\n")
+    return DEPLOY[i:DEPLOY.index("# ── 3b. SignalForge", i)]
+
+
+def _deploy_heax(tmp_path: Path, agent_url: str, hub_url: str, last_fp: dict[str, str], dist_rc: int = 0, **env):
+    """deploy-all 의 heax 구획을 임시 허브 리포에서 돌린다 → (화면, 대역이 받은 호출, 남은 기준 지문, 장부, skip 으로 센 줄)."""
+    hub = tmp_path / "heax"; dep = hub / "deploy/apptainer"; dep.mkdir(parents=True, exist_ok=True)
+    sifs = tmp_path / "sifs"; sifs.mkdir(exist_ok=True)
+    log = tmp_path / "calls.log"; log.write_text("")
+    ledger = tmp_path / "ledger"; ledger.write_text("")
+    failed = tmp_path / "failed"; failed.write_text("")
+    st = tmp_path / "state"; st.mkdir(exist_ok=True)
+    for name, fp in last_fp.items():
+        (st / name).write_text(fp + "\n")
+    # SIF_DIR 를 적는다 — 안 적으면 지문 계산이 실제 ~/serviceApptainers 를 읽는다.
+    (hub / ".env").write_text(f"SIF_DIR={sifs}\n")
+    # 부른 사실만 적는 대역. mirror·models-from-drive 는 만들지 않는다(구획이 -f 로 가드한다).
+    for name in ("dist-from-drive.sh", "appdata-merge-from-drive.sh", "stop.sh", "start.sh"):
+        rc = dist_rc if name == "dist-from-drive.sh" else 0
+        (dep / name).write_text(f'#!/usr/bin/env bash\necho "{name}" >> "{log}"\nexit {rc}\n'); (dep / name).chmod(0o755)
+    stubbin = tmp_path / "bin"; stubbin.mkdir(exist_ok=True)
+    (stubbin / "apptainer").write_text(f'#!/usr/bin/env bash\necho "apptainer $*" >> "{log}"\nexit 0\n'); (stubbin / "apptainer").chmod(0o755)
+    block = _heax_block()
+    assert _HUB_HEALTH in block, "허브의 health 주소가 바뀌었다 — 하네스가 바꿔 끼울 자리를 다시 찾는다"
+    body = (_deploy_common() + 'RESTART="${NO_RESTART:-0}"\n' + block)
+    assert _AGENT_HEALTH in body, "심의 수를 묻는 주소는 에이전트 서버의 health 다"
+    body = body.replace(_AGENT_HEALTH, agent_url).replace(_HUB_HEALTH, hub_url)
+    assert "localhost:4180" not in body and "127.0.0.1:9009" not in body, "실물 주소가 남았다 — 하네스가 떠 있는 서비스를 두드린다"
+    script = (f'set -euo pipefail\ncd "{tmp_path}"\n'
+              f'[ "$(command -v apptainer)" = "{stubbin}/apptainer" ] || {{ echo "HARNESS: apptainer 가 대역이 아니다" >&2; exit 97; }}\n'
+              f'PORTAL_DIR="{tmp_path}/portal"; HEAX_DIR="{hub}"; DEPLOY_FAILED_FILE="{failed}"\n'
+              f'[ "$(cd "$HEAX_DIR" && pwd)" = "{hub}" ] || {{ echo "HARNESS: 임시 허브 리포로 못 들어간다" >&2; exit 97; }}\n'
+              f'[ "$(sed -n "s/^SIF_DIR=//p" "$HEAX_DIR/.env")" = "{sifs}" ] || exit 97\n'
+              'want() { true; }; hr() { echo "── $*"; }; ok() { echo "OK:$*"; }\n'
+              'skip() { echo "SKIP:$*"; printf "%s\\n" "$*" >> "$DEPLOY_FAILED_FILE"; }\n'
+              'git_update() { echo "  · git: aaa → bbb (reset to origin/main)"; }; set_remote() { :; }\n'
+              f'{LIBS}export HWAX_RESTART_STATE_DIR="{st}" HWAX_SKIP_LEDGER="{ledger}" HWAX_WAIT_DOWN_MAX=1 HWAX_WAIT_UP_MAX=1\n'
+              f'{body}\necho "END"\n')
+    r = _sh(script, PATH=f'{stubbin}:{os.environ["PATH"]}', **env)
+    assert r.returncode != 97, r.stderr
+    assert "END" in r.stdout, r.stdout + r.stderr
+    state = {f.name: f.read_text().strip() for f in st.iterdir()}
+    return r.stdout + r.stderr, log.read_text().splitlines(), state, ledger.read_text(), failed.read_text()
+
+
+def test_심의가_돌면_허브를_내리지_않고_새_SIF_도_받지_않는다(tmp_path, health):
+    """**이 시험이 이 걸음의 이유다** — 지문이 바뀌었어도 허브를 내리지 않고 dist-from-drive 도 부르지 않는다. 미룬 것은 ○ 한 줄이고
+    실패가 아니다 — skip 으로 세면 심의가 도는 동안의 모든 update-all 이 deploy-all 4 를 받아 ✗ 로 끝난다."""
+    health["body"] = {"status": "ok", "delib_active": 1, "delib_queued": 2}
+    out, calls, state, ledger, failed = _deploy_heax(tmp_path, health["url"], health["url"], {"heax": "old-fp"})
+    assert calls == [], f"대역이 불렸다 — {calls}"
+    line = next(ln for ln in out.splitlines() if "○" in ln)
+    assert "heax 재기동 건너뜀" in line and "심의 1건 진행 중, 2건 대기" in line and "restart 로 닫히고" in line
+    assert "engine_stream_cut" not in line, "허브를 내리면 구독이 끊기는 것이 아니라 리스크 앱이 같이 내려간다 — 포털의 사유를 빌려 쓰지 않는다"
+    assert "AGENT_RESTART_FORCE=1" in out
+    assert "heax 재기동 건너뜀" in ledger, "update-all 의 마지막 요약에도 다시 나온다"
+    assert state == {"heax": "old-fp"}, "미룬 재기동의 지문을 적으면 새 앱 SIF 가 영영 안 올라간다"
+    assert "OK:heax up" not in out, "올라왔다고 말하지 않는다"
+    assert "SKIP:" not in out and failed == "", "실패가 아니다 — skip 으로 세면 deploy-all 이 4 로 끝나고 update-all 이 실패로 적는다"
+
+
+def test_deploy_all_의_heax_재기동도_심의를_묻고_난_뒤다():
+    """묻기 → 받기 → 내렸다 올리기 순서다. 받은 뒤에 물으면 떠 있는 인스턴스 밑의 앱 SIF 가 이미 덮였다."""
+    import re
+
+    assert len(re.findall(r"hwax_restart_cycle heax ", DEPLOY)) == 1, "허브를 내리는 자리가 늘었다 — 그 자리도 _delib_hold 를 지나게 한다"
+    hb = _heax_block()
+    assert "_delib_hold " in hb, "heax 구획이 도는 심의를 묻지 않는다"
+    assert hb.index("_delib_hold ") < hb.index("./deploy/apptainer/dist-from-drive.sh") < hb.index("hwax_restart_cycle heax ")
+
+
+@pytest.mark.parametrize("case", ["심의 없음", "옛 판(수를 싣지 않는다)", "강행", "허브가 내려가 있다", "내리지 않고 띄우기만(NO_RESTART=1)"])
+def test_심의가_없거나_모르거나_강행하면_허브를_종전대로_받고_재기동한다(tmp_path, health, case):
+    health["body"] = {"심의 없음": {"status": "ok", "delib_active": 0, "delib_queued": 0},
+                      "옛 판(수를 싣지 않는다)": {"status": "ok"}}.get(case, {"delib_active": 2, "delib_queued": 1})
+    env = {"강행": {"AGENT_RESTART_FORCE": "1"}, "내리지 않고 띄우기만(NO_RESTART=1)": {"NO_RESTART": "1"}}.get(case, {})
+    hub = DEAD if case == "허브가 내려가 있다" else health["url"]          # 내려가 있으면 닫을 패널이 없다 — 띄워야 한다
+    out, calls, _, ledger, _ = _deploy_heax(tmp_path, health["url"], hub, {"heax": "old-fp"}, **env)
+    stop = [] if case.startswith("내리지 않고") else ["stop.sh"]
+    assert calls == ["dist-from-drive.sh", "appdata-merge-from-drive.sh", *stop, "start.sh"], (calls, out)
+    assert "○" not in out and ledger == "", out
+
+
+def test_허브_구획이_진짜로_실패하면_종전대로_skip_으로_센다(tmp_path, health):
+    """끝의 case 가 3 만 삼키고 진짜 실패(1)는 그대로 skip 으로 센다 — 받기에 실패한 실행이 초록으로 끝나면 옛 허브가 말없이 남는다."""
+    health["body"] = {"status": "ok", "delib_active": 0, "delib_queued": 0}
+    out, calls, state, ledger, failed = _deploy_heax(tmp_path, health["url"], health["url"], {"heax": "old-fp"}, dist_rc=1)
+    assert calls == ["dist-from-drive.sh"], (calls, out)
+    assert "SKIP:heax failed" in out and len(failed.splitlines()) == 1, out
+    assert "OK:heax up" not in out and "○" not in out and ledger == "" and state == {"heax": "old-fp"}
 
 
 # ── update-all §4 — update-sites 의 3 은 실패가 아니다 ─────────────────────────────────────────

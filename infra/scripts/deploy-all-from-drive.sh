@@ -9,7 +9,7 @@
 #   MXWP_DIR=~/Projects/MXWhitePaper ./infra/scripts/deploy-all-from-drive.sh   # override a repo path
 #   SF_RESTORE_DB=1 ./infra/scripts/deploy-all-from-drive.sh signalforge  # 최초 시드/갱신 시에만 DB 복원
 #   AGENT_RESTART_FORCE=1 ./infra/scripts/deploy-all-from-drive.sh portal # 도는·줄 선 심의가 있어도 포털·nginx 를 재기동(구독이 전부 끊긴다)
-#       기본은 그 반대다 — 심의가 있으면 포털 구획(이미지 받기·재기동)과 nginx 재기동을 건너뛰고 ○ 로 남긴다.
+#       기본은 그 반대다 — 심의가 있으면 포털 구획(이미지 받기·재기동)·heax 구획(SIF 받기·허브 재기동)과 nginx 재기동을 건너뛰고 ○ 로 남긴다.
 #
 # Prereqs (once): an rclone remote configured on cae00 (likely ALREADY there from another project —
 # we auto-detect ApptainerImages:, else the first remote, else pass --remote=). You do NOT need to
@@ -188,7 +188,7 @@ note() { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
 # 생략은 줄로 보이고 끝(Done)에 모아 다시 낸다. docs/update-all-skip-unchanged/.
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/change-detect.sh"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/skip-ledger.sh"    # ○ 장부 — update-all 이 물려준 HWAX_SKIP_LEDGER 가 있으면 같은 파일에 적는다(단독 실행이면 화면에만)
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/delib-busy.sh"     # 도는·줄 선 심의가 있으면 포털·nginx 를 내리지 않는다(아래 _delib_hold)
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/delib-busy.sh"     # 도는·줄 선 심의가 있으면 포털·nginx·허브를 내리지 않는다(아래 _delib_hold)
 HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$PORTAL_DIR/infra/.state/restart-fp}"; export HWAX_RESTART_STATE_DIR
 _fp_git() { printf '%s|' "$(git rev-parse HEAD 2>/dev/null || echo nogit)"; }   # 서브셸 안에서: 지문 앞에 git HEAD
 # .env 값 하나 — **정본 규칙**(update-all `_envfile_value` · services.py `_infra_value` · ste-doctor `envv` 와 글자 단위로 같다):
@@ -210,16 +210,18 @@ _ngfp() {  # nginx 가 실제로 읽는 것 — conf 와 conf 가 경로로만 �
 # 리스크 잡은 engine_stream_cut 으로 멈춰 사람이 재개해야 하고, 엔진은 끊긴 심의를 끝까지 돌리지만 그 결과는 원장에 못 들어가
 # 패널을 처음부터 다시 돌린다. 에이전트 서버만 보호하던 동안에는 포털 커밋이 하나라도 있는 update-all 이 이 일을 했다(포털 지문의
 # 맨 앞이 git HEAD 다). 그러고 나서 §4 는 구독자를 이미 잃은 심의를 보고 '재기동하면 전부 끊긴다' 며 에이전트 서버를 건너뛰었다.
-#   _delib_hold <살아 있는지 볼 url> <장부 이름> <미뤄서 생기는 일>   0 = 미뤘다(○ 를 찍고 장부에 적었다) · 1 = 그대로 진행한다.
+#   _delib_hold <살아 있는지 볼 url> <장부 이름> <미뤄서 생기는 일> [내리면 생기는 일]   0 = 미뤘다(○ 를 찍고 장부에 적었다) · 1 = 그대로 진행한다.
+#   넷째 인자가 없으면 포털·nginx 의 사유(구독이 끊긴다)를 쓴다. 허브는 다르다 — 리스크 앱이 같이 내려가 패널이 restart 로 닫힌다.
 #   그 url 이 답하지 않으면 끊을 구독이 없다 — 그대로 띄운다. 심의 수를 모를 때(2·4)도 미루지 않는다(죽은·옛 서버를 영영 못 올린다).
 #   강행은 AGENT_RESTART_FORCE=1 — 에이전트 서버 쪽과 같은 손잡이다. NO_RESTART=1(내리지 않고 띄우기만 한다)이면 끊을 것이 없어 묻지 않는다.
 _delib_hold() {
   local _b _rc=0
+  local _why="${4:-내리면 웹 심의와 리스크 패널의 구독이 전부 끊긴다(리스크 잡은 engine_stream_cut 으로 멈춰 사람이 재개해야 한다).}"
   [ "${RESTART:-0}" = 1 ] && return 1
   hwax_alive "$1" || return 1
   _b="$(hwax_delib_busy http://127.0.0.1:9009/health)" || _rc=$?
   [ "$_rc" = 0 ] || return 1
-  hwax_skip "$2" "심의 ${_b% *}건 진행 중, ${_b#* }건 대기 — 내리면 웹 심의와 리스크 패널의 구독이 전부 끊긴다(리스크 잡은 engine_stream_cut 으로 멈춰 사람이 재개해야 한다). $3" "심의가 끝난 뒤 update-all 을 다시 돌린다 · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
+  hwax_skip "$2" "심의 ${_b% *}건 진행 중, ${_b#* }건 대기 — $_why $3" "심의가 끝난 뒤 update-all 을 다시 돌린다 · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
   return 0
 }
 
@@ -292,10 +294,17 @@ fi
 if want heax; then
   if [ -n "$HEAX_DIR" ]; then
     hr "HEAX Hub  ($HEAX_DIR)"
+    _hrc=0
     ( cd "$HEAX_DIR"
       git_update
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }
       set_remote .env HEAX_DRIVE_REMOTE HEAXHub/dist
+      # 도는·줄 선 심의가 있으면 여기서 멈춘다(위 _delib_hold) — 리스크 앱과 좌석이 부르는 허브 앱 도구가 전부 이 허브에 산다.
+      # 묻는 자리는 dist-from-drive **앞**이어야 한다 — 그 스크립트가 떠 있는 인스턴스 밑의 앱 SIF 를 제자리에서 덮어쓴다.
+      # 지문도 적지 않는다 — 다음 실행이 같은 차이를 다시 본다.
+      if _delib_hold http://localhost:4180/health "heax 재기동 건너뜀" \
+           "새 앱 SIF·frontend/dist 를 받지 않았고 앱 데이터 병합도 하지 않았다. 리포의 코드는 당겼지만 허브와 앱은 옛 것 그대로다" \
+           "내리면 리스크 앱이 같이 내려가 도는 패널이 restart 로 닫히고(사람이 재개해야 한다) 좌석이 부르는 허브 앱 도구가 그 순간 실패한다."; then exit 3; fi
       ./deploy/apptainer/dist-from-drive.sh || exit 1   # frontend/dist + 런타임 + base/서비스 + per-app SIF
       # 폐쇄망 pip/npm 미러(var/pkg-mirror) — 서버가 SIF 를 직접 빌드할 때의 의존성 소스.
       # 미리 받은 SIF(dist-from-drive)로 도는 앱엔 불필요하나, git 소스 빌드 앱엔 필요. 비치명적.
@@ -334,7 +343,10 @@ if want heax; then
         echo "  · app-data 병합 재시도 — 앱 기동으로 마이그레이션이 적용된 뒤다"
         bash deploy/apptainer/appdata-merge-from-drive.sh \
           || echo "  ⚠ 재시도도 실패 — 스키마 말고 다른 원인이다(위 로그 확인)"
-      fi ) && ok "heax up" || skip "heax failed (see the log lines above)"
+      fi
+      true ) || _hrc=$?
+    # 3 = 심의 때문에 미뤘다(○ 를 이미 찍었다). 실패가 아니라 skip 으로 세지 않고(exit 4 가 된다), 올라왔다고도 말하지 않는다.
+    case "$_hrc" in 0) ok "heax up" ;; 3) ;; *) skip "heax failed (see the log lines above)" ;; esac
   else skip "HEAXHub repo not found (set HEAX_DIR=)"; fi
 fi
 
