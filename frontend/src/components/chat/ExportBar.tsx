@@ -122,6 +122,12 @@ export function ExportBar({ threadRef }: { threadRef: RefObject<HTMLDivElement |
         </button>
       </Menu>
       {briefOpen && conv && <HandoffBrief conv={conv} onClose={() => setBriefOpen(false)} />}
+      {conv.cacheFillFailed && (
+        <span className="cx-export-err" role="status">
+          이 브라우저의 사본은 저장 한도로 줄어 있고, 서버 정본과 메시지 모양이 달라 되채우지 못했습니다 — 심의로 넘기기·이어하기·내보내기가
+          줄인 판(활동 60건·발언 45건·근거 4건)으로 만들어집니다.
+        </span>
+      )}
       {err && (
         <span className="cx-export-err" role="alert">
           {err}

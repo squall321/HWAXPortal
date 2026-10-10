@@ -163,6 +163,40 @@ def test_브라우저_사본을_줄였으면_표식을_남긴다():
     assert got == [["big", True], ["small", False]]
 
 
+def test_줄인_사본을_다시_저장해도_표식이_남는다():
+    """새로고침 직후 저장 효과(250ms)가 이미 줄인 메시지로 다시 판정하면 조건이 하나도 서지 않는다 — 표식은 메모리 값을 잇는다.
+    그래야 두 번째 새로고침에도 되채운다(검토 P-2 — 종전엔 첫 새로고침에만 성립했다)."""
+    acts = [{"ts": i, "step": f"s{i}", "tool": "t", "result_full": "가" * 1000} for i in range(80)]
+    turns = [{"round": 1, "persona": f"p{i}", "say": "버블", "sayFull": "전체", "ts": 0} for i in range(60)]
+    ev = [{"source": f"e{i}", "text": "나" * 3000, "included": True} for i in range(8)]
+    big = {"id": "big", "title": "t", "createdAt": 0, "updatedAt": 0, "serverId": "s-big",
+           "messages": [_msg("user", "q"), _msg("assistant", "d", activity=acts, delib={"turns": turns, "evidence": ev})]}
+    got = _node(["state/chatStore.ts"],
+                "const s = require('./state/chatStore.js'); const flag = () => s.loadConversations().map(c => !!c.cacheTrimmed)[0];"
+                " s.saveConversations(input); const first = flag();"
+                " s.saveConversations(s.loadConversations()); const second = flag();"
+                " s.saveConversations(s.loadConversations()); const third = flag();"
+                # 되채운 뒤(메모리 표식 false·전체 데이터)에 저장하면 큰 대화는 다시 판정해 표식을 세운다.
+                " s.saveConversations([{ ...input[0], cacheTrimmed: false }]); const refilled = flag();"
+                " out([first, second, third, refilled]);", [big])
+    assert got == [True, True, True, True]
+
+
+def test_되채우지_못하면_표식을_지우지_않고_화면에_알린다():
+    """서버 사본과 모양이 달라 fillTrimmed 가 null 이면, 표식을 지워 줄인 판이 원본처럼 남으면 안 된다. 같은 세션에 되풀이해
+    가져오지 않게 실패를 메모리에 적고, 대화 머리에 '줄인 판으로 만들어진다' 를 알린다."""
+    ctx = (_SRC / "state/ChatContext.tsx").read_text(encoding="utf-8")
+    blk = ctx[ctx.index("const filled = fillTrimmed("):]
+    blk = blk[:blk.index("});")]
+    assert "if (!filled) return { ...c, cacheFillFailed: true };" in blk, "되채우지 못한 경우를 따로 다루지 않는다"
+    assert "...(filled ?" not in blk, "null 이어도 표식을 지우는 옛 모양이다"
+    assert "conv.cacheFillFailed" in ctx, "실패한 대화를 같은 세션에 다시 가져온다(무한 재요청)"
+    bar = (_SRC / "components/chat/ExportBar.tsx").read_text(encoding="utf-8")
+    assert "conv.cacheFillFailed" in bar, "되채우지 못한 것을 화면에 알리지 않는다"
+    store = (_SRC / "state/chatStore.ts").read_text(encoding="utf-8")
+    assert "cacheFillFailed" not in store, "실패 표식은 세션 값이다 — 저장하면 다음 세션이 다시 시도하지 않는다"
+
+
 def test_열면_줄인_칸을_서버_정본으로_되채운다():
     local = [_msg("user", "q"), _msg("assistant", "결정문", activity=[{"ts": 1, "step": "s", "tool": "t"}],
                                     delib={"turns": [{"round": 1, "persona": "p", "say": "버블", "ts": 0}],

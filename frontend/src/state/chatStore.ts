@@ -203,7 +203,9 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
       ...(c.serverId ? { serverId: c.serverId } : {}),
-      ...(cut.any ? { cacheTrimmed: true as const } : {}),
+      // 메모리의 표식을 잇는다 — 새로고침 직후 저장은 이미 줄인 메시지로 다시 판정해 아무것도 줄이지 않으므로, 그 판정만 믿으면
+      // 되채우기 전에 표식이 지워져 다음 새로고침부터 줄인 판이 원본처럼 남는다. 되채운 뒤에는 메모리가 false 라 다시 판정한다.
+      ...(cut.any || c.cacheTrimmed ? { cacheTrimmed: true as const } : {}),
       ...(c.pinnedApps?.length ? { pinnedApps: c.pinnedApps } : {}),
       ...(c.pinnedTools?.length ? { pinnedTools: c.pinnedTools } : {}),
       ...(c.pinnedAgent ? { pinnedAgent: c.pinnedAgent } : {}),

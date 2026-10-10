@@ -272,6 +272,8 @@ export interface Conversation {
   serverId?: string;
   /** 브라우저 사본을 저장 한도(쿼터)로 줄였다 — 열 때 서버 정본에서 줄인 칸을 되채운다(ChatContext · fillTrimmed). */
   cacheTrimmed?: boolean;
+  /** 줄인 사본을 서버 정본으로 되채우지 못했다(메시지 모양이 다르다) — 이 세션에서만 쥐는 값이라 저장하지 않는다. 대화 머리가 알린다. */
+  cacheFillFailed?: boolean;
   // 사용자 지정 우선 도구 — 도구 카탈로그에서 선택. 이 대화의 이후 발화에 pinned_tools 로 실린다.
   pinnedTools?: string[];
   // 사용자 지정 우선 앱 — 앱을 고르면 그 앱의 도구 전체가 우선 사용된다(서버가 펼침).

@@ -485,7 +485,7 @@ export function ChatProvider({
     if (!serverKind || !activeId) return;
     const conv = conversations.find((c) => c.id === activeId);
     const sid = conv?.serverId;
-    if (!conv || !sid || !conv.cacheTrimmed || streamConvRef.current === conv.id) return;
+    if (!conv || !sid || !conv.cacheTrimmed || conv.cacheFillFailed || streamConvRef.current === conv.id) return;
     if (detailLoadingRef.current.has(sid)) return;
     detailLoadingRef.current.add(sid);
     void getServerConversation(sid)
@@ -496,7 +496,10 @@ export function ChatProvider({
           prev.map((c) => {
             if (c.id !== conv.id || streamConvRef.current === c.id) return c;
             const filled = fillTrimmed(c.messages, fresh.messages);
-            return { ...c, cacheTrimmed: false, ...(filled ? { messages: filled } : {}) };
+            // 모양이 달라 못 채웠으면 표식을 지우지 않는다(지우면 줄인 판이 원본처럼 남는다). 같은 세션에 다시 가져오지 않게
+            // 실패를 메모리에 적고, 대화 머리가 '줄인 판으로 만들어진다' 를 알린다(ExportBar).
+            if (!filled) return { ...c, cacheFillFailed: true };
+            return { ...c, cacheTrimmed: false, messages: filled };
           }),
         );
       })
