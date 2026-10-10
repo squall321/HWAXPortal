@@ -381,11 +381,13 @@ def test_원장에_가는_발언은_좌석이_낸_원문이다():
     assert "…[총" not in first["say"] + last["say"], "원장 열의 상한(2,000자) 안이면 손대지 않는다"
 
 
-def test_원장_열의_상한을_넘는_발언만_표식을_달고_줄인다():
-    """줄이는 곳은 원장 열의 상한 하나뿐이다(앱도 같은 자리에서 자른다) — 무표식으로 자르면 잘린 발언이 완결로 읽힌다."""
+def test_예산_안이면_원장_칸보다_긴_발언도_줄이지_않는다():
+    """앱은 원문을 say 로 남기고 화면용 발췌(2,000자)는 스스로 만든다(HWAXRisk R-63) — 여기서 그 칸 크기로 먼저 자르면 앱의 수리가
+    Claude 길에는 닿지 않는다(검토 P-3). 줄이는 곳은 제출 에코 예산 하나뿐이고, 그때는 표식을 단다(tests/test_risk_review_submit_turns)."""
     out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}]), seat={"recommendation": "라" * 2600})
     first = next(t for t in _submit_arg(out, "turns") if t["round"] == 1)
-    assert len(first["say"]) <= 2000 and re.search(r"…\[총 \d+자\]$", first["say"]), first["say"][-40:]
+    assert "라" * 2600 in first["say"] and "…[총" not in first["say"], first["say"][-40:]
+    assert first["position"] == "라" * 2600
 
 
 def test_엔진_길로_손수_돌릴_때는_full_로_받으라고_적혀_있다():

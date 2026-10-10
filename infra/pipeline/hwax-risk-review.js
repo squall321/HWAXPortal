@@ -77,22 +77,29 @@ const EVIDENCE_ONLY_NOTE = '이 실행에는 도구 호출 경로가 없다 — 
 // `turn{round, persona, say, position?, stance?, non_negotiable?}` 형식이고 앱은 이것을
 // rr_seat_opinions.turns 로 저장한다. 여기서 요약·재작성을 하지 않는다(엔진이 낸 필드만 옮긴다).
 // 발언은 자식 워크플로가 돌려준 **구조화 원문**(result.rounds)에서 옮긴다 — 화면용으로 줄인 글도, 다음 라운드용 요약
-// (hwax-deliberate 의 summarize — reads 를 600자에서 끊는다)도 아니다. 줄이는 곳은 원장 열의 상한(SAY_CAP) 하나뿐이고 표식을 남긴다.
+// (hwax-deliberate 의 summarize)도 아니다. 줄이는 곳은 아래 제출 에코 예산(SUBMIT_BUDGET) 하나뿐이고 표식을 남긴다.
 // ⚠ 엔진 MCP 길(deliberate_start job=risk-review 로 손수 돌린 패널)은 사정이 다르다 — deliberate_transcript 는 기본이 회의
 //   버블용으로 **줄인** 발언이라, 그 글을 그대로 제출하면 잘린 뒤쪽의 인용이 원장에서 사라진다. 그 길은
 //   deliberate_transcript(job_id, full=true) 로 받는다(HWAXAgentServer mcp_server 의 도구 설명). 이 워크플로는 엔진 잡을
 //   띄우지 않아(job_id 가 없다) 그 도구를 부를 자리가 없다 — 위 원문이 같은 구실을 한다.
 // hwax-deliberate 의 라운드 스키마는 셋이다 — 1라운드 {lens, reads, recommendation, concerns},
 // 중간 {concede, rebut, deepen}, 마지막 {final_position, non_negotiable, vote}.
-// 두 상한은 이 길의 바깥 한도다(창이 아니다) — 원장에 내는 것은 에이전트가 도구 인자로 되받아 적어야 해서(아래 SUBMIT_BUDGET)
-// 건수와 길이를 묶는다. 넘으면 표식을 달고, 몇 건을 줄였는지 원장(evidence_omitted)과 반환(flags)에 남긴다.
+// 발언 길이에는 고정 상한을 두지 않는다 — 앱은 원문을 say 로 남기고 화면용 발췌(2,000자)는 스스로 만든다(HWAXRisk R-63). 종전엔 여기서
+// 그 칸 크기(2,000자)로 먼저 잘라, 앱이 원문을 남기게 된 뒤에도 Claude 길의 원장에는 잘린 글만 갔다(검토 P-3 — D-21 이 걷기로 한 상한).
+// 남는 한도는 이 길의 바깥 한도다(창이 아니다) — 원장에 내는 것은 에이전트가 도구 인자로 되받아 적어야 한다(아래 SUBMIT_BUDGET).
+// 건수는 TURN_CAP 으로, 길이는 결정문을 통째로 싣고 남는 몫으로 묶는다(fitTurns). 넘으면 표식을 달고, 몇 건을 몇 자에서 줄였는지
+// 원장(evidence_omitted)과 반환(flags)에 남긴다.
 const TURN_CAP = 60          // 저장 상한(계획 §0.6 turns 60/대화)
-const SAY_CAP = 2000         // seat_opinion.say_excerpt 상한(앱 HWAXRisk narrative.SAY_EXCERPT_MAX 와 같다)
+// 에코 제출 크기 예산(감사 1-F 치명) — 자식 CONV_AGENT_BUDGET 와 같은 근거: 대형 페이로드를 LLM 이 도구 인자로 옮기면 조용히 요약·
+// 의역해 넣고 성공을 돌려준다(실측 C37/C50). 절단보다 나쁜 무표시 변조라, 결정문·발언·알림을 합쳐 이 안에 넣는다.
+const SUBMIT_BUDGET = 60000
+// 발언을 글마다 이보다 짧게 줄여야 예산에 든다면 발언이 뜻을 잃는다 — 제출하지 않고 반환 partials 에 보존한다(결정문이 예산을 거의 다 쓴 때).
+const MIN_SAY_CAP = 300
 // 캡 절단에 표식을 남긴다(감사 1-F) — 무표식 절단은 좌석이 잘린 발언을 완결로 읽게 한다.
-// 표식 포함 총길이가 캡을 넘지 않게 안쪽에서 자른다(원장 열 상한이 캡 기준일 수 있다).
-const capMark = (s) => {
+// 표식 포함 총길이가 캡을 넘지 않게 안쪽에서 자른다.
+const capMark = (s, cap) => {
   const v = String(s)
-  return v.length > SAY_CAP ? v.slice(0, SAY_CAP - 25) + ` …[총 ${v.length}자]` : v
+  return v.length > cap ? v.slice(0, cap - 25) + ` …[총 ${v.length}자]` : v
 }
 const joinList = v => (Array.isArray(v) ? v.filter(Boolean).map(String) : [])
 // 반박 항목은 이제 객체다({target,quote,counter,basis} — hwax-deliberate R2_SCHEMA). joinList 의
@@ -105,48 +112,77 @@ const rebutList = v => (Array.isArray(v) ? v.filter(Boolean).map(r => {
   const head = (r.target ? `${r.target}의 ` : '') + (q ? `'${q}' 에 대해 —` : '')
   return [head.trim(), String(r.counter || '').trim(), r.basis ? `(근거: ${r.basis})` : ''].filter(Boolean).join(' ')
 }) : [])
-function toTurns(roundsData) {
-  if (!Array.isArray(roundsData)) return { turns: [], dropped: 0, sayCut: 0 }
+// 1라운드 발언 — 엔진의 기록용 발언(deliberation._say_of full)과 같은 순서로 잇는다: 관점 → 권장 → 근거 해석(reads) → 우려.
+// 종전엔 해석을 권장 앞에 끼워, 해석이 긴 좌석은 꼬리 절단이 권장과 우려를 원장에서 지웠다(권장은 position 에 남지만 우려는 어디에도
+// 없었다 — 검토 P-3). 상한을 넘으면 해석의 뒤를 줄이고(표식) 관점·권장·우려는 지킨다. 그것만으로도 넘치면 뒤를 줄인다.
+function sayR1(o, cap) {
+  const head = [o.lens, o.recommendation].filter(Boolean).join('\n')
+  const reads = joinList(o.reads).join('\n')
+  const tail = joinList(o.concerns).join('\n')
+  const full = [head, reads, tail].filter(Boolean).join('\n')
+  if (full.length <= cap) return full
+  const mark = k => ` …[해석 ${reads.length}자 중 앞 ${k}자]`
+  const room = cap - head.length - tail.length - 2 - mark(reads.length).length
+  if (!reads || room <= 0) return capMark(full, cap)
+  return [head, reads.slice(0, room) + mark(room), tail].filter(Boolean).join('\n')
+}
+// cap 은 글 하나(발언·입장·조항)의 상한이다 — 기본(Infinity)은 손대지 않는다. 줄일 상한은 fitTurns 가 제출 예산에서 정한다.
+function toTurns(roundsData, cap = Infinity) {
+  if (!Array.isArray(roundsData)) return { turns: [], dropped: 0, sayCut: 0, longest: 0 }
   const out = []
-  const cutAt = new Set()   // 발언(say)을 상한에서 줄인 자리 — 원장에 내는 것만 센다
+  const cutAt = new Set()   // 상한에서 줄인 글이 있는 발언 자리 — 원장에 내는 것만 센다
+  let longest = 0           // 줄이기 전 가장 긴 글 — fitTurns 가 상한을 찾는 범위
   const last = roundsData.length - 1
   roundsData.forEach((rd, i) => {
     const isFirst = i === 0
     const isLast = i === last && last > 0
     for (const o of (Array.isArray(rd) ? rd : [])) {
       if (!o || !o.persona) continue
-      let say = ''
+      let raw = ''
       let position = ''
       if (isFirst) {
         // 근거 해석(reads)을 빼지 않는다 — 좌석 계약이 요구하는 [e:]/[c:] 인용이 여기 있다. 종전엔 1라운드 발언에서 통째로 빠져
         // 원장이 센 1라운드 인용은 늘 0 이었다(주석은 '엔진이 낸 필드만 옮긴다' 였는데 필드 하나가 없었다).
-        say = [o.lens, ...joinList(o.reads), o.recommendation, ...joinList(o.concerns)].filter(Boolean).join('\n')
+        raw = sayR1(o, Infinity)
         position = String(o.recommendation || '')
       } else if (isLast) {
-        say = [o.final_position, o.non_negotiable, o.vote].filter(Boolean).join('\n')
+        raw = [o.final_position, o.non_negotiable, o.vote].filter(Boolean).join('\n')
         position = String(o.final_position || '')
       } else {
-        say = [...joinList(o.concede), ...rebutList(o.rebut), o.deepen].filter(Boolean).join('\n')
+        raw = [...joinList(o.concede), ...rebutList(o.rebut), o.deepen].filter(Boolean).join('\n')
         position = String(o.deepen || '')
       }
-      if (say.length > SAY_CAP) cutAt.add(out.length)
-      const t = { round: i + 1, persona: String(o.persona), say: capMark(say) }
-      if (position) t.position = capMark(position)
-      if (isLast && o.non_negotiable) t.non_negotiable = capMark(o.non_negotiable)
+      const nn = isLast && o.non_negotiable ? String(o.non_negotiable) : ''
+      longest = Math.max(longest, raw.length, position.length, nn.length)
+      if (Math.max(raw.length, position.length, nn.length) > cap) cutAt.add(out.length)
+      const t = { round: i + 1, persona: String(o.persona), say: isFirst ? sayR1(o, cap) : capMark(raw, cap) }
+      if (position) t.position = capMark(position, cap)
+      if (nn) t.non_negotiable = capMark(nn, cap)
       out.push(t)
     }
   })
   // 캡 초과분은 **앞(초기 라운드)** 을 버리고 꼬리를 지킨다(감사 1-F 실증) — 종전의 선두 우선
   // 채움은 21석×6R(126건)에서 최종 라운드의 final_position·vote 전원분을 무표시로 버렸다.
-  // 원장의 최우선 가치는 최종 입장이다. 드롭은 반드시 로그한다.
+  // 원장의 최우선 가치는 최종 입장이다. 드롭의 로그는 부른 쪽이 한 번 남긴다(상한을 찾느라 여러 번 부른다).
   const dropped = Math.max(0, out.length - TURN_CAP)
-  if (dropped) {
-    log(`⚠ 발언 ${out.length}건 중 앞라운드 ${dropped}건 드롭(TURN_CAP ${TURN_CAP}) — ` +
-        `최종 라운드를 보존했다. 전체 발언은 반환 partials/자식 결과에 있다.`)
-  }
   // 줄인 발언 수는 원장에 내는 것만 센다(앞에서 버린 건수는 dropped 가 말한다).
   const sayCut = [...cutAt].filter(ix => ix >= out.length - Math.min(out.length, TURN_CAP)).length
-  return { turns: out.slice(-TURN_CAP), dropped, sayCut }
+  return { turns: out.slice(-TURN_CAP), dropped, sayCut, longest }
+}
+// 결정문을 싣고 남는 몫(room)에 발언을 맞춘다 — 다 들어가면 그대로(cap null), 아니면 들어가는 가장 큰 상한을 찾는다(상한이 작을수록
+// JSON 이 짧아지므로 이분 탐색). MIN_SAY_CAP 에서도 넘치면 null — 부른 쪽이 제출하지 않고 보존한다.
+function fitTurns(roundsData, room) {
+  const whole = toTurns(roundsData)
+  if (JSON.stringify(whole.turns).length <= room) return { ...whole, cap: null }
+  let lo = MIN_SAY_CAP
+  let hi = whole.longest
+  let best = null
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    const t = toTurns(roundsData, mid)
+    if (JSON.stringify(t.turns).length <= room) { best = { ...t, cap: mid }; lo = mid + 1 } else hi = mid - 1
+  }
+  return best
 }
 
 // ── 브리프 ───────────────────────────────────────────────────────────────────
@@ -407,7 +443,7 @@ for (const p of panels) {
 
   // 회수 — 결정문 원문을 그대로 앱에 넘긴다. 파싱·병합은 앱 한 곳에서 한다.
   phase('회수')
-  const { turns, dropped: droppedTurns, sayCut } = toTurns(result.rounds)
+  const decisionText = String(result.decision)
   // 보고서 번호는 원장 열이 INTEGER 다(rr_panels.report_id) — 에이전트가 한 줄로 돌려주는
   // 보고서 번호에서 숫자만 뽑고, 없으면 null 로 보내 열을 건드리지 않는다.
   const reportNo = (() => {
@@ -422,19 +458,6 @@ for (const p of panels) {
     },
     required: ['ok'],
   }
-  // 에코 제출 크기 예산(감사 1-F 치명) — 자식 CONV_AGENT_BUDGET 와 같은 근거: 대형 페이로드를
-  // LLM 이 도구 인자로 옮기면 조용히 요약·의역해 넣고 성공을 돌려준다(실측 C37/C50). 절단보다
-  // 나쁜 무표시 변조라, 예산을 넘으면 에코 제출을 생략하고 데이터를 반환에 보존한다.
-  const SUBMIT_BUDGET = 60000
-  const payloadSize = JSON.stringify(turns).length + String(result.decision).length
-  if (payloadSize > SUBMIT_BUDGET) {
-    failed.push({ panel_id: p.panel_id,
-                  error: `payload_too_large: ${payloadSize}자 > ${SUBMIT_BUDGET}` })
-    keepPartial(p, result, 'payload_too_large')
-    log(`패널 ${p.panel_id} 페이로드 ${payloadSize.toLocaleString()}자 — LLM 에코 제출은 이 크기에서 ` +
-        `의역 변조된다(실측). 제출 생략, 반환 partials 의 원문으로 결정적 제출이 필요하다`)
-    continue
-  }
   // 좌석에 못 간 근거(loss)를 원장에도 남긴다 — risk_submit_panel_result 의 evidence_omitted=[{source, text}]
   // (HWAXRisk 1c11432). 앱은 항목마다 '<source> — <text>' 한 줄로 패널 quality 의 engine_withheld 에 적는다.
   // 받는 자리가 생긴 뒤에도 여기서 안 보내, 원장과 통합 보고서의 [품질 플래그] 는 비어 좌석이 브리프를 전부 본
@@ -444,7 +467,7 @@ for (const p of panels) {
   //   말없이 자른다). 앱이 뺀 것(칸 초과 키 · 메모 절단)은 MCP 도구에 받을 칸이 따로 없어 같은 줄로 싣는다.
   //   옛 앱(인자를 모르는 판)은 이 인자를 말없이 버린다 — 반영 여부는 게이트웨이 tools/list 로 본다.
   const clip200 = (s) => { const v = String(s); return v.length > 200 ? v.slice(0, 199) + '…' : v }
-  const omitted = [
+  const lossNotes = [
     ...loss.evidenceOmitted.map(x => ({ source: String(x.source), text: clip200(x.text) })),
     ...loss.inputNotices.map(x => ({ source: String(x.source), text: clip200(x.text) })),
     ...(loss.briefEvidenceDropped.length
@@ -453,13 +476,43 @@ for (const p of panels) {
     ...(loss.userMemoCut
       ? [{ source: '사용자 메모 절단',
            text: `사용자 메모 ${loss.userMemoCut.chars}자 중 ${loss.userMemoCut.kept}자만 좌석에 실렸다.` }] : []),
+  ]
+  // 결정문은 통째로 싣는다 — 앱이 risk_spec 을 파싱하고 결정문이 원장의 본체다. 발언은 남는 몫에 맞춘다(fitTurns). 발언 알림 두 줄
+  // 몫(각 200자 안쪽 + 출처)을 먼저 뗀다. 종전엔 발언을 2,000자 칸에 맞춰 자른 뒤 합이 예산을 넘으면 통째로 제출을 건너뛰어, M1 이
+  // 1라운드에 해석을 넣자 결정문에 남는 몫이 7석×3라운드에서 30,492자 → 22,078자로 줄었고 그 사이 패널이 웹에 안 올라갔다(검토 X-4).
+  const room = SUBMIT_BUDGET - decisionText.length - JSON.stringify(lossNotes).length - 600
+  const fit = fitTurns(result.rounds, room)
+  if (!fit) {
+    failed.push({ panel_id: p.panel_id,
+                  error: `payload_too_large: 결정문 ${decisionText.length}자 — 발언을 글마다 ${MIN_SAY_CAP}자까지 줄여도 ` +
+                         `에코 제출 예산 ${SUBMIT_BUDGET}자에 들지 않는다` })
+    keepPartial(p, result, 'payload_too_large')
+    log(`패널 ${p.panel_id} 결정문 ${decisionText.length.toLocaleString()}자 — 발언을 글마다 ${MIN_SAY_CAP}자까지 줄여도 LLM 에코 ` +
+        `제출 예산(${SUBMIT_BUDGET.toLocaleString()}자)에 들지 않는다. 그 크기에서는 의역 변조된다(실측). 제출 생략, 반환 partials 의 ` +
+        `원문으로 결정적 제출이 필요하다`)
+    continue
+  }
+  const { turns, dropped: droppedTurns, sayCut, cap: sayCap } = fit
+  if (droppedTurns) {
+    log(`⚠ 발언 ${turns.length + droppedTurns}건 중 앞라운드 ${droppedTurns}건 드롭(TURN_CAP ${TURN_CAP}) — ` +
+        `최종 라운드를 보존했다. 전체 발언은 반환 partials/자식 결과에 있다.`)
+  }
+  if (sayCap) {
+    log(`⚠ 패널 ${p.panel_id} 발언 ${sayCut}건을 글마다 ${sayCap.toLocaleString()}자에서 줄였다 — 결정문 ` +
+        `${decisionText.length.toLocaleString()}자를 통째로 싣고 LLM 에코 제출 예산(${SUBMIT_BUDGET.toLocaleString()}자)에 남는 몫에 ` +
+        `맞췄다(1라운드는 해석을 줄이고 권장·우려를 지켰다). 원장 evidence_omitted 에도 남긴다`)
+  }
+  const omitted = [
+    ...lossNotes,
     // 이 길이 원장에 내며 줄인 발언 — 종전엔 로그와 반환(flags)뿐이라 원장에서는 전원 발언이 온전히 들어온 것으로 읽혔다.
     ...(droppedTurns
       ? [{ source: '발언 건수 상한 초과',
            text: clip200(`발언 ${turns.length + droppedTurns}건 중 앞 라운드 ${droppedTurns}건은 상한(${TURN_CAP}건)을 넘겨 내지 않았다. 전문은 워크플로 반환에 있다.`) }] : []),
     ...(sayCut
       ? [{ source: '발언 길이 상한 초과',
-           text: clip200(`발언 ${sayCut}건은 원장 칸 상한(${SAY_CAP}자)을 넘어 앞부분만 냈다(끝에 '…[총 N자]' 표식).`) }] : []),
+           text: clip200(`발언 ${sayCut}건은 제출 에코 예산(${SUBMIT_BUDGET.toLocaleString()}자 — 결정문 ` +
+                         `${decisionText.length.toLocaleString()}자를 통째로 싣고 남는 몫)에 맞추려고 글마다 ${sayCap.toLocaleString()}자에서 ` +
+                         `줄였다(표식 '…[총 N자]', 1라운드는 해석을 줄이고 권장·우려를 지켰다).`) }] : []),
   ]
   let ack = null
   try {
@@ -472,7 +525,7 @@ for (const p of panels) {
       `  model = "${MODEL}"\n` +
       `  report_id = ${reportNo === null ? 'null' : reportNo}\n` +
       `  turns = ${JSON.stringify(turns)}\n` +
-      `  decision_text = ${JSON.stringify(String(result.decision))}\n` +
+      `  decision_text = ${JSON.stringify(decisionText)}\n` +
       `  evidence_omitted = ${JSON.stringify(omitted)}\n` +
       `- turns 는 위 JSON 배열 그대로다(객체 목록이지 개수가 아니다). 항목을 줄이거나 요약하지 마라.\n` +
       `- decision_text 는 위 문자열 그대로다. 요약·재작성·펜스 제거를 하지 마라.\n` +
@@ -486,13 +539,14 @@ for (const p of panels) {
   if (ack && ack.ok) {
     submitted.push({
       panel_id: p.panel_id, report_id: reportNo, turns: turns.length,
-      decisionChars: String(result.decision).length,
+      decisionChars: decisionText.length,
       // 자식 품질 플래그 승계(감사 1-F) — 원장 감사 시 절단·유실·대조 상태를 여기서 본다.
       flags: {
         decisionTruncated: result.decisionTruncated || false,   // 'marker-missing' 이면 그 문자열
         seatLoss: (result.seatLoss || []).length,
         droppedTurns,
         sayCut,
+        sayCap: sayCap || null,   // 발언을 줄인 글당 상한(제출 에코 예산에서 정했다) — 줄이지 않았으면 null
         citationUnmatched: (result.citationAudit && result.citationAudit.unmatched
                             ? result.citationAudit.unmatched.length : null),
         // 좌석에 못 간 근거 — 비어 있지 않으면 이 패널의 좌석은 브리프의 일부만 보고 판정했다.

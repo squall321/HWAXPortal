@@ -148,10 +148,17 @@ def test_리스크_심사_1라운드_발언에_근거_해석을_싣는다():
 
 
 def test_리스크_심사가_원장에_내며_줄인_발언을_원장에_알린다():
-    out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}]), seat={"recommendation": "라" * 2600})
+    """발언은 고정 칸(2,000자)으로 자르지 않는다 — 결정문을 통째로 싣고 제출 에코 예산(60,000자)에 남는 몫에 맞출 때만 줄이고, 그 상한을
+    원장에 적는다(검토 P-3·X-4). 결정문 55,000자면 1라운드 좌석 셋(지정 반대석 포함)의 2,600자 권장이 남는 몫을 넘는다."""
+    out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}]), seat={"recommendation": "라" * 2600},
+                decision="## 리스크 심사 보고서\n" + "판" * 55_000 + "\n〔결정문 끝〕")
     by = {x["source"]: x["text"] for x in _submit_arg(out, "evidence_omitted")}
-    assert "발언 길이 상한 초과" in by and "2000자" in by["발언 길이 상한 초과"]
-    assert out["result"]["submitted"][0]["flags"]["sayCut"] == 3, "1라운드 좌석 셋(지정 반대석 포함)"
+    flags = out["result"]["submitted"][0]["flags"]
+    assert flags["sayCut"] == 3, "1라운드 좌석 셋(지정 반대석 포함)"
+    assert "발언 길이 상한 초과" in by and f"{flags['sayCap']:,}자" in by["발언 길이 상한 초과"], by
+    assert "60,000자" in by["발언 길이 상한 초과"] and "2000자" not in by["발언 길이 상한 초과"]
+    small = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}]), seat={"recommendation": "라" * 2600})
+    assert small["result"]["submitted"][0]["flags"]["sayCut"] == 0, "예산 안이면 2,000자 넘는 발언도 줄이지 않는다"
 
 
 def test_리스크_심사가_창을_자식_심의에_넘긴다():
