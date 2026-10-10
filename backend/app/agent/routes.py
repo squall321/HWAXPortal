@@ -481,6 +481,8 @@ async def search_conversations(
             "index": {**(await asyncio.to_thread(store.index_stats, principal.subject, conv_search.MODEL)),
                       "just_indexed": idx["indexed"], "too_short": idx["too_short"],
                       "not_indexed_yet": left,
+                      # 색인이 시간 예산(conv_search.REINDEX_BUDGET_S)에서 멈췄다 — 게이트웨이 한도 안에 답하려고 남긴 것이다.
+                      "budget_hit": idx.get("budget_hit", False),
                       "partial": bool(left)}}
 
 

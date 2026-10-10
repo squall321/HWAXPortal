@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import re
 import struct
+import time
 
 import httpx
 
@@ -38,6 +39,14 @@ _MIN_SCORE = 0.84
 # 그래서 거르지 말고 알린다. 못 가르는 것을 가르는 척하면 둘 중 하나는 반드시 거짓이 된다.
 _SHORT_Q = 12          # 이보다 짧은 질의는 점수로 관련성을 판정하지 않는다
 _SHORT_FLOOR = 0.75    # 명백한 무관만 쳐내는 느슨한 바닥
+
+# 검색 한 번이 색인에 쓰는 시간. 게이트웨이 search_conversations 는 포털을 120초 기다린다(HWAXMcpGateway gateway.py) — 그보다 길면
+# 게이트웨이가 먼저 포기하는데 핸들러는 계속 돌고, 벡터를 쓰기 전에 다음 검색이 같은 미색인분을 다시 보낸다. 웹 심의의 서버 사본이
+# 좌석 발언을 줄이지 않은 글로 건수 상한 없이 남기면서(수천 자 × 좌석 × 라운드) 큰 심의 뒤 첫 검색이 이 한도에 닿는다. 예산에서
+# 멈추고 남은 수는 응답의 index.not_indexed_yet·partial 이 말한다 — 다음 검색이 잇는다.
+REINDEX_BUDGET_S = 60.0
+_EMBED_BATCH = 64
+_clock = time.monotonic   # 시험이 시계를 바꿔 끼운다
 
 
 def chunks(text: str) -> list[str]:
@@ -81,12 +90,18 @@ async def embed(texts: list[str], base_url: str, kind: str = "passage",
     return vecs
 
 
-async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000) -> dict:
-    """아직 벡터가 없는 내 메시지를 색인한다. 증분이며, 여러 번 불러도 안전하다."""
+async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000,
+                  budget_s: float = REINDEX_BUDGET_S) -> dict:
+    """아직 벡터가 없는 내 메시지를 색인한다. 증분이며, 여러 번 불러도 안전하다.
+
+    budget_s 를 넘기면 새 메시지를 더 꺼내지 않고 멈춘다(budget_hit) — 남은 것은 다음 검색이 잇는다. 벡터는 임베딩 한 묶음
+    (조각 64개 남짓)을 끝낼 때마다 쓴다. 메시지 하나의 조각은 한 묶음에 다 들어가므로, 쓰인 메시지는 조각을 전부 가진다(반쪽만
+    쓰면 '색인됨' 으로 분류돼 뒤쪽 조각을 영영 못 찾는다). 임베더가 중간에 실패해도 앞서 끝낸 묶음은 남는다."""
+    t0 = _clock()
     # 동기 sqlite 전량 조회다. 색인 대상이 수천 건이면 그 시간만큼 이벤트 루프가 멈춘다 —
     # _rank 만 빼고 여기를 남긴 것은 조사가 '아는 이름' 만 찾았기 때문이다(실측 지적).
     pending = await asyncio.to_thread(store.unindexed, owner_sub, MODEL, limit)
-    rows, texts, short = [], [], 0
+    marks, todo, short = [], [], 0
     for m in pending:
         cs = chunks(m["content"])
         if not cs:
@@ -95,29 +110,47 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000) -> di
             # 차지하고, 짧은 메시지가 창 크기를 넘으면 그보다 오래된 진짜 미색인 메시지가
             # 영영 색인되지 않는다. 이 표식은 vectors_for 가 chunk_ix >= 0 으로 걸러 낸다.
             short += 1
-            rows.append({"message_id": m["message_id"], "chunk_ix": -1,
-                         "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
-                         "text": "", "model": MODEL, "dim": 0, "vec": b""})
+            marks.append({"message_id": m["message_id"], "chunk_ix": -1,
+                          "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
+                          "text": "", "model": MODEL, "dim": 0, "vec": b""})
             continue
+        todo.append((m, cs))
+    if marks:
+        await asyncio.to_thread(store.put_vectors, marks)   # 표식은 임베딩 없이 바로 남긴다
+    written, done, budget_hit = len(marks), 0, False
+    group: list[dict] = []
+    texts: list[str] = []
+
+    async def flush() -> None:
+        nonlocal written
+        # 한 번에 다 보내면 큰 대화에서 타임아웃이 난다. 나눠 보내되 실패는 그대로 올린다.
+        vecs: list[list[float]] = []
+        for i in range(0, len(texts), _EMBED_BATCH):
+            vecs.extend(await embed(texts[i:i + _EMBED_BATCH], base_url, "passage"))
+        for r, v in zip(group, vecs, strict=True):
+            r["vec"] = pack(_norm(v))
+        # 수천 행 일괄 INSERT — 같은 이유로 스레드에서.
+        await asyncio.to_thread(store.put_vectors, group)
+        written += len(group)
+        group.clear()
+        texts.clear()
+
+    for m, cs in todo:
+        if _clock() - t0 >= budget_s:
+            budget_hit = True
+            break
         for ix, c in enumerate(cs):
-            rows.append({"message_id": m["message_id"], "chunk_ix": ix,
-                         "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
-                         "text": c, "model": MODEL, "dim": DIM})
+            group.append({"message_id": m["message_id"], "chunk_ix": ix,
+                          "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
+                          "text": c, "model": MODEL, "dim": DIM})
             texts.append(c)
-    if not texts:
-        await asyncio.to_thread(store.put_vectors, rows)   # 표식만이라도 남긴다
-        return {"indexed": 0, "messages": len(pending), "too_short": short}
-    # 한 번에 다 보내면 큰 대화에서 타임아웃이 난다. 나눠 보내되 실패는 그대로 올린다.
-    vecs: list[list[float]] = []
-    for i in range(0, len(texts), 64):
-        vecs.extend(await embed(texts[i:i + 64], base_url, "passage"))
-    # 표식 행(dim=0)은 임베딩 대상이 아니었으므로 벡터를 받을 행만 짝짓는다.
-    embedded = [r for r in rows if r["dim"]]
-    for r, v in zip(embedded, vecs, strict=True):
-        r["vec"] = pack(_norm(v))
-    # 수천 행 일괄 INSERT — 같은 이유로 스레드에서.
-    await asyncio.to_thread(store.put_vectors, rows)
-    return {"indexed": len(rows), "messages": len(pending), "too_short": short}
+        done += 1
+        if len(texts) >= _EMBED_BATCH:
+            await flush()
+    if texts:
+        await flush()
+    return {"indexed": written, "messages": len(pending), "too_short": short,
+            "budget_hit": budget_hit, "deferred": len(todo) - done}
 
 
 def short_query(query: str) -> bool:
