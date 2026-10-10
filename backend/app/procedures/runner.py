@@ -566,31 +566,35 @@ class ProceduresRunner:
                 scope[sel.var] = values
                 self.store.merge_inputs(run_id, {sel.var: values})
                 return None
+            # 사람이 훑는 목록이라 50개만 보여 준다 — 총수를 같이 싣는다. 없으면 51번째부터는 있는 줄도 모른 채 못 고른다.
             shown = [{"i": i, "label": str(r.get(sel.label or sel.save, ""))[:120],
                       "value": r.get(sel.save)} for i, r in enumerate(rows[:50])]
             self.store.finish_step(run_id, ix, ok=False, state="pending", stage="select:ask_many",
                                    error=None,
-                                   notes={"candidates": shown, "pick_into": sel.var, "pick_multi": True})
+                                   notes={"candidates": shown, "candidates_total": len(rows),
+                                          "pick_into": sel.var, "pick_multi": True})
             self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
             return {"state": "gated", "stopped_at": ix, "kind": "select_ask_many",
-                    "candidates": shown}
+                    "candidates": shown, "candidates_total": len(rows)}
 
         if len(rows) > 1 and sel.on_many != "first":
+            # 보여 주는 것은 50개까지 — 총수를 같이 싣는다(위 ask_many 와 같다).
             shown = [{"i": i, "label": str(r.get(sel.label or sel.save, ""))[:120],
                       "value": r.get(sel.save)} for i, r in enumerate(rows[:50])]
             if sel.on_many == "fail":
                 self.store.finish_step(run_id, ix, ok=False, stage="select:many",
                                        error=f"룰이 {len(rows)}개를 골랐다 — 하나로 좁혀라",
-                                       notes={"candidates": shown})
+                                       notes={"candidates": shown, "candidates_total": len(rows)})
                 self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
                 return {"state": "failed", "stopped_at": ix, "kind": "select_many",
                         "error": f"룰이 {len(rows)}개를 골랐다"}
             # ask — 사람이 고른다. 게이트와 같은 자리에서 멈춘다.
             self.store.finish_step(run_id, ix, ok=False, state="pending", stage="select:ask",
-                                   error=None, notes={"candidates": shown, "pick_into": sel.var})
+                                   error=None, notes={"candidates": shown, "candidates_total": len(rows),
+                                                      "pick_into": sel.var})
             self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
             return {"state": "gated", "stopped_at": ix, "kind": "select_ask",
-                    "candidates": shown}
+                    "candidates": shown, "candidates_total": len(rows)}
 
         got = rows[0].get(sel.save)
         if template.is_empty(got):
@@ -801,4 +805,5 @@ def _names_of(body) -> list[dict]:
         out.append({"name": str(r["name"]),
                     "summary": str(r.get("summary") or r.get("description") or "")[:160],
                     **({"category": str(r["category"])} if r.get("category") else {})})
-    return out[:200]
+    # 끊지 않는다 — 이름과 한 줄 요약뿐이라 가볍고, 종전 200개 컷은 201번째부터 '없는 항목' 으로 보이게 했다.
+    return out

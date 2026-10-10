@@ -354,7 +354,11 @@ def list_conversations(
     request: Request,
     principal: Principal = Depends(principal_pat_or_session),
 ) -> dict:
-    return {"conversations": _conv(request).list_for_owner(principal.subject)}
+    # 최근 100건만 준다 — 총수와 끊었는지를 같이 싣는다. 없으면 Claude(MCP)·다른 기기에서 101번째부터는 없는 대화로 보였다.
+    store = _conv(request)
+    rows = store.list_for_owner(principal.subject)
+    total = store.count_for_owner(principal.subject)
+    return {"conversations": rows, "total": total, "truncated": total > len(rows)}
 
 
 @router.post("/conversations")

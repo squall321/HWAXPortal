@@ -157,6 +157,12 @@ class ConversationStore:
         return [{"id": r[0], "title": r[1], "kind": r[2], "source": r[3],
                  "created_at": r[4], "updated_at": r[5]} for r in rows]
 
+    def count_for_owner(self, owner_sub: str) -> int:
+        """그 사람의 대화 총수 — 목록(list_for_owner)이 최근 limit 건만 줄 때 끊었다는 것을 알리는 데 쓴다."""
+        with self._lock:
+            return int(self._conn.execute("SELECT COUNT(*) FROM conversations WHERE owner_sub = ?",
+                                          (owner_sub,)).fetchone()[0])
+
     def get(self, cid: str, owner_sub: str) -> dict | None:
         """대화 + 메시지(순서대로). 소유자만. 없거나 타인 소유면 None."""
         with self._lock:
