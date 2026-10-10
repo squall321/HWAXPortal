@@ -60,9 +60,28 @@ SSE_HEADERS = {
 }
 
 
+# 1백만 토큰 창(GLM-5.2 — 1,048,576 토큰)에 들어갈 수 있는 가장 긴 글. 토큰당 4자(ASCII 기준, 한글은 1자 안팎)로 잡은
+# 바깥 경계다. 모델 입력이 될 수 있는 글 칸의 상한은 이 값에서 유도한다 — 종전의 이력 한 건 24,000자·메시지 65,536자·
+# 이어하기 요약 24,000자·사람 의견 8,000자·도우미 화두 8,192자·대화 한 칸 20,000자는 16K·128K 창 시절 값이라 1M 창에서
+# 먼저 묶여, 결정문 하나(13,000~75,000자)가 든 대화와 이어하기를 422 로 막았다(docs/risk-review-redesign D-21).
+# 창에 넣을 길이는 창을 아는 쪽(에이전트 서버 이력 예산·엔진)이 정하고 줄였으면 알린다. 여기는 폭주 방지선만 긋는다 —
+# 넘으면 자르지 않고 422 로 소리 낸다.
+_WINDOW_TOKENS = 1_048_576
+_WINDOW_CHARS = _WINDOW_TOKENS * 4
+
+
+def _history_total(v: list) -> list:
+    """이력 합계를 창 하나로 묶는다 — 항목 상한을 창에서 유도하면 160건 × 그 값이 되므로 합계 선이 따로 있어야 한다."""
+    total = sum(len(m.content) for m in v)
+    if total > _WINDOW_CHARS:
+        raise ValueError(f"이력 합계 {total:,}자가 상한 {_WINDOW_CHARS:,}자(1M 토큰 창 하나)를 넘는다 — "
+                         "창에 들어갈 수 없는 이력이다. 오래된 대화를 줄여 보내라")
+    return v
+
+
 class ChatHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str = Field(max_length=24000)  # per-item cap — no unbounded input (DoS)
+    content: str = Field(max_length=_WINDOW_CHARS)  # 항목 상한 — 합계는 _history_total 이 본다(DoS)
 
 
 # 좌석 지식카드 검색어(DelibOpts.knowledge_query)의 모양 — 값 하나 600자 · 좌석 키 120자 · 사전 64항목.
@@ -89,14 +108,16 @@ class DelibOpts(BaseModel):
     # 422 로 떨어졌다. 넘는 값은 지금처럼 422 로 소리 내 막는다(엔진은 제 상한으로 죄고 카드로 알린다).
     timeout_s: float | None = Field(default=None, ge=10, le=14400)
     # 이어하기(사람 개입 스티어링) — 사람 의견 + 이전 심의 요약 + 전문가 재사용(발굴 생략)
-    # human_note 8,000 은 바깥 경계다 — 좌석에 싣는 길이는 엔진이 정하고(DELIB_HUMAN_NOTE_MAX, 기본 2,000),
-    # 잘랐으면 엔진이 카드로 알린다. 엔진 **기본값**이 이 값을 넘으면 안 된다
+    # human_note 상한은 바깥 경계다(창에서 유도 — 종전 8,000) — 좌석에 싣는 길이는 엔진이 정하고(DELIB_HUMAN_NOTE_MAX,
+    # 기본 2,000), 잘랐으면 엔진이 카드로 알린다. 엔진 **기본값**이 이 값을 넘으면 안 된다
     # (tests/test_human_note_cap_contract.py, docs/delib-engine-feedback D-7).
-    human_note: str | None = Field(default=None, max_length=8000)
+    human_note: str | None = Field(default=None, max_length=_WINDOW_CHARS)
     # 불량 환기 — auto(질문에 불량 단어가 있을 때만, 엔진 종전) | off | always. 'VOC 먼저 보기' 에서
     # 사람이 이미 골랐으면 off 로 보낸다(자동 환기가 사람이 뺀 VOC 를 다시 넣지 않게).
     voc: Literal["auto", "off", "always"] | None = None
-    continue_summary: str | None = Field(default=None, max_length=24000)
+    # 이어하기에 싣는 이전 결정문·쟁점. 결정문 하나가 13,000~75,000자다 — 종전 24,000 이면 긴 결정문의 이어하기가 422 였고,
+    # 프론트는 그 전에 8,000자로 조용히 잘라 보냈다. 좌석에 싣는 길이는 엔진(_SUMMARY_MAX)이 정하고 줄였으면 카드로 알린다.
+    continue_summary: str | None = Field(default=None, max_length=_WINDOW_CHARS)
     # 좌석 상한 — 엔진 MAX_REQ_SEATS **기본값**·ExpertPicker·HandoffBrief·RosterEditor 와 같은 값이어야 한다
     # (tests/test_seat_cap_contract.py). 넘으면 422 로 막는다 — 엔진까지 가면 잘려서 사라진다.
     # 엔진은 환경값(DELIB_MAX_SEATS)으로 더 앉힐 수 있지만 그 길은 MCP·리스크 앱 것이다(포털 스키마를
@@ -109,7 +130,9 @@ class DelibOpts(BaseModel):
     #
     # 이전 심의의 양보 불가 조항. 요약에 섞지 않고 따로 넘겨야 승계가 보장된다 —
     # 빠지면 이전 결정이 소리 없이 되돌아간다(엔진 _cont_block 이 매 라운드 프롬프트에 넣는다).
-    non_negotiables: list[str] | None = Field(default=None, max_length=12)
+    # 상한은 한 회차가 낼 수 있는 조항 수 — 좌석 상한(20) × 라운드 상한(8). 종전 12 는 수렴 라운드 좌석 20/20 이 조항을 낸
+    # 실측에서 8건을 막았다(프론트가 그 전에 12건으로 조용히 잘랐다). 좌석에 싣는 건수는 엔진(_NN_MAX)이 정하고 알린다.
+    non_negotiables: list[str] | None = Field(default=None, max_length=160)
     # 1이면 초기 라운드까지만 돌고 사람에게 넘긴다(인간 체크포인트). 결정문 대신 전원 초기
     # 입장이 내려오고, 이어하기 폼으로 의견을 보태면 좌석 재심사가 그 방향의 도메인을 부른다.
     stop_after_round: int | None = Field(default=None, ge=0, le=1)
@@ -181,10 +204,11 @@ class ChatDocument(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=65536)  # cap payload — no unbounded input (DoS)
+    message: str = Field(min_length=1, max_length=_WINDOW_CHARS)  # 폭주 방지선 — 창 하나(종전 65,536)
     system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
     # 멀티턴 컨텍스트: 오래된 것→최신 순, 이번 message는 포함하지 않는다(agent-server 계약).
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=160)
+    history_total = field_validator("history")(_history_total)
     # 있으면 이 대화(서버 정본)에 user+assistant 를 저장한다. 없으면 저장 안 함(하위호환).
     conversation_id: str | None = Field(default=None, max_length=64)
     # 심의 손잡이 오버라이드 — 심의(/심의) 요청에서만 의미. agent-server 로 그대로 포워딩.
@@ -220,7 +244,9 @@ class ChatRequest(BaseModel):
 
 class ConvMessageIn(BaseModel):
     role: Literal["user", "assistant", "system", "persona"] = "assistant"
-    content: str = Field(max_length=20000)
+    # = _WINDOW_CHARS. 숫자로 적는다 — 게이트웨이 시험이 이 줄을 `max_length=숫자` 로 읽어 제 조각 크기와 견준다(종전 20,000 은
+    # 2만 자 넘는 발언 하나로 일괄 생성 전체를 422 로 떨어뜨렸다).
+    content: str = Field(max_length=4194304)
     persona: str | None = Field(default=None, max_length=120)
     round: int | None = None
     meta: dict | None = None
@@ -569,7 +595,10 @@ async def _relay_stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload
         ) as r:
             if r.status_code != 200:
-                detail = (await r.aread()).decode(errors="replace")[:200]  # server-side only
+                # 감사에만 남긴다(브라우저에는 코드만). 422 의 사유는 어느 칸이 넘었는지를 말하는데 종전엔 200자에서 표식 없이
+                # 잘랐다 — 자르면 원래 길이를 붙인다(사유 본문이 요청 글을 되풀이할 수 있어 감사 칸은 2,000자로 둔다).
+                _raw = (await r.aread()).decode(errors="replace")
+                detail = _raw if len(_raw) <= 2000 else _raw[:2000] + f"…(원문 {len(_raw):,}자)"
                 audit.record(principal=principal.subject, event="chat_error",
                              chat_id=chat_id, status="error",
                              meta={"upstream": r.status_code, "detail": detail})
@@ -702,23 +731,26 @@ async def catalog_record(
 
 
 class ExpertsRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=8192)
+    # 화두 — 챗 메시지와 같은 상한이다. 종전 8,192 는 챗(65,536)보다 작아 긴 화두에서 422 → 빈 추천이 됐다.
+    message: str = Field(min_length=1, max_length=_WINDOW_CHARS)
     # 대화 전체 — 좌석 추천을 화두 한 줄이 아니라 오간 맥락 위에서 하기 위한 것.
     # 캡은 챗 경로와 같은 계약을 쓴다(별도 규칙을 만들면 한쪽만 조이는 일이 생긴다).
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=160)
+    history_total = field_validator("history")(_history_total)
     # 조직도 1단계(명부만) — 트리를 먼저 그리고 태그·도구 카탈로그는 뒤에서 받는다.
     light: bool = False
 
 
 class ClarifyRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=8192)
+    message: str = Field(min_length=1, max_length=_WINDOW_CHARS)
     # 심의 방법 — 칸 묶음을 고른다(원인 규명·안 선택·신뢰 판정·시험 설계…). 모르는 값은 서버가 자유 심의로 본다.
     job: str = Field(default="default", max_length=40)
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=160)
+    history_total = field_validator("history")(_history_total)
 
 
 class VocPreviewRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=8192)
+    message: str = Field(min_length=1, max_length=_WINDOW_CHARS)
     # 사람이 고친 영어 검색어 — 주면 추출을 건너뛴다.
     keywords: list[str] = Field(default_factory=list, max_length=6)
 
@@ -1363,7 +1395,9 @@ class TopicRequest(BaseModel):
     """챗 대화 → 심의 화두. history 상한은 ChatRequest 와 같은 이유로 둔다(무한 입력 금지)."""
 
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=160)
-    fallback: str = Field(default="", max_length=2000)
+    history_total = field_validator("history")(_history_total)
+    # 실패하면 그대로 돌려줄 화두(대개 첫 발화) — 첫 발화가 2,000자를 넘으면 종전엔 422 로 제안 자체가 꺼졌다.
+    fallback: str = Field(default="", max_length=_WINDOW_CHARS)
     job: str = Field(default="default", max_length=40)
 
 
