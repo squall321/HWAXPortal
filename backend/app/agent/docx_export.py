@@ -161,6 +161,12 @@ def _delib_turns(m: dict[str, Any]) -> list[dict]:
     return [t for t in (d.get("turns") or []) if isinstance(t, dict)]
 
 
+def _say(t: dict) -> str:
+    """좌석 발언 본문 — 줄이지 않은 글(sayFull)이 있으면 그것을 쓴다. say 는 엔진이 회의 버블용으로 줄인 글이라, 그대로 쓰면
+    '전문' 내보내기와 정리본 원문에서 발언 뒤쪽(인용·근거)이 빠졌다."""
+    return str(t.get("sayFull") or t.get("say") or "")
+
+
 def _write_turns(doc: "Document", turns: list[dict]) -> None:
     last_round = None
     for t in turns:
@@ -188,7 +194,7 @@ def _write_turns(doc: "Document", turns: list[dict]) -> None:
             pr = _run(lead, f"   {pos}")
             pr.font.size = Pt(9)
             pr.font.color.rgb = _MUTED
-        _body(doc, str(t.get("say") or ""))
+        _body(doc, _say(t))
         nn = _clean(str(t.get("nonNegotiable") or "")).strip()
         if nn:
             _body(doc, f"양보 불가: {nn}")
@@ -253,14 +259,17 @@ def build_report(title: str, markdown: str, source_note: str) -> bytes:
     return buf.getvalue()
 
 
-def transcript_text(conv: dict[str, Any], limit: int = 60000) -> str:
-    """LLM 에 넘길 대화 원문. 너무 길면 앞부분을 자르되 잘랐다는 사실을 남긴다."""
+def transcript_text(conv: dict[str, Any], limit: int | None = None) -> str:
+    """LLM 에 넘길 대화 원문. limit 을 주면 넘는 만큼 뒤를 자르고 원문 길이와 함께 잘랐다는 사실을 남긴다.
+
+    상한은 부르는 쪽이 모델 창에서 정한다(routes._report_tx_limit) — 종전 기본값 60,000자는 16K·128K 창 시절 값이라
+    1M 창에서 심의 대화의 결정문(발언 뒤에 쌓인다)을 잘랐다."""
     out = []
     for m in conv.get("messages") or []:
         # 좌석 발언도 넣는다. 빼면 LLM 이 근거 없이 결론만 보고 '결론과 근거' 절을 쓰게 된다 —
         # 정리본이 지어낸 근거를 달게 되는 가장 나쁜 경로다.
         for t_ in _delib_turns(m):
-            say = str(t_.get("say") or "").strip()
+            say = _say(t_).strip()
             if say:
                 out.append(f"[{t_.get('persona') or '좌석'} R{t_.get('round')}] {say}")
         t = (m.get("text") or "").strip()
@@ -269,6 +278,6 @@ def transcript_text(conv: dict[str, Any], limit: int = 60000) -> str:
         who = {"user": "질문", "assistant": "응답"}.get(m.get("role"), m.get("role") or "")
         out.append(f"[{who}] {t}")
     full = "\n\n".join(out)
-    if len(full) <= limit:
+    if limit is None or len(full) <= limit:
         return full
-    return full[:limit] + "\n\n(…이후 생략 — 원문이 길어 앞부분만 전달했다)"
+    return full[:limit] + f"\n\n(…이후 생략 — 원문 {len(full):,}자 중 앞 {limit:,}자만 전달했다)"

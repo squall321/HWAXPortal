@@ -761,7 +761,10 @@ class DocxTurn(BaseModel):
     model_config = {"extra": "ignore"}
     round: int | None = None
     persona: str = Field(default="", max_length=120)
-    say: str = Field(default="", max_length=100_000)
+    # 글 칸 하나의 상한은 총량(4,000,000자 — ConvPayload._total_budget)과 같다. 칸마다 따로 작게 두면 결정문·발언 하나가 총량 안인데도
+    # 422 다. 정리본 원문은 줄이지 않은 발언(sayFull — 엔진 say_full)을 쓰고, say 는 화면 버블이다.
+    say: str = Field(default="", max_length=4_000_000)
+    sayFull: str = Field(default="", max_length=4_000_000)  # noqa: N815 — 프론트 필드명
     position: str = Field(default="", max_length=2_000)
     stance: str = Field(default="", max_length=120)
     nonNegotiable: str = Field(default="", max_length=2_000)  # noqa: N815 — 프론트 필드명
@@ -777,12 +780,12 @@ class DocxMessage(BaseModel):
 
     ⚠ extra 를 닫는다. allow 로 두면 캡을 건 필드 옆으로 임의 크기 JSON 이 무제한 통과해
     캡이 메모리 상한 구실을 못 한다. docx_export 가 실제로 읽는 필드를 전수 확인했고
-    (delib·role·text·ts, turn 은 round/persona/say/position/stance/nonNegotiable),
+    (delib·role·text·ts, turn 은 round/persona/say/sayFull/position/stance/nonNegotiable),
     전부 여기 선언돼 있으므로 닫아도 잃는 것이 없다.
     """
     model_config = {"extra": "ignore"}
     role: str = Field(default="assistant", max_length=40)
-    text: str = Field(default="", max_length=200_000)
+    text: str = Field(default="", max_length=4_000_000)
     # 표시용 시각. int/float/str/None 만 받는다 — Any 로 열어 두면 extra 를 닫은 의미가
     # 없다(임의 크기 dict·list 가 그대로 들어온다). 값의 타당성은 _ts 가 다시 본다.
     ts: int | float | str | None = None
@@ -805,7 +808,7 @@ class ConvPayload(BaseModel):
         # 필드를 늘리면 여기도 같이 늘려야 한다. 그래서 목록을 한 곳에 둔다.
         def _turn_chars(t: "DocxTurn") -> int:
             return sum(len(getattr(t, f) or "")
-                       for f in ("say", "position", "stance", "persona", "nonNegotiable"))
+                       for f in ("say", "sayFull", "position", "stance", "persona", "nonNegotiable"))
 
         total = sum(len(m.text) + sum(_turn_chars(t) for t in (m.delib.turns if m.delib else []))
                     for m in v)
@@ -845,6 +848,24 @@ _REPORT_PROMPT = """다음은 엔지니어링 포털에서 오간 대화 이력�
 
 대화 이력:
 """
+
+
+# 정리본에 넘기는 대화 원문의 상한 — 에이전트 서버가 알려 주는 모델 창(/health 의 context_tokens)에서 유도한다. 한국어 1자 ≈
+# 1토큰으로 잡고 창의 60% 를 원문에 준다(나머지는 지시문·도구·출력 몫). 창을 못 읽거나 유도한 값이 더 작으면(dev 16K) 종전
+# 60,000자가 바닥이다 — 종전 동작은 그대로 남는다. 종전엔 60,000 고정이라 1M 창에서 심의 대화의 결정문이 잘렸다.
+_REPORT_TX_FLOOR = 60_000
+
+
+async def _report_tx_limit(request: Request, settings: Settings) -> tuple[int, str]:
+    """(상한, 출처) — 출처는 server(창을 읽었다) | fallback(못 읽어 바닥으로 돈다)."""
+    try:
+        r = await _agent_client(request).get(f"{settings.agent_server_url}/health", timeout=_unary_timeout(settings))
+        ctx = int(r.json().get("context_tokens") or 0) if r.status_code == 200 else 0
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        ctx = 0
+    if ctx <= 0:
+        return _REPORT_TX_FLOOR, "fallback"
+    return max(_REPORT_TX_FLOOR, int(ctx * 0.6)), "server"
 
 
 @router.post("/export/docx")
@@ -903,8 +924,12 @@ async def _export_docx_inner(request, body, principal, settings, audit, conv, ti
         # 세마포어는 바깥(export_docx)에서 이미 잡았다 — 이중 획득 금지.
         # ⚠ acquire 와 try 사이에 아무것도 두지 않는다. 그 틈에서 예외가 나면
         # 퍼밋이 영구히 새고, 상한만큼 쌓이면 챗 전체가 429 로 고정된다(실측 재현).
-        # 대화 전체(총량 상한 400만자)를 문자열로 조립하는 동기 작업이다.
-        _tx = await asyncio.to_thread(dx.transcript_text, conv)
+        # 대화 전체(총량 상한 400만자)를 문자열로 조립하는 동기 작업이다. 모델 창을 넘는 만큼만 뒤를 자르고, 잘랐으면
+        # 받는 사람의 문서 머리와 감사 기록에 원문 길이를 남긴다(종전엔 모델만 '(…이후 생략)' 을 봤다).
+        _full = await asyncio.to_thread(dx.transcript_text, conv)
+        _limit, _window = await _report_tx_limit(request, settings)
+        _tx = _full if len(_full) <= _limit else dx.transcript_text(conv, limit=_limit)
+        _sent = min(len(_full), _limit)
         md = ""
         try:
             # 에이전트는 SSE 만 낸다(비스트리밍 엔드포인트가 없다). 여기서 스트림을 받아
@@ -930,7 +955,7 @@ async def _export_docx_inner(request, body, principal, settings, audit, conv, ti
             md = ""
         audit.record(principal=principal.subject, event="docx_report",
                      status="ok" if md.strip() else "error",
-                     meta={"messages": n_msg})
+                     meta={"messages": n_msg, "tx_chars": len(_full), "tx_sent": _sent, "window": _window})
         if not md.strip():
             return Response(
                 content='{"error":"report_failed","detail":"정리본 생성에 실패했습니다 — '
@@ -938,8 +963,10 @@ async def _export_docx_inner(request, body, principal, settings, audit, conv, ti
                 status_code=503, media_type="application/json")
         first = next((ln.lstrip("# ").strip() for ln in md.splitlines()
                       if ln.startswith("#")), title)
-        data = await asyncio.to_thread(dx.build_report, first, md,
-                                       f"원본 대화 '{title}' · 발화 {n_msg}개")
+        _sub = f"원본 대화 '{title}' · 발화 {n_msg}개"
+        if _sent < len(_full):
+            _sub += f" · 정리에 쓴 것은 원문 {len(_full):,}자 중 앞 {_sent:,}자다(뒤는 모델 창을 넘어 넣지 못했다)"
+        data = await asyncio.to_thread(dx.build_report, first, md, _sub)
         name = f"{first[:50]}-정리본"
 
     safe = re.sub(r'[\\/:*?"<>|]+', " ", name).strip() or "대화"
