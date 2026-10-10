@@ -176,6 +176,8 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
         ...(e.display_round != null ? { displayRound: Number(e.display_round) } : {}),
         persona: String(e.persona ?? ''),
         say: String(e.say ?? ''),
+        // 버블은 줄인 글이다 — 줄이지 않은 글은 따로 쥔다(화면은 say, 내보내기는 sayFull ?? say).
+        ...(typeof e.say_full === 'string' && e.say_full ? { sayFull: e.say_full } : {}),
         ...(e.position ? { position: String(e.position) } : {}),
         ...(e.stance ? { stance: String(e.stance) } : {}),
         ...(e.non_negotiable ? { nonNegotiable: String(e.non_negotiable) } : {}),

@@ -116,10 +116,13 @@ function trimDelib(d: DelibData): DelibData {
     // 합성한다) 저장에 두 번 실으면 한 대화가 쿼터를 먹는다 — 쿼터를 넘기면 저장이 대화
     // 절반을 버리고 재시도하므로(saveConversations catch) 이력이 조용히 날아간다.
     // 관계도는 target·round 만 있으면 그려지고, 본문은 회의록에서 읽는다.
+    // 줄이지 않은 발언(sayFull)은 브라우저에 두지 않는다 — 좌석당 수천~수만 자라 쿼터를 먹는다. 서버 사본이 본문으로 쥔다.
     ...(d.turns
       ? {
-          turns: d.turns.slice(-45).map((t) =>
-            t.rebut?.length
+          turns: d.turns.slice(-45).map((t0) => {
+            const t = { ...t0 };
+            delete t.sayFull;
+            return t.rebut?.length
               ? {
                   ...t,
                   rebut: t.rebut.slice(0, 4).map((r) => ({
@@ -129,8 +132,8 @@ function trimDelib(d: DelibData): DelibData {
                     basis: r.basis.slice(0, 60),
                   })),
                 }
-              : t,
-          ),
+              : t;
+          }),
         }
       : {}),
     ...(evList.length

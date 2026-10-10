@@ -34,7 +34,10 @@ export interface DelibTurn {
   /** 이어하기 회차를 이어 센 번호(엔진 display_round). 라벨·다음 이어하기의 rounds_so_far 는 이것. */
   displayRound?: number;
   persona: string;
+  /** 회의 버블 — 엔진이 화면용으로 줄인 글. 화면은 이것을 그린다. */
   say: string;
+  /** 줄이지 않은 발언(엔진 say_full) — 엔진이 버블을 줄였을 때만 온다. 자료 경로(내보내기·서버 사본)는 이것을 쓴다. */
+  sayFull?: string;
   position?: string; // 입장 한 줄 요약(R1/R3)
   stance?: string; // R3: 동의|조건부 동의|반대
   /** R3 양보 불가 제약 원문 — 이어하기에서 승계해 이전 결정이 되돌아가지 않게 한다(표시용 say 와 별개). */

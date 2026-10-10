@@ -14,6 +14,7 @@ StreamingResponse → nginx buffering-off → fetch+ReadableStream) with no Agen
 """
 
 import asyncio
+import codecs
 import json
 import logging
 import re
@@ -46,18 +47,6 @@ from app.agent import upload as _upload
 from app.deps import ensure, principal_pat_or_session
 
 logger = logging.getLogger(__name__)
-
-
-def _clip(v, n: int) -> str | None:
-    """표식 붙인 절단. 표식 없이 자르면 **잘린 줄도 모른 채** 뒤가 사라진다 —
-    에이전트 서버 `_tool_preview` 와 같은 규약(`…#sha1[:6]`)을 쓴다."""
-    if not v:
-        return None
-    s = str(v)
-    if len(s) <= n:
-        return s
-    import hashlib
-    return s[:n] + "…#" + hashlib.sha1(s.encode("utf-8")).hexdigest()[:6]
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -1497,11 +1486,15 @@ async def chat(
         decision: str | None = None  # 심의 결정문(result 없을 때 폴백)
         turns: list[dict] = []       # 심의 persona 발언 — MCP 경로와 대칭으로 서버에 남긴다
         activity: list[dict] = []    # status 이벤트(도구 호출·결과) 누적 — 심의 핸드오프 스냅샷 서버 영속
+        delib_ev: list[dict] = []    # 심의 근거 카드(좌석 조회 결과·엔진의 '줄였다·뺐다' 알림) — 서버 사본에도 남긴다
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
+        # 청크는 글자 경계와도 안 맞는다 — 한글 한 자(3바이트)가 두 청크로 갈리면 청크마다 따로 풀 때 그 자리가 '�' 로
+        # 깨져 서버 사본에 들어간다. 발언이 길수록(줄이지 않은 글은 수만 자다) 걸린다. 이어지는 바이트를 쥐고 푼다.
+        dec = codecs.getincrementaldecoder("utf-8")(errors="replace")
         try:
             async for frame in source:
                 if store is not None:
-                    buf += frame.decode(errors="replace") if isinstance(frame, bytes) else str(frame)
+                    buf += dec.decode(frame) if isinstance(frame, bytes) else str(frame)
                     while "\n\n" in buf:
                         one, buf = buf.split("\n\n", 1)
                         parsed = _parse_sse_frame(one)
@@ -1515,6 +1508,10 @@ async def chat(
                         elif evt == "delib":
                             k = data.get("kind")
                             if k == "turn" and isinstance(data.get("say"), str):
+                                # say 는 회의 버블용으로 줄인 글이다. 엔진은 줄였을 때만 줄이지 않은 글(say_full)과
+                                # 그 원래 길이(say_full_chars)를 같은 이벤트에 따로 싣는다 — 서버 사본(다른 기기·이어가기·
+                                # Claude 가 읽는 정본)은 그쪽을 남기고 버블은 meta.say 로 둔다(화면이 버블을 그린다).
+                                _full = data.get("say_full")
                                 turns.append({"persona": data.get("persona"),
                                               # 이어하기 회차를 이어 센 번호로 저장한다 — MCP 경로
                                               # (JS rn())와 같은 의미. 회차 안 번호(round)로 두면
@@ -1522,7 +1519,12 @@ async def chat(
                                               "round": (data.get("display_round")
                                                         if isinstance(data.get("display_round"), int)
                                                         else data.get("round")),
-                                              "content": data["say"],
+                                              "content": (_full if isinstance(_full, str) and _full
+                                                          else data["say"]),
+                                              "say": data["say"],
+                                              "say_full_chars": (data["say_full_chars"]
+                                                                 if isinstance(data.get("say_full_chars"), int)
+                                                                 else None),
                                               # 관계·입장은 say 산문에 녹아 있지만 구조로 남기지
                                               # 않으면 다른 기기에서 열었을 때 관계도가 비고
                                               # 이어하기가 조항을 승계하지 못한다(감사 2026-09-11).
@@ -1531,6 +1533,11 @@ async def chat(
                                               "rebut": data.get("rebut")})
                             elif k == "decision" and isinstance(data.get("text"), str):
                                 decision = data["text"]
+                            elif k == "evidence":
+                                # 근거 카드는 엔진이 '좌석에 주지 않았다·줄였다·좌석이 유실됐다' 를 알리는 유일한
+                                # 길이다(notice). 종전엔 서버 사본에 남지 않아 다른 기기·새로고침 뒤에는 알림이 사라지고,
+                                # 좌석이 조회한 근거(이어하기가 승계한다)도 브라우저 사본 최근 4건만 남았다. 그대로 둔다.
+                                delib_ev.append({kk: vv for kk, vv in data.items() if kk != "kind"})
                         elif evt == "status" and data.get("tool"):
                             # 도구가 붙은 status 만 근거로 남긴다(진행 텍스트만 있는 건 스냅샷 대상 아님).
                             activity.append({
@@ -1548,16 +1555,20 @@ async def chat(
                                 "ms": (int(data["ms"]) if isinstance(data.get("ms"), int) else None),
                                 "ok": (bool(data["ok"]) if isinstance(data.get("ok"), bool) else None),
                                 "detail": (str(data.get("detail"))[:400] if data.get("detail") else None),
-                                # 절차 도출용 날것 — 미리보기로 만든 절차는 인자가 손상돼 있다
-                                "detail_full": _clip(data.get("detail_full"), 4000),
+                                # 절차 도출용 날것 — 미리보기로 만든 절차는 인자가 손상돼 있다.
+                                # ⚠ 다시 자르지 않는다. 에이전트가 HANDOFF_RESULT_CHARS 에서 자르고 `…#sha6` 표식을 붙여
+                                #   보낸다 — 여기서 한 번 더 자르면 그 표식이 떨어지고, 에이전트 손잡이를 올려도 서버 사본·
+                                #   절차 원장은 이 자리의 숫자에 묶였다.
+                                "detail_full": (str(data["detail_full"]) if data.get("detail_full") else None),
                                 "result_preview": (str(data.get("result_preview"))[:2000]
                                                    if data.get("result_preview") else None),
                                 # 핸드오프용 날것 — 이것을 안 남기면 새로고침 뒤 심의로 넘길 때
                                 # 220자 미리보기만 남는다(감사 C45 — result_full 채널을 뚫어놓고
                                 # 서버 스냅샷이 버리고 있었다).
                                 # ⚠ 에이전트는 4000자를 보내는데 여기서 2000 으로 **다시**
-                                # 잘랐다(표식 없이). 잘린 줄도 모르고 뒤가 사라졌다.
-                                "result_full": _clip(data.get("result_full"), 4000),
+                                # 잘랐다(표식 없이). 잘린 줄도 모르고 뒤가 사라졌다. 그 뒤 4,000자로 맞췄지만
+                                # 같은 숫자를 두 곳에 두면 한쪽만 올린 날 다시 묶인다 — 자르는 것은 에이전트 하나다.
+                                "result_full": (str(data["result_full"]) if data.get("result_full") else None),
                             })
                 yield frame
         finally:
@@ -1570,38 +1581,43 @@ async def chat(
                 def _save() -> None:
                     # ⚠ 저장이 실패하면 **로그로 말한다.** 여기는 스트림이 닫힌 뒤라 예외가 나도 화면에 갈 길이 없고,
                     #   로그가 없으면 몇 시간 돈 심의의 서버 사본이 빠진 것을 아무도 모른다(브라우저 사본만 남는다).
-                    #   첫 실패에서 멈춘다 — 잠긴 DB 에 발언마다 다시 기다리면 199건 × 잠금 대기가 된다.
+                    #   첫 실패에서 멈춘다 — 잠긴 DB 에 발언마다 다시 기다리면 발언 수 × 잠금 대기가 된다.
                     try:
-                        # ⚠ 머리 60 이면 잘리는 쪽이 뒤 = 수렴 라운드의 최종 입장이다(감사 C41).
-                        #   캡은 서버 생성 상한(200)에 맞추고 꼬리를 지킨다 — 초기입장보다 최종입장이
-                        #   이어가기·재열람에 더 값나간다. 잘리면 로그를 남긴다.
-                        if len(turns) > 199:
-                            logger.warning("심의 발언 %d건 중 뒤 199건만 저장(cid=%s)", len(turns), cid)
-                        for t in turns[-199:]:  # 심의 발언 수 캡(폭주 방어) — 꼬리 유지
-                            # meta 는 이미 있는 칸이라 스키마 변경이 필요 없다. 관계는 target·round 만
-                            # 있으면 그려지므로 본문은 짧게 자른다(원문은 content 에 이미 있다).
+                        # 자르지 않는다 — 이 사본은 끝난 심의의 서버 정본이다(다른 기기·Claude·GLM 이어가기가 읽는다).
+                        # 종전엔 발언을 뒤 199건·20,000자, 조항을 1,200자, 반박을 4건·인용 80자, 도구 활동을 60건에서
+                        # 표식 없이 잘랐다. 저장소(TEXT)에는 길이 상한이 없고, 이 글은 우리 엔진이 낸 것이다.
+                        for t in turns:
+                            # meta 는 이미 있는 칸이라 스키마 변경이 필요 없다. 관계는 target·round 만 있으면 그려지고,
+                            # 조항은 이어하기가 이 칸에서 승계한다.
                             _m: dict = {}
                             if t.get("stance"):
-                                _m["stance"] = str(t["stance"])[:40]
+                                _m["stance"] = str(t["stance"])
                             if t.get("non_negotiable"):
-                                _m["non_negotiable"] = str(t["non_negotiable"])[:1200]
+                                _m["non_negotiable"] = str(t["non_negotiable"])
                             if isinstance(t.get("rebut"), list) and t["rebut"]:
                                 _m["rebut"] = [
-                                    {"target": str(r.get("target") or "")[:60],
-                                     "quote": str(r.get("quote") or "")[:80],
-                                     "counter": str(r.get("counter") or "")[:160],
-                                     "basis": str(r.get("basis") or "")[:60]}
-                                    for r in t["rebut"][:4] if isinstance(r, dict)
+                                    {"target": str(r.get("target") or ""),
+                                     "quote": str(r.get("quote") or ""),
+                                     "counter": str(r.get("counter") or ""),
+                                     "basis": str(r.get("basis") or "")}
+                                    for r in t["rebut"] if isinstance(r, dict)
                                 ]
+                            _content = str(t["content"])
+                            if t.get("say") is not None and t["say"] != _content:
+                                _m["say"] = str(t["say"])          # 회의 버블 — 화면이 그린다(본문은 content)
+                            if isinstance(t.get("say_full_chars"), int) and t["say_full_chars"] > len(_content):
+                                # 엔진이 줄이지 않은 글마저 DELIB_TRANSCRIPT_CLIP 에서 잘랐다 — 원래 길이를 남긴다.
+                                _m["say_full_chars"] = t["say_full_chars"]
                             store.append(conversation_id=cid, owner_sub=owner, role="persona",
-                                         content=str(t["content"])[:20000],
+                                         content=_content,
                                          persona=(str(t["persona"])[:120] if t.get("persona") else None),
                                          round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
                                          meta=(_m or None))
                         reply = final if final is not None else (decision or "".join(acc))
                         if reply:
+                            _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev)) if v}
                             store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
-                                         meta=({"activity": activity[:60]} if activity else None))
+                                         meta=(_am or None))
                     except sqlite3.Error as exc:
                         logger.warning("대화 저장 실패 — %s(잠금 대기 CONV_STORE_BUSY_TIMEOUT_S=%s초), cid=%s · 심의 발언 %d건과 "
                                        "최종 응답 중 일부가 서버 대화에 없다", exc, settings.conv_store_busy_timeout_s, cid,

@@ -76,7 +76,10 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       turns.push({
         round: m.round ?? 0,
         persona: m.persona ?? '',
-        say: m.content,
+        // 웹 심의의 서버 사본은 줄이지 않은 발언을 본문에, 회의 버블을 meta.say 에 둔다 — 화면은 라이브와 같이 버블을 그린다.
+        // MCP 가 저장한 발언은 버블이 따로 없다(본문 그대로).
+        say: typeof meta.say === 'string' ? meta.say : m.content,
+        ...(typeof meta.say === 'string' ? { sayFull: m.content } : {}),
         ...(typeof meta.stance === 'string' ? { stance: meta.stance } : {}),
         ...(typeof meta.non_negotiable === 'string' ? { nonNegotiable: meta.non_negotiable } : {}),
         ...(Array.isArray(meta.rebut) && meta.rebut.length
@@ -92,12 +95,29 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 연속이므로 최소값으로 회차 안 번호를 되살린다 — 라운드 묶음·수렴 판정이 그걸 쓴다.
       const off = Math.min(...turns.map((t) => t.round || 1)) - 1;
       const local = turns.map((t) => ({ ...t, displayRound: t.round, round: (t.round || 1) - off }));
+      // 근거 카드 — 좌석이 조회한 것(이어하기가 승계한다)과 엔진의 '줄였다·뺐다' 알림. 서버 사본에 없으면 다른 기기에서는 사라진다.
+      const ev = (m.meta as { delib_evidence?: { source?: unknown; text?: unknown; included?: unknown; notice?: unknown }[] } | null)
+        ?.delib_evidence;
       out.push({
         id: newId(),
         role: 'assistant',
         text: m.content,
         ts,
-        delib: { turns: local, decision: m.content, totalRounds: Math.max(...local.map((t) => t.round)) },
+        delib: {
+          turns: local,
+          decision: m.content,
+          totalRounds: Math.max(...local.map((t) => t.round)),
+          ...(Array.isArray(ev) && ev.length
+            ? {
+                evidence: ev.map((e) => ({
+                  source: String(e.source ?? ''),
+                  text: String(e.text ?? ''),
+                  included: Boolean(e.included),
+                  ...(e.notice ? { notice: true } : {}),
+                })),
+              }
+            : {}),
+        },
       });
       turns = [];
     } else {
