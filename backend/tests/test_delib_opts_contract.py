@@ -203,3 +203,79 @@ def test_검색어_모양이_틀리면_소리_내_막는다(bad):
 
     with pytest.raises(ValidationError):
         ChatRequest(message="/심의 화두", delib_opts=bad)
+
+
+# ── 좌석 검색어 · 보고서 저장 — 포털이 낸 값을 엔진이 실제로 읽는가(형제 리포의 실제 _resolve_opts) ─────────────
+# 위 시험들은 포털 모델만 본다. 검색어의 두 상한(값 하나 600자 · 좌석별 사전 64항목)은 포털 routes.py 와 엔진
+# deliberation.py 에 따로 적혀 있어, 한쪽만 고치면 포털이 엔진이 받는 값을 422 로 막거나(포털이 작을 때) 엔진이
+# 포털을 지난 값을 말없이 줄인다(엔진이 작을 때). 그래서 엔진 소스의 상수 줄을 읽어 포털 모델을 **동작으로** 견주고,
+# 포털 모델이 낸 출력을 JSON 으로 엔진의 실제 _resolve_opts 에 넣어 읽은 값을 돌려받는다(소비자의 입력을 생산자의
+# 실제 출력으로 만든다 — docs/risk-review-redesign PLAN 9절).
+def _engine_const(name: str) -> int:
+    """엔진 소스의 `이름 = 수` 한 줄(주석 없이) — 못 찾으면 실패한다. 추출이 깨졌는데 조용히 통과하는 것이 최악이다."""
+    m = re.search(rf"^{name}\s*=\s*(\d+)\s*$", _ENGINE.read_text(encoding="utf-8"), re.M)
+    assert m, (f"deliberation.py 에서 `{name} = 수` 줄을 못 찾았다 — 이름을 바꿨거나 같은 줄에 주석·식을 붙였으면 "
+               "엔진을 그 꼴로 되돌리거나 이 추출을 고쳐라")
+    return int(m.group(1))
+
+
+def test_검색어_상한은_엔진과_같은_수다():
+    if not _ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {_ENGINE}")
+    from pydantic import ValidationError
+
+    n, k = _engine_const("_KNOWLEDGE_Q_MAX"), _engine_const("_KNOWLEDGE_Q_KEYS_MAX")
+    assert DelibOpts(knowledge_query="가" * n).knowledge_query == "가" * n, (
+        f"포털이 엔진 상한({n}자)까지의 검색어를 그대로 못 넘긴다")
+    with pytest.raises(ValidationError):    # 포털이 더 크면 엔진이 포털을 지난 값을 말없이 줄인다
+        DelibOpts(knowledge_query="가" * (n + 1))
+    assert DelibOpts(knowledge_query={"seat": "가" * n}).knowledge_query == {"seat": "가" * n}
+    with pytest.raises(ValidationError):
+        DelibOpts(knowledge_query={"seat": "가" * (n + 1)})
+    full = {f"seat-{i}": "q" for i in range(k)}
+    assert DelibOpts(knowledge_query=full).knowledge_query == full, f"포털이 엔진 상한({k}항목)의 사전을 못 넘긴다"
+    with pytest.raises(ValidationError):
+        DelibOpts(knowledge_query={f"seat-{i}": "q" for i in range(k + 1)})
+
+
+# 엔진이 읽은 값만 찍는다 — 경우마다 (검색어, 보고서 저장, 읽지 못한 값, 줄인 값).
+_ENGINE_READ = (
+    "import json, sys, deliberation as d\n"
+    "out = []\n"
+    "for req in json.load(sys.stdin):\n"
+    "    o = d._resolve_opts(req)\n"
+    "    out.append({'kq': o.knowledge_query, 'save': o.save_report, 'unread': o.req_unread, 'cut': o.req_cut})\n"
+    "print(json.dumps(out, ensure_ascii=False))\n"
+)
+
+
+def test_포털이_낸_값을_엔진이_실제로_읽는다():
+    if not _ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {_ENGINE}")
+    import json
+    import os
+    import subprocess
+    import sys
+
+    from app.agent.routes import ChatRequest
+
+    n = _engine_const("_KNOWLEDGE_Q_MAX")
+    one = "C-12 리브 두께 0.8→0.6 mm · 커넥터 간극 축소"
+    # 좌석 키는 포털 상한(120자) 끝까지 — 엔진이 그보다 짧게 끊으면 이 좌석의 검색어가 엔진에서 다른 키로 읽힌다.
+    by_seat = {"mech-a": "리브 두께 감소 강성", "*": "커넥터 간극 축소", "k" * 120: "가" * n}
+    cases = [{"knowledge_query": one}, {"knowledge_query": "가" * n}, {"knowledge_query": by_seat},
+             {"knowledge_query": {f"seat-{i}": f"검색어 {i}" for i in range(_engine_const("_KNOWLEDGE_Q_KEYS_MAX"))}},
+             {"save_report": 0}]
+    wire = [ChatRequest(message="/심의 화두", delib_opts=c).delib_opts.model_dump(exclude_none=True) for c in cases]
+    assert wire == cases, "포털 모델이 값을 바꾸거나 버렸다 — 엔진에 닿기 전에 갈라졌다"
+    r = subprocess.run([sys.executable, "-c", _ENGINE_READ], input=json.dumps(wire, ensure_ascii=False),
+                       cwd=_ENGINE.parent, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                       capture_output=True, text=True, timeout=120)
+    # 형제 리포가 있는데 엔진을 못 부르면 건너뛰지 않는다 — 건너뜀은 통과가 아니다.
+    assert r.returncode == 0, f"엔진 _resolve_opts 를 이 venv 로 부르지 못했다 — {r.stderr.strip()[-600:]}"
+    got = json.loads(r.stdout)
+    for sent, read in zip(wire, got):
+        assert read["kq"] == sent.get("knowledge_query", ""), f"엔진이 포털이 낸 검색어를 다르게 읽었다 — {sent}"
+        assert read["save"] == sent.get("save_report", 1), f"엔진이 포털이 낸 보고서 저장 값을 다르게 읽었다 — {sent}"
+        assert read["unread"] == {} and read["cut"] == {}, (
+            f"포털을 지난 값을 엔진이 못 읽거나 줄였다 — 두 리포의 모양·상한이 갈라졌다: {read}")
