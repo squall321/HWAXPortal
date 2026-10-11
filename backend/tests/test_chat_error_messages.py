@@ -215,6 +215,26 @@ def test_결정문_없이_끝난_심의는_연결_실패나_도구_실패로_보
         assert got[k]["hint"] == raws[k], f"{k}: 한도가 아닌 사유에 한도 손잡이를 덧붙이지 않는다(닿지 않는 것은 늘려서 풀리지 않는다)"
 
 
+_LOOP_CAP = ("한 턴의 도구 왕복 상한(AGENT_RECURSION_LIMIT=80 — 연속 왕복 약 39회)에 걸려 답을 끝내지 못했습니다. 같은 질문을 그대로 "
+             "다시 보내면 같은 도구를 처음부터 다시 실행합니다 — 범위를 나눠 물어 주세요.")
+
+
+def test_도구_왕복_상한은_다시_시도를_내지_않는다(front):
+    """챗 한 턴이 도구를 상한(AGENT_RECURSION_LIMIT)만큼 돌고 끝나지 못하면 엔진은 error(tool_loop_limit)로 끝낸다. 같은 질문을
+    다시 보내면 같은 도구를 처음부터 다시 실행한다(부작용 있는 도구도) — 화면이 '다시 시도' 를 내면 사용자가 그것을 누른다."""
+    (got,) = front(friendly=[_LOOP_CAP])["friendly"]
+    assert got == {"title": "한 턴의 도구 왕복 상한에 걸렸습니다", "hint": _LOOP_CAP, "retry": False}
+
+
+def test_도구_왕복_상한의_글자를_엔진이_아직_그렇게_말한다():
+    """화면은 엔진 글에 든 손잡이 이름(AGENT_RECURSION_LIMIT)으로 이 갈래를 알아본다 — 엔진이 글을 바꾸면 화면은 조용히 기본
+    갈래로 돌아가 '다시 시도' 를 다시 낸다."""
+    app_src = _engine_src("app.py")
+    assert '"code": "tool_loop_limit"' in app_src and "한 턴의 도구 왕복 상한(AGENT_RECURSION_LIMIT=" in app_src, (
+        "엔진의 도구 왕복 상한 글이 바뀌었다 — chatErrors.ts 의 AGENT_RECURSION_LIMIT 갈래와 이 파일의 _LOOP_CAP 을 맞춘다")
+    assert "r.includes('AGENT_RECURSION_LIMIT')" in (FE / "src/lib/chatErrors.ts").read_text(encoding="utf-8")
+
+
 def _engine_src(name: str) -> str:
     if not (_ENGINE / name).exists():
         pytest.skip(f"형제 리포 없음: {_ENGINE}")

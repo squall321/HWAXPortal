@@ -57,6 +57,10 @@ export function friendlyError(raw: string): { title: string; hint?: string; retr
   if (r.includes('LLM_TIMEOUT_S'))
     return { title: 'LLM 응답이 제한 시간 안에 오지 않았습니다', hint: r, retry: true };
   if (r.startsWith(STREAM_CUT)) return { title: STREAM_CUT, hint: afterDash(r), retry: true };
+  // 챗 한 턴의 도구 왕복 상한(AGENT_RECURSION_LIMIT) — 일시 장애가 아니다. 같은 질문을 다시 보내면 같은 도구를 처음부터 다시
+  // 실행하고(부작용 있는 도구도) 같은 자리에서 또 걸린다. 엔진 글이 범위를 나눠 물으라고 말한다 — 다시 시도 버튼을 내지 않는다.
+  if (r.includes('AGENT_RECURSION_LIMIT'))
+    return { title: '한 턴의 도구 왕복 상한에 걸렸습니다', hint: r, retry: false };
   // 같은 값으로 다시 보내면 같은 거절이다 — 다시 시도 버튼을 내지 않는다.
   if (r.startsWith(REJECTED))
     return {
