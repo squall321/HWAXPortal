@@ -62,7 +62,7 @@
 - [x] 반대 검토 1차(아홉 관점, 49건) → 고침 → 2차(15건) → 고침 → 3차(5건) → 고침(2026-10-10~11)
 - [x] 두 방식 공존 결정(D-24) — 패널 방식은 그대로 남는다
 - [x] `WP1 S17·P3` 문서·업데이트 이력·절차서(`truncation.md`·`server-setup-m1.md`·업데이트 이력 10-11 두 건)
-- [ ] dev 나갈 기준(패널 셋 연속 `done` 외) — 다섯 리포 시험 전체 통과(리스크 앱·엔진 1,415·포털 2,128·게이트웨이 320·AIDataHub 344, 파리티·sync 일치, 10-11). **남은 것은 실 LLM 으로 합성 타깃 패널 셋** — 주입 스크립트는 있다(HWAXRisk `tests/synth/inject_dev.py`, 7db27db — diff 까지만, 명단은 `risk_open_target` 이 받는다). dev 원장에 쓰는 실행과 러너 자격(사용자 등록 PAT — dev 에 서비스 PAT 없음)은 사용자 몫이다
+- [x] dev 나갈 기준(10-11) — 다섯 리포 시험 전체 통과(리스크 앱 1,615·엔진 1,415·포털 2,128·게이트웨이 320·AIDataHub 344, 파리티·sync 일치). 실 LLM(dev 7B) 합성 40건 Tier A 패널 셋 연속 `done`, 패널 1 은 저장 실패 → `risk_repersist_panel` → `done`, 판단어 이름 부품 `brief_error` 0, 변경 목록 실명·값과 생략 표기. 실주행이 찾은 둘을 고쳤다 — 의장 출력 모양 맞추기(ff747e7)·Claude 다시 저장 도구(c3f46ba). 자세히는 context-notes D-25
 - [x] push · hwax-risk SIF · Drive · dev 재기동(10-11 — 여섯 리포 push, SIF `6d6650a` 로 교체·스키마 v3 이행·사본 `pre-migrate-v2-*`, 엔진·게이트웨이·AIDataHub·포털 리스너 새 pid, 게이트웨이 리스크 도구 25종·`risk_next_step` 위임 신원 `delegated:true`·`folded-old-app` 0, Drive 는 hwax-risk.sif·포털 dist)
 - [ ] cae00 나갈 기준(사용자)
 

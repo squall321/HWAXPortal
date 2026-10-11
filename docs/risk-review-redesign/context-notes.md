@@ -149,3 +149,14 @@ D-21 의 귀결이다. 반대 검토가 막는 문제로 올린 '박스 한도�
 - 새 방식의 쟁점 토의(M3)는 같은 패널 엔진을 쟁점 단위로 쓴다. Claude Code 보충 회차(`hwax-risk-review.js`)는 `panels` 대상에서 그대로 쓰고 `cells` 대상에서만 막는다.
 - 회귀 가드 — M2·M3 의 모든 걸음은 `panels` 대상이 종전과 같이 도는지(옛 타깃 픽스처·합성 다건 패널 셋 연속 done)를 시험으로 지킨다.
 
+
+## 2026-10-11 덧붙임 — dev 나갈 기준 실주행
+
+**D-25 의장 출력의 모양은 정규화 첫 걸음에서 계약 모양으로 맞춘다. 저장이 실패한 패널은 Claude 에서도 다시 저장한다.**
+dev 실주행(qwen 7B · 합성 40건 `DEVSEED-40-20261009` · Tier A 패널 셋)의 첫 패널이 persist_error 로 닫혔다. 의장이 `coverage.seats` 에 좌석 목록 대신 좌석 수 4 를 써 `for s in 4` 에서 죽었다. 같은 출력에서 `raised_by`·`contested_by`·`statements.by` 는 문자열 하나였고 `resolving_check` 는 객체 대신 문장이었다.
+- 자리마다 고치지 않는다. 정규화 첫 걸음에서 스키마(risk_spec.v1)를 걸어 목록·객체 자리를 맞춘다(HWAXRisk ff747e7). 하나짜리(문자열·객체 하나)는 한 항목 목록으로 읽는다. 다른 모양은 빈 값으로 읽고 원래 값을 `invalid_enum`(field=shape)에 남긴다(버리지 않는다).
+- 문자열을 그대로 두면 글자로 쪼개져 `raised_by=["c","a","m",…]` 처럼 조용히 틀린 값이 남는다. 죽는 것보다 나쁘다. GLM 도 모양을 틀릴 수 있어 dev 전용 처방이 아니다.
+- 결과 선저장(WP1 S2)은 설계대로 결과를 지켰다. 다만 다시 저장이 REST 뿐이라 Claude 로 돌린 심사는 Claude 에서 풀 수 없었다 → `risk_repersist_panel`(HWAXRisk c3f46ba, 입구 12종 · 도구 26종). 길잡이는 도는·멈춘 잡의 다음 걸음 맨 앞에 그것을 둔다.
+- 합성 과제 주입은 `tests/synth/inject_dev.py`(7db27db)다. diff 까지만 넣고 명단은 실제 입구(`risk_open_target`)가 AIDataHub 에서 받는다. 주입한 과제는 소스가 없어 길잡이가 'sources' 에서 멈춘다(실 과제·가져온 과제는 소스가 있어 해당 없음). 그래서 이번 주행은 도구를 id 로 직접 불렀다.
+- 결과 — 패널 셋 연속 `done`(LLM 호출 47·44·68). 패널 1 은 저장 실패 → 다시 저장(Claude 도구) → `done` 이다. 판단어 이름 부품(HOOK_LATCH·PASSIVE_PAD·강화유리 WINDOW)이 세 브리프에 다 실렸고 `brief_error` 0. 변경 목록은 실명과 값(예: `penetration_depth 0.050→0.020 mm (−60.0%)`)을 싣는다. 감소 변화는 부호 때문에 꼬리로 밀리지 않는다(−60% 가 5번째). 다만 두께 감소(−25%)는 종류 순서 때문에 42줄 가운데 뒤쪽(38·40번째)이다. dev 16K 창이라 54줄 가운데 12줄이 빠졌고 꼬리에 `전체 54건 — 실림 42 · 생략 12 | 종류별 수` 가 붙었다(cae00 1백만 토큰 창에서는 빠지지 않는다).
+- 품질 깃발(7B 출력의 질, 나갈 기준 밖) — `low_ir_cite`·`header_mismatch`·`coverage_mismatch`·`adversary_silent|overreject`·`brief_clipped`·`knowledge_query_cut`·`engine_withheld`. 뒤의 셋은 16K 창 탓이다.

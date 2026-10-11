@@ -1,8 +1,8 @@
 # 서버(cae00)에서 할 일 — 리스크 심사 M1(패널 수리·1백만 토큰·Claude 입구)
 
 > 대상: cae00 운영자 · **대조 시점 2026-10-11** · 보낸 쪽: dev(이 리포 `docs/risk-review-redesign/`).
-> 반영되는 리포와 push 된 커밋(2026-10-11) — HWAXRisk `6d6650a`(리스크 앱 SIF, Drive 에도 올림) · HWAXAgentServer `7644284` · HWAXMcpGateway `9dc6c01` · AIDataHub `b401f88` · HEAXHub `d65990c`(등록 사본) · HWAXPortal 은 이 문서를 담은 커밋(프론트 dist 는 Drive 에도 올림). 이보다 새 커밋이 있어도 update-all 이 함께 받는다.
-> dev 에서는 같은 커밋으로 다섯 구성 요소를 다시 띄워 §3 의 ①③④⑤ 를 확인했다(② 는 dev 창이 16K 라 2,000 이 맞다).
+> 반영되는 리포와 push 된 커밋(2026-10-11) — HWAXRisk `c3f46ba`(리스크 앱 SIF, Drive 에도 올림) · HWAXAgentServer `7644284` · HWAXMcpGateway `9dc6c01` · AIDataHub `b401f88` · HEAXHub `04c0930`(등록 사본) · HWAXPortal 은 이 문서를 담은 커밋(프론트 dist 는 Drive 에도 올림). 이보다 새 커밋이 있어도 update-all 이 함께 받는다.
+> dev 에서는 같은 커밋으로 다섯 구성 요소를 다시 띄워 §3 의 ①③④⑤ 를 확인했다(② 는 dev 창이 16K 라 2,000 이 맞다). 합성 40건 과제로 Claude 에서 Tier A 패널 셋을 끝까지 돌렸다(context-notes D-25).
 > 명령은 각 리포 루트에서 돈다(cae00 은 `~/Projects/<Repo>`). 근거는 줄 번호가 아니라 **출력 문구**로 가리킨다.
 > 이 박스의 지금 상태는 이 문서가 알지 못한다. 그래서 확인마다 재는 명령을 적었다.
 
@@ -14,7 +14,7 @@
 - **리스크 앱 패널이 끝까지 돈다.** 같은 과제의 두 번째 패널부터 저장이 실패하던 것, 저장이 터지면 결과를 잃던 것(이제 먼저 남기고 '다시 저장' 한다), 부품 이름의 낱말 때문에 브리프가 죽던 것을 고쳤다.
 - **리스크 앱 DB 가 스키마 v3 로 오른다.** 새 SIF 가 처음 뜰 때 스스로 올리고 직전 사본을 남긴다. 옛 SIF 는 v3 DB 를 열지 못한다(§4).
 - **글자를 자르지 않는다.** 엔진·포털·게이트웨이·AIDataHub 의 상한을 GLM-5.2 의 1백만 토큰 창에서 유도한다. `.env` 에 적어 둔 옛 상한이 있으면 그 값이 천장으로 걸린다(§1 확인 2).
-- **Claude 에서 과제를 올리고 리스크 심사를 시작할 수 있다.** 리스크 앱 도구가 14종에서 25종이 된다(`risk_next_step` 부터). 쓰기 도구는 게이트웨이가 확인한 **본인 신원으로만** 쓴다. 리스크 앱 MCP 를 개인 토큰으로 **직접 등록한 길은 읽기 전용**이 된다.
+- **Claude 에서 과제를 올리고 리스크 심사를 시작할 수 있다.** 리스크 앱 도구가 14종에서 26종이 된다(`risk_next_step` 부터, 저장이 실패한 패널의 다시 저장 `risk_repersist_panel` 포함). 쓰기 도구는 게이트웨이가 확인한 **본인 신원으로만** 쓴다. 리스크 앱 MCP 를 개인 토큰으로 **직접 등록한 길은 읽기 전용**이 된다.
 
 ## 1. 돌리기 전 확인
 
@@ -55,7 +55,7 @@ grep -nE '^(DELIB_(SEAT_CTX|SER_CLIP|TRANSCRIPT_CLIP|KNOWLEDGE_BUDGET|CHAT_CONTE
 |---|---|---|---|
 | ① | 리스크 앱 DB 가 v3 다 | `./infra/scripts/risk-review-inventory.sh` | `스키마 버전: 3` |
 | ② | 엔진이 1백만 토큰 창으로 근거 예산을 잡았다 | 같은 출력의 `health:` 줄 | `evid_budget` 이 389,648 안팎이다. 2,000 이나 20,067 이면 창을 못 읽었거나(§1 확인 2 의 손잡이·`LLM_CONTEXT_TOKENS`) 옛 엔진이다 |
-| ③ | 게이트웨이에 리스크 앱 새 도구가 뜬다 | Claude 에서 `list_tool_apps(app='heax-hwax_risk')` | 도구 25종, 그 안에 `risk_next_step` 이 있다. 14종이면 허브가 아직 옛 SIF 다 |
+| ③ | 게이트웨이에 리스크 앱 새 도구가 뜬다 | Claude 에서 `list_tool_apps(app='heax-hwax_risk')` | 도구 26종, 그 안에 `risk_next_step`·`risk_repersist_panel` 이 있다. 그보다 적으면 허브가 아직 옛 SIF 다 |
 | ④ | Claude 쓰기가 본인 이름으로 된다 | Claude 에서 `risk_next_step` | 응답이 오고 `delegation_required` 가 없다. 있으면 그 응답의 `detail.fix` 를 따른다 |
 | ⑤ | 게이트웨이 감사에 옛 앱 표식이 늘지 않는다 | 게이트웨이 리포 루트에서 `grep -c folded-old-app audit.jsonl`(감사 경로를 `GATEWAY_AUDIT` 로 바꾼 박스는 그 파일)을 리스크 앱을 새로 띄운 직후와 Claude 로 리스크 도구를 한 번 부른 뒤에 두 번 센다 | 두 수가 같다. 늘었으면 허브가 아직 옛 SIF 로 돈다 |
 
