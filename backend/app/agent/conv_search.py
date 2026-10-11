@@ -13,11 +13,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import struct
 import time
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 # 임베딩 공간의 이름. 모델이 바뀌면 이 값을 바꿔야 하고, 그러면 옛 벡터는 자동으로 무시된다
 # (vectors_for 가 model 로 거른다). 섞인 채로 코사인을 재는 것이 가장 나쁜 실패다.
@@ -44,9 +47,16 @@ _SHORT_FLOOR = 0.75    # 명백한 무관만 쳐내는 느슨한 바닥
 # 게이트웨이가 먼저 포기하는데 핸들러는 계속 돌고, 벡터를 쓰기 전에 다음 검색이 같은 미색인분을 다시 보낸다. 웹 심의의 서버 사본이
 # 좌석 발언을 줄이지 않은 글로 건수 상한 없이 남기면서(수천 자 × 좌석 × 라운드) 큰 심의 뒤 첫 검색이 이 한도에 닿는다. 예산에서
 # 멈추고 남은 수는 응답의 index.not_indexed_yet·partial 이 말한다 — 다음 검색이 잇는다.
+# 시계는 임베딩 묶음마다 본다 — 메시지 사이에서만 보면 1M 창에 붙여 넣은 메시지 하나(최대 4,194,304자 = 5,592조각 = 임베딩 88번)가
+# 예산과 무관하게 끝까지 돌았다(검토 RR2-PF-2). 예산 안에 끝낼 수 없는 메시지는 요청 밖에서 색인한다(_index_outside).
 REINDEX_BUDGET_S = 60.0
 _EMBED_BATCH = 64
 _clock = time.monotonic   # 시험이 시계를 바꿔 끼운다
+# 요청 밖에서 색인 중인 message_id — 그동안 검색이 같은 메시지를 다시 임베더에 보내지 않게 한다(P-8 의 이중 색인). 포털은 uvicorn
+# 프로세스 하나로 뜬다(infra/apptainer/portal.def) — 프로세스 안 집합으로 충분하다. 재기동으로 태스크가 끊기면 쓴 것이 없으니 다음 검색이
+# 다시 넘긴다.
+_OUTSIDE: set[str] = set()
+_OUTSIDE_TASKS: set[asyncio.Task] = set()   # 이벤트 루프는 태스크를 약하게만 쥔다 — 끝날 때까지 참조를 잡아 둔다
 
 
 def chunks(text: str) -> list[str]:
@@ -90,19 +100,31 @@ async def embed(texts: list[str], base_url: str, kind: str = "passage",
     return vecs
 
 
+def _rows(m: dict, cs: list[str], owner_sub: str) -> list[dict]:
+    return [{"message_id": m["message_id"], "chunk_ix": ix, "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
+             "text": c, "model": MODEL, "dim": DIM} for ix, c in enumerate(cs)]
+
+
 async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000,
-                  budget_s: float = REINDEX_BUDGET_S) -> dict:
+                  budget_s: float = REINDEX_BUDGET_S, spawn=None) -> dict:
     """아직 벡터가 없는 내 메시지를 색인한다. 증분이며, 여러 번 불러도 안전하다.
 
-    budget_s 를 넘기면 새 메시지를 더 꺼내지 않고 멈춘다(budget_hit) — 남은 것은 다음 검색이 잇는다. 벡터는 임베딩 한 묶음
-    (조각 64개 남짓)을 끝낼 때마다 쓴다. 메시지 하나의 조각은 한 묶음에 다 들어가므로, 쓰인 메시지는 조각을 전부 가진다(반쪽만
-    쓰면 '색인됨' 으로 분류돼 뒤쪽 조각을 영영 못 찾는다). 임베더가 중간에 실패해도 앞서 끝낸 묶음은 남는다."""
+    budget_s 를 넘기면 멈춘다(budget_hit) — 시계는 메시지 사이와 임베딩 묶음(조각 64개)마다 본다. 벡터는 모은 메시지들의 조각을 다
+    임베딩했을 때만 한 번에 쓴다. 묶음 사이에서 예산을 넘기면 그 메시지들은 하나도 쓰지 않는다(deferred) — 반쪽만 쓰면 '색인됨' 으로
+    분류돼 뒤쪽 조각을 영영 못 찾는다. 임베더가 중간에 실패해도 앞서 쓴 메시지는 남는다.
+
+    남은 메시지 가운데 이번 요청이 예산 안에 임베딩한 조각 수보다 조각이 많은 것은 다음 검색도 끝낼 수 없다 — 검색마다 앞 조각만
+    다시 보내게 된다. spawn(fn, *args) 이 있으면 그것을 요청 밖 색인(_index_outside)으로 넘기고 background 로 센다(도는 중인 것도)."""
     t0 = _clock()
+    deadline = t0 + budget_s
     # 동기 sqlite 전량 조회다. 색인 대상이 수천 건이면 그 시간만큼 이벤트 루프가 멈춘다 —
     # _rank 만 빼고 여기를 남긴 것은 조사가 '아는 이름' 만 찾았기 때문이다(실측 지적).
     pending = await asyncio.to_thread(store.unindexed, owner_sub, MODEL, limit)
-    marks, todo, short = [], [], 0
+    marks, todo, short, outside = [], [], 0, 0
     for m in pending:
+        if m["message_id"] in _OUTSIDE:
+            outside += 1          # 요청 밖에서 색인 중이다 — 다시 보내지 않는다
+            continue
         cs = chunks(m["content"])
         if not cs:
             # "네", "확인했습니다" 류. 색인 대상이 아니지 밀린 일이 아니다.
@@ -117,16 +139,21 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000,
         todo.append((m, cs))
     if marks:
         await asyncio.to_thread(store.put_vectors, marks)   # 표식은 임베딩 없이 바로 남긴다
-    written, done, budget_hit = len(marks), 0, False
+    written, done, queued, embedded, budget_hit = len(marks), 0, 0, 0, False
     group: list[dict] = []
     texts: list[str] = []
 
-    async def flush() -> None:
-        nonlocal written
+    async def flush() -> bool:
+        """모은 메시지들을 묶음마다 임베딩해 한 번에 쓴다. 묶음 앞에서 예산을 넘었으면 쓰지 않고 False."""
+        nonlocal written, embedded
         # 한 번에 다 보내면 큰 대화에서 타임아웃이 난다. 나눠 보내되 실패는 그대로 올린다.
         vecs: list[list[float]] = []
         for i in range(0, len(texts), _EMBED_BATCH):
-            vecs.extend(await embed(texts[i:i + _EMBED_BATCH], base_url, "passage"))
+            if _clock() >= deadline:
+                return False
+            batch = texts[i:i + _EMBED_BATCH]
+            vecs.extend(await embed(batch, base_url, "passage"))
+            embedded += len(batch)
         for r, v in zip(group, vecs, strict=True):
             r["vec"] = pack(_norm(v))
         # 수천 행 일괄 INSERT — 같은 이유로 스레드에서.
@@ -134,23 +161,60 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000,
         written += len(group)
         group.clear()
         texts.clear()
+        return True
 
     for m, cs in todo:
-        if _clock() - t0 >= budget_s:
+        if _clock() >= deadline:
             budget_hit = True
             break
-        for ix, c in enumerate(cs):
-            group.append({"message_id": m["message_id"], "chunk_ix": ix,
-                          "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
-                          "text": c, "model": MODEL, "dim": DIM})
-            texts.append(c)
-        done += 1
+        group.extend(_rows(m, cs, owner_sub))
+        texts.extend(cs)
+        queued += 1
         if len(texts) >= _EMBED_BATCH:
-            await flush()
-    if texts:
-        await flush()
+            if not await flush():
+                budget_hit = True
+                break
+            done, queued = done + queued, 0
+    else:
+        if texts:
+            if await flush():
+                done, queued = done + queued, 0
+            else:
+                budget_hit = True
+    rest = todo[done:]        # 쓰지 않은 메시지 — 순서대로 모아 쓰므로 앞에서부터 done 건이 쓰였다
+    big = [(m, cs) for m, cs in rest if len(cs) > embedded] if (spawn and budget_hit and embedded) else []
+    if big:
+        _OUTSIDE.update(m["message_id"] for m, _ in big)
+        spawn(_index_outside, store, owner_sub, base_url, big)
     return {"indexed": written, "messages": len(pending), "too_short": short,
-            "budget_hit": budget_hit, "deferred": len(todo) - done}
+            "budget_hit": budget_hit, "deferred": len(rest) - len(big), "background": outside + len(big)}
+
+
+async def _index_outside(store, owner_sub: str, base_url: str, items: list[tuple[dict, list[str]]]) -> None:
+    """요청 밖 색인 — 메시지마다 조각을 끝까지 임베딩한 뒤 한 번에 쓴다(반쪽 기록 없음). 실패는 올릴 곳이 없어 로그에 남기고, 표식을
+    풀어 다음 검색이 다시 넘기게 한다."""
+    try:
+        for m, cs in items:
+            vecs: list[list[float]] = []
+            for i in range(0, len(cs), _EMBED_BATCH):
+                vecs.extend(await embed(cs[i:i + _EMBED_BATCH], base_url, "passage"))
+            rows = _rows(m, cs, owner_sub)
+            for r, v in zip(rows, vecs, strict=True):
+                r["vec"] = pack(_norm(v))
+            await asyncio.to_thread(store.put_vectors, rows)
+    except Exception:  # noqa: BLE001 — 요청 밖이라 받을 호출자가 없다
+        logger.warning("대화 검색 요청 밖 색인 실패 — 다음 검색이 다시 넘긴다", exc_info=True)
+    finally:
+        for m, _ in items:
+            _OUTSIDE.discard(m["message_id"])
+
+
+def spawn_outside(fn, *args) -> None:
+    """요청 밖에서 돌린다 — 응답을 붙들지 않고, 라우트가 뒤에서 실패해도 돈다(BackgroundTasks 는 응답이 나가야 돌아, 검색이 503 이면
+    표식만 남고 영영 안 돈다)."""
+    task = asyncio.get_running_loop().create_task(fn(*args))
+    _OUTSIDE_TASKS.add(task)
+    task.add_done_callback(_OUTSIDE_TASKS.discard)
 
 
 def short_query(query: str) -> bool:

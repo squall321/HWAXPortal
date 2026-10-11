@@ -461,7 +461,9 @@ async def search_conversations(
     settings = get_settings()
     store = _conv(request)
     try:
-        idx = await conv_search.reindex(store, principal.subject, settings.embed_base_url)
+        # 예산 안에 끝낼 수 없는 큰 메시지는 요청 밖에서 색인한다(검토 RR2-PF-2) — 응답의 index.in_background 가 그 수다.
+        idx = await conv_search.reindex(store, principal.subject, settings.embed_base_url,
+                                        spawn=conv_search.spawn_outside)
         hits = await conv_search.search(store, principal.subject, body.query,
                                         settings.embed_base_url, body.limit)
     except (httpx.HTTPError, ValueError) as e:
@@ -483,6 +485,11 @@ async def search_conversations(
                       "not_indexed_yet": left,
                       # 색인이 시간 예산(conv_search.REINDEX_BUDGET_S)에서 멈췄다 — 게이트웨이 한도 안에 답하려고 남긴 것이다.
                       "budget_hit": idx.get("budget_hit", False),
+                      # not_indexed_yet 가운데 요청 밖에서 색인 중인 큰 메시지 — 남은 수만 보면 다음 검색도 못 끝낼 것처럼 읽힌다.
+                      "in_background": idx.get("background", 0),
+                      **({"background_note": f"큰 메시지 {idx['background']}건은 검색 한 번의 시간 안에 색인을 끝낼 수 없어 요청 밖에서 "
+                                             "색인하고 있다 — 끝나면 다음 검색부터 찾힌다(not_indexed_yet 에는 아직 든다)."}
+                         if idx.get("background") else {}),
                       "partial": bool(left)}}
 
 

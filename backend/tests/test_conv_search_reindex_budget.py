@@ -127,3 +127,99 @@ def test_검색_응답이_예산에서_멈춘_색인을_알린다(slow_embedder)
         assert idx["budget_hit"] is True and idx["partial"] is True and idx["not_indexed_yet"] > 0, idx
     finally:
         app.dependency_overrides.pop(principal_pat_or_session, None)
+
+
+# ── RR2-PF-2 — 큰 메시지 하나 ────────────────────────────────────────────────────────────────
+def _paste(store: ConversationStore) -> dict:
+    """1M 창에서 문서를 통째로 붙여 넣은 챗 — 포털이 받는 메시지 한 칸의 상한(_WINDOW_CHARS) 하나와 짧은 메시지 하나."""
+    from app.agent.routes import _WINDOW_CHARS
+
+    cid = store.create(owner_sub="u1", title="문서 붙여넣기", kind="chat")
+    store.append(conversation_id=cid, owner_sub="u1", role="user", content=("배터리 스웰링 가스 발생 판단 근거. " * 40)[:800])
+    store.append(conversation_id=cid, owner_sub="u1", role="user",
+                 content=("힌지 브래킷 낙하 해석 사양서 본문 문장. " * 200_000)[:_WINDOW_CHARS])
+    return next(m for m in store.unindexed("u1", cs.MODEL) if len(m["content"]) == _WINDOW_CHARS)
+
+
+def test_큰_메시지_하나도_예산을_넘겨_임베딩하지_않고_반쪽을_쓰지_않는다(tmp_path, slow_embedder):
+    """**RR2-PF-2 의 이유다** — 예산을 메시지 사이에서만 보면, 예산 안에 집은 메시지 하나의 조각은 예산과 무관하게 다 임베딩한다.
+    4,194,304자 메시지 하나는 5,592조각 · 임베딩 88번이다(한 번에 10초면 880초 — 게이트웨이 120초를 한참 넘기고, 핸들러가 끝에서야
+    쓰는 사이 다음 검색이 같은 메시지를 처음부터 다시 보낸다 — P-8 의 이중 색인). 묶음마다 시계를 보고, 넘으면 쓰지 않은 묶음을 버린다."""
+    store = _store(tmp_path)
+    big = _paste(store)
+    assert len(cs.chunks(big["content"])) > 5_000
+    out = asyncio.run(cs.reindex(store, "u1", "http://embed.invalid"))
+    per = slow_embedder["per_call"]
+    assert slow_embedder["now"] <= cs.REINDEX_BUDGET_S + per, f"{slow_embedder['now']}초 — 예산을 넘어 계속 불렀다"
+    assert slow_embedder["calls"] <= cs.REINDEX_BUDGET_S / per + 1, f"임베딩 {slow_embedder['calls']}번"
+    assert out["budget_hit"] is True and out["deferred"] == 2, out
+    assert big["message_id"] not in {mid for mid, *_ in store.vectors_for("u1", cs.MODEL)}, "반쪽을 썼다"
+    assert store.remaining("u1", cs.MODEL) == 2
+
+
+def test_예산_안에_끝낼_수_없는_메시지는_요청_밖에서_끝까지_색인하고_그동안_다시_보내지_않는다(tmp_path, slow_embedder):
+    """묶음마다 멈추기만 하면 그 메시지는 영영 못 끝나고, 검색마다 앞 조각을 임베더에 다시 보낸다. 이번 요청이 예산 안에 임베딩한 조각
+    수보다 조각이 많은 메시지는 요청 밖에서 끝까지 색인한다 — 도는 동안 다음 검색은 그 메시지를 건너뛰고 그 수를 알린다."""
+    store = _store(tmp_path)
+    big = _paste(store)
+    jobs = []
+    out = asyncio.run(cs.reindex(store, "u1", "http://embed.invalid", spawn=lambda fn, *a: jobs.append((fn, a))))
+    assert out["budget_hit"] is True and out["background"] == 1 and out["deferred"] == 1, out
+    assert len(jobs) == 1
+    slow_embedder["now"] = 0.0
+    before = slow_embedder["calls"]
+    again = asyncio.run(cs.reindex(store, "u1", "http://embed.invalid", spawn=lambda fn, *a: jobs.append((fn, a))))
+    assert again["background"] == 1 and again["deferred"] == 0 and len(jobs) == 1, again
+    assert slow_embedder["calls"] - before == 1, "요청 밖에서 도는 메시지를 다음 검색이 다시 보냈다"
+    assert store.remaining("u1", cs.MODEL) == 1
+    fn, a = jobs[0]
+    asyncio.run(fn(*a))
+    ixs = {cix for mid, cix, *_ in store.vectors_for("u1", cs.MODEL) if mid == big["message_id"]}
+    assert ixs == set(range(len(cs.chunks(big["content"])))), "요청 밖 색인이 조각을 다 쓰지 않았다"
+    assert store.remaining("u1", cs.MODEL) == 0
+    assert asyncio.run(cs.reindex(store, "u1", "http://embed.invalid"))["background"] == 0, "끝난 뒤에도 도는 중으로 센다"
+
+
+def test_요청_밖_색인이_실패해도_다음_검색이_다시_넘긴다(tmp_path, slow_embedder):
+    store = _store(tmp_path)
+    _paste(store)
+    jobs = []
+    asyncio.run(cs.reindex(store, "u1", "http://embed.invalid", spawn=lambda fn, *a: jobs.append((fn, a))))
+    slow_embedder["fail_at"] = slow_embedder["calls"] + 3
+    fn, a = jobs[0]
+    asyncio.run(fn(*a))   # 요청 밖이라 올릴 곳이 없다 — 로그에 남기고 표식을 푼다
+    slow_embedder["fail_at"], slow_embedder["now"] = None, 0.0
+    out = asyncio.run(cs.reindex(store, "u1", "http://embed.invalid", spawn=lambda fn, *a: jobs.append((fn, a))))
+    assert out["background"] == 1 and len(jobs) == 2, out
+
+
+def test_검색_응답이_요청_밖에서_색인하는_큰_메시지를_알린다(slow_embedder):
+    """남은 수(not_indexed_yet)와 함께, 그중 몇 건이 요청 밖에서 색인 중인지와 그 뜻을 싣는다 — 다음 검색에서 찾힌다."""
+    import time as _time
+
+    from fastapi.testclient import TestClient
+
+    from app.auth.provider import Principal
+    from app.deps import principal_pat_or_session
+    from app.main import app
+
+    app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
+        subject="u-bg", email="u@hwax.local", display_name="U", groups=["feat:deliberation"])
+    try:
+        with TestClient(app) as c:
+            store = app.state.conv_store
+            cid = store.create(owner_sub="u-bg", title="문서 붙여넣기", kind="chat")
+            store.append(conversation_id=cid, owner_sub="u-bg", role="user",
+                         content=("힌지 브래킷 낙하 해석 사양서 본문 문장. " * 20_000)[:400_000])
+            r = c.post("/agent/conversations/search", json={"query": "힌지 브래킷 낙하 응력 판단"})
+            assert r.status_code == 200, r.text
+            idx = r.json()["index"]
+            # not_indexed_yet 은 여기서 단언하지 않는다 — 대역 임베더는 기다리지 않아, 요청 밖 색인이 응답을 만드는 사이에 끝나기도 한다.
+            assert idx["in_background"] == 1 and idx["budget_hit"] is True, idx
+            assert "요청 밖" in idx["background_note"] and "다음 검색" in idx["background_note"], idx
+            end = _time.monotonic() + 30
+            while store.remaining("u-bg", cs.MODEL) and _time.monotonic() < end:
+                _time.sleep(0.05)
+            assert store.remaining("u-bg", cs.MODEL) == 0, "요청 밖 색인이 끝나지 않았다"
+    finally:
+        app.dependency_overrides.pop(principal_pat_or_session, None)
