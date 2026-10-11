@@ -172,8 +172,9 @@ def test_엔진이_시간_한도로_적은_손잡이가_킷에_빠짐없이_있�
         pytest.skip(f"형제 리포 없음: {ENGINE}")
     text = readme.read_text(encoding="utf-8")
     assert "\n### Time limits\n" in text, "엔진 README 의 시간 한도 표를 못 찾았다 — 제목이 바뀌었으면 이 시험도 고쳐라"
-    table = text[text.index("\n### Time limits\n"):]
-    names = re.findall(r"^\| `([A-Z][A-Z0-9_]*)` \|", table[:table.index("\n## ")], re.M)
+    table = text[text.index("\n### Time limits\n") + 1:]
+    # 표는 다음 제목(## 든 ### 든)에서 끝난다 — '## ' 까지 읽으면 뒤에 붙은 '### MCP result pages' 의 쪽 크기 손잡이까지 시간 한도로 셌다.
+    names = re.findall(r"^\| `([A-Z][A-Z0-9_]*)` \|", table[:re.search(r"\n#{2,3} ", table).start()], re.M)
     assert len(names) >= 15, names
     kit = _knobs()
     for name in names:
