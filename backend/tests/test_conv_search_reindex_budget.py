@@ -182,7 +182,7 @@ def test_예산_안에_끝낼_수_없는_메시지는_요청_밖에서_끝까지
 
 def test_요청_밖_색인이_실패해도_다음_검색이_다시_넘긴다(tmp_path, slow_embedder):
     store = _store(tmp_path)
-    _paste(store)
+    big = _paste(store)
     jobs = []
     asyncio.run(cs.reindex(store, "u1", "http://embed.invalid", spawn=lambda fn, *a: jobs.append((fn, a))))
     slow_embedder["fail_at"] = slow_embedder["calls"] + 3
@@ -191,6 +191,10 @@ def test_요청_밖_색인이_실패해도_다음_검색이_다시_넘긴다(tmp
     slow_embedder["fail_at"], slow_embedder["now"] = None, 0.0
     out = asyncio.run(cs.reindex(store, "u1", "http://embed.invalid", spawn=lambda fn, *a: jobs.append((fn, a))))
     assert out["background"] == 1 and len(jobs) == 2, out
+    fn, a = jobs[1]
+    asyncio.run(fn(*a))   # 다시 넘긴 것은 끝까지 쓴다(그리고 이 시험이 표식을 남기지 않는다)
+    ixs = {cix for mid, cix, *_ in store.vectors_for("u1", cs.MODEL) if mid == big["message_id"]}
+    assert ixs == set(range(len(cs.chunks(big["content"])))) and not cs._OUTSIDE
 
 
 def test_검색_응답이_요청_밖에서_색인하는_큰_메시지를_알린다(slow_embedder):
