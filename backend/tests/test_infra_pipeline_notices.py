@@ -383,8 +383,9 @@ def test_원장에_가는_발언은_좌석이_낸_원문이다():
 
 def test_예산_안이면_원장_칸보다_긴_발언도_줄이지_않는다():
     """앱은 원문을 say 로 남기고 화면용 발췌(2,000자)는 스스로 만든다(HWAXRisk R-63) — 여기서 그 칸 크기로 먼저 자르면 앱의 수리가
-    Claude 길에는 닿지 않는다(검토 P-3). 줄이는 곳은 제출 에코 예산 하나뿐이고, 그때는 표식을 단다(tests/test_risk_review_submit_turns)."""
-    out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프"}]), seat={"recommendation": "라" * 2600})
+    Claude 길에는 닿지 않는다(검토 P-3). 줄이는 곳은 제출 에코 예산 하나뿐이고, 그때는 표식을 단다(tests/test_risk_review_submit_turns).
+    원문 보존을 알리는 앱(근거마다 result_chars)일 때의 얘기다 — 옛 앱이면 종전 칸에 맞춘다(RR2-PF-1, 같은 시험 파일)."""
+    out = _risk(_brief([{"key": "E0", "source": "scope", "result": "스코프", "result_chars": 3}]), seat={"recommendation": "라" * 2600})
     first = next(t for t in _submit_arg(out, "turns") if t["round"] == 1)
     assert "라" * 2600 in first["say"] and "…[총" not in first["say"], first["say"][-40:]
     assert first["position"] == "라" * 2600

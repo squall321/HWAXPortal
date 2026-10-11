@@ -47,8 +47,10 @@ def _body(n: int) -> str:
     return _decision(n).replace("\n〔결정문 끝〕", "")
 
 
-def _panel(seat: dict, decision_len: int = 2_000, seats=None, rounds: int = 3) -> dict:
-    brief = _brief([{"key": "E0", "source": "scope", "result": "스코프"}], seats=seats or _SEATS6, rounds=rounds)
+def _panel(seat: dict, decision_len: int = 2_000, seats=None, rounds: int = 3, legacy: bool = False) -> dict:
+    """legacy=False 는 원문 보존을 알리는 앱(근거마다 result_chars — HWAXRisk R-63 뒤 판)이다. True 는 그것을 싣지 않는 옛 앱(main)이다."""
+    e0 = {"key": "E0", "source": "scope", "result": "스코프", **({} if legacy else {"result_chars": 3})}
+    brief = _brief([e0], seats=seats or _SEATS6, rounds=rounds)
     return _run(_RISK, {"targetKey": "T1", "briefToken": "tok", "tier": "B"}, brief=brief, seat=seat,
                 decision=_decision(decision_len))
 
@@ -125,3 +127,47 @@ def test_다_들어가면_상한을_쓰지_않는다():
     flags = out["result"]["submitted"][0]["flags"]
     assert flags["sayCut"] == 0 and flags["sayCap"] is None
     assert len(json.loads(_raw(out, "turns"))) == 21, "7석×3라운드"
+
+
+# ── RR2-PF-1 — 옛 앱(원문 보존을 알리지 않는 판)이면 종전처럼 앱 발췌 칸(2,000자)에 맞춘다 ─────────────────────
+def test_옛_앱_브리프면_발언마다_2000자_표식을_걸고_원장에_알린다():
+    """**RR2-PF-1 의 이유다** — 상한을 걷은 근거(앱이 원문을 say 로 남기고 발췌를 스스로 만든다, HWAXRisk R-63)는 m1 판 앱에만 맞다.
+    main 판 앱(narrative._seat_turns)은 받은 say 를 2,000자에서 표식 없이 자른다. 그 앱에 해석이 긴 1라운드 발언을 통째로 보내면 원장에는
+    표식 없는 2,000자가 남고 우려가 빠지며, 여기서 자르지 않았으니 evidence_omitted 의 알림도 없다 — 종전 JS 보다 나빴다.
+    옛 앱은 근거에 result_chars 를 싣지 않는다. 그때는 종전처럼 글마다 2,000자에 표식을 달고(1라운드는 해석을 줄여 권장·우려를 지킨다)
+    그 절단을 원장에 알린다."""
+    out = _panel(_seat(), seats=_SEATS6[:2], rounds=2, legacy=True)
+    r1 = _r1(out)
+    for t in r1:
+        assert len(t["say"]) <= 2_000, f"옛 앱이 다시 자를 길이다 — {len(t['say']):,}자"
+        assert "권장표지" in t["say"] and t["say"].count("우려표지") == 3, t["say"][-120:]
+        assert "…[해석 " in t["say"], "줄였다는 표식이 없다"
+    assert all(len(t.get(k, "")) <= 2_000 for t in _submit_arg(out, "turns") for k in ("say", "position", "non_negotiable"))
+    flags = out["result"]["submitted"][0]["flags"]
+    assert flags["sayCut"] == len(r1) and flags["sayCap"] == 2_000, flags
+    note = next((x["text"] for x in _submit_arg(out, "evidence_omitted") if x["source"] == "발언 길이 상한 초과"), None)
+    assert note and "2,000자" in note and "result_chars" in note and "60,000자" not in note, note
+    assert len(note) <= 200
+    assert any("P1" in ln and "result_chars" in ln and "2,000자" in ln for ln in out["logs"]), out["logs"]
+
+
+def test_옛_앱이라도_칸_안이면_손대지_않고_예산이_더_좁으면_예산을_따른다():
+    short = _panel(_seat(reads_each=20), seats=_SEATS6[:2], rounds=2, legacy=True)
+    assert short["result"]["submitted"][0]["flags"]["sayCut"] == 0 and short["result"]["submitted"][0]["flags"]["sayCap"] is None
+    tight = _panel(_seat(), decision_len=25_000, legacy=True)
+    flags = tight["result"]["submitted"][0]["flags"]
+    assert flags["sayCap"] < 2_000 and flags["sayCut"] > 0, flags
+    note = next(x["text"] for x in _submit_arg(tight, "evidence_omitted") if x["source"] == "발언 길이 상한 초과")
+    assert "60,000자" in note and f"{flags['sayCap']:,}자" in note, note
+
+
+def test_원문_보존을_알리는_앱은_근거가_모두_result_chars_를_실을_때뿐이다():
+    """result_chars 가 하나라도 빠지면(옛 앱) 또는 근거가 아예 없으면 알림이 없는 것이다 — 칸을 걷지 않는다."""
+    seat = {"recommendation": "라" * 2600}
+    mixed = _brief([{"key": "E0", "source": "scope", "result": "스코프", "result_chars": 3},
+                    {"key": "E1", "source": "변경", "result": "변경"}])
+    out = _run(_RISK, {"targetKey": "T1", "briefToken": "tok", "tier": "B"}, brief=mixed, seat=seat, decision=_decision(2_000))
+    assert out["result"]["submitted"][0]["flags"]["sayCap"] == 2_000
+    none = _brief([])
+    out = _run(_RISK, {"targetKey": "T1", "briefToken": "tok", "tier": "B"}, brief=none, seat=seat, decision=_decision(2_000))
+    assert out["result"]["submitted"][0]["flags"]["sayCap"] == 2_000

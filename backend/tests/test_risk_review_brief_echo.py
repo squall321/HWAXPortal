@@ -112,3 +112,44 @@ def test_파일을_끝까지_못_읽었으면_손잡이를_말하고_멈춘다()
     out = _risk({"error": "brief_too_large", "panels": []})
     assert out["result"]["error"] == "brief_too_large" and _seated(out) == []
     assert any("MAX_MCP_OUTPUT_TOKENS" in ln for ln in out["logs"]), out["logs"]
+
+
+# ── 앱·게이트웨이가 거절하면 — 오류 코드와 까닭·고칠 곳을 그대로 사람에게 ─────────────────────────────────
+_WHY = ("이 호출의 단언(admin@example.com)은 게이트웨이가 위임 헤더(X-Hwax-Delegate-Email) 없이 받아 온 것이다 — 쓰기 도구는 게이트웨이 "
+        "위임으로 확인된 신원으로만 쓴다(그 계정으로 대신 쓰지 않는다).")
+_FIX = ("운영자가 게이트웨이를 사람별 위임에 X-Hwax-Delegate-Email 을 싣는 판으로 올리고, 이 앱의 per_user_sso 가 설정됐는지 본다. "
+        "그 전에는 웹 리스크 앱(/risk/)에서 같은 일을 한다.")
+
+
+def test_위임이_없어_앱이_거절하면_코드와_까닭과_고칠_곳을_그대로_보인다():
+    """리스크 앱(m1)은 결과를 낼 수 없는 신원(게이트웨이 위임 없음)에게 risk_get_brief 단계에서 {error:'delegation_required', message,
+    detail:{fix}} 를 돌려준다(HWAXRisk RV-1). 종전 스키마에는 message·fix 칸이 없어 구조화 출력이 버렸고, 사람은 '브리프 중단 —
+    delegation_required' 만 보고 어디를 고칠지 몰랐다(RR2-PF-1)."""
+    out = _risk({"error": "delegation_required", "message": _WHY, "fix": _FIX, "panels": []})
+    res = out["result"]
+    assert res["error"] == "delegation_required" and _seated(out) == [] and _submits(out) == []
+    assert res["message"] == _WHY and res["fix"] == _FIX, res
+    said = "\n".join(out["logs"])
+    assert "delegation_required" in said and _WHY in said and _FIX in said, out["logs"]
+
+
+def test_앱이_고칠_곳을_주지_않아도_위임_거절은_어디를_볼지_말한다():
+    out = _risk({"error": "delegation_required", "panels": []})
+    line = next(ln for ln in out["logs"] if "위임" in ln)
+    assert "게이트웨이" in line and "웹 리스크 앱" in line, out["logs"]
+
+
+def test_호출이_실패해도_그_오류_문구를_버리지_않는다():
+    """게이트웨이가 접힌 위임을 거부하면(HWAXMcpGateway RR2-GW-1) 도구 호출 자체가 실패해 brief_unavailable 로 닫힌다 — 그 오류 문구가
+    유일한 단서인데 종전엔 칸이 없어 버려졌다."""
+    msg = "heax-hwax_risk: a@example.com 자격증명으로 호출하지 못했습니다 (RuntimeError('SSO 단언이 호출자가 아닌 다른 계정으로 발급됐다'))"
+    out = _risk({"error": "brief_unavailable", "message": msg, "panels": []})
+    assert out["result"]["error"] == "brief_unavailable" and out["result"]["message"] == msg
+    assert any(msg in ln for ln in out["logs"]), out["logs"]
+
+
+def test_오류_문구와_고칠_곳을_줄이지_말고_옮기라고_시킨다():
+    prompt = _brief_prompt(_risk({"panels": []}))
+    assert "detail.fix" in prompt and "message" in prompt
+    tail = prompt[prompt.index('error="brief_unavailable"'):]
+    assert "message" in tail, "호출 실패 문구를 옮기라는 말이 없다"

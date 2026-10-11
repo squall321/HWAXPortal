@@ -37,7 +37,8 @@
 //   - partials 는 제출되지 못한 패널의 심의 데이터 보존분이다(결정문 절단·페이로드 초과·
 //     제출 실패·no_decision) — 자식의 부분 반환 원칙을 부모도 지킨다(감사 1-F). 여기 있는
 //     데이터로 결정적 재제출·전사 복원·continueFrom 재의결이 가능하다.
-//   - error(브리프 단계에서 멈춘 까닭) — 앱이 돌려준 코드(tier_a_web_only·brief_token_invalid …) 외에 이 워크플로가 가르는 넷:
+//   - error(브리프 단계에서 멈춘 까닭) — 앱이 돌려준 코드(tier_a_web_only·brief_token_invalid·delegation_required …)면 그 문구와 고칠 곳을
+//     message·fix 로 함께 싣는다(호출 자체가 실패한 brief_unavailable 은 그 오류 문구를 message 로). 그 밖에 이 워크플로가 가르는 넷:
 //     no_planned_panel(앱 응답에 패널이 정말 없다) · brief_echo_failed(옮겨 적는 에이전트가 아무것도 못 돌려줬다 — 패널이 없다는 뜻이
 //     아니다) · brief_echo_mismatch(옮겨 적은 근거 길이가 앱이 알린 원문 길이와 다르다 — echoMismatch 에 항목) · brief_too_large(결과가
 //     Claude Code 의 MCP 결과 상한을 넘어 파일로 저장됐는데 끝까지 옮기지 못했다 — MAX_MCP_OUTPUT_TOKENS).
@@ -86,10 +87,15 @@ const EVIDENCE_ONLY_NOTE = '이 실행에는 도구 호출 경로가 없다 — 
 // 중간 {concede, rebut, deepen}, 마지막 {final_position, non_negotiable, vote}.
 // 발언 길이에는 고정 상한을 두지 않는다 — 앱은 원문을 say 로 남기고 화면용 발췌(2,000자)는 스스로 만든다(HWAXRisk R-63). 종전엔 여기서
 // 그 칸 크기(2,000자)로 먼저 잘라, 앱이 원문을 남기게 된 뒤에도 Claude 길의 원장에는 잘린 글만 갔다(검토 P-3 — D-21 이 걷기로 한 상한).
+// ⚠ 다만 그것은 원문을 보존하는 앱(R-63 뒤 판)에만 맞다. 옛 앱(main)은 받은 say 를 그 칸에서 **표식 없이** 자른다 — 여기서 통째로
+//   보내면 원장에는 표식 없는 앞 2,000자가 남고 우려가 빠지며, 여기서 자르지 않았으니 알림도 없다(검토 RR2-PF-1). 그래서 칸을 걷는 것은
+//   앱이 원문 보존을 알릴 때(브리프 근거마다 result_chars — R-63 뒤에 생긴 칸)뿐이고, 아니면 종전처럼 글마다 APP_SAY_EXCERPT 에서
+//   표식을 달아 줄이고 원장에 알린다(아래 sayCeil).
 // 남는 한도는 이 길의 바깥 한도다(창이 아니다) — 원장에 내는 것은 에이전트가 도구 인자로 되받아 적어야 한다(아래 SUBMIT_BUDGET).
 // 건수는 TURN_CAP 으로, 길이는 결정문을 통째로 싣고 남는 몫으로 묶는다(fitTurns). 넘으면 표식을 달고, 몇 건을 몇 자에서 줄였는지
 // 원장(evidence_omitted)과 반환(flags)에 남긴다.
 const TURN_CAP = 60          // 저장 상한(계획 §0.6 turns 60/대화)
+const APP_SAY_EXCERPT = 2000 // 앱 화면 발췌 칸(HWAXRisk narrative.SAY_EXCERPT_MAX) — 옛 앱은 받은 say 를 여기서 표식 없이 자른다
 // 에코 제출 크기 예산(감사 1-F 치명) — 자식 CONV_AGENT_BUDGET 와 같은 근거: 대형 페이로드를 LLM 이 도구 인자로 옮기면 조용히 요약·
 // 의역해 넣고 성공을 돌려준다(실측 C37/C50). 절단보다 나쁜 무표시 변조라, 결정문·발언·알림을 합쳐 이 안에 넣는다.
 const SUBMIT_BUDGET = 60000
@@ -171,11 +177,12 @@ function toTurns(roundsData, cap = Infinity) {
 }
 // 결정문을 싣고 남는 몫(room)에 발언을 맞춘다 — 다 들어가면 그대로(cap null), 아니면 들어가는 가장 큰 상한을 찾는다(상한이 작을수록
 // JSON 이 짧아지므로 이분 탐색). MIN_SAY_CAP 에서도 넘치면 null — 부른 쪽이 제출하지 않고 보존한다.
-function fitTurns(roundsData, room) {
-  const whole = toTurns(roundsData)
-  if (JSON.stringify(whole.turns).length <= room) return { ...whole, cap: null }
+// ceil 은 예산과 무관한 글 하나의 상한이다(옛 앱의 발췌 칸) — 그 상한에서 줄인 글이 있으면 들어가도 cap 은 ceil 이다.
+function fitTurns(roundsData, room, ceil = Infinity) {
+  const whole = toTurns(roundsData, ceil)
+  if (JSON.stringify(whole.turns).length <= room) return { ...whole, cap: whole.sayCut ? ceil : null }
   let lo = MIN_SAY_CAP
-  let hi = whole.longest
+  let hi = Math.min(whole.longest, ceil)
   let best = null
   while (lo <= hi) {
     const mid = Math.floor((lo + hi) / 2)
@@ -192,6 +199,10 @@ const BRIEF_SCHEMA = {
   properties: {
     error: { type: 'string', description: '앱이 오류를 돌려줬으면 그 코드(예 tier_a_web_only). 없으면 빈 문자열' },
     reason: { type: 'string', description: '앱이 reason 을 돌려줬으면 그 값(예 caller_unresolved). 없으면 빈 문자열' },
+    // 오류의 까닭과 고칠 곳 — 종전엔 칸이 없어 구조화 출력이 버렸고, 사람은 코드만 보고 어디를 고칠지 몰랐다(검토 RR2-PF-1 · HWAXRisk RV-1
+    // 의 delegation_required 는 {error, message, detail:{fix}} 로 온다). 도구 호출 자체가 실패하면 그 오류 문구가 유일한 단서다.
+    message: { type: 'string', description: '응답의 message 문구 그대로. 도구 호출 자체가 실패했으면 그 오류 문구 그대로. 없으면 빈 문자열' },
+    fix: { type: 'string', description: '응답의 detail.fix(고칠 곳) 문구 그대로. 없으면 빈 문자열' },
     panels: {
       type: 'array',
       description: '앱이 돌려준 패널 목록을 그대로. 값을 지어내지 말 것',
@@ -260,7 +271,8 @@ const brief = await agent(
   `- 결과를 요약·가공하지 말고 스키마 필드에 그대로 옮겨라. 근거(evidence)의 result 문자열은 원문 그대로다.\n` +
   `- 근거 항목의 key 도 그대로 옮기고, 패널에 evidence_dropped·user_memo_cut 이 있으면 그것도 그대로 옮겨라.\n` +
   `- 근거 항목에 result_chars 가 있으면 그 수를 그대로 옮겨라(세지 마라) — 이 워크플로가 옮겨 적은 result 와 견준다.\n` +
-  `- 응답에 error 가 있으면 error 에 그 코드를 넣고 panels 는 빈 배열로 둬라.\n` +
+  `- 응답에 error 가 있으면 error 에 그 코드를 넣고, message 와 detail.fix 가 있으면 message·fix 에 그 문구를 줄이지 말고 그대로 ` +
+  `옮기고, panels 는 빈 배열로 둬라.\n` +
   // Claude Code 는 MCP 결과가 MAX_MCP_OUTPUT_TOKENS(기본 25,000토큰)를 넘으면 본문 대신 파일 저장 안내를 일반 결과로 준다(검토 GA-1).
   // 'Error:' 로 시작해 아래 '실패' 규칙으로 읽히면 브리프가 큰 타깃만 brief_unavailable 로 닫힌다. Read 는 2,000자 넘는 줄을 잘라 보여
   // 주므로(근거 result 는 한 줄에 수천~수만 자다) 그대로 읽으면 앞부분만 옮겨진다 — 그 절단은 위 result_chars 대조가 잡는다.
@@ -269,7 +281,8 @@ const brief = await agent(
   `같은 긴 문자열은 jq 나 python 으로 필드를 꺼내 끝까지 읽어라. 끝까지 읽지 못했으면 옮기지 말고 error="brief_too_large" 로 두고 ` +
   `panels 는 빈 배열로 둬라.\n` +
   `- ${BY_NAME}\n` +
-  `- 이름으로도 부를 수 없거나 호출이 실패하면 error="brief_unavailable" 로 두고 panels 는 빈 배열로 둬라. 재시도하지 마라.`,
+  `- 이름으로도 부를 수 없거나 호출이 실패하면 error="brief_unavailable" 로 두고, message 에 도구가 돌려준 오류 문구를 줄이지 말고 ` +
+  `그대로 옮기고, panels 는 빈 배열로 둬라. 재시도하지 마라.`,
   { label: 'brief', phase: '브리프', schema: BRIEF_SCHEMA })
 
 // agent() 는 API 오류·취소 시 null 이다(계약) — 가드 밖 .trim() 은 TypeError 즉사였다(감사 1-F).
@@ -293,9 +306,19 @@ if (briefError) {
     log('브리프 토큰이 만료됐거나 맞지 않는다 — 앱 화면에서 다시 받아 오세요' +
         '(토큰은 발급 뒤 기본 900초만 살고 한 번 쓴다 · 앱의 HWAXRISK_BRIEF_TOKEN_TTL_S)')
   }
-  log(`브리프 중단 — ${briefError}${brief.reason ? ` (${brief.reason})` : ''}`)
+  const briefMsg = String(brief.message || '').trim()
+  const briefFix = String(brief.fix || '').trim()
+  // 결과를 낼 수 없는 신원이면 앱이 브리프 단계에서 거절한다(HWAXRisk RV-1) — 몇 시간 심의 뒤 제출에서야 거절되던 것을 앞당긴 것이다.
+  // 고칠 곳은 앱이 detail.fix 로 준다. 옮겨 적기가 그것을 놓쳤어도 어디를 볼지는 말한다.
+  if (briefError === 'delegation_required') {
+    log('브리프 중단 — 리스크 앱이 이 호출을 결과를 낼 사람(게이트웨이 사람별 위임으로 확인된 패널 소유자)으로 확인하지 못했다' +
+        (briefFix ? '' : ' — 운영자가 게이트웨이의 사람별 위임(X-Hwax-Delegate-Email)과 리스크 앱 판을 보고, 그 전에는 웹 리스크 앱에서 ' +
+                         '같은 일을 한다'))
+  }
+  log(`브리프 중단 — ${briefError}${brief.reason ? ` (${brief.reason})` : ''}${briefMsg ? ` — ${briefMsg}` : ''}` +
+      `${briefFix ? ` — 고칠 곳: ${briefFix}` : ''}`)
   return { targetKey: TARGET, tier: TIER, submitted: [], failed: [], error: briefError,
-           reason: String((brief && brief.reason) || '') }
+           reason: String((brief && brief.reason) || ''), message: briefMsg, fix: briefFix }
 }
 
 const _rawPanels = (brief && brief.panels) || []
@@ -320,13 +343,17 @@ if (!panels.length) {
 // 말없이 어긋난다. 앱이 항목마다 원문 길이(result_chars — 앞뒤 공백을 뗀 result 의 파이썬 len, 코드포인트 수)를 실으면 견주고, 다르면
 // 심의를 돌리지 않는다. JS 의 .length 는 UTF-16 단위라 BMP 밖 글자에서 두 배가 된다 — 코드포인트로 센다. 앞뒤 공백은 세지 않는다 —
 // 옮겨 적으며 끝 줄바꿈이 빠지는 것은 근거가 바뀐 것이 아니고(자식 심의도 앞뒤를 떼고 싣는다), 그것까지 막으면 헛멈춤이다.
+// 같은 칸이 앱의 판을 알린다 — result_chars 는 원문 보존(R-63) 뒤에 생긴 칸이라, 근거가 모두 그것을 실을 때만 발언의 칸 상한을 걷는다.
+let sayCeil = APP_SAY_EXCERPT
 {
   const mismatch = []
   let unchecked = 0
+  let checked = 0
   for (const p of panels) {
     for (const e of (p.evidence || [])) {
       const want = Number(e && e.result_chars)
       if (!(want > 0)) { unchecked += 1; continue }
+      checked += 1
       const got = [...String((e && e.result) || '').trim()].length
       if (got !== want) mismatch.push({ panel_id: String(p.panel_id), key: String(e.key || e.source || ''), want, got })
     }
@@ -341,6 +368,11 @@ if (!panels.length) {
   if (unchecked) {
     log(`· 근거 ${unchecked}항목은 앱이 원문 길이(result_chars)를 싣지 않아 옮겨 적기를 대조하지 못했다(옛 앱) — ` +
         `좌석이 받은 근거가 앱의 동결 브리프와 같은지 이 실행은 보증하지 않는다`)
+  }
+  if (checked && !unchecked) sayCeil = Infinity
+  else {
+    log(`· 앱이 원문 보존을 알리지 않았다(근거에 result_chars 없음 — 옛 앱은 받은 발언을 ${APP_SAY_EXCERPT.toLocaleString()}자에서 ` +
+        `표식 없이 자른다) — 발언은 종전처럼 글마다 ${APP_SAY_EXCERPT.toLocaleString()}자에서 표식을 달아 줄이고 원장에 알린다`)
   }
 }
 log(`패널 ${panels.length}건 — target=${TARGET} tier=${TIER} actor=${ACTOR || '(미지정)'} model=${MODEL}`)
@@ -481,7 +513,7 @@ for (const p of panels) {
   // 몫(각 200자 안쪽 + 출처)을 먼저 뗀다. 종전엔 발언을 2,000자 칸에 맞춰 자른 뒤 합이 예산을 넘으면 통째로 제출을 건너뛰어, M1 이
   // 1라운드에 해석을 넣자 결정문에 남는 몫이 7석×3라운드에서 30,492자 → 22,078자로 줄었고 그 사이 패널이 웹에 안 올라갔다(검토 X-4).
   const room = SUBMIT_BUDGET - decisionText.length - JSON.stringify(lossNotes).length - 600
-  const fit = fitTurns(result.rounds, room)
+  const fit = fitTurns(result.rounds, room, sayCeil)
   if (!fit) {
     failed.push({ panel_id: p.panel_id,
                   error: `payload_too_large: 결정문 ${decisionText.length}자 — 발언을 글마다 ${MIN_SAY_CAP}자까지 줄여도 ` +
@@ -493,11 +525,17 @@ for (const p of panels) {
     continue
   }
   const { turns, dropped: droppedTurns, sayCut, cap: sayCap } = fit
+  // 옛 앱의 발췌 칸에 맞춘 것인가 — 예산 때문이면 상한이 칸보다 작다(fitTurns 는 칸에서 들어가면 칸을 돌려준다).
+  const appCut = sayCap !== null && sayCap === sayCeil
   if (droppedTurns) {
     log(`⚠ 발언 ${turns.length + droppedTurns}건 중 앞라운드 ${droppedTurns}건 드롭(TURN_CAP ${TURN_CAP}) — ` +
         `최종 라운드를 보존했다. 전체 발언은 반환 partials/자식 결과에 있다.`)
   }
-  if (sayCap) {
+  if (sayCap && appCut) {
+    log(`⚠ 패널 ${p.panel_id} 발언 ${sayCut}건을 글마다 ${sayCap.toLocaleString()}자에서 표식을 달아 줄였다 — 앱이 원문 보존을 ` +
+        `알리지 않아(근거에 result_chars 없음 — 옛 앱) 앱 발췌 칸에 맞췄다(1라운드는 해석을 줄이고 권장·우려를 지켰다). ` +
+        `원장 evidence_omitted 에도 남긴다`)
+  } else if (sayCap) {
     log(`⚠ 패널 ${p.panel_id} 발언 ${sayCut}건을 글마다 ${sayCap.toLocaleString()}자에서 줄였다 — 결정문 ` +
         `${decisionText.length.toLocaleString()}자를 통째로 싣고 LLM 에코 제출 예산(${SUBMIT_BUDGET.toLocaleString()}자)에 남는 몫에 ` +
         `맞췄다(1라운드는 해석을 줄이고 권장·우려를 지켰다). 원장 evidence_omitted 에도 남긴다`)
@@ -510,9 +548,12 @@ for (const p of panels) {
            text: clip200(`발언 ${turns.length + droppedTurns}건 중 앞 라운드 ${droppedTurns}건은 상한(${TURN_CAP}건)을 넘겨 내지 않았다. 전문은 워크플로 반환에 있다.`) }] : []),
     ...(sayCut
       ? [{ source: '발언 길이 상한 초과',
-           text: clip200(`발언 ${sayCut}건은 제출 에코 예산(${SUBMIT_BUDGET.toLocaleString()}자 — 결정문 ` +
-                         `${decisionText.length.toLocaleString()}자를 통째로 싣고 남는 몫)에 맞추려고 글마다 ${sayCap.toLocaleString()}자에서 ` +
-                         `줄였다(표식 '…[총 N자]', 1라운드는 해석을 줄이고 권장·우려를 지켰다).`) }] : []),
+           text: clip200(appCut
+             ? `발언 ${sayCut}건은 앱 발췌 칸(${APP_SAY_EXCERPT.toLocaleString()}자)에 맞춰 글마다 앞부분만 냈다(표식 '…[총 N자]', ` +
+               `1라운드는 해석을 줄이고 권장·우려를 지켰다) — 앱이 원문 보존을 알리지 않았다(근거에 result_chars 없음).`
+             : `발언 ${sayCut}건은 제출 에코 예산(${SUBMIT_BUDGET.toLocaleString()}자 — 결정문 ` +
+               `${decisionText.length.toLocaleString()}자를 통째로 싣고 남는 몫)에 맞추려고 글마다 ${sayCap.toLocaleString()}자에서 ` +
+               `줄였다(표식 '…[총 N자]', 1라운드는 해석을 줄이고 권장·우려를 지켰다).`) }] : []),
   ]
   let ack = null
   try {
@@ -546,7 +587,7 @@ for (const p of panels) {
         seatLoss: (result.seatLoss || []).length,
         droppedTurns,
         sayCut,
-        sayCap: sayCap || null,   // 발언을 줄인 글당 상한(제출 에코 예산에서 정했다) — 줄이지 않았으면 null
+        sayCap: sayCap || null,   // 발언을 줄인 글당 상한(제출 에코 예산 또는 옛 앱의 발췌 칸에서 정했다) — 줄이지 않았으면 null
         citationUnmatched: (result.citationAudit && result.citationAudit.unmatched
                             ? result.citationAudit.unmatched.length : null),
         // 좌석에 못 간 근거 — 비어 있지 않으면 이 패널의 좌석은 브리프의 일부만 보고 판정했다.
