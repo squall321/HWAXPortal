@@ -1,7 +1,8 @@
 # 서버(cae00)에서 할 일 — 리스크 심사 M1(패널 수리·1백만 토큰·Claude 입구)
 
 > 대상: cae00 운영자 · **대조 시점 2026-10-11** · 보낸 쪽: dev(이 리포 `docs/risk-review-redesign/`).
-> 반영되는 리포 — HWAXRisk(리스크 앱 SIF) · HWAXAgentServer · HWAXPortal · HWAXMcpGateway · AIDataHub · HEAXHub(등록 사본). 커밋은 이 문서와 같은 날 push 된 각 리포의 HEAD 다.
+> 반영되는 리포와 push 된 커밋(2026-10-11) — HWAXRisk `6d6650a`(리스크 앱 SIF, Drive 에도 올림) · HWAXAgentServer `7644284` · HWAXMcpGateway `9dc6c01` · AIDataHub `b401f88` · HEAXHub `d65990c`(등록 사본) · HWAXPortal 은 이 문서를 담은 커밋(프론트 dist 는 Drive 에도 올림). 이보다 새 커밋이 있어도 update-all 이 함께 받는다.
+> dev 에서는 같은 커밋으로 다섯 구성 요소를 다시 띄워 §3 의 ①③④⑤ 를 확인했다(② 는 dev 창이 16K 라 2,000 이 맞다).
 > 명령은 각 리포 루트에서 돈다(cae00 은 `~/Projects/<Repo>`). 근거는 줄 번호가 아니라 **출력 문구**로 가리킨다.
 > 이 박스의 지금 상태는 이 문서가 알지 못한다. 그래서 확인마다 재는 명령을 적었다.
 
