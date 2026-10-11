@@ -153,3 +153,12 @@ def test_오류_문구와_고칠_곳을_줄이지_말고_옮기라고_시킨다(
     assert "detail.fix" in prompt and "message" in prompt
     tail = prompt[prompt.index('error="brief_unavailable"'):]
     assert "message" in tail, "호출 실패 문구를 옮기라는 말이 없다"
+
+
+def test_위임됐지만_패널_소유자가_아니면_E404_와_그_문구를_그대로_보인다():
+    """같은 앱 판은 위임된 신원이라도 토큰의 패널 소유자가 아니면 {error:'E404', message} 로 답한다(detail.fix 는 없다) — 결과 제출은
+    소유자만 하므로 동결 전에 거절한 것이다. 코드만 보이면 '토큰이 틀렸나' 로 읽힌다."""
+    msg = "이 브리프 토큰의 패널을 b@example.com 으로 찾을 수 없습니다 — 결과 제출은 패널 소유자만 하므로, 소유자가 돌리세요."
+    out = _risk({"error": "E404", "message": msg, "panels": []})
+    assert out["result"]["error"] == "E404" and out["result"]["message"] == msg and out["result"]["fix"] == ""
+    assert _seated(out) == [] and any("E404" in ln and msg in ln for ln in out["logs"]), out["logs"]
