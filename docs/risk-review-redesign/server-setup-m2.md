@@ -151,12 +151,13 @@ cat "$OUT"
 코드가 고르지 않는다(M2.md 5절 #11). 사용자가 영역 대표 9명을 고른다.
 
 ```text
-risk_get_coverage(target_key='diff:<diff id>', with_seats=true)
+risk_get_coverage(target_key='diff:<diff id>', order_offset=0)
 ```
 
-- 영역(`domain`)마다 대표 한 명씩, 9개 영역에서 고른다. 대표는 그 영역의 1순위 좌석이다 — Tier A 패널을 돌린 대상이면 `seats` 의 `tier` 가 `A` 인 좌석이다. 패널을 돌리지 않아 `tier` 가 비어 있으면 [S12 뒤] 최종본이 1순위를 보는 곳을 적는다(그 전에는 dev 에 대상 키를 보내 묻는다). `agent_key` 를 적어 둔다.
-- ECAD 가 없는 과제면 ECAD 에 기대는 영역(회로 등)은 고르지 않는다. 그 영역의 2순위부터는 `status` 가 `deferred`·`reason` 이 `ecad_absent` 로 보이고, 1순위는 `pending` 이어도 입력이 빠진 좌석이다. 입력 결손 호출은 M3 다. 잘못 넣으면 잡을 만들 때 `input_gap_m3` 로 거절되고 그 `agents` 를 말한다.
-- 1순위의 카드가 0장이면 다음 순위로 바꾸거나 그대로 둔다(그 셀은 역할만으로 판정하는 `role_only` 가 된다). 무엇을 고를지는 사용자가 정한다. [S12 뒤] 카드 장수가 어디에 보이는지는 최종본에 적는다.
+- 응답의 `review.order` 가 검토 순서다. 한 행은 `{order, agent_key, domain, rank_in_domain, tier, deferred, input_gaps, state, cards_total, checkable_n}` 다. 한 번에 다 오지 않으면 `review.order_page.next_order_offset` 을 다음 `order_offset` 으로 주고 이어 받는다(로스터가 수백 명이면 쪽이 여럿이다). `order_offset` 없이 부르면 영역마다 순위 1~3 만 온다 — 고르기에는 그것으로도 넉넉하다.
+- 영역(`domain`)마다 대표 한 명씩, 9개 영역에서 고른다. 대표는 그 영역의 `rank_in_domain` 이 1 인 행이다. `agent_key` 를 적어 둔다.
+- ECAD 가 없는 과제면 ECAD 에 기대는 영역(회로 등)은 고르지 않는다. 그 영역의 행은 `input_gaps` 에 `ecad_absent` 가 있고, 2순위부터는 `deferred` 가 참이다. 입력 결손 호출은 M3 다. 잘못 넣으면 잡을 만들 때 `input_gap_m3` 로 거절되고 그 `agents` 를 말한다.
+- 1순위의 카드가 0장이면 다음 순위로 바꾸거나 그대로 둔다(그 셀은 역할만으로 판정하는 `role_only` 가 된다). 무엇을 고를지는 사용자가 정한다. 카드 장수(`cards_total`·판정 대상 `checkable_n`)는 잡이 그 전문가의 카드 묶음을 받은 뒤에 같은 행에 찬다(그 전에는 비어 있다). 잡을 시작하고 몇 분 뒤 다시 불러 보고, 0장이면 그 전문가를 범위에서 빼고 다음 순위로 새 잡을 세울지 정한다.
 
 ## 5. 잡 시작 — [S12 뒤]
 
@@ -179,6 +180,7 @@ ls -l "$D"/risk_review.db "$D"/risk_review.db-wal
 | `review_disabled` | 스위치가 꺼져 있다 | 2절 |
 | `units_absent` | 활성 단위 빌드가 없다 | 3-1 |
 | `review_job_exists` · `panel_job_running` | 이미 도는 잡이 있다 | 그 잡이 끝난 뒤 |
+| `review_in_flight` | 앞 잡을 취소했는데 그 잡의 호출이 아직 돈다(`detail` 에 전문가·셀 수) | 앞 잡이 `cancelling` 에서 `cancelled` 가 된 뒤 |
 | `repersist_pending` | 다시 저장을 기다리는 패널이 있다 | `risk_repersist_panel` 로 먼저 정리한다 |
 | `input_gap_m3` | 범위에 입력 결손 전문가가 있다 | 응답의 `agents` 를 빼고 다시(4절) |
 | `scope_invalid` · `scope_empty` | 범위의 키가 로스터에 없거나 비었다 | 키 철자를 본다 |
