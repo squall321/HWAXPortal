@@ -116,6 +116,14 @@ async def lifespan(app: FastAPI):
         limits=httpx.Limits(max_connections=settings.max_concurrent_chats,
                             max_keepalive_connections=20),
     )
+    # 카드 대조 중계(/agent/card-review/*) 전용 — 챗과 연결·퍼밋을 다투지 않는다(config card_review_max_streams, P-14). run 은
+    # 세마포어가 그 수에서 429 로 막고, 풀은 거기에 limits·pack·plan 몫 4 를 더한다. 한도는 챗과 같다(read 는 침묵 한도 —
+    # 단발 셋은 요청마다 AGENT_UNARY_TIMEOUT_S 를 따로 준다).
+    app.state.card_review_semaphore = asyncio.Semaphore(settings.card_review_max_streams)
+    app.state.card_review_client = httpx.AsyncClient(
+        timeout=_agent_timeout(settings),
+        limits=httpx.Limits(max_connections=settings.card_review_max_streams + 4),
+    )
     # 절차(업무 절차 인벤토리) — 챗과 자원을 공유하지 않는 격리 모듈(docs/procedures/PLAN.md §3).
     # ⚠ 여기서 터져도 포털은 떠야 한다. W-10 의 "영향 0" 은 런타임 자원 얘기이고 **기동 실패는
     #   공유되므로** 모듈만 끄고 챗 릴레이(/agent/)는 살린다.
@@ -144,6 +152,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown: close the pooled client + the audit sqlite connection.
     await app.state.agent_client.aclose()
+    await app.state.card_review_client.aclose()
     app.state.agent_audit.close()
     if app.state.procedures_runner is not None:
         await app.state.procedures_runner.aclose()

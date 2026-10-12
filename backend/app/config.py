@@ -287,6 +287,11 @@ class Settings(BaseSettings):
     # 만료는 실패가 아니라 **기본값으로 진행**이다(첫 발화가 화두, 좌석은 심의가 자동 발굴) — 응답의 error 가 agent_timeout 이다.
     agent_unary_timeout_s: float = 600.0
     max_concurrent_chats: int = 64                     # SSE connections hold a worker → cap + 429
+    # 카드 대조 중계(/agent/card-review/run, 리스크 심사 재설계 M2)의 동시 수. 챗과 따로 센다 — 전용 세마포어(넘으면 429 engine_busy,
+    # 30초 뒤 같은 호출)와 전용 연결 풀(이 값 + 4, limits·pack·plan 몫)이다. 챗 풀(위 64)을 같이 쓰면 챗이 차면 카드 대조가 연결을
+    # 못 얻고, 카드 대조 수천 건이 챗을 막는다(P-14). 줄을 세우는 곳은 엔진 관문(CARD_REVIEW_CONCURRENCY 4) 하나이고, 리스크 앱
+    # 검토 워커(HWAXRISK_REVIEW_CONCURRENCY 4)보다 넉넉히 둔다(docs/risk-review-redesign/M2.md 4.5).
+    card_review_max_streams: int = 12
     agent_audit_log_path: str = "secrets/agent_audit.sqlite"  # who/when/which tool (Phase 1)
     # 정문 nginx 접근 로그(회전본은 같은 이름 뒤에 붙는다) — 관리자 접속 이력이 계정별 요청을 찾는다(docs/access-history).
     # 컨테이너에서는 리포가 /workspace 라 backend 기준 상대경로로 닿는다.

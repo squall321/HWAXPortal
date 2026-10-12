@@ -15,6 +15,7 @@ StreamingResponse → nginx buffering-off → fetch+ReadableStream) with no Agen
 
 import asyncio
 import codecs
+import hashlib
 import json
 import logging
 import re
@@ -31,7 +32,7 @@ import anyio
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from app.access.agent_guard import check_chat, filter_experts
@@ -1720,3 +1721,353 @@ async def chat(
                                title=(str(body.message or "")[:60].strip() or None))
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+# ── 카드 대조 중계(리스크 심사 재설계 M2 · WP3a P1) ─────────────────────────────────────────────────────
+# 리스크 앱 검토 러너가 PAT 로 부르면 본문을 **통째로** 에이전트 서버 /card-review/{limits|pack|plan|run} 으로 넘긴다. 칸을 선언해
+# 하나씩 옮기지 않는다 — 위 ChatRequest·DelibOpts 의 흉터대로, 선언하지 않은 칸은 조용히 사라진다. 포털이 하는 일은 넷이다.
+#   · 권한 — feat:deliberation. 없으면 403 이고 에이전트 서버로 아무것도 안 나간다(pack 은 카드 원문을 돌려준다).
+#   · 신원 — groups·user_email·user_pat·entitlements 넷을 검증된 주체로 덮어쓰고 나머지 칸은 손대지 않는다. 호출자가 실어 보낸
+#     신원은 버린다 — 통째로 넘기는 중계의 유일한 구멍이다(spec-wp5b 3.10.2).
+#   · 크기 — 원 본문이 _WINDOW_CHARS 바이트를 넘으면 413. 창에 넣을 길이는 창을 아는 엔진이 정한다(넘으면 엔진의 422 over_budget).
+#   · 감사 — 주체·종류·전문가 키·단위 id·본문 바이트 수·sha256·상류 상태(와 오류 code)만. 본문은 싣지 않는다.
+# 대화를 만들지 않고 /agent/chat 을 타지 않는다(M2 나갈 기준 3 — 포털 대화 목록에 새 대화가 없다). 챗과 연결·퍼밋을 다투지 않게
+# 전용 클라이언트·세마포어를 쓴다(main.py — P-14). 오류 어휘는 docs/risk-review-redesign/M2.md 4.4 다 — 리스크 앱이 code 하나로
+# 부류(기다림·인프라·잡 보류·내용 탓)를 가르고 표에 없는 code 는 '내용 탓'(차감)이 되므로 여기서 새 이름을 지어내지 않는다.
+# 중계가 새로 낸 이름은 본문 상한의 body_too_large(413) 하나이고 표의 '내용 탓' 칸에 적었다 — 같은 본문은 다시 보내도 넘는다.
+
+_CR_RETRY_AFTER_S = 30       # engine_busy 의 대기 — 엔진 관문 CARD_REVIEW_RETRY_AFTER_S 의 기본값과 같은 수
+_CR_META_MAX = 200           # 감사에 옮기는 식별자 하나의 상한 — 식별자 칸에 본문을 실어 감사로 흘리지 못하게
+
+
+class _CrReject(Exception):
+    """중계가 스스로 내는 거절. 본문은 엔진 오류와 같은 모양 {code, message, …} 이다 — 앱이 code 로 가른다."""
+
+    def __init__(self, status: int, code: str, message: str, *, upstream: int | None = None,
+                 headers: dict[str, str] | None = None, **extra: Any) -> None:
+        super().__init__(message)
+        self.status, self.code, self.upstream, self.headers = status, code, upstream, headers
+        self.body = {"code": code, "message": message, **({"upstream": upstream} if upstream is not None else {}), **extra}
+
+    def response(self) -> JSONResponse:
+        return JSONResponse(status_code=self.status, content=self.body, headers=self.headers)
+
+
+def _cr_sem(request: Request) -> asyncio.Semaphore:
+    return request.app.state.card_review_semaphore
+
+
+def _cr_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.card_review_client
+
+
+def _cr_busy(what: str) -> _CrReject:
+    """기다림 부류 — 앱은 아무것도 세지 않고 retry_after_s 뒤 같은 호출을 다시 낸다. 줄을 세우지 않는다(줄은 엔진 관문 하나다)."""
+    return _CrReject(429, "engine_busy", f"{what} — {_CR_RETRY_AFTER_S}초 뒤 같은 호출을 다시 낸다",
+                     retry_after_s=_CR_RETRY_AFTER_S, headers={"Retry-After": str(_CR_RETRY_AFTER_S)})
+
+
+async def _cr_read(request: Request) -> tuple[bytes, dict]:
+    """원 본문(바이트)과 그 JSON 객체. 상한을 넘는 순간 읽기를 멈춘다 — 앞단 nginx 가 2GB 까지 받으므로 다 읽은 뒤 재지 않는다."""
+    def too_large(n: int | None) -> _CrReject:
+        return _CrReject(413, "body_too_large",
+                         f"본문{f' {n:,}바이트' if n else ''}가 상한 {_WINDOW_CHARS:,}바이트(1M 토큰 창 하나)를 넘는다 — 창에 들어갈 수 "
+                         "없는 요청이라 자르지 않고 거절한다", max_bytes=_WINDOW_CHARS)
+
+    cl = request.headers.get("content-length", "")
+    if cl.isdigit() and int(cl) > _WINDOW_CHARS:
+        raise too_large(int(cl))
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > _WINDOW_CHARS:
+            raise too_large(None)
+    raw = bytes(buf)
+    try:
+        obj = json.loads(raw)
+    except (ValueError, RecursionError):
+        raise _CrReject(422, "bad_request", "본문이 JSON 이 아니다") from None
+    if not isinstance(obj, dict):
+        raise _CrReject(422, "bad_request", "본문은 JSON 객체여야 한다")
+    return raw, obj
+
+
+def _cr_payload(request: Request, settings: Settings, principal: Principal, obj: dict) -> bytes:
+    """호출자 본문에 신원 칸 넷만 덮어쓴다(호출자가 실어 보낸 값은 버린다). 나머지 칸은 선언하지 않은 것까지 그대로 간다."""
+    ident = {"groups": principal.groups,
+             "user_email": principal.email,
+             # /chat 과 같은 규칙 — None 이 아니라 빈 문자열이 '없음' 이다(엔진은 서비스 계정으로 내려가지 않고 credential_missing 이다).
+             "user_pat": _chat_user_pat(request.app.state.keystore, settings, principal) or "",
+             "entitlements": sorted(g for g in principal.groups if is_synthetic(g))}
+    return json.dumps({**obj, **ident}, ensure_ascii=False).encode()
+
+
+def _cr_meta(raw: bytes, obj: dict) -> dict:
+    """감사 칸 — 종류·전문가 키·단위 id·본문 바이트 수·sha256. 본문은 싣지 않는다."""
+    expert, unit = obj.get("expert"), obj.get("unit")
+    ids = {"kind": obj.get("kind"),
+           "agent": (expert.get("key") if isinstance(expert, dict) else None) or obj.get("agent_key"),
+           "unit": unit.get("unit_id") if isinstance(unit, dict) else None}
+    meta = {k: str(v)[:_CR_META_MAX] for k, v in ids.items() if v is not None}
+    if raw:
+        meta.update(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+    return meta
+
+
+def _cr_audit(request: Request, principal: Principal, route: str, meta: dict, *,
+              upstream: int | None = None, code: str | None = None, status: str = "ok") -> None:
+    extra = {k: v for k, v in (("upstream", upstream), ("code", code)) if v is not None}
+    _audit(request).record(principal=principal.subject, status=status, meta={**meta, **extra},
+                           event=f"card_review_{route}_{'done' if status == 'ok' else 'error'}")
+
+
+def _cr_fail(request: Request, principal: Principal, route: str, meta: dict, rej: _CrReject) -> JSONResponse:
+    # 에이전트 서버에 닿기 전에 포털이 막은 것(본문·자리)은 rejected, 닿으려다 실패한 것은 error 다.
+    mine = rej.upstream is None and rej.status in (413, 422, 429)
+    _cr_audit(request, principal, route, meta, upstream=rej.upstream, code=rej.code,
+              status="rejected" if mine else "error")
+    return rej.response()
+
+
+def _cr_upstream_code(r: httpx.Response) -> str | None:
+    """에이전트 서버 오류 본문의 code — 최상위이거나 FastAPI detail 안이다. 못 읽으면 None."""
+    try:
+        body = r.json()
+    except ValueError:
+        return None
+    if isinstance(body, dict) and isinstance(body.get("detail"), dict):
+        body = body["detail"]
+    code = body.get("code") if isinstance(body, dict) else None
+    return str(code)[:_CR_META_MAX] if code else None
+
+
+def _cr_answer(r: httpx.Response) -> Response:
+    """에이전트 서버의 답(본문까지 읽은 것)을 상태·본문 그대로 넘긴다 — 4xx 도 그대로다(앱이 code·need·have 를 읽는다).
+    엔진이 code 를 실은 5xx 도 그대로다 — 팩의 tools_unavailable(503)·card_list_failed·card_list_unstable·card_fetch_failed(502)는
+    앱이 팩 재시도로 가르는 어휘다(M2.md 4.4). 502 agent_5xx 로 덮으면 그 구분이 사라진다.
+    code 가 없는 것 둘만 바꾼다. 404 면 이 경로를 모르는 옛 에이전트 서버다(agent_outdated — 앱은 잡을 보류하고 300초 뒤 다시 본다.
+    엔진의 404 agent_not_found 는 code 가 있어 그대로 간다). 5xx 면 엔진이 죽었거나 앞단이 낸 것이라 502 agent_5xx 다(본문은
+    되싣지 않는다)."""
+    code = _cr_upstream_code(r)
+    if code is None and r.status_code >= 500:
+        raise _CrReject(502, "agent_5xx", f"에이전트 서버 오류(HTTP {r.status_code})", upstream=r.status_code)
+    if code is None and r.status_code == 404:
+        raise _CrReject(404, "agent_outdated", "에이전트 서버에 카드 대조 경로가 없다 — 옛 판이다. 에이전트 서버를 카드 대조가 든 "
+                        "판으로 올리고 다시 띄운다", upstream=404)
+    headers = {"Retry-After": r.headers["retry-after"]} if "retry-after" in r.headers else None
+    return Response(content=r.content, status_code=r.status_code, headers=headers,
+                    media_type=r.headers.get("content-type", "application/json"))
+
+
+def _cr_transport(exc: httpx.HTTPError, read_s: float | None, knob: str) -> _CrReject:
+    """에이전트 서버에 닿지 못했거나 답이 늦었다. 시간 초과는 기본값으로 진행하지 않는다 — 도우미의 폴백 규칙(_unary_fail)과
+    다르다. 앱은 agent_timeout·agent_unreachable 을 인프라로 치고 차감 없이 다시 낸다."""
+    if isinstance(exc, httpx.PoolTimeout):
+        # 전용 풀(run 동시 수 + 4)이 찼다 — 엔진에 닿지도 않았으니 기다림이다.
+        return _cr_busy("카드 대조 중계의 연결 풀이 찼다(CARD_REVIEW_MAX_STREAMS + 4)")
+    if isinstance(exc, httpx.ReadTimeout):
+        return _CrReject(504, "agent_timeout", f"에이전트 서버 응답이 {read_s or 0:.0f}초 안에 오지 않았다({knob})",
+                         knob=knob, timeout_s=read_s)
+    return _CrReject(502, "agent_unreachable", f"에이전트 서버에 연결하지 못했다({type(exc).__name__})")
+
+
+async def _cr_unary(request: Request, principal: Principal, settings: Settings, route: str) -> Response:
+    """limits(GET)·pack·plan — 단발 JSON. read 는 AGENT_UNARY_TIMEOUT_S(600초)이고 넘으면 504 agent_timeout 이다."""
+    ensure(principal, "feat:deliberation")
+    raw, obj = b"", {}
+    try:
+        if request.method == "POST":
+            raw, obj = await _cr_read(request)
+        content = _cr_payload(request, settings, principal, obj) if request.method == "POST" else None
+        try:
+            r = await _cr_client(request).request(
+                request.method, f"{settings.agent_server_url}/card-review/{route}", content=content,
+                headers={"content-type": "application/json"} if content is not None else None,
+                timeout=_unary_timeout(settings))
+        except httpx.HTTPError as exc:
+            raise _cr_transport(exc, settings.agent_unary_timeout_s, "AGENT_UNARY_TIMEOUT_S") from exc
+        out = _cr_answer(r)
+    except _CrReject as rej:
+        return _cr_fail(request, principal, route, _cr_meta(raw, obj), rej)
+    bad = r.status_code >= 400
+    _cr_audit(request, principal, route, _cr_meta(raw, obj), upstream=r.status_code,
+              code=_cr_upstream_code(r) if bad else None, status="error" if bad else "ok")
+    return out
+
+
+@router.get("/card-review/limits")
+async def card_review_limits(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """이 박스의 카드 대조 예산과 판(에이전트 서버 GET /card-review/limits). 404 면 옛 에이전트 서버다(agent_outdated)."""
+    return await _cr_unary(request, principal, settings, "limits")
+
+
+@router.post("/card-review/pack")
+async def card_review_pack(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """전문가 한 명의 지식카드 전부 → 정규 팩. 엔진이 이 사람의 user_pat 으로만 게이트웨이에 붙는다(서비스 계정으로 내려가지 않는다)."""
+    return await _cr_unary(request, principal, settings, "pack")
+
+
+@router.post("/card-review/plan")
+async def card_review_plan(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """카드 묶음·목록 쪽 나누기(엔진의 순수 계산)."""
+    return await _cr_unary(request, principal, settings, "plan")
+
+
+class _CrRun:
+    """흐르는 run 한 건 — 상류 응답을 닫고 퍼밋을 돌려주고 마지막 감사를 **한 번만** 남긴다. 생성기의 finally 와 응답의 finally
+    둘 다 부른다 — 생성기는 한 번도 돌지 않으면(헤더를 보내다 끊김) finally 도 돌지 않아, 퍼밋이 새고 엔진은 듣는 이 없는 LLM
+    호출을 끝까지 돈다."""
+
+    def __init__(self, request: Request, principal: Principal, sem: asyncio.Semaphore, meta: dict,
+                 r: httpx.Response) -> None:
+        self.request, self.principal, self.sem, self.meta, self.r = request, principal, sem, meta, r
+        self.code: str | None = None   # 지나간 error 프레임의 code(엔진이 냈거나 중계가 냈다)
+        self.result = False            # result 프레임이 지나갔다
+        self.done = False              # done 프레임이 지나갔다 — 그 뒤에 끊겨도 중계는 아무것도 덧붙이지 않는다
+        self.ended = False             # 상류가 스스로 끝났다 — 끝 프레임 없이 끝났으면 끊긴 것이다
+        self._closed = False
+
+    def saw(self, frame: bytes) -> None:
+        """완결된 프레임 하나 — 이름만 본다(result 는 크다). error 일 때만 data 를 읽는다."""
+        name = next((ln[6:].strip() for ln in frame.split(b"\n") if ln.startswith(b"event:")), None)
+        if name == b"result":
+            self.result = True
+        elif name == b"done":
+            self.done = True
+        elif name == b"error":
+            parsed = _parse_sse_frame(frame.decode(errors="replace"))
+            data = parsed[1] if parsed else None
+            self.code = str((data.get("code") if isinstance(data, dict) else None) or "error")[:_CR_META_MAX]
+
+    def cut(self, buf: bytes, code: str, message: str, **extra: Any) -> bytes:
+        """끊겼을 때 중계가 내는 끝 — error 와 done. 상류가 이미 done 을 냈으면 덧붙이지 않는다. 반쯤 온 프레임이 있으면 먼저
+        닫는다 — 안 닫으면 그 조각과 이 프레임이 한 프레임으로 붙어 앱이 둘 다 못 읽는다."""
+        if self.done:
+            return b""
+        self.code = code
+        return ((b"\n\n" if buf else b"")
+                + sse_event("error", {"code": code, "message": message, "infra": True, "retryable": True, **extra})
+                + sse_event("done", {}))
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            # 가린다 — 취소된 채 만난 await 는 곧바로 다시 취소돼 연결을 못 닫는다. 연결이 닫혀야 엔진이 LLM 태스크를 거둔다.
+            with anyio.CancelScope(shield=True):
+                await self.r.aclose()
+        finally:
+            self.sem.release()
+            code = self.code or (None if self.result else ("engine_stream_cut" if self.ended else "client_closed"))
+            _cr_audit(self.request, self.principal, "run", self.meta, upstream=self.r.status_code, code=code,
+                      status="ok" if code is None else ("cancelled" if code == "client_closed" else "error"))
+
+
+async def _cr_frames(run: _CrRun, idle_s: float | None) -> AsyncIterator[bytes]:
+    """상류 바이트를 그대로 흘리며 프레임 이름만 훑는다(감사의 결과 code). 프레임을 만들지 않는다 — ping 도 엔진 것만 넘긴다
+    (중계가 만들면 멈춘 엔진이 살아 있는 것으로 보인다). 끊겼을 때만 error·done 둘을 낸다."""
+    buf = b""                          # 아직 끝나지 않은 프레임(경계 \n\n 전까지)
+    try:
+        async for chunk in run.r.aiter_raw():
+            if not chunk:
+                continue
+            buf += chunk
+            while (i := buf.find(b"\n\n")) >= 0:
+                run.saw(buf[:i])
+                buf = buf[i + 2:]
+            yield chunk
+        run.ended = True
+    except httpx.ReadTimeout:
+        # 침묵 한도(AGENT_STREAM_IDLE_TIMEOUT_S) — 엔진은 15초마다 ping 을 내므로 멈춘 엔진이다. 연결을 닫아 엔진이 거두게 한다.
+        if tail := run.cut(buf, "agent_stream_idle",
+                           f"에이전트 서버가 {idle_s or 0:.0f}초 동안 아무 신호도 보내지 않아 중계가 구독을 끊었다"
+                           "(AGENT_STREAM_IDLE_TIMEOUT_S)", knob="AGENT_STREAM_IDLE_TIMEOUT_S", idle_s=idle_s):
+            yield tail
+    except httpx.HTTPError as exc:
+        # 도중에 끊겼다(재기동·연결 리셋) — 인프라다. 앱은 차감 없이 같은 호출을 다시 낸다.
+        if tail := run.cut(buf, "agent_unreachable", f"에이전트 서버 스트림이 도중에 끊겼다({type(exc).__name__})"):
+            yield tail
+    finally:
+        await run.close()
+
+
+class _CrStream(StreamingResponse):
+    """run 의 SSE 응답 — 끝나든 끊기든 run.close() 가 돈다(생성기 finally 의 짝 — _CrRun 주석)."""
+
+    def __init__(self, run: _CrRun, content: AsyncIterator[bytes]) -> None:
+        super().__init__(content, media_type="text/event-stream", headers=SSE_HEADERS)
+        self._run = run
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._run.close()
+
+
+@router.post("/card-review/run")
+async def card_review_run(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """카드 대조 호출 한 건(SSE) — 바이트를 그대로 흘린다. 스트림 전 거절(422·409·403 …)은 상태 그대로, 자리가 없으면 429
+    engine_busy, 침묵 한도에 걸리면 error{agent_stream_idle}, 앱 쪽이 끊으면 에이전트 쪽 연결도 닫는다(엔진이 LLM 을 거둔다).
+    상태를 그대로 넘기려면 응답을 시작하기 전에 상류의 상태를 알아야 해서, 상류를 여기서 열고 스트림에 넘긴다."""
+    ensure(principal, "feat:deliberation")
+    sem = _cr_sem(request)
+    raw, obj = b"", {}
+    try:
+        raw, obj = await _cr_read(request)
+        # /chat 과 같은 규칙 — locked() 와 acquire() 사이에 await 가 없어 원자적이다. 줄을 세우지 않고 거절한다.
+        if sem.locked():
+            raise _cr_busy(f"카드 대조 중계가 꽉 찼다(동시 {settings.card_review_max_streams}건 — CARD_REVIEW_MAX_STREAMS)")
+    except _CrReject as rej:
+        return _cr_fail(request, principal, "run", _cr_meta(raw, obj), rej)
+    meta = _cr_meta(raw, obj)
+    await sem.acquire()
+    handed = False
+    # ⚠ acquire 와 스트림을 넘기는 사이는 보호한다(/chat 의 ⚠ 와 같은 까닭) — 여기서 새면 퍼밋이 영구히 사라진다.
+    try:
+        _audit(request).record(principal=principal.subject, event="card_review_run_start", meta=meta)
+        client = _cr_client(request)
+        try:
+            r = await client.send(client.build_request(
+                "POST", f"{settings.agent_server_url}/card-review/run",
+                content=_cr_payload(request, settings, principal, obj),
+                headers={"content-type": "application/json"}), stream=True)
+        except httpx.HTTPError as exc:
+            raise _cr_transport(exc, client.timeout.read, "AGENT_STREAM_IDLE_TIMEOUT_S") from exc
+        if r.status_code != 200:
+            try:
+                await r.aread()
+            except httpx.HTTPError as exc:
+                raise _cr_transport(exc, client.timeout.read, "AGENT_STREAM_IDLE_TIMEOUT_S") from exc
+            finally:
+                await r.aclose()
+            out = _cr_answer(r)
+            bad = r.status_code >= 400
+            _cr_audit(request, principal, "run", meta, upstream=r.status_code,
+                      code=_cr_upstream_code(r) if bad else None, status="error" if bad else "ok")
+            return out
+        run = _CrRun(request, principal, sem, meta, r)
+        handed = True
+        return _CrStream(run, _cr_frames(run, client.timeout.read))
+    except _CrReject as rej:
+        return _cr_fail(request, principal, "run", meta, rej)
+    finally:
+        if not handed:
+            sem.release()
