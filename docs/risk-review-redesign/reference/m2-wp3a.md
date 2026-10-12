@@ -250,7 +250,7 @@ M2 에서 하는 것은 아래 여덟 걸음이다(PLAN 3절 M2 · 체크리스�
 
 **계약.**
 - 본문 — 원 본문 바이트가 `_WINDOW_CHARS`(4,194,304)를 넘으면 413 이다. 설계서의 600,000자 상한은 버린다(1백만 토큰 창의 단일 sweep 은 카드 9만 자 + 목록 10만 자 안팎이다). JSON 으로 읽어 `groups = principal.groups`, `user_email = principal.email`, `user_pat = _chat_user_pat(...) or ""`, `entitlements = sorted(합성 그룹)` 을 덮어쓰고 나머지 칸은 손대지 않는다. 호출자가 실어 보낸 신원 칸은 버린다.
-- 단발(limits·pack·plan) — `_unary_timeout`(600초). 시간 초과는 기본값 진행이 아니라 504 `agent_timeout` 이다(도우미 폴백 규칙을 따르지 않는다). 에이전트 서버의 4xx JSON 은 상태와 본문을 그대로 넘긴다(앱이 `code·need·have` 를 읽는다). 404 는 `agent_outdated` 로 적는다(옛 에이전트 서버). 5xx·연결 실패는 502 `agent_5xx`·`agent_unreachable` 이다.
+- 단발(limits·pack·plan) — `_unary_timeout`(600초). 시간 초과는 기본값 진행이 아니라 504 `agent_timeout` 이다(도우미 폴백 규칙을 따르지 않는다). 에이전트 서버의 4xx JSON 은 상태와 본문을 그대로 넘긴다(앱이 `code·need·have` 를 읽는다). 404 는 `agent_outdated` 로 적는다(옛 에이전트 서버). 5xx·연결 실패는 502 `agent_5xx`·`agent_unreachable` 이다. (구현 D-28 — `code` 를 실은 엔진 오류는 5xx 도 그대로 넘기고, 바꾸는 것은 `code` 없는 404·5xx 뿐이다. 413 의 code 는 `body_too_large`, 전용 풀이 차면 429 `engine_busy` 다.)
 - run — 전용 세마포어가 차면 429 `{code:"engine_busy", retry_after_s:30}` 이다(기다림 부류 — PLAN 4절 C-24·C-26). 획득과 제너레이터 사이를 `/chat` 처럼 보호한다. 바이트를 그대로 흘리고, 침묵 한도(`agent_stream_idle_timeout_s`, 13시간)에 걸리면 `error{agent_stream_idle}` 를 낸다. 앱 쪽 연결이 끊기면 `client.stream` 문맥이 닫혀 에이전트 쪽 연결도 닫힌다(problems-wp5a 186행).
 - 감사 — `card_review_pack_*`·`card_review_run_{start,done,error}` 에 주체·종류·전문가 키·단위 id·본문 바이트 수·sha256·상류 상태만 적는다. 본문은 싣지 않는다.
 

@@ -91,7 +91,7 @@
 - [ ] `E5` 실행기·관문(`review_gate.py`)·가짜 LLM
 - [ ] `E7` 라우트 넷·`/health`·계약 예제(`run_*.sse` 포함)
 - [ ] 가짜 LLM 서버(`tests/fakes/llm_server.py`)
-- [ ] `P1` 포털 중계 넷
+- [x] `P1` 포털 중계 넷 — HWAXPortal `0f66999`, 시험 77건(`test_card_review_relay.py`), 계획과 다른 곳은 D-28
 - [ ] 에이전트 서버·포털 시험 전체 → push(쓰는 곳이 없어 동작 변화 없음)
 
 단계 C 원장(리스크 앱 가지 `m2-cells`)

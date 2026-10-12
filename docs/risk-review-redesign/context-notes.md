@@ -171,3 +171,16 @@ dev 실주행(qwen 7B · 합성 40건 `DEVSEED-40-20261009` · Tier A 패널 셋
 - 가짜 LLM 서버(OpenAI 호환)를 M4 에서 M2 로 당겼다. dev LLM 은 16K 창이라 1백만 토큰 예산을 실제 스택으로 볼 수 없다. 배선은 가짜 LLM 으로, 판정의 질은 cae00 파일럿에서 본다. 운영 코드에 가짜 손잡이를 두지 않는다는 D-15 와 부딪치지 않는다(시험 디렉터리의 별도 프로세스다).
 - change_kind 두 종(R-32)을 M2 에서 맞춘다 — 택소노미 1.1. M3 의 메커니즘 14종은 1.2 다.
 - MCP 도구는 M2 끝 29종이다(PLAN 4절 C-30 의 17종은 M1 입구 전의 셈).
+
+## 2026-10-12 덧붙임 — M2 P1 포털 중계
+
+**D-28 포털 중계는 엔진이 `code` 를 실은 오류를 상태·본문 그대로 넘기고, `code` 가 없는 것만 중계 어휘로 바꾼다.** (HWAXPortal `0f66999`) 계획(m2-wp3a P1)과 다른 곳과 그 까닭이다.
+- 계획은 '5xx → 502 `agent_5xx`' 였다. 그러면 엔진이 내는 팩 오류 `tools_unavailable`(503)·`card_list_failed`·`card_list_unstable`·`card_fetch_failed`(502)가 `agent_5xx` 로 덮여, 앱이 팩 재시도(M2.md 4.4)와 인프라 백오프를 가를 수 없다. 그래서 상류 본문에 `code`(최상위 또는 FastAPI `detail` 안)가 있으면 상태·본문을 그대로 넘긴다. `code` 가 없는 5xx 만 502 `agent_5xx`(상류 본문은 되싣지 않는다), `code` 가 없는 404 만 404 `agent_outdated` 다. 엔진의 404 `agent_not_found` 는 `code` 가 있어 그대로 간다. M2.md 4.4 표 아래에 한 줄로 적었다.
+- 전용 풀이 차서 연결을 못 얻으면(httpx `PoolTimeout`) 502 가 아니라 429 `engine_busy`(`retry_after_s` 30, `Retry-After`)다. 엔진에 닿지도 않았으니 기다림 부류다.
+- 본문 상한(413)의 code 는 `body_too_large` 다. M2.md 4.4 의 '내용 탓' 칸에 더했다(같은 본문은 다시 보내도 넘는다). 상한은 받은 원 본문의 **바이트**로 잰다. Content-Length 가 있으면 읽기 전에, 없으면 읽으면서 멈춘다(앞단 nginx 는 2GB 까지 받는다). 리스크 앱은 본문을 UTF-8 그대로 보내야 한다 — httpx `json=` 은 이미 `ensure_ascii=False` 다. `\uXXXX` 로 보내면 한글 한 자가 6바이트라 1M 토큰 창 근처의 sweep 본문이 엔진 예산 검사 전에 413 이 될 수 있다.
+- 신원 칸 넷은 run 만이 아니라 pack·plan 본문에도 덮어쓴다(설계서 3.2 — 중계 넷 전부). 엔진의 `plan` 요청 모델이 `extra="forbid"` 라면 네 칸을 선언해야 한다. 안 하면 포털을 거친 plan 이 전부 422 `unknown_fields` 다(E7 몫). `limits` 는 GET 이라 본문이 없다.
+- run 은 상류를 응답 전에 연다. 422·409 를 상태 그대로 넘기려면 응답을 시작하기 전에 상류 상태를 알아야 해서다. 그래서 끊김 정리를 두 곳에 둔다 — 생성기의 finally 와 응답(`_CrStream.__call__`)의 finally 다. 생성기는 한 번도 돌지 않으면(헤더를 보내다 끊김) finally 도 돌지 않는다. 한 곳만 두면 퍼밋이 새고 엔진은 듣는 이 없는 LLM 호출을 끝까지 돈다(사본 변이 — 둘 다 지우면 8건, 응답 쪽만 지우면 1건이 붉다). 닫기는 `anyio.CancelScope(shield=True)` 로 가린다.
+- 끊겼을 때 중계가 내는 프레임은 둘뿐이다. 침묵 한도는 `error{agent_stream_idle, infra, retryable, knob, idle_s}`, 도중 끊김은 `error{agent_unreachable, infra, retryable}` 이고 둘 다 뒤에 `done` 이다. 반쯤 온 프레임이 있으면 `\n\n` 으로 먼저 닫는다(안 닫으면 조각과 붙어 앱이 둘 다 못 읽는다). 엔진이 `done` 을 낸 뒤면 덧붙이지 않는다. 끝 프레임 없이 끝난 스트림에는 아무것도 지어내지 않는다(앱의 `engine_stream_cut`).
+- 감사 — `card_review_{limits|pack|plan}_{done|error}`·`card_review_run_{start,done,error}`. 칸은 `kind`·`agent`·`unit`(각 200자에서 끊는다)·`bytes`·`sha256`(받은 원 본문)·`upstream`·`code` 뿐이다. run 의 끝 code 는 지나간 `error` 프레임의 code 이고, 없으면 `engine_stream_cut`(끝 프레임 없이 끝남)이나 `client_closed`(앱이 떠남, status `cancelled`)다. 포털이 막은 것(413·422·429)은 status `rejected` 다. 계획은 pack·run 만 적었지만 limits·plan 도 한 줄씩 남긴다 — 옛 판(`agent_outdated`)·시간 초과를 뒤에서 찾게 한다.
+- 포털 403(권한 문, `ensure`)의 본문은 포털 공통 `{"detail": …}` 이고 `code` 가 없다. 앱은 상태 403 으로 가른다.
+- 시험 — `backend/tests/test_card_review_relay.py` 77건. WP5b C7 ①~⑤, P-14(챗 세마포어 0·챗 클라이언트가 실패해도 카드 대조는 제 풀로 간다), 나갈 기준 3(대화 수 불변), 끊김 두 길(ASGI spec 2.3 의 `http.disconnect` — uvicorn 이 이것이다 — 와 2.4 의 헤더 전송 OSError). 사본 변이 일곱 가지(신원 덮어쓰기 뒤집기·권한 문·본문 상한·감사에 본문·code 실은 5xx 덮기·정리 두 곳)가 전부 붉다.
