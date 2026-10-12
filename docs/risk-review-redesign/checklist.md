@@ -16,7 +16,7 @@
 
 - [x] M0-a cae00 재고(사용자, `./infra/scripts/risk-review-inventory.sh`, 10-10 — 창 1,048,576 토큰 · 원장 0건 · 패널 저장 실패 흔적 0줄) — 모델 창을 읽은 방식, 출력 상한·시간 한도, 변경 비교 타깃 수와 타깃별 변경 수, 패널 수, `UNIQUE constraint failed: rr_seat_opinions` 로그 유무
 - [x] C0 옛 타깃 얼리기(`7248651` 코드로 v2 DB·골든 픽스처) — M1 에서 끝남(`tests/rr/test_legacy_flow.py`·`tests/fixtures/legacy/`)
-- [ ] M0-b 탐침 스크립트(LLM 직결 60~100회) — 호출 초·글자/토큰 비·절단·행 누락·K
+- [ ] M0-b 탐침 스크립트(LLM 직결 60~100회) — 호출 초·글자/토큰 비·절단·행 누락·K — 스크립트·절차서 준비됨(10-12, `server-setup-m0b.md`), cae00 실행 대기
 - [ ] M0-c 단위 순수 핵심을 실제 `diff_json` 에 — 변경 수·단위 수·줄 분포
 - [ ] M0-d cae00 에서 실제 과제의 리비전 쌍 캡처 → 변경 비교 타깃 1건(사용자와 함께, 선행 자격 확인부터)
 - [ ] 실측표(PLAN 6절) 채움, 전원 1회 벽시계 다시 적음
@@ -84,7 +84,7 @@
 - [x] `U2` 동결 발췌(A 층)
 - [x] `U7` `scope_changed` 인용 조회 · `U8` `review_order` · `U9` change_kind 두 종(택소노미 1.1)
 - [x] `S2` `review_ops`(분류·백오프·보류·차단기)
-- [ ] M0-b 탐침 스크립트와 절차서(cae00 몫)
+- [x] M0-b 탐침 스크립트와 절차서(cae00 몫) — HWAXAgentServer `scripts/m0b_probe.py`(412edde), 절차서 `server-setup-m0b.md`. dev(16K) 실주행 확인, GLM 실행은 cae00
 - [x] 반대 검토 1라운드 → 고침(10-12 — 리스크 앱 RA 11건, 엔진·중계 RB 10건, 전부 재현 뒤 고침 · 변이 시험으로 확인)
 
 단계 B 엔진 끝까지
