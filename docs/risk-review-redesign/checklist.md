@@ -75,22 +75,22 @@
 - [x] 세 꾸러미 사이 계약을 한 벌로 정함(M2.md 4절 — 이름·limits·run·오류 어휘·손잡이·도구 29종)
 
 단계 A 순수 바탕
-- [ ] `E1` 예산·창 출처(`_model_context_state`, `ctx_source`)·`plan()`
-- [ ] `E2` 카드 정규화·렌더·`pack_hash`
-- [ ] `E3` 출력 파서·검사·합치기(모양 맞추기 포함)
-- [ ] `E4` 프롬프트 셋·`_assemble`·`_ask`
-- [ ] `E6` 팩 빌더(`_tools_by_name(svc_fallback=False)`)
-- [ ] `U1` 단위 순수 핵심(devseed 의 part_of 엣지 포함, XU1·XU2·XU8·XU9)
-- [ ] `U2` 동결 발췌(A 층)
-- [ ] `U7` `scope_changed` 인용 조회 · `U8` `review_order` · `U9` change_kind 두 종(택소노미 1.1)
-- [ ] `S2` `review_ops`(분류·백오프·보류·차단기)
+- [x] `E1` 예산·창 출처(`_model_context_state`, `ctx_source`)·`plan()`
+- [x] `E2` 카드 정규화·렌더·`pack_hash`
+- [x] `E3` 출력 파서·검사·합치기(모양 맞추기 포함)
+- [x] `E4` 프롬프트 셋·`_assemble`·`_ask`
+- [x] `E6` 팩 빌더(`_tools_by_name(svc_fallback=False)`)
+- [x] `U1` 단위 순수 핵심(devseed 의 part_of 엣지 포함, XU1·XU2·XU8·XU9)
+- [x] `U2` 동결 발췌(A 층)
+- [x] `U7` `scope_changed` 인용 조회 · `U8` `review_order` · `U9` change_kind 두 종(택소노미 1.1)
+- [x] `S2` `review_ops`(분류·백오프·보류·차단기)
 - [ ] M0-b 탐침 스크립트와 절차서(cae00 몫)
-- [ ] 반대 검토 1라운드 → 고침
+- [x] 반대 검토 1라운드 → 고침(10-12 — 리스크 앱 RA 11건, 엔진·중계 RB 10건, 전부 재현 뒤 고침 · 변이 시험으로 확인)
 
 단계 B 엔진 끝까지
-- [ ] `E5` 실행기·관문(`review_gate.py`)·가짜 LLM
-- [ ] `E7` 라우트 넷·`/health`·계약 예제(`run_*.sse` 포함)
-- [ ] 가짜 LLM 서버(`tests/fakes/llm_server.py`)
+- [x] `E5` 실행기·관문(`review_gate.py`)·가짜 LLM
+- [x] `E7` 라우트 넷·`/health`·계약 예제(`run_*.sse` 포함)
+- [x] 가짜 LLM 서버(`tests/fakes/llm_server.py`)
 - [x] `P1` 포털 중계 넷 — HWAXPortal `0f66999`, 시험 77건(`test_card_review_relay.py`), 계획과 다른 곳은 D-28
 - [ ] 에이전트 서버·포털 시험 전체 → push(쓰는 곳이 없어 동작 변화 없음)
 
