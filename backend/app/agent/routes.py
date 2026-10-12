@@ -23,7 +23,7 @@ import os
 import shutil
 import sqlite3
 from pathlib import Path
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
@@ -1502,6 +1502,21 @@ async def deliberate_voc(
         return {"items": [], "keywords": [], **_unary_fail(exc, settings, "deliberate/voc")}
 
 
+class _ReleasingStream(StreamingResponse):
+    """SSE 응답 — 끝나든 끊기든 on_close 가 돈다. 생성기는 한 번도 돌지 않으면(헤더를 보내다 끊김 — ASGI spec 2.4) finally 도
+    돌지 않으므로, 생성기 finally 에만 맡긴 정리(퍼밋 반납)는 새어 버린다. on_close 는 두 번 불려도 한 번만 일하게 쓴다."""
+
+    def __init__(self, content: AsyncIterator[bytes], on_close: Callable[[], None], **kw: Any) -> None:
+        super().__init__(content, **kw)
+        self._on_close = on_close
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._on_close()
+
+
 @router.post("/chat")
 async def chat(
     request: Request,
@@ -1525,6 +1540,15 @@ async def chat(
                      meta={"reason": "max_concurrent_chats"})
         raise AuthError("too many concurrent chats; retry shortly", status_code=429)
     await sem.acquire()
+    # 퍼밋은 한 번만 돌려준다 — 생성기의 finally 와 응답(_ReleasingStream)이 둘 다 부른다. 헤더를 보내다 끊기면(ASGI spec 2.4)
+    # 생성기가 한 번도 돌지 않아 그 finally 도 돌지 않는다 — 응답 쪽이 없으면 퍼밋이 영구히 샌다.
+    released = False
+
+    def _release() -> None:
+        nonlocal released
+        if not released:
+            released = True
+            sem.release()
 
     # ⚠ acquire 와 gen() 사이는 반드시 보호한다. 여기서 예외가 나면 gen() 이 아예
     # 만들어지지 않으므로 그 안의 finally(sem.release) 가 영원히 실행되지 않는다 —
@@ -1562,7 +1586,7 @@ async def chat(
                 store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
 
     except BaseException:
-        sem.release()
+        _release()
         raise
 
     async def gen() -> AsyncIterator[bytes]:
@@ -1657,7 +1681,7 @@ async def chat(
                             })
                 yield frame
         finally:
-            sem.release()  # released even on client disconnect (Starlette aclose()s the gen)
+            _release()  # released even on client disconnect (Starlette aclose()s the gen) — 시작 전 끊김은 응답이 돌려준다
             if store is not None and cid:
                 # 저장은 스레드에서 한다 — 루프 위에서 하면 잠금을 기다리는 동안 포털 전체가 멈춘다(대화 REST 머리의 ⚠).
                 # ⚠ 가려야(shield) 한다. 브라우저가 도중에 떠나면 Starlette 가 이 태스크를 취소하고, 취소된 채로 만난 await 는
@@ -1720,7 +1744,7 @@ async def chat(
                                activity=activity,
                                title=(str(body.message or "")[:60].strip() or None))
 
-    return StreamingResponse(gen(), media_type="text/event-stream", headers=SSE_HEADERS)
+    return _ReleasingStream(gen(), _release, media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 # ── 카드 대조 중계(리스크 심사 재설계 M2 · WP3a P1) ─────────────────────────────────────────────────────
