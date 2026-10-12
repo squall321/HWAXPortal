@@ -95,12 +95,12 @@
 - [ ] 에이전트 서버·포털 시험 전체 → push(쓰는 곳이 없어 동작 변화 없음)
 
 단계 C 원장(리스크 앱 가지 `m2-cells`)
-- [ ] v4 한 블록(`U3` + `S1`) — push 하지 않는다
-- [ ] `U4` 손잡이·`knobs.env`·`/api/meta/runtime`·`check_review_chain`
-- [ ] `U5` 단위 저장·조회·REST·`risk_get_units`·타깃 생성 훅
-- [ ] `U6` 방식 고르기(D-24) — 바꾸기·얹기·문지기·길잡이
-- [ ] `S3` 카드 묶음 동결 · `S4` 검증·등급·narrative 카드 갈래
-- [ ] `S5` 셀 원장·잡 만들기 · `S6` 패널 경로 가르기·보류 열
+- [x] v4 한 블록(`U3` + `S1`) — push 하지 않는다(10-12, `m2-cells` `44cd436`·`34bc7db`, v3 원장 픽스처 `03af145`)
+- [x] `U4` 손잡이·`knobs.env`·`/api/meta/runtime`·`check_review_chain`
+- [x] `U5` 단위 저장·조회·REST·`risk_get_units`·타깃 생성 훅
+- [x] `U6` 방식 고르기(D-24) — 바꾸기·얹기·문지기·길잡이
+- [x] `S3` 카드 묶음 동결 · `S4` 검증·등급·narrative 카드 갈래
+- [ ] `S5` 셀 원장·잡 만들기 · `S6` 패널 경로 가르기·보류 열 — S6 끝(10-12), S5 진행 중
 - [ ] `S7` 엔진 클라이언트·가짜 엔진 · `S8` 검토 루프
 - [ ] `S9` 승격·의견·원장 마감 · `S10` 전문가 보고서 · `S11` 품질 수치
 - [ ] `S12` REST·`risk_get_cells`·`risk_get_expert_report`·`risk_start_job(mode)`
