@@ -179,8 +179,8 @@ ls -l "$D"/risk_review.db "$D"/risk_review.db-wal
 |---|---|---|
 | `review_disabled` | 스위치가 꺼져 있다 | 2절 |
 | `units_absent` | 활성 단위 빌드가 없다 | 3-1 |
-| `review_job_exists` · `panel_job_running` | 이미 도는 잡이 있다 | 그 잡이 끝난 뒤 |
-| `review_in_flight` | 앞 잡을 취소했는데 그 잡의 호출이 아직 돈다(`detail` 에 전문가·셀 수) | 앞 잡이 `cancelling` 에서 `cancelled` 가 된 뒤 |
+| `review_job_exists` · `panel_job_running` | 이미 도는 잡이 있다. 앞 잡을 취소했는데 그 호출이 아직 돌면 `review_job_exists` 의 `state` 가 `cancelling` 이다 | 그 잡이 끝난 뒤(`cancelling` 이면 `cancelled` 가 된 뒤 — 보통 몇십 초) |
+| `review_in_flight` | 잡은 닫혔는데 그 대상의 호출이 아직 돈다(과제 폐기처럼 루프 밖에서 닫힌 경우, `detail` 에 전문가·셀 수) | 워커가 호출을 닫고 놓을 때까지 잠시 뒤 다시 |
 | `repersist_pending` | 다시 저장을 기다리는 패널이 있다 | `risk_repersist_panel` 로 먼저 정리한다 |
 | `input_gap_m3` | 범위에 입력 결손 전문가가 있다 | 응답의 `agents` 를 빼고 다시(4절) |
 | `scope_invalid` · `scope_empty` | 범위의 키가 로스터에 없거나 비었다 | 키 철자를 본다 |
