@@ -32,6 +32,10 @@ class TokenStore:
             "aud TEXT NOT NULL, scopes TEXT NOT NULL, "
             "created INTEGER NOT NULL, exp INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0)"
         )
+        # 토큰 교환(`/auth/pat/exchange`)으로 받은 PAT 의 원 jti — 원을 폐기하면 자식도 폐기한다.
+        # 돌고 있는 원장에도 칸이 생겨야 한다(새 DB 에만 있으면 읽는 길이 운영에서만 터진다).
+        if "parent_jti" not in {r[1] for r in self._conn.execute("PRAGMA table_info(pat)")}:
+            self._conn.execute("ALTER TABLE pat ADD COLUMN parent_jti TEXT")
         self._conn.commit()
 
     def mark_jti_once(self, jti: str, exp: int) -> bool:
@@ -50,12 +54,49 @@ class TokenStore:
     def record_pat(self, *, jti: str, sub: str, email: str | None, name: str,
                    aud: list[str], scopes: list[str], created: int, exp: int) -> None:
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO pat (jti, sub, email, name, aud, scopes, created, exp, revoked) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
-                (jti, sub, email, name, json.dumps(aud), json.dumps(scopes), created, exp),
-            )
+            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, None)
             self._conn.commit()
+
+    def record_exchanged_pat(self, *, parent_jti: str, jti: str, sub: str, email: str | None,
+                             name: str, aud: list[str], scopes: list[str], created: int,
+                             exp: int) -> int | None:
+        """교환으로 받은 PAT 을 기록하고, 대체로 폐기한 앞선 교환 PAT 수를 돌려준다.
+
+        같은 사람·같은 이름의 앞선 교환 PAT 은 **같은 트랜잭션에서** 폐기한다(갱신이 쌓이지
+        않게 — 따로 하면 동시 교환 둘이 서로를 못 보고 둘 다 산다). 손으로 낸 PAT(parent 없음)은
+        건드리지 않는다. 원이 그사이 폐기됐으면 기록하지 않고 None 이다 — 검사와 기록 사이에 원을
+        폐기하면 연쇄가 아직 없는 자식을 못 보고, 자식이 원의 폐기를 피해 살아남는다. 폐기도 같은
+        잠금을 쥐므로 여기서 보면 닫힌다. 원이 될 수 있는지는 `pat_is_exchangeable` 이 이미 봤다 —
+        여기는 '그사이 폐기' 하나만 본다."""
+        with self._lock:
+            if self._conn.execute("SELECT 1 FROM pat WHERE jti = ? AND revoked = 1",
+                                  (parent_jti,)).fetchone():
+                return None
+            cur = self._conn.execute(
+                "UPDATE pat SET revoked = 1 WHERE sub = ? AND name = ? "
+                "AND parent_jti IS NOT NULL AND revoked = 0", (sub, name))
+            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, parent_jti)
+            self._conn.commit()
+            return cur.rowcount
+
+    def _insert_pat(self, jti, sub, email, name, aud, scopes, created, exp, parent_jti) -> None:
+        self._conn.execute(
+            "INSERT INTO pat (jti, sub, email, name, aud, scopes, created, exp, revoked, "
+            "parent_jti) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
+            (jti, sub, email, name, json.dumps(aud), json.dumps(scopes), created, exp, parent_jti),
+        )
+
+    def pat_is_exchangeable(self, jti: str, sub: str) -> bool:
+        """토큰 교환의 원이 될 수 있나 — 토큰 화면(`/auth/pat`)에서 사람이 낸 살아 있는 PAT 만이다.
+
+        챗·절차 PAT 은 여기 기록되지 않으므로 거절된다(24시간짜리로 90일짜리를 받는 수명 늘리기).
+        교환으로 받은 PAT(parent 있음)도 원이 못 된다 — 자식이 다시 원이 되면 폐기 연쇄가 한 단만
+        내려가 손자가 원 PAT 의 폐기를 피해 살아남는다."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM pat WHERE jti = ? AND sub = ? AND revoked = 0 "
+                "AND parent_jti IS NULL", (jti, sub)).fetchone()
+        return row is not None
 
     def count_pats(self) -> int:
         with self._lock:
@@ -96,7 +137,10 @@ class TokenStore:
         ]
 
     def revoke_pat(self, jti: str, sub: str | None = None) -> bool:
-        """Mark a PAT revoked. sub=None → admin (any owner); else only the owner. True if changed."""
+        """Mark a PAT revoked. sub=None → admin (any owner); else only the owner. True if changed.
+
+        그 PAT 을 원으로 교환해 받은 자식도 함께 폐기한다(연쇄) — 안 하면 자식이 원의 폐기를 피해
+        살아남는다."""
         with self._lock:
             if sub is None:
                 cur = self._conn.execute("UPDATE pat SET revoked = 1 WHERE jti = ?", (jti,))
@@ -104,6 +148,9 @@ class TokenStore:
                 cur = self._conn.execute(
                     "UPDATE pat SET revoked = 1 WHERE jti = ? AND sub = ?", (jti, sub)
                 )
+            if cur.rowcount > 0:
+                self._conn.execute(
+                    "UPDATE pat SET revoked = 1 WHERE parent_jti = ? AND revoked = 0", (jti,))
             self._conn.commit()
             return cur.rowcount > 0
 

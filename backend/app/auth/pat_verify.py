@@ -12,6 +12,14 @@ from app.auth.provider import Principal
 
 
 def verify_pat(token: str, *, keystore, revoked_jtis, audience: str) -> Principal:
+    return pat_principal(verify_pat_claims(token, keystore=keystore, revoked_jtis=revoked_jtis,
+                                           audience=audience))
+
+
+def verify_pat_claims(token: str, *, keystore, revoked_jtis, audience: str) -> dict:
+    """`verify_pat` 과 같은 검사를 하고 클레임을 그대로 돌려준다.
+
+    토큰 교환이 원 PAT 의 aud·scopes·exp·jti 를 본다."""
     kid = jwt.get_unverified_header(token).get("kid")
     if not kid:
         raise ValueError("PAT has no kid")
@@ -24,6 +32,10 @@ def verify_pat(token: str, *, keystore, revoked_jtis, audience: str) -> Principa
         raise ValueError("PAT is not scope=api")
     if claims["jti"] in set(revoked_jtis):
         raise ValueError("PAT revoked")
+    return claims
+
+
+def pat_principal(claims: dict) -> Principal:
     return Principal(
         subject=claims["sub"],
         email=claims.get("email", ""),

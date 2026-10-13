@@ -19,9 +19,10 @@ from pydantic import BaseModel, Field
 
 from app.access.policy import login_groups
 from app.auth.errors import AuthError
+from app.auth.pat_verify import pat_principal, verify_pat_claims
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
-from app.deps import ensure, get_current_principal, require_csrf
+from app.deps import ensure, entitled, get_current_principal, require_csrf
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,15 @@ class PatCreate(BaseModel):
     scopes: list[str] = Field(default_factory=lambda: ["read", "write"])
     # 0 = 무기한(만료로는 안 죽고 폐기로만 죽는다). None 이면 서버 기본값.
     ttl_days: int | None = Field(default=None, ge=0, le=36500)
+
+
+class PatExchange(BaseModel):
+    """토큰 교환 본문 — `/auth/pat` 과 달리 전부 필수다. 빈 칸을 기본값으로 채우면 그 기본값이
+    원 PAT 보다 넓을 수 있다."""
+    name: str = Field(min_length=1, max_length=80)
+    audiences: list[str]
+    scopes: list[str]
+    ttl_days: int
 
 
 class PatMeta(BaseModel):
@@ -51,10 +61,14 @@ class PatCreated(PatMeta):
 
 
 def _mint_pat(request: Request, settings: Settings, principal: Principal, *,
-              name: str, audiences: list[str], scopes: list[str], ttl_days: int):
+              name: str, audiences: list[str], scopes: list[str], ttl_days: int,
+              not_after: int | None = None):
+    """`not_after`(epoch 초)를 주면 만료가 그보다 늦지 않다 — 교환 PAT 은 원보다 오래 못 산다."""
     keystore = request.app.state.keystore
     now = datetime.now(tz=UTC)
     exp = now + timedelta(days=ttl_days)
+    if not_after is not None:
+        exp = min(exp, datetime.fromtimestamp(not_after, tz=UTC))
     jti = secrets.token_urlsafe(24)
     claims = {
         "iss": settings.jwt_issuer,
@@ -114,6 +128,75 @@ def create_pat(
                    "무기한" if never else f"{ttl}d",
                    " ⚠NEVER-EXPIRES" if never else "")
     return PatCreated(jti=jti, name=body.name, audiences=auds, scopes=body.scopes,
+                      created=created, exp=exp, revoked=False, token=token)
+
+
+@router.post("/exchange", response_model=PatCreated)
+def exchange_pat(
+    body: PatExchange,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> PatCreated:
+    """원 PAT 하나를 증거로 **같은 사람의 더 좁은 PAT** 을 낸다. 넓히는 일은 하지 않는다.
+
+    게이트웨이가 Claude 로 온 호출자 본인의 PAT 을 그대로 들고 부른다(docs/risk-credentials
+    PLAN §4.1). 그래서 인증은 `Authorization: Bearer` 하나다 — 세션 쿠키는 보지 않는다(웹은
+    `/auth/pat` 이 있다). 쿠키를 안 보므로 CSRF 도 걸 자리가 없다. 거절은 전부
+    `{"detail": {"code", "message"}}` 다 — 게이트웨이가 code 로 갈라 감사에 남긴다.
+    """
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() != "bearer ":
+        raise AuthError("Authorization: Bearer <원 PAT> 만 받는다 — 브라우저는 /auth/pat 를 쓴다",
+                        status_code=401, code="invalid_source")
+    ts = request.app.state.token_store
+    try:
+        src = verify_pat_claims(auth[7:].strip(), keystore=request.app.state.keystore,
+                                revoked_jtis=ts.revoked_jtis(),
+                                audience=settings.pat_chat_audience)
+    except Exception as exc:  # noqa: BLE001 — 어떤 검증 실패든 401(principal_pat_or_session 과 같다)
+        raise AuthError("원 PAT 이 유효하지 않다(서명·청중·만료·폐기)", status_code=401,
+                        code="invalid_source") from exc
+    try:
+        principal = entitled(request, pat_principal(src), settings.portal_admin_email_set)
+    except AuthError as exc:
+        raise AuthError(exc.message, status_code=exc.status_code,
+                        code="account_disabled") from exc
+    try:
+        ensure(principal, "feat:api-token")
+    except AuthError as exc:
+        raise AuthError(exc.message, status_code=exc.status_code,
+                        code="permission_denied") from exc
+    # 사람이 토큰 화면에서 낸 PAT 만 원이 된다. 챗·절차 PAT 은 기록되지 않고 절차 PAT 은
+    # `purpose` 를 단다 — 24시간짜리 챗 PAT 로 90일짜리를 받는 수명 늘리기를 막는다.
+    if src.get("purpose") or not ts.pat_is_exchangeable(src["jti"], src["sub"]):
+        raise AuthError("토큰 화면에서 발급한 PAT 만 바꿀 수 있다 — 챗·절차용 PAT 과 "
+                        "교환으로 받은 PAT 은 원이 될 수 없다",
+                        status_code=403, code="source_not_exchangeable")
+    src_aud = src["aud"] if isinstance(src["aud"], list) else [src["aud"]]
+    # 빈 청중도 거절한다 — `/auth/pat` 에서 빈 청중은 '기본 전체' 라 좁히기가 아니다.
+    if not body.audiences or not set(body.audiences) <= set(src_aud):
+        raise AuthError(f"audiences 는 비지 않은 원 PAT 청중의 부분집합이어야 한다(원: {src_aud})",
+                        status_code=400, code="widen_audience")
+    src_scopes = src.get("scopes", ["read", "write"])  # 칸이 없던 옛 PAT 은 /auth/pat 기본값
+    if not set(body.scopes) <= set(src_scopes):
+        raise AuthError(f"scopes 는 원 PAT 범위의 부분집합이어야 한다(원: {src_scopes})",
+                        status_code=400, code="widen_scopes")
+    if not 1 <= body.ttl_days <= settings.pat_max_ttl_days:
+        raise AuthError(f"ttl_days 는 1..{settings.pat_max_ttl_days} 다(무기한 없음)",
+                        status_code=400, code="bad_ttl")
+    token, jti, created, exp = _mint_pat(
+        request, settings, principal, name=body.name, audiences=body.audiences,
+        scopes=body.scopes, ttl_days=body.ttl_days, not_after=int(src["exp"]),
+    )
+    replaced = ts.record_exchanged_pat(
+        parent_jti=src["jti"], jti=jti, sub=principal.subject, email=principal.email,
+        name=body.name, aud=body.audiences, scopes=body.scopes, created=created, exp=exp,
+    )
+    if replaced is None:  # 검사 뒤 기록 전에 원이 폐기됐다 — 낸 토큰은 기록도 반환도 안 한다
+        raise AuthError("원 PAT 이 방금 폐기됐다", status_code=403, code="source_not_exchangeable")
+    logger.warning("PAT exchanged: sub=%s name=%s parent=%s aud=%s exp=%s replaced=%d",
+                   principal.subject, body.name, src["jti"], body.audiences, exp, replaced)
+    return PatCreated(jti=jti, name=body.name, audiences=body.audiences, scopes=body.scopes,
                       created=created, exp=exp, revoked=False, token=token)
 
 

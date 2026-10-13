@@ -192,7 +192,8 @@ async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResp
 
 @app.exception_handler(AuthError)
 async def _auth_error_handler(_request: Request, exc: AuthError) -> JSONResponse:
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+    detail = {"code": exc.code, "message": exc.message} if exc.code else exc.message
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail})
 
 
 app.include_router(routes_health.router)
