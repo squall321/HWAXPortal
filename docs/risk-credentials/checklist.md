@@ -17,18 +17,18 @@
 
 ## P2 리스크 앱
 
-- [ ] R5 — 필수 키는 `CRED_KEY` 하나, `box.reasons[]`, `cred_key_source`, `dev_fallback` 기동 경고·옮기기 안내
-- [ ] U-3 — 패널 잡의 서비스 PAT 폴백 없앰(만들기·claim·엔진), 안내문, 서비스 PAT 를 쓰는 짧은 호출은 `credential: service` 표시
-- [ ] R2 — 캡처 REST 의 위임 경로 = 게이트웨이 `step-forge` + 사람 PAT, `capture_rest` 값·안내문
-- [ ] R3 — `external_sync` 요약(`sender_unwired`)을 과제·대상·`risk_get_coverage`·`risk_next_step` 에
-- [ ] R1 — `_user_prefs` 살림 표, `GET /api/me` 의 `portal_pat.auto`, `PUT /api/me/portal-pat-auto`, 단언의 `portal_pat_wanted`, `POST /api/auth/portal-pat`, 손잡이 둘·기동 검사
-- [ ] 리스크 시험 전체 · ruff
+- [x] R5 — 필수 키는 `CRED_KEY` 하나, `box.reasons[]`, `cred_key_source`, `dev_fallback` 기동 경고·옮기기 안내(리스크 앱 `8d672c7`, 브랜치 `creds` 미push)
+- [x] U-3 — 패널 잡의 서비스 PAT 폴백 없앰(만들기·claim·엔진), 안내문, 서비스 PAT 를 쓰는 짧은 호출은 `credential: service` 표시(`5d47690` — `roster_credential`·브리프 `field_credential`·캡처 `credentials.mcp`, C3 자동 후속도 요청자 → owner)
+- [x] R2 — 캡처 REST 의 위임 경로 = 게이트웨이 `step-forge` + 사람 PAT, `capture_rest` 값·안내문(`0e65f3a` — 게이트웨이 다리는 PAT 의 aud 에 `step-forge` 가 있어야 연다, 교환 명세는 `mcp-gateway` 만이라 지금은 교환 PAT 로 다리가 열리지 않는다 — 결정 대기)
+- [x] R3 — `external_sync` 요약(`sender_unwired`)을 과제·대상·`risk_get_coverage`·`risk_next_step` 에(`0966b41`)
+- [x] R1 — `_user_prefs` 살림 표, `GET /api/me` 의 `portal_pat.auto`, `PUT /api/me/portal-pat-auto`, 단언의 `portal_pat_wanted`, `POST /api/auth/portal-pat`, 손잡이 둘·기동 검사(`491895c`)
+- [x] 리스크 시험 전체 · ruff(10-14 — 2,298 통과·xfail 4, ruff 깨끗 · 거절 검사 변이 19종 중 18종이 시험을 깨고 1종은 도달 불가 변이)
 
 ## P3 게이트웨이
 
-- [ ] `per_user_sso.<app>.portal_pat_url` — `portal_pat_wanted` 면 호출자 PAT 로 교환 → 등록(최선 노력, GW_TOKEN 호출 제외), 감사 note
-- [ ] `provision-config.sh` 가 hwax_risk 에 `portal_pat_url` 을 적는다
-- [ ] 게이트웨이 시험
+- [x] `per_user_sso.<app>.portal_pat_url` — `portal_pat_wanted` 면 호출자 PAT 로 교환 → 등록(최선 노력, GW_TOKEN 호출 제외), 감사 note(게이트웨이 `c5ae578`, 미push — via=pat 만, 웹 챗·절차 PAT 도 건너뜀)
+- [x] `provision-config.sh` 가 hwax_risk 에 `portal_pat_url` 을 적는다(게이트웨이 `ae92a6d`, 미push — `HWAXRISK_PORTAL_PAT_URL` 로 덮음)
+- [x] 게이트웨이 시험(새 24건, 전체 344 통과 10-14 · 변이 9종이 해당 시험을 깨는 것 확인)
 
 ## P4 반대 검토
 
