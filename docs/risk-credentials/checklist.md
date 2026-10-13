@@ -10,10 +10,10 @@
 
 ## P1 포털 — 토큰 교환
 
-- [ ] `POST /auth/pat/exchange` — Bearer 원 PAT, 기록된 PAT 만, `feat:api-token`, 좁히기만(aud·scopes·만료 ≤ 원)
-- [ ] `token_store` 에 `parent_jti` — 같은 이름의 앞선 교환 PAT 폐기, 원 PAT 폐기 연쇄
-- [ ] 시험 — 넓히기 거절 넷(aud·scopes·수명·챗 PAT 원) · 쿠키 길 거절 · 폐기된 원 · 권한 없음 · 연쇄 폐기 · 대체 폐기
-- [ ] 포털 시험 전체 → push
+- [x] `POST /auth/pat/exchange` — Bearer 원 PAT, 기록된 PAT 만, `feat:api-token`, 좁히기만(aud·scopes·만료 ≤ 원)(포털 `12862e3`, 미push — 교환 PAT 은 원이 못 된다 C-7, 거절 code 일곱 C-8)
+- [x] `token_store` 에 `parent_jti` — 같은 이름의 앞선 교환 PAT 폐기, 원 PAT 폐기 연쇄(돌던 원장은 `PRAGMA table_info` 로 칸을 더한다 · 기록할 때 원의 폐기를 다시 본다 C-9)
+- [x] 시험 — 넓히기 거절 넷(aud·scopes·수명·챗 PAT 원) · 쿠키 길 거절 · 폐기된 원 · 권한 없음 · 연쇄 폐기 · 대체 폐기(`test_pat_exchange.py` 19건 — 절차 PAT·만료된 원·정지·교환 PAT 원·만료 상한·원장 이관 포함; 스크래치 사본 변이 22종 중 21종이 해당 시험을 깬다, 남은 하나는 `verify_pat` 폐기 목록과 겹치는 원장 `revoked = 0`)
+- [ ] 포털 시험 전체 → push — 시험 전체 2264 통과·11 건너뜀(10-14), push 는 아직
 
 ## P2 리스크 앱
 
