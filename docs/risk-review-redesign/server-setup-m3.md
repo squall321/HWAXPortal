@@ -132,6 +132,8 @@ cd ../HWAXAgentServer && ./start.sh -d
 
 스키마 v5 · 도구 31종(`risk_get_issues` · `risk_get_report`) · 앱 워커 기본 8 · 배정표 승인. 단계 D 가 끝나면 채운다.
 
+적어 둘 것(단계 D 최종본에서 정리) — 근거 꾸러미 실호출(B 층) 손잡이 `HWAXRISK_EVIDENCE_LIVE`(기본 1)는 게이트웨이의 `compare_reports`·`compare_materials` 를 그 사람의 PAT 로 부른다. 그 PAT 의 게이트웨이 `tools/list` 에 둘이 보여야 한다(dev 는 10-15 에 보였다). 잡 단계에 `live` 가 생겼다.
+
 ## 3. M0-b 탐침 보강 팔 — 지금
 
 M2 의 M0-b 를 `server-setup-m0b.md` 대로 돌리되, 1절을 반영한 뒤 보강 팔 셋을 더한다(탐침 판 `m0b-2`). 기본 탐침의 계획은 그대로이고 고른 팔만 더한다.
