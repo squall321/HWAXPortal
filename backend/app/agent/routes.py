@@ -187,6 +187,10 @@ class DelibOpts(BaseModel):
     # 보고서 저장 끄기(0)·켜기(1). None=엔진 기본(저장). 쟁점 패널이 패널마다 RA 보고서를 만들지 않게 하려는 자리다 —
     # 여기서 떨어지면 저장을 끈 줄 아는 심의가 보고서를 만든다. 지금은 보내는 곳이 없다(선언만 한다).
     save_report: int | None = Field(default=None, ge=0, le=1)
+    # 누가 띄운 심의인가 — 리스크 앱 러너가 편성한 패널(쟁점·옛 흐름)은 "app" 을 싣는다. 엔진의 카드 대조 관문은 '심의가 돌면
+    # 절반' 을 사람이 띄운 심의(app 아닌 것)로만 센다(docs/risk-review-redesign M3.md #26). 여기서 떨어지면 표지가 사라져 쟁점
+    # 패널도 사람 심의로 세어지고 카드 대조가 며칠 동안 반(4)으로 묶인다. 스스로 밝히는 값이라 검증하지 않는다. None=사람.
+    started_by: Literal["human", "app"] | None = None
 
 
 class ChatDocument(BaseModel):

@@ -279,3 +279,25 @@ def test_포털이_낸_값을_엔진이_실제로_읽는다():
         assert read["save"] == sent.get("save_report", 1), f"엔진이 포털이 낸 보고서 저장 값을 다르게 읽었다 — {sent}"
         assert read["unread"] == {} and read["cut"] == {}, (
             f"포털을 지난 값을 엔진이 못 읽거나 줄였다 — 두 리포의 모양·상한이 갈라졌다: {read}")
+
+
+
+@pytest.mark.parametrize("v", ["human", "app"])
+def test_누가_띄운_심의인지가_포털을_지나_살아_나온다(v):
+    """M3 #26 — 리스크 앱 러너가 패널마다 started_by:"app" 을 싣는다. 선언이 없으면 model_dump(exclude_none=True) 에서 조용히
+    사라지고, 엔진은 쟁점 패널을 사람 심의로 세어 카드 대조 관문을 절반(4)으로 내린다."""
+    from app.agent.routes import ChatRequest
+
+    wire = ChatRequest(message="/심의 화두", delib_opts={"started_by": v}).delib_opts.model_dump(exclude_none=True)
+    assert wire.get("started_by") == v
+    assert "started_by" not in ChatRequest(message="/심의 화두", delib_opts={}).delib_opts.model_dump(exclude_none=True)
+
+
+@pytest.mark.parametrize("bad", ["robot", "", 1, "APP"])
+def test_started_by_는_human_app_밖이면_422(bad):
+    from pydantic import ValidationError
+
+    from app.agent.routes import ChatRequest
+
+    with pytest.raises(ValidationError):
+        ChatRequest(message="/심의 화두", delib_opts={"started_by": bad})
