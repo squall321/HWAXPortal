@@ -19,7 +19,7 @@ auto: {
   last_error_kind: "transient" | "final" | null,    // transient 는 앱이 10분 뒤 다시 바란다
   last_error_at: epoch | null,
   how_to_stop: string | null                        // 켜져 있을 때만 — 지우거나 폐기해도 다시 만들어지니 멈추려면 끈다
-}
+}                                                   // (스위치가 화면에 생기기 전이라 지금 글은 '곧 생긴다 — 그때까지는 운영자가 PUT' 이다)
 ```
 
 끄기·켜기는 `PUT /api/me/portal-pat-auto {enabled: bool}` 이다.
@@ -30,7 +30,9 @@ auto: {
 - 실패하면 막지 말고 알림 한 줄을 띄운다(`portalPat.ts` 의 지금 오류 문구 — 세션 없음·`feat:api-token` 없음·로그인 만료). 같은 세션에서 되풀이하지 않는다.
 - 설정 화면에 '자동 등록' 스위치(`auto.enabled`)를 두고, `last_source`·`last_at`·`last_error` 를 보인다. 스위치 옆에 `how_to_stop` 을 보인다.
 - `due_reason: "audience"` 는 등록된 PAT 에 `step-forge` 청중이 없다는 뜻이다(위임 캡처의 REST 다리가 닫힌다). 화면은 `due` 를 보고 지금처럼 두 청중으로 새로 발급해 등록하면 된다.
-- 새 PAT 를 등록하면 백엔드가 앞서 등록돼 있던 `hwax-risk` 이름의 PAT 를 포털에서 폐기한다(`/auth/pat/revoke-self` — 응답을 보낸 뒤 최선 노력). 화면이 옛 PAT 를 따로 폐기할 필요는 없고, 발급 이름은 `hwax-risk` 그대로 둔다(다른 이름의 PAT 는 폐기하지 않는다).
+- **설정의 「포털에서 발급해 등록」 버튼도 `source: "web"` 을 싣는다.** 지금은 아무것도 싣지 않아 `manual` 로 적힌다. 백엔드는 갈아 끼울 때 앞선 등록의 출처가 `web`·`gateway-exchange`(앱이 받아 온 것)일 때만 옛 PAT 를 폐기하므로, 버튼으로 낸 PAT 가 `manual` 로 적히면 다음 갱신 때 폐기되지 않고 쌓인다. 사람이 PAT 를 손으로 붙여 넣는 칸은 지금처럼 `source` 없이(= `manual`) 보낸다 — 그 PAT 는 그 사람의 Claude PAT 일 수 있어 폐기하지 않는다(폐기하면 Claude 길과 그 자식들까지 죽는다).
+- 새 PAT 를 등록하면 백엔드가 앞서 등록돼 있던 `hwax-risk` 이름의 PAT 를 포털에서 폐기한다 — 앞선 등록의 출처가 `web`·`gateway-exchange` 일 때만이다(`/auth/pat/revoke-self` — 응답을 보낸 뒤 최선 노력). 화면이 옛 PAT 를 따로 폐기할 필요는 없고, 발급 이름은 `hwax-risk` 그대로 둔다(다른 이름의 PAT 는 폐기하지 않는다).
+- 자동 등록 스위치를 내보내면 백엔드 세션에 알려 주십시오. `how_to_stop`·`pat_unavailable` 안내의 '곧 생긴다 — 그때까지는 운영자가 그 사람으로 `PUT /api/me/portal-pat-auto`' 꼬리를 뗀다. 웹 자동 등록을 내보낼 때도 같다 — 지금 안내는 '웹에서 앱을 열면 자동 등록' 을 말하지 않는다.
 
 ## 2. 박스 자격 문구
 
@@ -50,7 +52,7 @@ cred_key_source: "secrets" | "env" | "path" | "dev_fallback" | "absent"
 - `missing_optional` 은 경고가 아니라 정보로 보인다(앱은 돈다). `secrets_valid` 는 그대로 쓰되 그 뜻이 '필수가 갖춰졌다' 로 바뀌었다.
 - `secrets_valid` 를 거짓으로 만드는 code 는 `host_mismatch`·`missing_required`·`cred_key_invalid`(키가 Fernet 키 형식이 아니다)·`cred_key_dev_fallback` 이다. `cred_key_path_missing`(HWAXRISK_CRED_KEY_PATH 가 가리키는 파일이 없다)은 경고로 보이되 그것만으로는 막지 않는다.
 - `fix` 의 셸 명령은 백틱 하나로 감싼 한 줄이다(데이터 디렉터리에서 돈다). 복사하기 쉽게 코드 모양으로 보여 주십시오. 글에는 절대경로가 없다 — 경로는 관리자용 `GET /api/meta/runtime` 의 `data_dir` 이다.
-- **익명**에게는 `box` 가 `{secrets_valid, reasons: [{code}]}` 뿐이다(글·키 이름·`hostname`·`portal_base`·`cred_key_*` 없음). 익명 화면은 `message`·`fix` 를 기대하지 않는다.
+- **익명**에게는 `box` 가 `{hostname, secrets_valid, cred_key_present, portal_base, reasons: [{code}]}` 다. 앞의 넷은 이 작업 전부터 공개였고 지금 화면이 그대로 읽는다. 까닭의 `message`·`fix`·`keys` 와 `cred_key_source` 는 싣지 않는다 — 익명 화면은 `message`·`fix` 를 기대하지 않는다.
 
 ## 3. RA 상태 모양 어긋남(지금 있는 결함)
 
@@ -76,5 +78,11 @@ cred_key_source: "secrets" | "env" | "path" | "dev_fallback" | "absent"
   - `external_sync` 가 실리는 곳은 `GET /api/projects/{id}` 의 `targets[]` 각 항목, `GET /api/targets` 의 각 항목, `GET /api/targets/{key}/coverage` 다.
 - 고침 1라운드(2026-10-14, 같은 브랜치 `creds`)로 바뀐 칸이다. 위 1·2절에 반영했다.
   - `portal_pat.auto` — `due_reason` 에 `audience`, 새 칸 `last_error_kind`·`how_to_stop`. `last_error` 는 이제 게이트웨이가 보낸 글이 아니라 앱이 고른 `"<code>: <글>"` 이다.
-  - `box` — 익명은 `{secrets_valid, reasons[{code}]}` 만. reason code `cred_key_invalid`·`cred_key_path_missing` 이 더해졌다. `GET /api/meta/runtime` 에 `data_dir`.
+  - `box` — 익명은 `{secrets_valid, reasons[{code}]}` 만(2라운드에서 공개 칸 셋을 되돌렸다 — 아래). reason code `cred_key_invalid`·`cred_key_path_missing` 이 더해졌다. `GET /api/meta/runtime` 에 `data_dir`.
   - 캡처 응답 `credentials.rest` 는 게이트웨이 다리가 실패해 서비스 PAT 로 넘어갔으면 `"user_pat_gateway→service_pat"` 이고, 다리가 실패했으면 `credentials.rest_bridge{http_status, error}` 가 함께 있다.
+- 고침 2라운드(2026-10-14, 같은 브랜치 `creds`, `b7c008d`~`e34a0a6`)로 바뀐 칸이다. 위 1·2절에 반영했다.
+  - `box`(`aaf0650`) — 익명에게 `hostname`·`cred_key_present`·`portal_base` 를 되돌렸다. 1라운드가 이것을 빼자 지금 `SettingsPage` 가 익명에게 빨간 'cred_key: absent' 배지와 빈 호스트 이름을 띄웠다(`types.ts` 는 `hostname` 을 요구한다). `reasons` 는 그대로 code 만이다.
+  - 캡처 응답(`c783cc9`) — `credentials.rest_ok: bool` 을 더했다. REST 호출이 하나 이상 있었고 전부 읽혔으면 참이다(어느 자격으로든). 서비스 PAT 가 없는 박스에서는 `credentials.rest` 가 다리가 읽었든 못 읽었든 `"user_pat_gateway"` 라 이것으로 가른다. REST 를 부르지 않은 캡처도 거짓이다.
+  - 등록 출처(`b4d82bd`) — 설정 버튼은 `source: "web"` 을 싣는다(1절). 지금 버튼은 싣지 않아 `manual` 이다.
+  - 안내 글(`10be03b`) — `how_to_stop` 과 `pat_unavailable` 의 `message` 는 지금 있는 길만 말한다. 등록은 Claude 에서 hwax_risk 도구를 부르기와 이 버튼이고, 멈추기는 곧 생길 스위치(그때까지는 운영자가 `PUT /api/me/portal-pat-auto`)다.
+  - 바뀌지 않은 것 — 웹 `PUT /api/me/portal-pat` 는 포털에 못 닿으면 종전처럼 502 `portal_unreachable` 이다. 424 는 게이트웨이 전용 문(`POST /api/auth/portal-pat`)만이다.
