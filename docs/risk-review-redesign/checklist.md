@@ -131,12 +131,12 @@
 - [ ] 사용자 확인 대기 — 보류(`undetermined`) 잔여를 20% 넘으면 막음으로(#52, 권고값으로 짓는다) · 변경 → 메커니즘·역할 표도 배정표와 함께 훑나(#40)
 
 단계 A 순수 바탕
-- [ ] 시작 걸음 `C3-0`·`S3-0`·`E3-0`·`P3-0` — 닻을 그날 HEAD 로 다시 grep, 문제(`X1` 전부·WP4 P-01~P-17·WP5a·WP3a) 대조표, 가지 `m3`·`m3-cells`·`m3-synth`(워크트리 따로), HWAXRisk `context-notes` 에 'v5 는 M3 몫 — 블록 주인 S3-1'
+- [ ] 시작 걸음 `C3-0`·`S3-0`·`E3-0`·`P3-0`(10-14 — `C3-0`·`S3-0` 끝, 엔진·포털 도는 중) — 닻을 그날 HEAD 로 다시 grep, 문제(`X1` 전부·WP4 P-01~P-17·WP5a·WP3a) 대조표, 가지 `m3`·`m3-cells`·`m3-synth`(워크트리 따로), HWAXRisk `context-notes` 에 'v5 는 M3 몫 — 블록 주인 S3-1'
 - [ ] `E3-1` 새 종류 둘의 몫·판·`CARD_REVIEW_MAX_TOKENS`
 - [ ] `E3-7`(순수 부분) `limit_for` 표 8/4/0 · `DrainState` · 사람이 띄운 심의만 세는 입력(#26)
-- [ ] `S3-2` 택소노미 1.2(메커니즘 52) · `mech-owners.v1.json` draft · 읽는 함수 넷 · 승인 문
-- [ ] `C3-5` 코드 신호 — `relevance.py` · `change-routing.v1.json` · 역할표 · XU3·XU4·XU5(#56)
-- [ ] 순수 판정 셋 — `relevance.route_decision`(m3-cells 3.2 결정표) · `review_verify.audit_outcome` · `review_verify.dual_plan_flagged`
+- [x] `S3-2` 택소노미 1.2(메커니즘 52) · `mech-owners.v1.json` draft · 읽는 함수 넷 · 승인 문(10-14, `m3` `5320f33`·`793b685` — 변이 16/16)
+- [x] `C3-5` 코드 신호 — `relevance.py` · `change-routing.v1.json` · 역할표 · XU3·XU4·XU5(#56)(10-14, `m3-cells` `5d74655`·`77e996a` — 초안이 넓어 거르기는 주로 mem·soc·std·sh·passive 에서 준다)
+- [x] 순수 판정 셋 — `relevance.route_decision`(m3-cells 3.2 결정표) · `review_verify.audit_outcome` · `review_verify.dual_plan_flagged`(10-14, `m3-cells` `f934841`·`9763b34`·`e1147ac`·`0f454d3` — 변이 66/66)
 - [ ] 배정표 52행과 변경 → 메커니즘·역할 표를 사용자에게 건넴
 - [ ] 반대 검토 1라운드 → 고침
 
@@ -152,14 +152,14 @@
 - [ ] 반대 검토 → 고침
 
 단계 C 원장(리스크 앱 가지 `m3`)
-- [ ] v5 한 블록 — `S3-1` + `C3-1`(`rr_unit_live`) 한 커밋, push 하지 않는다
+- [x] v5 한 블록 — `S3-1` + `C3-1`(`rr_unit_live`) 한 커밋, push 하지 않는다(10-14, `m3` `f6731c2`, 임시 해시 `9474298a…` — 변이 20/20, v4 원장 픽스처 `6958247`)
 - [ ] 셀(`m3-cells`) `C3-2` 전원 포함·보류 해제·`input_gap_m3` 없앰
 - [ ] 셀 `C3-6` 거르기 분류(`routing_approved` 동결 — #40) → `C3-3` 입력 결손 호출·`prompt_key(lim, kinds)`·검색 실패 한도(#39)·카드 0장 `search_only` → `C3-9` 걸린 별칭만 rev·1순위 보정·무작위 뒤집기 자동 켬(#32)
 - [ ] 셀 `C3-7` 표본·그림자·넓힘·보충 표본 → `C3-4` 실패 셀 처분(`retry`·`skip`·`force`)·롤업 줄 → `C3-10` 호출 추정·동의·앱 워커 8
 - [ ] 셀 `C3-12` 근거 꾸러미 실호출(B 층 — 밀리면 M4 로 가장 먼저 뺀다)
 - [ ] 셀 `C3-8` 보이기·품질(`rq-2`)·`closure_cells` · `C3-11` 359명 규모·전문가별 단계
 - [ ] 셀 `C3-13` 보안 · `C3-14` 대역 일치(계약 예제 뒤)
-- [ ] 쟁점·종합(`m3-synth`) `S3-3` 미분류 쪼개기·`mech_out_of_domain` → `S3-4` 등록부 병합(`cells` 대상에서 M2 #7·#20 을 푼다, 패널 대상 바이트 동일)
+- [ ] 쟁점·종합(`m3-synth`) `S3-3` 미분류 쪼개기·`mech_out_of_domain`(S3-3 은 10-14 `48b1fe5` 끝 — 변이 14/15, 남은 하나는 동치) → `S3-4` 등록부 병합(`cells` 대상에서 M2 #7·#20 을 푼다, 패널 대상 바이트 동일)
 - [ ] 쟁점·종합 `S3-6` 쟁점 선정(24/48 — #28) → `S3-7` 쟁점 패널(`started_by:"app"` #26 · 하루 상한 제외 #27 · I 항목 근거 #48)
 - [ ] 쟁점·종합 `S3-5` 잡 사슬(`_finish` 훅은 셀의 `review_runner` 변경이 합쳐진 뒤) → `S3-8` 완결 판정·잔여·확인 → `S3-9` 영역 요약·종합 보고서
 - [ ] 쟁점·종합 `S3-10` REST·`risk_get_issues`·`risk_get_report`(31종) · `S3-12` 시험(C10·C11·C12·C14)
