@@ -623,10 +623,10 @@ def test_요약의_감사는_범위_키를_단위_자리에_싣는다(portal):
     assert _call(portal, "run", _SUMMARY).status_code == 200
     start = _rows()[0]
     assert start["event"] == "card_review_run_start" and start["meta"]["kind"] == "summary"
-    assert start["meta"]["unit"] == "mech" and "agent" not in start["meta"]
+    assert start["meta"].get("unit") == "mech" and "agent" not in start["meta"], start["meta"]
     long_key = {**_SUMMARY, "summary": {**_SUMMARY["summary"], "scope": {"kind": "domain", "key": "k" * 5000}}}
     assert _call(portal, "run", long_key).status_code == 200
-    assert len(_rows()[-1]["meta"]["unit"]) == 200
+    assert len(_rows()[-1]["meta"].get("unit") or "") == 200, _rows()[-1]["meta"]
 
 
 def test_엔진의_비우기_거절은_상태와_본문_그대로_온다(portal):
