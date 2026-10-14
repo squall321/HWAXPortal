@@ -137,7 +137,7 @@
 - [x] `S3-2` 택소노미 1.2(메커니즘 52) · `mech-owners.v1.json` draft · 읽는 함수 넷 · 승인 문(10-14, `m3` `5320f33`·`793b685` — 변이 16/16)
 - [x] `C3-5` 코드 신호 — `relevance.py` · `change-routing.v1.json` · 역할표 · XU3·XU4·XU5(#56)(10-14, `m3-cells` `5d74655`·`77e996a` — 초안이 넓어 거르기는 주로 mem·soc·std·sh·passive 에서 준다)
 - [x] 순수 판정 셋 — `relevance.route_decision`(m3-cells 3.2 결정표) · `review_verify.audit_outcome` · `review_verify.dual_plan_flagged`(10-14, `m3-cells` `f934841`·`9763b34`·`e1147ac`·`0f454d3` — 변이 66/66)
-- [ ] 배정표 52행과 변경 → 메커니즘·역할 표를 사용자에게 건넴
+- [x] 배정표 52행과 변경 → 메커니즘·역할 표를 사용자에게 건넴(10-14, [review-tables.md](review-tables.md) — 승인 대기)
 - [ ] 반대 검토 1라운드 → 고침
 
 단계 B 엔진 끝까지
