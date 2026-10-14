@@ -225,9 +225,11 @@ def test_남은_수명은_ttl_과_원_만료_중_짧은_쪽이다(box, mints):
 
 # ── 원 하나의 살아 있는 자식 상한(SEC-5) ──────────────────────────────────────
 def test_살아_있는_자식은_원마다_다섯까지다(box, mints):
+    """다섯은 계약이다(게이트웨이·리스크 앱이 기댄다) — 상수가 아니라 값으로 본다."""
     c, hu = box
     src, other_src = _source(c, hu), _source(c, hu, name="claude-2")
-    kids = [_exchange(c, src["token"], name=f"k{i}").json() for i in range(MAX_LIVE_CHILDREN)]
+    kids = [_exchange(c, src["token"], name=f"k{i}").json() for i in range(5)]
+    assert all("token" in k for k in kids)
     mints.clear()
     before = _rows()
     _refused(_exchange(c, src["token"], name="k-over"), 409, "too_many_children")
