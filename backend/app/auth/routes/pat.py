@@ -69,8 +69,11 @@ class PatCreated(PatMeta):
 
 def _mint_pat(request: Request, settings: Settings, principal: Principal, *,
               name: str, audiences: list[str], scopes: list[str], ttl_days: int,
-              not_after: int | None = None):
-    """`not_after`(epoch 초)를 주면 만료가 그보다 늦지 않다 — 교환 PAT 은 원보다 오래 못 산다."""
+              not_after: int | None = None, parent_jti: str | None = None):
+    """`not_after`(epoch 초)를 주면 만료가 그보다 늦지 않다 — 교환 PAT 은 원보다 오래 못 산다.
+
+    `parent_jti` 를 주면 클레임 `par` 로 싣는다 — 받는 쪽(게이트웨이)이 교환 PAT(자식)과 사람이
+    낸 PAT(원)을 원장 없이 가른다(D5)."""
     keystore = request.app.state.keystore
     now = datetime.now(tz=UTC)
     exp = now + timedelta(days=ttl_days)
@@ -92,6 +95,8 @@ def _mint_pat(request: Request, settings: Settings, principal: Principal, *,
         "iat": now, "nbf": now, "exp": exp,
         "jti": jti,
     }
+    if parent_jti:
+        claims["par"] = parent_jti
     token = jwt.encode(claims, keystore.private_pem, algorithm="RS256",
                        headers={"kid": keystore.active_kid})
     return token, jti, int(now.timestamp()), int(exp.timestamp())
@@ -211,6 +216,7 @@ def exchange_pat(
     token, jti, created, exp = _mint_pat(
         request, settings, principal, name=body.name, audiences=body.audiences,
         scopes=body.scopes, ttl_days=body.ttl_days, not_after=int(src["exp"]),
+        parent_jti=src["jti"],
     )
     # 같은 이름의 앞선 교환 PAT 은 여기서 폐기하지 않는다(C-11) — 소비자가 새것을 받아들인 뒤
     # `/auth/pat/revoke-self` 로 옛것을 스스로 폐기한다.

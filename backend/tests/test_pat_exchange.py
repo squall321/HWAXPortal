@@ -119,6 +119,22 @@ def test_좁힌_PAT_을_같은_사람에게_낸다(box, caplog):
     assert any("PAT exchanged:" in m and src["jti"] in m for m in caplog.messages)
 
 
+def test_교환_PAT_은_par_클레임에_원을_싣고_받는_쪽이_막지_않는다(box):
+    """게이트웨이가 자식과 원을 원장 없이 가르는 표지(D5). 모르는 클레임이라 막는 곳이 없어야
+    한다 — 포털의 verify_pat(principal_pat_or_session 도 이것)과 게이트웨이 rest_proxy 의 decode
+    옵션 그대로."""
+    c, hu = box
+    src = _source(c, hu)
+    child = _exchange(c, src["token"]).json()
+    assert _claims(child["token"])["par"] == src["jti"]
+    assert "par" not in _claims(src["token"])                # 사람이 낸 원에는 없다
+    assert _verify(child["token"]).email == U
+    pub = app.state.keystore.public_pem(jwt.get_unverified_header(child["token"])["kid"])
+    got = jwt.decode(child["token"], pub, algorithms=["RS256"], audience=AUD,
+                     options={"require": ["exp", "aud", "sub", "jti"]}, leeway=30)
+    assert got["scope"] == "api" and got["par"] == src["jti"]
+
+
 def test_만료는_원_PAT_을_넘지_않는다(box):
     c, hu = box
     src = _source(c, hu, ttl_days=2)
