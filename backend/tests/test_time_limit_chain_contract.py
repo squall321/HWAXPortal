@@ -14,6 +14,8 @@
   지식카드       AIDataHub 연결 < 풀 대기 · 풀 대기 + 검색 문장 < 엔진의 지식카드 한도
   자격           패널 벽시계 + 보고서 저장 < chat PAT 의 최소 잔여 · 패널 벽시계 < 리스크 자격 여유 < PAT 등록 하한
   대화 생성      포털 대화 저장소 잠금 대기 ≤ 리스크 앱의 대화 생성 호출(지금은 같은 값이다 — 그 시험의 ⚠)
+  카드 대조      연결 < 시도 1회 < 논리 호출 < 요청 최악 < 앱 호출 벽시계 < 앱 검토 자격 여유 < PAT 등록 하한 · 자격 여유 < chat PAT 최소 잔여
+                 heartbeat × 4 < 앱 카드 대조 침묵 < 포털 릴레이 침묵 < nginx 침묵 · 팩 최악(대기 + 목록 + 카드 묶음) < 포털 단발 한도
 """
 import re
 from pathlib import Path
@@ -97,6 +99,51 @@ def _risk() -> dict[str, float]:
             "margin": panel + _val(RISK, c, const("ENGINE_BUSY_ALLOWANCE_S")) + _val(RISK, c, const("CREDENTIAL_SLACK_S")),
             "pat_floor": _val(RISK, "backend/app/routes.py", const("PAT_MIN_REMAINING_S")),
             "portal_call": _val(RISK, c, const("DEFAULT_PORTAL_CALL_TIMEOUT_S"))}
+
+
+def _plain(repo: str, rel: str, pattern: str, what: str) -> float:
+    """기본값 자리를 통째로 읽는다 — 식이 **수 하나**가 아니면(다른 상수·셈) 그 식을 보여 주고 실패한다(P-17 '사슬 시험이 읽을 줄').
+    수만 고르는 식은 `X = Y + 60` 에서 60 을 읽고 초록이 될 수 있다. 식이 바뀌었으면 그 식이 뜻하는 값으로 사슬을 다시 짠다."""
+    m = re.search(pattern, _src(repo, rel), re.M)
+    assert m, (f"{repo}/{rel} 에서 {what} 줄을 못 읽었다(식 {pattern}) — 이름이나 줄 모양이 바뀌었으면 이 식을 고쳐라. "
+               "건너뛰지 않는다 — 건너뛰면 사슬이 조용히 풀린다")
+    expr = m.group(1).strip()
+    assert re.fullmatch(r"[0-9][0-9_]*(?:\.[0-9_]*)?", expr), (
+        f"{repo}/{rel} 의 {what} 기본값이 수가 아니라 식이다 — `{expr}`. 이 시험은 식을 셈하지 않는다 — 그 식이 뜻하는 값으로 아래 사슬을 고쳐라")
+    return float(expr.replace("_", ""))
+
+
+def _card_review() -> dict[str, float]:
+    """카드 대조(M2·M3) — 엔진 card_review.py·deliberation.py 와 리스크 앱 config.py 의 기본값."""
+    cr, delib, rc = "card_review.py", "deliberation.py", "backend/app/config.py"
+
+    def const(name: str) -> str:
+        return rf"^{name}\s*=\s*([^#\n]+?)\s*(?:#.*)?$"
+    c = {"parse_retries": _plain(ENGINE, cr, const("PARSE_RETRIES_DEFAULT"), "PARSE_RETRIES_DEFAULT(CARD_REVIEW_PARSE_RETRIES)"),
+         "search": _plain(ENGINE, cr, const("SEARCH_TIMEOUT_DEFAULT"), "SEARCH_TIMEOUT_DEFAULT(CARD_REVIEW_SEARCH_TIMEOUT_S)"),
+         "pack_wait": _plain(ENGINE, cr, const("PACK_WAIT_S"), "PACK_WAIT_S"),
+         "pack_call": _plain(ENGINE, cr, const("PACK_CALL_TIMEOUT_S"), "PACK_CALL_TIMEOUT_S"),
+         "pack_conc": _plain(ENGINE, delib, r'^_KN_CONC\s*=\s*_env_int\("DELIB_KNOWLEDGE_CONCURRENCY",\s*([^)]+)\)',
+                             "_KN_CONC(DELIB_KNOWLEDGE_CONCURRENCY)"),
+         "app_call": _plain(RISK, rc, const("DEFAULT_REVIEW_CALL_TIMEOUT_S"), "DEFAULT_REVIEW_CALL_TIMEOUT_S(HWAXRISK_REVIEW_CALL_TIMEOUT_S)"),
+         "app_read": _plain(RISK, rc, r'Knob\("HWAXRISK_REVIEW_READ_TIMEOUT_S",\s*"[a-z_]+",\s*([^,)]+)',
+                            "HWAXRISK_REVIEW_READ_TIMEOUT_S 의 Knob"),
+         "slack": _plain(RISK, rc, const("CREDENTIAL_SLACK_S"), "CREDENTIAL_SLACK_S")}
+    src = _src(ENGINE, cr)
+    # 아래 셈이 엔진의 셈과 같은지 — 식이 바뀌면 여기서 걸린다(그 식대로 이 시험을 고친다).
+    for piece, why in (('SEARCH_TIMEOUT_ENV = "CARD_REVIEW_SEARCH_TIMEOUT_S"', "검색 기한의 손잡이 이름"),
+                       ('env.get("CARD_REVIEW_PARSE_RETRIES")', "보충 횟수의 손잡이 이름"),
+                       ("attempts = 1 + _parse_retries()", "요청 최악의 시도 수"),
+                       ("attempts * (tries * read + 8) + search_timeout_s()", "요청 최악의 식(/health.card_review.request_worst_s)"),
+                       ("hb = float(DELIB_HEARTBEAT_S)", "카드 대조 스트림의 ping 간격"),
+                       ("await asyncio.wait_for(sem.acquire(), PACK_WAIT_S)", "팩 자리 대기"),
+                       ("asyncio.wait_for(_call(tools, name, args), PACK_CALL_TIMEOUT_S)", "팩 도구 호출 하나의 기한"),
+                       ("sem = asyncio.Semaphore(_KN_CONC)", "팩의 카드 조회 동시 수")):
+        assert piece in src, f"엔진 card_review.py 에서 {why} 줄(`{piece}`)이 바뀌었다 — 아래 셈을 그 식대로 고쳐라"
+    assert "return (review_call_timeout_s(cfg) or DEFAULT_REVIEW_CALL_TIMEOUT_S) + CREDENTIAL_SLACK_S" in _src(RISK, rc), (
+        "리스크 앱의 검토 자격 여유 식이 바뀌었다 — 아래 app_margin 을 그 식대로 고쳐라")
+    c["app_margin"] = c["app_call"] + c["slack"]
+    return c
 
 
 def _nginx_default(knob: str) -> float:
@@ -216,6 +263,52 @@ def test_심의_전_도우미는_nginx_가_끊기_전에_기본값으로_넘어�
     """도우미 대기(600초)는 실패가 아니라 폴백으로 끝난다 — nginx /agent/ 의 침묵 한도가 그보다 짧으면 폴백 대신 절단이 화면에 간다."""
     p = _portal()
     _ascending([("포털 도우미 대기(AGENT_UNARY_TIMEOUT_S)", p["unary"]), ("nginx /agent/ 침묵(NGINX_AGENT_READ_TIMEOUT)", p["nginx_agent"])])
+
+
+# ── 카드 대조(M3 P3-3) — 엔진·리스크 앱·포털 세 리포의 값이다 ─────────────────────────────────────────────────
+# 카드 35장은 dev 에서 본 전문가 한 명의 최대다 — cae00 실측표(M0-b)의 값이 나오면 그 수로 갈아 넣는다.
+PACK_CARDS_MAX = 35
+
+
+def test_카드_대조_요청_한_건을_리스크_앱의_벽시계와_자격이_감싼다():
+    """요청 한 건의 최악은 (1 + 보충) × 논리 호출 + 긴 문서 검색 기한이다(엔진 /health.card_review.request_worst_s 와 같은 식). 리스크 앱의
+    호출 벽시계가 그보다 커야 엔진의 구체적인 사유(llm_timeout·손잡이)가 먼저 온다. 앱이 사용자 PAT 에 요구하는 여유(벽시계 + 600)는
+    PAT 등록 하한과 chat PAT 의 최소 잔여보다 작아야 한다 — 크면 등록한 PAT 로 검토 잡이 시작조차 못 한다."""
+    e, c, r, p = _engine(), _card_review(), _risk(), _portal()
+    worst = (1 + c["parse_retries"]) * e["logical"] + c["search"]
+    margin = ("리스크 앱 검토 자격 여유(HWAXRISK_REVIEW_CALL_TIMEOUT_S + CREDENTIAL_SLACK_S)", c["app_margin"])
+    _ascending([("LLM 연결(LLM_CONNECT_TIMEOUT_S)", e["connect"]), ("LLM 호출 시도 1회(DELIB_TIMEOUT_S)", e["attempt"]),
+                ("LLM 논리 호출 1회((1+DELIB_LLM_MAX_RETRIES)×시도+8)", e["logical"]),
+                ("카드 대조 요청 최악((1+CARD_REVIEW_PARSE_RETRIES)×논리 호출+CARD_REVIEW_SEARCH_TIMEOUT_S)", worst),
+                ("리스크 앱 카드 대조 호출 벽시계(HWAXRISK_REVIEW_CALL_TIMEOUT_S)", c["app_call"]), margin,
+                ("리스크 PAT 등록 하한(PAT_MIN_REMAINING_S)", r["pat_floor"])])
+    _ascending([margin, ("chat PAT 의 최소 잔여(CHAT_PAT_TTL_S − 30분 창)", p["pat_left"])])
+
+
+def test_카드_대조_스트림의_침묵_한도는_ping_네_번을_기다리고_릴레이보다_안쪽이다():
+    """카드 대조 스트림은 엔진 ping(DELIB_HEARTBEAT_S)이 침묵을 깬다. 리스크 앱의 침묵 한도가 ping 네 번보다 짧으면 부하 걸린 박스의 건강한
+    호출이 끊기고, 포털 릴레이·nginx 보다 길면 앱이 사유를 말하기 전에 바깥이 빈 절단을 낸다."""
+    e, c, p = _engine(), _card_review(), _portal()
+    _ascending([("엔진 heartbeat × 4(DELIB_HEARTBEAT_S)", 4 * e["heartbeat"]),
+                ("리스크 앱 카드 대조 침묵(HWAXRISK_REVIEW_READ_TIMEOUT_S)", c["app_read"]),
+                ("포털 릴레이 침묵(AGENT_STREAM_IDLE_TIMEOUT_S)", p["relay"]),
+                ("nginx /agent/ 침묵(NGINX_AGENT_READ_TIMEOUT)", p["nginx_agent"])])
+
+
+def test_팩_빌드의_최악이_포털_단발_한도_안이다():
+    """팩은 포털 단발 경로(AGENT_UNARY_TIMEOUT_S)로 온다. 자리 대기 + 목록 한 번 + 카드 묶음(동시 _KN_CONC 장씩)마다 호출 기한 하나가
+    그보다 작아야, 포털이 504 agent_timeout 을 내는 사이 엔진이 버려진 팩을 짓지 않는다(엔진 RB-8)."""
+    import math
+
+    c, p = _card_review(), _portal()
+    worst = c["pack_wait"] + c["pack_call"] + math.ceil(PACK_CARDS_MAX / c["pack_conc"]) * c["pack_call"]
+    _ascending([(f"팩 최악(PACK_WAIT_S + PACK_CALL_TIMEOUT_S × (1 + ⌈{PACK_CARDS_MAX}/DELIB_KNOWLEDGE_CONCURRENCY⌉))", worst),
+                ("포털 단발 한도(AGENT_UNARY_TIMEOUT_S)", p["unary"])])
+
+
+# 단언 4(나란한 값 — 포털 card_review_max_streams ≥ 엔진 CONCURRENCY_DEFAULT, 리스크 앱 HWAXRISK_REVIEW_CONCURRENCY 기본 ≥ 엔진
+# CONCURRENCY_DEFAULT)는 아직 두지 않는다(M3.md #60). 리스크 앱 main 의 워커 기본이 8 이 되는 단계 D push 뒤에 여기에 넣는다 —
+# 지금 넣으면 형제 체크아웃이 어느 가지냐에 따라 이 시험이 뒤집힌다(xfail 로도 두지 않는다).
 
 
 def test_nginx_생성기가_견주는_포털_기본값이_포털의_그_값이다():
