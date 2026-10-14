@@ -80,3 +80,40 @@ grep -nE '^(DELIB_(SEAT_CTX|SER_CLIP|TRANSCRIPT_CLIP|KNOWLEDGE_BUDGET|CHAT_CONTE
 | `HWAXRISK_RUNNER_LOCK_RETRY_S` | 리스크 앱(허브 매니페스트 env) | 코드 기본 | 러너 잠금을 못 쥔 프로세스가 다시 시도하는 간격 |
 
 dev 박스에 넣은 메모리 감시기 설정(earlyoom)은 dev 전용이다. cae00 에 옮기지 않는다.
+
+## 7. 리스크 앱 비밀 키 — `secrets.env` (2026-10-14 덧붙임)
+
+> 리스크 앱 데이터 디렉터리(cae00 은 `/data/appdata/hwax_risk/`, 0600)의 `secrets.env` 다. 값은 화면에 띄우지 않고 넣는다.
+> 아래 '이번 뒤' 칸은 사람 자격 작업([../risk-credentials/PLAN.md](../risk-credentials/PLAN.md))이 들어간 뒤의 뜻이다 — 그 전 SIF 에서는
+> 다섯 키가 전부 필수로 세어져 '이 박스의 자격이 없습니다' 가 늘 뜬다(원인과 다른 문구 — 요청 R5).
+
+| 키 | 무엇 | 누구 명의 | 없으면 | 이번 뒤 |
+|---|---|---|---|---|
+| `HWAXRISK_CRED_KEY` | 사람이 등록한 포털 PAT 를 암호화하는 키(Fernet) | 사람 아님 — 박스 값 | 앱이 첫 PAT 등록 때 `<data>/cred.key` 를 만들어 쓴다(아래 7-1) | **필수 하나** |
+| `HWAXRISK_HEAX_GATEWAY_SECRET` | 게이트웨이 사람별 위임 단언의 비밀 | 사람 아님 — provision-config 가 만든다 | Claude 로 온 호출이 사람으로 보이지 않고(쓰기 도구 거절) PAT 자동 등록도 없다 | 선택(Claude 길에 필요) |
+| `HWAXRISK_PORTAL_PAT` | 서비스 읽기 PAT | 비인격 서비스 계정 | 사람 PAT 가 없을 때의 짧은 조회(전문가 명단·현장 VOC·캡처 MCP 폴백)가 닫힌다 | 선택 — 사람이 시작한 잡(패널·카드 대조)은 쓰지 않는다 |
+| `HWAXRISK_HEAX_SERVICE_PAT` | 허브 서비스 토큰(StepForge REST) | 허브 관리자 PAT | 웹 로그인 토큰도 게이트웨이 경유 본인 PAT 도 없는 캡처가 G6 `unit_unknown` 으로 막힌다 | 선택 — 마지막 폴백 |
+| `HWAXRISK_PORTAL_PAT_RW` | RA 쓰기 | — | 지금은 달라지는 것이 없다(보내는 쪽 미배선, M4) | 선택 |
+| `HWAXRISK_AIDH_API_KEY` | AIDataHub 반입 키 | AIDataHub 관리자가 발급하는 API 키(이름 `hwax-risk`) | 지금은 달라지는 것이 없다(반입하는 쪽 미배선, M4) | 선택 — 반입의 정본은 서비스 키다(사람별 서버 간 길이 없다, 요청 R4) |
+| `HWAXRISK_BACKUP_KEY` | 백업 암호화(age 공개키) | — | 백업이 평문이고 `/api/health` 에 `backup_unencrypted` | 선택 |
+
+### 7-1. `cred.key` 를 `secrets.env` 로 옮기기
+
+앱이 `<data>/cred.key` 를 만들어 쓰고 있으면(설정 화면 '이 박스' 의 `cred_key_source` 가 `dev_fallback`, 기동 로그에 경고) 그 값을 **그대로** 옮긴다. 새 키를 만들어 넣으면 이미 등록된 PAT 가 전부 풀리지 않는다.
+
+```bash
+D=/data/appdata/hwax_risk                        # 리스크 앱 데이터 디렉터리
+K="$(tr -d '[:space:]' < "$D/cred.key" 2>/dev/null)"
+if [ -z "$K" ]; then echo "cred.key 가 없거나 비었다 — 멈춘다"
+elif grep -qE '^HWAXRISK_CRED_KEY=.+' "$D/secrets.env" 2>/dev/null; then echo "secrets.env 에 이미 있다 — 멈춘다"
+else printf '\nHWAXRISK_CRED_KEY=%s\n' "$K" >> "$D/secrets.env"; chmod 600 "$D/secrets.env"; echo "옮겼다"; fi
+unset K
+```
+
+앞에 붙인 줄바꿈은 `secrets.env` 끝에 줄바꿈이 없을 때 앞 줄에 붙어 두 키가 함께 깨지는 것을 막는다. 값은 화면에 나오지 않는다.
+
+그 뒤 리스크 앱을 다시 띄우고(`redeploy-app.sh hwax-risk`) 설정 화면의 `cred_key_source` 가 `secrets` 인지 본다. `cred.key` 는 지우지 말고 백업과 함께 둔다(같은 값이다).
+
+### 7-2. 자동 등록을 멈추려면
+
+포털 토큰 화면에서 `hwax-risk` 토큰(목록에 '교환으로 생김' 표지)을 폐기해도, 앱의 자동 등록이 켜져 있으면 다음 Claude 호출이나 웹 접속 때 다시 생긴다(context-notes C-11). 멈추려면 리스크 앱 설정의 '자동 등록' 을 끈다. 그 뒤 사람이 시작한 잡은 PAT 를 손으로 등록할 때까지 `pat_unavailable` 로 멈춘다.
