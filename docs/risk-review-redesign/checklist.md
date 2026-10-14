@@ -132,8 +132,8 @@
 
 단계 A 순수 바탕
 - [ ] 시작 걸음 `C3-0`·`S3-0`·`E3-0`·`P3-0`(10-14 — `C3-0`·`S3-0` 끝, 엔진·포털 도는 중) — 닻을 그날 HEAD 로 다시 grep, 문제(`X1` 전부·WP4 P-01~P-17·WP5a·WP3a) 대조표, 가지 `m3`·`m3-cells`·`m3-synth`(워크트리 따로), HWAXRisk `context-notes` 에 'v5 는 M3 몫 — 블록 주인 S3-1'
-- [ ] `E3-1` 새 종류 둘의 몫·판·`CARD_REVIEW_MAX_TOKENS`
-- [ ] `E3-7`(순수 부분) `limit_for` 표 8/4/0 · `DrainState` · 사람이 띄운 심의만 세는 입력(#26)
+- [x] `E3-1` 새 종류 둘의 몫·판·`CARD_REVIEW_MAX_TOKENS`(10-14, 엔진 `947eeb6` — 판 다섯·`cr-l2` 한 번에)
+- [x] `E3-7`(순수 부분) `limit_for` 표 8/4/0 · `DrainState` · 사람이 띄운 심의만 세는 입력(#26)(10-14, `4619dfe`)
 - [x] `S3-2` 택소노미 1.2(메커니즘 52) · `mech-owners.v1.json` draft · 읽는 함수 넷 · 승인 문(10-14, `m3` `5320f33`·`793b685` — 변이 16/16)
 - [x] `C3-5` 코드 신호 — `relevance.py` · `change-routing.v1.json` · 역할표 · XU3·XU4·XU5(#56)(10-14, `m3-cells` `5d74655`·`77e996a` — 초안이 넓어 거르기는 주로 mem·soc·std·sh·passive 에서 준다)
 - [x] 순수 판정 셋 — `relevance.route_decision`(m3-cells 3.2 결정표) · `review_verify.audit_outcome` · `review_verify.dual_plan_flagged`(10-14, `m3-cells` `f934841`·`9763b34`·`e1147ac`·`0f454d3` — 변이 66/66)
@@ -141,14 +141,14 @@
 - [ ] 반대 검토 1라운드 → 고침
 
 단계 B 엔진 끝까지
-- [ ] `E3-3` 훑기 결손 블록(`cr-sweep-2`) → `E3-4` 판정 틀 `mech`(`cr-verdict-2`) → `E3-2` `noinput` → `E3-5` 긴 문서 검색(`cr-offcard-2`) → `E3-6` `summary`(`card_review.py` 한 줄로)
-- [ ] `E3-7` 나머지 · `E3-8` `/drain`·`/health`(`card_review.delib_human`)·`start.sh`
-- [ ] `E3-9` 챗 첫 조각 지연 계측·`llm_ttft_probe.py`, 가짜 LLM `--capacity` 와 대본(`noinput`·`summary`·결손 훑기·`mech`·쟁점 패널 심의)
-- [ ] `E3-10` 봉투 계약 시험 · 계약 예제를 한 번에 다시 뜸
-- [ ] `E3-11` 쟁점 패널이 엔진에 기대는 것 — #26(사람 심의 → 4 · 쟁점 패널 → 8)·#48(I 항목 key) 로 고친 단언
-- [ ] `E3-12` M0-b 보강(일치·합친·요약 팔) · `server-setup-m0b.md` 덧붙임
-- [ ] `P3-1` 중계 경계 · 감사 칸 · `DelibOpts.started_by` 선언(#26)
-- [ ] 에이전트 서버·포털 시험 전체 → push · 업데이트 이력 · `server-setup-m3.md` 1절(판 올림 규칙 #37 — cae00 반영은 도는 검토 잡이 없을 때)
+- [x] `E3-3` 훑기 결손 블록(`cr-sweep-2`) → `E3-4` 판정 틀 `mech`(`cr-verdict-2`) → `E3-2` `noinput` → `E3-5` 긴 문서 검색(`cr-offcard-2`) → `E3-6` `summary`(`card_review.py` 한 줄로)(10-14, `037dcd6`·`2ea0fb1`·`e1443c6`·`ed32a43`·`99035b2`)
+- [x] `E3-7` 나머지 · `E3-8` `/drain`·`/health`(`card_review.delib_human`)·`start.sh`(10-14, `8e1e3d4`·`a1482ae`)
+- [x] `E3-9` 챗 첫 조각 지연 계측·`llm_ttft_probe.py`, 가짜 LLM `--capacity` 와 대본(`noinput`·`summary`·결손 훑기·`mech`·쟁점 패널 심의)(10-14, `036a999`)
+- [x] `E3-10` 봉투 계약 시험 · 계약 예제를 한 번에 다시 뜸(10-14, `734bc38` — 128 파일, 두 번 떠도 같다)
+- [x] `E3-11` 쟁점 패널이 엔진에 기대는 것 — #26(사람 심의 → 4 · 쟁점 패널 → 8)·#48(I 항목 key) 로 고친 단언(10-14, `ab36b06`)
+- [x] `E3-12` M0-b 보강(일치·합친·요약 팔) · `server-setup-m0b.md` 덧붙임(10-14, `b011c5b` — 절차서 덧붙임은 단계 B push 때)
+- [x] `P3-1` 중계 경계 · 감사 칸 · `DelibOpts.started_by` 선언(#26)(10-14, 포털 `5592043`·`118e8be`·`965096b`)
+- [ ] 에이전트 서버·포털 시험 전체 → push(10-14 시험 전체 — 엔진 2,029 · 포털 2,304 통과, 변이 28종 전부, push 는 반대 검토 뒤) · 업데이트 이력 · `server-setup-m3.md` 1절(판 올림 규칙 #37 — cae00 반영은 도는 검토 잡이 없을 때)
 - [ ] 반대 검토 → 고침
 
 단계 C 원장(리스크 앱 가지 `m3`)
