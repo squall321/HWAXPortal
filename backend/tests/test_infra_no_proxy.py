@@ -185,12 +185,12 @@ def _top_export(src: str = UA) -> str:
 
 
 def _run_1f_and_after(tmp_path, *, infra_env: str = "", pre: str = "", **env) -> tuple[str, str]:
-    """맨 위 export → (1e 가 남긴 RA_HOST 는 pre 로) → 1f 원문 → 그 뒤 §2 머리까지 원문. 끝에서 **자식 프로세스**가 본 값을 찍는다."""
+    """맨 위 export → (1e 가 남긴 RA_HOST 는 pre 로) → 1f 원문 → 그 뒤 1h(비우기) 앞까지 원문. 끝에서 **자식 프로세스**가 본 값을 찍는다."""
     repo = tmp_path / "HWAXPortal"; (repo / "infra").mkdir(parents=True); (repo / "backend/config").mkdir(parents=True)
     gw = tmp_path / "HWAXMcpGateway"; gw.mkdir()
     (repo / "infra/.env").write_text(infra_env)
     i = UA.index("# ── 1f) AI Ready Portal(ARP) 연결")
-    block = UA[i:UA.index("# ── 2) 전 서비스 배포", i)]
+    block = UA[i:UA.index("# ── 1h) 리스크 검토 비우기", i)]   # 1h(비우기)는 lib 를 적재해야 돈다 — test_update_all_review_drain 이 본다
     script = "\n".join([
         "set -uo pipefail",                       # update-all 과 같은 셸 옵션 — 리포가 정의하지 않는 변수를 읽으면 여기서 죽는다
         _top_export(),

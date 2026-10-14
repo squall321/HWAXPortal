@@ -41,7 +41,7 @@ def box(tmp_path):
         (repo / "infra/.env").write_text(env_text)
         script = "\n".join(["set -uo pipefail", STUBS, _fn("_envfile_value"), _fn("_ra_envv"), _fn("_upsert_kv"),
                             f'SELF_REPO="{repo}"', f'GW_DIR="{gw}"', f'ROUTES_ENV="{repo}/backend/config/routes.env"',
-                            _block("# ── 1f) AI Ready Portal(ARP) 연결", "# ── 2) 전 서비스 배포")])
+                            _block("# ── 1f) AI Ready Portal(ARP) 연결", "# ── 1h) 리스크 검토 비우기")])
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)})
         assert r.returncode == 0, r.stderr

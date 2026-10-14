@@ -7,6 +7,16 @@
 #   AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh   # 도는·줄 선 심의가 있어도 포털·nginx·허브·에이전트 서버를 재기동(심의가 전부 끊긴다)
 #       기본은 그 반대다 — 심의가 있으면 포털·nginx·허브 재기동(§2), 에이전트 서버 재기동(§4), 게이트웨이 재프로비저닝(§5)을
 #       건너뛰고 ○ 로 남긴다. 포털과 허브는 그 동안 새 이미지·frontend/dist·앱 SIF 도 받지 않는다(옛 프로세스가 그대로 돈다).
+#       강행하면 1h 의 비우기 깃발은 세우되 도는 카드 대조를 기다리지 않는다.
+#   1h) 리스크 검토 비우기의 손잡이(전부 선택 — 안 적으면 기본값). 깃발은 에이전트 서버 /drain 이고 사람이 보고·세우는 것은
+#   ./infra/scripts/review-drain.sh 다.
+#     HWAX_DRAIN_TTL_S=1800     깃발 수명(초). § 머리마다 다시 늘린다 — update-all 이 죽으면 마지막으로 늘린 때부터 이만큼 뒤에 풀린다.
+#                               21600(엔진이 요청 하나에 받는 상한)에서 자른다.
+#     HWAX_DRAIN_WAIT_S=300     깃발을 세운 뒤 도는 카드 대조가 끝나기를 기다리는 한도(초, 0 = 기다리지 않는다). 넘기면 끊고 간다 —
+#                               끊긴 호출은 리스크 앱이 차감 없이 다시 돌린다.
+#     HWAX_DRAIN_GRACE_S=1800   재기동을 미룬 실행의 끝 — 도는 심의가 0 이 된 뒤 새 패널을 멈춰 두는 창(초). 그 안에 다시 돌리면 미룸 없이 지나간다.
+#     HWAX_DRAIN_MAX_S=46800    그 깃발의 최대 수명(초).
+#     HWAX_AGENT_URL=http://127.0.0.1:9009   비우기가 부르는 에이전트 서버(시험이 바꿔 끼운다).
 #
 # 순서:
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
@@ -67,10 +77,14 @@ hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
          # 정지 요약은 완주 요약과 같은 stdout 으로 — stderr 로 내면 `> log` 로 남긴 로그에 ○ 요약만 있어 완주처럼 보인다(5라운드).
          echo "  · 종료 요청을 받아 여기서 멈춘다 — 앞 §는 끝냈다(직전 머리: '${HWAX_UPDATE_ALL_LAST_HR:-없음}'). '$*' 머리에서 멈췄다(0b)"
          [ -n "${FAIL_ITEMS:-}" ] && printf '  지금까지의 ✗:\n%s' "$FAIL_ITEMS"
+         # 비우기 끝맺음은 장부를 지우기 전에 — 미룬 재기동 줄을 장부에서 읽는다(1h).
+         command -v _hwax_drain_finish >/dev/null 2>&1 && _hwax_drain_finish
          command -v hwax_skip_summary >/dev/null 2>&1 && hwax_skip_summary
          rm -f "${HWAX_SKIP_LEDGER:-}" 2>/dev/null; exit 143; fi
        export HWAX_UPDATE_ALL_LAST_HR="$*"      # §1 exec 재실행을 넘어가야 하니 환경변수
-       printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"; }
+       printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"
+       # 1h 가 세운 비우기 깃발의 수명을 § 머리마다 다시 늘린다 — 실패는 삼킨다(비우기는 예의지 관문이 아니다).
+       if [ "${HWAX_DRAIN_RAISED:-0}" = 1 ]; then hwax_drain on all "${HWAX_DRAIN_TTL_S:-1800}" update-all "${HWAX_DRAIN_REASON:-update-all}" >/dev/null 2>&1 || true; fi; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # ⚠ **치명과 비치명을 눈으로 가른다.** 종전엔 둘 다 빨간 ✗ 라, 이 박스 대상도 아닌 서비스나
 # '비치명' 이라고 적힌 항목까지 실패처럼 보였다(2026-09-20 cae00: ✗ 넷 중 종료코드를 세운 것은
@@ -88,6 +102,41 @@ app_bad() { local c="$1"; shift; if [ "$c" = 1 ]; then fail "$@"; else bad "$@";
 HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER
 # 도는·줄 선 심의가 있으면 에이전트 서버를 재기동하지 않는다(§4 는 update-sites 가, §5 는 재프로비저닝 앞에서 묻는다).
 . "$SELF_REPO/infra/scripts/lib/delib-busy.sh"
+# 리스크 검토 비우기(1h) — 에이전트 서버 /drain 깃발을 세우고, § 머리마다 늘리고, 끝에서 내리거나 새 패널만 멈춘 채로 둔다.
+. "$SELF_REPO/infra/scripts/lib/review-drain.sh"
+# 비우기 끝맺음 — 1h 가 세운 깃발을 장부에 따라 정리한다. 완주 끝(요약 직전)과 hr() 정지 경로에서 부른다(장부를 지우기 전이어야 한다).
+#   미룬 사실은 종료코드가 아니라 **장부**에서 읽는다 — 이름이 '재기동 건너뜀'·'재프로비저닝 건너뜀' 으로 끝나는 줄(deploy-all·update-sites 는
+#   같은 HWAX_SKIP_LEDGER 파일에 적는다). _DA_RC=3 은 git 실패지 미룸이 아니다.
+#   미룬 것이 있으면 scope panels until-idle 로 바꾼다 — 카드 대조는 다시 받고 새 패널만 멈춘 채, 도는 심의가 끝나면 GRACE 동안 배포 창을
+#   연다(그 안에 다시 돌린 update-all 은 미룸 없이 지나가고 깃발을 내린다). 없으면 내린다. 남의 깃발(409)이면 건드리지 않는다.
+_hwax_drain_finish() {
+  [ "${HWAX_DRAIN_RAISED:-0}" = 1 ] || return 0
+  HWAX_DRAIN_RAISED=0                     # 한 번만 — 뒤따르는 hr() 의 수명 늘리기도 여기서 멈춘다
+  local _def="" _rc=0 _out _g _m _w
+  if [ -n "${HWAX_SKIP_LEDGER:-}" ] && [ -f "$HWAX_SKIP_LEDGER" ]; then
+    _def="$(awk -F'\t' '$1 ~ /(재기동|재프로비저닝) 건너뜀$/ && !s[$1]++ { printf "%s%s", (n++ ? " · " : ""), $1 }' "$HWAX_SKIP_LEDGER")"
+  fi
+  if [ -n "$_def" ]; then
+    _g="$(_hwax_drain_secs "${HWAX_DRAIN_GRACE_S:-}" 1800)"; [ "$_g" -gt 0 ] || _g=1800
+    _m="$(_hwax_drain_secs "${HWAX_DRAIN_MAX_S:-}" 46800)"; [ "$_m" -gt 0 ] || _m=46800
+    if [ $((_g % 60)) = 0 ]; then _w="$((_g / 60))분"; else _w="${_g}초"; fi
+    _out="$(hwax_drain until-idle "$_g" "$_m" update-all "미룬 재기동 — $_def")" || _rc=$?
+    case "$_rc" in
+      0) hwax_skip "리스크 검토 비우기 유지(새 패널만 멈춤)" "미룬 재기동이 있다($_def). 카드 대조는 다시 받고 새 패널(쟁점·옛 흐름)만 집지 않는다 — 도는 심의가 끝나면 $_w 창이 열린다(깃발은 최대 ${_m}초)" \
+           "그 창 안에 update-all 을 다시 돌리면 미룸 없이 지나가고 깃발이 내려간다 · 지금 풀려면 ./infra/scripts/review-drain.sh off --force" ;;
+      5) echo "  ○ 리스크 검토 비우기 — $_out — 건드리지 않는다(새 패널만 멈추는 창으로 바꾸지 않았다)" ;;
+      *) bad "리스크 검토 비우기 — 미룬 재기동 뒤 새 패널만 멈추는 창으로 바꾸지 못했다($_out). 지금 깃발은 수명(${HWAX_DRAIN_TTL_S:-1800}초)이 지나면 스스로 풀린다(비치명)" ;;
+    esac
+  else
+    _out="$(hwax_drain off update-all)" || _rc=$?
+    case "$_rc" in
+      0) echo "  · 리스크 검토 비우기 — 깃발을 내렸다(카드 대조·새 패널이 이어 돈다)" ;;
+      5) echo "  ○ 리스크 검토 비우기 — $_out — 건드리지 않는다(내리지 않았다)" ;;
+      *) bad "리스크 검토 비우기 — 깃발을 내리지 못했다($_out). 수명(${HWAX_DRAIN_TTL_S:-1800}초)이 지나면 스스로 풀린다(비치명)" ;;
+    esac
+  fi
+  return 0
+}
 
 # HTTP 코드 프로브 — curl은 실패해도 -w로 '000'을 찍으므로 종료코드가 아니라 출력값으로만 판정한다.
 http_code() { curl -sk -m "${2:-4}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null; }
@@ -524,6 +573,47 @@ for _np_k in RA_HOST ARP_HOST; do
 done
 export NO_PROXY="${NO_PROXY:-}"; export no_proxy="$NO_PROXY"
 if [ -n "$_np_added" ]; then echo "  · NO_PROXY 에 내부 목적지를 더했다:$_np_added (이 뒤에 뜨는 서비스가 물려받는다)"; fi
+
+# ── 1h) 리스크 검토 비우기 — §2~§5 가 포털·허브·에이전트 서버를 재기동하는 동안 새 카드 대조·새 패널을 멈춘다 ──────────────────────
+# 카드 대조는 delib_active 에 들지 않아 재기동을 막지 않고, 끊긴 호출은 리스크 앱이 차감 없이 다시 낸다 — 그래도 그 LLM 시간은 버려진다.
+# 깃발(scope all)을 세우고, 도는 것을 HWAX_DRAIN_WAIT_S 까지 기다린 뒤 간다. 수명은 § 머리(hr)마다 늘리고, 끝맺음(_hwax_drain_finish)이
+# 내리거나 — 재기동을 미뤘으면 — 새 패널만 멈추는 창으로 바꾼다. 남의 깃발(사람의 고정·다른 주인, 409)은 건드리지 않는다.
+# 옛 에이전트 서버(/drain 404)는 ○ 다 — 이번 실행이 엔진을 새 판으로 올린 뒤의 update-all 부터 걸린다. 422·503 은 진짜 실패라 ⚠ 다.
+# 비우기는 예의지 관문이 아니다 — 무엇이 와도 배포는 그대로 간다. deploy-all 을 혼자 돌리면 비우기가 없다(미룸 보호는 있다).
+hr "1h) 리스크 검토 비우기"
+HWAX_DRAIN_RAISED=0
+HWAX_DRAIN_TTL_S="$(_hwax_drain_secs "${HWAX_DRAIN_TTL_S:-}" 1800 "$HWAX_DRAIN_TTL_CAP")"; [ "$HWAX_DRAIN_TTL_S" -gt 0 ] || HWAX_DRAIN_TTL_S=1800
+HWAX_DRAIN_REASON="update-all — §2~§5 재기동 동안 새 카드 대조·새 패널을 멈춘다"
+_dr_rc=0; _dr="$(hwax_drain on all "$HWAX_DRAIN_TTL_S" update-all "$HWAX_DRAIN_REASON")" || _dr_rc=$?
+case "$_dr_rc" in
+  0)
+    HWAX_DRAIN_RAISED=1
+    echo "  · 세웠다 — $_dr. 새 카드 대조·새 패널을 받지 않는다. 수명은 § 머리마다 ${HWAX_DRAIN_TTL_S}초로 늘리고 끝에서 정리한다"
+    _dw="$(_hwax_drain_secs "${HWAX_DRAIN_WAIT_S:-}" 300)"; _st_rc=0; _st=""
+    [ "${AGENT_RESTART_FORCE:-0}" = 1 ] || { _st="$(hwax_review_state)" || _st_rc=$?; }
+    _dn="${_st%% *}"
+    if [ "${AGENT_RESTART_FORCE:-0}" = 1 ]; then
+      echo "  · AGENT_RESTART_FORCE=1 — 도는 카드 대조를 기다리지 않는다(끊긴 호출은 리스크 앱이 차감 없이 다시 돌린다)"
+    elif [ "$_st_rc" = 0 ] && [ "$_dn" != 0 ] && [ "$_dw" = 0 ]; then
+      echo "  · HWAX_DRAIN_WAIT_S=0 — 도는 카드 대조 ${_dn}건을 기다리지 않는다(끊긴 호출은 리스크 앱이 차감 없이 다시 돌린다)"
+    elif [ "$_st_rc" = 0 ] && [ "$_dn" != 0 ]; then
+      echo "  · 도는 카드 대조 ${_dn}건 — 끝나기를 최대 ${_dw}초 기다린다(HWAX_DRAIN_WAIT_S)"
+      _t0=$SECONDS; _dw_rc=0; _dn="$(hwax_review_wait "$_dw")" || _dw_rc=$?
+      if [ "$_dw_rc" = 0 ]; then
+        echo "  · 카드 대조가 비었다($((SECONDS - _t0))초) — 재기동으로 넘어간다"
+      else
+        echo "  · ${_dw}초 안에 끝나지 않은 카드 대조 ${_dn}건은 재기동에 끊길 수 있다 — 리스크 앱이 차감 없이 다시 돌린다"
+      fi
+    fi ;;
+  3) hwax_skip "리스크 검토 비우기" "에이전트 서버가 /drain 을 모른다(옛 판) — 이번 재기동에 끊긴 카드 대조는 리스크 앱이 차감 없이 다시 돌린다" \
+       "따로 할 일 없음 — 이번 실행이 에이전트 서버를 새 판으로 올리면 다음 update-all 부터 걸린다" ;;
+  5) hwax_skip "리스크 검토 비우기" "$_dr — 건드리지 않는다(세운 것으로 치지 않고 끝에서도 내리지 않는다)" \
+       "그 깃발은 세운 주체가 ./infra/scripts/review-drain.sh off 로 내린다(남이 내리려면 --force)" ;;
+  2) hwax_skip "리스크 검토 비우기" "에이전트 서버가 받지 않는다(내려가 있다 — 끊길 카드 대조가 없다)" \
+       "따로 할 일 없음 — 에이전트 서버가 떠 있는 update-all 부터 걸린다" ;;
+  4) bad "리스크 검토 비우기 — $_dr. 깃발 없이 간다(비치명)" ;;
+  *) bad "리스크 검토 비우기 실패 — 에이전트 서버가 요청을 거절했다($_dr). 깃발 없이 간다 — 옛 판이 아니다, 엔진 로그의 [drain] 줄을 본다(비치명)" ;;
+esac
 
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
@@ -1521,6 +1611,15 @@ probe "nginx          :8088" http://127.0.0.1:8088/health 1 "200"
 probe "agent-server   :9009" http://127.0.0.1:9009/health 1 "200"
 probe "gateway        :9110" http://127.0.0.1:9110/health 1 "200"
 probe "aidh           :8001" http://127.0.0.1:8001/api/system/health 0 "200"
+# 리스크 검토 — 비우기 깃발(1h 가 세운 것이면 아직 서 있다 — 끝에서 정리한다)·도는 카드 대조·챗 첫 조각 지연. 챗이 카드 대조 중에 평소의
+# 2배를 넘게 느리면(load.chat.slow) ⚠ 다 — 배포 판정(FAIL)은 건드리지 않는다. 못 읽으면 위 agent-server 줄이 이미 말했다.
+_rb_rc=0; _rb="$(hwax_review_brief)" || _rb_rc=$?
+case "$_rb_rc" in
+  0) ok "리스크 검토      $_rb" ;;
+  1) bad "리스크 검토      $_rb — 카드 대조가 챗을 밀어낸다. 에이전트 서버 .env 의 CARD_REVIEW_CONCURRENCY 를 낮추고 심의가 없을 때 ./start.sh -d(비치명)" ;;
+  3) echo "  · 리스크 검토      에이전트 서버가 비우기·카드 대조 칸을 싣지 않는다(옛 판)" ;;
+  *) echo "  · 리스크 검토      에이전트 서버 /health 를 읽지 못했다 — 위 agent-server 줄을 본다" ;;
+esac
 # ── 관리자 화면을 열 사람이 있는가 — 포털 /health/ready 의 temporary 에 no_active_admin 이 실리면 0명이다 ─────────────────────
 # 관리자는 원장의 표지와 PORTAL_ADMIN_EMAILS 만 본다(docs/change-request-8-10 D-3). 관리자를 IdP 그룹으로 받던 박스(mock·oidc)는 이
 # 배포로 올라온 순간 관리자 화면을 열 사람이 없어지는데, 위 프로브는 전부 초록이고 배선 설정은 관리자에게만 보인다 — 아무도 모른다.
@@ -2363,6 +2462,8 @@ fi
 # ○ 옵션·설정이 없어 안 켠 기능은 성공·실패 어느 쪽 끝에서도 다시 말한다 — 조용히 지나가면 그 기능이
 #   있는 줄도 모른다(사용자 지시 2026-09-25). 실패 목록과 섞이지 않게 먼저, 다른 표식으로 낸다.
 [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ] && echo "  · 종료 요청이 있었지만 남은 §가 없어 끝까지 갔다 — 아래 요약은 전부 실제로 한 것이다" >&2
+# 1h 비우기 끝맺음 — 장부(미룬 재기동 줄)를 읽으므로 요약·장부 지우기 앞이다.
+_hwax_drain_finish
 hwax_skip_summary
 rm -f "$HWAX_SKIP_LEDGER"
 # ⚠ 경고 요약 — 종료코드에는 안 들어가지만 실패 목록처럼 끝에 다시 낸다(위로 거슬러 올라가지 않아도 보이게).

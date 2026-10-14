@@ -520,7 +520,7 @@ def test_update_all_lock_passes_args_exit_code_and_survives_self_reexec(tmp_path
 # ── 1d 자동 라우트 ────────────────────────────────────────────────────────────
 def _run_1d(tmp_path, *, mode: str | None, routes_local: str | None, env=None) -> tuple[str, str]:
     i = UA_SRC.index('_ste_repo_dir() {')
-    block = UA_SRC[i:UA_SRC.index("# ── 2) 전 서비스 배포", i)]
+    block = UA_SRC[i:UA_SRC.index("# ── 1h) 리스크 검토 비우기", i)]   # 1h(비우기)는 lib 를 적재해야 돈다 — test_update_all_review_drain 이 본다
     repo = tmp_path / "HWAXPortal"; (repo / "backend/config").mkdir(parents=True, exist_ok=True)
     ste = tmp_path / "SmartTwinExplorer/deploy"; ste.mkdir(parents=True, exist_ok=True)
     tenv = ste / "transport.env"; tenv.unlink(missing_ok=True)
