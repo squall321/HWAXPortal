@@ -1155,6 +1155,7 @@ PY
   fi
   # 리스크 심사 앱 사용자 위임도 heax_registry 안의 항목이라 /health 에 안 나온다. 없으면 MCP 가
   # 서비스 계정 시야로만 돌아 '과제 0건'을 답한다 — 도구는 다 뜨는데 내용이 비는 부류라 눈에 안 띈다.
+  # 항목이 있어도 PAT 자동 등록 칸 둘(portal_pat_url·portal_pat_spec)이 없으면 같은 재프로비저닝으로 채운다.
   if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
      && [ -s "$(find_repo HEAXHub)/var/app_data/hwax_risk/secrets.env" ] \
      && ! python3 - "$GW_DIR/gateway_config.json" <<'PY' 2>/dev/null
@@ -1162,7 +1163,14 @@ import json, sys
 try: d = json.load(open(sys.argv[1]))
 except Exception: raise SystemExit(1)
 sso = ((d.get("heax_registry") or {}).get("per_user_sso") or {}).get("hwax_risk") or {}
-raise SystemExit(0 if sso.get("secret") and sso.get("sso_url") else 1)
+spec = sso.get("portal_pat_spec")
+# portal_pat_url·portal_pat_spec 도 본다(docs/risk-credentials C-18) — 항목이 이미 있는 박스는 이 두 칸 없이 남아 Claude 길 PAT
+# 자동 등록이 통째로 꺼진다(게이트웨이는 경고만 남긴다). 빠졌으면 재프로비저닝이 항목을 다시 쓴다.
+spec_ok = (isinstance(spec, dict) and isinstance(spec.get("name"), str) and spec["name"].strip()
+           and isinstance(spec.get("audiences"), list) and isinstance(spec.get("scopes"), list)
+           and isinstance(spec.get("max_ttl_days"), int) and not isinstance(spec.get("max_ttl_days"), bool)
+           and spec["max_ttl_days"] > 0)
+raise SystemExit(0 if sso.get("secret") and sso.get("sso_url") and sso.get("portal_pat_url") and spec_ok else 1)
 PY
   then
     MISSING="hwax_risk_sso${MISSING:+ $MISSING}"
