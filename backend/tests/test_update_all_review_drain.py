@@ -47,10 +47,17 @@ def agent():
     """엔진 규칙(review_gate.DrainState + 단계 B 뒤의 계약)을 줄여 흉내 낸다 — 사람의 고정은 hold 아닌 요청에 409 drain_held,
     살아 있는 깃발의 주인이 아닌 by 의 hold 아닌 요청은 409 drain_owned(본문은 drain 없이 owner·scope·until — 두 모양을 다 읽는지 본다),
     요청 하나의 ttl_s 는 21,600 까지(넘으면 422). state['review_seq'] 는 /health 마다 앞에서 하나씩 꺼낸다(비면 마지막 값).
-    state['old'] = 옛 엔진(/drain 404, /health 에 review_active·drain 없음) · state['force_status'] = /drain 이 그 상태로 답한다."""
+    state['old'] = 옛 엔진(/drain 404, /health 에 review_active·drain 없음) · state['force_status'] = /drain 이 그 상태로 답한다.
+    고정 아닌 깃발은 until 이 지나면 요청마다 풀린다(state['expired'] 가 센다). state['off_after_health'] = N 이면 N 번째 /health 에서
+    깃발을 내린다(1h 의 기다림 중에 사람이 내린 것)."""
     state = {"flag": None, "review": 0, "review_seq": [], "delib": (0, 0), "old": False, "force_status": None,
-             "slow": False, "calls": [], "delay": []}
+             "slow": False, "calls": [], "delay": [], "expired": 0, "off_after_health": None, "health_n": 0}
     lock = threading.Lock()
+
+    def _expire():
+        f = state["flag"]
+        if f and not f.get("hold") and f.get("until_idle") is None and f.get("until") is not None and f["until"] <= time.time():
+            state["flag"] = None; state["expired"] += 1
 
     class H(http.server.BaseHTTPRequestHandler):
         def _send(self, code: int, body):
@@ -65,10 +72,14 @@ def agent():
             if state["delay"]:
                 time.sleep(state["delay"].pop(0))
             with lock:
+                _expire()
                 state["calls"].append(("GET", self.path, None))
                 if self.path == "/health":
                     if state["review_seq"]:
                         state["review"] = state["review_seq"].pop(0)
+                    state["health_n"] += 1
+                    if state["off_after_health"] == state["health_n"]:
+                        state["flag"] = None
                     a, q = state["delib"]
                     if state["old"]:
                         return self._send(200, {"status": "ok", "delib_active": a, "delib_queued": q})
@@ -93,6 +104,7 @@ def agent():
                 time.sleep(state["delay"].pop(0))
             body = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"{}")
             with lock:
+                _expire()
                 state["calls"].append(("POST", self.path, body))
                 if self.path != "/drain" or state["old"]:
                     return self._send(404, {"detail": "Not Found"})
@@ -315,30 +327,110 @@ def test_git_실패만_있는_실행은_내린다(tmp_path, agent):
 # ── 남의 깃발(409 — 사람의 고정·다른 주인) ────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("hold,kind", [(True, "사람이 고정한 깃발"), (False, "다른 주체가 세운 깃발")])
 def test_남의_깃발이면_세운_것으로_치지_않고_끝에서도_건드리지_않는다(tmp_path, agent, hold, kind):
-    """고친 판을 올리는 update-all 이 사람의 멈춤을 풀지 않는다(P-05). 다른 주인의 깃발도 같다 — 409 면 어느 모양이든 늘리지도 내리지도
-    않는다. 미룬 재기동이 있어도 창으로 바꾸지 않는다(그 깃발은 우리 것이 아니다)."""
+    """고친 판을 올리는 update-all 이 사람의 멈춤을 풀지 않는다(P-05). 다른 주인의 깃발도 같다 — 409 면 어느 모양이든 그 깃발을 바꾸지
+    않는다. 미룬 재기동이 있어도 창으로 바꾸지 않는다(그 깃발은 우리 것이 아니다). 고정 아닌 남의 깃발이면 § 머리마다 제 깃발을 세워
+    보지만(풀리면 세운다 — 아래 시험) 살아 있는 동안은 409 라 아무것도 바뀌지 않는다. 사람의 고정이면 세워 보지도 않는다."""
     flag = {"scope": "all", "by": "human:kim", "hold": hold, "until": None if hold else time.time() + 600,
             "until_idle": None, "reason": "점검", "set_at": time.time()}
     agent["flag"] = dict(flag); agent["delib"] = (1, 0)
     rc, out, _ = _ua(tmp_path, agent, deploy_ledger=("포털·nginx 재기동 건너뜀",))
     assert rc == 0, out
-    assert len(_posts(agent)) == 1, f"409 뒤에 늘리거나 내렸다 — {_posts(agent)}"
+    tries = 1 if hold else 1 + _n_heads(SECTIONS)
+    assert [_strip_reason(b) for b in _posts(agent)] == [ON] * tries, f"409 뒤에 내리거나 창으로 바꿨다 — {_posts(agent)}"
     line = _line(out, "○", "리스크 검토 비우기")
     assert kind in line and "건드리지 않는다" in line and "human:kim" in line, line
     assert agent["flag"] == flag, "남의 깃발이 바뀌었다"
     assert "· 세웠다 — " not in out and "⚠" not in out
 
 
-def test_도중에_사람이_고정하면_끝맺음이_내리지_않는다(tmp_path, agent):
-    """update-all 이 세운 깃발을 사람이 도는 중에 고정으로 바꿨다 — 그 뒤의 늘리기는 409(삼킨다), 끝의 off 도 409 다. 내리지 않고 ○ 한 줄."""
-    take = ('curl -s --noproxy "*" -m 4 -X POST -H "content-type: application/json" '
-            '--data \'{"on": true, "scope": "all", "hold": true, "by": "human:lee", "reason": "x"}\' "$HWAX_AGENT_URL/drain" >/dev/null')
-    rc, out, _ = _ua(tmp_path, agent, sections=(("3) a", take), ("4) b", "")))
+def _human(body: dict) -> str:
+    """대역 § 에서 사람이 review-drain.sh 로 하는 일 — POST /drain 한 번(셸 한 줄)."""
+    return (f'curl -s --noproxy "*" -m 4 -X POST -H "content-type: application/json" '
+            f"--data '{json.dumps(body, ensure_ascii=False)}' \"$HWAX_AGENT_URL/drain\" >/dev/null")
+
+
+def _ours(agent) -> list[dict]:
+    """update-all 이 보낸 것만(대역 § 의 사람 요청은 뺀다)."""
+    return [_strip_reason(b) for b in _posts(agent) if b.get("by") == "update-all"]
+
+
+def test_도중에_사람이_고정하면_더_늘리지_않고_끝에서도_건드리지_않는다(tmp_path, agent):
+    """update-all 이 세운 깃발을 사람이 도는 중에 고정으로 바꿨다 — 다음 § 머리가 GET 으로 보고(우리 수명 안인데 남의 것) 늘리기를 멈춘다.
+    끝맺음은 off 를 보내지 않는다. ○ 한 줄이 누구의 깃발인지 말한다."""
+    rc, out, _ = _ua(tmp_path, agent, sections=(("3) a", _human({"on": True, "scope": "all", "hold": True, "by": "human:lee",
+                                                                  "reason": "x"})), ("4) b", ""), ("5) c", "")))
     assert rc == 0, out
-    assert _strip_reason(_last(agent)) == OFF, "끝맺음은 내리려고는 했다"
+    assert _ours(agent) == [ON] * 3, f"고정한 뒤에도 늘리거나 내렸다 — {_ours(agent)}"
     assert agent["flag"] and agent["flag"]["hold"] is True and agent["flag"]["by"] == "human:lee"
     line = _line(out, "○", "리스크 검토 비우기")
-    assert "사람이 고정한 깃발" in line and "건드리지 않는다" in line and "⚠" not in out
+    assert "수명 전에 다른 주체(by human:lee)의 것이 됐다" in line and "끝에서도 건드리지 않는다" in line, line
+    assert "⚠" not in out
+
+
+def test_마지막_절에서_사람이_고정하면_끝맺음이_내리지_않는다(tmp_path, agent):
+    """뒤에 § 머리가 없으면 끝맺음이 처음 본다 — off 가 409 를 받고 내리지 않는다(○ 한 줄, ⚠ 없음)."""
+    rc, out, _ = _ua(tmp_path, agent, sections=(("3) a", _human({"on": True, "scope": "all", "hold": True, "by": "human:lee",
+                                                                  "reason": "x"})),))
+    assert rc == 0, out
+    assert _ours(agent)[-1] == OFF and agent["flag"] and agent["flag"]["by"] == "human:lee"
+    line = _line(out, "○", "리스크 검토 비우기")
+    assert "사람이 고정한 깃발" in line and "건드리지 않는다(내리지 않았다)" in line and "⚠" not in out, line
+
+
+def test_남의_깃발이_풀리면_그_머리에서_제_깃발을_세운다(tmp_path, agent):
+    """#7 — 사람이 review-drain.sh on(고정 아님)으로 세운 깃발 때문에 1h 가 409 drain_owned 를 받았다. 종전엔 그 뒤로 아무것도 안 해,
+    그 깃발이 도중에 풀리면 §4 재기동 동안 카드 대조가 돌고 끝의 until-idle 도 없었다. 이제 § 머리마다 세워 보고(409 면 조용히), 그 깃발이
+    없어진 머리에서 세운다(· 한 줄). 그때부터는 늘리기·끝맺음이 종전대로다. 1h 의 ○ 는 끝 요약에 다시 나오지 않는다(이제 사실이 아니다)."""
+    agent["flag"] = {"scope": "all", "by": "human:lee", "hold": False, "until": time.time() + 600, "until_idle": None,
+                     "reason": "점검", "set_at": time.time()}
+    agent["delib"] = (1, 0)
+    rc, out, _ = _ua(tmp_path, agent, deploy_ledger=("포털·nginx 재기동 건너뜀",),
+                     sections=(("3) a", _human({"on": False, "by": "human:lee"})), ("4) b", ""), ("5) c", "")))
+    assert rc == 0, out
+    ours = _ours(agent)
+    assert ours[:4] == [ON] * 4 and len(ours) == 6, ours       # 1h · §2 · §3 머리(409) · §4 머리(세웠다) · §5 머리(늘림) · 끝맺음
+    assert ours[-1]["scope"] == "panels" and "until_idle" in ours[-1], "세운 뒤로는 끝맺음이 종전대로(미룬 재기동 → 창)"
+    line = _line(out, "· 리스크 검토 비우기 — 다른 주체의 깃발이 없어져 update-all 이 깃발을 세웠다")
+    assert "깃발 on(scope all · by update-all" in line, line
+    assert out.count("다른 주체가 세운 깃발") == 1, "1h 의 ○ 가 끝 요약에 다시 나왔다 — 세운 뒤에는 사실이 아니다"
+    assert agent["flag"]["by"] == "update-all" and agent["flag"]["scope"] == "panels"
+
+
+def test_사람이_도중에_내리면_되살리지_않는다(tmp_path, agent):
+    """#8 — update-all 의 깃발을 사람이 review-drain.sh off --force 로 내렸다. 종전엔 다음 § 머리의 늘리기가 그 깃발을 다시 세웠다. 이제
+    늘리기 전에 GET 으로 보고, 우리 수명(마지막으로 늘린 때 + TTL − 30초) 안인데 꺼져 있으면 사람이 내린 것이다 — 멈추고 끝에서도
+    건드리지 않는다. TTL 40 에 12초를 쉬어 마지막으로 늘린 때가 1h 가 아니라 § 머리의 늘리기임을 본다(1h 로 셈하면 수명이 지난 것으로 읽는다)."""
+    rc, out, _ = _ua(tmp_path, agent, HWAX_DRAIN_TTL_S="40",
+                     sections=(("3) a", "sleep 12"), ("4) b", _human({"on": False, "by": "human:kim", "force": True})),
+                               ("5) c", ""), ("6) d", "")))
+    assert rc == 0, out
+    on40 = {**ON, "ttl_s": 40}
+    assert _ours(agent) == [on40] * 4, f"사람이 내린 깃발을 되살렸거나 끝에서 건드렸다 — {_ours(agent)}"
+    assert agent["flag"] is None
+    line = _line(out, "○", "리스크 검토 비우기")
+    assert "update-all 의 깃발이 수명 전에 내려갔다(누군가 내렸다)" in line and "다시 세우지 않고" in line, line
+    assert "다른 주체의 깃발이 없어져" not in out, "사람이 내린 뒤에 #7 이 끼어들었다"
+
+
+def test_1h_의_기다림_중에_사람이_내려도_되살리지_않는다(tmp_path, agent):
+    """1h 가 세운 때가 첫 기준이다 — §2 머리 전에(도는 카드 대조를 기다리는 동안) 사람이 내렸으면 §2 머리가 그것을 본다."""
+    agent["review_seq"] = [2, 0]; agent["off_after_health"] = 2
+    rc, out, _ = _ua(tmp_path, agent, HWAX_DRAIN_WAIT_S="60")
+    assert rc == 0, out
+    assert _ours(agent) == [ON], _ours(agent)
+    assert "수명 전에 내려갔다" in out and agent["flag"] is None
+
+
+def test_긴_절에서_수명이_지났으면_다시_세운다(tmp_path, agent):
+    """§ 하나가 TTL 보다 길었다(cae00 의 deploy-all 은 30분을 넘길 수 있다) — 깃발은 수명에 풀렸고 사람 탓이 아니다. 다음 머리가 다시
+    세우고, 끝맺음은 종전대로 내린다. ○ 를 찍지 않는다."""
+    rc, out, _ = _ua(tmp_path, agent, HWAX_DRAIN_TTL_S="2", sections=(("3) a", "sleep 3"), ("4) b", "")))
+    assert rc == 0, out
+    assert agent["expired"] >= 1, "깃발이 풀리지 않았다 — 시험이 수명 경과를 만들지 못했다"
+    on2 = {**ON, "ttl_s": 2}
+    assert _ours(agent) == [on2] * 4 + [OFF], _ours(agent)
+    assert "수명 전에" not in out and "○" not in out, out
+    assert agent["flag"] is None
 
 
 # ── 옛 엔진 · 거절 · 내려간 서버 · 매달린 서버 ──────────────────────────────────────────────────────────
@@ -471,14 +563,15 @@ def test_update_all_배선():
     stop = hr[:_at(hr, "exit 143")]
     assert _at(stop, "_hwax_drain_finish") < _at(stop, "hwax_skip_summary") < _at(stop, 'rm -f "${HWAX_SKIP_LEDGER'), \
         "정지 경로 — 끝맺음 → 요약 → 장부 지우기"
-    assert 'if [ "${HWAX_DRAIN_RAISED:-0}" = 1 ]; then hwax_drain on all' in hr[_at(hr, "exit 143"):], "늘리기는 정지 판정 뒤다"
+    assert "_hwax_drain_tick" in hr[_at(hr, "exit 143"):], "깃발 돌보기는 정지 판정 뒤다"
     tail = _tail()
     assert _at(tail, "_hwax_drain_finish") < _at(tail, "hwax_skip_summary") < _at(tail, 'rm -f "$HWAX_SKIP_LEDGER"')
     head = UA[:UA.index("set -uo pipefail")]
     for knob in ("HWAX_DRAIN_TTL_S=1800", "HWAX_DRAIN_WAIT_S=300", "HWAX_DRAIN_GRACE_S=1800", "HWAX_DRAIN_MAX_S=46800",
                  "HWAX_AGENT_URL=http://127.0.0.1:9009", "review-drain.sh", "21600"):
         assert knob in head, f"머리 주석에 {knob} 가 없다"
-    for line in _drain_and_deploy().splitlines() + _region("_hwax_drain_finish() {", "\n}\n").splitlines():
+    for line in (_drain_and_deploy() + _region("_hwax_drain_finish() {", "\n}\n")
+                 + _region("_hwax_drain_tick() {", "\n}\n")).splitlines():
         assert not line.lstrip().startswith("`"), "대입어 사슬 안의 백틱 주석은 다음 대입어를 명령 이름으로 만든다"
 
 
@@ -486,8 +579,8 @@ def test_lib_의_0_아닌_값은_받아서_쓴다():
     """3·5 를 정상으로 돌려준다 — set -e 스크립트에서 맨 문장으로 부르면 조용히 끝난다(f1958af). 부르는 곳은 전부 || _rc=$? 다."""
     import re
 
-    for src in (_drain_and_deploy(), _region("_hwax_drain_finish() {", "\n}\n"), WRAPPER):
-        for m in re.finditer(r"\$\((hwax_drain|hwax_review_state|hwax_review_wait|hwax_review_brief)\b[^\n]*", src):
+    for src in (_drain_and_deploy(), _region("_hwax_drain_finish() {", "\n}\n"), _region("_hwax_drain_tick() {", "\n}\n"), WRAPPER):
+        for m in re.finditer(r"\$\((hwax_drain|hwax_drain_owner|hwax_review_state|hwax_review_wait|hwax_review_brief)\b[^\n]*", src):
             assert "|| _" in m.group(0) or "|| rc=$?" in m.group(0), m.group(0)
     assert "|| _rc=$?" in DRAIN_LIB[:DRAIN_LIB.index("HWAX_DRAIN_TTL_CAP=")], "머리 주석이 받는 법을 말한다"
 

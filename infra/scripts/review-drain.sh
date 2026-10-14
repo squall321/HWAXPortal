@@ -9,7 +9,7 @@
 #
 # 세운 주체는 human:<로그인 이름> 이다 — 내리는 쪽이 같은 이름이어야 하고, 아니면 --force. update-all 이 세운 깃발(by update-all)은
 # update-all 이 끝에서 정리한다. 주소는 HWAX_AGENT_URL(기본 http://127.0.0.1:9009). 규칙과 종료코드는 lib/review-drain.sh 다 —
-# 0 됐다 · 2 서버가 받지 않는다 · 3 /drain 을 모른다(옛 판) · 4 매달렸다 · 5 남의 깃발(건드리지 않았다) · 6 거절.
+# 0 됐다 · 2 서버가 받지 않는다 · 3 /drain 을 모른다(옛 판) · 4 매달렸다 · 5 사람의 고정 · 7 다른 주인(둘 다 건드리지 않았다) · 6 거절.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT/infra/scripts/lib/review-drain.sh"
@@ -51,7 +51,7 @@ case "$rc" in
   2) echo "✗ $out — ${HWAX_AGENT_URL:-http://127.0.0.1:9009} 에서 에이전트 서버가 떠 있는지 본다" >&2 ;;
   3) echo "✗ 에이전트 서버가 /drain 을 모른다(옛 판) — 새 판으로 올린 뒤에 쓴다(update-all)" >&2 ;;
   4) echo "✗ $out" >&2 ;;
-  5) echo "✗ $out — 건드리지 않았다. 내리려면 off --force" >&2 ;;
+  5|7) echo "✗ $out — 건드리지 않았다. 내리려면 off --force" >&2 ;;
   *) echo "✗ 거절 — $out" >&2 ;;
 esac
 exit "$rc"

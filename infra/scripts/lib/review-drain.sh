@@ -16,8 +16,10 @@
 #   hwax_drain off <by> [force]                              내린다. 세운 주체가 아니거나 고정이면 force 가 있어야 한다.
 #   hwax_drain status                                        GET /drain.
 #       한 줄 설명(깃발 모양 또는 거절 사유)을 찍는다. 0 = 됐다 · 2 = 서버가 받지 않는다(연결 거절) · 3 = /drain 을 모른다(404, 옛 판) ·
-#       4 = 매달렸다 · 5 = 남의 깃발(409 — 사람의 고정 drain_held 또는 다른 주인 drain_owned. 건드리지 않는다) ·
-#       6 = 거절(422 bad_request · 503 drain_unavailable · 그 밖의 상태). 6 은 진짜 실패다 — 옛 판(3)과 섞지 않는다.
+#       4 = 매달렸다 · 5 = 사람의 고정(409, 깃발이 hold) · 7 = 다른 주인의 깃발(409, hold 아님 — drain_owned 등) ·
+#       6 = 거절(422 bad_request · 503 drain_unavailable · 그 밖의 상태). 5·7 은 둘 다 남의 것이라 건드리지 않는다. 6 은 진짜 실패다 —
+#       옛 판(3)과 섞지 않는다.
+#   hwax_drain_owner           GET /drain 한 번 — 살아 있는 깃발의 주인(by)을 찍는다(꺼져 있으면 빈 줄). 0 = 읽었다 · 2·3·4·6 은 위와 같다.
 #   hwax_review_wait <max_s>   도는 카드 대조(review_active)가 0 이 될 때까지 2초마다 본다. 마지막에 본 건수를 찍는다.
 #       0 = 비었다(또는 서버가 내려갔다 — 기다릴 것이 없다) · 1 = 시간이 다 됐다.
 #   hwax_review_brief          §6 헬스게이트 한 줄(깃발·도는 카드 대조·챗 첫 조각 지연)을 찍는다.
@@ -122,8 +124,10 @@ if code == "200" and isinstance(b, dict):
 elif code == "409" and isinstance(b, dict):
     d = b.get("drain") if isinstance(b.get("drain"), dict) else b
     who = d.get("by") or d.get("owner") or "?"
-    kind = "사람이 고정한 깃발" if d.get("hold") is True else "다른 주체가 세운 깃발"
+    held = d.get("hold") is True
+    kind = "사람이 고정한 깃발" if held else "다른 주체가 세운 깃발"
     print(f"{kind}(by {str(who)[:60]} · scope {d.get('scope')} · {b.get('code', '409')})")
+    raise SystemExit(5 if held else 7)
 elif code == "404":
     print("HTTP 404 — /drain 이 없다(옛 판)")
 else:
@@ -153,13 +157,30 @@ hwax_drain() {
     2) echo "에이전트 서버가 받지 않는다(내려가 있다)"; return 2 ;;
     4) echo "에이전트 서버가 4초 안에 답하지 않았다(매달림)"; return 4 ;;
   esac
-  _hwax_drain_describe "$_HWAX_DRAIN_CODE" "$_HWAX_DRAIN_BODY"
+  rc=0; _hwax_drain_describe "$_HWAX_DRAIN_CODE" "$_HWAX_DRAIN_BODY" || rc=$?
   case "$_HWAX_DRAIN_CODE" in
     200) return 0 ;;
     404) return 3 ;;
-    409) return 5 ;;
+    409) [ "$rc" = 7 ] && return 7; return 5 ;;     # 고정이 아니라는 것이 보일 때만 7 — 모르면 사람의 고정으로 읽는다
     *)   return 6 ;;
   esac
+}
+
+hwax_drain_owner() {
+  local rc=0
+  _hwax_drain_http GET /drain || rc=$?
+  [ "$rc" = 0 ] || return "$rc"
+  case "$_HWAX_DRAIN_CODE" in 200) ;; 404) return 3 ;; *) return 6 ;; esac
+  B="$_HWAX_DRAIN_BODY" python3 - <<'PY'
+import json, os, sys
+try:
+    d = json.loads(os.environ["B"])
+except ValueError:
+    sys.exit(6)
+if not isinstance(d, dict):
+    sys.exit(6)
+print(str(d.get("by") or "") if d.get("on") is True else "")
+PY
 }
 
 # 요청 본문 — by·reason 은 사람이 쓴 글이라 셸에서 JSON 을 엮지 않는다(따옴표 하나에 깨진다).

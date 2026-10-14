@@ -83,8 +83,8 @@ hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
          rm -f "${HWAX_SKIP_LEDGER:-}" 2>/dev/null; exit 143; fi
        export HWAX_UPDATE_ALL_LAST_HR="$*"      # §1 exec 재실행을 넘어가야 하니 환경변수
        printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"
-       # 1h 가 세운 비우기 깃발의 수명을 § 머리마다 다시 늘린다 — 실패는 삼킨다(비우기는 예의지 관문이 아니다).
-       if [ "${HWAX_DRAIN_RAISED:-0}" = 1 ]; then hwax_drain on all "${HWAX_DRAIN_TTL_S:-1800}" update-all "${HWAX_DRAIN_REASON:-update-all}" >/dev/null 2>&1 || true; fi; }
+       # 1h 의 비우기 깃발을 § 머리마다 돌본다(늘리기 · 남이 내렸으면 멈추기 · 남의 깃발이 사라졌으면 세우기) — _hwax_drain_tick.
+       command -v _hwax_drain_tick >/dev/null 2>&1 && _hwax_drain_tick; return 0; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # ⚠ **치명과 비치명을 눈으로 가른다.** 종전엔 둘 다 빨간 ✗ 라, 이 박스 대상도 아닌 서비스나
 # '비치명' 이라고 적힌 항목까지 실패처럼 보였다(2026-09-20 cae00: ✗ 넷 중 종료코드를 세운 것은
@@ -124,17 +124,56 @@ _hwax_drain_finish() {
     case "$_rc" in
       0) hwax_skip "리스크 검토 비우기 유지(새 패널만 멈춤)" "미룬 재기동이 있다($_def). 카드 대조는 다시 받고 새 패널(쟁점·옛 흐름)만 집지 않는다 — 도는 심의가 끝나면 $_w 창이 열린다(깃발은 최대 ${_m}초)" \
            "그 창 안에 update-all 을 다시 돌리면 미룸 없이 지나가고 깃발이 내려간다 · 지금 풀려면 ./infra/scripts/review-drain.sh off --force" ;;
-      5) echo "  ○ 리스크 검토 비우기 — $_out — 건드리지 않는다(새 패널만 멈추는 창으로 바꾸지 않았다)" ;;
+      5|7) echo "  ○ 리스크 검토 비우기 — $_out — 건드리지 않는다(새 패널만 멈추는 창으로 바꾸지 않았다)" ;;
       *) bad "리스크 검토 비우기 — 미룬 재기동 뒤 새 패널만 멈추는 창으로 바꾸지 못했다($_out). 지금 깃발은 수명(${HWAX_DRAIN_TTL_S:-1800}초)이 지나면 스스로 풀린다(비치명)" ;;
     esac
   else
     _out="$(hwax_drain off update-all)" || _rc=$?
     case "$_rc" in
       0) echo "  · 리스크 검토 비우기 — 깃발을 내렸다(카드 대조·새 패널이 이어 돈다)" ;;
-      5) echo "  ○ 리스크 검토 비우기 — $_out — 건드리지 않는다(내리지 않았다)" ;;
+      5|7) echo "  ○ 리스크 검토 비우기 — $_out — 건드리지 않는다(내리지 않았다)" ;;
       *) bad "리스크 검토 비우기 — 깃발을 내리지 못했다($_out). 수명(${HWAX_DRAIN_TTL_S:-1800}초)이 지나면 스스로 풀린다(비치명)" ;;
     esac
   fi
+  return 0
+}
+# § 머리(hr)마다 비우기 깃발을 돌본다 — 셋 가운데 하나다. 실패는 삼킨다(비우기는 예의지 관문이 아니다).
+#   ① 우리가 세웠다(RAISED) — 늘리기 전에 GET 으로 주인을 본다. 우리 수명(마지막으로 세운·늘린 때 + TTL − 30초) 안인데 꺼졌거나 남의 것이면
+#      사람이 일부러 내린 것이다(review-drain.sh off --force · on --hold) — 늘리기를 멈추고 끝에서도 건드리지 않는다(○ 한 줄). 그대로 늘리면
+#      사람이 내린 깃발을 다음 § 머리가 되살린다. 수명이 이미 지났으면(§ 하나가 TTL 보다 길었다) 사람 탓이 아니다 — 다시 세운다.
+#   ② 1h 가 다른 주인의 깃발(409, 고정 아님)을 만났다(FOREIGN) — 다시 세워 본다. 여전히 409 면 조용히, 되면 그때부터 우리 것이다(· 한 줄).
+#      그 깃발은 그 주인의 수명에 풀린다 — 기다리지 않으면 §4 재기동 동안 카드 대조가 돌고 끝의 until-idle 도 없다.
+#   ③ 그 밖(사람의 고정 · 옛 판 · ① 에서 멈췄다) — 아무것도 하지 않는다.
+_hwax_drain_tick() {
+  local _by="" _rc=0 _out=""
+  if [ "${HWAX_DRAIN_RAISED:-0}" = 1 ]; then
+    _by="$(hwax_drain_owner)" || _rc=$?
+    if [ "$_rc" = 0 ] && [ "$_by" != update-all ] \
+       && [ "$(date +%s)" -lt $(( ${HWAX_DRAIN_LAST_S:-0} + ${HWAX_DRAIN_TTL_S:-1800} - 30 )) ]; then
+      HWAX_DRAIN_RAISED=0
+      if [ -z "$_by" ]; then
+        echo "  ○ 리스크 검토 비우기 — update-all 의 깃발이 수명 전에 내려갔다(누군가 내렸다) — 다시 세우지 않고 끝에서도 건드리지 않는다"
+      else
+        echo "  ○ 리스크 검토 비우기 — update-all 의 깃발이 수명 전에 다른 주체(by $_by)의 것이 됐다 — 더 늘리지 않고 끝에서도 건드리지 않는다"
+      fi
+      return 0
+    fi
+    _rc=0; hwax_drain on all "${HWAX_DRAIN_TTL_S:-1800}" update-all "${HWAX_DRAIN_REASON:-update-all}" >/dev/null 2>&1 || _rc=$?
+    case "$_rc" in
+      0) HWAX_DRAIN_LAST_S="$(date +%s)" ;;
+      7) HWAX_DRAIN_RAISED=0; HWAX_DRAIN_FOREIGN=1 ;;   # 우리 수명이 끝난 사이 남이 세웠다 — ② 로 간다
+      5) HWAX_DRAIN_RAISED=0 ;;                         # 그 사이 사람이 고정했다 — 손대지 않는다
+    esac
+    return 0
+  fi
+  [ "${HWAX_DRAIN_FOREIGN:-0}" = 1 ] || return 0
+  _out="$(hwax_drain on all "${HWAX_DRAIN_TTL_S:-1800}" update-all "${HWAX_DRAIN_REASON:-update-all}")" || _rc=$?
+  case "$_rc" in
+    0) HWAX_DRAIN_RAISED=1; HWAX_DRAIN_FOREIGN=0; HWAX_DRAIN_LAST_S="$(date +%s)"
+       hwax_skip_forget "리스크 검토 비우기"          # 1h 의 '남의 깃발' ○ 는 이제 사실이 아니다 — 끝 요약에서 뺀다
+       echo "  · 리스크 검토 비우기 — 다른 주체의 깃발이 없어져 update-all 이 깃발을 세웠다 — $_out" ;;
+    5) HWAX_DRAIN_FOREIGN=0 ;;                          # 그 사이 사람이 고정했다 — 손대지 않는다
+  esac
   return 0
 }
 
@@ -577,17 +616,18 @@ if [ -n "$_np_added" ]; then echo "  · NO_PROXY 에 내부 목적지를 더했�
 # ── 1h) 리스크 검토 비우기 — §2~§5 가 포털·허브·에이전트 서버를 재기동하는 동안 새 카드 대조·새 패널을 멈춘다 ──────────────────────
 # 카드 대조는 delib_active 에 들지 않아 재기동을 막지 않고, 끊긴 호출은 리스크 앱이 차감 없이 다시 낸다 — 그래도 그 LLM 시간은 버려진다.
 # 깃발(scope all)을 세우고, 도는 것을 HWAX_DRAIN_WAIT_S 까지 기다린 뒤 간다. 수명은 § 머리(hr)마다 늘리고, 끝맺음(_hwax_drain_finish)이
-# 내리거나 — 재기동을 미뤘으면 — 새 패널만 멈추는 창으로 바꾼다. 남의 깃발(사람의 고정·다른 주인, 409)은 건드리지 않는다.
+# 내리거나 — 재기동을 미뤘으면 — 새 패널만 멈추는 창으로 바꾼다. 남의 깃발(사람의 고정·다른 주인, 409)은 건드리지 않는다 — 다른 주인의
+# 고정 아닌 깃발은 풀리면 § 머리에서 우리 것을 세우고, 우리 깃발을 사람이 수명 전에 내렸으면 다시 세우지 않는다(_hwax_drain_tick).
 # 옛 에이전트 서버(/drain 404)는 ○ 다 — 이번 실행이 엔진을 새 판으로 올린 뒤의 update-all 부터 걸린다. 422·503 은 진짜 실패라 ⚠ 다.
 # 비우기는 예의지 관문이 아니다 — 무엇이 와도 배포는 그대로 간다. deploy-all 을 혼자 돌리면 비우기가 없다(미룸 보호는 있다).
 hr "1h) 리스크 검토 비우기"
-HWAX_DRAIN_RAISED=0
+HWAX_DRAIN_RAISED=0; HWAX_DRAIN_FOREIGN=0; HWAX_DRAIN_LAST_S=0   # 세웠나 · 남의 깃발이 사라지면 세울까 · 마지막으로 세운·늘린 때(epoch)
 HWAX_DRAIN_TTL_S="$(_hwax_drain_secs "${HWAX_DRAIN_TTL_S:-}" 1800 "$HWAX_DRAIN_TTL_CAP")"; [ "$HWAX_DRAIN_TTL_S" -gt 0 ] || HWAX_DRAIN_TTL_S=1800
 HWAX_DRAIN_REASON="update-all — §2~§5 재기동 동안 새 카드 대조·새 패널을 멈춘다"
 _dr_rc=0; _dr="$(hwax_drain on all "$HWAX_DRAIN_TTL_S" update-all "$HWAX_DRAIN_REASON")" || _dr_rc=$?
 case "$_dr_rc" in
   0)
-    HWAX_DRAIN_RAISED=1
+    HWAX_DRAIN_RAISED=1; HWAX_DRAIN_LAST_S="$(date +%s)"
     echo "  · 세웠다 — $_dr. 새 카드 대조·새 패널을 받지 않는다. 수명은 § 머리마다 ${HWAX_DRAIN_TTL_S}초로 늘리고 끝에서 정리한다"
     _dw="$(_hwax_drain_secs "${HWAX_DRAIN_WAIT_S:-}" 300)"; _st_rc=0; _st=""
     [ "${AGENT_RESTART_FORCE:-0}" = 1 ] || { _st="$(hwax_review_state)" || _st_rc=$?; }
@@ -608,6 +648,9 @@ case "$_dr_rc" in
   3) hwax_skip "리스크 검토 비우기" "에이전트 서버가 /drain 을 모른다(옛 판) — 이번 재기동에 끊긴 카드 대조는 리스크 앱이 차감 없이 다시 돌린다" \
        "따로 할 일 없음 — 이번 실행이 에이전트 서버를 새 판으로 올리면 다음 update-all 부터 걸린다" ;;
   5) hwax_skip "리스크 검토 비우기" "$_dr — 건드리지 않는다(세운 것으로 치지 않고 끝에서도 내리지 않는다)" \
+       "그 깃발은 세운 주체가 ./infra/scripts/review-drain.sh off 로 내린다(남이 내리려면 --force)" ;;
+  7) HWAX_DRAIN_FOREIGN=1
+     hwax_skip "리스크 검토 비우기" "$_dr — 건드리지 않는다(그 깃발이 풀리면 § 머리에서 update-all 이 제 깃발을 세운다)" \
        "그 깃발은 세운 주체가 ./infra/scripts/review-drain.sh off 로 내린다(남이 내리려면 --force)" ;;
   2) hwax_skip "리스크 검토 비우기" "에이전트 서버가 받지 않는다(내려가 있다 — 끊길 카드 대조가 없다)" \
        "따로 할 일 없음 — 에이전트 서버가 떠 있는 update-all 부터 걸린다" ;;
