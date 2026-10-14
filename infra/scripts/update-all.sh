@@ -139,30 +139,41 @@ _hwax_drain_finish() {
 }
 # § 머리(hr)마다 비우기 깃발을 돌본다 — 셋 가운데 하나다. 실패는 삼킨다(비우기는 예의지 관문이 아니다).
 #   ① 우리가 세웠다(RAISED) — 늘리기 전에 GET 으로 주인을 본다. 우리 수명(마지막으로 세운·늘린 때 + TTL − 30초) 안인데 꺼졌거나 남의 것이면
-#      사람이 일부러 내린 것이다(review-drain.sh off --force · on --hold) — 늘리기를 멈추고 끝에서도 건드리지 않는다(○ 한 줄). 그대로 늘리면
-#      사람이 내린 깃발을 다음 § 머리가 되살린다. 수명이 이미 지났으면(§ 하나가 TTL 보다 길었다) 사람 탓이 아니다 — 다시 세운다.
-#   ② 1h 가 다른 주인의 깃발(409, 고정 아님)을 만났다(FOREIGN) — 다시 세워 본다. 여전히 409 면 조용히, 되면 그때부터 우리 것이다(· 한 줄).
-#      그 깃발은 그 주인의 수명에 풀린다 — 기다리지 않으면 §4 재기동 동안 카드 대조가 돌고 끝의 until-idle 도 없다.
+#      사람이 손댄 것이다 — 그대로 늘리면 사람이 내린 깃발을 다음 § 머리가 되살린다. 꺼졌거나(off --force) 사람의 고정이면(on --hold)
+#      늘리기를 멈추고 끝에서도 건드리지 않는다. 고정 아닌 남의 깃발(off --force 뒤 on)이면 ② 로 간다 — 그 깃발이 풀리면 다시 세운다.
+#      수명이 이미 지났으면(§ 하나가 TTL 보다 길었다) 사람 탓이 아니다 — 다시 세운다. 늘리기가 409 를 받아도 같은 갈래로 가고 ○ 한 줄을 낸다.
+#   ② 다른 주인의 깃발(409, 고정 아님)을 만났다(FOREIGN — 1h 또는 ①) — 다시 세워 본다. 여전히 409 면 조용히, 되면 그때부터 우리 것이다
+#      (· 한 줄). 그 깃발은 그 주인의 수명에 풀린다 — 기다리지 않으면 §4 재기동 동안 카드 대조가 돌고 끝의 until-idle 도 없다.
 #   ③ 그 밖(사람의 고정 · 옛 판 · ① 에서 멈췄다) — 아무것도 하지 않는다.
+# 알려진 한계(D-42 F — 고치지 않고 받아들였다).
+#   · 누가 내렸는지를 시각으로 짐작한다(여유 30초). 우리 수명의 마지막 30초 안에 내렸거나, TTL 보다 긴 § 뒤에 내렸으면 수명이 끝난 것과
+#     구별하지 못해 다시 세운다.
+#   · 엔진이 재기동하며 깃발 파일을 잃으면(DRAIN_STATE_PATH·ARTIFACT_DIR 가 달라졌다) '누군가 내렸다' 로 읽고 그 실행 끝까지 비우기 없이 간다.
 _hwax_drain_tick() {
-  local _by="" _rc=0 _out=""
+  local _own="" _by="" _rc=0 _out=""
   if [ "${HWAX_DRAIN_RAISED:-0}" = 1 ]; then
-    _by="$(hwax_drain_owner)" || _rc=$?
+    _own="$(hwax_drain_owner)" || _rc=$?
+    _by="${_own#* }"
     if [ "$_rc" = 0 ] && [ "$_by" != update-all ] \
        && [ "$(date +%s)" -lt $(( ${HWAX_DRAIN_LAST_S:-0} + ${HWAX_DRAIN_TTL_S:-1800} - 30 )) ]; then
       HWAX_DRAIN_RAISED=0
-      if [ -z "$_by" ]; then
+      if [ -z "$_own" ]; then
         echo "  ○ 리스크 검토 비우기 — update-all 의 깃발이 수명 전에 내려갔다(누군가 내렸다) — 다시 세우지 않고 끝에서도 건드리지 않는다"
-      else
+      elif [ "${_own%% *}" = 1 ]; then
         echo "  ○ 리스크 검토 비우기 — update-all 의 깃발이 수명 전에 다른 주체(by $_by)의 것이 됐다 — 더 늘리지 않고 끝에서도 건드리지 않는다"
+      else
+        HWAX_DRAIN_FOREIGN=1
+        echo "  ○ 리스크 검토 비우기 — update-all 의 깃발이 수명 전에 다른 주체(by $_by)의 것이 됐다(고정 아님) — 건드리지 않는다(그 깃발이 풀리면 § 머리에서 다시 세운다)"
       fi
       return 0
     fi
-    _rc=0; hwax_drain on all "${HWAX_DRAIN_TTL_S:-1800}" update-all "${HWAX_DRAIN_REASON:-update-all}" >/dev/null 2>&1 || _rc=$?
+    _rc=0; _out="$(hwax_drain on all "${HWAX_DRAIN_TTL_S:-1800}" update-all "${HWAX_DRAIN_REASON:-update-all}" 2>/dev/null)" || _rc=$?
     case "$_rc" in
       0) HWAX_DRAIN_LAST_S="$(date +%s)" ;;
-      7) HWAX_DRAIN_RAISED=0; HWAX_DRAIN_FOREIGN=1 ;;   # 우리 수명이 끝난 사이 남이 세웠다 — ② 로 간다
-      5) HWAX_DRAIN_RAISED=0 ;;                         # 그 사이 사람이 고정했다 — 손대지 않는다
+      7) HWAX_DRAIN_RAISED=0; HWAX_DRAIN_FOREIGN=1      # 우리 수명이 끝난 사이 남이 세웠다 — ② 로 간다
+         echo "  ○ 리스크 검토 비우기 — 늘리려다 $_out 을 만났다 — 건드리지 않는다(그 깃발이 풀리면 § 머리에서 다시 세운다)" ;;
+      5) HWAX_DRAIN_RAISED=0                            # 그 사이 사람이 고정했다 — 손대지 않는다
+         echo "  ○ 리스크 검토 비우기 — 늘리려다 $_out 을 만났다 — 더 늘리지 않고 끝에서도 건드리지 않는다" ;;
     esac
     return 0
   fi
@@ -172,7 +183,8 @@ _hwax_drain_tick() {
     0) HWAX_DRAIN_RAISED=1; HWAX_DRAIN_FOREIGN=0; HWAX_DRAIN_LAST_S="$(date +%s)"
        hwax_skip_forget "리스크 검토 비우기"          # 1h 의 '남의 깃발' ○ 는 이제 사실이 아니다 — 끝 요약에서 뺀다
        echo "  · 리스크 검토 비우기 — 다른 주체의 깃발이 없어져 update-all 이 깃발을 세웠다 — $_out" ;;
-    5) HWAX_DRAIN_FOREIGN=0 ;;                          # 그 사이 사람이 고정했다 — 손대지 않는다
+    5) HWAX_DRAIN_FOREIGN=0                             # 그 사이 사람이 고정했다 — 손대지 않는다
+       echo "  ○ 리스크 검토 비우기 — 세우려다 $_out 을 만났다 — 더 세우지 않고 끝에서도 건드리지 않는다" ;;
   esac
   return 0
 }

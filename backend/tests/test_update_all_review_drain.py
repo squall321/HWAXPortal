@@ -412,6 +412,55 @@ def test_사람이_도중에_내리면_되살리지_않는다(tmp_path, agent):
     assert "다른 주체의 깃발이 없어져" not in out, "사람이 내린 뒤에 #7 이 끼어들었다"
 
 
+def test_사람이_도중에_넘겨받으면_그_깃발이_풀린_뒤_다시_세운다(tmp_path, agent):
+    """D-42 F(#4) — 사람이 off --force 뒤 on(고정 아님, 10초)으로 깃발을 넘겨받았다. 종전엔 '다른 주체의 것이 됐다' 를 찍고 멈춰, 그 깃발이
+    풀린 뒤의 §4 재기동이 비우기 없이 돌았다. 이제 고정 아닌 남의 깃발이면 기다렸다가(FOREIGN) 풀린 머리에서 다시 세운다. 끝까지 영영 멈추는
+    것은 꺼짐과 고정뿐이다."""
+    take = (_human({"on": False, "by": "human:erin", "force": True}) + "; "
+            + _human({"on": True, "scope": "all", "ttl_s": 3, "by": "human:erin", "reason": "x"}))
+    rc, out, _ = _ua(tmp_path, agent, sections=(("3) a", take), ("4) b", "sleep 4"), ("5) c", ""), ("6) d", "")))
+    assert rc == 0, out
+    assert _ours(agent) == [ON] * 5 + [OFF], _ours(agent)   # 1h · §2 · §3 · (§4 는 GET 만) · §5 다시 세움 · §6 늘림 · 끝
+    line = _line(out, "○", "리스크 검토 비우기")
+    assert "수명 전에 다른 주체(by human:erin)의 것이 됐다(고정 아님)" in line and "풀리면 § 머리에서 다시 세운다" in line, line
+    assert "· 리스크 검토 비우기 — 다른 주체의 깃발이 없어져 update-all 이 깃발을 세웠다" in out
+    assert agent["flag"] is None and agent["expired"] >= 1
+
+
+@pytest.mark.parametrize("hold", [True, False])
+def test_늘리기가_409_를_받으면_조용히_멈추지_않는다(tmp_path, agent, hold):
+    """D-42 F(E2) — 우리 수명 여유(30초) 밖이라 GET 으로는 사람 탓을 가르지 못하고 늘렸는데 409 다. 종전엔 아무 줄 없이 멈췄다. 이제 ○ 한
+    줄을 낸다 — 고정이면 멈추고, 고정 아닌 남의 깃발이면 그 깃발이 풀리기를 기다린다(다음 머리에서 다시 세워 본다)."""
+    if hold:
+        take = _human({"on": True, "scope": "all", "hold": True, "by": "human:lee", "reason": "x"})
+    else:
+        take = (_human({"on": False, "by": "human:erin", "force": True}) + "; "
+                + _human({"on": True, "scope": "all", "ttl_s": 600, "by": "human:erin", "reason": "x"}))
+    rc, out, _ = _ua(tmp_path, agent, HWAX_DRAIN_TTL_S="2", sections=(("3) a", take), ("4) b", ""), ("5) c", "")))
+    assert rc == 0, out
+    on2 = {**ON, "ttl_s": 2}
+    assert _ours(agent) == [on2] * (4 if hold else 5), _ours(agent)   # 고정 아님이면 §5 머리가 다시 세워 본다(409, 조용히)
+    line = _line(out, "○", "늘리려다")
+    if hold:
+        assert "사람이 고정한 깃발(by human:lee" in line and "더 늘리지 않고 끝에서도 건드리지 않는다" in line, line
+    else:
+        assert "다른 주체가 세운 깃발(by human:erin" in line and "풀리면 § 머리에서 다시 세운다" in line, line
+    assert out.count("○") == 1 and "⚠" not in out, out
+
+
+def test_남의_깃발을_기다리다_고정을_만나면_한_줄을_내고_멈춘다(tmp_path, agent):
+    """1h 가 다른 주인의 깃발(고정 아님)을 만나 기다리는데 그 주인이 고정으로 바꿨다 — 세우려던 것을 멈추고 ○ 한 줄. 그 뒤로는 세워 보지 않는다."""
+    agent["flag"] = {"scope": "all", "by": "human:lee", "hold": False, "until": time.time() + 600, "until_idle": None,
+                     "reason": "점검", "set_at": time.time()}
+    take = _human({"on": True, "scope": "all", "hold": True, "by": "human:lee", "reason": "x"})
+    rc, out, _ = _ua(tmp_path, agent, sections=(("3) a", take), ("4) b", ""), ("5) c", "")))
+    assert rc == 0, out
+    assert _ours(agent) == [ON] * 4, _ours(agent)       # 1h · §2 · §3 · §4(고정을 만남) — §5 는 세워 보지 않는다
+    line = _line(out, "○", "세우려다")
+    assert "사람이 고정한 깃발(by human:lee" in line and "더 세우지 않고 끝에서도 건드리지 않는다" in line, line
+    assert agent["flag"]["hold"] is True
+
+
 def test_1h_의_기다림_중에_사람이_내려도_되살리지_않는다(tmp_path, agent):
     """1h 가 세운 때가 첫 기준이다 — §2 머리 전에(도는 카드 대조를 기다리는 동안) 사람이 내렸으면 §2 머리가 그것을 본다."""
     agent["review_seq"] = [2, 0]; agent["off_after_health"] = 2

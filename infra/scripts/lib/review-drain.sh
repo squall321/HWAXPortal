@@ -19,7 +19,8 @@
 #       4 = 매달렸다 · 5 = 사람의 고정(409, 깃발이 hold) · 7 = 다른 주인의 깃발(409, hold 아님 — drain_owned 등) ·
 #       6 = 거절(422 bad_request · 503 drain_unavailable · 그 밖의 상태). 5·7 은 둘 다 남의 것이라 건드리지 않는다. 6 은 진짜 실패다 —
 #       옛 판(3)과 섞지 않는다.
-#   hwax_drain_owner           GET /drain 한 번 — 살아 있는 깃발의 주인(by)을 찍는다(꺼져 있으면 빈 줄). 0 = 읽었다 · 2·3·4·6 은 위와 같다.
+#   hwax_drain_owner           GET /drain 한 번 — 살아 있는 깃발의 "<hold 0|1> <by>" 를 찍는다(꺼져 있으면 빈 줄). 0 = 읽었다 · 2·3·4·6 은
+#       위와 같다. update-all 이 § 머리에서 '누가 내렸나' 를 이것과 시각으로 짐작한다 — 그 한계는 update-all 의 _hwax_drain_tick 머리 주석.
 #   hwax_review_wait <max_s>   도는 카드 대조(review_active)가 0 이 될 때까지 2초마다 본다. 마지막에 본 건수를 찍는다.
 #       0 = 비었다(또는 서버가 내려갔다 — 기다릴 것이 없다) · 1 = 시간이 다 됐다.
 #   hwax_review_brief          §6 헬스게이트 한 줄(깃발·도는 카드 대조·챗 첫 조각 지연)을 찍는다.
@@ -179,7 +180,8 @@ except ValueError:
     sys.exit(6)
 if not isinstance(d, dict):
     sys.exit(6)
-print(str(d.get("by") or "") if d.get("on") is True else "")
+if d.get("on") is True:
+    print("1" if d.get("hold") is True else "0", str(d.get("by") or ""))
 PY
 }
 
