@@ -198,6 +198,39 @@ requests:
       재기동 전에는 새 작업("stcx 로 전각도 낙하")이 목록에 **안 뜹니다**.
       "고쳤는데 안 바뀐다" 가 나는 자리입니다.
 
+  - id: dynaforge-ontology
+    title: DynaForge 의 과제·개정(온톨로지) 기능을 켠다
+    tag: 배포
+    severity: important
+    manual: true
+    default: auto
+    body: |
+      **옵션을 안 건드리면 있는 것으로 정합니다.** 허브 주소와 토큰이 둘 다 들어오면 켜지고,
+      없으면 꺼집니다. 그래서 보통은 아래 두 줄만 넣으면 됩니다.
+
+      1. DynaForge 박스의 `platform/.env` —
+         · `KOORM_SP_CORE_URL=` SP 허브의 코어 API 주소(예 `https://<허브>/api`)
+         · `KOORM_SP_CORE_TOKEN=` 그 허브에서 발급한 **`core:read` 범위** 토큰
+      2. `./infra/scripts/start.sh` — 마이그레이션까지 같이 돕니다.
+
+      안 넣어도 됩니다(기능이 안 보일 뿐입니다).
+
+      **켜고 끄는 것을 명시하려면** `KOORM_ONTOLOGY=1` 또는 `=0` 을 넣습니다 — 명시가
+      추론을 이깁니다. `=1` 은 허브 없이도 켭니다(과제 확인만 못 하고 개정 잇기는 됩니다).
+      `=0` 은 허브가 있어도 끕니다.
+
+      ⚠ **꺼지면 없어집니다** — 리포트 화면의 개정 패널이 사라지고 `/api/v1/ontology/*` 도
+      **409 + 사유**로 거절합니다(화면에서만 숨기면 그것은 꺼진 것이 아니라 숨긴 것입니다).
+
+      **켜졌는지 확인** — DynaForge 에서 `GET /api/v1/system/capabilities` 의 `ontology` 를
+      봅니다. `{"enabled": true, "source": "option"|"inferred", "reason": …}` 입니다.
+      꺼져 있으면 `reason` 이 **무엇이 없어서 꺼졌는지** 말합니다.
+
+      · 주기 수신 간격은 `KOORM_SP_CORE_SYNC_SEC`(기본 3600초)입니다. `0` 으로 두면
+        기능은 켜 둔 채 **주기 수신만** 멈춥니다.
+      · 과제의 정본은 **허브**입니다. DynaForge 에는 과제를 만들거나 고치는 길이 없습니다 —
+        받아서 거울로 두고, 우리 것(개발 개정)만 거기에 잇습니다.
+
   - id: stcx-chain-env
     title: (stcx 운영자 요청) 드라이버 잡 자원을 시나리오로 바꿀 수 있게
     tag: 요청
