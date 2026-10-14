@@ -5,6 +5,7 @@
 > dev 에서는 로컬 vLLM(qwen 16K)에 10회 돌려 응답 칸 읽기와 창 초과 거절(HTTP 400 `This model's maximum context length is 16384 tokens …` → `context_overflow`)을 확인했다. 포털 중계로 팩을 받는 길은 시험(가짜 중계)으로만 봤다.
 > 명령은 각 리포 루트에서 돈다(cae00 은 `~/Projects/<Repo>`). 근거는 줄 번호가 아니라 **출력 문구**로 가리킨다.
 > 이 박스의 지금 상태는 이 문서가 알지 못한다. 그래서 확인마다 재는 명령을 적었다.
+> (10-15 덧붙임) M3 의 보강 팔 셋(`--extra agree·merged·summary`, 탐침 판 `m0b-2`)은 `server-setup-m3.md` 3절이다. 이 문서의 걸음은 그대로 쓴다.
 
 ## 0. 한눈에
 
