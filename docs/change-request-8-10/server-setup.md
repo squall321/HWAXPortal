@@ -411,6 +411,18 @@ grep -a 'env .*파싱 실패' "$(readlink /proc/$(lsof -t -i:9009 -sTCP:LISTEN)/
 | 14 | 챗 토큰 수명(포털이 요청마다 에이전트서버에 넘기는 요청자 자격) | 86400초(24시간) | `CHAT_PAT_TTL_S` | 포털 `infra/.env` |
 | 신호 | 엔진이 조용한 동안 흘리는 heartbeat — 11~13 이 살아 있는 심의에 걸리지 않게 한다 | 15초 | `DELIB_HEARTBEAT_S`(0 = 끔) | 에이전트서버 `.env` |
 
+**카드 대조(리스크 심사 M2·M3) 의 층**(10-15 덧붙임 — 대조 판 에이전트 서버 `1958202` · 포털 `d217e77`. 포털 시험 `test_time_limit_chain_contract.py` 가 세 리포의 값을 읽어 이 순서를 지킨다).
+
+| 층(안쪽 → 바깥) | 기본 | 손잡이 | 적는 곳 |
+|---|---|---|---|
+| 카드 대조 요청 하나의 최악 — (1 + 다시 묻기) × (위 3 의 3608초) + 긴 문서 검색 | 10884초(3 × 3608 + 60) | `CARD_REVIEW_PARSE_RETRIES`(2) · `CARD_REVIEW_SEARCH_TIMEOUT_S`(60) · 위 2·3 | 에이전트서버 `.env` |
+| 리스크 앱의 카드 대조 호출 벽시계 | 18000초 | `HWAXRISK_REVIEW_CALL_TIMEOUT_S`(0 = 끔) | hwax-risk 앱 매니페스트의 `launch.env` |
+| 침묵 — 리스크 앱이 카드 대조 스트림을 읽는다(엔진 ping 15초 × 4 = 60초보다 길다) | 300초 | `HWAXRISK_REVIEW_READ_TIMEOUT_S` | hwax-risk 앱 매니페스트의 `launch.env` |
+| 팩 빌드 — 관문 대기 30 + 목록 60 + 카드 6장마다 60(카드 35장이면 450초)이 포털 단발 600초 안 | 450초 | 코드 상수(`PACK_WAIT_S` · `PACK_CALL_TIMEOUT_S`) | 바꾸지 않는다. 카드가 더 많은 전문가가 생기면 dev 에 알린다 |
+| update-all 비우기 깃발 수명 · 도는 카드 대조 기다림 | 1800초(§ 머리마다 다시 늘린다, 21600 에서 자른다) · 300초 | `HWAX_DRAIN_TTL_S` · `HWAX_DRAIN_WAIT_S` | update-all 을 띄우는 셸의 환경(`server-setup-m3.md` 7절) |
+
+`request_worst_s` 는 `/health` 의 `card_review` 칸이 이 박스에 실제로 걸린 값으로 셈해 싣는다. 리스크 앱 벽시계(18000)보다 작아야 한다 — 위 2·3 을 올려 넘기면 앱이 엔진보다 먼저 끊어 까닭 없는 시간 초과가 된다(dev 에 알린다).
+
 - 반영 명령은 §4-0 표에서 그 파일의 줄이다. 값 줄에는 수만 적는다(에이전트서버 `.env` 는 줄 끝 설명을 떼지 않는다 — §4-5). nginx 두 값만 단위 하나(s·m·h·d)를 붙일 수 있다.
 - 지금 걸린 값은 §3 의 ⑤(에이전트서버)·⑥(게이트웨이)·⑦(nginx)로 본다. 4 의 값은 잡마다 `deliberate_status` 의 `quiet_ok_s` 로 나온다.
 - 표 밖의 포털 손잡이 둘(`infra/.env`) — `AGENT_UNARY_TIMEOUT_S`(600초, 심의 전 도우미의 대기. 넘으면 실패가 아니라 기본값으로 진행한다) · `CONV_STORE_BUSY_TIMEOUT_S`(30초, 대화 저장소의 잠금 대기. 올리지 않는다 — 리스크 앱이 포털의 대화 생성을 기다리는 30초를 넘으면 안 된다).
