@@ -130,4 +130,11 @@ con.commit(); print(who, "자동 등록 끔")
 PY
 ```
 
-그 뒤 포털 토큰 화면에서 그 사람의 '교환으로 생김 · hwax-risk' 토큰을 폐기한다. 다시 켜려면 같은 명령에서 `0` 을 `1` 로 바꾼다. 끈 동안 그 사람이 시작한 패널·카드 대조는 PAT 를 손으로 등록할 때까지 `pat_unavailable` 로 멈춘다.
+그 뒤 포털 토큰 화면에서 그 사람의 '교환으로 생김 · hwax-risk' 토큰을 폐기한다. 다시 켤 때는 앞선 실패의 쉼(최대 6시간)도 함께 지운다 — 같은 명령의 SQL 을 아래로 바꾼다.
+
+```text
+con.execute("INSERT INTO _user_prefs(owner_sub, portal_pat_auto) VALUES(?, 1)"
+            " ON CONFLICT(owner_sub) DO UPDATE SET portal_pat_auto = 1,"
+            " auto_error = NULL, auto_error_kind = NULL, auto_error_at = NULL", (who,))
+```
+ 끈 동안 그 사람이 시작한 패널·카드 대조는 PAT 를 손으로 등록할 때까지 `pat_unavailable` 로 멈춘다.

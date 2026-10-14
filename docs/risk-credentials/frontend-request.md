@@ -16,13 +16,14 @@ auto: {
   last_source: "web" | "gateway-exchange" | "manual" | null,
   last_at: epoch | null,
   last_error: string | null,                        // "<code>: <앱이 고른 글>" — 할 일을 말한다
-  last_error_kind: "transient" | "final" | null,    // transient 는 앱이 10분 뒤 다시 바란다
+  last_error_kind: "transient" | "final" | null,    // transient 는 앱이 10분 뒤 다시 바란다(gateway_misconfigured 포함)
   last_error_at: epoch | null,
   how_to_stop: string | null                        // 켜져 있을 때만 — 지우거나 폐기해도 다시 만들어지니 멈추려면 끈다
-}                                                   // (스위치가 화면에 생기기 전이라 지금 글은 '곧 생긴다 — 그때까지는 운영자가 PUT' 이다)
+}                                                   // (스위치가 화면에 생기기 전이라 지금 글은 '곧 생긴다 — 그때까지는 운영자가
+                                                    //  앱 데이터 DB 에서 끈다, 포털 docs/risk-review-redesign/server-setup-m1.md §7-2' 다)
 ```
 
-끄기·켜기는 `PUT /api/me/portal-pat-auto {enabled: bool}` 이다.
+끄기·켜기는 `PUT /api/me/portal-pat-auto {enabled: bool}` 이다. 꺼져 있던 것을 켜면 마지막 자동 실패와 그 쉼을 지운다(답의 `last_error`·`last_error_kind`·`last_error_at` 이 `null` 이 되고 곧바로 다시 바란다).
 
 **할 일**
 - 앱 화면이 처음 뜰 때(로그인된 사용자) `auto.enabled && auto.due` 이면, 지금 버튼이 하는 일(`api/portalPat.ts` — `/auth/pat` 발급 → `PUT /api/me/portal-pat`)을 **조용히** 한 번 한다. 등록 요청에는 `source: "web"` 을 싣는다(백엔드가 받는 선택 칸).
@@ -32,7 +33,7 @@ auto: {
 - `due_reason: "audience"` 는 등록된 PAT 에 `step-forge` 청중이 없다는 뜻이다(위임 캡처의 REST 다리가 닫힌다). 화면은 `due` 를 보고 지금처럼 두 청중으로 새로 발급해 등록하면 된다.
 - **설정의 「포털에서 발급해 등록」 버튼도 `source: "web"` 을 싣는다.** 지금은 아무것도 싣지 않아 `manual` 로 적힌다. 백엔드는 갈아 끼울 때 앞선 등록의 출처가 `web`·`gateway-exchange`(앱이 받아 온 것)일 때만 옛 PAT 를 폐기하므로, 버튼으로 낸 PAT 가 `manual` 로 적히면 다음 갱신 때 폐기되지 않고 쌓인다. 사람이 PAT 를 손으로 붙여 넣는 칸은 지금처럼 `source` 없이(= `manual`) 보낸다 — 그 PAT 는 그 사람의 Claude PAT 일 수 있어 폐기하지 않는다(폐기하면 Claude 길과 그 자식들까지 죽는다).
 - 새 PAT 를 등록하면 백엔드가 앞서 등록돼 있던 `hwax-risk` 이름의 PAT 를 포털에서 폐기한다 — 앞선 등록의 출처가 `web`·`gateway-exchange` 일 때만이다(`/auth/pat/revoke-self` — 응답을 보낸 뒤 최선 노력). 화면이 옛 PAT 를 따로 폐기할 필요는 없고, 발급 이름은 `hwax-risk` 그대로 둔다(다른 이름의 PAT 는 폐기하지 않는다).
-- 자동 등록 스위치를 내보내면 백엔드 세션에 알려 주십시오. `how_to_stop`·`pat_unavailable` 안내의 '곧 생긴다 — 그때까지는 운영자가 그 사람으로 `PUT /api/me/portal-pat-auto`' 꼬리를 뗀다. 웹 자동 등록을 내보낼 때도 같다 — 지금 안내는 '웹에서 앱을 열면 자동 등록' 을 말하지 않는다.
+- 자동 등록 스위치를 내보내면 백엔드 세션에 알려 주십시오. `how_to_stop`·`pat_unavailable` 안내의 '곧 생긴다 — 그때까지는 운영자가 앱 데이터 DB 에서 끈다(켠다), 포털 …server-setup-m1.md §7-2' 꼬리를 뗀다. 웹 자동 등록을 내보낼 때도 같다 — 지금 안내는 '웹에서 앱을 열면 자동 등록' 을 말하지 않는다.
 
 ## 2. 박스 자격 문구
 
@@ -72,7 +73,7 @@ cred_key_source: "secrets" | "env" | "path" | "dev_fallback" | "absent"
   - `portal_pat` 은 로그인한 사람에게 **늘 객체**다. 등록이 없으면 `{registered: false, email: null, groups: [], exp: null, auto}` 이다(`auto` 를 싣기 위해서다). 익명과 박스 불일치(이관 직후)는 종전처럼 `null` 이다.
   - `PUT /api/me/portal-pat-auto` 의 답은 `portal_pat.auto` 와 같은 꼴의 객체 하나다.
   - `source` 는 `web`·`manual` 만 받는다(그 밖은 422 `E100`). `last_source` 의 `gateway-exchange` 는 게이트웨이 길로만 적힌다.
-  - 등록 삭제(`PUT /api/me/portal-pat {pat: null}`)는 자동 스위치를 바꾸지 않는다. 자동이 켜져 있으면 다음에 앱을 열 때 다시 등록된다 — 지운 채 두려는 사람에게는 자동도 함께 끄게 해 주십시오.
+  - 등록 삭제(`PUT /api/me/portal-pat {pat: null}`)는 자동 스위치를 바꾸지 않는다. 자동이 켜져 있으면 다음에 앱을 열 때 다시 등록된다 — 지운 채 두려는 사람에게는 자동도 함께 끄게 해 주십시오. 지운 PAT 가 앱이 받아 온 `hwax-risk` PAT(앞선 출처 `web`·`gateway-exchange`)면 백엔드가 응답 뒤 포털에서도 폐기한다(3라운드) — 화면이 따로 폐기할 필요는 없다.
   - `box.reasons[].keys` 는 `missing_required`·`cred_key_dev_fallback`·`missing_optional` 에만 있다(`host_mismatch` 에는 없다).
   - `external_sync.<채널>.pending_ops` 는 **건수(정수)**다. op 목록은 `GET /api/reports` 의 `ra_state`·재동기 응답이 지금처럼 준다.
   - `external_sync` 가 실리는 곳은 `GET /api/projects/{id}` 의 `targets[]` 각 항목, `GET /api/targets` 의 각 항목, `GET /api/targets/{key}/coverage` 다.
@@ -86,3 +87,9 @@ cred_key_source: "secrets" | "env" | "path" | "dev_fallback" | "absent"
   - 등록 출처(`b4d82bd`) — 설정 버튼은 `source: "web"` 을 싣는다(1절). 지금 버튼은 싣지 않아 `manual` 이다.
   - 안내 글(`10be03b`) — `how_to_stop` 과 `pat_unavailable` 의 `message` 는 지금 있는 길만 말한다. 등록은 Claude 에서 hwax_risk 도구를 부르기와 이 버튼이고, 멈추기는 곧 생길 스위치(그때까지는 운영자가 `PUT /api/me/portal-pat-auto`)다.
   - 바뀌지 않은 것 — 웹 `PUT /api/me/portal-pat` 는 포털에 못 닿으면 종전처럼 502 `portal_unreachable` 이다. 424 는 게이트웨이 전용 문(`POST /api/auth/portal-pat`)만이다.
+- 고침 3라운드(2026-10-14, 같은 브랜치 `creds`, `99e9b84`~`3aea93b`)로 바뀐 칸이다. 위 1절에 반영했다.
+  - `last_error_kind`(`99e9b84`) — 게이트웨이 설정 결함 `gateway_misconfigured` 가 `final` 에서 `transient` 로 바뀌었다(운영자가 게이트웨이를 고치면 10분 안에 다시 바란다).
+  - `PUT /api/me/portal-pat-auto`(`11a93bf`) — 꺼져 있던 것을 켜면 답의 `last_error`·`last_error_kind`·`last_error_at` 이 `null` 이다. 켜져 있는 채 다시 켜면 그대로다.
+  - 등록 삭제(`1bfc1d8`) — 응답 모양은 그대로이고, 앱이 받아 온 `hwax-risk` PAT 면 응답 뒤 포털에서 폐기한다.
+  - 안내 글(`3aea93b`) — `how_to_stop` 과 `pat_unavailable` 의 `message` 에서 '운영자가 그 사람으로 `PUT /api/me/portal-pat-auto`' 를 뺐다(운영자가 그 사람으로 부를 길이 없다). 이제 '운영자가 앱 데이터 DB 에서 끈다(켠다), 포털 docs/risk-review-redesign/server-setup-m1.md §7-2' 다.
+  - 캡처 호출 행(`eaad8f5`·`b99d5f9`) — 화면 칸은 그대로다. 게이트웨이 504 하나로는 다리를 건너뛰지 않고, 호출 행의 '120초 동안 응답이 없었다' 는 그 호출 자신의 시간 초과일 때만이다.
