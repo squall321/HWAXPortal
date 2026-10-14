@@ -6,6 +6,9 @@ multi-audience, and `scope="api"`. The HWAX REST API gateway verifies it via
 `/.well-known/jwks.json` and forwards to sub-site REST APIs with each site's own service
 token — the sub-sites are never changed. Revocation = the token_store jti denylist,
 published (non-expired revoked jtis) at `/auth/pat/revoked.json` for the gateway to poll.
+
+토큰 교환(`/auth/pat/exchange`)은 원 PAT 로 같은 사람의 더 좁은 PAT 을 내고, 소비자는 새것을
+받아들인 뒤 옛것을 `/auth/pat/revoke-self` 로 폐기한다(docs/risk-credentials C-11).
 """
 
 import logging
@@ -188,16 +191,51 @@ def exchange_pat(
         request, settings, principal, name=body.name, audiences=body.audiences,
         scopes=body.scopes, ttl_days=body.ttl_days, not_after=int(src["exp"]),
     )
-    replaced = ts.record_exchanged_pat(
+    # 같은 이름의 앞선 교환 PAT 은 여기서 폐기하지 않는다(C-11) — 소비자가 새것을 받아들인 뒤
+    # `/auth/pat/revoke-self` 로 옛것을 스스로 폐기한다.
+    refused = ts.record_exchanged_pat(
         parent_jti=src["jti"], jti=jti, sub=principal.subject, email=principal.email,
         name=body.name, aud=body.audiences, scopes=body.scopes, created=created, exp=exp,
     )
-    if replaced is None:  # 검사 뒤 기록 전에 원이 폐기됐다 — 낸 토큰은 기록도 반환도 안 한다
+    if refused == "source_revoked":  # 검사 뒤 기록 전에 원이 폐기됐다 — 낸 토큰은 버린다
         raise AuthError("원 PAT 이 방금 폐기됐다", status_code=403, code="source_not_exchangeable")
-    logger.warning("PAT exchanged: sub=%s name=%s parent=%s aud=%s exp=%s replaced=%d",
-                   principal.subject, body.name, src["jti"], body.audiences, exp, replaced)
+    logger.warning("PAT exchanged: sub=%s name=%s parent=%s aud=%s exp=%s",
+                   principal.subject, body.name, src["jti"], body.audiences, exp)
     return PatCreated(jti=jti, name=body.name, audiences=body.audiences, scopes=body.scopes,
                       created=created, exp=exp, revoked=False, token=token)
+
+
+@router.post("/revoke-self")
+def revoke_self(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Bearer 로 낸 PAT **그 자신**을 폐기한다(그 자식은 연쇄로 함께). 다른 jti 는 받지도 않는다.
+
+    교환 PAT 을 쥔 소비자(리스크 앱)가 새것을 받아들인 뒤 옛것을 죽이는 길이다(C-11). 인증은
+    `Authorization: Bearer` 하나이고, 폐기 대상은 그 토큰의 jti 뿐이다 — 본문·경로에 jti 를 받지
+    않으므로 남의 토큰을 고를 길이 없다.
+
+    폐기 목록은 보지 않는다(서명·청중·`scope=api`·만료는 본다). 이미 폐기된 토큰도 200 이다 —
+    응답을 잃은 재시도가 실패처럼 보이면 안 되고, 폐기된 토큰으로 할 수 있는 일은 이미 폐기된
+    자기 자신(과 연쇄로 이미 폐기된 자식)을 다시 폐기하는 것뿐이다. 계정 정지·`feat:api-token`
+    도 보지 않는다 — 힘을 줄이는 일이다. 만료된 토큰은 401 이다(이미 죽었고, 원장 행도 지워진다).
+    """
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() != "bearer ":
+        raise AuthError("Authorization: Bearer <폐기할 PAT> 만 받는다", status_code=401,
+                        code="invalid_token")
+    try:
+        claims = verify_pat_claims(auth[7:].strip(), keystore=request.app.state.keystore,
+                                   revoked_jtis=(), audience=settings.pat_chat_audience)
+    except Exception as exc:  # noqa: BLE001 — 어떤 검증 실패든 401
+        raise AuthError("PAT 이 유효하지 않다(서명·청중·만료)", status_code=401,
+                        code="invalid_token") from exc
+    if not request.app.state.token_store.revoke_pat(claims["jti"], claims["sub"]):
+        raise AuthError("토큰 원장에 없는 PAT 이다 — 챗·절차용 PAT 은 기록되지 않아 여기서 "
+                        "폐기할 수 없다(만료로 죽는다)", status_code=404, code="not_recorded")
+    logger.warning("PAT self-revoked: sub=%s jti=%s", claims["sub"], claims["jti"])
+    return {"revoked": claims["jti"]}
 
 
 @router.get("", response_model=list[PatMeta])

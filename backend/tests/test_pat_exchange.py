@@ -4,7 +4,7 @@
 원 PAT 은 진짜 `/auth/pat` 길(세션 + CSRF)로 받는다. 거절 시험은 막는 검사 하나를 빼면 깨지게
 짰다 — 두 검사가 같은 거절을 겹쳐 막는 곳은 그 겹침을 비켜 가는 입력을 쓴다(절차 PAT 의 jti 를
 기록해 둔다, 거절 code 까지 본다 등). 토큰 원장은 시험마다 새 파일이다(conftest 의 격리 위에 한
-겹 더 — 이름 대체가 앞 시험의 교환 PAT 을 건드리지 않게).
+겹 더 — 앞 시험의 PAT 이 폐기 목록·자식 수에 섞이지 않게).
 """
 import sqlite3
 import time
@@ -244,22 +244,16 @@ def test_정지된_계정은_거절한다(box):
     _refused(_exchange(c, src["token"]), 403, "account_disabled")
 
 
-# ── 대체·연쇄 폐기 ────────────────────────────────────────────────────────────
-def test_같은_이름으로_다시_바꾸면_앞선_것을_폐기한다(box):
+# ── 같은 이름·연쇄 폐기 ───────────────────────────────────────────────────────
+def test_같은_이름으로_다시_바꿔도_앞선_것은_산다(box):
+    """교환이 앞선 것을 폐기하면, 소비자가 새것을 거절했을 때 폐기된 옛것만 쥐고 남는다(C-11).
+    옛것은 소비자가 새것을 받아들인 뒤 revoke-self 로 죽인다."""
     c, hu = box
-    manual = _source(c, hu, name="hwax-risk")              # 손으로 낸 같은 이름 — 건드리지 않는다
-    hb = _login(c, BOSS)
-    boss_child = _exchange(c, _source(c, hb)["token"]).json()   # 남의 같은 이름 — 건드리지 않는다
-    hu = _login(c, U)
     src = _source(c, hu)
     first = _exchange(c, src["token"]).json()
     second = _exchange(c, src["token"]).json()
-    revoked = _revoked(c)
-    assert first["jti"] in revoked
-    assert not {second["jti"], manual["jti"], boss_child["jti"], src["jti"]} & revoked
-    with pytest.raises(ValueError):
-        _verify(first["token"])
-    assert _verify(second["token"]).email == U
+    assert not {first["jti"], second["jti"], src["jti"]} & _revoked(c)
+    assert _verify(first["token"]).email == _verify(second["token"]).email == U
 
 
 def test_원을_폐기하면_자식도_폐기된다(box):
@@ -281,7 +275,8 @@ def test_검사_뒤_원이_폐기되면_자식을_기록하지_않는다(tmp_pat
     row = {"sub": U, "email": U, "aud": [AUD], "scopes": ["read"], "created": 1, "exp": 2**31}
     ts.record_pat(jti="p", name="claude", **row)
     ts.revoke_pat("p")
-    assert ts.record_exchanged_pat(parent_jti="p", jti="k", name="hwax-risk", **row) is None
+    refused = ts.record_exchanged_pat(parent_jti="p", jti="k", name="hwax-risk", **row)
+    assert refused == "source_revoked"
     assert ts._conn.execute("SELECT COUNT(*) FROM pat WHERE jti = 'k'").fetchone() == (0,)
 
 
@@ -297,7 +292,84 @@ def test_돌고_있는_원장에_parent_jti_칸이_생긴다(tmp_path):
     ts = TokenStore(Settings(token_store_path=str(path)))
     TokenStore(Settings(token_store_path=str(path)))      # 두 번째 기동도 멀쩡하다(멱등)
     assert ts.record_exchanged_pat(parent_jti="p", jti="k", sub=U, email=U, name="hwax-risk",
-                                   aud=[AUD], scopes=["read"], created=1, exp=2**31) == 0
+                                   aud=[AUD], scopes=["read"], created=1, exp=2**31) is None
     assert {m["jti"] for m in ts.list_pats(U)} == {"k", "p"}      # 옛 행이 그대로 있다
     assert ts.revoke_pat("p", U)
     assert set(ts.revoked_jtis()) == {"p", "k"}
+
+
+# ── revoke-self(소비자가 새것을 받아들인 뒤 옛것을 죽이는 길, C-11) ───────────────────
+def _revoke_self(c, token: str, **kw):
+    return c.post("/auth/pat/revoke-self", headers={"Authorization": f"Bearer {token}"}, **kw)
+
+
+def test_revoke_self_는_그_토큰만_폐기한다(box):
+    """본문·쿼리에 남의 jti 를 실어도 Bearer 토큰 자신만 죽는다 — 형제·원·손으로 낸 같은 이름·
+    남의 것은 산다."""
+    c, hu = box
+    manual = _source(c, hu, name="hwax-risk")
+    hb = _login(c, BOSS)
+    boss_child = _exchange(c, _source(c, hb)["token"]).json()
+    hu = _login(c, U)
+    src = _source(c, hu)
+    first = _exchange(c, src["token"]).json()
+    second = _exchange(c, src["token"]).json()
+    r = _revoke_self(c, first["token"], json={"jti": second["jti"]},
+                     params={"jti": boss_child["jti"]})
+    assert r.status_code == 200 and r.json() == {"revoked": first["jti"]}, r.text
+    revoked = _revoked(c)
+    assert first["jti"] in revoked
+    assert not {second["jti"], manual["jti"], boss_child["jti"], src["jti"]} & revoked
+    with pytest.raises(ValueError, match="revoked"):
+        _verify(first["token"])
+    assert _verify(second["token"]).email == U
+
+
+def test_revoke_self_로_원을_죽이면_자식도_죽는다(box):
+    c, hu = box
+    src = _source(c, hu)
+    child = _exchange(c, src["token"]).json()
+    assert _revoke_self(c, src["token"]).json() == {"revoked": src["jti"]}
+    assert {src["jti"], child["jti"]} <= _revoked(c)
+
+
+def test_revoke_self_는_멱등이다(box):
+    """응답을 잃은 재시도·연쇄로 이미 폐기된 자식도 200 — 실패처럼 보이면 소비자가 옛것이 살아
+    있다고 읽는다."""
+    c, hu = box
+    src = _source(c, hu)
+    child = _exchange(c, src["token"]).json()
+    for _ in range(2):
+        r = _revoke_self(c, child["token"])
+        assert r.status_code == 200 and r.json() == {"revoked": child["jti"]}, r.text
+    other = _exchange(c, src["token"], name="other").json()
+    # 원을 폐기하면 연쇄로 other 도 폐기된다
+    assert c.delete(f"/auth/pat/{src['jti']}", headers=hu).status_code == 200
+    r = _revoke_self(c, other["token"])
+    assert r.status_code == 200 and r.json() == {"revoked": other["jti"]}, r.text
+
+
+def test_revoke_self_는_기록되지_않은_PAT_에_404(box):
+    c, _hu = box
+    chat = _chat_user_pat(app.state.keystore, get_settings(), _me())
+    proc = mint_procedure_pat(app.state.keystore, get_settings(), _me(), "run-1", 0)
+    for tok in (chat, proc):
+        _refused(_revoke_self(c, tok), 404, "not_recorded")
+
+
+def test_revoke_self_는_유효한_Bearer_만_받는다(box, monkeypatch):
+    c, hu = box
+    _source(c, hu)
+    _refused(c.post("/auth/pat/revoke-self", headers=hu), 401, "invalid_token")   # 쿠키 + CSRF 만
+    _refused(_revoke_self(c, "not-a-jwt"), 401, "invalid_token")
+    _refused(_revoke_self(c, _source(c, hu, audiences=["heax-hub"])["token"]), 401, "invalid_token")
+
+    class _ThreeDaysAgo(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) - timedelta(days=3)
+
+    with monkeypatch.context() as m:
+        m.setattr(pat_routes, "datetime", _ThreeDaysAgo)
+        old = _source(c, hu, ttl_days=1)
+    _refused(_revoke_self(c, old["token"]), 401, "invalid_token")

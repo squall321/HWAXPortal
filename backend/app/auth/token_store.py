@@ -59,25 +59,24 @@ class TokenStore:
 
     def record_exchanged_pat(self, *, parent_jti: str, jti: str, sub: str, email: str | None,
                              name: str, aud: list[str], scopes: list[str], created: int,
-                             exp: int) -> int | None:
-        """교환으로 받은 PAT 을 기록하고, 대체로 폐기한 앞선 교환 PAT 수를 돌려준다.
+                             exp: int) -> str | None:
+        """교환으로 받은 PAT 을 기록한다. 기록했으면 None, 못 했으면 그 까닭(code)이다.
 
-        같은 사람·같은 이름의 앞선 교환 PAT 은 **같은 트랜잭션에서** 폐기한다(갱신이 쌓이지
-        않게 — 따로 하면 동시 교환 둘이 서로를 못 보고 둘 다 산다). 손으로 낸 PAT(parent 없음)은
-        건드리지 않는다. 원이 그사이 폐기됐으면 기록하지 않고 None 이다 — 검사와 기록 사이에 원을
-        폐기하면 연쇄가 아직 없는 자식을 못 보고, 자식이 원의 폐기를 피해 살아남는다. 폐기도 같은
-        잠금을 쥐므로 여기서 보면 닫힌다. 원이 될 수 있는지는 `pat_is_exchangeable` 이 이미 봤다 —
-        여기는 '그사이 폐기' 하나만 본다."""
+        같은 이름의 앞선 교환 PAT 을 여기서 폐기하지 않는다(context-notes C-11) — 소비자가 새것을
+        받아들이기 전에 옛것을 죽이면, 소비자가 새것을 거절했을 때 폐기된 옛것만 쥐고 남는다. 옛것은
+        소비자가 새것을 받아들인 뒤 `/auth/pat/revoke-self` 로 스스로 폐기한다.
+
+        `source_revoked` — 원이 그사이 폐기됐다. 검사와 기록 사이에 원을 폐기하면 연쇄가 아직 없는
+        자식을 못 보고, 자식이 원의 폐기를 피해 살아남는다. 폐기도 같은 잠금을 쥐므로 여기서 보면
+        닫힌다. 원이 될 수 있는지는 `pat_is_exchangeable` 이 이미 봤다 — 여기는 '그사이 폐기'
+        하나만 본다."""
         with self._lock:
             if self._conn.execute("SELECT 1 FROM pat WHERE jti = ? AND revoked = 1",
                                   (parent_jti,)).fetchone():
-                return None
-            cur = self._conn.execute(
-                "UPDATE pat SET revoked = 1 WHERE sub = ? AND name = ? "
-                "AND parent_jti IS NOT NULL AND revoked = 0", (sub, name))
+                return "source_revoked"
             self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, parent_jti)
             self._conn.commit()
-            return cur.rowcount
+            return None
 
     def _insert_pat(self, jti, sub, email, name, aud, scopes, created, exp, parent_jti) -> None:
         self._conn.execute(
@@ -137,7 +136,10 @@ class TokenStore:
         ]
 
     def revoke_pat(self, jti: str, sub: str | None = None) -> bool:
-        """Mark a PAT revoked. sub=None → admin (any owner); else only the owner. True if changed.
+        """Mark a PAT revoked. sub=None → admin (any owner); else only the owner.
+
+        True if the row exists — 이미 폐기된 행도 True 다(SQLite UPDATE 는 값이 같아도 맞은 행을
+        센다). `/auth/pat/revoke-self` 의 멱등이 이것에 기댄다.
 
         그 PAT 을 원으로 교환해 받은 자식도 함께 폐기한다(연쇄) — 안 하면 자식이 원의 폐기를 피해
         살아남는다."""
