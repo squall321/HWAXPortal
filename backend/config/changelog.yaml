@@ -21,6 +21,36 @@
 #     실제로 파싱해 보므로, 깨뜨리면 테스트가 잡는다.
 
 entries:
+  - date: 2026-10-15
+    title: "**업데이트가 리스크 심사를 기다리지 않습니다** — 재기동 전에 카드 대조를 잠깐 비웁니다"
+    tag: 배포
+    items:
+      - "리스크 심사가 며칠 돌아도 update-all 을 막지 않습니다. 재기동 전에 카드 대조의 새 호출과 새 패널을 멈추고, 도는 카드 대조는 최대 5분 기다린 뒤 넘어갑니다. 그래도 끊긴 호출은 리스크 앱이 차감 없이 다시 돌립니다. 끝나면 깃발을 내려 이어 돕니다."
+      - "도는 심의 때문에 재기동을 미룬 실행이면 카드 대조는 곧바로 이어 돌고 새 패널만 멈춰 둡니다. 심의가 끝나면 30분 창이 열리고, 그 안에 update-all 을 다시 돌리면 미룸 없이 지나가며 깃발이 내려갑니다."
+      - "update-all 끝의 상태 점검에 '리스크 검토' 줄이 생겼습니다 — 비우기 깃발·도는 카드 대조 수·챗 첫 응답 지연(평소 대비). 챗이 평소의 2배 넘게 느리면 경고와 함께 카드 대조 동시 수를 낮추는 법을 알려 줍니다."
+      - "관리자는 ./infra/scripts/review-drain.sh 로 깃발을 보고(status) 세우거나(on · on --hold) 내릴 수 있습니다(off · off --force)."
+  - date: 2026-10-15
+    title: "**에이전트 서버 카드 대조** — 새 호출 둘·판 올림·동시 8건·비우기 깃발(재설계 M3)"
+    tag: 기술
+    items:
+      - "카드 대조에 호출 종류 둘을 더했습니다 — noinput(ECAD 처럼 입력이 없는 전문가가 카드 전부를 보고 '지금 변경으로 말할 수 있는 영향' 과 'ECAD 가 오면 확인할 것' 을 답함)과 summary(영역 요약·과제 종합의 서술 — 꼭 다룰 행이 빠지면 그것만 다시 묻는다). 판정 틀은 걸린 줄에 택소노미 1.2 의 메커니즘(mech)을 달고, 훑기는 결측을 알고 답하며, 카드 0장 전문가는 묶인 문서의 절을 발췌 근거로 씁니다."
+      - "프롬프트 판이 cr-sweep-2·cr-verdict-2·cr-offcard-2·cr-noinput-1·cr-summary-2, 예산 공식이 cr-l2 로 올랐습니다. 판이 바뀌면 도는 M2 카드 대조 셀은 처음부터 다시 돌므로 살아 있는 검토 잡이 없을 때 반영합니다."
+      - "카드 대조 동시 호출 상한이 8 이고, 사람이 띄운 심의가 돌면 4 로 줄어듭니다(리스크 앱이 띄운 패널은 줄이지 않는다 — delib_opts.started_by). 카드 대조만의 출력 상한 CARD_REVIEW_MAX_TOKENS 를 둡니다."
+      - "비우기 깃발 POST·GET /drain — scope all(새 카드 대조를 받지 않음)·panels(새 패널만 멈춤), TTL(요청 하나 6시간 상한 · 살아 있을 때 주인이 늘리면 창이 새로), until_idle(심의가 끝난 뒤 grace), 사람의 hold. 주인 아닌 비보류 요청은 409 drain_owned, 쓰기·지우기 실패는 503. /health 에 review_active·draining·drain·capabilities·card_review 칸이 생겼습니다."
+      - "/health.load.chat — 챗 첫 조각 지연(p50·평소)을 재고 카드 대조가 챗을 밀어내면 slow 를 세웁니다. LLM 탐침과 가짜 LLM 서버의 --capacity·스트리밍을 더했습니다."
+      - "결과 계약 — 종류별 판 limits_rev_by_kind(plan 응답에도) · run 의 expect.limits_rev_kind · 걸린 줄은 OK 줄에 흔적 없이 밀려나지 않음(checks.dup_conflict·flipped_from·contested_by, quality.dup_conflict·flipped) · meta.clipped · ctx_too_small 의 종류별 사유와 필요한 창·출력 상한 · 거절 되비춤 80자."
+      - "모델이 어휘 밖 말로 답하면 짧은 별칭표로 뜻을 읽습니다(예: FAILED·실패 → FAIL, 경고 → WARNING, none·없음·무관 → no, n/a·해당 없음 → na — 원래 말은 checks.alias). 그래도 모르는 말은 '모름' 쪽으로 두고, 다른 답과 부딪치면 다툼(dup_conflict·contested_by.raw)으로 남겨 흔적 없이 지우지 않습니다."
+      - "M0-b 탐침에 보강 팔 셋(--extra agree·merged·summary)과 팔별 OK+na 비율을 더했습니다."
+      - "반대 검토 다섯 라운드의 54건(엔진 49 · 포털 5)을 고쳤습니다 — 행 검사(덜 된 답을 완결로 받던 것 · 고친 줄이 옛 줄을 대신하지 못하던 것 · 상한이 진짜 걸림을 밀어내던 것), 비우기 깃발(고정 · 주인 · 수명 · 깨진 파일 · 동시 쓰기), 자리 누수, 검색 오류 봉투, 절단 표식, 요약 덮기(한 줄은 셋까지 — 요약 프롬프트 판 cr-summary-2)."
+  - date: 2026-10-15
+    title: "**포털 카드 대조 중계·update-all 비우기**(기술)"
+    tag: 기술
+    items:
+      - "카드 대조 중계가 새 종류(noinput·summary)를 그대로 넘기고, 요약 호출의 감사 줄은 단위 자리에 범위 키를 싣습니다. 포털은 /drain 을 중계하지 않습니다."
+      - "심의 요청의 delib_opts.started_by(human·app)를 받아 넘깁니다 — 리스크 앱이 띄운 패널의 표지가 중계에서 사라지지 않습니다."
+      - "update-all 1h) 리스크 검토 비우기와 lib/review-drain.sh — 손잡이 HWAX_DRAIN_TTL_S(1800, 21,600 에서 자름)·HWAX_DRAIN_WAIT_S(300)·HWAX_DRAIN_GRACE_S(1800)·HWAX_DRAIN_MAX_S(46800)·HWAX_AGENT_URL. 옛 엔진(/drain 없음)이면 ○ 한 줄로 지나갑니다. 비우기는 실패해도 배포를 막지 않습니다. 사람이 세운 깃발은 건드리지 않고(고정이면 끝까지, 수명 있는 것은 풀리면 update-all 이 이어받는다), 실행 중에 사람이 내린 깃발은 다시 세우지 않습니다."
+      - "워크플로 hwax-risk-review 의 안내에 '카드 대조(flow=cells) 대상은 받지 않는다 — 그 대상의 쟁점·종합 보고서는 risk_get_issues·risk_get_report 로 읽는다' 를 더했습니다(두 도구는 리스크 앱 M3 와 함께 올라갑니다)."
+      - "에이전트 서버 env 킷(infra/env-kits/agent-server.env)에 카드 대조 손잡이 구획을 주석으로 더했습니다 — CARD_REVIEW_CONCURRENCY(8)·CARD_REVIEW_CONCURRENCY_WITH_DELIB(4)·CARD_REVIEW_MAX_TOKENS(0)·CARD_REVIEW_PARSE_RETRIES(2)·CARD_REVIEW_SEARCH_TIMEOUT_S(60). 값은 엔진 기본값이고 시험이 엔진 상수와 맞댑니다."
   - date: 2026-10-14
     title: "**리스크 심사** — 로그인한 사람의 자격으로 끝까지 돕니다(PAT 를 손으로 등록하지 않아도)"
     tag: 연결
