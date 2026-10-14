@@ -184,7 +184,10 @@ _hwax_drain_tick() {
        hwax_skip_forget "리스크 검토 비우기"          # 1h 의 '남의 깃발' ○ 는 이제 사실이 아니다 — 끝 요약에서 뺀다
        echo "  · 리스크 검토 비우기 — 다른 주체의 깃발이 없어져 update-all 이 깃발을 세웠다 — $_out" ;;
     5) HWAX_DRAIN_FOREIGN=0                             # 그 사이 사람이 고정했다 — 손대지 않는다
-       echo "  ○ 리스크 검토 비우기 — 세우려다 $_out 을 만났다 — 더 세우지 않고 끝에서도 건드리지 않는다" ;;
+       # 1h 의 ○('풀리면 세운다')는 이제 사실이 아니다 — 끝 요약이 이 줄과 어긋나지 않게 고정 문구로 바꿔 적는다.
+       hwax_skip_forget "리스크 검토 비우기"
+       hwax_skip "리스크 검토 비우기" "세우려다 $_out 을 만났다 — 더 세우지 않고 끝에서도 건드리지 않는다" \
+         "그 깃발은 세운 주체가 ./infra/scripts/review-drain.sh off 로 내린다(남이 내리려면 --force)" ;;
   esac
   return 0
 }

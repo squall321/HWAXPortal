@@ -459,6 +459,11 @@ def test_남의_깃발을_기다리다_고정을_만나면_한_줄을_내고_멈
     line = _line(out, "○", "세우려다")
     assert "사람이 고정한 깃발(by human:lee" in line and "더 세우지 않고 끝에서도 건드리지 않는다" in line, line
     assert agent["flag"]["hold"] is True
+    # 끝 요약이 머리의 줄과 어긋나지 않는다 — 1h 의 '풀리면 세운다' ○ 는 고정 문구로 바뀌었다(D-43 #5).
+    summary = out[_at(out, "있는데 안 켠 것"):]
+    assert "풀리면 § 머리에서 update-all 이 제 깃발을 세운다" not in summary, summary
+    assert "리스크 검토 비우기 — 세우려다 사람이 고정한 깃발(by human:lee" in summary and "더 세우지 않고" in summary, summary
+    assert summary.count("리스크 검토 비우기") == 1, summary
 
 
 def test_1h_의_기다림_중에_사람이_내려도_되살리지_않는다(tmp_path, agent):
