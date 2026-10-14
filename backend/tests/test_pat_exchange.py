@@ -505,3 +505,15 @@ def test_교환_거절_글은_받은_값을_되싣지_않는다(box):
                     (_exchange(c, old, scopes=["z\nINJECT"]), "bad_scope")):
         msg = _refused(r, 400, code)["message"]
         assert "\n" not in msg and "INJECT" not in msg and "script" not in msg, msg
+
+
+def test_발급·교환_기록은_이름을_repr_로_남긴다(box, caplog):
+    """이름에 줄바꿈을 넣어 'PAT issued: …' 줄을 위조하지 못한다(SEC-4)."""
+    c, hu = box
+    caplog.set_level("WARNING", logger="app.auth.routes.pat")
+    forged = "claude\nPAT issued: sub=boss@corp.com name='x'"
+    src = _source(c, hu, name=forged)
+    assert _exchange(c, src["token"], name=forged).status_code == 200
+    lines = [m for m in caplog.messages if m.startswith(("PAT issued:", "PAT exchanged:"))]
+    assert len(lines) == 2, caplog.messages
+    assert all("\n" not in m and repr(forged) in m for m in lines), lines

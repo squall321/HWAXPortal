@@ -148,7 +148,8 @@ def create_pat(
     )
     # 발급을 남긴다 — 특히 무기한은 만료로 안 죽으므로 "누가 언제 냈나" 가 사후 유일한
     # 단서다. token_store 행 하나만으로는 조회 경로가 관리자 목록뿐이라 부족하다.
-    logger.warning("PAT issued: sub=%s name=%s aud=%s ttl=%s%s",
+    # name 은 사람이 고른 글이다 — %r 로 남겨 줄바꿈으로 기록 줄을 위조하지 못하게 한다(SEC-4).
+    logger.warning("PAT issued: sub=%s name=%r aud=%s ttl=%s%s",
                    principal.subject, body.name, auds,
                    "무기한" if never else f"{ttl}d",
                    " ⚠NEVER-EXPIRES" if never else "")
@@ -248,7 +249,7 @@ def exchange_pat(
         raise AuthError("원 PAT 이 방금 폐기됐다", status_code=403, code="source_not_exchangeable")
     if refused == "too_many_children":  # 동시 교환이 위 검사를 함께 지났다 — 낸 토큰은 버린다
         raise _too_many_children()
-    logger.warning("PAT exchanged: sub=%s name=%s parent=%s aud=%s exp=%s",
+    logger.warning("PAT exchanged: sub=%s name=%r parent=%s aud=%s exp=%s",  # name 은 %r(SEC-4)
                    principal.subject, body.name, src["jti"], body.audiences, exp)
     return PatCreated(jti=jti, name=body.name, audiences=body.audiences, scopes=body.scopes,
                       created=created, exp=exp, revoked=False, token=token)
