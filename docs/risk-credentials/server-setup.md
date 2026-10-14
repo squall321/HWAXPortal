@@ -1,8 +1,9 @@
 # 서버(cae00)에서 할 일 — 리스크 심사 앱 사람 자격(SSO 로 들어온 사람의 PAT 가 저절로)
 
 > 대상: cae00 운영자 · **대조 시점 2026-10-14** · 보낸 쪽: dev(이 리포 `docs/risk-credentials/`).
-> 반영되는 커밋 — HWAXRisk `a5e8558`(리스크 앱 SIF, M2 카드 대조 포함·스키마 v4) · HWAXPortal `260a62f` 이후 · HWAXMcpGateway `f8e7920`.
+> 반영되는 커밋 — HWAXRisk `3aea93b`(리스크 앱 SIF, M2 카드 대조 포함·스키마 v4 — 반대 검토 3라운드까지) · HWAXPortal `f4aced3` 이후 · HWAXMcpGateway `f8e7920`.
 > dev 에서 같은 커밋으로 세 구성 요소를 다시 띄워 §3 의 ①②④⑤ 를 확인했다(③ 은 cae00 의 키 상태라 dev 와 다르다).
+> 리스크 앱 SIF 는 10-14 Drive `latest/` 에 올렸다 — `hwax-risk.sif.hash` 앞 8자 `5896e0cd`(cae00 `--check` 가 이 값과 맞으면 된다).
 > 명령은 각 리포 루트에서 돈다(cae00 은 `~/Projects/<Repo>`). 이 박스의 지금 상태는 이 문서가 알지 못한다 — 확인마다 재는 명령을 적었다.
 
 ## 0. 한눈에
@@ -33,7 +34,7 @@
 
 기대.
 - update-all 로그에 재프로비저닝 대상으로 `hwax_risk_sso` 가 한 번 잡힌다. 이번 판정은 위임 항목에 `portal_pat_url`·`portal_pat_spec` 이 없어도 잡는다(이미 항목이 있던 박스라도 이번 한 번은 다시 쓴다).
-- `--check` 의 리스크 앱 SIF 가 `a5e8558` 판이고 스키마가 4 다.
+- `--check` 의 리스크 앱 SIF 가 `3aea93b` 판이고 스키마가 4 다.
 
 ## 3. 돌린 뒤 확인
 
