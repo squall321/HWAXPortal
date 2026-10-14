@@ -16,6 +16,10 @@ from pathlib import Path
 
 from app.config import Settings
 
+# 원 PAT 하나가 거느릴 수 있는 살아 있는(폐기·만료 아님) 교환 PAT 수(SEC-5). 교환이 옛것을 폐기하지
+# 않으므로(C-11) 소비자가 revoke-self 를 빠뜨리면 자식이 쌓인다 — 그 상한이다.
+MAX_LIVE_CHILDREN = 5
+
 
 class TokenStore:
     def __init__(self, settings: Settings) -> None:
@@ -69,11 +73,16 @@ class TokenStore:
         `source_revoked` — 원이 그사이 폐기됐다. 검사와 기록 사이에 원을 폐기하면 연쇄가 아직 없는
         자식을 못 보고, 자식이 원의 폐기를 피해 살아남는다. 폐기도 같은 잠금을 쥐므로 여기서 보면
         닫힌다. 원이 될 수 있는지는 `pat_is_exchangeable` 이 이미 봤다 — 여기는 '그사이 폐기'
-        하나만 본다."""
+        하나만 본다.
+
+        `too_many_children` — 살아 있는 자식이 이미 `MAX_LIVE_CHILDREN` 이다. 끝점이 서명 전에 한 번
+        보지만, 동시 교환 둘이 그 검사를 함께 지나 상한을 넘는 일을 여기서 닫는다."""
         with self._lock:
             if self._conn.execute("SELECT 1 FROM pat WHERE jti = ? AND revoked = 1",
                                   (parent_jti,)).fetchone():
                 return "source_revoked"
+            if self._live_children(parent_jti) >= MAX_LIVE_CHILDREN:
+                return "too_many_children"
             self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, parent_jti)
             self._conn.commit()
             return None
@@ -84,6 +93,17 @@ class TokenStore:
             "parent_jti) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
             (jti, sub, email, name, json.dumps(aud), json.dumps(scopes), created, exp, parent_jti),
         )
+
+    def live_children(self, parent_jti: str) -> int:
+        """그 원으로 교환해 받은 PAT 가운데 폐기·만료되지 않은 것의 수."""
+        with self._lock:
+            return self._live_children(parent_jti)
+
+    def _live_children(self, parent_jti: str) -> int:
+        now = int(datetime.now(tz=UTC).timestamp())
+        return self._conn.execute(
+            "SELECT COUNT(*) FROM pat WHERE parent_jti = ? AND revoked = 0 AND exp >= ?",
+            (parent_jti, now)).fetchone()[0]
 
     def pat_is_exchangeable(self, jti: str, sub: str) -> bool:
         """토큰 교환의 원이 될 수 있나 — 토큰 화면(`/auth/pat`)에서 사람이 낸 살아 있는 PAT 만이다.

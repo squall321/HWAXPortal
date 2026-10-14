@@ -18,7 +18,7 @@ import app.auth.routes.pat as pat_routes
 from app.agent.routes import _chat_user_pat
 from app.auth.pat_verify import verify_pat
 from app.auth.provider import Principal
-from app.auth.token_store import TokenStore
+from app.auth.token_store import MAX_LIVE_CHILDREN, TokenStore
 from app.auth.user_store import UserStore
 from app.config import Settings, get_settings
 from app.main import app
@@ -205,6 +205,37 @@ def test_남은_수명은_ttl_과_원_만료_중_짧은_쪽이다(box, mints):
     assert mints == ["hwax-risk"]                           # 거절된 쪽은 서명하지 않았다
     r = _exchange(c, src["token"], min_remaining_s=-1)      # 음수는 본문 꼴이 틀린 것(422)
     assert r.status_code == 422, r.text
+
+
+# ── 원 하나의 살아 있는 자식 상한(SEC-5) ──────────────────────────────────────
+def test_살아_있는_자식은_원마다_다섯까지다(box, mints):
+    c, hu = box
+    src, other_src = _source(c, hu), _source(c, hu, name="claude-2")
+    kids = [_exchange(c, src["token"], name=f"k{i}").json() for i in range(MAX_LIVE_CHILDREN)]
+    mints.clear()
+    before = _rows()
+    _refused(_exchange(c, src["token"], name="k-over"), 409, "too_many_children")
+    assert mints == [] and _rows() == before                # 서명도 기록도 하지 않았다
+    assert _exchange(c, other_src["token"]).status_code == 200   # 다른 원은 따로 센다
+    assert _revoke_self(c, kids[0]["token"]).status_code == 200   # 폐기한 자식은 안 센다
+    assert _exchange(c, src["token"], name="k-again").status_code == 200
+
+
+def test_자식_상한은_기록할_때_다시_본다(tmp_path):
+    """동시 교환 둘이 끝점의 검사를 함께 지나도 기록이 상한을 지킨다. 만료된 자식은 안 센다."""
+    ts = TokenStore(Settings(token_store_path=str(tmp_path / "t.sqlite")))
+    row = {"sub": U, "email": U, "aud": [AUD], "scopes": ["read"], "created": 1}
+    ts.record_pat(jti="p", name="claude", exp=2**31, **row)
+    for i in range(MAX_LIVE_CHILDREN):                      # 만료된 자식 다섯 — 세지 않는다
+        assert ts.record_exchanged_pat(parent_jti="p", jti=f"old{i}", name="x", exp=1,
+                                       **row) is None
+    assert ts.live_children("p") == 0
+    for i in range(MAX_LIVE_CHILDREN):
+        assert ts.record_exchanged_pat(parent_jti="p", jti=f"k{i}", name="x", exp=2**31,
+                                       **row) is None
+    refused = ts.record_exchanged_pat(parent_jti="p", jti="over", name="x", exp=2**31, **row)
+    assert refused == "too_many_children"
+    assert ts._conn.execute("SELECT COUNT(*) FROM pat WHERE jti = 'over'").fetchone() == (0,)
 
 
 # ── 원이 될 수 없는 PAT ───────────────────────────────────────────────────────

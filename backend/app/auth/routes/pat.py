@@ -24,6 +24,7 @@ from app.access.policy import login_groups
 from app.auth.errors import AuthError
 from app.auth.pat_verify import pat_principal, verify_pat_claims
 from app.auth.provider import Principal
+from app.auth.token_store import MAX_LIVE_CHILDREN
 from app.config import Settings, get_settings
 from app.deps import ensure, entitled, get_current_principal, require_csrf
 
@@ -137,6 +138,12 @@ def create_pat(
                       created=created, exp=exp, revoked=False, token=token)
 
 
+def _too_many_children() -> AuthError:
+    return AuthError(f"이 원 PAT 로 바꿔 받은 살아 있는 PAT 이 이미 {MAX_LIVE_CHILDREN}개다 — "
+                     "안 쓰는 것을 폐기(revoke-self·토큰 화면)한 뒤 다시 바꿔라",
+                     status_code=409, code="too_many_children")
+
+
 @router.post("/exchange", response_model=PatCreated)
 def exchange_pat(
     body: PatExchange,
@@ -199,6 +206,8 @@ def exchange_pat(
                f"ttl_days({body.ttl_days}일)가 min_remaining_s 보다 짧다")
         raise AuthError(f"새 PAT 이 {life}초만 살 수 있어 요구한 {body.min_remaining_s}초에 "
                         f"못 미친다 — {why}", status_code=400, code="source_expiring")
+    if ts.live_children(src["jti"]) >= MAX_LIVE_CHILDREN:
+        raise _too_many_children()
     token, jti, created, exp = _mint_pat(
         request, settings, principal, name=body.name, audiences=body.audiences,
         scopes=body.scopes, ttl_days=body.ttl_days, not_after=int(src["exp"]),
@@ -211,6 +220,8 @@ def exchange_pat(
     )
     if refused == "source_revoked":  # 검사 뒤 기록 전에 원이 폐기됐다 — 낸 토큰은 버린다
         raise AuthError("원 PAT 이 방금 폐기됐다", status_code=403, code="source_not_exchangeable")
+    if refused == "too_many_children":  # 동시 교환이 위 검사를 함께 지났다 — 낸 토큰은 버린다
+        raise _too_many_children()
     logger.warning("PAT exchanged: sub=%s name=%s parent=%s aud=%s exp=%s",
                    principal.subject, body.name, src["jti"], body.audiences, exp)
     return PatCreated(jti=jti, name=body.name, audiences=body.audiences, scopes=body.scopes,
