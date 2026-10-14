@@ -116,4 +116,18 @@ unset K
 
 ### 7-2. 자동 등록을 멈추려면
 
-포털 토큰 화면에서 `hwax-risk` 토큰(목록에 '교환으로 생김' 표지)을 폐기해도, 앱의 자동 등록이 켜져 있으면 다음 Claude 호출이나 웹 접속 때 다시 생긴다(context-notes C-11). 멈추려면 리스크 앱 설정의 '자동 등록' 을 끈다. 그 뒤 사람이 시작한 잡은 PAT 를 손으로 등록할 때까지 `pat_unavailable` 로 멈춘다.
+포털 토큰 화면에서 '교환으로 생김 · hwax-risk' 토큰을 폐기해도, 그 사람의 자동 등록이 켜져 있으면 다음 Claude 호출 때 다시 생긴다(context-notes C-17). 멈추는 스위치는 리스크 앱 설정 화면에 곧 생긴다. 그때까지는 운영자가 앱 데이터 DB 에서 그 사람의 자동 등록을 끈다(앱이 돌고 있어도 된다 — 요청마다 다시 읽는다).
+
+```bash
+D=/data/appdata/hwax_risk                        # 리스크 앱 데이터 디렉터리
+WHO='someone@example.com'                         # 끌 사람의 이메일(소문자)
+python3 - "$D/risk_review.db" "$WHO" <<'PY'
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1]); who = sys.argv[2].strip().lower()
+con.execute("INSERT INTO _user_prefs(owner_sub, portal_pat_auto) VALUES(?, 0)"
+            " ON CONFLICT(owner_sub) DO UPDATE SET portal_pat_auto = 0", (who,))
+con.commit(); print(who, "자동 등록 끔")
+PY
+```
+
+그 뒤 포털 토큰 화면에서 그 사람의 '교환으로 생김 · hwax-risk' 토큰을 폐기한다. 다시 켜려면 같은 명령에서 `0` 을 `1` 로 바꾼다. 끈 동안 그 사람이 시작한 패널·카드 대조는 PAT 를 손으로 등록할 때까지 `pat_unavailable` 로 멈춘다.
