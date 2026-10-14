@@ -588,3 +588,75 @@ def test_헤더를_보내다_끊겨도_에이전트_쪽_연결이_닫히고_퍼�
     assert stream.closed, "헤더를 보내다 끊긴 run 의 에이전트 쪽 연결이 열려 있다"
     assert not locked, "헤더를 보내다 끊긴 run 의 퍼밋이 돌아오지 않았다"
     assert _rows()[-1]["meta"]["code"] == "client_closed"
+
+
+# ── M3 P3-1 — 새 종류(noinput·summary)와 비우기가 그대로 지나간다 ─────────────────────────────────
+# 중계는 본문을 통째로 넘기므로 새 종류에 코드가 늘지 않는다. 경계만 못박는다 — 새 종류의 본문이 신원 칸 넷만 바뀌어 나가고,
+# 엔진의 비우기 거절(review_busy{reason:"draining"})이 상태·본문 그대로 오고, 1M 창 p_hard 크기의 한글 요약 본문이 바이트 상한
+# 안에서 지나가고, 비우기(/drain)는 포털로 새지 않는다(docs/risk-review-redesign M3.md 4.7 — 포털은 /drain 을 중계하지 않는다).
+_NOINPUT = {**_strip(_RUN), "kind": "noinput", "variant": None,
+            "unit": {**_RUN["unit"], "missing": [{"kind": "ecad", "note": "보드 고정점 주변 회로 배치가 없다"}]},
+            "extra": {"mechanisms": [{"code": "mechanical.drop_stress", "label": "낙하 응력"}],
+                      "known": [{"alias": "F01", "judgement": None, "why": "이미 낸 영향"}]},
+            "expect": {"prompt_rev": "cr-noinput-1"}}
+_SUMMARY = {"kind": "summary", "variant": None, "target_key": "diff:" + "ab" * 16, "expert": None,
+            "summary": {"scope": {"kind": "domain", "key": "mech", "label": "기구(구조)"},
+                        "rows": [{"ref": f"reg:{i:012x}", "text": f"중대/WARNING · mechanical.drop_stress · «부품{i}»"}
+                                 for i in range(40)],
+                        "must_cover": [f"reg:{i:012x}" for i in range(6)],
+                        "blocks": [{"name": "numbers", "title": "영역 수치", "text": "전문가 122 · 셀 2,301"}]},
+            "expect": {"prompt_rev": "cr-summary-1"},
+            "groups": ["portal-admin"], "user_pat": "forged-token"}
+
+
+@pytest.mark.parametrize("body", [_NOINPUT, _SUMMARY], ids=["noinput", "summary"])
+def test_새_종류의_본문도_신원_칸_넷만_바뀌어_나간다(portal, body):
+    agent = _wire()
+    assert _call(portal, "run", body).status_code == 200
+    sent = json.loads(agent.seen[0].content)
+    assert _strip(sent) == _strip(body) and sent["groups"] == _WHO.groups and sent["user_pat"] != "forged-token"
+    assert sent.get("expert", "absent") == body.get("expert", "absent"), "summary 의 expert:null 이 그대로 간다"
+
+
+def test_요약의_감사는_범위_키를_단위_자리에_싣는다(portal):
+    _wire()
+    assert _call(portal, "run", _SUMMARY).status_code == 200
+    start = _rows()[0]
+    assert start["event"] == "card_review_run_start" and start["meta"]["kind"] == "summary"
+    assert start["meta"]["unit"] == "mech" and "agent" not in start["meta"]
+    long_key = {**_SUMMARY, "summary": {**_SUMMARY["summary"], "scope": {"kind": "domain", "key": "k" * 5000}}}
+    assert _call(portal, "run", long_key).status_code == 200
+    assert len(_rows()[-1]["meta"]["unit"]) == 200
+
+
+def test_엔진의_비우기_거절은_상태와_본문_그대로_온다(portal):
+    """팩은 429 review_busy{reason:"draining", retry_after_s 60} 를 그대로, run 은 그 error 프레임을 그대로 흘린다(앱이 기다림
+    부류로 가른다 — 아무것도 세지 않는다)."""
+    busy = {"code": "review_busy", "message": "리스크 검토 비우기 중이다", "reason": "draining", "retry_after_s": 60,
+            "limit": 0, "infra": True, "retryable": True}
+    _wire(lambda req: httpx.Response(429, json=busy, headers={"Retry-After": "60"}))
+    r = _call(portal, "pack")
+    assert (r.status_code, r.json(), r.headers["retry-after"]) == (429, busy, "60")
+    frames = (f'event: error\ndata: {json.dumps(busy, ensure_ascii=False)}\n\nevent: done\ndata: {{}}\n\n').encode()
+    _wire(lambda req: httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=_Stream([frames])))
+    r = _call(portal, "run")
+    assert r.status_code == 200 and r.content == frames
+    assert _rows()[-1]["meta"]["code"] == "review_busy"
+
+
+def test_1M_창_p_hard_크기의_한글_요약_본문이_바이트_상한_안에서_지나간다(portal):
+    agent = _wire()
+    rows = [{"ref": f"reg:{i:012x}", "text": "가" * 380} for i in range(2_600)]       # 약 1,008,000자 — 1M 창 p_hard 근처
+    body = {**_SUMMARY, "summary": {**_SUMMARY["summary"], "rows": rows, "must_cover": []}}
+    raw = json.dumps(body, ensure_ascii=False).encode()
+    assert 3_000_000 < len(raw) <= _WINDOW_CHARS, len(raw)
+    assert _call(portal, "run", raw).status_code == 200
+    sent = json.loads(agent.seen[0].content)
+    assert sent["summary"]["rows"] == rows, "한글 본문이 그대로 간다(\\uXXXX 로 부풀리지 않는다)"
+
+
+def test_비우기는_포털로_새지_않는다():
+    """포털 라우터에 drain 경로가 없다 — update-all 이 에이전트 서버 루프백에만 묻는다(경로 목록은 라우터에서 뽑는다)."""
+    paths = [getattr(r, "path", "") for r in app.routes]
+    assert any(p.startswith("/agent/card-review/") for p in paths), "라우터에서 경로를 못 뽑았다 — 시험이 낡았다"
+    assert not [p for p in paths if "drain" in p.lower()], [p for p in paths if "drain" in p.lower()]

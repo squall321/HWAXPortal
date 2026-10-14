@@ -1831,11 +1831,14 @@ def _cr_payload(request: Request, settings: Settings, principal: Principal, obj:
 
 
 def _cr_meta(raw: bytes, obj: dict) -> dict:
-    """감사 칸 — 종류·전문가 키·단위 id·본문 바이트 수·sha256. 본문은 싣지 않는다."""
-    expert, unit = obj.get("expert"), obj.get("unit")
+    """감사 칸 — 종류·전문가 키·단위 id·본문 바이트 수·sha256. 본문은 싣지 않는다. 요약(kind summary — 전문가·단위가 없다)은
+    범위 키(summary.scope.key — 영역 코드 또는 '-')를 단위 자리에 싣는다(M3 P3-1)."""
+    expert, unit, summary = obj.get("expert"), obj.get("unit"), obj.get("summary")
+    scope = summary.get("scope") if isinstance(summary, dict) else None
     ids = {"kind": obj.get("kind"),
            "agent": (expert.get("key") if isinstance(expert, dict) else None) or obj.get("agent_key"),
-           "unit": unit.get("unit_id") if isinstance(unit, dict) else None}
+           "unit": (unit.get("unit_id") if isinstance(unit, dict) else None)
+           or (scope.get("key") if isinstance(scope, dict) else None)}
     meta = {k: str(v)[:_CR_META_MAX] for k, v in ids.items() if v is not None}
     if raw:
         meta.update(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
