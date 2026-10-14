@@ -463,6 +463,14 @@ export default function TokenPage() {
                         <tr key={p.jti} className={p.revoked ? 'is-revoked' : undefined}>
                           <td>
                             {p.name}
+                            {p.parent_jti && (
+                              <span
+                                className="tok-badge is-derived"
+                                title={`원 토큰(${p.parent_jti})에서 바꿔 받은 토큰 — 리스크 앱 같은 앱이 자동으로 받습니다. 원 토큰을 폐기하면 함께 폐기됩니다.`}
+                              >
+                                교환으로 생김
+                              </span>
+                            )}
                             {p.revoked && <span className="tok-badge">폐기됨</span>}
                           </td>
                           <td>{fmtDate(p.created)}</td>

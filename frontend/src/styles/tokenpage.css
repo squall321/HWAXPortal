@@ -154,6 +154,11 @@
   color: var(--danger);
   font-size: var(--fs-12);
 }
+/* 교환으로 생긴 토큰 — 경고가 아니라 출처 표시라 중립색 */
+.tok-badge.is-derived {
+  border-color: var(--border-strong);
+  color: var(--fg-muted);
+}
 
 /* 빈 상태 — 다음 행동을 함께 */
 .tok-empty {

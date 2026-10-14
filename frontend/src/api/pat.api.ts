@@ -9,6 +9,9 @@ export interface PatMeta {
   created: number; // unix seconds
   exp: number; // unix seconds
   revoked: boolean;
+  // 토큰 교환(/auth/pat/exchange)으로 받은 토큰이면 원 토큰의 jti — 리스크 앱 같은 앱이 자동으로 받는다.
+  // 이 칸이 없던 백엔드가 새 dist 를 내는 창에서는 undefined 다.
+  parent_jti?: string | null;
 }
 
 export interface PatCreated extends PatMeta {
