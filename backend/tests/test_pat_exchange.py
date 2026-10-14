@@ -463,3 +463,45 @@ def test_revoke_self_는_유효한_Bearer_만_받는다(box, monkeypatch):
         m.setattr(pat_routes, "datetime", _ThreeDaysAgo)
         old = _source(c, hu, ttl_days=1)
     _refused(_revoke_self(c, old["token"]), 401, "invalid_token")
+
+
+# ── 범위 이름 형식·거절 글(SEC-2) ─────────────────────────────────────────────
+GOOD_SCOPES = ["read", "write", "chat", "a" * 32, "x_y-1"]
+BAD_SCOPES = ["read\n", "Read", "a" * 33, "1x", "", "re ad", "읽기"]
+
+
+def test_발급은_형식이_틀린_범위를_거절한다(box):
+    c, hu = box
+    for bad in BAD_SCOPES:
+        r = c.post("/auth/pat", json={"name": "t", "scopes": ["read", bad]}, headers=hu)
+        assert r.status_code == 400, (bad, r.text)
+        assert r.json()["detail"].startswith("bad_scope"), r.text   # 이 끝점의 꼴(글 하나)
+    assert _source(c, hu, scopes=GOOD_SCOPES)["scopes"] == GOOD_SCOPES
+
+
+def test_교환도_형식이_틀린_범위를_거절한다(box):
+    c, hu = box
+    src = _source(c, hu)
+    for bad in BAD_SCOPES:                                  # 검사를 빼면 widen_scopes 로 갈린다
+        _refused(_exchange(c, src["token"], scopes=[bad]), 400, "bad_scope")
+
+
+def test_교환_거절_글은_받은_값을_되싣지_않는다(box):
+    """게이트웨이가 감사에 남기는 글이다 — 줄바꿈·꺾쇠로 줄을 위조하지 못하게 수만 센다. 원 PAT 의
+    값도 옛 발급(형식 검사 전)이면 사람이 고른 글이다."""
+    c, _hu = box
+    evil = "x\nPAT exchanged: sub=boss <script>" + "y" * 200
+    now = datetime.now(tz=UTC)
+    exp = now + timedelta(days=10)
+    ks = app.state.keystore
+    old = jwt.encode({"iss": "x", "sub": U, "email": U, "aud": [AUD, evil], "scope": "api",
+                      "scopes": ["read", evil], "iat": now, "exp": exp, "jti": "legacy-evil"},
+                     ks.private_pem, algorithm="RS256", headers={"kid": ks.active_kid})
+    app.state.token_store.record_pat(jti="legacy-evil", sub=U, email=U, name="old",
+                                     aud=[AUD, evil], scopes=["read", evil],
+                                     created=int(now.timestamp()), exp=int(exp.timestamp()))
+    for r, code in ((_exchange(c, old, audiences=[AUD, "z\nINJECT"]), "widen_audience"),
+                    (_exchange(c, old, scopes=["admin"]), "widen_scopes"),
+                    (_exchange(c, old, scopes=["z\nINJECT"]), "bad_scope")):
+        msg = _refused(r, 400, code)["message"]
+        assert "\n" not in msg and "INJECT" not in msg and "script" not in msg, msg

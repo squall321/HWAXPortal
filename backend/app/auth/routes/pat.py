@@ -12,6 +12,7 @@ published (non-expired revoked jtis) at `/auth/pat/revoked.json` for the gateway
 """
 
 import logging
+import re
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -31,6 +32,15 @@ from app.deps import ensure, entitled, get_current_principal, require_csrf
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth/pat", tags=["pat"])
+
+# 범위 이름 — 소문자로 시작하는 영소문자·숫자·`_`·`-`, 32자 이하(SEC-2). `fullmatch` 여야 한다 —
+# `re.match` 의 `$` 는 끝 줄바꿈 앞에서도 맞아 "read\n" 을 통과시킨다.
+_SCOPE_RE = re.compile(r"[a-z][a-z0-9_-]{0,31}")
+_SCOPE_RULE = "소문자로 시작하는 영소문자·숫자·_·- 32자 이하"
+
+
+def _bad_scopes(scopes: list[str]) -> int:
+    return sum(1 for s in scopes if not _SCOPE_RE.fullmatch(s))
 
 
 class PatCreate(BaseModel):
@@ -113,6 +123,9 @@ def create_pat(
     # API 토큰은 게이트웨이 도구를 포털 밖(Claude·스크립트)에서 쓰는 열쇠다 — 허가가 있어야
     # 발급한다.
     ensure(principal, "feat:api-token")
+    if n := _bad_scopes(body.scopes):
+        raise AuthError(f"bad_scope — scopes 가운데 {n}개의 형식이 틀렸다({_SCOPE_RULE})",
+                        status_code=400)
     # ttl_days=0 은 '무기한' 이다. `or` 로 기본값을 채우면 0 이 falsy 라 90일로 둔갑하므로
     # None 과 0 을 반드시 구분한다.
     never = body.ttl_days == 0
@@ -192,12 +205,19 @@ def exchange_pat(
                         status_code=403, code="source_not_exchangeable")
     src_aud = src["aud"] if isinstance(src["aud"], list) else [src["aud"]]
     # 빈 청중도 거절한다 — `/auth/pat` 에서 빈 청중은 '기본 전체' 라 좁히기가 아니다.
+    # 거절 글에 받은 값을 되싣지 않는다(SEC-2) — 게이트웨이가 감사에 남기는 글이라 줄바꿈 등으로
+    # 줄을 위조할 수 있다. 원 PAT 의 값도 옛 발급(형식 검사 전)이면 사람이 고른 글이라 수만 센다.
     if not body.audiences or not set(body.audiences) <= set(src_aud):
-        raise AuthError(f"audiences 는 비지 않은 원 PAT 청중의 부분집합이어야 한다(원: {src_aud})",
+        raise AuthError(f"audiences 는 원 PAT 청중({len(src_aud)}개)의 비지 않은 부분집합이어야 "
+                        f"한다 — 원에 없는 것 {len(set(body.audiences) - set(src_aud))}개",
                         status_code=400, code="widen_audience")
+    if n := _bad_scopes(body.scopes):
+        raise AuthError(f"scopes 가운데 {n}개의 형식이 틀렸다({_SCOPE_RULE})",
+                        status_code=400, code="bad_scope")
     src_scopes = src.get("scopes", ["read", "write"])  # 칸이 없던 옛 PAT 은 /auth/pat 기본값
     if not set(body.scopes) <= set(src_scopes):
-        raise AuthError(f"scopes 는 원 PAT 범위의 부분집합이어야 한다(원: {src_scopes})",
+        raise AuthError(f"scopes 는 원 PAT 범위({len(src_scopes)}개)의 부분집합이어야 한다 — "
+                        f"원에 없는 것 {len(set(body.scopes) - set(src_scopes))}개",
                         status_code=400, code="widen_scopes")
     if not 1 <= body.ttl_days <= settings.pat_max_ttl_days:
         raise AuthError(f"ttl_days 는 1..{settings.pat_max_ttl_days} 다(무기한 없음)",
