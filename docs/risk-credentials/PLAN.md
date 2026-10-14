@@ -48,14 +48,18 @@ PAT 하나를 증거로 **같은 사람의 더 좁은 PAT** 를 받는다. 넓�
   - `verify_pat` 를 지난다(aud `mcp-gateway`, `scope=api`, 폐기·만료 아님).
   - `token_store` 에 기록된 PAT 다. 사람이 토큰 화면에서 발급한 것만 해당하고, 챗 PAT·절차 PAT(기록되지 않음, `purpose` 있음)는 403 `source_not_exchangeable` 이다. 24시간짜리 챗 PAT 로 90일짜리를 받는 수명 늘리기를 막는다.
   - 계정이 살아 있고(`entitled`), `feat:api-token` 권한이 있다(`/auth/pat` 와 같은 문).
-- **본문**은 `{name, audiences, scopes, ttl_days}` 이고, 좁히기만 허용한다.
+- **본문**은 `{name, audiences, scopes, ttl_days, min_remaining_s?}` 이고, 좁히기만 허용한다.
   - `audiences ⊆ 원 PAT 의 aud`, `scopes ⊆ 원 PAT 의 scopes`(원에 없으면 `["read","write"]` 로 본다).
   - `ttl_days` 는 1 ~ `pat_max_ttl_days`. 만료는 `min(지금 + ttl, 원 PAT 의 만료)` 이다.
-- **발급**은 `/auth/pat` 와 같은 클레임에 `parent_jti`(원 PAT 의 jti)를 기록한다. 토큰 목록에 보이고 폐기할 수 있다.
-  - 같은 사람·같은 이름의 앞선 교환 PAT 는 발급 직전에 폐기한다(갱신이 쌓이지 않게).
+  - 그 수명이 `min_remaining_s`(기본 0)보다 짧으면 서명 전에 400 `source_expiring` 이다(C-12).
+  - 범위 이름은 `^[a-z][a-z0-9_-]{0,31}$` 다(400 `bad_scope`, C-15).
+- **발급**은 `/auth/pat` 와 같은 클레임에 `par`(원 PAT 의 jti)를 더하고, 원장에 `parent_jti` 를 기록한다. 토큰 목록에 `parent_jti` 와 함께 보이고 폐기할 수 있다(C-14·C-15).
+  - 같은 이름의 앞선 교환 PAT 는 **폐기하지 않는다.** 소비자가 새것을 받아들인 뒤 옛것으로 `POST /auth/pat/revoke-self` 를 불러 죽인다(C-11).
+  - 원 하나의 살아 있는 교환 PAT 은 다섯까지다. 넘으면 409 `too_many_children` 이다(C-13).
   - 원 PAT 를 폐기하면 그 자식도 폐기한다(연쇄).
-- **감사**는 `PAT exchanged: sub=… name=… parent=… exp=…` 다.
-- 응답 모양은 `/auth/pat` 와 같다(`token`·`jti`·`exp`…). 거절은 `{detail:{code, message}}` 다.
+- **감사**는 `PAT exchanged: sub=… name=<repr> parent=… aud=… exp=…` 다.
+- 응답 모양은 `/auth/pat` 와 같다(`token`·`jti`·`exp`·`parent_jti`…). 거절은 `{detail:{code, message}}` 이고, 글에 받은 값을 되싣지 않는다.
+- **`POST /auth/pat/revoke-self`** 는 Bearer 토큰 그 자신(과 연쇄로 그 자식)만 폐기하고 `{"revoked": jti}` 다. 이미 폐기된 토큰도 200 이다(멱등). 원장에 없는 챗·절차 PAT 는 404 `not_recorded`, Bearer 가 없거나 틀리거나 만료면 401 `invalid_token` 이다(C-11).
 
 ### 4.2 게이트웨이 — 위임 단언을 받을 때 교환을 대신 걸어 준다
 
