@@ -71,6 +71,8 @@ class PatMeta(BaseModel):
     created: int
     exp: int
     revoked: bool
+    # 교환으로 받은 PAT 이면 원 PAT 의 jti — 토큰 화면이 '교환으로 생김' 을 표시한다(D3).
+    parent_jti: str | None = None
 
 
 class PatCreated(PatMeta):
@@ -252,7 +254,7 @@ def exchange_pat(
     logger.warning("PAT exchanged: sub=%s name=%r parent=%s aud=%s exp=%s",  # name 은 %r(SEC-4)
                    principal.subject, body.name, src["jti"], body.audiences, exp)
     return PatCreated(jti=jti, name=body.name, audiences=body.audiences, scopes=body.scopes,
-                      created=created, exp=exp, revoked=False, token=token)
+                      created=created, exp=exp, revoked=False, parent_jti=src["jti"], token=token)
 
 
 @router.post("/revoke-self")

@@ -517,3 +517,16 @@ def test_발급·교환_기록은_이름을_repr_로_남긴다(box, caplog):
     lines = [m for m in caplog.messages if m.startswith(("PAT issued:", "PAT exchanged:"))]
     assert len(lines) == 2, caplog.messages
     assert all("\n" not in m and repr(forged) in m for m in lines), lines
+
+
+def test_토큰_목록은_교환으로_생긴_것에_원을_적는다(box):
+    """토큰 화면이 '교환으로 생김' 을 표시한다(D3) — 본인 목록·관리자 목록·교환 응답 셋 다."""
+    c, hu = box
+    src = _source(c, hu)
+    got = _exchange(c, src["token"]).json()
+    assert got["parent_jti"] == src["jti"] and src["parent_jti"] is None
+    mine = {m["jti"]: m["parent_jti"] for m in c.get("/auth/pat").json()}
+    assert mine == {src["jti"]: None, got["jti"]: src["jti"]}
+    _login(c, BOSS)
+    everyone = {m["jti"]: m["parent_jti"] for m in c.get("/auth/pat/all").json()["pats"]}
+    assert everyone[got["jti"]] == src["jti"] and everyone[src["jti"]] is None

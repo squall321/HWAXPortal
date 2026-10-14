@@ -133,25 +133,27 @@ class TokenStore:
             # 정확히 폐기해야 할 것부터 목록에서 사라진다. 만료가 먼 것(= 오래 사는 것)을
             # 먼저 보여 준다 — 이 목록의 존재 이유가 그것이다.
             cur = self._conn.execute(
-                "SELECT jti, name, aud, scopes, created, exp, revoked, sub, email FROM pat "
-                "ORDER BY revoked ASC, exp DESC, created DESC LIMIT ?", (limit,))
+                "SELECT jti, name, aud, scopes, created, exp, revoked, sub, email, parent_jti "
+                "FROM pat ORDER BY revoked ASC, exp DESC, created DESC LIMIT ?", (limit,))
             rows = cur.fetchall()
         return [{"jti": r[0], "name": r[1], "audiences": json.loads(r[2]),
                  "scopes": json.loads(r[3]), "created": r[4], "exp": r[5],
-                 "revoked": bool(r[6]), "sub": r[7], "email": r[8]} for r in rows]
+                 "revoked": bool(r[6]), "sub": r[7], "email": r[8], "parent_jti": r[9]}
+                for r in rows]
 
     def list_pats(self, sub: str) -> list[dict]:
         """Metadata (never the token itself) for one owner's PATs, newest first."""
         with self._lock:
             cur = self._conn.execute(
-                "SELECT jti, name, aud, scopes, created, exp, revoked FROM pat "
+                "SELECT jti, name, aud, scopes, created, exp, revoked, parent_jti FROM pat "
                 "WHERE sub = ? ORDER BY created DESC",
                 (sub,),
             )
             rows = cur.fetchall()
         return [
             {"jti": r[0], "name": r[1], "audiences": json.loads(r[2]),
-             "scopes": json.loads(r[3]), "created": r[4], "exp": r[5], "revoked": bool(r[6])}
+             "scopes": json.loads(r[3]), "created": r[4], "exp": r[5], "revoked": bool(r[6]),
+             "parent_jti": r[7]}
             for r in rows
         ]
 
