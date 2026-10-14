@@ -47,6 +47,9 @@ class PatExchange(BaseModel):
     audiences: list[str]
     scopes: list[str]
     ttl_days: int
+    # 새 PAT 이 적어도 이만큼(초) 살아야 한다 — 원이 곧 만료되면 낸 PAT 도 곧 죽으므로 내지 않고
+    # 거절한다(source_expiring). 소비자가 받자마자 다시 바라는 되풀이를 막는다.
+    min_remaining_s: int = Field(default=0, ge=0)
 
 
 class PatMeta(BaseModel):
@@ -187,6 +190,15 @@ def exchange_pat(
     if not 1 <= body.ttl_days <= settings.pat_max_ttl_days:
         raise AuthError(f"ttl_days 는 1..{settings.pat_max_ttl_days} 다(무기한 없음)",
                         status_code=400, code="bad_ttl")
+    now = int(datetime.now(tz=UTC).timestamp())
+    src_left = int(src["exp"]) - now
+    life = min(body.ttl_days * 86400, src_left)  # = min(지금 + ttl, 원의 만료) - 지금
+    if life < body.min_remaining_s:
+        why = (f"원 PAT 자체가 곧 만료된다(남은 {src_left}초) — 토큰 화면에서 새 PAT 을 발급해 "
+               "다시 넣어야 한다" if src_left < body.min_remaining_s else
+               f"ttl_days({body.ttl_days}일)가 min_remaining_s 보다 짧다")
+        raise AuthError(f"새 PAT 이 {life}초만 살 수 있어 요구한 {body.min_remaining_s}초에 "
+                        f"못 미친다 — {why}", status_code=400, code="source_expiring")
     token, jti, created, exp = _mint_pat(
         request, settings, principal, name=body.name, audiences=body.audiences,
         scopes=body.scopes, ttl_days=body.ttl_days, not_after=int(src["exp"]),

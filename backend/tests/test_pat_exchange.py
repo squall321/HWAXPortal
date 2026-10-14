@@ -164,6 +164,49 @@ def test_수명은_1일부터_상한까지다(box):
     assert _exchange(c, src["token"], ttl_days=top).status_code == 200
 
 
+@pytest.fixture()
+def mints(monkeypatch) -> list:
+    """`_mint_pat` 이 불린 횟수 — 거절이 서명 **전에** 나는지 본다."""
+    calls: list = []
+    real = pat_routes._mint_pat
+
+    def counting(*a, **kw):
+        calls.append(kw.get("name"))
+        return real(*a, **kw)
+
+    monkeypatch.setattr(pat_routes, "_mint_pat", counting)
+    return calls
+
+
+def _rows() -> int:
+    return app.state.token_store._conn.execute("SELECT COUNT(*) FROM pat").fetchone()[0]
+
+
+# ── 남은 수명(min_remaining_s) ────────────────────────────────────────────────
+def test_원이_곧_만료되면_내지_않는다(box, mints):
+    c, hu = box
+    src = _source(c, hu, ttl_days=2)
+    before, mints[:] = _rows(), []
+    detail = _refused(_exchange(c, src["token"], min_remaining_s=3 * 86400), 400, "source_expiring")
+    assert "원 PAT 자체가 곧 만료된다" in detail["message"] and "새 PAT" in detail["message"]
+    assert mints == [] and _rows() == before                # 서명도 기록도 하지 않았다
+    assert _exchange(c, src["token"], min_remaining_s=86400).status_code == 200
+
+
+def test_남은_수명은_ttl_과_원_만료_중_짧은_쪽이다(box, mints):
+    """원이 넉넉하면 ttl_days 가 수명이다 — 경계(같으면 낸다)를 시계에 안 기대고 본다."""
+    c, hu = box
+    src = _source(c, hu)                                   # 90일
+    mints.clear()
+    assert _exchange(c, src["token"], ttl_days=1, min_remaining_s=86400).status_code == 200
+    detail = _refused(_exchange(c, src["token"], ttl_days=1, min_remaining_s=86401),
+                      400, "source_expiring")
+    assert "ttl_days" in detail["message"]
+    assert mints == ["hwax-risk"]                           # 거절된 쪽은 서명하지 않았다
+    r = _exchange(c, src["token"], min_remaining_s=-1)      # 음수는 본문 꼴이 틀린 것(422)
+    assert r.status_code == 422, r.text
+
+
 # ── 원이 될 수 없는 PAT ───────────────────────────────────────────────────────
 def test_챗_PAT_으로는_못_바꾼다(box):
     """24시간짜리 챗 PAT 로 긴 PAT 을 받는 수명 늘리기. 본문은 챗 PAT 기준으로 좁혀 둔다 —
