@@ -24,8 +24,10 @@ ENGINE = ROOT.parent / "HWAXAgentServer"
 
 
 def _time_block() -> str:
-    """킷의 시간 한도 구획(주석 손잡이들) — 머리 줄부터 파일 끝까지."""
-    return KIT[KIT.index("# --- 시간 한도(2026-10"):]
+    """킷의 시간 한도 구획(주석 손잡이들) — 머리 줄부터 다음 구획 머리(`# --- `) 앞까지(없으면 파일 끝)."""
+    block = KIT[KIT.index("# --- 시간 한도(2026-10"):]
+    nxt = block.find("\n# --- ", 1)
+    return block if nxt < 0 else block[:nxt + 1]
 
 
 def _knobs() -> dict[str, str]:
@@ -184,6 +186,33 @@ def test_엔진이_시간_한도로_적은_손잡이가_킷에_빠짐없이_있�
             continue
         assert name in kit, f"엔진의 시간 한도 손잡이 {name} 가 킷(infra/env-kits/agent-server.env)에 없다 — 기본값과 함께 적는다"
 
+
+
+def test_카드_대조_구획의_값이_엔진_기본값과_같다():
+    """카드 대조 구획(리스크 심사 M2·M3)도 '아래 값이 코드 기본값이다' 라고 말한다. 엔진은 그 기본값을 이름 붙은 상수로 두므로
+    (`_env_int(..., CONCURRENCY_DEFAULT, ...)`) 위 식이 아니라 상수 줄을 읽어 맞댄다. 구획에 새 줄을 더하면 여기에도 더한다."""
+    if not ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {ENGINE}")
+    block = KIT[KIT.index("# --- 카드 대조(리스크 심사"):]
+    kit = dict(re.findall(r"^# ([A-Z][A-Z0-9_]*)=(\S+)$", block, re.M))
+    gate = (ENGINE / "review_gate.py").read_text(encoding="utf-8")
+    cr = (ENGINE / "card_review.py").read_text(encoding="utf-8")
+
+    def const(src: str, name: str) -> float:
+        m = re.search(rf"^{name} = ([0-9.]+)", src, re.M)
+        assert m, f"엔진 소스에서 {name} 를 못 찾았다 — 이름이 바뀌었으면 킷과 이 시험을 맞춘다"
+        return float(m.group(1))
+
+    conc = const(gate, "CONCURRENCY_DEFAULT")
+    want = {"CARD_REVIEW_CONCURRENCY": conc,
+            "CARD_REVIEW_CONCURRENCY_WITH_DELIB": max(1, int(conc) // 2),     # review_gate.knobs — 평소의 절반(바닥 1)
+            "CARD_REVIEW_MAX_TOKENS": 0,                                      # 비면 0 — 심의 LLM 의 상한을 따른다
+            "CARD_REVIEW_PARSE_RETRIES": const(cr, "PARSE_RETRIES_DEFAULT"),
+            "CARD_REVIEW_SEARCH_TIMEOUT_S": const(cr, "SEARCH_TIMEOUT_DEFAULT")}
+    assert sorted(kit) == sorted(want), f"구획의 손잡이와 이 시험의 목록이 다르다 — {sorted(kit)}"
+    for name, v in want.items():
+        assert float(kit[name]) == float(v), f"{name}: 엔진 {v} · 킷 {kit[name]}"
+    assert 'MAX_TOKENS_ENV = "CARD_REVIEW_MAX_TOKENS"' in cr and '"CARD_REVIEW_CONCURRENCY_WITH_DELIB"' in gate
 
 # ── 층 — 킷의 수치로 안쪽 < 바깥이 성립한다 ───────────────────────────────────────────────────
 def test_킷의_수치로_안쪽_한도가_바깥보다_작다():
