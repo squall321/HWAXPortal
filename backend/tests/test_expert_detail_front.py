@@ -65,10 +65,12 @@ def test_시작_패널이_고정된_전문가로_열리면_상세를_불러온�
 def test_심층_보기는_실패한_상세를_물려받지_않고_다시_부른다():
     src = _src("AgentDeepView.tsx")
     assert "const [reload, setReload] = useState(0);" in src, "다시 시도할 손잡이가 없다"
+    assert "}, [agent.key, initialDetail, reload]);" in src, "다시 시도가 상세 effect 를 다시 돌리지 않는다"
     eff = src[src.index("const [reload, setReload] = useState(0);"):]
     eff = eff[:eff.index("}, [agent.key, initialDetail, reload]);")]
     assert "if (initialDetail && !initialDetail.error) {" in eff, "실패본을 물려받으면 상세칸의 실패가 전체 화면에도 그대로 남는다"
-    assert eff.index("setDetail(null);") < eff.index("fetchAgentDetail(agent.key)"), "다시 부를 때는 불러오는 중으로 돌린다"
+    assert "setDetail(null);" in eff and eff.index("setDetail(null);") < eff.index("fetchAgentDetail(agent.key)"), (
+        "다시 부를 때는 불러오는 중으로 돌린다 — 안 그러면 실패 문구가 응답이 올 때까지 남는다")
 
 
 def test_실패하면_프로필_대신_다시_시도를_준다():

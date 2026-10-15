@@ -304,6 +304,7 @@ def test_선택_앱이_붙은_박스에서는_지금과_같게_만든다():
     notes: list[str] = []
     rows, skipped, errors = sync.plan(one, both, notes)
     assert not errors and not skipped and notes == [], (errors, skipped, notes)
+    assert one == _one("he-sim-smarttwin"), "plan() 이 정본을 제자리에서 고쳤다 — 두 번 부르면 선택 앱 칸이 두 번 붙는다"
     rc = rows[0]["response_config"]
     assert rc["mcp_apps"] == ["smart-twin-mcp", "smart-twin-cluster"]
     # 둘 다 붙은 박스(dev)는 옮기기 전과 같은 도구를 입구로 묶는다(선택 앱 몫이 뒤로 가 순서만 바뀐다)

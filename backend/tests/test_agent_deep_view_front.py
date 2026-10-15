@@ -69,6 +69,7 @@ def test_잘림_안내는_무엇이_잘렸는지_따로_말한다():
 def test_다음_부분_보기_버튼과_실패_문구():
     rd = _reader()
     assert "function RecordReader({ rec, onMore, moreLoading, moreError }: {" in rd
+    assert "{rec.next && onMore && (" in rd, "이어 읽을 위치가 없는데도 버튼을 띄우면 누를 때마다 첫 쪽이 되풀이된다"
     btn = rd[rd.index("{rec.next && onMore && ("):]
     btn = btn[:btn.index("</button>")]
     assert '<button type="button" className="pv-chip pv-chip-btn" disabled={moreLoading} onClick={onMore}>' in btn
