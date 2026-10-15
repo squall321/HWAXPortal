@@ -137,6 +137,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 리스크 심사 재설계(전 전문가가 자기 지식카드 전부로 검토 — 카드 대조는 혼자 먼저·토의는 쟁점만, 마일스톤 M0~M4, 문제 250건 색인·상세 설계서 일곱 편; **M1 완료** — 패널 수리·Claude 입구·1백만 토큰 기준 글자 잘림 해소, 패널 방식은 새 방식과 함께 남긴다 D-24; **M2 승인**(D-32); **M3 진행 중** — 전원·거르기·쟁점 패널·종합 보고서, 실행 계획 `M3.md`) | `docs/risk-review-redesign/` (PLAN·M2·**M3**·checklist·context-notes·problems·**truncation**(잘림 해소 요약)·**server-setup-m1·m2·m3**(cae00 절차)·reference/(설계서·`m2-*`·`m3-*` 걸음별 상세)) |
 | 리스크 심사 앱 사람 자격(SSO 로 들어온 사람의 PAT 가 저절로 — 웹은 화면 자동, Claude 는 게이트웨이 토큰 교환 `POST /auth/pat/exchange` · 패널도 서비스로 안 내려감 · 캡처 REST 는 게이트웨이 step-forge · 필수 키는 CRED_KEY 하나, 결정 U-1~U-4) | `docs/risk-credentials/` (PLAN·checklist·context-notes·frontend-request) |
 | 포털 UI 개선('세련되지 못하다' 원인 넷·결정·단계 0~4, 리뷰 방법은 임시 포털 캡처) | `docs/ui-refresh/` (PLAN·checklist·context-notes) |
+| 리스크 심사를 Claude 로도(엔진의 LLM 자리에 외부 응답자 — Claude Code 워크플로가 MCP 로 과제를 집어 답한다, **기본 꺼짐**·잡마다 반출 동의, 실제 Claude 실행 시험은 하지 않음 — 사용자 결정 10-15) | `docs/risk-claude-engine/` (PLAN·checklist·context-notes) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
