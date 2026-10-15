@@ -41,18 +41,42 @@ hwax_fp() {
 #   이름을 바꾸면 도는 프로세스는 옛 inode 를 쥔 채 그대로 돌고, 다음 기동이 새 파일을 연다. 대상이 심링크면 링크는 두고 가리키는 파일을
 #   바꾼다(/data 이관의 심링크 브리지). 쓸 수 없는 대상(권한·다른 소유자)은 종전처럼 실패다 — 이름 바꾸기는 디렉터리 권한만 보므로 그대로 두면
 #   읽기 전용 파일도 갈아 끼운다. 그래서 먼저 본다.
+# 구석(LLM 풀 반대 검토 2라운드 LOW 3 · LP-D14):
+#   · 끊기면(Ctrl-C · HUP · TERM) 임시 파일을 지우고 같은 신호로 죽는다 — 반쯤 받은 이미지(수백 MB, 600)가 남았다. 서브셸의 EXIT trap 하나로
+#     된다 — 비대화형 bash 는 EXIT trap 이 있으면 끝내는 신호를 받아도 그 trap 을 돌린 뒤 같은 신호로 죽는다(부른 bash 도 그 신호로 멈춘다 —
+#     신호마다 trap 을 걸어 exit 로 끝내면 부른 쪽이 Ctrl-C 를 '자식이 처리했다' 로 읽고 다음 줄로 간다).
+#   · 임시 파일 이름은 대상과 같은 확장자로 끝난다(`.portal.sif.XXXXXX.sif`) — 대상을 무시하는 규칙(infra/.gitignore 의 `*.sif`)이 임시 파일도
+#     무시해, SIGKILL 로 남은 것도 deploy-all 의 `git stash push -u` 가 리포 안으로 쓸어 가지 않는다(점으로 시작해 `*.sif` 글롭 지문에도 안 든다).
+#   · 끊긴 심링크인 대상은 거절한다(옛 cp 처럼) — 이름 바꾸기는 링크를 일반 파일로 바꿔 /data 브리지를 조용히 지웠다.
+#   · 디렉터리에 쓸 수 없으면(파일은 쓸 수 있어도) 실패다 — 제자리에 덮어쓰지 않는다(그것이 도는 프로세스를 죽였다). 디렉터리를 쓸 수 있게 한다.
 hwax_install_if_changed() {  # $1=src $2=dst
-  local real tmp=""
+  local real dir base ext rc=0
   if [ -f "$2" ] && cmp -s "$1" "$2"; then return 1; fi
+  if [ -L "$2" ] && [ ! -e "$2" ]; then
+    echo "  ✗ $(basename "$2") 설치 실패 — $2 는 끊긴 심링크다(→ $(readlink -- "$2" 2>/dev/null) 가 없다). 링크를 고치거나 지운 뒤 다시 돌린다 — 아무것도 바꾸지 않았다" >&2
+    return 2
+  fi
   real="$(readlink -f -- "$2" 2>/dev/null)" || real=""
   [ -n "$real" ] || real="$2"
-  if { [ ! -e "$real" ] || [ -w "$real" ]; } \
-     && tmp="$(mktemp "$(dirname -- "$real")/.$(basename -- "$real").XXXXXX" 2>/dev/null)" \
-     && cp -p "$1" "$tmp" && mv -fT "$tmp" "$real"; then
-    return 0
+  dir="$(dirname -- "$real")"; base="$(basename -- "$real")"
+  if [ -e "$real" ] && [ ! -w "$real" ]; then
+    echo "  ✗ $base 설치 실패 — $2 에 쓸 수 없다(권한·소유자). 옛 파일이 그대로다" >&2
+    return 2
   fi
-  [ -n "$tmp" ] && rm -f "$tmp"
-  echo "  ✗ $(basename "$2") 설치 실패 — $2 에 쓸 수 없다(권한·소유자·디스크). 옛 파일이 그대로다" >&2
+  if [ ! -d "$dir" ] || [ ! -w "$dir" ] || [ ! -x "$dir" ]; then
+    echo "  ✗ $base 설치 실패 — 디렉터리 $dir 에 쓸 수 있어야 한다(임시 파일 + 이름 바꾸기로 설치한다 — 파일만 쓸 수 있어도 제자리에 덮어쓰지 않는다: 그 이미지로 도는 프로세스가 죽는다). 옛 파일이 그대로다" >&2
+    return 2
+  fi
+  case "$base" in *.*) ext=".${base##*.}" ;; *) ext="" ;; esac
+  ( tmp=""
+    trap 'if [ -n "$tmp" ]; then rm -f -- "$tmp"; fi' EXIT
+    tmp="$(mktemp "$dir/.$base.XXXXXX$ext" 2>/dev/null)" || exit 1
+    cp -p -- "$1" "$tmp" || exit 1
+    mv -fT -- "$tmp" "$real" || exit 1
+    tmp=""
+  ) || rc=$?
+  [ "$rc" = 0 ] && return 0
+  echo "  ✗ $base 설치 실패 — $2 에 쓰지 못했다(rc $rc — 권한·소유자·디스크·끊김). 옛 파일이 그대로다(임시 파일은 지웠다)" >&2
   return 2
 }
 

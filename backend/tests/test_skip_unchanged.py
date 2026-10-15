@@ -156,14 +156,94 @@ def test_install_if_changed_keeps_a_symlinked_destination(tmp_path):
 
 @NOT_ROOT
 def test_install_if_changed_fails_without_touching_the_old_file_when_the_directory_is_not_writable(tmp_path):
+    """파일은 쓸 수 있어도 디렉터리를 못 쓰면 실패다 — 옛 cp -p 처럼 제자리에 덮어쓰지 않는다(그것이 도는 라우터를 죽였다, 1라운드 M2).
+    사유는 '디렉터리를 쓸 수 있어야 한다' 로 분명히 말한다(2라운드 LOW 3 — 종전 사유는 '쓸 수 없다' 뿐이라 파일 권한을 보게 했다)."""
     src = tmp_path / "new.sif"; src.write_bytes(b"new")
-    dst = tmp_path / "live/x.sif"; dst.parent.mkdir(); dst.write_bytes(b"old"); dst.parent.chmod(0o555)
+    dst = tmp_path / "live/x.sif"; dst.parent.mkdir(); dst.write_bytes(b"old"); dst.chmod(0o644); dst.parent.chmod(0o555)
     try:
         r = _sh(f'hwax_install_if_changed "{src}" "{dst}"; echo rc=$?')
     finally:
         dst.parent.chmod(0o755)
     assert "rc=2" in r.stdout and "설치 실패" in r.stderr and dst.read_bytes() == b"old", r.stdout + r.stderr
+    assert f"디렉터리 {dst.parent} 에 쓸 수 있어야 한다" in r.stderr and "제자리에 덮어쓰지 않는다" in r.stderr, r.stderr
     assert sorted(p.name for p in dst.parent.iterdir()) == ["x.sif"]
+
+
+@pytest.mark.parametrize("target_dir_exists", [False, True])
+def test_install_if_changed_refuses_a_dangling_symlink_destination(tmp_path, target_dir_exists):
+    """**2라운드 LOW 3 회귀** — 옛 cp 는 끊긴 심링크를 거절했는데 이름 바꾸기는 링크를 일반 파일로 바꾸고 rc 0 이었다(/data 브리지가 조용히
+    사라진다). 링크도, 링크가 가리킬 자리도 그대로 두고 2 다."""
+    src = tmp_path / "new.sif"; src.write_bytes(b"new")
+    target = tmp_path / "data/portal.sif"
+    if target_dir_exists:
+        target.parent.mkdir()
+    d = tmp_path / "apptainer"; d.mkdir(); link = d / "portal.sif"; link.symlink_to(target)
+    r = _sh(f'hwax_install_if_changed "{src}" "{link}"; echo rc=$?')
+    assert "rc=2" in r.stdout and "끊긴 심링크" in r.stderr, r.stdout + r.stderr
+    assert link.is_symlink() and os.readlink(link) == str(target) and not target.exists()
+    assert sorted(p.name for p in d.iterdir()) == ["portal.sif"]
+
+
+def _cp_stub(tmp_path: Path, *, slow: bool) -> tuple[Path, Path]:
+    """cp 대역 — 받은 대상(임시 파일) 이름을 적는다. slow 면 앞 1MB 를 쓰고 5초 잔 뒤 진짜 cp(큰 SIF 를 받는 도중 — 검토 하네스 h_sif_int)."""
+    b = tmp_path / "bin"; b.mkdir(exist_ok=True); log = tmp_path / "cp.log"
+    body = 'dst="${@: -1}"; echo "$dst" >> "' + str(log) + '"\n'
+    if slow:
+        body += 'head -c 1000000 "${@: -2:1}" > "$dst"; sleep 5\n'
+    (b / "cp").write_text("#!/usr/bin/env bash\n" + body + 'exec /bin/cp "$@"\n'); (b / "cp").chmod(0o755)
+    return b / "cp", log
+
+
+@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGHUP, signal.SIGTERM])
+def test_install_if_changed_removes_its_temp_file_when_interrupted(tmp_path, sig):
+    """**2라운드 LOW 3 회귀** — 큰 SIF 를 받는 도중 Ctrl-C(INT)·끊긴 터미널(HUP)·TERM 이 오면 반쯤 받은 임시 파일(600)이 대상 옆에 남았다. 이제
+    지우고 같은 신호로 죽는다 — 부른 bash 도 그 신호로 끝난다(exit 로 끝내면 Ctrl-C 를 '처리했다' 로 읽고 다음 줄로 간다). 옛 파일은 그대로다.
+    터미널처럼 프로세스 묶음 전체에 신호를 보낸다(기본 신호 처리로 띄운다)."""
+    stub, log = _cp_stub(tmp_path, slow=True)
+    src = tmp_path / "stage/portal.sif"; src.parent.mkdir(); src.write_bytes(os.urandom(3_000_000))
+    dst = tmp_path / "appt/portal.sif"; dst.parent.mkdir(); dst.write_bytes(os.urandom(3_000_000)); old = dst.read_bytes()
+    script = (f'[ "$(command -v cp)" = "{stub}" ] || exit 97; set -euo pipefail; . "{LIB}"; '
+              f'_rc=0; hwax_install_if_changed "{src}" "{dst}" || _rc=$?; echo "rc=$_rc"')
+
+    def pre():
+        os.setsid()
+        for s in (signal.SIGINT, signal.SIGHUP, signal.SIGTERM):
+            signal.signal(s, signal.SIG_DFL)
+
+    p = subprocess.Popen(["bash", "-c", script], env={"PATH": f"{stub.parent}:/usr/bin:/bin", "HOME": str(tmp_path)},
+                         preexec_fn=pre, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    t0 = time.time()
+    while not (log.exists() and log.read_text().strip()) and time.time() - t0 < 10:
+        time.sleep(0.05)
+    temp = Path(log.read_text().strip())
+    t0 = time.time()
+    while not (temp.exists() and temp.stat().st_size > 0) and time.time() - t0 < 10:
+        time.sleep(0.05)
+    assert temp.exists() and temp.parent == dst.parent, "임시 파일을 쓰는 도중이 아니다 — 시험이 헛돈다"
+    os.killpg(p.pid, sig)
+    out, _ = p.communicate(timeout=30)
+    assert p.returncode != 97, out
+    assert sorted(x.name for x in dst.parent.iterdir()) == ["portal.sif"], f"반쯤 받은 임시 파일이 남았다 — {out!r}"
+    assert dst.read_bytes() == old, "끊긴 설치가 옛 파일을 건드렸다"
+    assert p.returncode == -sig and b"rc=" not in out, (p.returncode, out)
+
+
+@pytest.mark.parametrize("name", ["portal.sif", "nginx.sif", "searxng-fixed.sif"])
+def test_install_if_changed_temp_name_is_ignored_by_git_where_images_land(tmp_path, name):
+    """**2라운드 LOW 3 회귀** — 임시 이름 `.portal.sif.XXXXXX` 는 `*.sif` 에 안 걸려, SIGKILL 로 남은 반쪽 이미지를 deploy-all 의
+    `git stash push -u` 가 리포(.git) 로 쓸어 갔다. 이름이 대상의 확장자로 끝나야 대상을 무시하는 규칙이 임시 파일도 무시한다 —
+    images-from-drive 가 놓는 자리(infra/apptainer)의 실제 무시 규칙으로 본다. 점으로 시작해 `*.sif` 글롭 지문에도 안 든다."""
+    stub, log = _cp_stub(tmp_path, slow=False)
+    src = tmp_path / "stage" / name; src.parent.mkdir(); src.write_bytes(b"new")
+    dst = tmp_path / "apptainer" / name; dst.parent.mkdir(); dst.write_bytes(b"old")
+    r = subprocess.run(["bash", "-c", f'[ "$(command -v cp)" = "{stub}" ] || exit 97; . "{LIB}"; hwax_install_if_changed "{src}" "{dst}"; echo rc=$?'],
+                       capture_output=True, text=True, timeout=60, env={"PATH": f"{stub.parent}:/usr/bin:/bin", "HOME": str(tmp_path)})
+    assert "rc=0" in r.stdout and dst.read_bytes() == b"new", r.stdout + r.stderr
+    temp = Path(log.read_text().strip()).name
+    assert temp.startswith(f".{name}.") and temp.endswith(Path(name).suffix), temp
+    rel = f"infra/apptainer/{temp}"
+    ignored = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "-q", "--no-index", rel], capture_output=True, text=True)
+    assert ignored.returncode == 0, f"{rel} 가 git 에 무시되지 않는다 — git stash push -u 가 쓸어 간다({ignored.stderr})"
 
 
 @NOT_ROOT
