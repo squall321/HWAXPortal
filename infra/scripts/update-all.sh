@@ -8,6 +8,8 @@
 #       기본은 그 반대다 — 심의가 있으면 포털·nginx·허브 재기동(§2), 에이전트 서버 재기동(§4), 게이트웨이 재프로비저닝(§5)을
 #       건너뛰고 ○ 로 남긴다. 포털과 허브는 그 동안 새 이미지·frontend/dist·앱 SIF 도 받지 않는다(옛 프로세스가 그대로 돈다).
 #       강행하면 1h 의 비우기 깃발은 세우되 도는 카드 대조를 기다리지 않는다.
+#   LLM_ROUTER_RESTART_FORCE=1 ./infra/scripts/update-all.sh   # LLM 라우터를 지나는 요청이 있어도 라우터를 재기동한다(풀을 껐으면 내린다) —
+#       그 스트림이 끊긴다. 기본은 미루고 ○ 로 남긴다(1i · §4 뒤). 라우터는 infra/.env 의 LLM_UPSTREAMS 한 줄로 켠다(docs/llm-pool).
 #   1h) 리스크 검토 비우기의 손잡이(전부 선택 — 안 적으면 기본값). 깃발은 에이전트 서버 /drain 이고 사람이 보고·세우는 것은
 #   ./infra/scripts/review-drain.sh 다.
 #     HWAX_DRAIN_TTL_S=1800     깃발 수명(초). § 머리마다 다시 늘린다 — update-all 이 죽으면 마지막으로 늘린 때부터 이만큼 뒤에 풀린다.
@@ -104,6 +106,8 @@ HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER
 . "$SELF_REPO/infra/scripts/lib/delib-busy.sh"
 # 리스크 검토 비우기(1h) — 에이전트 서버 /drain 깃발을 세우고, § 머리마다 늘리고, 끝에서 내리거나 새 패널만 멈춘 채로 둔다.
 . "$SELF_REPO/infra/scripts/lib/review-drain.sh"
+# LLM 서버 풀(1i · §4 뒤 라우터 내리기 · §6) — LLM_UPSTREAMS 한 줄의 규칙(목록 검사·라우터 주소·사본 바꾸기)은 이 lib 한 곳에 있다.
+. "$SELF_REPO/infra/scripts/lib/llm-pool.sh"
 # 비우기 끝맺음 — 1h 가 세운 깃발을 장부에 따라 정리한다. 완주 끝(요약 직전)과 hr() 정지 경로에서 부른다(장부를 지우기 전이어야 한다).
 #   미룬 사실은 종료코드가 아니라 **장부**에서 읽는다 — 이름이 '재기동 건너뜀'·'재프로비저닝 건너뜀' 으로 끝나는 줄(deploy-all·update-sites 는
 #   같은 HWAX_SKIP_LEDGER 파일에 적는다). _DA_RC=3 은 git 실패지 미룸이 아니다.
@@ -673,6 +677,147 @@ case "$_dr_rc" in
   *) bad "리스크 검토 비우기 실패 — 에이전트 서버가 요청을 거절했다($_dr). 깃발 없이 간다 — 옛 판이 아니다, 엔진 로그의 [drain] 줄을 본다(비치명)" ;;
 esac
 
+# ── 1i) LLM 라우터 — infra/.env 의 LLM_UPSTREAMS 한 줄 → 라우터 기동 · LLM 주소 사본(docs/llm-pool PLAN §4) ─────────────────────────
+# 사람이 적는 것은 `LLM_UPSTREAMS=<서버1 /v1 주소>,<서버2 /v1 주소>` 한 줄이다(RA_HOST·ARP_HOST 와 같은 '한 줄 → 유도' 모양). 규칙은 lib/llm-pool.sh.
+#   있으면 ① 모양을 본다(하나라도 틀리면 아무것도 바꾸지 않는다) ② update-sites 로 라우터를 띄운다(지문이 같고 살아 있으면 생략 · 라우터를
+#   지나는 요청이 있으면 재기동을 미루고 ○ — update-sites 가 정한다) ③ 라우터 /health 가 서버 하나 이상 올라왔다고 답할 때만 ④ 사본을
+#   라우터 주소로 바꾼다 — 지금 값이 '관리하는 값'(직접 주소 LLM_BASE_URL · 목록의 서버 · 라우터)인 사본만, 바꾸기 전에 그 파일을 백업하고.
+#   사람이 일부러 적은 다른 주소는 그대로 두고 ⚠. 키가 없는 사본은 3.5 의 apply-envs 몫이다(같은 lib 로 같은 조건의 주소를 적는다).
+#   없으면 라우터를 가리키는 사본만 직접 주소로 되돌리고, 라우터는 §4 **뒤에** 내린다 — 사본을 쓰는 서비스가 §2·§4 에서 직접 주소로 다시
+#   뜬 뒤여야 한다(먼저 내리면 아직 옛 주소를 쥔 서비스와, 심의 때문에 재기동을 미룬 서비스가 그 사이 LLM 을 잃는다).
+#   줄도 없고 라우터를 가리키는 사본도 떠 있는 라우터도 없으면 ○ 만 남긴다.
+# 왜 1h 뒤인가 — 라우터 재기동도 비우기 창 안에서 한다(카드 대조가 빠진 뒤라 미룰 일이 적다). 왜 §2 앞인가 — §2(deploy-all)·§4(update-sites)
+#   는 서비스의 .env 를 재기동 지문에 넣는다. 여기서 바꾼 사본은 그 자리에서 재기동으로 이어진다 — 이어지지 않는 사본은 따로 말한다.
+LLM_ENV="$SELF_REPO/infra/.env"
+_LLM_RETIRE=0                                    # 풀을 껐는데 라우터가 떠 있다 — §4 뒤에 내린다
+_llm_router_rc=0; _llm_router="$(hwax_llm_router_url "$LLM_ENV")" || _llm_router_rc=$?
+_llm_direct="$(hwax_llm_envv "$LLM_ENV" LLM_BASE_URL)"
+_llm_svcs=""
+# 바뀐 사본의 서비스가 이번 실행에서 그 .env 를 다시 읽는 자리 — 재기동 지문에 .env 가 든 자리다(deploy-all 의 hwax_fp · services.py fp).
+# 이번 실행이 띄우지 않으면 1 과 손으로 반영하는 법을 낸다.
+_llm_restart_by() {  # $1=서비스(apply-envs 의 이름)
+  case "$1" in
+    agent-server)   echo "§4 update-sites 가 에이전트 서버를 다시 띄우며 읽는다(도는·줄 선 심의가 있으면 미루고 ○ 로 말한다)" ;;
+    ai-data-hub)    echo "§2 deploy-all 이 aidh 를 다시 띄우며 읽는다" ;;
+    heax-hub)       echo "§2 deploy-all 이 허브를 다시 띄우며 읽고 앱도 새로 뜬다(도는 심의가 있으면 미루고 ○ 로 말한다)" ;;
+    signalforge)    echo "§2 deploy-all(signalforge) · §4 update-sites(signalforge-mcp) 가 다시 띄우며 읽는다" ;;
+    mx-white-paper) echo "§2 deploy-all 이 mxwp 를 다시 띄우며 읽는다" ;;
+    paper-ingest)   echo "허브 앱 paper_ingest 는 이 파일을 읽지 않는다(앱은 HEAXHub/.env 의 HEAX_APP_LLM_BASE_URL 을 받는다 — §2 허브 재기동). 이 파일로 PaperIngest 를 손으로 띄운 것이 있으면 그 프로세스를 다시 띄운다"; return 1 ;;
+    *)              echo "그 서비스를 다시 띄운다: ./infra/scripts/services.sh down $1 && ./infra/scripts/services.sh up $1"; return 1 ;;
+  esac
+}
+# 사본을 바꾸고 줄마다 말한다 — $1=관리 밖 사본에 ⚠ 를 낼까(1 = 풀을 켤 때 — 라우터로 안 가는 사본은 알린다) $2=새 값 $3…=관리하는 값.
+# 바꾼 서비스는 _llm_svcs 에 모은다. 출력은 탭으로 갈린 줄이다(lib 머리 주석) — 빈 칸은 뒤쪽에만 오므로 탭 IFS 가 칸을 당기지 않는다.
+_llm_apply() {
+  local warn="$1" new="$2" out st svc rp rel key cur bak n_ch=0 n_same=0 n_for=0 n_abs=0
+  shift 2
+  _llm_svcs=""
+  out="$(hwax_llm_pool_rewrite "$SELF_REPO" write "$new" "$@")"
+  while IFS=$'\t' read -r st svc rp rel key cur bak; do
+    case "$st" in
+      changed) n_ch=$((n_ch + 1))
+               ok "${rp##*/}/$rel  $key: $cur → $new  (백업 ${bak##*/})"
+               case " $_llm_svcs " in *" $svc "*) ;; *) _llm_svcs="${_llm_svcs:+$_llm_svcs }$svc" ;; esac ;;
+      same)    n_same=$((n_same + 1)) ;;
+      foreign) n_for=$((n_for + 1))
+               if [ "$warn" = 1 ]; then
+                 bad "${rp##*/}/$rel  $key 는 관리하는 주소가 아니다(${cur:-빈 값}) — 그대로 둔다. 라우터로 보내려면 그 값을 직접 주소(infra/.env 의 LLM_BASE_URL)와 같게 두고 재실행하거나 손으로 $new 로 바꾼다"
+               fi ;;
+      absent)  n_abs=$((n_abs + 1)) ;;
+      error)   fail "${rp##*/}/$rel  $key 를 바꾸지 못했다 — $cur" ;;
+    esac
+  done <<<"$out"
+  echo "  · 사본 — 바꿈 $n_ch · 이미 그 주소 $n_same · 관리 밖 $n_for · 키 없음 $n_abs(3.5 apply-envs 몫)"
+}
+_llm_say_restarts() {  # $1=옛 주소의 이름 — _llm_svcs 마다 이번 실행에서 새 주소를 읽는 자리, 없으면 그 사실과 손으로 반영하는 법
+  local svc by
+  for svc in $_llm_svcs; do
+    if by="$(_llm_restart_by "$svc")"; then
+      echo "  · $svc — $by"
+    else
+      bad "$svc — 이번 update-all 은 이 .env 를 읽는 프로세스를 다시 띄우지 않는다. 다음 재기동까지 ${1}를 쓴다 — $by"
+    fi
+  done
+}
+_llm_ups_rc=0; _llm_ups="$(hwax_llm_pool_upstreams "$LLM_ENV")" || _llm_ups_rc=$?
+case "$_llm_ups_rc" in
+  0)
+    hr "1i) LLM 라우터 (LLM_UPSTREAMS → 라우터 · 사본을 라우터 주소로)"
+    mapfile -t _llm_ups_a <<<"$_llm_ups"
+    if [ "$_llm_router_rc" != 0 ]; then
+      fail "$_llm_router — 라우터 주소를 정하지 못해 아무것도 바꾸지 않았다(라우터·사본 그대로)"
+    else
+      echo "  · 서버 ${#_llm_ups_a[@]}곳 · 라우터 $_llm_router"
+      "$SELF_REPO/infra/scripts/update-sites.sh" llm-router; _llm_us_rc=$?
+      case "$_llm_us_rc" in
+        0|3) ;;    # 3 = 라우터를 지나는 요청이 있어 재기동을 미뤘다(update-sites 가 ○ 로 적었다) — 옛 라우터가 그대로 돌고 아래에서 판정한다
+        *) fail "LLM 라우터를 띄우지(새 코드로 갈아 끼우지) 못했다 — update-sites llm-router rc $_llm_us_rc(위 ✗ 줄)" ;;
+      esac
+      # ③ 막 뜬 라우터는 첫 지표를 읽기 전 잠깐 down(503)이다 — 서버 하나 이상이 올라올 때까지 HWAX_LLM_ROUTER_WAIT_S(기본 20초) 기다린다.
+      _llm_wait="${HWAX_LLM_ROUTER_WAIT_S:-20}"; case "$_llm_wait" in ''|*[!0-9]*) _llm_wait=20 ;; esac
+      _llm_hurl="$(hwax_llm_router_health_url "$LLM_ENV")"; _llm_t0=$SECONDS
+      _llm_st=""; _llm_up=""; _llm_tot=""; _llm_inf=""; _llm_m=""
+      while :; do
+        _llm_h_rc=0; _llm_h="$(hwax_llm_router_health "$_llm_hurl")" || _llm_h_rc=$?
+        read -r _llm_st _llm_up _llm_tot _llm_inf _llm_m <<<"$_llm_h"
+        if [ "$_llm_h_rc" = 0 ] && [[ "${_llm_up:-}" =~ ^[0-9]+$ ]] && [ "$_llm_up" -ge 1 ]; then break; fi
+        [ $((SECONDS - _llm_t0)) -lt "$_llm_wait" ] || break
+        sleep 1
+      done
+      if [ "$_llm_h_rc" = 0 ] && [[ "${_llm_up:-}" =~ ^[0-9]+$ ]] && [ "$_llm_up" -ge 1 ]; then
+        case "$_llm_m" in true) _llm_mt="모델 같음" ;; false) _llm_mt="모델 다름(§6 이 다시 말한다)" ;; *) _llm_mt="모델 대조 전" ;; esac
+        ok "라우터가 답한다 — 서버 $_llm_up/$_llm_tot 올라옴 · $_llm_mt · 도는 요청 $_llm_inf"
+        _llm_apply 1 "$_llm_router" "$_llm_direct" "${_llm_ups_a[@]}" "$_llm_router"
+        if [ -n "$_llm_svcs" ]; then
+          echo "  · 되돌리기 — infra/.env 의 LLM_UPSTREAMS 줄을 지우고 update-all 을 다시 돌린다(라우터를 가리키는 사본만 직접 주소로 돌아간다). 파일째 되돌리려면 위 백업을 cp -p 로 덮는다"
+          _llm_say_restarts "직접 주소"
+        fi
+      else
+        if [ "$_llm_h_rc" = 0 ]; then _llm_why="올라온 서버 ${_llm_up:-?}/${_llm_tot:-?}(status ${_llm_st:-?})"; else _llm_why="/health 가 답하지 않는다"; fi
+        _llm_at="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_router")"; _llm_left=""
+        [ "${_llm_at:-0}" != 0 ] && _llm_left=" 이미 라우터를 가리키는 사본 ${_llm_at}곳은 그대로다 — 그 서비스들의 LLM 호출이 지금 실패한다(직접 주소로 돌리려면 LLM_UPSTREAMS 줄을 지우고 update-all)."
+        case "$_llm_us_rc" in
+          0|3) fail "LLM 라우터가 쓸 수 있는 서버를 답하지 않는다($_llm_why · ${_llm_wait}초 기다렸다) — 사본을 라우터로 바꾸지 않았다.$_llm_left 라우터 로그와 LLM_UPSTREAMS 의 서버를 본다" ;;
+          *)   echo "  · 사본은 라우터로 바꾸지 않았다(라우터가 뜨지 않았다 — 위 ✗).$_llm_left" ;;
+        esac
+      fi
+    fi ;;
+  1)
+    _llm_at=0; _llm_running=0
+    if [ "$_llm_router_rc" = 0 ]; then
+      _llm_at="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_router")"
+      hwax_llm_router_health "$(hwax_llm_router_health_url "$LLM_ENV")" >/dev/null && _llm_running=1
+    fi
+    if [ "$_llm_router_rc" != 0 ]; then
+      bad "LLM 서버 풀은 꺼져 있다(LLM_UPSTREAMS 없음) — $_llm_router. 라우터를 가리키는 사본을 찾지 못해 아무것도 바꾸지 않았다"
+    elif [ "${_llm_at:-0}" = 0 ] && [ "$_llm_running" = 0 ]; then
+      hwax_skip "LLM 서버 풀(라우터)" "infra/.env 에 LLM_UPSTREAMS 가 없다 — LLM 주소 사본들이 LLM_BASE_URL(서버 하나)을 직접 본다" \
+        "같은 모델을 올린 vLLM 서버 둘 이상을 자원 보고 나눠 쓰려면 infra/.env 에 LLM_UPSTREAMS=<서버1 /v1 주소>,<서버2 /v1 주소> 를 적고 재실행(1i 가 라우터를 띄우고 사본을 바꾼다 — docs/llm-pool)"
+    else
+      hr "1i) LLM 라우터 — 풀 꺼짐(LLM_UPSTREAMS 없음 → 사본을 직접 주소로)"
+      if [ "$_llm_at" != 0 ] && [ -z "$_llm_direct" ]; then
+        fail "라우터를 가리키는 사본이 ${_llm_at}곳인데 되돌릴 직접 주소(infra/.env 의 LLM_BASE_URL)가 없다 — 사본도 라우터도 그대로 둔다. LLM_BASE_URL 을 적고 재실행"
+      elif [ "$_llm_at" != 0 ] && [ "${_llm_direct%/}" = "${_llm_router%/}" ]; then
+        fail "infra/.env 의 LLM_BASE_URL 이 라우터 주소다 — 서버(vLLM)의 /v1 주소를 적고 재실행. 사본도 라우터도 그대로 둔다"
+      else
+        if [ "$_llm_at" != 0 ]; then
+          _llm_apply 0 "$_llm_direct" "$_llm_router"
+          echo "  · 되돌리기(다시 켜기) — infra/.env 에 LLM_UPSTREAMS 를 다시 적고 update-all. 파일째 되돌리려면 위 백업을 cp -p 로 덮는다"
+          _llm_say_restarts "라우터 주소"
+        fi
+        if [ "$_llm_running" = 1 ]; then
+          _LLM_RETIRE=1
+          echo "  · 라우터가 아직 떠 있다 — §4 뒤에 내린다(사본을 쓰는 서비스가 직접 주소로 다시 뜬 뒤 · 라우터를 지나는 요청이 없을 때)"
+        fi
+      fi
+    fi ;;
+  2)
+    hr "1i) LLM 라우터 (LLM_UPSTREAMS 확인)"
+    fail "$_llm_ups — 아무것도 바꾸지 않았다(라우터·사본 그대로)" ;;
+  *)
+    bad "LLM 서버 풀 설정을 판정하지 못했다(rc $_llm_ups_rc) — 1i 를 건너뛴다(라우터·사본 그대로)" ;;
+esac
+
 # ── 2) 전 서비스 배포(코드+Drive 아티팩트+기동+nginx). SF DB는 기본 보존, SF_RESTORE_DB=1이면 복원 ──
 hr "2) deploy-all-from-drive (portal·mxwp·heax·signalforge·aidh·kooremapper)"
 # 종료코드 3 = 소스 갱신 실패(git fetch/reset). 서비스는 떠 있어도 옛 코드라 가장 위험한
@@ -890,6 +1035,39 @@ case "$_us_rc" in
   0|3) ;;
   *) fail "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다" ;;
 esac
+
+# 1i 의 뒤처리 — 풀을 껐는데(LLM_UPSTREAMS 없음) 라우터가 떠 있으면 여기서 내린다. 사본을 쓰는 서비스는 §2·§4 에서 직접 주소로 다시
+# 떴다. 그래도 아직 라우터 주소를 쥔 프로세스가 있을 수 있으면 미루고 ○ — 재기동을 미룬 서비스(장부의 '재기동 건너뜀')·§2·§4 가 깨끗이
+# 끝나지 않았다·라우터를 지나는 요청이 **확실히** 있다(모르면 내린다 — update-sites 의 재기동 미룸과 같은 규율). 강행은
+# LLM_ROUTER_RESTART_FORCE=1. 라우터를 가리키는 사본이 남았으면(1i 가 못 되돌렸다) 강행해도 내리지 않는다.
+# 장부 이름은 '재기동 건너뜀' 으로 끝나지 않는다 — 1h 끝맺음이 그 이름을 '미룬 재기동' 으로 읽어 새 패널을 멈춘 채 둔다(이 미룸과 무관하다).
+if [ "$_LLM_RETIRE" = 1 ]; then
+  _lr_why=""; _lr_rc=0
+  _lr_left="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_router")"
+  _lr_def="$(awk -F'\t' '$1 ~ /재기동 건너뜀$/ && !s[$1]++ { printf "%s%s", (n++ ? " · " : ""), $1 }' "${HWAX_SKIP_LEDGER:-/dev/null}" 2>/dev/null)"
+  if [ "${_lr_left:-0}" != 0 ]; then
+    _lr_why="사본 ${_lr_left}곳이 아직 라우터를 가리킨다(위 1i 의 ✗)"
+  elif [ "${LLM_ROUTER_RESTART_FORCE:-0}" != 1 ]; then
+    if [ -n "$_lr_def" ]; then
+      _lr_why="재기동을 미룬 서비스가 있다($_lr_def) — 그 옛 프로세스가 아직 라우터 주소를 쥐고 있다"
+    elif [ "${_DA_RC:-1}" != 0 ] || [ "$_us_rc" != 0 ]; then
+      _lr_why="§2·§4 가 깨끗이 끝나지 않았다(deploy-all rc ${_DA_RC:-?} · update-sites rc $_us_rc) — 다시 뜨지 못한 서비스가 아직 라우터 주소를 쓸 수 있다"
+    elif _lr_n="$(hwax_llm_router_busy "$(hwax_llm_router_health_url "$LLM_ENV")")"; then
+      _lr_why="LLM 요청 ${_lr_n}건이 라우터를 지나고 있다 — 내리면 그 스트림이 끊긴다"
+    fi
+  fi
+  if [ -n "$_lr_why" ]; then
+    hwax_skip "LLM 라우터 내리기 미룸" "풀을 껐다(LLM_UPSTREAMS 없음) — $_lr_why. 라우터는 그대로 돈다" \
+      "다음 update-all 이 다시 본다 · 지금 내리려면 ./infra/scripts/llm-router.sh stop(또는 LLM_ROUTER_RESTART_FORCE=1 로 재실행 — 라우터를 가리키는 사본이 없을 때)"
+  else
+    "$SELF_REPO/infra/scripts/llm-router.sh" stop || _lr_rc=$?
+    if [ "$_lr_rc" = 0 ]; then
+      ok "LLM 라우터를 내렸다 — 풀 꺼짐, 사본은 직접 주소다"
+    else
+      bad "LLM 라우터를 내리지 못했다(llm-router.sh stop rc $_lr_rc) — 손으로 ./infra/scripts/llm-router.sh stop"
+    fi
+  fi
+fi
 
 # ste 를 이 박스가 쓰는가 — **`ste=` 라우트가 설정돼 있으면 쓴다**(ARP_BASE 와 같은 신호 방식).
 # 주석(`#ste=`)은 세지 않는다. 아래 기대 백엔드 판정과 프로비저닝 인자 둘 다 이 값을 본다.
@@ -1669,6 +1847,39 @@ probe "nginx          :8088" http://127.0.0.1:8088/health 1 "200"
 probe "agent-server   :9009" http://127.0.0.1:9009/health 1 "200"
 probe "gateway        :9110" http://127.0.0.1:9110/health 1 "200"
 probe "aidh           :8001" http://127.0.0.1:8001/api/system/health 0 "200"
+# LLM 라우터 — 풀이 켜진 박스만(infra/.env 의 LLM_UPSTREAMS, docs/llm-pool). 올라온 서버 · 두 서버의 모델이 같은가 · 라우터를 지나는 요청.
+#   쓸 수 있는 서버가 없는데 사본이 라우터를 가리키면 그 서비스들의 LLM 호출이 지금 실패한다 — ✗(위 프로브는 전부 초록일 수 있다).
+#   사본이 아직 직접 주소면(1i 가 안 바꿨다) LLM 은 돈다 — ⚠.
+if [ -n "$(hwax_llm_envv "$SELF_REPO/infra/.env" LLM_UPSTREAMS)" ]; then
+  _lh_url_rc=0; _lh_url="$(hwax_llm_router_url "$SELF_REPO/infra/.env")" || _lh_url_rc=$?
+  if [ "$_lh_url_rc" != 0 ]; then
+    bad "LLM 라우터      $_lh_url"
+  else
+    _lh_rc=0; _lh="$(hwax_llm_router_health "$(hwax_llm_router_health_url "$SELF_REPO/infra/.env")")" || _lh_rc=$?
+    read -r _lh_st _lh_up _lh_tot _lh_inf _lh_m <<<"$_lh"
+    case "$_lh_m" in true) _lh_mt="모델 같음" ;; false) _lh_mt="모델 다름" ;; *) _lh_mt="모델 대조 전" ;; esac
+    if [ "$_lh_rc" = 0 ] && [[ "${_lh_up:-}" =~ ^[0-9]+$ ]] && [ "$_lh_up" -ge 1 ]; then
+      _lh_line="서버 $_lh_up/$_lh_tot 올라옴 · $_lh_mt · 도는 요청 $_lh_inf"
+      if [ "$_lh_st" = ok ] && [ "$_lh_m" = true ]; then
+        ok "LLM 라우터      $_lh_line"
+      elif [ "$_lh_m" = false ]; then
+        bad "LLM 라우터      $_lh_line — 두 서버의 모델·창이 다르다(같아야 한다 — LP-D6). 한쪽만 다른 인자로 재기동했는지 본다(라우터 /health 의 models)"
+      elif [ "$_lh_st" != ok ]; then
+        bad "LLM 라우터      $_lh_line — 내려간 서버가 있다. 라우터는 남은 서버로만 보낸다 — 그 서버의 vLLM 을 본다(라우터 /stats)"
+      else
+        bad "LLM 라우터      $_lh_line — 라우터가 두 서버의 모델을 아직 대조하지 못했다(막 떴으면 정상 — 60초마다 본다)"
+      fi
+    else
+      _lh_at="$(hwax_llm_pool_at "$SELF_REPO" "$_lh_url")"
+      if [ "$_lh_rc" = 0 ]; then _lh_why="올라온 서버 ${_lh_up:-?}/${_lh_tot:-?}(status ${_lh_st:-?})"; else _lh_why="/health 가 답하지 않는다"; fi
+      if [ "${_lh_at:-0}" != 0 ]; then
+        fail "LLM 라우터      $_lh_why — 사본 ${_lh_at}곳이 라우터를 가리킨다(그 서비스들의 LLM 호출이 실패한다). 라우터 로그와 서버를 보고 ./infra/scripts/update-sites.sh llm-router · 직접 주소로 돌리려면 LLM_UPSTREAMS 줄을 지우고 update-all"
+      else
+        bad "LLM 라우터      $_lh_why — 사본은 직접 주소 그대로라 LLM 은 돈다(풀만 안 쓴다 — 위 1i)"
+      fi
+    fi
+  fi
+fi
 # 리스크 검토 — 비우기 깃발(1h 가 세운 것이면 아직 서 있다 — 끝에서 정리한다)·도는 카드 대조·챗 첫 조각 지연. 챗이 카드 대조 중에 평소의
 # 2배를 넘게 느리면(load.chat.slow) ⚠ 다 — 배포 판정(FAIL)은 건드리지 않는다. 못 읽으면 위 agent-server 줄이 이미 말했다.
 _rb_rc=0; _rb="$(hwax_review_brief)" || _rb_rc=$?
