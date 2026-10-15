@@ -4,7 +4,7 @@
 
 - [x] 사용자 결정 — K6-1 (나) · K6-2 (가)+업로드 막기 · K6-3 strict 기본 켬 · K3-9 (가) · K5-2 스위치 뒤 기본 끔 · K2-6 갱신 때 연장
 - [x] 갈래 A 에이전트서버 — K1 → K3 → K9 → K2-5 → K8 → K7 → K5 독스트링 · 시험 · push · 재기동(dev) — 10-15 `bc6e2ff..3bba0c5` push(전체 2,203 통과 · 변이 73/74, 남은 하나는 동치), dev 재기동(9009 새 pid 확인). 요청서와 다르게 한 것 둘 — 실패 판정에 `_result_ok` 를 더함(실제 게이트웨이 실패 문구가 `_tool_text_ok` 를 빠져나감) · K5 독스트링은 본문 검색이 기본 끔이라 '켜면 본문까지'. 안 한 것 — K3 의 선택(빈 줄에서 자르기) · K9-2(요청서가 '나중에')
-- [ ] 갈래 B 포털 — 프런트 묶음(K1-3·K2·K6-5·K3·K4·K5·K8) · 백엔드(K3 프록시·K2-6) · K8 정본 · 시험·lint · 빌드 · Drive · push
+- [x] 갈래 B 포털 — 프런트 묶음(K1-3·K2·K6-5·K3·K4·K5·K8) · 백엔드(K3 프록시·K2-6) · K8 정본 · 시험·lint · 빌드 · Drive · push — 10-15 `90147ac..639be42` push(백엔드 2,408 통과 · 변이 59/59 + 20/20 · 화면 37/37), Drive 올림. 요청서와 다르게 한 것 — K8-2 에서 `smarttwin_submit`·`smarttwin_scenario_options` 를 클러스터의 optional 로(실제로 smart-twin-cluster 도구 — 요청서대로면 SmartTwinMCP 등록 순간 동기화가 전원 ✗). 더한 것(조정자 결정) — 갱신이 원장을 다시 본다(정지·삭제 계정 401, 다시 켜도 정지 전 토큰은 안 살아남), 'smart-twin-cluster 조회 전용' 거짓 문구 정정
 - [x] 갈래 C AIDataHub(K5·K6-3·K6-4·K3-9 받는 쪽) · KooRemapper(K6-1 나·K6-2 가) · MaterialTwinWeb(K3-9 가) · 시험 · push — 10-15 AIDataHub `b401f88..57397d9` push(585 통과 · 실패 35 는 `b401f88` 에서도 같은 35건 — 시험 환경, 변이 29/29) · KooRemapper `290b740..6d63038` push(560 통과, 변이 6/6) · **MaterialTwinWeb `a3563b6` 은 로컬에만**(다른 세션의 미푸시 60커밋이 아래에 있어 사용자가 '올리지 않고 남김' — 그 세션이 올릴 때 함께, AIDataHub 는 sections 가 없으면 body 로 받는다)
-- [ ] 업데이트 이력(사용자 체감 + 기술)
+- [x] 업데이트 이력(사용자 체감 + 기술) — 10-15 에이전트서버·포털 몫(`639be42` 에 든다). AIDataHub·KooRemapper 몫은 포털 다음 push 때
 - [ ] 운영 몫 안내(사용자) — 동기화 재개(K6-4)·데이터 정리(K6-1·K6-2)·`sim-drop-impact` data_types·K5-2 측정 뒤 켜기·stcx SmartTwinMCP 등록(K8)·sync-he-personas 미리보기·kc_sweep 재점검
