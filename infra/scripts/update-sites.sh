@@ -10,6 +10,7 @@ SVC="$ROOT/infra/scripts/services.sh"
 . "$ROOT/infra/scripts/lib/change-detect.sh"
 . "$ROOT/infra/scripts/lib/skip-ledger.sh"    # ○ 장부 — update-all 이 물려준 HWAX_SKIP_LEDGER 가 있으면 같은 파일에 적는다(단독 실행이면 화면에만)
 . "$ROOT/infra/scripts/lib/delib-busy.sh"     # 도는·줄 선 심의가 있으면 에이전트 서버를 내리지 않는다
+. "$ROOT/infra/scripts/lib/llm-pool.sh"       # LLM 요청이 라우터를 지나고 있으면 llm-router 를 내리지 않는다
 # deploy-all(§2) 과 다른 형식의 지문이라 **하위 디렉터리**를 따로 쓴다 — 같은 파일을 두 형식이 번갈아 덮으면 핑퐁 재기동이 난다(2라운드: 인자 없는 update-sites 는 portal 도 대상)
 HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$ROOT/infra/.state/restart-fp/sites}"; export HWAX_RESTART_STATE_DIR
 SVCPY="$ROOT/infra/scripts/services.py"
@@ -32,6 +33,8 @@ case "${1:-}" in
     echo "              이어서 나머지를 서비스별 순차 재기동(하나 실패해도 계속) → 요약."
     echo "  심의 보호  : agent-server 는 도는·줄 선 심의가 있으면 재기동하지 않고 ○ 로 남긴다(종료코드 3)."
     echo "              그래도 재기동하려면 AGENT_RESTART_FORCE=1 을 준다(심의가 전부 끊긴다)."
+    echo "  라우터 보호: llm-router 는 LLM 요청이 라우터를 지나고 있으면(/health 의 inflight) 재기동하지 않고 ○ 로 남긴다(종료코드 3)."
+    echo "              그래도 재기동하려면 LLM_ROUTER_RESTART_FORCE=1 을 준다(그 스트림이 끊긴다)."
     exit 0 ;;
   # 인식 못 한 플래그를 그대로 두면 `TARGETS="$*"` 에 들어가고, services.py 가 `-` 로 시작하는 인자를 이름 목록에서 걸러
   # **'이름 없음 = 전부'** 로 읽어 14개 서비스를 통째로 update·down·up 한다(제외 약속된 report-archive 포함. 5라운드 실측).
@@ -162,6 +165,7 @@ show_cause() {
 # 기동이 성공한 뒤에만 지문을 적는다. HWAX_RESTART_ALL=1 은 종전 동작. docs/update-all-skip-unchanged D-5·D-8.
 SKIPPED_RESTART=""
 DEFERRED_RESTART=""   # 도는·줄 선 심의 때문에 재기동을 미룬 서비스(지금은 agent-server 뿐) — 옛 프로세스가 그대로 돈다
+DEFERRED_LLM=""       # 라우터를 지나는 LLM 요청 때문에 재기동을 미룬 llm-router — 같은 약속(○ · 지문을 적지 않는다 · 종료코드 3)
 restart_svc() {
   local name="$1" rc tmp tmpu cur last id0 id1 _en _restart_fail=0 _upd_fail=0 _busy _brc; local -a _urls=()
   # 이름이 플래그면 여기서 끊는다 — services.py 는 `-` 로 시작하는 인자를 이름 목록에서 걸러 '이름 없음 = 전부' 로 읽는다(5라운드).
@@ -219,6 +223,20 @@ restart_svc() {
       echo "  · $name: /health 가 연속으로 4초 안에 답하지 않았다(듣고는 있다 — 매달린 것으로 본다). 도는 심의 수를 확인하지 못한 채 재기동한다"
     elif [ "$_brc" = 2 ] && hwax_alive "${_urls[0]}"; then
       echo "  · $name: /health 가 도는 심의 수(delib_active·delib_queued)를 싣지 않는다(옛 판) — 묻지 못하고 재기동한다"
+    fi
+  fi
+  # LLM 라우터도 같은 규율이다(docs/llm-pool PLAN §4) — 라우터를 내리면 그 순간 라우터를 지나던 스트림(챗·심의 좌석·카드 대조)이 전부
+  # 끊기고 라우터는 다시 보내지 않는다(LP-D3). /health 의 inflight 가 **확실한** 양의 정수일 때만 미룬다 — 모르면(내려가 있다·옛 판·
+  # 답이 이상하다) 그대로 재기동한다(죽은·매달린 라우터를 무인 경로가 다시 띄울 수 있어야 한다). 지문은 적지 않는다 — 다음 실행이 다시 본다.
+  # 장부 이름이 '재기동 건너뜀' 으로 끝나지 않는 까닭 — update-all 1h 끝맺음이 그 이름을 심의 때문에 미룬 재기동으로 읽어 새 패널을 멈춘 채
+  # 둔다. 이 미룸은 심의와 무관하다(라우터를 지나는 요청에는 챗·카드 대조도 든다).
+  if [ "$name" = llm-router ] && [ "${#_urls[@]}" -gt 0 ]; then
+    _busy="$(hwax_llm_router_busy "${_urls[0]}")"; _brc=$?
+    if [ "$_brc" = 0 ]; then
+      hwax_skip "llm-router 재기동 미룸" "LLM 요청 ${_busy}건이 라우터를 지나고 있다 — 재기동하면 그 스트림이 끊긴다(라우터는 다시 보내지 않는다). 새 코드는 아직 반영되지 않았다(옛 프로세스가 돈다)" "요청이 빈 뒤 다시 돌린다(./infra/scripts/update-sites.sh llm-router) · 지금 강행하려면 LLM_ROUTER_RESTART_FORCE=1 을 주고 재실행"
+      DEFERRED_LLM="$DEFERRED_LLM $name"; rm -f "$tmp" "$tmpu"
+      if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 종료코드만 올린다" >&2; return 2; fi
+      return 0
     fi
   fi
   echo "  · down (기존 인스턴스 정리) …"
@@ -280,6 +298,7 @@ done
 echo
 [ -n "$SKIPPED_RESTART" ] && echo "▶ 재기동 생략(마지막 기동 뒤 변경 없음·살아 있음):$SKIPPED_RESTART  — 전부 재기동하려면 HWAX_RESTART_ALL=1"
 [ -n "$DEFERRED_RESTART" ] && echo "▶ ○ 재기동 미룸(심의가 돌거나 줄 서 있다):$DEFERRED_RESTART  — 옛 프로세스가 돈다. 심의가 끝난 뒤 다시 돌린다(강행: AGENT_RESTART_FORCE=1)"
+[ -n "$DEFERRED_LLM" ] && echo "▶ ○ 재기동 미룸(LLM 요청이 라우터를 지나고 있다):$DEFERRED_LLM  — 옛 프로세스가 돈다. 요청이 빈 뒤 다시 돌린다(강행: LLM_ROUTER_RESTART_FORCE=1)"
 echo "▶ 최종 상태:"; "$SVC" status $TARGETS || true
 [ -n "$PULL_FAILED" ] && echo "▶ ⚠ 갱신(git pull) 실패:$PULL_FAILED  — 서비스는 정상이다(옛 코드로 돈다). 네트워크·원격을 확인하고 다시 돌려라."
 if [ -n "$FAILED" ]; then
@@ -287,6 +306,6 @@ if [ -n "$FAILED" ]; then
   exit 1
 fi
 [ -n "$PULL_FAILED" ] && exit 1
-# 3 = 실패는 없고 재기동만 미뤘다 — 0 이면 '전부 재기동됐다' 와 구별이 안 된다(deploy-ste 의 게이트와 같은 약속. update-all §4 가 읽는다).
-if [ -n "$DEFERRED_RESTART" ]; then echo "▶ 완료 — 단, 재기동을 미룬 서비스가 있다(위 ○)."; exit 3; fi
+# 3 = 실패는 없고 재기동만 미뤘다 — 0 이면 '전부 재기동됐다' 와 구별이 안 된다(deploy-ste 의 게이트와 같은 약속. update-all §4·1i 가 읽는다).
+if [ -n "$DEFERRED_RESTART$DEFERRED_LLM" ]; then echo "▶ 완료 — 단, 재기동을 미룬 서비스가 있다(위 ○)."; exit 3; fi
 echo "▶ 완료 — report-archive 제외 전부 최신화·재기동."
