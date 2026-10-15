@@ -104,6 +104,9 @@ _NOT_RELAYED = {
     "continue_non_negotiables",   # non_negotiables 의 옛 이름 — 엔진이 둘 다 읽고 포털은 새 이름만 싣는다
     "options",                    # 후보안 목록 — MCP deliberate_start 의 인자다. 웹·러너는 보내지 않는다
     "parse_retries",              # JSON 재시도 횟수 — 운영 손잡이(DELIB_PARSE_RETRIES)다. 요청으로 보내는 곳이 없다
+    "llm",                        # 외부 응답자 선택(llm=external, 기본 꺼짐 — docs/risk-claude-engine X-1). 지금은 웹도 리스크 앱
+                                  # 러너도 보내지 않는다. X-2(앱이 보낸다)·X-3(포털이 llm 과 consent_external 을 StrictBool 로 중계)
+                                  # 에서 중계를 더하고 여기서 뺀다 — 그 전에 포털을 거치면 GLM 으로 돈다(바깥으로 나가지 않는 쪽).
 }
 
 
