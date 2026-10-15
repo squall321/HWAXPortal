@@ -226,6 +226,45 @@ def test_접두_이름은_겹치는_앱이_빠진_게이트웨이에서도_통�
         assert rows[0]["response_config"]["key_tools"] == persona["key_tools"], "올리는 값은 정본 그대로다 — 박스마다 바뀌면 AIDataHub 사본이 출렁인다"
 
 
+# cae00 게이트웨이(10-15 실측) — simflow 가 같은 이름을 내놓아 reportarchive 의 upload_from_url·upload_file 은 접두 이름으로만 나오고,
+# 웹 리서치 브로커는 공급자(WEB_PROVIDER)가 없어 search_web 을 등록하지 않았다(도구 7개).
+_CAE00_SHARED = {"upload_from_url": "simflow", "upload_file": "simflow", "prepare_upload": "ste",
+                 "list_reports": "heax-kooremapper_mcp"}
+
+
+def _cae00_map(persona: dict, extra: set[str], drop: set[str]) -> dict:
+    app = persona["apps"][0]
+    names = ({_native(n, persona["apps"]) for fld in _TOOL_FIELDS for n in persona[fld]} | extra) - drop
+    tmap = {"map": {}, "areas": {}, "area_meta": [], "apps": [{"app": app, "label": app}]}
+    for n in names:
+        if n in _CAE00_SHARED:   # 겹치면 게이트웨이가 양쪽 다 접두 이름으로 낸다
+            tmap["map"][f"{app.replace('-', '')}_{n}"] = app
+            other = _CAE00_SHARED[n]
+            tmap["map"][f"{other.replace('-', '')}_{n}"] = other
+        else:
+            tmap["map"][n] = app
+    return tmap
+
+
+def test_정본은_cae00_게이트웨이에서도_멈추지_않는다():
+    """오류가 하나라도 있으면 동기화는 아무도 안 올린다 — cae00 에서 정본 두 줄 때문에 ODB 허브 운영자를 만들 수 없었다(K8-1)."""
+    sync = _sync()
+    ra = _one("he-doc-reportarchive")
+    _rows, skipped, errors = sync.plan(ra, _cae00_map(ra["personas"][0], {"upload_file"}, set()))
+    assert not errors and not skipped, errors
+    web = _one("he-research-web")
+    _rows, skipped, errors = sync.plan(web, _cae00_map(web["personas"][0], {"list_egress_log"}, {"search_web"}))
+    assert not errors and not skipped, errors
+
+
+def test_본문의_올리기_도구도_부를_수_있는_이름으로_적는다():
+    """맨 이름 upload_from_url·upload_file 은 simflow 가 붙은 박스에서 없는 도구다 — 본문이 그 이름을 대면 모델이 그대로 부른다."""
+    p = _one("he-doc-reportarchive")["personas"][0]
+    text = " ".join([p["mission"], *p["can"], *p["workflow"], *p["concepts"], *p["pitfalls"]])
+    bare = re.findall(r"(?<![a-z_])upload_(?:from_url|file)\b", text)
+    assert not bare, bare
+
+
 # ── 심의 운영자 — 엔진이 바꾼 계약을 안내문이 따라간다 ─────────────────────────────────────────────
 # 이 페르소나의 안내문은 모델이 심의 도구를 모는 법이다. 엔진(HWAXAgentServer)이 대기열을 넣고(상한에 걸리면 거절이 아니라
 # status=queued) 남의 심의를 접지 못하게 한 뒤에도 안내문은 옛 계약을 말했다 — 그대로면 모델이 줄 선 심의를 실패로 읽고 같은

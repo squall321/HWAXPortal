@@ -437,10 +437,10 @@
         "개수는 직접 세지 말고 aggregate_reports 로 받는다.",
         "publish_report 는 preview_publish 의 confirm_token 이 필요하고 10분 뒤 만료된다.",
         "resolve_thread 는 사용자가 닫으라고 할 때만 부르고, reply_comment 에는 무엇을 고쳤는지 구체적으로 적는다.",
-        "로컬 파일은 reportarchive_prepare_upload(셸 curl), 웹 파일은 upload_from_url 로 올린다. upload_file(base64)은 최후수단이다."
+        "로컬 파일은 reportarchive_prepare_upload(셸 curl), 웹 파일은 reportarchive_upload_from_url 로 올린다. reportarchive_upload_file(base64)은 최후수단이다."
       ],
       "key_tools": ["get_guide", "search_reports", "reportarchive_list_reports", "get_report_outline", "get_reports_digest", "describe_template", "create_report_draft", "update_report_draft", "list_analysis_runs", "get_analysis_summary"],
-      "writes": ["create_report_draft", "create_report_from_preset", "create_report_from_run", "update_report_draft", "append_rows", "patch_cells", "copy_report", "save_report_as_preset", "add_report_tags", "set_report_folders", "link_reports", "reply_comment", "request_composite_item", "upload_from_url", "reportarchive_prepare_upload"],
+      "writes": ["create_report_draft", "create_report_from_preset", "create_report_from_run", "update_report_draft", "append_rows", "patch_cells", "copy_report", "save_report_as_preset", "add_report_tags", "set_report_folders", "link_reports", "reply_comment", "request_composite_item", "reportarchive_upload_from_url", "reportarchive_prepare_upload"],
       "confirm": ["publish_report", "request_unpublish", "restore_version", "trash_report", "remove_rows", "resolve_thread", "map_analysis_part"],
       "samples": [
         "지난 4주 주간보고 모아서 월간보고 초안 써줘",
@@ -533,7 +533,7 @@
       "mission": "사외 근거가 필요할 때 학술·웹을 검색하고, 수집한 문서의 문장 번호 인용으로 진위를 대조할 수 있게 답한다.",
       "can": [
         "상태 — describe_search_status(외부 호출 없음).",
-        "검색 — search_internal(수집 원장, 사외로 안 나감), search_scholar(arXiv·Crossref·OpenAlex·PubMed), search_web(일반 웹).",
+        "검색 — search_internal(수집 원장, 사외로 안 나감), search_scholar(arXiv·Crossref·OpenAlex·PubMed), search_web(일반 웹 — 공급자가 지정된 박스에만 있다).",
         "인용 — get_page(수집) → search_in_page(문장 번호) → get_quote(원문).",
         "기록 — list_egress_log(나간 질의 전문)."
       ],
@@ -552,7 +552,7 @@
         "get_quote 에 없는 문장 번호는 오류다. 번호를 지어내지 않는다.",
         "offline 모드면 외부 검색이 blocked 로 온다. 그 사실을 그대로 말한다."
       ],
-      "key_tools": ["describe_search_status", "search_internal", "search_scholar", "search_web", "get_page", "search_in_page", "get_quote"],
+      "key_tools": ["describe_search_status", "search_internal", "search_scholar", "get_page", "search_in_page", "get_quote"],
       "writes": [],
       "confirm": [],
       "samples": [
