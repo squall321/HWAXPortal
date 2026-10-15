@@ -396,6 +396,11 @@ export interface RecordView extends AgentRecordRow {
   sources: { title: string; doi: string; url: string; kind: string; authors: string; year: number | null }[];
   /** 본문·표를 앞쪽만 실었다 — 전부인 척 보이지 않게 화면이 알린다. */
   truncated: boolean;
+  /** 원문 총량(블록을 푼 절 기준) — 에이전트서버가 아직 안 주면 없다. */
+  total_sections?: number;
+  total_chars?: number;
+  /** 다음 부분 위치 — null 이면 절은 끝까지 실었다. char > 0 이면 다음 쪽 첫 절은 이 쪽 마지막 절의 뒷부분이다. */
+  next?: { section: number; char: number } | null;
   error?: string;
 }
 
@@ -422,8 +427,8 @@ export function fetchAgentRecords(
   return postJson('/agent/catalog/agent/records', { key, q, offset, limit }, { total: 0, offset, items: [] });
 }
 
-export function fetchRecord(id: string): Promise<RecordView> {
-  return postJson('/agent/catalog/record', { id }, {
+export function fetchRecord(id: string, at?: { section: number; char: number }): Promise<RecordView> {
+  return postJson('/agent/catalog/record', { id, section_offset: at?.section ?? 0, char_offset: at?.char ?? 0 }, {
     id, title: '', data_type: '', doc_type: '', year: null, tags: [], summary: '', agents: [],
     sections: [], table: null, sources: [], truncated: false,
   });

@@ -36,7 +36,18 @@ function doiHref(doi: string): string {
 }
 
 /** 카드 한 장 — 문서(섹션)·표·그 밖(JSON 원문) 셋을 모두 보인다. 잘렸으면 잘렸다고 말한다. */
-function RecordReader({ rec }: { rec: RecordView }) {
+function RecordReader({ rec, onMore, moreLoading, moreError }: {
+  rec: RecordView; onMore?: () => void; moreLoading?: boolean; moreError?: string | null;
+}) {
+  // 무엇이 잘렸는지 따로 말한다 — 표가 없는 카드에 「표는 앞 0행」을 붙이지 않는다.
+  const shown = rec.sections.reduce((n, s) => n + s.text.length, 0);
+  const cutTable = rec.table && rec.table.total_rows > rec.table.rows.length ? rec.table : null;
+  const note = [
+    rec.next && rec.total_chars
+      ? `본문 ${nf.format(rec.total_sections ?? 0)}절·${nf.format(rec.total_chars)}자 중 앞 ${nf.format(shown)}자(약 ${Math.floor((shown * 100) / rec.total_chars)}%)를 싣습니다.`
+      : cutTable ? '' : '본문이 길어 앞부분만 싣습니다.',
+    cutTable ? `표는 ${nf.format(cutTable.total_rows)}행 중 앞 ${nf.format(cutTable.rows.length)}행입니다.` : '',
+  ].filter(Boolean).join(' ');
   return (
     <div className="dv-rec">
       <h3 className="dv-rec-title">{rec.title || rec.id}</h3>
@@ -48,15 +59,19 @@ function RecordReader({ rec }: { rec: RecordView }) {
       </div>
       {rec.tags.length > 0 && <p className="pv-dim dv-rec-tags">{rec.tags.join(' · ')}</p>}
       {rec.summary && <p className="dv-rec-summary">{rec.summary}</p>}
-      {rec.truncated && (
-        <p className="dv-note">본문이 길어 앞부분만 싣습니다 — 표는 앞 {nf.format(rec.table?.rows.length ?? 0)}행입니다.</p>
-      )}
+      {rec.truncated && <p className="dv-note">{note}</p>}
       {rec.sections.map((s, i) => (
         <section key={s.id || i} className="dv-rec-sec">
           {s.title && <h4 className="dv-rec-h">{s.title}</h4>}
           <TextBlock text={s.text} />
         </section>
       ))}
+      {rec.next && onMore && (
+        <button type="button" className="pv-chip pv-chip-btn" disabled={moreLoading} onClick={onMore}>
+          {moreLoading ? '불러오는 중…' : '다음 부분 보기 ▼'}
+        </button>
+      )}
+      {moreError && <p className="pv-empty">다음 부분을 불러오지 못했습니다({moreError}).</p>}
       {rec.table && (
         <section className="dv-rec-sec">
           <h4 className="dv-rec-h">
@@ -156,18 +171,50 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
   const [selId, setSelId] = useState<string | null>(null);
   const [rec, setRec] = useState<RecordView | null>(null);
   const [recLoading, setRecLoading] = useState(false);
+  const [moreLoading, setMoreLoading] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
   const selRef = useRef<string | null>(null);
   const openRecord = useCallback((id: string) => {
     selRef.current = id;
     setSelId(id);
     setRec(null);
     setRecLoading(true);
+    setMoreLoading(false);
+    setMoreError(null);
     void fetchRecord(id).then((r) => {
       if (selRef.current !== id) return;
       setRec(r);
       setRecLoading(false);
     });
   }, []);
+  // 다음 부분 보기 — 앞 쪽의 next 를 그대로 돌려보내 이어 붙인다. 절 중간에서 이어 받은 첫 조각은 앞 절에 붙인다
+  // (제목이 두 번 나오지 않게). 보낸 위치가 지금의 next 와 같을 때만 붙인다 — 그사이 같은 카드를 다시 열었으면
+  // 새 첫 쪽 뒤에 엉뚱한 쪽이 붙는다.
+  const loadMore = useCallback(() => {
+    if (!rec?.next) return;
+    const id = rec.id;
+    const at = rec.next;
+    setMoreLoading(true);
+    setMoreError(null);
+    void fetchRecord(id, at).then((more) => {
+      if (selRef.current !== id) return;
+      setMoreLoading(false);
+      if (more.error) {
+        setMoreError(more.error);
+        return;
+      }
+      setRec((cur) => {
+        if (!cur || cur.id !== id || cur.next?.section !== at.section || cur.next?.char !== at.char) return cur;
+        const secs = [...cur.sections];
+        const add = [...more.sections];
+        if (at.char > 0 && secs.length && add.length) {
+          const last = secs.pop()!;
+          secs.push({ ...last, text: last.text + add.shift()!.text });
+        }
+        return { ...cur, sections: [...secs, ...add], next: more.next ?? null, truncated: more.truncated };
+      });
+    });
+  }, [rec]);
   // 첫 쪽이 오면 첫 카드를 펼쳐 둔다 — 빈 읽기 칸으로 시작하면 무엇을 보는 화면인지 한 번 더 눌러야 안다.
   useEffect(() => {
     if (selRef.current === null && page && page.items.length > 0) openRecord(page.items[0].id);
@@ -334,7 +381,9 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
                 {!selId && !listLoading && <p className="pv-empty">가운데에서 카드를 고르면 본문이 여기 보입니다.</p>}
                 {recLoading && <p className="pv-empty">카드 불러오는 중…</p>}
                 {rec?.error && <p className="pv-empty">카드를 불러오지 못했습니다({rec.error}).</p>}
-                {rec && !rec.error && <RecordReader rec={rec} />}
+                {rec && !rec.error && (
+                  <RecordReader rec={rec} onMore={loadMore} moreLoading={moreLoading} moreError={moreError} />
+                )}
               </article>
             )}
           </div>
