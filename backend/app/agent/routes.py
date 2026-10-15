@@ -728,6 +728,9 @@ async def catalog_agent_records(
 
 class CatalogRecordRequest(BaseModel):
     id: str = Field(min_length=1, max_length=120)
+    # 다음 부분 보기 — 앞 응답의 next(절 번호 · 그 절 안 글자 위치)를 그대로 돌려받는다(목록의 offset 과 같은 꼴).
+    section_offset: int = Field(default=0, ge=0, le=1_000_000)
+    char_offset: int = Field(default=0, ge=0, le=2_000_000)
 
 
 @router.post("/catalog/record")
@@ -742,7 +745,7 @@ async def catalog_record(
     client = _agent_client(request)
     try:
         r = await client.post(f"{settings.agent_server_url}/catalog/record", timeout=_unary_timeout(settings),
-                              json={"id": body.id, "groups": principal.groups})
+                              json={**body.model_dump(), "groups": principal.groups})
         return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}", "id": body.id}
     except httpx.HTTPError as exc:
         return {"id": body.id, **_unary_fail(exc, settings, "catalog/record")}
