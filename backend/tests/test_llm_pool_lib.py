@@ -103,8 +103,8 @@ def _ups(tmp_path: Path, env_text: str) -> tuple[int, list[str]]:
     (f'LLM_UPSTREAMS="{S1} {S2}"\n', [S1, S2]),                                     # 공백은 따옴표 안에서만
     (f'LLM_UPSTREAMS="{S1}, {S2}"   # 두 서버\n', [S1, S2]),
     (f"export LLM_UPSTREAMS={S1}\n", [S1]),                                          # 하나여도 켜짐이다(라우터만 앞에 선다)
-    ("LLM_UPSTREAMS=https://llm-a.example/openai/v1,http://llm-b.example:8000/v1\n",
-     ["https://llm-a.example/openai/v1", "http://llm-b.example:8000/v1"]),
+    ("LLM_UPSTREAMS=https://llm-a.example/v1,http://llm-b.example:8000/v1\n",
+     ["https://llm-a.example/v1", "http://llm-b.example:8000/v1"]),
     (f"LLM_UPSTREAMS=http://127.0.0.1:8000/v1\nLLM_ROUTER_PORT=9555\n", ["http://127.0.0.1:8000/v1"]),   # 같은 박스의 vLLM 도 서버다
     (f"LLM_UPSTREAMS=x\nLLM_UPSTREAMS={S2}\n", [S2]),                                 # 마지막 줄이 이긴다
 ])
@@ -127,6 +127,7 @@ def test_없거나_빈_값이면_꺼짐이다(tmp_path, text):
     ("LLM_UPSTREAMS=http://[::1]:8000/v1\n", "IPv6"),
     ("LLM_UPSTREAMS=http://u:p@203.0.113.11:10000/v1\n", "계정"),
     ("LLM_UPSTREAMS=http://203.0.113.11:10000/v1?x=1\n", "/v1"),
+    ("LLM_UPSTREAMS=https://llm-a.example/openai/v1\n", "/v1"),  # 경로는 정확히 /v1 — 라우터가 /metrics·/v1/models 를 그 호스트의 뿌리에서 본다
     ("LLM_UPSTREAMS=http://<서버1 주소>:<포트>/v1,http://<서버2 주소>:<포트>/v1\n", "따옴표 밖"),   # .env.example 의 예시를 그대로 풀었다
     ("LLM_UPSTREAMS=http://<서버1>:<포트>/v1\n", "/v1"),
     ("LLM_UPSTREAMS=http://203.0.113.11:70000/v1\n", "1~65535"),
