@@ -37,7 +37,7 @@ for a in "$@"; do
 done
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"     # Z 는 UTC 다 — 종전엔 박스 시각에 Z 를 붙였다
-ADDED=0; NEEDS=0; PAIRS=0
+ADDED=0; NEEDS=0; PAIRS=0; FAILED=""
 BK_ROOT="$ROOT/infra/.state/env-sync-backups"
 
 # 백업 — $1=리포 루트 $2=리포 안 경로(.env · infra/.env …) → 만든 백업 경로를 찍는다. 같은 초에 다시 돌아도 앞 백업을 덮지 않는다(-n).
@@ -95,6 +95,13 @@ needs_human() {
     *CHANGE_ME*|*REPLACE*|*TODO*|*'<'*'>'*|your-*|*example.com*|*xxx*) return 0 ;;
   esac
   return 1
+}
+
+# 이번 리포(rel)의 '사람이 정할 것' 을 ○ 장부에 적는다 — 그 주석 줄이 .env 에 실제로 들어간 뒤에만 부른다(--check 는 보고만).
+_record_needs() {
+  local k
+  for k in "${add_needval[@]}";  do hwax_skip_record "설정값 $k" "값을 정해야 켜진다(비밀·자리표시자·빈 값, $rel)" "$rel/.env 에서 $k 값을 정하고 재실행"; done
+  for k in "${add_optional[@]}"; do hwax_skip_record "선택설정 $k" "예시 주석으로만 들어갔다 — 필요하면 켠다($rel)" "$rel/.env 에서 $k 주석을 풀고 값을 정하고 재실행"; done
 }
 
 for DIR in $(discover); do
@@ -160,10 +167,9 @@ for DIR in $(discover); do
   for kv in "${add_active[@]}";    do echo "    + ${kv%%=*}"; done
   for k in "${add_needval[@]}";  do echo "    ⚠ $k — 값을 정해야 한다"; done
   for k in "${add_optional[@]}"; do echo "    · $k — 선택 설정(예시로만 적혀 있다)"; done
-  for k in "${add_needval[@]}";  do hwax_skip_record "설정값 $k" "값을 정해야 켜진다(비밀·자리표시자·빈 값, $rel)" "$rel/.env 에서 $k 값을 정하고 재실행"; done
-  for k in "${add_optional[@]}"; do hwax_skip_record "선택설정 $k" "예시 주석으로만 들어갔다 — 필요하면 켠다($rel)" "$rel/.env 에서 $k 주석을 풀고 값을 정하고 재실행"; done
-  ADDED=$((ADDED + n_a)); NEEDS=$((NEEDS + n_c))
-  [ "$CHECK" = "1" ] && continue
+  if [ "$CHECK" = "1" ]; then
+    _record_needs; ADDED=$((ADDED + n_a)); NEEDS=$((NEEDS + n_c)); continue
+  fi
 
   # 리포 루트와 리포 안 경로 — discover 는 <리포><""|/infra|/platform> 을 낸다
   case "$DIR" in
@@ -171,20 +177,34 @@ for DIR in $(discover); do
     */platform) R="${DIR%/platform}"; SUB="platform/" ;;
     *)          R="$DIR";             SUB="" ;;
   esac
-  BAK="$(backup_env "$R" "${SUB}.env")" || { echo "  ✗ 백업 실패($BK_ROOT 에 쓸 수 없다) — 건드리지 않는다" >&2; continue; }
-  {
+  # 센다·장부에 적는 것은 백업과 덧붙이기가 **된 뒤에만**(LLM 풀 반대 검토 2라운드 LOW 5 · LP-D14) — 종전엔 세고 나서 백업이 실패해, 하나도
+  # 못 채운 실행이 '✓ env-sync … 자동 추가 N' · 종료코드 0 으로 끝났다(포털 infra/.state 에 쓸 수 없는 박스).
+  BAK="$(backup_env "$R" "${SUB}.env")" || {
+    echo "  ✗ $rel — 백업 실패($BK_ROOT 에 쓸 수 없다 — 포털 infra/.state 의 권한·소유자를 본다). 이 .env 는 건드리지 않았다" >&2
+    FAILED="$FAILED $rel"; continue; }
+  if {
     printf '\n# ── env-sync %s — `.env.example` 에는 있는데 여기 없던 설정 ──\n' "$(date +%F)"
     for kv in "${add_active[@]}"; do printf '%s\n' "$kv"; done
     for kv in "${add_commented[@]}"; do
       printf '# %s   # ⚠ 값을 운영자가 정해야 한다(예시값은 그대로 쓰면 안 된다)\n' "$kv"
     done
-  } >> "$EN"
-  echo "    → 채웠다(백업 $BAK)"
+  } >> "$EN"; then
+    _record_needs; ADDED=$((ADDED + n_a)); NEEDS=$((NEEDS + n_c))
+    echo "    → 채웠다(백업 $BAK)"
+  else
+    echo "  ✗ $rel — .env 에 덧붙이지 못했다(권한·디스크). 반쯤 붙었을 수 있다 — 되돌리려면 cp '$BAK' '$EN'" >&2
+    FAILED="$FAILED $rel"
+  fi
 done
 
-echo "✓ env-sync: 대상 $PAIRS 쌍 · 자동 추가 $ADDED · 사람이 정할 것 $NEEDS"
+if [ -n "$FAILED" ]; then
+  echo "✗ env-sync: 대상 $PAIRS 쌍 · 자동 추가 $ADDED · 사람이 정할 것 $NEEDS · 못 채운 곳:$FAILED(위 ✗ 줄)"
+else
+  echo "✓ env-sync: 대상 $PAIRS 쌍 · 자동 추가 $ADDED · 사람이 정할 것 $NEEDS"
+fi
 if [ "$NEEDS" -gt 0 ]; then
   echo "  ⚠ 위 ⚠ 항목은 **주석으로** 넣었다 — 값을 채우고 해당 서비스를 재기동해야 반영된다." >&2
 fi
+[ -n "$FAILED" ] && exit 2              # 못 채운 리포가 있다 — update-all 1c 가 ✗ 로 센다
 if [ "$CHECK" = "1" ] && [ $((ADDED + NEEDS)) -gt 0 ]; then exit 1; fi
 exit 0

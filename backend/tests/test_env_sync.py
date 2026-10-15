@@ -14,6 +14,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "infra" / "scripts" / "env-sync.sh"
 
@@ -155,16 +157,43 @@ def test_a_sub_directory_env_keeps_its_path_in_the_backup(tmp_path):
 
 
 def test_no_write_without_a_backup(tmp_path):
-    """백업을 못 만들면(포털 상태 디렉터리에 쓸 수 없다) 건드리지 않는다."""
+    """백업을 못 만들면(포털 상태 디렉터리에 쓸 수 없다) 건드리지 않는다 — 그리고 **채웠다고 말하지 않는다**(LLM 풀 반대 검토 2라운드 LOW 5).
+    종전엔 세고 나서 백업이 실패해, 하나도 못 채운 실행이 '✓ env-sync … 자동 추가 1' · 종료코드 0 으로 끝났다 — update-all 1c 가 초록으로
+    지나갔다. 이제 그 리포는 ✗ 이고 끝 줄도 ✗(✓ 아님) · 자동 추가 0 · 종료코드 2 다. 장부에도 '들어갔다' 를 적지 않는다."""
     if os.geteuid() == 0:
         return
-    d = _repo(tmp_path, "NEW=1\n", "OLD=1\n")
+    d = _repo(tmp_path, "NEW=1\nOPT_SECRET=\n", "OLD=1\n")
     state = tmp_path / "HWAXPortal/infra/.state"; state.mkdir(parents=True); state.chmod(0o555)
+    ledger = tmp_path / "ledger"; ledger.write_text("")
     try:
-        r = _run(d)
+        r = _run(d, HWAX_SKIP_LEDGER=str(ledger))
     finally:
         state.chmod(0o755)
     assert (d / ".env").read_text(encoding="utf-8") == "OLD=1\n" and "백업 실패" in r.stderr, r.stdout + r.stderr
+    assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+    last = r.stdout.strip().splitlines()[-1]
+    assert last.startswith("✗ env-sync:") and "자동 추가 0" in last and "사람이 정할 것 0" in last and d.name in last, r.stdout
+    assert "✓ env-sync" not in r.stdout, "못 채운 실행을 ✓ 로 끝냈다"
+    assert ledger.read_text() == "", "들어가지 않은 주석 줄을 장부에 '들어갔다' 로 적었다"
+
+
+@pytest.mark.parametrize("rc,want_fail", [(2, True), (0, False)])
+def test_update_all_counts_a_failed_env_sync(tmp_path, rc, want_fail):
+    """env-sync 의 0 아닌 값을 update-all 1c 가 버리지 않는다 — 종전엔 `|| true` 로 버려 못 채운 실행이 초록으로 지나갔다. 1c 구획을 원문
+    그대로 떼어 임시 포털의 대역 env-sync.sh 로 돌린다(실물 env-sync 는 형제 리포의 .env 를 고친다)."""
+    ua = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
+    i = ua.index('hr "1c) .env 옵션 동기화"')
+    block = ua[i:ua.index("# ── 1d)", i)]
+    portal = tmp_path / "HWAXPortal"; (portal / "infra/scripts").mkdir(parents=True)
+    stub = portal / "infra/scripts/env-sync.sh"
+    stub.write_text(f'#!/usr/bin/env bash\necho "(대역) env-sync"\necho "  ✗ 대역 리포 — 백업 실패" >&2\nexit {rc}\n'); stub.chmod(0o755)
+    script = "\n".join(["set -uo pipefail", f'SELF_REPO="{portal}"',
+                        f'grep -q "(대역) env-sync" "$SELF_REPO/infra/scripts/env-sync.sh" || exit 97',
+                        'hr() { :; }; hwax_skip() { echo "SKIP:$*"; }; fail() { echo "FAIL:$*"; }', block, "echo END"])
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)})
+    assert r.returncode != 97 and "END" in r.stdout and "(대역) env-sync" in r.stdout, r.stdout + r.stderr
+    fails = [ln for ln in r.stdout.splitlines() if ln.startswith("FAIL:")]
+    assert bool(fails) == want_fail and (not fails or f"env-sync rc {rc}" in fails[0]), r.stdout
 
 
 def test_a_big_backlog_goes_to_a_human_instead_of_flipping_switches(tmp_path):

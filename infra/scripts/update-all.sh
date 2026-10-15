@@ -408,7 +408,10 @@ fi
 # 밀린 양이 상한(HWAX_ENV_SYNC_MAX, 기본 10)을 넘으면 **자동으로 켜지 않고** 사람에게 넘긴다.
 hr "1c) .env 옵션 동기화"
 if [ -x "$SELF_REPO/infra/scripts/env-sync.sh" ]; then
-  "$SELF_REPO/infra/scripts/env-sync.sh" 2>&1 | sed 's/^/  /' || true
+  # 못 채운 리포가 있으면(백업을 못 만들었다 — 포털 infra/.state 에 쓸 수 없다 · 덧붙이지 못했다) env-sync 가 ✗ 와 0 아닌 값으로 끝난다(LP-D14).
+  # 종전엔 그때도 '✓ … 자동 추가 N' 이었고 여기서 rc 를 버렸다 — 새 설정이 안 들어간 것이 초록으로 지나갔다.
+  _es_rc=0; "$SELF_REPO/infra/scripts/env-sync.sh" 2>&1 | sed 's/^/  /' || _es_rc=$?
+  [ "$_es_rc" = 0 ] || fail ".env 옵션 동기화 — 새 설정을 채우지 못한 .env 가 있다(env-sync rc $_es_rc — 위 ✗ 줄이 리포와 까닭을 말한다). 포털 infra/.state 의 권한·소유자를 보고 재실행"
 else
   hwax_skip ".env 옵션 동기화" "env-sync.sh 가 없다(구버전 체크아웃)" "git pull 뒤 재실행"
 fi
