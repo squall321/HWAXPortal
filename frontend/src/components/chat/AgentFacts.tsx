@@ -1,4 +1,4 @@
-// 전문가 상세 공용 조각 — HE팀 운영 앱 줄·보유 지식 제목(챗 조직도·심의 좌석 조직도 상세칸 공용)
+// 전문가 상세 공용 조각 — HE팀 운영 앱 줄·보유 지식 제목·상세 실패 문구(챗 조직도·심의 좌석 조직도·시작 패널 상세칸 공용)
 import type { AgentDetail } from '../../api/chat.api';
 
 /** 상세칸의 보유 지식 제목 — 목록은 미리보기(앞 20건)라서 실제 총수와 '전체 보기'를 함께 보인다.
@@ -37,4 +37,12 @@ export function OperatorApps({ detail }: { detail: AgentDetail }) {
       </ul>
     </div>
   );
+}
+
+/** 상세를 못 받았을 때 — 빈 전문가처럼 보이지 않게 한 줄로 말한다(전문가 목록·심의 좌석·시작 패널 공용). */
+export function DetailError({ detail, className = 'pv-empty' }: { detail: AgentDetail; className?: string }) {
+  if (detail.error) return <p className={className}>상세를 불러오지 못했습니다({detail.error}).</p>;
+  if (detail.records_error)
+    return <p className={className}>보유 지식을 불러오지 못했습니다({detail.records_error}) — 보유 지식이 없다는 뜻이 아닙니다.</p>;
+  return null;
 }

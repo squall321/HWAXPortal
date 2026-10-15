@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { fetchAgentDetail, fetchDeliberateExperts, type AgentDetail, type PoolExpert } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import { colorOf, initialOf, shortName } from './personaColor';
-import { OperatorApps, RecordsHeading } from './AgentFacts';
+import { DetailError, OperatorApps, RecordsHeading } from './AgentFacts';
 import { AgentDeepView } from './AgentDeepView';
 import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
 import { agentPath, useOrgNav } from './orgNav';
@@ -290,7 +290,7 @@ export function PersonaBrowser({
                           </ul>
                         </>
                       )}
-                      {detail.error && <p className="pv-empty">상세를 불러오지 못했습니다({detail.error}).</p>}
+                      <DetailError detail={detail} />
                     </>
                   )}
                 </>

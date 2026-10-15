@@ -343,6 +343,8 @@ export interface AgentDetail {
   operator?: boolean;
   apps?: { key: string; label: string; tool_count: number; connected: boolean | null }[];
   error?: string;
+  /** 보유 지식 목록을 못 받았다(에이전트서버 records_failed) — '0건'이 아니다. */
+  records_error?: string;
 }
 
 export async function fetchAgentDetail(key: string): Promise<AgentDetail> {

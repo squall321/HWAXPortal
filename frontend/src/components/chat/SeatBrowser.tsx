@@ -2,7 +2,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchAgentDetail, type AgentDetail, type PoolExpert, type RecommendedExpert } from '../../api/chat.api';
 import { colorOf, initialOf, shortName } from './personaColor';
-import { OperatorApps, RecordsHeading } from './AgentFacts';
+import { DetailError, OperatorApps, RecordsHeading } from './AgentFacts';
 import { AgentDeepView } from './AgentDeepView';
 import { findDomain } from './personaCatalog';
 import { OrgCrumb, OrgOverview, OrgTreeNav } from './OrgTree';
@@ -210,6 +210,7 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
                           </ul>
                         </>
                       )}
+                      <DetailError detail={detail} />
                     </>
                   )}
                 </>

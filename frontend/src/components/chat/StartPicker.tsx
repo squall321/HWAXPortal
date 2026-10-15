@@ -12,6 +12,7 @@ import {
 import { useChat } from '../../state/ChatContext';
 import { useCan } from '../../auth/useCan';
 import { PersonaBrowser } from './PersonaBrowser';
+import { DetailError } from './AgentFacts';
 import { shortName } from './personaColor';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
@@ -123,6 +124,11 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
       setDetailLoading(false);
     });
   };
+  // 고정된 전문가로 다시 열면 상세도 불러온다 — 안 부르면 키만 든 빈 상자가 남는다.
+  useEffect(() => {
+    if (pinnedAgent) showAgent(pinnedAgent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // 확정은 전문가·앱·도구를 한 번에 — 조직도 샘플 질의로 곧장 시작할 때는 방금 고른 키를 받는다
   // (setAgentSel 은 이 렌더에 반영되지 않는다).
   const applyWith = (key: string | null) => {
@@ -308,6 +314,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
                   </ul>
                 </>
               )}
+              <DetailError detail={detail} className="sp-warn" />
             </>
           ) : null}
         </div>
