@@ -43,14 +43,6 @@ def set_session_cookies(
     )
 
 
-def set_session_cookie(response: Response, settings: Settings, *, session: str) -> None:
-    """Refresh path: replace only the access token."""
-    response.set_cookie(
-        SESSION_COOKIE, session, httponly=True, path="/",
-        max_age=settings.jwt_session_ttl, **_base(settings),
-    )
-
-
 def set_csrf_cookie(response: Response, settings: Settings, *, token: str) -> None:
     # NOT httpOnly: the SPA reads it and echoes it in the X-CSRF-Token header (double-submit).
     # Lives as long as the refresh window so /auth/refresh still passes CSRF after the

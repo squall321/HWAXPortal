@@ -243,7 +243,13 @@ def refresh(
 
     principal = jwt_service.principal_from_claims(claims)
     response = JSONResponse({"status": "refreshed"})
-    cookies.set_session_cookie(response, settings, session=jwt_service.issue_session(principal))
+    # 쓰는 동안에는 로그인 8시간에 끊기지 않게 — refresh 토큰도 새로 내고, CSRF 쿠키는 값은 그대로(다른 탭이 같은 값을
+    # 헤더로 싣는다) 수명만 늘린다(docs/request_1015.md K2-6, 사용자 결정 10-15). 종전엔 액세스 쿠키만 다시 줘서 두 쿠키가
+    # 로그인 때 받은 max_age 로 끝났고, 그 뒤 갱신은 CSRF 403 이었다. 쉬는 상한은 그대로다 — jwt_refresh_ttl 안에 갱신이
+    # 한 번도 없으면 둘 다 끝나고, 위의 만료·CSRF 검사도 그대로 돈다. 그룹은 issue_refresh 가 login_groups 로 다시 거른다.
+    cookies.set_session_cookies(response, settings, session=jwt_service.issue_session(principal),
+                                refresh=jwt_service.issue_refresh(principal))
+    cookies.set_csrf_cookie(response, settings, token=request.cookies[cookies.CSRF_COOKIE])
     return response
 
 
