@@ -9,7 +9,8 @@
         update-all 이고(사본을 되돌린 뒤 라우터를 내린다) 재기동이 미뤄진 손님은 그때까지 이 라우터를 부른다. 처음 읽을 때 비었거나 틀렸으면 503.
   올라옴  연결이 되고 **마지막 /v1/models 가 200 으로 모델 목록을 줬고** 탐침이 연달아 PROBE_TIMEOUTS_DOWN 번 읽기 한도를 넘기지 않은 서버만
         '올라옴' 이다. 아직 답하지 않은 서버(모름 — 내려갔다 올라온 서버도 다시 물을 때까지)·목록을 못 준 서버·답이 없는 서버는 올라온 서버가
-        하나도 없을 때만 쓴다. 요청이 model 을 적었으면 그 모델이 있는 서버를 먼저 고른다(없으면 올라온 서버 전부).
+        하나도 없을 때만 쓴다. 요청이 model 을 적었으면 그 모델이 있는 서버를 먼저 고르고(없으면 올라온 서버 전부), 그 가운데 그 모델의 창
+        (max_model_len)이 가장 큰 서버만 쓴다(모델을 적지 않았으면 서버마다 가장 큰 창으로 견준다).
   기동  첫 지표·모델 대조를 STARTUP_PROBE_S 까지만 기다리고 듣기 시작한다 — 답하지 않은 서버는 '모름' 이고 탐침은 이어 돈다.
   고르기  부하 = 마지막 지표의 running + waiting(라벨 묶음 전부 합) + 그 뒤로 이 라우터가 더 보낸 수 — 이 라우터가 그 서버에 보내 도는 수보다
         작아지지 않는다. 지표를 잠깐 못 읽으면(읽기 한도 · 끊김 · 5xx) 마지막 지표를 세 번째 실패까지 쓰고, 404 · vLLM 모양이 아닌 글 · 세 번
@@ -430,6 +431,11 @@ class Upstream:
         도는 수가 0 이라 가장 한가해 보이고 보낸 요청이 부르는 쪽의 한도까지 매달린다(검토 2라운드 LOW 1)."""
         return self.models is not None and self.probe_timeouts < PROBE_TIMEOUTS_DOWN
 
+    def window(self, model: str | None) -> float:
+        """그 모델(없으면 이 서버의 모델 전부)의 가장 큰 max_model_len — 수가 아니면(적지 않은 서버) -1, 아는 창보다 작은 것으로 친다."""
+        lens = [n for mid, n in (self.models[1] if self.models else ()) if model is None or mid == model]
+        return max((float(n) for n in lens if isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n)), default=-1.0)
+
     def load(self) -> float:
         """마지막 지표의 running + waiting 에 '그 뒤로 이 라우터가 더 보낸 수'(0 아래는 0)를 더한다. 이 라우터가 지금 이 서버에 보내 도는
         수보다 작아지지 않는다 — vLLM 은 본문을 받고 토큰으로 바꾼 뒤에야 센다(1M 창이면 몇 초). 그 사이에 지표를 읽으면 그 요청들이 부하에서
@@ -750,7 +756,8 @@ class Router:
         sig = json.dumps({k: summary[k] for k in ("match", "ids", "max_model_len")}, sort_keys=True, ensure_ascii=False, default=str)
         if summary["match"] is False and sig != self._models_warned:
             self._models_warned = sig
-            LOG.warning("모델 어긋남 — 서버마다 모델 id 또는 max_model_len 이 다르다(같은 모델·같은 창이어야 한다, LP-D6): ids=%s max_model_len=%s",
+            LOG.warning("모델 어긋남 — 서버마다 모델 id 또는 max_model_len 이 다르다(같은 모델·같은 창이어야 한다, LP-D6): ids=%s max_model_len=%s"
+                        " · 같은 모델이면 창이 가장 큰 서버로만 보낸다(작은 창 서버는 그 서버가 올라와 있지 않을 때만)",
                         json.dumps(summary["ids"], ensure_ascii=False), json.dumps(summary["max_model_len"], default=str))
         elif summary["match"] is True and self._models_warned is not None:
             self._models_warned = None
@@ -843,16 +850,24 @@ class Router:
 
     # ── 넘기기 ──
     def _choose(self, key: bytes | None, model: str | None, tried: list[Upstream]) -> tuple[Upstream, str, Upstream | None] | None:
-        """후보 — 시도하지 않은 서버 가운데 연결되는 것(모두 빠졌으면 전부를 다시 시도해 본다 — 멀쩡해졌을 수 있다), 그 가운데 '올라옴'(모델 목록
-        확인 · 탐침에 답함 — confirmed)인 것(올라온 서버가 하나도 없을 때만 나머지 — 답하는 서버 먼저), 요청이 모델을 적었으면 그 모델이 있는 것
-        (없으면 그대로). 빨리 실패하는 서버(다른 모델로 다시 뜬 vLLM · 엉뚱한 포트의 다른 앱)는 도는 수가 늘 0 이라 가장 한가해 보인다 — 그래서
-        부하보다 먼저 거른다(검토 M1·M5). 매달린 서버도 지표를 버린 뒤 도는 수 0 으로 같은 꼴이다(검토 2라운드 LOW 1)."""
+        """후보 — 시도하지 않은 서버 가운데 연결되는 것(모두 빠졌으면 전부를 다시 시도해 본다 — 멀쩡해졌을 수 있다), 그 가운데 '올라옴'
+        (모델 목록 확인 · 탐침에 답함 — confirmed)인 것. 요청이 모델을 적었으면 그 모델이 있는 것(없으면 올라온 서버 전부), 그 가운데 그 모델의
+        창(max_model_len — 모델을 적지 않았거나 어디에도 없으면 서버의 가장 큰 창)이 가장 큰 것만 — 작은 창 서버는 큰 창 서버가 올라와 있는
+        동안 쓰지 않는다. 올라온 서버가 하나도 없을 때만 나머지(모름 · 목록 아님 · 답 없음 — 답하는 서버 먼저)를 쓴다. 빨리 실패하는 서버
+        (다른 모델로 다시 뜬 vLLM · 엉뚱한 포트의 다른 앱 · 긴 요청을 곧바로 400 으로 내는 작은 창)는 도는 수가 늘 0 이라 가장 한가해 보인다 —
+        그래서 부하보다 먼저 거른다(검토 M1·M5 · 2라운드 M-A)."""
         now = time.monotonic()
         rest = [u for u in self.ups if u not in tried]
         live = [u for u in rest if u.is_up(now)] or rest
-        cands = [u for u in live if u.confirmed()] or [u for u in live if u.probe_timeouts < PROBE_TIMEOUTS_DOWN] or live
-        if model is not None:
-            cands = [u for u in cands if u.models is not None and model in u.models[0]] or cands
+        if up := [u for u in live if u.confirmed()]:
+            serving = [u for u in up if model is not None and model in u.models[0]]
+            pool, want = (serving, model) if serving else (up, None)
+            widest = max(u.window(want) for u in pool)
+            cands = [u for u in pool if u.window(want) == widest]
+        else:
+            cands = [u for u in live if u.probe_timeouts < PROBE_TIMEOUTS_DOWN] or live
+            if model is not None:
+                cands = [u for u in cands if u.models is not None and model in u.models[0]] or cands
         if not cands:
             return None
         best = min(cands, key=lambda u: (u.load(), u.kv(), self.ups.index(u)))

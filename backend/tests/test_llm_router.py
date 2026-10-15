@@ -1392,6 +1392,39 @@ def test_지문은_바이트코드를_보지_않고_fp_git_false_면_리포_루�
 
 
 # ── 반대 검토 2라운드(LP-D14) — 검토자의 탐침을 회귀 시험으로 ─────────────────────────────────────────────
+def test_검토2_MA_같은_모델이면_창이_가장_큰_서버로만_보내고_작은_창은_그_서버가_없을_때만(lab):
+    """같은 모델 id · 다른 창(한쪽만 다른 인자로 다시 띄운 날, LP-D6) — 작은 창 서버는 긴 요청을 곧바로 400 으로 내 도는 수가 늘 0 이라
+    가장 한가해 보였다(검토: 긴 요청 20 개 가운데 18 개가 16K 서버로 가 실패). 큰 창 서버가 올라와 있는 동안 작은 창 서버는 쓰지 않고,
+    /health 는 어긋남을 그대로 말한다. 모델을 적지 않은 요청도 서버의 가장 큰 창으로 견준다."""
+    a = lab.fake("A")
+    a.mode = "hold"                                       # 1M 창 — 긴 요청을 붙들고 있다(바쁘다)
+    b = lab.fake("B", max_len=16_384)                     # 16K 창 — 한가하다
+    r = lab.router([a, b], LLM_ROUTER_SCRAPE_S=0.1)
+    h = r.health().json()
+    assert (h["status"], h["upstreams_up"], h["models"]["match"]) == ("degraded", 2, False)
+    jobs = [_bg(lambda i=i: r.chat(f"카드 묶음 {i} — " + "x" * 2000)) for i in range(6)]
+    jobs.append(_bg(lambda: r.http.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "모델 없이"}]})))
+    _wait(lambda: len(a.hits) == 7, what="일곱 다 A 에 닿기")
+    assert not b.hits, "A 가 바빠도 작은 창 서버로 보내지 않는다"
+    a.release.set()
+    for j in jobs:
+        j["t"].join(10)
+        assert j["r"].status_code == 200
+    a.srv.stop()                                          # 큰 창 서버가 없으면 작은 창 서버가 가장 큰 창이다
+    _wait(lambda: r.by_url()[a.base]["reachable"] is False, what="A 가 빠지기")
+    assert r.chat("x").json()["served_by"] == "B"
+
+
+def test_검토2_MA_창을_적지_않은_서버는_아는_창보다_작게_친다():
+    u = R.Upstream("http://127.0.0.1:1/v1")
+    assert u.window("glm") == -1.0, "모델 목록을 모르면 창도 모른다"
+    for rows, want in (((("glm", 1_048_576),), 1_048_576.0), ((("glm", None),), -1.0), ((("glm", True),), -1.0),
+                       ((("glm", "1048576"),), -1.0), ((("glm", 16_384), ("glm-alias", 32_768)), 16_384.0)):
+        u.models = (frozenset(i for i, _ in rows), rows)
+        assert u.window("glm") == want, rows
+    assert u.window(None) == 32_768.0, "모델을 적지 않으면 서버의 가장 큰 창"
+
+
 def test_검토2_MB_다른_모델로_다시_뜬_서버는_다시_확인하기_전에는_올라옴이_아니다(lab, caplog):
     """B 가 다른 --served-model-name 으로 다시 떴다 — 연결 실패는 모델 목록을 지우지 않았고 다시 올라올 때 대조를 앞당기는 것은 목록이 없던
     서버뿐이라, 다음 정기 대조(60초)까지 옛 목록('glm')으로 올라옴이었다(검토: 20/20 이 B 로 가 404 · match true 라 1i 관문도 지난다).
