@@ -18,32 +18,32 @@ HWAX 의 LLM 호출은 전부 서버 하나(…137 의 vLLM, GLM-5.2 · 1M 창)�
 
 ## 3. 라우터 계약(L-1)
 
-**자리.** `infra/llm-router/llm_router.py` 한 파일(원시 ASGI + httpx). 포털 SIF 의 파이썬(3.13 · httpx 0.28 · uvicorn 0.49)으로 돈다 — 새 이미지가 없다. 띄우는 것은 `infra/scripts/llm-router.sh run`(앞에서 도는 `apptainer exec`, 리포를 `/workspace` 로 바인드, `127.0.0.1:${LLM_ROUTER_PORT:-9130}` 에만 듣는다), 내리는 것은 `llm-router.sh stop`(그 포트를 **LISTEN** 하는 프로세스만, 명령줄이 라우터인지 확인한 뒤 — 연결 중인 클라이언트를 죽이지 않는다).
+**자리.** `infra/llm-router/llm_router.py` 한 파일(원시 ASGI + httpx). 포털 SIF 의 파이썬(3.13 · httpx 0.28 · uvicorn 0.49)으로 돈다 — 새 이미지가 없다. 띄우는 것은 `infra/scripts/llm-router.sh run`(앞에서 도는 `apptainer exec`, 리포를 `/workspace` 로 바인드, `127.0.0.1:<포트>` 에만 듣는다 — 띄우기 전에 `LLM_UPSTREAMS` 를 아래 정본 규칙으로 보고 틀린 줄이면 띄우지 않는다), 내리는 것은 `llm-router.sh stop`(그 포트를 **LISTEN** 하는 프로세스만, 명령줄이 라우터인지 확인한 뒤 — 연결 중인 클라이언트를 죽이지 않는다. pid 가 안 보이는 리스너(다른 계정)와 `ss` 가 없는 박스는 '모른다' 라 실패(1)다 — '내려갔다' 로 말하지 않는다). 포트는 환경의 `LLM_ROUTER_PORT` 가 `infra/.env` 보다 먼저다(옛 포트에 남은 라우터를 내릴 때) — `run` 은 그 포트를 라우터에도 넘긴다(자기 자신을 가리키는 칸을 거르는 데 쓴다).
 
-**설정.** 리포 루트의 `infra/.env` 를 라우터가 직접 읽는다(파일 위치에서 유도, 키를 argv·환경으로 넘기지 않는다). 읽는 규칙은 update-all 의 `_envfile_value` 와 같다(마지막 활성 줄 · `export` 허용 · 공백 뒤 `#` 주석 · 따옴표 · CR 제거). 파일의 mtime 이 바뀌면 다음 지표 주기에 다시 읽는다 — 서버를 더하고 빼는 데 재기동이 없다.
+**설정.** 리포 루트의 `infra/.env` 를 라우터가 직접 읽는다(파일 위치에서 유도, 키를 argv·환경으로 넘기지 않는다). 읽는 규칙은 update-all 의 `_envfile_value` 와 같다(마지막 활성 줄 · `export` 허용 · 공백 뒤 `#` 주석 · 따옴표 · CR 제거 — 공백은 sed 의 `[[:space:]]` 와 같은 ASCII 여섯). 지표 주기마다 파일 **내용**을 견줘 바뀌었으면 다시 읽는다(같은 크기 · 같은 시각의 편집도 본다) — 서버를 더하고 빼는 데 재기동이 없다. 파일이 지워지거나 못 읽으면 한 번 알리고 마지막 설정으로 계속 보낸다. `LLM_UPSTREAMS` 의 규칙은 `lib/llm-pool.sh` 의 `hwax_llm_pool_upstreams` 하나가 정본이고 라우터는 같은 표로 대조된다(`test_llm_pool_upstreams_rules.py`) — 값은 공백·따옴표 없이 쓰거나 따옴표 한 쌍으로 통째 감싼다 · 칸마다 소문자 `http(s)://<호스트>[:<포트>]/v1`(경로는 정확히 `/v1`, 계정·질의·조각·IPv6 없음, IPv4 는 옥텟 0~255 · 앞 0 없음, 이름은 영숫자·하이픈 라벨이고 3·4번째가 `--` 가 아니다) · 라우터 자신(루프백·0.0.0.0·localhost 에 라우터 포트)과 같은 서버 두 번(호스트 대소문자 · 기본 포트 무시)은 거절. **틀린 칸이 하나라도 있으면 줄 전체를 받지 않는다** — 다시 읽을 때면 마지막 목록으로 계속 보내고(`/health.kept_last_list`) 처음이면 503 이다. 틀린 칸은 로그에 스킴과 호스트만 적는다(질의·계정에 키가 들 수 있다).
 
 | 키 | 기본 | 뜻 |
 |---|---|---|
-| `LLM_UPSTREAMS` | (없음 = 풀 꺼짐) | vLLM 의 `/v1` 주소들, 쉼표·공백으로 나눈다 |
+| `LLM_UPSTREAMS` | (없음 = 풀 꺼짐) | vLLM 의 `/v1` 주소들, 쉼표로(따옴표 안이면 공백으로도) 나눈다 — 규칙은 위 정본 하나 |
 | `LLM_API_KEY` | — | 라우터 자신의 `/v1/models` 대조에만 쓴다. 손님 요청의 `Authorization` 은 **그대로 넘긴다**(라우터가 키를 끼워 넣지 않는다 — 이 박스의 다른 계정이 키 없이 LLM 을 쓰게 되지 않게) |
-| `LLM_ROUTER_PORT` | 9130 | 띄우는 스크립트가 쓴다 |
+| `LLM_ROUTER_PORT` | 9130 | 띄우는 스크립트가 쓴다(환경의 값이 먼저) |
 | `LLM_ROUTER_SCRAPE_S` | 2 | `/metrics` 읽는 주기 |
-| `LLM_ROUTER_STICKY_SLACK` | 4 | 붙인 서버가 가장 한가한 서버보다 이만큼 이상 바쁘면 떨어뜨린다 |
+| `LLM_ROUTER_STICKY_SLACK` | 2 | 붙인 서버가 가장 한가한 서버보다 이만큼 이상 바쁘면 떨어뜨린다 — 같은 앞부분이 한꺼번에 몰려도 두 서버의 차이는 많아야 이만큼(빈 서버 둘에 8 개면 5·3, 4 였을 때는 6·2) |
 | `LLM_ROUTER_PREFIX_CHARS` | 8000 | 붙임 열쇠로 해시하는 메시지 앞부분 글자 수 |
 | `LLM_ROUTER_CONNECT_TIMEOUT_S` | 5 | 연결 한도(넘김 판정) |
 | `LLM_ROUTER_COOLDOWN_S` | 15 | 연결이 안 된 서버를 빼 두는 시간 |
 
-**고르기.** 서버마다 마지막 지표의 `vllm:num_requests_running + vllm:num_requests_waiting`(라벨 묶음 전부 합) 에 '그 뒤로 라우터가 더 보낸 수'(지금 도는 수 − 지표 읽을 때 도는 수, 0 아래는 0)를 더한 것이 부하다. 지표가 없는 서버(404·파싱 실패)는 라우터가 보낸 도는 수만으로 잰다. 같으면 KV 사용률(`vllm:kv_cache_usage_perc`, 옛 이름 `vllm:gpu_cache_usage_perc`)이 낮은 쪽, 그것도 같으면 목록 앞쪽.
+**고르기.** 먼저 거른다 — 연결이 되고 **마지막 `/v1/models` 가 200 으로 모델 목록을 준** 서버만 '올라옴' 이다. 아직 답하지 않은 서버(모름)·목록을 못 준 서버(401·404·다른 글)는 올라온 서버가 하나도 없을 때만 쓴다. 요청 본문이 `model` 을 적었으면 그 모델이 있는 서버를 먼저 고른다(어디에도 없으면 거른 서버 전부) — 다른 모델로 다시 뜬 vLLM · 엉뚱한 포트의 다른 앱은 곧바로 실패해 도는 수가 늘 0 이라 가장 한가해 보이기 때문이다. 그 가운데서 서버마다 마지막 지표의 `vllm:num_requests_running + vllm:num_requests_waiting`(라벨 묶음 전부 합) 에 '그 뒤로 라우터가 더 보낸 수'(지금 도는 수 − 지표 읽을 때 도는 수, 0 아래는 0)를 더한 것이 부하이고, 라우터가 그 서버에 보내 도는 수보다 작아지지 않는다(vLLM 은 본문을 받고 토큰으로 바꾼 뒤에야 센다). 지표를 잠깐 못 읽으면(읽기 한도 · 끊김 · 5xx) 마지막 지표를 세 번째 연달은 실패까지 쓰고(`/stats` 의 `metrics_age_s`), 그 뒤나 지표가 없는 서버(404 · vLLM 모양이 아닌 글)는 라우터가 보낸 도는 수만으로 잰다 — 바뀔 때만 한 줄 알린다. 같으면 KV 사용률(`vllm:kv_cache_usage_perc`, 옛 이름 `vllm:gpu_cache_usage_perc`)이 낮은 쪽, 그것도 같으면 목록 앞쪽.
 
 **붙임.** 본문이 JSON 이고 `messages` 가 있으면 `role:내용`(목록 내용은 글 조각만)을 차례로 이은 앞 `PREFIX_CHARS` 자, `prompt` 면 그 앞부분을 해시한 것이 열쇠다. 열쇠마다 렌데부 해시로 선호 서버가 정해지고, 선호 서버 부하 − 최소 부하 < `STICKY_SLACK` 이면 선호 서버로, 아니면 가장 한가한 서버로 보낸다. 같은 전문가의 카드 묶음·같은 대화가 같은 서버의 접두 캐시를 다시 쓴다(LP-D2). 클라이언트는 고치지 않는다.
 
-**넘김.** 연결 실패(연결 거절·연결 한도 초과 — 요청이 서버에 닿지 않은 것)만 그 서버를 `COOLDOWN_S` 동안 빼고 다음 서버로 다시 보낸다(요청마다 서버 하나에 한 번). 연결된 뒤의 일(HTTP 오류·생성 중 끊김)은 그대로 넘기고 다시 보내지 않는다(LP-D3). 빠진 서버는 지표가 다시 읽히면 돌아온다. 모두 빠졌으면 전부를 다시 시도해 본다(멀쩡해졌을 수 있다).
+**넘김.** 연결 실패(연결 거절·연결 한도 초과 — 요청이 서버에 닿지 않은 것)만 그 서버를 `COOLDOWN_S` 동안 빼고 다음 서버로 다시 보낸다(요청마다 서버 하나에 한 번). 연결된 뒤의 일(HTTP 오류·생성 중 끊김)은 그대로 넘기고 다시 보내지 않는다(LP-D3). 서버 하나에서 난 뜻밖의 예외(httpx 의 것이 아닌 것)는 그 서버만 뺀다 — 보낸 것이 없을 때(요청을 만들다 난 것)만 다음 서버로, 보내다 난 것은 502 로 끝낸다. 지표·모델 탐침과 기동도 서버마다 가둔다(하나가 라우터 전체를 500 으로 만들거나 기동을 막지 않게). 빠진 서버는 지표가 다시 읽히면 돌아온다. 모두 빠졌으면 전부를 다시 시도해 본다(멀쩡해졌을 수 있다).
 
-**흐름.** 위로는 늘 스트림으로 보내고 받은 바이트를 그대로 흘린다(SSE 든 한 덩어리 JSON 이든). 손님이 끊으면 — 머리를 받기 전이든 흐르는 중이든 — 1초 안에 위 연결을 닫아 vLLM 이 생성을 멈추게 한다(지금 클라이언트가 vLLM 에 직접 붙어 있을 때와 같다 — 버려진 생성이 GPU 를 잡지 않게). 시간 한도는 연결 한도 하나다. 읽기·쓰기는 한도가 없다 — 한도는 부르는 쪽의 것이고 그 끊김이 위로 전해진다(시간 한도 층에 새 층을 끼우지 않는다).
+**흐름.** 위로는 늘 스트림으로 보내고 받은 바이트를 그대로 흘린다(SSE 든 한 덩어리 JSON 이든). 요청은 `httpx.Request` 를 직접 만든다 — 머리는 손님 것만 가고(httpx 의 user-agent · accept · accept-encoding 을 덧붙이지 않는다), 주소는 서버 주소의 조각에 손님의 경로를 끼워 만든다(대상이 `/` 로 시작하지 않으면 400 — 이어 붙이면 `GET @다른호스트/…` 가 목록 밖으로 간다). 손님이 끊으면 — 머리를 받기 전이든 흐르는 중이든 — 1초 안에 위 연결을 닫아 vLLM 이 생성을 멈추게 한다(지금 클라이언트가 vLLM 에 직접 붙어 있을 때와 같다 — 버려진 생성이 GPU 를 잡지 않게). 시간 한도는 연결 한도 하나다. 읽기·쓰기는 한도가 없다 — 한도는 부르는 쪽의 것이고 그 끊김이 위로 전해진다(시간 한도 층에 새 층을 끼우지 않는다). 위 서버는 http 이거나 공인 인증서의 https 여야 한다 — 사설 CA 를 줄 자리가 없다(`trust_env=False` · `--cleanenv`, LP-D13 에서 받지 않았다). 인증서 오류는 연결 실패와 따로 한 줄로 알린다.
 
-**모델 대조.** 기동 때와 60초마다 서버마다 `/v1/models` 를 읽어 모델 id 묶음과 `max_model_len` 을 견준다. 다르면 `/health` 의 `models.match=false` 와 경고 한 줄(바뀔 때만).
+**모델 대조.** 기동 때와 60초마다(서버가 더해지거나 모델을 모르던 서버가 다시 올라오면 곧바로) 서버마다 `/v1/models` 를 읽는다. 200 모델 목록이면 그 서버는 '올라옴' 이 될 수 있고, 답했는데 목록이 아니면(401 · 404 · 다른 글) 아니다. 답이 없으면(읽기 한도 · 끊김) 지난 답을 그대로 둔다. 실패는 서버마다 바뀔 때 한 줄(401·403 이면 `LLM_API_KEY` 를 보라고)과 `/health` 의 `models.errors`. 모델 id 묶음과 `max_model_len` 이 서버마다 다르면 `models.match=false` 와 경고 한 줄(바뀔 때만).
 
-**엔드포인트.** `GET /health` — `{status: ok|degraded|down, upstreams_total, upstreams_up, inflight, models{match, ids, max_model_len}, config_mtime}`(down 이면 503). `GET /stats` — 서버마다 `{url, up, running, waiting, kv, scrape_age_s, inflight, sent, connect_fail, retried_away, sticky, overflow}`. 그 밖의 모든 경로는 고른 서버의 같은 경로로 넘긴다(`/v1/*` · `/tokenize` 등). 요청마다 로그를 남기지 않는다 — 기동·다시 읽기·서버 오르내림·모델 어긋남·연결 실패만. 키와 본문은 어디에도 찍지 않는다.
+**엔드포인트.** `GET /health` — `{status: ok|degraded|down, upstreams_total, upstreams_up, upstreams_reachable, inflight, models{match, ids, max_model_len, errors}, config_mtime, kept_last_list}`. `upstreams_up` 은 '올라옴'(연결 + 모델 목록) 수다 — update-all 1i 는 이것이 1 이상일 때만 사본을 라우터로 바꾼다. `upstreams_reachable` 은 연결만 되는 수, `down`(503)은 연결되는 서버가 없을 때, `degraded` 는 올라오지 않은 서버가 있거나 모델이 다를 때다. `inflight` 는 본문을 다 받은 요청만 센다(멈춘 올리기가 재기동을 영영 미루지 않게). `GET /stats` — 서버마다 `{url, up, reachable, models(ok|unknown|error), models_error, running, waiting, kv, metrics_age_s, metrics_fail, scrape_age_s, inflight, sent, connect_fail, retried_away, sticky, overflow}`. 그 밖의 모든 경로는 고른 서버의 같은 경로로 넘긴다(`/v1/*` · `/tokenize` 등). 요청마다 로그를 남기지 않는다 — 기동·다시 읽기·서버 오르내림·지표와 모델 상태가 바뀔 때·연결 실패만. 키와 본문은 어디에도 찍지 않는다.
 
 ## 4. 배선(L-2 · L-3)
 
@@ -55,7 +55,7 @@ HWAX 의 LLM 호출은 전부 서버 하나(…137 의 vLLM, GLM-5.2 · 1M 창)�
 
 ## 5. 동시 수(L-4) — 지금은 자동으로 올리지 않는다(LP-D7)
 
-라우터만으로 두 서버를 함께 쓴다 — 카드 대조 8 개가 4·4 로 나뉘고, 한쪽에 챗·심의가 몰리면 다른 쪽으로 간다. 처리량까지 두 배로 쓰려면 세 곳이 같이 움직여야 한다 — 에이전트 서버 `.env` 의 `CARD_REVIEW_CONCURRENCY` · 리스크 앱 `knobs.env` 의 `HWAXRISK_REVIEW_CONCURRENCY` · 포털 `backend/.env` 의 `CARD_REVIEW_MAX_STREAMS`(이상). 그래서 절차서에 세 줄과 판단법(`/stats` 의 waiting 이 0 근처면 올린다, 늘 0 보다 크면 내린다)을 싣고, 코드 기본값(8 · 8 · 12)과 시간 한도 사슬 시험은 그대로 둔다.
+라우터만으로 두 서버를 함께 쓴다 — 카드 대조 8 개가 두 서버로 나뉘고(같은 앞부분이면 붙임 문턱만큼까지 기운다 — 기본 2 면 5·3), 한쪽에 챗·심의가 몰리면 다른 쪽으로 간다. 처리량까지 두 배로 쓰려면 세 곳이 같이 움직여야 한다 — 에이전트 서버 `.env` 의 `CARD_REVIEW_CONCURRENCY` · 리스크 앱 `knobs.env` 의 `HWAXRISK_REVIEW_CONCURRENCY` · 포털 `backend/.env` 의 `CARD_REVIEW_MAX_STREAMS`(이상). 그래서 절차서에 세 줄과 판단법(`/stats` 의 waiting 이 0 근처면 올린다, 늘 0 보다 크면 내린다)을 싣고, 코드 기본값(8 · 8 · 12)과 시간 한도 사슬 시험은 그대로 둔다.
 
 ## 6. 걸음
 
