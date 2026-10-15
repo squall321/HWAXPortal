@@ -583,6 +583,18 @@ def test_물려받은_라우터_포트를_버린다():
     assert r.stdout.split() == ["[없음]", "[없음]", "[7777]"], r.stdout + r.stderr
 
 
+# ── 이름 바꾸기 대신 제자리에 쓴 사본(2라운드 LOW 4 · LP-D14) ─────────────────────────────────────────────
+def test_제자리에_쓴_사본은_그렇게_말한다(box, router):
+    """하드 링크가 둘인 사본은 이름 바꾸기 대신 제자리에 쓴다(LOW 4) — ✓ 줄이 그 사실과 까닭을 말한다(다른 이름도 함께 바뀐다)."""
+    box.env(f"LLM_BASE_URL={DIRECT}\nLLM_UPSTREAMS={S1},{S2}\nLLM_ROUTER_PORT={router['port']}\n")
+    box.put({"agent-server": DIRECT})
+    agent = box.copy("agent-server"); other = box.home / "agent-shared.env"; os.link(agent, other)
+    out = box.run()
+    mine = [ln for ln in _lines(out, "OK:") if ln.startswith("OK:HWAXAgentServer/.env  VLLM_BASE_URL")]
+    assert len(mine) == 1 and "제자리에 썼다" in mine[0] and "하드 링크" in mine[0], out
+    assert other.read_text() == agent.read_text() and f"http://127.0.0.1:{router['port']}/v1" in other.read_text()
+
+
 # ── §6 한 줄 ───────────────────────────────────────────────────────────────────────────────────────
 def _s6(box: Box, router, body: dict | None, values: dict, *, pool: bool = True) -> str:
     port = router["port"] if body is not None else _dead_port()

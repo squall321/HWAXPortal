@@ -726,14 +726,15 @@ _llm_restart_by() {  # $1=서비스(apply-envs 의 이름)
 # 백업은 파일마다 한 번 **전체 경로**와 되돌리는 명령을 낸다(같은 파일의 키 둘은 백업 하나 — 포털 infra/.state 아래라 이름만으로는 못 찾는다).
 # lib 의 종료코드를 본다 — 0 이 아니면 줄을 내지 못한 사본은 바뀌었는지 모른다(반대 검토 L4: 뒤 파일에서 죽으면 앞 파일의 ✓ 까지 사라졌다).
 _llm_apply() {
-  local warn="$1" new="$2" out rc=0 st svc rp rel key cur bak seen="|" n_ch=0 n_same=0 n_for=0 n_abs=0
+  local warn="$1" new="$2" out rc=0 st svc rp rel key cur bak how seen="|" n_ch=0 n_same=0 n_for=0 n_abs=0
   shift 2
   _llm_svcs=""
   out="$(hwax_llm_pool_rewrite "$SELF_REPO" write "$new" "$@")" || rc=$?
-  while IFS=$'\t' read -r st svc rp rel key cur bak; do
+  # 여덟째 칸(how) — 이름 바꾸기 대신 제자리에 썼으면 그 사실과 까닭(ACL · 하드 링크 · 쓸 수 없는 디렉터리, LP-D14).
+  while IFS=$'\t' read -r st svc rp rel key cur bak how; do
     case "$st" in
       changed) n_ch=$((n_ch + 1))
-               ok "${rp##*/}/$rel  $key: $cur → $new"
+               ok "${rp##*/}/$rel  $key: $cur → $new${how:+  ($how)}"
                case "$seen" in
                  *"|$bak|"*) ;;
                  *) seen="$seen$bak|"; echo "    · 백업 $bak — 파일째 되돌리려면 cp '$bak' '$rp/$rel'" ;;

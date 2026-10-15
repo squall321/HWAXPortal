@@ -534,21 +534,89 @@ def test_백업을_못_만들면_바꾸지_않는다(box):
 
 
 @NOT_ROOT
-def test_사본_디렉터리에_쓸_수_없으면_바꾸지_않고_만든_백업도_지운다(box):
-    """임시 파일 + 이름 바꾸기라 사본 디렉터리에 써야 한다. 못 쓰면 사본은 그대로고, 막 만든 백업은 지운다(L6 — 아무것도 안 바뀌었는데
-    비밀 사본만 하나 더 남고 '그 백업으로 되돌린다' 고 말했다)."""
+def test_사본_디렉터리에_쓸_수_없으면_백업_뒤_제자리에_쓰고_그렇게_말한다(box):
+    """**2라운드 LOW 4 회귀**(LP-D14) — 이름 바꾸기는 디렉터리에 써야 한다. 종전(제자리 쓰기)에는 되던 읽기 전용 리포 디렉터리에서 ✗ 가 됐다.
+    파일은 쓸 수 있으면 백업 뒤 **제자리에** 쓰고(같은 inode) 줄의 여덟째 칸에 그 사실과 까닭을 적는다. 디렉터리에는 아무것도 생기지 않는다."""
     _, _, sib = box
     agent = sib["HWAXAgentServer"]
-    agent.write_text(f"VLLM_BASE_URL={DIRECT}\n"); agent.chmod(0o600)
+    agent.write_text(f"VLLM_BASE_URL={DIRECT}\nK=1\n"); agent.chmod(0o600)
+    ino = agent.stat().st_ino
     agent.parent.chmod(0o555)
     try:
         rows = _rewrite(box, "write", ROUTER, DIRECT, ROUTER)
+        listing = sorted(x.name for x in agent.parent.iterdir())
     finally:
         agent.parent.chmod(0o755)
     row = _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")
-    assert row[0] == "error" and "쓰지 못했다" in row[5] and "그대로다" in row[5] and "백업은 지웠다" in row[5], row
-    assert "되돌린다" not in row[5] and row[6] == "", "바뀐 것이 없다 — 되돌릴 백업을 가리키지 않는다"
-    assert agent.read_text() == f"VLLM_BASE_URL={DIRECT}\n" and not _baks(agent) and _strays(agent) == []
+    assert row[0] == "changed" and len(row) == 8 and "제자리에 썼다" in row[7] and "디렉터리에 쓸 수 없다" in row[7], row
+    assert agent.read_text() == f"VLLM_BASE_URL={ROUTER}\nK=1\n" and agent.stat().st_ino == ino
+    assert stat.S_IMODE(agent.stat().st_mode) == 0o600 and listing == [".env"]
+    assert len(_baks(agent)) == 1 and row[6] == str(_baks(agent)[0]), "제자리 쓰기도 백업이 먼저다"
+
+
+@NOT_ROOT
+def test_제자리_쓰기가_디스크에_막히면_원래_내용으로_되돌리고_백업도_지운다(box):
+    """제자리 쓰기가 도중에 막히면(디스크가 찼다 — RLIMIT_FSIZE 로 흉내, 한도를 넘는 데서 끊긴다) 원래 내용을 다시 쓴다. 반쯤 쓴 .env 를
+    남기지 않고, 결과가 원래와 같으니 백업도 지운다(파일은 그대로다)."""
+    root, home, sib = box
+    agent = sib["HWAXAgentServer"]
+    old, new = "http://198.51.100.7/v1", "http://127.0.0.1:9130/v1/" + "a" * 700
+    agent.write_text(f"VLLM_BASE_URL={old}\nPAD={'x' * 64900}\n")
+    before = agent.read_bytes()
+    assert len(before) < 65536 < len(before) + 700
+    agent.parent.chmod(0o555)                                     # 제자리 쓰기 길로
+    try:
+        r = _sh(f'ulimit -f 64; . "{LIB}"; hwax_llm_pool_rewrite "{root}" write "{new}" "{old}"; echo "rc=$?"', home)
+    finally:
+        agent.parent.chmod(0o755)
+    row = [ln.split("\t") for ln in r.stdout.splitlines() if "HWAXAgentServer" in ln]
+    assert len(row) == 1 and row[0][0] == "error" and "쓰지 못했다" in row[0][5] and "그대로다" in row[0][5], r.stdout + r.stderr
+    assert "백업은 지웠다" in row[0][5] and agent.read_bytes() == before and not _baks(agent) and _strays(agent) == []
+
+
+def test_하드_링크_사본은_제자리에_써서_다른_이름도_함께_바뀐다(box):
+    """**2라운드 LOW 4 회귀** — 이름 바꾸기는 하드 링크를 끊었다(다른 이름이 옛 주소에 남는다 — 그 이름으로 읽는 서비스는 옛 주소로 돈다)."""
+    _, _, sib = box
+    agent = sib["HWAXAgentServer"]
+    shared = agent.parent.parent / "shared/agent.env"; shared.parent.mkdir()
+    shared.write_text(f"VLLM_BASE_URL={DIRECT}\nK=1\n"); agent.hardlink_to(shared)
+    rows = _rewrite(box, "write", ROUTER, DIRECT)
+    row = _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")
+    assert row[0] == "changed" and len(row) == 8 and "하드 링크" in row[7], row
+    assert agent.stat().st_nlink == 2 and agent.stat().st_ino == shared.stat().st_ino, "링크가 끊겼다"
+    assert shared.read_text() == f"VLLM_BASE_URL={ROUTER}\nK=1\n", "다른 이름이 옛 주소에 남았다"
+    assert _strays(agent) == [] and sorted(x.name for x in shared.parent.iterdir()) == ["agent.env"]
+
+
+def _acl(p: Path) -> str:
+    return subprocess.run(["getfacl", "-c", "-p", str(p)], capture_output=True, text=True).stdout
+
+
+@pytest.mark.skipif(shutil.which("setfacl") is None or shutil.which("getfacl") is None, reason="setfacl·getfacl 이 없다 — ACL 을 만들 수 없다")
+def test_ACL_이_있는_사본은_제자리에_써서_ACL_을_지킨다(box):
+    """**2라운드 LOW 4 회귀** — 새 파일은 모드만 받는다(S_IMODE 의 그룹 칸은 ACL 마스크다). `group::---` + `user:nobody:r` 이던 비밀 파일이
+    `group::r--` 가 되고 이름 붙은 사용자는 사라졌다 — 그룹의 읽기 권한이 넓어졌다. ACL 이 있으면 제자리에 써서 그대로 둔다."""
+    _, _, sib = box
+    sf = sib["SignalForge"]
+    sf.write_text(f"OPENAI_BASE_URL={DIRECT}\nOPENAI_API_KEY=secret\n"); sf.chmod(0o600)
+    r = subprocess.run(["setfacl", "-m", "u:nobody:r", str(sf)], capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"이 파일 시스템은 ACL 을 받지 않는다 — {r.stderr.strip()}")
+    before = _acl(sf)
+    assert "user:nobody:r--" in before and "group::---" in before, before
+    rows = _rewrite(box, "write", ROUTER, DIRECT)
+    row = _row(rows, "SignalForge", "OPENAI_BASE_URL")
+    assert row[0] == "changed" and len(row) == 8 and "ACL" in row[7], row
+    assert _acl(sf) == before, (before, _acl(sf))
+    assert sf.read_text() == f"OPENAI_BASE_URL={ROUTER}\nOPENAI_API_KEY=secret\n" and _strays(sf) == []
+
+
+def test_이름_바꾸기로_바꾼_줄은_여덟째_칸이_없다(box):
+    """제자리에 쓴 줄만 그 사실을 적는다 — 보통 사본(링크 하나 · ACL 없음 · 디렉터리에 쓸 수 있다)은 종전대로 일곱 칸이다."""
+    _, _, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={DIRECT}\n")
+    row = _row(_rewrite(box, "write", ROUTER, DIRECT), "HWAXAgentServer", "VLLM_BASE_URL")
+    assert row[0] == "changed" and len(row) == 7, row
 
 
 @NOT_ROOT
