@@ -687,8 +687,9 @@ def test_health_는_올라온_서버_수로_ok_degraded_down_이고_down_이면_
     assert body["upstreams_reachable"] == 2
     assert body["models"] == {"match": True, "ids": ["glm"], "max_model_len": 1_048_576, "errors": {}}
     assert body["config_mtime"] == pytest.approx(r.env.stat().st_mtime, abs=0.01)
-    assert set(r.stats()[0]) == {"url", "up", "reachable", "models", "models_error", "running", "waiting", "kv", "metrics_age_s",
-                                 "metrics_fail", "scrape_age_s", "inflight", "sent", "connect_fail", "retried_away", "sticky", "overflow"}
+    assert set(r.stats()[0]) == {"url", "up", "reachable", "models", "models_error", "probe_timeouts", "running", "waiting", "kv",
+                                 "metrics_age_s", "metrics_fail", "scrape_age_s", "inflight", "sent", "connect_fail", "retried_away",
+                                 "sticky", "overflow"}
     b.srv.stop()
     _wait(lambda: r.health().json()["status"] == "degraded", what="degraded")
     assert r.health().status_code == 200 and r.health().json()["upstreams_up"] == 1
@@ -1426,6 +1427,47 @@ def test_검토2_MB_내려가기_전에_시작한_모델_대조의_답은_버린
     _wait(lambda: r.by_url()[a.base]["models"] == "unknown", what="내려가며 목록을 지우기")
     time.sleep(2.0)                                       # 매달렸던 대조의 답이 온다
     assert r.by_url()[a.base]["models"] == "unknown", "내려가기 전에 시작한 대조의 답을 적었다"
+
+
+class _HangFake(_Fake):
+    """hung 이 켜지면 모든 요청(지표 · 모델 · 채팅)을 받고 답하지 않는다 — GPU 가 멎었는데 API 프로세스는 산 vLLM. 꺼지면 다시 답한다."""
+    hung = False
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and self.hung:
+            if scope["path"] not in ("/metrics", "/v1/models"):
+                self.hits.append({"path": scope["path"], "t": time.monotonic()})
+            while self.hung:
+                await asyncio.sleep(0.01)
+        return await super().__call__(scope, receive, send)
+
+
+def test_검토2_LOW1_탐침이_세_번_연달아_매달리면_다시_답할_때까지_올라옴이_아니다(lab, monkeypatch, caplog):
+    """세 번 연달은 읽기 한도 초과 뒤 지표를 버리면 매달린 서버는 도는 수 0 으로 가장 한가해 보였고, 모델 목록은 그대로라 올라옴이었다
+    (검토: 10 개 가운데 7 개가 매달린 서버로 가 부르는 쪽의 한도까지 매달림). 이제 다시 답할 때까지 올라옴이 아니다."""
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(R, "PROBE_READ_S", 0.3)
+    a = lab.fake("A", running=4)
+    b = _HangFake("B")
+    b.srv = _Srv(b)
+    lab.servers.append(b.srv)
+    lab.fakes.append(b)
+    r = lab.router([a, b], LLM_ROUTER_PREFIX_CHARS=0, LLM_ROUTER_SCRAPE_S=0.1)
+    assert r.chat("x").json()["served_by"] == "B", "B(0) 가 A(4) 보다 한가하다"
+    b.hung = True
+    st = _until(r.by_url, lambda s: s[b.base]["probe_timeouts"] >= R.PROBE_TIMEOUTS_DOWN, timeout=10, what="세 번 연달아 매달리기")[b.base]
+    assert (st["up"], st["reachable"], st["models"]) == (False, True, "ok")
+    assert r.health().json()["upstreams_up"] == 1
+    hung_before = len(b.hits)
+    jobs = [_bg(lambda: r.http.post("/v1/chat/completions", json={"model": "glm", "messages": []}, timeout=4)) for _ in range(10)]
+    for j in jobs:
+        j["t"].join(8)
+    assert len(b.hits) == hung_before and all(j["r"].json()["served_by"] == "A" for j in jobs), "매달린 서버로 보내지 않는다"
+    assert sum("서버 응답 없음" in x.getMessage() and b.base in x.getMessage() for x in caplog.records) == 1
+    b.hung = False
+    _wait(lambda: r.by_url()[b.base]["up"] is True, timeout=5, what="다시 답하면 돌아오기")
+    assert r.by_url()[b.base]["probe_timeouts"] == 0 and any("서버 다시 답함" in x.getMessage() for x in caplog.records)
+    assert r.chat("x").json()["served_by"] == "B"
 
 
 def test_검토2_MC_기동은_첫_탐침을_2초까지만_기다리고_늦은_답은_이어서_받는다(lab):

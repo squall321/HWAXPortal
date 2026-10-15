@@ -7,9 +7,9 @@
         LLM_UPSTREAMS 의 규칙은 lib/llm-pool.sh hwax_llm_pool_upstreams(정본)와 같고 같은 표로 대조된다 — 틀린 칸이 하나라도 있으면 줄 전체를
         받지 않는다. 다시 읽은 목록이 비거나 틀렸으면 마지막 목록으로 계속 보내고 /health 의 kept_last_list 가 true 다 — 풀을 끄는 것은
         update-all 이고(사본을 되돌린 뒤 라우터를 내린다) 재기동이 미뤄진 손님은 그때까지 이 라우터를 부른다. 처음 읽을 때 비었거나 틀렸으면 503.
-  올라옴  연결이 되고 **마지막 /v1/models 가 200 으로 모델 목록을 준** 서버만 '올라옴' 이다. 아직 답하지 않은 서버(모름 — 내려갔다 올라온 서버도
-        다시 물을 때까지)·목록을 못 준 서버는 올라온 서버가 하나도 없을 때만 쓴다. 요청이 model 을 적었으면 그 모델이 있는 서버를 먼저 고른다
-        (없으면 올라온 서버 전부).
+  올라옴  연결이 되고 **마지막 /v1/models 가 200 으로 모델 목록을 줬고** 탐침이 연달아 PROBE_TIMEOUTS_DOWN 번 읽기 한도를 넘기지 않은 서버만
+        '올라옴' 이다. 아직 답하지 않은 서버(모름 — 내려갔다 올라온 서버도 다시 물을 때까지)·목록을 못 준 서버·답이 없는 서버는 올라온 서버가
+        하나도 없을 때만 쓴다. 요청이 model 을 적었으면 그 모델이 있는 서버를 먼저 고른다(없으면 올라온 서버 전부).
   기동  첫 지표·모델 대조를 STARTUP_PROBE_S 까지만 기다리고 듣기 시작한다 — 답하지 않은 서버는 '모름' 이고 탐침은 이어 돈다.
   고르기  부하 = 마지막 지표의 running + waiting(라벨 묶음 전부 합) + 그 뒤로 이 라우터가 더 보낸 수 — 이 라우터가 그 서버에 보내 도는 수보다
         작아지지 않는다. 지표를 잠깐 못 읽으면(읽기 한도 · 끊김 · 5xx) 마지막 지표를 세 번째 실패까지 쓰고, 404 · vLLM 모양이 아닌 글 · 세 번
@@ -50,6 +50,7 @@ MODELS_EVERY_S = 60.0     # /v1/models 대조 주기(설정이 바뀌어 서버 
 PROBE_READ_S = 10.0       # 라우터 자신의 탐침(/metrics · /v1/models) 읽기 한도 — 손님 요청 경로가 아니다
 BIG_BODY = 1 << 20        # 이보다 큰 본문은 JSON 해석을 이벤트 루프 밖에서 한다(1M 창 요청은 수 MB 다)
 METRICS_KEEP_FAILS = 3    # 지표 일시 실패가 이만큼 연달면 마지막 지표를 버리고 보낸 수로만 잰다
+PROBE_TIMEOUTS_DOWN = 3   # 탐침(지표 · 모델)이 연달아 이만큼 읽기 한도를 넘기면 다시 답할 때까지 '올라옴' 이 아니다(검토 2라운드 LOW 1)
 STARTUP_PROBE_S = 2.0     # 기동 때 첫 지표·모델 대조를 함께 기다리는 한도 — 넘으면 '모름' 으로 두고 듣기 시작한다(검토 2라운드 M-C)
 DEFAULT_ROUTER_PORT = 9130
 
@@ -374,6 +375,11 @@ def _rank(key: bytes, url: str) -> int:
     return int.from_bytes(hashlib.blake2b(key + url.encode(), digest_size=8).digest(), "big")
 
 
+def _read_timeout(exc: BaseException) -> bool:
+    """연결은 됐는데 읽기·쓰기 한도를 넘겼다 — 연결 한도(ConnectTimeout)는 '연결 실패' 다(그 서버를 뺀다)."""
+    return isinstance(exc, httpx.TimeoutException) and not isinstance(exc, httpx.ConnectTimeout)
+
+
 def _cert_error(exc: BaseException) -> bool:
     """인증서 검증 실패인가 — httpx.ConnectError 의 원인 사슬 끝에 ssl.SSLCertVerificationError 가 있다."""
     e: BaseException | None = exc
@@ -406,6 +412,7 @@ class Upstream:
         self.down_until = 0.0          # 연결 실패 뒤 이 시각까지 뺀다(지표 연결도 실패하면 다시 늘어난다)
         self.down_noted = False        # '내려감' 을 알렸고 아직 '올라옴' 을 못 알렸다
         self.downs = 0                 # 내려간 횟수 — 그 전에 시작한 모델 대조의 답은 버린다(옛 프로세스의 답일 수 있다)
+        self.probe_timeouts = 0        # 탐침(지표 · 모델)이 연달아 읽기 한도를 넘긴 수 — 답이 오면(상태 코드와 상관없이) 0
         # 마지막으로 **답한** /v1/models 가 200 모델 목록이면 (ids, (id, max_model_len)…), 아니면 None — None 이면 '올라옴' 이 아니다.
         # 답이 없던 대조(읽기 한도 · 끊김)는 이것을 바꾸지 않는다. 내려가면 None(모름)으로 되돌린다 — 다시 올라오면 새로 묻는다.
         # models_error 는 마지막 대조의 실패(상태 코드 · 까닭)다.
@@ -415,8 +422,13 @@ class Upstream:
         self.sent = self.connect_fail = self.retried_away = self.sticky = self.overflow = 0
 
     def is_up(self, now: float) -> bool:
-        """연결이 되는가(빼 둔 시간 밖) — '올라옴' 은 여기에 모델 목록이 더해진다(Router._choose · health)."""
+        """연결이 되는가(빼 둔 시간 밖) — '올라옴' 은 여기에 confirmed() 가 더해진다(Router._choose · health)."""
         return now >= self.down_until
+
+    def confirmed(self) -> bool:
+        """모델 목록을 확인했고 탐침에 답한다 — 연결(is_up)과 함께 '올라옴' 이다. 매달린 서버(연결은 되고 답이 없다)는 지표를 버린 뒤
+        도는 수가 0 이라 가장 한가해 보이고 보낸 요청이 부르는 쪽의 한도까지 매달린다(검토 2라운드 LOW 1)."""
+        return self.models is not None and self.probe_timeouts < PROBE_TIMEOUTS_DOWN
 
     def load(self) -> float:
         """마지막 지표의 running + waiting 에 '그 뒤로 이 라우터가 더 보낸 수'(0 아래는 0)를 더한다. 이 라우터가 지금 이 서버에 보내 도는
@@ -504,7 +516,7 @@ class Router:
             self._start_loop(u, first=first)
         self._tasks = [asyncio.create_task(self._watch_config()), asyncio.create_task(self._models_loop(check)), *firsts, check]
         now = time.monotonic()
-        LOG.info("기동 — 서버 %d곳(올라옴 %d) · 설정 %s%s", len(self.ups), sum(u.is_up(now) and u.models is not None for u in self.ups), self.env_file,
+        LOG.info("기동 — 서버 %d곳(올라옴 %d) · 설정 %s%s", len(self.ups), sum(u.is_up(now) and u.confirmed() for u in self.ups), self.env_file,
                  f" · {STARTUP_PROBE_S:g}초 안에 답하지 않은 탐침 {len(pending)}개는 이어서 기다린다" if pending else "")
 
     async def stop(self) -> None:
@@ -612,11 +624,14 @@ class Router:
             self._mark_down(u, exc, where="지표")
             return
         except httpx.HTTPError as exc:           # 닿기는 했다(읽기 한도 · 끊김) — 일시 실패, 마지막 지표를 이어 쓴다
+            if _read_timeout(exc):
+                self._probe_timed_out(u)
             self._metrics_miss(u, type(exc).__name__)
         except Exception as exc:                 # 뜻밖 — 이 서버만 나쁘다고 본다(라우터 전체로 번지지 않게)
             self._mark_down(u, exc, where="뜻밖")
             return
         else:
+            self._probe_answered(u)
             if r.status_code == 200:
                 m = parse_metrics(r.text)
                 if m is None:
@@ -663,6 +678,20 @@ class Router:
             age = "" if u.metrics_at is None else f" · 마지막 지표 {time.monotonic() - u.metrics_at:.0f}초 전"
             LOG.warning("지표를 %d번 연달아 못 읽었다 %s — %s%s · 이 라우터가 보낸 도는 수로만 잰다", u.metrics_fail, u.url, why, age)
         u.metrics, u.metrics_note = None, note
+
+    def _probe_timed_out(self, u: Upstream) -> None:
+        """탐침(지표 · 모델)이 읽기 한도를 넘겼다 — 연결은 됐는데 답이 없다. PROBE_TIMEOUTS_DOWN 번 연달으면 다시 답할 때까지 '올라옴' 이 아니다
+        (매달린 vLLM — API 프로세스는 받는데 답하지 않는다. 그리 보낸 요청은 부르는 쪽의 한도까지 매달린다, 검토 2라운드 LOW 1)."""
+        u.probe_timeouts += 1
+        if u.probe_timeouts == PROBE_TIMEOUTS_DOWN:
+            LOG.warning("서버 응답 없음 %s — 탐침(지표·모델)이 %d번 연달아 읽기 한도(%g초)를 넘겼다 · 다시 답할 때까지 '올라옴' 으로 치지 않는다"
+                        "(올라온 서버가 따로 있으면 보내지 않는다)", u.url, u.probe_timeouts, PROBE_READ_S)
+
+    def _probe_answered(self, u: Upstream) -> None:
+        """탐침에 답이 왔다(상태 코드와 상관없이 — 답하는 서버다)."""
+        if u.probe_timeouts >= PROBE_TIMEOUTS_DOWN:
+            LOG.info("서버 다시 답함 %s — 탐침에 답이 왔다", u.url)
+        u.probe_timeouts = 0
 
     def _mark_down(self, u: Upstream, exc: BaseException, *, where: str) -> None:
         """연결 실패(또는 이 서버에서 난 뜻밖의 예외) — COOLDOWN_S 동안 뺀다. 지표 연결이 실패할 때마다 다시 늘어나므로 죽은 서버는 계속 빠져
@@ -733,10 +762,13 @@ class Router:
             r = await self._probe.get(u.models_url, headers=hdrs, timeout=_probe_timeout(self.cfg.connect_timeout_s))
         except Exception as exc:                 # noqa: BLE001 — 답이 없다(연결 · 읽기 한도 · 끊김 · 뜻밖) — 지난 답을 그대로 둔다
             if u.downs == downs:
+                if _read_timeout(exc):
+                    self._probe_timed_out(u)
                 self._models_failed(u, type(exc).__name__, answered=False)
             return
         if u.downs != downs:                     # 묻는 사이에 내려갔다 — 옛 프로세스의 답일 수 있다(다시 올라오면 새로 묻는다)
             return
+        self._probe_answered(u)
         if r.status_code != 200:
             self._models_failed(u, r.status_code, answered=True)
         elif (got := _model_list(r)) is None:
@@ -773,13 +805,13 @@ class Router:
 
     # ── 라우터 자신의 끝점 ──
     def health(self) -> tuple[dict, int]:
-        """upstreams_up 은 '올라옴'(연결이 되고 모델 목록을 준) 서버 수다 — update-all 1i 는 이것이 1 이상일 때만 사본을 라우터로 바꾼다.
+        """upstreams_up 은 '올라옴'(연결이 되고 모델 목록을 줬고 탐침에 답하는) 서버 수다 — update-all 1i 는 이것이 1 이상일 때만 사본을 라우터로 바꾼다.
         status 는 down(연결되는 서버가 없다 — 503) · degraded(올라오지 않은 서버가 있거나 모델이 다르다) · ok. upstreams_reachable 은 연결만 되는
         수다(올라온 서버가 없어도 연결되는 서버로는 보낸다). kept_last_list 는 status 를 바꾸지 않는다 — 파일의 목록과 쓰는 목록이 다르다는
         사실만 알린다(update-all 이 라우터를 내릴 차례인지 보는 데 쓴다)."""
         now = time.monotonic()
         reach = [u for u in self.ups if u.is_up(now)]
-        up = sum(u.models is not None for u in reach)
+        up = sum(u.confirmed() for u in reach)
         models = self._models_summary()
         status = "down" if not reach else "degraded" if (up < len(self.ups) or models["match"] is False) else "ok"
         return ({"status": status, "upstreams_total": len(self.ups), "upstreams_up": up, "upstreams_reachable": len(reach),
@@ -791,9 +823,9 @@ class Router:
         out = []
         for u in self.ups:
             m = u.metrics or {}
-            out.append({"url": u.url, "up": u.is_up(now) and u.models is not None, "reachable": u.is_up(now),
+            out.append({"url": u.url, "up": u.is_up(now) and u.confirmed(), "reachable": u.is_up(now),
                         "models": "ok" if u.models is not None else ("error" if u.models_bad else "unknown"),
-                        "models_error": u.models_error,
+                        "models_error": u.models_error, "probe_timeouts": u.probe_timeouts,
                         "running": m.get("running"), "waiting": m.get("waiting"), "kv": m.get("kv"),
                         "metrics_age_s": None if u.metrics is None or u.metrics_at is None else round(now - u.metrics_at, 3),
                         "metrics_fail": u.metrics_fail,
@@ -811,13 +843,14 @@ class Router:
 
     # ── 넘기기 ──
     def _choose(self, key: bytes | None, model: str | None, tried: list[Upstream]) -> tuple[Upstream, str, Upstream | None] | None:
-        """후보 — 시도하지 않은 서버 가운데 연결되는 것(모두 빠졌으면 전부를 다시 시도해 본다 — 멀쩡해졌을 수 있다), 그 가운데 모델 목록이
-        확인된 것(확인된 서버가 하나도 없을 때만 모르는 서버를 쓴다), 요청이 모델을 적었으면 그 모델이 있는 것(없으면 그대로). 빨리 실패하는
-        서버(다른 모델로 다시 뜬 vLLM · 엉뚱한 포트의 다른 앱)는 도는 수가 늘 0 이라 가장 한가해 보인다 — 그래서 부하보다 먼저 거른다(검토 M1·M5)."""
+        """후보 — 시도하지 않은 서버 가운데 연결되는 것(모두 빠졌으면 전부를 다시 시도해 본다 — 멀쩡해졌을 수 있다), 그 가운데 '올라옴'(모델 목록
+        확인 · 탐침에 답함 — confirmed)인 것(올라온 서버가 하나도 없을 때만 나머지 — 답하는 서버 먼저), 요청이 모델을 적었으면 그 모델이 있는 것
+        (없으면 그대로). 빨리 실패하는 서버(다른 모델로 다시 뜬 vLLM · 엉뚱한 포트의 다른 앱)는 도는 수가 늘 0 이라 가장 한가해 보인다 — 그래서
+        부하보다 먼저 거른다(검토 M1·M5). 매달린 서버도 지표를 버린 뒤 도는 수 0 으로 같은 꼴이다(검토 2라운드 LOW 1)."""
         now = time.monotonic()
         rest = [u for u in self.ups if u not in tried]
         live = [u for u in rest if u.is_up(now)] or rest
-        cands = [u for u in live if u.models is not None] or live
+        cands = [u for u in live if u.confirmed()] or [u for u in live if u.probe_timeouts < PROBE_TIMEOUTS_DOWN] or live
         if model is not None:
             cands = [u for u in cands if u.models is not None and model in u.models[0]] or cands
         if not cands:
