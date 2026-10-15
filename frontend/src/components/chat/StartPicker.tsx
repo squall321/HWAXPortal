@@ -303,7 +303,12 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
               )}
               {detail.records.length > 0 && (
                 <>
-                  <div className="sp-sub sp-dim">보유 지식 ({detail.records.length}건)</div>
+                  <div className="sp-sub sp-dim">
+                    보유 지식 {(detail.records_total ?? detail.records.length).toLocaleString('ko-KR')}건
+                    {(detail.records_total ?? 0) > detail.records.length && (
+                      <span className="sp-dim"> · 앞 {detail.records.length}건</span>
+                    )}
+                  </div>
                   <ul className="sp-detail-list sp-scroll">
                     {detail.records.map((r) => (
                       <li key={r.id || r.title}>

@@ -91,3 +91,20 @@ def test_설명도_역할_문서도_없으면_아직_등록되지_않은_전문�
         r"\{detail\.prompt \? \(\s*<div className=\"dv-doc\">\s*<TextBlock text=\{detail\.prompt\} />\s*</div>\s*"
         r"\) : detail\.role \? \(\s*<p className=\"pv-empty\">따로 쓴 역할 문서가 없습니다 — 위 설명이 전부입니다\.</p>\s*"
         r"\) : \(\s*<p className=\"pv-empty\">설명과 역할 문서가 아직 등록되지 않은 전문가입니다\.</p>\s*\)\}", src)
+
+
+# ── K4 시작 패널의 보유 지식 수 ───────────────────────────────────────────────────────────────────
+def test_시작_패널은_미리보기가_아니라_전체_수를_센다():
+    """records 는 앞 20건 미리보기다 — 2,729건인 사람이 시작 패널에서만 20건으로 보였다(761명). 전문가 목록(RecordsHeading)과
+    같은 계산·같은 문구로 맞춘다. records_total 이 null(구 서버·목록 실패)이면 지금처럼 미리보기 수만 보인다."""
+    sp = _src("StartPicker.tsx")
+    assert "보유 지식 ({detail.records.length}건)" not in sp
+    head = sp[sp.index('<div className="sp-sub sp-dim">\n'):]
+    head = head[:head.index("</div>")]
+    assert "보유 지식 {(detail.records_total ?? detail.records.length).toLocaleString('ko-KR')}건" in head
+    assert "{(detail.records_total ?? 0) > detail.records.length && (" in head
+    assert '<span className="sp-dim"> · 앞 {detail.records.length}건</span>' in head
+    # 'git grep 보유 지식 (' 가 0 이어야 한다(요청서 확인) — 미리보기 수로 세는 곳이 프런트에 더 없다
+    front = Path(__file__).resolve().parents[2] / "frontend" / "src"
+    left = [str(p) for p in front.rglob("*.tsx") if "보유 지식 (" in p.read_text("utf-8")]
+    assert not left, left
