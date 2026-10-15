@@ -48,7 +48,10 @@
 #       아니다). 리포는 apply-envs·update-all 의 find_repo 와 같은 순서로 찾는다(<포털 상위>/ → ~/Projects/ → ~/claude/). 줄은 파일마다
 #       처리하는 대로 낸다 — 뒤 파일에서 죽어도 앞 파일의 결과는 남는다(부르는 쪽은 종료코드를 본다). 값은 바이트 그대로 다룬다(UTF-8 이
 #       아닌 값도 어느 LANG 에서나 죽지 않는다).
-#   hwax_llm_pool_at <포털 루트> <주소>      지금 그 주소를 가리키는 사본 수(끝 `/` 무시).
+#   hwax_llm_pool_at <포털 루트> <주소>      지금 그 주소를 가리키는 사본 수(끝 `/` 무시)를 찍고 0. **셀 수 없으면 2** 와 사유 한 줄 — 사본 lib 이
+#       실패했거나(here-doc 임시 파일을 못 만든다 · 파이썬이 죽었다) 읽지 못한 사본이 있다. 부르는 쪽은 2 를 '모른다 — 사본이 그 주소를 가리킬
+#       수 있다' 로 읽는다(라우터를 내리지 않는다 · 기록을 덮지 않는다 · '직접 주소다' 라고 말하지 않는다 — ✗ 와 사유. 반대 검토 2라운드 M-D:
+#       0 으로 읽어 사본 둘이 아직 가리키는 라우터를 내렸다).
 #
 # ⚠ 0 아닌 값을 정상으로 돌려준다 — `set -e` 스크립트에서는 `_x="$(hwax_llm_… )" || _rc=$?` 로 받는다. 맨 문장이면 1·2 에서 조용히 끝난다.
 
@@ -538,6 +541,23 @@ for path, entries in groups.items():
 PY
 }
 
-hwax_llm_pool_at() {  # $1=포털 루트 $2=주소
-  hwax_llm_pool_rewrite "$1" dry "$2" "$2" | awk -F'\t' '$1 == "same" { n++ } END { print n + 0 }'
+hwax_llm_pool_at() {  # $1=포털 루트 $2=주소 — 0 = 수를 찍었다 · 2 = 셀 수 없다(사유 한 줄 — 부르는 쪽은 '가리킬 수 있다' 로 읽는다)
+  # 종전엔 lib 의 실패를 0 으로 읽었다(`… | awk 'END { print n + 0 }'` — /tmp 가 차 here-doc 을 못 만들면 '가리키는 사본 0곳').
+  local out rc=0 cnt n e
+  out="$(hwax_llm_pool_rewrite "$1" dry "$2" "$2")" || rc=$?
+  if [ "$rc" != 0 ]; then
+    printf '%s\n' "사본을 세지 못했다(사본 lib rc $rc — 위 오류 줄)"; return 2
+  fi
+  # 읽지 못한 사본(error 줄)도 '모른다' 다 — 그 사본이 이 주소를 가리킬 수 있다. 첫 사본의 자리와 사유를 함께 낸다.
+  cnt="$(printf '%s\n' "$out" | awk -F'\t' '$1 == "same" { n++ }
+           $1 == "error" { if (!e) { k = split($3, p, "/"); w = p[k] "/" $4 " " $5 " — " $6 } e++ }
+           END { printf "%d\t%d\t%s\n", n, e, w }')" || cnt=""
+  n="${cnt%%$'\t'*}"; e="${cnt#*$'\t'}"; e="${e%%$'\t'*}"
+  if ! [[ "$n" =~ ^[0-9]+$ && "$e" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "사본을 세지 못했다(수를 읽지 못했다)"; return 2
+  fi
+  if [ "$e" != 0 ]; then
+    printf '%s\n' "사본 ${e}곳을 읽지 못했다(${cnt#*$'\t'*$'\t'})"; return 2
+  fi
+  printf '%s\n' "$n"
 }

@@ -595,6 +595,92 @@ def test_제자리에_쓴_사본은_그렇게_말한다(box, router):
     assert other.read_text() == agent.read_text() and f"http://127.0.0.1:{router['port']}/v1" in other.read_text()
 
 
+# ── 사본을 셀 수 없을 때(2라운드 M-D · LP-D14) — 어느 자리든 '가리킬 수 있다' 로 읽는다 ─────────────────────────────────────
+def _dry_fails(box: Box) -> str:
+    """사본 lib 의 dry(세기)만 죽는 python3 를 PATH 앞에 세운다 — write(바꾸기)와 /health 읽기는 그대로 돈다. 세기가 실패한 자리마다 0 이 아니라
+    '모른다' 로 읽는지 본다."""
+    shim = box.home / "shim-dry"; shim.mkdir(exist_ok=True)
+    (shim / "python3").write_text("#!/usr/bin/env bash\n"
+                                  'if [ "${HWAX_LLM_MODE:-}" = dry ]; then echo "(대역) 세기 실패" >&2; exit 7; fi\n'
+                                  f'exec "{shutil.which("python3")}" "$@"\n')
+    (shim / "python3").chmod(0o755)
+    return f"{shim}:{os.environ['PATH']}"
+
+
+def test_임시_파일을_못_만드는_박스에서_풀을_꺼도_라우터를_내리지_않는다(box, router):
+    """**2라운드 M-D 회귀(검토 탐침 probe_count_failopen 그대로)** — /tmp 가 차 bash 가 lib 의 파이썬 here-doc 임시 파일을 못 만들면(ulimit -f 1)
+    사본 수가 0 으로 읽혀, 1i 는 사본을 안 되돌리고 ✗ 도 없었고, 뒤처리는 '✓ … 사본은 직접 주소다' 를 찍고 사본 둘이 아직 가리키는 라우터를
+    내렸다. 이제 1i 와 뒤처리가 각각 ✗ 와 사유를 내고 라우터는 그대로다."""
+    rurl = f"http://127.0.0.1:{router['port']}/v1"
+    box.env(f"LLM_BASE_URL={DIRECT}\nLLM_UPSTREAMS={S1},{S2}\nLLM_ROUTER_PORT={router['port']}\n")
+    box.put({"agent-server": DIRECT, "signalforge": DIRECT})
+    box.run()
+    assert box.value("agent-server") == rurl and box.value("signalforge") == rurl
+    box.env(f"LLM_ROUTER_PORT={router['port']}\nLLM_BASE_URL={DIRECT}\n")              # 풀을 끈다
+    out = box.run(first=False, pre="ulimit -f 1\n" + _block_1i() + '\necho "RETIRE=[$_LLM_RETIRE]"\n_DA_RC=0; _us_rc=0\n', retire=True)
+    assert "here-document" in out, "lib 이 실패하지 않았다 — 시험이 헛돈다"
+    assert [c for c in box.called() if c.startswith("llm-router.sh stop")] == [], f"사본이 가리키는데 라우터를 내렸다 — {box.called()}"
+    assert not [ln for ln in _lines(out, "OK:") if "내렸다" in ln], out
+    fails = _lines(out, "FAIL:")
+    assert any("라우터를 가리키는 LLM 주소 사본을 세지 못했다" in ln for ln in fails), out
+    assert any(f"LLM 라우터(:{router['port']})를 내리지 않았다" in ln and "세지 못했다" in ln for ln in fails), out
+    assert "LLM 서버 풀(라우터)" not in box.ledger.read_text(), "'사본들이 직접 본다' ○ 는 거짓일 수 있다"
+
+
+def test_풀을_끌_때_셀_수_없으면_되돌릴_수_있는_사본은_되돌리되_라우터는_내리지_않는다(box, router):
+    rurl = _off(box, router)
+    _recorded(box, rurl)          # 기록이 있다(지금 라우터) — 기록 없음의 루프백 점검(LOW 7)이 이 세기 실패를 대신 잡지 않게
+    out = box.run(retire=True, pre="_DA_RC=0; _us_rc=0\n", PATH=_dry_fails(box))
+    assert "(대역) 세기 실패" in out, "세기가 죽지 않았다 — 시험이 헛돈다"
+    assert box.value("agent-server") == DIRECT and box.value("aidh-openai") == DIRECT, "가리킬 수 있으면 되돌리기는 한다"
+    assert box.called() == [], f"셀 수 없는데 라우터를 내렸다 — {box.called()}"
+    assert f"RETIRE=[{rurl}]" in out
+    fails = _lines(out, "FAIL:")
+    assert len(fails) == 2 and "세지 못했다" in fails[0] and f"(:{router['port']})를 내리지 않았다" in fails[1], out
+    assert "LLM 서버 풀(라우터)" not in box.ledger.read_text() and "LLM 라우터 내리기 미룸" not in box.ledger.read_text(), \
+        "셀 수 없는 것은 미룸(○)이 아니라 실패(✗)다"
+
+
+def test_옛_주소의_사본을_셀_수_없으면_기록을_덮지_않는다(box, router, old_router):
+    """옛 라우터 주소는 이 기록에만 있다 — 그 주소의 사본이 남았는지 모르는데 기록을 새 주소로 바꾸면 그 사본을 영영 못 찾는다(M-D)."""
+    _recorded(box, old_router["url"])
+    new = f"http://127.0.0.1:{router['port']}/v1"
+    box.env(f"LLM_BASE_URL={DIRECT}\nLLM_UPSTREAMS={S1},{S2}\nLLM_ROUTER_PORT={router['port']}\n")
+    box.put({"agent-server": old_router["url"]})
+    out = box.run(PATH=_dry_fails(box))
+    assert "(대역) 세기 실패" in out and box.value("agent-server") == new, out
+    assert box.record() == old_router["url"], "셀 수 없는데 기록을 새 주소로 덮었다"
+    fails = _lines(out, "FAIL:")
+    assert len(fails) == 1 and old_router["url"] in fails[0] and "세지 못했다" in fails[0] and "기록은 옛 주소 그대로" in fails[0], out
+
+
+def test_라우터가_쓸_수_없을_때_사본을_셀_수_없으면_그렇게_말한다(box, router):
+    router["body"] = _ok_body(status="down", upstreams_up=0)
+    box.env(f"LLM_BASE_URL={DIRECT}\nLLM_UPSTREAMS={S1}\nLLM_ROUTER_PORT={router['port']}\n")
+    box.put({"agent-server": f"http://127.0.0.1:{router['port']}/v1"})
+    out = box.run(PATH=_dry_fails(box))
+    fails = _lines(out, "FAIL:")
+    assert len(fails) == 1 and "라우터를 가리키는 사본을 세지 못했다" in fails[0] and "지금 실패한다" in fails[0], out
+
+
+@pytest.mark.parametrize("which", ["지금 라우터", "옛 라우터"])
+def test_6장_은_사본을_셀_수_없으면_직접_주소라고_말하지_않는다(box, router, old_router, which):
+    """**2라운드 M-D 회귀** — §6 은 세기가 실패해도 0 으로 읽어 '사본은 직접 주소 그대로라 LLM 은 돈다' 고 말했다. 이제 ✗ 와 사유다."""
+    if which == "지금 라우터":
+        router["body"] = _ok_body(status="down", upstreams_up=0)
+        box.env(f"LLM_UPSTREAMS={S1},{S2}\nLLM_BASE_URL={DIRECT}\nLLM_ROUTER_PORT={router['port']}\n")
+        box.put({"agent-server": f"http://127.0.0.1:{router['port']}/v1"})
+    else:
+        _recorded(box, old_router["url"])
+        box.env(f"LLM_UPSTREAMS={S1},{S2}\nLLM_BASE_URL={DIRECT}\nLLM_ROUTER_PORT={_dead_port()}\n")
+        box.put({"agent-server": old_router["url"]})
+    out = box.run(first=False, s6=True, PATH=_dry_fails(box))
+    assert not [ln for ln in _lines(out, "BAD:") if "직접 주소 그대로라" in ln], out
+    mine = [ln for ln in _lines(out, "FAIL:") if "LLM 라우터" in ln and "세지 못했다" in ln]
+    want = "옛 라우터(" if which == "옛 라우터" else "라우터를 가리키는 사본을 세지 못했다"
+    assert any(want in ln for ln in mine), out
+
+
 # ── §6 한 줄 ───────────────────────────────────────────────────────────────────────────────────────
 def _s6(box: Box, router, body: dict | None, values: dict, *, pool: bool = True) -> str:
     port = router["port"] if body is not None else _dead_port()

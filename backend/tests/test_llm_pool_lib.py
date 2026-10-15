@@ -498,8 +498,48 @@ def test_가리키는_사본_수(box):
     root, home, sib = box
     sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={ROUTER}/\n")
     sib["AIDataHub"].write_text(f"OPENAI_BASE_URL={ROUTER}\nLLM_BASE_URL={DIRECT}\n")
-    r = _sh(f'. "{LIB}"; hwax_llm_pool_at "{root}" "{ROUTER}"', home)
-    assert r.stdout.strip() == "2", r.stdout + r.stderr
+    r = _sh(f'. "{LIB}"; hwax_llm_pool_at "{root}" "{ROUTER}"; echo "rc=$?"', home)
+    assert r.stdout.split() == ["2", "rc=0"], r.stdout + r.stderr
+
+
+def _at(box, *, pre: str = "", **env) -> tuple[int, str, str]:
+    root, home, _ = box
+    r = _sh(f'{pre}. "{LIB}"; out="$(hwax_llm_pool_at "{root}" "{ROUTER}")"; rc=$?; echo "rc=$rc"; printf "[%s]\\n" "$out"', home, **env)
+    lines = r.stdout.splitlines()
+    return int(lines[0][3:]), lines[1], r.stderr
+
+
+def test_셀_수_없으면_0_이_아니라_모른다(box):
+    """**2라운드 M-D 회귀** — `rewrite dry | awk 'END { print n + 0 }'` 는 lib 이 실패해도 0 이었다. /tmp 가 차 bash 가 파이썬 here-doc 의 임시
+    파일을 못 만들면(ulimit -f 1 로 흉내) 1i 는 사본을 안 되돌리고, 뒤처리는 '사본은 직접 주소다' 를 찍고 사본 둘이 아직 가리키는 라우터를
+    내렸다. 이제 2 와 사유 한 줄이다 — 부르는 쪽이 '가리킬 수 있다' 로 읽는다."""
+    _, _, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={ROUTER}\n")
+    rc, out, err = _at(box, pre="ulimit -f 1; ")
+    assert "here-document" in err, "lib 이 실패하지 않았다 — 시험이 헛돈다"
+    assert rc == 2 and out.startswith("[사본을 세지 못했다") and "rc 1" in out, (rc, out, err)
+
+
+@NOT_ROOT
+def test_읽지_못한_사본이_있으면_모른다(box):
+    """읽지 못한 사본(error 줄)은 그 주소를 가리킬 수 있다 — 세지 않고 0 으로 치면 같은 결함이다. 자리와 사유를 함께 낸다."""
+    _, _, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={ROUTER}\n")
+    sib["SignalForge"].write_text(f"OPENAI_BASE_URL={ROUTER}\n"); sib["SignalForge"].chmod(0o000)
+    try:
+        rc, out, _ = _at(box)
+    finally:
+        sib["SignalForge"].chmod(0o644)
+    assert rc == 2 and "1곳을 읽지 못했다" in out and "SignalForge/.env OPENAI_BASE_URL" in out, out
+
+
+def test_파이썬이_죽어도_모른다(box, tmp_path):
+    _, _, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={ROUTER}\n")
+    shim = tmp_path / "shim"; shim.mkdir()
+    (shim / "python3").write_text("#!/usr/bin/env bash\necho '(대역) python3 죽음' >&2\nexit 9\n"); (shim / "python3").chmod(0o755)
+    rc, out, err = _at(box, PATH=f"{shim}:{os.environ['PATH']}")
+    assert "(대역) python3 죽음" in err and rc == 2 and "rc 9" in out, (rc, out, err)
 
 
 def test_리포가_없는_사본은_줄을_내지_않는다(box):
