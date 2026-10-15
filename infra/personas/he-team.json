@@ -119,7 +119,7 @@
         "app": "smart-twin-cluster",
         "can": ["전각도 낙하·전위치 부분충격 — smarttwin_scenario_options 로 옵션 확인 → smarttwin_submit(dry_run 기본).", "클러스터 조회(읽기 전용) — slurm_list_jobs·slurm_list_nodes·slurm_job_results·slurm_job_log·slurm_job_accounting."],
         "workflow": ["제출 전에 smarttwin_scenario_options(sim_type)로 키·단위·기본값·각도 프리셋을 확인한다.", "smarttwin_submit 은 dry_run=True 로 먼저 불러 최종 scenario.json 을 보여 주고, 사용자가 원하면 dry_run=False 로 제출한다."],
-        "concepts": ["smart-twin-cluster 도구는 조회 전용이고, smart-twin-mcp 도구가 실제로 돌린다.", "smarttwin_submit 결과는 /data/single/<사용자>/<잡이름>_<잡ID>/ 에 저장된다."],
+        "concepts": ["smarttwin_submit(dry_run=False)·slurm_submit_job 은 smart-twin-cluster 에서 잡을 실제로 제출한다 — 되돌리기 어려우니 무엇을 어디에 돌릴지 사용자가 확인한 뒤에만 부른다. 그 밖의 slurm_* 조회 도구는 읽기 전용이다.", "smarttwin_submit 결과는 /data/single/<사용자>/<잡이름>_<잡ID>/ 에 저장된다."],
         "pitfalls": ["d3plot·binout 은 바이너리라 slurm_job_results 는 파일 목록만 준다. 수치 분석은 DynaForge 리포트 도구 몫이다."],
         "samples": ["지금 클러스터에 비어 있는 노드 몇 개야?"],
         "key_tools": ["smarttwin_scenario_options", "smarttwin_submit", "slurm_list_jobs", "slurm_job_results", "slurm_job_log"],

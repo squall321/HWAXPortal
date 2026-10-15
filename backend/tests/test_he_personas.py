@@ -405,3 +405,14 @@ def test_심의_운영자는_좌석_상한을_숫자로_박아_두지_않는다(
         assert '"seats": _engine.MAX_REQ_SEATS' in _ENGINE_MCP.read_text(encoding="utf-8"), (
             "deliberate_jobs 가 limits.seats 를 더는 엔진 상수에서 내지 않는다 — 안내문을 다시 맞춘다")
 
+
+
+def test_클러스터의_제출_도구를_조회_전용이라_하지_않는다():
+    """smart-twin-cluster 의 smarttwin_submit·slurm_submit_job 은 잡을 실제로 제출한다 — '그 앱 도구는 조회 전용' 이라 쓰면 모델이
+    확인 없이 부른다. 허브 규칙(잡 제출은 무엇을 어디에 돌릴지 사용자가 확인한 뒤)을 그 두 도구에 적는다."""
+    p = _one("he-sim-smarttwin")["personas"][0]
+    cluster = next(o for o in p.get("optional") or [] if o["app"] == "smart-twin-cluster")
+    text = " ".join(s for src in (p, cluster) for f in ("can", "workflow", "concepts", "pitfalls") for s in src.get(f) or [])
+    assert "smart-twin-cluster 도구는 조회 전용" not in text
+    line = next((s for s in cluster["concepts"] if "smarttwin_submit" in s and "slurm_submit_job" in s), None)
+    assert line is not None and "확인한 뒤에만" in line, line
