@@ -140,6 +140,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 리스크 심사를 Claude 로도(엔진의 LLM 자리에 외부 응답자 — Claude Code 워크플로가 MCP 로 과제를 집어 답한다, **기본 꺼짐**·잡마다 반출 동의, 실제 Claude 실행 시험은 하지 않음 — 사용자 결정 10-15) | `docs/risk-claude-engine/` (PLAN·checklist·context-notes) |
 | LLM 서버 둘을 자원 보고 나눠 쓰기(같은 모델 둘 · vLLM 지표를 읽는 라우터 · 캐시 붙임 · 연결 실패만 넘김 · 주소 사본 함께 바꾸기 — 리스크 심사 M3 뒤, 사용자 결정 10-15) | `docs/llm-pool/` (PLAN·checklist·context-notes) |
 | 챗·심의에서 그림을 모델이 보게(지금은 GLM 요청에 `image_url` 이 없다 — 진단 · 서버 탐침 `HWAXAgentServer/scripts/llm_vision_probe.py`, 챗 이미지 + 도구 그림, M3 뒤) | `docs/chat-vision/` (PLAN·checklist·context-notes) |
+| 운영 수정 요청 10-15(전문가·지식카드 화면 — 빈 카드·로그인 만료·긴 카드·검색·빈 전문가·HE 운영자, K1~K9, 다섯 리포) | `docs/request_1015.md`(요청서 정본) · `docs/request-1015/` (PLAN·checklist·context-notes) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
