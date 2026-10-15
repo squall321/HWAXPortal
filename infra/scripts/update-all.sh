@@ -56,6 +56,10 @@ for _h in ${_np_parts[@]+"${_np_parts[@]}"}; do
   case ",$_np," in *",$_h,"*) ;; *) _np="${_np:+$_np,}$_h" ;; esac
 done
 export NO_PROXY="$_np"; export no_proxy="$_np"; unset _np _np_parts _h
+# 운영자 셸에 export 된 LLM_ROUTER_PORT 를 물려주지 않는다(LLM 풀 반대 검토 2라운드 LOW 6 · LP-D14) — llm-router.sh stop 은 환경의 포트를
+# 먼저 본다. 옛 포트가 남아 있으면 §1i·§4 의 update-sites llm-router 가 그 포트의 라우터(미룬 서비스가 아직 쓸 수 있다)를 내리고 지금 포트의
+# 라우터는 못 내린다. 라우터 포트의 정본은 infra/.env 하나다 — 옛 포트를 내릴 때는 그 한 번에만 준다(LLM_ROUTER_PORT=<포트> … llm-router.sh stop).
+unset LLM_ROUTER_PORT
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
@@ -408,7 +412,10 @@ fi
 # 밀린 양이 상한(HWAX_ENV_SYNC_MAX, 기본 10)을 넘으면 **자동으로 켜지 않고** 사람에게 넘긴다.
 hr "1c) .env 옵션 동기화"
 if [ -x "$SELF_REPO/infra/scripts/env-sync.sh" ]; then
-  "$SELF_REPO/infra/scripts/env-sync.sh" 2>&1 | sed 's/^/  /' || true
+  # 못 채운 리포가 있으면(백업을 못 만들었다 — 포털 infra/.state 에 쓸 수 없다 · 덧붙이지 못했다) env-sync 가 ✗ 와 0 아닌 값으로 끝난다(LP-D14).
+  # 종전엔 그때도 '✓ … 자동 추가 N' 이었고 여기서 rc 를 버렸다 — 새 설정이 안 들어간 것이 초록으로 지나갔다.
+  _es_rc=0; "$SELF_REPO/infra/scripts/env-sync.sh" 2>&1 | sed 's/^/  /' || _es_rc=$?
+  [ "$_es_rc" = 0 ] || fail ".env 옵션 동기화 — 새 설정을 채우지 못한 .env 가 있다(env-sync rc $_es_rc — 위 ✗ 줄이 리포와 까닭을 말한다). 포털 infra/.state 의 권한·소유자를 보고 재실행"
 else
   hwax_skip ".env 옵션 동기화" "env-sync.sh 가 없다(구버전 체크아웃)" "git pull 뒤 재실행"
 fi
@@ -693,6 +700,9 @@ esac
 #   없으면 라우터(지금 포트 · 기록한 옛 포트)를 가리키는 사본만 직접 주소로 되돌리고, 라우터는 §4 **뒤에** 내린다 — 사본을 쓰는 서비스가
 #   §2·§4 에서 직접 주소로 다시 뜬 뒤여야 한다(먼저 내리면 아직 옛 주소를 쥔 서비스와, 심의 때문에 재기동을 미룬 서비스가 그 사이 LLM 을 잃는다).
 #   줄도 없고 라우터를 가리키는 사본도 떠 있는 라우터도 없으면 ○ 만 남긴다.
+#   사본 수를 셀 수 없으면(사본 lib 실패 — hwax_llm_pool_at 의 2) 어느 자리든 '가리킬 수 있다' 로 읽는다 — 기록을 덮지 않고 · ○ 로 넘기지
+#   않고 · 라우터를 내리지 않고 · §6 에서 '직접 주소다' 라고 말하지 않는다. 자리마다 ✗ 와 사유(LP-D14). 라우터 기록이 없거나 못 읽는데
+#   풀이 꺼져 있으면 아무것도 듣지 않는 루프백 사본을 ⚠ 로 알린다 — 옛 라우터인지 로컬 vLLM 인지 몰라 고치지 않는다.
 # 왜 1h 뒤인가 — 라우터 재기동도 비우기 창 안에서 한다(카드 대조가 빠진 뒤라 미룰 일이 적다). 왜 §2 앞인가 — §2(deploy-all)·§4(update-sites)
 #   는 서비스의 .env 를 재기동 지문에 넣는다. 여기서 바꾼 사본은 그 자리에서 재기동으로 이어진다 — 이어지지 않는 사본은 따로 말한다.
 LLM_ENV="$SELF_REPO/infra/.env"
@@ -700,7 +710,8 @@ _LLM_RETIRE=""                                   # 풀을 껐는데 떠 있는 �
 _llm_router_rc=0; _llm_router="$(hwax_llm_router_url "$LLM_ENV")" || _llm_router_rc=$?
 _llm_direct="$(hwax_llm_envv "$LLM_ENV" LLM_BASE_URL)"
 # 1i 가 마지막으로 사본에 적은 라우터 주소 — 지금 포트의 주소와 다를 때만 따로 본다(포트를 바꿨거나 포트 줄을 풀과 함께 지웠다).
-_llm_old="$(hwax_llm_router_recorded "$SELF_REPO")" || _llm_old=""
+# 기록이 없거나 못 읽으면(_llm_rec_rc ≠ 0) 옛 라우터 주소를 모른다 — 풀을 끌 때 루프백 사본을 따로 본다(아래 1 갈래, LOW 7).
+_llm_rec_rc=0; _llm_old="$(hwax_llm_router_recorded "$SELF_REPO")" || { _llm_rec_rc=$?; _llm_old=""; }
 [ "$_llm_old" = "$_llm_router" ] && _llm_old=""
 _llm_svcs=""
 # 바뀐 사본의 서비스가 이번 실행에서 그 .env 를 다시 읽는 자리 — 재기동 지문에 .env 가 든 자리다(deploy-all 의 hwax_fp · services.py fp).
@@ -721,14 +732,15 @@ _llm_restart_by() {  # $1=서비스(apply-envs 의 이름)
 # 백업은 파일마다 한 번 **전체 경로**와 되돌리는 명령을 낸다(같은 파일의 키 둘은 백업 하나 — 포털 infra/.state 아래라 이름만으로는 못 찾는다).
 # lib 의 종료코드를 본다 — 0 이 아니면 줄을 내지 못한 사본은 바뀌었는지 모른다(반대 검토 L4: 뒤 파일에서 죽으면 앞 파일의 ✓ 까지 사라졌다).
 _llm_apply() {
-  local warn="$1" new="$2" out rc=0 st svc rp rel key cur bak seen="|" n_ch=0 n_same=0 n_for=0 n_abs=0
+  local warn="$1" new="$2" out rc=0 st svc rp rel key cur bak how seen="|" n_ch=0 n_same=0 n_for=0 n_abs=0
   shift 2
   _llm_svcs=""
   out="$(hwax_llm_pool_rewrite "$SELF_REPO" write "$new" "$@")" || rc=$?
-  while IFS=$'\t' read -r st svc rp rel key cur bak; do
+  # 여덟째 칸(how) — 이름 바꾸기 대신 제자리에 썼으면 그 사실과 까닭(ACL · 하드 링크 · 쓸 수 없는 디렉터리, LP-D14).
+  while IFS=$'\t' read -r st svc rp rel key cur bak how; do
     case "$st" in
       changed) n_ch=$((n_ch + 1))
-               ok "${rp##*/}/$rel  $key: $cur → $new"
+               ok "${rp##*/}/$rel  $key: $cur → $new${how:+  ($how)}"
                case "$seen" in
                  *"|$bak|"*) ;;
                  *) seen="$seen$bak|"; echo "    · 백업 $bak — 파일째 되돌리려면 cp '$bak' '$rp/$rel'" ;;
@@ -788,9 +800,14 @@ case "$_llm_ups_rc" in
       if [ "$_llm_live" = 1 ] && [ "$_llm_m" = true ]; then
         ok "라우터가 답한다 — 서버 $_llm_up/$_llm_tot 올라옴 · 모델 같음 · 도는 요청 $_llm_inf"
         _llm_apply 1 "$_llm_router" "$_llm_direct" "${_llm_ups_a[@]}" "$_llm_router" ${_llm_old:+"$_llm_old"}
-        # 바꾼 라우터 주소를 적는다 — 다음 실행이 포트를 바꾸거나 포트 줄을 풀과 함께 지워도 이 주소의 사본을 찾게(M4). 옛 주소의 사본이 남았으면
-        # (위 ✗) 옛 기록을 그대로 둔다 — 새 주소는 infra/.env 에서 늘 나오지만 옛 주소는 이 기록에만 있다(지우면 그 사본을 영영 못 찾는다).
-        if [ -n "$_llm_old" ] && [ "$(hwax_llm_pool_at "$SELF_REPO" "$_llm_old")" != 0 ]; then
+        # 바꾼 라우터 주소를 적는다 — 다음 실행이 포트를 바꾸거나 포트 줄을 풀과 함께 지워도 이 주소의 사본을 찾게(M4). 옛 주소의 사본이 남았거나
+        # **셀 수 없으면**(사본 lib 실패 — 가리킬 수 있다, LP-D14) 옛 기록을 그대로 둔다 — 새 주소는 infra/.env 에서 늘 나오지만 옛 주소는 이
+        # 기록에만 있다(지우면 그 사본을 영영 못 찾는다).
+        _llm_oc=0; _llm_oc_rc=0
+        if [ -n "$_llm_old" ]; then _llm_oc="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_old")" || _llm_oc_rc=$?; fi
+        if [ "$_llm_oc_rc" != 0 ]; then
+          fail "옛 라우터 주소($_llm_old)를 가리키는 사본을 세지 못했다 — $_llm_oc. 가리키는 사본이 있을 수 있어 기록은 옛 주소 그대로 둔다(다음 update-all 이 다시 센다)"
+        elif [ "$_llm_oc" != 0 ]; then
           bad "옛 라우터 주소($_llm_old)를 가리키는 사본이 남았다(위 ✗) — 기록은 옛 주소 그대로 둔다(다음 update-all 이 다시 옮긴다)"
         else
           hwax_llm_router_record "$SELF_REPO" "$_llm_router" \
@@ -816,47 +833,89 @@ case "$_llm_ups_rc" in
         else
           _llm_why="/health 가 답하지 않는다(${_llm_wait}초 기다렸다)"
         fi
-        _llm_left=""; _llm_n="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_router")"
-        if [ "${_llm_n:-0}" != 0 ] && [ "$_llm_live" = 1 ]; then
+        # 이미 라우터를 가리키는 사본 — 셀 수 없으면(사본 lib 실패) 그 사실을 ✗ 줄에 적는다(가리킬 수 있다 — LP-D14, 0 으로 읽지 않는다).
+        _llm_left=""; _llm_unk=""; _llm_n_rc=0; _llm_n="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_router")" || _llm_n_rc=$?
+        if [ "$_llm_n_rc" != 0 ]; then
+          _llm_unk=1
+          _llm_left=" 라우터를 가리키는 사본을 세지 못했다($_llm_n) — 가리키는 사본이 있으면 그대로다$([ "$_llm_live" = 1 ] || printf '%s' ' — 그 서비스들의 LLM 호출이 지금 실패한다')."
+        elif [ "$_llm_n" != 0 ] && [ "$_llm_live" = 1 ]; then
           _llm_left=" 이미 라우터를 가리키는 사본 ${_llm_n}곳은 그대로다(그 라우터로 계속 간다)."
-        elif [ "${_llm_n:-0}" != 0 ]; then
+        elif [ "$_llm_n" != 0 ]; then
           _llm_left=" 이미 라우터를 가리키는 사본 ${_llm_n}곳은 그대로다 — 그 서비스들의 LLM 호출이 지금 실패한다(직접 주소로 돌리려면 LLM_UPSTREAMS 줄을 지우고 update-all)."
         fi
         if [ -n "$_llm_old" ]; then
-          _llm_n="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_old")"
-          [ "${_llm_n:-0}" != 0 ] && _llm_left="$_llm_left 옛 라우터 주소($_llm_old)의 사본 ${_llm_n}곳도 그대로다(옛 라우터가 떠 있는 동안만 돈다)."
+          _llm_n_rc=0; _llm_n="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_old")" || _llm_n_rc=$?
+          if [ "$_llm_n_rc" != 0 ]; then
+            _llm_unk=1; _llm_left="$_llm_left 옛 라우터 주소($_llm_old)를 가리키는 사본도 세지 못했다($_llm_n)."
+          elif [ "$_llm_n" != 0 ]; then
+            _llm_left="$_llm_left 옛 라우터 주소($_llm_old)의 사본 ${_llm_n}곳도 그대로다(옛 라우터가 떠 있는 동안만 돈다)."
+          fi
         fi
         case "$_llm_us_rc" in
           0|3) fail "LLM 라우터 — $_llm_why. 사본을 라우터로 바꾸지 않았다.$_llm_left 라우터 로그와 LLM_UPSTREAMS 의 서버를 본다" ;;
-          *)   echo "  · 사본은 라우터로 바꾸지 않았다(라우터가 뜨지 않았다 — 위 ✗).$_llm_left" ;;
+          *)   if [ -n "$_llm_unk" ]; then
+                 fail "사본은 라우터로 바꾸지 않았다(라우터가 뜨지 않았다 — 위 ✗).$_llm_left"
+               else
+                 echo "  · 사본은 라우터로 바꾸지 않았다(라우터가 뜨지 않았다 — 위 ✗).$_llm_left"
+               fi ;;
         esac
       fi
     fi ;;
   1)
     # 볼 라우터 — 지금 포트의 주소와 1i 가 기록한 옛 주소(포트를 바꿨거나 포트 줄을 풀과 함께 지웠다 — 지우면 9130 으로 돌아가 옛 포트의
     # 사본·라우터를 못 찾았다, 반대 검토 M4). 둘 다 관리하는 값이고, 떠 있는 것은 둘 다 §4 뒤에 내린다.
-    _llm_at=0; _llm_running=""
+    # 셀 수 없으면(사본 lib 실패 — 2라운드 M-D) '가리킬 수 있다' 로 읽는다 — ○ 로 넘기지 않고 ✗, 되돌릴 수 있는 사본은 되돌린다(LP-D14).
+    _llm_at=0; _llm_unk=""; _llm_running=""; _llm_dead=""
     if [ "$_llm_router_rc" = 0 ]; then
       for _llm_u in "$_llm_router" ${_llm_old:+"$_llm_old"}; do
-        _llm_n="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_u")"; _llm_at=$((_llm_at + ${_llm_n:-0}))
+        _llm_n_rc=0; _llm_n="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_u")" || _llm_n_rc=$?
+        if [ "$_llm_n_rc" = 0 ]; then _llm_at=$((_llm_at + _llm_n)); else _llm_unk="${_llm_unk:+$_llm_unk · }$_llm_u — $_llm_n"; fi
         hwax_llm_router_health "${_llm_u%/v1}/health" >/dev/null && _llm_running="${_llm_running:+$_llm_running }$_llm_u"
       done
+      # 라우터 기록이 없거나 못 읽으면 옛 라우터 주소를 모른다(지웠다 · 손으로 고쳤다 — 2라운드 LOW 7: 죽은 라우터를 가리키는 사본을 두고
+      # '사본들이 LLM_BASE_URL 을 직접 본다' ○ 였다). 루프백 /v1 인데 아무것도 듣지 않는 사본을 ⚠ 로 알린다 — 고치지 않는다(이 박스의 로컬
+      # vLLM 일 수 있다). 지금 라우터 주소 · 직접 주소와 같은 값은 위에서 다룬다.
+      if [ "$_llm_rec_rc" != 0 ] && [ -z "$_llm_unk" ]; then
+        _llm_dead_rc=0; _llm_dead="$(hwax_llm_pool_loopback_dead "$SELF_REPO" "$_llm_router" "$_llm_direct")" || _llm_dead_rc=$?
+        if [ "$_llm_dead_rc" != 0 ]; then _llm_unk="루프백 사본 — $_llm_dead"; _llm_dead=""; fi
+      fi
     fi
+    _llm_say_dead() {
+      local rp rel key val how
+      while IFS=$'\t' read -r rp rel key val; do
+        [ -n "$rp" ] || continue
+        if [[ "${val%/}" =~ ^http://127\.0\.0\.1:[0-9]{1,5}/v1$ ]]; then
+          how="옛 라우터면 그 주소를 기록에 적고(printf '%s\\n' '${val%/}' > '$SELF_REPO/infra/.state/llm-pool.router') update-all 을 다시 돌린다 — 직접 주소로 되돌린다"
+        else
+          how="옛 라우터면 손으로 직접 주소(infra/.env 의 LLM_BASE_URL)로 고친다"
+        fi
+        bad "${rp##*/}/$rel  $key=$val 는 루프백 주소인데 그 포트에 아무것도 듣지 않는다 — 라우터 기록($SELF_REPO/infra/.state/llm-pool.router)이 없거나 못 읽어 옛 LLM 라우터 주소인지 모른다. 고치지 않는다 · $how · 이 박스의 로컬 vLLM 이면 그 vLLM 을 띄운다"
+      done <<<"$_llm_dead"
+    }
     if [ "$_llm_router_rc" != 0 ]; then
       bad "LLM 서버 풀은 꺼져 있다(LLM_UPSTREAMS 없음) — $_llm_router. 라우터를 가리키는 사본을 찾지 못해 아무것도 바꾸지 않았다"
-    elif [ "$_llm_at" = 0 ] && [ -z "$_llm_running" ]; then
-      hwax_skip "LLM 서버 풀(라우터)" "infra/.env 에 LLM_UPSTREAMS 가 없다 — LLM 주소 사본들이 LLM_BASE_URL(서버 하나)을 직접 본다" \
-        "같은 모델을 올린 vLLM 서버 둘 이상을 자원 보고 나눠 쓰려면 infra/.env 에 LLM_UPSTREAMS=<서버1 /v1 주소>,<서버2 /v1 주소> 를 적고 재실행(1i 가 라우터를 띄우고 사본을 바꾼다 — docs/llm-pool)"
+    elif [ "$_llm_at" = 0 ] && [ -z "$_llm_running" ] && [ -z "$_llm_unk" ]; then
+      if [ -n "$_llm_dead" ]; then
+        hr "1i) LLM 라우터 — 풀 꺼짐(라우터 기록 없음 · 아무것도 듣지 않는 루프백 사본)"
+        _llm_say_dead
+        hwax_skip "LLM 서버 풀(라우터)" "infra/.env 에 LLM_UPSTREAMS 가 없다 — 단, 아무것도 듣지 않는 루프백 주소를 보는 사본이 있다(위 ⚠ — 옛 라우터인지 모른다)" \
+          "같은 모델을 올린 vLLM 서버 둘 이상을 자원 보고 나눠 쓰려면 infra/.env 에 LLM_UPSTREAMS=<서버1 /v1 주소>,<서버2 /v1 주소> 를 적고 재실행(1i 가 라우터를 띄우고 사본을 바꾼다 — docs/llm-pool)"
+      else
+        hwax_skip "LLM 서버 풀(라우터)" "infra/.env 에 LLM_UPSTREAMS 가 없다 — LLM 주소 사본들이 LLM_BASE_URL(서버 하나)을 직접 본다" \
+          "같은 모델을 올린 vLLM 서버 둘 이상을 자원 보고 나눠 쓰려면 infra/.env 에 LLM_UPSTREAMS=<서버1 /v1 주소>,<서버2 /v1 주소> 를 적고 재실행(1i 가 라우터를 띄우고 사본을 바꾼다 — docs/llm-pool)"
+      fi
     else
       hr "1i) LLM 라우터 — 풀 꺼짐(LLM_UPSTREAMS 없음 → 사본을 직접 주소로)"
+      [ -z "$_llm_unk" ] || fail "라우터를 가리키는 LLM 주소 사본을 세지 못했다 — $_llm_unk. 가리키는 사본이 있을 수 있다 — 되돌릴 수 있는 사본은 되돌리고, 라우터는 §4 뒤에 다시 세어 0 일 때만 내린다"
       _llm_self=0
       for _llm_u in "$_llm_router" ${_llm_old:+"$_llm_old"}; do [ "${_llm_direct%/}" = "${_llm_u%/}" ] && _llm_self=1; done
-      if [ "$_llm_at" != 0 ] && [ -z "$_llm_direct" ]; then
-        fail "라우터를 가리키는 사본이 ${_llm_at}곳인데 되돌릴 직접 주소(infra/.env 의 LLM_BASE_URL)가 없다 — 사본도 라우터도 그대로 둔다. LLM_BASE_URL 을 적고 재실행"
-      elif [ "$_llm_at" != 0 ] && [ "$_llm_self" = 1 ]; then
+      _llm_may=0; { [ "$_llm_at" != 0 ] || [ -n "$_llm_unk" ]; } && _llm_may=1      # 가리키는 사본이 있다 · 있을 수 있다(셀 수 없다)
+      if [ "$_llm_may" = 1 ] && [ -z "$_llm_direct" ]; then
+        fail "라우터를 가리키는 사본이 ${_llm_at}곳${_llm_unk:+ 이상(셀 수 없는 것이 있다)}인데 되돌릴 직접 주소(infra/.env 의 LLM_BASE_URL)가 없다 — 사본도 라우터도 그대로 둔다. LLM_BASE_URL 을 적고 재실행"
+      elif [ "$_llm_may" = 1 ] && [ "$_llm_self" = 1 ]; then
         fail "infra/.env 의 LLM_BASE_URL 이 라우터 주소다 — 서버(vLLM)의 /v1 주소를 적고 재실행. 사본도 라우터도 그대로 둔다"
       else
-        if [ "$_llm_at" != 0 ]; then
+        if [ "$_llm_may" = 1 ]; then
           _llm_apply 0 "$_llm_direct" "$_llm_router" ${_llm_old:+"$_llm_old"}
           echo "  · 되돌리기(다시 켜기) — infra/.env 에 LLM_UPSTREAMS 를 다시 적고 update-all. 파일째 되돌리려면 위 '백업' 줄의 cp"
           # 이번 실행이 띄우지 않는 프로세스는 라우터 주소를 쥔 채 남는다 — 라우터를 §4 뒤에 내리면 그 호출이 끊긴다(라우터를 계속 쓴다고
@@ -872,6 +931,7 @@ case "$_llm_ups_rc" in
           echo "  · 라우터가 아직 떠 있다($_llm_running) — §4 뒤에 내린다(사본을 쓰는 서비스가 직접 주소로 다시 뜬 뒤 · 라우터를 지나는 요청이 없을 때)"
         fi
       fi
+      _llm_say_dead
     fi ;;
   2)
     hr "1i) LLM 라우터 (LLM_UPSTREAMS 확인)"
@@ -1127,8 +1187,13 @@ if [ -n "$_LLM_RETIRE" ]; then
   _lr_def="$(awk -F'\t' '$1 ~ /재기동 건너뜀$/ && !s[$1]++ { printf "%s%s", (n++ ? " · " : ""), $1 }' "${HWAX_SKIP_LEDGER:-/dev/null}" 2>/dev/null)"
   for _lr_u in $_LLM_RETIRE; do
     _lr_why=""; _lr_how=""; _lr_rc=0; _lr_p="${_lr_u##*:}"; _lr_p="${_lr_p%/v1}"
-    _lr_left="$(hwax_llm_pool_at "$SELF_REPO" "$_lr_u")"
-    if [ "${_lr_left:-0}" != 0 ]; then
+    # 셀 수 없으면(사본 lib 실패) 내리지 않는다 — 가리키는 사본이 있으면 내리는 순간 그 서비스들의 LLM 이 끊긴다(2라운드 M-D: 0 으로 읽고
+    # '✓ … 사본은 직접 주소다' 를 찍은 뒤 사본 둘이 아직 가리키는 라우터를 내렸다). ✗ 로 센다 — 미룸(○)이 아니다.
+    _lr_n_rc=0; _lr_left="$(hwax_llm_pool_at "$SELF_REPO" "$_lr_u")" || _lr_n_rc=$?
+    if [ "$_lr_n_rc" != 0 ]; then
+      fail "LLM 라우터(:$_lr_p)를 내리지 않았다 — 이 라우터를 가리키는 사본을 세지 못했다($_lr_left). 가리키는 사본이 있으면 내리는 순간 그 서비스들의 LLM 호출이 끊긴다 — 사본 .env 들을 보고 다음 update-all 이 다시 센다(손으로 내리려면 LLM_ROUTER_PORT=$_lr_p ./infra/scripts/llm-router.sh stop)"
+      continue
+    elif [ "$_lr_left" != 0 ]; then
       _lr_why="사본 ${_lr_left}곳이 아직 이 라우터를 가리킨다(위 1i 의 ✗)"
     elif [ -n "$_lr_def" ]; then
       _lr_why="재기동을 미룬 서비스가 있다($_lr_def) — 그 옛 프로세스가 아직 라우터 주소를 쥐고 있다"
@@ -1935,17 +2000,21 @@ probe "aidh           :8001" http://127.0.0.1:8001/api/system/health 0 "200"
 #   사본이 아직 직접 주소면(1i 가 안 바꿨다) LLM 은 돈다 — ⚠.
 #   1i 가 기록한 옛 라우터 주소(포트를 바꿨는데 새 라우터가 쓸 만하지 않아 1i 가 사본을 못 옮겼다)를 가리키는 사본도 센다(반대 검토 M4 —
 #   지금 포트만 세면 그 사본을 '직접 주소 그대로' 로 읽었다). 옛 라우터가 쓸 서버를 답하지 않으면 그 서비스들의 LLM 호출이 실패한다 — ✗.
+#   셀 수 없으면(사본 lib 실패) '직접 주소다' 라고 말하지 않는다 — 가리킬 수 있다, ✗ 와 사유(2라운드 M-D · LP-D14).
 if [ -n "$(hwax_llm_envv "$SELF_REPO/infra/.env" LLM_UPSTREAMS)" ]; then
   _lh_url_rc=0; _lh_url="$(hwax_llm_router_url "$SELF_REPO/infra/.env")" || _lh_url_rc=$?
   if [ "$_lh_url_rc" != 0 ]; then
     bad "LLM 라우터      $_lh_url"
   else
     _lh_old="$(hwax_llm_router_recorded "$SELF_REPO")" || _lh_old=""
-    _lh_old_at=0
+    _lh_old_at=0; _lh_old_unk=""
     if [ -n "$_lh_old" ] && [ "$_lh_old" != "$_lh_url" ]; then
-      _lh_old_at="$(hwax_llm_pool_at "$SELF_REPO" "$_lh_old")"
+      _lh_oa_rc=0; _lh_old_at="$(hwax_llm_pool_at "$SELF_REPO" "$_lh_old")" || _lh_oa_rc=$?
+      if [ "$_lh_oa_rc" != 0 ]; then _lh_old_unk="$_lh_old_at"; _lh_old_at=0; fi
     fi
-    if [ "${_lh_old_at:-0}" != 0 ]; then
+    if [ -n "$_lh_old_unk" ]; then
+      fail "LLM 라우터      옛 라우터($_lh_old)를 가리키는 사본을 세지 못했다($_lh_old_unk) — 가리키는 사본이 있으면 그 라우터가 내려가는 순간 그 서비스들의 LLM 호출이 실패한다. 사본 .env 들을 본다"
+    elif [ "$_lh_old_at" != 0 ]; then
       _lh_o_rc=0; _lh_o="$(hwax_llm_router_health "${_lh_old%/v1}/health")" || _lh_o_rc=$?
       read -r _lh_o_st _lh_o_up _lh_o_rest <<<"$_lh_o"
       if [ "$_lh_o_rc" = 0 ] && [[ "${_lh_o_up:-}" =~ ^[0-9]+$ ]] && [ "$_lh_o_up" -ge 1 ]; then
@@ -1969,11 +2038,13 @@ if [ -n "$(hwax_llm_envv "$SELF_REPO/infra/.env" LLM_UPSTREAMS)" ]; then
         bad "LLM 라우터      $_lh_line — 라우터가 두 서버의 모델을 아직 대조하지 못했다(막 떴으면 정상 — 60초마다 본다)"
       fi
     else
-      _lh_at="$(hwax_llm_pool_at "$SELF_REPO" "$_lh_url")"
+      _lh_at_rc=0; _lh_at="$(hwax_llm_pool_at "$SELF_REPO" "$_lh_url")" || _lh_at_rc=$?
       if [ "$_lh_rc" = 0 ]; then _lh_why="올라온 서버 ${_lh_up:-?}/${_lh_tot:-?}(status ${_lh_st:-?})"; else _lh_why="/health 가 답하지 않는다"; fi
-      if [ "${_lh_at:-0}" != 0 ]; then
+      if [ "$_lh_at_rc" != 0 ]; then
+        fail "LLM 라우터      $_lh_why — 라우터를 가리키는 사본을 세지 못했다($_lh_at). 가리키는 사본이 있으면 그 서비스들의 LLM 호출이 실패한다 — 사본 .env 들을 보고, 라우터 로그와 서버를 보고 ./infra/scripts/update-sites.sh llm-router · 직접 주소로 돌리려면 LLM_UPSTREAMS 줄을 지우고 update-all"
+      elif [ "$_lh_at" != 0 ]; then
         fail "LLM 라우터      $_lh_why — 사본 ${_lh_at}곳이 라우터를 가리킨다(그 서비스들의 LLM 호출이 실패한다). 라우터 로그와 서버를 보고 ./infra/scripts/update-sites.sh llm-router · 직접 주소로 돌리려면 LLM_UPSTREAMS 줄을 지우고 update-all"
-      elif [ "${_lh_old_at:-0}" != 0 ]; then
+      elif [ "$_lh_old_at" != 0 ] || [ -n "$_lh_old_unk" ]; then
         bad "LLM 라우터      $_lh_why — 이 라우터를 가리키는 사본은 없다(옛 라우터를 가리키는 사본은 위 줄 — 위 1i)"
       else
         bad "LLM 라우터      $_lh_why — 사본은 직접 주소 그대로라 LLM 은 돈다(풀만 안 쓴다 — 위 1i)"

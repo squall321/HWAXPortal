@@ -498,8 +498,88 @@ def test_가리키는_사본_수(box):
     root, home, sib = box
     sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={ROUTER}/\n")
     sib["AIDataHub"].write_text(f"OPENAI_BASE_URL={ROUTER}\nLLM_BASE_URL={DIRECT}\n")
-    r = _sh(f'. "{LIB}"; hwax_llm_pool_at "{root}" "{ROUTER}"', home)
-    assert r.stdout.strip() == "2", r.stdout + r.stderr
+    r = _sh(f'. "{LIB}"; hwax_llm_pool_at "{root}" "{ROUTER}"; echo "rc=$?"', home)
+    assert r.stdout.split() == ["2", "rc=0"], r.stdout + r.stderr
+
+
+def _at(box, *, pre: str = "", **env) -> tuple[int, str, str]:
+    root, home, _ = box
+    r = _sh(f'{pre}. "{LIB}"; out="$(hwax_llm_pool_at "{root}" "{ROUTER}")"; rc=$?; echo "rc=$rc"; printf "[%s]\\n" "$out"', home, **env)
+    lines = r.stdout.splitlines()
+    return int(lines[0][3:]), lines[1], r.stderr
+
+
+def test_셀_수_없으면_0_이_아니라_모른다(box):
+    """**2라운드 M-D 회귀** — `rewrite dry | awk 'END { print n + 0 }'` 는 lib 이 실패해도 0 이었다. /tmp 가 차 bash 가 파이썬 here-doc 의 임시
+    파일을 못 만들면(ulimit -f 1 로 흉내) 1i 는 사본을 안 되돌리고, 뒤처리는 '사본은 직접 주소다' 를 찍고 사본 둘이 아직 가리키는 라우터를
+    내렸다. 이제 2 와 사유 한 줄이다 — 부르는 쪽이 '가리킬 수 있다' 로 읽는다."""
+    _, _, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={ROUTER}\n")
+    rc, out, err = _at(box, pre="ulimit -f 1; ")
+    assert "here-document" in err, "lib 이 실패하지 않았다 — 시험이 헛돈다"
+    assert rc == 2 and out.startswith("[사본을 세지 못했다") and "rc 1" in out, (rc, out, err)
+
+
+@NOT_ROOT
+def test_읽지_못한_사본이_있으면_모른다(box):
+    """읽지 못한 사본(error 줄)은 그 주소를 가리킬 수 있다 — 세지 않고 0 으로 치면 같은 결함이다. 자리와 사유를 함께 낸다."""
+    _, _, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={ROUTER}\n")
+    sib["SignalForge"].write_text(f"OPENAI_BASE_URL={ROUTER}\n"); sib["SignalForge"].chmod(0o000)
+    try:
+        rc, out, _ = _at(box)
+    finally:
+        sib["SignalForge"].chmod(0o644)
+    assert rc == 2 and "1곳을 읽지 못했다" in out and "SignalForge/.env OPENAI_BASE_URL" in out, out
+
+
+def test_파이썬이_죽어도_모른다(box, tmp_path):
+    _, _, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={ROUTER}\n")
+    shim = tmp_path / "shim"; shim.mkdir()
+    (shim / "python3").write_text("#!/usr/bin/env bash\necho '(대역) python3 죽음' >&2\nexit 9\n"); (shim / "python3").chmod(0o755)
+    rc, out, err = _at(box, PATH=f"{shim}:{os.environ['PATH']}")
+    assert "(대역) python3 죽음" in err and rc == 2 and "rc 9" in out, (rc, out, err)
+
+
+@pytest.fixture()
+def listener():
+    """무언가 듣는 루프백 포트(답은 아무래도 좋다 — 연결만 받는다)."""
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield srv.server_address[1]
+    srv.shutdown(); srv.server_close()
+
+
+def test_아무것도_듣지_않는_루프백_사본을_찾되_고치지_않는다(box, listener):
+    """**2라운드 LOW 7** — 라우터 기록을 잃으면 옛 라우터 주소를 모른다. 루프백 /v1 인데 그 포트에 아무것도 듣지 않는 사본만 낸다 — 듣고
+    있는 루프백(로컬 vLLM)·원격 주소·뺄 주소(지금 라우터 · 직접 주소)는 내지 않는다. 파일은 한 바이트도 안 바뀐다."""
+    root, home, sib = box
+    dead, dead2 = f"http://127.0.0.1:{_dead_port()}/v1", f"http://localhost:{_dead_port()}/v1/"
+    excluded = f"http://127.0.0.1:{_dead_port()}/v1"
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={dead}\n")
+    sib["AIDataHub"].write_text(f"OPENAI_BASE_URL=http://127.0.0.1:{listener}/v1\nLLM_BASE_URL={DIRECT}\n")
+    sib["SignalForge"].write_text(f"OPENAI_BASE_URL={excluded}\n")
+    sib["MXWhitePaper"].write_text(f"LLM_BASE_URL={dead2}\n")
+    sib["HEAXHub"].write_text(f"HEAX_APP_LLM_BASE_URL=http://127.0.0.1:{_dead_port()}/openai\n")   # /v1 이 아니다 — LLM 주소 모양이 아니다
+    before = {p: p.read_bytes() for p in sib.values() if p.exists()}
+    r = _sh(f'. "{LIB}"; out="$(hwax_llm_pool_loopback_dead "{root}" "{excluded}/" "{DIRECT}")"; echo "rc=$?"; printf "%s" "$out"', home)
+    lines = r.stdout.splitlines()
+    assert lines[0] == "rc=0", r.stdout + r.stderr
+    got = sorted((Path(a).name, b, c, d) for a, b, c, d in (ln.split("\t") for ln in lines[1:]))
+    assert got == [("HWAXAgentServer", ".env", "VLLM_BASE_URL", dead), ("MXWhitePaper", ".env", "LLM_BASE_URL", dead2)], got
+    assert {p: p.read_bytes() for p in before} == before
+
+
+@NOT_ROOT
+def test_루프백_점검도_읽지_못하면_모른다(box):
+    root, home, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL=http://127.0.0.1:{_dead_port()}/v1\n"); sib["HWAXAgentServer"].chmod(0o000)
+    try:
+        r = _sh(f'. "{LIB}"; out="$(hwax_llm_pool_loopback_dead "{root}")"; echo "rc=$?"; printf "%s" "$out"', home)
+    finally:
+        sib["HWAXAgentServer"].chmod(0o644)
+    assert r.stdout.startswith("rc=2") and "읽지 못했다" in r.stdout, r.stdout
 
 
 def test_리포가_없는_사본은_줄을_내지_않는다(box):
@@ -534,21 +614,89 @@ def test_백업을_못_만들면_바꾸지_않는다(box):
 
 
 @NOT_ROOT
-def test_사본_디렉터리에_쓸_수_없으면_바꾸지_않고_만든_백업도_지운다(box):
-    """임시 파일 + 이름 바꾸기라 사본 디렉터리에 써야 한다. 못 쓰면 사본은 그대로고, 막 만든 백업은 지운다(L6 — 아무것도 안 바뀌었는데
-    비밀 사본만 하나 더 남고 '그 백업으로 되돌린다' 고 말했다)."""
+def test_사본_디렉터리에_쓸_수_없으면_백업_뒤_제자리에_쓰고_그렇게_말한다(box):
+    """**2라운드 LOW 4 회귀**(LP-D14) — 이름 바꾸기는 디렉터리에 써야 한다. 종전(제자리 쓰기)에는 되던 읽기 전용 리포 디렉터리에서 ✗ 가 됐다.
+    파일은 쓸 수 있으면 백업 뒤 **제자리에** 쓰고(같은 inode) 줄의 여덟째 칸에 그 사실과 까닭을 적는다. 디렉터리에는 아무것도 생기지 않는다."""
     _, _, sib = box
     agent = sib["HWAXAgentServer"]
-    agent.write_text(f"VLLM_BASE_URL={DIRECT}\n"); agent.chmod(0o600)
+    agent.write_text(f"VLLM_BASE_URL={DIRECT}\nK=1\n"); agent.chmod(0o600)
+    ino = agent.stat().st_ino
     agent.parent.chmod(0o555)
     try:
         rows = _rewrite(box, "write", ROUTER, DIRECT, ROUTER)
+        listing = sorted(x.name for x in agent.parent.iterdir())
     finally:
         agent.parent.chmod(0o755)
     row = _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")
-    assert row[0] == "error" and "쓰지 못했다" in row[5] and "그대로다" in row[5] and "백업은 지웠다" in row[5], row
-    assert "되돌린다" not in row[5] and row[6] == "", "바뀐 것이 없다 — 되돌릴 백업을 가리키지 않는다"
-    assert agent.read_text() == f"VLLM_BASE_URL={DIRECT}\n" and not _baks(agent) and _strays(agent) == []
+    assert row[0] == "changed" and len(row) == 8 and "제자리에 썼다" in row[7] and "디렉터리에 쓸 수 없다" in row[7], row
+    assert agent.read_text() == f"VLLM_BASE_URL={ROUTER}\nK=1\n" and agent.stat().st_ino == ino
+    assert stat.S_IMODE(agent.stat().st_mode) == 0o600 and listing == [".env"]
+    assert len(_baks(agent)) == 1 and row[6] == str(_baks(agent)[0]), "제자리 쓰기도 백업이 먼저다"
+
+
+@NOT_ROOT
+def test_제자리_쓰기가_디스크에_막히면_원래_내용으로_되돌리고_백업도_지운다(box):
+    """제자리 쓰기가 도중에 막히면(디스크가 찼다 — RLIMIT_FSIZE 로 흉내, 한도를 넘는 데서 끊긴다) 원래 내용을 다시 쓴다. 반쯤 쓴 .env 를
+    남기지 않고, 결과가 원래와 같으니 백업도 지운다(파일은 그대로다)."""
+    root, home, sib = box
+    agent = sib["HWAXAgentServer"]
+    old, new = "http://198.51.100.7/v1", "http://127.0.0.1:9130/v1/" + "a" * 700
+    agent.write_text(f"VLLM_BASE_URL={old}\nPAD={'x' * 64900}\n")
+    before = agent.read_bytes()
+    assert len(before) < 65536 < len(before) + 700
+    agent.parent.chmod(0o555)                                     # 제자리 쓰기 길로
+    try:
+        r = _sh(f'ulimit -f 64; . "{LIB}"; hwax_llm_pool_rewrite "{root}" write "{new}" "{old}"; echo "rc=$?"', home)
+    finally:
+        agent.parent.chmod(0o755)
+    row = [ln.split("\t") for ln in r.stdout.splitlines() if "HWAXAgentServer" in ln]
+    assert len(row) == 1 and row[0][0] == "error" and "쓰지 못했다" in row[0][5] and "그대로다" in row[0][5], r.stdout + r.stderr
+    assert "백업은 지웠다" in row[0][5] and agent.read_bytes() == before and not _baks(agent) and _strays(agent) == []
+
+
+def test_하드_링크_사본은_제자리에_써서_다른_이름도_함께_바뀐다(box):
+    """**2라운드 LOW 4 회귀** — 이름 바꾸기는 하드 링크를 끊었다(다른 이름이 옛 주소에 남는다 — 그 이름으로 읽는 서비스는 옛 주소로 돈다)."""
+    _, _, sib = box
+    agent = sib["HWAXAgentServer"]
+    shared = agent.parent.parent / "shared/agent.env"; shared.parent.mkdir()
+    shared.write_text(f"VLLM_BASE_URL={DIRECT}\nK=1\n"); agent.hardlink_to(shared)
+    rows = _rewrite(box, "write", ROUTER, DIRECT)
+    row = _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")
+    assert row[0] == "changed" and len(row) == 8 and "하드 링크" in row[7], row
+    assert agent.stat().st_nlink == 2 and agent.stat().st_ino == shared.stat().st_ino, "링크가 끊겼다"
+    assert shared.read_text() == f"VLLM_BASE_URL={ROUTER}\nK=1\n", "다른 이름이 옛 주소에 남았다"
+    assert _strays(agent) == [] and sorted(x.name for x in shared.parent.iterdir()) == ["agent.env"]
+
+
+def _acl(p: Path) -> str:
+    return subprocess.run(["getfacl", "-c", "-p", str(p)], capture_output=True, text=True).stdout
+
+
+@pytest.mark.skipif(shutil.which("setfacl") is None or shutil.which("getfacl") is None, reason="setfacl·getfacl 이 없다 — ACL 을 만들 수 없다")
+def test_ACL_이_있는_사본은_제자리에_써서_ACL_을_지킨다(box):
+    """**2라운드 LOW 4 회귀** — 새 파일은 모드만 받는다(S_IMODE 의 그룹 칸은 ACL 마스크다). `group::---` + `user:nobody:r` 이던 비밀 파일이
+    `group::r--` 가 되고 이름 붙은 사용자는 사라졌다 — 그룹의 읽기 권한이 넓어졌다. ACL 이 있으면 제자리에 써서 그대로 둔다."""
+    _, _, sib = box
+    sf = sib["SignalForge"]
+    sf.write_text(f"OPENAI_BASE_URL={DIRECT}\nOPENAI_API_KEY=secret\n"); sf.chmod(0o600)
+    r = subprocess.run(["setfacl", "-m", "u:nobody:r", str(sf)], capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"이 파일 시스템은 ACL 을 받지 않는다 — {r.stderr.strip()}")
+    before = _acl(sf)
+    assert "user:nobody:r--" in before and "group::---" in before, before
+    rows = _rewrite(box, "write", ROUTER, DIRECT)
+    row = _row(rows, "SignalForge", "OPENAI_BASE_URL")
+    assert row[0] == "changed" and len(row) == 8 and "ACL" in row[7], row
+    assert _acl(sf) == before, (before, _acl(sf))
+    assert sf.read_text() == f"OPENAI_BASE_URL={ROUTER}\nOPENAI_API_KEY=secret\n" and _strays(sf) == []
+
+
+def test_이름_바꾸기로_바꾼_줄은_여덟째_칸이_없다(box):
+    """제자리에 쓴 줄만 그 사실을 적는다 — 보통 사본(링크 하나 · ACL 없음 · 디렉터리에 쓸 수 있다)은 종전대로 일곱 칸이다."""
+    _, _, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={DIRECT}\n")
+    row = _row(_rewrite(box, "write", ROUTER, DIRECT), "HWAXAgentServer", "VLLM_BASE_URL")
+    assert row[0] == "changed" and len(row) == 7, row
 
 
 @NOT_ROOT

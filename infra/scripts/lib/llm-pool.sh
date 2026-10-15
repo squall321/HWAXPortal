@@ -34,16 +34,28 @@
 #       `infra/.state/llm-pool-backups/<리포 이름>/<.env 상대경로>.<UTC 시각>[-n]` 으로 백업한다(디렉터리 700 · 파일 600 — 만드는 순간부터).
 #       서비스 리포 안에 두지 않는다 — 그쪽은 gitignore 밖이라 추적 안 된 비밀 파일로 남고 deploy-all 의 `git stash push -u` 가 비밀째
 #       stash 로 쓸어 간다(반대 검토 H1). 바꾸기는 원자적이다 — 같은 디렉터리의 임시 파일에 쓰고 fsync 한 뒤 이름을 바꾼다(심링크면 링크는 두고
-#       가리키는 파일을 바꾼다 · 권한·소유자 그대로 — 소유자를 지킬 수 없으면 바꾸지 않는다). 그 값의 글자 말고는 파일을 한 바이트도 바꾸지
+#       가리키는 파일을 바꾼다 · 권한·소유자 그대로 — 소유자를 지킬 수 없으면 바꾸지 않는다). 단 이름 바꾸기가 무언가를 잃는 파일은 백업 뒤
+#       **제자리에** 쓴다(같은 inode — LP-D14) — ACL 이 있다(새 파일은 모드만 받아 이름 붙은 사용자가 사라지고 그룹 칸이 마스크로 넓어진다) ·
+#       하드 링크가 둘 이상이다(다른 이름이 옛 주소에 남는다) · 디렉터리에 쓸 수 없다(이름을 못 바꾼다). 제자리 쓰기가 도중에 막히면(디스크가
+#       찼다) 원래 내용을 다시 쓴다. 그 값의 글자 말고는 파일을 한 바이트도 바꾸지
 #       않는다(따옴표·`export`·줄 끝 주석·CRLF·다른 줄 그대로). 줄은 `\n` 으로만 나눈다(홀로 선 `\r` 은 줄바꿈이 아니다 — 읽는 쪽 sed 와 같다).
-#       같은 파일에 키가 둘이면 백업은 한 번이다. 쓸 수 없는 파일(읽기 전용)은 백업도 만들지 않고, 쓰다 실패하면 만든 백업을 지운다.
-#       줄마다 "<상태>\t<서비스>\t<리포 경로>\t<.env 상대경로>\t<키>\t<지금 값>\t<백업 경로>" — 상태는
-#       changed(바꿨다) · would(dry — 바꿀 것이다) · same(이미 새 값) · foreign(관리하는 값이 아니다 — 사람이 적은 다른 주소, 그대로 둔다) ·
-#       absent(파일·키가 없다) · error(못 바꿨다 — 지금 값 칸에 사유, 파일은 그대로). 리포가 없는 사본은 줄을 내지 않는다(이 박스 대상이
+#       같은 파일에 키가 둘이면 백업은 한 번이다. 쓸 수 없는 파일(읽기 전용)은 백업도 만들지 않고, 쓰다 실패하면 — 파일이 그대로면 — 만든
+#       백업을 지운다(제자리 쓰기가 반쯤 바꿨으면 백업을 남기고 사유에 되돌리는 cp 를 적는다).
+#       줄마다 "<상태>\t<서비스>\t<리포 경로>\t<.env 상대경로>\t<키>\t<지금 값>\t<백업 경로>[\t<쓴 방법>]" — 상태는
+#       changed(바꿨다 — 제자리에 썼으면 여덟째 칸에 그 사실과 까닭) · would(dry — 바꿀 것이다) · same(이미 새 값) · foreign(관리하는 값이
+#       아니다 — 사람이 적은 다른 주소, 그대로 둔다) ·
+#       absent(파일·키가 없다) · error(못 바꿨다 — 지금 값 칸에 사유). 리포가 없는 사본은 줄을 내지 않는다(이 박스 대상이
 #       아니다). 리포는 apply-envs·update-all 의 find_repo 와 같은 순서로 찾는다(<포털 상위>/ → ~/Projects/ → ~/claude/). 줄은 파일마다
 #       처리하는 대로 낸다 — 뒤 파일에서 죽어도 앞 파일의 결과는 남는다(부르는 쪽은 종료코드를 본다). 값은 바이트 그대로 다룬다(UTF-8 이
 #       아닌 값도 어느 LANG 에서나 죽지 않는다).
-#   hwax_llm_pool_at <포털 루트> <주소>      지금 그 주소를 가리키는 사본 수(끝 `/` 무시).
+#   hwax_llm_pool_at <포털 루트> <주소>      지금 그 주소를 가리키는 사본 수(끝 `/` 무시)를 찍고 0. **셀 수 없으면 2** 와 사유 한 줄 — 사본 lib 이
+#       실패했거나(here-doc 임시 파일을 못 만든다 · 파이썬이 죽었다) 읽지 못한 사본이 있다. 부르는 쪽은 2 를 '모른다 — 사본이 그 주소를 가리킬
+#       수 있다' 로 읽는다(라우터를 내리지 않는다 · 기록을 덮지 않는다 · '직접 주소다' 라고 말하지 않는다 — ✗ 와 사유. 반대 검토 2라운드 M-D:
+#       0 으로 읽어 사본 둘이 아직 가리키는 라우터를 내렸다).
+#   hwax_llm_pool_loopback_dead <포털 루트> <뺄 주소…>   지금 값이 루프백 /v1 주소(127.x.x.x · localhost)인데 그 포트에 아무것도 듣지 않는
+#       사본 — 줄마다 "<리포 경로>\t<.env 상대경로>\t<키>\t<값>". 뺄 주소(끝 `/` 무시)와 같은 값은 보지 않는다. 0 = 다 봤다(없으면 빈
+#       출력) · 2 = 셀 수 없다(사유 한 줄). **고치지 않는다** — 라우터 기록이 없으면 그 주소가 옛 라우터인지 박스의 로컬 vLLM 인지 모른다
+#       (풀 꺼짐 + 기록 없음일 때 update-all 1i 가 ⚠ 로 알린다 — LP-D14).
 #
 # ⚠ 0 아닌 값을 정상으로 돌려준다 — `set -e` 스크립트에서는 `_x="$(hwax_llm_… )" || _rc=$?` 로 받는다. 맨 문장이면 1·2 에서 조용히 끝난다.
 
@@ -362,6 +374,48 @@ def backup(repo: str, rel: str, data: bytes) -> Path:
     raise OSError(0, "이름이 다 찼다")
 
 
+def in_place_why(real: Path) -> str:
+    """이름 바꾸기가 무언가를 잃는 파일이면 그 까닭(제자리에 쓴다 — LP-D14), 아니면 빈 글. 새 파일은 모드만 받는다 — ACL 의 이름 붙은
+    사용자는 사라지고 그룹 칸은 마스크로 넓어진다(비밀 파일의 읽기 권한이 넓어진다). 하드 링크의 다른 이름은 옛 inode(옛 주소)에 남는다."""
+    st = real.stat()
+    if st.st_nlink > 1:
+        return f"하드 링크가 {st.st_nlink}개다 — 다른 이름도 함께 바뀐다"
+    try:
+        os.getxattr(real, "system.posix_acl_access")              # 기본 칸(모드)뿐인 ACL 은 커널이 적지 않는다 — 있으면 확장 ACL 이다
+        return "ACL 이 있다 — 그대로 둔다"
+    except OSError:                                             # ENODATA(없다) · ENOTSUP(이 파일 시스템은 ACL 이 없다)
+        pass
+    if not os.access(real.parent, os.W_OK | os.X_OK):
+        return "디렉터리에 쓸 수 없다 — 이름을 바꿀 수 없다"
+    return ""
+
+
+def put_at_start(fd: int, body: bytes) -> None:
+    os.lseek(fd, 0, os.SEEK_SET)
+    view = memoryview(body)
+    while view:
+        view = view[os.write(fd, view):]
+    os.ftruncate(fd, len(body))
+    os.fsync(fd)
+
+
+def write_in_place(real: Path, content: bytes, old: bytes) -> None:
+    """제자리에 쓴다 — 같은 inode 라 ACL · 하드 링크 · 소유자 · 모드가 그대로다. 쓰다 실패하면(디스크가 찼다 — 여기서는 EFBIG·ENOSPC) 원래
+    내용을 다시 쓴다 — 원래 크기 안이라 자리는 이미 있다. 부르는 쪽이 결과를 읽어 본다(그래도 다르면 백업으로 되돌리라고 말한다)."""
+    fd = os.open(real, os.O_WRONLY)
+    try:
+        try:
+            put_at_start(fd, content)
+        except BaseException:
+            try:
+                put_at_start(fd, old)                           # 반쯤 쓴 채로 두지 않는다
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(fd)
+
+
 def replace(path: Path, content: bytes) -> None:
     """원자적으로 바꾼다(L3) — 가리키는 파일 옆의 임시 파일에 쓰고 fsync 한 뒤 이름을 바꾼다. 제자리 쓰기는 디스크가 차면 반쯤 잘린 .env 를
     남겼다. 심링크면 링크는 그대로 두고 가리키는 파일을 바꾼다. 권한·소유자는 원본 그대로 — 소유자를 지킬 수 없으면(남의 파일) 바꾸지 않는다."""
@@ -451,8 +505,9 @@ for path, entries in groups.items():
         mine.append(["changed" if mode == "write" else "would", svc, d, rel, key, shown, b""])
     if edits and mode == "write":
         repo0, rel0 = entries[0][2], entries[0][3]                # 한 파일의 키들은 같은 리포 · 같은 경로다
-        why, bak = None, None
-        if not os.access(os.path.realpath(path), os.W_OK):     # 이름 바꾸기는 디렉터리 권한만 본다 — 읽기 전용 파일도 갈아 끼울 수 있어 먼저 본다
+        real = Path(os.path.realpath(path))
+        why, bak, how = None, None, ""
+        if not os.access(real, os.W_OK):                       # 이름 바꾸기는 디렉터리 권한만 본다 — 읽기 전용 파일도 갈아 끼울 수 있어 먼저 본다
             why = "쓸 수 없는 파일이다(권한) — 백업도 만들지 않았다. 파일은 그대로다"
         else:
             try:
@@ -460,24 +515,81 @@ for path, entries in groups.items():
             except OSError as e:
                 why = f"백업을 만들지 못했다({e.strerror or e}) — 파일은 그대로다"
         if bak is not None:
+            content = b"".join(edits.get(i, l) for i, l in enumerate(lines))
             try:
-                replace(path, b"".join(edits.get(i, l) for i, l in enumerate(lines)))
+                how = in_place_why(real)                       # 이름 바꾸기가 ACL · 하드 링크를 잃거나 못 하면 백업 뒤 제자리에(LP-D14)
+                if how:
+                    write_in_place(real, content, data)
+                else:
+                    replace(path, content)
             except OSError as e:
-                why = f"쓰지 못했다({e.strerror or e}) — 파일은 그대로다"
-                try:
-                    bak.unlink()                               # 쓰지 못한 바꾸기의 백업은 남기지 않는다(비밀 사본이 하나 더 남을 뿐이다)
-                    why += "(만든 백업은 지웠다)"
+                try:                                           # 이름 바꾸기는 실패하면 손대지 않은 것이다 — 제자리 쓰기는 읽어 본다
+                    intact = not how or real.read_bytes() == data
                 except OSError:
-                    why += f"(백업 {bak} 이 남았다)"
+                    intact = False
+                if intact:
+                    why = f"쓰지 못했다({e.strerror or e}) — 파일은 그대로다"
+                    try:
+                        bak.unlink()                           # 쓰지 못한 바꾸기의 백업은 남기지 않는다(비밀 사본이 하나 더 남을 뿐이다)
+                        why += "(만든 백업은 지웠다)"
+                    except OSError:
+                        why += f"(백업 {bak} 이 남았다)"
+                else:
+                    why = (f"쓰지 못했다({e.strerror or e}) — 제자리에 쓰다 멈춰 파일이 반쯤 바뀌었을 수 있다. "
+                           f"백업으로 되돌린다: cp '{bak}' '{path}'")
                 bak = None
         if bak is None:
             mine = [["error", *r[1:5], why, b""] if r[0] == "changed" else r for r in mine]
         else:
-            mine = [[*r[:6], bak] if r[0] == "changed" else r for r in mine]
+            note = [f"제자리에 썼다 — {how}"] if how else []   # 여덟째 칸 — 이름 바꾸기 대신 제자리에 쓴 사실과 까닭(부르는 쪽이 ✓ 줄에 붙인다)
+            mine = [[*r[:6], bak, *note] if r[0] == "changed" else r for r in mine]
     emit(mine)
 PY
 }
 
-hwax_llm_pool_at() {  # $1=포털 루트 $2=주소
-  hwax_llm_pool_rewrite "$1" dry "$2" "$2" | awk -F'\t' '$1 == "same" { n++ } END { print n + 0 }'
+hwax_llm_pool_at() {  # $1=포털 루트 $2=주소 — 0 = 수를 찍었다 · 2 = 셀 수 없다(사유 한 줄 — 부르는 쪽은 '가리킬 수 있다' 로 읽는다)
+  # 종전엔 lib 의 실패를 0 으로 읽었다(`… | awk 'END { print n + 0 }'` — /tmp 가 차 here-doc 을 못 만들면 '가리키는 사본 0곳').
+  local out rc=0 cnt n e
+  out="$(hwax_llm_pool_rewrite "$1" dry "$2" "$2")" || rc=$?
+  if [ "$rc" != 0 ]; then
+    printf '%s\n' "사본을 세지 못했다(사본 lib rc $rc — 위 오류 줄)"; return 2
+  fi
+  # 읽지 못한 사본(error 줄)도 '모른다' 다 — 그 사본이 이 주소를 가리킬 수 있다. 첫 사본의 자리와 사유를 함께 낸다.
+  cnt="$(printf '%s\n' "$out" | awk -F'\t' '$1 == "same" { n++ }
+           $1 == "error" { if (!e) { k = split($3, p, "/"); w = p[k] "/" $4 " " $5 " — " $6 } e++ }
+           END { printf "%d\t%d\t%s\n", n, e, w }')" || cnt=""
+  n="${cnt%%$'\t'*}"; e="${cnt#*$'\t'}"; e="${e%%$'\t'*}"
+  if ! [[ "$n" =~ ^[0-9]+$ && "$e" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "사본을 세지 못했다(수를 읽지 못했다)"; return 2
+  fi
+  if [ "$e" != 0 ]; then
+    printf '%s\n' "사본 ${e}곳을 읽지 못했다(${cnt#*$'\t'*$'\t'})"; return 2
+  fi
+  printf '%s\n' "$n"
+}
+
+hwax_llm_pool_loopback_dead() {  # $1=포털 루트 $2…=뺄 주소 — 머리 주석
+  local root="$1" out rc=0 st svc rp rel key cur x skip scheme host port code dead=""
+  shift
+  out="$(hwax_llm_pool_rewrite "$root" dry "-")" || rc=$?      # 관리하는 값 없이 — 값이 있는 사본은 전부 foreign 줄로 지금 값을 낸다
+  if [ "$rc" != 0 ]; then
+    printf '%s\n' "사본을 읽지 못했다(사본 lib rc $rc — 위 오류 줄)"; return 2
+  fi
+  while IFS=$'\t' read -r st svc rp rel key cur _; do
+    case "$st" in
+      error) printf '%s\n' "${rp##*/}/$rel $key 를 읽지 못했다 — $cur"; return 2 ;;
+      foreign) ;;
+      *) continue ;;
+    esac
+    [[ "$cur" =~ ^(https?)://(127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|localhost)(:([0-9]{1,5}))?/v1/?$ ]] || continue
+    scheme="${BASH_REMATCH[1]}"; host="${BASH_REMATCH[2]}"; port="${BASH_REMATCH[4]}"
+    skip=0
+    for x in "$@"; do [ -n "$x" ] && [ "${x%/}" = "${cur%/}" ] && skip=1; done
+    [ "$skip" = 0 ] || continue
+    if [ -z "$port" ]; then if [ "$scheme" = https ]; then port=443; else port=80; fi; fi
+    # 듣는 것이 없다 = 연결 거절(curl 7). 답이 무엇이든(404 · TLS 오류 · 시간 초과) 무언가 듣고 있으면 이 줄에 넣지 않는다.
+    code=0; curl -s -o /dev/null --noproxy '*' --connect-timeout 2 -m 3 "http://$host:$port/" 2>/dev/null || code=$?
+    [ "$code" = 7 ] && dead="$dead$rp"$'\t'"$rel"$'\t'"$key"$'\t'"$cur"$'\n'
+  done <<<"$out"
+  printf '%s' "$dead"
 }
