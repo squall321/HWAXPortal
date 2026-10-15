@@ -44,6 +44,8 @@ def _apply(tmp_path: Path, existing: str | None = None) -> tuple[str, str]:
     (portal / "infra/env-kits").mkdir(parents=True)
     for f in ("apply-envs.sh", "agent-server.env"):
         shutil.copy(ROOT / "infra/env-kits" / f, portal / "infra/env-kits" / f)
+    (portal / "infra/scripts/lib").mkdir(parents=True)          # apply-envs 가 소싱하는 LLM 주소 규칙(lib/llm-pool.sh)
+    shutil.copy(ROOT / "infra/scripts/lib/llm-pool.sh", portal / "infra/scripts/lib/llm-pool.sh")
     agent = tmp_path / "HWAXAgentServer"; agent.mkdir()
     if existing is not None:
         (agent / ".env").write_text(existing, encoding="utf-8")

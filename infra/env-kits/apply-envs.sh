@@ -16,6 +16,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"          # infra/env-kits
 ROOT="$(cd "$HERE/../.." && pwd)"                              # 포털 레포 루트
 PARENT="$(dirname "$ROOT")"
+# LLM 주소의 규칙(풀이 켜져 있으면 라우터 주소) — update-all 1i 와 같은 곳(docs/llm-pool). 정의만 있다.
+. "$ROOT/infra/scripts/lib/llm-pool.sh"
 
 DRY=0
 case "${1:-}" in -n|--dry-run) DRY=1; shift ;; esac
@@ -58,7 +60,7 @@ ra_env_value() {  # $1=키(LLM_BASE_URL 등) → stdout 값
 }
 
 apply_one() {  # $1=서비스명
-  local svc="$1" spec repo rel kit dir target added=0 kept=0 key val line
+  local svc="$1" spec repo rel kit dir target added=0 kept=0 key val line eff
   spec="${MAP[$svc]:-}"
   [ -n "$spec" ] || { echo "✗ 알 수 없는 서비스: $svc (지원: ${!MAP[*]})"; return 1; }
   repo="${spec%%:*}"; rel="${spec#*:}"
@@ -85,6 +87,14 @@ apply_one() {  # $1=서비스명
       @FROM_RA:*@)  # ReportArchive .env 의 해당 키를 상속 — 없으면(dev=mock) 이 키는 건너뜀
         rak="${val#@FROM_RA:}"; rak="${rak%@}"
         val="$(ra_env_value "$rak")"
+        # LLM 주소는 **지금 써야 할 주소**로 푼다 — 풀(infra/.env 의 LLM_UPSTREAMS)이 켜져 있고 라우터가 서버를 올렸다고 답하면 라우터
+        # 주소(lib/llm-pool.sh). 1i 가 사본을 라우터로 바꾼 뒤 3.5 에서 더해진 키가 직접 주소로 남지 않게. 라우터가 그렇게 답하지 않으면
+        # 직접 주소다 — 1i 도 그때는 사본을 안 바꾼다(새 키만 죽은 라우터를 보지 않게). 다른 마커는 종전 그대로다.
+        if [ "$rak" = LLM_BASE_URL ]; then
+          eff="$(hwax_llm_effective_url "$ROOT/infra/.env" "$val")" || eff=""
+          if [ -n "$eff" ] && [ "$eff" != "$val" ]; then echo "   · $key: LLM 풀이 켜져 있다 — 라우터 주소로 적는다"; fi
+          val="$eff"
+        fi
         # 문구에 서비스 이름을 박아 두면 다른 kit 에서 거짓말이 된다 — 실제로 agent-server 가
         # 아닌 kit 에서도 "agent-server 기본값" 이라고 찍혔다. 무엇이 없어서 무엇이 되는지만 말한다.
         [ -n "$val" ] || { echo "   · $key: RA .env 에 $rak 없음 → 건너뜀(대상 앱의 자체 기본값을 쓴다)"; continue; } ;;
