@@ -4,6 +4,10 @@
 #  → 실패 시 나머지 보존하고 중단, 나머지는 서비스별 순차·실패해도 계속)
 set -uo pipefail   # NOTE: -e 없음 — 한 서비스 실패가 전체 실행을 끊지 않도록
 export PYTHONUNBUFFERED=1   # tee 파이프로 넘겨도 진행 로그가 즉시(버퍼링 없이) 흐르도록
+# 물려받은 LLM_ROUTER_PORT 를 버린다(LLM 풀 반대 검토 2라운드 LOW 6 · LP-D14) — services.py down 이 이 환경을 llm-router.sh stop 에 넘기고, stop 은
+# 환경의 포트를 먼저 본다. 운영자 셸에 옛 포트가 export 돼 있으면 llm-router 재기동이 옛 포트의 라우터(미룬 서비스가 아직 쓸 수 있다)를 내리고
+# 지금 포트의 라우터는 못 내린다. 포트의 정본은 infra/.env 다 — 옛 포트는 그 한 번에만 준다(LLM_ROUTER_PORT=<포트> … llm-router.sh stop).
+unset LLM_ROUTER_PORT
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SVC="$ROOT/infra/scripts/services.sh"

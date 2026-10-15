@@ -570,6 +570,19 @@ def test_같은_포트의_다른_것은_라우터로_치지_않는다(box, route
     assert box.called() == [] and "RETIRE=[]" in out and "LLM 서버 풀(라우터)" in out
 
 
+# ── 물려받은 라우터 포트(2라운드 LOW 6 · LP-D14) ──────────────────────────────────────────────────────────
+def test_물려받은_라우터_포트를_버린다():
+    """**2라운드 LOW 6** — 운영자 셸에 export 된 LLM_ROUTER_PORT 가 update-sites → services.py down → llm-router.sh stop 으로 흘러, 옛 포트의
+    라우터를 내리고 지금 포트의 라우터는 못 내릴 수 있었다(stop 은 환경의 포트가 먼저다). update-all 머리가 버린다 — 손으로 내릴 때의
+    한 번짜리 `LLM_ROUTER_PORT=<포트> … stop` 은 그대로 된다."""
+    head = UA[:UA.index('SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"')]
+    script = head + ('\necho "[${LLM_ROUTER_PORT-없음}]"\nbash -c \'echo "[${LLM_ROUTER_PORT-없음}]"\'\n'
+                     'LLM_ROUTER_PORT=7777 bash -c \'echo "[$LLM_ROUTER_PORT]"\'\n')
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                       env={"PATH": os.environ["PATH"], "HOME": "/nonexistent", "LLM_ROUTER_PORT": "9555"})
+    assert r.stdout.split() == ["[없음]", "[없음]", "[7777]"], r.stdout + r.stderr
+
+
 # ── §6 한 줄 ───────────────────────────────────────────────────────────────────────────────────────
 def _s6(box: Box, router, body: dict | None, values: dict, *, pool: bool = True) -> str:
     port = router["port"] if body is not None else _dead_port()

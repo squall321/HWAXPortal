@@ -156,6 +156,38 @@ def test_미루기만_한_실행은_3으로_끝나고_사유를_다시_말한다
     assert _driver(idle, router["url"]).returncode != 3, "비었으면 미룬 것이 없다"
 
 
+def test_물려받은_라우터_포트를_services_sh_에_넘기지_않는다(tmp_path):
+    """**2라운드 LOW 6 회귀** — services.py down 은 부른 쪽의 환경을 llm-router.sh stop 에 넘기고, stop 은 환경의 LLM_ROUTER_PORT 가 먼저다.
+    운영자 셸에 옛 포트가 export 돼 있으면 update-sites llm-router 가 옛 포트의 라우터(미룬 서비스가 아직 쓸 수 있다)를 내리고 지금 포트의
+    라우터는 못 내렸다. update-sites 머리가 그 값을 버린다 — services.sh 가 받는 환경에 없다.
+    update-sites.sh 를 **임시 포털에 복사해** 통째로 돌린다 — services.sh·services.py·매니페스트는 그 포털의 대역이다(실물 서비스를 건드리지 않게
+    — 스크립트가 서비스 경로를 자기 자리에서 유도하는지 먼저 본다)."""
+    src = UPDATE_SITES
+    for line in ('ROOT="$(cd "$(dirname "$0")/../.." && pwd)"', 'SVC="$ROOT/infra/scripts/services.sh"',
+                 'SVCPY="$ROOT/infra/scripts/services.py"', 'MANIFEST="$ROOT/infra/services.yaml"'):
+        assert line in src, f"update-sites 가 서비스 경로를 자기 자리에서 유도하지 않는다 — 복사본이 실물을 부를 수 있다: {line}"
+    portal = tmp_path / "HWAXPortal"; scripts = portal / "infra/scripts"; (scripts / "lib").mkdir(parents=True)
+    (scripts / "update-sites.sh").write_text(src, encoding="utf-8")
+    for n in ("change-detect.sh", "skip-ledger.sh", "delib-busy.sh", "llm-pool.sh"):
+        (scripts / "lib" / n).write_text((LIBDIR / n).read_text(encoding="utf-8"), encoding="utf-8")
+    log = tmp_path / "svc.log"
+    (scripts / "services.sh").write_text(
+        f'#!/usr/bin/env bash\necho "$* port=${{LLM_ROUTER_PORT-없음}}" >> "{log}"\n'
+        'case "$1" in update) echo "  · $2  (대역) skip";; fp) echo f-new;; status) echo "  ✓ up $2";;\n'
+        f'  health) echo {_dead_url()};; enabled) exit 0;; esac\nexit 0\n')
+    (scripts / "services.sh").chmod(0o755)
+    (scripts / "services.py").write_text("from pathlib import Path\nPARENT = Path('/nonexistent')\n\ndef resolve_dir(s):\n    return None\n")
+    (portal / "infra/services.yaml").write_text("services:\n  - name: llm-router\n")
+    ledger = tmp_path / "ledger"; ledger.write_text("")
+    r = subprocess.run(["bash", str(scripts / "update-sites.sh"), "llm-router"], capture_output=True, text=True, timeout=120,
+                       env={"PATH": os.environ["PATH"], "HOME": str(tmp_path), "LLM_ROUTER_PORT": "9555",
+                            "HWAX_RESTART_STATE_DIR": str(tmp_path / "state"), "HWAX_WAIT_DOWN_MAX": "1", "HWAX_WAIT_UP_MAX": "1",
+                            "HWAX_SKIP_LEDGER": str(ledger)})
+    calls = log.read_text().splitlines() if log.exists() else []
+    assert calls and all(c.endswith(" port=없음") for c in calls), (calls, r.stdout + r.stderr)
+    assert "down llm-router port=없음" in calls, (calls, r.stdout + r.stderr)
+
+
 def test_사용법이_라우터_보호를_말한다():
     head = UPDATE_SITES[:UPDATE_SITES.index("# ── 대상 산출")]
     assert "LLM_ROUTER_RESTART_FORCE=1" in head and "llm-router" in head

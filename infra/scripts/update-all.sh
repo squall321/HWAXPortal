@@ -56,6 +56,10 @@ for _h in ${_np_parts[@]+"${_np_parts[@]}"}; do
   case ",$_np," in *",$_h,"*) ;; *) _np="${_np:+$_np,}$_h" ;; esac
 done
 export NO_PROXY="$_np"; export no_proxy="$_np"; unset _np _np_parts _h
+# 운영자 셸에 export 된 LLM_ROUTER_PORT 를 물려주지 않는다(LLM 풀 반대 검토 2라운드 LOW 6 · LP-D14) — llm-router.sh stop 은 환경의 포트를
+# 먼저 본다. 옛 포트가 남아 있으면 §1i·§4 의 update-sites llm-router 가 그 포트의 라우터(미룬 서비스가 아직 쓸 수 있다)를 내리고 지금 포트의
+# 라우터는 못 내린다. 라우터 포트의 정본은 infra/.env 하나다 — 옛 포트를 내릴 때는 그 한 번에만 준다(LLM_ROUTER_PORT=<포트> … llm-router.sh stop).
+unset LLM_ROUTER_PORT
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
