@@ -128,6 +128,44 @@ def test_install_if_changed_returns_installed_same_or_failed(tmp_path):
     src.write_bytes(b"abcd"); assert "rc=0" in _sh(f'hwax_install_if_changed "{src}" "{dst}"; echo rc=$?').stdout and dst.read_bytes() == b"abcd"
 
 
+def test_install_if_changed_never_rewrites_the_file_a_running_process_has_open(tmp_path):
+    """**LLM 풀 반대 검토 M2 회귀** — 설치가 cp -p 로 대상을 제자리에 덮어써, portal.sif 로 도는 LLM 라우터(apptainer exec) 밑에서 squashfs 가
+    바뀌어 EIO 뒤 Bus error 가 났다(실측). 같은 디렉터리의 임시 파일 + 이름 바꾸기면 도는 프로세스는 옛 inode 를 쥔 채 옛 내용을 읽고, 다음
+    기동이 새 파일을 연다. 열린 파일 서술자가 그 '도는 프로세스' 다."""
+    src = tmp_path / "cache/portal.sif"; src.parent.mkdir(); src.write_bytes(b"NEW-IMAGE" * 1000); os.utime(src, (1_600_000_000, 1_600_000_000))
+    dst = tmp_path / "apptainer/portal.sif"; dst.parent.mkdir(); dst.write_bytes(b"OLD-IMAGE" * 1000)
+    ino0 = dst.stat().st_ino
+    with open(dst, "rb") as running:
+        r = _sh(f'hwax_install_if_changed "{src}" "{dst}"; echo rc=$?')
+        assert "rc=0" in r.stdout, r.stdout + r.stderr
+        assert running.read() == b"OLD-IMAGE" * 1000, "도는 프로세스 밑의 내용이 바뀌었다(제자리 덮어쓰기)"
+    assert dst.read_bytes() == b"NEW-IMAGE" * 1000 and dst.stat().st_ino != ino0, "새 파일은 새 inode 다"
+    assert int(dst.stat().st_mtime) == 1_600_000_000, "mtime 은 원본 그대로(cp -p) — 지문이 안정된다"
+    assert sorted(p.name for p in dst.parent.iterdir()) == ["portal.sif"], "임시 파일이 남지 않는다"
+
+
+def test_install_if_changed_keeps_a_symlinked_destination(tmp_path):
+    """/data 이관의 심링크 브리지 — 이름 바꾸기를 링크에 하면 링크가 파일이 되어 브리지가 끊긴다. 가리키는 파일을 바꾼다."""
+    src = tmp_path / "new.sif"; src.write_bytes(b"new")
+    real = tmp_path / "data/portal.sif"; real.parent.mkdir(); real.write_bytes(b"old")
+    link = tmp_path / "apptainer/portal.sif"; link.parent.mkdir(); link.symlink_to(real)
+    assert "rc=0" in _sh(f'hwax_install_if_changed "{src}" "{link}"; echo rc=$?').stdout
+    assert link.is_symlink() and real.read_bytes() == b"new"
+    assert sorted(p.name for p in real.parent.iterdir()) == ["portal.sif"]
+
+
+@NOT_ROOT
+def test_install_if_changed_fails_without_touching_the_old_file_when_the_directory_is_not_writable(tmp_path):
+    src = tmp_path / "new.sif"; src.write_bytes(b"new")
+    dst = tmp_path / "live/x.sif"; dst.parent.mkdir(); dst.write_bytes(b"old"); dst.parent.chmod(0o555)
+    try:
+        r = _sh(f'hwax_install_if_changed "{src}" "{dst}"; echo rc=$?')
+    finally:
+        dst.parent.chmod(0o755)
+    assert "rc=2" in r.stdout and "설치 실패" in r.stderr and dst.read_bytes() == b"old", r.stdout + r.stderr
+    assert sorted(p.name for p in dst.parent.iterdir()) == ["x.sif"]
+
+
 @NOT_ROOT
 def test_install_if_changed_reports_a_failed_copy_loudly(tmp_path):
     """검토: cp 실패가 '같음 — 그대로' 로 찍히고 rc 0 이었다 — 옛 SIF 가 조용히 남는다."""
