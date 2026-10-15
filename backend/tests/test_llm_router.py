@@ -750,9 +750,10 @@ def test_다시_읽은_목록이_비면_update_all_이_내릴_때까지_마지�
 # ── 띄우는 스크립트 ──────────────────────────────────────────────────────────────────────────────────
 def _lay(tmp_path: Path, env_text: str) -> tuple[Path, Path, Path]:
     lay = (tmp_path / "repo").resolve()
-    (lay / "infra/scripts").mkdir(parents=True)
+    (lay / "infra/scripts/lib").mkdir(parents=True)
     (lay / "infra/apptainer").mkdir()
     shutil.copy(LAUNCHER, lay / "infra/scripts/llm-router.sh")
+    shutil.copy(ROOT / "infra/scripts/lib/llm-pool.sh", lay / "infra/scripts/lib/llm-pool.sh")    # run 이 목록을 정본 규칙으로 본다
     (lay / "infra/.env").write_text(env_text, encoding="utf-8")
     (lay / "infra/apptainer/portal.sif").write_text("")
     stub = tmp_path / "apptainer"
@@ -761,9 +762,10 @@ def _lay(tmp_path: Path, env_text: str) -> tuple[Path, Path, Path]:
     return lay, stub, tmp_path / "argv.txt"
 
 
-def _launch(lay: Path, stub: Path, out: Path, *args: str) -> subprocess.CompletedProcess:
-    env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "/tmp"), "APPTAINER": str(stub), "STUB_OUT": str(out)}
-    return subprocess.run(["bash", str(lay / "infra/scripts/llm-router.sh"), *args], capture_output=True, text=True, env=env, timeout=60)
+def _launch(lay: Path, stub: Path, out: Path, *args: str, env: dict | None = None, path: str | None = None) -> subprocess.CompletedProcess:
+    e = {"PATH": path or os.environ["PATH"], "HOME": os.environ.get("HOME", "/tmp"), "APPTAINER": str(stub), "STUB_OUT": str(out),
+         **(env or {})}
+    return subprocess.run(["bash", str(lay / "infra/scripts/llm-router.sh"), *args], capture_output=True, text=True, env=e, timeout=60)
 
 
 def test_run_은_서버_목록이_없거나_포트가_수가_아니면_띄우지_않는다(tmp_path):
@@ -844,7 +846,8 @@ def test_매니페스트_항목은_LLM_UPSTREAMS_있는_박스에서만_라우�
     spec.loader.exec_module(m)
     entry = {s["name"]: s for s in yaml.safe_load((ROOT / "infra/services.yaml").read_text(encoding="utf-8"))["services"]}["llm-router"]
     assert {k: entry[k] for k in ("dir", "if_env", "update", "fp_git", "fp", "start", "stop", "health", "tier")} == {
-        "dir": ".", "if_env": "LLM_UPSTREAMS", "update": False, "fp_git": False, "fp": ["infra/llm-router", "infra/scripts/llm-router.sh"],
+        "dir": ".", "if_env": "LLM_UPSTREAMS", "update": False, "fp_git": False,
+        "fp": ["infra/llm-router", "infra/scripts/llm-router.sh", "infra/apptainer/portal.sif"],   # 라우터가 도는 이미지 — §2 가 갈아 끼운다
         "start": "./infra/scripts/llm-router.sh run", "stop": "./infra/scripts/llm-router.sh stop",
         "health": "http://127.0.0.1:${LLM_ROUTER_PORT:-9130}/health", "tier": 5}
     (tmp_path / "infra").mkdir()
@@ -855,6 +858,15 @@ def test_매니페스트_항목은_LLM_UPSTREAMS_있는_박스에서만_라우�
     assert m.health_url(entry) == "http://127.0.0.1:9555/health", "포트는 infra/.env 를 따른다(기동 대기·상태가 같은 주소를 본다)"
     (tmp_path / "infra/.env").write_text("LLM_UPSTREAMS=http://203.0.113.5:8000/v1\n", encoding="utf-8")
     assert m.enabled_here(entry) is True and m.health_url(entry) == "http://127.0.0.1:9130/health"
+    # 지문 — 라우터가 도는 이미지(portal.sif)는 들고 포털 루트 .env(env-sync 가 덧붙인다)는 들지 않는다(검토 배선 M2 · 라우터 L2)
+    (tmp_path / "infra/apptainer").mkdir()
+    sif = tmp_path / "infra/apptainer/portal.sif"
+    sif.write_bytes(b"old image")
+    f1 = m.service_fp(entry)
+    (tmp_path / ".env").write_text("NEW_KEY=1\n", encoding="utf-8")
+    assert m.service_fp(entry) == f1, "포털 루트 .env 는 라우터 지문이 아니다"
+    sif.write_bytes(b"new image!")
+    assert m.service_fp(entry) != f1, "§2 가 portal.sif 를 갈아 끼우면 라우터도 다시 띄운다(그 이미지로 돈다)"
 
 
 def test_services_cli_enables_llm_router_only_with_upstreams_in_the_file(tmp_path):
@@ -1258,3 +1270,92 @@ def test_같은_앞부분이_몰려도_두_서버의_차이는_기본_문턱_2_�
         j["t"].join(10)
         assert j["r"].status_code == 200
 
+
+# ── 띄우는 스크립트 — 검토 L1 · 배선 M4 ───────────────────────────────────────────────────────────────
+def test_run_은_정본_규칙에_틀린_목록이면_띄우지_않고_환경의_포트를_먼저_본다(tmp_path):
+    cases = ['LLM_UPSTREAMS="http://a.example:8000/v1", "http://b.example:8000/v1"\n',     # 포털 start.sh 의 소싱을 죽이는 줄(배선 M1)
+             "LLM_UPSTREAMS=http://203.0.113.256:8000/v1\n",
+             "LLM_UPSTREAMS=http://127.0.0.1:9131/v1\nLLM_ROUTER_PORT=9131\n"]               # 라우터 자신
+    for i, text in enumerate(cases):
+        sub = tmp_path / f"c{i}"
+        sub.mkdir()
+        lay, stub, out = _lay(sub, text)
+        r = _launch(lay, stub, out, "run")
+        assert r.returncode == 2 and "LLM_UPSTREAMS 를 쓸 수 없어" in r.stderr and not out.exists(), (text, r.stderr)
+    sub = tmp_path / "env"
+    sub.mkdir()
+    lay, stub, out = _lay(sub, "LLM_UPSTREAMS=http://127.0.0.1:9131/v1\nLLM_ROUTER_PORT=9555\n")
+    r = _launch(lay, stub, out, "run", env={"LLM_ROUTER_PORT": "9131"})
+    assert r.returncode == 2 and "라우터 자신" in r.stderr and not out.exists(), "환경의 포트가 실제로 듣는 포트다"
+    r = _launch(lay, stub, out, "run", env={"LLM_ROUTER_PORT": "9132"})
+    argv = out.read_text().splitlines()
+    assert r.returncode == 0 and argv[argv.index("--port") + 1] == "9132" and "LLM_ROUTER_PORT=9132" in argv, (r.stderr, argv)
+
+
+def _bin_without(tmp_path: Path, *drop: str) -> str:
+    """PATH 로 쓸 디렉터리 — 띄우는 스크립트가 부르는 명령을 링크로 두고 drop 은 뺀다."""
+    d = tmp_path / "bin"
+    d.mkdir()
+    for name in ("bash", "sed", "tail", "tr", "grep", "cut", "sort", "seq", "sleep", "dirname", "basename", "ss", "cat"):
+        p = shutil.which(name)
+        if name not in drop and p:
+            (d / name).symlink_to(p)
+    return str(d)
+
+
+def test_stop_은_모르면_실패한다_ss_가_없거나_pid_가_안_보이는_리스너(tmp_path):
+    """'이미 내려가 있다' rc 0 이던 두 경우(검토 L1) — update-all 의 내리기는 rc 를 믿는다. 그 포트에 남이 떠 있으면 사본들이 키와 프롬프트를
+    그리로 보낸다."""
+    port = _free_port()
+    lay, stub, out = _lay(tmp_path, f"LLM_UPSTREAMS=http://203.0.113.5:8000/v1\nLLM_ROUTER_PORT={port}\n")
+    mine = _listener(port, "llm_router:app")
+    try:
+        r = _launch(lay, stub, out, "stop", path=_bin_without(tmp_path, "ss"))
+        assert r.returncode == 1 and "ss" in r.stderr and "이미 내려가" not in r.stdout and mine.poll() is None, r.stdout + r.stderr
+    finally:
+        mine.kill()
+        mine.wait(10)
+    fake = tmp_path / "fakess"
+    fake.mkdir()
+    (fake / "ss").write_text(f"#!/usr/bin/env bash\necho 'LISTEN 0 4096 127.0.0.1:{port} 0.0.0.0:*'\n", encoding="utf-8")
+    (fake / "ss").chmod(0o755)
+    r = _launch(lay, stub, out, "stop", path=f"{fake}:{os.environ['PATH']}")
+    assert r.returncode == 1 and "pid 가 안 보인다" in r.stderr, r.stdout + r.stderr
+
+
+def test_stop_은_환경의_포트를_infra_env_보다_먼저_본다(tmp_path):
+    """update-all 이 옛 포트에 남은 라우터를 내릴 때 그 포트를 환경으로 준다(배선 M4)."""
+    port = _free_port()
+    other = next(p for p in iter(_free_port, None) if p != port)
+    lay, stub, out = _lay(tmp_path, f"LLM_UPSTREAMS=http://203.0.113.5:8000/v1\nLLM_ROUTER_PORT={other}\n")
+    mine = _listener(port, "llm_router:app")
+    try:
+        r = _launch(lay, stub, out, "stop", env={"LLM_ROUTER_PORT": str(port)})
+        assert r.returncode == 0 and f":{port}" in r.stdout and "내려갔다" in r.stdout, r.stdout + r.stderr
+        assert mine.wait(10) is not None
+    finally:
+        if mine.poll() is None:
+            mine.kill()
+
+
+# ── 지문 — 검토 L2 ───────────────────────────────────────────────────────────────────────────────────
+def test_지문은_바이트코드를_보지_않고_fp_git_false_면_리포_루트_env_도_보지_않는다(tmp_path):
+    """`services.py fp llm-router` 가 import 한 번(__pycache__)과 포털 루트 .env(env-sync 가 덧붙인다)에 바뀌었다 — 라우터가 쓸데없이 재기동된다."""
+    spec = importlib.util.spec_from_file_location("svc_for_router_fp", ROOT / "infra/scripts/services.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    work = tmp_path / "work"
+    (work / "code").mkdir(parents=True)
+    (work / "code/router.py").write_text("v1\n", encoding="utf-8")
+    svc = {"name": "r", "dir": str(work), "fp_git": False, "fp": ["code"]}
+    plain = {"name": "p", "dir": str(work), "fp": ["code"]}             # fp_git 기본 — 다른 모든 서비스
+    a, p0 = m.service_fp(svc), m.service_fp(plain)
+    (work / "code/__pycache__").mkdir()
+    (work / "code/__pycache__/router.cpython-313.pyc").write_bytes(b"\0" * 16)
+    (work / "code/stray.pyc").write_bytes(b"\0")
+    assert (m.service_fp(svc), m.service_fp(plain)) == (a, p0), "바이트코드는 어느 서비스의 지문에도 넣지 않는다"
+    (work / ".env").write_text("NEW_KEY=1\n", encoding="utf-8")
+    assert m.service_fp(svc) == a, "fp_git: false 면 리포 루트 .env 를 넣지 않는다"
+    assert m.service_fp(plain) != p0, "기본은 종전대로 .env 가 든다"
+    (work / "code/router.py").write_text("v2 — 코드가 바뀌었다\n", encoding="utf-8")
+    assert m.service_fp(svc) != a
