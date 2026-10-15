@@ -52,6 +52,10 @@
 #       실패했거나(here-doc 임시 파일을 못 만든다 · 파이썬이 죽었다) 읽지 못한 사본이 있다. 부르는 쪽은 2 를 '모른다 — 사본이 그 주소를 가리킬
 #       수 있다' 로 읽는다(라우터를 내리지 않는다 · 기록을 덮지 않는다 · '직접 주소다' 라고 말하지 않는다 — ✗ 와 사유. 반대 검토 2라운드 M-D:
 #       0 으로 읽어 사본 둘이 아직 가리키는 라우터를 내렸다).
+#   hwax_llm_pool_loopback_dead <포털 루트> <뺄 주소…>   지금 값이 루프백 /v1 주소(127.x.x.x · localhost)인데 그 포트에 아무것도 듣지 않는
+#       사본 — 줄마다 "<리포 경로>\t<.env 상대경로>\t<키>\t<값>". 뺄 주소(끝 `/` 무시)와 같은 값은 보지 않는다. 0 = 다 봤다(없으면 빈
+#       출력) · 2 = 셀 수 없다(사유 한 줄). **고치지 않는다** — 라우터 기록이 없으면 그 주소가 옛 라우터인지 박스의 로컬 vLLM 인지 모른다
+#       (풀 꺼짐 + 기록 없음일 때 update-all 1i 가 ⚠ 로 알린다 — LP-D14).
 #
 # ⚠ 0 아닌 값을 정상으로 돌려준다 — `set -e` 스크립트에서는 `_x="$(hwax_llm_… )" || _rc=$?` 로 받는다. 맨 문장이면 1·2 에서 조용히 끝난다.
 
@@ -560,4 +564,30 @@ hwax_llm_pool_at() {  # $1=포털 루트 $2=주소 — 0 = 수를 찍었다 · 2
     printf '%s\n' "사본 ${e}곳을 읽지 못했다(${cnt#*$'\t'*$'\t'})"; return 2
   fi
   printf '%s\n' "$n"
+}
+
+hwax_llm_pool_loopback_dead() {  # $1=포털 루트 $2…=뺄 주소 — 머리 주석
+  local root="$1" out rc=0 st svc rp rel key cur x skip scheme host port code dead=""
+  shift
+  out="$(hwax_llm_pool_rewrite "$root" dry "-")" || rc=$?      # 관리하는 값 없이 — 값이 있는 사본은 전부 foreign 줄로 지금 값을 낸다
+  if [ "$rc" != 0 ]; then
+    printf '%s\n' "사본을 읽지 못했다(사본 lib rc $rc — 위 오류 줄)"; return 2
+  fi
+  while IFS=$'\t' read -r st svc rp rel key cur _; do
+    case "$st" in
+      error) printf '%s\n' "${rp##*/}/$rel $key 를 읽지 못했다 — $cur"; return 2 ;;
+      foreign) ;;
+      *) continue ;;
+    esac
+    [[ "$cur" =~ ^(https?)://(127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|localhost)(:([0-9]{1,5}))?/v1/?$ ]] || continue
+    scheme="${BASH_REMATCH[1]}"; host="${BASH_REMATCH[2]}"; port="${BASH_REMATCH[4]}"
+    skip=0
+    for x in "$@"; do [ -n "$x" ] && [ "${x%/}" = "${cur%/}" ] && skip=1; done
+    [ "$skip" = 0 ] || continue
+    if [ -z "$port" ]; then if [ "$scheme" = https ]; then port=443; else port=80; fi; fi
+    # 듣는 것이 없다 = 연결 거절(curl 7). 답이 무엇이든(404 · TLS 오류 · 시간 초과) 무언가 듣고 있으면 이 줄에 넣지 않는다.
+    code=0; curl -s -o /dev/null --noproxy '*' --connect-timeout 2 -m 3 "http://$host:$port/" 2>/dev/null || code=$?
+    [ "$code" = 7 ] && dead="$dead$rp"$'\t'"$rel"$'\t'"$key"$'\t'"$cur"$'\n'
+  done <<<"$out"
+  printf '%s' "$dead"
 }

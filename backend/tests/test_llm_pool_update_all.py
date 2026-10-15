@@ -681,6 +681,47 @@ def test_6장_은_사본을_셀_수_없으면_직접_주소라고_말하지_않�
     assert any(want in ln for ln in mine), out
 
 
+# ── 풀이 꺼졌는데 라우터 기록이 없을 때(2라운드 LOW 7 · LP-D14) ────────────────────────────────────────────
+@pytest.mark.parametrize("record", ["없다", "모양이 틀렸다",
+                                    pytest.param("못 읽는다", marks=pytest.mark.skipif(os.geteuid() == 0, reason="root 는 권한을 무시한다"))])
+def test_기록이_없으면_아무것도_듣지_않는_루프백_사본을_알리되_고치지_않는다(box, record):
+    """**2라운드 LOW 7 회귀(검토 탐침 corrupt)** — 기록을 잃으면(지웠다 · 손으로 고쳤다 · 못 읽는다) 옛 라우터 주소를 몰라, 죽은 라우터를
+    가리키는 사본을 두고 ○ '사본들이 LLM_BASE_URL 을 직접 본다' 였다. 이제 루프백 /v1 인데 아무것도 듣지 않는 사본을 ⚠ 로 하나씩 알린다 —
+    고치지 않는다(이 박스의 로컬 vLLM 일 수 있다). 되돌리는 길(그 주소를 기록에 적고 재실행)을 함께 말한다."""
+    dead = f"http://127.0.0.1:{_dead_port()}/v1"
+    f = box.repo / "infra/.state/llm-pool.router"
+    if record == "모양이 틀렸다":
+        _recorded(box, dead.replace("127.0.0.1", "localhost"))
+    elif record == "못 읽는다":
+        _recorded(box, dead); f.chmod(0)
+    box.env(f"LLM_BASE_URL={DIRECT}\nLLM_ROUTER_PORT={_dead_port()}\n")
+    box.put({"agent-server": dead, "signalforge": DIRECT, "heax-hub": FOREIGN})
+    before = box.snapshot()
+    try:
+        out = box.run(retire=True, pre="_DA_RC=0; _us_rc=0\n")
+    finally:
+        if f.exists():
+            f.chmod(0o644)
+    assert box.snapshot() == before and box.called() == [], "알리기만 한다 — 옛 라우터인지 로컬 vLLM 인지 모른다"
+    warns = [ln for ln in _lines(out, "BAD:") if "아무것도 듣지 않는다" in ln]
+    assert len(warns) == 1 and f"HWAXAgentServer/.env  VLLM_BASE_URL={dead} " in warns[0], out
+    assert f"'{dead}' > '{box.repo}/infra/.state/llm-pool.router'" in warns[0] and "고치지 않는다" in warns[0], warns[0]
+    first = box.ledger.read_text().splitlines()[0]
+    assert first.startswith("LLM 서버 풀(라우터)\t") and "직접 본다" not in first and "위 ⚠" in first, first
+    assert not _lines(out, "FAIL:"), out
+
+
+def test_듣고_있는_루프백과_직접_주소는_알리지_않는다(box, router):
+    """로컬 vLLM 을 루프백으로 쓰는 dev 박스 — 그 포트에 무언가 들으면 ⚠ 가 없다. 직접 주소(LLM_BASE_URL)와 같은 값은 풀과 무관하다(꺼져
+    있어도 — 그것은 LLM 자체의 일이다)."""
+    direct = f"http://127.0.0.1:{_dead_port()}/v1"
+    box.env(f"LLM_BASE_URL={direct}\nLLM_ROUTER_PORT={_dead_port()}\n")
+    box.put({"agent-server": direct, "signalforge": f"http://127.0.0.1:{router['port']}/v1"})
+    out = box.run(retire=True, pre="_DA_RC=0; _us_rc=0\n")
+    assert not [ln for ln in _lines(out, "BAD:") if "듣지 않는다" in ln] and not _lines(out, "HR:"), out
+    assert "직접 본다" in box.ledger.read_text().splitlines()[0]
+
+
 # ── §6 한 줄 ───────────────────────────────────────────────────────────────────────────────────────
 def _s6(box: Box, router, body: dict | None, values: dict, *, pool: bool = True) -> str:
     port = router["port"] if body is not None else _dead_port()

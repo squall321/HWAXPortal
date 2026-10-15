@@ -542,6 +542,46 @@ def test_파이썬이_죽어도_모른다(box, tmp_path):
     assert "(대역) python3 죽음" in err and rc == 2 and "rc 9" in out, (rc, out, err)
 
 
+@pytest.fixture()
+def listener():
+    """무언가 듣는 루프백 포트(답은 아무래도 좋다 — 연결만 받는다)."""
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield srv.server_address[1]
+    srv.shutdown(); srv.server_close()
+
+
+def test_아무것도_듣지_않는_루프백_사본을_찾되_고치지_않는다(box, listener):
+    """**2라운드 LOW 7** — 라우터 기록을 잃으면 옛 라우터 주소를 모른다. 루프백 /v1 인데 그 포트에 아무것도 듣지 않는 사본만 낸다 — 듣고
+    있는 루프백(로컬 vLLM)·원격 주소·뺄 주소(지금 라우터 · 직접 주소)는 내지 않는다. 파일은 한 바이트도 안 바뀐다."""
+    root, home, sib = box
+    dead, dead2 = f"http://127.0.0.1:{_dead_port()}/v1", f"http://localhost:{_dead_port()}/v1/"
+    excluded = f"http://127.0.0.1:{_dead_port()}/v1"
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={dead}\n")
+    sib["AIDataHub"].write_text(f"OPENAI_BASE_URL=http://127.0.0.1:{listener}/v1\nLLM_BASE_URL={DIRECT}\n")
+    sib["SignalForge"].write_text(f"OPENAI_BASE_URL={excluded}\n")
+    sib["MXWhitePaper"].write_text(f"LLM_BASE_URL={dead2}\n")
+    sib["HEAXHub"].write_text(f"HEAX_APP_LLM_BASE_URL=http://127.0.0.1:{_dead_port()}/openai\n")   # /v1 이 아니다 — LLM 주소 모양이 아니다
+    before = {p: p.read_bytes() for p in sib.values() if p.exists()}
+    r = _sh(f'. "{LIB}"; out="$(hwax_llm_pool_loopback_dead "{root}" "{excluded}/" "{DIRECT}")"; echo "rc=$?"; printf "%s" "$out"', home)
+    lines = r.stdout.splitlines()
+    assert lines[0] == "rc=0", r.stdout + r.stderr
+    got = sorted((Path(a).name, b, c, d) for a, b, c, d in (ln.split("\t") for ln in lines[1:]))
+    assert got == [("HWAXAgentServer", ".env", "VLLM_BASE_URL", dead), ("MXWhitePaper", ".env", "LLM_BASE_URL", dead2)], got
+    assert {p: p.read_bytes() for p in before} == before
+
+
+@NOT_ROOT
+def test_루프백_점검도_읽지_못하면_모른다(box):
+    root, home, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL=http://127.0.0.1:{_dead_port()}/v1\n"); sib["HWAXAgentServer"].chmod(0o000)
+    try:
+        r = _sh(f'. "{LIB}"; out="$(hwax_llm_pool_loopback_dead "{root}")"; echo "rc=$?"; printf "%s" "$out"', home)
+    finally:
+        sib["HWAXAgentServer"].chmod(0o644)
+    assert r.stdout.startswith("rc=2") and "읽지 못했다" in r.stdout, r.stdout
+
+
 def test_리포가_없는_사본은_줄을_내지_않는다(box):
     _, _, sib = box
     shutil.rmtree(sib["PaperIngest"].parent)
