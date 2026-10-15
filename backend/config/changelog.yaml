@@ -22,6 +22,12 @@
 
 entries:
   - date: 2026-10-16
+    title: "**리스크 심사 Claude 길 — 포털 중계**(기술, 기본 꺼짐)"
+    tag: 기술
+    items:
+      - "카드 대조 limits 중계(GET /agent/card-review/limits)가 질의 문자열의 llm 을 엔진에 옮깁니다(엔진이 읽는 이름만 — 없으면 종전과 같은 주소). 그동안은 ?llm=external 을 버려 외부 응답자 잡에도 GLM 예산과 판이 돌아왔습니다."
+      - "심의 옵션(delib_opts)이 llm(glm · external 만)과 consent_external(엄격한 참·거짓 — \"true\"·1 은 422)을 엔진에 그대로 넘깁니다. 그동안은 포털을 거치면 외부 선택이 말없이 떨어져 GLM 으로 돌았습니다. 보내는 곳은 리스크 앱뿐이고 포털 화면에는 이 선택이 없습니다."
+  - date: 2026-10-16
     title: "**업데이트 이력 보충** — 10-12~10-15 에 빠졌던 변경을 날짜별로 채웠습니다"
     tag: 수정
     items:
