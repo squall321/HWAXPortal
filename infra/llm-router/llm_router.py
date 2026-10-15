@@ -4,6 +4,8 @@
 계약(PLAN §3 · context-notes LP-D2~D10).
   설정  리포 루트의 infra/.env 를 직접 읽는다(파일 위치에서 유도 — 키를 argv·환경으로 받지 않는다). LLM_ROUTER_ENV_FILE 은 시험·손 점검용
         다른 파일이다. 읽는 규칙은 update-all `_envfile_value` 와 같고, 파일이 바뀌면 다음 지표 주기에 다시 읽는다(재기동 없음).
+        다시 읽은 목록이 비면 마지막 목록으로 계속 보내고 /health 의 kept_last_list 가 true 다 — 풀을 끄는 것은 update-all 이고(사본을 되돌린
+        뒤 라우터를 내린다) 재기동이 미뤄진 손님은 그때까지 이 라우터를 부른다. 처음 읽을 때 비었으면 503 이다.
   고르기  부하 = 마지막 지표의 running + waiting(라벨 묶음 전부 합) + 그 뒤로 이 라우터가 더 보낸 수. 같으면 KV 사용률, 그다음 목록 순서.
   붙임  메시지 앞부분 PREFIX_CHARS 자의 해시 → 렌데부 해시로 선호 서버. 선호 서버가 가장 한가한 서버보다 STICKY_SLACK 이상 바쁘면 떨어진다.
   넘김  연결 실패(요청이 서버에 닿지 않은 것)만 그 서버를 COOLDOWN_S 동안 빼고 다른 서버로 — 요청마다 서버 하나에 한 번. 연결된 뒤의 일
@@ -24,7 +26,7 @@ import os
 import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -279,6 +281,7 @@ class Router:
         self._models_warned: str | None = None
         self._all_failed_noted = -math.inf
         self._running = False
+        self.kept_last_list = False    # 파일의 목록이 비어 마지막 목록을 이어 쓰는 중(/health 에 싣는다)
 
     # ── ASGI ──
     async def __call__(self, scope, receive, send) -> None:
@@ -356,6 +359,12 @@ class Router:
         self._sig, self._bad_sig = sig, None
         self._mtime = round(sig[0] / 1e9, 3) if sig else None
         cfg = build_config(vals)
+        # 다시 읽은 목록이 비었으면(줄을 지웠거나 쓸 수 있는 항목이 없다) 마지막 목록으로 계속 보낸다. 풀을 끄는 것은 update-all 이다 — 사본을
+        # 직접 주소로 되돌리고 그 뒤에야 라우터를 내리는데, 재기동이 미뤄진 손님(심의가 도는 에이전트 서버 · 바쁜 HEAX)은 그동안 이 라우터를
+        # 부른다. 빈 목록을 그대로 받으면 그 호출이 전부 503 이 된다. 처음 읽을 때 비었으면 그대로 503 이다(이어받을 목록이 없다).
+        self.kept_last_list = not initial and not cfg.upstreams and bool(self.cfg.upstreams)
+        if self.kept_last_list:
+            cfg = replace(cfg, upstreams=self.cfg.upstreams)
         old = {u.url: u for u in self.ups}
         self.ups = [old.get(url) or Upstream(url) for url in cfg.upstreams]
         added = [u for u in self.ups if u.url not in old]
@@ -370,7 +379,10 @@ class Router:
                 self._start_loop(u, delay=False)
         for p in cfg.problems:
             LOG.warning("설정 — %s", p)
-        if not cfg.upstreams:
+        if self.kept_last_list:       # 다시 읽기는 파일 모양이 바뀔 때만 돈다 — 이 경고도 파일 모양마다 한 번이다
+            LOG.warning("LLM_UPSTREAMS 가 비었다(쓸 수 있는 항목 없음, %s) — update-all 이 라우터를 내릴 때까지 마지막 목록 %d곳으로 계속 보낸다",
+                        self.env_file, len(self.ups))
+        elif not cfg.upstreams:
             LOG.warning("LLM_UPSTREAMS 가 비어 있다(%s) — 보낼 서버가 없어 손님 요청은 503 이다", self.env_file)
         if not initial:
             LOG.info("설정 다시 읽음 — 서버 %d곳(더함 %d · 뺌 %d)", len(self.ups), len(added), len(removed))
@@ -480,12 +492,14 @@ class Router:
 
     # ── 라우터 자신의 끝점 ──
     def health(self) -> tuple[dict, int]:
+        """status 는 올라온 서버 수와 모델 대조로만 정한다(down 이면 503). kept_last_list 는 status 를 바꾸지 않는다 — 보내는 데는 문제가 없고,
+        파일의 목록과 쓰는 목록이 다르다는 사실만 알린다(update-all 이 라우터를 내릴 차례인지 보는 데 쓴다)."""
         now = time.monotonic()
         total, up = len(self.ups), sum(u.is_up(now) for u in self.ups)
         models = self._models_summary()
         status = "down" if up == 0 else "degraded" if (up < total or models["match"] is False) else "ok"
         return ({"status": status, "upstreams_total": total, "upstreams_up": up, "inflight": self.inflight, "models": models,
-                 "config_mtime": self._mtime}, 503 if status == "down" else 200)
+                 "config_mtime": self._mtime, "kept_last_list": self.kept_last_list}, 503 if status == "down" else 200)
 
     def stats(self) -> list[dict]:
         now = time.monotonic()

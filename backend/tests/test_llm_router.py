@@ -661,11 +661,38 @@ def test_설정을_다시_읽어_재기동_없이_서버를_더하고_뺀다(lab
     hits_a = len(a.hits)
     a.running = -100                                          # 빠진 서버는 아무리 한가해 보여도 고르지 않는다
     assert all(r.chat("x").json()["served_by"] == "B" for _ in range(3)) and len(a.hits) == hits_a
-    _write_env(r.env, [], LLM_ROUTER_SCRAPE_S=0.1)
-    _wait(lambda: r.stats() == [], what="목록이 비기")
-    resp = r.chat("x")
+
+
+def test_다시_읽은_목록이_비면_update_all_이_내릴_때까지_마지막_목록으로_보낸다(lab, caplog):
+    """풀을 끄는 것은 update-all 이다 — LLM_UPSTREAMS 를 지우면 사본을 직접 주소로 되돌리고 그 뒤에야 라우터를 내리는데, 재기동이 미뤄진
+    손님(심의가 도는 에이전트 서버 · 바쁜 HEAX)은 그동안 라우터를 계속 부른다. 빈 목록을 그대로 받아 503 을 내면 그 호출이 전부 깨진다.
+    처음 읽을 때 비었으면 이어받을 목록이 없으니 503 이다."""
+    caplog.set_level(logging.INFO)
+    a, b = lab.fake("A"), lab.fake("B")
+    r = lab.router([a], LLM_ROUTER_PREFIX_CHARS=0, LLM_ROUTER_SCRAPE_S=0.1)
+    assert r.health().json()["kept_last_list"] is False
+    kept = lambda: [x for x in caplog.records if "마지막 목록" in x.getMessage()]   # noqa: E731
+    _write_env(r.env, [], LLM_ROUTER_PREFIX_CHARS=0, LLM_ROUTER_SCRAPE_S=0.1)          # 줄은 남고 값이 빈 꼴
+    _wait(lambda: r.health().json()["kept_last_list"] is True, what="빈 목록을 읽기")
+    body = r.health().json()
+    assert (body["status"], body["upstreams_total"], [s["url"] for s in r.stats()]) == ("ok", 1, [a.base]), "status 는 보내는 능력만 말한다"
+    assert r.chat("x").json()["served_by"] == "A", "마지막 목록으로 계속 보낸다"
+    assert len(kept()) == 1
+    _write_env(r.env, ["ftp://nope/v1"], LLM_ROUTER_PREFIX_CHARS=0, LLM_ROUTER_SCRAPE_S=0.1)   # 쓸 수 있는 항목이 없는 목록도 같다
+    _wait(lambda: len(kept()) == 2, what="파일 모양이 바뀌면 다시 한 줄")
+    time.sleep(0.4)
+    assert len(kept()) == 2, "같은 파일 모양에는 한 번만 알린다"
+    assert r.chat("x").json()["served_by"] == "A" and r.health().json()["kept_last_list"] is True
+    _write_env(r.env, [b.base], LLM_ROUTER_PREFIX_CHARS=0, LLM_ROUTER_SCRAPE_S=0.1)
+    _wait(lambda: [s["url"] for s in r.stats()] == [b.base], what="다시 채운 목록으로 바뀌기")
+    assert r.health().json()["kept_last_list"] is False
+    assert r.chat("x").json()["served_by"] == "B", "다시 채우면 새 목록이다"
+    # 처음 읽을 때 비었으면 503
+    empty = lab.router([], LLM_ROUTER_SCRAPE_S=0.1)
+    resp = empty.chat("x")
     assert resp.status_code == 503 and resp.json()["error"]["type"] == "llm_router_no_upstreams"
-    assert r.health().status_code == 503
+    h = empty.health()
+    assert h.status_code == 503 and h.json()["status"] == "down" and h.json()["kept_last_list"] is False
 
 
 # ── 띄우는 스크립트 ──────────────────────────────────────────────────────────────────────────────────
