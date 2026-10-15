@@ -257,6 +257,86 @@ def test_정본은_cae00_게이트웨이에서도_멈추지_않는다():
     assert not errors and not skipped, errors
 
 
+def _cluster_tool(name: str) -> bool:
+    """smart-twin-cluster(:5012, KooSlurmInstallAutomationRefactory dashboard/mcp_slurm)가 내는 도구 — slurm_* 와
+    smarttwin_submit·smarttwin_scenario_options 다(dev 게이트웨이 감사 로그 backend=smart-twin-cluster). SmartTwinMCP(:5013)
+    카탈로그에는 smarttwin_* 가 없다 — slurm_ 접두로만 나누면 cae00 에서 이 둘이 '이 앱에 없는 도구' 로 동기화를 멈춘다."""
+    return name.startswith(("slurm_", "smarttwin_"))
+
+
+def _smarttwin_maps() -> tuple[dict, dict]:
+    """he-sim-smarttwin 이 적은 이름으로 만든 게이트웨이 둘 — smart-twin-mcp 만 붙은 박스(cae00)와 둘 다 붙은 박스(dev)."""
+    p = _one("he-sim-smarttwin")["personas"][0]
+    names = {n for src in [p, *(p.get("optional") or [])] for fld in _TOOL_FIELDS for n in src.get(fld) or []}
+    mcp = {_native(n, ["smart-twin-mcp"]): "smart-twin-mcp" for n in names if not _cluster_tool(n)}
+    cluster = {n: "smart-twin-cluster" for n in names if _cluster_tool(n)}
+    base = {"areas": {}, "area_meta": [], "apps": [{"app": "smart-twin-mcp", "label": "시뮬레이션 실행(SmartTwin)"},
+                                                   {"app": "smart-twin-cluster", "label": "시뮬레이션 클러스터"}]}
+    return {**base, "map": mcp}, {**base, "map": {**mcp, **cluster}}
+
+
+def test_선택_앱이_빠진_박스에서도_운영자를_만든다():
+    """cae00 에는 smart-twin-cluster 가 없다 — 앱 둘을 다 필수로 적으면 SmartTwinMCP 가 붙어도 이 운영자는 늘 건너뛰어졌다(K8-2)."""
+    sync = _sync()
+    one = _one("he-sim-smarttwin")
+    mcp_only, both = _smarttwin_maps()
+    rows, skipped, errors = sync.plan(one, mcp_only)
+    assert not errors and not skipped, (errors, skipped)
+    notes: list[str] = []
+    rows, skipped, errors = sync.plan(one, mcp_only, notes)
+    assert not errors and not skipped and len(rows) == 1
+    assert notes == ["he-sim-smarttwin: smart-twin-cluster 없이 만든다(선택 앱)"], "빼고 만든 것을 건너뜀으로 세거나 말없이 넘기면 안 된다"
+    r = rows[0]
+    assert r["response_config"]["mcp_apps"] == ["smart-twin-mcp"], "없는 앱을 묶으면 챗이 '연결 안 됨' 경고를 낸다"
+    # 없는 앱의 도구를 프롬프트가 대면 모델이 그 도구를 부른다
+    for name in ("slurm_", "smarttwin_submit", "smarttwin_scenario_options"):
+        assert name not in r["system_prompt"], name
+    assert not any(_cluster_tool(t) for t in r["response_config"]["key_tools"])
+
+
+def test_선택_앱이_붙은_박스에서는_지금과_같게_만든다():
+    sync = _sync()
+    one = _one("he-sim-smarttwin")
+    p = one["personas"][0]
+    assert p["apps"] == ["smart-twin-mcp"] and [o["app"] for o in p.get("optional") or []] == ["smart-twin-cluster"], (
+        "클러스터는 선택 앱이다 — 필수 apps 에 두면 붙지 않은 박스에서 운영자 전체가 건너뛰어진다")
+    _mcp_only, both = _smarttwin_maps()
+    notes: list[str] = []
+    rows, skipped, errors = sync.plan(one, both, notes)
+    assert not errors and not skipped and notes == [], (errors, skipped, notes)
+    rc = rows[0]["response_config"]
+    assert rc["mcp_apps"] == ["smart-twin-mcp", "smart-twin-cluster"]
+    # 둘 다 붙은 박스(dev)는 옮기기 전과 같은 도구를 입구로 묶는다(선택 앱 몫이 뒤로 가 순서만 바뀐다)
+    assert sorted(rc["key_tools"]) == sorted(["smarttwin_scenario_options", "smarttwin_submit", "list_recent_jobs",
+                                              "smarttwinmcp_job_status", "get_job_details", "job_diagnose",
+                                              "slurm_list_jobs", "slurm_job_results", "slurm_job_log"])
+    assert "slurm_job_control" in rows[0]["system_prompt"], "선택 앱의 confirm 도 상태를 바꾸는 도구 줄에 실린다"
+    # 선택 앱 몫의 이름도 붙은 박스에서는 대조한다 — 오타를 그대로 올리면 모델이 없는 도구를 부른다
+    bad = json.loads(json.dumps(one))
+    bad["personas"][0]["optional"][0]["key_tools"].append("slurm_job_logg")
+    _rows, _skipped, errors = sync.plan(bad, both)
+    assert errors and "slurm_job_logg" in errors[0]
+
+
+def test_미리보기가_선택_앱을_빼고_만든_운영자를_알린다(monkeypatch, capsys):
+    sync = _sync()
+    mcp_only, _both = _smarttwin_maps()
+
+    def fake_http(method, url, body=None):
+        if url.endswith("/tools-map"):
+            return 200, mcp_only
+        if url.endswith("/api/agents"):
+            return 200, []
+        return 404, "not found"      # 아직 없는 운영자 — 미리보기는 + 줄만 찍고 쓰지 않는다
+
+    monkeypatch.setattr(sync, "_http", fake_http)
+    monkeypatch.setattr(sync.sys, "argv", ["sync-he-personas.py"])
+    assert sync.main() == 0
+    out = capsys.readouterr().out
+    assert "· 일부 he-sim-smarttwin: smart-twin-cluster 없이 만든다(선택 앱)" in out
+    assert "+ he-sim-smarttwin 새로 만든다" in out and "건너뜀 he-sim-smarttwin" not in out
+
+
 def test_본문의_올리기_도구도_부를_수_있는_이름으로_적는다():
     """맨 이름 upload_from_url·upload_file 은 simflow 가 붙은 박스에서 없는 도구다 — 본문이 그 이름을 대면 모델이 그대로 부른다."""
     p = _one("he-doc-reportarchive")["personas"][0]

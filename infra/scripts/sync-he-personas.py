@@ -14,7 +14,8 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 이름이라 겹치는 상대가 붙어 있든 아니든 통과한다(plan 의 주석).
 
 앱이 게이트웨이에 없으면 그 페르소나는 건너뛴다(dev 의 arp·odb-hub). cae00 에서 같은 명령을 돌리면
-그 박스 게이트웨이에 붙은 앱으로 만들어진다.
+그 박스 게이트웨이에 붙은 앱으로 만들어진다. 선택 앱(페르소나의 optional)은 다르다 — 붙어 있으면 그 칸을 정본 뒤에 잇고,
+없으면 빼고 만든다(건너뛰지 않는다. 미리보기에 '· 일부' 로 찍는다).
 
   GATEWAY_HTTP_BASE  기본 http://127.0.0.1:9110
   AIDH_HTTP_BASE     기본 http://127.0.0.1:8001
@@ -85,8 +86,27 @@ def build_prompt(p: dict, app_labels: list[str], n_tools: int, tool_map: list[tu
     return "\n".join(lines)
 
 
-def plan(spec: dict, tmap: dict) -> tuple[list[dict], list[str], list[str]]:
-    """정본 + 게이트웨이 → 올릴 페이로드 목록, 건너뛴 사유, 오류."""
+# 박스마다 붙은 앱이 다르다(cae00 에는 smart-twin-cluster 가 없다). 그 앱 몫의 칸은 페르소나의 optional 에 묶고,
+# 앱이 이 게이트웨이에 붙어 있을 때만 정본 뒤에 잇는다. 없어도 그 페르소나는 건너뛰지 않는다.
+_LISTS = ("can", "workflow", "concepts", "pitfalls", "samples", "key_tools", "writes", "confirm")
+
+
+def _with_optional(p: dict, by_app: dict) -> tuple[dict, list[str]]:
+    """정본 한 명 → 붙어 있는 선택 앱의 칸을 이은 사본, 빠진 선택 앱."""
+    q = {**p, "apps": list(p["apps"]), **{f: list(p[f]) for f in _LISTS}}
+    absent: list[str] = []
+    for o in p.get("optional") or []:
+        if o["app"] not in by_app:
+            absent.append(o["app"])
+            continue
+        q["apps"].append(o["app"])
+        for f in _LISTS:
+            q[f] += o.get(f) or []
+    return q, absent
+
+
+def plan(spec: dict, tmap: dict, notes: list[str] | None = None) -> tuple[list[dict], list[str], list[str]]:
+    """정본 + 게이트웨이 → 올릴 페이로드 목록, 건너뛴 사유, 오류. notes 를 주면 선택 앱을 빼고 만든 페르소나를 적는다."""
     tool_app: dict = tmap.get("map") or {}
     areas: dict = tmap.get("areas") or {}
     area_label = {a["area"]: a.get("label") or a["area"] for a in (tmap.get("area_meta") or []) if a.get("area")}
@@ -106,6 +126,9 @@ def plan(spec: dict, tmap: dict) -> tuple[list[dict], list[str], list[str]]:
         if missing:
             skipped.append(f"{key}: 이 게이트웨이에 앱이 없다({', '.join(missing)}) — 붙어 있는 박스에서 돌리면 생긴다")
             continue
+        p, absent = _with_optional(p, by_app)
+        if absent and notes is not None:
+            notes.append(f"{key}: {', '.join(absent)} 없이 만든다(선택 앱)")
         tools = sorted(t for a in p["apps"] for t in by_app[a])
         # 정본의 이름은 노출 이름이거나 **접두 별칭**(`<앱 키에서 하이픈을 뺀 것>_<이름>`)이면 맞다. 게이트웨이는 지금 붙은 백엔드끼리
         # 이름이 겹칠 때만 접두를 붙여 내놓으므로, 같은 도구의 노출 이름이 **다른 앱이 붙어 있느냐**로 뒤집힌다(ste 가 없는 박스는
@@ -154,9 +177,12 @@ def main() -> int:
     if st != 200 or not isinstance(tmap, dict) or not tmap.get("map"):
         print(f"✗ 게이트웨이 /tools-map 을 못 읽었다({st}) — {GATEWAY}", file=sys.stderr)
         return 2
-    rows, skipped, errors = plan(spec, tmap)
+    notes: list[str] = []
+    rows, skipped, errors = plan(spec, tmap, notes)
     for s in skipped:
         print(f"  · 건너뜀 {s}")
+    for n in notes:
+        print(f"  · 일부 {n}")
     if errors:
         for e in errors:
             print(f"✗ {e}", file=sys.stderr)
