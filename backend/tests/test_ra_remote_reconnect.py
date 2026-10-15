@@ -539,6 +539,40 @@ def test_unreadable_infra_env_fails_closed_for_unless_env(tmp_path, monkeypatch)
         f.chmod(0o644)
 
 
+# ── if_env — unless_env 의 거울(docs/llm-pool: LLM_UPSTREAMS 가 있는 박스에서만 LLM 라우터를 다룬다) ─────────────
+def test_if_env_handles_the_service_only_where_the_key_is_set(tmp_path, monkeypatch):
+    """읽는 규칙·순서는 unless_env 와 같다(환경 > infra/.env, 빈 값 = 없음, 주석 줄은 없음). 사유는 키 이름과 함께 찍힌다."""
+    m = _services_mod(); (tmp_path / "infra").mkdir(); monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path)
+    monkeypatch.delenv("LLM_UPSTREAMS", raising=False)
+    svc = {"name": "llm-router", "if_env": "LLM_UPSTREAMS"}
+    assert m.enabled_here(svc) is False, "infra/.env 가 없으면 키도 없다 — 켜지 않은 박스"
+    (tmp_path / "infra/.env").write_text(f"LLM_UPSTREAMS=   # 나중에 적는다\n# LLM_UPSTREAMS=http://{A}:8000/v1\n")
+    assert m.enabled_here(svc) is False and "if_env=LLM_UPSTREAMS(비어 있음" in m.skip_reason(svc)
+    (tmp_path / "infra/.env").write_text(f"export LLM_UPSTREAMS='http://{A}:8000/v1'   # 서버 둘\n")
+    assert m.enabled_here(svc) is True, "파일에만 적은 값으로도 켜진다(부팅 유닛은 env 를 안 넘긴다)"
+    (tmp_path / "infra/.env").write_text("OTHER=1\n")
+    monkeypatch.setenv("LLM_UPSTREAMS", f"http://{A}:8000/v1")
+    assert m.enabled_here(svc) is True, "환경변수도 그대로 먹는다"
+    assert m.enabled_here({"name": "plain"}) is True, "칸이 없으면 종전 그대로"
+
+
+@NOT_ROOT
+def test_unreadable_infra_env_fails_closed_for_if_env(tmp_path, monkeypatch):
+    """모름은 닫는다 — 못 읽은 채 띄우면 켜지 않은 박스에서 라우터가 뜬다. 사유는 '비어 있음'(앎)이 아니라 '읽을 수 없음'(모름)이다."""
+    m = _services_mod(); (tmp_path / "svc/infra").mkdir(parents=True); monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path / "svc")
+    monkeypatch.delenv("LLM_UPSTREAMS", raising=False)
+    svc = {"name": "llm-router", "if_env": "LLM_UPSTREAMS"}
+    f = tmp_path / "svc/infra/.env"; f.write_text(f"LLM_UPSTREAMS=http://{A}:8000/v1\n"); f.chmod(0)
+    try:
+        assert m.enabled_here(svc) is False
+        why = m.skip_reason(svc)
+        assert "읽을 수 없음 — 모름이라 닫는다" in why and "비어 있음" not in why, why
+        monkeypatch.setenv("LLM_UPSTREAMS", f"http://{A}:8000/v1")
+        assert m.enabled_here(svc) is True, "환경에 있으면 파일을 읽지 않는다(unless_env 와 같은 순서)"
+    finally:
+        f.chmod(0o644)
+
+
 def test_apply_envs_reads_the_last_active_line_and_strips_comments(tmp_path):
     portal = tmp_path / "HWAXPortal"; (portal / "infra").mkdir(parents=True)
     (portal / "infra/.env").write_text('LLM_BASE_URL=http://old/v1\nLLM_BASE_URL="http://new/v1"   # 정본\n')

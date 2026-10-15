@@ -94,9 +94,10 @@ def skip_reason(svc: dict) -> str:
     """status/up/down/update 가 '왜 건너뛰었나' 를 찍을 때 — only_on 만 알던 문구(`only_on=None`)로는 unless_env 로 꺼진
     항목의 사유가 보이지 않았다(3라운드). '설정됨'(앎)과 '못 읽음'(모름)은 다른 문구다 — 못 읽은 것을 '다른 서버에서 돈다' 로
     찍으면 `2>/dev/null` 로 부르는 자리(update-all §5·deploy-all)에서 거짓만 남는다(4라운드). 경고는 enabled_here 가 이미 찍었다."""
-    allowed, why = _unless_env_state(svc, warn=False)
-    if not allowed:
-        return why
+    for state in (_unless_env_state, _if_env_state):
+        allowed, why = state(svc, warn=False)
+        if not allowed:
+            return why
     return f"only_on={svc.get('only_on')}"
 
 
@@ -122,6 +123,27 @@ def _unless_env_state(svc: dict, *, warn: bool = True) -> tuple[bool, str]:
 
 def _unless_env_allows(svc: dict) -> bool:
     return _unless_env_state(svc)[0]
+
+
+def _if_env_state(svc: dict, *, warn: bool = True) -> tuple[bool, str]:
+    """unless_env 의 거울 — `if_env: <KEY>` 는 그 키가 환경 또는 infra/.env 에 **있는** 박스에서만 다룬다(예: LLM_UPSTREAMS 가 있어야
+    LLM 라우터를 띄운다 — docs/llm-pool). 읽는 규칙·순서는 unless_env 와 같다(환경 > infra/.env, 빈 값 = 없음). 못 읽으면 '모름' 이고
+    모름은 닫는다 — 못 읽은 채 띄우면 그 박스가 켜지 않은 서비스를 되살린다."""
+    want = svc.get("if_env")
+    if not want:
+        return True, ""
+    k = str(want)
+    v = os.environ.get(k)
+    if v is None or not v.strip():
+        try:
+            v = _infra_value(k)
+        except InfraEnvUnreadable as exc:
+            if warn:
+                print(f"  ⚠ infra/.env 를 읽을 수 없어 {svc.get('name')} 을 이 박스 대상 아님으로 둔다({exc})", file=sys.stderr, flush=True)
+            return False, f"if_env={k}(infra/.env 를 읽을 수 없음 — 모름이라 닫는다: {exc})"
+    if v:
+        return True, ""
+    return False, f"if_env={k}(비어 있음 — 이 박스에서는 켜지 않았다)"
 
 
 def _hwax_setting(key: str) -> str | None:
@@ -253,7 +275,8 @@ def enabled_here(svc: dict) -> bool:
     # `unless_env: <KEY>` — 그 설정이 **있는** 박스에서는 이 서비스가 다른 서버에서 돈다는 뜻이라 여기서 다루지
     # 않는다(예: RA_HOST 가 있으면 Report Archive 는 원격 서버쌍 — 로컬 항목을 띄우면 이사 전 DB 를 되살린다).
     # 박스 이름(only_on)이 아니라 사실(설정값)로 가른다 — cae00 호스트명이 바뀌거나 운영 박스가 늘어도 맞다.
-    if not _unless_env_allows(svc):
+    # `if_env: <KEY>` 는 그 거울이다 — 그 설정이 있는 박스에서만 다룬다(예: LLM_UPSTREAMS → LLM 라우터).
+    if not _unless_env_allows(svc) or not _if_env_state(svc)[0]:
         return False
     only = svc.get("only_on")
     if not only:
@@ -318,7 +341,7 @@ def env_prefix(env: dict | None) -> str:
 
 def start_one(svc: dict) -> str:
     name = svc["name"]
-    url = svc.get("health", "")
+    url = health_url(svc)
     if url and health_ok(url, expect=svc.get("expect")):
         return "already-up"
 
@@ -432,18 +455,21 @@ def update_one(svc: dict) -> str:
 
 def service_fp(svc: dict) -> str:
     """서비스 지문 — git HEAD + <dir>/.env 내용(+manifest `fp:` 경로들). update-sites 가 '마지막으로 띄운 시점' 의 지문과 비교해
-    재기동 생략을 정한다(docs/update-all-skip-unchanged). 디렉터리를 못 찾으면 그 사실이 지문이다(모름 → 재기동)."""
+    재기동 생략을 정한다(docs/update-all-skip-unchanged). 디렉터리를 못 찾으면 그 사실이 지문이다(모름 → 재기동).
+    `fp_git: false` 면 git HEAD 를 넣지 않는다 — 남의 리포 안에 사는 작은 서비스(LLM 라우터는 포털 리포 안이다)가 그 리포의 커밋마다
+    재기동되지 않게. 그때는 `fp:` 경로가 코드의 지문이다(docs/llm-pool LP-D10)."""
     import hashlib
     wd = resolve_dir(svc)
     parts: list[str] = []
     if not wd or not wd.is_dir():
         parts.append("dir:missing")
     else:
-        try:
-            r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(wd), capture_output=True, text=True, timeout=10)  # noqa: S603
-            parts.append("git:" + (r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "nogit"))
-        except (OSError, subprocess.TimeoutExpired):
-            parts.append("git:nogit")
+        if svc.get("fp_git", True) is not False:
+            try:
+                r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(wd), capture_output=True, text=True, timeout=10)  # noqa: S603
+                parts.append("git:" + (r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "nogit"))
+            except (OSError, subprocess.TimeoutExpired):
+                parts.append("git:nogit")
         # .env + 매니페스트 data.identity(글롭·백업 제외) — 게이트웨이는 .env 가 없고 gateway_config.json·provision.env 가 동작을 정한다(2라운드).
         # identity 의 **디렉터리**는 넣지 않는다 — 이관용 신원 목록이라 런타임 상태 디렉터리(heax var/integration_state 는 celery 가 45초마다
         # 다시 쓴다)가 들어 있고, 그것을 지문에 넣으면 '변경 없음' 이 영영 성립하지 않아 매 회 전체 스택을 내렸다 올린다(3라운드). 디렉터리 지문이
@@ -484,18 +510,28 @@ def service_urls(svc: dict) -> list[str]:
     """이 서비스가 **듣는 url 전부** — `health` + 매니페스트 `urls`. 재기동이 됐는지는 이 전부가 새 프로세스여야 한다(5라운드:
     하나만 갈렸는데 기록하면 그 인스턴스가 옛 코드로 영구 생략된다). `${KEY:-기본}` 은 infra/.env 를 정본 규칙(_infra_value)으로 푼다 —
     포털의 nginx 포트(HTTP_PORT)처럼 박스마다 다른 값을 매니페스트에 박지 않기 위한 것이다."""
+    out: list[str] = []
+    for u in [svc.get("health"), *(svc.get("urls") or [])]:
+        t = _expand_url(u)
+        if t and t not in out:
+            out.append(t)
+    return out
+
+
+def _expand_url(u: object) -> str:
     def _sub(m: "re.Match[str]") -> str:
         try:
             v = _infra_value(m.group(1))
         except InfraEnvUnreadable:
             v = None
         return v if v else (m.group(2) or "")
-    out: list[str] = []
-    for u in [svc.get("health"), *(svc.get("urls") or [])]:
-        t = _URLVAR_RE.sub(_sub, str(u or "")).strip()
-        if t and t not in out:
-            out.append(t)
-    return out
+    return _URLVAR_RE.sub(_sub, str(u or "")).strip()
+
+
+def health_url(svc: dict) -> str:
+    """기동 대기·상태·정지가 두드리는 health — `${KEY:-기본}` 을 service_urls 와 같은 규칙으로 푼다. 풀지 않고 두드리면 포트 자리의
+    `${…}` 때문에 늘 '죽었다' 로 읽혀 up 이 이미 뜬 것을 또 띄우고 status 는 영구 ✗ 다(LLM 라우터의 LLM_ROUTER_PORT — docs/llm-pool)."""
+    return _expand_url(svc.get("health"))
 
 
 def cmd_health(names: list[str]) -> int:
@@ -564,7 +600,7 @@ def cmd_status(names: list[str]) -> int:
         if not enabled_here(s):
             print(f"  {'· skip':<12} {s['name']:<16} {skip_reason(s)}")
             continue
-        url = s.get("health", "")
+        url = health_url(s)
         up = health_ok(url, expect=s.get("expect")) if url else None
         mark = "✓ up" if up else ("? no-health" if up is None else "✗ down")
         if up is False:
@@ -588,7 +624,7 @@ def cmd_down(names: list[str]) -> int:
             subprocess.run(["bash", "-c", s["stop"]], cwd=str(wd) if wd else None, check=False)
             print(f"  • {name}: ran stop")
             continue
-        url = s.get("health", "")
+        url = health_url(s)
         port = url.rsplit(":", 1)[-1].split("/")[0] if ":" in url else ""
         if s.get("host", "local") == "local" and port.isdigit():
             subprocess.run(  # noqa: S607
