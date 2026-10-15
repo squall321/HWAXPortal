@@ -327,7 +327,9 @@ def test_LLM_라우터는_연결_한도만_두어_사슬에_층을_더하지_않
     assert m, "라우터에서 _proxy_timeout 을 못 읽었다 — 이름이나 줄 모양이 바뀌었으면 이 식을 고쳐라"
     assert m.group(1) == "httpx.Timeout(connect=connect_s, read=None, write=None, pool=None)", (
         f"라우터의 손님 요청 한도가 연결만이 아니다 — `{m.group(1)}`. 읽기·쓰기·풀 한도는 시간 한도 사슬에 층을 더한다")
-    assert re.search(r"self\._client\.build_request\([^)]*timeout=_proxy_timeout\(", src), "손님 요청은 그 한도로 보낸다(탐침 한도가 아니다)"
+    # 손님 요청은 httpx.Request 를 직접 만든다(클라이언트 기본 머리를 덧붙이지 않게 — LP-D13) — 한도는 extensions 의 timeout 으로 싣는다
+    assert re.search(r'ext = \{"timeout": _proxy_timeout\(self\.cfg\.connect_timeout_s\)\.as_dict\(\)\}', src) and \
+        re.search(r'httpx\.Request\(scope\["method"\],[^\n]*extensions=ext\)', src), "손님 요청은 그 한도로 보낸다(탐침 한도가 아니다)"
 
 
 def test_nginx_생성기가_견주는_포털_기본값이_포털의_그_값이다():

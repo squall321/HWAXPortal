@@ -610,7 +610,7 @@ def test_services_fp_tracks_head_env_and_identity_files_but_not_identity_dirs(tm
 
 def test_services_fp_without_git_tracks_only_the_listed_paths(tmp_path):
     """`fp_git: false`(LLM 라우터 — 포털 리포 안의 작은 서비스) — 포털 커밋마다 재기동하면 몇 시간 도는 LLM 호출이 끊긴다(docs/llm-pool LP-D10).
-    HEAD 는 지문에 넣지 않고 `fp:` 경로(라우터 코드)만 넣는다. .env 는 종전대로 든다. 칸이 없으면 종전대로 HEAD 가 든다."""
+    HEAD 는 지문에 넣지 않고 `fp:` 경로(라우터 코드)만 넣는다. 리포 루트 .env 도 넣지 않는다(env-sync 가 덧붙인다 — LP-D13). 칸이 없으면 종전대로 HEAD 가 든다."""
     origin = tmp_path / "origin"; origin.mkdir(); _git("init", "-q", "-b", "main", cwd=origin)
     (origin / "f").write_text("1\n"); _git("add", ".", cwd=origin); _git("commit", "-qm", "A", cwd=origin)
     work = tmp_path / "work"; _git("clone", "-q", str(origin), str(work), cwd=tmp_path)
@@ -624,7 +624,7 @@ def test_services_fp_without_git_tracks_only_the_listed_paths(tmp_path):
     assert m.service_fp(plain) != p0, "칸이 없으면 종전대로 HEAD 가 든다"
     (work / "code/router.py").write_text("v2 — 코드가 바뀌었다\n"); b = m.service_fp(svc); assert b != a, "fp: 의 디렉터리 안 파일"
     (work / "run.sh").write_text("#!/bin/sh\n"); c = m.service_fp(svc); assert c not in (a, b), "fp: 의 파일(없음 → 있음)"
-    (work / ".env").write_text("K=1\n"); assert m.service_fp(svc) not in (a, b, c), ".env 는 종전대로 든다"
+    (work / ".env").write_text("K=1\n"); assert m.service_fp(svc) == c, "리포 루트 .env 는 들지 않는다(fp_git: false — LP-D13)"
 
 
 def test_service_urls_lists_every_listener_and_expands_env_refs():

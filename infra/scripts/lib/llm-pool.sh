@@ -83,48 +83,107 @@ hwax_llm_router_health_url() {  # $1=infra.env
   printf '%s/health\n' "${u%/v1}"
 }
 
-hwax_llm_pool_upstreams() {  # $1=infra.env
-  local v raw u host port rport re out="" seen=" " n=0
-  local -a items
-  v="$(hwax_llm_envv "$1" LLM_UPSTREAMS)"
-  [ -n "$v" ] || return 1
-  # 따옴표 밖의 공백은 받지 않는다 — infra/.env 는 포털 start.sh(_common.sh)가 `set -a; . infra/.env` 로 소싱한다. `A=x y` 는 bash 에서
-  # 'y' 를 명령으로 돌리고(그 대입은 남지 않는다) set -e 인 기동이 그 자리에서 죽는다. 이 독자는 공백을 나눔표로 읽어 맞는 목록으로 볼 것이라
-  # 여기서 막지 않으면 update-all 은 초록인데 다음 포털 기동이 죽는다.
-  raw="$(_hwax_llm_raw "$1" LLM_UPSTREAMS)"
-  case "$raw" in
-    \"*|\'*) ;;
-    *[[:space:]]*) printf '%s\n' "LLM_UPSTREAMS 의 공백이 따옴표 밖에 있다 — infra/.env 는 포털 start.sh 가 bash 로 소싱해 공백 뒤가 명령이 되고 기동이 죽는다. 쉼표로만(공백 없이) 나누거나 값 전체를 큰따옴표로 감싼다"
-                   return 2 ;;
+_hwax_llm_ups_label() {  # $1=칸 → 사유에 적을 '스킴://호스트'(못 알아보면 ?). 칸 원문은 찍지 않는다 — 질의·계정에 키가 들 수 있다.
+  local u="$1" s="?" h="?" rest
+  case "$u" in
+    *://*)
+      s="${u%%://*}"; rest="${u#*://}"
+      [[ "$s" =~ ^[A-Za-z][A-Za-z0-9+.-]{0,15}$ ]] || s="?"
+      rest="${rest%%[/?#]*}"; rest="${rest##*@}"
+      [[ "$rest" =~ :[0-9]*$ ]] && rest="${rest%:*}"
+      [[ "$rest" =~ ^[A-Za-z0-9.-]{1,253}$ ]] && h="$rest" ;;
   esac
-  rport="$(_hwax_llm_port "$1")" || rport=""
-  # 호스트 규칙은 1e(RA_HOST)와 같다 — IPv4 또는 라벨(영숫자, 안쪽 하이픈)을 점으로 이은 이름. 경로는 vLLM(OpenAI 호환)의 /v1 로 끝난다.
-  # 계정(user@)·질의(?)·조각(#)·IPv6 은 받지 않는다.
-  re='^https?://([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*)(:([0-9]{1,5}))?(/[A-Za-z0-9._~-]+)*/v1$'
-  IFS=$', \t' read -ra items <<<"$v"
+  printf '%s://%s' "$s" "$h"
+}
+
+hwax_llm_pool_upstreams() {  # $1=infra.env [$2=라우터 포트 — 주지 않으면 infra/.env 의 LLM_ROUTER_PORT(기본 9130)]
+  # LLM_UPSTREAMS 규칙의 **정본**이다 — 라우터(infra/llm-router/llm_router.py parse_upstreams)가 같은 표로 이 함수와 대조된다
+  # (backend/tests/test_llm_pool_upstreams_rules.py — 이 함수가 오라클이다. 규칙을 바꾸면 두 곳을 함께 바꾸고 표에 줄을 더한다).
+  #   모양  값(주석·양끝 공백을 벗긴 원문)이 공백·따옴표 없이 쓰였거나, 큰따옴표 한 쌍 또는 작은따옴표 한 쌍으로 통째 감쌌고 안에 따옴표가
+  #         없다. 그 밖(따옴표 밖 공백 · 짝 없는 따옴표 · 따옴표 여럿 · 안의 따옴표)은 줄이 틀렸다 — infra/.env 는 포털 start.sh(_common.sh)가
+  #         `set -a; . infra/.env` 로 소싱한다. `A="x", "y"` 같은 줄은 bash 에서 뒤가 명령이 되어 set -e 인 기동이 그 자리에서 죽는다.
+  #   나눔  쉼표로(따옴표 안이면 공백으로도) 나누고 빈 칸은 버린다. 칸마다 끝 `/` 를 뗀다.
+  #   칸    스킴은 소문자 http·https · 계정·질의·조각이 없다 · 호스트는 점 넷의 IPv4(칸마다 0~255, 앞 0 없음 — 0 하나는 된다) 또는 라벨
+  #         이름(영숫자·하이픈 — 하이픈으로 시작·끝나지 않고, 3·4번째 글자가 `--` 가 아니다)이고, 숫자·점뿐인 이름은 IPv4 여야 한다(203.0.113.256 ·
+  #         0203.0.113.1 · 2130706433 은 틀렸다) · IPv6 은 받지 않는다 · 포트는 없거나 숫자 1~5자로 1~65535 · 경로는 정확히 `/v1`.
+  #         `--` 규칙은 IDN(`xn--…`)을 막는다 — httpx 는 `xn--` 로 시작하는 호스트를 idna 로 풀다 ValueError 를 낸다(InvalidURL 이 아니다).
+  #   고리  루프백·미지정 호스트(127.0.0.0/8 · 0.0.0.0 · localhost)에 라우터 포트(적지 않았으면 스킴 기본 포트)면 라우터 자신이다.
+  #   겹침  스킴 · 호스트(대소문자 무시) · 포트(적지 않았으면 스킴 기본 포트)가 같으면 같은 서버다.
+  #   틀린 칸이 하나라도 있으면 줄 전체가 틀렸다(rc 2, 사유 한 줄 — 칸은 스킴과 호스트만 적는다).
+  local v raw rport u lab scheme host port eport key out="" seen=" " n=0 o quad loop
+  local -a items
+  raw="$(_hwax_llm_raw "$1" LLM_UPSTREAMS)"
+  v="$(hwax_llm_envv "$1" LLM_UPSTREAMS)"
+  if [ "$#" -ge 2 ]; then
+    rport=""; [[ "$2" =~ ^[0-9]{1,5}$ ]] && rport="$((10#$2))"
+  else
+    rport="$(_hwax_llm_port "$1")" || rport=""
+  fi
+  local LC_ALL=C     # 글자 부류·범위를 바이트(ASCII)로 — 로케일마다 공백(U+3000 등)·[A-Za-z] 가 달라지면 라우터와 갈린다
+  local re_dq="^\"[^\"']*\"\$" re_sq="^'[^\"']*'\$"
+  local re_item='^(https?)://([A-Za-z0-9.-]+)(:([0-9]{1,5}))?/v1$'
+  local re_quad='^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$'
+  local re_name='^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$'
+  local re_dd='(^|\.)[A-Za-z0-9-]{2}--'
+  local tail_msg="vLLM 의 /v1 주소(http(s)://<호스트>[:<포트>]/v1 — 계정·질의·IPv6 은 받지 않는다)여야 한다"
+  case "$raw" in
+    *[\"\']*)
+      if ! [[ "$raw" =~ $re_dq || "$raw" =~ $re_sq ]]; then
+        printf '%s\n' "LLM_UPSTREAMS 의 공백·따옴표 모양이 틀렸다(따옴표 밖의 공백 · 짝이 없거나 여럿인 따옴표 · 따옴표 안의 따옴표) — infra/.env 는 포털 start.sh 가 bash 로 소싱해 그 줄에서 기동이 죽는다. 쉼표로만(공백 없이) 나누거나 값 전체를 큰따옴표 한 쌍으로 감싼다"
+        return 2
+      fi ;;
+    *[[:space:]]*)
+      printf '%s\n' "LLM_UPSTREAMS 의 공백이 따옴표 밖에 있다 — infra/.env 는 포털 start.sh 가 bash 로 소싱해 공백 뒤가 명령이 되고 기동이 죽는다. 쉼표로만(공백 없이) 나누거나 값 전체를 큰따옴표 한 쌍으로 감싼다"
+      return 2 ;;
+  esac
+  [ -n "$v" ] || return 1
+  IFS=, read -ra items <<<"${v//[[:space:]]/,}"
   for u in ${items[@]+"${items[@]}"}; do
     [ -n "$u" ] || continue
     while [ "${u%/}" != "$u" ]; do u="${u%/}"; done
-    if ! [[ "$u" =~ $re ]]; then
-      printf '%s\n' "LLM_UPSTREAMS 에 쓸 수 없는 주소가 있다: '$u' — vLLM 의 /v1 주소(http(s)://<호스트>[:<포트>]/…/v1)여야 한다(계정·질의·IPv6 은 받지 않는다)"
+    lab="$(_hwax_llm_ups_label "$u")"
+    if ! [[ "$u" =~ $re_item ]]; then
+      case "$u" in
+        *@*)        printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 에 계정(user@)이 있다 — $tail_msg" ;;
+        *[?#]*)     printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 에 질의·조각(? #)이 있다 — $tail_msg" ;;
+        *\[*)       printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 은 IPv6 이다 — $tail_msg" ;;
+        http://*|https://*) printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 은 쓸 수 있는 주소가 아니다(호스트 글자 · 포트 · 경로가 정확히 /v1 인지) — $tail_msg" ;;
+        *)          printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 의 스킴이 소문자 http·https 가 아니다 — $tail_msg" ;;
+      esac
       return 2
     fi
-    host="${BASH_REMATCH[1],,}"; port="${BASH_REMATCH[6]}"
-    if [ -n "$port" ] && { [ "$((10#$port))" -lt 1 ] || [ "$((10#$port))" -gt 65535 ]; }; then
-      printf '%s\n' "LLM_UPSTREAMS 의 포트가 1~65535 밖이다: '$u'"; return 2
+    scheme="${BASH_REMATCH[1]}"; host="${BASH_REMATCH[2]}"; port="${BASH_REMATCH[4]}"
+    loop=0
+    if [[ "$host" =~ ^[0-9.]+$ ]]; then
+      quad=0
+      if [[ "$host" =~ $re_quad ]]; then
+        quad=1
+        for o in "${BASH_REMATCH[@]:1:4}"; do [ "$o" -le 255 ] || quad=0; done
+      fi
+      if [ "$quad" != 1 ]; then
+        printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 은 IPv4 가 아니다(점 넷 · 칸마다 0~255 · 앞에 0 을 붙이지 않는다) — $tail_msg"; return 2
+      fi
+      { [ "${host%%.*}" = 127 ] || [ "$host" = 0.0.0.0 ]; } && loop=1
+    elif ! [[ "$host" =~ $re_name ]] || [[ "$host" =~ $re_dd ]]; then
+      printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 의 호스트 이름이 틀렸다(영숫자·하이픈 라벨 — 하이픈으로 시작·끝나지 않고 3·4번째가 -- 가 아니다) — $tail_msg"; return 2
+    else
+      host="${host,,}"
+      [ "$host" = localhost ] && loop=1
     fi
-    case "$host" in
-      localhost|127.*)
-        if [ -n "$rport" ] && [ -n "$port" ] && [ "$((10#$port))" = "$rport" ]; then
-          printf '%s\n' "LLM_UPSTREAMS 가 라우터 자신을 가리킨다: '$u' — 서버(vLLM)의 /v1 주소를 적는다(라우터 주소는 update-all 이 사본에 적는다)"; return 2
-        fi ;;
-    esac
+    if [ -n "$port" ] && { [ "$((10#$port))" -lt 1 ] || [ "$((10#$port))" -gt 65535 ]; }; then
+      printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 의 포트가 1~65535 밖이다"; return 2
+    fi
+    if [ -n "$port" ]; then eport="$((10#$port))"; elif [ "$scheme" = https ]; then eport=443; else eport=80; fi
+    if [ "$loop" = 1 ] && [ -n "$rport" ] && [ "$eport" = "$rport" ]; then
+      printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 이 라우터 자신을 가리킨다(포트 $rport) — 서버(vLLM)의 /v1 주소를 적는다(라우터 주소는 update-all 이 사본에 적는다)"; return 2
+    fi
+    key="$scheme://$host:$eport"
     case "$seen" in
-      *" $u "*) printf '%s\n' "LLM_UPSTREAMS 에 같은 주소가 두 번 있다: '$u' — 서버마다 한 번씩 적는다"; return 2 ;;
+      *" $key "*) printf '%s\n' "LLM_UPSTREAMS 에 같은 서버가 두 번 있다: '$lab' — 서버마다 한 번씩 적는다(호스트의 대소문자 · 적지 않은 기본 포트는 같은 것이다)"; return 2 ;;
     esac
-    seen="$seen$u "; out="$out$u"$'\n'; n=$((n + 1))
+    seen="$seen$key "; out="$out$u"$'\n'; n=$((n + 1))
   done
-  if [ "$n" = 0 ]; then printf '%s\n' "LLM_UPSTREAMS 에 주소가 하나도 없다: '$v'"; return 2; fi
+  if [ "$n" = 0 ]; then printf '%s\n' "LLM_UPSTREAMS 에 주소가 하나도 없다(쉼표·공백뿐이다)"; return 2; fi
   printf '%s' "$out"
 }
 

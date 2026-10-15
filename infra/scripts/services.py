@@ -453,11 +453,18 @@ def update_one(svc: dict) -> str:
     return ("updated" if rc == 0 else "FAIL") + (f": {tail[:60]}" if tail else "")
 
 
+def _fp_noise(f: Path, top: Path) -> bool:
+    """`fp:` 디렉터리 안의 파이썬 바이트코드(`__pycache__` · `*.pyc`) — import 한 번에 생기고 코드는 그대로다. 지문에 넣으면 시험이나 손 점검이
+    모듈을 읽기만 해도 다음 update-all 이 그 서비스를 재기동한다(LLM 라우터 — docs/llm-pool LP-D13)."""
+    return f.suffix == ".pyc" or "__pycache__" in f.relative_to(top).parts
+
+
 def service_fp(svc: dict) -> str:
     """서비스 지문 — git HEAD + <dir>/.env 내용(+manifest `fp:` 경로들). update-sites 가 '마지막으로 띄운 시점' 의 지문과 비교해
     재기동 생략을 정한다(docs/update-all-skip-unchanged). 디렉터리를 못 찾으면 그 사실이 지문이다(모름 → 재기동).
-    `fp_git: false` 면 git HEAD 를 넣지 않는다 — 남의 리포 안에 사는 작은 서비스(LLM 라우터는 포털 리포 안이다)가 그 리포의 커밋마다
-    재기동되지 않게. 그때는 `fp:` 경로가 코드의 지문이다(docs/llm-pool LP-D10)."""
+    `fp_git: false` 면 git HEAD 도 <dir>/.env 도 넣지 않는다 — 남의 리포 안에 사는 작은 서비스(LLM 라우터는 포털 리포 안이다)가 그 리포의
+    커밋마다(그리고 env-sync 가 덧붙이는 그 리포 루트 .env 마다) 재기동되지 않게. 그때는 `fp:` 경로만이 지문이다(docs/llm-pool LP-D10).
+    `fp:` 디렉터리는 파일마다 크기·시각으로 넣되 바이트코드는 뺀다(_fp_noise)."""
     import hashlib
     wd = resolve_dir(svc)
     parts: list[str] = []
@@ -477,6 +484,8 @@ def service_fp(svc: dict) -> str:
         idents = [x for x in ((svc.get("data") or {}).get("identity") or []) if "*" not in str(x)]
         fps = list(svc.get("fp") or [])
         for rel in dict.fromkeys([".env", *idents, *fps]):
+            if rel == ".env" and svc.get("fp_git", True) is False and rel not in idents and rel not in fps:
+                continue   # fp_git: false — 남의 리포 루트 .env(env-sync 가 덧붙인다)는 이 서비스의 설정이 아니다(LP-D13)
             q = wd / rel
             if q.is_file():
                 st = q.stat()
@@ -484,7 +493,7 @@ def service_fp(svc: dict) -> str:
             elif rel in idents and rel != ".env" and rel not in fps:
                 continue   # identity 항목은 파일일 때만 — 디렉터리·없는 경로는 지문에 흔적을 남기지 않는다(생기는 순간 한 번 바뀌는 것도 막는다)
             elif q.is_dir():
-                for f in sorted(x for x in q.rglob("*") if x.is_file()):
+                for f in sorted(x for x in q.rglob("*") if x.is_file() and not _fp_noise(x, q)):
                     st = f.stat(); parts.append(f"{f.relative_to(wd)}:{st.st_size}:{int(st.st_mtime)}")
             else:
                 parts.append(f"{rel}:missing")
