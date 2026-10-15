@@ -7,8 +7,9 @@
         LLM_UPSTREAMS 의 규칙은 lib/llm-pool.sh hwax_llm_pool_upstreams(정본)와 같고 같은 표로 대조된다 — 틀린 칸이 하나라도 있으면 줄 전체를
         받지 않는다. 다시 읽은 목록이 비거나 틀렸으면 마지막 목록으로 계속 보내고 /health 의 kept_last_list 가 true 다 — 풀을 끄는 것은
         update-all 이고(사본을 되돌린 뒤 라우터를 내린다) 재기동이 미뤄진 손님은 그때까지 이 라우터를 부른다. 처음 읽을 때 비었거나 틀렸으면 503.
-  올라옴  연결이 되고 **마지막 /v1/models 가 200 으로 모델 목록을 준** 서버만 '올라옴' 이다. 아직 답하지 않은 서버(모름)·목록을 못 준 서버는
-        올라온 서버가 하나도 없을 때만 쓴다. 요청이 model 을 적었으면 그 모델이 있는 서버를 먼저 고른다(없으면 올라온 서버 전부).
+  올라옴  연결이 되고 **마지막 /v1/models 가 200 으로 모델 목록을 준** 서버만 '올라옴' 이다. 아직 답하지 않은 서버(모름 — 내려갔다 올라온 서버도
+        다시 물을 때까지)·목록을 못 준 서버는 올라온 서버가 하나도 없을 때만 쓴다. 요청이 model 을 적었으면 그 모델이 있는 서버를 먼저 고른다
+        (없으면 올라온 서버 전부).
   기동  첫 지표·모델 대조를 STARTUP_PROBE_S 까지만 기다리고 듣기 시작한다 — 답하지 않은 서버는 '모름' 이고 탐침은 이어 돈다.
   고르기  부하 = 마지막 지표의 running + waiting(라벨 묶음 전부 합) + 그 뒤로 이 라우터가 더 보낸 수 — 이 라우터가 그 서버에 보내 도는 수보다
         작아지지 않는다. 지표를 잠깐 못 읽으면(읽기 한도 · 끊김 · 5xx) 마지막 지표를 세 번째 실패까지 쓰고, 404 · vLLM 모양이 아닌 글 · 세 번
@@ -404,8 +405,10 @@ class Upstream:
         self.inflight_at_scrape = 0
         self.down_until = 0.0          # 연결 실패 뒤 이 시각까지 뺀다(지표 연결도 실패하면 다시 늘어난다)
         self.down_noted = False        # '내려감' 을 알렸고 아직 '올라옴' 을 못 알렸다
+        self.downs = 0                 # 내려간 횟수 — 그 전에 시작한 모델 대조의 답은 버린다(옛 프로세스의 답일 수 있다)
         # 마지막으로 **답한** /v1/models 가 200 모델 목록이면 (ids, (id, max_model_len)…), 아니면 None — None 이면 '올라옴' 이 아니다.
-        # 답이 없던 대조(읽기 한도 · 끊김)는 이것을 바꾸지 않는다. models_error 는 마지막 대조의 실패(상태 코드 · 까닭)다.
+        # 답이 없던 대조(읽기 한도 · 끊김)는 이것을 바꾸지 않는다. 내려가면 None(모름)으로 되돌린다 — 다시 올라오면 새로 묻는다.
+        # models_error 는 마지막 대조의 실패(상태 코드 · 까닭)다.
         self.models: tuple[frozenset[str], tuple[tuple[str, object], ...]] | None = None
         self.models_error: int | str | None = None
         self.models_bad = False        # 마지막으로 답한 대조가 목록이 아니었다(/stats 의 models 'error' — 아직 답이 없으면 'unknown')
@@ -444,6 +447,7 @@ class Router:
         self._probe: httpx.AsyncClient | None = None
         self._loops: dict[str, asyncio.Task] = {}
         self._tasks: list[asyncio.Task] = []
+        self._rechecks: set[asyncio.Task] = set()   # 다시 올라온 서버 하나의 모델 대조(정기 대조를 기다리지 않는다)
         self._models_kick: asyncio.Event | None = None
         self._models_warned: str | None = None
         self._all_failed_noted = -math.inf
@@ -505,11 +509,12 @@ class Router:
 
     async def stop(self) -> None:
         self._running = False
-        tasks = [*self._tasks, *self._loops.values()]
+        tasks = [*self._tasks, *self._loops.values(), *self._rechecks]
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         self._loops.clear()
+        self._rechecks.clear()
         for c in (self._client, self._probe):
             if c is not None:
                 await c.aclose()
@@ -626,9 +631,13 @@ class Router:
         u.scraped_at = now
         if u.down_noted and u.is_up(now):
             u.down_noted = False
-            LOG.info("서버 올라옴 %s — 지표 탐침이 다시 닿는다", u.url)
-            if u.models is None and self._models_kick is not None:
-                self._models_kick.set()      # 모델 목록을 아직 못 받은 서버 — 다음 정기 대조(60초)까지 '모름' 으로 두지 않는다
+            LOG.info("서버 올라옴 %s — 지표 탐침이 다시 닿는다 · 모델 목록을 다시 확인한다(그때까지 다른 서버가 없을 때만 쓴다)", u.url)
+            # 내려갈 때 모델 목록을 '모름' 으로 되돌렸다 — 다른 --served-model-name 으로 다시 뜬 vLLM 을 옛 목록으로 올라옴으로 치면 곧바로
+            # 404 를 내 가장 한가해 보인다(검토 2라운드 M-B). 정기 대조(60초)나 매달린 서버를 기다리는 대조 뒤에 줄 세우지 않고 이 서버만 곧바로 묻는다.
+            if self._running:
+                t = asyncio.create_task(self._recheck(u))
+                self._rechecks.add(t)
+                t.add_done_callback(self._rechecks.discard)
 
     def _metrics_ok(self, u: Upstream, m: dict) -> None:
         u.metrics, u.metrics_at, u.metrics_fail, u.inflight_at_scrape = m, time.monotonic(), 0, u.inflight
@@ -658,12 +667,16 @@ class Router:
     def _mark_down(self, u: Upstream, exc: BaseException, *, where: str) -> None:
         """연결 실패(또는 이 서버에서 난 뜻밖의 예외) — COOLDOWN_S 동안 뺀다. 지표 연결이 실패할 때마다 다시 늘어나므로 죽은 서버는 계속 빠져
         있고, 지표가 다시 읽히기 시작하면 빼 둔 시간이 지난 뒤 돌아온다('올라옴' 은 그 뒤 첫 지표에서 알린다). connect_fail 은 손님 요청의
-        연결 실패만 센다. 알림은 내려갈 때 한 번 — 인증서 검증 실패는 따로 말한다(사설 CA 는 받지 않는다)."""
+        연결 실패만 센다. 알림은 내려갈 때 한 번 — 인증서 검증 실패는 따로 말한다(사설 CA 는 받지 않는다).
+        내려갈 때 모델 목록을 '모름' 으로 되돌린다 — 다시 올라오면 그 서버만 곧바로 다시 묻고, 그때까지는 올라온 서버가 없을 때만 쓴다. 빼 둔
+        시간이 지나는 순간과 다음 지표 사이에 옛 목록으로 '올라옴' 이 되는 틈이 없게 올라올 때가 아니라 내려갈 때 지운다(검토 2라운드 M-B)."""
         if where == "요청":
             u.connect_fail += 1
         u.down_until = time.monotonic() + self.cfg.cooldown_s
         if not u.down_noted:
             u.down_noted = True
+            u.downs += 1
+            u.models, u.models_bad = None, False
             if _cert_error(exc):
                 LOG.warning("서버 내려감 %s — TLS 인증서를 믿을 수 없다(%s 연결 · %s) · 라우터는 사설 CA 를 믿지 않는다 — 위 서버는 http 이거나 "
                             "공인 인증서의 https 여야 한다 · %g초 동안 뺀다", u.url, where, type(exc).__name__, self.cfg.cooldown_s)
@@ -691,11 +704,17 @@ class Router:
             except Exception:
                 LOG.exception("모델 대조 실패")
 
-    async def _check_models(self) -> None:
+    async def _recheck(self, u: Upstream) -> None:
+        try:
+            await self._check_models([u])
+        except Exception:
+            LOG.exception("모델 대조 실패 %s", u.url)
+
+    async def _check_models(self, ups: list[Upstream] | None = None) -> None:
         """서버마다 /v1/models — 200 모델 목록이면 그 서버는 '올라옴' 이 될 수 있고, 답했는데 목록이 아니면(401 · 404 · 다른 글) 아니다.
         답이 없으면(읽기 한도 · 끊김) 지난 답을 그대로 둔다. 실패는 서버마다 바뀔 때 한 번 알리고 /health 의 models.errors 에 싣는다(검토 L7).
-        답은 서버마다 오는 대로 적는다 — 매달린 서버 하나가 다른 서버의 확인을 읽기 한도(10초)만큼 붙들지 않게."""
-        ups = list(self.ups)
+        답은 서버마다 오는 대로 적는다 — 매달린 서버 하나가 다른 서버의 확인을 읽기 한도(10초)만큼 붙들지 않게. ups 를 주면 그 서버만 묻는다."""
+        ups = list(self.ups) if ups is None else ups
         hdrs = {"Authorization": f"Bearer {self.cfg.api_key}"} if self.cfg.api_key else {}
         await asyncio.gather(*(self._check_one(u, hdrs) for u in ups))
         summary = self._models_summary()
@@ -709,10 +728,14 @@ class Router:
             LOG.info("모델 같아짐 — ids=%s max_model_len=%s", json.dumps(summary["ids"], ensure_ascii=False), summary["max_model_len"])
 
     async def _check_one(self, u: Upstream, hdrs: dict[str, str]) -> None:
+        downs = u.downs
         try:
             r = await self._probe.get(u.models_url, headers=hdrs, timeout=_probe_timeout(self.cfg.connect_timeout_s))
         except Exception as exc:                 # noqa: BLE001 — 답이 없다(연결 · 읽기 한도 · 끊김 · 뜻밖) — 지난 답을 그대로 둔다
-            self._models_failed(u, type(exc).__name__, answered=False)
+            if u.downs == downs:
+                self._models_failed(u, type(exc).__name__, answered=False)
+            return
+        if u.downs != downs:                     # 묻는 사이에 내려갔다 — 옛 프로세스의 답일 수 있다(다시 올라오면 새로 묻는다)
             return
         if r.status_code != 200:
             self._models_failed(u, r.status_code, answered=True)

@@ -59,7 +59,12 @@ class _Srv:
         cfg = uvicorn.Config(app, log_config=None, log_level="warning", lifespan=lifespan, http=http, timeout_graceful_shutdown=1,
                              **({"ssl_certfile": str(tls[0]), "ssl_keyfile": str(tls[1])} if tls else {}))
         self.server = uvicorn.Server(cfg)
-        self.thread = threading.Thread(target=lambda: asyncio.run(self.server.serve(sockets=[self.sock])), daemon=True)
+        self.loop: asyncio.AbstractEventLoop | None = None      # 이 서버의 이벤트 루프 — 시험이 루프 안의 일을 깨울 때(call_soon_threadsafe)
+
+        async def serve() -> None:
+            self.loop = asyncio.get_running_loop()
+            await self.server.serve(sockets=[self.sock])
+        self.thread = threading.Thread(target=lambda: asyncio.run(serve()), daemon=True)
         self.thread.start()
         deadline = time.monotonic() + 20
         while not self.server.started:
@@ -261,6 +266,10 @@ class _Router:
 
     def health(self) -> httpx.Response:
         return self.http.get("/health")
+
+    def kick_models(self) -> None:
+        """모델 대조를 곧바로 한 번 — 정기 대조(60초)를 기다리지 않는다. 라우터 루프에서 깨운다(asyncio.Event 는 스레드에 안전하지 않다)."""
+        self.srv.loop.call_soon_threadsafe(self.app._models_kick.set)
 
 
 @pytest.fixture
@@ -482,17 +491,24 @@ def test_붙인_서버가_문턱만큼_바빠지면_가장_한가한_서버로_�
 
 # ── 넘김 ───────────────────────────────────────────────────────────────────────────────────────────
 def test_연결_실패만_다른_서버로_넘기고_빼_둔_뒤_돌아온다(lab):
+    """빼 둔 서버는 빼 둔 시간이 지나고 모델 목록을 다시 확인한 뒤 돌아온다 — 내려갈 때 목록을 '모름' 으로 되돌린다(다른 모델로 다시 떴을
+    수 있다, 검토 2라운드 M-B). 운영에서는 지표 탐침이 다시 닿을 때 곧바로 묻는다 — 이 시험은 지표 주기가 60초라 대조를 손으로 깨운다."""
     a, b = lab.fake("A", running=0), lab.fake("B", running=5)
     r = lab.router([a, b], LLM_ROUTER_PREFIX_CHARS=0, LLM_ROUTER_COOLDOWN_S=0.8)
     a.srv.stop()                                         # 연결 거절 — 지표 주기(60초)는 아직 모른다
     assert r.chat("x").json()["served_by"] == "B", "요청이 서버에 닿지 않았으니 다른 서버로 다시 보낸다"
     st = r.by_url()
     assert (st[a.base]["up"], st[a.base]["connect_fail"], st[a.base]["retried_away"], st[a.base]["sent"]) == (False, 1, 1, 0)
-    assert st[b.base]["sent"] == 1
+    assert st[a.base]["models"] == "unknown" and st[b.base]["sent"] == 1
     assert r.chat("x").json()["served_by"] == "B"
     assert r.by_url()[a.base]["connect_fail"] == 1, "빼 둔 동안은 시도하지 않는다"
     lab.restart(a)
-    time.sleep(0.9)                                      # 빼 둔 시간(0.8초)이 지나면 다시 고른다
+    time.sleep(0.9)                                      # 빼 둔 시간(0.8초)이 지났다 — 연결은 되지만 모델 목록은 아직 '모름' 이다
+    st = r.by_url()[a.base]
+    assert (st["reachable"], st["models"], st["up"]) == (True, "unknown", False)
+    assert r.chat("x").json()["served_by"] == "B", "다시 확인하기 전에는 올라온 서버(B)가 있는 동안 쓰지 않는다"
+    r.kick_models()
+    _wait(lambda: r.by_url()[a.base]["up"], what="모델 목록을 다시 확인하기")
     assert r.chat("x").json()["served_by"] == "A"
     assert r.by_url()[a.base]["up"] is True
     # 모두 빠졌으면 전부를 다시 시도해 본다(멀쩡해졌을 수 있다)
@@ -990,13 +1006,13 @@ def test_검토H1_요청을_못_만든_서버는_빼고_다음_서버로_보낸_
         def copy_with(self, **kw):
             raise ValueError("이 서버 주소로는 요청을 못 만든다")
 
-    good_base, ua.base = ua.base, _BadBase()
+    good_base, good_models, ua.base = ua.base, ua.models, _BadBase()
     resp = r.chat("x")
     assert resp.status_code == 200 and resp.json()["served_by"] == "B", "보낸 것이 없으니 다음 서버로"
     st = r.by_url()[a.base]
     assert (st["reachable"], st["sent"], st["retried_away"]) == (False, 0, 1)
     # 보내는 중의 뜻밖 — 닿았는지 모르니 다시 보내지 않는다(LP-D3). 이 요청은 502 이고 그 서버는 뺀다.
-    ua.base, ua.down_until = good_base, 0.0
+    ua.base, ua.down_until, ua.models = good_base, 0.0, good_models     # 다시 올라와 모델 목록까지 확인한 것으로 둔다
     r.app._client = _Boom(r.app._client, a.srv.port)
     resp = r.chat("x")
     assert resp.status_code == 502 and resp.json()["error"]["type"] == "llm_router_upstream_error", resp.text
@@ -1375,6 +1391,43 @@ def test_지문은_바이트코드를_보지_않고_fp_git_false_면_리포_루�
 
 
 # ── 반대 검토 2라운드(LP-D14) — 검토자의 탐침을 회귀 시험으로 ─────────────────────────────────────────────
+def test_검토2_MB_다른_모델로_다시_뜬_서버는_다시_확인하기_전에는_올라옴이_아니다(lab, caplog):
+    """B 가 다른 --served-model-name 으로 다시 떴다 — 연결 실패는 모델 목록을 지우지 않았고 다시 올라올 때 대조를 앞당기는 것은 목록이 없던
+    서버뿐이라, 다음 정기 대조(60초)까지 옛 목록('glm')으로 올라옴이었다(검토: 20/20 이 B 로 가 404 · match true 라 1i 관문도 지난다).
+    내려갈 때 목록을 '모름' 으로 되돌리고, 다시 올라오면 그 서버만 곧바로 묻는다."""
+    caplog.set_level(logging.INFO)
+    a = lab.fake("A", running=6)
+    b = lab.fake("B")
+    r = lab.router([a, b], LLM_ROUTER_SCRAPE_S=0.1)
+    assert r.health().json()["models"]["match"] is True
+    b.srv.stop()
+    st = _until(r.by_url, lambda s: s[b.base]["reachable"] is False, what="B 가 내려가기")[b.base]
+    assert st["models"] == "unknown", "내려가면 목록을 모른다"
+    b.model, b.mode = "other", "404model"
+    lab.restart(b)
+    _wait(lambda: r.by_url()[b.base]["reachable"] is True, timeout=10, what="B 가 다시 닿기")
+    codes = [r.chat(f"대화 {i}").status_code for i in range(20)]
+    assert codes == [200] * 20 and not b.hits, codes
+    _wait(lambda: r.by_url()[b.base]["models"] == "ok", timeout=3, what="정기 대조(60초)를 기다리지 않고 B 의 목록을 다시 읽기")
+    h = r.health().json()
+    assert h["models"]["match"] is False and h["models"]["ids"][b.base] == ["other"], h["models"]
+    assert any("서버 올라옴" in x.getMessage() and b.base in x.getMessage() for x in caplog.records)
+
+
+def test_검토2_MB_내려가기_전에_시작한_모델_대조의_답은_버린다(lab):
+    """묻는 사이에 서버가 내려갔다 오면 그 답은 옛 프로세스의 것일 수 있다 — 내려간 수(downs)가 바뀌었으면 적지 않는다."""
+    a = lab.fake("A")
+    r = lab.router([a], LLM_ROUTER_SCRAPE_S=60)
+    ua = r.app.ups[0]
+    a.models_mode, a.hang_s = "hang", 1.5                 # 1.5초 뒤에 답한다
+    r.kick_models()
+    _wait(lambda: len(a.model_hits) == 2, what="두 번째 대조가 A 에 닿기")
+    r.srv.loop.call_soon_threadsafe(lambda: r.app._mark_down(ua, OSError("시험"), where="지표"))
+    _wait(lambda: r.by_url()[a.base]["models"] == "unknown", what="내려가며 목록을 지우기")
+    time.sleep(2.0)                                       # 매달렸던 대조의 답이 온다
+    assert r.by_url()[a.base]["models"] == "unknown", "내려가기 전에 시작한 대조의 답을 적었다"
+
+
 def test_검토2_MC_기동은_첫_탐침을_2초까지만_기다리고_늦은_답은_이어서_받는다(lab):
     """기동이 서버마다 지표 → 모델 대조를 차례로 다 기다렸다 — 매달린 서버 하나면 20초, 닿지 않는 서버 하나면 10초 동안 라우터 포트가 닫혀
     재기동마다 LLM 호출이 끊겼다(검토 M-C). 이제 함께 돌리고 STARTUP_PROBE_S(2초)까지만 기다린다. 늦게 답한 서버는 정기 대조(60초)를 기다리지
