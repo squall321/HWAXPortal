@@ -108,3 +108,31 @@ def test_시작_패널은_미리보기가_아니라_전체_수를_센다():
     front = Path(__file__).resolve().parents[2] / "frontend" / "src"
     left = [str(p) for p in front.rglob("*.tsx") if "보유 지식 (" in p.read_text("utf-8")]
     assert not left, left
+
+
+# ── K8-4 운영자의 앱이 하나도 안 붙었을 때 ─────────────────────────────────────────────────────────
+def test_앱이_전부_연결_안_됐을_때만_도구로_답하지_못한다고_쓴다():
+    """머리말은 늘 '도구를 직접 호출해 답합니다' 였고 바로 밑 줄은 '이 서버에 연결 안 됨' 이었다(he-sim-smarttwin, cae00).
+    connected 가 null(매핑을 못 받음)이면 없다고 단정하지 않는다 — 에이전트서버 _op_missing 과 같은 규칙."""
+    src = _src("AgentFacts.tsx")
+    assert ("// eslint-disable-next-line react-refresh/only-export-components\n"
+            "export function operatorOffline(detail: AgentDetail | null | undefined): boolean {") in src, (
+        "컴포넌트가 아닌 함수를 내보내면 pnpm lint(--max-warnings 0)가 걸린다")
+    fn = src[src.index("export function operatorOffline"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "return !!detail?.operator && apps.length > 0 && apps.every((a) => a.connected === false);" in fn
+    head = src[src.index('<h4 className="pv-detail-h">'):]
+    head = head[:head.index("</h4>")]
+    assert "operatorOffline(detail)" in head
+    assert "'MCP 운영자 — 이 서버에는 이 운영자의 앱이 연결돼 있지 않아 지금은 도구로 답하지 못합니다'" in head
+    assert "'MCP 운영자 — 대화하면 이 앱의 도구를 직접 호출해 답합니다'" in head
+
+
+def test_심층_보기의_빈_카드_문구도_연결_상태를_본다():
+    src = _src("AgentDeepView.tsx")
+    assert "import { OperatorApps, operatorOffline } from './AgentFacts';" in src
+    blk = src[src.index(": detail?.operator"):]
+    blk = blk[:blk.index("'연결된 지식카드가 없습니다.'")]
+    assert "? operatorOffline(detail)" in blk
+    assert "'지식카드가 없습니다 — 이 운영자의 앱이 이 서버에 연결돼 있지 않아 지금은 도구로도 답하지 못합니다.'" in blk
+    assert "'지식카드가 없습니다 — 이 전문가는 지식카드가 아니라 앱 도구를 직접 호출해 답합니다.'" in blk

@@ -19,6 +19,14 @@ export function RecordsHeading({ detail, onMore }: { detail: AgentDetail; onMore
   );
 }
 
+/** 운영자의 앱이 이 서버 게이트웨이에 하나도 안 붙었다 — '도구로 답한다' 고 말하면 안 되는 경우.
+ *  connected 가 null(매핑을 못 받음)이면 없다고 단정하지 않는다(에이전트서버 _op_missing 과 같은 규칙). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function operatorOffline(detail: AgentDetail | null | undefined): boolean {
+  const apps = detail?.apps ?? [];
+  return !!detail?.operator && apps.length > 0 && apps.every((a) => a.connected === false);
+}
+
 /** HE팀 MCP 운영자 — 보유 지식이 0건인 게 정상이라, 무엇으로 답하는지(앱·도구 수)를 대신 보인다.
  *  이 서버 게이트웨이에 없는 앱(cae00 전용 arp·odb-hub 를 dev 에서 본 경우)은 그렇다고 적는다. */
 export function OperatorApps({ detail }: { detail: AgentDetail }) {
@@ -26,7 +34,11 @@ export function OperatorApps({ detail }: { detail: AgentDetail }) {
   const apps = detail.apps ?? [];
   return (
     <div className="pv-op">
-      <h4 className="pv-detail-h">MCP 운영자 — 대화하면 이 앱의 도구를 직접 호출해 답합니다</h4>
+      <h4 className="pv-detail-h">
+        {operatorOffline(detail)
+          ? 'MCP 운영자 — 이 서버에는 이 운영자의 앱이 연결돼 있지 않아 지금은 도구로 답하지 못합니다'
+          : 'MCP 운영자 — 대화하면 이 앱의 도구를 직접 호출해 답합니다'}
+      </h4>
       <ul className="pv-op-apps">
         {apps.map((a) => (
           <li key={a.key} className={`pv-op-app${a.connected === false ? ' is-off' : ''}`}>

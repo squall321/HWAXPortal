@@ -9,7 +9,7 @@ import {
   type PoolExpert,
   type RecordView,
 } from '../../api/chat.api';
-import { OperatorApps } from './AgentFacts';
+import { OperatorApps, operatorOffline } from './AgentFacts';
 import { colorOf, initialOf } from './personaColor';
 import { InlineMd, TextBlock } from './renderers/TextBlock';
 import { Modal } from '../ui/Modal';
@@ -353,7 +353,9 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
                   {query
                     ? `‘${query}’ 에 맞는 카드가 없습니다.`
                     : detail?.operator
-                      ? '지식카드가 없습니다 — 이 전문가는 지식카드가 아니라 앱 도구를 직접 호출해 답합니다.'
+                      ? operatorOffline(detail)
+                        ? '지식카드가 없습니다 — 이 운영자의 앱이 이 서버에 연결돼 있지 않아 지금은 도구로도 답하지 못합니다.'
+                        : '지식카드가 없습니다 — 이 전문가는 지식카드가 아니라 앱 도구를 직접 호출해 답합니다.'
                       : '연결된 지식카드가 없습니다.'}
                 </p>
               )}
