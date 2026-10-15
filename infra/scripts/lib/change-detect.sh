@@ -3,8 +3,9 @@
 #   . "$ROOT/infra/scripts/lib/change-detect.sh"      (HWAX_RESTART_STATE_DIR 을 먼저 export — 기본은 <포털>/infra/.state/restart-fp)
 #   hwax_fp <경로…>                        지문(sha256 앞 12자). 디렉터리는 파일 이름·크기·mtime, 32MB 넘는 파일도 크기·mtime(SIF — 내용 해시는
 #                                          초 단위), 작은 파일은 내용 해시(.env 같은 설정). 없는 경로는 "missing:<경로>" 로 들어간다.
-#   hwax_install_if_changed <src> <dst>    cmp 가 다를 때만 cp -p. 0=설치했다 · 1=같아서 손대지 않았다 · 2=cp 실패(stderr 에 ✗). 살아 있는 인스턴스
-#                                          밑의 SIF 를 같은 내용으로 덮어쓰면 squashfs 가 깨지고, cp 는 mtime 을 리셋해 지문이 매번 달라진다.
+#   hwax_install_if_changed <src> <dst>    cmp 가 다를 때만 설치(같은 디렉터리의 임시 파일에 cp -p → 이름 바꾸기). 0=설치했다 · 1=같아서 손대지
+#                                          않았다 · 2=설치 실패(stderr 에 ✗). 살아 있는 인스턴스 밑의 SIF 를 같은 내용으로 덮어쓰면 squashfs 가 깨지고,
+#                                          cp 는 mtime 을 리셋해 지문이 매번 달라진다. 다른 내용도 제자리에 덮어쓰지 않는다(아래 함수 머리).
 #   hwax_alive <url>                       0 이면 답한다(200 401 302 405 406). curl 은 rc 가 아니라 코드로 판정.
 #   hwax_last_fp <이름> / hwax_mark_started <이름> <지문>   마지막으로 **띄운** 시점의 지문(상태 파일). 기동이 성공한 뒤에만 적는다.
 #   hwax_restart_cycle …                 아래 함수 머리 참조 — 재기동·기록의 정본 경로(url 별 판정은 hwax_verify_restarted).
@@ -35,9 +36,22 @@ hwax_fp() {
 
 # 돌려주는 값: 0 = 설치함 · 1 = 같음(오류 아님) · 2 = 설치 실패. ⚠ set -e 스크립트에서는 `_rc=0; hwax_install_if_changed … || _rc=$?`
 #   로 받아라 — 맨 문장(`f; _rc=$?`)이면 '같음' 에서 스크립트가 조용히 끝난다(images-from-drive 실사고 2026-09-30).
+# 설치는 **원자적**이다 — 대상 옆의 임시 파일에 cp -p 로 받고 이름을 바꾼다. 제자리 덮어쓰기(cp -p 가 대상을 열어 덮는다)는 그 SIF 로 도는
+#   프로세스 밑에서 squashfs 를 바꿔 EIO 뒤 Bus error 를 냈다(LLM 풀 반대 검토 M2 — portal.sif 로 도는 LLM 라우터가 §2 의 설치를 맞는다).
+#   이름을 바꾸면 도는 프로세스는 옛 inode 를 쥔 채 그대로 돌고, 다음 기동이 새 파일을 연다. 대상이 심링크면 링크는 두고 가리키는 파일을
+#   바꾼다(/data 이관의 심링크 브리지). 쓸 수 없는 대상(권한·다른 소유자)은 종전처럼 실패다 — 이름 바꾸기는 디렉터리 권한만 보므로 그대로 두면
+#   읽기 전용 파일도 갈아 끼운다. 그래서 먼저 본다.
 hwax_install_if_changed() {  # $1=src $2=dst
+  local real tmp=""
   if [ -f "$2" ] && cmp -s "$1" "$2"; then return 1; fi
-  if cp -p "$1" "$2"; then return 0; fi
+  real="$(readlink -f -- "$2" 2>/dev/null)" || real=""
+  [ -n "$real" ] || real="$2"
+  if { [ ! -e "$real" ] || [ -w "$real" ]; } \
+     && tmp="$(mktemp "$(dirname -- "$real")/.$(basename -- "$real").XXXXXX" 2>/dev/null)" \
+     && cp -p "$1" "$tmp" && mv -fT "$tmp" "$real"; then
+    return 0
+  fi
+  [ -n "$tmp" ] && rm -f "$tmp"
   echo "  ✗ $(basename "$2") 설치 실패 — $2 에 쓸 수 없다(권한·소유자·디스크). 옛 파일이 그대로다" >&2
   return 2
 }

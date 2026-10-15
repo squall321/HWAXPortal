@@ -22,18 +22,27 @@
 #       LLM_ROUTER_RESTART_FORCE=1 이면 묻지 않고 1 — 사람이 끊기로 한 것이다. 부르는 쪽은 **0 일 때만** 미룬다 — 모르는데 미루면 죽은·
 #       매달린 라우터를 영영 못 띄우고 새 코드를 영영 못 올린다(delib-busy 와 같은 규율).
 #   hwax_llm_effective_url <infra.env> [직접 주소]   LLM 클라이언트가 **지금** 써야 할 주소 — 풀이 켜져 있고 라우터가 서버 하나 이상이
-#       올라왔다고 답하면 라우터 주소, 아니면 직접 주소(주지 않으면 infra/.env 의 LLM_BASE_URL). 0 = 찍었다 · 1 = 빈 값.
-#       1i 가 사본을 라우터로 바꾸는 조건과 같다 — 라우터가 그렇게 답하지 않을 때 새로 더한 키만 죽은 라우터를 보지 않게(stderr 에 한 줄).
+#       올라왔고 모델이 같다고 답하면 라우터 주소, 아니면 직접 주소(주지 않으면 infra/.env 의 LLM_BASE_URL). 0 = 찍었다 · 1 = 빈 값.
+#       1i 가 사본을 라우터로 바꾸는 조건과 같다 — 라우터가 그렇게 답하지 않을 때 새로 더한 키만 라우터를 보지 않게(stderr 에 한 줄).
+#   hwax_llm_router_recorded <포털 루트>    1i 가 마지막으로 사본에 적은 라우터 주소(infra/.state/llm-pool.router) — 0 = 찍었다 · 1 = 없다
+#       (기록이 없거나 루프백 /v1 주소 모양이 아니다). 포트를 바꾸거나 포트 줄을 풀과 함께 지워도 옛 라우터를 가리키는 사본을 찾는 데 쓴다.
+#   hwax_llm_router_record <포털 루트> <주소>   그 기록을 바꾼다(임시 파일 + 이름 바꾸기). 0 = 적었다 · 1 = 못 적었다.
 #   hwax_llm_pool_copies <포털 루트>         관리하는 사본 — 줄마다 "<서비스>\t<리포 이름>\t<.env 상대경로>\t<키>". apply-envs 의 MAP 과 킷의
 #       `<키>=@FROM_RA:LLM_BASE_URL@` 줄에서 유도하고(킷에 줄이 늘면 저절로 따라온다), 서비스 코드가 직접 읽는 키(_HWAX_LLM_EXTRA)를 더한다.
 #   hwax_llm_pool_rewrite <포털 루트> <dry|write> <새 값> <관리하는 값…>
-#       사본 가운데 지금 값(끝 `/` 무시)이 관리하는 값인 것만 새 값으로 바꾼다. 바꾸기 **전에** 그 파일을 같은 디렉터리의
-#       `<파일>.bak-<UTC 시각>` 으로 백업하고(권한 그대로 — 비밀 파일은 600 그대로, 만드는 순간부터 600), 그 값의 글자 말고는 파일을
-#       한 바이트도 바꾸지 않는다(따옴표·`export`·줄 끝 주석·CRLF·다른 줄 그대로). 같은 파일에 키가 둘이면 백업은 한 번이다.
+#       사본 가운데 지금 값(끝 `/` 무시)이 관리하는 값인 것만 새 값으로 바꾼다. 바꾸기 **전에** 그 파일을 **포털의** gitignore 된
+#       `infra/.state/llm-pool-backups/<리포 이름>/<.env 상대경로>.<UTC 시각>[-n]` 으로 백업한다(디렉터리 700 · 파일 600 — 만드는 순간부터).
+#       서비스 리포 안에 두지 않는다 — 그쪽은 gitignore 밖이라 추적 안 된 비밀 파일로 남고 deploy-all 의 `git stash push -u` 가 비밀째
+#       stash 로 쓸어 간다(반대 검토 H1). 바꾸기는 원자적이다 — 같은 디렉터리의 임시 파일에 쓰고 fsync 한 뒤 이름을 바꾼다(심링크면 링크는 두고
+#       가리키는 파일을 바꾼다 · 권한·소유자 그대로 — 소유자를 지킬 수 없으면 바꾸지 않는다). 그 값의 글자 말고는 파일을 한 바이트도 바꾸지
+#       않는다(따옴표·`export`·줄 끝 주석·CRLF·다른 줄 그대로). 줄은 `\n` 으로만 나눈다(홀로 선 `\r` 은 줄바꿈이 아니다 — 읽는 쪽 sed 와 같다).
+#       같은 파일에 키가 둘이면 백업은 한 번이다. 쓸 수 없는 파일(읽기 전용)은 백업도 만들지 않고, 쓰다 실패하면 만든 백업을 지운다.
 #       줄마다 "<상태>\t<서비스>\t<리포 경로>\t<.env 상대경로>\t<키>\t<지금 값>\t<백업 경로>" — 상태는
 #       changed(바꿨다) · would(dry — 바꿀 것이다) · same(이미 새 값) · foreign(관리하는 값이 아니다 — 사람이 적은 다른 주소, 그대로 둔다) ·
-#       absent(파일·키가 없다 — apply-envs 몫) · error(못 바꿨다 — 지금 값 칸에 사유, 파일은 그대로). 리포가 없는 사본은 줄을 내지
-#       않는다(이 박스 대상이 아니다). 리포는 apply-envs·update-all 의 find_repo 와 같은 순서로 찾는다(<포털 상위>/ → ~/Projects/ → ~/claude/).
+#       absent(파일·키가 없다) · error(못 바꿨다 — 지금 값 칸에 사유, 파일은 그대로). 리포가 없는 사본은 줄을 내지 않는다(이 박스 대상이
+#       아니다). 리포는 apply-envs·update-all 의 find_repo 와 같은 순서로 찾는다(<포털 상위>/ → ~/Projects/ → ~/claude/). 줄은 파일마다
+#       처리하는 대로 낸다 — 뒤 파일에서 죽어도 앞 파일의 결과는 남는다(부르는 쪽은 종료코드를 본다). 값은 바이트 그대로 다룬다(UTF-8 이
+#       아닌 값도 어느 LANG 에서나 죽지 않는다).
 #   hwax_llm_pool_at <포털 루트> <주소>      지금 그 주소를 가리키는 사본 수(끝 `/` 무시).
 #
 # ⚠ 0 아닌 값을 정상으로 돌려준다 — `set -e` 스크립트에서는 `_x="$(hwax_llm_… )" || _rc=$?` 로 받는다. 맨 문장이면 1·2 에서 조용히 끝난다.
@@ -222,18 +231,34 @@ hwax_llm_router_busy() {  # $1=health url
 }
 
 hwax_llm_effective_url() {  # $1=infra.env [$2=직접 주소]
-  local direct rurl h rc=0 st up rest
+  local direct rurl h rc=0 st up tot inf m
   if [ "$#" -ge 2 ]; then direct="$2"; else direct="$(hwax_llm_envv "$1" LLM_BASE_URL)"; fi
   if hwax_llm_pool_upstreams "$1" >/dev/null && rurl="$(hwax_llm_router_url "$1")"; then
     h="$(hwax_llm_router_health "$(hwax_llm_router_health_url "$1")")" || rc=$?
-    read -r st up rest <<<"$h"
-    if [ "$rc" = 0 ] && [[ "${up:-}" =~ ^[0-9]+$ ]] && [ "$up" -ge 1 ]; then
+    read -r st up tot inf m <<<"$h"
+    if [ "$rc" = 0 ] && [[ "${up:-}" =~ ^[0-9]+$ ]] && [ "$up" -ge 1 ] && [ "${m:-}" = true ]; then
       printf '%s\n' "$rurl"; return 0
     fi
-    printf '%s\n' "   · LLM 풀이 켜져 있는데 라우터($rurl)가 올라온 서버를 답하지 않는다 — 직접 주소를 쓴다(라우터가 살아나면 update-all 1i 가 사본을 라우터로 바꾼다)" >&2
+    printf '%s\n' "   · LLM 풀이 켜져 있는데 라우터($rurl)가 올라온 서버와 같은 모델을 답하지 않는다 — 직접 주소를 쓴다(라우터가 그렇게 답하면 update-all 1i 가 사본을 라우터로 바꾼다)" >&2
   fi
   [ -n "$direct" ] || return 1
   printf '%s\n' "$direct"
+}
+
+hwax_llm_router_recorded() {  # $1=포털 루트
+  local v
+  v="$(head -n 1 "$1/infra/.state/llm-pool.router" 2>/dev/null)" || v=""
+  [[ "$v" =~ ^http://127\.0\.0\.1:[0-9]{1,5}/v1$ ]] || return 1
+  printf '%s\n' "$v"
+}
+
+hwax_llm_router_record() {  # $1=포털 루트 $2=라우터 주소
+  local f="$1/infra/.state/llm-pool.router" tmp=""
+  if mkdir -p "${f%/*}" 2>/dev/null && tmp="$(mktemp "$f.XXXXXX" 2>/dev/null)" && printf '%s\n' "$2" > "$tmp" && mv -f "$tmp" "$f"; then
+    return 0
+  fi
+  [ -n "$tmp" ] && rm -f "$tmp"
+  return 1
 }
 
 hwax_llm_pool_copies() {  # $1=포털 루트
@@ -258,15 +283,19 @@ hwax_llm_pool_rewrite() {  # $1=포털 루트 $2=dry|write $3=새 값 $4…=관�
   [ -n "$new" ] || { echo "hwax_llm_pool_rewrite: 새 값이 비었다 — 사본을 빈 주소로 바꾸지 않는다" >&2; return 2; }
   HWAX_LLM_COPIES="$(hwax_llm_pool_copies "$root")" HWAX_LLM_ROOT="$root" HWAX_LLM_MODE="$mode" HWAX_LLM_NEW="$new" \
     python3 - "$@" <<'PY'
-import os, re, shutil, sys, time
+import os, re, stat, sys, tempfile, time
 from pathlib import Path
 
+# 값은 **바이트로** 다룬다 — 사본에 UTF-8 이 아닌 값이 하나라도 있으면 str 로 풀어 찍다가 ko_KR.UTF-8 에서 UnicodeEncodeError 로
+# 죽었다(그때는 이미 파일을 다 쓴 뒤라 바꾼 줄이 하나도 안 나왔다 — 반대 검토 L4). 환경·인자도 바이트로 받고, 출력도 바이트로 낸다.
 root = Path(os.environ["HWAX_LLM_ROOT"]).resolve()
-mode, new = os.environ["HWAX_LLM_MODE"], os.environ["HWAX_LLM_NEW"]
-norm = lambda s: s.rstrip("/")
-managed = {norm(m) for m in sys.argv[1:] if m.strip()}
+mode, new = os.environ["HWAX_LLM_MODE"], os.environb[b"HWAX_LLM_NEW"]
+norm = lambda s: s.rstrip(b"/")
+managed = {norm(os.fsencode(m)) for m in sys.argv[1:] if m.strip()}
 home = Path(os.environ.get("HOME") or "/nonexistent")
 bases = (root.parent, home / "Projects", home / "claude")      # find_repo 와 같은 순서
+bkroot = root / "infra/.state/llm-pool-backups"               # 포털의 gitignore 된 상태 디렉터리 — 서비스 리포 안에 두지 않는다(H1)
+out = sys.stdout.buffer
 
 
 def repo_dir(name):
@@ -276,15 +305,92 @@ def repo_dir(name):
     return None
 
 
+def enc(x) -> bytes:
+    if isinstance(x, bytes):
+        return x
+    if isinstance(x, Path):
+        return os.fsencode(x)
+    return str(x).encode("utf-8", "surrogateescape")          # 사유 글은 UTF-8 로(스크립트의 다른 글과 같게) — LANG 과 무관하다
+
+
+def emit(rows):
+    """파일마다 처리하는 대로 낸다 — 뒤 파일에서 죽어도 앞 파일의 결과(바꿨다 · 백업 경로)는 부르는 쪽에 남는다."""
+    for r in rows:
+        out.write(b"\t".join(enc(x) for x in r) + b"\n")
+    out.flush()
+
+
 # update-all _envfile_value 와 같은 규칙 — 줄 머리([[:space:]]*, export 허용), 공백 뒤 # 주석, 양끝 공백, 따옴표·CR
 WS = rb" \t\v\f\r"
-def value_of(body: bytes) -> str:
+def value_of(body: bytes) -> bytes:
     v = re.sub(rb"[" + WS + rb"]+#.*$", b"", body)
-    v = v.strip(WS).replace(b'"', b"").replace(b"'", b"").replace(b"\r", b"")
-    return v.decode("utf-8", "surrogateescape")
+    return v.strip(WS).replace(b'"', b"").replace(b"'", b"").replace(b"\r", b"")
 
 
-groups = {}                                                   # 파일 → [(서비스, 리포, 상대경로, 키)] — 백업은 파일마다 한 번
+def split_lines(data: bytes) -> list:
+    """`\\n` 으로만 나눈다 — bytes.splitlines 는 홀로 선 `\\r` 에서도 나눠, 읽는 쪽(sed — 줄은 `\\n` 뿐)이 보지 않는 줄을 고쳤다(L5)."""
+    parts = data.split(b"\n")
+    return [p + b"\n" for p in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
+def backup(repo: str, rel: str, data: bytes) -> Path:
+    """<bkroot>/<리포>/<상대경로>.<UTC>[-n] — 디렉터리 700 · 파일 600(만드는 순간부터). 같은 초에 다시 돌아도 앞 백업을 덮지 않는다."""
+    stem = bkroot / repo / rel
+    old = os.umask(0o077)                                      # 새로 만드는 디렉터리는 전부 700(중간 디렉터리까지)
+    try:
+        stem.parent.mkdir(parents=True, exist_ok=True)
+    finally:
+        os.umask(old)
+    os.chmod(bkroot, 0o700)                                    # 먼저 있던 백업 뿌리도 700 — 그 아래 전부가 이 하나로 닫힌다
+    for k in range(100):
+        cand = stem.with_name(f"{stem.name}.{ts}" + (f"-{k}" if k else ""))
+        try:
+            fd = os.open(cand, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError:
+            cand.unlink(missing_ok=True)
+            raise
+        return cand
+    raise OSError(0, "이름이 다 찼다")
+
+
+def replace(path: Path, content: bytes) -> None:
+    """원자적으로 바꾼다(L3) — 가리키는 파일 옆의 임시 파일에 쓰고 fsync 한 뒤 이름을 바꾼다. 제자리 쓰기는 디스크가 차면 반쯤 잘린 .env 를
+    남겼다. 심링크면 링크는 그대로 두고 가리키는 파일을 바꾼다. 권한·소유자는 원본 그대로 — 소유자를 지킬 수 없으면(남의 파일) 바꾸지 않는다."""
+    real = Path(os.path.realpath(path))
+    st = real.stat()
+    fd, tmp = tempfile.mkstemp(dir=real.parent, prefix=f"{real.name}.tmp-")   # 같은 디렉터리 — 이름 바꾸기가 원자적인 자리
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chown(tmp, st.st_uid, st.st_gid)                    # 남의 소유면 PermissionError — 아래에서 '그대로다' 로 끝난다
+        os.chmod(tmp, stat.S_IMODE(st.st_mode))
+        os.replace(tmp, real)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    try:                                                       # 이름 바꾸기를 디스크에 — 실패해도 파일은 이미 새 내용이다
+        dfd = os.open(real.parent, os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
+
+
+groups = {}                                                   # 파일 → [(서비스, 리포, 리포 이름, 상대경로, 키)] — 백업은 파일마다 한 번
 for ln in os.environ.get("HWAX_LLM_COPIES", "").splitlines():
     parts = ln.split("\t")
     if len(parts) != 4:
@@ -293,42 +399,42 @@ for ln in os.environ.get("HWAX_LLM_COPIES", "").splitlines():
     d = repo_dir(repo)
     if d is None:
         continue                                              # 이 박스에 그 리포가 없다 — 대상 아님
-    groups.setdefault(d / rel, []).append((svc, d, rel, key))
+    groups.setdefault(d / rel, []).append((svc, d, repo, rel, key))
 
-rows = []
 ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
 for path, entries in groups.items():
     if not path.is_file():
-        rows += [["absent", s, d, r, k, "", ""] for s, d, r, k in entries]
+        emit([["absent", s, d, r, k, b"", b""] for s, d, _, r, k in entries])
         continue
     try:
         data = path.read_bytes()
     except OSError as e:
-        rows += [["error", s, d, r, k, f"읽지 못했다({e.strerror})", ""] for s, d, r, k in entries]
+        emit([["error", s, d, r, k, f"읽지 못했다({e.strerror})", b""] for s, d, _, r, k in entries])
         continue
-    lines = data.splitlines(keepends=True)
+    lines = split_lines(data)
     edits, mine = {}, []
-    for svc, d, rel, key in entries:
+    for svc, d, repo, rel, key in entries:
         pat = re.compile(rb"^[" + WS + rb"]*(?:export[" + WS + rb"]+)?" + re.escape(key.encode()) + rb"=")
         idx = [i for i, l in enumerate(lines) if pat.match(l)]
         if not idx:
-            mine.append(["absent", svc, d, rel, key, "", ""])
+            mine.append(["absent", svc, d, rel, key, b"", b""])
             continue
         i = idx[-1]                                            # 읽는 쪽(tail -1)과 같은 줄을 고친다
         line = lines[i]
         head = pat.match(line).end()
         body = line[head:]
         eol = b""
-        for e in (b"\r\n", b"\n", b"\r"):
+        for e in (b"\r\n", b"\n", b"\r"):                      # 끝의 `\r` 만 남은 줄은 파일 끝의 마지막 줄뿐이다(줄은 `\n` 으로만 나눴다)
             if body.endswith(e):
                 eol, body = e, body[: -len(e)]
                 break
         cur = value_of(body)
+        shown = cur.replace(b"\t", b" ")                       # 출력 칸은 탭으로 갈린다 — 값 속 탭이 칸을 밀지 않게(보여 주기만)
         if cur and norm(cur) == norm(new):
-            mine.append(["same", svc, d, rel, key, cur, ""])
+            mine.append(["same", svc, d, rel, key, shown, b""])
             continue
         if not cur or norm(cur) not in managed:
-            mine.append(["foreign", svc, d, rel, key, cur, ""])  # 사람이 일부러 적은 다른 주소(또는 빈 값) — 건드리지 않는다
+            mine.append(["foreign", svc, d, rel, key, shown, b""])  # 사람이 일부러 적은 다른 주소(또는 빈 값) — 건드리지 않는다
             continue
         # 값의 글자만 바꾼다 — 앞뒤 공백·감싼 따옴표·줄 끝 주석·줄 끝은 그대로
         cm = re.search(rb"[ \t\v\f]+#.*$", body)
@@ -339,43 +445,34 @@ for path, entries in groups.items():
         stripped = core.rstrip(b" \t")
         trail, core = core[len(stripped):], stripped
         q = core[:1] if len(core) >= 2 and core[:1] in (b'"', b"'") and core[-1:] == core[:1] else b""
-        edits[i] = line[:head] + lead + q + new.encode() + q + trail + comment + eol
-        mine.append(["changed" if mode == "write" else "would", svc, d, rel, key, cur, ""])
+        edits[i] = line[:head] + lead + q + new + q + trail + comment + eol
+        mine.append(["changed" if mode == "write" else "would", svc, d, rel, key, shown, b""])
     if edits and mode == "write":
-        bak = None
-        for k in range(100):                                   # 같은 초에 다시 돌아도 앞 백업을 덮지 않는다
-            cand = path.with_name(f"{path.name}.bak-{ts}" + (f"-{k}" if k else ""))
-            try:
-                fd = os.open(cand, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)   # 만드는 순간부터 600 — 비밀 사본이 잠깐도 열리지 않게
-            except FileExistsError:
-                continue
-            except OSError as e:
-                bak = e
-                break
-            try:
-                with os.fdopen(fd, "wb") as f:
-                    f.write(data)
-                shutil.copystat(path, cand)                     # 권한·시각을 원본과 같게(644 면 644, 600 이면 600)
-                bak = cand
-            except OSError as e:
-                bak = e
-            break
-        if not isinstance(bak, Path):
-            why = f"백업을 만들지 못했다({getattr(bak, 'strerror', None) or '이름이 다 찼다'}) — 파일은 그대로다"
-            mine = [["error", *r[1:5], why, ""] if r[0] == "changed" else r for r in mine]
+        repo0, rel0 = entries[0][2], entries[0][3]                # 한 파일의 키들은 같은 리포 · 같은 경로다
+        why, bak = None, None
+        if not os.access(os.path.realpath(path), os.W_OK):     # 이름 바꾸기는 디렉터리 권한만 본다 — 읽기 전용 파일도 갈아 끼울 수 있어 먼저 본다
+            why = "쓸 수 없는 파일이다(권한) — 백업도 만들지 않았다. 파일은 그대로다"
         else:
             try:
-                with open(path, "r+b") as f:                    # 제자리 — inode·권한·소유자 그대로(_upsert_kv 와 같다)
-                    f.write(b"".join(edits.get(i, l) for i, l in enumerate(lines)))
-                    f.truncate()
-                mine = [[*r[:6], str(bak)] if r[0] == "changed" else r for r in mine]
+                bak = backup(repo0, rel0, data)
             except OSError as e:
-                why = f"쓰지 못했다({e.strerror}) — 백업 {bak} 로 되돌린다: cp -p '{bak}' '{path}'"
-                mine = [["error", *r[1:5], why, str(bak)] if r[0] == "changed" else r for r in mine]
-    rows += mine
-
-for r in rows:
-    print("\t".join(str(x) for x in r))
+                why = f"백업을 만들지 못했다({e.strerror or e}) — 파일은 그대로다"
+        if bak is not None:
+            try:
+                replace(path, b"".join(edits.get(i, l) for i, l in enumerate(lines)))
+            except OSError as e:
+                why = f"쓰지 못했다({e.strerror or e}) — 파일은 그대로다"
+                try:
+                    bak.unlink()                               # 쓰지 못한 바꾸기의 백업은 남기지 않는다(비밀 사본이 하나 더 남을 뿐이다)
+                    why += "(만든 백업은 지웠다)"
+                except OSError:
+                    why += f"(백업 {bak} 이 남았다)"
+                bak = None
+        if bak is None:
+            mine = [["error", *r[1:5], why, b""] if r[0] == "changed" else r for r in mine]
+        else:
+            mine = [[*r[:6], bak] if r[0] == "changed" else r for r in mine]
+    emit(mine)
 PY
 }
 

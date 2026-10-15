@@ -3,14 +3,28 @@
 그 차이는 조용하다. 09-19 에 StepForge 공개주소가 dev 에만 있고 cae00 에 없어 앱이 자리표시자
 URL 을 냈다. 사람이 문서를 보고 손으로 넣는 방식은 박스가 늘수록 반드시 어긋난다.
 
-이 시험은 `infra/scripts/env-sync.sh` 를 **그대로 실행**한다(가짜 리포를 만들어 인자로 준다).
+이 시험은 `infra/scripts/env-sync.sh` 를 **그대로 실행**한다(가짜 리포를 만들어 인자로 준다). 스크립트는 임시 포털에 복사해 돌린다 —
+백업은 스크립트가 든 포털의 infra/.state/env-sync-backups 에 쌓이므로 실물 리포에서 돌리면 체크아웃의 상태 디렉터리에 시험 찌꺼기가 남는다.
 """
+import datetime
 import os
+import re
+import shutil
+import stat
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "infra" / "scripts" / "env-sync.sh"
+
+
+def portal_copy(tmp_path: Path) -> Path:
+    """임시 포털에 env-sync.sh(+ 장부 lib)를 복사해 그 경로를 낸다 — 다른 시험 파일도 이것으로 돌린다."""
+    scripts = tmp_path / "HWAXPortal" / "infra" / "scripts"
+    (scripts / "lib").mkdir(parents=True, exist_ok=True)
+    shutil.copy(SCRIPT, scripts / "env-sync.sh")
+    shutil.copy(ROOT / "infra/scripts/lib/skip-ledger.sh", scripts / "lib/skip-ledger.sh")
+    return scripts / "env-sync.sh"
 
 
 def _repo(tmp_path, example: str, env: str) -> Path:
@@ -21,10 +35,16 @@ def _repo(tmp_path, example: str, env: str) -> Path:
     return d
 
 
-def _run(d: Path, *args) -> subprocess.CompletedProcess:
-    return subprocess.run(["bash", str(SCRIPT), str(d), *args],
+def _run(d: Path, *args, **env) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", str(portal_copy(d.parent)), str(d), *args],
                           capture_output=True, text=True,
-                          env={"PATH": "/usr/bin:/bin", "HOME": str(d.parent)})
+                          env={"PATH": "/usr/bin:/bin", "HOME": str(d.parent), **env})
+
+
+def _baks(d: Path) -> list[Path]:
+    """repo 의 백업 — 임시 포털의 infra/.state/env-sync-backups/<리포 이름>/.env.<UTC>[-n]."""
+    bk = d.parent / "HWAXPortal/infra/.state/env-sync-backups" / d.name
+    return sorted(bk.glob(".env.*")) if bk.is_dir() else []
 
 
 def test_a_new_safe_option_is_filled_in(tmp_path):
@@ -93,14 +113,58 @@ def test_check_mode_writes_nothing_and_fails_loudly(tmp_path):
     r = _run(d, "--check")
     assert r.returncode == 1, "빠진 것이 있는데 0 으로 끝났다"
     assert (d / ".env").read_text(encoding="utf-8") == before
-    assert not list(d.glob(".env.bak-*")), "--check 인데 백업을 만들었다"
+    assert not list(d.glob(".env.bak-*")) and not _baks(d), "--check 인데 백업을 만들었다"
 
 
 def test_a_backup_is_made_before_writing(tmp_path):
     d = _repo(tmp_path, "NEW=1\n", "OLD=1\n")
-    _run(d)
-    baks = list(d.glob(".env.bak-*"))
+    r = _run(d)
+    baks = _baks(d)
     assert len(baks) == 1 and baks[0].read_text(encoding="utf-8") == "OLD=1\n"
+    assert f"백업 {baks[0]}" in r.stdout, "백업의 전체 경로를 말한다(이름만으로는 포털 infra/.state 아래를 못 찾는다)"
+
+
+def test_backups_never_land_in_the_service_repo(tmp_path):
+    """**LLM 풀 반대 검토 H1 회귀** — `.env.bak-*` 가 서비스 리포 안(gitignore 밖)에 비밀째 남았고, deploy-all 의 `git stash push -u` 가
+    그 가운데 셋을 stash 로 쓸어 갔다(HEAXHub 에 셋이 남아 있었다). 백업은 포털의 gitignore 된 infra/.state/env-sync-backups 에만 —
+    디렉터리 700 · 파일 600(원본이 644 여도). 시각은 UTC(`Z`)다."""
+    d = _repo(tmp_path, "NEW=1\n", "SECRET_TOKEN=s3cr3t\n"); (d / ".env").chmod(0o644)
+    _run(d)
+    assert sorted(p.name for p in d.iterdir()) == [".env", ".env.example"], "서비스 리포에 백업이 남았다"
+    baks = _baks(d)
+    assert len(baks) == 1 and stat.S_IMODE(baks[0].stat().st_mode) == 0o600
+    m = re.fullmatch(r"\.env\.(\d{8}T\d{6})Z", baks[0].name)
+    assert m, baks[0].name
+    stamp = datetime.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=datetime.timezone.utc)
+    assert abs((datetime.datetime.now(datetime.timezone.utc) - stamp).total_seconds()) < 600, "UTC 가 아니다(박스 시각에 Z 를 붙였다)"
+    bkroot = tmp_path / "HWAXPortal/infra/.state/env-sync-backups"
+    for p in (bkroot, bkroot / d.name):
+        assert stat.S_IMODE(p.stat().st_mode) == 0o700, p
+
+
+def test_a_sub_directory_env_keeps_its_path_in_the_backup(tmp_path):
+    """infra/.env · platform/.env 는 리포 안 경로 그대로 — 같은 리포의 두 .env 가 섞이지 않는다. 같은 초에 다시 써도 앞 백업을 덮지 않는다."""
+    d = tmp_path / "repo"; (d / "infra").mkdir(parents=True)
+    (d / "infra/.env.example").write_text("NEW=1\n"); (d / "infra/.env").write_text("OLD=1\n")
+    _run(d)
+    bk = tmp_path / "HWAXPortal/infra/.state/env-sync-backups/repo/infra"
+    assert [p.read_text() for p in bk.glob(".env.*")] == ["OLD=1\n"]
+    (d / "infra/.env.example").write_text("NEW=1\nNEWER=2\n")
+    _run(d)
+    assert len(list(bk.glob(".env.*"))) == 2, "두 번째 실행의 백업이 앞 백업을 덮었다"
+
+
+def test_no_write_without_a_backup(tmp_path):
+    """백업을 못 만들면(포털 상태 디렉터리에 쓸 수 없다) 건드리지 않는다."""
+    if os.geteuid() == 0:
+        return
+    d = _repo(tmp_path, "NEW=1\n", "OLD=1\n")
+    state = tmp_path / "HWAXPortal/infra/.state"; state.mkdir(parents=True); state.chmod(0o555)
+    try:
+        r = _run(d)
+    finally:
+        state.chmod(0o755)
+    assert (d / ".env").read_text(encoding="utf-8") == "OLD=1\n" and "백업 실패" in r.stderr, r.stdout + r.stderr
 
 
 def test_a_big_backlog_goes_to_a_human_instead_of_flipping_switches(tmp_path):
@@ -113,7 +177,5 @@ def test_a_big_backlog_goes_to_a_human_instead_of_flipping_switches(tmp_path):
     assert body == "OLD=1\n", "상한을 넘겼는데 활성화했다"
     assert "사람이 봐야 한다" in r.stdout
     # 상한을 올리면 적용된다 — 막는 것이 아니라 **사람의 결정을 요구**하는 것이다
-    r2 = subprocess.run(["bash", str(SCRIPT), str(d)], capture_output=True, text=True,
-                        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path),
-                             "HWAX_ENV_SYNC_MAX": "50"})
+    r2 = _run(d, HWAX_ENV_SYNC_MAX="50")
     assert "OPT14=14" in (d / ".env").read_text(encoding="utf-8"), r2.stdout

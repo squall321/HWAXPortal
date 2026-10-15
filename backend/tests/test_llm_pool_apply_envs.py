@@ -91,11 +91,16 @@ def test_다른_킷의_LLM_주소도_같다(tmp_path, router):
     assert _v(env, "OPENAI_BASE_URL") == [f"http://127.0.0.1:{router['port']}/v1"]
 
 
-@pytest.mark.parametrize("case", ["올라온 서버 0", "답 없음"])
+@pytest.mark.parametrize("case", ["올라온 서버 0", "답 없음", "모델 다름", "모델 대조 전"])
 def test_라우터가_쓸_수_없으면_직접_주소와_한_줄(tmp_path, router, case):
+    """1i 가 사본을 바꾸는 조건과 같다 — 서버 하나 이상이 올라왔고 **모델이 같다**고 답할 때만 라우터(반대 검토 M5)."""
     port = router["port"]
     if case == "답 없음":
         port = _dead_port()
+    elif case == "모델 다름":
+        router["body"] = {**router["body"], "status": "degraded", "models": {"match": False}}
+    elif case == "모델 대조 전":
+        router["body"] = {**router["body"], "models": {"match": None}}
     else:
         router["body"] = {"status": "down", "upstreams_total": 2, "upstreams_up": 0, "inflight": 0}
     env, _, err = _apply(tmp_path, f"LLM_BASE_URL={DIRECT}\nLLM_UPSTREAMS={DIRECT},{S2}\nLLM_ROUTER_PORT={port}\n")

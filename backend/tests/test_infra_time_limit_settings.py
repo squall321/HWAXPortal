@@ -16,6 +16,7 @@ import pytest
 
 from app.config import Settings
 from tests.test_infra_no_proxy import start_portal  # noqa: F401 — 기동 블록을 임시 리포에서 돌리는 대역
+from tests.test_env_sync import portal_copy  # env-sync 를 임시 포털의 사본으로 돌린다(백업 자리)
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = (ROOT / "infra/.env.example").read_text(encoding="utf-8")
@@ -84,7 +85,8 @@ def test_env_sync_가_기존_박스의_env_에_주석으로_알린다(tmp_path):
     (box / ".env.example").write_text(EXAMPLE, encoding="utf-8")
     old_env = "\n".join(ln for ln in EXAMPLE.splitlines() if not any(re.match(rf"^[ \t]*#?[ \t]*{k}=", ln) for k in keys)) + "\n"
     (box / ".env").write_text(old_env, encoding="utf-8")
-    r = subprocess.run(["bash", str(ROOT / "infra/scripts/env-sync.sh"), str(box.parent)], capture_output=True, text=True,
+    # 스크립트는 임시 포털의 사본으로 돌린다 — 백업이 스크립트가 든 포털의 infra/.state 에 쌓인다(실물 체크아웃에 남기지 않는다)
+    r = subprocess.run(["bash", str(portal_copy(tmp_path)), str(box.parent)], capture_output=True, text=True,
                        timeout=60, env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)})
     assert r.returncode == 0, r.stdout + r.stderr
     added = (box / ".env").read_text(encoding="utf-8")[len(old_env):]
