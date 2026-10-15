@@ -47,11 +47,14 @@ HWAX 의 LLM 호출은 전부 서버 하나(…137 의 vLLM, GLM-5.2 · 1M 창)�
 
 ## 4. 배선(L-2 · L-3)
 
-- **매니페스트.** `infra/services.yaml` 에 `llm-router`(dir `.` · tier 5 · `update: false`). 새 칸 둘 — `if_env: LLM_UPSTREAMS`(그 키가 비어 있지 않은 박스에서만 다룬다, `unless_env` 의 거울 · infra/.env 를 못 읽으면 '모름' 이라 닫는다)와 `fp_git: false`(지문에 포털 HEAD 를 넣지 않고 `fp:` 경로 `infra/llm-router` · `infra/scripts/llm-router.sh` 만 — 포털 커밋마다 라우터가 재기동돼 도는 LLM 호출이 끊기지 않게).
-- **재기동 미룸.** `update-sites.sh` 가 `llm-router` 를 내리기 전에 `/health` 의 `inflight` 를 본다. 0 보다 크면 미루고 ○ 로 남긴다(에이전트 서버의 심의 미룸과 같은 규율). 강행은 `LLM_ROUTER_RESTART_FORCE=1`.
-- **update-all 1i 'LLM 라우터'.** `LLM_UPSTREAMS` 가 있으면 ① 목록 모양 검사 ② `update-sites.sh llm-router`(지문이 같고 살아 있으면 생략) ③ `/health` 가 답하고 서버 하나 이상이 올라와 있을 때만 ④ 사본들을 라우터 주소로 바꾼다 — 사본의 지금 값이 '관리하는 값'(직접 주소 `LLM_BASE_URL` · 목록의 서버 주소 · 라우터 주소)일 때만, 바꾸기 전에 그 파일을 백업하고, 바꾼 파일 목록과 되돌리기 한 줄을 찍는다. 관리하는 값이 아닌 사본(사람이 일부러 적은 다른 주소)은 그대로 두고 ⚠. `LLM_UPSTREAMS` 가 없으면 라우터를 가리키는 사본만 직접 주소로 되돌리고 라우터를 내리며, 아무것도 없으면 ○(켜려면 그 한 줄).
-- **새 키.** `apply-envs.sh` 의 `@FROM_RA:LLM_BASE_URL@` 은 풀이 켜져 있으면 라우터 주소로 푼다(1i 뒤 3.5 에서 더해진 키가 직접 주소로 남지 않게). 같은 규칙을 `infra/scripts/lib/llm-pool.sh` 한 곳에 둔다.
-- **§6.** 라우터 한 줄 — 서버 올라옴 수 · 모델 같음 · 도는 요청.
+- **매니페스트.** `infra/services.yaml` 에 `llm-router`(dir `.` · tier 5 · `update: false`). 새 칸 둘 — `if_env: LLM_UPSTREAMS`(그 키가 비어 있지 않은 박스에서만 다룬다, `unless_env` 의 거울 · infra/.env 를 못 읽으면 '모름' 이라 닫는다)와 `fp_git: false`(지문에 포털 HEAD 도 숨은 `.env` 도 넣지 않고 `fp:` 의 `infra/llm-router` · `infra/scripts/llm-router.sh` · `infra/apptainer/portal.sif` 만 — 포털 커밋마다 라우터가 재기동돼 도는 LLM 호출이 끊기지 않게, 그러나 라우터가 도는 이미지가 바뀌면 재기동한다). 지문의 디렉터리 훑기는 `__pycache__`·`.pyc` 를 뺀다.
+- **재기동 미룸.** `update-sites.sh` 가 `llm-router` 를 내리기 전에 `/health` 의 `inflight` 를 본다. 0 보다 크면 미루고 ○ 로 남긴다(에이전트 서버의 심의 미룸과 같은 규율). 강행은 `LLM_ROUTER_RESTART_FORCE=1` — 도는 요청 검사만 넘는다.
+- **update-all 1i 'LLM 라우터'.** `LLM_UPSTREAMS` 가 있으면 ① 목록 모양 검사(규칙은 3절 — lib 이 정본, 틀린 칸이 하나라도 있으면 아무것도 안 바꾼다) ② `update-sites.sh llm-router`(지문이 같고 살아 있으면 생략) ③ `/health` 가 서버 하나 이상이 **올라왔고(모델 목록을 답했고) 모델이 같다**고 답할 때만(다르면 ✗, 아직 모르면 ✗ '모델 대조 전') ④ 사본들을 라우터 주소로 바꾼다 — 사본의 지금 값이 '관리하는 값'(직접 주소 `LLM_BASE_URL` · 목록의 서버 주소 · 지금 라우터 주소 · 1i 가 마지막으로 적어 둔 라우터 주소 `infra/.state/llm-pool.router`)일 때만. 바꾸기 전에 그 파일을 포털의 `infra/.state/llm-pool-backups/<Repo>/…`(700/600 — 서비스 리포 안에는 남기지 않는다)에 백업하고, 바꾸기는 원자적이다(같은 디렉터리의 임시 파일 → 이름 바꾸기, 심링크는 따라가 링크를 지킨다, 모드·소유자 유지). 바꾼 파일과 백업 경로, 되돌리기 한 줄을 찍는다. 관리하는 값이 아닌 사본(사람이 일부러 적은 다른 주소)은 그대로 두고 ⚠. `LLM_UPSTREAMS` 가 없으면 지금·적어 둔 라우터 주소를 가리키는 사본만 직접 주소로 되돌리고, 라우터는 §4 **뒤에** 내린다(미룬 재기동이 장부에 있거나 §2·§4 가 실패했거나 도는 요청이 있거나 사본이 아직 가리키면 ○ 로 미룬다). 아무것도 없으면 ○(켜려면 그 한 줄). 한 서버에 묶어 둔 사본은 풀을 끄면 `LLM_BASE_URL` 로 돌아간다(묶음은 되살리지 않는다).
+- **§2 뒤.** §2 가 `portal.sif` 를 바꿨을 수 있으므로 풀이 켜져 있으면 §4 머리에서 `update-sites.sh llm-router` 를 한 번 더 부른다(지문에 portal.sif 가 있다). 이미지 설치(`hwax_install_if_changed`)는 임시 파일 → 이름 바꾸기라 도는 라우터는 옛 inode 를 쥐고 계속 낸다.
+- **§3.5.** 에이전트 서버의 `VLLM_BASE_URL` 이 라우터 주소면 원격 GLM 으로 본다(TOOL_MAX=0 규칙이 그대로 걸린다).
+- **새 키.** `apply-envs.sh` 의 `@FROM_RA:LLM_BASE_URL@` 은 풀이 켜져 있고 라우터가 올라왔으며 모델이 같다고 답할 때만 라우터 주소, 아니면 직접 주소로 푼다. 같은 규칙을 `infra/scripts/lib/llm-pool.sh` 한 곳에 둔다.
+- **§6.** 라우터 한 줄 — 서버 올라옴 수 · 모델 같음 · 도는 요청, 지금·적어 둔 라우터 주소를 가리키는 사본 수.
+- **포트 바꾸기.** 풀을 켠 채 `LLM_ROUTER_PORT` 를 바꾸면 사본은 새 주소로 옮겨지지만 옛 포트의 라우터는 저절로 내리지 않는다(⚠ 와 `LLM_ROUTER_PORT=<옛 포트> ./infra/scripts/llm-router.sh stop` 을 찍는다). `llm-router.sh` 는 환경의 `LLM_ROUTER_PORT` 를 `stop` 에서만 본다 — `run` 은 늘 infra/.env 의 포트다.
 
 ## 5. 동시 수(L-4) — 지금은 자동으로 올리지 않는다(LP-D7)
 
