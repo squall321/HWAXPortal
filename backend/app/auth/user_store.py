@@ -94,6 +94,11 @@ class UserStore:
         self._add_column("dept_id", "TEXT NOT NULL DEFAULT ''")
         # 사번(IdP 의 Sabun) — 정지를 이메일뿐 아니라 사번으로도 본다(disabled_by_sabun). 이메일이 바뀌어도 같은 사람이다(10차 요청 §6).
         self._add_column("sabun", "TEXT NOT NULL DEFAULT ''")
+        # 정지 시각 — 정지는 그 시각까지 낸 세션(refresh)을 죽인다. 되살려도 지우지 않는다 — /auth/refresh 가 토큰의 iat 와 견줘,
+        # 정지 전에 낸 refresh 는 되살린 뒤에도 받지 않는다(docs/request_1015.md K2-6 후속). 이 칸이 생기기 전에 정지된 행은
+        # 처음 열 때 한 번 채운다 — 0 이면 정지 전·후를 가를 수 없다(WHERE disabled_at = 0 이라 다시 열어도 밀리지 않는다).
+        self._add_column("disabled_at", "INTEGER NOT NULL DEFAULT 0")
+        self._conn.execute("UPDATE users SET disabled_at = ? WHERE status = 'disabled' AND disabled_at = 0", (_now(),))
         # 허가 요청 — 사용자가 내 권한 페이지에서 보내고 관리자가 승인·거절한다.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS access_requests ("
@@ -231,8 +236,12 @@ class UserStore:
         if status not in ("active", "disabled"):
             raise ValueError("bad status")
         with self._lock:
-            cur = self._conn.execute(
-                "UPDATE users SET status = ? WHERE email = ?", (status, norm_email(email)))
+            if status == "disabled":   # 정지 시각을 남긴다 — 되살릴 때는 지우지 않는다(위 disabled_at 칸 주석)
+                cur = self._conn.execute(
+                    "UPDATE users SET status = 'disabled', disabled_at = ? WHERE email = ?", (_now(), norm_email(email)))
+            else:
+                cur = self._conn.execute(
+                    "UPDATE users SET status = ? WHERE email = ?", (status, norm_email(email)))
             self._commit()
             return cur.rowcount > 0
 
@@ -266,7 +275,7 @@ class UserStore:
             admins = [e for e, g, _s in active if ADMIN_GROUP in json.loads(g or "[]") or e in pinned]
             if any(e in hit for e in admins) and all(e in hit for e in admins):
                 return "last"
-            self._conn.execute("UPDATE users SET status = 'disabled' WHERE email = ?", (key,))
+            self._conn.execute("UPDATE users SET status = 'disabled', disabled_at = ? WHERE email = ?", (_now(), key))
             self._commit()
             return "set"
 

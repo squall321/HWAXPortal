@@ -226,6 +226,35 @@ def me(request: Request, principal=Depends(get_current_principal)) -> UserProfil
     )
 
 
+def _ledger_refuses(request: Request, claims: dict) -> str:
+    """갱신을 거절할 사유(없으면 빈 값) — 갱신이 세션을 늘리므로(K2-6) 원장을 다시 본다(조정자 결정 10-15).
+
+    · 행이 없다 — 원장에는 지우는 기능이 없어 이것이 '지워진 계정' 이다. 정지할 행이 없으니 갱신이 끝없이 늘리게 두지 않는다.
+    · 정지됐다 — 요청마다 보는 entitled 와 같은 기준이다(pending 은 막지 않는다).
+    · 정지 시각 이전에 낸 refresh(iat ≤ disabled_at) — 정지는 그 시각까지 낸 세션을 죽인다. 되살려도 다시 살지 않는다.
+    · 행이 생기기 전에 낸 refresh(iat < created_at) — 지운 행을 다음 SSO 로그인이 새로 만들어도 그 전 토큰은 남의 것이다.
+    · 원장을 못 읽으면 거절한다 — SSO 콜백과 같은 규칙이다(고장 난 동안 정지가 풀리면 안 된다).
+    401 이면 화면은 hwax:session-expired 로 로그인 화면에 간다."""
+    store = getattr(request.app.state, "user_store", None)
+    if store is None:
+        return "원장이 없다"
+    try:
+        row = store.get(claims.get("email") or "")
+    except Exception:  # noqa: BLE001 — 못 읽은 것을 '정지 아님' 으로 읽지 않는다
+        log.warning("갱신 — 원장을 읽지 못했다", exc_info=True)
+        return "원장을 읽지 못했다"
+    if row is None:
+        return "원장에 행이 없다"
+    if row.get("status") == "disabled":
+        return "정지된 계정이다"
+    iat = int(claims.get("iat") or 0)
+    if iat <= int(row.get("disabled_at") or 0):
+        return "정지 전에 낸 refresh 다"
+    if iat < int(row.get("created_at") or 0):
+        return "행이 생기기 전에 낸 refresh 다"
+    return ""
+
+
 @router.post("/refresh")
 def refresh(
     request: Request,
@@ -240,6 +269,10 @@ def refresh(
         claims = jwt_service.verify_refresh(token)
     except jwt.PyJWTError as exc:
         raise AuthError("invalid or expired refresh token", status_code=401) from exc
+    why = _ledger_refuses(request, claims)
+    if why:
+        log.warning("갱신 거절(%s) — %s", claims.get("email"), why)
+        raise AuthError("account disabled or missing — sign in again", status_code=401)
 
     principal = jwt_service.principal_from_claims(claims)
     response = JSONResponse({"status": "refreshed"})

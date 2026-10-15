@@ -6,12 +6,15 @@ http_401 만 되풀이했다(docs/request_1015.md K2, 10-14 실측 124건).
 사용자 결정(10-15) — 갱신 때 연장한다. 갱신이 refresh 토큰을 새로 내고 CSRF 쿠키는 값은 그대로 수명만 늘린다.
 쉬는 상한은 그대로다 — refresh 를 jwt_refresh_ttl 안에 한 번도 안 부르면 토큰도 쿠키도 끝난다. 만료·CSRF 검사도 그대로다.
 """
-from datetime import UTC, datetime
+import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.access.policy import ADMIN_GROUP
+from app.auth import jwt_service as jwt_mod
+from app.auth import user_store as store_mod
 from app.auth.cookies import CSRF_COOKIE, REFRESH_COOKIE, SESSION_COOKIE
 from app.auth.jwt_service import SESSION_AUDIENCE
 from app.auth.token_store import TokenStore
@@ -137,3 +140,87 @@ def test_로그인부터_갱신까지_이어진다(box):
     assert next(k.value for k in c.cookies.jar if k.name == REFRESH_COOKIE) != old, "브라우저가 새 refresh 를 받지 않았다"
     assert c.post("/auth/refresh", headers={"X-CSRF-Token": c.cookies.get(CSRF_COOKIE)}).status_code == 200
     assert c.get("/auth/me").json()["email"] == "user@corp.com"
+
+
+# ── 원장 대조(K2-6 후속, 조정자 결정 10-15) — 갱신이 세션을 늘리므로 정지·삭제된 계정은 갱신에서 끝난다 ────────────────
+# 정지는 그 시각까지 낸 refresh 를 죽인다 — 되살려도 그 전에 낸 refresh 는 다시 살지 않는다(PAT 의 revoke_all_for 와 같은 뜻).
+def _minted(monkeypatch, seconds_ago: int, email: str = "user@corp.com") -> str:
+    """seconds_ago 초 전에 낸 refresh(아직 유효) — 낸 시각(iat)을 정지·행 생성 시각과 견주려고 서명 시계를 뒤로 돌린다."""
+    real = jwt_mod._now
+    with monkeypatch.context() as m:
+        m.setattr(jwt_mod, "_now", lambda: real() - timedelta(seconds=seconds_ago))
+        return _refresh_token(email, ["mes-user"], ttl=3600)
+
+
+def _suspend_ago(monkeypatch, seconds_ago: int, email: str = "user@corp.com") -> None:
+    real = store_mod._now
+    with monkeypatch.context() as m:
+        m.setattr(store_mod, "_now", lambda: real() - seconds_ago)
+        assert app.state.user_store.suspend(email) == "set"
+
+
+def test_정지된_계정은_갱신이_401_이고_쿠키를_다시_내지_않는다(box, monkeypatch):
+    c, _s = box
+    assert c.post("/auth/refresh", headers=_wear(c, _refresh_token("user@corp.com", ["mes-user"], ttl=600))).status_code == 200
+    _suspend_ago(monkeypatch, 10)
+    # 정지 **뒤에** 낸 토큰이라도 — 정지 시각이 아니라 지금 상태(disabled)로 막는다
+    r = c.post("/auth/refresh", headers=_wear(c, _refresh_token("user@corp.com", ["mes-user"], ttl=600)))
+    assert r.status_code == 401, "정지된 계정의 세션을 갱신이 계속 늘린다"
+    assert not ({REFRESH_COOKIE, CSRF_COOKIE, SESSION_COOKIE} & set(_set_cookies(r)))
+
+
+def test_되살려도_정지_전에_받은_refresh_는_다시_살지_않는다(box, monkeypatch):
+    c, _s = box
+    store = app.state.user_store
+    old = _minted(monkeypatch, 20)                     # 20초 전에 받은 refresh — 수명은 아직 남았다
+    _suspend_ago(monkeypatch, 10)                      # 10초 전에 정지
+    assert store.set_status("user@corp.com", "active")  # 지금 되살림
+    r = c.post("/auth/refresh", headers=_wear(c, old))
+    assert r.status_code == 401, "되살린 계정의 정지 전 refresh 가 다시 산다(훔쳐 간 사본도 같이 산다)"
+    # 되살린 뒤 새로 로그인한 세션은 그대로 늘어난다
+    c.cookies.clear()
+    assert c.post("/auth/local/login", json={"email": "user@corp.com", "password": PW}).status_code == 200
+    assert c.post("/auth/refresh", headers={"X-CSRF-Token": c.cookies.get(CSRF_COOKIE)}).status_code == 200
+
+
+def test_원장에_없는_계정은_갱신이_401_이다(box):
+    """원장에는 지우는 기능이 없다 — 행이 없는 것이 '지워진 계정' 이다. 정지할 행이 없으니 갱신이 끝없이 늘릴 수 없게 막는다."""
+    c, _s = box
+    assert c.post("/auth/refresh", headers=_wear(c, _refresh_token("ghost@corp.com", ["mes-user"], ttl=600))).status_code == 401
+
+
+def test_지운_뒤_다시_생긴_행은_그_전에_낸_refresh_를_받지_않는다(box, monkeypatch):
+    """사람이 DB 에서 지운 행을 그 사람의 다음 SSO 로그인이 새로 만들면, 지우기 전에 낸 refresh 가 다시 사는 길이다.
+    행이 생긴 시각(created_at)보다 먼저 낸 토큰은 받지 않는다."""
+    c, _s = box
+    store = app.state.user_store
+    old = _minted(monkeypatch, 20)
+    with store._lock:
+        store._conn.execute("DELETE FROM users WHERE email = ?", ("user@corp.com",))
+        store._commit()
+    assert c.post("/auth/refresh", headers=_wear(c, old)).status_code == 401
+    store.note_sso_login(email="user@corp.com", name="User")
+    assert store.get("user@corp.com")["status"] == "active"
+    assert c.post("/auth/refresh", headers=_wear(c, old)).status_code == 401, "지우기 전에 낸 refresh 가 다시 산다"
+
+
+def test_정지_시각_칸이_없던_원장의_정지된_행에도_정지_시각을_채운다(tmp_path):
+    """칸이 생기기 전에 정지된 계정은 정지 시각이 0 이라 되살린 뒤 그 전에 낸 refresh 를 가를 수 없다 — 처음 열 때 한 번 채운다."""
+    path = tmp_path / "u.sqlite"
+    conn = sqlite3.connect(str(path))
+    conn.execute("CREATE TABLE users (email TEXT PRIMARY KEY, name TEXT NOT NULL, pw_hash TEXT, "
+                 "groups TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending', "
+                 "auth_source TEXT NOT NULL DEFAULT 'local', created_at INTEGER NOT NULL, approved_at INTEGER, "
+                 "approved_by TEXT, last_login_at INTEGER, failed_count INTEGER NOT NULL DEFAULT 0, "
+                 "locked_until INTEGER NOT NULL DEFAULT 0)")
+    conn.execute("INSERT INTO users (email, name, status, created_at) VALUES ('on@corp.com', 'On', 'active', 1700000000)")
+    conn.execute("INSERT INTO users (email, name, status, created_at) VALUES ('off@corp.com', 'Off', 'disabled', 1700000000)")
+    conn.commit()
+    conn.close()
+    before = int(datetime.now(tz=UTC).timestamp())
+    first = UserStore(Settings(_env_file=None, user_store_path=str(path))).get("off@corp.com")
+    assert "disabled_at" in first, "정지 시각 칸이 없다 — 되살린 뒤 정지 전에 낸 refresh 를 가를 수 없다"
+    assert first["disabled_at"] >= before, "정지된 옛 행의 정지 시각이 비었다"
+    again = UserStore(Settings(_env_file=None, user_store_path=str(path)))
+    assert again.get("off@corp.com")["disabled_at"] == first["disabled_at"], "다시 열 때마다 정지 시각을 밀면 안 된다"
+    assert again.get("on@corp.com")["disabled_at"] == 0
