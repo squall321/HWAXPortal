@@ -170,6 +170,7 @@
 단계 D 리허설
 - [ ] `rehearsal_d.py` 를 넓힌 하나(M3.md 3.3) — 359명 전원 × 단위 4~6 · 관문 4/8 · update-all 흉내 중 비우기 · 쟁점 패널(가짜 LLM 심의 대본, 안 되면 쟁점 단계만 dev 7B) · 종합 보고서 판 넷 · 카드 대조 대화 0(쟁점 패널 대화 == 쟁점 패널 수) · 재기동 이어 돌기 · 실 저장소 무접촉
 - [ ] 문서 `C3-15`·`S3-11`·`P3-4` — 매니페스트·HEAXHub 사본·JS `whenToUse`·sync·`server-setup-m3.md` 2절·업데이트 이력 — S3-11 JS `whenToUse` 는 10-14 포털 `a54d70e`·sync
+- [ ] M3 화면 요청서(`frontend/` 는 다른 세션 몫) — 쟁점 목록·종합 보고서 쪽·완결 표기·잔여 확인·셀 다시/넘김·새 잔여(`issues_reraised`)·`report_version`·`ledger_rev`·남의 것 404 를 API 모양 그대로(risk-credentials/frontend-request.md 와 같은 꼴), 단계 D 문서와 함께
 - [ ] v5 확정(`PUSHED_DDL_SHA256[5]`) → `m3` 합치기 → push · SIF · dev 인스턴스 교체(도는 검토 잡 없을 때) · 게이트웨이 `tools/list` 31종·`risk_job_action` 새 인자 · `P3-3` 단언 4
 
 단계 E cae00
