@@ -320,7 +320,7 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
                     type="text"
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="카드 제목·요약으로 찾기"
+                    placeholder="제목·요약에서 낱말로 찾기"
                     aria-label="지식카드 검색"
                     autoFocus
                   />

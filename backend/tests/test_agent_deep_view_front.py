@@ -94,3 +94,12 @@ def test_이어_받은_쪽을_같은_카드_같은_위치에만_붙인다():
     op = op[:op.index("}, []);")]
     assert "setMoreLoading(false);" in op and "setMoreError(null);" in op, "다른 카드를 열면 앞 카드의 이어 읽기 상태를 지운다"
     assert "<RecordReader rec={rec} onMore={loadMore} moreLoading={moreLoading} moreError={moreError} />" in src
+
+
+# ── K5 검색칸 문구 ────────────────────────────────────────────────────────────────────────────
+def test_검색칸은_낱말로_찾는다고_말한다():
+    """AIDataHub 가 검색어를 낱말로 나눠 AND 로 건다(K5-1). 본문 검색(K5-2)은 스위치 뒤 기본 끔이라(사용자 결정 10-15)
+    지금 동작대로 '제목·요약' 만 말한다 — 켜는 박스가 생기면 이 문구도 '제목·요약·본문' 으로 바꾼다."""
+    src = _view()
+    assert 'placeholder="제목·요약에서 낱말로 찾기"' in src
+    assert "카드 제목·요약으로 찾기" not in src
