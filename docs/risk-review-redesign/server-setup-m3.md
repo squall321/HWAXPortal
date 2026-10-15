@@ -7,7 +7,7 @@
 
 ## 0. 한눈에
 
-> **먼저 — 보안 핫픽스(10-15).** M2 리스크 앱에 남이 다른 사람의 대상으로 등록부 병합을 부를 수 있는 길이 있었다(대상의 존재·크기가 새고 그 원장 행이 바뀐다). main `12130f9` 로 고쳤고 SIF 를 Drive `latest/` 에 올렸다(`hwax-risk.sif.hash` 앞 8자 `e7b78675`). M3 와 상관없이 다음 update-all 에 들어간다 — 반영 확인은 `cut -c1-8 ../HEAXHub/var/sifs/hwax-risk.sif.hash` 가 그 값이다.
+> **먼저 — 보안 핫픽스(10-15).** M2 리스크 앱에 남이 다른 사람의 대상으로 등록부 병합을 부를 수 있는 길이 있었다(대상의 존재·크기가 새고 그 원장 행이 바뀐다). main `12130f9` 로 고쳤고 SIF 를 Drive `latest/` 에 올렸다(`hwax-risk.sif.hash` 앞 8자 `e7b78675`). M3 와 상관없이 다음 update-all 에 들어간다. (같은 날 뒤에 M3 판 `a368c86` 의 SIF 가 Drive `latest/` 를 이어받았다 — 그 판이 핫픽스를 담는다. 지금 Drive 의 해시 앞 8자는 `fd0595ec` 이고, M3 를 받으면 2절의 v5 이행이 함께 온다.)
 
 M3 는 M2 의 카드 대조를 대표 9명에서 **전원(359명)** 으로 넓히고, 관련 없는 영역을 거르되 누락을 막는 장치를 두고, 갈린 판정을 **쟁점 패널**로 다시 보고, 영역 요약과 **종합 보고서**를 낸다(M3.md 1절).
 
@@ -150,7 +150,7 @@ D="$(readlink -f var/app_data/hwax_risk)" && echo "$D"
 | 2 | 카드 대조 스위치가 켜져 있다 | `grep -n '^HWAXRISK_REVIEW_ENABLED' "$D/knobs.env"` | `HWAXRISK_REVIEW_ENABLED=1`. 없으면 `server-setup-m2.md` 2절 |
 | 3 | 살아 있는 리스크 잡이 없다 | 포털 리포 루트에서 `./infra/scripts/risk-review-inventory.sh` | `잡 상태별:` 에 `queued`·`running`·`paused`·`cancelling` 이 없다. 있으면 끝난 뒤에 한다 — 새 앱은 셀 지문을 그 셀이 부르는 종류의 판으로 다시 세어, 도는 M2 셀을 처음부터 돌린다(차감은 없다) |
 | 4 | 이행 사본을 뜰 자리가 있다 | 아래 명령 | 남은 바이트가 원장과 `-wal` 합의 1.2배 이상 |
-| 5 | dev 가 판을 올렸다 | dev 의 알림 | `m3` 를 합친 main 커밋과 hwax-risk SIF 해시 앞 8자를 받았다 |
+| 5 | dev 가 판을 올렸다 | 아래 값 | 리스크 앱 main `a368c86`(M3 를 합친 커밋 — 보안 핫픽스 `12130f9` 포함), hwax-risk SIF 해시 앞 8자 `fd0595ec`(10-15 Drive `latest/`) |
 
 ```bash
 du -cb "$D"/risk_review.db "$D"/risk_review.db-wal 2>/dev/null | tail -1   # 원장과 -wal 의 합(바이트)
@@ -197,7 +197,7 @@ apptainer exec instance://heax_app_hwax_risk grep -c '^@mcp.tool' /app/backend/a
 |---|---|
 | `스키마 버전:` | `5` |
 | `risk_review.db.pre-migrate-v4-…` | 하나 있고 크기가 이행 전 원장과 비슷하다 |
-| SIF 해시 앞 8자 | dev 가 알린 값 |
+| SIF 해시 앞 8자 | `fd0595ec`(10-15, `a368c86`) |
 | `@mcp.tool` 수 | `31`(떠 있는 앱의 소스) |
 
 관리자 계정으로 로그인한 브라우저의 `/apps/hwax_risk/api/meta/runtime` 에서도 `schema_version` 이 5 다(2-5 의 손잡이도 거기 보인다).
