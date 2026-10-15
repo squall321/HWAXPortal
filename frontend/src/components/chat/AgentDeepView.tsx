@@ -101,7 +101,7 @@ function RecordReader({ rec }: { rec: RecordView }) {
           </ul>
         </section>
       )}
-      {rec.sections.length === 0 && !rec.table && <p className="pv-empty">본문이 비어 있는 카드입니다.</p>}
+      {rec.sections.every((s) => !s.text) && !rec.table && <p className="pv-empty">본문이 비어 있는 카드입니다.</p>}
     </div>
   );
 }
