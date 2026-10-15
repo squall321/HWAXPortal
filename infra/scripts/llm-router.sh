@@ -24,7 +24,8 @@ ENV_FILE="$ROOT/infra/.env"
 
 # infra/.env 값 하나 — 정본 규칙(update-all `_envfile_value` · services.py `_infra_value` · 라우터 read_env)과 같은 한 줄이다.
 # 마지막 활성 줄이 이기고, `export` 허용, 공백 뒤 `#` 이후·양끝 공백·따옴표 문자·CR 을 벗긴다. 파일이 없으면 빈 값이다.
-envv() { sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$2" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'; }
+# 첫 sed 도 LC_ALL=C — 공백은 ASCII 여섯뿐이다(UTF-8 로케일이면 U+3000 으로 시작하는 줄도 활성 줄이 되어 라우터와 갈린다).
+envv() { LC_ALL=C sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$2" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'; }
 
 _port_ok() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ "${#1}" -le 5 ] && [ "$((10#$1))" -ge 1 ] && [ "$((10#$1))" -le 65535 ]; }
 

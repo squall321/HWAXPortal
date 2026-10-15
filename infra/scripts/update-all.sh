@@ -461,7 +461,9 @@ fi
 # 모양)에서 `#` 앞 공백이 사라져 주석 문구가 값이 된다(4라운드: 네 독자가 모두 그렇게 읽어 일치 시험은 통과했다).
 _envfile_value() {  # $1=파일 $2=키 → 마지막 활성 줄의 값, 없거나 빈 값이면 빈 문자열. `export KEY=` 도 같은 줄이다(_common.sh 가 set -a 로 소싱).
                     #   services.py _infra_value·ste-doctor envv·apply-envs ra_env_value 와 같은 규칙 — RA .env·provision.env 도 이것으로 읽는다.
-  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$2=//p" "$1" 2>/dev/null | tail -1 \
+                    #   첫 sed(줄 고르기)도 LC_ALL=C — UTF-8 로케일이면 U+3000 으로 시작하는 줄도 활성 줄이 되어 ASCII 공백만 보는
+                    #   services.py·라우터와 갈린다(LLM 풀 검토 2라운드 LOW 2).
+  LC_ALL=C sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$2=//p" "$1" 2>/dev/null | tail -1 \
     | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'
 }
 _ra_envv() { _envfile_value "$SELF_REPO/infra/.env" "$1"; }

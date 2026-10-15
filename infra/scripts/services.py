@@ -59,7 +59,10 @@ class InfraEnvUnreadable(RuntimeError):
     """infra/.env 가 있는데 못 읽는다 — '모름' 이다. unless_env 판정은 이것을 '대상 아님'(닫힘) 으로 다룬다."""
 
 
-_INLINE_COMMENT = re.compile(r"[ \t]+#.*$")   # ASCII 공백만 — sed(LC_ALL=C) 독자와 같게. `\s` 는 NBSP·U+3000 도 먹어 두 독자가 갈린다(4라운드)
+# 공백은 sed(LC_ALL=C)의 [[:space:]] 와 같은 ASCII 여섯(줄 안에는 \n 이 없다) — `\s` 는 NBSP·U+3000 도 먹어 두 독자가 갈린다(4라운드),
+# 스페이스·탭만 보면 수직탭·폼피드·CR 에서 갈린다(LLM 풀 검토 2라운드 LOW 2).
+_ENV_WS = " \t\n\v\f\r"
+_INLINE_COMMENT = re.compile(r"[ \t\v\f\r]+#.*$")
 
 
 def _infra_value(key: str) -> str | None:
@@ -71,21 +74,24 @@ def _infra_value(key: str) -> str | None:
     따옴표 문자(`"` `'`)·CR 제거, 마지막 줄이 이기고 빈 값은 미설정. `=` 뒤 공백은 **주석을 벗긴 뒤에** 지운다 — 먼저 지우면
     `KEY=   # 설명`(값 없이 주석만) 에서 `#` 앞 공백이 사라져 주석 문구가 값이 된다(4라운드: shlex 시절엔 맞게 읽던 회귀였다). shlex 를 쓰지 않는 이유: shlex 는 `x#y` 의 `#` 도 주석으로
     잘라 `x` 를 돌리고 `don't` 는 예외로 줄을 버려, 같은 파일을 두 독자가 다르게 읽었다(3라운드 검토 — 그러면 services.py 는
-    'RA 원격' 인데 update-all 은 '미설정' 으로 로컬 RA 가 죽는다). os.environ 에는 넣지 않는다. 못 읽으면 InfraEnvUnreadable."""
+    'RA 원격' 인데 update-all 은 '미설정' 으로 로컬 RA 가 죽는다). 줄은 `\n` 으로만 나눈다 — splitlines() 는 홀로 선 `\r` · U+2028 에서도
+    끊어 `X=1\rLLM_ROUTER_PORT=9555` 의 뒤를 활성 줄로 읽었다(sed 에는 한 줄이다 — LLM 풀 검토 2라운드 LOW 2). NUL 은 마지막에 지운다(bash 의
+    `$(…)` 가 그렇게 받는다). 대조 표: backend/tests/test_llm_pool_upstreams_rules.py. os.environ 에는 넣지 않는다. 못 읽으면 InfraEnvUnreadable."""
     p = PORTAL_ROOT / "infra" / ".env"
     if not p.exists():
         return None
     try:
-        text = p.read_text(encoding="utf-8", errors="replace")
+        text = p.read_bytes().decode("utf-8", errors="replace")    # read_text 는 홀로 선 \r 을 줄바꿈으로 바꿔 읽는다
     except OSError as exc:
         raise InfraEnvUnreadable(f"{p}: {exc}") from exc
-    pat = re.compile(r"^[ \t]*(?:export[ \t]+)?" + re.escape(key) + r"=(.*)$")
+    pat = re.compile(r"^[ \t\v\f\r]*(?:export[ \t\v\f\r]+)?" + re.escape(key) + r"=(.*)$")
     val: str | None = None
-    for ln in text.splitlines():
+    for ln in text.split("\n"):
         m = pat.match(ln)
         if not m:
             continue
-        v = _INLINE_COMMENT.sub("", m.group(1)).strip(" \t").replace('"', "").replace("'", "").replace("\r", "")
+        v = _INLINE_COMMENT.sub("", m.group(1)).strip(_ENV_WS)
+        v = v.replace('"', "").replace("'", "").replace("\r", "").replace("\x00", "")
         val = v or None
     return val
 

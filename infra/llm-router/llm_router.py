@@ -92,19 +92,21 @@ def env_values(text: str, *, quotes: bool = False) -> dict[str, str]:
     """infra/.env 글 → {키: 값}(빈 값도 남긴다 — 마지막 줄이 빈 값이면 그 키는 꺼진 것이다). 규칙은 update-all `_envfile_value`(sed)와 같다 —
     `export` 허용, 공백 뒤 `#` 이후를 벗긴 **뒤에** 양끝 공백을 지우고(먼저 지우면 `KEY=   # 설명` 의 설명이 값이 된다) CR 을 지운다.
     quotes=False 면 따옴표 문자도 지운다(_envfile_value 의 값). True 면 남긴다(lib 의 _hwax_llm_raw — LLM_UPSTREAMS 의 모양 검사에 쓴다).
-    줄은 개행으로만 나눈다(sed 와 같게 — splitlines 는 \\x85 같은 글자에서도 끊는다)."""
+    줄은 개행으로만 나눈다(sed 와 같게 — splitlines 는 \\r · \\x85 · U+2028 에서도 끊는다). 공백은 ASCII 여섯뿐이다(bash 독자는 첫 sed 까지
+    LC_ALL=C — UTF-8 로케일의 [[:space:]] 는 U+3000 도 먹는다). NUL 은 마지막에 지운다 — bash 의 `$(…)` 가 그렇게 받는다(검토 2라운드 LOW 2)."""
     vals: dict[str, str] = {}
     for ln in text.split("\n"):
         m = _ENV_LINE.match(ln)
         if m:
-            v = _INLINE_COMMENT.sub("", m.group(2)).strip(_WS).replace("\r", "")
+            v = _INLINE_COMMENT.sub("", m.group(2)).strip(_WS).replace("\r", "").replace("\x00", "")
             vals[m.group(1)] = v if quotes else v.replace('"', "").replace("'", "")
     return vals
 
 
 def read_env(path: Path) -> dict[str, str]:
-    """infra/.env → {키: 값}. 빈 값은 없는 것이다. 못 읽으면 OSError 가 그대로 올라간다."""
-    return {k: v for k, v in env_values(path.read_text(encoding="utf-8", errors="replace")).items() if v}
+    """infra/.env → {키: 값}. 빈 값은 없는 것이다. 못 읽으면 OSError 가 그대로 올라간다. 바이트로 읽는다 — read_text 는 홀로 선 \\r 을
+    줄바꿈으로 바꿔 읽는다(_reload 와 같게)."""
+    return {k: v for k, v in env_values(path.read_bytes().decode("utf-8", errors="replace")).items() if v}
 
 
 # LLM_UPSTREAMS 규칙 — 정본은 lib/llm-pool.sh hwax_llm_pool_upstreams 다(그 함수 머리 주석). 같은 표로 대조된다

@@ -3,7 +3,11 @@
 (검토 배선 L1 — /v1 없는 칸 · 대문자 스킴 · IPv6 · 포트 0), 또는 그 거꾸로 lib 는 받는데 라우터는 요청마다 예외를 낸다(검토 라우터 H1 — 옥텟 256).
 
 일치 시험은 둘 다 틀리면 통과한다(감사 라운드 교훈) — 그래서 표의 줄마다 기대값을 적고, bash 와 라우터가 서로 같고 기대값과도 같은지 본다.
-bash 는 로케일 둘(C.UTF-8 · C)에서 돌린다 — lib 는 글자 부류를 LC_ALL=C 로 고정했다(U+3000 이 UTF-8 로케일에서만 공백이면 라우터와 갈린다).
+bash 는 로케일 셋(C.UTF-8 · C · ko_KR.UTF-8 — 없으면 다른 UTF-8 로케일)에서 돌린다 — 독자는 첫 sed 부터 LC_ALL=C 다(UTF-8 로케일의
+[[:space:]] 는 U+3000 · U+2003 · U+2028 도 먹어 `　LLM_UPSTREAMS=…` 가 bash 에만 활성 줄이 됐다 — 검토 2라운드 LOW 2). 로케일이 정말
+걸렸는지는 고치지 않은 sed 로 먼저 본다(걸리지 않은 로케일에서 통과하면 아무것도 본 것이 아니다).
+값 하나를 읽는 독자는 셋이 더 있다 — services.py `_infra_value`(if_env · health 주소의 포트) · update-all `_envfile_value` · llm-router.sh
+`envv`. lib `hwax_llm_envv` 를 오라클로 그 셋과 라우터 env_values 를 표의 모든 글에서 글자 단위로 견준다.
 생성한 칸 수백 개는 기대값 없이 둘의 일치만 본다(표가 정답을, 생성이 구석을 맡는다). 주소는 TEST-NET · 루프백 · 지어낸 이름만.
 """
 import importlib.util
@@ -17,6 +21,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 LIB = ROOT / "infra/scripts/lib/llm-pool.sh"
+NUL_WARNING = "ignored null byte in input"     # bash 의 `$(…)` 는 NUL 을 지우며 이 경고를 낸다 — 독자들이 그 동작을 따른다
 
 
 def _load_router():
@@ -111,25 +116,65 @@ CASES: list[tuple[str, object]] = [
     (L("https://h.example/v1,https://h.example:443/v1"), BAD), (L("http://h.example:8000/v1,http://h.example:08000/v1"), BAD),
     (L(f"{S1},{S1}/"), BAD),
     (L(",,"), BAD), (L('" , "'), BAD),                                       # 주소가 하나도 없다
+    # ── 줄 고르기 — 공백은 ASCII 여섯뿐이고 줄은 \n 으로만 나눈다(검토 2라운드 LOW 2) ──
+    (f"\u3000LLM_UPSTREAMS={S1}\n", OFF), (f"export\u3000LLM_UPSTREAMS={S1}\n", OFF),          # U+3000 으로 시작하는 줄은 활성 줄이 아니다
+    (f"LLM_UPSTREAMS={S1}\n\u3000LLM_UPSTREAMS={S2}\n", [S1]), (f"LLM_UPSTREAMS={S1}\n\u2003LLM_UPSTREAMS={S2}\n", [S1]),
+    (f"LLM_UPSTREAMS={S1}\n\u2028LLM_UPSTREAMS={S2}\n", [S1]),                                  # splitlines 는 U+2028 에서 끊는다
+    (f"LLM_UPSTREAMS={S1}\n\x85LLM_UPSTREAMS={S2}\n", [S1]), (f"\u2003LLM_UPSTREAMS={S1}\n", OFF),
+    ("\u3000LLM_ROUTER_PORT=9555\nLLM_UPSTREAMS=http://127.0.0.1:9555/v1\n", ["http://127.0.0.1:9555/v1"]),   # 포트 줄이 활성이 아니면 9130
+    (f"LLM_UPSTREAMS={S1}\rLLM_UPSTREAMS={S2}\n", BAD),                                         # 홀로 선 \r 은 줄바꿈이 아니다 — 한 줄이다
+    (f"OTHER=1\rLLM_UPSTREAMS={S1}\n", OFF), (f"\rLLM_UPSTREAMS={S1}\n", [S1]), (f"LLM_UPSTREAMS={S1}\r#x\n", [S1]),
+    ("LLM_UPSTREAMS=http://127.0.0.1:9555/v1\nOTHER=1\rLLM_ROUTER_PORT=9555\n", ["http://127.0.0.1:9555/v1"]),
+    # ── NUL — bash 의 `$(…)` 는 지운다(경고 한 줄) · 라우터·services.py 도 마지막에 지운다 ──
+    ("LLM_UPSTREAMS=http://203.0.113.1\x001:10000/v1\n", [S1]), (f"LLM_UPSTREAMS={S1}\x00\n", [S1]),
+    (f"LLM_UPSTREAMS={S1}\n\x00LLM_UPSTREAMS={S2}\n", [S1]), (f'LLM_UPSTREAMS="{S1}\x00 {S2}"\n', [S1, S2]),
 ]
 
 
-def _bash_batch(tmp_path: Path, texts: list[str], lang: str) -> list[tuple[int, list[str]]]:
-    """표의 글마다 파일 하나 — bash 한 번에 전부 돌린다(줄마다 띄우면 수백 번이다)."""
-    d = tmp_path / f"cases-{lang}"
+def _utf8_locale() -> str:
+    """세 번째 로케일 — 운영 박스의 한국어 로케일(ko_KR.UTF-8)이 있으면 그것, 없으면 en_US.UTF-8(걸렸는지는 _run_bash 가 본다)."""
+    try:
+        have = {x.lower().replace("-", "") for x in subprocess.run(["locale", "-a"], capture_output=True, text=True, timeout=30).stdout.split()}
+    except (OSError, subprocess.SubprocessError):
+        have = set()
+    return "ko_KR.UTF-8" if "ko_kr.utf8" in have else "en_US.UTF-8"
+
+
+LANGS = ["C.UTF-8", "C", _utf8_locale()]
+
+
+def _write_cases(d: Path, texts: list) -> None:
     d.mkdir()
     for i, text in enumerate(texts):
-        (d / f"{i}.env").write_bytes(text.encode("utf-8"))
+        (d / f"{i}.env").write_bytes(text if isinstance(text, bytes) else text.encode("utf-8"))
+
+
+def _run_bash(tmp_path: Path, lang: str, body: str) -> bytes:
+    """body 를 그 로케일의 bash 로 돌린다. 먼저 로케일이 정말 걸렸는지 본다 — 고치지 않은 sed(첫 sed 가 LC_ALL=C 가 아니던 독자)는 UTF-8
+    로케일에서 U+3000 을 공백으로 먹는다. 걸리지 않으면(이 박스에 그 로케일이 없다) 그 로케일은 건너뛴다 — 통과로 치지 않는다."""
+    canary = "printf '%s\\n' \"$(printf '\\343\\200\\200x' | sed -E 's/^[[:space:]]+//')\"\n"
+    r = subprocess.run(["bash", "-c", canary + body], capture_output=True, timeout=600,       # 경고 글만 영어로(글자 부류는 LANG 그대로)
+                       env={"PATH": os.environ["PATH"], "HOME": str(tmp_path), "LANG": lang, "LC_MESSAGES": "C"})
+    stray = [ln for ln in r.stderr.decode("utf-8", "replace").splitlines() if NUL_WARNING not in ln]
+    assert r.returncode == 0 and not stray, "\n".join(stray)
+    head, _, out = r.stdout.partition(b"\n")
+    if lang != "C" and head != b"x":
+        pytest.skip(f"로케일 {lang} 이 이 박스에서 걸리지 않는다(U+3000 을 공백으로 보지 않는다) — 이 로케일의 대조는 아무것도 보지 못한다")
+    assert lang != "C" or head == "\u3000x".encode(), head
+    return out
+
+
+def _bash_batch(tmp_path: Path, texts: list, lang: str) -> list[tuple[int, list[str]]]:
+    """표의 글마다 파일 하나 — bash 한 번에 전부 돌린다(줄마다 띄우면 수백 번이다)."""
+    d = tmp_path / f"cases-{lang}"
+    _write_cases(d, texts)
     script = (f'. "{LIB}"\n'
               f'for i in $(seq 0 {len(texts) - 1}); do\n'
               f'  rc=0; out="$(hwax_llm_pool_upstreams "{d}/$i.env")" || rc=$?\n'
               '  if [ "$rc" = 0 ]; then printf \'%s\\t%s\\t%s\\n\' "$i" "$rc" "$(printf \'%s\' "$out" | tr \'\\n\' \' \')"\n'
               '  else printf \'%s\\t%s\\t\\n\' "$i" "$rc"; fi\n'
               'done\n')
-    r = subprocess.run(["bash", "-c", script], capture_output=True, timeout=600,
-                       env={"PATH": os.environ["PATH"], "HOME": str(tmp_path), "LANG": lang})
-    assert r.returncode == 0 and not r.stderr, r.stderr.decode(errors="replace")
-    rows = [ln.split("\t") for ln in r.stdout.decode("utf-8").splitlines()]
+    rows = [ln.split("\t") for ln in _run_bash(tmp_path, lang, script).decode("utf-8").splitlines()]
     assert [int(x[0]) for x in rows] == list(range(len(texts)))
     return [(int(rc), items.split()) for _, rc, items in rows]
 
@@ -145,13 +190,92 @@ def _want(w) -> tuple[int, list[str]]:
     return (0, w) if isinstance(w, list) else (1, []) if w == OFF else (2, [])
 
 
-@pytest.mark.parametrize("lang", ["C.UTF-8", "C"])
+@pytest.mark.parametrize("lang", LANGS)
 def test_정본과_라우터가_표의_모든_줄을_같게_읽고_기대값과도_같다(tmp_path, monkeypatch, lang):
     monkeypatch.delenv("LLM_ROUTER_PORT", raising=False)       # 라우터는 띄우는 스크립트가 넘긴 이 값을 파일보다 먼저 본다 — 표는 파일만
     sh = _bash_batch(tmp_path, [t for t, _ in CASES], lang)
     wrong = [(text, _want(w), sh[i], _router_view(text)) for i, (text, w) in enumerate(CASES)
              if not sh[i] == _router_view(text) == _want(w)]
     assert not wrong, "\n".join(f"{t!r}: 기대 {w} · lib {s} · 라우터 {p}" for t, w, s, p in wrong)
+
+
+# ── 값 하나를 읽는 독자 다섯 — lib hwax_llm_envv(오라클) · update-all _envfile_value · llm-router.sh envv · 라우터 env_values · services.py
+#    _infra_value(if_env · health 주소의 포트). 표의 글에 이 구석을 더해 키 둘(LLM_UPSTREAMS · LLM_ROUTER_PORT)을 글자 단위로 견준다.
+#    줄마다 LLM_ROUTER_PORT 의 기대값을 적는다 — 오라클도 틀릴 수 있다(None 은 기대값 없이 일치만) ──
+READER_ROWS: list[tuple[str | bytes, str | None]] = [
+    ("X=1\rLLM_ROUTER_PORT=9555\n", ""),             # services.py 의 splitlines() 는 뒤를 활성 줄로 읽었다(health 주소가 :9555 — 검토 LOW 2)
+    ("LLM_ROUTER_PORT=9130\n\u2028LLM_ROUTER_PORT=9555\n", "9130"), ("LLM_ROUTER_PORT=9130\n\x85LLM_ROUTER_PORT=9555\n", "9130"),
+    ("LLM_ROUTER_PORT=9130\n\u3000LLM_ROUTER_PORT=9555\n", "9130"), ("LLM_ROUTER_PORT=9130\n\u2003LLM_ROUTER_PORT=9555\n", "9130"),
+    ("LLM_ROUTER_PORT=9130\n\x0cLLM_ROUTER_PORT=9555\n", "9555"),      # 폼피드는 ASCII 공백이다
+    ("\x0bexport\x0bLLM_ROUTER_PORT=9555\n", "9555"), ("LLM_ROUTER_PORT=\x0b9555\n", "9555"), ("LLM_ROUTER_PORT=9555\x0b# 주석\n", "9555"),
+    ("LLM_ROUTER_PORT=\x0c9555\r\n", "9555"), ("LLM_ROUTER_PORT=9555\u3000\n", "9555\u3000"), ("LLM_ROUTER_PORT=\u00a09555\n", "\u00a09555"),
+    ("LLM_ROUTER_PORT=95\x0055\n", "9555"), ("LLM_ROUTER_PORT=9555 \x00\n", "9555 "), ("LLM_ROUTER_PORT=\x00 # c\n", ""),
+    ("LLM_UPSTREAMS='a\x00b' # c\n", None),
+    (b"LLM_ROUTER_PORT=9\xff5\n", "9\ufffd5"), (b"\xffLLM_ROUTER_PORT=9555\n", ""), (b'LLM_UPSTREAMS="http://a\xe3\x80/v1"\n', None),
+]
+READER_KEYS = ("LLM_UPSTREAMS", "LLM_ROUTER_PORT")
+
+
+def _services_mod():
+    spec = importlib.util.spec_from_file_location("hwax_services_rules", ROOT / "infra/scripts/services.py")
+    m = importlib.util.module_from_spec(spec)
+    keep, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    try:
+        spec.loader.exec_module(m)
+    finally:
+        sys.dont_write_bytecode = keep
+    return m
+
+
+def _bash_readers(tmp_path: Path, texts: list, lang: str) -> dict[tuple[int, str, str], bytes]:
+    """bash 독자 넷이 읽은 값 — {(글 번호, 키, 독자): 바이트}. 값은 독자를 부르는 쪽과 같게 `$(…)` 로 받아(끝 개행 · NUL 이 빠진다) 파일에 쓴다."""
+    ua = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
+    i = ua.index("_envfile_value() {")
+    launcher = (ROOT / "infra/scripts/llm-router.sh").read_text(encoding="utf-8")
+    j = launcher.index("envv() {")
+    d, o = tmp_path / f"readers-{lang}", tmp_path / f"values-{lang}"
+    _write_cases(d, texts)
+    o.mkdir()
+    readers = {"lib": 'hwax_llm_envv "$f" "$k"', "raw": '_hwax_llm_raw "$f" "$k"', "update-all": '_envfile_value "$f" "$k"',
+               "llm-router.sh": 'envv "$k" "$f"'}
+    script = (f'. "{LIB}"\n{ua[i:ua.index(chr(10) + "}" + chr(10), i) + 3]}{launcher[j:launcher.index(chr(10), j) + 1]}'
+              f'for i in $(seq 0 {len(texts) - 1}); do f="{d}/$i.env"; for k in {" ".join(READER_KEYS)}; do\n'
+              + "".join(f'  v="$({call})"; printf \'%s\' "$v" > "{o}/$i.$k.{name}"\n' for name, call in readers.items())
+              + "done; done\n")
+    _run_bash(tmp_path, lang, script)
+    return {(n, k, name): (o / f"{n}.{k}.{name}").read_bytes() for n in range(len(texts)) for k in READER_KEYS for name in readers}
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_값을_읽는_독자_다섯이_표의_모든_글을_글자_단위로_같게_읽는다(tmp_path, monkeypatch, lang):
+    """독자가 갈리면 같은 infra/.env 를 두고 lib 는 '풀 켜짐', 라우터는 다른 목록, services.py 는 다른 포트의 health 를 두드린다(검토 2라운드
+    LOW 2 — UTF-8 로케일에서 U+3000 으로 시작하는 줄이 bash 에만 활성 · `X=1\\rLLM_ROUTER_PORT=9555` 가 services.py 에만 활성).
+    오라클은 lib hwax_llm_envv 다 — bash 셋은 그와 바이트로, 라우터·services.py 는 UTF-8(깨진 바이트는 U+FFFD)로 같아야 한다."""
+    monkeypatch.delenv("LLM_ROUTER_PORT", raising=False)
+    texts = [t for t, _ in CASES] + [t for t, _ in READER_ROWS]
+    sh = _bash_readers(tmp_path, texts, lang)
+    svc = _services_mod()
+    portal = tmp_path / "portal"
+    (portal / "infra").mkdir(parents=True)
+    monkeypatch.setattr(svc, "PORTAL_ROOT", portal)
+    wrong = []
+    for n, text in enumerate(texts):
+        raw = text if isinstance(text, bytes) else text.encode("utf-8")
+        (portal / "infra/.env").write_bytes(raw)
+        decoded = raw.decode("utf-8", errors="replace")          # 라우터 _reload 가 읽는 그대로
+        plain, quoted = R.env_values(decoded), R.env_values(decoded, quotes=True)
+        for k in READER_KEYS:
+            oracle = sh[(n, k, "lib")]
+            wrong += [(text, k, who, oracle, sh[(n, k, who)]) for who in ("update-all", "llm-router.sh") if sh[(n, k, who)] != oracle]
+            got = {"라우터": plain.get(k, ""), "services.py": svc._infra_value(k) or ""}
+            wrong += [(text, k, who, oracle, v) for who, v in got.items() if v != oracle.decode("utf-8", "replace")]
+            if quoted.get(k, "") != sh[(n, k, "raw")].decode("utf-8", "replace"):
+                wrong.append((text, k, "라우터(따옴표 남김) ↔ _hwax_llm_raw", sh[(n, k, "raw")], quoted.get(k, "")))
+    assert not wrong, "\n".join(f"{t!r} [{k}] {who}: 오라클 {o!r} · 읽은 값 {v!r}" for t, k, who, o, v in wrong[:30])
+    off = len(CASES)
+    bad = [(t, w, sh[(off + n, "LLM_ROUTER_PORT", "lib")]) for n, (t, w) in enumerate(READER_ROWS)
+           if w is not None and sh[(off + n, "LLM_ROUTER_PORT", "lib")].decode("utf-8", "replace") != w]
+    assert not bad, "오라클이 기대값과 다르다 — " + "; ".join(f"{t!r}: 기대 {w!r} · lib {g!r}" for t, w, g in bad)
 
 
 def _generated(n: int = 400) -> list[str]:
