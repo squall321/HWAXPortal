@@ -36,9 +36,14 @@ def box(tmp_path, monkeypatch):
     with TestClient(app) as c:
         keep = (app.state.user_store, app.state.token_store)
         app.state.user_store, app.state.token_store = UserStore(s), TokenStore(s)   # 기동 뒤 교체 — 실 저장소를 안 쓴다
-        c.post("/auth/local/signup", json={"email": "boss@corp.com", "name": "Boss", "password": PW})
-        c.post("/auth/local/signup", json={"email": "user@corp.com", "name": "User", "password": PW})
-        assert app.state.user_store.approve("user@corp.com", by="boss@corp.com", groups=["mes-user"])
+        # 계정은 한 시간 전에 만들어졌다 — 몇십 초 전에 낸 refresh 가 '행이 생기기 전에 낸 토큰' 으로 걸리지 않아야
+        # 정지 시각 규칙을 따로 볼 수 있다(행 생성 시각 규칙은 지운 뒤 다시 생긴 행 시험이 따로 본다).
+        real = store_mod._now
+        with monkeypatch.context() as m:
+            m.setattr(store_mod, "_now", lambda: real() - 3600)
+            c.post("/auth/local/signup", json={"email": "boss@corp.com", "name": "Boss", "password": PW})
+            c.post("/auth/local/signup", json={"email": "user@corp.com", "name": "User", "password": PW})
+            assert app.state.user_store.approve("user@corp.com", by="boss@corp.com", groups=["mes-user"])
         yield c, s
         app.state.user_store, app.state.token_store = keep
     app.dependency_overrides.pop(get_settings, None)
@@ -152,11 +157,13 @@ def _minted(monkeypatch, seconds_ago: int, email: str = "user@corp.com") -> str:
         return _refresh_token(email, ["mes-user"], ttl=3600)
 
 
-def _suspend_ago(monkeypatch, seconds_ago: int, email: str = "user@corp.com") -> None:
+def _suspend_ago(monkeypatch, seconds_ago: int, email: str = "user@corp.com", how: str = "suspend") -> None:
+    """seconds_ago 초 전에 정지 — 관리자 화면의 정지(suspend)와 저장소의 set_status("disabled") 둘 다 정지 시각을 남겨야 한다."""
     real = store_mod._now
     with monkeypatch.context() as m:
         m.setattr(store_mod, "_now", lambda: real() - seconds_ago)
-        assert app.state.user_store.suspend(email) == "set"
+        store = app.state.user_store
+        assert (store.suspend(email) == "set") if how == "suspend" else store.set_status(email, "disabled")
 
 
 def test_정지된_계정은_갱신이_401_이고_쿠키를_다시_내지_않는다(box, monkeypatch):
@@ -169,11 +176,12 @@ def test_정지된_계정은_갱신이_401_이고_쿠키를_다시_내지_않는
     assert not ({REFRESH_COOKIE, CSRF_COOKIE, SESSION_COOKIE} & set(_set_cookies(r)))
 
 
-def test_되살려도_정지_전에_받은_refresh_는_다시_살지_않는다(box, monkeypatch):
+@pytest.mark.parametrize("how", ["suspend", "set_status"])
+def test_되살려도_정지_전에_받은_refresh_는_다시_살지_않는다(box, monkeypatch, how):
     c, _s = box
     store = app.state.user_store
     old = _minted(monkeypatch, 20)                     # 20초 전에 받은 refresh — 수명은 아직 남았다
-    _suspend_ago(monkeypatch, 10)                      # 10초 전에 정지
+    _suspend_ago(monkeypatch, 10, how=how)             # 10초 전에 정지
     assert store.set_status("user@corp.com", "active")  # 지금 되살림
     r = c.post("/auth/refresh", headers=_wear(c, old))
     assert r.status_code == 401, "되살린 계정의 정지 전 refresh 가 다시 산다(훔쳐 간 사본도 같이 산다)"
@@ -181,6 +189,33 @@ def test_되살려도_정지_전에_받은_refresh_는_다시_살지_않는다(b
     c.cookies.clear()
     assert c.post("/auth/local/login", json={"email": "user@corp.com", "password": PW}).status_code == 200
     assert c.post("/auth/refresh", headers={"X-CSRF-Token": c.cookies.get(CSRF_COOKIE)}).status_code == 200
+
+
+def test_정지와_같은_초에_낸_refresh_도_받지_않는다(box, monkeypatch):
+    """iat·정지 시각은 초 단위다 — 같은 초면 정지 전·후를 못 가르므로 받지 않는 쪽으로 둔다(되살아나는 틈을 남기지 않는다)."""
+    c, _s = box
+    t = int(datetime.now(tz=UTC).timestamp()) - 30
+    with monkeypatch.context() as m:
+        m.setattr(jwt_mod, "_now", lambda: datetime.fromtimestamp(t, tz=UTC))
+        old = _refresh_token("user@corp.com", ["mes-user"], ttl=3600)
+    with monkeypatch.context() as m:
+        m.setattr(store_mod, "_now", lambda: t)
+        assert app.state.user_store.suspend("user@corp.com") == "set"
+    assert app.state.user_store.set_status("user@corp.com", "active")
+    assert c.post("/auth/refresh", headers=_wear(c, old)).status_code == 401
+
+
+def test_원장을_못_읽으면_갱신을_받지_않는다(box, monkeypatch):
+    """SSO 콜백과 같은 규칙 — 원장이 고장 난 동안 정지가 통째로 풀리면 안 된다."""
+    c, _s = box
+
+    def boom(_email):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(app.state.user_store, "get", boom)
+    assert c.post("/auth/refresh", headers=_wear(c, _refresh_token("user@corp.com", ["mes-user"], ttl=600))).status_code == 401
+    monkeypatch.setattr(app.state, "user_store", None)
+    assert c.post("/auth/refresh", headers=_wear(c, _refresh_token("user@corp.com", ["mes-user"], ttl=600))).status_code == 401
 
 
 def test_원장에_없는_계정은_갱신이_401_이다(box):
@@ -204,7 +239,7 @@ def test_지운_뒤_다시_생긴_행은_그_전에_낸_refresh_를_받지_않�
     assert c.post("/auth/refresh", headers=_wear(c, old)).status_code == 401, "지우기 전에 낸 refresh 가 다시 산다"
 
 
-def test_정지_시각_칸이_없던_원장의_정지된_행에도_정지_시각을_채운다(tmp_path):
+def test_정지_시각_칸이_없던_원장의_정지된_행에도_정지_시각을_채운다(tmp_path, monkeypatch):
     """칸이 생기기 전에 정지된 계정은 정지 시각이 0 이라 되살린 뒤 그 전에 낸 refresh 를 가를 수 없다 — 처음 열 때 한 번 채운다."""
     path = tmp_path / "u.sqlite"
     conn = sqlite3.connect(str(path))
@@ -221,6 +256,8 @@ def test_정지_시각_칸이_없던_원장의_정지된_행에도_정지_시각
     first = UserStore(Settings(_env_file=None, user_store_path=str(path))).get("off@corp.com")
     assert "disabled_at" in first, "정지 시각 칸이 없다 — 되살린 뒤 정지 전에 낸 refresh 를 가를 수 없다"
     assert first["disabled_at"] >= before, "정지된 옛 행의 정지 시각이 비었다"
+    real = store_mod._now
+    monkeypatch.setattr(store_mod, "_now", lambda: real() + 100)   # 재기동은 나중에 일어난다
     again = UserStore(Settings(_env_file=None, user_store_path=str(path)))
     assert again.get("off@corp.com")["disabled_at"] == first["disabled_at"], "다시 열 때마다 정지 시각을 밀면 안 된다"
     assert again.get("on@corp.com")["disabled_at"] == 0
