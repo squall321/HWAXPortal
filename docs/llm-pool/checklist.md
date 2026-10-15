@@ -7,4 +7,4 @@
 - [x] L-2·3 `lib/llm-pool.sh` · update-all 1i(기동 → 답할 때만 사본 바꾸기 · 백업 · 되돌리기) · `update-sites` 미룸 · `apply-envs` 새 키 · §6 한 줄 · `infra/.env.example` · 시험 — 10-15 `279983a`·`7fe321d`·`35d5820`·`ffb31fd`(시험 149 · 변이 9/9), 합침 `854127b` · 실제 라우터 /health 를 lib 로 읽어 봄(도는 스트림 1 → 미룸)
 - [x] L-4 절차서의 동시 수 세 줄(자동 아님 — LP-D7) — `server-setup.md` 5절
 - [x] L-5 반대 검토 · 변이 검사 — 1라운드(라우터 H1·M2·L12 · 배선 H1·M5·L6 → LP-D13, 변이 36/36 · 29/29) · 2라운드(M4·L7 → LP-D14, 변이 18/18 · 28/28 · 대조기 1,939건 중 갈림 1 → 2,048자 상한으로 0) · 3라운드(풀 끈 박스, LOW 5 → LP-D15, 변이 5/5)
-- [ ] L-6 절차서(cae00) · 업데이트 이력 · push · Drive(포털)
+- [x] L-6 절차서(cae00) · 업데이트 이력 · push · Drive(포털) — 10-15 `server-setup.md` · 이력(기술) · 포털 main `c46cb3c` push(전체 2,718 통과). Drive 는 필요 없다(라우터는 포털 리포와 git 으로 가고 portal.sif·frontend 는 그대로다)
