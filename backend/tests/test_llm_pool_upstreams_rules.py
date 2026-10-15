@@ -45,6 +45,20 @@ def L(value: str, *extra: str) -> str:
     return f"LLM_UPSTREAMS={value}\n" + "".join(x + "\n" for x in extra)
 
 
+def _long_url(n: int) -> str:
+    """정확히 n 자인 맞는 모양의 /v1 주소 — 라벨 50자를 점으로 잇고 마지막 라벨로 길이를 맞춘다."""
+    head, tail = "http://", ":8000/v1"
+    room = n - len(head) - len(tail)
+    labels, left = [], room
+    while left > 51:
+        labels.append("a" * 50)
+        left -= 51
+    labels.append("b" * left)
+    url = head + ".".join(labels) + tail
+    assert len(url) == n
+    return url
+
+
 CASES: list[tuple[str, object]] = [
     # ── 맞는 줄 ──
     (L(f"{S1},{S2}"), [S1, S2]),
@@ -128,6 +142,8 @@ CASES: list[tuple[str, object]] = [
     # ── NUL — bash 의 `$(…)` 는 지운다(경고 한 줄) · 라우터·services.py 도 마지막에 지운다 ──
     ("LLM_UPSTREAMS=http://203.0.113.1\x001:10000/v1\n", [S1]), (f"LLM_UPSTREAMS={S1}\x00\n", [S1]),
     (f"LLM_UPSTREAMS={S1}\n\x00LLM_UPSTREAMS={S2}\n", [S1]), (f'LLM_UPSTREAMS="{S1}\x00 {S2}"\n', [S1, S2]),
+    # ── 칸 하나의 글자 상한 2,048 — httpx 는 64KiB 넘는 주소를 못 만든다(검토 2라운드 대조기의 마지막 갈림) ──
+    (L(_long_url(2048)), [_long_url(2048)]), (L(_long_url(2049)), BAD), (L(f"{S1},{_long_url(70000)}"), BAD),
 ]
 
 

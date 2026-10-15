@@ -165,6 +165,12 @@ hwax_llm_pool_upstreams() {  # $1=infra.env [$2=라우터 포트 — 주지 않�
     [ -n "$u" ] || continue
     while [ "${u%/}" != "$u" ]; do u="${u%/}"; done
     lab="$(_hwax_llm_ups_label "$u")"
+    # 칸 하나가 2,048자를 넘으면 받지 않는다 — 라우터(httpx)는 64KiB 넘는 주소를 못 만들어, 넘는 칸을 lib 만 받으면 둘이 갈린다(2라운드 대조기).
+    if [ "${#u}" -gt 2048 ]; then
+      printf '%s
+' "LLM_UPSTREAMS 의 칸 '$lab' 이 2,048자를 넘는다 — $tail_msg"
+      return 2
+    fi
     if ! [[ "$u" =~ $re_item ]]; then
       case "$u" in
         *@*)        printf '%s\n' "LLM_UPSTREAMS 의 칸 '$lab' 에 계정(user@)이 있다 — $tail_msg" ;;

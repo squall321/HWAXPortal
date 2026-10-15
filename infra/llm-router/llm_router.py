@@ -163,6 +163,10 @@ def _httpx_problem(url: str) -> str | None:
     return None
 
 
+# 칸 하나의 글자 상한 — lib(hwax_llm_pool_upstreams)과 같은 값이다. httpx 는 64KiB 넘는 주소를 못 만들어, 상한이 없으면 lib 만 받는 칸이 생긴다.
+ITEM_MAX_CHARS = 2048
+
+
 def parse_upstreams(raw: str | None, router_port: int | None = None) -> tuple[list[str], list[str]]:
     """LLM_UPSTREAMS 원문(따옴표를 남긴 값) → (서버 /v1 주소들, 틀린 까닭들). 틀린 칸이 하나라도 있으면 주소는 비고 까닭이 찬다 — 반만 맞는
     목록으로 보내지 않는다. 값이 비면 ([], []) — 꺼짐. router_port 는 고리(라우터 자신을 가리킴) 검사에 쓰고, None 이면 검사하지 않는다.
@@ -187,8 +191,10 @@ def parse_upstreams(raw: str | None, router_port: int | None = None) -> tuple[li
     for tok in toks:
         url = tok.rstrip("/")
         why: str | None = None
-        m = _ITEM.fullmatch(url)
-        if m is None:
+        m = _ITEM.fullmatch(url) if len(url) <= ITEM_MAX_CHARS else None
+        if len(url) > ITEM_MAX_CHARS:
+            why = f"{ITEM_MAX_CHARS:,}자를 넘는다"
+        elif m is None:
             why = _item_problem(url)
         else:
             scheme, host, port = m.group(1), m.group(2), m.group(3)
