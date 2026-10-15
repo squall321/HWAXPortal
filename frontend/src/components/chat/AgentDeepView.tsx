@@ -20,7 +20,7 @@ export interface AgentDeepViewProps {
   agent: PoolExpert;
   /** 조직도 경로(루트·분류·분야·그룹) — 이 사람이 어디 소속인지. */
   path?: string[];
-  /** 상세칸이 이미 받아 둔 요약. 있으면 다시 부르지 않는다(/catalog/agent 는 콜드 6~11초). */
+  /** 상세칸이 이미 받아 둔 요약. 실패본이 아니면 다시 부르지 않는다(/catalog/agent 는 콜드 6~11초). */
   initialDetail?: AgentDetail | null;
   /** 머리줄 오른쪽 행동(이 전문가로 대화 / 좌석에 넣기) — 부르는 쪽이 정한다. */
   actions?: ReactNode;
@@ -108,12 +108,15 @@ function RecordReader({ rec }: { rec: RecordView }) {
 
 export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onClose }: AgentDeepViewProps) {
   const [detail, setDetail] = useState<AgentDetail | null>(initialDetail ?? null);
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     // 상세칸 요약이 늦게 도착하면 그걸 쓴다 — 여기서 따로 부른 것과 같은 응답이다.
-    if (initialDetail) {
+    // 실패본(error)은 물려받지 않고 다시 부른다.
+    if (initialDetail && !initialDetail.error) {
       setDetail(initialDetail);
       return;
     }
+    setDetail(null);
     let live = true;
     void fetchAgentDetail(agent.key).then((d) => {
       if (live) setDetail(d);
@@ -121,7 +124,7 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
     return () => {
       live = false;
     };
-  }, [agent.key, initialDetail]);
+  }, [agent.key, initialDetail, reload]);
 
   // 지식카드 목록 — 검색어는 잠깐 멈췄을 때 보낸다(글자마다 게이트웨이를 두드리지 않게).
   const [q, setQ] = useState('');
@@ -177,7 +180,8 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
   const items = page?.items ?? [];
   // 카드가 아예 없는 사람(HE팀 운영자 등) — 읽기 칸을 접고 프로필을 넓힌다.
   const noCards = !listLoading && !query && !!page && !page.error && page.total === 0;
-  const name = detail?.name || agent.name;
+  // 실패본의 name 은 키다(chat.api.ts fetchAgentDetail) — 그때는 전문가 목록의 이름을 쓴다.
+  const name = (detail && !detail.error && detail.name) || agent.name;
 
   return (
     <Modal onClose={onClose} label={`${name} 심층 보기`}>
@@ -207,8 +211,13 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
             {/* ── 프로필: 무엇을 하는 사람인가 ── */}
             <aside className="dv-col dv-profile" aria-label="전문가 설명">
               {!detail && <p className="pv-empty">설명 불러오는 중…</p>}
-              {detail?.error && <p className="pv-empty">설명을 불러오지 못했습니다({detail.error}).</p>}
-              {detail && (
+              {detail?.error && (
+                <p className="pv-empty">
+                  설명을 불러오지 못했습니다({detail.error}).{' '}
+                  <button type="button" className="pv-more" onClick={() => setReload((n) => n + 1)}>다시 시도</button>
+                </p>
+              )}
+              {detail && !detail.error && (
                 <>
                   {detail.role && <p className="dv-desc"><InlineMd text={detail.role} /></p>}
                   {detail.tags.length > 0 && (
@@ -242,8 +251,10 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
                     <div className="dv-doc">
                       <TextBlock text={detail.prompt} />
                     </div>
-                  ) : (
+                  ) : detail.role ? (
                     <p className="pv-empty">따로 쓴 역할 문서가 없습니다 — 위 설명이 전부입니다.</p>
+                  ) : (
+                    <p className="pv-empty">설명과 역할 문서가 아직 등록되지 않은 전문가입니다.</p>
                   )}
                 </>
               )}

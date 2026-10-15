@@ -59,3 +59,35 @@ def test_시작_패널이_고정된_전문가로_열리면_상세를_불러온�
                   r"// eslint-disable-next-line react-hooks/exhaustive-deps\s*\}, \[\]\);", sp)
     assert m, "고정된 전문가의 상세를 여는 effect 가 없다"
     assert m.start() > sp.index("const showAgent = (key: string) => {"), "showAgent 를 정의한 뒤에 둔다"
+
+
+# ── K2-4·K6-5 심층 보기 프로필 — 실패면 프로필 대신 다시 시도, 설명이 없으면 '아직 등록되지 않은 전문가' ──────────
+def test_심층_보기는_실패한_상세를_물려받지_않고_다시_부른다():
+    src = _src("AgentDeepView.tsx")
+    assert "const [reload, setReload] = useState(0);" in src, "다시 시도할 손잡이가 없다"
+    eff = src[src.index("const [reload, setReload] = useState(0);"):]
+    eff = eff[:eff.index("}, [agent.key, initialDetail, reload]);")]
+    assert "if (initialDetail && !initialDetail.error) {" in eff, "실패본을 물려받으면 상세칸의 실패가 전체 화면에도 그대로 남는다"
+    assert eff.index("setDetail(null);") < eff.index("fetchAgentDetail(agent.key)"), "다시 부를 때는 불러오는 중으로 돌린다"
+
+
+def test_실패하면_프로필_대신_다시_시도를_준다():
+    src = _src("AgentDeepView.tsx")
+    assert "{detail?.error && (" in src, "실패 문구에 다시 시도 버튼이 붙지 않았다"
+    err = src[src.index("{detail?.error && ("):]
+    err = err[:err.index("</p>")]
+    assert "설명을 불러오지 못했습니다({detail.error}).{' '}" in err
+    assert '<button type="button" className="pv-more" onClick={() => setReload((n) => n + 1)}>다시 시도</button>' in err
+    assert "{detail && !detail.error && (" in src, "실패해도 프로필을 그리면 '위 설명이 전부입니다' 가 실패 문구 밑에 붙는다"
+    assert "{detail && (" not in src
+    # 실패본의 name 은 키다 — 제목은 전문가 목록의 이름을 쓴다
+    assert "const name = (detail && !detail.error && detail.name) || agent.name;" in src
+
+
+def test_설명도_역할_문서도_없으면_아직_등록되지_않은_전문가라고_쓴다():
+    """위에 아무것도 없는데 '위 설명이 전부입니다' 라고 썼다(K6-5) — 화면이 덜 그려진 것으로 읽힌다."""
+    src = _src("AgentDeepView.tsx")
+    assert re.search(
+        r"\{detail\.prompt \? \(\s*<div className=\"dv-doc\">\s*<TextBlock text=\{detail\.prompt\} />\s*</div>\s*"
+        r"\) : detail\.role \? \(\s*<p className=\"pv-empty\">따로 쓴 역할 문서가 없습니다 — 위 설명이 전부입니다\.</p>\s*"
+        r"\) : \(\s*<p className=\"pv-empty\">설명과 역할 문서가 아직 등록되지 않은 전문가입니다\.</p>\s*\)\}", src)
