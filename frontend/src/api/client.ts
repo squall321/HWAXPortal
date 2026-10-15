@@ -9,6 +9,9 @@ function getCookie(name: string): string | null {
   return m ? decodeURIComponent(m[2]) : null;
 }
 
+/** 갱신이 401·403 으로 끝났다 — 세션을 되살릴 수 없다. AuthContext 가 듣는다. */
+export const SESSION_EXPIRED_EVENT = 'hwax:session-expired';
+
 let refreshInFlight: Promise<boolean> | null = null;
 
 function doRefresh(): Promise<boolean> {
@@ -19,7 +22,12 @@ function doRefresh(): Promise<boolean> {
       credentials: 'include',
       headers: csrf ? { 'X-CSRF-Token': csrf } : {},
     })
-      .then((r) => r.ok)
+      .then((r) => {
+        // 403 은 CSRF 쿠키가 없어서다 — 갱신 쿠키와 수명이 같아(cookies.py) 401 과 같은 만료다.
+        // 네트워크 오류·5xx 는 순간 끊김일 수 있어 알리지 않는다.
+        if (r.status === 401 || r.status === 403) window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+        return r.ok;
+      })
       .catch(() => false)
       .finally(() => {
         refreshInFlight = null;

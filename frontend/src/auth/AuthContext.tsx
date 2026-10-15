@@ -1,5 +1,6 @@
 import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { getMe, postLogout } from '../api/auth.api';
+import { SESSION_EXPIRED_EVENT } from '../api/client';
 import type { AuthStatus, User } from './types';
 import { revokeSteCredential } from '../api/ste.api';
 import { clearSteCredential } from '../components/layout/StePrimer';
@@ -44,6 +45,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  // 갱신까지 실패하면 세션은 끝났다 — 화면마다 http_401 을 띄우지 말고 로그인으로 보낸다(ProtectedRoute 가 /login 으로).
+  // logout() 의 clearSteCredential·끝 두 줄과 같다.
+  useEffect(() => {
+    const onExpired = () => {
+      // ste 사본을 안 지우면 이 탭에서 다음에 로그인한 사람이 앞 사람의 ste 토큰을 그대로 쓴다
+      // (StePrimer 가 사본이 있으면 다시 받지 않는다. 토큰에 만료가 없다).
+      // 서버 회수(revokeSteCredential)는 부르지 않는다 — 세션이 없어 401 이다(10-14 실측).
+      clearSteCredential();
+      setUser(null);
+      setStatus('unauthenticated');
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
 
   // Full-page navigation to the backend, which redirects to the IdP (mock or real AD).
