@@ -1053,6 +1053,9 @@ def test_검토M5_모델_목록을_못_주는_서버는_올라옴이_아니다(l
     assert (h["status"], h["upstreams_up"], h["upstreams_reachable"], h["upstreams_total"]) == ("degraded", 1, 2, 2)
     assert h["models"]["errors"] == {other.base: 404}
     assert [r.chat(f"q{i}").json()["served_by"] for i in range(10)] == ["A"] * 10 and not other.hits
+    no_model = [r.http.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": f"q{i}"}]}).json()["served_by"]
+                for i in range(5)]
+    assert no_model == ["A"] * 5 and not other.hits, "모델을 적지 않은 요청도 — 고르는 것은 '올라옴' 이 먼저다(모델 고르기가 가려 주지 않는다)"
     st = r.by_url()[other.base]
     assert (st["up"], st["reachable"], st["models"], st["models_error"]) == (False, True, "error", 404)
     other.models_mode = "garbage"                       # 200 인데 모델 목록이 아니다 — 역시 올라옴이 아니다
@@ -1072,6 +1075,8 @@ def test_모델_목록을_아직_모르는_서버는_올라온_서버가_없을_
                 what="B 가 더해지고 지표는 읽히되 모델 대조는 답 없이 끝나기")[b.base]
     assert (st["models"], st["up"], st["reachable"]) == ("unknown", False, True) and r.health().json()["upstreams_up"] == 1
     assert all(r.chat("x").json()["served_by"] == "A" for _ in range(3)), "B(0) 가 A(5) 보다 한가해도 모르는 서버다"
+    assert all(r.http.post("/v1/chat/completions", json={"messages": []}).json()["served_by"] == "A" for _ in range(3)), \
+        "모델을 적지 않은 요청도 모르는 서버로 가지 않는다"
     b.models_mode = "ok"
     _wait(lambda: r.by_url()[b.base]["models"] == "ok", what="B 의 모델 목록이 읽히기")
     assert r.chat("x").json()["served_by"] == "B"
