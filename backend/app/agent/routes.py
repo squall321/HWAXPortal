@@ -33,7 +33,7 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator, model_validator
 
 from app.access.agent_guard import check_chat, filter_experts
 from app.access.policy import is_synthetic, login_groups
@@ -191,6 +191,18 @@ class DelibOpts(BaseModel):
     # 절반' 을 사람이 띄운 심의(app 아닌 것)로만 센다(docs/risk-review-redesign M3.md #26). 여기서 떨어지면 표지가 사라져 쟁점
     # 패널도 사람 심의로 세어지고 카드 대조가 며칠 동안 반(4)으로 묶인다. 스스로 밝히는 값이라 검증하지 않는다. None=사람.
     started_by: Literal["human", "app"] | None = None
+    # ⚠ 아래 둘은 외부 응답자 심의(docs/risk-claude-engine — 기본 꺼짐, 에이전트 서버 EXTERNAL_LLM_ENABLED=1 에서만 열린다)의 칸이다.
+    #   선언이 없던 동안(X-3a 전)은 포털을 거친 외부 선택이 여기서 말없이 떨어져 심의가 GLM 으로 돌았다.
+    #   보내는 곳은 리스크 앱(웹 러너 · 그 앱의 MCP risk_start_job 이 연 잡)뿐이다. 포털 화면은 이 선택을 내지 않고(프론트에 입구가
+    #   없다), MCP deliberate_start 는 포털을 거치지 않는다(게이트웨이 → 에이전트 서버 advanced.llm).
+    #
+    # 판단 LLM — glm(이 박스 에이전트 서버의 LLM, None 과 같다) | external(잡 주인이 돌리는 Claude Code 워크플로가 답하고, 좌석은 도구
+    # 호출 없이 evidence_only 로 돈다). 받는 두 값 밖은 422 다 — 엔진도 bad_request 로 거절하지만, 포털 손잡이는 받는 값만 받는다.
+    llm: Literal["glm", "external"] | None = None
+    # 반출 동의 표지 — llm=external 인 심의를 엔진은 이것이 JSON true 일 때만 연다(없거나 false 면 external_consent_required 로 시작하지
+    # 않는다). 사람에게 동의를 받고 누가 언제 했는지 적는 것은 부르는 쪽(리스크 앱)의 몫이고, 포털은 받은 그대로 옮기기만 한다.
+    # StrictBool 인 까닭 — "true"·1 은 엔진이 동의로 치지 않는 값인데, 포털이 true 로 바꿔 넘기면 동의가 아닌 것을 동의로 세탁한다.
+    consent_external: StrictBool | None = None
 
 
 class ChatDocument(BaseModel):
@@ -1766,9 +1778,18 @@ async def chat(
 # 전용 클라이언트·세마포어를 쓴다(main.py — P-14). 오류 어휘는 docs/risk-review-redesign/M2.md 4.4 다 — 리스크 앱이 code 하나로
 # 부류(기다림·인프라·잡 보류·내용 탓)를 가르고 표에 없는 code 는 '내용 탓'(차감)이 되므로 여기서 새 이름을 지어내지 않는다.
 # 중계가 새로 낸 이름은 본문 상한의 body_too_large(413) 하나이고 표의 '내용 탓' 칸에 적었다 — 같은 본문은 다시 보내도 넘는다.
+# 외부 응답자(docs/risk-claude-engine — 기본 꺼짐)의 llm·consent_external 은 plan·run 본문의 다른 칸처럼 손대지 않고 지나간다. 보내는
+# 곳은 리스크 앱뿐이고, 사람에게 반출 동의를 받는 것도 그 앱의 몫이다(엔진은 consent_external: true 가 없는 외부 run 을 거절한다).
+# limits 는 GET 이라 llm 을 질의 문자열로 받는다 — _CR_LIMITS_QUERY.
 
 _CR_RETRY_AFTER_S = 30       # engine_busy 의 대기 — 엔진 관문 CARD_REVIEW_RETRY_AFTER_S 의 기본값과 같은 수
 _CR_META_MAX = 200           # 감사에 옮기는 식별자 하나의 상한 — 식별자 칸에 본문을 실어 감사로 흘리지 못하게
+# limits 질의 문자열에서 엔진에 옮기는 이름 — 엔진 GET /card-review/limits 가 읽는 것만이다. 지금은 llm 하나다(?llm=external 이면 외부
+# 응답자의 창·출력 상한으로 셈한 예산과 판, 없거나 glm 이면 종전 그대로). 종전엔 질의 문자열을 통째로 버려 ?llm=external 에도 GLM 예산이
+# 돌아왔다(X-3a). 값은 보지 않는다 — 본문의 llm 처럼 엔진이 정본이고, 모르는 값은 엔진의 422 bad_request 가 상태·본문 그대로 간다.
+# 그 밖의 이름은 옮기지 않는다 — 엔진이 읽지 않으니 버려도 결과가 같고, 엔진이 나중에 읽게 될 이름(신원 칸 같은)이 포털의 검토 없이
+# 지나가지 않는다. 엔진이 새 이름을 읽게 되면 tests/test_card_review_contract_replay.py 가 묻는다.
+_CR_LIMITS_QUERY = ("llm",)
 
 
 class _CrReject(Exception):
@@ -1913,9 +1934,13 @@ async def _cr_unary(request: Request, principal: Principal, settings: Settings, 
         if request.method == "POST":
             raw, obj = await _cr_read(request)
         content = _cr_payload(request, settings, principal, obj) if request.method == "POST" else None
+        # GET(limits)은 질의 문자열에서 엔진이 읽는 이름만 옮긴다(_CR_LIMITS_QUERY). 없으면 종전과 같은 주소다.
+        params = ({k: request.query_params[k] for k in _CR_LIMITS_QUERY if k in request.query_params}
+                  if request.method == "GET" else None)
         try:
             r = await _cr_client(request).request(
                 request.method, f"{settings.agent_server_url}/card-review/{route}", content=content,
+                params=params or None,
                 headers={"content-type": "application/json"} if content is not None else None,
                 timeout=_unary_timeout(settings))
         except httpx.HTTPError as exc:

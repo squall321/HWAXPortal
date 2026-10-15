@@ -660,3 +660,51 @@ def test_비우기는_포털로_새지_않는다():
     paths = [getattr(r, "path", "") for r in app.routes]
     assert any(p.startswith("/agent/card-review/") for p in paths), "라우터에서 경로를 못 뽑았다 — 시험이 낡았다"
     assert not [p for p in paths if "drain" in p.lower()], [p for p in paths if "drain" in p.lower()]
+
+
+# ── 외부 응답자(X-3a) — limits 의 질의 문자열 ───────────────────────────────────────────────────────
+# 엔진 GET /card-review/limits 는 ?llm=external 이면 외부 응답자의 창·출력 상한으로 셈한 예산을 낸다(docs/risk-claude-engine). 종전
+# 중계는 질의 문자열을 통째로 버려 그 요청에도 GLM 예산이 돌아왔다 — 앱은 GLM 판으로 계획을 짜고 외부 run 에서 rev_mismatch 를 만난다.
+# 엔진이 읽는 이름(llm)만 옮기고 값은 엔진이 가른다. 엔진의 실제 답으로 보는 시험은 test_card_review_contract_replay.py 에 있다.
+
+
+@pytest.mark.parametrize("llm", ["external", "glm"])
+def test_limits_는_llm_질의를_엔진에_그대로_옮긴다(portal, llm):
+    agent = _wire()
+    r = portal.get(f"/agent/card-review/limits?llm={llm}")
+    assert r.status_code == 200 and r.json() == {"ok": True, "path": "/card-review/limits"}
+    (req,) = agent.seen
+    assert (req.method, req.url.path, dict(req.url.params), req.content) == (
+        "GET", "/card-review/limits", {"llm": llm}, b""), "질의가 엔진에 닿지 않으면 외부 길을 물어도 GLM 예산이 온다"
+
+
+def test_limits_에_llm_이_없으면_종전과_같은_주소와_감사다(portal):
+    """GLM(기본) 호출은 X-3a 전과 바이트째 같다 — 질의 문자열이 붙지 않고 감사 행도 같다."""
+    agent = _wire()
+    assert _call(portal, "limits").status_code == 200
+    (req,) = agent.seen
+    assert (req.url.path, req.url.query, req.content) == ("/card-review/limits", b"", b"")
+    assert "?" not in str(req.url)
+    assert _rows()[-1] == {"principal": "u1", "status": "ok", "meta": {"upstream": 200},
+                           "event": "card_review_limits_done"}
+
+
+def test_limits_는_엔진이_읽지_않는_질의를_옮기지_않는다(portal):
+    """엔진이 읽는 이름만 간다 — 신원처럼 보이는 이름을 실어 보내도 엔진 쪽 주소에는 llm 하나뿐이다."""
+    agent = _wire()
+    r = portal.get("/agent/card-review/limits", params=[("user_email", "boss@hwax.local"), ("groups", "portal-admin"),
+                                                         ("llm", "external"), ("zzz", "1")])
+    assert r.status_code == 200
+    assert agent.seen[0].url.query == b"llm=external"
+
+
+def test_limits_의_llm_값은_엔진이_가르고_그_거절이_그대로_온다(portal):
+    """포털은 값을 고치거나 막지 않는다 — 받는 값의 정본은 엔진이고(본문의 llm 과 같다), 거절은 상태·본문 그대로 간다."""
+    body = {"code": "bad_request", "message": "모르는 llm 'claude' — glm(기본)·external 만 받는다"}
+    agent = _wire(lambda req: httpx.Response(422, json=body))
+    r = portal.get("/agent/card-review/limits?llm=claude")
+    assert (r.status_code, r.json()) == (422, body)
+    assert dict(agent.seen[0].url.params) == {"llm": "claude"}
+    last = _rows()[-1]
+    assert (last["event"], last["status"], last["meta"]) == (
+        "card_review_limits_error", "error", {"upstream": 422, "code": "bad_request"})

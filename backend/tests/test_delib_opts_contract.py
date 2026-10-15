@@ -104,14 +104,12 @@ _NOT_RELAYED = {
     "continue_non_negotiables",   # non_negotiables 의 옛 이름 — 엔진이 둘 다 읽고 포털은 새 이름만 싣는다
     "options",                    # 후보안 목록 — MCP deliberate_start 의 인자다. 웹·러너는 보내지 않는다
     "parse_retries",              # JSON 재시도 횟수 — 운영 손잡이(DELIB_PARSE_RETRIES)다. 요청으로 보내는 곳이 없다
-    "llm",                        # 외부 응답자 선택(llm=external, 기본 꺼짐 — docs/risk-claude-engine X-1). 지금은 웹도 리스크 앱
-                                  # 러너도 보내지 않는다. X-2(앱이 보낸다)·X-3(포털이 llm 과 consent_external 을 StrictBool 로 중계)
-                                  # 에서 중계를 더하고 여기서 뺀다 — 그 전에 포털을 거치면 GLM 으로 돈다(바깥으로 나가지 않는 쪽).
 }
 
 
 def _engine_request_keys() -> set[str]:
-    """엔진 _resolve_opts 가 요청(req_opts)에서 읽는 키 — 낱개 get("…") 과 정수 손잡이 루프의 튜플."""
+    """엔진이 요청(req_opts)에서 읽는 키 — _resolve_opts 의 낱개 get("…") 과 정수 손잡이 루프의 튜플, 그리고 파일 어디서든 이름 붙인
+    상수로 읽는 키(get(external_llm.CONSENT_FIELD) 같은)."""
     src = _ENGINE.read_text(encoding="utf-8")
     body = src[src.index("def _resolve_opts("):]
     body = body[: body.index("\n    return o\n")]
@@ -125,7 +123,16 @@ def _engine_request_keys() -> set[str]:
         named = re.search(rf"^{listed} = \(([^)]*)\)", src, re.M)
         assert named, f"엔진의 정수 손잡이 목록 {listed} 을 모듈 최상위에서 못 찾았다 — 모양이 바뀌었으면 이 추출도 고쳐라"
         listed = named.group(1)
-    return keys | set(re.findall(r'"([a-z_]+)"', listed))
+    keys |= set(re.findall(r'"([a-z_]+)"', listed))
+    # 이름 붙인 상수로 읽는 키 — 반출 동의(consent_external)는 _resolve_opts 밖(_external_refusal)에서 get(external_llm.CONSENT_FIELD)
+    # 로 읽는다. 글자 그대로의 get("…") 만 찾던 추출은 이 키를 못 봐서, 포털이 동의를 버려도 아래 시험이 지나갔다. 상수 값은 그 모듈
+    # (없으면 deliberation.py)의 `이름 = "값"` 줄에서 읽는다 — 못 찾으면 실패한다.
+    for mod, name in re.findall(r"req_opts\.get\((?:([a-z_]+)\.)?([A-Z][A-Z0-9_]*)\)", src):
+        where = _ENGINE.with_name(f"{mod}.py") if mod else _ENGINE
+        const = re.search(rf'^{name}\s*=\s*"([a-z_]+)"', where.read_text(encoding="utf-8"), re.M)
+        assert const, f"엔진이 요청 키로 읽는 상수 {name} 의 값을 {where.name} 에서 못 찾았다 — 모양이 바뀌었으면 이 추출도 고쳐라"
+        keys.add(const.group(1))
+    return keys
 
 
 def test_엔진이_요청으로_받는_키는_포털이_중계하거나_알고_남겨_둔_것이다():
@@ -133,6 +140,11 @@ def test_엔진이_요청으로_받는_키는_포털이_중계하거나_알고_�
         pytest.skip(f"형제 리포 없음: {_ENGINE}")
     keys = _engine_request_keys()
     assert len(keys) >= 25, f"엔진 요청 키 추출 실패: {sorted(keys)}"   # 못 뽑으면 조용히 통과한다
+    ext_src = _ENGINE.with_name("external_llm.py").read_text(encoding="utf-8")
+    consent = re.search(r'^CONSENT_FIELD\s*=\s*"([a-z_]+)"', ext_src, re.M)
+    assert consent and consent.group(1) in keys, (
+        "엔진의 반출 동의 칸(external_llm.CONSENT_FIELD)이 추출에 안 잡혔다 — 엔진이 읽는 모양이 바뀌었으면 추출을 고쳐라"
+        "(못 보면 포털이 동의를 버려도 이 시험이 지나간다)")
     missing = keys - set(DelibOpts.model_fields) - _NOT_RELAYED
     assert not missing, (
         f"엔진은 요청 키로 받는데 포털 DelibOpts 에 없다 — 포털을 거치는 길에서 말없이 사라진다: {sorted(missing)}. "
@@ -304,3 +316,145 @@ def test_started_by_는_human_app_밖이면_422(bad):
 
     with pytest.raises(ValidationError):
         ChatRequest(message="/심의 화두", delib_opts={"started_by": bad})
+
+
+# ── 외부 응답자 선택 · 반출 동의(X-3a) — docs/risk-claude-engine ────────────────────────────────────────────
+# 엔진은 delib_opts.llm=external 이면 판단 호출을 잡 주인의 과제 줄로 보내고, consent_external 이 JSON true 가 아니면 시작하지 않는다.
+# 포털에 선언이 없던 동안은 둘 다 model_dump(exclude_none=True) 에서 말없이 떨어져 외부를 고른 심의가 GLM 으로 돌았다. 보내는 곳은
+# 리스크 앱뿐이다(포털 화면에는 입구가 없다). 동의는 StrictBool — "true"·1 을 true 로 바꿔 넘기면 동의가 아닌 것을 동의로 세탁한다.
+@pytest.mark.parametrize("opts", [
+    {"llm": "external", "consent_external": True},
+    {"llm": "external", "consent_external": False},     # 엔진이 거절할 값도 바꾸지 않고 넘긴다 — 거절은 엔진의 몫이다
+    {"llm": "glm"},
+    {"consent_external": True},
+], ids=["external+consent", "external+false", "glm", "consent-only"])
+def test_외부_응답자_선택과_반출_동의가_포털을_지나_살아_나온다(opts):
+    from app.agent.routes import ChatRequest
+
+    wire = ChatRequest(message="/심의 화두", delib_opts=opts).delib_opts.model_dump(exclude_none=True)
+    assert wire == opts
+    if "consent_external" in opts:
+        assert wire["consent_external"] is opts["consent_external"], "동의는 bool 그대로 간다"
+    # 안 보내면 안 나간다 — 없는 선택을 glm 으로, 없는 동의를 false 로 채워 보내지 않는다.
+    silent = ChatRequest(message="/심의 화두", delib_opts={}).delib_opts.model_dump(exclude_none=True)
+    assert "llm" not in silent and "consent_external" not in silent
+
+
+@pytest.mark.parametrize("bad", [
+    {"llm": "claude"}, {"llm": "External"}, {"llm": " external"}, {"llm": ""}, {"llm": 1}, {"llm": True},
+    {"consent_external": "true"}, {"consent_external": "True"}, {"consent_external": 1}, {"consent_external": "1"},
+    {"consent_external": 1.0}, {"consent_external": 0}, {"consent_external": "false"}, {"consent_external": "yes"},
+], ids=lambda b: f"{next(iter(b))}={next(iter(b.values()))!r}")
+def test_외부_응답자_선택과_동의의_모양이_틀리면_422(bad):
+    from pydantic import ValidationError
+
+    from app.agent.routes import ChatRequest
+
+    with pytest.raises(ValidationError):
+        ChatRequest(message="/심의 화두", delib_opts={"llm": "external", "consent_external": True, **bad})
+
+
+# 포털을 지나는 심의 요청의 세 모양 — 셋 다 POST /agent/chat 하나(_relay_stream)로 엔진의 /chat 에 간다. 리스크 앱 러너(engine_client)도
+# 이어하기·핸드오프(프론트 sendMessage 의 extraDelibOpts)도 같은 길이다. 웹 화면은 llm 을 내지 않지만 길은 같다.
+_SHAPES = {
+    "web": {"evidence_prepass": 1, "rounds": 3, "search_sources": []},
+    "risk_runner": {"started_by": "app", "free_tools": 1, "tools": [], "voc": "off", "save_report": 0,
+                    "persona_knowledge": 1, "chair_template": "risk-review",
+                    "knowledge_query": {"mech-a": "리브 두께 감소", "*": "커넥터 간극"},
+                    "personas": [{"key": "mech-a", "name": "기구 A"}],
+                    "evidence": [{"id": "E0", "title": "브리프", "result": "근거 원문"}]},
+    "continue": {"continue_summary": "이전 결정문", "non_negotiables": ["조항 1"], "rounds_so_far": 3,
+                 "human_note": "사람 의견", "append_to_report_id": 7, "rescreen": 0},
+}
+
+
+def _relay_chat(*bodies: dict) -> tuple[list[int], list[dict]]:
+    """POST /agent/chat 을 차례로 부르고 (상태들, 엔진 /chat 이 받은 본문들)을 돌려준다. 엔진은 MockTransport 대역이다."""
+    import json
+
+    import httpx
+    from fastapi.testclient import TestClient
+
+    from app.auth.provider import Principal
+    from app.deps import principal_pat_or_session
+    from app.main import app
+
+    seen: list[dict] = []
+
+    def engine(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/chat"
+        seen.append(json.loads(req.content))
+        return httpx.Response(200, stream=httpx.ByteStream(b"event: done\ndata: {}\n\n"))
+
+    app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
+        subject="u1", email="u1@hwax.local", display_name="U", groups=["eng-team", "feat:deliberation"])
+    try:
+        with TestClient(app) as c:
+            real = app.state.agent_client
+            app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(engine))
+            try:
+                codes = [c.post("/agent/chat", json=b).status_code for b in bodies]
+            finally:
+                app.state.agent_client = real
+    finally:
+        app.dependency_overrides.pop(principal_pat_or_session, None)
+    return codes, seen
+
+
+@pytest.mark.parametrize("shape", sorted(_SHAPES))
+def test_외부_응답자_선택과_동의가_심의_중계_길마다_엔진_본문에_그대로_닿는다(shape):
+    base = _SHAPES[shape]
+    ext = {**base, "llm": "external", "consent_external": True}
+    codes, seen = _relay_chat(
+        {"message": "/심의 화두", "delib_opts": ext},
+        {"message": "/심의 화두", "delib_opts": base},                                            # GLM — 종전 그대로
+        {"message": "/심의 화두", "delib_opts": {**ext, "consent_external": "true"}},             # 문자열 동의
+        {"message": "/심의 화두", "delib_opts": {**ext, "consent_external": 1}},                  # 수 동의
+        {"message": "/심의 화두", "delib_opts": {**ext, "llm": "claude"}})                        # 모르는 선택
+    assert codes == [200, 200, 422, 422, 422]
+    assert len(seen) == 2, "422 로 막힌 요청이 엔진으로 나갔다"
+    assert seen[0]["delib_opts"] == ext, "외부 선택·동의를 실은 심의 손잡이가 엔진에 그대로 닿지 않았다"
+    assert seen[0]["delib_opts"]["consent_external"] is True and seen[0]["user_email"] == "u1@hwax.local"
+    assert seen[1]["delib_opts"] == base, "GLM 심의 본문이 바뀌었다(없는 llm·동의를 채워 보내면 안 된다)"
+
+
+# 포털 모델의 출력을 스위치를 켠 엔진(EXTERNAL_LLM_ENABLED=1)의 실제 _resolve_opts · _external_refusal 에 넣는다 — 소비자의 입력을
+# 생산자의 실제 출력으로 만든다. 셸의 다른 EXTERNAL_LLM_* · DELIB_* 는 물려받지 않는다(값이 틀리면 엔진이 길을 닫아 시험이 흔들린다).
+_ENGINE_EXTERNAL = (
+    "import json, sys, types, deliberation as d\n"
+    "app = types.SimpleNamespace(state=types.SimpleNamespace())\n"
+    "out = []\n"
+    "for req in json.load(sys.stdin):\n"
+    "    o = d._resolve_opts(req)\n"
+    "    refused = d._external_refusal(app, req, 'u1@hwax.local')\n"
+    "    out.append({'llm': o.llm, 'unread': o.req_unread, 'refused': (refused or {}).get('code')})\n"
+    "print(json.dumps(out, ensure_ascii=False))\n"
+)
+
+
+def test_포털이_낸_외부_선택과_동의를_엔진이_그대로_읽는다():
+    if not _ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {_ENGINE}")
+    import json
+    import os
+    import subprocess
+    import sys
+
+    from app.agent.routes import ChatRequest
+
+    cases = [{"llm": "external", "consent_external": True}, {"llm": "external"},
+             {"llm": "external", "consent_external": False}, {"llm": "glm"}, {}]
+    wire = [ChatRequest(message="/심의 화두", delib_opts=c).delib_opts.model_dump(exclude_none=True) for c in cases]
+    assert wire == cases, "포털 모델이 값을 바꾸거나 버렸다 — 엔진에 닿기 전에 갈라졌다"
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("EXTERNAL_LLM_", "DELIB_"))}
+    r = subprocess.run([sys.executable, "-c", _ENGINE_EXTERNAL], input=json.dumps(wire), cwd=_ENGINE.parent,
+                       env={**env, "EXTERNAL_LLM_ENABLED": "1", "PYTHONDONTWRITEBYTECODE": "1"},
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, f"엔진 _resolve_opts·_external_refusal 을 이 venv 로 부르지 못했다 — {r.stderr.strip()[-600:]}"
+    got = json.loads(r.stdout.strip().splitlines()[-1])
+    assert [(g["llm"], g["refused"]) for g in got] == [
+        ("external", None),                               # 동의가 JSON true 로 닿아 열린다
+        ("external", "external_consent_required"),        # 동의 없는 외부 선택은 엔진이 막는다(포털은 동의를 지어내지 않는다)
+        ("external", "external_consent_required"),
+        ("glm", None), ("glm", None)], got
+    assert all(g["unread"] == {} for g in got), f"포털을 지난 llm 을 엔진이 못 읽었다: {got}"
