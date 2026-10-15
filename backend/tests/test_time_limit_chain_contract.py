@@ -306,9 +306,16 @@ def test_팩_빌드의_최악이_포털_단발_한도_안이다():
                 ("포털 단발 한도(AGENT_UNARY_TIMEOUT_S)", p["unary"])])
 
 
-# 단언 4(나란한 값 — 포털 card_review_max_streams ≥ 엔진 CONCURRENCY_DEFAULT, 리스크 앱 HWAXRISK_REVIEW_CONCURRENCY 기본 ≥ 엔진
-# CONCURRENCY_DEFAULT)는 아직 두지 않는다(M3.md #60). 리스크 앱 main 의 워커 기본이 8 이 되는 단계 D push 뒤에 여기에 넣는다 —
-# 지금 넣으면 형제 체크아웃이 어느 가지냐에 따라 이 시험이 뒤집힌다(xfail 로도 두지 않는다).
+def test_카드_대조의_나란한_값은_엔진_관문_이상이다():
+    """단언 4(M3.md #60 — 리스크 앱 main 이 워커 기본 8 로 오른 10-15 단계 D push 뒤에 넣었다). 감싸는 관계가 아니라 '이 이상' 이다.
+    포털 중계 동시 수(card_review_max_streams)가 엔진 관문(CONCURRENCY_DEFAULT)보다 작으면 엔진이 받을 자리가 있어도 포털이 줄을 세우고,
+    리스크 앱 워커 기본(HWAXRISK_REVIEW_CONCURRENCY)이 작으면 D-34 의 8 이 앱 수에 묶인다 — 한쪽만 고쳐 순서가 뒤집히는 것을 막는다."""
+    gate = _val(ENGINE, "review_gate.py", r"^CONCURRENCY_DEFAULT = (\d+)")
+    streams = Settings.model_fields["card_review_max_streams"].default
+    workers = _val(RISK, "backend/app/config.py", r'Knob\("HWAXRISK_REVIEW_CONCURRENCY", "risk_review_concurrency", (\d+)')
+    assert streams >= gate, f"포털 card_review_max_streams({streams}) < 엔진 CONCURRENCY_DEFAULT({gate:g}) — 포털이 엔진 관문을 못 채운다"
+    assert workers >= gate, (f"리스크 앱 HWAXRISK_REVIEW_CONCURRENCY 기본({workers:g}) < 엔진 CONCURRENCY_DEFAULT({gate:g}) — "
+                             "D-34 의 동시 수가 앱 워커 수에 묶인다")
 
 
 def test_nginx_생성기가_견주는_포털_기본값이_포털의_그_값이다():
