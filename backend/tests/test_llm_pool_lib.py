@@ -10,6 +10,7 @@ HOME 을 임시 디렉터리로 바꾸고, 포털 사본을 임시 디렉터리�
 import http.server
 import json
 import os
+import re
 import shutil
 import socket
 import stat
@@ -246,12 +247,17 @@ def test_풀이_켜져_있고_라우터가_서버를_올렸으면_라우터(tmp_
         "직접 주소가 없어도 라우터가 쓸 만하면 라우터다"
 
 
-@pytest.mark.parametrize("case", ["올라온 서버 0", "답 없음"])
+@pytest.mark.parametrize("case", ["올라온 서버 0", "답 없음", "모델 다름", "모델 대조 전"])
 def test_라우터가_쓸_수_없으면_직접_주소와_한_줄(tmp_path, router, case):
-    """1i 가 사본을 안 바꾸는 바로 그 조건 — 새로 더한 키만 죽은 라우터를 보면 안 된다."""
+    """1i 가 사본을 안 바꾸는 바로 그 조건 — 새로 더한 키만 라우터를 보면 안 된다. 모델이 다르거나 아직 대조 전이면 1i 도 바꾸지
+    않는다(반대 검토 M5 — 다른 모델로 재기동한 서버는 빨리 실패해 한가해 보이고 요청을 다 받는다)."""
     port = router["port"]
     if case == "답 없음":
         port = _dead_port()
+    elif case == "모델 다름":
+        router["body"]["models"] = {"match": False, "ids": {"a": ["x"], "b": ["y"]}, "max_model_len": {}}
+    elif case == "모델 대조 전":
+        router["body"]["models"] = {"match": None, "ids": [], "max_model_len": None}
     else:
         router["code"] = 503; router["body"].update(status="down", upstreams_up=0)
     rc, out, err = _eff(tmp_path, f"LLM_BASE_URL={DIRECT}\nLLM_UPSTREAMS={S1},{S2}\nLLM_ROUTER_PORT={port}\n")
@@ -332,8 +338,20 @@ def _row(rows, repo: str, key: str) -> list[str]:
     return hit[0]
 
 
+def _bk_root(p: Path) -> Path:
+    """사본 p(<임시>/<리포>/<상대경로>)의 백업 자리 — 포털의 infra/.state/llm-pool-backups/<리포>/<상대경로>(사본 옆이 아니다)."""
+    top = next(a for a in p.parents if (a / "HWAXPortal").is_dir())
+    return top / "HWAXPortal/infra/.state/llm-pool-backups" / p.relative_to(top)
+
+
 def _baks(p: Path) -> list[Path]:
-    return sorted(p.parent.glob(p.name + ".bak-*"))
+    bk = _bk_root(p)
+    return sorted(bk.parent.glob(bk.name + ".*")) if bk.parent.is_dir() else []
+
+
+def _strays(p: Path) -> list[str]:
+    """사본 디렉터리에 사본 말고 생긴 것 — 옛 `.env.bak-*` 나 남은 임시 파일. 서비스 리포 안에는 아무것도 남기지 않는다(H1)."""
+    return sorted(x.name for x in p.parent.iterdir() if x.name != p.name) if p.parent.is_dir() else []
 
 
 ROUTER = "http://127.0.0.1:9130/v1"
@@ -359,20 +377,42 @@ def test_관리하는_값만_바꾸고_나머지는_한_바이트도_안_바꾼�
     assert sf.read_text() == f"OPENAI_BASE_URL={ROUTER}\nOPENAI_MODEL=glm\n"
 
 
-def test_바꾸기_전에_권한_그대로_백업한다(box):
-    _, _, sib = box
-    agent, sf = sib["HWAXAgentServer"], sib["SignalForge"]
+def test_백업은_포털_상태_디렉터리에만_600_으로_남고_서비스_리포에는_아무것도_없다(box):
+    """**H1 회귀** — 백업이 사본 옆(`.env.bak-*`)에 남으면 서비스 리포 다섯 곳에서 gitignore 밖의 비밀 파일이 되고, deploy-all 의
+    `git stash push -u` 가 그 비밀째 stash 로 쓸어 가 되돌리기 안내가 가리키는 파일이 사라진다. 백업은 포털의 gitignore 된
+    infra/.state/llm-pool-backups/<리포>/<상대경로>.<UTC> 에 — 디렉터리 700 · 파일 600(원본이 644 여도) — 둔다."""
+    root, _, sib = box
+    agent, sf, aidh = sib["HWAXAgentServer"], sib["SignalForge"], sib["AIDataHub"]
     agent.write_text(f"VLLM_BASE_URL={DIRECT}\nVLLM_API_KEY=secret\n"); agent.chmod(0o600)
     sf.write_text(f"OPENAI_BASE_URL={DIRECT}\n"); sf.chmod(0o644)
-    orig = {agent: agent.read_bytes(), sf: sf.read_bytes()}
+    aidh.write_text(f"OPENAI_BASE_URL={DIRECT}\nLLM_BASE_URL={DIRECT}\n"); aidh.chmod(0o640)
+    orig = {p: (p.read_bytes(), stat.S_IMODE(p.stat().st_mode), p.stat().st_uid, p.stat().st_gid) for p in (agent, sf, aidh)}
     rows = _rewrite(box, "write", ROUTER, DIRECT, ROUTER)
-    for p, mode in ((agent, 0o600), (sf, 0o644)):
+    bkroot = root / "infra/.state/llm-pool-backups"
+    for p, (data, mode, uid, gid) in orig.items():
+        repo = p.relative_to(root.parent).parts[0]
         baks = _baks(p)
-        assert len(baks) == 1 and baks[0].read_bytes() == orig[p], "백업은 바꾸기 전 내용이다"
-        assert stat.S_IMODE(baks[0].stat().st_mode) == mode, "비밀 파일의 백업은 600 그대로다"
-        assert stat.S_IMODE(p.stat().st_mode) == mode, "제자리에 쓴다 — 권한이 그대로다"
-        row = [r for r in rows if Path(r[2]).resolve() == p.parent.resolve() and r[0] == "changed"]
-        assert row and all(r[6] == str(baks[0]) for r in row), "바꾼 줄은 백업 경로를 함께 낸다(되돌리기)"
+        assert len(baks) == 1 and baks[0].read_bytes() == data, "백업은 바꾸기 전 내용이다 — 파일마다 한 번"
+        assert re.fullmatch(r"\.env\.\d{8}T\d{6}Z", baks[0].name), baks[0].name
+        assert stat.S_IMODE(baks[0].stat().st_mode) == 0o600, "백업은 원본 권한과 무관하게 600 이다(비밀 사본)"
+        assert stat.S_IMODE(p.stat().st_mode) == mode and (p.stat().st_uid, p.stat().st_gid) == (uid, gid), "권한·소유자 그대로"
+        assert _strays(p) == [], f"서비스 리포에 남은 것이 있다 — {_strays(p)}"
+        for d in [a for a in baks[0].parents if a == bkroot or a.is_relative_to(bkroot)]:
+            assert stat.S_IMODE(d.stat().st_mode) == 0o700, f"백업 디렉터리는 700 — {d}"
+        mine = [r for r in rows if r[2].endswith("/" + repo) and r[0] == "changed"]
+        assert mine and all(r[6] == str(baks[0]) and Path(r[6]).is_absolute() for r in mine), "바꾼 줄은 백업의 전체 경로를 낸다(되돌리기)"
+    assert (bkroot / "AIDataHub/deploy/apptainer").is_dir(), "리포 안 경로를 그대로 따른다"
+
+
+def test_같은_초에_다시_돌아도_앞_백업을_덮지_않는다(box):
+    _, _, sib = box
+    agent = sib["HWAXAgentServer"]; agent.write_text(f"VLLM_BASE_URL={DIRECT}\n")
+    for new, old in ((ROUTER, DIRECT), (DIRECT, ROUTER), (ROUTER, DIRECT)):
+        _rewrite(box, "write", new, old)
+    names = [p.name for p in _baks(agent)]
+    assert len(names) == 3 and len(set(names)) == 3, names
+    assert sorted(p.read_text() for p in _baks(agent)) == sorted([f"VLLM_BASE_URL={DIRECT}\n", f"VLLM_BASE_URL={ROUTER}\n",
+                                                                  f"VLLM_BASE_URL={DIRECT}\n"])
 
 
 def test_따옴표_export_줄끝_주석_CRLF_를_그대로_둔다(box):
@@ -478,32 +518,157 @@ def test_새_값이_비면_아무것도_하지_않는다(box):
 
 @NOT_ROOT
 def test_백업을_못_만들면_바꾸지_않는다(box):
-    """백업이 먼저다 — 디렉터리에 쓸 수 없으면(백업을 못 만든다) 제자리 쓰기는 될 수 있어도 하지 않는다."""
-    _, _, sib = box
+    """백업이 먼저다 — 포털의 상태 디렉터리에 쓸 수 없으면(백업을 못 만든다) 사본은 쓸 수 있어도 바꾸지 않는다."""
+    root, _, sib = box
     agent = sib["HWAXAgentServer"]
     agent.write_text(f"VLLM_BASE_URL={DIRECT}\n"); agent.chmod(0o644)
+    state = root / "infra/.state"; state.mkdir(parents=True); state.chmod(0o555)
+    try:
+        rows = _rewrite(box, "write", ROUTER, DIRECT, ROUTER)
+    finally:
+        state.chmod(0o755)
+    row = _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")
+    assert row[0] == "error" and "백업을 만들지 못했다" in row[5] and "그대로다" in row[5], row
+    assert agent.read_text() == f"VLLM_BASE_URL={DIRECT}\n" and not _baks(agent) and _strays(agent) == []
+
+
+@NOT_ROOT
+def test_사본_디렉터리에_쓸_수_없으면_바꾸지_않고_만든_백업도_지운다(box):
+    """임시 파일 + 이름 바꾸기라 사본 디렉터리에 써야 한다. 못 쓰면 사본은 그대로고, 막 만든 백업은 지운다(L6 — 아무것도 안 바뀌었는데
+    비밀 사본만 하나 더 남고 '그 백업으로 되돌린다' 고 말했다)."""
+    _, _, sib = box
+    agent = sib["HWAXAgentServer"]
+    agent.write_text(f"VLLM_BASE_URL={DIRECT}\n"); agent.chmod(0o600)
     agent.parent.chmod(0o555)
     try:
         rows = _rewrite(box, "write", ROUTER, DIRECT, ROUTER)
     finally:
         agent.parent.chmod(0o755)
     row = _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")
-    assert row[0] == "error" and "백업" in row[5], row
-    assert agent.read_text() == f"VLLM_BASE_URL={DIRECT}\n" and not _baks(agent)
+    assert row[0] == "error" and "쓰지 못했다" in row[5] and "그대로다" in row[5] and "백업은 지웠다" in row[5], row
+    assert "되돌린다" not in row[5] and row[6] == "", "바뀐 것이 없다 — 되돌릴 백업을 가리키지 않는다"
+    assert agent.read_text() == f"VLLM_BASE_URL={DIRECT}\n" and not _baks(agent) and _strays(agent) == []
 
 
 @NOT_ROOT
-def test_쓸_수_없는_파일은_그대로_두고_되돌릴_길을_말한다(box):
+def test_읽기_전용_사본은_그대로_두고_백업도_만들지_않는다(box):
+    """이름 바꾸기는 디렉터리 권한만 본다 — 읽기 전용 파일도 갈아 끼울 수 있어 먼저 본다(사람이 일부러 잠근 파일이다)."""
     _, _, sib = box
     agent = sib["HWAXAgentServer"]
     agent.write_text(f"VLLM_BASE_URL={DIRECT}\n"); agent.chmod(0o444)
+    ino = agent.stat().st_ino
     try:
         rows = _rewrite(box, "write", ROUTER, DIRECT, ROUTER)
     finally:
-        agent.chmod(0o644)
+        mode = stat.S_IMODE(agent.stat().st_mode); agent.chmod(0o644)
     row = _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")
-    assert row[0] == "error" and "쓰지 못했다" in row[5], row
-    assert agent.read_text() == f"VLLM_BASE_URL={DIRECT}\n"
+    assert row[0] == "error" and "쓸 수 없는 파일" in row[5] and "되돌린다" not in row[5], row
+    assert agent.read_text() == f"VLLM_BASE_URL={DIRECT}\n" and agent.stat().st_ino == ino and mode == 0o444
+    assert not _baks(agent) and _strays(agent) == []
+
+
+def test_디스크가_차도_반쯤_잘린_사본을_남기지_않는다(box):
+    """**L3 회귀** — 제자리 쓰기는 쓰다 막히면(디스크 참 — 여기서는 RLIMIT_FSIZE 로 흉내) 잘린 .env 를 남겼다. 임시 파일에 쓰고 이름을
+    바꾸므로 사본은 한 바이트도 안 바뀌고, 임시 파일도 막 만든 백업도 남지 않는다. 한도는 lib 의 here-doc(bash 임시 파일)보다 커야 한다."""
+    root, home, sib = box
+    agent = sib["HWAXAgentServer"]
+    old, new = "http://198.51.100.7/v1", "http://127.0.0.1:9130/v1/" + "a" * 700
+    agent.write_text(f"VLLM_BASE_URL={old}\nPAD={'x' * 64900}\n")
+    before = agent.read_bytes()
+    assert len(before) < 65536 < len(before) + 700, "원본은 한도 안 · 바꾼 것은 한도 밖"
+    r = _sh(f'ulimit -f 64; . "{LIB}"; hwax_llm_pool_rewrite "{root}" write "{new}" "{old}"; echo "rc=$?"', home)
+    row = [ln.split("\t") for ln in r.stdout.splitlines() if "HWAXAgentServer" in ln]
+    assert len(row) == 1 and row[0][0] == "error" and "쓰지 못했다" in row[0][5], r.stdout + r.stderr
+    assert agent.read_bytes() == before, "사본이 잘렸다"
+    assert _strays(agent) == [] and not _baks(agent), "임시 파일·백업이 남았다"
+
+
+def test_심링크_사본은_링크를_두고_가리키는_파일을_바꾼다(box):
+    """/data 이관의 심링크 브리지 모양 — 이름 바꾸기를 링크에 하면 링크가 파일로 바뀌어 브리지가 끊긴다."""
+    _, _, sib = box
+    agent = sib["HWAXAgentServer"]
+    target = agent.parent.parent / "data/agent/agent.env"; target.parent.mkdir(parents=True)
+    target.write_text(f"VLLM_BASE_URL={DIRECT}\nK=secret\n"); target.chmod(0o600)
+    agent.symlink_to(target)
+    rows = _rewrite(box, "write", ROUTER, DIRECT)
+    assert _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")[0] == "changed"
+    assert agent.is_symlink() and agent.resolve() == target.resolve(), "링크가 그대로다"
+    assert target.read_text() == f"VLLM_BASE_URL={ROUTER}\nK=secret\n" and stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert len(_baks(agent)) == 1 and _baks(agent)[0].read_text() == f"VLLM_BASE_URL={DIRECT}\nK=secret\n"
+    assert sorted(x.name for x in target.parent.iterdir()) == ["agent.env"], "가리키는 파일 옆에도 남은 것이 없다"
+
+
+@pytest.mark.parametrize("lang", ["C.UTF-8", "ko_KR.UTF-8"])
+def test_UTF8_이_아닌_값이_있어도_죽지_않고_줄을_낸다(box, lang):
+    """**L4 회귀** — 사본 하나에 UTF-8 이 아닌 값이 있으면 ko_KR.UTF-8 에서 줄을 찍다 UnicodeEncodeError 로 죽었다(파일은 이미 다 쓴 뒤라
+    바꾼 사본의 ✓ · 재기동 안내가 하나도 안 나왔다). 값은 바이트 그대로 지나간다."""
+    root, home, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={DIRECT}\n")
+    sib["SignalForge"].write_bytes(b"OPENAI_BASE_URL=http://caf\xe9.example/v1\n")      # Latin-1 한 바이트 — 관리 밖 값
+    r = subprocess.run(["bash", "-c", f'. "{LIB}"; hwax_llm_pool_rewrite "{root}" write "{ROUTER}" "{DIRECT}"'], capture_output=True,
+                       timeout=60, env={"PATH": os.environ["PATH"], "HOME": str(home), "LANG": lang, "LC_ALL": lang})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    rows = {ln.split(b"\t")[1]: ln.split(b"\t") for ln in r.stdout.splitlines()}
+    assert rows[b"agent-server"][0] == b"changed" and sib["HWAXAgentServer"].read_text() == f"VLLM_BASE_URL={ROUTER}\n"
+    assert rows[b"signalforge"][0] == b"foreign" and rows[b"signalforge"][5] == b"http://caf\xe9.example/v1", "값은 바이트 그대로 보인다"
+    assert sib["SignalForge"].read_bytes() == b"OPENAI_BASE_URL=http://caf\xe9.example/v1\n"
+
+
+def test_줄은_파일마다_처리하는_대로_낸다(box, tmp_path):
+    """뒤 파일에서 예상 밖으로 죽어도 앞 파일의 결과(바꿨다 · 백업 경로)는 부르는 쪽에 남는다 — 부르는 쪽(update-all _llm_apply)은 종료코드로
+    '끝까지 못 갔다' 를 안다. 두 번째 파일의 이름 바꾸기에서 죽는 python3 를 PATH 앞에 세운다(lib 의 python3 - <<'PY' 를 그대로 받는다)."""
+    root, home, sib = box
+    sib["HWAXAgentServer"].write_text(f"VLLM_BASE_URL={DIRECT}\n")                 # 첫 파일(사본 목록은 정렬 — agent-server 가 앞)
+    sib["AIDataHub"].write_text(f"OPENAI_BASE_URL={DIRECT}\n")
+    shim = tmp_path / "shim"; shim.mkdir()
+    real_py = shutil.which("python3")
+    (shim / "python3").write_text(
+        "#!/usr/bin/env bash\n"
+        f'exec "{real_py}" -c \'import os, sys\n'
+        "real = os.replace; n = [0]\n"
+        "def flaky(a, b):\n"
+        "    n[0] += 1\n"
+        "    if n[0] == 2: raise RuntimeError(\"boom\")\n"
+        "    return real(a, b)\n"
+        "os.replace = flaky\n"
+        "exec(compile(sys.stdin.read(), \"<lib>\", \"exec\"), {\"__name__\": \"__main__\"})\n"
+        "' \"${@:2}\"\n")
+    (shim / "python3").chmod(0o755)
+    r = subprocess.run(["bash", "-c", f'. "{LIB}"; hwax_llm_pool_rewrite "{root}" write "{ROUTER}" "{DIRECT}"; echo "rc=$?"'],
+                       capture_output=True, text=True, timeout=60,
+                       env={"PATH": f"{shim}:{os.environ['PATH']}", "HOME": str(home), "LANG": "C.UTF-8"})
+    assert "RuntimeError" in r.stderr, "대역이 죽지 않았다 — 시험이 헛돈다"
+    first = [ln.split("\t") for ln in r.stdout.splitlines() if ln.startswith("changed\tagent-server")]
+    assert len(first) == 1 and Path(first[0][6]).is_file(), r.stdout
+    assert "rc=1" in r.stdout and "ai-data-hub" not in r.stdout
+
+
+def test_홀로_선_CR_은_줄바꿈이_아니다(box):
+    """**L5 회귀** — 읽는 쪽(sed)은 `\\n` 으로만 줄을 나눈다. bytes.splitlines 는 홀로 선 `\\r` 에서도 나눠, 읽는 쪽이 보지 않는 줄(앞
+    키의 값 꼬리)을 고쳤다. CRLF 는 그대로 된다(위 시험)."""
+    root, home, sib = box
+    agent = sib["HWAXAgentServer"]
+    raw = f"A=1\rVLLM_BASE_URL={DIRECT}\nB=2\n".encode()
+    agent.write_bytes(raw)
+    reader = _sh(f'. "{LIB}"; printf "[%s]" "$(hwax_llm_envv "{agent}" VLLM_BASE_URL)"', home).stdout
+    assert reader == "[]", "읽는 쪽에는 그 키가 없다"
+    rows = _rewrite(box, "write", ROUTER, DIRECT)
+    assert _row(rows, "HWAXAgentServer", "VLLM_BASE_URL")[0] == "absent"
+    assert agent.read_bytes() == raw and not _baks(agent)
+
+
+def test_라우터_주소_기록(tmp_path):
+    """1i 가 사본에 적은 라우터 주소를 infra/.state 에 적고 읽는다 — 루프백 /v1 주소 모양이 아니면 없는 것으로 본다(M4)."""
+    root = tmp_path / "HWAXPortal"; root.mkdir()
+    rd = f'. "{LIB}"; v="$(hwax_llm_router_recorded "{root}")"; echo "rc=$? [$v]"'
+    assert _sh(rd, tmp_path).stdout.strip() == "rc=1 []", "기록이 없으면 1"
+    w = _sh(f'. "{LIB}"; hwax_llm_router_record "{root}" "http://127.0.0.1:9555/v1"; echo "rc=$?"', tmp_path)
+    assert w.stdout.strip() == "rc=0" and (root / "infra/.state/llm-pool.router").read_text() == "http://127.0.0.1:9555/v1\n"
+    assert _sh(rd, tmp_path).stdout.strip() == "rc=0 [http://127.0.0.1:9555/v1]"
+    assert [p.name for p in (root / "infra/.state").iterdir()] == ["llm-pool.router"], "임시 파일이 남지 않는다"
+    for junk in ("", "http://198.51.100.1:9555/v1\n", "http://127.0.0.1:9555/v1/x\n", "garbage\n"):
+        (root / "infra/.state/llm-pool.router").write_text(junk)
+        assert _sh(rd, tmp_path).stdout.strip() == "rc=1 []", junk
 
 
 def test_lib_는_소싱만으로는_아무것도_하지_않는다(tmp_path):
