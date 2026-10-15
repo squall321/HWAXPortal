@@ -36,6 +36,31 @@ entries:
       - "에이전트 서버에 외부 응답자 — EXTERNAL_LLM_ENABLED=1 인 박스에서만 카드 대조(llm=external)와 심의(delib_opts.llm=external)의 판단 호출이 주인별 과제 줄로 가고, Claude Code 워크플로가 MCP review_task_next · review_task_read · review_task_submit 으로 집어 답한다(엔진의 프롬프트 · 파서 · 보충 되묻기는 그대로). 실제 Claude 로 돌리는 시험은 하지 않았다(사용자 결정)."
       - "안전 장치 — 반출 동의(consent_external: true) 없이는 과제를 만들지 않는다 · 집기마다 lease(늦은 제출이 다른 집기에 섞이지 않는다) · GLM 관문 자리를 쓰지 않고 주인마다 상한 · 비우기 중 거절 · 이 박스의 GLM 챗·심의는 과제 도구와 외부 선택을 쓸 수 없다 · 값이 틀리면 기능이 닫힌 채 뜬다. 스위치를 끈 박스는 main 과 바이트째 같다(도구 목록 · /health · /drain · 계약 · 심의 장면 대조)."
   - date: 2026-10-15
+    title: "**StepForge** — CAD 개정을 줄로 잇고, 개정을 건너 같은 파트의 이력을 봅니다"
+    tag: 연결
+    items:
+      - "같은 PLM 과제의 CAD 개정을 순서 있는 줄로 잇습니다. 개정 이름은 허브의 모델 리비전 · 과제명 끝 조각 · STEP 헤더 · 파일 이름에서 후보와 근거를 보여 주고 사람이 `set_revision` 으로 확정합니다(미리 보기 · 지우기). `revision_history` 가 이웃 개정 사이의 차이를 수로 보여 주고, 내용이 같은 다른 과제는 알리기만 합니다."
+      - "개정을 건너는 같은 파트의 대응을 `record_part_lineage` 로 남기고, `part_history` 가 과제코드 → 개정 줄 → 파트 이력(같은 파트 · 따라감 · 끊김과 그 까닭)을 보여 줍니다. 파싱하지 않은 과제로는 남기지 않고 parse 호출문을 줍니다."
+      - "`ontology_model` 이 StepForge 자체 정의(CAD 개정 · 파트 · 파트 역할과 그 관계)와 SP 허브 카탈로그를 한 보기로 보여 줍니다(읽기). 허브의 과제 정보는 허브 주소와 토큰을 넣은 박스에서만 받습니다."
+  - date: 2026-10-15
+    title: "**StepForge** — 이름으로 부른 파트가 0건이던 것 · 같은 자리를 회전했다고 하던 것을 고쳤습니다"
+    tag: 수정
+    items:
+      - "`list_joints` · `fastener_report` 에 있는 파트를 이름으로 주면 0건이 나오던 것을 고쳤습니다. 없는 이름이나 어셈블리 이름을 주면 말없이 0건 대신 `part_unknown` 으로 까닭을 말합니다(`list_interfaces` · `risk_screen` 도 같습니다)."
+      - "두 판에서 같은 자리에 놓인 파트를 아주 작은 각도(백만분의 1도 남짓)로 회전했다고 하던 것을 고쳤습니다. 실물 짝 325개 가운데 40개가 거짓 회전이었습니다(`compare_snapshots`)."
+      - "파싱한 판과 막 올린 판을 견주면 '6개 삭제 · −100%' 처럼 말하던 것을, 파싱하지 않은 파일을 맨 앞에 알리고 수를 말하지 않게 했습니다. STEP 을 올리기만 한 과제의 파트 이름에는 '그런 파트가 없다' 대신 '아직 모른다' 와 parse 호출문을 줍니다."
+      - "`risk_screen` 이 목록을 상한에서 자른 뒤에 파트를 걸러 뒤쪽 파트를 이름으로 불러도 아무것도 안 나오던 것, `find_plm_task` 가 Ö · Δ · 전각 글자가 든 과제를 제 글자로도 못 찾던 것을 고쳤습니다."
+      - "서버가 붐빌 때 리브 · 보스 찾기(`rib_boss_features`)가 원환이 많은 파트의 시간을 짧게 어림해 2분을 넘기거나 구멍 판을 거짓으로 거절하던 것을 고쳤습니다."
+  - date: 2026-10-15
+    title: "**StepForge** — 수신기 이음매 · 자체 온톨로지 · 개정·계보 표 · 토큰은 secrets.env · 관문 남은 것(기술)"
+    tag: 기술
+    items:
+      - "SP 허브 수신기(D-527 · D-534 · D-539) — 허브 주소를 바꾸면 타입마다 처음부터 받고(hub_changed), 개명 뒤에도 renamed_from 을 싣는 허브에서 key 를 다시 쓴 새 과제를 지우지 않으며, 주소 · 토큰 파일의 비밀을 거절 문구로 되뇌지 않습니다(BOM 이 붙은 토큰 파일은 utf-8-sig). 찾기는 LIKE 대신 instr 이고, 마지막 전체 대조 시각(objects_full_at · relations_full_at)과 멈춘 판에서 안 온 과제(absent_held)를 실으며, 선은 두 끝점이 살아 있는 것만 셉니다(live_edges)."
+      - "gmsh.initialize() 가 SIGPIPE 처리를 기본(죽음)으로 되돌려, 러너가 죽은 뒤 메시 워커가 첫 출력에서 즉사하던 것을 직전 처리로 되돌려 고쳤습니다(D-528 — 실제 서버에서 메시 잡이 34% 에서 failed). 회귀의 gmsh 날 호출 가드는 별칭 import 도 봅니다."
+      - "자체 정의 core/data/ontology/stepforge-core.json(cad_revision · cad_part · part_role · revision_of · supersedes · same_part_as)과 SP 의 두 문(가져오기 · 화면)을 출처째 옮긴 검증기 core/onto_model.py, 원 표 투영 검사(20만 행 0.44초), REST GET /api/ontology-model, 파일로만 묶는 scripts/onto_export.py(네트워크 0). 표 cad_revisions(core/revisions.py)와 part_lineage(core/lineage.py) — same_part_as 선은 두 끝 · 신뢰도 sure 이상 · 지금 형상의 기록만, 과제코드 줄은 supersedes 가 증명하는 이웃만 잇습니다(D-532). system_capabilities · revision_history 는 챗 접기 표에 넣었습니다."
+      - "허브 토큰은 데이터 폴더 secrets.env 의 STEPFORGE_SP_TOKEN 줄이 기본입니다(리스크 앱과 같은 관례 — 허브의 Drive 백업이 이 이름을 뺀다). 허브 루트 .env 에는 주소 한 줄(APPTAINERENV_STEPFORGE_SP_CORE_URL)만 두고, STEPFORGE_SP_TOKEN_FILE 을 주면 그 파일이 먼저입니다. 같은 파일에 든 다른 앱의 비밀은 읽지도 싣지도 않습니다(D-533 · D-537)."
+      - "관문 남은 것(D-535 · D-539) — rib_boss_features 예상을 정의 축 모형(치수 기록부와 같은 단가 표)으로 바꿔 실제 서버 rib_30 이 73.1초에서 5.4초가 됐고, 병렬 예상이 같은 코어의 SMT 짝(measure.worker_capacity · WORKER_SMT_RATIO 1.5)과 cgroup v1 몫을 세며, 혼자 도는 파트에는 짝 느려짐을 곱하지 않습니다. field_check 에 cpu_quota · cpu_cores_usable · smt_active 칸을 더했고 붐빔 말은 budget_words 한 자리에서 나옵니다."
+  - date: 2026-10-15
     title: "**리스크 심사 M3 뒤처리** — 긴 문서 발췌로 본 셀이 완결을 막던 것 · 보고서 다시 내기 중복 · 거르기 꺼짐에 남은 셀 안내"
     tag: 수정
     items:
@@ -50,6 +75,27 @@ entries:
       - "synth.create_synth_job 이 대기(queued) 종합 잡이 있으면 새 행 없이 그 잡을 created:false 로 돌려준다(확인과 쓰기를 한 트랜잭션으로). 도는 잡은 막지 않는다(사슬 _busy 와 같은 규칙). 사슬은 그 경합을 받으면 그 잡에 지금 원장의 표지를 단다."
       - "closure 의 filtered 잔여에 off 칸과 '거르기 꺼짐(넓힌 영역 N)' 표기, risk_next_step 이 원장(closure_cells)에서 거르기 꺼짐에 남은 거른 셀을 세어 where=review · risk_start_job 걸음 · 까닭을 준다(basis_hash 는 그대로 — 이미 받은 확인은 유효)."
       - "create_review_job · REST 잡 만들기 독스트링이 견주는 값을 calls_estimate.expected 로 바로잡았다(동작 변화 없음)."
+  - date: 2026-10-15
+    title: "**DynaForge** — 만든 덱이 LS-DYNA 에 바로 들어갑니다(`*KEYWORD` 첫 카드 · 10칸 덱)"
+    tag: 수정
+    items:
+      - "DynaForge 가 쓴 덱의 첫 카드에 `*KEYWORD` 가 없던 것을 고쳤습니다(`generate` · `unfold` · `map` · `warpage` · `offset` · prestress 동반 덱 등 — 추적 덱 496장 가운데 177장). 첫 카드가 `*KEYWORD` 가 아니면 LS-DYNA 가 옛 입력 형식으로 읽으려 해 해석에 바로 쓸 수 없었습니다. 이미 있는 덱에는 덧붙이지 않습니다."
+      - "`cnrb2solid` · `cnrb2spring` 이 `*KEYWORD I10=Y`(10칸) 덱에 절점 · 요소를 8칸으로 써 넣어 다시 읽으면 칸이 어긋나던 것을 고쳤습니다. 10칸 덱의 멀쩡한 ID 를 거절하던 것도 함께 고쳤고, 8칸 덱의 출력은 한 글자도 바뀌지 않습니다."
+  - date: 2026-10-15
+    title: "**DynaForge** — 개정끼리 견주고 잇기를 되돌립니다 · 기능 스위치를 시스템 화면에서 봅니다"
+    tag: 연결
+    items:
+      - "같은 과제의 개정 줄을 표로 견줍니다 — 판마다 최악 응력 · 최악 G · 심각도 · 케이스 수와 앞 판 대비 변화(늘면 빨강). 재지 않은 값은 0 이 아니라 '—' 로 적고, 한 판에 리포트가 여럿이면 하나를 대표로 고르지 않고 몇 건에서 모았는지 말합니다."
+      - "리포트의 개정 잇기를 풀 수 있고(개정 자체는 남습니다), 과제 별칭을 뗄 수 있습니다(이미 이어 둔 개정은 그대로입니다). 예전에는 '먼저 떼라' 고 안내하면서 떼는 길이 없었습니다."
+      - "시스템 화면에 과제 · 개정 기능 카드가 생겼습니다 — 켜짐 · 꺼짐, 누가 정했는지(옵션 · 추론), 사유, 비어 있는 설정 이름과 넣을 자리. '켰는데 안 보인다' 를 curl 없이 봅니다."
+  - date: 2026-10-15
+    title: "**DynaForge** — stcx 업로드 정리 · 개정 비교와 되돌리기 · 덱 첫 카드 판정(기술)"
+    tag: 기술
+    items:
+      - "stcx 제출이 registry_id 를 받으면(응답이든 work_dir 로 되찾았든) stcx 쪽에 올린 덱을 지웁니다 — 받는 쪽이 스테이징으로 복사한 뒤라 원본이 더는 필요 없습니다. 잡을 먼저 커밋하고 지우며 실패는 경고뿐이고 external_ref.upload_id 를 남깁니다. result_dir(실제 결과 폴더) · model_source 를 external_ref 에 남기고, model_source 가 existing 이면 묵은 덱으로 돌았다고 경고합니다(잡은 닫지 않는다)."
+      - "개정 — remove_alias · DELETE /ontology/aliases, unlink_revision · DELETE /reports/{id}/revision, compare() 는 리포트에 이미 승격된 칸만 씁니다(두 곳에서 계산하지 않는다). MCP 도구 넷(68 → 72) — remove_task_alias 가 쿼리를 문자열로 이어 붙여 공백 · & · = 가 든 별칭이 다른 요청이 되던 것을 params 로 고쳤고, 도구 문서(TOOLS.md 등)에 빠진 열 줄을 채웠습니다."
+      - "`*KEYWORD` 판정 정본 hasKeywordCard 와 쓰는 자리 셋(KFileWriter::writeHeader · ModelAssembler::writeOutput · prestress 동반 덱) — 없을 때만 넣어 I10=Y 덱의 폭 판정(첫 `*KEYWORD` 에서 멈춘다)을 지킵니다. 관문 test_keyword_card.py(129항 · 훑은 덱 56장)가 고치기 전 바이너리에서 여섯 op 을 이름으로 뭅니다."
+      - "cnrb2solid · cnrb2spring 의 절점 · 요소 줄이 KFileWriter 와 같은 deckFieldWidth 를 따르고 ID 상한도 폭에서 유도합니다(`*PART` · `*SET_NODE_LIST` 의 10칸은 표준이라 그대로). 2026-09-26 감사 장부를 다시 돌려 열린 15건 가운데 셋이 이미 끝난 것으로 고쳐 적었습니다."
   - date: 2026-10-15
     title: "**리스크 심사 M3** — 전원(359명)이 카드 대조를 끝내면 쟁점 토의와 종합 보고서가 저절로 이어 돕니다"
     tag: 심의
@@ -71,6 +117,8 @@ entries:
       - "진행판에 level_label · qualifiers · stage · report 와 review.filter · dispositions · noinput, 잡의 phase live · progress.reopened_extra · waiting(health_unknown · draining)이 생겼습니다. 재개는 ?consent=true 를 받고 잡 상한을 넘으면 409 max_calls 입니다."
       - "MCP 도구가 29종에서 31종이 됐습니다 — risk_get_issues · risk_get_report(읽기). risk_job_action 에 reason · filter · consent 와 action retry_failed · skip_failed 가 더해졌습니다. 359명 로스터에서도 응답 하나가 와이어 25,000자 안이고 쪽으로 이어 받습니다(쟁점 · 등록부 쪽의 ledger_rev 가 바뀌면 처음부터)."
       - "과제 구성원이 아닌 사람에게는 모든 쓰기 · 읽기 경로와 MCP 도구가 없는 것과 같은 404(not_visible)로 답하고 과제 id 를 싣지 않습니다. 쓰기 51 · 읽기 41 · MCP 31 을 시험이 라우터와 서버에서 뽑아 봅니다."
+      - "남의 과제가 섞여 나오지 않게 했습니다 — 브리프의 좌석 기억(E7) · 성격 진술(E6) · 코퍼스 수(E8)와 유사 과제 · 선례 · 패턴 후보는 그 대상 주인이 볼 수 있는 과제만(MCP 는 주인과 부른 사람 둘 다 볼 수 있는 것만) 싣고, 앞 과제 · 계보로 남의 과제를 읽지 않으며, 원장 참조(reg · narr · tool)는 구성원만 엽니다. 야간 근접 중복 쌍 · 재제기 표기 · 새 패턴 큐 · 패턴 특징 범위는 한 소유자 안에서만 만들고, 과제 거름을 밝히지 않은 AIDataHub 클라이언트로는 서술 · 좌석 기억 2차 경로를 찾지 않습니다."
+      - "반출 · 폐기 · 들여오기 — 기본 반출은 대상 · 스냅샷 · diff 열쇠 표도 과제 규칙으로 걸러 코퍼스에서 뺀 기밀 과제의 행을 싣지 않고, 쟁점 패널이 옮겨 적은 카드 글도 판정당 200자로 줄입니다. 과제 폐기는 등록부 merged_json 과 패널의 엔진 결과 원문까지 비우고 폐기 뒤에 끝난 패널 · 요약의 쓰기를 버리며, 들여오기는 사람의 확인 취소와 쟁점 결정을 잃지 않습니다."
   - date: 2026-10-15
     title: "**리스크 심사 앱 M3** — 러너 · 거르기 · 사슬 · 안전장치(기술)"
     tag: 기술
@@ -83,6 +131,7 @@ entries:
       - "비우기 — /health 캐시를 15초로 줄였고, /health 를 못 읽거나 비우기 중이면 묶음 · 검토 워커를 띄우지 않고 진행판에 까닭(waiting health_unknown · draining)을 적습니다. 마감 · 근거 꾸러미는 그동안에도 돌고, 새 쟁점 패널 · 요약은 내지 않습니다."
       - "새 손잡이(knobs.env) — HWAXRISK_REVIEW_CONCURRENCY 8(4 에서) · HWAXRISK_REVIEW_FILTER on · HWAXRISK_FILTER_AUDIT_PCT 5 · HWAXRISK_REVIEW_DUAL flagged · HWAXRISK_REVIEW_DUAL_NEG_PCT 10 · HWAXRISK_EVIDENCE_LIVE 1 · HWAXRISK_ISSUE_PANEL_CAP 24 · HWAXRISK_ISSUE_PANEL_HARD_CAP 48 · HWAXRISK_ISSUE_SPLIT_MIN_OPPOSERS 2 · HWAXRISK_ISSUE_MAX_CHARGED 2 · HWAXRISK_SUMMARY_MAX_CHARGED 2 · HWAXRISK_SUMMARY_INFRA_MAX 6. 동의 · 상한(1,500 · 30,000)은 이제 calls_estimate.expected(거르기 없음 가정)와 견줍니다."
       - "반대 검토 여러 라운드와 단계 D 리허설(359명 × 단위 5, 실제 엔진의 쟁점 패널)에서 찾은 결함을 고쳤습니다 — 넘긴 셀의 걸림이 사라지던 것, 다시 연 셀이 어떤 잡에도 묶이지 않던 것, 요약을 모두 다시 쓰면 종합 잡이 끝나지 않던 것, 상한 재선정이 판정된 쟁점의 결과를 지우던 것, 비우기 깃발 뒤에도 호출이 나가던 것, 남이 다른 사람의 대상으로 등록부 병합을 부를 수 있던 것(main 핫픽스 12130f9 와 같은 수리)."
+      - "택소노미 1.2 — 메커니즘 14종(광학 셋 · 음향 셋 · RF 넷 · 계면 둘 · 전기 둘)과 대분류 셋(optical · acoustic · rf)을 더하고 한 · 영 동의어를 넓혔습니다. 옛 38행은 한 칸도 바꾸지 않아 1.1 에서 풀리던 finding 은 1.2 에서도 같습니다. 카드 대조 요청의 메커니즘 목록이 38개에서 52개가 되고, 카드 대조 finding 의 메커니즘이 비거나 택소노미 밖이면 cells 대상에서만 자유 기술로 클러스터를 쪼개 서로 다른 지적이 process.unclassified 한 덩이로 뭉치지 않게 했습니다(배정표 밖 메커니즘에는 mech_out_of_domain 표지만 달고 판정은 그대로입니다)."
   - date: 2026-10-15
     title: "**지식카드 검색 · 빈 전문가 · 동기화** — 낱말 검색, 등록 안 된 키 거절, MX 카드 요약"
     tag: 수정
@@ -158,6 +207,37 @@ entries:
       - "워크플로 hwax-risk-review 의 안내에 '카드 대조(flow=cells) 대상은 받지 않는다 — 그 대상의 쟁점·종합 보고서는 risk_get_issues·risk_get_report 로 읽는다' 를 더했습니다(두 도구는 리스크 앱 M3 와 함께 올라갑니다)."
       - "에이전트 서버 env 킷(infra/env-kits/agent-server.env)에 카드 대조 손잡이 구획을 주석으로 더했습니다 — CARD_REVIEW_CONCURRENCY(8)·CARD_REVIEW_CONCURRENCY_WITH_DELIB(4)·CARD_REVIEW_MAX_TOKENS(0)·CARD_REVIEW_PARSE_RETRIES(2)·CARD_REVIEW_SEARCH_TIMEOUT_S(60). 값은 엔진 기본값이고 시험이 엔진 상수와 맞댑니다."
   - date: 2026-10-14
+    title: "**StepForge** — StandardPlatform 참고본 · SP 허브 과제 정보 수신기(기술)"
+    tag: 기술
+    items:
+      - "StandardPlatform 을 submodule 로 둡니다(external/StandardPlatform 을 f7485c0 에 고정 — DynaForge 와 같은 경로 · 같은 커밋). 런타임(app · core · scripts · fixtures)이 그것을 import 하거나 sys.path 로 우회하면 깨지는 구조 시험을 두었습니다(D-525)."
+      - "SP 허브 코어 API 수신자 core/sp_core.py — StandardPlatform 수신 키트를 httpx 로 옮겨 카탈로그 → 가리키는 타입 → 객체 → 열린 선 순으로 받고, 수신 규칙 열하나(삭제 · 병합 · 개명 · 숨김, 모르는 칸 무시, 부재 대조는 끝까지 받은 뒤, 404 둘을 코드로)를 지킵니다. reset 은 거울을 비우지 않고 처음부터 받은 뒤 대조합니다(D-526)."
+      - "읽기 전용 거울 표 다섯(onto_types · onto_relation_types · onto_objects · onto_relations · onto_sync_state — 쓰는 코드는 sp_core 하나), 잡 plm_sync(잡 종류 13 → 14 · 도구 141 → 142), get_project_meta.plm_task(0건이면 까닭) · find_plm_task · REST GET /api/find-plm-task. 설정은 STEPFORGE_SP_CORE_URL · STEPFORGE_SP_TOKEN_FILE 이고 토큰은 응답 · 로그 · DB 에 남지 않습니다. 진짜 허브가 아직 없어 가짜 코어 서버로 끝까지 돌렸습니다."
+  - date: 2026-10-14
+    title: "**DynaForge** — 해석 리포트를 SP 허브의 과제·개정에 잇습니다(설정으로 켭니다)"
+    tag: 연결
+    items:
+      - "해석 리포트를 과제(PLM)와 개발 개정에 잇습니다. 개정 이름은 리포트 메타 · 과제명 꼬리 · 허브의 모델 리비전에서 후보와 근거를 보여 주고 사람이 고릅니다. 짐작으로 붙이지 않고, 사람이 확정한 것은 리포트를 다시 올려도 기계가 덮지 않으며, 순환하는 개정 줄은 거절합니다."
+      - "리포트 화면에 개정 패널이 생겼습니다. 메타와 이어진 개정이 다르면 조용히 맞추지 않고 빨간 띠로 먼저 보이고, 쓸 수 없는 후보도 사유와 함께 보이며, 같은 과제의 개정 줄과 판마다 결과 건수를 보여 줍니다."
+      - "지난 리포트를 정본 과제에 붙이는 계획은 글자 그대로 같거나 사람이 별칭을 적어 둔 것만 자동으로 붙이고, 나머지는 근거 있는 후보와 '못 붙였다' 목록으로 줍니다. 계획을 보는 것만으로는 아무것도 쓰지 않습니다."
+      - "과제는 허브에서 받기만 하고 이쪽에서 고치는 길은 없습니다. DynaForge 박스의 `platform/.env` 에 허브 코어 API 주소와 `core:read` 토큰 두 줄을 넣으면 켜지고(`KOORM_ONTOLOGY=1` · `=0` 으로 적으면 그것이 이깁니다), 꺼지면 화면에서 사라지고 API 도 409 와 사유로 거절합니다. 포털 관리자 화면의 배선 설정 목록에 이 항목(dynaforge-ontology)을 더했습니다."
+  - date: 2026-10-14
+    title: "**DynaForge** — stcx 전각도 낙하가 SmartTwinMCP 로 덱을 실어 보냅니다"
+    tag: 연결
+    items:
+      - "stcx(356대) 전각도 낙하 제출이 SmartTwinMCP 도구로 바뀌고, 제출 전에 덱을 stcx 쪽에 나눠 올려 그 경로를 넘깁니다. 두 쪽이 같은 경로를 본다는 전제가 사실이 아니어서 stcx 가 이 서버의 덱을 열 수 없었습니다."
+      - "`*INCLUDE` 가 든 덱은 올리기 전에 막고 `extract-parts` 로 한 파일 덱을 만들라고 안내합니다(받는 쪽은 모델 파일 하나만 받습니다). 덱 앞부분만이 아니라 끝까지 훑어 찾습니다."
+      - "제출 폼에 이번 판이 실제로 받는 칸만 남겼습니다. 예전 폼의 98칸은 대부분 제출에서 거절됐습니다."
+  - date: 2026-10-14
+    title: "**DynaForge** — SmartTwinMCP 제출 배선 · 과제·개정 표와 수신기 · StandardPlatform 참고본(기술)"
+    tag: 기술
+    items:
+      - "stcx 제출 — 도구 smarttwincluster_* → smarttwinmcp_*(인자는 args 한 겹, 응답은 JSON 봉투 — 성공은 봉투 ok · result.ok · registry_id 셋 다), 반입 StcxUploader(init → chunk → complete). stcx 설정 넷 가운데 하나라도 비면 제출이 명시적으로 실패합니다. 시간 초과에 다시 내지 않고(받는 쪽이 묵은 덱으로 돈다) job_status(work_dir) 로 registry_id 를 되찾으며, 끝 판정은 get_job_details 를 함께 봅니다."
+      - "업로드는 잡 번호를 싣지 않고 이름 <잡 id>_<이름>.k 로 가릅니다 — 받는 쪽 1.1.2 가 jobs/ 경로를 허용 범위 밖으로 거절하고, SSO 가 꺼진 받는 쪽에서는 모두 admin 이라 같은 이름이 서로 덮습니다. /api/v1/stcx/options 는 빈 목록 + 사유, 카탈로그 params 98 → 14, 받지 않는 80칸은 _SCENARIO_MAP 에 남기고 시험이 이름으로 고정합니다."
+      - "StandardPlatform 을 submodule 로 둡니다(external/StandardPlatform @ f7485c0 — StepForge 와 같은 경로 · 커밋, 허브 토큰은 platform/.env). 런타임이 그것을 import 하지 않는다는 경계 시험은 훑은 파일 수까지 봅니다(추적 파일만 훑어 늘 초록이던 것을 고쳤습니다)."
+      - "과제 수신 — 표 다섯(0011_ontology)과 수신기 app/runner/sp_core.py(renamed_from 을 previous_keys 로 옮김 · 한 쪽에 같은 key 가 두 번 오면 접음 · 0건이면 아무것도 비활성으로 만들지 않음 · APP-CORE-0001 은 멈추고 알림), 주기 수신 plm_sync(잡이 아니라 주기 작업 · 간격 기본 3600초 · 주소나 토큰이 없으면 꺼짐). 부서 행은 만들지 않습니다(소속 정본은 포털입니다)."
+      - "자체 정의 platform/core/ontology/dynaforge-core.json(dev_revision · revision_of · supersedes · measured_at)과 정의 검증기 app/runner/ontology_def.py, 0012 관계 카디널리티 · 0013 과제 별칭 표. 라우트 10 · MCP 도구 6(62 → 68) — 과제를 쓰는 길이 없다는 것(쓰기 경로 집합)과 관리자 관문을 시험이 고정하고, 켜짐 판정은 app/shared/features.py 한 곳입니다. MCP 기본 호출이 빈 limit 때문에 422 로 깨져 있던 것과 isError 를 못 보던 스모크를 고쳤습니다."
+  - date: 2026-10-14
     title: "**리스크 심사** — 로그인한 사람의 자격으로 끝까지 돕니다(PAT 를 손으로 등록하지 않아도)"
     tag: 연결
     items:
@@ -189,6 +269,43 @@ entries:
       - "등록이 새 PAT 를 받아들인 뒤에 앱이 스스로 받은 옛 PAT(교환·웹 버튼)만 포털에서 폐기합니다. 손으로 붙여넣은 PAT 나 새것의 원은 건드리지 않습니다."
       - "캡처의 StepForge REST 는 웹 로그인 토큰 → 게이트웨이 다리(사람 PAT) → 서비스 키 순이고, 다리가 실패하면 그 캡처 동안 서비스 키로 넘어가며 다리의 HTTP 상태를 길잡이에 싣습니다. 캡처 응답에 credentials.rest·rest_ok·rest_bridge 가 실립니다."
       - "자격 암호화 키를 Fernet 으로 확인하고(cred_key_invalid), 설정 화면 글에서 절대경로를 빼고 익명에게는 까닭 코드만 줍니다. 고칠 명령은 값을 화면에 찍지 않고 끝 줄바꿈 없는 secrets.env 에도 안전합니다. 갱신 문턱 손잡이 HWAXRISK_PAT_RENEW_BEFORE_S·쉼 HWAXRISK_PAT_AUTO_RETRY_S 와 그 기동 검사를 더했습니다."
+  - date: 2026-10-14
+    title: "**낙하 해석 전처리(pyKooCAE)** — 강체 전환에서 뺀 파트 때문에 해석이 시작도 못 하던 것을 고쳤습니다"
+    tag: 수정
+    items:
+      - "낙하 해석에서 일부 파트를 강체 전환에서 빼면(`ELASTIC_TO_RIGID` 의 `*PIDExcept`) 뺀 파트의 재질이 출력 덱에서 사라지고, 그 재질 번호를 같이 쓰던 파트에는 재질이 하나도 남지 않아 LS-DYNA 가 입력 단계에서 멈추던 것을 고쳤습니다. 뺀 파트의 재질은 그대로 두고, 같은 재질 번호를 쓰는 강체화 파트에는 강체 재질을 새 번호로 만들어 줍니다. 빼는 파트가 없는 덱은 출력이 그대로입니다."
+      - "KooChainRun 낙하(DROP) 도움말에 10월에 더한 접촉 · 강체 전환 키(drop_surface.deformable_to_rigid · drop_contact 의 Type · Scope · InheritGeneral · tied_options 등)와 실제로 돌려 확인한 강체 전환 사례를 실었습니다. SmartTwinMCP 의 낙하 시나리오 도구 설명이 이 도움말에서 만들어집니다."
+  - date: 2026-10-13
+    title: "**StepForge** — 서버가 붐벼도 측정 호출이 2분 한도를 넘기지 않습니다"
+    tag: 수정
+    items:
+      - "서버가 바쁠 때 판 전체 단면 · 단면 위 치수 · 파트 색인 · 모서리 근접 · 리브와 보스 찾기가 2분(게이트웨이 한도)을 넘겨 끊기던 것을 고쳤습니다. 재기 전에 얼마나 붐비는지(같은 코어를 나눠 쓰는 하이퍼스레드 짝까지)를 재어 한 호출에 할 몫을 줄이고, 넘칠 것 같으면 일찍 멈춰 찾은 데까지와 같은 계산을 끝까지 재는 잡 호출문을 줍니다. 그때 응답이 '붐볐다' 고 말합니다."
+      - "한가할 때의 답은 그대로이고, 잡음 수준의 바쁨으로는 몫을 줄이지 않습니다."
+      - "`estimate_cost` 가 치수를 재지 않는 단면 호출에도 '재기 전에 스스로 멈춘다' 고 말하던 것을 고쳤습니다."
+  - date: 2026-10-13
+    title: "**StepForge** — 판 전체 합치기 벽 모형 · 단면 치수 관문 · 실행 대기 한 함수 · 하이퍼스레드 짝 몫(기술)"
+    tag: 기술
+    items:
+      - "판 전체 합치기 벽 모형(D-519) — 결과를 짓는 몫은 면마다 한 스레드라 따로 셉니다(fuse_seconds, FUSE_BUILD_WALL_PER_CPU 0.42 — 쌍 수로 세는 모형 다섯은 버렸다). section_profile 판 전체와 stackup 외곽이 한 함수를 쓰고, 붐빈 서버에서 120.6초 걸리던 구멍 1,600개 판 둘이 합치기 전에 4.6초에 멈춥니다."
+      - "단면 위 치수 진행 관문(D-520) — section_report(dims=true) 의 분기한정이 원시 호출(최근접 · 점 분류 · 교선 등)을 부르기 전에 꼴별 단가로 세어 멈추고, 찾은 행은 지키며 못 본 쌍은 하한과 함께 냅니다(rows_certain · skipped_work · work_skipped_pairs). 측정 잡에 section_report 를 더했습니다."
+      - "실행 대기 보정 한 함수(D-521 · D-522) — 재기 전 작업량 예상과 견주는 관문 전부가 measure.paced_budget 으로 상한을 받고(셈표 가드 GATES · 사유 문장 budget_words · 공개 표 load_pace 14블록), 겹침 부울만 OVERLAP_PACE_FILL 0.665 로 덜 나눕니다. 견적은 인자에 딸린 관문 표 GATED_WHEN 으로 판정합니다."
+      - "하이퍼스레드 짝 몫(D-523 · D-524) — 재는 창에서 짝 논리 CPU 의 바쁨 b 를 읽어 나눌 값을 대기 비 × (1 + b(σ−1)) / 1.3 으로 셉니다(σ 1.3, 칸 sibling_busy · sibling_share). 한가할 때 짝 몫만으로 넘긴 잔 나눔은 무시하고(LOAD_PACE_GRAIN_RATIO 1.03), 병렬 형상 도구의 일꾼 수는 묶인 CPU · cgroup 몫(core.parallel.usable_cpus)을 넘지 않습니다."
+  - date: 2026-10-13
+    title: "**DynaForge** — 해석 리포트의 핫스팟 군집과 결과 그림을 화면과 Claude 에서 봅니다"
+    tag: 연결
+    items:
+      - "리포트에 들어 있었는데 플랫폼이 버리던 블록을 이제 전부 꺼내 봅니다(deep 21키 중 11 · impact 27키 중 18 이 어디에도 닿지 않았습니다). 핫스팟 군집 · 거동 군집 · 분석 요약 일곱 블록이 따로 오르고, 나머지도 블록 이름과 경로로 꺼냅니다. 큰 배열은 잘랐다고 말하고, 계산하지 않은 블록은 0 이 아니라 '미계산' 으로 적습니다."
+      - "리포트를 번들(.zip · .tar)로 올리면 결과 그림과 영상이 함께 들어옵니다. Claude 가 결과 그림을 직접 보고(`report_image`), 케이스 여러 개의 지표 표와 그림을 한 번에 견줍니다(`report_compare` — 그림 8장까지, 넘으면 뺀 수를 말합니다). 영상은 모델이 볼 수 없어 피크 그림을 권합니다."
+      - "리포트 분석 화면에 탭 넷(핫스팟 군집 · 거동 군집 · 결과 그림 · 분석 블록)이 생겼습니다. 합성(mock) 데이터나 한 가지로 뭉친 거동 군집, 값이 고르게 퍼진 핫스팟은 눈에 띄게 따로 적습니다."
+      - "파트 시계열이 응력 하나만 싣던 것을 변형률 · 주응력 · 주변형까지 일곱 계열로 넓혔습니다."
+      - "`extract-parts` 가 원본의 초기응력 · 초기변형(`*INITIAL_STRESS_*` · `*INITIAL_STRAIN_*` · `*INTERFACE_SPRINGBACK_*`)을 뽑은 덱에 옮기지 못할 때 따로 세어 경고하고 이어 가는 법을 알려 줍니다. 예전에는 버린 키워드 목록에 묻혀 프리스트레스 모델의 초기응력이 조용히 사라졌습니다."
+  - date: 2026-10-13
+    title: "**DynaForge** — 리포트 블록 전수 · 결과 그림 번들 반입 · 규모 측정 생성기(기술)"
+    tag: 기술
+    items:
+      - "리포트 정규화의 허용 목록 대신 list_blocks(최상위 블록 전수와 해석 여부 read_by_parser) · get_block(name, path) 로 무엇이든 꺼내고, 회귀가 '해석하지 않는 블록 집합' 을 이름으로 고정합니다 — 생성기가 키를 늘리면 빨개집니다. 분석 요약은 다시 계산하지 않고 생성기의 summary 를 그대로 올립니다(다시 계산하면 HTML 화면 숫자와 갈린다)."
+      - "결과 그림 반입 — app/reports/bundle.py 가 번들을 풀며 경로 탈출 · 링크 · 장치 파일 · 멤버 수 · 크기 · 확장자를 막고, 마이그레이션 0010_report_media(JSONB)에 리포트가 선언한 위치 ↔ 그림 매핑만 싣습니다(그림 없는 위치는 비워 두고 deep 은 파일명으로 짐작하지 않는다). API 여섯(/blocks · /blocks/{name} · /hotspots · /clusters · /analytics · /media)을 더했고, MCP report_image 는 ImageContent 로 내며 reports_smoke 가 콘텐츠 블록의 종류를 봅니다(dict 속 base64 는 성공처럼 보인다)."
+      - "규모 측정 생성기 tools/scale/gen_scale_deck.py 를 리포에 넣었습니다(측정 폴더를 지워 재현할 길이 없었다). 1.9GB 합성 덱에서 cleanup-nodes(report) 16.7초 · 686MB, extract-parts 34.0초 · 1.18GB 로 덱 전문을 들지 않는 것을 쟀습니다."
   - date: 2026-10-13
     title: "**리스크 심사 앱** — 전문가가 자기 지식카드 전부로 변경 단위를 하나씩 대조합니다(카드 대조, 재설계 M2 · 박스마다 켬)"
     tag: 기술
@@ -200,6 +317,7 @@ entries:
       - "MCP 도구가 26종에서 29종이 됐습니다 — `risk_get_units`(검토 단위)·`risk_get_cells`(전문가 × 단위 격자)·`risk_get_expert_report`(보고서 쪽). 검토 잡은 `risk_start_job(mode='reviews', scope=...)` 로 세우고, 진행은 `risk_get_coverage` 의 `review` 칸이며 검토 순서 전부는 `order_offset` 쪽으로 받습니다(수백 명 로스터도 응답 하나가 잘리지 않게)."
       - "스키마를 v4 로 올렸습니다 — 검토 단위 표 둘, 셀 원장 표 다섯(셀·판정·카드 묶음·호출·전문가 머리), 잡의 보류 열, finding 의 출처 열. 추가만 하는 이관이라 기존 원장은 그대로입니다."
       - "과제를 폐기하는 동안 돌던 카드 대조 호출이 다음 재기동까지 '도는 중' 으로 남아 그 대상의 새 검토를 막던 것을 배선 리허설에서 찾아 고쳤습니다."
+      - "배포된 게이트웨이에 리스크 앱 도구가 실제로 떠 있는지 이 체크아웃의 도구 목록과 대조하는 scripts/rr_gateway_check.py 를 더했습니다(읽기 전용 · 표준 라이브러리만 · PAT 는 환경변수로만 받는다). 종료코드는 0 이상 없음 · 2 판정 불가 · 3 배포본이 낡음이고, update-all 에는 배선하지 않았습니다."
   - date: 2026-10-12
     title: "챗이 **'동시 챗 한도' 에 묶여 풀리지 않던** 경우를 막았습니다"
     tag: 수정
@@ -223,6 +341,26 @@ entries:
       - "`feat:deliberation` 이 없으면 403 이고 에이전트 서버로 아무것도 나가지 않습니다. 본문 상한은 1M 토큰 창 하나(4,194,304바이트, 넘으면 413 `body_too_large`)이고, 감사에는 종류·전문가 키·단위 id·바이트 수·sha256·상류 상태만 남깁니다."
       - "챗과 연결·자리를 다투지 않게 전용 연결 풀과 세마포어를 둡니다(`CARD_REVIEW_MAX_STREAMS` 기본 12, 넘으면 429 `engine_busy` — 30초 뒤 다시). 단발 셋은 `AGENT_UNARY_TIMEOUT_S` 를 따르고 넘으면 504 `agent_timeout` 입니다(기본값으로 진행하지 않습니다). run 은 침묵 한도에 걸리면 `agent_stream_idle` 을 내고, 앱이 끊으면 에이전트 쪽 연결도 닫습니다."
       - "엔진이 code 를 실은 오류(422 `over_budget`·409 `rev_mismatch`·503 `tools_unavailable` 등)는 상태와 본문 그대로 넘기고, code 가 없는 404 는 `agent_outdated`(옛 에이전트 서버), code 가 없는 5xx 는 502 `agent_5xx` 로 바꿉니다. 부르는 곳이 아직 없어 화면과 동작은 바뀌지 않습니다."
+  - date: 2026-10-12
+    title: "**리스크 심사** — 접촉을 바꾼 변경을 근거로 든 리스크가 제대로 저장됩니다"
+    tag: 수정
+    items:
+      - "접촉 종류나 마찰 계수를 바꾼 변경을 근거로 든 리스크가 변경 종류 '없음' 으로 저장되고 분류 오류 목록에 오르던 것을 고쳤습니다. 이제 그 변경 종류(접촉 종류 · 파라미터)로 남습니다."
+      - "실제로 있는 접촉 범위 변경을 인용한 리스크가 저장할 때 '가리키는 변경이 없다' 로 남던 것을 고쳤습니다."
+  - date: 2026-10-12
+    title: "**리스크 심사 앱** — 변경 종류 택소노미 1.1 · 합성 설계의 계층 엣지(기술)"
+    tag: 기술
+    items:
+      - "택소노미 1.0 → 1.1 — change_kind 에 contact_type · parameter 를 더해 정규화(_CHANGE_KINDS) · risk_spec 스키마 · 택소노미 자산 · RA 온톨로지 부트스트랩 표를 diff 생산자의 14종과 맞췄습니다. 새 스냅샷 · finding 은 1.1 로 찍히고 옛 IR 위의 finding 은 그 IR 의 판을 그대로 씁니다. 이미 만든 RA 온톨로지는 drift 로 보고만 합니다."
+      - "SpecContext.diff_item 이 구조층의 dict 버킷(dyna)도 한 단계 더 열어 contact.scope_changed 의 cid 를 찾습니다 — 리스트 버킷만 훑어 그 인용이 저장 때 dangling 으로 남았습니다."
+      - "합성 설계 생성기(devseed)가 실제 어댑터처럼 part_of 엣지를 싣습니다(adapters.mcad._part_of_edges 를 그대로 부른다). 합성 쌍에 계층 엣지가 없어 부품 추가 · 삭제 · 조립 이동이 내는 계층 구조 항목을 시험이 보지 못했습니다. 노드에서 유도되는 엣지라 내용 해시 · 계면 수에는 넣지 않습니다."
+  - date: 2026-10-12
+    title: "**DynaForge** — 보 요소가 든 파트도 떼어 내고, `info` 가 `--strict` 를 알려 줍니다"
+    tag: 연결
+    items:
+      - "`extract-parts` 가 보 요소(`*ELEMENT_BEAM` · `_DISCRETE` · `_MASS` · `_SEATBELT` · `_PLOTEL`)가 든 파트도 떼어 냅니다. 볼트 · 용접점처럼 보로만 된 파트도 받습니다. 예전에는 그런 파트를 거절했습니다. `*ELEMENT_MASS_NODE_SET` · `*ELEMENT_SEATBELT_*` 는 아직 받지 않습니다."
+      - "`cleanup-nodes` 가 보 족의 칸 자리를 알아, 보의 해제 플래그(RT1 · LOCAL)나 안전벨트의 SBRID 를 절점으로 세지 않습니다. 그 값과 번호가 같은 고아 절점이 지워지지 않고 남던 것을 고쳤습니다."
+      - "`info` 가 메시 검증 오류를 찾고도 종료코드 0 으로 끝날 때, `--strict` 로 돌리면 실패(1)로 받을 수 있다고 한 줄 알려 줍니다. 정상 덱에서는 아무것도 덧붙이지 않고 기본 종료코드도 그대로입니다."
   - date: 2026-10-12
     title: "**StepForge** — 오래 걸리는 측정은 멈추고 잡으로 끝까지 잽니다"
     tag: 수정
