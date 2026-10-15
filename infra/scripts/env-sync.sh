@@ -9,7 +9,9 @@
 #
 # 규율
 #   · **있는 값은 절대 건드리지 않는다.** 순서도 안 바꾼다. 없는 것만 **끝에 덧붙인다.**
-#   · 쓰기 전에 `.env.bak-<타임스탬프>` 로 백업한다.
+#   · 쓰기 전에 **이 포털의** `infra/.state/env-sync-backups/<리포>/<리포 안 경로>.<UTC 시각>[-n]` 으로 백업한다(디렉터리 700 · 파일 600).
+#     대상 리포 안(`.env.bak-*`)에 두면 gitignore 밖이라 추적 안 된 비밀 파일로 남고, deploy-all 의 `git stash push -u` 가 그 비밀째
+#     stash 로 쓸어 간다(LLM 풀 반대 검토 H1 — HEAXHub 에 셋이 남아 있었다). 이미 남은 파일은 건드리지 않는다.
 #   · 값이 **사람이 정해야 하는 것**(비밀·자리표시자·빈 값)이면 주석으로 넣고 크게 알린다 —
 #     예시값을 그대로 활성화하면 "그럴듯하게 틀린 설정" 이 되어 자리표시자 URL 사고를 반복한다.
 #   · 주석으로 선언된 키(`# KEY=`)도 **선언된 것**으로 본다 — 다시 붙이지 않는다(매번 늘어나지 않게).
@@ -34,8 +36,26 @@ for a in "$@"; do
   esac
 done
 
-TS="$(date +%Y%m%dT%H%M%SZ)"
+TS="$(date -u +%Y%m%dT%H%M%SZ)"     # Z 는 UTC 다 — 종전엔 박스 시각에 Z 를 붙였다
 ADDED=0; NEEDS=0; PAIRS=0
+BK_ROOT="$ROOT/infra/.state/env-sync-backups"
+
+# 백업 — $1=리포 루트 $2=리포 안 경로(.env · infra/.env …) → 만든 백업 경로를 찍는다. 같은 초에 다시 돌아도 앞 백업을 덮지 않는다(-n).
+# 만드는 순간부터 600(umask 077 + noclobber 로 새로 만든다 — 비밀 사본이 잠깐도 열리지 않게), 새 디렉터리는 700. 못 만들면 1.
+backup_env() {
+  local base dst k
+  base="$BK_ROOT/$(basename "$1")/$2.$TS"
+  ( umask 077; mkdir -p "$(dirname "$base")" ) 2>/dev/null && chmod 700 "$BK_ROOT" 2>/dev/null || return 1
+  for k in "" $(seq 1 99); do
+    dst="$base${k:+-$k}"
+    if ( umask 077; set -C; : > "$dst" ) 2>/dev/null; then
+      if cat "$1/$2" > "$dst"; then printf '%s\n' "$dst"; return 0; fi
+      rm -f "$dst"; return 1
+    fi
+    [ -e "$dst" ] || return 1          # 이름이 겹친 것이 아니다 — 쓸 수 없다
+  done
+  return 1
+}
 
 # 대상 찾기 — 리포 루트와 흔한 하위 배치(infra/·platform/)를 본다. `.env` 가 없으면 건너뛴다
 # (그건 최초 설치의 일이지 동기화의 일이 아니다).
@@ -145,7 +165,13 @@ for DIR in $(discover); do
   ADDED=$((ADDED + n_a)); NEEDS=$((NEEDS + n_c))
   [ "$CHECK" = "1" ] && continue
 
-  cp -p "$EN" "$EN.bak-$TS" || { echo "  ✗ 백업 실패 — 건드리지 않는다" >&2; continue; }
+  # 리포 루트와 리포 안 경로 — discover 는 <리포><""|/infra|/platform> 을 낸다
+  case "$DIR" in
+    */infra)    R="${DIR%/infra}";    SUB="infra/" ;;
+    */platform) R="${DIR%/platform}"; SUB="platform/" ;;
+    *)          R="$DIR";             SUB="" ;;
+  esac
+  BAK="$(backup_env "$R" "${SUB}.env")" || { echo "  ✗ 백업 실패($BK_ROOT 에 쓸 수 없다) — 건드리지 않는다" >&2; continue; }
   {
     printf '\n# ── env-sync %s — `.env.example` 에는 있는데 여기 없던 설정 ──\n' "$(date +%F)"
     for kv in "${add_active[@]}"; do printf '%s\n' "$kv"; done
@@ -153,7 +179,7 @@ for DIR in $(discover); do
       printf '# %s   # ⚠ 값을 운영자가 정해야 한다(예시값은 그대로 쓰면 안 된다)\n' "$kv"
     done
   } >> "$EN"
-  echo "    → 채웠다(백업 $(basename "$EN.bak-$TS"))"
+  echo "    → 채웠다(백업 $BAK)"
 done
 
 echo "✓ env-sync: 대상 $PAIRS 쌍 · 자동 추가 $ADDED · 사람이 정할 것 $NEEDS"
