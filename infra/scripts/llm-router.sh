@@ -24,15 +24,15 @@ ENV_FILE="$ROOT/infra/.env"
 envv() { sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$2" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'; }
 
 if [ -n "${LLM_ROUTER_PORT:-}" ]; then
-  PORT="$LLM_ROUTER_PORT"; _FROM="환경"
+  PORT="$LLM_ROUTER_PORT"; _FROM="환경변수"
 else
   PORT="$(envv LLM_ROUTER_PORT "$ENV_FILE" || true)"; PORT="${PORT:-9130}"; _FROM="infra/.env"
 fi
 case "$PORT" in
-  ''|*[!0-9]*) echo "✗ $_FROM 의 LLM_ROUTER_PORT='$PORT' 는 포트 번호가 아니다 — 수만 적는다(기본 9130)" >&2; exit 2 ;;
+  ''|*[!0-9]*) echo "✗ LLM_ROUTER_PORT='$PORT'($_FROM) 는 포트 번호가 아니다 — 수만 적는다(기본 9130)" >&2; exit 2 ;;
 esac
 if [ "${#PORT}" -gt 5 ] || [ "$((10#$PORT))" -lt 1 ] || [ "$((10#$PORT))" -gt 65535 ]; then
-  echo "✗ $_FROM 의 LLM_ROUTER_PORT=$PORT 는 1~65535 밖이다" >&2; exit 2
+  echo "✗ LLM_ROUTER_PORT=$PORT($_FROM) 는 1~65535 밖이다" >&2; exit 2
 fi
 PORT="$((10#$PORT))"
 
