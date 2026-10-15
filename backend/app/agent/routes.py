@@ -33,7 +33,7 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator, model_validator
 
 from app.access.agent_guard import check_chat, filter_experts
 from app.access.policy import is_synthetic, login_groups
@@ -191,6 +191,18 @@ class DelibOpts(BaseModel):
     # 절반' 을 사람이 띄운 심의(app 아닌 것)로만 센다(docs/risk-review-redesign M3.md #26). 여기서 떨어지면 표지가 사라져 쟁점
     # 패널도 사람 심의로 세어지고 카드 대조가 며칠 동안 반(4)으로 묶인다. 스스로 밝히는 값이라 검증하지 않는다. None=사람.
     started_by: Literal["human", "app"] | None = None
+    # ⚠ 아래 둘은 외부 응답자 심의(docs/risk-claude-engine — 기본 꺼짐, 에이전트 서버 EXTERNAL_LLM_ENABLED=1 에서만 열린다)의 칸이다.
+    #   선언이 없던 동안(X-3a 전)은 포털을 거친 외부 선택이 여기서 말없이 떨어져 심의가 GLM 으로 돌았다.
+    #   보내는 곳은 리스크 앱(웹 러너 · 그 앱의 MCP risk_start_job 이 연 잡)뿐이다. 포털 화면은 이 선택을 내지 않고(프론트에 입구가
+    #   없다), MCP deliberate_start 는 포털을 거치지 않는다(게이트웨이 → 에이전트 서버 advanced.llm).
+    #
+    # 판단 LLM — glm(이 박스 에이전트 서버의 LLM, None 과 같다) | external(잡 주인이 돌리는 Claude Code 워크플로가 답하고, 좌석은 도구
+    # 호출 없이 evidence_only 로 돈다). 받는 두 값 밖은 422 다 — 엔진도 bad_request 로 거절하지만, 포털 손잡이는 받는 값만 받는다.
+    llm: Literal["glm", "external"] | None = None
+    # 반출 동의 표지 — llm=external 인 심의를 엔진은 이것이 JSON true 일 때만 연다(없거나 false 면 external_consent_required 로 시작하지
+    # 않는다). 사람에게 동의를 받고 누가 언제 했는지 적는 것은 부르는 쪽(리스크 앱)의 몫이고, 포털은 받은 그대로 옮기기만 한다.
+    # StrictBool 인 까닭 — "true"·1 은 엔진이 동의로 치지 않는 값인데, 포털이 true 로 바꿔 넘기면 동의가 아닌 것을 동의로 세탁한다.
+    consent_external: StrictBool | None = None
 
 
 class ChatDocument(BaseModel):
