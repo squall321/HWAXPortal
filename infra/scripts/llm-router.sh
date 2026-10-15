@@ -7,6 +7,9 @@
 #
 # 포트 — run 은 늘 infra/.env 의 LLM_ROUTER_PORT(기본 9130)다. 사본·update-all 1i·§6 은 infra/.env 만 읽으므로 운영자 셸에 export 된 값으로
 #   띄우면 아무 사본도 가리키지 않는 포트에 라우터가 뜬다 — 환경의 값이 다르면 경고 한 줄을 찍고 infra/.env 로 띄운다.
+#   stop 은 환경의 LLM_ROUTER_PORT 를 먼저 본다 — update-all 이 옛 포트에 남은 라우터를 내릴 때 **그 호출에만** 주는 값이다. 그래서
+#   update-all · update-sites 는 시작할 때 물려받은 LLM_ROUTER_PORT 를 지운다(운영자 셸에 export 된 옛 포트가 남으면 재기동의 stop 이
+#   지금 라우터 대신 옛 포트를 내리고, 지금 라우터는 그대로 남아 run 이 포트를 못 잡는다 — 검토 2라운드 LOW 6).
 #
 # run — 리포를 /workspace 로 바인드하고 127.0.0.1:<포트> 에만 듣는다. 새 이미지가 없다(포털 SIF 의 python·httpx·uvicorn).
 #   설정은 라우터가 infra/.env 를 **직접** 읽는다 — 키를 argv·환경으로 넘기지 않으려고 --cleanenv 로 띄운다(띄운 셸의 http_proxy·비밀이
