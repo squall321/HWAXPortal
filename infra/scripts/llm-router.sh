@@ -3,7 +3,10 @@
 #
 #   ./infra/scripts/llm-router.sh run    # 앞에서 돈다(services.py 가 떼어 띄운다 — services.yaml llm-router)
 #   ./infra/scripts/llm-router.sh stop   # 그 포트를 LISTEN 하는 프로세스만, 명령줄이 라우터인지 확인한 뒤 TERM → 기다림 → KILL
-#   LLM_ROUTER_PORT=9131 ./infra/scripts/llm-router.sh stop    # 환경의 포트가 infra/.env 보다 먼저다(옛 포트에 남은 라우터를 내릴 때)
+#   LLM_ROUTER_PORT=9131 ./infra/scripts/llm-router.sh stop    # stop 만 환경의 포트가 infra/.env 보다 먼저다(옛 포트에 남은 라우터를 내릴 때)
+#
+# 포트 — run 은 늘 infra/.env 의 LLM_ROUTER_PORT(기본 9130)다. 사본·update-all 1i·§6 은 infra/.env 만 읽으므로 운영자 셸에 export 된 값으로
+#   띄우면 아무 사본도 가리키지 않는 포트에 라우터가 뜬다 — 환경의 값이 다르면 경고 한 줄을 찍고 infra/.env 로 띄운다.
 #
 # run — 리포를 /workspace 로 바인드하고 127.0.0.1:<포트> 에만 듣는다. 새 이미지가 없다(포털 SIF 의 python·httpx·uvicorn).
 #   설정은 라우터가 infra/.env 를 **직접** 읽는다 — 키를 argv·환경으로 넘기지 않으려고 --cleanenv 로 띄운다(띄운 셸의 http_proxy·비밀이
@@ -23,7 +26,9 @@ ENV_FILE="$ROOT/infra/.env"
 # 마지막 활성 줄이 이기고, `export` 허용, 공백 뒤 `#` 이후·양끝 공백·따옴표 문자·CR 을 벗긴다. 파일이 없으면 빈 값이다.
 envv() { sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$2" 2>/dev/null | tail -1 | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'; }
 
-if [ -n "${LLM_ROUTER_PORT:-}" ]; then
+_port_ok() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ "${#1}" -le 5 ] && [ "$((10#$1))" -ge 1 ] && [ "$((10#$1))" -le 65535 ]; }
+
+if [ "${1:-}" = stop ] && [ -n "${LLM_ROUTER_PORT:-}" ]; then
   PORT="$LLM_ROUTER_PORT"; _FROM="환경변수"
 else
   PORT="$(envv LLM_ROUTER_PORT "$ENV_FILE" || true)"; PORT="${PORT:-9130}"; _FROM="infra/.env"
@@ -31,10 +36,13 @@ fi
 case "$PORT" in
   ''|*[!0-9]*) echo "✗ LLM_ROUTER_PORT='$PORT'($_FROM) 는 포트 번호가 아니다 — 수만 적는다(기본 9130)" >&2; exit 2 ;;
 esac
-if [ "${#PORT}" -gt 5 ] || [ "$((10#$PORT))" -lt 1 ] || [ "$((10#$PORT))" -gt 65535 ]; then
+if ! _port_ok "$PORT"; then
   echo "✗ LLM_ROUTER_PORT=$PORT($_FROM) 는 1~65535 밖이다" >&2; exit 2
 fi
 PORT="$((10#$PORT))"
+if [ "${1:-}" = run ] && [ -n "${LLM_ROUTER_PORT:-}" ] && { ! _port_ok "$LLM_ROUTER_PORT" || [ "$((10#$LLM_ROUTER_PORT))" != "$PORT" ]; }; then
+  echo "⚠ 환경변수 LLM_ROUTER_PORT=$LLM_ROUTER_PORT 는 run 에서 쓰지 않는다 — 사본·update-all 은 infra/.env 만 보므로 infra/.env 의 포트 $PORT 로 띄운다" >&2
+fi
 
 case "${1:-}" in
   run)

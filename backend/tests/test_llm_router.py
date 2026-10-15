@@ -1277,7 +1277,7 @@ def test_같은_앞부분이_몰려도_두_서버의_차이는_기본_문턱_2_�
 
 
 # ── 띄우는 스크립트 — 검토 L1 · 배선 M4 ───────────────────────────────────────────────────────────────
-def test_run_은_정본_규칙에_틀린_목록이면_띄우지_않고_환경의_포트를_먼저_본다(tmp_path):
+def test_run_은_정본_규칙에_틀린_목록이면_띄우지_않는다(tmp_path):
     cases = ['LLM_UPSTREAMS="http://a.example:8000/v1", "http://b.example:8000/v1"\n',     # 포털 start.sh 의 소싱을 죽이는 줄(배선 M1)
              "LLM_UPSTREAMS=http://203.0.113.256:8000/v1\n",
              "LLM_UPSTREAMS=http://127.0.0.1:9131/v1\nLLM_ROUTER_PORT=9131\n"]               # 라우터 자신
@@ -1287,14 +1287,21 @@ def test_run_은_정본_규칙에_틀린_목록이면_띄우지_않고_환경의
         lay, stub, out = _lay(sub, text)
         r = _launch(lay, stub, out, "run")
         assert r.returncode == 2 and "LLM_UPSTREAMS 를 쓸 수 없어" in r.stderr and not out.exists(), (text, r.stderr)
-    sub = tmp_path / "env"
-    sub.mkdir()
-    lay, stub, out = _lay(sub, "LLM_UPSTREAMS=http://127.0.0.1:9131/v1\nLLM_ROUTER_PORT=9555\n")
-    r = _launch(lay, stub, out, "run", env={"LLM_ROUTER_PORT": "9131"})
-    assert r.returncode == 2 and "라우터 자신" in r.stderr and not out.exists(), "환경의 포트가 실제로 듣는 포트다"
-    r = _launch(lay, stub, out, "run", env={"LLM_ROUTER_PORT": "9132"})
-    argv = out.read_text().splitlines()
-    assert r.returncode == 0 and argv[argv.index("--port") + 1] == "9132" and "LLM_ROUTER_PORT=9132" in argv, (r.stderr, argv)
+
+
+def test_run_은_환경의_포트를_쓰지_않고_infra_env_로_띄우며_다르면_한_줄_알린다(tmp_path):
+    """사본·update-all 1i·§6 은 infra/.env 만 읽는다 — 운영자 셸에 export 된 LLM_ROUTER_PORT 로 띄우면 아무 사본도 가리키지 않는 포트에 라우터가
+    뜬다(조정자 결정). 환경의 포트는 stop 만 본다(옛 포트에 남은 라우터 내리기 — 아래 시험)."""
+    lay, stub, out = _lay(tmp_path, "LLM_UPSTREAMS=http://127.0.0.1:9131/v1\nLLM_ROUTER_PORT=9555\n")
+    warn = "환경변수 LLM_ROUTER_PORT"
+    for env_port in ("9131", "abc"):          # 9131 이면 그 포트로는 고리지만 run 은 그 값을 보지 않는다 · 수가 아닌 값도 경고만
+        r = _launch(lay, stub, out, "run", env={"LLM_ROUTER_PORT": env_port})
+        argv = out.read_text().splitlines()
+        assert r.returncode == 0 and argv[argv.index("--port") + 1] == "9555" and "LLM_ROUTER_PORT=9555" in argv, (r.stderr, argv)
+        assert r.stderr.count(warn) == 1 and f"LLM_ROUTER_PORT={env_port} 는 run 에서 쓰지 않는다" in r.stderr, r.stderr
+    for env_port in ("9555", "09555"):        # 같은 포트면(update-all 이 infra/.env 를 내보낸 셸) 알리지 않는다
+        r = _launch(lay, stub, out, "run", env={"LLM_ROUTER_PORT": env_port})
+        assert r.returncode == 0 and warn not in r.stderr, r.stderr
 
 
 def _bin_without(tmp_path: Path, *drop: str) -> str:
