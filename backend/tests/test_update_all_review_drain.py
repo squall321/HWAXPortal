@@ -188,7 +188,7 @@ def _portal(tmp_path: Path, default_url: str) -> Path:
     repo = tmp_path / "portal"; lib = repo / "infra/scripts/lib"; lib.mkdir(parents=True, exist_ok=True)
     assert REAL in DRAIN_LIB, "lib 의 기본 주소가 바뀌었다 — 하네스가 바꿔 끼울 자리를 다시 찾는다"
     (lib / "review-drain.sh").write_text(DRAIN_LIB.replace(REAL, default_url), encoding="utf-8")
-    for name in ("skip-ledger.sh", "delib-busy.sh"):
+    for name in ("skip-ledger.sh", "delib-busy.sh", "llm-pool.sh"):   # update-all 머리가 적재하는 lib 전부(llm-pool 은 정의만 — 1i 는 아래에서 뺀다)
         (lib / name).write_text((LIBDIR / name).read_text(encoding="utf-8").replace(REAL, default_url), encoding="utf-8")
     (repo / "infra/scripts/review-drain.sh").write_text(WRAPPER.replace(REAL, default_url), encoding="utf-8")
     (repo / "infra/scripts/review-drain.sh").chmod(0o755)
@@ -225,8 +225,9 @@ def _head() -> str:
 
 
 def _drain_and_deploy() -> str:
-    """1h 와 §2(deploy-all 부르기와 rc 판정) — 1h 머리부터 §3 주석 앞까지."""
-    return _region("# ── 1h) 리스크 검토 비우기", "# ── 3) AIDataHub 데이터 동기화")
+    """1h 와 §2(deploy-all 부르기와 rc 판정) — 1h 머리부터 §3 주석 앞까지. 사이의 1i(LLM 라우터 — 풀이 없으면 ○ 한 줄)는 뺀다 —
+    그 구획은 test_llm_pool_update_all 이 따로 돌린다. 여기 두면 이 파일의 '○·⚠ 가 없다' 단언이 비우기와 무관한 줄에 걸린다."""
+    return _region("# ── 1h) 리스크 검토 비우기", "# ── 1i) LLM 라우터") + _region("# ── 2) 전 서비스 배포", "# ── 3) AIDataHub 데이터 동기화")
 
 
 def _tail() -> str:
@@ -607,11 +608,15 @@ def test_끝맺음_뒤의_머리는_깃발을_늘리지_않는다(tmp_path, agen
 
 # ── 배선 — 자리와 순서 ─────────────────────────────────────────────────────────────────────────────
 def test_update_all_배선():
+    import re
+
     assert _at(UA, '. "$SELF_REPO/infra/scripts/lib/delib-busy.sh"') < _at(UA, '. "$SELF_REPO/infra/scripts/lib/review-drain.sh"') \
         < _at(UA, 'hr "1) 포털 레포 최신화"'), "lib 는 첫 § 머리 전에 적재한다(정지 경로가 끝맺음을 부른다)"
     one_h = _at(UA, 'hr "1h) 리스크 검토 비우기"')
     two = _at(UA, 'hr "2) deploy-all-from-drive')
-    assert one_h < two and 'hr "' not in UA[one_h + 5:two], "1h 는 §2 바로 앞이다"
+    between = re.findall(r'hr "([^"]*)"', UA[one_h + 5:two])
+    assert one_h < two and all(h.startswith("1i) LLM 라우터") for h in between), \
+        f"1h 와 §2 사이에는 1i(LLM 라우터 — 라우터 재기동도 비우기 창 안에서 한다)뿐이다: {between}"
     assert _at(UA, "# ── 1g)") < one_h, "1g(NO_PROXY) 뒤 — 1h 의 curl 은 루프백이라 상관없지만 차례를 지킨다"
     hr = _region('hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then', "\nok() {")
     stop = hr[:_at(hr, "exit 143")]
