@@ -9,6 +9,7 @@
         update-all 이고(사본을 되돌린 뒤 라우터를 내린다) 재기동이 미뤄진 손님은 그때까지 이 라우터를 부른다. 처음 읽을 때 비었거나 틀렸으면 503.
   올라옴  연결이 되고 **마지막 /v1/models 가 200 으로 모델 목록을 준** 서버만 '올라옴' 이다. 아직 답하지 않은 서버(모름)·목록을 못 준 서버는
         올라온 서버가 하나도 없을 때만 쓴다. 요청이 model 을 적었으면 그 모델이 있는 서버를 먼저 고른다(없으면 올라온 서버 전부).
+  기동  첫 지표·모델 대조를 STARTUP_PROBE_S 까지만 기다리고 듣기 시작한다 — 답하지 않은 서버는 '모름' 이고 탐침은 이어 돈다.
   고르기  부하 = 마지막 지표의 running + waiting(라벨 묶음 전부 합) + 그 뒤로 이 라우터가 더 보낸 수 — 이 라우터가 그 서버에 보내 도는 수보다
         작아지지 않는다. 지표를 잠깐 못 읽으면(읽기 한도 · 끊김 · 5xx) 마지막 지표를 세 번째 실패까지 쓰고, 404 · vLLM 모양이 아닌 글 · 세 번
         연달은 실패면 이 라우터가 보낸 도는 수로만 잰다. 같으면 KV 사용률, 그다음 목록 순서.
@@ -48,6 +49,7 @@ MODELS_EVERY_S = 60.0     # /v1/models 대조 주기(설정이 바뀌어 서버 
 PROBE_READ_S = 10.0       # 라우터 자신의 탐침(/metrics · /v1/models) 읽기 한도 — 손님 요청 경로가 아니다
 BIG_BODY = 1 << 20        # 이보다 큰 본문은 JSON 해석을 이벤트 루프 밖에서 한다(1M 창 요청은 수 MB 다)
 METRICS_KEEP_FAILS = 3    # 지표 일시 실패가 이만큼 연달면 마지막 지표를 버리고 보낸 수로만 잰다
+STARTUP_PROBE_S = 2.0     # 기동 때 첫 지표·모델 대조를 함께 기다리는 한도 — 넘으면 '모름' 으로 두고 듣기 시작한다(검토 2라운드 M-C)
 DEFAULT_ROUTER_PORT = 9130
 
 # 손잡이 → (기본값, 형, 최솟값). 수가 아니거나 최솟값보다 작으면 기본값으로 두고 읽을 때마다 한 줄 알린다.
@@ -428,7 +430,7 @@ class Upstream:
 
 # ── 라우터 ─────────────────────────────────────────────────────────────────────────────────────────
 class Router:
-    """ASGI 앱 자체다. 기동(lifespan)에서 설정을 읽고 지표·모델을 한 바퀴 읽은 뒤 손님을 받는다."""
+    """ASGI 앱 자체다. 기동(lifespan)에서 설정을 읽고 지표·모델을 한 바퀴 읽은 뒤(STARTUP_PROBE_S 까지만) 손님을 받는다."""
 
     def __init__(self, env_file: Path, *, log_to_stderr: bool = False) -> None:
         self.env_file = Path(env_file)
@@ -486,22 +488,20 @@ class Router:
         self._probe = httpx.AsyncClient(trust_env=False, limits=_LIMITS, timeout=_probe_timeout(self.cfg.connect_timeout_s))
         self._models_kick = asyncio.Event()
         self._reload(initial=True)
-        # 첫 지표·모델을 읽고서 손님을 받는다 — /health 가 처음부터 사실을 말한다. 서버 하나의 뜻밖의 예외가 기동을 막지 않는다.
+        # 첫 지표·모델 대조를 함께 돌리고 STARTUP_PROBE_S 까지만 기다린다 — 그 안에 답한 것은 /health 가 처음부터 말하고, 답하지 않은 서버는
+        # '모름'(올라온 서버가 없을 때만 쓴다)으로 둔 채 듣기 시작한다. 매달리거나 닿지 않는 서버 하나 때문에 재기동마다 라우터 포트가
+        # 10~20초 닫혀 있으면 그동안의 LLM 호출이 전부 실패한다(검토 2라운드 M-C). 끝나지 않은 탐침은 끊지 않고 주기 탐침이 이어받는다.
         ups = list(self.ups)
-        for u, res in zip(ups, await asyncio.gather(*(self._scrape(u) for u in ups), return_exceptions=True), strict=True):
-            if isinstance(res, Exception):
-                LOG.warning("기동 — 지표 읽기 실패 %s(%s) · 다음 주기에 다시", u.url, type(res).__name__)
-        try:
-            await self._check_models()
-        except Exception:
-            LOG.exception("기동 — 모델 대조 실패 · 다음 주기에 다시")
+        firsts = [asyncio.create_task(self._scrape(u)) for u in ups]
+        check = asyncio.create_task(self._check_models())
+        _, pending = await asyncio.wait([*firsts, check], timeout=STARTUP_PROBE_S)
         self._running = True
-        for u in self.ups:
-            self._start_loop(u, delay=True)
-        self._tasks = [asyncio.create_task(self._watch_config()), asyncio.create_task(self._models_loop())]
+        for u, first in zip(ups, firsts, strict=True):
+            self._start_loop(u, first=first)
+        self._tasks = [asyncio.create_task(self._watch_config()), asyncio.create_task(self._models_loop(check)), *firsts, check]
         now = time.monotonic()
-        LOG.info("기동 — 서버 %d곳(올라옴 %d) · 설정 %s", len(self.ups), sum(u.is_up(now) and u.models is not None for u in self.ups),
-                 self.env_file)
+        LOG.info("기동 — 서버 %d곳(올라옴 %d) · 설정 %s%s", len(self.ups), sum(u.is_up(now) and u.models is not None for u in self.ups), self.env_file,
+                 f" · {STARTUP_PROBE_S:g}초 안에 답하지 않은 탐침 {len(pending)}개는 이어서 기다린다" if pending else "")
 
     async def stop(self) -> None:
         self._running = False
@@ -554,7 +554,7 @@ class Router:
                 t.cancel()
         if self._running:
             for u in added:
-                self._start_loop(u, delay=False)
+                self._start_loop(u)
         for p in cfg.problems:
             LOG.warning("설정 — %s", p)
         what = "틀렸다(위 까닭 — 줄 전체를 받지 않는다)" if cfg.upstreams_invalid else "비었다"
@@ -577,24 +577,27 @@ class Router:
                 LOG.exception("설정 다시 읽기 실패")
 
     # ── 지표 ──
-    def _start_loop(self, u: Upstream, *, delay: bool) -> None:
+    def _start_loop(self, u: Upstream, *, first: asyncio.Task | None = None) -> None:
         old = self._loops.pop(u.url, None)
         if old is not None:
             old.cancel()
-        self._loops[u.url] = asyncio.create_task(self._scrape_loop(u, delay))
+        self._loops[u.url] = asyncio.create_task(self._scrape_loop(u, first))
 
-    async def _scrape_loop(self, u: Upstream, delay: bool) -> None:
-        if delay:
-            await asyncio.sleep(self.cfg.scrape_s)
+    async def _scrape_loop(self, u: Upstream, first: asyncio.Task | None) -> None:
+        """first — 기동 때 시작한 첫 탐침. 아직 돌면 끝나길 기다린다(같은 서버를 둘이 함께 찌르지 않게). 없으면(더해진 서버) 곧바로 읽는다."""
         while True:
             try:
-                await self._scrape(u)
+                if first is not None:
+                    await first
+                else:
+                    await self._scrape(u)
                 u.loop_err_noted = False
             except Exception as exc:     # _scrape 안에서 가두지 못한 것 — 그 서버만 빼고, 같은 고장은 한 번만 길게 찍는다
                 if not u.loop_err_noted:
                     LOG.exception("지표 읽기 실패 %s", u.url)
                     u.loop_err_noted = True
                 self._mark_down(u, exc, where="뜻밖")
+            first = None
             await asyncio.sleep(self.cfg.scrape_s)
 
     async def _scrape(self, u: Upstream) -> None:
@@ -672,7 +675,13 @@ class Router:
                             type(exc).__name__, self.cfg.cooldown_s)
 
     # ── 모델 대조 ──
-    async def _models_loop(self) -> None:
+    async def _models_loop(self, first: asyncio.Task | None = None) -> None:
+        """first — 기동 때 시작한 첫 대조(매달린 서버가 있으면 그 읽기 한도까지 이어 돈다). 그 뒤로 MODELS_EVERY_S 마다 또는 깨울 때."""
+        if first is not None:
+            try:
+                await first
+            except Exception:
+                LOG.exception("모델 대조 실패")
         while True:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._models_kick.wait(), MODELS_EVERY_S)
@@ -684,25 +693,11 @@ class Router:
 
     async def _check_models(self) -> None:
         """서버마다 /v1/models — 200 모델 목록이면 그 서버는 '올라옴' 이 될 수 있고, 답했는데 목록이 아니면(401 · 404 · 다른 글) 아니다.
-        답이 없으면(읽기 한도 · 끊김) 지난 답을 그대로 둔다. 실패는 서버마다 바뀔 때 한 번 알리고 /health 의 models.errors 에 싣는다(검토 L7)."""
+        답이 없으면(읽기 한도 · 끊김) 지난 답을 그대로 둔다. 실패는 서버마다 바뀔 때 한 번 알리고 /health 의 models.errors 에 싣는다(검토 L7).
+        답은 서버마다 오는 대로 적는다 — 매달린 서버 하나가 다른 서버의 확인을 읽기 한도(10초)만큼 붙들지 않게."""
         ups = list(self.ups)
         hdrs = {"Authorization": f"Bearer {self.cfg.api_key}"} if self.cfg.api_key else {}
-        res = await asyncio.gather(*(self._probe.get(u.models_url, headers=hdrs, timeout=_probe_timeout(self.cfg.connect_timeout_s))
-                                     for u in ups), return_exceptions=True)
-        for u, r in zip(ups, res, strict=True):
-            if isinstance(r, BaseException) and not isinstance(r, Exception):
-                raise r
-            if isinstance(r, Exception):
-                self._models_failed(u, type(r).__name__, answered=False)
-            elif r.status_code != 200:
-                self._models_failed(u, r.status_code, answered=True)
-            elif (got := _model_list(r)) is None:
-                self._models_failed(u, "not-a-model-list", answered=True)
-            else:
-                u.models, u.models_bad = got, False
-                if u.models_error is not None:
-                    LOG.info("모델 목록 다시 읽힘 %s — %s", u.url, ", ".join(sorted(got[0])))
-                    u.models_error = None
+        await asyncio.gather(*(self._check_one(u, hdrs) for u in ups))
         summary = self._models_summary()
         sig = json.dumps({k: summary[k] for k in ("match", "ids", "max_model_len")}, sort_keys=True, ensure_ascii=False, default=str)
         if summary["match"] is False and sig != self._models_warned:
@@ -712,6 +707,22 @@ class Router:
         elif summary["match"] is True and self._models_warned is not None:
             self._models_warned = None
             LOG.info("모델 같아짐 — ids=%s max_model_len=%s", json.dumps(summary["ids"], ensure_ascii=False), summary["max_model_len"])
+
+    async def _check_one(self, u: Upstream, hdrs: dict[str, str]) -> None:
+        try:
+            r = await self._probe.get(u.models_url, headers=hdrs, timeout=_probe_timeout(self.cfg.connect_timeout_s))
+        except Exception as exc:                 # noqa: BLE001 — 답이 없다(연결 · 읽기 한도 · 끊김 · 뜻밖) — 지난 답을 그대로 둔다
+            self._models_failed(u, type(exc).__name__, answered=False)
+            return
+        if r.status_code != 200:
+            self._models_failed(u, r.status_code, answered=True)
+        elif (got := _model_list(r)) is None:
+            self._models_failed(u, "not-a-model-list", answered=True)
+        else:
+            u.models, u.models_bad = got, False
+            if u.models_error is not None:
+                LOG.info("모델 목록 다시 읽힘 %s — %s", u.url, ", ".join(sorted(got[0])))
+                u.models_error = None
 
     def _models_failed(self, u: Upstream, code: int | str, *, answered: bool) -> None:
         if answered:

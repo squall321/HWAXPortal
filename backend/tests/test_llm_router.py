@@ -97,8 +97,8 @@ SSE = [(b"content-type", b"text/event-stream"), (b"cache-control", b"no-cache")]
 class _Fake:
     """가짜 vLLM. mode — json · sse · 500 · break(머리와 한 조각 뒤 끊음) · hold(머리 전에 붙든다) · hold_stream(한 조각 뒤 붙든다) · slow(3초 침묵) ·
     404model(모델이 없다는 404 를 곧바로 — 다른 --served-model-name 으로 다시 뜬 vLLM).
-    metrics_mode — ok · 404 · 500 · hang(5초 침묵 — 라우터 탐침의 읽기 한도를 넘긴다) · garbage(200 인데 vLLM 지표가 아니다).
-    models_mode — ok · 401 · 404 · hang · garbage(200 인데 모델 목록이 아니다)."""
+    metrics_mode — ok · 404 · 500 · hang(hang_s 초 — 기본 5초 — 침묵한 뒤 답한다 · 라우터 탐침의 읽기 한도를 넘긴다) · garbage(200 인데 vLLM 지표가
+    아니다). models_mode — ok · 401 · 404 · hang · garbage(200 인데 모델 목록이 아니다)."""
 
     def __init__(self, name: str, *, running=0.0, waiting=0.0, kv=0.0, model="glm", max_len=1_048_576):
         self.name, self.running, self.waiting, self.kv = name, running, waiting, kv
@@ -106,6 +106,7 @@ class _Fake:
         self.mode = "json"
         self.metrics_mode = "ok"
         self.models_mode = "ok"
+        self.hang_s = 5.0
         self.metrics_hits = 0
         self.hits: list[dict] = []          # 채팅·그 밖의 넘어온 요청
         self.model_hits: list[dict] = []    # /v1/models 요청의 머리
@@ -137,7 +138,7 @@ class _Fake:
             self.metrics_hits += 1
             mm = self.metrics_mode
             if mm == "hang":
-                await asyncio.sleep(5)
+                await asyncio.sleep(self.hang_s)
             status = {"404": 404, "500": 500}.get(mm, 200)
             data = b"<html>not metrics</html>" if mm == "garbage" else self.metrics_text().encode() if status == 200 else b"no"
             await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", b"text/plain")]})
@@ -147,7 +148,7 @@ class _Fake:
             self.model_hits.append(headers)
             mm = self.models_mode
             if mm == "hang":
-                await asyncio.sleep(5)
+                await asyncio.sleep(self.hang_s)
             if mm in ("401", "404"):
                 await _send_json(send, int(mm), {"error": {"message": "no"}})
             elif mm == "garbage":
@@ -1371,3 +1372,28 @@ def test_지문은_바이트코드를_보지_않고_fp_git_false_면_리포_루�
     assert m.service_fp(plain) != p0, "기본은 종전대로 .env 가 든다"
     (work / "code/router.py").write_text("v2 — 코드가 바뀌었다\n", encoding="utf-8")
     assert m.service_fp(svc) != a
+
+
+# ── 반대 검토 2라운드(LP-D14) — 검토자의 탐침을 회귀 시험으로 ─────────────────────────────────────────────
+def test_검토2_MC_기동은_첫_탐침을_2초까지만_기다리고_늦은_답은_이어서_받는다(lab):
+    """기동이 서버마다 지표 → 모델 대조를 차례로 다 기다렸다 — 매달린 서버 하나면 20초, 닿지 않는 서버 하나면 10초 동안 라우터 포트가 닫혀
+    재기동마다 LLM 호출이 끊겼다(검토 M-C). 이제 함께 돌리고 STARTUP_PROBE_S(2초)까지만 기다린다. 늦게 답한 서버는 정기 대조(60초)를 기다리지
+    않고 그 답이 오는 대로 올라온다(끝나지 않은 탐침을 끊지 않는다)."""
+    a = lab.fake("A")
+    b = lab.fake("B")
+    b.metrics_mode = b.models_mode = "hang"
+    b.hang_s = 4.0                                        # 4초 뒤에 답한다 — 기동 한도(2초) 밖 · 읽기 한도(10초) 안
+    env = lab.tmp / "slow.env"
+    _write_env(env, [a.base, b.base], LLM_ROUTER_SCRAPE_S=60, LLM_ROUTER_PREFIX_CHARS=0)
+    t0 = time.monotonic()
+    s = _Srv(R.make_app(env), lifespan="on")
+    took = time.monotonic() - t0
+    lab.servers.append(s)
+    r = _Router(s, env)
+    lab.routers.append(r)
+    assert R.STARTUP_PROBE_S <= took < R.STARTUP_PROBE_S + 1.5, f"{took:.1f}초"
+    h = r.health().json()
+    assert (h["upstreams_up"], h["upstreams_total"]) == (1, 2) and r.by_url()[b.base]["models"] == "unknown"
+    assert r.chat("x").json()["served_by"] == "A"
+    _wait(lambda: r.by_url()[b.base]["up"] is True, timeout=6, what="B 의 늦은 답을 받기")
+    assert r.by_url()[b.base]["running"] == 0.0, "늦게 온 첫 지표도 받는다"
