@@ -608,6 +608,25 @@ def test_services_fp_tracks_head_env_and_identity_files_but_not_identity_dirs(tm
     assert m.service_fp({"name": "z", "dir": str(tmp_path / "nope")}) == m.service_fp({"name": "z", "dir": str(tmp_path / "nope")})
 
 
+def test_services_fp_without_git_tracks_only_the_listed_paths(tmp_path):
+    """`fp_git: false`(LLM 라우터 — 포털 리포 안의 작은 서비스) — 포털 커밋마다 재기동하면 몇 시간 도는 LLM 호출이 끊긴다(docs/llm-pool LP-D10).
+    HEAD 는 지문에 넣지 않고 `fp:` 경로(라우터 코드)만 넣는다. .env 는 종전대로 든다. 칸이 없으면 종전대로 HEAD 가 든다."""
+    origin = tmp_path / "origin"; origin.mkdir(); _git("init", "-q", "-b", "main", cwd=origin)
+    (origin / "f").write_text("1\n"); _git("add", ".", cwd=origin); _git("commit", "-qm", "A", cwd=origin)
+    work = tmp_path / "work"; _git("clone", "-q", str(origin), str(work), cwd=tmp_path)
+    (work / "code").mkdir(); (work / "code/router.py").write_text("v1\n")
+    m = _services_mod()
+    svc = {"name": "r", "dir": str(work), "fp_git": False, "fp": ["code", "run.sh"]}
+    plain = {"name": "r", "dir": str(work), "fp": ["code", "run.sh"]}
+    a, p0 = m.service_fp(svc), m.service_fp(plain)
+    (origin / "f").write_text("2\n"); _git("commit", "-qam", "B", cwd=origin); _git("fetch", "-q", "origin", cwd=work); _git("reset", "-q", "--hard", "origin/main", cwd=work)
+    assert m.service_fp(svc) == a, "포털 HEAD 가 옮겨도 라우터 지문은 그대로"
+    assert m.service_fp(plain) != p0, "칸이 없으면 종전대로 HEAD 가 든다"
+    (work / "code/router.py").write_text("v2 — 코드가 바뀌었다\n"); b = m.service_fp(svc); assert b != a, "fp: 의 디렉터리 안 파일"
+    (work / "run.sh").write_text("#!/bin/sh\n"); c = m.service_fp(svc); assert c not in (a, b), "fp: 의 파일(없음 → 있음)"
+    (work / ".env").write_text("K=1\n"); assert m.service_fp(svc) not in (a, b, c), ".env 는 종전대로 든다"
+
+
 def test_service_urls_lists_every_listener_and_expands_env_refs():
     """5라운드(high): 인스턴스가 둘인 서비스에서 한쪽만 갈려도 기록돼 영구 생략됐다. 매니페스트가 듣는 url 전부를 들고,
     박스마다 다른 값(포털 nginx 포트)은 `${KEY:-기본}` 으로 infra/.env 에서 푼다."""
@@ -620,6 +639,26 @@ def test_service_urls_lists_every_listener_and_expands_env_refs():
     assert m.service_urls(by["kooremapper"])[1].endswith("/mcp"), "MCP 루트는 404 라 /mcp 를 본다"
     assert m.service_urls({"health": "http://h:1/a", "urls": ["http://h:${NO_SUCH_KEY_X:-9}/b", "http://h:1/a"]}) == \
         ["http://h:1/a", "http://h:9/b"], "기본값을 쓰고 중복은 하나로"
+
+
+def test_health_probes_expand_env_refs_like_service_urls(tmp_path, monkeypatch, capsys):
+    """`health:` 의 `${KEY:-기본}` 은 기동 대기·status·down 이 두드리기 전에 푼다 — 풀지 않으면 포트 자리의 `${…}` 때문에 늘 '죽었다' 로 읽혀
+    up 이 떠 있는 것을 또 띄우고 status 는 영구 ✗ 다(LLM 라우터의 LLM_ROUTER_PORT — docs/llm-pool). 그 값은 infra/.env 가 정한다."""
+    import http.server
+    import threading
+    srv = http.server.HTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)   # 무엇에든 501 — 응답이 오면 up 이다
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        m = _services_mod(); (tmp_path / "infra").mkdir(); monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path)
+        (tmp_path / "infra/.env").write_text(f"T_PROBE_PORT={srv.server_port}\n")
+        svc = {"name": "t", "dir": str(tmp_path), "start": "false", "health": "http://127.0.0.1:${T_PROBE_PORT:-1}/health", "tier": 1}
+        assert m.health_url(svc) == f"http://127.0.0.1:{srv.server_port}/health"
+        monkeypatch.setattr(m, "load", lambda: [svc])
+        assert m.cmd_status([]) == 0 and "✓ up" in capsys.readouterr().out
+        assert m.start_one(svc) == "already-up", "떠 있으면 다시 띄우지 않는다"
+        assert m.health_url({"health": "http://h:${NO_SUCH_KEY_X:-9}/b"}) == "http://h:9/b" and m.health_url({}) == ""
+    finally:
+        srv.shutdown()
 
 
 def test_services_port_and_health_print_from_the_real_manifest():
