@@ -418,6 +418,8 @@ synth(영역 요약 15 + 종합 1) ──completed──▶ chain.on_synth_close
 | `GET /targets/{key}/panels` · `GET /panels/{id}/transcript` | 패널마다 + `kind` · `issue_id`, 쿼리 `kind` |
 | `POST /panels/{id}/complete` | 쟁점 패널도 받는다(고쳐서 다시 내기 — 러너와 같은 갈래를 탄다) |
 
+(10-15 덧붙임 — 반대 검토 뒤 더한 칸, 지운 칸 없음.) 쟁점 행(REST·MCP)과 요약 입력에 `reargue`(패널이 판정한 쟁점의 근거가 바뀌어 다시 토의가 필요함 — 새 패널이 정할 때까지 옛 판정을 보이고, 새 패널이 결정을 못 내면 '…(새 패널 결정 못 함)'). 새 잔여 `issues_reraised`. 확인·확인 취소 응답에 `report_version`. 쪽 나누기 목록에 `ledger_rev`(바뀌면 offset 0 부터). 등록부 MCP 행은 `merged_json` 없이 목록을 줄이고 `merged.lists_total`. 남에게는 모든 쓰기·읽기 경로가 없는 것과 같은 404(가드 `tests/rr/test_review1_stranger.py` — 쓰기 51 · 읽기 41 · MCP 31). 결정은 context-notes D-44~D-52.
+
 MCP 는 **29 → 31종**이다(PLAN 4절 C-30). 새 도구 둘은 읽기 전용이다(`test_no_write_tools` 의 뜻 그대로).
 
 - `risk_get_issues(target_key, state=None, p_class=None, limit=100, offset=0)` — REST 와 같은 함수(`routes.issues_payload`)를 `_fit_rows` 로 감싼다. 와이어(들여쓰기 2 JSON)가 25,000자 안에 들 때까지 `limit` 를 줄이고 남으면 `next_offset` 을 준다(자르지 않는다). 설명문에 '쟁점은 웹 러너가 돌린다 — Claude 에서는 지켜본다' 를 적는다.
