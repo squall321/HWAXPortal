@@ -59,6 +59,23 @@ services:
       identity: [infra/.env, backend/.env, backend/config/routes.local.env]
     tier: 0
 
+  # ── tier 5: LLM 라우터 — vLLM 서버 둘을 /metrics 로 보고 덜 바쁜 쪽으로 보낸다(docs/llm-pool PLAN §3·§4) ──
+  # infra/.env 에 LLM_UPSTREAMS 가 **있는** 박스에서만 다룬다(if_env — unless_env 의 거울, 못 읽으면 '모름' 이라 닫는다). 없으면 이 박스 대상 아님.
+  # 서버를 더하고 빼는 것은 라우터가 infra/.env 를 다시 읽어 재기동 없이 한다. 그래서 지문은 라우터 파일뿐이다(fp_git: false + fp:) —
+  #   포털 HEAD 를 넣으면 문서 커밋 하나에도 라우터가 재기동돼 몇 시간 도는 카드 대조·심의의 LLM 호출이 끊긴다(LP-D10).
+  # update: false — 포털 리포 안이라 받는 것은 포털 항목이 한다. 정지는 그 포트를 LISTEN 하는 라우터만(llm-router.sh stop).
+  - name: llm-router
+    host: local
+    dir: .
+    if_env: LLM_UPSTREAMS
+    update: false
+    fp_git: false
+    fp: [infra/llm-router, infra/scripts/llm-router.sh]
+    start: ./infra/scripts/llm-router.sh run
+    stop: ./infra/scripts/llm-router.sh stop
+    health: http://127.0.0.1:${LLM_ROUTER_PORT:-9130}/health
+    tier: 5
+
   # ── tier 10: federated sub-services (proxied via routes.env) ──
   - name: mx-white-paper
     host: local

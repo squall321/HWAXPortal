@@ -318,6 +318,18 @@ def test_카드_대조의_나란한_값은_엔진_관문_이상이다():
                              "D-34 의 동시 수가 앱 워커 수에 묶인다")
 
 
+def test_LLM_라우터는_연결_한도만_두어_사슬에_층을_더하지_않는다():
+    """LLM 호출은 라우터(infra/llm-router, docs/llm-pool)를 지난다. 라우터가 읽기·쓰기 한도를 두면 'LLM 연결 < 시도 1회 < …' 사슬 안에 값이
+    적히지 않은 층이 하나 끼고, 그 층이 엔진보다 먼저 끊으면 손잡이 이름 없는 끊김이 된다. 손님 요청의 한도는 위 서버에 닿는 연결 하나뿐이다 —
+    끊는 것은 부르는 쪽(엔진·리스크 앱)이고 그 끊김이 위로 전해진다. 그래서 이 사슬에 라우터의 값은 없다."""
+    src = _src("HWAXPortal", "infra/llm-router/llm_router.py")
+    m = re.search(r"def _proxy_timeout\(connect_s: float\) -> httpx\.Timeout:\n(?:[ \t][^\n]*\n)*?[ \t]+return (httpx\.Timeout\([^)]*\))\n", src)
+    assert m, "라우터에서 _proxy_timeout 을 못 읽었다 — 이름이나 줄 모양이 바뀌었으면 이 식을 고쳐라"
+    assert m.group(1) == "httpx.Timeout(connect=connect_s, read=None, write=None, pool=None)", (
+        f"라우터의 손님 요청 한도가 연결만이 아니다 — `{m.group(1)}`. 읽기·쓰기·풀 한도는 시간 한도 사슬에 층을 더한다")
+    assert re.search(r"self\._client\.build_request\([^)]*timeout=_proxy_timeout\(", src), "손님 요청은 그 한도로 보낸다(탐침 한도가 아니다)"
+
+
 def test_nginx_생성기가_견주는_포털_기본값이_포털의_그_값이다():
     """gen-nginx-conf.sh 는 포털 값을 못 읽으면 기본값으로 순서를 견준다 — 그 수는 config.py 기본값의 bash 쪽 사본이다."""
     m = re.search(r'_idle="\$\{_idle:-(\d+)\}"', _src("HWAXPortal", "infra/scripts/gen-nginx-conf.sh"))
