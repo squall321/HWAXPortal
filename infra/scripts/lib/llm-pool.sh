@@ -59,12 +59,14 @@ _HWAX_LLM_EXTRA=(
 )
 
 hwax_llm_envv() {  # $1=파일 $2=키 — update-all _envfile_value 와 같은 줄(그 머리 주석의 까닭 그대로: LC_ALL=C · 주석을 벗긴 뒤에 공백)
-  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$2=//p" "$1" 2>/dev/null | tail -1 \
+  # 첫 sed 도 LC_ALL=C — UTF-8 로케일의 [[:space:]] 는 U+3000·U+2003·U+2028 도 먹어 `　LLM_UPSTREAMS=…` 가 bash 에만 활성 줄이 된다
+  # (라우터·services.py 는 ASCII 여섯만 공백이다 — 검토 2라운드 LOW 2). 대조 표: backend/tests/test_llm_pool_upstreams_rules.py
+  LC_ALL=C sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$2=//p" "$1" 2>/dev/null | tail -1 \
     | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'
 }
 
-_hwax_llm_raw() {  # $1=파일 $2=키 — 같은 줄의 원문(주석·양끝 공백·CR 만 벗긴다 — 따옴표는 남긴다)
-  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$2=//p" "$1" 2>/dev/null | tail -1 \
+_hwax_llm_raw() {  # $1=파일 $2=키 — 같은 줄의 원문(주석·양끝 공백·CR 만 벗긴다 — 따옴표는 남긴다). 고르는 줄은 hwax_llm_envv 와 같다
+  LC_ALL=C sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$2=//p" "$1" 2>/dev/null | tail -1 \
     | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '\r'
 }
 

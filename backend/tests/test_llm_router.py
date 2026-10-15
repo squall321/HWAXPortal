@@ -59,7 +59,12 @@ class _Srv:
         cfg = uvicorn.Config(app, log_config=None, log_level="warning", lifespan=lifespan, http=http, timeout_graceful_shutdown=1,
                              **({"ssl_certfile": str(tls[0]), "ssl_keyfile": str(tls[1])} if tls else {}))
         self.server = uvicorn.Server(cfg)
-        self.thread = threading.Thread(target=lambda: asyncio.run(self.server.serve(sockets=[self.sock])), daemon=True)
+        self.loop: asyncio.AbstractEventLoop | None = None      # 이 서버의 이벤트 루프 — 시험이 루프 안의 일을 깨울 때(call_soon_threadsafe)
+
+        async def serve() -> None:
+            self.loop = asyncio.get_running_loop()
+            await self.server.serve(sockets=[self.sock])
+        self.thread = threading.Thread(target=lambda: asyncio.run(serve()), daemon=True)
         self.thread.start()
         deadline = time.monotonic() + 20
         while not self.server.started:
@@ -97,8 +102,8 @@ SSE = [(b"content-type", b"text/event-stream"), (b"cache-control", b"no-cache")]
 class _Fake:
     """가짜 vLLM. mode — json · sse · 500 · break(머리와 한 조각 뒤 끊음) · hold(머리 전에 붙든다) · hold_stream(한 조각 뒤 붙든다) · slow(3초 침묵) ·
     404model(모델이 없다는 404 를 곧바로 — 다른 --served-model-name 으로 다시 뜬 vLLM).
-    metrics_mode — ok · 404 · 500 · hang(5초 침묵 — 라우터 탐침의 읽기 한도를 넘긴다) · garbage(200 인데 vLLM 지표가 아니다).
-    models_mode — ok · 401 · 404 · hang · garbage(200 인데 모델 목록이 아니다)."""
+    metrics_mode — ok · 404 · 500 · hang(hang_s 초 — 기본 5초 — 침묵한 뒤 답한다 · 라우터 탐침의 읽기 한도를 넘긴다) · garbage(200 인데 vLLM 지표가
+    아니다). models_mode — ok · 401 · 404 · hang · garbage(200 인데 모델 목록이 아니다)."""
 
     def __init__(self, name: str, *, running=0.0, waiting=0.0, kv=0.0, model="glm", max_len=1_048_576):
         self.name, self.running, self.waiting, self.kv = name, running, waiting, kv
@@ -106,6 +111,7 @@ class _Fake:
         self.mode = "json"
         self.metrics_mode = "ok"
         self.models_mode = "ok"
+        self.hang_s = 5.0
         self.metrics_hits = 0
         self.hits: list[dict] = []          # 채팅·그 밖의 넘어온 요청
         self.model_hits: list[dict] = []    # /v1/models 요청의 머리
@@ -137,7 +143,7 @@ class _Fake:
             self.metrics_hits += 1
             mm = self.metrics_mode
             if mm == "hang":
-                await asyncio.sleep(5)
+                await asyncio.sleep(self.hang_s)
             status = {"404": 404, "500": 500}.get(mm, 200)
             data = b"<html>not metrics</html>" if mm == "garbage" else self.metrics_text().encode() if status == 200 else b"no"
             await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", b"text/plain")]})
@@ -147,7 +153,7 @@ class _Fake:
             self.model_hits.append(headers)
             mm = self.models_mode
             if mm == "hang":
-                await asyncio.sleep(5)
+                await asyncio.sleep(self.hang_s)
             if mm in ("401", "404"):
                 await _send_json(send, int(mm), {"error": {"message": "no"}})
             elif mm == "garbage":
@@ -260,6 +266,10 @@ class _Router:
 
     def health(self) -> httpx.Response:
         return self.http.get("/health")
+
+    def kick_models(self) -> None:
+        """모델 대조를 곧바로 한 번 — 정기 대조(60초)를 기다리지 않는다. 라우터 루프에서 깨운다(asyncio.Event 는 스레드에 안전하지 않다)."""
+        self.srv.loop.call_soon_threadsafe(self.app._models_kick.set)
 
 
 @pytest.fixture
@@ -481,17 +491,24 @@ def test_붙인_서버가_문턱만큼_바빠지면_가장_한가한_서버로_�
 
 # ── 넘김 ───────────────────────────────────────────────────────────────────────────────────────────
 def test_연결_실패만_다른_서버로_넘기고_빼_둔_뒤_돌아온다(lab):
+    """빼 둔 서버는 빼 둔 시간이 지나고 모델 목록을 다시 확인한 뒤 돌아온다 — 내려갈 때 목록을 '모름' 으로 되돌린다(다른 모델로 다시 떴을
+    수 있다, 검토 2라운드 M-B). 운영에서는 지표 탐침이 다시 닿을 때 곧바로 묻는다 — 이 시험은 지표 주기가 60초라 대조를 손으로 깨운다."""
     a, b = lab.fake("A", running=0), lab.fake("B", running=5)
     r = lab.router([a, b], LLM_ROUTER_PREFIX_CHARS=0, LLM_ROUTER_COOLDOWN_S=0.8)
     a.srv.stop()                                         # 연결 거절 — 지표 주기(60초)는 아직 모른다
     assert r.chat("x").json()["served_by"] == "B", "요청이 서버에 닿지 않았으니 다른 서버로 다시 보낸다"
     st = r.by_url()
     assert (st[a.base]["up"], st[a.base]["connect_fail"], st[a.base]["retried_away"], st[a.base]["sent"]) == (False, 1, 1, 0)
-    assert st[b.base]["sent"] == 1
+    assert st[a.base]["models"] == "unknown" and st[b.base]["sent"] == 1
     assert r.chat("x").json()["served_by"] == "B"
     assert r.by_url()[a.base]["connect_fail"] == 1, "빼 둔 동안은 시도하지 않는다"
     lab.restart(a)
-    time.sleep(0.9)                                      # 빼 둔 시간(0.8초)이 지나면 다시 고른다
+    time.sleep(0.9)                                      # 빼 둔 시간(0.8초)이 지났다 — 연결은 되지만 모델 목록은 아직 '모름' 이다
+    st = r.by_url()[a.base]
+    assert (st["reachable"], st["models"], st["up"]) == (True, "unknown", False)
+    assert r.chat("x").json()["served_by"] == "B", "다시 확인하기 전에는 올라온 서버(B)가 있는 동안 쓰지 않는다"
+    r.kick_models()
+    _wait(lambda: r.by_url()[a.base]["up"], what="모델 목록을 다시 확인하기")
     assert r.chat("x").json()["served_by"] == "A"
     assert r.by_url()[a.base]["up"] is True
     # 모두 빠졌으면 전부를 다시 시도해 본다(멀쩡해졌을 수 있다)
@@ -670,8 +687,9 @@ def test_health_는_올라온_서버_수로_ok_degraded_down_이고_down_이면_
     assert body["upstreams_reachable"] == 2
     assert body["models"] == {"match": True, "ids": ["glm"], "max_model_len": 1_048_576, "errors": {}}
     assert body["config_mtime"] == pytest.approx(r.env.stat().st_mtime, abs=0.01)
-    assert set(r.stats()[0]) == {"url", "up", "reachable", "models", "models_error", "running", "waiting", "kv", "metrics_age_s",
-                                 "metrics_fail", "scrape_age_s", "inflight", "sent", "connect_fail", "retried_away", "sticky", "overflow"}
+    assert set(r.stats()[0]) == {"url", "up", "reachable", "models", "models_error", "probe_timeouts", "running", "waiting", "kv",
+                                 "metrics_age_s", "metrics_fail", "scrape_age_s", "inflight", "sent", "connect_fail", "retried_away",
+                                 "sticky", "overflow"}
     b.srv.stop()
     _wait(lambda: r.health().json()["status"] == "degraded", what="degraded")
     assert r.health().status_code == 200 and r.health().json()["upstreams_up"] == 1
@@ -989,13 +1007,13 @@ def test_검토H1_요청을_못_만든_서버는_빼고_다음_서버로_보낸_
         def copy_with(self, **kw):
             raise ValueError("이 서버 주소로는 요청을 못 만든다")
 
-    good_base, ua.base = ua.base, _BadBase()
+    good_base, good_models, ua.base = ua.base, ua.models, _BadBase()
     resp = r.chat("x")
     assert resp.status_code == 200 and resp.json()["served_by"] == "B", "보낸 것이 없으니 다음 서버로"
     st = r.by_url()[a.base]
     assert (st["reachable"], st["sent"], st["retried_away"]) == (False, 0, 1)
     # 보내는 중의 뜻밖 — 닿았는지 모르니 다시 보내지 않는다(LP-D3). 이 요청은 502 이고 그 서버는 뺀다.
-    ua.base, ua.down_until = good_base, 0.0
+    ua.base, ua.down_until, ua.models = good_base, 0.0, good_models     # 다시 올라와 모델 목록까지 확인한 것으로 둔다
     r.app._client = _Boom(r.app._client, a.srv.port)
     resp = r.chat("x")
     assert resp.status_code == 502 and resp.json()["error"]["type"] == "llm_router_upstream_error", resp.text
@@ -1371,3 +1389,139 @@ def test_지문은_바이트코드를_보지_않고_fp_git_false_면_리포_루�
     assert m.service_fp(plain) != p0, "기본은 종전대로 .env 가 든다"
     (work / "code/router.py").write_text("v2 — 코드가 바뀌었다\n", encoding="utf-8")
     assert m.service_fp(svc) != a
+
+
+# ── 반대 검토 2라운드(LP-D14) — 검토자의 탐침을 회귀 시험으로 ─────────────────────────────────────────────
+def test_검토2_MA_같은_모델이면_창이_가장_큰_서버로만_보내고_작은_창은_그_서버가_없을_때만(lab):
+    """같은 모델 id · 다른 창(한쪽만 다른 인자로 다시 띄운 날, LP-D6) — 작은 창 서버는 긴 요청을 곧바로 400 으로 내 도는 수가 늘 0 이라
+    가장 한가해 보였다(검토: 긴 요청 20 개 가운데 18 개가 16K 서버로 가 실패). 큰 창 서버가 올라와 있는 동안 작은 창 서버는 쓰지 않고,
+    /health 는 어긋남을 그대로 말한다. 모델을 적지 않은 요청도 서버의 가장 큰 창으로 견준다."""
+    a = lab.fake("A")
+    a.mode = "hold"                                       # 1M 창 — 긴 요청을 붙들고 있다(바쁘다)
+    b = lab.fake("B", max_len=16_384)                     # 16K 창 — 한가하다
+    r = lab.router([a, b], LLM_ROUTER_SCRAPE_S=0.1)
+    h = r.health().json()
+    assert (h["status"], h["upstreams_up"], h["models"]["match"]) == ("degraded", 2, False)
+    jobs = [_bg(lambda i=i: r.chat(f"카드 묶음 {i} — " + "x" * 2000)) for i in range(6)]
+    jobs.append(_bg(lambda: r.http.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "모델 없이"}]})))
+    _wait(lambda: len(a.hits) == 7, what="일곱 다 A 에 닿기")
+    assert not b.hits, "A 가 바빠도 작은 창 서버로 보내지 않는다"
+    a.release.set()
+    for j in jobs:
+        j["t"].join(10)
+        assert j["r"].status_code == 200
+    a.srv.stop()                                          # 큰 창 서버가 없으면 작은 창 서버가 가장 큰 창이다
+    _wait(lambda: r.by_url()[a.base]["reachable"] is False, what="A 가 빠지기")
+    assert r.chat("x").json()["served_by"] == "B"
+
+
+def test_검토2_MA_창을_적지_않은_서버는_아는_창보다_작게_친다():
+    u = R.Upstream("http://127.0.0.1:1/v1")
+    assert u.window("glm") == -1.0, "모델 목록을 모르면 창도 모른다"
+    for rows, want in (((("glm", 1_048_576),), 1_048_576.0), ((("glm", None),), -1.0), ((("glm", True),), -1.0),
+                       ((("glm", "1048576"),), -1.0), ((("glm", 16_384), ("glm-alias", 32_768)), 16_384.0)):
+        u.models = (frozenset(i for i, _ in rows), rows)
+        assert u.window("glm") == want, rows
+    assert u.window(None) == 32_768.0, "모델을 적지 않으면 서버의 가장 큰 창"
+
+
+def test_검토2_MB_다른_모델로_다시_뜬_서버는_다시_확인하기_전에는_올라옴이_아니다(lab, caplog):
+    """B 가 다른 --served-model-name 으로 다시 떴다 — 연결 실패는 모델 목록을 지우지 않았고 다시 올라올 때 대조를 앞당기는 것은 목록이 없던
+    서버뿐이라, 다음 정기 대조(60초)까지 옛 목록('glm')으로 올라옴이었다(검토: 20/20 이 B 로 가 404 · match true 라 1i 관문도 지난다).
+    내려갈 때 목록을 '모름' 으로 되돌리고, 다시 올라오면 그 서버만 곧바로 묻는다."""
+    caplog.set_level(logging.INFO)
+    a = lab.fake("A", running=6)
+    b = lab.fake("B")
+    r = lab.router([a, b], LLM_ROUTER_SCRAPE_S=0.1)
+    assert r.health().json()["models"]["match"] is True
+    b.srv.stop()
+    st = _until(r.by_url, lambda s: s[b.base]["reachable"] is False, what="B 가 내려가기")[b.base]
+    assert st["models"] == "unknown", "내려가면 목록을 모른다"
+    b.model, b.mode = "other", "404model"
+    lab.restart(b)
+    _wait(lambda: r.by_url()[b.base]["reachable"] is True, timeout=10, what="B 가 다시 닿기")
+    codes = [r.chat(f"대화 {i}").status_code for i in range(20)]
+    assert codes == [200] * 20 and not b.hits, codes
+    _wait(lambda: r.by_url()[b.base]["models"] == "ok", timeout=3, what="정기 대조(60초)를 기다리지 않고 B 의 목록을 다시 읽기")
+    h = r.health().json()
+    assert h["models"]["match"] is False and h["models"]["ids"][b.base] == ["other"], h["models"]
+    assert any("서버 올라옴" in x.getMessage() and b.base in x.getMessage() for x in caplog.records)
+
+
+def test_검토2_MB_내려가기_전에_시작한_모델_대조의_답은_버린다(lab):
+    """묻는 사이에 서버가 내려갔다 오면 그 답은 옛 프로세스의 것일 수 있다 — 내려간 수(downs)가 바뀌었으면 적지 않는다."""
+    a = lab.fake("A")
+    r = lab.router([a], LLM_ROUTER_SCRAPE_S=60)
+    ua = r.app.ups[0]
+    a.models_mode, a.hang_s = "hang", 1.5                 # 1.5초 뒤에 답한다
+    r.kick_models()
+    _wait(lambda: len(a.model_hits) == 2, what="두 번째 대조가 A 에 닿기")
+    r.srv.loop.call_soon_threadsafe(lambda: r.app._mark_down(ua, OSError("시험"), where="지표"))
+    _wait(lambda: r.by_url()[a.base]["models"] == "unknown", what="내려가며 목록을 지우기")
+    time.sleep(2.0)                                       # 매달렸던 대조의 답이 온다
+    assert r.by_url()[a.base]["models"] == "unknown", "내려가기 전에 시작한 대조의 답을 적었다"
+
+
+class _HangFake(_Fake):
+    """hung 이 켜지면 모든 요청(지표 · 모델 · 채팅)을 받고 답하지 않는다 — GPU 가 멎었는데 API 프로세스는 산 vLLM. 꺼지면 다시 답한다."""
+    hung = False
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and self.hung:
+            if scope["path"] not in ("/metrics", "/v1/models"):
+                self.hits.append({"path": scope["path"], "t": time.monotonic()})
+            while self.hung:
+                await asyncio.sleep(0.01)
+        return await super().__call__(scope, receive, send)
+
+
+def test_검토2_LOW1_탐침이_세_번_연달아_매달리면_다시_답할_때까지_올라옴이_아니다(lab, monkeypatch, caplog):
+    """세 번 연달은 읽기 한도 초과 뒤 지표를 버리면 매달린 서버는 도는 수 0 으로 가장 한가해 보였고, 모델 목록은 그대로라 올라옴이었다
+    (검토: 10 개 가운데 7 개가 매달린 서버로 가 부르는 쪽의 한도까지 매달림). 이제 다시 답할 때까지 올라옴이 아니다."""
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(R, "PROBE_READ_S", 0.3)
+    a = lab.fake("A", running=4)
+    b = _HangFake("B")
+    b.srv = _Srv(b)
+    lab.servers.append(b.srv)
+    lab.fakes.append(b)
+    r = lab.router([a, b], LLM_ROUTER_PREFIX_CHARS=0, LLM_ROUTER_SCRAPE_S=0.1)
+    assert r.chat("x").json()["served_by"] == "B", "B(0) 가 A(4) 보다 한가하다"
+    b.hung = True
+    st = _until(r.by_url, lambda s: s[b.base]["probe_timeouts"] >= R.PROBE_TIMEOUTS_DOWN, timeout=10, what="세 번 연달아 매달리기")[b.base]
+    assert (st["up"], st["reachable"], st["models"]) == (False, True, "ok")
+    assert r.health().json()["upstreams_up"] == 1
+    hung_before = len(b.hits)
+    jobs = [_bg(lambda: r.http.post("/v1/chat/completions", json={"model": "glm", "messages": []}, timeout=4)) for _ in range(10)]
+    for j in jobs:
+        j["t"].join(8)
+    assert len(b.hits) == hung_before and all(j["r"].json()["served_by"] == "A" for j in jobs), "매달린 서버로 보내지 않는다"
+    assert sum("서버 응답 없음" in x.getMessage() and b.base in x.getMessage() for x in caplog.records) == 1
+    b.hung = False
+    _wait(lambda: r.by_url()[b.base]["up"] is True, timeout=5, what="다시 답하면 돌아오기")
+    assert r.by_url()[b.base]["probe_timeouts"] == 0 and any("서버 다시 답함" in x.getMessage() for x in caplog.records)
+    assert r.chat("x").json()["served_by"] == "B"
+
+
+def test_검토2_MC_기동은_첫_탐침을_2초까지만_기다리고_늦은_답은_이어서_받는다(lab):
+    """기동이 서버마다 지표 → 모델 대조를 차례로 다 기다렸다 — 매달린 서버 하나면 20초, 닿지 않는 서버 하나면 10초 동안 라우터 포트가 닫혀
+    재기동마다 LLM 호출이 끊겼다(검토 M-C). 이제 함께 돌리고 STARTUP_PROBE_S(2초)까지만 기다린다. 늦게 답한 서버는 정기 대조(60초)를 기다리지
+    않고 그 답이 오는 대로 올라온다(끝나지 않은 탐침을 끊지 않는다)."""
+    a = lab.fake("A")
+    b = lab.fake("B")
+    b.metrics_mode = b.models_mode = "hang"
+    b.hang_s = 4.0                                        # 4초 뒤에 답한다 — 기동 한도(2초) 밖 · 읽기 한도(10초) 안
+    env = lab.tmp / "slow.env"
+    _write_env(env, [a.base, b.base], LLM_ROUTER_SCRAPE_S=60, LLM_ROUTER_PREFIX_CHARS=0)
+    t0 = time.monotonic()
+    s = _Srv(R.make_app(env), lifespan="on")
+    took = time.monotonic() - t0
+    lab.servers.append(s)
+    r = _Router(s, env)
+    lab.routers.append(r)
+    assert R.STARTUP_PROBE_S <= took < R.STARTUP_PROBE_S + 1.5, f"{took:.1f}초"
+    h = r.health().json()
+    assert (h["upstreams_up"], h["upstreams_total"]) == (1, 2) and r.by_url()[b.base]["models"] == "unknown"
+    assert r.chat("x").json()["served_by"] == "A"
+    _wait(lambda: r.by_url()[b.base]["up"] is True, timeout=6, what="B 의 늦은 답을 받기")
+    assert r.by_url()[b.base]["running"] == 0.0, "늦게 온 첫 지표도 받는다"
