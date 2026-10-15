@@ -415,7 +415,7 @@ if [ -x "$SELF_REPO/infra/scripts/env-sync.sh" ]; then
   # 못 채운 리포가 있으면(백업을 못 만들었다 — 포털 infra/.state 에 쓸 수 없다 · 덧붙이지 못했다) env-sync 가 ✗ 와 0 아닌 값으로 끝난다(LP-D14).
   # 종전엔 그때도 '✓ … 자동 추가 N' 이었고 여기서 rc 를 버렸다 — 새 설정이 안 들어간 것이 초록으로 지나갔다.
   _es_rc=0; "$SELF_REPO/infra/scripts/env-sync.sh" 2>&1 | sed 's/^/  /' || _es_rc=$?
-  [ "$_es_rc" = 0 ] || fail ".env 옵션 동기화 — 새 설정을 채우지 못한 .env 가 있다(env-sync rc $_es_rc — 위 ✗ 줄이 리포와 까닭을 말한다). 포털 infra/.state 의 권한·소유자를 보고 재실행"
+  [ "$_es_rc" = 0 ] || fail ".env 옵션 동기화 — 새 설정을 채우지 못한 .env 가 있다(env-sync rc $_es_rc — 위 ✗ 줄이 리포와 까닭을 말한다). 포털 infra/.state 의 권한·소유자를 보고 재실행(sudo 로 돌린 적이 있으면 sudo chown -R \"$(id -un)\" \"$SELF_REPO/infra/.state\")"
 else
   hwax_skip ".env 옵션 동기화" "env-sync.sh 가 없다(구버전 체크아웃)" "git pull 뒤 재실행"
 fi
@@ -865,17 +865,27 @@ case "$_llm_ups_rc" in
     # 볼 라우터 — 지금 포트의 주소와 1i 가 기록한 옛 주소(포트를 바꿨거나 포트 줄을 풀과 함께 지웠다 — 지우면 9130 으로 돌아가 옛 포트의
     # 사본·라우터를 못 찾았다, 반대 검토 M4). 둘 다 관리하는 값이고, 떠 있는 것은 둘 다 §4 뒤에 내린다.
     # 셀 수 없으면(사본 lib 실패 — 2라운드 M-D) '가리킬 수 있다' 로 읽는다 — ○ 로 넘기지 않고 ✗, 되돌릴 수 있는 사본은 되돌린다(LP-D14).
-    _llm_at=0; _llm_unk=""; _llm_running=""; _llm_dead=""
+    _llm_at=0; _llm_unk=""; _llm_running=""; _llm_dead=""; _llm_soft=""
+    # 풀을 켠 적이 있는 박스인가 — 1i 는 사본을 바꾸기 전에 반드시 infra/.state/llm-pool-backups 에 백업하고 바꾼 라우터 주소를
+    # infra/.state/llm-pool.router 에 적는다. 둘 다 없고 라우터도 답하지 않으면 1i 가 사본을 라우터로 돌린 적이 없다(cae00 의 기본). 그런 박스에서
+    # 사본 하나를 못 읽었다고 실행을 ✗ 로 만들거나(3라운드 LOW 1) 이 박스의 로컬 데몬이 꺼졌다고 매번 루프백 ⚠ 를 내지 않는다(LOW 2) —
+    # 지금 라우터 주소를 가리키는 사본만 세고(손으로 돌렸거나 infra/.state 를 지운 경우), 못 읽은 것은 ⚠ 한 줄이다.
+    _llm_ever=0
+    { [ -e "$SELF_REPO/infra/.state/llm-pool.router" ] || [ -d "$SELF_REPO/infra/.state/llm-pool-backups" ]; } && _llm_ever=1
     if [ "$_llm_router_rc" = 0 ]; then
       for _llm_u in "$_llm_router" ${_llm_old:+"$_llm_old"}; do
+        hwax_llm_router_health "${_llm_u%/v1}/health" >/dev/null && { _llm_running="${_llm_running:+$_llm_running }$_llm_u"; _llm_ever=1; }
+      done
+      for _llm_u in "$_llm_router" ${_llm_old:+"$_llm_old"}; do
         _llm_n_rc=0; _llm_n="$(hwax_llm_pool_at "$SELF_REPO" "$_llm_u")" || _llm_n_rc=$?
-        if [ "$_llm_n_rc" = 0 ]; then _llm_at=$((_llm_at + _llm_n)); else _llm_unk="${_llm_unk:+$_llm_unk · }$_llm_u — $_llm_n"; fi
-        hwax_llm_router_health "${_llm_u%/v1}/health" >/dev/null && _llm_running="${_llm_running:+$_llm_running }$_llm_u"
+        if [ "$_llm_n_rc" = 0 ]; then _llm_at=$((_llm_at + _llm_n))
+        elif [ "$_llm_ever" = 1 ]; then _llm_unk="${_llm_unk:+$_llm_unk · }$_llm_u — $_llm_n"
+        else _llm_soft="${_llm_soft:+$_llm_soft · }$_llm_n"; fi
       done
       # 라우터 기록이 없거나 못 읽으면 옛 라우터 주소를 모른다(지웠다 · 손으로 고쳤다 — 2라운드 LOW 7: 죽은 라우터를 가리키는 사본을 두고
       # '사본들이 LLM_BASE_URL 을 직접 본다' ○ 였다). 루프백 /v1 인데 아무것도 듣지 않는 사본을 ⚠ 로 알린다 — 고치지 않는다(이 박스의 로컬
       # vLLM 일 수 있다). 지금 라우터 주소 · 직접 주소와 같은 값은 위에서 다룬다.
-      if [ "$_llm_rec_rc" != 0 ] && [ -z "$_llm_unk" ]; then
+      if [ "$_llm_ever" = 1 ] && [ "$_llm_rec_rc" != 0 ] && [ -z "$_llm_unk" ]; then
         _llm_dead_rc=0; _llm_dead="$(hwax_llm_pool_loopback_dead "$SELF_REPO" "$_llm_router" "$_llm_direct")" || _llm_dead_rc=$?
         if [ "$_llm_dead_rc" != 0 ]; then _llm_unk="루프백 사본 — $_llm_dead"; _llm_dead=""; fi
       fi
@@ -901,6 +911,7 @@ case "$_llm_ups_rc" in
         hwax_skip "LLM 서버 풀(라우터)" "infra/.env 에 LLM_UPSTREAMS 가 없다 — 단, 아무것도 듣지 않는 루프백 주소를 보는 사본이 있다(위 ⚠ — 옛 라우터인지 모른다)" \
           "같은 모델을 올린 vLLM 서버 둘 이상을 자원 보고 나눠 쓰려면 infra/.env 에 LLM_UPSTREAMS=<서버1 /v1 주소>,<서버2 /v1 주소> 를 적고 재실행(1i 가 라우터를 띄우고 사본을 바꾼다 — docs/llm-pool)"
       else
+        [ -z "$_llm_soft" ] || bad "LLM 주소 사본 가운데 읽지 못한 것이 있다($_llm_soft) — 이 박스는 LLM 서버 풀을 켠 적이 없어(라우터 기록·백업 없음) 라우터를 가리킬 수 없으므로 넘어간다. 그 서비스의 .env 권한을 본다"
         hwax_skip "LLM 서버 풀(라우터)" "infra/.env 에 LLM_UPSTREAMS 가 없다 — LLM 주소 사본들이 LLM_BASE_URL(서버 하나)을 직접 본다" \
           "같은 모델을 올린 vLLM 서버 둘 이상을 자원 보고 나눠 쓰려면 infra/.env 에 LLM_UPSTREAMS=<서버1 /v1 주소>,<서버2 /v1 주소> 를 적고 재실행(1i 가 라우터를 띄우고 사본을 바꾼다 — docs/llm-pool)"
       fi

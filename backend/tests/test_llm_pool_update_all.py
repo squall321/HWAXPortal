@@ -682,7 +682,7 @@ def test_6장_은_사본을_셀_수_없으면_직접_주소라고_말하지_않�
 
 
 # ── 풀이 꺼졌는데 라우터 기록이 없을 때(2라운드 LOW 7 · LP-D14) ────────────────────────────────────────────
-@pytest.mark.parametrize("record", ["없다", "모양이 틀렸다",
+@pytest.mark.parametrize("record", ["없다(풀을 쓴 적은 있다)", "모양이 틀렸다",
                                     pytest.param("못 읽는다", marks=pytest.mark.skipif(os.geteuid() == 0, reason="root 는 권한을 무시한다"))])
 def test_기록이_없으면_아무것도_듣지_않는_루프백_사본을_알리되_고치지_않는다(box, record):
     """**2라운드 LOW 7 회귀(검토 탐침 corrupt)** — 기록을 잃으면(지웠다 · 손으로 고쳤다 · 못 읽는다) 옛 라우터 주소를 몰라, 죽은 라우터를
@@ -690,7 +690,9 @@ def test_기록이_없으면_아무것도_듣지_않는_루프백_사본을_알�
     고치지 않는다(이 박스의 로컬 vLLM 일 수 있다). 되돌리는 길(그 주소를 기록에 적고 재실행)을 함께 말한다."""
     dead = f"http://127.0.0.1:{_dead_port()}/v1"
     f = box.repo / "infra/.state/llm-pool.router"
-    if record == "모양이 틀렸다":
+    if record == "없다(풀을 쓴 적은 있다)":
+        (box.repo / "infra/.state/llm-pool-backups").mkdir(parents=True)     # 1i 가 사본을 바꾼 적이 있다 — 기록만 잃었다(3라운드 뒤)
+    elif record == "모양이 틀렸다":
         _recorded(box, dead.replace("127.0.0.1", "localhost"))
     elif record == "못 읽는다":
         _recorded(box, dead); f.chmod(0)
@@ -709,6 +711,39 @@ def test_기록이_없으면_아무것도_듣지_않는_루프백_사본을_알�
     first = box.ledger.read_text().splitlines()[0]
     assert first.startswith("LLM 서버 풀(라우터)\t") and "직접 본다" not in first and "위 ⚠" in first, first
     assert not _lines(out, "FAIL:"), out
+
+
+def test_풀을_켠_적이_없는_박스는_듣지_않는_루프백_사본을_알리지_않는다(box):
+    """**3라운드 LOW 2 회귀** — 라우터 기록도 백업도 없고 라우터도 답하지 않으면 1i 가 사본을 라우터로 돌린 적이 없다. dev 처럼 로컬 데몬
+    (:8000 · :11434)을 보는 사본이 있으면 그 데몬이 꺼진 실행마다 ⚠ 와 '옛 라우터면 기록에 적어라' 를 냈다. 이제 ○ 한 줄이다."""
+    dead = f"http://127.0.0.1:{_dead_port()}/v1"
+    box.env(f"LLM_BASE_URL={DIRECT}\nLLM_ROUTER_PORT={_dead_port()}\n")
+    box.put({"agent-server": DIRECT, "heax-hub": dead})
+    before = box.snapshot()
+    out = box.run(retire=True, pre="_DA_RC=0; _us_rc=0\n")
+    assert box.snapshot() == before and box.called() == [], out
+    assert not _lines(out, "BAD:") and not _lines(out, "FAIL:"), out
+    first = box.ledger.read_text().splitlines()[0]
+    assert first.startswith("LLM 서버 풀(라우터)\t") and "직접 본다" in first, first
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root 는 권한을 무시한다")
+@pytest.mark.parametrize("how", ["파일", "디렉터리"])
+def test_풀을_켠_적이_없는_박스는_사본을_못_읽어도_실패로_세지_않는다(box, how):
+    """**3라운드 LOW 1 회귀** — 켠 적 없는 박스에서 사본 .env 하나를 못 읽으면(권한 000 · 들어갈 수 없는 디렉터리) 1i 가 ✗ 로 실행 전체를
+    실패로 만들었고 디렉터리 쪽은 파이썬 트레이스백을 두 번 찍었다. 이제 ⚠ 한 줄과 ○ 이고, 바꾸는 것은 없다."""
+    box.env(f"LLM_BASE_URL={DIRECT}\nLLM_ROUTER_PORT={_dead_port()}\n")
+    box.put({"agent-server": DIRECT, "heax-hub": DIRECT})
+    target = box.copy("heax-hub") if how == "파일" else box.copy("heax-hub").parent
+    target.chmod(0)
+    try:
+        out = box.run(retire=True, pre="_DA_RC=0; _us_rc=0\n")
+    finally:
+        target.chmod(0o700 if how == "디렉터리" else 0o600)
+    assert "Traceback" not in out and not _lines(out, "FAIL:"), out
+    warns = [ln for ln in _lines(out, "BAD:") if "읽지 못한 것이 있다" in ln]
+    assert len(warns) == 1 and "켠 적이 없어" in warns[0], out
+    assert box.called() == [] and box.value("agent-server") == DIRECT, out
 
 
 def test_듣고_있는_루프백과_직접_주소는_알리지_않는다(box, router):

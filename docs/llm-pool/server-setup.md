@@ -6,7 +6,7 @@
 
 ## 0. 이 판을 받기만 하면 — 아무것도 바뀌지 않는다
 
-`LLM_UPSTREAMS` 를 적지 않은 박스에서 update-all 은 1i 에서 ○ 한 줄(`LLM 서버 풀(라우터)` — `infra/.env 에 LLM_UPSTREAMS 가 없다`)만 남긴다. 라우터는 뜨지 않고 LLM 주소 사본도 그대로다. 켜는 것은 아래 1~3절이다.
+`LLM_UPSTREAMS` 를 적지 않은 박스에서 update-all 은 1i 에서 ○ 한 줄(`LLM 서버 풀(라우터)` — `infra/.env 에 LLM_UPSTREAMS 가 없다`)만 남긴다. 라우터는 뜨지 않고 LLM 주소 사본도 그대로다. 이 판을 받는 **첫** update-all 만 1c(env-sync)가 `infra/.env` 끝에 주석 두 줄(`# LLM_UPSTREAMS=   # 선택 — …` · `# LLM_ROUTER_PORT=9130   # 선택 — …`)을 붙이고 '선택 설정' ○ 를 남긴다 — 값을 정하라는 뜻이 아니다(비워 두면 꺼짐). 켜는 것은 아래 1~3절이다.
 
 ## 1. 먼저 — 두 서버가 같은지 본다
 

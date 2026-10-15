@@ -79,6 +79,23 @@ def test_an_option_declared_only_as_a_comment_is_still_surfaced(tmp_path):
     assert "# APPTAINERENV_STEPFORGE_PUBLIC_BASE=" in body, f"주석 선언을 못 봤다\n{body}"
 
 
+def test_an_empty_value_that_means_off_is_optional_not_a_chore(tmp_path):
+    """`LLM_UPSTREAMS` 는 비워 두면 꺼짐이다 — 서버가 둘인 박스만 켠다. 켠 적 없는 박스의 첫 update-all 이 그 줄을 '값을 운영자가 정해야
+    한다' ⚠ 로 붙이고 ○ 요약에 '값을 정해야 켜지는 설정' 으로 올려, 필요 없는 운영자에게 값을 정하라고 재촉했다(docs/llm-pool 3라운드 LOW 3).
+    이제 주석 줄로 붙되 '선택' 으로 센다. 빈 값의 다른 키는 그대로 사람 몫이다."""
+    d = _repo(tmp_path, "# LLM_UPSTREAMS=\nOTHER_EMPTY=\nSAFE=1\n", "OLD=1\n")
+    r = _run(d)
+    body = (d / ".env").read_text(encoding="utf-8")
+    assert r.returncode == 0, r.stdout + r.stderr
+    line = next(ln for ln in body.splitlines() if "LLM_UPSTREAMS=" in ln)
+    assert line.startswith("# LLM_UPSTREAMS="), f"꺼짐이 기본이다 — 켜진 줄로 넣으면 안 된다\n{body}"
+    assert "값을 운영자가 정해야 한다" not in line and "# 선택" in line, line
+    other = next(ln for ln in body.splitlines() if "OTHER_EMPTY=" in ln)
+    assert "⚠ 값을 운영자가 정해야 한다" in other, other
+    assert "LLM_UPSTREAMS — 값을 정해야 한다" not in r.stdout and "LLM_UPSTREAMS — 선택 설정" in r.stdout, r.stdout
+    assert "OTHER_EMPTY" in r.stdout and "값을 정해야 한다" in r.stdout, "빈 값의 다른 키는 여전히 사람 몫이다"
+
+
 def test_it_is_idempotent(tmp_path):
     d = _repo(tmp_path, "NEW=1\nTOKEN_X=fill-me\n", "OLD=1\n")
     _run(d)

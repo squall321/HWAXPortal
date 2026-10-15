@@ -87,6 +87,9 @@ discover() {
 # 사람이 정해야 하는 값인가 — 비밀·자리표시자·빈 값
 needs_human() {
   local key="$1" val="$2"
+  # 빈 값이 곧 '꺼짐' 인 선택 설정 — 비워 두는 것이 정상이라 '값을 정해야 한다' ⚠ 로 몰지 않는다(LLM 서버 풀은 서버가 둘인 박스만 켠다,
+  # docs/llm-pool 3라운드 LOW 3 — 켠 적 없는 박스의 첫 update-all 이 운영자에게 그 값을 정하라고 재촉했다).
+  case "$key" in LLM_UPSTREAMS) return 1 ;; esac
   [ -z "$val" ] && return 0
   case "$key" in
     *SECRET*|*PASSWORD*|*TOKEN*|*_KEY|*APIKEY*|*_PAT|*CREDENTIAL*) return 0 ;;
@@ -186,7 +189,12 @@ for DIR in $(discover); do
     printf '\n# ── env-sync %s — `.env.example` 에는 있는데 여기 없던 설정 ──\n' "$(date +%F)"
     for kv in "${add_active[@]}"; do printf '%s\n' "$kv"; done
     for kv in "${add_commented[@]}"; do
-      printf '# %s   # ⚠ 값을 운영자가 정해야 한다(예시값은 그대로 쓰면 안 된다)\n' "$kv"
+      # 선택 설정(값이 있어도 되고 비워 두면 꺼짐)은 '값을 정해야 한다' 고 적지 않는다 — 필요 없는 운영자에게 값을 정하라고 재촉한다(3라운드 LOW 3).
+      # 파이프(`printf | grep -q`) 없이 본다 — 위 '선언 여부' 와 같은 SIGPIPE·pipefail 함정이다.
+      case " ${add_needval[*]} " in
+        *" ${kv%%=*} "*) printf '# %s   # ⚠ 값을 운영자가 정해야 한다(예시값은 그대로 쓰면 안 된다)\n' "$kv" ;;
+        *)               printf '# %s   # 선택 — 필요하면 주석을 풀고 값을 정한다\n' "$kv" ;;
+      esac
     done
   } >> "$EN"; then
     _record_needs; ADDED=$((ADDED + n_a)); NEEDS=$((NEEDS + n_c))

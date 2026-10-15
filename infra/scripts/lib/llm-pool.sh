@@ -320,8 +320,11 @@ out = sys.stdout.buffer
 
 def repo_dir(name):
     for b in bases:
-        if (b / name).is_dir():
-            return b / name
+        try:
+            if (b / name).is_dir():
+                return b / name
+        except OSError:                                          # 들어갈 수 없는 디렉터리 — '없다' 가 아니라 '모른다' 다. 그 경로를
+            return b / name                                      # 넘겨 아래 is_file 이 error 줄을 낸다(셈이 닫힌다 — 3라운드 LOW 1)
     return None
 
 
@@ -465,7 +468,12 @@ for ln in os.environ.get("HWAX_LLM_COPIES", "").splitlines():
 
 ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
 for path, entries in groups.items():
-    if not path.is_file():
+    try:
+        present = path.is_file()
+    except OSError as e:                                          # 경로를 따라 들어갈 수 없다 — 트레이스백이 아니라 error 줄(3라운드 LOW 1)
+        emit([["error", s, d, r, k, f"읽지 못했다({e.strerror})", b""] for s, d, _, r, k in entries])
+        continue
+    if not present:
         emit([["absent", s, d, r, k, b"", b""] for s, d, _, r, k in entries])
         continue
     try:
