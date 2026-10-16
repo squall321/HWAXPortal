@@ -73,7 +73,7 @@ if [ -f "$STAGE/guidellm.sif" ]; then
   case $_rc in 0) echo "  ✓ staged guidellm.sif → $APPT_DIR" ;; 1) echo "  · guidellm.sif 같음 — 그대로" ;; *) echo "✗ guidellm.sif 설치 실패 — 위 사유"; exit 1 ;; esac
 fi
 # 호출 추적(Phoenix — docs/improvement-1015/call-trace.md) SIF — 있을 때만(searxng 와 같다). 이름 바꾸기로 갈아 끼우므로 도는 Phoenix 는 옛 이미지로
-# 계속 돈다 — update-all 은 이 서비스를 다시 띄우지 않는다(다음 부팅 또는 손으로 — 안내서 '판').
+# 계속 돌다가, 지문(services.yaml fp)이 바뀌어 다음 update-sites call-trace(update-all 5c)가 새 이미지로 다시 띄운다(상태판과 같다).
 if [ -f "$STAGE/phoenix.sif" ]; then
   _rc=0; hwax_install_if_changed "$STAGE/phoenix.sif" "$APPT_DIR/phoenix.sif" || _rc=$?
   case $_rc in 0) echo "  ✓ staged phoenix.sif → $APPT_DIR" ;; 1) echo "  · phoenix.sif 같음 — 그대로" ;; *) echo "✗ phoenix.sif 설치 실패 — 위 사유"; exit 1 ;; esac

@@ -674,3 +674,22 @@ def test_images_to_drive_는_gatus_sif_를_함께_싣고_체크섬에_넣는다(
     r = run()
     assert r.returncode == 0 and "included gatus.sif" in r.stdout, r.stdout + r.stderr
     assert (stage / "gatus.sif").read_text() == "gatus-image" and "  gatus.sif" in (stage / "SHA256SUMS").read_text()
+
+
+def test_stop_은_인자에_gatus_가_들었을_뿐인_리스너는_건드리지_않는다(lay):
+    """`*gatus*` 로 맞추면 인자 어딘가에 gatus 가 든 남의 프로세스도 죽였다(호출 추적 반대 검토 LOW-6 과 같은 꼴)."""
+    port = _free_port()
+    lay.infra_env(f"STATUS_BOARD_PORT={port}\n")
+    other = _listener(port, "--directory", "/tmp/gatus-notes", "/gatus.yaml")
+    try:
+        r = _launch(lay, "stop")
+        assert r.returncode == 1 and "상태판(gatus)이 아니다" in r.stderr and other.poll() is None, r.stdout + r.stderr
+    finally:
+        other.kill()
+        other.wait(10)
+
+
+def test_5b_꺼진_박스는_200_이_아니면_내리지_않는다(box):
+    out = box.run("", STUB_EN="1", STUB_HTTP="404")
+    assert box.called() == ["services.sh enabled status-board"], box.called()
+    assert not _tag(out, "BAD:"), out

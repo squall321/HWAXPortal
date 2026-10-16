@@ -2028,7 +2028,8 @@ if [ "$_sb_en" = 0 ]; then
     fi
   fi
 else
-  if [ "$_sb_en" = 1 ] && [ "$(http_code "http://127.0.0.1:$_sb_port/health" 3)" != 000 ]; then
+  # 200 일 때만 — 켠 적 없는 박스에서 그 포트에 무엇이든(404 포함) 답하면 매번 stop 을 부르고 ⚠ 를 남겼다(반대 검토 LOW-6).
+  if [ "$_sb_en" = 1 ] && [ "$(http_code "http://127.0.0.1:$_sb_port/health" 3)" = 200 ]; then
     hr "5b) 상시 상태판 — 꺼짐(STATUS_BOARD 없음 → 떠 있는 상태판을 내린다)"
     if "$SELF_REPO/infra/scripts/status-board.sh" stop; then
       ok "상시 상태판(:$_sb_port)을 내렸다 — STATUS_BOARD 가 없다(경보 메일도 멈췄다)"
@@ -2047,8 +2048,12 @@ fi
 #   든다(IM-D18 · 3.5 가 옛 DELIB_TIMEOUT_S 를 알리기만 하는 것과 같다). 에이전트 서버 .env 를 모르는 박스(AGENT_DIR 없음)는 대조하지 않는다.
 _ct_en=0; "$SVC" enabled call-trace >/dev/null 2>&1 || _ct_en=$?
 _ct_port="$(_envfile_value "$SELF_REPO/infra/.env" CALL_TRACE_PORT)"; _ct_port="${_ct_port:-8750}"
-_ct_known=0; _ct_url=""
-if [ -n "${AGENT_ENV:-}" ] && [ -f "$AGENT_ENV" ]; then _ct_known=1; _ct_url="$(_envfile_value "$AGENT_ENV" CALL_TRACE_URL)"; fi
+_ct_known=0; _ct_url=""; _ct_raw=""
+if [ -n "${AGENT_ENV:-}" ] && [ -f "$AGENT_ENV" ]; then
+  _ct_known=1; _ct_url="$(_envfile_value "$AGENT_ENV" CALL_TRACE_URL)"
+  # 에이전트 서버 start.sh 는 줄 끝 설명을 떼지 않는다 — 그 서버가 읽는 값은 이것이다(_envfile_value 는 설명을 떼어 '맞다' 로 읽는다).
+  _ct_raw="$(LC_ALL=C sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?CALL_TRACE_URL=//p" "$AGENT_ENV" 2>/dev/null | tail -1 | LC_ALL=C tr -d '"'"'"'\r')"
+fi
 if [ "$_ct_en" = 0 ]; then
   hr "5c) 호출 추적 (CALL_TRACE → Phoenix 기동)"
   case "$(_envfile_value "$SELF_REPO/infra/.env" CALL_TRACE | tr 'A-Z' 'a-z')" in
@@ -2066,9 +2071,12 @@ if [ "$_ct_en" = 0 ]; then
   fi
   if [ "$_ct_known" = 1 ] && [ -z "$_ct_url" ]; then
     bad "호출 추적 — 받는 쪽(Phoenix)만 켜졌다. 보내는 쪽은 에이전트 서버 .env 의 CALL_TRACE_URL=http://127.0.0.1:$_ct_port 한 줄이다 — 적고 도는 심의가 없을 때 재기동(cd ../HWAXAgentServer && ./start.sh -d)"
+  elif [ "$_ct_known" = 1 ] && ! [[ "$_ct_raw" =~ ^http://(127\.0\.0\.1|localhost):${_ct_port}(/v1/traces)?/?$ ]]; then
+    # 있기만 하고 받는 쪽과 다르면 조용히 버려진다 — 다른 포트 · 줄 끝 설명(그 서버가 주소로 못 읽어 꺼진 채 돈다) · 스킴 없음(반대 검토 LOW-5)
+    bad "호출 추적 — 에이전트 서버 .env 의 CALL_TRACE_URL(${_ct_raw:0:120}) 이 받는 쪽과 맞지 않는다 — http://127.0.0.1:$_ct_port 한 줄이어야 한다(줄 끝 설명은 그 서버가 주소로 못 읽어 꺼진 채 돈다). 고치고 도는 심의가 없을 때 재기동"
   fi
 else
-  if [ "$_ct_en" = 1 ] && [ "$(http_code "http://127.0.0.1:$_ct_port/healthz" 3)" != 000 ]; then
+  if [ "$_ct_en" = 1 ] && [ "$(http_code "http://127.0.0.1:$_ct_port/healthz" 3)" = 200 ]; then      # 200 일 때만(5b 와 같다)
     hr "5c) 호출 추적 — 꺼짐(CALL_TRACE 없음 → 떠 있는 Phoenix 를 내린다)"
     if "$SELF_REPO/infra/scripts/call-trace.sh" stop; then
       ok "호출 추적(:$_ct_port)을 내렸다 — CALL_TRACE 가 없다(모은 기록은 infra/.state/call-trace 에 그대로 남는다)"
@@ -2080,7 +2088,7 @@ else
     bad "호출 추적 — infra/.env 에 CALL_TRACE 가 없는데 에이전트 서버 .env 에 CALL_TRACE_URL 이 남아 있다(받는 곳 없이 보내 기록은 버려지고 그 로그에 ⚠ 한 줄). 그 줄을 지우고 도는 심의가 없을 때 재기동"
   fi
   hwax_skip "호출 추적(Phoenix)" "infra/.env 에 CALL_TRACE 가 없다 — LLM·도구 호출의 서버·시간·토큰을 본문 없이 모아 보는 Phoenix 를 띄우지 않았다" \
-    "infra/.env 에 CALL_TRACE=1 을 적고 재실행 + 에이전트 서버 .env 에 CALL_TRACE_URL=http://127.0.0.1:8750(재기동) — docs/improvement-1015/call-trace.md"
+    "infra/.env 에 CALL_TRACE=1 을 적고 재실행 + 에이전트 서버 .env 에 CALL_TRACE_URL=http://127.0.0.1:$_ct_port(재기동) — docs/improvement-1015/call-trace.md"
 fi
 
 # ── 6) 헬스게이트 — 핵심 체인 실패 시 exit 1로 크게 알림 ──

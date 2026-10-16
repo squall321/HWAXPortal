@@ -478,3 +478,60 @@ def test_물려받은_호출_추적_포트를_버린다():
         r = subprocess.run(["bash", "-c", head + '\necho "[${CALL_TRACE_PORT-없음}]"\n'], capture_output=True, text=True, timeout=30,
                            env={"PATH": os.environ["PATH"], "HOME": "/nonexistent", "CALL_TRACE_PORT": "9555"})
         assert r.stdout.split()[-1:] == ["[없음]"], r.stdout + r.stderr
+
+
+# ── 반대 검토(10-16) 뒤 — 정지 판정 · 상태 디렉터리 잠금 · 보내는 줄 대조 ──────────────────────────────────────────────
+def test_stop_은_인자에_phoenix_가_들었을_뿐인_리스너는_건드리지_않는다(repo):
+    """`*phoenix*` 로 맞추면 인자 어딘가에 phoenix 가 든 남의 프로세스를 죽였다(반대 검토 LOW-6 — http.server --directory …/phoenix-notes)."""
+    port = _free_port()
+    (repo / "infra/.env").write_text(f"CALL_TRACE_PORT={port}\n", encoding="utf-8")
+    other = _listener(port, "--directory", "/tmp/phoenix-notes", "phoenix_serve.py.bak")
+    try:
+        r, _ = _launch(repo, "stop")
+        assert r.returncode == 1 and "호출 추적(phoenix)이 아니다" in r.stderr and other.poll() is None, r.stdout + r.stderr
+    finally:
+        other.kill()
+        other.wait(10)
+
+
+def test_run_은_상태_디렉터리를_다른_Phoenix_가_쓰면_띄우지_않는다(repo):
+    """포트를 바꾸고 옛 것을 안 내리면 둘째 Phoenix 가 같은 SQLite 를 쓴다(반대 검토 LOW-5) — 잠금이 쥐어져 있으면 apptainer 를 부르지 않는다."""
+    import fcntl
+    (repo / "infra/apptainer/phoenix.sif").write_text("")
+    state = repo / "infra/.state/call-trace"
+    state.mkdir(parents=True)
+    with open(state / ".lock", "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r, argv_file = _launch(repo, "run")
+        assert r.returncode == 1 and "다른 Phoenix 가 이 상태 디렉터리" in r.stderr and "call-trace.sh stop" in r.stderr, r.stdout + r.stderr
+        assert not argv_file.exists() or not argv_file.read_text().strip(), "apptainer 를 부르지 않는다"
+    r, argv_file = _launch(repo, "run")
+    assert r.returncode == 0 and argv_file.read_text().strip(), "잠금이 풀리면 띄운다"
+
+
+def test_5c_꺼진_박스는_200_이_아니면_내리지_않는다(box5c):
+    out = box5c.run("", STUB_EN="1", STUB_HTTP="404")
+    assert box5c.called() == ["services.sh enabled call-trace"], box5c.called()
+    assert not _tagged(out, "BAD:"), out
+
+
+@pytest.mark.parametrize("line,ok", [
+    ("CALL_TRACE_URL=http://127.0.0.1:8750\n", True),
+    ('CALL_TRACE_URL="http://127.0.0.1:8750"\n', True),
+    ("CALL_TRACE_URL=http://localhost:8750/\n", True),
+    ("export CALL_TRACE_URL=http://127.0.0.1:8750/v1/traces\n", True),
+    ("CALL_TRACE_URL=http://127.0.0.1:8752\n", False),
+    ("CALL_TRACE_URL=http://127.0.0.1:8750   # 설명\n", False),
+    ("CALL_TRACE_URL=127.0.0.1:8750\n", False),
+])
+def test_5c_보내는_줄이_받는_쪽과_맞지_않으면_알린다(box5c, line, ok):
+    """있기만 하고 다르면 기록이 조용히 버려진다 — 다른 포트 · 줄 끝 설명(에이전트 서버는 설명을 떼지 않아 주소로 못 읽고 꺼진다) · 스킴 없음."""
+    out = box5c.run("CALL_TRACE=1\n", STUB_EN="0", agent_env=line)
+    bads = [ln for ln in _tagged(out, "BAD:") if "맞지 않는다" in ln]
+    assert (not bads) == ok, out
+    assert box5c.agent_env.read_text() == line, "에이전트 서버 .env 는 고쳐 쓰지 않는다"
+
+
+def test_5c_켜려면의_포트는_설정된_포트다(box5c):
+    box5c.run("CALL_TRACE_PORT=18755\n", STUB_EN="1")
+    assert "CALL_TRACE_URL=http://127.0.0.1:18755" in box5c.ledger.read_text(), box5c.ledger.read_text()

@@ -96,7 +96,8 @@ case "${1:-}" in
       # 명령줄을 먼저 받고 본다 — `… | grep -q` 는 pipefail 아래서 맞은 것을 '아니다' 로 읽을 수 있다(판정 파이프 함정)
       _cmd="$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null || true)"
       case "$_cmd" in
-        *gatus*) ;;
+        # 인자 하나가 정확히 /gatus 여야 한다 — `*gatus*` 면 인자 어딘가에 gatus 가 든 남의 프로세스도 죽였다(호출 추적 반대 검토 LOW-6 과 같은 꼴).
+        *" /gatus "*) ;;
         *) echo "✗ :$PORT 를 듣는 pid $p 는 상태판(gatus)이 아니다(${_cmd:0:120}) — 건드리지 않는다" >&2; exit 1 ;;
       esac
     done

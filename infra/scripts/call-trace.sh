@@ -63,6 +63,14 @@ case "${1:-}" in
     A="${A:-apptainer}"
     command -v "$A" >/dev/null 2>&1 || { echo "✗ apptainer 를 찾지 못했다($A) — ./infra/scripts/bootstrap.sh" >&2; exit 1; }
     ( umask 077; mkdir -p "$STATE" ) && chmod 700 "$STATE"
+    # 상태 디렉터리(SQLite 하나)는 Phoenix 하나만 쓴다 — 포트를 바꾸고 옛 것을 안 내리면 update-sites 가 새 포트에 둘째를 띄워 둘이 같은 DB 를
+    # 쓰게 된다(반대 검토 LOW-5). 잠금 fd 는 아래 exec 로 Phoenix 가 물려받아 사는 동안 쥔다(2026-10-16 dev — apptainer 1.3.6 로 확인).
+    exec 9>>"$STATE/.lock"
+    if ! flock -n 9; then
+      echo "✗ 다른 Phoenix 가 이 상태 디렉터리($STATE)를 쓰고 있다 — 포트를 바꿨다면 옛 포트의 것을 먼저 내린다:" \
+           "CALL_TRACE_PORT=<옛 포트> ./infra/scripts/call-trace.sh stop" >&2
+      exit 1
+    fi
     exec "$A" exec --cleanenv --no-home --bind "$STATE:/state" --bind "$ROOT/infra/call-trace:/hwax:ro" \
       --env PHOENIX_HOST=127.0.0.1 --env "PHOENIX_PORT=$PORT" --env PHOENIX_WORKING_DIR=/state \
       --env "PHOENIX_DEFAULT_RETENTION_POLICY_DAYS=$DAYS" \
@@ -90,8 +98,10 @@ case "${1:-}" in
     for p in $PIDS; do
       # 명령줄을 먼저 받고 본다 — `… | grep -q` 는 pipefail 아래서 맞은 것을 '아니다' 로 읽을 수 있다(판정 파이프 함정)
       _cmd="$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null || true)"
-      case "$_cmd" in
-        *phoenix*) ;;
+      # 인자 하나가 정확히 띄우는 셈의 경로여야 한다 — `*phoenix*` 면 인자 어딘가에 phoenix 가 든 남의 프로세스(예 --directory …/phoenix-notes)를
+      # 죽였다(반대 검토 LOW-6).
+      case " $_cmd" in
+        *" /hwax/phoenix_serve.py "*) ;;
         *) echo "✗ :$PORT 를 듣는 pid $p 는 호출 추적(phoenix)이 아니다(${_cmd:0:120}) — 건드리지 않는다" >&2; exit 1 ;;
       esac
     done
