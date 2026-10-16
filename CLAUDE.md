@@ -142,6 +142,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 챗·심의에서 그림을 모델이 보게(지금은 GLM 요청에 `image_url` 이 없다 — 진단 · 서버 탐침 `HWAXAgentServer/scripts/llm_vision_probe.py`, 챗 이미지 + 도구 그림, M3 뒤) | `docs/chat-vision/` (PLAN·checklist·context-notes) |
 | 운영 수정 요청 10-15(전문가·지식카드 화면 — 빈 카드·로그인 만료·긴 카드·검색·빈 전문가·HE 운영자, K1~K9, 다섯 리포) | `docs/request_1015.md`(요청서 정본) · `docs/request-1015/` (PLAN·checklist·context-notes) |
 | 운영·관측·검색 개선 여섯(상태판 Gatus · 호출 추적 Phoenix · LLM 풀 용량 측정 · 의미 기반 도구 검색 · 한국어 검색 평가 · 도구 인자 설명 점수판 — 제안 10-15 @박용진, 분석·판정 10-16) | `docs/improvement-1015/` (PLAN·checklist·context-notes) |
+| 임베더를 BGE-M3 로(한국어 질의–영어 카드 정합성 · 무중단 슬롯 둘 `*_m3 halfvec(1024)` · 청크 백필 · dev GPU 로 채워 cae00 은 merge 로 받는다 · 소비처는 응답 모델을 따른다 · 모델별 점수 하한) | `docs/embedder-bge-m3/` (PLAN·checklist·context-notes) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
