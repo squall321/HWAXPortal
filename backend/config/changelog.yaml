@@ -22,6 +22,14 @@
 
 entries:
   - date: 2026-10-17
+    title: "**챗은 stcx GPU LLM, 심의는 GLM — 챗 전용 LLM 설정**(운영은 절차서대로 두 줄, 설정 전에는 그대로)"
+    tag: 챗
+    items:
+      - "챗만 따로 다른 LLM 서버로 보낼 수 있습니다 — cae00 에 새로 생긴 stcx GPU LLM(Qwen3.8-Flash-Next 10벌)을 챗에 쓰고, 띵킹 · 심의 준비 · 심의 · 카드 대조는 GLM 에 그대로 둡니다. 포털 infra/.env 에 두 줄(CHAT_LLM_BASE_URL · CHAT_LLM_MODEL)을 적고 update-all 을 돌리면 켜집니다(docs/chat-llm-stcx/server-setup.md)."
+      - "stcx 가 죽으면(연결 실패 · 시간 초과 · 5xx) 그 LLM 호출을 GLM 으로 넘겨 답합니다. 턴 전체를 다시 돌리지 않아 이미 실행한 도구가 두 번 돌지 않습니다. 넘긴 횟수와 사유는 에이전트 서버 /health 의 chat_llm 에 보입니다."
+      - "챗에서는 Qwen 의 생각 모드를 끕니다(빠른 답). 챗 턴의 문맥 예산은 stcx 창(262,144 토큰)으로 잡아 긴 대화가 넘치지 않고, 챗 서버와 GLM 의 스트리밍 설정이 달라도 넘겨받은 답의 글이 빠지지 않습니다."
+      - "update-all 3.5c 가 infra/.env 의 설정을 에이전트 서버로 맞추고 그 서버가 모델을 내는지 봅니다. 끄려면 CHAT_LLM_BASE_URL 을 빈 값으로 둡니다."
+  - date: 2026-10-17
     title: "**한국어로 물어도 영어 지식카드를 찾습니다 — 지식카드 검색을 BGE-M3 로 바꿨습니다**(dev, 운영은 절차서대로 한 줄)"
     tag: 심의
     items:
