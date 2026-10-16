@@ -138,3 +138,20 @@ def test_GuideLLM_SIF_가_Drive_에_있으면_받고_없으면_건너뛴다(box)
     assert (repo / "infra/apptainer/guidellm.sif").read_text() == "guidellm-0.8.0"
     r2 = run()
     assert r2.returncode == 0 and "· guidellm.sif 같음" in r2.stdout
+
+
+def test_호출_추적_SIF_가_Drive_에_있으면_받고_없으면_건너뛴다(box):
+    """호출 추적(Phoenix — docs/improvement-1015/call-trace.md) — 올리는 쪽만 고치고 여기를 빼먹으면 cae00 에 이미지가 안 간다."""
+    repo, remote, run = box
+    _publish(remote, sif="v1", dist="first")
+    r0 = run()
+    assert r0.returncode == 0 and "phoenix" not in r0.stdout and not (repo / "infra/apptainer/phoenix.sif").exists()
+    latest = remote / "latest"
+    (latest / "phoenix.sif").write_text("phoenix-20.19.0")
+    with open(latest / "SHA256SUMS", "a") as f:
+        f.write(f"{hashlib.sha256(b'phoenix-20.19.0').hexdigest()}  phoenix.sif\n")
+    r1 = run()
+    assert r1.returncode == 0 and "✓ staged phoenix.sif" in r1.stdout, r1.stdout + r1.stderr
+    assert (repo / "infra/apptainer/phoenix.sif").read_text() == "phoenix-20.19.0"
+    r2 = run()
+    assert r2.returncode == 0 and "· phoenix.sif 같음" in r2.stdout

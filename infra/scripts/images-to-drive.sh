@@ -69,6 +69,13 @@ if [ -f "$GUIDELLM_SIF" ]; then
   echo "  · included guidellm.sif"
 fi
 
+# 호출 추적(Phoenix — docs/improvement-1015/call-trace.md) SIF — dev 에서 build-phoenix.sh 로 구운 것이 있으면 같이 나른다.
+# 위 searxng 와 같은 까닭으로 따로 올리지 않는다(latest/ 는 sync 미러라 여기 없으면 지워진다).
+if [ -f "$APPT_DIR/phoenix.sif" ]; then
+  cp "$APPT_DIR/phoenix.sif" "$STAGE/phoenix.sif"
+  echo "  · included phoenix.sif"
+fi
+
 # Checksums over an EXPLICIT file list (so SHA256SUMS doesn't checksum itself).
 ( cd "$STAGE"
   files="portal.sif nginx.sif"
@@ -76,6 +83,7 @@ fi
   [ -f searxng-fixed.sif ] && files="$files searxng-fixed.sif"
   [ -f gatus.sif ] && files="$files gatus.sif"
   [ -f guidellm.sif ] && files="$files guidellm.sif"
+  [ -f phoenix.sif ] && files="$files phoenix.sif"
   sha256sum $files > SHA256SUMS )
 
 echo "→ uploading to $REMOTE/images-$TS/  (+ latest/)"

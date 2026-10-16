@@ -77,6 +77,26 @@ services:
     health: http://127.0.0.1:${LLM_ROUTER_PORT:-8730}/health
     tier: 5
 
+  # ── tier 5: 호출 추적(Phoenix) — 에이전트 서버의 LLM·도구 호출을 본문 없이(서버·시간·토큰·id) 받아 보여 준다(docs/improvement-1015/call-trace.md) ──
+  # infra/.env 에 CALL_TRACE 가 **있는** 박스에서만 다룬다(if_env — 값이 있으면 켠다, 0 도 켜짐). 보내는 쪽(에이전트 서버)은 그쪽 .env 의
+  #   CALL_TRACE_URL 한 줄로 따로 켠다(안내서 '켜기'). 보내는 쪽보다 앞 tier 다 — 늦게 떠도 보내는 쪽은 그동안의 기록만 버리고 기다리지 않는다.
+  # update-all 은 이 항목을 띄우지 않는다 — 부팅 유닛(services.py up --update)과 손(./infra/scripts/services.sh up call-trace)이 띄운다.
+  # 지문은 이미지·띄우는 스크립트·띄우는 셈뿐이다(fp_git: false + fp:) — 포털 HEAD 를 넣으면 문서 커밋 하나에도 다시 뜬다(뜨는 동안의 기록은 버려진다).
+  # update: false — 포털 리포 안이라 받는 것은 포털 항목이 한다. 정지는 그 포트를 LISTEN 하는 phoenix 만(call-trace.sh stop).
+  # 포트는 HEAXHub 앱 포트 풀(9100~9999) 밖이다(docs/PORT-MAP.md). expect: 200 — Phoenix /healthz 는 200 이다.
+  - name: call-trace
+    host: local
+    dir: .
+    if_env: CALL_TRACE
+    update: false
+    fp_git: false
+    fp: [infra/apptainer/phoenix.sif, infra/scripts/call-trace.sh, infra/call-trace/phoenix_serve.py]
+    start: ./infra/scripts/call-trace.sh run
+    stop: ./infra/scripts/call-trace.sh stop
+    expect: 200
+    health: http://127.0.0.1:${CALL_TRACE_PORT:-8750}/healthz
+    tier: 5
+
   # ── tier 10: federated sub-services (proxied via routes.env) ──
   - name: mx-white-paper
     host: local
