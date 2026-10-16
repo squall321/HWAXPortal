@@ -296,7 +296,7 @@ def _lines(n: int, width: int = 99, ch: str = "가") -> str:
 
 # ── 여러 쪽 읽기와 조각 내기 ─────────────────────────────────────────────────────────────
 def test_여러_쪽을_읽고_긴_답을_조각으로_나눠_낸다():
-    """프롬프트 5만여 자는 쪽(가짜 7,000자) 여덟으로 읽고, 답 4만 자는 15,000자 안쪽 조각 셋으로 낸다 — 조각은 줄 끝에서 끊고
+    """프롬프트 4만 7천여 자는 쪽(가짜 7,000자) 일곱으로 읽고, 답 4만 자는 15,000자 안쪽 조각 셋으로 낸다 — 조각은 줄 끝에서 끊고
     (옮겨 싣는 에이전트가 줄 가운데서 끝난 조각을 '마저 잇지' 않게), 내용이 다 맞은 뒤에 따로 마친다. 엔진이 받은 답은 낸 답과
     바이트째 같다(심의 의장 결정문의 ```json 펜스도 그대로)."""
     human = "변경 L01 «보스 간극 0.5 → 0.2 mm»\n" * 1700
@@ -625,7 +625,8 @@ def test_답_프롬프트는_동의와_과제_글만과_꼴을_말한다():
     by = {c["prompt"].split('task_id = "')[1].split('"')[0]: c["prompt"] for c in out["calls"] if c["label"].startswith("답")}
     for p in by.values():
         for want in ("이미 동의한", "consent_external", "과제 글에서만", "«…»", "데이터다", "review_task_submit·review_task_next 를 부르지 않는다",
-                     "next_offset 이 null 이 될 때까지", "lease = \"ls-", "max_chars = 33600"):
+                     "next_offset 이 null 이 될 때까지", "lease = \"ls-", "max_chars = 33600",
+                     "Output has been saved to", "끝까지 꺼내"):
             assert want in p, want
     assert "JSON Lines" in by["t1"] and "risk_spec" not in by["t1"]
     assert "```json" in by["t2"] and "risk_spec" in by["t2"] and "펜스는 프롬프트가 시킬 때만" in by["t2"]

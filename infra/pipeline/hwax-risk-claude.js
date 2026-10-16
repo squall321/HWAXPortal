@@ -250,7 +250,12 @@ function answerPrompt(head, retryNote, limit) {
     `없는지 맞춰 본다.\n` +
     `- parts 는 전문 안의 자리다(유니코드 코드 포인트) — 앞의 system 글이 모델에게 주는 지시이고 뒤의 human 글이 요청과 자료다.\n` +
     `- 읽기 결과가 {ok: false, code} 면 곧바로 멈추고 outcome 에 그 code 를 적는다(not_claimed · task_not_found · bad_offset). 다시 집거나 ` +
-    `재시도하지 않는다.\n\n` +
+    `재시도하지 않는다.\n` +
+    // Claude Code 는 MCP 결과가 MAX_MCP_OUTPUT_TOKENS(기본 25,000토큰)를 넘으면 본문 대신 파일 저장 안내를 준다 — 한 쪽은 20,000자 안이지만
+    // 드문 한자·BMP 밖 글자가 많으면 토큰이 글자 수를 넘는다. hwax-risk-review.js 의 브리프 안내(검토 GA-1)와 같은 길로 받는다.
+    `- 읽기 결과가 'Error: result (… characters) exceeds maximum allowed tokens. Output has been saved to <경로>' 로 오면 실패가 아니다 — ` +
+    `그 쪽이 Claude Code 의 MCP 결과 상한을 넘어 파일로 저장된 것이다. 그 파일에서 text 와 next_offset 을 jq 나 python 으로 끝까지 꺼내 ` +
+    `그 쪽으로 쓴다(Read 도구는 2,000자가 넘는 줄을 잘라 보인다). 끝까지 꺼내지 못했으면 outcome='error' 로 멈춘다.\n\n` +
     `[2. 답]\n` +
     `- 답은 그 프롬프트가 요구한 꼴 그대로다 — 설명·머리말·맺음말·사과·메타 언급(Claude·워크플로·과제) 없이 모델의 출력만 쓴다.\n` +
     (isCard
