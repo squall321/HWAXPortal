@@ -1,18 +1,20 @@
 # 임베더 BGE-M3 전환 — 체크리스트
 
-> 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md).
+> 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md) · cae00 절차 [server-setup.md](server-setup.md).
 
 - [x] B0 정확 범위 검색(AIDataHub `5507c68`) 재측정 · 올림 · 문서(`ko-search-baseline.md` 고친 뒤 절 `d99ddc9`) — 좌석이 받는 것 0.617→0.667
 - [x] B1 AIDataHub 코드 — `bge_m3` 임베더 · 슬롯 둘(네 표의 `*_m3 halfvec(1024)` 열 · 이행) · 청크 백필(키셋 · 청크 커밋 · advisory lock · 이어하기 · 슬롯별) · 읽기 슬롯(설정 한 줄) · `/api/embed` 모델 표지 · 시험 — 합침 · 올림 `e036812`(EM-D10)
-- [ ] B2 dev 이행 · v2 백필(GPU) · HNSW 색인(CONCURRENTLY)
+- [x] B2 dev 이행 · v2 백필(GPU) · HNSW 색인(CONCURRENTLY)
   - [x] 이행 0032(dev, 09:27 UTC) · 작은 표 셋 m3 백필(9분)
   - [x] HDD 캐시 데우기(EM-D11) · 절차서 `29c9c38`
   - [x] 절 m3 백필 — 채움 1,090,100 · 빈 글 431 · 실패 0 · 2,048토큰 넘침 23,566(2.2%), 10,091초(108행/초, 09:36~12:24 UTC) · 인앱 v1 스윕 214,837 — 실패 0 · 512토큰 넘침 105,120(49%), 2,845초(10:16 UTC 끝)
-  - [ ] m3 HNSW 색인 · `AIDH_EMBED_FILL=v1,m3` · 재기동
-- [x] B4 뒤 — 빠뜨린 소비처 WebResearchMCP(EM-D15) 고침 `e6cc2ed` · dev 인스턴스 새 SIF 로 교체(12:53 UTC, 포트 9228→9421, env 42개 그대로)
-- [ ] B3 견주기 — v1 대 v2, 같은 평가셋(좌석 · 전역), 지연 포함 — v1 도 같은 DB 에서 다시 잰다(EM-D12)
+  - [x] m3 HNSW 색인 — 절 469초 · 2,825MB · 레코드 시그니처 16초 · 151MB(12:56~13:04 UTC)
+- [x] B4 뒤 — 빠뜨린 소비처 WebResearchMCP(EM-D15) 고침 `e6cc2ed` · dev 인스턴스 새 SIF 로 교체(12:53 UTC, 포트 9228→9421, env 42개 그대로) · HEAX Drive 올림(`latest/` 의 SIF MD5 · SHA256SUMS 일치)
+- [x] B3 견주기 — 질의 397 × 모드 다섯, v1 · m3 같은 DB(EM-D17) — 좌석이 받는 것 0.703→0.849(한국어 0.880→0.886 · 영어 0.586→0.824), 전역 의미 0.506→0.806(한국어 0.943→0.911)
+  - [x] 견주기 중 발견 — 전역 HNSW 탐색 폭 40 의 재현율 v1 0.641 · m3 0.665 → 1000 으로 넓힘(AIDataHub `210ae73`, EM-D16) · 전역 두 모드 다시 잼
 - [x] B4 소비처 — 포털 대화 검색(응답 모델을 표지로 · 모델별 하한 · 재지 않은 모델은 거르지 않고 알림, 시험 4 · 변이 4/4) · 에이전트 서버 도구 벡터 캐시(공간 = 모델 · 차원, 에이전트 서버 `76f9557` · 변이 2/2) — BGE-M3 하한 (0.58, 0.30)을 전환 전에 견주기 API 로 쟀다(EM-D14, 시험 5 · 변이 2/2)
-- [ ] B5 dev 전환 · 재기동 · 다시 재기
-- [ ] B6 cae00 절차서 — 모델 받기(model-to/from-drive 에 bge_m3) · 갱신 · merge 로 v2 벡터 · 전환 한 줄(사람)
-- [ ] B7 v1 정리(나중 — 한동안 돌려 본 뒤)
+- [x] B5 dev 전환(2026-10-17 04:3x KST) — `.env` 의 `AIDH_EMBED_ACTIVE=m3` · `restart.sh --api` · 견주기 API 내림 · 포털 재기동, 실패하던 질의 셋이 정답 1위
+  - [ ] 전환 뒤 첫 dev 덤프 → Drive(cae00 merge 의 원천) — 올린 덤프 이름과 시각을 여기에 적는다
+- [ ] B6 cae00 — 절차서 [server-setup.md](server-setup.md)는 준비됨(사람). Drive 에 모델 묶음(e5 + BGE-M3, `aidh-models-20261016-125809Z`) · HEAX(WebResearchMCP 새 SIF)는 올렸다
+- [ ] B7 v1 정리(나중 — 한동안 돌려 본 뒤). 그때까지 덤프가 v1 · m3 둘을 실어 하루 약 2배다
 - [ ] 업데이트 이력 · CLAUDE.md 문서 표
