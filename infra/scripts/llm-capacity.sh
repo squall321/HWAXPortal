@@ -167,6 +167,7 @@ cleanup() { stop_router; rm -rf "$TMPD"; }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+trap 'exit 129' HUP      # ssh 가 끊겨도 측정용 라우터를 내리고 임시 디렉터리를 지운다
 
 _scenario() {  # $1=대상 $2=보고서 $3=시나리오 파일 $4…=라벨
   local target="$1" report="$2" out="$3"; shift 3
@@ -224,6 +225,10 @@ for s in json.load(open(sys.argv[1])):
         print(f"· 서버 {s['server']} — 비어 있다")
 PY
 
+# 측정용 라우터의 수명 상한 — 변형 하나가 걸릴 수 있는 가장 긴 시간(단계마다 상한 + GuideLLM 기동·마감) + 라우터 기동 대기
+_n_levels=0; for _x in $LEVELS; do _n_levels=$((_n_levels + 1)); done
+ROUTER_MAX_S=$(( _n_levels * (${MAX_SECONDS%%.*} + 61) + 300 ))
+
 start_router() {  # $1=문턱 $2=변형 디렉터리 — RPID · RURL 을 채운다
   local slack="$1" vdir="$2" port envf k v
   port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
@@ -238,7 +243,8 @@ start_router() {  # $1=문턱 $2=변형 디렉터리 — RPID · RURL 을 채운
       printf 'LLM_ROUTER_STICKY_SLACK=%s\n' "$slack"; } > "$envf" )
   # 운영 llm-router.sh run 과 같은 띄우기(포털 SIF · --cleanenv · 리포를 /workspace 로) — 포트와 설정 파일만 이 실행의 것이다.
   # setsid — 자기 프로세스 묶음으로 띄워 끝낼 때 그 묶음만 내린다(포트로 찾아 죽이지 않는다 — gotchas §1).
-  setsid "$A" exec --cleanenv --bind "$ROOT:/workspace" --bind "$TMPD" \
+  # timeout — 이 스크립트가 KILL 로 죽어(정리 trap 이 못 돈다) 라우터가 홀로 남아도 변형 하나의 최대 시간 뒤에는 내려간다.
+  setsid timeout --kill-after=10 "$ROUTER_MAX_S" "$A" exec --cleanenv --bind "$ROOT:/workspace" --bind "$TMPD" \
     --env PYTHONDONTWRITEBYTECODE=1 --env PYTHONUNBUFFERED=1 --env PYTHONUTF8=1 --env PYTHONNOUSERSITE=1 \
     --env "LLM_ROUTER_PORT=$port" --env "LLM_ROUTER_ENV_FILE=$envf" \
     "$PORTAL_SIF" python3 -m uvicorn --app-dir /workspace/infra/llm-router llm_router:app \
@@ -251,6 +257,9 @@ start_router() {  # $1=문턱 $2=변형 디렉터리 — RPID · RURL 을 채운
     echo "  ✗ 측정용 라우터가 서버 ${N_UPS}곳을 올라옴으로 보지 못했다($msg) — 로그 $vdir/router.log" >&2
     return 1
   fi
+  # 라우터가 설정을 읽었으니(서버가 올라왔다고 답했다) 키가 든 파일을 곧바로 지운다 — 라우터는 파일이 없어지면 마지막으로 읽은 설정으로
+  # 계속 보낸다(LP-D11 ④ · 로그에 한 줄). 그래서 키는 띄우는 몇 초 동안만 디스크에 있다.
+  rm -f "$envf"
   echo "  · 측정용 라우터 :$port — $msg"
 }
 

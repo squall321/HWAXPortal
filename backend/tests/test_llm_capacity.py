@@ -9,11 +9,14 @@
 import http.server
 import importlib.util
 import json
+import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -265,7 +268,8 @@ rec = {"argv": argv, "sif": os.path.basename(sif), "key_env": "GUIDELLM__SPEC__B
 if cmd[:3] == ["python3", "-m", "uvicorn"]:
     ws = next(b.split(":", 1)[0] for b in binds if b.endswith(":/workspace"))
     ef = envs["LLM_ROUTER_ENV_FILE"]
-    rec.update(router_port=int(cmd[cmd.index("--port") + 1]), router_env_file=ef, router_env_mode=oct(os.stat(ef).st_mode & 0o777),
+    parent = open(f"/proc/{os.getppid()}/cmdline", "rb").read().split(b"\0")[0].decode()
+    rec.update(pid=os.getpid(), parent=os.path.basename(parent), router_port=int(cmd[cmd.index("--port") + 1]), router_env_file=ef, router_env_mode=oct(os.stat(ef).st_mode & 0o777),
                router_env_lines=sorted(ln.split("=", 1)[0] for ln in open(ef).read().splitlines()))
     log.write(json.dumps(rec) + "\n"); log.flush()
     args = [a.replace("/workspace", ws) for a in cmd[1:]]
@@ -279,6 +283,12 @@ if cmd[:2] == ["guidellm", "run"]:
         target = target[:-3]
     key = env.get("GUIDELLM__SPEC__BACKEND__API_KEY")
     hdr = {"Authorization": "Bearer " + key} if key else {}
+    routers = [json.loads(x) for x in open(os.environ["STUB_LOG"], encoding="utf-8") if '"router_env_file"' in x]
+    if sc["metadata"]["labels"].get("path") == "router":
+        rec["router_env_exists_during_run"] = os.path.exists(routers[-1]["router_env_file"])
+        if os.environ.get("STUB_HOLD"):           # 재는 도중에 끊기는 시험 — 붙들고 기다린다(묶음 신호로 끝난다)
+            log.write(json.dumps({**rec, "holding": True}) + "\n"); log.flush()
+            time.sleep(60)
     op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     op.open(urllib.request.Request(target + "/v1/models", headers=hdr), timeout=10).read()
     body = json.dumps({"model": "fake", "stream": True, "max_tokens": 4,
@@ -407,18 +417,33 @@ def lay(tmp_path):
 
     dead = f"http://127.0.0.1:{_free_port()}/health"
 
-    def run(*args, timeout=180):
+    def _cmd(args, extra_env):
         # 에이전트 서버 주소를 주지 않은 시험도 이 박스에 떠 있는 진짜 :9009 를 묻지 않게 닫힌 포트를 앞에 둔다(뒤의 같은 인자가 이긴다)
-        args = ("--agent-health", dead, *args)
         env = {"PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin", "HOME": str(tmp_path), "APPTAINER": str(stub),
-               "STUB_LOG": str(log), "TMPDIR": str(tmp_path), "PYTHONDONTWRITEBYTECODE": "1"}
-        return subprocess.run(["bash", str(repo / "infra/scripts/llm-capacity.sh"), *args], capture_output=True, text=True,
-                              env=env, timeout=timeout)
+               "STUB_LOG": str(log), "TMPDIR": str(tmp_path), "PYTHONDONTWRITEBYTECODE": "1", **extra_env}
+        return ["bash", str(repo / "infra/scripts/llm-capacity.sh"), "--agent-health", dead, *args], env
+
+    def run(*args, timeout=180):
+        cmd, env = _cmd(args, {})
+        return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
+
+    def popen(*args, extra_env=None):
+        cmd, env = _cmd(args, extra_env or {})
+        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, start_new_session=True)
 
     def calls():
         return [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
 
-    return {"repo": repo, "run": run, "calls": calls, "lengths": lengths, "prod": prod, "tmp": tmp_path}
+    yield {"repo": repo, "run": run, "popen": popen, "calls": calls, "lengths": lengths, "prod": prod, "tmp": tmp_path}
+    # 시험이 실패하거나 기한에 걸려 스크립트가 KILL 로 끝나면(정리 trap 이 못 돈다) 측정용 라우터가 홀로 남는다 — 이 시험이 띄운 것만 내린다
+    for c in calls():
+        pid = c.get("pid")
+        try:
+            alive = pid and "llm_router" in Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
+        except OSError:
+            alive = False
+        if alive:
+            os.kill(pid, 15)
 
 
 def _free_urls(text: str) -> str:
@@ -504,10 +529,12 @@ def test_끝까지_돌고_키는_어느_argv_에도_없이_환경으로만_서�
     for c in routers:
         assert c["router_port"] != lay["prod"] and c["router_port"] != 9130, "운영 라우터 포트에 띄웠다"
         assert c["router_env_mode"] == "0o600", c
+        assert c["parent"] == "timeout", "스크립트가 KILL 로 죽어도 라우터가 무기한 남지 않게 수명 상한 아래에서 띄운다"
         assert c["router_env_lines"] == ["LLM_API_KEY", "LLM_ROUTER_STICKY_SLACK", "LLM_UPSTREAMS"]
         assert not Path(c["router_env_file"]).exists(), "키가 든 라우터 설정 파일이 남았다"
         with socket.socket() as s:
             assert s.connect_ex(("127.0.0.1", c["router_port"])) != 0, "측정용 라우터가 내려가지 않았다"
+    assert [c.get("router_env_exists_during_run") for c in guide] == [None, False, False], "라우터가 올라오면 키가 든 파일을 곧바로 지운다"
     # 키는 서버까지 Bearer 로 닿는다 — 직결은 첫 서버에, 라우터 경로는 라우터를 지나(라우터 자신의 /v1/models 대조도 같은 키)
     assert ("/v1/chat/completions", "match") in a.auth and all(v == "match" for _, v in a.auth + b.auth), (a.auth, b.auth)
     assert len([1 for p, _ in a.auth + b.auth if p == "/v1/chat/completions"]) == 3
@@ -534,3 +561,28 @@ def test_끝까지_돌고_키는_어느_argv_에도_없이_환경으로만_서�
 
 def test_시나리오의_토크나이저_자리는_이미지가_굽는_자리다():
     assert C.TOKENIZER_IN_SIF == "/opt/tokenizers/glm-5.2" and C.TOKENIZER_IN_SIF in (ROOT / "infra/scripts/build-guidellm.sh").read_text(encoding="utf-8")
+
+
+def test_재는_도중에_끊기면_측정용_라우터를_내리고_임시_디렉터리를_지운다(lay):
+    """ssh 가 끊기면 터미널의 프로세스 묶음 전체가 HUP 를 받는다 — 앞에서 도는 GuideLLM 이 죽고, 스크립트는 정리하고 끝나야 한다.
+    측정용 라우터는 자기 묶음(setsid)이라 그 신호를 받지 않으므로 스크립트가 내려야 한다."""
+    a, agent = _FakeVLLM(KEY), _FakeAgent()
+    try:
+        p = lay["popen"]("--lengths", str(lay["lengths"]), "--upstreams", a.url, "--paths", "router", "--slack", "2", "--levels", "1 2",
+                         "--agent-health", agent.url, "--out", str(lay["tmp"] / "res"), extra_env={"STUB_HOLD": "1"})
+        deadline = time.monotonic() + 60
+        while not any(c.get("holding") for c in lay["calls"]()):
+            assert p.poll() is None and time.monotonic() < deadline, p.stdout.read() if p.poll() is not None else "붙들지 않았다"
+            time.sleep(0.1)
+        os.killpg(p.pid, signal.SIGHUP)
+        out, _ = p.communicate(timeout=60)
+    finally:
+        a.close()
+        agent.close()
+    assert p.returncode == 129, out
+    router = next(c for c in lay["calls"]() if "router_port" in c)
+    with socket.socket() as s:
+        assert s.connect_ex(("127.0.0.1", router["router_port"])) != 0, "측정용 라우터가 남았다"
+    cmdline = Path(f"/proc/{router['pid']}/cmdline")
+    assert not cmdline.exists() or "llm_router" not in cmdline.read_bytes().decode(errors="replace"), "측정용 라우터 프로세스가 남았다"
+    assert not [x for x in lay["tmp"].iterdir() if x.name.startswith("tmp.")], "임시 디렉터리를 남겼다"

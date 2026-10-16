@@ -91,9 +91,9 @@ L=infra/.state/llm-capacity/lengths-YYYYMMDD.json        # 3절의 파일
 | `<변형>/benchmarks.json` · `guidellm.log` | GuideLLM 보고서(요청마다의 글은 남기지 않는다 — 수만) · 콘솔 출력 |
 | `<변형>/scenario.json` | 보낸 부하(분포 · 앞부분 · 씨앗) — 키는 없다 |
 | `<변형>/metrics-before/after.json` · `agent-before/after.json` | 서버 지표(도는 수 · 접두 캐시 누계) · 에이전트 서버의 일(흐려짐 판정) |
-| `router-*/router.log` · `router-stats.json` | 측정용 라우터 로그 · 서버별 보낸 수와 붙음·넘침 |
+| `router-*/router.log` · `router-stats.json` | 측정용 라우터 로그 · 서버별 보낸 수와 붙음·넘침. 로그의 `설정 파일을 읽지 못했다(… 없다(지워졌다)) — 마지막으로 읽은 설정을 그대로 쓴다` 한 줄은 정상이다 — 라우터가 올라오면 키가 든 설정 파일을 곧바로 지운다 |
 
-멈추기 — Ctrl-C. 측정용 라우터를 내리고 키가 든 임시 설정 파일을 지운 뒤 끝난다(rc 130). 줄이고 싶으면 `--levels "1 4 8 16"` · `--paths router` · `--requests N`. 한 변형이 실패해도(서버가 안 올라옴 · GuideLLM 실패) 나머지를 재고 rc 1 로 끝난다.
+멈추기 — Ctrl-C. 측정용 라우터를 내리고 임시 디렉터리를 지운 뒤 끝난다(rc 130 — ssh 가 끊겨도 같다). `kill -9` 처럼 정리를 못 하고 죽어도 측정용 라우터는 변형 하나의 최대 시간(단계 수 × 약 16분) 뒤에 스스로 내려간다. 줄이고 싶으면 `--levels "1 4 8 16"` · `--paths router` · `--requests N`. 한 변형이 실패해도(서버가 안 올라옴 · GuideLLM 실패) 나머지를 재고 rc 1 로 끝난다.
 
 ## 6. 표 읽기
 
