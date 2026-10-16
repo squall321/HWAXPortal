@@ -79,8 +79,8 @@ def scenario(lengths: dict, *, kind: str, target: str, levels: list, requests: i
     호출이 앞을 공유한다(card_review.build_prompt). 원장에는 그 몫이 따로 없으므로 프롬프트 중앙값 × prefix_share 를 앞부분으로 두고
     (p5 를 넘지 않게) 서로 다른 앞부분 prefix_count 개를 요청마다 고른다. GuideLLM 은 앞부분을 system 메시지로 보낸다 — 라우터의 붙임 열쇠
     (앞 8,000자)가 그 앞부분으로 정해지는 크기면 같은 앞부분은 같은 서버로 붙는다.
-    seed 는 변형마다 달라야 한다 — 같은 씨앗이면 다음 변형이 앞 변형의 프롬프트를 그대로 다시 보내 vLLM 접두 캐시에 거저 맞는다(dev 스모크 실측:
-    첫 변형 적중 18% · 같은 씨앗의 다음 변형 96%)."""
+    seed 는 변형마다 달라야 한다 — 같은 씨앗이면 다음 변형이 앞 변형의 프롬프트를 그대로 다시 보내 vLLM 접두 캐시에 거저 맞는다
+    (dev 스모크 실측 — 첫 변형 적중 18% · 같은 씨앗의 다음 변형 96%)."""
     block = pick_lengths(lengths, kind)
     pt, ot = block["prompt_tokens"], block["output_tokens"]
     prefix = int(round(prefix_share * pt["p50"])) if prefix_share > 0 else 0
