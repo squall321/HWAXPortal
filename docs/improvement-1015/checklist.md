@@ -13,5 +13,5 @@
 - [ ] 5 한국어 검색 — 자동 질의 평가셋 · 지금 검색 기준선(사본에서) · 비교는 결과를 보고
 - [x] 2 호출 추적(1단계) — 에이전트 서버 기록기 `call_trace.py`(CALL_TRACE_URL · 기본 꺼짐 · 본문은 코드가 가림 · OTLP/HTTP protobuf 손 인코딩 — 새 패키지 없음) · LLM 라우터 `x-hwax-llm-upstream` · Phoenix 20.19.0 이미지(`build-phoenix.sh`, 340MB) · `call-trace.sh`(루프백 8750 한 포트 — gRPC 수신기 끔) · 매니페스트 `call-trace`(CALL_TRACE · 기본 꺼짐) · update-all 5c(띄우기 · 내리기 · 두 줄 어긋남 알림) · Drive 운반 · PORT-MAP 8750 · 안내서 `call-trace.md` · 시험(에이전트 서버 14 · 변이 14/14, 포털 23 · 변이 15/15 + 7/7) · dev 실주행(스팬 14 — 표식 0건) — 10-16 에이전트 서버 main `94b18b9` · 포털 `4bc8d90`(IM-D14~D19)
 - [ ] 2 호출 추적(켜기 — 사람) — ~~dev 가 phoenix.sif 를 Drive 에 올린다~~(10-16 끝 — Drive 포털 `latest/` 에 phoenix.sif 356,491,264바이트, sha256 이 에이전트가 구운 것과 같다) · cae00 포털 `infra/.env` 에 `CALL_TRACE=1` → update-all(§2 가 받고 5c 가 띄운다) · 에이전트 서버 `.env` 에 `CALL_TRACE_URL=http://127.0.0.1:8750` → 재기동(도는 심의가 없을 때 — 다음 update-all §4 도 다시 띄운다)
-- [ ] 우리 앱의 인자 설명 채우기 — 리스크 앱 MCP 31종(132개 · X-2 합친 뒤) · ~~에이전트 서버 deliberate_* (제안 근거의 14개)~~(10-16 — 심의 도구 일곱의 인자 39개 전부, 상한 수는 엔진 상수에서 읽는다 · 시험 셋 · 변이 3/3)
+- [x] 우리 앱의 인자 설명 채우기 — 에이전트 서버 심의 도구 일곱의 인자 39개(10-16 `650b541`) · 리스크 앱 MCP 31종 인자 134개(10-16 리스크 앱 main `ae4af1d` — 허용값 · 상한은 코드 상수와 REST 본문 모델에서 읽는다 · 인자 계약 스냅샷 시험 · 변이 12/12 · 전체 3,359 통과, dev 교체 9419 · SIF Drive). dev 점수판 — hwax-deliberation 39/39(단위·범위 19), 리스크 앱 134/134(33)
 - [ ] 업데이트 이력 · CLAUDE.md 문서 표
