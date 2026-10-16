@@ -544,7 +544,9 @@ def test_끝나지_않으면_한도_뒤에_경고_없이_간다(tmp_path, agent)
     rc, out, _ = _ua(tmp_path, agent, HWAX_DRAIN_WAIT_S="3")
     took = time.monotonic() - t0
     assert rc == 0, out
-    assert 3 <= took < 25, took
+    # 기다림은 bash $SECONDS(정수 초)로 잰다 — 한도 3초는 시작한 초 안의 자리에 따라 실제 2초 남짓에 끝날 수 있다(전체 시험에서 2.39초로
+    # 실패했다, 2026-10-16). 그래서 하한은 한도 - 1 이다.
+    assert 2 <= took < 25, took
     assert "3초 안에 끝나지 않은 카드 대조 2건" in out and "⚠" not in out, out
     assert _strip_reason(_last(agent)) == OFF
 
