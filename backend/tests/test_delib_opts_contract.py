@@ -458,3 +458,21 @@ def test_포털이_낸_외부_선택과_동의를_엔진이_그대로_읽는다(
         ("external", "external_consent_required"),
         ("glm", None), ("glm", None)], got
     assert all(g["unread"] == {} for g in got), f"포털을 지난 llm 을 엔진이 못 읽었다: {got}"
+
+
+def test_외부_응답자_과제의_대상_열쇠를_엔진에_그대로_넘긴다():
+    """쟁점 패널(질문 머리가 `[쟁점 …]`)의 외부 과제는 엔진이 delib_opts.target_key 로만 대상을 안다(X-D9) — 포털이 떨어뜨리면 워크플로가
+    그 과제를 답하지 않아 잡이 external_worker 로 선다. 모양은 엔진과 같아야 한다(다르면 포털이 멀쩡한 열쇠를 422 로 막거나 틀린 것을 넘긴다)."""
+    from pydantic import ValidationError
+
+    from app.agent.routes import ChatRequest
+    ok = "diff:eacc7fb1134d416096a088b8a1ea9246"
+    wire = ChatRequest(message="/심의 화두", delib_opts={"llm": "external", "consent_external": True, "target_key": ok}) \
+        .delib_opts.model_dump(exclude_none=True)
+    assert wire["target_key"] == ok
+    assert ChatRequest(message="/심의 화두", delib_opts={"target_key": "snap:abc_1-2"}).delib_opts.target_key == "snap:abc_1-2"
+    for bad in ("proj:abc", "diff:", "diff:-abc", "diff:" + "a" * 65, "diff:a b", " diff:abc"):
+        with pytest.raises(ValidationError):
+            ChatRequest(message="/심의 화두", delib_opts={"target_key": bad})
+    assert "target_key" not in ChatRequest(message="/심의 화두", delib_opts={}).delib_opts.model_dump(exclude_none=True)
+

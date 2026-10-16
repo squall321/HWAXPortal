@@ -203,6 +203,10 @@ class DelibOpts(BaseModel):
     # 않는다). 사람에게 동의를 받고 누가 언제 했는지 적는 것은 부르는 쪽(리스크 앱)의 몫이고, 포털은 받은 그대로 옮기기만 한다.
     # StrictBool 인 까닭 — "true"·1 은 엔진이 동의로 치지 않는 값인데, 포털이 true 로 바꿔 넘기면 동의가 아닌 것을 동의로 세탁한다.
     consent_external: StrictBool | None = None
+    # 외부 응답자 과제의 대상 열쇠(docs/risk-claude-engine X-D9) — llm=external 심의(리스크 앱의 쟁점 패널)에서만 엔진이 과제 머리에 싣는다.
+    # Claude Code 워크플로는 제가 맡은 잡의 대상 과제만 답하므로, 이것이 떨어지면 쟁점 패널 과제가 답 없이 시간을 넘겨 잡이 external_worker
+    # 로 선다. GLM 심의는 엔진이 이 값을 읽지 않는다. 모양은 엔진의 _RISK_TARGET_KEY_RE 와 같다(diff:·snap: + 64자 안의 영숫자·_·-).
+    target_key: Annotated[str, StringConstraints(pattern=r"^(?:diff|snap):[0-9A-Za-z][0-9A-Za-z_-]{0,63}$")] | None = None
 
 
 class ChatDocument(BaseModel):
