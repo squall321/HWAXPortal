@@ -19,8 +19,9 @@ update-all 이 AIDataHub(`e036812` 이후)를 받으면 `start_api.sh` 가 이�
 아래가 모두 참일 때만 2절로 간다. 하나라도 아니면 이 박스는 0절 상태로 둔다.
 
 1. dev 에서 견주기(B3)로 전환하기로 했다 — [checklist.md](checklist.md) 의 B3 · B5 가 체크돼 있다.
-2. Drive 의 dev 덤프가 **dev 의 BGE-M3 백필 뒤에** 만든 것이다. dev 는 매일 04:45 UTC(13:45 KST)에 덤프를 올린다. 백필 뒤 첫 덤프 시각은
-   checklist.md 의 B5 줄에 적는다. 그보다 옛 덤프를 merge 하면 BGE-M3 벡터가 오지 않는다(4절에서 보인다).
+2. Drive 의 dev 덤프가 **dev 의 BGE-M3 백필 뒤에** 만든 것이다 — 첫 덤프는 `aidh-db-20261016-193902Z.sql.gz`(2026-10-17 04:39 KST,
+   약 11GB)이고 그 뒤 매일 04:45 UTC(13:45 KST) 덤프도 그렇다. 이보다 옛 덤프를 merge 하면 BGE-M3 벡터가 오지 않는다(4절에서 보인다).
+   덤프가 4.75GB 에서 약 11GB 로 커져 §3 의 받기 · 풀기도 그만큼 길다.
 3. 이 박스의 웹 리서치 앱(WebResearchMCP)이 임베딩 공간을 가리는 판(`e6cc2ed` 이후)이다 — 옛 판은 원장에 저장한 e5 문장 벡터를 BGE-M3
    질의와 섞어 `search_in_page` 의 의미 순위를 오류 없이 틀리게 낸다(EM-D15). 새 판은 HEAX 앱 SIF 로 Drive 를 거쳐 온다(update-all §2).
 
