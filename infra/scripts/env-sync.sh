@@ -88,8 +88,9 @@ discover() {
 needs_human() {
   local key="$1" val="$2"
   # 빈 값이 곧 '꺼짐' 인 선택 설정 — 비워 두는 것이 정상이라 '값을 정해야 한다' ⚠ 로 몰지 않는다(LLM 서버 풀은 서버가 둘인 박스만 켠다,
-  # docs/llm-pool 3라운드 LOW 3 — 켠 적 없는 박스의 첫 update-all 이 운영자에게 그 값을 정하라고 재촉했다).
-  case "$key" in LLM_UPSTREAMS) return 1 ;; esac
+  # docs/llm-pool 3라운드 LOW 3 — 켠 적 없는 박스의 첫 update-all 이 운영자에게 그 값을 정하라고 재촉했다). 상태판 경보 받는 곳도 같다 —
+  # 비우면 화면만 돈다(docs/improvement-1015/status-board.md). 예시는 자리표시(<팀 공용 주소>)라 주석으로만 들어간다.
+  case "$key" in LLM_UPSTREAMS|STATUS_ALERT_TO) return 1 ;; esac
   [ -z "$val" ] && return 0
   case "$key" in
     *SECRET*|*PASSWORD*|*TOKEN*|*_KEY|*APIKEY*|*_PAT|*CREDENTIAL*) return 0 ;;

@@ -8,6 +8,8 @@ export PYTHONUNBUFFERED=1   # tee 파이프로 넘겨도 진행 로그가 즉시
 # 환경의 포트를 먼저 본다. 운영자 셸에 옛 포트가 export 돼 있으면 llm-router 재기동이 옛 포트의 라우터(미룬 서비스가 아직 쓸 수 있다)를 내리고
 # 지금 포트의 라우터는 못 내린다. 포트의 정본은 infra/.env 다 — 옛 포트는 그 한 번에만 준다(LLM_ROUTER_PORT=<포트> … llm-router.sh stop).
 unset LLM_ROUTER_PORT
+# 상태판 포트도 같은 까닭으로 버린다 — status-board.sh stop 도 환경의 STATUS_BOARD_PORT 를 먼저 본다(옛 포트는 그 한 번에만 준다).
+unset STATUS_BOARD_PORT
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SVC="$ROOT/infra/scripts/services.sh"

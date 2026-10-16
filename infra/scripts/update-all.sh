@@ -30,6 +30,7 @@
 #   5) 게이트웨이 config 정합    — /health backends + config의 heax_registry를 기대 목록과 비교,
 #                                  빠졌으면 provision-config.sh --force 재생성(토큰은 provision.env) 후
 #                                  재기동 + 재검증(agent 토큰 정합 확인 포함)
+#   5b) 상시 상태판               — infra/.env 에 STATUS_BOARD 가 있으면 설정을 다시 만들고 띄운다(없으면 ○ — docs/improvement-1015/status-board.md)
 #   6) 헬스게이트                — 핵심 체인(portal→agent→gateway) 실패 시 exit 1로 크게 알림
 #
 # 1회 준비물(재프로비저닝용 토큰, 없으면 해당 백엔드만 빠짐):
@@ -60,6 +61,8 @@ export NO_PROXY="$_np"; export no_proxy="$_np"; unset _np _np_parts _h
 # 먼저 본다. 옛 포트가 남아 있으면 §1i·§4 의 update-sites llm-router 가 그 포트의 라우터(미룬 서비스가 아직 쓸 수 있다)를 내리고 지금 포트의
 # 라우터는 못 내린다. 라우터 포트의 정본은 infra/.env 하나다 — 옛 포트를 내릴 때는 그 한 번에만 준다(LLM_ROUTER_PORT=<포트> … llm-router.sh stop).
 unset LLM_ROUTER_PORT
+# 상태판 포트도 같은 까닭으로 버린다 — status-board.sh stop 도 환경의 STATUS_BOARD_PORT 를 먼저 본다(옛 포트는 그 한 번에만 준다).
+unset STATUS_BOARD_PORT
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
@@ -1984,6 +1987,54 @@ PY
       done
     fi
   fi
+fi
+
+# ── 5b) 상시 상태판(Gatus) — infra/.env 의 STATUS_BOARD 한 줄로 켠다(docs/improvement-1015/status-board.md) ──
+# 켜져 있으면(services.py 판정 — 매니페스트 항목이 if_env: STATUS_BOARD) ① 설정을 매번 다시 만든다(gen-status-config.py — 이 박스가 다루는
+#   서비스의 리스너 전부 · 게이트웨이 백엔드 이름 · 경보) ② update-sites 로 띄운다. 지문(services.yaml fp)에 생성 설정이 들어 있어 ①이 바꾼
+#   것이 있을 때만 다시 뜬다 — 그래서 ①이 ② 앞이다. §5 뒤인 까닭 — 재프로비저닝을 마친 게이트웨이의 백엔드 이름을 싣고, 지켜보는 서비스가
+#   §2·§4·§5 에서 다시 뜬 뒤에 상태판이 다시 뜬다.
+# 꺼져 있으면 ○ 를 남기고, 그 포트에 상태판(gatus)이 떠 있으면 내린다 — 켰다 끈 박스에서 경보 메일이 계속 나가지 않게.
+# 판정 — 설정을 못 만들었거나(손잡이 값이 틀렸다) 띄우지 못했으면 ✗(켠 기능이 안 돈다 — 경보 없이 초록이면 안 된다). STATUS_ALERT_TO 는
+#   있는데 메일을 못 꾸렸으면 ⚠(화면은 돈다).
+_sb_en=0; "$SVC" enabled status-board >/dev/null 2>&1 || _sb_en=$?
+_sb_port="$(_envfile_value "$SELF_REPO/infra/.env" STATUS_BOARD_PORT)"; _sb_port="${_sb_port:-8740}"
+if [ "$_sb_en" = 0 ]; then
+  hr "5b) 상시 상태판 (STATUS_BOARD → 설정 생성 · 기동)"
+  case "$(_envfile_value "$SELF_REPO/infra/.env" STATUS_BOARD | tr 'A-Z' 'a-z')" in
+    0|false|off|no) bad "infra/.env 의 STATUS_BOARD 값이 '끔' 처럼 보이지만 켜짐으로 읽힌다(값이 있으면 켠다 — if_env). 끄려면 그 줄을 지운다" ;;
+  esac
+  _sb_py="$SELF_REPO/backend/.venv/bin/python"; [ -x "$_sb_py" ] || _sb_py="python3"
+  _sb_rc=0; _sb_out="$("$_sb_py" "$SELF_REPO/infra/scripts/gen-status-config.py" 2>&1)" || _sb_rc=$?
+  printf '%s\n' "$_sb_out" | sed 's/^/  /'
+  case "$_sb_rc" in
+    0) ;;
+    3) bad "상시 상태판 — 경보를 켜지 못했다(위 ⚠ 줄). 화면은 돈다 — 메일을 받으려면 포털 backend/.env 의 SMTP 설정을 채운다(docs/improvement-1015/status-board.md)" ;;
+    *) fail "상시 상태판 설정을 만들지 못했다(gen-status-config rc $_sb_rc — 위 ✗ 줄). 옛 설정이 있으면 그 설정으로 돈다" ;;
+  esac
+  if [ ! -f "$SELF_REPO/infra/apptainer/gatus.sif" ]; then
+    fail "상시 상태판 이미지가 없다(infra/apptainer/gatus.sif) — §2 의 images-from-drive 가 Drive latest/ 에서 받는다. Drive 에도 없으면 dev 에서 ./infra/scripts/build-gatus.sh 뒤 ./infra/scripts/images-to-drive.sh"
+  elif [ ! -f "$SELF_REPO/infra/.state/status/config.yaml" ]; then
+    fail "상시 상태판 설정이 없어 띄우지 않았다 — 위 생성기 줄을 본다"
+  else
+    "$SELF_REPO/infra/scripts/update-sites.sh" status-board; _sb_us=$?
+    if [ "$_sb_us" = 0 ]; then
+      ok "상시 상태판 — http://127.0.0.1:$_sb_port (루프백 — 사람은 SSH 터널로 본다, docs/improvement-1015/status-board.md)"
+    else
+      fail "상시 상태판을 띄우지 못했다 — update-sites status-board rc $_sb_us(위 ✗ 줄 · 로그 /tmp/hwax-services/status-board.log)"
+    fi
+  fi
+else
+  if [ "$_sb_en" = 1 ] && [ "$(http_code "http://127.0.0.1:$_sb_port/health" 3)" != 000 ]; then
+    hr "5b) 상시 상태판 — 꺼짐(STATUS_BOARD 없음 → 떠 있는 상태판을 내린다)"
+    if "$SELF_REPO/infra/scripts/status-board.sh" stop; then
+      ok "상시 상태판(:$_sb_port)을 내렸다 — STATUS_BOARD 가 없다(경보 메일도 멈췄다)"
+    else
+      bad "상시 상태판(:$_sb_port)을 내리지 못했다(위 ✗ 줄) — 그 포트에 다른 것이 떠 있거나 모른다. 손으로: ./infra/scripts/status-board.sh stop"
+    fi
+  fi
+  hwax_skip "상시 상태판(Gatus)" "infra/.env 에 STATUS_BOARD 가 없다 — 서비스 리스너·게이트웨이 백엔드를 1분마다 보고 메일로 알리는 상태판을 띄우지 않았다" \
+    "infra/.env 에 STATUS_BOARD=1(경보 메일은 STATUS_ALERT_TO=<팀 공용 주소> 도) 을 적고 재실행 — docs/improvement-1015/status-board.md"
 fi
 
 # ── 6) 헬스게이트 — 핵심 체인 실패 시 exit 1로 크게 알림 ──
