@@ -143,6 +143,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 운영 수정 요청 10-15(전문가·지식카드 화면 — 빈 카드·로그인 만료·긴 카드·검색·빈 전문가·HE 운영자, K1~K9, 다섯 리포) | `docs/request_1015.md`(요청서 정본) · `docs/request-1015/` (PLAN·checklist·context-notes) |
 | 운영·관측·검색 개선 여섯(상태판 Gatus · 호출 추적 Phoenix · LLM 풀 용량 측정 · 의미 기반 도구 검색 · 한국어 검색 평가 · 도구 인자 설명 점수판 — 제안 10-15 @박용진, 분석·판정 10-16) | `docs/improvement-1015/` (PLAN·checklist·context-notes) |
 | 임베더를 BGE-M3 로(한국어 질의–영어 카드 정합성 · 무중단 슬롯 둘 `*_m3 halfvec(1024)` · 청크 백필 · dev GPU 로 채워 cae00 은 merge 로 받는다 · 소비처는 응답 모델을 따른다 · 모델별 점수 하한) | `docs/embedder-bge-m3/` (PLAN·checklist·context-notes) |
+| 챗은 stcx GPU LLM, 심의는 GLM(챗 전용 LLM `CHAT_LLM_*` — 챗 ReAct · 챗 안 도구 계획만, 띵킹 · 심의 준비 · 심의 · 카드 대조는 GLM · stcx 가 죽으면 호출 단위로 GLM 넘김 · 생각 모드 끔 · 챗 턴 창은 두 서버 중 작은 쪽 · update-all 3.5c 가 `infra/.env` 에서 맞춘다, 사용자 결정 10-17) | `docs/chat-llm-stcx/` (PLAN·checklist·context-notes·**server-setup**(cae00 절차)) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
