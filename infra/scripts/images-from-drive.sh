@@ -61,6 +61,12 @@ if [ -f "$STAGE/searxng-fixed.sif" ]; then
   _rc=0; hwax_install_if_changed "$STAGE/searxng-fixed.sif" "$APPT_DIR/searxng-fixed.sif" || _rc=$?
   case $_rc in 0) echo "  ✓ staged searxng-fixed.sif → $APPT_DIR" ;; 1) echo "  · searxng-fixed.sif 같음 — 그대로" ;; *) echo "✗ searxng-fixed.sif 설치 실패 — 위 사유"; exit 1 ;; esac
 fi
+# 상시 상태판(Gatus) SIF — 위와 같다(있을 때만). 이름 바꾸기로 갈아 끼우므로 도는 상태판은 옛 이미지로 계속 돌고, 지문(services.yaml fp)이 바뀌어
+# 다음 update-sites status-board(update-all 5b)가 새 이미지로 다시 띄운다.
+if [ -f "$STAGE/gatus.sif" ]; then
+  _rc=0; hwax_install_if_changed "$STAGE/gatus.sif" "$APPT_DIR/gatus.sif" || _rc=$?
+  case $_rc in 0) echo "  ✓ staged gatus.sif → $APPT_DIR" ;; 1) echo "  · gatus.sif 같음 — 그대로" ;; *) echo "✗ gatus.sif 설치 실패 — 위 사유"; exit 1 ;; esac
+fi
 
 if [ -f "$STAGE/frontend-dist.tar.gz" ]; then
   # 마지막으로 푼 tar 의 사본과 같으면 다시 풀지 않는다(수천 파일 rewrite 생략) — 다르면 풀고 사본을 갱신

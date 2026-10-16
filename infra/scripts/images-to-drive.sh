@@ -54,12 +54,19 @@ if [ -f "$SEARXNG_SIF" ]; then
   cp "$SEARXNG_SIF" "$STAGE/searxng-fixed.sif"
   echo "  · included searxng-fixed.sif"
 fi
+# 상시 상태판(Gatus) SIF — 있으면 같이 나른다. 위와 같은 까닭으로 이 목록에 있어야 한다(latest/ 는 sync 라 빠지면 지워진다).
+# dev 는 ./infra/scripts/build-gatus.sh 로 infra/apptainer/ 에 굽는다(docs/improvement-1015/status-board.md).
+if [ -f "$APPT_DIR/gatus.sif" ]; then
+  cp "$APPT_DIR/gatus.sif" "$STAGE/gatus.sif"
+  echo "  · included gatus.sif"
+fi
 
 # Checksums over an EXPLICIT file list (so SHA256SUMS doesn't checksum itself).
 ( cd "$STAGE"
   files="portal.sif nginx.sif"
   [ -f frontend-dist.tar.gz ] && files="$files frontend-dist.tar.gz"
   [ -f searxng-fixed.sif ] && files="$files searxng-fixed.sif"
+  [ -f gatus.sif ] && files="$files gatus.sif"
   sha256sum $files > SHA256SUMS )
 
 echo "→ uploading to $REMOTE/images-$TS/  (+ latest/)"

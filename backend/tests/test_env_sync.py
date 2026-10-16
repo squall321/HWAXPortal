@@ -96,6 +96,23 @@ def test_an_empty_value_that_means_off_is_optional_not_a_chore(tmp_path):
     assert "OTHER_EMPTY" in r.stdout and "값을 정해야 한다" in r.stdout, "빈 값의 다른 키는 여전히 사람 몫이다"
 
 
+def test_the_status_board_block_is_surfaced_as_options_and_never_switches_the_board_on(tmp_path):
+    """상시 상태판(docs/improvement-1015/status-board.md)은 기본 꺼짐이다 — 실제 infra/.env.example 의 그 덩이를 이미 맞춰진 .env 에 흘려도
+    상태판을 켜는 줄(STATUS_BOARD=1)이 켜진 줄로 들어가면 안 된다(모든 박스에서 켜진다). 경보 받는 곳(STATUS_ALERT_TO)은 비우면 화면만 도는
+    선택이라 '값을 정해야 한다' 로 재촉하지 않는다. 설명 줄이 KEY= 모양으로 시작하면 같은 키를 두 번 붙이므로 키마다 한 줄인지도 본다."""
+    example = (ROOT / "infra/.env.example").read_text(encoding="utf-8")
+    i = example.index("# ── 상시 상태판(Gatus")
+    d = _repo(tmp_path, example, example[:i])            # 상태판 덩이만 새것이다
+    r = _run(d)
+    assert r.returncode == 0, r.stdout + r.stderr
+    added = (d / ".env").read_text(encoding="utf-8")[i:]
+    keys = ("STATUS_BOARD", "STATUS_ALERT_TO", "STATUS_BOARD_PORT", "STATUS_BOARD_INTERVAL")
+    for k in keys:
+        lines = [ln for ln in added.splitlines() if re.match(rf"^#?\s*{k}=", ln)]
+        assert len(lines) == 1 and lines[0].startswith(f"# {k}=") and "# 선택" in lines[0], (k, lines, added)
+    assert "STATUS_ALERT_TO — 값을 정해야 한다" not in r.stdout and "STATUS_ALERT_TO — 선택 설정" in r.stdout, r.stdout
+
+
 def test_it_is_idempotent(tmp_path):
     d = _repo(tmp_path, "NEW=1\nTOKEN_X=fill-me\n", "OLD=1\n")
     _run(d)
