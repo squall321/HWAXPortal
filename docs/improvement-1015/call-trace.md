@@ -34,16 +34,18 @@
 
 1. **(dev, 한 번)** 이미지를 굽고 Drive 에 올린다 — `./infra/scripts/build-phoenix.sh` 뒤 `./infra/scripts/images-to-drive.sh`(portal·nginx
    이미지와 프런트 dist 도 함께 올린다 — status-board.md '켜기' 1 과 같다). 이미지는 340MB 남짓이다.
-2. **(cae00)** 포털 `infra/.env` 에 한 줄 — `CALL_TRACE=1`. `./infra/scripts/update-all.sh` 의 §2(images-from-drive)가 `phoenix.sif` 를 받는다.
-   update-all 은 Phoenix 를 띄우지 않는다 — 받은 뒤 한 번 `./infra/scripts/services.sh up call-trace`. 재부팅 뒤에는 부팅 유닛(hwax-stack —
-   `services.py up --update`)이 띄운다.
+2. **(cae00)** 포털 `infra/.env` 에 한 줄 — `CALL_TRACE=1` 뒤 `./infra/scripts/update-all.sh`. §2(images-from-drive)가 `phoenix.sif` 를 받고
+   **5c 가 Phoenix 를 띄운다**(지문 — 이미지 · 띄우는 스크립트 · 셈 — 이 바뀌었을 때만 다시 뜬다). 재부팅 뒤에는 부팅 유닛(hwax-stack —
+   `services.py up --update`)이 띄운다. update-all 을 기다리지 않고 바로 띄우려면 `./infra/scripts/services.sh up call-trace`.
 3. **(cae00)** 에이전트 서버 `HWAXAgentServer/.env` 에 한 줄 — `CALL_TRACE_URL=http://127.0.0.1:8750`. 반영은 재기동이다 — 도는 심의가
    없을 때 `cd ../HWAXAgentServer && ./start.sh -d`, 또는 다음 update-all §4(에이전트 서버 .env 가 바뀌어 다시 띄운다 — 도는 심의가 있으면 미룬다).
    기동 로그에 `[agent] 호출 추적(CALL_TRACE_URL) 켜짐 — 127.0.0.1:8750 …` 한 줄이 나오면 된 것이다.
 
 ⚠ 둘을 따로 켜는 까닭(한 줄로 묶지 않은 까닭) — 에이전트 서버의 .env 를 만지는 길은 env 킷(`apply-envs.sh`)뿐인데 그것은 **없는 키만 더한다**.
-켜기는 되지만 끄기·포트 바꾸기가 따라가지 않아, 끈 박스의 에이전트 서버가 죽은 주소로 계속 보내게 된다. 두 쪽을 함께 맞추려면 update-all 에
-LLM 라우터(1i)만 한 구획이 새로 든다 — 이번에는 넣지 않았다. 킷(`infra/env-kits/agent-server.env`)에는 주석으로만 적어 두었다.
+켜기는 되지만 끄기·포트 바꾸기가 따라가지 않아, 끈 박스의 에이전트 서버가 죽은 주소로 계속 보내게 된다. 두 쪽을 함께 고쳐 쓰려면 update-all 에
+LLM 라우터(1i)만 한 구획이 새로 든다 — 이번에는 넣지 않았다. 대신 update-all 5c 가 **두 줄이 어긋나면 알린다** — 받는 쪽만 켜졌거나(⚠ '받는
+쪽(Phoenix)만 켜졌다') 끈 박스에 보내는 줄이 남았으면(⚠ 'CALL_TRACE_URL 이 남아 있다'). 에이전트 서버 .env 는 고쳐 쓰지 않는다(IM-D18).
+킷(`infra/env-kits/agent-server.env`)에는 주석으로만 적어 두었다.
 
 ⚠ `phoenix.sif` 가 처음 들어오는 update-all 에서는 포털도 한 번 다시 뜬다 — deploy-all 의 포털 지문이 `infra/apptainer/*.sif` 를 보기 때문이다.
 
@@ -68,7 +70,8 @@ LLM 라우터(1i)만 한 구획이 새로 든다 — 이번에는 넣지 않았�
 ## 끄기
 
 1. 에이전트 서버 `.env` 의 `CALL_TRACE_URL` 줄을 지우고 재기동한다(도는 심의가 없을 때).
-2. 포털 `infra/.env` 의 `CALL_TRACE` 줄을 지우고 `./infra/scripts/call-trace.sh stop`. 값을 0 으로 두면 켜짐으로 읽힌다(값이 있으면 켜는 if_env 다).
+2. 포털 `infra/.env` 의 `CALL_TRACE` 줄을 지운다 — 다음 update-all 5c 가 떠 있는 Phoenix 를 내리고 ○ 로 남긴다(바로 내리려면
+   `./infra/scripts/call-trace.sh stop`). 값을 0 으로 두면 켜짐으로 읽힌다(값이 있으면 켜는 if_env 다 — update-all 이 ⚠ 로 알린다).
 
 순서가 바뀌어도 해는 없다 — Phoenix 가 내려가 있으면 에이전트 서버는 기록만 버리고(로그에 `[call-trace] ⚠ … 보내지 못했다` 한 줄) 호출은 기다리지
 않는다. 다시 올라오면 `✓ 다시 보낸다` 한 줄이다.
@@ -76,7 +79,8 @@ LLM 라우터(1i)만 한 구획이 새로 든다 — 이번에는 넣지 않았�
 ## 포트·보존 바꾸기
 
 - `CALL_TRACE_PORT`(기본 8750) — 9100~9999 는 HEAXHub 앱 포트 풀이라 쓰지 않는다([PORT-MAP](../PORT-MAP.md)). 바꾸면 옛 포트의 Phoenix 를 먼저
-  내린다 — `CALL_TRACE_PORT=<옛 포트> ./infra/scripts/call-trace.sh stop`(stop 만 환경의 포트를 먼저 본다) 뒤 `services.sh up call-trace`.
+  내린다 — `CALL_TRACE_PORT=<옛 포트> ./infra/scripts/call-trace.sh stop`(stop 만 환경의 포트를 먼저 본다) 뒤 update-all(5c) 이나
+  `services.sh up call-trace`. update-all · update-sites 는 셸이 물려준 `CALL_TRACE_PORT` 를 버린다(infra/.env 가 정본이다).
   에이전트 서버의 `CALL_TRACE_URL` 도 같은 포트로 고치고 재기동한다.
 - `CALL_TRACE_RETENTION_DAYS`(기본 30, 0 은 지우지 않는다) — 위 '보존' 의 ⚠.
 - 틀린 값(포트가 수가 아니다 · 날 수가 0 이상의 정수가 아니다)이면 띄우지 않고 까닭을 찍는다.
@@ -114,8 +118,8 @@ LLM 라우터(1i)만 한 구획이 새로 든다 — 이번에는 넣지 않았�
 지금 판은 **Phoenix 20.19.0**(2026-10-01 공개, `arizephoenix/phoenix` 의 그 판 다중 아키텍처 목록 다이제스트)이다. 올릴 때는
 `build-phoenix.sh` 의 `PHOENIX_VERSION` · `PHOENIX_DIGEST` 두 줄과 이 문서를 함께 고치고 굽는다 — 받은 이미지의 판 라벨(`arize-phoenix-v<판>`)이
 다르면 굽기가 멈춘다. 새 판에서 다시 볼 것 — gRPC 수신기 자리(`phoenix.server.grpc_server.GrpcServer.__aenter__`), 이미지 안 파이썬 경로
-(`/usr/bin/python3.13`), `/v1/traces` 가 받는 형식, 위 환경값 이름들. 판을 올린 뒤에는 update-all 이 다시 띄우지 않으므로
-`./infra/scripts/services.sh down call-trace && ./infra/scripts/services.sh up call-trace` 를 한 번 한다.
+(`/usr/bin/python3.13`), `/v1/traces` 가 받는 형식, 위 환경값 이름들. 새 이미지가 Drive 로 오면 update-all 5c 가 지문(이미지)이 바뀐 것을 보고
+다시 띄운다.
 
 ## 함정
 

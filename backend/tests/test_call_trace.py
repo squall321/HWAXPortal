@@ -327,3 +327,154 @@ def test_이미지는_Drive_로_간다_올리고_받고_어긋남을_본다(tmp_
     drift = (SCRIPTS / "drive-drift.sh").read_text(encoding="utf-8")
     loops = [ln.split(" in ", 1)[1].split(";")[0].split() for ln in drift.splitlines() if ln.strip().startswith("for _sif in ")]
     assert len(loops) == 1 and "phoenix" in loops[0], loops
+
+
+# ── update-all 5c — 켜면 띄우고, 끄면 ○ 와 함께 떠 있는 것을 내리고, 두 줄이 어긋나면 알린다 ─────────────────────────────
+UA = (SCRIPTS / "update-all.sh").read_text(encoding="utf-8")
+
+
+def _ua_region(start: str, end: str) -> str:
+    assert start in UA, f"`{start}` 가 없다"
+    i = UA.index(start)
+    return UA[i:UA.index(end, i)]
+
+
+class _Box5c:
+    """update-all 5c 를 원문 그대로 임시 포털에서 돌린다 — services.sh enabled · update-sites · call-trace.sh stop 은 부른 사실만 적는 대역이고
+    http_code 도 대역이다(실 포트를 두드리지 않는다). AGENT_ENV 는 임시 에이전트 서버 .env 다(없으면 대조하지 않는 박스)."""
+
+    def __init__(self, tmp: Path):
+        self.tmp = tmp.resolve()
+        self.repo = self.tmp / "HWAXPortal"
+        (self.repo / "infra/scripts/lib").mkdir(parents=True)
+        (self.repo / "infra/apptainer").mkdir()
+        shutil.copy(SCRIPTS / "lib/skip-ledger.sh", self.repo / "infra/scripts/lib/skip-ledger.sh")
+        self.calls, self.ledger = self.tmp / "calls.log", self.tmp / "ledger"
+        self.calls.write_text("")
+        self.ledger.write_text("")
+        self.agent_env = self.tmp / "agent.env"
+        sh = {"services.sh": 'echo "services.sh $*" >> "{c}"; [ "$1" = enabled ] && exit "${{STUB_EN:-1}}"; exit 0',
+              "update-sites.sh": 'echo "update-sites.sh $*" >> "{c}"; echo "  (대역) update-sites $*"; exit "${{STUB_US:-0}}"',
+              "call-trace.sh": 'echo "call-trace.sh $*" >> "{c}"; echo "  (대역) call-trace $*"; exit "${{STUB_STOP:-0}}"'}
+        for name, body in sh.items():
+            p = self.repo / "infra/scripts" / name
+            p.write_text("#!/usr/bin/env bash\n" + body.format(c=self.calls) + "\n", encoding="utf-8")
+            p.chmod(0o755)
+
+    def run(self, infra_env: str = "", *, sif: bool = True, agent_env: str | None = "", **env) -> str:
+        (self.repo / "infra/.env").write_text(infra_env, encoding="utf-8")
+        if sif:
+            (self.repo / "infra/apptainer/phoenix.sif").write_text("")
+        if agent_env is None:
+            agent_line = "unset AGENT_ENV"
+        else:
+            self.agent_env.write_text(agent_env, encoding="utf-8")
+            agent_line = f'AGENT_ENV="{self.agent_env}"'
+        envfile = _ua_region("_envfile_value() {", "\n}\n") + "\n}\n"
+        body = _ua_region("# ── 5c) 호출 추적(Phoenix)", "# ── 6) 헬스게이트")
+        assert "/home/" not in body, "구획에 실물 경로가 박혀 있다"
+        script = "\n".join([
+            "set -uo pipefail", f'cd "{self.tmp}"', f'SELF_REPO="{self.repo}"', f'SVC="{self.repo}/infra/scripts/services.sh"', agent_line,
+            f'[ "$(cd "$SELF_REPO" && pwd)" = "{self.repo}" ] || exit 97',
+            'hr() { echo "HR:$*"; }; ok() { echo "OK:$*"; }; bad() { echo "BAD:$*"; }; fail() { echo "FAIL:$*"; FAIL=1; }',
+            'http_code() { echo "${STUB_HTTP:-000}"; }',
+            f'export HWAX_SKIP_LEDGER="{self.ledger}"', f'. "{self.repo}/infra/scripts/lib/skip-ledger.sh"',
+            envfile, body, "echo END",
+        ])
+        base = {"PATH": os.environ["PATH"], "HOME": str(self.tmp), "LANG": "C.UTF-8"}
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={**base, **env})
+        assert r.returncode != 97 and "END" in r.stdout, r.stdout + r.stderr
+        assert "unbound variable" not in r.stderr and "command not found" not in r.stderr, r.stderr
+        return r.stdout + r.stderr
+
+    def called(self) -> list[str]:
+        return self.calls.read_text().splitlines()
+
+
+@pytest.fixture()
+def box5c(tmp_path):
+    return _Box5c(tmp_path)
+
+
+def _tagged(out: str, tag: str) -> list[str]:
+    return [ln for ln in out.splitlines() if ln.startswith(tag)]
+
+
+def test_5c_꺼져_있으면_안_켠_기능으로_남기고_아무것도_띄우지_않는다(box5c):
+    out = box5c.run("OTHER=1\n", STUB_EN="1")
+    assert box5c.called() == ["services.sh enabled call-trace"], box5c.called()
+    assert not _tagged(out, "HR:") and not _tagged(out, "FAIL:") and not _tagged(out, "BAD:"), out
+    led = box5c.ledger.read_text()
+    assert led.startswith("호출 추적(Phoenix)\t") and "CALL_TRACE=1" in led and "CALL_TRACE_URL" in led and "call-trace.md" in led, led
+
+
+def test_5c_꺼졌는데_Phoenix_가_떠_있으면_내린다(box5c):
+    out = box5c.run("CALL_TRACE_PORT=18752\n", STUB_EN="1", STUB_HTTP="200")
+    assert box5c.called() == ["services.sh enabled call-trace", "call-trace.sh stop"], box5c.called()
+    assert any(":18752" in ln and "내렸다" in ln for ln in _tagged(out, "OK:")), out
+    out = box5c.run("", STUB_EN="1", STUB_HTTP="200", STUB_STOP="1")
+    assert any("내리지 못했다" in ln for ln in _tagged(out, "BAD:")) and not _tagged(out, "FAIL:"), out
+
+
+def test_5c_꺼졌는데_보내는_쪽이_남아_있으면_알린다(box5c):
+    out = box5c.run("", STUB_EN="1", agent_env="CALL_TRACE_URL=http://127.0.0.1:8750\n")
+    assert any("CALL_TRACE_URL 이 남아 있다" in ln for ln in _tagged(out, "BAD:")), out
+    assert box5c.agent_env.read_text() == "CALL_TRACE_URL=http://127.0.0.1:8750\n", "에이전트 서버 .env 는 고쳐 쓰지 않는다"
+    assert box5c.ledger.read_text().startswith("호출 추적(Phoenix)\t"), "꺼짐은 그대로 ○ 다"
+
+
+def test_5c_켜져_있으면_update_sites_로_띄우고_보내는_쪽이_있으면_조용하다(box5c):
+    out = box5c.run("CALL_TRACE=1\n", STUB_EN="0", agent_env="CALL_TRACE_URL=http://127.0.0.1:8750\n")
+    assert box5c.called() == ["services.sh enabled call-trace", "update-sites.sh call-trace"], box5c.called()
+    assert _tagged(out, "HR:5c)") and any("http://127.0.0.1:8750" in ln for ln in _tagged(out, "OK:")), out
+    assert not _tagged(out, "FAIL:") and not _tagged(out, "BAD:") and not box5c.ledger.read_text(), out
+
+
+def test_5c_받는_쪽만_켜졌으면_보내는_줄을_알린다(box5c):
+    out = box5c.run("CALL_TRACE=1\nCALL_TRACE_PORT=18753\n", STUB_EN="0", agent_env="VLLM_MODEL=x\n")
+    assert any("받는 쪽(Phoenix)만 켜졌다" in ln and "CALL_TRACE_URL=http://127.0.0.1:18753" in ln for ln in _tagged(out, "BAD:")), out
+    assert box5c.agent_env.read_text() == "VLLM_MODEL=x\n", "에이전트 서버 .env 는 고쳐 쓰지 않는다"
+
+
+def test_5c_에이전트_서버_env_를_모르면_대조하지_않는다(box5c):
+    out = box5c.run("CALL_TRACE=1\n", STUB_EN="0", agent_env=None)
+    assert not _tagged(out, "BAD:"), out
+    out = box5c.run("", STUB_EN="1", agent_env=None)
+    assert not _tagged(out, "BAD:"), out
+
+
+def test_5c_이미지가_없으면_기다리지_않고_실패로_센다(box5c):
+    out = box5c.run("CALL_TRACE=1\n", sif=False, STUB_EN="0", agent_env="CALL_TRACE_URL=http://127.0.0.1:8750\n")
+    assert "update-sites.sh call-trace" not in box5c.called(), "health 를 기다리지 않는다"
+    assert any("이미지가 없다" in ln and "build-phoenix.sh" in ln for ln in _tagged(out, "FAIL:")), out
+
+
+def test_5c_띄우지_못하면_실패로_센다(box5c):
+    out = box5c.run("CALL_TRACE=1\n", STUB_EN="0", STUB_US="1", agent_env="CALL_TRACE_URL=http://127.0.0.1:8750\n")
+    assert any("띄우지 못했다" in ln and "rc 1" in ln for ln in _tagged(out, "FAIL:")), out
+
+
+def test_5c_CALL_TRACE_0_은_켜짐이라고_알린다(box5c):
+    out = box5c.run("CALL_TRACE=0\n", STUB_EN="0", agent_env="CALL_TRACE_URL=http://127.0.0.1:8750\n")
+    assert any("켜짐으로 읽힌다" in ln for ln in _tagged(out, "BAD:")), out
+
+
+def test_5c_update_all_배선():
+    i5b, i5c, i6 = UA.index("# ── 5b) 상시 상태판(Gatus)"), UA.index("# ── 5c) 호출 추적(Phoenix)"), UA.index('hr "6) 헬스게이트"')
+    assert i5b < i5c < i6, "5c 는 5b 뒤 · §6 앞이다"
+    head = UA[:UA.index("set -uo pipefail")]
+    assert "5c) 호출 추적" in head and "CALL_TRACE" in head, "사용법의 순서 목록에 있다"
+    for line in _ua_region("# ── 5c) 호출 추적(Phoenix)", "# ── 6) 헬스게이트").splitlines():
+        assert not line.lstrip().startswith("`"), "대입어 사슬 안의 백틱 주석은 다음 대입어를 명령 이름으로 만든다"
+
+
+def test_물려받은_호출_추적_포트를_버린다():
+    """call-trace.sh stop 은 환경의 CALL_TRACE_PORT 를 먼저 본다 — 운영자 셸에 export 된 옛 포트가 update-sites → services.py down 으로 흘러
+    지금 Phoenix 대신 옛 포트를 내리지 않게 update-all·update-sites 머리가 버린다(상태판 · LLM 라우터와 같다)."""
+    us = (SCRIPTS / "update-sites.sh").read_text(encoding="utf-8")
+    heads = (UA[:UA.index('SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"')],
+             us[:us.index('ROOT="$(cd "$(dirname "$0")/../.." && pwd)"')])
+    for head in heads:
+        r = subprocess.run(["bash", "-c", head + '\necho "[${CALL_TRACE_PORT-없음}]"\n'], capture_output=True, text=True, timeout=30,
+                           env={"PATH": os.environ["PATH"], "HOME": "/nonexistent", "CALL_TRACE_PORT": "9555"})
+        assert r.stdout.split()[-1:] == ["[없음]"], r.stdout + r.stderr

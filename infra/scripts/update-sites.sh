@@ -10,6 +10,8 @@ export PYTHONUNBUFFERED=1   # tee 파이프로 넘겨도 진행 로그가 즉시
 unset LLM_ROUTER_PORT
 # 상태판 포트도 같은 까닭으로 버린다 — status-board.sh stop 도 환경의 STATUS_BOARD_PORT 를 먼저 본다(옛 포트는 그 한 번에만 준다).
 unset STATUS_BOARD_PORT
+# 호출 추적(Phoenix) 포트도 같은 까닭으로 버린다 — call-trace.sh stop 도 환경의 CALL_TRACE_PORT 를 먼저 본다.
+unset CALL_TRACE_PORT
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SVC="$ROOT/infra/scripts/services.sh"

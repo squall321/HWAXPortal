@@ -31,6 +31,7 @@
 #                                  빠졌으면 provision-config.sh --force 재생성(토큰은 provision.env) 후
 #                                  재기동 + 재검증(agent 토큰 정합 확인 포함)
 #   5b) 상시 상태판               — infra/.env 에 STATUS_BOARD 가 있으면 설정을 다시 만들고 띄운다(없으면 ○ — docs/improvement-1015/status-board.md)
+#   5c) 호출 추적(Phoenix)        — infra/.env 에 CALL_TRACE 가 있으면 받는 쪽(Phoenix)을 띄운다(없으면 ○ · 떠 있으면 내린다 — docs/improvement-1015/call-trace.md)
 #   6) 헬스게이트                — 핵심 체인(portal→agent→gateway) 실패 시 exit 1로 크게 알림
 #
 # 1회 준비물(재프로비저닝용 토큰, 없으면 해당 백엔드만 빠짐):
@@ -63,6 +64,8 @@ export NO_PROXY="$_np"; export no_proxy="$_np"; unset _np _np_parts _h
 unset LLM_ROUTER_PORT
 # 상태판 포트도 같은 까닭으로 버린다 — status-board.sh stop 도 환경의 STATUS_BOARD_PORT 를 먼저 본다(옛 포트는 그 한 번에만 준다).
 unset STATUS_BOARD_PORT
+# 호출 추적(Phoenix) 포트도 같은 까닭으로 버린다 — call-trace.sh stop 도 환경의 CALL_TRACE_PORT 를 먼저 본다.
+unset CALL_TRACE_PORT
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
@@ -2035,6 +2038,49 @@ else
   fi
   hwax_skip "상시 상태판(Gatus)" "infra/.env 에 STATUS_BOARD 가 없다 — 서비스 리스너·게이트웨이 백엔드를 1분마다 보고 메일로 알리는 상태판을 띄우지 않았다" \
     "infra/.env 에 STATUS_BOARD=1(경보 메일은 STATUS_ALERT_TO=<팀 공용 주소> 도) 을 적고 재실행 — docs/improvement-1015/status-board.md"
+fi
+
+# ── 5c) 호출 추적(Phoenix) — infra/.env 의 CALL_TRACE 한 줄로 받는 쪽을 띄운다(docs/improvement-1015/call-trace.md) ──
+# 켜져 있으면(매니페스트 if_env: CALL_TRACE) update-sites 로 띄운다 — 지문이 이미지 · 띄우는 스크립트 · 셈이라 바뀌었을 때만 다시 뜬다.
+# 꺼져 있으면 ○ 를 남기고, 그 포트에 Phoenix 가 떠 있으면 내린다(켰다 끈 박스 — 상태판 5b 와 같다).
+# 보내는 쪽(에이전트 서버 .env 의 CALL_TRACE_URL)은 고쳐 쓰지 않고 두 줄이 어긋나면 알리기만 한다 — 그 .env 는 사람이 적고 바꾸면 재기동이
+#   든다(IM-D18 · 3.5 가 옛 DELIB_TIMEOUT_S 를 알리기만 하는 것과 같다). 에이전트 서버 .env 를 모르는 박스(AGENT_DIR 없음)는 대조하지 않는다.
+_ct_en=0; "$SVC" enabled call-trace >/dev/null 2>&1 || _ct_en=$?
+_ct_port="$(_envfile_value "$SELF_REPO/infra/.env" CALL_TRACE_PORT)"; _ct_port="${_ct_port:-8750}"
+_ct_known=0; _ct_url=""
+if [ -n "${AGENT_ENV:-}" ] && [ -f "$AGENT_ENV" ]; then _ct_known=1; _ct_url="$(_envfile_value "$AGENT_ENV" CALL_TRACE_URL)"; fi
+if [ "$_ct_en" = 0 ]; then
+  hr "5c) 호출 추적 (CALL_TRACE → Phoenix 기동)"
+  case "$(_envfile_value "$SELF_REPO/infra/.env" CALL_TRACE | tr 'A-Z' 'a-z')" in
+    0|false|off|no) bad "infra/.env 의 CALL_TRACE 값이 '끔' 처럼 보이지만 켜짐으로 읽힌다(값이 있으면 켠다 — if_env). 끄려면 그 줄을 지운다" ;;
+  esac
+  if [ ! -f "$SELF_REPO/infra/apptainer/phoenix.sif" ]; then
+    fail "호출 추적 이미지가 없다(infra/apptainer/phoenix.sif) — §2 의 images-from-drive 가 Drive latest/ 에서 받는다. Drive 에도 없으면 dev 에서 ./infra/scripts/build-phoenix.sh 뒤 ./infra/scripts/images-to-drive.sh"
+  else
+    "$SELF_REPO/infra/scripts/update-sites.sh" call-trace; _ct_us=$?
+    if [ "$_ct_us" = 0 ]; then
+      ok "호출 추적 — http://127.0.0.1:$_ct_port (루프백 — 사람은 SSH 터널로 본다, docs/improvement-1015/call-trace.md)"
+    else
+      fail "호출 추적을 띄우지 못했다 — update-sites call-trace rc $_ct_us(위 ✗ 줄 · 로그 /tmp/hwax-services/call-trace.log)"
+    fi
+  fi
+  if [ "$_ct_known" = 1 ] && [ -z "$_ct_url" ]; then
+    bad "호출 추적 — 받는 쪽(Phoenix)만 켜졌다. 보내는 쪽은 에이전트 서버 .env 의 CALL_TRACE_URL=http://127.0.0.1:$_ct_port 한 줄이다 — 적고 도는 심의가 없을 때 재기동(cd ../HWAXAgentServer && ./start.sh -d)"
+  fi
+else
+  if [ "$_ct_en" = 1 ] && [ "$(http_code "http://127.0.0.1:$_ct_port/healthz" 3)" != 000 ]; then
+    hr "5c) 호출 추적 — 꺼짐(CALL_TRACE 없음 → 떠 있는 Phoenix 를 내린다)"
+    if "$SELF_REPO/infra/scripts/call-trace.sh" stop; then
+      ok "호출 추적(:$_ct_port)을 내렸다 — CALL_TRACE 가 없다(모은 기록은 infra/.state/call-trace 에 그대로 남는다)"
+    else
+      bad "호출 추적(:$_ct_port)을 내리지 못했다(위 ✗ 줄) — 그 포트에 다른 것이 떠 있거나 모른다. 손으로: ./infra/scripts/call-trace.sh stop"
+    fi
+  fi
+  if [ -n "$_ct_url" ]; then
+    bad "호출 추적 — infra/.env 에 CALL_TRACE 가 없는데 에이전트 서버 .env 에 CALL_TRACE_URL 이 남아 있다(받는 곳 없이 보내 기록은 버려지고 그 로그에 ⚠ 한 줄). 그 줄을 지우고 도는 심의가 없을 때 재기동"
+  fi
+  hwax_skip "호출 추적(Phoenix)" "infra/.env 에 CALL_TRACE 가 없다 — LLM·도구 호출의 서버·시간·토큰을 본문 없이 모아 보는 Phoenix 를 띄우지 않았다" \
+    "infra/.env 에 CALL_TRACE=1 을 적고 재실행 + 에이전트 서버 .env 에 CALL_TRACE_URL=http://127.0.0.1:8750(재기동) — docs/improvement-1015/call-trace.md"
 fi
 
 # ── 6) 헬스게이트 — 핵심 체인 실패 시 exit 1로 크게 알림 ──
