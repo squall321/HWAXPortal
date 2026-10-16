@@ -31,7 +31,7 @@ DIRECT = "http://203.0.113.11:10000/v1"                                     # �
 
 
 def _dead_port() -> int:
-    """아무것도 듣지 않는 포트 — 잠깐 열었다 닫는다(실물 9130 을 두드리지 않게)."""
+    """아무것도 듣지 않는 포트 — 잠깐 열었다 닫는다(실물 8730 을 두드리지 않게)."""
     s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close()
     return p
 
@@ -133,7 +133,7 @@ def test_없거나_빈_값이면_꺼짐이다(tmp_path, text):
     ("LLM_UPSTREAMS=http://<서버1>:<포트>/v1\n", "/v1"),
     ("LLM_UPSTREAMS=http://203.0.113.11:70000/v1\n", "1~65535"),
     (f"LLM_UPSTREAMS={S1},{S1}/\n", "두 번"),
-    ("LLM_UPSTREAMS=http://127.0.0.1:9130/v1\n", "라우터 자신"),
+    ("LLM_UPSTREAMS=http://127.0.0.1:8730/v1\n", "라우터 자신"),
     ("LLM_UPSTREAMS=http://localhost:9555/v1\nLLM_ROUTER_PORT=9555\n", "라우터 자신"),
     ("LLM_UPSTREAMS=,,\n", "하나도"),
     (f"LLM_UPSTREAMS={S1},http://-bad-.example/v1\n", "/v1"),     # 하나라도 틀리면 줄 전체를 버린다
@@ -146,8 +146,8 @@ def test_틀린_목록은_사유와_함께_통째로_버린다(tmp_path, text, w
 
 # ── 라우터 주소 ──────────────────────────────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("text,rc,out", [
-    ("", 0, "http://127.0.0.1:9130/v1"), ("LLM_ROUTER_PORT=9555\n", 0, "http://127.0.0.1:9555/v1"),
-    ("LLM_ROUTER_PORT=09555   # 앞 0\n", 0, "http://127.0.0.1:9555/v1"), ("LLM_ROUTER_PORT=\n", 0, "http://127.0.0.1:9130/v1"),
+    ("", 0, "http://127.0.0.1:8730/v1"), ("LLM_ROUTER_PORT=9555\n", 0, "http://127.0.0.1:9555/v1"),
+    ("LLM_ROUTER_PORT=09555   # 앞 0\n", 0, "http://127.0.0.1:9555/v1"), ("LLM_ROUTER_PORT=\n", 0, "http://127.0.0.1:8730/v1"),
     ("LLM_ROUTER_PORT=abc\n", 2, "LLM_ROUTER_PORT"), ("LLM_ROUTER_PORT=0\n", 2, "LLM_ROUTER_PORT"),
     ("LLM_ROUTER_PORT=70000\n", 2, "LLM_ROUTER_PORT"),
 ])
@@ -355,7 +355,7 @@ def _strays(p: Path) -> list[str]:
     return sorted(x.name for x in p.parent.iterdir() if x.name != p.name) if p.parent.is_dir() else []
 
 
-ROUTER = "http://127.0.0.1:9130/v1"
+ROUTER = "http://127.0.0.1:8730/v1"
 
 
 def test_관리하는_값만_바꾸고_나머지는_한_바이트도_안_바꾼다(box):
@@ -640,7 +640,7 @@ def test_제자리_쓰기가_디스크에_막히면_원래_내용으로_되돌�
     남기지 않고, 결과가 원래와 같으니 백업도 지운다(파일은 그대로다)."""
     root, home, sib = box
     agent = sib["HWAXAgentServer"]
-    old, new = "http://198.51.100.7/v1", "http://127.0.0.1:9130/v1/" + "a" * 700
+    old, new = "http://198.51.100.7/v1", "http://127.0.0.1:8730/v1/" + "a" * 700
     agent.write_text(f"VLLM_BASE_URL={old}\nPAD={'x' * 64900}\n")
     before = agent.read_bytes()
     assert len(before) < 65536 < len(before) + 700
@@ -721,7 +721,7 @@ def test_디스크가_차도_반쯤_잘린_사본을_남기지_않는다(box):
     바꾸므로 사본은 한 바이트도 안 바뀌고, 임시 파일도 막 만든 백업도 남지 않는다. 한도는 lib 의 here-doc(bash 임시 파일)보다 커야 한다."""
     root, home, sib = box
     agent = sib["HWAXAgentServer"]
-    old, new = "http://198.51.100.7/v1", "http://127.0.0.1:9130/v1/" + "a" * 700
+    old, new = "http://198.51.100.7/v1", "http://127.0.0.1:8730/v1/" + "a" * 700
     agent.write_text(f"VLLM_BASE_URL={old}\nPAD={'x' * 64900}\n")
     before = agent.read_bytes()
     assert len(before) < 65536 < len(before) + 700, "원본은 한도 안 · 바꾼 것은 한도 밖"

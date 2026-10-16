@@ -5,7 +5,7 @@
 #   ./infra/scripts/llm-router.sh stop   # 그 포트를 LISTEN 하는 프로세스만, 명령줄이 라우터인지 확인한 뒤 TERM → 기다림 → KILL
 #   LLM_ROUTER_PORT=9131 ./infra/scripts/llm-router.sh stop    # stop 만 환경의 포트가 infra/.env 보다 먼저다(옛 포트에 남은 라우터를 내릴 때)
 #
-# 포트 — run 은 늘 infra/.env 의 LLM_ROUTER_PORT(기본 9130)다. 사본·update-all 1i·§6 은 infra/.env 만 읽으므로 운영자 셸에 export 된 값으로
+# 포트 — run 은 늘 infra/.env 의 LLM_ROUTER_PORT(기본 8730)다. 사본·update-all 1i·§6 은 infra/.env 만 읽으므로 운영자 셸에 export 된 값으로
 #   띄우면 아무 사본도 가리키지 않는 포트에 라우터가 뜬다 — 환경의 값이 다르면 경고 한 줄을 찍고 infra/.env 로 띄운다.
 #   stop 은 환경의 LLM_ROUTER_PORT 를 먼저 본다 — update-all 이 옛 포트에 남은 라우터를 내릴 때 **그 호출에만** 주는 값이다. 그래서
 #   update-all · update-sites 는 시작할 때 물려받은 LLM_ROUTER_PORT 를 지운다(운영자 셸에 export 된 옛 포트가 남으면 재기동의 stop 이
@@ -35,10 +35,10 @@ _port_ok() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ "${#1}" -le 5 ] && [ 
 if [ "${1:-}" = stop ] && [ -n "${LLM_ROUTER_PORT:-}" ]; then
   PORT="$LLM_ROUTER_PORT"; _FROM="환경변수"
 else
-  PORT="$(envv LLM_ROUTER_PORT "$ENV_FILE" || true)"; PORT="${PORT:-9130}"; _FROM="infra/.env"
+  PORT="$(envv LLM_ROUTER_PORT "$ENV_FILE" || true)"; PORT="${PORT:-8730}"; _FROM="infra/.env"
 fi
 case "$PORT" in
-  ''|*[!0-9]*) echo "✗ LLM_ROUTER_PORT='$PORT'($_FROM) 는 포트 번호가 아니다 — 수만 적는다(기본 9130)" >&2; exit 2 ;;
+  ''|*[!0-9]*) echo "✗ LLM_ROUTER_PORT='$PORT'($_FROM) 는 포트 번호가 아니다 — 수만 적는다(기본 8730)" >&2; exit 2 ;;
 esac
 if ! _port_ok "$PORT"; then
   echo "✗ LLM_ROUTER_PORT=$PORT($_FROM) 는 1~65535 밖이다" >&2; exit 2

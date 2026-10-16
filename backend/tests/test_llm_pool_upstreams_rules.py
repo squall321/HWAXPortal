@@ -79,7 +79,7 @@ CASES: list[tuple[str, object]] = [
     (L("http://10-0-0-1:8000/v1"), ["http://10-0-0-1:8000/v1"]),            # 숫자·하이픈 이름은 이름이다
     (L("http://xn-abc.example/v1"), ["http://xn-abc.example/v1"]),          # 3·4번째가 -- 가 아니다
     (L("http://a--b.example/v1"), ["http://a--b.example/v1"]),
-    (L("http://127.example:9130/v1"), ["http://127.example:9130/v1"]),      # 이름이다 — 루프백 IPv4 가 아니다
+    (L("http://127.example:8730/v1"), ["http://127.example:8730/v1"]),      # 이름이다 — 루프백 IPv4 가 아니다
     (L("http://203.0.113.11/v1"), ["http://203.0.113.11/v1"]),
     (L("https://203.0.113.11:443/v1"), ["https://203.0.113.11:443/v1"]),
     (L("http://203.0.113.11:08000/v1"), ["http://203.0.113.11:08000/v1"]),  # 포트는 숫자 1~5자
@@ -87,8 +87,8 @@ CASES: list[tuple[str, object]] = [
     (L("http://0.0.0.0:8000/v1"), ["http://0.0.0.0:8000/v1"]),              # 라우터 포트가 아니면 같은 박스의 서버다
     (L("http://127.0.0.1:8000/v1"), ["http://127.0.0.1:8000/v1"]),
     (L("http://localhost:8000/v1"), ["http://localhost:8000/v1"]),
-    (L("http://127.0.0.1:9130/v1", "LLM_ROUTER_PORT=9555"), ["http://127.0.0.1:9130/v1"]),
-    (L("http://127.0.0.1:9130/v1", "LLM_ROUTER_PORT=abc"), ["http://127.0.0.1:9130/v1"]),   # 포트를 모르면 고리 검사를 하지 않는다(lib 와 같다)
+    (L("http://127.0.0.1:8730/v1", "LLM_ROUTER_PORT=9555"), ["http://127.0.0.1:8730/v1"]),
+    (L("http://127.0.0.1:8730/v1", "LLM_ROUTER_PORT=abc"), ["http://127.0.0.1:8730/v1"]),   # 포트를 모르면 고리 검사를 하지 않는다(lib 와 같다)
     (L("http://localhost/v1", "LLM_ROUTER_PORT=443"), ["http://localhost/v1"]),
     (L("http://h.example:8000/v1,https://h.example:8000/v1"), ["http://h.example:8000/v1", "https://h.example:8000/v1"]),
     # ── 꺼짐 ──
@@ -109,7 +109,7 @@ CASES: list[tuple[str, object]] = [
     (L("http://[::1]:8000/v1"), BAD), (L("http://[fd00::1]:8000/v1"), BAD),
     (L("http://203.0.113.256:8000/v1"), BAD), (L("http://203.0.113.1377:8000/v1"), BAD), (L("http://198.51.100.300:8000/v1"), BAD),
     (L("http://203.0.113.011:8000/v1"), BAD), (L("http://0203.0.113.11:8000/v1"), BAD),     # 앞 0 — inet_aton 은 8진수로 읽는다
-    (L("http://2130706433:9130/v1"), BAD), (L("http://127.1:9130/v1"), BAD), (L("http://1.2.3/v1"), BAD), (L("http://1.2.3.4.5/v1"), BAD),
+    (L("http://2130706433:8730/v1"), BAD), (L("http://127.1:8730/v1"), BAD), (L("http://1.2.3/v1"), BAD), (L("http://1.2.3.4.5/v1"), BAD),
     (L("http://-bad.example/v1"), BAD), (L("http://bad-.example/v1"), BAD), (L("http://a..example/v1"), BAD),
     (L("http://a_b.example/v1"), BAD), (L("http://a.example.:8000/v1"), BAD),
     (L("http://xn--abc.example/v1"), BAD),                                  # httpx 가 idna 로 풀다 ValueError 를 낸다
@@ -121,9 +121,9 @@ CASES: list[tuple[str, object]] = [
     (L("http://é.example/v1"), BAD), (L("/"), BAD), (L("sk-live-SECRET"), BAD),
     (L(f"{S1},http://203.0.113.256:10000/v1"), BAD),                        # 하나라도 틀리면 줄 전체
     # ── 라우터 자신(고리) ──
-    (L("http://127.0.0.1:9130/v1"), BAD), (L("http://127.255.0.1:9130/v1"), BAD), (L("http://0.0.0.0:9130/v1"), BAD),
-    (L("http://LOCALHOST:9130/v1"), BAD), (L("http://localhost:09130/v1"), BAD), (L("https://127.0.0.1:9130/v1"), BAD),
-    (L("http://localhost:9555/v1", "LLM_ROUTER_PORT=9555"), BAD), (L("http://127.0.0.1:9130/v1", "LLM_ROUTER_PORT=09130"), BAD),
+    (L("http://127.0.0.1:8730/v1"), BAD), (L("http://127.255.0.1:8730/v1"), BAD), (L("http://0.0.0.0:8730/v1"), BAD),
+    (L("http://LOCALHOST:8730/v1"), BAD), (L("http://localhost:08730/v1"), BAD), (L("https://127.0.0.1:8730/v1"), BAD),
+    (L("http://localhost:9555/v1", "LLM_ROUTER_PORT=9555"), BAD), (L("http://127.0.0.1:8730/v1", "LLM_ROUTER_PORT=08730"), BAD),
     (L("http://localhost/v1", "LLM_ROUTER_PORT=80"), BAD), (L("https://localhost/v1", "LLM_ROUTER_PORT=443"), BAD),  # 적지 않은 포트는 스킴 기본
     # ── 같은 서버 두 번 ──
     (L("http://h.example:8000/v1,http://H.EXAMPLE:8000/v1"), BAD), (L("http://h.example/v1,http://h.example:80/v1"), BAD),
@@ -135,7 +135,7 @@ CASES: list[tuple[str, object]] = [
     (f"LLM_UPSTREAMS={S1}\n\u3000LLM_UPSTREAMS={S2}\n", [S1]), (f"LLM_UPSTREAMS={S1}\n\u2003LLM_UPSTREAMS={S2}\n", [S1]),
     (f"LLM_UPSTREAMS={S1}\n\u2028LLM_UPSTREAMS={S2}\n", [S1]),                                  # splitlines 는 U+2028 에서 끊는다
     (f"LLM_UPSTREAMS={S1}\n\x85LLM_UPSTREAMS={S2}\n", [S1]), (f"\u2003LLM_UPSTREAMS={S1}\n", OFF),
-    ("\u3000LLM_ROUTER_PORT=9555\nLLM_UPSTREAMS=http://127.0.0.1:9555/v1\n", ["http://127.0.0.1:9555/v1"]),   # 포트 줄이 활성이 아니면 9130
+    ("\u3000LLM_ROUTER_PORT=9555\nLLM_UPSTREAMS=http://127.0.0.1:9555/v1\n", ["http://127.0.0.1:9555/v1"]),   # 포트 줄이 활성이 아니면 8730
     (f"LLM_UPSTREAMS={S1}\rLLM_UPSTREAMS={S2}\n", BAD),                                         # 홀로 선 \r 은 줄바꿈이 아니다 — 한 줄이다
     (f"OTHER=1\rLLM_UPSTREAMS={S1}\n", OFF), (f"\rLLM_UPSTREAMS={S1}\n", [S1]), (f"LLM_UPSTREAMS={S1}\r#x\n", [S1]),
     ("LLM_UPSTREAMS=http://127.0.0.1:9555/v1\nOTHER=1\rLLM_ROUTER_PORT=9555\n", ["http://127.0.0.1:9555/v1"]),
@@ -220,9 +220,9 @@ def test_정본과_라우터가_표의_모든_줄을_같게_읽고_기대값과�
 #    줄마다 LLM_ROUTER_PORT 의 기대값을 적는다 — 오라클도 틀릴 수 있다(None 은 기대값 없이 일치만) ──
 READER_ROWS: list[tuple[str | bytes, str | None]] = [
     ("X=1\rLLM_ROUTER_PORT=9555\n", ""),             # services.py 의 splitlines() 는 뒤를 활성 줄로 읽었다(health 주소가 :9555 — 검토 LOW 2)
-    ("LLM_ROUTER_PORT=9130\n\u2028LLM_ROUTER_PORT=9555\n", "9130"), ("LLM_ROUTER_PORT=9130\n\x85LLM_ROUTER_PORT=9555\n", "9130"),
-    ("LLM_ROUTER_PORT=9130\n\u3000LLM_ROUTER_PORT=9555\n", "9130"), ("LLM_ROUTER_PORT=9130\n\u2003LLM_ROUTER_PORT=9555\n", "9130"),
-    ("LLM_ROUTER_PORT=9130\n\x0cLLM_ROUTER_PORT=9555\n", "9555"),      # 폼피드는 ASCII 공백이다
+    ("LLM_ROUTER_PORT=8730\n\u2028LLM_ROUTER_PORT=9555\n", "8730"), ("LLM_ROUTER_PORT=8730\n\x85LLM_ROUTER_PORT=9555\n", "8730"),
+    ("LLM_ROUTER_PORT=8730\n\u3000LLM_ROUTER_PORT=9555\n", "8730"), ("LLM_ROUTER_PORT=8730\n\u2003LLM_ROUTER_PORT=9555\n", "8730"),
+    ("LLM_ROUTER_PORT=8730\n\x0cLLM_ROUTER_PORT=9555\n", "9555"),      # 폼피드는 ASCII 공백이다
     ("\x0bexport\x0bLLM_ROUTER_PORT=9555\n", "9555"), ("LLM_ROUTER_PORT=\x0b9555\n", "9555"), ("LLM_ROUTER_PORT=9555\x0b# 주석\n", "9555"),
     ("LLM_ROUTER_PORT=\x0c9555\r\n", "9555"), ("LLM_ROUTER_PORT=9555\u3000\n", "9555\u3000"), ("LLM_ROUTER_PORT=\u00a09555\n", "\u00a09555"),
     ("LLM_ROUTER_PORT=95\x0055\n", "9555"), ("LLM_ROUTER_PORT=9555 \x00\n", "9555 "), ("LLM_ROUTER_PORT=\x00 # c\n", ""),
@@ -298,7 +298,7 @@ def _generated(n: int = 400) -> list[str]:
     """구석을 찌르는 칸 — 스킴·호스트(숫자·점·하이픈·밑줄·대문자·xn--)·포트·경로를 섞는다. 같은 씨앗이라 늘 같은 표다."""
     rnd = random.Random(1015)
     schemes = ["http"] * 4 + ["https"] * 3 + ["HTTP", "Https", "ftp", ""]
-    ports = [""] * 4 + [":1", ":80", ":443", ":8000", ":08000", ":9130", ":65535", ":0", ":65536", ":99999", ":", ":1x"]
+    ports = [""] * 4 + [":1", ":80", ":443", ":8000", ":08000", ":8730", ":65535", ":0", ":65536", ":99999", ":", ":1x"]
     paths = ["/v1"] * 6 + ["/v1/", "/v1//", "", "/", "/v2", "/v1/x", "//v1", "/openai/v1"]
 
     def label() -> str:
@@ -322,7 +322,7 @@ def _generated(n: int = 400) -> list[str]:
             item = f"{item},{rnd.choice([S1, item, item.upper()])}"
         if rnd.random() < 0.1:
             item = f'"{item}"'
-        out.append(L(item, *(["LLM_ROUTER_PORT=" + rnd.choice(["80", "443", "8000", "9130", "x"])] if rnd.random() < 0.3 else [])))
+        out.append(L(item, *(["LLM_ROUTER_PORT=" + rnd.choice(["80", "443", "8000", "8730", "x"])] if rnd.random() < 0.3 else [])))
     return out
 
 

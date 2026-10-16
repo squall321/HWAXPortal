@@ -42,3 +42,6 @@ update-all 의 재기동(대개 1~2분)으로는 메일이 나가지 않게. Gat
 값이 있으면 켜므로 `STATUS_BOARD=0` 은 켜짐이다 — update-all 이 ⚠ 로 알린다. env-sync 는 `STATUS_ALERT_TO` 를 '값을 정해야 한다' 로 재촉하지 않는다
 (비우면 화면만 돈다 — `LLM_UPSTREAMS` 와 같다). `status-board.sh stop` 은 환경의 포트를 먼저 보므로 update-all · update-sites 머리가 물려받은
 `STATUS_BOARD_PORT` 를 버린다(LP-D14 와 같다). 이미지 판은 v5.37.0(태그 + 다이제스트)이고 SIF 는 25MB 다.
+
+**IM-D12 LLM 라우터 포트도 허브 풀 밖으로(2026-10-16).** 상태판이 9100~9999(HEAXHub 앱 포트 풀)을 피해 8740 을 고른 까닭(IM-D7)이 LLM 라우터 9130 에도 그대로 맞는다 — 아직 어디에도 배포하기 전이라 8730 으로 옮겼다(llm-pool LP-D16).
+

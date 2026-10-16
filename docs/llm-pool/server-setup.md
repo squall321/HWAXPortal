@@ -6,7 +6,7 @@
 
 ## 0. 이 판을 받기만 하면 — 아무것도 바뀌지 않는다
 
-`LLM_UPSTREAMS` 를 적지 않은 박스에서 update-all 은 1i 에서 ○ 한 줄(`LLM 서버 풀(라우터)` — `infra/.env 에 LLM_UPSTREAMS 가 없다`)만 남긴다. 라우터는 뜨지 않고 LLM 주소 사본도 그대로다. 이 판을 받는 **첫** update-all 만 1c(env-sync)가 `infra/.env` 끝에 주석 두 줄(`# LLM_UPSTREAMS=   # 선택 — …` · `# LLM_ROUTER_PORT=9130   # 선택 — …`)을 붙이고 '선택 설정' ○ 를 남긴다 — 값을 정하라는 뜻이 아니다(비워 두면 꺼짐). 켜는 것은 아래 1~3절이다.
+`LLM_UPSTREAMS` 를 적지 않은 박스에서 update-all 은 1i 에서 ○ 한 줄(`LLM 서버 풀(라우터)` — `infra/.env 에 LLM_UPSTREAMS 가 없다`)만 남긴다. 라우터는 뜨지 않고 LLM 주소 사본도 그대로다. 이 판을 받는 **첫** update-all 만 1c(env-sync)가 `infra/.env` 끝에 주석 두 줄(`# LLM_UPSTREAMS=   # 선택 — …` · `# LLM_ROUTER_PORT=8730   # 선택 — …`)을 붙이고 '선택 설정' ○ 를 남긴다 — 값을 정하라는 뜻이 아니다(비워 두면 꺼짐). 켜는 것은 아래 1~3절이다.
 
 ## 1. 먼저 — 두 서버가 같은지 본다
 
@@ -33,7 +33,7 @@ LLM_UPSTREAMS=http://<서버1>:<포트>/v1,http://<서버2>:<포트>/v1
 - 쉼표로 나누고 공백을 넣지 않는다(공백이 필요하면 값 전체를 큰따옴표 한 쌍으로 감싼다 — start.sh 가 이 파일을 bash 로 읽는다).
 - 주소마다 소문자 `http`/`https` 로 시작하고 정확히 `/v1` 로 끝난다. 계정(`user@`) · 질의(`?`) · IPv6 · 같은 서버 두 번 · 라우터 자신의 포트는 받지 않는다. 칸 하나는 2,048자까지다. 틀린 칸이 하나라도 있으면 update-all 은 아무것도 바꾸지 않고 ✗ 로 까닭을 말한다.
 - `LLM_BASE_URL` 은 그대로 둔다 — 풀을 끄면 사본이 돌아갈 직접 주소다.
-- 라우터 포트는 기본 9130 이다(`LLM_ROUTER_PORT` 로 바꾼다 — 풀을 켠 채 바꾸면 옛 포트 라우터는 저절로 안 내린다, 6절).
+- 라우터 포트는 기본 8730 이다(`LLM_ROUTER_PORT` 로 바꾼다 — 풀을 켠 채 바꾸면 옛 포트 라우터는 저절로 안 내린다, 6절).
 
 ## 3. update-all
 
@@ -47,7 +47,7 @@ LLM_UPSTREAMS=http://<서버1>:<포트>/v1,http://<서버2>:<포트>/v1
 |---|---|
 | 1i 머리 | `1i) LLM 라우터 (LLM_UPSTREAMS → 라우터 · 사본을 라우터 주소로)` |
 | 라우터 | `✓ 라우터가 답한다 — 서버 2/2 올라옴 · 모델 같음 · 도는 요청 0` |
-| 사본마다 | `✓ <리포>/<파일>  <키>: <옛 주소> → http://127.0.0.1:9130/v1  (백업 …/infra/.state/llm-pool-backups/<리포>/…)` |
+| 사본마다 | `✓ <리포>/<파일>  <키>: <옛 주소> → http://127.0.0.1:8730/v1  (백업 …/infra/.state/llm-pool-backups/<리포>/…)` |
 | 사본 셈 | `· 사본 — 바꿈 N · 이미 그 주소 N · 관리 밖 N · 키 없음 N` |
 | 다시 읽는 자리 | `· agent-server — §4 update-sites 가 …` 처럼 서비스마다 한 줄. PaperIngest 는 ⚠(이번 실행이 다시 읽게 하지 않는다 — 허브 앱은 HEAXHub 의 주소를 받는다) |
 | §6 | `✓ LLM 라우터      서버 2/2 올라옴 · 모델 같음 · 도는 요청 N` |
@@ -59,8 +59,8 @@ LLM_UPSTREAMS=http://<서버1>:<포트>/v1,http://<서버2>:<포트>/v1
 ## 4. 확인
 
 ```bash
-curl -s --noproxy '*' http://127.0.0.1:9130/health | python3 -m json.tool
-curl -s --noproxy '*' http://127.0.0.1:9130/stats  | python3 -m json.tool
+curl -s --noproxy '*' http://127.0.0.1:8730/health | python3 -m json.tool
+curl -s --noproxy '*' http://127.0.0.1:8730/stats  | python3 -m json.tool
 ```
 
 - `/health` — `status` 가 `ok`, `upstreams_up` 이 2, `models.match` 가 `true`. `kept_last_list: true` 면 infra/.env 의 목록이 비었거나 틀려 마지막 목록으로 내고 있다.
@@ -80,7 +80,7 @@ curl -s --noproxy '*' http://127.0.0.1:9130/stats  | python3 -m json.tool
 
 ## 6. 끄기 · 되돌리기
 
-- **끄기** — `infra/.env` 의 `LLM_UPSTREAMS` 줄을 지우고 update-all. 라우터를 가리키는 사본만 `LLM_BASE_URL` 로 돌아가고(1i 머리 `1i) LLM 라우터 — 풀 꺼짐(LLM_UPSTREAMS 없음 → 사본을 직접 주소로)`), 라우터는 §4 뒤에 내린다(`✓ LLM 라우터(:9130)를 내렸다 — 풀 꺼짐, 사본은 직접 주소다`). 미룬 재기동이 있거나 아직 라우터를 가리키는 사본이 있으면 ○ `LLM 라우터 내리기 미룸` — 다음 update-all 이 다시 본다. 한 서버에 일부러 묶어 둔 사본은 `LLM_BASE_URL` 로 돌아간다(묶음은 되살리지 않는다).
+- **끄기** — `infra/.env` 의 `LLM_UPSTREAMS` 줄을 지우고 update-all. 라우터를 가리키는 사본만 `LLM_BASE_URL` 로 돌아가고(1i 머리 `1i) LLM 라우터 — 풀 꺼짐(LLM_UPSTREAMS 없음 → 사본을 직접 주소로)`), 라우터는 §4 뒤에 내린다(`✓ LLM 라우터(:8730)를 내렸다 — 풀 꺼짐, 사본은 직접 주소다`). 미룬 재기동이 있거나 아직 라우터를 가리키는 사본이 있으면 ○ `LLM 라우터 내리기 미룸` — 다음 update-all 이 다시 본다. 한 서버에 일부러 묶어 둔 사본은 `LLM_BASE_URL` 로 돌아간다(묶음은 되살리지 않는다).
 - **파일째 되돌리기** — 바꾸기 전 사본은 `infra/.state/llm-pool-backups/<리포>/<파일>.<UTC>` 에 있다(600). `cp -p <백업> <원래 파일>` 로 덮고 그 서비스를 다시 띄운다.
 - **포트를 바꿨다** — 사본은 새 포트로 옮겨지지만 옛 포트의 라우터는 저절로 안 내린다. update-all 이 찍는 `LLM_ROUTER_PORT=<옛 포트> ./infra/scripts/llm-router.sh stop` 을 돌린다.
 

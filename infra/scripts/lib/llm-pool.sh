@@ -13,7 +13,7 @@
 #   hwax_llm_pool_upstreams <infra.env>     LLM_UPSTREAMS 를 검사해 서버 주소를 한 줄에 하나 찍는다(끝 `/` 는 뗀다). 쉼표·공백으로 나눈다.
 #       0 = 켜짐 · 1 = 없다(꺼짐) · 2 = 모양이 틀렸다 — 사유 한 줄을 찍는다. **하나라도 틀리면 줄 전체를 버린다**(반만 맞는 목록으로
 #       라우터를 띄우거나 사본을 바꾸지 않게 — 부르는 쪽은 아무것도 바꾸지 않는다).
-#   hwax_llm_router_url <infra.env>         라우터 주소 http://127.0.0.1:<LLM_ROUTER_PORT, 기본 9130>/v1 · 2 = 포트가 틀렸다(사유를 찍는다).
+#   hwax_llm_router_url <infra.env>         라우터 주소 http://127.0.0.1:<LLM_ROUTER_PORT, 기본 8730>/v1 · 2 = 포트가 틀렸다(사유를 찍는다).
 #   hwax_llm_router_health_url <infra.env>  라우터 /health 주소(같은 포트).
 #   hwax_llm_router_health <health url>     라우터 /health 를 읽어 "<status> <올라온 서버> <전체> <도는 요청> <모델 같음>" 을 찍는다(모르는 칸은 ?).
 #       0 = 라우터가 답했다(down 의 503 도 답이다) · 2 = 답이 없다 · JSON 이 아니다 · 라우터의 답이 아니다(upstreams_total 이 없다 —
@@ -82,10 +82,10 @@ _hwax_llm_raw() {  # $1=파일 $2=키 — 같은 줄의 원문(주석·양끝 �
     | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '\r'
 }
 
-_hwax_llm_port() {  # $1=infra.env → 라우터 포트(기본 9130) · 2 = 틀렸다(사유)
+_hwax_llm_port() {  # $1=infra.env → 라우터 포트(기본 8730) · 2 = 틀렸다(사유)
   local p
   p="$(hwax_llm_envv "$1" LLM_ROUTER_PORT)"
-  if [ -z "$p" ]; then printf '9130\n'; return 0; fi
+  if [ -z "$p" ]; then printf '8730\n'; return 0; fi
   if [[ "$p" =~ ^[0-9]{1,5}$ ]] && [ "$((10#$p))" -ge 1 ] && [ "$((10#$p))" -le 65535 ]; then
     printf '%s\n' "$((10#$p))"; return 0
   fi
@@ -119,7 +119,7 @@ _hwax_llm_ups_label() {  # $1=칸 → 사유에 적을 '스킴://호스트'(못 
   printf '%s://%s' "$s" "$h"
 }
 
-hwax_llm_pool_upstreams() {  # $1=infra.env [$2=라우터 포트 — 주지 않으면 infra/.env 의 LLM_ROUTER_PORT(기본 9130)]
+hwax_llm_pool_upstreams() {  # $1=infra.env [$2=라우터 포트 — 주지 않으면 infra/.env 의 LLM_ROUTER_PORT(기본 8730)]
   # LLM_UPSTREAMS 규칙의 **정본**이다 — 라우터(infra/llm-router/llm_router.py parse_upstreams)가 같은 표로 이 함수와 대조된다
   # (backend/tests/test_llm_pool_upstreams_rules.py — 이 함수가 오라클이다. 규칙을 바꾸면 두 곳을 함께 바꾸고 표에 줄을 더한다).
   #   모양  값(주석·양끝 공백을 벗긴 원문)이 공백·따옴표 없이 쓰였거나, 큰따옴표 한 쌍 또는 작은따옴표 한 쌍으로 통째 감쌌고 안에 따옴표가

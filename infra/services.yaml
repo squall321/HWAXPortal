@@ -74,7 +74,7 @@ services:
     fp: [infra/llm-router, infra/scripts/llm-router.sh, infra/apptainer/portal.sif]
     start: ./infra/scripts/llm-router.sh run
     stop: ./infra/scripts/llm-router.sh stop
-    health: http://127.0.0.1:${LLM_ROUTER_PORT:-9130}/health
+    health: http://127.0.0.1:${LLM_ROUTER_PORT:-8730}/health
     tier: 5
 
   # ── tier 10: federated sub-services (proxied via routes.env) ──

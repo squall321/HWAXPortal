@@ -380,8 +380,8 @@ def test_서버_목록은_정본_규칙으로_읽고_틀린_칸이_하나라도_
 
 def test_라우터_자신을_가리키는_칸은_띄우는_스크립트가_넘긴_포트로_거른다(monkeypatch):
     monkeypatch.delenv("LLM_ROUTER_PORT", raising=False)
-    assert R.router_port({}) == 9130 and R.router_port({"LLM_ROUTER_PORT": "09555"}) == 9555 and R.router_port({"LLM_ROUTER_PORT": "x"}) is None
-    assert R.build_config({"LLM_UPSTREAMS": "http://127.0.0.1:9130/v1"}).upstreams == ()
+    assert R.router_port({}) == 8730 and R.router_port({"LLM_ROUTER_PORT": "09555"}) == 9555 and R.router_port({"LLM_ROUTER_PORT": "x"}) is None
+    assert R.build_config({"LLM_UPSTREAMS": "http://127.0.0.1:8730/v1"}).upstreams == ()
     assert R.build_config({"LLM_UPSTREAMS": "http://localhost:9555/v1", "LLM_ROUTER_PORT": "9555"}).upstreams == ()
     monkeypatch.setenv("LLM_ROUTER_PORT", "9777")               # llm-router.sh run 이 --env 로 넘기는 실제 포트가 파일보다 먼저다
     assert R.build_config({"LLM_UPSTREAMS": "http://0.0.0.0:9777/v1", "LLM_ROUTER_PORT": "9555"}).upstreams == ()
@@ -809,7 +809,7 @@ def test_run_은_리포를_바인드하고_루프백에만_듣고_키를_argv_�
         "--host", "127.0.0.1", "--port", "9131", "--no-access-log"]
     assert "PYTHONDONTWRITEBYTECODE=1" in argv and not any("sk-not-in-argv" in x for x in argv)
     (lay / "infra/.env").write_text("export LLM_UPSTREAMS='http://203.0.113.5:8000/v1'\n", encoding="utf-8")
-    assert _launch(lay, stub, out, "run").returncode == 0 and "9130" in out.read_text().splitlines(), "기본 포트 9130"
+    assert _launch(lay, stub, out, "run").returncode == 0 and "8730" in out.read_text().splitlines(), "기본 포트 8730"
 
 
 def _free_port() -> int:
@@ -867,7 +867,7 @@ def test_매니페스트_항목은_LLM_UPSTREAMS_있는_박스에서만_라우�
         "dir": ".", "if_env": "LLM_UPSTREAMS", "update": False, "fp_git": False,
         "fp": ["infra/llm-router", "infra/scripts/llm-router.sh", "infra/apptainer/portal.sif"],   # 라우터가 도는 이미지 — §2 가 갈아 끼운다
         "start": "./infra/scripts/llm-router.sh run", "stop": "./infra/scripts/llm-router.sh stop",
-        "health": "http://127.0.0.1:${LLM_ROUTER_PORT:-9130}/health", "tier": 5}
+        "health": "http://127.0.0.1:${LLM_ROUTER_PORT:-8730}/health", "tier": 5}
     (tmp_path / "infra").mkdir()
     monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path)
     monkeypatch.delenv("LLM_UPSTREAMS", raising=False)
@@ -875,7 +875,7 @@ def test_매니페스트_항목은_LLM_UPSTREAMS_있는_박스에서만_라우�
     assert m.enabled_here(entry) is False and "if_env=LLM_UPSTREAMS" in m.skip_reason(entry)
     assert m.health_url(entry) == "http://127.0.0.1:9555/health", "포트는 infra/.env 를 따른다(기동 대기·상태가 같은 주소를 본다)"
     (tmp_path / "infra/.env").write_text("LLM_UPSTREAMS=http://203.0.113.5:8000/v1\n", encoding="utf-8")
-    assert m.enabled_here(entry) is True and m.health_url(entry) == "http://127.0.0.1:9130/health"
+    assert m.enabled_here(entry) is True and m.health_url(entry) == "http://127.0.0.1:8730/health"
     # 지문 — 라우터가 도는 이미지(portal.sif)는 들고 포털 루트 .env(env-sync 가 덧붙인다)는 들지 않는다(검토 배선 M2 · 라우터 L2)
     (tmp_path / "infra/apptainer").mkdir()
     sif = tmp_path / "infra/apptainer/portal.sif"

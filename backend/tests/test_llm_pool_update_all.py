@@ -8,7 +8,7 @@ update-all 의 구획을 **원문 그대로** 떼어 임시 포털 리포에서 
 ⚠ 실물을 건드리면 안 된다 — 상대경로 하네스가 실 apptainer 로 dev nginx 를 내린 사고가 있었다(2026-09-28).
   · 경로는 전부 절대경로다. 하네스는 임시 디렉터리에서 돌고, 부르는 스크립트가 임시 리포의 대역인지 먼저 확인한다(아니면 97).
   · HOME 을 임시 디렉터리로 바꾼다 — lib 는 형제 리포를 ~/claude 에서도 찾는다(실물 .env 를 고치지 않게). 시험마다 LLM_ROUTER_PORT 를
-    적는다(실물 9130 을 두드리지 않게).
+    적는다(실물 8730 을 두드리지 않게).
 """
 import http.server
 import json
@@ -114,7 +114,7 @@ class Box:
             p.chmod(0o755)
 
     def env(self, text: str):
-        assert "LLM_ROUTER_PORT=" in text, "시험마다 라우터 포트를 적는다 — 실물 9130 을 두드리지 않게"
+        assert "LLM_ROUTER_PORT=" in text, "시험마다 라우터 포트를 적는다 — 실물 8730 을 두드리지 않게"
         (self.repo / "infra/.env").write_text(text, encoding="utf-8")
 
     def copy(self, which: str) -> Path:
@@ -163,7 +163,7 @@ class Box:
             body += _block_retire()
         if s6:
             body += _block_s6()
-        for real in ("/home/", "127.0.0.1:9130"):
+        for real in ("/home/", "127.0.0.1:8730"):
             assert real not in body, f"돌리는 구획에 {real} 가 박혀 있다 — 하네스가 실물을 건드린다"
         script = "\n".join([
             "set -uo pipefail", f'cd "{self.tmp}"',
@@ -473,7 +473,7 @@ def _recorded(box: Box, url: str):
 
 
 def test_풀과_포트_줄을_함께_지우면_기록한_옛_포트의_사본을_되돌리고_그_라우터를_내린다(box, old_router):
-    """**M4 회귀** — 사용자 포트 A 로 켠 풀을 줄 둘 다 지워 끄면 포트가 9130 으로 돌아가, 옛 포트 A 의 사본을 못 찾고(○ '직접 주소를 본다'
+    """**M4 회귀** — 사용자 포트 A 로 켠 풀을 줄 둘 다 지워 끄면 포트가 8730 으로 돌아가, 옛 포트 A 의 사본을 못 찾고(○ '직접 주소를 본다'
     — 거짓) 라우터도 안 내렸다. 재부팅 뒤 그 사본들은 죽은 포트를 보는데 검사는 전부 초록이었다. 기록한 주소까지 관리 값이다."""
     _recorded(box, old_router["url"])
     box.env(f"LLM_BASE_URL={DIRECT}\nLLM_ROUTER_PORT={_dead_port()}\n")   # 지운 자리 — 기본 포트(아무도 안 듣는다)의 대역

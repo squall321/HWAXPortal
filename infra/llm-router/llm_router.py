@@ -53,7 +53,7 @@ BIG_BODY = 1 << 20        # 이보다 큰 본문은 JSON 해석을 이벤트 루
 METRICS_KEEP_FAILS = 3    # 지표 일시 실패가 이만큼 연달면 마지막 지표를 버리고 보낸 수로만 잰다
 PROBE_TIMEOUTS_DOWN = 3   # 탐침(지표 · 모델)이 연달아 이만큼 읽기 한도를 넘기면 다시 답할 때까지 '올라옴' 이 아니다(검토 2라운드 LOW 1)
 STARTUP_PROBE_S = 2.0     # 기동 때 첫 지표·모델 대조를 함께 기다리는 한도 — 넘으면 '모름' 으로 두고 듣기 시작한다(검토 2라운드 M-C)
-DEFAULT_ROUTER_PORT = 9130
+DEFAULT_ROUTER_PORT = 8730
 
 # 손잡이 → (기본값, 형, 최솟값). 수가 아니거나 최솟값보다 작으면 기본값으로 두고 읽을 때마다 한 줄 알린다.
 # STICKY_SLACK — 붙인 서버의 부하가 가장 한가한 서버보다 이만큼 이상 많으면 떨어진다. 같은 앞부분 요청이 한꺼번에 몰리면 두 서버의 부하
@@ -229,7 +229,7 @@ def parse_upstreams(raw: str | None, router_port: int | None = None) -> tuple[li
 
 
 def router_port(vals: dict[str, str]) -> int | None:
-    """라우터가 듣는 포트 — 띄우는 스크립트가 넘긴 환경 LLM_ROUTER_PORT(실제로 듣는 포트), 없으면 infra/.env, 없으면 9130.
+    """라우터가 듣는 포트 — 띄우는 스크립트가 넘긴 환경 LLM_ROUTER_PORT(실제로 듣는 포트), 없으면 infra/.env, 없으면 8730.
     lib _hwax_llm_port 와 같은 모양(숫자 1~5자 · 1~65535)이 아니면 None — 고리 검사를 하지 않는다(lib 와 같다)."""
     raw = os.environ.get("LLM_ROUTER_PORT") or vals.get("LLM_ROUTER_PORT") or str(DEFAULT_ROUTER_PORT)
     return int(raw) if re.fullmatch(r"[0-9]{1,5}", raw) and 1 <= int(raw) <= 65535 else None
