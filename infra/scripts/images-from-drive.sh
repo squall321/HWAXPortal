@@ -67,6 +67,11 @@ if [ -f "$STAGE/gatus.sif" ]; then
   _rc=0; hwax_install_if_changed "$STAGE/gatus.sif" "$APPT_DIR/gatus.sif" || _rc=$?
   case $_rc in 0) echo "  ✓ staged gatus.sif → $APPT_DIR" ;; 1) echo "  · gatus.sif 같음 — 그대로" ;; *) echo "✗ gatus.sif 설치 실패 — 위 사유"; exit 1 ;; esac
 fi
+# GuideLLM(LLM 풀 용량 측정 — docs/llm-pool/capacity.md) SIF — 있을 때만(searxng 와 같다). 측정할 때만 쓴다(띄워 두는 인스턴스가 없다).
+if [ -f "$STAGE/guidellm.sif" ]; then
+  _rc=0; hwax_install_if_changed "$STAGE/guidellm.sif" "$APPT_DIR/guidellm.sif" || _rc=$?
+  case $_rc in 0) echo "  ✓ staged guidellm.sif → $APPT_DIR" ;; 1) echo "  · guidellm.sif 같음 — 그대로" ;; *) echo "✗ guidellm.sif 설치 실패 — 위 사유"; exit 1 ;; esac
+fi
 
 if [ -f "$STAGE/frontend-dist.tar.gz" ]; then
   # 마지막으로 푼 tar 의 사본과 같으면 다시 풀지 않는다(수천 파일 rewrite 생략) — 다르면 풀고 사본을 갱신

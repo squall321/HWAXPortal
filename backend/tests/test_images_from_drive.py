@@ -121,3 +121,20 @@ def test_상태판_SIF_는_Drive_에_있을_때만_받고_같으면_그대로_�
     assert (repo / "infra/apptainer/gatus.sif").read_text() == "gatus-v5"
     r = run()
     assert r.returncode == 0 and "· gatus.sif 같음" in r.stdout, r.stdout + r.stderr
+
+
+def test_GuideLLM_SIF_가_Drive_에_있으면_받고_없으면_건너뛴다(box):
+    """LLM 풀 용량 측정(docs/llm-pool/capacity.md) — 올리는 쪽(images-to-drive)만 고치고 여기를 빼먹으면 cae00 에 이미지가 안 간다."""
+    repo, remote, run = box
+    _publish(remote, sif="v1", dist="first")
+    r0 = run()
+    assert r0.returncode == 0 and "guidellm" not in r0.stdout and not (repo / "infra/apptainer/guidellm.sif").exists()
+    latest = remote / "latest"
+    (latest / "guidellm.sif").write_text("guidellm-0.8.0")
+    with open(latest / "SHA256SUMS", "a") as f:
+        f.write(f"{hashlib.sha256(b'guidellm-0.8.0').hexdigest()}  guidellm.sif\n")
+    r1 = run()
+    assert r1.returncode == 0 and "✓ staged guidellm.sif" in r1.stdout, r1.stdout + r1.stderr
+    assert (repo / "infra/apptainer/guidellm.sif").read_text() == "guidellm-0.8.0"
+    r2 = run()
+    assert r2.returncode == 0 and "· guidellm.sif 같음" in r2.stdout

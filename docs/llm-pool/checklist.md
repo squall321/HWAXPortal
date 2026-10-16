@@ -8,3 +8,5 @@
 - [x] L-4 절차서의 동시 수 세 줄(자동 아님 — LP-D7) — `server-setup.md` 5절
 - [x] L-5 반대 검토 · 변이 검사 — 1라운드(라우터 H1·M2·L12 · 배선 H1·M5·L6 → LP-D13, 변이 36/36 · 29/29) · 2라운드(M4·L7 → LP-D14, 변이 18/18 · 28/28 · 대조기 1,939건 중 갈림 1 → 2,048자 상한으로 0) · 3라운드(풀 끈 박스, LOW 5 → LP-D15, 변이 5/5)
 - [x] L-6 절차서(cae00) · 업데이트 이력 · push · Drive(포털) — 10-15 `server-setup.md` · 이력(기술) · 포털 main `c46cb3c` push(전체 2,718 통과). Drive 는 필요 없다(라우터는 포털 리포와 git 으로 가고 portal.sif·frontend 는 그대로다)
+- [x] L-7 용량 측정 도구(개선 제안 3 — LP-D17) — 길이 분포 추출기 `llm-lengths.py`(본문 없이 수만) · GuideLLM 0.8.0 이미지 `build-guidellm.sh`(Drive 로 나른다) · 실행 `llm-capacity.sh`(직결 대 측정용 라우터 · 붙임 문턱 2·0) · 계산 `llm-capacity.py`(표 · 세 손잡이 권장) · 절차서 `capacity.md` · 시험 · 변이 · dev vLLM 스모크 — 10-16 작업 트리 `llm-capacity`(아직 main 아님)
+- [ ] L-8 용량 측정 실측(사용자 · cae00 · 심의 없는 때) — `capacity.md` 2~8절, 결과는 8절 표에, 세 손잡이는 `server-setup.md` 5절. 그 전에 dev 에서 `build-guidellm.sh` · `images-to-drive.sh`

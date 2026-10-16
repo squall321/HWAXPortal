@@ -228,7 +228,7 @@ def test_install_if_changed_removes_its_temp_file_when_interrupted(tmp_path, sig
     assert p.returncode == -sig and b"rc=" not in out, (p.returncode, out)
 
 
-@pytest.mark.parametrize("name", ["portal.sif", "nginx.sif", "searxng-fixed.sif"])
+@pytest.mark.parametrize("name", ["portal.sif", "nginx.sif", "searxng-fixed.sif", "guidellm.sif"])
 def test_install_if_changed_temp_name_is_ignored_by_git_where_images_land(tmp_path, name):
     """**2라운드 LOW 3 회귀** — 임시 이름 `.portal.sif.XXXXXX` 는 `*.sif` 에 안 걸려, SIGKILL 로 남은 반쪽 이미지를 deploy-all 의
     `git stash push -u` 가 리포(.git) 로 쓸어 갔다. 이름이 대상의 확장자로 끝나야 대상을 무시하는 규칙이 임시 파일도 무시한다 —
