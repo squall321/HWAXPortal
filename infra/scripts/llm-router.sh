@@ -72,8 +72,10 @@ case "${1:-}" in
     A="${A:-apptainer}"
     command -v "$A" >/dev/null 2>&1 || { echo "✗ apptainer 를 찾지 못했다($A) — ./infra/scripts/bootstrap.sh" >&2; exit 1; }
     # PYTHONDONTWRITEBYTECODE — 지문(services.yaml fp: infra/llm-router)은 __pycache__ 를 보지 않지만 리포에 바이트코드를 남기지 않는다.
+    # PYTHONNOUSERSITE — apptainer 는 $HOME 을 붙이므로 ~/.local 의 site-packages 가 이미지의 httpx·fastapi 를 가릴 수 있다(--cleanenv 로는
+    #   못 막는다). 라우터는 이미지에 든 것으로만 돈다.
     exec "$A" exec --cleanenv --bind "$ROOT:/workspace" \
-      --env PYTHONDONTWRITEBYTECODE=1 --env PYTHONUNBUFFERED=1 --env PYTHONUTF8=1 --env "LLM_ROUTER_PORT=$PORT" \
+      --env PYTHONDONTWRITEBYTECODE=1 --env PYTHONNOUSERSITE=1 --env PYTHONUNBUFFERED=1 --env PYTHONUTF8=1 --env "LLM_ROUTER_PORT=$PORT" \
       "$SIF" python3 -m uvicorn --app-dir /workspace/infra/llm-router llm_router:app \
       --host 127.0.0.1 --port "$PORT" --no-access-log
     ;;

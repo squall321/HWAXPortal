@@ -808,6 +808,7 @@ def test_run_은_리포를_바인드하고_루프백에만_듣고_키를_argv_�
         "python3", "-m", "uvicorn", "--app-dir", "/workspace/infra/llm-router", "llm_router:app",
         "--host", "127.0.0.1", "--port", "9131", "--no-access-log"]
     assert "PYTHONDONTWRITEBYTECODE=1" in argv and not any("sk-not-in-argv" in x for x in argv)
+    assert "PYTHONNOUSERSITE=1" in argv, "~/.local 의 패키지가 이미지 것을 가리지 않게"
     (lay / "infra/.env").write_text("export LLM_UPSTREAMS='http://203.0.113.5:8000/v1'\n", encoding="utf-8")
     assert _launch(lay, stub, out, "run").returncode == 0 and "8730" in out.read_text().splitlines(), "기본 포트 8730"
 
