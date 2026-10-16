@@ -441,7 +441,9 @@ M2 의 보류(user · credential · ctx_too_small · contract · llm_misconfigur
 | 쟁점 잡 멈춤(재기동) | `stage.state` 가 `paused` · `stage.error` 가 `restart: 앱이 재기동해 도는 패널을 닫았다 — …` · 길잡이 `chain_paused` | 리스크 앱이 다시 뜨며 도는 쟁점 패널을 닫았다. 그 쟁점은 차감 없이 대기로 돌아왔고, M4 전에는 저절로 재개하지 않는다 | 길잡이에 `repersist_pending` 이 있으면 `risk_repersist_panel(panel_id='…')` 이 먼저다. 그 뒤 `risk_job_action(job_id='<stage.job_id>', action='resume')` |
 | 쟁점 잡 실패 | `stage.state` 가 `failed` | 쟁점 패널이 잇달아 셋 실패했다 | 남은 대기 쟁점은 '미토의'(`untried_cap`)가 되고 사슬은 종합으로 넘어간다. 에이전트 서버 로그를 dev 에 보낸다 |
 | 알림 `issue_yield_low` | `stage.advice` · 길잡이 `notes` | 최근 쟁점 패널 다섯이 전부 기각 · 판정 못 함이다(잡은 돈다) | 계속할지 사용자가 정한다. 멈추려면 `risk_job_action(action='pause')` |
-| `external_worker` | — | 이 판에 없다(순수 Claude 길은 M3 뒤 — 포털 D-48) | — |
+| 보류 `external_worker` | `review.job.hold_code` · 길잡이 `blocked` | Claude 잡(8절)인데 잡 주인의 워크플로 `hwax-risk-claude` 가 과제를 집지 않았거나 답하지 않았다(엔진의 `EXTERNAL_LLM_WAIT_S` · `EXTERNAL_LLM_ANSWER_S` 를 넘겼다 — 차감 없음). 시계로 저절로 재개하지 않는다 | 잡 주인이 자기 Claude Code 에서 자기 PAT 로 워크플로를 다시 돌린 뒤 `risk_job_action(job_id='…', action='resume')` |
+| 보류 `external_config` | 같다 | Claude 길의 설정 문제다 — 에이전트 서버가 그 길을 열지 않았거나(`EXTERNAL_LLM_ENABLED` · 값이 틀려 닫힘) 포털 중계가 `llm` · `consent_external` · 신원 칸을 엔진에 넘기지 않았다(무엇인지는 `message`) | 8-1 대로 엔진을 고친 뒤 `resume`, 또는 잡을 취소하고 `llm` 없이(GLM) 다시 만든다 |
+| 표시 `llm_mismatch` | 잡 행의 `llm_mismatch` · 보고서 · 품질 글의 판단 LLM 표지 | Claude 잡인데 외부 응답자의 답이 아니었던 호출 · 패널 수다(그 몫은 GLM 이 답했다) | 8-1 의 확인으로 엔진의 길이 열려 있는지 본다. 그 몫을 Claude 판단으로 보고하지 않는다(보고서가 따로 센다) |
 
 검토 잡과 종합 잡은 앱 · 에이전트 서버가 다시 떠도 차감 없이 저절로 이어 돈다(끊긴 호출 · 요약은 다시 낸다). 사람이 이어야 하는 것은 쟁점 잡뿐이다.
 
@@ -578,6 +580,10 @@ risk_get_report(target_key='diff:<diff id>', part='domains', page=1)    # 영역
 | 에이전트 서버 `.env` | `CARD_REVIEW_CONCURRENCY` | 8 | 카드 대조 동시 호출 |
 | 에이전트 서버 `.env` | `CARD_REVIEW_CONCURRENCY_WITH_DELIB` | 위의 절반 | 사람이 띄운 심의가 돌 때(위보다 크면 위로 묶는다) |
 | 에이전트 서버 `.env` | `CARD_REVIEW_MAX_TOKENS` | 0 | 카드 대조만의 출력 상한(0 = `DELIB_MAX_TOKENS`). 바꾸면 카드 대조 판이 오른다 — 도는 검토 잡이 없을 때 |
+| 에이전트 서버 `.env` | `EXTERNAL_LLM_ENABLED` | 0 | Claude 길(8절) 켜기 — `1` · `true` · `yes` · `on`. 아래 값 하나라도 못 읽으면 길이 닫힌 채 뜬다 |
+| 에이전트 서버 `.env` | `EXTERNAL_LLM_CTX_TOKENS` · `EXTERNAL_LLM_MAX_TOKENS` | 200000 · 32000 | Claude 의 창과 출력 상한(토큰) — 창은 사람들이 쓰는 Claude 창에서 답 에이전트의 기본 문맥과 답을 뺀 값보다 크게 잡지 않는다 |
+| 에이전트 서버 `.env` | `EXTERNAL_LLM_WAIT_S` · `EXTERNAL_LLM_ANSWER_S` | 300 · 1200 | 과제가 집히기를 기다리는 한도 · 집은 뒤 답을 다 내는 한도(초). 2 × 둘의 합(3000)이 심의 LLM 논리 호출 1회의 최악(3608)보다 작아야 길이 열린다 |
+| 에이전트 서버 `.env` | `EXTERNAL_LLM_MAX_INFLIGHT` | 8 | 한 사람이 동시에 낼 수 있는 Claude 카드 대조 호출 수(GLM 관문 자리를 쓰지 않는 대신의 상한) |
 | update-all 을 띄우는 셸 | `HWAX_DRAIN_TTL_S` | 1800 | 깃발 수명(초) — § 머리마다 다시 늘린다. 21600 에서 자른다 |
 | update-all 을 띄우는 셸 | `HWAX_DRAIN_WAIT_S` | 300 | 도는 카드 대조를 기다리는 한도(0 = 기다리지 않는다) |
 | update-all 을 띄우는 셸 | `HWAX_DRAIN_GRACE_S` · `HWAX_DRAIN_MAX_S` | 1800 · 46800 | 재기동을 미룬 실행의 끝 — 심의가 끝난 뒤 새 패널을 멈춰 두는 창 · 그 깃발의 최대 수명 |
@@ -585,3 +591,49 @@ risk_get_report(target_key='diff:<diff id>', part='domains', page=1)    # 영역
 `AGENT_RESTART_FORCE=1` 이면 update-all 은 도는 카드 대조를 기다리지 않는다(심의 보호를 건너뛰는 것과 같은 손잡이).
 
 리스크 앱의 손잡이(`$D/knobs.env` — 워커 수 · 거르기 · 이중 판정 · 근거 꾸러미 실호출 · 동의 문턱과 상한 · 쟁점 상한 · 요약 한도)는 2-5 의 표다. 고친 뒤에는 쟁점 패널이 돌지 않을 때 앱만 다시 띄운다.
+
+## 8. 리스크 심사를 Claude 로 — 켜는 법(기본 꺼짐)
+
+> 사용자 결정(10-15) — 기본 꺼짐이고 잡마다 반출 동의를 받는다. 이 리포에서는 실제 Claude 로 돌려 보지 않았다(가짜 응답자 · 가짜 런타임 시험만). 켜기 전에 이 박스의 자료를 Claude 로 보내도 되는지 먼저 허락을 받는다. 근거는 `docs/risk-claude-engine/`(PLAN · context-notes X-D1~X-D9). 대조한 판 — 에이전트 서버 `53082a4` · 리스크 앱 `54c4385` · 포털 `e4ebb2f`.
+
+검토 잡을 판단 LLM `claude` 와 반출 동의로 만들면 그 잡의 판단 호출(카드 대조 · 쟁점 패널 · 종합 요약)이 GLM 대신 잡 주인의 과제 줄에 선다. 잡 주인이 자기 Claude Code 에서 워크플로 `hwax-risk-claude` 를 돌리면 워크플로가 그 과제를 집어 답한다. 프롬프트 · 파서 · 보충 되묻기 · 원장은 GLM 잡과 같고, GLM 잡은 이 절과 상관없이 그대로 돈다.
+
+### 8-1. 엔진(에이전트 서버) — 운영자
+
+1. 도는 심의와 카드 대조가 없을 때 `../HWAXAgentServer/.env` 에 한 줄을 더한다. 나머지 손잡이(창 · 출력 상한 · 시간 한도 · 한 사람당 동시 호출)는 기본값으로 둔다 — 목록과 뜻은 env 킷 `infra/env-kits/agent-server.env` 의 '외부 응답자' 구획과 7절 표다.
+
+   ```
+   EXTERNAL_LLM_ENABLED=1
+   ```
+
+   창(`EXTERNAL_LLM_CTX_TOKENS`, 기본 200,000)은 사람들이 쓰는 Claude 의 창보다 작게 잡는다. 답 에이전트(Claude Code 서브에이전트)는 이 크기의 프롬프트 위에 제 기본 문맥(시스템 · CLAUDE.md · 도구 목록)과 답(`EXTERNAL_LLM_MAX_TOKENS`, 기본 32,000)을 함께 담는다.
+2. 재기동한다 — `cd ../HWAXAgentServer && ./start.sh -d`. 도는 심의가 있으면 재기동하지 않고 종료코드 3 으로 끝난다(끝난 뒤 다시).
+3. 확인 — 아래가 `True 3000.0` 이고 기동 로그(`agent-server.log`)에 `⛔` 줄이 없다. 값을 하나라도 못 읽으면 길은 닫힌 채 뜨고 `⛔` 한 줄이 무엇이 틀렸는지 말한다.
+
+   ```bash
+   curl -s --noproxy '*' http://127.0.0.1:9009/health | python3 -c 'import json,sys; h=json.load(sys.stdin); print("external_llm" in h.get("capabilities", []), h.get("external_llm", {}).get("call_worst_s"))'
+   ```
+
+4. 게이트웨이에 과제 도구 셋이 보이는지 본다. 게이트웨이는 백엔드 도구 목록을 1분마다 다시 보므로 1~2분 뒤 셋 다 `hwax-deliberation` 이다. 소스가 아니라 게이트웨이 목록으로 판정한다(CLAUDE.md MCP 절).
+
+   ```bash
+   curl -s --noproxy '*' http://127.0.0.1:9110/tools-map | python3 -c 'import json,sys; m=json.load(sys.stdin)["map"]; print({t: m.get(t) for t in ("review_task_next", "review_task_read", "review_task_submit")})'
+   ```
+
+리스크 앱에는 따로 켤 것이 없다. 엔진 `/health` 의 `capabilities` 에 `external_llm` 이 있을 때만 `llm='claude'` 잡을 받고, 없으면 409 `external_llm_unavailable` 로 거절한다.
+
+끄기 — 그 줄을 지우고(또는 `0`) 같은 때 재기동한다. 도는 Claude 잡은 다음 판단 호출에서 보류 `external_config` 로 멈춘다(차감 없음 — 5-5).
+
+### 8-2. 잡 주인 — 자기 Claude Code 에서
+
+1. Claude Code 가 HWAX 게이트웨이 MCP 에 **자기 PAT** 로 붙어 있어야 한다(포털 토큰 페이지의 등록 — `docs/ste-cae00/`). 과제는 잡 주인의 줄에만 서고 신원은 게이트웨이가 넘긴 PAT 의 주인이다 — 남의 PAT 로 붙은 Claude Code 에는 내 과제가 안 보인다.
+2. 잡을 만든다 — `risk_next_step` 이 고른 `risk_start_job(mode='reviews', …)` 에 `llm='claude'` 를 더한다. 반출되는 것(이 잡의 지식카드 · 설계 변경 원문과, 사슬이 이어 도는 쟁점 패널 · 종합 요약의 입력 — 이 대상 전체의 등록부 행 · 쟁점 · 요약, 다른 사람의 검토 결과도 든다)을 사용자에게 보이고 동의를 받은 뒤에만 `consent_external=true`(JSON 참 — 글자 `'true'` · `1` 은 받지 않는다)를 싣는다. 사슬이 잇는 쟁점 · 종합 잡은 같은 선택과 동의를 물려받는다.
+3. 워크플로를 돌린다 — 파일은 포털 리포의 `infra/pipeline/hwax-risk-claude.js` 하나다. Claude Code 에서 Workflow 를 그 파일의 `scriptPath` 로 부른다(이름으로는 부르지 못한다 — X-D8 ⑧). args 는 `{targetKey: 'diff:…'}`(여럿이면 `targetKeys`)이고, 일꾼 수 `concurrency`(기본 4 · 최대 8)는 그 PC 의 에이전트 동시 수(min(16, CPU − 2)) 아래로 둔다 — 넘으면 긴 폴링 중인 집기 에이전트가 자리를 쥐어 답이 한 폴링 창(최대 150초)만큼 늦는다(X-D8 ⑨).
+   - 워크플로는 맡은 대상의 과제만 답하고, 빈 집기가 이어지면 멈춘다(다른 일꾼이 과제를 쓰는 동안은 기다린다). 끝에 답 · 건너뜀 · 실패를 종류별로 알린다.
+   - 한 쪽(20,000자)이 드문 한자 · BMP 밖 글자로 Claude Code 의 MCP 결과 상한(`MAX_MCP_OUTPUT_TOKENS`, 기본 25,000토큰)을 넘으면 결과가 파일로 저장되고 답 프롬프트가 그 파일에서 읽는다. 되풀이되면 그 셸의 `MAX_MCP_OUTPUT_TOKENS` 를 올린다.
+4. 워크플로가 멈추거나 PC 가 꺼지면 잡은 기다림 한도(300초) · 답 한도(1,200초) 뒤 보류 `external_worker` 로 멈춘다 — 차감은 없다. 워크플로를 다시 돌리고 `risk_job_action(job_id='…', action='resume')`(5-5).
+
+### 8-3. 아직 없는 것
+
+- **워크플로 파일을 사용자 PC 로 나르는 길.** 지금은 리포 사본에서 파일 하나를 받아 두어야 한다. 켜기로 정하면 토큰 페이지의 MCP 등록과 함께 내려 주는 길을 붙인다(사용자 결정).
+- **웹 화면의 판단 LLM 선택.** 리스크 앱 웹 화면에는 아직 이 선택과 동의 칸이 없다 — Claude 잡은 Claude(MCP)에서 만든다.

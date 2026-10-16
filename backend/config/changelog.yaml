@@ -81,6 +81,7 @@ entries:
     items:
       - "에이전트 서버에 외부 응답자 — EXTERNAL_LLM_ENABLED=1 인 박스에서만 카드 대조(llm=external)와 심의(delib_opts.llm=external)의 판단 호출이 주인별 과제 줄로 가고, Claude Code 워크플로가 MCP review_task_next · review_task_read · review_task_submit 으로 집어 답한다(엔진의 프롬프트 · 파서 · 보충 되묻기는 그대로). 실제 Claude 로 돌리는 시험은 하지 않았다(사용자 결정)."
       - "안전 장치 — 반출 동의(consent_external: true) 없이는 과제를 만들지 않는다 · 집기마다 lease(늦은 제출이 다른 집기에 섞이지 않는다) · GLM 관문 자리를 쓰지 않고 주인마다 상한 · 비우기 중 거절 · 이 박스의 GLM 챗·심의는 과제 도구와 외부 선택을 쓸 수 없다 · 값이 틀리면 기능이 닫힌 채 뜬다. 스위치를 끈 박스는 main 과 바이트째 같다(도구 목록 · /health · /drain · 계약 · 심의 장면 대조)."
+      - "켜는 법과 손잡이 — 포털 docs/risk-review-redesign/server-setup-m3.md 8절(엔진 한 줄 · 확인 명령 · 게이트웨이 도구 판정 · 잡 주인의 Claude Code), 에이전트 서버 env 킷의 '외부 응답자' 구획과 README 시간 한도 표(기다림 300초 · 답 1,200초 — 과제 하나의 최악 3,000초가 심의 LLM 논리 호출 1회의 최악보다 작아야 길이 열린다)."
   - date: 2026-10-15
     title: "**StepForge** — CAD 개정을 줄로 잇고, 개정을 건너 같은 파트의 이력을 봅니다"
     tag: 연결

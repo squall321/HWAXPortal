@@ -138,8 +138,27 @@ def test_옛_값이_남는다는_말이_값을_적는_자리에_있다():
 
 
 # ── 엔진과의 계약 — 킷에 적은 이름·기본값이 엔진의 것과 같다 ──────────────────────────────────────
+def _external_default(knob: str) -> str | None:
+    """외부 응답자(Claude 길) 손잡이의 기본값 — external_llm.py 는 `_env_int(…)` 식이 아니라 이름 붙은 상수로 둔다
+    (`WAIT_ENV, ANSWER_ENV = "EXTERNAL_LLM_WAIT_S", …` · `_num(env, WAIT_ENV, WAIT_DEFAULT, …)` · `WAIT_DEFAULT = 300.0`). 그 셋을 이어 읽는다."""
+    f = ENGINE / "external_llm.py"
+    if not f.exists():
+        return None
+    src = f.read_text(encoding="utf-8")
+    names = {}
+    for lhs, rhs in re.findall(r"^([A-Z_]+_ENV(?:\s*,\s*[A-Z_]+_ENV)*)\s*=\s*(\"[^\n]+)$", src, re.M):
+        names.update(zip(re.findall(r'"([A-Z0-9_]+)"', rhs), re.split(r"\s*,\s*", lhs)))
+    if knob not in names:
+        return None
+    m = re.search(rf"_num\(env, {names[knob]}, ([A-Z_]+)", src)
+    d = m and re.search(rf"^{m.group(1)} = ([0-9_.]+)", src, re.M)
+    return d.group(1).replace("_", "") if d else None
+
+
 def _engine_default(knob: str) -> str | None:
     """엔진 소스가 그 손잡이에 주는 기본값(문자열). 손잡이를 모르면 None."""
+    if knob.startswith("EXTERNAL_LLM_"):
+        return _external_default(knob)
     pats = (rf'_env_(?:int|float)\(\s*"{knob}"\s*,\s*([0-9.]+)\s*\)', rf'environ\.get\(\s*"{knob}"\s*,\s*"([0-9.]+)"\s*\)',
             rf'\$\{{{knob}:-([0-9.]+)\}}')
     for name in ("app.py", "deliberation.py", "thinking.py", "delib_jobs.py", "mcp_server.py", "start.sh"):
@@ -196,6 +215,7 @@ def test_카드_대조_구획의_값이_엔진_기본값과_같다():
     if not ENGINE.exists():
         pytest.skip(f"형제 리포 없음: {ENGINE}")
     block = KIT[KIT.index("# --- 카드 대조(리스크 심사"):]
+    block = block[:block.find("\n# --- ", 1) + 1 or None]   # 다음 구획(외부 응답자) 앞까지 — 뒤에 구획이 없으면 파일 끝
     kit = dict(re.findall(r"^# ([A-Z][A-Z0-9_]*)=(\S+)$", block, re.M))
     gate = (ENGINE / "review_gate.py").read_text(encoding="utf-8")
     cr = (ENGINE / "card_review.py").read_text(encoding="utf-8")
@@ -216,6 +236,32 @@ def test_카드_대조_구획의_값이_엔진_기본값과_같다():
         assert float(kit[name]) == float(v), f"{name}: 엔진 {v} · 킷 {kit[name]}"
     assert 'MAX_TOKENS_ENV = "CARD_REVIEW_MAX_TOKENS"' in cr and '"CARD_REVIEW_CONCURRENCY_WITH_DELIB"' in gate
 
+def _external_block() -> dict[str, str]:
+    block = KIT[KIT.index("# --- 외부 응답자(리스크 심사 Claude 길)"):]
+    nxt = block.find("\n# --- ", 1)
+    return dict(re.findall(r"^# ([A-Z][A-Z0-9_]*)=(\S+)$", block if nxt < 0 else block[:nxt + 1], re.M))
+
+
+def test_외부_응답자_구획의_값이_엔진_기본값과_같고_엔진_손잡이가_빠짐없다():
+    """Claude 길 손잡이 여섯 — 시간 둘은 시간 한도 구획(위 시험들이 본다), 나머지 넷은 이 구획이다. 엔진 README 의 External responder 표가
+    그 길의 손잡이 목록이다 — 엔진에 생겼는데 킷에 없으면 킷을 보고 켜는 사람은 그 손잡이를 모른다."""
+    if not ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {ENGINE}")
+    ext = _external_block()
+    assert ext.pop("EXTERNAL_LLM_ENABLED") == "0", "킷은 '기본 꺼짐' 이라고 적는다"
+    assert 'ENABLED_ENV = "EXTERNAL_LLM_ENABLED"' in (ENGINE / "external_llm.py").read_text(encoding="utf-8")
+    assert sorted(ext) == ["EXTERNAL_LLM_CTX_TOKENS", "EXTERNAL_LLM_MAX_INFLIGHT", "EXTERNAL_LLM_MAX_TOKENS"], sorted(ext)
+    for name, v in ext.items():
+        got = _engine_default(name)
+        assert got is not None and float(got) == float(v), f"{name}: 엔진 {got} · 킷 {v}"
+    text = (ENGINE / "README.md").read_text(encoding="utf-8")
+    sec = text[text.index("\n### External responder"):]
+    sec = sec[:re.search(r"\n#{2,3} ", sec[1:]).start() + 1]
+    names = set(re.findall(r"^\| `(EXTERNAL_LLM_[A-Z0-9_]*)` \|", sec, re.M))
+    assert len(names) >= 6, names
+    assert names <= set(ext) | {"EXTERNAL_LLM_ENABLED"} | set(_knobs()), f"킷에 없는 손잡이 — {sorted(names - set(ext) - set(_knobs()))}"
+
+
 # ── 층 — 킷의 수치로 안쪽 < 바깥이 성립한다 ───────────────────────────────────────────────────
 def test_킷의_수치로_안쪽_한도가_바깥보다_작다():
     """한 값만 고치면 순서가 뒤집힌다. 포털 릴레이의 침묵 한도는 heartbeat 가 꺼진(또는 없는 옛) 엔진에서도 LLM 논리 호출 1회의
@@ -230,3 +276,5 @@ def test_킷의_수치로_안쪽_한도가_바깥보다_작다():
     assert attempts * k["DELIB_TIMEOUT_MAX_S"] + 8 < relay_idle, "요청 상한까지 청한 호출 1회도 그 안에 든다"
     assert k["DELIB_HEARTBEAT_S"] < k["DELIB_TIMEOUT_S"]
     assert k["KNOWLEDGE_TIMEOUT_S"] < k["MCP_CALL_TIMEOUT_S"], "지식카드 한도는 도구 호출 기한 안에서 먼저 걸려 폴백으로 넘어간다"
+    # Claude 길 — 엔진은 과제 하나의 최악이 논리 호출 1회의 최악보다 작지 않으면 그 길을 닫은 채 뜬다(킷 값 그대로 적어도 열려야 한다)
+    assert 2 * k["EXTERNAL_LLM_WAIT_S"] + 2 * k["EXTERNAL_LLM_ANSWER_S"] < attempts * k["DELIB_TIMEOUT_S"] + 8
