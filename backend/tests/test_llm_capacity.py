@@ -405,7 +405,11 @@ def lay(tmp_path):
     lengths.write_text(json.dumps(_lengths()), encoding="utf-8")
     log = tmp_path / "stub.jsonl"
 
+    dead = f"http://127.0.0.1:{_free_port()}/health"
+
     def run(*args, timeout=180):
+        # 에이전트 서버 주소를 주지 않은 시험도 이 박스에 떠 있는 진짜 :9009 를 묻지 않게 닫힌 포트를 앞에 둔다(뒤의 같은 인자가 이긴다)
+        args = ("--agent-health", dead, *args)
         env = {"PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin", "HOME": str(tmp_path), "APPTAINER": str(stub),
                "STUB_LOG": str(log), "TMPDIR": str(tmp_path), "PYTHONDONTWRITEBYTECODE": "1"}
         return subprocess.run(["bash", str(repo / "infra/scripts/llm-capacity.sh"), *args], capture_output=True, text=True,
@@ -415,6 +419,14 @@ def lay(tmp_path):
         return [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
 
     return {"repo": repo, "run": run, "calls": calls, "lengths": lengths, "prod": prod, "tmp": tmp_path}
+
+
+def _free_urls(text: str) -> str:
+    """시험 속 서버 주소는 닫힌 포트다 — 변이로 스크립트가 끝까지 가도 이 박스에 떠 있는 서비스(:8001 AIDataHub 같은)를 부르지 않게."""
+    for tok in ("FREE1", "FREE2"):
+        if tok in text:
+            text = text.replace(tok, str(_free_port()))
+    return text
 
 
 @pytest.mark.parametrize("args, word", [
@@ -431,14 +443,15 @@ def lay(tmp_path):
     (["--lengths", "L", "--max-seconds", "0"], "--max-seconds"),
     (["--lengths", "L", "--bogus"], "모르는 인자"),
     (["--lengths"], "값이 없다"),
-    (["--lengths", "L", "--upstreams", "http://10.0.0.1:8000/v1?key=x"], "질의"),
+    (["--lengths", "L", "--upstreams", "http://203.0.113.5:8000/v1?key=x"], "질의"),
     (["--lengths", "L", "--upstreams", "http://127.0.0.1:PROD/v1"], "라우터 자신"),
-    (["--lengths", "L", "--upstreams", "http://127.0.0.1:8001/v1,http://127.0.0.1:8001/v1"], "두 번"),
-    (["--lengths", "L", "--upstreams", "http://127.0.0.1:8001/v1", "--direct", "nope"], "--direct"),
+    (["--lengths", "L", "--upstreams", "http://127.0.0.1:FREE1/v1,http://127.0.0.1:FREE1/v1"], "두 번"),
+    (["--lengths", "L", "--upstreams", "http://127.0.0.1:FREE1/v1", "--direct", "nope"], "--direct"),
     (["--lengths", "L"], "잴 서버가 없다"),
 ])
 def test_스크립트는_틀린_인자로_아무것도_부르지_않는다(lay, args, word):
-    args = [a.replace("PROD", str(lay["prod"])) if "PROD" in a else (str(lay["lengths"]) if a == "L" else a) for a in args]
+    args = [_free_urls(a.replace("PROD", str(lay["prod"]))) if "PROD" in a or "FREE" in a else (str(lay["lengths"]) if a == "L" else a)
+            for a in args]
     r = lay["run"](*args)
     assert r.returncode == 2 and word in r.stderr, (args, r.returncode, r.stdout, r.stderr)
     assert lay["calls"]() == [], "apptainer 를 불렀다"
@@ -446,9 +459,10 @@ def test_스크립트는_틀린_인자로_아무것도_부르지_않는다(lay, 
 
 
 def test_dry_run_은_계획만_찍고_아무것도_부르지_않는다(lay):
-    r = lay["run"]("--lengths", str(lay["lengths"]), "--upstreams", "http://127.0.0.1:8001/v1,http://127.0.0.1:8002/v1", "--dry-run")
+    ups = _free_urls("http://127.0.0.1:FREE1/v1,http://127.0.0.1:FREE2/v1")
+    r = lay["run"]("--lengths", str(lay["lengths"]), "--upstreams", ups, "--dry-run")
     assert r.returncode == 0, r.stderr
-    assert "변형 — direct router-slack2 router-slack0" in r.stdout and "직결 대상 http://127.0.0.1:8001/v1" in r.stdout
+    assert "변형 — direct router-slack2 router-slack0" in r.stdout and f"직결 대상 {ups.split(',')[0]}" in r.stdout
     assert "최대 212건 × 변형 3" in r.stdout and "LLM_API_KEY 를 환경으로만" in r.stdout and KEY not in r.stdout + r.stderr
     assert lay["calls"]() == [] and not (lay["repo"] / "infra/.state").exists()
     assert not [p for p in lay["tmp"].iterdir() if p.name.startswith("tmp.")], "임시 디렉터리를 남겼다"
@@ -457,14 +471,14 @@ def test_dry_run_은_계획만_찍고_아무것도_부르지_않는다(lay):
 def test_도는_심의가_있으면_재지_않는다(lay):
     agent = _FakeAgent(delib=1)
     try:
-        r = lay["run"]("--lengths", str(lay["lengths"]), "--upstreams", "http://127.0.0.1:8001/v1", "--agent-health", agent.url,
+        r = lay["run"]("--lengths", str(lay["lengths"]), "--upstreams", _free_urls("http://127.0.0.1:FREE1/v1"), "--agent-health", agent.url,
                        "--out", str(lay["tmp"] / "res"))
     finally:
         agent.close()
     assert r.returncode == 3 and "심의 1건이 돈다" in r.stderr and "--force" in r.stderr
     assert lay["calls"]() == [] and not (lay["tmp"] / "res").exists(), "재지 않았으면 결과 디렉터리도 만들지 않는다"
     dead = f"http://127.0.0.1:{_free_port()}/health"
-    r2 = lay["run"]("--lengths", str(lay["lengths"]), "--upstreams", "http://127.0.0.1:8001/v1", "--agent-health", dead,
+    r2 = lay["run"]("--lengths", str(lay["lengths"]), "--upstreams", _free_urls("http://127.0.0.1:FREE1/v1"), "--agent-health", dead,
                     "--out", str(lay["tmp"] / "res2"))
     assert r2.returncode == 3 and "모른다" in r2.stderr and lay["calls"]() == []
 
