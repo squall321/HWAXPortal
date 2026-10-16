@@ -25,7 +25,7 @@ update-all 이 AIDataHub(`e036812` 이후)를 받으면 `start_api.sh` 가 이�
    질의와 섞어 `search_in_page` 의 의미 순위를 오류 없이 틀리게 낸다(EM-D15). 새 판은 HEAX 앱 SIF 로 Drive 를 거쳐 온다(update-all §2).
 
    ```bash
-   apptainer exec ~/Projects/HEAXHub/var/sifs/web-research-mcp.sif grep -c WRV2 /app/app/ledger.py   # 1 이면 새 판, 0 이면 멈춘다
+   apptainer exec ~/Projects/HEAXHub/var/sifs/web-research-mcp.sif grep -c WRV2 /app/app/ledger.py   # 1 이상이면 새 판, 0 이면 멈춘다
    ```
 
 ## 2. 모델 받기 — 전환 전에
