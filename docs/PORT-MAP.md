@@ -30,6 +30,20 @@
 **5432 도 위험하다** — 시스템 postgres 의 첫 클러스터 기본값이다. MXWhitePaper 가 쓰고 있으나,
 시스템 postgres 가 도는 박스에 배치하려면 먼저 확인해야 한다.
 
+## 포털 스택의 서비스 포트
+
+포털 리포가 띄우거나 바로 기대는 리스너다(박스마다 같은 기본값 — 바꾸면 이 표와 그 설정을 함께 고친다).
+
+| 포트 | 무엇 | 듣는 곳 | 설정 |
+|---|---|---|---|
+| 8723 | 포털 백엔드(SPA 도 낸다) | 루프백 | `infra/.env` `PORTAL_PORT` |
+| 8088 | 포털 nginx(정문) | 모든 인터페이스 | `infra/.env` `HTTP_PORT` |
+| 9009 | 에이전트 서버(챗·심의 SSE) | 루프백 | `HWAXAgentServer/.env` |
+| 9110 | MCP 게이트웨이 | 루프백 | `HWAXMcpGateway` |
+| 9130 | **LLM 라우터**(풀을 켠 박스만 — `LLM_UPSTREAMS`) | 루프백 | `infra/.env` `LLM_ROUTER_PORT` |
+
+**9120 은 쓰지 않는다** — 게이트웨이 시험의 knox-bridge 예시가 쓰는 포트라 LLM 라우터를 9130 으로 옮겼다(docs/llm-pool LP-D5 무렵).
+
 ## DynaForge 는 두 값을 함께 바꿔야 한다
 
 포트를 옮길 때 `KooRemapper/platform/.env` 의 두 값이 반드시 같아야 한다. 한쪽만 바꾸면
