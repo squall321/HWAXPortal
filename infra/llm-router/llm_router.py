@@ -23,6 +23,8 @@
         (vLLM 이 생성을 멈춘다 — 버려진 생성이 GPU 를 잡지 않게). 요청 머리는 손님 것만 간다(httpx 기본 머리를 덧붙이지 않는다).
   시간  연결 한도 하나뿐이다. 읽기·쓰기 한도는 부르는 쪽의 것이다 — 시간 한도 사슬에 층을 끼우지 않는다.
   키    손님의 Authorization 을 그대로 넘기고 끼워 넣지 않는다(LP-D9). LLM_API_KEY 는 라우터 자신의 /v1/models 대조에만 쓴다.
+  표지  넘긴 응답에는 그 요청을 받은 서버의 호스트:포트를 응답 머리 x-hwax-llm-upstream 으로 단다(위 서버가 보낸 같은 이름의 머리는
+        버린다) — 에이전트 서버의 호출 추적(call_trace.py)이 '어느 서버' 로 적는다. 라우터 자신이 낸 답(502 · 503)에는 없다.
   TLS   위 서버는 http 이거나 공인 인증서의 https 여야 한다 — 사설 CA 를 줄 자리가 없다(trust_env=False · --cleanenv). 인증서 오류는 따로 알린다.
   로그  요청마다 남기지 않는다 — 기동 · 다시 읽기 · 서버 오르내림 · 지표·모델 상태가 바뀔 때 · 연결 실패만. 키와 본문은 어디에도 찍지 않고,
         틀린 LLM_UPSTREAMS 칸은 스킴과 호스트만 찍는다(질의·계정에 키가 들 수 있다).
@@ -72,7 +74,8 @@ _LIMITS = httpx.Limits(max_connections=None, max_keepalive_connections=0)
 _HOP = frozenset({b"connection", b"keep-alive", b"proxy-authenticate", b"proxy-authorization", b"te", b"trailer", b"trailers",
                   b"transfer-encoding", b"upgrade"})
 _REQ_DROP = _HOP | {b"host", b"content-length", b"expect"}    # 길이·호스트는 httpx 가 위 서버에 맞게 다시 단다
-_RESP_DROP = _HOP | {b"date", b"server"}                      # uvicorn 이 자기 것을 단다 — 두 벌이 되지 않게
+UPSTREAM_HEADER = b"x-hwax-llm-upstream"                      # 받은 서버의 호스트:포트(모듈 머리 '표지')
+_RESP_DROP = _HOP | {b"date", b"server", UPSTREAM_HEADER}     # uvicorn 이 자기 것을 단다 — 두 벌이 되지 않게. 표지는 이 라우터가 단다
 _TARGET_CHECK = httpx.URL("http://127.0.0.1/")                # 요청 대상이 httpx 주소 조각이 되는지 서버와 상관없이 본다
 
 
@@ -406,6 +409,7 @@ class Upstream:
     def __init__(self, url: str) -> None:
         self.url = url
         self.base = httpx.URL(url)                       # 요청 주소는 이것에서 조각으로 만든다(손님의 대상 글자를 이어 붙이지 않는다)
+        self.label = self.base.netloc                    # 응답 머리 표지(호스트:포트 — parse_upstreams 가 계정·IPv6 를 받지 않는다)
         self.metrics_url = self.base.copy_with(raw_path=b"/metrics")
         self.models_url = self.base.copy_with(raw_path=b"/v1/models")
         self.metrics: dict[str, float | None] | None = None
@@ -1006,7 +1010,7 @@ class Router:
         broken: BaseException | None = None
         try:
             await send({"type": "http.response.start", "status": resp.status_code,
-                        "headers": _filter_headers(resp.headers.raw, _RESP_DROP)})
+                        "headers": [*_filter_headers(resp.headers.raw, _RESP_DROP), (UPSTREAM_HEADER, u.label)]})
             async for chunk in resp.aiter_raw():       # 받은 바이트 그대로(압축도 풀지 않는다) — 오는 대로 흘린다
                 if chunk:
                     await send({"type": "http.response.body", "body": chunk, "more_body": True})

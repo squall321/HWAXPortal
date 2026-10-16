@@ -112,6 +112,7 @@ class _Fake:
         self.metrics_mode = "ok"
         self.models_mode = "ok"
         self.hang_s = 5.0
+        self.headers_out: list = []         # json 답에 덧붙이는 머리(라우터가 같은 이름을 갈아 끼우는지 보는 시험)
         self.metrics_hits = 0
         self.hits: list[dict] = []          # 채팅·그 밖의 넘어온 요청
         self.model_hits: list[dict] = []    # /v1/models 요청의 머리
@@ -172,7 +173,7 @@ class _Fake:
         if mode == "404model":
             await _send_json(send, 404, {"error": {"message": "The model does not exist."}, "served_by": self.name})
         elif mode == "json":
-            await _send_json(send, 200, {"served_by": self.name})
+            await _send_json(send, 200, {"served_by": self.name}, self.headers_out)
         elif mode == "500":
             await _send_json(send, 500, {"error": {"message": "boom"}, "served_by": self.name})
         elif mode == "slow":
@@ -591,6 +592,27 @@ def test_SSE_는_모으지_않고_오는_대로_흘린다(lab):
     assert joined.count(b"data: ") == 4 and joined.endswith(b"data: [DONE]\n\n")
     first = next(t for t, c in arrived if b'"i": 0' in c)
     assert arrived[-1][0] - first >= 0.6, "첫 조각이 끝보다 0.8초 앞서 왔어야 한다 — 모아서 한 번에 보내면 같은 순간에 온다"
+
+
+def test_넘긴_응답에는_받은_서버의_호스트_포트를_머리로_단다(lab):
+    """에이전트 서버의 호출 추적(docs/improvement-1015/call-trace.md)이 라우터를 지난 호출의 '어느 서버' 를 이 머리로 적는다. 위 서버가 같은
+    이름의 머리를 보내도 하나만 간다(이 라우터가 단 것). 위 서버의 오류 응답·SSE 에도 단다. 라우터 자신이 낸 답(모두 연결 실패 502)에는 없다."""
+    a, b = lab.fake("A", running=0), lab.fake("B", running=5)
+    r = lab.router([a, b], LLM_ROUTER_PREFIX_CHARS=0)
+    want = [httpx.URL(a.base).netloc.decode()]
+    a.headers_out = [(b"x-hwax-llm-upstream", b"forged:1")]
+    resp = r.chat("x")
+    assert resp.json()["served_by"] == "A" and resp.headers.get_list("x-hwax-llm-upstream") == want, resp.headers
+    a.mode = "500"
+    resp = r.chat("x")
+    assert resp.status_code == 500 and resp.headers.get_list("x-hwax-llm-upstream") == want
+    a.mode = "sse"
+    with r.http.stream("POST", "/v1/chat/completions", json={"model": "glm", "stream": True, "messages": []}) as resp:
+        assert resp.headers.get_list("x-hwax-llm-upstream") == want
+        resp.read()
+    r2 = lab.router([f"http://127.0.0.1:{_free_port()}/v1"])
+    resp = r2.chat("x")
+    assert resp.status_code == 502 and "x-hwax-llm-upstream" not in resp.headers, resp.headers
 
 
 def _raw_post(port: int, body: bytes) -> socket.socket:
