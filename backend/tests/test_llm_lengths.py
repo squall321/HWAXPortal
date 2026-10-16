@@ -198,6 +198,17 @@ def test_추출기의_수(tmp_path, sources):
     assert dr["result_chars"]["min"] == 12
 
 
+def test_추출기는_표가_없는_원장의_까닭을_오류로만_말한다(tmp_path):
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE rr_jobs(id TEXT)")
+    con.close()
+    r, out = _extract_cli(tmp_path, db, tmp_path / "없음", tmp_path / "없음2")
+    assert r.returncode == 0 and "no such table: rr_review_calls" in r.stderr
+    res = json.loads(out.read_text(encoding="utf-8"))
+    assert res["sources"]["card_review"]["unreadable"] is True and res["card_review"] == {}
+
+
 def test_추출기는_없는_출처를_말하고_덮지_않는다(tmp_path):
     r, out = _extract_cli(tmp_path, tmp_path / "없음.db", tmp_path / "없음", tmp_path / "없음2")
     assert r.returncode == 0, r.stderr

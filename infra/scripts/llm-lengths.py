@@ -147,6 +147,14 @@ def _in_flight(rows: list) -> tuple[list, list]:
     return calls, experts
 
 
+def _unreadable(src: dict, exc: Exception) -> tuple[dict, dict]:
+    """원장을 못 읽었다 — 까닭은 표준 오류에만(SQLite 의 말 — 표·문법 이름이지 원장의 글이 아니다). 표가 없으면 M2 전의 원장이고,
+    문법 오류(DENSE_RANK)면 SQLite 가 3.25 보다 옛것이다."""
+    print(f"[lengths] ⚠ 카드 대조 원장을 읽지 못했다 — {type(exc).__name__}: {exc}", file=sys.stderr)
+    src["unreadable"] = True
+    return src, {}
+
+
 def card_review(db: Path) -> tuple[dict, dict]:
     """(출처 표, 분포) — 원장이 없거나 표가 없으면 분포는 비고 출처 표가 까닭의 칸을 든다."""
     src = {"found": False, "rows": 0, "rows_with_usage": 0, "multi_attempt_rows": 0, "llm_calls": 0, "other_kind_rows": 0}
@@ -154,14 +162,12 @@ def card_review(db: Path) -> tuple[dict, dict]:
         return src, {}
     try:
         con = sqlite3.connect(f"{db.as_uri()}?mode=ro", uri=True)
-    except sqlite3.Error:
-        src["unreadable"] = True
-        return src, {}
+    except sqlite3.Error as exc:
+        return _unreadable(src, exc)
     try:
         rows = con.execute(_CALLS_SQL).fetchall()
-    except sqlite3.Error:
-        src["unreadable"] = True
-        return src, {}
+    except sqlite3.Error as exc:
+        return _unreadable(src, exc)
     finally:
         con.close()
     src["found"] = True
