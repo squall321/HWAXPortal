@@ -123,7 +123,9 @@ if want koorm; then
       k=0
       for pair in "platform/frontend/dist:koorm-frontend-dist.tar.gz" "platform/backend/bin:koorm-bin.tar.gz"; do
         src="${pair%%:*}"; obj="${pair##*:}"
-        newest="$(find "$D/$src" -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"
+        # BUILD_INFO.txt 는 tar 에 들지 않는다 — KooRemapper 의 dist-to-drive.sh 가 tar 를 만든 **뒤에** 게시한 박스의 bin/ 에
+        # 내려놓아(--exclude=bin/BUILD_INFO.txt) 늘 tar 보다 새것이다. 넣고 재면 게시 직후마다 '올려야 한다' 가 뜬다(10-16 실측).
+        newest="$(find "$D/$src" -type f ! -name BUILD_INFO.txt -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"
         t="$(rclone lsl "$R/latest/$obj" 2>/dev/null | awk '{print $2" "$3}')"
         [ -n "$newest" ] && [ -n "$t" ] || continue
         e="$(date -d "$t" +%s 2>/dev/null || echo 0)"
