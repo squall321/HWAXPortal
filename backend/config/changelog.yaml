@@ -22,6 +22,12 @@
 
 entries:
   - date: 2026-10-16
+    title: "**LLM 풀 용량 측정 도구 — GuideLLM**(기술, 측정은 운영자가 cae00 에서)"
+    tag: 기술
+    items:
+      - "카드 대조 동시 수 세 손잡이(에이전트 서버 관문 CARD_REVIEW_CONCURRENCY · 리스크 앱 워커 HWAXRISK_REVIEW_CONCURRENCY · 포털 중계 CARD_REVIEW_MAX_STREAMS)를 정할 데이터를 재는 도구를 더했습니다. 리스크 앱 원장의 카드 대조 호출 길이(본문 없이 수만 — infra/scripts/llm-lengths.py)로 GuideLLM 합성 부하를 만들어 서버 하나 직결과 측정용 라우터 경유(붙임 문턱 2 · 0)를 동시 수 단계마다 재고, 표와 세 손잡이 권장값을 냅니다(infra/scripts/llm-capacity.sh — 운영 라우터 · infra/.env 는 건드리지 않습니다)."
+      - "GuideLLM 0.8.0 측정 이미지(infra/scripts/build-guidellm.sh — 판 고정 · GLM-5.2 토크나이저를 구워 인터넷 없이 돈다, 약 440MB)를 dev 에서 굽고 images-to-drive · images-from-drive 가 다른 이미지와 함께 나릅니다. 키는 환경으로만 넘기고 명령줄 · 결과에 남지 않습니다. 측정은 GPU 를 차지하므로 심의 없는 때 docs/llm-pool/capacity.md 대로 돌립니다."
+  - date: 2026-10-16
     title: "**리스크 심사 Claude 길 — 워크플로 hwax-risk-claude**(기술, 기본 꺼짐)"
     tag: 기술
     items:
