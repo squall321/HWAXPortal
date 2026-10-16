@@ -52,8 +52,8 @@ if want portal; then
     # python-docx 가 없어 워드 내보내기가 500 이었다).
     # searxng-fixed.sif 도 본다. images-to-drive 가 latest/ 를 sync(미러)하므로 스테이징에서
     # 빠지면 조용히 삭제된다 — 실제로 한 번 그렇게 사라졌고(2026-08-19), 이 검사가 그 파일을
-    # 안 보고 있어서 "✓ 일치" 로 보였다.
-    for _sif in portal nginx searxng-fixed; do
+    # 안 보고 있어서 "✓ 일치" 로 보였다. gatus.sif(상시 상태판)도 같은 까닭으로 본다.
+    for _sif in portal nginx searxng-fixed gatus; do
       _l="$SELF_REPO/infra/apptainer/${_sif}.sif"
       [ -f "$_l" ] || _l="$HOME/serviceApptainers/${_sif}.sif"   # dev 는 여기에 굽는다
       [ -f "$_l" ] || continue

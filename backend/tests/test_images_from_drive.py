@@ -103,3 +103,21 @@ def test_설치에_실패하면_사유를_찍고_멈춘다(box):
     if os.geteuid() == 0:
         pytest.skip("root 는 권한 없이도 쓴다")
     assert r.returncode != 0 and "설치 실패" in (r.stdout + r.stderr)
+
+
+def test_상태판_SIF_는_Drive_에_있을_때만_받고_같으면_그대로_둔다(box):
+    """images-to-drive 가 latest/ 를 미러(sync)하므로 받는 쪽도 목록에 있어야 운영 박스에 닿는다(docs/improvement-1015/status-board.md).
+    없는 박스(아직 굽지 않았다)에서는 조용히 넘어가고, 있으면 이름 바꾸기로 갈아 끼운다(도는 상태판 밑의 squashfs 를 덮지 않는다)."""
+    repo, remote, run = box
+    _publish(remote, sif="v1", dist="first")
+    r = run()
+    assert r.returncode == 0 and "gatus.sif" not in r.stdout and not (repo / "infra/apptainer/gatus.sif").exists(), r.stdout + r.stderr
+    latest = remote / "latest"
+    (latest / "gatus.sif").write_text("gatus-v5")
+    with open(latest / "SHA256SUMS", "a") as f:
+        f.write(f"{hashlib.sha256(b'gatus-v5').hexdigest()}  gatus.sif\n")
+    r = run()
+    assert r.returncode == 0 and "✓ staged gatus.sif" in r.stdout, r.stdout + r.stderr
+    assert (repo / "infra/apptainer/gatus.sif").read_text() == "gatus-v5"
+    r = run()
+    assert r.returncode == 0 and "· gatus.sif 같음" in r.stdout, r.stdout + r.stderr
