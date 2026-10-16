@@ -515,7 +515,7 @@ def _region(start: str, end: str) -> str:
 
 
 def _block_5b() -> str:
-    return _region("# ── 5b) 상시 상태판(Gatus)", "# ── 6) 헬스게이트")
+    return _region("# ── 5b) 상시 상태판(Gatus)", "# ── 5c) 호출 추적(Phoenix)")      # 5b 다음은 5c(호출 추적)다 — test_call_trace 가 본다
 
 
 class Box:

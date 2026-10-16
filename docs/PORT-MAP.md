@@ -42,6 +42,7 @@
 | 9110 | MCP 게이트웨이 | 루프백 | `HWAXMcpGateway` |
 | 8730 | **LLM 라우터**(풀을 켠 박스만 — `LLM_UPSTREAMS`) | 루프백 | `infra/.env` `LLM_ROUTER_PORT` |
 | 8740 | **상시 상태판**(Gatus — 켠 박스만, `STATUS_BOARD`) | 루프백 | `infra/.env` `STATUS_BOARD_PORT` |
+| 8750 | **호출 추적**(Phoenix — 켠 박스만, `CALL_TRACE`. 화면·API·OTLP 수신이 한 포트다) | 루프백 | `infra/.env` `CALL_TRACE_PORT` |
 
 **LLM 라우터는 8730 이다** — 처음엔 9130(그 전엔 9120 — 게이트웨이 시험의 knox-bridge 예시와 겹쳐 피했다)이었으나 아래 허브 앱 포트 풀 안이라 어디에도 배포하기 전에 옮겼다(2026-10-16, docs/llm-pool LP-D16).
 
@@ -50,6 +51,10 @@
 넘어갈 수 있다 — 그러면 그 서비스는 포트를 못 잡고, 기동 판정은 그 앱의 응답을 '이미 떠 있다' 로 읽는다. 새 고정 포트는 이 범위 밖에서
 고른다. 상태판을 8740 으로 둔 까닭이다(2026-10-16 dev 실측 — 허브 앱이 9132·9145 를 쥐고 있었다). 게이트웨이(9110)는 이
 범위 안이다 — 늘 떠 있어 허브가 비켜 가지만 같은 틈이 있다(오래 쓰여 와 옮기지 않는다). LLM 라우터는 같은 까닭으로 8730 으로 옮겼다.
+
+**호출 추적(Phoenix)은 포트 하나다.** Phoenix 는 gRPC OTLP 수신기(기본 4317)를 따로 여는데 PHOENIX_HOST 를 보지 않고 모든 인터페이스에 열어서,
+띄우는 셈(`infra/call-trace/phoenix_serve.py`)이 그 수신기를 끈다 — 기록기는 8750 의 `/v1/traces` 로만 보낸다. 기동 화면에 찍히는
+`OTLP over gRPC …:4317` 줄은 듣지 않는 포트다(docs/improvement-1015/call-trace.md).
 
 ## DynaForge 는 두 값을 함께 바꿔야 한다
 
