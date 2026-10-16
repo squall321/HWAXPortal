@@ -53,7 +53,7 @@ if want portal; then
     # searxng-fixed.sif 도 본다. images-to-drive 가 latest/ 를 sync(미러)하므로 스테이징에서
     # 빠지면 조용히 삭제된다 — 실제로 한 번 그렇게 사라졌고(2026-08-19), 이 검사가 그 파일을
     # 안 보고 있어서 "✓ 일치" 로 보였다.
-    for _sif in portal nginx searxng-fixed; do
+    for _sif in portal nginx searxng-fixed guidellm; do   # guidellm — LLM 풀 용량 측정(build-guidellm.sh)
       _l="$SELF_REPO/infra/apptainer/${_sif}.sif"
       [ -f "$_l" ] || _l="$HOME/serviceApptainers/${_sif}.sif"   # dev 는 여기에 굽는다
       [ -f "$_l" ] || continue

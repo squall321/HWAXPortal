@@ -55,11 +55,20 @@ if [ -f "$SEARXNG_SIF" ]; then
   echo "  · included searxng-fixed.sif"
 fi
 
+# GuideLLM(LLM 풀 용량 측정 — docs/llm-pool/capacity.md) SIF — dev 에서 build-guidellm.sh 로 구운 것이 있으면 같이 나른다.
+# 위 searxng 와 같은 까닭으로 따로 올리지 않는다(latest/ 는 sync 미러라 여기 없으면 지워진다).
+GUIDELLM_SIF="$REPO_ROOT/infra/apptainer/guidellm.sif"
+if [ -f "$GUIDELLM_SIF" ]; then
+  cp "$GUIDELLM_SIF" "$STAGE/guidellm.sif"
+  echo "  · included guidellm.sif"
+fi
+
 # Checksums over an EXPLICIT file list (so SHA256SUMS doesn't checksum itself).
 ( cd "$STAGE"
   files="portal.sif nginx.sif"
   [ -f frontend-dist.tar.gz ] && files="$files frontend-dist.tar.gz"
   [ -f searxng-fixed.sif ] && files="$files searxng-fixed.sif"
+  [ -f guidellm.sif ] && files="$files guidellm.sif"
   sha256sum $files > SHA256SUMS )
 
 echo "→ uploading to $REMOTE/images-$TS/  (+ latest/)"
