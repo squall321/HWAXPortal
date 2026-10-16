@@ -1115,6 +1115,73 @@ if [ -n "${AGENT_DIR:-}" ]; then
     *@FROM_RA:*) bad "VLLM_BASE_URL 아직 마커 — apply-envs 치환 실패(RA .env 의 LLM_BASE_URL 확인)" ;;
     *)           ok "VLLM_BASE_URL=$VB" ;;
   esac
+  # ── 3.5c) 챗 전용 LLM — infra/.env 의 CHAT_LLM_* 를 에이전트 서버 .env 로 맞춘다(docs/chat-llm-stcx) ────────────────────
+  # 챗(ReAct · 챗 안 도구 계획)만 다른 LLM 서버로 보낸다 — 띵킹 · 심의 준비 · 심의 · 카드 대조는 VLLM_BASE_URL 그대로다(CL-D2). cae00 은 stcx
+  # GPU LLM(127.0.0.1:18700/v1)이다. 킷(apply-envs)은 없는 키만 더하므로 그대로면 바꾸거나 끈 값이 사본에 닿지 않는다(LLM 풀 LP-D4 와 같은
+  # 꼴) — 매 실행 맞춘다. infra/.env 에 키가 **없으면** 손대지 않는다(○ — 에이전트 서버 .env 에 사람이 직접 적은 값은 그대로). 빈 값이면
+  # 끈다(사본도 빈 값 — 에이전트 서버는 빈 값을 '없음' 으로 읽는다). 에이전트 서버 .env 는 그 서비스의 지문이라(services.yaml identity) 바뀌면
+  # 아래 update-sites 가 재기동한다. 그 서버가 모델을 내는지는 보기만 한다 — 못 닿아도 진행한다(에이전트 서버가 GLM 으로 넘겨 답한다).
+  # 3.5c 가 적은 값은 infra/.state/chat-llm.url 에 남긴다 — infra/.env 에서 줄을 **지워도** 그 값이면 끈다(사람이 직접 적은 다른 값은 그대로).
+  _chat_rec_f="$SELF_REPO/infra/.state/chat-llm.url"
+  _chat_rec="$(cat "$_chat_rec_f" 2>/dev/null || true)"
+  if ! LC_ALL=C grep -qE '^[[:space:]]*(export[[:space:]]+)?CHAT_LLM_BASE_URL=' "$SELF_REPO/infra/.env" 2>/dev/null; then
+    if [ -n "$_chat_rec" ] && [ "$(_envfile_value "$AGENT_ENV" CHAT_LLM_BASE_URL)" = "$_chat_rec" ]; then
+      if _upsert_kv "$AGENT_ENV" CHAT_LLM_BASE_URL "" 600; then
+        rm -f "$_chat_rec_f"
+        ok "infra/.env 에서 CHAT_LLM_BASE_URL 줄이 빠졌다 — 3.5c 가 적었던 챗 전용 LLM 을 껐다(챗도 VLLM_BASE_URL)"
+      else fail "에이전트 서버 .env 의 CHAT_LLM_BASE_URL 을 비우지 못했다 — 권한·소유자를 보라(챗은 아직 옛 서버로 간다)"; fi
+    else
+      hwax_skip "챗 전용 LLM" "infra/.env 에 CHAT_LLM_BASE_URL 이 없다 — 챗도 심의와 같은 LLM(VLLM_BASE_URL)을 쓴다" \
+        "infra/.env 에 CHAT_LLM_BASE_URL=<챗 서버 /v1 주소> · CHAT_LLM_MODEL=<그 서버의 모델 이름>(cae00 의 stcx GPU LLM 은 docs/chat-llm-stcx/server-setup.md)"
+    fi
+  else
+    _chat_url="$(_ra_envv CHAT_LLM_BASE_URL)"; _chat_model="$(_ra_envv CHAT_LLM_MODEL)"; _chat_key="$(_ra_envv CHAT_LLM_API_KEY)"
+    if [ -z "$_chat_url" ]; then
+      if [ -n "$(_envfile_value "$AGENT_ENV" CHAT_LLM_BASE_URL)" ]; then
+        if _upsert_kv "$AGENT_ENV" CHAT_LLM_BASE_URL "" 600; then
+          rm -f "$_chat_rec_f"
+          ok "챗 전용 LLM 을 껐다 — 에이전트 서버 .env 의 CHAT_LLM_BASE_URL 을 비웠다(챗도 VLLM_BASE_URL)"
+        else fail "에이전트 서버 .env 의 CHAT_LLM_BASE_URL 을 비우지 못했다 — 권한·소유자를 보라(챗은 아직 옛 서버로 간다)"; fi
+      else
+        ok "챗 전용 LLM 꺼짐(infra/.env 의 CHAT_LLM_BASE_URL 이 빈 값) — 챗도 VLLM_BASE_URL"
+      fi
+    elif ! [[ "$_chat_url" =~ ^https?://[A-Za-z0-9._-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$ ]]; then
+      fail "CHAT_LLM_BASE_URL 모양이 틀렸다('$_chat_url') — http(s)://호스트[:포트]/v1 꼴(계정 · 질의 · 공백 없이). 에이전트 서버 .env 를 바꾸지 않았다"
+    elif [ -z "$_chat_model" ]; then
+      fail "CHAT_LLM_BASE_URL 은 있는데 CHAT_LLM_MODEL 이 없다 — 둘 다 있어야 켜진다. 에이전트 서버 .env 를 바꾸지 않았다"
+    else
+      _chat_w=1
+      _upsert_kv "$AGENT_ENV" CHAT_LLM_BASE_URL "$_chat_url" 600 || _chat_w=0
+      _upsert_kv "$AGENT_ENV" CHAT_LLM_MODEL "$_chat_model" 600 || _chat_w=0
+      if [ -n "$_chat_key" ]; then _upsert_kv "$AGENT_ENV" CHAT_LLM_API_KEY "$_chat_key" 600 || _chat_w=0; fi
+      if [ "$_chat_w" = 1 ]; then
+        ok "챗 전용 LLM: $_chat_url · $_chat_model → 에이전트 서버 .env (띵킹 · 심의는 VLLM_BASE_URL)"
+        ( umask 077; mkdir -p "$SELF_REPO/infra/.state" && printf '%s\n' "$_chat_url" > "$_chat_rec_f" ) \
+          || bad "적은 값을 infra/.state/chat-llm.url 에 남기지 못했다 — infra/.env 에서 줄을 지워 끌 때는 빈 값(CHAT_LLM_BASE_URL=)으로 둔다"
+      else fail "에이전트 서버 .env 에 챗 전용 LLM 을 못 적었다 — 권한·소유자를 보라"; fi
+      # 그 서버가 이 모델을 내는지 — /v1/models 하나(5초). 키는 argv 에 싣지 않는다(환경으로 넘긴다). 루프백이라 프록시를 타지 않는다.
+      _chat_probe="$(CHAT_URL="$_chat_url" CHAT_KEY="${_chat_key:-EMPTY}" CHAT_MODEL="$_chat_model" timeout --foreground 10 python3 - <<'PY' 2>/dev/null
+import json, os, urllib.request
+req = urllib.request.Request(os.environ["CHAT_URL"].rstrip("/") + "/models",
+                             headers={"Authorization": "Bearer " + os.environ["CHAT_KEY"]})
+try:
+    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as r:
+        data = [m for m in (json.loads(r.read() or b"{}").get("data") or []) if isinstance(m, dict)]
+except Exception as e:  # noqa: BLE001
+    print("unreach", type(e).__name__)
+    raise SystemExit(0)
+m = next((x for x in data if x.get("id") == os.environ["CHAT_MODEL"]), None)
+print("served" if m else "missing", (m or {}).get("max_model_len") or "?", ",".join(str(x.get("id")) for x in data)[:200])
+PY
+)"
+      case "$_chat_probe" in
+        served*)  ok "챗 서버가 $_chat_model 을 낸다(창 $(printf '%s' "$_chat_probe" | cut -d' ' -f2) 토큰)" ;;
+        missing*) bad "챗 서버에 $_chat_model 이 없다(있는 것: $(printf '%s' "$_chat_probe" | cut -d' ' -f3-)) — CHAT_LLM_MODEL 을 그 서버의 모델 이름으로(그대로면 챗이 404 로 실패한다)" ;;
+        *)        bad "챗 서버에 닿지 않는다($_chat_url, ${_chat_probe:-응답 없음}) — 지금 챗은 GLM 으로 넘겨 답한다. stcx 면 ~/stcx-llm/llmctl.sh status · llm-tunnel" ;;
+      esac
+    fi
+  fi
+  # ── 3.5c 끝
   # TOOL_MAX 정리(prod) — dev 전용 소형 캡(40 등)을 제거해 agent-server 기본값(80)을 쓰게 한다.
   # 80 은 '무조건 절단'이 아니라 질의 관련도(어휘+시맨틱 RRF) 상위 80개 선택이라, 도구가 수백 개로
   # 늘어도 필요한 도구가 남고 컨텍스트도 보호된다. 전량 바인딩이 필요하면 .env 에 TOOL_MAX=0 명시.
