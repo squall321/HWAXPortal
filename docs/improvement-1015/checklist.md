@@ -10,6 +10,7 @@
 - [x] 3 용량 측정 — 길이 분포 추출기(본문 없이) · GuideLLM 이미지 · 실행 스크립트(직결 대 라우터 · 붙임 켬·끔) · 절차서 — 10-16 main 에 합침 `6c3a6dc`(IM-D13 · LP-D17 · `docs/llm-pool/capacity.md`) · guidellm.sif 를 Drive 포털 `latest/` 에 올렸다(10-16) · 남은 것은 측정 자체(사용자 · cae00 · 심의 없는 때 — llm-pool L-8)
 - [ ] 4 도구 검색 — 평가셋(오배정 사례 + 쌍 초안) · 지금 방식 기준선 · RRF 옵션(기본 꺼짐 · 임베더 죽으면 지금 방식) · 견주기 시험
 - [ ] 5 한국어 검색 — 자동 질의 평가셋 · 지금 검색 기준선(사본에서) · 비교는 결과를 보고
-- [ ] 2 호출 추적 — 원문 없이 시간·토큰만(IM-D6) · 에이전트 서버 연결(env 로 켬 · 본문 가림) · Phoenix 이미지 · 패키지 반입 길
+- [x] 2 호출 추적(1단계) — 에이전트 서버 기록기 `call_trace.py`(CALL_TRACE_URL · 기본 꺼짐 · 본문은 코드가 가림 · OTLP/HTTP protobuf 손 인코딩 — 새 패키지 없음) · LLM 라우터 `x-hwax-llm-upstream` · Phoenix 20.19.0 이미지(`build-phoenix.sh`, 340MB) · `call-trace.sh`(루프백 8750 한 포트 — gRPC 수신기 끔) · 매니페스트 `call-trace`(CALL_TRACE · 기본 꺼짐) · update-all 5c(띄우기 · 내리기 · 두 줄 어긋남 알림) · Drive 운반 · PORT-MAP 8750 · 안내서 `call-trace.md` · 시험(에이전트 서버 14 · 변이 14/14, 포털 23 · 변이 15/15 + 7/7) · dev 실주행(스팬 14 — 표식 0건) — 10-16 에이전트 서버 main `94b18b9` · 포털 `4bc8d90`(IM-D14~D19)
+- [ ] 2 호출 추적(켜기 — 사람) — dev 가 phoenix.sif 를 Drive 에 올린 뒤 cae00 포털 `infra/.env` 에 `CALL_TRACE=1` → update-all(§2 가 받고 5c 가 띄운다) · 에이전트 서버 `.env` 에 `CALL_TRACE_URL=http://127.0.0.1:8750` → 재기동(도는 심의가 없을 때 — 다음 update-all §4 도 다시 띄운다)
 - [ ] 우리 앱의 인자 설명 채우기 — 리스크 앱 MCP 31종(132개 · X-2 합친 뒤) · ~~에이전트 서버 deliberate_* (제안 근거의 14개)~~(10-16 — 심의 도구 일곱의 인자 39개 전부, 상한 수는 엔진 상수에서 읽는다 · 시험 셋 · 변이 3/3)
 - [ ] 업데이트 이력 · CLAUDE.md 문서 표
