@@ -48,7 +48,12 @@ _MIN_SCORE = 0.84
 _SHORT_Q = 12          # 이보다 짧은 질의는 점수로 관련성을 판정하지 않는다
 _SHORT_FLOOR = 0.75    # 명백한 무관만 쳐내는 느슨한 바닥
 # 표지 → (긴 질의 하한, 짧은 질의 바닥). 새 모델은 같은 방법(정답 발췌의 최소 점수 대 무관 질의 1위의 최대 점수)으로 재서 더한다.
-_FLOORS: dict[str, tuple[float, float]] = {MODEL: (_MIN_SCORE, _SHORT_FLOOR)}
+# BGE-M3 — 같은 방법으로 쟀다(2026-10-16, dev 1,204청크, AIDataHub 견주기 API 의 /api/embed). 정답 발췌 120개의 원래 청크 점수 최소
+# 0.589(e5 0.862), 무관 질의 20개의 1위 최대 0.574(e5 0.860) — 0.58 이 그 사이다. 정답 손실 0/120 · 무관 통과 0/20(같은 표본에서 e5 0.84
+# 는 0/120 · 4/20). 짧은 질의는 BGE-M3 도 겹친다(온토픽 0.343~0.522 · 오프토픽 0.304~0.508) — 0.30 은 e5 0.75 처럼 아무것도 가르지 않는
+# 느슨한 바닥이다(온토픽 손실 0/24 · 오프토픽 컷 0/20). 포털 docs/embedder-bge-m3 EM-D14.
+_M3 = "aidh-BAAI_bge-m3-1024"
+_FLOORS: dict[str, tuple[float, float]] = {MODEL: (_MIN_SCORE, _SHORT_FLOOR), _M3: (0.58, 0.30)}
 
 
 def current_tag() -> str:

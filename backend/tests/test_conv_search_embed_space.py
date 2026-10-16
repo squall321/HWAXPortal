@@ -32,7 +32,8 @@ def test_표지는_모델이_없거나_e5_base_면_옛_것이다():
     assert cs.tag_of({"model": "BAAI/bge-m3", "dim": 1024}, v1024) == "aidh-BAAI_bge-m3-1024"
     assert cs.tag_of({"model": "x y/../z", "dim": "1024"}, v1024) == "aidh-x_y_.._z-1024", "표지 글자는 안전한 것만"
     assert cs.floors_for(cs.MODEL) == (cs._MIN_SCORE, cs._SHORT_FLOOR)
-    assert cs.floors_for("aidh-BAAI_bge-m3-1024") is None
+    assert cs.floors_for("aidh-BAAI_bge-m3-1024") == (0.58, 0.30), "BGE-M3 는 잰 하한이 있다(EM-D14)"
+    assert cs.floors_for("aidh-acme_embed-v9-1024") is None
 
 
 def test_embed_는_응답의_모델로_표지를_바꾼다(monkeypatch):
@@ -75,7 +76,7 @@ def test_재지_않은_모델은_점수로_거르지_않는다(tmp_path, monkeyp
     store = _store(tmp_path)
     cid = store.create(owner_sub="u1", title="t", kind="chat")
     store.append(conversation_id=cid, owner_sub="u1", role="user", content="낙하 해석의 코너 응력 이야기 " * 4)
-    new = "aidh-BAAI_bge-m3-1024"
+    new = "aidh-acme_embed-v9-1024"                # 하한을 잰 적 없는 가상의 모델(BGE-M3 는 잰 하한이 있다)
     _fake_embed(monkeypatch, new, 1024, value=1.0)
     asyncio.run(cs.reindex(store, "u1", "http://aidh.invalid"))
 
@@ -89,3 +90,26 @@ def test_재지_않은_모델은_점수로_거르지_않는다(tmp_path, monkeyp
     monkeypatch.setitem(cs._FLOORS, new, (0.5, 0.4))
     hits = asyncio.run(cs.search(store, "u1", "낙하 해석의 코너 응력을 다룬 대화를 찾는다", "http://aidh.invalid"))
     assert hits == [], "잰 하한이 생기면 그것으로 거른다"
+
+
+def test_BGE_M3_는_잰_하한으로_거른다(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    cid = store.create(owner_sub="u1", title="t", kind="chat")
+    store.append(conversation_id=cid, owner_sub="u1", role="user", content="낙하 해석의 코너 응력 이야기 " * 4)
+    m3 = "aidh-BAAI_bge-m3-1024"
+    _fake_embed(monkeypatch, m3, 1024, value=1.0)
+    asyncio.run(cs.reindex(store, "u1", "http://aidh.invalid"))
+
+    def query_at(sim: float):
+        async def q(texts, base_url, kind="passage", timeout=60.0):     # 질의 벡터가 저장 벡터와 sim 만큼 닮았다
+            cs._LAST["tag"] = m3
+            return [[sim, (1 - sim * sim) ** 0.5] + [0.0] * 1022 for _ in texts]
+        monkeypatch.setattr(cs, "embed", q)
+
+    long_q = "낙하 해석의 코너 응력을 다룬 대화를 찾는다"
+    query_at(0.60)
+    assert asyncio.run(cs.search(store, "u1", long_q, "http://aidh.invalid")), "0.58 이상은 남는다"
+    query_at(0.55)
+    assert asyncio.run(cs.search(store, "u1", long_q, "http://aidh.invalid")) == [], "e5 하한(0.84)이 아니라 0.58 로 거른다"
+    query_at(0.35)
+    assert asyncio.run(cs.search(store, "u1", "코너 응력", "http://aidh.invalid")), "짧은 질의는 느슨한 바닥(0.30)만 건다"
