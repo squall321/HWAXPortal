@@ -37,3 +37,25 @@ AIDataHub 의 에이전트별 `retrieval_config.score_threshold` 는 dev 796개 
 돌아왔고(e5-base, 프로세스 GPU 1.4GB), 첫 주기에 옛 백필이 21만 절을 ORM 객체로 한꺼번에 올렸다 — 프로세스 RSS 16GB(EM-D4 그대로). 그 백필이
 스레드에서 `encode_many` 를 도는 동안 검색 요청이 같은 임베더로 질의를 인코딩해 묶음이 `Already borrowed` 로 실패했다 — HF 빠른 토크나이저는
 여러 스레드가 함께 쓰면 안 된다. 새 백필은 검색과 나란히 돌아야 하므로 임베더 안에서 인코딩을 한 번에 하나로 묶는다(B1).
+
+**EM-D10 B1 합침 · B2 시작(2026-10-16 09:27 UTC).** 가지 `embed-m3`(커밋 12)를 검토해 AIDataHub main 에 합치고 올렸다(`e036812`). 슬롯 설정을
+안 적은 박스는 지금과 같다(활성 · 채움 모두 v1 — `embed_slots.active_name` · `fill_names` 기본값). 옛 API(옛 스윕이 몇 시간 열린 트랜잭션 ·
+RSS 29GB)를 `restart.sh --api` 로 내리고 띄우자 0031→0032 가 올라갔고 v1 의미검색 · `/api/embed`(model · dim · slot)가 그대로 돌았다. m3
+백필은 CLI(`embed-slot.sh fill --slot m3`)로 뒤에서 돈다 — 시그니처 59,032 · 표본 7,670 · 도구 4 는 9분에 끝났고 절 1,090,531 이 남았다.
+인앱 v1 스윕은 새 청크 백필로 v1 백로그 214,837 을 함께 채운다(GPU 를 나눠 쓴다). 시험 — 본 venv 엔 `aiosqlite` 가 없어 SQLite 시험이
+건너뛰므로 따로 깐 곳을 붙여 돌렸다. 합친 main 629 통과 · 35 실패, 35건은 합치기 전 main 도 같다(적재 · 시드 — 임베딩과 무관).
+
+**EM-D11 dev 의 백필은 HDD 의 색인 갱신에 묶였다 — 캐시를 데워 풀었다.** 새 열 UPDATE 는 대부분 HOT 이 아니어서(절 7% · 레코드 30%만
+HOT) 표의 모든 색인을 갱신한다 — v1 HNSW 는 같은 벡터를 이미 있는 원소의 힙 TID 목록에 덧붙이지만 그 원소를 찾는 그래프 탐색이 필요하고,
+레코드의 content GIN 은 content 를 풀어 읽는다. dev PG 데이터는 HDD(`/data/pg/aidh`)이고 `shared_buffers` 는 기본값 128MB 라 첫 청크가
+무작위 읽기에 묶였다(레코드 4.8행/초 · 디스크 100%). 두 표의 표 · TOAST · 색인 파일(약 11GB)을 한 번 순차로 읽어 OS 캐시에 올리자 레코드
+120~280행/초 · 절 155~160행/초가 됐다. PG 설정(shared_buffers · max_wal_size)은 바꾸지 않았다 — 재시작이 dev 의 모든 소비처를 끊고, 캐시
+데우기만으로 읽기가 0 이 됐다. 명령은 AIDataHub `docs/embedder-bge-m3.md` dev 절차 1)에 그대로 적었다(`29c9c38`).
+
+**EM-D12 v1 도 다시 잰다(B3).** 한국어 검색 기준선과 정확 범위 수정 뒤 측정(IM-D22 · IM-D23)은 절 214,837개(약 20%)에 v1 임베딩이 없던 DB
+에서 쟀다 — 그 절들은 의미검색에 보이지 않았다. 인앱 v1 스윕이 그것을 채우고 있으므로 견주기는 v1 · m3 백필이 둘 다 끝난 같은 DB 에서
+v1(본 API) · m3(견주기 API)를 함께 잰다. 옛 수치와 바로 견주지 않는다.
+
+**EM-D13 cae00 갱신 순서.** HWAXPortal update-all → deploy-all → `boot.sh --force` → `start_api.sh` 는 이행을 옛 API 를 내리기 **전에**
+돌린다. 0032 는 잠금을 10초만 기다리므로 그때 cae00 의 옛 스윕이 긴 트랜잭션을 쥐고 있으면 'aidh failed' 가 보이고 옛 API 가 옛 코드로 돈다
+— 조용한 고장은 아니고 다음 update-all 이 다시 올린다. 절차서(B6)에 적는다.
