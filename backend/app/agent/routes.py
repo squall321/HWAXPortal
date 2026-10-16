@@ -493,15 +493,20 @@ async def search_conversations(
     # 아직 남은 색인 분량을 반드시 실어 보낸다 — 게으른 색인은 한 번에 상한까지만 처리하므로,
     # 큰 대화 이력에서는 첫 검색이 '부분 색인 위의 결과' 다. 그 사실을 숨기면 못 찾은 것이
     # 없는 것으로 읽힌다.
-    left = await asyncio.to_thread(store.remaining, principal.subject, conv_search.MODEL)
+    tag = conv_search.current_tag()          # 이번 검색이 쓴 임베딩 공간(AIDataHub 의 지금 모델) — 남은 색인도 그 공간으로 센다
+    left = await asyncio.to_thread(store.remaining, principal.subject, tag)
     # 짧은 질의는 점수로 관련성을 가릴 수 없다(온토픽·오프토픽 분포가 겹친다). 결과를
     # 주되 그 사실을 함께 낸다 — 못 가르는 것을 가른 척하면 사용자가 무관한 결과를
     # 관련 있는 것으로 읽는다.
     warn = ("질의가 짧아 관련성 판정이 약합니다 — 무관한 결과가 섞일 수 있습니다. "
             "문장으로 풀어 쓰면 정확해집니다.") if conv_search.short_query(body.query) else ""
+    if conv_search.floors_for(tag) is None:
+        # 하한은 모델의 점수 분포로 잰다 — 재지 않은 모델의 점수로 거르면 맞는 것까지 버리거나 무관한 것을 통과시킨다. 거르지 않고 알린다.
+        warn = ("이 임베딩 모델의 관련성 하한을 아직 재지 않아 점수로 거르지 않았습니다 — 무관한 결과가 섞일 수 있습니다. "
+                + warn).strip()
     return {"query": body.query, "results": hits,
             "low_confidence": bool(warn), "note": warn,
-            "index": {**(await asyncio.to_thread(store.index_stats, principal.subject, conv_search.MODEL)),
+            "index": {**(await asyncio.to_thread(store.index_stats, principal.subject, tag)), "embed_space": tag,
                       "just_indexed": idx["indexed"], "too_short": idx["too_short"],
                       "not_indexed_yet": left,
                       # 색인이 시간 예산(conv_search.REINDEX_BUDGET_S)에서 멈췄다 — 게이트웨이 한도 안에 답하려고 남긴 것이다.

@@ -22,14 +22,19 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# 임베딩 공간의 이름. 모델이 바뀌면 이 값을 바꿔야 하고, 그러면 옛 벡터는 자동으로 무시된다
-# (vectors_for 가 model 로 거른다). 섞인 채로 코사인을 재는 것이 가장 나쁜 실패다.
+# 임베딩 공간의 이름(표지). 벡터는 이 표지로 저장하고 찾는다 — 모델이 바뀌면 옛 벡터는 자동으로 무시되고(vectors_for 가 model 로
+# 거른다) 새 표지로 다시 색인된다. 섞인 채로 코사인을 재는 것이 가장 나쁜 실패다.
+# 표지는 AIDataHub /api/embed 응답의 model · dim 에서 정한다(embed 가 마지막으로 본 것 — current_tag). 응답에 model 이 없거나 e5-base(768)
+# 이면 옛 표지 MODEL 을 그대로 쓴다 — 같은 공간을 다시 색인하지 않게(포털 docs/embedder-bge-m3).
 MODEL = "aidh-768"
 DIM = 768
+_LAST = {"tag": MODEL}
 
 _CHUNK = 900        # 문자. 한 메시지가 길면 주제가 여러 개다 — 통째로 임베딩하면 다 뭉갠다.
 _OVERLAP = 150      # 경계에 걸친 문장이 어느 쪽에서도 안 잡히는 것을 막는다.
 _MIN = 40           # 이보다 짧은 조각은 "네", "확인했습니다" 같은 것이라 검색 가치가 없다.
+# 아래 두 하한은 **e5-base(표지 MODEL)의 코사인 분포**로 잰 값이다 — 다른 모델은 분포가 달라 그대로 쓰면 거의 다 '무관' 으로 버린다.
+# 표지마다 _FLOORS 에 두고, 재지 않은 표지는 점수로 거르지 않고 그렇다고 알린다(floors_for).
 # 이보다 낮으면 "관련 없음" 으로 본다. 감이 아니라 이 코퍼스에서 잰 값이다(2026-08-19,
 # 1096청크): 정답 청크 점수 최소 0.882, 무관 질의 1위 최대 0.822 — 두 분포 사이가 비어
 # 있고 0.84 가 그 한가운데다. 실측으로 정답 손실 0/23, 무관 통과 0/6.
@@ -42,6 +47,30 @@ _MIN_SCORE = 0.84
 # 그래서 거르지 말고 알린다. 못 가르는 것을 가르는 척하면 둘 중 하나는 반드시 거짓이 된다.
 _SHORT_Q = 12          # 이보다 짧은 질의는 점수로 관련성을 판정하지 않는다
 _SHORT_FLOOR = 0.75    # 명백한 무관만 쳐내는 느슨한 바닥
+# 표지 → (긴 질의 하한, 짧은 질의 바닥). 새 모델은 같은 방법(정답 발췌의 최소 점수 대 무관 질의 1위의 최대 점수)으로 재서 더한다.
+_FLOORS: dict[str, tuple[float, float]] = {MODEL: (_MIN_SCORE, _SHORT_FLOOR)}
+
+
+def current_tag() -> str:
+    """embed 가 마지막으로 본 임베딩 공간의 표지(처음에는 MODEL)."""
+    return _LAST["tag"]
+
+
+def tag_of(data: dict, vecs: list) -> str:
+    """/api/embed 응답의 model · dim 으로 표지를 정한다 — model 이 없거나 e5-base(768)면 옛 표지다."""
+    model = str((data or {}).get("model") or "").strip()
+    try:
+        dim = int((data or {}).get("dim") or (len(vecs[0]) if vecs else 0))
+    except (TypeError, ValueError):
+        dim = len(vecs[0]) if vecs else 0
+    if not model or (dim == DIM and "e5" in model.lower()):
+        return MODEL
+    return f"aidh-{re.sub(r'[^A-Za-z0-9_.-]+', '_', model)[:60]}-{dim}"
+
+
+def floors_for(tag: str) -> tuple[float, float] | None:
+    """그 표지의 (긴 질의 하한, 짧은 질의 바닥). 잰 적 없는 표지면 None — 점수로 거르지 않는다."""
+    return _FLOORS.get(tag)
 
 # 검색 한 번이 색인에 쓰는 시간. 게이트웨이 search_conversations 는 포털을 120초 기다린다(HWAXMcpGateway gateway.py) — 그보다 길면
 # 게이트웨이가 먼저 포기하는데 핸들러는 계속 돌고, 벡터를 쓰기 전에 다음 검색이 같은 미색인분을 다시 보낸다. 웹 심의의 서버 사본이
@@ -97,12 +126,13 @@ async def embed(texts: list[str], base_url: str, kind: str = "passage",
     vecs = data.get("vectors") or []
     if len(vecs) != len(texts):
         raise ValueError(f"임베더가 {len(texts)}개를 받아 {len(vecs)}개를 돌려줬습니다.")
+    _LAST["tag"] = tag_of(data, vecs)      # 이 벡터들이 든 공간 — 저장 · 순위가 이 표지를 쓴다
     return vecs
 
 
-def _rows(m: dict, cs: list[str], owner_sub: str) -> list[dict]:
+def _rows(m: dict, cs: list[str], owner_sub: str, tag: str | None = None) -> list[dict]:
     return [{"message_id": m["message_id"], "chunk_ix": ix, "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
-             "text": c, "model": MODEL, "dim": DIM} for ix, c in enumerate(cs)]
+             "text": c, "model": tag or current_tag(), "dim": DIM} for ix, c in enumerate(cs)]
 
 
 async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000,
@@ -119,7 +149,7 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000,
     deadline = t0 + budget_s
     # 동기 sqlite 전량 조회다. 색인 대상이 수천 건이면 그 시간만큼 이벤트 루프가 멈춘다 —
     # _rank 만 빼고 여기를 남긴 것은 조사가 '아는 이름' 만 찾았기 때문이다(실측 지적).
-    pending = await asyncio.to_thread(store.unindexed, owner_sub, MODEL, limit)
+    pending = await asyncio.to_thread(store.unindexed, owner_sub, current_tag(), limit)
     marks, todo, short, outside = [], [], 0, 0
     for m in pending:
         if m["message_id"] in _OUTSIDE:
@@ -134,7 +164,7 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000,
             short += 1
             marks.append({"message_id": m["message_id"], "chunk_ix": -1,
                           "conversation_id": m["conversation_id"], "owner_sub": owner_sub,
-                          "text": "", "model": MODEL, "dim": 0, "vec": b""})
+                          "text": "", "model": current_tag(), "dim": 0, "vec": b""})
             continue
         todo.append((m, cs))
     if marks:
@@ -154,8 +184,10 @@ async def reindex(store, owner_sub: str, base_url: str, limit: int = 2000,
             batch = texts[i:i + _EMBED_BATCH]
             vecs.extend(await embed(batch, base_url, "passage"))
             embedded += len(batch)
+        tag = current_tag()                  # 방금 받은 벡터의 공간 — 색인을 시작할 때 본 표지와 다를 수 있다(그사이 전환)
         for r, v in zip(group, vecs, strict=True):
             r["vec"] = pack(_norm(v))
+            r["model"], r["dim"] = tag, len(v)
         # 수천 행 일괄 INSERT — 같은 이유로 스레드에서.
         await asyncio.to_thread(store.put_vectors, group)
         written += len(group)
@@ -198,9 +230,10 @@ async def _index_outside(store, owner_sub: str, base_url: str, items: list[tuple
             vecs: list[list[float]] = []
             for i in range(0, len(cs), _EMBED_BATCH):
                 vecs.extend(await embed(cs[i:i + _EMBED_BATCH], base_url, "passage"))
-            rows = _rows(m, cs, owner_sub)
+            rows = _rows(m, cs, owner_sub, current_tag())
             for r, v in zip(rows, vecs, strict=True):
                 r["vec"] = pack(_norm(v))
+                r["dim"] = len(v)
             await asyncio.to_thread(store.put_vectors, rows)
     except Exception:  # noqa: BLE001 — 요청 밖이라 받을 호출자가 없다
         logger.warning("대화 검색 요청 밖 색인 실패 — 다음 검색이 다시 넘긴다", exc_info=True)
@@ -226,16 +259,18 @@ async def search(store, owner_sub: str, query: str, base_url: str,
                  limit: int = 8) -> list[dict]:
     """내 대화 안에서만 찾는다. 소유자 필터는 store 가 강제한다."""
     qv = _norm((await embed([query], base_url, "query"))[0])
+    tag = current_tag()                       # 질의 벡터의 공간 — 그 공간의 벡터와만 견준다
+    fl = floors_for(tag)
+    floor = None if fl is None else (fl[1] if short_query(query) else fl[0])
     # SQLite 전량 조회와 순수 파이썬 코사인은 동기다 — async 엔드포인트에서 그대로 돌리면
     # 색인이 커질수록 포털 이벤트 루프 전체가 그 시간만큼 멈춘다(다른 사용자의 요청까지).
     # 스레드로 뺀다. sqlite3 연결은 check_same_thread=False 로 열려 있어 안전하다.
-    return await asyncio.to_thread(_rank, store, owner_sub, qv, limit,
-                                   _SHORT_FLOOR if short_query(query) else _MIN_SCORE)
+    return await asyncio.to_thread(_rank, store, owner_sub, qv, limit, floor, tag)
 
 
-def _rank(store, owner_sub: str, qv: list[float], limit: int, floor: float) -> list[dict]:
+def _rank(store, owner_sub: str, qv: list[float], limit: int, floor: float | None, tag: str | None = None) -> list[dict]:
     hits = []
-    for mid, cix, cid, text, blob, title, role, persona, ts in store.vectors_for(owner_sub, MODEL):
+    for mid, cix, cid, text, blob, title, role, persona, ts in store.vectors_for(owner_sub, tag or MODEL):
         v = unpack(blob)
         if len(v) != len(qv):
             continue          # 차원이 다르면 옛 모델의 잔재다. 조용히 건너뛴다.
@@ -253,7 +288,8 @@ def _rank(store, owner_sub: str, qv: list[float], limit: int, floor: float) -> l
     # 상대폭('1위 대비 얼마 이내')도 함께 걸어 봤으나 이 코퍼스에서는 절대 하한과 결과가
     # 완전히 같았고(재현율 23/25·오탐 0/6 동일), 1위가 유난히 높을 때 멀쩡한 2·3위를
     # 버리는 실패 모드만 늘었다. 하는 일이 없으면 없는 편이 낫다.
-    hits = [h for h in hits if h["score"] >= floor]
+    if floor is not None:                     # 잰 적 없는 모델(floors_for None)은 점수로 거르지 않는다 — 응답의 note 가 알린다
+        hits = [h for h in hits if h["score"] >= floor]
     # 같은 대화가 상위를 독식하면 "어느 대화였는지"를 못 고른다 — 대화당 2조각까지만 올린다.
     seen: dict[str, int] = {}
     out = []
