@@ -145,6 +145,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 임베더를 BGE-M3 로(한국어 질의–영어 카드 정합성 · 무중단 슬롯 둘 `*_m3 halfvec(1024)` · 청크 백필 · dev GPU 로 채워 cae00 은 merge 로 받는다 · 소비처는 응답 모델을 따른다 · 모델별 점수 하한) | `docs/embedder-bge-m3/` (PLAN·checklist·context-notes) |
 | 챗은 stcx GPU LLM, 심의는 GLM(챗 전용 LLM `CHAT_LLM_*` — 챗 ReAct · 챗 안 도구 계획만, 띵킹 · 심의 준비 · 심의 · 카드 대조는 GLM · stcx 가 죽으면 호출 단위로 GLM 넘김 · 생각 모드 끔 · 챗 턴 창은 두 서버 중 작은 쪽 · update-all 3.5c 가 `infra/.env` 에서 맞춘다, 사용자 결정 10-17) | `docs/chat-llm-stcx/` (PLAN·checklist·context-notes·**server-setup**(cae00 절차)) |
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
+| 남은 일 정리 10-17(체크리스트 37개 · 안 끝난 456줄을 코드 · 커밋과 맞대 갈래 여섯으로 — 사용자가 고른 세 묶음: 작은 결함 · 빈틈(합성 데이터 경고 · 인구조사 점검 · 병합 키 해석 등) · 기록 정리(이미 한 82 · 버림 26) · 문서 보강) | `docs/leftovers-1017/` (PLAN·checklist·context-notes) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
 거기 있고, 없으면 같은 판단을 다시 내리느라 시간을 쓴다.
