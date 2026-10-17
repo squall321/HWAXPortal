@@ -46,7 +46,7 @@
 - [x] **signalforge**(D4) 12:37 — pg 1.9G(11표 일치) · reports·audit 는 추적 파일 → 등록만(`enabled:false`)
 - [x] **ai-data-hub**(D4·D3) 12:48 — pg 9.8G(21표 일치)·attachments·figures·mcp_uploads 570M + db_paths 치환 `record_attachments.file_path` 18행·`mcp_uploads.manifest` 4행. **1차 시도(12:41) 롤백**: 치환 SQL 리터럴을 `shlex.quote` 로 만들어 슬래시만 있는 경로가 인용되지 않음(`syntax error at or near "/"`) → `sql_lit()` 로 수정. 롤백이 pg 9.8G 사본 포함 4개를 `.rolled-back-20260905-123758` 로 비켜둠(사람이 지운다). 재실행은 3시간 안의 daily 덤프를 재사용해 21s
 - [x] **공통 게이트**: `services.sh data --check` rc 0(이동 종류 전부 same) · 심링크가 `--bind` 소스여도 커널이 해석(mxwp·koorm·heax·sf pg 인스턴스가 `/data/pg/<svc>/pgdata/postmaster.pid` 갱신 — 실측) · 크론 23줄 매번 복원 · 원장 `/data/hwax/state/data-migrate/journal.jsonl`
-- [ ] 유예 뒤 `.pre-move-*`(8리포)·`.rolled-back-*`(`/data/pg/mxwp.…-122907`·`/data/svc/mxwp/minio.…-122907`·`/data/pg/aidh.…-123758` 9.8G·`/data/svc/aidh/{attachments,figures,mcp_uploads}.…-123758`) 삭제 — 사람(D7)
+- [x] 유예 뒤 `.pre-move-*`(8리포)·`.rolled-back-*`(`/data/pg/mxwp.…-122907`·`/data/svc/mxwp/minio.…-122907`·`/data/pg/aidh.…-123758` 9.8G·`/data/svc/aidh/{attachments,figures,mcp_uploads}.…-123758`) 삭제 — 사람(D7) — **지움(10-18 — 사용자 '목록대로 모두', dev 29개 · 24.0GB — docs/followups-1017 FU-D15)**
 
 ## D5 — 동기화 배선 (P3.1b) — 기존 스크립트 + ssh
 - [ ] `infra/boxes.yaml`(gitignore) + ssh 키 확인(dev↔cae00↔prod BatchMode)
