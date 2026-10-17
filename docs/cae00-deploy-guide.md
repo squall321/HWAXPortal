@@ -586,3 +586,21 @@ grep -c FROM_RA ../HWAXAgentServer/.env                          # 0 — 마커�
   기본값이 이 박스에만 안 먹는다) · 절차 원장에서 선언한 상한(30초·110초)보다 오래 걸린 단계를 찾는다 · 포털 대화 저장소가 로컬 디스크인지 본다.
 - **심의가 도는 동안에는 update-all 이 포털·nginx·HEAX Hub 재기동(새 앱 SIF 받기 포함)·에이전트서버 재기동과 게이트웨이 재프로비저닝을 미루고 `○` 로 남긴다**(강행은 `AGENT_RESTART_FORCE=1`).
   단 이번 첫 실행은 떠 있는 에이전트서버가 옛 판이라 그 보호가 걸리지 않는다 — 도는 심의가 없을 때 돌린다.
+
+## 2026-10-17 반영분 — 업데이트 리뷰 후속 · 사용자 결정
+
+단계별 절차는 [followups-1017/server-setup.md](followups-1017/server-setup.md) 다. 이 절은 무엇이 왔는지와 이 박스의 설정 판단만 적는다.
+
+- **온 것** — 서비스 로그 덧붙여 쓰기(700 · 600) · 게이트웨이 로그의 토큰 가림 · AIDataHub 병합이 빠진 열을 알리고 다시 병합 · 레코드 m3
+  시그니처 병합 · 이행 전 쉬는 트랜잭션 표시 · 챗 LLM 401 · 403 · 첫 조각 전 멈춤도 GLM 으로 · HEAX 앱 데이터 병합의 SQLite 부속 파일 · 통합
+  앱 기동 실패 억제 · Caddy 로그 회전 · 리스크 앱 암호 백업(박스별 칸) · MXWP 갱신이 남의 인스턴스를 내리지 않음 · 설정 킷의 사내 주소 제거.
+- **사람 몫** — 옛 자동 stash 정리 · AIDataHub PG 30분 시한 · AIDataHub 를 루프백으로 · 리스크 백업(age · 공개키 · 크론) · `cred.key` 정리 ·
+  **11-14 전** stcx LLM `rolling`(절차서 1~5절).
+- **이 박스의 설정 판단(10-17 사용자 결정)** — 리뷰 D1~D7 중 지금은 바꾸지 않는 것.
+  - **VOC 수집은 dev 만** — 이 박스에는 Redis 가 없어 SignalForge 수집 · 알림(celery)이 돌지 않는다(D2). VOC 는 dev 병합으로 온다(10-17 +5,019).
+    합치기의 'dev 가 이긴다' 규칙이 이 상태에 맞다. 여기서 수집을 켜려면 Redis 와 SignalForge `.env` 의 비밀번호가 함께 있어야 한다.
+  - **SignalForge REST 중계는 쓰는 곳이 생길 때 키를 넣는다**(D1) — `SignalForge/.env` 의 `API_KEY` 가 코드 기본값이라 게이트웨이 `rest_call`
+    의 `/api/v1/*` 가 전부 401 이다. MCP 도구 35종은 정상이고 REST 호출 기록은 0 이다. 열 때는 실제 키 → SignalForge API 재기동 → update-collab.
+  - **AIDataHub 내부 동기화 3건은 그대로 멈춰 둔다**(D3) — 데이터는 Drive 병합으로 온다. 이제 막힌 사유가 원장 `last_status='blocked'` ·
+    `last_error` 에 남는다(예전엔 'ok' 그대로였다).
+  - **포털 메일은 SMTP 값이 있어야 켠다**(D6) — `MAIL_BACKEND=smtp` · `SMTP_HOST` · `MAIL_FROM`. 상태판 경보도 그것이 있어야 켜진다.
