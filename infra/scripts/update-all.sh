@@ -364,6 +364,13 @@ if [ -z "$(git config --global 'credential.https://github.com.username' 2>/dev/n
     && ok "git username 기본값=squall321 (github — 이제 username 은 안 물음)"
 fi
 
+# stash@{0} 에 든 파일 — 추적 안 되던 파일(-u 로 쓸어 간 것)도 보인다. `git stash show --name-only` 만으로는 그것이 안 보여
+# 알림의 '대상:' 뒤가 비었다(10-17 cae00 리뷰 P4). --include-untracked 는 git 2.32 부터라, 없으면 세 번째 부모(^3)를 직접 읽는다.
+_stash_names() {
+  git stash show --include-untracked --name-only 'stash@{0}' 2>/dev/null \
+    || { git stash show --name-only 'stash@{0}' 2>/dev/null; git ls-tree -r --name-only 'stash@{0}^3' 2>/dev/null; }
+}
+
 # ── 1) 자기 자신 최신화 — 스크립트가 구버전이면 갱신 후 새 버전으로 재실행(1회 한정) ──
 hr "1) 포털 레포 최신화"
 if [ "${UPDATE_ALL_REEXEC:-0}" != "1" ]; then
@@ -379,7 +386,12 @@ if [ "${UPDATE_ALL_REEXEC:-0}" != "1" ]; then
       # 로컬 수정이 stash로 치워졌으면 조용히 넘어가지 않고 크게 알린다(복구: git stash pop).
       if [ "$(git stash list 2>/dev/null | wc -l)" -gt "$nstash_before" ]; then
         echo "  ⚠ 로컬 수정이 stash로 보관됨(복구: git stash pop). 대상:"
-        git stash show --name-only 'stash@{0}' 2>/dev/null | sed 's/^/      /'
+        _sn="$(_stash_names | sort -u)"
+        printf '%s\n' "$_sn" | sed 's/^/      /'
+        # 비밀이 든 파일이 쓸려 가면 stash 를 지워도 git 객체로 남는다 — 옛 자동 stash 셋에 infra/.env 백업이 있었다(리뷰 D7).
+        if printf '%s\n' "$_sn" | grep -qE '(^|/)\.env|\.env([._-]|$)|secret'; then
+          echo "  ⚠ 비밀이 든 듯한 파일이 stash 에 들어갔다 — 백업은 리포 밖(~/portal-backups)에 두고, 확인 뒤 stash 를 지운다(docs/followups-1017)"
+        fi
       fi
       git reset --hard "origin/$branch" --quiet 2>/dev/null || true
     fi

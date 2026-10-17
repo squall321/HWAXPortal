@@ -16,6 +16,10 @@ backend/secrets/
 .env
 .env.local
 .env.*.local
+# 비밀이 든 설정 파일의 손 백업 — 무시해야 update-all 의 `git stash push -u` 가 쓸어 가지 않는다. 쓸려 가면 비밀이 stash 의
+# git 객체로 남는다(10-17 cae00 리뷰 D7 — 옛 자동 stash 셋에 infra/.env 백업). 백업은 리포 밖(~/portal-backups)이 맞다.
+*.env.bak*
+*.env.*.bak
 
 # Node / frontend
 node_modules/
