@@ -71,11 +71,49 @@ def pull(url: str = "http://127.0.0.1:9110") -> dict:
             "gateway_tools": len(rows), "tools": rows}
 
 
+def health_down(url: str = "http://127.0.0.1:9110") -> set[str]:
+    """게이트웨이 `/health` 가 내려갔다고 적은 백엔드. 못 읽으면 빈 집합 — 이유를 붙이는 데만 쓰고 판정은 도구 수로 한다."""
+    try:
+        h = json.loads(urllib.request.urlopen(f"{url}/health", timeout=10).read())
+    except (OSError, ValueError):
+        return set()
+    return {k for k, v in (h.get("backends") or {}).items() if v is False}
+
+
+def compare(old: dict, fresh: dict) -> dict:
+    """기록 → 지금. 사라진 도구를 **백엔드째 안 보이는 것**과 정말 없어진 것으로 가른다.
+
+    ⚠ 백엔드 하나가 내려가면 그 도구가 통째로 tools/list 에서 빠진다(dev 10-17 — reportarchive ·
+    smart-twin-cluster 89종). 다른 백엔드가 그만큼 늘면 '크게 줄면 막는다' 를 지나쳐, 갱신이 내려간
+    백엔드의 도구를 고정물에서 조용히 지우고 그 뒤 가드는 없는 도구로 친다."""
+    was = {t["name"]: t.get("backend") for t in old["tools"]}
+    now = {t["name"] for t in fresh["tools"]}
+    live = {t.get("backend") for t in fresh["tools"]}
+    absent: dict[str, list[str]] = {}
+    gone: list[str] = []
+    for n in sorted(set(was) - now):
+        b = was[n]
+        (absent.setdefault(b, []) if b and b not in live else gone).append(n)
+    dry_was = {t["name"] for t in old["tools"] if t["dry_run"]}
+    dry_now = {t["name"] for t in fresh["tools"] if t["dry_run"]}
+    return {"added": sorted(now - set(was)), "gone": gone, "absent": absent,
+            "dry_added": sorted(dry_now - dry_was),
+            # 안 보이는 도구는 dry_run 을 잃은 게 아니다 — 위 두 갈래에 이미 있다.
+            "dry_removed": sorted((dry_was - dry_now) & now)}
+
+
+def _age(generated) -> str:
+    try:
+        return f"{(datetime.date.today() - datetime.date.fromisoformat(str(generated))).days}일 전"
+    except ValueError:
+        return "날짜 모름"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="갱신하지 않고 어긋난 것만 보고")
     ap.add_argument("--force", action="store_true",
-                    help="도구가 크게 줄어도 덮어쓴다(부분 실패가 아님을 확인했을 때)")
+                    help="도구가 크게 줄거나 백엔드째 안 보여도 덮어쓴다(부분 실패 · 내려감이 아님을 확인했을 때)")
     a = ap.parse_args()
 
     fresh = pull()
@@ -97,16 +135,24 @@ def main() -> int:
     old = json.loads(CENSUS.read_text(encoding="utf-8"))
     was = {t["name"] for t in old["tools"]}
     now = {t["name"] for t in fresh["tools"]}
-    dry_was = {t["name"] for t in old["tools"] if t["dry_run"]}
-    dry_now = {t["name"] for t in fresh["tools"] if t["dry_run"]}
-    print(f"기록 {len(was)}종({old.get('generated')}) → 지금 {len(now)}종")
-    for label, s in (("새로 생긴 도구", now - was), ("사라진 도구", was - now),
-                     ("dry_run 이 생긴 도구", dry_now - dry_was),
-                     ("dry_run 이 없어진 도구", dry_was - dry_now)):
+    c = compare(old, fresh)
+    down = health_down()
+    print(f"기록 {len(was)}종({old.get('generated')}, {_age(old.get('generated'))}) → 지금 {len(now)}종")
+    for label, s in (("새로 생긴 도구", c["added"]), ("사라진 도구", c["gone"]),
+                     ("dry_run 이 생긴 도구", c["dry_added"]),
+                     ("dry_run 이 없어진 도구", c["dry_removed"])):
         if s:
-            print(f"  ⚠ {label} {len(s)}: {sorted(s)[:12]}")
+            print(f"  ⚠ {label} {len(s)}: {s[:12]}")
+    for b, names in sorted(c["absent"].items()):
+        why = "게이트웨이 /health 가 내려갔다고 한다" if b in down else "도구가 하나도 안 보인다(내려갔거나 빠졌다)"
+        print(f"  ⚠ 백엔드째 안 보임 — {b} {len(names)}종: {why}")
     if a.check:
-        return 1 if (was != now or dry_was != dry_now) else 0
+        return 1 if any(c.values()) else 0
+    # ⚠ **안 보이는 백엔드의 도구를 지우지 않는다**(compare 머리말). 띄운 뒤 다시 돌리는 게 맞다.
+    if c["absent"] and not a.force:
+        print(f"✗ 백엔드째 안 보이는 도구가 있다({', '.join(sorted(c['absent']))}) — 지금 갱신하면 그 도구가 "
+              f"고정물에서 빠진다. 띄운 뒤 다시 돌리거나, 정말 뺀 백엔드면 --force")
+        return 2
     # ⚠ **줄어든 것을 그냥 덮어쓰지 않는다.** 부분 실패로 소수만 받아 고정물을 줄이면,
     # 그 뒤 가드는 줄어든 목록을 기준으로 삼아 조용히 통과한다. 크게 줄면 사람이 본다.
     if len(now) < len(was) * 0.9 and not a.force:
