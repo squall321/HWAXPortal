@@ -66,11 +66,13 @@ update-all 을 한 번 더). ⚠ `챗 서버에 닿지 않는다` 는 막는 오
 curl -s http://127.0.0.1:9009/health | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["chat_llm"], ensure_ascii=False, indent=1))'
 ```
 
-- 기대 — `"enabled": true`, `"model": "qwen3.8-flash-next"`, `"thinking": false`, `"fallback": {"enabled": true, "to": "<GLM 모델>", "count": 0, …}`.
+- 기대 — `"enabled": true`, `"model": "qwen3.8-flash-next"`, `"thinking": true`, `"effort": "xhigh"`, `"max_tokens": 0`(보내지 않음 — stcx 서버가
+  131,072 로 막는다), `"output_reserve": 65536`, `"fallback": {"enabled": true, "to": "<GLM 모델>", "count": 0, …}`(10-18 부터 — 6절).
   `ctx_tokens` 는 첫 챗 턴 뒤에 `262144` 로 찬다(그 전에는 null — 9절로 1M 을 켠 뒤에는 `1010000`, 10분 안에 따라온다).
 - 포털에서 챗을 한 번 보낸다. stcx 쪽에서 요청이 들어왔는지 본다 — `tail -3 ~/stcx-llm/nginx/logs/access.log`(요청마다 어느 벌로 갔는지 `up=`).
 - 심의는 GLM 그대로인지 — 심의를 하나 돌리고 stcx access.log 에 그 시각의 요청이 늘지 않는지 본다.
-- 에이전트 서버 로그(`../HWAXAgentServer/agent-server.log`)의 기동 줄 — `[agent] 챗 전용 LLM — 127.0.0.1:18700 · qwen3.8-flash-next · 생각 끔 · …`.
+- 에이전트 서버 로그(`../HWAXAgentServer/agent-server.log`)의 기동 줄 — `[agent] 챗 전용 LLM — 127.0.0.1:18700 · qwen3.8-flash-next · 생각 켬(xhigh) · 출력 상한 서버 기본(보내지 않음) · 출력 몫 65,536 토큰 · …`.
+- 같은 `/health` 의 `tool_cut`(챗 도구 절단 — 뺀 수 · 앱, null 이면 다 붙었다)과 `vision`(서버마다 그림을 받는지 — 첫 그림 턴 전에는 비어 있다).
 
 ## 5. stcx 가 죽으면 — 넘김
 
@@ -88,7 +90,14 @@ stcx 를 다시 올리면(`llmctl.sh start-all`) 다음 호출부터 저절로 s
 | 키 | 기본 | 언제 |
 |---|---|---|
 | `CHAT_LLM_DISABLE_STREAMING` | `LLM_DISABLE_STREAMING` 을 따른다(cae00 은 1 — 비스트리밍) | stcx 의 **스트리밍 도구 호출**을 확인한 뒤 `0` 으로 열면 챗 글이 토큰 단위로 흐른다. 확인 — 도구를 부르는 질문(예: '지식 허브에서 낙하 충격 카드 찾아줘')을 보내 도구 상태 줄이 뜨고 답이 오는지 |
-| `CHAT_LLM_ENABLE_THINKING` | `0`(생각 끔) | 답이 얕으면 `1`(모델 기본 — 느려진다) |
+| `CHAT_LLM_ENABLE_THINKING` | `1`(생각 켬 — 10-18 사용자 결정, 그 전엔 0) | 답이 너무 느리면 `0`. 끄면 강도 · 출력 몫도 꺼진다 |
+| `CHAT_LLM_REASONING_EFFORT` | `xhigh` | 생각을 켰을 때의 강도(`low`·`medium`·`high`·`xhigh`). 빈 값이면 보내지 않는다(모델 기본) |
+| `CHAT_LLM_MAX_TOKENS` | `0`(보내지 않음) | stcx 서버가 `--override-generation-config` 로 131,072 에서 막는다(요청서 v1.1 0장). 따로 묶을 때만 |
+| `CHAT_LLM_OUTPUT_RESERVE` | 생각 켜면 `65536` | 챗 턴의 창에서 출력 몫으로 비우는 토큰(창 절반까지) — 입력이 창을 다 채우면 생각할 자리가 없다(CD-D4 · CD-D6) |
+| `CHAT_LLM_VISION` · `LLM_VISION` | `auto` | 챗 서버 · VLLM_* 가 그림을 받는지. auto 는 그림이 실릴 때 한 번 묻는다(빨간 그림 탐침), `1`·`0` 은 묻지 않는다 |
+| `VISION_MAX_IMAGES` · `VISION_MAX_BYTES` | `12` · 8MiB | 한 발화 · 한 장 상한 — 포털 · 화면도 같은 수라 올리려면 세 곳을 같이(`test_chat_images_route`) |
+| `VISION_HISTORY_IMAGES` · `VISION_TRANSCRIBE_MAX` | `6` · `8` | 앞 대화의 그림을 다시 싣는 수 · 띵킹 · 심의가 판독하는 수(최근부터) |
+| `THINK_LLM` | GLM | `chat` 이면 띵킹 좌석이 챗 전용 LLM(Qwen)으로 돈다(docs/chat-depth-context CD-D8) |
 | `CHAT_LLM_FALLBACK` | `1` | `0` 이면 넘기지 않는다 |
 | `CHAT_LLM_MAX_RETRIES` | `1` | 넘기기 전에 stcx 에 다시 보내는 횟수 |
 
@@ -104,10 +113,11 @@ stcx 를 다시 올리면(`llmctl.sh start-all`) 다음 호출부터 저절로 s
 
 - **품질** — Qwen3.8-Flash-Next 는 전문 영역에서 일반론 수준이고 틀린 서술이 섞인다(가이드 6장). 그래서 심의 · 띵킹은 GLM 에 남겼다(CL-D1).
 - **창** — 챗 턴의 문맥 예산은 두 서버 창 중 작은 값이다. stcx 가 262,144 인 동안은 그 값이라 긴 문서 · 긴 대화를 더 줄여 싣고,
-  도구 설명도 창의 45%(117,964 토큰)까지만 붙어 게이트웨이 순서 뒤쪽의 도구가 챗에서 빠진다(dev 실측 — 519종 중 87종: StepForge 77 ·
-  게이트웨이 자체 8 · REST 2. cae00 은 665종이라 더 앞까지 잘린다 — 잘린 수는 에이전트 서버 로그의 `[agent] tool budget:` 줄).
-  9절로 1M 을 켜면 GLM 때와 같다.
-- **이미지** — Qwen3.8 은 이미지를 읽지만 포털 챗은 아직 이미지를 LLM 에 싣지 않는다(docs/chat-vision).
+  도구 설명도 창의 45%(117,964 토큰)까지만 붙는다. 넘치면 질문과의 관련도 순으로 세워 뒤에서 빼고 안내대 셋(`search_tools` · `invoke_tool` ·
+  `list_tool_apps`)은 늘 남긴다(10-18 부터 — 그 전엔 게이트웨이 순서 뒤쪽의 앱이 통째로 빠졌다, 수정 제안서 F1). 뺀 수 · 앱은 `/health`
+  `tool_cut` · 에이전트 서버 로그 `— 뺀 것:` · update-all 헬스게이트 「챗 도구 절단 N개」. 9절로 1M 을 켜면 GLM 때와 같다.
+- **그림** — 10-18 부터 챗이 올린 그림 · 도구 그림 · 앞 대화의 그림을 모델에 싣는다(docs/chat-depth-context T5 · CD-D11). 챗 서버가 그림을
+  받는지는 첫 그림 턴에 한 번 묻는다(`/health` `vision`). 띵킹 · 심의는 GLM 이 받으면 그림, 못 받으면 Qwen 이 옮긴 판독문을 근거로 싣는다.
 - **stcx 쪽 제약** — 잡 한도 30일(만료되면 `start-all` — 10-17 에 띄운 잡은 **11-15 전후에 끝난다**, 11-14 전에 `~/stcx-llm/llmctl.sh rolling`), cgroup 격리가 없어 같은 노드의 후처리가 메모리를 과용하면 그 벌이 죽는다(가이드 7장).
 
 ## 9. Qwen 도 1M 창으로 — stcx 쪽(사람 몫, 사용자 결정 10-18)

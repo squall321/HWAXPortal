@@ -147,6 +147,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 절차(한 번 한 일을 굳혀 대상만 바꿔 재생) | `docs/procedures/` (PLAN·**examples**(정본 예제 넷)·checklist·context-notes·odb-request) |
 | 남은 일 정리 10-17(체크리스트 37개 · 안 끝난 456줄을 코드 · 커밋과 맞대 갈래 여섯으로 — 사용자가 고른 세 묶음: 작은 결함 · 빈틈(합성 데이터 경고 · 인구조사 점검 · 병합 키 해석 등) · 기록 정리(이미 한 82 · 버림 26) · 문서 보강) | `docs/leftovers-1017/` (PLAN·checklist·context-notes) |
 | 10-17 사용자 결정 · cae00 업데이트 리뷰 후속(결정 38 — 리뷰 P1~P9 · A1~A3 · G1 · G2 · H1~H5 · X1~X5 · K1 고침, 리스크 암호 백업(이 앱만 · 박스별 칸 `risk-backup/<박스>`, 공개키만 박스에 — **개인키는 사용자**) · 지식 리포 git 묶음 Drive 매일 · 설정 킷 사내 주소 0 · 통합 앱 기동 실패 억제 · 로그 이어쓰기와 Caddy 회전(logrotate 편입은 쓰기자가 새로 뜬 뒤), **cae00 사람 몫은 `server-setup.md`**, 요청서 셋, 묶음 B(토큰 읽기·쓰기 · 같은 소속 심의 열람 · 그림 인식 · 도구 검색 재측정 · T1)는 다음) | `docs/followups-1017/` (PLAN·checklist·context-notes·**server-setup**·requests) |
+| 챗 생각 깊이 · 대화 맥락(챗 Qwen 생각 켬 · `xhigh` · 출력 몫 65,536 · 이력에 앞 턴의 조회 근거 · 띵킹 좌석마다 세션 맥락 · '생각 중' 칸 · 답한 모델 표시 · **그림** — 올린 그림 · 도구 그림 · 앞 대화의 그림, 챗은 그대로 · 띵킹 · 심의는 탐침 뒤 자동(받으면 그림, 못 받으면 Qwen 판독문), 수정 제안서 10-18 F1~F5 · K1 · S1 · 4-b, 사용자 결정 10-18) | `docs/chat-depth-context/` (PLAN·checklist·context-notes·request) |
 
 작업을 시작하기 전에 해당 폴더의 `context-notes.md` 를 본다 — **왜 그렇게 했는지**가
 거기 있고, 없으면 같은 판단을 다시 내리느라 시간을 쓴다.
