@@ -1244,6 +1244,10 @@ PY
   # 게이트웨이 도구가 100 개를 넘는 순간 heax-hub 계열이 챗에 안 실려, 아래 헬스게이트가
   # "TOOL_MAX=80 < 게이트웨이 N개" 경고를 내면서도 스크립트는 계속 80 을 강제하는 자기모순이
   # 된다. 로컬 vLLM(작은 컨텍스트)에서는 종전대로 기본값에 맡긴다.
+  # 챗 전용 LLM(3.5c — 창이 작을 수 있다, stcx 262,144)이 켜져 있어도 0 이 안전하다 — 에이전트 서버가 무캡 경로에서도 스키마 총량이
+  # 예산(챗 창의 45%)을 넘으면 관련도 순으로 세워 뒤에서 빼고 안내대(search_tools · invoke_tool · list_tool_apps)는 늘 남긴다
+  # (HWAXAgentServer 2806672 — 종전엔 게이트웨이 순서 뒤에서부터 잘라 MaterialTwin 34종 · 안내대가 통째로 빠졌다, 수정 제안서 F1 · F3).
+  # 얼마나 잘렸는지는 아래 7)의 '챗 도구 절단' 줄이 에이전트 서버 /health 의 tool_cut 으로 말한다.
   TM="$(grep -E '^TOOL_MAX=' "$AGENT_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
   case "${VB:-}" in
     ''|*127.0.0.1*|*localhost*) REMOTE_LLM=0 ;;
@@ -3095,7 +3099,9 @@ body = json.dumps({"message": "한 문장으로 자기소개 해주세요.",
 req = urllib.request.Request("http://127.0.0.1:9009/chat", data=body,
                              headers={"Content-Type": "application/json"})
 try:
-    with urllib.request.urlopen(req, timeout=60) as r:
+    # 900초 — 챗 서버 생각이 기본 켬(xhigh, 사용자 결정 10-18)이라 비스트리밍 호출은 생각하는 동안 한 바이트도 안 낸다(실측 한 번 1~2분).
+    # 종전 60초면 정상 챗이 '챗 응답 실패' 로 찍힌다(docs/chat-depth-context).
+    with urllib.request.urlopen(req, timeout=900) as r:
         raw = r.read().decode("utf-8", "replace")
 except Exception as e:
     print("FAIL|요청 실패: %s" % e); sys.exit()
@@ -3134,7 +3140,17 @@ try:
     if tmax and gtools and tmax < gtools:
         print("  · ⚠ 챗 도구 캡: TOOL_MAX=%s < 게이트웨이 %s개 → 일부 도구(heax-hub 등) 챗 미바인딩. 프로드는 TOOL_MAX=0 권장" % (tmax, gtools))
     elif gtools:
-        print("  · 챗 도구: TOOL_MAX=%s (0=무제한) → 게이트웨이 %s개 전부 바인딩 가능" % (tmax, gtools))
+        print("  · 챗 도구: TOOL_MAX=%s (0=무제한) → 게이트웨이 %s개 — 스키마 예산(챗 창의 45%%) 안이면 전부 바인딩" % (tmax, gtools))
+    # 스키마 예산 절단 — 개수 캡이 없어도 창이 작으면 잘린다(stcx 262,144 → 상한 117,964 — 수정 제안서 F1 · F3). 마지막 챗 턴(위 7)의
+    # 스모크 포함)의 값이다. 관련도 낮은 것부터 뺐고 안내대로 닿지만, 뺀 앱이 크면 사람이 안다.
+    cut = ah.get("tool_cut") or {}
+    if cut.get("before") and cut.get("after") is not None and cut["after"] < cut["before"]:
+        apps = " · ".join("%s %s" % (k, v) for k, v in list((cut.get("dropped_apps") or {}).items())[:8])
+        print("  · ⚠ 챗 도구 절단: 마지막 챗 턴에서 %s개 중 %s개만 실었다(스키마 상한 %s토큰 — 챗 창의 45%%) · 뺀 것: %s"
+              " — 관련도 낮은 것부터 뺐고 안내대(search_tools · invoke_tool)로 닿는다. 다 실으려면 챗 서버 창을 넓힌다"
+              "(docs/chat-llm-stcx/server-setup.md 9절)" % (cut["before"], cut["after"], format(cut.get("budget") or 0, ","), apps or "?"))
+    elif cut == {} and ah.get("tool_cut", 0) is None:
+        print("  · 챗 도구 절단: 마지막 챗 턴에서 잘린 도구 없음")
 except Exception:
     pass
 PY
