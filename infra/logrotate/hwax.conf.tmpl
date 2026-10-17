@@ -3,9 +3,11 @@
 #
 # ⚠ copytruncate 는 **O_APPEND 로 열린 쓰기자에만** 안전하다(사전점검 /proc fdinfo 실측). O_APPEND 가 아니면
 #   truncate 뒤 다음 write 가 옛 오프셋으로 가서 파일 앞이 NUL 구멍(sparse)이 된다. 그래서 아래 (A) 는 실측으로
-#   O_APPEND 가 확인된 것만이다. HEAX var/logs/{worker,backend,beat}.log · AIDH deploy/apptainer/logs/uvicorn.log 는
-#   `nohup >` 로 열려 O_APPEND 가 아니라 **제외** — 기동 스크립트 `>`→`>>` 수리(PLAN §12-7) 뒤 편입한다.
-#   /tmp/hwax-services/*.log 는 services.py 가 "wb" 로 열어 자식이 상속 — 역시 제외(기동마다 truncate 되므로 회전 불필요).
+#   O_APPEND 가 확인된 것만이다. HEAX var/logs/{worker,backend,beat}.log · AIDH deploy/apptainer/logs/uvicorn.log ·
+#   /tmp/hwax-services/*.log 는 아직 **제외**다. 기동 쪽은 10-17 에 덧붙여 쓰게 고쳤다(HEAX start.sh `>>` · AIDH start_api.sh `>>`
+#   · services.py "ab" — 셋 다 기동 때 크면 한 벌(.1)만 넘긴다). 그러나 이미 떠 있는 프로세스는 옛 `>` · "wb" fd 를 쥐고 있어
+#   그 박스에서 다시 뜨기 전에는 여기 넣으면 위의 NUL 구멍이 생긴다(update-all 은 바뀐 서비스만 다시 띄운다). 편입은 박스마다
+#   그 쓰기자가 새로 뜬 뒤 `/proc/<pid>/fdinfo/1` 의 flags 에 02000(O_APPEND)이 있는지 보고 한다.
 # 크론은 매시 — maxsize 는 logrotate 가 돌 때만 평가되므로 daily 크론이면 900M .err 도 하루 한 번만 잘린다.
 
 # (A) 장수 프로세스가 O_APPEND 로 쥔 로그 — apptainer 인스턴스 stdout/stderr(apptainer 가 append 로 연다),
