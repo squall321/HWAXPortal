@@ -162,7 +162,7 @@ def test_w120_warning_is_lifted_to_notes():
 
 
 def test_model_provenance_is_lifted():
-    """pcb_warpage_surrogate 의 합성 데이터 경고가 이 길로 남는다."""
+    """pcb_warpage_surrogate 의 모델 출처가 이 길로 남는다 — 합성 데이터 경고는 설명에만 있어 실행기가 따로 싣는다(`description_caveat`)."""
     n = collect_notes({"data": {"model_version": "v20260719_112422",
                                 "out_of_domain": ["pad_size"]}})
     assert n["model_version"] == "v20260719_112422"
@@ -176,6 +176,18 @@ def test_notes_are_capped():
 
 def test_notes_skip_empty_and_false():
     assert collect_notes({"warnings": [], "degenerate": False, "notes": ""}) == {}
+
+
+def test_결과가_합성이라는_표시가_노트와_경고_칸에_오른다():
+    """KooRemapper 리포트 해석기(parser.py) 실제 모양 — 군집이 mock 이거나 footprint 를 지어냈으면 응답에 그렇다고 싣는다."""
+    mock = collect_notes({"n_clusters": 4, "degenerate": False, "is_mock": True,
+                          "mock_note": "★이 군집은 **합성(mock)** 이다 — 실측 거동이 아니므로 결론의 근거로 쓰지 말라"})
+    assert mock["is_mock"] is True
+    assert any("합성(mock)" in w for w in warn_labels(mock))
+    geo = collect_notes({"data": {"kind": "impact", "synthetic_footprints": 3, "footprints_are_measured": False,
+                                  "footprint_warning": "파트 3/10 의 footprint 는 상류 생성기가 **파트 id 해시로 지어낸 사각형**이다"}})
+    assert any("지어낸" in w or "footprint" in w for w in warn_labels(geo)), geo
+    assert collect_notes({"is_mock": False, "footprints_are_measured": True}) == {}, "실측이면 아무 표시도 없다"
 
 
 # ── 실패 카드 한 줄 ─────────────────────────────────────────────────────

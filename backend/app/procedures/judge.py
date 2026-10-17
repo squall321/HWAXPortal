@@ -368,12 +368,16 @@ def _envelope_msg(parsed: dict) -> str:
 _NOTE_KEYS = ("warnings", "warning", "notes", "caveats", "status", "assumptions",
               "model_version", "model",
               "provenance", "out_of_domain", "extrapolation", "quality_flags",
-              "suspect_shared_values", "degenerate")
+              "suspect_shared_values", "degenerate",
+              # 결과에 따라 **합성**인 응답의 표시(KooRemapper 리포트 해석기 — `report_behavior_clusters` 의
+              # `is_mock`+`mock_note`, `report_geometry` 의 지어낸 footprint `footprint_warning`).
+              "is_mock", "mock_note", "footprint_warning")
 _NOTE_MAX = 4096
 
 # 그중 **경고로 읽어야 할 것들.** 표의 경고 칸은 여기서 나온다.
 _WARN_KEYS = ("warnings", "warning", "caveats", "quality_flags",
-              "out_of_domain", "extrapolation", "degenerate")
+              "out_of_domain", "extrapolation", "degenerate",
+              "mock_note", "footprint_warning")   # 표식은 사람이 읽는 문장 쪽 — `is_mock` 은 노트에만
 
 
 def warn_labels(notes: dict | None, *, limit: int = 8) -> list[str]:
