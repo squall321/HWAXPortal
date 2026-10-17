@@ -3114,7 +3114,8 @@ fi
 # 챗 에이전트에 안 실린다(프로드는 TOOL_MAX=0 무제한 권장 — 대형 컨텍스트 GLM 이라 전부 실림).
 AH="$(curl -s -m 4 http://127.0.0.1:9009/health 2>/dev/null || true)"
 if [ -n "$AH" ]; then
-  AH="$AH" GH="$H" python3 - <<'PY' || true
+  # 게이트웨이 도구 수는 여기서 다시 읽는다 — $H 는 6절 앞에서 받아 둔 것이라 6절의 재프로비저닝 뒤 수와 달랐다(657 → 665, 10-17 리뷰 P8).
+  AH="$AH" GH="$(gw_health 2>/dev/null || true)" python3 - <<'PY' || true
 import json, os
 try:
     ah = json.loads(os.environ["AH"]); gh = json.loads(os.environ.get("GH") or "{}")

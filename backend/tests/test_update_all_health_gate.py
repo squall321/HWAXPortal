@@ -203,3 +203,11 @@ def test_인자_칸이_없는_도구부터_고른다():
     m = _smoke_mod()
     props = {"part_history": PART_HISTORY_PROPS, "system_status": {}, "list_parts": {"limit": {}}, "health": {}}
     assert m._order(["part_history", "system_status", "list_parts", "health"], props) == ["system_status", "health", "part_history", "list_parts"]
+
+
+def test_7절의_챗_도구_줄은_게이트웨이_도구_수를_그_자리에서_다시_읽는다():
+    """6절 앞에서 받아 둔 $H 를 쓰면 6절의 재프로비저닝 뒤 수와 다르다 — cae00 657 → 665(10-17 리뷰 P8)."""
+    src = UPDATE_ALL.read_text(encoding="utf-8")
+    i = src.index('hr "7) 챗 스모크')
+    block = src[i:src.index("hwax_skip_summary", i)]
+    assert 'GH="$(gw_health' in block and 'GH="$H"' not in block

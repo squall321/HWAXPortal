@@ -33,11 +33,21 @@ echo "→ source: $SRC"
 # 파일은 전송 0 이고 modtime 이 원격 것으로 보존돼 아래 지문(deploy-all)이 안정된다. docs/update-all-skip-unchanged D-2.
 . "$(dirname "$0")/lib/change-detect.sh"
 STAGE="${HWAX_DRIVE_CACHE:-$APPT_DIR/.drive-cache}"; mkdir -p "$STAGE"
-"$RCLONE" sync --progress "$SRC/" "$STAGE/"    # sync — 원격에서 뺀 파일이 캐시에 남아 옛 SIF 가 되살아나지 않게(SHA256SUMS 는 있는 것만 검사한다)
+# 꺼진 선택 서비스의 이미지는 받지 않는다 — latest/ 를 통째로 받아 상시 상태판(gatus.sif) · 호출 추적(phoenix.sif) 약 365MB 를 켜지 않은
+# 박스도 받았다(10-17 cae00 리뷰 P8). 켜짐 판정은 update-all 과 같은 `services.py enabled`(1 = 이 박스 대상 아님)이고, 판정이 실패하면(그 밖의
+# 종료코드) 예전처럼 받는다. 켜면 다음 실행이 받는다. 제외한 이름은 sync 가 캐시에서 지우지도 않는다.
+_excl=()
+for _opt in "status-board gatus.sif" "call-trace phoenix.sif"; do
+  read -r _svc _img <<<"$_opt"
+  _en=0; python3 "$(dirname "$0")/services.py" enabled "$_svc" >/dev/null 2>&1 || _en=$?
+  # 캐시의 옛 사본은 치운다 — 남겨 두면 Drive 의 새 SHA256SUMS 와 어긋나 아래 검증이 업데이트 전체를 끊는다(그 이미지는 쓰지도 않는데).
+  if [ "$_en" = 1 ]; then _excl+=(--exclude "$_img"); rm -f "$STAGE/$_img"; echo "  · $_img 받지 않음 — $_svc 꺼짐(켜면 다음 실행이 받는다)"; fi
+done
+"$RCLONE" sync --progress ${_excl[@]+"${_excl[@]}"} "$SRC/" "$STAGE/"    # sync — 원격에서 뺀 파일이 캐시에 남아 옛 SIF 가 되살아나지 않게(SHA256SUMS 는 있는 것만 검사한다)
 
 # Verify integrity before staging.
 if [ -f "$STAGE/SHA256SUMS" ]; then
-  ( cd "$STAGE" && sha256sum -c SHA256SUMS ) \
+  ( cd "$STAGE" && sha256sum -c --ignore-missing SHA256SUMS ) \
     || { echo "✗ checksum verification failed — not staging"; exit 1; }
   echo "  ✓ checksums OK"
 else
