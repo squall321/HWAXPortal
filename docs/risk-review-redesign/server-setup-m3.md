@@ -150,7 +150,7 @@ D="$(readlink -f var/app_data/hwax_risk)" && echo "$D"
 | 2 | 카드 대조 스위치가 켜져 있다 | `grep -n '^HWAXRISK_REVIEW_ENABLED' "$D/knobs.env"` | `HWAXRISK_REVIEW_ENABLED=1`. 없으면 `server-setup-m2.md` 2절 |
 | 3 | 살아 있는 리스크 잡이 없다 | 포털 리포 루트에서 `./infra/scripts/risk-review-inventory.sh` | `잡 상태별:` 에 `queued`·`running`·`paused`·`cancelling` 이 없다. 있으면 끝난 뒤에 한다 — 새 앱은 셀 지문을 그 셀이 부르는 종류의 판으로 다시 세어, 도는 M2 셀을 처음부터 돌린다(차감은 없다) |
 | 4 | 이행 사본을 뜰 자리가 있다 | 아래 명령 | 남은 바이트가 원장과 `-wal` 합의 1.2배 이상 |
-| 5 | dev 가 판을 올렸다 | 아래 값 | 리스크 앱 main `646f0b3`(M3 `a368c86` · 뒤처리 D-55 `d18e9d6` · Claude 길 X-2 `54c4385`(판단 LLM 선택은 기본 GLM, 켜지 않으면 동작 그대로) · MCP 인자 설명 `ae4af1d` · **거르기 표 승인 `d8f6a87`(10-17, 2-6 · D-56)** · mcad 격리 경고 `8b3d4e8` · 다음 리비전 승계의 병합 키 해석 `c1aac90`(10-17, 포털 docs/leftovers-1017 LO-D6) — 보안 핫픽스 `12130f9` 포함), hwax-risk SIF 해시 앞 8자 `7fbf0807`(10-17 Drive `latest/`) |
+| 5 | dev 가 판을 올렸다 | 아래 값 | 리스크 앱 main 이 `646f0b3` 이후다(M3 `a368c86` · 뒤처리 D-55 `d18e9d6` · Claude 길 X-2 `54c4385`(판단 LLM 선택은 기본 GLM, 켜지 않으면 동작 그대로) · MCP 인자 설명 `ae4af1d` · **거르기 표 승인 `d8f6a87`(10-17, 2-6 · D-56)** · mcad 격리 경고 `8b3d4e8` · 다음 리비전 승계의 병합 키 해석 `c1aac90`(10-17, 포털 docs/leftovers-1017 LO-D6) — 보안 핫픽스 `12130f9` 포함). 박스의 hwax-risk SIF 해시 앞 8자가 Drive `latest/` 의 `hwax-risk.sif.hash` 와 같다(2-3 의 명령 — 판이 오를 때마다 바뀌어 값을 박지 않는다, 리뷰 P7) |
 
 ```bash
 du -cb "$D"/risk_review.db "$D"/risk_review.db-wal 2>/dev/null | tail -1   # 원장과 -wal 의 합(바이트)
@@ -179,7 +179,7 @@ ls -l "$D"/risk_review.db.pre-* 2>/dev/null                                 # �
 새 SIF 로 처음 뜰 때 한 번 돈다(같은 데이터 디렉터리에 둘이 떠도 `migrate.lock` 이 줄 세운다).
 
 1. 쓰기 앞 로그(WAL)를 원장에 접고, 남은 자리가 원장과 `-wal` 합의 1.2배 이상인지 본다.
-2. 원장 전체를 `risk_review.db.pre-migrate-v4-<에포크 초>` 로 뜬다(`.tmp` 로 쓰고 다 쓰면 이름을 바꾼다). 같은 v4 사본이 있고 그 뒤로 원장이 바뀌지 않았으면 다시 뜨지 않는다.
+2. 원장 전체를 `risk_review.db.pre-migrate-v<출발 판>-<에포크 초>` 로 뜬다 — v4 박스는 `v4`, v3 박스는 `v3` 다(10-17 cae00 은 v3 였다). `.tmp` 로 쓰고 다 쓰면 이름을 바꾼다. 같은 판의 사본이 있고 그 뒤로 원장이 바뀌지 않았으면 다시 뜨지 않는다.
 3. v5 를 한 트랜잭션으로 적용한다 — 새 표 다섯(`rr_issues` · `rr_summaries` · `rr_reports` · `rr_close_acks` · `rr_unit_live`), 새 열 열셋(잡 · 패널 · 등록부 · 대상), 새 색인, 그리고 클러스터 별칭 표 `rr_cluster_alias` 를 소유자별 열쇠로 다시 짓는다(있던 별칭 행은 그 행의 주인 것으로 옮긴다). 그 밖의 원장 행은 그대로다 — 패널 대상의 등록부는 바이트로 같다.
 4. 사본은 갈래(pre-migrate · pre-merge)마다 새것 둘만 남긴다.
 
@@ -188,21 +188,22 @@ ls -l "$D"/risk_review.db.pre-* 2>/dev/null                                 # �
 ```bash
 cd ~/Projects/HWAXPortal
 ./infra/scripts/risk-review-inventory.sh | grep -E '스키마 버전|잡 상태별'
-ls -l "$D"/risk_review.db.pre-migrate-v4-*
+ls -l "$D"/risk_review.db.pre-migrate-v*
 cut -c1-8 ../HEAXHub/var/sifs/hwax-risk.sif.hash
+rclone cat "$(sed -n 's/^HEAX_DRIVE_REMOTE=//p' ../HEAXHub/.env | tail -1)/latest/hwax-risk.sif.hash" | cut -c1-8   # Drive 의 정본
 apptainer exec instance://heax_app_hwax_risk grep -c '^@mcp.tool' /app/backend/app/mcp_server.py
 ```
 
 | 줄 | 기대 |
 |---|---|
 | `스키마 버전:` | `5` |
-| `risk_review.db.pre-migrate-v4-…` | 하나 있고 크기가 이행 전 원장과 비슷하다 |
-| SIF 해시 앞 8자 | `7fbf0807`(10-17, `646f0b3`) |
+| `risk_review.db.pre-migrate-v<출발 판>-…` | 하나 있고 크기가 이행 전 원장과 비슷하다(v3 박스는 `v3`, v4 박스는 `v4`) |
+| SIF 해시 앞 8자 | 바로 아래 줄(Drive `latest/` 의 `hwax-risk.sif.hash`)과 같다 — 판이 오를 때마다 바뀌므로 여기 값을 박지 않는다(10-17 오후 `7fbf0807` 이었다 · 리뷰 P7) |
 | `@mcp.tool` 수 | `31`(떠 있는 앱의 소스) |
 
 관리자 계정으로 로그인한 브라우저의 `/apps/hwax_risk/api/meta/runtime` 에서도 `schema_version` 이 5 다(2-5 의 손잡이도 거기 보인다).
 
-되돌리기 — 옛 SIF 는 v5 원장을 열지 못한다(2-2 표의 마지막 문구). 내려야 하면 dev 에 알린다. 옛 SIF 와 사본 되돌림(`pre-migrate-v4-…` → `risk_review.db`)을 함께 하고, 그 사이에 쓴 것은 잃는다(`server-setup-m2.md` 9절과 같은 방식).
+되돌리기 — 옛 SIF 는 v5 원장을 열지 못한다(2-2 표의 마지막 문구). 내려야 하면 dev 에 알린다. 옛 SIF 와 사본 되돌림(`pre-migrate-v<출발 판>-…` → `risk_review.db`)을 함께 하고, 그 사이에 쓴 것은 잃는다(`server-setup-m2.md` 9절과 같은 방식).
 
 ### 2-4. 게이트웨이 — 도구 31종과 새 인자
 
@@ -293,7 +294,7 @@ cd ~/Projects/HEAXHub && deploy/apptainer/redeploy-app.sh hwax-risk       # 고�
 apptainer exec instance://heax_app_hwax_risk python3 -c 'import json; [print(f, json.load(open("/app/backend/app/assets/" + f)).get("review_status")) for f in ("mech-owners.v1.json", "change-routing.v1.json")]'
 ```
 
-기대 — 승인이 든 SIF(`0d120ea3` 이후 — 10-17 지금 `7fbf0807`)가 뜬 뒤에는 둘 다 `approved` 다(그 전의 옛 SIF 면 `draft` — update-all 을 다시 돌린다). 잡을 만든 뒤에는 Claude `risk_get_coverage(target_key='diff:…', with_seats=false)` 의 `review.filter.approved` 가 그 잡이 얼린 값이다.
+기대 — 승인이 든 SIF(`0d120ea3` 이후 — 지금 판은 2-3 의 Drive `.hash` 로 본다)가 뜬 뒤에는 둘 다 `approved` 다(그 전의 옛 SIF 면 `draft` — update-all 을 다시 돌린다). 잡을 만든 뒤에는 Claude `risk_get_coverage(target_key='diff:…', with_seats=false)` 의 `review.filter.approved` 가 그 잡이 얼린 값이다.
 
 ## 3. M0-b 탐침 보강 팔 — 지금
 
