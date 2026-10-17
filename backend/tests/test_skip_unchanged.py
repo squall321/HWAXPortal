@@ -701,7 +701,8 @@ def test_deploy_all_env_reader_matches_the_canonical_rule(tmp_path):
 
 
 def test_images_from_drive_syncs_a_persistent_cache_and_fails_loudly():
-    assert '"$RCLONE" sync --progress "$SRC/" "$STAGE/"' in IMAGES and 'STAGE="${HWAX_DRIVE_CACHE:-$APPT_DIR/.drive-cache}"' in IMAGES and "mktemp -d" not in IMAGES
+    # 꺼진 선택 서비스의 이미지는 --exclude 로 뺀다(3b88ea7 · P8) — 영구 캐시로 sync 하는 것은 그대로다.
+    assert '"$RCLONE" sync --progress ${_excl[@]+"${_excl[@]}"} "$SRC/" "$STAGE/"' in IMAGES and 'STAGE="${HWAX_DRIVE_CACHE:-$APPT_DIR/.drive-cache}"' in IMAGES and "mktemp -d" not in IMAGES
     assert 'case $_rc in 0) echo "  ✓ staged $_f' in IMAGES and "설치 실패 — 위 사유\"; exit 1" in IMAGES
     assert '[ -f "$REPO_ROOT/frontend/dist/index.html" ] && [ -f "$APPT_DIR/.frontend-dist.applied.tar.gz" ]' in IMAGES, "dist 가 지워졌으면 같은 tar 라도 다시 푼다"
 
