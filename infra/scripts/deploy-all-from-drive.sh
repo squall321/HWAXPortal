@@ -312,7 +312,11 @@ if want heax; then
       # 미리 받은 SIF(dist-from-drive)로 도는 앱엔 불필요하나, git 소스 빌드 앱엔 필요. 비치명적.
       # 가드는 -f 다 — 어차피 `bash <파일>` 로 부르므로 실행비트는 무의미하고, -x 로 두면
       # 레포에 644 로 커밋된 순간 호출이 통째로 사라진다(실제로 models-from-drive 가 그랬다).
-      [ -f deploy/apptainer/mirror-from-drive.sh ] && bash deploy/apptainer/mirror-from-drive.sh || true
+      # 미러가 없으면 HEAXHub 가 ○ 와 3 으로 말한다(HEAX_MIRROR_OPTIONAL=1 — 옛 판은 ✗ 와 1). 사유 줄은 거기서 이미 찍었으니 장부에만 적는다.
+      _mrc=0
+      [ -f deploy/apptainer/mirror-from-drive.sh ] && { HEAX_MIRROR_OPTIONAL=1 bash deploy/apptainer/mirror-from-drive.sh || _mrc=$?; }
+      [ "$_mrc" = 3 ] && hwax_skip_record "HEAX pip·npm 미러" "Drive 에 미러가 없다 — 미리 받은 SIF 로 도는 앱에는 필요 없다" \
+        "소스로 SIF 를 빌드할 박스라면 온라인 박스에서 HEAXHub deploy/apptainer/mirror-to-drive.sh"
       # 앱 데이터(materialtwin 재료 DB 등) MERGE(비파괴 — dev 신규 추가 + cae00 데이터 보존).
       # merge 스크립트 있으면 그것, 없으면 기존 보존 복원으로 폴백. 둘 다 비치명적.
       # ⚠ 이 병합은 앱 기동보다 **먼저** 돈다. 그래서 dev 데이터가 새 스키마를 요구하면
