@@ -215,7 +215,10 @@ class ProceduresRunner:
                                              ended=True)
                     return {"state": "failed", "stage": "schema_drift", "detail": drift}
                 self.store.set_run_state(run_id, "running")
-                return await self._loop(run_id, spec, scope, principal, sess, start_at)
+                # 설명에만 있는 경고(합성 데이터 모델)는 실행 기록에 남긴다 — 결과에는 안 실린다(W-7 ③).
+                caveats = {ix: c for ix, st in enumerate(spec.steps)
+                           if (c := J.description_caveat(_meta(catalog, st).get("description")))}
+                return await self._loop(run_id, spec, scope, principal, sess, start_at, caveats)
             finally:
                 try:
                     await sess.close(self.mint_pat(principal, run_id, -1) or pat)
@@ -276,7 +279,7 @@ class ProceduresRunner:
                            f"({st.schema_fp} → {now}) — 자동 진행하지 않는다")
         return out
 
-    async def _loop(self, run_id, spec, scope, principal, sess, start_at) -> dict:
+    async def _loop(self, run_id, spec, scope, principal, sess, start_at, caveats=None) -> dict:
         for ix in range(start_at, len(spec.steps)):
             st = spec.steps[ix]
 
@@ -314,7 +317,8 @@ class ProceduresRunner:
                     self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
                     return {"state": "gated", "stopped_at": ix, "args_sha256": want}
 
-            v = await self._one(run_id, ix, st, scope, principal, sess, args=args)
+            v = await self._one(run_id, ix, st, scope, principal, sess, args=args,
+                                caveat=(caveats or {}).get(ix))
             if v is None:  # warmup — 결과를 버린다
                 continue
             if not v.ok:
@@ -410,13 +414,16 @@ class ProceduresRunner:
                 raise RunnerError("사용자 명의 PAT 발급 실패 — 서비스 계정으로 대신 돌지 않는다")
             try:
                 await sess.open(pat)
+                # 실행 경로와 같은 경고(합성 데이터 모델) — 이 길이 절차 기능의 진입점이다(독스트링). 빠지면 한 단계씩 돌린 기록에 없다.
+                caveat = J.description_caveat(_meta(await sess.list_tools(pat), step).get("description"))
                 self.store.set_run_state(run_id, "running")
                 args, bad = self._args(run_id, ix, step, scope)
                 if bad is not None:
                     self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
                     return {"ix": ix, "ok": False, "kind": bad.kind, "saved": {},
                             "error": J.short_error(bad)}
-                v = await self._one(run_id, ix, step, scope, principal, sess, args=args)
+                v = await self._one(run_id, ix, step, scope, principal, sess, args=args,
+                                    caveat=caveat)
                 if v is None:
                     return {"ix": ix, "state": "skipped"}
                 saved = {}
@@ -665,7 +672,8 @@ class ProceduresRunner:
                 error=f"{exc} — 앞 단계가 그 값을 안 냈다(건너뛰었거나 뽑지 못했다)")
             return None, J.Verdict(False, "args", "args_missing", error=str(exc))
 
-    async def _one(self, run_id, ix, st: Step, scope, principal, sess, *, args: dict):
+    async def _one(self, run_id, ix, st: Step, scope, principal, sess, *, args: dict,
+                   caveat: str | None = None):
         """단계 하나 — 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다.
 
         인자는 이미 치환된 것을 받는다(`_args`) — 게이트가 승인한 지문 그대로 나간다.
@@ -739,6 +747,10 @@ class ProceduresRunner:
                     break
 
         notes = dict(v.notes or {})
+        if caveat:
+            # 화면(단계 · 배치 표)이 읽는 `warnings` 에 **덧붙인다** — 결과가 준 경고는 그대로 둔다.
+            w = notes.get("warnings")
+            notes["warnings"] = [*(w if isinstance(w, list) else [w] if w else []), caveat]
         if other:
             notes["non_text_blocks"] = [b.get("type") for b in other if isinstance(b, dict)]
         notes["judge"] = v.as_row()
@@ -765,6 +777,11 @@ def _sha(args: dict) -> str:
 
     blob = json.dumps(args, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _meta(catalog: dict, st: Step) -> dict:
+    """카탈로그에서 이 단계의 도구 — 노출 이름(alias) 먼저, 맨이름은 그다음(`_check_drift` 의 주석). 없으면 빈 dict."""
+    return catalog.get(st.alias) or catalog.get(st.tool) or {}
 
 
 def _gate_of(st: Step) -> str | None:

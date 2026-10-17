@@ -842,3 +842,75 @@ def test_계획_모드는_실제로_멈출_자리를_보인다(kit):
         calls = out.get("calls") or []
         assert calls and calls[0]["gate"] == "human", out
     asyncio.run(go(*kit))
+
+
+# ── 도구 설명에만 있는 경고(합성 데이터 모델 — W-7 ③) ─────────────────────────
+# 게이트웨이 실물 설명(ai-data-hub `pcb_warpage_surrogate`, 10-17) — 응답에는 이 경고가 없다.
+SURROGATE_DESC = ("적 휨(µm)을 즉시 예측하는 회귀 대리모델. 홀드아웃 R²=0.971. 예측값과 함께 민감도 곡선 PNG를 반환한다. "
+                  "경고: 이 모델은 합성(synthetic) 데이터로 학습한 데모다. 실제 공정·측정 데이터가 아니며 계수는 어떤 "
+                  "실측으로도 교정되지 않았다. 절대값을 판정·양산 의사결정 근거로 쓰지 마라 (경향 비교와 민감도 확인 용도).")
+
+
+def test_합성_데이터_경고는_설명에서_읽어_단계_경고에_남긴다(kit):
+    async def go(store, build):
+        g = Gate(tools={"b_surrogate": {"description": SURROGATE_DESC}, "b_plain": {"description": "평범한 도구"}},
+                 replies={"b_surrogate": ok({"pred_um": 41.2}), "b_plain": ok({})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "surrogate"}, {"backend": "b", "tool": "plain"}])
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "done", out
+        s0, s1 = store.list_steps(rid)
+        w = s0["notes"]["warnings"]
+        assert len(w) == 1 and w[0].startswith("합성 데이터 모델(도구 설명) — 이 모델은 합성(synthetic) 데이터로")
+        assert "판정·양산 의사결정 근거로 쓰지 마라" in w[0]
+        assert "warnings" not in s1["notes"], "경고 없는 도구에 경고를 달았다"
+    asyncio.run(go(*kit))
+
+
+def test_결과가_준_경고는_그대로_두고_덧붙인다(kit):
+    async def go(store, build):
+        g = Gate(tools={"b_surrogate": {"description": SURROGATE_DESC}},
+                 replies={"b_surrogate": ok({"pred_um": 1, "warnings": ["W120: ply 제외"]})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "surrogate"}])
+        rid = _run(store, spec)
+        await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        w = store.list_steps(rid)[0]["notes"]["warnings"]
+        assert w[0] == "W120: ply 제외" and w[1].startswith("합성 데이터 모델(도구 설명)"), w
+    asyncio.run(go(*kit))
+
+
+def test_한_단계씩_돌려도_합성_데이터_경고가_남는다(kit):
+    """`step_once` 가 절차 기능의 진입점이다 — 여기서 빠지면 사람이 한 단계씩 돌린 기록에 없다."""
+    async def go(store, build):
+        g = Gate(tools={"b_surrogate": {"description": SURROGATE_DESC}}, replies={"b_surrogate": ok({"pred_um": 1})})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live")
+        out = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="surrogate"))
+        await r.aclose()
+        assert out["ok"] is True
+        assert store.list_steps(rid)[0]["notes"]["warnings"][0].startswith("합성 데이터 모델(도구 설명)")
+    asyncio.run(go(*kit))
+
+
+@pytest.mark.parametrize("desc", [
+    "CLT 는 모든 층이 **완전합성**으로 함께 굽는다고 가정한다",                       # 복합재 — 다른 뜻
+    "새 파트의 경로는 `<과제>/shape_ops/<이름>`(합성 경로 — 원본 트리가 아니다)",       # 경로 — 다른 뜻
+    "서버 설정 DELIB_KNOWLEDGE_SYNTHETIC_SEATS 에 그 키를 적어야 조회한다",            # 환경 변수 이름
+    "실선=실측, 점선=합성 근사이므로 반드시 구분해 해석하라",                           # 결과 안의 표시 — 도구가 이미 가른다
+    "", None])
+def test_합성_한_낱말로는_경고를_달지_않는다(desc):
+    from app.procedures.judge import description_caveat
+    assert description_caveat(desc) is None
+
+
+@pytest.mark.parametrize("desc, want", [
+    ("합성(synthetic) 데이터로 학습했다. 경향만 보라.", "합성(synthetic) 데이터로 학습했다. 경향만 보라."),   # 첫 문장부터 — 앞 글자를 자르지 않는다
+    ("대리모델.\n⚠ 경고: synthetic data 로 맞췄다.\n\n사용법: x", "synthetic data 로 맞췄다."),          # 줄 경계 · ⚠ · '경고:' 를 떼고 문단에서 멈춘다
+])
+def test_합성_데이터_경고는_그_문장부터_문단_끝까지다(desc, want):
+    from app.procedures.judge import description_caveat
+    assert description_caveat(desc) == f"합성 데이터 모델(도구 설명) — {want}"

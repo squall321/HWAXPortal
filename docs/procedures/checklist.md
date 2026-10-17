@@ -557,7 +557,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] (실행기) 값 단언 `assert` — 판정기는 '도구가 실패했나' 만 본다(W-97 ①). `save` 보다 먼저 보고, 경로가 안 풀려도
       정지. 씨앗 둘의 `report_summary` 에 `kind == sphere|impact` 를 걸었다. ⚠ `not_empty` 는 숫자 0 을 빈 값으로 안 본다
 - [x] (실행기) 인자를 못 풀면 실행이 `running` 인 채 남던 사고 — 치환을 `_args()` 한 곳으로 모아 단계로 마감(W-97 ③)
-- [ ] `pcb_warpage_surrogate` 의 합성 데이터 경고를 `notes` 로
+- [x] `pcb_warpage_surrogate` 의 합성 데이터 경고를 `notes` 로
+      → (10-17) 경고는 응답이 아니라 **도구 설명**에만 있다. 실행 · 한 단계 둘 다 카탈로그 설명에서 '합성(synthetic) 데이터' 문단을
+      뽑아 단계 `notes.warnings` 에 덧붙인다(단계 화면 · 배치 표가 그 칸을 읽는다). '합성' 한 낱말로는 안 잡는다 — 519종 중 다른 뜻 열둘
 - [x] HWAXRisk `odb-adapter-contract.md` 4도구와 이름이 다르면 계약 개정을 HWAXRisk 쪽 일감으로
       → 대조 완료(sed-mapping.md) — **넷 다 없다**. `odb_list_nets` 는 대응 도구 자체가 없고 `list_parts` 엔 좌표가 없다. 개정은 HWAXRisk 몫
 

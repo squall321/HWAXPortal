@@ -409,8 +409,31 @@ def warn_labels(notes: dict | None, *, limit: int = 8) -> list[str]:
 
 
 
+# 결과가 아니라 **도구 설명**에만 있는 경고 — `pcb_warpage_surrogate` 는 "합성(synthetic) 데이터로 학습한 데모다 …
+# 절대값을 판정·양산 의사결정 근거로 쓰지 마라" 를 설명에만 적고 응답에는 싣지 않는다(W-7 ③).
+# ⚠ '합성' 한 낱말로 잡지 않는다. 복합재의 '완전합성' · shape_op 의 '합성 경로' · 환경 변수
+# `DELIB_KNOWLEDGE_SYNTHETIC_SEATS` 처럼 다른 뜻이 많다(게이트웨이 519종 실측 10-17 — 설명에 '합성' · 'synthetic' 이 든 열다섯 중
+# 합성 데이터 학습을 못박은 것은 이것 하나다. 결과에 따라 합성인 도구 둘은 응답에 표시를 싣는다 — `_NOTE_KEYS` 쪽).
+_SYNTHETIC_DATA = re.compile(r"합성\s*\(\s*synthetic\s*\)\s*데이터|synthetic\s+data", re.I)
+_CAVEAT_MAX = 400
+
+
+def description_caveat(description: str | None) -> str | None:
+    """설명이 합성 데이터 경고를 달았으면 그 문단(그 말이 든 문장부터)을 경고 한 줄로 돌려준다."""
+    d = description or ""
+    m = _SYNTHETIC_DATA.search(d)
+    if not m:
+        return None
+    dot = d.rfind(". ", 0, m.start())
+    start = max(dot + 2 if dot >= 0 else 0, d.rfind("\n", 0, m.start()) + 1)
+    end = d.find("\n\n", m.end())
+    text = d[start:end if end >= 0 else len(d)].strip().lstrip("⚠").strip()
+    text = re.sub(r"^경고\s*[:：]\s*", "", text)
+    return f"합성 데이터 모델(도구 설명) — {' '.join(text.split())}"[:_CAVEAT_MAX]
+
+
 def collect_notes(parsed: object) -> dict:
-    """`notes` 칸에 올릴 경고·출처. W120(ply 제외)·합성 데이터 경고가 이 길로 남는다."""
+    """`notes` 칸에 올릴 경고·출처. W120(ply 제외)이 이 길로 남는다(합성 데이터 경고는 설명에서 — `description_caveat`)."""
     out: dict = {}
     if not isinstance(parsed, dict):
         return out
