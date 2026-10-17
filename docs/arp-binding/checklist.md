@@ -5,4 +5,4 @@
 - [x] `.env.example` 에 ARP_HOST·ARP_PORT · 배포 가이드 한 줄
 - [x] 추적 파일의 사내 IP 예시 지우기(update-all 주석 셋·게이트웨이 provision-config ARP 주석) · 내부 IP 가드 14 → 13
 - [x] 시험(신규 12 · 변이 4건 전부 사망 · 포털 전체 991) · 커밋·푸시
-- [ ] ② 판단: cae00 에서 `curl -s http://<ARP>:3001/login.html | head -40` 결과로 하위 경로 가능 여부
+- [x] ~~② 판단: cae00 에서 `curl -s http://<ARP>:3001/login.html | head -40` 결과로 하위 경로 가능 여부~~ — 버림(10-17 — D-3(10-08)으로 대체 — ARP 가 절대 경로 리다이렉트를 고쳤고 타일은 포털 /aireadyportal/ jwt-handoff 로 간다(8517dd5))

@@ -43,7 +43,7 @@
 
 - [x] `docs/thinking-mode/context-notes.md` 계속 append
 - [x] `CLAUDE.md` 문서 색인에 모드 추가
-- [ ] 커밋 분할 — 엔진 / 배선 / 프론트 / 문서
+- [x] 커밋 분할 — 엔진 / 배선 / 프론트 / 문서 (확인 10-17 — 나눠 커밋됨 — 엔진 HWAXAgentServer 8d94509 · 배선 0670caf · 프론트 048abf0 · 문서 d5c4cb2)
 
 ## 별건 — 사용자 지시로 이어서 처리 (2026-09-09 완료)
 
@@ -66,5 +66,5 @@
 ## 남은 것
 
 - [ ] 브라우저 렌더 실측 — 로그인 자격이 없어 못 했다(D6). 데이터 경로는 전부 확인됨.
-- [ ] `test_app.py::test_agent_for_caches_by_group_set` 사전 실패 — 가짜 `app.state` 에
-      `tool_snapshot` 이 없다. 내 변경과 무관하고(변경 전에도 실패) 고치지 않았다.
+- [x] `test_app.py::test_agent_for_caches_by_group_set` 사전 실패 — 가짜 `app.state` 에
+      `tool_snapshot` 이 없다. 내 변경과 무관하고(변경 전에도 실패) 고치지 않았다. (확인 10-17 — HWAXAgentServer 8f85c3c(09-09)가 가짜 app.state 에 tool_snapshot 을 넣어 고침(test_app.py:87))

@@ -3,9 +3,9 @@
 완료 기준을 만족할 때만 체크한다(만들었다 ≠ 됐다 — 검증까지가 완료).
 
 ## S0 — 재기 (cae00, 사람 1회)
-- [ ] `ste-doctor --report` 를 cae00 에서 1회 실행, 출력을 `context-notes.md` §F 에 붙인다
-- [ ] 확정할 것: ste-tunnel 의 `-L` 포트(15810 만/15812 도) · `systemctl --user cat ste-tunnel`
-- [ ] 확정할 것: 포털 인증서 종류(`/tls/info` 의 `self_signed`, 체인이 공개 루트에 닿는가)
+- [x] `ste-doctor --report` 를 cae00 에서 1회 실행, 출력을 `context-notes.md` §F 에 붙인다 (확인 10-17 — context-notes §F(09-27) — 사용자가 돌린 ste-doctor 출력을 붙였다(--report JSON 이 아니라 글 형태))
+- [x] 확정할 것: ste-tunnel 의 `-L` 포트(15810 만/15812 도) · `systemctl --user cat ste-tunnel` (확인 10-17 — context-notes --check — 리포 유닛 active · 15810 200(15812 는 000 = 헤드의 옛 코드), D-30 에서 15812 터널을 열어 헤드에 닿았다)
+- [x] 확정할 것: 포털 인증서 종류(`/tls/info` 의 `self_signed`, 체인이 공개 루트에 닿는가) (확인 10-17 — context-notes §F(09-27) — tls 사설 · 자체서명, 인증서 = 자체서명(https 켜짐))
 - [ ] 확정할 것: 헤드 `/opt/ste/.env` 의 `STE_SSO_SECRET` 일치 여부·`STE_MCP_TOKEN` 유무
 - [ ] 확정할 것: Teleport 인증서 TTL·`port_forwarding` 허용·비대화식 만료 거동 — `ste-doctor` 의 teleport 항목이 `tsh status` 를 읽는다(형식 미확인이라 못 읽으면 "모름")
 - [ ] 확정할 것: `provision.env` 의 `STE_MCP_URL`·`STE_SSO_URL` 명시 여부, `HEAX_MCP_TOKEN` 자동 발급 성공 여부

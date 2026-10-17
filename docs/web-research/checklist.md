@@ -83,7 +83,7 @@
 
 ## P7 — 일반 웹 🔒 (승인 + 시크릿 경로 + 키)
 
-- [ ] `search_web` 도구
+- [x] `search_web` 도구 (확인 10-17 — WebResearchMCP 4cdc9c5(08-19) — app/mcp_server.py:362 search_web, dev 게이트웨이 /tools-map 에 등록됨)
 - [ ] deny-list 로더 + redaction 골든셋 (차단 100% / 오탐 ≤10%)
 - [ ] 차단 시 `tcpdump` 로 외부 소켓 실제 0건
 - [ ] 키 없이 기동 → 크래시 대신 `domain_only` 강등
@@ -92,8 +92,8 @@
 
 ## P8 — 배포 파이프라인
 
-- [ ] `build-all-to-drive.sh` WANT 목록 반영
-- [ ] `deploy-all-from-drive.sh` 반영
+- [x] ~~`build-all-to-drive.sh` WANT 목록 반영~~ — 버림(10-17 — HEAX 일반 경로로 대체 — build-all-to-drive.sh:83 → HEAXHub dist-to-drive.sh:85 가 var/sifs/*.sif 전부 운반)
+- [x] ~~`deploy-all-from-drive.sh` 반영~~ — 버림(10-17 — HEAX 일반 경로로 대체 — deploy-all-from-drive.sh:339 → HEAXHub dist-from-drive.sh:77 이 앱 SIF 를 var/sifs 에 설치)
 - [ ] `var/sifs` 스테이징 완전성 검사 (일부러 지워보고 경고 확인)
 - [x] `update-all.sh` 웹 리서치 소스 점검(비치명)
 

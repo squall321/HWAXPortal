@@ -20,7 +20,7 @@
 - [ ] dev 실측 — 카탈로그 재적재 뒤 타일 coming_soon, `/knox-bridge/ui/actions.json` 요청이 안 나간다
 
 ## 반영(사내) — 순서를 지킨다
-- [ ] 커밋·push
+- [x] 커밋·push (확인 10-17 — 3a1e093 · 1487848 이 origin/main 에 있음(main = origin/main))
 - [ ] **사이드카가 먼저** — `/knox-bridge/ui/actions.json` 이 `application/json` 으로 나오는지 사이드카 포트에서 확인
 - [ ] **게이트웨이 키가 먼저** — 사이드카 bridge MCP 를 게이트웨이에 붙이기 전(또는 같은 변경)에 그 백엔드 키를
       `access.yaml` `knoxbridge.gateway` 에 넣고, `feat:chat` 만 있는 계정의 `tools/list` 에 bridge 도구가 없는지 본다
@@ -31,4 +31,4 @@
 
 ## 사용자 결정
 - [x] Knox 미개통 박스에서는 **숨긴다**(2026-09-17) — 타일·권한 표 행·권한 요청. 테스트 4 더함(되돌림 셋 확인), A-12
-- [ ] dev 포털 반영 — 백엔드 코드라 포털 인스턴스 재기동이 필요하다(사용자 승인)
+- [x] dev 포털 반영 — 백엔드 코드라 포털 인스턴스 재기동이 필요하다(사용자 승인) (확인 10-17 — dev 포털 :8723 이 2026-10-16 19:38 UTC 에 다시 떴고 실행 중 코드에 hide_unless_routed(1487848)가 있음)

@@ -68,6 +68,6 @@
 
 - [ ] **zip 실주행** — `import_archive` 분기는 코드로만 맞췄다. STEP 단일 파일만 실증했다.
 - [ ] 브라우저에서 폼을 실제로 눌러본 적은 없다 — API 계층까지만 실증했다.
-- [ ] 프론트 `canUpload` 하드코딩(`['portal-admin']`) — 사내 그룹명을 .env 로 바꾸면
-      여기도 고쳐야 버튼이 보인다. 서버가 그룹을 내려주는 쪽이 옳으나 이번 범위 밖.
-- [ ] 두 번째 목적지(K파일 → DynaForge)는 이 구조가 서면 반복이다
+- [x] 프론트 `canUpload` 하드코딩(`['portal-admin']`) — 사내 그룹명을 .env 로 바꾸면
+      여기도 고쳐야 버튼이 보인다. 서버가 그룹을 내려주는 쪽이 옳으나 이번 범위 밖. (확인 10-17 — 버튼이 서버 권한을 봄 — Composer.tsx:74 can('feat:upload')(60c7a0b, 09-11) · backend/app/agent/upload.py:80)
+- [x] 두 번째 목적지(K파일 → DynaForge)는 이 구조가 서면 반복이다 (확인 10-17 — backend/app/agent/upload.py:57 DESTINATIONS 'dynaforge'(k·key·dyn·inc) — doc-deliberate D-25)

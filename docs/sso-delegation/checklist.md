@@ -11,7 +11,7 @@
 - [x] TestScope — 토큰 등록(구 RA 방식, D-15): 외부 연결 카드 · 주인 확인 · 게이트웨이 PORTAL_CONN · 외부 링크 타일 · ste 방식 준비분 걷기
 - [x] TestScope 두 방식(D-16) — `TESTSCOPE_SSO_SECRET` → `per_user_sso.testscope` · `testscope_mode` · 카드 sso 모드 · start.sh·update-all
 - [x] 되돌리기 실제로 — 비밀을 비우면 update-all 이 `PER_USER_SSO_OFF` 로 게이트웨이 위임을 지운다(D-17)
-- [ ] 검토(반박 검증) — 사용자 요청으로 생략, 전체 시험으로 대신(포털 1126 · 게이트웨이 144)
+- [x] ~~검토(반박 검증) — 사용자 요청으로 생략, 전체 시험으로 대신(포털 1126 · 게이트웨이 144)~~ — 버림(10-17 — 줄에 적힌 대로 반박 검토 대신 전체 시험(포털 1126 · 게이트웨이 144)으로 갈음했다 — 검토 라운드는 돌지 않았다)
 
 ## 문서
 - [x] PLAN(ste 방식으로 다시) · ra-request(RA 담당용) · server-setup · context-notes D-9~D-13
@@ -19,7 +19,7 @@
 - [x] 업데이트 이력
 
 ## 배포
-- [ ] 커밋(의미 단위) · push(포털·게이트웨이·TestScope — TestScope 는 push 가 릴리스를 만든다, 확인 후) · 빌드 · Drive · dev 재기동
+- [x] 커밋(의미 단위) · push(포털·게이트웨이·TestScope — TestScope 는 push 가 릴리스를 만든다, 확인 후) · 빌드 · Drive · dev 재기동 (확인 10-17 — 포털 f90a9eb · 614a764, 게이트웨이 674a843 · dd8d604 가 origin 에 있다 · TestScope 는 해당 없음(D-14) · 빌드 · Drive 는 delib-engine-feedback 체크리스트)
 
 ## 서버(사람 몫 — server-setup.md)
 - [ ] RA 담당 — ra-request(heax.py 되살리기 + 홈 부서) · HEAX_SSO_SECRET

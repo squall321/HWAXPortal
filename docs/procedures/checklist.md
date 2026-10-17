@@ -30,8 +30,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       + AP/PKG refdes 행 + `board_type` 어휘 + 쓰기·파괴 도구 표 + HWAXRisk 4도구 대조
 - [x] 메모 — 잡 수명·식별 · 파일 주는 법 · 오래 걸리는 도구와 상태 도구 이름 · 에러 코드 어휘 ·
       목록 상한 · 단위·면 · 시야·쓰기 명의 · resources 노출 여부
-- [ ] 지우기 게이트 `grep` 0건 → 파일 단위 `git add` → 커밋 → **push** 완료
-      → 원문에 내부 IP·잡 ID·관리계정명이 있어 지웠다(grep 0건 · `test_no_internal_ips` 통과) · 커밋. **push 대기**
+- [x] 지우기 게이트 `grep` 0건 → 파일 단위 `git add` → 커밋 → **push** 완료
+      → 원문에 내부 IP·잡 ID·관리계정명이 있어 지웠다(grep 0건 · `test_no_internal_ips` 통과) · 커밋. **push 대기** (확인 10-17 — push 됨 — fixtures(odb-hub) d5e40e8 이 origin/main 에 있음(main = origin/main))
 
 ## S1 · 절차 저장소 + 실행기 + 최소 화면 (가장 큰 덩어리)
 
@@ -139,9 +139,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       재실행 안 함. `unknown` 인 쓰기 단계(`create_`·`submit_`·`ingest_`·`publish_`)는 사람 확인 뒤에만.
       재개는 소유자만, PAT 는 재개자 명의로 새로. 클라이언트 타임아웃·프로세스 종료는 `failed` 가 아니라
       `unknown`. 기동 시 `running` 단계 → `unknown(stage=restart)`, 실행 → `failed(stage=restart)`
-- [ ] 비멱등 재실행 경로 둘을 안다 — ① 게이트웨이가 예외(120초 포함) 뒤 재연결하고 **같은 인자로 한 번
+- [x] 비멱등 재실행 경로 둘을 안다 — ① 게이트웨이가 예외(120초 포함) 뒤 재연결하고 **같은 인자로 한 번
       더** 부른다(`gateway.py:1929-1949`) ② 실행기가 먼저 포기하면 쓰기는 그 뒤 완료된다. 그래서 타임아웃
-      ≥260초·`unknown` 규칙이다
+      ≥260초·`unknown` 규칙이다 (확인 10-17 — W-19 에 두 경로 기록 · 대응 규칙(타임아웃 ≥260초 L41 · unknown 규칙 L138) 구현 · cd6a2f0(10-08 벽시계 기한))
 - [x] 취소 — `POST /runs/{id}/cancel`, 단계 경계에서 `cancelled`, 주체·시각 기록, portal-admin 우회 한 줄
 - [x] 결과 저장 — gzip BLOB + bytes + sha256, 2MB 초과는 프리뷰 4KB + `truncated`, 이미지는
       `procedures-artifacts/` 파일, 본문 90일 뒤 비움·메타 영구. `save` 는 저장·절단 전에
@@ -199,7 +199,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] `frontend/vite.config.ts:18-26` 프록시 `'/procedures-api'` 1줄
 - [x] SSE 를 내지 않는다 — 내면 nginx **두 파일**(`hwax.conf.tmpl:74-93` + `gen-nginx-conf.sh:173-184`)을
       같이 고쳐야 한다. 폴링으로 충분하다
-- [ ] ⚠ `systems.yaml` 타일을 만들면 `access.yaml` `platforms:` 에도(`test_access_control.py:28-36` 강제)
+- [x] ~~⚠ `systems.yaml` 타일을 만들면 `access.yaml` `platforms:` 에도(`test_access_control.py:28-36` 강제)~~ — 버림(10-17 — 타일을 만들지 않음 — access.yaml features: procedures + 헤더 주 메뉴(frontend/src/components/layout/AppHeader.tsx:84)로 대체)
 - [x] `backend/config/changelog.yaml` 에 사용자가 겪는 변화
 - [x] `git diff backend/requirements.txt`·`frontend/package.json` 이 **비어 있다**
 - → 검증: `git diff --stat` 에 챗·심의 파일 0개. `curl -s :8723/procedures-api/procedures` 가 JSON(HTML 아님)
@@ -268,7 +268,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] `laminate` 는 속성 없는 object(44/465) — 원문 JSON 2단 입력으로 받는다. `unit_system` 은 ✅ 화면이 여러 줄 원문 JSON 칸으로 받고 `coerce_inputs` 가 푼다(W-35)
       `SI`|`SI_mm` 이고 섞이면 조용히 틀린다
 - [ ] 검증: dev 에서 완주 → 저장 → `bend_radius` 만 바꿔 재생. 층별 응력·수명이 R 에 따라 변한다
-- [ ] 검증: 물성 없는 ply 를 일부러 넣어 **W120 이 `notes` 에 올라오는지**
+- [x] 검증: 물성 없는 ply 를 일부러 넣어 **W120 이 `notes` 에 올라오는지** (확인 10-17 — backend/tests/test_procedures_r1.py:135 — 실호출 고정물 life_w120(W-29, 09-14)으로 W120 이 notes 에 오르는 것 검증)
 
 ## S2.5 · 2단 도구 — 역량이 도구 뒤에 숨은 자리 (PLAN §9-4·§9-5)
 
@@ -302,7 +302,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] ⑥ 게이트웨이 얇은 색인 — `caller`(MCP 10곳) · `corr` · `mode` · 밀리초 `ts`(W-47)
 - [x] ⑦ 성공 기록의 `error` 오남용 제거 — 칸을 갈랐다. 정적 검사로 재발 방지(W-47)
 - [x] 절차 실행의 상관 ID 가 감사에 남는다(실측 `corr: run-TEST123`)
-- [ ] ⚠ 챗은 상관 ID 미결 — 도구 연결이 그룹 캐시라 대화별로 못 붙인다(원장 직접 쓰기로 대체)
+- [x] ~~⚠ 챗은 상관 ID 미결 — 도구 연결이 그룹 캐시라 대화별로 못 붙인다(원장 직접 쓰기로 대체)~~ — 버림(10-17 — 원장 직접 쓰기로 대체 — from_chat.record() 가 챗 턴을 run_steps 에 남김(S7a ⑤, L297 체크됨))
 - [ ] 실제 챗 한 턴을 돌려 원장에 제대로 남는지 확인(사람)
 - [x] **도출** — `derive.find_path()` 가 값의 출처를 역으로 찾는다(키워드 목록 아님, W-48)
 - [x] R1 실행을 넣으면 R1 체인이 그대로 나온다 · 결손도 같이 나온다
@@ -329,12 +329,12 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 전 앱이 인자 `description` 을 채운다 — `gaps/hub-arg-descriptions.yaml`(절차에 쓰는 도구부터)
 - [x] **② 환원 — 스택업** 결손을 장부에 등재 + **StepForge 에 요청서**를 냈다
       (`gaps/stepforge-stackup-profile.yaml` · `StepForge/docs/REQUEST-stackup-profile.md`)
-- [ ] StepForge 회신 대기 — "이미 되는 길이 있으면 알려 달라" 를 함께 물었다
+- [x] StepForge 회신 대기 — "이미 되는 길이 있으면 알려 달라" 를 함께 물었다 (확인 10-17 — StepForge 가 stackup_profile 구현으로 답함 — StepForge 1106469(09-15, D-291), dev 게이트웨이 /tools-map 에 있음)
 - [x] **DynaForge 에도 요청서를 보냈다**(2026-09-16) — `KooRemapper/platform/docs/
       REQUEST-postprocess-operation.md`. 처음엔 "진행 중이니 요청할 것이 아니다" 로
       뒀는데, **어떤 모양으로 오면 우리가 안 고치는지**는 그쪽이 알아야 정한다.
       실측으로 아직 안 왔다(연산 47종 · 후처리 0건)
-- [ ] DynaForge 회신 대기 — 세 갈래 중 어느 쪽인지(연산 / 독립 도구 / 오래 걸림)
+- [x] ~~DynaForge 회신 대기 — 세 갈래 중 어느 쪽인지(연산 / 독립 도구 / 오래 걸림)~~ — 버림(10-17 — W-93 사용자 결정(후처리 예약 연산 — KooRemapper REQUEST-postprocess-operation.md §7)으로 대체 · DynaForge 회신 §9(09-19))
 - [ ] ② 두 번째 환원 도구가 `bend_profile` 과 **같은 모양인지** 보고 규약으로 올린다(§10-7)
 - [ ] **③ 보강 — 라미나 물성**(강도·피로) 조달 경로 → MaterialTwin ↔ 적층 해석기 결손
 - [x] S5 와 이었다 — `fan-out` 이 후보마다 실행을 하나씩 만든다(W-57)
@@ -450,29 +450,29 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 ### R2a 제출 (dev 는 `dry_run` 까지)
 - [ ] `save_result_to_path`(gate) → `smarttwin_scenario_options`(`raw: true` — 반환이 텍스트
       카탈로그다) → `smarttwin_submit`(**must-gate**)
-- [ ] `sim_type` 만 바꾼 판본 둘 — `fullangle_drop`(각도 프리셋) · `partial_impact`
+- [x] `sim_type` 만 바꾼 판본 둘 — `fullangle_drop`(각도 프리셋) · `partial_impact`
       (`locations.mode` = grid|list|lhs|part_center, `impactor` Sphere|Cylinder)
       → **부분충격 완료**(2026-09-16) — 씨앗 `fixtures/partial-impact-submit.yaml`: 카탈로그 → 미리보기(리터럴
       `dry_run: true`) → 게이트 → 제출(앵커로 같은 인자). 임팩터 물성 명시·단위 label·`generation_mode` enum·
       100mm 초과 경고. 테스트 11(`test_procedures_s3.py`, 되돌림 셋 확인)
       → **전각도 완료** — 씨앗 `fixtures/fullangle-drop-submit.yaml`: 같은 틀, 프리셋 enum·바닥 종류 enum·
-      **바닥 물성으로 프리셋의 SI 값을 덮는다**·높이 100mm 이하 경고. 두 씨앗 공통 검사로 묶어 테스트 21(되돌림 둘 더)
-- [ ] **제출 갈래는 `smarttwin_submit` 만** 쓴다 — `fullangle_drop_simulation` 은 `lstc_license_ip`
-      를 사람에게 묻고 부분충격 빌더가 없다
-- [ ] ⚠ **단위계가 실제로 섞여 있다** — 프리셋 `26direction` 은 SI(7850, 2e11), 부분충격 실제 잡은
+      **바닥 물성으로 프리셋의 SI 값을 덮는다**·높이 100mm 이하 경고. 두 씨앗 공통 검사로 묶어 테스트 21(되돌림 둘 더) (확인 10-17 — 하위 줄 '부분충격 완료'·'전각도 완료' — fixtures/partial-impact-submit.yaml · fullangle-drop-submit.yaml + test_procedures_s3.py)
+- [x] **제출 갈래는 `smarttwin_submit` 만** 쓴다 — `fullangle_drop_simulation` 은 `lstc_license_ip`
+      를 사람에게 묻고 부분충격 빌더가 없다 (확인 10-17 — 두 제출 씨앗(fixtures/*-submit.yaml)이 smarttwin_submit 만 씀 — fullangle_drop_simulation 사용 0건)
+- [x] ⚠ **단위계가 실제로 섞여 있다** — 프리셋 `26direction` 은 SI(7850, 2e11), 부분충격 실제 잡은
       tonne-mm(7.85e-9, 2.0e5). `scenario_overrides` 물성은 **무변환 기입**된다. 변수 label 에 단위를 박는다
       → 2026-09-16 재확인: 각도 프리셋 **5종 전부** 한 파일 안에서 섞였다(높이 1500 mm · 바닥 밀도 7850 ·
       E 2e11 · 바닥 Plane). pyKooCAE `StepConfigBuilder.py` 가 코드 기본은 tonne-mm(125~126행)인데 scenario 값을
       **변환 없이** 기입한다(264~265행). tonne-mm 덱이면 변형 바닥이 밀도 ~1e12배·강성 ~1e6배 — **결정 필요**
       (프리셋 데이터 수정은 클러스터 소유 · 절차는 바닥 물성을 늘 명시하게 할지)
       → 2026-09-16 확정(W-91): KMM 에 단위 키가 없고 기본이 tonne-mm-s-MPa 라 **프리셋 값이 틀렸다**. 씨앗은 물성을
-      **늘 명시**하고 단위계 선택 변수는 만들지 않는다. 부분충격 초속 이중 합산(h>100 이면 2배)은 pyKooCAE 결함
-- [ ] ⚠ enum 저장 시점 검증 — `generation_mode` 오타는 **조용히 기본값 처리**된다
-      → 부분충격 씨앗은 `generation_mode` 를 enum 변수로 받아 막는다
-- [ ] ⚠ 전각도 `scenario_overrides` 에 `mode` 키가 섞이면 **조용히 부분충격으로 오실행**(사고 `799`)
+      **늘 명시**하고 단위계 선택 변수는 만들지 않는다. 부분충격 초속 이중 합산(h>100 이면 2배)은 pyKooCAE 결함 (확인 10-17 — W-91 확정 — 씨앗이 물성을 늘 tonne-mm 로 명시·label 에 단위, 단위계 변수 없음(test_procedures_s3.py 단위 시험))
+- [x] ⚠ enum 저장 시점 검증 — `generation_mode` 오타는 **조용히 기본값 처리**된다
+      → 부분충격 씨앗은 `generation_mode` 를 enum 변수로 받아 막는다 (확인 10-17 — fixtures/partial-impact-submit.yaml:72 — generation_mode 를 type: enum 변수로 받는다(하위 줄 그대로))
+- [x] ⚠ 전각도 `scenario_overrides` 에 `mode` 키가 섞이면 **조용히 부분충격으로 오실행**(사고 `799`)
       → 제출 도구가 병합 뒤 `mode` 를 **뺀다**(KooSlurm smarttwin_submit, 소스 확인). 부분충격은 반대로 서버가
-      `mode`·`model_file` 을 고정한다. 씨앗은 둘 다 `mode` 를 넣지 않고 검사로 박는다
-- [ ] `model_path` 는 공유 FS 절대경로 — 파일 반입은 절차 밖(§4)
+      `mode`·`model_file` 을 고정한다. 씨앗은 둘 다 `mode` 를 넣지 않고 검사로 박는다 (확인 10-17 — 씨앗에 mode 키 없음 — backend/tests/test_procedures_s3.py:87 이 scenario_overrides 에 mode·model_file 없음을 단언)
+- [x] `model_path` 는 공유 FS 절대경로 — 파일 반입은 절차 밖(§4) (확인 10-17 — 두 제출 씨앗의 model_path 변수 — label '공유 FS 절대경로' + why(/data/…, 클라이언트 로컬 경로 거부))
 - [x] ⚠ 미확인 — `smarttwin_submit` 반환 모양(제출계라 안 불렀다). `save` 경로는 첫 실행에서 확정한다
       → **평문이다**(KooSlurm 소스 + 게이트웨이 dry_run 실호출, 2026-09-16). 성공 `✅ 제출 완료 — job_id=N`,
       미리보기 `[DRY-RUN] 제출 계획`, 실패 `error: …`(isError=false). **job_id 는 save 경로로 못 뽑는다** —
@@ -487,14 +487,14 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       테스트 37(되돌림 넷 확인). `slurm_job_results` 단계는 뺐다(평문·`COMPLETED 0:0`)
 - [ ] cae00 실행 — 합성 고정물(`dynaforge_report_responses.json`)을 **실측으로 교체**한다. 부분충격은 리포트 생성이
       먼저다(pyKooCAE 요청)
-- [ ] `report_id` 를 **변수로 받는다** — 리포트 HTML 이 8~10MB 라 MCP 로 못 나른다. 반입은 REST
+- [x] ~~`report_id` 를 **변수로 받는다** — 리포트 HTML 이 8~10MB 라 MCP 로 못 나른다. 반입은 REST
       intake(512MB)이고 절차 밖이다
       → 2026-09-16 제안(W-92): 입력 키를 **잡 키**로 — `find_reports(project="{{job_name}}_{{slurm_job_id}}")` 가
-      임베드 project_name 으로 잡는다. 제출 씨앗 잡 이름은 ASCII 로 받는다. 여러 건은 사람이 고르고 0건은 실패
-- [ ] ⚠ ① `slurm_job_results` 의 `save: {state, exit_code}` 는 평문이라 안 풀리고, `COMPLETED 0:0` 은 후처리 성공이 아니다
-- [ ] `sphere`/`impact` 는 리포트 `kind` — `sim_type` 과 짝이다. `ingest_report` 가 자동 판별한다
-- [ ] ⚠ **부분충격은 scenario 첨부를 생략**한다 — 파서가 `scenarios` 배열을 요구하는데 평탄
-      구조라 `ScenarioParseError` 로 **인제스트 전체가 실패**한다
+      임베드 project_name 으로 잡는다. 제출 씨앗 잡 이름은 ASCII 로 받는다. 여러 건은 사람이 고르고 0건은 실패~~ — 버림(10-17 — W-96 잡 키 조회로 대체 — find_reports(project=job_name_slurm_job_id); test_procedures_s3.py:225)
+- [x] ⚠ ① `slurm_job_results` 의 `save: {state, exit_code}` 는 평문이라 안 풀리고, `COMPLETED 0:0` 은 후처리 성공이 아니다 (확인 10-17 — 회수 씨앗에서 slurm_job_results 단계를 뺐다(L487 하위 줄 · fixtures/*-part-report.yaml 에 없음))
+- [x] `sphere`/`impact` 는 리포트 `kind` — `sim_type` 과 짝이다. `ingest_report` 가 자동 판별한다 (확인 10-17 — 씨앗 report_summary 에 kind == sphere|impact 단언(L558) — backend/tests/test_procedures_s3.py:337)
+- [x] ⚠ **부분충격은 scenario 첨부를 생략**한다 — 파서가 `scenarios` 배열을 요구하는데 평탄
+      구조라 `ScenarioParseError` 로 **인제스트 전체가 실패**한다 (확인 10-17 — fixtures/partial-impact-part-report.yaml:14 — 부분충격은 scenario 를 리포트에 붙이지 않음(첨부 단계 없음))
 - [ ] ⚠ 구버전 SIF 는 `impact_report` 를 **`exit 0` 으로 조용히 건너뛴다** — 산출이 없는데 성공으로
       보인다. 실행 기록에 산출 파일 유무를 남긴다
 - [ ] 과제 메타(`project`·`dev_rev`·`variation`·`doe`·`focus`)를 안 넣으면 `find_reports` 로 다시 못 찾는다
@@ -539,7 +539,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       → **게이트웨이에서 풀었다**. odb-hub 상태 도구가 `get_task` 하나뿐이라 저장 거절로 막으면 비동기 단계를 아예
       못 쓴다. 게이트웨이가 상태·잡 조회(`task|status|progress|job`)와 봉투형 실패를 캐시하지 않게 했다
       (이미 붙은 앱에서도 7개가 5분씩 캐시되고 있었다). 포털 사본도 맞추고 대조 검사를 양방향으로
-- [ ] dev 완주 시험 — ODB 단계가 "사람이 채우는 칸" 으로 내려간 상태
+- [x] ~~dev 완주 시험 — ODB 단계가 "사람이 채우는 칸" 으로 내려간 상태~~ — 버림(10-17 — W-87 환원 도구 sed_sample_from_odb 로 대체 — 'dev 에 odb-hub 가 없어도 끝까지 검증'(test_procedures_r3 + 실호출 왕복 L529))
 - [x] 열충격 절차를 export 해 `docs/procedures/fixtures/` 에 커밋 → cae00 에서 import
       → 씨앗 `fixtures/thermal-shock-sed.yaml` + `test_procedures_r3.py`(저장 검증 · 도구 스키마 · 실물 응답 save
       경로 · 경고 수집, 되돌림 셋 확인). cae00 가져오기는 실주행 항목에서
@@ -573,7 +573,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] **첫 `gate: human` 직전까지** — 각 실행이 자기 게이트에서 멈춘다(구조가 그렇다)
 - [x] 동시 상한은 **실행기의 기존 것**을 쓴다(두 곳에서 세면 어긋난다) · 기본 계획 모드
 - [x] 비교표에 **왜** 를 싣는다 — 첫 실패 단계·도구·오류 + 경고 코드(W-59)
-- [ ] `predict_sed_batch` 는 쓰지 않는다 — 전부-아니면-전무 검증이라 건너뛰기가 안 되고 응답 모양이 다르다
+- [x] `predict_sed_batch` 는 쓰지 않는다 — 전부-아니면-전무 검증이라 건너뛰기가 안 되고 응답 모양이 다르다 (확인 10-17 — predict_sed_batch 를 쓰는 씨앗·실행기 0건 — 일괄 재생은 fan-out 새 실행 N개(W-57))
 
 ## S6 · 과제 키 레지스트리 (S5 뒤)
 
@@ -626,8 +626,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 ## 착수 전
 
-- [ ] PLAN §7 결정 — S0 시점 · 공유 정책(#6). **S2(R1)부터 권장** — 선행 0, dev 완주
-- [ ] S1 을 먼저 시작할지(S0 과 병렬 가능) 확인
+- [x] ~~PLAN §7 결정 — S0 시점 · 공유 정책(#6). **S2(R1)부터 권장** — 선행 0, dev 완주~~ — 버림(10-17 — 착수로 대체 — S0 은 reference.md 로 받음(09-16, L19~31 체크), S1·S2 진행; #6 은 PLAN §7 의 v1 정책으로 확정)
+- [x] ~~S1 을 먼저 시작할지(S0 과 병렬 가능) 확인~~ — 버림(10-17 — 착수로 대체 — S1 코드가 다 섰다(체크리스트 머리말 · S1 소절 전부 체크))
 - [x] 씨앗 절차 + 실물 응답 고정물 + 회귀 16개 — `save` 경로가 봉투(`data.`) 아래라는 것을
       테스트가 잡았다(W-29). 굽힘반경은 `bend_profile` 이 준다(W-28)
 - [ ] 포털 화면에서 R1 을 **실제로 완주** — StepForge 에 U자 판을 반입하고 절차를 재생한다(사람)

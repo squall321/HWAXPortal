@@ -23,8 +23,8 @@
 - [x] 4라운드 — 값 없음+주석 줄(네 독자·bash 오라클·`_envfile_value` 하나로)·§5 `(rc $?)`·실패 시 재기동 안 함·못 읽음≠설정됨·루프백 별칭·upsert export·거부값 비움·NOT_ROOT (D-11)
 
 ## cae00 (사용자)
-- [ ] `infra/.env` 에 `RA_HOST=<A 주소>`(요청서 §1) → `git pull && ./infra/scripts/update-all.sh`
+- [x] `infra/.env` 에 `RA_HOST=<A 주소>`(요청서 §1) → `git pull && ./infra/scripts/update-all.sh` (확인 10-17 — ra-reconnect D-9 'RA 쪽은 돌았다'(RA_HOST 설정 · 1e 실행), ste-cae00 D-28 'RA 완료')
 - [ ] 요청서 §8 여덟 줄 확인(구 :3000 안 뜸 · 공개 주소 화면 · 2MB 첨부 · 타일 SSO · RA 직접 접속 SSO · 챗 RA 도구가 새 데이터 · apply-envs 재실행에도 LLM 유지 · update-all 이 RA 죽었다고 경고 안 함)
-- [ ] RA 담당에게 **JWKS 주소** 전달(1e 출력의 후보 중 하나 — 사내망 http :8088 이 간단) — https 를 고르면 사내 CA 일 때 `/tls/ca.crt` 도
+- [x] RA 담당에게 **JWKS 주소** 전달(1e 출력의 후보 중 하나 — 사내망 http :8088 이 간단) — https 를 고르면 사내 CA 일 때 `/tls/ca.crt` 도 (확인 10-17 — ste-cae00 D-28 — RA 콜백 303 = SSO 켜짐(RA 쪽 PORTAL_JWKS_URL 이 있어야 선다, D-12 표), ra-reconnect D-12 — RA 담당이 주소를 골랐다)
 - [ ] 공개 https 를 낼 박스면 `infra/.env` 에 `ENABLE_TLS=true·TLS_CERT_PATH(fullchain, 리포 루트 상대)·PUBLIC_BASE_URL=https://…·COOKIE_SECURE=true` → `ste-doctor` 의 `tls`·`https` 행 둘 다 초록
 - [ ] 구 RA 설치본 정리는 3-5(LLM 이관) 확인 **뒤에** — RA 담당과 맞춘다

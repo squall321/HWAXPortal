@@ -18,7 +18,7 @@
 - [x] KooRemapper `platform/infra/scripts/dist-from-drive.sh` + gitignore
 
 ## 검증
-- [ ] dev 에서 update-all 두 번 — 두 번째 §2·§4 전부 생략, Drive 전송 0
+- [x] ~~dev 에서 update-all 두 번 — 두 번째 §2·§4 전부 생략, Drive 전송 0~~ — 버림(10-17 — dev 실행 금지(deploy-all 은 dev 금지)라 버린다 — cae00 측정 줄(이 체크리스트의 [~] 줄)이 대신한다)
 - [x] 적대 검토 1라운드 — 설계 결함(전/후 기준) 잡힘 → 상태 기준으로 재설계(D-8)
 - [x] 적대 검토 2라운드(재설계 대상) — 확인 6 → 기록 조건을 '새 프로세스가 답한다' 로(D-9)
 - [x] 적대 검토 3라운드(2라운드 수정 대상) — 확인 17(열 갈래, high 3) → url 별 비교·wait_up·nginx rc·§4 health(D-10)

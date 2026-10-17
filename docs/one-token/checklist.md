@@ -40,8 +40,8 @@
 - [x] ste 자격 중계 E2E — 게이트웨이가 본인 명의 PAT 로 `/api/auth/me` 200(계정 JIT 생성)
 - [x] §6 자격중계 게이트 초록(`401 + www-authenticate 없음` = 양쪽 설정됨)
 - [ ] dev: 포털 PAT 한 장으로 `/mcp-gw/api/<site>/…` HTTP 경로도 통하는지 (MCP 경로만 확인했다)
-- [ ] cae00: `update-all` (provision 이 새 사이트를 만들고, 2c 가 ste 를 판정한다 —
-      운영 클러스터라 실배포는 `STE_DEPLOY=1` 을 줄 때만 돈다)
+- [x] cae00: `update-all` (provision 이 새 사이트를 만들고, 2c 가 ste 를 판정한다 —
+      운영 클러스터라 실배포는 `STE_DEPLOY=1` 을 줄 때만 돈다) (확인 10-17 — cae00 update-all 이 09-23 커밋 뒤 09-27 에 돌았다 — ste-cae00 context-notes §F · D-28(두 번째 실행, §5 재프로비저닝))
 
 ## 열기 전에 닫아야 할 것 (PLAN §3 — **미결**)
 - [ ] **`scope`(read/write)가 아무 데서도 검증되지 않는다.** 지금은 한 장 = 전권이다
