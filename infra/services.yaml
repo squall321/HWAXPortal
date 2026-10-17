@@ -356,6 +356,7 @@ services:
     discover: HWAXMcpGateway
     repo: https://github.com/squall321/HWAXMcpGateway.git  # update-sites.sh auto-clones/sets-remote if missing
     start: ./start.sh                     # streamable-http :9110, injects per-backend tokens
+    log: gateway.log                      # 손 기동(start.sh --bg)과 같은 한 곳 — 덧붙여 쓴다(services.py prep_log, 10-17 리뷰 P1)
     health: http://localhost:9110/health  # unauthenticated JSON {status,tools,backends}
     data:
       backup_want: [gateway]

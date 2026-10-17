@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import subprocess
+import time
 import sys
 import urllib.request
 from pathlib import Path
@@ -27,6 +28,50 @@ PORTAL_ROOT = Path(__file__).resolve().parent.parent.parent  # infra/scripts →
 PARENT = PORTAL_ROOT.parent
 MANIFEST = PORTAL_ROOT / "infra" / "services.yaml"
 LOG_DIR = Path("/tmp/hwax-services")
+LOG_ROTATE_BYTES = 64 * 1024 * 1024   # 기동 · 갱신 때 이보다 크면 한 벌(.1)만 넘기고 새로 연다
+
+
+def svc_log(svc: dict, wd: Path | None = None) -> Path:
+    """서비스 로그 자리 — 매니페스트 `log:`(서비스 디렉터리 기준) 또는 LOG_DIR/<이름>.log.
+
+    게이트웨이는 `log: gateway.log` 로 손 기동(`start.sh --bg`)과 같은 한 곳에 쓴다(데이터 레지스트리의 그 서비스 log 와 같다).
+    """
+    rel = svc.get("log")
+    base = wd if wd is not None else resolve_dir(svc)
+    return (base / rel) if rel and base else LOG_DIR / f"{svc['name']}.log"
+
+
+def prep_log(path: Path) -> Path:
+    """덧붙여 쓸 로그를 준비한다 — 디렉터리 700(LOG_DIR) · 파일 600 · 크면 한 벌 회전.
+
+    ⚠ 기동마다 'wb' 로 열어 지웠다 — cae00 게이트웨이 10-14~10-17 기록이 사라졌고(10-17 리뷰 P1), 바로 앞 갱신 단계가 같은
+    파일에 덧붙인 출력도 함께 날아갔다. 그리고 토큰이 든 주소가 찍히는 로그(G1)를 같은 박스의 다른 사용자도 읽을 수 있었다(775 · 664).
+    """
+    if path.parent == LOG_DIR:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(LOG_DIR, 0o700)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if path.stat().st_size > LOG_ROTATE_BYTES:
+            os.replace(path, path.with_name(path.name + ".1"))
+    except FileNotFoundError:
+        pass
+    os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600))
+    os.chmod(path, 0o600)
+    return path
+
+
+def _log_tail(path: Path, start: int) -> str:
+    """이번 기동이 쓴 부분(start 이후)의 마지막 비지 않은 줄 — 덧붙여 쓰므로 앞 기동의 줄을 진행으로 보이지 않게 한다."""
+    try:
+        with open(path, "rb") as lf:
+            size = lf.seek(0, os.SEEK_END)
+            lf.seek(max(start, size - 65536))
+            ls = [ln for ln in lf.read().decode("utf-8", errors="replace").splitlines() if ln.strip()]
+    except OSError:
+        return ""
+    return ls[-1].rstrip()[:90] if ls else ""
 
 # ── 데이터 경로 레지스트리(docs/data-migration/PLAN.md §5) ──────────────────────────
 # services.yaml 의 서비스별 `data:` 블록을 기동 env 로 해석한다. HWAX_DATA_ROOT 가 없으면 {} 를
@@ -352,8 +397,7 @@ def start_one(svc: dict) -> str:
         return "already-up"
 
     host = svc.get("host", "local")
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log = LOG_DIR / f"{name}.log"
+    log = svc_log(svc)
     # 레지스트리 env(HWAX_DATA_ROOT 있을 때만) 위에 명시 env: 가 덮는다. 미설정이면 종전과 동일.
     inner = f"{env_prefix({**resolve_data(svc), **(svc.get('env') or {})})}{svc['start']}"
 
@@ -361,8 +405,12 @@ def start_one(svc: dict) -> str:
         wd = resolve_dir(svc)
         if not wd or not wd.is_dir():
             return f"FAIL: dir not found (discover={svc.get('discover')}, dir={svc.get('dir')})"
+        prep_log(log)
+        with open(log, "ab") as lf:
+            lf.write(f"\n=== start {time.strftime('%Y-%m-%dT%H:%M:%S%z')}: {svc['start']}\n".encode())
+        log_start = log.stat().st_size
         # Detached session: survives this orchestrator; foreground servers keep running.
-        with open(log, "wb") as lf, open("/dev/null", "rb") as devnull:
+        with open(log, "ab") as lf, open("/dev/null", "rb") as devnull:
             subprocess.Popen(  # noqa: S602 — commands come from our own manifest
                 ["bash", "-c", inner], cwd=str(wd),
                 stdout=lf, stderr=subprocess.STDOUT, stdin=devnull,
@@ -389,13 +437,8 @@ def start_one(svc: dict) -> str:
     def _tick(i: int, n: int) -> None:
         if i != 1 and i % 5 != 0:      # ~10초마다(1회차 + 5의 배수)만 출력
             return
-        last = ""
-        try:  # 서비스 자기 로그 꼬리를 함께 보여 heal.sh/기동 진행을 노출
-            with open(log, encoding="utf-8", errors="replace") as lf:
-                ls = [ln for ln in lf if ln.strip()]
-            last = ls[-1].rstrip()[:90] if ls else ""
-        except OSError:
-            pass
+        # 서비스 자기 로그 꼬리를 함께 보여 heal.sh/기동 진행을 노출 — 원격은 로그가 이 박스에 없다
+        last = _log_tail(log, log_start) if host == "local" else ""
         print(f"        · 대기 {int(i * gap)}s/{int(n * gap)}s"
               + (f"  | log꼬리: {last}" if last else "  | (로그 아직 없음)"), flush=True)
 
@@ -423,8 +466,7 @@ def update_one(svc: dict) -> str:
     wd = resolve_dir(svc)
     if not wd or not wd.is_dir():
         return "FAIL: dir not found"
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    logp = LOG_DIR / f"{svc['name']}.log"
+    logp = prep_log(svc_log(svc, wd))
     lines: list[str] = []
 
     def _head() -> str | None:  # git HEAD — 갱신 전/후를 비교해 '바뀌었나' 를 문자열("Already up to date")이 아니라 커밋으로 말한다
