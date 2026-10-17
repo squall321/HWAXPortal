@@ -90,6 +90,18 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       continue;
     }
     if (m.role === 'system') continue; // 화면 비표시(향후 필요 시 확장)
+    if (m.role === 'assistant') {
+      // 그 발화에 올린 그림의 서버 주소 — 포털이 답의 meta(user_images)에 남긴다(사람 발화는 스트림 전에 저장돼 주소를 모른다).
+      // 바로 앞 사람 발화에 붙인다 — 다른 기기에서 연 대화도 다음 턴 이력에 그림이 실린다(T5).
+      const ui = (m.meta as { user_images?: unknown } | null)?.user_images;
+      if (Array.isArray(ui) && ui.length) {
+        for (let k = out.length - 1; k >= 0; k -= 1) {
+          if (out[k].role !== 'user') continue;
+          out[k] = { ...out[k], images: ui.filter((u): u is string => typeof u === 'string') };
+          break;
+        }
+      }
+    }
     if (m.role === 'assistant' && turns.length > 0) {
       // 저장된 round 는 이어하기를 이어 센 번호다(웹·MCP 공통). 한 회차의 라운드는 offset+1 부터
       // 연속이므로 최소값으로 회차 안 번호를 되살린다 — 라운드 묶음·수렴 판정이 그걸 쓴다.

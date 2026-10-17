@@ -46,5 +46,6 @@ def test_모양이_틀린_근거는_막는다():
 
 def test_심의_전_도우미에는_근거를_넘기지_않는다():
     """전문가 고르기 · 되묻기 · 화두는 글만 본다 — 근거가 실려 와도 요청만 무거워진다."""
-    assert SRC.count('"history": [m.model_dump(exclude={"evidence"}) for m in body.history]') == 3
+    # 그림 주소(images)도 같이 뺀다 — tests/test_chat_images_route.py
+    assert SRC.count('"history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history]') == 3
     assert '[m.model_dump() for m in body.history]' not in SRC

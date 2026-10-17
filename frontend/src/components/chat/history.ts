@@ -52,12 +52,14 @@ function sizeOf(h: HistoryMessage): number {
 
 /** 멀티턴 history: 대화의 기존 메시지 → 계약 형식(오래된 것→최신 순, 이번 발화 제외). 항목은 자르지 않는다.
  *  evidence 를 켜면 어시스턴트 항목에 그 턴의 조회 근거를 싣는다(챗 보내기) — 심의 전 도우미(브리프)는 글만 본다.
+ *  images 를 켜면 사람 항목에 그 발화에 올린 그림의 서버 주소를 싣는다(주소뿐이라 합계 상한에 세지 않는다 — 포털도 안 센다).
  *  글이 근거에 밀리지 않게 두 번 담는다 — 1차로 글만 종전처럼 최신부터 합계 상한까지, 2차로 남는 몫에 최근 턴의 근거부터. */
-export function buildHistory(messages: Message[], opts: { evidence?: boolean } = {}): HistoryMessage[] {
+export function buildHistory(messages: Message[], opts: { evidence?: boolean; images?: boolean } = {}): HistoryMessage[] {
   const items = messages
     .filter((m) => !m.error && m.text.trim() !== '')
     .map((m) => ({ role: m.role, content: m.text,
-                   evidence: opts.evidence && m.role === 'assistant' ? turnEvidence(m) : [] }));
+                   evidence: opts.evidence && m.role === 'assistant' ? turnEvidence(m) : [],
+                   images: opts.images && m.role === 'user' ? (m.images ?? []) : [] }));
   // 1차 — 최근 것 우선, 뒤에서부터 개수/총량 예산만큼 글을 담는다(종전과 같다).
   const out: HistoryMessage[] = [];
   const evs: HistoryEvidence[][] = [];
@@ -65,7 +67,8 @@ export function buildHistory(messages: Message[], opts: { evidence?: boolean } =
   for (let i = items.length - 1; i >= 0 && out.length < HISTORY_MAX_ITEMS; i--) {
     if (total + items[i].content.length > HISTORY_MAX_TOTAL_CHARS) break;
     total += items[i].content.length;
-    out.push({ role: items[i].role, content: items[i].content });
+    out.push({ role: items[i].role, content: items[i].content,
+               ...(items[i].images.length ? { images: items[i].images } : {}) });
     evs.push(items[i].evidence);
   }
   // 2차 — 남는 몫에 최근 턴의 근거부터. 못 드는 턴은 건너뛴다(더 오래된 턴의 작은 근거는 들 수 있다).

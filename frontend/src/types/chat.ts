@@ -253,6 +253,11 @@ export interface Message {
   /** 이 발화에 붙인 문서 — **이름과 길이만** 남긴다. 본문(수만 자)까지 대화에 넣으면
    *  localStorage 쿼터를 바로 먹는다(agentCatalog 를 안 남기는 것과 같은 이유). */
   docs?: { name: string; chars: number; kind?: string }[];
+  /** 이 발화에 올린 그림의 서버 주소(/agent/artifacts/…, SSE user_images) — 다음 턴 이력에 실려 챗 · 띵킹 · 심의가 다시 본다(T5).
+   *  주소만이라 작다 — 영속된다. */
+  images?: string[];
+  /** 서버 주소가 오기 전의 썸네일(data URL) — 화면에만, 영속하지 않는다(쿼터). user_images 가 오면 지운다. */
+  localImages?: string[];
   error?: string;
   // 자격증명 강등 등 치명적이지 않은 경고 — 심의가 서비스 계정으로 근거를 모은 경우.
   // error 와 달리 응답을 막지 않고 옆에 지속 표시한다(무음 강등 가시화).

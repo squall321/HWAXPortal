@@ -476,6 +476,64 @@ ol.md-list li.md-li-d2 {
   font-size: 0.75rem;
 }
 
+/* 올린 그림 — 입력창의 붙일 그림(썸네일 + 떼기)과 사람 말풍선 아래의 그림. docs/chat-depth-context T5 */
+.img-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.img-chip {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+.img-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.img-chip button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  line-height: 18px;
+  font-size: 13px;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--fg);
+  opacity: 0.85;
+}
+.img-chip button:hover,
+.img-chip button:focus-visible {
+  opacity: 1;
+}
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+.msg-images .md-figure {
+  max-width: min(220px, 100%);
+  margin: 0;
+}
+.msg-images .md-img {
+  max-height: 180px;
+  object-fit: contain;
+}
+
 /* 스트리밍 상태 — 상태 라인 펄스 / 타이핑 점 / 라이브 커서 */
 .msg-thinking {
   min-height: 1.4em;

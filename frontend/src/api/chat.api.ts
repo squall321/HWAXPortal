@@ -30,6 +30,8 @@ export interface StreamHandlers {
   onReasoning?: (e: { delta: string }) => void;
   /** 턴 끝 — 답한 모델 · 생각 설정(SSE meta). */
   onMeta?: (e: TurnMeta) => void;
+  /** 이 발화에 올린 그림을 서버가 저장한 주소(SSE user_images) — 사람 메시지에 남겨 다음 턴 이력에 싣는다. */
+  onUserImages?: (e: { urls: string[] }) => void;
   onDone?: () => void;
   /** 프레임이 하나 올 때마다(이벤트 이름) — 서버 heartbeat(`ping`)를 포함한다. 내용이 아니라 '살아 있다' 는 신호다. */
   onSignal?: (event: string) => void;
@@ -94,6 +96,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
     case 'meta':
       h.onMeta?.(payload as TurnMeta);
       break;
+    case 'user_images':
+      h.onUserImages?.(payload as { urls: string[] });
+      break;
     case 'error':
       h.onError?.(payload as ErrorEvent);
       break;
@@ -109,6 +114,8 @@ export interface HistoryMessage {
   content: string;
   /** 그 턴에 도구가 조회한 결과(어시스턴트 항목) — 에이전트 서버가 다음 턴 이력과 띵킹 좌석의 세션 맥락에 싣는다(docs/chat-depth-context). */
   evidence?: HistoryEvidence[];
+  /** 그 발화에 올린 그림의 서버 주소(사람 항목, /agent/artifacts/…) — 챗 · 띵킹 · 심의가 앞 대화의 그림으로 다시 싣는다(T5). */
+  images?: string[];
 }
 
 // 앞 턴의 조회 근거 하나 — 포털 ChatHistoryEvidence 와 같은 모양(tool 200자 · args 8,000자).
@@ -479,11 +486,13 @@ export async function streamChat(
     /** 붙인 문서의 **추출문**. 원본 파일은 올라가지 않는다 — DRM 때문에 추출은 PC 의
      *  Office COM 에서 끝난다(docs/doc-deliberate). 서버가 예산에 맞춰 다시 자른다. */
     documents?: { name: string; kind?: string; text: string }[];
+    /** 이 발화에 올린 그림(긴 변 1,568px 로 줄인 data URL). 서버가 저장하고 주소를 user_images 로 돌려준다. */
+    images?: { name: string; mime: string; data: string }[];
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -517,6 +526,8 @@ export async function streamChat(
       // 켠 것만 보낸다(서버 기본값 false). 끄면 키 자체가 안 나간다.
       ...(thinking ? { thinking: true } : {}),
       ...(documents && documents.length > 0 ? { documents: documents.slice(0, 10) } : {}),
+      // 장수는 붙이는 자리(Composer · IMAGES_MAX)가 막는다 — 넘으면 포털이 422 로 알린다.
+      ...(images && images.length > 0 ? { images } : {}),
     }),
     signal,
   });

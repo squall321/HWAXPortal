@@ -90,17 +90,40 @@ class ChatHistoryEvidence(BaseModel):
     result: str = Field(max_length=_WINDOW_CHARS)
 
 
+# 한 발화에 올리는 그림 — 에이전트 서버 vision.MAX_IMAGES(VISION_MAX_IMAGES 기본 12) · MAX_BYTES(VISION_MAX_BYTES 기본 8MiB)와 같은 수다.
+# 넘는 것은 여기서 422 로 소리 낸다(에이전트 서버도 다시 보고 건너뛴 수를 화면에 알린다). base64 는 원본의 4/3 이고 data URL 머리가 붙을 수 있다.
+_IMAGES_MAX = 12
+_IMAGE_BYTES_MAX = 8 * 1024 * 1024
+_IMAGE_B64_MAX = (_IMAGE_BYTES_MAX + 2) // 3 * 4 + 64
+# 이력 항목의 그림은 에이전트 서버가 저장한 올린 그림의 주소뿐이다(해시 이름 — 열거할 수 없다). 다른 주소는 받지 않는다.
+_ARTIFACT_IMAGE_PAT = r"^/agent/artifacts/[A-Za-z0-9][A-Za-z0-9_.-]{0,79}\.(?:png|jpe?g|gif|webp)$"
+_ARTIFACT_IMAGE_RE = re.compile(_ARTIFACT_IMAGE_PAT)
+_ArtifactImage = Annotated[str, StringConstraints(pattern=_ARTIFACT_IMAGE_PAT)]
+
+
+class ChatImage(BaseModel):
+    """이 발화에 올린 그림 한 장 — 화면이 긴 변 1,568px 로 줄여 base64 로 싣는다(docs/chat-depth-context T5). 에이전트 서버가 아티팩트로
+    저장하고 주소를 'user_images' 사건으로 돌려준다 — 화면은 그 주소를 이력 항목(images)에 남긴다(원본은 남기지 않는다 — 쿼터)."""
+    name: str = Field(default="", max_length=260)
+    mime: Literal["image/png", "image/jpeg", "image/gif", "image/webp"]
+    data: str = Field(min_length=1, max_length=_IMAGE_B64_MAX)
+
+
 class ChatHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(max_length=_WINDOW_CHARS)  # 항목 상한 — 합계는 _history_total 이 본다(DoS)
     # 그 턴의 조회 근거(어시스턴트 항목) — 없으면 종전 이력과 같다. 건수는 한 턴의 도구 호출 수 위쪽(에이전트 서버 호출 예산보다 넉넉히).
     evidence: list[ChatHistoryEvidence] | None = Field(default=None, max_length=256)
+    # 그 발화에 올린 그림의 주소(사람 항목) — 에이전트 서버가 앞 대화의 그림으로 다시 싣는다(챗 · 띵킹 · 심의, T5).
+    images: list[_ArtifactImage] | None = Field(default=None, max_length=_IMAGES_MAX)
 
     def to_agent(self) -> dict:
-        """에이전트 서버 /chat 이력 항목 — 근거가 있을 때만 그 칸을 싣는다(종전 모양 그대로 · 빈 칸을 늘리지 않는다)."""
+        """에이전트 서버 /chat 이력 항목 — 근거 · 그림이 있을 때만 그 칸을 싣는다(종전 모양 그대로 · 빈 칸을 늘리지 않는다)."""
         out: dict = {"role": self.role, "content": self.content}
         if self.evidence:
             out["evidence"] = [e.model_dump(exclude_none=True) for e in self.evidence]
+        if self.images:
+            out["images"] = list(self.images)
         return out
 
 
@@ -268,6 +291,8 @@ class ChatRequest(BaseModel):
     # 붙인 문서의 **추출문**(챗). 원본 파일은 오지 않는다 — DRM 문서는 그 PC 에서만 복호화되므로
     # 추출을 사용자 PC 의 Office COM 으로 옮겼다(docs/doc-deliberate). 여기 오는 것은 이미 평문이다.
     documents: list[ChatDocument] | None = Field(default=None, max_length=10)
+    # 이 발화에 올린 그림(챗) — 에이전트 서버로 그대로 넘긴다. 서버 대화에는 원본이 아니라 돌려받은 주소만 남는다.
+    images: list[ChatImage] | None = Field(default=None, max_length=_IMAGES_MAX)
     # 웹 리서치 소스 토글(챗) — None 이면 종전 동작, 리스트면 그 소스만 바인딩한다.
     # 빈 리스트는 '전부 끔'이다. 전역 SEARCH_MODE 가 끄면 이 값과 무관하게 나가지 않는다.
     search_sources: list[str] | None = Field(default=None, max_length=4)
@@ -648,6 +673,8 @@ async def _relay_stream(
         payload["thinking"] = True
     if body.documents:  # 붙인 문서의 추출문 — 원본이 아니라 평문이다
         payload["documents"] = [d.model_dump() for d in body.documents]
+    if body.images:  # 올린 그림 — 에이전트 서버가 저장하고 주소를 돌려준다(user_images)
+        payload["images"] = [i.model_dump() for i in body.images]
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload
@@ -1450,7 +1477,7 @@ async def deliberate_experts(
     client = _agent_client(request)
     payload = {"message": body.message, "groups": principal.groups, "light": body.light,
                # ⚠ 이 줄이 없으면 프론트가 대화를 보내도 여기서 버려져 축이 안 나온다.
-               "history": [m.model_dump(exclude={"evidence"}) for m in body.history]}
+               "history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history]}
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/experts", json=payload,
                               timeout=_unary_timeout(settings))
@@ -1478,7 +1505,7 @@ async def deliberate_clarify(
     ensure(principal, "feat:deliberation")
     client = _agent_client(request)
     payload = {"message": body.message, "job": body.job,
-               "history": [m.model_dump(exclude={"evidence"}) for m in body.history]}
+               "history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history]}
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/clarify", json=payload,
                               timeout=_unary_timeout(settings))
@@ -1512,7 +1539,7 @@ async def deliberate_topic(
     쓰면 되지, 브리프가 안 열리면 안 된다."""
     ensure(principal, "feat:deliberation")
     client = _agent_client(request)
-    payload = {"history": [m.model_dump(exclude={"evidence"}) for m in body.history],
+    payload = {"history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history],
                "fallback": body.fallback, "job": body.job}
     fail = {"topic": body.fallback, "why": "", "options": []}
     try:
@@ -1643,6 +1670,7 @@ async def chat(
         turns: list[dict] = []       # 심의 persona 발언 — MCP 경로와 대칭으로 서버에 남긴다
         activity: list[dict] = []    # status 이벤트(도구 호출·결과) 누적 — 심의 핸드오프 스냅샷 서버 영속
         delib_ev: list[dict] = []    # 심의 근거 카드(좌석 조회 결과·엔진의 '줄였다·뺐다' 알림) — 서버 사본에도 남긴다
+        user_images: list[str] = []  # 이 발화에 올린 그림의 주소(user_images) — 서버 사본의 답 meta 에 남겨 다른 기기의 이력에도 그림이 실리게
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
         # 청크는 글자 경계와도 안 맞는다 — 한글 한 자(3바이트)가 두 청크로 갈리면 청크마다 따로 풀 때 그 자리가 '�' 로
         # 깨져 서버 사본에 들어간다. 발언이 길수록(줄이지 않은 글은 수만 자다) 걸린다. 이어지는 바이트를 쥐고 푼다.
@@ -1694,6 +1722,10 @@ async def chat(
                                 # 길이다(notice). 종전엔 서버 사본에 남지 않아 다른 기기·새로고침 뒤에는 알림이 사라지고,
                                 # 좌석이 조회한 근거(이어하기가 승계한다)도 브라우저 사본 최근 4건만 남았다. 그대로 둔다.
                                 delib_ev.append({kk: vv for kk, vv in data.items() if kk != "kind"})
+                        elif evt == "user_images" and isinstance(data.get("urls"), list):
+                            # 주소 꼴만 받는다 — 이력 항목(ChatHistoryMessage.images)이 받는 꼴과 같아야 다음 턴에 422 가 안 난다.
+                            user_images = [u for u in data["urls"]
+                                           if isinstance(u, str) and _ARTIFACT_IMAGE_RE.fullmatch(u)][:_IMAGES_MAX]
                         elif evt == "status" and data.get("tool"):
                             # 도구가 붙은 status 만 근거로 남긴다(진행 텍스트만 있는 건 스냅샷 대상 아님).
                             activity.append({
@@ -1771,7 +1803,8 @@ async def chat(
                                          meta=(_m or None))
                         reply = final if final is not None else (decision or "".join(acc))
                         if reply:
-                            _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev)) if v}
+                            _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
+                                                     ("user_images", user_images)) if v}
                             store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
                                          meta=(_am or None))
                     except sqlite3.Error as exc:

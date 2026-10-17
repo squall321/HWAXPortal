@@ -12,6 +12,8 @@ import { IconArrowDown, IconCheck, IconCopy } from './icons';
 import { colorOf, initialOf, shortName } from './personaColor';
 import { StreamPulse } from './StreamPulse';
 import { TextBlock } from './renderers/TextBlock';
+import { Figure } from './renderers/Figure';
+import { config } from '../../config';
 
 function ErrorBlock({ raw }: { raw: string }) {
   const { retryLast, streaming } = useChat();
@@ -46,6 +48,19 @@ function CopyAction({ text }: { text: string }) {
   );
 }
 
+/** 그 발화에 올린 그림 — 서버 주소(images)가 오면 그것(포털 프록시가 낸다), 오기 전엔 보낼 때의 썸네일(localImages). */
+function UserImages({ msg }: { msg: Message }) {
+  const srcs = msg.images?.length ? msg.images.map((u) => `${config.apiBase}${u}`) : (msg.localImages ?? []);
+  if (!srcs.length) return null;
+  return (
+    <div className="msg-images">
+      {srcs.map((src, i) => (
+        <Figure key={`${i}-${src.slice(-24)}`} src={src} alt={`올린 그림 ${i + 1}`} />
+      ))}
+    </div>
+  );
+}
+
 function Row({ msg }: { msg: Message }) {
   if (msg.role === 'user') {
     return (
@@ -53,6 +68,7 @@ function Row({ msg }: { msg: Message }) {
         <div className="msg-bubble">
           <TextBlock text={msg.text} />
         </div>
+        <UserImages msg={msg} />
       </div>
     );
   }

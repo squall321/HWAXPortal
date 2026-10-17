@@ -7,6 +7,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
@@ -20,6 +21,7 @@ import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
 import { classify, readDoc, kindLabel, unitsLabel, isEncryptedOffice, DOC_MAX } from './docAttach';
+import { IMAGES_MAX, isImageFile, readImage, type AttachedImage } from './imageAttach';
 import { DocExtractHint } from './DocExtractHint';
 import { DocActions } from './DocActions';
 import { UploadRouter } from './UploadRouter';
@@ -66,6 +68,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setPinnedHelpers,
     attachedDocs,
     setAttachedDocs,
+    attachedImages,
+    setAttachedImages,
   } = useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { user } = useAuth();
@@ -83,11 +87,41 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   //   text      추출문·평문 → 브라우저에서 그대로 읽어 챗·심의 근거로. 서버에 안 올린다.
   //   needs-com PPT·Word·PDF 원본 → 서버가 파싱하면 DRM 에 막힌다. PC 추출 안내를 띄운다.
   //   upload    물성 CSV·STEP 등 → 종전 목적지 선택 경로 그대로.
+  // 그림 — 브라우저에서 줄여(긴 변 1,568px) 이 발화에 싣는다. 서버가 저장하고 돌려준 주소가 그 발화에 남아 다음 턴 · 띵킹 · 심의가
+  // 다시 본다(docs/chat-depth-context T5). 상한(IMAGES_MAX)을 넘거나 읽히지 않으면 말한다(조용히 빼지 않는다).
+  const addImages = useCallback(
+    async (files: File[]) => {
+      setUpErr('');
+      const room = IMAGES_MAX - attachedImages.length;
+      if (room <= 0) {
+        setUpErr(`그림은 한 번에 ${IMAGES_MAX}장까지 올릴 수 있습니다.`);
+        return;
+      }
+      const got: AttachedImage[] = [];
+      const errs: string[] = [];
+      for (const f of files.slice(0, room)) {
+        try {
+          got.push(await readImage(f));
+        } catch (e) {
+          errs.push(e instanceof Error ? e.message : '그림을 읽지 못했습니다.');
+        }
+      }
+      if (files.length > room) errs.push(`${files.length - room}장은 한 번에 ${IMAGES_MAX}장 상한을 넘어 붙이지 않았습니다.`);
+      if (got.length) setAttachedImages([...attachedImages, ...got]);
+      if (errs.length) setUpErr(errs.join(' · '));
+    },
+    [attachedImages, setAttachedImages],
+  );
+
   const onPick = useCallback(
     async (f: File | undefined) => {
       if (!f) return;
       setUpErr('');
       setComFile(null);
+      if (isImageFile(f)) {
+        await addImages([f]);
+        return;
+      }
       const verdict = classify(f.name);
       if (verdict === 'needs-com') {
         // **평문이면 서버가 읽는다** — 각 서비스가 자기 취입기를 갖고 있으므로 그냥 올린다.
@@ -122,8 +156,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         setUpErr(e instanceof Error ? e.message : '업로드 실패');
       }
     },
-    [attachedDocs, setAttachedDocs],
+    [attachedDocs, setAttachedDocs, addImages],
   );
+
+  // 붙여넣기 — 그림만 온 붙여넣기(화면 갈무리)는 그림으로. 글이 함께 오면(Office 복사는 글 + 그 글의 그림을 같이 싣는다) 글 붙여넣기다.
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData?.files ?? []).filter(isImageFile);
+    if (!files.length || e.clipboardData.getData('text/plain')) return;
+    e.preventDefault();
+    void addImages(files);
+  };
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }), []);
 
@@ -275,6 +317,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ))}
         </div>
       )}
+      {attachedImages.length > 0 && (
+        <div className="img-chips" aria-label="올릴 그림">
+          {attachedImages.map((im, i) => (
+            <span
+              key={`${im.name}-${i}`}
+              className="img-chip"
+              title={`${im.name} — ${im.width}×${im.height}px · ${(im.bytes / 1024).toFixed(0)}KB${
+                im.scaledFrom ? ` (긴 변 ${im.scaledFrom}px 에서 줄임)` : ''}`}
+            >
+              <img src={im.dataUrl} alt={im.name} />
+              <button
+                type="button"
+                onClick={() => setAttachedImages(attachedImages.filter((_, j) => j !== i))}
+                aria-label={`그림 ${im.name} 떼기`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       {attachedDocs.length > 0 && (
         <DocActions
           docs={attachedDocs}
@@ -296,6 +359,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           aria-label="메시지 입력"
         />
@@ -306,16 +370,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <input
                 ref={fileRef}
                 type="file"
-                accept=".md,.txt,.pptx,.ppt,.docx,.doc,.pdf,.htm,.html,.csv,.xlsx,.step,.stp,.msh,.zip,.k,.key,.dyn,.inc"
+                accept=".md,.txt,.pptx,.ppt,.docx,.doc,.pdf,.htm,.html,.csv,.xlsx,.step,.stp,.msh,.zip,.k,.key,.dyn,.inc,.png,.jpg,.jpeg,.gif,.webp"
+                multiple
                 style={{ display: 'none' }}
-                onChange={(e) => void onPick(e.target.files?.[0] ?? undefined)}
+                onChange={(e) => {
+                  // 그림만 여럿 고르면 다 붙인다. 그 밖(문서 · 업로드)은 종전대로 첫 파일 하나.
+                  const fs = Array.from(e.target.files ?? []);
+                  e.target.value = '';
+                  if (fs.length > 1 && fs.every(isImageFile)) void addImages(fs);
+                  else void onPick(fs[0]);
+                }}
               />
               <button
                 type="button"
                 className="composer-btn composer-attach"
                 onClick={() => fileRef.current?.click()}
                 aria-label="파일 붙이기"
-                title="파일 붙이기 — 문서(PPT·Word·PDF) · 물성 CSV · STEP·MSH·ZIP · K파일"
+                title="파일 붙이기 — 문서(PPT·Word·PDF) · 그림(PNG·JPG — 붙여넣기도 된다) · 물성 CSV · STEP·MSH·ZIP · K파일"
               >
                 <IconPlus />
               </button>
@@ -350,7 +421,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       </div>
       {showHint && (
         <div className="composer-hint" aria-hidden="true">
-          {streaming ? '응답 생성 중… 중지하려면 ■ 버튼' : 'Enter 전송 · Shift+Enter 줄바꿈'}
+          {streaming ? '응답 생성 중… 중지하려면 ■ 버튼' : 'Enter 전송 · Shift+Enter 줄바꿈 · 그림은 붙여넣기(Ctrl+V)'}
         </div>
       )}
     </form>

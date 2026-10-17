@@ -21,6 +21,8 @@ interface StoredMessage {
   persona?: { key: string; name?: string };
   /** 이 턴에 답한 모델 · 생각 설정 — 작아서 남긴다(생각 글은 남기지 않는다). */
   meta?: TurnMeta;
+  /** 이 발화에 올린 그림의 서버 주소 — 주소만 남긴다(그림 원본 · data URL 은 남기지 않는다 — 쿼터). */
+  images?: string[];
 }
 interface StoredConversation {
   id: string;
@@ -69,6 +71,9 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           ...(m.think && typeof m.think === 'object' ? { think: m.think } : {}),
           ...(m.persona && typeof m.persona.key === 'string' ? { persona: m.persona } : {}),
           ...(m.meta && typeof m.meta.models === 'object' ? { meta: m.meta } : {}),
+          ...(Array.isArray(m.images) && m.images.length
+            ? { images: m.images.filter((u): u is string => typeof u === 'string' && u.startsWith('/agent/artifacts/')) }
+            : {}),
         });
       }
       convs.push({
@@ -199,6 +204,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ...(m.think ? { think: trimThink(m.think) } : {}),
             ...(m.persona ? { persona: m.persona } : {}),
             ...(m.meta ? { meta: m.meta } : {}),
+            ...(m.images?.length ? { images: m.images } : {}),
           };
         });
       return {

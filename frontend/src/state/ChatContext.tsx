@@ -25,6 +25,7 @@ import { useCan } from '../auth/useCan';
 import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
+import type { AttachedImage } from '../components/chat/imageAttach';
 import { buildHistory } from '../components/chat/history';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import {
@@ -98,6 +99,9 @@ interface ChatContextValue {
    *  원본 파일은 서버로 가지 않는다(DRM 전제: 추출은 PC 의 Office COM 에서 끝난다). */
   attachedDocs: AttachedDoc[];
   setAttachedDocs: (list: AttachedDoc[]) => void;
+  /** 이번 발화에 올릴 그림(줄인 data URL). 보내면 비워진다 — 서버가 저장한 주소가 그 발화에 남아 다음 턴 이력으로 다시 실린다(T5). */
+  attachedImages: AttachedImage[];
+  setAttachedImages: (list: AttachedImage[]) => void;
   stop: () => void;
   /** 지금 도는 스트림의 생존 신호(마지막 프레임·마지막 진행 시각). 돌지 않으면 null. 상태가 아니라 읽는 함수다 —
    *  토큰마다 다시 그리지 않고, 보여 주는 쪽(StreamPulse)이 1초마다 읽는다. */
@@ -371,6 +375,14 @@ export function ChatProvider({
     attachedDocsRef.current = list;
     setAttachedDocsState(list);
   }, []);
+  // 올린 그림 — 문서와 달리 보낸 뒤 비운다. 그림은 서버에 남고(아티팩트) 그 주소가 이력으로 다음 턴에 다시 실리므로, 남겨 두면 같은
+  // 그림이 매 턴 두 번(이번 발화 + 앞 대화의 그림) 간다.
+  const [attachedImages, setAttachedImagesState] = useState<AttachedImage[]>([]);
+  const attachedImagesRef = useRef<AttachedImage[]>([]);
+  const setAttachedImages = useCallback((list: AttachedImage[]) => {
+    attachedImagesRef.current = list;
+    setAttachedImagesState(list);
+  }, []);
   const draftPinsRef = useRef(draftPins);
   const setDraftPins = useCallback((v: DraftPins) => {
     draftPinsRef.current = v;
@@ -535,7 +547,8 @@ export function ChatProvider({
       // 멀티턴: 이번 user 메시지를 붙이기 전의 활성 대화 메시지가 history가 된다(중복 금지).
       const existing = conversations.find((c) => c.id === activeId);
       // 앞 턴의 조회 근거도 싣는다 — 다음 턴 · 띵킹 좌석이 '아까 조회한 그 값' 을 알게(docs/chat-depth-context CD-D5).
-      const history = buildHistory(existing?.messages ?? [], { evidence: true });
+      // 앞 발화에 올린 그림의 주소도 — 챗 · 띵킹 · 심의가 앞 대화의 그림으로 다시 본다(T5).
+      const history = buildHistory(existing?.messages ?? [], { evidence: true, images: true });
       // 첫 발화 여부 — sendPrefix(심의 트리거)는 첫 발화에만 붙는다(이후는 GLM 이어가기).
       const isFirstTurn = !existing || existing.messages.length === 0;
 
@@ -561,9 +574,12 @@ export function ChatProvider({
         ...(Array.isArray(extraDelibOpts?.evidence) ? (extraDelibOpts?.evidence as HandoffEvidence[]) : []),
       ];
       const evDropped = Math.max(0, evAll.length - EVID_ITEMS);
+      const imgs = attachedImagesRef.current;
       const userMsg: Message = {
         id: newId(), role: 'user', text, ts: now,
         ...(docs.length ? { docs: docs.map((d) => ({ name: d.name, chars: d.chars, kind: d.meta?.kind })) } : {}),
+        // 서버 주소(user_images)가 오기 전까지의 썸네일 — 영속하지 않는다.
+        ...(imgs.length ? { localImages: imgs.map((i) => i.dataUrl) } : {}),
       };
       const botId = newId();
       // 이 답이 누구 것인지는 **보낼 때** 찍는다 — 나중에 전문가를 바꿔도 과거 답의 주인이
@@ -620,6 +636,7 @@ export function ChatProvider({
       }
 
       setInput('');
+      if (imgs.length) setAttachedImages([]);
       setStreaming(true);
       liveRef.current = startLive(now);
       const controller = new AbortController();
@@ -663,6 +680,8 @@ export function ChatProvider({
         searchSources: effSources,
         // 붙인 문서의 **추출문**만 간다(원본 파일은 브라우저를 떠나지 않는다).
         ...(docs.length ? { documents: docs.map((d) => ({ name: d.name, kind: d.meta?.kind, text: d.text })) } : {}),
+        // 올린 그림 — 서버가 저장하고 주소를 user_images 로 돌려준다(아래 onUserImages 가 이 발화에 남긴다).
+        ...(imgs.length ? { images: imgs.map((i) => ({ name: i.name, mime: i.mime, data: i.dataUrl })) } : {}),
         // 띵킹 모드 — 켠 동안 모든 발화에 실린다. 서버는 명시 슬래시 트리거(/심의 등)를
         // 먼저 보므로, 모드가 켜져 있어도 그 턴에 대놓고 심의를 부르면 심의가 이긴다.
         ...(thinkingRef.current && can('feat:thinking') ? { thinking: true } : {}),
@@ -728,6 +747,9 @@ export function ChatProvider({
         // 생각 글 — 접힌 칸에만(다음 턴 이력 · 영속에는 넣지 않는다). 답한 모델 · 강도는 메시지 아래 표시로.
         onReasoning: (e) => patch(cid, botId, (m) => ({ ...m, reasoning: (m.reasoning ?? '') + (e.delta ?? '') })),
         onMeta: (e) => patch(cid, botId, (m) => ({ ...m, meta: e })),
+        // 올린 그림의 서버 주소 — 이 발화(사람 메시지)에 남겨 다음 턴 이력에 싣는다. 썸네일도 이 주소로 바꾼다(data URL 은 버린다).
+        onUserImages: (e) =>
+          patch(cid, userMsg.id, (m) => ({ ...m, images: (e.urls ?? []).filter((u) => typeof u === 'string'), localImages: undefined })),
         onError: (e) => patch(cid, botId, (m) => ({ ...m, error: e.message, status: undefined })),
         onSignal: (ev) => {
           if (liveRef.current) noteFrame(liveRef.current, ev, Date.now());
@@ -764,7 +786,7 @@ export function ChatProvider({
         streamConvRef.current = null;
       });
     },
-    [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can],
+    [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can, setAttachedImages],
   );
 
   // 이어하기(사람 개입 스티어링) — 끝난 심의에 사람 의견을 넣어, 같은 전문가가 이전 결정을
@@ -1022,6 +1044,8 @@ export function ChatProvider({
         setSearchSources,
         attachedDocs,
         setAttachedDocs,
+        attachedImages,
+        setAttachedImages,
         pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
         pinnedAgentName: activeConversation
           ? (activeConversation.pinnedAgentName ?? null)
