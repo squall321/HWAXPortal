@@ -22,6 +22,21 @@
 
 entries:
   - date: 2026-10-17
+    title: "**상시 상태판 2단계**(기술, STATUS_BOARD 박스만) — MCP 도구 실호출 · Drive latest/ 를 30·60분마다 보고, update-all 동안 경보를 멈춘다"
+    tag: 기술
+    items:
+      - "상태판이 Gatus 가 직접 못 보는 둘을 스크립트로 봅니다 — MCP 도구 실호출(30분마다, 백엔드마다 읽기 도구 하나 — 목록은 오는데 호출이 전부 실패하는 백엔드를 잡는다)과 Drive latest/(60분마다, 가장 새 업로드 폴더의 파일이 latest/ 에 같은 MD5 로 있는가 — 업로드가 반만 돼 옛 산출물이 조용히 가는 것을 잡는다). 밀어 넣는 쪽(infra/scripts/status-push.py)은 상태판과 함께 뜨고 함께 내려가며, 끊기면 heartbeat 가 실패로 칩니다. 연속 2번 실패(1시간 · 2시간)에 메일이 갑니다."
+      - "주기 스모크(mcp-smoke.py --periodic)는 읽기 낱말 허용 목록(list · get · status …)에 드는 도구만 백엔드당 하나 부르고, 호출마다 X-HWAX-Corr: status-board:mcp-smoke 를 실어 게이트웨이 감사에서 가려낼 수 있습니다. 검사용 PAT 는 따로 받지 않습니다 — PAT 의 읽기·쓰기 범위는 어디서도 강제되지 않아 막아 주는 것이 없습니다."
+      - "기록을 sqlite(infra/.state/status/data/gatus.db)에 둡니다. 그동안은 메모리라 설정을 다시 읽거나 다시 뜰 때마다 기록과 경보 상태를 잃어, 울린 경보의 풀림 메일이 오지 않았습니다(Gatus v5.37.0 실측)."
+      - "update-all 이 서비스를 다시 띄우는 동안(1c~§5) 경보 메일을 멈춥니다(1b2 가 걸고 5b 가 풀고, 실패는 그대로 기록). update-all 이 중간에 죽어도 60분 시한이 지나면 상태판이 스스로 풉니다. 점검 전에 손으로 멈추려면 python3 ./infra/scripts/gen-status-config.py --pause <분>, 풀려면 --unpause 입니다(docs/improvement-1015/status-board.md '2단계')."
+      - "따로 켤 것은 없습니다 — STATUS_BOARD=1 박스에서 다음 update-all 이 설정을 다시 만들고 상태판을 다시 띄웁니다."
+  - date: 2026-10-17
+    title: "**update-all 이 ste 때문에 매번 게이트웨이를 다시 띄우던 것 · 상태판을 못 내리던 것을 고쳤습니다**"
+    tag: 수정
+    items:
+      - "update-all 의 MCP 실호출 스모크가 사람 신원으로만 답하는 ste 를 '호출 0성공' 으로 셌습니다(게이트웨이 토큰에는 신원이 없어 ste 가 401 로 거절한다). 그래서 매번 자동 복구(게이트웨이 재프로비저닝 · 재기동)를 돌리고 ✗ 로 끝났습니다. 이제 ste 처럼 서비스 자격 없이 사람별 위임만 있는 백엔드는 '검사 못 함' 으로 말하고 부르지 않습니다 — ste 는 update-all 의 '사람 신분 실호출' 이 사람 명의로 따로 봅니다. DynaForge 처럼 서비스 자격이 있는 앱의 토큰 만료는 그대로 잡힙니다."
+      - "상시 상태판을 내리는 스크립트(status-board.sh stop)가 진짜 Gatus 를 '상태판이 아니다' 로 거부했습니다(명령줄이 /gatus 하나라 판정이 맞지 않았다). 그래서 update-all 이 설정이 바뀐 상태판을 다시 띄우거나 끈 박스에서 내리지 못했습니다. 고쳤고, 진짜와 같은 꼴의 시험을 더했습니다."
+  - date: 2026-10-17
     title: "**챗은 stcx GPU LLM, 심의는 GLM — 챗 전용 LLM 설정**(운영은 절차서대로 두 줄, 설정 전에는 그대로)"
     tag: 챗
     items:
