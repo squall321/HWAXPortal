@@ -406,8 +406,8 @@ services:
   # ── tier 30: 상시 상태판(Gatus) — 이 박스가 다루는 서비스의 리스너 전부를 1분마다 보고 메일로 알린다(docs/improvement-1015/status-board.md) ──
   # infra/.env 에 STATUS_BOARD 가 **있는** 박스에서만 다룬다(if_env — 값이 있으면 켠다, 0 도 켜짐). 설정은 update-all 5b 가 매번 만든다
   #   (gen-status-config.py → infra/.state/status/config.yaml, 600 — 경보 메일 자격이 든다). 지켜보는 서비스들보다 뒤 tier 다.
-  # 지문은 이미지·띄우는 스크립트·생성기·생성 설정뿐이다(fp_git: false + fp:) — 포털 HEAD 를 넣으면 문서 커밋 하나에도 다시 뜨고 그때마다
-  #   기록(메모리 저장)이 사라진다. update: false — 포털 리포 안이라 받는 것은 포털 항목이 한다. 정지는 그 포트를 LISTEN 하는 gatus 만.
+  # 지문은 이미지·띄우는 스크립트·생성기·밀어 넣는 쪽(status-push.py — 함께 뜬다)·생성 설정뿐이다(fp_git: false + fp:) — 포털 HEAD 를 넣으면
+  #   문서 커밋 하나에도 다시 뜬다(기록은 sqlite 라 남지만 뜰 때마다 1분쯤 비고 밀어 넣기가 2분 늦게 시작한다). update: false — 포털 리포 안이라 받는 것은 포털 항목이 한다. 정지는 그 포트를 LISTEN 하는 gatus 만.
   # 포트는 HEAXHub 앱 포트 풀(9100~9999) 밖이다 — 안이면 상태판이 내려간 틈에 허브가 그 포트를 앱에 줄 수 있고, 그 앱의 /health 가 답해
   #   기동이 'already-up' 으로 건너뛰어진다(docs/PORT-MAP.md). expect: 200 — Gatus /health 는 200 {"status":"UP"} 이다.
   - name: status-board
@@ -416,7 +416,7 @@ services:
     if_env: STATUS_BOARD
     update: false
     fp_git: false
-    fp: [infra/apptainer/gatus.sif, infra/scripts/status-board.sh, infra/scripts/gen-status-config.py, infra/.state/status/config.yaml]
+    fp: [infra/apptainer/gatus.sif, infra/scripts/status-board.sh, infra/scripts/gen-status-config.py, infra/scripts/status-push.py, infra/.state/status/config.yaml]
     start: ./infra/scripts/status-board.sh run
     stop: ./infra/scripts/status-board.sh stop
     expect: 200

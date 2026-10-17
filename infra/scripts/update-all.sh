@@ -30,7 +30,8 @@
 #   5) 게이트웨이 config 정합    — /health backends + config의 heax_registry를 기대 목록과 비교,
 #                                  빠졌으면 provision-config.sh --force 재생성(토큰은 provision.env) 후
 #                                  재기동 + 재검증(agent 토큰 정합 확인 포함)
-#   5b) 상시 상태판               — infra/.env 에 STATUS_BOARD 가 있으면 설정을 다시 만들고 띄운다(없으면 ○ — docs/improvement-1015/status-board.md)
+#   5b) 상시 상태판               — infra/.env 에 STATUS_BOARD 가 있으면 설정을 다시 만들고 띄운다(없으면 ○ — docs/improvement-1015/status-board.md).
+#                                  1b2 가 1c~§5 동안 건 경보 멈춤도 여기서 풀린다
 #   5c) 호출 추적(Phoenix)        — infra/.env 에 CALL_TRACE 가 있으면 받는 쪽(Phoenix)을 띄운다(없으면 ○ · 떠 있으면 내린다 — docs/improvement-1015/call-trace.md)
 #   6) 헬스게이트                — 핵심 체인(portal→agent→gateway) 실패 시 exit 1로 크게 알림
 #
@@ -93,6 +94,7 @@ hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
          [ -n "${FAIL_ITEMS:-}" ] && printf '  지금까지의 ✗:\n%s' "$FAIL_ITEMS"
          # 비우기 끝맺음은 장부를 지우기 전에 — 미룬 재기동 줄을 장부에서 읽는다(1h).
          command -v _hwax_drain_finish >/dev/null 2>&1 && _hwax_drain_finish
+         command -v _hwax_board_resume >/dev/null 2>&1 && _hwax_board_resume     # 1b2 의 경보 멈춤(5b 전에 멈췄다)
          command -v hwax_skip_summary >/dev/null 2>&1 && hwax_skip_summary
          rm -f "${HWAX_SKIP_LEDGER:-}" 2>/dev/null; exit 143; fi
        export HWAX_UPDATE_ALL_LAST_HR="$*"      # §1 exec 재실행을 넘어가야 하니 환경변수
@@ -120,6 +122,15 @@ HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER
 . "$SELF_REPO/infra/scripts/lib/review-drain.sh"
 # LLM 서버 풀(1i · §4 뒤 라우터 내리기 · §6) — LLM_UPSTREAMS 한 줄의 규칙(목록 검사·라우터 주소·사본 바꾸기)은 이 lib 한 곳에 있다.
 . "$SELF_REPO/infra/scripts/lib/llm-pool.sh"
+# 상태판 경보 멈춤 풀기 — 1b2 가 걸었으면. 5b 의 설정 생성이 늘 풀므로(그때 HWAX_BOARD_PAUSED=0) 여기는 5b 전에 멈춘 경로(§ 머리 정지)와
+#   완주 끝의 마지막 확인이다. 실패는 삼킨다 — 시한(60분)이 지나면 상태판의 밀어 넣는 쪽(status-push.py)이 걷어낸다.
+_hwax_board_resume() {
+  [ "${HWAX_BOARD_PAUSED:-0}" = 1 ] || return 0
+  HWAX_BOARD_PAUSED=0
+  local _py="$SELF_REPO/backend/.venv/bin/python"; [ -x "$_py" ] || _py="python3"
+  "$_py" "$SELF_REPO/infra/scripts/gen-status-config.py" --unpause 2>&1 | sed 's/^/  /' || true
+  return 0
+}
 # 비우기 끝맺음 — 1h 가 세운 깃발을 장부에 따라 정리한다. 완주 끝(요약 직전)과 hr() 정지 경로에서 부른다(장부를 지우기 전이어야 한다).
 #   미룬 사실은 종료코드가 아니라 **장부**에서 읽는다 — 이름이 '재기동 건너뜀'·'재프로비저닝 건너뜀' 으로 끝나는 줄(deploy-all·update-sites 는
 #   같은 HWAX_SKIP_LEDGER 파일에 적는다). _DA_RC=3 은 git 실패지 미룸이 아니다.
@@ -408,6 +419,27 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   # D0 항목 중 유일하게 박스 운영 동작(회전)을 바꾸는 것이라 env 게이트 없이 cae00 에 퍼지지 않게 한다.
   if grep -qE '^HWAX_LOGROTATE=1' "$SELF_REPO/infra/.env" 2>/dev/null && [ -x "$SELF_REPO/infra/scripts/install-logrotate.sh" ]; then
     "$SELF_REPO/infra/scripts/install-logrotate.sh" 2>&1 | sed 's/^/  /' || true
+  fi
+fi
+
+# ── 1b2) 상시 상태판 경보 멈춤 — 1c~§5 가 서비스를 다시 띄우는 동안 상태판 메일을 멈춘다(docs/improvement-1015/status-board.md · IM-D28) ──
+# 상태판이 켜진 박스(services.py 판정 — if_env STATUS_BOARD)에서만 생성 설정의 maintenance 칸을 넣는다 — 실패는 그대로 기록하고 메일만
+#   멈춘다. 5b 의 설정 생성이 풀고(그 뒤 5c·§6·§7 의 재기동은 짧아 연속 5번 문턱이 막는다), 5b 전에 멈추면 _hwax_board_resume 이 푼다.
+#   60분 상한 — 그보다 오래 돌거나 도중에 죽으면 시한에 밀어 넣는 쪽이 걷어낸다(Gatus 의 창은 요일마다 되풀이되어 남겨 두면 다음 주 같은
+#   시각에 또 멈춘다). 비치명 — 못 걸어도 배포는 그대로 간다(연속 5번 문턱이 남는다). 자리 — 1b(사전 백업)는 서비스를 멈추지 않고 오래 걸릴
+#   수 있어 그 뒤에 건다(60분 창을 백업이 갉아먹지 않게). 1c 뒤로 두지 않는 까닭 — 1d~§2 는 다른 시험이 원문을 떼어 돌리는 구획(1d~1h ·
+#   1e~2 · 1f~1h · 1h~1i · 1i~2)이라 끼면 그 하네스에 없는 $SVC 로 죽는다(IM-D8 과 같은 규율 — 실제로 비우기 시험 35개가 깨졌다).
+HWAX_BOARD_PAUSED=0
+_sbp_en=0; "$SVC" enabled status-board >/dev/null 2>&1 || _sbp_en=$?
+if [ "$_sbp_en" = 0 ]; then
+  hr "1b2) 상시 상태판 경보 멈춤 (1c~§5 재기동 동안 — 5b 가 푼다)"
+  _sbp_py="$SELF_REPO/backend/.venv/bin/python"; [ -x "$_sbp_py" ] || _sbp_py="python3"
+  _sbp_rc=0; _sbp_out="$("$_sbp_py" "$SELF_REPO/infra/scripts/gen-status-config.py" --pause 60 2>&1)" || _sbp_rc=$?
+  printf '%s\n' "$_sbp_out" | sed 's/^/  /'
+  if [ "$_sbp_rc" = 0 ]; then
+    HWAX_BOARD_PAUSED=1
+  else
+    bad "상시 상태판 경보 멈춤을 걸지 못했다(gen-status-config --pause rc $_sbp_rc — 위 줄). 재기동이 5분을 넘기면 경보 메일이 갈 수 있다(비치명)"
   fi
 fi
 
@@ -2076,6 +2108,7 @@ if [ "$_sb_en" = 0 ]; then
   esac
   _sb_py="$SELF_REPO/backend/.venv/bin/python"; [ -x "$_sb_py" ] || _sb_py="python3"
   _sb_rc=0; _sb_out="$("$_sb_py" "$SELF_REPO/infra/scripts/gen-status-config.py" 2>&1)" || _sb_rc=$?
+  HWAX_BOARD_PAUSED=0      # 일반 생성은 1b2 의 경보 멈춤을 늘 푼다(못 만들었어도 옛 설정의 창을 걷는다 — gen-status-config generate)
   printf '%s\n' "$_sb_out" | sed 's/^/  /'
   case "$_sb_rc" in
     0) ;;
@@ -3088,6 +3121,7 @@ fi
 [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ] && echo "  · 종료 요청이 있었지만 남은 §가 없어 끝까지 갔다 — 아래 요약은 전부 실제로 한 것이다" >&2
 # 1h 비우기 끝맺음 — 장부(미룬 재기동 줄)를 읽으므로 요약·장부 지우기 앞이다.
 _hwax_drain_finish
+_hwax_board_resume      # 1b2 의 경보 멈춤 — 5b 가 이미 풀었으면 아무것도 하지 않는다
 hwax_skip_summary
 rm -f "$HWAX_SKIP_LEDGER"
 # ⚠ 경고 요약 — 종료코드에는 안 들어가지만 실패 목록처럼 끝에 다시 낸다(위로 거슬러 올라가지 않아도 보이게).

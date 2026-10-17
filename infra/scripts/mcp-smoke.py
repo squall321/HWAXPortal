@@ -17,9 +17,14 @@ server.py 커밋보다 1분 먼저 떠서 도구 22개만 노출한 채로 돌�
 못 봤다(2026-08-16 발견). 그래서 자기 도구 수를 보고하는 앱은 그 값과 게이트웨이 노출
 수를 대조한다.
 
-사용:  mcp-smoke.py [--json] [--per-backend N] [--timeout S]
+사용:  mcp-smoke.py [--json] [--per-backend N] [--timeout S] [--periodic]
 종료:  0=이상 없음, 1=0성공 백엔드 있음, 2=게이트웨이에 붙지 못함(판정 불가),
        3=버전 드리프트(호출은 되는데 배포본이 코드보다 오래됨)
+
+--periodic — 상시 상태판이 30분마다 부르는 판(infra/scripts/status-push.py, docs/improvement-1015/status-board.md).
+  쓰기 낱말을 빼는 것만으로는 샌다(위 ingest_now). 몇 분마다 부르면 샌 도구도 그만큼 자주 불리므로 **읽기 낱말 허용
+  목록**(READ)에 드는 도구만, 백엔드당 하나만 부른다. 허용 목록에 드는 도구가 없는 백엔드는 '검사 못 함' 이다. 호출마다
+  묶음 표지(X-HWAX-Corr: status-board:mcp-smoke)를 실어 게이트웨이 감사에서 이 호출을 가려낼 수 있게 한다.
 """
 import argparse
 import json
@@ -45,6 +50,14 @@ WRITE = re.compile(
 # 이름 **어디든** 이 말이 들어 있으면 쓰기로 본다 — 접두사 규칙이 못 잡는 자리를 메운다
 # (예: `render_submit` 은 submit 으로 시작하지 않아 접두사 목록을 통과한다).
 WRITE_ANY = re.compile(r"(submit|ingest|reload|_now$|_apply$|purge|rebuild)")
+
+# --periodic 의 허용 목록 — 이름의 낱말 하나(맨 앞이거나 _ 로 갈린 자리)가 읽기 동사여야 부른다. 앱 접두가 붙은 이름
+# (`risk_list_projects`·`heaxstep_forge_system_status`)도 잡도록 맨 앞에 묶지 않는다. 쓰기 규칙(위 둘)이 먼저다.
+# ⚠ 게이트웨이의 '필수 인자 없음' 은 보호가 아니다 — smart-twin-mcp 는 직접 도구를 `args: dict` 하나로 내보내 잡을 내는
+# `fullangle_drop_simulation` 도 필수 인자가 없어 보인다(서버가 실행 전에 jsonschema 로 막는다 — 2026-10-17 확인).
+READ = re.compile(r"(^|_)(list|get|search|find|describe|show|query|read|lookup|status|health|ping|version|info"
+                  r"|capabilities|count|stats|whoami|taxonomy|catalog)(_|$)")
+PERIODIC_CORR = "status-board:mcp-smoke"
 
 def _find_cfg() -> str:
     """게이트웨이 config 경로. 박스마다 리포 위치가 달라 하드코딩하면 안 된다.
@@ -93,9 +106,12 @@ _COUNT_KEYS = ("mcp_tools", "tool_count", "tools_count", "n_tools")
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true", help="결과를 JSON 으로")
-    ap.add_argument("--per-backend", type=int, default=3, help="백엔드당 최대 호출 수")
+    ap.add_argument("--per-backend", type=int, default=None, help="백엔드당 최대 호출 수(기본 3, --periodic 은 1)")
     ap.add_argument("--timeout", type=float, default=20, help="호출당 제한시간(초)")
+    ap.add_argument("--periodic", action="store_true", help="상시 상태판 판 — 읽기 낱말 허용 목록 · 백엔드당 하나 · 감사 묶음 표지")
     a = ap.parse_args()
+    if a.per_backend is None:
+        a.per_backend = 1 if a.periodic else 3
 
     try:
         import anyio
@@ -116,6 +132,8 @@ def main() -> int:
     identity_only = _identity_only(full)
     url = f"http://127.0.0.1:{gw.get('port', 9110)}/mcp"
     headers = {"Authorization": f"Bearer {gw['token']}"}
+    if a.periodic:
+        headers["X-HWAX-Corr"] = PERIODIC_CORR
 
     result: dict[str, dict] = {}
     drift: dict[str, dict] = {}
@@ -143,10 +161,14 @@ def main() -> int:
                         continue
                     if (t.inputSchema or {}).get("required"):
                         continue
+                    if a.periodic and not READ.search(t.name):
+                        continue
                     by_be.setdefault(be, []).append(t.name)
                 for be in sorted(seen_be - set(by_be) - {"_gateway", "?"}):
                     if be in identity_only:
                         why = "사람 신원으로만 답하는 백엔드라 게이트웨이 토큰(신원 없음)으로는 확인 못 함 — 사람 신분 실호출이 따로 본다"
+                    elif a.periodic:
+                        why = "읽기 낱말 허용 목록에 드는 무인자 도구가 없어 호출로는 확인 못 함"
                     else:
                         why = "무인자 읽기 도구가 없어 호출로는 확인 못 함"
                     result.setdefault(be, {"ok": 0, "err": 0, "probed": [], "why": why, "unprobed": True})

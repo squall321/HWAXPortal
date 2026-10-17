@@ -302,7 +302,8 @@ def test_같은_내용이면_다시_쓰지_않는다(lay):
     lay.infra_env("STATUS_BOARD_INTERVAL=2m\n")
     r = lay.gen()
     assert r.returncode == 0 and "설정을 새로 썼다" in r.stdout and lay.out.stat().st_mtime_ns != m0, r.stdout
-    assert not [p for p in lay.out.parent.iterdir() if p.name != "config.yaml"], "임시 파일이 남았다"
+    left = sorted(p.name for p in lay.out.parent.iterdir())
+    assert left == [".gen.lock", "config.yaml", "data", "push.json"], f"임시 파일이 남았거나 모르는 파일이 생겼다: {left}"
 
 
 def test_볼_리스너가_하나도_없으면_쓰지_않는다(lay):
@@ -396,8 +397,11 @@ def test_run_은_설정_디렉터리를_읽기_전용으로_바인드하고_환�
     assert argv[:4] == ["exec", "--cleanenv", "--bind", f"{lay.repo}/infra/.state/status:/config:ro"], argv
     assert argv[-6:] == ["--env", "GATUS_CONFIG_PATH=/config/config.yaml", "--env", "GATUS_LOG_LEVEL=WARN", str(sif), "/gatus"], argv
     middle = argv[4:-6]
-    assert middle == [] or (len(middle) == 2 and middle[0] == "--bind" and middle[1].endswith(":/etc/ssl/certs/ca-certificates.crt:ro")), \
-        f"그 사이에는 호스트 CA 묶음 덧바인드 하나만 온다: {middle}"
+    assert middle[:2] == ["--bind", f"{lay.repo}/infra/.state/status/data:/data"], f"기록(sqlite)만 쓰기 바인드로 온다: {middle}"
+    assert (lay.repo / "infra/.state/status/data").is_dir() and oct((lay.repo / "infra/.state/status/data").stat().st_mode & 0o777) == "0o700"
+    rest = middle[2:]
+    assert rest == [] or (len(rest) == 2 and rest[0] == "--bind" and rest[1].endswith(":/etc/ssl/certs/ca-certificates.crt:ro")), \
+        f"그 뒤에는 호스트 CA 묶음 덧바인드 하나만 온다: {rest}"
     assert not any("p@ss" in a or "from-shell" in a for a in argv), "비밀은 argv 로 넘기지 않는다"
 
 
@@ -502,7 +506,7 @@ def test_매니페스트_항목은_STATUS_BOARD_가_있는_박스에서만_다�
     assert {k: entry[k] for k in ("dir", "if_env", "update", "fp_git", "fp", "start", "stop", "expect", "health", "tier")} == {
         "dir": ".", "if_env": "STATUS_BOARD", "update": False, "fp_git": False,
         "fp": ["infra/apptainer/gatus.sif", "infra/scripts/status-board.sh", "infra/scripts/gen-status-config.py",
-               "infra/.state/status/config.yaml"],
+               "infra/scripts/status-push.py", "infra/.state/status/config.yaml"],
         "start": "./infra/scripts/status-board.sh run", "stop": "./infra/scripts/status-board.sh stop", "expect": 200,
         "health": "http://127.0.0.1:${STATUS_BOARD_PORT:-8740}/health", "tier": 30}
     assert entry["tier"] > max(s.get("tier", 10) for n, s in MANIFEST.items() if n != "status-board"), "지켜보는 서비스들보다 뒤에 뜬다"
@@ -587,7 +591,7 @@ class Box:
                        "    (d / 'config.yaml').write_text('endpoints: []\\n')\n"
                        "sys.exit(int(os.environ.get('STUB_GEN_RC', '0')))\n", encoding="utf-8")
 
-    def run(self, infra_env: str = "", *, sif: bool = True, **env) -> str:
+    def run(self, infra_env: str = "", *, sif: bool = True, pre: str = "", post: str = "", **env) -> str:
         (self.repo / "infra/.env").write_text(infra_env, encoding="utf-8")
         if sif:
             (self.repo / "infra/apptainer/gatus.sif").write_text("")
@@ -600,7 +604,7 @@ class Box:
             'hr() { echo "HR:$*"; }; ok() { echo "OK:$*"; }; bad() { echo "BAD:$*"; }; fail() { echo "FAIL:$*"; FAIL=1; }',
             'http_code() { echo "${STUB_HTTP:-000}"; }',
             f'export HWAX_SKIP_LEDGER="{self.ledger}"', f'. "{self.repo}/infra/scripts/lib/skip-ledger.sh"',
-            envfile, body, "echo END",
+            envfile, pre, body, post, "echo END",
         ])
         base = {"PATH": os.environ["PATH"], "HOME": str(self.tmp), "LANG": "C.UTF-8"}
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={**base, **env})
@@ -643,6 +647,14 @@ def test_5b_켜져_있으면_설정을_만든_뒤_update_sites_로_띄운다(box
     assert _tag(out, "HR:5b)") and any("http://127.0.0.1:8740" in ln for ln in _tag(out, "OK:")), out
     assert "  · (대역) 생성기" in out, "생성기 출력을 들여 보인다"
     assert not _tag(out, "FAIL:") and not _tag(out, "BAD:") and not box.ledger.read_text(), out
+
+
+@pytest.mark.parametrize("gen_rc", ["0", "2"])
+def test_5b_의_일반_생성은_1b2_의_경보_멈춤을_풀었다고_적는다(box, gen_rc):
+    """1b2 가 건 경보 멈춤 — 생성기의 일반 생성은 늘 푼다(못 만들어도 — 옛 설정의 창을 걷는다). 그래서 완주 끝 · 정지 경로가 다시 부르지 않는다."""
+    out = box.run("STATUS_BOARD=1\n", STUB_EN="0", STUB_GEN_WRITES="1", STUB_GEN_RC=gen_rc,
+                  pre="HWAX_BOARD_PAUSED=1", post='echo "PAUSED=$HWAX_BOARD_PAUSED"')
+    assert "PAUSED=0" in out.splitlines(), out
 
 
 @pytest.mark.parametrize("env,want_calls,tag,needle", [

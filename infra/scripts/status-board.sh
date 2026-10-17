@@ -15,6 +15,11 @@
 #   호스트의 CA 묶음이 있으면 이미지의 것 위에 읽기 전용으로 덮는다 — 이미지에는 공개 루트만 있어 사내 CA 로 서명한 SMTP 서버의 STARTTLS 가
 #   검증에 실패하고, 그 실패는 상태판 로그 한 줄로만 남는다(경보가 조용히 안 나간다).
 #   로그는 WARN 이다 — INFO 는 검사마다 한 줄이라 하루 수 MB 가 /tmp 의 서비스 로그로 쌓인다. 경보 발송 실패는 ERROR 로 남는다.
+#   기록(sqlite)은 infra/.state/status/data 를 /data 로 쓰기 바인드한다 — 설정 디렉터리는 읽기 전용 그대로다(IM-D25).
+#   스크립트 검사(2단계) — push.json 이 있으면 밀어 넣는 쪽(status-push.py)을 함께 띄운다. 그래서 exec 하지 않고 이 셸이 둘의 부모로
+#   남는다 — Gatus 가 끝나면(stop 이 그 리스너를 내리면) 밀어 넣는 쪽도 내린다. 이 셸이 먼저 죽으면 밀어 넣는 쪽은 부모가 바뀐 것을
+#   보고 스스로 끝난다. 매니페스트 항목으로 따로 두지 않은 까닭 — 듣는 포트가 없어 health 가 없으면 services.py 가 up 마다 또 띄운다
+#   (IM-D26). 밀어 넣기가 끊기면 Gatus 의 heartbeat 가 실패로 친다.
 # stop — 포트로 죽일 때 연결 중인 클라이언트까지 잡으면 남을 죽인다(docs/gotchas.md §1). `ss -ltnp` 의 리스너만 보고, 그 명령줄에 gatus 가
 #   없으면 손대지 않고 실패로 끝난다. 아무도 안 들으면 이미 내려간 것이다(0). pid 가 안 보이는 리스너(다른 계정)와 ss 가 없는 박스는 '모른다' 라
 #   실패(1)다 — '내려갔다' 로 말하지 않는다.
@@ -73,9 +78,24 @@ case "${1:-}" in
     for _b in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt; do
       [ -r "$_b" ] && { _ca=(--bind "$(readlink -f "$_b"):/etc/ssl/certs/ca-certificates.crt:ro"); break; }
     done
-    exec "$A" exec --cleanenv --bind "$CONF_DIR:/config:ro" ${_ca[@]+"${_ca[@]}"} \
+    mkdir -p "$CONF_DIR/data" && chmod 700 "$CONF_DIR/data"
+    _pp=""
+    if [ -f "$CONF_DIR/push.json" ]; then
+      if command -v python3 >/dev/null 2>&1; then
+        python3 "$ROOT/infra/scripts/status-push.py" loop --parent $$ </dev/null & _pp=$!
+      else
+        echo "⚠ python3 이 없어 스크립트 검사(status-push.py)를 띄우지 않았다 — 상태판의 heartbeat 가 그 검사를 실패로 칠 것이다" >&2
+      fi
+    fi
+    _rc=0
+    "$A" exec --cleanenv --bind "$CONF_DIR:/config:ro" --bind "$CONF_DIR/data:/data" ${_ca[@]+"${_ca[@]}"} \
       --env GATUS_CONFIG_PATH=/config/config.yaml --env GATUS_LOG_LEVEL=WARN \
-      "$SIF" /gatus
+      "$SIF" /gatus || _rc=$?
+    if [ -n "$_pp" ]; then
+      kill -TERM "$_pp" 2>/dev/null || true
+      wait "$_pp" 2>/dev/null || true
+    fi
+    exit "$_rc"
     ;;
   stop)
     command -v ss >/dev/null 2>&1 || {
