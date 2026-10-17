@@ -48,8 +48,9 @@
 
 ## T6 문서 · 배포
 
-- [ ] `docs/chat-llm-stcx/server-setup.md` 6절(생각 기본 켬 · 강도 · 상한) · CL-D1 ③ 뒤집힘 표시
-- [ ] `docs/thinking-mode/` 에 세션 맥락 한 절 · `docs/chat-vision/` 상태
-- [ ] 업데이트 이력 · CLAUDE.md 문서 표
-- [ ] 에이전트 서버 · 포털 전체 시험, 화면 `pnpm build` · Drive(`images-to-drive.sh`), push
+- [x] `docs/chat-llm-stcx/server-setup.md` 4 · 6 · 8절(생각 기본 켬 · 강도 · 상한 · 출력 몫 · 그림 · 도구 절단) · CL-D1 ③ 뒤집힘 표시 · 에이전트 서버 README(`126a604`) · 설정 킷(`a5f6b3f`)
+- [x] `docs/thinking-mode/` 에 세션 맥락 한 절 · `docs/chat-vision/` 상태
+- [x] 업데이트 이력(10-18 다섯 건 — 커밋 대응 빠짐 0) · CLAUDE.md 문서 표
+- [x] 전체 시험 — 에이전트 서버 2420 통과(건너뜀 1) · 포털 3106 · KooRemapper 574, 끝까지 한 번(임시 포털 + 에이전트 서버 + 그림 받는 가짜 LLM — 올림 · 다음 턴 · 새로고침 · 서버 사본 · /심의 판독 · 앱 검색), 화면 `pnpm build` · Drive(`images-to-drive.sh`), push(세 리포)
 - [ ] cae00(사람) — update-all · 요청서 4절 전후 비교 · `/health`(`chat_llm` · `tool_cut` · `vision`) · 그림 한 장 올려 보기
+- [ ] dev(사용자 확인 뒤) — 포털 · 에이전트 서버 재기동(지금은 옛 코드로 떠 있다 — 화면만 새 빌드라 dev 에서는 재기동 전까지 그림이 모델에 가지 않는다)
