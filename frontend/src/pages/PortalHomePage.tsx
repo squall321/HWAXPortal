@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
+import { fetchHubApps, type HubApp } from '../api/access.api';
 import { noteTileOpen } from '../api/launch.api';
 import { listSystems, type SystemTile } from '../api/systems.api';
 import { useAuth } from '../auth/useAuth';
 import { GROUP_ORDER, groupOf } from '../components/catalog/appGroups';
 import { PlatformCard } from '../components/catalog/PlatformCard';
+import { hubMatches } from '../components/catalog/hubSearch';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { Spinner } from '../components/common/Spinner';
 import { Page, PageHeader } from '../components/ui/Page';
@@ -16,6 +18,10 @@ export default function PortalHomePage() {
   const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState<string>('전체');
+  // HEAX 허브 앱(게이트웨이 앱 목록) — MaterialTwin · StepForge 같은 허브 앱은 'HEAX Hub' 타일 안에 있어 타일 검색에 안 걸렸다
+  // (10-18 「MaterialTwin 이 연결 해제되었나」 문의 — 수정 제안서 F4). 검색어를 칠 때 한 번만 부른다(첫 화면마다 게이트웨이를 부르지 않게).
+  const [hubApps, setHubApps] = useState<HubApp[] | null>(null);
+  const [hubErr, setHubErr] = useState(false);
 
   useEffect(() => {
     listSystems()
@@ -52,6 +58,17 @@ export default function PortalHomePage() {
     return GROUP_ORDER.filter((g) => have.has(g));
   }, [systems]);
   const q = query.trim().toLowerCase();
+  useEffect(() => {
+    if (!q || hubApps !== null || hubErr) return;
+    fetchHubApps()
+      .then((r) => setHubApps(r.apps))
+      .catch(() => setHubErr(true));
+  }, [q, hubApps, hubErr]);
+  const hubShown = hubMatches(hubApps ?? [], new Set((systems ?? []).map((s) => s.id)), q);
+  const openHub = (slug: string) => {
+    noteTileOpen('heax-hub');
+    window.open(`/heax-hub/apps/${encodeURIComponent(slug)}`, '_blank', 'noopener');
+  };
   const shown = (systems ?? []).filter(
     (s) =>
       (group === '전체' || groupOf(s.category) === group) &&
@@ -107,7 +124,11 @@ export default function PortalHomePage() {
         <Spinner label="앱 불러오는 중…" />
       ) : shown.length === 0 ? (
         <p className="apps-empty">
-          {q ? `'${query}' 에 맞는 앱이 없습니다.` : '이 분류에 쓸 수 있는 앱이 없습니다.'}{' '}
+          {q
+            ? hubShown.length
+              ? `'${query}' 는 포털 앱에는 없고 HEAX 허브 앱에 있습니다 — 아래에서 고르면 허브에서 엽니다.`
+              : `'${query}' 에 맞는 앱이 없습니다.`
+            : '이 분류에 쓸 수 있는 앱이 없습니다.'}{' '}
           <button
             type="button"
             className="apps-reset"
@@ -125,6 +146,30 @@ export default function PortalHomePage() {
             <PlatformCard key={s.id} system={s} onOpen={onOpen} />
           ))}
         </div>
+      )}
+
+      {q && hubShown.length > 0 && (
+        <section className="apps-hub" aria-label="HEAX 허브 앱">
+          <h2 className="apps-hub-title">
+            HEAX 허브 앱 <span>— HEAX Hub 안의 앱입니다. 고르면 허브의 그 앱 화면을 새 탭으로 엽니다</span>
+          </h2>
+          <ul className="apps-hub-list">
+            {hubShown.map((a) => (
+              <li key={a.app}>
+                <button type="button" className="apps-hub-item" onClick={() => openHub(a.slug)}>
+                  <b>{a.label}</b>
+                  {a.description && <span>{a.description}</span>}
+                  <em className={a.reachable ? '' : 'is-down'}>
+                    {a.reachable ? `도구 ${a.tool_count}개` : '지금 연결 안 됨'}
+                  </em>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {q && hubErr && (
+        <p className="apps-empty">HEAX 허브 앱 목록을 불러오지 못해 허브 앱은 검색하지 않았습니다(게이트웨이에 닿지 않음).</p>
       )}
 
       {toast && <div className="toast">{toast}</div>}

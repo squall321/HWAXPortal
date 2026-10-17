@@ -153,6 +153,58 @@
   text-underline-offset: 2px;
 }
 
+/* 검색에 걸린 HEAX 허브 앱 — 타일이 아니라 허브 안의 앱이라 한 줄 목록으로 둔다(수정 제안서 F4) */
+.apps-hub {
+  margin-top: 1.25rem;
+}
+.apps-hub-title {
+  font-size: var(--fs-14);
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.apps-hub-title span {
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+.apps-hub-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.apps-hub-item {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.apps-hub-item:hover,
+.apps-hub-item:focus-visible {
+  border-color: var(--border-strong);
+}
+.apps-hub-item span {
+  flex: 1 1 20rem;
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+}
+.apps-hub-item em {
+  font-style: normal;
+  font-size: var(--fs-14);
+  color: var(--fg-muted);
+}
+.apps-hub-item em.is-down {
+  color: var(--danger-fg);
+}
+
 .toast {
   position: fixed;
   bottom: 1.5rem;
