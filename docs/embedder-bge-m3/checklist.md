@@ -17,4 +17,4 @@
   - [x] 전환 뒤 첫 dev 덤프 → Drive(cae00 merge 의 원천) — `aidh-db-20261016-193902Z.sql.gz`(11.06GB, 2026-10-16 19:39 UTC · 10-17 04:39 KST, MD5 일치). 그 뒤의 매일 덤프(04:45 UTC)도 BGE-M3 벡터를 싣는다 — 크기가 4.75 → 약 11GB 다
 - [ ] B6 cae00 — 절차서 [server-setup.md](server-setup.md)는 준비됨(사람). Drive 에 모델 묶음(e5 + BGE-M3, `aidh-models-20261016-125809Z`) · HEAX(WebResearchMCP 새 SIF)는 올렸다
 - [ ] B7 v1 정리(나중 — 한동안 돌려 본 뒤). 그때까지 덤프가 v1 · m3 둘을 실어 하루 약 2배다
-- [ ] 업데이트 이력 · CLAUDE.md 문서 표
+- [x] 업데이트 이력 · CLAUDE.md 문서 표 — 이력 10-17 두 항목(전환 · 전역 의미검색 재현율) · 문서 표 한 줄
