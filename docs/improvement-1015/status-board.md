@@ -1,6 +1,7 @@
 # 상시 상태판(Gatus) — 운영 안내
 
-> 계획 [PLAN.md](PLAN.md) §2-1 · 결정 [context-notes.md](context-notes.md)(IM-D3 · IM-D4 · IM-D6 · IM-D7~IM-D11). 1단계(검사·화면·메일 경보)까지 지었다.
+> 계획 [PLAN.md](PLAN.md) §2-1 · 결정 [context-notes.md](context-notes.md)(IM-D3 · IM-D4 · IM-D6 · IM-D7~IM-D11 · 2단계 IM-D24~IM-D29). 1단계(검사·화면·메일 경보)와
+> 2단계(스크립트 검사 · 기록 보존 · update-all 동안 경보 멈춤 — 2026-10-17)까지 지었다.
 
 포털 인스턴스가 '떠 있음' 인데 안의 백엔드만 죽어 아무도 몰랐던 2026-10-16 아침의 사례(IM-D4)가 출발점이다. 상태판은 인스턴스가 아니라
 **리스너의 응답**을 1분마다 보고, 오래 실패하면 팀 공용 주소로 메일을 보낸다.
@@ -13,6 +14,8 @@
 | 게이트웨이 `/health` | status ok · 도구 1개 이상 · 백엔드마다 false 가 아니다 · 하나라도 false 가 아니다 | 백엔드 이름이 경보 본문에 찍힌다. 마지막 조건은 설정을 만든 뒤에 생긴 백엔드를 잡는다 |
 | 에이전트 서버 `/health` | status ok · 도는 심의·줄 선 심의 칸이 있다 | 그 칸이 없으면 update-all 이 심의를 끊지 않으려고 재기동을 미루지 못한다(옛 판) |
 | LLM 라우터 `/health`(풀을 켠 박스만) | status ok · 두 서버의 모델이 같다 · 올라온 서버 수가 전체와 같다 | docs/llm-pool 의 라우터다. `LLM_UPSTREAMS` 가 없는 박스에서는 보지 않는다 |
+| `checks/mcp-smoke` — MCP 도구 실호출(30분마다, 아래 '2단계') | 백엔드마다 읽기 도구 하나가 실제로 답한다 · 배포본 도구 수가 게이트웨이와 같다 | 목록은 오는데 호출이 전부 실패하는 백엔드(DynaForge 토큰 만료 전례)는 `/health` 로 안 보인다 |
+| `checks/drive-latest` — Drive `latest/`(60분마다, 아래 '2단계') | 리모트마다 가장 새 업로드 폴더의 파일이 `latest/` 에 같은 MD5 로 있다 | 업로드가 시각 폴더까지만 되고 `latest/` 가 낡으면 소비자가 옛 산출물을 오류 없이 받는다(docs/gotchas.md 8) |
 
 - 주기는 1분이다(`STATUS_BOARD_INTERVAL`). 성공한 조건도 실제 값을 함께 보인다 — 도구 수, 도는 심의 수가 화면에 숫자로 나온다.
 - 상태판 자신은 보지 않는다. 죽으면 이 화면도 없으므로 update-all 의 5b 줄과 `services.sh status status-board` 로 본다.
@@ -42,7 +45,10 @@
 - 박스 안에서는 `curl -s http://127.0.0.1:8740/api/v1/endpoints/statuses` 가 JSON 으로 준다. 상태판 자체는 `./infra/scripts/services.sh status status-board` 로 본다.
 - 로그는 `/tmp/hwax-services/status-board.log` 이다. WARN 이상만 남긴다 — 검사마다 쓰는 INFO 는 하루 수 MB 라 뺐다. 메일 발송 실패는 ERROR 줄
   (`Failed to send an alert`)로 남는다.
-- 기록은 메모리에만 둔다. 상태판이 다시 뜨면 지난 기록이 사라진다(설정·이미지·스크립트가 바뀐 update-all 뒤).
+- 기록은 sqlite(`infra/.state/status/data/gatus.db`)에 둔다 — 설정을 다시 읽거나 상태판이 다시 떠도 기록과 경보 상태가 이어진다(끝점마다
+  최근 결과 100개 · 사건 50개가 Gatus 기본 상한이다). 메모리에 두던 1단계는 다시 읽을 때마다 기록을 잃고, 울린 경보의 풀림 메일도 오지 않았다(IM-D25).
+- 스크립트 검사는 화면의 `checks` 묶음이다. 실패 사유는 그 결과의 오류 칸과 로그의 `[status-push]` 줄에 있다. 손으로 한 번 —
+  `python3 ./infra/scripts/status-push.py once`(둘 다) · `… once mcp-smoke` · `… once drive-latest --no-push`(상태판에 밀어 넣지 않고 찍기만).
 
 ## 경보(메일)
 
@@ -60,14 +66,19 @@
 - **STARTTLS** — 포털이 `SMTP_STARTTLS` 참(기본)이면 Gatus 도 서버가 내밀면 STARTTLS 를 쓰고 인증서를 검증한다. 사내 CA 로 서명한 서버면
   호스트의 CA 묶음(`/etc/ssl/certs/ca-certificates.crt` 또는 `/etc/pki/tls/certs/ca-bundle.crt`)에 그 CA 가 있어야 한다 — 띄우는 스크립트가
   그 파일을 컨테이너의 CA 묶음 자리에 읽기 전용으로 덮는다. 거짓이면 Gatus 는 STARTTLS 를 끌 수 없어(서버가 내밀면 쓴다) 검증 없이 쓴다.
-- **Graph 박스** — Gatus 는 Graph 로 못 보낸다. 독립 발신기는 2단계다(IM-D3).
+- **스크립트 검사 메일** — 연속 2번 실패(MCP 1시간 · Drive 2시간)에 보내고 1번 성공에 풀림 메일을 보낸다. 본문에 실패 사유가 실리지 않는다
+  (Gatus 가 밀어 넣은 사유를 메일에 안 싣는다 — 실측) — 설명 줄이 사유를 보는 곳을 말한다. 밀어 넣기가 끊겨도(밀어 넣는 쪽이 죽었다) heartbeat
+  (45분 · 70분)가 실패로 쳐 같은 메일이 온다.
+- **update-all 동안** — 1b2 가 경보를 멈추고 5b 가 푼다(아래 '2단계'). 그 사이 실패는 기록만 하고 메일을 보내지 않는다.
+- **Graph 박스** — Gatus 는 Graph 로 못 보낸다. Graph 를 쓰는 박스가 없어 독립 발신기는 짓지 않았다(IM-D3 · IM-D24 — cae00 은 SMTP).
 - **시험 발송** — Gatus 에는 '지금 보내기' 단추가 없다. 운영 박스에서 서비스를 일부러 내리지 말고, 첫 실제 경보를 기다리거나 같은 SMTP 설정으로
   dev 에서 확인한다. 발송이 실패하면 위 로그의 ERROR 줄로 보인다.
 
 ## 끄기
 
 `infra/.env` 에서 `STATUS_BOARD` 줄을 지운다. 값을 0 으로 두면 켜짐으로 읽힌다(값이 있으면 켜는 if_env 다 — update-all 이 ⚠ 로 알린다).
-다음 update-all 의 5b 가 떠 있는 상태판을 내리고 ○ 를 남긴다. 바로 내리려면 `./infra/scripts/status-board.sh stop` 이다.
+다음 update-all 의 5b 가 떠 있는 상태판을 내리고 ○ 를 남긴다. 바로 내리려면 `./infra/scripts/status-board.sh stop` 이다. 밀어 넣는 쪽
+(status-push.py)은 상태판과 함께 내려간다.
 
 ## 포트·주기 바꾸기
 
@@ -86,10 +97,14 @@
 | Drive 운반 | `images-to-drive.sh` · `images-from-drive.sh`(latest/ 의 gatus.sif) · `drive-drift.sh` |
 | 설정 생성기 | `infra/scripts/gen-status-config.py` |
 | 생성 설정(메일 자격 포함, gitignore) | `infra/.state/status/config.yaml`(디렉터리 700 · 파일 600) |
+| 스크립트 검사 목록 · 밀어 넣기 토큰 | `infra/.state/status/push.json`(600 — 생성기가 쓰고 밀어 넣는 쪽이 읽는다) |
+| 기록(sqlite) | `infra/.state/status/data/gatus.db`(700 — 컨테이너 `/data` 로 쓰기 바인드) |
+| 경보 멈춤 시한 | `infra/.state/status/pause.json`(걸렸을 때만) |
+| 밀어 넣는 쪽 | `infra/scripts/status-push.py {loop\|once}` · 스모크 주기 판 `infra/scripts/mcp-smoke.py --periodic` |
 | 띄우기·내리기 | `infra/scripts/status-board.sh {run\|stop}` |
 | 매니페스트 항목 | `infra/services.yaml` 의 `status-board`(tier 30, `if_env: STATUS_BOARD`) |
-| update-all | 5b(§5 뒤 · §6 앞) |
-| 시험 | `backend/tests/test_status_board.py` |
+| update-all | 1b2(경보 멈춤 — 사전 백업 뒤) · 5b(§5 뒤 · §6 앞 — 설정 생성 · 기동 · 멈춤 풀기) |
+| 시험 | `backend/tests/test_status_board.py` · `backend/tests/test_status_push.py`(2단계) |
 
 ## 판
 
@@ -97,18 +112,46 @@
 `GATUS_VERSION` · `GATUS_DIGEST` 두 줄을 함께 고치고 굽는다 — 받은 이미지의 판 라벨이 태그와 다르면 굽기가 멈춘다. 새 판에서 다시 볼 것은
 설정 키(web · ui · endpoints · alerting.email · skip-invalid-config-update), 조건 문법(has() · pat() · any()), 설정 글의 `$` 풀이다.
 
-## 2단계(아직 아니다)
+## 2단계 — 스크립트 검사 · 기록 보존 · 경보 멈춤(2026-10-17)
 
-- **스크립트가 필요한 검사** — `infra/scripts/mcp-smoke.py`(실제 도구 호출)와 Drive `latest/` 의 나이(마지막으로 올린 때)는 Gatus 가 직접 못
-  본다. 주기 스크립트가 결과를 Gatus 의 외부 끝점(external-endpoints)으로 밀어 넣는다. 검사용 PAT 는 읽기 전용 그룹으로 따로 발급한다(사람 몫).
-- **Graph 박스의 독립 발신기**(IM-D3).
-- **기록 보존** — 필요하면 Gatus 저장소(sqlite)를 `infra/.state/status/` 아래에 둔다.
-- **update-all 동안 경보 멈춤** — 지금은 연속 5번 문턱으로만 피한다.
+따로 켤 것은 없다 — `STATUS_BOARD=1` 박스에서 다음 update-all 의 5b 가 설정을 다시 만들고(지문이 바뀌어) 상태판을 다시 띄운다.
+
+**스크립트 검사.** Gatus 가 직접 못 보는 둘을 밀어 넣는 쪽(`infra/scripts/status-push.py`)이 돌려 Gatus 외부 끝점으로 민다.
+
+| 검사 | 주기 · 상한 | 실패로 치는 것 | 싣는 조건(없으면 생성기가 까닭을 한 줄로) |
+|---|---|---|---|
+| `mcp-smoke` | 30분 · 10분 | 호출이 전부 실패한 백엔드 · 배포본 도구 수 어긋남 · 게이트웨이에 못 붙음 · 시간 초과 | 게이트웨이가 이 박스 대상 · 에이전트 서버 venv(mcp 모듈) |
+| `drive-latest` | 60분 · 5분 | 가장 새 `<접두>-<시각>/` 의 파일이 `latest/` 에 없거나 MD5 가 다르다 · Drive 에 못 닿음 | rclone · Drive 리모트(drive-drift 와 같은 셋 — 포털 `HWAX_DRIVE_REMOTE`, HEAXHub · KooRemapper 는 그 리포의 .env) |
+
+- 스모크는 `mcp-smoke.py --periodic` 이다 — 읽기 낱말 허용 목록(list · get · status …)에 드는 무인자 도구만 백엔드당 하나 부르고, 호출마다
+  `X-HWAX-Corr: status-board:mcp-smoke` 를 실어 게이트웨이 감사(`audit.jsonl` 의 `corr`)에서 가려낼 수 있다. 사람 신원으로만 답하는 백엔드(ste)는
+  '검사 못 함' 이다 — update-all 의 '사람 신분 실호출'(`HWAX_STE_PROBE_EMAIL`)이 사람 명의로 본다.
+- 검사용 PAT 는 받지 않는다 — PAT 의 scope 는 어디서도 강제되지 않아 '읽기 전용 PAT' 로는 쓰기가 막히지 않는다(IM-D24). 게이트웨이 토큰으로
+  부르고, 허용 목록이 실제 안전장치다.
+- 밀어 넣는 쪽은 상태판과 함께 뜨고 함께 내려간다(`status-board.sh run` 이 부모로 남는다 — IM-D26). 첫 검사는 뜬 지 2분 뒤다.
+  검사 목록(`infra/.state/status/push.json`, 600 — 밀어 넣기 토큰이 든다)은 돌 때마다 다시 읽는다.
+
+**update-all 동안 경보 멈춤.** 1c~§5 가 서비스를 다시 띄우는 동안 메일을 멈춘다(IM-D28).
+
+- 1b2(사전 백업 뒤) — `gen-status-config.py --pause 60` 이 생성 설정에 maintenance 칸(UTC · 그날 요일 · 60분)만 넣는다. 실패는 그대로 기록된다.
+- 5b — 일반 생성이 그 칸을 뺀다(손잡이가 틀려 설정을 못 만들어도 뺀다). § 머리에서 멈춘 실행과 완주 끝도 푼다. 그 뒤(5c · §6 · §7)의
+  재기동은 짧아 연속 5번 문턱이 막는다.
+- update-all 이 5b 전에 죽으면 60분 시한(`infra/.state/status/pause.json`)이 지난 뒤 밀어 넣는 쪽이 걷어낸다 — Gatus 의 창은 요일마다
+  되풀이되므로 남겨 두면 다음 주 같은 시각에 또 멈춘다.
+- 손으로 — 점검 전에 `python3 ./infra/scripts/gen-status-config.py --pause <분>`(1~240), 끝나면 `--unpause`. 걸린 것을 보려면
+  `grep -A4 '^maintenance:' infra/.state/status/config.yaml`. 걸기·풀기는 30초 안에 반영된다(Gatus 가 파일 시각을 본다).
+
+**아직 아닌 것.** Graph 박스의 독립 발신기(Graph 를 쓰는 박스가 생기면 — IM-D24).
 
 ## 함정
 
 - 생성 설정을 손으로 고치면 다음 update-all 이 덮는다. 손잡이는 `infra/.env` 에만 둔다.
 - 생성 설정의 `$` 는 두 번 적혀 있다 — Gatus 가 설정 글 전체에서 `$이름` 을 환경변수로 풀기 때문이다(두 번 적으면 하나로 읽는다). 비밀번호를
   손으로 옮겨 적을 때 하나로 줄이지 않는다.
+- 설정을 다시 읽을 때(멈춤 걸기·풀기 포함) 로그에 검사마다 `Canceling current execution` WARN 한 줄이 남는다 — 정상이다.
+- **부팅 유닛이 띄운 상태판의 Drive 검사** — 밀어 넣는 쪽은 띄운 쪽의 환경을 물려받는다. update-all(사람 셸)이 띄우면 셸의 프록시를 쓰고,
+  부팅 유닛(hwax-stack)이 띄우면 PATH 만 있다. Drive 에 프록시로만 닿는 박스면 재부팅 뒤 `drive-latest` 가 'Drive 에 닿지 못했다' 로 실패한다.
+  사람 셸에서 `./infra/scripts/services.sh down status-board && ./infra/scripts/services.sh up status-board` 로 다시 띄우면 셸의 환경을
+  물려받는다(update-all 은 지문이 같으면 다시 띄우지 않는다).
 - 게이트웨이 백엔드 이름은 설정을 만들 때 떠 있는 게이트웨이에서 읽는다. 그때 게이트웨이가 답하지 않았으면 이름 없이 '하나라도 false' 한 줄만
   싣는다(생성기가 그렇게 말한다) — 다음 update-all 이 채운다.
