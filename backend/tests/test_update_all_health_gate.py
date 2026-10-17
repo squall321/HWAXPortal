@@ -124,6 +124,17 @@ def test_side_effecting_tools_are_never_probed(name):
     assert m.WRITE.match(name) or m.WRITE_ANY.search(name), f"{name} 이 '읽기 도구'로 샌다"
 
 
+def test_사람_신원으로만_답하는_백엔드는_부르지_않는다():
+    m = _smoke_mod()
+    cfg = {"_gateway": {"token": "t", "port": 9110},
+           "ste": {"url": "http://127.0.0.1:15812/mcp", "transport": "streamable_http"},
+           "reportarchive": {"url": "http://ra/mcp", "headers": {"Authorization": "Bearer rat"}},
+           "smart-twin-mcp": {"url": "http://127.0.0.1:5012/mcp"},
+           "heax_registry": {"per_user_sso": {"ste": {}, "reportarchive": {}, "kooremapper_mcp": {}}}}
+    assert m._identity_only(cfg) == {"ste"}, "서비스 자격이 있는 RA · 위임이 아닌 정적 백엔드 · 허브 앱(DynaForge)은 그대로 부른다"
+    assert m._identity_only({"ste": {"url": "u"}}) == set(), "위임이 없으면 신원 전용이 아니다"
+
+
 @pytest.mark.parametrize("name", ["inbox_status", "list_reports", "get_report", "search_cards"])
 def test_read_tools_are_still_probed(name):
     """반대로 다 막아 버리면 스모크가 아무것도 안 본다."""

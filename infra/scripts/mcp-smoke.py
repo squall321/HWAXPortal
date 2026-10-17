@@ -69,6 +69,21 @@ def _find_cfg() -> str:
 
 CFG = _find_cfg()
 
+def _identity_only(cfg: dict) -> set[str]:
+    """사람 신원으로만 답하는 백엔드 — 이 스모크는 게이트웨이 토큰(신원 없음)으로 부르므로 거절될 수밖에 없다.
+
+    설정에 url 을 직접 적은 정적 백엔드 가운데 사람별 위임(`heax_registry.per_user_sso`)에 있고 서비스 자격(`headers`)이
+    없는 것이다. ste 가 그렇다 — 프로비저닝이 url 만 적고, 신원 없이 부르면 REST 가 401 이다(2026-10-17 dev 실측 0/3 ·
+    감사 note no-identity). 그것을 0성공으로 세면 update-all §6 이 매번 '복구'(재프로비저닝 · 게이트웨이 재기동)를 돌리고
+    ✗ 로 끝났다. 그래서 부르지 않고 '검사 못 함' 으로 말한다 — ste 는 update-all 의 '사람 신분 실호출'
+    (ste-gateway-check.py probe)이 사람 명의로 따로 본다.
+    허브 앱(heax-*)은 허브 등록 토큰이 서비스 자격이라 넣지 않는다 — DynaForge 의 토큰 만료(이 스모크가 생긴 까닭)는
+    그대로 0성공으로 잡힌다."""
+    per_user = set(((cfg.get("heax_registry") or {}).get("per_user_sso") or {}).keys())
+    return {k for k, v in cfg.items()
+            if not k.startswith("_") and isinstance(v, dict) and v.get("url") and k in per_user and not v.get("headers")}
+
+
 # 자기 상태를 돌려주는 무인자 도구 이름들. 이 중 하나가 있으면 드리프트 대조를 시도한다.
 _SELF_REPORT = ("system_capabilities", "capabilities", "system_status")
 # 그 응답에서 '이 앱이 노출한다고 주장하는 도구 수'를 담고 있을 만한 키(먼저 맞는 것 하나).
@@ -93,10 +108,12 @@ def main() -> int:
 
     try:
         with open(CFG) as f:
-            gw = json.load(f)["_gateway"]
+            full = json.load(f)
+        gw = full["_gateway"]
     except Exception as exc:  # noqa: BLE001
         print(f"✗ 게이트웨이 config 를 읽지 못함({CFG}): {exc!r}", file=sys.stderr)
         return 2
+    identity_only = _identity_only(full)
     url = f"http://127.0.0.1:{gw.get('port', 9110)}/mcp"
     headers = {"Authorization": f"Bearer {gw['token']}"}
 
@@ -120,15 +137,19 @@ def main() -> int:
                 for t in tools:
                     be = tmap.get(t.name, "?")
                     seen_be.add(be)
+                    if be in identity_only:
+                        continue
                     if WRITE.match(t.name) or WRITE_ANY.search(t.name):
                         continue
                     if (t.inputSchema or {}).get("required"):
                         continue
                     by_be.setdefault(be, []).append(t.name)
                 for be in sorted(seen_be - set(by_be) - {"_gateway", "?"}):
-                    result.setdefault(be, {"ok": 0, "err": 0, "probed": [],
-                                           "why": "무인자 읽기 도구가 없어 호출로는 확인 못 함",
-                                           "unprobed": True})
+                    if be in identity_only:
+                        why = "사람 신원으로만 답하는 백엔드라 게이트웨이 토큰(신원 없음)으로는 확인 못 함 — 사람 신분 실호출이 따로 본다"
+                    else:
+                        why = "무인자 읽기 도구가 없어 호출로는 확인 못 함"
+                    result.setdefault(be, {"ok": 0, "err": 0, "probed": [], "why": why, "unprobed": True})
 
                 for be, names in sorted(by_be.items()):
                     if be == "_gateway":
