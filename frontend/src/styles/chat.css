@@ -447,6 +447,35 @@ ol.md-list li.md-li-d2 {
   }
 }
 
+/* 챗 서버의 생각 글(접힌 칸)과 답한 모델 표시 — docs/chat-depth-context C2 · C3 */
+.msg-reasoning {
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  font-size: 0.82rem;
+}
+.msg-reasoning > summary {
+  cursor: pointer;
+  padding: 0.35rem 0.6rem;
+  color: var(--fg-muted);
+  user-select: none;
+}
+.msg-reasoning-body {
+  max-height: 18rem;
+  overflow-y: auto;
+  padding: 0.4rem 0.7rem 0.6rem;
+  white-space: pre-wrap;
+  color: var(--fg-muted);
+  line-height: 1.55;
+}
+.msg-model {
+  margin-left: 0.6rem;
+  align-self: center;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+
 /* 스트리밍 상태 — 상태 라인 펄스 / 타이핑 점 / 라이브 커서 */
 .msg-thinking {
   min-height: 1.4em;

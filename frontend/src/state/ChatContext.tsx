@@ -725,6 +725,9 @@ export function ChatProvider({
             status: undefined,
           })),
         onWarning: (e) => patch(cid, botId, (m) => ({ ...m, warn: e.message })),
+        // 생각 글 — 접힌 칸에만(다음 턴 이력 · 영속에는 넣지 않는다). 답한 모델 · 강도는 메시지 아래 표시로.
+        onReasoning: (e) => patch(cid, botId, (m) => ({ ...m, reasoning: (m.reasoning ?? '') + (e.delta ?? '') })),
+        onMeta: (e) => patch(cid, botId, (m) => ({ ...m, meta: e })),
         onError: (e) => patch(cid, botId, (m) => ({ ...m, error: e.message, status: undefined })),
         onSignal: (ev) => {
           if (liveRef.current) noteFrame(liveRef.current, ev, Date.now());

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { friendlyError } from '../../lib/chatErrors';
 import { useChat } from '../../state/ChatContext';
-import type { Message } from '../../types/chat';
+import type { Message, TurnMeta } from '../../types/chat';
 import { copyText } from './clipboard';
 import { AgentCatalogBlock } from './AgentCatalogBlock';
 import { DelibView } from './DelibView';
@@ -91,6 +91,8 @@ function Row({ msg }: { msg: Message }) {
         className="msg-content"
         style={persona ? { borderLeftColor: colorOf(who) } : undefined}
       >
+        {/* 챗 서버의 생각 글 — 접힌 칸. 답이 나오기 전엔 '생각 중' 으로(1~2분 동안 화면이 멈춰 보이지 않게, docs/chat-depth-context C2). */}
+        {msg.reasoning && <ReasoningBlock text={msg.reasoning} live={Boolean(msg.streaming) && !msg.text} />}
         {hasDelib ? (
           <DelibView msg={msg} />
         ) : hasThink ? (
@@ -128,10 +130,32 @@ function Row({ msg }: { msg: Message }) {
       {!msg.streaming && msg.text && (
         <div className="msg-actions">
           <CopyAction text={msg.text} />
+          {msg.meta && <ModelBadge meta={msg.meta} />}
         </div>
       )}
     </div>
   );
+}
+
+/** 챗 서버의 생각 글 — 접어 둔다(수만 자일 수 있다). 도는 동안은 '생각 중 · N자' 로 진행만 보인다. */
+function ReasoningBlock({ text, live }: { text: string; live: boolean }) {
+  return (
+    <details className="msg-reasoning">
+      <summary>{live ? '생각 중' : '생각'} · {text.length.toLocaleString()}자</summary>
+      <div className="msg-reasoning-body">{text}</div>
+    </details>
+  );
+}
+
+/** 이 턴에 답한 모델 · 생각 설정 — 넘김(챗 서버 → GLM)이 섞였으면 그렇게 말한다(같은 질문에 답의 깊이가 달라진다, C3). */
+function ModelBadge({ meta }: { meta: TurnMeta }) {
+  const names = Object.keys(meta.models ?? {});
+  if (!names.length) return null;
+  const main = meta.chat_model && names.includes(meta.chat_model) ? meta.chat_model : names[0];
+  const others = names.filter((n) => n !== main);
+  const effort = meta.thinking ? ` · 생각 ${meta.effort ?? '켬'}` : meta.thinking === false ? ' · 생각 끔' : '';
+  const label = `${main}${effort}${others.length ? ` · 넘김 ${others.map((n) => `${n} ${meta.models[n]}회`).join(', ')}` : ''}`;
+  return <span className="msg-model" title="이 답을 낸 모델(호출 수)">{label}</span>;
 }
 
 export function MessageList({ messages }: { messages: Message[] }) {

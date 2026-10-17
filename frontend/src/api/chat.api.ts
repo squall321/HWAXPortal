@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 import { rejectedMessage, streamCutMessage } from '../lib/chatErrors';
-import type { AgentCatalog, DelibEvent, ErrorEvent, ResultBlock, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog } from '../types/chat';
+import type { AgentCatalog, DelibEvent, ErrorEvent, ResultBlock, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -26,6 +26,10 @@ export interface StreamHandlers {
   onError?: (e: ErrorEvent) => void;
   /** 치명적이지 않은 경고(SSE warning) — 자격증명 강등 등. 응답은 계속된다. */
   onWarning?: (e: { code?: string; message: string }) => void;
+  /** 챗 서버의 생각 글 조각(SSE reasoning) — 접힌 '생각 중' 칸으로. */
+  onReasoning?: (e: { delta: string }) => void;
+  /** 턴 끝 — 답한 모델 · 생각 설정(SSE meta). */
+  onMeta?: (e: TurnMeta) => void;
   onDone?: () => void;
   /** 프레임이 하나 올 때마다(이벤트 이름) — 서버 heartbeat(`ping`)를 포함한다. 내용이 아니라 '살아 있다' 는 신호다. */
   onSignal?: (event: string) => void;
@@ -83,6 +87,12 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'warning':
       h.onWarning?.(payload as { code?: string; message: string });
+      break;
+    case 'reasoning':
+      h.onReasoning?.(payload as { delta: string });
+      break;
+    case 'meta':
+      h.onMeta?.(payload as TurnMeta);
       break;
     case 'error':
       h.onError?.(payload as ErrorEvent);

@@ -258,6 +258,19 @@ export interface Message {
   // error 와 달리 응답을 막지 않고 옆에 지속 표시한다(무음 강등 가시화).
   warn?: string;
   streaming?: boolean;
+  /** 챗 서버가 생각한 글(SSE reasoning) — 접힌 '생각 중' 칸에만 보인다. 다음 턴 이력에 넣지 않고 영속하지 않는다(수만 자 — 쿼터). */
+  reasoning?: string;
+  /** 이 턴에 답한 모델 · 생각 설정(SSE meta) — 넘김이 일어나면 같은 질문에 답의 깊이가 달라진다. 영속됨(작다). */
+  meta?: TurnMeta;
+}
+
+/** 에이전트 서버가 턴 끝에 내는 meta — models 는 이 턴의 모델 호출 수(모델 이름 → 횟수). docs/chat-depth-context C3. */
+export interface TurnMeta {
+  models: Record<string, number>;
+  chat_model?: string | null;
+  thinking?: boolean | null;
+  effort?: string | null;
+  fallback_to?: string | null;
 }
 
 // 대화 한 건 — localStorage('hwax.chat.*') 영속 단위 (chatStore.ts가 직렬화 담당).

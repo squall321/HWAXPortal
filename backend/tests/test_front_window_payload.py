@@ -259,3 +259,26 @@ def test_근거_곁_필드를_프론트에서_미리_자르지_않는다():
     got = _node(["components/chat/handoff.ts"],
                 "const h = require('./components/chat/handoff.js'); out(h.conversationEvidence(input));", conv)
     assert got[0]["source"] == step and len(got[0]["args"]) == len(("인자 " * 700).strip())
+
+
+# ── 생각 글 · 답한 모델(docs/chat-depth-context C2 · C3) ──────────────────────────────────────
+def test_답한_모델은_남기고_생각_글은_남기지_않는다():
+    """생각 글은 수만 자라 브라우저 사본에 남기면 쿼터를 먹는다 — 접힌 칸에서 그 자리에서만 보인다. 답한 모델 · 강도(meta)는 작아서 남긴다."""
+    meta = {"models": {"qwen3.8-flash-next": 2, "GLM-5.2": 1}, "chat_model": "qwen3.8-flash-next", "thinking": True,
+            "effort": "xhigh", "fallback_to": "GLM-5.2"}
+    convs = [{"id": "c", "title": "t", "createdAt": 0, "updatedAt": 0,
+              "messages": [_msg("user", "q"), _msg("assistant", "답", reasoning="생" * 50000, meta=meta)]}]
+    got = _node(["state/chatStore.ts"],
+                "const s = require('./state/chatStore.js'); s.saveConversations(input);"
+                " const m = s.loadConversations()[0].messages[1]; out({meta: m.meta ?? null, reasoning: m.reasoning ?? null});", convs)
+    assert got == {"meta": meta, "reasoning": None}
+
+
+def test_스트림은_reasoning_과_meta_사건을_넘긴다():
+    """모르는 사건은 dispatch 에서 조용히 버려진다(default 없음) — 두 사건이 손잡이로 이어지는지 소스로 본다."""
+    api = (_SRC / "api/chat.api.ts").read_text(encoding="utf-8")
+    assert "case 'reasoning':\n      h.onReasoning?.(" in api and "case 'meta':\n      h.onMeta?.(" in api
+    ctx = (_SRC / "state/ChatContext.tsx").read_text(encoding="utf-8")
+    assert "onReasoning: (e) =>" in ctx and "onMeta: (e) =>" in ctx
+    view = (_SRC / "components/chat/MessageList.tsx").read_text(encoding="utf-8")
+    assert "<ReasoningBlock" in view and "<ModelBadge" in view

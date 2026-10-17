@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, Conversation, DelibData, DelibOpts, Message, Role, ThinkData } from '../types/chat';
+import type { ActivityItem, Conversation, DelibData, DelibOpts, Message, Role, ThinkData, TurnMeta } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -19,6 +19,8 @@ interface StoredMessage {
   think?: ThinkData;
   /** 이 답을 낸 전문가(페르소나). 없으면 일반 어시스턴트 답이다. */
   persona?: { key: string; name?: string };
+  /** 이 턴에 답한 모델 · 생각 설정 — 작아서 남긴다(생각 글은 남기지 않는다). */
+  meta?: TurnMeta;
 }
 interface StoredConversation {
   id: string;
@@ -66,6 +68,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           ...(m.delib && typeof m.delib === 'object' ? { delib: m.delib } : {}),
           ...(m.think && typeof m.think === 'object' ? { think: m.think } : {}),
           ...(m.persona && typeof m.persona.key === 'string' ? { persona: m.persona } : {}),
+          ...(m.meta && typeof m.meta.models === 'object' ? { meta: m.meta } : {}),
         });
       }
       convs.push({
@@ -195,6 +198,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ...(m.delib ? { delib: trimDelib(m.delib, cut) } : {}),
             ...(m.think ? { think: trimThink(m.think) } : {}),
             ...(m.persona ? { persona: m.persona } : {}),
+            ...(m.meta ? { meta: m.meta } : {}),
           };
         });
       return {
