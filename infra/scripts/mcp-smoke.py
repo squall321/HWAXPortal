@@ -98,6 +98,54 @@ def _identity_only(cfg: dict) -> set[str]:
 
 
 # 자기 상태를 돌려주는 무인자 도구 이름들. 이 중 하나가 있으면 드리프트 대조를 시도한다.
+# 인자가 있어야 하는 도구라는 거절인가 — 스키마에 required 가 없어도 본문이 '둘 중 하나를 준다' 로 막는 도구가 있다(StepForge
+# part_history: "projects(…)나 task_code(…) 중 하나를 준다", 10-17 cae00 리뷰 P6 · X5). 실패로 세면 그 백엔드가 2/3 이고, 주기 판
+# (백엔드당 하나)에서는 '죽음' 이 되어 상태판이 헛경보를 낸다. 낱말('필수' · '필요')로만 가르면 '인증이 필요합니다' 같은 진짜 장애를
+# 건너뛴다 — 그래서 **그 도구의 인자 이름**이 문구에 나와야 하고, 인증 · 연결 거절로 보이면 인자 이름이 있어도 실패로 센다.
+_AUTH_OR_TRANSPORT = re.compile(r"(?i)\b40[13]\b|unauthori|forbidden|인증|권한|토큰|\btoken\b|connect|timed? ?out|refused")
+
+
+def _args_needed(text: str, props: dict) -> bool:
+    if not props or _AUTH_OR_TRANSPORT.search(text or ""):
+        return False
+    return any(re.search(rf"(?<![A-Za-z0-9_]){re.escape(p)}(?![A-Za-z0-9_])", text or "") for p in props)
+
+
+def _order(names: list, props_of: dict) -> list:
+    """인자 칸이 아예 없는 도구부터 — 숨은 '둘 중 하나' 요구가 없다. 같은 무리 안의 차례는 그대로(안정 정렬)."""
+    return sorted(names, key=lambda n: bool(props_of.get(n)))
+
+
+async def _probe(rec: dict, names: list, call, per_backend: int, timeout: float, props_of: dict) -> None:
+    """백엔드 하나를 부른다 — 인자를 요구하는 거절(_args_needed)은 세지 않고 다음 후보로 넘어간다. 센 호출이 per_backend 개면 멈춘다."""
+    import anyio
+    for n in names:
+        if len(rec["probed"]) >= per_backend:
+            break
+        try:
+            with anyio.fail_after(timeout):
+                res = await call(n, {})
+            if getattr(res, "isError", False):
+                txt = _text(res)
+                if _args_needed(txt, props_of.get(n) or {}):
+                    rec.setdefault("skipped", []).append(n)
+                    continue
+                rec["probed"].append(n)
+                rec["err"] += 1
+                if not rec["why"]:
+                    rec["why"] = txt[:160]
+            else:
+                rec["probed"].append(n)
+                rec["ok"] += 1
+        except Exception as exc:  # noqa: BLE001 — 타임아웃 포함
+            rec["probed"].append(n)
+            rec["err"] += 1
+            if not rec["why"]:
+                rec["why"] = f"{type(exc).__name__}: {exc}"[:160]
+    if not rec["probed"] and rec.get("skipped"):
+        rec.update(unprobed=True, why=f"부를 후보가 모두 인자를 요구했다(건너뜀 {len(rec['skipped'])} — {', '.join(rec['skipped'][:3])})")
+
+
 _SELF_REPORT = ("system_capabilities", "capabilities", "system_status")
 # 그 응답에서 '이 앱이 노출한다고 주장하는 도구 수'를 담고 있을 만한 키(먼저 맞는 것 하나).
 _COUNT_KEYS = ("mcp_tools", "tool_count", "tools_count", "n_tools")
@@ -152,6 +200,7 @@ def main() -> int:
                 # 화면에는 아무 줄도 안 나오고, 읽는 사람은 문제없다고 읽는다. 그래서 그런 백엔드를
                 # 따로 세어 "무인자 읽기 도구 없음" 으로 **말한다**(초록도 빨강도 아니다).
                 seen_be: set[str] = set()
+                props_of = {t.name: (t.inputSchema or {}).get("properties") or {} for t in tools}
                 for t in tools:
                     be = tmap.get(t.name, "?")
                     seen_be.add(be)
@@ -164,6 +213,8 @@ def main() -> int:
                     if a.periodic and not READ.search(t.name):
                         continue
                     by_be.setdefault(be, []).append(t.name)
+                for be in by_be:
+                    by_be[be] = _order(by_be[be], props_of)
                 for be in sorted(seen_be - set(by_be) - {"_gateway", "?"}):
                     if be in identity_only:
                         why = "사람 신원으로만 답하는 백엔드라 게이트웨이 토큰(신원 없음)으로는 확인 못 함 — 사람 신분 실호출이 따로 본다"
@@ -177,21 +228,7 @@ def main() -> int:
                     if be == "_gateway":
                         continue      # 게이트웨이 자체 도구는 백엔드 건강과 무관
                     rec = result.setdefault(be, {"ok": 0, "err": 0, "probed": [], "why": ""})
-                    for n in names[: a.per_backend]:
-                        rec["probed"].append(n)
-                        try:
-                            with anyio.fail_after(a.timeout):
-                                res = await s.call_tool(n, {})
-                            if getattr(res, "isError", False):
-                                rec["err"] += 1
-                                if not rec["why"]:
-                                    rec["why"] = _text(res)[:160]
-                            else:
-                                rec["ok"] += 1
-                        except Exception as exc:  # noqa: BLE001 — 타임아웃 포함
-                            rec["err"] += 1
-                            if not rec["why"]:
-                                rec["why"] = f"{type(exc).__name__}: {exc}"[:160]
+                    await _probe(rec, names, s.call_tool, a.per_backend, a.timeout, props_of)
 
                 # ── 버전 드리프트 ───────────────────────────────────────────
                 # 호출이 되는 것과 최신 코드가 도는 것은 다르다. DynaForge 가 실제로
@@ -249,7 +286,8 @@ def main() -> int:
                 continue
             mark = "✗" if be in dead else "·"
             print(f"  {mark} {be:28} 성공 {r['ok']}/{len(r['probed'])}"
-                  + (f"   {r['why']}" if be in dead else ""))
+                  + (f"   {r['why']}" if be in dead else "")
+                  + (f"   · 인자 필요로 건너뜀 {len(r['skipped'])}({', '.join(r['skipped'][:3])})" if r.get("skipped") else ""))
         for be, d in sorted(drift.items()):
             print(f"  ✗ {be:28} 도구 수 불일치 — 앱은 {d['app']}개라는데 게이트웨이엔 {d['gateway']}개"
                   f" ({d['tool']}.{d['key']})")

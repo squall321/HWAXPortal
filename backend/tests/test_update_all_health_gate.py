@@ -140,3 +140,66 @@ def test_read_tools_are_still_probed(name):
     """반대로 다 막아 버리면 스모크가 아무것도 안 본다."""
     m = _smoke_mod()
     assert not (m.WRITE.match(name) or m.WRITE_ANY.search(name)), f"{name} 까지 막았다"
+
+
+# ── 인자를 요구하는 거절은 실패로 세지 않는다(10-17 cae00 리뷰 P6 · X5) ─────────────────────
+PART_HISTORY_ERR = "Error executing tool part_history: projects(개정 순서의 과제 목록)나 task_code(PLM 과제코드 — 그 과제의 개정 줄) 중 하나를 준다"
+PART_HISTORY_PROPS = {"projects": {}, "part": {}, "at": {}, "min_confidence": {}, "task_code": {}, "full": {}}
+
+
+def test_인자_요구_거절은_그_도구의_인자_이름이_나올_때만이다():
+    """스키마에 required 가 없는데 본문이 '둘 중 하나' 로 막는다(StepForge part_history — dev 게이트웨이 실물 문구, 10-17)."""
+    m = _smoke_mod()
+    assert m._args_needed(PART_HISTORY_ERR, PART_HISTORY_PROPS)
+    assert not m._args_needed("Error executing tool x: 인증이 필요합니다 — projects 를 볼 권한이 없다", PART_HISTORY_PROPS), \
+        "인증 · 권한 거절은 인자 이름이 있어도 실패다(진짜 장애를 건너뛰면 안 된다)"
+    assert not m._args_needed("HTTP 401 projects", PART_HISTORY_PROPS)
+    assert not m._args_needed("Error executing tool x: 내부 오류", PART_HISTORY_PROPS), "인자 이름이 없으면 실패다"
+    assert not m._args_needed(PART_HISTORY_ERR, {}), "인자 칸이 없는 도구의 거절은 실패다"
+    assert not m._args_needed("Error: subprojects missing", {"projects": {}}), "낱말 안의 일부는 인자 이름이 아니다"
+
+
+class _Res:
+    def __init__(self, text: str, err: bool):
+        self.isError = err
+        self.content = [type("C", (), {"type": "text", "text": text})()]
+
+
+def _call(replies: dict):
+    async def call(name, args):
+        r = replies[name]
+        if isinstance(r, Exception):
+            raise r
+        return r
+    return call
+
+
+def _run_probe(names, replies, per_backend=1, props=None):
+    import anyio
+    m = _smoke_mod()
+    rec = {"ok": 0, "err": 0, "probed": [], "why": ""}
+    props = props if props is not None else {n: PART_HISTORY_PROPS for n in names}
+    anyio.run(m._probe, rec, names, _call(replies), per_backend, 5.0, props)
+    return rec
+
+
+def test_인자를_요구한_도구는_건너뛰고_다음_후보를_부른다():
+    """주기 판(백엔드당 하나)에서 그 도구가 뽑히면 백엔드가 '죽음' 이 되어 상태판이 헛경보를 냈다."""
+    rec = _run_probe(["part_history", "list_parts"], {"part_history": _Res(PART_HISTORY_ERR, True), "list_parts": _Res("[]", False)})
+    assert rec["probed"] == ["list_parts"] and rec["ok"] == 1 and rec["err"] == 0 and rec["skipped"] == ["part_history"], rec
+
+
+def test_후보가_모두_인자를_요구하면_검사_못_함이다():
+    rec = _run_probe(["part_history"], {"part_history": _Res(PART_HISTORY_ERR, True)})
+    assert rec.get("unprobed") and "모두 인자를 요구" in rec["why"] and rec["probed"] == [], rec
+
+
+def test_인증_거절과_예외는_그대로_실패로_센다():
+    rec = _run_probe(["a", "b"], {"a": _Res("인증이 필요합니다(projects)", True), "b": RuntimeError("boom")}, per_backend=2)
+    assert rec["err"] == 2 and rec["probed"] == ["a", "b"] and "skipped" not in rec and "인증" in rec["why"], rec
+
+
+def test_인자_칸이_없는_도구부터_고른다():
+    m = _smoke_mod()
+    props = {"part_history": PART_HISTORY_PROPS, "system_status": {}, "list_parts": {"limit": {}}, "health": {}}
+    assert m._order(["part_history", "system_status", "list_parts", "health"], props) == ["system_status", "health", "part_history", "list_parts"]
