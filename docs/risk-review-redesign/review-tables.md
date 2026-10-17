@@ -1,6 +1,9 @@
 # 거르기 표 검토 — 사용자 승인용(리스크 심사 재설계 M3, D-33·D-34·D-35)
 
-> 2026-10-14 · 초안 판 — 메커니즘 → 영역 `mech-owners.v1.json`(HWAXRisk 가지 `m3`) · 변경 → 메커니즘·부품 역할 → 영역 `change-routing.v1.json`(가지 `m3-cells`). 둘 다 `review_status: "draft"` 다.
+> 2026-10-14 · 초안 판 — 메커니즘 → 영역 `mech-owners.v1.json`(HWAXRisk 가지 `m3`) · 변경 → 메커니즘·부품 역할 → 영역 `change-routing.v1.json`(가지 `m3-cells`). 둘 다 `review_status: "draft"` 였다.
+>
+> **승인 — 2026-10-17 사용자 '이대로 승인'(아래 '고르실 것' 1).** 리스크 앱 main `d8f6a87` 이 두 표의 `review_status` · `reviewed_by` · `reviewed_at` 세 칸만
+> 고쳤다(SIF `0d120ea3`). 그 SIF 가 뜬 뒤 새로 만드는 검토 잡부터 거른다 — 결정 [context-notes.md](context-notes.md) D-56.
 
 ## 이 표가 하는 일
 

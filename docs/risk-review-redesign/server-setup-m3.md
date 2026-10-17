@@ -150,7 +150,7 @@ D="$(readlink -f var/app_data/hwax_risk)" && echo "$D"
 | 2 | 카드 대조 스위치가 켜져 있다 | `grep -n '^HWAXRISK_REVIEW_ENABLED' "$D/knobs.env"` | `HWAXRISK_REVIEW_ENABLED=1`. 없으면 `server-setup-m2.md` 2절 |
 | 3 | 살아 있는 리스크 잡이 없다 | 포털 리포 루트에서 `./infra/scripts/risk-review-inventory.sh` | `잡 상태별:` 에 `queued`·`running`·`paused`·`cancelling` 이 없다. 있으면 끝난 뒤에 한다 — 새 앱은 셀 지문을 그 셀이 부르는 종류의 판으로 다시 세어, 도는 M2 셀을 처음부터 돌린다(차감은 없다) |
 | 4 | 이행 사본을 뜰 자리가 있다 | 아래 명령 | 남은 바이트가 원장과 `-wal` 합의 1.2배 이상 |
-| 5 | dev 가 판을 올렸다 | 아래 값 | 리스크 앱 main `54c4385`(M3 `a368c86` · 뒤처리 D-55 `d18e9d6` 에 Claude 길 X-2 — 판단 LLM 선택은 기본 GLM, 켜지 않으면 동작 그대로 · 보안 핫픽스 `12130f9` 포함), hwax-risk SIF 해시 앞 8자 `eee3240f`(10-16 Drive `latest/`) |
+| 5 | dev 가 판을 올렸다 | 아래 값 | 리스크 앱 main `d8f6a87`(M3 `a368c86` · 뒤처리 D-55 `d18e9d6` · Claude 길 X-2 `54c4385`(판단 LLM 선택은 기본 GLM, 켜지 않으면 동작 그대로) · MCP 인자 설명 `ae4af1d` · **거르기 표 승인 `d8f6a87`(10-17, 2-6 · D-56)** — 보안 핫픽스 `12130f9` 포함), hwax-risk SIF 해시 앞 8자 `0d120ea3`(10-17 Drive `latest/`) |
 
 ```bash
 du -cb "$D"/risk_review.db "$D"/risk_review.db-wal 2>/dev/null | tail -1   # 원장과 -wal 의 합(바이트)
@@ -197,7 +197,7 @@ apptainer exec instance://heax_app_hwax_risk grep -c '^@mcp.tool' /app/backend/a
 |---|---|
 | `스키마 버전:` | `5` |
 | `risk_review.db.pre-migrate-v4-…` | 하나 있고 크기가 이행 전 원장과 비슷하다 |
-| SIF 해시 앞 8자 | `eee3240f`(10-16, `54c4385`) |
+| SIF 해시 앞 8자 | `0d120ea3`(10-17, `d8f6a87`) |
 | `@mcp.tool` 수 | `31`(떠 있는 앱의 소스) |
 
 관리자 계정으로 로그인한 브라우저의 `/apps/hwax_risk/api/meta/runtime` 에서도 `schema_version` 이 5 다(2-5 의 손잡이도 거기 보인다).
@@ -281,7 +281,7 @@ cd ~/Projects/HEAXHub && deploy/apptainer/redeploy-app.sh hwax-risk       # 고�
 
 ### 2-6. 배정표 승인 — 사용자
 
-거르기의 코드 신호는 두 표에서 나온다 — 메커니즘 → 영역 배정표(`mech-owners.v1.json`, 52행)와 변경 → 메커니즘 · 부품 역할 표(`change-routing.v1.json`, 변경 코드 97). `a27e569` 에서 둘 다 `review_status: "draft"` 다.
+거르기의 코드 신호는 두 표에서 나온다 — 메커니즘 → 영역 배정표(`mech-owners.v1.json`, 52행)와 변경 → 메커니즘 · 부품 역할 표(`change-routing.v1.json`, 변경 코드 97). `a27e569` 에서 둘 다 `review_status: "draft"` 였고, **10-17 사용자가 '이대로 승인'** 했다(리스크 앱 main `d8f6a87` · SIF `0d120ea3` — D-56). 그 SIF 가 이 박스에 뜬 뒤 새로 만드는 검토 잡부터 거른다.
 
 - **승인 전** — 코드 신호가 모든 영역에 '모름' 을 내어 아무 셀도 걸러지지 않는다. 진행판 `review.filter.approved` 가 `false` 이고 `filtered` 가 0 이다. 전원 실주행은 약 1만 5천 호출 이상(동시 8 · 호출 5분이면 약 7일)이다(5-7).
 - **누가** — 사용자가 [review-tables.md](review-tables.md) 를 훑고 '고르실 것' 넷(이대로 승인 · `drop_stress` 의 관련 영역 좁히기 · xd 좁히기 · 고칠 칸 직접) 가운데 하나를 dev 에 알린다. dev 가 두 파일의 `review_status` 를 `approved` 로 바꾸는 커밋 하나(`reviewed_by` · `reviewed_at` 과 함께)를 만들어 SIF 와 함께 올린다. 표는 SIF 안의 자산이라 박스에서 고치지 않는다.
@@ -293,7 +293,7 @@ cd ~/Projects/HEAXHub && deploy/apptainer/redeploy-app.sh hwax-risk       # 고�
 apptainer exec instance://heax_app_hwax_risk python3 -c 'import json; [print(f, json.load(open("/app/backend/app/assets/" + f)).get("review_status")) for f in ("mech-owners.v1.json", "change-routing.v1.json")]'
 ```
 
-기대 — 지금은 두 줄 다 `draft`, 승인 SIF 가 뜬 뒤에는 둘 다 `approved` 다. 잡을 만든 뒤에는 Claude `risk_get_coverage(target_key='diff:…', with_seats=false)` 의 `review.filter.approved` 가 그 잡이 얼린 값이다.
+기대 — 승인 SIF(`0d120ea3`)가 뜬 뒤에는 둘 다 `approved` 다(그 전의 옛 SIF 면 `draft` — update-all 을 다시 돌린다). 잡을 만든 뒤에는 Claude `risk_get_coverage(target_key='diff:…', with_seats=false)` 의 `review.filter.approved` 가 그 잡이 얼린 값이다.
 
 ## 3. M0-b 탐침 보강 팔 — 지금
 
