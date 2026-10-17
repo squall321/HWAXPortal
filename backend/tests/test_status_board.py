@@ -418,6 +418,46 @@ def _listener(port: int, *tag: str) -> subprocess.Popen:
             time.sleep(0.05)
 
 
+def _listener_as(argv0: str, port: int) -> subprocess.Popen:
+    """명령줄 첫 인자가 argv0 인 리스너 — 진짜 Gatus 의 명령줄은 `/gatus` 하나다(앞에 다른 인자가 없다). 위 `_listener(port, "/gatus")` 는
+    `python -c … /gatus` 라 판정 패턴 `* /gatus *` 와 맞았지만 진짜는 안 맞아, 정지가 진짜 상태판을 '상태판이 아니다' 로 거부했다(2026-10-17 dev 실측)."""
+    code = ("import socket,sys,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); "
+            "s.bind(('127.0.0.1',int(sys.argv[1]))); s.listen(); time.sleep(120)")
+    p = subprocess.Popen([argv0, "-c", code, str(port)], executable=sys.executable, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+            return p
+        except OSError:
+            if time.monotonic() > deadline:
+                p.kill()
+                raise
+            time.sleep(0.05)
+
+
+def test_stop_은_명령줄_첫_인자가_gatus_인_진짜_상태판을_내린다(lay):
+    port = _free_port()
+    lay.infra_env(f"STATUS_BOARD_PORT={port}\n")
+    real = _listener_as("/gatus", port)
+    try:
+        assert open(f"/proc/{real.pid}/cmdline", "rb").read().split(b"\0")[0] == b"/gatus"
+        r = _launch(lay, "stop")
+        assert r.returncode == 0 and "내려갔다" in r.stdout, r.stdout + r.stderr
+        assert real.wait(10) is not None
+    finally:
+        if real.poll() is None:
+            real.kill()
+    other = _listener_as("/usr/bin/gatus-notes", port)            # 첫 인자가 /gatus 로 끝나기만 하는 남의 것
+    try:
+        r = _launch(lay, "stop")
+        assert r.returncode == 1 and "상태판(gatus)이 아니다" in r.stderr and other.poll() is None, r.stdout + r.stderr
+    finally:
+        other.kill()
+        other.wait(10)
+
+
 def test_stop_은_그_포트를_듣는_gatus_만_내린다(lay):
     port = _free_port()
     lay.infra_env(f"STATUS_BOARD_PORT={port}\n")

@@ -95,7 +95,9 @@ case "${1:-}" in
     for p in $PIDS; do
       # 명령줄을 먼저 받고 본다 — `… | grep -q` 는 pipefail 아래서 맞은 것을 '아니다' 로 읽을 수 있다(판정 파이프 함정)
       _cmd="$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null || true)"
-      case "$_cmd" in
+      # 앞에 빈칸을 붙여 견준다 — 진짜 Gatus 의 명령줄은 `/gatus` 하나라(첫 인자) 앞에 빈칸이 없다. 붙이지 않으면 진짜 상태판을 '아니다' 로
+      #   거부했다(2026-10-17 dev 실측 — 시험의 가짜는 `python -c … /gatus` 라 맞았다).
+      case " $_cmd" in
         # 인자 하나가 정확히 /gatus 여야 한다 — `*gatus*` 면 인자 어딘가에 gatus 가 든 남의 프로세스도 죽였다(호출 추적 반대 검토 LOW-6 과 같은 꼴).
         *" /gatus "*) ;;
         *) echo "✗ :$PORT 를 듣는 pid $p 는 상태판(gatus)이 아니다(${_cmd:0:120}) — 건드리지 않는다" >&2; exit 1 ;;
