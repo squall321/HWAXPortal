@@ -517,8 +517,15 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
     APPT="apptainer"; for c in infra/apptainer/bin-*/usr/bin/apptainer; do [ -x "$c" ] && { APPT="$c"; break; }; done
     _stop()  { "$APPT" instance stop hwax_nginx >>"$NG_LOG" 2>&1 || true; }
     _start() { HWAX_NO_BUILD=1 ./infra/scripts/start.sh >>"$NG_LOG" 2>&1; }
-    hwax_restart_cycle nginx "$_ngcur" _stop _start "http://127.0.0.1:${NG_PORT:-8088}/health" ) || _ngrc=$?
+    # 생략했는지는 이 사이클의 표지로 본다 — 사이클은 생략해도 0 이라, 그 뒤 /health 200 만 보고 'reloaded' 라고 찍었다(10-17 리뷰 P5).
+    HWAX_RESTART_SKIPPED_FILE="$NG_LOG.skipped" hwax_restart_cycle nginx "$_ngcur" _stop _start "http://127.0.0.1:${NG_PORT:-8088}/health" ) || _ngrc=$?
   fi
+  _ngskipped=0
+  if [ -s "$NG_LOG.skipped" ]; then
+    _ngskipped=1
+    [ -n "${HWAX_RESTART_SKIPPED_FILE:-}" ] && cat "$NG_LOG.skipped" >> "$HWAX_RESTART_SKIPPED_FILE"   # 끝 요약의 '재기동 생략' 목록에도 든다
+  fi
+  rm -f "$NG_LOG.skipped"
   # rc 를 변수로 받는다(`|| true` 로 버리지 않는다) — 이 파일은 set -e 라 서브셸 실패가 여기서 배포 전체를 끊으면 아래 skip·로그·
   # Health 요약·종료코드 집계가 통째로 빠지고, 반대로 버리면 "같은 프로세스가 답한다(stop 실패)" 인데 /health 200 만 보고
   # "reloaded" 초록이 됐다(3라운드 실측: 옛 conf 로 돌면서 exit 0). /health 200 은 '떠 있다' 일 뿐 '새 conf 로 떴다' 가 아니다.
@@ -534,7 +541,8 @@ if [ "${NO_NGINX_REFRESH:-0}" != "1" ] && [ -d "$PORTAL_DIR" ]; then
     skip "nginx 재기동 실패(rc=$_ngrc) — 같은 프로세스가 답하거나 뜨지 않았다. 옛 라우팅 conf 로 돌고 있을 수 있다. 아래는 마지막 로그다."
     tail -12 "$NG_LOG" | sed 's/^/      /'
   elif [ "${NG_CODE:-000}" = "200" ]; then
-    ok "nginx reloaded with current routes (/health → 200)"
+    if [ "$_ngskipped" = 1 ]; then ok "nginx conf 그대로 · 살아 있음 — 재기동 생략 (/health → 200)"
+    else ok "nginx reloaded with current routes (/health → 200)"; fi
     # conf 는 만들어졌어도 생성기가 남긴 ✗·⚠ 는 사람이 봐야 한다(모양이 틀려 버린 NGINX_*_READ_TIMEOUT · 침묵 한도의 순서가 뒤집혔다 ·
     # 중복 라우트). 이 갈래는 NG_LOG 를 그대로 지워, update-all 로만 도는 박스에서는 그 줄들이 한 번도 화면에 안 나왔다.
     grep -E '^[[:space:]]*(✗|⚠)' "$NG_LOG" | sed 's/^/      /' || true

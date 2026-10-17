@@ -641,7 +641,13 @@ def test_nginx_block_bounces_on_conf_change_skips_otherwise_and_counts_a_failed_
     routes, run, state, _ = nginx
     out, calls, rc = run(); assert rc == 0 and "OK:nginx reloaded" in out and state() and "start.sh" in calls, (out, calls)
     first = state()
-    out, calls, rc = run(); assert "재기동 생략" in out and "OK:nginx reloaded" in out and not any(c.startswith("apptainer") for c in calls) and state() == first, "conf 그대로·살아 있음 → bounce 없음"
+    import tempfile
+    _fd, skipf = tempfile.mkstemp(prefix="hwax-skipped-"); os.close(_fd)
+    out, calls, rc = run(env={"HWAX_RESTART_SKIPPED_FILE": skipf})
+    assert "재기동 생략" in out and not any(c.startswith("apptainer") for c in calls) and state() == first, "conf 그대로·살아 있음 → bounce 없음"
+    assert Path(skipf).read_text().split() == ["nginx"], "끝 요약의 '재기동 생략' 목록에도 든다"; os.unlink(skipf)
+    # 생략했으면 'reloaded' 라고 말하지 않는다 — 사이클은 생략해도 0 이라 /health 200 만 보고 그렇게 찍었다(10-17 cae00 리뷰 P5)
+    assert "OK:nginx conf 그대로 · 살아 있음 — 재기동 생략" in out and "OK:nginx reloaded" not in out, out
     routes.write_text("ste=b\n")                                                           # 라우트가 바뀌어 conf 가 달라진다
     out, calls, rc = run(); assert "변경 있음" in out and any("instance stop hwax_nginx" in c for c in calls) and "start.sh" in calls and state() not in (None, first), out
     second = state(); routes.write_text("ste=c\n")
