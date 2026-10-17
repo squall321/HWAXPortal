@@ -50,7 +50,7 @@ DynaForge(KooRemapper)는 미커밋 작업 25파일이 있어 정리 전 구현 
 
 ## 신규 도구 spec
 
-**1. `license_status` (smart-twin-cluster MCP :5012, 병합)** — 무인자(또는 feature명 옵션) 읽기 도구. ste 헤드노드에서 `lstc_qrun -s`/`lmstat -a`를 라이선스 서버(10.228.132.74:31010)로 쏘아 프로그램별(MPP/SMP) 총 좌석·사용 중·가용·점유 잡 목록을 반환. 기존 slurm_* 와 같은 ssh 경로라 신규 배선 없음, `slurm_cluster_health` 패턴으로 함수 하나 추가. gap-dynaforge의 정직한 한계를 채택한다 — LS-DYNA 라이선스는 implicit/explicit 좌석이 분리되지 않은 코어 기반일 수 있으므로, 도구는 실제 라이선스 모델을 그대로 보여주고 심의가 질문을 교정하게 한다. `_FREE_ALLOW` 등재 필수.
+**1. `license_status` (smart-twin-cluster MCP :5012, 병합)** — 무인자(또는 feature명 옵션) 읽기 도구. ste 헤드노드에서 `lstc_qrun -s`/`lmstat -a`를 라이선스 서버(<라이선스 서버 IP>:31010)로 쏘아 프로그램별(MPP/SMP) 총 좌석·사용 중·가용·점유 잡 목록을 반환. 기존 slurm_* 와 같은 ssh 경로라 신규 배선 없음, `slurm_cluster_health` 패턴으로 함수 하나 추가. gap-dynaforge의 정직한 한계를 채택한다 — LS-DYNA 라이선스는 implicit/explicit 좌석이 분리되지 않은 코어 기반일 수 있으므로, 도구는 실제 라이선스 모델을 그대로 보여주고 심의가 질문을 교정하게 한다. `_FREE_ALLOW` 등재 필수.
 
 **3. `pipeline_status` (StepForge)** — 입력 project_id. 단계별(parse/detect/mesh/export/cavity) 최근 잡 status·finished_at, 산출물 유무(tree.json·graph.json·mesh_report.json), interfaces의 kind×status(auto/confirmed/manual) 이중 집계, part_mesh 상태 집계, step_files 등록 시각 대비 stale 플래그. jobs·interfaces·part_mesh 표 조회+파일 존재 확인뿐이라 `app/mcp_server.py` ANALYSIS 등록 하나로 끝. "auto인가 confirmed인가" 미결도 이 도구의 이중 집계가 함께 닫는다.
 

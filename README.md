@@ -203,7 +203,7 @@ Each value is **whatever address the destination is reachable at** — `localhos
 
 ```ini
 mx-white-paper=http://localhost:5173            # same host as the portal
-heax-hub=http://10.123.45.67:4180               # another server, by IP
+heax-hub=http://<host-ip>:4180               # another server, by IP
 ai-data-hub=https://aidata.sec.samsung.net      # another server, by domain
 report-archive=http://localhost:8001/dashboard/ # sub-path on a service
 ```

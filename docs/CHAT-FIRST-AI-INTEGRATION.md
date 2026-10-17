@@ -102,7 +102,7 @@ HWAXAgentServer :9009  (LangGraph ReAct 루프)
   이 파일과 게이트웨이의 `gateway_config.json`(600, gitignore)은 **`HWAXMcpGateway/provision-config.sh` 가 자동 생성**한다 — GW_TOKEN 발급 + 백엔드 토큰(rat_/sfmcp_/mxwp_) 조달 + 두 파일 동시 작성. 앱은 손으로 토큰을 넣지 않는다.
 - **vLLM 은 config/env 로만 잡는다(playbook §8 — 외부 인프라 설정 참조 원칙).** AgentServer 박스의 `.env` 에 `VLLM_BASE_URL`(OpenAI 호환 base) + `VLLM_MODEL`(served model name) 을 둔다. **라이브 엔드포인트를 테스트로 프로빙하지 말 것**(dev 박스의 포트는 무관한 서비스일 수 있어 오해 유발) · **주소·모델명 하드코딩 금지**.
   - dev/운영 전환은 **주소·모델명 스왑만** — 코드는 한 줄도 안 바뀐다.
-  - **cae00(운영 박스) 테스트** — 상암 프로덕션 LLM 이 아직 없으니 dev 박스 vLLM 을 가리켜 검증한다. `VLLM_BASE_URL=http://192.168.1.100:8000/v1`, `VLLM_MODEL=qwen2.5-7b-dev`.
+  - **cae00(운영 박스) 테스트** — 상암 프로덕션 LLM 이 아직 없으니 dev 박스 vLLM 을 가리켜 검증한다. `VLLM_BASE_URL=http://<dev 박스 IP>:8000/v1`, `VLLM_MODEL=qwen2.5-7b-dev`.
   - **상암 프로덕션 LLM 이 서면** 그 주소·모델명으로 `.env` 만 교체한다(박스별 `.env`, 코드 무변경).
 - **포털 SSO `.env` 배포.** 앱의 포털 로그인 연동 블록은 `infra/env-kits/apply-envs.sh` 로 일괄 배포(없는 키만 추가 · 기존 값 보존). 게이트웨이/에이전트 시크릿(GW_TOKEN·서비스 토큰)은 별도로 `provision-config.sh` 담당.
 
@@ -126,7 +126,7 @@ HWAXAgentServer :9009  (LangGraph ReAct 루프)
 3. **챗 UI + useSSE** — `fetch`+`ReadableStream`, CSRF 헤더, event/data 수동 파싱, AbortController. → 검증. status/token/result/done 이 화면에 순서대로.
 4. **agent 배선** — 최소안은 프론트가 `/agent/chat`(포털 릴레이) 호출로 끝. 데이터 주입이 필요하면 `POST /<app>/api/agent/chat` 릴레이 추가(`agent_server_url` env). → 검증. `/agent/chat` 200 SSE.
 5. **게이트웨이 등록** — 앱 MCP 서버를 게이트웨이 백엔드로 등록(`gateway_config.json`) 하고, 토큰 조달은 `provision-config.sh` 로 자동. `allowed_groups` 필요시 지정. → 검증. 게이트웨이 `/health` 의 tools 수에 앱 도구 반영.
-6. **vLLM env(§8)** — AgentServer 박스 `.env` 의 `VLLM_BASE_URL`/`VLLM_MODEL`. cae00 테스트는 dev vLLM(`http://192.168.1.100:8000/v1`, `qwen2.5-7b-dev`). 하드코딩·프로빙 금지. → 검증. AgentServer `/health` 의 `vllm`/`model` 이 env 값과 일치.
+6. **vLLM env(§8)** — AgentServer 박스 `.env` 의 `VLLM_BASE_URL`/`VLLM_MODEL`. cae00 테스트는 dev vLLM(`http://<dev 박스 IP>:8000/v1`, `qwen2.5-7b-dev`). 하드코딩·프로빙 금지. → 검증. AgentServer `/health` 의 `vllm`/`model` 이 env 값과 일치.
 7. **데이터 업로드 흐름(§5)** — 최소안(기존 업로드 참조) 또는 확장안(챗 첨부→핸들→도구). → 검증. 챗에서 올린 데이터로 도구가 실제 응답.
 8. **포털 SSO `.env`** — `infra/env-kits/apply-envs.sh` 로 배포 후 앱 재기동. → 검증. 포털 타일에서 로그인 진입 성공.
 

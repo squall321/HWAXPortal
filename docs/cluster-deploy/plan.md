@@ -91,8 +91,8 @@ data_root: /data/hwax
 control: node01                       # update-all 을 돌리는 배포 서버 (운영망 내부)
 
 nodes:
-  node01: { host: 10.10.1.11, user: koopark, roles: [entry] }   # nginx 진입점
-  node02: { host: 10.10.1.12, user: koopark }
+  node01: { host: <node01 IP>, user: koopark, roles: [entry] }   # nginx 진입점
+  node02: { host: <node02 IP>, user: koopark }
   # … node18 까지. dev 는 nodes: { dev: {host: 127.0.0.1} } 하나.
 
 placement:                            # 스칼라=단일, 리스트=복제(롤링 재기동 대상)
