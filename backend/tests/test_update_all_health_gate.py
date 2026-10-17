@@ -11,6 +11,7 @@
     실제 인입·색인·그라운딩을 발사하고 있었다.
 """
 import importlib.util
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -61,6 +62,17 @@ def test_enabled_answers_with_exit_codes_only(monkeypatch):
     assert m.cmd_enabled([only_on["name"]]) == 1, "대상이 아닌데 0 을 냈다"
     assert m.cmd_enabled(["그런서비스없음"]) == 2
     assert names, "services.yaml 을 못 읽었다"
+
+
+def test_enabled_은_판정이_죽으면_1이_아니라_2다(tmp_path):
+    """잡히지 않은 예외는 파이썬이 1 로 끝내 '이 박스 대상 아님' 과 같아진다 — 부르는 쪽(images-from-drive · update-all 의 상태판 ·
+    호출 추적)이 고장을 '꺼짐' 으로 읽고 조용히 건너뛴다(10-17, 매니페스트 없는 사본에서 이미지가 빠졌다)."""
+    (tmp_path / "infra/scripts").mkdir(parents=True)
+    shutil.copy(SCRIPTS / "services.py", tmp_path / "infra/scripts/services.py")       # services.yaml 없는 사본
+    r = subprocess.run([sys.executable, str(tmp_path / "infra/scripts/services.py"), "enabled", "status-board"],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 2, (r.returncode, r.stderr)
+    assert "판정 실패" in r.stderr
 
 
 # ── ② 헬스게이트가 only_on 을 본다 ─────────────────────────────────────────

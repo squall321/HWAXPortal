@@ -21,8 +21,12 @@ map() { local p="${1#fake:images}"; printf '%s%s' "$FAKE_REMOTE" "${p%/}"; }
 case "$1" in
   version) echo "rclone v0-fake" ;;
   lsf) if [ "$2" = "--dirs-only" ]; then ls -1p "$(map "$3")" | grep '/$' || true; else ls -1 "$(map "$2")"; fi ;;
-  sync) shift; [ "$1" = "--progress" ] && shift; src="$(map "$1")"; dst="${2%/}"; mkdir -p "$dst"
-        find "$dst" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; cp -p "$src"/* "$dst"/ ;;
+  sync) shift; excl=(); pos=()       # 진짜처럼 플래그는 어디에 와도 된다 · --exclude 는 받지도 지우지도 않는다(--delete-excluded 없이)
+        while [ $# -gt 0 ]; do case "$1" in --exclude) excl+=("$2"); shift 2 ;; -*) shift ;; *) pos+=("$1"); shift ;; esac; done
+        src="$(map "${pos[0]}")"; dst="${pos[1]%/}"; mkdir -p "$dst"
+        _ex() { local e; for e in "${excl[@]:-}"; do [ "$1" = "$e" ] && return 0; done; return 1; }
+        for f in "$dst"/*; do [ -e "$f" ] || continue; _ex "$(basename "$f")" || rm -rf "$f"; done
+        for f in "$src"/*; do _ex "$(basename "$f")" || cp -p "$f" "$dst"/; done ;;
   *) echo "fake rclone: 모르는 명령 $*" >&2; exit 9 ;;
 esac
 '''

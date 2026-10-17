@@ -721,7 +721,13 @@ def main() -> int:
     if action == "up":
         return cmd_up(names, do_update=do_update)
     if action == "enabled":  # 이 박스 대상인가(종료코드로만) — 헬스게이트가 only_on 을 보게 한다
-        return cmd_enabled(names)
+        # 판정이 죽으면 2(모름)다 — 잡히지 않은 예외는 파이썬이 1 로 끝내 '이 박스 대상 아님' 과 똑같아진다(10-17: 매니페스트가 없는
+        # 사본에서 상태판 · 호출 추적 이미지가 '꺼짐' 으로 빠졌다). 1 은 판정이 끝까지 돈 때만 낸다.
+        try:
+            return cmd_enabled(names)
+        except Exception as e:  # noqa: BLE001
+            print(f"services.py enabled: 판정 실패 — {e}", file=sys.stderr)
+            return 2
     if action == "data":  # 데이터 경로 레지스트리 조회·검증(docs/data-migration)
         return cmd_data(names, check="--check" in args)
     return {"status": cmd_status, "down": cmd_down, "update": cmd_update, "fp": cmd_fp, "port": cmd_port, "health": cmd_health}[action](names)
