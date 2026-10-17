@@ -42,3 +42,38 @@ P3 · A1~A3 는 리뷰 본문과 안내서 문구를 기준으로 고친다.
 라고 적었다. dev 는 10-17 에 걸었고(병합 · 덤프가 돌지 않는 것을 보고 · 새 연결에서 `30min`), cae00 한 줄은 AIDataHub
 `deploy/apptainer/README.md` 'PG 안전망' 이다 — 적은 명령을 dev 에서 그대로 돌려 봤다. 이행 마이그레이션으로 자동화하지 않은 까닭 — 카드에
 그렇게 여쭙지 않았다.
+
+**FU-D9 리스크 백업은 '이 앱만, 박스별 칸' 이다.** 래퍼는 원래 HEAXHub app-data 백업 전체를 불러 공유 칸(`app-data` — dev 가 올리고
+cae00 이 병합해 받는다)에 올리게 돼 있었다. cae00 의 `HEAX_DRIVE_REMOTE` 는 deploy-all 이 dev 와 같은 `HEAXHub/dist` 로 잡으므로, 카드대로
+'cae00 에도 같은 줄' 을 돌리면 cae00 의 앱 데이터 전부가 그 칸의 `latest/` 를 덮어 dev → cae00 병합을 뒤섞고 다른 앱의 운영 데이터(음성
+녹음 등)까지 평문으로 나갔을 것이다. 그래서 HEAXHub 스크립트에 앱(`HEAX_APPDATA_ONLY`)과 칸(`HEAX_APPDATA_CHANNEL`)을 더하고 래퍼는
+`risk-backup/<박스>` 에 리스크 앱만 올린다(보존 5벌은 HEAXHub 의 것). 평문 원장이 다른 길(포털 build-all)로 나가지 않게 '곁에 `.age` 가
+있으면 평문은 싣지 않는다' 를 HEAXHub 쪽에 걸었다. 키는 박스마다 만들지 않고 dev 와 같은 공개키를 쓴다 — 박스가 죽을 때 키도 함께 사라지면
+백업을 못 푼다. **개인키는 지금 dev(`~/.config/hwax/risk-backup.agekey`, 600)에만 있다 — 사용자가 따로 지녀야 한다.**
+
+**FU-D10 지식 리포 묶음에는 커밋 안 된 변경도 싣는다.** git 묶음은 커밋만 담는데 ExpertGrounding 은 커밋이 8월의 1개뿐이고 뒤 작업
+1,482개가 작업 트리에만 있었다 — 묶음만이면 거의 빈 백업이다. 수정 · 추적 안 된 파일(.gitignore 존중)을 싣고 비밀 꼴(`.env*` · `*.key` ·
+`*.pem`)과 `*.sif` 는 뺀다. 다른 세션이 그 리포를 쓰므로 커밋은 대신 하지 않았다. 바뀐 것이 없으면 올리지 않는다(지문의 정렬은 `LC_ALL=C`
+— 빈 환경(크론)과 사람 셸의 지문이 갈려 같은 내용을 다시 올린 것을 보고 고쳤다).
+
+**FU-D11 logrotate 편입은 미룬다.** HEAX 백엔드 · 워커 · beat, AIDataHub uvicorn, `/tmp/hwax-services` 는 이제 `>>` · "ab" 로 열지만,
+`copytruncate` 는 떠 있는 쓰기자가 O_APPEND 일 때만 안전하다. dev 실측(`/proc/<pid>/fdinfo/1`) — HEAX 워커 · AIDataHub API 는 `0100001`(없음),
+새 services.py 로 띄운 게이트웨이만 `0102001`. update-all 은 바뀐 서비스만 다시 띄우므로 편입은 박스마다 새로 뜬 것을 본 뒤다. 그때까지는 기동
+때 크면 한 벌 넘기는 것(HEAX `_keep_log` · AIDH `rotate_log` · services.py `prep_log`)이 커짐을 막는다.
+
+**FU-D12 `services.py enabled` 의 오류는 2 다.** P8(이미지 받기)을 고친 뒤 포털 전체 시험에서 기존 시험 다섯이 깨졌다 — 매니페스트가 없는
+사본에서 services.py 가 예외로 죽으면 파이썬은 1 로 끝나는데 1 은 '이 박스 대상 아님' 이라 이미지를 '꺼짐' 으로 뺐다. update-all 의 상태판 ·
+호출 추적 판정도 같은 1 을 받는다. 잡히지 않은 예외는 2(모름)로 바꿨다 — '실패가 정상 응답과 똑같이 생겼다' 의 또 한 꼴.
+
+**FU-D13 HEAXHub 시험은 런처 디렉터리를 격리한다.** 기동 실패 억제는 상태 디렉터리에 기록을 남기는데 HEAXHub 에는 conftest 가 없어, 디렉터리를
+돌리지 않는 기존 시험(모르는 스택 등)이 진짜 `var/integration_state` 에 쓰면 다음 실행부터 backoff 를 받는다. autouse 픽스처로 막았다. 덧붙여 —
+워커는 작업 안에서 런처를 불러오고 자식이 200 작업마다 갈려, 커밋 전에 새 코드를 부른 자식이 dev 의 `heax_demo_nextjs` 억제 기록을 썼다
+(옛 자식은 옛 코드로 계속 시도). 진행 중인 빌드를 끊을 수 있어 워커를 억지로 다시 띄우지 않았다 — 자식이 갈리며 맞춰진다.
+
+**FU-D14 age 는 사용자 공간에 둔다.** dev 는 `apt-get download age`(서명된 저장소)로 받은 우분투 꾸러미를 `dpkg-deb -x` 로 `~/.local/opt/age`
+에 풀었다(sudo · 설치 없음). cae00 은 apt 가 깨져 있어(리뷰 D2) 같은 꾸러미와 체크섬을 Drive `HWAXPortal/tools/age/` 에 두었다 — 절차서의
+명령을 dev 에서 임시 접두사로 그대로 따라 해 봤다.
+
+**FU-D15 옛 사본 목록(결정 17) — 확인 대기.** dev 의 `.pre-move-*` 19 · `.rolled-back-*` 6(09-05 이관의 원본과 실패 때 옮겨 둔 사본)과 쓸모없는
+파일 넷(`HEAXHub/dev2.db` 와 부속 둘 — 참조 0, `var/app_data/materialtwin.db` 0바이트), 모두 29개 · 24.0GB. 지우기 전에 — 그것을 가리키는
+심링크 0, 그 안의 파일을 쥔 프로세스 0(`/proc/*/fd`). 가장 큰 둘은 AIDataHub PG 의 옛 사본 두 벌(각 9.8GB)이다. 사용자 확인을 받고 지운다.
