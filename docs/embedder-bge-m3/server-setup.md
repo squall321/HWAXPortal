@@ -11,7 +11,29 @@ update-all 이 AIDataHub(`e036812` 이후)를 받으면 `start_api.sh` 가 이�
 
 - **update-all 에 `aidh failed` 가 보이면** — 이행이 옛 API 를 내리기 전에 돈다. 그때 옛 임베딩 스윕이 긴 트랜잭션을 쥐고 있으면 0032 가 잠금을
   10초만 기다리고 실패한다(`deploy/apptainer/logs/alembic.log` 에 `canceling statement due to lock timeout`). 옛 API 는 옛 코드로 계속
-  돈다. 조금 뒤 update-all 을 다시 돌리면 올라간다(EM-D13). 급하면 `bash deploy/apptainer/restart.sh --api` — 옛 API 를 먼저 내린다.
+  돈다(EM-D13). 다음처럼 푼다(10-17 cae00 에서 실제로 한 길).
+  1. 쉬는 트랜잭션을 본다 — 새 판의 기동은 이행 전에 그 pid · 시간을 직접 찍는다(`idle in transaction`).
+
+     ```bash
+     cd ~/Projects/AIDataHub
+     bash <<'SH'
+     . deploy/apptainer/_common.sh; load_env
+     apptainer exec "instance://$INST_POSTGRES" psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+       "SELECT pid, now() - xact_start AS 걸린_시간, left(query, 60) AS 쿼리 FROM pg_stat_activity WHERE state LIKE 'idle in transaction%';"
+     SH
+     ```
+  2. 옛 API 의 것(몇 분 넘게 쉬는 것)이면 `SELECT pg_terminate_backend(<pid>);` 로 끊는다(같은 psql 줄에 쿼리만 바꿔).
+  3. `cd ~/Projects/HWAXPortal && ./infra/scripts/deploy-all-from-drive.sh aidh` — 이행이 **먼저** 돌고, 성공해야 옛 API 를 내린다. 또
+     실패하면 옛 API 가 그대로 남는다.
+  - ⚠ `bash deploy/apptainer/restart.sh --api` 는 쓰지 않는다 — 옛 API 를 **먼저** 내리고 이행을 돌려, 이행이 또 실패하면 AIDataHub 가 멈춘다
+    (예전 판 이 줄의 '급하면' 길이었다 — 10-17 리뷰 P2).
+  - PG 의 쉬는 트랜잭션 시한(`idle_in_transaction_session_timeout` 30분 — 사용자 결정 10-17)을 건 박스는 이 막힘이 30분 안에 스스로 풀린다.
+    거는 한 줄은 AIDataHub `deploy/apptainer/README.md` 의 'PG 안전망'.
+- **0032 가 update-all 의 3절 병합보다 늦게 올라갔으면** — 병합은 운영 DB 에 있는 열만 옮긴다. 새 판 병합(AIDataHub `a7a2ee4` 이후)은 그런
+  열을 `⚠ <표>: dev 에만 있는 열 — …` 로 이름째 찍고 3 으로 끝나고, update-all §3 은 `AIDH 데이터 merge 는 됐지만 dev 에만 있는 열이 빠졌다`
+  로 알리며 '병합함' 표식(`.last-merged`)을 안 적는다 — 다음 update-all 이 같은 덤프로 다시 병합한다. 바로 받으려면 이행 뒤
+  `bash deploy/apptainer/merge-from-drive.sh`(약 1시간). 옛 판 병합은 이 경우 ✓ 로 끝나 m3 열이 조용히 빠졌고, 다음 update-all 은 같은
+  덤프라 건너뛰었다(10-17 cae00 — 리뷰 P2 · H1).
 - 새 백필은 1,024행씩 커밋하고 겹쳐 돌지 않는다 — 예전처럼 API 프로세스가 수십 GB 로 부풀지 않는다.
 
 ## 1. 전제 — dev 쪽이 끝났는가
@@ -48,7 +70,7 @@ cd ~/Projects/HWAXPortal && ./infra/scripts/update-all.sh
 ```
 
 §3(AIDataHub 데이터 동기화)이 dev 덤프를 merge 하며 BGE-M3 벡터가 함께 온다. merge 가 평소보다 길다 — staging 에 덤프를 풀 때 BGE-M3
-색인(약 2.8GB)도 지어진다.
+색인(약 2.8GB)도 지어진다. §3 에 `dev 에만 있는 열이 빠졌다` 가 보이면 0절 둘째 항목이다.
 
 ## 4. 남은 것 확인 — 여기서 멈출지 정한다
 
@@ -56,7 +78,11 @@ cd ~/Projects/HWAXPortal && ./infra/scripts/update-all.sh
 cd ~/Projects/AIDataHub && bash deploy/apptainer/embed-slot.sh status --slot m3
 ```
 
-- 기대 — `record_sections` 가 수백~수천(cae00 에서만 생긴 절 + cae00 에서 고친 레코드의 절)이다.
+- 기대 — `record_sections` 가 수백~수천(cae00 에서만 생긴 절 + cae00 에서 고친 레코드의 절)이고, `records` 가 수십~수백(cae00 에서만
+  생긴 레코드 + cae00 에서 고친 레코드)이다.
+- **`records` 가 5만 9천 안팎이면** 병합이 레코드 시그니처를 못 옮긴 것이다 — AIDataHub 가 `722d7a0` 전 판이다(예전 병합이 cae00 의
+  `updated_at` 을 병합 시각으로 올려 둬 레코드 갱신이 0건이었다 — 10-17 cae00, 리뷰 H1-b). 그 판에서는 그대로 5절로 가고, 6절 뒤 인앱
+  스윕이 CPU 로 채운다(10-17 cae00 — 레코드 59,032건 약 4분).
 - **100만 안팎이면 멈춘다** — 덤프가 dev 백필 전 것이다(1절 2). 이대로 전환하면 이 박스가 CPU 로 109만 절을 임베딩한다(dev CPU 로 1.9 절/초 —
   약 6.6일, 그동안 같은 모델을 쓰는 검색 질의가 묶음마다 기다린다). 다음 덤프 뒤 3절부터 다시 한다.
 
@@ -78,7 +104,7 @@ AIDH_EMBED_ACTIVE=m3
 ```
 
 ```bash
-bash deploy/apptainer/restart.sh --api
+cd ~/Projects/HWAXPortal && ./infra/scripts/deploy-all-from-drive.sh aidh   # 0절과 같은 길 — restart.sh --api 는 쓰지 않는다
 curl -s http://127.0.0.1:8001/api/system/health \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["embed_slot"], d.get("embed_backlog_by_slot"))'
 ```
@@ -94,8 +120,8 @@ EM-D14)이 이미 들어 있다. 포털 · 에이전트 서버 코드는 3절의
 
 ## 8. 되돌리기
 
-`.env` 의 `AIDH_EMBED_ACTIVE=m3` 줄을 지우거나 `v1` 로 바꾸고 `bash deploy/apptainer/restart.sh --api`. v1 열은 6절 동안에도 계속 채워졌으므로
-그대로 쓴다. 포털 대화 검색은 옛 색인(aidh-768)을 다시 쓴다.
+`.env` 의 `AIDH_EMBED_ACTIVE=m3` 줄을 지우거나 `v1` 로 바꾸고 `cd ~/Projects/HWAXPortal && ./infra/scripts/deploy-all-from-drive.sh aidh`.
+v1 열은 6절 동안에도 계속 채워졌으므로 그대로 쓴다. 포털 대화 검색은 옛 색인(aidh-768)을 다시 쓴다.
 
 ## 9. 지켜볼 것
 
