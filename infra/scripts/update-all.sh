@@ -1063,13 +1063,19 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
   MARKER="${LATEST_LINK:+$(dirname "$LATEST_LINK")/.last-merged}"
   if [ -n "$LATEST_DUMP" ] && [ -n "$MARKER" ] && [ "$(cat "$MARKER" 2>/dev/null)" = "$LATEST_DUMP" ]; then
     ok "AIDH 덤프 변화 없음($(basename "$LATEST_DUMP")) — merge 생략"
-  elif [ -x "$AIDH_DIR/deploy/apptainer/merge-from-drive.sh" ] \
-       && ( cd "$AIDH_DIR" && AIDH_MERGE_DUMP="$(readlink -f "$LATEST_LINK" 2>/dev/null)" ./deploy/apptainer/merge-from-drive.sh ); then
-    # MERGE(비파괴): dev 신규는 추가, cae00 자체 등록분은 유지(updated_at 최신 우선). DROP 안 함.
-    [ -n "$MARKER" ] && printf '%s' "$(readlink "$LATEST_LINK" 2>/dev/null)" > "$MARKER" 2>/dev/null
-    ok "AIDH 데이터 merge(dev 신규 반영 + cae00 데이터 보존)"
+  elif [ ! -x "$AIDH_DIR/deploy/apptainer/merge-from-drive.sh" ]; then
+    bad "AIDH merge-from-drive.sh 없음 — 데이터 merge 못 함(cae00 데이터는 무손상)"
   else
-    bad "AIDH 데이터 merge 실패 또는 merge-from-drive 없음 — cae00 데이터는 무손상"
+    # MERGE(비파괴): dev 신규는 추가, cae00 자체 등록분은 유지(updated_at 최신 우선). DROP 안 함.
+    # 3 은 '옮겼지만 dev 에만 있는 열이 빠졌다'(운영 DB 이행이 늦었다 — 10-17 cae00 리뷰 H1) — 표식을 안 적어 다음 실행이 같은 덤프로 다시 병합한다.
+    _aidh_mrc=0
+    ( cd "$AIDH_DIR" && AIDH_MERGE_DUMP="$(readlink -f "$LATEST_LINK" 2>/dev/null)" ./deploy/apptainer/merge-from-drive.sh ) || _aidh_mrc=$?
+    case "$_aidh_mrc" in
+      0) [ -n "$MARKER" ] && printf '%s' "$(readlink "$LATEST_LINK" 2>/dev/null)" > "$MARKER" 2>/dev/null
+         ok "AIDH 데이터 merge(dev 신규 반영 + cae00 데이터 보존)" ;;
+      3) bad "AIDH 데이터 merge 는 됐지만 dev 에만 있는 열이 빠졌다(운영 DB 이행이 늦었다) — 표식을 안 적어 다음 update-all 이 다시 병합한다(이행 뒤 손으로: cd $AIDH_DIR && ./deploy/apptainer/merge-from-drive.sh)" ;;
+      *) bad "AIDH 데이터 merge 실패(rc $_aidh_mrc) — cae00 데이터는 무손상" ;;
+    esac
   fi
 else
   hwax_skip "AIDataHub 동기화" "AIDataHub 리포 또는 sync-from-drive.sh 가 없다" "../AIDataHub 를 클론(update-all 이 다음 실행부터 동기화한다)"
