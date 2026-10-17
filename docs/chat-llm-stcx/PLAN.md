@@ -26,6 +26,8 @@
 - **생각 모드 끔** — `chat_template_kwargs.enable_thinking=false`(사용자 결정). `CHAT_LLM_ENABLE_THINKING=1` 로 켠다.
 - **문맥 창** — 챗 경로의 예산은 챗 서버 창(Qwen 262,144)과 GLM 창 중 작은 값. 지금은 GLM 의 1M 으로 챗 예산까지 잡으므로 그대로면 긴
   챗이 400 으로 죽는다.
+  → 10-18 사용자 결정 — Qwen 도 1M(YaRN · 1,010,000, stcx 쪽은 사람 몫 [server-setup.md](server-setup.md) 9절 · CL-D9).
+  벌의 창이 섞인 동안의 '창이 모자라다' 400 은 GLM 으로 넘긴다.
 - **보이기** — `/health` 의 `chat_llm`(주소 · 모델 · 창 · 넘긴 횟수 · 마지막 넘김 사유).
 - **포털 update-all 3.5** — `infra/.env` 의 `CHAT_LLM_*` 를 에이전트 서버 `.env` 로 맞춘다(없으면 ○ · 빈 값이면 끔 · 값이면 적고 그 서버가
   모델을 내는지 본다). 에이전트 서버 `.env` 는 그 서비스의 지문이라 바뀌면 재기동된다.
@@ -38,3 +40,6 @@
 | C2 | 포털 update-all 3.5 · 킷 주석 · 시험 | dev |
 | C3 | cae00 절차서 · 업데이트 이력 · CLAUDE.md 문서 표 | dev |
 | C4 | cae00 — `infra/.env` 두 줄 · update-all · 확인 | 사람 |
+| C5 | 에이전트 서버 — '창이 모자라다' 400 넘김(`ChatCtxOverflow`) · 시험 | dev |
+| C6 | cae00 절차서 9절(Qwen 1M) · 덮어쓰기 생성기 확인 | dev |
+| C7 | stcx sbatch(YaRN) · 시범 · rolling · 확인 | 사람 |

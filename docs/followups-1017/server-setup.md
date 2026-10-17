@@ -161,6 +161,9 @@ Slurm 잡 한도가 30일이라 2026-11-15 전후에 끝난다. 끝나도 챗은
 ~/stcx-llm/llmctl.sh rolling      # 또는 start-all
 ```
 
+Qwen 을 1M 창으로 올리는 rolling(`docs/chat-llm-stcx/server-setup.md` 9.5)을 11-14 전에 하면 이 rolling 을 겸한다 — 다음 만료는 그 rolling
+한 날 + 30일이다.
+
 ## 6. 지켜볼 것
 
 - **AIDataHub 병합 시간** — 절(109만 행)은 바뀌지 않은 행까지 매번 다시 쓰고, 이제 m3 색인(약 2.8GB)도 같이 갱신한다. update-all §3 의
