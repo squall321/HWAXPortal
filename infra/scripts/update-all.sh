@@ -1205,12 +1205,15 @@ if [ -n "${AGENT_DIR:-}" ]; then
       else fail "에이전트 서버 .env 에 챗 전용 LLM 을 못 적었다 — 권한·소유자를 보라"; fi
       # 그 서버가 이 모델을 내는지 — /v1/models 하나(5초). 키는 argv 에 싣지 않는다(환경으로 넘긴다). 루프백이라 프록시를 타지 않는다.
       _chat_probe="$(CHAT_URL="$_chat_url" CHAT_KEY="${_chat_key:-EMPTY}" CHAT_MODEL="$_chat_model" timeout --foreground 10 python3 - <<'PY' 2>/dev/null
-import json, os, urllib.request
+import json, os, urllib.error, urllib.request
 req = urllib.request.Request(os.environ["CHAT_URL"].rstrip("/") + "/models",
                              headers={"Authorization": "Bearer " + os.environ["CHAT_KEY"]})
 try:
     with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5) as r:
         data = [m for m in (json.loads(r.read() or b"{}").get("data") or []) if isinstance(m, dict)]
+except urllib.error.HTTPError as e:  # 닿기는 했다 — 401·403 은 키 문제다('닿지 않는다' 로 찍으면 원인을 엉뚱한 데서 찾는다, 10-17 리뷰 P3)
+    print("auth" if e.code in (401, 403) else "http", e.code)
+    raise SystemExit(0)
 except Exception as e:  # noqa: BLE001
     print("unreach", type(e).__name__)
     raise SystemExit(0)
@@ -1221,6 +1224,8 @@ PY
       case "$_chat_probe" in
         served*)  ok "챗 서버가 $_chat_model 을 낸다(창 $(printf '%s' "$_chat_probe" | cut -d' ' -f2) 토큰)" ;;
         missing*) bad "챗 서버에 $_chat_model 이 없다(있는 것: $(printf '%s' "$_chat_probe" | cut -d' ' -f3-)) — CHAT_LLM_MODEL 을 그 서버의 모델 이름으로(그대로면 챗이 404 로 실패한다)" ;;
+        auth*)    bad "챗 서버가 키를 거절했다(HTTP $(printf '%s' "$_chat_probe" | cut -d' ' -f2)) — infra/.env 의 CHAT_LLM_API_KEY 를 본다(stcx 는 ~/stcx-llm/api_key 가 원본 · 값은 추적 파일에 적지 않는다). 에이전트 서버 .env 만 고치면 다음 update-all 이 이 값으로 되돌린다. 그동안 챗은 GLM 으로 넘겨 답한다(느리다)" ;;
+        http*)    bad "챗 서버가 /v1/models 에 HTTP $(printf '%s' "$_chat_probe" | cut -d' ' -f2) 로 답한다($_chat_url) — stcx 면 ~/stcx-llm/llmctl.sh status. 그동안 챗은 GLM 으로 넘겨 답할 수 있다" ;;
         *)        bad "챗 서버에 닿지 않는다($_chat_url, ${_chat_probe:-응답 없음}) — 지금 챗은 GLM 으로 넘겨 답한다. stcx 면 ~/stcx-llm/llmctl.sh status · llm-tunnel" ;;
       esac
     fi

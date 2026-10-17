@@ -28,7 +28,12 @@ CHAT_LLM_MODEL=qwen3.8-flash-next
 
 - env-sync 가 넣어 둔 주석 줄(`# CHAT_LLM_BASE_URL=`)이 있으면 그 줄의 `#` 을 지우고 값을 적는다.
 - `LLM_BASE_URL` · `LLM_MODEL` 은 그대로 둔다 — 띵킹 · 심의 준비 · 심의 · 카드 대조가 그대로 쓰고, stcx 가 죽었을 때 챗이 넘겨 답하는 곳이다.
-- 키는 없다(stcx vLLM 은 인증이 없고 이 주소는 루프백이다). 키가 있는 서버로 바꾸면 `CHAT_LLM_API_KEY` 를 더한다.
+- **키가 있어야 한다** — stcx LLM 은 키가 없으면 401 이다(10-17 cae00 실측 · 예전 판 이 줄의 '키는 없다' 는 틀렸다). 원본은 `~/stcx-llm/api_key`,
+  `infra/.env` 에 `CHAT_LLM_API_KEY=` 한 줄로 넣는다(값은 추적 파일에 적지 않는다). update-all 3.5c 가 매번 에이전트 서버 `.env` 로 옮기므로
+  **에이전트 서버 `.env` 만 고치면 다음 update-all 이 옛 키로 되돌린다.** 키가 틀리면 3.5c 가 `⚠ 챗 서버가 키를 거절했다(HTTP 401)` 를
+  찍고, 그동안 챗은 GLM 으로 넘겨 답한다(에이전트 서버가 401 · 403 을 넘기는 판부터 — 느리다).
+- 키를 바꿀 때 — stcx rolling(약 20분) 동안 옛 키 · 새 키가 섞여 일부 호출이 401 이 된다. 그 호출은 GLM 으로 넘어간다(`/health` 의
+  `chat_llm.fallback.count` · `last_error` 로 보인다).
 
 ## 3. update-all
 
@@ -87,4 +92,4 @@ stcx 를 다시 올리면(`llmctl.sh start-all`) 다음 호출부터 저절로 s
 - **품질** — Qwen3.8-Flash-Next 는 전문 영역에서 일반론 수준이고 틀린 서술이 섞인다(가이드 6장). 그래서 심의 · 띵킹은 GLM 에 남겼다(CL-D1).
 - **창** — 챗 턴의 문맥 예산은 stcx 창(262,144)으로 잡는다(GLM 1M 이 아니다). 긴 문서 · 긴 대화는 더 줄여 싣는다.
 - **이미지** — Qwen3.8 은 이미지를 읽지만 포털 챗은 아직 이미지를 LLM 에 싣지 않는다(docs/chat-vision).
-- **stcx 쪽 제약** — 잡 한도 30일(만료되면 `start-all`), cgroup 격리가 없어 같은 노드의 후처리가 메모리를 과용하면 그 벌이 죽는다(가이드 7장).
+- **stcx 쪽 제약** — 잡 한도 30일(만료되면 `start-all` — 10-17 에 띄운 잡은 **11-15 전후에 끝난다**, 11-14 전에 `~/stcx-llm/llmctl.sh rolling`), cgroup 격리가 없어 같은 노드의 후처리가 메모리를 과용하면 그 벌이 죽는다(가이드 7장).

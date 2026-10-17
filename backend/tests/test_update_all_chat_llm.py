@@ -39,11 +39,15 @@ def _free_port() -> int:
 class _Models(BaseHTTPRequestHandler):
     served: list = []
     seen_auth: list = []
+    status: int = 200
 
     def do_GET(self):  # noqa: N802
         type(self).seen_auth.append(self.headers.get("Authorization"))
-        body = json.dumps({"data": [{"id": m, "max_model_len": 262_144} for m in type(self).served]}).encode()
-        self.send_response(200)
+        if type(self).status != 200:
+            body = json.dumps({"error": "Unauthorized" if type(self).status in (401, 403) else "oops"}).encode()
+        else:
+            body = json.dumps({"data": [{"id": m, "max_model_len": 262_144} for m in type(self).served]}).encode()
+        self.send_response(type(self).status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -176,3 +180,23 @@ def test_키는_출력에_싣지_않고_서버에는_보낸다(box, models_serve
     out = box.run(f"CHAT_LLM_BASE_URL={url}\nCHAT_LLM_MODEL=qwen3.8-flash-next\nCHAT_LLM_API_KEY=s3cr3t-chat-key\n", "")
     assert "s3cr3t-chat-key" not in out, "키가 화면에 찍혔다"
     assert h.seen_auth == ["Bearer s3cr3t-chat-key"] and box.agent("CHAT_LLM_API_KEY") == "s3cr3t-chat-key"
+
+
+@pytest.mark.parametrize("code", [401, 403])
+def test_키_거절은_닿지_않는다가_아니라_키_문제라고_말한다(box, models_server, code):
+    """stcx LLM 은 키가 없으면 401 이다 — 예전엔 '닿지 않는다' 로 찍어 원인을 터널 · 서버에서 찾게 했다(10-17 cae00 리뷰 P3).
+    키는 화면에 안 싣는다. 적기는 한다(경고) — 그동안 챗은 GLM 으로 넘겨 답한다(에이전트 서버 A1)."""
+    url, h = models_server
+    h.status = code
+    out = box.run(f"CHAT_LLM_BASE_URL={url}\nCHAT_LLM_MODEL=qwen3.8-flash-next\nCHAT_LLM_API_KEY=wr0ng-key\n", "")
+    bad = _tagged(out, "BAD:")
+    assert any(f"키를 거절했다(HTTP {code})" in ln and "CHAT_LLM_API_KEY" in ln for ln in bad), out
+    assert not any("닿지 않는다" in ln for ln in bad) and "wr0ng-key" not in out
+    assert box.agent("CHAT_LLM_BASE_URL") == url and not _tagged(out, "FAIL:")
+
+
+def test_다른_HTTP_오류는_그_코드로_말한다(box, models_server):
+    url, h = models_server
+    h.status = 500
+    out = box.run(f"CHAT_LLM_BASE_URL={url}\nCHAT_LLM_MODEL=qwen3.8-flash-next\n", "")
+    assert any("HTTP 500 로 답한다" in ln for ln in _tagged(out, "BAD:")), out
