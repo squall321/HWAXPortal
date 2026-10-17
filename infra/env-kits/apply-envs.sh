@@ -59,6 +59,20 @@ ra_env_value() {  # $1=키(LLM_BASE_URL 등) → stdout 값
   return 1
 }
 
+# 박스의 NO_PROXY(@NO_PROXY@ 마커) — 킷에 사내 주소를 적지 않는다(이 리포는 공개다, 10-17 결정 1). 루프백에 포털 infra/.env 의
+# LLM_BASE_URL 호스트 · RA_HOST · ARP_HOST · NO_PROXY 를 더한다(update-all 1g 와 같은 내부 목적지 — 순서를 지키고 겹치면 한 번만).
+box_no_proxy() {
+  local out="127.0.0.1,localhost" item u
+  u="$(ra_env_value LLM_BASE_URL 2>/dev/null)" || u=""
+  for item in "$(printf '%s' "$u" | sed -nE 's#^[a-zA-Z][a-zA-Z0-9+.-]*://([^/:@]+).*#\1#p')" \
+              "$(ra_env_value RA_HOST 2>/dev/null)" "$(ra_env_value ARP_HOST 2>/dev/null)" \
+              $(ra_env_value NO_PROXY 2>/dev/null | tr ',' ' '); do
+    [ -n "$item" ] || continue
+    case ",$out," in *",$item,"*) ;; *) out="$out,$item" ;; esac
+  done
+  printf '%s' "$out"
+}
+
 apply_one() {  # $1=서비스명
   local svc="$1" spec repo rel kit dir target added=0 kept=0 key val line eff
   spec="${MAP[$svc]:-}"
@@ -84,6 +98,7 @@ apply_one() {  # $1=서비스명
     fi
     case "$val" in
       @GENERATE_HEX32@) val="$(openssl rand -hex 32)" ;;
+      @NO_PROXY@) val="$(box_no_proxy)" ;;
       @FROM_RA:*@)  # ReportArchive .env 의 해당 키를 상속 — 없으면(dev=mock) 이 키는 건너뜀
         rak="${val#@FROM_RA:}"; rak="${rak%@}"
         val="$(ra_env_value "$rak")"

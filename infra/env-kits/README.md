@@ -30,6 +30,9 @@ bash infra/env-kits/apply-envs.sh        # 적용 — 없는 키만 추가, 기�
 - **RA LLM 상속**: `@FROM_RA:LLM_BASE_URL@`·`@FROM_RA:LLM_MODEL@` 마커는 적용 시점에 형제
   ReportArchive `.env` 의 해당 키를 읽어 채운다(agent-server 가 RA 의 상암 LLM 을 '그대로' 씀).
   RA 가 mock(LLM_ 미설정)이면 그 키는 건너뛰어 agent-server 기본값(로컬 vLLM)을 쓴다. RA 는 읽기만 한다.
+- **사내 주소 없음(`@NO_PROXY@`)**: `NO_PROXY`·`no_proxy` 는 적용 시점에 루프백(`127.0.0.1,localhost`)에 포털 `infra/.env` 의
+  `LLM_BASE_URL` 호스트 · `RA_HOST` · `ARP_HOST` · `NO_PROXY` 를 더해 채운다 — 이 리포는 공개라 킷에 사내 주소를 적지 않는다
+  (10-17 결정 1). 예전 킷이 이미 심은 값은 그대로다(없는 키만 더한다). 다른 내부 목적지가 필요하면 포털 `infra/.env` 의 `NO_PROXY` 에 적는다.
 - **멱등**: 몇 번을 다시 돌려도 이미 있는 키는 건드리지 않는다(값 수정 없음).
   값을 바꾸려면 대상 `.env` 에서 직접 수정.
 - **agent-server 는 기본 목록에 없다**: `bash apply-envs.sh agent-server` 로 인자를 명시해야

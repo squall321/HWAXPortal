@@ -16,8 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 # 사내 대역. 127.x(루프백)·0.0.0.0 은 뺀다 — 그건 내부 배치가 아니다.
 _IP = re.compile(r"\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\.?\d{0,3}\b")
 # 지금 있는 것(줄이는 방향으로만 바꾼다). 늘리려면 **먼저 왜 필요한지 적어라.**
-KNOWN_FILES = 5    # 실측 — 남은 것은 배포가 읽는 설정 킷 다섯(infra/env-kits/*.env)이다. 09-30 systems.yaml·10-01 update-all.sh 주석,
-                   # 10-17 문서·주석 여덟 곳(README · routes*.env 주석 · 문서 다섯)을 뺐다 — docs/leftovers-1017
+KNOWN_FILES = 0    # 실측 — 09-30 systems.yaml·10-01 update-all.sh 주석, 10-17 문서·주석 여덟 곳(README · routes*.env 주석 · 문서 다섯 —
+                   # docs/leftovers-1017), 10-17 설정 킷 다섯(NO_PROXY 는 적용 시점에 박스 infra/.env 로 채운다 — 결정 1)을 뺐다.
+                   # 이제 하나도 없다 — 새로 적으면 여기서 걸린다. 과거 커밋에 남은 것은 그대로 둔다(결정 1 — 히스토리는 다시 쓰지 않는다).
 
 
 def _tracked() -> list[Path]:
@@ -49,7 +50,7 @@ def test_내부_IP_를_적은_추적_파일이_늘지_않았다():
 
 def test_가드가_실제로_찾는다():
     """0건을 훑고 통과하면 아무것도 안 지킨다 — 실제로 찾는지 본다."""
-    assert _IP.search("NO_PROXY=10.198.143.137,localhost")
+    assert _IP.search("NO_PROXY=10.0.0.5,localhost")
     assert _IP.search("http://192.168.0.5:8000")
     assert not _IP.search("127.0.0.1:8723"), "루프백은 내부 배치가 아니다"
     assert not _IP.search("0.0.0.0:8723")
