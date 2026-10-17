@@ -534,7 +534,8 @@ export function ChatProvider({
 
       // 멀티턴: 이번 user 메시지를 붙이기 전의 활성 대화 메시지가 history가 된다(중복 금지).
       const existing = conversations.find((c) => c.id === activeId);
-      const history = buildHistory(existing?.messages ?? []);
+      // 앞 턴의 조회 근거도 싣는다 — 다음 턴 · 띵킹 좌석이 '아까 조회한 그 값' 을 알게(docs/chat-depth-context CD-D5).
+      const history = buildHistory(existing?.messages ?? [], { evidence: true });
       // 첫 발화 여부 — sendPrefix(심의 트리거)는 첫 발화에만 붙는다(이후는 GLM 이어가기).
       const isFirstTurn = !existing || existing.messages.length === 0;
 
@@ -698,6 +699,10 @@ export function ChatProvider({
                       ...(e.tools_used ? { tools_used: e.tools_used } : {}),
                       ...(e.detail ? { detail: e.detail } : {}),
                       ...(e.result_preview ? { result_preview: e.result_preview } : {}),
+                      // 호출 · 완료 짝 키와 성패 — 활동 패널이 짝 키로 묶고(ActivityPanel), 다음 턴 이력의 근거가 결과에 인자를 잇는다
+                      // (history.turnEvidence). 종전엔 저장하지 않아 패널은 이름으로만 묶였다.
+                      ...(e.call ? { call: e.call } : {}),
+                      ...(typeof e.ok === 'boolean' ? { ok: e.ok } : {}),
                       // 화면엔 안 쓴다 — 심의 핸드오프가 읽는 날것. 영속 시 예산으로 묶는다.
                       ...(e.result_full ? { result_full: e.result_full } : {}),
                     },

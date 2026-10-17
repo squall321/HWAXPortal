@@ -97,6 +97,15 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
 export interface HistoryMessage {
   role: 'user' | 'assistant';
   content: string;
+  /** 그 턴에 도구가 조회한 결과(어시스턴트 항목) — 에이전트 서버가 다음 턴 이력과 띵킹 좌석의 세션 맥락에 싣는다(docs/chat-depth-context). */
+  evidence?: HistoryEvidence[];
+}
+
+// 앞 턴의 조회 근거 하나 — 포털 ChatHistoryEvidence 와 같은 모양(tool 200자 · args 8,000자).
+export interface HistoryEvidence {
+  tool: string;
+  args?: string;
+  result: string;
 }
 
 // ── 심의 전 전문가 선정 미리보기 ────────────────────────────────────────────

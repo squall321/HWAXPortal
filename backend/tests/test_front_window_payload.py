@@ -95,6 +95,38 @@ def test_이력_합계를_넘는_오래된_턴만_뺀다():
     assert [len(m["content"]) for m in got] == [len(big), len(big)], "가장 오래된 턴만 빠져야 한다(포털 422 를 피한다)"
 
 
+def _history_ev(messages: list[dict]) -> list[dict]:
+    return _node(["components/chat/history.ts"],
+                 "const { buildHistory } = require('./components/chat/history.js');"
+                 " out(buildHistory(input, { evidence: true }));", messages)
+
+
+def test_챗_이력은_그_턴의_조회_근거를_싣고_인자를_짝_키로_잇는다():
+    """docs/chat-depth-context CD-D5 — 호출(인자)과 완료(결과)는 따로 온다. 짝 키(call)로 잇고, 짝 키 없는 낡은 기록은 같은 도구의 직전 인자로."""
+    act = [{"ts": 1, "step": "도구 호출: stepforge_part_info", "tool": "stepforge_part_info", "detail": '{"part": "H1"}', "call": "c1"},
+           {"ts": 2, "step": "도구 완료: stepforge_part_info", "tool": "stepforge_part_info", "result_preview": "thick…",
+            "result_full": "thickness=1.0mm · material=SUS301", "call": "c1", "ok": True},
+           {"ts": 3, "step": "도구 호출: materialtwin_lookup", "tool": "materialtwin_lookup", "detail": '{"name": "SUS301"}'},
+           {"ts": 4, "step": "도구 완료: materialtwin_lookup", "tool": "materialtwin_lookup", "result_preview": "yield=520MPa"},
+           {"ts": 5, "step": "도구 완료: broken_tool", "tool": "broken_tool", "result_preview": "Error: 404", "ok": False},
+           {"ts": 6, "step": "생각 중", "tool": None}]
+    got = _history_ev([_msg("user", "두께?", n=1), _msg("assistant", "1.0mm 입니다", n=2, activity=act)])
+    assert got[0] == {"role": "user", "content": "두께?"}
+    assert got[1]["evidence"] == [
+        {"tool": "stepforge_part_info", "args": '{"part": "H1"}', "result": "thickness=1.0mm · material=SUS301"},
+        {"tool": "materialtwin_lookup", "args": '{"name": "SUS301"}', "result": "yield=520MPa"},
+        {"tool": "broken_tool", "result": "[호출 실패] Error: 404"}]
+    # 브리프(심의 전 도우미)는 글만 — 근거 칸이 없다
+    assert "evidence" not in _history([_msg("assistant", "1.0mm 입니다", n=2, activity=act)])[0]
+
+
+def test_합계_상한을_넘으면_근거부터_뺀다():
+    big = "가" * (R._WINDOW_CHARS // 2)
+    act = [{"ts": 1, "step": "도구 완료: t", "tool": "t", "result_full": "r" * (R._WINDOW_CHARS // 2 + 100)}]
+    got = _history_ev([_msg("user", big, n=1), _msg("assistant", "답", n=2, activity=act)])
+    assert [len(m["content"]) for m in got] == [len(big), 1] and "evidence" not in got[1], "글을 남기고 근거를 뺐다"
+
+
 def test_챗과_브리프가_같은_이력_함수를_쓴다():
     ctx = (_SRC / "state/ChatContext.tsx").read_text(encoding="utf-8")
     brief = (_SRC / "components/chat/HandoffBrief.tsx").read_text(encoding="utf-8")

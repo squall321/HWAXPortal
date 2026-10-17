@@ -72,17 +72,36 @@ _WINDOW_CHARS = _WINDOW_TOKENS * 4
 
 
 def _history_total(v: list) -> list:
-    """이력 합계를 창 하나로 묶는다 — 항목 상한을 창에서 유도하면 160건 × 그 값이 되므로 합계 선이 따로 있어야 한다."""
-    total = sum(len(m.content) for m in v)
+    """이력 합계를 창 하나로 묶는다 — 항목 상한을 창에서 유도하면 160건 × 그 값이 되므로 합계 선이 따로 있어야 한다.
+    앞 턴의 조회 근거(evidence)도 같은 합계에 센다 — 근거는 글보다 크기 쉽다."""
+    total = sum(len(m.content) + sum(len(e.tool) + len(e.args or "") + len(e.result) for e in (m.evidence or []))
+                for m in v)
     if total > _WINDOW_CHARS:
         raise ValueError(f"이력 합계 {total:,}자가 상한 {_WINDOW_CHARS:,}자(1M 토큰 창 하나)를 넘는다 — "
                          "창에 들어갈 수 없는 이력이다. 오래된 대화를 줄여 보내라")
     return v
 
 
+class ChatHistoryEvidence(BaseModel):
+    """앞 턴에서 도구가 조회한 결과 하나 — 화면이 그 턴의 활동 기록(activity)에서 모은다(docs/chat-depth-context CD-D5).
+    에이전트 서버가 근거 몫 안에서 그 턴의 물음 뒤에 '시스템 첨부' 로 싣고, 띵킹은 좌석의 세션 맥락([e:N])으로 싣는다."""
+    tool: str = Field(min_length=1, max_length=200)
+    args: str | None = Field(default=None, max_length=8000)
+    result: str = Field(max_length=_WINDOW_CHARS)
+
+
 class ChatHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(max_length=_WINDOW_CHARS)  # 항목 상한 — 합계는 _history_total 이 본다(DoS)
+    # 그 턴의 조회 근거(어시스턴트 항목) — 없으면 종전 이력과 같다. 건수는 한 턴의 도구 호출 수 위쪽(에이전트 서버 호출 예산보다 넉넉히).
+    evidence: list[ChatHistoryEvidence] | None = Field(default=None, max_length=256)
+
+    def to_agent(self) -> dict:
+        """에이전트 서버 /chat 이력 항목 — 근거가 있을 때만 그 칸을 싣는다(종전 모양 그대로 · 빈 칸을 늘리지 않는다)."""
+        out: dict = {"role": self.role, "content": self.content}
+        if self.evidence:
+            out["evidence"] = [e.model_dump(exclude_none=True) for e in self.evidence]
+        return out
 
 
 # 좌석 지식카드 검색어(DelibOpts.knowledge_query)의 모양 — 값 하나 600자 · 좌석 키 120자 · 사전 64항목.
@@ -609,7 +628,7 @@ async def _relay_stream(
         # pydantic 이 null 을 422 로 거절하고, 그러면 '발급 실패해도 챗은 계속' 이라는 이쪽
         # 폴백이 정반대로 챗 전체를 죽인다(실측: null→422, ""→200). 빈 문자열이 '없음' 이다.
         "user_pat": user_pat or "",
-        "history": [{"role": m.role, "content": m.content} for m in body.history],
+        "history": [m.to_agent() for m in body.history],
         # 요청 시점 권한 — 심의·Thinking 트리거는 agent-server 가 판정하므로 그쪽이 한 번 더 막는다.
         "entitlements": sorted(g for g in principal.groups if is_synthetic(g)),
     }
@@ -1431,7 +1450,7 @@ async def deliberate_experts(
     client = _agent_client(request)
     payload = {"message": body.message, "groups": principal.groups, "light": body.light,
                # ⚠ 이 줄이 없으면 프론트가 대화를 보내도 여기서 버려져 축이 안 나온다.
-               "history": [m.model_dump() for m in body.history]}
+               "history": [m.model_dump(exclude={"evidence"}) for m in body.history]}
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/experts", json=payload,
                               timeout=_unary_timeout(settings))
@@ -1459,7 +1478,7 @@ async def deliberate_clarify(
     ensure(principal, "feat:deliberation")
     client = _agent_client(request)
     payload = {"message": body.message, "job": body.job,
-               "history": [m.model_dump() for m in body.history]}
+               "history": [m.model_dump(exclude={"evidence"}) for m in body.history]}
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/clarify", json=payload,
                               timeout=_unary_timeout(settings))
@@ -1493,7 +1512,7 @@ async def deliberate_topic(
     쓰면 되지, 브리프가 안 열리면 안 된다."""
     ensure(principal, "feat:deliberation")
     client = _agent_client(request)
-    payload = {"history": [m.model_dump() for m in body.history],
+    payload = {"history": [m.model_dump(exclude={"evidence"}) for m in body.history],
                "fallback": body.fallback, "job": body.job}
     fail = {"topic": body.fallback, "why": "", "options": []}
     try:
