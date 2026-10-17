@@ -239,6 +239,8 @@ mv -T /data/hwax/current/.<svc>.tmp /data/hwax/current/<svc>     # rename(2) = �
 6. **시크릿은 /data/hwax/secrets (0700) 만.** cluster.yaml·레포·Drive 에 시크릿 금지.
    NFS 특성상 uid 로만 보호되므로 노드 계정 통제가 전제임을 명시.
 7. **cae00 은 클러스터 검증 완료까지 불간섭.** 전환은 마지막 별도 결정.
+   → **10-17 — 사용자(결정 13 · 14)**: 방향은 데이터 이관 계획과 같다 — 새 운영 서버(이관 D6)가 선 뒤 cae00 을 시험(staging) 서버로 내린다
+   (`HWAX_BOX_ROLE=staging`). 방향만 승인했고 실행은 새 운영 서버가 생길 때다(당분간 없음). 그때까지 cae00 은 그대로 운영이다.
 
 ## 10. Phase 계획
 
@@ -262,6 +264,8 @@ mv -T /data/hwax/current/.<svc>.tmp /data/hwax/current/<svc>     # rename(2) = �
 - 롤백: cluster.yaml 삭제 = 현행 복귀. cae00 영향: 없음.
 
 ### Phase 2 — 다노드 fan-out (신규 노드 2~3대 파일럿)
+> **보류(10-17 — 사용자, 결정 15)** — 장비(18대 노드 · 배포 서버)가 정해질 때까지 Phase 2 이후는 멈춘다. **다시 여는 조건**: 11절의
+> '배포 서버 지정' · '노드 동질성' 이 정해진다(착수 게이트의 첫 줄과 같다).
 - 진입 조건: Phase 1 수용 테스트 통과 (+ aidh 복구 리허설은 2.4 안에서 수행).
 - **2.1** `preflight-cluster.sh`: ssh 도달성(BatchMode)·/data 마운트 동일성(마커 파일)·
   hard mount·디스크 여유·시계 동기(JWT nbf/iat 보호)·sha256 재검증·NO_PROXY 주입.
@@ -324,6 +328,8 @@ mv -T /data/hwax/current/.<svc>.tmp /data/hwax/current/<svc>     # rename(2) = �
 ### cae00 전환 (마지막, 별도 결정)
 - 클러스터 Phase 3 안정 운영 후: cae00 데이터를 backup-local 스냅샷 → 클러스터 DB 로 merge
   (기존 merge-from-drive 비파괴 패턴 재사용) → DNS/진입점 전환 → cae00 예비 강등.
+- **10-17 — 사용자(결정 13)**: '예비 강등' 은 데이터 이관 계획의 'cae00 → staging' 과 같은 것이다 — 새 운영 서버 뒤 시험 서버로.
+  두 계획이 다른 이름으로 같은 끝을 적고 있었다(docs/data-migration/PLAN.md §12-1).
 
 ## 11. 결정 필요 (사용자/조직)
 

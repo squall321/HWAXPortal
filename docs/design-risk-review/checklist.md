@@ -10,29 +10,29 @@
 - [x] ~~(3) 러너 자격 — (a) 서비스 계정 포털 PAT `HWAXRISK_PORTAL_PAT` 발급(계정·groups·ttl 365·aud `mcp-gateway`) 승인 · (b) SettingsPage 사용자 PAT 등록 UX P0 포함 승인(대리 발급 없음) · (c) 서비스 자격 2키 분리 승인 — `HWAXRISK_PORTAL_PAT`(scopes read, 패널·소스 읽기)와 `HWAXRISK_PORTAL_PAT_RW`(scopes read+write, RA·ADH 쓰기 전용, §8.2.7)~~ — 버림(10-17 — docs/risk-credentials U-1~U-4·C-4·C-6/R5(10-14)로 대체 — 패널 서비스 PAT 폴백 없앰 5d47690, 필수 키 CRED_KEY 하나 8d672c7)
 - [x] (25) 러너 엔진 호출 경로 — (A) 앱 → 포털 `/agent/chat` 정본, (B) `:9009` 직접은 `HWAXRISK_AGENT_URL` 설정 박스 폴백만(기본 꺼짐) (확인 10-17 — 기본 (A) 구현 — HWAXRisk engine_client.py:492 call_path='portal'(PortalPanelEngine 만), config.py:359 AGENT_URL 기본 빈 값)
 - [ ] (1) RA 시스템관리자 PAT — `bootstrap_ra_ontology.py --base <RA REST 오리진>` 실행자 env `RA_ADMIN_PAT` 1회 사용 승인(앱 런타임 무보유. 미승인이면 P0(2) 보류, `external_sync.ra=unavailable`)
-- [ ] (10) AIDataHub doc_type 3종·`risk-review-memory` 생성·`external_source=hwax-risk`·`HWAXRISK_AIDH_API_KEY` 발급 주체·`AUTH_REQUIRED` 값 확인
+- [x] ~~(10) AIDataHub doc_type 3종·`risk-review-memory` 생성·`external_source=hwax-risk`·`HWAXRISK_AIDH_API_KEY` 발급 주체·`AUTH_REQUIRED` 값 확인~~ — 닫음(10-17 — 사용자: 보내는 쪽 코드가 아직 없어(M4) 지금 정해도 바뀌는 동작이 없다 — M4 에서 다시 연다)
 - [x] (16) 브라우저 신원 = 앱 `identity.py` 가 heax `/api/v1/auth/me` 되묻기(HEAX 무수정) — 기본값 그대로 갈지, `copy_identity` additive 를 원하는지 (확인 10-17 — 기본값 채택·구현 — HWAXRisk README.md:22 identity.py 가 heax /auth/me 되묻기·TTL 60 s(P0 완료 기록), HEAX 무수정)
-- [ ] (17) MCP 호출자·게이트웨이 헤더 — 읽기 범위는 `actor` 를 폐기하고 §8.2.5 caller 해석·`brief_token` 으로 확정(반영 완료). 남는 결정 둘 — ① 쓰기 귀속 `actor` 미검증(`actor_verified:false`) 유지 vs 게이트웨이 `x-hwax-user` 전달, ② 같은 자리에서 `x-hwax-scopes` 전달(§8.4.1 gateway.py 1행). 둘 다 기본 미채택
+- [x] (17) MCP 호출자·게이트웨이 헤더 — 읽기 범위는 `actor` 를 폐기하고 §8.2.5 caller 해석·`brief_token` 으로 확정(반영 완료). 남는 결정 둘 — ① 쓰기 귀속 `actor` 미검증(`actor_verified:false`) 유지 vs 게이트웨이 `x-hwax-user` 전달, ② 같은 자리에서 `x-hwax-scopes` 전달(§8.4.1 gateway.py 1행). 둘 다 기본 미채택 — **확정(10-17 — 사용자: 지금대로 확정)**
 - [x] (18) 앱 시크릿 `secrets.env`·`_user_credentials` 가 Drive tar 에 포함됨 — ①(확정) ttl ≤365 로 수용. DB·exports 는 §5.2.5 (3a) 로 `--exclude`+age 암호 사본이 정본이다 **기본값이 ②+③ 으로 바뀌었다** — `_user_credentials` 는 `portal_pat_enc`(Fernet, 키 `HWAXRISK_CRED_KEY`)로만 저장(③ 반영 완료)이고, 그 키가 같은 `secrets.env` 에 있으므로 `appdata-to-drive.sh` 에 `*/secrets.env` 제외 패턴을 넣는 ②(HEAX 스크립트 additive 1행) 승인이 남는다 (확인 10-17 — ② 이미 반영 — HEAXHub deploy/apptainer/appdata-to-drive.sh:43-45 가 cred.key·secrets.env 삭제(context-notes D9 정정 09-01))
-- [ ] (18b) 데이터 등급 값 — `internal|confidential` 2값 유지(기본). 투영·MCP 경계는 등급이 아니라 `mcp_visibility` 가 정하도록 분리됨(반영 완료) — 남는 질문은 '`confidential` 이면 조직 공개를 막을지'
-- [ ] (29) 과제 공유 기본값 — 명시 초대만(기본) vs 부서 자동 viewer / 열람(GET) 감사 로그 남길지(기본 안 남김)
-- [ ] (30) 퇴사자 자산 — 수동 이양(기본, `risk_admin_roles`) vs 자동 이양 (P4 이후 운영)
-- [ ] (31) 사람 finding 을 선례로 되먹일지 — `risk_prior_include_human` 기본 true (P5 착수)
-- [ ] (32) 인젝션 위생 강도 — 어휘 적중 시 자리표시자 차단(기본) vs 어휘 축소(X01~X06) vs 경고만 (P1 착수)
-- [ ] (14d) 사전 메이저 승급 뒤 `recompute_part_keys.py` — 수동 실행+경고 배너(기본) vs 기동 시 자동 vs 승급 API 동기 실행 (P2 착수)
-- [ ] (33) 기각·반증 선례(E5−)를 다른 과제 브리프에 실을지 — 실음(기본, 블록 분리·6줄 상한) vs 계보 안에서만 vs 안 실음 (P5 착수)
+- [x] (18b) 데이터 등급 값 — `internal|confidential` 2값 유지(기본). 투영·MCP 경계는 등급이 아니라 `mcp_visibility` 가 정하도록 분리됨(반영 완료) — 남는 질문은 '`confidential` 이면 조직 공개를 막을지' — **확정(10-17 — 사용자: 지금대로 따로 둠(등급 2값 · 공개는 mcp_visibility))**
+- [x] (29) 과제 공유 기본값 — 명시 초대만(기본) vs 부서 자동 viewer / 열람(GET) 감사 로그 남길지(기본 안 남김) — **확정(10-17 — 사용자: 초대만 · 열람 기록 없음)**
+- [x] (30) 퇴사자 자산 — 수동 이양(기본, `risk_admin_roles`) vs 자동 이양 (P4 이후 운영) — **확정(10-17 — 사용자: 관리자 수동 이양)**
+- [x] (31) 사람 finding 을 선례로 되먹일지 — `risk_prior_include_human` 기본 true (P5 착수) — **확정(10-17 — 사용자: 표시 붙여 계속 실음(risk_prior_include_human true))**
+- [x] (32) 인젝션 위생 강도 — 어휘 적중 시 자리표시자 차단(기본) vs 어휘 축소(X01~X06) vs 경고만 (P1 착수) — **확정(10-17 — 사용자: 지금처럼 가림(자리표시자 차단))**
+- [x] (14d) 사전 메이저 승급 뒤 `recompute_part_keys.py` — 수동 실행+경고 배너(기본) vs 기동 시 자동 vs 승급 API 동기 실행 (P2 착수) — **확정(10-17 — 사용자: 수동 실행과 경고 배너)**
+- [x] (33) 기각·반증 선례(E5−)를 다른 과제 브리프에 실을지 — 실음(기본, 블록 분리·6줄 상한) vs 계보 안에서만 vs 안 실음 (P5 착수) — **확정(10-17 — 사용자: 따로 6줄 실음)**
 - [ ] (34) `rr_panel_calls.result_gz` 보존 — 영구(기본) vs 인용된 것만 영구 vs 항목 상한 (P4 이후 운영)
 - [x] ~~(19) HEAX 콜백 `next` allowlist additive(2단 → 1단) 채택 여부 — 기본 미채택~~ — 버림(10-17 — context-notes D10 숨은 iframe SsoPrimer(포털 9a15512)로 대체 — 포털 로그인 한 번에 앱까지, HEAXHub 콜백 무수정)
 - [ ] (20) app-data 백업 — dev crontab `appdata-to-drive.sh` 일 1회 시각(기본 03:30), RETAIN 5
 - [x] ~~(2) 게이트웨이 `rest.heax` — 기본 불필요(heax 서비스 PAT 직접 읽기). 원하면 설정 3곳 변경(P1 착수 전 선택)~~ — 버림(10-17 — HWAXRisk 37b9c3b(호출자 heax 토큰으로 StepForge REST)·risk-credentials R2 게이트웨이 step-forge 다리(0e65f3a)로 대체)
-- [ ] (8) 성격 통제 어휘 v1(8축 — `char:constraint` 포함)·택소노미 v1 초안 확정 주체 지정(초안 그대로 시작 가능)
-- [ ] (36) 요구(`rr_requirements`) 입력 주체와 `standard` 규격 원천 — owner·editor 등록·`source_ref` 자유 문자열(기본), 요구 미등록 과제도 심사 허용 (P1 착수)
-- [ ] (37) 소스 응답 계약 위반 강도 — `risk_source_drift_block=false`(표기만)+`caveat='parser_differs'`(기본) vs 차단 (P1 착수)
-- [ ] (38) 과제↔제품 대응표 유지 주체 — 등록 화면에서 owner 다중 선택(기본). 비면 라벨 경로 1·2 자동 확정 0·경로 4 미실행 (P1 착수)
+- [x] (8) 성격 통제 어휘 v1(8축 — `char:constraint` 포함)·택소노미 v1 초안 확정 주체 지정(초안 그대로 시작 가능) — **확정(10-17 — 사용자: 초안 그대로 · 확정 주체는 P6 때 지정)**
+- [x] (36) 요구(`rr_requirements`) 입력 주체와 `standard` 규격 원천 — owner·editor 등록·`source_ref` 자유 문자열(기본), 요구 미등록 과제도 심사 허용 (P1 착수) — **확정(10-17 — 사용자: 지금대로 확정)**
+- [x] (37) 소스 응답 계약 위반 강도 — `risk_source_drift_block=false`(표기만)+`caveat='parser_differs'`(기본) vs 차단 (P1 착수) — **확정(10-17 — 사용자: 표시만 하고 진행(parser_differs))**
+- [x] (38) 과제↔제품 대응표 유지 주체 — 등록 화면에서 owner 다중 선택(기본). 비면 라벨 경로 1·2 자동 확정 0·경로 4 미실행 (P1 착수) — **확정(10-17 — 사용자: 소유자가 직접 입력)**
 - [ ] (39) 모델 상한 — `risk_max_leaf` 1500·`risk_max_interfaces` 6000·예산 180 s(`allow_large` 600) 값 승인, 초과는 409 후 명시 승인(기본) (P1 착수)
-- [ ] (35) MCAD 없는 과제(K파일만·ECAD만) 심사 범위 — 대표 1석+`risk_mcad_domains` deferred(기본), 등록부·선례는 분리하지 않음 (P2 착수)
+- [x] (35) MCAD 없는 과제(K파일만·ECAD만) 심사 범위 — 대표 1석+`risk_mcad_domains` deferred(기본), 등록부·선례는 분리하지 않음 (P2 착수) — **확정(10-17 — 사용자: 전원 보고 결손 표시)**
 - [x] ~~(40) `delib_opts.evidence` 항목 상한 12 상향 여부 — 접어 둔다(E10 을 E5 항목의 세 번째 블록으로, 엔진 무수정) (P5 착수)~~ — 버림(10-17 — 근거 건수 상한 12→120 으로 대체 — HWAXAgentServer 49f5a37(deliberation.py:202 _EVID_ITEMS), 포털 DelibOpts.evidence max 120)
-- [ ] (41) material 좌석의 자리 — `heax-materialtwin_web` backend_down 실측(`_MATERIAL_TOOLS` 게이트웨이 0건). ① 가용성으로 좌석 `deferred`+P0 (5) material 항 조건부 skip(기본) vs ② 로스터 도메인 15→14 vs ③ 필수 호출을 `material_usage` 로 교체 (P0 착수 전)
+- [x] ~~(41) material 좌석의 자리 — `heax-materialtwin_web` backend_down 실측(`_MATERIAL_TOOLS` 게이트웨이 0건). ① 가용성으로 좌석 `deferred`+P0 (5) material 항 조건부 skip(기본) vs ② 로스터 도메인 15→14 vs ③ 필수 호출을 `material_usage` 로 교체 (P0 착수 전)~~ — 닫음(10-17 — 사용자: MaterialTwin 이 살아 있고(도구 34) 앱에 가용성으로 좌석을 보류하는 코드가 없어 물성 좌석은 늘 앉는다 — 고를 것이 남지 않았다)
 
 ## P0 부트스트랩 — 계약·엔진 손잡이·저장소 준비 (§9.1)
 산출물 A — 앱 리포 `HWAXRisk` 스캐폴드(ThermalShockMCP 골격 복제 + `fastapi_react` 레이아웃, 파일 첫 줄 한국어 주석). `[x]` = 파일이 실존 스캐폴드(`/home/koopark/claude/HWAXRisk`, 2026-08-31 커밋 0건)에 이미 있음 — 계획값과의 차이는 바로 아래 '델타' 줄이고 델타가 닫혀야 항목 완료(§9.1 A-δ, §10.8 #28)
@@ -142,7 +142,7 @@
 - [ ] `planner.py`(Tier A/B/C·라운드로빈·인접·deferred·carried·결정론) · `rr_roster/rr_coverage`(부분 유니크 `rr_cov_active`)·`rr_jobs` · `runner.py` 배치 모드(경로 (A) 동일) · C1~C3 · 통합 보고서 v1/v2/v3(게이트웨이 MCP) · `TargetPage` 완성 + `CoverageHeatmap/PanelRunner`(히트맵·자격 표시·미착석 배지·verdict 확정) · `GET /api/meta/metrics` · `delib_metrics.py` 지표 6종(원천 앱 REST) · `tests/test_coverage_sm.py`
 - [ ] 사람 개입 원장(§6.8.2·§4.7.3) — `PUT /targets/{key}/coverage/{agent_key}`(skipped·carried 되돌리기, 사유 필수·`status_source='human'`·`decided_by`) · `rr_jobs.state_by`·`state_at`·`credential_email`(§0.1.6 (b) 후보 순서) · `POST jobs` 의 `exclude_evidence` → `params_json`·`rr_panels.evidence_excluded_json`·`rr_audit(brief.exclude)` · 통합 보고서 minutes '사람 개입 요약'
 - [ ] 통과 14항 — C1 도달(RA 백엔드 불통/403 에서도, 포털 PAT 유효) / 원장 불변식 / 편성 결정론·동시 편성 이중 착석 0 / 실패 주입 재시도→skipped / ecad deferred ≈105석 / carried 조건·되돌리기 / Tier B ≤6h·슬롯 ≤2·일일 24 / done_weak→C2 strong / 미착석 배지 N 일치 / close_level C2/C3 동작 / 수확 체감 정지 / `redeploy-app.sh hwax-risk` 재기동 복구·conv_id 연결 유지 / **사람 개입 주체**(skipped 사유 없으면 422·`decided_by` 기록·자동 정지는 `state_by='code:*'`·minutes 요약이 `rr_audit` 건수와 일치, (13)) / **동료 잡의 자격 기록**(`credential_email` 이 (b) 후보 순서 첫 적중과 일치·둘 다 미등록이면 `service`, (14))
-- [ ] 결정(§10 5·6·7·6a·6b·12a): 로스터 도메인 15·ECAD 6·xd 전원 / 기본 마감 C2 vs C3 / carried 90일 / 패널 LLM 상한 120 / 야간 창·concurrency / DOCX 불요
+- [x] 결정(§10 5·6·7·6a·6b·12a): 로스터 도메인 15·ECAD 6·xd 전원 / 기본 마감 C2 vs C3 / carried 90일 / 패널 LLM 상한 120 / 야간 창·concurrency / DOCX 불요 — **확정(10-17 — 사용자: 지금 값대로 확정)**
 얻는 것 — "전체 HW/XD 전문가 한 번씩" 회계(C3 문자적 충족, C2 비용 타협)와 레벨별 리스크 심사 보고서
 
 ## P5 재사용 루프 (§9.6)
@@ -154,13 +154,13 @@
 - [x] 사람 finding UI·MCP·브리프 표기 — `TargetPage` '리스크 직접 등록' 폼(작성자만 수정·삭제) · MCP 7번째 도구 `risk_add_finding`(P3 REST 를 감쌈, `tools/list` 6→7) · E5 접두 2종 `[재검토]`·`[사람 제기·검증 대상]` · `risk_prior_include_human` 토글 · `registry.corpus_projects()` 를 E5·E6·E8·kNN 후보에 적용 (확인 10-17 — frontend components/HumanFindingForm.tsx, MCP risk_add_finding, E5 접두 '재검토'·'사람 제기', risk_prior_include_human)
 - [x] 다른 심의의 읽기 범위(§5.1 원칙 9·§6.11·§8.2.5) — `risk_get_registry`·`risk_claims_for_ref`·`risk_get_snapshot`·`risk_get_diff` 가 서비스 신원에는 `mcp_visibility='org'` 과제만, 개인 PAT 에는 멤버십 범위까지 열고 나머지는 `{error:'not_visible'}` · `hwax-risk-review.js` args 에 `briefToken` 필수(없으면 앱 호출 전 중단) · `TargetPage` '브리프 토큰 복사' 버튼 · ADH 회수 호출의 `required_tags` (확인 10-17 — hwax-risk-review.js:65-66 briefToken 필수, TargetPage.tsx:779-785 brief_token, MCP not_visible 판정(redesign D-50))
 - [ ] 통과 15항 — E5~E8 실림·드롭 0(최대 길이 픽스처) / kNN top1 / agent_search 재현 ≥0.8·E7 슬롯 규칙 / narr:/reg: 인용 ≥1·없는 인용 dangling / **계보 없는 과제 회수 ≥1** / sim-plan 좌석이 apps `heax-hwax_risk` 로 `risk_get_registry` 자유조회·`/tools-map` 수 P0 기준 불변 / MCP 워크플로 1패널 `risk_get_brief`→`risk_submit_panel_result` 원장 done·tier A `tier_a_web_only` / 판단어 0·부정 증거 항목 / MCP `actor` 미검증 기록·owner_sub 승계·미해석 `caller_unresolved`·헤더 미사용 0건 / **사람 finding 입구**(UI 폼·`risk_add_finding` 이 REST 와 바이트 동일 행·`tools/list` 7종·E5 접두·`risk_prior_include_human=false` 면 미탑재, (10)) / **코퍼스 필터**(`corpus_excluded=1` 과제가 E5·E6·E8·kNN 에서 0건, 풀면 복귀, 결측 문구의 n 도 필터 후 값, (11)) / **부정 선례**(기각 3건이 E5− 에만 실림·E5+ 0건·예산 700/300·항목 12·드롭 0·E7 상태 필터 3종 0줄·`exclude_tags` 인자·`status_retag` op·`neg_precedent_cited_n ≥1`·`adversary_false_reject` 분모 수동 계산 일치, (12)) / **근접 중복**(야간 큐 1행·자동 병합 0·병합 후 support=distinct 패널 수·다른 family 422·`cluster_dup_ratio` 감소·reject 한 쌍 재출현 0, (13)) / **필드·VOC 근거**(제품 연결 있는 타깃에서 E10 이 ≤5줄로 실리고 `voc:`·`paper:` 인용이 `GET /refs` 로 해석·미등록 타깃은 결측 문구 1줄+배지·조회 실패는 그 줄만 빠지고 브리프 조립은 완주·항목 수 12·드롭 0·rel 좌석의 `get_top_issues` 실호출 SSE ≥1·경로 4 가 product_code 없는 과제를 건너뜀, (14)) / **다른 심의 읽기 범위**(org 과제는 행 반환·private 과제는 `not_visible` 이고 그 결과가 브리프·발언에 실리지 않음, 개인 PAT 은 자기 멤버 과제까지 열림, `risk_get_brief` 는 `actor` 만으로는 안 열리고 `brief_token` 으로만 200, ADH 검색 인자에 `required_tags` 100%, (15))
-- [ ] 결정(§10 8a·13·13a·17·26·31·38·40)
+- [x] 결정(§10 8a·13·13a·17·26·31·38·40) — **확정(10-17 — 사용자: 셋 닫고 둘 확정(카드 그대로))**
 얻는 것 — 배치가 쌓일수록 브리프가 두터워지는 폐루프·다른 connectivity 회수·다른 심의의 등록부 읽기·Claude Code L2 보충 회차
 
 ## P6 학습 루프 (§9.7) — 전부 앱 리포
 - [ ] `rr_labels/rr_patterns/rr_rules/rr_metrics/rr_curation_queue` 쓰기 경로 · 라벨 동기 잡(`sync_loop` 확장 — RA incident·test_run 게이트웨이 읽기·DynaForge 러너 자격·VOC·수동) · 조건 DSL·백테스트 · 지표 대시보드(TargetPage '품질' 카드)·'루프 작동' 배지 · `risk_pattern_card` doc_type(`bootstrap_adh.py`) · `visibility` 정책(§10 11) · RA typed 템플릿 절차서
 - [ ] 통과 9항 — incident 동기 auto confirmed 는 match 1.0 만 / 라벨 20건 지표·n<5 표기 / 합성 30타깃 candidate 정확·거짓 0 / 승격 API 백테스트 게이트 422 / rule_hits 결정론 / taxonomy_version·재매핑 dry-run 0 / S2 게이트 전 예측기 코드 0줄 / org 토글 읽기·쓰기 0 / **택소노미 메이저 재매핑 전파**(별칭 `reason='taxonomy_major'` 행 생성·저장 cluster_key 불변·옛 `reg:` dangling 0·priors/patterns 재합산·`rr_patterns.merged_into`·승격 카운트에서 `rejected_in_panel`·`recall_eligible=0`·`weak_subject` 제외, (9))
-- [ ] 결정(§10 11·12·21)
+- [x] 결정(§10 11·12·21) — **확정(10-17 — 사용자: 지금대로 확정 · 둘 닫기)**
 얻는 것 — 검증된 선례·규칙과 루프 작동 여부의 계측(앱 DB 누적, `GET /api/meta/metrics`)
 
 ## P7 ODB 실연동·예측기 승격(조건부) (§9.8)

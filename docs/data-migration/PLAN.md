@@ -418,23 +418,23 @@ backup-local 몫 — `data --check` 도 이 종류는 rc 에 안 센다); DB 행
 
 ## 12. 결정 필요 (사용자)
 
-1. **토폴로지 개정 승인** — plan §0·§9-7 "cae00 은 클러스터 검증 완료까지 불간섭" → "prod 편입(D6) + cae00 강등→staging". 이 계획은 개정을 전제로 썼다.
-2. **prod 박스** — hostname·계정, `/data` 가 로컬인지 NFS 인지(NFS 면 sqlite 클래스를 singleton 노드 로컬로). ~~ssh 가능 여부~~ → **전부 ssh 가능(확인)**.
-3. (선택, 우선순위 낮음) **오프사이트 Drive 백업의 암호화(age)** — 동기화는 Drive 를 안 거치므로 남는 것은 SF·AIDH 일 1회 백업 덤프의 평문 문제만.
-4. **prod→staging mirror 를 원문으로 할지 마스킹**(PAT 해시·이메일·대화 원문이 시험 박스에 복제된다).
-5. **SF voc_records 소유권** — 권고: prod 단일 크롤 + dev/staging 은 mirror(updated_at 부재가 실확인됐으므로 가장 정합). 대안: 양쪽 크롤 유지 + `update_cols` 허용목록.
-6. **upload-staging** — `~/.hwax` 유지·이관 제외(권고) vs HEAX 런처 바인드 추가.
-7. **타 리포 수리 8건** — MTW catalog 23개 절대경로 env 화 + `.mcp.json` 라이브 DB 지정 · MXWP `update.sh:188 --all` 제거 + `MEILI_DB_PATH` · SF crawler `/reports` 바인드 + `reports/`·`audit/` 산출물 추적 해제(248+9) · PaperIngest `/data/corpus` 바인드 · HEAX 런처 `HEAX_APP_DATA_ROOT`(D2 선행) · **HEAX `deploy/apptainer/start.sh` worker/backend 로그 `>`→`>>`** · **AIDH `start_api.sh` uvicorn 로그 `>`→`>>`** · HEAX Caddy 로그 `roll` 설정.
-8. **삭제 확인** — HEAX `dev2.db` 84M(참조 0) · `.pre-*` 924M(아카이브 후) · 0바이트 materialtwin.db · AIDH 미참조 SIF 2개 246M · AIDH logs 안 393M 덤프 · MXWP `.env.bak` · 포털 루트 stale `.env` · `a.txt` · crontab 1·24행 · Drive 고아 채널.
-9. **`/data/backups` 잔재**(cluster_setup 2.6G·dpkg.*) 이동 여부·소유자.
-10. **SmartTwinMCP 유닛 `/data` 절대경로** — NFS 전환 시 `<hostname>/` 하위 vs 노드 로컬.
-11. **RA 블루-그린 시점·green DB 위치**(같은 PG14 클러스터 DB 추가 vs `/data/pg/reportarchive`).
-12. **PAT store Postgres 이관(plan 4.2) 시점** — D1 과 합칠지 분리할지(이 계획은 분리).
+1. **토폴로지 개정 승인** — plan §0·§9-7 "cae00 은 클러스터 검증 완료까지 불간섭" → "prod 편입(D6) + cae00 강등→staging". 이 계획은 개정을 전제로 썼다. → **10-17 — 사용자: 방향 승인, 실행은 나중(결정 13 — 클러스터 계획의 불간섭 · 예비 강등과 함께 docs/followups-1017)**
+2. **prod 박스** — hostname·계정, `/data` 가 로컬인지 NFS 인지(NFS 면 sqlite 클래스를 singleton 노드 로컬로). ~~ssh 가능 여부~~ → **전부 ssh 가능(확인)**. → **10-17 — 사용자: 새 운영 서버는 당분간 없음(결정 14) — D6 · 클러스터 2단계는 멈춘다**
+3. (선택, 우선순위 낮음) **오프사이트 Drive 백업의 암호화(age)** — 동기화는 Drive 를 안 거치므로 남는 것은 SF·AIDH 일 1회 백업 덤프의 평문 문제만. → **10-17 — 사용자: D5 와 함께 도입(결정 18)**
+4. **prod→staging mirror 를 원문으로 할지 마스킹**(PAT 해시·이메일·대화 원문이 시험 박스에 복제된다). → **10-17 — 사용자: 원문, 토큰 · 비밀만 제외(결정 22)**
+5. **SF voc_records 소유권** — 권고: prod 단일 크롤 + dev/staging 은 mirror(updated_at 부재가 실확인됐으므로 가장 정합). 대안: 양쪽 크롤 유지 + `update_cols` 허용목록. → **10-17 — 사용자: VOC 수집은 dev 만(결정 19 — cae00 은 Redis 가 없어 수집이 돌지 않는다, 합치기 코드는 그대로)**
+6. **upload-staging** — `~/.hwax` 유지·이관 제외(권고) vs HEAX 런처 바인드 추가. → **10-17 — 사용자: 지금처럼 홈 폴더(~/.hwax) 유지 · 이관 제외 — 기본값 확정(결정 20)**
+7. **타 리포 수리 8건** — MTW catalog 23개 절대경로 env 화 + `.mcp.json` 라이브 DB 지정 · MXWP `update.sh:188 --all` 제거 + `MEILI_DB_PATH` · SF crawler `/reports` 바인드 + `reports/`·`audit/` 산출물 추적 해제(248+9) · PaperIngest `/data/corpus` 바인드 · HEAX 런처 `HEAX_APP_DATA_ROOT`(D2 선행) · **HEAX `deploy/apptainer/start.sh` worker/backend 로그 `>`→`>>`** · **AIDH `start_api.sh` uvicorn 로그 `>`→`>>`** · HEAX Caddy 로그 `roll` 설정. → **10-17 — 사용자: 위험 큰 것부터(결정 16) — MXWP `--all` 제거 · HEAX 백엔드 · 워커 · beat 와 AIDH uvicorn 로그 `>>` · Caddy 로그 회전은 10-17 반영, 나머지는 다음**
+8. **삭제 확인** — HEAX `dev2.db` 84M(참조 0) · `.pre-*` 924M(아카이브 후) · 0바이트 materialtwin.db · AIDH 미참조 SIF 2개 246M · AIDH logs 안 393M 덤프 · MXWP `.env.bak` · 포털 루트 stale `.env` · `a.txt` · crontab 1·24행 · Drive 고아 채널. → **10-17 — 사용자: 목록 확인 뒤 지우기(결정 17) — 목록(경로 · 크기)을 보이고 확인받은 뒤**
+9. **`/data/backups` 잔재**(cluster_setup 2.6G·dpkg.*) 이동 여부·소유자. → **10-17 — 사용자: 그대로 둔다 — 기본값 확정(결정 20)**
+10. **SmartTwinMCP 유닛 `/data` 절대경로** — NFS 전환 시 `<hostname>/` 하위 vs 노드 로컬. → **10-17 — 사용자: 닫음 — cae00 은 SmartTwinMCP 를 직접 띄운 적이 없어(stcx 쪽을 부른다) 겹칠 일이 없다**
+11. **RA 블루-그린 시점·green DB 위치**(같은 PG14 클러스터 DB 추가 vs `/data/pg/reportarchive`). → **10-17 — 사용자: 닫음 — RA 담당이 09-26~27 에 RA 를 자기 서버 두 대로 옮겼고 포털은 다시 연결했다**
+12. **PAT store Postgres 이관(plan 4.2) 시점** — D1 과 합칠지 분리할지(이 계획은 분리). → **10-17 — 사용자: 여러 대가 될 때 따로 — 기본값 확정(결정 20)**
 13. STE ste.db 백업 채널 · `/srv/ste/munge.key` 처리(별 박스).
-14. ExpertAgents/knowledge·ExpertGrounding git remote 부여(dev 유일본).
-15. cae00 `var/app_data` 정리(이미 시드된 `.pre-*`·0바이트 db·origin.json) 를 D6 전에.
-16. AIDH `:8001` 무인증 — prod 편입 전 화이트리스트/키.
-17. HF 모델 캐시 `/data/models/hf` 이동 여부(선택, 10G 미만).
+14. ExpertAgents/knowledge·ExpertGrounding git remote 부여(dev 유일본). → **10-17 — 사용자: Drive 에 git 묶음(결정 3) — `infra/scripts/repo-bundle-to-drive.sh`, dev 매일 04:20 · 커밋 안 된 변경도 함께**
+15. cae00 `var/app_data` 정리(이미 시드된 `.pre-*`·0바이트 db·origin.json) 를 D6 전에. → **10-17 — 사용자: D6 직전에 정리 — 기본값 확정(결정 20)**
+16. AIDH `:8001` 무인증 — prod 편입 전 화이트리스트/키. → **10-17 — 사용자: 서버 안에서만 받기(결정 4) — `API_HOST=127.0.0.1`(dev 10-17 · 예시 기본값), cae00 은 docs/followups-1017/server-setup.md 3절**
+17. HF 모델 캐시 `/data/models/hf` 이동 여부(선택, 10G 미만). → **10-17 — 사용자: 지금 자리 유지 — 기본값 확정(결정 20)**
 
 ## 13. 범위 밖
 

@@ -5,7 +5,7 @@
 
 ## 착수 게이트
 - [x] 전 박스 ssh 가능(2026-09-05) → 동기화 매체 rsync/ssh, Drive 데이터 채널 불필요
-- [ ] PLAN §12 결정 1(토폴로지 개정)·2(prod hostname·/data 종류)·5(SF 소유권)·6(upload-staging) 사용자 답
+- [x] PLAN §12 결정 1(토폴로지 개정)·2(prod hostname·/data 종류)·5(SF 소유권)·6(upload-staging) 사용자 답 — **확정(10-17 — 사용자: §12 결정 — 1 방향 승인 · 실행은 나중(결정 13) · 2 새 운영 서버 당분간 없음(결정 14) · 5 VOC 수집은 dev 만(결정 19) · 6 업로드 임시칸은 지금처럼 홈 폴더(기본값 확정 — 결정 20))**
 - [ ] `docs/cluster-deploy/context-notes.md` 에 토폴로지 개정 + `/data/svc` 한 줄 추가 기록(D1 전)
 - [x] 작업 중 `hwax-stack.service` 부팅 갱신기 일시 disable — dev 에서 disable(2026-09-05, D0 끝나면 enable) → **재enable 완료**(2026-09-05 dev D1~D4 뒤)
 
@@ -56,12 +56,15 @@
 - [ ] mirror: Koorm·HEAX `pg_restore --clean` 4줄 + `exclude_on_mirror` TRUNCATE + `provision-config.sh --force` · sqlite `.backup` rsync→`mv -T`
 - [ ] update-all §3·deploy-all SF/heax merge 를 `DB_SYNC` 플래그로 이중화(기본 0) → 같은 덤프로 결과 diff 0 → 기본값 전환
 - [ ] SF·MTW `*/30` Drive push 정지 · AIDH 이중 덤프 통합 · Drive db-dumps 3세대
+- [ ] Drive 로 나가는 DB 덤프(SF · AIDH 일 1회)를 age 로 암호화 — D5 와 함께(10-17 — 사용자, 결정 18). 리스크 앱 백업이 쓰는 같은 방식(공개키만 박스에, 개인키는 사용자)
 - [ ] **게이트**: 원장 1건 · 롤백 리허설(pre-sync 복원) 1회 · `divergent` 0 · `db-sync status` 0 · Drive 채널(코드) 무변경 확인
 
 ## D6 — prod 편입
+
+> 시험 서버로 보내는 사본(prod → staging mirror)은 **원문으로, 토큰 · 비밀만 뺀다**(10-17 — 사용자, 결정 22 — PLAN §12-4). 새 운영 서버는 당분간 없다(결정 14).
 - [ ] prod 박스 준비(결정 2) · `HWAX_DATA_ROOT=/data` 레이아웃 · update-all 1회
 - [ ] 키 봉투 수동 전달(HEAX SECRET_ENCRYPTION_KEY · 포털 jwt · HWAXRisk cred.key · rclone.conf) — 어느 채널에도 안 실림
-- [ ] cae00 쓰기 정지(포털 maintenance) → `seed`(콘텐츠 publish + 사용자 데이터 1회) → prod `provision-config.sh` 새로 → 소유권 전환(cae00 `HWAX_BOX_ROLE=staging`)
-- [ ] RA 블루-그린(§7.9) 컷오버
+- [ ] cae00 쓰기 정지(포털 maintenance) → `seed`(콘텐츠 publish + 사용자 데이터 1회) → prod `provision-config.sh` 새로 → 소유권 전환(cae00 `HWAX_BOX_ROLE=staging`) — (10-17 — 사용자: §12 #15 의 cae00 정리는 D6 직전에(기본값 확정) — D6 은 새 운영 서버가 생길 때다(당분간 없음 — 결정 14))
+- [x] ~~RA 블루-그린(§7.9) 컷오버~~ — 닫음(10-17 — 사용자: RA 담당이 09-26~27 에 RA 를 자기 서버 두 대로 옮겼고 포털은 다시 연결했다 — 포털 쪽 블루-그린이 없어졌다)
 - [ ] 첫 `mirror prod→staging`(결정 4 마스킹) · 오프박스 백업 rsync
 - [ ] **게이트**: prod 전 서비스 health · cae00 발급 PAT 가 prod 게이트웨이에서 유효 · RA rat_ 토큰 유효 · 첫 mirror 성공 · 오프박스 백업 도착 · DNS 전환
