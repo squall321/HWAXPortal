@@ -126,3 +126,18 @@ cae00 update-all 에 실린다. MXWP 전체 시험의 401 실패(개발용 인�
 건너뛴다 — 진짜 logrotate 로 시험했다(`r+` 로 쥐면 내용 그대로 · 회전본 없음, `a` 면 회전). 덧붙여 dev 허브 백엔드는 10-18 01:24 옛 감시가
 `>` 로 띄운 것이라 가드가 실제로 막았고(첫 실측), 허브 `start.sh` 로 다시 띄워 풀었다. 감시는 이번엔 끼어들지 않았다(74fa732).
 
+**FU-D22 dev 메모리 부족이 서비스를 내렸다(10-18 07:11 UTC — 10-19 발견).** earlyoom(dev drop-in `hwax-dev.conf` — `-m 6,3 -s 100,100`
+· `--prefer '^(python|python3|pytest|node)$'` · `--avoid` 에 `code` 등)이 10-18 하루 SIGTERM 1,300번 남짓을 보냈고, 07:11 에 포털(인스턴스는
+남고 앱만 죽음) · 게이트웨이(93MB) · KooRemapper MCP(인스턴스 남음) · smarttwin-mcp(systemd `Restart=on-failure` 는 SIGTERM 을 깨끗한 종료로
+봐 다시 안 띄움) · mxwp-mcp · searxng 가 함께 내려가 14시간 꺼져 있었다. AIDataHub API 는 감시가 매분 다시 띄우지만 다시 죽는다(10-19 도 두 번).
+복구 — 포털 `apptainer instance stop hwax_portal && start.sh` · 게이트웨이 · mxwp-mcp · searxng `services.sh up` · smarttwin-mcp `sudo systemctl start`
+· KooRemapper MCP 는 인스턴스를 내려 KooRemapper 감시가 다시 띄우게. 메모리를 먹는 쪽은 서비스가 아니다 — `cpptools` 3개 42GB · `code` 226개
+31GB · VM 16GB · Claude 세션 52개 9GB, 우리 서비스는 합쳐 15GB 남짓. 빈틈 넷(포털 · 게이트웨이 · KooRemapper MCP · smarttwin-mcp 는 죽어도
+안 돌아온다)과 earlyoom 설정은 사용자 결정으로 넘긴다.
+
+**FU-D23 두 좌석의 태그 조건(10-19).** `mx-whitepaper-analyst` 는 `required_tags=[whitepaper]` 인데 묶인 427장은 전부 `doc_type=whitepaper` 이고
+그 태그는 0장, `market-voc-analyst` 는 `[voc]` 인데 2장은 `voc:camera` 같은 갈래 태그뿐이다 — 두 좌석 모두 `required_doc_type` 에 이미 맞는 종류가
+있고 묶음이 그것을 보장한다. 조건이 문서 종류를 태그로 잘못 적은 것이라 비운다(카드 427장에 태그를 다는 것보다 좁고 되돌리기 쉽다 — 되돌릴 값
+`[whitepaper]` · `[voc]`). agents 표는 cae00 병합에 `updated_at` 으로 실린다. VOC 좌석은 비웠고(게이트웨이 `agent_search` 히트 0 → 2 · 4),
+백서 좌석은 자동 모드의 권한 검사가 '공유 자원 수정' 으로 막아 사용자 확인을 기다린다.
+
