@@ -39,7 +39,7 @@
 - [x] **update-all 이 앞으로 한다(2c)** — direct 는 다를 때만 자동, teleport 는 `STE_DEPLOY=1`
 - [x] ste 자격 중계 E2E — 게이트웨이가 본인 명의 PAT 로 `/api/auth/me` 200(계정 JIT 생성)
 - [x] §6 자격중계 게이트 초록(`401 + www-authenticate 없음` = 양쪽 설정됨)
-- [ ] dev: 포털 PAT 한 장으로 `/mcp-gw/api/<site>/…` HTTP 경로도 통하는지 (MCP 경로만 확인했다)
+- [x] dev: 포털 PAT 한 장으로 `/mcp-gw/api/<site>/…` HTTP 경로도 통하는지 (MCP 경로만 확인했다) → 10-19 확인 — dev 가짜 로그인 세션으로 정상 발급(`POST /auth/pat`, 하루짜리 둘) · 토큰 없음 · 엉터리 401 · 읽기 · 쓰기 PAT 로 여섯 사이트 GET 이 사이트까지 간다(ai-data-hub `/health` 200) · 읽기 전용 PAT 의 POST 는 쓰기 열린 per_user 사이트(dyna-forge)에서 게이트웨이가 403 `read-only token`(결정 5 의 HTTP 길) · 둘 다 폐기 · 폐기 목록 확인
 - [x] cae00: `update-all` (provision 이 새 사이트를 만들고, 2c 가 ste 를 판정한다 —
       운영 클러스터라 실배포는 `STE_DEPLOY=1` 을 줄 때만 돈다) (확인 10-17 — cae00 update-all 이 09-23 커밋 뒤 09-27 에 돌았다 — ste-cae00 context-notes §F · D-28(두 번째 실행, §5 재프로비저닝))
 

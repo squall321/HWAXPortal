@@ -33,7 +33,7 @@
 
 ## 묶음 C — 바로 할 수 있는 것(10-19 사용자 '바로 할 수 있는 것들은 다 하자')
 - [x] logrotate 편입(FU-D11 의 뒤) — 회전 직전 가드 `infra/logrotate/append-guard.sh`(쥔 프로세스가 모두 O_APPEND 일 때만, 아니면 그 로그만 건너뜀) · 템플릿 (C) 묶음(HEAX backend · worker · beat · AIDH uvicorn · `/tmp/hwax-services/*.log`) · 시험(진짜 logrotate). dev 렌더 · 허브 백엔드를 `>>` 로 다시 띄움(10-19 06:00 KST) — 셋 다 가드 통과. cae00 은 `HWAX_LOGROTATE=1` 이면 update-all 이 렌더한다(옛 fd 를 쥔 쓰기자는 가드가 건너뛴다)
-- [ ] 포털 PAT 로 `/mcp-gw/api/<사이트>/…` HTTP 경로(one-token 42)
+- [x] 포털 PAT 로 `/mcp-gw/api/<사이트>/…` HTTP 경로(one-token 42) — 10-19 통한다 · 읽기 전용 PAT 의 쓰기는 HTTP 길에서도 403(결정 5). PAT 는 dev 가짜 로그인 세션으로 정상 발급(CSRF 이중 제출 그대로) · 하루짜리 · 끝나고 폐기
 - [ ] MXWhitePaper dev 시험 401 — 원인 · 고침
 - [ ] 전문가 검색 — 늘 거절되는 두 좌석 · 임베딩 없는 카드 9%
 
