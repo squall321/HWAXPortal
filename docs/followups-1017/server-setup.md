@@ -270,3 +270,19 @@ unset PAT
 누가 `search_tools` 를 한 번 부른 뒤 — `head -1 ~/Projects/HWAXMcpGateway/tool_search_eval/queries.local.jsonl` 의 `d` 가 첫날이다. 그날부터
 30일 뒤 게이트웨이 로그에 `search_tools 질의 모으기 — 첫 줄(…)부터 30일이 지나 멈췄다` 가 남고 더 쓰지 않는다. 그 파일은 추적하지 않으니
 그대로 두고, 정답을 달아 재는 일은 Claude 에게 맡긴다(체크리스트 '사람 몫'). 끄려면 게이트웨이를 띄우는 env 에 `GATEWAY_TOOL_QUERY_LOG=0`.
+
+## 9. 서비스 감시 — 켜고 싶으면(선택, 10-19 결정)
+
+dev 는 켰다. cae00 은 사람이 고른다 — 켜면 포털 · 게이트웨이 · 에이전트 서버 · mxwp-mcp · searxng 가 **죽었을 때만**(그 포트에 연결 거부가
+세 번) 매니페스트의 down · up 으로 다시 뜬다. 느리거나 오류를 내는 것은 건드리지 않고, update-all 이 도는 동안은 건너뛴다.
+
+```bash
+echo 'HWAX_WATCHDOG=1' >> infra/.env      # 줄 끝에 주석을 붙이지 않는다
+./infra/scripts/update-all.sh             # 또는 바로 — ./infra/scripts/install-watchdog.sh
+```
+
+- 확인 — `crontab -l | grep hwax-watchdog`. 일이 있을 때만 `~/.local/state/hwax/watchdog.log` 에 `✗ <이름> 죽었다 … → down · up` · `✓ … 복구 성공` 이 남는다.
+- 끄기 — `./infra/scripts/install-watchdog.sh --remove` 하고 `infra/.env` 의 줄을 지운다(남겨 두면 다음 update-all 이 다시 건다).
+- smarttwin-mcp 를 systemd 로 띄우는 박스라면 `Restart=on-failure` 는 SIGTERM(earlyoom · OOM 정리) 뒤에 다시 띄우지 않는다 — dev 처럼
+  `/etc/systemd/system/smarttwin-mcp.service.d/restart-always.conf` 에 `[Service]` · `Restart=always` 를 두고 `sudo systemctl daemon-reload`.
+
