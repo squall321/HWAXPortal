@@ -31,6 +31,12 @@
 - [x] 도구 검색 재측정 · 질의 수집(결정 21) — 재측정 `686b42c`(그대로 끈다) · 질의 수집 `a17fc83`(이름 없이 30일, dev 는 10-18 01:22 부터) · 150쌍 검토 화면 https://claude.ai/artifact/MsLjvDFr3oMJsUXZbwavob (표시는 그 저장소 `marks/<쌍 id>`) · 되돌리기 `e617012`(`tool_search_eval/apply_review.py`)
 - [x] T1 cae00 절차(결정 11) — 10-18 `server-setup.md` 7절(재기 · 판정 · 켜기 · 되돌리기). 재기 전 A/B 러너 결함 넷을 고쳤다(에이전트 서버 `3ca9894` — 결정문을 못 잡음 · 기본 주소 :8000 · 프록시 · 재는 심의가 RA 초안을 남김). 실행 · 판정은 사람(cae00)
 
+## 묶음 C — 바로 할 수 있는 것(10-19 사용자 '바로 할 수 있는 것들은 다 하자')
+- [x] logrotate 편입(FU-D11 의 뒤) — 회전 직전 가드 `infra/logrotate/append-guard.sh`(쥔 프로세스가 모두 O_APPEND 일 때만, 아니면 그 로그만 건너뜀) · 템플릿 (C) 묶음(HEAX backend · worker · beat · AIDH uvicorn · `/tmp/hwax-services/*.log`) · 시험(진짜 logrotate). dev 렌더 · 허브 백엔드를 `>>` 로 다시 띄움(10-19 06:00 KST) — 셋 다 가드 통과. cae00 은 `HWAX_LOGROTATE=1` 이면 update-all 이 렌더한다(옛 fd 를 쥔 쓰기자는 가드가 건너뛴다)
+- [ ] 포털 PAT 로 `/mcp-gw/api/<사이트>/…` HTTP 경로(one-token 42)
+- [ ] MXWhitePaper dev 시험 401 — 원인 · 고침
+- [ ] 전문가 검색 — 늘 거절되는 두 좌석 · 임베딩 없는 카드 9%
+
 ## 사람 몫(cae00 · 사용자)
 - [ ] 150쌍 검토(검토 화면) — 표시가 끝나면 Claude 에게 '검토 표시를 되돌려' → 내려받기 · `apply_review.py`(먼저 보고 `--write`) · 재측정
 - [ ] 30일 뒤(첫 줄 날짜 + 30일) — 모은 질의(`queries.local.jsonl`)에 정답을 달아 `source: usage` 로 재측정 · RRF 판정(cae00 · dev 각자)
