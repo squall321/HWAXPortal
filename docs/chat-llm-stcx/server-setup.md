@@ -94,7 +94,7 @@ stcx 를 다시 올리면(`llmctl.sh start-all`) 다음 호출부터 저절로 s
 | `CHAT_LLM_REASONING_EFFORT` | `xhigh` | 생각을 켰을 때의 강도(`low`·`medium`·`high`·`xhigh`). 빈 값이면 보내지 않는다(모델 기본) |
 | `CHAT_LLM_MAX_TOKENS` | `0`(보내지 않음) | stcx 서버가 `--override-generation-config` 로 131,072 에서 막는다(요청서 v1.1 0장). 따로 묶을 때만 |
 | `CHAT_LLM_OUTPUT_RESERVE` | 생각 켜면 `65536` | 챗 턴의 창에서 출력 몫으로 비우는 토큰(창 절반까지) — 입력이 창을 다 채우면 생각할 자리가 없다(CD-D4 · CD-D6) |
-| `CHAT_LLM_VISION` · `LLM_VISION` | `auto` | 챗 서버 · VLLM_* 가 그림을 받는지. auto 는 그림이 실릴 때 한 번 묻는다(빨간 그림 탐침), `1`·`0` 은 묻지 않는다 |
+| `CHAT_LLM_VISION` · `LLM_VISION` | `auto` | 챗 서버 · VLLM_* 가 그림을 받는지. auto 는 그림이 실릴 때 한 번 묻는다(빨간 그림 탐침 · 한도 `VISION_PROBE_TIMEOUT_S` 120초), `1`·`0` 은 묻지 않는다. `/health` `vision` 의 `ok` 가 null(모름)이면 `why` 에 까닭이 있다 — 그동안 그 턴은 그림 없이 가고 화면에 '그림을 받는지 아직 모른다' 가 뜬다. 서버가 그림을 받는 것이 확실하면 `1` 로 박아 탐침을 건너뛴다 |
 | `VISION_MAX_IMAGES` · `VISION_MAX_BYTES` | `12` · 8MiB | 한 발화 · 한 장 상한 — 포털 · 화면도 같은 수라 올리려면 세 곳을 같이(`test_chat_images_route`) |
 | `VISION_HISTORY_IMAGES` · `VISION_TRANSCRIBE_MAX` | `6` · `8` | 앞 대화의 그림을 다시 싣는 수 · 띵킹 · 심의가 판독하는 수(최근부터) |
 | `THINK_LLM` | GLM | `chat` 이면 띵킹 좌석이 챗 전용 LLM(Qwen)으로 돈다(docs/chat-depth-context CD-D8) |
