@@ -8,14 +8,18 @@ is polled at its health URL. Idempotent: a service that's already answering is s
   services.py up [name ...]      start all (or named) services, tier by tier, wait healthy
   services.py status [name ...]  show which are up (health probe only)
   services.py down [name ...]    stop (uses `stop:` if given, else best-effort by port)
+  services.py heal [name ...]    `watch: true` 서비스가 죽었으면(포트 연결 거부 세 번) down · up — 크론(install-watchdog.sh)
 
 NO SECRETS: remote = ssh <ssh_user>@<host> with key auth. sudo on a remote = that host's
 NOPASSWD sudoers, never a password here.
 """
 
+import fcntl
+import json
 import os
 import re
 import shlex
+import socket
 import subprocess
 import time
 import sys
@@ -693,6 +697,98 @@ def cmd_down(names: list[str]) -> int:
     return 0
 
 
+# ── 감시(heal) — 죽은 서비스를 다시 띄운다(followups-1017 FU-D22 · 사용자 결정 10-19 '감시 보강만') ─────────────────────────
+# 10-18 07:11 UTC dev 의 earlyoom 이 포털(인스턴스는 남고 앱만) · 게이트웨이 · mxwp-mcp · searxng 를 내렸고 14시간 아무도 다시 띄우지 않았다.
+# 판정은 보수적이다 — health 의 host:port 에 **연결 거부**가 세 번(사이 HWAX_WATCH_RECHECK_S초)일 때만 죽었다고 본다. 느린 응답 · 시간 초과 ·
+# HTTP 오류는 죽음이 아니다(바쁜 에이전트 서버를 다시 띄우면 도는 심의가 끊긴다). 고치는 길은 매니페스트의 down(stop) → up 이다 —
+# 인스턴스만 남고 앱이 죽은 포털도 stop 이 인스턴스를 내려 up 이 새로 띄운다. update-all 이 도는 동안은 건너뛴다(잠금은 잡지 않는다 —
+# 잡으면 막 시작하려던 update-all 을 막는다). 서비스마다 백오프 — 복구 뒤 10분, 다시 죽으면 두 배(상한 1시간), 산 것을 보면 푼다.
+WATCH_STATE = Path(os.environ.get("HWAX_WATCH_STATE") or (Path.home() / ".local/state/hwax/watchdog"))
+WATCH_RECHECK_S = float(os.environ.get("HWAX_WATCH_RECHECK_S") or 5)
+WATCH_TRIES = 3
+WATCH_BACKOFF_S = 600
+
+
+def _refused(url: str) -> bool | None:
+    """그 health 의 host:port 에 아무도 듣지 않는가 — 연결 거부면 True, 붙으면 False, 그 밖(시간 초과 · 이름 풀이 실패)은 None(모름)."""
+    from urllib.parse import urlsplit
+    u = urlsplit(url)
+    if not u.hostname:
+        return None
+    try:
+        with socket.create_connection((u.hostname, u.port or (443 if u.scheme == "https" else 80)), timeout=3):
+            return False
+    except ConnectionRefusedError:
+        return True
+    except OSError:
+        return None
+
+
+def _update_all_running() -> bool:
+    """update-all 이 도는가 — 잠금을 잡아 보지 않고 프로세스 명령줄로만 본다."""
+    me = os.getpid()
+    for p in Path("/proc").iterdir():
+        if not p.name.isdigit() or int(p.name) == me:
+            continue
+        try:
+            if b"infra/scripts/update-all.sh" in (p / "cmdline").read_bytes():
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def cmd_heal(names: list[str]) -> int:
+    """죽은 `watch: true` 서비스를 down · up 한다. 아무 일 없으면 아무것도 찍지 않는다(크론 로그가 매분 쌓이지 않게)."""
+    stamp = lambda: time.strftime("%F %T")  # noqa: E731
+    WATCH_STATE.mkdir(parents=True, exist_ok=True)
+    lock = open(WATCH_STATE / "heal.lock", "w")   # 파이썬 fd 는 자식에게 물려지지 않는다(PEP 446) — 띄운 데몬이 잠금을 쥐지 않는다
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return 0                                   # 앞 회차가 아직 복구 중이다
+    if _update_all_running():
+        return 0
+    rc = 0
+    for s in load():
+        name = s["name"]
+        if not s.get("watch") or (names and name not in names):
+            continue
+        if not enabled_here(s) or s.get("host", "local") != "local":
+            continue
+        url = health_url(s)
+        if not url:
+            continue
+        st_path = WATCH_STATE / f"{name}.json"
+        try:
+            st = json.loads(st_path.read_text())
+        except (OSError, ValueError):
+            st = {"count": 0, "last": 0.0}
+        seen = []
+        for i in range(WATCH_TRIES):
+            seen.append(_refused(url))
+            if seen[-1] is not True:
+                break
+            if i < WATCH_TRIES - 1:
+                time.sleep(WATCH_RECHECK_S)
+        if seen[-1] is not True:
+            if seen[-1] is False and st.get("count"):
+                st_path.unlink(missing_ok=True)     # 산 것을 봤다 — 백오프를 푼다
+            continue
+        window = min(3600, WATCH_BACKOFF_S * 2 ** (st["count"] - 1)) if st.get("count") else 0
+        if st.get("count") and time.time() - st.get("last", 0) < window:
+            print(f"[{stamp()}] ○ {name} 죽어 있다 — 직전 복구 {int(time.time() - st['last'])}초 전이라 {window}초까지 기다린다(백오프)",
+                  flush=True)
+            continue
+        print(f"[{stamp()}] ✗ {name} 죽었다({url} 연결 거부 {WATCH_TRIES}번) → down · up", flush=True)
+        st_path.write_text(json.dumps({"count": st.get("count", 0) + 1, "last": time.time()}))
+        cmd_down([name])
+        r = cmd_up([name])
+        print(f"[{stamp()}] {'✓' if r == 0 else '✗'} {name} 복구 {'성공' if r == 0 else '실패'}", flush=True)
+        rc |= r
+    return rc
+
+
 def cmd_enabled(names: list[str]) -> int:
     """이 박스가 그 서비스의 대상인가 — 종료코드로만 답한다(0=대상, 1=아님, 2=그런 서비스 없음).
 
@@ -711,7 +807,7 @@ def cmd_enabled(names: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled", "fp", "port", "health"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("up", "down", "status", "update", "data", "enabled", "fp", "port", "health", "heal"):
         print(__doc__)
         return 2
     action = sys.argv[1]
@@ -730,7 +826,8 @@ def main() -> int:
             return 2
     if action == "data":  # 데이터 경로 레지스트리 조회·검증(docs/data-migration)
         return cmd_data(names, check="--check" in args)
-    return {"status": cmd_status, "down": cmd_down, "update": cmd_update, "fp": cmd_fp, "port": cmd_port, "health": cmd_health}[action](names)
+    return {"status": cmd_status, "down": cmd_down, "update": cmd_update, "fp": cmd_fp, "port": cmd_port, "health": cmd_health,
+            "heal": cmd_heal}[action](names)
 
 
 if __name__ == "__main__":

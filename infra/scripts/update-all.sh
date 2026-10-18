@@ -432,6 +432,14 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   if grep -qE '^HWAX_LOGROTATE=1' "$SELF_REPO/infra/.env" 2>/dev/null && [ -x "$SELF_REPO/infra/scripts/install-logrotate.sh" ]; then
     "$SELF_REPO/infra/scripts/install-logrotate.sh" 2>&1 | sed 's/^/  /' || true
   fi
+  # 서비스 감시(followups-1017 FU-D22) — infra/.env 에 HWAX_WATCHDOG=1 일 때만. 박스의 운영 동작(죽은 서비스를 다시 띄움)을 바꾸므로
+  # 로그 회전과 같이 env 게이트로 둔다. 끈 채 두면 그 사실을 남긴다(안 켠 기능도 로그에).
+  if grep -qE '^HWAX_WATCHDOG=1' "$SELF_REPO/infra/.env" 2>/dev/null && [ -x "$SELF_REPO/infra/scripts/install-watchdog.sh" ]; then
+    "$SELF_REPO/infra/scripts/install-watchdog.sh" 2>&1 | sed 's/^/  /' || true
+  else
+    hwax_skip "서비스 감시" "HWAX_WATCHDOG=1 이 아니다 — 죽은 포털 · 게이트웨이 · 에이전트 서버 · mxwp-mcp · searxng 를 아무도 다시 띄우지 않는다" \
+      "infra/.env 에 HWAX_WATCHDOG=1 을 적고 update-all(매분 services.sh heal — 포트 연결 거부 세 번일 때만 down · up)"
+  fi
 fi
 
 # ── 1b2) 상시 상태판 경보 멈춤 — 1c~§5 가 서비스를 다시 띄우는 동안 상태판 메일을 멈춘다(docs/improvement-1015/status-board.md · IM-D28) ──
