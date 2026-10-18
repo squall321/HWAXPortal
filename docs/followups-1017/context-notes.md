@@ -106,7 +106,10 @@ MCP 에서만 하고 주인 확인이 없다 · 잡에는 X-HWAX-User 원문(퍼
 jti · exp 가 없으면 재사용 막기에서 KeyError 500). 허브 진입 토큰 검증을 같이 고쳤다(`c168772` — 포털의 진입 토큰은 넷을 늘 실어 로그인은
 그대로). **같은 꼴이 SignalForge `backend/app/api/portal_sso.py` 와 MXWhitePaper `apps/api/app/routers/portal_sso.py` 에 있다** — 서명이 있어야
 하고 포털의 진입 토큰은 aud 를 늘 실어 뚫리지는 않는다(잘못된 토큰이 401 대신 500). SignalForge 는 다른 세션의 미커밋 작업이 있어 손대지
-않았다 — 고칠지 사용자에게 여쭌다. ② 허브 감시(`scripts/watchdog.sh`, 매분)가 `start.sh` 가 막 띄운 백엔드를 기동 reconcile(앱 22개 —
+않았다 — 고칠지 사용자에게 여쭌다. → **10-18 사용자 'ㄱㄱ'** — SignalForge `de6a71b`(백엔드 파일만 · 다른 세션의 `.bkit` · `reports`
+는 그대로) · MXWhitePaper `c164dda` · lat 문서 `79abd6c`, 셋 다 고치기 전 코드에서 시험이 실패하는 것을 봤다. MXWP dev 는 `--reload` 라 바로
+실렸다. SignalForge dev 백엔드(10-15 부터 · `--reload` 없음)는 다른 세션이 돌보는 스택이라 다시 띄우지 않았다 — 그쪽 `scripts/up.sh` 나
+cae00 update-all 에 실린다. MXWP 전체 시험의 401 실패(개발용 인증 우회가 꺼진 인스턴스 환경)는 고치기 전 코드에서도 같다. ② 허브 감시(`scripts/watchdog.sh`, 매분)가 `start.sh` 가 막 띄운 백엔드를 기동 reconcile(앱 22개 —
 1분 넘게) 중에 죽이고 다시 띄웠다(dev 01:24 실측 — 두 번 기동). ③ 감시는 백엔드 · 워커 · beat 를 `>` 로 열어 앞 프로세스의 기록을 지웠다 —
 10-17 결정 16 이 `start.sh` 만 고쳤다. ②③ 은 `74fa732`(backend.rev 시각부터 300초 여유 · 감시가 띄울 때도 시각을 찍음 · `>>`). 덧붙여 dev 허브
 백엔드는 10-10 부터 옛 커밋(091be05)으로 떠 있었다 — 그 뒤 백엔드 커밋은 이번 재기동으로 처음 dev 에 실렸다.
