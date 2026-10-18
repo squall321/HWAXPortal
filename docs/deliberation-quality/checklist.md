@@ -111,7 +111,7 @@
 `GLM-DELIB-TUNING-REVIEW.md` 의 실행 순서를 따른다. **동시 적용 금지 — 단일 변수 A/B만.**
 
 - [x] T0 계측 하네스(e765985) + 단일 변수 A/B 러너(8ac689f) — 실행은 cae00(GLM)에서. 개발 박스는 qwen2.5-7b 라 결과가 전이되지 않는다
-- [ ] T1 `DELIB_EVIDENCE_PREPASS` A/B
+- [ ] T1 `DELIB_EVIDENCE_PREPASS` A/B — 절차는 `docs/followups-1017/server-setup.md` 7절(10-18, 러너 고침 에이전트 서버 `3ca9894`). cae00 실행 · 판정 대기
 - [ ] T2 `DELIB_REBUT_QUOTE` A/B
 - [ ] T3 `DELIB_PROSE_FIRST` A/B (T4 thinking 진단 후)
 - [ ] T4 reasoning effort A/B

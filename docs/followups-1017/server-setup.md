@@ -173,3 +173,59 @@ Qwen 을 1M 창으로 올리는 rolling(`docs/chat-llm-stcx/server-setup.md` 9.5
 - **Caddy 로그** — 다음 Caddy 재기동부터 `var/caddy/caddy.log` 를 Caddy 가 64MB 마다 돌린다(5벌 · gzip). 그 전까지는 예전처럼 자란다.
 - **logrotate 에 넣지 않은 로그** — HEAX 백엔드 · 워커 · beat, AIDataHub uvicorn, `/tmp/hwax-services/*.log` 는 이제 덧붙여 쓰지만(기동 때
   크면 한 벌 넘김) 떠 있던 프로세스는 옛 fd 다. 편입은 dev 가 박스마다 쓰기자가 새로 뜬 것을 보고(`/proc/<pid>/fdinfo/1` 의 02000) 한다.
+
+## 7. 심의 품질 T1 — 근거 선주입을 재고, 나으면 켠다 — 결정 11
+
+T1 은 `DELIB_EVIDENCE_PREPASS`(기본 0)다. 켜면 1라운드 전에 근거 도구 넷(`hybrid_search` · `search_knowledge` · `search_reports` ·
+`query_rules`)을 각 3건씩 부르고, LLM 한 번으로 정량 근거만 추려 좌석마다 `[정량 근거]` 블록(3,000자 이하)으로 싣는다. 도구가 없거나
+실패하면 건너뛴다. 봉인 심의는 늘 끈다. 손잡이는 한 번에 하나만 바꾼다(`docs/deliberation-quality/checklist.md` — 동시 적용 금지).
+
+### 7-1. 먼저
+
+- update-all 을 마친 판이다 — 에이전트 서버 `3ca9894` 이후(그 전 러너는 결정문을 못 잡아 결정문 지표가 양쪽 다 0 이었고, 재는 심의마다 RA
+  보고서 초안을 남겼다).
+- GLM 이 답한다 — 심의 하나가 끝까지 돈다.
+- 근거 도구가 게이트웨이에 있다(`없음` 인 것은 T1 이 건너뛴다 — `search_reports` 는 RA 가 붙어 있어야 있다):
+
+```bash
+curl -s http://127.0.0.1:9110/tools-map | python3 -c 'import json,sys; m=json.load(sys.stdin)["map"]; print({t: m.get(t, "없음") for t in ("hybrid_search", "search_knowledge", "search_reports", "query_rules")})'
+```
+
+- 심의가 한가한 때다 — 심의 18회(조건 둘 × 질문 셋 × 3회)라 몇 시간 걸린다. 그동안 update-all 은 재기동을 미룬다.
+
+### 7-2. 재기(A/B)
+
+```bash
+cd ~/Projects/HWAXAgentServer
+OUT=~/portal-backups/ab-t1-$(date +%Y%m%d)
+nohup .venv/bin/python -m tools.delib_ab --knob evidence_prepass --questions tools/ab_questions.txt --repeat 3 --out "$OUT" > "$OUT.log" 2>&1 &
+```
+
+- 손잡이는 요청마다 켜고 끈다(`delib_opts.evidence_prepass`) — `.env` 를 바꾸지 않는다. 대조군(0) 9회 뒤 실험군(1) 9회.
+- RA 보고서는 남기지 않는다(러너 기본 — `--save-report` 를 주면 남긴다). 질문 셋은 `tools/ab_questions.txt`(RA 에 결론이 저장된 주제는
+  넣지 않는다 — 정답 유출).
+- 한 회가 실패해도 이어 간다(로그의 `✗ 실패` 줄). 끝나면 `$OUT.log` 끝에 대조표, `$OUT/summary.json` 에 수치. 다시 집계 —
+  `.venv/bin/python -m tools.delib_ab --report "$OUT"`.
+
+### 7-3. 판정(사람)
+
+- 대조표 — 발언당 수치 인용 · 반박 인용률 · 파싱 실패율 · 결정문 수치 밀도(대조군 · 실험군 · 변화).
+- 결정문 두세 쌍을 나란히 읽는다 — `$OUT/evidence_prepass=0_q0_r0.json` 과 `$OUT/evidence_prepass=1_q0_r0.json` 의 `decision`. 실험군의
+  수치가 `[정량 근거]` 의 출처에 닿는가, 출처 없는 수치가 늘지 않았는가.
+- 켜는 기준 — 근거 붙은 수치가 늘고, 출처 없는 수치 · 파싱 실패 · 실패 회차가 늘지 않는다. 애매하면 켜지 않는다(기본 꺼짐 그대로).
+
+### 7-4. 켜기
+
+```bash
+cd ~/Projects/HWAXAgentServer
+echo 'DELIB_EVIDENCE_PREPASS=1' >> .env      # 줄 끝에 주석을 붙이지 않는다 — start.sh 는 주석까지 값으로 읽는다
+```
+
+도는 심의가 없을 때 update-all(에이전트 서버 `.env` 가 지문이라 다시 띄운다) 또는 `./start.sh -d`. 확인 — 새 심의의 상태 줄에 `정량 근거
+수집 — 지식·보고서 검색` · `정량 근거 수집 완료`, 근거 카드에 `지식·보고서 검색`.
+
+### 7-5. 되돌리기 · 남기기
+
+- 되돌리기 — 그 줄을 지우거나 `=0` 으로 두고 다시 띄운다.
+- 남기기 — `docs/deliberation-quality/checklist.md` 의 T1 줄에 날짜 · 판정 · `summary.json` 요약을 적는다. 다음 손잡이(T2 `DELIB_REBUT_QUOTE`)
+  는 T1 을 정한 뒤에 같은 러너로(`--knob rebut_quote`).
