@@ -24,14 +24,17 @@
 - [x] 옛 사본 목록(결정 17) → 사용자 확인(10-18 '목록대로 모두') → 삭제 — 29개 · 24.0GB, 지우기 직전 다시 대조(꼴 · 링크 · 쥔 프로세스) 뒤 실패 0
 
 ## 묶음 B — 기능
-- [ ] 토큰 읽기 · 쓰기(결정 5) — 게이트웨이 · 리스크 앱 대조 — 10-18 설계 PLAN 4절(허용 목록 + readOnlyHint · 챗 우회 그대로)
-- [ ] 허브 앱 개방(결정 7) — 5 뒤 — 10-18 설계 PLAN 4절(허브 권한만 · 읽기 PAT 는 GET · HEAD)
-- [ ] 같은 소속 심의 열람(결정 6) — 10-18 설계 PLAN 4절(시작 때 소속 · 옛 잡은 내부와 관리자 · 목록에 같은 소속)
+- [x] 토큰 읽기 · 쓰기(결정 5) — 게이트웨이 `ffb5292`(scopes 가 read 만이면 허용 목록 `read_tools.json` 26종 · readOnlyHint · 자체 조회만, REST 다리 GET · HEAD 만, `save_conversation` 거부) · 리스크 앱 주석 `5833db9`. 챗 우회는 그대로. dev 게이트웨이 재기동 10-18 01:22(services.sh — `GATEWAY_AUDIT` 그대로)
+- [x] 허브 앱 개방(결정 7) — HEAXHub `fc1ab89`(관문이 포털 PAT — JWKS kid · aud heax-hub · scope api · exp · sub · jti 필수 · 폐기 목록 60초 · 한 번도 못 읽으면 503 → 이메일로 허브 사용자(없으면 403 '허브에 한 번 로그인') → `can_view_app`, 읽기 PAT 는 GET · HEAD) · 진입 토큰 필수 클레임 `c168772`(jose 결함, FU-D19) · 감시 `74fa732`(FU-D19). dev 백엔드 재기동 10-18 01:24 · 실검증(폐기 목록 주소 · 292건 · 모르는 kid 401)
+- [x] 같은 소속 심의 열람(결정 6) — 에이전트 서버 `9d4c931`(상태 · 결과 · 발언 · 이어하기 · 목록 — 주인 · 같은 소속 · 관리자 · 신원 없는 내부, 잡에 `owner_aff`) · 게이트웨이 `ab34abd`(`x-hwax-affiliation`). dev 에이전트 서버 재기동 10-18 01:28 · 실검증(내부 15건 · 다른 소속 0건)
 - [x] 그림 인식 V-1 · V-2(결정 10) — 10-18 docs/chat-depth-context T5 로 했다(에이전트 서버 `0b2f8b6` · 포털 `2ff8dc0`, 심의 그림까지)
-- [ ] 도구 검색 재측정 · 질의 수집(결정 21) — 재측정 10-18 끝(게이트웨이 `686b42c` — 그대로 끈다), 질의 수집 30일 · 150쌍 검토 화면
+- [x] 도구 검색 재측정 · 질의 수집(결정 21) — 재측정 `686b42c`(그대로 끈다) · 질의 수집 `a17fc83`(이름 없이 30일, dev 는 10-18 01:22 부터) · 150쌍 검토 화면 https://claude.ai/artifact/MsLjvDFr3oMJsUXZbwavob (표시는 그 저장소 `marks/<쌍 id>`) · 되돌리기 `e617012`(`tool_search_eval/apply_review.py`)
 - [x] T1 cae00 절차(결정 11) — 10-18 `server-setup.md` 7절(재기 · 판정 · 켜기 · 되돌리기). 재기 전 A/B 러너 결함 넷을 고쳤다(에이전트 서버 `3ca9894` — 결정문을 못 잡음 · 기본 주소 :8000 · 프록시 · 재는 심의가 RA 초안을 남김). 실행 · 판정은 사람(cae00)
 
 ## 사람 몫(cae00 · 사용자)
+- [ ] 150쌍 검토(검토 화면) — 표시가 끝나면 Claude 에게 '검토 표시를 되돌려' → 내려받기 · `apply_review.py`(먼저 보고 `--write`) · 재측정
+- [ ] 30일 뒤(첫 줄 날짜 + 30일) — 모은 질의(`queries.local.jsonl`)에 정답을 달아 `source: usage` 로 재측정 · RRF 판정(cae00 · dev 각자)
+- [ ] cae00 update-all 뒤 묶음 B 확인 — `server-setup.md` 8절
 - [ ] stcx LLM 잡 만료 — **11-14 전** `~/stcx-llm/llmctl.sh rolling`(리뷰 4절)
 - [ ] cae00 — 옛 stash 확인 뒤 drop · PG 시한 한 줄 · 리스크 백업 키 · 데이터허브 바인드 확인
 

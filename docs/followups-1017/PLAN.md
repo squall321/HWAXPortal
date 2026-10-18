@@ -83,6 +83,8 @@
 
 결정과 까닭은 [context-notes.md](context-notes.md) FU-D17 ~. 조사는 탐색 에이전트 셋(읽기 전용)이 했고 숫자는 직접 다시 확인했다.
 
+**상태(10-18)** — 아래 넷 모두 구현 · 올림 · dev 반영 · 실물 확인 끝(커밋과 확인은 [checklist.md](checklist.md) 묶음 B, 드러난 결함은 FU-D19). cae00 은 update-all 뒤 [server-setup.md](server-setup.md) 8절.
+
 | # | 정한 것 | 짓는 것 | 리포 |
 |---|---|---|---|
 | 5 | **허용 목록 + 표시 존중** · 챗 우회는 그대로 | 포털 PAT 의 `scopes` 가 `read` 만(=`read` 있고 `write` 없음 — 챗 · 절차 PAT 의 `["chat"]` 은 해당 없음)이면 MCP 도구는 허용 목록(`read_tools.json`, `백엔드:원래 이름`) 또는 앱이 단 `readOnlyHint` 만, `rest_call` · REST 다리는 GET · HEAD 만, `save_conversation` 은 막는다. 막으면 이유와 '목록에 더하는 법' 을 답한다. 처음 목록 — 리스크 앱이 읽기 토큰으로 부르는 것(대조 25종) | 게이트웨이 |
