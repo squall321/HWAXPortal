@@ -26,3 +26,23 @@ NODE_EXTRA_CA_CERTS 는 없을 때만 채운다(대소문자 무시) — 다만 
 배열을 PowerShell 이 감싼 채 넣으면 JavaScriptSerializer 가 객체로 쓸 수 있어 `[object[]]` 로 못 박았고, `-NoProfile` 창에서 Cert: 드라이브가
 안 올라왔을 수 있어 모듈을 먼저 부른다.
 
+
+## 10-20 (2) — 인증서 따로 받기 · 직접 설정 안내
+
+**TB-D6 안내 명령은 생성기가 배치와 같은 상수로 만든다.** 사람이 손으로 한 설정과 배치가 한 설정이 다른 파일을 가리키면 서로를 깬다(토큰을
+갱신하는 배치가 손 설정의 경로를 못 알아본다). 그래서 인증서 자리(`CERT_FILE` · `CA_BUNDLE`)와 묶음 PowerShell 본문(`PS_BUNDLE_BODY` ·
+`PS_WRITE_BUNDLE`)을 생성기 위로 올려 배치와 안내가 같이 쓴다 — 올린 뒤 배치 · 스니펫 산출물을 고치기 전과 바이트로 대조해 같았다.
+안내 ② 는 사람이 PowerShell 창에 붙여 넣으므로 `exit` 를 쓰지 않는다(그 창이 닫힌다). 저장소를 못 읽으면 배치처럼 포털 인증서만 담는다.
+③ 연결 확인은 Node 로 한다 — Claude 가 실제로 쓰는 것이 Node 의 TLS 이고, 윈도우 curl 은 다른 신뢰 저장소(Schannel)를 본다.
+
+실측(dev, Node 20.19, 사설 CA 가 서명한 https 서버):
+- 묶음 없이 → `FAIL UNABLE_TO_VERIFY_LEAF_SIGNATURE`, 안내 ② 꼴의 묶음(포털 인증서 + 다른 루트 64자 줄) → `OK HTTP 200`.
+- 처음엔 `String(e.cause)` 를 찍어 `Error: unable to verify the first certificate` 같은 문장이 나왔다 — 안내문의 코드 이름과 맞대기 어려워
+  `e.cause.code` 를 찍는다. 닫힌 포트는 `ECONNREFUSED`, 연결 시간 초과는 `ETIMEDOUT` 이 아니라 `UND_ERR_CONNECT_TIMEOUT` 이다. 포트 1 은
+  fetch 가 막는 포트(bad port)라 시험에 쓰면 엉뚱한 결과가 나온다.
+- BOM 이 붙은 묶음도 Node 20 은 읽었다 — 배치가 BOM 없이 쓰는 것은 종전 그대로 두되, 'BOM 이면 못 읽는다' 는 까닭은 적지 않는다.
+
+**TB-D7 인증서는 토큰 없이 받고, 받아서 PEM 인지 본 뒤 저장한다.** 배치는 토큰이 들어 있어 발급 순간에만 만들 수 있지만(서버는 평문 토큰을
+보관하지 않는다) 인증서는 토큰과 상관없다 — 이미 등록한 사람이 인증서만 바꾸거나 배치를 못 쓰는 PC 에서 받을 길이 있어야 한다. 링크
+(`<a download>`)로 걸지 않고 fetch 로 받아 `-----BEGIN CERTIFICATE-----` 를 확인한다 — 실패를 화면에 말하고, 오류 응답이 `.crt` 이름으로
+저장되지 않게. (포털은 없는 `/tls` 경로에 404 JSON 을 준다 — 실측. SPA HTML 이 섞일 걱정은 지금은 없지만 확인 자체는 싸다.)
