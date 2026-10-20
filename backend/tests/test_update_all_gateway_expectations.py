@@ -55,13 +55,13 @@ def _expect(tmp_path: Path, *, have: list[str], siblings: dict | None = None, pr
         _fn("_envfile_value"), _fn("_ra_envv"), pre,
         _between("# RA 사람별 위임(ste 방식, docs/sso-delegation) — 같은 자리에서 읽되", "\n# ── 5) 게이트웨이 config 정합"),
         _between('  PROV_ENV="${GW_DIR:+$GW_DIR/provision.env}"', '. "$PROV_ENV"\n'),
-        _fn("calc_missing"),
+        _fn("_sso_generic_pairs"), _fn("_gw_managed_names"), _fn("_mcp_generic_expected"), _fn("calc_missing"),
         "MXWP_UP=0; STE_ROUTED=0",
         f"printf 'MISSING=[%s]\\n' \"$(calc_missing '{h}')\"",
     ])
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                        env={"PATH": os.environ["PATH"], "HOME": str(tmp_path / "home")})
-    assert r.returncode == 0 and "unbound variable" not in r.stderr, r.stderr
+    assert r.returncode == 0 and "unbound variable" not in r.stderr and "command not found" not in r.stderr, r.stderr
     line = [ln for ln in r.stdout.splitlines() if ln.startswith("MISSING=[")]
     assert len(line) == 1, r.stdout + r.stderr
     return line[0][len("MISSING=["):-1].split(), r.stdout
@@ -723,3 +723,31 @@ def test_재프로비저닝이_ODB_허브_주소를_게이트웨이에_넘긴다
     update-all 은 기대하므로 매 실행 재프로비저닝이 헛돈다."""
     vals = {"ODB_HUB_TOKEN": "odb-test-token", "ODB_HUB_BASE": "http://203.0.113.30:8000"}
     assert _provisioner_sees(tmp_path, vals) == vals
+
+
+# ── heax-hub 밖 일반 앱의 MCP 백엔드(<접두>_MCP_URL) — MatNexus 등(docs/sso-delegation, 10-20) ─────────────────────────
+MNX_ENV = 'PER_USER_SSO_APPS="matnexus:MATNEXUS"\nMATNEXUS_MCP_URL=http://203.0.113.30:8012/mcp\n'
+
+
+def test_일반_앱은_MCP_URL_이_있는_박스에서만_기대한다(tmp_path):
+    """게이트웨이 provision 이 그 키로 정적 백엔드를 만든다 — 기대하지 않으면 config 에서 빠져도 초록이다. 거꾸로 게이트웨이가 만들지
+    않는 경우(주소 없음 · 목록에 없음 · 게이트웨이가 직접 만드는 다섯)를 기대하면 매 실행 재프로비저닝이 헛돈다."""
+    assert _expect(tmp_path / "set", have=BASE, prov_env=MNX_ENV)[0] == ["matnexus"]
+    assert _expect(tmp_path / "have", have=BASE + ["matnexus"], prov_env=MNX_ENV)[0] == []
+    sso_only = 'PER_USER_SSO_APPS="matnexus:MATNEXUS"\nMATNEXUS_SSO_URL=http://203.0.113.30:8010/api/auth/sso\n'
+    assert _expect(tmp_path / "sso-only", have=BASE, prov_env=sso_only)[0] == []
+    assert _expect(tmp_path / "unlisted", have=BASE, prov_env="MATNEXUS_MCP_URL=http://203.0.113.30:8012/mcp\n")[0] == []
+    special = 'PER_USER_SSO_APPS="reportarchive:EVIL"\nEVIL_MCP_URL=http://203.0.113.30:1/mcp\n'
+    assert _expect(tmp_path / "special", have=BASE, prov_env=special)[0] == []
+
+
+def test_일반_앱_키가_게이트웨이가_만드는_이름이면_기대하지_않는다(tmp_path):
+    """provision 은 그 이름을 덮지 않고 건너뛴다 — 기대하면 그 백엔드가 없는 박스(arp 는 토큰 · 주소가 있어야 생긴다)에서 매 실행
+    재프로비저닝이 헛돈다. 이름 목록은 게이트웨이 provision-config.sh 의 MANAGED 를 그대로 읽는다(두 벌 두지 않는다)."""
+    src = ROOT.parent / "HWAXMcpGateway/provision-config.sh"
+    if not src.exists():
+        pytest.skip("HWAXMcpGateway 리포가 옆에 없다")
+    env = 'PER_USER_SSO_APPS="arp:ARPX matnexus:MATNEXUS"\nARPX_MCP_URL=http://203.0.113.30:1/mcp\nMATNEXUS_MCP_URL=http://203.0.113.30:8012/mcp\n'
+    missing, _ = _expect(tmp_path, have=BASE, prov_env=env,
+                         siblings={"HWAXMcpGateway/provision-config.sh": src.read_text(encoding="utf-8")})
+    assert missing == ["matnexus"], "arp 는 MANAGED 라 기대하지 않는다 — matnexus 만"

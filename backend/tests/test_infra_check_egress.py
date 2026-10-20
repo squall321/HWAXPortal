@@ -359,3 +359,23 @@ def test_한_호스트를_두_포트로_부르면_포트_붙은_항목_하나로
     assert run("--internal", https_proxy=PROXY, NO_PROXY=ODB).returncode == 0
     (repo / "backend/.env").write_text(f"TESTSCOPE_BASE_URL=http://{ODB}:8000/api\n")
     assert run("--internal", https_proxy=PROXY, NO_PROXY=f"{ODB}:8000").returncode == 0, "같은 포트면 한 항목으로 덮인다"
+
+
+MNX = "192.0.2.60"   # 다른 조직 서버의 일반 앱(MatNexus 처럼 heax-hub 밖) — 문서용 예약 대역
+
+
+def test_일반_앱의_MCP_와_위임_주소도_목적지로_본다(box):
+    """게이트웨이 provision.env 의 일반 앱(PER_USER_SSO_APPS) — 게이트웨이가 그 MCP 와 위임 창구를 부른다(10-20, docs/sso-delegation).
+    한 호스트를 두 포트로 부르므로 포트 붙은 항목 하나로는 덮이지 않는다. 목록에 없는 접두 · 못 읽은 쌍은 보지 않는다."""
+    repo, run, calls = box
+    gw = repo.parent / "HWAXMcpGateway"; gw.mkdir()
+    (gw / "provision.env").write_text(
+        f'PER_USER_SSO_APPS="matnexus:MATNEXUS bad:9X"   # 일반 앱\nMATNEXUS_MCP_URL=http://{MNX}:8012/mcp\n'
+        f'MATNEXUS_SSO_URL=http://{MNX}:8010/api/auth/sso\nOTHER_MCP_URL=http://192.0.2.61:9000/mcp\n')
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=ALL)
+    assert r.returncode == 1 and "MATNEXUS_MCP_URL" in r.stdout, r.stdout + r.stderr
+    assert "OTHER_MCP_URL" not in r.stdout, "목록에 없는 접두는 게이트웨이가 부르지 않는다"
+    assert MNX not in r.stdout + r.stderr, "주소는 찍지 않는다"
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=f"{ALL},{MNX}:8012").returncode == 1, "포트 하나로는 두 포트를 못 덮는다"
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=f"{ALL},{MNX}").returncode == 0
+    assert not calls.exists()

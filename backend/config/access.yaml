@@ -74,6 +74,21 @@ platforms:
     #   게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 있는 박스에서 그 백엔드를 기대한다.
     gateway: [testscope]
     hide_unless_routed: true   # 타일 주소(systems.local.yaml)가 없는 박스에서는 권한 표·요청에서 뺀다(권한 계산은 그대로)
+  - id: matnexus
+    label: MatNexus
+    systems: [matnexus]
+    # 다른 조직의 물성 관리 시스템(TestScope 와 같은 팀) — 호출은 게이트웨이가 그 사람 이름으로 받은 읽기 전용 토큰으로만 간다
+    # (표준 위임 — 게이트웨이 provision.env 의 PER_USER_SSO_APPS "matnexus:MATNEXUS" · MATNEXUS_SSO_* · MATNEXUS_MCP_URL, docs/sso-delegation).
+    # ⚠ 게이트웨이에 matnexus 백엔드를 붙이기 **전에** 여기 적는다(표에 없는 백엔드는 '전체 공개').
+    gateway: [matnexus]
+    hide_unless_routed: true
+  - id: fmea
+    label: FMEA Agent
+    systems: [fmea]
+    # 다른 조직 서버 — 붙는 방식은 그쪽 답을 받아 정한다(docs/sso-delegation/fmea-request.md). 표준 위임이면 MatNexus 와 같이 게이트웨이
+    # provision.env 의 PER_USER_SSO_APPS "fmea:FMEA" · FMEA_SSO_* · FMEA_MCP_URL 로 붙는다 — 그때 표에 없으면 '전체 공개' 라 미리 둔다(10-20).
+    gateway: [fmea]
+    hide_unless_routed: true
   - id: smarttwin
     label: SmartTwin 시뮬레이션
     systems: [smart-twin-cluster, ste]

@@ -57,7 +57,8 @@ add_json() { RES_JSON="${RES_JSON}${RES_JSON:+,}{\"name\":\"$1\",\"code\":\"$2\"
 # ── 이 박스가 실제로 부르는 **내부** 목적지 — 프록시를 타면 안 되는 곳(9차 요청 §4-(4)) ─────────────────────
 # 종전엔 NO_PROXY 에 루프백 둘만 있는지 봤다. 그런데 사고는 다른 서버에서 났다 — RA 호출이 사내 프록시를 타 상대의 IP 허용목록에
 # 걸려 사람별 위임이 403 이었다(2026-10-03 cae00). 목적지는 **리포가 아는 설정에서 유도한다**(주소를 여기 적지 않는다):
-#   infra/.env 의 RA_HOST·ARP_HOST · routes(.local).env 의 원격 호스트 · backend/.env 의 TESTSCOPE_BASE_URL.
+#   infra/.env 의 RA_HOST·ARP_HOST · routes(.local).env 의 원격 호스트 · backend/.env 의 TESTSCOPE_BASE_URL ·
+#   게이트웨이 provision.env 의 일반 앱(PER_USER_SSO_APPS) <접두>_MCP_URL·<접두>_SSO_URL(MatNexus 처럼 heax-hub 밖 앱).
 # 출력에는 주소가 아니라 **어느 설정인지**만 낸다 — 이 출력은 update-all 로그에 그대로 남는다.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # update-all 의 _envfile_value 와 같은 규칙(인라인 주석·따옴표·CR 을 벗기고 마지막 줄이 이긴다) — ste-doctor.sh 의 envv 와 같은 한 줄이다.
@@ -77,9 +78,9 @@ _url_port() {  # URL → 적힌 포트(없으면 빈 값). 스킴의 기본 포�
 # 포트는 그 설정이 주소에 적은 것만 안다(라우트·TESTSCOPE_BASE_URL). RA_HOST·ARP_HOST 는 포트가 없다 — update-all 1e 가 RA_HOST 한 줄에서
 # :3000 과 :3002 를 함께 만든다. 같은 호스트가 다른 포트로 또 나오면 포트를 비운다 — 포트 하나를 적은 NO_PROXY 항목으로는 둘을 못 덮는다.
 internal_dests() {  # "<이름>|<호스트>|<포트>" 줄들. 루프백은 뺀다(아래에서 따로 본다). 같은 호스트는 먼저 나온 이름 하나로.
-  local k h f line _rp _v
+  local k h f line _rp _v _gw_env _pair _p
   declare -A _route=() _rport=() _seen=() _port=()
-  local -a _order=() _hosts=()
+  local -a _order=() _hosts=() _pairs=()
   _add() { case "$2" in ''|localhost|127.*|0.0.0.0|::1|\[*) return 0 ;; esac
            if [ -n "${_seen[$2]:-}" ]; then [ "${_port[$2]}" = "${3:-}" ] || _port[$2]=""; return 0; fi
            _seen[$2]="$1"; _port[$2]="${3:-}"; _hosts+=("$2"); }
@@ -99,6 +100,18 @@ internal_dests() {  # "<이름>|<호스트>|<포트>" 줄들. 루프백은 뺀�
   done
   for k in ${_order[@]+"${_order[@]}"}; do _add "라우트 $k" "${_route[$k]}" "${_rport[$k]}"; done
   h="$(envv TESTSCOPE_BASE_URL "$ROOT/backend/.env")"; [ -n "$h" ] && _add TESTSCOPE_BASE_URL "$(_url_host "$h")" "$(_url_port "$h")"
+  # 일반 앱 — 게이트웨이가 그 MCP 와 위임 창구를 부른다. 쌍의 접두 규칙은 update-all _sso_generic_pairs 와 같다(못 읽은 쌍은 건너뛴다).
+  _gw_env="${GW_DIR:-$ROOT/../HWAXMcpGateway}/provision.env"
+  if [ -f "$_gw_env" ]; then
+    read -ra _pairs <<<"$(envv PER_USER_SSO_APPS "$_gw_env")"
+    for _pair in ${_pairs[@]+"${_pairs[@]}"}; do
+      _p="${_pair#*:}"
+      [ "$_p" != "$_pair" ] && [[ "$_p" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+      for k in "${_p}_MCP_URL" "${_p}_SSO_URL"; do
+        h="$(envv "$k" "$_gw_env")"; [ -n "$h" ] && _add "$k" "$(_url_host "$h")" "$(_url_port "$h")"
+      done
+    done
+  fi
   for h in ${_hosts[@]+"${_hosts[@]}"}; do printf '%s|%s|%s\n' "${_seen[$h]}" "$h" "${_port[$h]}"; done
   return 0
 }

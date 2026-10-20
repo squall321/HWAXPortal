@@ -118,6 +118,36 @@ systems:
     hide_unless_routed: true
     sort_order: 45
 
+  - id: matnexus
+    name: MatNexus
+    tagline: 물성 관리 — 시험 데이터에서 솔버 입력까지
+    description: >-
+      시험 데이터를 등록해 탄소성·점탄성 같은 물성으로 만들고, 통계 처리해 시뮬레이션
+      툴 입력으로 내보냅니다.
+    accent: emerald
+    category: Data
+    status: available
+    # TestScope 와 같은 팀의 다른 조직 서버 — 그쪽 주소로 바로 여는 직결 링크다(로그인 토큰을 넘기지 않는다). 주소는
+    # backend/config/systems.local.yaml(gitignore)의 `matnexus: {url: ...}`. 없으면 숨긴다.
+    # Claude·챗의 MatNexus 호출은 이 타일과 따로 — 게이트웨이가 그 사람 이름의 읽기 전용 토큰을 받아 부른다(docs/sso-delegation).
+    integration_type: external-url
+    hide_unless_routed: true
+    sort_order: 46
+
+  - id: fmea
+    name: FMEA Agent
+    tagline: 고장 모드 · 영향 분석(FMEA) 에이전트
+    description: >-
+      FMEA(고장 모드 · 영향 분석) 작업을 돕는 에이전트입니다. 그쪽 서버 화면으로 바로 엽니다.
+    accent: amber
+    category: Engineering
+    status: available
+    # 다른 조직 서버(10-20 연결 요청) — 직결 링크. 주소는 backend/config/systems.local.yaml 의 `fmea: {url: ...}`, 없으면 숨긴다.
+    # 소개 문구는 이름에서 지었다 — 그쪽 답(docs/sso-delegation/fmea-request.md)을 받으면 맞춘다.
+    integration_type: external-url
+    hide_unless_routed: true
+    sort_order: 47
+
   - id: smart-twin-cluster
     name: Smart Twin Cluster
     tagline: 시뮬레이션 자동화 & AI 분석

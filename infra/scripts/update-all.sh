@@ -45,6 +45,7 @@
 #     ARP_TOKEN=xxxx                   # ARP MCP 서비스 토큰(2026-10-01 부터 인증) — 없으면 arp 백엔드만 빠진다
 #     SMARTTWIN_MCP_URL=http://127.0.0.1:5013/mcp   # SmartTwinMCP 를 쓰는 박스만(dev) — 없으면 게이트웨이가 smart-twin-mcp 를 등재하지 않는다
 #     PER_USER_SSO_APPS="<per_user 키>:<ENV 접두> …" # 여섯 번째 앱부터의 사람별 위임 — <접두>_SSO_SECRET · <접두>_SSO_URL 과 함께 적는다
+#                                                    #   heax-hub 밖 앱(MatNexus 등)은 <접두>_MCP_URL 도 — 같은 키의 MCP 백엔드가 붙는다
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
@@ -1529,7 +1530,7 @@ fi
 
 calc_missing() {  # $1=health JSON → 기대 목록에서 빠진 백엔드(공백 구분). heax는 config 파일로 별도 판정.
   H="$1" RAT="${RAT_TOKEN:-}" ARP="${ARP_TOKEN:+${ARP_BASE:-}}" MXWP_UP="$MXWP_UP" \
-  SMARTTWIN_EXPECTED="${SMARTTWIN_EXPECTED:-0}" ODB_HUB_EXPECTED="${ODB_HUB_EXPECTED:-0}" \
+  SMARTTWIN_EXPECTED="${SMARTTWIN_EXPECTED:-0}" ODB_HUB_EXPECTED="${ODB_HUB_EXPECTED:-0}" GENERIC_MCP="$(_mcp_generic_expected)" \
   KNOX_BRIDGE_UP="${KNOX_BRIDGE_UP:-0}" STE_ROUTED="$STE_ROUTED" TESTSCOPE_EXPECTED="${TESTSCOPE_EXPECTED:-0}" python3 - <<'PY'
 import json, os
 h = json.loads(os.environ["H"]); have = set((h.get("backends") or {}).keys())
@@ -1555,6 +1556,8 @@ if os.environ.get("ARP"):           want.add("arp")
 if os.environ.get("STE_ROUTED") == "1": want.add("ste")
 # TestScope MCP — 게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 있는 박스에서만 기대한다(ARP 와 같은 방식, docs/sso-delegation).
 if os.environ.get("TESTSCOPE_EXPECTED") == "1": want.add("testscope")
+# heax-hub 밖 일반 앱(MatNexus 등) — 게이트웨이 provision.env 에 <접두>_MCP_URL 이 있는 쌍만(_mcp_generic_expected).
+want.update((os.environ.get("GENERIC_MCP") or "").split())
 # SmartTwinMCP — 주소가 설정된 박스에서만(위 판정, 게이트웨이의 등재 조건과 같다). 무조건 기대하면 띄운 적 없는 박스가 매 실행 재프로비저닝한다.
 if os.environ.get("SMARTTWIN_EXPECTED") == "1": want.add("smart-twin-mcp")
 # Knox 브리지 — gateway_config.json 은 gitignore 라 pull 로 오지 않는다. 사라지면 챗의 메일·메신저 도구 6개가 통째로 없어진다.
@@ -1594,10 +1597,32 @@ _sso_generic_pairs() {  # → 줄마다 "<per_user 키> <ENV 접두>"  ($1=dups 
     if [ "${1:-}" != dups ]; then printf '%s %s\n' "$k" "$p"; fi
   done
 }
-_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다) — 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL
+_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다) — 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL <접두>_MCP_URL
   local _k p
   while read -r _k p; do
-    if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL ' "$p" "$p"; fi
+    if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL %s_MCP_URL ' "$p" "$p" "$p"; fi
+  done <<<"$(_sso_generic_pairs)"
+}
+# 게이트웨이가 직접 만드는 백엔드 이름(provision-config.sh 의 MANAGED) — $1=그 파일 → 공백 구분 이름, 못 읽으면 빈 값. 목록은 그 파일에서
+# 읽는다(두 벌 두지 않는다).
+_gw_managed_names() {
+  python3 - "$1" <<'PY' 2>/dev/null || true
+import re, sys
+m = re.search(r"^MANAGED = \{(.*?)\}", open(sys.argv[1], encoding="utf-8").read(), re.S | re.M)
+print(" ".join(re.findall(r'"([^"]+)"', m.group(1))) if m else "")
+PY
+}
+# heax-hub 밖 일반 앱의 MCP 백엔드 — <접두>_MCP_URL 이 있는 쌍의 키(공백 구분). 게이트웨이 provision 이 그 키로 정적 백엔드를 만드니
+# calc_missing 이 기대한다 — 안 보면 config 에서 빠져도 초록이다(TestScope 의 TESTSCOPE_MCP_URL 과 같은 자리). 쌍 규칙은 위와 같다.
+# 키가 게이트웨이가 직접 만드는 이름이면 provision 이 덮지 않고 건너뛴다 — 그 이름을 기대하면 그 백엔드가 없는 박스(arp · odb-hub 처럼
+# 조건부인 것)에서 매 실행 재프로비저닝이 헛돈다. 그래서 뺀다.
+_mcp_generic_expected() {
+  local _k p v managed
+  managed=" $(_gw_managed_names "${GW_DIR:-/nonexistent}/provision-config.sh") "
+  while read -r _k p; do
+    v="${p:+${p}_MCP_URL}"
+    case "$managed" in *" $_k "*) continue ;; esac
+    if [ -n "$v" ] && [ -n "${!v:-}" ]; then printf '%s ' "$_k"; fi
   done <<<"$(_sso_generic_pairs)"
 }
 # 목록에서 **뺀** 일반 앱 — 앱을 걷을 때 사람은 PER_USER_SSO_APPS 의 쌍과 <접두>_SSO_* 줄을 지운다. 그러면 위 쌍 목록에 그 앱이 없어

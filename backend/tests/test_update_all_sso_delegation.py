@@ -379,13 +379,13 @@ def test_no_generic_list_means_nothing_extra_is_exported(tmp_path):
 
 
 @pytest.mark.parametrize("apps,names", [
-    ("newapp:NEWAPP", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL"),
-    ("  newapp:NEWAPP\tother:OTHER_APP ", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL OTHER_APP_SSO_SECRET OTHER_APP_SSO_URL"),
-    ("콜론없음 :NOKEY nopfx: bad:9X bad2:A-B bad3:A:B ok:OK_1", "OK_1_SSO_SECRET OK_1_SSO_URL"),
+    ("newapp:NEWAPP", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL"),
+    ("  newapp:NEWAPP\tother:OTHER_APP ", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL OTHER_APP_SSO_SECRET OTHER_APP_SSO_URL OTHER_APP_MCP_URL"),
+    ("콜론없음 :NOKEY nopfx: bad:9X bad2:A-B bad3:A:B ok:OK_1", "OK_1_SSO_SECRET OK_1_SSO_URL OK_1_MCP_URL"),
     ("reportarchive:RA testscope:TS ste:STE hwax_risk:HR kooremapper_mcp:KR", ""),   # 게이트웨이가 직접 만드는 다섯 — 순회로 덮지 않는다
     ("*:STAR 'q:Q $(id):X", ""),                                                      # 키가 이름 꼴이 아니면 다루지 않는다
-    ("dup:FOO dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL"),                                # 한 키를 두 번 — 먼저 적힌 쌍만
-    ("dup:9X dup:FOO other:O dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL O_SSO_SECRET O_SSO_URL"),   # 못 읽은 쌍은 '먼저' 가 아니다
+    ("dup:FOO dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL"),                                # 한 키를 두 번 — 먼저 적힌 쌍만
+    ("dup:9X dup:FOO other:O dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL O_SSO_SECRET O_SSO_URL O_MCP_URL"),   # 못 읽은 쌍은 '먼저' 가 아니다
     ("", ""),
 ])
 def test_generic_pairs_are_read_with_the_gateway_rule(tmp_path, apps, names):
