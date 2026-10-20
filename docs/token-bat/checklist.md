@@ -10,5 +10,5 @@
 - [x] 5 실행 중인 Claude Desktop 이면 멈춤 · 트레이 종료 안내(설정을 바꾸기 전에)
 - [x] 화면에 보여 주는 수동 스니펫(Desktop · Claude Code)도 같은 env
 - [x] 시험(test_setup_bat) — 26 통과(새 6 · 고친 5, 변이 셋 잡힘) — 산출물 글로 다섯 각각 · 기존 시험(토큰 비노출 · 괄호 블록 없음 · 라벨) 그대로
-- [ ] 화면 빌드 · Drive · 업데이트 이력
+- [x] 화면 빌드 · Drive · 업데이트 이력 — 빌드 표식 = `HEAD:frontend`, Drive `images-20261020-071607Z` + `latest/frontend-dist.tar.gz`(10-20), 이력 10-20 '연결'
 - [ ] 실제 Windows 확인(사람 — 염종섭 님): Store 판 · NO_PROXY/no_proxy 가 함께 있는 설정 · 토큰 재발급 뒤 손 설정 유지 · Desktop 켠 채 실행
