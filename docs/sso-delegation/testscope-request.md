@@ -1,6 +1,7 @@
 # TestScope — (선택) 포털 로그인 그대로 연결하기: `POST /api/auth/sso`
 
 > 대상: TestScope 개발 담당 · 2026-10-03 · 보낸 쪽: HWAX 포털(`docs/sso-delegation/`)
+> **10-20 확인 — TestScope v0.51.0(10-03)에 들어갔다**(`backend/app/modules/auth/gateway_token.py`). 이 요청은 끝났고, 켜는 법은 [server-setup.md](server-setup.md) B-2.
 > **지금은 아무것도 안 해도 됩니다.** HWAX 포털은 TestScope 를 **토큰 등록** 방식으로 붙입니다 — 사람마다 TestScope 에서 개인 토큰(`tsc_pat_…`)을
 > 발급해 포털에 등록하면, 포털 AI(Claude·챗)가 그 토큰으로 TestScope 를 그 사람 명의로 부릅니다. TestScope 코드 수정은 필요 없습니다.
 > 아래는 **사람이 토큰을 등록하는 수고까지 없애고 싶을 때만** 넣는 엔드포인트입니다(포털이 ste·HWAX Risk 에 쓰는 것과 같은 계약).

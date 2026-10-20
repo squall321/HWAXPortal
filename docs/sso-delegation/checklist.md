@@ -25,3 +25,16 @@
 - [ ] RA 담당 — ra-request(heax.py 되살리기 + 홈 부서) · HEAX_SSO_SECRET
 - [ ] cae00 — RA_SSO_SECRET · TESTSCOPE_BASE_URL · systems.local.yaml testscope · provision.env TESTSCOPE_MCP_URL · (선택) TESTSCOPE_SSO_SECRET · update-all
 - [ ] TestScope 서버 — MCP(:8022) 도달 · (선택, B-2) `/api/auth/sso` + HEAX_SSO_SECRET
+
+## 10-20 MatNexus · TestScope · FMEA Agent(사용자 요청)
+- [x] 조사 — MatNexus(GitHub v1.292.1) · TestScope(로컬 v0.62.0 으로 최신화): 둘 다 표준 위임 창구 · 개인 토큰 · `/api/auth/me`, MatNexus 연동 안내 P1~P4 (D-18)
+- [x] 게이트웨이 — `PER_USER_SSO_APPS` 쌍의 `<접두>_MCP_URL` → 같은 키 MCP 백엔드(시험 4 · 변이 2) (D-19)
+- [x] update-all 이름 넘기기 · 기대 목록(게이트웨이 MANAGED 이름은 빼고) / check-egress 일반 앱 목적지(시험 3 · 기대값 5 갱신 · 변이 4)
+- [x] 권한표 · 타일 — `matnexus` · `fmea`(둘 다 주소가 없으면 숨김) (D-20)
+- [x] 문서 — PLAN 5 · server-setup C(MatNexus) · B-2(TestScope 위임, v0.51.0+) · D(FMEA) · fmea-request · D-18~D-20
+- [ ] 커밋 · push(포털 · 게이트웨이) · 업데이트 이력
+- [ ] 비밀 — 포털 운영자가 서비스마다 `openssl rand -hex 32` 하나씩(MatNexus 전용 · TestScope 전용) → 그쪽 운영에 안전한 길로
+- [ ] MatNexus 운영 — 운영 판에 창구가 있는지(verify) · `HEAX_SSO_SECRET` · (선택) `HEAX_SSO_ALLOWED_IPS` · `MCP_ALLOWED_HOSTS` · 방화벽 8012
+- [ ] TestScope 운영 — v0.51.0 이상 · `HEAX_SSO_SECRET` · `MCP_ALLOWED_HOSTS` · 방화벽 8022
+- [ ] cae00 — server-setup C3~C6 · B2~B5 + B-2 · `NO_PROXY` · update-all
+- [ ] FMEA Agent — fmea-request 답 → server-setup D(타일 소개 문구도 맞춘다)

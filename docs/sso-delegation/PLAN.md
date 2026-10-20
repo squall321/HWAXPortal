@@ -60,3 +60,31 @@ TestScope: 포털 `backend/.env TESTSCOPE_BASE_URL` · `systems.local.yaml tests
 - 포털이 하위 서비스 토큰을 발급·저장·갱신하는 것(이전안 — 걷었다).
 - 포털 화면에서 RA 조직을 고르는 것(ste 방식에서는 RA 가 그 사람의 홈 부서로 정한다 — ra-request §3).
 - 공유 비밀을 서비스끼리 묶는 것(서비스마다 따로. HEAXHub `gateway_shared_secret` 재사용 금지 선례).
+
+## 5. 10-20 — MatNexus · TestScope · FMEA Agent 연결(사용자 요청 2026-10-20)
+
+> "아래 주소에 토큰 발급해서 연결하는 걸 예전에 report archive 처럼 연결할 생각인데, 뭘 수정해서 넣어야 하는지" · "위가 FMEA Agent 이고
+> MatNexus TestScope 도 연결해야 해" · 주소표(MatNexus · TestScope 는 한 서버 — 백엔드 8010 · 8020, MCP 8012 · 8022, 임베딩 11434 · DB 5434 공유).
+> 주소는 이 문서에 적지 않는다(박스 설정 파일에만). 결정 D-18 ~ D-20.
+
+| | MatNexus | TestScope | FMEA Agent |
+|---|---|---|---|
+| 무엇 | 물성 관리 시스템(시험 데이터 → 물성 → 솔버 입력) | 시험 항목 지도 | 모름 |
+| 소스(읽기만) | GitHub `MatNexus` v1.292.1 | `../TestScope` v0.62.0(10-20 최신화) | 찾지 못함 |
+| 개인 토큰 · 본인 확인 | `mnx_pat_` · `GET /api/auth/me` | `tsc_pat_` · `GET /api/auth/me` | 모름 |
+| 표준 위임 창구(`POST /api/auth/sso` · verify · revoke) | **있다**(ADR 0056) — 소비자 이름까지 `per_user_sso.matnexus` | **있다**(ADR 0010) | 모름 |
+| 위임 토큰 | 읽기 전용 · 2일 · 승인된 기존 계정만(없으면 403) | 같다 | — |
+| MCP | :8012 — 받은 Authorization 을 백엔드로 넘기기만(만능 토큰 없음), Host 허용목록 | :8022 — 같다 | 모름 |
+| 우리 쪽 | 코드 없음 → **이번에 설정만으로 붙게 했다**(아래) | 이미 됨(토큰 등록 · 위임 둘 다) | 요청서 [fmea-request.md](fmea-request.md) · 권한표 · 숨김 타일 미리 |
+
+### 5-1. 고친 것(코드)
+- 게이트웨이 `provision-config.sh` — 일반 앱(`PER_USER_SSO_APPS`)에 `<접두>_MCP_URL` 을 적으면 **같은 키의 MCP 백엔드**도 만든다. 서비스 토큰은
+  싣지 않는다(위임이 없으면 토큰 없이 불러 앱이 401). 이 파일이 만드는 백엔드 이름과 겹치면 덮지 않는다. 주소가 없는 실행은 직전 것을 보존한다.
+- 포털 update-all — `<접두>_MCP_URL` 을 provision 에 넘기고, 있는 박스에서 그 백엔드를 기대한다(빠지면 재프로비저닝).
+- 포털 check-egress — 일반 앱의 MCP · 위임 주소도 내부 목적지로 본다(NO_PROXY 에 없으면 update-all §6 경고).
+- 권한표 `plat:matnexus`(게이트웨이 `matnexus`) · 타일 `matnexus`(주소는 `systems.local.yaml`, 없으면 숨김). FMEA 도 같은 꼴로
+  `plat:fmea` · 숨김 타일 `fmea` 를 미리 넣었다(표에 없는 백엔드는 전체 공개 — 그쪽이 표준 위임이면 박스 설정만 남는다).
+- MatNexus 쪽이 10-03 에 이미 써 둔 연동 안내(그 리포 `docs/연동-HWAX-포털.md` 의 P1~P4)와 맞춘 결과다 — P1 권한표 · P2 MCP 주소 ·
+  P3 위임(전용 분기 대신 일반 앱 목록 `PER_USER_SSO_APPS` 로, 비밀을 비우면 지우는 D-17 규칙도 같이 탄다) · P4 타일.
+
+### 5-2. 박스에서 넣을 값 — [server-setup.md](server-setup.md) C(MatNexus) · B-2(TestScope 위임) · D(FMEA)
