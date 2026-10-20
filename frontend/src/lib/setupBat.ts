@@ -41,6 +41,58 @@ export function makeSnippets(origin: string): Snippets {
   const ALLOW_HTTP = IS_PLAINTEXT ? ' --allow-http' : '';
   const ALLOW_HTTP_ARR = IS_PLAINTEXT ? "'--allow-http'," : '';
   const ALLOW_HTTP_TOML = IS_PLAINTEXT ? ', "--allow-http"' : '';
+  // hwax env 의 NO_PROXY 기본값(10-20 요청 3) — 포털 호스트(포트 없이) · localhost · 127.0.0.1. 사내 프록시가 잡힌 PC 에서
+  // mcp-remote 가 포털까지 프록시로 가려다 막혔다(요청자 실측: 이 값과 회사 인증서를 넣자 붙었다).
+  const HOSTNAME = (() => {
+    try {
+      return new URL(ORIGIN).hostname;
+    } catch {
+      return HOSTONLY.split(':')[0];
+    }
+  })();
+  const NOPROXY = Array.from(new Set([HOSTNAME, 'localhost', '127.0.0.1'])).join(',');
+
+  // 설정 JSON 을 대소문자를 구분해 읽고 쓴다(10-20 요청 2, docs/token-bat TB-D2). 5.1 의 ConvertFrom-Json 은 NO_PROXY 와 no_proxy 처럼
+  // 대소문자만 다른 키를 중복으로 보고 멈춘다. JavaScriptSerializer 는 .NET Framework 라 5.1 에 늘 있다 — 대신 한 줄 JSON 으로 쓴다.
+  const PS_JSON =
+    'Add-Type -AssemblyName System.Web.Extensions;$js=New-Object System.Web.Script.Serialization.JavaScriptSerializer;$js.MaxJsonLength=[int]::MaxValue;';
+  const PS_DICT = "(New-Object 'System.Collections.Generic.Dictionary[string,object]')";
+
+  /** `$m`(mcpServers 사전)의 hwax 항목을 고친다 — 이미 있으면 그것을 바탕으로(10-20 요청 4, TB-D3).
+   * 토큰(AUTH)과 우리가 정하는 칸(명령 · 주소)만 바꾸고 손으로 넣은 env 는 남긴다. NO_PROXY · NODE_EXTRA_CA_CERTS 를 이미 적어 뒀으면 그 값을
+   * 쓰되, 예전 배치가 넣은 포털 인증서 경로만 회사 인증서 묶음으로 바꾼다. 토큰 · 경로는 환경변수로만 받는다(HWAX_AUTH · HWAX_CERT ·
+   * HWAX_NOPROXY) — 명령줄에 실으면 프로세스 목록에 남는다. withType 은 Claude Code 항목(`type: stdio`)이고 Desktop 항목에는 없다. */
+  function psMergeHwax(pem: boolean, withType: boolean): string {
+    const copy = (src: string, dst: string) => `foreach($k in @(${src}.Keys)){${dst}[$k]=${src}[$k]};`;
+    const head = [
+      "$o=$null;if($m.ContainsKey('hwax')){$o=$m['hwax']};",
+      `$e=${PS_DICT};if($o -is [System.Collections.IDictionary]){${copy('$o', '$e')}};`,
+    ];
+    if (pem) {
+      return [
+        ...head,
+        withType ? "$e['type']='stdio';" : "if($e.ContainsKey('type')){[void]$e.Remove('type')};",
+        "$e['command']='npx';",
+        // [object[]] — 배열을 PowerShell 이 감싼 채로 넣으면 JavaScriptSerializer 가 배열이 아니라 객체로 쓴다. 맨 .NET 배열로 못 박는다.
+        `$e['args']=[object[]]@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}');`,
+        "foreach($k in @('url','headers')){if($e.ContainsKey($k)){[void]$e.Remove($k)}};",
+        `$v=${PS_DICT};if($e.ContainsKey('env') -and ($e['env'] -is [System.Collections.IDictionary])){${copy("$e['env']", '$v')}};`,
+        "$v['AUTH']=$env:HWAX_AUTH;",
+        "$ca=@($v.Keys | Where-Object {$_ -ieq 'NODE_EXTRA_CA_CERTS'});",
+        "if($ca.Count -eq 0){$v['NODE_EXTRA_CA_CERTS']=$env:HWAX_CERT}else{foreach($k in $ca){if([string]$v[$k] -like '*\\.hwax\\hwax-portal.crt'){$v[$k]=$env:HWAX_CERT}}};",
+        "if(@($v.Keys | Where-Object {$_ -ieq 'NO_PROXY'}).Count -eq 0){$v['NO_PROXY']=$env:HWAX_NOPROXY};",
+        "$e['env']=$v;$m['hwax']=$e;",
+      ].join('');
+    }
+    return [
+      ...head,
+      "$e['type']='http';",
+      `$e['url']='${MCP_URL}';`,
+      "foreach($k in @('command','args','env')){if($e.ContainsKey($k)){[void]$e.Remove($k)}};",
+      `$h=${PS_DICT};if($e.ContainsKey('headers') -and ($e['headers'] -is [System.Collections.IDictionary])){${copy("$e['headers']", '$h')}};`,
+      "$h['Authorization']=$env:HWAX_AUTH;$e['headers']=$h;$m['hwax']=$e;",
+    ].join('');
+  }
 
   function claudeCodeSnippet(token: string): string {
     return `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`;
@@ -56,6 +108,7 @@ export function makeSnippets(origin: string): Snippets {
       `claude mcp add -s user hwax ^`,
       `  -e AUTH="Bearer ${token}" ^`,
       `  -e NODE_EXTRA_CA_CERTS=${certPath} ^`,
+      `  -e NO_PROXY=${NOPROXY} ^`,
       `  -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:\${AUTH}"`,
     ].join('\n');
   }
@@ -95,6 +148,8 @@ export function makeSnippets(origin: string): Snippets {
   function buildSetupBat(token: string, name: string, pem: string | null): string {
     const certDir = '%USERPROFILE%\\.hwax';
     const certFile = `${certDir}\\hwax-portal.crt`;
+    // NODE_EXTRA_CA_CERTS 가 가리키는 파일 — 포털 인증서 + 이 PC 의 윈도우 신뢰 저장소(회사 루트 인증서 포함). 파일 하나만 받으므로 묶는다.
+    const caFile = `${certDir}\\hwax-ca-bundle.pem`;
     // 등록 뒤 "이 토큰으로 갱신됐는지" 를 되읽어 확인할 표식. 재발급했는데 옛 토큰이 그대로
     // 남는 것이 이 스크립트의 가장 조용한 실패라, 존재 확인만으로는 부족하다.
     const tokenTail = token.slice(-8);
@@ -243,8 +298,58 @@ export function makeSnippets(origin: string): Snippets {
       for (const line of pem.split('\n')) {
         if (line.trim()) L.push(`>>"${certFile}" echo ${line.trim()}`);
       }
-      L.push(`echo      ${certFile}`, '');
+      // 회사 인증서(10-20 요청 3, TB-D1) — 사람마다 다른 경로를 묻지 않고 윈도우 신뢰 저장소에서 꺼낸다(Node 의 --use-system-ca 와 같은 효과).
+      //   지문으로 겹침을 빼고 64자 줄로 PEM 을 쓴다. 못 읽으면 포털 인증서만 담아 종전과 같게 간다.
+      const caPs = [
+        "$ErrorActionPreference='Stop';",
+        'try{',
+        // Cert: 드라이브는 이 모듈이 낸다 — -NoProfile 창에서 아직 안 올라왔을 수 있어 먼저 부른다(실패하면 아래 catch → 포털 인증서만).
+        'Import-Module Microsoft.PowerShell.Security;',
+        '$sb=New-Object System.Text.StringBuilder;',
+        '[void]$sb.Append([System.IO.File]::ReadAllText($env:HWAX_PORTAL_CRT));[void]$sb.Append([char]10);',
+        '$seen=@{};',
+        "foreach($st in @('Cert:\\LocalMachine\\Root','Cert:\\CurrentUser\\Root')){foreach($x in @(Get-ChildItem -Path $st -EA SilentlyContinue)){",
+        'if($seen.ContainsKey($x.Thumbprint)){continue};$seen[$x.Thumbprint]=1;',
+        "$b=[Convert]::ToBase64String($x.RawData);[void]$sb.Append('-----BEGIN CERTIFICATE-----'+[char]10);",
+        'for($i=0;$i -lt $b.Length;$i+=64){[void]$sb.Append($b.Substring($i,[Math]::Min(64,$b.Length-$i))+[char]10)};',
+        "[void]$sb.Append('-----END CERTIFICATE-----'+[char]10)}};",
+        'if($seen.Count -eq 0){exit 1};',
+        '[System.IO.File]::WriteAllText($env:HWAX_CA_FILE,$sb.ToString(),(New-Object System.Text.UTF8Encoding($false)));',
+        "Write-Host ('     윈도우 신뢰 인증서 '+$seen.Count+'개를 포털 인증서와 묶었습니다');exit 0",
+        '}catch{exit 1}',
+      ].join(' ');
+      L.push(
+        `echo      ${certFile}`,
+        `set "HWAX_PORTAL_CRT=${certFile}"`,
+        `set "HWAX_CA_FILE=${caFile}"`,
+        `powershell -NoProfile -ExecutionPolicy Bypass -Command "${caPs}"`,
+        'if errorlevel 1 goto :ca_portal_only',
+        `echo      ${caFile}`,
+        'goto :ca_done',
+        ':ca_portal_only',
+        `copy /y "${certFile}" "${caFile}" >nul`,
+        'echo      [!] 윈도우 인증서 저장소를 읽지 못해 포털 인증서만 씁니다 - 사내 프록시 뒤라면 npx 가 실패할 수 있습니다',
+        ':ca_done',
+        '',
+      );
     }
+
+    // ── 실행 중인 Claude Desktop 이면 아무것도 바꾸지 않고 멈춘다(10-20 요청 5) ─────────
+    // 창만 닫으면 트레이에 남고, 종료될 때 자기 메모리의 옛 설정으로 파일을 덮어써 등록이 되돌아간다. Claude Code 사용자 설정도 같은 앱이 쓴다.
+    // 경로로 Desktop 만 고른다 — 이름이 같은 Claude Code CLI(claude.exe)는 %USERPROFILE%\.local 아래라 걸리지 않는다. 남의 · 권한 높은
+    // 프로세스는 경로가 비어 걸리지 않는다(그때는 아래 '켜져 있으면 끄고 다시' 안내가 남는다).
+    L.push(
+      `powershell -NoProfile -Command "$p=@(Get-Process -Name claude -EA SilentlyContinue | Where-Object {$_.Path -and ($_.Path -like '*\\AnthropicClaude\\*' -or $_.Path -like '*\\WindowsApps\\*')});if($p.Count -gt 0){exit 1};exit 0"`,
+      'if not errorlevel 1 goto :desk_closed',
+      'echo  [!] Claude Desktop 이 실행 중입니다 - 아무 설정도 바꾸지 않고 멈춥니다.',
+      'echo      창만 닫으면 트레이^(작업 표시줄 오른쪽 아래^)에 남아 있다가, 종료할 때 예전 설정으로 다시 덮어씁니다.',
+      'echo      트레이의 Claude 아이콘을 오른쪽 클릭해 종료^(Quit^)까지 한 뒤 이 파일을 다시 실행하세요.',
+      'echo.',
+      'pause',
+      'exit /b 1',
+      ':desk_closed',
+      '',
+    );
 
     // ⚠ 아래는 일부러 괄호 블록( if ... ( ... ) )을 쓰지 않고 goto 로 흐름을 만든다.
     // 괄호 안에 PowerShell 한 줄처럼 (, ), | 가 섞인 긴 명령을 넣으면 cmd 의 괄호 매칭이
@@ -262,10 +367,7 @@ export function makeSnippets(origin: string): Snippets {
     // Claude Code 의 homedir 는 USERPROFILE 을 먼저 본다 — 이 창에서 둘이 다르면 그 사실을 찍는다(앱은 보통 프로필 폴더 쪽이다).
     // 이 판정을 cmd 에서 하지 않고 병합하는 PowerShell 안에서 한다 — 값을 cmd 로 되돌려 받으려면 `for /f … in (…)` 나
     // 임시 파일이 필요한데, 둘 다 Desktop 쪽에서 일부러 뺀 함정이다(괄호 파싱·한글 사용자명 코드페이지, bba1bd8).
-    const ccjEntry = pem
-      ? `$e=[pscustomobject]@{type='stdio';command='npx';args=@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}');env=[pscustomobject]@{AUTH=$env:HWAX_AUTH;NODE_EXTRA_CA_CERTS=$env:HWAX_CERT}};`
-      : `$e=[pscustomobject]@{type='http';url='${MCP_URL}';headers=[pscustomobject]@{Authorization=$env:HWAX_AUTH}};`;
-    const ccjAuth = pem ? '$v.mcpServers.hwax.env.AUTH' : '$v.mcpServers.hwax.headers.Authorization';
+    const ccjAuth = pem ? '$r.mcpServers.hwax.env.AUTH' : '$r.mcpServers.hwax.headers.Authorization';
     // Desktop 병합과 같은 방식(경로·토큰은 환경변수, 조립은 PowerShell, Stop + exit 1)에 넷을 더한다.
     // 이 파일은 Claude Code 의 큰 전역 상태라 깨지면 잃는 것이 많다.
     //   ① 읽기를 UTF-8 로 못 박는다 — 5.1 의 Get-Content 는 BOM 없는 파일을 ANSI 로 읽어 한글 경로 키를 깨뜨린 채 다시 쓴다.
@@ -291,14 +393,16 @@ export function makeSnippets(origin: string): Snippets {
       "else{$w='Claude Code 를 쓴 흔적이 없어 새로 만듭니다 - 처음 켤 때 이 파일을 읽습니다.'}};",
       "Write-Host ('          설정 파일: '+$c);Write-Host ('          '+$w);",
       "$t=$c+'.hwax-tmp';$u=New-Object System.Text.UTF8Encoding($false);$s='read';",
-      ccjEntry,
-      "if(Test-Path -LiteralPath $c){$s='backup';$b=$c+'.hwax-bak';Copy-Item -LiteralPath $c -Destination $b -Force;Write-Host ('          백업: '+$b);$s='read';$j=[System.IO.File]::ReadAllText($c,$u) | ConvertFrom-Json}else{$j=[pscustomobject]@{}};",
-      'if(-not $j.mcpServers){$j | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) -Force};',
-      '$j.mcpServers | Add-Member -NotePropertyName hwax -NotePropertyValue $e -Force;',
-      "$n=@($j.PSObject.Properties).Count;$s='write';",
-      '[System.IO.File]::WriteAllText($t, ($j | ConvertTo-Json -Depth 100), $u);',
-      "$s='verify';$v=[System.IO.File]::ReadAllText($t,$u) | ConvertFrom-Json;",
-      `if(@($v.PSObject.Properties).Count -ne $n -or ${ccjAuth} -cne $env:HWAX_AUTH){throw 'mismatch'};`,
+      PS_JSON,
+      "$j=$null;if(Test-Path -LiteralPath $c){$s='backup';$b=$c+'.hwax-bak';Copy-Item -LiteralPath $c -Destination $b -Force;Write-Host ('          백업: '+$b);$s='read';$x=[System.IO.File]::ReadAllText($c,$u);if($x.Trim()){$j=$js.DeserializeObject($x)}};",
+      `if(-not ($j -is [System.Collections.IDictionary])){$j=${PS_DICT}};`,
+      `if(-not $j.ContainsKey('mcpServers') -or -not ($j['mcpServers'] -is [System.Collections.IDictionary])){$j['mcpServers']=${PS_DICT}};`,
+      "$m=$j['mcpServers'];",
+      psMergeHwax(!!pem, true),
+      "$n=$j.Count;$s='write';",
+      '[System.IO.File]::WriteAllText($t, $js.Serialize($j), $u);',
+      "$s='verify';$r=$js.DeserializeObject([System.IO.File]::ReadAllText($t,$u));",
+      `if($r.Count -ne $n -or ${ccjAuth} -cne $env:HWAX_AUTH){throw 'mismatch'};`,
       // 바꿔 넣은 뒤의 임시 파일 정리는 실패로 치지 않는다 — 이미 바뀌었는데 '실패' 라고 하면 거짓이다.
       "$s='replace';[System.IO.File]::Copy($t,$c,$true);Remove-Item -LiteralPath $t -Force -EA SilentlyContinue;",
       // $t 가 아직 없으면(자리 판정에서 실패) 지우지 않는다 — null 로 Remove-Item 을 부르면 catch 안에서 또 던져 아래 안내가 안 나간다.
@@ -353,7 +457,7 @@ export function makeSnippets(origin: string): Snippets {
         '"%%HWAX_CLAUDE%%" mcp remove hwax -s local >nul 2>nul',
         '"%%HWAX_CLAUDE%%" mcp remove hwax -s user >nul 2>nul',
         pem
-          ? `"%%HWAX_CLAUDE%%" mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
+          ? `"%%HWAX_CLAUDE%%" mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${caFile} -e NO_PROXY=${NOPROXY} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"`
           : `"%%HWAX_CLAUDE%%" mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"`,
         'if errorlevel 1 exit /b 2',
         '"%%HWAX_CLAUDE%%" mcp get hwax >nul 2>nul',
@@ -389,7 +493,7 @@ export function makeSnippets(origin: string): Snippets {
       // 어느 파일에 왜 쓰는지(설정 파일·판단·백업)는 PowerShell 이 고른 뒤 찍는다 — 위 ccjPs 주석.
       'echo          Claude Desktop 안에서 쓰는 Claude Code 는 Desktop 설정이 아니라 아래 파일을 읽습니다.',
       `set "HWAX_AUTH=Bearer ${token}"`,
-      ...(pem ? [`set "HWAX_CERT=${certFile}"`] : []),
+      ...(pem ? [`set "HWAX_CERT=${caFile}"`, `set "HWAX_NOPROXY=${NOPROXY}"`] : []),
       `powershell -NoProfile -ExecutionPolicy Bypass -Command "${ccjPs}"`,
       'if errorlevel 1 goto :ccj_fail',
       'set HWAX_DONE=1',
@@ -420,22 +524,33 @@ export function makeSnippets(origin: string): Snippets {
     // ⚠ powershell.exe 는 cmdlet 이 에러를 뱉어도 **종료코드 0** 으로 끝난다. errorlevel 만 보면
     //    실패가 성공으로 보인다(위 사고에서 "등록 완료" 가 찍혔다). ErrorActionPreference=Stop +
     //    try/catch + exit 1 로 실패를 errorlevel 에 실어 보낸다.
-    const psEntry = pem
-      ? `$e=[pscustomobject]@{command='npx';args=@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}');env=[pscustomobject]@{AUTH=$env:HWAX_AUTH;NODE_EXTRA_CA_CERTS=$env:HWAX_CERT}};`
-      : `$e=[pscustomobject]@{type='http';url='${MCP_URL}';headers=[pscustomobject]@{Authorization=$env:HWAX_AUTH}};`;
+    const deskAuth = pem ? '$r.mcpServers.hwax.env.AUTH' : '$r.mcpServers.hwax.headers.Authorization';
     // PowerShell 조각 안에서는 큰따옴표를 쓰지 않는다 — cmd 의 "..." 안에 들어가기 때문.
+    // 자리 — cmd 가 고른 설치판 자리(HWAX_CFG) + Store 판 자리 `%LOCALAPPDATA%\Packages\Claude*\LocalCache\Roaming\Claude`(10-20 요청 1).
+    //   Store 판은 설치판 자리를 읽지 않아 종전엔 '완료' 인데 hwax 가 안 보였다. 설정 폴더가 있는 곳마다 반영하고 어디를 고쳤는지 찍는다.
+    // 파일마다 Claude Code 쪽과 같은 순서다 — 백업(.bak) → 대소문자 구분으로 읽기 → 병합 → 임시 파일에 쓰고 되읽어 확인 → 바꿔 넣기.
+    //   예외 메시지는 찍지 않는다(파싱 오류에 파일 내용 · 토큰이 붙을 수 있다) — 단계와 종류만.
     const ps = [
       "$ErrorActionPreference='Stop';",
       'try{',
-      '$c=$env:HWAX_CFG;',
-      psEntry,
-      "if(Test-Path $c){Copy-Item $c ($c+'.bak') -Force; $j=Get-Content $c -Raw | ConvertFrom-Json}else{$j=[pscustomobject]@{}};",
-      'if(-not $j.mcpServers){$j | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) -Force};',
-      '$j.mcpServers | Add-Member -NotePropertyName hwax -NotePropertyValue $e -Force;',
-      '[System.IO.File]::WriteAllText($c, ($j | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)));',
-      // 쓴 뒤 되읽어 확인한다. 파일이 깨졌으면 여기서 걸린다.
-      "if(-not ((Get-Content $c -Raw | ConvertFrom-Json).mcpServers.hwax)){throw 'config verify failed'};",
-      'exit 0}catch{[Console]::Error.WriteLine($_.Exception.Message);exit 1}',
+      PS_JSON,
+      '$u=New-Object System.Text.UTF8Encoding($false);',
+      "$cs=@($env:HWAX_CFG);$pk=$null;if($env:LOCALAPPDATA){$pk=[System.IO.Path]::Combine($env:LOCALAPPDATA,'Packages')};",
+      "if($pk -and (Test-Path -LiteralPath $pk)){foreach($p in @(Get-ChildItem -LiteralPath $pk -Directory -Filter 'Claude*' -EA SilentlyContinue)){$d=[System.IO.Path]::Combine($p.FullName,'LocalCache','Roaming','Claude');if(Test-Path -LiteralPath $d){$cs+=[System.IO.Path]::Combine($d,'claude_desktop_config.json')}}};",
+      '$bad=0;',
+      "foreach($c in $cs){$s='read';$t=$null;try{",
+      "Write-Host ('          '+$c);",
+      "$j=$null;if(Test-Path -LiteralPath $c){$s='backup';Copy-Item -LiteralPath $c -Destination ($c+'.bak') -Force;$s='read';$x=[System.IO.File]::ReadAllText($c,$u);if($x.Trim()){$j=$js.DeserializeObject($x)}};",
+      `if(-not ($j -is [System.Collections.IDictionary])){$j=${PS_DICT}};`,
+      `if(-not $j.ContainsKey('mcpServers') -or -not ($j['mcpServers'] -is [System.Collections.IDictionary])){$j['mcpServers']=${PS_DICT}};`,
+      "$m=$j['mcpServers'];",
+      psMergeHwax(!!pem, false),
+      "$n=$j.Count;$t=$c+'.hwax-tmp';$s='write';[System.IO.File]::WriteAllText($t,$js.Serialize($j),$u);",
+      `$s='verify';$r=$js.DeserializeObject([System.IO.File]::ReadAllText($t,$u));if($r.Count -ne $n -or ${deskAuth} -cne $env:HWAX_AUTH){throw 'mismatch'};`,
+      "$s='replace';[System.IO.File]::Copy($t,$c,$true);Remove-Item -LiteralPath $t -Force -EA SilentlyContinue;Write-Host '            등록 완료'",
+      "}catch{$bad=1;if($t){Remove-Item -LiteralPath $t -Force -EA SilentlyContinue};Write-Host ('            [X] '+$s+' failed: '+$_.Exception.GetType().Name)}};",
+      'if($bad){exit 1};exit 0',
+      "}catch{Write-Host ('     failed: '+$_.Exception.GetType().Name);exit 1}",
     ].join(' ');
     L.push(
       ':desktop',
@@ -451,7 +566,7 @@ export function makeSnippets(origin: string): Snippets {
       'set "HWAX_DESKDIR=%HWAX_ROAMING%\\Claude"',
       'set "HWAX_CFG=%HWAX_DESKDIR%\\claude_desktop_config.json"',
       // 어디를 봤는지 반드시 찍는다 — 종전엔 '폴더 없음' 만 말해 어느 경로를 본 것인지 알 수 없었다.
-      'echo      설정 파일: %HWAX_CFG%',
+      'echo      설치판 설정 자리: %HWAX_CFG%',
       'if exist "%HWAX_DESKDIR%\\" goto :desktop_write',
       // ⚠ 여기가 사용자가 만난 '설정 폴더 없음 - 건너뜀' 자리다. 그 폴더는 Claude Desktop 을 **한 번
       //   실행했을 때** 만들어진다 — 설치만 해 둔 사람(또는 방금 설치한 사람)은 종전 판에서 영영 등록이
@@ -473,7 +588,8 @@ export function makeSnippets(origin: string): Snippets {
       'echo      설정 폴더가 없어 새로 만들었습니다 ^(Desktop 을 아직 한 번도 실행하지 않은 경우입니다^)',
       ':desktop_write',
       `set "HWAX_AUTH=Bearer ${token}"`,
-      ...(pem ? [`set "HWAX_CERT=${certFile}"`] : []),
+      ...(pem ? [`set "HWAX_CERT=${caFile}"`, `set "HWAX_NOPROXY=${NOPROXY}"`] : []),
+      'echo      고치는 파일^(Store 판 자리가 있으면 그것도^):',
       `powershell -NoProfile -ExecutionPolicy Bypass -Command "${ps}"`,
       'if errorlevel 1 goto :desktop_fail',
       'set HWAX_DONE=1',
@@ -497,7 +613,7 @@ export function makeSnippets(origin: string): Snippets {
     // ⚠ `gemini mcp add` 는 --header 를 **자기 옵션으로 먹는다**(실측: args 에서 통째로 사라져
     // 인증 없이 등록됨 → 401). npx 뒤에 `--` 를 넣어야 나머지가 서버 인자로 넘어간다(실측 확인).
     const gemEnv = pem
-      ? `-e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${certFile}`
+      ? `-e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${caFile}`
       : `-e AUTH="Bearer ${token}"`;
     L.push(
       ':gemini',
@@ -540,7 +656,7 @@ export function makeSnippets(origin: string): Snippets {
     // gemini 와 같은 이유로 `--` 뒤에 서버 명령을 둬야 --header 가 codex 옵션으로 먹히지 않는다.
     // 실패하면 붙여넣을 TOML 조각을 남긴다(이 환경에 codex 가 없어 실행 검증은 못 했다).
     const codexEnv = pem
-      ? `--env AUTH="Bearer ${token}" --env NODE_EXTRA_CA_CERTS=${certFile}`
+      ? `--env AUTH="Bearer ${token}" --env NODE_EXTRA_CA_CERTS=${caFile}`
       : `--env AUTH="Bearer ${token}"`;
     const codexToml = [
       '[mcp_servers.hwax]',
@@ -552,7 +668,7 @@ export function makeSnippets(origin: string): Snippets {
       // TOML 리터럴 문자열(홑따옴표)은 이스케이프를 처리하지 않으므로 경로를 그대로 쓴다.
       // 큰따옴표 + 백슬래시 이중화는 Desktop JSON 과 똑같은 함정에 빠진다 — 배치가 echo 할 때
       // %USERPROFILE% 이 확장되면서 홑/겹 백슬래시가 섞여 \U 가 되고 TOML 파싱이 깨진다.
-      ...(pem ? [`NODE_EXTRA_CA_CERTS = '${certFile}'`] : []),
+      ...(pem ? [`NODE_EXTRA_CA_CERTS = '${caFile}'`] : []),
     ];
     L.push(
       ':codex',
@@ -630,7 +746,7 @@ export function makeSnippets(origin: string): Snippets {
     return {
       command: 'npx',
       args: ['-y', 'mcp-remote', MCP_URL, ...(IS_PLAINTEXT ? ['--allow-http'] : []), '--header', 'Authorization:${AUTH}'],
-      env: { AUTH: `Bearer ${token}`, NODE_EXTRA_CA_CERTS: certPath },
+      env: { AUTH: `Bearer ${token}`, NODE_EXTRA_CA_CERTS: certPath, NO_PROXY: NOPROXY },
     };
   }
 

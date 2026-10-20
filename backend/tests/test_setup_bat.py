@@ -148,7 +148,7 @@ def test_no_cli_registers_claude_code_in_the_user_config(gen):
         bat = gen(pem=pem)
         assert "이대로 정상" not in bat and "이 단계만 건너뜁니다" not in bat
         blk = _no_cli_block(bat)
-        cert = ['set "HWAX_CERT=%USERPROFILE%\\.hwax\\hwax-portal.crt"'] if pem else []
+        cert = ['set "HWAX_CERT=%USERPROFILE%\\.hwax\\hwax-ca-bundle.pem"', 'set "HWAX_NOPROXY=hwax.example.net,localhost,127.0.0.1"'] if pem else []
         order = [f'set "HWAX_AUTH=Bearer {TOKEN}"', *cert, _ccj_ps(blk),
                  "if errorlevel 1 goto :ccj_fail", "set HWAX_DONE=1", "goto :desktop", ":ccj_fail"]
         idx = [blk.index(s) for s in order]
@@ -205,20 +205,23 @@ def test_no_cli_merge_backs_up_writes_a_temp_reparses_then_swaps(gen):
     for pem in (True, False):
         ps = _ccj_ps(_no_cli_block(gen(pem=pem)))
         steps = ["if(Test-Path -LiteralPath $c){$s='backup';$b=$c+'.hwax-bak';Copy-Item -LiteralPath $c -Destination $b -Force;",
-                 "$j=[System.IO.File]::ReadAllText($c,$u) | ConvertFrom-Json}else{$j=[pscustomobject]@{}};",
-                 "$j.mcpServers | Add-Member -NotePropertyName hwax -NotePropertyValue $e -Force;",
-                 "$n=@($j.PSObject.Properties).Count;",
-                 "[System.IO.File]::WriteAllText($t, ($j | ConvertTo-Json -Depth 100), $u);",
-                 "$v=[System.IO.File]::ReadAllText($t,$u) | ConvertFrom-Json;",
+                 "$x=[System.IO.File]::ReadAllText($c,$u);if($x.Trim()){$j=$js.DeserializeObject($x)}};",
+                 "$m=$j['mcpServers'];",
+                 "$m['hwax']=$e;",
+                 "$n=$j.Count;",
+                 "[System.IO.File]::WriteAllText($t, $js.Serialize($j), $u);",
+                 "$r=$js.DeserializeObject([System.IO.File]::ReadAllText($t,$u));",
                  "throw 'mismatch'",
                  "[System.IO.File]::Copy($t,$c,$true);"]
         idx = [ps.index(s) for s in steps]
         assert idx == sorted(idx), steps
         assert "$t=$c+'.hwax-tmp'" in ps
         assert "WriteAllText($c" not in ps, "원본에 직접 쓰지 않는다 — 쓰다 깨지면 전역 상태를 잃는다"
-        assert re.findall(r"ConvertTo-Json(?: -Depth (\d+))?", ps) == ["100"], "기본 깊이(2)면 projects 아래가 문자열로 잘린다"
+        # 5.1 의 ConvertFrom-Json 은 대소문자만 다른 키(projects 의 C:/… 와 c:/…)에서 멈춘다 — 읽기 · 쓰기 모두 대소문자를 구분하는 것으로
+        assert "ConvertFrom-Json" not in ps and "ConvertTo-Json" not in ps
+        assert "$js.MaxJsonLength=[int]::MaxValue;" in ps, "기본 2MB — 큰 Claude Code 설정이 잘린다"
         # 다른 키는 그대로 — hwax 만 얹고, 되읽은 최상위 키 수가 같은지 본다
-        assert "@($v.PSObject.Properties).Count -ne $n" in ps
+        assert "$r.Count -ne $n" in ps
         # powershell 은 cmdlet 이 실패해도 0 으로 끝난다 — Stop + catch 의 exit 1 로 errorlevel 에 싣는다
         body = ps.split('-Command "', 1)[1]
         assert body.startswith("$ErrorActionPreference='Stop';") and body.endswith('exit 1}"')
@@ -263,25 +266,28 @@ def test_no_cli_entry_has_the_shape_claude_mcp_add_writes(gen):
     url = "https://hwax.example.net/mcp-gw/mcp"
     bat = gen(pem=False)
     ps = _ccj_ps(_no_cli_block(bat))
-    assert ("$e=[pscustomobject]@{type='http';url='" + url
-            + "';headers=[pscustomobject]@{Authorization=$env:HWAX_AUTH}};") in ps
+    assert "$e['type']='http';" + f"$e['url']='{url}';" in ps
+    assert "$h['Authorization']=$env:HWAX_AUTH;$e['headers']=$h;" in ps
+    assert "foreach($k in @('command','args','env')){if($e.ContainsKey($k)){[void]$e.Remove($k)}};" in ps, "stdio 였던 항목의 칸은 걷는다"
     assert f'--transport http hwax {url} --header "Authorization: Bearer {TOKEN}"' in _cli_add_line(bat)
-    assert "$v.mcpServers.hwax.headers.Authorization -cne $env:HWAX_AUTH" in ps, "되읽어 이번 토큰인지 본다"
+    assert "$r.mcpServers.hwax.headers.Authorization -cne $env:HWAX_AUTH" in ps, "되읽어 이번 토큰인지 본다"
     for origin in ("https://hwax.example.net", "http://hwax.example.net"):
         bat = gen(origin=origin, pem=True)
         blk = _no_cli_block(bat)
         ps = _ccj_ps(blk)
-        m = re.search(r"\$e=\[pscustomobject\]@\{type='stdio';command='([^']*)';args=@\(([^)]*)\);"
-                      r"env=\[pscustomobject\]@\{AUTH=\$env:HWAX_AUTH;NODE_EXTRA_CA_CERTS=\$env:HWAX_CERT\}\};", ps)
+        m = re.search(r"\$e\['type'\]='stdio';\$e\['command'\]='([^']*)';.*?\$e\['args'\]=\[object\[\]\]@\(([^)]*)\);", ps)
         assert m, ps
+        assert "$v['AUTH']=$env:HWAX_AUTH;" in ps and "$v['NODE_EXTRA_CA_CERTS']=$env:HWAX_CERT" in ps and "$v['NO_PROXY']=$env:HWAX_NOPROXY" in ps
         cli = _cli_add_line(bat)
         assert [m.group(1)] + re.findall(r"'([^']*)'", m.group(2)) == shlex.split(cli.split(" -- ", 1)[1])
         assert ("'--allow-http'" in m.group(2)) == origin.startswith("http://"), "mcp-remote 는 http 를 즉시 거부한다"
         # env 값도 CLI 의 -e 와 같은 것 — 인증서 경로는 cmd 가 set 할 때 확장해 환경변수로 넘긴다
         assert f'-e AUTH="Bearer {TOKEN}"' in cli
         cert = re.search(r"-e NODE_EXTRA_CA_CERTS=(\S+)", cli).group(1)
-        assert f'set "HWAX_CERT={cert}"' in blk
-        assert "$v.mcpServers.hwax.env.AUTH -cne $env:HWAX_AUTH" in ps
+        assert f'set "HWAX_CERT={cert}"' in blk and cert.endswith("hwax-ca-bundle.pem"), "CLI 와 직접 쓰기가 같은 묶음을 가리킨다"
+        noproxy = re.search(r"-e NO_PROXY=(\S+)", cli).group(1)
+        assert f'set "HWAX_NOPROXY={noproxy}"' in blk
+        assert "$r.mcpServers.hwax.env.AUTH -cne $env:HWAX_AUTH" in ps
 
 
 def test_no_cli_tells_the_user_to_quit_running_claude_apps_and_what_was_kept(gen):
@@ -315,7 +321,7 @@ def test_desktop_validates_the_roaming_path_and_has_a_fallback(gen):
     assert 'set "HWAX_ROAMING=%APPDATA%"' in blk
     assert 'if not defined HWAX_ROAMING set "HWAX_ROAMING=%USERPROFILE%\\AppData\\Roaming"' in blk, "비었을 때"
     assert 'if not exist "%HWAX_ROAMING%\\" set "HWAX_ROAMING=%USERPROFILE%\\AppData\\Roaming"' in blk, "닿지 않을 때"
-    assert "echo      설정 파일: %HWAX_CFG%" in blk, "어느 경로를 봤는지 찍어야 사람이 원인을 찾을 수 있다"
+    assert "echo      설치판 설정 자리: %HWAX_CFG%" in blk, "어느 경로를 봤는지 찍어야 사람이 원인을 찾을 수 있다"
     # cmd 파싱 함정을 새로 들이지 않는다 — `for /f ... in (`cmd`)` 안의 괄호는 `in (` 를 먼저 닫는다.
     assert "usebackq" not in blk and "for /f" not in blk, "실제 Windows 에서 재보지 않은 구문을 쓰지 않는다"
 
@@ -368,7 +374,7 @@ def test_pasted_desktop_snippet_does_not_hide_an_unexpanded_variable(gen):
     snip = gen(what="desktop", cert=r"C:\Users\<사용자>\.hwax\hwax-portal.crt")
     assert "%USERPROFILE%" not in snip and "<사용자>" in snip
     # 배치 쪽은 반대로 cmd 가 확장하는 경로를 그대로 쓴다(그쪽은 풀린다)
-    assert 'set "HWAX_CERT=%USERPROFILE%\\.hwax\\hwax-portal.crt"' in gen()
+    assert 'set "HWAX_CERT=%USERPROFILE%\\.hwax\\hwax-ca-bundle.pem"' in gen()
 
 
 # ── 생성기가 페이지에서 떼어져 있는지(이 시험이 가능한 조건) ──────────────────────────
@@ -377,3 +383,105 @@ def test_the_generator_is_free_of_browser_globals():
     assert "window." not in src and "document." not in src, "origin 은 인자로 받는다 — 그래서 시험할 수 있다"
     page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
     assert "from '../lib/setupBat'" in page and "function buildSetupBat" not in page
+
+
+# ── 10-20 개선 요청 다섯(염종섭 님 — docs/token-bat PLAN 10-20 · TB-D1~) ─────────────────────────────
+def _desk_ps(bat: str) -> str:
+    ps = [l for l in _desktop_block(bat) if l.startswith("powershell ")]
+    assert len(ps) == 1, ps
+    return ps[0]
+
+
+def test_req1_desktop_also_writes_the_store_app_config(gen):
+    """Store 판 Claude 는 %APPDATA%\\Claude 가 아니라 %LOCALAPPDATA%\\Packages\\Claude*\\LocalCache\\Roaming\\Claude 를 읽는다 —
+    종전엔 '완료' 인데 hwax 가 안 보였다. 설치판 자리와 함께, 설정 폴더가 있는 Store 판 자리마다 고치고 어디를 고쳤는지 찍는다."""
+    for pem in (True, False):
+        ps = _desk_ps(gen(pem=pem))
+        assert "$cs=@($env:HWAX_CFG);" in ps, "설치판 자리는 그대로(cmd 가 고르고 없으면 만든다)"
+        assert "[System.IO.Path]::Combine($env:LOCALAPPDATA,'Packages')" in ps
+        assert "Get-ChildItem -LiteralPath $pk -Directory -Filter 'Claude*'" in ps
+        assert "[System.IO.Path]::Combine($p.FullName,'LocalCache','Roaming','Claude')" in ps
+        assert "if(Test-Path -LiteralPath $d){$cs+=" in ps, "설정 폴더가 있는 곳만 — 안 깐 Store 판 자리는 만들지 않는다"
+        assert "foreach($c in $cs){" in ps and "Write-Host ('          '+$c)" in ps, "파일마다 경로를 찍는다"
+        assert "$bad=1" in ps and "if($bad){exit 1}" in ps, "한 곳이라도 실패하면 실패로 끝난다"
+
+
+def test_req2_both_merges_read_case_sensitively_and_back_up_first(gen):
+    """NO_PROXY 와 no_proxy 가 함께 있으면 5.1 의 ConvertFrom-Json 이 중복 키로 보고 멈췄다. 대소문자를 구분하는 JavaScriptSerializer 로
+    읽고 쓰며(두 키가 그대로 남는다), 읽기 전에 원본을 백업한다. 예외 메시지는 찍지 않는다(파일 내용 · 토큰이 붙을 수 있다)."""
+    for pem in (True, False):
+        bat = gen(pem=pem)
+        for ps, bak in ((_desk_ps(bat), "($c+'.bak')"), (_ccj_ps(_no_cli_block(bat)), "$b=$c+'.hwax-bak'")):
+            assert "Add-Type -AssemblyName System.Web.Extensions;$js=New-Object System.Web.Script.Serialization.JavaScriptSerializer;" in ps
+            assert "$js.MaxJsonLength=[int]::MaxValue;" in ps
+            assert "ConvertFrom-Json" not in ps and "ConvertTo-Json" not in ps and "Get-Content" not in ps
+            assert "System.Collections.Generic.Dictionary[string,object]" in ps, "새로 만드는 사전도 대소문자를 구분한다"
+            assert ps.index(bak) < ps.index("$js.DeserializeObject($x)"), "읽기 전에 백업"
+            assert "Exception.Message" not in ps
+            body = ps.split('-Command "', 1)[1][:-1]
+            assert '"' not in body and "%" not in body, "cmd 의 \"…\" 안이고 % 는 cmd 가 먼저 푼다"
+
+
+def test_req3_stdio_env_gets_no_proxy_and_the_company_ca_bundle(gen):
+    """사내 프록시 PC 에서는 hwax env 에 NO_PROXY 와 회사 인증서가 있어야 붙었다. NO_PROXY 는 포털 호스트(스킴 · 포트 없이) · localhost ·
+    127.0.0.1, 회사 인증서는 사람마다 경로가 달라 윈도우 신뢰 저장소에서 꺼내 포털 인증서와 한 파일로 묶는다(TB-D1)."""
+    bat = gen(origin="https://hwax.example.net:8443", pem=True)
+    assert 'set "HWAX_NOPROXY=hwax.example.net,localhost,127.0.0.1"' in bat, "포트 없이 — NO_PROXY 는 호스트로 맞춘다"
+    assert "-e NO_PROXY=hwax.example.net,localhost,127.0.0.1 --" in _cli_add_line(bat)
+    ls = _lines(bat)
+    ca = next(l for l in ls if "Cert:\\LocalMachine\\Root" in l)
+    assert "Cert:\\CurrentUser\\Root" in ca and "Import-Module Microsoft.PowerShell.Security;" in ca
+    assert "$seen.ContainsKey($x.Thumbprint)" in ca, "두 저장소에 다 있는 것은 한 번만"
+    assert "$b.Substring($i,[Math]::Min(64,$b.Length-$i))" in ca, "PEM 은 64자 줄"
+    assert "ReadAllText($env:HWAX_PORTAL_CRT)" in ca, "포털 인증서가 맨 앞"
+    i = ls.index(ca)
+    assert ls[i + 1] == "if errorlevel 1 goto :ca_portal_only"
+    fb = ls.index(":ca_portal_only")
+    assert ls[fb + 1].startswith('copy /y "%USERPROFILE%\\.hwax\\hwax-portal.crt" "%USERPROFILE%\\.hwax\\hwax-ca-bundle.pem"'), "못 읽으면 포털 인증서만"
+    # Claude 쪽 셋(CLI · Claude Code 직접 · Desktop)과 연결 확인이 같은 묶음을 쓴다. Gemini · Codex 도 묶음만(NO_PROXY 는 넣지 않는다 — PLAN)
+    assert bat.count('set "HWAX_CERT=%USERPROFILE%\\.hwax\\hwax-ca-bundle.pem"') == 2
+    assert "hwax-portal.crt" not in "".join(l for l in ls if "NODE_EXTRA_CA_CERTS" in l and "-like" not in l)
+    gem = next(l for l in ls if "gemini mcp add" in l)
+    assert "NODE_EXTRA_CA_CERTS=%USERPROFILE%\\.hwax\\hwax-ca-bundle.pem" in gem and "NO_PROXY" not in gem
+    # 포털 인증서가 없는(공개 인증서) 포털은 http 항목이라 env 가 없다 — NO_PROXY · 묶음도 없다
+    plain = gen(pem=False)
+    assert "HWAX_NOPROXY" not in plain and "hwax-ca-bundle" not in plain and "Cert:\\" not in plain
+
+
+def test_req3_pasted_snippets_carry_the_same_env(gen):
+    desk = gen(what="desktop", cert=r"C:\Users\<사용자>\.hwax\hwax-portal.crt")
+    assert '"NO_PROXY": "hwax.example.net,localhost,127.0.0.1"' in desk
+
+
+def test_req4_token_refresh_keeps_hand_edits(gen):
+    """토큰을 다시 받아 실행하면 hwax 항목이 통째로 바뀌어 손으로 넣은 NO_PROXY · 회사 인증서가 지워졌다. 있는 항목을 바탕으로 AUTH 와
+    우리가 정하는 칸(명령 · 인자 · 주소)만 바꾼다. NO_PROXY · NODE_EXTRA_CA_CERTS 는 없을 때만 채우고(대소문자 무시), 예전 배치가 넣은 포털
+    인증서 경로만 새 묶음으로 바꾼다 — 사람이 넣은 회사 인증서 경로는 남는다."""
+    for pem in (True, False):
+        bat = gen(pem=pem)
+        for ps in (_desk_ps(bat), _ccj_ps(_no_cli_block(bat))):
+            assert "$o=$null;if($m.ContainsKey('hwax')){$o=$m['hwax']};" in ps
+            assert "if($o -is [System.Collections.IDictionary]){foreach($k in @($o.Keys)){$e[$k]=$o[$k]};}" in ps, "있는 칸을 먼저 옮긴다"
+            assert ps.index("$e[$k]=$o[$k]") < ps.index("$m['hwax']=$e"), "옮긴 뒤에 우리 칸을 덮는다"
+            if pem:
+                assert "foreach($k in @($e['env'].Keys)){$v[$k]=$e['env'][$k]};" in ps, "손으로 넣은 env 를 옮긴다"
+                assert "$v['AUTH']=$env:HWAX_AUTH;" in ps
+                assert "Where-Object {$_ -ieq 'NODE_EXTRA_CA_CERTS'}" in ps and "Where-Object {$_ -ieq 'NO_PROXY'}" in ps, "대소문자 무시로 있는지 본다"
+                assert "-like '*\\.hwax\\hwax-portal.crt'){$v[$k]=$env:HWAX_CERT}" in ps, "예전 배치가 넣은 포털 인증서만 바꾼다"
+            else:
+                assert "if($e.ContainsKey('headers') -and ($e['headers'] -is [System.Collections.IDictionary]))" in ps, "다른 머리글은 남긴다"
+
+
+def test_req5_running_desktop_stops_before_any_change(gen):
+    """Claude 를 창만 닫으면 트레이에 남아 종료할 때 옛 설정으로 덮어써 등록이 되돌아갔다. 설정을 하나라도 바꾸기 전에 실행 중인 Desktop
+    (설치판 · Store 판)을 찾으면 멈추고 '트레이까지 종료' 를 안내한다. 이름이 같은 Claude Code CLI 는 경로로 거른다."""
+    for pem in (True, False):
+        bat = gen(pem=pem)
+        ls = _lines(bat)
+        i = next(k for k, l in enumerate(ls) if "Get-Process -Name claude" in l)
+        assert "-like '*\\AnthropicClaude\\*'" in ls[i] and "-like '*\\WindowsApps\\*'" in ls[i], "경로로 Desktop 만"
+        assert ls[i + 1] == "if not errorlevel 1 goto :desk_closed"
+        stop = ls[i + 2:ls.index(":desk_closed")]
+        assert stop[-2:] == ["pause", "exit /b 1"] and any("트레이" in l and "종료" in l for l in stop)
+        first_change = min(k for k, l in enumerate(ls) if "[2] Claude Code" in l or "HWAX_AUTH=" in l)
+        assert i < first_change, "Claude 설정을 바꾸기 전에 멈춘다"
