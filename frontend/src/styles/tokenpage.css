@@ -87,6 +87,17 @@
   margin-top: var(--sp-3);
 }
 
+/* 배치 없이 인증서로 직접 설정하는 순서 — 펼치기 */
+.tok-guide {
+  margin-top: var(--sp-4);
+}
+.tok-guide > summary {
+  cursor: pointer;
+  color: var(--fg);
+  font-size: var(--fs-15);
+  font-weight: 600;
+}
+
 .tok-copy {
   margin-top: var(--sp-4);
 }

@@ -7,12 +7,20 @@
 //
 // window·document 를 **참조하지 않는다** — origin 은 인자로 받는다.
 
+/** 배치 없이 인증서로 직접 설정하는 한 단계 — 화면이 복사 상자 하나와 설명 한 줄로 그린다. */
+export interface CertStep {
+  label: string;
+  text: string;
+  note: string;
+}
+
 export interface Snippets {
   buildSetupBat: (token: string, name: string, pem: string | null) => string;
   claudeCodeSnippet: (token: string) => string;
   claudeCodeSnippetSelfSigned: (token: string, certPath: string) => string;
   claudeDesktopSnippet: (token: string, certPath: string | null) => string;
   chatCurlSnippet: (token: string) => string;
+  certGuide: (token: string | null) => CertStep[];
 }
 
 export function makeSnippets(origin: string): Snippets {
@@ -51,6 +59,29 @@ export function makeSnippets(origin: string): Snippets {
     }
   })();
   const NOPROXY = Array.from(new Set([HOSTNAME, 'localhost', '127.0.0.1'])).join(',');
+
+  // 인증서 자리 — 배치와 화면의 '직접 설정' 안내가 같은 파일을 가리킨다(%USERPROFILE% 은 cmd 가 푼다).
+  const CERT_DIR = '%USERPROFILE%\\.hwax';
+  const CERT_FILE = `${CERT_DIR}\\hwax-portal.crt`;
+  // NODE_EXTRA_CA_CERTS 가 가리키는 파일 — 포털 인증서 + 이 PC 의 윈도우 신뢰 저장소(회사 루트 인증서 포함). 파일 하나만 받으므로 묶는다.
+  const CA_BUNDLE = `${CERT_DIR}\\hwax-ca-bundle.pem`;
+  // 묶음 만드는 PowerShell 본문 — 배치([1])와 안내 ②가 같은 문장을 쓴다(10-20 요청 3, TB-D1). 경로는 환경변수
+  //   HWAX_PORTAL_CRT(읽을 포털 인증서)로 받는다. 지문으로 겹침을 빼고 64자 줄로 PEM 을 쓴다. 끝에서 $seen.Count 가 0 이면 저장소를 못 읽은 것이다.
+  const PS_BUNDLE_BODY = [
+    // Cert: 드라이브는 이 모듈이 낸다 — -NoProfile 창에서 아직 안 올라왔을 수 있어 먼저 부른다(배치는 실패하면 catch → 포털 인증서만).
+    'Import-Module Microsoft.PowerShell.Security;',
+    '$sb=New-Object System.Text.StringBuilder;',
+    '[void]$sb.Append([System.IO.File]::ReadAllText($env:HWAX_PORTAL_CRT));[void]$sb.Append([char]10);',
+    '$seen=@{};',
+    "foreach($st in @('Cert:\\LocalMachine\\Root','Cert:\\CurrentUser\\Root')){foreach($x in @(Get-ChildItem -Path $st -EA SilentlyContinue)){",
+    'if($seen.ContainsKey($x.Thumbprint)){continue};$seen[$x.Thumbprint]=1;',
+    "$b=[Convert]::ToBase64String($x.RawData);[void]$sb.Append('-----BEGIN CERTIFICATE-----'+[char]10);",
+    'for($i=0;$i -lt $b.Length;$i+=64){[void]$sb.Append($b.Substring($i,[Math]::Min(64,$b.Length-$i))+[char]10)};',
+    "[void]$sb.Append('-----END CERTIFICATE-----'+[char]10)}};",
+  ];
+  // BOM 없는 UTF-8 로 쓴다(종전 그대로).
+  const PS_WRITE_BUNDLE =
+    '[System.IO.File]::WriteAllText($env:HWAX_CA_FILE,$sb.ToString(),(New-Object System.Text.UTF8Encoding($false)));';
 
   // 설정 JSON 을 대소문자를 구분해 읽고 쓴다(10-20 요청 2, docs/token-bat TB-D2). 5.1 의 ConvertFrom-Json 은 NO_PROXY 와 no_proxy 처럼
   // 대소문자만 다른 키를 중복으로 보고 멈춘다. JavaScriptSerializer 는 .NET Framework 라 5.1 에 늘 있다 — 대신 한 줄 JSON 으로 쓴다.
@@ -146,10 +177,9 @@ export function makeSnippets(origin: string): Snippets {
   ];
 
   function buildSetupBat(token: string, name: string, pem: string | null): string {
-    const certDir = '%USERPROFILE%\\.hwax';
-    const certFile = `${certDir}\\hwax-portal.crt`;
-    // NODE_EXTRA_CA_CERTS 가 가리키는 파일 — 포털 인증서 + 이 PC 의 윈도우 신뢰 저장소(회사 루트 인증서 포함). 파일 하나만 받으므로 묶는다.
-    const caFile = `${certDir}\\hwax-ca-bundle.pem`;
+    const certDir = CERT_DIR;
+    const certFile = CERT_FILE;
+    const caFile = CA_BUNDLE;
     // 등록 뒤 "이 토큰으로 갱신됐는지" 를 되읽어 확인할 표식. 재발급했는데 옛 토큰이 그대로
     // 남는 것이 이 스크립트의 가장 조용한 실패라, 존재 확인만으로는 부족하다.
     const tokenTail = token.slice(-8);
@@ -303,18 +333,9 @@ export function makeSnippets(origin: string): Snippets {
       const caPs = [
         "$ErrorActionPreference='Stop';",
         'try{',
-        // Cert: 드라이브는 이 모듈이 낸다 — -NoProfile 창에서 아직 안 올라왔을 수 있어 먼저 부른다(실패하면 아래 catch → 포털 인증서만).
-        'Import-Module Microsoft.PowerShell.Security;',
-        '$sb=New-Object System.Text.StringBuilder;',
-        '[void]$sb.Append([System.IO.File]::ReadAllText($env:HWAX_PORTAL_CRT));[void]$sb.Append([char]10);',
-        '$seen=@{};',
-        "foreach($st in @('Cert:\\LocalMachine\\Root','Cert:\\CurrentUser\\Root')){foreach($x in @(Get-ChildItem -Path $st -EA SilentlyContinue)){",
-        'if($seen.ContainsKey($x.Thumbprint)){continue};$seen[$x.Thumbprint]=1;',
-        "$b=[Convert]::ToBase64String($x.RawData);[void]$sb.Append('-----BEGIN CERTIFICATE-----'+[char]10);",
-        'for($i=0;$i -lt $b.Length;$i+=64){[void]$sb.Append($b.Substring($i,[Math]::Min(64,$b.Length-$i))+[char]10)};',
-        "[void]$sb.Append('-----END CERTIFICATE-----'+[char]10)}};",
+        ...PS_BUNDLE_BODY,
         'if($seen.Count -eq 0){exit 1};',
-        '[System.IO.File]::WriteAllText($env:HWAX_CA_FILE,$sb.ToString(),(New-Object System.Text.UTF8Encoding($false)));',
+        PS_WRITE_BUNDLE,
         "Write-Host ('     윈도우 신뢰 인증서 '+$seen.Count+'개를 포털 인증서와 묶었습니다');exit 0",
         '}catch{exit 1}',
       ].join(' ');
@@ -763,5 +784,64 @@ export function makeSnippets(origin: string): Snippets {
     ].join('\n');
   }
 
-  return { buildSetupBat, claudeCodeSnippet, claudeCodeSnippetSelfSigned, claudeDesktopSnippet, chatCurlSnippet };
+  /** 배치 없이 인증서로 직접 설정하는 순서(10-20 사용자 요청, docs/token-bat TB-D6) — 배치 [1] · [2] · [3] 이 하는 일을 사람이 차례로 한다.
+   * 파일 · 묶음 본문은 배치와 같은 상수를 쓴다. token 이 없으면(발급하지 않고 인증서만 받은 사람) `<토큰>` 자리표시자를 넣는다.
+   * ② 는 PowerShell 창에 붙여 넣는다 — exit 를 쓰지 않는다(그 창이 닫힌다). 저장소를 못 읽으면 배치처럼 포털 인증서만 담는다. */
+  function certGuide(token: string | null): CertStep[] {
+    const tok = token ?? '<토큰>';
+    const psPath = (p: string) => p.replace('%USERPROFILE%', '$env:USERPROFILE');
+    const noToken = token ? '' : ' <토큰> 자리에 발급 때 복사해 둔 토큰을 넣으세요 — 토큰은 발급 직후 한 번만 보입니다.';
+    return [
+      {
+        label: '① 인증서를 제자리에 — 명령 프롬프트(cmd)',
+        text: [`mkdir "${CERT_DIR}" 2>nul`, `move /y "%USERPROFILE%\\Downloads\\hwax-portal.crt" "${CERT_FILE}"`].join('\n'),
+        note: '받은 파일이 다운로드 폴더에 없거나 이름이 hwax-portal (1).crt 처럼 바뀌었으면 move 의 앞쪽 경로를 고치세요.',
+      },
+      {
+        label: '② 회사 인증서와 한 파일로 묶기 — PowerShell',
+        text: [
+          `$env:HWAX_PORTAL_CRT="${psPath(CERT_FILE)}"`,
+          `$env:HWAX_CA_FILE="${psPath(CA_BUNDLE)}"`,
+          'try{',
+          ...PS_BUNDLE_BODY,
+          "if($seen.Count -eq 0){Copy-Item -LiteralPath $env:HWAX_PORTAL_CRT -Destination $env:HWAX_CA_FILE -Force;Write-Host '윈도우 인증서 저장소를 읽지 못해 포털 인증서만 담았습니다 - 사내 프록시 뒤라면 npx 가 실패할 수 있습니다'}else{",
+          PS_WRITE_BUNDLE,
+          "Write-Host ('만들었습니다: '+$env:HWAX_CA_FILE+' (윈도우 신뢰 인증서 '+$seen.Count+'개 + 포털 인증서)')}",
+          "}catch{Write-Host ('실패: '+$_.Exception.Message+' - ①에서 인증서를 '+$env:HWAX_PORTAL_CRT+' 에 두었는지 보세요')}",
+        ].join('\n'),
+        note:
+          'Claude(Node)는 윈도우 인증서 저장소를 보지 않고, NODE_EXTRA_CA_CERTS 는 파일 하나만 받습니다. 그래서 포털 인증서와 이 PC 가 믿는 ' +
+          '루트 인증서(회사 인증서 포함)를 한 파일로 묶습니다 — 배치파일이 하는 것과 같습니다.',
+      },
+      {
+        label: '③ 연결 확인 — 명령 프롬프트(cmd)',
+        text: [
+          `set "NODE_EXTRA_CA_CERTS=${CA_BUNDLE}"`,
+          // 실패는 오류 코드로 찍는다 — Node 의 문장(unable to verify the first certificate)보다 아래 안내와 맞대기 쉽다(실측 10-20).
+          `node -e "fetch('${ORIGIN}/health').then(r=>console.log('OK HTTP',r.status)).catch(e=>console.log('FAIL',e.cause&&e.cause.code||String(e)))"`,
+        ].join('\n'),
+        note:
+          'OK HTTP 200 이 나오면 Claude 도 이 인증서로 포털에 붙습니다. FAIL 뒤가 UNABLE_TO_VERIFY_LEAF_SIGNATURE · SELF_SIGNED_CERT_IN_CHAIN 이면 ' +
+          '①②의 경로를, ENOTFOUND · ECONNREFUSED · UND_ERR_CONNECT_TIMEOUT 이면 주소 · 방화벽 · 프록시를 보세요.',
+      },
+      {
+        label: '④ Claude Code 등록 — 명령 프롬프트(cmd)',
+        text: ['claude mcp remove hwax -s user >nul 2>nul', claudeCodeSnippetSelfSigned(tok, CA_BUNDLE)].join('\n'),
+        note: `첫 줄은 예전 hwax 등록을 지웁니다(없으면 아무 일도 안 합니다).${noToken}`,
+      },
+      {
+        label: '⑤ Claude Desktop — claude_desktop_config.json 의 mcpServers',
+        // Desktop 은 설정 값의 %USERPROFILE% 을 풀지 않는다 — 붙여 넣는 조각은 사람이 바꿀 자리표시자로 둔다.
+        text: claudeDesktopSnippet(tok, CA_BUNDLE.replace('%USERPROFILE%', 'C:\\Users\\<사용자>')),
+        note: `<사용자> 를 본인 계정 폴더 이름으로 바꾸세요. 트레이에서 Desktop 을 완전히 끈 뒤 저장해야 예전 설정으로 되돌아가지 않습니다.${noToken}`,
+      },
+      {
+        label: '(선택) 모든 Node 프로그램에 늘 적용 — 명령 프롬프트(cmd)',
+        text: `setx NODE_EXTRA_CA_CERTS "${CA_BUNDLE}"`,
+        note: '새로 여는 창부터 Claude Code · npx · Gemini CLI · Codex 가 모두 이 묶음을 믿습니다. ④⑤의 설정과 겹쳐도 됩니다.',
+      },
+    ];
+  }
+
+  return { buildSetupBat, claudeCodeSnippet, claudeCodeSnippetSelfSigned, claudeDesktopSnippet, chatCurlSnippet, certGuide };
 }

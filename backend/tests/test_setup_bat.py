@@ -5,6 +5,8 @@
 # TokenPage.tsx 안에 있어 React·DOM 없이 돌릴 수 없었기 때문이다. 생성기를 frontend/src/lib/setupBat.ts 로
 # 떼어 냈으니, 여기서 tsc 로 그 파일만 컴파일해 node 로 돌려 **진짜 .bat 을 만들고** 검사한다.
 # cmd.exe 를 실행할 수는 없으므로 검사는 구조(라벨 도달성·이스케이프·토큰 노출)와 계약(문구·분기)이다.
+import json
+import os
 import re
 import shlex
 import shutil
@@ -38,6 +40,7 @@ def gen(tmp_path_factory):
         "const pem = process.argv[3] === 'pem' ? '-----BEGIN CERTIFICATE-----\\nQUJD\\n-----END CERTIFICATE-----' : null;\n"
         "const s = makeSnippets(process.argv[2]);\n"
         "process.stdout.write(process.argv[4] === 'desktop' ? s.claudeDesktopSnippet('" + TOKEN + "', process.argv[5] || null)\n"
+        "  : process.argv[4] === 'guide' ? JSON.stringify(s.certGuide(process.argv[5] === 'notoken' ? null : '" + TOKEN + "'))\n"
         "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem));\n")
 
     def run(origin="https://hwax.example.net", pem=True, what="bat", cert=""):
@@ -367,10 +370,13 @@ def test_batch_warns_when_run_as_administrator(gen):
 # ── 손으로 붙여넣는 Desktop 조각 — %USERPROFILE% 은 풀리지 않는다 ─────────────────────
 def test_pasted_desktop_snippet_does_not_hide_an_unexpanded_variable(gen):
     """Desktop 은 설정 값의 %USERPROFILE% 을 풀지 않는다 — JSON 에 그대로 들어가 없는 경로가 된다.
-    배치는 확장된 실제 경로를 쓰지만, 붙여넣는 조각은 사람이 바꿀 자리표시자여야 한다."""
+    배치는 확장된 실제 경로를 쓰지만, 붙여넣는 조각은 사람이 바꿀 자리표시자여야 한다.
+    10-20 부터 인증서가 드는 포털의 Desktop 조각은 '직접 설정' 안내 ⑤(certGuide)가 만든다 — 화면은 인증서 없는 조각만 직접 부른다."""
     page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
-    assert "claudeDesktopSnippet(created.token, needsCa ? String.raw`C:\\Users\\<사용자>" in page
-    assert "claudeDesktopSnippet(created.token, needsCa ? String.raw`%USERPROFILE%" not in page
+    assert "claudeDesktopSnippet(created.token, null)" in page
+    assert re.search(r"claudeDesktopSnippet\(created\.token, (?!null\))", page) is None, "화면이 경로를 직접 넣으면 이 검사를 비껴간다"
+    desk = json.loads(gen(what="guide"))[4]
+    assert desk["label"].startswith("⑤") and "%USERPROFILE%" not in desk["text"] and "<사용자>" in desk["text"]
     snip = gen(what="desktop", cert=r"C:\Users\<사용자>\.hwax\hwax-portal.crt")
     assert "%USERPROFILE%" not in snip and "<사용자>" in snip
     # 배치 쪽은 반대로 cmd 가 확장하는 경로를 그대로 쓴다(그쪽은 풀린다)
@@ -485,3 +491,136 @@ def test_req5_running_desktop_stops_before_any_change(gen):
         assert stop[-2:] == ["pause", "exit /b 1"] and any("트레이" in l and "종료" in l for l in stop)
         first_change = min(k for k, l in enumerate(ls) if "[2] Claude Code" in l or "HWAX_AUTH=" in l)
         assert i < first_change, "Claude 설정을 바꾸기 전에 멈춘다"
+
+
+# ── 10-20 사용자 요청 — 인증서 따로 받기 · 배치 없이 인증서로 직접 설정하는 안내(docs/token-bat TB-D6 · TB-D7) ─────────────
+def _guide(gen, token=True, origin="https://hwax.example.net"):
+    return json.loads(gen(origin=origin, what="guide", cert="" if token else "notoken"))
+
+
+def test_cert_guide_points_at_the_files_the_batch_uses(gen):
+    """안내와 배치가 다른 파일을 가리키면 손으로 한 설정과 배치가 한 설정이 서로를 깬다 — 둘 다 같은 상수에서 나온다."""
+    g = _guide(gen)
+    assert [s["label"][0] for s in g[:5]] == list("①②③④⑤") and g[5]["label"].startswith("(선택)")
+    bat = gen()
+    crt, ca = r"%USERPROFILE%\.hwax\hwax-portal.crt", r"%USERPROFILE%\.hwax\hwax-ca-bundle.pem"
+    assert f'set "HWAX_PORTAL_CRT={crt}"' in bat and f'set "HWAX_CA_FILE={ca}"' in bat
+    assert g[0]["text"].splitlines()[-1].endswith(f'"{crt}"'), "① 은 배치가 심는 자리에 둔다"
+    assert r'$env:HWAX_PORTAL_CRT="$env:USERPROFILE\.hwax\hwax-portal.crt"' in g[1]["text"]
+    assert r'$env:HWAX_CA_FILE="$env:USERPROFILE\.hwax\hwax-ca-bundle.pem"' in g[1]["text"]
+    assert f'set "NODE_EXTRA_CA_CERTS={ca}"' in g[2]["text"]
+    assert f"-e NODE_EXTRA_CA_CERTS={ca} ^" in g[3]["text"] and "-e NO_PROXY=hwax.example.net,localhost,127.0.0.1 ^" in g[3]["text"]
+    assert g[3]["text"].splitlines()[0] == "claude mcp remove hwax -s user >nul 2>nul", "배치처럼 옛 등록부터 지운다(있으면 add 가 거절한다)"
+    assert r'"NODE_EXTRA_CA_CERTS": "C:\\Users\\<사용자>\\.hwax\\hwax-ca-bundle.pem"' in g[4]["text"]
+    assert g[5]["text"] == f'setx NODE_EXTRA_CA_CERTS "{ca}"'
+
+
+def test_cert_guide_bundles_with_the_same_powershell_as_the_batch(gen):
+    """② 의 묶음 본문은 배치 [1] 의 것과 한 글자도 다르지 않다(공용 상수) — 한쪽만 고치면 손 설정과 배치의 묶음이 갈린다.
+    ② 는 사람이 PowerShell 창에 붙여 넣는다 — exit 가 있으면 그 창이 닫힌다. 저장소를 못 읽으면 배치처럼 포털 인증서만 담는다."""
+    lines = _guide(gen)[1]["text"].splitlines()
+    bat_ps = next(l for l in _lines(gen()) if l.startswith("powershell ") and "HWAX_CA_FILE" in l)
+    i = lines.index("try{")
+    j = next(k for k, l in enumerate(lines) if l.startswith("if($seen.Count -eq 0)"))
+    body = lines[i + 1:j]
+    # 양 끝을 붙여 본다 — 부분 문자열만 보면 안내 쪽에서 앞뒤 줄이 빠져도 통과한다
+    assert "try{ " + " ".join(body) + " if($seen.Count -eq 0){exit 1};" in bat_ps, "배치와 같은 본문"
+    joined = "\n".join(lines)
+    assert all(s in joined for s in ("Cert:\\LocalMachine\\Root", "Cert:\\CurrentUser\\Root", "$x.Thumbprint", "UTF8Encoding($false)"))
+    assert not re.search(r"\bexit\b", joined), "붙여 넣은 PowerShell 창이 닫힌다"
+    assert "Copy-Item -LiteralPath $env:HWAX_PORTAL_CRT -Destination $env:HWAX_CA_FILE -Force" in lines[j], "못 읽으면 포털 인증서만"
+    assert lines[-1].startswith("}catch{")
+
+
+def test_cert_guide_without_a_token_uses_placeholders_and_with_one_only_where_needed(gen):
+    """인증서만 받은 사람(토큰 발급 전)은 <토큰> 자리표시자를 본다. 발급 직후에는 등록 조각 ④⑤ 에만 토큰이 들어간다."""
+    g = _guide(gen, token=False)
+    assert all(TOKEN not in s["text"] for s in g)
+    assert '-e AUTH="Bearer <토큰>" ^' in g[3]["text"] and '"AUTH": "Bearer <토큰>"' in g[4]["text"]
+    assert "<토큰>" in g[3]["note"] and "<토큰>" in g[4]["note"]
+    t = _guide(gen)
+    assert [k for k, s in enumerate(t) if TOKEN in s["text"]] == [3, 4], "토큰은 등록 조각에만"
+    assert all("<토큰>" not in s["text"] + s["note"] for s in t)
+
+
+def test_cert_guide_check_tells_trusted_from_untrusted(gen, tmp_path):
+    """③ 을 실제로 돌린다 — 사설 CA 가 서명한 https 서버에, 생성기가 낸 그 node 명령을 묶음 없이 · 있이 부른다.
+    묶음은 ② 가 만드는 꼴(포털 인증서 + 다른 루트를 64자 줄로)이다. 붙으면 'OK HTTP 200', 아니면 오류 코드다(10-20 실측과 같다).
+    ③ 은 cmd 에서 돈다 — node -e 인자는 큰따옴표 하나로 감싸고 그 안에 cmd 가 먹는 % 가 없어야 한다."""
+    import base64
+    import http.server
+    import ssl
+    import threading
+    from datetime import datetime, timedelta, timezone
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    now = datetime.now(timezone.utc)
+
+    def cert(cn, key, issuer, issuer_key, ca, san=None):
+        b = (x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)]))
+             .issuer_name(issuer).public_key(key.public_key()).serial_number(x509.random_serial_number())
+             .not_valid_before(now - timedelta(minutes=5)).not_valid_after(now + timedelta(days=1))
+             .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True))
+        if ca:
+            b = b.add_extension(x509.KeyUsage(digital_signature=True, content_commitment=False, key_encipherment=False,
+                                              data_encipherment=False, key_agreement=False, key_cert_sign=True, crl_sign=True,
+                                              encipher_only=False, decipher_only=False), critical=True)
+        if san:
+            b = b.add_extension(x509.SubjectAlternativeName([x509.DNSName(san)]), critical=False)
+        return b.sign(issuer_key, hashes.SHA256())
+
+    ca_key, other_key, leaf_key = (ec.generate_private_key(ec.SECP256R1()) for _ in range(3))
+    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "HWAX 시험 CA")])
+    ca = cert("HWAX 시험 CA", ca_key, ca_name, ca_key, True)
+    other_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "다른 루트")])
+    other = cert("다른 루트", other_key, other_name, other_key, True)
+    leaf = cert("localhost", leaf_key, ca_name, ca_key, False, san="localhost")
+    (tmp_path / "leaf.pem").write_bytes(leaf.public_bytes(serialization.Encoding.PEM))
+    (tmp_path / "leaf.key").write_bytes(leaf_key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                                               serialization.NoEncryption()))
+    b64 = base64.b64encode(other.public_bytes(serialization.Encoding.DER)).decode()
+    bundle = tmp_path / "hwax-ca-bundle.pem"
+    bundle.write_text(ca.public_bytes(serialization.Encoding.PEM).decode() + "\n-----BEGIN CERTIFICATE-----\n"
+                      + "".join(b64[k:k + 64] + "\n" for k in range(0, len(b64), 64)) + "-----END CERTIFICATE-----\n")
+
+    class Health(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200 if self.path == "/health" else 404)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Health)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(tmp_path / "leaf.pem", tmp_path / "leaf.key")
+    srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        chk = _guide(gen, origin=f"https://localhost:{srv.server_address[1]}")[2]["text"].splitlines()
+        m = re.fullmatch(r'node -e "([^"%]*)"', chk[1])
+        assert m, chk[1]
+        env = {k: v for k, v in os.environ.items() if k != "NODE_EXTRA_CA_CERTS"}
+
+        def run(**extra):
+            r = subprocess.run(["node", "-e", m.group(1)], capture_output=True, text=True, timeout=60, env={**env, **extra})
+            return r.stdout.strip()
+        assert run() == "FAIL UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+        assert run(NODE_EXTRA_CA_CERTS=str(bundle)) == "OK HTTP 200"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_cert_download_does_not_need_a_new_token():
+    """인증서만 따로 — 토큰을 발급하지 않아도 받는다(발급 전 칸 · 발급 상자 둘 다). 링크가 아니라 받아서 PEM 인지 본 뒤 저장한다
+    (오류 응답이 .crt 이름으로 저장되지 않게)."""
+    page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
+    assert "{!created && needsCa && !blocked && (" in page and "<CertGuide token={null}" in page
+    assert "<CertGuide token={created.token}" in page
+    assert page.count("onClick={() => void downloadCert()}") == 2
+    assert "pem.includes('-----BEGIN CERTIFICATE-----')" in page and 'download="hwax-portal.crt"' not in page

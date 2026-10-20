@@ -59,6 +59,26 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
   );
 }
 
+// 배치 없이 인증서로 직접 설정하는 순서(10-20 사용자 요청) — 명령은 생성기(certGuide)가 배치와 같은 파일 · 묶음 본문으로 만든다.
+function CertGuide({ token, open }: { token: string | null; open: boolean }) {
+  return (
+    <details className="tok-guide" open={open}>
+      <summary>배치파일 없이 인증서로 직접 설정하기</summary>
+      <p className="tok-hint">
+        배치파일이 하는 일을 손으로 하는 순서입니다. 받은 인증서를 <code>%USERPROFILE%\.hwax</code> 에
+        두고, 이 PC 가 믿는 회사 인증서와 한 파일로 묶은 뒤, 그 파일을{' '}
+        <code>NODE_EXTRA_CA_CERTS</code> 로 Claude 에 알려 줍니다. 통신은 그대로 HTTPS 입니다.
+      </p>
+      {SNIP.certGuide(token).map((s) => (
+        <div key={s.label}>
+          <CopyBlock label={s.label} text={s.text} />
+          <div className="tok-hint">{s.note}</div>
+        </div>
+      ))}
+    </details>
+  );
+}
+
 export default function TokenPage() {
   // 이 페이지는 PAT 발급과 Report Archive 연결을 함께 담는다 — 권한에 맞는 것만 보인다.
   const canToken = useCan()('feat:api-token');
@@ -91,6 +111,28 @@ export default function TokenPage() {
   const [access, setAccess] = useState<MyAccess | null>(null);
   const [batBusy, setBatBusy] = useState(false);
   const [batError, setBatError] = useState<string | null>(null);
+  const [certError, setCertError] = useState<string | null>(null);
+
+  // 인증서만 따로(10-20 사용자 요청) — 배치를 못 쓰는 PC · 손으로 설정하는 사람 몫이라 토큰을 발급하지 않아도 받는다.
+  // 링크(<a download>)로 걸지 않고 받아서 PEM 인지 본 뒤 저장한다 — 실패를 화면에 말하고, 오류 응답이 .crt 이름으로 저장되지 않게.
+  const downloadCert = async () => {
+    setCertError(null);
+    try {
+      const r = await fetch(caUrl);
+      if (!r.ok) throw new Error(`인증서를 받지 못했습니다 (HTTP ${r.status}).`);
+      const pem = await r.text();
+      if (!pem.includes('-----BEGIN CERTIFICATE-----'))
+        throw new Error('서버가 인증서가 아닌 것을 돌려줬습니다 — 운영자에게 알리세요.');
+      const url = URL.createObjectURL(new Blob([pem], { type: 'application/x-x509-ca-cert' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'hwax-portal.crt';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setCertError(err instanceof Error ? err.message : '인증서를 받지 못했습니다.');
+    }
+  };
 
   // 배치파일은 브라우저에서 만든다 — 평문 토큰을 가진 곳이 여기뿐이라, 서버에 한 번만
   // 내려받게 하는 별도 상태를 두지 않아도 '발급 순간에만 가능'이 자연히 성립한다.
@@ -296,6 +338,30 @@ export default function TokenPage() {
               )}
             </section>
 
+            {/* 인증서만 — 토큰을 새로 발급하지 않아도 받는다(이미 등록한 설정에 인증서만 넣을 때 · 배치를 못 쓰는 PC).
+                발급하면 이 칸 대신 아래 발급 상자가 같은 버튼과 안내를 토큰을 넣어 보여 준다. */}
+            {!created && needsCa && !blocked && (
+              <section className="tok-sec">
+                <h2>포털 인증서</h2>
+                <p className="tok-muted">
+                  이 포털의 인증서는 공개 루트에 닿지 않아 Claude(Node)에 따로 알려 줘야 합니다. 새
+                  토큰을 발급하면 나오는 배치파일이 알아서 심습니다 — 배치를 못 쓰는 PC 이거나 이미
+                  등록한 설정에 인증서만 넣을 때 여기서 받으세요.
+                </p>
+                <div className="tok-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => void downloadCert()}
+                  >
+                    인증서 내려받기 (.crt)
+                  </button>
+                </div>
+                {certError && <div className="tok-danger">{certError}</div>}
+                <CertGuide token={null} open={false} />
+              </section>
+            )}
+
             {created && (
               <section className="tok-created">
                 <div className="tok-created-title">
@@ -378,13 +444,18 @@ export default function TokenPage() {
                     >
                       {batBusy ? '만드는 중…' : '설정 배치파일 내려받기 (.bat)'}
                     </button>
-                    {needsCa && caAvailable && (
-                      <a href={caUrl} download="hwax-portal.crt" className="tok-small">
-                        인증서만 따로 받기
-                      </a>
+                    {needsCa && !blocked && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => void downloadCert()}
+                      >
+                        인증서 내려받기 (.crt)
+                      </button>
                     )}
                   </div>
                   {batError && <div className="tok-danger">{batError}</div>}
+                  {certError && <div className="tok-danger">{certError}</div>}
                 </div>
                 {blocked ? (
                   <p className="tok-muted">
@@ -393,31 +464,15 @@ export default function TokenPage() {
                       : '운영자 조치 뒤 이 화면을 다시 열면 등록 명령이 나옵니다.'}{' '}
                     토큰 자체는 유효합니다 — 등록만 뒤로 미룹니다.
                   </p>
+                ) : needsCa ? (
+                  // 인증서가 드는 포털 — Claude Code · Desktop 조각은 안내의 ④⑤다(배치와 같은 묶음 경로, Desktop 은 자리표시자).
+                  <CertGuide token={created.token} open />
                 ) : (
                   <>
+                    <CopyBlock label="Claude Code (터미널)" text={SNIP.claudeCodeSnippet(created.token)} />
                     <CopyBlock
-                      label={
-                        needsCa ? 'Claude Code (터미널 — 직접 실행할 때)' : 'Claude Code (터미널)'
-                      }
-                      text={
-                        needsCa
-                          ? SNIP.claudeCodeSnippetSelfSigned(
-                              created.token,
-                              '%USERPROFILE%\\.hwax\\hwax-portal.crt',
-                            )
-                          : SNIP.claudeCodeSnippet(created.token)
-                      }
-                    />
-                    {/* ⚠ Desktop 은 설정 값의 %USERPROFILE% 을 **풀지 않는다** — JSON 에 그대로 들어가 없는 경로가 된다.
-                        배치는 확장된 실제 경로를 써 주지만, 손으로 붙여넣는 이 조각은 사람이 바꿀 수 있게 자리표시자로 보여 준다. */}
-                    <CopyBlock
-                      label={
-                        needsCa
-                          ? 'Claude Desktop (claude_desktop_config.json — 인증서 경로를 본인 것으로 바꾸세요)'
-                          : 'Claude Desktop (claude_desktop_config.json)'
-                      }
-                      // 한 줄로 둔다 — test_setup_bat 가 이 호출을 소스에서 그대로 찾아 자리표시자를 확인한다
-                      text={SNIP.claudeDesktopSnippet(created.token, needsCa ? String.raw`C:\Users\<사용자>\.hwax\hwax-portal.crt` : null)}
+                      label="Claude Desktop (claude_desktop_config.json)"
+                      text={SNIP.claudeDesktopSnippet(created.token, null)}
                     />
                   </>
                 )}
