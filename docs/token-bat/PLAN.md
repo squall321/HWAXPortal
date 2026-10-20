@@ -84,3 +84,22 @@ PATH 에 없을 수 있는 조건(확인해서 채운다).
 - **PATH 는 사용자 PATH 에 추가되고, 이미 열려 있던 셸 세션에는 반영되지 않는다.**
   문서가 "새 터미널을 열라"고 명시한다. 설치 직후 Explorer 에서 배치를 더블클릭하면
   `where` 가 실패하는 정확한 이유다.
+
+---
+
+# 10-20 — 설치 파일 개선 요청 다섯(염종섭 님, 2026-10-20)
+
+> 체크리스트 [checklist.md](checklist.md) · 결정과 까닭 [context-notes.md](context-notes.md)(TB-D1~). 사용자 결정 10-20 —
+> "고친다 · 인증서는 윈도우 저장소에서", '우리쪽 토큰 발급 오류' 는 이 배치 문제와 같은 것.
+
+| # | 요청 | 지금(고치기 전) | 고친 것 |
+|---|---|---|---|
+| 1 | Microsoft Store 판 Claude 의 설정 위치 | `%APPDATA%\Claude\claude_desktop_config.json` 하나만 고친다 — Store 판은 `%LOCALAPPDATA%\Packages\Claude*\LocalCache\Roaming\Claude\` 를 읽어 '완료' 인데 hwax 가 안 보인다 | 두 위치를 다 찾아 설정 폴더가 있는 곳마다 반영하고, 어디를 고쳤는지 줄마다 찍는다 |
+| 2 | 대소문자만 다른 키(NO_PROXY · no_proxy) | Desktop 은 `ConvertFrom-Json`(5.1)이 중복 키로 보고 멈춘다. Claude Code 설정도 같은 이유로 멈춘다(그쪽은 실패를 알리고 원본은 그대로) | 대소문자를 구분하는 .NET `JavaScriptSerializer` 로 읽고 쓴다(두 파일 모두). 고치기 전 원본 백업은 그대로 |
+| 3 | 사내망 설정(NODE_EXTRA_CA_CERTS · NO_PROXY) | `NODE_EXTRA_CA_CERTS` 는 포털 인증서만, `NO_PROXY` 는 배치 창 안에서만 | hwax env 에 `NO_PROXY=<포털 호스트>,localhost,127.0.0.1` 를 기본으로. `NODE_EXTRA_CA_CERTS` 는 포털 인증서 + 이 PC 의 윈도우 신뢰 저장소(회사 루트 인증서 포함)를 한 파일(`%USERPROFILE%\.hwax\hwax-ca-bundle.pem`)로 묶어 가리킨다 — 사람마다 다른 '회사 인증서 경로' 를 몰라도 된다 |
+| 4 | 토큰 갱신 때 손으로 맞춘 설정이 지워짐 | hwax 항목을 통째로 덮어쓴다 | 이미 있으면 그 항목을 바탕으로 토큰(AUTH)과 우리가 정하는 칸(명령 · 주소)만 바꾼다. 손으로 넣은 env 는 남고, `NO_PROXY` · `NODE_EXTRA_CA_CERTS` 를 이미 적어 뒀으면 그 값을 쓴다(예전 배치가 넣은 포털 인증서 경로만 새 묶음으로 바꾼다) |
+| 5 | Claude 가 켜진 채 설치하면 되돌아감 | '켜져 있으면 끄고 다시 켜라' 안내만 | 설정을 바꾸기 전에 실행 중인 Claude Desktop(설치판 · Store 판)을 찾으면 아무것도 바꾸지 않고 멈춰 '트레이 아이콘까지 종료' 를 안내한다 |
+
+대상은 Claude 쪽이다(Desktop · Claude Code). Gemini · Codex 는 자기 CLI 로 등록해 쉼표가 든 `NO_PROXY` 값을 어떻게 나누는지 여기서 재 볼 수 없어
+그대로 둔다(인증서 묶음 경로만 같이 쓴다). 이 배치는 dev 에 PowerShell 이 없어 산출물의 글만 시험한다 — 실제 Windows 확인은 염종섭 님 PC
+(Store 판 · 대소문자 중복 키가 있는 설정)에서 받는다.
