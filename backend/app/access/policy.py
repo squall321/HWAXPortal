@@ -7,10 +7,13 @@ per-request entitlement computation.
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
+import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -21,6 +24,8 @@ logger = logging.getLogger(__name__)
 ADMIN_GROUP = "portal-admin"
 FEAT, PLAT = "feat:", "plat:"
 WILDCARD = "*"
+# '외부 연결' 화면의 문 — 표의 항목이 아니라 합성 키다. 외부 연결 선언(connect:)이 있는 플랫폼의 권한을 하나라도 가지면 붙는다(compute).
+CONNECT_FEATURE = "feat:connect"
 
 
 def is_synthetic(group: str) -> bool:
@@ -38,6 +43,33 @@ def login_groups(groups: list[str] | None) -> list[str]:
 
 
 @dataclass(frozen=True)
+class ConnectSpec:
+    """외부 연결 선언 하나 — 박스 권한표 플랫폼 항목의 `connect:` 블록(docs/ext-connect). 포털은 이것으로 '외부 연결' 카드를 그리고 토큰을
+    받으며, 게이트웨이는 권한 행과 같은 응답(`/internal/access/policy` 의 connections)으로 받아 백엔드를 붙인다. 칸의 뜻은 요청서 1-2 표다."""
+    backend: str                    # 게이트웨이 백엔드 키이자 포털 service(connections 표의 service)
+    mcp_url: str
+    platform_id: str
+    label: str
+    desc: str = ""
+    token_hint: str = ""
+    token_prefix: str = ""
+    issue: str = ""
+    issue_url: str = ""
+    note: str = ""
+    verify: str = "none"            # none | mcp | url — 유효성만 본다(주인은 owner_field 가 있을 때만)
+    verify_url: str = ""
+    owner_field: str = ""
+    list_auth: str = "open"         # open | registered:<포털 이메일>
+    read_tools: tuple[str, ...] = ()
+    workspace_header: str = ""
+    workspace_label: str = ""
+
+    @property
+    def need(self) -> str:
+        return f"{PLAT}{self.platform_id}"
+
+
+@dataclass(frozen=True)
 class Item:
     key: str                     # feat:deliberation · plat:stepforge
     id: str
@@ -49,6 +81,8 @@ class Item:
     gateway: tuple[str, ...] = ()   # 게이트웨이 백엔드 키
     # 그 타일이 이 박스에서 하나도 안 열리면 권한 표·요청에서 숨긴다(표시만 — 권한 계산·게이트웨이 정책은 그대로).
     hide_unless_routed: bool = False
+    # 외부 연결 선언 — 박스 파일(access.local.yaml)의 플랫폼에서만 온다(load_raw 가 추적 파일의 것을 뗀다).
+    connect: ConnectSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -69,9 +103,11 @@ class Policy:
     # 읽다가 버린 것(틀린 행·읽지 않는 절) — 관리자의 배선 설정에 뜬다(AccessPolicy.problems).
     warnings: tuple[str, ...] = ()
     _by_key: dict[str, Item] = field(default_factory=dict)
+    _conns: dict[str, ConnectSpec] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self._by_key = {i.key: i for i in self.items}
+        self._conns = {i.connect.backend: i.connect for i in self.items if i.connect is not None}
 
     @property
     def keys(self) -> list[str]:
@@ -115,6 +151,18 @@ class Policy:
         """이 게이트웨이 백엔드들을 쓰려면 필요한 키들(HE팀 페르소나의 앱 → 플랫폼)."""
         return sorted({i.key for i in self.items for b in backends if b in i.gateway})
 
+    def connections(self) -> dict[str, ConnectSpec]:
+        """외부 연결 선언 — 백엔드 키(= 포털 service) → 선언. 박스 파일에서 검사를 통과한 것만 있다(docs/ext-connect)."""
+        return dict(self._conns)
+
+    def gateway_connections(self) -> dict[str, dict]:
+        """게이트웨이에 넘길 선언 — 백엔드를 붙이고 거절 안내 · 앱 표시 · 읽기 도구에 쓰는 칸만. 카드 문구 · 확인 방법(verify) 칸은
+        싣지 않는다(게이트웨이가 쓰지 않는다). 키는 늘 같은 응답의 gateway_policy() 에 있다(connect 는 그 항목의 gateway: 안에서만 산다)."""
+        return {k: {"platform": c.platform_id, "label": c.label, "desc": c.desc, "hint": c.token_hint, "prefix": c.token_prefix,
+                    "mcp_url": c.mcp_url, "list_auth": c.list_auth, "read_tools": list(c.read_tools),
+                    "workspace_header": c.workspace_header}
+                for k, c in sorted(self._conns.items())}
+
 
 # 박스 파일에서 읽는 절은 이 둘뿐이다. 소속·기본 허가·기능까지 받으면 추적되지 않는 파일 한 줄이 전원의 권한을 바꾼다.
 LOCAL_SECTIONS = ("platforms", "sso_affiliation_map")
@@ -147,6 +195,12 @@ def load_raw(path: Path) -> dict:
     notes: list[str] = []
     if raw.pop("sso_affiliation_map", None) is not None:
         notes.append(f"{path.name} 의 sso_affiliation_map 은 읽지 않는다 — Claim 값은 사내 식별자라 {local.name} 에만 적는다")
+    # 외부 연결 선언(connect:)도 박스 파일에서만 받는다 — 추적 파일에 적으면 git push 한 번으로 모든 박스의 사람 토큰이 그 주소로
+    # 간다(docs/ext-connect PB2). 합치기 **전에** 떼므로, 합친 뒤 남은 connect 는 박스 파일의 것이다.
+    for d in raw.get("platforms") or []:
+        if isinstance(d, dict) and d.pop("connect", None) is not None:
+            notes.append(f"{path.name} 의 플랫폼 '{d.get('id')}' 에 적힌 connect 는 읽지 않는다 — 외부 연결 선언은 박스 파일"
+                         f"({local.name})의 그 항목에만 적는다")
     if local.exists():
         ov = _read_yaml(local) or {}
         if not isinstance(ov, dict):
@@ -203,16 +257,183 @@ def _bad_sso_row(row: object, affiliations: dict[str, dict]) -> str | None:
     return None
 
 
+# ── 외부 연결 선언(connect:) — docs/ext-connect ─────────────────────────────────
+# 칸과 뜻은 요청서 1-2 표다. 틀린 블록은 **던지지 않고 그 블록만 버린다**(SSO 행과 같은 자세 — 박스 파일의 오타 한 줄이 권한 표 전체를
+# 멈추면 안 된다). 모르는 칸도 버린다 — `owner_feild` 같은 오타가 칸을 조용히 기본값(주인 확인 끔)으로 남기지 않게(EC-D3).
+CONNECT_KEYS = frozenset(("backend", "mcp_url", "token_hint", "token_prefix", "issue", "issue_url", "note", "verify", "verify_url",
+                          "owner_field", "list_auth", "read_tools", "workspace_header", "workspace_label"))
+# 받지 않는 백엔드 키 — 내장 둘(RA · TestScope — 주인 확인이 있는 길을 설정으로 확인 없는 길로 옮기지 못하게)과 게이트웨이 설정의 절 이름.
+CONNECT_RESERVED = frozenset(("reportarchive", "testscope", "_gateway", "rest", "portal", "heax_registry"))
+CONNECT_VERIFY = ("none", "mcp", "url")
+# 사람 토큰의 다른 서비스 접두 — 이것으로 시작하는 토큰은 다른 플랫폼 것으로 보고 받지 않는다(내장 둘의 접두).
+BUILTIN_TOKEN_PREFIXES = ("rat_", "tsc_pat_")
+_CONNECT_KEY = re.compile(r"^[a-z0-9][a-z0-9_-]{1,40}$")
+_HOST = re.compile(r"^[a-z0-9._-]+$")
+_HEADER = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+_FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$")
+_TOOL = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+_PREFIX = re.compile(r"^[\x21-\x7e]{1,32}$")
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# 실을 수 없는 헤더(게이트웨이도 같은 목록으로 막는다) — 자격 · 연결 · 본문 · MCP 세션 · 포털/허브 신원.
+_BLOCKED_HEADERS = frozenset(("authorization", "proxy-authorization", "cookie", "host", "accept", "x-csrf-token"))
+_BLOCKED_HEADER_PREFIXES = ("content-", "mcp-", "x-hwax-", "x-heax-")
+_TEXT_MAX = {"token_hint": 64, "issue": 1000, "note": 1000, "workspace_label": 40}
+
+
+def blocked_header(name: str) -> bool:
+    n = name.strip().lower()
+    return n in _BLOCKED_HEADERS or n.startswith(_BLOCKED_HEADER_PREFIXES)
+
+
+def _bad_url(url: object) -> str | None:
+    """사람 토큰을 보낼 주소의 꼴 — http(s) · 계정 · 쿼리 · 조각 없음 · 호스트는 IP 이거나 [a-z0-9._-]+(게이트웨이가 NO_PROXY 에 적을 수 있는
+    꼴 — `_bypass_proxy_for` 와 같은 규칙). 틀리면 까닭."""
+    if not isinstance(url, str) or not url.strip():
+        return "비었다"
+    raw = url.strip()
+    try:
+        u = urlsplit(raw)
+        u.port   # noqa: B018 — 틀린 포트는 여기서 ValueError
+    except ValueError:
+        return "주소로 읽지 못했다"
+    if u.scheme not in ("http", "https"):
+        return "http(s) 만 받는다"
+    if "@" in u.netloc:
+        return "계정(user@)을 넣지 않는다"
+    if "?" in raw:
+        return "?쿼리를 넣지 않는다(토큰이 주소에 실리는 꼴을 막는다)"
+    if "#" in raw:
+        return "#조각을 넣지 않는다"
+    host = u.hostname or ""
+    if not host:
+        return "호스트가 없다"
+    try:
+        ok = not getattr(ipaddress.ip_address(host), "scope_id", None)
+    except ValueError:
+        ok = bool(_HOST.fullmatch(host))
+    return None if ok else "호스트는 IP 이거나 [a-z0-9._-]+ 여야 한다"
+
+
+def _parse_connect(d: dict, *, gateway: tuple[str, ...], label: str, desc: str, notes: list[str],
+                   seen: set[str]) -> ConnectSpec | None:
+    """플랫폼 항목 d 의 connect 블록 → 선언(없으면 None). 틀리면 그 블록만 버리고 notes 에 까닭을 남긴다."""
+    c = d.get("connect")
+    if c is None:
+        return None
+    pid = str(d.get("id"))
+
+    def drop(why: str) -> None:
+        notes.append(f"플랫폼 '{pid}' 의 connect 를 버렸다 — {why}. 카드 · 게이트웨이 백엔드가 생기지 않는다(docs/ext-connect)")
+
+    if not isinstance(c, dict):
+        drop("매핑이 아니다(mcp_url · token_prefix … 칸을 가진 블록)")
+        return None
+    unknown = sorted(str(k) for k in c if k not in CONNECT_KEYS)
+    if unknown:
+        drop(f"모르는 칸 {', '.join(unknown)}(오타면 그 칸이 조용히 기본값이 된다)")
+        return None
+    texts: dict[str, str] = {}
+    for k in ("backend", "mcp_url", "token_hint", "token_prefix", "issue", "issue_url", "note", "verify", "verify_url",
+              "owner_field", "list_auth", "workspace_header", "workspace_label"):
+        v = c.get(k)
+        if v is not None and not isinstance(v, str):
+            drop(f"{k} 가 글자가 아니다")
+            return None
+        texts[k] = (v or "").strip()
+        if k in _TEXT_MAX and len(texts[k]) > _TEXT_MAX[k]:
+            drop(f"{k} 가 {_TEXT_MAX[k]}자를 넘는다")
+            return None
+    backend = texts["backend"] or pid
+    if not _CONNECT_KEY.fullmatch(backend):
+        drop(f"백엔드 키 {backend!r} 의 꼴이 틀렸다(^[a-z0-9][a-z0-9_-]{{1,40}}$)")
+        return None
+    if backend in CONNECT_RESERVED or backend.startswith("heax-"):
+        drop(f"백엔드 키 {backend!r} 는 받지 않는다(내장 연결 · 허브 앱 · 게이트웨이 설정의 이름)")
+        return None
+    if backend not in gateway:
+        drop(f"백엔드 키 {backend!r} 가 그 항목의 gateway: 에 없다(권한 행 없이 연결만 생기지 않게)")
+        return None
+    if backend in seen:
+        drop(f"백엔드 키 {backend!r} 를 다른 플랫폼이 이미 선언했다")
+        return None
+    why = _bad_url(texts["mcp_url"])
+    if why:
+        drop(f"mcp_url — {why}")
+        return None
+    if texts["issue_url"]:
+        try:
+            iu = urlsplit(texts["issue_url"])
+        except ValueError:
+            iu = None
+        if iu is None or iu.scheme not in ("http", "https") or not iu.hostname:
+            drop("issue_url 은 http(s) 주소만 받는다")
+            return None
+    prefix = texts["token_prefix"]
+    if prefix and not _PREFIX.fullmatch(prefix):
+        drop("token_prefix 는 공백 없는 32자 이하다")
+        return None
+    verify = texts["verify"] or "none"
+    if verify not in CONNECT_VERIFY:
+        drop(f"verify 는 {' · '.join(CONNECT_VERIFY)} 가운데 하나다")
+        return None
+    if verify == "url":
+        why = _bad_url(texts["verify_url"])
+        if why:
+            drop(f"verify: url 인데 verify_url — {why}")
+            return None
+    elif texts["verify_url"]:
+        drop("verify_url 은 verify: url 일 때만 쓴다")
+        return None
+    if texts["owner_field"]:
+        if verify != "url":
+            drop("owner_field 는 verify: url 일 때만 쓴다(주인을 읽을 응답이 있어야 한다)")
+            return None
+        if not _FIELD.fullmatch(texts["owner_field"]):
+            drop("owner_field 는 응답 JSON 의 칸 이름이다(영문 · 숫자 · _)")
+            return None
+    list_auth = texts["list_auth"] or "open"
+    if list_auth != "open":
+        who = list_auth.removeprefix("registered:").strip().lower() if list_auth.startswith("registered:") else ""
+        if not _EMAIL.fullmatch(who):
+            drop("list_auth 는 open 또는 registered:<포털 이메일> 이다")
+            return None
+        list_auth = f"registered:{who}"
+    rt = c.get("read_tools") or []
+    if not isinstance(rt, list) or not all(isinstance(t, str) and _TOOL.fullmatch(t.strip()) for t in rt):
+        drop("read_tools 는 도구 원래 이름의 목록이다")
+        return None
+    header = texts["workspace_header"]
+    if header and (not _HEADER.fullmatch(header) or blocked_header(header)):
+        drop(f"workspace_header {header!r} 는 실을 수 없는 헤더다(자격 · 연결 · 본문 · MCP · 포털/허브 신원 헤더는 막는다)")
+        return None
+    if texts["workspace_label"] and not header:
+        drop("workspace_label 은 workspace_header 와 함께 쓴다")
+        return None
+    seen.add(backend)
+    return ConnectSpec(backend=backend, mcp_url=texts["mcp_url"], platform_id=pid, label=label, desc=desc,
+                       token_hint=texts["token_hint"] or (f"{prefix}…" if prefix else ""), token_prefix=prefix,
+                       issue=texts["issue"], issue_url=texts["issue_url"], note=texts["note"], verify=verify,
+                       verify_url=texts["verify_url"], owner_field=texts["owner_field"], list_auth=list_auth,
+                       read_tools=tuple(dict.fromkeys(t.strip() for t in rt)), workspace_header=header,
+                       workspace_label=(texts["workspace_label"] or ("워크스페이스" if header else "")))
+
+
 def parse_policy(raw: dict) -> Policy:
     items: list[Item] = []
+    notes = [str(n) for n in raw.get(_NOTES) or []]
+    seen: set[str] = set()
     for kind, prefix, section in (("feature", FEAT, "features"), ("platform", PLAT, "platforms")):
         for d in raw.get(section) or []:
+            label, desc = str(d.get("label") or d["id"]), str(d.get("desc") or "")
+            gateway = tuple(d.get("gateway") or ())
             items.append(Item(
                 key=f"{prefix}{d['id']}", id=str(d["id"]), kind=kind,
-                label=str(d.get("label") or d["id"]),
-                desc=str(d.get("desc") or ""), implies=tuple(d.get("implies") or ()),
-                systems=tuple(d.get("systems") or ()), gateway=tuple(d.get("gateway") or ()),
-                hide_unless_routed=bool(d.get("hide_unless_routed", False))))
+                label=label,
+                desc=desc, implies=tuple(d.get("implies") or ()),
+                systems=tuple(d.get("systems") or ()), gateway=gateway,
+                hide_unless_routed=bool(d.get("hide_unless_routed", False)),
+                connect=(_parse_connect(d, gateway=gateway, label=label, desc=desc, notes=notes, seen=seen)
+                         if kind == "platform" else None)))
     keys = [i.key for i in items]
     if len(keys) != len(set(keys)):
         raise ValueError("access.yaml: 같은 id 가 두 번 있다")
@@ -236,7 +457,7 @@ def parse_policy(raw: dict) -> Policy:
         raise ValueError(f"access.yaml: default_grants 에 없는 키 {bad}")
     # SSO Claim → 소속 표. 위의 절들과 달리 틀린 행은 **던지지 않고 버린다** — 박스 파일의 오타 한 줄이 권한 표 전체를 멈추면
     # 안 된다. 대신 조용히 버리지 않는다: 모르는 소속으로 가는 행이 남으면 그 사람은 소속 없이(기본 권한) 생기고 아무도 모른다.
-    notes = [str(n) for n in raw.get(_NOTES) or []]
+    # (notes 는 위에서 load_raw 의 메모로 시작했다 — 버린 connect 블록의 까닭도 이미 들어 있다.)
     rows = raw.get("sso_affiliation_map") or []
     if not isinstance(rows, list):
         notes.append("sso_affiliation_map 이 목록이 아니다 — 통째로 버렸다('- {claim: …, value: …, affiliation: …}' 를 줄마다)")
@@ -427,6 +648,11 @@ def compute(policy: Policy, *, groups: list[str], row: dict | None,
         for k in list(reasons):
             for imp in policy.implied_by(k):
                 reasons.setdefault(imp, f"implied:{k}")
+    # '외부 연결' 화면의 문(docs/ext-connect PB12) — 연결 선언이 있는 플랫폼 권한을 하나라도 가지면. 화면이 플랫폼 이름 없이 이것 하나만
+    # 본다(새 플랫폼마다 화면을 빌드하지 않게). 표의 항목이 아니라 요청 · 허가 대상이 아니고 '내 권한' 표에도 안 나온다.
+    via = next((c.need for c in policy.connections().values() if c.need in reasons), None)
+    if via:
+        reasons.setdefault(CONNECT_FEATURE, f"implied:{via}")
     return Entitlements(keys=set(reasons), reasons=reasons, affiliation=aff, is_admin=is_admin)
 
 

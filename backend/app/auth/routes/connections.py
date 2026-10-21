@@ -12,22 +12,27 @@ TestScope(다른 조직 포털)도 같은 등록부를 쓴다 — 그쪽 개인 
 """
 import hmac
 import logging
+import re
 
 import httpx
+import jwt
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.access.policy import BUILTIN_TOKEN_PREFIXES, ConnectSpec
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.auth.user_store import UserStore
 from app.config import Settings, get_settings
-from app.deps import principal_pat_or_session, require_csrf
+from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["connections"])
 
 SERVICES = ("reportarchive", "testscope")
+# 내장 연결 — 주인 확인 · 부서가 있는 RA · TestScope. 아래 외부 연결(ext) 길은 이 둘을 받지 않는다(설정으로 확인 없는 길로 옮기지 못하게).
+BUILTIN = frozenset(SERVICES)
 
 
 def _store(request: Request) -> UserStore:
@@ -326,6 +331,186 @@ async def delete_testscope_connection(
     return JSONResponse({"ok": True})
 
 
+# ── 외부 연결 — 박스 권한표의 connect: 선언으로 붙는 플랫폼(docs/ext-connect) ─────────────────────
+# 위 RA · TestScope 는 그대로다. 아래는 플랫폼 이름을 모르는 일반 길이다 — 선언이 카드 문구 · 토큰 접두 · 확인 방법을 정하고, 새 플랫폼은
+# 박스 파일 한 곳으로 붙는다(빌드 · 코드 · 재기동 없음). 새 플랫폼은 토큰 주인을 확인하지 않는다(사용자 결정 10-21) — 대신 등록은 브라우저
+# 세션 + CSRF 만 받고(PAT 를 훔친 사람이 남의 행에 제 토큰을 넣지 못하게), 포털 JWT · 다른 서비스 접두를 네트워크를 쓰기 전에 거른다.
+_SERVICE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,40}$")
+_TOKEN = re.compile(r"^[\x21-\x7e]{8,512}$")
+_WORKSPACE = re.compile(r"^[A-Za-z0-9._:-]{0,120}$")
+_BEARER = re.compile(r"^bearer\s+", re.I)
+_MCP_INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                        "clientInfo": {"name": "hwax-portal-verify", "version": "1"}}}
+
+
+def _registry(request: Request) -> dict[str, ConnectSpec]:
+    """지금 정책의 외부 연결 선언 — 백엔드 키(= service) → 선언. 정책 객체는 요청마다 mtime 을 본다(재기동 없이 반영)."""
+    access = getattr(request.app.state, "access", None)
+    return access.get().connections() if access is not None else {}
+
+
+def _hidden_keys(request: Request) -> set[str]:
+    """이 박스에서 권한 요청을 받지 않는 플랫폼 키 — 권한 화면과 같은 셈(access/routes._hidden)."""
+    access = getattr(request.app.state, "access", None)
+    catalog = getattr(request.app.state, "catalog", None)
+    if access is None or catalog is None:
+        return set()
+    return access.get().hidden_keys(catalog.live_ids())
+
+
+@router.get("/auth/connections/ext")
+def list_ext_connections(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    """외부 연결 카드 — 선언마다 문구 · 내 권한 · 등록 상태, 그리고 더는 선언이 없는 내 토큰(고아). 주소 · 확인 주소 · 목록 자격은 내지 않는다."""
+    store = _store(request)
+    reg = _registry(request)
+    hidden = _hidden_keys(request)
+    have = set(principal.groups)
+    platforms = [{"service": k, "label": c.label, "token_hint": c.token_hint, "issue": c.issue, "issue_url": c.issue_url,
+                  "note": c.note, "verify": c.verify, "workspace_label": c.workspace_label,
+                  "entitled": c.need in have, "need": c.need, "requestable": c.need not in hidden,
+                  "connected": store.connection_meta(email=principal.email, service=k)}
+                 for k, c in sorted(reg.items(), key=lambda kv: (kv[1].label, kv[0]))]
+    orphans = []
+    for svc in store.connection_services(principal.email):
+        if svc in BUILTIN or svc in reg:
+            continue
+        meta = store.connection_meta(email=principal.email, service=svc) or {}
+        orphans.append({"service": svc, "tail": meta.get("tail") or "", "created_at": meta.get("created_at")})
+    return {"platforms": platforms, "orphans": orphans}
+
+
+class ExtConnectionIn(BaseModel):
+    # 'Bearer ' 를 붙여 넣어도 받는다 — 꼴은 그것을 뗀 뒤에 본다(FMEA 화면이 'Bearer fmea_…' 로 보여 준다).
+    token: str = Field(min_length=1, max_length=600)
+    workspace: str | None = Field(default=None, max_length=120)
+
+
+def _portal_jwt(token: str, issuer: str) -> bool:
+    """HWAX 포털이 낸 JWT(PAT · 세션)인가 — 서명은 보지 않고 iss 만 본다. 포털 PAT 는 접두가 없어 접두 검사로는 못 거른다."""
+    if token.count(".") != 2:
+        return False
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False, "verify_exp": False, "verify_aud": False})
+    except jwt.PyJWTError:
+        return False
+    return isinstance(claims, dict) and claims.get("iss") == issuer
+
+
+def _foreign_prefix(spec: ConnectSpec, token: str, reg: dict[str, ConnectSpec]) -> str:
+    """토큰이 다른 서비스의 접두로 시작하면 그 접두. 자기 접두의 앞부분인 접두는 보지 않는다(mnx_pat_ 플랫폼에 mnx_ 플랫폼이 있어도)."""
+    others = {c.token_prefix for k, c in reg.items() if k != spec.backend and c.token_prefix} | set(BUILTIN_TOKEN_PREFIXES)
+    if spec.token_prefix:
+        others = {p for p in others if not spec.token_prefix.startswith(p)}
+    return next((p for p in sorted(others, key=len, reverse=True) if token.startswith(p)), "")
+
+
+async def _verify_ext(spec: ConnectSpec, token: str, email: str) -> None:
+    """선언의 verify 대로 토큰의 **유효성**만 본다(none · mcp · url). owner_field 가 있으면 주인도 본다(fail-closed — TestScope 와 같다).
+    사람 토큰이 사내 프록시를 지나지 않게 env 프록시를 따르지 않는다(trust_env=False). 응답 본문은 돌려주지 않는다."""
+    if spec.verify == "none":
+        return
+    auth = {"Authorization": f"Bearer {token}"}
+    try:
+        async with httpx.AsyncClient(timeout=8, trust_env=False) as cli:
+            if spec.verify == "mcp":
+                resp = await cli.post(spec.mcp_url, json=_MCP_INIT,
+                                      headers={**auth, "Accept": "application/json, text/event-stream"})
+                sid = resp.headers.get("mcp-session-id")
+                if resp.status_code == 200 and sid:
+                    try:   # 확인용 세션을 닫는다 — 실패해도 확인 결과는 그대로다
+                        await cli.delete(spec.mcp_url, headers={**auth, "Mcp-Session-Id": sid})
+                    except httpx.HTTPError:
+                        pass
+            else:
+                resp = await cli.get(spec.verify_url, headers=auth)
+    except httpx.HTTPError as exc:
+        raise AuthError(f"{spec.label} 에 연결하지 못했습니다({exc.__class__.__name__}). 서비스가 떠 있는지 확인하세요.",
+                        status_code=502) from exc
+    if resp.status_code in (401, 403):
+        raise AuthError(f"{spec.label} 가 이 토큰을 거부했습니다 — 만료 · 폐기됐거나 잘못 복사된 토큰입니다.", status_code=400)
+    if resp.status_code != 200:
+        raise AuthError(f"{spec.label} 확인 실패(HTTP {resp.status_code}).", status_code=400)
+    if not spec.owner_field:
+        return
+    # 맨 모델이든 {data: …} 봉투든 그 칸의 이메일 — '모르겠다' 는 '맞다' 가 아니다(RA · TestScope 와 같은 fail-closed).
+    try:
+        me = resp.json()
+    except ValueError:
+        me = None
+    me = me if isinstance(me, dict) else {}
+    data = me.get("data") if isinstance(me.get("data"), dict) else {}
+    owner = str(me.get(spec.owner_field) or data.get(spec.owner_field) or "").strip().lower()
+    if not owner:
+        raise AuthError(f"{spec.label} 가 계정 이메일({spec.owner_field})을 주지 않아 이 토큰이 누구 것인지 확인할 수 없습니다 — "
+                        "등록하지 않습니다.", status_code=502)
+    if owner != email.strip().lower():
+        raise AuthError(f"{spec.label} 계정 이메일({owner})이 포털 계정({email})과 다릅니다. 같은 이메일의 {spec.label} 계정에서 "
+                        "발급한 토큰을 등록하세요.", status_code=400)
+
+
+@router.put("/auth/connections/ext/{service}")
+async def set_ext_connection(
+    service: str,
+    body: ExtConnectionIn,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    principal: Principal = Depends(get_current_principal),
+    _: None = Depends(require_csrf),
+) -> JSONResponse:
+    """외부 연결 토큰 등록 — 브라우저 세션 + CSRF 만(PAT 거절). ⓪~⑥ 은 네트워크를 쓰지 않는다(docs/ext-connect PB8)."""
+    token = _BEARER.sub("", body.token.strip(), count=1)                             # ⓪
+    reg = _registry(request)
+    spec = None if (service in BUILTIN or not _SERVICE.fullmatch(service)) else reg.get(service)
+    if spec is None:                                                                # ①
+        raise AuthError("모르는 외부 연결입니다.", status_code=404)
+    ensure(principal, spec.need)                                                    # ②
+    if not _TOKEN.fullmatch(token):                                                 # ③
+        raise AuthError("토큰 꼴이 아닙니다 — 공백 · 줄바꿈 없이 8~512자를 그대로 붙여 넣으세요.", status_code=400)
+    if _portal_jwt(token, settings.jwt_issuer):                                     # ④
+        raise AuthError(f"HWAX 포털 토큰입니다 — {spec.label} 에서 발급한 토큰을 붙여 넣으세요(포털 토큰은 다른 서버로 보내지 않습니다).",
+                        status_code=400)
+    if spec.token_prefix and not token.startswith(spec.token_prefix):               # ⑤
+        raise AuthError(f"{spec.label} 토큰은 {spec.token_prefix} 로 시작합니다 — 다른 서비스의 토큰이 아닌지 확인하세요.",
+                        status_code=400)
+    other = _foreign_prefix(spec, token, reg)
+    if other:
+        raise AuthError(f"{other} 로 시작하는 토큰은 다른 서비스의 것입니다 — {spec.label} 에서 발급한 토큰을 붙여 넣으세요.",
+                        status_code=400)
+    workspace = (body.workspace or "").strip()                                      # ⑥
+    if workspace and not spec.workspace_header:
+        raise AuthError(f"{spec.label} 연결은 워크스페이스 칸을 받지 않습니다.", status_code=400)
+    if not _WORKSPACE.fullmatch(workspace):
+        raise AuthError("워크스페이스 값은 영문 · 숫자 · . _ : - 로 120자 이하입니다.", status_code=400)
+    await _verify_ext(spec, token, principal.email)                                 # ⑦
+    _store(request).set_connection(email=principal.email, service=service, token=token, workspace=workspace)   # ⑧
+    await _invalidate_gateway_cache(settings, principal.email)                      # ⑨
+    logger.info("connection set: %s for %s (verify=%s, owner %s)", service, principal.email, spec.verify,  # ⑩ 토큰은 남기지 않는다
+                "verified" if spec.owner_field else "not verified")
+    return JSONResponse({"ok": True, "verify": spec.verify})
+
+
+@router.delete("/auth/connections/ext/{service}")
+async def delete_ext_connection(
+    service: str,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    principal: Principal = Depends(get_current_principal),
+    _: None = Depends(require_csrf),
+) -> JSONResponse:
+    """외부 연결 토큰 해제 — 권한을 잃었거나 선언이 사라진(고아) 행도 지운다. 내장 RA · TestScope 는 제 주소로만 지운다."""
+    if service in BUILTIN or not _SERVICE.fullmatch(service):
+        raise AuthError("모르는 외부 연결입니다.", status_code=404)
+    if not _store(request).delete_connection(email=principal.email, service=service):
+        raise AuthError("등록된 토큰이 없습니다.", status_code=404)
+    await _invalidate_gateway_cache(settings, principal.email)
+    logger.info("connection deleted: %s for %s", service, principal.email)
+    return JSONResponse({"ok": True})
+
+
 # ── 게이트웨이 전용 내부 조회 — 공유 시크릿(GW_TOKEN)으로만 연다 ─────────────────
 @router.get("/internal/connections/{service}")
 def internal_connection(
@@ -342,7 +527,8 @@ def internal_connection(
     # 공유 시크릿은 **상수 시간**으로 본다(access/routes.py 와 같은 이유).
     if not hmac.compare_digest(auth, f"Bearer {expected}"):
         raise AuthError("forbidden", status_code=403)
-    if service not in SERVICES:
+    # 외부 연결 선언 키도 받는다(docs/ext-connect PB10) — 선언이 사라지면 404 라 게이트웨이가 호출을 거절한다.
+    if service not in SERVICES and service not in _registry(request):
         raise AuthError("unknown service", status_code=404)
     conn = _store(request).get_connection(email=email, service=service)
     if not conn:

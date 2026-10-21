@@ -3,22 +3,22 @@
 > 계획 [PLAN.md](PLAN.md) · 요청서 [request.md](request.md) · 결정 [context-notes.md](context-notes.md).
 
 ## E1 포털 백엔드
-- [ ] PB1 `ConnectSpec`(frozen) · `Item.connect`
-- [ ] PB2 `load_raw` — 추적 권한표의 `connect` 를 떼고 알린다(박스 파일에서만)
-- [ ] PB3 `_parse_connect` — 칸 표대로 검사, 틀리면 그 블록만 버리고 알린다(모르는 칸도 — EC-D3)
-- [ ] PB4 `Policy.connections()` · `gateway_connections()`
-- [ ] PB5 `/internal/access/policy` 에 `connections`(한 파싱 · 한 응답)
-- [ ] PB6 `BUILTIN` · `_registry(request)`
-- [ ] PB7 `GET /auth/connections/ext` — platforms · orphans(주소 · verify_url · list_auth 를 내지 않는다)
-- [ ] PB8 `PUT · DELETE /auth/connections/ext/{service}` — 세션 + CSRF 만, ⓪~⑩
-- [ ] PB9 `_verify_ext` — `trust_env=False`, none · mcp · url, owner_field fail-closed
-- [ ] PB10 `/internal/connections/{service}` 가 선언 키를 받는다
-- [ ] PB11 `connection_services(email)`
-- [ ] PB12 합성 권한 `feat:connect`
-- [ ] PB13 추적 권한표 주석(matnexus · fmea · 머리)
-- [ ] PB14(선택) check-egress 가 `connections[*].mcp_url` 호스트도 알린다
-- [ ] 시험 — 파싱 · 오버레이 · 재기동 없는 반영 · 내부 정책 불변식 · ext 목록 · PUT · DELETE · 합성 권한 · 호환
-- [ ] 포털 전체 시험
+- [x] PB1 `ConnectSpec`(frozen) · `Item.connect`
+- [x] PB2 `load_raw` — 추적 권한표의 `connect` 를 떼고 알린다(박스 파일에서만)
+- [x] PB3 `_parse_connect` — 칸 표대로 검사, 틀리면 그 블록만 버리고 알린다(모르는 칸도 — EC-D3)
+- [x] PB4 `Policy.connections()` · `gateway_connections()`
+- [x] PB5 `/internal/access/policy` 에 `connections`(한 파싱 · 한 응답)
+- [x] PB6 `BUILTIN` · `_registry(request)`
+- [x] PB7 `GET /auth/connections/ext` — platforms · orphans(주소 · verify_url · list_auth 를 내지 않는다)
+- [x] PB8 `PUT · DELETE /auth/connections/ext/{service}` — 세션 + CSRF 만, ⓪~⑩
+- [x] PB9 `_verify_ext` — `trust_env=False`, none · mcp · url, owner_field fail-closed
+- [x] PB10 `/internal/connections/{service}` 가 선언 키를 받는다
+- [x] PB11 `connection_services(email)`
+- [x] PB12 합성 권한 `feat:connect`
+- [x] PB13 추적 권한표 주석(matnexus · fmea · 머리)
+- [~] PB14(선택) — 하지 않는다(EC-D5)
+- [x] 시험 — 파싱 · 오버레이 · 재기동 없는 반영 · 내부 정책 불변식 · ext 목록 · PUT · DELETE · 합성 권한 · 호환(`test_ext_connections.py` 68)
+- [x] 포털 전체 시험 — 3,202 통과 · 2 실패(HEAD 에서도 같다, EC-D6)
 
 ## E2 게이트웨이
 - [ ] GW1 `_BUILTIN_CONN` · `_CONN_REG` · `_CONN_ACTIVE` · `_CONN_STATUS`

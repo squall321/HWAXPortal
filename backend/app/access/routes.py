@@ -324,9 +324,14 @@ def _internal(request: Request, settings: Settings) -> None:
 
 @router.get("/internal/access/policy")
 def internal_policy(request: Request, settings: Settings = Depends(get_settings)) -> dict:
-    """게이트웨이 백엔드별 필요 권한 — 게이트웨이가 allowed_groups 로 쓴다(access-control D-4)."""
+    """게이트웨이 백엔드별 필요 권한 — 게이트웨이가 allowed_groups 로 쓴다(access-control D-4).
+
+    `connections` 는 외부 연결 선언(박스 권한표의 connect: — docs/ext-connect)이다. 권한 행과 **같은 파싱 · 같은 응답**으로 낸다 — 게이트웨이가
+    둘을 따로 받으면 행 없는 선언이나 선언 없는 행을 잠깐이라도 볼 수 있다. 선언 키는 늘 backends 에 있다(connect 는 그 항목의 gateway:
+    안에서만 산다). backends 만 읽는 쪽(옛 게이트웨이 · update-collab · update-all)은 그대로 돈다."""
     _internal(request, settings)
-    return {"backends": _policy(request).gateway_policy()}
+    policy = _policy(request)
+    return {"backends": policy.gateway_policy(), "connections": policy.gateway_connections()}
 
 
 @router.get("/internal/access/entitlements")

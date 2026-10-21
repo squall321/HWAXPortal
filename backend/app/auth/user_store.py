@@ -356,6 +356,13 @@ class UserStore:
             return None
         return {"tail": row[0][-4:], "workspace": row[1], "created_at": row[2]}
 
+    def connection_services(self, email: str) -> list[str]:
+        """그 사람이 토큰을 등록한 service 들 — 토큰 칸은 읽지 않는다('외부 연결' 화면의 고아 줄, docs/ext-connect)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT service FROM connections WHERE email = ? ORDER BY service", (norm_email(email),)).fetchall()
+        return [r[0] for r in rows]
+
     def set_hub_app_muted(self, email: str, app: str, muted: bool) -> list[str] | None:
         """허브에서 앱 **하나**를 끄거나 켠다 — 읽고-고쳐-쓰기를 잠금 안에서 한 번에. 목록을 통째로 받던 때는 두 탭이
         각자 옛 목록을 보내 서로의 선택을 조용히 되돌렸다(검토 2026-09-29). 행이 없으면 None, 있으면 새 목록."""
