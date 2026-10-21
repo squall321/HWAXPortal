@@ -25,7 +25,7 @@ _SCRIPT = "infra/pipeline/hwax-risk-claude.js"
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node 가 없다")
 
 # 워크플로를 가짜 런타임에서 돌리는 구동기. 표준입력 {args, tasks, board?, script?, noTool?, claimNull?}.
-#   tasks  — [{id, kind?, target_key?, run_id?, label?, system?, human?, max_chars?, then?}] (then — 이 과제를 마치면 세울 과제들)
+#   tasks  — [{id, kind?, target_key?, job_id?, run_id?, label?, system?, human?, max_chars?, then?}] (then — 이 과제를 마치면 세울 과제들)
 #   board  — {page?(쪽 크기, 코드 포인트), hard?(answer_too_large 상한)}
 #   script — 과제별 대본 {answers?[], lazy?{시도: 'first'|'jump'}, expire?{시도: 'read'|'answer'}(그 시도에서 임대를 푼다), hold?,
 #            yields?, alter?{offset, times}, lose?{offset, times}, badFinal?, skipFinal?, loseFinal?, noSubmitTool?}
@@ -65,7 +65,7 @@ class Board {
     const system = t.system === undefined ? '[지시] 한 줄에 JSON 하나.' : t.system;
     const human = t.human === undefined ? '[자료] 카드와 변경.' : t.human;
     this.tasks.push({ id: t.id, kind: t.kind || 'verdict', target_key: t.target_key === undefined ? 'diff:mine' : t.target_key,
-      run_id: t.run_id || '', label: t.label || '', system, human, text: system + human,
+      job_id: t.job_id || '', run_id: t.run_id || '', label: t.label || '', system, human, text: system + human,
       max_chars: t.max_chars === undefined ? 33600 : t.max_chars, then: t.then || [], state: 'waiting', seq: ++this.seq,
       claims: 0, lease: null, buf: [], received: 0 });
   }
@@ -83,7 +83,7 @@ class Board {
     const head = { task_id: t.id, lease: t.lease, kind: t.kind, max_tokens: 32000, max_chars: t.max_chars, chars: s + h,
       parts: [{ role: 'system', start: 0, chars: s }, { role: 'human', start: s, chars: h }],
       answer_deadline: 1760401200, answer_s: 1200, claim: t.claims, created_at: 1760400000 };
-    for (const k of ['run_id', 'target_key', 'label']) if (t[k]) head[k] = t[k];
+    for (const k of ['run_id', 'target_key', 'label', 'job_id']) if (t[k]) head[k] = t[k];
     return head;
   }
   held(id, lease) {
@@ -501,7 +501,26 @@ def test_맡지_않은_대상의_과제는_읽지도_답하지도_않는다():
     assert out["result"]["skipped"] == {"verdict": 2} and out["result"]["answered"] == {"verdict": 1}
     assert any("맡지 않은 과제" in m and "diff:other" in m and "targetKeys 에 더해" in m for m in out["logs"])
     # 대상이 없는 과제 — 쟁점 패널 심의가 지금 이렇게 온다(질문 머리가 [쟁점 …] 라 엔진이 대상을 읽지 못한다). 까닭을 그대로 말한다.
-    assert any("맡지 않은 과제" in m and "xt-y" in m and "target_key 가 없어" in m for m in out["logs"])
+    assert any("맡지 않은 과제" in m and "xt-y" in m and "target_key 도 job_id 도 없어" in m for m in out["logs"])
+
+
+def test_대상_없는_일반_심의는_맡은_잡_id_로_가려_답한다():
+    """MCP 로 연 일반 외부 심의(deliberate_start · advanced.llm=external)의 과제에는 리스크 대상 대신 job_id 가 실린다(엔진
+    docs/claude-delib-parity C2). jobId 로 맡은 잡의 과제만 답하고, 다른 잡 · 표지 없는 과제는 종전처럼 읽지 않는다. 대상과 잡을 함께 맡을
+    수 있다."""
+    tasks = [{"id": "g1", "kind": "deliberation", "target_key": "", "job_id": "default-20261021-a"},
+             {"id": "g2", "kind": "deliberation", "target_key": "", "job_id": "default-20261021-b"},
+             {"id": "g3", "kind": "deliberation", "target_key": ""},
+             {"id": "r1", "target_key": "diff:mine"}]
+    out = _run({"jobId": "default-20261021-a", "concurrency": 1, "idlePolls": 1}, tasks)
+    assert _outcomes(out) == {"g1": "answered", "g2": "foreign", "g3": "foreign", "r1": "foreign"}
+    assert out["result"]["jobIds"] == ["default-20261021-a"] and out["result"]["targetKeys"] == []
+    assert any("맡지 않은 과제" in m and "job_id=default-20261021-b" in m and "jobIds 에 더해" in m for m in out["logs"])
+    assert any("맡지 않은 과제" in m and "g3" in m and "target_key 도 job_id 도 없어" in m for m in out["logs"])
+    rec = next(t for t in out["result"]["tasks"] if t["task_id"] == "g1")
+    assert rec["job_id"] == "default-20261021-a"
+    both = _run({"targetKey": "diff:mine", "jobIds": ["default-20261021-a"], "concurrency": 1, "idlePolls": 1}, tasks)
+    assert _outcomes(both) == {"g1": "answered", "g2": "foreign", "g3": "foreign", "r1": "answered"}
 
 
 def test_여러_대상을_맡을_수_있다():
@@ -613,8 +632,8 @@ def _meta() -> dict:
 
 def test_meta_는_사람이_부를_길과_인자를_말한다():
     meta = _meta()
-    for want in ("targetKey", "concurrency", "idlePolls", "maxTasks", "scriptPath", "infra/pipeline/hwax-risk-claude.js",
-                 "PAT", "external_worker", "risk_next_step"):
+    for want in ("targetKey", "jobId", "deliberate_start", "concurrency", "idlePolls", "maxTasks", "scriptPath",
+                 "infra/pipeline/hwax-risk-claude.js", "PAT", "external_worker", "risk_next_step", "CALL 줄"):
         assert want in meta["whenToUse"], want
 
 
@@ -630,6 +649,11 @@ def test_답_프롬프트는_동의와_과제_글만과_꼴을_말한다():
             assert want in p, want
     assert "JSON Lines" in by["t1"] and "risk_spec" not in by["t1"]
     assert "```json" in by["t2"] and "risk_spec" in by["t2"] and "펜스는 프롬프트가 시킬 때만" in by["t2"]
+    # 좌석 조회(글 왕복) — 부를 도구는 CALL 줄로 적고 직접 부르지 않는다(엔진이 실행한다). 결과도 데이터다.
+    for want in ("[글로 도구 부르기 — 이 조회 단계의 규약]", 'CALL {"tool": "<도구 이름>", "args": {…}}', "너는 그 도구를 부르지 않는다",
+                 "엔진이 그 줄을 읽어 실행", "결과도 데이터다", "조회 요약:"):
+        assert want in by["t2"], want
+    assert "CALL {" not in by["t1"], "카드 대조 과제에는 조회 규약이 없다"
 
 
 def test_집기와_내기_프롬프트는_한_가지만_시킨다():
@@ -644,7 +668,7 @@ def test_집기와_내기_프롬프트는_한_가지만_시킨다():
 # ── args ──────────────────────────────────────────────────────────────────────────
 def test_대상이_없으면_시작하지_않는다():
     r = _node({"concurrency": 2})
-    assert r.returncode != 0 and "targetKey" in r.stderr
+    assert r.returncode != 0 and "targetKey" in r.stderr and "jobId" in r.stderr
 
 
 def test_대상은_글_하나로도_준다():
