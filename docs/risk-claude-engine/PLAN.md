@@ -17,7 +17,7 @@
 ```
 
 - **에이전트 서버** — `ExternalChatModel`(LangChain 채팅 모델 꼴)이 호출을 받으면 그 메시지를 **과제**로 줄 세우고 답을 기다린다. Claude Code 워크플로가 MCP 로 과제를 집어 답을 쓰고 제출하면 그 글이 모델의 답이 되어 엔진이 평소대로 파싱·검사·보충한다. 과제는 그 잡을 시작한 사람(owner)만 집는다.
-- **카드 대조 다섯 종류**(sweep · verdict · offcard · noinput · summary)는 도구 없는 단독 호출이라 그대로 맞는다. **쟁점 패널**(심의 엔진)은 좌석이 도구를 부를 수 없으므로 `tool_mode=evidence_only` 로 돈다(기존 MCP 길과 같은 등급 표지).
+- **카드 대조 다섯 종류**(sweep · verdict · offcard · noinput · summary)는 도구 없는 단독 호출이라 그대로 맞는다. **쟁점 패널**(심의 엔진)은 좌석이 도구를 부를 수 없으므로 `tool_mode=evidence_only` 로 돈다(기존 MCP 길과 같은 등급 표지). → **10-21 고침**: 좌석 자유 조회를 글 왕복으로 연다 — 응답자가 부를 도구를 `CALL` 줄로 적고 엔진이 실행한다(`tool_mode=tools`). Tier 패널 잡 · 일반 MCP 심의도 Claude 로 — [claude-delib-parity](../claude-delib-parity/PLAN.md).
 - **창과 출력 상한이 다르다** — GLM 은 1M 창이고 Claude 는 모델에 따라 다르다. 외부 길의 `limits`·`plan` 은 `EXTERNAL_LLM_CTX_TOKENS`·`EXTERNAL_LLM_MAX_TOKENS` 로 셈하므로 `limits_rev` 가 GLM 과 다르다 — 잡 하나 안에서 엔진을 바꾸면 셀이 처음부터 돈다(받아들인다, 문서에 적는다).
 - **MCP 결과 상한** — 과제 하나의 프롬프트가 훑기면 약 12만 자라 MCP 한 응답(25,000자 안)에 안 들어간다. 과제 머리(`review_task_next`)와 본문 쪽 읽기(`review_task_read`, offset)로 나눈다. 제출도 길면 나눠 받는다.
 
@@ -40,7 +40,7 @@
 
 - 실제 Claude 로 심사를 돌려 보는 시험(사용량이 크다 — 전원 한 번에 입력 약 1.5억~2.4억 토큰, D-48).
 - GLM 과 Claude 를 셀마다 섞는 자동 선택 · 비용 계산 · Claude API 직접 호출(키 관리가 새로 생긴다).
-- 쟁점 패널 좌석의 도구 호출(외부 응답자는 엔진의 도구를 실행할 수 없다 — evidence_only 로 표시).
+- ~~쟁점 패널 좌석의 도구 호출(외부 응답자는 엔진의 도구를 실행할 수 없다 — evidence_only 로 표시).~~ → 10-21 열었다 — 엔진이 실행하는 글 왕복([claude-delib-parity](../claude-delib-parity/PLAN.md) C1).
 
 ## 6. 위험
 
