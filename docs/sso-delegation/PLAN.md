@@ -66,6 +66,8 @@ TestScope: 포털 `backend/.env TESTSCOPE_BASE_URL` · `systems.local.yaml tests
 > "아래 주소에 토큰 발급해서 연결하는 걸 예전에 report archive 처럼 연결할 생각인데, 뭘 수정해서 넣어야 하는지" · "위가 FMEA Agent 이고
 > MatNexus TestScope 도 연결해야 해" · 주소표(MatNexus · TestScope 는 한 서버 — 백엔드 8010 · 8020, MCP 8012 · 8022, 임베딩 11434 · DB 5434 공유).
 > 주소는 이 문서에 적지 않는다(박스 설정 파일에만). 결정 D-18 ~ D-20.
+>
+> **10-21 — MatNexus · FMEA 는 토큰 등록(외부 연결 `connect:`)으로 바뀜.** 사용자 결정 셋(토큰 등록만 · 새 플랫폼은 주인 확인 안 함 · 플랫폼이 늘어도 빌드 없음)으로 아래 표준 위임 · 요청서 길은 쓰지 않는다. 박스 권한표 `access.local.yaml` 의 그 항목에 `connect:` 블록 하나로 붙는다 — [docs/ext-connect](../ext-connect/PLAN.md) · 절차는 [server-setup.md](server-setup.md) C · D(다시 씀). 아래는 그때의 기록이다.
 
 | | MatNexus | TestScope | FMEA Agent |
 |---|---|---|---|

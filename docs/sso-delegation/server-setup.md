@@ -1,6 +1,6 @@
 # 사람별 위임(ste 방식) — 서버 쪽에서 사람이 할 일
 
-> 대상: 포털 운영자(cae00) · RA 담당 · TestScope · MatNexus 운영 담당 · 2026-10-03(D · E 는 10-20)
+> 대상: 포털 운영자(cae00) · RA 담당 · TestScope · MatNexus 운영 담당 · 2026-10-03(C · D 는 10-21 — 외부 연결 `connect:` 로 다시 씀)
 > 코드는 리포에 들어가 있다. 아래는 **박스마다 다른 값과 비밀**이라 사람이 넣는다(비밀·사내 주소는 리포에 적지 않는다).
 > RA 위임 비밀은 `openssl rand -hex 32` 로 만들어 RA 담당과 같은 값을 쓴다(다른 서비스와 묶지 않는다).
 
@@ -61,53 +61,96 @@ TestScope 쪽이 [testscope-request.md](testscope-request.md) 의 `/api/auth/sso
 확인: TestScope 카드가 '포털 로그인으로 본인 명의 — 등록할 것 없음'. 되돌리기: `TESTSCOPE_SSO_SECRET` 을 비우고 update-all — 토큰 등록으로 돌아간다(출력에 '사람별 위임 끄기: testscope', D-17).
 ⚠ TestScope 가 `/api/auth/sso` 를 넣기 **전에** 비밀을 넣으면 TestScope 호출이 전부 거부된다(게이트웨이가 위임으로만 부른다).
 
-## C. MatNexus — 표준 위임(10-20, D-18 · D-19)
+## C. MatNexus · FMEA Agent — 토큰 등록, 박스 권한표의 `connect:` 한 블록(10-21, [docs/ext-connect](../ext-connect/PLAN.md))
 
-MatNexus 는 TestScope 와 같은 팀의 다른 조직 서버다. 위임 창구(`/api/auth/sso`)가 이미 있어 **우리 쪽 코드 없이 설정만** 넣는다. 사람이 토큰을
-등록하지 않는다 — 게이트웨이가 그 사람 이름의 읽기 전용 `mnx_pat_` 를 받아 부른다(2일짜리, 12시간 캐시). 순서는 **MatNexus 먼저**다 — 우리 쪽에
-비밀이 생기는 순간 위임으로만 부르므로, 그쪽 창구가 꺼져 있으면 MatNexus 도구가 전부 거부된다.
+**10-21 사용자 결정으로 바뀌었다.** 10-20 판(MatNexus 는 표준 위임 · FMEA 는 그쪽 답을 기다림)은 쓰지 않는다 — 둘 다 **토큰 등록**이다. 사람이
+그쪽에서 받은 제 토큰을 포털 '개인 토큰 › 외부 연결'(`/tokens?tab=connect`) 카드에 등록하고, 게이트웨이는 그 토큰으로만 부른다. 새 플랫폼은
+토큰 주인을 확인하지 않는다(필요한 플랫폼만 `owner_field` 로 켠다). 플랫폼이 늘어도 빌드 · 코드 · 재기동이 없다. 10-20 판은 git 이력에 있다.
 
-| # | 어디 | 무엇 | 누가 |
-|---|---|---|---|
-| C1 | MatNexus 서버 `backend\.env` | `HEAX_SSO_SECRET=<비밀>`(`openssl rand -hex 32`, 다른 서비스와 묶지 않는다) · (선택) `HEAX_SSO_ALLOWED_IPS=<그쪽에서 본 cae00 주소>` → 재시작 | MatNexus 운영 |
-| C2 | MatNexus 서버 MCP | `MATNEXUS_MCP_ALLOWED_HOSTS=<MatNexus 주소>:8012`(게이트웨이가 부르는 주소를 **포트까지 그대로** — 다르면 421) · 방화벽 TCP 8012 인바운드 | MatNexus 운영 |
-| C3 | cae00 `~/Projects/HWAXMcpGateway/provision.env` | 아래 네 줄 | 포털 운영자 |
-| C4 | cae00 `backend/config/systems.local.yaml` | `matnexus: {url: http://<MatNexus 주소>:8010/}` — 앱 목록 타일(새 탭). 비면 숨긴다 | 포털 운영자 |
-| C5 | cae00 운영자 셸 | `NO_PROXY` 에 MatNexus 주소(포트 없이 — 8010 · 8012 둘을 부른다). TestScope 와 같은 서버라 그쪽을 이미 넣었으면 끝 | 포털 운영자 |
-| C6 | cae00 | `./infra/scripts/update-all.sh` | 포털 운영자 |
-| C7 | MatNexus 화면 | 쓸 사람의 MatNexus 계정이 **승인돼 있고 이메일이 포털 계정과 같아야** 한다(없거나 승인 대기면 403 — 위임은 계정을 만들지 않는다) | 사용자 · MatNexus 관리자 |
-| C8 | 포털 사용자 관리 | MatNexus 권한(`plat:matnexus` — CAEG 소속은 이미 전부) | 포털 관리자 |
+⚠ `PER_USER_SSO_APPS` 에 `matnexus:MATNEXUS` · `fmea:FMEA` 와 `MATNEXUS_*` · `FMEA_*` 줄을 **넣지 않는다.** 같은 키의 정적 백엔드가 생기면
+게이트웨이가 선언을 collision 으로 무시한다(`/health` 의 `conn_platforms` 에 `collision`). 이미 넣었으면 그 줄을 지우고 `gateway_config.json` 의
+그 항목을 지운 뒤 게이트웨이를 다시 띄운다(provision 은 주소가 없는 실행에 직전 백엔드를 보존한다).
 
-C3 의 네 줄(`<…>` 만 바꾼다, 다른 일반 앱이 이미 있으면 `PER_USER_SSO_APPS` 에 쌍을 띄어 쓰기로 더한다):
+다음 플랫폼을 붙이는 절차(요청서 [1-7](../ext-connect/request.md)).
+
+| # | 무엇 | 누가 |
+|---|---|---|
+| C1 | 그쪽 팀에서 넷을 받는다 — MCP 주소, 토큰 접두, 사람이 토큰을 발급하는 곳, 토큰 없이 initialize · tools/list 가 되는지. 코드는 받지 않는다 | 포털 운영자 |
+| C2 | cae00 에서 프록시 없이 · 토큰 없이 미리 본다(아래 명령, 비밀은 보내지 않는다). 200 이면 `list_auth: open`, 401 이면 `registered:<포털 이메일>`. 연결이 끊기면 길부터 고친다 | 포털 운영자 |
+| C3 | 그쪽 도구 이름이 지금 게이트웨이 도구와 겹치는지 본다 — 겹치면 선언 쪽 도구만 `<키>_` 접두가 붙는다(기존 앱의 맨 이름은 그대로) | 포털 운영자 |
+| C4 | 박스 권한표(`~/Projects/HWAXPortal/backend/config/access.local.yaml`)의 `>>> hwax-batch` 블록 **밖**에 항목과 `connect:` 를 적고 저장한다(아래 예). 같은 id 는 추적 권한표의 항목을 통째로 바꾸므로 label · systems · gateway · hide_unless_routed 를 다시 적는다. 포털은 다음 요청부터 카드를 보인다 | 포털 운영자 |
+| C5 | `update-collab.sh --check`(cae00 운영 스크립트 — 이 리포의 추적 파일이 아니다). 아무것도 바꾸지 않는다. ① 에 새 블록의 알림이 없고 ⑥ 이 초록이어야 한다 | 포털 운영자 |
+| C6 | 게이트웨이에 바로 반영 — 아래 `/refresh`(토큰은 명령줄에 나타나지 않는다). 그냥 두면 최대 약 2분 안에 스스로 붙는다 | 포털 운영자 |
+| C7 | `list_auth: registered:<이메일>` 이면 그 포털 계정으로 `/tokens?tab=connect` 에 들어가 목록용 토큰을 등록하고 C6 을 한 번 더 부른다(그 계정에도 `plat:<id>` 가 있어야 등록된다) | 목록 계정 주인 |
+| C8 | 확인 — `/health` 의 `conn_platforms.<키>` 가 `ok` · `backends.<키>` 가 true · `/tools-map` 에 그 도구들 · 시험 사용자가 카드에 등록하고 읽기 도구 하나를 부르면 감사(`audit.jsonl`)에 `mode=as-conn` 과 `tok:` 지문 · 등록하지 않은 사용자에게는 `/tokens?tab=connect` 를 가리키는 거절 안내 | 포털 운영자 · 시험 사용자 |
+| C9 | `/tools-map` 을 보고 같은 블록의 `read_tools` 에 읽기 도구의 **원래 이름**을 채운다(저장하면 바로 반영 — 읽기 전용 PAT · 응답 캐시가 이것을 본다). 쓰기 도구는 넣지 않는다 | 포털 운영자 |
+| C10 | 권한 — 쓸 사람에게 `plat:<id>`(CAEG 소속은 이미 전부). 타일이 그 박스에 없으면 `hide_unless_routed: false` 로 두어야 권한 요청을 받는다 | 포털 관리자 |
+
+할 일은 여기까지다 — 빌드 0, 코드 0, 재기동 0. `backend/.env` · `infra/.env` · `provision.env` · `gateway_config.json` 도 손대지 않는다.
+되돌릴 때는 `connect:` 블록이나 그 항목을 지우고 C6 을 부른다(떼어 내기 전까지도 게이트웨이가 그 백엔드를 닫아 둔다). 남은 토큰은 사용자가 카드의
+'더 이상 연결하지 않는 서비스' 줄에서 지운다. 타일은 cae00 에서 `systems.cae00.yaml`(`backend/.env` 의 `CATALOG_PATH`)이다 — `systems.local.yaml`
+이 아니다(10-20 판의 C4 · D 가 틀렸다).
+
+C2 · C6 명령(`<…>` 만 바꾼다).
 
 ```bash
-PER_USER_SSO_APPS="matnexus:MATNEXUS"
-MATNEXUS_MCP_URL=http://<MatNexus 주소>:8012/mcp
-MATNEXUS_SSO_URL=http://<MatNexus 주소>:8010/api/auth/sso
-MATNEXUS_SSO_SECRET=<C1 과 같은 비밀>
+curl --noproxy '*' -s -o /dev/null -w '%{http_code}\n' -X POST \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"precheck","version":"0"}}}' \
+  <MCP 주소>
+
+python3 -c 'import json,os;print("header = \"Authorization: Bearer %s\"" % json.load(open(os.path.expanduser("~/Projects/HWAXMcpGateway/gateway_config.json")))["_gateway"]["token"])' \
+  | curl -s --noproxy '*' -K - -X POST http://127.0.0.1:9110/refresh
 ```
 
-확인: ① update-all 출력에 `✓ matnexus — …(사람별 호출은 위임 토큰으로)` · 기대 목록 누락 없음 · §6 '프록시 우회' 초록. ② 비밀이 맞는지(그쪽 창구만 —
-아무것도 만들지 않는다, 비밀이 명령줄에 남지 않게 파일로 넘긴다):
-`curl -s -o /dev/null -w '%{http_code}\n' -X POST -H @<(printf 'X-Heax-Gateway-Secret: %s\n' "$MATNEXUS_SSO_SECRET") http://<MatNexus 주소>:8010/api/auth/sso/verify`
-→ 204(401 은 비밀 불일치, 404 는 그쪽 창구 꺼짐). ③ Claude Code 에서 MatNexus 도구가 본인 자료를 낸다 · 게이트웨이 감사(audit.jsonl)에 `mode=as-user-pat`.
-MatNexus 의 `내 계정 → 토큰` 에 'HWAX 포털 게이트웨이 (gateway)' 가 보인다.
+C4 의 블록(두 플랫폼, 칸의 뜻과 검사는 요청서 [1-2](../ext-connect/request.md) 의 표).
 
-쓰기: 위임 토큰은 읽기 전용이다(MatNexus 의 결정 — 포털로 들어오는 쓰기는 그쪽이 프롬프트를 못 보는 통로). 쓰기 도구는 미리보기(dry_run)까지만
-돈다 — 실제로 쓰려면 MatNexus 에서 발급한 토큰으로 MatNexus MCP 에 직접 붙는다. 되돌리기: C3 의 비밀을 비우고 update-all(출력 '사람별 위임 끄기:
-matnexus') — 백엔드는 남고 호출은 토큰 없이 나가 MatNexus 가 401 로 막는다. 백엔드까지 걷으려면 네 줄을 지우고 `gateway_config.json` 의 `matnexus`
-를 지운 뒤 게이트웨이를 다시 띄운다(provision 은 주소가 없는 실행에 직전 백엔드를 보존한다).
+```yaml
+platforms:
+  - id: fmea
+    label: FMEA Agent
+    desc: FMEA 분석 · 소재 기준선/규격 덮개
+    systems: [fmea]
+    gateway: [fmea]                  # 권한 행 — connect 의 백엔드 키가 여기 없으면 connect 를 버린다
+    hide_unless_routed: true
+    connect:
+      mcp_url: http://<FMEA_호스트>:5190/mcp
+      token_hint: "fmea_…"
+      token_prefix: "fmea_"
+      issue: "FMEA 웹 화면에 로그인한 뒤 토큰 메뉴(/tokens)에서 발급한 토큰을 붙여 넣습니다. 'Bearer ' 까지 붙여도 됩니다."
+      issue_url: http://<FMEA_호스트>:5195/tokens
+      verify: mcp                    # 등록할 때 그 토큰으로 보낸 initialize 가 200 이어야 저장한다(주인은 보지 않는다)
+      list_auth: "registered:<목록용 포털 계정 이메일>"
+      read_tools: []
+      note: "쓰기 도구 2개(add_material_baseline_overlay_tool · add_spec_overlay_tool)는 이 토큰 주인 명의로 FMEA 에 덮개를 저장합니다."
+  - id: matnexus
+    label: MatNexus
+    desc: 물성 관리 시스템(TestScope 와 같은 팀)
+    systems: [matnexus]
+    gateway: [matnexus]
+    hide_unless_routed: false        # 타일이 아직 없다 — true 면 권한 요청까지 막힌다
+    connect:
+      mcp_url: http://<MatNexus_호스트>:8012/mcp
+      token_hint: "mnx_pat_…"
+      token_prefix: "mnx_pat_"
+      issue: "MatNexus 의 내 계정 › 토큰에서 개인 토큰을 발급해 붙여 넣습니다."
+      verify: none                   # initialize 는 토큰 없이 열려 있어 mcp 확인으로는 알 수 있는 것이 없다
+      list_auth: open
+      read_tools: []
+      note: "읽기 전용 토큰이면 MatNexus 가 쓰기 도구를 거절합니다."
+```
 
-## D. FMEA Agent — 그쪽 답을 받은 뒤(10-20, D-20)
+## D. FMEA Agent — 목록 계정
 
-dev 에서는 닿지 않고(사내망 안쪽) 소스도 찾지 못했다. [fmea-request.md](fmea-request.md) 를 FMEA Agent 담당에게 보내 답을 받는다. 그쪽이
-**표준 위임 창구**를 넣으면 C 와 똑같다 — 키 `fmea`, 접두 `FMEA` 로 `PER_USER_SSO_APPS="matnexus:MATNEXUS fmea:FMEA"` 와 `FMEA_MCP_URL` ·
-`FMEA_SSO_URL` · `FMEA_SSO_SECRET`(타일은 `systems.local.yaml` 의 `fmea: {url: …}`). 권한표 `plat:fmea`(게이트웨이 `fmea`)와 숨김 타일 `fmea` 는
-10-20 에 미리 넣었다 — 표에 없는 백엔드는 전체 공개라서다. 타일 소개 문구는 이름에서 지었으니 답을 받으면 맞춘다. 개인 토큰 + 본인 확인만
-있다면 TestScope 같은 '토큰 등록' 이 필요하고 그때는 포털 · 게이트웨이 코드가 든다.
+FMEA 의 `/mcp` 는 initialize 부터 토큰을 요구한다(10-21 실측). 그래서 게이트웨이가 사람 없이 도구 목록을 받으려면 목록용 토큰이 하나 든다 —
+`list_auth: registered:<포털 이메일>` 이 가리키는 포털 계정이 FMEA 카드에 등록한 토큰을 **목록 세션에만** 싣는다(호출은 늘 부르는 사람의 토큰).
+권하는 꼴은 FMEA `/signup` 으로 만든 **목록 전용 FMEA 로컬 계정**의 토큰을, 공용 관리자 로컬 계정 같은 포털 계정으로 로그인해 등록하는 것이다.
+사람의 토큰을 쓰면 FMEA 로그에 그 사람이 60초마다 목록을 부른 것으로 남고, 그 사람이 토큰을 폐기하거나 떠나면 도구도 사라진다. 목록 계정이
+아직 등록하지 않았으면 `conn_platforms.fmea` 가 `no-list-token`, 토큰이 만료 · 폐기되면 `down` 이다. FMEA 가 목록을 토큰 없이 열어 주면
+`list_auth: open` 한 줄로 바꾼다 — 그쪽에 청할 것은 [fmea-request.md](fmea-request.md)(목록 공개 · readOnlyHint · 상시 운영).
 
 ## 함께 보는 곳
 
 - update-all §6 출력 — 게이트웨이 '권한 표 구멍' 경고가 없는지(testscope 는 access.yaml 에 이미 있다).
 - 사용자 관리 맨 위 배선 설정 상자.
-- 게이트웨이 `/health` 의 backends 에 `testscope` · `matnexus`.
+- 게이트웨이 `/health` 의 backends 에 `testscope` · `matnexus` · `fmea`, `conn_platforms` 에 `matnexus` · `fmea` 가 `ok`.

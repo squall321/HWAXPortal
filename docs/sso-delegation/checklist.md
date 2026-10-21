@@ -38,3 +38,4 @@
 - [ ] TestScope 운영 — v0.51.0 이상 · `HEAX_SSO_SECRET` · `MCP_ALLOWED_HOSTS` · 방화벽 8022
 - [ ] cae00 — server-setup C3~C6 · B2~B5 + B-2 · `NO_PROXY` · update-all
 - [ ] FMEA Agent — fmea-request 답 → server-setup D(타일 소개 문구도 맞춘다)
+- **10-21 — MatNexus · FMEA 는 토큰 등록(외부 연결 `connect:`)으로 바뀜** — 위 MatNexus 운영 · 비밀 · cae00 C3~C6 · FMEA 답 줄은 그 길로는 하지 않는다. 할 일은 [docs/ext-connect/checklist.md](../ext-connect/checklist.md) · 절차는 [server-setup.md](server-setup.md) C · D(다시 씀).

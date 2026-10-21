@@ -146,6 +146,7 @@ MatNexus 는 ADR 0056(10-03)으로 `POST /api/auth/sso`(+ verify · revoke)를 �
 알아 둘 것: 위임 토큰은 두 곳 다 **읽기 전용 · 2일**이고 계정을 만들지 않는다(승인된 계정만, 없으면 403). 포털로 들어오는 쓰기는 미리보기까지만
 도는 것이 그쪽의 결정이다 — 쓰려면 그 앱의 토큰으로 MCP 에 직접 붙는다. MatNexus README 에는 "운영 서버는 v0.1.4" 라는 낡아 보이는 줄이 있다.
 운영 판에 창구가 있는지는 문서가 아니라 `/api/auth/sso/verify`(204 · 401 · 404)로 확인한다.
+**10-21 — MatNexus · FMEA 는 토큰 등록(외부 연결 `connect:`)으로 바뀜.** 사용자 결정 ①(토큰 등록 방식만 — 표준 위임은 쓰지 않는다)으로 이 결정의 MatNexus 몫은 뒤집혔다. TestScope 는 그대로다(D-16 · B-2). 까닭과 설계는 [docs/ext-connect](../ext-connect/context-notes.md).
 
 ## D-19. 일반 앱의 MCP 백엔드는 `<접두>_MCP_URL` 한 줄로 — 앱마다 분기를 또 만들지 않는다 (2026-10-20)
 게이트웨이 provision 은 여섯 번째 앱부터 위임을 일반 목록(`PER_USER_SSO_APPS`)으로 만든다(8차 요청 §4-(2)). 그런데 MCP 백엔드를 만드는 길은
@@ -169,3 +170,4 @@ dev 에서는 주소가 닿지 않고(6초 시간 초과 — 사내망 안쪽), 
 숨김 타일 `fmea` 는 미리 넣었다 — 표에 없는 게이트웨이 백엔드는 전체 공개이고, 타일 없이 넣으면 FMEA 를 안 쓰는 박스의 권한 요청 목록에도 뜬다.
 타일 소개 문구는 이름에서 지었으니 답을 받으면 맞춘다. 주소(사용자가 준 FMEA · MatNexus · TestScope 의 사내 IP)는 추적 파일에 적지 않는다 —
 박스의 `provision.env` · `systems.local.yaml` 에만 넣는다.
+**10-21 — MatNexus · FMEA 는 토큰 등록(외부 연결 `connect:`)으로 바뀜.** FMEA 는 개인 토큰((나) 안)으로 정해져 요청서는 목록 공개 · readOnlyHint · 상시 운영만 청한다([fmea-request.md](fmea-request.md)). 권한표 행 · 숨김 타일은 그대로 쓴다. 타일 파일은 cae00 에서 `systems.cae00.yaml`(`backend/.env` 의 `CATALOG_PATH`)이다 — 위의 `systems.local.yaml` 은 dev 기준이었다.
