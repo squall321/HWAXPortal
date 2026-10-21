@@ -2029,9 +2029,17 @@ PY
   # 등록됐지만 죽어 있는(false) 백엔드 → 해당 서비스만 지정 기동(전 스택 무인자 up 금지 —
   # hands-off RA·vllm 등 의도적으로 내려둔 것을 되살리지 않기 위함). 게이트웨이는 60s 내 자동 재편입.
   DOWN="$(H="$H" python3 -c 'import json,os;h=json.loads(os.environ["H"]);print(" ".join(sorted(k for k,v in (h.get("backends") or {}).items() if not v)))' 2>/dev/null)"
+  # 외부 연결 플랫폼(게이트웨이 /health 의 conn_platforms 가운데 붙어 있는 것 — 포털 박스 권한표의 connect:)은 다른 조직의 서버다. 여기서 띄울
+  # 것이 없으니 복구 대상에 넣지 않고 그쪽 서버 상태로 알린다(HWAXPortal docs/ext-connect PX2). collision 같은 사유의 키는 선언이 아닌 진짜
+  # 백엔드라 아래 갈래를 그대로 탄다.
+  CONN_UP=" $(H="$H" python3 -c 'import json,os;c=json.loads(os.environ["H"]).get("conn_platforms");print(" ".join(sorted(k for k,v in (c if isinstance(c,dict) else {}).items() if v in ("ok","down"))))' 2>/dev/null) "
   if [ -n "$DOWN" ]; then
     UP_SVCS=""
     for b in $DOWN; do
+      case "$CONN_UP" in
+        *" $b "*) bad "외부 연결 플랫폼 $b — 그쪽 서버 상태(게이트웨이가 못 붙는다 · 여기서 살리지 않는다 — 그쪽 담당과 확인, 상태는 게이트웨이 /health 의 conn_platforms)"
+                  continue ;;
+      esac
       case "$b" in
         # signalforge-mcp 는 웹(:18000)이 아니라 **SignalForge postgres(:5432)에 직결**한다
         # (mcp-server/db.py: postgresql+asyncpg://…/signalforge). 그 postgres 를 띄우는 건

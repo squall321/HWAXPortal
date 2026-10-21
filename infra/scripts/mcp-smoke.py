@@ -82,7 +82,7 @@ def _find_cfg() -> str:
 
 CFG = _find_cfg()
 
-def _identity_only(cfg: dict) -> set[str]:
+def _identity_only(cfg: dict, health: dict | None = None) -> set[str]:
     """사람 신원으로만 답하는 백엔드 — 이 스모크는 게이트웨이 토큰(신원 없음)으로 부르므로 거절될 수밖에 없다.
 
     설정에 url 을 직접 적은 정적 백엔드 가운데 사람별 위임(`heax_registry.per_user_sso`)에 있고 서비스 자격(`headers`)이
@@ -91,10 +91,15 @@ def _identity_only(cfg: dict) -> set[str]:
     ✗ 로 끝났다. 그래서 부르지 않고 '검사 못 함' 으로 말한다 — ste 는 update-all 의 '사람 신분 실호출'
     (ste-gateway-check.py probe)이 사람 명의로 따로 본다.
     허브 앱(heax-*)은 허브 등록 토큰이 서비스 자격이라 넣지 않는다 — DynaForge 의 토큰 만료(이 스모크가 생긴 까닭)는
-    그대로 0성공으로 잡힌다."""
+    그대로 0성공으로 잡힌다.
+    외부 연결 플랫폼(포털 박스 권한표의 connect: — HWAXPortal docs/ext-connect PX1)도 같다 — 사람이 포털에 등록한 그쪽 토큰으로만
+    부르고 신원 없는 호출은 게이트웨이가 거절한다. 설정 파일에는 없어 게이트웨이 `/health` 의 `conn_platforms` 로 안다. 붙어 있는
+    것(ok · down)만 뺀다 — collision 같은 사유의 키는 선언이 아닌 진짜 백엔드라 그대로 부른다."""
     per_user = set(((cfg.get("heax_registry") or {}).get("per_user_sso") or {}).keys())
-    return {k for k, v in cfg.items()
-            if not k.startswith("_") and isinstance(v, dict) and v.get("url") and k in per_user and not v.get("headers")}
+    conn = (health or {}).get("conn_platforms")
+    declared = {k for k, st in conn.items() if st in ("ok", "down")} if isinstance(conn, dict) else set()
+    return declared | {k for k, v in cfg.items()
+                       if not k.startswith("_") and isinstance(v, dict) and v.get("url") and k in per_user and not v.get("headers")}
 
 
 # 자기 상태를 돌려주는 무인자 도구 이름들. 이 중 하나가 있으면 드리프트 대조를 시도한다.
@@ -194,6 +199,9 @@ def main() -> int:
                 # 도구 → 백엔드 매핑은 /tools-map 이 준다. 못 얻으면 백엔드 구분 없이
                 # 전체를 한 덩어리로 본다(그래도 '전량 실패'는 잡힌다).
                 tmap = await _tools_map(url, headers)
+                # 외부 연결 플랫폼은 설정 파일에 없다 — 게이트웨이 /health 의 conn_platforms 로 안다(PX1). 못 읽으면 종전대로다.
+                conn_keys = _identity_only({}, await _health(url))
+                identity_only.update(conn_keys)
                 by_be: dict[str, list] = {}
                 # ⚠ **검사를 못 돌린 것과 통과한 것은 다르다**(update-all §6 의 같은 규율).
                 # 쓰기 도구만 있는 백엔드는 부를 게 없어 결과에서 **통째로 사라진다** — 그러면
@@ -216,7 +224,10 @@ def main() -> int:
                 for be in by_be:
                     by_be[be] = _order(by_be[be], props_of)
                 for be in sorted(seen_be - set(by_be) - {"_gateway", "?"}):
-                    if be in identity_only:
+                    if be in conn_keys:
+                        why = ("외부 연결 플랫폼 — 사람이 포털에 등록한 그쪽 토큰으로만 답해 게이트웨이 토큰(신원 없음)으로는 확인 못 함"
+                               "(상태는 게이트웨이 /health 의 conn_platforms)")
+                    elif be in identity_only:
                         why = "사람 신원으로만 답하는 백엔드라 게이트웨이 토큰(신원 없음)으로는 확인 못 함 — 사람 신분 실호출이 따로 본다"
                     elif a.periodic:
                         why = "읽기 낱말 허용 목록에 드는 무인자 도구가 없어 호출로는 확인 못 함"
@@ -303,6 +314,20 @@ def main() -> int:
 def _text(res) -> str:
     return "\n".join(c.text or "" for c in (res.content or [])
                      if getattr(c, "type", None) == "text")
+
+
+async def _health(url: str) -> dict:
+    """게이트웨이 /health(무인증). 실패하면 빈 것 — 외부 연결 플랫폼을 가려내지 못할 뿐 스모크는 종전대로 돈다."""
+    import httpx
+    base = url.rsplit("/mcp", 1)[0]
+    try:
+        async with httpx.AsyncClient(timeout=6) as cli:
+            resp = await cli.get(f"{base}/health")
+            resp.raise_for_status()
+            body = resp.json()
+            return body if isinstance(body, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 async def _tools_map(url: str, headers: dict) -> dict:

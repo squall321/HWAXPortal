@@ -147,6 +147,36 @@ def test_사람_신원으로만_답하는_백엔드는_부르지_않는다():
     assert m._identity_only({"ste": {"url": "u"}}) == set(), "위임이 없으면 신원 전용이 아니다"
 
 
+def test_외부_연결_플랫폼은_health_의_conn_platforms_로_가려_부르지_않는다():
+    """선언 백엔드는 설정 파일에 없다. 신원 없이 부르면 게이트웨이가 거절해 0성공 → update-all §6 이 매번 재프로비저닝 · 게이트웨이
+    재기동을 돌고 ✗ 로 끝난다(HWAXPortal docs/ext-connect PX1). 붙어 있는 것(ok · down)만 뺀다 — collision 같은 사유의 키는
+    선언이 아닌 진짜 백엔드다."""
+    m = _smoke_mod()
+    health = {"conn_platforms": {"fmea": "ok", "matnexus": "down", "signalforge": "collision", "gone": "no-list-token"}}
+    assert m._identity_only({}, health) == {"fmea", "matnexus"}
+    cfg = {"ste": {"url": "u"}, "heax_registry": {"per_user_sso": {"ste": {}}}}
+    assert m._identity_only(cfg, health) == {"ste", "fmea", "matnexus"}, "설정의 신원 전용과 더해진다"
+    assert m._identity_only({}, {"conn_platforms": ["fmea"]}) == set() and m._identity_only({}, None) == set(), "모르는 꼴은 종전대로"
+    src = (SCRIPTS / "mcp-smoke.py").read_text(encoding="utf-8")
+    assert "identity_only.update(conn_keys)" in src and "_identity_only({}, await _health(url))" in src, "스모크가 /health 를 읽지 않는다"
+
+
+def test_다운인_외부_연결_플랫폼은_복구_대상이_아니고_그쪽_서버_상태로_알린다():
+    """다른 조직 서버라 여기서 띄울 것이 없다 — '매핑된 서비스 없음' 이 아니라 그쪽 서버 상태라고 말한다(PX2)."""
+    import json
+    blk = _block('  DOWN="$(H="$H" python3', '    UP_SVCS="$(echo "$UP_SVCS" | xargs')
+    health = {"backends": {"fmea": False, "signalforge": False, "matnexus": False, "ok-one": True},
+              "conn_platforms": {"fmea": "down", "matnexus": "collision"}}
+    r = _sh('bad() { echo "BAD:$*"; }\nfail() { echo "FAIL:$*"; }\nok() { echo "OK:$*"; }\n'
+            + "H='" + json.dumps(health) + "'\n" + blk + 'echo "UP=[$UP_SVCS]"\nfi\n')
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    assert any(ln.startswith("BAD:외부 연결 플랫폼 fmea — 그쪽 서버 상태") for ln in lines), r.stdout
+    assert not any("fmea" in ln for ln in lines if "외부 연결 플랫폼" not in ln), "한 번만 알린다 — '매핑된 서비스 없음' 으로 또 세지 않는다"
+    assert "BAD:다운 백엔드 matnexus — 매핑된 서비스 없음(수동 확인)" in lines, "선언이 아닌 같은 키는 그대로 수동 확인"
+    assert "UP=[ signalforge signalforge-mcp]" in lines, "외부 연결 플랫폼은 복구 대상이 아니다"
+
+
 @pytest.mark.parametrize("name", ["inbox_status", "list_reports", "get_report", "search_cards"])
 def test_read_tools_are_still_probed(name):
     """반대로 다 막아 버리면 스모크가 아무것도 안 본다."""
