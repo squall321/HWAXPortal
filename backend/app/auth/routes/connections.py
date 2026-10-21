@@ -371,6 +371,8 @@ def list_ext_connections(
     have = set(principal.groups)
     platforms = [{"service": k, "label": c.label, "token_hint": c.token_hint, "issue": c.issue, "issue_url": c.issue_url,
                   "note": c.note, "verify": c.verify, "workspace_label": c.workspace_label,
+                  # 화면의 '주인을 확인하지 않습니다' 안내를 고르는 표지 — owner_field 를 켠 플랫폼에는 그 말이 틀린다(EC-D7)
+                  "owner_checked": bool(c.owner_field),
                   "entitled": c.need in have, "need": c.need, "requestable": c.need not in hidden,
                   "connected": store.connection_meta(email=principal.email, service=k)}
                  for k, c in sorted(reg.items(), key=lambda kv: (kv[1].label, kv[0]))]

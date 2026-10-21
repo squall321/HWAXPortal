@@ -75,8 +75,8 @@ export function AppHeader() {
     );
   }
 
-  // 같은 페이지가 PAT 발급과 Report Archive 연결(내 조직 선택)을 담는다 — 토큰 권한이 없어도 RA 를 쓰는 사람은 들어가야 한다.
-  const canTokens = can('feat:api-token') || can('plat:reportarchive');
+  // 같은 페이지가 PAT 발급과 Report Archive 연결(내 조직 선택) · 외부 연결을 담는다 — 토큰 권한이 없어도 RA · 외부 연결을 쓰는 사람은 들어가야 한다.
+  const canTokens = can('feat:api-token') || can('plat:reportarchive') || can('feat:connect');
   const primary: Item[] = [
     { to: '/', label: '챗', end: true },
     ...(can('feat:deliberation') ? [{ to: '/deliberate', label: '심의' }] : []),

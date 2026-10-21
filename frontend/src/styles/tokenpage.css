@@ -304,3 +304,15 @@
 .ra-card + .ra-card {
   margin-top: var(--sp-4);
 }
+/* 외부 연결(components/ExternalConnectionCards) — 설정이 준 안내(note)와 주인 확인 여부 안내. 카드마다 되풀이되니 상자 없이 글자만 둔다 */
+.ra-note {
+  margin: 0 0 var(--sp-2);
+}
+.ra-notice {
+  margin: 0 0 var(--sp-3);
+  color: var(--warn);
+  font-size: var(--fs-13);
+}
+.ra-ws {
+  margin-bottom: var(--sp-2);
+}

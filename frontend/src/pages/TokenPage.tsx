@@ -9,6 +9,7 @@ import { Tabs } from '../components/ui/Tabs';
 import { ErrorBanner } from '../components/common/ErrorBanner';
 import { RaConnectionCard } from '../components/RaConnectionCard';
 import { TestScopeConnectionCard } from '../components/TestScopeConnectionCard';
+import { ExternalConnectionCards } from '../components/ExternalConnectionCards';
 import { useCan } from '../auth/useCan';
 import { makeSnippets } from '../lib/setupBat';
 import '../styles/tokenpage.css';
@@ -246,14 +247,14 @@ export default function TokenPage() {
   // 경고문과 실제 동작이 서로 반대였다(3라운드 검토). 판정이 되면 다시 열면 된다.
   const blocked = tlsUnknown !== null || expired || (needsCa && !caAvailable);
 
-  // API 토큰 권한 없이 Report Archive 권한으로 들어온 사람 — PAT 발급부는 감추고 연결만 남긴다.
+  // API 토큰 권한 없이 Report Archive 권한이나 외부 연결 권한(feat:connect)으로 들어온 사람 — PAT 발급부는 감추고 연결만 남긴다.
   // (이 페이지가 RA 연결·내 조직 선택을 함께 담고 있어서 열어 준 것이다.)
   if (!canToken) {
     return (
       <Page className="tok-page">
         <PageHeader
           title="연결 설정"
-          desc="Report Archive 계정을 연결하고, 보고서를 쌓을 내 조직(워크스페이스)을 고릅니다."
+          desc="외부 서비스 계정 · 토큰을 연결합니다."
         />
         <p className="tok-note">
           개인 Claude·스크립트용 API 토큰(PAT)은 <b>API 토큰 · MCP 개인 연결</b> 권한이 있어야
@@ -261,6 +262,7 @@ export default function TokenPage() {
         </p>
         <RaConnectionCard />
         <TestScopeConnectionCard />
+        <ExternalConnectionCards />
       </Page>
     );
   }
@@ -296,6 +298,7 @@ export default function TokenPage() {
           <>
             <RaConnectionCard />
             <TestScopeConnectionCard />
+            <ExternalConnectionCards />
           </>
         )}
         {tab === 'tokens' && (

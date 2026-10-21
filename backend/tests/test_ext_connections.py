@@ -282,6 +282,7 @@ def test_목록은_선언마다_문구_권한_상태를_내고_주소_자격은_
     assert f["issue"].startswith("토큰 메뉴") and f["issue_url"] == "http://fmea.test:5195/tokens" and f["note"]
     assert f["requestable"] is False, "타일이 없는 숨긴 플랫폼은 요청을 받지 않는다(관리자에게 문의)"
     assert by["matnexus"]["requestable"] is True and f["connected"] is None
+    assert by["owned"]["owner_checked"] is True and f["owner_checked"] is False, "화면이 '주인을 확인하지 않습니다' 를 고른다"
     blob = json.dumps(out, ensure_ascii=False)
     for secret in ("5190/mcp", "mnx.test:8012", "registered:", "lister@", "verify_url", "/api/me", "list_auth"):
         assert secret not in blob, secret

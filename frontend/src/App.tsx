@@ -73,10 +73,11 @@ const router = createBrowserRouter([
       },
       {
         // Report Archive 연결(토큰·내 조직 선택)이 이 페이지에 함께 산다 — API 토큰 권한이
-        // 없어도 RA 를 쓰는 사람은 조직을 골라야 보고서가 제 자리에 쌓인다.
+        // 없어도 RA 를 쓰는 사람은 조직을 골라야 보고서가 제 자리에 쌓인다. 외부 연결(feat:connect — 연결 선언이 있는
+        // 플랫폼 권한을 하나라도 가지면 포털이 붙인다)도 같다 — 게이트웨이 거절 안내가 그 사람을 /tokens?tab=connect 로 보낸다.
         path: '/tokens',
         element: (
-          <RequireEntitlement need={['feat:api-token', 'plat:reportarchive']}>
+          <RequireEntitlement need={['feat:api-token', 'plat:reportarchive', 'feat:connect']}>
             <TokenPage />
           </RequireEntitlement>
         ),
