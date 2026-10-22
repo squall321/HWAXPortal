@@ -220,6 +220,34 @@ async def stage_upload(settings: Settings, sub: str, file: UploadFile) -> dict:
     }
 
 
+def ra_import_pages_to_ai(pages: list) -> tuple[list[dict], int]:
+    """RA 가져오기 초안의 쪽 → `create_report_draft` 의 쪽 입력. (쪽들, 블록 수)를 돌려준다.
+
+    RA `/api/imports/pptx` 의 쪽은 저장 꼴(`ReportPage`)이라 위젯 정의 `extra_blocks: [{id, type, props}]` 와 내용
+    `content: {id: 내용}` 이 따로 있다. `create_report_draft`(→ RA `/api/reports/ai-draft`)는 정의 항목 **안의** content 를
+    읽는다 — 저장 꼴을 그대로 넘겨 블록마다 '내용 없음' 으로 버려졌고, 쪽만 있고 블록 0 인 보고서가 됐다(10-22 cae00 — 29쪽 ·
+    블록 0, docs/chat-ppt PP-D2). 정의에 내용을 넣으면 RA 정규화를 한 번 더 거쳐도 가져오기와 같다(RA 코드로 확인 — 제목 ·
+    글 · 표 · 그림). 배치(layout_overrides)는 넘기지 않는다 — AI 초안 API 는 자동 배치를 다시 한다. 빈 쪽도 남긴다(슬라이드
+    한 장이 보고서 한 쪽이다)."""
+    out: list[dict] = []
+    n = 0
+    for p in pages or []:
+        if not isinstance(p, dict):
+            continue
+        content = p.get("content") if isinstance(p.get("content"), dict) else {}
+        blocks = []
+        for d in p.get("extra_blocks") or []:
+            if not isinstance(d, dict) or not d.get("id") or not d.get("type") or d["id"] not in content:
+                continue
+            blocks.append({"id": d["id"], "type": d["type"], "props": d.get("props") or {}, "content": content[d["id"]]})
+        page: dict = {"extra_blocks": blocks}
+        if p.get("name"):
+            page["name"] = p["name"]
+        out.append(page)
+        n += len(blocks)
+    return out, n
+
+
 def staged_path(settings: Settings, sub: str, staging_id: str, filename: str) -> Path:
     """확정·삭제용 경로 복원. staging_id 가 폴더라 그 안의 파일 하나를 집는다."""
     # staging_id 는 이제 **경로 한 조각**이라 값 자체를 막아야 한다(전에는 glob 패턴의

@@ -1312,17 +1312,30 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         if not pages:
             return {"stage": "failed", "error": "가져올 내용이 없습니다(텍스트·표·그림을 못 찾음).",
                     "detail": {"warnings": warns}}
+        # 가져오기 쪽(저장 꼴)을 AI 초안 입력 꼴로 — 그대로 넘기면 RA 가 블록마다 '내용 없음' 으로 버려 블록 0 인 보고서가 됐다
+        # (10-22 cae00 29쪽 · 블록 0, docs/chat-ppt PP-D2). 블록이 하나도 없으면 빈 보고서를 RA 에 남기지 않는다.
+        ai_pages, n_blocks = _upload.ra_import_pages_to_ai(pages)
+        if not n_blocks:
+            return {"stage": "failed", "error": "가져온 쪽에 블록이 하나도 없습니다 — 보고서를 만들지 않았습니다(텍스트·표·그림을 못 찾음).",
+                    "detail": {"warnings": warns, "pages": len(pages)}}
         # 변환 결과를 보고서 초안으로. __import_blank__ 은 필수 블록이 없어 문서를 그대로 담는다
         # (RA 웹 가져오기가 쓰는 그 템플릿이다 — 처음 쓰일 때 생성된다).
         out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "create_report_draft", {
             "template_id": "__import_blank__", "template_version": 1,
             "title": (draft.get("title") or Path(body.filename).stem)[:200],
-            "blocks": {}, "pages": pages,
+            "blocks": {}, "pages": ai_pages,
         })
+        rid = out.get("report_id") if isinstance(out, dict) else None
+        if not rid:
+            return {"stage": "failed", "error": "Report Archive 가 보고서 번호를 돌려주지 않았습니다 — 만들어졌는지 RA 에서 확인하세요.",
+                    "detail": out}
+        ra_warns = [f"RA: {w}" for w in (out.get("warnings") or []) if isinstance(w, str)]
         audit.record(principal=principal.subject, event="upload_dispatch",
-                     meta={"destination": "reportarchive", "pages": len(pages)})
+                     meta={"destination": "reportarchive", "pages": len(pages), "blocks": n_blocks, "report_id": rid})
         return {"stage": "done", "destination": "reportarchive", "created": True,
-                "pages": len(pages), "warnings": warns, "result": out}
+                "pages": len(pages), "blocks": n_blocks, "report_id": rid,
+                "title": out.get("title"), "url": out.get("url"),
+                "warnings": [*warns, *ra_warns], "result": out}
 
     if body.destination == "aidatahub":
         # ── AI 데이터 허브 ────────────────────────────────────────────

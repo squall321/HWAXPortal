@@ -215,7 +215,34 @@ class _Audit:
         self.rows.append(kw)
 
 
-PPTX_OK = {"success": True, "data": {"draft": {"title": "t", "pages": [{"name": "p1"}]}, "warnings": []}}
+# RA 가져오기가 실제로 내는 쪽 하나(ReportPage.model_dump — RA 코드를 읽기 전용으로 돌려 뽑았다, docs/chat-ppt PP-D2). 정의(extra_blocks)와
+# 내용(content)이 따로 있다 — 종전 픽스처(쪽 이름만)는 그날의 0블록 꼴이라 블록 수를 볼 수 없었다.
+RA_PAGE = {'template_id': '__import_blank__',
+           'template_version': 1,
+           'name': '낙하 시험 요약',
+           'content': {'imp_1_1': {'text': '낙하 시험 요약', 'level': 1},
+                       'imp_1_2': {'items': [{'depth': 0, 'text': '높이 1.5 m'}]},
+                       'imp_1_3': {'rows': [{'col_1': '각도', 'col_2': '45°'}]},
+                       'imp_1_4': {'files': [{'file_id': 'f1', 'alt': 'Picture 4'}]}},
+           'layout_overrides': {'imp_1_1': {'row': 1, 'col_span': 12, 'row_span': 4},
+                                'imp_1_2': {'row': 2, 'col_span': 12, 'row_span': 4},
+                                'imp_1_3': {'row': 3, 'col_span': 12, 'row_span': 4},
+                                'imp_1_4': {'row': 4, 'col_span': 12, 'row_span': 4}},
+           'props_overrides': None,
+           'extra_blocks': [{'id': 'imp_1_1', 'type': 'heading', 'props': {'level': 2}},
+                            {'id': 'imp_1_2', 'type': 'rich_text', 'props': {'label': '내용', 'required': False}},
+                            {'id': 'imp_1_3',
+                             'type': 'table',
+                             'props': {'label': '표',
+                                       'columns': [{'key': 'col_1', 'label': '항목', 'type': 'text'},
+                                                   {'key': 'col_2', 'label': '값', 'type': 'text'}]}},
+                            {'id': 'imp_1_4', 'type': 'image', 'props': {'label': '이미지', 'max_count': 1}}],
+           'blocks_order': ['imp_1_1', 'imp_1_2', 'imp_1_3', 'imp_1_4'],
+           'block_sections': {},
+           'block_updated_at': {}}
+PPTX_OK = {"success": True, "data": {"draft": {"title": "t", "pages": [RA_PAGE]}, "warnings": ["p1: 차트 1개 건너뜀"]}}
+RA_CREATED = {"report_id": 7, "title": "t", "page_count": 1, "phase": "drafting", "warnings": [],
+              "url": "/w/personal-5/reports/7"}
 
 
 def _ra_handler(*, sso=None, pptx=None):
@@ -227,7 +254,7 @@ def _ra_handler(*, sso=None, pptx=None):
     return h
 
 
-async def _dispatch(monkeypatch, tmp_path, settings, conn=None):
+async def _dispatch(monkeypatch, tmp_path, settings, conn=None, created=None):
     """`_dispatch_inner` 의 RA 분기만 — 스테이징·권한·챗 PAT·게이트웨이 호출은 가짜로 바꾼다."""
     from app.agent import routes as R
 
@@ -237,7 +264,7 @@ async def _dispatch(monkeypatch, tmp_path, settings, conn=None):
 
     async def _mcp(url, pat, tool, args, timeout=90.0):
         calls.append((tool, args))
-        return {"ok": True}
+        return dict(created if created is not None else RA_CREATED)
 
     monkeypatch.setattr(R._upload, "require_destination_group", lambda *a, **k: None)
     monkeypatch.setattr(R._upload, "staged_path", lambda *a, **k: f)
@@ -323,6 +350,66 @@ async def test_a_revoked_cached_token_is_reminted_once(monkeypatch, tmp_path):
     assert out["stage"] == "done"
     assert [r.url.path for r in seen] == ["/api/imports/pptx", "/api/auth/sso", "/api/imports/pptx"]
     assert seen[-1].headers["Authorization"] == f"Bearer {TOKEN}"
+
+
+# ── 가져오기 초안 → 보고서 초안(docs/chat-ppt PP-D2) ─────────────────────────────────────
+# 10-22 cae00 — 29쪽 · 블록 0 · 본문 0자 초안이 만들어졌는데 화면은 「페이지 29장이 들어갔습니다」 였다. 가져오기 쪽(저장 꼴)을
+# 그대로 넘겨 RA AI 초안 API 가 블록마다 '내용 없음' 으로 버렸다.
+@pytest.mark.anyio
+async def test_ppt_import_pages_go_to_the_draft_with_their_content(monkeypatch, tmp_path):
+    _mock_ra(monkeypatch, _ra_handler())
+    out, calls = await _dispatch(monkeypatch, tmp_path, _settings(), conn=None)
+    ((tool, args),) = calls
+    assert tool == "create_report_draft" and args["template_id"] == "__import_blank__" and args["blocks"] == {}
+    (pg,) = args["pages"]
+    assert pg["name"] == "낙하 시험 요약" and "layout_overrides" not in pg and "content" not in pg
+    assert [b["id"] for b in pg["extra_blocks"]] == RA_PAGE["blocks_order"]
+    for b in pg["extra_blocks"]:
+        d = next(x for x in RA_PAGE["extra_blocks"] if x["id"] == b["id"])
+        assert b["content"] == RA_PAGE["content"][b["id"]], "정의 항목 안에 내용이 있어야 RA 가 버리지 않는다"
+        assert b["type"] == d["type"] and b["props"] == d["props"]
+    assert out["stage"] == "done" and out["pages"] == 1 and out["blocks"] == 4
+    assert out["report_id"] == 7 and out["url"] == "/w/personal-5/reports/7" and out["title"] == "t"
+    assert out["warnings"] == ["p1: 차트 1개 건너뜀"]
+
+
+@pytest.mark.anyio
+async def test_ppt_import_with_no_blocks_makes_no_report(monkeypatch, tmp_path):
+    empty = {"success": True, "data": {"draft": {"title": "t", "pages": [{"name": "p1", "content": {}, "extra_blocks": []}]},
+                                       "warnings": ["p1: 차트 1개 건너뜀"]}}
+    _mock_ra(monkeypatch, _ra_handler(pptx=lambda r: httpx.Response(201, json=empty)))
+    out, calls = await _dispatch(monkeypatch, tmp_path, _settings(), conn=None)
+    assert out["stage"] == "failed" and "보고서를 만들지 않았습니다" in out["error"]
+    assert out["detail"]["warnings"] == ["p1: 차트 1개 건너뜀"] and out["detail"]["pages"] == 1
+    assert calls == [], "빈 초안을 RA 에 남기지 않는다"
+
+
+@pytest.mark.anyio
+async def test_a_draft_without_a_report_id_is_a_failure(monkeypatch, tmp_path):
+    _mock_ra(monkeypatch, _ra_handler())
+    out, _ = await _dispatch(monkeypatch, tmp_path, _settings(), conn=None, created={"error": "검증 실패"})
+    assert out["stage"] == "failed" and "보고서 번호를 돌려주지 않았습니다" in out["error"]
+
+
+@pytest.mark.anyio
+async def test_ra_normalize_warnings_are_shown_with_a_prefix(monkeypatch, tmp_path):
+    _mock_ra(monkeypatch, _ra_handler())
+    out, _ = await _dispatch(monkeypatch, tmp_path, _settings(), conn=None,
+                             created={**RA_CREATED, "warnings": ["p1: extra block 'imp_1_9': 알 수 없는 위젯 — 건너뜀"]})
+    assert out["warnings"] == ["p1: 차트 1개 건너뜀", "RA: p1: extra block 'imp_1_9': 알 수 없는 위젯 — 건너뜀"]
+
+
+def test_page_conversion_keeps_empty_pages_and_skips_broken_blocks():
+    from app.agent.upload import ra_import_pages_to_ai
+
+    pages = [RA_PAGE, "쪽이 아님", {"name": "빈 쪽", "content": {}, "extra_blocks": []},
+             {"content": {"a": {"text": "x"}},
+              "extra_blocks": [{"id": "a", "type": "heading"}, {"id": "b", "type": "heading"}, {"type": "x"}, "정의 아님"]}]
+    out, n = ra_import_pages_to_ai(pages)
+    assert n == 5 and len(out) == 3, "쪽이 아닌 것만 빠지고 빈 쪽은 남는다(슬라이드 한 장 = 한 쪽)"
+    assert out[1] == {"name": "빈 쪽", "extra_blocks": []}
+    assert out[2] == {"extra_blocks": [{"id": "a", "type": "heading", "props": {}, "content": {"text": "x"}}]}, \
+        "내용이 없는 정의 · id 없는 정의는 뺀다"
 
 
 # ── 화면이 RA 카드를 가르는 값 ───────────────────────────────────────────────
