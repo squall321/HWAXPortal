@@ -32,7 +32,7 @@ import anyio
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator, model_validator
 
 from app.access.agent_guard import check_chat, filter_experts
@@ -44,8 +44,9 @@ from app.auth import ra_sso
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, chat_pat_ttl_s, get_settings
+from app.agent import pc_upload as _pc
 from app.agent import upload as _upload
-from app.deps import ensure, principal_pat_or_session
+from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
 logger = logging.getLogger(__name__)
 
@@ -1446,6 +1447,188 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
             "created_project": created, "job_id": job_id, "kind": None if run == "none" else run,
             "next": "job_status(job_id) 로 진행을 보고, 끝나면 project_tree·list_interfaces",
             "result": out}
+
+
+# ── PC 도우미 업로드 — DRM 문서를 PC 의 PowerPoint 로 풀어 올린다(docs/chat-ppt B · PP-D8) ─────────────────────────────────
+# 브라우저는 COM 을 부를 수 없고 PC 파일 경로도 모른다. 화면이 표를 받아 `hwax-doc://` 로 PC 도우미(추출기 -Url 모드)를 깨우고, 도우미가
+# 뽑은 글(.hwax.md)과 고르면 슬라이드 그림을 그 표로 올린다. 서버는 받은 것을 그 사람 스테이징에 둘 뿐 대화에 쓰지 않는다 — 화면이 받아
+# 문서 칩 · 그림 칩으로 붙이고 사람이 보고 보낸다(손으로 .hwax.md 를 붙이던 길과 같은 끝).
+class PcTicketReq(BaseModel):
+    model_config = {"extra": "ignore"}
+    filename: str = Field(default="", max_length=400)          # 브라우저가 고른 원본 이름 — 도우미가 파일 고르기 창에 미리 넣는다
+    conversation_id: str = Field(default="", max_length=200)   # 감사용(서버 대화 id) — 받은 글을 대화에 쓰지는 않는다
+    slides: StrictBool = False                                 # 슬라이드 그림도(최대 _pc.SLIDES_MAX 장)
+
+
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+def _pc_reject(exc: Exception) -> AuthError:
+    return AuthError(exc.message, status_code=exc.status) if isinstance(exc, _pc.TicketError) else AuthError(str(exc), status_code=400)
+
+
+def _pc_audit(request: Request, rec: dict, event: str, status: str, **meta) -> None:
+    """표의 감사 한 줄 — 주인 · 대화 · 파일 이름 · IP 와 넘긴 칸. 본문은 남기지 않는다(B7)."""
+    _audit(request).record(principal=rec.get("owner_sub") or "", event=event, status=status,
+                           chat_id=(rec.get("conversation_id") or None),
+                           meta={"filename": rec.get("filename") or "", "ip": _client_ip(request), **meta})
+
+
+@router.post("/upload/pc-ticket")
+async def upload_pc_ticket(
+    request: Request,
+    body: PcTicketReq,
+    principal: Principal = Depends(get_current_principal),
+    settings: Settings = Depends(get_settings),
+    _csrf: None = Depends(require_csrf),
+) -> dict:
+    """PC 도우미가 로그인 없이 **한 번** 올릴 표(10분). 브라우저 세션 + CSRF 로만 낸다 — PAT 로는 못 낸다(PC 에 포털 토큰을 새로 두지
+    않는다). 받는 쪽은 /upload 와 같은 게이트다(서버 스테이징에 쓴다)."""
+    _upload.require_any_upload_group(settings, principal.groups)
+    for rec in await asyncio.to_thread(_pc.sweep, settings):
+        _pc_audit(request, rec, "pc_upload", "expired")
+    name = Path((body.filename or "").replace("\\", "/")).name[:200]
+    ticket, rec, closed = await asyncio.to_thread(
+        _pc.issue, settings, owner_sub=principal.subject, owner_email=principal.email or principal.subject,
+        owner_name=principal.display_name or "", conversation_id=body.conversation_id, filename=name, slides=body.slides)
+    for c in closed:
+        _pc_audit(request, c, "pc_upload", "closed")
+    _pc_audit(request, rec, "pc_ticket_issue", "ok", slides=body.slides)
+    q = f"t={ticket}&name={quote(name, safe='')}&slides={'1' if body.slides else '0'}"
+    return {"ticket": ticket, "expires_in_s": _pc.TICKET_TTL_S, "helper_url": f"hwax-doc://extract?{q}",
+            "protocol": _pc.PROTOCOL}
+
+
+@router.get("/upload/pc-ticket/{ticket}")
+async def upload_pc_ticket_state(
+    ticket: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """화면이 몇 초마다 묻는다 — 대기 · 열림(도우미가 표를 읽었다) · 받음 · 실패 · 취소 · 만료. 주인만(남의 표는 없는 표다).
+    묻는 김에 수명이 다한 표를 닫고 감사에 적는다(만료는 한 번만 적힌다 — 청소 한 곳에서)."""
+    for rec in await asyncio.to_thread(_pc.sweep, settings):
+        _pc_audit(request, rec, "pc_upload", "expired")
+    try:
+        out = await asyncio.to_thread(_pc.view, settings, ticket, principal.subject)
+    except _pc.TicketError as exc:
+        raise _pc_reject(exc) from None
+    r = out.get("received")
+    if r:
+        # 다음 단계 — 받은 글을 AI 데이터 허브로(PP-D11). 글은 이미 스테이징 상자에 있으니 그 상자로 '어디로 보낼까요' 를 연다.
+        out["staged"] = {"staging_id": r["doc_staging_id"], "filename": r["doc_name"], "size": r["bytes"], "ext": "md",
+                         "destinations": _upload.allowed_destinations(settings, principal.groups, "md")}
+    return out
+
+
+@router.get("/upload/pc-ticket/{ticket}/doc")
+async def upload_pc_ticket_doc(
+    ticket: str,
+    principal: Principal = Depends(get_current_principal),
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    try:
+        p = await asyncio.to_thread(_pc.received_doc, settings, ticket, principal.subject)
+    except _pc.TicketError as exc:
+        raise _pc_reject(exc) from None
+    return FileResponse(p, media_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/upload/pc-ticket/{ticket}/slides/{n}")
+async def upload_pc_ticket_slide(
+    ticket: str,
+    n: int,
+    principal: Principal = Depends(get_current_principal),
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    try:
+        p = await asyncio.to_thread(_pc.received_slide, settings, ticket, principal.subject, n)
+    except _pc.TicketError as exc:
+        raise _pc_reject(exc) from None
+    return FileResponse(p, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/upload/pc/{ticket}")
+async def upload_pc_helper_info(ticket: str, request: Request, settings: Settings = Depends(get_settings)) -> dict:
+    """도우미가 처음 묻는 자리(표만 — 로그인 없이). 받는 계정(이름 · 메일)을 돌려준다 — 도우미는 이것을 사람에게 보여 주고 묻는다. 남이 만든
+    링크(남의 표)로 내 문서가 남의 대화에 가는 것을 막는 문이 그 확인이다(PP-D8 ④). 판(helper_min)이 맞지 않으면 도우미가 멈춘다."""
+    try:
+        rec, first = await asyncio.to_thread(_pc.helper_open, settings, ticket)
+    except _pc.TicketError as exc:
+        raise _pc_reject(exc) from None
+    if first:
+        _pc_audit(request, rec, "pc_ticket_open", "ok", helper=request.headers.get("x-hwax-helper", "")[:20])
+    return {"protocol": _pc.PROTOCOL, "helper_min": _pc.HELPER_MIN,
+            "owner_email": rec.get("owner_email") or "", "owner_name": rec.get("owner_name") or "",
+            "filename": rec.get("filename") or "", "slides": bool(rec.get("slides")),
+            "expires_in_s": _pc.expires_in(rec),
+            "doc_max_bytes": _pc.DOC_MAX_BYTES, "slides_max": _pc.SLIDES_MAX, "slide_max_bytes": _pc.SLIDE_MAX_BYTES}
+
+
+@router.post("/upload/pc/{ticket}/cancel")
+async def upload_pc_helper_cancel(ticket: str, request: Request, settings: Settings = Depends(get_settings)) -> dict:
+    """도우미에서 사람이 '아니오' · 파일 고르기 취소 · 추출 실패를 골랐다 — 화면이 기다리지 않고 곧바로 알게 표를 닫는다.
+    까닭은 본문 JSON `{"reason": …}`(선택)이다 — 헤더는 ASCII 만 실려 한글 까닭을 못 싣는다. 로그인 없는 자리라 본문은 4KB 까지만 읽는다."""
+    cl = request.headers.get("content-length", "")
+    if cl.isdigit() and int(cl) > 4096:
+        raise AuthError("본문이 4KB 를 넘습니다.", status_code=413)
+    reason = ""
+    if cl.isdigit() and int(cl) > 0:
+        try:
+            got = json.loads(await request.body())
+            reason = str(got.get("reason") or "")[:200] if isinstance(got, dict) else ""
+        except ValueError:
+            reason = ""
+    try:
+        rec = await asyncio.to_thread(_pc.helper_cancel, settings, ticket, reason)
+    except _pc.TicketError as exc:
+        raise _pc_reject(exc) from None
+    _pc_audit(request, rec, "pc_upload", "cancelled", reason=rec.get("error") or "")
+    return {"ok": True}
+
+
+@router.post("/upload/pc/{ticket}")
+async def upload_pc_helper_receive(ticket: str, request: Request, settings: Settings = Depends(get_settings)) -> dict:
+    """도우미가 올리는 자리(표만 — 로그인 없이). **표를 먼저 닫고 나서** 본문을 읽는다 — 아무나 큰 본문을 보내 스테이징을 채우지 못하게,
+    같은 표로 두 번 올리지 못하게. 받는 것: `doc`(.hwax.md — UTF-8 · 머리말 schema hwax-doc/1 · _pc.DOC_MAX_BYTES) ·
+    `slides`(PNG · _pc.SLIDES_MAX 장 · 장당 _pc.SLIDE_MAX_BYTES — 표가 그림을 청했을 때만 둔다). 원본은 받지 않는다(사용자 결정 10-22)."""
+    cl = request.headers.get("content-length", "")
+    limit = _pc.DOC_MAX_BYTES + _pc.SLIDES_MAX * _pc.SLIDE_MAX_BYTES + (1 << 20)
+    if not cl.isdigit():
+        raise AuthError("길이(Content-Length)가 없는 본문은 받지 않습니다.", status_code=411)
+    if int(cl) > limit:
+        raise AuthError(f"본문이 상한 {limit:,}바이트를 넘습니다.", status_code=413)
+    try:
+        rec = await asyncio.to_thread(_pc.claim, settings, ticket)
+    except _pc.TicketError as exc:
+        raise _pc_reject(exc) from None
+    try:
+        async with request.form(max_files=_pc.SLIDES_MAX + 1, max_fields=4, max_part_size=64 * 1024) as form:
+            doc = form.get("doc")
+            if isinstance(doc, str) or doc is None:
+                raise ValueError("글(doc 파일)이 없습니다.")
+            text = _pc.check_doc(await doc.read(_pc.DOC_MAX_BYTES + 1))
+            parts = [f for f in form.getlist("slides") if not isinstance(f, str)] if rec.get("slides") else []
+            if len(parts) > _pc.SLIDES_MAX:
+                raise ValueError(f"슬라이드 그림이 {_pc.SLIDES_MAX}장을 넘습니다({len(parts)}장).")
+            blobs = []
+            for i, f in enumerate(parts, start=1):
+                b = await f.read(_pc.SLIDE_MAX_BYTES + 1)
+                _pc.check_slide(b, i)
+                blobs.append(b)
+            helper = str(form.get("helper") or "")[:20]
+        received = await asyncio.to_thread(_pc.store, settings, rec, text, blobs)
+    except Exception as exc:  # noqa: BLE001 — 표는 이미 닫혔다. 까닭을 남기고 도우미에 돌려준다
+        reason = str(exc)[:300] if isinstance(exc, ValueError) else f"{type(exc).__name__}: {exc}"[:300]
+        await asyncio.to_thread(_pc.finish, settings, ticket, ok=False, error=reason)
+        _pc_audit(request, rec, "pc_upload", "failed", error=reason)
+        raise AuthError(f"받지 못했습니다 — {reason} 포털 화면에서 단추를 다시 누르세요.", status_code=422) from None
+    await asyncio.to_thread(_pc.finish, settings, ticket, ok=True, received=received)
+    _pc_audit(request, rec, "pc_upload", "ok", doc=received["doc_name"], bytes=received["bytes"], chars=received["chars"],
+              slides=received["slides"], helper=helper)
+    return {"ok": True, "chars": received["chars"], "slides": received["slides"]}
 
 
 @router.post("/upload/analyze")
