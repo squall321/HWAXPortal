@@ -41,12 +41,13 @@ function Probe() {
   );
 }
 function Peek() {
-  const { messages, activeConversation, attachedDocs } = useChat();
+  const { messages, activeConversation, attachedDocs, streaming } = useChat();
   return (
     <>
       <span id="roles">{messages.map((m) => m.role).join(',')}</span>
       <span id="sid">{activeConversation?.serverId ?? ''}</span>
       <span id="docs">{attachedDocs.map((d) => `${d.name}:${d.chars}`).join(',')}</span>
+      <span id="streaming">{String(streaming)}</span>
     </>
   );
 }
@@ -58,7 +59,9 @@ function Peek() {
     >
       <MemoryRouter>
         <ChatProvider storagePrefix="hwax.chat" serverKind="chat" sendPrefix={what === 'delib' ? '/심의 ' : ''}>
-          {what === 'composer' ? <><Composer /><Peek /></> : <Probe />}
+          {what === 'composer' ? <><Composer /><Peek /></>
+            : what === 'composer-page' ? <><Composer dropAnywhere /><Peek /><div id="thread" style={{ height: 300 }}>대화</div></>
+            : <Probe />}
         </ChatProvider>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -81,6 +84,7 @@ _STUB = r"""
     window.__calls.push({ url: u, method, body: typeof init.body === 'string' ? JSON.parse(init.body) : null });
     if (u === '/agent/upload' && method === 'POST') {
       const f = init.body.get('file');
+      if (f.name.includes('broken')) return json({ detail: '스테이징 디스크가 찼습니다' }, 507);
       window.__staged = (window.__staged || 0) + 1;
       return json({ staging_id: 'st' + window.__staged, filename: f.name, size: f.size, ext: 'pptx', content_type: '',
                     destinations: [{ id: 'aidatahub', label: 'AI 데이터 허브 — 지식카드로 변환' },
@@ -139,6 +143,27 @@ async function pick(page, name, head) {
   await page.locator('input[type=file]').setInputFiles({ name, mimeType: 'application/octet-stream',
     buffer: Buffer.concat([Buffer.from(head), Buffer.alloc(64)]) });
 }
+
+const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const PK_B64 = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(64)]).toString('base64');
+// 파일을 끌어 와 놓는다 — 페이지 안에서 DataTransfer 를 만들어 dragover(놓을 자리 표시를 본다) → drop. files 가 없으면 글 끌기.
+async function drag(page, selector, files, text) {
+  const dt = await page.evaluateHandle(([fs, t]) => {
+    const d = new DataTransfer();
+    for (const f of fs) d.items.add(new File([Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0))], f.name, { type: f.mime }));
+    if (t) d.setData('text/plain', t);
+    return d;
+  }, [files, text || '']);
+  await page.dispatchEvent(selector, 'dragover', { dataTransfer: dt });
+  const veil = await page.evaluate(() => Boolean(document.querySelector('.drop-veil')));
+  const veil_text = await page.evaluate(() => (document.querySelector('.drop-veil b') || {}).textContent || '');
+  const ring = await page.evaluate(() => Boolean(document.querySelector('form.composer-drop')));
+  await page.dispatchEvent(selector, 'drop', { dataTransfer: dt });
+  await page.waitForTimeout(80);
+  return { veil, veil_text, ring, veil_after: await page.evaluate(() => Boolean(document.querySelector('.drop-veil'))) };
+}
+const err = (page) => page.evaluate(() => (document.querySelector('.composer .upl-err') || {}).textContent || '');
+const chips = (page) => page.evaluate(() => document.querySelectorAll('.img-chip').length);
 
 async function open(browser, what = '') {
   const page = await browser.newPage();
@@ -228,6 +253,60 @@ const SCENARIOS = {
     const early = await page.getByRole('button', { name: '도우미 설치 배치 받기' }).count();
     for (let i = 0; i < 12; i += 1) await forward(page, 1600);
     return { early, late: await page.getByRole('button', { name: '도우미 설치 배치 받기' }).count(), errors: page.__errors };
+  },
+  // 대화창(화면 어디든)에 PPT 를 놓으면 '+' 와 같이 올라가 '어디로 보낼까요' 가 뜬다 · 그림 여럿은 다 붙는다
+  async drop_page(browser) {
+    const page = await open(browser, 'composer-page');
+    const ppt = await drag(page, '#thread', [{ name: '설계검토.pptx', mime: 'application/vnd.ms-powerpoint', b64: PK_B64 }]);
+    await page.getByText('어디로 보낼까요').waitFor();
+    const staged = await page.locator('.upl-file').first().textContent();
+    const uploads = (await calls(page)).filter((c) => c.url === '/agent/upload').length;
+    const imgs = await drag(page, 'body', [{ name: 'a.png', mime: 'image/png', b64: PNG_B64 }, { name: 'b.png', mime: 'image/png', b64: PNG_B64 }]);
+    await page.waitForFunction(() => document.querySelectorAll('.img-chip').length === 2);
+    return { ppt, staged, uploads, imgs, chips: await chips(page), errors: page.__errors };
+  },
+  // 섞어 놓기 — 문서 하나 + 그림, 나머지 문서는 이름을 대고 · 받지 않는 형식은 올리지 않고 이름을 댄다
+  async drop_mixed(browser) {
+    const page = await open(browser, 'composer-page');
+    await drag(page, '#thread', [{ name: 'a.pptx', mime: '', b64: PK_B64 }, { name: 'p.png', mime: 'image/png', b64: PNG_B64 },
+                                 { name: 'b.pptx', mime: '', b64: PK_B64 }, { name: 'setup.exe', mime: '', b64: PK_B64 }]);
+    await page.getByText('어디로 보낼까요').waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('.img-chip').length === 1);
+    const mixed = { staged: await page.locator('.upl-file').first().textContent(), err: await err(page),
+                    uploads: (await calls(page)).filter((c) => c.url === '/agent/upload').length };
+    // 문서가 못 올라가도 그 까닭이 함께 놓은 그림 처리에 지워지지 않는다
+    const page3 = await open(browser, 'composer-page');
+    await drag(page3, '#thread', [{ name: 'broken.pptx', mime: '', b64: PK_B64 }, { name: 'p.png', mime: 'image/png', b64: PNG_B64 }]);
+    await page3.waitForFunction(() => document.querySelectorAll('.img-chip').length === 1);
+    const broken = { err: await err(page3) };
+    const page2 = await open(browser, 'composer-page');
+    await drag(page2, 'body', [{ name: 'setup.exe', mime: '', b64: PK_B64 }]);
+    await page2.waitForTimeout(100);
+    const odd = { err: await err(page2), uploads: (await calls(page2)).filter((c) => c.url === '/agent/upload').length };
+    return { mixed, odd, broken, errors: [...page.__errors, ...page2.__errors, ...page3.__errors] };
+  },
+  // 독(입력창 위에 놓을 때만) — 바깥에 놓으면 받지 않고(다른 화면의 끌기를 가로채지 않는다), 입력창 위에 놓으면 받는다 · 글 끌기는 그대로
+  async drop_dock(browser) {
+    const page = await open(browser, 'composer');
+    const outside = await drag(page, 'body', [{ name: 'a.png', mime: 'image/png', b64: PNG_B64 }]);
+    const after_outside = await chips(page);
+    const inside = await drag(page, 'form.composer', [{ name: 'a.png', mime: 'image/png', b64: PNG_B64 }]);
+    await page.waitForFunction(() => document.querySelectorAll('.img-chip').length === 1);
+    const page2 = await open(browser, 'composer-page');
+    const text = await drag(page2, '#thread', [], '그냥 글');
+    return { outside, after_outside, inside, text, errors: [...page.__errors, ...page2.__errors] };
+  },
+  // 답을 받는 중 — 놓아도 붙이지 않고 까닭을 말한다(+ 단추가 숨는 때와 같다)
+  async drop_streaming(browser) {
+    const page = await open(browser, 'composer-page');
+    await page.locator('textarea').fill('질문');
+    await page.locator('textarea').press('Enter');
+    await page.waitForFunction(() => typeof window.__push === 'function');
+    const d = await drag(page, '#thread', [{ name: 'a.png', mime: 'image/png', b64: PNG_B64 }]);
+    await page.waitForTimeout(100);
+    const during = { chips: await chips(page), err: await err(page), veil_text: d.veil_text };
+    await finish(page);
+    return { during, errors: page.__errors };
   },
   // 심의 화면 — 알림만 있는 대화의 첫 발화에도 트리거가 붙는다
   async delib_first_turn(browser) {
@@ -390,3 +469,35 @@ def test_도우미가_안_열리면_15초_뒤_설치_안내를_띄운다(seen):
 
 def test_알림만_있는_대화의_첫_발화에도_심의_트리거가_붙는다(seen):
     assert seen("delib_first_turn")["message"] == "/심의 방금 변환한 것 검토해 줘"
+
+
+def test_대화창_어디에_놓아도_PPT_는_올라가고_그림은_여럿_붙는다(seen):
+    s = seen("drop_page")
+    assert s["ppt"] == {"veil": True, "veil_text": "여기에 놓으면 업로드됩니다", "ring": False, "veil_after": False}, \
+        "끄는 동안 화면 전체에 놓을 자리 · 놓으면 거둔다"
+    assert s["staged"] == "설계검토.pptx" and s["uploads"] == 1, "'+' 와 같은 길 — 올리고 '어디로 보낼까요'"
+    assert s["imgs"]["veil"] and s["chips"] == 2, "그림은 여럿 붙는다"
+
+
+def test_섞어_놓으면_문서_하나와_그림을_붙이고_나머지는_이름을_댄다(seen):
+    s = seen("drop_mixed")
+    m = s["mixed"]
+    assert m["staged"] == "a.pptx" and m["uploads"] == 1
+    assert "파일은 한 번에 하나씩 붙습니다 — b.pptx 은(는) 따로 붙이세요" in m["err"], m["err"]
+    assert "붙이지 않는 형식입니다 — setup.exe" in m["err"], m["err"]
+    assert s["odd"]["uploads"] == 0 and "붙이지 않는 형식입니다 — setup.exe" in s["odd"]["err"], "받지 않는 형식은 올리지도 않는다"
+    assert "스테이징 디스크가 찼습니다" in s["broken"]["err"], "문서 업로드 실패가 함께 놓은 그림 처리에 지워지지 않는다"
+
+
+def test_독은_입력창_위에_놓을_때만_받고_글_끌기는_건드리지_않는다(seen):
+    s = seen("drop_dock")
+    assert s["outside"] == {"veil": False, "veil_text": "", "ring": False, "veil_after": False} and s["after_outside"] == 0, \
+        "독은 닫혀도 입력창이 붙어 있다 — 바깥 끌기를 가로채지 않는다"
+    assert s["inside"]["ring"] is True and s["inside"]["veil"] is False, "입력창 위면 테두리로 알리고 받는다"
+    assert s["text"]["veil"] is False, "파일이 아닌 끌기(글 · 링크)는 그대로"
+
+
+def test_답을_받는_중에_놓으면_붙이지_않고_까닭을_말한다(seen):
+    d = seen("drop_streaming")["during"]
+    assert d["chips"] == 0 and "답을 받는 중에는 붙이지 않습니다" in d["err"], d
+    assert d["veil_text"] == "답을 받는 중에는 붙이지 않습니다", "끄는 동안에도 미리 말한다"

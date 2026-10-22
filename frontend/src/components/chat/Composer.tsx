@@ -8,9 +8,11 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type DragEvent as ReactDragEvent,
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useChat } from '../../state/ChatContext';
 import { shortName } from './personaColor';
 import { SearchToggle } from './SourcePanel';
@@ -20,7 +22,7 @@ import { IconFile, IconPlus, IconSend, IconStop, IconUser } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
-import { classify, readDoc, kindLabel, unitsLabel, isEncryptedOffice, DOC_MAX } from './docAttach';
+import { classify, extOf, readDoc, kindLabel, unitsLabel, isEncryptedOffice, DOC_MAX } from './docAttach';
 import { IMAGES_MAX, isImageFile, readImage, type AttachedImage } from './imageAttach';
 import { DocExtractHint } from './DocExtractHint';
 import { DocActions } from './DocActions';
@@ -29,6 +31,14 @@ import { UploadRouter } from './UploadRouter';
 export interface ComposerHandle {
   focus: () => void;
 }
+
+// '+' 로 고를 수 있는 파일 — 끌어다 놓은 파일도 같은 목록으로 거른다(놓기는 accept 를 지나지 않는다, docs/chat-ppt PP-D16).
+const ACCEPT = '.md,.txt,.pptx,.ppt,.docx,.doc,.pdf,.htm,.html,.csv,.xlsx,.step,.stp,.msh,.zip,.k,.key,.dyn,.inc,.png,.jpg,.jpeg,.gif,.webp';
+const ACCEPT_EXTS = ACCEPT.split(',').map((x) => x.slice(1));
+// 끄는 중 표시를 거두는 때 — 마지막 dragover 뒤 이만큼. 브라우저는 끄는 동안 350ms 마다 dragover 를 낸다(손이 멈춰 있어도). 창 밖으로
+// 나가거나 Esc 로 그만둔 것은 dragleave 만으로는 브라우저마다 다르게 알린다.
+const DRAG_IDLE_MS = 800;
+const isFileDrag = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes('Files');
 
 interface ComposerProps {
   autoFocus?: boolean;
@@ -39,6 +49,9 @@ interface ComposerProps {
   onSubmitText?: (text: string) => void;
   /** 도구 줄에 '전문가' 알약 — 챗 화면만(심의는 좌석을 ExpertPicker 로 정하고, 독은 좁다). */
   showExpert?: boolean;
+  /** 화면 어디에 끌어다 놓아도 이 입력창으로 올린다 — 입력창이 그 화면의 주인인 챗 · 심의 화면만. 독은 닫혀도 붙어 있어 켜지 않는다
+   *  (켜면 '앱' 화면의 끌기를 닫힌 독이 가로챈다) — 독은 입력창 위에 놓을 때만 받는다(docs/chat-ppt PP-D16). */
+  dropAnywhere?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
@@ -48,6 +61,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     showHint = false,
     onSubmitText,
     showExpert = false,
+    dropAnywhere = false,
   },
   ref,
 ) {
@@ -104,11 +118,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // 그림 — 브라우저에서 줄여(긴 변 1,568px) 이 발화에 싣는다. 서버가 저장하고 돌려준 주소가 그 발화에 남아 다음 턴 · 띵킹 · 심의가
   // 다시 본다(docs/chat-depth-context T5). 상한(IMAGES_MAX)을 넘거나 읽히지 않으면 말한다(조용히 빼지 않는다).
   const addImages = useCallback(
-    async (files: File[]) => {
-      setUpErr('');
+    async (files: File[], keep = false) => {
+      // keep — 같은 동작에서 앞서 남긴 알림을 지우지 않고 잇는다(문서와 그림을 함께 놓았을 때, PP-D16)
+      const say = (m: string) => setUpErr((e) => (keep && e ? `${e} · ${m}` : m));
+      if (!keep) setUpErr('');
       const room = IMAGES_MAX - attachedImages.length;
       if (room <= 0) {
-        setUpErr(`그림은 한 번에 ${IMAGES_MAX}장까지 올릴 수 있습니다.`);
+        say(`그림은 한 번에 ${IMAGES_MAX}장까지 올릴 수 있습니다.`);
         return;
       }
       const got: AttachedImage[] = [];
@@ -122,7 +138,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }
       if (files.length > room) errs.push(`${files.length - room}장은 한 번에 ${IMAGES_MAX}장 상한을 넘어 붙이지 않았습니다.`);
       if (got.length) setAttachedImages([...attachedImages, ...got]);
-      if (errs.length) setUpErr(errs.join(' · '));
+      if (errs.length) say(errs.join(' · '));
     },
     [attachedImages, setAttachedImages],
   );
@@ -172,6 +188,104 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     },
     [attachedDocs, setAttachedDocs, addImages],
   );
+
+  // '+' 로 고른 파일과 끌어다 놓은 파일은 같은 길로 간다(docs/chat-ppt PP-D16). 그림은 여럿을, 그 밖(문서 · 업로드)은 한 번에 하나를 —
+  // 업로드 패널 · 추출 안내가 한 파일씩이다. 함께 고른 나머지 · 받지 않는 형식은 이름을 대고 말한다(조용히 빼지 않는다).
+  const addFiles = useCallback(
+    async (all: File[]) => {
+      const odd = all.filter((f) => !isImageFile(f) && !ACCEPT_EXTS.includes(extOf(f.name)));
+      const fs = all.filter((f) => !odd.includes(f));
+      const imgs = fs.filter(isImageFile);
+      const rest = fs.filter((f) => !isImageFile(f));
+      const notes: string[] = [];
+      if (rest.length > 1) notes.push(`파일은 한 번에 하나씩 붙습니다 — ${rest.slice(1).map((f) => f.name).join(', ')} 은(는) 따로 붙이세요`);
+      if (odd.length) notes.push(`붙이지 않는 형식입니다 — ${odd.map((f) => f.name).join(', ')}`);
+      if (rest.length) await onPick(rest[0]);
+      else setUpErr('');
+      if (imgs.length) await addImages(imgs, true);
+      if (notes.length) setUpErr((e) => [e, ...notes].filter(Boolean).join(' · '));
+    },
+    [addImages, onPick],
+  );
+
+  // 놓은 파일 — '+' 단추가 보이는 때와 같은 때만 받는다(붙일 권한 · 답을 받는 중이 아님). 받지 않을 때도 까닭을 말한다.
+  const dropFiles = useCallback(
+    (fs: File[]) => {
+      if (!fs.length) return;
+      if (!canUp) {
+        setUpErr('파일을 붙일 권한이 없습니다 — 내 권한 페이지에서 요청할 수 있습니다.');
+        return;
+      }
+      if (streaming) {
+        setUpErr('답을 받는 중에는 붙이지 않습니다 — 답이 끝난 뒤 다시 놓으세요.');
+        return;
+      }
+      void addFiles(fs);
+    },
+    [canUp, streaming, addFiles],
+  );
+  const dropRef = useRef(dropFiles);
+  dropRef.current = dropFiles;
+  const [dragOn, setDragOn] = useState(false);
+
+  // 화면 어디에 놓아도(dropAnywhere — 챗 · 심의 화면) — 창이 받는다. 끄는 동안 놓을 자리를 화면 전체에 보이고, 브라우저가 파일을 열어
+  // 화면을 떠나지 않게 막는다(받는 중이던 답이 끊긴다). 파일이 아닌 끌기(글 · 링크)는 건드리지 않는다.
+  useEffect(() => {
+    if (!dropAnywhere) return;
+    let timer = 0;
+    const off = () => {
+      window.clearTimeout(timer);
+      setDragOn(false);
+    };
+    const over = (e: DragEvent) => {
+      if (!isFileDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      setDragOn(true);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(off, DRAG_IDLE_MS);
+    };
+    const leave = (e: DragEvent) => {
+      if (isFileDrag(e.dataTransfer) && e.relatedTarget === null) off();   // 창 밖으로
+    };
+    const drop = (e: DragEvent) => {
+      if (!isFileDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      off();
+      dropRef.current(Array.from(e.dataTransfer?.files ?? []));
+    };
+    window.addEventListener('dragover', over);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('drop', drop);
+    return () => {
+      off();
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('drop', drop);
+    };
+  }, [dropAnywhere]);
+
+  // 입력창 위에 놓을 때만(독) — 놓기를 여기서 끝낸다(창으로 올라가 다른 입력창이 한 번 더 받지 않게).
+  const formDrop = dropAnywhere
+    ? {}
+    : {
+        onDragOver: (e: ReactDragEvent<HTMLFormElement>) => {
+          if (!isFileDrag(e.dataTransfer)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setDragOn(true);
+        },
+        onDragLeave: (e: ReactDragEvent<HTMLFormElement>) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOn(false);
+        },
+        onDrop: (e: ReactDragEvent<HTMLFormElement>) => {
+          if (!isFileDrag(e.dataTransfer)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setDragOn(false);
+          dropFiles(Array.from(e.dataTransfer.files));
+        },
+      };
 
   // PC 도우미가 올린 글(.hwax.md) · 슬라이드 그림 — 손으로 붙이던 길(readDoc · addImages)과 같다(docs/chat-ppt B4). 까닭은 돌려준다.
   const attachPcResult = useCallback(
@@ -234,7 +348,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const canSend = input.trim().length > 0 && !streaming;
 
   return (
-    <form className="composer" onSubmit={onSubmit}>
+    <form className={dragOn && !dropAnywhere ? 'composer composer-drop' : 'composer'} onSubmit={onSubmit} {...formDrop}>
+      {dropAnywhere && dragOn && createPortal(
+        // 놓을 자리 표시 — 손을 대지 않는다(pointer-events: none). 놓기는 창이 받는다.
+        <div className="drop-veil" aria-hidden="true">
+          <div className="drop-veil-card">
+            <b>{!canUp ? '파일을 붙일 권한이 없습니다' : streaming ? '답을 받는 중에는 붙이지 않습니다' : '여기에 놓으면 업로드됩니다'}</b>
+            <span>그림 · PPT · Word · PDF · 문서(.md) · CSV · STEP · K파일 — ‘+’ 와 같은 길</span>
+          </div>
+        </div>,
+        document.body,
+      )}
       {/* 지정 전문가·도구 칩 — 이 대화에 적용될 선택을 항상 보이게(× 로 즉시 해제). */}
       {(pinnedTools.length > 0 ||
         pinnedApps.length > 0 ||
@@ -414,15 +538,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <input
                 ref={fileRef}
                 type="file"
-                accept=".md,.txt,.pptx,.ppt,.docx,.doc,.pdf,.htm,.html,.csv,.xlsx,.step,.stp,.msh,.zip,.k,.key,.dyn,.inc,.png,.jpg,.jpeg,.gif,.webp"
+                accept={ACCEPT}
                 multiple
                 style={{ display: 'none' }}
                 onChange={(e) => {
-                  // 그림만 여럿 고르면 다 붙인다. 그 밖(문서 · 업로드)은 종전대로 첫 파일 하나.
+                  // 끌어다 놓기와 같은 길 — 그림은 여럿, 그 밖(문서 · 업로드)은 한 번에 하나(나머지는 이름을 대고 알린다, PP-D16).
                   const fs = Array.from(e.target.files ?? []);
                   e.target.value = '';
-                  if (fs.length > 1 && fs.every(isImageFile)) void addImages(fs);
-                  else void onPick(fs[0]);
+                  void addFiles(fs);
                 }}
               />
               <button

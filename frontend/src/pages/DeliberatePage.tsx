@@ -249,6 +249,7 @@ export default function DeliberatePage() {
                 ))}
                 <Composer
                   ref={composerRef}
+                  dropAnywhere
                   autoFocus
                   placeholder={JOB_BY_ID[job].placeholder}
                   onSubmitText={startPicking}
@@ -298,6 +299,7 @@ export default function DeliberatePage() {
               <DelibOptsPanel />
               <Composer
                 ref={composerRef}
+                dropAnywhere
                 autoFocus
                 placeholder="이어서 질문하거나 의견을 보태세요… (GLM이 심의 로그를 이어받아 답합니다)"
               />

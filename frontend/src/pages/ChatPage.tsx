@@ -153,6 +153,7 @@ export default function ChatPage() {
               <h1 className="cx-hero-title">무엇을 도와드릴까요?</h1>
               <Composer
                 ref={composerRef}
+                dropAnywhere
                 autoFocus
                 showHint
                 showExpert
@@ -206,6 +207,7 @@ export default function ChatPage() {
             <div className="cx-composer-dock">
               <Composer
                 ref={composerRef}
+                dropAnywhere
                 autoFocus
                 showHint
                 showExpert

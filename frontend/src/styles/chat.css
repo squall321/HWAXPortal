@@ -653,6 +653,51 @@ ol.md-list li.md-li-d2 {
   border-color: rgba(152, 168, 255, 0.55);
   box-shadow: 0 0 0 3px var(--cx-accent-soft);
 }
+/* 끌어다 놓기(docs/chat-ppt PP-D16) — 챗 · 심의 화면은 화면 전체가 놓을 자리라 끄는 동안 덮개를 띄운다. 덮개는 손을 대지 않는다
+   (pointer-events: none) — 놓기는 창이 받는다. 독은 입력창 위에 놓을 때만이라 입력창 테두리만 바뀐다. */
+.composer.composer-drop .composer-box {
+  border-color: var(--cx-accent);
+  box-shadow: 0 0 0 3px var(--cx-accent-soft);
+}
+.drop-veil {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-lightbox);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cx-accent-soft);
+  outline: 2px dashed var(--cx-accent);
+  outline-offset: -12px;
+}
+.drop-veil-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-6);
+  border-radius: var(--r-xl);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  font-size: 13px;
+}
+.drop-veil-card b {
+  font-size: 15px;
+}
+.drop-veil-card span {
+  opacity: 0.72;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .drop-veil {
+    animation: drop-veil-in 0.12s ease-out;
+  }
+}
+@keyframes drop-veil-in {
+  from {
+    opacity: 0;
+  }
+}
 .composer-box textarea {
   width: 100%;
   min-width: 0;
