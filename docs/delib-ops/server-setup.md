@@ -60,8 +60,24 @@ curl -s --noproxy '*' http://127.0.0.1:9009/limits
 curl -s --noproxy '*' -X POST http://127.0.0.1:9009/limits -H 'content-type: application/json' -d '{"reset": true, "by": "<이름>"}'
 ```
 
-범위는 전역 1~1000 · 사용자별 0~1000(0 = 전역을 따른다) · 줄 0~1000 이다. 덮개 파일은 `<DELIB_JOB_DIR>/state/limits.json` 이고 손으로 고쳐도
+범위는 전역 1~1000 · 사용자별 0~1000(0 = 전역을 따른다) · 줄 0~1000 · 좌석 합 0~1000(0 = 끔) 이다. 덮개 파일은 `<DELIB_JOB_DIR>/state/limits.json` 이고 손으로 고쳐도
 다음 판정부터 읽는다(깨지면 읽지 않고 env 값으로 돌며 `limits.error` 에 까닭이 뜬다).
+
+**좌석 합 상한(`max_seats_running` — 기본 꺼짐).** 위 셋은 심의 **건수**를 센다 — 3석 심의도 20석 심의도 1건이다. 한 심의는 단계마다 좌석 수만큼
+LLM 호출을 한꺼번에 내니, LLM 서버가 받는 수를 묶으려면 좌석 합을 건다. 걸면 좌석이 많은 심의는 건수 한도 안이어도 자리가 나기를 기다린다
+(먼저 선 심의부터 · 혼자면 넘어도 돈다). 리스크 쟁점 패널(웹 심의)은 합에 들지 않는다 — 리스크 앱이 `HWAXRISK_CONCURRENCY`(기본 2)개씩 연다.
+
+1. 걸기 전에 바쁜 때의 좌석 합을 며칠 본다 — `curl -s --noproxy '*' http://127.0.0.1:9009/health` 의 `delib_seats_running`.
+2. 값은 LLM 용량 측정([../llm-pool/capacity.md](../llm-pool/capacity.md))이 권한 동시 수(서버 둘의 합)에서 카드 대조 관문 몫
+   (`CARD_REVIEW_CONCURRENCY`)을 뺀 수를 넘지 않게 잡는다 — 그 측정은 카드 대조 길이로 재므로 심의 호출에는 어림이다. 측정 전이면 1 에서 본
+   평소 꼭대기보다 조금 위로 걸어 '그보다 많이 몰릴 때만' 줄을 세운다.
+
+```bash
+curl -s --noproxy '*' -X POST http://127.0.0.1:9009/limits -H 'content-type: application/json' \
+  -d '{"max_seats_running": <수>, "by": "<이름>", "reason": "<까닭>"}'
+# 끄기 — 그 칸의 덮개를 지운다(env 기본 0)
+curl -s --noproxy '*' -X POST http://127.0.0.1:9009/limits -H 'content-type: application/json' -d '{"max_seats_running": null, "by": "<이름>"}'
+```
 
 ## 4. 새 심의 멈춤(R1) — 손으로
 

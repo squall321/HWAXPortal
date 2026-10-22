@@ -3,7 +3,8 @@
 > 요청서 [request.md](request.md)(사양 — R1~R5 · O1 · O2) · 체크리스트 [checklist.md](checklist.md) · 결정 [context-notes.md](context-notes.md) ·
 > cae00 절차(사람 몫) [server-setup.md](server-setup.md).
 > 대상은 HWAXAgentServer(엔진)와 HWAXPortal `infra/scripts`(운영 스크립트)다. **완료 10-22** — 엔진 `2e5dad6`(R4) · `41a3996`(R5) · `e7df642`(R1~R3) ·
-> `1567dba`(R2' start.sh), 포털 `5ea295d`(R2' lib · O1 · O2).
+> `1567dba`(R2' start.sh), 포털 `5ea295d`(R2' lib · O1 · O2). 뒤이어 10-22 — 이어하기 요약을 좌석 몫으로 엔진 `8c37ba2`(DO-D15) · 좌석 합 상한
+> 엔진 `43234c6`(R4' · DO-D16).
 
 ## 1. 무엇 · 왜
 
@@ -25,6 +26,7 @@
 | # | 무엇 | 어디 |
 |---|---|---|
 | R4 | 동시 한도 셋(`MAX_RUNNING` · `MAX_RUNNING_PER_USER` · `QUEUE_MAX`)을 판정 때마다 읽는다 — 박스 파일(`<잡 원장>/state/limits.json`)이 env 위에 덮인다. `GET · POST /limits`(루프백, `/drain` 과 같은 신뢰), 올리면 줄을 곧바로 띄운다. 내리면 도는 잡은 그대로 · 새 시작만 준다. `/health` 에 지금 값과 출처(DO-D3) | 엔진 `delib_jobs` · `app` |
+| R4' | **좌석 합 상한**(사용자 요청 10-22 — '심의와 리스크 심사는 쓰는 에이전트 수가 다르다') — 위 셋은 잡 수를 세 3석도 20석도 1건이다. 네 번째 한도 `max_seats_running`(`DELIB_JOB_MAX_SEATS_RUNNING` · `/limits` · 기본 0 = 끔)이 도는 GLM 잡의 좌석 합을 묶는다. 앉기 전은 어림, 앉으면 고치고 줄을 다시 본다 · 혼자면 넘어도 돈다 · 먼저 선 잡의 좌석을 가로채지 않는다 · 외부 응답자 잡 · 웹 심의(리스크 패널은 앱이 2개씩)는 합에 넣지 않는다(DO-D16) | 엔진 `delib_jobs` · `app` · `mcp_server` |
 | R5 | `LLM_CONTEXT_TOKENS` 를 서버 답의 **상한**으로도 쓴다(`min(서버, env)`, 출처는 env). 창을 굳히지 않고 `LLM_CONTEXT_TTL_S`(기본 600초)마다 뒤에서 다시 묻는다(묻는 동안 호출자는 기다리지 않는다). 한 번 물을 때 `LLM_CONTEXT_SAMPLES`(3)번 물어 가장 작은 값. **다시 물은 답은 줄일 때만 받는다** — 넓히기는 재기동 때(DO-D4) · `/health.context` | 엔진 `app._model_context_tokens` |
 | R1 | **새 심의 멈춤** — 비우기 깃발과 같은 규칙(수명 상한 · 주인 · 고정 · 원자적 쓰기)의 **따로 된 파일**(`<잡 원장>/state/delib-pause.json` · `scope: delib`). 켜져 있으면 MCP `deliberate_start` · `deliberate_continue` 가 「점검 중 — 약 N분 뒤 다시」(retry_after_s)로 거절하고, 웹 세 트리거도 SSE `error`(`delib_paused`)로 거절한다(앱이 띄운 리스크 패널은 앱이 비우기 깃발로 스스로 멈춘다 — 엔진이 거절하면 패널이 오류로 닫힌다). **줄 선 잡도 띄우지 않는다**(잡아 두고 재기동). 도는 잡은 끝까지 간다. 끄면 그 자리에서, 수명으로 풀리면 15초 주기 펌프가 줄을 띄운다. `POST /drain {scope:"delib"}` · `/health` 의 `delib_paused` · `delib_pause`(`GET /drain` 은 그대로 — DO-D5) | 엔진 `review_gate` · `delib_jobs` · `app` · `mcp_server` |
 | R2 | **줄이 재기동을 넘긴다** — 잡마다 시작 인자 전부를 `<잡 원장>/args/<id>.json`(0600)에 적고(토큰 없음), 재기동 뒤 줄 선 잡을 처음 줄 선 차례(`queued_at`)로 다시 세운다(멈춤이 켜져 있으면 그대로 붙잡는다). 정상 종료(TERM)로 접힌 도는 잡은 `interrupted` 로 남는다. `/health` 의 `delib_queue_durable` · `delib_requeued`(DO-D6 · DO-D7) | 엔진 `delib_jobs` · `mcp_server` |

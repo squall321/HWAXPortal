@@ -115,3 +115,15 @@ N 에 들어서면(단계 `rN`) 앞의 N−1 이 끝난 것이고, 의장 결정
 (`CARD_REVIEW_CONCURRENCY` 8, 사람 심의 중 4)과 앱 워커(`HWAXRISK_REVIEW_CONCURRENCY` 8) 가운데 작은 쪽, 쟁점 패널은 앱 러너가
 `HWAXRISK_CONCURRENCY`(기본 2)개씩 연다(웹 심의라 잡 한도에 들지 않는다 — `/health.delib_active` 에는 든다). 좌석 합으로 묶는 한도를 더할지는
 사용자 결정을 기다린다.
+
+**DO-D16 R4' — 좌석 합 상한을 네 번째 한도로 · 기본 꺼짐(10-22, 엔진 `43234c6` — 사용자 'ㄱㄱㄱ', DO-D15 의 권함대로).** ① 같은 덮개(`/limits` ·
+`state/limits.json`)의 네 번째 칸 `max_seats_running`(env `DELIB_JOB_MAX_SEATS_RUNNING`) — 0 이면 끔이다. 기본을 켜 두지 않은 까닭 — LLM 서버가
+몇 개를 함께 받는지는 측정(llm-pool capacity) 전에는 모른다. 짐작한 값으로 켜면 올리는 순간 cae00 의 큰 패널이 까닭 없이 줄을 선다. ② 잡이 쥐는
+좌석은 앉은 수(personas 사건 — 다단 심의는 지금 단의 좌석)이고, 앉기 전은 어림이다(지정 좌석 + 1 — 종류마다 엔진이 더하는 반대석 · 고정석 몫, 없으면
+`DELIB_PERSONAS` 5 + `DELIB_COUNTER_SEATS` 2 + 1). 넉넉한 쪽으로 어림한다 — 적게 어림하면 앉는 순간 상한을 넘는다. 앉으면 그 자리에서 줄을 다시
+본다(어림보다 적게 앉았으면 자리가 났다). ③ 혼자면 상한보다 커도 돈다 — 아니면 그 잡은 영영 못 뜬다. ④ 먼저 선 GLM 잡이 좌석을 기다리면 뒤의 GLM
+잡이 그 좌석을 가로채지 않는다 — 건너뛰게 두면 작은 심의가 끝없이 들어와 큰 심의가 굶는다(심의는 몇 분 ~ 몇 시간이라 굶김이 실제로 난다).
+쓰임새를 조금 잃는 대신 차례를 지킨다. 사용자별 상한에 걸린 잡은 종전대로 건너뛴다(차례를 막지 않는다). ⑤ 외부 응답자 잡은 GLM 을 물지 않아
+세지 않는다. 웹 심의(포털 화면 · 리스크 패널)도 넣지 않았다 — 웹 심의는 줄이 없어 넘칠 때 거절해야 하고, 리스크 패널은 앱이
+`HWAXRISK_CONCURRENCY`(2)로 이미 묶는다(DO-D15 에서 권한 쪽). ⑥ 보이는 곳 — `/health.limits.max_seats_running` · `/health.delib_seats_running` ·
+`deliberate_jobs` 의 `running_seats` · `running_seats_max` · 줄 순번의 `why`('좌석 합 상한 N석 — 도는 심의가 M석, 이 심의는 K석(어림)').

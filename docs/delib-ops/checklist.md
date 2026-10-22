@@ -4,6 +4,8 @@
 
 ## 엔진(HWAXAgentServer)
 - [x] R4 한도 셋을 판정 때마다(박스 파일 > env) · `GET · POST /limits` · 올리면 줄 띄우기 · `/health` 의 `limits` — 엔진 `2e5dad6`(DO-D3)
+- [x] R4' 좌석 합 상한 `max_seats_running`(기본 꺼짐) · 앉기 전 어림 · 앉으면 다시 보기 · 혼자 예외 · 차례 지키기 — 엔진 `43234c6`(DO-D16)
+- [x] R3 보강 — 이어하기 요약을 좌석 몫으로(엔진 `8c37ba2`, DO-D15)
 - [x] R5 `LLM_CONTEXT_TOKENS` 상한 · 주기 재조회(뒤에서) · 여러 번 물어 작은 값 · `/health` 출처 — 줄일 때만 받는다, 엔진 `41a3996`(DO-D4)
 - [x] R1 비우기 클래스에 범위 매개변수 · 심의 멈춤 파일(`scope: delib`) · MCP 두 도구 거절 · 웹 세 트리거 거절(앱 패널 빼고) · 줄 붙잡기 · 주기 펌프 · `/drain` · `/health` — 엔진 `e7df642`(DO-D5)
 - [x] R2 시작 인자 파일(0600, 토큰 없음) · 끝나면 지우기 · 재기동 뒤 줄 다시 세우기(순서) · `/health` 의 `delib_queue_durable` · `delib_requeued` · 정상 종료는 interrupted — `e7df642`(DO-D6 · DO-D7)
