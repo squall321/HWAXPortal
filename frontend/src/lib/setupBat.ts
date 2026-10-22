@@ -845,3 +845,91 @@ export function makeSnippets(origin: string): Snippets {
 
   return { buildSetupBat, claudeCodeSnippet, claudeCodeSnippetSelfSigned, claudeDesktopSnippet, chatCurlSnippet, certGuide };
 }
+
+/** PC 문서 도우미 설치 배치 — 웹 챗의 'PC 의 PowerPoint 로 열어 가져오기' 단추가 이 PC 의 추출기(-Url 모드)를 부르게 한다(docs/chat-ppt B5).
+ *
+ *  ① 추출기를 포털에서 `%LOCALAPPDATA%\HWAX\` 로 받는다(직결 먼저 · 안 되면 시스템 프록시, 못 받으면 배치 옆의 사본) — 받은 파일에 판 표식
+ *     (`HWAX_DOC_HELPER = `)이 있는지 본다. 없는 정적 경로는 SPA 가 index.html 을 200 으로 내 '받았다' 로 보인다.
+ *  ② 포털 주소를 설정 파일(`hwax-doc.json`)에 적는다 — 도우미는 URL 이 아니라 이 주소로만 올린다(가짜 링크가 남의 서버로 못 보낸다).
+ *  ③ `HKCU\Software\Classes\hwax-doc` 를 잇는다 — 이 사용자만이라 관리자 권한이 필요 없다.
+ *  토큰이 없다(표는 웹 화면이 그때그때 받는다). Claude 셋업 배치와 따로 둔다 — 웹 챗 사용자는 그것을 돌리지 않는다(PP-D9). */
+export function buildDocHelperBat(origin: string): string {
+  const ORIGIN = origin.replace(/\/+$/, '');
+  const PS1_URL = `${ORIGIN}/doc-extract/hwax-doc-extract.ps1`;
+  // 받기 — 포털은 사내 주소라 직결을 먼저, 안 되면 시스템 프록시. TLS 1.2 를 켠다(PS 5.1 기본값이 낮은 PC 가 있다).
+  const download =
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference=\'Stop\';' +
+    '[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12;' +
+    `$u='${PS1_URL}';$o=Join-Path $env:LOCALAPPDATA 'HWAX\\hwax-doc-extract.ps1';` +
+    'try{[System.Net.WebRequest]::DefaultWebProxy=$null;Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 -Uri $u -OutFile $o}' +
+    'catch{$p=[System.Net.WebRequest]::GetSystemWebProxy();$p.Credentials=[System.Net.CredentialCache]::DefaultCredentials;' +
+    '[System.Net.WebRequest]::DefaultWebProxy=$p;Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 -Uri $u -OutFile $o}"';
+  const L: string[] = [
+    // ⚠ 첫 줄은 희생용이다 — BOM 을 cmd.exe 가 첫 줄에 섞어 읽는다(Claude 셋업 배치와 같은 까닭).
+    '@rem HWAX doc helper setup',
+    '@echo off',
+    'setlocal',
+    'chcp 65001 >nul',
+    'echo.',
+    'echo  HWAX 포털 - PC 문서 도우미 설치',
+    "echo  웹 챗의 'PC 의 PowerPoint 로 열어 가져오기' 단추가 이 PC 의 Office 를 부르게 합니다.",
+    `echo  포털: ${ORIGIN}`,
+    'echo.',
+    // 관리자 권한이면 %LOCALAPPDATA% 와 HKCU 가 관리자 프로필을 가리킨다 — 평소 계정의 브라우저가 못 찾는다.
+    'whoami /groups 2>nul | find "S-1-16-12288" >nul 2>nul',
+    'if errorlevel 1 goto :not_admin',
+    'echo  [!] 관리자 권한으로 실행 중입니다 - 지금 사용자^(%USERNAME%^) 에만 등록됩니다.',
+    'echo      평소 브라우저를 쓰는 계정이 아니면 관리자 권한 없이 그냥 더블클릭해 다시 실행하세요.',
+    'echo.',
+    ':not_admin',
+    'set "HWAX_DIR=%LOCALAPPDATA%\\HWAX"',
+    'if not exist "%HWAX_DIR%" mkdir "%HWAX_DIR%"',
+    'echo  [1/3] 추출기 내려받기...',
+    download,
+    'if not errorlevel 1 goto :dl_check',
+    'if not exist "%~dp0hwax-doc-extract.ps1" goto :dl_fail',
+    'copy /y "%~dp0hwax-doc-extract.ps1" "%HWAX_DIR%\\hwax-doc-extract.ps1" >nul',
+    'echo      포털에서 받지 못해 이 배치 옆의 hwax-doc-extract.ps1 을 썼습니다.',
+    ':dl_check',
+    'findstr /c:"HWAX_DOC_HELPER = " "%HWAX_DIR%\\hwax-doc-extract.ps1" >nul 2>nul',
+    'if not errorlevel 1 goto :dl_ok',
+    'del /q "%HWAX_DIR%\\hwax-doc-extract.ps1" >nul 2>nul',
+    'echo  [!] 받은 파일이 추출기가 아닙니다^(로그인 화면이거나 낡은 추출기^).',
+    'goto :dl_hint',
+    ':dl_fail',
+    'echo  [!] 추출기를 내려받지 못했습니다 - 사내망^(VPN^) · 프록시를 확인하세요.',
+    ':dl_hint',
+    `echo      포털의 ${ORIGIN}/doc-extract/hwax-doc-extract.ps1 을 이 배치와 같은 폴더에 받아 다시 실행해도 됩니다.`,
+    'goto :fail',
+    ':dl_ok',
+    'echo  [2/3] 포털 주소 적기...',
+    // 도우미는 URL 이 아니라 이 주소로만 올린다 — 이 줄이 올릴 곳의 정본이다.
+    `> "%HWAX_DIR%\\hwax-doc.json" echo {"origin": "${ORIGIN}"}`,
+    'if errorlevel 1 goto :fail',
+    'echo  [3/3] 웹 챗 단추와 잇기 - hwax-doc:// , 이 사용자만 · 관리자 권한 불필요...',
+    'reg add "HKCU\\Software\\Classes\\hwax-doc" /ve /d "URL:HWAX Doc Helper" /f >nul',
+    'if errorlevel 1 goto :reg_fail',
+    'reg add "HKCU\\Software\\Classes\\hwax-doc" /v "URL Protocol" /d "" /f >nul',
+    'if errorlevel 1 goto :reg_fail',
+    // %%1 — 배치 안이라 % 를 겹쳐 적는다(레지스트리에는 %1 로 들어간다). 따옴표는 reg 의 \" 다.
+    'reg add "HKCU\\Software\\Classes\\hwax-doc\\shell\\open\\command" /ve /d ' +
+      '"powershell.exe -NoProfile -ExecutionPolicy Bypass -File \\"%HWAX_DIR%\\hwax-doc-extract.ps1\\" -Url \\"%%1\\"" /f >nul',
+    'if errorlevel 1 goto :reg_fail',
+    'echo.',
+    "echo  설치했습니다. 포털 화면으로 돌아가 'PC 의 PowerPoint 로 열어 가져오기' 를 다시 누르세요.",
+    "echo  처음 한 번은 브라우저가 'HWAX Doc Helper 를 열까요' 를 묻습니다 - [열기] 를 누르세요.",
+    'echo  이 PC 의 Office 를 먼저 확인하려면:',
+    'echo    powershell -NoProfile -ExecutionPolicy Bypass -File "%HWAX_DIR%\\hwax-doc-extract.ps1" -SelfTest',
+    'echo.',
+    'pause',
+    'exit /b 0',
+    ':reg_fail',
+    'echo  [!] 레지스트리에 잇지 못했습니다 - 회사 정책이 HKCU\\Software\\Classes 쓰기를 막았을 수 있습니다.',
+    ':fail',
+    'echo.',
+    'pause',
+    'exit /b 1',
+  ];
+  // CRLF + BOM — 윈도우 배치는 CRLF 여야 안전하고, BOM 이 있어야 위 한글 안내가 UTF-8 로 읽힌다(Claude 셋업 배치와 같다).
+  return '﻿' + L.join('\r\n') + '\r\n';
+}

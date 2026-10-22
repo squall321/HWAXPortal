@@ -87,6 +87,19 @@ _STUB = r"""
                                    { id: 'reportarchive', label: 'Report Archive — 보고서로' }] });
     }
     if (u === '/agent/upload/dispatch') return json(window.__dispatch);
+    if (u === '/agent/upload/pc-ticket' && method === 'POST')
+      return json({ ticket: 'T'.repeat(43), expires_in_s: 600, helper_url: 'hwax-doc://extract?t=' + 'T'.repeat(43), protocol: 1 });
+    if (u === '/agent/upload/pc-ticket/' + 'T'.repeat(43)) {
+      const st = window.__pcStates.length > 1 ? window.__pcStates.shift() : window.__pcStates[0];
+      return st === 'err' ? json({ detail: '잠깐 끊김' }, 502) : json(st);
+    }
+    if (u === '/agent/upload/pc-ticket/' + 'T'.repeat(43) + '/doc')
+      return Promise.resolve(new Response(window.__pcDoc, { status: 200, headers: { 'Content-Type': 'text/markdown' } }));
+    if (u === '/agent/upload/pc-ticket/' + 'T'.repeat(43) + '/slides/1') {
+      const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
+                                  (ch) => ch.charCodeAt(0));
+      return Promise.resolve(new Response(png, { status: 200, headers: { 'Content-Type': 'image/png' } }));
+    }
     if (u === '/agent/conversations' && method === 'GET') return json({ conversations: [] });
     if (u === '/agent/conversations' && method === 'POST') {
       made += 1;
@@ -115,6 +128,13 @@ const { chromium } = createRequire(path.join(FE, 'package.json'))('@playwright/t
 const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
 const AIDH = { stage: 'done', destination: 'aidatahub', inbox_name: 'u1-a.pptx', result: { status: 'converted', record: { t: 1 } } };
+const MD = '---\nschema: hwax-doc/1\nsource: 설계검토.pptx\nkind: ppt\nunits: 1\n---\n\n## [s.1] 개요\n\n낙하 1.5 m\n';
+const RECEIVED = { state: 'received', filename: 'drm.pptx', expires_in_s: 0,
+  received: { doc_name: '설계검토.hwax.md', chars: MD.length, bytes: MD.length, slides: 1, doc_staging_id: 'd1' },
+  staged: { staging_id: 'd1', filename: '설계검토.hwax.md', size: MD.length, ext: 'md', content_type: '',
+            destinations: [{ id: 'aidatahub', label: 'AI 데이터 허브 — 지식카드로 변환' }] } };
+const WAITING = { state: 'waiting', filename: 'drm.pptx', expires_in_s: 590 };
+
 async function pick(page, name, head) {
   await page.locator('input[type=file]').setInputFiles({ name, mimeType: 'application/octet-stream',
     buffer: Buffer.concat([Buffer.from(head), Buffer.alloc(64)]) });
@@ -173,6 +193,41 @@ const SCENARIOS = {
     const kept = await page.locator('textarea').inputValue();
     await page.getByRole('button', { name: '검토 지시문을 입력창에 넣기' }).click();
     return { kept, after_button: await page.locator('textarea').inputValue(), errors: page.__errors };
+  },
+  // 암호 파일 → PC 도우미 → 받은 글이 문서 칩으로 · 다음 단계(AI 데이터 허브)
+  async pc_helper(browser) {
+    const page = await open(browser, 'composer');
+    // 한 번의 끊김(502)으로 멈추지 않는다 — 다시 묻는다
+    await page.evaluate(([w, r, md]) => { window.__pcStates = ['err', w, { ...w, state: 'opened' }, r]; window.__pcDoc = md; }, [WAITING, RECEIVED, MD]);
+    await pick(page, 'drm.pptx', [0xd0, 0xcf, 0x11, 0xe0]);
+    await page.getByLabel('슬라이드 그림도(최대 12장)').check();
+    await page.getByRole('button', { name: 'PC 의 PowerPoint 로 열어 가져오기' }).click();
+    await page.getByText('PC 도우미를 기다리는 중…').waitFor();
+    const ticket = (await calls(page)).find((c) => c.url === '/agent/upload/pc-ticket');
+    await forward(page, 1600);
+    const after_blip = (await page.getByText('받지 못했습니다').count()) + (await page.getByText('잠깐 끊김').count());
+    await forward(page, 1600);
+    await forward(page, 1600);
+    const opened = (await page.getByText('PC 도우미가 열렸습니다').count()) > 0;
+    await forward(page, 1600);
+    await page.getByText('입력창에 붙였습니다').waitFor();
+    const docs = await text(page, 'docs');
+    await page.waitForFunction(() => document.querySelectorAll('.img-chip').length === 1);
+    const imgs = await page.evaluate(() => document.querySelectorAll('.img-chip').length);
+    await page.getByRole('button', { name: '이 글을 AI 데이터 허브로도 보내기' }).click();
+    await page.getByText('어디로 보낼까요').waitFor();
+    return { ticket: ticket && ticket.body, after_blip, opened, docs, imgs, next_file: await page.locator('.upl-file').first().textContent(), errors: page.__errors };
+  },
+  // 도우미가 안 열리면(설치 전) 15초 뒤 설치 안내
+  async pc_helper_late(browser) {
+    const page = await open(browser, 'composer');
+    await page.evaluate((w) => { window.__pcStates = [w]; }, WAITING);
+    await pick(page, 'drm.pptx', [0xd0, 0xcf, 0x11, 0xe0]);
+    await page.getByRole('button', { name: 'PC 의 PowerPoint 로 열어 가져오기' }).click();
+    await page.getByText('PC 도우미를 기다리는 중…').waitFor();
+    const early = await page.getByRole('button', { name: '도우미 설치 배치 받기' }).count();
+    for (let i = 0; i < 12; i += 1) await forward(page, 1600);
+    return { early, late: await page.getByRole('button', { name: '도우미 설치 배치 받기' }).count(), errors: page.__errors };
   },
   // 심의 화면 — 알림만 있는 대화의 첫 발화에도 트리거가 붙는다
   async delib_first_turn(browser) {
@@ -316,6 +371,21 @@ def test_쓰던_글은_저절로_덮지_않고_단추로만_넣는다(seen):
     s = seen("composer_typed")
     assert s["kept"] == "내가 쓰던 글"
     assert s["after_button"].startswith("AI 데이터 허브 inbox 파일 `u1-a.pptx`")
+
+
+def test_암호_파일은_PC_도우미로_가져와_문서_칩으로_붙이고_다음_단계를_준다(seen):
+    s = seen("pc_helper")
+    assert s["ticket"] == {"filename": "drm.pptx", "conversation_id": "", "slides": True}
+    assert s["after_blip"] == 0, "상태 조회 한 번의 끊김으로 '실패' 를 굳히지 않는다"
+    assert s["opened"], "도우미가 표를 읽으면 '열렸습니다' 로 바뀐다"
+    assert s["docs"].startswith("설계검토.hwax.md:"), "손으로 .hwax.md 를 붙이던 것과 같은 칩"
+    assert s["imgs"] == 1, "슬라이드 그림은 그림 칩으로(손으로 그림을 붙이던 길과 같다)"
+    assert s["next_file"] == "설계검토.hwax.md", "다음 단계는 받은 글의 스테이징 상자로 '어디로 보낼까요'"
+
+
+def test_도우미가_안_열리면_15초_뒤_설치_안내를_띄운다(seen):
+    s = seen("pc_helper_late")
+    assert s["early"] == 0 and s["late"] == 1
 
 
 def test_알림만_있는_대화의_첫_발화에도_심의_트리거가_붙는다(seen):

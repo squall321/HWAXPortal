@@ -624,3 +624,83 @@ def test_cert_download_does_not_need_a_new_token():
     assert "<CertGuide token={created.token}" in page
     assert page.count("onClick={() => void downloadCert()}") == 2
     assert "pem.includes('-----BEGIN CERTIFICATE-----')" in page and 'download="hwax-portal.crt"' not in page
+
+
+# ── PC 문서 도우미 설치 배치(docs/chat-ppt B5 · PP-D9) ─────────────────────────────────────
+# 웹 챗 'PC 의 PowerPoint 로 열어 가져오기' 단추가 부르는 PC 도우미(추출기 -Url 모드)를 놓는다 — 추출기를 내 사용자 폴더에 받고,
+# 포털 주소를 설정 파일에 적고, HKCU 의 hwax-doc 프로토콜을 잇는다. 토큰이 없다. 위 셋업 배치와 같은 규약(BOM · CRLF · 희생 첫 줄 ·
+# goto 만 · echo 이스케이프)을 같은 검사로 본다.
+PS1 = FE / "public/doc-extract/hwax-doc-extract.ps1"
+
+
+@pytest.fixture(scope="module")
+def helper(tmp_path_factory):
+    out = tmp_path_factory.mktemp("dochelper")
+    r = subprocess.run([str(TSC), str(LIB), "--outDir", str(out), "--module", "commonjs",
+                        "--target", "es2019", "--skipLibCheck"], capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stdout + r.stderr
+    drv = out / "drive.cjs"
+    drv.write_text("const { buildDocHelperBat } = require('./setupBat.js');\nprocess.stdout.write(buildDocHelperBat(process.argv[2]));\n")
+
+    def run(origin="https://hwax.example.net"):
+        r = subprocess.run(["node", str(drv), origin], capture_output=True, timeout=120, cwd=str(out))
+        assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
+        return r.stdout.decode("utf-8")
+    return run
+
+
+def test_doc_helper_bat_keeps_the_batch_rules(helper):
+    bat = helper()
+    ls = _lines(bat)
+    assert bat.startswith("﻿@rem ") and ls[1] == "@echo off", "BOM 이 섞여 죽어도 무해한 첫 줄"
+    assert "\r\n" in bat and "\n" not in bat.replace("\r\n", ""), "CRLF 만"
+    labels = [l.strip()[1:] for l in ls if re.fullmatch(r":[A-Za-z_][A-Za-z0-9_]*", l.strip())]
+    targets = {m.group(1) for l in ls for m in [re.search(r"\bgoto\s+:?([A-Za-z_][A-Za-z0-9_]*)", l)] if m}
+    assert len(labels) == len(set(labels)) and targets <= set(labels), (sorted(labels), sorted(targets))
+    assert [l for l in ls if l.rstrip().endswith("(")] == [], "괄호 블록 없이 goto 로만"
+    for l in ls:
+        t = l.strip()
+        if t.startswith("echo "):
+            assert not set(re.sub(r"\^[&<>|^]", "", t)) & set("&<>|"), l
+
+
+def test_doc_helper_bat_downloads_checks_the_marker_and_writes_the_origin(helper):
+    bat = helper("https://hwax.example.net/")
+    assert "$u='https://hwax.example.net/doc-extract/hwax-doc-extract.ps1'" in bat, "끝 / 를 떼고 그 포털의 추출기를 받는다"
+    assert "DefaultWebProxy=$null" in bat and "GetSystemWebProxy()" in bat, "직결 먼저 · 안 되면 시스템 프록시"
+    assert "Tls12" in bat
+    # 없는 정적 경로는 SPA 가 index.html 을 200 으로 낸다 — 받은 것이 추출기인지 판 표식으로 본다(추출기에 그 글이 있어야 한다)
+    m = re.search(r'findstr /c:"([^"]+)" "%HWAX_DIR%\\hwax-doc-extract\.ps1"', bat)
+    assert m and m.group(1) in PS1.read_text(encoding="utf-8-sig"), "배치가 찾는 표식이 추출기에 있다"
+    assert '> "%HWAX_DIR%\\hwax-doc.json" echo {"origin": "https://hwax.example.net"}' in bat, "올릴 곳의 정본은 이 설정 파일이다"
+    assert TOKEN not in bat and "Bearer" not in bat, "토큰이 없다 — 표는 웹 화면이 그때그때 받는다"
+
+
+def test_doc_helper_bat_registers_hwax_doc_for_this_user_only(helper):
+    bat = helper()
+    assert 'reg add "HKCU\\Software\\Classes\\hwax-doc" /v "URL Protocol" /d "" /f >nul' in bat
+    assert ('reg add "HKCU\\Software\\Classes\\hwax-doc\\shell\\open\\command" /ve /d "powershell.exe -NoProfile -ExecutionPolicy '
+            'Bypass -File \\"%HWAX_DIR%\\hwax-doc-extract.ps1\\" -Url \\"%%1\\"" /f >nul') in bat, \
+        "배치 안이라 %%1(레지스트리에는 %1) · 경로와 URL 은 따옴표로"
+    assert "HKLM" not in bat, "관리자 권한이 필요 없게 이 사용자 칸만"
+
+
+def test_the_extractor_is_the_helper_the_portal_expects():
+    """추출기 하나가 손 추출 · PC 도우미 둘을 한다(PP-D9) — 포털 계약과 같은 이름 · 길 · 판."""
+    from app.agent import pc_upload
+
+    raw = PS1.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf"), "PS 5.1 은 BOM 없는 UTF-8 을 ANSI 로 읽는다 — 한글 문자열이 깨진다"
+    assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), "CRLF 만"
+    src = raw.decode("utf-8-sig")
+    m = re.search(r"^\$script:HWAX_DOC_HELPER = (\d+)\s*$", src, re.M)
+    assert m and int(m.group(1)) >= pc_upload.HELPER_MIN, "포털이 거절하지 않는 판이어야 한다"
+    assert "[string] $Url" in src and "if ($Url) {" in src
+    assert "'^[A-Za-z0-9_-]{43}$'" in src and pc_upload._TICKET_RE.pattern == r"^[A-Za-z0-9_-]{43}$", "표 꼴이 같다"
+    assert '$base = "$origin/agent/upload/pc/$ticket"' in src and '"$base/cancel"' in src
+    assert "'\"doc\"'" in src and "'\"slides\"'" in src and "'\"helper\"'" in src, "포털이 읽는 multipart 이름"
+    assert "@{ reason = $Reason }" in src, "취소 까닭은 본문 JSON(헤더는 ASCII 만)"
+    assert "}.GetNewClosure()" not in src, "GetNewClosure 는 $script: 와 바깥 범위 변수를 잃는다"
+    assert "hwax-doc.json" in src and "'^https?://[^/\\s]+$'" in src, "올릴 곳은 설정 파일의 주소뿐"
+    routes = (Path(pc_upload.__file__).parent / "routes.py").read_text(encoding="utf-8")
+    assert 'f"hwax-doc://extract?{q}"' in routes and "^hwax-doc://" in src, "포털이 내는 주소와 추출기가 받는 주소"

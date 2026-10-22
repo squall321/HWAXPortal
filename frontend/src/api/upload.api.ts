@@ -135,6 +135,63 @@ export async function dispatchUpload(body: {
   return j as DispatchResult;
 }
 
+// ── PC 도우미 — DRM 문서를 PC 의 Office 로 풀어 올린다(docs/chat-ppt B · PP-D8) ─────────────────────────────
+// 표는 세션 + CSRF 로만 받는다. 도우미(추출기 -Url 모드)가 그 표로 로그인 없이 한 번 올리고, 화면은 상태를 보다가 받은 글을 문서 칩으로 붙인다.
+
+export interface PcTicket {
+  ticket: string;
+  expires_in_s: number;
+  /** hwax-doc://extract?t=…&name=…&slides=… — 설치 배치가 HKCU 에 이은 PC 도우미를 깨운다. */
+  helper_url: string;
+  protocol: number;
+}
+
+export type PcTicketStateName = 'waiting' | 'opened' | 'receiving' | 'received' | 'failed' | 'cancelled' | 'expired' | 'closed';
+
+export interface PcTicketState {
+  state: PcTicketStateName;
+  filename: string;
+  expires_in_s: number;
+  error?: string;
+  received?: { doc_name: string; chars: number; bytes: number; slides: number; doc_staging_id: string };
+  /** 받은 글이 든 스테이징 상자 — '어디로 보낼까요' 를 이 상자로 연다(다음 단계 — AI 데이터 허브만, PP-D11). */
+  staged?: StagedFile;
+}
+
+export async function createPcTicket(body: { filename: string; conversation_id?: string; slides?: boolean }): Promise<PcTicket> {
+  const r = await apiFetch('/agent/upload/pc-ticket', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(errorDetail(j?.detail, `PC 도우미 표를 받지 못했습니다 (HTTP ${r.status}).`));
+  return j as PcTicket;
+}
+
+export async function getPcTicket(ticket: string): Promise<PcTicketState> {
+  const r = await apiFetch(`/agent/upload/pc-ticket/${encodeURIComponent(ticket)}`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(errorDetail(j?.detail, `상태를 못 읽었습니다 (HTTP ${r.status}).`));
+  return j as PcTicketState;
+}
+
+async function pcFile(path: string, name: string, type: string): Promise<File> {
+  const r = await apiFetch(path);
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(errorDetail(j?.detail, `받은 파일을 못 읽었습니다 (HTTP ${r.status}).`));
+  }
+  return new File([await r.blob()], name, { type });
+}
+
+/** 받은 글(.hwax.md) — 손으로 붙이던 파일과 같은 File 로 돌려준다(readDoc 이 그대로 읽는다). */
+export const fetchPcDoc = (ticket: string, name: string) =>
+  pcFile(`/agent/upload/pc-ticket/${encodeURIComponent(ticket)}/doc`, name, 'text/markdown');
+/** 받은 슬라이드 그림(n 은 1부터) — readImage 가 그대로 줄인다. */
+export const fetchPcSlide = (ticket: string, n: number) =>
+  pcFile(`/agent/upload/pc-ticket/${encodeURIComponent(ticket)}/slides/${n}`, `slide-${String(n).padStart(2, '0')}.png`, 'image/png');
+
 // 업로드 권한 그룹 — 백엔드 설정과 맞춘다. 프론트 숨김은 편의고 진짜 방어는 백엔드
 // 재검증이다(두 층). ⚠ 목적지별 그룹(upload_allowed_groups·upload_groups_step)을 나눈 뒤로
 // 이 목록은 '어느 목적지든 쓸 수 있는 그룹의 합집합' 이어야 한다. 사내 그룹명을 .env 로

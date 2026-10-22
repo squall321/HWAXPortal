@@ -28,10 +28,17 @@
     Office COM 이 이 PC 에서 실제로 동작하는지 스스로 시험한다. DRM 문서를 붙이기
     전에 이걸 먼저 돌려라.
 
+.PARAMETER Url
+    PC 도우미 모드(웹 챗의 'PC 의 PowerPoint 로 열어 가져오기' 단추). 브라우저가 hwax-doc://extract?t=<표>&name=<이름>
+    으로 이 스크립트를 깨운다(설치 배치가 HKCU 에 잇는다). 올릴 곳은 URL 이 아니라 설치 때 적은 설정 파일
+    (%LOCALAPPDATA%\HWAX\hwax-doc.json)의 포털 주소다. 받는 계정을 보여 주고 묻고, 사람이 고른 문서를 이 PC 의
+    Office 로 읽어 글(과 청했으면 슬라이드 그림)만 올린다 — 원본은 올리지 않는다. 임시 파일은 지운다.
+
 .EXAMPLE
     .\hwax-doc-extract.ps1 -SelfTest
     .\hwax-doc-extract.ps1 "C:\문서\설계검토.pptx"
     .\hwax-doc-extract.ps1 "C:\문서" -OutDir "C:\추출"
+    .\hwax-doc-extract.ps1 -Url "hwax-doc://extract?t=..."     (웹 챗 단추가 부른다)
 #>
 [CmdletBinding()]
 param(
@@ -41,13 +48,16 @@ param(
     [string[]] $Path,
     [string] $OutDir,
     [int] $MaxChars = 2000000,
-    [switch] $SelfTest
+    [switch] $SelfTest,
+    [string] $Url
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
 $script:SCHEMA = 'hwax-doc/1'
+# PC 도우미(-Url) 판. 포털 /agent/upload/pc/<표> 의 helper_min 보다 낮으면 '설치 배치를 다시 받으라' 로 멈춘다.
+$script:HWAX_DOC_HELPER = 1
 $script:EXT_WORD = @('.doc', '.docx', '.docm', '.rtf', '.odt')
 $script:EXT_PPT  = @('.ppt', '.pptx', '.pptm', '.odp')
 $script:EXT_PDF  = @('.pdf')
@@ -293,7 +303,14 @@ function Get-ShapeText {
 }
 
 function Extract-Ppt {
-    param([string] $File, [System.Collections.Generic.List[string]] $Warnings)
+    param(
+        [string] $File,
+        [System.Collections.Generic.List[string]] $Warnings,
+        # 주면 앞에서부터 SlideMax 장을 PNG 로 내보낸다(도우미 모드 — 웹 챗이 그림도 청했을 때). 못 내보내면 경고만 남긴다
+        # (DRM 정책이 화면 갈무리 · 내보내기를 막을 수 있다 — 글은 그대로 간다).
+        [string] $SlideDir,
+        [int] $SlideMax = 0
+    )
 
     $msoTrue = -1
     $msoFalse = 0
@@ -303,6 +320,8 @@ function Extract-Ppt {
     $ppt = $h.App
     $pres = $null
     $body = New-Object Collections.Generic.List[string]
+    $slides = New-Object Collections.Generic.List[string]
+    $exportFailed = $false
 
     try {
         # PowerPoint 는 Visible=$false 를 거부하는 버전이 있다. 대신 Open 의 네 번째
@@ -310,8 +329,25 @@ function Extract-Ppt {
         $pres = $ppt.Presentations.Open($File, $msoTrue, $msoFalse, $msoFalse)
 
         $n = [int]$pres.Slides.Count
+        $px = 1280; $py = 720
+        if ($SlideDir -and $SlideMax -gt 0) {
+            try {
+                $sw = [double]$pres.PageSetup.SlideWidth; $sh = [double]$pres.PageSetup.SlideHeight
+                if ($sw -gt 0) { $py = [int][Math]::Round($px * $sh / $sw) }
+            } catch { }
+        }
         for ($i = 1; $i -le $n; $i++) {
             $slide = $pres.Slides.Item($i)
+            if ($SlideDir -and $i -le $SlideMax -and -not $exportFailed) {
+                $png = Join-Path $SlideDir ('slide-{0:D2}.png' -f $i)
+                try {
+                    $slide.Export($png, 'PNG', $px, $py)
+                    if (Test-Path -LiteralPath $png) { $slides.Add($png) }
+                } catch {
+                    $exportFailed = $true
+                    $Warnings.Add("슬라이드 그림을 내보내지 못했다(글만 간다) — $($_.Exception.Message)")
+                }
+            }
             $parts = New-Object Collections.Generic.List[string]
 
             # 제목은 루프 **밖에서** 한 번만 집는다. 안에서 $slide.Shapes.Title 을 다시 부르면
@@ -352,7 +388,7 @@ function Extract-Ppt {
             Release-Com $slide
         }
 
-        return [pscustomobject]@{ Body = ($body -join "`n`n"); Pages = $n; App = 'PowerPoint' }
+        return [pscustomobject]@{ Body = ($body -join "`n`n"); Pages = $n; App = 'PowerPoint'; Slides = $slides.ToArray() }
     }
     finally {
         # 발표자료만 닫는다. 앱 정리는 Close-OfficeApps 가 실행 끝에 한 번.
@@ -392,7 +428,7 @@ function Extract-Html {
 
 # ──────────────────────────────────────────────────────────────────── 파일 하나
 function Extract-One {
-    param([string] $File, [string] $Dest)
+    param([string] $File, [string] $Dest, [string] $SlideDir, [int] $SlideMax = 0)
 
     $item = Get-Item -LiteralPath $File
     $ext = $item.Extension.ToLowerInvariant()
@@ -409,7 +445,7 @@ function Extract-One {
 
     switch ($kind) {
         'word' { $r = Extract-Word $item.FullName $warnings }
-        'ppt'  { $r = Extract-Ppt  $item.FullName $warnings }
+        'ppt'  { $r = Extract-Ppt -File $item.FullName -Warnings $warnings -SlideDir $SlideDir -SlideMax $SlideMax }
         'html' { $r = Extract-Html $item.FullName $warnings }
         'pdf'  {
             # PDF 는 Office COM 이 따로 없다. Word 2013+ 의 PDF 리플로우를 쓴다.
@@ -461,8 +497,10 @@ function Extract-One {
     # BOM 없는 UTF-8 — 서버·에디터 어디로 보내도 깨지지 않는다.
     [IO.File]::WriteAllText($outFile, $out, (New-Object Text.UTF8Encoding($false)))
 
+    $slideFiles = @()
+    if ($r.PSObject.Properties.Name -contains 'Slides') { $slideFiles = @($r.Slides) }
     return [pscustomobject]@{
-        Out = $outFile; Chars = $bodyText.Length; Warnings = $warnings; Kind = $kind
+        Out = $outFile; Chars = $bodyText.Length; Warnings = $warnings; Kind = $kind; Slides = $slideFiles
     }
 }
 
@@ -553,7 +591,256 @@ function Invoke-SelfTest {
     }
 }
 
+# ──────────────────────────────────────────────────────── PC 도우미(-Url) 모드
+# 웹 챗 단추 → 포털이 일회용 표를 낸다 → 브라우저가 hwax-doc://extract?t=<표>&name=<이름> 을 연다 → 이 함수.
+# ⚠ 올릴 곳은 URL 이 아니라 설치 때 적은 설정 파일의 포털 주소다 — 가짜 링크가 남의 서버로 문서를 올리게 하지 못한다.
+# ⚠ 올리기 전에 받는 계정(이름 · 메일)을 보여 주고 묻는다 — 남이 만든 링크(남의 표)로 내 문서가 남의 대화에 가는 것을 막는 문이다.
+$script:HELPER_DIR = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'HWAX' } else { Join-Path $env:TEMP 'HWAX' }
+$script:HELPER_LOG = Join-Path $script:HELPER_DIR 'hwax-doc.log'
+
+function Write-HelperLog {
+    param([string] $Text)
+    # 본문 · 표는 적지 않는다 — 어느 단계에서 멈췄는지만(문제를 전할 때 이 파일을 보낸다)
+    try {
+        if (-not (Test-Path -LiteralPath $script:HELPER_DIR)) { New-Item -ItemType Directory -Path $script:HELPER_DIR -Force | Out-Null }
+        if ((Test-Path -LiteralPath $script:HELPER_LOG) -and (Get-Item -LiteralPath $script:HELPER_LOG).Length -gt 1MB) {
+            Move-Item -LiteralPath $script:HELPER_LOG -Destination ($script:HELPER_LOG + '.old') -Force
+        }
+        $line = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  ' + $Text
+        [IO.File]::AppendAllText($script:HELPER_LOG, $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
+
+function Show-HelperBox {
+    param([string] $Text, [string] $Buttons = 'OK', [string] $Icon = 'Information')
+    # 브라우저 뒤에 숨지 않게 맨 위 창을 주인으로 단다
+    $owner = New-Object System.Windows.Forms.Form
+    $owner.TopMost = $true
+    try { return [System.Windows.Forms.MessageBox]::Show($owner, $Text, 'HWAX 문서 도우미', $Buttons, $Icon) }
+    finally { $owner.Dispose() }
+}
+
+function New-HelperClient {
+    param([bool] $Direct)
+    $h = New-Object System.Net.Http.HttpClientHandler
+    if ($Direct) {
+        $h.UseProxy = $false
+    } else {
+        $h.UseProxy = $true
+        $h.Proxy = [System.Net.WebRequest]::GetSystemWebProxy()
+        $h.Proxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials
+    }
+    $c = New-Object System.Net.Http.HttpClient($h)
+    $c.Timeout = [TimeSpan]::FromMinutes(10)
+    [void]$c.DefaultRequestHeaders.TryAddWithoutValidation('X-HWAX-Helper', [string]$script:HWAX_DOC_HELPER)
+    return $c
+}
+
+function Send-Helper {
+    # 포털은 사내 주소라 직결을 먼저, 연결이 안 되면 시스템 프록시로 한 번 더. HTTP 응답을 받았으면(4xx 포함) 그대로 돌려준다.
+    # 요청은 보낼 때마다 새로 만든다(HttpRequestMessage 는 한 번만 보낼 수 있다). MakeRequest 는 부른 쪽의 변수를 동적 범위로 본다 —
+    # GetNewClosure() 는 쓰지 않는다(새 동적 모듈에 묶여 $script: 와 바깥 범위 변수를 잃는다).
+    param([scriptblock] $MakeRequest)
+    $last = $null
+    foreach ($direct in @($true, $false)) {
+        $c = New-HelperClient $direct
+        try {
+            $req = & $MakeRequest
+            $resp = $c.SendAsync($req).GetAwaiter().GetResult()
+            $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            return [pscustomobject]@{ Status = [int]$resp.StatusCode; Body = $body }
+        } catch {
+            $last = $_.Exception.GetBaseException()
+            Write-HelperLog ("연결 실패(" + $(if ($direct) { '직결' } else { '시스템 프록시' }) + "): " + $last.Message)
+        } finally {
+            $c.Dispose()
+        }
+    }
+    throw "포털에 연결하지 못했습니다 — $($last.Message)"
+}
+
+function Get-HelperDetail {
+    param([string] $Body)
+    try { $j = $Body | ConvertFrom-Json; if ($j.detail) { return [string]$j.detail } } catch { }
+    if ($Body.Length -gt 300) { return $Body.Substring(0, 300) }
+    return $Body
+}
+
+function Invoke-UrlMode {
+    param([string] $Url)
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Net.Http
+    # PS 5.1(.NET Framework)은 TLS 1.2 가 꺼진 PC 가 있다
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+    # 표 · 이름 — URL 에서 읽는 것은 이 둘뿐이다
+    $query = @{}
+    if ($Url -notmatch '^hwax-doc://') { Show-HelperBox "hwax-doc 주소가 아닙니다." 'OK' 'Error' | Out-Null; return 1 }
+    $q = ($Url -split '\?', 2)
+    if ($q.Count -eq 2) {
+        foreach ($pair in ($q[1] -split '&')) {
+            $kv = $pair -split '=', 2
+            if ($kv[0]) { $query[[Uri]::UnescapeDataString($kv[0])] = $(if ($kv.Count -eq 2) { [Uri]::UnescapeDataString($kv[1]) } else { '' }) }
+        }
+    }
+    $ticket = [string]$query['t']
+    $name = [string]$query['name']
+    if ($ticket -notmatch '^[A-Za-z0-9_-]{43}$') {
+        Write-HelperLog '표 꼴이 아니다'
+        Show-HelperBox "표가 올바르지 않습니다 — 포털 화면에서 단추를 다시 누르세요." 'OK' 'Error' | Out-Null
+        return 1
+    }
+    $tag = $ticket.Substring(0, 6)
+    Write-HelperLog "시작 — 표 $tag…"
+
+    # 올릴 곳 — 설치 때 적은 설정 파일
+    $cfgPath = Join-Path $script:HELPER_DIR 'hwax-doc.json'
+    $origin = ''
+    try { $origin = [string]((Get-Content -LiteralPath $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json).origin) } catch { }
+    $origin = $origin.TrimEnd('/')
+    if ($origin -notmatch '^https?://[^/\s]+$') {
+        Write-HelperLog "설정 없음 — $cfgPath"
+        Show-HelperBox ("도우미 설정이 없습니다($cfgPath).`n`n포털 화면의 안내에서 '도우미 설치' 배치를 받아 한 번 실행하세요.") 'OK' 'Error' | Out-Null
+        return 1
+    }
+    $base = "$origin/agent/upload/pc/$ticket"
+    $cancel = {
+        param([string] $Reason)
+        try {
+            $mk = {
+                $r = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Post, "$base/cancel")
+                $json = (@{ reason = $Reason } | ConvertTo-Json -Compress)
+                $r.Content = New-Object System.Net.Http.StringContent($json, [Text.Encoding]::UTF8, 'application/json')
+                $r
+            }
+            [void](Send-Helper $mk)
+        } catch { }
+        Write-HelperLog "취소 — $Reason"
+    }
+
+    # 받는 계정 · 상한 · 판
+    try {
+        $mkInfo = { New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $base) }
+        $res = Send-Helper $mkInfo
+    } catch {
+        Write-HelperLog $_.Exception.Message
+        Show-HelperBox ("$($_.Exception.Message)`n`n사내망(VPN) · 프록시를 확인하세요. 기록: $script:HELPER_LOG") 'OK' 'Error' | Out-Null
+        return 1
+    }
+    if ($res.Status -ne 200) {
+        $why = Get-HelperDetail $res.Body
+        Write-HelperLog "표 확인 실패 $($res.Status) — $why"
+        Show-HelperBox "$why" 'OK' 'Warning' | Out-Null
+        return 1
+    }
+    $info = $res.Body | ConvertFrom-Json
+    if ([int]$info.helper_min -gt $script:HWAX_DOC_HELPER) {
+        & $cancel "도우미 판이 낡았다($script:HWAX_DOC_HELPER < $($info.helper_min))"
+        Show-HelperBox ("이 PC 의 도우미가 낡았습니다(판 $script:HWAX_DOC_HELPER — 포털은 $($info.helper_min) 이상).`n`n포털 화면의 안내에서 '도우미 설치' 배치를 다시 받아 실행하세요.") 'OK' 'Warning' | Out-Null
+        return 1
+    }
+    $who = if ($info.owner_name) { "$($info.owner_name) <$($info.owner_email)>" } else { [string]$info.owner_email }
+    $want = if ($info.filename) { [string]$info.filename } elseif ($name) { $name } else { '(포털에서 고른 문서)' }
+    $withSlides = [bool]$info.slides
+    $ask = "HWAX 포털로 문서를 올립니다.`n`n포털: $origin`n받는 계정: $who`n가져올 문서: $want" +
+           $(if ($withSlides) { "  (슬라이드 그림도 — 최대 $($info.slides_max)장)" } else { '' }) +
+           "`n`n이 PC 의 Office 로 읽어 글만 올립니다 — 원본 파일은 올리지 않습니다.`n" +
+           "본인 계정이 맞으면 [예] 를 누르세요. 모르는 링크로 열렸다면 [아니오]."
+    if ((Show-HelperBox $ask 'YesNo' 'Question') -ne 'Yes') { & $cancel '사람이 [아니오] 를 골랐다'; return 2 }
+
+    # 사람이 파일을 고른다 — 브라우저는 PC 경로를 모른다
+    $owner = New-Object System.Windows.Forms.Form
+    $owner.TopMost = $true
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = "가져올 문서를 고르세요 — $want"
+    $dlg.Filter = 'Office 문서 (*.pptx;*.ppt;*.pptm;*.docx;*.doc;*.docm;*.pdf)|*.pptx;*.ppt;*.pptm;*.docx;*.doc;*.docm;*.pdf|모든 파일 (*.*)|*.*'
+    if ($name) { $dlg.FileName = $name }
+    $down = Join-Path $env:USERPROFILE 'Downloads'
+    if (Test-Path -LiteralPath $down) { $dlg.InitialDirectory = $down }
+    try { $picked = $dlg.ShowDialog($owner) } finally { $owner.Dispose() }
+    if ($picked -ne [System.Windows.Forms.DialogResult]::OK) { & $cancel '파일 고르기를 취소했다'; return 2 }
+    $file = $dlg.FileName
+
+    $tmp = Join-Path $env:TEMP ('hwax-doc-' + [Guid]::NewGuid().ToString('N').Substring(0, 12))
+    New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+    try {
+        $slideDir = ''
+        $slideMax = 0
+        if ($withSlides) {
+            $slideDir = Join-Path $tmp 'slides'
+            New-Item -ItemType Directory -Path $slideDir -Force | Out-Null
+            $slideMax = [int]$info.slides_max
+        }
+        try {
+            $r = Extract-One -File $file -Dest $tmp -SlideDir $slideDir -SlideMax $slideMax
+        } catch {
+            & $cancel "추출 실패 — $($_.Exception.Message)"
+            Show-HelperBox ("문서를 읽지 못했습니다 — $($_.Exception.Message)`n`n자가 시험(hwax-doc-extract.bat 를 그냥 두 번 누르기)으로 이 PC 의 Office 를 먼저 확인하세요.") 'OK' 'Error' | Out-Null
+            return 1
+        } finally {
+            Close-OfficeApps
+        }
+        $docBytes = [IO.File]::ReadAllBytes($r.Out)
+        if ($docBytes.Length -gt [long]$info.doc_max_bytes) {
+            & $cancel "글이 상한을 넘는다($($docBytes.Length) 바이트)"
+            Show-HelperBox ("뽑은 글이 커서 올릴 수 없습니다($([Math]::Round($docBytes.Length / 1MB, 1))MB — 상한 $([Math]::Round([long]$info.doc_max_bytes / 1MB))MB).`n`n손으로 나눠 붙이세요: $($r.Out)") 'OK' 'Warning' | Out-Null
+            return 1
+        }
+        $pngs = @($r.Slides | Where-Object { $_ -and ((Get-Item -LiteralPath $_).Length -le [long]$info.slide_max_bytes) } | Select-Object -First ([int]$info.slides_max))
+        Write-HelperLog "추출 — 글 $($r.Chars)자 · 그림 $($pngs.Count)장"
+
+        $mkUp = {
+            $mp = New-Object System.Net.Http.MultipartFormDataContent
+            $dc = New-Object System.Net.Http.ByteArrayContent -ArgumentList (,[byte[]]$docBytes)
+            $dc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('text/markdown')
+            # 파일 부분 이름은 ASCII 로 둔다 — 진짜 이름은 글 머리말(source)에 있다(.NET 의 비ASCII 이름 인코딩을 서버가 못 풀 수 있다)
+            $mp.Add($dc, '"doc"', '"doc.hwax.md"')
+            foreach ($png in $pngs) {
+                $pc = New-Object System.Net.Http.ByteArrayContent -ArgumentList (,[byte[]][IO.File]::ReadAllBytes($png))
+                $pc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('image/png')
+                $mp.Add($pc, '"slides"', ('"' + [IO.Path]::GetFileName($png) + '"'))
+            }
+            $mp.Add((New-Object System.Net.Http.StringContent([string]$script:HWAX_DOC_HELPER)), '"helper"')
+            $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Post, $base)
+            $req.Content = $mp
+            $req
+        }
+        try {
+            $up = Send-Helper $mkUp
+        } catch {
+            Write-HelperLog $_.Exception.Message
+            Show-HelperBox ("$($_.Exception.Message)`n`n기록: $script:HELPER_LOG") 'OK' 'Error' | Out-Null
+            return 1
+        }
+        if ($up.Status -ne 200) {
+            $why = Get-HelperDetail $up.Body
+            Write-HelperLog "올리기 실패 $($up.Status) — $why"
+            Show-HelperBox "올리지 못했습니다 — $why" 'OK' 'Error' | Out-Null
+            return 1
+        }
+        $ok = $up.Body | ConvertFrom-Json
+        Write-HelperLog "올림 — 글 $($ok.chars)자 · 그림 $($ok.slides)장"
+        $warn = if ($r.Warnings.Count -gt 0) { "`n`n추출 경고:`n- " + ($r.Warnings -join "`n- ") } else { '' }
+        Show-HelperBox ("올렸습니다 — 글 $($ok.chars)자" + $(if ($ok.slides) { " · 슬라이드 그림 $($ok.slides)장" } else { '' }) +
+                        ".`n포털 화면으로 돌아가세요(입력창에 문서가 붙습니다).$warn") 'OK' 'Information' | Out-Null
+        return 0
+    } finally {
+        # 풀린 글 · 그림은 이 PC 임시 폴더에도 남기지 않는다(올린 뒤 지운다)
+        Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────── 진입점
+if ($Url) {
+    $code = 1
+    # 함수가 흘린 출력이 섞이면 배열이 된다 — 마지막 값만 종료 코드로
+    try { $code = [int](@(Invoke-UrlMode -Url $Url)[-1]) }
+    catch {
+        Write-HelperLog "멈춤 — $($_.Exception.Message)"
+        try { Show-HelperBox "도우미가 멈췄습니다 — $($_.Exception.Message)`n`n기록: $script:HELPER_LOG" 'OK' 'Error' | Out-Null } catch { }
+    }
+    exit $code
+}
 if ($SelfTest) { Invoke-SelfTest; exit 0 }
 
 if (-not $Path -or $Path.Count -eq 0) {

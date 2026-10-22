@@ -71,11 +71,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     attachedImages,
     setAttachedImages,
     addUploadNotice,
+    activeConversation,
   } = useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
-  // 보내기는 기다린 뒤에 부른다 — 그 사이 사람이 쓴 글을 낡은 값으로 덮지 않게 가장 새 값을 읽는다.
-  const latest = useRef({ input });
-  latest.current = { input };
+  // 보내기 · PC 도우미는 기다린 뒤에 부른다 — 그 사이 사람이 쓴 글 · 붙인 문서를 낡은 값으로 덮지 않게 가장 새 값을 읽는다.
+  const latest = useRef({ input, attachedDocs });
+  latest.current = { input, attachedDocs };
   /** 지시문을 입력창에 — auto 면 비어 있을 때만(사람이 쓰던 글을 지우지 않는다, docs/chat-ppt PP-D4). */
   const fillInput = useCallback(
     (t: string, auto?: boolean) => {
@@ -170,6 +171,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }
     },
     [attachedDocs, setAttachedDocs, addImages],
+  );
+
+  // PC 도우미가 올린 글(.hwax.md) · 슬라이드 그림 — 손으로 붙이던 길(readDoc · addImages)과 같다(docs/chat-ppt B4). 까닭은 돌려준다.
+  const attachPcResult = useCallback(
+    async (doc: File, slides: File[]): Promise<string | void> => {
+      const docs = latest.current.attachedDocs;
+      if (docs.length >= DOC_MAX) return `문서는 한 번에 ${DOC_MAX}건까지 붙일 수 있습니다 — 칩 하나를 떼고 다시 누르세요.`;
+      try {
+        setAttachedDocs([...docs, await readDoc(doc)]);
+      } catch (e) {
+        return e instanceof Error ? e.message : '받은 글을 읽지 못했습니다.';
+      }
+      if (slides.length) await addImages(slides);
+    },
+    [setAttachedDocs, addImages],
   );
 
   // 붙여넣기 — 그림만 온 붙여넣기(화면 갈무리)는 그림으로. 글이 함께 오면(Office 복사는 글 + 그 글의 그림을 같이 싣는다) 글 붙여넣기다.
@@ -311,6 +327,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           filename={comFile.name}
           encrypted={comFile.encrypted}
           onClose={() => setComFile(null)}
+          conversationId={activeConversation?.serverId ?? ''}
+          onAttach={attachPcResult}
+          onStaged={(st) => {
+            setComFile(null);
+            setStaged(st);
+          }}
         />
       )}
       {attachedDocs.length > 0 && (
