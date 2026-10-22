@@ -21,6 +21,10 @@
 #     HWAX_DRAIN_GRACE_S=1800   재기동을 미룬 실행의 끝 — 도는 심의가 0 이 된 뒤 새 패널을 멈춰 두는 창(초). 그 안에 다시 돌리면 미룸 없이 지나간다.
 #     HWAX_DRAIN_MAX_S=46800    그 깃발의 최대 수명(초).
 #     HWAX_AGENT_URL=http://127.0.0.1:9009   비우기가 부르는 에이전트 서버(시험이 바꿔 끼운다).
+#   §4) 에이전트 서버 재기동 앞의 새 심의 멈춤(docs/delib-ops O1 — 엔진이 /drain scope delib 을 아는 판부터).
+#     HWAX_DELIB_WAIT_S=600     재기동할 에이전트 서버에 도는 심의가 있으면 새 심의를 멈추고(새 시작 · 이어하기는 '점검 중' 으로 거절되고 줄
+#                               선 심의는 붙잡힌다) 도는 것이 끝나기를 기다리는 한도(초, 0 = 종전대로 곧바로 미룬다). 넘기면 종전대로 재기동을
+#                               미루고 멈춤을 내린다. 재기동했으면 멈춤은 이 실행의 끝에서 내린다(다시 선 줄이 그때 든다 — 몇 건인지 §4 가 찍는다).
 #
 # 순서:
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
@@ -95,6 +99,7 @@ hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
          [ -n "${FAIL_ITEMS:-}" ] && printf '  지금까지의 ✗:\n%s' "$FAIL_ITEMS"
          # 비우기 끝맺음은 장부를 지우기 전에 — 미룬 재기동 줄을 장부에서 읽는다(1h).
          command -v _hwax_drain_finish >/dev/null 2>&1 && _hwax_drain_finish
+         command -v _hwax_delib_pause_finish >/dev/null 2>&1 && _hwax_delib_pause_finish   # §4 가 세운 새 심의 멈춤(O1)
          command -v _hwax_board_resume >/dev/null 2>&1 && _hwax_board_resume     # 1b2 의 경보 멈춤(5b 전에 멈췄다)
          command -v hwax_skip_summary >/dev/null 2>&1 && hwax_skip_summary
          rm -f "${HWAX_SKIP_LEDGER:-}" 2>/dev/null; exit 143; fi
@@ -162,6 +167,25 @@ _hwax_drain_finish() {
       5|7) echo "  ○ 리스크 검토 비우기 — $_out — 건드리지 않는다(내리지 않았다)" ;;
       *) bad "리스크 검토 비우기 — 깃발을 내리지 못했다($_out). 수명(${HWAX_DRAIN_TTL_S:-1800}초)이 지나면 스스로 풀린다(비치명)" ;;
     esac
+  fi
+  return 0
+}
+# 새 심의 멈춤 끝맺음(docs/delib-ops O1) — §4 의 update-sites 가 에이전트 서버를 재기동하며 세운 멈춤(by update-all)을 내린다(다시 선 줄이
+#   든다). 세운 것은 자식(update-sites)이라 셸 변수로 못 넘긴다 — 자식이 남긴 표지 파일(HWAX_DELIB_PAUSE_MARK)이 있을 때만 엔진에 묻고(켜져
+#   있고 by update-all 인 것만) 내린다. 표지가 없으면 묻지도 않는다. 사람이나 다른 주체의 멈춤은 건드리지 않는다. 멈춤을 모르는 엔진(옛 판)에는 보내지 않는다(hwax_delib_pause — 옛 엔진은 /drain 의 scope 를 안 봐 카드 대조 깃발 끄기로
+#   읽는다). 완주 끝과 hr() 정지 경로에서 부른다. 실패는 ⚠ 다 — 멈춤은 수명(기다림 + 30분)이 지나면 스스로 풀린다.
+_hwax_delib_pause_finish() {
+  local _st _rc=0 _o _u=""
+  [ -n "${HWAX_DELIB_PAUSE_MARK:-}" ] && [ -f "$HWAX_DELIB_PAUSE_MARK" ] || return 0
+  _u="$(head -1 "$HWAX_DELIB_PAUSE_MARK" 2>/dev/null)"; rm -f "$HWAX_DELIB_PAUSE_MARK"
+  _st="$(hwax_delib_pause_state "$_u")" || _rc=$?        # 표지의 주소(비면 lib 의 기본 — HWAX_AGENT_URL)
+  [ "$_rc" = 0 ] || return 0
+  { [ "${_st%% *}" = 1 ] && [ "${_st#* }" = update-all ]; } || return 0
+  _rc=0; _o="$(hwax_delib_pause off "$_u" update-all)" || _rc=$?
+  if [ "$_rc" = 0 ]; then
+    echo "  · 새 심의 멈춤을 내렸다(update-all) — 새 심의를 다시 받고 다시 선 줄이 차례로 든다"
+  else
+    bad "새 심의 멈춤을 내리지 못했다($_o) — 수명이 지나면 스스로 풀린다(비치명)"
   fi
   return 0
 }
@@ -1322,12 +1346,33 @@ if [ "$_llm_ups_rc" = 0 ] && [ "$_llm_router_rc" = 0 ]; then
     *) fail "LLM 라우터를 §2 뒤에 다시 띄우지 못했다 — update-sites llm-router rc $_llm_us4_rc(위 ✗ 줄). 새 portal.sif 로 못 떴으면 옛 프로세스가 옛 이미지로 돈다" ;;
   esac
 fi
+# 에이전트 서버를 재기동할 때 도는 심의가 있으면 update-sites 가 새 심의를 멈추고 기다린다(O1) — 그 멈춤의 주인을 update-all 로 해 둔다
+# (재기동했으면 이 실행의 끝에서 내린다 — _hwax_delib_pause_finish, 표지 파일로 넘겨받는다). 이번에 다시 떴는지는 리스너(pid · 시작 시각)로
+# 본다(O2 — lib/delib-busy.sh 의 hwax_agent_ident). command -v 로 감싼다 — §4 를 떼어 도는 시험 사본은 그 lib 를 읽지 않는다.
+export HWAX_DELIB_PAUSE_BY=update-all HWAX_DELIB_PAUSE_MARK="${HWAX_SKIP_LEDGER}.delib-pause"
+_ag0=""; command -v hwax_agent_ident >/dev/null 2>&1 && _ag0="$(hwax_agent_ident)"
 "$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server; _us_rc=$?
 case "$_us_rc" in
   0|3) ;;
   *) fail "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다" ;;
 esac
-
+# O2(docs/delib-ops) — 에이전트 서버가 이번에 다시 떴으면 재기동을 넘겨 다시 선 줄의 수를 찍는다(엔진 R2 — /health.delib_requeued). 다시 뜨지
+# 않았으면 그 수는 앞 기동의 것이라 찍지 않는다. 옛 엔진(칸 없음)이면 아무것도 찍지 않는다.
+if command -v hwax_agent_ident >/dev/null 2>&1; then
+  _ag1="$(hwax_agent_ident)"
+  if [ "$_ag0" != "$_ag1" ] && [ "$_ag1" != "?" ]; then
+    _rq_rc=0; _rq="$(hwax_delib_requeued)" || _rq_rc=$?
+    if [ "$_rq_rc" = 0 ]; then
+      if [ "${_rq%% *}" = 0 ]; then
+        echo "  · 에이전트 서버가 다시 떴다 — 재기동을 넘겨 다시 선 줄 0건"
+      elif [ "${_rq#* }" = 1 ]; then
+        echo "  · 에이전트 서버가 다시 떴다 — 재기동을 넘겨 다시 선 줄 ${_rq%% *}건(처음 줄 선 차례 그대로 · 새 심의 멈춤이 풀리면 차례로 든다)"
+      else
+        echo "  · 에이전트 서버가 다시 떴다 — 재기동을 넘겨 다시 선 줄 ${_rq%% *}건(처음 줄 선 차례 그대로 · 자리가 나는 대로 든다)"
+      fi
+    fi
+  fi
+fi
 # 1i 의 뒤처리 — 풀을 껐는데(LLM_UPSTREAMS 없음) 라우터가 떠 있으면 여기서 내린다(지금 포트 · 1i 가 기록한 옛 포트 — 포트마다 따로 본다).
 # 사본을 쓰는 서비스는 §2·§4 에서 직접 주소로 다시 떴다. 그래도 아직 라우터 주소를 쥔 프로세스가 있을 수 있으면 미루고 ○ — 그 라우터를
 # 가리키는 사본이 남았다(1i 가 못 되돌렸다) · 재기동을 미룬 서비스(장부의 '재기동 건너뜀') · §2·§4 가 깨끗이 끝나지 않았다 · 라우터를 지나는
@@ -3202,6 +3247,7 @@ fi
 [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ] && echo "  · 종료 요청이 있었지만 남은 §가 없어 끝까지 갔다 — 아래 요약은 전부 실제로 한 것이다" >&2
 # 1h 비우기 끝맺음 — 장부(미룬 재기동 줄)를 읽으므로 요약·장부 지우기 앞이다.
 _hwax_drain_finish
+_hwax_delib_pause_finish   # §4 가 에이전트 서버를 재기동하며 세운 새 심의 멈춤(O1) — 다시 선 줄이 이제 든다
 _hwax_board_resume      # 1b2 의 경보 멈춤 — 5b 가 이미 풀었으면 아무것도 하지 않는다
 hwax_skip_summary
 rm -f "$HWAX_SKIP_LEDGER"

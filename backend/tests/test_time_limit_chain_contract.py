@@ -377,12 +377,21 @@ def test_재기동_보호가_읽는_health_필드를_엔진이_그_이름으로_
     """update-all 은 에이전트 서버 /health 의 두 수를 보고 재기동을 건너뛴다(infra/scripts/lib/delib-busy.sh). 엔진이 이름을 바꾸면
     포털은 '모름' 으로 읽고 **그대로 재기동한다** — 몇 시간 돈 패널이 배포 한 번에 사라지는데 시험은 지어낸 응답으로 초록이다."""
     # 그 핸들러 하나만 — def 줄과 그 아래 들여쓴 줄들(파일의 마지막 라우트라 '다음 라우트 앞까지' 로는 못 끊는다)
-    m = re.search(r'@app\.get\("/health"\)\ndef [^\n]*\n(?:[ \t][^\n]*\n|\n)*', _src(ENGINE, "app.py"))
+    app_src = _src(ENGINE, "app.py")
+    m = re.search(r'@app\.get\("/health"\)\ndef [^\n]*\n(?:[ \t][^\n]*\n|\n)*', app_src)
     assert m, "엔진 app.py 에서 /health 핸들러를 못 찾았다 — 줄 모양이 바뀌었으면 이 식을 고쳐라"
-    names = set(re.findall(r'^\s*"(delib_[a-z]+)":', m.group(0), re.M))
-    assert names, "엔진 /health 에서 심의 수 필드를 못 찾았다 — 줄 모양이 바뀌었으면 이 식을 고쳐라"
+    names = set(re.findall(r'^\s*"(delib_[a-z_]+)":', m.group(0), re.M))
+    assert {"delib_active", "delib_queued"} <= names, "엔진 /health 에서 심의 수 필드를 못 찾았다 — 줄 모양이 바뀌었으면 이 식을 고쳐라"
+    # 새 심의 멈춤 · 줄 넘기기 칸(docs/delib-ops R1 · R2)은 핸들러가 **_delib_ops_health() 로 펼친다 — 그 함수가 내는 이름도 엔진이 내는 이름이다.
+    if "**_delib_ops_health()" in m.group(0):
+        ops = re.search(r'def _delib_ops_health\(\)[^\n]*\n(?:[ \t][^\n]*\n|\n)*', app_src)
+        assert ops, "엔진의 _delib_ops_health 를 못 찾았다 — 줄 모양이 바뀌었으면 이 식을 고쳐라"
+        names |= set(re.findall(r'"(delib_[a-z_]+)":', ops.group(0)))
     busy = _src("HWAXPortal", "infra/scripts/lib/delib-busy.sh")
-    assert names == set(re.findall(r'h\.get\("(delib_[a-z]+)"\)', busy)), "엔진이 내는 이름과 delib-busy.sh 가 읽는 이름이 다르다"
+    read = set(re.findall(r'h\.get\("(delib_[a-z_]+)"\)', busy))
+    # 읽는 이름이 전부 엔진에 있어야 한다(⊆) — 엔진이 이름을 바꾸면 포털은 '모름' 으로 읽는다. 엔진이 더 내는 칸(다시 선 줄 수 등)은 상관없다.
+    assert {"delib_active", "delib_queued"} <= read and read <= names, (
+        f"delib-busy.sh 가 읽는데 엔진이 안 내는 이름 {sorted(read - names)}")
 
 
 def test_엔진이_스스로_건너뛴_재기동의_종료코드를_update_forges_가_안다():

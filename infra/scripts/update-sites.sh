@@ -174,8 +174,24 @@ show_cause() {
 SKIPPED_RESTART=""
 DEFERRED_RESTART=""   # 도는·줄 선 심의 때문에 재기동을 미룬 서비스(지금은 agent-server 뿐) — 옛 프로세스가 그대로 돈다
 DEFERRED_LLM=""       # 라우터를 지나는 LLM 요청 때문에 재기동을 미룬 llm-router — 같은 약속(○ · 지문을 적지 않는다 · 종료코드 3)
+# 이 실행이 세운 새 심의 멈춤(O1 — 엔진 /drain scope delib). 혼자 돌면 끝에서, 재기동을 미루면 그 자리에서 내린다. update-all 아래면
+# (HWAX_DELIB_PAUSE_BY=update-all) 재기동한 멈춤은 update-all 이 끝에서 내린다 — 그 뒤의 §가 서비스를 더 내리는 동안 다시 선 줄을 붙잡아 둔다.
+# 세웠다는 사실은 표지 파일(HWAX_DELIB_PAUSE_MARK — update-all 이 물려준다)로 넘긴다. 자식의 셸 변수는 부모가 못 본다.
+DELIB_PAUSE_RAISED=0; DELIB_PAUSE_URL=""; DELIB_PAUSE_BY="${HWAX_DELIB_PAUSE_BY:-update-sites}"
+delib_pause_lower() {
+  local _o _r=0
+  [ "$DELIB_PAUSE_RAISED" = 1 ] || return 0
+  DELIB_PAUSE_RAISED=0
+  _o="$(hwax_delib_pause off "$DELIB_PAUSE_URL" "$DELIB_PAUSE_BY")" || _r=$?
+  if [ "$_r" = 0 ]; then
+    [ -n "${HWAX_DELIB_PAUSE_MARK:-}" ] && rm -f "$HWAX_DELIB_PAUSE_MARK"
+    echo "  · 새 심의 멈춤을 내렸다(by $DELIB_PAUSE_BY) — 새 심의를 다시 받고 줄 선 심의가 든다"
+  else
+    echo "  ⚠ 새 심의 멈춤을 내리지 못했다($_o) — 수명이 지나면 스스로 풀린다(지금 풀려면 curl -s --noproxy '*' -X POST ${DELIB_PAUSE_URL%/health}/drain -H 'content-type: application/json' -d '{\"on\":false,\"scope\":\"delib\",\"by\":\"$DELIB_PAUSE_BY\"}')" >&2
+  fi
+}
 restart_svc() {
-  local name="$1" rc tmp tmpu cur last id0 id1 _en _restart_fail=0 _upd_fail=0 _busy _brc; local -a _urls=()
+  local name="$1" rc tmp tmpu cur last id0 id1 _en _restart_fail=0 _upd_fail=0 _busy _brc _dws _prc _pout _t0 _wrc _wb; local -a _urls=()
   # 이름이 플래그면 여기서 끊는다 — services.py 는 `-` 로 시작하는 인자를 이름 목록에서 걸러 '이름 없음 = 전부' 로 읽는다(5라운드).
   case "$name" in -*) echo "  ✗ $name: 서비스명이 아니다(옵션처럼 보인다) — 실행을 멈춘다" >&2; return 1 ;; esac
   # 매니페스트에 없는 이름이면 여기서 끊는다 — 종전엔 update·up 이 조용히 아무것도 안 하고 `fp` 가 빈 값이라 아래 검증 블록을 통째로
@@ -219,8 +235,39 @@ restart_svc() {
   # 묻는 것은 이 서비스뿐이다. 답하지 않으면(내려가 있다) 끊을 심의가 없으니 그대로 띄운다. 강행은 AGENT_RESTART_FORCE=1.
   if [ "$name" = agent-server ] && [ "${#_urls[@]}" -gt 0 ]; then
     _busy="$(hwax_delib_busy "${_urls[0]}")"; _brc=$?
+    # O1(docs/delib-ops) — 도는 심의가 있으면 곧바로 미루지 않는다. 새 심의를 멈추고(엔진 R1 — 새 시작 · 이어하기를 '점검 중' 으로 거절하고 줄 선
+    # 잡을 띄우지 않는다) 도는 것이 끝나기를 HWAX_DELIB_WAIT_S(기본 600초 · 0 이면 종전대로 곧바로 미룬다)까지 기다린 뒤 재기동한다. 줄 선 것은
+    # 기다리지 않는다 — 줄을 파일로 넘기는 엔진(delib_queue_durable)이면 재기동 뒤 같은 차례로 다시 서고 hwax_delib_busy 가 이미 세지 않는다.
+    # 못 넘기는 줄이 있으면 기다려도 빠지지 않으니(멈춤 동안 줄은 그대로 선다) 종전대로 곧바로 미룬다. 멈춤을 모르는 엔진(옛 판)도 종전대로다.
+    # 남의 멈춤(사람 · 다른 주체 — 409)이 이미 서 있으면 그 멈춤 아래서 기다리기만 한다(내리지 않는다).
     if [ "$_brc" = 0 ]; then
-      hwax_skip "agent-server 재기동 건너뜀" "심의 ${_busy% *}건 진행 중, ${_busy#* }건 대기 — 재기동하면 전부 끊긴다(재개가 없다). 새 코드·설정은 아직 반영되지 않았다(옛 프로세스가 돈다)" "심의가 끝난 뒤 다시 돌리거나 HWAXAgentServer 에서 ./start.sh -d · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
+      _dws="${HWAX_DELIB_WAIT_S:-600}"; case "$_dws" in ''|*[!0-9]*) _dws=600 ;; esac
+      if [ "$_dws" -gt 0 ] && { [ "${_busy#* }" = 0 ] || hwax_delib_durable "${_urls[0]}"; }; then
+        _prc=0; _pout="$(hwax_delib_pause on "${_urls[0]}" "$DELIB_PAUSE_BY" "$((_dws + 1800))" \
+                           "에이전트 서버 재기동 — 도는 심의가 끝나기를 기다린다(${DELIB_PAUSE_BY})")" || _prc=$?
+        case "$_prc" in
+          0|5|7)
+            if [ "$_prc" = 0 ]; then
+              DELIB_PAUSE_RAISED=1; DELIB_PAUSE_URL="${_urls[0]}"
+              [ -n "${HWAX_DELIB_PAUSE_MARK:-}" ] && { printf '%s\n' "$DELIB_PAUSE_URL" > "$HWAX_DELIB_PAUSE_MARK"; } 2>/dev/null
+            fi
+            echo "  · $name: $_pout — 도는 심의 ${_busy% *}건이 끝나기를 최대 ${_dws}초 기다린 뒤 재기동한다(HWAX_DELIB_WAIT_S · 그동안 새 심의는 '점검 중' 으로 거절된다)"
+            _t0=$SECONDS; _wrc=0; _wb="$(hwax_delib_wait "${_urls[0]}" "$_dws")" || _wrc=$?
+            if [ "$_wrc" = 0 ]; then
+              echo "  · $name: 도는 심의가 끝났다($((SECONDS - _t0))초) — 재기동한다(줄 선 심의는 재기동 뒤 같은 차례로 다시 선다)"
+              _brc=1
+            else
+              [ -n "$_wb" ] && _busy="$_wb"
+              echo "  · $name: ${_dws}초 안에 끝나지 않았다 — 재기동을 미룬다"
+              delib_pause_lower        # 이번에 재기동하지 않는다 — 새 심의를 막고 있을 까닭이 없다
+            fi ;;
+          3) ;;
+          *) echo "  · $name: 새 심의를 멈추지 못했다($_pout) — 기다리지 않고 종전대로 미룬다" ;;
+        esac
+      fi
+    fi
+    if [ "$_brc" = 0 ]; then
+      hwax_skip "agent-server 재기동 건너뜀" "심의 ${_busy% *}건 진행 중, ${_busy#* }건 대기 — 재기동하면 끊긴다(줄을 파일로 넘기는 엔진이면 줄 선 것은 다시 서고 끊긴 것은 deliberate_continue 로 잇는다). 새 코드·설정은 아직 반영되지 않았다(옛 프로세스가 돈다)" "심의가 끝난 뒤 다시 돌리거나 HWAXAgentServer 에서 ./start.sh -d · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
       DEFERRED_RESTART="$DEFERRED_RESTART $name"; rm -f "$tmp" "$tmpu"
       if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 종료코드만 올린다" >&2; return 2; fi
       return 0
@@ -302,6 +349,8 @@ for s in $REST; do
   restart_svc "$s"; _rc=$?
   case "$_rc" in 0) ;; 2) PULL_FAILED="$PULL_FAILED $s" ;; *) FAILED="$FAILED $s" ;; esac
 done
+# 이 실행이 세운 새 심의 멈춤(O1) — 혼자 돌았으면 여기서 내린다(다시 선 줄이 든다). update-all 아래면 update-all 이 끝에서 내린다.
+[ "$DELIB_PAUSE_BY" = update-all ] || delib_pause_lower
 
 echo
 [ -n "$SKIPPED_RESTART" ] && echo "▶ 재기동 생략(마지막 기동 뒤 변경 없음·살아 있음):$SKIPPED_RESTART  — 전부 재기동하려면 HWAX_RESTART_ALL=1"
