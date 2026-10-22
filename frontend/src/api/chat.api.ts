@@ -123,6 +123,8 @@ export interface HistoryEvidence {
   tool: string;
   args?: string;
   result: string;
+  /** upload = 사람이 챗 화면에서 올려 보낸 결과(보내기 알림의 근거, docs/chat-ppt PP-D3). 없으면 조회 근거. */
+  kind?: 'upload';
 }
 
 // ── 심의 전 전문가 선정 미리보기 ────────────────────────────────────────────

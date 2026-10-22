@@ -25,6 +25,9 @@ export interface ActivityItem {
   ok?: boolean;
   /** 심의 핸드오프용 날것(≈1200자) — 화면에는 안 쓴다. 표시용(220자)보다 길 때만 온다. */
   result_full?: string;
+  /** upload = 사람이 챗 화면에서 파일을 올려 보낸 결과(포털이 사람 대신 도구를 불렀다) — 다음 턴 이력의 근거가 '조회한 결과' 와
+   *  다른 머리로 간다(docs/chat-ppt PP-D3). 없으면 그 턴에 모델이 부른 도구다. */
+  origin?: 'upload';
 }
 
 // ── 심의(deliberation) 구조화 스트림 — 라이브 회의·스테퍼·수렴 UI(DelibView)의 데이터 ──

@@ -70,8 +70,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setAttachedDocs,
     attachedImages,
     setAttachedImages,
+    addUploadNotice,
   } = useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // 보내기는 기다린 뒤에 부른다 — 그 사이 사람이 쓴 글을 낡은 값으로 덮지 않게 가장 새 값을 읽는다.
+  const latest = useRef({ input });
+  latest.current = { input };
+  /** 지시문을 입력창에 — auto 면 비어 있을 때만(사람이 쓰던 글을 지우지 않는다, docs/chat-ppt PP-D4). */
+  const fillInput = useCallback(
+    (t: string, auto?: boolean) => {
+      if (auto && latest.current.input.trim()) return;
+      setInput(t);
+      taRef.current?.focus();
+    },
+    [setInput],
+  );
   const { user } = useAuth();
   // 권한이 없으면 입구를 아예 숨긴다(docs/access-control). 업로드는 종전 그룹 설정도 인정한다.
   const can = useCan();
@@ -283,7 +296,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ))}
         </div>
       )}
-      {staged && <UploadRouter staged={staged} onClose={() => setStaged(null)} />}
+      {/* key — 새 파일마다 고른 목적지 · 완료 표시를 새로 시작한다(패널이 열린 채 다른 파일을 붙이면 앞 파일의 상태가 이어졌다, A5) */}
+      {staged && (
+        <UploadRouter
+          key={staged.staging_id}
+          staged={staged}
+          onClose={() => setStaged(null)}
+          onFill={fillInput}
+          onDispatched={addUploadNotice}
+        />
+      )}
       {comFile && (
         <DocExtractHint
           filename={comFile.name}

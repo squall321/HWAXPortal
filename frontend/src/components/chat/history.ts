@@ -39,8 +39,10 @@ export function turnEvidence(m: Message): HistoryEvidence[] {
     const args = detail || (a.call ? argsByCall.get(a.call) : undefined) || lastArgs.get(a.tool) || '';
     lastArgs.delete(a.tool);
     const res = a.ok === false ? `[호출 실패] ${result}` : result;
-    out.push(args ? { tool: a.tool.slice(0, 200), args: args.slice(0, EVIDENCE_ARGS_MAX), result: res }
-                  : { tool: a.tool.slice(0, 200), result: res });
+    // 보내기 알림의 근거(사람이 올려 보낸 결과)는 kind 를 단다 — 에이전트 서버가 '조회한 결과' 와 다른 머리로 싣는다(docs/chat-ppt PP-D3)
+    const kind = a.origin === 'upload' ? { kind: 'upload' as const } : {};
+    out.push(args ? { tool: a.tool.slice(0, 200), args: args.slice(0, EVIDENCE_ARGS_MAX), result: res, ...kind }
+                  : { tool: a.tool.slice(0, 200), result: res, ...kind });
   }
   return out;
 }

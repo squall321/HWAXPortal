@@ -22,15 +22,31 @@ export interface StepProject {
   name: string;
 }
 
+/** 보내기 응답 — 서버(routes._dispatch_inner)와 같은 모양. 문서 둘(RA · AIDH)과 DynaForge 는 그 자리에서 끝나 `done`, StepForge 는 잡을
+ *  세워 `dispatched`, 실패는 `failed`(오류는 error · detail). 종전 타입은 `done` 과 문서 갈래 칸이 없어 화면이 결과를 못 읽었다(docs/chat-ppt A1). */
 export interface DispatchResult {
-  stage: 'dispatched' | 'failed';
+  stage: 'done' | 'dispatched' | 'failed';
   destination?: string;
+  error?: string;
+  detail?: unknown;
+  /** 그 서비스 도구가 돌려준 것 그대로. */
+  result?: Record<string, unknown> | null;
+  // Report Archive — 만든 보고서 초안
+  report_id?: number | string;
+  title?: string | null;
+  url?: string | null;
+  pages?: number;
+  blocks?: number;
+  warnings?: string[];
+  // AI 데이터 허브 — 변환한 inbox 파일 이름
+  inbox_name?: string;
+  // StepForge · DynaForge
   project_id?: string;
   created_project?: boolean;
   job_id?: string | null;
   kind?: string | null;
   next?: string;
-  error?: string;
+  session_id?: string;
 }
 
 export interface UploadMeta {

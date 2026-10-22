@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { streamChat } from '../api/chat.api';
 import {
+  appendServerMessage,
   createServerConversation,
   deleteServerConversation,
   fillTrimmed,
@@ -27,6 +28,7 @@ import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEv
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import type { AttachedImage } from '../components/chat/imageAttach';
 import { buildHistory } from '../components/chat/history';
+import type { UploadNotice } from '../components/chat/uploadNotice';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import {
   delibOptsToWire,
@@ -95,13 +97,17 @@ interface ChatContextValue {
   /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다(회의 아님). 세션 토글이라 매 발화에 실린다. */
   thinking: boolean;
   setThinking: (v: boolean) => void;
-  /** 이번 발화에 붙인 문서(브라우저에서 읽은 추출문). 보내면 비워진다 — 1회성이다.
+  /** 붙인 문서(브라우저에서 읽은 추출문). 보내도 **비우지 않는다** — 대화에는 본문을 남기지 않으므로(쿼터) 칩을 떼기 전까지 매 발화에
+   *  다시 실려 뒤따르는 질문을 받는다(처음 1901dbf 부터 그랬다 — 주석만 '비운다' 로 낡아 있었다, docs/chat-ppt PP-D6).
    *  원본 파일은 서버로 가지 않는다(DRM 전제: 추출은 PC 의 Office COM 에서 끝난다). */
   attachedDocs: AttachedDoc[];
   setAttachedDocs: (list: AttachedDoc[]) => void;
   /** 이번 발화에 올릴 그림(줄인 data URL). 보내면 비워진다 — 서버가 저장한 주소가 그 발화에 남아 다음 턴 이력으로 다시 실린다(T5). */
   attachedImages: AttachedImage[];
   setAttachedImages: (list: AttachedImage[]) => void;
+  /** 보내기 결과를 대화에 남긴다 — 어시스턴트 알림 한 건 + 업로드 근거(docs/chat-ppt A2 · PP-D3). 대화가 없으면 새로 만든다.
+   *  서버 사본에도 붙인다(답을 받는 중인 대화면 그 답이 저장된 뒤). 종전엔 결과가 업로드 패널 안에서만 끝나 다음 질문이 몰랐다. */
+  addUploadNotice: (n: UploadNotice) => void;
   stop: () => void;
   /** 지금 도는 스트림의 생존 신호(마지막 프레임·마지막 진행 시각). 돌지 않으면 null. 상태가 아니라 읽는 함수다 —
    *  토큰마다 다시 그리지 않고, 보여 주는 쪽(StreamPulse)이 1초마다 읽는다. */
@@ -279,6 +285,9 @@ function mergeThink(prev: ThinkData | undefined, e: ThinkEvent): ThinkData {
 }
 
 /** 첫 사용자 메시지 → 대화 제목(≈40자). */
+// 받는 중인 대화에 온 보내기 알림을 그 스트림이 끝나고 얼마 뒤 서버 사본에 붙이나 — 포털이 답을 저장하는 틈(스트림 끝 → 저장)을 비켜 간다.
+const NOTICE_AFTER_STREAM_MS = 800;
+
 function makeTitle(text: string): string {
   const t = text.replace(/\s+/g, ' ').trim();
   if (!t) return '새 대화';
@@ -367,8 +376,8 @@ export function ChatProvider({
     thinkingRef.current = v;
     setThinkingState(v);
   }, []);
-  // 붙인 문서도 전송 시점 읽기다(같은 스테일 함정). 보낸 뒤 비운다 — 다음 발화에 딸려가면
-  // 사용자는 한 번 붙였다고 생각하는데 매 턴 수만 자가 다시 실린다.
+  // 붙인 문서도 전송 시점 읽기다(같은 스테일 함정). 보내도 비우지 않는다 — 대화에 본문을 남기지 않으므로 칩을 떼기 전까지 매 발화에
+  // 다시 실려 뒤따르는 질문을 받는다(그림과 다르다 — 그림은 서버 주소가 이력으로 다시 간다). 처음부터 그 동작이었고 주석만 낡았다(PP-D6).
   const [attachedDocs, setAttachedDocsState] = useState<AttachedDoc[]>([]);
   const attachedDocsRef = useRef<AttachedDoc[]>([]);
   const setAttachedDocs = useCallback((list: AttachedDoc[]) => {
@@ -523,6 +532,61 @@ export function ChatProvider({
       });
   }, [serverKind, activeId, conversations]);
 
+  // ── 보내기 알림(docs/chat-ppt PP-D3) ─────────────────────────────────────────────
+  // 서버 사본은 대화마다 한 줄로 잇는다(서버 대화 만들기 · 덧붙이기) — 다음 발화는 이 줄을 기다린다(알림이 만든 서버 대화를 모르고 하나 더
+  // 만들지 않게). 답을 받는 중인 대화면 그 스트림이 끝나고 잠시 뒤 붙인다 — 포털은 답을 스트림 끝에 적으므로, 먼저 적으면 다른 기기에서
+  // 알림이 답보다 앞에 선다. 기다릴 스트림은 알림이 온 그때 정한다(늦게 정하면 다음 발화의 스트림을 기다려 서로 붙잡는다).
+  const noticeChainRef = useRef<Map<string, Promise<string | undefined>>>(new Map());
+  const streamDoneRef = useRef<Map<string, Promise<void>>>(new Map());
+  const convsRef = useRef<Conversation[]>(conversations);
+  convsRef.current = conversations;
+
+  const addUploadNotice = useCallback(
+    (n: UploadNotice) => {
+      const now = Date.now();
+      const msg: Message = { id: newId(), role: 'assistant', text: n.text, ts: now, activity: n.activity };
+      let cid = activeId && convsRef.current.some((c) => c.id === activeId) ? activeId : null;
+      if (!cid) {
+        cid = newId();
+        const conv: Conversation = { id: cid, title: makeTitle(n.title), messages: [msg], createdAt: now, updatedAt: now };
+        setConversations((prev) => [conv, ...prev]);
+        setActiveId(cid);
+      } else {
+        const id0 = cid;
+        setConversations((prev) =>
+          prev.map((c) => (c.id !== id0 ? c : { ...c, updatedAt: now, messages: [...c.messages, msg] })),
+        );
+      }
+      if (!serverKind) return;
+      const id = cid;
+      const waitFor = streamConvRef.current === id ? streamDoneRef.current.get(id) : undefined;
+      const prev = noticeChainRef.current.get(id) ?? Promise.resolve<string | undefined>(undefined);
+      const next = prev
+        .then(async (prevSid) => {
+          if (waitFor) {
+            await waitFor;
+            await new Promise((r) => window.setTimeout(r, NOTICE_AFTER_STREAM_MS));
+          }
+          let sid = prevSid ?? convsRef.current.find((c) => c.id === id)?.serverId;
+          if (!sid) {
+            sid = await createServerConversation(makeTitle(n.title), serverKind);
+            const s1 = sid;
+            serverMetaRef.current.set(s1, Date.now());
+            setConversations((p) => p.map((c) => (c.id === id ? { ...c, serverId: s1 } : c)));
+          }
+          await appendServerMessage(sid, { role: 'assistant', content: n.text, meta: { activity: n.activity, upload: true } });
+          return sid;
+        })
+        // 서버에 못 남겨도 화면 사본은 남는다(대화 저장 미가용 박스의 종전 폴백과 같다)
+        .catch(() => convsRef.current.find((c) => c.id === id)?.serverId);
+      noticeChainRef.current.set(id, next);
+      void next.then(() => {
+        if (noticeChainRef.current.get(id) === next) noticeChainRef.current.delete(id);
+      });
+    },
+    [activeId, serverKind],
+  );
+
   const patch = useCallback((convId: string, msgId: string, fn: (m: Message) => Message) => {
     setConversations((prev) =>
       prev.map((c) =>
@@ -550,7 +614,8 @@ export function ChatProvider({
       // 앞 발화에 올린 그림의 주소도 — 챗 · 띵킹 · 심의가 앞 대화의 그림으로 다시 본다(T5).
       const history = buildHistory(existing?.messages ?? [], { evidence: true, images: true });
       // 첫 발화 여부 — sendPrefix(심의 트리거)는 첫 발화에만 붙는다(이후는 GLM 이어가기).
-      const isFirstTurn = !existing || existing.messages.length === 0;
+      // 사람 발화가 없으면 첫 발화다 — 보내기 알림(어시스턴트)만 있는 대화도 첫 발화에 트리거가 붙는다(docs/chat-ppt PP-D3).
+      const isFirstTurn = !existing || !existing.messages.some((m) => m.role === 'user');
 
       // 유효 지정 전문가·도구 — 기존 대화는 대화에 저장된 것, 새 대화(랜딩)는 draft 를 쓴다.
       const draft = draftPinsRef.current;
@@ -643,6 +708,16 @@ export function ChatProvider({
       abortRef.current = controller;
       streamConvRef.current = convId;
       const cid = convId;
+      // 이 스트림의 끝 — 받는 중에 온 보내기 알림이 서버 사본에 붙을 때를 기다린다(addUploadNotice)
+      let endStream: () => void = () => undefined;
+      const streamEnded = new Promise<void>((res) => {
+        endStream = res;
+      });
+      streamDoneRef.current.set(cid, streamEnded);
+      const finishStream = () => {
+        endStream();
+        if (streamDoneRef.current.get(cid) === streamEnded) streamDoneRef.current.delete(cid);
+      };
 
       // 심의 페이지 등에서 서버 트리거 프리픽스를 자동 부착 — "첫 발화"에만(이후 발화는
       // 일반 챗으로 흘려 심의 로그 위에서 GLM 이어가기가 되게 한다). 직접 입력했으면 존중.
@@ -653,6 +728,9 @@ export function ChatProvider({
         // 서버 정본 확보 — serverKind 설정 시 이 대화의 서버 id 를 보장(없으면 생성).
         // 실패해도 채팅은 계속(로컬 캐시 전용) — cae00 등 서버 저장 미가용 폴백.
         let serverId = existing?.serverId;
+        // 보내기 알림이 이 대화의 서버 사본을 만들거나 붙이는 중이면 끝나기를 기다린다 — 알림이 이 발화보다 앞에 적히고, 서버 대화를 둘 만들지 않는다
+        const notices = noticeChainRef.current.get(cid);
+        if (notices) serverId = serverId ?? (await notices);
         if (serverKind && !serverId) {
           try {
             serverId = await createServerConversation(makeTitle(text), serverKind);
@@ -760,6 +838,7 @@ export function ChatProvider({
           liveRef.current = null;
           abortRef.current = null;
           streamConvRef.current = null;
+          finishStream();
         },
         });
       })().catch((err) => {
@@ -784,6 +863,7 @@ export function ChatProvider({
         liveRef.current = null;
         abortRef.current = null;
         streamConvRef.current = null;
+        finishStream();
       });
     },
     [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can, setAttachedImages],
@@ -1046,6 +1126,7 @@ export function ChatProvider({
         setAttachedDocs,
         attachedImages,
         setAttachedImages,
+        addUploadNotice,
         pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
         pinnedAgentName: activeConversation
           ? (activeConversation.pinnedAgentName ?? null)

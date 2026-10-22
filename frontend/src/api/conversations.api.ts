@@ -50,6 +50,20 @@ export async function createServerConversation(title: string, kind: ConvKind): P
   return ((await r.json()) as { id: string }).id;
 }
 
+/** 서버 대화에 메시지 하나를 덧붙인다(주인만) — 챗 화면이 스스로 남기는 것(보내기 알림, docs/chat-ppt PP-D3)에 쓴다. 챗 턴은 포털이
+ *  /agent/chat 에서 적는다. 실패하면 던진다(부른 쪽이 화면 사본만 남긴다). */
+export async function appendServerMessage(
+  id: string,
+  m: { role: 'assistant' | 'user'; content: string; meta?: Record<string, unknown> },
+): Promise<void> {
+  const r = await apiFetch(`/agent/conversations/${encodeURIComponent(id)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(m),
+  });
+  if (!r.ok) throw new Error(`append failed (${r.status})`);
+}
+
 export async function deleteServerConversation(id: string): Promise<void> {
   await apiFetch(`/agent/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

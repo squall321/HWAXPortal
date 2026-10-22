@@ -9,8 +9,15 @@ import { DocDispatchPanel } from './DocDispatchPanel';
 import { DynaForgePanel } from './DynaForgePanel';
 import { StepForgePanel } from './StepForgePanel';
 import { UploadPanel } from './UploadPanel';
+import type { UploadNotice } from './uploadNotice';
 
-export function UploadRouter({ staged, onClose }: { staged: StagedFile; onClose: () => void }) {
+export function UploadRouter({ staged, onClose, onFill, onDispatched }: {
+  staged: StagedFile;
+  onClose: () => void;
+  /** 문서 갈래(RA · AIDH) 성공 뒤 — 지시문을 입력창에(auto 면 비어 있을 때만) · 대화에 알림(docs/chat-ppt A1 · A2). */
+  onFill?: (text: string, auto?: boolean) => void;
+  onDispatched?: (n: UploadNotice) => void;
+}) {
   const dests = staged.destinations ?? [];
   const { pinnedApps } = useChat();
   // ⚠ 종전에는 목적지가 하나면 묻지 않고 바로 들어갔다. 목적지는 계속 는다 — 하나일 때
@@ -60,6 +67,6 @@ export function UploadRouter({ staged, onClose }: { staged: StagedFile; onClose:
   if (picked === 'stepforge') return <StepForgePanel staged={staged} onClose={onClose} />;
   if (picked === 'dynaforge') return <DynaForgePanel staged={staged} onClose={onClose} />;
   if (picked === 'reportarchive' || picked === 'aidatahub')
-    return <DocDispatchPanel staged={staged} destination={picked} onClose={onClose} />;
+    return <DocDispatchPanel staged={staged} destination={picked} onClose={onClose} onFill={onFill} onDispatched={onDispatched} />;
   return <UploadPanel staged={staged} onClose={onClose} />;
 }
