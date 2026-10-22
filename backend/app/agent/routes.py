@@ -88,6 +88,9 @@ class ChatHistoryEvidence(BaseModel):
     tool: str = Field(min_length=1, max_length=200)
     args: str | None = Field(default=None, max_length=8000)
     result: str = Field(max_length=_WINDOW_CHARS)
+    # upload = 사람이 챗 화면에서 파일을 올려 보낸 결과(포털이 대화에 남긴 알림의 근거) — 에이전트 서버가 '조회한 결과' 와 다른 머리로
+    # 싣는다(docs/chat-ppt PP-D3). 비면 종전 조회 근거다.
+    kind: Literal["upload"] | None = None
 
 
 # 한 발화에 올리는 그림 — 에이전트 서버 vision.MAX_IMAGES(VISION_MAX_IMAGES 기본 12) · MAX_BYTES(VISION_MAX_BYTES 기본 8MiB)와 같은 수다.

@@ -49,3 +49,15 @@ def test_심의_전_도우미에는_근거를_넘기지_않는다():
     # 그림 주소(images)도 같이 뺀다 — tests/test_chat_images_route.py
     assert SRC.count('"history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history]') == 3
     assert '[m.model_dump() for m in body.history]' not in SRC
+
+
+def test_업로드_근거는_kind_를_싣고_다른_값은_막는다():
+    """보내기 결과(사람이 챗 화면에서 올려 보낸 것)는 kind=upload 로 — 에이전트 서버가 '조회한 결과' 와 다른 머리로 싣는다(docs/chat-ppt PP-D3)."""
+    req = _req([{"role": "assistant", "content": "PPT 를 변환했습니다",
+                 "evidence": [{"tool": "convert_file", "args": '{"file": "a.pptx"}', "result": "초안", "kind": "upload"},
+                              {"tool": "lookup", "result": "값"}]}])
+    out = req.history[0].to_agent()["evidence"]
+    assert out == [{"tool": "convert_file", "args": '{"file": "a.pptx"}', "result": "초안", "kind": "upload"},
+                   {"tool": "lookup", "result": "값"}], "kind 가 없는 근거는 그 칸을 싣지 않는다(옛 모양 그대로)"
+    with pytest.raises(ValidationError):
+        _req([{"role": "assistant", "content": "a", "evidence": [{"tool": "t", "result": "r", "kind": "tool"}]}])
