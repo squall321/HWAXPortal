@@ -279,6 +279,17 @@ export interface TurnMeta {
   thinking?: boolean | null;
   effort?: string | null;
   fallback_to?: string | null;
+  /** 자기검증 — 초안을 근거와 대조해 고친 결과(에이전트 서버, docs/chat-self-check). 끈 서버 · 옛 메시지는 없다. */
+  self_check?: SelfCheck | null;
+}
+
+// 챗 자기검증 결과 — ok 고칠 것 없음 · fixed 고친 답이 본문 · skipped 짧은 잡담이라 건너뜀 ·
+// suspect · failed · unreadable 은 검증하지 못해 초안이 본문이다(reason 이 까닭).
+export interface SelfCheck {
+  status: 'ok' | 'fixed' | 'skipped' | 'suspect' | 'failed' | 'unreadable';
+  fixes?: string[];
+  reason?: string;
+  ms?: number;
 }
 
 // 대화 한 건 — localStorage('hwax.chat.*') 영속 단위 (chatStore.ts가 직렬화 담당).

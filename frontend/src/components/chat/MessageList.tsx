@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { friendlyError } from '../../lib/chatErrors';
 import { useChat } from '../../state/ChatContext';
-import type { Message, TurnMeta } from '../../types/chat';
+import type { Message, SelfCheck, TurnMeta } from '../../types/chat';
 import { copyText } from './clipboard';
 import { AgentCatalogBlock } from './AgentCatalogBlock';
 import { DelibView } from './DelibView';
@@ -142,11 +142,13 @@ function Row({ msg }: { msg: Message }) {
           <div className="msg-warn" role="status">⚠ {msg.warn}</div>
         )}
         {msg.error && <ErrorBlock raw={msg.error} />}
+        {!msg.streaming && msg.meta?.self_check && <CheckNote check={msg.meta.self_check} />}
       </div>
       {!msg.streaming && msg.text && (
         <div className="msg-actions">
           <CopyAction text={msg.text} />
           {msg.meta && <ModelBadge meta={msg.meta} />}
+          {msg.meta?.self_check && <CheckBadge check={msg.meta.self_check} />}
         </div>
       )}
     </div>
@@ -172,6 +174,46 @@ function ModelBadge({ meta }: { meta: TurnMeta }) {
   const effort = meta.thinking ? ` · 생각 ${meta.effort ?? '켬'}` : meta.thinking === false ? ' · 생각 끔' : '';
   const label = `${main}${effort}${others.length ? ` · 넘김 ${others.map((n) => `${n} ${meta.models[n]}회`).join(', ')}` : ''}`;
   return <span className="msg-model" title="이 답을 낸 모델(호출 수)">{label}</span>;
+}
+
+const secs = (c: SelfCheck) => (typeof c.ms === 'number' ? ` · ${(c.ms / 1000).toFixed(1)}초` : '');
+
+/** 자기검증 — 고쳤거나 검증하지 못했으면 답 아래에 늘 보인다(펼치면 무엇을 왜). 초안은 '생각' 칸에 남아 있다(docs/chat-self-check). */
+function CheckNote({ check }: { check: SelfCheck }) {
+  const fixes = check.fixes ?? [];
+  if (check.status === 'ok' || check.status === 'skipped') return null;
+  if (check.status === 'fixed') {
+    return (
+      <details className="msg-check">
+        <summary>검증에서 {fixes.length ? `${fixes.length}곳을` : '답을'} 고쳤습니다{secs(check)}</summary>
+        {fixes.length > 0 && <ul>{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>}
+        <p>고치기 전 초안은 위 &lsquo;생각&rsquo; 칸에 있습니다.</p>
+      </details>
+    );
+  }
+  return (
+    <details className="msg-check warn">
+      <summary>검증하지 못해 초안을 그대로 보였습니다{secs(check)}</summary>
+      <p>{check.reason || '까닭을 받지 못했습니다.'}</p>
+      {fixes.length > 0 && (
+        <>
+          <p>검토자가 짚은 곳(반영하지 않음)</p>
+          <ul>{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>
+        </>
+      )}
+    </details>
+  );
+}
+
+/** 고칠 것이 없었거나 건너뛴 턴 — 모델 표시 옆에 조용히. */
+function CheckBadge({ check }: { check: SelfCheck }) {
+  if (check.status === 'ok') {
+    return <span className="msg-model" title="답을 질문 · 조회 결과 · 수치와 대조했고 고칠 곳이 없었습니다">검증 ✓{secs(check)}</span>;
+  }
+  if (check.status === 'skipped') {
+    return <span className="msg-model" title={check.reason || '근거도 수치도 없는 짧은 답'}>검증 생략</span>;
+  }
+  return null;
 }
 
 export function MessageList({ messages }: { messages: Message[] }) {
