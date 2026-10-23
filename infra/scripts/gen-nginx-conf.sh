@@ -15,7 +15,7 @@ mkdir -p "$(dirname "$NGINX_DIR")/data"
 # break. Keyed by the FULL id so a nested id (e.g. "svc/api") can differ from its parent.
 #   ste — CAE decks are uploaded through this proxy. nginx's default client_max_body_size is
 #         1m, so a 50MB deck would 413 before ever reaching the backend (whose own cap is
-#         MAX_UPLOAD_MB, default 2048 — raise it there too for decks over 2GB).
+#         STE_MAX_UPLOAD_MB — default 10240 since SmartTwinExplorer c588bb0, 2026-10-24; was 2048).
 #         request_buffering off streams the upload instead of spooling it to disk first, which
 #         is also what makes the browser's XHR progress bar track reality. buffering off keeps
 #         log tails and result downloads from being held whole in nginx.
@@ -29,7 +29,7 @@ loc_extras() { # $1=id
     # report-archive: 첨부 동영상 1GB·AI 작성 최대 10분·스트리밍 응답 — 없으면 413·504·「중단」 불능(RA 요청서 §3-3)
     # odb-hub: ODB++ 수십~수백 MB · MCP streamable-http 스트리밍 · 뷰어 기하 요청 수십 초
     # 상한 10GB — 템플릿의 전역 상한과 같다(사용자 결정 10-24, 종전 둘 다 2048m). 이 묶음은 request_buffering off 라 본문을 /tmp 에
-    # 쌓지 않고 흘린다. 뒤쪽 서비스가 따로 거는 상한(ste 의 MAX_UPLOAD_MB 등)은 그쪽에서 올린다.
+    # 쌓지 않고 흘린다. 뒤쪽 서비스가 따로 거는 상한(ste 의 STE_MAX_UPLOAD_MB — 같은 날 10GB 로 올렸다 등)은 그쪽 몫이다.
     ste|apps|heax-hub|report-archive|odb-hub)
       cat <<'EOF'
             client_max_body_size 10240m;
