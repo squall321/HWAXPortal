@@ -14,7 +14,8 @@ mkdir -p "$(dirname "$NGINX_DIR")/data"
 # Per-route extra directives. Most services need nothing; a few have traffic the defaults
 # break. Keyed by the FULL id so a nested id (e.g. "svc/api") can differ from its parent.
 #   ste — CAE decks are uploaded through this proxy. nginx's default client_max_body_size is
-#         1m, so a 50MB deck would 413 before ever reaching the backend (which allows 2048m).
+#         1m, so a 50MB deck would 413 before ever reaching the backend (whose own cap is
+#         MAX_UPLOAD_MB, default 2048 — raise it there too for decks over 2GB).
 #         request_buffering off streams the upload instead of spooling it to disk first, which
 #         is also what makes the browser's XHR progress bar track reality. buffering off keeps
 #         log tails and result downloads from being held whole in nginx.
@@ -27,9 +28,11 @@ loc_extras() { # $1=id
   case "$1" in
     # report-archive: 첨부 동영상 1GB·AI 작성 최대 10분·스트리밍 응답 — 없으면 413·504·「중단」 불능(RA 요청서 §3-3)
     # odb-hub: ODB++ 수십~수백 MB · MCP streamable-http 스트리밍 · 뷰어 기하 요청 수십 초
+    # 상한 10GB — 템플릿의 전역 상한과 같다(사용자 결정 10-24, 종전 둘 다 2048m). 이 묶음은 request_buffering off 라 본문을 /tmp 에
+    # 쌓지 않고 흘린다. 뒤쪽 서비스가 따로 거는 상한(ste 의 MAX_UPLOAD_MB 등)은 그쪽에서 올린다.
     ste|apps|heax-hub|report-archive|odb-hub)
       cat <<'EOF'
-            client_max_body_size 2048m;
+            client_max_body_size 10240m;
             proxy_request_buffering off;
             proxy_buffering off;
             proxy_read_timeout 600s;
@@ -37,7 +40,7 @@ EOF
       ;;
     # aireadyportal: 해석결과 업로드 최대 6GB · Abaqus 추출 동기 요청 최대 40분.
     # ⚠ proxy_request_buffering off 가 핵심이다 — 없으면 6GB 가 /tmp 에 쌓여 디스크를 채운다.
-    # 상한은 **이 location 에서만** 푼다(0 = 무제한). 템플릿의 전역 상한(2048m)을 0 으로 올리면 버퍼링이 켜진 다른 경로
+    # 상한은 **이 location 에서만** 푼다(0 = 무제한). 템플릿의 전역 상한(10240m)을 0 으로 풀면 버퍼링이 켜진 다른 경로
     # (/agent/ · /mcp-gw/ · 포털 `/` · arm 이 없는 라우트)의 본문도 제한 없이 /tmp 에 쌓인다 — / 파티션이 95% 찬 박스가 있다.
     aireadyportal)
       cat <<'EOF'

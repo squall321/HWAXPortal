@@ -191,7 +191,7 @@ tr '\0' '\n' < /proc/$(lsof -t -i:8723 -sTCP:LISTEN)/environ | grep -i '^no_prox
 #    'NO_PROXY — 더할 내부 목적지가 없다' 한 줄이면 정상이다(운영자 셸에 이미 다 있으면 뒤의 것이 나온다)
 grep -a '내부 목적지' "$(readlink /proc/$(lsof -t -i:9110 -sTCP:LISTEN)/fd/1)" | tail -1
 
-# ④ nginx 에 ARP·ODB 지시문이 들어갔다 — ARP 는 client_max_body_size 0, ODB 는 2048m 이고 둘 다 proxy_request_buffering off
+# ④ nginx 에 ARP·ODB 지시문이 들어갔다 — ARP 는 client_max_body_size 0, ODB 는 10240m(10-24 부터 — 그 전 판은 2048m)이고 둘 다 proxy_request_buffering off
 #    라우트가 없는 쪽은 아무것도 안 나온다(정상). TLS 를 켠 박스는 블록이 두 번 나온다
 grep -A13 'location /aireadyportal/' infra/nginx/hwax.conf
 grep -A13 'location /odb-hub/' infra/nginx/hwax.conf

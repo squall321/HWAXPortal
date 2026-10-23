@@ -84,7 +84,7 @@ def test_nginx_extras_cover_report_archive():
     fn = GEN[GEN.index("loc_extras() {"):]
     fn = fn[:fn.index("\n}\n") + 3]
     out = subprocess.run(["bash", "-c", fn + '\nloc_extras report-archive'], capture_output=True, text=True).stdout
-    assert "client_max_body_size 2048m" in out and "proxy_read_timeout 600s" in out and "proxy_buffering off" in out
+    assert "client_max_body_size 10240m" in out and "proxy_read_timeout 600s" in out and "proxy_buffering off" in out
 
 
 # ── 4-1 타일 세 줄 ────────────────────────────────────────────────────────────

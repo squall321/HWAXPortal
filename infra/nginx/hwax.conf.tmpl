@@ -31,7 +31,9 @@ http {
     # /report-archive/, /agent/, /mcp-gw/ 가 3MB 에서 전부 413 이었다.
     # 백엔드가 아무리 크게 받아도 여기서 먼저 잘리므로 원인이 앱처럼 보인다.
     # 개별 경로는 필요하면 location 에서 더 낮추거나 스트리밍 옵션을 얹는다.
-    client_max_body_size 2048m;
+    # 10GB — 사용자 결정 2026-10-24(종전 2048m, docs/change-request-8-10 D-6 덧붙임). 버퍼링이 켜진 경로는 본문을 아래
+    # client_body_temp_path(/tmp/hwax-nginx-body)에 다 받은 뒤 넘긴다 — 큰 업로드는 그만큼 / 파티션을 쓴다.
+    client_max_body_size 10240m;
 
     client_body_temp_path /tmp/hwax-nginx-body;
     proxy_temp_path       /tmp/hwax-nginx-proxy;

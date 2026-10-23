@@ -1,9 +1,9 @@
 # nginx 라우트별 추가 지시문(loc_extras) — odb-hub·aireadyportal 의 큰 업로드·긴 요청이 포털 정문에서 잘리지 않는지(ARP·ODB 작업지시 7-2)
 """왜 — 라우트는 routes(.local).env 한 줄로 생기지만 업로드 상한·버퍼링·읽기 시한은 gen-nginx-conf.sh 의 loc_extras 에 이름이
-있어야 붙는다. 없으면 ODB++ 수백 MB 가 버퍼링돼 /tmp 에 쌓이고, ARP 의 6GB 해석결과는 전역 상한 2048m 에서 413 이 난다.
+있어야 붙는다. 없으면 ODB++ 수백 MB 가 버퍼링돼 /tmp 에 쌓이고, ARP 의 해석결과(최대 6GB · 더 커질 수 있다)는 전역 상한에서 잘린다.
 
-전역 상한(hwax.conf.tmpl 의 http 레벨 2048m)은 **그대로** 둔다(7-1 은 하지 않는다 — docs/change-request-8-10 D-6). 전역을 풀면
-버퍼링이 켜진 다른 경로의 본문이 크기 제한 없이 /tmp 에 쌓인다. 그래서 aireadyportal location 안에서만 0 으로 푼다.
+전역 상한(hwax.conf.tmpl 의 http 레벨)은 10240m 이다(사용자 결정 10-24, 종전 2048m — docs/change-request-8-10 D-6 덧붙임). **무제한(0)은
+aireadyportal location 안에서만** 푼다 — 전역을 0 으로 풀면 버퍼링이 켜진 다른 경로의 본문이 크기 제한 없이 /tmp 에 쌓인다.
 
 생성기를 임시 리포에서 **실제로 돌려** 만들어진 conf 를 본다(스크립트·템플릿은 사본, 라우트·infra/.env 는 지어낸 값).
 주소는 문서용 예약 대역(TEST-NET)만 쓴다.
@@ -79,30 +79,32 @@ def test_odb_hub_는_기존_큰_업로드_묶음에_든다(conf):
     blocks = _locations(text, "odb-hub")
     assert len(blocks) == servers
     for b in blocks:
-        assert "client_max_body_size 2048m;" in b and "proxy_request_buffering off;" in b
+        assert "client_max_body_size 10240m;" in b and "proxy_request_buffering off;" in b
         assert "proxy_buffering off;" in b and "proxy_read_timeout 600s;" in b
 
 
-def test_기존_묶음은_그대로다(conf):
+def test_큰_파일_묶음은_10GB_까지_디스크에_쌓지_않고_흘린다(conf):
+    """상한 10GB(사용자 요청 10-24, 종전 2048m). 올려도 되는 까닭은 request_buffering off 다 — 이 줄이 빠지면 10GB 가 /tmp 에 쌓인다."""
     text, servers = conf
-    for rid in ("ste", "apps", "heax-hub", "report-archive"):
+    for rid in ("ste", "apps", "heax-hub", "report-archive", "odb-hub"):
         blocks = _locations(text, rid)
         assert len(blocks) == servers, rid
         for b in blocks:
-            assert "client_max_body_size 2048m;" in b and "proxy_read_timeout 600s;" in b, rid
+            assert "client_max_body_size 10240m;" in b and "proxy_read_timeout 600s;" in b, rid
+            assert "proxy_request_buffering off;" in b, f"{rid} — 버퍼링이 켜지면 10GB 본문이 /tmp 에 쌓인다"
 
 
-def test_상한이_풀린_곳은_aireadyportal_뿐이고_전역_상한은_2048m_그대로다(conf):
-    """**7-1 을 하지 않았다는 보증** — 전역이 0 이 되면 버퍼링이 켜진 /agent/·/mcp-gw/·포털 `/` 의 본문이 제한 없이 /tmp 에 쌓인다."""
+def test_상한이_풀린_곳은_aireadyportal_뿐이고_전역_상한은_10GB_다(conf):
+    """전역은 10GB(사용자 결정 10-24) — 무제한(0)이 되면 버퍼링이 켜진 /agent/·/mcp-gw/·포털 `/` 의 본문이 제한 없이 /tmp 에 쌓인다."""
     text, servers = conf
     assert text.count("client_max_body_size 0;") == servers, "aireadyportal location 밖에서 상한이 풀렸다"
     http_level = [ln for ln in text.splitlines() if ln.startswith("    client_max_body_size")]
-    assert http_level == ["    client_max_body_size 2048m;"], "http 레벨 전역 상한이 바뀌었다"
+    assert http_level == ["    client_max_body_size 10240m;"], "http 레벨 전역 상한이 바뀌었다"
     for rid in ("ai-data-hub", "signalforge/api", "knox-bridge"):
         blocks = _locations(text, rid)
         assert len(blocks) == servers, rid
         for b in blocks:
-            assert "client_max_body_size" not in b and "proxy_request_buffering" not in b, f"{rid} 는 전역 상한(2048m)을 물려받는다"
+            assert "client_max_body_size" not in b and "proxy_request_buffering" not in b, f"{rid} 는 전역 상한(10240m)을 물려받는다"
     for fixed in ("location /agent/ {", "location /mcp-gw/ {", "location / {"):
         i = text.index(fixed)
         assert "client_max_body_size" not in text[i:text.index("}", i)], fixed
