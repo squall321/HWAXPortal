@@ -11,7 +11,9 @@
 ## 뼈대 · 인계(10-24, dev)
 - [x] DocForge 리포(`squall321/DocForge` 비공개 · main · release `9f0d2e9`) — 앱 · 계약 · 걸어 다니는 뼈대 · 단계 명세 · 시험 16 + 명세 8 · 스크립트 · 문서(CLAUDE.md · docs/*)
 - [x] 인계 계획서 [cae00-handoff.md](cae00-handoff.md) — 첫날 순서 · 첫 배치(dev 몫) · 단계 · 포털 배달 명세 · 다른 리포 · 하지 말 것 · 허브 규약 · 지문 목록 합치기
-- [ ] 첫 배치 dev 쪽 — HEAXHub 등록 · SIF 빌드 · 모델 · Drive(DocForge docs/DEPLOY.md §4 1~6)
+- [x] 순서 고침(DF-D14) — dev 먼저(DocForge `docs/START.md` D0~D11), 실데이터가 필요해지면 cae00 · 허브 등록은 첫 SIF Drive 와 한 묶음(DF-D15)
+- [ ] dev 단계 D0~D11(DocForge 창의 세션 — `docs/START.md`)
+- [ ] 첫 배치 dev 쪽 — HEAXHub 등록 · SIF 빌드 · 모델 · Drive 를 한 날에(DocForge docs/DEPLOY.md §4 1~6)
 - [ ] 첫 배치 cae00 쪽(사람) — 박스 값 · models-from-drive · update-all · /health · 뼈대 실주행(§4 7~9 · §5)
 
 ## M0 실측

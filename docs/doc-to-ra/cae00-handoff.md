@@ -3,10 +3,14 @@
 > 읽는 사람 — cae00 에서 DocForge 를 이어 개발할 세션(사람 · 에이전트). 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md) ·
 > 조사 근거 [research.md](research.md). 앱 리포 **`squall321/DocForge`**(GitHub 비공개, 2026-10-24 커밋 `9f0d2e9` — `main` · `release` 같은 커밋).
 > 이 문서는 '무엇을 어떤 순서로' 다. '어떻게' 는 DocForge 리포의 `CLAUDE.md` 와 `docs/` 가 정본이다.
+>
+> **언제 쓰나** — 사용자 결정(10-24, DF-D14)으로 **dev 에서 먼저 개발한다**(시작점 DocForge `docs/START.md` D0~D11). 이 문서는 **실데이터가 필요해진 시점**
+> (실문서로 정할 것 · stcx Qwen 진짜 호출 · 실제 RA · SP 허브 · DRM)부터 cae00 에서 쓴다. 권장 — 첫 배치 묶음 직후 작은 M0(실문서 5건 · VLM 탐침)를 일찍.
 
 ## 0. 정해진 것 · 받은 것
 
-- **사용자 결정(10-24)** — VLM 은 **stcx Qwen** · 변환기는 **새 HEAX 앱 DocForge** · 뼈대는 dev 에서 · **상세 개발은 cae00** · 새 앱을 배치해 넣는 것까지 이 계획으로.
+- **사용자 결정(10-24)** — VLM 은 **stcx Qwen** · 변환기는 **새 HEAX 앱 DocForge** · **dev 에서 먼저 개발하고 실데이터가 필요해지면 cae00**(처음엔 '상세 개발은
+  cae00' 이었다 — DF-D14 로 고침) · 새 앱을 배치해 넣는 것까지 이 계획으로.
 - **DocForge 의 지금**(`9f0d2e9`) — 걸어 다니는 뼈대가 돈다.
   - 앱 — /health · REST · MCP 도구 다섯(`docforge_*`) · 잡(원장 · 실행기 · 워커 프로세스) · 신원
   - 계약 — IR · RA 위젯 · 패키지 · 변환 보고서

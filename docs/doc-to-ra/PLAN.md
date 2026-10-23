@@ -2,7 +2,8 @@
 
 > 체크리스트 [checklist.md](checklist.md) · 결정 [context-notes.md](context-notes.md) · 조사 근거(파일 · 줄) [research.md](research.md).
 > 상태 — **뼈대(2026-10-24)** — 앱 리포 `squall321/DocForge`(`9f0d2e9`)에 걸어 다니는 뼈대 · 계약 · 단계 명세 · 스크립트 · 문서.
-> **상세 개발은 cae00**(사용자 결정 10-24) — 인계 [cae00-handoff.md](cae00-handoff.md). 남은 결정은 §12.
+> **dev 에서 먼저 개발하고 실데이터가 필요해지면 cae00**(사용자 결정 10-24, DF-D14) — dev 시작점은 DocForge `docs/START.md`(D0~D11),
+> cae00 인계는 [cae00-handoff.md](cae00-handoff.md). 남은 결정은 §12.
 
 ## 0. 요청
 
@@ -223,7 +224,7 @@ Pydantic 모델은 **어느 도구를 쓰든 계약**이다 — RA 위젯 내용
 
 | 단계 | 할 일 | 완료 기준 |
 |---|---|---|
-| **M0 실측(cae00)** | 금 표본 모으기(사람) · Docling 을 금 표본에 돌려 형식별 직접 파서와 견주기 · 구조화 출력(Pydantic AI Native · Tool · json_schema 직접)을 stcx Qwen 에 · VLM 판독 시험 · LibreOffice + 한글 글꼴 SIF 시험 · RA 에 엄격 생성(개인 공간 · 시험 표시) · RA 엔티티 API · MCP 목록(절차 DocForge docs/M0.md) | §7 표의 선택을 수치로 정하고 결정 기록에 남긴다 · 기준선 수치 |
+| **M0 실측(dev 몫 + cae00 몫)** | dev — 도구 붙이기(Docling · Pydantic AI · 가짜 서버 · 합성 문서 · LibreOffice). cae00 — 금 표본 모으기(사람) · Docling 을 금 표본에 돌려 형식별 직접 파서와 견주기 · 구조화 출력(Pydantic AI Native · Tool · json_schema 직접)을 stcx Qwen 에 · VLM 판독 시험 · LibreOffice + 한글 글꼴 SIF 시험 · RA 에 엄격 생성(개인 공간 · 시험 표시) · RA 엔티티 API · MCP 목록(절차 DocForge docs/M0.md) | §7 표의 선택을 수치로 정하고 결정 기록에 남긴다 · 기준선 수치 |
 | **M1 PPTX 끝에서 끝** | DocForge 뼈대(HEAX 앱 · 잡 · 원장) · IR · PPTX 해부 · 배치(§6) · 포장 · 검증 · 포털 목적지 · 포털 배달 · 변환 보고서 | 금 PPTX 에서 모든 지표가 기준선보다 좋거나 같다 · 무음 누락 0 · dev 실주행 |
 | **M2 Word · Excel(+ PDF)** | DOCX · XLSX 해부와 대응 · PDF 는 Docling 기본 | 금 표본 지표 |
 | **M3 그림 읽기** | 그림 판독 · 그림 차트의 값 · 그림 속 글 · SmartArt 그림 · '모델 판독' 표시 · 부하 상한 | 판독 지표 · 표시 없는 모델 글 0 · 챗 첫 조각 지연이 늘지 않는다 |
