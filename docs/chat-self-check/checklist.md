@@ -8,11 +8,11 @@
 - [x] S3 지킴 — 못 읽음 · 빈 답 · 지나치게 짧음 · 그림 링크 잃음 · 끊김 · 실패 · 바뀐 글자 없음은 ok
 - [x] S5 손잡이(`CHAT_SELF_CHECK` · `CHAT_SELF_CHECK_THINK`) · 시험 환경 기본 끔(conftest)
 - [x] 시험 21건 · 변이 32개 · 전체 2,682 통과 · 커밋 `d8011e0`
-- [ ] push
+- [x] push(10-23)
 
 ## 포털 화면
 - [x] S4 검증 표시(`CheckNote` · `CheckBadge`) · 브라우저 시험 5건 · 변이 8개
-- [ ] 커밋 · 빌드 · Drive(포털 일치) · push
+- [x] 커밋 `5fa9a8e` · 포털 전체 시험 3,296 통과(실패 0) · 빌드 · Drive(포털 `latest/` 일치) · push(10-23)
 
 ## 문서
 - [x] 계획 · 결정(SC-D1~D11) · 업데이트 이력 · CLAUDE.md 행 · 기억
