@@ -36,6 +36,26 @@ SIF 배포 선례(5.2GB)도 있다.
 수신 키트는 의존성이 requests · sqlite3 뿐이고 StepForge 가 이미 옮겨 다듬었다(`core/sp_core.py` — 출처 머리 주석을 따라 다시 옮긴다). 허브 주소 · 토큰은
 StepForge 와 같은 미결(사람)이다.
 
+**DF-D9 사용자 결정 셋(2026-10-24).** ① VLM 은 stcx Qwen ② 새 HEAX 앱(DocForge) ③ 뼈대는 dev 에서 짜 두고 **상세 개발은 cae00 에서** — 새 앱을 배치해
+넣는 것까지 포털에 계획서로 넘기면 그쪽 세션이 개발한다(인계 [cae00-handoff.md](cae00-handoff.md)). 사용자 덧붙임 「되도록 상세한 것들을 넣어서 — 그쪽에서
+개발을 시킬 테니까」 — 그래서 뼈대에 계약 · 단계 명세(모듈 머리) · 명세 시험(xfail strict) · M0 탐침 · 배치 절차까지 넣었다.
+
+**DF-D10 개발은 main, 배치는 release(2026-10-24).** cae00 은 이 앱의 SIF 를 지을 수 없다(apt · torch — HEAX 허브 조사). cae00 의 스캔은 캐시 열쇠
+(커밋 + 매니페스트 + 틀)가 Drive 로 받은 SIF 와 같을 때만 띄운다 — cae00 세션이 개발 중에 올린 커밋이 운영 인스턴스를 흔들지 않게 매니페스트
+`source.ref: release` 로 두고, dev 가 지어 올린 커밋만 release 로 옮긴다. 배치 한 번마다 dev 의 손이 한 번 든다(DocForge docs/DEPLOY.md §7).
+
+**DF-D11 cae00 개발 환경은 두 길(2026-10-24).** cae00 은 사내 프록시가 TLS 를 다시 서명한다 — PyPI · Hugging Face 가 사내 CA 로 열리면 venv(길 A),
+아니면 dev 가 지은 앱 SIF 에 작업 사본을 얹어 쓴다(길 B — `scripts/dev-in-sif.sh`, editable 설치라 그대로 import). 어느 길인지는 cae00 에서
+`scripts/check-cae00-env.sh` 로 잰다(dev 에서 돌려 판정 논리를 확인했다 — 404 도 '닿았다' 로 셈한다).
+
+**DF-D12 포털 ↔ DocForge 는 경로로 주고받는다(2026-10-24).** StepForge 보내기와 같은 꼴 — 포털이 받아 둔 파일의 **호스트 경로**를 MCP `docforge_convert` 에
+넘기고(본문을 MCP 로 나르지 않는다), 패키지는 데이터 루트 기준 경로(`package_rel`)를 돌려줘 포털이 형제 리포 `../HEAXHub/var/app_data/doc_forge/…` 로 읽는다.
+DocForge 는 입력을 `DOCFORGE_INPUT_ROOTS` 밑만 받는다(아무 경로나 읽히면 $HOME 밑 비밀까지 읽힌다).
+
+**DF-D13 포털 배달은 포털 리포의 일이고 운영 체크아웃에서 하지 않는다(2026-10-24).** cae00 의 `~/Projects/HWAXPortal` · `HEAXHub` 는 update-all 이 pull ·
+재기동하는 운영 사본이다 — 거기 커밋하지 않은 변경이 남으면 배치가 깨진다. 포털 배달(목적지 · 진행 · 사용자 명의 엄격 생성 · 알림)은 포털 세션이 dev 에서
+하거나 cae00 의 **따로 clone 한 사본**에서 하고 push 한다(cae00-handoff §4 · §5).
+
 ## 조사에서 확인한 사실(계획의 전제)
 
 - RA 의 PPTX 가져오기는 차트 · SmartArt 를 경고와 함께, 노트 · 링크 · 위치를 말없이 버린다. EMF 그림을 그대로 올린다(브라우저가 못 연다). Word · Excel ·

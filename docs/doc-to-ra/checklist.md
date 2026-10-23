@@ -5,12 +5,19 @@
 ## 계획(10-24)
 - [x] 조사 — RA 형식 · 넣는 길 · 엔티티 · 지금 변환기 셋 · VLM · SP · HEAX 앱 바탕 · 바깥 도구(research.md)
 - [x] 계획 · 원칙 · 단계 · 평가 · 위험(PLAN.md) · 결정 기록(DF-D1~D8)
-- [ ] 사람이 정할 것 §12 — 1 어디에 · 2 RA 에 넣는 길 · 3 VLM 자리 · 4 금 표본 · 5 기준 숫자 · 6 형식 범위 · 7 Word 쪽 나누기 · 8 판독 자리 · 9 원본 슬라이드 그림 · 10 SP ↔ RA 엔티티 · 11 구조화 출력
+- [x] 사람이 정할 것 §12-1 어디에(새 HEAX 앱 DocForge) · §12-3 VLM(stcx Qwen) — 10-24
+- [ ] 사람이 정할 것 §12 남은 것 — 2 RA 에 넣는 길 · 4 금 표본 · 5 기준 숫자 · 6 형식 범위 · 7 Word 쪽 나누기 · 8 판독 자리 · 9 원본 슬라이드 그림 · 10 SP ↔ RA 엔티티 · 11 구조화 출력
+
+## 뼈대 · 인계(10-24, dev)
+- [x] DocForge 리포(`squall321/DocForge` 비공개 · main · release `9f0d2e9`) — 앱 · 계약 · 걸어 다니는 뼈대 · 단계 명세 · 시험 16 + 명세 8 · 스크립트 · 문서(CLAUDE.md · docs/*)
+- [x] 인계 계획서 [cae00-handoff.md](cae00-handoff.md) — 첫날 순서 · 첫 배치(dev 몫) · 단계 · 포털 배달 명세 · 다른 리포 · 하지 말 것 · 허브 규약 · 지문 목록 합치기
+- [ ] 첫 배치 dev 쪽 — HEAXHub 등록 · SIF 빌드 · 모델 · Drive(DocForge docs/DEPLOY.md §4 1~6)
+- [ ] 첫 배치 cae00 쪽(사람) — 박스 값 · models-from-drive · update-all · /health · 뼈대 실주행(§4 7~9 · §5)
 
 ## M0 실측
-- [ ] 금 표본 — 실문서 40건 + DRM 5건(사람) · dev `/data` · 정답 뽑기(원본 XML → 글 · 숫자 · 표 · 차트 값)
+- [ ] 금 표본 — 실문서 40건 + DRM 5건(사람) · cae00 개발 데이터 폴더(리포 밖) · 정답 뽑기(원본 XML → 글 · 숫자 · 표 · 차트 값)
 - [ ] 기준선 — RA 가져오기(+ ai-draft) · AIDH `convert_file` 을 금 표본에 · 지표 표
-- [ ] Docling — dev 에 격리 venv · 금 표본 · 글 회계 · 표 · 차트 · 노트 · 기하 · 쪽당 시간(CPU · GPU) · 모델 무게 · 라이선스
+- [ ] Docling — cae00(길 A venv · 길 B 앱 SIF) · 금 표본 · 글 회계 · 표 · 차트 · 노트 · 기하 · 쪽당 시간(CPU · GPU) · 모델 무게 · 라이선스
 - [ ] 형식별 직접 해부 — python-pptx · python-docx · openpyxl 로 Docling 이 놓치는 것(차트 XML 캐시 · 노트 · SmartArt · OMML · 병합 · 기하)
 - [ ] Pydantic AI — 우리 GLM · Qwen 에 `NativeOutput` · `ToolOutput` · 비스트리밍 · 스키마 준수율(목표 ≥ 99%) · 대체재(vLLM json_schema 직접)와 견주기
 - [ ] VLM 판독 — 공학 그림 · 그림 차트 값 · 그림 속 한국어 글 · 장당 시간 · 지어낸 수치 · Docling 그림 설명이 원격 VLM 을 부르나
