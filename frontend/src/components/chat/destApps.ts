@@ -7,6 +7,8 @@
 // 새 행선지를 만들면 여기 한 줄 더한다. 안 더해도 동작은 한다(추천이 안 뜰 뿐).
 export const DEST_APPS: Record<string, string[]> = {
   // 파일 업로드 목적지(UploadRouter)
+  // 이 대화에서 분석 — 보내는 앱이 없다(이 챗이 읽는다). 운영자 추천을 받을 앱이 없어 비워 둔다 — 목적지 목록에서 이미 맨 앞이다(PP-D17).
+  chat: [],
   material: ['heax-materialtwin_web'],
   stepforge: ['heax-step_forge'],
   dynaforge: ['heax-kooremapper_mcp'],

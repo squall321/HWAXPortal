@@ -11,12 +11,14 @@ import { StepForgePanel } from './StepForgePanel';
 import { UploadPanel } from './UploadPanel';
 import type { UploadNotice } from './uploadNotice';
 
-export function UploadRouter({ staged, onClose, onFill, onDispatched }: {
+export function UploadRouter({ staged, onClose, onFill, onDispatched, onAttachDoc }: {
   staged: StagedFile;
   onClose: () => void;
   /** 문서 갈래(RA · AIDH) 성공 뒤 — 지시문을 입력창에(auto 면 비어 있을 때만) · 대화에 알림(docs/chat-ppt A1 · A2). */
   onFill?: (text: string, auto?: boolean) => void;
   onDispatched?: (n: UploadNotice) => void;
+  /** 이 대화에서 분석 — 읽어 온 글을 문서 칩으로(docs/chat-ppt PP-D17). */
+  onAttachDoc?: (doc: File) => Promise<string | void>;
 }) {
   const dests = staged.destinations ?? [];
   const { pinnedApps } = useChat();
@@ -66,7 +68,10 @@ export function UploadRouter({ staged, onClose, onFill, onDispatched }: {
 
   if (picked === 'stepforge') return <StepForgePanel staged={staged} onClose={onClose} />;
   if (picked === 'dynaforge') return <DynaForgePanel staged={staged} onClose={onClose} />;
-  if (picked === 'reportarchive' || picked === 'aidatahub')
-    return <DocDispatchPanel staged={staged} destination={picked} onClose={onClose} onFill={onFill} onDispatched={onDispatched} />;
+  if (picked === 'reportarchive' || picked === 'aidatahub' || picked === 'chat')
+    return (
+      <DocDispatchPanel staged={staged} destination={picked} onClose={onClose} onFill={onFill}
+        onDispatched={onDispatched} onAttachDoc={onAttachDoc} />
+    );
   return <UploadPanel staged={staged} onClose={onClose} />;
 }

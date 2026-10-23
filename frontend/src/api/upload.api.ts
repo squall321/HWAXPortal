@@ -40,6 +40,8 @@ export interface DispatchResult {
   warnings?: string[];
   // AI 데이터 허브 — 변환한 inbox 파일 이름
   inbox_name?: string;
+  // 이 대화에서 분석 — 저장하지 않고 읽어 온 글(.hwax.md). 화면이 문서 칩으로 붙인다(docs/chat-ppt PP-D17)
+  doc?: { name: string; text: string; chars: number };
   // StepForge · DynaForge
   project_id?: string;
   created_project?: boolean;

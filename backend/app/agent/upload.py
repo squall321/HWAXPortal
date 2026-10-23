@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from pathlib import Path
@@ -42,6 +43,15 @@ DESTINATIONS: dict[str, dict] = {
     # 문서는 **각 서비스가 자기 취입기를 갖고 있다** — 포털은 배달만 한다(파서를 새로 안 만든다).
     # DRM 은 대개 브라우저 읽기에 투명해서 여기 도착한 바이트가 이미 평문이다(사용자 실측).
     # 막히는 정책이면 그때 COM 추출기로 간다(docs/doc-deliberate).
+    # 이 챗에서 읽고 묻기 — 어디에도 저장하지 않는다. AI 데이터 허브의 변환기를 빌려(그 사람 명의라 허브를 쓸 수 있는 사람만) 글 · 표 ·
+    # 차트 데이터 · 발표자 노트를 .hwax.md 로 옮겨 화면이 문서 칩으로 붙인다(docs/chat-ppt PP-D17). 문서 목적지 중 맨 앞이다 — 올린 문서를
+    # 그 자리에서 묻는 일이 가장 잦다.
+    "chat": {
+        "label": "이 대화에서 분석 — 글·표·차트·노트를 읽어 입력창에(저장하지 않음)",
+        "exts": {"pptx", "docx", "pdf", "xlsx"},
+        "groups_attr": "upload_allowed_group_list",
+        "platform": "plat:aidatahub",
+    },
     "reportarchive": {
         "label": "Report Archive — 슬라이드를 보고서 페이지로(그림·표 포함)",
         "exts": {"pptx"},                      # RA /imports/pptx 가 받는 것이 이것뿐이다
@@ -246,6 +256,95 @@ def ra_import_pages_to_ai(pages: list) -> tuple[list[dict], int]:
         out.append(page)
         n += len(blocks)
     return out, n
+
+
+_KIND = {"pptx": "ppt", "ppt": "ppt", "docx": "word", "doc": "word", "pdf": "pdf", "xlsx": "excel"}
+
+
+_CAPTION_HEAD = re.compile(r"^(?:Table|Figure)\s+\d+\s*:\s*")
+
+
+def _caption(v) -> str:
+    """변환기가 붙인 'Table 1: ' · 'Figure 2: ' 머리를 뗀다 — 문서에는 [표 N] · [그림 N] 이 이미 붙는다."""
+    return _CAPTION_HEAD.sub("", " ".join(str(v or "").split()))
+
+
+def _md_cell(v) -> str:
+    return " ".join(str("" if v is None else v).split()).replace("|", "\\|")
+
+
+def record_markdown(record: dict, filename: str) -> str:
+    """AI 데이터 허브 변환 결과(record — 절 · 블록 · 표 · 그림) → `.hwax.md`(PC 추출기와 같은 꼴: 머리말 schema hwax-doc/1, 슬라이드는
+    `## [s.N]`). 이 챗에서 읽고 묻는 데 쓴다(docs/chat-ppt PP-D17). 발표자 노트는 '> 발표자 노트:' 로, 표는 마크다운 표로, 그림은 자리와
+    설명만 남긴다 — 그림 내용은 글로 옮기지 않았다고 적는다(그림 판독은 다음 단계). 모양이 틀린 칸은 건너뛴다."""
+    meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+    fmt = str(meta.get("source_format") or Path(filename).suffix.lstrip(".")).lower()
+    slides = fmt in ("pptx", "ppt") or meta.get("doc_type") == "slide"
+    tables = {t.get("id"): t for t in (record.get("tables") or []) if isinstance(t, dict)}
+    figures = {f.get("id"): f for f in (record.get("figures") or []) if isinstance(f, dict)}
+    body: list[str] = []
+    n_top = 0
+
+    def table_md(t: dict) -> list[str]:
+        heads = [_md_cell(h) for h in (t.get("headers") or [])]
+        rows = [r for r in (t.get("rows") or []) if isinstance(r, list)]
+        width = max([len(heads), *(len(r) for r in rows)] or [0])
+        if not width:
+            return []
+        heads = heads + [""] * (width - len(heads))
+        out = [f"| {' | '.join(heads)} |", f"|{' --- |' * width}"]
+        for r in rows:
+            cells = [_md_cell(c) for c in r] + [""] * (width - len(r))
+            out.append(f"| {' | '.join(cells)} |")
+        return out
+
+    def section(sec: dict, depth: int, top_no: int | None) -> None:
+        title = " ".join(str(sec.get("title") or "").split())
+        tag = f"[s.{top_no}] " if slides and top_no is not None else ""
+        body.append(f"{'#' * min(6, depth + 1)} {tag}{title}".rstrip())
+        body.append("")
+        notes = False
+        for b in sec.get("blocks") or []:
+            if not isinstance(b, dict):
+                continue
+            kind, text = b.get("type"), str(b.get("text") or "").strip()
+            if kind == "paragraph" and text == "[Speaker Notes]":
+                notes = True
+                continue
+            if kind != "list_item" and body and body[-1] != "":
+                body.append("")             # 목록 뒤 — 다음 단락 · 노트 · 표가 목록에 엉겨 붙지 않게
+            if kind in ("paragraph", "code") and text:
+                body.append(("> 발표자 노트: " + text.replace("\n", "\n> ")) if notes else text)
+                body.append("")
+            elif kind == "list_item" and text:
+                marker = str(b.get("marker") or "•")
+                body.append(f"{marker} {text}")
+            elif kind == "table" and b.get("ref") in tables:
+                t = tables[b["ref"]]
+                body.append(f"[표 {t.get('number')}] {_caption(t.get('caption'))}".rstrip())
+                body.extend(table_md(t))
+                body.append("")
+            elif kind == "figure" and b.get("ref") in figures:
+                f = figures[b["ref"]]
+                body.append(f"[그림 {f.get('number')}] {_caption(f.get('caption'))} — 그림 내용은 글로 옮기지 않았다")
+                body.append("")
+        if body and body[-1] != "":
+            body.append("")
+        for c in sec.get("children") or []:
+            if isinstance(c, dict):
+                section(c, depth + 1, None)
+
+    for sec in record.get("sections") or []:
+        if isinstance(sec, dict):
+            n_top += 1
+            section(sec, 1, n_top)
+    text = "\n".join(body).strip() + "\n"
+    title = " ".join(str(meta.get("title") or Path(filename).stem).split())
+    head = ["---", "schema: hwax-doc/1", f"source: {Path(filename).name}", f"kind: {_KIND.get(fmt, 'word')}"]
+    if slides:
+        head.append(f"units: {n_top}")
+    head += [f"chars: {len(text)}", "extracted_by: AI 데이터 허브 변환기(서버 — 저장하지 않음)", "---", "", f"# {title}", "", ""]
+    return "\n".join(head) + text
 
 
 def staged_path(settings: Settings, sub: str, staging_id: str, filename: str) -> Path:

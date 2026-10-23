@@ -4,6 +4,13 @@ import { dispatchUpload, type DispatchResult, type StagedFile } from '../../api/
 import { dispatchInstruction, dispatchNotice, reportLink, type UploadNotice } from './uploadNotice';
 
 const SPEC: Record<string, { title: string; note: string; go: string }> = {
+  chat: {
+    title: '이 대화에서 분석',
+    // 저장하지 않는다 — AI 데이터 허브 변환기로 읽어 온 글을 입력창의 문서 칩으로 붙인다(docs/chat-ppt PP-D17).
+    note: '글 · 표 · 차트 데이터 · 발표자 노트를 읽어 입력창에 문서로 붙입니다. 어디에도 저장하지 않습니다. '
+      + '그림 내용은 아직 글로 옮기지 않습니다(그림이 있던 자리만 표시).',
+    go: '읽어서 붙이기',
+  },
   reportarchive: {
     title: 'Report Archive 로 보내기',
     // RA 의 /imports/pptx 를 그대로 쓴다 — 포털에 파서를 새로 만들지 않는다.
@@ -20,7 +27,7 @@ const SPEC: Record<string, { title: string; note: string; go: string }> = {
 };
 
 export function DocDispatchPanel({
-  staged, destination, onClose, onFill, onDispatched,
+  staged, destination, onClose, onFill, onDispatched, onAttachDoc,
 }: {
   staged: StagedFile;
   destination: string;
@@ -29,6 +36,8 @@ export function DocDispatchPanel({
   onFill?: (text: string, auto?: boolean) => void;
   /** 보내기 성공을 대화에 남긴다(알림 한 건 + 업로드 근거, PP-D3). 종전엔 결과가 이 패널 안에서만 끝났다. */
   onDispatched?: (n: UploadNotice) => void;
+  /** 이 대화에서 분석 — 읽어 온 글을 문서 칩으로 붙인다(PP-D17). 못 붙이면 까닭을 돌려준다. */
+  onAttachDoc?: (doc: File) => Promise<string | void>;
 }) {
   const spec = SPEC[destination];
   const [busy, setBusy] = useState(false);
@@ -47,6 +56,14 @@ export function DocDispatchPanel({
         const ws = Array.isArray(w) ? w.filter((x): x is string => typeof x === 'string') : [];
         throw new Error(String(r.error || '보내기 실패') + (ws.length ? ` (경고: ${ws.slice(0, 3).join(' · ')}${ws.length > 3 ? ` 외 ${ws.length - 3}건` : ''})` : ''));
       }
+      if (destination === 'chat') {
+        // 보낸 것이 아니라 읽어 온 것 — 대화에 '보냈다' 알림을 남기지 않고 입력창에 문서로 붙인다
+        if (!r.doc?.text) throw new Error('읽어 온 글이 없습니다.');
+        const why = await onAttachDoc?.(new File([r.doc.text], r.doc.name, { type: 'text/markdown' }));
+        if (why) throw new Error(why);
+        setDone(r);
+        return;
+      }
       setDone(r);
       const n = dispatchNotice(staged.filename, r);
       if (n) onDispatched?.(n);
@@ -58,6 +75,21 @@ export function DocDispatchPanel({
       setBusy(false);
     }
   };
+
+  if (done && destination === 'chat') {
+    return (
+      <div className="upl-panel">
+        <div className="upl-head">
+          <b>입력창에 붙였습니다</b>
+          <span className="upl-file">{done.doc?.name ?? staged.filename}</span>
+          <button type="button" className="upl-x" onClick={onClose} aria-label="닫기">✕</button>
+        </div>
+        <p className="upl-note">
+          글 <b>{(done.doc?.chars ?? 0).toLocaleString()}</b>자를 문서로 붙였습니다 — 이제 물어보세요. 어디에도 저장하지 않았습니다.
+        </p>
+      </div>
+    );
+  }
 
   if (done) {
     const warns = done.warnings ?? [];

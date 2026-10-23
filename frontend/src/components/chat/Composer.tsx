@@ -444,6 +444,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onClose={() => setStaged(null)}
           onFill={fillInput}
           onDispatched={addUploadNotice}
+          // 이 대화에서 분석 — 읽어 온 글을 PC 도우미 결과와 같은 길로 붙인다(문서 칩)
+          onAttachDoc={(f) => attachPcResult(f, [])}
         />
       )}
       {comFile && (

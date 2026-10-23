@@ -87,8 +87,8 @@ _STUB = r"""
       if (f.name.includes('broken')) return json({ detail: '스테이징 디스크가 찼습니다' }, 507);
       window.__staged = (window.__staged || 0) + 1;
       return json({ staging_id: 'st' + window.__staged, filename: f.name, size: f.size, ext: 'pptx', content_type: '',
-                    destinations: [{ id: 'aidatahub', label: 'AI 데이터 허브 — 지식카드로 변환' },
-                                   { id: 'reportarchive', label: 'Report Archive — 보고서로' }] });
+                    destinations: window.__dests || [{ id: 'aidatahub', label: 'AI 데이터 허브 — 지식카드로 변환' },
+                                                      { id: 'reportarchive', label: 'Report Archive — 보고서로' }] });
     }
     if (u === '/agent/upload/dispatch') return json(window.__dispatch);
     if (u === '/agent/upload/pc-ticket' && method === 'POST')
@@ -205,6 +205,25 @@ const SCENARIOS = {
     await page.getByText('어디로 보낼까요').waitFor();
     const reset = { done_gone: (await page.getByText('변환했습니다').count()) === 0, file: await page.locator('.upl-file').first().textContent() };
     return { filled, roles, reset, errors: page.__errors };
+  },
+  // 이 대화에서 분석 — 읽어 온 글이 문서 칩으로 붙고, 대화에 '보냈다' 알림은 남지 않는다(docs/chat-ppt PP-D17)
+  async composer_chat(browser) {
+    const page = await open(browser, 'composer');
+    const md = '---\nschema: hwax-doc/1\nsource: a.pptx\nkind: ppt\nunits: 2\n---\n\n# a\n\n## [s.1] 개요\n\n낙하 1.5 m\n';
+    await page.evaluate((m) => {
+      window.__dests = [{ id: 'chat', label: '이 대화에서 분석 — 글·표·차트·노트를 읽어 입력창에(저장하지 않음)' },
+                        { id: 'aidatahub', label: 'AI 데이터 허브 — 지식카드로 변환' }];
+      window.__dispatch = { stage: 'done', destination: 'chat', doc: { name: 'a.hwax.md', text: m, chars: m.length } };
+    }, md);
+    await pick(page, 'a.pptx', [0x50, 0x4b, 0x03, 0x04]);
+    await page.getByRole('button', { name: /이 대화에서 분석/ }).click();
+    await page.getByRole('button', { name: '읽어서 붙이기' }).click();
+    await page.getByText('입력창에 붙였습니다').waitFor();
+    const sent = (await calls(page)).find((c) => c.url === '/agent/upload/dispatch');
+    return { docs: await text(page, 'docs'), roles: await text(page, 'roles'), dispatch: sent && sent.body,
+             appends: (await calls(page)).filter((c) => /\/messages$/.test(c.url)).length,
+             chip_kind: await page.evaluate(() => (document.querySelector('.doc-chip em') || {}).textContent || ''),
+             errors: page.__errors };
   },
   // 사람이 쓰던 글이 있으면 저절로 덮지 않는다 — 단추로만
   async composer_typed(browser) {
@@ -501,3 +520,11 @@ def test_답을_받는_중에_놓으면_붙이지_않고_까닭을_말한다(see
     d = seen("drop_streaming")["during"]
     assert d["chips"] == 0 and "답을 받는 중에는 붙이지 않습니다" in d["err"], d
     assert d["veil_text"] == "답을 받는 중에는 붙이지 않습니다", "끄는 동안에도 미리 말한다"
+
+
+def test_이_대화에서_분석은_읽어_온_글을_문서_칩으로_붙이고_보냈다는_알림을_남기지_않는다(seen):
+    s = seen("composer_chat")
+    assert s["dispatch"] == {"staging_id": "st1", "filename": "a.pptx", "destination": "chat"}
+    assert s["docs"].startswith("a.hwax.md:"), "손 추출 · PC 도우미와 같은 문서 칩"
+    assert s["chip_kind"].startswith("발표자료 · 2슬라이드"), "머리말(kind · units)을 칩이 읽는다"
+    assert s["roles"] == "" and s["appends"] == 0, "보낸 것이 아니라 읽어 온 것 — 대화에 알림을 남기지 않는다"

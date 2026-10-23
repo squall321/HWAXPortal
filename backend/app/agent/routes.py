@@ -22,6 +22,7 @@ import re
 import os
 import shutil
 import sqlite3
+import uuid
 from pathlib import Path
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timedelta
@@ -1340,6 +1341,30 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
                 "pages": len(pages), "blocks": n_blocks, "report_id": rid,
                 "title": out.get("title"), "url": out.get("url"),
                 "warnings": [*warns, *ra_warns], "result": out}
+
+    if body.destination == "chat":
+        # ── 이 대화에서 분석 ─────────────────────────────────────────
+        # 어디에도 저장하지 않는다 — AI 데이터 허브의 변환기를 그 사람 명의로 빌려 글 · 목록 · 표 · 차트 데이터 · 발표자 노트를
+        # .hwax.md 로 옮겨 돌려주면 화면이 문서 칩으로 붙인다(PC 도우미 · 손 추출과 같은 끝, docs/chat-ppt PP-D17). 변환기는 inbox
+        # 하위만 읽으므로 거기 잠시 두고, 변환이 끝나면(실패해도) 지운다 — AI 데이터 허브로 보낸 같은 이름의 파일과 겹치지 않게 이름을 가른다.
+        inbox = Path(os.environ.get("AIDH_CONVERT_INBOX") or (Path.home() / "aidh-inbox"))
+        inbox.mkdir(parents=True, exist_ok=True)
+        safe = Path(body.filename).name
+        dest = inbox / f"{principal.subject.split('@')[0][:24]}-chat-{uuid.uuid4().hex[:8]}-{safe}"
+        shutil.copy2(path, dest)
+        try:
+            out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "convert_file", {"file": dest.name})
+        finally:
+            dest.unlink(missing_ok=True)
+        record = out.get("record") if isinstance(out, dict) else None
+        if not isinstance(record, dict) or not record.get("sections"):
+            return {"stage": "failed", "error": "문서에서 읽을 내용을 찾지 못했습니다(글 · 표가 없거나 변환기가 처리하지 못한 구조).",
+                    "detail": out}
+        text = _upload.record_markdown(record, body.filename)
+        name = f"{Path(safe).stem}.hwax.md"
+        audit.record(principal=principal.subject, event="upload_dispatch",
+                     meta={"destination": "chat", "filename": body.filename, "chars": len(text)})
+        return {"stage": "done", "destination": "chat", "doc": {"name": name, "text": text, "chars": len(text)}}
 
     if body.destination == "aidatahub":
         # ── AI 데이터 허브 ────────────────────────────────────────────
