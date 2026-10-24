@@ -32,6 +32,11 @@
 - [x] P10 도구 영역 — 위키 쓰기 넷(`wiki_submit_source · wiki_fileback · wiki_propose · wiki_add_question`)은 '데이터 등록·온톨로지', 읽기는 앱 기본 '사내 지식 검색'(게이트웨이 `tool_areas.json`) · 페르소나 `he-doc-mxwhitepaper` '위키 먼저 묻기'(정본 · dev 등록부는 그 한 명만 반영 — `sync-he-personas` 의 `plan` 으로) — MW-D21
   - [ ] cae00 — 페르소나는 `python3 infra/scripts/sync-he-personas.py` 미리보기 뒤 `--apply`(사람 몫, 다른 페르소나의 어긋남도 같이 보인다)
 
+## 사람을 따로 받지 않는다(사용자 결정 10-25 — MW-D22)
+- [ ] MX 백서 세션 — 가입 · 비밀번호 길 닫기(비상용 관리자만) · 로그인 화면은 포털 진입 하나 · SSO 세션 수명 ≤ 소속 사진 유효 시간 · 낡으면 저절로 포털 다녀오기 · 팀도 소속 표를 따르게 · 포털로 들어온 적 없는 계정 목록 명령
+- [ ] dev 켜기 · 끝에서 끝(비밀번호 로그인 403 · 포털 진입으로만 · 하루 넘은 세션도 소속 유지)
+- [ ] cae00 — 포털로 들어온 적 없는 계정 목록을 본 뒤 켠다(사람 몫)
+
 ## 사람(cae00)
 - [ ] 비밀 → 게이트웨이 provision.env 넷 · MXWP `.env` · update-all · 타일 로그인 확인(PLAN §6)
 - [ ] 위키 워커 PAT 의 `plat:plmdefect` 여부(권한표 담당)
