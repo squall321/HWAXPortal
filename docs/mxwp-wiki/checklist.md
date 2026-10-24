@@ -7,14 +7,14 @@
 - [x] MXWhitePaper `docs/llm-wiki/` 요청서 여섯 · 이 폴더 셋
 
 ## 연결 · 신원(MXWP C1 뒤)
-- [ ] P1 게이트웨이 provision.env — `PER_USER_SSO_APPS` `mx-white-paper:MXWP` · `MXWP_SSO_SECRET` · `MXWP_SSO_URL`
-- [ ] P2 REST 다리 `per_user`(provision-config.sh) · 시험
-- [ ] P5 update-all — 비밀 전달 · 끄기 · MXWP 설정 킷 적용 · 자동 생성 안 함 · 시험
+- [ ] P1 게이트웨이 provision.env — `PER_USER_SSO_APPS` `mx-white-paper:MXWP` · `MXWP_SSO_SECRET` · `MXWP_SSO_URL` · `MXWP_SEND_PLAT=1`(dev — MXWP C1 뒤)
+- [x] P2 REST 다리 — 위임이 있을 때만 `per_user`(provision-config.sh) · 시험 — HWAXMcpGateway baa2880
+- [x] P5 update-all — 비밀 · 끄기 · 어긋남은 이미 일반 길로 됨, `<접두>_SEND_PLAT` 넘기기 · 어긋남 더함 · 자동 생성 안 함 · 시험 — f7c9c7b(MXWP `.env` 비밀은 사람)
 - [ ] PLAN §5 확인(dev) — 감사 원장 사람 명의 · 문서 소유자 · 끄면 되돌아옴
 
 ## 소속 · 플랫폼 전달
-- [ ] P3 진입 토큰 `access` 클레임(시스템별 켜기 `claims_access`) · 시험(켠 시스템만)
-- [ ] P4 게이트웨이 `X-Heax-User-Plat` + `X-Heax-Plat-Proof`(앱별 `send_plat`) · 시험
+- [x] P3 진입 토큰 `affiliation` 클레임(시스템별 켜기 `claims_affiliation` — `plat:` 은 원래 `groups` 에) · 시험(켠 시스템만 · 빈 값 · 지운 소속) — 703d949
+- [x] P4 게이트웨이 `X-Heax-User-Plat` + `X-Heax-Plat-Proof`(앱별 `send_plat` · provision `<접두>_SEND_PLAT`) · 시험 — HWAXMcpGateway baa2880
 
 ## 쓰기 길(MXWP W1 · W2 · W3 · W6 뒤)
 - [ ] P6 '위키에 남기기' — 서버가 저장된 턴으로 봉투 · 사람 토큰 도우미 · 대화 알림 · 이력
@@ -24,5 +24,5 @@
 - [ ] P10 도구 영역 · 페르소나 안내문(게이트웨이 `tools/list` 확인 뒤)
 
 ## 사람(cae00)
-- [ ] 비밀 → `infra/.env` · update-all · 타일 로그인 확인
+- [ ] 비밀 → 게이트웨이 provision.env 넷 · MXWP `.env` · update-all · 타일 로그인 확인(PLAN §6)
 - [ ] 위키 워커 PAT 의 `plat:plmdefect` 여부(권한표 담당)

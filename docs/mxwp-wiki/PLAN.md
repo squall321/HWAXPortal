@@ -21,7 +21,7 @@
 | 타일 SSO(jwt-handoff, `systems.yaml` `mx-white-paper`) · 로그아웃 연동 · nginx 라우트(`routes.env` 46~51행) · 배포 · 상태판 · `plat:mxwhitepaper` | 됨(실제 로그인 끝까지 확인한 기록은 없다) |
 | 게이트웨이 MCP 백엔드 `mx-white-paper` | 됨 — 그러나 **서비스 토큰**(`admin@mx.local`) 명의. 위임 없음(`per_user_sso` 에 없다), REST 다리는 `inject`(GET · HEAD 만) |
 | 포털 → MXWP 쓰기 | 챗 문서 메뉴 'MX 백서에 싣기' 는 지시문만 채운다(`DocActions.tsx` `key: 'wiki'`) · 업로드 목적지 없음 · 심의 결정문은 RA 로만 |
-| 소속 · 플랫폼 권한 전달 | 진입 토큰에 없다(`downstream.py` 클레임 — `groups` 는 AD 그룹). 게이트웨이는 위임 백엔드에 소속 + 증명은 싣지만 `plat:` 는 안 싣는다 |
+| 소속 · 플랫폼 권한 전달 | 진입 토큰 `groups` 에는 원장으로 센 `plat:` · `feat:` 합성 그룹이 **원래 실린다**(`deps.entitled` → `with_entitlements`) — 소속만 없다. 게이트웨이는 위임 백엔드에 소속 + 증명은 싣지만 `plat:` 는 안 싣는다 |
 | MXWP 설정 킷(`infra/env-kits/mx-white-paper.env`) | 새 박스에서 손으로(update-all 은 에이전트 서버 킷만) |
 
 ## 3. 할 일(포털 · 게이트웨이 · 에이전트 서버)
@@ -31,11 +31,11 @@ MXWP 쪽 C1(위임 창구)이 dev 에 올라오기 **전에는** P1 · P5 의 �
 
 | # | 리포 · 파일 | 할 일 | 의존 |
 |---|---|---|---|
-| P1 | HWAXMcpGateway `provision.env`(설정만) | `PER_USER_SSO_APPS` 에 `mx-white-paper:MXWP` · `MXWP_SSO_SECRET` · `MXWP_SSO_URL`(기본 `http://127.0.0.1:8800/api/v1/auth/sso`). 일반 길이라 코드 수정 없음(`provision-config.sh` `PER_USER_SSO_APPS` 순회). 목록 조회용 서비스 헤더는 남긴다 | MXWP C1 |
-| P2 | HWAXMcpGateway `provision-config.sh` | REST 다리 `rest["mx-white-paper"]` 를 `inject` → `per_user`(ste 줄과 같은 모양). 그러면 `rest_call` 쓰기도 그 사람 명의 | P1 |
-| P3 | HWAXPortal `backend/app/auth/downstream.py` · `systems.yaml` | 진입 토큰에 `access: {affiliation, plat:[…]}` — **시스템별 켜기**(`systems.yaml` 항목에 `claims_access: true`, MXWP 만 먼저). 값은 포털 원장 소속 · 요청마다 계산하는 `plat:` 합성 그룹. 값이 없으면 칸을 싣지 않는다(빈 소속을 하나의 소속으로 묶지 않게). 시험 — 켠 시스템만 실린다 · 끈 시스템(RA 등)은 토큰이 그대로 | 없음 |
-| P4 | HWAXMcpGateway `gateway.py`(소속 증명 옆, `_aff_proof`) | 위임 호출에 `X-Heax-User-Plat`(쉼표 목록, `plat:` 만) + `X-Heax-Plat-Proof`(`v1|<email>|<정렬한 목록>|<exp>` HMAC-SHA256, 같은 앱별 비밀) — **앱별 켜기**(`per_user_sso.<앱>.send_plat`). 값은 게이트웨이가 확인한 그룹에서만(클라이언트 사본은 버린다) | P1 |
-| P5 | HWAXPortal `infra/scripts/update-all.sh` | `infra/.env` 의 `MXWP_SSO_SECRET` 을 provision 에 넘기고(RA_SSO_SECRET 과 같은 줄), 비면 `PER_USER_SSO_OFF` 로 끈다. 같은 값을 MXWP `.env` 에도(설정 킷 적용 — 바뀌면 `mxwp_api` 재기동). **비밀은 자동 생성하지 않는다** | MXWP C1 |
+| P1 | HWAXMcpGateway `provision.env`(설정만) | `PER_USER_SSO_APPS` 에 `mx-white-paper:MXWP` · `MXWP_SSO_SECRET` · `MXWP_SSO_URL`(기본 `http://127.0.0.1:8800/api/v1/auth/sso`) · `MXWP_SEND_PLAT=1`(P4). 일반 길이라 코드 수정 없음(`provision-config.sh` `PER_USER_SSO_APPS` 순회). 목록 조회용 서비스 헤더는 남긴다 | MXWP C1 |
+| P2 | HWAXMcpGateway `provision-config.sh` | REST 다리 `rest["mx-white-paper"]` 를 **위임이 있을 때만** `per_user`(ste 줄과 같은 모양), 없으면 지금처럼 서비스 토큰 주입 — 위임 창구가 없는 MXWP 판에서 REST 가 끊기지 않게. `rest_call` 쓰기도 그 사람 명의로 열린다 | P1 — **10-24 구현** |
+| P3 | HWAXPortal `backend/app/auth/downstream.py` · `routes/launch.py` · `schemas/system.py` · `systems.yaml` | 진입 토큰에 소속 `affiliation` 클레임 — **시스템별 켜기**(`claims_affiliation: true`, MXWP 만). `plat:` 은 원래 `groups` 에 실리므로 더하지 않는다. 값은 이번 요청에 원장으로 센 소속(`request.state.entitlements`), **권한표에 없는 소속 id 와 빈 값은 칸 자체를 뺀다**(게이트웨이 `/internal/access/entitlements` 와 같은 규칙). 시험 `tests/test_launch_affiliation_claim.py` — 켠 시스템만 · 빈 값 · 지운 소속 · 추적 카탈로그에서 켠 것은 MXWP 하나 | 없음 — **10-24 구현** |
+| P4 | HWAXMcpGateway `gateway.py`(`_plat_proof` — 소속 증명 옆) · `provision-config.sh` | 위임 호출에 `X-Heax-User-Plat`(`plat:` 만 정렬 · 쉼표 · 퍼센트 인코딩) + `X-Heax-Plat-Proof`(`v1|<email>|<정렬한 목록>|<exp>` HMAC-SHA256, 같은 앱별 비밀, 120초) — **앱별 켜기**(`per_user_sso.<앱>.send_plat` 이 참일 때만 — provision.env `<접두>_SEND_PLAT=1`, 안 적으면 이어받기 · 0 이면 끔). 값은 게이트웨이가 확인한 그룹(`_request_groups`)에서만. 목록이 비면 두 헤더를 지운다 | P1 — **10-24 구현** |
+| P5 | HWAXPortal `infra/scripts/update-all.sh` | 일반 길이라 비밀 · 주소는 **게이트웨이 provision.env** 에 둔다(P1) — update-all 은 이미 그 값들을 provision 에 넘기고(`_sso_generic_names`) · 비면 `PER_USER_SSO_OFF` 로 끄고 · config 와 어긋나면 재프로비저닝한다. 빠져 있던 것은 `<접두>_SEND_PLAT` 하나 — 넘기기와 어긋남(`<키>_sso_plat`)을 더했다. MXWP `.env` 의 같은 비밀은 **사람이** 넣는다(RA 와 같다 — 비밀이 두 리포 파일에 갈라지는 자리라 한 번에 손으로). **비밀은 자동 생성하지 않는다** | 없음 — **10-24 구현**(f7c9c7b) |
 | P6 | HWAXPortal 백엔드 + `DocActions.tsx` | 답 아래 **'위키에 남기기'** — 서버가 저장된 그 턴(질문 · 최종 답 · 활동 요약)으로 `qa` 봉투를 지어(화면이 보낸 근거를 믿지 않는다) 그 사람 명의로 MXWP `POST /api/v1/wiki/sources`. 사람 토큰은 `app/auth/ra_sso.py` 꼴의 도우미(`X-Heax-Client: hwax-portal`). 성공은 대화에 알림 + 업로드 근거(챗 PPT 때의 '보낸 결과를 대화에 남기기' 와 같은 길) | MXWP W1 · W2 · W3 |
 | P7 | HWAXPortal 백엔드 · 화면 | **'해결됨'** 표시(턴 단위) → 위키 **후보**(주인만 보는 `held` 원천, 7일). 자동 후보(자기검증 통과 + 도구 근거 + 이어지는 '됐다') 여부는 사용자 결정(MXWP request §11 Q1, 권장 B) | P6 |
 | P8 | HWAXAgentServer `deliberation.py` | 심의 결정문을 RA 와 함께 위키에도 — 게이트웨이 도구 `wiki_submit_source`(사람 명의로 게이트웨이가 위임)로 `deliberation` 봉투. 버린 근거 · 소수 의견을 빼지 않는다. 심의 옵션 `delib_opts.wiki`(기본 꺼짐 — 결정 Q1 과 함께) | MXWP W6 |
@@ -58,11 +58,19 @@ MXWP W6(MCP · 묻기) ─▶ P6 · P7 ─▶ P8 · P10
 
 - dev — 비밀을 넣기 전: 게이트웨이 감사 원장에서 MXWP 호출은 지금처럼 서비스 계정. 넣은 뒤: 포털 챗이 만든 MXWP 문서의 소유자가 그 사람 · 감사 줄이 사람 명의 모드.
 - 비밀을 비우고 update-all → 위임이 꺼지고(`PER_USER_SSO_OFF`) 서비스 계정으로 돌아온다(되돌리기가 된다).
-- P3 — `claims_access` 를 켠 MXWP 진입 토큰에만 `access` 가 있고 RA · TestScope 진입 토큰은 바이트가 그대로(클레임 목록 시험).
+- P3 — `claims_affiliation` 을 켠 MXWP 진입 토큰에만 `affiliation` 이 있고 다른 jwt-handoff 앱의 토큰은 그대로(`tests/test_launch_affiliation_claim.py`).
 - P4 — MXWP 가 받은 `X-Heax-Plat-Proof` 를 다른 이메일 · 만료 · 목록 바꿈으로 시험해 거부되는지(MXWP 쪽 시험과 짝).
 - 타일 로그인 — dev · cae00 에서 브라우저로 끝까지 한 번(사람).
 
 ## 6. cae00(사람)
 
-비밀 하나(`openssl rand -hex 32`)를 포털 `infra/.env` `MXWP_SSO_SECRET` 에 넣고 update-all(P5 가 MXWP `.env` 에도 넣는다). 시장불량 쪽 — 위키 워커의
-읽기 전용 PAT 에 `plat:plmdefect` 를 줄지는 권한표 담당이 정한다(MXWP request §11 Q8). 실데이터 연결(W8)은 cae00 에서만.
+MXWP 위임 창구(C1)가 그 박스에 올라온 뒤에 한다.
+
+1. 비밀 하나를 만든다(`openssl rand -hex 32`) — 메신저 평문 말고.
+2. 게이트웨이 `HWAXMcpGateway/provision.env` 에 넷 — `PER_USER_SSO_APPS` 에 `mx-white-paper:MXWP` 쌍(이미 다른 쌍이 있으면 공백으로 덧붙인다) ·
+   `MXWP_SSO_SECRET=<비밀>` · `MXWP_SSO_URL=http://127.0.0.1:8800/api/v1/auth/sso` · `MXWP_SEND_PLAT=1`.
+3. MXWP `.env` 에 같은 비밀(`MXWP_SSO_SECRET=<비밀>`) → `mxwp_api` 재기동(MXWP 의 방식대로).
+4. update-all → 로그에 `✓ mx-white-paper 사람별 위임 — … · plat 권한 전달` 이 나오는지, §5 확인.
+
+끄기 — provision.env 의 `MXWP_SSO_SECRET` 을 비우고 update-all(서비스 계정으로 돌아간다). 시장불량 쪽 — 위키 워커의 읽기 전용 PAT 에
+`plat:plmdefect` 를 줄지는 권한표 담당이 정한다(MXWP request §11 Q8). 실데이터 연결(W8)은 cae00 에서만.

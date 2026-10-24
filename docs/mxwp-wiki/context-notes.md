@@ -17,6 +17,19 @@
 - **MW-D6 대화를 일괄로 내보내지 않는다.** 위키로 가는 것은 주인이 보낸 턴 · 승인한 후보뿐(권장 B — MXWP request §11 Q1, 사용자 결정 대기).
 - **MW-D7 비밀은 자동 생성하지 않는다(RA 때와 같은 까닭)** — MXWP 위임 창구가 준비되기 전에 비밀이 생기면 게이트웨이가 위임을 켜고 그 순간 MXWP 호출이
   거부로 바뀐다.
+- **MW-D8 MW-D3 을 좁힌다 — 진입 토큰에 더하는 것은 소속(`affiliation`) 하나다.** 까닭 — 코드를 보니 진입 토큰 `groups` 에는
+  `deps.entitled` 가 그 요청에 원장으로 센 `feat:` · `plat:` 합성 그룹이 이미 실린다(`JwtDownstreamIssuer.mint` 가 `principal.groups` 를 그대로
+  싣는다). `access{affiliation, plat[]}` 묶음은 같은 값을 두 번 싣는 셈이다. 소속은 권한표에 없는 id 면 빼고(게이트웨이용
+  `/internal/access/entitlements` 와 같은 규칙), 켜는 것은 시스템별(`claims_affiliation`)로 남긴다.
+- **MW-D9 게이트웨이 `plat:` 헤더는 앱별 설정 `send_plat` 이 참(True)일 때만, provision 은 `<접두>_SEND_PLAT` 이 적혀 있을 때만 그 값을 바꾼다.**
+  까닭 — 문자열 설정을 켠 것으로 읽으면 손으로 넣은 오타가 권한 목록을 퍼뜨린다. 안 적은 실행이 끄면 손으로 돌린 provision 한 번에 위키의
+  `plat:` 범위가 조용히 닫힌다(이어받기 — RA · TestScope 비밀과 같은 규칙).
+- **MW-D10 REST 다리는 위임이 있을 때만 `per_user` 로.** 까닭 — 위임 창구(MXWP C1)가 없는 판에서 바꾸면 지금 되는 GET 이 '위임 설정이 없다' 로
+  끊긴다. 위임이 생기면 `credential_mode` 가 `per_user` 를 먼저 보므로 주입 토큰은 남기지 않는다.
+- **MW-D11 P5 는 '넘기기 하나' 로 줄었다 — 비밀 · 주소 · 끄기 · 어긋남은 일반 길(`PER_USER_SSO_APPS`)이 이미 한다.** 비밀은 포털 `infra/.env` 가 아니라
+  게이트웨이 provision.env 에 둔다(일반 앱의 규칙). 빠져 있던 것은 `<접두>_SEND_PLAT` 이었다 — provision-config.sh 는 `os.environ` 만 읽고
+  update-all 은 이름 셋만 넘겨, 켜도 닿지 않고 어긋남도 못 봤다(조용한 결함). MXWP `.env` 에 같은 비밀을 넣는 것은 사람 몫으로 남긴다 —
+  RA 와 같고, 비밀이 두 리포의 파일에 갈라지는 자리를 스크립트가 맞추게 하면 어느 쪽이 정본인지 흐려진다.
 
 ## 조사 근거(2026-10-24)
 
@@ -24,5 +37,5 @@
 - 일반 위임 길 `PER_USER_SSO_APPS="<키>:<접두>"` → `<접두>_SSO_SECRET` · `<접두>_SSO_URL`(같은 파일 703~737행 근처) — 정적 백엔드는 키가 곧 위임 id
   (`gateway.py` `_delegation_app_id`).
 - 게이트웨이 `/health` 에는 위임 목록이 없다 — provision 이 `✓ <키> 사람별 위임 — <주소>` 를 찍는다.
-- 포털 진입 토큰 클레임 — `downstream.py` `JwtDownstreamIssuer.mint`(소속 · 플랫폼 없음).
+- 포털 진입 토큰 클레임 — `downstream.py` `JwtDownstreamIssuer.mint`(소속 없음 — `plat:` 은 `groups` 에 원래 실린다. 처음엔 '플랫폼 없음' 으로 잘못 읽었다 → MW-D8).
 - 시장불량 원천 후보 — `plm-defect`(cae00 게이트웨이에만, `access.yaml` `plmdefect` · 알려진 도구 `plm_case_detail` · `plm_similar_cases`) · SignalForge.
