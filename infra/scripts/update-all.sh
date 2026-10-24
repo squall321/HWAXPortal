@@ -2272,9 +2272,12 @@ PY
         heax-*)
           _slug="${b#heax-}"
           _rd="${HEAX_DIR:-}/deploy/apptainer/redeploy-app.sh"
+          # redeploy-app.sh 는 integrations/ 아래 폴더 이름을 그대로 받는다 — 대개 하이픈(doc-forge · hwax-risk)이지만 step_forge 는 밑줄이라
+          # 일괄 치환(_ → -)이면 StepForge 만 'integrations/step-forge 없음' 으로 못 살렸다(10-25 cae00 업데이트 점검). 있는 쪽을 고른다.
+          _rdir="$_slug"; [ -d "${HEAX_DIR:-}/integrations/$_rdir" ] || _rdir="$(echo "$_slug" | tr '_' '-')"
           if [ -x "$_rd" ]; then
-            echo "  · heax 앱 $_slug 다운 → redeploy-app.sh $(echo "$_slug" | tr '_' '-')"
-            bash "$_rd" "$(echo "$_slug" | tr '_' '-')" 2>&1 | tail -3 | sed 's/^/      /' \
+            echo "  · heax 앱 $_slug 다운 → redeploy-app.sh $_rdir"
+            bash "$_rd" "$_rdir" 2>&1 | tail -3 | sed 's/^/      /' \
               || bad "heax 앱 $_slug 재배포 실패 — 수동 확인 필요"
           else
             bad "heax 앱 $_slug 다운 — redeploy-app.sh 없음($_rd). 허브 통기동으로는 안 살아난다."

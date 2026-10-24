@@ -886,7 +886,7 @@ def test_다시_띄우는_자리라고_말한_곳의_지문에_그_env_가_들�
     서비스는 '변경 없음' 으로 재기동을 생략해 옛 주소로 돈다 — LP-D4 의 무음 결함이 그대로 돌아온다)."""
     deploy = (SCRIPTS / "deploy-all-from-drive.sh").read_text(encoding="utf-8")
     for fp in ("hwax_fp infra/apptainer/*.sif .env)",                     # mxwp — MXWhitePaper/.env
-               "hwax_fp frontend/dist var/sifs .env ",                    # heax — HEAXHub/.env(HEAX_APP_LLM_BASE_URL)
+               "hwax_fp frontend/dist var/sifs/*.sif var/sifs/*.sif.hash .env ",   # heax — HEAXHub/.env(HEAX_APP_LLM_BASE_URL) · SIF 와 해시만(10-25)
                "hwax_fp apptainer/sif .env)",                             # signalforge — SignalForge/.env
                "hwax_fp deploy/apptainer/.env)"):                         # aidh — AIDataHub/deploy/apptainer/.env
         assert fp in deploy, f"deploy-all 의 지문이 바뀌었다 — 1i 의 _llm_restart_by 가 거짓말을 할 수 있다: {fp}"

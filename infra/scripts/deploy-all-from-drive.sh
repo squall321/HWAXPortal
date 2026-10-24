@@ -189,6 +189,7 @@ note() { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/change-detect.sh"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/skip-ledger.sh"    # ○ 장부 — update-all 이 물려준 HWAX_SKIP_LEDGER 가 있으면 같은 파일에 적는다(단독 실행이면 화면에만)
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/delib-busy.sh"     # 도는·줄 선 심의가 있으면 포털·nginx·허브를 내리지 않는다(아래 _delib_hold)
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/koorm-busy.sh"     # 도는 DynaForge 로컬 작업이 있으면 KooRemapper 스택을 내리지 않는다(아래 KooRemapper 구역)
 HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$PORTAL_DIR/infra/.state/restart-fp}"; export HWAX_RESTART_STATE_DIR
 _fp_git() { printf '%s|' "$(git rev-parse HEAD 2>/dev/null || echo nogit)"; }   # 서브셸 안에서: 지문 앞에 git HEAD
 # .env 값 하나 — **정본 규칙**(update-all `_envfile_value` · services.py `_infra_value` · ste-doctor `envv` 와 글자 단위로 같다):
@@ -283,7 +284,9 @@ if want mxwp; then
       # 위키 워커(mxwp_wiki · wiki.sif — MXWhitePaper docs/llm-wiki W3)도 같다. 빠지면 start.sh 가 '이미 떠 있다' 로 건너뛰어 갈아 끼운
       # SIF 위에서 깨진 마운트로 남는다(HWAXPortal docs/mxwp-wiki P9). 순서는 MXWP stop.sh 와 같다(web · wiki · api).
       _stop()  { local _i; for _i in mxwp_web mxwp_wiki mxwp_api; do "$_appt" instance stop "$_i" 2>/dev/null || true; done; }
-      _start() { ./infra/scripts/start.sh && { ./infra/scripts/migrate.sh || echo "  ⚠ mxwp migrate 실패(비치명) — 수동: (mxwp) ./infra/scripts/migrate.sh"; }; }
+      # 이관 실패는 실패로 센다(skip → exit 4) — 인스턴스는 그대로 둔다. 새 코드는 새 칸(users.portal_* 등)을 요청마다 읽어 이관이 안 되면
+      # 로그인한 요청이 전부 500 인데, MX 백서 /healthz 는 DB 를 안 봐서 아래 판정이 'mxwp up' 으로 끝났다(10-25 cae00 업데이트 점검).
+      _start() { ./infra/scripts/start.sh && { ./infra/scripts/migrate.sh || skip "mxwp migrate 실패 — 새 코드가 새 칸을 읽어 로그인한 요청이 500 이 된다. 수동: (mxwp) ./infra/scripts/migrate.sh"; }; }
       hwax_restart_cycle mxwp "$_cur" _stop _start http://127.0.0.1:8800/api/v1/healthz http://127.0.0.1:5173/ || exit 1   # api 와 web 둘 다
       true ) && ok "mxwp up" || skip "mxwp failed (see above)"
       # mxwp_api 를 재기동했으면 그 안에서 돌던 mxwp-mcp 도 다시 올린다(있으면).
@@ -345,7 +348,9 @@ if want heax; then
       ./deploy/apptainer/dist-from-drive.sh || exit 1   # frontend/dist + 런타임 + base/서비스 + per-app SIF — 떠 있는 인스턴스 밑에서 덮는다
       # SIF_DIR 판독은 dist-from-drive 의 env_get 과 같게(큰·작은따옴표 둘 다). 캐시 디렉터리(.drive-dist)는 지문에 넣지 않는다 — 원격 재업로드만으로 바뀐다.
       _sd="$(_envv .env SIF_DIR)"; _sd="${_sd:-$HOME/serviceApptainers}"
-      _cur="$(_fp_git; hwax_fp frontend/dist var/sifs .env deploy/apptainer/cache/*.deb deploy/apptainer/cache/python-*-x86_64-linux.tar.gz deploy/apptainer/cache/node-*.tar.gz "$_sd"/heaxhub_*.sif "$_sd"/base_*.sif)"
+      # var/sifs 는 SIF 와 그 해시만 센다 — 같은 폴더의 빌드 잠금(.lock) · 정의(.def)는 허브 스캐너가 만지기만 해도 바뀌어 허브 전체 재기동이
+      # 한 번 더 났다(10-25 cae00 업데이트 점검).
+      _cur="$(_fp_git; hwax_fp frontend/dist var/sifs/*.sif var/sifs/*.sif.hash .env deploy/apptainer/cache/*.deb deploy/apptainer/cache/python-*-x86_64-linux.tar.gz deploy/apptainer/cache/node-*.tar.gz "$_sd"/heaxhub_*.sif "$_sd"/base_*.sif)"
       _stop()  { bash deploy/apptainer/stop.sh 2>/dev/null || true; }
       _start() { if ! HEAX_NO_BUILD=1 bash deploy/apptainer/start.sh; then
                    echo "  ── last lines of var/logs/postgres-start.log (the hidden error) ──"
@@ -453,21 +458,36 @@ if want kooremapper; then
   fi
   if [ -n "$KOOR_DIR" ]; then
     hr "KooRemapper / DynaForge  ($KOOR_DIR)"
+    _krc=0
     ( cd "$KOOR_DIR"
       git_update
       [ -f platform/.env ] || { [ -f platform/.env.example ] && cp platform/.env.example platform/.env; }
       set_remote platform/.env KOORM_DRIVE_REMOTE KooRemapper/dist
-      # 바이너리+dist+서비스 SIF 반입(없으면 skip — prod 빌드 가능 시 start 가 알아서 빌드).
-      bash platform/infra/scripts/dist-from-drive.sh || note "koorm dist-from-drive 실패(비치명) — 로컬 아티팩트로 진행"
+      # 바이너리+dist+서비스 SIF 반입. 실패는 실패로 센다(skip → exit 4) — 경고만 하면 새 파이썬 코드가 옛 바이너리 · 화면 위에서 다시 뜨고
+      # update-all 은 초록으로 끝났다(10-25 cae00 업데이트 점검). 진행은 종전처럼 한다(로컬 아티팩트로).
+      bash platform/infra/scripts/dist-from-drive.sh || skip "koorm dist-from-drive 실패 — 새 코드가 옛 바이너리 · 화면으로 뜬다(Drive KooRemapper/dist/latest · KOORM_DRIVE_REMOTE 확인)"
       _cur="$(_fp_git; hwax_fp platform/backend/bin platform/frontend/dist platform/infra/apptainer/*.sif platform/.env)"
       _stop()  { bash platform/infra/scripts/stop.sh 2>/dev/null || true; }
       _start() { bash platform/infra/scripts/start.sh; }
+      # 도는 로컬 작업이 있으면 재기동을 미룬다 — 내리면 SIGKILL 로 끊기고 다시 뜰 때 실패로 적힌다(줄 선 작업 · stcx 외부 잡은 넘긴다).
+      # 재기동이 필요할 때만 센다(묻기의 장부 줄은 아래 cycle 이 한 번만 적게 비운다). 셀 수 없으면(빈 값) 막지 않는다. 강제는 KOORM_RESTART_FORCE=1.
+      if [ "${KOORM_RESTART_FORCE:-0}" != 1 ] \
+         && HWAX_RESTART_SKIPPED_FILE= hwax_restart_needed kooremapper "$_cur" http://127.0.0.1:8700/api/health http://127.0.0.1:8701/mcp >/dev/null; then
+        _kr="$(hwax_koorm_running_jobs "$KOOR_DIR")"
+        if [ -n "$_kr" ] && [ "$_kr" != 0 ]; then
+          hwax_skip "kooremapper 재기동" "도는 DynaForge 로컬 작업 ${_kr}건 — 내리면 끊기고 실패로 적힌다. 코드 · 배포물은 받았고 서버는 옛 것 그대로다" \
+            "작업이 끝난 뒤 update-all 을 다시 돌린다(지금 내리려면 KOORM_RESTART_FORCE=1)"
+          exit 3
+        fi
+      fi
       # :8701 은 MCP 서버라 루트가 404 다 — /mcp(406) 로 산 것을 본다(services.yaml 도 같은 말을 적었다). 루트로 두면 매 회 '죽었다 → 기동' 이었다(2라운드).
       hwax_restart_cycle kooremapper "$_cur" _stop _start http://127.0.0.1:8700/api/health http://127.0.0.1:8701/mcp || exit 1
       # 자동 재기동 편입(리포트 2026-09-04 §4-①) — 감독자가 없으면 죽어도 되살릴 주체가
       # 없어 간헐 접속 불가가 된다. @reboot 크론 + supervisor 감시를 멱등 설치한다.
       bash platform/infra/scripts/install-autostart.sh || echo "  ⚠ autostart 설치 실패(비치명)"
-    ) && ok "kooremapper up" || skip "kooremapper failed (see above)"
+    ) || _krc=$?
+    # 3 = 도는 작업 때문에 미뤘다(○ 를 이미 찍었다) — 허브 구역과 같은 꼴로 실패로 세지 않고, 올라왔다고도 말하지 않는다.
+    case "$_krc" in 0) ok "kooremapper up" ;; 3) ;; *) skip "kooremapper failed (see above)" ;; esac
     # start.sh 가 0 으로 끝나도 업스트림이 안 떠 있으면 DynaForge 는 502 다. 여기서 못 박아 둔다 —
     # 이 두 줄이 없으면 긴 배포 로그 어디에도 '왜 502 인지'가 남지 않는다.
     for _p in 8700 8701; do

@@ -36,7 +36,11 @@ APPTAINERENV_DOCFORGE_INPUT_ROOTS=<포털 업로드 스테이징의 호스트 �
 | `DOCFORGE_RA_FILE_MAX_MB`(RA 에 올릴 리소스 상한) | 25(RA `upload_max_bytes` 기본) | RA 상한을 바꾼 박스면 `backend/.env` 에 같은 값 — 넘는 리소스는 올리지 않고 그 칸을 비우고 알린다 |
 | RA 명의(정밀 변환 배달) | 'Report Archive 로 보내기' 와 같은 길 — `RA_SSO_SECRET`(위임) 또는 사람마다 '외부 연결' 토큰 | 이미 RA 보내기가 되는 박스면 그대로 |
 
-HEAXHub 가 `$HOME` 밑이 아니면(포털 컨테이너가 못 본다) DOCFORGE_PACKAGE_ROOT 의 경로를 포털 컨테이너에 바인드해야 한다 — 지금 cae00 은 `~/Projects` 라 해당 없다.
+HEAXHub 가 `$HOME` 밑이어도 그 `var/app_data` 가 `/data` 로 가는 심링크면(/data 이관 뒤의 dev · cae00) 링크 끝이 포털 컨테이너에 없다 —
+10-25 점검 전까지 이 줄은 'cae00 은 `~/Projects` 라 해당 없다' 였고 틀렸다(dev 컨테이너 실측: `/data` 에 appdata 가 없어 모든 배달이
+'패키지를 찾지 못했다'). 이제 `start.sh` 가 데이터 루트를 끝까지 따라가 `$HOME` 밖이면 그 경로를 **읽기 전용**으로 바인드한다(사람이 할 일 없음 —
+포털을 다시 띄우면 선다). 확인: `readlink -f ~/Projects/HEAXHub/var/app_data` 가 `/data/...` 면 바인드가 붙고, 포털 재기동 뒤
+`apptainer exec instance://hwax_portal ls <그 경로>/doc_forge` 가 보인다.
 
 ## 3. update-all
 

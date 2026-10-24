@@ -104,6 +104,16 @@ else
   for d in "$_DR/svc/portal" "$_DR/hwax/secrets/portal" "$_DR/delib-runs"; do
     [ -d "$d" ] && DATA_BINDS+=(--bind "$d:$d")
   done
+  # >>> docforge-bind — DocForge 정밀 변환 패키지를 읽을 데이터 루트. $HOME 은 자동 마운트라 링크 자체는 보이지만, /data 이관 뒤엔 그것이
+  # /data/appdata/doc_forge 로 가는 심링크라 끝이 컨테이너에 없었다 — 모든 배달이 '패키지를 찾지 못했다' 였다(10-25 cae00 점검 · dev 실측).
+  # 링크 끝이 $HOME 밖이면 같은 경로로 **읽기 전용** 바인드한다. 없으면(DocForge 를 안 쓰는 박스) 바인드하지 않는다.
+  DOCFORGE_ROOT="${HWAX_DOCFORGE_DATA:-$(cd "$REPO_ROOT/.." && pwd)/HEAXHub/var/app_data/doc_forge}"
+  _dfr="$(readlink -f "$DOCFORGE_ROOT" 2>/dev/null || true)"
+  case "$_dfr" in
+    ""|"$HOME"/*) ;;
+    *) [ -d "$_dfr" ] && DATA_BINDS+=(--bind "$_dfr:$_dfr:ro") ;;
+  esac
+  # <<< docforge-bind
   for k in USER_STORE_PATH CONV_STORE_PATH TOKEN_STORE_PATH AGENT_AUDIT_LOG_PATH JWT_KEYS_DIR DELIB_ARCHIVE_ROOT \
            PROCEDURES_STORE_PATH PROCEDURES_ARTIFACT_ROOT; do
     [ -n "${!k:-}" ] && DATA_ENVS+=(--env "$k=${!k}")
@@ -178,7 +188,7 @@ else
     `# 양쪽에서 같게 보인다(heax_app_step_forge 인스턴스에서 실측 확인, 2026-09-01).` \
     --env "UPLOAD_STAGING_HOST_DIR=$STAGING_HOST" \
     `# DocForge 정밀 변환 — 패키지를 읽을 DocForge 데이터 루트(형제 리포 HEAXHub 의 앱 데이터, $HOME 밑이라 같은 경로로 보인다 — DF-D17).` \
-    --env "DOCFORGE_PACKAGE_ROOT=${HWAX_DOCFORGE_DATA:-$(cd "$REPO_ROOT/.." && pwd)/HEAXHub/var/app_data/doc_forge}" \
+    --env "DOCFORGE_PACKAGE_ROOT=$DOCFORGE_ROOT" \
     --env "APP_ENV=${APP_ENV:-prod}" \
     --env "SERVE_FRONTEND=true" \
     --env "JWT_AUTOGEN_KEYS=true" \
