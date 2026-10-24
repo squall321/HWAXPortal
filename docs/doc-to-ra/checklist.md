@@ -1,6 +1,6 @@
 # 문서 → RA 정밀 변환 — 체크리스트
 
-> 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md) · 조사 [research.md](research.md).
+> 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md) · 조사 [research.md](research.md) · cae00 설정 [server-setup.md](server-setup.md).
 
 ## 계획(10-24)
 - [x] 조사 — RA 형식 · 넣는 길 · 엔티티 · 지금 변환기 셋 · VLM · SP · HEAX 앱 바탕 · 바깥 도구(research.md)
@@ -37,7 +37,8 @@
 - [x] 포털 — 목적지 「Report Archive — 정밀 변환」 · 잡 진행 패널 · 사용자 명의 배달(엄격 생성) · 대화 알림(DF-D17 · 10-24, 가짜 MCP · 가짜 RA 시험)
 - [x] 포털 — 브라우저 시험(정밀 변환 진행 → 배달 → 알림, test_chat_ppt_in_browser)
 - [x] DocForge 0.2.0 배치 dev 쪽 — release `7b166ac` · HEAXHub `973444a` · dev 허브 · Drive(10-25)
-- [ ] cae00 update-all(사람) → DocForge status beta(순서 — DocForge DEPLOY §4-10) → 관리자 `plat:docforge` 부여 → dev · cae00 실주행
+- [x] cae00 사람 몫 절차서 [server-setup.md](server-setup.md) — HEAXHub/.env 한 줄 · 모델 처음 한 번 · update-all 순서 · 권한(CAEG 은 `*`) · 페르소나 동기화 · 확인 · 막히면
+- [ ] cae00 update-all(사람 — server-setup §1 ~ §6) → dev · cae00 실주행
 - [ ] 금 PPTX 지표 ≥ 기준선(cae00 · 금 표본) · 반대 검토 · 변이 · dev 실주행(beta 뒤)
 
 ## M2 Word · Excel(+ PDF)
