@@ -33,6 +33,12 @@
 - **MW-D12 사용자 결정(10-24, MXWP 세션에서 — MXWhitePaper context-notes WK-D15 · WK-D17)** — 대화 수확은 **B(후보 + 한 번 승인)** · 질문자
   비공개, 범위는 토큰 넷 + 위키가 아닌 기존 `restricted` 문서도 같은 필터로 막는다. 그래서 P7 의 '해결됨' → 후보는 이 꼴로 짓는다(주인만 보는
   `held` 원천 · 7일 · 자동 승인 없음). 남은 사람 결정은 Q2 · Q8 · Q11 · Q12.
+- **MW-D13 dev 에서 켰다(10-24, 사용자 확인)** — 비밀 하나를 MXWP `.env`(644 → 600 으로 좁힘) · 게이트웨이 provision.env 에, `mxwp_api` 만 재기동,
+  게이트웨이 손 재프로비저닝(GW_TOKEN · heax 토큰 보존) · 게이트웨이와 포털만 재기동(에이전트 서버는 같은 GW_TOKEN 이라 그대로). 확인 — 감사
+  `as-user-pat` · 만든 문서의 주인이 그 사람 · 신원 없는 호출은 `service` + `no-identity`. 곁가지 셋 — ① 첫 손 실행이 infra/.env 를 export 해
+  heax_registry 를 잃은 config 를 썼다(재기동 전에 대조해 잡음 — docs/gotchas.md). ② 재프로비저닝이 `portal.api_base` 를 더해 dev 의 RA 호출도
+  09-29 결정대로 본인 등록 토큰으로만 간다(dev config 가 낡아 있었다). ③ `koo.park` 의 MXWP 역할이 reader 라 챗에서 MXWP 쓰기가 403 —
+  위임이 맞게 그 사람 역할로 막힌 것이다(예전엔 서비스 계정으로 통과). 역할은 사용자 결정.
 
 ## 조사 근거(2026-10-24)
 

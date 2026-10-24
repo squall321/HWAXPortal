@@ -7,10 +7,11 @@
 - [x] MXWhitePaper `docs/llm-wiki/` 요청서 여섯 · 이 폴더 셋
 
 ## 연결 · 신원(MXWP C1 뒤)
-- [ ] P1 게이트웨이 provision.env — `PER_USER_SSO_APPS` `mx-white-paper:MXWP` · `MXWP_SSO_SECRET` · `MXWP_SSO_URL` · `MXWP_SEND_PLAT=1`(dev — MXWP C1 뒤)
+- [x] P1 게이트웨이 provision.env — `PER_USER_SSO_APPS` `mx-white-paper:MXWP` · `MXWP_SSO_SECRET` · `MXWP_SSO_URL` · `MXWP_SEND_PLAT=1` — **dev 10-24**(MXWP C1 fc7ddb3 뒤, 사용자 확인) · cae00 은 사람(PLAN §6)
 - [x] P2 REST 다리 — 위임이 있을 때만 `per_user`(provision-config.sh) · 시험 — HWAXMcpGateway baa2880
 - [x] P5 update-all — 비밀 · 끄기 · 어긋남은 이미 일반 길로 됨, `<접두>_SEND_PLAT` 넘기기 · 어긋남 더함 · 자동 생성 안 함 · 시험 — f7c9c7b(MXWP `.env` 비밀은 사람)
-- [ ] PLAN §5 확인(dev) — 감사 원장 사람 명의 · 문서 소유자 · 끄면 되돌아옴
+- [x] PLAN §5 확인(dev 10-24) — 감사 원장 `as-user-pat`(호출자 그 사람) · 만든 문서의 주인이 그 사람(DB) · 신원 없는 내부 호출은 `service` + `no-identity`
+- [ ] PLAN §5 — 끄면 서비스 계정으로 되돌아오는지(dev 에서 아직 안 해 봄) · 브라우저 타일 실클릭으로 진입 토큰 `affiliation` 이 MXWP 에 들어가는지
 
 ## 소속 · 플랫폼 전달
 - [x] P3 진입 토큰 `affiliation` 클레임(시스템별 켜기 `claims_affiliation` — `plat:` 은 원래 `groups` 에) · 시험(켠 시스템만 · 빈 값 · 지운 소속) — 703d949

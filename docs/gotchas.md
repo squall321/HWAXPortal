@@ -335,3 +335,22 @@ config 는 `8013` 을 들고 있어 `/health` 의 `signalforge: false` 가 09-18
 '중단했다' 고 찍고 잠금을 푼 뒤 재실행이 살아 있는 전송과 겹친다. update-all 은 단계에 `HWAX_STEP_ID=<표식>` 을 실어 띄우고 124 면 `_reap_step` 이
 `/proc/*/environ` 으로 그 표식을 가진 프로세스를 찾아 정리한다(같은 사용자만 보인다). 시험 `test_update_all_ctrl_c_reaches_a_step_run_under_timeout_foreground` 가 실 스크립트 전체를 grep 한다.
 
+
+## 손으로 재프로비저닝할 때 포털 `infra/.env` 를 export 하면 HEAX 허브 앱이 통째로 빠진다 (2026-10-24, 재기동 전에 잡음)
+
+dev 에서 MX 백서 위임을 켜려고 `provision-config.sh --force` 를 손으로 돌리면서 update-all 흉내로 포털 `infra/.env` 를 `set -a` 로 읽었다.
+그 안의 `APP_ENV=dev` 가 provision 이 부르는 HEAXHub 파이썬(heax 토큰 자동 발급)에 그대로 넘어가 HEAXHub 설정 검사(development · staging ·
+production)에서 죽었고, provision 은 **`heax_registry` 의 토큰 · 주소 · app_tokens 를 통째로 뺀 config** 를 썼다 — 경고 한 줄(⚠ heax 토큰 자동
+발급 실패)만 남기고 rc 0 이다. 그대로 게이트웨이를 재기동했으면 StepForge · HWAX Risk 등 허브 앱 도구가 전부 사라졌다. 재기동 전에 실행 전 config
+(`.bak.<시각>`)와 키를 대조해서 잡았다.
+
+- 손으로 돌릴 때는 `infra/.env` · `provision.env` 를 **소싱만** 하고(export 아님) update-all §5 의 대입어 목록만 넘긴다. heax 토큰이 provision.env 에
+  없으면 지금 config 의 것을 `HEAX_MCP_TOKEN` · `HEAX_MCP_BASE` · `HEAX_MCP_SERVERS_URL` 로 넘겨 새로 발급하지 않는다.
+- **재기동 전에 대조한다** — 백엔드 키 · `heax_registry` 키 · `per_user_sso` · `rest` 를 실행 전 사본과 견준다. provision 의 rc 0 은 '아무것도
+  안 잃었다' 가 아니다.
+- mxwp 서비스 토큰은 재발급이 같은 이름 행을 덮어쓴다(회전) — 떠 있는 게이트웨이의 옛 토큰이 **그 순간** 죽는다. 재프로비저닝과 재기동 사이를
+  짧게 하고, 되돌릴 때도 옛 config 를 그대로 되살리면 죽은 토큰이 돌아온다(다시 프로비저닝해야 한다).
+- update-all 은 이 꼴로는 안 걸린다 — `_common.sh` 를 읽지 않고(update-all.sh 머리 주석) infra/.env 값은 자기 독자로 골라 읽어 대입어로만
+  넘긴다. 걸리는 것은 `_common.sh` 처럼 `set -a` 로 infra/.env 를 통째 export 한 셸에서 provision 을 부를 때다.
+- 남은 약점(고치지 않음) — heax 자동 발급이 실패한 실행은 직전 config 의 heax 토큰을 이어받지 않는다(mxwp 토큰은 이어받는다). 다른 까닭으로
+  발급이 실패해도(허브가 내려가 있음 등) 같은 꼴로 허브 앱이 빠진다.
