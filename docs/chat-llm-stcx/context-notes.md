@@ -72,3 +72,13 @@ MaterialTwin 쪽)까지 잘렸을 것으로 본다 — 사용자가 본 'Materia
   (가이드 — 50.3 GiB 에 262K 대화 19개)이라 1M 대화는 벌마다 약 4.9개를 동시에 담는다. 짧은 요청의 동시 처리는 그대로다.
 - **stcx 쪽은 사람 몫이다** — dev 에서 stcx 에 닿지 않는다(CL-D7). 시범 수치(needle 200K · 500K · 900K 의 시간 · 찾음, 짧은 글 비교)는 시범한
   사람이 여기 적는다 — 아직 없다.
+
+**CL-D10 허브 앱도 챗 서버(stcx Qwen)를 받는다 — update-all 1g2(2026-10-24, 사용자 「실제 운용은 cae00 의 조건 — 환경변수를 공유받고」).**
+DocForge(허브 앱 — 문서 → RA 변환)가 그림 판독을 stcx Qwen 으로 하기로 했는데(doc-to-ra DF-D16), 허브 런처는 `HEAX_APP_LLM_*`(RA 의 GLM)만
+`LLM_*` 로 바꿔 넘기고 `CHAT_LLM_*` 는 3.5c 가 에이전트 서버로만 맞췄다 — 허브 앱은 그림을 읽는 서버를 받을 길이 없었다. 허브 `.env` 의
+`APPTAINERENV_<이름>=` 줄은 apptainer 가 `--cleanenv` 에도 앞머리를 떼고 앱 컨테이너로 넘기므로, 1g2 가 `infra/.env` 의 `CHAT_LLM_*` 를
+`HEAXHub/.env` 의 `APPTAINERENV_CHAT_LLM_*` 로 맞춘다 — 정본은 그대로 `infra/.env` 하나다. 규칙은 3.5c 와 같다(키가 없으면 ○ · 빈 값이면 끔 · 지운
+줄은 1g2 가 적었던 값일 때만 끔(infra/.state/heax-chat-llm.url) · 모양 · 모델 검사 · 키는 화면에 안 냄). 그 서버가 모델을 내는지는 3.5c 가 본다.
+허브 `.env` 가 없으면 만들지 않는다. 자리는 1g(NO_PROXY) 뒤 · 1h 앞 — §2 가 허브 `.env` 를 재기동 지문에 넣으므로 같은 실행에서 앱이 받고,
+1h~§2 는 비우기 창이라 1i 만 둔다는 규칙(test_update_all_review_drain)을 지킨다. 받은 값은 모든 허브 앱에 간다(GLM 과 같다 — 앱은 쓰지 않으면
+그만이다). 시험 11 · 변이 5/5 · update-all 관련 전체 1,375.

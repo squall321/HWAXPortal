@@ -727,6 +727,61 @@ done
 export NO_PROXY="${NO_PROXY:-}"; export no_proxy="$NO_PROXY"
 if [ -n "$_np_added" ]; then echo "  · NO_PROXY 에 내부 목적지를 더했다:$_np_added (이 뒤에 뜨는 서비스가 물려받는다)"; fi
 
+# ── 1g2) 허브 앱 챗 LLM — infra/.env 의 CHAT_LLM_* 를 HEAXHub/.env 의 APPTAINERENV_CHAT_LLM_* 로 맞춘다(docs/chat-llm-stcx CL-D10) ──────────
+# 허브 앱(DocForge 의 그림 판독 등)도 그림을 읽는 챗 서버(stcx Qwen)를 쓰게 한다. 허브 런처는 HEAX_APP_LLM_*(RA 의 GLM)만 LLM_* 로 바꿔 넘기고,
+# 허브 .env 의 `APPTAINERENV_<이름>=` 줄은 앞머리를 뗀 이름 그대로 모든 앱 컨테이너로 간다(apptainer 는 --cleanenv 에도 넘긴다).
+# 3.5c 와 같은 규칙이다 — 키가 없으면 ○(허브 .env 에 사람이 적은 값은 그대로) · 빈 값이면 끈다 · 줄을 지우면 1g2 가 적었던 값일 때만 끈다
+# (infra/.state/heax-chat-llm.url) · 모양이 틀리거나 모델이 없으면 ✗ 이고 바꾸지 않는다 · 키는 화면에 싣지 않는다. 그 서버가 모델을 내는지는
+# 3.5c 가 본다(같은 값이라 여기서 다시 묻지 않는다). 허브 .env 가 없으면 만들지 않는다(허브를 세우기 전 박스).
+# 왜 §2 앞인가 — §2(deploy-all)가 허브 .env 를 재기동 지문에 넣는다. 여기서 바꾸면 같은 실행에서 허브가 다시 뜨며 앱이 새 값을 받는다.
+# 왜 1h 앞인가 — 1h(리스크 검토 비우기)와 §2 사이는 비우기 창이라 1i 만 둔다(test_update_all_review_drain) — 파일 하나 고치는 일은 창 밖에서.
+# 앱이 읽는 차례는 앱 몫이다(DocForge — DOCFORGE_VLM_* 가 없으면 CHAT_LLM_*, R-D29).
+HEAX_ENV="${HEAX_DIR:+$HEAX_DIR/.env}"
+_hchat_rec_f="$SELF_REPO/infra/.state/heax-chat-llm.url"
+_hchat_rec="$(cat "$_hchat_rec_f" 2>/dev/null || true)"
+if [ -z "${HEAX_DIR:-}" ] || [ ! -f "$HEAX_ENV" ]; then
+  hwax_skip "허브 앱 챗 LLM" "HEAXHub(.env)가 없다 — 허브 앱에 넘길 곳이 없다" "허브를 세운 뒤(HEAXHub/.env 가 생긴 뒤) 다시 돈다"
+elif ! LC_ALL=C grep -qE '^[[:space:]]*(export[[:space:]]+)?CHAT_LLM_BASE_URL=' "$SELF_REPO/infra/.env" 2>/dev/null; then
+  if [ -n "$_hchat_rec" ] && [ "$(_envfile_value "$HEAX_ENV" APPTAINERENV_CHAT_LLM_BASE_URL)" = "$_hchat_rec" ]; then
+    hr "1g2) 허브 앱 챗 LLM (CHAT_LLM_* → HEAXHub/.env)"
+    if _upsert_kv "$HEAX_ENV" APPTAINERENV_CHAT_LLM_BASE_URL "" 600; then
+      rm -f "$_hchat_rec_f"
+      ok "infra/.env 에서 CHAT_LLM_BASE_URL 줄이 빠졌다 — 1g2 가 적었던 허브 앱 챗 LLM 을 껐다(§2 허브 재기동 뒤 앱에서 빠진다)"
+    else fail "HEAXHub/.env 의 APPTAINERENV_CHAT_LLM_BASE_URL 을 비우지 못했다 — 권한·소유자를 보라(앱은 아직 옛 서버를 본다)"; fi
+  else
+    hwax_skip "허브 앱 챗 LLM" "infra/.env 에 CHAT_LLM_BASE_URL 이 없다 — 허브 앱은 그림을 읽는 LLM 없이 돈다(DocForge 는 판독을 건너뛰고 알린다)" \
+      "infra/.env 에 CHAT_LLM_BASE_URL · CHAT_LLM_MODEL(docs/chat-llm-stcx/server-setup.md) — 3.5c(에이전트 서버)와 1g2(허브 앱)가 같이 맞춘다"
+  fi
+else
+  hr "1g2) 허브 앱 챗 LLM (CHAT_LLM_* → HEAXHub/.env)"
+  _hc_url="$(_ra_envv CHAT_LLM_BASE_URL)"; _hc_model="$(_ra_envv CHAT_LLM_MODEL)"; _hc_key="$(_ra_envv CHAT_LLM_API_KEY)"
+  if [ -z "$_hc_url" ]; then
+    if [ -n "$(_envfile_value "$HEAX_ENV" APPTAINERENV_CHAT_LLM_BASE_URL)" ]; then
+      if _upsert_kv "$HEAX_ENV" APPTAINERENV_CHAT_LLM_BASE_URL "" 600; then
+        rm -f "$_hchat_rec_f"
+        ok "허브 앱 챗 LLM 을 껐다 — HEAXHub/.env 의 APPTAINERENV_CHAT_LLM_BASE_URL 을 비웠다(§2 허브 재기동 뒤 앱에서 빠진다)"
+      else fail "HEAXHub/.env 의 APPTAINERENV_CHAT_LLM_BASE_URL 을 비우지 못했다 — 권한·소유자를 보라(앱은 아직 옛 서버를 본다)"; fi
+    else
+      ok "허브 앱 챗 LLM 꺼짐(infra/.env 의 CHAT_LLM_BASE_URL 이 빈 값)"
+    fi
+  elif ! [[ "$_hc_url" =~ ^https?://[A-Za-z0-9._-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$ ]]; then
+    fail "CHAT_LLM_BASE_URL 모양이 틀렸다('$_hc_url') — http(s)://호스트[:포트]/v1 꼴(계정 · 질의 · 공백 없이). HEAXHub/.env 를 바꾸지 않았다"
+  elif [ -z "$_hc_model" ]; then
+    fail "CHAT_LLM_BASE_URL 은 있는데 CHAT_LLM_MODEL 이 없다 — 둘 다 있어야 켜진다. HEAXHub/.env 를 바꾸지 않았다"
+  else
+    _hc_w=1
+    _upsert_kv "$HEAX_ENV" APPTAINERENV_CHAT_LLM_BASE_URL "$_hc_url" 600 || _hc_w=0
+    _upsert_kv "$HEAX_ENV" APPTAINERENV_CHAT_LLM_MODEL "$_hc_model" 600 || _hc_w=0
+    if [ -n "$_hc_key" ]; then _upsert_kv "$HEAX_ENV" APPTAINERENV_CHAT_LLM_API_KEY "$_hc_key" 600 || _hc_w=0; fi
+    if [ "$_hc_w" = 1 ]; then
+      ok "허브 앱 챗 LLM: $_hc_url · $_hc_model → HEAXHub/.env APPTAINERENV_CHAT_LLM_*(§2 허브 재기동 뒤 앱이 CHAT_LLM_* 로 받는다)"
+      ( umask 077; mkdir -p "$SELF_REPO/infra/.state" && printf '%s\n' "$_hc_url" > "$_hchat_rec_f" ) \
+        || bad "적은 값을 infra/.state/heax-chat-llm.url 에 남기지 못했다 — infra/.env 에서 줄을 지워 끌 때는 빈 값(CHAT_LLM_BASE_URL=)으로 둔다"
+    else fail "HEAXHub/.env 에 허브 앱 챗 LLM 을 못 적었다 — 권한·소유자를 보라"; fi
+  fi
+fi
+# ── 1g2 끝
+
 # ── 1h) 리스크 검토 비우기 — §2~§5 가 포털·허브·에이전트 서버를 재기동하는 동안 새 카드 대조·새 패널을 멈춘다 ──────────────────────
 # 카드 대조는 delib_active 에 들지 않아 재기동을 막지 않고, 끊긴 호출은 리스크 앱이 차감 없이 다시 낸다 — 그래도 그 LLM 시간은 버려진다.
 # 깃발(scope all)을 세우고, 도는 것을 HWAX_DRAIN_WAIT_S 까지 기다린 뒤 간다. 수명은 § 머리(hr)마다 늘리고, 끝맺음(_hwax_drain_finish)이

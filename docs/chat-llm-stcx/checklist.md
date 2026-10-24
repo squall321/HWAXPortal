@@ -9,3 +9,5 @@
 - [x] C5 에이전트 서버 — 챗 서버의 '창이 모자라다' 400 만 GLM 으로 넘긴다(`ChatCtxOverflow` · 다른 400 은 그대로) · 가짜 LLM `ctx_overflow`(vLLM 0.23.0 본문) · 시험 둘 · 변이 6/6 · 전체 2,466 — `35c048b`(CL-D9)
 - [x] C6 cae00 절차서 9절(Qwen 1M — 덮어쓰기 생성기 · sbatch · 시범 · rolling · 확인 · 되돌리기) — 생성기는 vLLM 0.23.0 의 실제 설정 함수로 확인
 - [ ] C7 cae00 · stcx — 9절(update-all 로 `35c048b` · 덮어쓰기 · sbatch · 시범 수치 · rolling · 확인)과 CL-D9 에 시범 수치 적기(사람)
+- [x] C8 포털 update-all 1g2 — `infra/.env` 의 `CHAT_LLM_*` → `HEAXHub/.env` 의 `APPTAINERENV_CHAT_LLM_*`(허브 앱도 받게, 3.5c 와 같은 규칙) · 시험 11 · 변이 5/5 · 관련 전체 1,375(CL-D10)
+- [ ] C9 cae00 — update-all 의 1g2 줄 · 허브 앱(DocForge 배치 뒤) capabilities 의 `vlm.source` 가 `chat_llm`(사람)

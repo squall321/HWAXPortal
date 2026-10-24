@@ -67,6 +67,12 @@ stcx Qwen 진짜 호출 · 실제 RA · SP 허브 · DRM 은 cae00 에서. 합�
 SIF 가 Drive 에 없으면 그 앱을 띄우지 못해 실패나 경고를 남길 수 있다(확인하지 않았다). dev 단계는 venv 로 루프백에 띄워 개발하고, 등록 · SIF · 모델 · Drive 는
 한 날에 한다(DocForge R-D15 · DEPLOY §4).
 
+**DF-D16 모델 끝점은 cae00 에서 공유받는다(2026-10-24, 사용자 「실제 운용은 cae00 의 조건 — 환경변수를 공유받고」).** DocForge 는 전용 값이 없으면
+공유 이름을 읽는다 — VLM `DOCFORGE_VLM_*` → `CHAT_LLM_*`(포털 챗 서버 stcx Qwen — 그림을 읽는다), LLM 판단 `DOCFORGE_LLM_*` → VLM 과 같은 끝점 →
+허브가 모든 앱에 넘기는 `LLM_*`(RA 의 GLM). 출처마다 주소 · 모델 · 키를 한 묶음으로 고르고 그림 판독은 GLM 으로 넘기지 않는다(DocForge R-D29).
+허브 앱이 `CHAT_LLM_*` 를 받는 길은 포털 update-all 1g2(`infra/.env` → `HEAXHub/.env` 의 `APPTAINERENV_CHAT_LLM_*`, chat-llm-stcx CL-D10)다 —
+cae00 에서 따로 적을 값은 DocForge 고유 경로 둘(`DOCFORGE_INPUT_ROOTS` · `DOCFORGE_HOST_DATA_DIR`)뿐이다.
+
 ## 조사에서 확인한 사실(계획의 전제)
 
 - RA 의 PPTX 가져오기는 차트 · SmartArt 를 경고와 함께, 노트 · 링크 · 위치를 말없이 버린다. EMF 그림을 그대로 올린다(브라우저가 못 연다). Word · Excel ·

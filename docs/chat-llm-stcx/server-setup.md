@@ -57,6 +57,12 @@ CHAT_LLM_MODEL=qwen3.8-flash-next
 - `✓ 챗 전용 LLM: http://127.0.0.1:18700/v1 · qwen3.8-flash-next → 에이전트 서버 .env (띵킹 · 심의는 VLLM_BASE_URL)`
 - `✓ 챗 서버가 qwen3.8-flash-next 을 낸다(창 262144 토큰)` — 9절로 1M 을 켠 뒤에는 `창 1010000 토큰`
 
+1g2 에서 기대하는 줄(허브 앱도 같은 값을 받는다 — CL-D10).
+
+- `✓ 허브 앱 챗 LLM: http://127.0.0.1:18700/v1 · qwen3.8-flash-next → HEAXHub/.env APPTAINERENV_CHAT_LLM_*(§2 허브 재기동 뒤 앱이 CHAT_LLM_* 로 받는다)`
+- 허브 `.env` 가 바뀌었으므로 같은 실행의 §2 가 허브를 다시 띄운다. 확인은 앱 쪽에서 — DocForge 면 `/apps/doc_forge/api/v1/capabilities` 의
+  `vlm.source` 가 `chat_llm`(주소 · 키는 보고에 없다).
+
 에이전트 서버 `.env` 가 바뀌었으므로 같은 실행의 update-sites 가 에이전트 서버를 다시 띄운다. 도는 심의가 있으면 재기동을 미룬다(○ — 끝난 뒤
 update-all 을 한 번 더). ⚠ `챗 서버에 닿지 않는다` 는 막는 오류가 아니다 — 적기는 했고, 그동안 챗은 GLM 으로 넘겨 답한다. 1절로 돌아가 본다.
 
