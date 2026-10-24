@@ -68,6 +68,9 @@ DESTINATIONS: dict[str, dict] = {
         "groups_attr": "upload_allowed_group_list",
         "platform": "plat:reportarchive",
         "also": ("plat:docforge",),
+        # 게이트웨이에 이 도구가 있어야 고를 수 있다 — DocForge 가 초안(draft)이면 게이트웨이에 안 떠서, 보이기는 하는데 고를 때마다
+        # docforge_convert 에서 실패했다(10-25 cae00 업데이트 점검 — dev 도 같았다). allowed_destinations 의 tools 참고.
+        "needs_tool": "docforge_convert",
     },
     "aidatahub": {
         "label": "AI 데이터 허브 — 지식카드로 변환(검토 후 저장)",
@@ -102,14 +105,41 @@ def _dest_ok(settings: Settings, groups: list[str], dest_id: str) -> bool:
     return bool(plats[0]) and "feat:upload" in have and all(p in have for p in plats)
 
 
-def allowed_destinations(settings: Settings, groups: list[str], ext: str) -> list[dict]:
+# 게이트웨이가 지금 내놓는 도구 이름(인증 없는 /tools-map) — 목적지 가운데 그 도구가 있어야 도는 것(needs_tool)을 고를 때 본다. 60초 붙잡는다.
+_GW_TOOLS: dict = {"at": float("-inf"), "names": None}
+GW_TOOLS_TTL_S = 60.0
+
+
+async def gateway_tool_names(settings: Settings) -> frozenset[str] | None:
+    """게이트웨이 도구 지도의 이름들. 못 읽으면 None(모른다) — 그때는 목적지를 숨기지 않는다(게이트웨이가 잠깐 안 닿는다고 지우지 않는다)."""
+    now = time.monotonic()
+    if now - _GW_TOOLS["at"] < GW_TOOLS_TTL_S:
+        return _GW_TOOLS["names"]
+    names = None
+    base = (settings.mcp_gateway_url or "").rstrip("/")
+    if base:
+        try:
+            async with _httpx.AsyncClient(timeout=3.0) as c:
+                r = await c.get(base + "/tools-map")
+            m = r.json().get("map") if r.status_code < 400 else None
+            names = frozenset(m) if isinstance(m, dict) else None
+        except (_httpx.HTTPError, ValueError, AttributeError):
+            names = None
+    _GW_TOOLS.update(at=now, names=names)
+    return names
+
+
+def allowed_destinations(settings: Settings, groups: list[str], ext: str, tools: frozenset[str] | None = None) -> list[dict]:
     """이 사용자·이 확장자로 고를 수 있는 목적지. 되묻기(B) 화면의 입력이다.
 
     빈 배열이면 프론트가 "보낼 곳이 없다" 를 띄운다 — 조용히 아무 데나 보내지 않는다.
+    tools — 게이트웨이 도구 이름(gateway_tool_names). 주면 needs_tool 이 없는 목적지를 뺀다, None(모름)이면 종전대로 둔다.
     """
     out: list[dict] = []
     for did, spec in DESTINATIONS.items():
         if ext and ext not in spec["exts"]:
+            continue
+        if spec.get("needs_tool") and tools is not None and spec["needs_tool"] not in tools:
             continue
         if _dest_ok(settings, groups, did):
             out.append({"id": did, "label": spec["label"]})

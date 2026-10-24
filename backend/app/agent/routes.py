@@ -1190,7 +1190,8 @@ async def upload_file(
     out = {k: v for k, v in meta.items() if k != "path"}
     # 되묻기(B)의 입력 — 이 사용자·이 확장자로 고를 수 있는 목적지. 빈 배열이면
     # 프론트가 "보낼 곳이 없다" 를 띄운다. 조용히 아무 데나 보내지 않는다.
-    out["destinations"] = _upload.allowed_destinations(settings, principal.groups, meta["ext"])
+    out["destinations"] = _upload.allowed_destinations(settings, principal.groups, meta["ext"],
+                                                       await _upload.gateway_tool_names(settings))
     return out
 
 
@@ -1814,7 +1815,8 @@ async def upload_pc_ticket_state(
     if r:
         # 다음 단계 — 받은 글을 AI 데이터 허브로(PP-D11). 글은 이미 스테이징 상자에 있으니 그 상자로 '어디로 보낼까요' 를 연다.
         out["staged"] = {"staging_id": r["doc_staging_id"], "filename": r["doc_name"], "size": r["bytes"], "ext": "md",
-                         "destinations": _upload.allowed_destinations(settings, principal.groups, "md")}
+                         "destinations": _upload.allowed_destinations(settings, principal.groups, "md",
+                                                                      await _upload.gateway_tool_names(settings))}
     return out
 
 

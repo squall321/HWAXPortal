@@ -247,6 +247,44 @@ def test_정밀_변환_목적지는_RA_와_DocForge_둘_다_있어야(tmp_path):
     assert any(d["id"] == "reportarchive_precise" for d in U.allowed_destinations(s, both, "xlsx"))
 
 
+def test_정밀_변환은_게이트웨이에_docforge_convert_가_있을_때만_고르고_모르면_종전대로(tmp_path):
+    """DocForge 가 초안(draft)이면 게이트웨이에 안 떠서, 보이기만 하고 고를 때마다 실패했다(10-25 cae00 업데이트 점검 — dev 도 같았다)."""
+    from app.agent import upload as U
+    s = _settings(tmp_path, upload_allowed_groups="")
+    both = ["feat:upload", "plat:reportarchive", "plat:docforge"]
+
+    def ids(tools):
+        return [d["id"] for d in U.allowed_destinations(s, both, "pptx", tools)]
+    assert "reportarchive_precise" not in ids(frozenset({"convert_file", "create_report_draft"}))
+    assert "reportarchive_precise" in ids(frozenset({"docforge_convert"}))
+    assert "reportarchive_precise" in ids(None), "게이트웨이 지도를 못 읽으면(모름) 숨기지 않는다"
+    assert "reportarchive" in ids(frozenset()), "도구를 요구하지 않는 목적지는 그대로"
+
+
+def test_게이트웨이_도구_지도는_60초_붙잡고_못_읽으면_모른다(tmp_path, monkeypatch):
+    from app.agent import upload as U
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(str(req.url))
+        return httpx.Response(200, json={"map": {"docforge_convert": "heax-doc_forge", "list_parts": "heax-step_forge"}})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(U._httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    monkeypatch.setattr(U, "_GW_TOOLS", {"at": float("-inf"), "names": None})
+    s = _settings(tmp_path, mcp_gateway_url="http://gw.test")
+    import asyncio
+    assert asyncio.run(U.gateway_tool_names(s)) == frozenset({"docforge_convert", "list_parts"})
+    assert asyncio.run(U.gateway_tool_names(s)) == frozenset({"docforge_convert", "list_parts"}) and len(calls) == 1, "60초 안은 다시 묻지 않는다"
+    assert calls == ["http://gw.test/tools-map"]
+
+    def broken(req: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused")
+    monkeypatch.setattr(U._httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(broken), **kw))
+    monkeypatch.setattr(U, "_GW_TOOLS", {"at": float("-inf"), "names": None})
+    assert asyncio.run(U.gateway_tool_names(s)) is None
+
+
 # ── PC 도우미 추출본(DRM 문서) — 글 + 슬라이드 그림을 zip 하나로(DF-D18) ─────────────────────────────────────────────
 MD = "---\nschema: hwax-doc/1\nsource: 설계검토.pptx\nkind: ppt\n---\n\n# 설계검토\n## [s.1] 개요\n\n낙하 1.5 m\n"
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 20
