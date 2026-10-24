@@ -10,6 +10,8 @@
    template_id · template_version 을 pages[0] 에서 위로 올려 `POST /api/reports`(엄격 생성 — 배치를 지키는 유일한 길, DF-D3).
    RA 상한(설정 docforge_ra_file_max_mb, RA 기본 25MB)을 넘는 리소스는 올리지 않고 그 파일 칸을 빼고 경고로 알린다.
 5. 한 잡은 한 번만 넣는다 — 기록에 report_id 가 있으면 그것을 돌려준다(두 번 눌러도 보고서가 둘이 되지 않게 · 잡마다 잠금).
+6. '이 대화에서 분석'(DF-D19) — 같은 잡 길로 맡기고(purpose chat), 끝나면 패키지의 document.md(챗에서 읽는 글 — DocForge R-D40)를 문서 칩으로.
+   대화용 잡은 RA 에 넣지 않는다.
 기록 · 로그에는 문서 글을 남기지 않는다(이름 · 수 · 번호만).
 """
 from __future__ import annotations
@@ -55,8 +57,9 @@ def _write(p: Path, rec: dict) -> None:
     os.replace(tmp, p)
 
 
-def save_job(settings: Settings, job_id: str, *, owner_sub: str, owner_email: str, filename: str) -> dict:
-    rec = {"job_id": job_id, "owner_sub": owner_sub, "owner_email": owner_email, "filename": filename,
+def save_job(settings: Settings, job_id: str, *, owner_sub: str, owner_email: str, filename: str, purpose: str = "ra") -> dict:
+    """purpose — ra(정밀 변환 → RA 엄격 생성) · chat(이 대화에서 분석 → 문서 칩)."""
+    rec = {"job_id": job_id, "owner_sub": owner_sub, "owner_email": owner_email, "filename": filename, "purpose": purpose,
            "created_at": time.time(), "delivered": None}
     _write(_file(settings, job_id), rec)
     return rec
@@ -100,6 +103,15 @@ def package_dir(settings: Settings, package_rel: str) -> Path:
     if not (p / "report.json").is_file() or not (p / "conversion.json").is_file():
         raise DeliveryError("패키지를 찾지 못했습니다 — 포털이 DocForge 데이터 루트를 보는지(docforge_package_root) 확인하세요.", 502)
     return p
+
+
+def document_text(settings: Settings, pkg: dict) -> str:
+    """패키지의 document.md(DocForge 0.3 부터 — document_rel). 패키지 폴더 밑만 읽는다(package_dir 와 같은 검사)."""
+    pdir = package_dir(settings, pkg.get("package_rel"))
+    f = (pdir / "document.md").resolve()
+    if not f.is_relative_to(pdir) or not f.is_file():
+        raise DeliveryError("DocForge 가 읽을 글(document.md)을 만들지 않았습니다 — DocForge 판이 낡았을 수 있습니다.", 502)
+    return f.read_text(encoding="utf-8")
 
 
 def _refs(value) -> set[str]:

@@ -93,6 +93,7 @@ _STUB = r"""
     if (u === '/agent/upload/dispatch') return json(window.__dispatch);
     if (u.startsWith('/agent/upload/destinations/docforge/jobs/')) {      // 정밀 변환(DocForge) — 진행은 차례대로, 배달은 한 번
       if (u.endsWith('/deliver')) return json(window.__dfDeliver);
+      if (u.endsWith('/document')) return json(window.__dfDocument);
       if (u.endsWith('/cancel')) return json({ cancelled: true });
       return json(window.__dfStates.length > 1 ? window.__dfStates.shift() : window.__dfStates[0]);
     }
@@ -258,6 +259,30 @@ const SCENARIOS = {
              filled: await page.locator('textarea').inputValue(),
              link: await page.evaluate(() => { const a = document.querySelector('.upl-panel a'); return a ? a.getAttribute('href') : ''; }),
              model_note: (await page.getByText('원본과 맞는지 확인하세요').count()) > 0, errors: page.__errors };
+  },
+  // 이 대화에서 분석을 DocForge 가 맡으면(DF-D19) — 진행을 보다가 끝나면 읽은 글을 문서 칩으로, 대화에 '보냈다' 알림은 없다
+  async composer_chat_docforge(browser) {
+    const page = await open(browser, 'composer');
+    const md = '---\nschema: hwax-doc/1\nsource: a.pptx\nkind: ppt\nunits: 2\nextracted_by: DocForge 0.3.0\n---\n\n# a\n\n## [s.1] 개요\n\n낙하 1.5 m\n';
+    await page.evaluate((m) => {
+      window.__dests = [{ id: 'chat', label: '이 대화에서 분석 — 글·표·차트·노트를 읽어 입력창에(저장하지 않음)' }];
+      window.__dispatch = { stage: 'dispatched', destination: 'chat', via: 'docforge', job_id: 'j_chat01' };
+      window.__dfStates = [{ job_id: 'j_chat01', status: 'running', stage: 'S1 해부', progress: 10 },
+                           { job_id: 'j_chat01', status: 'done', stage: '끝', progress: 100 }];
+      window.__dfDocument = { stage: 'done', destination: 'chat', via: 'docforge', doc: { name: 'a.hwax.md', text: m, chars: m.length } };
+    }, md);
+    await pick(page, 'a.pptx', [0x50, 0x4b, 0x03, 0x04]);
+    await page.getByRole('button', { name: /이 대화에서 분석/ }).click();
+    await page.getByRole('button', { name: '읽어서 붙이기' }).click();
+    await page.getByText('문서를 읽는 중').waitFor();
+    await forward(page, 1600);
+    const progress = await page.evaluate(() => (document.querySelector('.upl-panel [role=status]') || {}).textContent || '');
+    await forward(page, 1600);
+    await page.getByText('입력창에 붙였습니다').waitFor();
+    const all = await calls(page);
+    return { progress, docs: await text(page, 'docs'), roles: await text(page, 'roles'),
+             df: all.filter((c) => c.url.includes('/docforge/')).map((c) => `${c.method} ${c.url}`),
+             appends: all.filter((c) => /\/messages$/.test(c.url)).length, errors: page.__errors };
   },
   // 사람이 쓰던 글이 있으면 저절로 덮지 않는다 — 단추로만
   async composer_typed(browser) {
@@ -573,3 +598,12 @@ def test_정밀_변환은_진행을_보이고_끝나면_넣어_대화에_알림�
     assert s["roles"] == "assistant", "대화에 알림 한 건"
     assert s["filled"] == "Report Archive 보고서 41(「설계 검토」)를 get_report_outline · get_report 로 읽고 검토해 줘"
     assert s["link"] == "/report-archive/w/personal-5/reports/41" and s["model_note"] is True
+
+
+def test_이_대화에서_분석을_DocForge_가_맡으면_진행을_보다가_읽은_글을_문서_칩으로(seen):
+    s = seen("composer_chat_docforge")
+    assert "S1 해부 · 10%" in s["progress"] and "끝나면 입력창에 문서로 붙입니다" in s["progress"], s["progress"]
+    job = "/agent/upload/destinations/docforge/jobs/j_chat01"
+    assert s["df"] == [f"GET {job}", f"GET {job}", f"GET {job}/document"], "배달(RA)은 부르지 않는다"
+    assert s["docs"].startswith("a.hwax.md:"), "손 추출 · PC 도우미와 같은 문서 칩"
+    assert s["roles"] == "" and s["appends"] == 0, "읽어 온 것 — 대화에 알림을 남기지 않는다"

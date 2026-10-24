@@ -1,7 +1,8 @@
 // 문서(PPT·Word·PDF)를 각 서비스의 **자기 취입기**로 보내는 패널 — 포털은 배달만 한다
 import { useEffect, useRef, useState } from 'react';
 import {
-  dispatchUpload, docforgeCancel, docforgeDeliver, docforgeStatus, type DispatchResult, type DocforgeStatus, type StagedFile,
+  dispatchUpload, docforgeCancel, docforgeDeliver, docforgeDocument, docforgeStatus, type DispatchResult, type DocforgeStatus,
+  type StagedFile,
 } from '../../api/upload.api';
 import { dispatchInstruction, dispatchNotice, reportLink, type UploadNotice } from './uploadNotice';
 
@@ -57,8 +58,8 @@ export function DocDispatchPanel({
   const [done, setDone] = useState<DispatchResult | null>(null);
   // 정밀 변환 — 맡긴 잡을 1.5초마다 본다(PC 도우미와 같은 박자). 끝나면 배달(RA 엄격 생성)까지 하고 멈춘다.
   const [job, setJob] = useState<{ id: string; st?: DocforgeStatus; errs: number } | null>(null);
-  const cb = useRef({ onDispatched, onFill });
-  cb.current = { onDispatched, onFill };
+  const cb = useRef({ onDispatched, onFill, onAttachDoc });
+  cb.current = { onDispatched, onFill, onAttachDoc };
 
   const finish = (r: DispatchResult) => {
     setDone(r);
@@ -75,6 +76,22 @@ export function DocDispatchPanel({
       try {
         const st = await docforgeStatus(job.id);
         if (stop) return;
+        if (st.status === 'done' && destination === 'chat') {
+          // 이 대화에서 분석(DocForge) — 읽은 글을 받아 문서 칩으로 붙인다. 보낸 것이 아니라 읽어 온 것이라 대화에 알림은 없다(PP-D17)
+          const r = await docforgeDocument(job.id);
+          if (stop) return;
+          const why = r.stage === 'failed' || !r.doc?.text
+            ? String(r.error || '읽은 글이 없습니다.')
+            : await cb.current.onAttachDoc?.(new File([r.doc.text], r.doc.name, { type: 'text/markdown' }));
+          if (stop) return;
+          if (why) {
+            setErr(why);
+            setJob((j) => (j && j.id === job.id ? { ...j, st: { ...st, status: 'failed' } } : j));
+            return;
+          }
+          setDone(r);
+          return;
+        }
         if (st.status === 'done') {
           const r = st.delivered ?? await docforgeDeliver(job.id);
           if (stop) return;
@@ -125,6 +142,10 @@ export function DocDispatchPanel({
         setJob({ id: r.job_id, errs: 0 });
         return;
       }
+      if (destination === 'chat' && r.stage === 'dispatched' && r.job_id) {
+        setJob({ id: r.job_id, errs: 0 });          // DocForge 가 맡았다(DF-D19) — 진행을 보다가 끝나면 글을 받아 붙인다
+        return;
+      }
       if (destination === 'chat') {
         // 보낸 것이 아니라 읽어 온 것 — 대화에 '보냈다' 알림을 남기지 않고 입력창에 문서로 붙인다
         if (!r.doc?.text) throw new Error('읽어 온 글이 없습니다.');
@@ -166,14 +187,19 @@ export function DocDispatchPanel({
     return (
       <div className="upl-panel">
         <div className="upl-head">
-          <b>{running ? '정밀 변환 중' : '정밀 변환을 끝내지 못했습니다'}</b>
+          <b>{destination === 'chat'
+            ? (running ? '문서를 읽는 중' : '문서를 읽지 못했습니다')
+            : (running ? '정밀 변환 중' : '정밀 변환을 끝내지 못했습니다')}</b>
           <span className="upl-file">{staged.filename}</span>
           <button type="button" className="upl-x" onClick={onClose} aria-label="닫기">✕</button>
         </div>
         {running && (
           <p className="upl-note" role="status">
-            {st?.status === 'done' ? 'Report Archive 에 넣는 중…'
-              : `${st?.stage || '줄 서는 중'} · ${Math.round(st?.progress ?? 0)}%`} — 그림 판독이 있으면 몇 분 걸립니다. 이 창을 닫아도 변환은 계속됩니다.
+            {st?.status === 'done' ? (destination === 'chat' ? '읽은 글을 붙이는 중…' : 'Report Archive 에 넣는 중…')
+              : `${st?.stage || '줄 서는 중'} · ${Math.round(st?.progress ?? 0)}%`}
+            {destination === 'chat'
+              ? ' — 끝나면 입력창에 문서로 붙입니다. 이 창을 닫으면 붙이지 않습니다.'
+              : ' — 그림 판독이 있으면 몇 분 걸립니다. 이 창을 닫아도 변환은 계속됩니다.'}
           </p>
         )}
         {err && <div className="upl-err" role="alert">⚠ {err}</div>}

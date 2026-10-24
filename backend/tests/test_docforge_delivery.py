@@ -312,3 +312,78 @@ async def test_추출기가_만들지_않은_md_는_맡기지_않는다(monkeypa
     body = R.UploadDispatchReq(staging_id="a" * 32, filename="note.md", destination="reportarchive_precise")
     out = await R._dispatch_inner(req, body, KIM, s)
     assert out["stage"] == "failed" and "PC 도우미가 만든 .hwax.md 만" in out["error"] and seen["calls"] == 0
+
+
+# ── 이 대화에서 분석 — DocForge 가 보이는 사람은 DocForge 로(DF-D19) ──────────────────────────────────────────────
+KIM_DF = Principal(subject="kim@corp.com", email="kim@corp.com", display_name="김철수", groups=["feat:upload", "plat:aidatahub", "plat:docforge"])
+RECORD = {"record": {"meta": {"source_format": "pptx", "title": "a"}, "sections": [{"title": "개요", "blocks": [{"type": "paragraph", "text": "글"}]}]}}
+
+
+def _wire_chat(monkeypatch, tmp_path, replies: dict):
+    """종전 길(AI 데이터 허브)도 돌 수 있게 inbox 를 시험 폴더로."""
+    monkeypatch.setenv("AIDH_CONVERT_INBOX", str(tmp_path / "inbox"))
+    R, req, calls = _wire(monkeypatch, tmp_path, {})
+
+    async def _mcp(url, pat, tool, args, timeout=90.0):
+        calls.append((tool, args))
+        rep = replies[tool]
+        if isinstance(rep, Exception):
+            raise rep
+        return dict(rep)
+
+    monkeypatch.setattr(R._upload, "mcp_call", _mcp)
+    return R, req, calls
+
+
+@pytest.mark.anyio
+async def test_DocForge_가_보이면_이_대화에서_분석은_DocForge_에_맡긴다_그림_판독은_끄고(monkeypatch, tmp_path):
+    s = _settings(tmp_path)
+    R, req, calls = _wire_chat(monkeypatch, tmp_path, {"docforge_convert": {"job_id": "j_chat01", "status": "queued"}})
+    out = await R._dispatch_inner(req, R.UploadDispatchReq(staging_id="s1", filename="a.pptx", destination="chat"), KIM_DF, s)
+    assert out == {"stage": "dispatched", "destination": "chat", "via": "docforge", "job_id": "j_chat01"}
+    ((tool, args),) = calls
+    assert tool == "docforge_convert" and args["vlm"] is False and args["path"] == "/host/staging/kim/s1/a.pptx"
+    assert D.load_job(s, "j_chat01", KIM.subject)["purpose"] == "chat"
+
+
+@pytest.mark.anyio
+async def test_DocForge_가_안_보이거나_맡지_않으면_종전_길(monkeypatch, tmp_path):
+    s = _settings(tmp_path)
+    R, req, calls = _wire_chat(monkeypatch, tmp_path, {"docforge_convert": AuthError("docforge_convert: unknown tool", status_code=502),
+                                                            "convert_file": RECORD})
+    body = R.UploadDispatchReq(staging_id="s1", filename="a.pptx", destination="chat")
+    out = await R._dispatch_inner(req, body, KIM, s)                 # plat:docforge 없음
+    assert out["stage"] == "done" and [t for t, _ in calls] == ["convert_file"]
+    calls.clear()
+    out = await R._dispatch_inner(req, body, KIM_DF, s)              # 있지만 게이트웨이가 모른다
+    assert out["stage"] == "done" and out["doc"]["name"] == "a.hwax.md" and [t for t, _ in calls] == ["docforge_convert", "convert_file"]
+
+
+@pytest.mark.anyio
+async def test_끝난_대화용_잡은_읽은_글을_주고_RA_에는_넣지_않는다(monkeypatch, tmp_path):
+    s = _settings(tmp_path)
+    rel = _package(tmp_path)
+    md = "---\nschema: hwax-doc/1\nsource: a.pptx\nkind: ppt\nunits: 1\n---\n\n# 설계 검토\n\n## [s.1] 개요\n\n낙하 1.5 m\n"
+    (tmp_path / "df" / rel / "document.md").write_text(md, encoding="utf-8")
+    R, req, calls = _wire(monkeypatch, tmp_path, {"docforge_package": {"job_id": "j_chat01", "package_rel": rel}})
+    D.save_job(s, "j_chat01", owner_sub=KIM.subject, owner_email=KIM.email, filename="설계 검토.pptx", purpose="chat")
+    out = await R.upload_docforge_document("j_chat01", req, KIM, s)
+    assert out["stage"] == "done" and out["doc"] == {"name": "설계 검토.hwax.md", "text": md, "chars": len(md)}
+    row = req.app.state.agent_audit.rows[-1]
+    assert row["event"] == "upload_document" and row["meta"]["chars"] == len(md) and "text" not in row["meta"], "문서 글은 감사에 싣지 않는다"
+    with pytest.raises(AuthError) as e:
+        await R.upload_docforge_deliver("j_chat01", req, KIM, s)
+    assert e.value.status_code == 409 and [t for t, _ in calls] == ["docforge_package"]
+    with pytest.raises(AuthError) as e:
+        await R.upload_docforge_document("j_chat01", req, LEE, s)
+    assert e.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_글이_없는_낡은_패키지면_까닭을_말한다(monkeypatch, tmp_path):
+    s = _settings(tmp_path)
+    rel = _package(tmp_path)
+    R, req, _ = _wire(monkeypatch, tmp_path, {"docforge_package": {"job_id": "j_chat01", "package_rel": rel}})
+    D.save_job(s, "j_chat01", owner_sub=KIM.subject, owner_email=KIM.email, filename="a.pptx", purpose="chat")
+    out = await R.upload_docforge_document("j_chat01", req, KIM, s)
+    assert out["stage"] == "failed" and "document.md" in out["error"]

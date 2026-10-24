@@ -49,6 +49,8 @@ export interface DispatchResult {
   fidelity?: string | null;
   resources?: number;
   conversion_warnings?: string[];
+  /** 이 대화에서 분석을 DocForge 가 맡았으면 'docforge'(DF-D19) — 끝나면 …/document 로 글을 받는다. */
+  via?: string;
   // StepForge · DynaForge
   project_id?: string;
   created_project?: boolean;
@@ -150,6 +152,14 @@ export async function docforgeDeliver(jobId: string): Promise<DispatchResult> {
   const r = await apiFetch(`/agent/upload/destinations/docforge/jobs/${encodeURIComponent(jobId)}/deliver`, { method: 'POST' });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(errorDetail(j?.detail, `Report Archive 에 넣지 못했습니다 (HTTP ${r.status}).`));
+  return j as DispatchResult;
+}
+
+/** 끝난 잡의 '챗에서 읽는 글'(document.md — hwax-doc/1 꼴) — 이 대화에서 분석이 문서 칩으로 붙인다(DF-D19). */
+export async function docforgeDocument(jobId: string): Promise<DispatchResult> {
+  const r = await apiFetch(`/agent/upload/destinations/docforge/jobs/${encodeURIComponent(jobId)}/document`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(errorDetail(j?.detail, `읽은 글을 받지 못했습니다 (HTTP ${r.status}).`));
   return j as DispatchResult;
 }
 

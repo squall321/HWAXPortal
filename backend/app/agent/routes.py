@@ -1467,6 +1467,25 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         return {"stage": "dispatched", "destination": "reportarchive_precise", "job_id": job_id,
                 "next": "GET /agent/upload/destinations/docforge/jobs/{job_id} 로 진행을 보고, 끝나면 POST …/deliver"}
 
+    if body.destination == "chat" and "plat:docforge" in (principal.groups or []):
+        # ── 이 대화에서 분석 — DocForge(DF-D19) ─────────────────────────
+        # DocForge 가 보이는 사람은 DocForge 로 읽는다 — 차트 값(원본 캐시) · SmartArt · 수식 · 발표자 노트 · 병합 표까지 원문에서. 그림 판독은
+        # 하지 않는다(대화에서 바로 묻는 길이라 빨라야 한다 · stcx Qwen 을 챗과 나눠 쓴다). 잡이라 화면이 진행을 보다가 끝나면 …/document 로
+        # 글을 받아 문서 칩으로 붙인다. DocForge 가 맡지 않으면(게이트웨이에 없음 · 거절) 아래 지금 길로 간다.
+        try:
+            out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_convert",
+                                         {"path": _upload.host_path(settings, path), "parser": "auto", "vlm": False})
+        except AuthError as exc:
+            out = {"ok": False, "error": exc.message}
+        job_id = str(out.get("job_id") or "").strip() if isinstance(out, dict) else ""
+        if job_id and out.get("ok") is not False:
+            _dfd.save_job(settings, job_id, owner_sub=principal.subject, owner_email=principal.email or principal.subject,
+                          filename=body.filename, purpose="chat")
+            audit.record(principal=principal.subject, event="upload_dispatch",
+                         meta={"destination": "chat", "via": "docforge", "filename": body.filename, "job_id": job_id})
+            return {"stage": "dispatched", "destination": "chat", "via": "docforge", "job_id": job_id}
+        logger.info("이 대화에서 분석 — DocForge 가 맡지 않아 AI 데이터 허브 변환기로 간다(%s)", str(out.get("error") or "잡 번호 없음")[:120])
+
     if body.destination == "chat":
         # ── 이 대화에서 분석 ─────────────────────────────────────────
         # 어디에도 저장하지 않는다 — AI 데이터 허브의 변환기를 그 사람 명의로 빌려 글 · 목록 · 표 · 차트 데이터 · 발표자 노트를
@@ -1641,6 +1660,8 @@ async def upload_docforge_deliver(
         rec = _dfd.load_job(settings, job_id, principal.subject)
     except _dfd.DeliveryError as exc:
         raise _dfd_http(exc) from exc
+    if rec.get("purpose") == "chat":
+        raise AuthError("대화에서 읽으려고 맡긴 변환입니다 — Report Archive 에 넣지 않습니다.", status_code=409)
     async with _dfd.lock(job_id):
         rec = _dfd.load_job(settings, job_id, principal.subject)
         if rec.get("delivered"):
@@ -1675,6 +1696,34 @@ async def upload_docforge_deliver(
                                meta={"destination": "reportarchive_precise", "job_id": job_id, "report_id": got["report_id"],
                                      "pages": got.get("pages"), "blocks": got.get("blocks"), "resources": got.get("resources")})
         return {"stage": "done", "destination": "reportarchive_precise", "created": True, **result}
+
+
+@router.get("/upload/destinations/docforge/jobs/{job_id}/document")
+async def upload_docforge_document(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """끝난 잡의 '챗에서 읽는 글'(document.md — hwax-doc/1 꼴) — 화면이 문서 칩으로 붙인다(이 대화에서 분석, DF-D19). 어디에도 저장하지 않는다."""
+    try:
+        rec = _dfd.load_job(settings, job_id, principal.subject)
+    except _dfd.DeliveryError as exc:
+        raise _dfd_http(exc) from exc
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+    pkg = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_package", {"job_id": job_id}, timeout=30.0)
+    if pkg.get("ok") is False:
+        return {"stage": "failed", "error": f"DocForge: {pkg.get('error')}"}
+    try:
+        text = await asyncio.to_thread(_dfd.document_text, settings, pkg)
+    except _dfd.DeliveryError as exc:
+        return {"stage": "failed", "error": exc.message}
+    name = f"{Path(rec.get('filename') or 'document').stem}.hwax.md"
+    _audit(request).record(principal=principal.subject, event="upload_document", status="ok",
+                           meta={"destination": "chat", "via": "docforge", "job_id": job_id, "chars": len(text)})
+    return {"stage": "done", "destination": "chat", "via": "docforge", "doc": {"name": name, "text": text, "chars": len(text)}}
 
 
 @router.post("/upload/destinations/docforge/jobs/{job_id}/cancel")
