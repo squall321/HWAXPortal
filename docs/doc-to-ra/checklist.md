@@ -49,13 +49,15 @@
 ## M3 그림 읽기
 - [ ] 그림 판독 · 그림 차트의 값(확인 필요 표시) · 그림 속 글 · SmartArt 그림
 - [x] '모델 판독' 표시 · 판독 캐시 · 동시 수 상한(가짜 서버로 — 진짜 stcx Qwen 은 cae00)
+- [x] 그림 둘째 판독 — 첫 판독의 종류로 고른 그림만 차트 값(구조화 출력 · '값 확인 필요') · 그림 속 글(DocForge E9 · R-D39 · 10-25)
 - [ ] 판독 지표 · 표시 없는 모델 글 0 · 챗 첫 조각 지연
 
 ## M4 온톨로지 · DRM · MCP
 - [ ] SP 거울(수신 키트) · 과제 · 모델 · 부서 후보 + 근거 구절 · RA `key_value` · `tags` · 엔티티(§12-10)
 - [x] PC 도우미 묶음 길 — `hwax-doc/1` + 슬라이드 PNG 판독 · 낮은 충실도 표시(DocForge E5 · R-D35, 포털이 글 + 그림을 zip 으로 넘김 DF-D18 · 10-25)
 - [x] MCP 도구(capabilities · convert · status · package · cancel) · RA 에 넣는 길(포털이 사용자 명의 엄격 생성 — DF-D17, §12-2 의 M1 몫)
-- [ ] '이 대화에서 분석' 을 DocForge IR 로
+- [x] '이 대화에서 분석' 을 DocForge 로 — DocForge 가 보이는 사람은 DocForge 가 읽은 글(document.md)을 문서 칩으로 · 아니면 지금 길(DF-D19 · 10-25)
+- [x] DocForge 운영자 페르소나 `he-doc-docforge`(infra/personas/he-team.json — RA 는 선택 앱, DocForge 가 게이트웨이에 실리면 동기화가 만든다 · DF-D20)
 
 ## M5 운영
 - [ ] cae00 — 굵은 SIF(모델 · LibreOffice · 글꼴) · Drive(지문 목록 합치기) · server-setup(사람 몫)
