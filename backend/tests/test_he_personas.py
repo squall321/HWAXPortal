@@ -416,3 +416,28 @@ def test_클러스터의_제출_도구를_조회_전용이라_하지_않는다()
     assert "smart-twin-cluster 도구는 조회 전용" not in text
     line = next((s for s in cluster["concepts"] if "smarttwin_submit" in s and "slurm_submit_job" in s), None)
     assert line is not None and "확인한 뒤에만" in line, line
+
+
+def test_DocForge_운영자는_RA_를_선택_앱으로_묶고_변환은_업로드로_안내한다():
+    """정밀 변환은 포털 업로드가 맡기고(호스트 경로) · 사람 명의로 RA 에 넣는다 — 운영자는 그 길을 안내하고 진행 · 변환 보고서를 풀어 준다.
+    만든 보고서를 읽는 RA 도구는 선택 앱(RA 가 없는 박스에서도 운영자는 생긴다). DocForge 가 게이트웨이에 없으면(draft) 건너뛴다."""
+    sync = _sync()
+    one = _one("he-doc-docforge")
+    df = {"docforge_capabilities", "docforge_convert", "docforge_status", "docforge_package", "docforge_cancel"}
+    ra = {"get_report_outline", "get_report", "search_reports"}
+    base = {"areas": {}, "area_meta": [], "apps": [{"app": "heax-doc_forge", "label": "DocForge"},
+                                                   {"app": "reportarchive", "label": "Report Archive"}]}
+    rows, skipped, errors = sync.plan(one, {**base, "map": {**dict.fromkeys(df, "heax-doc_forge"), **dict.fromkeys(ra, "reportarchive")}})
+    assert not errors and not skipped, errors
+    (r,) = rows
+    assert r["response_config"]["mcp_apps"] == ["heax-doc_forge", "reportarchive"]
+    prompt = r["system_prompt"]
+    assert "「Report Archive — 정밀 변환」" in prompt and "'모델 판독'" in prompt and len(prompt) <= sync.PROMPT_MAX
+    writes = prompt.split("## 상태를 바꾸는 도구", 1)[1]
+    assert "docforge_convert" in writes and "docforge_cancel" in writes.split("되돌리기 어렵다", 1)[1], "취소는 확인받고 부른다"
+    notes: list[str] = []
+    rows, skipped, errors = sync.plan(one, {**base, "map": dict.fromkeys(df, "heax-doc_forge")}, notes)
+    assert not errors and not skipped and notes == ["he-doc-docforge: reportarchive 없이 만든다(선택 앱)"]
+    assert "get_report_outline" not in rows[0]["system_prompt"], "없는 앱의 도구를 대면 모델이 그 도구를 부른다"
+    rows, skipped, _errors = sync.plan(one, {**base, "map": dict.fromkeys(ra, "reportarchive")})
+    assert rows == [] and skipped, "DocForge 가 게이트웨이에 실리기 전(draft)에는 만들지 않는다"
