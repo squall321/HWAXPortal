@@ -22,8 +22,8 @@
   - [x] REST 다리(`rest_call` · `/api/<site>/`)의 사람별 경로에도 소속 · plat 증명 — 사용자 결정 10-24, HWAXMcpGateway 335213e (클라이언트가 보낸 증명 사본은 뗀다) · dev 반영(게이트웨이 재기동, rest_call 사람 명의 200)
 
 ## 쓰기 길(MXWP W1 · W2 · W3 · W6 뒤)
-- [ ] P6 '위키에 남기기' — 서버가 저장된 턴으로 봉투 · 사람 토큰 도우미 · 대화 알림 · 이력
-- [ ] P7 '해결됨' → 후보(사용자 결정 Q1 = B, 10-24 — MW-D12)
+- [x] P6 '위키에 남기기' — 서버가 저장된 턴으로 봉투(`app/agent/wiki_send.py`) · 그 사람 챗 PAT 로 게이트웨이 `wiki_submit_source`(비밀 더 안 쥠) · 대화 알림(업로드 근거) · 감사 · 시험(서버 8 · 브라우저 4) — dev 반영은 포털 재기동 뒤
+- [x] P7 '해결됨' → 후보(consent candidate — MX 백서가 주인만 보는 held 로, '내 후보' 에서 범위를 골라 승인) — P6 과 같은 길
 - [ ] P8 심의 결정문 → 위키(`delib_opts.wiki`, 기본 꺼짐)
 - [ ] P9 상태판 `/api/v1/wiki/health` · services.yaml 여섯째 인스턴스 · 업데이트 이력
 - [ ] P10 도구 영역 · 페르소나 안내문(게이트웨이 `tools/list` 확인 뒤)

@@ -1,5 +1,6 @@
 // 보내기 결과를 대화의 알림 한 건 · 입력창 지시문으로 옮기는 순수 함수 — 다음 턴이 '방금 보낸 것' 을 알게(docs/chat-ppt A1 · A2)
 import type { DispatchResult } from '../../api/upload.api';
+import type { WikiSendResult } from '../../api/wiki.api';
 import type { ActivityItem } from '../../types/chat';
 
 /** 대화에 남길 알림 — 어시스턴트 메시지 글 하나와 업로드 근거가 될 활동 기록 하나(origin: 'upload'). */
@@ -22,6 +23,30 @@ function clip(text: string, max = NOTICE_RESULT_MAX): string {
 function preview(text: string): string {
   const one = text.replace(/\s+/g, ' ').trim();
   return one.length > 220 ? `${one.slice(0, 220)}…` : one;
+}
+
+/** 위키 보내기 결과 → 대화 알림 한 건(origin: 'upload') — 다음 턴이 '이 답을 위키에 남겼다' 를 안다(docs/mxwp-wiki P6 · P7). */
+export function wikiNotice(r: WikiSendResult, now = Date.now()): UploadNotice {
+  const src = r.short || r.id;
+  const where = (r.audience ?? []).join(', ');
+  const facts = { source: src, mode: r.mode, audience: r.audience ?? [], dedup: Boolean(r.dedup),
+                  doc_slug: r.doc_slug ?? null, ingest_state: r.ingest_state ?? null };
+  const full = JSON.stringify(facts);
+  const candidate = r.mode === 'candidate';
+  const text = candidate
+    ? `이 답을 MX 백서 위키 후보로 보냈습니다 — 원천 ${src}. 나만 보는 후보이고, MX 백서 '내 후보' 에서 범위(제안 ${where})를 골라 `
+      + '승인하면 위키에 들어갑니다(승인하지 않으면 7일 뒤 버려집니다).'
+    : r.dedup
+      ? `이 답은 이미 MX 백서 위키에 남아 있습니다 — 원천 ${src}(범위 ${where}).`
+      : `이 답을 MX 백서 위키에 남겼습니다 — 원천 ${src}(범위 ${where}). 위키가 이 질문 · 답 · 조회 근거를 관련 문서에 엮습니다.`;
+  return {
+    title: 'MX 백서 위키',
+    text,
+    activity: [{
+      ts: now, step: candidate ? 'MX 백서 위키 후보(사람이 보냄)' : 'MX 백서 위키에 남김(사람이 보냄)', tool: 'wiki_submit_source',
+      detail: JSON.stringify({ mode: r.mode }), result_full: full, result_preview: preview(full), ok: true, origin: 'upload',
+    }],
+  };
 }
 
 /** 보내기 성공 → 알림. 문서 갈래(RA · AIDH)가 아니거나 실패면 null(알림을 남기지 않는다). */

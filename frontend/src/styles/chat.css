@@ -477,6 +477,14 @@ ol.md-list li.md-li-d2 {
 }
 
 /* 자기검증 — 고친 곳 · 검증 못 함은 답 아래에 늘 보인다(펼치면 무엇을 왜). docs/chat-self-check */
+.msg-wiki-note {
+  align-self: center;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+.msg-wiki-note.is-err {
+  color: var(--warn);
+}
 .msg-check {
   margin-top: 0.6rem;
   color: var(--fg-muted);

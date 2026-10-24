@@ -1,9 +1,12 @@
 // 대화 메시지 목록 — 클로드 스타일(어시스턴트 좌측 와이드/유저 버블), 스티키 자동 스크롤 + 하단 이동 버튼
 import { useEffect, useRef, useState } from 'react';
+import { sendTurnToWiki, type WikiMode } from '../../api/wiki.api';
+import { useCan } from '../../auth/useCan';
 import { friendlyError } from '../../lib/chatErrors';
 import { useChat } from '../../state/ChatContext';
 import type { Message, SelfCheck, TurnMeta } from '../../types/chat';
 import { copyText } from './clipboard';
+import { wikiNotice } from './uploadNotice';
 import { AgentCatalogBlock } from './AgentCatalogBlock';
 import { DelibView } from './DelibView';
 import { ThinkView } from './ThinkView';
@@ -45,6 +48,42 @@ function CopyAction({ text }: { text: string }) {
       {copied ? <IconCheck width={14} height={14} /> : <IconCopy width={14} height={14} />}
       <span>{copied ? '복사됨' : '복사'}</span>
     </button>
+  );
+}
+
+/** 답을 MX 백서 LLM 위키로 — '위키에 남기기'(내 소속 범위로 바로) · '해결됨'(나만 보는 후보, MX 백서에서 범위를 골라 승인).
+ *  서버가 저장된 턴으로 봉투를 짓고 그 사람 명의로 보낸다(docs/mxwp-wiki P6 · P7). 결과는 대화에 알림으로 남긴다 — 다음 턴이 안다. */
+function WikiActions({ msg }: { msg: Message }) {
+  const can = useCan();
+  const { activeConversation, addUploadNotice } = useChat();
+  const [busy, setBusy] = useState<WikiMode | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const sid = activeConversation?.serverId;
+  if (!can('plat:mxwhitepaper') || !sid) return null;
+  const model = msg.meta?.chat_model || Object.keys(msg.meta?.models ?? {})[0] || null;
+  const send = (mode: WikiMode) => {
+    setBusy(mode);
+    setNote(null);
+    void sendTurnToWiki(sid, { text: msg.text, mode, model })
+      .then((r) => {
+        addUploadNotice(wikiNotice(r));
+        setNote({ ok: true, text: mode === 'candidate' ? '후보로 보냈습니다' : r.dedup ? '이미 남아 있습니다' : '위키에 남겼습니다' });
+      })
+      .catch((e: unknown) => setNote({ ok: false, text: e instanceof Error ? e.message : String(e) }))
+      .finally(() => setBusy(null));
+  };
+  return (
+    <>
+      <button type="button" className="msg-copy msg-wiki" disabled={busy !== null} onClick={() => send('button')}
+        title="이 답을 MX 백서 LLM 위키에 남깁니다 — 내 소속 범위로, 질문 · 답 · 조회 근거가 원천이 됩니다">
+        <span>{busy === 'button' ? '남기는 중…' : '위키에 남기기'}</span>
+      </button>
+      <button type="button" className="msg-copy msg-wiki" disabled={busy !== null} onClick={() => send('candidate')}
+        title="해결된 답으로 표시합니다 — MX 백서에 나만 보는 후보로 가고, MX 백서 '내 후보' 에서 범위를 골라 승인하면 위키에 들어갑니다">
+        <span>{busy === 'candidate' ? '보내는 중…' : '해결됨'}</span>
+      </button>
+      {note && <span className={`msg-wiki-note${note.ok ? '' : ' is-err'}`} role="status">{note.text}</span>}
+    </>
   );
 }
 
@@ -147,6 +186,8 @@ function Row({ msg }: { msg: Message }) {
       {!msg.streaming && msg.text && (
         <div className="msg-actions">
           <CopyAction text={msg.text} />
+          {/* 심의 · 띵킹 답은 따로(P8), 업로드 알림은 사람이 보낸 결과라 답이 아니다 */}
+          {!hasDelib && !hasThink && !msg.error && !msg.activity?.some((a) => a.origin === 'upload') && <WikiActions msg={msg} />}
           {msg.meta && <ModelBadge meta={msg.meta} />}
           {msg.meta?.self_check && <CheckBadge check={msg.meta.self_check} />}
         </div>

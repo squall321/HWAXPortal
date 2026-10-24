@@ -48,6 +48,7 @@ from app.config import Settings, chat_pat_ttl_s, get_settings
 from app.agent import docforge_delivery as _dfd
 from app.agent import pc_upload as _pc
 from app.agent import upload as _upload
+from app.agent import wiki_send as _wiki
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
 logger = logging.getLogger(__name__)
@@ -483,6 +484,64 @@ def append_conversation_message(
     if not ok:
         raise AuthError("conversation not found", status_code=404)
     return {"ok": True}
+
+
+class WikiSendIn(BaseModel):
+    """'위키에 남기기' · '해결됨' — text 는 남길 답의 본문(저장된 답과 글자 그대로 같아야 짝이 찾아진다), model 은 표시용 꼬리표."""
+    text: str = Field(min_length=1, max_length=400_000)
+    mode: Literal["button", "candidate"] = "button"
+    outcome: Literal["solved", "partial", "unknown"] = "solved"
+    model: str | None = Field(default=None, max_length=120)
+
+
+@router.post("/conversations/{cid}/wiki")
+async def send_turn_to_wiki(
+    cid: str,
+    request: Request,
+    body: WikiSendIn,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """저장된 턴을 MX 백서 위키 원천으로 — button 은 바로 들이기, candidate 는 주인만 보는 후보(docs/mxwp-wiki P6 · P7, app/agent/wiki_send.py).
+    실패해도 감사 한 줄을 남긴다(업로드 보내기와 같은 까닭 — 게이트웨이 너머에서 이미 일어난 일이 있을 수 있다)."""
+    try:
+        return await _wiki_send(request, cid, body, principal, settings)
+    except Exception as exc:  # noqa: BLE001 — 남기고 그대로 올린다
+        try:
+            _audit(request).record(principal=principal.subject, event="wiki_submit", status="failed",
+                                   meta={"conversation": cid, "mode": body.mode, "error": f"{type(exc).__name__}: {exc}"[:300]})
+        except Exception:  # noqa: BLE001 — 감사 실패가 원래 오류를 가리면 안 된다
+            logger.warning("위키 보내기 실패 감사 기록 실패", exc_info=True)
+        raise
+
+
+async def _wiki_send(request: Request, cid: str, body: WikiSendIn, principal: Principal, settings: Settings) -> dict:
+    ensure(principal, _wiki.PLAT_KEY)
+    if not principal.email:
+        raise AuthError("이메일이 없는 계정은 위키에 남길 수 없습니다 — MX 백서는 주인을 이메일로 가린다", status_code=400)
+    try:
+        conv = await asyncio.to_thread(_conv(request).get, cid, principal.subject)
+    except sqlite3.OperationalError as exc:
+        raise _store_busy(exc) from exc
+    if conv is None:
+        raise AuthError("conversation not found", status_code=404)
+    turn = _wiki.pick_turn(conv.get("messages") or [], body.text)
+    if turn is None:
+        raise AuthError("이 대화에 저장된 그 답(과 그 앞의 질문)을 찾지 못했습니다 — 답이 저장된 뒤 다시 시도하세요", status_code=409)
+    index, question, message = turn
+    audience = _wiki.audience_for(_wiki.known_affiliation(request), body.mode)
+    env = _wiki.qa_envelope(cid=cid, index=index, question=question, message=message, owner_email=principal.email.lower(),
+                            audience=audience, mode=body.mode, outcome=body.outcome, model=body.model,
+                            now=datetime.now(tz=UTC))
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+    got = _wiki.result_of(await _upload.mcp_call(settings.mcp_gateway_url, pat, "wiki_submit_source",
+                                                 {"envelope": env, "ingest": True}))
+    _audit(request).record(principal=principal.subject, event="wiki_submit",
+                           meta={"conversation": cid, "index": index, "mode": body.mode, "audience": audience,
+                                 "source": got["id"], "dedup": bool(got.get("dedup"))})
+    return {"ok": True, "mode": body.mode, "audience": audience, **got}
 
 
 @router.delete("/conversations/{cid}")
