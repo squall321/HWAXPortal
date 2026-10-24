@@ -6,6 +6,8 @@
   · RA 상한을 넘는 리소스는 올리지 않고 그 파일 칸을 빼고 경고로. 두 번 불러도 보고서는 하나. 패키지 위치가 데이터 루트 밖이면 거절.
 """
 import json
+import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -243,3 +245,70 @@ def test_정밀_변환_목적지는_RA_와_DocForge_둘_다_있어야(tmp_path):
     assert any(d["id"] == "reportarchive_precise" for d in U.allowed_destinations(s, both, "pptx"))
     assert not any(d["id"] == "reportarchive_precise" for d in U.allowed_destinations(s, both[:2], "pptx"))
     assert any(d["id"] == "reportarchive_precise" for d in U.allowed_destinations(s, both, "xlsx"))
+
+
+# ── PC 도우미 추출본(DRM 문서) — 글 + 슬라이드 그림을 zip 하나로(DF-D18) ─────────────────────────────────────────────
+MD = "---\nschema: hwax-doc/1\nsource: 설계검토.pptx\nkind: ppt\n---\n\n# 설계검토\n## [s.1] 개요\n\n낙하 1.5 m\n"
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 20
+
+
+def _wire_pc(monkeypatch, s):
+    """staged_path 는 진짜로 — 받은 글 상자에서 글을 집는 것까지 본다. 가짜 게이트웨이는 넘겨받은 경로를 그 자리에서 열어 본다(뒤에 지워지므로)."""
+    from app.agent import routes as R
+    seen: dict = {"calls": 0}
+
+    async def _mcp(url, pat, tool, args, timeout=90.0):
+        seen["calls"] += 1
+        local = Path(args["path"].replace("/host/staging", s.upload_staging_dir, 1))
+        seen["path"] = local
+        if local.suffix == ".zip":
+            with zipfile.ZipFile(local) as zf:
+                seen["names"] = sorted(zf.namelist())
+        return {"job_id": "j_pc0001", "status": "queued"}
+
+    monkeypatch.setattr(R._upload, "require_destination_group", lambda *a, **k: None)
+    monkeypatch.setattr(R._upload, "mcp_call", _mcp)
+    monkeypatch.setattr(R, "_chat_user_pat", lambda *a, **k: "chat-pat")
+    req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(user_store=_Store(None), agent_audit=_Audit(), keystore=None)))
+    return R, req, seen
+
+
+@pytest.mark.anyio
+async def test_PC_도우미_추출본은_글과_슬라이드_그림을_zip_하나로_넘기고_묶음_상자를_치운다(monkeypatch, tmp_path):
+    from app.agent import pc_upload as P
+    s = _settings(tmp_path)
+    got = P.store(s, {"owner_sub": KIM.subject, "filename": "설계검토.pptx"}, MD, [PNG, PNG])
+    R, req, seen = _wire_pc(monkeypatch, s)
+    body = R.UploadDispatchReq(staging_id=got["doc_staging_id"], filename=got["doc_name"], destination="reportarchive_precise")
+    out = await R._dispatch_inner(req, body, KIM, s)
+    assert out["stage"] == "dispatched" and out["job_id"] == "j_pc0001"
+    assert seen["names"] == ["slide-01.png", "slide-02.png", "설계검토.hwax.md"], "DocForge 는 zip 안의 *.hwax.md 와 slide-NN.png 를 읽는다"
+    assert not seen["path"].parent.exists(), "DocForge 가 받아 간 뒤 묶음 상자는 지운다"
+    assert R._upload.staged_path(s, KIM.subject, got["doc_staging_id"], got["doc_name"]).name == "설계검토.hwax.md", \
+        "받은 글 상자에는 글 하나뿐 — 다른 목적지(AI 데이터 허브)로 보내도 글이 간다"
+    assert req.app.state.agent_audit.rows[-1]["meta"]["slides"] == 2
+    assert P.slides_of(s, LEE.subject, got["doc_staging_id"]) == [], "남의 글 상자의 그림은 찾지 않는다"
+
+
+@pytest.mark.anyio
+async def test_그림_없는_추출본은_글만_넘긴다(monkeypatch, tmp_path):
+    from app.agent import pc_upload as P
+    s = _settings(tmp_path)
+    got = P.store(s, {"owner_sub": KIM.subject, "filename": "설계검토.pptx"}, MD, [])
+    R, req, seen = _wire_pc(monkeypatch, s)
+    body = R.UploadDispatchReq(staging_id=got["doc_staging_id"], filename=got["doc_name"], destination="reportarchive_precise")
+    out = await R._dispatch_inner(req, body, KIM, s)
+    assert out["stage"] == "dispatched" and seen["path"].name == "설계검토.hwax.md" and "names" not in seen
+
+
+@pytest.mark.anyio
+async def test_추출기가_만들지_않은_md_는_맡기지_않는다(monkeypatch, tmp_path):
+    from app.agent import upload as U
+    s = _settings(tmp_path)
+    box = U._user_dir(s, KIM.subject) / ("a" * 32)
+    box.mkdir(parents=True)
+    (box / "note.md").write_text("# 그냥 메모\n", encoding="utf-8")
+    R, req, seen = _wire_pc(monkeypatch, s)
+    body = R.UploadDispatchReq(staging_id="a" * 32, filename="note.md", destination="reportarchive_precise")
+    out = await R._dispatch_inner(req, body, KIM, s)
+    assert out["stage"] == "failed" and "PC 도우미가 만든 .hwax.md 만" in out["error"] and seen["calls"] == 0

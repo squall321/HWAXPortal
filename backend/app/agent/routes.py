@@ -23,6 +23,7 @@ import os
 import shutil
 import sqlite3
 import uuid
+import zipfile
 from pathlib import Path
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timedelta
@@ -1424,8 +1425,36 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         # DOCFORGE_INPUT_ROOTS 에 스테이징 호스트 경로가 있어야 한다). 변환은 잡이라 기다리지 않는다 — 화면이 진행을 보다가
         # 끝나면 deliver 를 부른다(포털이 그 사람 명의로 RA 에 엄격 생성, DF-D17). 맡긴 사람을 기록해 진행 · 배달을 그 사람에게만.
         src = _upload.host_path(settings, path)
-        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_convert",
-                                     {"path": src, "parser": "auto", "vlm": bool(body.vlm)})
+        slides: list[Path] = []
+        bundle_box: Path | None = None
+        if path.suffix.lower() == ".md":
+            # PC 도우미 추출본(DRM 문서 — DocForge R-D35 · DF-D18). 추출기가 만든 글만 받는다. 받을 때 슬라이드 그림도 왔으면 글과 함께
+            # zip 하나로 묶어 넘긴다 — 글 상자가 아니라 새 상자에(staged_path 가 상자의 첫 파일을 집는다), DocForge 가 받아 간 뒤 지운다.
+            try:
+                await asyncio.to_thread(_pc.check_doc, path.read_bytes())
+            except ValueError as exc:
+                return {"stage": "failed", "error": f"PC 도우미가 만든 .hwax.md 만 정밀 변환할 수 있습니다 — {exc}"}
+            slides = await asyncio.to_thread(_pc.slides_of, settings, principal.subject, body.staging_id)
+            if slides:
+                bundle_box = _upload._user_dir(settings, principal.subject) / uuid.uuid4().hex
+                bundle_box.mkdir(parents=True)
+                arc = path.name if path.name.endswith(".hwax.md") else f"{path.stem}.hwax.md"   # DocForge 는 zip 안의 *.hwax.md 를 찾는다
+                zp = bundle_box / (arc.removesuffix(".hwax.md") + ".hwax.zip")
+
+                def _pack() -> None:
+                    with zipfile.ZipFile(zp, "w") as zf:
+                        zf.write(path, arcname=arc)
+                        for s in slides:
+                            zf.write(s, arcname=s.name)
+
+                await asyncio.to_thread(_pack)
+                src = _upload.host_path(settings, zp)
+        try:
+            out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_convert",
+                                         {"path": src, "parser": "auto", "vlm": bool(body.vlm)})
+        finally:
+            if bundle_box is not None:                 # DocForge 는 맡을 때 입력을 제 잡 폴더로 옮겨 둔다(링크 또는 복사)
+                shutil.rmtree(bundle_box, ignore_errors=True)
         job_id = str(out.get("job_id") or "").strip() if isinstance(out, dict) else ""
         if not job_id or out.get("ok") is False:
             return {"stage": "failed", "error": f"DocForge 가 변환을 맡지 않았습니다 — {out.get('error') or '잡 번호 없음'}",
@@ -1434,7 +1463,7 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
                       filename=body.filename)
         audit.record(principal=principal.subject, event="upload_dispatch",
                      meta={"destination": "reportarchive_precise", "filename": body.filename, "job_id": job_id,
-                           "vlm": bool(body.vlm)})
+                           "vlm": bool(body.vlm), "slides": len(slides)})
         return {"stage": "dispatched", "destination": "reportarchive_precise", "job_id": job_id,
                 "next": "GET /agent/upload/destinations/docforge/jobs/{job_id} 로 진행을 보고, 끝나면 POST …/deliver"}
 

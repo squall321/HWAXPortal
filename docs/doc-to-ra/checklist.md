@@ -35,7 +35,9 @@
 - [ ] 검증 — 글 회계 · 숫자 대조 · 그림 회계 · RA 스키마 · 격자 합 · 무음 누락 0
 - [ ] 포장 — `report.json` · `resources/` · `conversion.json`
 - [x] 포털 — 목적지 「Report Archive — 정밀 변환」 · 잡 진행 패널 · 사용자 명의 배달(엄격 생성) · 대화 알림(DF-D17 · 10-24, 가짜 MCP · 가짜 RA 시험)
-- [ ] 포털 — dev 실주행(DocForge status beta + 게이트웨이 tools/list 확인 뒤) · 브라우저 시험
+- [x] 포털 — 브라우저 시험(정밀 변환 진행 → 배달 → 알림, test_chat_ppt_in_browser)
+- [x] DocForge 0.2.0 배치 dev 쪽 — release `7b166ac` · HEAXHub `973444a` · dev 허브 · Drive(10-25)
+- [ ] cae00 update-all(사람) → DocForge status beta(순서 — DocForge DEPLOY §4-10) → 관리자 `plat:docforge` 부여 → dev · cae00 실주행
 - [ ] 시험 · 반대 검토 · 변이 · dev 실주행 · 문서 · 이력 · 올림
 
 ## M2 Word · Excel(+ PDF)
@@ -51,7 +53,7 @@
 
 ## M4 온톨로지 · DRM · MCP
 - [ ] SP 거울(수신 키트) · 과제 · 모델 · 부서 후보 + 근거 구절 · RA `key_value` · `tags` · 엔티티(§12-10)
-- [ ] PC 도우미 묶음 길 — `hwax-doc/1` + 슬라이드 PNG 판독 · 낮은 충실도 표시
+- [x] PC 도우미 묶음 길 — `hwax-doc/1` + 슬라이드 PNG 판독 · 낮은 충실도 표시(DocForge E5 · R-D35, 포털이 글 + 그림을 zip 으로 넘김 DF-D18 · 10-25)
 - [ ] MCP 도구(convert · status · package) · RA 에 넣는 길(§12-2)
 - [ ] '이 대화에서 분석' 을 DocForge IR 로
 

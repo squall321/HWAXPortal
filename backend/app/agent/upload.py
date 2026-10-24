@@ -60,9 +60,11 @@ DESTINATIONS: dict[str, dict] = {
     },
     # 정밀 변환 — DocForge 가 패키지를 만들고(배치 · 표 · 차트 값 · 그림 판독) 포털이 그 사람 명의로 RA 에 **엄격 생성**한다(docs/doc-to-ra
     # DF-D2 · DF-D3 · DF-D17). 위 'Report Archive 로 보내기' 는 비교 기준선이라 남긴다. 권한은 RA 와 DocForge 둘 다(also).
+    # md 는 PC 도우미 추출본(DRM 문서 — DF-D18)이다. 화면은 .md 를 브라우저에서 읽으므로 스테이징의 .md 는 도우미가 올린 것이고, 그래도 dispatch 가
+    # 추출기 머리말을 다시 본다.
     "reportarchive_precise": {
         "label": "Report Archive — 정밀 변환(배치 유지 · 그림 판독)",
-        "exts": {"pptx", "docx", "xlsx", "pdf"},
+        "exts": {"pptx", "docx", "xlsx", "pdf", "md"},
         "groups_attr": "upload_allowed_group_list",
         "platform": "plat:reportarchive",
         "also": ("plat:docforge",),

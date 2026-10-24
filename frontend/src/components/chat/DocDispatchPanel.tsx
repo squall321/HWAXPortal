@@ -272,7 +272,13 @@ export function DocDispatchPanel({
         <span className="upl-file">{staged.filename}</span>
         <button type="button" className="upl-x" onClick={onClose} aria-label="닫기">✕</button>
       </div>
-      <p className="upl-note">{spec?.note}</p>
+      <p className="upl-note">
+        {destination === 'reportarchive_precise' && staged.ext === 'md'
+          // PC 도우미 추출본(DRM 문서) — 위치 · 차트 값 · 박힌 그림이 없다(DocForge R-D35 · DF-D18). 원본 그대로라고 말하지 않는다.
+          ? 'PC 도우미로 가져온 추출본이라 위치 · 차트 값 · 박힌 그림은 없습니다. 슬라이드마다 글 · 표 · 발표자 노트를 옮기고, '
+            + '함께 가져온 슬라이드 그림을 그대로 싣고 모델이 읽어 \'모델 판독\' 으로 답니다. 본인 명의로 내 공간에 보고서가 만들어집니다.'
+          : spec?.note}
+      </p>
       {err && <div className="upl-err" role="alert">⚠ {err}</div>}
       <div className="upl-actions">
         <button type="button" className="upl-go" disabled={busy} onClick={() => void go()}>

@@ -32,6 +32,10 @@ _KEEP_S = 3600                          # 닫힌 표의 기록을 남겨 두는 
 # 스테이징 루트 아래 표 폴더. 사용자 폴더 이름(_user_dir — 영숫자 · -_@. 만)과 겹칠 수 없는 이름이다. 기존 청소(sweep_expired —
 # <루트>/*/* 의 6시간 지난 것)가 남은 표 파일도 같이 지운다.
 _DIR_NAME = "#pc-tickets"
+# 받은 글 상자 → 그 슬라이드 그림 상자(정밀 변환이 글과 그림을 zip 하나로 묶어 DocForge 에 넘긴다, docs/doc-to-ra DF-D18). 글 상자 안에 두지 않는다 —
+# staged_path 가 상자의 첫 파일을 집으므로 다른 파일이 끼면 글 대신 그것이 간다. 같은 청소가 6시간 뒤 지운다.
+_SLIDES_DIR = "#pc-slides"
+_BOX_RE = re.compile(r"^[0-9a-f]{32}$")
 _TICKET_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 _OPEN = ("waiting", "opened")
@@ -255,7 +259,23 @@ def store(settings: Settings, rec: dict, text: str, slides: list[bytes]) -> dict
         for i, b in enumerate(slides, start=1):
             (user / sid / f"slide-{i:02d}.png").write_bytes(b)
         out["slides_staging_id"] = sid
+        idx = Path(settings.upload_staging_dir) / _SLIDES_DIR
+        idx.mkdir(parents=True, exist_ok=True)
+        _write(idx / f"{doc_id}.json", {"owner_sub": rec["owner_sub"], "slides_staging_id": sid, "slides": len(slides)})
     return out
+
+
+def slides_of(settings: Settings, owner_sub: str, doc_staging_id: str) -> list[Path]:
+    """받은 글 상자에 딸린 슬라이드 그림(1번부터). 없거나 · 남의 것이거나 · 청소됐으면 빈 목록 — 부르는 쪽이 글만 보낸다."""
+    if not isinstance(doc_staging_id, str) or not _BOX_RE.fullmatch(doc_staging_id):
+        return []
+    p = Path(settings.upload_staging_dir) / _SLIDES_DIR / f"{doc_staging_id}.json"
+    rec = _read(p) if p.exists() else None
+    sid = (rec or {}).get("slides_staging_id")
+    if not rec or rec.get("owner_sub") != owner_sub or not isinstance(sid, str) or not _BOX_RE.fullmatch(sid):
+        return []
+    box = _user_dir(settings, owner_sub) / sid
+    return [f for i in range(1, int(rec.get("slides") or 0) + 1) if (f := box / f"slide-{i:02d}.png").is_file()]
 
 
 def view(settings: Settings, ticket: str, owner_sub: str, now: float | None = None) -> dict:

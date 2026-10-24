@@ -127,7 +127,8 @@ def test_도우미는_표만으로_받는_계정을_보고_한_번_올린다(box
     v = c.get(f"/agent/upload/pc-ticket/{t}").json()
     assert v["state"] == "received" and v["received"]["doc_name"] == "설계검토.hwax.md" and v["received"]["chars"] == len(MD)
     st = v["staged"]
-    assert st["ext"] == "md" and [d["id"] for d in st["destinations"]] == ["aidatahub"], "다음 단계는 AI 데이터 허브만(PP-D11)"
+    assert st["ext"] == "md" and [d["id"] for d in st["destinations"]] == ["reportarchive_precise", "aidatahub"], \
+        "다음 단계는 RA 정밀 변환(DocForge PC 묶음 — DF-D18) · AI 데이터 허브(PP-D11)"
     assert up.staged_path(s, "boss@corp.com", st["staging_id"], st["filename"]).read_text(encoding="utf-8") == MD, \
         "보내기(dispatch)가 그 상자를 그대로 집는다 — 상자에 .md 하나"
     d = c.get(f"/agent/upload/pc-ticket/{t}/doc")
