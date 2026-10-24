@@ -16,6 +16,8 @@
 ## 소속 · 플랫폼 전달
 - [x] P3 진입 토큰 `affiliation` 클레임(시스템별 켜기 `claims_affiliation` — `plat:` 은 원래 `groups` 에) · 시험(켠 시스템만 · 빈 값 · 지운 소속) — 703d949
 - [x] P4 게이트웨이 `X-Heax-User-Plat` + `X-Heax-Plat-Proof`(앱별 `send_plat` · provision `<접두>_SEND_PLAT`) · 시험 — HWAXMcpGateway baa2880
+  - [x] dev 끝에서 끝(10-24) — `plat:plmdefect` 범위 시험 문서가 그 권한이 있을 때만 MCP 로 열린다(없으면 404). MXWP MCP 서버가 헤더를 버리던 것은 그쪽이 고침(39c3c98)
+  - [ ] REST 다리(`rest_call` · `/api/<site>/`)의 사람별 경로에도 소속 · plat 증명 — 지금은 토큰만 싣는다(사용자 확인 대기)
 
 ## 쓰기 길(MXWP W1 · W2 · W3 · W6 뒤)
 - [ ] P6 '위키에 남기기' — 서버가 저장된 턴으로 봉투 · 사람 토큰 도우미 · 대화 알림 · 이력
