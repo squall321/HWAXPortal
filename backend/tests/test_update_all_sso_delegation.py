@@ -379,13 +379,13 @@ def test_no_generic_list_means_nothing_extra_is_exported(tmp_path):
 
 
 @pytest.mark.parametrize("apps,names", [
-    ("newapp:NEWAPP", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL"),
-    ("  newapp:NEWAPP\tother:OTHER_APP ", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL OTHER_APP_SSO_SECRET OTHER_APP_SSO_URL OTHER_APP_MCP_URL"),
-    ("콜론없음 :NOKEY nopfx: bad:9X bad2:A-B bad3:A:B ok:OK_1", "OK_1_SSO_SECRET OK_1_SSO_URL OK_1_MCP_URL"),
+    ("newapp:NEWAPP", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL NEWAPP_SEND_PLAT"),
+    ("  newapp:NEWAPP\tother:OTHER_APP ", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL NEWAPP_SEND_PLAT OTHER_APP_SSO_SECRET OTHER_APP_SSO_URL OTHER_APP_MCP_URL OTHER_APP_SEND_PLAT"),
+    ("콜론없음 :NOKEY nopfx: bad:9X bad2:A-B bad3:A:B ok:OK_1", "OK_1_SSO_SECRET OK_1_SSO_URL OK_1_MCP_URL OK_1_SEND_PLAT"),
     ("reportarchive:RA testscope:TS ste:STE hwax_risk:HR kooremapper_mcp:KR", ""),   # 게이트웨이가 직접 만드는 다섯 — 순회로 덮지 않는다
     ("*:STAR 'q:Q $(id):X", ""),                                                      # 키가 이름 꼴이 아니면 다루지 않는다
-    ("dup:FOO dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL"),                                # 한 키를 두 번 — 먼저 적힌 쌍만
-    ("dup:9X dup:FOO other:O dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL O_SSO_SECRET O_SSO_URL O_MCP_URL"),   # 못 읽은 쌍은 '먼저' 가 아니다
+    ("dup:FOO dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL FOO_SEND_PLAT"),                                # 한 키를 두 번 — 먼저 적힌 쌍만
+    ("dup:9X dup:FOO other:O dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL FOO_SEND_PLAT O_SSO_SECRET O_SSO_URL O_MCP_URL O_SEND_PLAT"),   # 못 읽은 쌍은 '먼저' 가 아니다
     ("", ""),
 ])
 def test_generic_pairs_are_read_with_the_gateway_rule(tmp_path, apps, names):
@@ -412,6 +412,32 @@ def test_generic_delegation_drift_follows_the_ra_rule(tmp_path):
     assert _drift(tmp_path, _cfg(reportarchive=SECRET, newapp="old"), ra=SECRET, box=on) == "newapp_sso"
     assert _drift(tmp_path, {}, ra=SECRET, box=on) == "reportarchive_sso newapp_sso", "RA·TestScope 가 먼저, 일반 앱은 뒤에"
     assert GEN_SECRET not in _fn("_sso_deleg_drift")
+
+
+def test_generic_delegation_drift_sees_send_plat(tmp_path):
+    """<접두>_SEND_PLAT 을 켜거나 끈 것도 방아쇠다 — 비밀 · 주소가 같으면 재프로비저닝이 돌지 않아, provision.env 에서 켜도 게이트웨이가
+    plat 권한을 싣지 않았다(MX 백서 위키의 plat: 범위가 조용히 닫힌 채 — docs/mxwp-wiki MW-D9). 안 적은 박스는 config 를 잇는다
+    (게이트웨이 provision 과 같은 규칙)."""
+    on = f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\nNEWAPP_SSO_URL="http://x/sso"\n'
+    plain = _cfg(newapp=GEN_SECRET)
+    with_plat = {"heax_registry": {"per_user_sso": {"newapp": {"sso_url": "http://x/sso", "secret": GEN_SECRET,
+                                                               "send_plat": True}}}}
+    assert _drift(tmp_path, plain, box=on + "NEWAPP_SEND_PLAT=1\n") == "newapp_sso_plat"
+    assert _drift(tmp_path, with_plat, box=on + "NEWAPP_SEND_PLAT=1\n") == ""
+    assert _drift(tmp_path, with_plat, box=on + "NEWAPP_SEND_PLAT=0\n") == "newapp_sso_plat", "0 이면 끈다 — config 에 남은 것이 어긋남"
+    assert _drift(tmp_path, with_plat, box=on) == "", "안 적은 박스는 config 를 잇는다"
+    assert _drift(tmp_path, plain, box=on) == ""
+    assert _drift(tmp_path, {}, box=on + "NEWAPP_SEND_PLAT=1\n") == "newapp_sso", "위임이 없으면 그 방아쇠 하나로(재프로비저닝이 둘 다 맞춘다)"
+    # 알림 문구와 방아쇠 — 기본 갈래(*)의 '비밀이 다르다' 로 읽히면 사람이 엉뚱한 값을 찾는다
+    i = UA.index('for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do')
+    loop = UA[i:UA.index("\n    done\n", i)]
+    script = "\n".join([
+        "set -uo pipefail", 'bad() { echo "BAD:$*"; }', "MISSING=''",
+        '_sso_deleg_drift() { echo "newapp_sso_plat"; }', 'GW_DIR="/nonexistent"', loop, "    done", 'echo "MISSING=[$MISSING]"'])
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    assert "MISSING=[newapp_sso_plat]" in r.stdout, "재프로비저닝이 맞추는 어긋남이다"
+    assert "plat 전달 드리프트: newapp" in r.stdout and "SEND_PLAT" in r.stdout and "비밀이" not in r.stdout
 
 
 def test_a_generic_secret_without_an_address_is_reported_not_reprovisioned(tmp_path):

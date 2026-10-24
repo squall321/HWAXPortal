@@ -50,6 +50,7 @@
 #     SMARTTWIN_MCP_URL=http://127.0.0.1:5013/mcp   # SmartTwinMCP 를 쓰는 박스만(dev) — 없으면 게이트웨이가 smart-twin-mcp 를 등재하지 않는다
 #     PER_USER_SSO_APPS="<per_user 키>:<ENV 접두> …" # 여섯 번째 앱부터의 사람별 위임 — <접두>_SSO_SECRET · <접두>_SSO_URL 과 함께 적는다
 #                                                    #   heax-hub 밖 앱(MatNexus 등)은 <접두>_MCP_URL 도 — 같은 키의 MCP 백엔드가 붙는다
+#                                                    #   <접두>_SEND_PLAT=1 — 위임 호출에 그 사람의 plat: 권한을 서명과 함께(MX 백서 위키, docs/mxwp-wiki P4)
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
@@ -1642,10 +1643,10 @@ _sso_generic_pairs() {  # → 줄마다 "<per_user 키> <ENV 접두>"  ($1=dups 
     if [ "${1:-}" != dups ]; then printf '%s %s\n' "$k" "$p"; fi
   done
 }
-_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다) — 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL <접두>_MCP_URL
+_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다) — 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL <접두>_MCP_URL <접두>_SEND_PLAT
   local _k p
   while read -r _k p; do
-    if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL %s_MCP_URL ' "$p" "$p" "$p"; fi
+    if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL %s_MCP_URL %s_SEND_PLAT ' "$p" "$p" "$p" "$p"; fi
   done <<<"$(_sso_generic_pairs)"
 }
 # 게이트웨이가 직접 만드는 백엔드 이름(provision-config.sh 의 MANAGED) — $1=그 파일 → 공백 구분 이름, 못 읽으면 빈 값. 목록은 그 파일에서
@@ -1715,6 +1716,13 @@ for k, p in sorted(ln.split() for ln in (os.environ.get("GEN") or "").splitlines
         out.append(f"{k}_sso_nourl")   # 주소는 env 가 먼저고 없으면 게이트웨이가 지금 config 의 것을 잇는다. 둘 다 없으면 만들지 못한다
     elif (cur or {}).get("secret") != s or (u and (cur or {}).get("sso_url") != u):
         out.append(f"{k}_sso")         # 위임이 없거나 비밀이 다르다, 또는 주소를 바꿨다(게이트웨이가 env 의 주소로 고쳐 쓴다)
+    else:
+        # plat 권한 전달 — 게이트웨이 provision 과 같은 규칙: <접두>_SEND_PLAT 이 **적혀 있을 때만** 그 값이 정한다(1·true·yes·on 이면
+        # 켬). 안 적은 박스는 config 를 잇는다. 이 줄이 없으면 provision.env 에서 켜도 재프로비저닝이 돌지 않아 위키의 plat: 범위가
+        # 조용히 닫힌 채다(docs/mxwp-wiki P4 · MW-D9).
+        sp = os.environ.get(f"{p}_SEND_PLAT")
+        if sp is not None and (sp.strip().lower() in ("1", "true", "yes", "on")) != ((cur or {}).get("send_plat") is True):
+            out.append(f"{k}_sso_plat")
 # 목록에서 뺀 일반 앱(_sso_generic_unlisted) — 비밀도 접두도 이 실행에는 없다. 표지가 붙은 채 남은 위임이 곧 방아쇠다.
 out += [t for t in (f"{k}_sso_off" for k in (os.environ.get("UNL") or "").split()) if t not in out]
 print(" ".join(out))
@@ -1959,6 +1967,7 @@ PY
             reportarchive|testscope) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — infra/.env 의 비밀이 비었는데 게이트웨이는 아직 위임으로 부른다(토큰 등록으로 되돌린다)" ;;
             *) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — HWAXMcpGateway/provision.env 에서 그 앱의 비밀을 비웠거나 PER_USER_SSO_APPS 에서 뺐는데 게이트웨이는 아직 위임으로 부른다(일반 앱은 사람별 호출이 서비스 계정으로 되돌아간다)" ;;
           esac ;;
+        *_sso_plat) echo "  · 사람별 위임 plat 전달 드리프트: ${_k%_sso_plat} — HWAXMcpGateway/provision.env 의 그 앱 <접두>_SEND_PLAT 과 게이트웨이 설정(send_plat)이 다르다(재프로비저닝으로 맞춘다)" ;;
         *) echo "  · 사람별 위임 드리프트: ${_k%_sso} — 게이트웨이 설정에 위임이 없거나 비밀이 infra/.env 와 다르다(일반 앱은 provision.env 의 비밀·주소)" ;;
       esac
       MISSING="${MISSING:+$MISSING }$_k"
