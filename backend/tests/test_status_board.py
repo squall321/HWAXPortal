@@ -214,6 +214,14 @@ def test_MX_백서_위키_워커는_워커가_있는_판만_API_의_위키_상�
     worker = lay.tmp / "MXWhitePaper/apps/api/app/wiki/worker.py"     # 형제 리포(생성기의 _find_repo — 포털 리포 옆)
     worker.parent.mkdir(parents=True)
     worker.write_text("# 위키 워커\n", encoding="utf-8")
+    # 워커 코드가 있어도 위키를 켜지 않은 박스는 싣지 않는다 — 끄면 그쪽 /api/v1/wiki/* 가 health 까지 404 라 늘 빨갛다(10-25 cae00 점검)
+    mx_env = lay.tmp / "MXWhitePaper/.env"
+    for off in ("", "WIKI_ENABLED=false\n", "WIKI_ENABLED='0'\n"):
+        mx_env.write_text(off, encoding="utf-8")
+        r = lay.gen()
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert wiki not in lay.endpoints() and "위키를 켜지 않았다" in r.stdout, (off, r.stdout)
+    mx_env.write_text("WIKI_ENABLED=false\nWIKI_ENABLED=\"true\"\n", encoding="utf-8")     # 마지막 줄 · 따옴표 — 그쪽이 읽는 규칙
     r = lay.gen()
     assert r.returncode == 0, r.stdout + r.stderr
     ep = lay.endpoints()[wiki]

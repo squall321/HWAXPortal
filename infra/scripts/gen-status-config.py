@@ -20,7 +20,8 @@
   · 에이전트 서버 /health — status ok · 도는 심의·줄 선 심의 수(update-all·start.sh 가 재기동을 미루는 근거 칸 — 없으면 옛 판이다).
   · LLM 라우터 /health — 풀을 켠 박스만(llm-router 항목의 if_env: LLM_UPSTREAMS) status ok · models.match == true · 올라온 서버 수.
   · MX 백서 위키 워커 — 리스너가 없어 API 의 /api/v1/wiki/health 로 본다(최근 10분 안에 박동한 워커가 있고 맨 앞이 stopped 가 아니다 ·
-    줄 선 작업 · 24시간 실패 수). 이 박스의 MXWhitePaper 에 워커가 있는 판(위키 W3 뒤)만 싣는다(docs/mxwp-wiki P9).
+    줄 선 작업 · 24시간 실패 수). 이 박스의 MXWhitePaper 에 워커가 있는 판(위키 W3 뒤)이고 그 .env 가 위키를 켰을 때(WIKI_ENABLED)만
+    싣는다 — 위키를 끄면 /api/v1/wiki/* 가 전부 404 라 늘 빨갛다(docs/mxwp-wiki P9).
   · 끝점마다 성공한 조건도 값을 풀어 보인다(resolve-successful-conditions) — 도구 수 · 도는 심의 수가 화면에 숫자로 보인다.
 경보(메일) — infra/.env 의 STATUS_ALERT_TO(팀 공용 주소, 쉼표로 여럿) **와** 포털 backend/.env 의 SMTP 설정(MAIL_BACKEND=smtp · SMTP_HOST ·
   MAIL_FROM · SMTP_PORT(기본 587) · SMTP_USERNAME · SMTP_PASSWORD · SMTP_STARTTLS)이 다 있을 때만 싣는다(IM-D6). 포털에 맡기지 않는다 —
@@ -278,12 +279,17 @@ def _enriched(name: str, notes: list[str], gw_names: list[str] | None) -> list[s
 
 
 def _mxwp_wiki(health: str, interval: str, mail: dict | None, notes: list[str]) -> dict | None:
-    """MX 백서 위키 워커 끝점 — 이 박스의 MXWhitePaper 에 워커가 있는 판만(없으면 None · 그 까닭을 notes 에). 워커는 리스너가 없어 API
+    """MX 백서 위키 워커 끝점 — 이 박스의 MXWhitePaper 에 워커가 있는 판이고 그 .env 가 위키를 켰을 때만(아니면 None · 그 까닭을 notes 에).
+    위키를 끄면 그쪽은 /api/v1/wiki/* 를 health 까지 전부 404 로 낸다 — 실으면 위키를 안 쓰는 박스에서 늘 빨갛고 경보가 운다(10-25 cae00
+    점검 — 처음엔 워커 코드만 보고 실었다). 워커는 리스너가 없어 API
     (health 와 같은 호스트 · 포트)의 위키 상태로 본다. 그 응답은 최근 10분 안에 박동한 워커만 싣고(위키를 꺼도 워커는 disabled 로 박동한다)
     멈출 때 stopped 를 남긴다 — API 만 살아 있으면 200 이라 상태 코드로는 죽은 워커를 못 본다. 수 조건 둘은 화면에 그 수를 보이려는 것이다."""
     repo = _find_repo(MXWP_REPO)
     if repo is None or not (repo / _MXWP_WIKI_WORKER).is_file():
         notes.append("MX 백서 위키 워커는 보지 않는다 — 이 박스의 MXWhitePaper 에 워커가 없는 판이다(위키 W3 전)")
+        return None
+    if _env_get(repo / ".env", "WIKI_ENABLED").strip().lower() not in _TRUE:
+        notes.append("MX 백서 위키 워커는 보지 않는다 — 이 박스의 MX 백서는 위키를 켜지 않았다(MXWhitePaper/.env 의 WIKI_ENABLED)")
         return None
     u = urlsplit(health)
     url = f"{u.scheme}://{u.netloc}{_MXWP_WIKI_HEALTH}"
