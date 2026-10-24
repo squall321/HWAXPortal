@@ -1,0 +1,28 @@
+# MX WhitePaper 완전 연결 · LLM 위키 — 포털 쪽 체크리스트
+
+> MXWP 쪽 단계는 MXWhitePaper `docs/llm-wiki/checklist.md`. 여기는 [PLAN.md](PLAN.md) §3 의 P1~P10.
+
+## 요청서(2026-10-24)
+- [x] 조사 — Karpathy 원문 · MXWP 현황 · 포털 연결 상태 · 원천 위치(시장불량 · 해석 · 대화 · 온톨로지)
+- [x] MXWhitePaper `docs/llm-wiki/` 요청서 여섯 · 이 폴더 셋
+
+## 연결 · 신원(MXWP C1 뒤)
+- [ ] P1 게이트웨이 provision.env — `PER_USER_SSO_APPS` `mx-white-paper:MXWP` · `MXWP_SSO_SECRET` · `MXWP_SSO_URL`
+- [ ] P2 REST 다리 `per_user`(provision-config.sh) · 시험
+- [ ] P5 update-all — 비밀 전달 · 끄기 · MXWP 설정 킷 적용 · 자동 생성 안 함 · 시험
+- [ ] PLAN §5 확인(dev) — 감사 원장 사람 명의 · 문서 소유자 · 끄면 되돌아옴
+
+## 소속 · 플랫폼 전달
+- [ ] P3 진입 토큰 `access` 클레임(시스템별 켜기 `claims_access`) · 시험(켠 시스템만)
+- [ ] P4 게이트웨이 `X-Heax-User-Plat` + `X-Heax-Plat-Proof`(앱별 `send_plat`) · 시험
+
+## 쓰기 길(MXWP W1 · W2 · W3 · W6 뒤)
+- [ ] P6 '위키에 남기기' — 서버가 저장된 턴으로 봉투 · 사람 토큰 도우미 · 대화 알림 · 이력
+- [ ] P7 '해결됨' → 후보(사용자 결정 Q1 뒤)
+- [ ] P8 심의 결정문 → 위키(`delib_opts.wiki`, 기본 꺼짐)
+- [ ] P9 상태판 `/api/v1/wiki/health` · services.yaml 여섯째 인스턴스 · 업데이트 이력
+- [ ] P10 도구 영역 · 페르소나 안내문(게이트웨이 `tools/list` 확인 뒤)
+
+## 사람(cae00)
+- [ ] 비밀 → `infra/.env` · update-all · 타일 로그인 확인
+- [ ] 위키 워커 PAT 의 `plat:plmdefect` 여부(권한표 담당)
