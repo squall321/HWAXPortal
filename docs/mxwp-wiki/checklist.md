@@ -29,7 +29,8 @@
 - [x] P8 심의 결정문 → 위키(`delib_opts.wiki`, 기본 꺼짐) — 엔진이 RA 저장 자리에서 단마다 `deliberation` 봉투 · 사람 명의 · 소속 범위(없으면 후보) · 결정문 끝 안내, MCP `deliberate_start(wiki)` · 이어하기 이어받음, 포털 `DelibOpts.wiki` · 원장 소속 중계 · 심의 옵션 토글(MX 백서 권한) · 시험(엔진 12 — 봉투는 MX 백서 pydantic 모델로 검증 · 포털 중계 1) — MW-D18
   - [ ] dev 반영 — 에이전트 서버 재기동(사용자 확인 10-24) · 포털 재기동과 화면 빌드는 한 묶음(먼저 빌드하면 옛 백엔드가 `wiki` 를 말없이 버린다)
 - [x] P9 상태판 — MX 백서 위키 워커 끝점(워커가 있는 판만 · 최근 박동 · 맨 앞이 stopped 아님 · 줄 · 24시간 실패 수) · cae00 배치가 `mxwp_wiki` 도 내렸다 올린다(갈아 끼운 SIF 위에서 깨진 채 남지 않게) · 시험(생성기 1 · 배치 2 — MXWP start.sh 와 대조) · 이력 — MW-D20
-- [ ] P10 도구 영역 · 페르소나 안내문(게이트웨이 `tools/list` 확인 뒤)
+- [x] P10 도구 영역 — 위키 쓰기 넷(`wiki_submit_source · wiki_fileback · wiki_propose · wiki_add_question`)은 '데이터 등록·온톨로지', 읽기는 앱 기본 '사내 지식 검색'(게이트웨이 `tool_areas.json`) · 페르소나 `he-doc-mxwhitepaper` '위키 먼저 묻기'(정본 · dev 등록부는 그 한 명만 반영 — `sync-he-personas` 의 `plan` 으로) — MW-D21
+  - [ ] cae00 — 페르소나는 `python3 infra/scripts/sync-he-personas.py` 미리보기 뒤 `--apply`(사람 몫, 다른 페르소나의 어긋남도 같이 보인다)
 
 ## 사람(cae00)
 - [ ] 비밀 → 게이트웨이 provision.env 넷 · MXWP `.env` · update-all · 타일 로그인 확인(PLAN §6)
