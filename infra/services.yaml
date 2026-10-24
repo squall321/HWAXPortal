@@ -199,6 +199,7 @@ services:
         step_forge:        { kind: sqlite, file: stepforge.db,      sync: mirror, blobs: [projects, materials] }
         hwax_risk:         { kind: sqlite, file: risk_review.db,    sync: mirror, keys_with: [cred.key], identity: [origin.json] }
         voice_recorder:    { kind: sqlite, file: voicerecorder.db,  sync: mirror }
+        doc_forge:         { kind: sqlite, file: docforge.db,       sync: mirror, blobs: [jobs, uploads] }   # 박스 고유 — dev 작업 · 올린 파일을 씨앗으로 보내지 않는다. 모델(models/)은 Drive models/ 로 따로(models-from-drive)
         thermal_shock_mcp: { kind: model,  sync: publish-replace }
         web_design_agents: { kind: blob,   sync: mirror }
         paper_ingest:      { kind: blob,   sync: none }

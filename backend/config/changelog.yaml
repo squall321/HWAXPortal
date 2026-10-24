@@ -22,6 +22,13 @@
 
 entries:
   - date: 2026-10-25
+    title: "Drive 배포물 점검이 앱 데이터 어긋남을 제대로 보고, 안전하게 올리는 길을 알려 줍니다"
+    tag: 기술
+    items:
+      - "drive-drift.sh 의 허브 앱 데이터 검사가 /data 로 옮긴 링크를 따라가지 못해 늘 통과였습니다. 이제 링크를 따라가되 dev 에서 박스로 보내는 앱(재료 DB 등 — 레지스트리의 publish 규칙)만 견줍니다. 박스마다 따로인 StepForge · DocForge · 음성 기록 · 리스크 DB 는 보지 않습니다."
+      - "어긋남이 있으면 구역마다 따로 올리는 명령을 안내합니다(포털 · 허브 앱 SIF 하나씩 · KooRemapper · MX 백서). 전체 올리기는 허브 되돌림 판을 셋만 남기고 대조 목록을 이번 것으로 덮으며 dev 데이터를 박스에 씨앗으로 싣기 때문에 권하지 않습니다."
+      - "데이터 레지스트리(infra/services.yaml)에 DocForge 데이터를 박스 고유(mirror)로 적었습니다."
+  - date: 2026-10-25
     title: "DocForge 가 아직 연결되지 않은 곳에서는 「Report Archive — 정밀 변환」 을 보이지 않습니다"
     tag: 연결
     items:

@@ -100,7 +100,24 @@ if want heax; then
         fi
       done
       # app-data(재료·장비 DB 등)는 tar 로 올라가므로 '가장 최근에 바뀐 DB' 와 tar 시각을 견준다.
-      newest="$(find "$D/var/app_data" -name '*.db' -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"
+      # -L — var/app_data 는 /data 이관 뒤 심링크다(dev · cae00). 안 따라가면 DB 를 하나도 못 찾아 이 검사가 늘 통과였다(10-25 점검).
+      # 레지스트리(infra/services.yaml heax-hub data.apps)가 dev → 박스로 보내는 앱(sync: publish-*)의 DB 만 본다 — 박스 고유(mirror)인
+      # stepforge · docforge · voicerecorder · risk DB 는 dev 에서 늘 새것이라, 다 보면 이 줄이 늘 떠서 진짜 어긋남을 가린다.
+      _py="$SELF_REPO/backend/.venv/bin/python"; [ -x "$_py" ] || _py=python3
+      _pub="$("$_py" - "$SELF_REPO/infra/services.yaml" <<'PY' 2>/dev/null
+import sys, yaml
+for s in yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["services"]:
+    if s.get("name") == "heax-hub":
+        for k, v in ((s.get("data") or {}).get("apps") or {}).items():
+            if str((v or {}).get("sync", "")).startswith("publish-"):
+                print(k)
+PY
+)"
+      if [ -n "$_pub" ]; then
+        newest="$(for _a in $_pub; do find -L "$D/var/app_data/$_a" -name '*.db' -printf '%T@\n' 2>/dev/null; done | sort -rn | head -1)"
+      else
+        newest="$(find -L "$D/var/app_data" -name '*.db' -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"   # 레지스트리를 못 읽으면 전부
+      fi
       tar_t="$(rclone lsl "${R%/dist}/app-data/latest/app-data.tar.gz" 2>/dev/null | awk '{print $2" "$3}')"
       if [ -n "$newest" ] && [ -n "$tar_t" ]; then
         tar_e="$(date -d "$tar_t" +%s 2>/dev/null || echo 0)"
@@ -193,13 +210,14 @@ fi
 
 if [ "$DRIFT" = 1 ]; then
   echo
-  echo "→ 올려야 한다:"
-  echo "    ./infra/scripts/build-all-to-drive.sh            # 전체(빌드+업로드)"
-  echo "    (HEAXHub 만)  cd \$HEAXHub && bash deploy/apptainer/dist-to-drive.sh"
-  echo "    (app-data 만) cd \$HEAXHub && bash deploy/apptainer/appdata-to-drive.sh"
+  echo "→ 올려야 한다 — 구역마다 따로(전체 build-all-to-drive.sh 는 쓰지 않는다: 허브 dist-to-drive 가 되돌림 판을 셋만 남기고 지우고,"
+  echo "  SHA256SUMS 를 이번에 올린 것만으로 덮고, app-data 가 dev 데이터를 cae00 에 씨앗으로 싣는다 — 10-25 cae00 업데이트 점검):"
+  echo "    (포털)        ./infra/scripts/build-all-to-drive.sh portal"
+  echo "    (허브 앱 SIF) SLUG=<앱> bash ../DocForge/scripts/drive-push-sif.sh --dry-run   # 본 뒤 --dry-run 없이 — 목록을 합쳐 맨 끝에 올린다"
+  echo "    (app-data)    올리지 않는다 — 꼭 필요하면 HEAX_BACKUP_EXCLUDE=\"doc_forge step_forge voice_recorder\" 로(dev 의 DB · 작업 · 업로드가 씨앗으로 간다)"
   echo "    (KooRemapper) cd \$KooRemapper && bash platform/infra/scripts/dist-to-drive.sh"
-  echo "    (MX 백서)     cd \$MXWhitePaper && ./infra/scripts/images-to-drive.sh   # 그 리포의 안내대로 — 짓는 이미지 전부를 싣는다"
-    echo "    (ste)         ./infra/scripts/build-all-to-drive.sh ste   # pack-staging + push-to-drive"
+  echo "    (MX 백서)     cd \$MXWhitePaper && ./infra/scripts/images-to-drive.sh   # web · api · wiki 를 한 묶음으로(그쪽 637a34f 부터)"
+  echo "    (ste)         ./infra/scripts/build-all-to-drive.sh ste   # pack-staging + push-to-drive"
   exit 1
 fi
 echo "✓ Drive 가 이 박스의 아티팩트와 일치한다"
