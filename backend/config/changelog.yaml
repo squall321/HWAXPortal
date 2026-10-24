@@ -22,6 +22,11 @@
 
 entries:
   - date: 2026-10-25
+    title: "Drive 배포물 점검이 MX 백서 이미지도 봅니다"
+    tag: 기술
+    items:
+      - "drive-drift.sh 가 MX 백서가 짓는 이미지 셋(web · api · wiki)을 Drive latest/ 와 견줍니다. 그동안 이 구역을 보지 않아, 위키 워커 이미지가 Drive 에 한 번도 올라가지 않은 것을 아무도 몰랐습니다."
+  - date: 2026-10-25
     title: "'이 대화에서 분석' 을 DocForge 가 읽습니다 · DocForge 운영자 페르소나"
     tag: 챗
     items:

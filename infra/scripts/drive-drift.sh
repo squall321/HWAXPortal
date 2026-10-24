@@ -11,7 +11,7 @@
 #   돌렸고, 새 데이터가 옛 스키마의 CHECK 에 걸려 app-data 병합이 통째로 실패했다.
 #
 #   ./infra/scripts/drive-drift.sh          # 전부 확인
-#   ./infra/scripts/drive-drift.sh heax     # 지정한 것만 (portal | heax | koorm)
+#   ./infra/scripts/drive-drift.sh heax     # 지정한 것만 (portal | heax | koorm | mxwp | ste)
 #
 # 종료코드 0=일치, 1=드리프트 있음(올려야 함), 2=확인 불가.
 set -uo pipefail
@@ -21,7 +21,7 @@ PARENT="$(dirname "$SELF_REPO")"
 find_repo() { local n="$1"; for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/claude/$n"; do
   [ -d "$c" ] && { printf '%s' "$c"; return 0; }; done; return 0; }
 
-WANT="${*:-portal heax koorm ste}"
+WANT="${*:-portal heax koorm mxwp ste}"
 want() { printf '%s\n' $WANT | grep -qx "$1"; }
 command -v rclone >/dev/null 2>&1 || { echo "✗ rclone 없음 — 확인 불가"; exit 2; }
 
@@ -138,6 +138,34 @@ if want koorm; then
   fi
 fi
 
+# ── MX 백서: 그쪽이 짓는 SIF(web · api · wiki)를 크기로 비교한다 ──
+# MX 백서는 이미지를 따로 올린다(그 리포의 images-to-drive.sh → MXWP_IMAGES_REMOTE/latest). 이 검사가 이 구역을 안 봐서 web.sif 를 새로
+# 구워도 Drive 를 아무도 대조하지 않았다(10-25 — 위키 워커 wiki.sif 가 Drive 에 한 번도 안 올라간 것을 사람이 찾았다). 올리기는 latest/ 를
+# 그때 올린 묶음으로 sync 하므로, 안 올린 이미지는 latest/ 에서 빠진다 — 있어야 할 이미지가 없는 것도 드리프트로 친다.
+if want mxwp; then
+  D="$(find_repo MXWhitePaper)"
+  if [ -z "$D" ]; then echo "· MXWhitePaper 레포 없음 — 건너뜀"; else
+    R="$(env_get MXWP_IMAGES_REMOTE "$D/.env")"; R="${R%/}"
+    if [ -z "$R" ]; then echo "· MXWP_IMAGES_REMOTE 미설정 — 건너뜀"; else
+      echo "── MX 백서 이미지 ($R/latest)"
+      m=0
+      _mx="$(rclone lsl "$R/latest/" 2>/dev/null | awk '{print $1, $NF}')"
+      for b in web.sif api.sif wiki.sif; do
+        f="$D/infra/apptainer/$b"
+        [ -f "$f" ] || continue          # 이 박스에서 굽지 않은 것은 견줄 것이 없다(wiki.sif 는 위키 W3 판부터)
+        ls_="$(stat -c%s "$f")"
+        ds="$(printf '%s\n' "$_mx" | awk -v n="$b" '$2==n{print $1}')"
+        if [ -z "$ds" ]; then
+          echo "  ✗ $b — Drive latest/ 에 없다(cae00 이 받을 수 없다)"; DRIFT=1; m=1
+        elif [ "$ls_" != "$ds" ]; then
+          echo "  ✗ $b — 로컬 $ls_ ≠ Drive $ds"; DRIFT=1; m=1
+        fi
+      done
+      [ "$m" = 0 ] && echo "  ✓ 일치"
+    fi
+  fi
+fi
+
 # ── ste(SmartTwinExplorer): Drive 스테이징의 커밋이 이 박스의 HEAD 와 같은가 ──
 # 스테이징은 pack-staging 이 쓴 ste-code.commit 을 품는다. 그것이 HEAD 와 다르면 cae00 은 옛 코드를
 # 배포한다(그리고 sha256 은 맞으니 초록이다). 커밋 한 줄만 `rclone cat` 하므로 수 KB 다.
@@ -170,6 +198,7 @@ if [ "$DRIFT" = 1 ]; then
   echo "    (HEAXHub 만)  cd \$HEAXHub && bash deploy/apptainer/dist-to-drive.sh"
   echo "    (app-data 만) cd \$HEAXHub && bash deploy/apptainer/appdata-to-drive.sh"
   echo "    (KooRemapper) cd \$KooRemapper && bash platform/infra/scripts/dist-to-drive.sh"
+  echo "    (MX 백서)     cd \$MXWhitePaper && ./infra/scripts/images-to-drive.sh   # 그 리포의 안내대로 — 짓는 이미지 전부를 싣는다"
     echo "    (ste)         ./infra/scripts/build-all-to-drive.sh ste   # pack-staging + push-to-drive"
   exit 1
 fi
