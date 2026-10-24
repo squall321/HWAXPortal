@@ -45,6 +45,7 @@ from app.auth import ra_sso
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, chat_pat_ttl_s, get_settings
+from app.agent import docforge_delivery as _dfd
 from app.agent import pc_upload as _pc
 from app.agent import upload as _upload
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
@@ -1192,6 +1193,8 @@ class UploadDispatchReq(BaseModel):
     purpose: str = Field(default="", max_length=4000)      # 해석목적(자유 문장)
     note: str = Field(default="", max_length=4000)         # 특이사항
     stage: str = Field(default="", max_length=40)          # 개발단계 — 선행|DV|PV|양산
+    # reportarchive_precise 전용 — 그림을 VLM 으로 판독해 '모델 판독' 블록을 단다(목적지 이름이 '그림 판독' 을 말한다 — 기본 켬).
+    vlm: bool = True
 
 
 @router.get("/upload/destinations/stepforge/projects")
@@ -1245,6 +1248,28 @@ async def _dispatch_audited(request, body, principal, settings) -> dict:
         raise
 
 
+async def _ra_user_token(request, settings: Settings, principal: Principal) -> tuple[str, bool, dict]:
+    """RA 에 그 사람 명의로 부를 토큰 — (토큰, 위임으로 받았나, 외부 연결 기록). RA_SSO_SECRET 이 있으면 포털이 그 자리에서 받고
+    (ste 방식, docs/sso-delegation), 없거나 못 받으면 '외부 연결' 에 등록해 둔 토큰이다. 둘 다 없으면 무엇을 고칠지 말한다."""
+    email = principal.email or principal.subject
+    conn = request.app.state.user_store.get_connection(email=email, service="reportarchive") or {}
+    token = None
+    if settings.ra_sso_secret:
+        token = await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
+    via_sso = bool(token)
+    token = token or conn.get("token")
+    if not token:
+        if settings.ra_sso_secret:
+            raise AuthError(
+                "Report Archive 가 본인 명의 토큰을 내주지 않았습니다(포털 위임) — RA 쪽 위임 상태"
+                "(HEAX_SSO_SECRET·그 계정)를 RA 담당에게 확인하세요. 포털 서버 로그 hwax.ra_sso 에 이유가 있습니다.",
+                status_code=502)
+        raise AuthError(
+            "Report Archive 연결이 없습니다 — 포털 '개인 토큰 › 외부 연결'(/tokens?tab=connect)에서 RA 토큰을 먼저 등록하세요.",
+            status_code=400)
+    return token, via_sso, conn
+
+
 async def _dispatch_inner(request, body, principal, settings) -> dict:
     _upload.require_destination_group(settings, principal.groups, body.destination)
     audit = _audit(request)
@@ -1257,24 +1282,9 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         # ── Report Archive ────────────────────────────────────────────
         # **RA 의 파서를 그대로 쓴다**(포털에 python-pptx 를 넣지 않는다). RA 의 웹 '가져오기'
         # 와 같은 엔드포인트라 그림·표까지 위젯으로 들어온다. 그 사람 명의 토큰으로 부르므로
-        # 권한·워크스페이스가 그 사람 것이다 — RA_SSO_SECRET 이 있으면 포털이 그 자리에서 받고
-        # (ste 방식, docs/sso-delegation), 없거나 못 받으면 '외부 연결' 에 등록해 둔 토큰이다.
+        # 권한·워크스페이스가 그 사람 것이다(_ra_user_token).
         email = principal.email or principal.subject
-        conn = request.app.state.user_store.get_connection(email=email, service="reportarchive") or {}
-        token = None
-        if settings.ra_sso_secret:
-            token = await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
-        via_sso = bool(token)
-        token = token or conn.get("token")
-        if not token:
-            if settings.ra_sso_secret:
-                raise AuthError(
-                    "Report Archive 가 본인 명의 토큰을 내주지 않았습니다(포털 위임) — RA 쪽 위임 상태"
-                    "(HEAX_SSO_SECRET·그 계정)를 RA 담당에게 확인하세요. 포털 서버 로그 hwax.ra_sso 에 이유가 있습니다.",
-                    status_code=502)
-            raise AuthError(
-                "Report Archive 연결이 없습니다 — 포털 '개인 토큰 › 외부 연결'(/tokens?tab=connect)에서 RA 토큰을 먼저 등록하세요.",
-                status_code=400)
+        token, via_sso, conn = await _ra_user_token(request, settings, principal)
 
         async def _post_pptx(tok: str) -> httpx.Response:
             hdrs = {"Authorization": f"Bearer {tok}"}
@@ -1341,6 +1351,26 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
                 "pages": len(pages), "blocks": n_blocks, "report_id": rid,
                 "title": out.get("title"), "url": out.get("url"),
                 "warnings": [*warns, *ra_warns], "result": out}
+
+    if body.destination == "reportarchive_precise":
+        # ── Report Archive 정밀 변환(DocForge) ─────────────────────────
+        # 파일 본문은 MCP 로 나르지 않는다 — 스테이징의 **호스트 경로**를 넘긴다(StepForge 와 같은 꼴 · DocForge 의
+        # DOCFORGE_INPUT_ROOTS 에 스테이징 호스트 경로가 있어야 한다). 변환은 잡이라 기다리지 않는다 — 화면이 진행을 보다가
+        # 끝나면 deliver 를 부른다(포털이 그 사람 명의로 RA 에 엄격 생성, DF-D17). 맡긴 사람을 기록해 진행 · 배달을 그 사람에게만.
+        src = _upload.host_path(settings, path)
+        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_convert",
+                                     {"path": src, "parser": "auto", "vlm": bool(body.vlm)})
+        job_id = str(out.get("job_id") or "").strip() if isinstance(out, dict) else ""
+        if not job_id or out.get("ok") is False:
+            return {"stage": "failed", "error": f"DocForge 가 변환을 맡지 않았습니다 — {out.get('error') or '잡 번호 없음'}",
+                    "detail": out}
+        _dfd.save_job(settings, job_id, owner_sub=principal.subject, owner_email=principal.email or principal.subject,
+                      filename=body.filename)
+        audit.record(principal=principal.subject, event="upload_dispatch",
+                     meta={"destination": "reportarchive_precise", "filename": body.filename, "job_id": job_id,
+                           "vlm": bool(body.vlm)})
+        return {"stage": "dispatched", "destination": "reportarchive_precise", "job_id": job_id,
+                "next": "GET /agent/upload/destinations/docforge/jobs/{job_id} 로 진행을 보고, 끝나면 POST …/deliver"}
 
     if body.destination == "chat":
         # ── 이 대화에서 분석 ─────────────────────────────────────────
@@ -1472,6 +1502,102 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
             "created_project": created, "job_id": job_id, "kind": None if run == "none" else run,
             "next": "job_status(job_id) 로 진행을 보고, 끝나면 project_tree·list_interfaces",
             "result": out}
+
+
+# ── Report Archive 정밀 변환 — DocForge 잡의 진행 · 배달 · 취소(docs/doc-to-ra DF-D17) ─────────────────────────────────────────
+# 맡기기는 /upload/dispatch(reportarchive_precise)다. 여기 셋은 그 잡을 **맡긴 사람만** 부른다 — 기록의 주인이 아니면 '없다'.
+# DocForge 도 같은 사람 PAT 로 부르므로 그쪽 원장의 주인 검사도 한 번 더 걸린다.
+def _dfd_http(exc: _dfd.DeliveryError) -> AuthError:
+    return AuthError(exc.message, status_code=exc.status)
+
+
+@router.get("/upload/destinations/docforge/jobs/{job_id}")
+async def upload_docforge_status(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """화면이 1.5초마다 본다 — status(queued · running · done · failed · cancelled) · stage · progress · error · 배달했으면 그 결과."""
+    try:
+        rec = _dfd.load_job(settings, job_id, principal.subject)
+    except _dfd.DeliveryError as exc:
+        raise _dfd_http(exc) from exc
+    if rec.get("delivered"):
+        return {"job_id": job_id, "status": "done", "progress": 100, "delivered": rec["delivered"]}
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+    out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_status", {"job_id": job_id}, timeout=20.0)
+    if out.get("ok") is False:
+        raise AuthError(f"DocForge: {out.get('error')}", status_code=int(out.get("status") or 502))
+    return {"job_id": job_id, **{k: out.get(k) for k in ("status", "stage", "progress", "error")}}
+
+
+@router.post("/upload/destinations/docforge/jobs/{job_id}/deliver")
+async def upload_docforge_deliver(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """끝난 잡의 패키지를 그 사람 명의로 RA 에 엄격 생성한다. 한 잡은 한 번만 — 이미 넣었으면 그 결과를 그대로(두 번 눌러도 하나)."""
+    try:
+        rec = _dfd.load_job(settings, job_id, principal.subject)
+    except _dfd.DeliveryError as exc:
+        raise _dfd_http(exc) from exc
+    async with _dfd.lock(job_id):
+        rec = _dfd.load_job(settings, job_id, principal.subject)
+        if rec.get("delivered"):
+            return {"stage": "done", "destination": "reportarchive_precise", "created": False, **rec["delivered"]}
+        pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+        if not pat:
+            raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+        pkg = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_package", {"job_id": job_id}, timeout=30.0)
+        if pkg.get("ok") is False:
+            return {"stage": "failed", "error": f"DocForge: {pkg.get('error')}", "detail": pkg}
+        email = principal.email or principal.subject
+        token, via_sso, conn = await _ra_user_token(request, settings, principal)
+
+        async def _remint() -> str | None:
+            if not via_sso:
+                return None
+            ra_sso.forget(email)
+            return await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
+
+        try:
+            pdir = _dfd.package_dir(settings, pkg.get("package_rel"))
+            got = await _dfd.deliver(settings, pdir, token=token, workspace=conn.get("workspace") or "", remint=_remint)
+        except _dfd.DeliveryError as exc:
+            _audit(request).record(principal=principal.subject, event="upload_deliver", status="failed",
+                                   meta={"destination": "reportarchive_precise", "job_id": job_id, "error": exc.message[:300]})
+            return {"stage": "failed", "error": exc.message}
+        except httpx.HTTPError as exc:
+            return {"stage": "failed", "error": f"Report Archive 에 연결하지 못했습니다({exc.__class__.__name__})."}
+        result = {"job_id": job_id, "filename": rec.get("filename"), **got}
+        _dfd.mark_delivered(settings, job_id, rec, result)
+        _audit(request).record(principal=principal.subject, event="upload_deliver", status="ok",
+                               meta={"destination": "reportarchive_precise", "job_id": job_id, "report_id": got["report_id"],
+                                     "pages": got.get("pages"), "blocks": got.get("blocks"), "resources": got.get("resources")})
+        return {"stage": "done", "destination": "reportarchive_precise", "created": True, **result}
+
+
+@router.post("/upload/destinations/docforge/jobs/{job_id}/cancel")
+async def upload_docforge_cancel(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    try:
+        _dfd.load_job(settings, job_id, principal.subject)
+    except _dfd.DeliveryError as exc:
+        raise _dfd_http(exc) from exc
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+    out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_cancel", {"job_id": job_id}, timeout=20.0)
+    return {"job_id": job_id, "cancelled": bool(out.get("cancelled"))}
 
 
 # ── PC 도우미 업로드 — DRM 문서를 PC 의 PowerPoint 로 풀어 올린다(docs/chat-ppt B · PP-D8) ─────────────────────────────────

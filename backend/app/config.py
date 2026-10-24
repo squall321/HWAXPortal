@@ -270,6 +270,10 @@ class Settings(BaseSettings):
     # 빈 값이면 변환하지 않고 컨테이너 경로를 그대로 쓴다(로컬 개발·비컨테이너 실행).
     upload_staging_host_dir: str = ""                 # 예: /home/koopark/.hwax/upload-staging
     upload_staging_ttl_hours: int = 6
+    # DocForge 정밀 변환(docs/doc-to-ra DF-D17) — 패키지를 읽을 DocForge 데이터 루트의 **호스트** 경로(apptainer 가 $HOME 을 붙여 컨테이너에서도
+    # 같게 보인다). 비면 형제 리포 ../HEAXHub/var/app_data/doc_forge(비컨테이너 실행) — start.sh 가 호스트 경로로 넘긴다.
+    docforge_package_root: str = ""
+    docforge_ra_file_max_mb: int = 25                 # RA upload_max_bytes 기본(25MB) — 넘는 리소스는 올리지 않고 알린다
     mcp_gateway_url: str = "http://127.0.0.1:9110"    # MCP Gateway (HWAXMcpGateway; aggregates the 3 MCPs). :9100 was node_exporter.
     mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
     agent_token_audience: str = "agent-server"         # aud for the RS256 handoff token

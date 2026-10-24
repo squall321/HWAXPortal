@@ -42,6 +42,13 @@ export interface DispatchResult {
   inbox_name?: string;
   // 이 대화에서 분석 — 저장하지 않고 읽어 온 글(.hwax.md). 화면이 문서 칩으로 붙인다(docs/chat-ppt PP-D17)
   doc?: { name: string; text: string; chars: number };
+  // Report Archive 정밀 변환(DocForge, docs/doc-to-ra DF-D17) — 맡기면 dispatched(job_id), 배달하면 done(보고서 + 변환 보고서 요약)
+  dropped?: number;
+  model_written?: number;
+  unaccounted?: number;
+  fidelity?: string | null;
+  resources?: number;
+  conversion_warnings?: string[];
   // StepForge · DynaForge
   project_id?: string;
   created_project?: boolean;
@@ -121,8 +128,37 @@ export async function stepProjects(): Promise<StepProject[]> {
 /** 개발단계 — 백엔드 `_STEP_STAGES` 와 같은 목록이어야 한다(어긋나면 조용히 버려진다). */
 export const STEP_STAGES = ['선행', 'DV', 'PV', '양산'] as const;
 
+/** DocForge 잡 진행 — 맡긴 사람만(남의 잡은 404). 배달했으면 delivered 에 그 결과. */
+export interface DocforgeStatus {
+  job_id: string;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | string;
+  stage?: string | null;
+  progress?: number | null;
+  error?: string | null;
+  delivered?: DispatchResult;
+}
+
+export async function docforgeStatus(jobId: string): Promise<DocforgeStatus> {
+  const r = await apiFetch(`/agent/upload/destinations/docforge/jobs/${encodeURIComponent(jobId)}`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(errorDetail(j?.detail, `변환 진행을 못 읽었습니다 (HTTP ${r.status}).`));
+  return j as DocforgeStatus;
+}
+
+/** 끝난 잡을 그 사람 명의로 RA 에 엄격 생성 — 한 잡은 한 번만(다시 부르면 같은 보고서). */
+export async function docforgeDeliver(jobId: string): Promise<DispatchResult> {
+  const r = await apiFetch(`/agent/upload/destinations/docforge/jobs/${encodeURIComponent(jobId)}/deliver`, { method: 'POST' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(errorDetail(j?.detail, `Report Archive 에 넣지 못했습니다 (HTTP ${r.status}).`));
+  return j as DispatchResult;
+}
+
+export async function docforgeCancel(jobId: string): Promise<void> {
+  await apiFetch(`/agent/upload/destinations/docforge/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }).catch(() => undefined);
+}
+
 export async function dispatchUpload(body: {
-  staging_id: string; filename: string; destination: string;
+  staging_id: string; filename: string; destination: string; vlm?: boolean;
   project_id?: string; project_name?: string; run?: string;
   // 과제 메타 — 새 과제일 때만 보낸다. 기존 과제 메타는 덮지 않는다.
   code?: string; department?: string; purpose?: string; note?: string; stage?: string;

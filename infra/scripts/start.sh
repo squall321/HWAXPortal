@@ -177,6 +177,8 @@ else
     `# 그대로 주면 상대는 못 읽는다. apptainer 가 $HOME 을 자동 마운트해 호스트 경로는` \
     `# 양쪽에서 같게 보인다(heax_app_step_forge 인스턴스에서 실측 확인, 2026-09-01).` \
     --env "UPLOAD_STAGING_HOST_DIR=$STAGING_HOST" \
+    `# DocForge 정밀 변환 — 패키지를 읽을 DocForge 데이터 루트(형제 리포 HEAXHub 의 앱 데이터, $HOME 밑이라 같은 경로로 보인다 — DF-D17).` \
+    --env "DOCFORGE_PACKAGE_ROOT=${HWAX_DOCFORGE_DATA:-$(cd "$REPO_ROOT/.." && pwd)/HEAXHub/var/app_data/doc_forge}" \
     --env "APP_ENV=${APP_ENV:-prod}" \
     --env "SERVE_FRONTEND=true" \
     --env "JWT_AUTOGEN_KEYS=true" \

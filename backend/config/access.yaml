@@ -147,6 +147,11 @@ platforms:
   - id: paperingest
     label: Paper Ingest
     gateway: [heax-paper_ingest]
+  - id: docforge
+    label: DocForge(문서 → Report Archive 정밀 변환)
+    # HEAX 앱 doc_forge 의 MCP 백엔드. ⚠ 앱을 status beta 로 올려 게이트웨이에 싣기 **전에** 여기 적는다(표에 없는 키는 '전체 공개').
+    # 챗 업로드 목적지 '정밀 변환' 은 이것과 plat:reportarchive 를 둘 다 요구한다(docs/doc-to-ra DF-D17).
+    gateway: [heax-doc_forge]
   # 아래 둘은 cae00 게이트웨이에만 있는 백엔드다(5차 요청 §2 — 실측 키). 표에 없을 때 simflow 는 allowed_groups 가 비어
   # 도구 21개가 **전원 공개**였고, plm-defect 는 allowed_groups 가 plat:plmdefect 를 요구하는데 그 키가 표에 없어 **전원 차단**이었다.
   - id: simflow

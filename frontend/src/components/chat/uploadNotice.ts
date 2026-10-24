@@ -56,6 +56,28 @@ export function dispatchNotice(filename: string, r: DispatchResult, now = Date.n
       }],
     };
   }
+  if (r.destination === 'reportarchive_precise' && r.report_id != null) {
+    // 변환 보고서 요약을 함께 — 쪽 · 블록 · 버린 것 · 모델 판독 · 무음 누락(DocForge 는 무음 누락이 있으면 패키지를 만들지 않는다, DF-D17)
+    const warns = [...(r.warnings ?? []), ...(r.conversion_warnings ?? [])];
+    const facts = { report_id: r.report_id, title: r.title ?? null, pages: r.pages ?? null, blocks: r.blocks ?? null,
+                    dropped: r.dropped ?? 0, model_written: r.model_written ?? 0, unaccounted: r.unaccounted ?? 0,
+                    fidelity: r.fidelity ?? null, url: r.url ?? null, warnings: warns };
+    const full = clip(JSON.stringify(facts));
+    const mw = r.model_written ?? 0;
+    return {
+      title: `${filename} — Report Archive 정밀 변환`,
+      text: `「${filename}」 을 정밀 변환해 Report Archive 보고서를 만들었습니다 — 보고서 ${r.report_id}`
+        + `${r.title ? `「${r.title}」` : ''} · ${r.pages ?? '?'}쪽 · 블록 ${r.blocks ?? '?'}개 · 버린 요소 ${r.dropped ?? 0}건(까닭은 변환 보고서) · `
+        + `모델 판독 ${mw}건 · 무음 누락 ${r.unaccounted ?? 0}`
+        + `${r.fidelity === 'drm_bundle' ? ' · PC 추출본으로 만들어 충실도가 낮습니다' : ''}.`
+        + `${mw ? ' \'모델 판독\' 블록은 모델이 그림을 읽은 것이니 원본과 맞는지 확인하세요.' : ''}`
+        + `${warns.length ? ` 경고 ${warns.length}건.` : ''}`,
+      activity: [{
+        ts: now, step: 'Report Archive 정밀 변환(사람이 올림)', tool: 'docforge_convert',
+        detail: JSON.stringify({ file: filename }), result_full: full, result_preview: preview(full), ok: true, origin: 'upload',
+      }],
+    };
+  }
   return null;
 }
 
@@ -66,7 +88,7 @@ export function dispatchInstruction(r: DispatchResult): string {
     return `AI 데이터 허브 inbox 파일 \`${r.inbox_name}\` 을 convert_file 로 변환한 초안을 검토하고, 모자란 항목은 `
       + 'import_record(dry_run=true)로 물어봐 줘';
   }
-  if (r.destination === 'reportarchive' && r.report_id != null) {
+  if ((r.destination === 'reportarchive' || r.destination === 'reportarchive_precise') && r.report_id != null) {
     return `Report Archive 보고서 ${r.report_id}${r.title ? `(「${r.title}」)` : ''}를 get_report_outline · get_report 로 읽고 검토해 줘`;
   }
   return '';

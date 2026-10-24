@@ -68,7 +68,7 @@ export function UploadRouter({ staged, onClose, onFill, onDispatched, onAttachDo
 
   if (picked === 'stepforge') return <StepForgePanel staged={staged} onClose={onClose} />;
   if (picked === 'dynaforge') return <DynaForgePanel staged={staged} onClose={onClose} />;
-  if (picked === 'reportarchive' || picked === 'aidatahub' || picked === 'chat')
+  if (picked === 'reportarchive' || picked === 'reportarchive_precise' || picked === 'aidatahub' || picked === 'chat')
     return (
       <DocDispatchPanel staged={staged} destination={picked} onClose={onClose} onFill={onFill}
         onDispatched={onDispatched} onAttachDoc={onAttachDoc} />

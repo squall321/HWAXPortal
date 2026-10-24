@@ -81,3 +81,18 @@ cae00 에서 따로 적을 값은 DocForge 고유 경로 둘(`DOCFORGE_INPUT_ROO
 - Docling · Pydantic AI · Instructor · MarkItDown · Unstructured 는 어느 리포에도 없다. LibreOffice 는 dev 호스트에만 있다.
 - cae00 SP 허브에는 아직 아무 앱도 붙지 않았다(StepForge 도 가짜 허브 회귀까지).
 - `GalaxyOntology` 는 이 일과 무관하다.
+
+**DF-D17 포털 배달 — 「Report Archive — 정밀 변환」(2026-10-24, DocForge E7).** cae00-handoff §4 를 그대로 붙였다. 정한 것 —
+① 목적지 `reportarchive_precise`(PPTX · DOCX · XLSX · PDF — DocForge 가 넷 다 돈다) · 권한은 RA **와** DocForge 둘 다(`upload.py` 의 `also` — 기존
+목적지는 그대로 하나). 권한표에 `docforge`(게이트웨이 `heax-doc_forge`)를 **앱을 beta 로 올리기 전에** 더했다(표에 없는 키는 '전체 공개').
+② 맡기기는 StepForge 꼴 — 스테이징 **호스트 경로**를 사용자 PAT 로 `docforge_convert(path, parser=auto, vlm)` · vlm 은 기본 켬(목적지 이름이 '그림
+판독' 이다 · DocForge 가 동시 2 로 묶는다). 맡긴 사람을 스테이징 아래 `#docforge-jobs/<job>.json` 에 남기고 진행(`docforge_status`) · 배달 · 취소는
+그 사람만(남의 것 · 없는 것은 똑같이 404). ③ 배달은 **화면이 끝난 것을 보고 부른다**(포털이 뒤에서 기다리는 일감을 만들지 않는다 — 창을 닫으면
+잡은 끝나도 안 넣는다, 다시 열 길은 아직 없다). 패키지는 `docforge_package` 의 `package_rel` 을 포털 설정 `docforge_package_root`(start.sh 가 형제
+리포 `HEAXHub/var/app_data/doc_forge` 의 호스트 경로로 넘긴다 — $HOME 밑이라 컨테이너에서도 같게 보인다) 밑에서만 읽는다(realpath 검사).
+④ 넣기 — RA 토큰은 RA 가지와 같은 함수(`_ra_user_token`, 위임 먼저 · 등록 토큰 다음)로 떼어 같이 쓴다. report.json 이 가리키는 리소스만
+`POST /api/files`(쓰지 않는 리소스는 올리지 않는다) → `res://` 를 받은 id 로 → template 을 pages[0] 에서 올려 `POST /api/reports`. RA 상한
+(`docforge_ra_file_max_mb`, 25)을 넘는 리소스는 올리지 않고 그 파일 칸을 빼고 경고 · 위임 토큰 401 은 한 번만 새로 받는다 · RA 가 템플릿을
+모르면 'RA 웹 가져오기를 한 번' 안내. ⑤ 한 잡은 한 번만 — 잡마다 잠금 + 기록의 `delivered`(두 번 눌러도 보고서 하나). ⑥ 알림은 화면 몫(종전
+꼴) — 보고서 링크 · 쪽 · 블록 · 버린 요소 · 모델 판독 · 무음 누락 · '모델 판독' 확인 문구 · PC 추출본이면 충실도. 남은 것 — DocForge status beta
+(게이트웨이 tools/list 확인) · dev 실주행 · 브라우저 시험 · PC 도우미 묶음(글 + 슬라이드 그림을 zip 으로 묶어 넘기기, DocForge R-D35)을 이 목적지에.

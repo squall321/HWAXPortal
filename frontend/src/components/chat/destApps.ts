@@ -13,6 +13,7 @@ export const DEST_APPS: Record<string, string[]> = {
   stepforge: ['heax-step_forge'],
   dynaforge: ['heax-kooremapper_mcp'],
   reportarchive: ['reportarchive'],
+  reportarchive_precise: ['reportarchive', 'heax-doc_forge'],
   aidatahub: ['ai-data-hub'],
   // 문서 행선지(DocActions)
   card: ['ai-data-hub'],

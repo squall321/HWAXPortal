@@ -58,6 +58,15 @@ DESTINATIONS: dict[str, dict] = {
         "groups_attr": "upload_allowed_group_list",
         "platform": "plat:reportarchive",
     },
+    # 정밀 변환 — DocForge 가 패키지를 만들고(배치 · 표 · 차트 값 · 그림 판독) 포털이 그 사람 명의로 RA 에 **엄격 생성**한다(docs/doc-to-ra
+    # DF-D2 · DF-D3 · DF-D17). 위 'Report Archive 로 보내기' 는 비교 기준선이라 남긴다. 권한은 RA 와 DocForge 둘 다(also).
+    "reportarchive_precise": {
+        "label": "Report Archive — 정밀 변환(배치 유지 · 그림 판독)",
+        "exts": {"pptx", "docx", "xlsx", "pdf"},
+        "groups_attr": "upload_allowed_group_list",
+        "platform": "plat:reportarchive",
+        "also": ("plat:docforge",),
+    },
     "aidatahub": {
         "label": "AI 데이터 허브 — 지식카드로 변환(검토 후 저장)",
         "exts": {"pptx", "docx", "pdf", "xlsx", "md"},
@@ -86,8 +95,9 @@ def _dest_ok(settings: Settings, groups: list[str], dest_id: str) -> bool:
     have = set(groups or [])
     if set(_dest_groups(settings, dest_id)) & have:
         return True
-    plat = (DESTINATIONS.get(dest_id) or {}).get("platform")
-    return bool(plat) and "feat:upload" in have and plat in have
+    spec = DESTINATIONS.get(dest_id) or {}
+    plats = [spec.get("platform"), *spec.get("also", ())]    # also — 함께 있어야 하는 플랫폼(정밀 변환 = RA + DocForge)
+    return bool(plats[0]) and "feat:upload" in have and all(p in have for p in plats)
 
 
 def allowed_destinations(settings: Settings, groups: list[str], ext: str) -> list[dict]:

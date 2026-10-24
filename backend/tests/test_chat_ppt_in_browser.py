@@ -91,6 +91,11 @@ _STUB = r"""
                                                       { id: 'reportarchive', label: 'Report Archive — 보고서로' }] });
     }
     if (u === '/agent/upload/dispatch') return json(window.__dispatch);
+    if (u.startsWith('/agent/upload/destinations/docforge/jobs/')) {      // 정밀 변환(DocForge) — 진행은 차례대로, 배달은 한 번
+      if (u.endsWith('/deliver')) return json(window.__dfDeliver);
+      if (u.endsWith('/cancel')) return json({ cancelled: true });
+      return json(window.__dfStates.length > 1 ? window.__dfStates.shift() : window.__dfStates[0]);
+    }
     if (u === '/agent/upload/pc-ticket' && method === 'POST')
       return json({ ticket: 'T'.repeat(43), expires_in_s: 600, helper_url: 'hwax-doc://extract?t=' + 'T'.repeat(43), protocol: 1 });
     if (u === '/agent/upload/pc-ticket/' + 'T'.repeat(43)) {
@@ -224,6 +229,35 @@ const SCENARIOS = {
              appends: (await calls(page)).filter((c) => /\/messages$/.test(c.url)).length,
              chip_kind: await page.evaluate(() => (document.querySelector('.doc-chip em') || {}).textContent || ''),
              errors: page.__errors };
+  },
+  // 정밀 변환(DocForge) — 맡기면 진행을 1.5초마다 보고, 끝나면 배달(RA 엄격 생성)해 대화에 알림 · 입력창에 지시문(docs/doc-to-ra DF-D17)
+  async composer_precise(browser) {
+    const page = await open(browser, 'composer');
+    await page.evaluate(() => {
+      window.__dests = [{ id: 'reportarchive_precise', label: 'Report Archive — 정밀 변환(배치 유지 · 그림 판독)' }];
+      window.__dispatch = { stage: 'dispatched', destination: 'reportarchive_precise', job_id: 'j_abc123' };
+      window.__dfStates = [{ job_id: 'j_abc123', status: 'running', stage: 'S3 읽기', progress: 50 },
+                           { job_id: 'j_abc123', status: 'done', stage: '끝', progress: 100 }];
+      window.__dfDeliver = { stage: 'done', destination: 'reportarchive_precise', created: true, report_id: 41, title: '설계 검토',
+        url: '/w/personal-5/reports/41', pages: 3, blocks: 12, dropped: 1, model_written: 2, unaccounted: 0, fidelity: 'full',
+        warnings: [], conversion_warnings: ['u1.e3: 경고'] };
+    });
+    await pick(page, 'a.pptx', [0x50, 0x4b, 0x03, 0x04]);
+    await page.getByRole('button', { name: /정밀 변환/ }).click();
+    await page.getByRole('button', { name: '정밀 변환 맡기기' }).click();
+    await page.getByText('정밀 변환 중').waitFor();
+    await forward(page, 1600);
+    const progress = await page.evaluate(() => (document.querySelector('.upl-panel [role=status]') || {}).textContent || '');
+    await forward(page, 1600);
+    await page.getByText('정밀 변환 보고서를 만들었습니다').waitFor();
+    await page.waitForFunction(() => window.__calls.some((c) => /\/messages$/.test(c.url)));
+    const all = await calls(page);
+    const sent = all.find((c) => c.url === '/agent/upload/dispatch');
+    return { progress, dispatch: sent && sent.body, roles: await text(page, 'roles'),
+             df: all.filter((c) => c.url.includes('/docforge/')).map((c) => `${c.method} ${c.url}`),
+             filled: await page.locator('textarea').inputValue(),
+             link: await page.evaluate(() => { const a = document.querySelector('.upl-panel a'); return a ? a.getAttribute('href') : ''; }),
+             model_note: (await page.getByText('원본과 맞는지 확인하세요').count()) > 0, errors: page.__errors };
   },
   // 사람이 쓰던 글이 있으면 저절로 덮지 않는다 — 단추로만
   async composer_typed(browser) {
@@ -528,3 +562,14 @@ def test_이_대화에서_분석은_읽어_온_글을_문서_칩으로_붙이고
     assert s["docs"].startswith("a.hwax.md:"), "손 추출 · PC 도우미와 같은 문서 칩"
     assert s["chip_kind"].startswith("발표자료 · 2슬라이드"), "머리말(kind · units)을 칩이 읽는다"
     assert s["roles"] == "" and s["appends"] == 0, "보낸 것이 아니라 읽어 온 것 — 대화에 알림을 남기지 않는다"
+
+
+def test_정밀_변환은_진행을_보이고_끝나면_넣어_대화에_알림과_지시문을_남긴다(seen):
+    s = seen("composer_precise")
+    assert s["dispatch"] == {"staging_id": "st1", "filename": "a.pptx", "destination": "reportarchive_precise"}
+    assert "S3 읽기 · 50%" in s["progress"], s["progress"]
+    job = "/agent/upload/destinations/docforge/jobs/j_abc123"
+    assert s["df"] == [f"GET {job}", f"GET {job}", f"POST {job}/deliver"], "1.5초마다 보고 · 끝나면 한 번 넣는다"
+    assert s["roles"] == "assistant", "대화에 알림 한 건"
+    assert s["filled"] == "Report Archive 보고서 41(「설계 검토」)를 get_report_outline · get_report 로 읽고 검토해 줘"
+    assert s["link"] == "/report-archive/w/personal-5/reports/41" and s["model_note"] is True

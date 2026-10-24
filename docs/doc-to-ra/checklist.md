@@ -12,8 +12,9 @@
 - [x] DocForge 리포(`squall321/DocForge` 비공개 · main · release `9f0d2e9`) — 앱 · 계약 · 걸어 다니는 뼈대 · 단계 명세 · 시험 16 + 명세 8 · 스크립트 · 문서(CLAUDE.md · docs/*)
 - [x] 인계 계획서 [cae00-handoff.md](cae00-handoff.md) — 첫날 순서 · 첫 배치(dev 몫) · 단계 · 포털 배달 명세 · 다른 리포 · 하지 말 것 · 허브 규약 · 지문 목록 합치기
 - [x] 순서 고침(DF-D14) — dev 먼저(DocForge `docs/START.md` D0~D11), 실데이터가 필요해지면 cae00 · 허브 등록은 첫 SIF Drive 와 한 묶음(DF-D15)
-- [ ] dev 단계 D0~D11(DocForge 창의 세션 — `docs/START.md`)
-- [ ] 첫 배치 dev 쪽 — HEAXHub 등록 · SIF 빌드 · 모델 · Drive 를 한 날에(DocForge docs/DEPLOY.md §4 1~6)
+- [x] dev 단계 D0~D11(DocForge 창의 세션 — `docs/START.md`) — 10-24
+- [x] 첫 배치 dev 쪽 — HEAXHub 등록 · SIF 빌드 · 모델 · Drive 를 한 날에(DocForge docs/DEPLOY.md §4 1~6) — 10-24, release `3154dfa`
+- [x] dev 2단계(DocForge `docs/START.md` §8) — E1 PPTX 수식 · E2 DOCX · E3 XLSX · E4 PDF · E5 PC 도우미 묶음 · E6 평가 도구(truth · eval) — 10-24
 - [ ] 첫 배치 cae00 쪽(사람) — 박스 값 · models-from-drive · update-all · /health · 뼈대 실주행(§4 7~9 · §5)
 
 ## M0 실측
@@ -33,7 +34,8 @@
 - [ ] IR · PPTX 해부 · 배치(§6) · 서식 → 허용 태그 · 표 · 차트 → chart/pie/scatter · 노트 · 링크 · 그림(EMF → PNG)
 - [ ] 검증 — 글 회계 · 숫자 대조 · 그림 회계 · RA 스키마 · 격자 합 · 무음 누락 0
 - [ ] 포장 — `report.json` · `resources/` · `conversion.json`
-- [ ] 포털 — 목적지 「Report Archive — 정밀 변환」 · 잡 진행 패널 · 사용자 명의 배달(엄격 생성) · 대화 알림
+- [x] 포털 — 목적지 「Report Archive — 정밀 변환」 · 잡 진행 패널 · 사용자 명의 배달(엄격 생성) · 대화 알림(DF-D17 · 10-24, 가짜 MCP · 가짜 RA 시험)
+- [ ] 포털 — dev 실주행(DocForge status beta + 게이트웨이 tools/list 확인 뒤) · 브라우저 시험
 - [ ] 시험 · 반대 검토 · 변이 · dev 실주행 · 문서 · 이력 · 올림
 
 ## M2 Word · Excel(+ PDF)
