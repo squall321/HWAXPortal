@@ -50,6 +50,11 @@
   MXWP 도 같다(기본 editor · 위임 호출은 admin 을 owner 로 낮춤). `koo.park` 의 reader 는 08-01 생성 때 값이라 MXWP 관리자가 한 번 고칠 일이다
   (MXWP 세션의 권한 판정이 '권한 부여' 로 막아 사용자에게 넘김 — 다른 세션이 대신 하지 않는다).
 
+- **MW-D16 사용자 결정(10-24) — MXWP 시험은 시험 전용 DB 로, 다른 것에 지장을 주지 않게.** MXWP 세션이 끝냈다(그쪽 2dd41f2) — 같은 postgres 의
+  `mxwp_test` 를 시험 하네스가 만들어 올리고, 시험 DB 가 dev DB 와 같거나 이름이 `_test` 로 끝나지 않으면 시험이 시작하지 않는다(닫힌 쪽).
+  Meilisearch 는 `test_` 접두 · MinIO 는 `mxwp-test-*`. 떠 있는 인스턴스는 그대로였고, 전체 1,336 두 번 동안 dev DB 85 표 51,008 줄이 표마다
+  같았다. 뒤에 게이트웨이의 서비스 시야 · 위임 호출 모두 정상(읽기 확인).
+
 ## 조사 근거(2026-10-24)
 
 - 게이트웨이 `mx-white-paper` 백엔드 · REST 다리는 서비스 토큰(`HWAXMcpGateway/provision-config.sh` 98~130 · 490~493 · 534~536행 근처).
