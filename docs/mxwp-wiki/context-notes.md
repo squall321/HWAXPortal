@@ -40,6 +40,16 @@
   09-29 결정대로 본인 등록 토큰으로만 간다(dev config 가 낡아 있었다). ③ `koo.park` 의 MXWP 역할이 reader 라 챗에서 MXWP 쓰기가 403 —
   위임이 맞게 그 사람 역할로 막힌 것이다(예전엔 서비스 계정으로 통과). 역할은 사용자 결정.
 
+- **MW-D14 MX 백서 서비스 토큰은 '살아 있으면 잇고 죽었을 때만 다시' — 다른 플랫폼(DynaForge kr_ PAT)과 같은 규칙으로.** 까닭 — MXWP 시험 둘이
+  dev DB 에 `DELETE FROM api_tokens` 를 돌려 게이트웨이 서비스 토큰 둘과 사람들의 개인 토큰이 통째 지워졌고(그쪽 f7484b9 로 시험이 자기 사용자만
+  지우게 고침), 게이트웨이는 도구는 뜨고 신원 없는 호출만 401 인 채였다. 또 provision 이 `--force` 마다 토큰을 회전해 떠 있는 게이트웨이의 토큰이
+  재기동까지 죽었다. 고친 것 — provision 은 그 토큰으로 `/api/v1/me` 를 물어 산 것은 잇고(게이트웨이 55962dd), update-all 은 죽은 토큰을
+  `_mxwp_token_drift` 로 알아 재프로비저닝한다(MXWP 가 안 닿으면 방아쇠로 삼지 않는다). 다른 표를 통째로 비우는 MXWP 시험은 아직 남아 사용자 결정 대기.
+- **MW-D15 역할은 다른 플랫폼처럼 포털에서 받아 오지 않는다.** 조사(10-24) — HEAXHub · HWAX Risk · ste · DynaForge · RA · AIDataHub 모두 첫 진입에
+  고정 기본값(일반 사용자 · editor · member)으로 만들고 이후 역할은 그 앱 관리자가 관리한다. `groups` · `portal-admin` 을 역할로 바꾸는 곳은 없다.
+  MXWP 도 같다(기본 editor · 위임 호출은 admin 을 owner 로 낮춤). `koo.park` 의 reader 는 08-01 생성 때 값이라 MXWP 관리자가 한 번 고칠 일이다
+  (MXWP 세션의 권한 판정이 '권한 부여' 로 막아 사용자에게 넘김 — 다른 세션이 대신 하지 않는다).
+
 ## 조사 근거(2026-10-24)
 
 - 게이트웨이 `mx-white-paper` 백엔드 · REST 다리는 서비스 토큰(`HWAXMcpGateway/provision-config.sh` 98~130 · 490~493 · 534~536행 근처).

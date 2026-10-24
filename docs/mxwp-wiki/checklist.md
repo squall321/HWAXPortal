@@ -13,6 +13,8 @@
 - [x] PLAN §5 확인(dev 10-24) — 감사 원장 `as-user-pat`(호출자 그 사람) · 만든 문서의 주인이 그 사람(DB) · 신원 없는 내부 호출은 `service` + `no-identity`
 - [ ] PLAN §5 — 끄면 서비스 계정으로 되돌아오는지(dev 에서 아직 안 해 봄) · 브라우저 타일 실클릭으로 진입 토큰 `affiliation` 이 MXWP 에 들어가는지
 
+- [x] 게이트웨이 MX 백서 서비스 토큰 — 살아 있으면 잇고 죽었을 때만 다시(게이트웨이 55962dd) · update-all 이 죽은 토큰을 알아 재프로비저닝(MW-D14)
+
 ## 소속 · 플랫폼 전달
 - [x] P3 진입 토큰 `affiliation` 클레임(시스템별 켜기 `claims_affiliation` — `plat:` 은 원래 `groups` 에) · 시험(켠 시스템만 · 빈 값 · 지운 소속) — 703d949
 - [x] P4 게이트웨이 `X-Heax-User-Plat` + `X-Heax-Plat-Proof`(앱별 `send_plat` · provision `<접두>_SEND_PLAT`) · 시험 — HWAXMcpGateway baa2880

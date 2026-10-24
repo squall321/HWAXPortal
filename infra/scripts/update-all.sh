@@ -1797,6 +1797,32 @@ raise SystemExit(0 if ((arp.get("headers") or {}).get("Authorization") or "") !=
 PY
 }
 
+# MX 백서 서비스 토큰이 **살아 있나** — 게이트웨이 config 의 mx-white-paper(MCP) · rest 주입 토큰으로 MXWP /api/v1/me 를 불러 하나라도
+# 401 · 403 이면 0(어긋남), 다 200 이거나 판정할 수 없으면(항목 · 토큰 없음, MXWP 가 안 닿음) 1. 키는 있고 토큰만 죽은 것은 calc_missing 이
+# 못 본다 — MXWP 시험이 api_tokens 를 비우자(2026-10-24 dev) 도구는 뜨고 신원 없는 호출만 401 인 채 남았다(docs/mxwp-wiki MW-D14).
+# 안 닿는 것을 방아쇠로 삼지 않는다 — 그러면 MXWP 가 내려간 동안 매 실행 재프로비저닝이 헛돈다. 토큰은 argv 에 싣지 않고 찍지 않는다.
+_mxwp_token_drift() {  # $1=gateway_config.json
+  python3 - "$1" <<'PY' 2>/dev/null
+import json, sys, urllib.error, urllib.request
+try: d = json.load(open(sys.argv[1]))
+except Exception: raise SystemExit(1)
+site = (d.get("rest") or {}).get("mx-white-paper") or {}
+toks = [((d.get("mx-white-paper") or {}).get("headers") or {}).get("Authorization") or "", (site.get("inject") or {}).get("value") or ""]
+toks = [t for t in toks if t.startswith("Bearer ") and len(t) > 7]
+if not toks: raise SystemExit(1)
+base = str(site.get("base") or "http://127.0.0.1:8800").rstrip("/")
+dead = False
+for t in toks:
+    try:
+        urllib.request.urlopen(urllib.request.Request(base + "/api/v1/me", headers={"Authorization": t}), timeout=8)
+    except urllib.error.HTTPError as e:
+        dead = dead or e.code in (401, 403)
+    except Exception:
+        raise SystemExit(1)
+raise SystemExit(0 if dead else 1)
+PY
+}
+
 # 걷어낼 옛 항목 — 게이트웨이가 재프로비저닝 때 **빼는** 관리 키 둘이 config 에 남아 있나. 기대 목록(calc_missing)과 드리프트 판정들은
 # '있어야 할 것이 없다·다르다' 만 본다. **없어야 할 것이 남은** 박스에는 방아쇠가 없었다 — #10·#11 이 겨냥한 그 박스(cae00)에서 반영 뒤에도
 # 재프로비저닝이 한 번도 안 돌아 가짜 DOWN 둘(arp 401 · smart-twin-mcp 연결 실패)이 그대로였고, 매 실행 "다운 백엔드 … *_MCP_URL 을
@@ -1978,6 +2004,13 @@ PY
     echo "  · 토큰 드리프트: arp — 게이트웨이 config 의 arp 가 provision.env 의 ARP_TOKEN 을 싣고 있지 않다(토큰 없이 등재됐거나 토큰을 바꿨다)"
     case " $MISSING " in *" arp "*) ;; *) MISSING="${MISSING:+$MISSING }arp" ;; esac
   fi
+  # MX 백서 서비스 토큰 — 키는 있고 토큰만 죽은 경우(_mxwp_token_drift). 재프로비저닝은 죽은 토큰만 다시 발급하고 산 토큰은 잇는다
+  # (게이트웨이 provision 의 mxwp_token_alive — DynaForge kr_ PAT 와 같은 규칙).
+  if [ "${MXWP_UP:-0}" = 1 ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+     && _mxwp_token_drift "$GW_DIR/gateway_config.json"; then
+    echo "  · 토큰 드리프트: mx-white-paper — 게이트웨이가 쥔 MX 백서 서비스 토큰이 401 이다(지워짐 · 회수) — 재프로비저닝이 다시 발급한다"
+    case " $MISSING " in *" mx-white-paper "*) ;; *) MISSING="${MISSING:+$MISSING }mx-white-paper" ;; esac
+  fi
   # 걷어낼 옛 항목(위 _gw_stale) — 키가 있으니 calc_missing 은 '빠짐 없음' 이고, 기대하지 않는 박스라 위의 어느 드리프트 판정도 보지
   # 않는다. 한 번 재프로비저닝하면 그 항목이 사라져 다음 실행부터 조용하다. 기대 목록(calc_missing 의 want)에는 넣지 않는다 — 게이트웨이가
   # 등재하지 않을 것을 기대하면 매 실행 헛돈다(docs/change-request-8-10 D-4·D-5).
@@ -2109,6 +2142,9 @@ PY
         # ARP 토큰도 calc_missing 이 못 본다(키는 있다) — 재프로비저닝 뒤에도 안 실렸으면 게이트웨이가 ARP_TOKEN 을 모르는 옛 판이다.
         if [ -n "${ARP_TOKEN:-}" ] && [ -n "${ARP_BASE:-}" ] && _arp_token_drift "$GW_DIR/gateway_config.json"; then
           STILL="${STILL:+$STILL }arp(토큰 미반영 — 게이트웨이 리포가 ARP_TOKEN 을 싣는 판인지 보라)"
+        fi
+        if [ "${MXWP_UP:-0}" = 1 ] && _mxwp_token_drift "$GW_DIR/gateway_config.json"; then
+          STILL="${STILL:+$STILL }mx-white-paper(서비스 토큰이 여전히 401 — provision 출력의 mxwp 발급 줄을 보라)"
         fi
         # 걷어낼 옛 항목도 calc_missing 이 못 본다(키가 **남은** 것이라) — 재프로비저닝 뒤에도 남았으면 말한다. 조용하면 매 실행 헛돈다.
         for _k in $(_gw_stale "$GW_DIR/gateway_config.json" "$GW_DIR/provision-config.sh"); do
