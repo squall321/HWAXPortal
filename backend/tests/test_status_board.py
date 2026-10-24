@@ -202,6 +202,28 @@ def test_에이전트_서버는_도는_심의_칸을_보고_LLM_라우터는_풀
         "[BODY].upstreams_up == [BODY].upstreams_total"]
 
 
+def test_MX_백서_위키_워커는_워커가_있는_판만_API_의_위키_상태로_본다(lay):
+    """docs/mxwp-wiki P9 — 워커는 리스너가 없어 API 의 위키 상태(최근 10분 안에 박동한 워커만 싣는다)로 본다. API 만 살아 있으면 200 이라
+    상태 코드로는 죽은 워커를 못 본다. 그 리포에 워커가 없는 판(위키 W3 전)이면 싣지 않는다 — 실으면 없는 주소로 경보가 늘 운다."""
+    api = _svc("mx-white-paper", f"http://127.0.0.1:{_free_port()}/api/v1/healthz", expect=200)
+    wiki = api["health"].replace("/api/v1/healthz", "/api/v1/wiki/health")
+    lay.manifest([api])
+    r = lay.gen()
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert wiki not in lay.endpoints() and "워커가 없는 판" in r.stdout, r.stdout
+    worker = lay.tmp / "MXWhitePaper/apps/api/app/wiki/worker.py"     # 형제 리포(생성기의 _find_repo — 포털 리포 옆)
+    worker.parent.mkdir(parents=True)
+    worker.write_text("# 위키 워커\n", encoding="utf-8")
+    r = lay.gen()
+    assert r.returncode == 0, r.stdout + r.stderr
+    ep = lay.endpoints()[wiki]
+    assert ep["group"] == "mx-white-paper" and ep["conditions"] == [
+        "[CONNECTED] == true", "[STATUS] == 200", "len([BODY].data.workers) >= 1",
+        "[BODY].data.workers[0].state != stopped", "[BODY].data.jobs.queued > -1", "[BODY].data.jobs.failed_24h > -1"]
+    assert lay.endpoints()[api["health"]]["conditions"] == ["[CONNECTED] == true", "[STATUS] == 200"], "API 검사는 그대로"
+    assert "MX 백서 위키 워커를 본다" in r.stdout, r.stdout
+
+
 def test_Gatus_키가_겹치는_두_리스너는_번호로_가른다(lay):
     port = _free_port()
     lay.manifest([_svc("x", f"http://127.0.0.1:{port}/a_b", urls=[f"http://127.0.0.1:{port}/a.b"])])

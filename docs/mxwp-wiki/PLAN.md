@@ -39,7 +39,7 @@ MXWP 쪽 C1(위임 창구)이 dev 에 올라오기 **전에는** P1 · P5 의 �
 | P6 | HWAXPortal 백엔드 `app/agent/wiki_send.py` · 라우트 `POST /agent/conversations/{cid}/wiki` + 화면 `MessageList.tsx`(답 아래 버튼) — **10-24 구현**(MW-D17) | 답 아래 **'위키에 남기기'** — 서버가 저장된 그 턴(질문 · 최종 답 · 활동 요약)으로 `qa` 봉투를 지어(화면이 보낸 근거를 믿지 않는다) 그 사람 명의로 MXWP `POST /api/v1/wiki/sources`. 사람 토큰은 `app/auth/ra_sso.py` 꼴의 도우미(`X-Heax-Client: hwax-portal`). 성공은 대화에 알림 + 업로드 근거(챗 PPT 때의 '보낸 결과를 대화에 남기기' 와 같은 길) | MXWP W1 · W2 · W3 |
 | P7 | HWAXPortal 백엔드 · 화면 | **'해결됨'** 표시(턴 단위) → 위키 **후보**(주인만 보는 `held` 원천, 7일). 자동 후보(자기검증 통과 + 도구 근거 + 이어지는 '됐다') 여부는 사용자 결정(MXWP request §11 Q1, 권장 B) | P6 |
 | P8 | HWAXAgentServer `deliberation.py` | 심의 결정문을 RA 와 함께 위키에도 — 게이트웨이 도구 `wiki_submit_source`(사람 명의로 게이트웨이가 위임)로 `deliberation` 봉투. 버린 근거 · 소수 의견을 빼지 않는다. 심의 옵션 `delib_opts.wiki`(기본 꺼짐 — 결정 Q1 과 함께) | MXWP W6 |
-| P9 | HWAXPortal 상태판 · 이력 · services.yaml | `gen-status-config.py` 에 MXWP `/api/v1/wiki/health` · `infra/services.yaml` MXWP 항목에 여섯째 인스턴스 `mxwp_wiki`(MXWP W3 뒤) · 바뀔 때마다 `backend/config/changelog.yaml` | MXWP W3 |
+| P9 | HWAXPortal 상태판 · 배치 · 이력 | `gen-status-config.py` 에 MXWP 위키 워커 끝점(`/api/v1/wiki/health` 본문 조건 — 그 리포에 워커가 있는 판만) · cae00 배치(`deploy-all-from-drive.sh`)가 `mxwp_wiki` 도 내렸다 올린다(services.yaml 에는 인스턴스 목록이 없다 — MW-D20) · 바뀔 때마다 `backend/config/changelog.yaml` | MXWP W3 |
 | P10 | HWAXAgentServer · 페르소나 | `wiki_*` 도구가 게이트웨이 `tools/list` 에 뜬 뒤 — 도구 영역(`HWAXMcpGateway/tool_areas.json`)에 넣고, 페르소나 `he-doc-mxwhitepaper`(`infra/personas/he-team.json`) 안내문에 '위키 먼저 묻기' | MXWP W6 |
 
 하지 않는 것 — MXWP 코드는 여기서 고치지 않는다(그 리포 세션 몫). 대화 저장소를 일괄로 내보내지 않는다(주인만 읽는다는 약속 — 위키로 가는 것은 주인이 보내거나

@@ -19,6 +19,8 @@
     `!= pat(*:false*)` 한 줄이 잡는다(하나라도 false 면 실패). 게이트웨이가 답하지 않으면 그 한 줄만 싣는다.
   · 에이전트 서버 /health — status ok · 도는 심의·줄 선 심의 수(update-all·start.sh 가 재기동을 미루는 근거 칸 — 없으면 옛 판이다).
   · LLM 라우터 /health — 풀을 켠 박스만(llm-router 항목의 if_env: LLM_UPSTREAMS) status ok · models.match == true · 올라온 서버 수.
+  · MX 백서 위키 워커 — 리스너가 없어 API 의 /api/v1/wiki/health 로 본다(최근 10분 안에 박동한 워커가 있고 맨 앞이 stopped 가 아니다 ·
+    줄 선 작업 · 24시간 실패 수). 이 박스의 MXWhitePaper 에 워커가 있는 판(위키 W3 뒤)만 싣는다(docs/mxwp-wiki P9).
   · 끝점마다 성공한 조건도 값을 풀어 보인다(resolve-successful-conditions) — 도구 수 · 도는 심의 수가 화면에 숫자로 보인다.
 경보(메일) — infra/.env 의 STATUS_ALERT_TO(팀 공용 주소, 쉼표로 여럿) **와** 포털 backend/.env 의 SMTP 설정(MAIL_BACKEND=smtp · SMTP_HOST ·
   MAIL_FROM · SMTP_PORT(기본 587) · SMTP_USERNAME · SMTP_PASSWORD · SMTP_STARTTLS)이 다 있을 때만 싣는다(IM-D6). 포털에 맡기지 않는다 —
@@ -78,6 +80,10 @@ DEFAULT_INTERVAL = "1m"
 FAILURES = 5                   # 연속 실패 수 — 주기 1분이면 5분. update-all 의 재기동(대개 1~2분)으로는 메일이 나가지 않게
 SUCCESSES = 2                  # 다시 살아난 것으로 치는 연속 성공 수(풀림 메일)
 GATEWAY, AGENT, ROUTER = "mcp-gateway", "agent-server", "llm-router"
+# MX 백서 위키 워커(인스턴스 mxwp_wiki — MXWhitePaper docs/llm-wiki W3). 그 리포에 워커가 있는 판만 본다(docs/mxwp-wiki P9).
+MXWP, MXWP_REPO = "mx-white-paper", "MXWhitePaper"
+_MXWP_WIKI_HEALTH = "/api/v1/wiki/health"
+_MXWP_WIKI_WORKER = Path("apps/api/app/wiki/worker.py")
 _NAME_OK = re.compile(r"[A-Za-z0-9_-]+")      # Gatus 경로·조건에 그대로 넣을 수 있는 백엔드 이름(점·괄호·공백이 있으면 경로가 갈린다)
 _ADDR = re.compile(r"[^@\s<>,;\"']+@[^@\s<>,;\"']+")
 # 스크립트 검사(외부 끝점) — 주기 · 한 번의 상한(초). heartbeat 는 주기 + 상한 + 5분이다(한 번이 늦어도 끊긴 것으로 치지 않게).
@@ -271,6 +277,28 @@ def _enriched(name: str, notes: list[str], gw_names: list[str] | None) -> list[s
     return None
 
 
+def _mxwp_wiki(health: str, interval: str, mail: dict | None, notes: list[str]) -> dict | None:
+    """MX 백서 위키 워커 끝점 — 이 박스의 MXWhitePaper 에 워커가 있는 판만(없으면 None · 그 까닭을 notes 에). 워커는 리스너가 없어 API
+    (health 와 같은 호스트 · 포트)의 위키 상태로 본다. 그 응답은 최근 10분 안에 박동한 워커만 싣고(위키를 꺼도 워커는 disabled 로 박동한다)
+    멈출 때 stopped 를 남긴다 — API 만 살아 있으면 200 이라 상태 코드로는 죽은 워커를 못 본다. 수 조건 둘은 화면에 그 수를 보이려는 것이다."""
+    repo = _find_repo(MXWP_REPO)
+    if repo is None or not (repo / _MXWP_WIKI_WORKER).is_file():
+        notes.append("MX 백서 위키 워커는 보지 않는다 — 이 박스의 MXWhitePaper 에 워커가 없는 판이다(위키 W3 전)")
+        return None
+    u = urlsplit(health)
+    url = f"{u.scheme}://{u.netloc}{_MXWP_WIKI_HEALTH}"
+    ep: dict = {"name": _endpoint_name(url), "group": MXWP, "url": url, "interval": interval,
+                "conditions": ["[CONNECTED] == true", "[STATUS] == 200", "len([BODY].data.workers) >= 1",
+                               "[BODY].data.workers[0].state != stopped",
+                               "[BODY].data.jobs.queued > -1", "[BODY].data.jobs.failed_24h > -1"],
+                "ui": {"resolve-successful-conditions": True}}
+    if mail:
+        ep["alerts"] = [{"type": "email", "description": "MX 백서 위키 워커(mxwp_wiki)가 박동하지 않는다 — 확인: (MXWhitePaper) "
+                                                     f"./infra/scripts/diag.sh · 안내 {RUNBOOK}"}]
+    notes.append("MX 백서 위키 워커를 본다 — 최근 10분 안에 박동한 워커가 있고 맨 앞이 stopped 가 아니어야 한다")
+    return ep
+
+
 def _find_repo(name: str) -> Path | None:
     """형제 리포 → ~/Projects → ~/claude — update-all find_repo · drive-drift 와 같은 순서(박스마다 리포 자리가 다르다)."""
     for base in (ROOT.parent, Path.home() / "Projects", Path.home() / "claude"):
@@ -406,6 +434,10 @@ def build(svc_mod) -> tuple[dict, list[str], str, bool, dict]:
             if mail:
                 ep["alerts"] = [{"type": "email", "description": f"확인: ./infra/scripts/services.sh status {name} · 안내 {RUNBOOK}"}]
             endpoints.append(ep)
+        if name == MXWP:
+            wiki = _mxwp_wiki(urls[0], interval, mail, notes)
+            if wiki:
+                endpoints.append(wiki)
     if not endpoints:
         raise RuntimeError("이 박스에서 볼 리스너가 하나도 없다 — 매니페스트(infra/services.yaml)와 infra/.env 를 본다")
     # 같은 키가 둘이면 Gatus 가 설정을 거부한다 — 뒤에 번호를 붙인다. 키는 Gatus 의 config/key 그대로다(그룹과 이름을 따로 _san 한 뒤

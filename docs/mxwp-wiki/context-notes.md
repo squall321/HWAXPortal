@@ -88,6 +88,19 @@
   MXWP 계정에 포털 소속이 아직 없다(포털을 거쳐 MX 백서에 들어온 적이 없다). 그래서 후보를 제안 범위 `aff:` 로 승인하려면 포털에서 MX 백서로
   들어간 세션이어야 하고, 비밀번호로 바로 들어오면 403('나만' 은 된다). 그쪽이 그 경우를 짚게 403 안내를 고쳤다(그쪽 031de98).
 
+- **MW-D20 P9 — 빈틈은 services.yaml 이 아니라 cae00 배치의 정지 목록이었다.** services.yaml 에는 인스턴스 목록 칸이 없다(PLAN 의 '여섯째
+  인스턴스' 는 틀린 짐작 — PLAN 줄을 고쳤다). 실제 빈틈 — `deploy-all-from-drive.sh` 는 새 SIF 를 받으면 `mxwp_web · mxwp_api` 만 내리고
+  MX 백서 `start.sh` 로 다시 띄우는데, MX 백서는 바뀐 SIF 만 `cp -p` 로 갈아 끼우고 `start.sh` 는 떠 있는 인스턴스를 '이미 떠 있다' 로 건너뛴다.
+  그래서 위키 워커(`mxwp_wiki` · `wiki.sif`)만 갈아 끼운 SIF 위에서 깨진 마운트로 남는다(같은 꼴의 실사고 — cae00 mxwp_api → mxwp-mcp).
+  `_stop` 에 `mxwp_wiki` 를 넣었고(순서는 MX 백서 stop.sh 와 같은 web · wiki · api), 시험이 MX 백서 start.sh 와 대조해 MX 백서가 짓는 SIF 로
+  뜨는 인스턴스가 빠지면 잡는다(밖에서 받는 postgres · meili · minio 는 종전대로 내리지 않는다 — 거의 안 바뀐다). 상태판 — 워커는 리스너가
+  없어 API 의 `/api/v1/wiki/health` 로 본다. 그 응답은 최근 10분 안에 박동한 워커만 싣고 위키를 꺼도 워커는 `disabled` 로 박동하며 멈출 때
+  `stopped` 를 남긴다 — 조건은 '워커가 하나 이상 · 맨 앞이 stopped 아님'(줄 · 24시간 실패 수는 화면에 보이려는 늘 참 조건). API 만 살아 있으면
+  200 이라 상태 코드로는 죽은 워커를 못 본다. 그래서 services.yaml 항목을 따로 두지 않았다 — `services.sh status` 는 상태 코드만 봐서 죽은
+  워커도 up 으로 찍었을 것이다(실패가 정상 응답과 똑같이 생긴 꼴). 끝점은 이 박스의 MXWhitePaper 에 워커 코드가 있는 판만 싣는다 —
+  W3 전 판(지금의 cae00)에 실으면 없는 주소로 경보가 늘 운다. 살아 있는 API 에 묻지 않은 까닭 — 생성(update-all 5b) 때 API 가 잠깐
+  내려가 있으면 다음 update-all 까지 검사가 빠진다.
+
 ## 조사 근거(2026-10-24)
 
 - 게이트웨이 `mx-white-paper` 백엔드 · REST 다리는 서비스 토큰(`HWAXMcpGateway/provision-config.sh` 98~130 · 490~493 · 534~536행 근처).

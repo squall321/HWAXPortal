@@ -280,7 +280,9 @@ if want mxwp; then
       # mount — every exec inside dies with "error while loading shared libraries: libc.so.6"
       # (bit cae00's mxwp_api → mxwp-mcp). start.sh re-creates them cleanly from the new SIFs.
       _cur="$(_fp_git; hwax_fp infra/apptainer/*.sif .env)"
-      _stop()  { local _i; for _i in mxwp_web mxwp_api; do "$_appt" instance stop "$_i" 2>/dev/null || true; done; }
+      # 위키 워커(mxwp_wiki · wiki.sif — MXWhitePaper docs/llm-wiki W3)도 같다. 빠지면 start.sh 가 '이미 떠 있다' 로 건너뛰어 갈아 끼운
+      # SIF 위에서 깨진 마운트로 남는다(HWAXPortal docs/mxwp-wiki P9). 순서는 MXWP stop.sh 와 같다(web · wiki · api).
+      _stop()  { local _i; for _i in mxwp_web mxwp_wiki mxwp_api; do "$_appt" instance stop "$_i" 2>/dev/null || true; done; }
       _start() { ./infra/scripts/start.sh && { ./infra/scripts/migrate.sh || echo "  ⚠ mxwp migrate 실패(비치명) — 수동: (mxwp) ./infra/scripts/migrate.sh"; }; }
       hwax_restart_cycle mxwp "$_cur" _stop _start http://127.0.0.1:8800/api/v1/healthz http://127.0.0.1:5173/ || exit 1   # api 와 web 둘 다
       true ) && ok "mxwp up" || skip "mxwp failed (see above)"
