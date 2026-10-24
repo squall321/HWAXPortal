@@ -236,6 +236,10 @@ class DelibOpts(BaseModel):
     # 보고서 저장 끄기(0)·켜기(1). None=엔진 기본(저장). 쟁점 패널이 패널마다 RA 보고서를 만들지 않게 하려는 자리다 —
     # 여기서 떨어지면 저장을 끈 줄 아는 심의가 보고서를 만든다. 지금은 보내는 곳이 없다(선언만 한다).
     save_report: int | None = Field(default=None, ge=0, le=1)
+    # MX 백서 LLM 위키에도 결정문을 남긴다(1). None=엔진 기본(꺼짐). 범위는 그 사람의 소속이다 — 포털이 원장에서 채워 `affiliation`
+    # 으로 따로 싣는다(손잡이가 아니라 신원이다). 소속이 없으면 엔진이 후보로 보낸다(docs/mxwp-wiki P8). 화면은 MX 백서 권한이 있을 때만
+    # 이 토글을 보인다 — 권한 없는 사람이 보내도 게이트웨이가 위키 도구를 주지 않아 엔진이 '도구가 없다' 고 결정문 끝에 적는다.
+    wiki: int | None = Field(default=None, ge=0, le=1)
     # 누가 띄운 심의인가 — 리스크 앱 러너가 편성한 패널(쟁점·옛 흐름)은 "app" 을 싣는다. 엔진의 카드 대조 관문은 '심의가 돌면
     # 절반' 을 사람이 띄운 심의(app 아닌 것)로만 센다(docs/risk-review-redesign M3.md #26). 여기서 떨어지면 표지가 사라져 쟁점
     # 패널도 사람 심의로 세어지고 카드 대조가 며칠 동안 반(4)으로 묶인다. 스스로 밝히는 값이라 검증하지 않는다. None=사람.
@@ -694,7 +698,7 @@ async def _echo_stream(message: str, principal: Principal, audit: AuditLog) -> A
 
 async def _relay_stream(
     body: "ChatRequest", principal: Principal, audit: AuditLog,
-    settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None
+    settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None, affiliation: str = ""
 ) -> AsyncIterator[bytes]:
     """Relay the remote Agent Server's SSE stream byte-for-byte to the browser.
 
@@ -718,6 +722,9 @@ async def _relay_stream(
         # pydantic 이 null 을 422 로 거절하고, 그러면 '발급 실패해도 챗은 계속' 이라는 이쪽
         # 폴백이 정반대로 챗 전체를 죽인다(실측: null→422, ""→200). 빈 문자열이 '없음' 이다.
         "user_pat": user_pat or "",
+        # 호출자 소속 id — 원장 값(권한표에 없는 id 는 빈 값, wiki_send.known_affiliation). 위키에 남기는 심의(delib_opts.wiki)의
+        # 범위다(docs/mxwp-wiki P8). 브라우저가 보낸 값이 아니다.
+        "affiliation": affiliation,
         "history": [m.to_agent() for m in body.history],
         # 요청 시점 권한 — 심의·Thinking 트리거는 agent-server 가 판정하므로 그쪽이 한 번 더 막는다.
         "entitlements": sorted(g for g in principal.groups if is_synthetic(g)),
@@ -2045,7 +2052,8 @@ async def chat(
             source = _echo_stream(body.message, principal, audit)
         else:
             source = _relay_stream(body, principal, audit, settings, _agent_client(request),
-                                   _chat_user_pat(request.app.state.keystore, settings, principal))
+                                   _chat_user_pat(request.app.state.keystore, settings, principal),
+                                   _wiki.known_affiliation(request))
 
         # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
         # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).

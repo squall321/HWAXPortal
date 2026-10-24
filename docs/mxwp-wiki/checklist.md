@@ -22,9 +22,12 @@
   - [x] REST 다리(`rest_call` · `/api/<site>/`)의 사람별 경로에도 소속 · plat 증명 — 사용자 결정 10-24, HWAXMcpGateway 335213e (클라이언트가 보낸 증명 사본은 뗀다) · dev 반영(게이트웨이 재기동, rest_call 사람 명의 200)
 
 ## 쓰기 길(MXWP W1 · W2 · W3 · W6 뒤)
-- [x] P6 '위키에 남기기' — 서버가 저장된 턴으로 봉투(`app/agent/wiki_send.py`) · 그 사람 챗 PAT 로 게이트웨이 `wiki_submit_source`(비밀 더 안 쥠) · 대화 알림(업로드 근거) · 감사 · 시험(서버 8 · 브라우저 4) — dev 반영은 포털 재기동 뒤
+- [x] P6 '위키에 남기기' — 서버가 저장된 턴으로 봉투(`app/agent/wiki_send.py`) · 그 사람 챗 PAT 로 게이트웨이 `wiki_submit_source`(비밀 더 안 쥠) · 대화 알림(업로드 근거) · 감사 · 시험(서버 8 · 브라우저 4) — dev 반영 10-24(포털 재기동, 사용자 확인)
+  - [x] dev 끝에서 끝(10-25 KST) — 같은 봉투 · 같은 `mcp_call` 로 게이트웨이를 거쳐 두 원천(바로 남기기 queued · 후보 held), MXWP 쪽이 읽기로 확인(MW-D19)
+  - [ ] 사람 몫 — 브라우저에서 버튼 실클릭 · MX 백서 '내 후보' 승인(제안 범위 `aff:` 로 승인하려면 포털을 거쳐 MX 백서에 들어간 세션이어야 한다)
 - [x] P7 '해결됨' → 후보(consent candidate — MX 백서가 주인만 보는 held 로, '내 후보' 에서 범위를 골라 승인) — P6 과 같은 길
-- [ ] P8 심의 결정문 → 위키(`delib_opts.wiki`, 기본 꺼짐)
+- [x] P8 심의 결정문 → 위키(`delib_opts.wiki`, 기본 꺼짐) — 엔진이 RA 저장 자리에서 단마다 `deliberation` 봉투 · 사람 명의 · 소속 범위(없으면 후보) · 결정문 끝 안내, MCP `deliberate_start(wiki)` · 이어하기 이어받음, 포털 `DelibOpts.wiki` · 원장 소속 중계 · 심의 옵션 토글(MX 백서 권한) · 시험(엔진 12 — 봉투는 MX 백서 pydantic 모델로 검증 · 포털 중계 1) — MW-D18
+  - [ ] dev 반영 — 에이전트 서버 재기동(사용자 확인 10-24) · 포털 재기동과 화면 빌드는 한 묶음(먼저 빌드하면 옛 백엔드가 `wiki` 를 말없이 버린다)
 - [ ] P9 상태판 `/api/v1/wiki/health` · services.yaml 여섯째 인스턴스 · 업데이트 이력
 - [ ] P10 도구 영역 · 페르소나 안내문(게이트웨이 `tools/list` 확인 뒤)
 

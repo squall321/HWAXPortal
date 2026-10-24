@@ -1,4 +1,5 @@
 // 심의 손잡이(깊이 회복 옵션) 웹 토글 패널 — env 재시작 없이 심의마다 옵션을 바꿔 A/B 한다
+import { useCan } from '../../auth/useCan';
 import { useChat } from '../../state/ChatContext';
 import { DELIB_TIMEOUT_MAX_S } from '../../state/chatStore';
 import type { DelibOpts } from '../../types/chat';
@@ -18,11 +19,17 @@ const FLAGS: { key: keyof DelibOpts; label: string; hint: string; heavy?: boolea
 // 손잡이가 아니라 진행 방식 — 위 A/B 플래그와 성격이 달라 따로 둔다.
 const CHECKPOINT_HINT =
   '초기 입장만 듣고 멈춘다. 빠진 관점을 의견으로 보태 이어가면 좌석 재심사가 그 방향의 도메인을 불러온다';
+// 결정문을 MX 백서 LLM 위키에도 — 범위는 내 소속, 소속이 없으면 '내 후보'(docs/mxwp-wiki P8). 켜 두면 이후 심의마다 남는다.
+const WIKI_HINT =
+  '결정문 · 표 · 소수 의견을 MX 백서 위키에 내 소속 범위로 남긴다. 소속이 없으면 MX 백서 \'내 후보\' 로 가서 승인해야 들어간다. '
+  + '켜 두면 이후 심의마다 남는다';
 
 // mods — 심의 첫 화면만 준다: '얹을 층'(방법 보강)은 새 심의를 시작할 때만 쓰여, 이어 묻는 화면에는 없다.
 // 종전엔 첫 화면 한가운데 칩 줄로 나와 목적 카드·입력창 사이를 갈랐다(docs/ui-refresh 단계 4).
 export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; toggle: (id: string) => void } } = {}) {
   const { delibOpts, setDelibOpts } = useChat();
+  // 권한이 사라져도 켜진 채 저장된 토글은 숨기지 않는다 — 보이지 않는 채 켜져 있으면 끌 길이 없다.
+  const showWiki = useCan()('plat:mxwhitepaper') || !!delibOpts.wiki;
 
   const setFlag = (key: keyof DelibOpts, on: boolean) =>
     setDelibOpts({ ...delibOpts, [key]: on });
@@ -33,6 +40,7 @@ export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; tog
     FLAGS.filter((f) => delibOpts[f.key]).length +
     (delibOpts.chair_bestof && delibOpts.chair_bestof > 1 ? 1 : 0) +
     (delibOpts.stop_after_round === 1 ? 1 : 0) +
+    (delibOpts.wiki ? 1 : 0) +
     (mods?.on.size ?? 0);
 
   return (
@@ -76,6 +84,19 @@ export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; tog
             </label>
             <span className="do-hint">{CHECKPOINT_HINT}</span>
           </li>
+          {showWiki && (
+            <li className="do-item">
+              <label className="do-toggle">
+                <input
+                  type="checkbox"
+                  checked={!!delibOpts.wiki}
+                  onChange={(e) => setDelibOpts({ ...delibOpts, wiki: e.target.checked || undefined })}
+                />
+                <span className="do-label">MX 백서 위키에도 남기기</span>
+              </label>
+              <span className="do-hint">{WIKI_HINT}</span>
+            </li>
+          )}
           <li className="do-item">
             <span className="do-label">라운드 수</span>
             <select

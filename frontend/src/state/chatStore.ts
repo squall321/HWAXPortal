@@ -311,6 +311,8 @@ export function delibOptsToWire(o: DelibOpts): Record<string, number> {
   // DelibOpts 둘 다** 통과해야 한다. 한쪽만 있으면 에러 없이 조용히 사라진다(실제로
   // 그래서 이 토글이 죽어 있었다 — docs/delib-ux/context-notes.md D-1).
   if (o.stop_after_round === 1) w.stop_after_round = 1;
+  // MX 백서 위키에도 결정문 남기기 — 백엔드 DelibOpts.wiki 와 짝이다(위와 같은 까닭으로 둘 다 있어야 한다).
+  if (o.wiki) w.wiki = 1;
   return w;
 }
 

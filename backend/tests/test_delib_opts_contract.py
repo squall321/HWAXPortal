@@ -476,3 +476,17 @@ def test_외부_응답자_과제의_대상_열쇠를_엔진에_그대로_넘긴�
             ChatRequest(message="/심의 화두", delib_opts={"target_key": bad})
     assert "target_key" not in ChatRequest(message="/심의 화두", delib_opts={}).delib_opts.model_dump(exclude_none=True)
 
+
+
+def test_위키에_남기기와_원장의_소속이_엔진_본문에_닿는다(monkeypatch):
+    """P8(docs/mxwp-wiki) — 손잡이 wiki 는 delib_opts 로, 범위가 될 소속은 원장 값으로 본문 꼭대기 affiliation 에 간다. 브라우저가 실어 보낸
+    소속은 버린다(ChatRequest 가 모르는 칸) — 신원은 검증된 주체에서만 채운다. 손잡이 범위 밖(2)은 422 다."""
+    from app.agent import wiki_send
+
+    monkeypatch.setattr(wiki_send, "known_affiliation", lambda _request: "CAEG")
+    codes, seen = _relay_chat({"message": "/심의 화두", "delib_opts": {"wiki": 1}},
+                              {"message": "/심의 화두", "delib_opts": {"wiki": 2}},
+                              {"message": "/심의 화두", "affiliation": "OTHER"})
+    assert codes == [200, 422, 200]
+    assert seen[0]["delib_opts"] == {"wiki": 1} and seen[0]["affiliation"] == "CAEG"
+    assert seen[1]["affiliation"] == "CAEG" and "delib_opts" not in seen[1], "브라우저가 보낸 소속이 엔진에 닿았다"
