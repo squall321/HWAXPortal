@@ -31,7 +31,7 @@ class HandoffPayload(BaseModel):
 
 
 class DownstreamTokenIssuer(Protocol):
-    def issue(self, principal: Principal, system: LinkedSystem) -> HandoffPayload: ...
+    def issue(self, principal: Principal, system: LinkedSystem, *, affiliation: str = "") -> HandoffPayload: ...
 
 
 class JwtDownstreamIssuer:
@@ -41,9 +41,9 @@ class JwtDownstreamIssuer:
         self._settings = settings
         self._keystore = keystore
 
-    def mint(self, principal: Principal, *, audience: str) -> str:
+    def mint(self, principal: Principal, *, audience: str, affiliation: str = "") -> str:
         now = datetime.now(tz=UTC)
-        claims = {
+        claims: dict = {
             "iss": self._settings.jwt_issuer,
             "sub": principal.subject,
             "aud": audience,  # ONE downstream system — replay at another system fails aud check
@@ -56,6 +56,10 @@ class JwtDownstreamIssuer:
             "exp": now + timedelta(seconds=self._settings.jwt_launch_ttl),
             "jti": secrets.token_urlsafe(16),
         }
+        # 값이 있을 때만 싣는다 — 빈 값을 실으면 받는 쪽이 '소속 없음' 을 하나의 소속으로 묶어 서로의 문서를 읽게 된다
+        # (게이트웨이 AFF_HEADER 와 같은 자세).
+        if affiliation:
+            claims["affiliation"] = affiliation
         return jwt.encode(
             claims,
             self._keystore.private_pem,
@@ -63,14 +67,15 @@ class JwtDownstreamIssuer:
             headers={"kid": self._keystore.active_kid},
         )
 
-    def issue(self, principal: Principal, system: LinkedSystem) -> HandoffPayload:
+    def issue(self, principal: Principal, system: LinkedSystem, *, affiliation: str = "") -> HandoffPayload:
         if system.integration_type == "saml-handoff":
             # Deferred: downstream SAML-IdP (assertion issuance) lands behind this same seam.
             raise AuthError("SAML handoff not implemented yet", status_code=501)
         if system.integration_type != "jwt-handoff" or not system.audience:
             raise AuthError("system is not configured for token handoff", status_code=400)
 
-        token = self.mint(principal, audience=system.audience)
+        token = self.mint(principal, audience=system.audience,
+                          affiliation=affiliation if system.claims_affiliation else "")
         if system.handoff_mode == "auto_post":
             return HandoffPayload(
                 mode="auto_post", action=system.url, fields={system.handoff_param: token}

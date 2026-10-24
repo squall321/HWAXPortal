@@ -44,6 +44,9 @@ class LinkedSystem(BaseModel):
     # jwt-handoff 에도 쓴다 — 핸드오프 타일은 콜백 url 이 추적 파일에 늘 있어 url 만으로는 '이 박스에 붙었는지' 를 모른다.
     # 표식을 달면 **라우트가 있을 때만** 켠다(registry._apply_route — 라우트를 박스 파일에 손으로 적는 aireadyportal).
     hide_unless_routed: bool = False
+    # 진입 토큰에 그 사람의 포털 소속(`affiliation` 클레임)을 싣는다 — 소속 단위로 읽기 범위를 가르는 앱만 켠다(docs/mxwp-wiki MW-D3).
+    # 플랫폼 권한(plat:)은 켜지 않아도 이미 `groups` 에 실린다(deps.entitled). 소속은 쓰지 않는 앱에 퍼지지 않게 시스템마다 고른다.
+    claims_affiliation: bool = False
 
     @model_validator(mode="after")
     def _hide_needs_proxy(self):

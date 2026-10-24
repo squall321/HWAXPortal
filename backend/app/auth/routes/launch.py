@@ -24,6 +24,19 @@ router = APIRouter(prefix="/systems", tags=["launch"])
 PRIMER_SYSTEMS = frozenset({"heax-hub"})
 
 
+def _launch_affiliation(request: Request) -> str:
+    """진입 토큰에 실을 소속 id — 이번 요청에 원장으로 다시 센 값(deps.entitled 가 request.state 에 둔다).
+
+    게이트웨이가 읽는 `/internal/access/entitlements` 와 같은 규칙으로 **표에 없는 소속 id 는 빈 값**이다 — 조직 개편으로
+    access.yaml 에서 지운 소속이 원장에 남아 있으면, 권한은 끊겼는데 하위 앱에서는 옛 구성원끼리 공유가 살아 있게 된다."""
+    ents = getattr(request.state, "entitlements", None)
+    aff = str(getattr(ents, "affiliation", "") or "")
+    access = getattr(request.app.state, "access", None)
+    if not aff or access is None:
+        return ""
+    return aff if aff in access.get().affiliations else ""
+
+
 @router.post("/{system_id}/launch", response_model=HandoffPayload)
 def launch(
     system_id: str,
@@ -41,7 +54,7 @@ def launch(
         raise AuthError("external systems are opened directly, not launched", status_code=400)
 
     issuer = request.app.state.downstream_issuer
-    payload = issuer.issue(principal, system)
+    payload = issuer.issue(principal, system, affiliation=_launch_affiliation(request))
     # 접속 원장(docs/access-history). 화면의 SSO 미리 로그인(SsoPrimer)은 45분마다 저절로 부르므로 표시해 둔다 —
     # 관리자 화면은 기본으로 그 줄을 숨긴다. 발급이지 하위 서비스의 수락은 아니다.
     access_log.note(request, email=principal.email or principal.subject, event="launch", service=system_id,

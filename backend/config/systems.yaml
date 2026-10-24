@@ -63,6 +63,7 @@ systems:
     audience: mx-white-paper            # token `aud`; must match mxwp PORTAL_AUDIENCE
     # Launch token auto-POSTs here. Same portal origin; nginx proxies /mx-white-paper/api/ → mxwp.
     url: /mx-white-paper/api/v1/auth/portal-callback
+    claims_affiliation: true            # 진입 토큰에 포털 소속 — 위키 보이기 범위(MXWhitePaper docs/llm-wiki CONTRACTS §9)
     sort_order: 30
 
   - id: signalforge
