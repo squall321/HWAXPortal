@@ -646,6 +646,8 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
   사용자 결정 대기다(실을 범위). 다시 쓴 커밋을 올리게 되면 dev 가 그 커밋으로 지은 SIF 를 Drive 에 먼저 올린 뒤 push 하고, 이 박스의
   update-all 은 그 뒤에 돌린다. 허브 SIF 는 앱 리포의 추적 파일을 통째로 담는다 — 리포에서 무엇을 빼기로 하면 GitHub 만이 아니라 SIF
   (Drive `latest/` · Drive 휴지통의 옛 묶음 · 이 박스의 `var/sifs` 와 Drive 받기 캐시)도 다시 지어 갈아 끼우거나 지워야 한다.
+  앱 DB 의 글(노트 · 설명)은 데이터 허브 카드로 내보내져 AIDataHub DB · Drive 매일 덤프(휴지통 포함) · 이 박스의 병합으로 간다 — 리포만
+  정리해서는 걷히지 않는다(앱 DB 를 고치고 허브를 다시 맞추며, 지난 덤프는 따로 다룬다).
 - SignalForge 화면 이미지(07-20)에는 '포털 밖 직접 접속 프록시'(08-28)가 없다 — 포털로 쓰는 데는 상관없다(SignalForge 몫).
 
 ### 2. 이 박스에서 돌리기 전 — 사람
