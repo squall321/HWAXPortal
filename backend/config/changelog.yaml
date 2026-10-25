@@ -22,6 +22,12 @@
 
 entries:
   - date: 2026-10-25
+    title: "update-all 전에 돌리는 사전 점검 — 무엇이 끊기고 무엇이 사라지나"
+    tag: 배포
+    items:
+      - "박스에서 update-all 을 돌리기 전에 python3 infra/scripts/update-preflight.py 로 한 번에 봅니다. 도는 심의 · 카드 대조 · DynaForge · StepForge · DocForge · 위키 작업, update-all 이 치울 파일(설정이 가리키는 파일은 ✗)과 버릴 로컬 커밋, 갱신이 막힐 리포, 들어올 DB 이관과 MX 백서 이관 0056 이 지울 줄 수, 디스크, 새 기능에 빠진 설정(비밀은 해시 앞자리로만 견줍니다), Drive 에 이 박스가 받을 판(포털 화면 · MX 백서 이미지 · 허브 대조 목록)을 봅니다. 아무것도 바꾸지 않습니다."
+      - "아직 받지 않은 박스에서도 원격 판을 그대로 돌릴 수 있습니다 — 포털 리포 루트에서 git show origin/main:infra/scripts/update-preflight.py | python3 -. 순서와 확인은 cae00 배포 가이드의 '2026-10-25 반영분' 에 있습니다."
+  - date: 2026-10-25
     title: "박스 고유 타일 목록이 update-all 에 치워지지 않습니다"
     tag: 배포
     items:

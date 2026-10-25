@@ -604,3 +604,76 @@ grep -c FROM_RA ../HWAXAgentServer/.env                          # 0 — 마커�
   - **AIDataHub 내부 동기화 3건은 그대로 멈춰 둔다**(D3) — 데이터는 Drive 병합으로 온다. 이제 막힌 사유가 원장 `last_status='blocked'` ·
     `last_error` 에 남는다(예전엔 'ok' 그대로였다).
   - **포털 메일은 SMTP 값이 있어야 켠다**(D6) — `MAIL_BACKEND=smtp` · `SMTP_HOST` · `MAIL_FROM`. 상태판 경보도 그것이 있어야 켜진다.
+
+## 2026-10-25 반영분 — MX 백서 위키 · DocForge · StepForge · DynaForge, 돌리기 전 점검
+
+10-17 뒤로 쌓인 변경(MX 백서 위키 · SSO 전용 · 위임, DocForge 정밀 변환, 심의 운영, 챗 자기검증 · PPT · 생각 깊이, StepForge 견주기 도구,
+DynaForge 감시 수리, 배포 길 고침)을 이 박스가 한 번에 받는 순서다. 무엇이 달라졌는지는 포털 `/updates`, 기능별 절차는 끝의 표가 정본이다.
+
+### 0. 사전 점검 — 읽기만 한다
+
+```bash
+cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:infra/scripts/update-preflight.py | python3 -
+```
+
+- 받기 전의 박스에서 원격 판을 그대로 돌린다(작업 트리는 안 바뀐다). 받은 뒤에는 `python3 infra/scripts/update-preflight.py`.
+- 보는 것 — 끊길 일(심의 · 카드 대조 · DynaForge · StepForge · DocForge · 위키 작업), update-all 이 치우거나 지우는 것(git 이 모르는 파일 ·
+  로컬 커밋 · 들어올 DB 이관 · MX 백서 이관 0056 이 지울 줄 수 · 디스크), 새 기능에 빠진 설정(비밀은 해시 앞자리로만 견준다), Drive 에 이 박스가
+  받을 판(포털 화면 · MX 백서 이미지 · 허브 대조 목록).
+- 종료코드 1(✗)이면 그 줄의 할 일을 하고 다시 돌린다. ⚠ 는 읽고 판단한다.
+- **가장 큰 것 — 포털 타일 목록 `backend/config/systems.cae00.yaml`.** `backend/.env` 의 `CATALOG_PATH` 가 가리키는 이 파일을 git 이 모르면
+  update-all 첫 단계(§1)의 `git stash -u` 가 작업 트리에서 치우고, 포털은 카탈로그를 못 읽어 뜨지 못한다. 점검이 ✗ 로 알리고
+  `.git/info/exclude` 에 넣는 명령을 같이 보인다. 이번 판부터 `.gitignore` 에 `backend/config/systems.*.yaml` 이 있지만, 첫 실행의 stash 는
+  옛 `.gitignore` 로 돈다. 점검 없이 돌려 포털이 안 뜨면 `git show 'stash@{0}^3:backend/config/systems.cae00.yaml' > backend/config/systems.cae00.yaml`
+  로 되살리고 포털을 다시 띄운다.
+
+### 1. dev 에서 먼저 — 이 박스가 받을 판
+
+| 할 일 | 안 하면 | 누가 |
+|---|---|---|
+| 포털 화면 빌드 · 올리기(`pnpm --dir frontend build` → `./infra/scripts/build-all-to-drive.sh portal`) | update-all §6 이 'SPA dist 가 지금 소스와 다르다' 로 실패한다(종료코드 1). 화면은 옛 판 | dev |
+| MX 백서 이미지 web · api · wiki(`cd ~/claude/MXWhitePaper && ./infra/scripts/images-to-drive.sh`) | Drive 의 web.sif 는 9-13 판이고 api · wiki 는 latest/ 에 없다 — 이 박스는 MX 백서 화면이 옛 판으로 남고 위키 워커가 없다(위키를 켜기 전엔 배치가 깨지지 않는다) | 사람 — MX 백서 세션이 운영 배포로 보고 넘겼다 |
+| DocForge 베타(0.3.0) 배치 | 등록이 draft 라 게이트웨이에 안 실리고, 포털 「정밀 변환」 목적지는 숨는다(10-25 판부터 — 오류는 아니다) | DocForge · 허브 주인 |
+
+### 2. 이 박스에서 돌리기 전 — 사람
+
+1. 사전 점검 ✗ 0.
+2. 도는 일이 없을 때 돌린다. 새 판(§1 이 포털을 받은 뒤 새 update-all 로 다시 돈다)은 DynaForge 로컬 작업이 돌면 그 재기동만 미룬다(○).
+   떠 있는 에이전트서버가 10-22 전 판이면(10-17 갱신 뒤 그대로면) 심의가 돌 때 에이전트 재기동을 미룬다(○) — 그때는 끝난 뒤 한 번 더 돌린다. StepForge · DocForge
+   작업은 허브가 다시 뜨면 끊긴다(막는 장치가 없다).
+3. 에이전트서버 `.env` — 챗 자기검증은 기본 켜짐이다(모든 챗 답에 검토 호출이 하나 더 붙는다). 끄려면 `CHAT_SELF_CHECK=0`.
+   `LLM_CONTEXT_TOKENS` 는 이제 상한이다 — 서버 창보다 작게 적혀 있으면 창이 그만큼 준다(점검이 견준다, 정본은 [delib-ops/server-setup.md](delib-ops/server-setup.md) §2).
+4. 게이트웨이 `provision.env` 에 `HEAX_MCP_TOKEN` 고정을 권한다 — 없으면 재프로비저닝마다 허브에서 새로 발급한다(10-25 판부터 발급이 실패하면 앞 토큰으로 잇는다).
+5. 디스크 — `/tmp` 12GiB 이상(AIDataHub 병합이 Drive 덤프 11GB 남짓을 `mktemp -d` 로 받는다).
+6. MX 백서 사람 명의 위임은 그쪽 위임 창구(`POST /api/v1/auth/sso`)가 이 박스에서 답한 뒤에 켠다 — [mxwp-wiki/PLAN.md](mxwp-wiki/PLAN.md) §6 의 순서
+   (MX 백서 `.env` → MX 백서 재기동 → `provision.env` → update-all). 두 곳의 `MXWP_SSO_SECRET` 이 다르면 신원 있는 MX 백서 호출이 전부 실패한다(점검이 해시로 견준다).
+
+### 3. 도는 동안 — 이렇게 나오면 정상
+
+- `○ kooremapper 재기동` — DynaForge 로컬 작업이 돌았다. 코드 · 배포물은 받았고 서버는 옛 것 그대로다. 끝난 뒤 한 번 더 돌린다.
+- MX 백서 이관이 0056 을 지나면 짝 없는 `doc_triples` 를 지운다(점검이 센 수 — §1b 의 배포 전 백업에 남는다).
+- 새로 실패로 세는 것 — DynaForge 배포물 받기 실패 · MX 백서 DB 이관 실패. 예전엔 경고만 남기고 초록으로 끝나 옛 화면 · 옛 스키마로 돌았다.
+
+### 4. 돌린 뒤 — 확인 · 한 번만 하는 일
+
+- update-all 끝 요약 ✗ 0, §6 의 `SPA dist 가 지금 소스와 같다` ✓.
+- 게이트웨이 `curl -s --noproxy '*' localhost:9110/tools-map` — StepForge(다른 앱과 겹치는 이름은 `heaxstep_forge_` 접두가 붙는다) · DynaForge 리포트 도구 ·
+  MX 백서 `wiki_*`, DocForge 베타 뒤엔 `docforge_*` 다섯.
+- 페르소나 동기화(update-all 은 안 한다) — `python3 infra/scripts/sync-he-personas.py` 미리보기 → `--apply`. MX 백서 운영자
+  (`he-doc-mxwhitepaper`), DocForge 가 실린 뒤엔 `he-doc-docforge`.
+- `systems.cae00.yaml` 의 `mx-white-paper` 에 `claims_affiliation: true` — 없으면 타일 진입이 MX 백서에 소속을 싣지 않아 위키 소속 범위가 안 선다(점검이 본다).
+- 계정 원장(`users.sqlite`)이 644 면 `chmod 600` — 외부 연결 토큰이 평문으로 든다.
+- DocForge 를 쓰게 되면 [doc-to-ra/server-setup.md](doc-to-ra/server-setup.md) §1 의 `APPTAINERENV_DOCFORGE_INPUT_ROOTS` 와 Docling 모델(한 번).
+
+### 5. 기능별 절차(정본)
+
+| 기능 | 절차 |
+|---|---|
+| MX 백서 위키 · SSO 전용 · 사람 명의 위임 | [mxwp-wiki/PLAN.md](mxwp-wiki/PLAN.md) §6 · MXWhitePaper `docs/llm-wiki/START.md` |
+| DocForge 정밀 변환 | [doc-to-ra/server-setup.md](doc-to-ra/server-setup.md) |
+| 심의 운영(새 심의 멈춤 · 이어하기 · 한도 · 창 상한) | [delib-ops/server-setup.md](delib-ops/server-setup.md) |
+| 챗 자기검증 · PPT · 생각 깊이 | [chat-self-check/PLAN.md](chat-self-check/PLAN.md) · [chat-ppt/PLAN.md](chat-ppt/PLAN.md) · [chat-depth-context/PLAN.md](chat-depth-context/PLAN.md) |
+| 챗 LLM(stcx) · 임베더 BGE-M3 | [chat-llm-stcx/server-setup.md](chat-llm-stcx/server-setup.md) · [embedder-bge-m3/server-setup.md](embedder-bge-m3/server-setup.md) |
+| 리스크 심사 20만 창 | [risk-200k/server-setup.md](risk-200k/server-setup.md) |
+| 외부 연결(`connect:`) · 사람별 연결 | [sso-delegation/server-setup.md](sso-delegation/server-setup.md) C · D |
+| 10-17 후속(사람 몫) | [followups-1017/server-setup.md](followups-1017/server-setup.md) |
