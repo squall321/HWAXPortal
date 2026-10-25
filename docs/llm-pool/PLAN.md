@@ -5,7 +5,7 @@
 
 ## 1. 지금
 
-HWAX 의 LLM 호출은 전부 서버 하나(…137 의 vLLM, GLM-5.2 · 1M 창)로 간다. 주소의 정본은 포털 `infra/.env` 의 `LLM_BASE_URL` 이고, 서비스마다 자기 `.env` 에 사본을 든다 — 에이전트 서버 `VLLM_BASE_URL` · AIDataHub `OPENAI_BASE_URL`(과 `LLM_BASE_URL`) · PaperIngest `GLM_BASE_URL` · SignalForge `OPENAI_BASE_URL` · HEAXHub `HEAX_APP_LLM_BASE_URL`(허브가 앱에 `LLM_BASE_URL` 로 넘긴다) · MXWhitePaper `LLM_BASE_URL`. 설정 킷(`infra/env-kits/apply-envs.sh`)은 '없는 키만 더한다' 라서 정본을 바꿔도 이미 적힌 사본은 바뀌지 않는다(LP-D4).
+HWAX 의 LLM 호출은 전부 서버 하나(…137 의 vLLM, GLM-5.2 · 1M 창)로 간다. 주소의 정본은 포털 `infra/.env` 의 `LLM_BASE_URL` 이고, 서비스마다 자기 `.env` 에 사본을 든다 — 에이전트 서버 `VLLM_BASE_URL` · AIDataHub `OPENAI_BASE_URL`(과 `LLM_BASE_URL`) · PaperIngest `GLM_BASE_URL` · SignalForge `OPENAI_BASE_URL` · HEAXHub `HEAX_APP_LLM_BASE_URL`(허브가 앱에 `LLM_BASE_URL` 로 넘긴다) · MXWhitePaper `LLM_BASE_URL` · WebDesignAgents `LLM_BASE_URL`(10-24 킷 8deefb0 — 경로 B 가 RA 설정을 상속한다. 풀을 켤 때 이 사본을 다시 띄우는 자리는 아직 손 안내다 — `_llm_restart_by` 의 그 밖 갈래). 설정 킷(`infra/env-kits/apply-envs.sh`)은 '없는 키만 더한다' 라서 정본을 바꿔도 이미 적힌 사본은 바뀌지 않는다(LP-D4).
 
 ## 2. 모양
 

@@ -279,6 +279,7 @@ EXPECTED = {
     ("mx-white-paper", "MXWhitePaper", ".env", "LLM_BASE_URL"),
     ("paper-ingest", "PaperIngest", ".env", "GLM_BASE_URL"),
     ("signalforge", "SignalForge", ".env", "OPENAI_BASE_URL"),
+    ("webdesignagents", "WebDesignAgents", ".env", "LLM_BASE_URL"),   # 10-24 킷(8deefb0) — 경로 B(vLLM 무인 심의)가 RA 의 LLM_* 를 상속
 }
 
 
@@ -288,8 +289,8 @@ def _copies(root: Path, home: Path) -> set[tuple[str, ...]]:
     return {tuple(ln.split("\t")) for ln in r.stdout.splitlines()}
 
 
-def test_사본_목록은_PLAN_의_일곱_곳이다(tmp_path):
-    """PLAN §1 의 사본 목록과 같다 — 킷의 @FROM_RA:LLM_BASE_URL@ 다섯(+PaperIngest) 과 코드가 직접 읽는 LLM_BASE_URL 둘."""
+def test_사본_목록은_PLAN_의_여덟_곳이다(tmp_path):
+    """PLAN §1 의 사본 목록과 같다 — 킷의 @FROM_RA:LLM_BASE_URL@ 여섯(+PaperIngest · 10-24 WebDesignAgents) 과 코드가 직접 읽는 LLM_BASE_URL 둘."""
     assert _copies(ROOT, tmp_path) == EXPECTED
 
 
