@@ -122,3 +122,17 @@ he-team.json)에 `he-doc-docforge`(보고서·문서·발표 묶음)를 더했�
 RA 도구(get_report_outline · get_report)는 **선택 앱**이다 — RA 가 안 붙은 박스에서도 운영자는 생긴다. DocForge 가 게이트웨이에 없으면(지금 draft)
 동기화가 건너뛴다 — beta 뒤 update-all 의 동기화(또는 `sync-he-personas.py --apply`)가 만든다. 조립한 프롬프트 약 3,000자(상한 8,000).
 화면 행선지 표(destApps)의 `reportarchive_precise` 에 `heax-doc_forge` 가 있어, 이 운영자와 대화 중이면 정밀 변환 목적지가 '지금 전문가' 로 앞선다.
+
+**DF-D21 DocForge 가 게이트웨이에 없으면 정밀 변환 목적지를 숨긴다(2026-10-25, cae00 업데이트 점검 · 포털 `2a27208`).** 등록이 draft
+(게이트웨이에 안 실림)인 박스 — 지금의 dev · cae00 — 에서 「Report Archive — 정밀 변환」 은 권한만 보고 떠서, 고를 때마다
+`docforge_convert` 에서 실패했다. ① 목적지에 `needs_tool: docforge_convert` 를 두고, 업로드 · PC 도우미 다음 단계의 목적지 계산이
+게이트웨이 `/tools-map`(인증 없음)의 이름을 받아 그 도구가 없으면 뺀다. ② 이름은 60초 붙잡는다. 못 읽으면 '모름' 이라 숨기지
+않는다 — 게이트웨이가 잠깐 안 닿는다고 목적지를 지우면 그 사이 올린 사람이 '보낼 곳이 없다' 를 본다. ③ 게이트웨이는 이름이 겹칠
+때만 접두를 단다(StepForge 의 `cancel_job` 등은 `heaxstep_forge_` 가 붙었다) — `docforge_*` 는 겹치지 않아 맨 이름이고 포털이
+부르는 이름과 같다. ④ '이 대화에서 분석' 은 가리지 않는다 — DocForge 가 없으면 같은 요청이 AI 데이터 허브로 간다(DF-D19 ③).
+
+**DF-D22 DocForge 데이터 루트를 포털 컨테이너에 읽기 전용으로(2026-10-25, 포털 `e38be9a`).** server-setup §2 는 'cae00 은
+`~/Projects` 라 해당 없다' 였다 — 틀렸다. `$HOME` 은 자동 마운트라 `HEAXHub/var/app_data` 링크 자체는 보이지만, /data 이관 뒤엔
+그것이 `/data/appdata` 로 가는 심링크라 끝이 컨테이너에 없다(dev 실측 — 모든 배달이 '패키지를 찾지 못했다'). start.sh 가
+`DOCFORGE_PACKAGE_ROOT` 를 끝까지 따라가 `$HOME` 밖이면 그 경로를 같은 자리에 `:ro` 로 묶는다. 쓰기는 주지 않는다 — 포털은
+패키지를 읽기만 하고, 쓰는 쪽은 DocForge 다. 앱에는 링크 경로를 그대로 넘긴다(그쪽이 남기는 경로와 같은 꼴).

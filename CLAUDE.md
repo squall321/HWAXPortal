@@ -113,7 +113,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 | 주제 | 위치 |
 |---|---|
 | 함정·사고 기록 | `docs/gotchas.md` |
-| cae00 배포 | `docs/cae00-deploy-guide.md` |
+| cae00 배포(update-all 전 읽기 전용 사전 점검 `infra/scripts/update-preflight.py` — 받기 전엔 `git show origin/main:… \| python3 -`, 10-25) | `docs/cae00-deploy-guide.md` |
 | 챗 업로드 목적지 라우팅 | `docs/upload/` (PLAN·checklist·context-notes) |
 | 심의 품질·방법 메뉴 | `docs/deliberation-quality/` |
 | 띵킹 모드(답할 수 있는 전문가만 각자 답한다) | `docs/thinking-mode/` |

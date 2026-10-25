@@ -634,6 +634,8 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 | 포털 화면 빌드 · 올리기(`pnpm --dir frontend build` → `./infra/scripts/build-all-to-drive.sh portal`) | update-all §6 이 'SPA dist 가 지금 소스와 다르다' 로 실패한다(종료코드 1). 화면은 옛 판 | dev |
 | MX 백서 이미지 web · api · wiki(`cd ~/claude/MXWhitePaper && ./infra/scripts/images-to-drive.sh`) | Drive 의 web.sif 는 9-13 판이고 api · wiki 는 latest/ 에 없다 — 이 박스는 MX 백서 화면이 옛 판으로 남고 위키 워커가 없다(위키를 켜기 전엔 배치가 깨지지 않는다) | 사람 — MX 백서 세션이 운영 배포로 보고 넘겼다 |
 | DocForge 베타(0.3.0) 배치 | 등록이 draft 라 게이트웨이에 안 실리고, 포털 「정밀 변환」 목적지는 숨는다(10-25 판부터 — 오류는 아니다) | DocForge · 허브 주인 |
+| StepForge SIF(`cd ~/claude/DocForge && SLUG=step_forge bash scripts/drive-push-sif.sh --dry-run` → 본 뒤 `--dry-run` 없이) | Drive 판은 a23932d 로 지었고 허브가 받을 `main` 끝은 b8481c4(문서만)다. 허브는 `sha256(커밋 + 등록 사본 + 템플릿)` 을 `.sif.hash` 와 견준다 — 이 박스의 허브가 소스를 받을 수 있으면 표지가 달라 다시 지으려다 실패하고, 그 회차엔 StepForge 를 띄우지 않는다(소스를 못 받는 폐쇄망 길이면 받은 SIF 로 뜬다) | 사람(dev) |
+| voice-recorder SIF(같은 명령, `SLUG=voice-recorder`) | Drive 판은 07-30(60548cd), `main` 끝은 cd6970d — 같은 까닭이다. 석 달 치 변화(5.2 → 5.7GB)라 올릴지는 그 앱 주인이 정한다 | 앱 주인 |
 
 ### 2. 이 박스에서 돌리기 전 — 사람
 
