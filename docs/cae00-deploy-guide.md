@@ -644,7 +644,8 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 - MaterialTwinWeb — dev 리포가 GitHub 보다 61커밋 앞이다(09-05 뒤 push 안 함). dev 허브는 로컬 리포에서 받아 지었고 이 박스는 GitHub 을
   받는다. 지금은 커밋이 그대로라 받은 SIF 로 뜨지만, GitHub `main` 이 지은 커밋(a3563b6)이 아닌 곳으로 움직이면 뜨지 못한다. push 는
   사용자 결정 대기다(실을 범위). 다시 쓴 커밋을 올리게 되면 dev 가 그 커밋으로 지은 SIF 를 Drive 에 먼저 올린 뒤 push 하고, 이 박스의
-  update-all 은 그 뒤에 돌린다.
+  update-all 은 그 뒤에 돌린다. 허브 SIF 는 앱 리포의 추적 파일을 통째로 담는다 — 리포에서 무엇을 빼기로 하면 GitHub 만이 아니라 SIF
+  (Drive `latest/` · Drive 휴지통의 옛 묶음 · 이 박스의 `var/sifs` 와 Drive 받기 캐시)도 다시 지어 갈아 끼우거나 지워야 한다.
 - SignalForge 화면 이미지(07-20)에는 '포털 밖 직접 접속 프록시'(08-28)가 없다 — 포털로 쓰는 데는 상관없다(SignalForge 몫).
 
 ### 2. 이 박스에서 돌리기 전 — 사람

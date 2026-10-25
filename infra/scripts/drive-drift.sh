@@ -154,7 +154,7 @@ for hf in sorted(kd.glob("*.sif.hash")):
         same.append(d); continue
     ws = hub / "var/integration_workspaces" / d / "upstream"
     if built and subprocess.run(["git", "-C", str(ws), "merge-base", "--is-ancestor", head, built], capture_output=True).returncode == 0:
-        print(f"⚠ {d} — Drive SIF 는 {built[:8]} 인데 GitHub {ref} 은 {head[:8]} 에 머물러 있다(앱 리포에 push 안 한 커밋) — cae00 은 GitHub 을 받는다. 커밋이 그대로인 동안은 받은 SIF 로 뜨지만 GitHub 이 다른 커밋으로 움직이면 뜨지 못한다 — push 여부 · 범위는 앱 주인이 정한다(공개 리포면 실을 수 있는 판인지 먼저)"); continue
+        print(f"⚠ {d} — Drive SIF 는 {built[:8]} 인데 GitHub {ref} 은 {head[:8]} 에 머물러 있다(앱 리포에 push 안 한 커밋) — cae00 은 GitHub 을 받는다. 커밋이 그대로인 동안은 받은 SIF 로 뜨지만 GitHub 이 다른 커밋으로 움직이면 뜨지 못한다 — push 여부 · 범위는 앱 주인이 정한다(공개 리포면 실을 수 있는 판인지 먼저). SIF 는 앱 리포의 추적 파일을 통째로 담는다 — 리포에서 무엇을 빼면 SIF 도 다시 지어 Drive · 받은 박스의 사본을 갈아 끼운다"); continue
     print(f"✗ {d} — Drive SIF{' 는 ' + built[:8] + ' 판인데' if built else ' 의 열쇠가'} {ref} 끝 {head[:8]} 와 맞지 않는다 — cae00 허브가 다시 지으려다 실패해 그 앱을 띄우지 않는다. dev 에서 다시 짓고(redeploy-app.sh --rebuild {d}) 올린다")
 if same:
     print(f"· 매니페스트 · 틀만 바뀐 앱 {len(same)}({', '.join(same)}) — 커밋이 그대로라 cae00 은 열쇠를 다시 재지 않고 받은 SIF 로 띄운다")
