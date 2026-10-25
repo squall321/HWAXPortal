@@ -565,7 +565,7 @@ def check_drive() -> None:
             else:
                 say("✓", f"허브 Drive 대조 목록 {len(listed)}줄이 latest/ 와 맞는다")
             if loose:
-                say("·", f"허브 Drive latest/ 의 SIF {len(loose)}개는 대조 목록 밖이다 — 내용 대조 없이 깔린다(.sif.hash 는 커밋 표지다). "
+                say("·", f"허브 Drive latest/ 의 SIF {len(loose)}개는 대조 목록 밖이다 — 내용 대조 없이 깔린다(.sif.hash 는 내용 해시가 아니라 허브의 캐시 열쇠다). "
                          "rclone 이 받을 때 해시로 확인해 위험은 낮다")
 
 
