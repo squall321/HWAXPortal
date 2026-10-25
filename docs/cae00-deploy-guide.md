@@ -627,15 +627,24 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
   옛 `.gitignore` 로 돈다. 점검 없이 돌려 포털이 안 뜨면 `git show 'stash@{0}^3:backend/config/systems.cae00.yaml' > backend/config/systems.cae00.yaml`
   로 되살리고 포털을 다시 띄운다.
 
-### 1. dev 에서 먼저 — 이 박스가 받을 판
+### 1. dev 에서 먼저 — 이 박스가 받을 판(10-25 에 올렸다)
 
-| 할 일 | 안 하면 | 누가 |
-|---|---|---|
-| 포털 화면 빌드 · 올리기(`pnpm --dir frontend build` → `./infra/scripts/build-all-to-drive.sh portal`) | update-all §6 이 'SPA dist 가 지금 소스와 다르다' 로 실패한다(종료코드 1). 화면은 옛 판 | dev |
-| MX 백서 이미지 web · api · wiki(`cd ~/claude/MXWhitePaper && ./infra/scripts/images-to-drive.sh`) | Drive 의 web.sif 는 9-13 판이고 api · wiki 는 latest/ 에 없다 — 이 박스는 MX 백서 화면이 옛 판으로 남고 위키 워커가 없다(위키를 켜기 전엔 배치가 깨지지 않는다) | 사람 — MX 백서 세션이 운영 배포로 보고 넘겼다 |
-| DocForge 베타(0.3.0) 배치 | 등록이 draft 라 게이트웨이에 안 실리고, 포털 「정밀 변환」 목적지는 숨는다(10-25 판부터 — 오류는 아니다) | DocForge · 허브 주인 |
-| StepForge SIF(`cd ~/claude/DocForge && SLUG=step_forge bash scripts/drive-push-sif.sh --dry-run` → 본 뒤 `--dry-run` 없이) | Drive 판은 a23932d 로 지었고 허브가 받을 `main` 끝은 b8481c4(문서만)다. 허브는 `sha256(커밋 + 등록 사본 + 템플릿)` 을 `.sif.hash` 와 견준다 — 이 박스의 허브가 소스를 받을 수 있으면 표지가 달라 다시 지으려다 실패하고, 그 회차엔 StepForge 를 띄우지 않는다(소스를 못 받는 폐쇄망 길이면 받은 SIF 로 뜬다) | 사람(dev) |
-| voice-recorder SIF(같은 명령, `SLUG=voice-recorder`) | Drive 판은 07-30(60548cd), `main` 끝은 cd6970d — 같은 까닭이다. 석 달 치 변화(5.2 → 5.7GB)라 올릴지는 그 앱 주인이 정한다 | 앱 주인 |
+| 무엇 | 상태(10-25, 사용자 지시 「SIF 전달이 잘 안되던 건 다 최신본이 가게」) |
+|---|---|
+| 포털 화면 · 이미지 | 올림 — Drive 빌드 표지 = `origin/main:frontend`(a4feb335c0). 안 올렸으면 update-all §6 이 'SPA dist 가 지금 소스와 다르다' 로 실패했다 |
+| MX 백서 이미지 web · api · wiki | 올림(`images-20261025-022913Z`) — 그때까지 latest/ 에 api · wiki 가 한 번도 없었고 web 은 09-13 판이었다. MX 백서 세션이 세 판을 확인했다 |
+| StepForge SIF | 올림(`main` 끝 b8481c4 판, 되돌리기 `dist-20261025-022757Z/`) |
+| voice-recorder SIF | 올림(`main` 끝 cd6970d 판, 되돌리기 `dist-20261025-023703Z/` — 그 전 Drive 판은 07-30) |
+| DocForge 베타(0.3.0) | 남음 — 등록이 draft 라 게이트웨이에 안 실리고 포털 「정밀 변환」 목적지는 숨는다(오류는 아니다). DocForge · 허브 주인 몫 |
+
+허브 앱이 이 박스에서 뜨는 조건 — 허브는 앱 소스를 매니페스트의 `source.ref` 에서 받는다. 커밋이 그대로이고 그 커밋으로 성공한 기록이
+있으면 받은 SIF 로 그대로 띄운다. 커밋이 바뀌면 캐시 열쇠 `sha256(커밋 + 등록 사본 + 틀)` 을 받은 SIF 의 `.sif.hash` 와 견주고, 다르면
+다시 지으려다(이 박스는 못 짓는다) 실패해 **그 회차엔 앱을 띄우지 않는다** — 허브가 다시 뜨면 그 앱은 꺼진 채 남는다. 그래서 앱 리포에
+문서만 올려도 dev 가 다시 지어 Drive 로 보내야 한다. dev 에서 `./infra/scripts/drive-drift.sh heax` 가 10-25 부터 이 열쇠까지 견준다.
+- MaterialTwinWeb — dev 리포가 GitHub 보다 61커밋 앞이다(09-05 뒤 push 안 함). dev 허브는 로컬 리포에서 받아 지었고 이 박스는 GitHub 을
+  받는다. 지금은 커밋이 그대로라 받은 SIF 로 뜨지만, GitHub `main` 이 지은 커밋(a3563b6)이 아닌 곳으로 움직이면 뜨지 못한다. 앱 리포를
+  push 하면 열쇠가 맞는다(그 앱 주인 몫).
+- SignalForge 화면 이미지(07-20)에는 '포털 밖 직접 접속 프록시'(08-28)가 없다 — 포털로 쓰는 데는 상관없다(SignalForge 몫).
 
 ### 2. 이 박스에서 돌리기 전 — 사람
 
@@ -654,6 +663,8 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 
 - `○ kooremapper 재기동` — DynaForge 로컬 작업이 돌았다. 코드 · 배포물은 받았고 서버는 옛 것 그대로다. 끝난 뒤 한 번 더 돌린다.
 - MX 백서 이관이 0056 을 지나면 짝 없는 `doc_triples` 를 지운다(점검이 센 수 — §1b 의 배포 전 백업에 남는다).
+- MX 백서 이관 뒤 `migrate.sh` 가 restricted 거르기 재색인을 한 번 돈다(표지 `infra/data/.reindexed-audience-v1`). 0050 이 만드는 소속 → 팀
+  표는 비어 있어, 관리자가 채우기 전엔 진입 때 팀이 옮겨지는 사람이 없다(MX 백서 세션 확인 — 이관 0050~0058 에서 데이터를 지우는 것은 0056 하나).
 - 새로 실패로 세는 것 — DynaForge 배포물 받기 실패 · MX 백서 DB 이관 실패. 예전엔 경고만 남기고 초록으로 끝나 옛 화면 · 옛 스키마로 돌았다.
 
 ### 4. 돌린 뒤 — 확인 · 한 번만 하는 일
