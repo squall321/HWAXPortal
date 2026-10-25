@@ -99,11 +99,76 @@ if want heax; then
           echo "  ✗ $b — 로컬 $ls_ ≠ Drive $ds"; DRIFT=1; h=1
         fi
       done
+      _py="$SELF_REPO/backend/.venv/bin/python"; [ -x "$_py" ] || _py=python3
+      # 캐시 열쇠 — cae00 허브는 앱 소스를 GitHub(매니페스트 source.ref)에서 받고, 커밋이 바뀌면 sha256(커밋 + 매니페스트 + 틀)을
+      # 받은 SIF 의 .sif.hash 와 견준다. 다르면 다시 지으려다(그 박스는 못 짓는다) 실패해 그 회차엔 앱을 띄우지 않는다(HEAXHub
+      # integrations_scanner — 빌드 실패는 기동 없음). 크기만 보면 dev 와 Drive 가 같이 낡은 앱을 놓친다(10-25 — StepForge 는 문서 커밋
+      # 뒤 다시 안 올림, MaterialTwinWeb 은 GitHub 이 61커밋 뒤). 커밋이 그대로면 cae00 은 열쇠를 다시 재지 않는다 — 매니페스트 · 틀만 바뀐 것은 정보다.
+      _kd="$(mktemp -d)"
+      rclone copy "$R/latest/" "$_kd/" --include "*.sif.hash" 2>/dev/null || true
+      _keys="$("$_py" - "$D" "$_kd" <<'PY' 2>&1
+import hashlib, json, re, subprocess, sys
+from pathlib import Path
+try:
+    import yaml
+except ImportError:
+    print("? 캐시 열쇠를 견주지 못했다 — 이 python 에 PyYAML 이 없다"); sys.exit(0)
+hub, kd = Path(sys.argv[1]), Path(sys.argv[2])
+same = []   # 매니페스트 · 틀만 바뀐 앱 — 한 줄로 묶는다
+def show(rel):  # cae00 이 받을 판(@{u}) — 없으면 작업 트리
+    r = subprocess.run(["git", "-C", str(hub), "show", f"@{{u}}:{rel}"], capture_output=True)
+    if r.returncode == 0:
+        return r.stdout
+    p = hub / rel
+    return p.read_bytes() if p.is_file() else None
+def key(commit, man, tpl):  # HEAXHub integration_sif_builder._hash_inputs 와 같은 꼴
+    x = hashlib.sha256(); x.update(commit.encode()); x.update(b"\0")
+    x.update(json.dumps(man, sort_keys=True, default=str).encode()); x.update(b"\0"); x.update(tpl)
+    return x.hexdigest()
+for hf in sorted(kd.glob("*.sif.hash")):
+    d = hf.name[:-len(".sif.hash")]
+    raw = show(f"integrations/{d}/.portal/manifest.yaml")
+    if raw is None:
+        continue
+    man = yaml.safe_load(raw) or {}
+    src = man.get("source") or {}
+    tpl = show(f"backend/app/services/sif_templates/{(man.get('build') or {}).get('stack')}.def")
+    if src.get("type") != "git" or not src.get("url") or tpl is None:
+        continue
+    ref = src.get("ref") or "main"
+    r = subprocess.run(["git", "ls-remote", src["url"], f"refs/heads/{ref}"], capture_output=True, text=True, timeout=60, cwd=hub)   # 상대 주소(데모의 var/local-demo-repos)는 허브 기준
+    head = (r.stdout.split() or [""])[0]
+    if not head:
+        print(f"? {d} — {ref} 끝을 못 읽었다(열쇠 대조 생략)"); continue
+    drive, want = hf.read_text().strip(), key(head, man, tpl)
+    if drive == want:
+        continue
+    lk = hub / "var/sifs" / f"{d}.sif.hash"
+    local = lk.read_text().strip() if lk.is_file() else ""
+    if local == want:
+        print(f"✗ {d} — dev 는 {ref} 끝 {head[:8]} 로 지었는데 Drive 는 옛 판이다 — 올린다(SLUG={d} bash ../DocForge/scripts/drive-push-sif.sh --dry-run)"); continue
+    df = hub / "var/sifs" / f"{d}.def"
+    m = re.search(r"upstream commit:\s*([0-9a-f]{40})", df.read_text(errors="replace")) if local == drive and df.is_file() else None
+    built = m.group(1) if m else ""
+    if built == head:
+        same.append(d); continue
+    ws = hub / "var/integration_workspaces" / d / "upstream"
+    if built and subprocess.run(["git", "-C", str(ws), "merge-base", "--is-ancestor", head, built], capture_output=True).returncode == 0:
+        print(f"⚠ {d} — Drive SIF 는 {built[:8]} 인데 GitHub {ref} 은 {head[:8]} 에 머물러 있다(앱 리포에 push 안 한 커밋) — cae00 은 GitHub 을 받는다, 앱 리포를 push 하면 열쇠가 맞는다"); continue
+    print(f"✗ {d} — Drive SIF{' 는 ' + built[:8] + ' 판인데' if built else ' 의 열쇠가'} {ref} 끝 {head[:8]} 와 맞지 않는다 — cae00 허브가 다시 지으려다 실패해 그 앱을 띄우지 않는다. dev 에서 다시 짓고(redeploy-app.sh --rebuild {d}) 올린다")
+if same:
+    print(f"· 매니페스트 · 틀만 바뀐 앱 {len(same)}({', '.join(same)}) — 커밋이 그대로라 cae00 은 열쇠를 다시 재지 않고 받은 SIF 로 띄운다")
+PY
+)"
+      rm -rf "$_kd"
+      if [ -n "$_keys" ]; then
+        printf '%s\n' "$_keys" | sed 's/^/  /'
+        printf '%s\n' "$_keys" | grep -q '^✗' && { DRIFT=1; h=1; }
+      fi
       # app-data(재료·장비 DB 등)는 tar 로 올라가므로 '가장 최근에 바뀐 DB' 와 tar 시각을 견준다.
       # -L — var/app_data 는 /data 이관 뒤 심링크다(dev · cae00). 안 따라가면 DB 를 하나도 못 찾아 이 검사가 늘 통과였다(10-25 점검).
       # 레지스트리(infra/services.yaml heax-hub data.apps)가 dev → 박스로 보내는 앱(sync: publish-*)의 DB 만 본다 — 박스 고유(mirror)인
       # stepforge · docforge · voicerecorder · risk DB 는 dev 에서 늘 새것이라, 다 보면 이 줄이 늘 떠서 진짜 어긋남을 가린다.
-      _py="$SELF_REPO/backend/.venv/bin/python"; [ -x "$_py" ] || _py=python3
       _pub="$("$_py" - "$SELF_REPO/infra/services.yaml" <<'PY' 2>/dev/null
 import sys, yaml
 for s in yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["services"]:
