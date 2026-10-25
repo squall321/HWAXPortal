@@ -642,8 +642,9 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 다시 지으려다(이 박스는 못 짓는다) 실패해 **그 회차엔 앱을 띄우지 않는다** — 허브가 다시 뜨면 그 앱은 꺼진 채 남는다. 그래서 앱 리포에
 문서만 올려도 dev 가 다시 지어 Drive 로 보내야 한다. dev 에서 `./infra/scripts/drive-drift.sh heax` 가 10-25 부터 이 열쇠까지 견준다.
 - MaterialTwinWeb — dev 리포가 GitHub 보다 61커밋 앞이다(09-05 뒤 push 안 함). dev 허브는 로컬 리포에서 받아 지었고 이 박스는 GitHub 을
-  받는다. 지금은 커밋이 그대로라 받은 SIF 로 뜨지만, GitHub `main` 이 지은 커밋(a3563b6)이 아닌 곳으로 움직이면 뜨지 못한다. 앱 리포를
-  push 하면 열쇠가 맞는다(그 앱 주인 몫).
+  받는다. 지금은 커밋이 그대로라 받은 SIF 로 뜨지만, GitHub `main` 이 지은 커밋(a3563b6)이 아닌 곳으로 움직이면 뜨지 못한다. push 는
+  사용자 결정 대기다(실을 범위). 다시 쓴 커밋을 올리게 되면 dev 가 그 커밋으로 지은 SIF 를 Drive 에 먼저 올린 뒤 push 하고, 이 박스의
+  update-all 은 그 뒤에 돌린다.
 - SignalForge 화면 이미지(07-20)에는 '포털 밖 직접 접속 프록시'(08-28)가 없다 — 포털로 쓰는 데는 상관없다(SignalForge 몫).
 
 ### 2. 이 박스에서 돌리기 전 — 사람
