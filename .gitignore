@@ -82,5 +82,8 @@ infra/apptainer/.frontend-dist.applied.tar.gz
 infra/.state/
 # 박스별 타일 덮어쓰기 — 외부 타일의 사내 주소(docs/access-history)
 backend/config/systems.local.yaml
+# 박스 고유 타일 목록(backend/.env 의 CATALOG_PATH — cae00 은 systems.cae00.yaml). 무시하지 않으면 update-all 첫 stash 가 치워
+# 포털이 카탈로그를 못 읽고 뜨지 못한다(10-25 cae00 업데이트 점검). 추적 중인 systems.yaml 은 이 꼴에 걸리지 않는다.
+backend/config/systems.*.yaml
 # 박스별 권한 표 덧붙임 — 박스 전용 플랫폼과 SSO Claim → 소속 표(사내 코드가 들어간다, docs/change-request-8-10)
 backend/config/access.local.yaml

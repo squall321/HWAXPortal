@@ -22,6 +22,11 @@
 
 entries:
   - date: 2026-10-25
+    title: "박스 고유 타일 목록이 update-all 에 치워지지 않습니다"
+    tag: 배포
+    items:
+      - "박스마다 따로 두는 타일 목록(backend/config/systems.<박스>.yaml — cae00 은 systems.cae00.yaml)을 git 이 무시하게 했습니다. 그동안은 update-all 첫 단계가 이 파일을 작업 트리에서 치워, 포털이 카탈로그를 못 읽고 뜨지 못할 수 있었습니다. 이 규칙이 아직 없는 박스의 첫 실행은 옛 규칙으로 돌기 때문에 사전 점검이 따로 알립니다."
+  - date: 2026-10-25
     title: "Drive 배포물 점검이 앱 데이터 어긋남을 제대로 보고, 안전하게 올리는 길을 알려 줍니다"
     tag: 기술
     items:
