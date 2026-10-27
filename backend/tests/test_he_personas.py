@@ -441,3 +441,45 @@ def test_DocForge_운영자는_RA_를_선택_앱으로_묶고_변환은_업로�
     assert "get_report_outline" not in rows[0]["system_prompt"], "없는 앱의 도구를 대면 모델이 그 도구를 부른다"
     rows, skipped, _errors = sync.plan(one, {**base, "map": dict.fromkeys(ra, "reportarchive")})
     assert rows == [] and skipped, "DocForge 가 게이트웨이에 실리기 전(draft)에는 만들지 않는다"
+
+
+# ── 같은 앱 안의 켜고 끄는 기능 — needs_tool(10-28, docs/request-1027 HP-35 미리보기에서 드러났다) ──────────────────
+# MX 백서는 위키가 꺼진 박스에서 wiki_* 를 내지 않고(MXWhitePaper MW-01), 서버 경로를 읽는 도구(import_file · upload_image ·
+# extract_pptx_images)는 http 모드에서 아예 싣지 않는다(MW-02). 정본 필수 칸에 그 이름이 있으면 그 박스에서 동기화가 통째로 멈췄다.
+def _mxwp_map(with_wiki: bool) -> dict:
+    p = _one("he-doc-mxwhitepaper")["personas"][0]
+    base = {n for fld in _TOOL_FIELDS for n in p[fld]}
+    wiki = {n for o in p.get("optional") or [] for fld in _TOOL_FIELDS for n in o.get(fld) or []}
+    names = base | (wiki if with_wiki else set())
+    return {"map": dict.fromkeys(names, "mx-white-paper"), "areas": {}, "area_meta": [],
+            "apps": [{"app": "mx-white-paper", "label": "MX 백서"}]}
+
+
+def test_MX_백서_운영자는_위키가_켜진_박스에서_위키부터_묻는다():
+    sync = _sync()
+    one = _one("he-doc-mxwhitepaper")
+    p = one["personas"][0]
+    assert [o.get("needs_tool") for o in p.get("optional") or []] == ["wiki_ask"], "위키 몫은 needs_tool 로 묶는다"
+    notes: list[str] = []
+    rows, skipped, errors = sync.plan(one, _mxwp_map(True), notes)
+    assert not errors and not skipped and notes == [], (errors, skipped, notes)
+    (r,) = rows
+    assert r["response_config"]["mcp_apps"] == ["mx-white-paper"], "같은 앱을 두 번 묶었다 — 도구 수 · 라벨이 두 번 센다"
+    assert r["common_tags"].count("MX 백서") == 1
+    assert {"wiki_ask", "wiki_read"} <= set(r["response_config"]["key_tools"]) and "wiki_fileback" in r["system_prompt"]
+    assert f"도구 {len(_mxwp_map(True)['map'])}개" in r["system_prompt"], "도구 수를 두 번 셌다"
+
+
+def test_MX_백서_운영자는_위키가_꺼진_박스에서도_멈추지_않고_위키를_대지_않는다():
+    sync = _sync()
+    one = _one("he-doc-mxwhitepaper")
+    notes: list[str] = []
+    rows, skipped, errors = sync.plan(one, _mxwp_map(False), notes)
+    assert not errors and not skipped, (errors, skipped)
+    assert notes == ["he-doc-mxwhitepaper: mx-white-paper 의 wiki_ask 없이 만든다(선택 앱)"]
+    (r,) = rows
+    assert "wiki_" not in r["system_prompt"] and not any(t.startswith("wiki_") for t in r["response_config"]["key_tools"])
+    p = one["personas"][0]
+    text = " ".join([*p["can"], *p["workflow"], *p["pitfalls"], *p["writes"], *p["key_tools"]])
+    for gone in ("import_file", "upload_image,", "extract_pptx_images"):
+        assert gone not in text and "upload_image" not in p["writes"], f"http 모드에서 실리지 않는 도구를 댄다 — {gone}"

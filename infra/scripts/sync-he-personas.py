@@ -92,14 +92,21 @@ _LISTS = ("can", "workflow", "concepts", "pitfalls", "samples", "key_tools", "wr
 
 
 def _with_optional(p: dict, by_app: dict) -> tuple[dict, list[str]]:
-    """정본 한 명 → 붙어 있는 선택 앱의 칸을 이은 사본, 빠진 선택 앱."""
+    """정본 한 명 → 붙어 있는 선택 앱의 칸을 이은 사본, 빠진 선택 앱.
+
+    `needs_tool` 이 있으면 앱이 붙어 있고 그 도구도 낼 때만 잇는다(노출 이름 또는 접두 별칭) — 같은 앱 안에서 켜고 끄는 기능을 그 칸에
+    묶는다. MX 백서는 위키가 꺼진 박스에서 wiki_* 를 내지 않는다(MXWhitePaper MW-01) — 필수 칸에 두면 그 박스에서 동기화가 통째로
+    멈춘다(한 명이 걸리면 아무도 안 올라간다). 같은 앱을 apps 에 두 번 넣지 않는다(도구 수 · 라벨이 두 번 센다)."""
     q = {**p, "apps": list(p["apps"]), **{f: list(p[f]) for f in _LISTS}}
     absent: list[str] = []
     for o in p.get("optional") or []:
-        if o["app"] not in by_app:
-            absent.append(o["app"])
+        app, need = o["app"], o.get("needs_tool")
+        names = by_app.get(app) or []
+        if app not in by_app or (need and need not in names and f"{app.replace('-', '')}_{need}" not in names):
+            absent.append(f"{app} 의 {need}" if app in by_app else app)
             continue
-        q["apps"].append(o["app"])
+        if app not in q["apps"]:
+            q["apps"].append(app)
         for f in _LISTS:
             q[f] += o.get(f) or []
     return q, absent
