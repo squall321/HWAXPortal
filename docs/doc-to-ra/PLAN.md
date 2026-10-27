@@ -1,6 +1,7 @@
 # 문서 → Report Archive 정밀 변환 — 계획 (2026-10-24)
 
-> 체크리스트 [checklist.md](checklist.md) · 결정 [context-notes.md](context-notes.md) · 조사 근거(파일 · 줄) [research.md](research.md).
+> 체크리스트 [checklist.md](checklist.md) · 결정 [context-notes.md](context-notes.md) · 조사 근거(파일 · 줄) [research.md](research.md) ·
+> RA 에 드리는 요청 [ra-requests.md](ra-requests.md).
 > 상태 — **뼈대(2026-10-24)** — 앱 리포 `squall321/DocForge`(`9f0d2e9`)에 걸어 다니는 뼈대 · 계약 · 단계 명세 · 스크립트 · 문서.
 > **dev 에서 먼저 개발하고 실데이터가 필요해지면 cae00**(사용자 결정 10-24, DF-D14) — dev 시작점은 DocForge `docs/START.md`(D0~D11),
 > cae00 인계는 [cae00-handoff.md](cae00-handoff.md). 남은 결정은 §12.
@@ -250,7 +251,7 @@ Pydantic 모델은 **어느 도구를 쓰든 계약**이다 — RA 위젯 내용
 
 - **RA 계약이 자주 바뀐다** — v0.167 이고, 쪽 안의 칸은 마이그레이션 없이 늘었으며, 규칙 파일과 스키마가 두 곳에서 어긋난다. `GET /api/widgets` 의
   `schema_version` 을 보고, 우리가 내는 위젯만 Pydantic 으로 둔다. dev RA 에 계약 시험을 두고, 낯선 판이면 크게 알리고 멈춘다.
-- **RA 는 손대지 않는다** — 필요한 것(패키지 가져오기 · 엔티티 합의 · 큰 원본 첨부 상한)은 요청서로 보낸다.
+- **RA 는 손대지 않는다** — 필요한 것(패키지 가져오기 · 엔티티 합의 · 큰 원본 첨부 상한)은 요청서로 보낸다([ra-requests.md](ra-requests.md) — 10-27).
 - **Docling 의 PPTX 는 XML 을 그대로 읽는 해부라 얕을 수 있다** — 형식별 보강으로 메운다. 어디까지 메울지는 M0 이 정한다.
 - **폐쇄망** — Docling 모델 무게 · LibreOffice · 한글 글꼴을 SIF 에 굽는다. SIF 가 수 GB 라 Drive 올리기가 길다(30분 한도 · HEAXHub 지문 목록 함정).
 - **GPU** — dev GPU 는 AIDH · dev vLLM 과 나눠 쓴다. cae00 GPU 는 모른다 → CPU 로도 돌 수 있게 한다(쪽당 시간은 M0 에서 잰다).

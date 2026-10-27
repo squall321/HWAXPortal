@@ -57,6 +57,7 @@
 ## M4 온톨로지 · DRM · MCP
 - [x] SP 거울(수신 키트 — StepForge 판을 옮김) · 과제 · 모델 후보(글자 그대로 · 근거 구절) · 첫 쪽 `key_value` · `tags`(DocForge E13 · E14 — 가짜 허브로, 진짜 허브 주소 · 토큰은 사람 몫)
 - [ ] 부서 후보 · pattern · fuzzy · llm(실데이터 — SP 모델명 규칙) · RA 엔티티(§12-10 · RA 요청서)
+- [x] RA 요청서 [ra-requests.md](ra-requests.md) — 템플릿 시드 · 검증만(dry_run) · SP key 를 엔티티 code 로(자동 태깅) · 원본 첨부 상한 · 운영 확인(DF-D24 · DocForge E17). RA 쪽에 건네기는 사람 몫
 - [x] PC 도우미 묶음 길 — `hwax-doc/1` + 슬라이드 PNG 판독 · 낮은 충실도 표시(DocForge E5 · R-D35, 포털이 글 + 그림을 zip 으로 넘김 DF-D18 · 10-25)
 - [x] MCP 도구(capabilities · convert · status · package · cancel) · RA 에 넣는 길(포털이 사용자 명의 엄격 생성 — DF-D17, §12-2 의 M1 몫)
 - [x] '이 대화에서 분석' 을 DocForge 로 — DocForge 가 보이는 사람은 DocForge 가 읽은 글(document.md)을 문서 칩으로 · 아니면 지금 길(DF-D19 · 10-25)
