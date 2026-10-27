@@ -22,6 +22,11 @@
 
 entries:
   - date: 2026-10-28
+    title: "배포가 DynaForge 를 다시 띄우는 동안 감시가 겹쳐 띄우지 않게 표지를 둡니다"
+    tag: 배포
+    items:
+      - "update-all 이 DynaForge(KooRemapper)를 내렸다 올리는 사이에 1분 감시가 start.sh 를 겹쳐 돌려 DB 가 멈춘 일이 있었습니다(10-09 · 10-17). 이제 배포가 내리기 직전에 platform/infra/data/deploy.lock.d 표지를 만들고, 다 올린 뒤(실패해도) 지웁니다. 감시가 이 표지를 보고 비키는 쪽은 KooRemapper 몫입니다."
+  - date: 2026-10-28
     title: "update-all 이 거짓 실패를 내지 않고, heax 앱이 빠지면 실패로 셉니다"
     tag: 배포
     items:

@@ -158,3 +158,40 @@ def test_HP06_큰_지도도_전후_비교와_MCP_COUNTS_가_돈다(tmp_path):
     assert "· 도구 변화:" in r.stdout and "+new_tool" in r.stdout and "-tool_00000_" in r.stdout, r.stdout + r.stderr
     assert "COUNTS=[a 3 1]" in r.stdout and "TM_OK=1" in r.stdout, r.stdout
     assert "BAD:" not in r.stdout and "FAIL:" not in r.stdout and "Argument list too long" not in r.stderr, r.stdout + r.stderr
+
+
+# ── HP-01 — KooRemapper 재기동 동안 배포 표지 ────────────────────────────────────────────────────────
+_DEPLOY = (ROOT / "infra/scripts/deploy-all-from-drive.sh").read_text(encoding="utf-8")
+
+
+def _koorm_marker_block() -> str:
+    i = _DEPLOY.index('      _dl="platform/infra/data/deploy.lock.d"')
+    j = _DEPLOY.index("\n", _DEPLOY.index("      _start() {", i)) + 1
+    return _DEPLOY[i:j]
+
+
+def _koorm(tmp: Path, start_rc: int, tail: str) -> tuple[subprocess.CompletedProcess, Path]:
+    repo = tmp / "KooRemapper"
+    (repo / "platform/infra/scripts").mkdir(parents=True, exist_ok=True)
+    (repo / "platform/infra/data").mkdir(parents=True, exist_ok=True)
+    for name, body in (("stop.sh", 'echo "stop marker=$(cat platform/infra/data/deploy.lock.d/pid 2>/dev/null)" >> "$CALLS"'),
+                       ("start.sh", f'echo "start marker=$([ -d platform/infra/data/deploy.lock.d ] && echo yes || echo no)" >> "$CALLS"; exit {start_rc}')):
+        (repo / "platform/infra/scripts" / name).write_text(f"#!/usr/bin/env bash\n{body}\n")
+    body = f'( cd "{repo}"\n{_koorm_marker_block()}\n{tail}\n) ; echo "SUB=$?"\n'
+    return _run(body, tmp), repo / "platform/infra/data/deploy.lock.d"
+
+
+def test_HP01_표지는_내린_뒤_올리는_동안만_있다(tmp_path):
+    r, marker = _koorm(tmp_path, 0, '_stop; _start; echo "START_RC=$?"')
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert calls[0].startswith("stop marker=") and calls[0].endswith(" deploy-all"), ("내리기 전에 pid · 시각 · 주체를 적는다", calls)
+    assert calls[1] == "start marker=yes", "start.sh 가 도는 동안은 표지가 있다 — 감시가 비킨다"
+    assert "START_RC=0" in r.stdout and not marker.exists(), "올린 뒤 지운다"
+
+
+def test_HP01_실패해도_미뤄도_표지는_남지_않는다(tmp_path):
+    r, marker = _koorm(tmp_path, 1, '_stop; _start; echo "START_RC=$?"')
+    assert "START_RC=1" in r.stdout and not marker.exists(), ("start 실패는 rc 를 그대로 돌려주고 표지는 지운다", r.stdout)
+    (tmp_path / "calls").unlink()
+    r, marker = _koorm(tmp_path, 0, "_stop; exit 3")                 # 내린 뒤 서브셸이 끝나도(미룸 · 예외) EXIT 가 지운다
+    assert "SUB=3" in r.stdout and not marker.exists(), r.stdout

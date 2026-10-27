@@ -467,8 +467,15 @@ if want kooremapper; then
       # update-all 은 초록으로 끝났다(10-25 cae00 업데이트 점검). 진행은 종전처럼 한다(로컬 아티팩트로).
       bash platform/infra/scripts/dist-from-drive.sh || skip "koorm dist-from-drive 실패 — 새 코드가 옛 바이너리 · 화면으로 뜬다(Drive KooRemapper/dist/latest · KOORM_DRIVE_REMOTE 확인)"
       _cur="$(_fp_git; hwax_fp platform/backend/bin platform/frontend/dist platform/infra/apptainer/*.sif platform/.env)"
-      _stop()  { bash platform/infra/scripts/stop.sh 2>/dev/null || true; }
-      _start() { bash platform/infra/scripts/start.sh; }
+      # 배포 표지 — 내렸다 올리는 사이 1분 감시(supervisor.sh)가 start.sh 를 겹쳐 돌려 'koorm_postgres already exists' · PG 18시간 정지가
+      # 났다(docs/request-1027 HP-01). 내리기 직전에 만들고 올린 뒤 지운다 — 실패 · 미룸(exit 3)에도 이 서브셸의 EXIT 가 지운다.
+      # 감시가 이 표지(살아 있는 pid)를 보면 건너뛰는 쪽은 KooRemapper 몫(KR-04). 이름 · 꼴은 두 쪽이 맞춘다 — pid 파일 "<pid> <epoch> deploy-all".
+      _dl="platform/infra/data/deploy.lock.d"
+      _unmark() { rm -rf "$_dl" 2>/dev/null || true; }
+      trap _unmark EXIT
+      _stop()  { mkdir -p "$_dl" 2>/dev/null && printf '%s %s deploy-all\n' "${BASHPID:-$$}" "$(date +%s)" > "$_dl/pid"
+                 bash platform/infra/scripts/stop.sh 2>/dev/null || true; }
+      _start() { local _r=0; bash platform/infra/scripts/start.sh || _r=$?; _unmark; return "$_r"; }
       # 도는 로컬 작업이 있으면 재기동을 미룬다 — 내리면 SIGKILL 로 끊기고 다시 뜰 때 실패로 적힌다(줄 선 작업 · stcx 외부 잡은 넘긴다).
       # 재기동이 필요할 때만 센다(묻기의 장부 줄은 아래 cycle 이 한 번만 적게 비운다). 셀 수 없으면(빈 값) 막지 않는다. 강제는 KOORM_RESTART_FORCE=1.
       if [ "${KOORM_RESTART_FORCE:-0}" != 1 ] \

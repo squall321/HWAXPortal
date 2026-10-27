@@ -9,7 +9,7 @@
 - [x] HP-08 repair_mcp 앞 `hwax_delib_busy` — 바쁘면 건너뜀(선택: 지금 config 의 HEAX_MCP_TOKEN 넘기기)
 - [x] HP-06 헬스게이트 도구 지도를 파일로(세 곳) · python 실패를 ⚠ 로
 - [x] HP-07 TOOL_MAX 를 덮지 않는다 · ok 문구는 `/health` tool_cut
-- [ ] HP-01 KooRemapper 재기동 표지 `$DATA_DIR/deploy.lock.d`(PID, trap 으로 지움) — 감시 쪽은 KooRemapper KR-04
+- [x] HP-01 KooRemapper 재기동 표지 `$DATA_DIR/deploy.lock.d`(PID, trap 으로 지움) — 감시 쪽은 KooRemapper KR-04
 - [ ] HP-04 backup-local — XDG_RUNTIME_DIR · DBUS_SESSION_BUS_ADDRESS 스스로 채움
 - [ ] HP-17 비밀 백업 — portal/infra · portal/backend 로 나눔 + 박스 파일 · exclude · crontab · 리스크 secrets.env · origin.json · 연결 토큰 키(D-5)
 - [ ] HP-18 `--install-cron` · `install-logrotate` — 'no crontab' 만 빈 목록, 그 밖 실패는 멈춤
