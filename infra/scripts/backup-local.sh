@@ -85,6 +85,13 @@ for s in aidh signalforge mxwp materialtwin portal; do
   rmdir "$old" 2>/dev/null || true   # pre-merge-* 같은 다른 파일이 남아 있으면 그대로 둔다
 done
 
+# 크론은 로그인 세션의 두 변수 없이 돈다 — 그러면 `apptainer exec instance://` 가 'DBUS_SESSION_BUS_ADDRESS is not set' 으로 rc 255 를
+# 내고 KooRemapper 덤프가 10-02 부터 매일 실패했다(docs/request-1027 HP-04). 비어 있고 사용자 런타임 폴더 · 버스 소켓이 있으면 스스로
+# 채운다 — 본보기는 AIDataHub deploy/apptainer/_common.sh 의 _aidh_runtime_autotune. 준 값은 그대로 둔다.
+_uid="$(id -u)"
+[ -z "${XDG_RUNTIME_DIR:-}" ] && [ -d "/run/user/$_uid" ] && export XDG_RUNTIME_DIR="/run/user/$_uid"
+[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "/run/user/$_uid/bus" ] && export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$_uid/bus"
+
 # apptainer 인스턴스 안에서 pg_dump 실행 → gzip → 로컬. (env 값은 각 서비스 .env 에서)
 # $7(선택) 비밀번호 — heax-pg 는 127.0.0.1 도 scram 이라 없으면 매일 '0바이트 실패' 다(다른 4개는 trust).
 pg_backup() {  # $1=서비스라벨 $2=인스턴스 $3=user $4=port $5=db $6=출력디렉토리 [$7=pw]

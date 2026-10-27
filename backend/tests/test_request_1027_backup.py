@@ -179,3 +179,28 @@ def test_HP18_update_all_은_설치기_실패를_삼키지_않는다():
         i = s.index(name + " 2>&1 | sed")
         tail = s[i:s.index("\n", s.index("\n", i) + 1)]
         assert "|| true" not in tail and "|| bad " in tail, tail
+
+
+# ── HP-04 — 크론의 빈 환경에서도 instance exec 가 된다 ───────────────────
+
+def _kooremapper(tree):
+    (tree["tmp"] / "KooRemapper/platform").mkdir(parents=True)
+
+
+def test_HP04_비어_있으면_사용자_런타임_폴더로_채운다(tree):
+    uid = os.getuid()
+    if not Path(f"/run/user/{uid}/bus").is_socket():
+        pytest.skip(f"/run/user/{uid}/bus 없음 — 채울 원천이 없는 박스")
+    _kooremapper(tree)
+    r = _run(tree, [str(tree["portal"] / "infra/scripts/backup-local.sh"), "kooremapper"])
+    assert r.returncode == 0 and "kooremapper → kooremapper-t-" in r.stdout, r.stdout + r.stderr
+    seen = Path(tree["env"]["AP_ENV_LOG"]).read_text().splitlines()
+    assert seen == [f"XDG=/run/user/{uid}", f"DBUS=unix:path=/run/user/{uid}/bus"], seen
+
+
+def test_HP04_준_값은_그대로_둔다(tree):
+    _kooremapper(tree)
+    r = _run(tree, [str(tree["portal"] / "infra/scripts/backup-local.sh"), "kooremapper"],
+             XDG_RUNTIME_DIR="/given", DBUS_SESSION_BUS_ADDRESS="unix:path=/given/bus")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert Path(tree["env"]["AP_ENV_LOG"]).read_text().splitlines() == ["XDG=/given", "DBUS=unix:path=/given/bus"]
