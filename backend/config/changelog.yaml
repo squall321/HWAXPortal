@@ -22,6 +22,12 @@
 
 entries:
   - date: 2026-10-28
+    title: "update-all 의 프록시 우회 점검이 거짓 경보를 내지 않습니다"
+    tag: 배포
+    items:
+      - "'NO_PROXY 에 없는 내부 목적지' 경고가 정문(nginx)이 부르는 경로까지 세어 거짓으로 뜨던 것을 고쳤습니다. 이제 부르는 쪽별로 봅니다 — 포털이 부르는 곳(RA · AI Ready Portal · TestScope)은 지금 셸의 설정으로, 게이트웨이가 부르는 곳은 게이트웨이가 스스로 맞춘 결과로 판정합니다."
+      - "설정으로 붙는 외부 연결(FMEA · MatNexus)의 주소도 점검합니다. 게이트웨이 /health 는 프록시 우회 결과를 수로만 알립니다(주소는 싣지 않습니다)."
+  - date: 2026-10-28
     title: "ste 긴 내려받기 시한 · SimFlow · stcx LLM 경로를 설정 한 줄로 맞춥니다"
     tag: 기술
     items:

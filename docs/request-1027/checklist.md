@@ -19,8 +19,8 @@
 - [x] HP-47 `/ste/` 결과 파일 연결 · 속도 제한 손잡이(기본 끔 — D-6, 결과 파일 경로에만)
 - [x] HP-26 PER_USER_SSO_APPS 앱의 /verify 도 확인(verify 없는 앱은 ○ — dev MX 백서)
 - [x] HP-27 install-ste-tunnel `--check` — 15812 없으면 0 아님
-- [ ] HP-22 check-egress — nginx 전용 라우트 빼기 · 게이트웨이 목적지는 `/health` 보정 결과(HG-18 뒤)
-- [ ] HP-23 check-egress — 선언 플랫폼 mcp_url 호스트
+- [x] HP-22 check-egress — nginx 전용 라우트 빼기 · 게이트웨이 목적지는 `/health` 보정 결과(게이트웨이 519358f — HG-18)
+- [x] HP-23 check-egress — 선언 플랫폼 mcp_url 호스트(박스 권한표 connect: — 게이트웨이 목적지로 센다)
 - [x] HP-35 AIDH merge 뒤 페르소나 미리보기 → ✗ · + · ~ 면 warn(덤 — MX 백서 운영자 정본을 needs_tool 로 고침, 미리보기가 dev 에서 멈춰 있었다)
 - [x] HP-39 env 킷 DELIB_TIMEOUT_S 주석(킷 줄을 주석으로 — 심지 않는다)
 
