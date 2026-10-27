@@ -694,3 +694,28 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 | 리스크 심사 20만 창 | [risk-200k/server-setup.md](risk-200k/server-setup.md) |
 | 외부 연결(`connect:`) · 사람별 연결 | [sso-delegation/server-setup.md](sso-delegation/server-setup.md) C · D |
 | 10-17 후속(사람 몫) | [followups-1017/server-setup.md](followups-1017/server-setup.md) |
+
+## 2026-10-28 반영분 — 10-27 수정 요청(포털 몫)
+
+요청서 · 결정 · 진행은 [request-1027/](request-1027/)(01 포털 · 02 게이트웨이 · 03 에이전트서버 — 고침, 07 리스크 앱 · 10 AIDataHub — 검토만)이 정본이다.
+받는 길은 그대로 `git pull && update-all` 이다. 아래는 받은 뒤 **사람이** 할 일과 확인만 적는다(항목이 들어올 때마다 덧붙인다).
+
+### 받은 뒤 — 사람
+
+- **`/ste/` 읽기 시한(HP-12 · OB-80)** — `infra/.env` 에 `NGINX_STE_READ_TIMEOUT=3600s` 한 줄을 넣는다. 그 뒤 update-all(또는 restart.sh)이
+  conf 를 다시 만들 때마다 그 값이 들어간다 — conf 에 3600s 를 손으로 다시 넣던 일을 멈춘다. 확인 `grep -n 'proxy_read_timeout' infra/nginx/hwax.conf`
+  (`/ste/` 블록 둘 — HTTP · TLS).
+- **`/ste/` 결과 파일 제한(HP-47 · 결정 D-6)** — 기본 끔이다. 한 클라이언트가 큰 결과를 되풀이해 받아 다른 사용자가 느려지면 `infra/.env` 에
+  `NGINX_STE_RESULT_RATE=20m`(연결 하나의 속도) · `NGINX_STE_RESULT_CONN=2`(한 주소의 동시 수, 넘으면 429) 가운데 필요한 것을 넣는다.
+  결과 파일(`result.zip` · `result/file/…`)에만 걸린다.
+- **박스 crontab 맨 위 두 줄(XDG_RUNTIME_DIR · DBUS_SESSION_BUS_ADDRESS, OB-75)은 아직 두다.** 백업은 이제 두 변수를 스스로 채우지만(HP-04),
+  감시(`services.sh heal`)는 채우지 않는다. 걷기 전에 크론과 같은 빈 환경에서 감시가 인스턴스를 띄우는지 본다 —
+  `env -i HOME="$HOME" PATH=/usr/bin:/bin ./infra/scripts/services.sh heal`.
+
+### 다음 날 확인
+
+- `/data/backups/hwax/<박스>/backup.log` 에 `kooremapper → kooremapper-…sql.gz` 가 있다(HP-04 — 10-02 부터 매일 실패하던 덤프).
+- 비밀 묶음을 열어 본다 — `tar -tzf "$(ls -t /data/backups/hwax/<박스>/secrets/daily/secrets-*.tar.gz | head -1)"` 에 `portal/infra/.env` 와
+  `portal/backend/.env` 가 따로 있고, `portal/backend/config/`(systems.cae00.yaml · access.local.yaml …) · `portal/.git/info/exclude` ·
+  `crontab/crontab.txt` · `heax/hwax_risk/secrets.env` · `origin.json` 이 든다(HP-17).
+- 크론 설치기(백업 · 감시 · 로그 회전)는 crontab 을 못 읽으면 쓰지 않고 ✗ 로 멈춘다(HP-18) — update-all 1b 에 ⚠ 가 나오면 `crontab -l` 을 직접 본다.
