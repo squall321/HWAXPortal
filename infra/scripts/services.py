@@ -394,6 +394,34 @@ def env_prefix(env: dict | None) -> str:
     return " ".join(f"{k}={shlex.quote(str(v))}" for k, v in env.items()) + " "
 
 
+# start.sh 의 _np_shape 와 같은 글자 — IPv4 또는 점으로 이은 호스트명(스킴 · 포트 · 공백이 든 값은 NO_PROXY 에 넣지 않는다)
+_NP_SHAPE = re.compile(r"^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$")
+
+
+def child_env() -> dict[str, str]:
+    """띄우는 서비스의 환경 — 부모 그대로에 NO_PROXY · no_proxy 만 start.sh(포털)와 같은 합집합으로 명시한다(docs/request-1027 HP-11).
+
+    상속만 하면 감시(크론) · 부팅 유닛(systemd) · 손으로 부른 services.sh 로 뜬 서비스(게이트웨이 등)는 infra/.env 의 NO_PROXY 를 받지
+    못한다 — 운영자 셸에 프록시만 있으면 내부 호출이 사내 프록시를 탄다. 합집합은 루프백 셋 · 부모의 네 값(APPTAINERENV_ 두 철자 포함) ·
+    infra/.env 의 두 철자 · 모양이 맞는 RA_HOST · ARP_HOST 이고, 두 철자에 같은 값을 문자 그대로 넣는다. infra/.env 의 `${NO_PROXY}`
+    같은 참조는 아무도 펼치지 않으니 `$` 가 든 항목은 뺀다(그 값은 부모 값으로 이미 들어 있다). infra/.env 를 못 읽으면 부모 값으로만 만든다."""
+    env = dict(os.environ)
+    parts = ["127.0.0.1", "localhost", "::1"]
+    parts += [env.get(k, "") for k in ("APPTAINERENV_NO_PROXY", "APPTAINERENV_no_proxy", "NO_PROXY", "no_proxy")]
+    hosts = [env.get(k, "") for k in ("RA_HOST", "ARP_HOST")]
+    try:
+        parts += [_infra_value(k) or "" for k in ("NO_PROXY", "no_proxy")]
+        hosts += [_infra_value(k) or "" for k in ("RA_HOST", "ARP_HOST")]
+    except InfraEnvUnreadable:
+        pass
+    seen: list[str] = []
+    for item in [x for v in parts for x in re.split(r"[,\s]+", v)] + [h.strip() for h in hosts if _NP_SHAPE.match(h.strip())]:
+        if item and "$" not in item and item not in seen:
+            seen.append(item)
+    env["NO_PROXY"] = env["no_proxy"] = ",".join(seen)
+    return env
+
+
 def start_one(svc: dict) -> str:
     name = svc["name"]
     url = health_url(svc)
@@ -418,7 +446,7 @@ def start_one(svc: dict) -> str:
             subprocess.Popen(  # noqa: S602 — commands come from our own manifest
                 ["bash", "-c", inner], cwd=str(wd),
                 stdout=lf, stderr=subprocess.STDOUT, stdin=devnull,
-                start_new_session=True,
+                start_new_session=True, env=child_env(),
             )
     else:
         user = svc.get("ssh_user")
