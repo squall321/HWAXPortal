@@ -195,3 +195,57 @@ def test_HP01_실패해도_미뤄도_표지는_남지_않는다(tmp_path):
     (tmp_path / "calls").unlink()
     r, marker = _koorm(tmp_path, 0, "_stop; exit 3")                 # 내린 뒤 서브셸이 끝나도(미룸 · 예외) EXIT 가 지운다
     assert "SUB=3" in r.stdout and not marker.exists(), r.stdout
+
+
+# ── HP-26 §6 — 사람별 위임 일반 앱의 비밀을 상대의 /verify 로 견준다 ──────────────────────────────────────────
+_S6_VERIFY = _region("# ── 사람별 위임 일반 앱(PER_USER_SSO_APPS", 'H="$(gw_health)"', include_end=False)
+
+
+def test_HP26_위임_앱마다_verify_로_비밀을_견준다(tmp_path):
+    """같으면 ✓ · 다르면 ✗(집계) · verify 창구가 없으면 ○ · 닿지 않으면 ⚠. 대상은 게이트웨이가 쥔 위임 중 PER_USER_SSO_APPS 로 만든 것뿐이다
+    (ste 는 위에서 따로 본다). 비밀은 화면에 나오지 않는다."""
+    import http.server
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            if self.path == "/good/verify":
+                self.send_response(204 if self.headers.get("X-Heax-Gateway-Secret") == "right-secret" else 401)
+            else:
+                self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        gw = tmp_path / "gw"; gw.mkdir()
+        m = {"managed_by": "PER_USER_SSO_APPS", "client": "gateway"}
+        (gw / "gateway_config.json").write_text(json.dumps({"heax_registry": {"per_user_sso": {
+            "app-same": {**m, "sso_url": f"{base}/good", "secret": "right-secret"},
+            "app-diff": {**m, "sso_url": f"{base}/good/", "secret": "wrong-secret"},
+            "app-old": {**m, "sso_url": f"{base}/old", "secret": "right-secret"},
+            "app-down": {**m, "sso_url": "http://127.0.0.1:1/x", "secret": "right-secret"},
+            "ste": {"sso_url": f"{base}/good", "secret": "wrong-secret"},
+        }}}), encoding="utf-8")
+        r = _run(f'GW_DIR="{gw}"; FAIL=0\n{_S6_VERIFY}\necho "FAIL=$FAIL"', tmp_path)
+    finally:
+        srv.shutdown()
+    out = r.stdout + r.stderr
+    assert "OK:사람별 위임 app-same" in out and "FAIL:사람별 위임 app-diff" in out and "BAD:사람별 위임 app-down" in out, out
+    assert "FAIL=1" in out
+    assert "app-old" in (tmp_path / "ledger").read_text(encoding="utf-8"), "verify 창구가 없는 앱은 ○ 로 남는다"
+    assert "ste" not in re.sub(r"(?m)^.*app-.*$", "", r.stdout), "ste(위에서 따로 본다)까지 견줬다"
+    assert "right-secret" not in out and "wrong-secret" not in out, "비밀이 화면에 나왔다"
+
+
+def test_HP26_게이트웨이_설정이_없거나_깨지면_조용히_지나간다(tmp_path):
+    r = _run(f'GW_DIR="{tmp_path}/none"; FAIL=0\n{_S6_VERIFY}\necho "FAIL=$FAIL"', tmp_path)
+    assert "FAIL=0" in r.stdout and "사람별 위임" not in r.stdout
+    gw = tmp_path / "gw"; gw.mkdir()
+    (gw / "gateway_config.json").write_text("깨진 설정", encoding="utf-8")
+    r = _run(f'GW_DIR="{gw}"; FAIL=0\n{_S6_VERIFY}\necho "FAIL=$FAIL"', tmp_path)
+    assert "FAIL=0" in r.stdout and "사람별 위임" not in r.stdout

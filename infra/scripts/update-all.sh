@@ -2786,6 +2786,44 @@ elif [ "$_STE_SRC" = "routes.local.env" ]; then
 else
   hwax_skip "ste(SmartTwinExplorer)" "라우트 미설정 — routes.local.env 에 ste= 가 없어 프록시·자격중계·MCP 위임을 셋업하지 않았다" "teleport 박스: 1d 자동 기록(HWAX_STE_AUTOROUTE=1 기본, transport.env 필요) · direct 박스: routes.local.env 에 ste=http://<헤드>:15810/ 를 적고 재실행"
 fi
+# ── 사람별 위임 일반 앱(PER_USER_SSO_APPS — simflow · arp · odb-hub · MX 백서 …)의 비밀이 상대와 같은가(docs/request-1027 HP-26) ──
+# ste 와 같은 꼴 — 게이트웨이가 **실제로 쥔** 위임(config 의 per_user_sso 중 managed_by=PER_USER_SSO_APPS)마다 위임 주소의 /verify 에 그
+# 비밀을 친다. 204 같다 · 401 다르다 · 404 · 405 상대에 verify 창구가 없다. 상대가 비밀을 바꾸면 사람 호출만 실패하고 업데이트는 초록이던
+# 자리다. 비밀은 파이썬이 config 에서 읽어 헤더로만 보낸다(argv · 화면에 싣지 않는다). 프록시는 이 셸의 설정을 따른다(게이트웨이와 같다).
+_gw_cfg="${GW_DIR:+$GW_DIR/gateway_config.json}"
+if [ -n "$_gw_cfg" ] && [ -f "$_gw_cfg" ]; then
+  _vrows="$(python3 - "$_gw_cfg" <<'PY' 2>/dev/null
+import json, sys, urllib.error, urllib.request
+try:
+    pu = (json.load(open(sys.argv[1], encoding="utf-8")).get("heax_registry") or {}).get("per_user_sso") or {}
+except Exception:
+    raise SystemExit(1)
+for k, c in sorted(pu.items()):
+    if not isinstance(c, dict) or c.get("managed_by") != "PER_USER_SSO_APPS" or not c.get("sso_url") or not c.get("secret"):
+        continue
+    req = urllib.request.Request(str(c["sso_url"]).rstrip("/") + "/verify", data=b"", method="POST",
+                                 headers={"X-Heax-Gateway-Secret": str(c["secret"])})
+    try:
+        code = urllib.request.urlopen(req, timeout=6).status
+    except urllib.error.HTTPError as e:
+        code = e.code
+    except Exception:
+        code = 0
+    print(k, code)
+PY
+)" || _vrows=""
+  while read -r _vk _vc; do
+    [ -n "$_vk" ] || continue
+    case "$_vc" in
+      204) ok "사람별 위임 $_vk  비밀이 상대와 같다(verify 204)" ;;
+      401) fail "사람별 위임 $_vk  **비밀이 상대와 다르다**(verify 401) — 그 앱의 사람별 호출이 전부 실패한다. 상대 앱의 위임 비밀과 HWAXMcpGateway/provision.env 의 그 앱 <접두>_SSO_SECRET 을 맞추고 update-all" ;;
+      404|405) hwax_skip "사람별 위임 $_vk 비밀 대조" "상대에 verify 창구가 없다(HTTP $_vc) — 비밀이 어긋나면 사람 호출이 실패해서야 드러난다" \
+                 "상대 앱이 POST <위임 주소>/verify(같으면 204 · 다르면 401)를 갖추면 update-all 이 본다" ;;
+      0)   bad "사람별 위임 $_vk  verify 에 닿지 못했다 — 일치 여부 미확인(상대가 내려갔거나 주소 · 프록시 · 인증서 문제)" ;;
+      *)   bad "사람별 위임 $_vk  verify 응답 HTTP $_vc — 일치 여부 미확인" ;;
+    esac
+  done <<<"$_vrows"
+fi
 H="$(gw_health)"
 if [ -n "$H" ] && json_ok "$H"; then
   # HEAX Hub 앱 0개는 집계에 든다(docs/request-1027 HP-09) — 종전엔 print 만 해서 heax 앱 9개가 챗에서 빠져도 초록이었다.
