@@ -1169,6 +1169,22 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
       3) bad "AIDH 데이터 merge 는 됐지만 dev 에만 있는 열이 빠졌다(운영 DB 이행이 늦었다) — 표식을 안 적어 다음 update-all 이 다시 병합한다(이행 뒤 손으로: cd $AIDH_DIR && ./deploy/apptainer/merge-from-drive.sh)" ;;
       *) bad "AIDH 데이터 merge 실패(rc $_aidh_mrc) — cae00 데이터는 무손상" ;;
     esac
+    # merge 는 updated_at 이 더 새 쪽을 고른다 — dev 에서 나중에 동기화한 HE팀 운영자(he-*)가 이 박스 판(이 박스 게이트웨이의 앱 · 도구로
+    # 만든 것)을 덮을 수 있다(docs/request-1027 HP-35 · AIDataHub 검토 AD-12). 쓰지 않는 미리보기로 어긋남만 알린다 — 고치는 것은 사람이
+    # --apply 로(바뀐 칸만 PATCH 해 이 박스 판이 다시 앞선다). '정본에 없는 he-*'(?) 는 알리기만 하는 줄이라 세지 않는다.
+    if [ "$_aidh_mrc" = 0 ] || [ "$_aidh_mrc" = 3 ]; then
+      _hp_rc=0; _hp_out="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" 2>&1)" || _hp_rc=$?
+      _hp_diff="$(printf '%s\n' "$_hp_out" | grep -E '^  [+~] ' || true)"
+      if [ "$_hp_rc" != 0 ]; then
+        bad "HE팀 운영자 페르소나 미리보기를 못 했다(rc $_hp_rc) — merge 가 이 박스 판을 덮었는지 모른다. 끝난 뒤: python3 infra/scripts/sync-he-personas.py"
+        printf '%s\n' "$_hp_out" | grep -E '^✗' | head -5 | sed 's/^/    /'
+      elif [ -n "$_hp_diff" ]; then
+        bad "HE팀 운영자 페르소나 $(printf '%s\n' "$_hp_diff" | grep -c .)명이 이 박스 판과 다르다(merge 가 dev 판으로 덮었거나 새 운영자) — 끝난 뒤 확인하고: python3 infra/scripts/sync-he-personas.py --apply"
+        printf '%s\n' "$_hp_diff" | head -10 | sed 's/^/  /'
+      else
+        ok "HE팀 운영자 페르소나 — merge 뒤에도 이 박스 판 그대로(미리보기)"
+      fi
+    fi
   fi
 else
   hwax_skip "AIDataHub 동기화" "AIDataHub 리포 또는 sync-from-drive.sh 가 없다" "../AIDataHub 를 클론(update-all 이 다음 실행부터 동기화한다)"

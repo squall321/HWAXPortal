@@ -249,3 +249,39 @@ def test_HP26_게이트웨이_설정이_없거나_깨지면_조용히_지나간�
     (gw / "gateway_config.json").write_text("깨진 설정", encoding="utf-8")
     r = _run(f'GW_DIR="{gw}"; FAIL=0\n{_S6_VERIFY}\necho "FAIL=$FAIL"', tmp_path)
     assert "FAIL=0" in r.stdout and "사람별 위임" not in r.stdout
+
+
+# ── HP-35 §2b — AIDH merge 뒤 HE팀 운영자 미리보기 ─────────────────────────────────────────────────────
+_S2B_PERSONA = _region("    # merge 는 updated_at 이 더 새 쪽을 고른다", '이 박스 판 그대로(미리보기)"\n      fi\n    fi\n')
+
+
+def _persona_preview(tmp: Path, mrc: int, out: str, rc: int = 0) -> subprocess.CompletedProcess:
+    repo = tmp / "portal"
+    (repo / "infra/scripts").mkdir(parents=True, exist_ok=True)
+    (repo / "infra/scripts/sync-he-personas.py").write_text(
+        "import sys, pathlib\n"
+        f"pathlib.Path({str(tmp / 'called')!r}).write_text(' '.join(sys.argv[1:]) or 'preview')\n"
+        f"sys.stdout.write({out!r})\nsys.exit({rc})\n", encoding="utf-8")
+    return _run(f'SELF_REPO="{repo}"; _aidh_mrc={mrc}\n{_S2B_PERSONA}', tmp)
+
+
+def test_HP35_어긋남이_없으면_그대로라고_말한다(tmp_path):
+    r = _persona_preview(tmp_path, 0, "  · 건너뜀 he-calc-arp\n  ? 정본에 없는 he-* 에이전트 1명 — he-old (지우지 않았다)\n미리보기 — 새로 0 · 고침 0\n")
+    assert "OK:HE팀 운영자 페르소나 — merge 뒤에도 이 박스 판 그대로" in r.stdout and "BAD:" not in r.stdout, r.stdout
+    assert (tmp_path / "called").read_text() == "preview", "쓰는 --apply 를 불렀다"
+
+
+def test_HP35_덮였거나_새_운영자면_경고하고_줄을_보인다(tmp_path):
+    r = _persona_preview(tmp_path, 3, "  ~ he-doc-mxwhitepaper 고친다: system_prompt, key_tools\n  + he-new 새로 만든다 (100자)\n미리보기 — …\n")
+    assert "BAD:HE팀 운영자 페르소나 2명이 이 박스 판과 다르다" in r.stdout and "--apply" in r.stdout, r.stdout
+    assert "  ~ he-doc-mxwhitepaper" in r.stdout and "  + he-new" in r.stdout
+
+
+def test_HP35_미리보기를_못_하면_모른다고_말한다(tmp_path):
+    r = _persona_preview(tmp_path, 0, "✗ 게이트웨이 /tools-map 을 못 읽었다(0) — http://127.0.0.1:9110\n", rc=2)
+    assert "BAD:HE팀 운영자 페르소나 미리보기를 못 했다(rc 2)" in r.stdout and "✗ 게이트웨이 /tools-map" in r.stdout, r.stdout
+
+
+def test_HP35_merge_가_실패하면_미리보기를_부르지_않는다(tmp_path):
+    r = _persona_preview(tmp_path, 1, "  ~ he-x 고친다: name\n")
+    assert "HE팀" not in r.stdout and not (tmp_path / "called").exists(), r.stdout
