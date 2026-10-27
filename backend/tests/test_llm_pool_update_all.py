@@ -822,14 +822,15 @@ def _block_35() -> str:
 
 
 @pytest.mark.parametrize("vb,tm,want", [
-    ("ROUTER", None, "0"), ("ROUTER", "40", "0"), ("ROUTER", "0", "0"), ("ROUTER/", None, "0"), ('"ROUTER"', None, "0"),
+    ("ROUTER", None, "0"), ("ROUTER", "40", "40"), ("ROUTER", "0", "0"), ("ROUTER/", None, "0"), ('"ROUTER"', None, "0"),
     ("RECORDED", None, "0"),                                   # 1i 가 기록한 라우터 주소도 라우터다
-    (DIRECT, None, "0"), (DIRECT, "40", "0"),                   # 원격 GLM 직접 — 종전 그대로
-    ("http://127.0.0.1:8000/v1", "40", None), ("http://127.0.0.1:8000/v1", None, None),   # 로컬 vLLM — 종전 그대로(기본 80)
+    (DIRECT, None, "0"), (DIRECT, "40", "40"),                  # 원격 GLM 직접 — 박스가 적은 값은 덮지 않는다(request-1027 HP-07)
+    ("http://127.0.0.1:8000/v1", "40", None), ("http://127.0.0.1:8000/v1", None, None),   # 로컬 vLLM — 종전 그대로(기본 200)
 ])
 def test_3장5_는_라우터_주소를_원격_LLM_으로_읽는다(box, router, old_router, vb, tm, want):
     """**M3 회귀** — 라우터 주소(127.0.0.1)를 로컬 LLM 으로 읽어, 사본이 라우터로 가는 순간 원격 GLM 의 TOOL_MAX=0 이 빠지고(없으면 안 더하고
-    40 은 지워 기본 80) TOOL_MAX=0 이 있어도 '미설정 → 기본 80' 이라고 찍었다. 3.5 구획을 원문 그대로 돌린다(apply-envs 는 임시 박스의 사본)."""
+    40 은 지워 기본 80) TOOL_MAX=0 이 있어도 '미설정 → 기본 80' 이라고 찍었다. 3.5 구획을 원문 그대로 돌린다(apply-envs 는 임시 박스의 사본).
+    10-27(request-1027 HP-07) — 원격이어도 박스가 적은 값은 덮지 않는다(값이 없을 때만 0). 무캡 경로 캐시 결함이 고쳐지기 전 캡 경로를 고를 길."""
     _recorded(box, old_router["url"])
     box.env(f"LLM_BASE_URL={DIRECT}\nLLM_ROUTER_PORT={router['port']}\n")
     val = vb.replace("RECORDED", old_router["url"]).replace("ROUTER", f"http://127.0.0.1:{router['port']}/v1")

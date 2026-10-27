@@ -1326,8 +1326,8 @@ PY
     fi
   fi
   # ── 3.5c 끝
-  # TOOL_MAX 정리(prod) — dev 전용 소형 캡(40 등)을 제거해 agent-server 기본값(80)을 쓰게 한다.
-  # 80 은 '무조건 절단'이 아니라 질의 관련도(어휘+시맨틱 RRF) 상위 80개 선택이라, 도구가 수백 개로
+  # TOOL_MAX 정리(prod) — dev 전용 소형 캡(40 등)을 제거해 agent-server 기본값(200)을 쓰게 한다.
+  # 200 은 '무조건 절단'이 아니라 질의 관련도(어휘+시맨틱 RRF) 상위 200개 선택이라, 도구가 수백 개로
   # 늘어도 필요한 도구가 남고 컨텍스트도 보호된다. 전량 바인딩이 필요하면 .env 에 TOOL_MAX=0 명시.
   # 원격 LLM(상암 GLM 등 대형 컨텍스트)이면 캡을 아예 푼다(TOOL_MAX=0). 기본 80 을 두면
   # 게이트웨이 도구가 100 개를 넘는 순간 heax-hub 계열이 챗에 안 실려, 아래 헬스게이트가
@@ -1349,19 +1349,21 @@ PY
   _vb_r="$(hwax_llm_router_url "$SELF_REPO/infra/.env")" || _vb_r=""
   _vb_o="$(hwax_llm_router_recorded "$SELF_REPO")" || _vb_o=""
   if [ -n "$_vb_v" ] && { [ "$_vb_v" = "$_vb_r" ] || [ "$_vb_v" = "$_vb_o" ]; }; then REMOTE_LLM=1; fi
+  # 박스가 적은 값은 덮지 않는다(docs/request-1027 HP-07) — 종전엔 원격 LLM 이면 늘 0 으로 다시 써서, 무캡 경로의 캐시 결함(에이전트 HA-01)이
+  # 고쳐지기 전에 캡 경로(TOOL_MAX>0 + TOOL_SCHEMA_BUDGET)를 고를 길이 없었다. 값이 없을 때만 0 을 적는다. '전량 바인딩' 도 아니다 —
+  # 무캡이어도 챗 창 예산 안에서 질의 관련도 순으로 고른다(cae00 10-27 실측 1,613 → 225). 실제로 묶인 수는 7) 의 '챗 도구 절단' 줄이다.
   if [ "$REMOTE_LLM" = "1" ]; then
-    if [ "${TM:-}" != "0" ]; then
-      sed -i '/^TOOL_MAX=/d' "$AGENT_ENV"
+    if [ -z "${TM:-}" ]; then
       printf 'TOOL_MAX=0\n' >> "$AGENT_ENV"
-      ok "원격 LLM 감지 → TOOL_MAX=0(전량 바인딩) 설정${TM:+ (이전 $TM)}"
+      ok "원격 LLM 감지 → TOOL_MAX=0(무캡 — 챗 창 예산 안에서 질의마다 고른다, 묶인 수는 7) 의 '챗 도구 절단')"
     else
-      ok "TOOL_MAX=0 (전량 바인딩)"
+      ok "TOOL_MAX=$TM 그대로(박스 값 — update-all 은 덮지 않는다${TM:+, 0 이면 무캡 · 그 밖은 질의 관련도 상위 $TM개})"
     fi
   elif [ -n "${TM:-}" ] && [ "${TM:-0}" -gt 0 ] 2>/dev/null; then
     sed -i '/^TOOL_MAX=/d' "$AGENT_ENV"
-    ok "TOOL_MAX=$TM 제거 → 기본 80(질의 관련도 상위 선택)"
+    ok "TOOL_MAX=$TM 제거 → 기본 200(질의 관련도 상위 선택)"
   else
-    ok "TOOL_MAX 미설정 → 기본 80(질의 관련도 상위 선택)"
+    ok "TOOL_MAX 미설정 → 기본 200(질의 관련도 상위 선택)"
   fi
   # 옛 킷이 심은 심의 호출 타임아웃 — 킷은 없는 키만 더하므로, DELIB_TIMEOUT_S=600 이 박힌 박스는 킷 값을 올려도(1800) 그대로다.
   # 좌석 20석 넘는 패널은 공유 LLM 의 큐 대기가 호출 시계에 들어가 그 600초에 좌석이 빠진다 — 한도를 넉넉히 올린 것이 그 박스에서만
@@ -1929,12 +1931,20 @@ PY
     fi
     unset _KR_TOK
   fi
-  # heax_registry는 /health에 안 나오는 config 전용 항목 — config에 없으면 재프로비저닝 대상.
+  # heax_registry는 /health에 안 나오는 config 전용 항목 — 토큰·앱 목록 주소가 없으면 재프로비저닝 대상.
   # provision-config.sh 가 heax MCP 토큰을 자동 발급하므로, 명시 토큰이 없어도 heax-hub 백엔드(venv)만
   # 있으면 재프로비저닝 → 자동 발급 → heax_registry 활성. (토큰 명시돼 있으면 그것으로.)
+  # 키가 있는지만 보면 안 된다 — 사람별 위임(per_user_sso)이 토큰 없이도 그 키를 남겨, PAT 발급이 실패해 heax 앱 9개가 빠져도
+  # ✓ 였다(docs/request-1027 HP-09). token · servers_url 이 둘 다 있어야 앱 자동 탐지가 돈다.
   if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
-     && ! grep -q '"heax_registry"' "$GW_DIR/gateway_config.json" 2>/dev/null \
-     && { [ -n "${HEAX_MCP_TOKEN:-}" ] || [ -x "$(find_repo HEAXHub)/backend/.venv/bin/python" ]; }; then
+     && { [ -n "${HEAX_MCP_TOKEN:-}" ] || [ -x "$(find_repo HEAXHub)/backend/.venv/bin/python" ]; } \
+     && ! python3 - "$GW_DIR/gateway_config.json" <<'PY' 2>/dev/null
+import json, sys
+try: r = json.load(open(sys.argv[1])).get("heax_registry") or {}
+except Exception: raise SystemExit(1)
+raise SystemExit(0 if r.get("token") and r.get("servers_url") else 1)
+PY
+  then
     MISSING="heax_registry${MISSING:+ $MISSING}"
   fi
   # 리스크 심사 앱 사용자 위임도 heax_registry 안의 항목이라 /health 에 안 나온다. 없으면 MCP 가
@@ -2624,12 +2634,15 @@ PYWR
 fi
 TM="$(curl -s -m 6 http://127.0.0.1:9110/tools-map 2>/dev/null || true)"
 if [ -n "$TM" ]; then
-  TM="$TM" python3 - <<'PY' || true
-import json, os
+  # 도구 지도는 파일로 넘긴다 — 환경 변수 한 줄은 128 KiB(MAX_ARG_STRLEN)가 상한이라 cae00 의 150 KB 지도에서 python 이 아예 뜨지
+  # 못했고 `|| true` 가 그것을 삼켰다(docs/request-1027 HP-06). 아래 두 곳(갱신 전후 비교 · MCP_COUNTS)도 같다.
+  _tmf="$(mktemp)"; printf '%s' "$TM" > "$_tmf"
+  python3 - "$_tmf" <<'PY' || bad "heax MCP 앱 도구 수를 보지 못했다 — /tools-map 해석 실패"
+import json, sys
 try:
-    apps = (json.loads(os.environ["TM"]).get("apps") or [])
+    apps = (json.load(open(sys.argv[1], encoding="utf-8")).get("apps") or [])
 except Exception:
-    raise SystemExit
+    raise SystemExit(1)
 heax = [a for a in apps if str(a.get("app", "")).startswith("heax-")]
 if not heax:
     print("  · ⚠ heax MCP 앱이 게이트웨이에 하나도 없다 — heax_registry 폴링/PAT 확인")
@@ -2642,6 +2655,7 @@ for a in dead:
           "infra/scripts/check-mcp-registration.sh %s"
           % (a["app"], "연결안됨" if not a.get("reachable") else "연결됨", slug))
 PY
+  rm -f "$_tmf"
 fi
 # ⚠ :17370 은 **정적 프론트**라 API 가 죽어도 200 이 나온다(services.yaml 주석에도
 #   "프론트(:17370)도 정적이라 /zzz 가 200 이다" 라고 적혀 있다). 그것만 보면 '초록인데
@@ -2770,7 +2784,10 @@ else
 fi
 H="$(gw_health)"
 if [ -n "$H" ] && json_ok "$H"; then
-  H="$H" python3 - <<'PY'
+  # HEAX Hub 앱 0개는 집계에 든다(docs/request-1027 HP-09) — 종전엔 print 만 해서 heax 앱 9개가 챗에서 빠져도 초록이었다.
+  # 2 = 레지스트리는 있는데 앱을 못 찾음(⚠ — 기동 직후 폴링 전일 수 있다) · 3 = 레지스트리 없음(허브가 있는 박스면 ✗).
+  _hx=0
+  H="$H" python3 - <<'PY' || _hx=$?
 import json, os
 h = json.loads(os.environ["H"])
 backends = h.get("backends") or {}
@@ -2781,13 +2798,21 @@ heax = {k: v for k, v in backends.items() if k.startswith("heax") and k != "heax
 if heax:
     print("  · HEAX Hub 앱 발견: " + ", ".join(f"{k}={'up' if v else 'DOWN'}" for k, v in sorted(heax.items())))
 elif "heax_registry" in backends:
-    print("  · ⚠ HEAX Hub 앱 0개 발견 — heax_registry 는 있으나 폴링이 앱을 못 찾음(레지스트리에 앱 미등록/미기동?). 챗에 열충격·재료·적층 도구가 안 뜬다.")
+    raise SystemExit(2)
 else:
-    print("  · ⚠ HEAX Hub 앱 0개 — heax_registry 미구성(열충격·재료·적층 도구 없음).")
     print("      §5 가 heax-hub 에서 MCP 토큰을 자동 발급해 heax_registry 를 만드는데 실패했을 수 있다:")
     print("      heax-hub 백엔드(:4040)·DB 기동과 admin 유저 존재를 확인하라(provision-config.sh 로그의")
     print("      'heax MCP 토큰' 라인). 최후 수동: provision.env 에 HEAX_MCP_TOKEN 설정 후 재실행.")
+    raise SystemExit(3)
 PY
+  case "$_hx" in
+    2) bad "HEAX Hub 앱 0개 발견 — heax_registry 는 있으나 폴링이 앱을 못 찾음(레지스트리에 앱 미등록/미기동?). 챗에 열충격·재료·적층 도구가 안 뜬다" ;;
+    3) if [ -n "$(find_repo HEAXHub)" ]; then
+         fail "HEAX Hub 앱 0개 — heax_registry 미구성(토큰 · 앱 목록 주소 없음). 챗에서 리스크 · StepForge · DynaForge · 재료 도구가 빠졌다"
+       else
+         bad "HEAX Hub 앱 0개 — heax_registry 미구성(이 박스엔 HEAXHub 가 없다)"
+       fi ;;
+  esac
   # ── ste 가 이 박스에서 쓰이면(STE_ROUTED=1) 게이트웨이 ste 백엔드가 **떠 있어야** 한다 ──────
   # /health.backends[k] 는 DOWN 이어도 **키는 남고 값만 false** 다. §5 는 키 유무만 봐서 "빠진 백엔드
   # 없음" 을 내고, DOWN 분기는 "매핑된 서비스 없음(수동 확인)" 에 그친다 — 그래서 cae00 에서 ste MCP 가
@@ -2998,10 +3023,11 @@ TM="$(_tm_snapshot)"
 
 # 갱신 전후 도구 **이름** 차이 — 외부 MCP 가 무엇을 새로 내놓았고 무엇을 거뒀는지.
 if [ -n "$TM_BEFORE" ] && [ -n "$TM" ] && json_ok "$TM_BEFORE" && json_ok "$TM"; then
-  BEFORE_TM="$TM_BEFORE" AFTER_TM="$TM" python3 - <<'PY' | sed 's/^/  /'
-import json, os
-a = json.loads(os.environ["BEFORE_TM"]).get("map") or {}
-b = json.loads(os.environ["AFTER_TM"]).get("map") or {}
+  _tmb="$(mktemp)"; _tma="$(mktemp)"; printf '%s' "$TM_BEFORE" > "$_tmb"; printf '%s' "$TM" > "$_tma"
+  _dtc=0; _dt="$(python3 - "$_tmb" "$_tma" <<'PY'
+import json, sys
+a = json.load(open(sys.argv[1], encoding="utf-8")).get("map") or {}
+b = json.load(open(sys.argv[2], encoding="utf-8")).get("map") or {}
 added, gone = sorted(set(b) - set(a)), sorted(set(a) - set(b))
 if not added and not gone:
     raise SystemExit
@@ -3015,18 +3041,26 @@ for bk, d in sorted(by.items()):
     if d["-"]: bits.append("-" + " -".join(d["-"][:8]) + (" …" if len(d["-"]) > 8 else ""))
     print(f"    {bk}: " + "  ".join(bits))
 PY
+)" || _dtc=$?
+  rm -f "$_tmb" "$_tma"
+  [ -n "$_dt" ] && printf '%s\n' "$_dt" | sed 's/^/  /'
+  [ "$_dtc" = 0 ] || bad "도구 변화(갱신 전후)를 견주지 못했다 — 지도 해석 실패(rc $_dtc)"
 fi
 MCP_COUNTS=""   # "<id> <도구수> <연결1/0>" 줄 목록
 TM_OK=1
 if [ -n "$TM" ] && json_ok "$TM"; then
-  MCP_COUNTS="$(TM="$TM" python3 - <<'PY'
-import json, os
-for a in json.loads(os.environ["TM"]).get("apps") or []:
+  _tmf="$(mktemp)"; printf '%s' "$TM" > "$_tmf"; _mcrc=0
+  MCP_COUNTS="$(python3 - "$_tmf" <<'PY'
+import json, sys
+for a in json.load(open(sys.argv[1], encoding="utf-8")).get("apps") or []:
     name = a.get("app") or ""
     if name.startswith("heax-"):
         print(name[5:], a.get("tool_count") or 0, 1 if a.get("reachable") else 0)
 PY
-)"
+)" || _mcrc=$?
+  rm -f "$_tmf"
+  # 비어 있으면 아래 is_mcp 가 0 이 되어 MCP 앱의 정상 404 를 실패로 센다 — 못 읽었으면 그렇다고 말한다(조용한 빈 값 금지).
+  [ "$_mcrc" = 0 ] || { TM_OK=0; fail "게이트웨이 /tools-map 을 해석하지 못함(rc $_mcrc) — MCP 앱 도구 수를 판정할 수 없다"; }
 else
   TM_OK=0
   fail "게이트웨이 /tools-map 을 읽지 못함 — MCP 앱 도구 수를 판정할 수 없다(게이트웨이 확인)."
@@ -3054,6 +3088,15 @@ run_smoke() {
 #   ② 게이트웨이가 옛 토큰을 물고 있음 → config 는 기동 시 1회만 읽으므로 재기동이 필요
 # 둘 다 무해한 조치라 조건 없이 순서대로 시도하고, 마지막에 다시 검증한다.
 repair_mcp() {
+  # 재프로비저닝 · 게이트웨이 재기동은 도는 심의의 도구 호출을 몇 초 끊고 heax · mxwp 토큰을 다시 찍는다(docs/request-1027 HP-08 —
+  # §5 의 재프로비저닝과 같은 확인). 심의가 돌거나 줄 서 있으면 건너뛴다(1). 모르면(에이전트가 답하지 않음) 종전처럼 고친다.
+  local _dbusy _drc=0
+  _dbusy="$(hwax_delib_busy http://127.0.0.1:9009/health)" || _drc=$?
+  if [ "$_drc" = 0 ]; then
+    hwax_skip "MCP 자동 복구" "도는 · 줄 선 심의(진행 대기 $_dbusy) — 재프로비저닝 · 게이트웨이 재기동이 그 도구 호출을 끊는다" \
+      "심의가 끝난 뒤 update-all 을 다시 돌린다(지금 하려면 AGENT_RESTART_FORCE=1)"
+    return 1
+  fi
   echo "  · 자동 복구 시도 — 재프로비저닝 → 게이트웨이 재기동 → 재검증"
   # ⚠ 순서가 중요하다. --force 는 .bak 을 덮어쓰므로, 직전 config 에서 토큰을 건져 오는
   #   sync-provision-env 를 **먼저** 돌려야 한다. 반대로 하면 RAT/ODB 토큰을 못 건져
@@ -3093,9 +3136,11 @@ if [ -x "$SMOKE_PY" ] && [ -f "$SELF_REPO/infra/scripts/mcp-smoke.py" ]; then
       echo "      DynaForge(kooremapper_mcp): (KooRemapper) apptainer instance stop koorm_mcp && bash platform/infra/scripts/start.sh"
       echo "      heax 등록 앱:              (HEAXHub) bash deploy/apptainer/redeploy-app.sh <slug> --rebuild"
       echo "      둘 다 소스가 bind-mount 라 재기동만으로 최신 코드가 물린다(빌드형은 --rebuild)."
+    elif [ "$rc" = 1 ] && ! repair_mcp; then
+      # 심의가 돌아 복구를 미뤘다(○ 장부에 까닭) — 실패로 세지 않는다. 0성공 백엔드는 남아 있으니 경고로 보인다.
+      bad "MCP 백엔드 중 호출이 전량 실패하는 것이 있다(위 ✗ 줄) — 자동 복구는 심의가 끝난 뒤로 미뤘다"
     elif [ "$rc" = 1 ]; then
-      # 검출만 하고 끝내면 사람이 손으로 고칠 때까지 죽어 있다 — 여기서 고쳐 본다.
-      repair_mcp
+      # 검출만 하고 끝내면 사람이 손으로 고칠 때까지 죽어 있다 — 위 repair_mcp 가 고쳤다(재프로비저닝 → 재기동).
       echo "  · 복구 후 재검증"
       if run_smoke; then
         ok "자동 복구 성공 — 0성공 백엔드가 사라졌다"

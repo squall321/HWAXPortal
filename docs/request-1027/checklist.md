@@ -4,11 +4,11 @@
 
 ## 1. update-all 안전
 
-- [ ] HG-08 heax PAT — 새것을 받은 뒤 옛것을 지운다(발급 실패 시 직전 토큰 · 백엔드 수 그대로 — 시험)
-- [ ] HP-09 heax 재검증 — 키가 아니라 heax 백엔드 수 · token · servers_url
-- [ ] HP-08 repair_mcp 앞 `hwax_delib_busy` — 바쁘면 건너뜀(선택: 지금 config 의 HEAX_MCP_TOKEN 넘기기)
-- [ ] HP-06 헬스게이트 도구 지도를 파일로(세 곳) · python 실패를 ⚠ 로
-- [ ] HP-07 TOOL_MAX 를 덮지 않는다 · ok 문구는 `/health` tool_cut
+- [x] HG-08 heax PAT — 새것을 받은 뒤 옛것을 지운다(발급 실패 시 직전 토큰 · 백엔드 수 그대로 — 시험)
+- [x] HP-09 heax 재검증 — 키가 아니라 heax 백엔드 수 · token · servers_url
+- [x] HP-08 repair_mcp 앞 `hwax_delib_busy` — 바쁘면 건너뜀(선택: 지금 config 의 HEAX_MCP_TOKEN 넘기기)
+- [x] HP-06 헬스게이트 도구 지도를 파일로(세 곳) · python 실패를 ⚠ 로
+- [x] HP-07 TOOL_MAX 를 덮지 않는다 · ok 문구는 `/health` tool_cut
 - [ ] HP-01 KooRemapper 재기동 표지 `$DATA_DIR/deploy.lock.d`(PID, trap 으로 지움) — 감시 쪽은 KooRemapper KR-04
 - [ ] HP-04 backup-local — XDG_RUNTIME_DIR · DBUS_SESSION_BUS_ADDRESS 스스로 채움
 - [ ] HP-17 비밀 백업 — portal/infra · portal/backend 로 나눔 + 박스 파일 · exclude · crontab · 리스크 secrets.env · origin.json · 연결 토큰 키(D-5)
@@ -92,7 +92,7 @@
 - [ ] HP-38 리스크 자격 절차서 기대값
 - [ ] HP-40 점검표 경로
 - [-] HP-49 웹 좌석 20 그대로(D-8)
-- [~] HP-10 MX 백서 `--reload` — MX 백서 MW-03 과 둘 중 하나(그쪽에 묻는다)
+- [-] HP-10 MX 백서 `--reload` — MX 백서 MW-03 이 고쳤다(APP_ENV=development 일 때만 --reload, 10-28 그쪽 알림) · 포털 할 일 없음
 - [~] HP-33 X-Workspace-Slug — RA RP-01 회신 뒤
 - [~] HP-34 DRM 버튼 하나 — 정보보호 지침(우리 몫) 뒤 · 보류
 - [~] HP-42 MCP Apps 패널 호스트 — HG-07 · HA-20 뒤(2단계)
