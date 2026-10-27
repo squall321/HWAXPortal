@@ -29,7 +29,8 @@ import httpx
 
 from app.config import Settings
 
-_DIR_NAME = "#docforge-jobs"            # 스테이징 루트 아래 — 사용자 폴더 이름(영숫자 · -_@.)과 겹치지 않는다 · 기존 청소가 6시간 뒤 지운다
+# 스테이징 루트 아래 — 사용자 폴더 이름(영숫자 · -_@.)과 겹치지 않는다. 스테이징 청소(6시간)에서 빠지고 docforge_job_days(7일) 뒤 지운다(E15)
+JOBS_DIR = "#docforge-jobs"
 _JOB_RE = re.compile(r"^[A-Za-z0-9_-]{6,80}$")
 _RES = "res://"
 _LOCKS: dict[str, asyncio.Lock] = {}
@@ -45,7 +46,7 @@ class DeliveryError(Exception):
 def _file(settings: Settings, job_id: str) -> Path:
     if not isinstance(job_id, str) or not _JOB_RE.fullmatch(job_id):
         raise DeliveryError("그 변환 잡이 없습니다.", 404)
-    d = Path(settings.upload_staging_dir) / _DIR_NAME
+    d = Path(settings.upload_staging_dir) / JOBS_DIR
     d.mkdir(parents=True, exist_ok=True)
     return d / f"{job_id}.json"
 
@@ -79,6 +80,29 @@ def load_job(settings: Settings, job_id: str, owner_sub: str) -> dict:
 
 def mark_delivered(settings: Settings, job_id: str, rec: dict, result: dict) -> None:
     _write(_file(settings, job_id), {**rec, "delivered": result})
+
+
+def list_jobs(settings: Settings, owner_sub: str, *, purpose: str = "ra", limit: int = 20) -> list[dict]:
+    """맡긴 사람의 잡 기록 — 새것부터 limit 개(숨긴 것 · 다른 목적은 뺀다). 깨진 기록은 건너뛴다. 창을 닫아 넣지 못한 잡을 다시 열 때 쓴다(E15)."""
+    d = Path(settings.upload_staging_dir) / JOBS_DIR
+    if not d.is_dir():
+        return []
+    out = []
+    for p in d.glob("*.json"):
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if (isinstance(rec, dict) and rec.get("owner_sub") == owner_sub and rec.get("purpose", "ra") == purpose
+                and not rec.get("dismissed") and _JOB_RE.fullmatch(str(rec.get("job_id") or ""))):
+            out.append(rec)
+    out.sort(key=lambda r: r.get("created_at") or 0, reverse=True)
+    return out[:limit]
+
+
+def dismiss(settings: Settings, job_id: str, rec: dict) -> None:
+    """목록에서 숨긴다 — 기록은 남는다(진행 · 배달은 그대로 된다)."""
+    _write(_file(settings, job_id), {**rec, "dismissed": time.time()})
 
 
 def lock(job_id: str) -> asyncio.Lock:

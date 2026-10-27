@@ -167,6 +167,28 @@ export async function docforgeCancel(jobId: string): Promise<void> {
   await apiFetch(`/agent/upload/destinations/docforge/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }).catch(() => undefined);
 }
 
+/** 맡긴 사람의 정밀 변환 잡(최근 keep_days 일 · 새것부터 20) — 창을 닫아 넣지 못한 잡을 다시 열어 넣는다(DocForge E15).
+ *  아직 넣지 않은 잡은 DocForge 의 지금 상태(st) — 못 물었으면 null. */
+export interface DocforgeJob {
+  job_id: string;
+  filename?: string | null;
+  created_at?: number | null;
+  delivered?: { report_id?: number | string | null; title?: string | null; url?: string | null } | null;
+  st?: Omit<DocforgeStatus, 'job_id' | 'delivered'> | null;
+}
+
+export async function docforgeJobs(): Promise<{ jobs: DocforgeJob[]; keep_days?: number }> {
+  const r = await apiFetch('/agent/upload/destinations/docforge/jobs');
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(errorDetail(j?.detail, `정밀 변환 목록을 못 읽었습니다 (HTTP ${r.status}).`));
+  return { jobs: Array.isArray(j?.jobs) ? (j.jobs as DocforgeJob[]) : [], keep_days: j?.keep_days };
+}
+
+/** '끝나지 않은 정밀 변환' 목록에서 숨긴다 — 잡은 그대로(진행 · 배달은 된다). */
+export async function docforgeDismiss(jobId: string): Promise<void> {
+  await apiFetch(`/agent/upload/destinations/docforge/jobs/${encodeURIComponent(jobId)}/dismiss`, { method: 'POST' }).catch(() => undefined);
+}
+
 export async function dispatchUpload(body: {
   staging_id: string; filename: string; destination: string; vlm?: boolean;
   project_id?: string; project_name?: string; run?: string;

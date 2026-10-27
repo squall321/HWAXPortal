@@ -425,3 +425,65 @@ async def test_글이_없는_낡은_패키지면_까닭을_말한다(monkeypatch
     D.save_job(s, "j_chat01", owner_sub=KIM.subject, owner_email=KIM.email, filename="a.pptx", purpose="chat")
     out = await R.upload_docforge_document("j_chat01", req, KIM, s)
     assert out["stage"] == "failed" and "document.md" in out["error"]
+
+
+# ── 창을 닫은 잡 다시 열기(DocForge E15) ─────────────────────────────────────────────────────────────
+def _job(s, jid, who=KIM, *, at, purpose="ra", filename="a.pptx"):
+    D.save_job(s, jid, owner_sub=who.subject, owner_email=who.email, filename=filename, purpose=purpose)
+    rec = D.load_job(s, jid, who.subject)
+    D._write(D._file(s, jid), {**rec, "created_at": at})
+    return D.load_job(s, jid, who.subject)
+
+
+@pytest.mark.anyio
+async def test_창을_닫은_잡은_내_목록에서_다시_열고_숨길_수_있다(monkeypatch, tmp_path):
+    """맡긴 사람의 RA 잡만 · 새것부터 · 대화용 · 남의 것 · 숨긴 것은 빼고, 아직 넣지 않은 잡만 DocForge 에 지금 상태를 묻는다."""
+    s = _settings(tmp_path)
+    R, req, calls = _wire(monkeypatch, tmp_path, {"docforge_status": {"status": "done", "stage": "끝", "progress": 100}})
+    _job(s, "j_old0001", at=100, filename="옛.pptx")
+    _job(s, "j_new0001", at=300, filename="새.pptx")
+    done = _job(s, "j_done001", at=200)
+    D.mark_delivered(s, "j_done001", done, {"job_id": "j_done001", "report_id": 41, "title": "설계 검토", "url": "/w/p/reports/41", "pages": 3})
+    _job(s, "j_chat001", at=400, purpose="chat")
+    _job(s, "j_lee0001", LEE, at=500)
+    got = await R.upload_docforge_jobs(req, KIM, s)
+    assert [j["job_id"] for j in got["jobs"]] == ["j_new0001", "j_done001", "j_old0001"] and got["keep_days"] == 7
+    assert got["jobs"][0]["st"] == {"status": "done", "stage": "끝", "progress": 100, "error": None} and got["jobs"][0]["filename"] == "새.pptx"
+    assert got["jobs"][1]["delivered"] == {"report_id": 41, "title": "설계 검토", "url": "/w/p/reports/41"} and got["jobs"][1]["st"] is None
+    assert sorted(a["job_id"] for _, a in calls) == ["j_new0001", "j_old0001"], "넣은 잡까지 DocForge 에 물었다"
+
+    with pytest.raises(AuthError) as e:
+        await R.upload_docforge_dismiss("j_old0001", LEE, s)
+    assert e.value.status_code == 404
+    assert (await R.upload_docforge_dismiss("j_old0001", KIM, s))["dismissed"] is True
+    assert [j["job_id"] for j in (await R.upload_docforge_jobs(req, KIM, s))["jobs"]] == ["j_new0001", "j_done001"]
+    assert (await R.upload_docforge_status("j_old0001", req, KIM, s))["status"] == "done", "숨겨도 진행은 본다"
+
+
+@pytest.mark.anyio
+async def test_DocForge_가_답하지_않는_잡은_상태_없이_싣는다(monkeypatch, tmp_path):
+    s = _settings(tmp_path)
+    R, req, _ = _wire(monkeypatch, tmp_path, {"docforge_status": {"ok": False, "error": "보존 기한이 지났다", "status": 404}})
+    _job(s, "j_gone001", at=100)
+    got = await R.upload_docforge_jobs(req, KIM, s)
+    assert got["jobs"][0]["job_id"] == "j_gone001" and got["jobs"][0]["st"] is None
+
+
+def test_잡_기록은_스테이징_청소에서_빠지고_보존_기한_뒤에_지운다(tmp_path):
+    import os
+    import time
+
+    from app.agent import upload as U
+    s = _settings(tmp_path)
+    _job(s, "j_keep001", at=time.time())
+    _job(s, "j_gone001", at=time.time())
+    box = tmp_path / "staging" / "kim" / "s9"
+    box.mkdir(parents=True)
+    (box / "a.pptx").write_bytes(b"x")
+    two_days, eight_days = time.time() - 2 * 86400, time.time() - 8 * 86400
+    for p, t in ((box, two_days), (D._file(s, "j_keep001"), two_days), (D._file(s, "j_gone001"), eight_days)):
+        os.utime(p, (t, t))
+    U.sweep_expired(s)
+    assert not box.exists(), "6시간 지난 업로드 상자는 지운다"
+    assert D._file(s, "j_keep001").exists(), "7일 안의 잡 기록을 지웠다 — 창을 닫은 잡을 다시 열 수 없다"
+    assert not D._file(s, "j_gone001").exists()

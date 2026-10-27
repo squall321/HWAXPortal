@@ -274,6 +274,9 @@ class Settings(BaseSettings):
     # 같게 보인다). 비면 형제 리포 ../HEAXHub/var/app_data/doc_forge(비컨테이너 실행) — start.sh 가 호스트 경로로 넘긴다.
     docforge_package_root: str = ""
     docforge_ra_file_max_mb: int = 25                 # RA upload_max_bytes 기본(25MB) — 넘는 리소스는 올리지 않고 알린다
+    # 정밀 변환 잡 기록(맡긴 사람)을 두는 날 수 — DocForge 잡 보존 기한(기본 7일)과 같게. 스테이징 청소(6시간)에서 빠지고, 그 안에는 창을 닫아
+    # 넣지 못한 잡을 입력창 위 '끝나지 않은 정밀 변환' 에서 다시 열어 넣는다(DocForge E15).
+    docforge_job_days: int = 7
     mcp_gateway_url: str = "http://127.0.0.1:9110"    # MCP Gateway (HWAXMcpGateway; aggregates the 3 MCPs). :9100 was node_exporter.
     mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
     agent_token_audience: str = "agent-server"         # aud for the RS256 handoff token

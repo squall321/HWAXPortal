@@ -91,7 +91,9 @@ _STUB = r"""
                                                       { id: 'reportarchive', label: 'Report Archive — 보고서로' }] });
     }
     if (u === '/agent/upload/dispatch') return json(window.__dispatch);
+    if (u === '/agent/upload/destinations/docforge/jobs') return json({ jobs: window.__dfJobs || [], keep_days: 7 });   // 이어 보기(E15)
     if (u.startsWith('/agent/upload/destinations/docforge/jobs/')) {      // 정밀 변환(DocForge) — 진행은 차례대로, 배달은 한 번
+      if (u.endsWith('/dismiss')) return json({ dismissed: true });
       if (u.endsWith('/deliver')) return json(window.__dfDeliver);
       if (u.endsWith('/document')) return json(window.__dfDocument);
       if (u.endsWith('/cancel')) return json({ cancelled: true });
@@ -171,7 +173,7 @@ async function drag(page, selector, files, text) {
 const err = (page) => page.evaluate(() => (document.querySelector('.composer .upl-err') || {}).textContent || '');
 const chips = (page) => page.evaluate(() => document.querySelectorAll('.img-chip').length);
 
-async function open(browser, what = '') {
+async function open(browser, what = '', before = null) {
   const page = await browser.newPage();
   page.setDefaultTimeout(10000);
   page.__errors = [];
@@ -182,6 +184,7 @@ async function open(browser, what = '') {
   await page.goto('http://harness.invalid/');
   await page.addScriptTag({ path: path.join(OUT, 'stub.js') });
   await page.addScriptTag({ path: path.join(OUT, 'bundle.js') });
+  if (before) await page.evaluate(before);                 // 띄우기 전에 가짜 서버 값을 둔다(띄우자마자 읽는 것 — 이어 보기 목록)
   await page.evaluate((w) => window.__mount(w), what);
   return page;
 }
@@ -255,10 +258,45 @@ const SCENARIOS = {
     const all = await calls(page);
     const sent = all.find((c) => c.url === '/agent/upload/dispatch');
     return { progress, dispatch: sent && sent.body, roles: await text(page, 'roles'),
-             df: all.filter((c) => c.url.includes('/docforge/')).map((c) => `${c.method} ${c.url}`),
+             df: all.filter((c) => c.url.includes('/docforge/jobs/')).map((c) => `${c.method} ${c.url}`),
              filled: await page.locator('textarea').inputValue(),
              link: await page.evaluate(() => { const a = document.querySelector('.upl-panel a'); return a ? a.getAttribute('href') : ''; }),
              model_note: (await page.getByText('원본과 맞는지 확인하세요').count()) > 0, errors: page.__errors };
+  },
+  // 창을 닫아 넣지 못한 정밀 변환(DocForge E15) — 입력창 위 '끝나지 않은 정밀 변환' 에서 이어 보면 끝난 잡을 넣어 대화에 알림.
+  // 넣은 잡 · 실패한 잡 · DocForge 가 답하지 않은 잡은 보이지 않고, 숨기기는 목록에서 뺀다
+  async composer_precise_resume(browser) {
+    const page = await open(browser, 'composer', () => {
+      const st = (status, stage, progress) => ({ status, stage, progress, error: null });
+      window.__dfJobs = [
+        { job_id: 'j_left01', filename: '설계검토.pptx', created_at: 1792713600, delivered: null, st: st('done', '끝', 100) },
+        { job_id: 'j_run001', filename: '낙하.pptx', created_at: 1792710000, delivered: null, st: st('running', 'S3 읽기', 40) },
+        { job_id: 'j_fail01', filename: '깨짐.pptx', created_at: 1792700000, delivered: null, st: st('failed', null, 0) },
+        { job_id: 'j_gone01', filename: '지움.pptx', created_at: 1792690000, delivered: null, st: null },
+        { job_id: 'j_done01', filename: '넣음.pptx', created_at: 1792680000, delivered: { report_id: 40, title: '앞 보고서', url: '/w/p/reports/40' }, st: null },
+      ];
+      window.__dfStates = [{ job_id: 'j_left01', status: 'done', stage: '끝', progress: 100 }];
+      window.__dfDeliver = { stage: 'done', destination: 'reportarchive_precise', created: true, report_id: 41, title: '설계 검토',
+        url: '/w/personal-5/reports/41', pages: 3, blocks: 12, dropped: 1, model_written: 0, unaccounted: 0, fidelity: 'full',
+        warnings: [], conversion_warnings: [] };
+    });
+    await page.getByText('끝나지 않은 정밀 변환 2건').waitFor();
+    await page.getByRole('button', { name: '펼치기' }).click();
+    const rows = await page.evaluate(() => [...document.querySelectorAll('.df-resume-list li .upl-file')].map((e) => e.textContent));
+    const states = await page.evaluate(() => [...document.querySelectorAll('.df-resume-list li .upl-note')].map((e) => e.textContent));
+    await page.getByRole('button', { name: '숨기기' }).nth(1).click();
+    await page.getByText('끝나지 않은 정밀 변환 1건').waitFor();
+    await page.getByRole('button', { name: '이어 보기' }).click();
+    await page.getByText('정밀 변환 중').waitFor();
+    const bar_hidden = await page.evaluate(() => !document.querySelector('.df-resume'));
+    await forward(page, 1600);
+    await page.getByText('정밀 변환 보고서를 만들었습니다').waitFor();
+    await page.waitForFunction(() => window.__calls.some((c) => /\/messages$/.test(c.url)));
+    const all = await calls(page);
+    return { rows, states, bar_hidden, roles: await text(page, 'roles'),
+             file: await page.evaluate(() => (document.querySelector('.upl-panel .upl-file') || {}).textContent || ''),
+             df: all.filter((c) => c.url.includes('/docforge/')).map((c) => `${c.method} ${c.url}`),
+             dispatched: all.some((c) => c.url === '/agent/upload/dispatch'), errors: page.__errors };
   },
   // 이 대화에서 분석을 DocForge 가 맡으면(DF-D19) — 진행을 보다가 끝나면 읽은 글을 문서 칩으로, 대화에 '보냈다' 알림은 없다
   async composer_chat_docforge(browser) {
@@ -281,7 +319,7 @@ const SCENARIOS = {
     await page.getByText('입력창에 붙였습니다').waitFor();
     const all = await calls(page);
     return { progress, docs: await text(page, 'docs'), roles: await text(page, 'roles'),
-             df: all.filter((c) => c.url.includes('/docforge/')).map((c) => `${c.method} ${c.url}`),
+             df: all.filter((c) => c.url.includes('/docforge/jobs/')).map((c) => `${c.method} ${c.url}`),
              appends: all.filter((c) => /\/messages$/.test(c.url)).length, errors: page.__errors };
   },
   // 사람이 쓰던 글이 있으면 저절로 덮지 않는다 — 단추로만
@@ -598,6 +636,16 @@ def test_정밀_변환은_진행을_보이고_끝나면_넣어_대화에_알림�
     assert s["roles"] == "assistant", "대화에 알림 한 건"
     assert s["filled"] == "Report Archive 보고서 41(「설계 검토」)를 get_report_outline · get_report 로 읽고 검토해 줘"
     assert s["link"] == "/report-archive/w/personal-5/reports/41" and s["model_note"] is True
+
+
+def test_창을_닫은_정밀_변환은_입력창_위에서_이어_보고_넣는다(seen):
+    s = seen("composer_precise_resume")
+    assert s["rows"] == ["설계검토.pptx", "낙하.pptx"], "넣은 잡 · 실패한 잡 · DocForge 가 답하지 않은 잡은 보이지 않는다"
+    assert "변환 끝 — 넣기를 기다림" in s["states"][0] and "S3 읽기 · 40%" in s["states"][1], s["states"]
+    base = "/agent/upload/destinations/docforge/jobs"
+    assert s["df"] == [f"GET {base}", f"POST {base}/j_run001/dismiss", f"GET {base}/j_left01", f"POST {base}/j_left01/deliver"], s["df"]
+    assert s["bar_hidden"] is True and s["file"] == "설계검토.pptx" and s["dispatched"] is False, "맡기기를 건너뛰고 그 잡의 진행부터"
+    assert s["roles"] == "assistant", "넣으면 지금 대화에 알림 한 건"
 
 
 def test_이_대화에서_분석을_DocForge_가_맡으면_진행을_보다가_읽은_글을_문서_칩으로(seen):

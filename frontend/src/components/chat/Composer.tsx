@@ -21,12 +21,14 @@ import { ExpertToggle } from './ExpertToggle';
 import { IconFile, IconPlus, IconSend, IconStop, IconUser } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
-import { canUpload, uploadFile, type StagedFile } from '../../api/upload.api';
+import { canUpload, uploadFile, type StagedFile, type DocforgeJob } from '../../api/upload.api';
 import { classify, extOf, readDoc, kindLabel, unitsLabel, isEncryptedOffice, DOC_MAX } from './docAttach';
 import { IMAGES_MAX, isImageFile, readImage, type AttachedImage } from './imageAttach';
 import { DocExtractHint } from './DocExtractHint';
 import { DocActions } from './DocActions';
 import { UploadRouter } from './UploadRouter';
+import { DocDispatchPanel } from './DocDispatchPanel';
+import { DocforgeResume } from './DocforgeResume';
 
 export interface ComposerHandle {
   focus: () => void;
@@ -106,6 +108,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const canUp = can('feat:upload') || canUpload(user?.groups);
   const fileRef = useRef<HTMLInputElement>(null);
   const [staged, setStaged] = useState<StagedFile | null>(null);
+  // 창을 닫아 넣지 못한 정밀 변환 잡을 이어 본다(DocForge E15) — 이어 본 패널을 닫으면 목록을 다시 읽는다
+  const [resume, setResume] = useState<DocforgeJob | null>(null);
+  const [resumeTick, setResumeTick] = useState(0);
   const [upErr, setUpErr] = useState('');
   // Office 원본을 붙였을 때 띄우는 안내 — DRM 때문에 추출은 이 PC 에서 해야 한다.
   // 이름만이 아니라 **바이트**로 갈린다 — DRM 이 브라우저에도 투명하면 평문이 읽히고,
@@ -435,6 +440,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </span>
           ))}
         </div>
+      )}
+      {!staged && !resume && canUp && can('plat:docforge') && (
+        <DocforgeResume refresh={resumeTick} onResume={setResume} />
+      )}
+      {!staged && resume && (
+        <DocDispatchPanel
+          key={resume.job_id}
+          staged={{ staging_id: `docforge-${resume.job_id}`, filename: resume.filename || resume.job_id, size: 0, ext: '', content_type: '' }}
+          destination="reportarchive_precise"
+          resumeJobId={resume.job_id}
+          onClose={() => { setResume(null); setResumeTick((n) => n + 1); }}
+          onFill={fillInput}
+          onDispatched={addUploadNotice}
+        />
       )}
       {/* key — 새 파일마다 고른 목적지 · 완료 표시를 새로 시작한다(패널이 열린 채 다른 파일을 붙이면 앞 파일의 상태가 이어졌다, A5) */}
       {staged && (

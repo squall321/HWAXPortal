@@ -36,6 +36,7 @@
 - [x] 포장 — `report.json` · `resources/` · `conversion.json` · `ir.json`
 - [x] 포털 — 목적지 「Report Archive — 정밀 변환」 · 잡 진행 패널 · 사용자 명의 배달(엄격 생성) · 대화 알림(DF-D17 · 10-24, 가짜 MCP · 가짜 RA 시험)
 - [x] 포털 — 브라우저 시험(정밀 변환 진행 → 배달 → 알림, test_chat_ppt_in_browser)
+- [x] 포털 — 창을 닫아 넣지 못한 정밀 변환 다시 열기(입력창 위 목록 · 이어 보기 · 숨기기 · 잡 기록 7일, DF-D23 · DocForge E15)
 - [x] DocForge 0.2.0 배치 dev 쪽 — release `7b166ac` · HEAXHub `973444a` · dev 허브 · Drive(10-25)
 - [x] cae00 사람 몫 절차서 [server-setup.md](server-setup.md) — HEAXHub/.env 한 줄 · 모델 처음 한 번 · update-all 순서 · 권한(CAEG 은 `*`) · 페르소나 동기화 · 확인 · 막히면
 - [ ] cae00 update-all(사람 — server-setup §1 ~ §6) → dev · cae00 실주행
@@ -54,7 +55,8 @@
 - [ ] 판독 지표 · 표시 없는 모델 글 0 · 챗 첫 조각 지연
 
 ## M4 온톨로지 · DRM · MCP
-- [ ] SP 거울(수신 키트) · 과제 · 모델 · 부서 후보 + 근거 구절 · RA `key_value` · `tags` · 엔티티(§12-10)
+- [x] SP 거울(수신 키트 — StepForge 판을 옮김) · 과제 · 모델 후보(글자 그대로 · 근거 구절) · 첫 쪽 `key_value` · `tags`(DocForge E13 · E14 — 가짜 허브로, 진짜 허브 주소 · 토큰은 사람 몫)
+- [ ] 부서 후보 · pattern · fuzzy · llm(실데이터 — SP 모델명 규칙) · RA 엔티티(§12-10 · RA 요청서)
 - [x] PC 도우미 묶음 길 — `hwax-doc/1` + 슬라이드 PNG 판독 · 낮은 충실도 표시(DocForge E5 · R-D35, 포털이 글 + 그림을 zip 으로 넘김 DF-D18 · 10-25)
 - [x] MCP 도구(capabilities · convert · status · package · cancel) · RA 에 넣는 길(포털이 사용자 명의 엄격 생성 — DF-D17, §12-2 의 M1 몫)
 - [x] '이 대화에서 분석' 을 DocForge 로 — DocForge 가 보이는 사람은 DocForge 가 읽은 글(document.md)을 문서 칩으로 · 아니면 지금 길(DF-D19 · 10-25)

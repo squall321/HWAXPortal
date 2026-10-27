@@ -1345,6 +1345,11 @@
 /* 목적지 되묻기 — 버튼이 라벨을 담아 길어지므로 줄바꿈을 허용하고 세로로 쌓는다. */
 .upl-actions.upl-dests { flex-wrap: wrap; }
 .upl-actions.upl-dests .upl-go { flex: 1 1 240px; text-align: left; }
+/* 끝나지 않은 정밀 변환(DocForge E15) — 잡 한 줄에 이름 · 때 · 상태 · 단추 */
+.df-resume-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.df-resume-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.df-resume-list .upl-note { width: auto; flex: 1 1 160px; }
+.df-resume-list .upl-actions { margin-top: 0; }
 
 /* 심의 목적(Job) 그리드 — DeliberatePage 히어로(얹을 층은 심의 옵션 안으로 옮겼다). method-picker 클래스(.cx-brief-*) 재사용 */
 .cx-jobgroup-wide { width: 100%; margin-top: 10px; text-align: left; }

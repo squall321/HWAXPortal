@@ -1745,6 +1745,52 @@ async def upload_docforge_cancel(
     return {"job_id": job_id, "cancelled": bool(out.get("cancelled"))}
 
 
+@router.get("/upload/destinations/docforge/jobs")
+async def upload_docforge_jobs(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """맡긴 사람의 정밀 변환 잡(최근 docforge_job_days 일 · 새것부터 20 · 숨긴 것 빼고) — 창을 닫아 넣지 못한 잡을 입력창 위에서 다시 열어 넣는다
+    (DocForge E15). 아직 넣지 않은 잡은 DocForge 의 지금 상태(st)를 함께 — 못 물으면 st 가 없다(화면은 그 잡을 보이지 않는다)."""
+    recs = await asyncio.to_thread(_dfd.list_jobs, settings, principal.subject)
+    pending = [r["job_id"] for r in recs if not r.get("delivered")]
+    status: dict[str, dict] = {}
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal) if pending else None
+    if pat:
+        async def _one(jid: str) -> tuple[str, dict | None]:
+            try:
+                out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_status", {"job_id": jid}, timeout=10.0)
+            except Exception:  # noqa: BLE001 — 한 잡을 못 물어도 목록은 낸다
+                return jid, None
+            return jid, out if isinstance(out, dict) and out.get("ok") is not False else None
+
+        status = {jid: {k: out.get(k) for k in ("status", "stage", "progress", "error")}
+                  for jid, out in await asyncio.gather(*(_one(j) for j in pending)) if out is not None}
+    jobs = []
+    for r in recs:
+        done = r.get("delivered")
+        jobs.append({"job_id": r["job_id"], "filename": r.get("filename"), "created_at": r.get("created_at"),
+                     "delivered": {k: done.get(k) for k in ("report_id", "title", "url")} if done else None,
+                     "st": None if done else status.get(r["job_id"])})
+    return {"jobs": jobs, "keep_days": settings.docforge_job_days}
+
+
+@router.post("/upload/destinations/docforge/jobs/{job_id}/dismiss")
+async def upload_docforge_dismiss(
+    job_id: str,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """'끝나지 않은 정밀 변환' 목록에서 숨긴다 — 잡 기록 · DocForge 잡은 그대로(진행 · 배달은 된다)."""
+    try:
+        rec = _dfd.load_job(settings, job_id, principal.subject)
+    except _dfd.DeliveryError as exc:
+        raise _dfd_http(exc) from exc
+    await asyncio.to_thread(_dfd.dismiss, settings, job_id, rec)
+    return {"job_id": job_id, "dismissed": True}
+
+
 # ── PC 도우미 업로드 — DRM 문서를 PC 의 PowerPoint 로 풀어 올린다(docs/chat-ppt B · PP-D8) ─────────────────────────────────
 # 브라우저는 COM 을 부를 수 없고 PC 파일 경로도 모른다. 화면이 표를 받아 `hwax-doc://` 로 PC 도우미(추출기 -Url 모드)를 깨우고, 도우미가
 # 뽑은 글(.hwax.md)과 고르면 슬라이드 그림을 그 표로 올린다. 서버는 받은 것을 그 사람 스테이징에 둘 뿐 대화에 쓰지 않는다 — 화면이 받아

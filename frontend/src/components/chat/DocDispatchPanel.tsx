@@ -40,7 +40,7 @@ const POLL_MS = 1500;
 const POLL_ERR_MAX = 3;
 
 export function DocDispatchPanel({
-  staged, destination, onClose, onFill, onDispatched, onAttachDoc,
+  staged, destination, onClose, onFill, onDispatched, onAttachDoc, resumeJobId,
 }: {
   staged: StagedFile;
   destination: string;
@@ -51,13 +51,16 @@ export function DocDispatchPanel({
   onDispatched?: (n: UploadNotice) => void;
   /** 이 대화에서 분석 — 읽어 온 글을 문서 칩으로 붙인다(PP-D17). 못 붙이면 까닭을 돌려준다. */
   onAttachDoc?: (doc: File) => Promise<string | void>;
+  /** 창을 닫아 넣지 못한 정밀 변환 잡을 이어 본다(DocForge E15) — 맡기기를 건너뛰고 그 잡의 진행부터. */
+  resumeJobId?: string;
 }) {
   const spec = SPEC[destination];
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState<DispatchResult | null>(null);
   // 정밀 변환 — 맡긴 잡을 1.5초마다 본다(PC 도우미와 같은 박자). 끝나면 배달(RA 엄격 생성)까지 하고 멈춘다.
-  const [job, setJob] = useState<{ id: string; st?: DocforgeStatus; errs: number } | null>(null);
+  const [job, setJob] = useState<{ id: string; st?: DocforgeStatus; errs: number } | null>(
+    resumeJobId ? { id: resumeJobId, errs: 0 } : null);
   const cb = useRef({ onDispatched, onFill, onAttachDoc });
   cb.current = { onDispatched, onFill, onAttachDoc };
 
@@ -199,7 +202,7 @@ export function DocDispatchPanel({
               : `${st?.stage || '줄 서는 중'} · ${Math.round(st?.progress ?? 0)}%`}
             {destination === 'chat'
               ? ' — 끝나면 입력창에 문서로 붙입니다. 이 창을 닫으면 붙이지 않습니다.'
-              : ' — 그림 판독이 있으면 몇 분 걸립니다. 이 창을 닫아도 변환은 계속됩니다.'}
+              : ' — 그림 판독이 있으면 몇 분 걸립니다. 이 창을 닫아도 변환은 계속되고, 입력창 위 \'끝나지 않은 정밀 변환\' 에서 이어 넣을 수 있습니다.'}
           </p>
         )}
         {err && <div className="upl-err" role="alert">⚠ {err}</div>}
