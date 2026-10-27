@@ -633,7 +633,11 @@ def test_옛_항목이_재프로비저닝_뒤에도_남으면_누락으로_센�
 # update-all 은 토큰만 보고 기대했다 — 주소를 모르는 박스에서는 게이트웨이가 만들지 않는데 여기는 기대해, 매 실행 재프로비저닝이
 # 헛돌고 게이트웨이·에이전트서버가 그때마다 내려갔다 올라온다(ARP D-5 와 같은 모양).
 ODB_ENV = "ODB_HUB_TOKEN=odb-test-token\nODB_HUB_BASE=http://203.0.113.30:8000\n"
-ODB_CFG = {"odb-hub": {"url": "http://203.0.113.30:8000/mcp?token=odb-test-token", "transport": "streamable_http"}}
+# 게이트웨이는 10-27 부터 토큰을 헤더로 싣는다(HWAXMcpGateway — HWAXPortal docs/request-1027 HG-02). 그 전 판이 만든 쿼리 꼴 config 를 든
+# 박스도 있다 — 둘 다 본다(HP-28).
+ODB_CFG = {"odb-hub": {"url": "http://203.0.113.30:8000/mcp", "transport": "streamable_http",
+                       "headers": {"Authorization": "Bearer odb-test-token"}}}
+ODB_CFG_QUERY = {"odb-hub": {"url": "http://203.0.113.30:8000/mcp?token=odb-test-token", "transport": "streamable_http"}}
 
 
 def test_odb_hub_는_토큰과_주소가_둘_다_있는_박스에서_빠지면_빠졌다고_한다(tmp_path):
@@ -656,12 +660,13 @@ def test_odb_hub_토큰만_있고_주소를_모르면_기대하지_않는다(tmp
     assert missing == [] and "○ ODB 자동화 허브" in out, "운영자 셸에서 준 토큰도 같다"
 
 
-def test_odb_hub_주소가_지금_config_에_있으면_기대한다(tmp_path):
+@pytest.mark.parametrize("gw_config", [ODB_CFG, ODB_CFG_QUERY], ids=["헤더꼴", "옛-쿼리꼴"])
+def test_odb_hub_주소가_지금_config_에_있으면_기대한다(tmp_path, gw_config):
     """cae00 의 모양 — 주소를 어디에도 적은 적이 없고 옛 프로비저너가 기본값으로 config 에 넣었다. 게이트웨이는 그 주소를 이어받으니
     그 박스에서 odb-hub 가 떠 있는 게이트웨이에서 빠지면 빠졌다고 해야 한다(안 켠 기능으로 적지도 않는다)."""
-    missing, out = _expect(tmp_path / "gone", have=BASE, prov_env="ODB_HUB_TOKEN=odb-test-token\n", gw_config=ODB_CFG)
+    missing, out = _expect(tmp_path / "gone", have=BASE, prov_env="ODB_HUB_TOKEN=odb-test-token\n", gw_config=gw_config)
     assert missing == ["odb-hub"] and "ODB 자동화 허브" not in out
-    missing, out = _expect(tmp_path / "have", have=BASE + ["odb-hub"], prov_env="ODB_HUB_TOKEN=odb-test-token\n", gw_config=ODB_CFG)
+    missing, out = _expect(tmp_path / "have", have=BASE + ["odb-hub"], prov_env="ODB_HUB_TOKEN=odb-test-token\n", gw_config=gw_config)
     assert missing == [] and "ODB 자동화 허브" not in out
 
 
@@ -703,7 +708,9 @@ def _gateway_odb(env: dict, prev: dict | None):
 
 @pytest.mark.parametrize("base", [None, "http://203.0.113.30:8000"])
 @pytest.mark.parametrize("token", [None, "odb-test-token"])
-@pytest.mark.parametrize("prev", [None, ODB_CFG, {"odb-hub": {"url": "http://198.51.100.9:8000/mcp?token=old"}}], ids=["없음", "같은주소", "옛주소"])
+@pytest.mark.parametrize("prev", [None, ODB_CFG, ODB_CFG_QUERY, {"odb-hub": {"url": "http://198.51.100.9:8000/mcp?token=old"}},
+                                  {"odb-hub": {"url": "http://198.51.100.9:8000/mcp", "headers": {"Authorization": "Bearer old"}}}],
+                         ids=["없음", "같은주소", "같은주소-옛쿼리꼴", "옛주소-옛쿼리꼴", "옛주소"])
 def test_odb_hub_기대가_게이트웨이의_등재와_맞물린다(tmp_path, base, token, prev):
     """**정본은 게이트웨이다** — 그 등재 블록을 원문에서 꺼내 같은 입력(env · 직전 config)으로 돌려 update-all 의 판정과 맞춰 본다.
       ① update-all 이 기대하면 게이트웨이는 반드시 등재한다(아니면 매 실행 재프로비저닝이 헛돈다).
@@ -716,6 +723,10 @@ def test_odb_hub_기대가_게이트웨이의_등재와_맞물린다(tmp_path, b
     assert not expects or built is not None, "①"
     if token:
         assert expects is (built is not None), "②"
+    prov = ROOT.parent / "HWAXMcpGateway" / "provision-config.sh"
+    if built is not None and 'f"Bearer {_ODB}"' in prov.read_text(encoding="utf-8"):
+        # 옆의 게이트웨이가 헤더 꼴을 만드는 판이면 토큰은 주소에 없다 — 이어받은 옛 쿼리 꼴 토큰도 헤더로 옮겨 간다(HG-02)
+        assert "token=" not in built["url"] and built["headers"]["Authorization"].startswith("Bearer "), built
 
 
 def test_재프로비저닝이_ODB_허브_주소를_게이트웨이에_넘긴다(tmp_path):
