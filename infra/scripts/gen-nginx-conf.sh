@@ -30,12 +30,42 @@ loc_extras() { # $1=id
     # odb-hub: ODB++ 수십~수백 MB · MCP streamable-http 스트리밍 · 뷰어 기하 요청 수십 초
     # 상한 10GB — 템플릿의 전역 상한과 같다(사용자 결정 10-24, 종전 둘 다 2048m). 이 묶음은 request_buffering off 라 본문을 /tmp 에
     # 쌓지 않고 흘린다. 뒤쪽 서비스가 따로 거는 상한(ste 의 STE_MAX_UPLOAD_MB — 같은 날 10GB 로 올렸다 등)은 그쪽 몫이다.
-    ste|apps|heax-hub|report-archive|odb-hub)
+    # ste 는 묶음과 같되 읽기 시한만 손잡이다(NGINX_STE_READ_TIMEOUT, 기본 600s — 아래 _nginx_time). cae00 은 3600s 를 conf 를 다시
+    #만들 때마다 손으로 다시 넣고 있었다(docs/request-1027 HP-12). 결과 파일 제한 두 줄은 손잡이가 있을 때만 생긴다(HP-47 · 기본 끔).
+    ste)
+      cat <<'EOF'
+            client_max_body_size 10240m;
+            proxy_request_buffering off;
+            proxy_buffering off;
+            proxy_read_timeout {{STE_READ_TIMEOUT}};
+EOF
+      if [ -n "$STE_RESULT_RATE" ]; then printf '            limit_rate $ste_result_rate;\n'; fi
+      if [ -n "$STE_RESULT_CONN" ]; then printf '            limit_conn ste_result %s;\n            limit_conn_status 429;\n' "$STE_RESULT_CONN"; fi
+      ;;
+    apps|heax-hub|report-archive|odb-hub)
       cat <<'EOF'
             client_max_body_size 10240m;
             proxy_request_buffering off;
             proxy_buffering off;
             proxy_read_timeout 600s;
+EOF
+      ;;
+    # simflow: 입력 묶음 업로드 최대 600MB(파트너 타일 T3) · /simflow/mcp 스트리밍 — 없으면 600MB 가 nginx 임시 디스크에 통째로
+    # 쌓이고 스트리밍이 60초 침묵에 끊긴다(docs/request-1027 HP-13). aireadyportal 과 같은 처리.
+    simflow)
+      cat <<'EOF'
+            client_max_body_size 600m;
+            proxy_request_buffering off;
+            proxy_buffering off;
+            proxy_read_timeout 3600s;
+EOF
+      ;;
+    # stcx-llm: 비스트리밍 생성이 60초를 넘는다(실측 60.1초에 504) · 요청 본문이 그림 base64 라 수십 MB 다(HP-13).
+    stcx-llm)
+      cat <<'EOF'
+            client_max_body_size 200m;
+            proxy_buffering off;
+            proxy_read_timeout 3600s;
 EOF
       ;;
     # aireadyportal: 해석결과 업로드 최대 6GB · Abaqus 추출 동기 요청 최대 40분.
@@ -158,6 +188,28 @@ if [ ! -f "$ROUTES_LOCAL" ]; then
   esac
 fi
 
+# /ste/ 결과 파일 제한 — 기본 끔(docs/request-1027 HP-47 · 사용자 결정 D-6). 사내 클라이언트 한 대가 d3hsp(수 GB)를 처음부터 되풀이해
+# 받아 하루 수 TB 를 끌어간 적이 있다 — 다른 /ste/ 사용자가 느려지면 infra/.env 한 줄로 켠다. 결과 파일(result.zip · result/file/…)에만
+# 걸린다 — 화면 API · 업로드는 그대로다(http 레벨 map 으로 고르고, 키가 빈 요청은 limit_conn 이 세지 않는다).
+#   NGINX_STE_RESULT_RATE  연결 하나의 내려받기 속도(바이트/초, k·m) — 예 20m
+#   NGINX_STE_RESULT_CONN  한 주소에서 동시에 받는 결과 파일 수 — 예 2(넘으면 429)
+STE_RESULT_RATE="${NGINX_STE_RESULT_RATE:-}"; STE_RESULT_CONN="${NGINX_STE_RESULT_CONN:-}"
+if [ -n "$STE_RESULT_RATE" ] && [[ ! "$STE_RESULT_RATE" =~ ^[1-9][0-9]*[kKmM]?$ ]]; then
+  echo "  ✗ NGINX_STE_RESULT_RATE 값('$STE_RESULT_RATE')을 쓰지 않는다 — 숫자에 k·m 하나(예 20m). 속도 제한 없이 만든다" >&2; STE_RESULT_RATE=""
+fi
+if [ -n "$STE_RESULT_CONN" ] && [[ ! "$STE_RESULT_CONN" =~ ^[1-9][0-9]*$ ]]; then
+  echo "  ✗ NGINX_STE_RESULT_CONN 값('$STE_RESULT_CONN')을 쓰지 않는다 — 1 이상의 정수(예 2). 연결 제한 없이 만든다" >&2; STE_RESULT_CONN=""
+fi
+_ste_result_re='"~^/ste/api/jobs/[^/]+/result(\.zip|/file/)"'
+http_extras=""
+if [ -n "$STE_RESULT_RATE" ]; then
+  http_extras+="    map \$uri \$ste_result_rate { ${_ste_result_re} ${STE_RESULT_RATE}; default 0; }"$'\n'
+fi
+if [ -n "$STE_RESULT_CONN" ]; then
+  http_extras+="    map \$uri \$ste_result_key { ${_ste_result_re} \$binary_remote_addr; default \"\"; }"$'\n'
+  http_extras+="    limit_conn_zone \$ste_result_key zone=ste_result:10m;"$'\n'
+fi
+
 locations=""
 count=0
 if [ -f "$ROUTES_MERGED" ]; then
@@ -205,6 +257,7 @@ _nginx_secs() {  # $1=위 모양의 값 → 초(10# — 앞자리 0 을 8진수�
 }
 AGENT_READ_TIMEOUT="$(_nginx_time NGINX_AGENT_READ_TIMEOUT 50400s)"
 MCP_READ_TIMEOUT="$(_nginx_time NGINX_MCP_READ_TIMEOUT 1h)"
+STE_READ_TIMEOUT="$(_nginx_time NGINX_STE_READ_TIMEOUT 600s)"
 # 침묵 한도의 순서 — 포털 릴레이 < nginx /agent/. 뒤집히면 nginx 가 먼저 끊어, 포털이 낼 문구(손잡이 이름·'심의는 계속 돈다')
 # 대신 화면에 사유 없는 'network error' 만 남는다. 포털 값은 start.sh 가 넘기는 infra/.env 가 먼저고 없으면 backend/.env, 그것도
 # 없으면 코드 기본값이다. 포털 쪽을 0(끔)으로 둔 박스는 nginx 가 유일한 한도라 보지 않는다. 알리기만 한다(conf 는 그대로 만든다).
@@ -280,14 +333,16 @@ EOF
 fi
 
 # Assemble: inject {{LOCATIONS}} (HTTP server) → inject {{TLS_SERVER}} → substitute the tokens.
-TMP1="$(mktemp)"; trap 'rm -f "$TMP1"' EXIT
+TMP1="$(mktemp)"; TMP2="$(mktemp)"; trap 'rm -f "$TMP1" "$TMP2"' EXIT
 { sed '/{{LOCATIONS}}/,$d' "$TMPL"; printf '%s' "$locations"; sed '1,/{{LOCATIONS}}/d' "$TMPL"; } > "$TMP1"
-{ sed '/{{TLS_SERVER}}/,$d' "$TMP1"; printf '%s' "$tls_server"; sed '1,/{{TLS_SERVER}}/d' "$TMP1"; } \
+{ sed '/{{HTTP_EXTRAS}}/,$d' "$TMP1"; printf '%s' "$http_extras"; sed '1,/{{HTTP_EXTRAS}}/d' "$TMP1"; } > "$TMP2"
+{ sed '/{{TLS_SERVER}}/,$d' "$TMP2"; printf '%s' "$tls_server"; sed '1,/{{TLS_SERVER}}/d' "$TMP2"; } \
   | sed -e "s/{{HTTP_PORT}}/${HTTP_PORT}/g" \
         -e "s/{{PORTAL_PORT}}/${PORTAL_PORT}/g" \
         -e "s/{{HTTPS_PORT}}/${HTTPS_PORT:-443}/g" \
         -e "s/{{AGENT_READ_TIMEOUT}}/${AGENT_READ_TIMEOUT}/g" \
         -e "s/{{MCP_READ_TIMEOUT}}/${MCP_READ_TIMEOUT}/g" \
+        -e "s/{{STE_READ_TIMEOUT}}/${STE_READ_TIMEOUT}/g" \
         -e "s/{{TLS_SERVER_NAME}}/${TLS_SERVER_NAME:-_}/g" > "$OUT"
 
 tls_note=""; [ "${ENABLE_TLS:-false}" = "true" ] && tls_note=" + TLS :${HTTPS_PORT:-443}"
