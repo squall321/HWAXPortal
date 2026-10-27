@@ -204,3 +204,71 @@ def test_HP04_준_값은_그대로_둔다(tree):
              XDG_RUNTIME_DIR="/given", DBUS_SESSION_BUS_ADDRESS="unix:path=/given/bus")
     assert r.returncode == 0, r.stdout + r.stderr
     assert Path(tree["env"]["AP_ENV_LOG"]).read_text().splitlines() == ["XDG=/given", "DBUS=unix:path=/given/bus"]
+
+
+# ── HP-17 — 비밀 묶음: 자리를 나누고 박스 파일 · crontab · 리스크 앱 비밀을 담는다 ──────
+
+def _secrets_tree(tree):
+    p = tree["portal"]
+    files = {
+        "infra/.env": "SECRET_INFRA=1\n",
+        "backend/.env": "SECRET_BACKEND=2\n",
+        "backend/config/systems.yaml": "tracked\n",                 # git 이 아는 것 — 담지 않는다
+        "backend/config/routes.local.env": "R=1\n",
+        "backend/config/systems.local.yaml": "a: 1\n",
+        "backend/config/systems.cae00.yaml": "b: 2\n",
+        "backend/config/access.local.yaml": "c: 3\n",
+        "backend/config/saml/prod/idp.xml": "<x/>\n",
+    }
+    for rel, body in files.items():
+        (p / rel).parent.mkdir(parents=True, exist_ok=True)
+        (p / rel).write_text(body)
+    subprocess.run(["git", "-c", "init.defaultBranch=main", "init", "-q", str(p)], check=True)
+    subprocess.run(["git", "-C", str(p), "add", "backend/config/systems.yaml"], check=True)
+    with open(p / ".git/info/exclude", "a") as f:
+        f.write("backend/config/systems.cae00.yaml\n")
+    risk = tree["tmp"] / "HEAXHub/var/app_data/hwax_risk"
+    risk.mkdir(parents=True)
+    (tree["tmp"] / "HEAXHub/.env").write_text("H=1\n")
+    for n in ("cred.key", "secrets.env", "origin.json"):
+        (risk / n).write_text(n + "\n")
+
+
+def _secrets_tar(tree) -> tuple[Path, dict[str, bytes]]:
+    outs = sorted((tree["tmp"] / "backups/hwax/t/secrets/daily").glob("secrets-t-*.tar.gz"))
+    assert len(outs) == 1, outs
+    with tarfile.open(outs[0]) as t:
+        got = {m.name.removeprefix("./"): t.extractfile(m).read() for m in t.getmembers() if m.isfile()}
+    return outs[0], got
+
+
+def test_HP17_두_env_는_따로_박스_파일_crontab_리스크_비밀이_들어간다(tree):
+    _secrets_tree(tree)
+    tree["ct"].write_text("30 3 * * * backup\n* * * * * heal  # hwax-watchdog\n")
+    r = _run(tree, [str(tree["portal"] / "infra/scripts/backup-local.sh"), "secrets"], CT_MODE="ok")
+    assert r.returncode == 0, r.stdout + r.stderr
+    out, got = _secrets_tar(tree)
+    assert out.stat().st_mode & 0o777 == 0o600
+    assert got["portal/infra/.env"] == b"SECRET_INFRA=1\n" and got["portal/backend/.env"] == b"SECRET_BACKEND=2\n"
+    for rel in ("routes.local.env", "systems.local.yaml", "systems.cae00.yaml", "access.local.yaml", "saml/prod/idp.xml"):
+        assert f"portal/backend/config/{rel}" in got, (rel, sorted(got))
+    assert "portal/backend/config/systems.yaml" not in got, "git 이 아는 파일까지 담았다"
+    assert "portal/.env" not in got, "옛 자리(겹치던 자리)가 남았다"
+    assert b"systems.cae00.yaml" in got["portal/.git/info/exclude"]
+    assert got["crontab/crontab.txt"] == tree["ct"].read_bytes()
+    for n in ("cred.key", "secrets.env", "origin.json"):
+        assert got[f"heax/hwax_risk/{n}"] == (n + "\n").encode()
+
+
+def test_HP17_crontab_없음은_빼고_못_읽음은_실패로_센다(tree):
+    _secrets_tree(tree)
+    backup = str(tree["portal"] / "infra/scripts/backup-local.sh")
+    r = _run(tree, [backup, "secrets"], CT_MODE="none")
+    assert r.returncode == 0, r.stdout + r.stderr
+    out, got = _secrets_tar(tree)
+    assert "crontab/crontab.txt" not in got and "portal/infra/.env" in got
+    out.unlink()
+    r = _run(tree, [backup, "secrets"], CT_MODE="fail")
+    assert r.returncode == 1 and "crontab 을 읽지 못했다" in r.stdout, r.stdout + r.stderr
+    _out, got = _secrets_tar(tree)
+    assert "portal/infra/.env" in got, "crontab 하나 때문에 나머지 비밀을 담지 않았다"

@@ -5,7 +5,7 @@
 # 대상(기본 WANT): aidh signalforge mxwp heax kooremapper(postgres pg_dump) · materialtwin(HEAX app_data
 #   SQLite .backup) · portal(sqlite 5 + jwt, 0600) · gateway(audit.jsonl) · smarttwinmcp(sqlite 2) ·
 #   delib-runs · paper-index(코퍼스 색인 원장 4) · expertagents(git bundle + knowledge 작업트리) ·
-#   secrets(rclone.conf·.env·키 — 0600, 이 박스 복구용). ReportArchive 는 hands-off — 대상 아님(의도).
+#   secrets(rclone.conf·.env·키·박스 파일·crontab — 0600, 이 박스 복구용). ReportArchive 는 hands-off — 대상 아님(의도).
 #   소스가 이 박스에 없는 항목은 실패가 아니라 skip 이다(cae00 에 없는 dev 전용 경로들).
 #
 #   ./infra/scripts/backup-local.sh                 # 전부
@@ -298,8 +298,25 @@ if want secrets; then
   snap="$(mktemp -d)"; chmod 700 "$snap"
   put() { [ -e "$1" ] && { mkdir -p "$snap/$2"; cp -rp "$1" "$snap/$2/"; }; }
   put "$HOME/.config/rclone/rclone.conf" rclone
-  put "$SELF_REPO/infra/.env" portal; put "$SELF_REPO/backend/.env" portal
-  D="$(find_repo HEAXHub)";        [ -n "$D" ] && { put "$D/.env" heax; put "${HEAX_APP_DATA_ROOT:-$D/var/app_data}/hwax_risk/cred.key" heax/hwax_risk; }
+  # 포털 파일은 리포 안 자리 그대로 담는다(portal/infra/.env · portal/backend/.env …). 둘 다 portal/ 에 넣던 때는 이름이 같아
+  # backend/.env 가 infra/.env(포털 비밀 정본)를 덮었다(docs/request-1027 HP-17).
+  put "$SELF_REPO/infra/.env" portal/infra; put "$SELF_REPO/backend/.env" portal/backend
+  # 박스 파일 — backend/config 에서 git 이 모르는 것(routes.local.env · systems.local.yaml · systems.<박스>.yaml · 권한표
+  # access.local.yaml · saml/prod …)은 이 박스에만 있다. 이름을 늘어놓으면 새 박스 파일이 빠지니 git 에 묻는다(무시된 것 포함).
+  _bf="$(mktemp)"
+  if git -C "$SELF_REPO" ls-files -z --others -- backend/config > "$_bf" 2>/dev/null; then
+    while IFS= read -r -d '' f; do put "$SELF_REPO/$f" "portal/$(dirname "$f")"; done < "$_bf"
+  else bad "secrets: backend/config 의 박스 파일을 git 으로 세지 못했다 — 담지 못했다"; fi
+  rm -f "$_bf"
+  put "$SELF_REPO/.git/info/exclude" portal/.git/info
+  # crontab — 백업 · 감시 · 터널 줄. 'no crontab' 은 담을 것이 없을 뿐이다(lib/crontab-safe.sh).
+  . "$SELF_REPO/infra/scripts/lib/crontab-safe.sh"
+  if _ct="$(hwax_crontab_get)"; then
+    [ -z "$_ct" ] || { mkdir -p "$snap/crontab"; printf '%s\n' "$_ct" > "$snap/crontab/crontab.txt"; }
+  else bad "secrets: crontab 을 읽지 못했다 — 담지 못했다"; fi
+  # 리스크 앱 — cred.key(자격 암호 키) · secrets.env(앱 비밀) · origin.json(데이터를 쓴 호스트 · 판 — 기동 때 이관 여부를 이것으로 가른다)
+  D="$(find_repo HEAXHub)";        [ -n "$D" ] && { put "$D/.env" heax
+    for f in cred.key secrets.env origin.json; do put "${HEAX_APP_DATA_ROOT:-$D/var/app_data}/hwax_risk/$f" heax/hwax_risk; done; }
   D="$(find_repo KooRemapper)";    [ -n "$D" ] && put "$D/platform/.env" kooremapper
   D="$(find_repo HWAXMcpGateway)"; [ -n "$D" ] && { put "$D/gateway_config.json" gateway; put "$D/provision.env" gateway; }
   D="$(find_repo HWAXAgentServer)";[ -n "$D" ] && { put "$D/.env" agent-server; put "$D/mcp_servers.json" agent-server; }
