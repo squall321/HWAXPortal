@@ -31,9 +31,9 @@ def _time_block() -> str:
 
 
 def _knobs() -> dict[str, str]:
-    """시간 한도 구획의 값 줄 `# KEY=값` → {KEY: 값}, 그리고 킷이 실제로 심는 DELIB_TIMEOUT_S."""
+    """시간 한도 구획의 값 줄 `# KEY=값` → {KEY: 값}, 그리고 심의 구획에 주석으로 적은 DELIB_TIMEOUT_S."""
     out = dict(re.findall(r"^# ([A-Z][A-Z0-9_]*)=(\S+)$", _time_block(), re.M))
-    out["DELIB_TIMEOUT_S"] = re.search(r"^DELIB_TIMEOUT_S=(\S+)$", KIT, re.M).group(1)
+    out["DELIB_TIMEOUT_S"] = re.search(r"^# DELIB_TIMEOUT_S=(\S+)$", KIT, re.M).group(1)
     return out
 
 
@@ -55,10 +55,12 @@ def _apply(tmp_path: Path, existing: str | None = None) -> tuple[str, str]:
     return (agent / ".env").read_text(encoding="utf-8"), r.stdout
 
 
-def test_새_박스에는_1800초가_심긴다(tmp_path):
-    """**이 시험이 이 파일의 이유다** — 종전에는 600 이 심겼다."""
+def test_새_박스에는_심의_호출_타임아웃이_심기지_않아_코드_기본값_1800초로_돈다(tmp_path):
+    """**이 시험이 이 파일의 이유다** — 종전에는 600 이 심겼다. 10-28(docs/request-1027 HP-39)부터는 아무 값도 심지 않는다 — 1800 을 심던
+    동안은 지운 줄을 다음 적용이 다시 넣어 '지우면 코드 기본값' 이 거짓이었고, 코드 기본값을 올려도 심긴 박스만 1800 에 묶였다.
+    코드 기본값이 1800 인지는 아래 엔진 대조(test_킷의_값이_엔진_기본값과_같다)가 본다."""
     env, _ = _apply(tmp_path)
-    assert re.findall(r"^DELIB_TIMEOUT_S=(.*)$", env, re.M) == ["1800"]
+    assert re.findall(r"^DELIB_TIMEOUT_S=(.*)$", env, re.M) == []
 
 
 def test_주석으로_적어_둔_손잡이는_심기지_않는다(tmp_path):
@@ -66,7 +68,7 @@ def test_주석으로_적어_둔_손잡이는_심기지_않는다(tmp_path):
     (이번에 600 으로 겪은 일이다)."""
     env, _ = _apply(tmp_path)
     seeded = set(re.findall(r"^([A-Z][A-Z0-9_]*)=", env, re.M))
-    assert not seeded & (set(_knobs()) - {"DELIB_TIMEOUT_S"}), seeded
+    assert not seeded & set(_knobs()), seeded
 
 
 def test_이미_박힌_값은_킷이_건드리지_않는다(tmp_path):
@@ -132,7 +134,7 @@ def test_줄_끝_설명을_옮기지_말라는_말이_주석_손잡이_머리에
 
 
 def test_옛_값이_남는다는_말이_값을_적는_자리에_있다():
-    i = KIT.index("\nDELIB_TIMEOUT_S=")
+    i = KIT.index("\n# DELIB_TIMEOUT_S=")
     near = KIT[max(0, i - 900):i]
     assert "없는 키만" in near and "600" in near and "update-all" in near
 
