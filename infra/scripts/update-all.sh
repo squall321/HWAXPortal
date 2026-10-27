@@ -2534,12 +2534,14 @@ if RDY="$_rdy" python3 -c 'import json,os,sys; sys.exit(0 if "no_active_admin" i
   bad "포털 관리자      활성 관리자 0명 — 관리자 화면을 열 사람이 없다(원장에 사람은 있다). infra/.env 의 PORTAL_ADMIN_EMAILS 에 관리자로 둘 사람의 로그인 이메일을 적고 포털을 다시 띄운다(비치명)"
 fi
 # ── 내부 목적지가 프록시를 타지 않는가(9차 요청 §4-(4)) — 이 셸의 NO_PROXY 가 이번 실행이 띄운 서비스가 물려받은 값이다 ──────
-# RA·ARP 는 1g 가 더했다. 그 밖에 이 박스가 부르는 다른 서버(라우트의 원격 호스트 · TestScope)가 빠져 있으면 그 호출만 사내 프록시로
-# 새 상대의 IP 허용목록에 걸린다 — 기능 하나가 403·Connection error 인데 위 프로브는 전부 초록이다. 목적지는 check-egress.sh 가
-# 리포가 아는 설정에서 유도하고 이름으로만 말한다(주소를 여기 적지도, 찍지도 않는다). --internal 은 네트워크를 건드리지 않는다 —
-# 상한은 그 약속이 깨졌을 때를 위한 것이다. **경고**다(bad) — 점검이 깨져도 배포 판정(FAIL)은 건드리지 않는다.
+# RA·ARP 는 1g 가 더했다. 그 밖에 이 박스가 부르는 다른 서버(TestScope · 게이트웨이의 일반 앱 · 외부 연결)가 빠져 있으면 그 호출만 사내
+# 프록시로 새 상대의 IP 허용목록에 걸린다 — 기능 하나가 403·Connection error 인데 위 프로브는 전부 초록이다. 목적지는 check-egress.sh 가
+# 리포가 아는 설정에서 유도하고 이름으로만 말한다(주소를 여기 적지도, 찍지도 않는다). 부르는 쪽별로 가른다(docs/request-1027 HP-22) —
+# 라우트는 nginx 가 불러 세지 않고, 게이트웨이 목적지는 게이트웨이 /health 의 보정 결과(no_proxy, HG-18)로 판정한다. 그 본문은
+# 여기서 새로 물어 넘긴다(§5 가 게이트웨이를 다시 띄웠을 수 있다). --internal 은 네트워크를 건드리지 않는다 — 상한은 그 약속이 깨졌을
+# 때를 위한 것이다. **경고**다(bad) — 점검이 깨져도 배포 판정(FAIL)은 건드리지 않는다.
 if [ -x "$SELF_REPO/infra/scripts/check-egress.sh" ]; then
-  _eg_rc=0; _eg="$(timeout --foreground 20 "$SELF_REPO/infra/scripts/check-egress.sh" --internal 2>/dev/null)" || _eg_rc=$?
+  _eg_rc=0; _eg="$(GW_HEALTH_JSON="$(gw_health)" timeout --foreground 20 "$SELF_REPO/infra/scripts/check-egress.sh" --internal 2>/dev/null)" || _eg_rc=$?
   case "$_eg_rc" in
     0) ok "프록시 우회      ${_eg:-내부 목적지가 NO_PROXY 에 있다}" ;;
     1) bad "프록시 우회      NO_PROXY 에 없는 내부 목적지: ${_eg:-?} — 그 호출이 사내 프록시로 샌다(상대의 IP 허용목록에 걸리면 403). 운영자 셸의 NO_PROXY 에 그 호스트를 더하고 부르는 서비스를 재기동한다(비치명)" ;;

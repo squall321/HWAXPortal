@@ -15,7 +15,7 @@
 #   check-egress.sh              # 요약 진단
 #   check-egress.sh --sif <경로> # 그 SIF 안에서도 같은 검사(앱 런타임 기준 판정)
 #   check-egress.sh --json       # 기계 판독용
-#   check-egress.sh --internal   # 내부 목적지가 NO_PROXY 에 있는지만(네트워크를 건드리지 않는다 — update-all §6 이 부른다)
+#   check-egress.sh --internal   # 내부 목적지가 NO_PROXY 에 있는지만(네트워크를 건드리지 않는다 — update-all §6 이 부르고 게이트웨이 /health 를 GW_HEALTH_JSON 으로 준다)
 set -uo pipefail
 
 TIMEOUT="${EGRESS_TIMEOUT:-8}"
@@ -56,9 +56,15 @@ add_json() { RES_JSON="${RES_JSON}${RES_JSON:+,}{\"name\":\"$1\",\"code\":\"$2\"
 
 # ── 이 박스가 실제로 부르는 **내부** 목적지 — 프록시를 타면 안 되는 곳(9차 요청 §4-(4)) ─────────────────────
 # 종전엔 NO_PROXY 에 루프백 둘만 있는지 봤다. 그런데 사고는 다른 서버에서 났다 — RA 호출이 사내 프록시를 타 상대의 IP 허용목록에
-# 걸려 사람별 위임이 403 이었다(2026-10-03 cae00). 목적지는 **리포가 아는 설정에서 유도한다**(주소를 여기 적지 않는다):
-#   infra/.env 의 RA_HOST·ARP_HOST · routes(.local).env 의 원격 호스트 · backend/.env 의 TESTSCOPE_BASE_URL ·
-#   게이트웨이 provision.env 의 일반 앱(PER_USER_SSO_APPS) <접두>_MCP_URL·<접두>_SSO_URL(MatNexus 처럼 heax-hub 밖 앱).
+# 걸려 사람별 위임이 403 이었다(2026-10-03 cae00). 목적지는 **리포가 아는 설정에서 유도한다**(주소를 여기 적지 않는다).
+# **부르는 쪽별로 가른다**(docs/request-1027 HP-22) — 같은 목록을 이 셸의 NO_PROXY 하나로 재면 거짓 경보가 났다.
+#   portal  — 이 셸의 NO_PROXY 를 물려받는 포털 · 에이전트 서버가 부른다: infra/.env 의 RA_HOST·ARP_HOST · backend/.env 의 TESTSCOPE_BASE_URL.
+#   gateway — 게이트웨이가 부른다: provision.env 의 일반 앱(PER_USER_SSO_APPS) <접두>_MCP_URL·<접두>_SSO_URL · 박스 권한표
+#             (backend/config/access.local.yaml)의 외부 연결 connect: mcp_url(FMEA · MatNexus — HP-23). 게이트웨이는 제 목적지를 기동 ·
+#             합류 · 연결 때 NO_PROXY 에 스스로 더한다 — 그래서 /health 의 no_proxy(HG-18)로 판정하고, 그 칸이 없는 옛 게이트웨이만
+#             이 셸의 NO_PROXY 로 잰다.
+#   라우트(routes(.local).env)는 **세지 않는다** — nginx 가 부르고 nginx 는 프록시 환경을 쓰지 않는다(10-25 cae00 의 거짓 경보 셋이
+#   라우트였다). 라우트 호스트를 포털이 따로 부르면 그 설정(RA_HOST 등)으로 이미 센다.
 # 출력에는 주소가 아니라 **어느 설정인지**만 낸다 — 이 출력은 update-all 로그에 그대로 남는다.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # update-all 의 _envfile_value 와 같은 규칙(인라인 주석·따옴표·CR 을 벗기고 마지막 줄이 이긴다) — ste-doctor.sh 의 envv 와 같은 한 줄이다.
@@ -77,40 +83,45 @@ _url_port() {  # URL → 적힌 포트(없으면 빈 값). 스킴의 기본 포�
 }
 # 포트는 그 설정이 주소에 적은 것만 안다(라우트·TESTSCOPE_BASE_URL). RA_HOST·ARP_HOST 는 포트가 없다 — update-all 1e 가 RA_HOST 한 줄에서
 # :3000 과 :3002 를 함께 만든다. 같은 호스트가 다른 포트로 또 나오면 포트를 비운다 — 포트 하나를 적은 NO_PROXY 항목으로는 둘을 못 덮는다.
-internal_dests() {  # "<이름>|<호스트>|<포트>" 줄들. 루프백은 뺀다(아래에서 따로 본다). 같은 호스트는 먼저 나온 이름 하나로.
-  local k h f line _rp _v _gw_env _pair _p
-  declare -A _route=() _rport=() _seen=() _port=()
-  local -a _order=() _hosts=() _pairs=()
+dests() {  # $1=portal|gateway → "<이름>|<호스트>|<포트>" 줄들. 루프백은 뺀다(아래에서 따로 본다). 같은 호스트는 먼저 나온 이름 하나로.
+  local k h _gw_env _pair _p _id _u
+  declare -A _seen=() _port=()
+  local -a _hosts=() _pairs=()
   _add() { case "$2" in ''|localhost|127.*|0.0.0.0|::1|\[*) return 0 ;; esac
            if [ -n "${_seen[$2]:-}" ]; then [ "${_port[$2]}" = "${3:-}" ] || _port[$2]=""; return 0; fi
            _seen[$2]="$1"; _port[$2]="${3:-}"; _hosts+=("$2"); }
-  for k in RA_HOST ARP_HOST; do h="$(envv "$k" "$ROOT/infra/.env")"; _add "$k" "${h,,}"; done
-  # 라우트 — 추적 파일 위에 박스 오버레이가 같은 키를 덮는다(gen-nginx-conf.sh 와 같다). 빈 값은 '이 박스에서 끔' 이다.
-  _rp="$(envv ROUTES_PATH "$ROOT/infra/.env")"
-  for f in "$ROOT/backend/${_rp:-config/routes.env}" "$ROOT/backend/config/routes.local.env"; do
-    [ -f "$f" ] || continue
-    while IFS= read -r line || [ -n "$line" ]; do
-      line="${line#"${line%%[![:space:]]*}"}"
-      case "$line" in ''|\#*) continue ;; *=*) ;; *) continue ;; esac
-      k="${line%%=*}"; k="${k%"${k##*[![:space:]]}"}"
-      [ -n "${_route[$k]+x}" ] || _order+=("$k")
-      _v="$(printf '%s' "${line#*=}" | tr -d '[:space:]')"
-      _route[$k]="$(_url_host "$_v")"; _rport[$k]="$(_url_port "$_v")"
-    done < "$f"
-  done
-  for k in ${_order[@]+"${_order[@]}"}; do _add "라우트 $k" "${_route[$k]}" "${_rport[$k]}"; done
-  h="$(envv TESTSCOPE_BASE_URL "$ROOT/backend/.env")"; [ -n "$h" ] && _add TESTSCOPE_BASE_URL "$(_url_host "$h")" "$(_url_port "$h")"
-  # 일반 앱 — 게이트웨이가 그 MCP 와 위임 창구를 부른다. 쌍의 접두 규칙은 update-all _sso_generic_pairs 와 같다(못 읽은 쌍은 건너뛴다).
-  _gw_env="${GW_DIR:-$ROOT/../HWAXMcpGateway}/provision.env"
-  if [ -f "$_gw_env" ]; then
-    read -ra _pairs <<<"$(envv PER_USER_SSO_APPS "$_gw_env")"
-    for _pair in ${_pairs[@]+"${_pairs[@]}"}; do
-      _p="${_pair#*:}"
-      [ "$_p" != "$_pair" ] && [[ "$_p" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-      for k in "${_p}_MCP_URL" "${_p}_SSO_URL"; do
-        h="$(envv "$k" "$_gw_env")"; [ -n "$h" ] && _add "$k" "$(_url_host "$h")" "$(_url_port "$h")"
+  if [ "$1" = portal ]; then
+    for k in RA_HOST ARP_HOST; do h="$(envv "$k" "$ROOT/infra/.env")"; _add "$k" "${h,,}"; done
+    h="$(envv TESTSCOPE_BASE_URL "$ROOT/backend/.env")"; [ -n "$h" ] && _add TESTSCOPE_BASE_URL "$(_url_host "$h")" "$(_url_port "$h")"
+  else
+    # 일반 앱 — 게이트웨이가 그 MCP 와 위임 창구를 부른다. 쌍의 접두 규칙은 update-all _sso_generic_pairs 와 같다(못 읽은 쌍은 건너뛴다).
+    _gw_env="${GW_DIR:-$ROOT/../HWAXMcpGateway}/provision.env"
+    if [ -f "$_gw_env" ]; then
+      read -ra _pairs <<<"$(envv PER_USER_SSO_APPS "$_gw_env")"
+      for _pair in ${_pairs[@]+"${_pairs[@]}"}; do
+        _p="${_pair#*:}"
+        [ "$_p" != "$_pair" ] && [[ "$_p" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        for k in "${_p}_MCP_URL" "${_p}_SSO_URL"; do
+          h="$(envv "$k" "$_gw_env")"; [ -n "$h" ] && _add "$k" "$(_url_host "$h")" "$(_url_port "$h")"
+        done
       done
-    done
+    fi
+    # 외부 연결 — 박스 권한표의 connect: mcp_url(HP-23). 못 읽으면(파일 없음 · yaml 없음 · 깨짐) 건너뛴다 — 포털이 그 선언을 버리는 것과 같다.
+    while IFS='|' read -r _id _u; do
+      [ -n "$_u" ] && _add "외부 연결 $_id" "$(_url_host "$_u")" "$(_url_port "$_u")"
+    done < <(python3 - "$ROOT/backend/config/access.local.yaml" <<'PY' 2>/dev/null
+import sys
+try:
+    import yaml
+    d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+except Exception:
+    raise SystemExit(0)
+for p in (d.get("platforms") or []) if isinstance(d, dict) else []:
+    c = p.get("connect") if isinstance(p, dict) else None
+    if isinstance(c, dict) and isinstance(c.get("mcp_url"), str) and c["mcp_url"].strip():
+        print(f"{p.get('id') or '?'}|{c['mcp_url'].strip()}")
+PY
+)
   fi
   for h in ${_hosts[@]+"${_hosts[@]}"}; do printf '%s|%s|%s\n' "${_seen[$h]}" "$h" "${_port[$h]}"; done
   return 0
@@ -173,13 +184,43 @@ np_dead_note() {  # $1=NO_PROXY 목록 → 안내 한 구절(없으면 빈 값)
   [ "$n" -gt 0 ] && printf 'NO_PROXY 의 항목 %s개는 httpx 가 읽지 못하는 모양이다(대역 a.b.c.d/n · *.도메인 · 공백으로 나눈 항목) — 쉼표로 나눠 주소·이름을 그대로 적는다' "$n"
   return 0
 }
-internal_missing() {  # $1=NO_PROXY 목록 → 목록이 덮지 못하는 내부 목적지의 이름(", " 로 이음). 다 덮이면 빈 값.
+internal_missing() {  # $1=NO_PROXY 목록 [$2=portal(기본)|gateway] → 목록이 덮지 못하는 목적지의 이름(", " 로 이음). 다 덮이면 빈 값.
   local name host port out=""
   while IFS='|' read -r name host port; do
     [ -n "$host" ] || continue
     np_covers "$host" "$1" "$port" || out="${out:+$out, }$name"
-  done < <(internal_dests)
+  done < <(dests "${2:-portal}")
   printf '%s' "$out"
+}
+# 게이트웨이 /health 의 no_proxy(HG-18) → "더한수 못적은수 전부우회(0|1) 프록시(0|1)" 한 줄. 그 칸이 없는 옛 게이트웨이 · 못 읽음이면 빈 값.
+# --internal 은 네트워크를 건드리지 않는다 — 부르는 쪽(update-all §6)이 본문을 GW_HEALTH_JSON 으로 준다. 손으로 돌리는 전체 진단은 스스로 묻는다.
+gw_no_proxy() {
+  [ -n "${GW_HEALTH_JSON:-}" ] || return 0
+  python3 -c '
+import json, os
+try:
+    n = json.loads(os.environ["GW_HEALTH_JSON"]).get("no_proxy") or {}
+except Exception:
+    raise SystemExit(0)
+if isinstance(n, dict) and n.get("auto"):
+    print(int(n.get("added") or 0), int(n.get("unwritable") or 0), 1 if n.get("all") else 0, 1 if n.get("proxy") else 0)
+' 2>/dev/null || true
+}
+# 게이트웨이 쪽 판정 → 두 줄: 빠진 것(이름, 없으면 빈 줄) · 그 판정을 무엇으로 했는지 한 구절(옛 게이트웨이면 빈 줄).
+gateway_judge() {  # $1=이 셸의 NO_PROXY 목록
+  local g added unw all px
+  g="$(gw_no_proxy)"
+  if [ -n "$g" ]; then
+    read -r added unw all px <<<"$g"
+    if [ "$px" = 1 ] && [ "$all" = 0 ] && [ "${unw:-0}" -gt 0 ]; then
+      printf '게이트웨이 목적지 %s곳(NO_PROXY 에 적을 수 없는 주소 — 게이트웨이 로그의 경고를 본다)\n' "$unw"
+    else
+      printf '\n'
+    fi
+    printf '게이트웨이 목적지는 게이트웨이가 스스로 우회한다(보정 %s곳)\n' "$added"
+    return 0
+  fi
+  printf '%s\n\n' "$(internal_missing "$1" gateway)"
 }
 
 PROXY="${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}"
@@ -197,11 +238,16 @@ if [ "$INTERNAL" = 1 ]; then
   if [ -z "$PROXY" ]; then echo "프록시 환경변수 없음 — 직결 구성이라 볼 것이 없다"; exit 0; fi
   [ -z "$NP_SPLIT" ] || echo "$NP_SPLIT" >&2      # stdout 은 한 줄이다(update-all 이 그대로 싣는다) — 이 말은 stderr 로
   _miss="$(internal_missing "$NP_EFF")"
+  { IFS= read -r _gmiss; IFS= read -r _gnote; } <<<"$(gateway_judge "$NP_EFF")"
+  [ -z "${_gmiss:-}" ] || _miss="${_miss:+$_miss, }$_gmiss"
+  _gnote="${_gnote:+ · $_gnote}"
   # 읽지 못하는 항목은 덮였든 빠졌든 같은 줄 끝에 붙인다(stdout 은 한 줄이다 — update-all 이 그대로 싣는다). 종료코드는 바꾸지 않는다.
   _note="$(np_dead_note "$NP_EFF")"; _note="${_note:+ ($_note)}"
   if [ -n "$_miss" ]; then echo "$_miss$_note"; exit 1; fi
-  _n="$(internal_dests | grep -c . || true)"
-  if [ "${_n:-0}" = 0 ]; then echo "이 박스의 설정에 다른 서버의 내부 목적지가 없다$_note"; else echo "내부 목적지 ${_n}곳이 전부 NO_PROXY 에 있다$_note"; fi
+  # 센다 — 이 셸로 잰 목적지만(게이트웨이가 보정 결과를 알린 박스는 게이트웨이 목적지를 여기서 세지 않는다)
+  _n="$(dests portal | grep -c . || true)"
+  [ -n "$_gnote" ] || _n=$(( ${_n:-0} + $(dests gateway | grep -c . || true) ))
+  if [ "${_n:-0}" = 0 ]; then echo "이 박스의 설정에 다른 서버의 내부 목적지가 없다$_gnote$_note"; else echo "내부 목적지 ${_n}곳이 전부 NO_PROXY 에 있다$_gnote$_note"; fi
   exit 0
 fi
 
@@ -216,9 +262,13 @@ if [ -n "$PROXY" ]; then
     for h in 127.0.0.1 localhost; do
       case ",$NP," in *",$h,"*) ;; *) warn "NO_PROXY 에 $h 없음 — 내부 호출이 프록시로 샐 수 있다" ;; esac
     done
-    # 다른 서버의 내부 목적지(RA·ARP·라우트의 원격 호스트·TestScope) — 이름만 낸다
+    # 다른 서버의 내부 목적지 — 포털 쪽(RA·ARP·TestScope)은 이 셸의 NO_PROXY 로, 게이트웨이 쪽은 게이트웨이 /health 의 보정 결과로. 이름만 낸다.
+    GW_HEALTH_JSON="${GW_HEALTH_JSON:-$(curl -s -m 3 --noproxy '*' "${GW_HEALTH_URL:-http://127.0.0.1:9110/health}" 2>/dev/null)}"
     _miss="$(internal_missing "$NP")"
+    { IFS= read -r _gmiss; IFS= read -r _gnote; } <<<"$(gateway_judge "$NP")"
+    [ -z "${_gmiss:-}" ] || _miss="${_miss:+$_miss, }$_gmiss"
     [ -n "$_miss" ] && warn "NO_PROXY 에 없는 내부 목적지: $_miss — 그 호출이 프록시로 샌다(상대의 IP 허용목록에 걸리면 403)"
+    [ -n "${_gnote:-}" ] && dim "$_gnote"
     _note="$(np_dead_note "$NP")"
     [ -n "$_note" ] && warn "$_note"
   else

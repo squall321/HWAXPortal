@@ -1,10 +1,12 @@
 # 내부 목적지가 사내 프록시로 새지 않는지 — check-egress.sh --internal 과 그것을 부르는 update-all §6 의 경고(9차 요청 §4-(4))
 """왜 — check-egress.sh 는 NO_PROXY 에 루프백 둘만 있는지 봤고, 그나마 아무도 부르지 않았다. 이 박스가 실제로 부르는 내부
-목적지(RA·ARP·라우트의 원격 호스트·TestScope)가 NO_PROXY 에 없으면 그 호출만 프록시를 타고 상대의 IP 허용목록에 걸린다 —
-기능 하나가 403 인데 게이트는 전부 초록이다(RA 사람별 위임, 2026-10-03 실측).
+목적지(RA·ARP·TestScope · 게이트웨이의 일반 앱 · 외부 연결)가 NO_PROXY 에 없으면 그 호출만 프록시를 타고 상대의 IP 허용목록에
+걸린다 — 기능 하나가 403 인데 게이트는 전부 초록이다(RA 사람별 위임, 2026-10-03 실측).
+10-28(docs/request-1027 HP-22 · HP-23) — 부르는 쪽별로 가른다. 라우트는 nginx 가 불러 세지 않고(10-25 cae00 의 거짓 경보 셋), 게이트웨이
+목적지는 게이트웨이 /health 의 보정 결과(no_proxy, HG-18)로 판정한다(그 칸이 없는 옛 게이트웨이만 이 셸의 NO_PROXY 로 잰다).
 
 지키는 것.
- ① 목적지는 **리포가 아는 설정에서 유도한다**(infra/.env · routes(.local).env · backend/.env) — 주소를 스크립트에 적지 않는다.
+ ① 목적지는 **리포가 아는 설정에서 유도한다**(infra/.env · backend/.env · 게이트웨이 provision.env · 박스 권한표) — 주소를 스크립트에 적지 않는다.
  ② `--internal` 은 **네트워크를 건드리지 않는다** — update-all 이 매 실행 부르므로 멈출 일이 없어야 한다.
  ③ 주소·프록시 값은 찍지 않는다(프록시 주소에는 계정이 섞여 있을 수 있다) — 어느 설정인지 이름으로만 말한다.
  ④ update-all 에서는 **경고**다 — 종료코드를 세우지 않는다.
@@ -21,11 +23,12 @@ ROOT = Path(__file__).resolve().parents[2]
 UA = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
 PROXY = "http://svc-user:pw-not-real@proxy.example:8080"
 RA, ARP, ODB, TS = "203.0.113.10", "203.0.113.20", "203.0.113.30", "198.51.100.40"
+ROUTE_ONLY = "192.0.2.30"            # nginx 만 부르는 라우트 호스트 — 목적지가 아니다
 
 
 @pytest.fixture()
 def box(tmp_path):
-    """임시 리포 — RA·ARP(infra/.env) · 원격 라우트 하나(odb-hub) · TestScope(backend/.env) 를 아는 박스."""
+    """임시 리포 — RA·ARP(infra/.env) · TestScope(backend/.env) · 게이트웨이 일반 앱 하나(ODBX — provision.env) · nginx 라우트를 아는 박스."""
     repo = tmp_path / "HWAXPortal"
     (repo / "infra/scripts").mkdir(parents=True); (repo / "backend/config").mkdir(parents=True)
     shutil.copy(ROOT / "infra/scripts/check-egress.sh", repo / "infra/scripts/check-egress.sh")
@@ -35,7 +38,9 @@ def box(tmp_path):
         "# 예시:  heax-hub=http://192.0.2.99:4180\nheax-hub=http://localhost:4180/\nai-data-hub=http://127.0.0.1:8001/\n"
         "ste=http://192.0.2.50:15810/\n")
     (repo / "backend/config/routes.local.env").write_text(
-        f"ste=\nreport-archive=http://{RA}:3000/\nodb-hub=http://{ODB}:8000/\n#aireadyportal=http://192.0.2.77:3001\n")
+        f"ste=\nreport-archive=http://{RA}:3000/\nodb-hub=http://{ROUTE_ONLY}:8000/\n#aireadyportal=http://192.0.2.77:3001\n")
+    gw = tmp_path / "HWAXMcpGateway"; gw.mkdir()
+    (gw / "provision.env").write_text(f"PER_USER_SSO_APPS=odbx:ODBX\nODBX_MCP_URL=http://{ODB}:8000/mcp\n")
     # curl·openssl 이 불리면 표식이 남는다 — --internal 은 네트워크를 건드리지 않아야 한다
     shim = tmp_path / "shim"; shim.mkdir()
     for name in ("curl", "openssl"):
@@ -70,7 +75,7 @@ def test_빠진_목적지를_설정_이름으로_말하고_주소는_찍지_않�
     _, run, calls = box
     r = run("--internal", https_proxy=PROXY, NO_PROXY="127.0.0.1,localhost")
     assert r.returncode == 1, r.stdout + r.stderr
-    for label in ("RA_HOST", "ARP_HOST", "라우트 odb-hub", "TESTSCOPE_BASE_URL"):
+    for label in ("RA_HOST", "ARP_HOST", "ODBX_MCP_URL", "TESTSCOPE_BASE_URL"):
         assert label in r.stdout, r.stdout
     out = r.stdout + r.stderr
     for secret in (RA, ARP, ODB, TS, "pw-not-real", "proxy.example"):
@@ -78,13 +83,16 @@ def test_빠진_목적지를_설정_이름으로_말하고_주소는_찍지_않�
     assert not calls.exists()
 
 
-def test_라우트는_원격_호스트만_본다_루프백_주석_끈_라우트는_뺀다(box):
-    """루프백 라우트는 프록시와 무관하고, routes.local.env 의 `ste=`(빈 값)는 추적 파일의 ste 를 이 박스에서 끈 것이다."""
+def test_라우트는_nginx_가_불러_목적지로_세지_않는다(box):
+    """HP-22 — nginx 는 프록시 환경을 쓰지 않는다. 10-25 cae00 의 'NO_PROXY 에 없는 내부 목적지' 셋(rootdesign · compcore · simengbay)이
+    라우트였다 — 거짓 경보였다. 라우트 호스트를 포털이 따로 부르면 그 설정(RA_HOST 등)으로 이미 센다."""
     _, run, _ = box
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=ALL)            # 라우트만의 호스트(ROUTE_ONLY)는 없다
+    assert r.returncode == 0, r.stdout + r.stderr
     r = run("--internal", https_proxy=PROXY, NO_PROXY=f"{RA},{ARP},{TS}")
-    assert r.returncode == 1 and "라우트 odb-hub" in r.stdout
-    for not_a_dest in ("heax-hub", "ai-data-hub", "ste", "aireadyportal", "report-archive"):
-        assert not_a_dest not in r.stdout, f"{not_a_dest} 는 볼 목적지가 아니다(report-archive 는 RA_HOST 와 같은 호스트다): {r.stdout}"
+    assert r.returncode == 1 and r.stdout.strip() == "ODBX_MCP_URL", r.stdout
+    for not_a_dest in ("heax-hub", "ai-data-hub", "ste", "aireadyportal", "report-archive", "odb-hub", "라우트"):
+        assert not_a_dest not in r.stdout, f"{not_a_dest} 는 볼 목적지가 아니다: {r.stdout}"
 
 
 @pytest.mark.parametrize("np_list,covered", [
@@ -116,6 +124,7 @@ def test_호스트명은_도메인_꼬리로도_덮인다(box):
     (repo / "backend/.env").write_text("")
     (repo / "backend/config/routes.local.env").write_text("")
     (repo / "backend/config/routes.env").write_text("")
+    (repo.parent / "HWAXMcpGateway/provision.env").write_text("")
     assert run("--internal", https_proxy=PROXY, NO_PROXY=".corp.example").returncode == 0
     assert run("--internal", https_proxy=PROXY, NO_PROXY="corp.example").returncode == 0
     r = run("--internal", https_proxy=PROXY, NO_PROXY="*.corp.example")
@@ -153,7 +162,7 @@ def test_두_철자가_다르면_소문자로_판정하고_다르다고_말한�
 
 def test_설정_파일이_없는_박스에서도_죽지_않는다(box):
     repo, run, _ = box
-    for f in ("infra/.env", "backend/.env", "backend/config/routes.env", "backend/config/routes.local.env"):
+    for f in ("infra/.env", "backend/.env", "backend/config/routes.env", "backend/config/routes.local.env", "../HWAXMcpGateway/provision.env"):
         (repo / f).unlink()
     r = run("--internal", https_proxy=PROXY, NO_PROXY="127.0.0.1")
     assert r.returncode == 0 and "unbound variable" not in r.stderr, r.stdout + r.stderr
@@ -180,7 +189,7 @@ def test_전체_진단에서도_내부_목적지를_본다(box):
     _, run, calls = box
     r = run(https_proxy=PROXY, NO_PROXY="127.0.0.1,localhost", EGRESS_TIMEOUT="2")
     assert r.returncode == 0, r.stderr
-    assert "RA_HOST" in r.stdout and "라우트 odb-hub" in r.stdout and RA not in r.stdout
+    assert "RA_HOST" in r.stdout and "ODBX_MCP_URL" in r.stdout and RA not in r.stdout
     assert calls.exists(), "전체 진단은 종전대로 바깥을 찔러 본다"
 
 
@@ -194,7 +203,8 @@ def _gate(repo: Path, **env) -> str:
     script = "\n".join([
         "set -uo pipefail", "FAIL=0",
         'ok() { echo "OK:$*"; }; bad() { echo "BAD:$*"; }; fail() { echo "FAIL:$*"; FAIL=1; }',
-        'hwax_skip() { echo "SKIP:$1"; }', f'SELF_REPO="{repo}"', _gate_block(), 'echo "FAIL=$FAIL"',
+        'hwax_skip() { echo "SKIP:$1"; }', 'gw_health() { printf %s "${GWH:-}"; }', f'SELF_REPO="{repo}"', _gate_block(),
+        'echo "FAIL=$FAIL"',
     ])
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                        env={"PATH": os.environ["PATH"], "HOME": str(repo.parent), **env})
@@ -206,7 +216,7 @@ def test_update_all_은_빠진_목적지를_경고로_말하고_실패로_세지
     repo, _, _ = box
     out = _gate(repo, https_proxy=PROXY, NO_PROXY=f"127.0.0.1,localhost,{RA},{ARP}")
     line = [ln for ln in out.splitlines() if ln.startswith("BAD:")]
-    assert len(line) == 1 and "라우트 odb-hub" in line[0] and "TESTSCOPE_BASE_URL" in line[0], out
+    assert len(line) == 1 and "ODBX_MCP_URL" in line[0] and "TESTSCOPE_BASE_URL" in line[0], out
     assert "RA_HOST" not in line[0], "1g 가 더한 것은 빠졌다고 하지 않는다"
     assert "FAIL=0" in out and "FAIL:" not in out, "경고다 — 종료코드를 세우지 않는다"
     assert ODB not in out and TS not in out and "pw-not-real" not in out
@@ -241,7 +251,7 @@ def test_대역으로만_덮인_목적지는_빠졌다고_하고_대역이_죽�
     _, run, calls = box
     r = run("--internal", https_proxy=PROXY, NO_PROXY=CIDRS)
     assert r.returncode == 1, r.stdout + r.stderr
-    for label in ("RA_HOST", "ARP_HOST", "라우트 odb-hub", "TESTSCOPE_BASE_URL"):
+    for label in ("RA_HOST", "ARP_HOST", "ODBX_MCP_URL", "TESTSCOPE_BASE_URL"):
         assert label in r.stdout, r.stdout
     assert "대역" in r.stdout and "2개" in r.stdout and "httpx" in r.stdout, r.stdout
     assert len(r.stdout.strip().splitlines()) == 1, "update-all 이 이 한 줄을 그대로 싣는다"
@@ -268,11 +278,11 @@ def test_전체_진단도_죽은_항목을_경고한다(box):
 
 
 def test_update_all_은_대역으로만_덮인_박스를_초록으로_보지_않는다(box):
-    """1g 가 RA·ARP 를 글자 그대로 더한 뒤의 모양 — 나머지(라우트·TestScope)는 운영자의 대역뿐이다."""
+    """1g 가 RA·ARP 를 글자 그대로 더한 뒤의 모양 — 나머지(TestScope · 게이트웨이 일반 앱)는 운영자의 대역뿐이다."""
     repo, _, _ = box
     out = _gate(repo, https_proxy=PROXY, NO_PROXY=f"{CIDRS},{RA},{ARP}")
     (line,) = [ln for ln in out.splitlines() if ln.startswith("BAD:")]
-    assert "라우트 odb-hub" in line and "TESTSCOPE_BASE_URL" in line and "RA_HOST" not in line and "대역" in line, out
+    assert "ODBX_MCP_URL" in line and "TESTSCOPE_BASE_URL" in line and "RA_HOST" not in line and "대역" in line, out
     assert "FAIL=0" in out and "203.0.113.0" not in out and ODB not in out
 
 
@@ -292,7 +302,7 @@ def _httpx_direct(monkeypatch, np: str, url: str) -> bool:
 def _one_dest(box, host: str):
     repo, run, _ = box
     (repo / "infra/.env").write_text(f"RA_HOST={host}\n")
-    for f in ("backend/.env", "backend/config/routes.env", "backend/config/routes.local.env"):
+    for f in ("backend/.env", "backend/config/routes.env", "backend/config/routes.local.env", "../HWAXMcpGateway/provision.env"):
         (repo / f).write_text("")
     return run
 
@@ -342,6 +352,7 @@ def test_포트_판정이_httpx_가_실제로_고르는_길과_같다(box, monke
     (repo / "backend/config/routes.env").write_text("")
     (repo / "backend/config/routes.local.env").write_text("")
     (repo / "backend/.env").write_text(f"TESTSCOPE_BASE_URL={ts_url}\n")
+    (repo.parent / "HWAXMcpGateway/provision.env").write_text("")
     np = f"127.0.0.1,localhost,{entry}"
     covered = run("--internal", https_proxy=PROXY, NO_PROXY=np).returncode == 0
     direct = _httpx_direct(monkeypatch, np, ts_url)
@@ -349,11 +360,12 @@ def test_포트_판정이_httpx_가_실제로_고르는_길과_같다(box, monke
 
 
 def test_한_호스트를_두_포트로_부르면_포트_붙은_항목_하나로는_덮이지_않는다(box):
-    """라우트와 TestScope 가 같은 호스트의 다른 포트다 — 어느 포트 하나를 적은 항목은 다른 쪽 호출을 못 덮는다."""
+    """포털의 TestScope 와 게이트웨이의 일반 앱(ODBX, :8000)이 같은 호스트의 다른 포트다 — 어느 포트 하나를 적은 항목은 다른 쪽 호출을
+    못 덮는다(옛 게이트웨이 — 둘 다 이 셸로 잰다)."""
     repo, run, _ = box
     (repo / "infra/.env").write_text("")
     (repo / "backend/config/routes.env").write_text("")
-    (repo / "backend/config/routes.local.env").write_text(f"odb-hub=http://{ODB}:8000/\n")
+    (repo / "backend/config/routes.local.env").write_text("")
     (repo / "backend/.env").write_text(f"TESTSCOPE_BASE_URL=http://{ODB}:8020/\n")
     assert run("--internal", https_proxy=PROXY, NO_PROXY=f"{ODB}:8000").returncode == 1
     assert run("--internal", https_proxy=PROXY, NO_PROXY=ODB).returncode == 0
@@ -368,7 +380,7 @@ def test_일반_앱의_MCP_와_위임_주소도_목적지로_본다(box):
     """게이트웨이 provision.env 의 일반 앱(PER_USER_SSO_APPS) — 게이트웨이가 그 MCP 와 위임 창구를 부른다(10-20, docs/sso-delegation).
     한 호스트를 두 포트로 부르므로 포트 붙은 항목 하나로는 덮이지 않는다. 목록에 없는 접두 · 못 읽은 쌍은 보지 않는다."""
     repo, run, calls = box
-    gw = repo.parent / "HWAXMcpGateway"; gw.mkdir()
+    gw = repo.parent / "HWAXMcpGateway"; gw.mkdir(exist_ok=True)
     (gw / "provision.env").write_text(
         f'PER_USER_SSO_APPS="matnexus:MATNEXUS bad:9X"   # 일반 앱\nMATNEXUS_MCP_URL=http://{MNX}:8012/mcp\n'
         f'MATNEXUS_SSO_URL=http://{MNX}:8010/api/auth/sso\nOTHER_MCP_URL=http://192.0.2.61:9000/mcp\n')
@@ -379,3 +391,57 @@ def test_일반_앱의_MCP_와_위임_주소도_목적지로_본다(box):
     assert run("--internal", https_proxy=PROXY, NO_PROXY=f"{ALL},{MNX}:8012").returncode == 1, "포트 하나로는 두 포트를 못 덮는다"
     assert run("--internal", https_proxy=PROXY, NO_PROXY=f"{ALL},{MNX}").returncode == 0
     assert not calls.exists()
+
+
+# ── 게이트웨이 목적지 — 게이트웨이 /health 의 보정 결과로(HP-22 · HG-18) · 외부 연결 connect: 도 센다(HP-23) ──────────────────
+def _gwh(**kw) -> str:
+    import json
+    return json.dumps({"status": "ok", "no_proxy": {"auto": True, "added": 7, "unwritable": 0, "all": False, "proxy": True, **kw}})
+
+
+def test_게이트웨이가_보정을_알리면_그_목적지는_이_셸로_재지_않는다(box):
+    """게이트웨이는 제 목적지를 기동 · 합류 · 연결 때 NO_PROXY 에 스스로 더한다 — 이 셸에 없다고 경보하면 거짓이다."""
+    _, run, calls = box
+    portal_only = f"127.0.0.1,localhost,{RA},{ARP},{TS}"
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=portal_only, GW_HEALTH_JSON=_gwh())
+    assert r.returncode == 0 and "게이트웨이가 스스로 우회한다(보정 7곳)" in r.stdout, r.stdout + r.stderr
+    assert "내부 목적지 3곳" in r.stdout, "게이트웨이 목적지는 여기서 세지 않는다"
+    assert not calls.exists(), "--internal 은 게이트웨이를 묻지 않는다 — 부르는 쪽이 본문을 준다"
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=portal_only, GW_HEALTH_JSON=_gwh(unwritable=2))
+    assert r.returncode == 1 and "게이트웨이 목적지 2곳" in r.stdout, r.stdout
+    for ok_kw in ({"unwritable": 2, "all": True}, {"unwritable": 2, "proxy": False}):
+        assert run("--internal", https_proxy=PROXY, NO_PROXY=portal_only, GW_HEALTH_JSON=_gwh(**ok_kw)).returncode == 0, ok_kw
+    # 포털 쪽은 여전히 이 셸로 잰다
+    r = run("--internal", https_proxy=PROXY, NO_PROXY="127.0.0.1", GW_HEALTH_JSON=_gwh())
+    assert r.returncode == 1 and "RA_HOST" in r.stdout and "ODBX" not in r.stdout, r.stdout
+
+
+def test_옛_게이트웨이거나_본문을_못_받으면_이_셸로_잰다(box):
+    _, run, _ = box
+    portal_only = f"127.0.0.1,localhost,{RA},{ARP},{TS}"
+    for body in ('{"status": "ok"}', "깨진 본문", ""):
+        r = run("--internal", https_proxy=PROXY, NO_PROXY=portal_only, GW_HEALTH_JSON=body)
+        assert r.returncode == 1 and r.stdout.strip() == "ODBX_MCP_URL", (body, r.stdout)
+
+
+def test_외부_연결_connect_의_호스트도_게이트웨이_목적지로_센다(box):
+    """HP-23 — 설정으로 붙는 FMEA · MatNexus 의 mcp_url 호스트도 잡는다(박스 권한표의 connect: — 추적 권한표는 connect 를 읽지 않는다)."""
+    repo, run, _ = box
+    (repo / "backend/config/access.local.yaml").write_text(
+        "platforms:\n  - id: fmea\n    gateway: [fmea]\n    connect:\n      mcp_url: http://203.0.113.60:5190/mcp\n"
+        "  - id: plain\n    gateway: [plain]\n", encoding="utf-8")
+    r = run("--internal", https_proxy=PROXY, NO_PROXY=ALL)
+    assert r.returncode == 1 and r.stdout.strip() == "외부 연결 fmea", r.stdout + r.stderr
+    assert "203.0.113.60" not in r.stdout + r.stderr
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=ALL + ",203.0.113.60:5190").returncode == 0, "포트가 붙은 항목은 그 포트를 덮는다"
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=ALL, GW_HEALTH_JSON=_gwh()).returncode == 0, "보정을 알린 게이트웨이면 세지 않는다"
+    (repo / "backend/config/access.local.yaml").write_text("platforms: [깨진", encoding="utf-8")
+    assert run("--internal", https_proxy=PROXY, NO_PROXY=ALL).returncode == 0, "못 읽는 권한표는 건너뛴다(포털도 그 선언을 버린다)"
+
+
+def test_update_all_은_게이트웨이_본문을_새로_물어_넘긴다(box):
+    repo, _, _ = box
+    out = _gate(repo, https_proxy=PROXY, NO_PROXY=f"127.0.0.1,localhost,{RA},{ARP},{TS}", GWH=_gwh())
+    assert out.startswith("OK:프록시 우회") and "게이트웨이가 스스로 우회한다" in out and "FAIL=0" in out, out
+    out = _gate(repo, https_proxy=PROXY, NO_PROXY=f"127.0.0.1,localhost,{RA},{ARP},{TS}")
+    assert "BAD:프록시 우회" in out and "ODBX_MCP_URL" in out, "본문이 없으면(옛 게이트웨이) 이 셸로 잰다"
