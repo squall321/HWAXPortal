@@ -98,11 +98,12 @@ if [ "${1:-}" = "--check" ]; then
   if [ "$MODE" = direct ]; then
     ok "transport 가 direct 다 — 포털이 헤드에 직결이라 터널이 필요 없다($TENV)"; exit 0
   fi
+  _unit_rc=0
   if [ -f "$UNIT" ]; then
     ok "유닛 설치됨: $UNIT ($(systemctl --user is-active ste-tunnel 2>/dev/null || echo unknown))"
     # 파일이 있어도 옛 손 유닛이면 15810 만 연다 — -L 목록을 본다(cae00 실측 2026-09-27)
     if grep -q -- '-L 127.0.0.1:15812:' "$UNIT"; then ok "유닛에 -L 15812 있음"
-    else bad "유닛에 -L 15812 포워딩이 없다(옛 손 유닛) — 인자 없이 다시 실행하면 리포 유닛으로 덮어쓰고 재기동한다"; fi
+    else bad "유닛에 -L 15812 포워딩이 없다(옛 손 유닛) — 인자 없이 다시 실행하면 리포 유닛으로 덮어쓰고 재기동한다"; _unit_rc=1; fi
   else bad "유닛 없음: $UNIT"; fi
   # ⚠ `check_ports; _cp=$?` 로 쓰면 안 된다 — 이 스크립트는 set -e 라 check_ports 가 1 을 내는 순간 **여기서 끝나고**
   #   아래 진단(리스너·원인 분기·옛 터널)이 한 번도 안 돌았다(2026-09-28 dev 실측: rc 1 인데 진단 0줄). 종전 판의
@@ -113,6 +114,9 @@ if [ "${1:-}" = "--check" ]; then
     _st="$(_stray_pids)"
     [ -n "$_st" ] && bad "유닛이 아닌 ssh 가 그 포트를 잡고 있다(pid $_st) — 인자 없이 실행하면 그것을 내리고 유닛으로 다시 세운다"
   fi
+  # 포트가 지금 답해도 유닛이 15812 를 열지 않으면 실패다 — 그 포트를 쥔 것(옛 손 터널)이 죽으면 15812 도 함께 사라진다. update-all §2d 는
+  # 이 rc 로 터널을 다시 세울지 정한다(docs/request-1027 HP-27 — 종전엔 ✗ 만 찍고 0 이었다).
+  [ "$_cp" != 0 ] || _cp=$_unit_rc
   exit $_cp
 fi
 

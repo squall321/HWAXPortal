@@ -188,6 +188,23 @@ def test_check_entrypoint_splits_listener_present_but_refused(tmp_path):
     assert r.returncode == 1 and "포트는 열려 있는데 000" in out and "헤드에서 127.0.0.1:15812 로 가는 연결이 거부" in out, out
 
 
+def test_check_fails_when_the_unit_lacks_15812_even_if_ports_answer(tmp_path):
+    """docs/request-1027 HP-27 — 옛 손 유닛(15810 만 연다)이 깔려 있어도 15812 를 다른 것(옛 손 터널)이 지금 쥐고 있으면 두 포트가 답한다.
+    종전엔 ✗ 만 찍고 0 으로 끝나 update-all §2d 가 고치지 않았다 — 그 터널이 죽으면 15812 도 함께 사라진다."""
+    rule = 'case "$*" in *15810*) printf 200 ;; *15812*) printf 406 ;; *) printf 000 ;; esac'
+    run, home = _sandbox(tmp_path, "teleport", curl_rule=rule)
+    unit = home / ".config/systemd/user/ste-tunnel.service"
+    unit.parent.mkdir(parents=True)
+    unit.write_text("[Service]\nExecStart=/usr/bin/ssh -N -L 127.0.0.1:15810:127.0.0.1:15810 u@h\n")
+    r, _ = run("--check")
+    out = r.stdout + r.stderr
+    assert "15812 (MCP) → 406" in out and "-L 15812 포워딩이 없다" in out, out
+    assert r.returncode == 1, out
+    unit.write_text((ROOT / "infra/systemd/ste-tunnel.service").read_text(encoding="utf-8"))
+    r, _ = run("--check")
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
 def test_check_entrypoint_says_direct_boxes_need_no_tunnel(tmp_path):
     """dev 실측: direct 박스인데 '유닛 없음·000·000' 빨강이었다."""
     run, _ = _sandbox(tmp_path, "direct")
