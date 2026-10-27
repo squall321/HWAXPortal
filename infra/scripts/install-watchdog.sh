@@ -10,15 +10,19 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATE_DIR="$HOME/.local/state/hwax"; LOG="$STATE_DIR/watchdog.log"
 MARK="# hwax-watchdog"
+# 'no crontab' 만 빈 목록이다 — 못 읽었는데 다시 쓰면 백업 · 터널 줄이 함께 지워진다(docs/request-1027 HP-18)
+. "$ROOT/infra/scripts/lib/crontab-safe.sh"
 if [ "${1:-}" = "--remove" ]; then
-  crontab -l 2>/dev/null | grep -vF "$MARK" | crontab -
+  hwax_crontab_replace "$MARK" || { echo "✗ crontab 을 읽지 못해 감시 크론을 지우지 않았다(지금 줄은 그대로) — 위 까닭을 보고 다시 실행"; exit 1; }
   echo "✓ hwax-watchdog 크론 제거 (상태 $STATE_DIR/watchdog · 로그 $LOG 는 남김)"; exit 0
 fi
 mkdir -p -m 755 "$STATE_DIR"
 LINE="* * * * * $ROOT/infra/scripts/services.sh heal >> $LOG 2>&1  $MARK"
-if crontab -l 2>/dev/null | grep -qxF "$LINE"; then
+_cur="$(hwax_crontab_get)" || { echo "✗ crontab 을 읽지 못해 감시 크론을 고치지 않았다(지금 줄은 그대로) — 위 까닭을 보고 다시 실행"; exit 1; }
+if grep -qxF -- "$LINE" <<<"$_cur"; then
   echo "· 서비스 감시 크론 이미 최신"
-else
-  ( crontab -l 2>/dev/null | grep -vF "$MARK"; echo "$LINE" ) | crontab -
+elif hwax_crontab_replace "$MARK" "$LINE"; then
   echo "✓ 서비스 감시 크론 등록/갱신: 매분 services.sh heal (로그 $LOG — 일이 있을 때만 쓴다)"
+else
+  echo "✗ 감시 크론을 쓰지 못했다 — crontab -l 로 지금 줄을 확인"; exit 1
 fi

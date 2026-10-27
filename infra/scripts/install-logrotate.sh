@@ -14,9 +14,11 @@ TMPL="$ROOT/infra/logrotate/hwax.conf.tmpl"
 CONF_DIR="$HOME/.config/hwax"; CONF="$CONF_DIR/logrotate.conf"
 STATE_DIR="$HOME/.local/state/hwax"; STATE="$STATE_DIR/logrotate.status"; LOG="$STATE_DIR/logrotate.log"
 MARK="# hwax-logrotate"
+# 'no crontab' 만 빈 목록이다 — 못 읽었는데 다시 쓰면 백업 · 감시 · 터널 줄이 함께 지워진다(docs/request-1027 HP-18)
+. "$ROOT/infra/scripts/lib/crontab-safe.sh"
 
 if [ "${1:-}" = "--remove" ]; then
-  ( crontab -l 2>/dev/null | grep -vF "$MARK" ) | crontab - 2>/dev/null || true
+  hwax_crontab_replace "$MARK" || { echo "✗ crontab 을 읽지 못해 회전 크론을 지우지 않았다(지금 줄은 그대로) — 위 까닭을 보고 다시 실행"; exit 1; }
   echo "✓ hwax-logrotate 크론 제거 (렌더 파일 $CONF 와 상태 $STATE 는 남김)"; exit 0
 fi
 LR="$(command -v logrotate || true)"
@@ -40,9 +42,11 @@ echo "✓ 렌더 $CONF · 대상 로그 ${N}개(-d 검증 통과)"
 
 # 매시 17분 — maxsize 는 실행 시점에만 평가된다. 치환형 멱등(마커).
 LINE="17 * * * * $LR -s $STATE $CONF >> $LOG 2>&1  $MARK"
-if crontab -l 2>/dev/null | grep -qxF "$LINE"; then
+_cur="$(hwax_crontab_get)" || { echo "✗ crontab 을 읽지 못해 회전 크론을 고치지 않았다(지금 줄은 그대로) — 위 까닭을 보고 다시 실행"; exit 1; }
+if grep -qxF -- "$LINE" <<<"$_cur"; then
   echo "· 크론 이미 최신"
-else
-  ( crontab -l 2>/dev/null | grep -vF "$MARK"; echo "$LINE" ) | crontab -
+elif hwax_crontab_replace "$MARK" "$LINE"; then
   echo "✓ 크론 등록/갱신: 매시 17분 → $CONF (상태 $STATE, 로그 $LOG)"
+else
+  echo "✗ 회전 크론을 쓰지 못했다 — crontab -l 로 지금 줄을 확인"; exit 1
 fi

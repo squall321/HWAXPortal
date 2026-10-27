@@ -55,11 +55,15 @@ if [ "${1:-}" = "--install-cron" ]; then
   SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup-local.sh"
   mkdir -p "$ROOT"
   LINE="30 3 * * * BACKUP_ROOT=$BACKUP_ROOT RETAIN_DAYS=$RETAIN_DAYS $SELF >> $LOG_PATH 2>&1"
-  if crontab -l 2>/dev/null | grep -qxF "$LINE"; then
+  # 'no crontab' 만 빈 목록이다 — 못 읽었는데 다시 쓰면 감시 · 터널 줄이 함께 지워진다(docs/request-1027 HP-18)
+  . "$SELF_REPO/infra/scripts/lib/crontab-safe.sh"
+  _cur="$(hwax_crontab_get)" || { echo "✗ crontab 을 읽지 못해 백업 크론을 고치지 않았다(지금 줄은 그대로) — 위 까닭을 보고 다시 실행"; exit 1; }
+  if grep -qxF -- "$LINE" <<<"$_cur"; then
     echo "· cron 이미 최신 (crontab -l 로 확인)"
-  else
-    ( crontab -l 2>/dev/null | grep -vF "$SELF"; echo "$LINE" ) | crontab -
+  elif hwax_crontab_replace "$SELF" "$LINE"; then
     echo "✓ cron 등록/갱신: 매일 03:30 → $ROOT (로그 $LOG_PATH)"
+  else
+    echo "✗ 백업 크론을 쓰지 못했다 — crontab -l 로 지금 줄을 확인"; exit 1
   fi
   exit 0
 fi

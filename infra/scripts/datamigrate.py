@@ -81,7 +81,11 @@ def pause_crons() -> None:
     f = state_dir() / "crontab.paused"
     if f.exists():
         print("  ⚠ 이전 실행의 크론 일시정지가 남아 있다 — 먼저 복원한다"); resume_crons()
-    cur = sh("crontab -l", check=False).stdout
+    r = sh("LC_ALL=C crontab -l", check=False)
+    # 'no crontab' 만 빈 목록이다 — 못 읽은 채 아래 `crontab -r` 로 가면 복원본이 비어 모든 줄을 잃는다(docs/request-1027 HP-18)
+    if r.returncode != 0 and not r.stderr.startswith("no crontab for "):
+        raise SystemExit(f"  ✗ crontab -l 실패(rc {r.returncode}) — 크론을 일시정지할 수 없어 옮기지 않는다: {r.stderr.strip()[:300]}")
+    cur = r.stdout
     f.write_text(cur)
     sh("crontab -r", check=False)
     print(f"  · 크론 {len([l for l in cur.splitlines() if l.strip() and not l.startswith('#')])}줄 일시정지 → {f}")

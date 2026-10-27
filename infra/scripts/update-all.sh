@@ -452,16 +452,20 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
     tail -3 "$BK_LOG" | sed 's/^/  /'
   fi
   rm -f "$BK_LOG"
-  "$SELF_REPO/infra/scripts/backup-local.sh" --install-cron 2>&1 | sed 's/^/  /' || true
+  # 설치기는 crontab 을 못 읽으면 쓰지 않고 1 로 끝난다(docs/request-1027 HP-18) — 삼키지 않고 경고로 센다
+  "$SELF_REPO/infra/scripts/backup-local.sh" --install-cron 2>&1 | sed 's/^/  /' \
+    || bad "일일 백업 크론을 설치 · 갱신하지 못했다(위 ✗ 줄 — 크론은 그대로 두었다)"
   # 로그 회전(data-migration D0 ⑦) — infra/.env 에 HWAX_LOGROTATE=1 일 때만. 기본은 안 켠다:
   # D0 항목 중 유일하게 박스 운영 동작(회전)을 바꾸는 것이라 env 게이트 없이 cae00 에 퍼지지 않게 한다.
   if grep -qE '^HWAX_LOGROTATE=1' "$SELF_REPO/infra/.env" 2>/dev/null && [ -x "$SELF_REPO/infra/scripts/install-logrotate.sh" ]; then
-    "$SELF_REPO/infra/scripts/install-logrotate.sh" 2>&1 | sed 's/^/  /' || true
+    "$SELF_REPO/infra/scripts/install-logrotate.sh" 2>&1 | sed 's/^/  /' \
+      || bad "로그 회전 크론을 설치 · 갱신하지 못했다(위 ✗ 줄)"
   fi
   # 서비스 감시(followups-1017 FU-D22) — infra/.env 에 HWAX_WATCHDOG=1 일 때만. 박스의 운영 동작(죽은 서비스를 다시 띄움)을 바꾸므로
   # 로그 회전과 같이 env 게이트로 둔다. 끈 채 두면 그 사실을 남긴다(안 켠 기능도 로그에).
   if grep -qE '^HWAX_WATCHDOG=1' "$SELF_REPO/infra/.env" 2>/dev/null && [ -x "$SELF_REPO/infra/scripts/install-watchdog.sh" ]; then
-    "$SELF_REPO/infra/scripts/install-watchdog.sh" 2>&1 | sed 's/^/  /' || true
+    "$SELF_REPO/infra/scripts/install-watchdog.sh" 2>&1 | sed 's/^/  /' \
+      || bad "서비스 감시 크론을 설치 · 갱신하지 못했다(위 ✗ 줄 — 크론은 그대로 두었다)"
   else
     hwax_skip "서비스 감시" "HWAX_WATCHDOG=1 이 아니다 — 죽은 포털 · 게이트웨이 · 에이전트 서버 · mxwp-mcp · searxng 를 아무도 다시 띄우지 않는다" \
       "infra/.env 에 HWAX_WATCHDOG=1 을 적고 update-all(매분 services.sh heal — 포트 연결 거부 세 번일 때만 down · up)"
