@@ -22,3 +22,27 @@
 - **D-6 `/ste/` 결과 파일(HP-47)** — 연결 · 속도 제한 손잡이를 두되 기본은 끈다. 다른 사용자 지연이 보이면 `infra/.env` 한 줄로 켠다.
 - **D-7 절차 사전 점검(HP-48)** — 선언 플랫폼(FMEA · MatNexus) 단계도 시작 전에 토큰 등록을 본다(RA 와 같은 꼴).
 - **D-8 웹 심의 좌석(HP-49)** — 20 그대로(포털 D-3). 엔진의 `DELIB_MAX_SEATS` 는 MCP · 엔진 쪽 손잡이로만 쓴다.
+
+## 1. update-all 안전 — 고친 것의 판단(10-28 KST)
+
+- **HG-08** heax PAT 는 새것을 받은 뒤에 옛것을 지운다(게이트웨이 `bd94c48`). 발급이 실패하면 직전 토큰이 그대로 남아 heax 백엔드 수가 줄지 않는다.
+- **HP-09** 재검증 기준을 '키가 있다' 에서 token · servers_url 이 실제로 있는지로 바꿨다. 마지막 점검에서 HEAX 앱이 0 이면 — 레지스트리는 있는데
+  앱이 없으면 경고, 레지스트리가 없으면 HEAXHub 리포가 있는 박스에서만 실패(없는 박스는 경고).
+- **HP-08** repair_mcp 는 심의가 돌거나 줄 서 있을 때(`hwax_delib_busy` 0)만 건너뛰고 ○ 로 남긴다. 모름(2 · 4)은 막지 않는다 — 옛 엔진이나
+  에이전트 서버가 내려간 때 복구까지 막지 않게.
+- **HP-06** 도구 지도는 파일로 넘긴다. 환경 변수 한 줄의 상한은 128 KiB(MAX_ARG_STRLEN)다. cae00 지도는 150 KB · dev 는 54 KB 라 dev 에서는
+  재현되지 않았다 — 시험은 큰 지도를 만들어 세 곳을 다 돈다.
+- **HP-07** TOOL_MAX 는 박스 값을 덮지 않는다(값이 없을 때만 0).
+- **HP-01** 표지 계약 — 자리 `platform/infra/data/deploy.lock.d/pid`, 꼴 `"<pid> <epoch> deploy-all"`. 감시 쪽은 KooRemapper `f1ab307`(첫 칸만
+  읽는다 · update-all 잠금은 `/proc/locks` 로 잡지 않고 본다). `flock -n` 으로 엿보면 그 순간 뜨는 update-all 의 0b 가 감독자를 진짜 보유자로
+  보고(`_lock_holders` — comm `flock*` · 명령줄 `*infra/scripts/*`) 그만둘 수 있어 읽기로 바꾸게 했다. 앞서 그쪽에 'infra/.state 의 0b flock' 이라고
+  잘못 알렸다가 바로잡았다 — 잠금은 `/tmp/hwax-update-all.<리포 경로 md5 8자>.lock` 하나뿐이다.
+- **HP-18** 'no crontab for' 문구로만 빈 목록을 가른다 — cron 은 없을 때와 못 읽을 때 둘 다 rc 1 이라 rc 로는 못 가른다(C 로캘로 부른다).
+  요청서가 짚은 두 곳 밖에 같은 꼴 둘도 고쳤다 — install-watchdog, 그리고 datamigrate 의 pause_crons(못 읽은 빈 목록을 복원본으로 적고
+  곧바로 `crontab -r` 해 가장 위험했다). update-all 1b 는 설치기 실패를 `|| true` 로 삼키지 않고 경고로 센다.
+- **HP-04** 두 변수는 비었을 때만 채운다(준 값은 그대로). **박스 crontab 맨 위 두 줄(임시, OB-75)을 걷기 전에 볼 것** — 감시
+  (`services.sh heal` → services.py)는 두 변수를 스스로 채우지 않는다(start.sh 는 XDG 만). 걷은 뒤 감시가 인스턴스를 다시 띄우다 같은 rc 255 를
+  낼 수 있으니, 걷기 전에 크론과 같은 빈 환경(`env -i HOME=… PATH=/usr/bin:/bin`)에서 `services.sh heal` 이 인스턴스를 띄우는지 본다.
+- **HP-17** 포털 파일은 리포 안 자리 그대로 담는다(`portal/infra/.env` …) — 되돌릴 때 `portal/` 을 리포 루트에 그대로 얹으면 된다. 박스 파일은
+  이름 목록이 아니라 git 의 '추적 안 되는 파일'(무시된 것 포함)로 고른다 — cae00 의 `systems.cae00.yaml` · `saml/prod` 처럼 요청서에 없는
+  것도 담기고, 새 박스 파일이 생겨도 빠지지 않는다. 연결 토큰 키(D-5)는 키가 생기는 HP-05 커밋에서 백업도 같이 넣는다.

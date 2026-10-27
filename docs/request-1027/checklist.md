@@ -9,10 +9,10 @@
 - [x] HP-08 repair_mcp 앞 `hwax_delib_busy` — 바쁘면 건너뜀(선택: 지금 config 의 HEAX_MCP_TOKEN 넘기기)
 - [x] HP-06 헬스게이트 도구 지도를 파일로(세 곳) · python 실패를 ⚠ 로
 - [x] HP-07 TOOL_MAX 를 덮지 않는다 · ok 문구는 `/health` tool_cut
-- [x] HP-01 KooRemapper 재기동 표지 `$DATA_DIR/deploy.lock.d`(PID, trap 으로 지움) — 감시 쪽은 KooRemapper KR-04
-- [ ] HP-04 backup-local — XDG_RUNTIME_DIR · DBUS_SESSION_BUS_ADDRESS 스스로 채움
-- [ ] HP-17 비밀 백업 — portal/infra · portal/backend 로 나눔 + 박스 파일 · exclude · crontab · 리스크 secrets.env · origin.json · 연결 토큰 키(D-5)
-- [ ] HP-18 `--install-cron` · `install-logrotate` — 'no crontab' 만 빈 목록, 그 밖 실패는 멈춤
+- [x] HP-01 KooRemapper 재기동 표지 `$DATA_DIR/deploy.lock.d`(PID, trap 으로 지움) — 감시 쪽은 KooRemapper KR-04(`f1ab307` — 첫 칸만 · 잠금은 /proc/locks)
+- [x] HP-04 backup-local — XDG_RUNTIME_DIR · DBUS_SESSION_BUS_ADDRESS 스스로 채움(박스 crontab 두 줄 OB-75 는 감시를 본 뒤 — context-notes)
+- [x] HP-17 비밀 백업 — portal/infra · portal/backend 로 나눔 + 박스 파일 · exclude · crontab · 리스크 secrets.env · origin.json(연결 토큰 키 D-5 는 HP-05 커밋에서)
+- [x] HP-18 `--install-cron` · `install-logrotate` — 'no crontab' 만 빈 목록, 그 밖 실패는 멈춤(같은 꼴 install-watchdog · datamigrate 도)
 - [ ] HP-11 services.py Popen 에 `infra/.env` 의 NO_PROXY 리터럴
 - [ ] HP-12 nginx `/ste/` read timeout 손잡이 `NGINX_STE_READ_TIMEOUT` + 시험
 - [ ] HP-13 nginx `simflow` · `stcx-llm` 갈래
