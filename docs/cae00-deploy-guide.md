@@ -712,6 +712,12 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
   감시(`services.sh heal`)는 채우지 않는다. 걷기 전에 크론과 같은 빈 환경에서 감시가 인스턴스를 띄우는지 본다 —
   `env -i HOME="$HOME" PATH=/usr/bin:/bin ./infra/scripts/services.sh heal`.
 
+- **HE팀 운영자 동기화(정본이 바뀌었다 — MX 백서 운영자)** — update-all 이 끝난 뒤 `python3 infra/scripts/sync-he-personas.py` 미리보기 →
+  `--apply`. 위키가 꺼진 이 박스에서는 MX 백서 운영자가 위키 몫 없이 만들어진다(미리보기에 '· 일부 … wiki_ask 없이' 한 줄). update-all 은
+  AIDH 를 합친 뒤 같은 미리보기를 돌려 이 박스 판과 다르면 ⚠ 로 알린다(HP-35).
+- update-all §6 에 `○ 사람별 위임 <앱> 비밀 대조` 가 나오면 그 앱에 verify 창구가 없다는 기록이다(오류 아님). `✗ … 비밀이 상대와 다르다` 면
+  그 앱의 위임 비밀과 `HWAXMcpGateway/provision.env` 의 `<접두>_SSO_SECRET` 을 맞춘다(HP-26).
+
 ### 다음 날 확인
 
 - `/data/backups/hwax/<박스>/backup.log` 에 `kooremapper → kooremapper-…sql.gz` 가 있다(HP-04 — 10-02 부터 매일 실패하던 덤프).

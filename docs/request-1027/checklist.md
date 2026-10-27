@@ -13,16 +13,16 @@
 - [x] HP-04 backup-local — XDG_RUNTIME_DIR · DBUS_SESSION_BUS_ADDRESS 스스로 채움(박스 crontab 두 줄 OB-75 는 감시를 본 뒤 — context-notes)
 - [x] HP-17 비밀 백업 — portal/infra · portal/backend 로 나눔 + 박스 파일 · exclude · crontab · 리스크 secrets.env · origin.json(연결 토큰 키 D-5 는 HP-05 커밋에서)
 - [x] HP-18 `--install-cron` · `install-logrotate` — 'no crontab' 만 빈 목록, 그 밖 실패는 멈춤(같은 꼴 install-watchdog · datamigrate 도)
-- [ ] HP-11 services.py Popen 에 `infra/.env` 의 NO_PROXY 리터럴
-- [ ] HP-12 nginx `/ste/` read timeout 손잡이 `NGINX_STE_READ_TIMEOUT` + 시험
-- [ ] HP-13 nginx `simflow` · `stcx-llm` 갈래
-- [ ] HP-47 `/ste/` 결과 파일 연결 · 속도 제한 손잡이(기본 끔 — D-6)
-- [ ] HP-26 PER_USER_SSO_APPS 앱의 /verify 도 확인
-- [ ] HP-27 install-ste-tunnel `--check` — 15812 없으면 0 아님
+- [x] HP-11 services.py Popen 에 `infra/.env` 의 NO_PROXY 리터럴(start.sh 와 같은 합집합 · 감시 · 부팅 유닛도 이 길)
+- [x] HP-12 nginx `/ste/` read timeout 손잡이 `NGINX_STE_READ_TIMEOUT` + 시험(nginx -t 까지 — 박스는 OB-80 한 줄)
+- [x] HP-13 nginx `simflow` · `stcx-llm` 갈래
+- [x] HP-47 `/ste/` 결과 파일 연결 · 속도 제한 손잡이(기본 끔 — D-6, 결과 파일 경로에만)
+- [x] HP-26 PER_USER_SSO_APPS 앱의 /verify 도 확인(verify 없는 앱은 ○ — dev MX 백서)
+- [x] HP-27 install-ste-tunnel `--check` — 15812 없으면 0 아님
 - [ ] HP-22 check-egress — nginx 전용 라우트 빼기 · 게이트웨이 목적지는 `/health` 보정 결과(HG-18 뒤)
 - [ ] HP-23 check-egress — 선언 플랫폼 mcp_url 호스트
-- [ ] HP-35 AIDH merge 뒤 페르소나 미리보기 → ✗ · + · ~ 면 warn
-- [ ] HP-39 env 킷 DELIB_TIMEOUT_S 주석
+- [x] HP-35 AIDH merge 뒤 페르소나 미리보기 → ✗ · + · ~ 면 warn(덤 — MX 백서 운영자 정본을 needs_tool 로 고침, 미리보기가 dev 에서 멈춰 있었다)
+- [x] HP-39 env 킷 DELIB_TIMEOUT_S 주석(킷 줄을 주석으로 — 심지 않는다)
 
 ## 2. 에이전트서버
 

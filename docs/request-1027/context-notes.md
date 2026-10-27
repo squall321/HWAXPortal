@@ -46,3 +46,29 @@
 - **HP-17** 포털 파일은 리포 안 자리 그대로 담는다(`portal/infra/.env` …) — 되돌릴 때 `portal/` 을 리포 루트에 그대로 얹으면 된다. 박스 파일은
   이름 목록이 아니라 git 의 '추적 안 되는 파일'(무시된 것 포함)로 고른다 — cae00 의 `systems.cae00.yaml` · `saml/prod` 처럼 요청서에 없는
   것도 담기고, 새 박스 파일이 생겨도 빠지지 않는다. 연결 토큰 키(D-5)는 키가 생기는 HP-05 커밋에서 백업도 같이 넣는다.
+- **HP-12 · HP-13 · HP-47** — ste 를 큰 파일 묶음에서 떼어 읽기 시한만 손잡이(`NGINX_STE_READ_TIMEOUT`, 다른 nginx 시한과 같은 검사 —
+  0 · 모양이 틀린 값은 ✗ 와 기본값)로 둔다. 묶음의 다른 갈래(apps · heax-hub · report-archive · odb-hub)는 600s 그대로. 결과 파일 제한은
+  `/ste/` 전체가 아니라 결과 파일 경로(`/ste/api/jobs/<id>/result.zip` · `…/result/file/…` — SmartTwinExplorer `routes/jobs.py`)에만 건다 —
+  전체에 걸면 화면의 병렬 API · 업로드까지 묶인다. nginx 1.31.3(SIF)이라 `limit_rate` 에 변수를 쓰고, `limit_conn` 은 키가 빈 요청을
+  세지 않는 것으로 고른다(http 레벨 map 둘 + zone, 손잡이가 있을 때만 생긴다). 넘으면 429(기본 503 은 '서버 장애' 로 읽힌다).
+  시험의 `nginx -t` 는 listen 포트도 잡아 본다 — 빈 높은 포트를 주고 /tmp 는 임시 폴더로 바꿔 끼운다(떠 있는 nginx 파일을 안 건드린다).
+- **HP-11** 합집합은 start.sh 와 같은 글자(루프백 셋 · 부모 네 값 · infra/.env 두 철자 · 모양 맞는 RA_HOST · ARP_HOST)다. `_infra_env()` 는
+  `HWAX_*` 만 읽어 못 쓴다 — `_infra_value()`(update-all `_envfile_value` 와 같은 규칙)로 읽는다. `$` 가 든 항목은 뺀다 — infra/.env 의
+  `${NO_PROXY}` 는 bash 로 소싱할 때만 펼쳐지고, 문자 그대로 넘기면 httpx 가 클라이언트를 못 만든다(그 값은 부모 값으로 이미 들어 있다).
+  감시(크론) · 부팅 유닛(systemd)도 services.py 를 지나 따로 고칠 곳이 없다. 원격(ssh) 서비스는 그 호스트의 환경이라 손대지 않았다.
+- **HP-26** 대상은 게이트웨이가 **실제로 쥔** 위임(config `per_user_sso` 중 `managed_by=PER_USER_SSO_APPS`)이다 — provision.env 는 §5 가
+  소싱하지 못한 실행에서 비고, config 가 게이트웨이가 쓰는 값이다. 401 은 ✗(ste 와 같은 무게), verify 창구가 없는 앱(404 · 405)은 ○ —
+  오류가 아니라 대조를 못 한다는 기록이다. dev 의 MX 백서는 verify 가 없어 ○ 한 줄이다(MX 백서 세션에 선택으로 알렸다).
+  hwax_risk · kooremapper_mcp 같은 게이트웨이 직접 위임은 요청 범위 밖이라 보지 않는다.
+- **HP-27** 유닛 파일이 없을 때(유닛 없음)는 종전 그대로 포트로 가른다 — 요청은 '유닛에 15812 가 없음' 이다.
+- **HP-35** 미리보기는 merge 바로 뒤(§2b)에 돈다 — 그때 게이트웨이는 이 박스 것이라 'dev 판이 덮었나' 를 보기에 충분하다. 고치는 것은
+  update-all 이 끝난 뒤 사람이 `--apply`(그때의 게이트웨이로 만든다). 덤 — 미리보기를 dev 에서 돌려 보니 rc 2 였다. MX 백서 MW-01 · MW-02 가
+  wiki_* (꺼진 박스) · import_file · upload_image(http)를 싣지 않게 되어, 정본 필수 칸의 그 이름이 동기화를 통째로 멈췄다. 선택 칸에
+  `needs_tool` 을 두어(같은 앱 안의 켜고 끄는 기능) 위키 몫을 그리로 옮기고 두 도구를 뺐다 — cae00(위키 꺼짐)에서도 멈추지 않는다.
+  dev 의 `--apply` 는 하지 않았다(dev AIDH 행이 바뀌면 덤프 · 병합으로 cae00 판을 다시 덮는다 — 사람이 정한다).
+- **HP-39** 요청의 두 길 가운데 '킷 줄을 주석으로' 를 골랐다. 다른 길('대상 .env 의 `# KEY=` 를 일부러 뺐다로 읽기')은 apply-envs 의 모든
+  키에 걸린다 — 예시 주석이 남은 박스에서 LLM_BASE_URL 같은 필수 값을 더 넣지 않게 된다. 킷이 1800 을 심던 것은 시간 한도 구획의
+  다른 손잡이와 어긋났다(심으면 코드 기본값을 올려도 그 박스만 묶인다). 옛 600 알림(3.5)은 킷의 주석 값을 읽게 했다.
+- **HP-16 · HA-08 에 쓸 MX 백서 위키 신호**(MX 백서 세션 확인 10-28) — `GET /api/v1/wiki/health` 는 키가 없다. 꺼지면 404 `wiki_disabled`,
+  켜지면 200 이다. 200 은 스위치(WIKI_ENABLED)만 본다 — LLM 이 비거나(`data.llm` = ok · unreachable · unset, 30초 캐시) 워커가 없어도
+  (`data.workers` — 10분 안에 본 워커) 200 이다. '켜짐' 은 '처리할 수 있음' 과 다르다. 닿지 않음은 '모름' 이다(숨기지 않는다).
