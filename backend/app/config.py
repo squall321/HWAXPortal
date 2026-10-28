@@ -212,7 +212,9 @@ class Settings(BaseSettings):
     conv_store_busy_timeout_s: float = 30.0
 
     # 절차(업무 절차 인벤토리) — 챗과 자원을 공유하지 않는 격리 모듈(docs/procedures/PLAN.md §3).
-    # 동시 실행 상한은 심의 DELIB_JOB_MAX_RUNNING·HWAXRisk risk_concurrency 와 같은 2.
+    # 동시 실행 상한 2 — 심의 DELIB_JOB_MAX_RUNNING · HWAXRisk risk_concurrency 의 **코드 기본값**과 같을 뿐 따로 간다. 박스가 심의를
+    # 6 으로 올려도 따라 올리지 않는다 — 심의 한도는 LLM 큐 보호선이고, 절차는 단계마다 도구 백엔드(대개 일꾼 하나)를 부른다.
+    # 올리려면 PROCEDURES_CONCURRENCY(docs/request-1027 HP-45).
     # gate: human 에서 기다리는 실행은 슬롯을 쥐지 않는다.
     procedures_store_path: str = "data/procedures.sqlite"
     procedures_concurrency: int = 2

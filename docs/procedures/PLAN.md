@@ -252,7 +252,8 @@ ImportError 로 같이 죽는다. 게이트웨이 호출은 `mcp` 패키지 없�
 "챗에 지장 없음" 이 실패 경로에서 깨진다.
 
 상한은 Settings 둘 — `procedures_concurrency`(기본 2, 심의 `DELIB_JOB_MAX_RUNNING`·HWAXRisk
-`risk_concurrency` 와 같다. `gate: human` 대기 실행은 슬롯을 쥐지 않는다) ·
+`risk_concurrency` 의 코드 기본값과 같을 뿐 따로 간다 — 박스가 심의를 올려도 따라 올리지 않는다(10-28 HP-45).
+`gate: human` 대기 실행은 슬롯을 쥐지 않는다) ·
 `procedures_max_steps`(저장 시점 거절). 상한에 걸리면 429 가 아니라 큐에서 기다린다. 사용자별
 상한·관리자 목록 화면은 v1 에 없다(스택 어디에도 선례가 없다).
 
