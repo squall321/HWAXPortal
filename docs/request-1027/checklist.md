@@ -52,19 +52,19 @@
 
 ## 3. 게이트웨이
 
-- [ ] HG-01 search_tools — 온톨로지 동의어 · quality/voc 가중 · 쓰기 감점 · 정본 하나(same_in) · 앱 라벨 가중
-- [ ] HG-02 ODB 토큰을 헤더로(이어받기는 헤더 먼저 · 옛 쿼리도) + 시험 → 포털 HP-28
-- [ ] HG-03 401 · `_token_rejected` 일 때만 재발급 · `_user_pat(stale=…)`
-- [ ] HG-04 REST 중계 simflow · 위층 401 이면 캐시 버리기 · `X-Gateway-Token-Evicted`
-- [ ] HG-06 감사 — error 키 · isError 면 ok=false
-- [ ] HG-05 tool_areas — 코어 정규식 → knowledge · apps 기본값 · include_tools=false 를 영역 요약에도
-- [ ] HG-07 `_meta` 옮기기 · resources 처리기(1단계 중계)
-- [ ] HG-20 나가는 응답 개인정보 기본 가림(D-2)
-- [ ] HG-09 404 부정 캐시 · 상태 바뀔 때만 로그 · since
-- [ ] HG-10 list_tool_apps needs_connect
-- [ ] HG-11 graceful shutdown → 포털 HP-25
-- [ ] HG-12 search_tools 응답 요약 · required 만
-- [ ] HG-13 안내문 유사도 수치를 모델 무관하게
+- [x] HG-01 search_tools — 온톨로지 동의어 · quality/voc 가중 · 쓰기 감점 · 정본 하나(same_in) · 앱 이름 가중(게이트웨이 93cda53 — dev 147쌍 doc hit@1 0.475 → 0.550)
+- [x] HG-02 ODB 토큰을 헤더로(이어받기는 헤더 먼저 · 옛 쿼리도) + 시험(ecde6e2 · 계약 dccb620) → 포털 HP-28
+- [x] HG-03 401 · `_token_rejected` 일 때만 재발급 · `_user_pat(stale=…)`(c605b84 — 진짜 MCP 클라이언트로 401 꼴 실측)
+- [x] HG-04 REST 중계 simflow · 위층 401 이면 캐시 버리기 · `X-Gateway-Token-Evicted`(ce31ed1)
+- [x] HG-06 감사 — 오류 봉투면 ok=false · 사유(be7570f — 포털 판정기를 오라클로)
+- [x] HG-05 tool_areas — 코어 정규식 → knowledge · apps 기본값 · include_tools=false 를 영역 요약에도(7845ccf)
+- [x] HG-07 `_meta` 옮기기 · resources 처리기(bbd5c87 — ui:// 만, 메모리 전송 왕복 시험) — 확인은 cae00 Desktop(사람)
+- [x] HG-20 나가는 응답 개인정보 기본 가림(D-2, 2a2cba6 — 칸 이름 · IMEI Luhn, 끄기 GATEWAY_PII_MASK=0)
+- [x] HG-09 목록 계정 백오프 60 → 600초 · 상태 바뀔 때만 로그 · `/health` conn_since(bde1017)
+- [x] HG-10 list_tool_apps needs_connect(5fe6ea0)
+- [x] HG-11 graceful shutdown(177c22a — 실물 SIGTERM 0.11초에 포트, 진행 중 요청 200) → 포털 HP-25
+- [x] HG-12 search_tools 응답 요약 · required 만 · 선택 인자 이름(93cda53, detail=true 면 전문)
+- [x] HG-13 안내문 유사도 수치를 모델 무관하게(9bb5b17)
 - [-] HG-19 '(시험)' 앱 — D-1 라벨 바로잡기
 
 ## 4. 포털 업로드 · 화면 · 그 밖
@@ -85,8 +85,8 @@
 - [ ] HP-19 페르소나 정본 접두 이름(또는 동기화가 풀기)
 - [ ] HP-20 he-data-coreontology
 - [ ] HP-24 §7 스모크가 self_check(HA-13 뒤)
-- [ ] HP-25 update-sites 재기동 순서(HG-11 뒤)
-- [ ] HP-28 ODB 헤더 꼴 기대 시험(HG-02 뒤)
+- [x] HP-25 update-sites 재기동 순서 — 고칠 것 없음(down → 리스너 닫힘 → up 이 HG-11 과 맞물린다, 회귀 시험 게이트웨이 054d397)
+- [x] HP-28 ODB 헤더 꼴 기대 시험(40f6b76) · 옛 쿼리 꼴이면 재프로비저닝을 한 번 당긴다(92ae8d7)
 - [ ] HP-36 대화 검색 표지 기동 때 채움
 - [ ] HP-37 embedder 절차서 8절
 - [ ] HP-38 리스크 자격 절차서 기대값

@@ -708,7 +708,7 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 - **`/ste/` 결과 파일 제한(HP-47 · 결정 D-6)** — 기본 끔이다. 한 클라이언트가 큰 결과를 되풀이해 받아 다른 사용자가 느려지면 `infra/.env` 에
   `NGINX_STE_RESULT_RATE=20m`(연결 하나의 속도) · `NGINX_STE_RESULT_CONN=2`(한 주소의 동시 수, 넘으면 429) 가운데 필요한 것을 넣는다.
   결과 파일(`result.zip` · `result/file/…`)에만 걸린다.
-- **박스 crontab 맨 위 두 줄(XDG_RUNTIME_DIR · DBUS_SESSION_BUS_ADDRESS, OB-75)은 아직 두다.** 백업은 이제 두 변수를 스스로 채우지만(HP-04),
+- **박스 crontab 맨 위 두 줄(XDG_RUNTIME_DIR · DBUS_SESSION_BUS_ADDRESS, OB-75)은 아직 둔다.** 백업은 이제 두 변수를 스스로 채우지만(HP-04),
   감시(`services.sh heal`)는 채우지 않는다. 걷기 전에 크론과 같은 빈 환경에서 감시가 인스턴스를 띄우는지 본다 —
   `env -i HOME="$HOME" PATH=/usr/bin:/bin ./infra/scripts/services.sh heal`.
 
@@ -717,6 +717,16 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
   AIDH 를 합친 뒤 같은 미리보기를 돌려 이 박스 판과 다르면 ⚠ 로 알린다(HP-35).
 - update-all §6 에 `○ 사람별 위임 <앱> 비밀 대조` 가 나오면 그 앱에 verify 창구가 없다는 기록이다(오류 아님). `✗ … 비밀이 상대와 다르다` 면
   그 앱의 위임 비밀과 `HWAXMcpGateway/provision.env` 의 `<접두>_SSO_SECRET` 을 맞춘다(HP-26).
+
+- **게이트웨이(02 요청서) — 할 일 없음, 확인만.** 손잡이는 전부 기본값으로 켜져 온다(게이트웨이를 띄우는 셸의 환경에서만 읽는다 — `.env` ·
+  `provision.env` 는 읽지 않는다). 개인정보 가림(HG-20)을 급히 꺼야 하면 그 환경에 `GATEWAY_PII_MASK=0` 을 주고 게이트웨이만 다시 띄운다.
+  재기동 비우기 한도는 `GATEWAY_DRAIN_TIMEOUT`(30초) · `GATEWAY_SHUTDOWN_TAIL`(5초)이다.
+- **ODB 토큰 헤더(HG-02 · HP-28)** — update-all §5 에 `· 옛 꼴 바꾸기: odb-hub …` 가 한 번 나오고 재프로비저닝이 돈다(정상). 그 뒤 모양만 본다(값은
+  찍지 않는다, 포털 리포에서) — `python3 -c 'import json;d=json.load(open("../HWAXMcpGateway/gateway_config.json"))["odb-hub"];print("token=" in d["url"], "Authorization" in (d.get("headers") or {}))'`
+  → `False True`. `/health` 의 odb-hub 가 정상이고, 사람별 위임이 켜져 있으면 감사 줄이 as-user-pat · 본인 이메일이다.
+- **Desktop 패널(HG-07)** — Claude Desktop 을 `/mcp-gw/mcp` 로 붙여 `open_workflow_panel` 을 부르면 패널이 뜨고 `ui/initialize` 가 끝난다. 패널의
+  `tools/call` 이 그 사람 명의(감사 as-user-pat)로 SimFlow 에 닿고 `ui/open-link` 가 된다. 안 뜨면 게이트웨이 로그의 `ui 리소스 목록을 받지 못했다` ·
+  `ui 리소스 … 함께 낸다` 를 본다.
 
 ### 다음 날 확인
 
