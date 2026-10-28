@@ -84,3 +84,21 @@ def test_업로드_근거는_이력에서_kind_upload_로_간다():
     (ev,) = hist[2]["evidence"]
     assert ev["kind"] == "upload" and ev["tool"] == "convert_file" and json.loads(ev["args"]) == {"file": "koo.park-설계검토.pptx"}
     assert json.loads(ev["result"]) == AIDH["result"]
+
+
+SF = {"stage": "done", "destination": "simflow", "upload_id": "up-1", "upload_status": "ready", "size": 64,
+      "result": {"id": "up-1", "status": "ready"}}
+
+
+def test_HP15_SimFlow_보내기는_업로드_id_를_글로_박고_실행_지시문을_준다():
+    """받은 id 를 다음 턴이 run_workflow 에 쓰게(docs/request-1027 HP-15) — 근거 · 알림 · 지시문 셋 다 그 id 를 글로 갖는다."""
+    got = _notice("part.x_t", SF)
+    n = got["n"]
+    assert "업로드 id `up-1` · 상태 ready" in n["text"] and "run_workflow" in n["text"]
+    (a,) = n["activity"]
+    assert a["origin"] == "upload" and a["ok"] is True and json.loads(a["result_full"])["upload_id"] == "up-1"
+    assert got["ask"] == "SimFlow 업로드 `up-1` 를 입력으로 쓸 워크플로를 골라 run_workflow 로 돌려 줘" and got["link"] is None
+    pend = _notice("part.x_t", {**SF, "upload_status": "drm_pending", "note": "SimFlow 가 DRM 을 아직 풀고 있습니다"})
+    assert "아직 DRM 을 푸는 중" in pend["n"]["text"] and json.loads(pend["n"]["activity"][0]["result_full"])["status"] == "drm_pending"
+    assert _notice("part.x_t", {**SF, "upload_id": ""})["n"] is None, "id 가 없으면 알림을 남기지 않는다"
+

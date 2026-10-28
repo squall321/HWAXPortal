@@ -284,6 +284,12 @@ class Settings(BaseSettings):
     # 'Report Archive 로' 보내기(RA /api/imports/pptx)의 크기 한도 — 넘으면 RA 를 부르지 않고 413 과 사유를 돌려주고, 목적지 목록에 실어 화면이
     # 미리 막는다(docs/request-1027 HP-02). 실측 26.2 MB 통과 · 27.5 MB 거절이라 25 MB 로 둔다 — 정확한 값은 RA 회신(RP-16) 뒤. 0 = 끔.
     ra_import_max_mb: int = 25
+    # SimFlow 업로드 목적지(docs/request-1027 HP-15) — 받을 확장자(쉼표, 점 없이)와 크기 한도(MB, 넘으면 SimFlow 를 부르지 않고 413 · 0 = 끔).
+    # SimFlow 쪽 확인(14-Partner-apps PA-12 — 확장자 목록 · 500 MB 와 600 MB 중 어느 것인지) 전이라 요청서의 예(.x_t)와 MCP 업로드 U2 의
+    # 500 MB 로 둔다 — 박스에서 바꾼다. DRM 문서는 SimFlow 가 drm_pending → ready 로 푼다 — 그동안 이만큼(초) 기다린다(0 = 기다리지 않음).
+    simflow_upload_exts: str = "x_t"
+    simflow_upload_max_mb: int = 500
+    simflow_ready_wait_s: int = 120
     # 정밀 변환 잡 기록(맡긴 사람)을 두는 날 수 — DocForge 잡 보존 기한(기본 7일)과 같게. 스테이징 청소(6시간)에서 빠지고, 그 안에는 창을 닫아
     # 넣지 못한 잡을 입력창 위 '끝나지 않은 정밀 변환' 에서 다시 열어 넣는다(DocForge E15).
     docforge_job_days: int = 7
@@ -394,6 +400,10 @@ class Settings(BaseSettings):
     @property
     def mock_user_group_list(self) -> list[str]:
         return [g.strip() for g in self.mock_user_groups.split(",") if g.strip()]
+
+    @property
+    def simflow_upload_ext_set(self) -> set[str]:
+        return {e.strip().lower().lstrip(".") for e in self.simflow_upload_exts.split(",") if e.strip()}
 
     @property
     def upload_allowed_group_list(self) -> list[str]:

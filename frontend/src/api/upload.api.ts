@@ -55,6 +55,12 @@ export interface DispatchResult {
   conversion_warnings?: string[];
   /** 이 대화에서 분석을 DocForge 가 맡았으면 'docforge'(DF-D19) — 끝나면 …/document 로 글을 받는다. */
   via?: string;
+  // SimFlow — 워크플로우 입력 파일(docs/request-1027 HP-15). 받은 id 로 run_workflow 를 부른다. drm_pending 이면 SimFlow 가 아직 DRM 을
+  // 푸는 중이다(note 가 까닭).
+  upload_id?: string;
+  upload_status?: string;
+  note?: string;
+  size?: number;
   // StepForge · DynaForge
   project_id?: string;
   created_project?: boolean;
@@ -120,6 +126,24 @@ export async function uploadFile(file: File): Promise<StagedFile> {
 
 export const analyzeUpload = (m: UploadMeta) => jpost('/agent/upload/analyze', m);
 export const commitUpload = (m: UploadMeta) => jpost('/agent/upload/commit', m);
+
+/** 이 사람이 어딘가로 보낼 수 있는 확장자 — 파일 고르기 · 끌어 놓기 목록에 더한다. 화면 목록은 빌드 때 정해져 박스 설정으로 정하는
+ *  확장자(SimFlow — SIMFLOW_UPLOAD_EXTS)를 몰랐다(docs/request-1027 HP-15). 못 물으면 빈 목록(화면 목록 그대로). 5분 붙잡는다. */
+let extsAt = 0;
+let extsPending: Promise<string[]> | null = null;
+export function fetchUploadExts(): Promise<string[]> {
+  const now = Date.now();
+  if (extsPending && now - extsAt < 300_000) return extsPending;
+  extsAt = now;
+  extsPending = apiFetch('/agent/upload/exts')
+    .then(async (r) => {
+      if (!r.ok) return [];
+      const v = (await r.json())?.exts;
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && /^[a-z0-9_]{1,16}$/.test(x)) : [];
+    })
+    .catch(() => []);
+  return extsPending;
+}
 
 /** StepForge 기존 과제 목록 — 되묻기에서 '새 과제 / 기존 과제에 추가'를 고르게 한다. */
 export async function stepProjects(): Promise<StepProject[]> {

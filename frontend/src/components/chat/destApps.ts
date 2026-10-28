@@ -15,6 +15,7 @@ export const DEST_APPS: Record<string, string[]> = {
   reportarchive: ['reportarchive'],
   reportarchive_precise: ['reportarchive', 'heax-doc_forge'],
   aidatahub: ['ai-data-hub'],
+  simflow: ['simflow'],
   // 문서 행선지(DocActions)
   card: ['ai-data-hub'],
   report: ['reportarchive'],

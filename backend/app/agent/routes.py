@@ -426,6 +426,25 @@ def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | 
         return None
 
 
+def _site_pat(keystore, settings: Settings, principal: Principal, site: str, ttl_s: int = 900) -> str | None:
+    """게이트웨이 REST 다리(/api/<site>/…)를 그 사람 명의로 한 번 부를 짧은 PAT — 청중은 그 사이트 하나(docs/request-1027 HP-15).
+
+    챗 PAT 은 청중이 pat_chat_audience 하나라 다리가 거절한다(다리는 aud 에 사이트가 있어야 한다). 챗 PAT 의 청중을 넓히면 챗 · 심의 내내
+    그 사이트를 부를 수 있게 되므로 넓히지 않고, 보내기 한 번에 그 사이트만 담아 찍는다. jti 는 매번 새것이다(캐시할 일이 없다)."""
+    try:
+        now = datetime.now(tz=UTC)
+        claims = {
+            "iss": settings.jwt_issuer, "sub": principal.subject, "email": principal.email, "name": principal.display_name,
+            "groups": login_groups(principal.groups), "aud": [site], "scope": "api", "scopes": ["upload"],
+            "pat_name": f"upload-{site}", "iat": now, "nbf": now, "exp": now + timedelta(seconds=ttl_s),
+            "jti": f"upload-{site}-{uuid.uuid4().hex}",
+        }
+        return jwt.encode(claims, keystore.private_pem, algorithm="RS256", headers={"kid": keystore.active_kid})
+    except Exception:  # noqa: BLE001 — 발급 실패는 부른 쪽이 401 로 알린다
+        logger.warning("업로드용 사이트 PAT 발급 실패(%s)", site, exc_info=True)
+        return None
+
+
 @router.get("/conversations")
 def list_conversations(
     request: Request,
@@ -1210,6 +1229,16 @@ async def upload_file(
     return out
 
 
+@router.get("/upload/exts")
+async def upload_exts(
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """화면의 파일 고르기 · 끌어 놓기 목록에 더할 확장자 — 이 사람이 어딘가로 보낼 수 있는 것. 화면 목록은 빌드 때 정해져 박스 설정으로
+    정하는 확장자(SimFlow — SIMFLOW_UPLOAD_EXTS)를 몰랐다(docs/request-1027 HP-15). 보낼 곳이 없으면 빈 목록이다."""
+    return {"exts": _upload.upload_exts(settings, principal.groups, await _upload.gateway_tool_names(settings))}
+
+
 async def _upload_register(request, principal, settings, body, dry_run: bool):
     """스테이징 CSV 를 파싱해 물성 등록(dry_run 또는 확정)을 사용자 PAT 로 호출한다."""
     _upload.require_upload_group(settings, principal.groups)
@@ -1366,7 +1395,7 @@ async def _dispatch_audited(request, body, principal, settings) -> dict:
         slides = out.get("slides")
         meta = {"destination": body.destination, "filename": body.filename, "size": size,
                 "error": str(out.get("error") or "")[:200]}
-        for k in ("ra_status", "ra_code", "slides"):
+        for k in ("ra_status", "ra_code", "slides", "sf_status"):
             if out.get(k) is not None:
                 meta[k] = out[k]
         try:
@@ -1400,6 +1429,116 @@ async def _ra_user_token(request, settings: Settings, principal: Principal) -> t
     return token, via_sso, conn
 
 
+def _sf_fields(j) -> tuple[str, str]:
+    """SimFlow 업로드 응답 → (id, 상태). 감싼 꼴(data)도 받는다 — 칸 이름은 SimFlow 쪽 확인(PA-12) 전이다."""
+    d = j.get("data") if isinstance(j, dict) and isinstance(j.get("data"), dict) else j
+    if not isinstance(d, dict):
+        return "", ""
+    return str(d.get("id") or d.get("upload_id") or ""), str(d.get("status") or d.get("state") or "")
+
+
+def _sf_failed(r: httpx.Response) -> dict:
+    """SimFlow(또는 게이트웨이 다리)가 받지 않은 응답 → 사람이 알아듣는 실패. 상대가 밝힌 사유를 그대로 붙인다."""
+    try:
+        detail = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"text": r.text[:400]}
+    except ValueError:
+        detail = {"text": r.text[:400]}
+    raw = ""
+    if isinstance(detail, dict):
+        raw = detail.get("detail") or detail.get("message") or detail.get("error") or detail.get("text") or ""
+    msg = (raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False))[:300]
+    code = r.status_code
+    out: dict = {"stage": "failed", "destination": "simflow", "sf_status": code, "detail": detail}
+    if code == 413:
+        out["error"] = f"SimFlow 가 크기 한도로 받지 않았습니다(HTTP 413){' — ' + msg if msg else ''}."
+        out["hint"] = "파일을 나누거나 SimFlow 화면에서 직접 올리세요."
+    elif code == 401:
+        # 위층(SimFlow)이 거절했으면 게이트웨이가 캐시 토큰을 버리고 이 머리를 단다 — 한 번 다시 보내고도 401 이면 여기다(HG-04).
+        out["error"] = ("SimFlow 가 자격을 받지 않았습니다(HTTP 401) — 새로 받은 토큰도 거절됐습니다. 관리자에게 SimFlow 사람별 연결을 확인해 "
+                        "달라고 하세요." if r.headers.get("x-gateway-token-evicted") == "1"
+                        else "게이트웨이가 이 보내기의 자격을 받지 않았습니다(HTTP 401) — 포털에서 다시 로그인한 뒤 보내세요.")
+    elif code == 403:
+        out["error"] = f"SimFlow 로 보낼 권한이 없습니다(HTTP 403){' — ' + msg if msg else ''}."
+    elif code == 404:
+        out["error"] = ("SimFlow 업로드 길이 없습니다(HTTP 404) — 게이트웨이에 SimFlow REST 다리가 없거나(관리자: update-all 재프로비저닝) "
+                        "SimFlow 가 이 경로를 모릅니다.")
+    else:
+        out["error"] = f"SimFlow 가 받지 않았습니다(HTTP {code}){' — ' + msg if msg else '.'}"
+    return out
+
+
+async def _dispatch_simflow(request, body, principal, settings, path: Path) -> dict:
+    """SimFlow 워크플로우 입력(docs/request-1027 HP-15) — 게이트웨이 REST 다리로 흘려 보낸다. 게이트웨이가 그 사람의 SimFlow 토큰(사람별
+    위임)으로 넣는다(감사 mode=as-user-pat). DRM 원본은 그대로 보낸다 — SimFlow 가 drm_pending → ready 로 푼다(그동안 기다린다)."""
+    mx = _upload.dest_max_bytes(settings, "simflow")
+    size = path.stat().st_size
+    if mx and size > mx:
+        raise AuthError(f"SimFlow 업로드 한도 {mx // (1024 * 1024)} MB 를 넘습니다({size / (1024 * 1024):.1f} MB) — "
+                        "파일을 나누거나 SimFlow 화면에서 직접 올리세요.", status_code=413)
+    wait = max(0, int(settings.simflow_ready_wait_s or 0))
+    tok = _site_pat(request.app.state.keystore, settings, principal, "simflow", ttl_s=600 + wait + 300)
+    if not tok:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+    url = settings.mcp_gateway_url.rstrip("/") + "/api/simflow/api/v1/mcp-uploads"
+    hdrs = {"Authorization": f"Bearer {tok}"}
+
+    async def _post() -> httpx.Response:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(600, connect=10)) as cli:
+            with path.open("rb") as fh:
+                return await cli.post(url, headers=hdrs, files={"file": (body.filename, fh, "application/octet-stream")})
+
+    async def _get(uid: str) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30, connect=10)) as cli:
+            return await cli.get(f"{url}/{quote(uid, safe='')}", headers=hdrs)
+
+    def _evicted(r: httpx.Response) -> bool:
+        return r.status_code == 401 and r.headers.get("x-gateway-token-evicted") == "1"
+
+    try:
+        r = await _post()
+        if _evicted(r):
+            # 게이트웨이가 캐시한 SimFlow 토큰을 SimFlow 가 거절했다 — 캐시는 버렸고, 흘려 보낸 본문이라 게이트웨이 안에서는 다시 보내지
+            # 않는다(HG-04). 인증에서 끊겨 아무것도 넣지 않았으니 한 번만 다시 보낸다.
+            r = await _post()
+    except httpx.HTTPError as exc:
+        return {"stage": "failed", "destination": "simflow", "error": f"SimFlow 에 연결하지 못했습니다({exc.__class__.__name__})."}
+    if r.status_code >= 400:
+        return _sf_failed(r)
+    try:
+        j = r.json()
+    except ValueError:
+        j = {}
+    uid, st = _sf_fields(j)
+    if not uid:
+        return {"stage": "failed", "destination": "simflow", "detail": j if isinstance(j, dict) else {"text": r.text[:400]},
+                "error": "SimFlow 가 업로드 id 를 돌려주지 않았습니다 — 들어갔는지 SimFlow 화면에서 확인하세요."}
+    loop = asyncio.get_running_loop()
+    until = loop.time() + wait
+    while st == "drm_pending" and loop.time() < until:
+        await asyncio.sleep(2)
+        try:
+            g = await _get(uid)
+            if _evicted(g):
+                g = await _get(uid)
+        except httpx.HTTPError:
+            continue                                   # 상태 보기가 잠깐 안 닿는다 — 기다림 안에서 다시 본다
+        if g.status_code >= 400:
+            break                                      # 상태를 볼 길이 없다 — 받은 상태 그대로 알린다
+        try:
+            _nid, nst = _sf_fields(g.json())
+        except ValueError:
+            break
+        st = nst or st
+    _audit(request).record(principal=principal.subject, event="upload_dispatch",
+                           meta={"destination": "simflow", "upload_id": uid, "status": st, "size": size})
+    out = {"stage": "done", "destination": "simflow", "upload_id": uid, "upload_status": st, "size": size,
+           "result": j if isinstance(j, dict) else {}}
+    if st == "drm_pending":
+        out["note"] = (f"SimFlow 가 DRM 을 아직 풀고 있습니다({wait}초 기다림) — ready 가 되면 이 id 로 run_workflow 를 부르세요."
+                       if wait else "SimFlow 가 DRM 을 푸는 중입니다 — ready 가 되면 이 id 로 run_workflow 를 부르세요.")
+    return out
+
+
 async def _dispatch_inner(request, body, principal, settings) -> dict:
     _upload.require_destination_group(settings, principal.groups, body.destination)
     audit = _audit(request)
@@ -1407,6 +1546,9 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
     pat = _chat_user_pat(request.app.state.keystore, settings, principal)
     if not pat:
         raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+
+    if body.destination == "simflow":
+        return await _dispatch_simflow(request, body, principal, settings, path)
 
     if body.destination == "reportarchive":
         # ── Report Archive ────────────────────────────────────────────

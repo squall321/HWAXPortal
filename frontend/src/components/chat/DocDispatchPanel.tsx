@@ -28,6 +28,13 @@ const SPEC: Record<string, { title: string; note: string; go: string }> = {
       + '담지 못한 것은 버린 까닭과 함께 알립니다. 본인 명의로 내 공간에 보고서가 만들어집니다.',
     go: '정밀 변환 맡기기',
   },
+  simflow: {
+    title: 'SimFlow 로 보내기',
+    // 게이트웨이 REST 다리로 본인 명의로 넣는다(docs/request-1027 HP-15). 원본 그대로 — DRM 문서는 SimFlow 가 푼다.
+    note: '워크플로우 입력 파일로 본인 명의로 SimFlow 에 올립니다. 받은 업로드 id 로 run_workflow 를 돌릴 수 있습니다. '
+      + 'DRM 문서도 원본 그대로 보내고, SimFlow 가 풀 때까지 기다립니다.',
+    go: 'SimFlow 에 올리기',
+  },
   aidatahub: {
     title: 'AI 데이터 허브로 보내기',
     note: '서버가 정밀 변환해 지식카드 **초안**을 만듭니다. 바로 저장하지 않습니다 — '
@@ -262,7 +269,7 @@ export function DocDispatchPanel({
     return (
       <div className="upl-panel">
         <div className="upl-head">
-          <b>{destination === 'reportarchive' ? '보고서 초안을 만들었습니다' : '변환했습니다'}</b>
+          <b>{destination === 'reportarchive' ? '보고서 초안을 만들었습니다' : destination === 'simflow' ? 'SimFlow 에 올렸습니다' : '변환했습니다'}</b>
           <span className="upl-file">{staged.filename}</span>
           <button type="button" className="upl-x" onClick={onClose} aria-label="닫기">✕</button>
         </div>
@@ -273,15 +280,20 @@ export function DocDispatchPanel({
               {link
                 ? <> <a href={link} target="_blank" rel="noreferrer">Report Archive 에서 열기</a> — 확인하고 저장·게시하세요.</>
                 : <> Report Archive 의 “내가 쓴 보고서” 에서 확인하고 저장·게시하세요.</>}</>
-            : <>지식카드 초안이 나왔습니다(inbox 파일명 <code>{String(done.inbox_name ?? '')}</code>, 아직 저장하지 않았습니다).</>}
+            : destination === 'simflow'
+              ? <>업로드 id <code>{String(done.upload_id ?? '')}</code> · 상태 <b>{String(done.upload_status || '?')}</b>
+                {done.note ? <> — {done.note}</> : <> — 이 id 로 run_workflow 를 돌릴 수 있습니다.</>}</>
+              : <>지식카드 초안이 나왔습니다(inbox 파일명 <code>{String(done.inbox_name ?? '')}</code>, 아직 저장하지 않았습니다).</>}
         </p>
         <p className="upl-note">
           대화에 이 결과를 남겼습니다 — 다음 질문에서 근거로 함께 갑니다.
-          {ask && <> 검토하려면 아래 단추로 지시문을 입력창에 넣고 보내세요.</>}
+          {ask && <> {destination === 'simflow' ? '돌리려면' : '검토하려면'} 아래 단추로 지시문을 입력창에 넣고 보내세요.</>}
         </p>
         {ask && (
           <div className="upl-actions">
-            <button type="button" className="upl-go" onClick={() => onFill?.(ask)}>검토 지시문을 입력창에 넣기</button>
+            <button type="button" className="upl-go" onClick={() => onFill?.(ask)}>
+              {destination === 'simflow' ? '실행 지시문을 입력창에 넣기' : '검토 지시문을 입력창에 넣기'}
+            </button>
           </div>
         )}
         {warns.length > 0 && (

@@ -5,6 +5,7 @@ import {
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ClipboardEvent,
@@ -21,7 +22,7 @@ import { ExpertToggle } from './ExpertToggle';
 import { IconFile, IconPlus, IconSend, IconStop, IconUser } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
-import { canUpload, uploadFile, type StagedFile, type DocforgeJob } from '../../api/upload.api';
+import { canUpload, fetchUploadExts, uploadFile, type StagedFile, type DocforgeJob } from '../../api/upload.api';
 import { classify, extOf, readDoc, kindLabel, unitsLabel, isEncryptedOffice, DOC_MAX } from './docAttach';
 import { IMAGES_MAX, isImageFile, readImage, type AttachedImage } from './imageAttach';
 import { DocExtractHint } from './DocExtractHint';
@@ -106,6 +107,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // 권한이 없으면 입구를 아예 숨긴다(docs/access-control). 업로드는 종전 그룹 설정도 인정한다.
   const can = useCan();
   const canUp = can('feat:upload') || canUpload(user?.groups);
+  // 박스 설정으로 정하는 확장자(SimFlow — SIMFLOW_UPLOAD_EXTS)를 서버에 묻고 위 목록에 더한다 — 고르기 · 끌어 놓기 둘 다(docs/request-1027 HP-15)
+  const [serverExts, setServerExts] = useState<string[]>([]);
+  useEffect(() => {
+    if (!canUp) return;
+    let live = true;
+    void fetchUploadExts().then((v) => {
+      if (live) setServerExts(v);
+    });
+    return () => {
+      live = false;
+    };
+  }, [canUp]);
+  const acceptExts = useMemo(() => [...new Set([...ACCEPT_EXTS, ...serverExts])], [serverExts]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [staged, setStaged] = useState<StagedFile | null>(null);
   // 창을 닫아 넣지 못한 정밀 변환 잡을 이어 본다(DocForge E15) — 이어 본 패널을 닫으면 목록을 다시 읽는다
@@ -198,7 +212,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // 업로드 패널 · 추출 안내가 한 파일씩이다. 함께 고른 나머지 · 받지 않는 형식은 이름을 대고 말한다(조용히 빼지 않는다).
   const addFiles = useCallback(
     async (all: File[]) => {
-      const odd = all.filter((f) => !isImageFile(f) && !ACCEPT_EXTS.includes(extOf(f.name)));
+      const odd = all.filter((f) => !isImageFile(f) && !acceptExts.includes(extOf(f.name)));
       const fs = all.filter((f) => !odd.includes(f));
       const imgs = fs.filter(isImageFile);
       const rest = fs.filter((f) => !isImageFile(f));
@@ -210,7 +224,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       if (imgs.length) await addImages(imgs, true);
       if (notes.length) setUpErr((e) => [e, ...notes].filter(Boolean).join(' · '));
     },
-    [addImages, onPick],
+    [addImages, onPick, acceptExts],
   );
 
   // 놓은 파일 — '+' 단추가 보이는 때와 같은 때만 받는다(붙일 권한 · 답을 받는 중이 아님). 받지 않을 때도 까닭을 말한다.
@@ -559,7 +573,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <input
                 ref={fileRef}
                 type="file"
-                accept={ACCEPT}
+                accept={acceptExts.map((x) => `.${x}`).join(',')}
                 multiple
                 style={{ display: 'none' }}
                 onChange={(e) => {

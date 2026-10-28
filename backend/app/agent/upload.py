@@ -85,7 +85,32 @@ DESTINATIONS: dict[str, dict] = {
         "groups_attr": "upload_group_step_list",
         "platform": "plat:dynaforge",
     },
+    # SimFlow 워크플로우 입력(docs/request-1027 HP-15) — 게이트웨이 REST 다리(/api/simflow/api/v1/mcp-uploads)로 그 사람 명의로 넣고, 받은 id 를
+    # run_workflow 에 쓴다. 확장자 · 한도는 박스 설정이다(SimFlow 쪽 확인 전 — config 주석). SimFlow 도구가 게이트웨이에 없으면(dev) 고를 수 없다.
+    "simflow": {
+        "label": "SimFlow — 워크플로우 입력 파일",
+        "exts": set(),
+        "exts_attr": "simflow_upload_ext_set",
+        "groups_attr": "upload_allowed_group_list",
+        "platform": "plat:simflow",
+        "max_mb_attr": "simflow_upload_max_mb",
+        "needs_tool": "run_workflow",
+        "needs_tool_app": "simflow",            # 다른 앱과 이름이 겹치면 게이트웨이가 simflow_run_workflow 로 낸다
+    },
 }
+
+
+def dest_exts(settings: Settings, dest_id: str) -> set[str]:
+    """목적지가 받는 확장자 — 설정으로 정하는 목적지(exts_attr)는 그 값."""
+    spec = DESTINATIONS.get(dest_id) or {}
+    attr = spec.get("exts_attr")
+    return set(getattr(settings, attr, None) or ()) if attr else set(spec.get("exts") or ())
+
+
+def _has_tool(spec: dict, tools: frozenset[str]) -> bool:
+    need = spec["needs_tool"]
+    app = spec.get("needs_tool_app")
+    return need in tools or bool(app and f"{app.replace('-', '')}_{need}" in tools)
 
 
 def _dest_groups(settings: Settings, dest_id: str) -> list[str]:
@@ -144,9 +169,9 @@ def allowed_destinations(settings: Settings, groups: list[str], ext: str, tools:
     """
     out: list[dict] = []
     for did, spec in DESTINATIONS.items():
-        if ext and ext not in spec["exts"]:
+        if ext and ext not in dest_exts(settings, did):
             continue
-        if spec.get("needs_tool") and tools is not None and spec["needs_tool"] not in tools:
+        if spec.get("needs_tool") and tools is not None and not _has_tool(spec, tools):
             continue
         if _dest_ok(settings, groups, did):
             item = {"id": did, "label": spec["label"]}
@@ -155,6 +180,12 @@ def allowed_destinations(settings: Settings, groups: list[str], ext: str, tools:
                 item["max_bytes"] = mx
             out.append(item)
     return out
+
+
+def upload_exts(settings: Settings, groups: list[str], tools: frozenset[str] | None = None) -> list[str]:
+    """이 사람이 어딘가로 보낼 수 있는 확장자 전부 — 화면의 파일 고르기 · 끌어 놓기 목록에 더한다. 화면 목록은 빌드 때 정해져 설정으로
+    정하는 확장자(SimFlow)를 몰랐다 — 목록 밖 파일은 끌어 놓아도 '붙이지 않는 형식' 이었다(docs/request-1027 HP-15)."""
+    return sorted({e for d in allowed_destinations(settings, groups, "", tools) for e in dest_exts(settings, d["id"])})
 
 
 def dest_max_bytes(settings: Settings, dest_id: str) -> int | None:

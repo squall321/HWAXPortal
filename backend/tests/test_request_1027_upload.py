@@ -212,3 +212,137 @@ def test_HP14_사내_DRM_머리를_암호로_보고_HP31_서버_변환은_aidh_c
                 [{"extractedBy": "AI 데이터 허브 변환기(서버 — 저장하지 않음)"}, {"extractedBy": "office-com(PowerPoint)"}, {}])
     assert (got["drm"], got["pk"], got["ole"], got["near"]) == (True, False, True, None), got
     assert got["tools"] == ["aidh-convert", "office-com-extract", "text-attach"], got
+
+
+# ── HP-15 SimFlow 업로드 목적지 ─────────────────────────────────────────────────────────────────────────────────
+# 게이트웨이 REST 다리(/api/simflow/api/v1/mcp-uploads)는 MockTransport 로만 부른다. 사이트 PAT 은 진짜 RSA 키로 찍고 풀어 본다.
+_SF_URL = "http://gw.test/api/simflow/api/v1/mcp-uploads"
+_KEYS: dict = {}
+
+
+def _keystore():
+    if not _KEYS:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        k = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        _KEYS["ks"] = SimpleNamespace(private_pem=k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                                                  serialization.NoEncryption()), active_kid="t1")
+        _KEYS["pub"] = k.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return _KEYS["ks"], _KEYS["pub"]
+
+
+def _sf_box(monkeypatch, tmp_path, size: int = 64, name: str = "part.x_t"):
+    from app.agent import routes as R
+    f = tmp_path / name
+    f.write_bytes(b"\x01" * size)
+    monkeypatch.setattr(R._upload, "require_destination_group", lambda *a, **k: None)
+    monkeypatch.setattr(R._upload, "staged_path", lambda *a, **k: f)
+    monkeypatch.setattr(R, "_chat_user_pat", lambda *a, **k: "chat-pat")
+    sleeps: list[float] = []
+
+    async def _no_sleep(s):
+        sleeps.append(s)
+    monkeypatch.setattr(R.asyncio, "sleep", _no_sleep)
+    audit = _Audit()
+    ks, _pub = _keystore()
+    req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(agent_audit=audit, keystore=ks)))
+    body = R.UploadDispatchReq(staging_id="s1", filename=name, destination="simflow")
+    principal = Principal(subject="kim@corp.com", email="kim@corp.com", display_name="김철수")
+    return R, req, body, principal, audit, sleeps
+
+
+def _sf_settings(**kw):
+    return _settings(mcp_gateway_url="http://gw.test", **kw)
+
+
+def test_HP15_SimFlow_목적지는_설정_확장자_권한_게이트웨이_도구가_있어야_보인다():
+    from app.agent import upload as U
+    s = _sf_settings(upload_allowed_groups="g")
+    ids = lambda st, ext, tools: [d["id"] for d in U.allowed_destinations(st, ["g"], ext, tools)]  # noqa: E731
+    assert ids(s, "x_t", frozenset({"run_workflow"})) == ["simflow"]
+    assert ids(s, "x_t", frozenset({"simflow_run_workflow"})) == ["simflow"], "다른 앱과 겹쳐 접두로 나와도 SimFlow 가 붙어 있다"
+    assert ids(s, "x_t", frozenset({"create_report_draft"})) == [], "SimFlow 도구가 없는 게이트웨이(dev)에서는 고를 수 없다"
+    assert ids(s, "x_t", None) == ["simflow"], "도구 지도를 모르면 숨기지 않는다(종전 규칙)"
+    assert ids(_sf_settings(upload_allowed_groups="g", simflow_upload_exts=".X_T, x_b"), "x_b", None) == ["simflow"], "설정 확장자"
+    assert ids(_sf_settings(upload_allowed_groups="g", simflow_upload_exts="x_b"), "x_t", None) == []
+    (d,) = U.allowed_destinations(s, ["g"], "x_t", None)
+    assert d["max_bytes"] == 500 * 1024 * 1024 and d["label"] == "SimFlow — 워크플로우 입력 파일"
+    assert "x_t" in U.upload_exts(s, ["g"], None) and "x_t" not in U.upload_exts(s, ["g"], frozenset({"x"}))
+    assert U.upload_exts(s, [], None) == [], "보낼 곳이 없으면 빈 목록"
+    assert not U._dest_ok(s, ["feat:upload"], "simflow") and U._dest_ok(s, ["feat:upload", "plat:simflow"], "simflow")
+
+
+@pytest.mark.anyio
+async def test_HP15_보내기는_다리로_사이트_PAT_와_함께_흘려_보내고_받은_id_를_돌려준다(monkeypatch, tmp_path):
+    import jwt as _jwt
+    seen = _mock_ra(monkeypatch, lambda r: httpx.Response(200, json={"id": "up-1", "status": "ready"}))
+    R, req, body, principal, audit, _sl = _sf_box(monkeypatch, tmp_path)
+    out = await R._dispatch_audited(req, body, principal, _sf_settings())
+    assert out == {"stage": "done", "destination": "simflow", "upload_id": "up-1", "upload_status": "ready", "size": 64,
+                   "result": {"id": "up-1", "status": "ready"}}
+    (r,) = seen
+    assert r.method == "POST" and str(r.url) == _SF_URL
+    claims = _jwt.decode(r.headers["authorization"].removeprefix("Bearer "), _keystore()[1], algorithms=["RS256"], audience="simflow")
+    assert claims["aud"] == ["simflow"] and claims["email"] == "kim@corp.com" and claims["scope"] == "api", \
+        "청중은 SimFlow 하나 — 챗 PAT(게이트웨이 청중)은 다리가 거절한다"
+    assert claims["exp"] - claims["iat"] <= 600 + 120 + 300, "짧다"
+    raw = r.read()
+    assert b'filename="part.x_t"' in raw and b"\x01" * 64 in raw, "원본 그대로(DRM 원본도 풀지 않고)"
+    assert audit.rows[-1]["meta"] == {"destination": "simflow", "upload_id": "up-1", "status": "ready", "size": 64}
+
+
+@pytest.mark.anyio
+async def test_HP15_위층_401_로_캐시를_버렸으면_한_번_다시_보내고_게이트웨이_401_은_다시_보내지_않는다(monkeypatch, tmp_path):
+    answers = [httpx.Response(401, headers={"X-Gateway-Token-Evicted": "1"}, json={"detail": "expired"}),
+               httpx.Response(200, json={"data": {"upload_id": "up-2", "state": "ready"}})]
+    seen = _mock_ra(monkeypatch, lambda r: answers.pop(0))
+    R, req, body, principal, audit, _sl = _sf_box(monkeypatch, tmp_path)
+    out = await R._dispatch_audited(req, body, principal, _sf_settings())
+    assert out["stage"] == "done" and out["upload_id"] == "up-2" and len(seen) == 2, "감싼 꼴(data · upload_id · state)도 받는다"
+    seen = _mock_ra(monkeypatch, lambda r: httpx.Response(401, json={"detail": "bad aud"}))
+    out = await R._dispatch_audited(req, body, principal, _sf_settings())
+    assert len(seen) == 1 and out["stage"] == "failed" and "다시 로그인" in out["error"] and out["sf_status"] == 401
+    assert audit.rows[-1]["status"] == "failed" and audit.rows[-1]["meta"]["sf_status"] == 401
+    seen = _mock_ra(monkeypatch, lambda r: httpx.Response(401, headers={"X-Gateway-Token-Evicted": "1"}))
+    out = await R._dispatch_audited(req, body, principal, _sf_settings())
+    assert len(seen) == 2 and "새로 받은 토큰도 거절" in out["error"], "두 번째도 위층 401 이면 다시 보내지 않고 알린다"
+
+
+@pytest.mark.anyio
+async def test_HP15_drm_pending_이면_ready_까지_보고_기다림이_끝나면_그대로_알린다(monkeypatch, tmp_path):
+    states = ["drm_pending", "drm_pending", "ready"]
+
+    def _h(r):
+        if r.method == "POST":
+            return httpx.Response(201, json={"id": "up-3", "status": "drm_pending"})
+        assert str(r.url) == f"{_SF_URL}/up-3"
+        return httpx.Response(200, json={"id": "up-3", "status": states.pop(0)})
+    seen = _mock_ra(monkeypatch, _h)
+    R, req, body, principal, _audit, sleeps = _sf_box(monkeypatch, tmp_path)
+    out = await R._dispatch_audited(req, body, principal, _sf_settings())
+    assert out["upload_status"] == "ready" and "note" not in out and [r.method for r in seen] == ["POST", "GET", "GET", "GET"]
+    assert sleeps == [2, 2, 2]
+    seen = _mock_ra(monkeypatch, lambda r: httpx.Response(200, json={"id": "up-4", "status": "drm_pending"}))
+    out = await R._dispatch_audited(req, body, principal, _sf_settings(simflow_ready_wait_s=0))
+    assert out["stage"] == "done" and out["upload_status"] == "drm_pending" and "run_workflow" in out["note"] and len(seen) == 1
+
+
+@pytest.mark.anyio
+async def test_HP15_한도를_넘으면_부르지_않고_거절_사유는_알아듣게(monkeypatch, tmp_path):
+    seen = _mock_ra(monkeypatch, lambda r: httpx.Response(200, json={"id": "x", "status": "ready"}))
+    R, req, body, principal, audit, _sl = _sf_box(monkeypatch, tmp_path, size=1_200_000)
+    with pytest.raises(AuthError) as ei:
+        await R._dispatch_audited(req, body, principal, _sf_settings(simflow_upload_max_mb=1))
+    assert ei.value.status_code == 413 and "SimFlow 업로드 한도 1 MB" in ei.value.message and seen == []
+    for code, want in ((413, "크기 한도"), (404, "재프로비저닝"), (403, "권한이 없습니다"), (500, "HTTP 500")):
+        _mock_ra(monkeypatch, lambda r, c=code: httpx.Response(c, json={"detail": "사유 문구"}))
+        out = await R._dispatch_audited(req, body, principal, _sf_settings())
+        assert out["stage"] == "failed" and want in out["error"] and out["sf_status"] == code, (code, out)
+        assert code in (404,) or "사유 문구" in out["error"], "상대가 밝힌 사유를 붙인다"
+    for resp in (httpx.Response(413), httpx.Response(413, json={"code": "TOO_BIG"})):
+        _mock_ra(monkeypatch, lambda r, x=resp: x)
+        out = await R._dispatch_audited(req, body, principal, _sf_settings())
+        assert out["error"] == "SimFlow 가 크기 한도로 받지 않았습니다(HTTP 413)." and out["hint"], "사유가 없으면 사유 칸을 지어내지 않는다(null 도)"
+    _mock_ra(monkeypatch, lambda r: httpx.Response(200, json={"status": "ready"}))
+    out = await R._dispatch_audited(req, body, principal, _sf_settings())
+    assert out["stage"] == "failed" and "업로드 id 를 돌려주지 않았습니다" in out["error"]

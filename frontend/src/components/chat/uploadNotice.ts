@@ -49,7 +49,7 @@ export function wikiNotice(r: WikiSendResult, now = Date.now()): UploadNotice {
   };
 }
 
-/** 보내기 성공 → 알림. 문서 갈래(RA · AIDH)가 아니거나 실패면 null(알림을 남기지 않는다). */
+/** 보내기 성공 → 알림. 문서 갈래(RA · AIDH) · SimFlow 가 아니거나 실패면 null(알림을 남기지 않는다). */
 export function dispatchNotice(filename: string, r: DispatchResult, now = Date.now()): UploadNotice | null {
   if (r.stage !== 'done') return null;
   if (r.destination === 'aidatahub' && r.inbox_name) {
@@ -103,6 +103,22 @@ export function dispatchNotice(filename: string, r: DispatchResult, now = Date.n
       }],
     };
   }
+  if (r.destination === 'simflow' && r.upload_id) {
+    // 받은 id 를 글로 박는다 — 다음 턴이 그 id 로 run_workflow 를 부를 수 있게(docs/request-1027 HP-15). DRM 을 아직 푸는 중이면 그렇다고.
+    const st = r.upload_status || '?';
+    const facts = { upload_id: r.upload_id, status: st, size: r.size ?? null, note: r.note ?? null };
+    const full = clip(JSON.stringify(facts));
+    return {
+      title: `${filename} — SimFlow 업로드`,
+      text: `「${filename}」 을 SimFlow 에 올렸습니다 — 업로드 id \`${r.upload_id}\` · 상태 ${st}.`
+        + (st === 'drm_pending' ? ' SimFlow 가 아직 DRM 을 푸는 중입니다 — ready 가 된 뒤 run_workflow 에 이 id 를 쓰세요.'
+          : ' 이 id 를 run_workflow 의 입력으로 쓸 수 있습니다.'),
+      activity: [{
+        ts: now, step: 'SimFlow 업로드(사람이 올림)', tool: 'mcp-uploads',
+        detail: JSON.stringify({ file: filename }), result_full: full, result_preview: preview(full), ok: true, origin: 'upload',
+      }],
+    };
+  }
   return null;
 }
 
@@ -115,6 +131,9 @@ export function dispatchInstruction(r: DispatchResult): string {
   }
   if ((r.destination === 'reportarchive' || r.destination === 'reportarchive_precise') && r.report_id != null) {
     return `Report Archive 보고서 ${r.report_id}${r.title ? `(「${r.title}」)` : ''}를 get_report_outline · get_report 로 읽고 검토해 줘`;
+  }
+  if (r.destination === 'simflow' && r.upload_id) {
+    return `SimFlow 업로드 \`${r.upload_id}\` 를 입력으로 쓸 워크플로를 골라 run_workflow 로 돌려 줘`;
   }
   return '';
 }
