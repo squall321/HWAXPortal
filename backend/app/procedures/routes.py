@@ -453,6 +453,37 @@ def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal,
             f"RA 토큰을 등록하세요(단계: {', '.join(tools[:3])})"]
 
 
+def _conn_precheck(request: Request, spec: ProcedureSpec, principal: Principal) -> list[str]:
+    """박스 권한표에 선언한 외부 연결(FMEA · MatNexus … — connect:) 단계가 있는데 그 사람이 토큰을 등록하지 않았으면 **시작 전에**
+    말한다 — 종전엔 RA 만 봐서 실행 도중 게이트웨이에서 거절됐다(docs/request-1027 HP-48 · 사용자 결정 D-7). RA 와 같이 막지는 않는다."""
+    access = getattr(request.app.state, "access", None)
+    users = getattr(request.app.state, "user_store", None)
+    if access is None or users is None:
+        return []
+    try:
+        conns = access.get().connections()
+    except Exception:  # noqa: BLE001 — 사전검사 실패가 실행을 막지 않는다
+        logger.info("외부 연결 사전검사 — 선언을 읽지 못했다(건너뜀)", exc_info=True)
+        return []
+    out: list[str] = []
+    for key, c in sorted(conns.items()):
+        tools = [st.tool for st in spec.steps if st.backend == key]
+        if not tools:
+            continue
+        try:
+            conn = users.get_connection(email=principal.email, service=key)
+        except Exception:  # noqa: BLE001
+            logger.info("외부 연결 사전검사 실패(%s — 건너뜀)", key, exc_info=True)
+            continue
+        if conn and conn.get("token"):
+            continue
+        label = c.label or key
+        out.append(f"{label} 토큰이 등록되어 있지 않습니다 — 그 단계는 게이트웨이가 **거부합니다**(서비스 계정 없음). 포털 "
+                   f"**개인 토큰 › 외부 연결**(/tokens?tab=connect)에서 {label} 토큰({c.token_hint or '…'})을 등록하세요"
+                   f"(단계: {', '.join(tools[:3])})")
+    return out
+
+
 @router.post("/runs", status_code=202, dependencies=[Depends(require_csrf)])
 async def start_run(request: Request, body: RunIn,
                     principal: Principal = Depends(_me),
@@ -478,7 +509,7 @@ async def start_run(request: Request, body: RunIn,
         except SpecError as exc:
             raise AuthError(str(exc), status_code=422) from None
 
-    notes = _ra_precheck(request, spec, principal, settings) if spec is not None else []
+    notes = (_ra_precheck(request, spec, principal, settings) + _conn_precheck(request, spec, principal)) if spec is not None else []
 
     run_id = store.create_run(
         owner_sub=principal.subject, run_by=principal.subject,

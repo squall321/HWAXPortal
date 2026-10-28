@@ -1093,6 +1093,28 @@ def test_사람별_위임이_켜진_박스에서는_연결_없음을_말하지_�
         assert r.status_code == 202 and "warnings" not in r.json(), (conn, r.json())
 
 
+def test_HP48_선언_플랫폼_단계도_토큰이_없으면_시작_전에_말한다(user, monkeypatch):
+    """박스 권한표의 connect: 선언(FMEA · MatNexus …) 단계 — 등록이 없으면 게이트웨이가 거부하는데 종전엔 RA 만 봐서 실행 도중에야
+    알았다(docs/request-1027 HP-48 · 사용자 결정 D-7)."""
+    from app.access.policy import ConnectSpec
+    c, h = user
+    pol = c.app.state.access.get()
+    decl = ConnectSpec(backend="fmea", mcp_url="http://fmea.invalid/mcp", platform_id="fmea", label="FMEA Agent", token_hint="fmea_…")
+    monkeypatch.setattr(type(pol), "connections", lambda self: {"fmea": decl})
+    spec = {"title": "FMEA 절차", "steps": [{"backend": "fmea", "tool": "fmea_list_projects", "args": {}}]}
+    r = c.post(f"{PREFIX}/procedures", json={"title": "f", "spec": spec}, headers=h)
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan", "vars": {}}, headers=h)
+    assert r.status_code == 202, r.text
+    w = " ".join(r.json().get("warnings") or [])
+    assert "FMEA Agent 토큰이 등록되어 있지 않습니다" in w and "/tokens?tab=connect" in w and "fmea_list_projects" in w, r.json()
+    me = c.get("/auth/me", headers=h).json()
+    c.app.state.user_store.set_connection(email=me["email"], service="fmea", token="fmea_tok")
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan", "vars": {}}, headers=h)
+    assert r.status_code == 202 and "warnings" not in r.json(), r.json()
+
+
 def test_사전검사는_막지_않는다(user):
     """계획 모드로 무엇을 부를지만 보려는 경우가 있다 — 모르는 것과 틀린 것을 안 섞는다."""
     c, h = user
