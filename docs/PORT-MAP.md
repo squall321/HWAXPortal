@@ -22,6 +22,7 @@
 | 5434 | SignalForge | `sf_postgres` | `SignalForge/backend/.env` |
 | 5435 | AIDataHub | `aidh_postgres` | `AIDataHub/api_server/.env` |
 | 5436 | **DynaForge (KooRemapper)** | `koorm_postgres` | `KooRemapper/platform/.env` |
+| 5437 | **SceneForge** — 예약(10-28, 아직 없다) | SceneForge 가 정한다 | SceneForge 의 `.env` |
 | 5732 | HEAXHub | `heax-pg` | `HEAXHub/.env` |
 
 **5433 은 쓰지 않는다.** Debian/Ubuntu 계열에서 apt 로 깔린 두 번째 PostgreSQL 클러스터가
@@ -55,6 +56,19 @@
 **호출 추적(Phoenix)은 포트 하나다.** Phoenix 는 gRPC OTLP 수신기(기본 4317)를 따로 여는데 PHOENIX_HOST 를 보지 않고 모든 인터페이스에 열어서,
 띄우는 셈(`infra/call-trace/phoenix_serve.py`)이 그 수신기를 끈다 — 기록기는 8750 의 `/v1/traces` 로만 보낸다. 기동 화면에 찍히는
 `OTLP over gRPC …:4317` 줄은 듣지 않는 포트다(docs/improvement-1015/call-trace.md).
+
+## 포지의 고정 포트(허브 앱 풀 밖)
+
+HEAXHub 가 띄우지 않고 스스로 뜨는 포지(웹은 허브에 proxy 엔트리, MCP 는 직결 엔트리로 등록한다)의 리스너다. 새 포지는 이 줄 옆의
+빈 자리를 고르고, 허브 앱 포트 풀(9100~9999) 안은 고르지 않는다(위 '포털 스택의 서비스 포트' 아래 문단).
+
+| 포트 | 무엇 | 상태 | 설정 |
+|---|---|---|---|
+| 8700 · 8701 | DynaForge(KooRemapper) API · MCP | 운영 | `KooRemapper/platform/.env` `KOORM_API_PORT` · `KOORM_MCP_PORT` |
+| 8710 · 8711 | **SceneForge** API · MCP | **예약**(10-28 — 낙하 트윈, 리포만 있고 아직 뜨지 않는다) | SceneForge 의 `.env` |
+
+SceneForge 의 HEAX 두 엔트리 · 권한표 · 게이트웨이 위임 · 배포 줄은 그 포지의 골격이 뜬 뒤에 붙인다(KooRemapper
+`docs/requests/hwax-portal-drop-twin-request-2026-10-28.md` ③ · §8). 예약을 지우거나 옮기면 그 요청서의 받는 쪽에 알린다.
 
 ## DynaForge 는 두 값을 함께 바꿔야 한다
 
