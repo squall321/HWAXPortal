@@ -11,6 +11,7 @@ import {
 } from '../../api/chat.api';
 import { useChat } from '../../state/ChatContext';
 import { useCan } from '../../auth/useCan';
+import { AgentDeepView } from './AgentDeepView';
 import { PersonaBrowser } from './PersonaBrowser';
 import { DetailError } from './AgentFacts';
 import { shortName } from './personaColor';
@@ -39,6 +40,8 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const [helperSel, setHelperSel] = useState<{ key: string; name?: string }[]>(pinnedHelpers);
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // 고른 전문가의 지식카드 전체(AgentDeepView) — 조직도 창(PersonaBrowser)에만 있던 길을 여기서도 연다(docs/request-1027 HP-41).
+  const [deep, setDeep] = useState(false);
   const selKeyRef = useRef<string | null>(pinnedAgent);
 
   // 열자마자 전체 풀·도구 카탈로그 로드 — 조직도와 앱 목록이 이 응답 하나로 선다.
@@ -56,6 +59,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
 
   // 키 → 사람 이름. 지정 시 표시용 이름을 함께 실어야 칩·말풍선이 키를 안 보여 준다.
   const nameOf = (key: string) => pool.find((a) => a.key === key)?.name ?? key;
+  const selExpert = agentSel ? pool.find((a) => a.key === agentSel) : undefined;
 
   const toolAll = useMemo(() => res?.tools?.all ?? [], [res]);
   // 앱 목록 — 서버가 주면 그대로(설명 포함), 구 서버 응답이면 도구의 group 으로 재구성.
@@ -286,7 +290,12 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             <p className="sp-empty">상세 로딩 중…</p>
           ) : detail ? (
             <>
-              <div className="sp-detail-name"><IconUser className="ico" width={14} height={14} /> {detail.name}</div>
+              <div className="sp-detail-name">
+                <IconUser className="ico" width={14} height={14} /> {detail.name}
+                {selExpert && (
+                  <button type="button" className="pv-deep" onClick={() => setDeep(true)}>전체 보기 →</button>
+                )}
+              </div>
               {detail.role && <p className="sp-detail-role"><InlineMd text={detail.role} /></p>}
               {detail.tags.length > 0 && (
                 <p className="sp-dim">태그: {detail.tags.slice(0, 12).join(' · ')}</p>
@@ -322,6 +331,9 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
               <DetailError detail={detail} className="sp-warn" />
             </>
           ) : null}
+          {deep && selExpert && (
+            <AgentDeepView agent={selExpert} initialDetail={detail} onClose={() => setDeep(false)} />
+          )}
         </div>
       )}
 
