@@ -154,6 +154,10 @@ def test_프롬프트_상한이_에이전트서버와_같다():
 # 남아, 동기화 미리보기가 '이 앱에 없는 도구' 로 멈췄다(2026-10-07). ste 는 페르소나가 없어 정본에서는 겹침이 안 보인다 —
 # 그래서 그쪽 이름을 여기 적어 둔다(dev 게이트웨이 /tools-map 실측). ste 가 도구를 더 내놓으면 이 목록에 더한다.
 _STE_NATIVE = frozenset({"list_jobs", "submit_job", "prepare_upload", "cancel_job"})
+# cae00 에서 접두 이름으로만 있는 것 — 그 박스 미리보기가 '이 앱에 없는 도구' 로 exit 2 였다(10-27, docs/request-1027 HP-19).
+# cae00 /tools-map 에는 heaxkooremapper_mcp_get_job · aidatahub_list_tags · reportarchive_get_guide · reportarchive_restore_version
+# 으로만 있다(겹치는 상대 앱은 그 미리보기에 없다). dev 는 겹치는 상대가 없어 맨 이름으로 낸다 — 정본만 보면 겹침이 안 보인다.
+_CAE00_PREFIXED = frozenset({"get_job", "list_tags", "get_guide", "restore_version"})
 _TOOL_FIELDS = ("key_tools", "writes", "confirm")
 
 
@@ -175,7 +179,7 @@ def test_다른_앱과_이름이_겹치는_도구는_접두_이름으로_적는�
             for name in p[fld]:
                 owners.setdefault(_native(name, p["apps"]), set()).add(p["key"])
     # 겹치는 이름 = 두 페르소나(= 서로 다른 앱)가 같이 적은 이름 + ste 가 내놓는 이름
-    shared = {n for n, who in owners.items() if len(who) > 1} | _STE_NATIVE
+    shared = {n for n, who in owners.items() if len(who) > 1} | _STE_NATIVE | _CAE00_PREFIXED
     bare = [f"{p['key']}.{fld}: {name}" for p in personas for fld in _TOOL_FIELDS for name in p[fld]
             if name in shared and _native(name, p["apps"]) == name]
     assert not bare, ("다른 앱과 겹치는 도구를 맨 이름으로 적었다 — 게이트웨이는 `<앱 키에서 하이픈 뺀 것>_<이름>` 으로 내놓는다"
@@ -255,6 +259,25 @@ def test_정본은_cae00_게이트웨이에서도_멈추지_않는다():
     web = _one("he-research-web")
     _rows, skipped, errors = sync.plan(web, _cae00_map(web["personas"][0], {"list_egress_log"}, {"search_web"}))
     assert not errors and not skipped, errors
+
+
+def test_HP19_cae00_에서_접두로만_있는_이름도_멈추지_않는다():
+    """정본에 접두 별칭을 적으면 cae00(접두로만 노출) · dev(맨 이름 노출) 둘 다 통과하고, 올리는 값이 박스마다 같다(HP-19)."""
+    sync = _sync()
+    for key in ("he-sim-dynaforge", "he-data-aidatahub", "he-doc-reportarchive"):
+        one = _one(key)
+        p = one["personas"][0]
+        app = p["apps"][0]
+        names = {_native(n, p["apps"]) for fld in _TOOL_FIELDS for n in p[fld]}
+        assert names & _CAE00_PREFIXED, key
+        cae00 = {(f"{app.replace('-', '')}_{n}" if n in _CAE00_PREFIXED else n): app for n in names}
+        dev = dict.fromkeys(names, app)
+        rows = []
+        for m in (cae00, dev):
+            got, skipped, errors = sync.plan(one, {"map": m, "areas": {}, "area_meta": [], "apps": [{"app": app, "label": app}]})
+            assert not errors and not skipped, (key, errors, skipped)
+            rows.append(got[0]["response_config"]["key_tools"])
+        assert rows[0] == rows[1] == p["key_tools"], key
 
 
 def _cluster_tool(name: str) -> bool:

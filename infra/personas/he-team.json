@@ -162,7 +162,7 @@
         "compare_reports 는 같은 kind(sphere↔sphere, impact↔impact)끼리만 의미가 있다.",
         "report_part_series 는 다운샘플이다 — 원본 점 수와 함께 전한다."
       ],
-      "key_tools": ["list_operations", "describe_operation", "run_operation", "get_job", "list_sessions", "report_facets", "find_reports", "report_summary", "report_worst_cases", "report_part_risk"],
+      "key_tools": ["list_operations", "describe_operation", "run_operation", "heaxkooremapper_mcp_get_job", "list_sessions", "report_facets", "find_reports", "report_summary", "report_worst_cases", "report_part_risk"],
       "writes": ["create_session", "upload_kfile", "run_operation", "update_session", "ingest_report", "update_report_meta", "attach_report_scenario", "publish_report_to_datahub"],
       "confirm": ["delete_session", "delete_file", "delete_report", "heaxkooremapper_mcp_cancel_job"],
       "samples": [
@@ -368,7 +368,7 @@
         "team·group 은 임의로 채우지 않는다. 틀리면 엉뚱한 곳에 저장돼 못 찾는다 — 사용자에게 확인한다.",
         "pcb_warpage_surrogate 는 합성 데이터로 학습한 데모다. 절대값을 판정 근거로 쓰지 않는다."
       ],
-      "key_tools": ["discover", "list_records", "hybrid_search", "agent_search", "get_record_sections", "data_aggregate", "list_tags", "import_record"],
+      "key_tools": ["discover", "list_records", "hybrid_search", "agent_search", "get_record_sections", "data_aggregate", "aidatahub_list_tags", "import_record"],
       "writes": ["import_record", "convert_file"],
       "confirm": ["create_agent", "patch_agent", "bind_records_to_agent", "create_doc_type"],
       "samples": [
@@ -442,9 +442,9 @@
         "resolve_thread 는 사용자가 닫으라고 할 때만 부르고, reply_comment 에는 무엇을 고쳤는지 구체적으로 적는다.",
         "로컬 파일은 reportarchive_prepare_upload(셸 curl), 웹 파일은 reportarchive_upload_from_url 로 올린다. reportarchive_upload_file(base64)은 최후수단이다."
       ],
-      "key_tools": ["get_guide", "search_reports", "reportarchive_list_reports", "get_report_outline", "get_reports_digest", "describe_template", "create_report_draft", "update_report_draft", "list_analysis_runs", "get_analysis_summary"],
+      "key_tools": ["reportarchive_get_guide", "search_reports", "reportarchive_list_reports", "get_report_outline", "get_reports_digest", "describe_template", "create_report_draft", "update_report_draft", "list_analysis_runs", "get_analysis_summary"],
       "writes": ["create_report_draft", "create_report_from_preset", "create_report_from_run", "update_report_draft", "append_rows", "patch_cells", "copy_report", "save_report_as_preset", "add_report_tags", "set_report_folders", "link_reports", "reply_comment", "request_composite_item", "reportarchive_upload_from_url", "reportarchive_prepare_upload"],
-      "confirm": ["publish_report", "request_unpublish", "restore_version", "trash_report", "remove_rows", "resolve_thread", "map_analysis_part"],
+      "confirm": ["publish_report", "request_unpublish", "reportarchive_restore_version", "trash_report", "remove_rows", "resolve_thread", "map_analysis_part"],
       "samples": [
         "지난 4주 주간보고 모아서 월간보고 초안 써줘",
         "우리 팀 게시판 '진행 중' 폴더 보고서 목록 보여줘",
