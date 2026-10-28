@@ -604,7 +604,7 @@ def test_옛_항목_방아쇠의_판_확인_글자가_옆의_게이트웨이에_
     src = prov.read_text(encoding="utf-8")
     body = _fn("_gw_stale")
     literals = re.findall(r"grep -qF '([^']+)'", body)
-    assert len(literals) == 2, body
+    assert len(literals) == 3, body
     for lit in literals:
         assert lit in src, f"게이트웨이 프로비저너에 '{lit}' 가 없다 — update-all 의 _gw_stale 과 맞춘다"
 
@@ -734,6 +734,23 @@ def test_재프로비저닝이_ODB_허브_주소를_게이트웨이에_넘긴다
     update-all 은 기대하므로 매 실행 재프로비저닝이 헛돈다."""
     vals = {"ODB_HUB_TOKEN": "odb-test-token", "ODB_HUB_BASE": "http://203.0.113.30:8000"}
     assert _provisioner_sees(tmp_path, vals) == vals
+
+
+_ODB_NEW_GW = _NEW_GW + '\n        cfg["odb-hub"] = {"url": f\'{_odb_base}/mcp\', "headers": {"Authorization": f"Bearer {_ODB}"}}\n'
+
+
+@pytest.mark.parametrize("cfg, prov, want", [
+    (ODB_CFG_QUERY, "header", "odb-hub_stale"),     # 옛 쿼리 꼴 + 헤더 꼴을 짓는 판 → 다시 짓는다
+    (ODB_CFG, "header", ""),                        # 이미 헤더 꼴
+    (ODB_CFG_QUERY, "old", ""),                     # 옆 게이트웨이가 아직 쿼리 꼴을 짓는 판 — 당기면 매 실행 헛돈다
+], ids=["옛꼴-새판", "새꼴", "옛꼴-옛판"])
+def test_HP28_odb_hub_옛_쿼리_꼴은_재프로비저닝을_한_번_당겨_헤더로_옮긴다(tmp_path, cfg, prov, want):
+    """게이트웨이 HG-02 는 provision-config.sh 가 돌 때만 반영된다 — §5 는 빠진 백엔드가 없으면 재프로비저닝하지 않아 cae00 의 odb-hub 가
+    쿼리 꼴(토큰이 접속 로그에 남는다)로 남는다(docs/request-1027 HP-28)."""
+    missing, out = _stale_trigger(tmp_path, cfg, prov=_ODB_NEW_GW if prov == "header" else _NEW_GW)
+    assert missing == want, out
+    if want:
+        assert "옛 꼴 바꾸기: odb-hub" in out and "Authorization 헤더로 옮긴다" in out and "odb-test-token" not in out
 
 
 # ── heax-hub 밖 일반 앱의 MCP 백엔드(<접두>_MCP_URL) — MatNexus 등(docs/sso-delegation, 10-20) ─────────────────────────
