@@ -10,6 +10,7 @@ import copy
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -19,7 +20,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.access.policy import ADMIN_GROUP
+from app.auth.conn_crypt import ConnCipher
 from app.config import Settings
+
+log = logging.getLogger("hwax.user_store")
 
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**14, 8, 1
 LOCK_AFTER_FAILS = 5          # 연속 실패 이 횟수에서 잠금
@@ -121,6 +125,31 @@ class UserStore:
             "id TEXT PRIMARY KEY, by TEXT NOT NULL, at INTEGER NOT NULL)"
         )
         self._commit()
+        # 연결 토큰 암호화(docs/request-1027 HP-05 · 사용자 결정 D-5) — 쓸 때 잠그고 읽을 때 푼다. 옛 평문 행은 여기서 제자리에서 바꾼다.
+        self._cipher = ConnCipher(settings.resolve(getattr(settings, "conn_key_path", None) or "secrets/conn.key"))
+        self._encrypt_plain_connections()
+
+    def _encrypt_plain_connections(self) -> None:
+        """평문으로 남은 연결 토큰을 암호문으로 바꾸고, 풀 수 없는 암호문(키를 잃었다)이 있으면 몇 건인지 크게 남긴다(값은 찍지 않는다)."""
+        with self._lock:
+            rows = self._conn.execute("SELECT rowid, token FROM connections").fetchall()
+            plain = [(rid, tok) for rid, tok in rows if not self._cipher.is_enc(tok)]
+            for rid, tok in plain:
+                self._conn.execute("UPDATE connections SET token = ? WHERE rowid = ?", (self._cipher.encrypt(tok), rid))
+            if plain:
+                self._commit()
+        lost = sum(1 for _rid, tok in rows if self._cipher.is_enc(tok) and self._cipher.decrypt(tok) is None)
+        if plain:
+            log.info("연결 토큰 %d건을 암호문으로 바꿨다(HP-05)", len(plain))
+        if lost:
+            log.error("연결 토큰 %d건을 풀 수 없다 — 암호 키(%s)가 바뀌었거나 없어졌다. 비밀 묶음(backup-local secrets)의 "
+                      "portal/backend/secrets/conn.key 를 되살리거나, 그 사람들이 '외부 연결' 에서 다시 등록한다", lost, self._cipher.path)
+
+    def _plain(self, stored: str, email: str, service: str) -> str | None:
+        tok = self._cipher.decrypt(stored)
+        if tok is None:
+            log.warning("연결 토큰을 풀 수 없다(%s · %s) — 등록이 없는 것으로 본다(암호 키가 바뀌었다)", service, norm_email(email))
+        return tok
 
     def _add_column(self, name: str, decl: str) -> None:
         """users 표에 칸을 더한다 — **이미 있는 칸만** 조용히 넘어간다(재기동마다 지나는 자리다).
@@ -315,7 +344,7 @@ class UserStore:
         with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO connections (email, service, token, workspace, created_at) "
-                "VALUES (?, ?, ?, ?, ?)", (norm_email(email), service, token, workspace, _now()))
+                "VALUES (?, ?, ?, ?, ?)", (norm_email(email), service, self._cipher.encrypt(token), workspace, _now()))
             self._commit()
 
     def get_connection(self, *, email: str, service: str) -> dict | None:
@@ -323,7 +352,10 @@ class UserStore:
             row = self._conn.execute(
                 "SELECT token, workspace FROM connections WHERE email = ? AND service = ?",
                 (norm_email(email), service)).fetchone()
-        return {"token": row[0], "workspace": row[1]} if row else None
+        if not row:
+            return None
+        tok = self._plain(row[0], email, service)
+        return {"token": tok, "workspace": row[1]} if tok is not None else None
 
     def set_connection_workspace(self, *, email: str, service: str, workspace: str) -> bool:
         """토큰은 그대로 두고 워크스페이스만 바꾼다.
@@ -354,7 +386,10 @@ class UserStore:
                 "WHERE email = ? AND service = ?", (norm_email(email), service)).fetchone()
         if not row:
             return None
-        return {"tail": row[0][-4:], "workspace": row[1], "created_at": row[2]}
+        tok = self._plain(row[0], email, service)
+        if tok is None:
+            return {"tail": "", "workspace": row[1], "created_at": row[2], "unreadable": True}
+        return {"tail": tok[-4:], "workspace": row[1], "created_at": row[2]}
 
     def connection_services(self, email: str) -> list[str]:
         """그 사람이 토큰을 등록한 service 들 — 토큰 칸은 읽지 않는다('외부 연결' 화면의 고아 줄, docs/ext-connect)."""

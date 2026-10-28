@@ -21,8 +21,9 @@ os.environ.setdefault(
 #   · 절차 — 기동이 close_stale() 로 '돌던 단계' 를 unknown 으로 마감한다. 떠 있는 포털이 실제로 돌리던 단계까지 닫는다.
 #   · 대화 — 스키마 이관이 실 DB 에서 돈다.
 # 무엇을 열었는지는 test_suite_isolation 이 포털을 띄워 sqlite 에 직접 물어 본다.
+#   · 연결 토큰 암호 키(HP-05) — 계정 원장을 열면 키가 없을 때 만든다. 그대로 두면 시험이 이 박스의 backend/secrets/conn.key 를 만든다.
 for _key, _name in (("TOKEN_STORE_PATH", "token_store.sqlite"), ("CONV_STORE_PATH", "conversations.sqlite"),
-                    ("PROCEDURES_STORE_PATH", "procedures.sqlite")):
+                    ("PROCEDURES_STORE_PATH", "procedures.sqlite"), ("CONN_KEY_PATH", "conn.key")):
     os.environ.setdefault(_key, os.path.join(tempfile.mkdtemp(prefix="hwax-test-store-"), _name))
 # 사용자를 정지하면 앱 쪽 자격도 회수한다(8차 요청 §7 — 게이트웨이 `/conn-invalidate` · ste `/api/auth/sso/revoke`). 그대로 두면 시험이
 # 사용자를 정지할 때마다 이 박스에 **떠 있는** 게이트웨이를 backend/.env 의 실제 공유 시크릿으로 부른다 — 시험은 공유 서비스를 치면

@@ -6,7 +6,9 @@ Phase 0: health.  Phase 1: auth session + AuthProvider/JWTService on app.state.
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi.exceptions import RequestValidationError
@@ -54,6 +56,29 @@ def _agent_timeout(s) -> httpx.Timeout:
     """에이전트 서버로 가는 공유 클라이언트의 한도. read 만 따로다 — AGENT_STREAM_IDLE_TIMEOUT_S(침묵 한도), 0 이하는 끔(무제한)."""
     idle = s.agent_stream_idle_timeout_s
     return httpx.Timeout(s.agent_request_timeout, read=idle if idle > 0 else None)
+
+
+def _tighten_sqlite(settings) -> list[str]:
+    """포털 sqlite 다섯(+ -wal · -shm · -journal)을 0600 으로 맞춘다 → 바꾼 경로. 만드는 쪽이 umask 대로 644 로 두었다 — 10-27 cae00 에서
+    users.sqlite 만 손질로 600 이고 나머지 넷은 644 였다(docs/request-1027 HP-05). 심볼릭 링크(/data 이관)는 대상의 권한을 바꾼다.
+    못 바꾸면 경고만 — 기동은 막지 않는다."""
+    changed: list[str] = []
+    for attr in ("user_store_path", "conv_store_path", "token_store_path", "agent_audit_log_path", "procedures_store_path"):
+        raw = getattr(settings, attr, None)
+        if not raw:
+            continue
+        base = Path(settings.resolve(raw))
+        cands = {base, base.resolve()}
+        for b in list(cands):
+            cands |= {Path(f"{b}{suf}") for suf in ("-wal", "-shm", "-journal")}
+        for p in cands:
+            try:
+                if p.exists() and (p.stat().st_mode & 0o777) != 0o600:
+                    os.chmod(p, 0o600)
+                    changed.append(str(p))
+            except OSError as exc:
+                _log.warning("sqlite 권한을 0600 으로 맞추지 못했다: %s (%r)", p, exc)
+    return changed
 
 
 @asynccontextmanager
@@ -148,6 +173,10 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         app.state.procedures_error = f"{type(exc).__name__}: {exc}"
         _log.error("절차 기동 실패 — 모듈만 끄고 포털은 계속 뜬다", exc_info=True)
+    # 저장소를 다 연 뒤에 — 각자 파일을 만들었다(HP-05). 연결 토큰은 UserStore 가 이미 암호문으로 바꿨다.
+    _tight = _tighten_sqlite(settings)
+    if _tight:
+        _log.info("sqlite %d개를 0600 으로 맞췄다", len(_tight))
 
     yield
     # Shutdown: close the pooled client + the audit sqlite connection.

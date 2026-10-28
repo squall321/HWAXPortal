@@ -200,6 +200,9 @@ class Settings(BaseSettings):
     jwt_active_kid: str = "dev-1"
     jwt_launch_ttl: int = 90  # downstream launch token (s) — short to shrink replay window
     token_store_path: str = "secrets/token_store.sqlite"
+    # 사람이 등록한 외부 연결 토큰의 암호 키(0600) — 없으면 처음 열 때 만든다. 비밀 묶음(backup-local secrets)이 들고, DB 묶음에는 넣지 않는다.
+    # 잃으면 등록된 연결을 풀 수 없어 사람마다 다시 등록한다(docs/request-1027 HP-05 · 사용자 결정 D-5, app/auth/conn_crypt.py).
+    conn_key_path: str = "secrets/conn.key"
     # 서버 대화 저장소(SQLite) — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본.
     conv_store_path: str = "data/conversations.sqlite"
     # 서버 대화 저장소의 SQLite 잠금 대기(초). 종전에는 sqlite3 기본 5초였다 — 다른 프로세스(백업 backup-local.sh 가 이 DB 를

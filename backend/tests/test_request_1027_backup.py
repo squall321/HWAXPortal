@@ -219,6 +219,7 @@ def _secrets_tree(tree):
         "backend/config/systems.cae00.yaml": "b: 2\n",
         "backend/config/access.local.yaml": "c: 3\n",
         "backend/config/saml/prod/idp.xml": "<x/>\n",
+        "backend/secrets/conn.key": "k3y\n",                          # 연결 토큰 암호 키(HP-05)
     }
     for rel, body in files.items():
         (p / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -258,6 +259,14 @@ def test_HP17_두_env_는_따로_박스_파일_crontab_리스크_비밀이_들�
     assert got["crontab/crontab.txt"] == tree["ct"].read_bytes()
     for n in ("cred.key", "secrets.env", "origin.json"):
         assert got[f"heax/hwax_risk/{n}"] == (n + "\n").encode()
+    assert got["portal/backend/secrets/conn.key"] == b"k3y\n", "연결 토큰 암호 키 — 잃으면 사람마다 다시 등록한다(HP-05 · D-5)"
+
+
+def test_HP05_연결_키는_DB_를_담는_포털_묶음에는_넣지_않는다():
+    """한 묶음에 DB(암호문)와 키가 같이 들면 백업에서 암호화가 뜻을 잃는다 — 포털 묶음은 sqlite · jwt 만이다."""
+    src = (ROOT / "infra/scripts/backup-local.sh").read_text(encoding="utf-8")
+    portal = src[src.index("if want portal; then"):src.index("if want gateway; then")]
+    assert "conn.key" not in portal and "CONN_KEY_PATH" not in portal
 
 
 def test_HP17_crontab_없음은_빼고_못_읽음은_실패로_센다(tree):

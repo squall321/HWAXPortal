@@ -33,10 +33,11 @@ def opened() -> dict[str, Path]:
         assert st.procedures_store is not None, getattr(st, "procedures_error", "절차 저장소가 뜨지 않았다")
         return {"계정 원장": _db_file(st.user_store._conn), "토큰 저장소": _db_file(st.token_store._conn),
                 "대화 저장소": _db_file(st.conv_store._conn), "감사 원장": _db_file(st.agent_audit._conn),
-                "절차 저장소": _db_file(st.procedures_store._conn())}
+                "절차 저장소": _db_file(st.procedures_store._conn()),
+                "연결 암호 키": st.user_store._cipher.path.resolve()}     # sqlite 는 아니지만 계정 원장을 열면 없을 때 만든다(HP-05)
 
 
-@pytest.mark.parametrize("name", ["계정 원장", "토큰 저장소", "대화 저장소", "감사 원장", "절차 저장소"])
+@pytest.mark.parametrize("name", ["계정 원장", "토큰 저장소", "대화 저장소", "감사 원장", "절차 저장소", "연결 암호 키"])
 def test_기동이_여는_저장소는_이_박스의_실_저장소가_아니다(opened, name):
     path = opened[name]
     for root in REAL_ROOTS:

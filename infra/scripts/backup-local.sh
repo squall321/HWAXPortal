@@ -301,6 +301,10 @@ if want secrets; then
   # 포털 파일은 리포 안 자리 그대로 담는다(portal/infra/.env · portal/backend/.env …). 둘 다 portal/ 에 넣던 때는 이름이 같아
   # backend/.env 가 infra/.env(포털 비밀 정본)를 덮었다(docs/request-1027 HP-17).
   put "$SELF_REPO/infra/.env" portal/infra; put "$SELF_REPO/backend/.env" portal/backend
+  # 연결 토큰 암호 키(docs/request-1027 HP-05 · 결정 D-5) — DB 를 담는 포털 묶음과 **따로** 둔다(한 묶음이면 백업에서 암호화가 뜻을 잃는다).
+  # 잃으면 등록된 연결을 풀 수 없어 사람마다 다시 등록한다. 자리는 포털 설정 CONN_KEY_PATH(상대면 backend 기준)와 같다.
+  _ck="${CONN_KEY_PATH:-secrets/conn.key}"; case "$_ck" in /*) ;; *) _ck="$SELF_REPO/backend/$_ck" ;; esac
+  put "$_ck" portal/backend/secrets
   # 박스 파일 — backend/config 에서 git 이 모르는 것(routes.local.env · systems.local.yaml · systems.<박스>.yaml · 권한표
   # access.local.yaml · saml/prod …)은 이 박스에만 있다. 이름을 늘어놓으면 새 박스 파일이 빠지니 git 에 묻는다(무시된 것 포함).
   _bf="$(mktemp)"
