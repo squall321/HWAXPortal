@@ -42,11 +42,19 @@ def test_모든_포털_타일이_어느_플랫폼에든_속한다():
     )
 
 
+# 코어 허브 — cae00 박스 권한표(access.local.yaml)의 `>>> hwax-batch` 블록이 플랫폼으로 묶는다(docs/ext-connect/request.md 1-2).
+# 추적 표에는 없어 오버레이가 없는 박스(dev)에서는 이 대조를 할 수 없다 — 오버레이가 있는 박스에서는 그 표로 그대로 본다(HP-20).
+_BOX_GATED = frozenset({"rootdesigndatahub", "failuretrace", "caegroupdatahub"})
+
+
 def test_HE팀_페르소나_앱이_모두_플랫폼에_속한다():
     pol = _policy()
     spec = json.loads((_ROOT / "infra" / "personas" / "he-team.json").read_text(encoding="utf-8"))
+    overlay = (_BACKEND / "config" / "access.local.yaml").exists()
     for p in spec["personas"]:
-        assert pol.keys_for_gateway(p["apps"]), f"{p['key']} 의 앱 {p['apps']} 이 플랫폼 표에 없다"
+        apps = p["apps"] if overlay else [a for a in p["apps"] if a not in _BOX_GATED]
+        if apps:
+            assert pol.keys_for_gateway(apps), f"{p['key']} 의 앱 {apps} 이 플랫폼 표에 없다"
 
 
 # 게이트웨이 백엔드 키 — dev·cae00 에서 실측한 것(`/health` 의 backends). gateway_config.json 의 `_gateway`·`heax_registry`·

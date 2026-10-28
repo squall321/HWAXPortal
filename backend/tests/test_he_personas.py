@@ -506,3 +506,34 @@ def test_MX_백서_운영자는_위키가_꺼진_박스에서도_멈추지_않�
     text = " ".join([*p["can"], *p["workflow"], *p["pitfalls"], *p["writes"], *p["key_tools"]])
     for gone in ("import_file", "upload_image,", "extract_pptx_images"):
         assert gone not in text and "upload_image" not in p["writes"], f"http 모드에서 실리지 않는 도구를 댄다 — {gone}"
+
+
+def _onto_map(hubs: tuple[str, ...]) -> dict:
+    """cae00 꼴 — 허브 셋이 같은 도구 이름을 내놓아 게이트웨이가 모두 접두로 낸다(HWAXAgentServer _ONTO_CORE 의 노출 이름)."""
+    core = {"rootdesigndatahub": ("object_resolve", "objects_resolve_many", "objects_list", "objects_summary", "object_get",
+                                  "object_fields", "graph_neighbors", "search"),
+            "failuretrace": ("object_resolve", "objects_list", "objects_summary", "graph_neighbors"),
+            "caegroupdatahub": ("object_resolve", "objects_list", "objects_summary")}
+    return {"map": {f"{h}_{t}": h for h in hubs for t in core[h]}, "areas": {}, "area_meta": [],
+            "apps": [{"app": h, "label": h} for h in hubs]}
+
+
+def test_HP20_코어_온톨로지_운영자는_정본_허브를_몰고_붙은_허브만_잇는다():
+    """운영자 key_tools 가 먼저 묶이는 길을 코어 질문에 쓴다(docs/request-1027 HP-20). 이름은 허브끼리 겹쳐 접두로만 있다(HP-19 와 같은 까닭)."""
+    sync = _sync()
+    one = _one("he-data-coreontology")
+    notes: list[str] = []
+    (r,), skipped, errors = sync.plan(one, _onto_map(("rootdesigndatahub", "failuretrace", "caegroupdatahub")), notes)
+    assert not errors and not skipped and not notes, (errors, skipped, notes)
+    assert r["response_config"]["mcp_apps"] == ["rootdesigndatahub", "failuretrace", "caegroupdatahub"]
+    assert r["response_config"]["key_tools"][:5] == ["rootdesigndatahub_object_resolve", "rootdesigndatahub_objects_list",
+                                                    "rootdesigndatahub_objects_summary", "rootdesigndatahub_graph_neighbors",
+                                                    "rootdesigndatahub_object_get"]
+    assert len(r["response_config"]["key_tools"]) <= 12, "에이전트 서버가 12개까지만 싣는다(_persona_meta)"
+    prompt = r["system_prompt"]
+    assert len(prompt) <= sync.PROMPT_MAX and "candidates" in prompt and "조회하지 못했다" in prompt
+    (r,), skipped, errors = sync.plan(one, _onto_map(("rootdesigndatahub",)), notes)
+    assert not errors and r["response_config"]["mcp_apps"] == ["rootdesigndatahub"], "다른 허브가 없는 박스에서도 만든다"
+    assert any("failuretrace" in n and "caegroupdatahub" in n for n in notes), notes
+    _rows, skipped, errors = sync.plan(one, _onto_map(("failuretrace",)))
+    assert not errors and skipped, "정본 허브가 없으면 건너뛴다(dev)"
