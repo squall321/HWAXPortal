@@ -57,6 +57,7 @@ DESTINATIONS: dict[str, dict] = {
         "exts": {"pptx"},                      # RA /imports/pptx 가 받는 것이 이것뿐이다
         "groups_attr": "upload_allowed_group_list",
         "platform": "plat:reportarchive",
+        "max_mb_attr": "ra_import_max_mb",     # 크기 한도 — 목적지 목록에 실어 화면이 미리 막고, 보내기가 다시 본다(HP-02)
     },
     # 정밀 변환 — DocForge 가 패키지를 만들고(배치 · 표 · 차트 값 · 그림 판독) 포털이 그 사람 명의로 RA 에 **엄격 생성**한다(docs/doc-to-ra
     # DF-D2 · DF-D3 · DF-D17). 위 'Report Archive 로 보내기' 는 비교 기준선이라 남긴다. 권한은 RA 와 DocForge 둘 다(also).
@@ -125,6 +126,12 @@ async def gateway_tool_names(settings: Settings) -> frozenset[str] | None:
             names = frozenset(m) if isinstance(m, dict) else None
         except (_httpx.HTTPError, ValueError, AttributeError):
             names = None
+    # 못 읽었으면 **마지막으로 읽은 지도**를 쓴다 — 게이트웨이 재기동 중 60초 창에 None(모름 = 숨기지 않음)이 되면 지금 없는 '정밀 변환' 이
+    # 다시 보였다(docs/request-1027 HP-32). 한 번도 못 읽었으면 종전대로 None 이다.
+    if names is not None:
+        _GW_TOOLS["last"] = names
+    else:
+        names = _GW_TOOLS.get("last")
     _GW_TOOLS.update(at=now, names=names)
     return names
 
@@ -142,8 +149,19 @@ def allowed_destinations(settings: Settings, groups: list[str], ext: str, tools:
         if spec.get("needs_tool") and tools is not None and spec["needs_tool"] not in tools:
             continue
         if _dest_ok(settings, groups, did):
-            out.append({"id": did, "label": spec["label"]})
+            item = {"id": did, "label": spec["label"]}
+            mx = dest_max_bytes(settings, did)
+            if mx:
+                item["max_bytes"] = mx
+            out.append(item)
     return out
+
+
+def dest_max_bytes(settings: Settings, dest_id: str) -> int | None:
+    """목적지의 크기 한도(바이트) — 없거나 0 이면 None(한도 없음)."""
+    attr = (DESTINATIONS.get(dest_id) or {}).get("max_mb_attr")
+    mb = int(getattr(settings, attr, 0) or 0) if attr else 0
+    return mb * 1024 * 1024 if mb > 0 else None
 
 
 def require_any_upload_group(settings: Settings, groups: list[str]) -> None:
@@ -240,6 +258,68 @@ def sweep_expired(settings: Settings) -> int:
     return n
 
 
+def aidh_inbox_dir() -> Path:
+    """AI 데이터 허브 변환기가 읽는 inbox — 변환기는 이 아래의 이름만 받는다."""
+    import os
+    return Path(os.environ.get("AIDH_CONVERT_INBOX") or (Path.home() / "aidh-inbox"))
+
+
+def _aidh_ledger(settings: Settings) -> Path:
+    return Path(settings.upload_staging_dir) / ".aidh-inbox-ledger.json"
+
+
+def aidh_inbox_note(settings: Settings, name: str) -> None:
+    """포털이 inbox 에 둔 사본 하나를 장부에 적는다 — 청소가 **포털이 넣은 것만** 지우게(남이 둔 파일은 건드리지 않는다, HP-29)."""
+    import json
+    led = _aidh_ledger(settings)
+    try:
+        cur = json.loads(led.read_text(encoding="utf-8")) if led.exists() else {}
+    except (OSError, ValueError):
+        cur = {}
+    cur[name] = time.time()
+    try:
+        led.parent.mkdir(parents=True, exist_ok=True)
+        tmp = led.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cur, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(led)
+    except OSError:
+        logger.warning("AIDH inbox 장부를 쓰지 못했다 — 이 사본(%s)은 청소되지 않는다", name)
+
+
+def sweep_aidh_inbox(settings: Settings) -> int:
+    """장부에서 aidh_inbox_ttl_hours 가 지난 사본을 inbox 에서 지운다 → 지운 개수. 실패는 무시(청소가 업로드를 막지 않게)."""
+    import json
+    led = _aidh_ledger(settings)
+    if not led.exists():
+        return 0
+    try:
+        cur = json.loads(led.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    cutoff = time.time() - settings.aidh_inbox_ttl_hours * 3600
+    inbox = aidh_inbox_dir()
+    gone = [n for n, t in cur.items() if isinstance(t, (int, float)) and t < cutoff]
+    n = 0
+    for name in gone:
+        if "/" in name or name.startswith("."):
+            cur.pop(name, None)                  # 장부가 이상하면 지우지 않고 뺀다
+            continue
+        try:
+            (inbox / name).unlink(missing_ok=True)
+            n += 1
+        except OSError:
+            continue
+        cur.pop(name, None)
+    if gone:
+        try:
+            tmp = led.with_suffix(".tmp")
+            tmp.write_text(json.dumps(cur, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(led)
+        except OSError:
+            pass
+    return n
+
+
 async def stage_upload(settings: Settings, sub: str, file: UploadFile) -> dict:
     """업로드 파일을 디스크로 스트리밍 저장(메모리 안전)하고 staging 메타를 반환한다.
 
@@ -247,6 +327,7 @@ async def stage_upload(settings: Settings, sub: str, file: UploadFile) -> dict:
     디스크 스트리밍으로 막는다. (docs/upload/PLAN.md 결정 참조.)
     """
     sweep_expired(settings)
+    sweep_aidh_inbox(settings)
     d = _user_dir(settings, sub)
     staging_id = uuid.uuid4().hex
     orig = (file.filename or "upload").replace("/", "_").replace("\\", "_")

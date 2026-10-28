@@ -28,13 +28,18 @@ export type DocVerdict = 'text' | 'needs-com' | 'upload' | 'unknown';
  *  제품·정책마다 다르므로 **짐작하지 않고 바이트를 본다.**
  *    50 4B 03 04  "PK"  → zip(정상 OOXML) = 평문
  *    D0 CF 11 E0        → OLE 복합문서 = 암호화(또는 구형 .ppt/.doc)
+ *    3C 23 23 20 4E 41 53 43 41  "<## NASCA" → 사내 DRM 머리 = 암호화(10-25 PC 시험 파일 앞 34바이트 — RA 추출은 'zip 손상' 으로만
+ *                                 답했다, docs/request-1027 HP-14)
  */
+const DRM_HEAD = [0x3c, 0x23, 0x23, 0x20, 0x4e, 0x41, 0x53, 0x43, 0x41];
+
 export async function isEncryptedOffice(file: File): Promise<boolean | null> {
   try {
-    const b = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+    const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
     if (b.length < 4) return null;
     if (b[0] === 0x50 && b[1] === 0x4b) return false;                      // PK — zip
     if (b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0) return true;  // OLE
+    if (DRM_HEAD.every((x, i) => b[i] === x)) return true;                 // 사내 DRM 머리
     if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return false; // %PDF
     return null;   // 모르겠으면 모른다고 한다 — 억지로 단정하지 않는다
   } catch {
@@ -131,7 +136,8 @@ export async function readDoc(file: File): Promise<AttachedDoc> {
 export function docsAsEvidence(docs: AttachedDoc[]): HandoffEvidence[] {
   return docs.map((d) => ({
     source: `업로드 문서 · ${d.meta?.source || d.name}`.slice(0, 200),
-    tool: d.meta?.extractedBy ? 'office-com-extract' : 'text-attach',
+    // 서버(AI 데이터 허브 변환기)가 읽어 온 글은 COM 추출이 아니다 — 심의 근거에 'office-com-extract' 로 잘못 적혔다(HP-31).
+    tool: d.meta?.extractedBy ? (/^AI 데이터 허브/.test(d.meta.extractedBy) ? 'aidh-convert' : 'office-com-extract') : 'text-attach',
     args: [kindLabel(d.meta), unitsLabel(d.meta), `${d.chars.toLocaleString()}자`]
       .filter(Boolean).join(' · ').slice(0, 1200),
     result: d.text,

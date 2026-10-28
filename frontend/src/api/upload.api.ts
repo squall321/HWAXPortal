@@ -5,6 +5,8 @@ import { apiFetch, errorDetail } from './client';
 export interface UploadDestination {
   id: string;      // 'material' | 'stepforge' | …
   label: string;
+  /** 그 목적지의 크기 한도(바이트) — 넘는 파일은 고르기 전에 막는다(서버가 보내기 때 다시 본다, docs/request-1027 HP-02). 없으면 한도 없음. */
+  max_bytes?: number;
 }
 
 export interface StagedFile {
@@ -28,6 +30,8 @@ export interface DispatchResult {
   stage: 'done' | 'dispatched' | 'failed';
   destination?: string;
   error?: string;
+  /** 실패했을 때 다른 길 안내(크기 · 쪽 수 사유 — 사진 압축 · 나눠 보내기 · AI 데이터 허브, HP-02). */
+  hint?: string;
   detail?: unknown;
   /** 그 서비스 도구가 돌려준 것 그대로. */
   result?: Record<string, unknown> | null;

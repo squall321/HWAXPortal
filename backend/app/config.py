@@ -271,10 +271,16 @@ class Settings(BaseSettings):
     # 빈 값이면 변환하지 않고 컨테이너 경로를 그대로 쓴다(로컬 개발·비컨테이너 실행).
     upload_staging_host_dir: str = ""                 # 예: /home/koopark/.hwax/upload-staging
     upload_staging_ttl_hours: int = 6
+    # 'AI 데이터 허브 — 지식카드로 변환' 이 AIDH inbox 에 둔 사본을 지우는 시간 — 변환 뒤 모델이 그 이름으로 convert_file 을 다시 부를 수
+    # 있게 바로 지우지 않고, 포털이 넣은 것(장부)만 이만큼 지나면 지운다(docs/request-1027 HP-29 — 10-22 의 26.6 MB 가 그대로 남아 있었다).
+    aidh_inbox_ttl_hours: int = 24
     # DocForge 정밀 변환(docs/doc-to-ra DF-D17) — 패키지를 읽을 DocForge 데이터 루트의 **호스트** 경로(apptainer 가 $HOME 을 붙여 컨테이너에서도
     # 같게 보인다). 비면 형제 리포 ../HEAXHub/var/app_data/doc_forge(비컨테이너 실행) — start.sh 가 호스트 경로로 넘긴다.
     docforge_package_root: str = ""
     docforge_ra_file_max_mb: int = 25                 # RA upload_max_bytes 기본(25MB) — 넘는 리소스는 올리지 않고 알린다
+    # 'Report Archive 로' 보내기(RA /api/imports/pptx)의 크기 한도 — 넘으면 RA 를 부르지 않고 413 과 사유를 돌려주고, 목적지 목록에 실어 화면이
+    # 미리 막는다(docs/request-1027 HP-02). 실측 26.2 MB 통과 · 27.5 MB 거절이라 25 MB 로 둔다 — 정확한 값은 RA 회신(RP-16) 뒤. 0 = 끔.
+    ra_import_max_mb: int = 25
     # 정밀 변환 잡 기록(맡긴 사람)을 두는 날 수 — DocForge 잡 보존 기한(기본 7일)과 같게. 스테이징 청소(6시간)에서 빠지고, 그 안에는 창을 닫아
     # 넣지 못한 잡을 입력창 위 '끝나지 않은 정밀 변환' 에서 다시 열어 넣는다(DocForge E15).
     docforge_job_days: int = 7

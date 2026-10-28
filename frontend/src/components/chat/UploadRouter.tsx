@@ -11,6 +11,9 @@ import { StepForgePanel } from './StepForgePanel';
 import { UploadPanel } from './UploadPanel';
 import type { UploadNotice } from './uploadNotice';
 
+/** 바이트 → MB(소수 한 자리). */
+const mb = (n: number) => (n / (1024 * 1024)).toFixed(1).replace(/\.0$/, '');
+
 export function UploadRouter({ staged, onClose, onFill, onDispatched, onAttachDoc }: {
   staged: StagedFile;
   onClose: () => void;
@@ -54,14 +57,25 @@ export function UploadRouter({ staged, onClose, onFill, onDispatched, onAttachDo
           <button type="button" className="upl-x" onClick={onClose} aria-label="닫기">✕</button>
         </div>
         <div className="upl-actions upl-dests">
-          {[...dests].sort((a, b) => (a.id === rec ? -1 : b.id === rec ? 1 : 0)).map((d) => (
-            <button key={d.id} type="button"
-              className={d.id === rec ? 'upl-go upl-rec' : 'upl-go'}
-              onClick={() => setPicked(d.id)}>
-              {d.label}{d.id === rec && <em> · 지금 전문가</em>}
-            </button>
-          ))}
+          {[...dests].sort((a, b) => (a.id === rec ? -1 : b.id === rec ? 1 : 0)).map((d) => {
+            // 크기 한도를 넘는 목적지는 고르기 전에 막는다 — 업로드를 다 한 뒤에야 '파일이 너무 큽니다.' 를 보던 길이다(HP-02).
+            const over = !!d.max_bytes && staged.size > d.max_bytes;
+            return (
+              <button key={d.id} type="button" disabled={over}
+                className={d.id === rec ? 'upl-go upl-rec' : 'upl-go'}
+                title={over ? `한도 ${mb(d.max_bytes!)} MB 를 넘습니다(${mb(staged.size)} MB)` : undefined}
+                onClick={() => setPicked(d.id)}>
+                {d.label}{d.id === rec && <em> · 지금 전문가</em>}
+                {over && <em> · 한도 {mb(d.max_bytes!)} MB 넘음</em>}
+              </button>
+            );
+          })}
         </div>
+        {dests.some((d) => d.max_bytes && staged.size > d.max_bytes) && (
+          <p className="upl-note">
+            {mb(staged.size)} MB 라 한도가 있는 곳으로는 보낼 수 없습니다 — 사진을 압축하거나 나눠 보내거나, 한도가 없는 곳(AI 데이터 허브 등)으로 보내세요.
+          </p>
+        )}
       </div>
     );
   }

@@ -138,7 +138,8 @@ export function DocDispatchPanel({
         // 0블록처럼 서버가 만들지 않고 돌려준 경우 — 왜 비었는지(가져오기 경고)를 함께 보인다(docs/chat-ppt A4).
         const w = (r.detail as { warnings?: unknown } | undefined)?.warnings;
         const ws = Array.isArray(w) ? w.filter((x): x is string => typeof x === 'string') : [];
-        throw new Error(String(r.error || '보내기 실패') + (ws.length ? ` (경고: ${ws.slice(0, 3).join(' · ')}${ws.length > 3 ? ` 외 ${ws.length - 3}건` : ''})` : ''));
+        throw new Error(String(r.error || '보내기 실패') + (ws.length ? ` (경고: ${ws.slice(0, 3).join(' · ')}${ws.length > 3 ? ` 외 ${ws.length - 3}건` : ''})` : '')
+          + (r.hint ? ` ${r.hint}` : ''));   // 크기 · 쪽 수 사유면 다른 길을 함께(HP-02 — 서버가 RA 사유와 함께 준다)
       }
       if (destination === 'reportarchive_precise') {
         if (r.stage !== 'dispatched' || !r.job_id) throw new Error('DocForge 가 잡 번호를 주지 않았습니다.');

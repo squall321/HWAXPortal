@@ -1302,9 +1302,35 @@ async def upload_dispatch(
     return await _dispatch_audited(request, body, principal, settings)
 
 
+_RA_SIZE_HINT = "사진을 압축하거나 나눠 보내거나, 'AI 데이터 허브 — 지식카드로 변환' 으로 보내세요."
+
+
+def _pptx_slides(path) -> int | None:
+    """pptx 의 쪽 수(ppt/slides/slideN.xml) — 실패 기록용. 못 읽으면 None."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            return sum(1 for n in z.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", n))
+    except (OSError, zipfile.BadZipFile, ValueError):
+        return None
+
+
+def _ra_reason(detail) -> tuple[str, str]:
+    """RA 거절 본문 → (code, message). FastAPI 꼴({"detail": "…"} · {"detail": {"code", "message"}}) · {"error": …} · 글을 다 읽는다."""
+    d = detail.get("detail", detail) if isinstance(detail, dict) else detail
+    if isinstance(d, dict):
+        code = str(d.get("code") or d.get("error_code") or "")
+        msg = d.get("message") or d.get("msg") or d.get("error") or d.get("text") or ""
+        if not msg and isinstance(d.get("detail"), str):
+            msg = d["detail"]
+        return code[:60], str(msg)[:300]
+    if isinstance(d, list) and d and isinstance(d[0], dict):        # FastAPI 검증 오류
+        return "validation", str(d[0].get("msg") or "")[:300]
+    return "", str(d or "")[:300]
+
+
 async def _dispatch_audited(request, body, principal, settings) -> dict:
     try:
-        return await _dispatch_inner(request, body, principal, settings)
+        out = await _dispatch_inner(request, body, principal, settings)
     except Exception as exc:  # noqa: BLE001 — 남기고 그대로 올린다
         try:
             _audit(request).record(
@@ -1314,6 +1340,27 @@ async def _dispatch_audited(request, body, principal, settings) -> dict:
         except Exception:  # noqa: BLE001 — 감사 실패가 원래 오류를 가리면 안 된다
             logger.warning("업로드 실패 감사 기록 실패", exc_info=True)
         raise
+    if isinstance(out, dict) and out.get("stage") == "failed":
+        # 상대가 거절해 돌려준 실패(예외가 아니다)도 남긴다 — RA 400 은 200 으로 끝나 감사에 upload_stage 두 줄만 남았다(docs/request-1027
+        # HP-03). 본문은 싣지 않는다 — 상대 상태 · 오류 코드 · 크기 · 쪽 수만. 서버 로그에도 한 줄(파일 이름은 빼고).
+        size = None
+        try:
+            size = _upload.staged_path(settings, principal.subject, body.staging_id, body.filename).stat().st_size
+        except (OSError, AuthError):
+            pass
+        slides = out.get("slides")
+        meta = {"destination": body.destination, "filename": body.filename, "size": size,
+                "error": str(out.get("error") or "")[:200]}
+        for k in ("ra_status", "ra_code", "slides"):
+            if out.get(k) is not None:
+                meta[k] = out[k]
+        try:
+            _audit(request).record(principal=principal.subject, event="upload_dispatch", status="failed", meta=meta)
+        except Exception:  # noqa: BLE001
+            logger.warning("업로드 실패 감사 기록 실패", exc_info=True)
+        logger.warning("upload dispatch failed: dest=%s size=%s slides=%s ra_status=%s ra_code=%s", body.destination, size, slides,
+                       out.get("ra_status"), out.get("ra_code") or "-")
+    return out
 
 
 async def _ra_user_token(request, settings: Settings, principal: Principal) -> tuple[str, bool, dict]:
@@ -1352,6 +1399,12 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         # 와 같은 엔드포인트라 그림·표까지 위젯으로 들어온다. 그 사람 명의 토큰으로 부르므로
         # 권한·워크스페이스가 그 사람 것이다(_ra_user_token).
         email = principal.email or principal.subject
+        # 크기 한도를 넘으면 RA 를 부르지 않는다 — 10-23 의 116쪽 · 45 MB 가 업로드를 다 한 뒤 400 '파일이 너무 큽니다.' 였다(HP-02).
+        mx = _upload.dest_max_bytes(settings, "reportarchive")
+        size = path.stat().st_size
+        if mx and size > mx:
+            raise AuthError(f"Report Archive 가져오기 한도 {mx // (1024 * 1024)} MB 를 넘습니다({size / (1024 * 1024):.1f} MB) — "
+                            + _RA_SIZE_HINT, status_code=413)
         token, via_sso, conn = await _ra_user_token(request, settings, principal)
 
         async def _post_pptx(tok: str) -> httpx.Response:
@@ -1385,9 +1438,20 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         except httpx.HTTPError as exc:
             return {"stage": "failed", "error": f"Report Archive 에 연결하지 못했습니다({exc.__class__.__name__})."}
         if r.status_code >= 400:
-            detail = (r.json() if r.headers.get("content-type", "").startswith("application/json")
-                      else {"text": r.text[:400]})
-            return {"stage": "failed", "error": f"변환 실패(HTTP {r.status_code}).", "detail": detail}
+            try:
+                detail = (r.json() if r.headers.get("content-type", "").startswith("application/json")
+                          else {"text": r.text[:400]})
+            except ValueError:
+                detail = {"text": r.text[:400]}
+            # RA 가 밝힌 사유(message · code)를 그대로 보인다 — 종전엔 'HTTP n' 만 남기고 사유를 버려 '파일이 너무 큽니다.' 가 화면에 안 떴다(HP-02).
+            code, msg = _ra_reason(detail)
+            out = {"stage": "failed", "detail": detail, "ra_status": r.status_code, "ra_code": code or None,
+                   "slides": _pptx_slides(path),
+                   "error": f"Report Archive 가 받지 않았습니다(HTTP {r.status_code}{' · ' + code if code else ''})"
+                            + (f" — {msg}" if msg else ".")}
+            if r.status_code == 413 or re.search(r"(너무 큽|크기|too large|쪽 수|페이지 수|슬라이드 수|이미지 수|그림 수|pages?|slides?)", msg, re.I):
+                out["hint"] = _RA_SIZE_HINT
+            return out
         body_j = r.json()
         draft = ((body_j.get("data") or body_j).get("draft")) or {}
         warns = (body_j.get("data") or body_j).get("warnings") or []
@@ -1505,6 +1569,10 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         if not isinstance(record, dict) or not record.get("sections"):
             return {"stage": "failed", "error": "문서에서 읽을 내용을 찾지 못했습니다(글 · 표가 없거나 변환기가 처리하지 못한 구조).",
                     "detail": out}
+        meta = record.get("meta") if isinstance(record.get("meta"), dict) else None
+        if meta is not None and " ".join(str(meta.get("title") or "").split()) == dest.stem:
+            # 변환기는 제목이 없으면 inbox 임시 이름(<계정>-chat-<8자>-…)을 제목으로 쓴다 — 칩의 H1 에 계정이 드러나 모델이 인용했다(HP-30)
+            record = {**record, "meta": {**meta, "title": Path(safe).stem}}
         text = _upload.record_markdown(record, body.filename)
         name = f"{Path(safe).stem}.hwax.md"
         audit.record(principal=principal.subject, event="upload_dispatch",
@@ -1521,6 +1589,9 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
         safe = Path(body.filename).name
         dest = inbox / f"{principal.subject.split('@')[0][:24]}-{safe}"
         shutil.copy2(path, dest)
+        # 바로 지우지 않는다 — 모델이 그 이름으로 convert_file 을 다시 부를 수 있다(알림이 이름을 남긴다). 장부에 적어 두면 청소가
+        # aidh_inbox_ttl_hours 뒤에 지운다(HP-29 — 종전엔 아무도 안 지웠다).
+        _upload.aidh_inbox_note(settings, dest.name)
         out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "convert_file",
                                      {"file": dest.name})
         audit.record(principal=principal.subject, event="upload_dispatch",
