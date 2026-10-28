@@ -121,7 +121,9 @@ EM-D14)이 이미 들어 있다. 포털 · 에이전트 서버 코드는 3절의
 ## 8. 되돌리기
 
 `.env` 의 `AIDH_EMBED_ACTIVE=m3` 줄을 지우거나 `v1` 로 바꾸고 `cd ~/Projects/HWAXPortal && ./infra/scripts/deploy-all-from-drive.sh aidh`.
-v1 열은 6절 동안에도 계속 채워졌으므로 그대로 쓴다. 포털 대화 검색은 옛 색인(aidh-768)을 다시 쓴다.
+v1 열은 6절 동안에도 계속 채워졌으므로 그대로 쓴다. 포털 대화 검색은 옛 색인을 다시 쓰지 **않는다** — 색인 표가 조각마다 한 줄
+(`message_vectors` 의 키가 message_id · chunk_ix, `INSERT OR REPLACE`)이라 BGE-M3 행이 옛 e5 행을 덮었다. 되돌리면 사람마다 다음 검색 때
+e5(aidh-768)로 **다시 색인한다** — 7절과 같이 한 번에 시간 예산만큼, 남은 수는 `index.not_indexed_yet` · `partial`(docs/request-1027 HP-37).
 
 ## 9. 지켜볼 것
 

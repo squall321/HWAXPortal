@@ -10,3 +10,4 @@
 - [x] X-4 배선·문서 — 10-16: 에이전트 서버 README 시간 한도 표에 `EXTERNAL_LLM_WAIT_S` · `EXTERNAL_LLM_ANSWER_S`(사슬 문단 포함) · 포털 env 킷 `agent-server.env` 의 시간 한도 구획(둘) · '외부 응답자' 구획(넷) — 킷 시험이 엔진 상수 · README 표 · 층(2×(기다림+답) < 논리 호출 1회)을 맞댄다(변이 6/6) · `server-setup-m3.md` 8절 '켜는 법'(엔진 · 확인 · 게이트웨이 `/tools-map` 으로 도구 셋 판정 · 잡 주인의 Claude Code · 아직 없는 것) · 5-5 보류 표의 낡은 줄(`external_worker` '이 판에 없다')을 실제 셋(`external_worker` · `external_config` · `llm_mismatch`)으로 · 7절 손잡이 표 · 업데이트 이력
 - [x] 반대 검토 1라운드(가짜 응답자로 — 반출 동의 우회 · 남의 과제 집기 · 끝없는 기다림 · 꼴 어긋남) — X-1 몫은 두 라운드(X-D5 · X-D6). X-2·X-3 은 지은 뒤 다시
 - [x] push(엔진·앱·포털) — 기본 꺼짐 그대로 — 엔진 `53082a4` · 리스크 앱 `54c4385`(SIF `eee3240f` Drive) · 포털 `56adf3b`(10-16)
+  - (10-28 덧붙임) 위 SIF 해시는 그때의 기록이다 — 지금 판은 `../risk-review-redesign/server-setup-m3.md` 2-3 의 Drive `.hash` 와 맞춰 본다(docs/request-1027 HP-38)

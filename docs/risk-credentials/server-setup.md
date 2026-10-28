@@ -1,10 +1,11 @@
 # 서버(cae00)에서 할 일 — 리스크 심사 앱 사람 자격(SSO 로 들어온 사람의 PAT 가 저절로)
 
-> 대상: cae00 운영자 · **대조 시점 2026-10-14** · 보낸 쪽: dev(이 리포 `docs/risk-credentials/`).
-> 반영되는 커밋 — HWAXRisk `3aea93b`(리스크 앱 SIF, M2 카드 대조 포함·스키마 v4 — 반대 검토 3라운드까지) · HWAXPortal `f4aced3` 이후 · HWAXMcpGateway `f8e7920`.
+> 대상: cae00 운영자 · **대조 시점 2026-10-14** · **기대값 다시 맞춤 2026-10-28**(지금 Drive `latest/` 판 — 스키마 5 · 도구 31종, docs/request-1027 HP-38) · 보낸 쪽: dev(이 리포 `docs/risk-credentials/`).
+> 반영되는 커밋(10-14 판) — HWAXRisk `3aea93b`(리스크 앱 SIF, M2 카드 대조 포함·스키마 v4 — 반대 검토 3라운드까지) · HWAXPortal `f4aced3` 이후 · HWAXMcpGateway `f8e7920`.
 > dev 에서 같은 커밋으로 세 구성 요소를 다시 띄워 §3 의 ①②④⑤ 를 확인했다(③ 은 cae00 의 키 상태라 dev 와 다르다).
 > 리스크 앱 SIF 는 10-14 Drive `latest/` 에 올렸다 — `hwax-risk.sif.hash` 앞 8자 `5896e0cd`(cae00 `--check` 가 이 값과 맞으면 된다).
 > (10-15 덧붙임) 보안 핫픽스 `12130f9`(남의 대상으로 등록부 병합을 부르던 길 — 없는 대상과 같은 404)를 얹은 SIF 로 바꿔 올렸다 — 이제 앞 8자는 `e7b78675` 다. 위 값과 다르면 이 값과 맞는지 본다.
+> (10-28 덧붙임) 위 두 해시는 그때의 기록이다. 판이 오를 때마다 바뀌므로 지금은 값을 박지 않고 Drive `latest/` 의 `hwax-risk.sif.hash` 와 같은지만 본다(§2 의 명령 — `../risk-review-redesign/server-setup-m3.md` 2-3 과 같다).
 > 명령은 각 리포 루트에서 돈다(cae00 은 `~/Projects/<Repo>`). 이 박스의 지금 상태는 이 문서가 알지 못한다 — 확인마다 재는 명령을 적었다.
 
 ## 0. 한눈에
@@ -17,7 +18,7 @@
 - **Claude 로 캡처해도 StepForge REST 를 그 사람 PAT 로 읽는다**(게이트웨이 `step-forge` 다리). 그 PAT 에 `step-forge` 청중이 있어야 한다(§4).
 - **RA 로 아직 보내지 않은 일이 '반영 안 됨 — 보내는 쪽이 아직 없다(M4)' 로 보인다.** RA 쓰기 자체는 M4 다.
 - **설정 화면 '이 박스' 가 까닭별로 말한다.** 필수 키는 `HWAXRISK_CRED_KEY` 하나다. 나머지는 없으면 무엇이 닫히는지만 알린다.
-- **리스크 앱 DB 가 스키마 v4 로 오른다**(M2 카드 대조). 새 SIF 가 처음 뜰 때 스스로 올리고 직전 사본(`risk_review.db.pre-migrate-v3-*`)을 남긴다.
+- **리스크 앱 DB 가 스키마 v5 까지 오른다**(M2 카드 대조 v4 · M3 v5). 새 SIF 가 처음 뜰 때 스스로 올리고 직전 사본 `risk_review.db.pre-migrate-v<출발 판>-*` 를 남긴다 — **박스 판에 따라 이름이 다르다**(v3 박스는 `v3`, v4 박스는 `v4` — 10-17 cae00 은 v3 였다).
 
 ## 1. 돌리기 전 확인
 
@@ -28,14 +29,17 @@
 ## 2. 돌리기
 
 ```bash
-./infra/scripts/update-all.sh            # 포털·게이트웨이 코드 + 게이트웨이 hwax_risk 위임 항목 다시 쓰기(아래 '기대')
-./infra/scripts/update-collab.sh         # 리스크 앱 SIF 를 Drive latest 와 맞춘다(요청서의 반영 확인 길)
-./infra/scripts/update-collab.sh --check # 리스크 앱 SIF 해시 · 스키마
+./infra/scripts/update-all.sh            # 포털·게이트웨이 코드 + 게이트웨이 hwax_risk 위임 항목 다시 쓰기(아래 '기대') + 리스크 앱 SIF 를 Drive latest 로(2단계)
+./infra/scripts/risk-review-inventory.sh | grep -E '스키마 버전'
+cut -c1-8 ../HEAXHub/var/sifs/hwax-risk.sif.hash
+rclone cat "$(sed -n 's/^HEAX_DRIVE_REMOTE=//p' ../HEAXHub/.env | tail -1)/latest/hwax-risk.sif.hash" | cut -c1-8   # Drive 의 정본
 ```
+
+박스 스크립트 `update-collab.sh --check` 가 있으면 같은 해시 · 스키마를 본다(cae00 박스 전용 — 이 리포의 추적 파일이 아니다).
 
 기대.
 - update-all 로그에 재프로비저닝 대상으로 `hwax_risk_sso` 가 한 번 잡힌다. 이번 판정은 위임 항목에 `portal_pat_url`·`portal_pat_spec` 이 없어도 잡는다(이미 항목이 있던 박스라도 이번 한 번은 다시 쓴다).
-- `--check` 의 리스크 앱 SIF 가 `3aea93b` 판이고 스키마가 4 다.
+- 박스의 리스크 앱 SIF 해시 앞 8자가 Drive 정본 줄과 같고, `스키마 버전:` 이 `5` 다(옛 SIF 면 update-all 을 다시 돌린다).
 
 ## 3. 돌린 뒤 확인
 
@@ -44,7 +48,7 @@
 | ① | 게이트웨이 위임 항목에 새 두 칸 | 아래 명령 A | `portal_pat_url` 이 `…/apps/hwax_risk/api/auth/portal-pat`, `portal_pat_spec` 이 이름 `hwax-risk`·청중 둘·범위 `read`·90 |
 | ② | 게이트웨이 기동 경고 없음 | `grep -a "portal_pat_spec 이 없거나" <게이트웨이 리포>/gateway.log \| tail -1` | 아무것도 안 나온다(마지막 기동 뒤) |
 | ③ | `cred.key` 폴백을 옮겼다 | 리스크 앱 설정 화면 '이 박스' — 또는 앱 기동 로그의 `박스 자격` 줄 | `cred_key_dev_fallback` 이 없다(없애려면 [M1 절차서 7-1](../risk-review-redesign/server-setup-m1.md)) |
-| ④ | 리스크 도구 29종 | `python3 ~/Projects/HWAXRisk/backend/scripts/rr_gateway_check.py` | `판정 0` |
+| ④ | 리스크 도구 31종 | `apptainer exec instance://heax_app_hwax_risk python3 /app/backend/scripts/rr_gateway_check.py` — 떠 있는 앱 안의 사본이라 기대 목록이 곧 배포본이다(운영 박스에는 HWAXRisk 체크아웃이 없다) | `판정 0 — 이상 없음: 도구 31종이 …` |
 | ⑤ | Claude 길 실호출 | 운영자 Claude 에서 hwax `risk_next_step` 을 한 번 부르고 게이트웨이 감사의 그 줄 `note` 를 본다(아래 명령 B) | 아래 표 |
 
 명령 A(비밀 값은 찍지 않는다 — 게이트웨이 리포 루트에서).
