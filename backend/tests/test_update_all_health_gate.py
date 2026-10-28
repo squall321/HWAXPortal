@@ -253,3 +253,19 @@ def test_7절의_챗_도구_줄은_게이트웨이_도구_수를_그_자리에�
     i = src.index('hr "7) 챗 스모크')
     block = src[i:src.index("hwax_skip_summary", i)]
     assert 'GH="$(gw_health' in block and 'GH="$H"' not in block
+
+
+def test_HP44_스모크가_잡지_못한_예외로_죽으면_판정_불가_2_다(monkeypatch, capsys):
+    """파이썬 기본 종료코드 1 은 '0성공 백엔드 있음' 과 같다 — update-all §7 이 그 1 로 repair_mcp(재프로비저닝 · 게이트웨이 재기동)를
+    돌린다(docs/request-1027 HP-44). main() 밖으로 새는 예외(config 에 token 칸이 없다 · 결과를 찍다 깨졌다)는 2 로 바꾼다."""
+    m = _smoke_mod()
+
+    def boom():
+        raise KeyError("token")
+    monkeypatch.setattr(m, "main", boom)
+    assert m._exit_code() == 2 and "판정할 수 없다" in capsys.readouterr().err
+    monkeypatch.setattr(m, "main", lambda: 1)
+    assert m._exit_code() == 1, "진짜 0성공 판정은 그대로 1 이다"
+    src = (SCRIPTS / "mcp-smoke.py").read_text(encoding="utf-8")
+    assert src.rstrip().endswith('if __name__ == "__main__":\n    sys.exit(_exit_code())')
+

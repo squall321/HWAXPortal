@@ -343,5 +343,15 @@ async def _tools_map(url: str, headers: dict) -> dict:
         return {}
 
 
+def _exit_code() -> int:
+    """main() 의 종료코드 — 잡지 못한 예외는 2(판정 불가)로 바꾼다. 파이썬 기본 종료코드 1 은 '0성공 백엔드' 와 같아 update-all 이
+    repair_mcp(재프로비저닝 · 게이트웨이 재기동)를 엉뚱하게 돌린다(HWAXPortal docs/request-1027 HP-44 — 예: config 에 token 칸이 없다)."""
+    try:
+        return main()
+    except Exception as exc:  # noqa: BLE001
+        print(f"✗ 스모크가 예상하지 못한 오류로 멈췄다: {exc!r} — MCP 도구 동작을 판정할 수 없다.", file=sys.stderr)
+        return 2
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(_exit_code())
