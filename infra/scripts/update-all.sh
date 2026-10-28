@@ -3459,6 +3459,22 @@ try:
               "(docs/chat-llm-stcx/server-setup.md 9절)" % (cut["before"], cut["after"], format(cut.get("budget") or 0, ","), apps or "?"))
     elif cut == {} and ah.get("tool_cut", 0) is None:
         print("  · 챗 도구 절단: 마지막 챗 턴에서 잘린 도구 없음")
+    # 챗 자기검증(에이전트 HA-13) — 위 스모크 턴까지 센 결과 수 · 걸린 시간 · 마지막 실패. 옛 판은 칸이 없어 말하지 않는다(docs/request-1027 HP-24).
+    sc = ah.get("self_check")
+    if isinstance(sc, dict):
+        if not sc.get("on"):
+            print("  · 챗 자기검증: 꺼짐(에이전트 서버 CHAT_SELF_CHECK=0)")
+        else:
+            counts = sc.get("counts") or {}
+            ms = sc.get("ms") or {}
+            last = sc.get("last_error") or {}
+            bad = sum(int(counts.get(k) or 0) for k in ("failed", "unreadable", "suspect"))
+            line = " · ".join("%s %s" % (k, v) for k, v in sorted(counts.items())) or "아직 센 턴 없음"
+            if ms.get("n"):
+                line += " · %s/%sms(p50/p95, %s턴)" % (format(ms.get("p50") or 0, ","), format(ms.get("p95") or 0, ","), ms["n"])
+            if last:
+                line += " · 마지막 실패 %s: %s" % (last.get("status"), str(last.get("reason") or "")[:120])
+            print("  · %s챗 자기검증: %s" % ("⚠ " if bad else "", line))
 except Exception:
     pass
 PY
