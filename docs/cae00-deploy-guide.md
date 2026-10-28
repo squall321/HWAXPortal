@@ -728,6 +728,30 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
   `tools/call` 이 그 사람 명의(감사 as-user-pat)로 SimFlow 에 닿고 `ui/open-link` 가 된다. 안 뜨면 게이트웨이 로그의 `ui 리소스 목록을 받지 못했다` ·
   `ui 리소스 … 함께 낸다` 를 본다.
 
+- **포털 4절(업로드 · 화면 · 그 밖) — 화면은 Drive 판에 들어 있다.** 받은 뒤 사람 몫과 확인.
+  - **연결 토큰 암호화(HP-05 · 결정 D-5)** — 할 일 없음. 포털이 처음 뜰 때 키 `backend/secrets/conn.key`(0600)를 만들고 옛 평문 행을 제자리에서
+    바꾼다 — 포털 로그 `연결 토큰 N건을 암호문으로 바꿨다`. 포털 sqlite 는 뜰 때마다 `0600`(-wal · 링크 대상까지 — 종전 '644 면 chmod 600' 손질은
+    필요 없다). 키는 **비밀 묶음**에만 든다(`portal/backend/secrets/conn.key`) — 다음 날 비밀 묶음 목록에서 본다. 키를 잃으면 기동 로그가
+    `연결 토큰 N건을 풀 수 없다` 로 말하고 그 사람들은 '외부 연결' 에서 다시 등록한다(비밀 묶음에서 키를 되살리면 풀린다).
+  - **SimFlow 업로드 목적지(HP-15)** — SimFlow 가 게이트웨이에 붙은 이 박스에서만 보인다. 확장자 · 한도는 SimFlow 쪽 답(PA-12) 전이라 기본
+    `x_t` · 500 MB 다 — 답이 오면 포털 `backend/.env` 에 `SIMFLOW_UPLOAD_EXTS=x_t,x_b,…` · `SIMFLOW_UPLOAD_MAX_MB=…`(DRM 해제 기다림은
+    `SIMFLOW_READY_WAIT_S`, 기본 120)를 적고 포털만 다시 띄운다. 첫 실주행이 SimFlow 계약(업로드 응답의 id · status 칸, 상태 조회
+    `GET /api/v1/mcp-uploads/<id>`)의 확인이다 — `.x_t` 를 올려 목적지에 SimFlow 가 보이고, 받은 id 로 `run_workflow` 가 돌고, 게이트웨이 감사의
+    그 줄이 `mode=as-user-pat` 인지 본다. 어긋나면 화면에 SimFlow 응답 그대로가 나온다 — 그 문구를 dev 에 보낸다.
+  - **RA 보내기 한도(HP-02)** — 기본 25 MB(실측 26.2 MB 통과 · 27.5 MB 거절). RA 회신(RP-16)으로 값이 정해지면 포털 `backend/.env` 의
+    `RA_IMPORT_MAX_MB` 한 줄(0 = 끔).
+  - **AIDH inbox 옛 사본(HP-29 · OB-10)** — 이제 보낸 사본은 장부에 적고 24시간 뒤 지운다. 이 판 **전에** 쌓인 `~/aidh-inbox` 의 파일은 장부에 없어
+    지워지지 않는다 — 한 번 손으로 치운다(지금 보내는 중인 것이 없을 때, `find ~/aidh-inbox -type f -mtime +1` 로 먼저 본다).
+  - **HE팀 운영자 — 이름 넷 · 코어 온톨로지 운영자(HP-19 · HP-20)** — 위의 동기화 미리보기 → `--apply` 한 번에 함께 든다. 미리보기가 exit 2 없이
+    `+ he-data-coreontology 새로 만든다` 를 내야 한다(허브 셋이 붙은 이 박스). FailureTrace · CAE 그룹 허브가 해석 도구(object_resolve)를 내지 않으면
+    '· 일부 … 없이 만든다' 한 줄이 나온다(정상).
+  - **떠 있는 값 확인(HP-40)** — `claims_affiliation` 은 update-preflight 가 **파일**을 본다. 떠 있는 값은
+    `curl -s --noproxy '*' localhost:8723/health/ready` 의 `claims_affiliation` 이 `["mx-white-paper"]` 다(박스 파일이 덮은 뒤의 값). 챗 업로드 길의
+    생존은 `curl -s -o /dev/null -w '%{http_code}\n' --noproxy '*' -X POST localhost:8723/agent/upload` 와 `…/agent/upload/dispatch` 가 `401`(세션
+    없음 — 길은 있다)이다. `/agent/upload/destinations` 는 없는 경로(404)이고 `/upload/analyze` 는 물성 CSV 미리보기라 생존을 보지 못한다.
+  - **update-all §7 새 줄** — `· 챗 자기검증: …`(HP-24 — 실패가 있으면 ⚠). MCP 스모크가 예상하지 못한 오류로 멈추면 이제 `스모크를 돌리지 못했다(rc=2)`
+    ✗ 로 남고 재프로비저닝을 돌리지 않는다(HP-44) — 그 줄이 나오면 스모크 출력의 `✗ 스모크가 예상하지 못한 오류로 멈췄다` 를 dev 에 보낸다.
+
 ### 다음 날 확인
 
 - `/data/backups/hwax/<박스>/backup.log` 에 `kooremapper → kooremapper-…sql.gz` 가 있다(HP-04 — 10-02 부터 매일 실패하던 덤프).

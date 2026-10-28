@@ -69,28 +69,28 @@
 
 ## 4. 포털 업로드 · 화면 · 그 밖
 
-- [ ] HP-02 RA 목적지 max_bytes(기본 25MB) · 미리 막기 · 413 · 패널이 RA detail 을 보임 + 안내
-- [ ] HP-03 보내기 실패 감사 status=failed · 서버 로그 한 줄
-- [ ] HP-14 DRM 머리 `3C 23 23 20 4E 41 53 43 41`
-- [ ] HP-16 위키 꺼지면 버튼 · 심의 옵션 숨김(켜짐 신호) · 409 문구
-- [ ] HP-29 AIDH inbox 사본 지우기
-- [ ] HP-30 칩 H1 임시 이름
-- [ ] HP-31 extractedBy 'aidh-convert'
-- [ ] HP-32 마지막으로 성공한 도구 지도를 계속 쓴다
-- [ ] HP-05 sqlite 600(umask) · 연결 토큰 암호화(D-5)
-- [ ] HP-48 절차 사전 점검 — 선언 플랫폼 토큰(D-7)
-- [ ] HP-15 SimFlow 목적지(HG-04 뒤)
-- [ ] HP-41 StartPicker 「전체 보기 →」
-- [ ] HP-21 카드 본문 검색 문구(스위치에 맞춤)
-- [ ] HP-19 페르소나 정본 접두 이름(또는 동기화가 풀기)
-- [ ] HP-20 he-data-coreontology
-- [ ] HP-24 §7 스모크가 self_check(HA-13 뒤)
+- [x] HP-02 RA 목적지 max_bytes(기본 25MB) · 미리 막기 · 413 · 패널이 RA detail 을 보임 + 안내(2043930)
+- [x] HP-03 보내기 실패 감사 status=failed · 서버 로그 한 줄(2043930)
+- [x] HP-14 DRM 머리 `3C 23 23 20 4E 41 53 43 41`(2043930)
+- [x] HP-16 위키 꺼지면 버튼 · 심의 옵션 숨김(켜짐 신호) · 409 문구(138970f)
+- [x] HP-29 AIDH inbox 사본 지우기(2043930 — 장부 · 24시간, 옛 사본은 사람이 한 번 · OB-10)
+- [x] HP-30 칩 H1 임시 이름(2043930)
+- [x] HP-31 extractedBy 'aidh-convert'(2043930)
+- [x] HP-32 마지막으로 성공한 도구 지도를 계속 쓴다(2043930)
+- [x] HP-05 sqlite 600 · 연결 토큰 암호화(D-5)(f2ffa60 — 키 backend/secrets/conn.key · 비밀 묶음 · 시험 격리)
+- [x] HP-48 절차 사전 점검 — 선언 플랫폼 토큰(D-7)(3e020aa)
+- [x] HP-15 SimFlow 목적지(ff585d2 — 사이트 PAT · 설정 확장자 · drm_pending 기다림, 계약 확인은 cae00 첫 실주행 · PA-12)
+- [x] HP-41 StartPicker 「전체 보기 →」(a05fbda)
+- [~] HP-21 카드 본문 검색 문구 — 보류: 화면이 AIDataHub 스위치(`AIDH_RECORDS_Q_BODY_SEARCH`)를 볼 길이 없다. OB-89 로 켤 때 맞추거나 AIDH 가 응답에 스위치 상태를 싣게 청한다
+- [x] HP-19 페르소나 정본 접두 이름(42e6648 — 접두 별칭, 동기화가 풀기는 고르지 않음)
+- [x] HP-20 he-data-coreontology(62ed7b2 — dev 는 허브가 없어 건너뜀, `--apply` 는 cae00 사람)
+- [x] HP-24 §7 스모크가 self_check(847c403)
 - [x] HP-25 update-sites 재기동 순서 — 고칠 것 없음(down → 리스너 닫힘 → up 이 HG-11 과 맞물린다, 회귀 시험 게이트웨이 054d397)
 - [x] HP-28 ODB 헤더 꼴 기대 시험(40f6b76) · 옛 쿼리 꼴이면 재프로비저닝을 한 번 당긴다(92ae8d7)
-- [ ] HP-36 대화 검색 표지 기동 때 채움
-- [ ] HP-37 embedder 절차서 8절
-- [ ] HP-38 리스크 자격 절차서 기대값
-- [ ] HP-40 점검표 경로
+- [x] HP-36 대화 검색 표지 — 첫 색인 전에 한 번 묻는다(075472f)
+- [x] HP-37 embedder 절차서 8절(78ed68c)
+- [x] HP-38 리스크 자격 절차서 기대값(78ed68c)
+- [x] HP-40 점검표 경로 — 점검표는 요청한 쪽 것이라 cae00 가이드에 확인 길 · /health/ready claims_affiliation(0eb5041)
 - [-] HP-49 웹 좌석 20 그대로(D-8)
 - [-] HP-10 MX 백서 `--reload` — MX 백서 MW-03 이 고쳤다(APP_ENV=development 일 때만 --reload, 10-28 그쪽 알림) · 포털 할 일 없음
 - [~] HP-33 X-Workspace-Slug — RA RP-01 회신 뒤
@@ -100,7 +100,7 @@
 
 ## 5. 질문 답(answers.md)
 
-- [ ] HP-43 · HP-44 · HP-45 · HP-46 · HG-14 · HG-15 · HG-17 · HG-18 · HA-21 · HA-22
+- [x] HP-43 · HP-44 · HP-45 · HP-46 · HG-14 · HG-15 · HG-17 · HG-18 · HA-21 · HA-22 — `answers.md`(HP-44 는 고침 099eff2 · HP-45 는 주석 0b787d5)
 
 ## 6. 리스크 앱(07) — 검토만(사용자 「별도로 검토」)
 
