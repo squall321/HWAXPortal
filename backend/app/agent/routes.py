@@ -609,6 +609,8 @@ async def search_conversations(
     settings = get_settings()
     store = _conv(request)
     try:
+        # 재기동 직후면 지금 임베딩 공간부터 안다 — 옛 표지로 색인할 것을 고르면 이미 새 공간인 메시지까지 다시 임베딩한다(HP-36).
+        await conv_search.learn_tag(settings.embed_base_url)
         # 예산 안에 끝낼 수 없는 큰 메시지는 요청 밖에서 색인한다(검토 RR2-PF-2) — 응답의 index.in_background 가 그 수다.
         idx = await conv_search.reindex(store, principal.subject, settings.embed_base_url,
                                         spawn=conv_search.spawn_outside)

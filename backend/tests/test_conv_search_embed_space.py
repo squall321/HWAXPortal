@@ -19,6 +19,7 @@ from app.config import Settings
 @pytest.fixture(autouse=True)
 def _reset_tag(monkeypatch):
     monkeypatch.setitem(cs._LAST, "tag", cs.MODEL)
+    monkeypatch.setitem(cs._LAST, "seen", False)
 
 
 def _store(tmp_path) -> ConversationStore:
@@ -43,6 +44,22 @@ def test_embed_는_응답의_모델로_표지를_바꾼다(monkeypatch):
     monkeypatch.setattr(cs.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
     vecs = asyncio.run(cs.embed(["질의"], "http://aidh.invalid", "query"))
     assert len(vecs[0]) == 1024 and cs.current_tag() == "aidh-BAAI_bge-m3-1024"
+
+
+def test_HP36_learn_tag_는_프로세스마다_한_번만_임베더에_묻는다(monkeypatch):
+    """실제 embed 가 '이번 프로세스가 공간을 안다' 를 남긴다 — 검색마다 표지 확인 임베딩이 하나씩 더 붙지 않는다(HP-36)."""
+    calls: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(req.url.path)
+        return httpx.Response(200, json={"vectors": [[0.5] * 1024], "model": "BAAI/bge-m3", "dim": 1024})
+    real = httpx.AsyncClient
+    monkeypatch.setattr(cs.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    assert asyncio.run(cs.learn_tag("http://aidh.invalid")) == "aidh-BAAI_bge-m3-1024" and calls == ["/api/embed"]
+    asyncio.run(cs.learn_tag("http://aidh.invalid"))
+    asyncio.run(cs.embed(["질의"], "http://aidh.invalid", "query"))
+    asyncio.run(cs.learn_tag("http://aidh.invalid"))
+    assert len(calls) == 2, "표지 확인은 처음 한 번 — 그 뒤는 검색 자신의 임베딩뿐이다"
 
 
 def _fake_embed(monkeypatch, tag: str, dim: int, value: float = 1.0):
@@ -113,3 +130,35 @@ def test_BGE_M3_는_잰_하한으로_거른다(tmp_path, monkeypatch):
     assert asyncio.run(cs.search(store, "u1", long_q, "http://aidh.invalid")) == [], "e5 하한(0.84)이 아니라 0.58 로 거른다"
     query_at(0.35)
     assert asyncio.run(cs.search(store, "u1", "코너 응력", "http://aidh.invalid")), "짧은 질의는 느슨한 바닥(0.30)만 건다"
+
+
+def test_HP36_재기동_직후_첫_색인은_지금_공간을_먼저_알아_이미_새_공간인_메시지를_다시_임베딩하지_않는다(tmp_path, monkeypatch):
+    """종전엔 표지가 aidh-768 로 시작해 첫 검색의 색인이 m3 로 이미 든 메시지까지 '미색인' 으로 골라 다시 임베딩했다(docs/request-1027 HP-36)."""
+    store = _store(tmp_path)
+    cid = store.create(owner_sub="u1", title="배터리", kind="chat")
+    store.append(conversation_id=cid, owner_sub="u1", role="user", content="배터리 스웰링 원인을 셀 적층 압력과 함께 살펴본 대화 " * 3)
+    new = "aidh-BAAI_bge-m3-1024"
+    sent: list[int] = []
+
+    async def fake(texts, base_url, kind="passage", timeout=60.0):
+        cs._LAST.update(tag=new, seen=True)
+        sent.append(len(texts))
+        return [[1.0] + [0.0] * 1023 for _ in texts]
+    monkeypatch.setattr(cs, "embed", fake)
+    asyncio.run(cs.reindex(store, "u1", "http://aidh.invalid"))          # 앞 프로세스가 m3 로 다 색인했다
+    assert store.remaining("u1", new) == 0
+    cs._LAST.update(tag=cs.MODEL, seen=False)                            # 재기동 — 표지가 옛 것으로 돌아간다
+    sent.clear()
+    assert asyncio.run(cs.learn_tag("http://aidh.invalid")) == new and sent == [1], "짧은 글 하나로 공간을 안다"
+    out = asyncio.run(cs.reindex(store, "u1", "http://aidh.invalid"))
+    assert out["indexed"] == 0 and sent == [1], "이미 든 메시지를 다시 보내지 않았다"
+    sent.clear()
+    asyncio.run(cs.learn_tag("http://aidh.invalid"))
+    assert sent == [], "한 번 알면 다시 묻지 않는다"
+
+
+def test_HP36_검색_경로가_색인_전에_공간을_안다():
+    from pathlib import Path
+    src = (Path(cs.__file__).with_name("routes.py")).read_text(encoding="utf-8")
+    blk = src[src.index("async def search_conversations("):]
+    assert blk.index("await conv_search.learn_tag(settings.embed_base_url)") < blk.index("await conv_search.reindex(")

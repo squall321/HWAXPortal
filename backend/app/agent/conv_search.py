@@ -61,6 +61,16 @@ def current_tag() -> str:
     return _LAST["tag"]
 
 
+async def learn_tag(base_url: str, timeout: float = 30.0) -> str:
+    """이 프로세스가 아직 임베더를 부르지 않았으면 짧은 글 하나를 임베딩해 지금 공간의 표지를 안다 → 표지.
+
+    재기동하면 표지가 옛 MODEL(aidh-768)로 시작해, 첫 검색의 색인(reindex)이 그 표지로 '미색인' 을 골라 이미 새 공간(m3)인 메시지까지
+    다시 임베딩했다(결과는 맞고 시간만 들었다 — docs/request-1027 HP-36). 프로세스마다 한 번이다(embed 가 부르면 그것으로 안다)."""
+    if not _LAST.get("seen"):
+        await embed(["표지 확인"], base_url, "query", timeout=timeout)
+    return current_tag()
+
+
 def tag_of(data: dict, vecs: list) -> str:
     """/api/embed 응답의 model · dim 으로 표지를 정한다 — model 이 없거나 e5-base(768)면 옛 표지다."""
     model = str((data or {}).get("model") or "").strip()
@@ -132,6 +142,7 @@ async def embed(texts: list[str], base_url: str, kind: str = "passage",
     if len(vecs) != len(texts):
         raise ValueError(f"임베더가 {len(texts)}개를 받아 {len(vecs)}개를 돌려줬습니다.")
     _LAST["tag"] = tag_of(data, vecs)      # 이 벡터들이 든 공간 — 저장 · 순위가 이 표지를 쓴다
+    _LAST["seen"] = True
     return vecs
 
 
