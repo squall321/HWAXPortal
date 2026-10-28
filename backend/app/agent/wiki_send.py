@@ -18,6 +18,16 @@ EVIDENCE_MAX = 20     # 근거 줄 수 상한 — 한 턴의 도구 호출이 �
 EXCERPT_MAX = 300     # 근거 발췌 상한 — MX 백서 규칙서의 인용 상한(V10)과 같은 값
 TITLE_MAX = 120
 PLAT_KEY = "plat:mxwhitepaper"
+# 위키 켜짐 신호 — MX 백서는 위키가 꺼진 박스에서 wiki_* 도구를 게이트웨이에 싣지 않는다(MXWP MW-01 — 기동 때 /api/v1/wiki/health 가
+# wiki_disabled 면). 그래서 게이트웨이 도구 지도에 이 도구가 있으면 켜짐이다(에이전트 서버 HA-08 과 같은 근원, docs/request-1027 HP-16).
+WIKI_TOOL = "wiki_submit_source"
+
+
+def wiki_on(tool_names) -> bool | None:
+    """도구 이름들(게이트웨이 /tools-map) → 켜짐(True) · 꺼짐(False) · 모름(None — 지도를 한 번도 못 읽었다). 충돌 접두가 붙은 이름도 본다."""
+    if tool_names is None:
+        return None
+    return any(n == WIKI_TOOL or n.endswith("_" + WIKI_TOOL) for n in tool_names)
 
 
 def known_affiliation(request: Any) -> str:

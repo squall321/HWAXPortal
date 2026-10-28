@@ -52,12 +52,13 @@ _STUB = r"""
   const enc = new TextEncoder();
   const json = (body, status = 200) =>
     Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
-  window.__wiki = []; window.__msgs = []; window.__wikiReject = false;
+  window.__wiki = []; window.__msgs = []; window.__wikiReject = false; window.__wikiOff = false;
   window.fetch = (url, init = {}) => {
     const u = String(url);
     const method = (init.method || 'GET').toUpperCase();
     if (u === '/agent/conversations' && method === 'GET') return json({ conversations: [] });
     if (u === '/agent/conversations' && method === 'POST') return json({ id: 'srv-1' });
+    if (u === '/agent/wiki/status') return json({ enabled: !window.__wikiOff });
     if (/^\/agent\/conversations\/[^/]+\/messages$/.test(u)) { window.__msgs.push(JSON.parse(init.body || '{}')); return json({ ok: true }); }
     if (/^\/agent\/conversations\/[^/]+\/wiki$/.test(u)) {
       const b = JSON.parse(init.body || '{}');
@@ -88,7 +89,7 @@ const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n
 const ANSWER = '힌지 브래킷 최대 응력은 412 MPa 입니다.';
 const META = { models: { 'qwen3.8-flash-next': 1 }, chat_model: 'qwen3.8-flash-next', thinking: true, effort: 'xhigh', fallback_to: null };
 
-async function answered(browser, ents) {
+async function answered(browser, ents, wikiOff) {
   const page = await browser.newPage();
   page.setDefaultTimeout(10000);
   page.__errors = [];
@@ -97,6 +98,7 @@ async function answered(browser, ents) {
     r.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body><div id="root"></div></body></html>' }));
   await page.goto('http://harness.invalid/');
   await page.addScriptTag({ path: path.join(OUT, 'stub.js') });
+  if (wikiOff) await page.evaluate(() => { window.__wikiOff = true; });
   await page.addScriptTag({ path: path.join(OUT, 'bundle.js') });
   await page.evaluate((e) => window.__mount(e), ents);
   await page.click('#send');
@@ -137,6 +139,8 @@ async function press(browser, label, reject) {
       candidate: () => press(browser, '해결됨', false),
       rejected: () => press(browser, '위키에 남기기', true),
       noperm: async () => { const p = await answered(browser, ['chat']); const b = await buttons(p); const errors = p.__errors; await p.close(); return { before: b, errors }; },
+      // 위키가 꺼진 박스(HP-16) — 상태를 물은 뒤 버튼이 사라진다(모르는 동안은 종전대로 보인다)
+      wikioff: async () => { const p = await answered(browser, ['chat', 'plat:mxwhitepaper'], true); await p.waitForTimeout(400); const b = await buttons(p); const errors = p.__errors; await p.close(); return { before: b, errors }; },
     })) {
       try { out[name] = await fn(); } catch (e) { out[name] = { failed: String((e && e.stack) || e).slice(0, 1500) }; }
     }
@@ -171,6 +175,11 @@ def seen(tmp_path_factory):
 
 def test_권한이_없으면_버튼이_없다(seen):
     assert seen("noperm")["before"] == []
+
+
+def test_위키가_꺼진_박스에서는_버튼이_없다(seen):
+    """꺼진 박스에서 보이는데 누르면 502 였다(docs/request-1027 HP-16) — 포털 /agent/wiki/status 가 false 면 숨긴다."""
+    assert seen("wikioff")["before"] == []
 
 
 def test_위키에_남기기는_그_답을_보내고_대화에_알림을_남긴다(seen):

@@ -5,6 +5,7 @@ import { DELIB_TIMEOUT_MAX_S } from '../../state/chatStore';
 import type { DelibOpts } from '../../types/chat';
 import { MODIFIERS } from './delibTaxonomy';
 import { IconSliders } from './icons';
+import { useWikiEnabled } from './useWikiEnabled';
 
 // 표시 순서 = 권장 A/B 순서(GLM 리뷰 §5). heavy=부하 큰 옵션(경고 표식).
 const FLAGS: { key: keyof DelibOpts; label: string; hint: string; heavy?: boolean }[] = [
@@ -24,12 +25,17 @@ const WIKI_HINT =
   '결정문 · 표 · 소수 의견을 MX 백서 위키에 내 소속 범위로 남긴다. 소속이 없으면 MX 백서 \'내 후보\' 로 가서 승인해야 들어간다. '
   + '켜 두면 이후 심의마다 남는다';
 
+const WIKI_OFF_HINT = '이 박스에서는 MX 백서 위키가 꺼져 있다 — 켜 둔 것을 끄기만 할 수 있다(켜 두면 결정문 끝에 실패 문구가 붙는다)';
+
 // mods — 심의 첫 화면만 준다: '얹을 층'(방법 보강)은 새 심의를 시작할 때만 쓰여, 이어 묻는 화면에는 없다.
 // 종전엔 첫 화면 한가운데 칩 줄로 나와 목적 카드·입력창 사이를 갈랐다(docs/ui-refresh 단계 4).
 export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; toggle: (id: string) => void } } = {}) {
   const { delibOpts, setDelibOpts } = useChat();
   // 권한이 사라져도 켜진 채 저장된 토글은 숨기지 않는다 — 보이지 않는 채 켜져 있으면 끌 길이 없다.
-  const showWiki = useCan()('plat:mxwhitepaper') || !!delibOpts.wiki;
+  const canWiki = useCan()('plat:mxwhitepaper');
+  const wikiOn = useWikiEnabled(canWiki);
+  // 위키가 꺼진 박스에서는 숨긴다 — 켠 사람의 결정문 끝에 내부 오류 문구가 붙었다(HP-16). 이미 켜 둔 것은 끄는 길만 남긴다.
+  const showWiki = (canWiki && wikiOn !== false) || !!delibOpts.wiki;
 
   const setFlag = (key: keyof DelibOpts, on: boolean) =>
     setDelibOpts({ ...delibOpts, [key]: on });
@@ -90,11 +96,12 @@ export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; tog
                 <input
                   type="checkbox"
                   checked={!!delibOpts.wiki}
+                  disabled={wikiOn === false && !delibOpts.wiki}
                   onChange={(e) => setDelibOpts({ ...delibOpts, wiki: e.target.checked || undefined })}
                 />
                 <span className="do-label">MX 백서 위키에도 남기기</span>
               </label>
-              <span className="do-hint">{WIKI_HINT}</span>
+              <span className="do-hint">{wikiOn === false ? WIKI_OFF_HINT : WIKI_HINT}</span>
             </li>
           )}
           <li className="do-item">

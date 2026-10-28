@@ -102,6 +102,12 @@ def portal(tmp_path, monkeypatch):
         return {"result": {"id": "11111111-2222", "short": "src_11111111", "dedup": False, "doc_slug": "src-11111111",
                            "ingest_state": "queued"}}
     monkeypatch.setattr("app.agent.upload.mcp_call", fake_mcp)
+    # 위키 켜짐 신호(게이트웨이 도구 지도 — HP-16)도 가짜로 — 시험이 떠 있는 게이트웨이를 부르지 않게. 기본은 켜짐이다.
+    tools = {"names": frozenset({"wiki_submit_source"})}
+
+    async def fake_tools(_settings):
+        return tools["names"]
+    monkeypatch.setattr("app.agent.upload.gateway_tool_names", fake_tools)
     with TestClient(app) as c:
         keep = (app.state.user_store, app.state.access, app.state.catalog, app.state.conv_store)
         # 컨텍스트 진입 후 교체 — 실제 사용자 원장 · 대화 저장소를 건드리지 않는다
@@ -111,6 +117,7 @@ def portal(tmp_path, monkeypatch):
             c.post("/auth/local/signup", json={"email": email, "name": email.split("@")[0], "password": "pw123456"})
         h = _login(c, "boss@corp.com")
         assert c.post("/auth/local/users/user@corp.com/approve", json={"groups": []}, headers=h).status_code == 200
+        c.wiki_tools = tools
         yield c, calls
         app.state.user_store, app.state.access, app.state.catalog, app.state.conv_store = keep
     app.dependency_overrides.pop(get_settings, None)
@@ -178,3 +185,27 @@ def test_남의_대화는_없는_것과_같다(portal):
     h = _login(c, "user@corp.com")
     assert c.post(f"/agent/conversations/{cid}/wiki", json={"text": "412 MPa 입니다."}, headers=h).status_code == 404
     assert calls == []
+
+
+def test_HP16_위키_켜짐은_게이트웨이_도구_지도에서_읽는다():
+    assert W.wiki_on(None) is None, "지도를 한 번도 못 읽었으면 모른다(화면은 종전대로 보인다)"
+    assert W.wiki_on(frozenset({"wiki_submit_source", "wiki_ask"})) is True
+    assert W.wiki_on(frozenset({"mxwhitepaper_wiki_submit_source"})) is True, "충돌 접두가 붙은 이름도 켜짐이다"
+    assert W.wiki_on(frozenset({"list_documents", "get_section"})) is False
+
+
+def test_HP16_꺼진_박스에서는_상태가_false_고_보내기는_해결됨을_권하지_않고_막힌다(portal):
+    c, calls = portal
+    ha = _login(c, "boss@corp.com")
+    assert c.patch("/auth/access/users/user@corp.com", json={"grants": ["plat:mxwhitepaper"]}, headers=ha).status_code == 200
+    h = _login(c, "user@corp.com")
+    cid = _conv(c, h)
+    assert c.get("/agent/wiki/status", headers=h).json() == {"enabled": True}
+    c.wiki_tools["names"] = frozenset({"list_documents"})
+    assert c.get("/agent/wiki/status", headers=h).json() == {"enabled": False}
+    for mode in ("button", "candidate"):
+        r = c.post(f"/agent/conversations/{cid}/wiki", json={"text": "412 MPa 입니다.", "mode": mode}, headers=h)
+        assert r.status_code == 409 and "꺼져" in r.json()["detail"] and "해결됨" not in r.json()["detail"], r.text
+    assert calls == [], "꺼진 박스에서는 게이트웨이를 부르지 않는다(502 로 끝나던 길)"
+    c.wiki_tools["names"] = None
+    assert c.get("/agent/wiki/status", headers=h).json() == {"enabled": None}

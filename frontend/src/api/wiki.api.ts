@@ -38,3 +38,21 @@ export async function sendTurnToWiki(
   }
   return (await res.json()) as WikiSendResult;
 }
+
+/** 이 박스의 MX 백서 위키가 켜져 있나 — null 이면 모른다(화면은 종전대로 보인다). 꺼져 있으면 '위키에 남기기' · '해결됨' 과 심의 옵션을
+ *  숨긴다 — 보이는데 누르면 502 였다(docs/request-1027 HP-16). 답마다 버튼이 있어 한 번만 묻고 5분 붙잡는다. */
+let wikiAt = 0;
+let wikiPending: Promise<boolean | null> | null = null;
+export function fetchWikiEnabled(): Promise<boolean | null> {
+  const now = Date.now();
+  if (wikiPending && now - wikiAt < 300_000) return wikiPending;
+  wikiAt = now;
+  wikiPending = apiFetch('/agent/wiki/status')
+    .then(async (r) => {
+      if (!r.ok) return null;
+      const v = (await r.json())?.enabled;
+      return typeof v === 'boolean' ? v : null;
+    })
+    .catch(() => null);
+  return wikiPending;
+}

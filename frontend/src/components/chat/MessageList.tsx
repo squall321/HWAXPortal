@@ -14,6 +14,7 @@ import { ToolCatalogBlock } from './ToolCatalogBlock';
 import { IconArrowDown, IconCheck, IconCopy } from './icons';
 import { colorOf, initialOf, shortName } from './personaColor';
 import { StreamPulse } from './StreamPulse';
+import { useWikiEnabled } from './useWikiEnabled';
 import { TextBlock } from './renderers/TextBlock';
 import { Figure } from './renderers/Figure';
 import { config } from '../../config';
@@ -58,8 +59,10 @@ function WikiActions({ msg }: { msg: Message }) {
   const { activeConversation, addUploadNotice } = useChat();
   const [busy, setBusy] = useState<WikiMode | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const wikiOn = useWikiEnabled(can('plat:mxwhitepaper'));
   const sid = activeConversation?.serverId;
-  if (!can('plat:mxwhitepaper') || !sid) return null;
+  // 위키가 꺼진 박스에서는 숨긴다 — 보이는데 누르면 502 였다(HP-16). 모르면(null) 종전대로 보인다.
+  if (!can('plat:mxwhitepaper') || !sid || wikiOn === false) return null;
   const model = msg.meta?.chat_model || Object.keys(msg.meta?.models ?? {})[0] || null;
   const send = (mode: WikiMode) => {
     setBusy(mode);

@@ -499,6 +499,16 @@ class WikiSendIn(BaseModel):
     model: str | None = Field(default=None, max_length=120)
 
 
+@router.get("/wiki/status")
+async def wiki_status(
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """이 박스의 MX 백서 위키가 켜져 있나 — 화면이 '위키에 남기기' · '해결됨' 버튼과 심의 옵션을 숨기는 근거(docs/request-1027 HP-16).
+    enabled 가 null 이면 모른다(게이트웨이 도구 지도를 한 번도 못 읽었다) — 화면은 종전대로 보인다."""
+    return {"enabled": _wiki.wiki_on(await _upload.gateway_tool_names(settings))}
+
+
 @router.post("/conversations/{cid}/wiki")
 async def send_turn_to_wiki(
     cid: str,
@@ -522,6 +532,9 @@ async def send_turn_to_wiki(
 
 async def _wiki_send(request: Request, cid: str, body: WikiSendIn, principal: Principal, settings: Settings) -> dict:
     ensure(principal, _wiki.PLAT_KEY)
+    if _wiki.wiki_on(await _upload.gateway_tool_names(settings)) is False:
+        # 꺼진 박스 — 게이트웨이에서 502 로 끝나기 전에 말한다. 소속 없음(409)의 안내가 똑같이 실패할 '해결됨' 을 권하지 않게 먼저 본다(HP-16).
+        raise AuthError("이 박스에서는 MX 백서 위키가 꺼져 있어 남길 수 없습니다(wiki_disabled) — 위키를 켠 뒤 다시 시도하세요", status_code=409)
     if not principal.email:
         raise AuthError("이메일이 없는 계정은 위키에 남길 수 없습니다 — MX 백서는 주인을 이메일로 가린다", status_code=400)
     try:
