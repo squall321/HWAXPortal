@@ -235,8 +235,9 @@ class Settings(BaseSettings):
     # 게이트웨이 REST 다리의 사이트 키와 같아야 한다(rest.<site> / portal.audience_ok).
     # heax-hub 는 아직 소비처가 없다 — /apps/* 는 HEAXHub 자기 게이트가 막고 그쪽은 이 RS256
     # 토큰을 안 본다. 지우지 않고 남긴다(그 배선을 여는 결정이 아직 안 났다).
+    # simflow — 게이트웨이가 위임(per_user_sso simflow)이 있으면 REST 다리 사이트로 연다(HWAXMcpGateway HG-04, docs/request-1027 HP-15).
     pat_default_audiences: str = ("mx-white-paper,heax-hub,ai-data-hub,signalforge,"
-                                 "ste,dyna-forge,step-forge,mcp-gateway")
+                                 "ste,dyna-forge,step-forge,simflow,mcp-gateway")
     pat_chat_audience: str = "mcp-gateway"   # audience a PAT must carry to use the chat / MCP surface
     # 포털이 챗·심의 요청마다 찍어 에이전트 서버에 넘기는 사용자 PAT 의 수명(초) — exp = 30분 창의 시작 + 이 값이라
     # 시작 시점에 남는 수명은 최소 (이 값 − 1800)이다. 에이전트 서버는 시작할 때 받은 토큰을 그 실행 **끝까지** 쓴다
