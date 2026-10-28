@@ -101,3 +101,9 @@ def test_추적된_카탈로그에서_소속을_싣는_시스템은_MX_백서뿐
     """늘리려면 그 앱이 소속을 쓰는지 확인하고 여기를 같이 고친다 — 쓰지 않는 앱에 소속이 퍼지지 않게."""
     cat = CatalogFile.model_validate(yaml.safe_load((_CONFIG / "systems.yaml").read_text(encoding="utf-8")))
     assert [s.id for s in cat.systems if s.claims_affiliation] == ["mx-white-paper"]
+
+
+def test_HP40_떠_있는_카탈로그의_소속_싣는_시스템을_health_ready_가_말한다(portal):
+    """점검은 파일(update-preflight)만 봤다 — 박스 파일이 덮은 뒤의 떠 있는 값은 볼 길이 없었다(docs/request-1027 HP-40)."""
+    r = portal.get("/health/ready")
+    assert r.status_code == 200 and r.json()["claims_affiliation"] == ["mx-white-paper"], r.json()
