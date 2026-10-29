@@ -759,3 +759,28 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
   `portal/backend/.env` 가 따로 있고, `portal/backend/config/`(systems.cae00.yaml · access.local.yaml …) · `portal/.git/info/exclude` ·
   `crontab/crontab.txt` · `heax/hwax_risk/secrets.env` · `origin.json` 이 든다(HP-17).
 - 크론 설치기(백업 · 감시 · 로그 회전)는 crontab 을 못 읽으면 쓰지 않고 ✗ 로 멈춘다(HP-18) — update-all 1b 에 ⚠ 가 나오면 `crontab -l` 을 직접 본다.
+
+## 2026-10-29 반영분 — 10-29 웹 챗 온톨로지 QA 후속(1차)
+
+요청서 · 계획 · 결정은 [request-1029/](request-1029/)(PLAN · checklist · context-notes)이 정본이다. 받는 길은 그대로 `git pull && update-all`
+이다(포털 · 게이트웨이 · 에이전트 서버, 화면은 Drive 판). 설정할 것은 없다 — 코어 어휘표는 포털 리포의 `backend/config/core_vocab.json` 이고
+게이트웨이 · 에이전트 서버가 같은 박스의 그 파일을 읽는다.
+
+### 받은 뒤 — 확인
+
+- **게이트웨이** — `curl -s 127.0.0.1:9110/health | python3 -c 'import json,sys;print(json.load(sys.stdin)["core_vocab"])'` 가
+  `loaded: True · canonical: rootdesigndatahub · canonical_backend: True · tagline_applied: True` 다. `canonical_backend` 가 False 면 이 박스의
+  정본 허브 백엔드 키가 어휘표의 `canonical.app` 과 다르다 — 정본 소개 줄 · 정본 대표 접기가 꺼진 채다(검색 낱말은 그대로 돈다). 키를 알려 주면
+  dev 에서 어휘표를 고쳐 올린다. `tagline_applied` 가 False 면 다음 재활 회차(60초)에 다시 본다.
+- **에이전트 서버** — `curl -s 127.0.0.1:9009/health | python3 -c 'import json,sys;print(json.load(sys.stdin)["core_vocab"])'` 가
+  `loaded: True · canonical: rootdesigndatahub` 다. False 면 챗 코어 규칙이 옛 글(발동 낱말 넷)로 돈다 — `error` 가 까닭이다(`없음` 이면 포털
+  리포가 형제 자리 `../HWAXPortal` 에 없다).
+- **화면** — 답을 기다리며 다른 탭으로 옮겼다 돌아와도 답이 끝까지 와 있다. 중지 단추가 곧바로 풀린다.
+
+### 재시험 — 사람 · cae00 세션
+
+- 같은 정답표 16문항(OT-01 ~ 16)과 챗이 부른 search_tools 질의를 다시 잰다. 원문 여덟은 이 박스 게이트웨이의 질의 기록
+  (`../HWAXMcpGateway/tool_search_eval/queries.local.jsonl`)에 있다 — dev 는 요청서에 이름이 나온 일곱과 OT-07 영어 질문으로 쟀다(context-notes C-14).
+- 보는 것 — OT-06 ~ 10 에서 정본 허브 호출이 1회 이상인지, OT-07 · 08 · 10 · 11 의 첫 도구가 코어인지, OT-11 고장모드 수가 71 인지, 자기검증 ms p95
+  (`/health` `self_check`)와 '고친 답이 비어 초안 그대로' 가 주는지. 결과로 4차(E-1 ~ E-6)를 정한다(결정 D-7).
+- '낙하 해석 담당' 은 코어 낱말이 없어 어휘표가 닿지 않는다 — 이 질의가 다시 코어를 건너뛰어도 1차가 고친 것과 무관하다(C-14).
