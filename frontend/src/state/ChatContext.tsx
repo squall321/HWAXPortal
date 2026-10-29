@@ -306,6 +306,9 @@ interface ChatProviderProps {
   serverKind?: ConvKind;
 }
 
+// 다시 보일 때 서버 사본과 맞추는 침묵 문턱 — 챗 · 심의 스트림 모두 15초마다 ping 을 낸다(P-1 ②)
+const RESYNC_QUIET_MS = 20_000;
+
 export function ChatProvider({
   children,
   storagePrefix = 'hwax.chat',
@@ -1054,6 +1057,42 @@ export function ChatProvider({
   const stop = useCallback(() => {
     abortRef.current?.abort();
     stopUiRef.current?.();
+  }, []);
+
+  // 화면이 다시 보일 때(숨은 탭 → 보임) 받는 중인 대화가 RESYNC_QUIET_MS 넘게 조용했으면 서버 사본과 맞춘다(docs/request-1029 P-1 ②).
+  // 포털 중계는 브라우저가 읽지 않아도 상류를 끝까지 읽어 서버 사본에 답을 저장한다(P-1 ①). 서버 사본의 마지막이 이 턴의 사람 발화 뒤의 답이면
+  // 받는 중 표시를 끝내고 서버 사본으로 바꾼다. 서버에 아직 답이 없으면 아무것도 하지 않는다(답이 오는 중이다).
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const cid = streamConvRef.current;
+      const live = liveRef.current;
+      if (!cid || !live || Date.now() - live.signalAt < RESYNC_QUIET_MS) return;
+      const conv = convsRef.current.find((c) => c.id === cid);
+      const sid = conv?.serverId;
+      const asked = [...(conv?.messages ?? [])].reverse().find((m) => m.role === 'user')?.text?.trim();
+      if (!sid || !asked) return;
+      void getServerConversation(sid)
+        .then((detail) => {
+          if (!detail || streamConvRef.current !== cid) return;
+          const msgs = detail.messages ?? [];
+          const last = msgs[msgs.length - 1];
+          const lastUser = [...msgs].reverse().find((m) => m.role === 'user');
+          if (!last || last.role !== 'assistant' || !String(last.content ?? '').trim()) return;
+          if (!lastUser || !String(lastUser.content ?? '').includes(asked)) return; // 서버에 이 턴이 없다(저장 실패 등) — 옛 답으로 바꾸지 않는다
+          abortRef.current?.abort();
+          stopUiRef.current?.();
+          const fresh = serverConvToLocal(detail);      // 받은 사본을 그대로 쓴다(한 번 더 묻지 않는다)
+          setConversations((prev) =>
+            prev.map((c) => (c.id !== cid ? c : { ...c, title: fresh.title, messages: fresh.messages, updatedAt: fresh.updatedAt })),
+          );
+        })
+        .catch(() => {
+          /* 서버 미가용 — 받는 중인 스트림을 그대로 둔다 */
+        });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
   const newConversation = useCallback(() => {
