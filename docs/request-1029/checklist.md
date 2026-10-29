@@ -67,7 +67,7 @@
   - [x] ⑤ 창구 /search-log · /search-review · /search-eval · run.py live — 게이트웨이 1c7fcc1 · 9e9a8c0
   - [x] ⑥ platform_feedback_report.py — 게이트웨이 ed94439(손잡이 지문은 게이트웨이와 같다 — 시험이 맞댄다 · dev 실데이터 0.2초 · 신원 0건)
   - [x] ⑦ 포털 관리자 '도구 검색 검토' 화면 + 백엔드(관리자 · CSRF → 게이트웨이 공유 비밀)
-  - [ ] 문서(README 셋 · server-setup · 가이드) · 이력 · push · 화면 Drive
+  - [x] 문서(README 셋 · server-setup 7절 · 배포 가이드 10-30 절) · 이력 · push(게이트웨이 f4d9546 · 에이전트 ab87137 · 포털) · 화면 Drive images-20261029-210547Z(임시 포털 캡처로 좁은 화면 표 · 입력칸을 고친 판)
 - [x] E-6 새 앱 등록 자동 점검 — update-all §6 '새 앱 점검'(95f9274 · `infra/scripts/app-checks.py`, C-27) · 찾은 DocForge 미분류는 게이트웨이 44f4b8d
 
 ## 관련 프로젝트 — 이 박스에서 고칠 수 있는 것(사용자 지시 10-29, C-17)

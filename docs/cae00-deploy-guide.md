@@ -826,3 +826,12 @@ StepForge 몫(D-647 — `find_plm_task` 프로젝트 별칭 · `sync` 요약)은
 - **오래 안 불린 도구 보고(E-3)** — `cd ~/Projects/HWAXMcpGateway && python3 tool_usage_report.py --out ~/unused-tools-$(date +%F).md`.
   앱마다 30일 동안 안 불린 도구가 나온다. 앱 주인에게 넘긴다(부른 사람 · 주소는 싣지 않는다).
 - **SignalForge SG-04** — [request-1029/signalforge-sg04-question.md](request-1029/signalforge-sg04-question.md) 를 SignalForge 주인에게 넘긴다(P8 · PH8 제품 코드 — 데이터 결정).
+
+## 2026-10-30 반영분 — 검색 고리(E-7 ~ E-9 — 손잡이 · 덧씌우기 · 굴러가는 기록 · 검토 화면 · 피드백 보고서)
+
+**받기 전에 [request-1029/server-setup.md](request-1029/server-setup.md) 7절을 읽는다.** 기본값은 지금 순위와 바이트까지 같다 — 덧씌우기 파일을 만들기 전에는
+검색 답이 바뀌지 않는다. 게이트웨이 `f4d9546` · 에이전트 서버 `ab87137` · 포털(관리자 '도구 검색 검토' · update-all §7 지문 줄)을 update-all 한 번으로 받는다.
+⚠ **덧씌우기 파일(`HWAXMcpGateway/search_tuning.local.json` · `backend/config/core_vocab.local.json`)은 이 판을 받은 뒤에 만든다** — update-all §1 의
+stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치운다. 이미 만들었으면 그 리포의 `.git/info/exclude` 에 먼저 적는다.
+받은 뒤 끝 요약 §7 에 `· 검색 손잡이: 지문 …` · `· 코어 어휘표 지문: 게이트웨이 … · 에이전트 …`(둘이 같아야 한다) 두 줄이 보인다.
+정답 달기 · 평가 · 플랫폼별 피드백 보고서(`platform_feedback_report.py`)는 사람 몫이다(7.3절).
