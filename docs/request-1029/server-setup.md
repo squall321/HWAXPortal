@@ -11,7 +11,7 @@ cae00 에서 이 묶음(1 · 2 · 3차와 4차 일부, 2026-10-29)을 받기 전
 | 포털(HWAXPortal) | main — 이 문서가 든 판 | 코어 어휘표 `backend/config/core_vocab.json`(정본) · 챗 중계가 상류 읽기를 화면 쓰기와 뗀다(숨은 탭에서도 답이 끝까지 저장된다) · 챗 침묵 한도 900초(심의와 뗐다) · 서버 대화 id 를 에이전트 서버에 싣는다 · 화면(중지 단추가 곧바로 풀린다 · 숨은 탭에서 돌아오면 서버 사본과 맞춘다) · update-all §6 '새 앱 점검' · env 킷 주석 손잡이 둘 |
 | 에이전트 서버(HWAXAgentServer) | main `969e723` | 코어 데이터 규칙을 어휘표로 짓는다 · 챗 스트림에도 15초마다 ping · 자기검증은 바꿀 곳([원문] · [새 글])만 받는다(상한 4,096) · 도구 결과 머리에 앱 이름 · 같은 도구 네 번째에 '앞 결과를 써라' · 허브 큰 응답 접기 · 한자 · 가나 낱말을 자기검증에 짚는다 · 챗 LLM 호출에 대화 머리(`X-Session-Affinity`) · 프롬프트 앞부분 고정 · 도구 설명 예산 손잡이 |
 | 게이트웨이(HWAXMcpGateway) | master `44f4b8d` | 코어 낱말 → 허브 읽기 도구(search_tools) · 정본 도구 설명 앞 소개 줄 · 같은 도구 사본은 정본 한 줄로 · 코어 질문은 '심의 · 토의 · 회의' 를 말할 때만 심의 도구를 올린다 · 시험 사본(stepforge-prod · dynaforge-prod)을 목록 · 검색에서 뺀다 · `tool_usage_report.py`(안 쓴 도구 보고) · DocForge 도구 영역 |
-| StepForge | main `6907f8e`(D-647) · Drive SIF | `find_plm_task` 가 과제가 속한 프로젝트의 이름 · 별칭(마케팅명)으로도 찾는다(`matched_by` `project:<키>`) · 응답의 `sync` 는 요약(타입마다의 줄은 `system_capabilities.plm_hub` 에만) |
+| StepForge | main `6907f8e`(D-647) · Drive SIF — **dev 가 push · SIF 를 올린 뒤에 든다**(그 전 update-all 은 지금 판 `dc0f697` 그대로 정상으로 뜬다) | `find_plm_task` 가 과제가 속한 프로젝트의 이름 · 별칭(마케팅명)으로도 찾는다(`matched_by` `project:<키>`) · 응답의 `sync` 는 요약(타입마다의 줄은 `system_capabilities.plm_hub` 에만) |
 
 받는 판에는 이 묶음 밖의 커밋(다른 작업)도 함께 든다. 리포마다 무엇이 드는지는 받기 전에 본다(2절 ①).
 
@@ -38,6 +38,8 @@ cd ~/Projects/HWAXPortal && ./infra/scripts/drive-drift.sh heax
 ```
 
 `step_forge` 줄이 ✗(열쇠가 다르다)면 update-all 을 미루고 dev 에 알린다 — dev 가 그 커밋의 SIF 를 다시 올린다.
+dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다. 그래서 dev 가 push 한 뒤 새 SIF 가 Drive 에 닿기까지 몇 분은 열쇠가 어긋난다 —
+그 사이에는 update-all 을 돌리지 않는다(dev 가 '올렸다' 고 알린 뒤에 돌린다). 지금 판끼리 맞을 때(✓)는 언제 돌려도 된다.
 
 ⑤ **형제 리포 자리.** 게이트웨이 · 에이전트 서버는 `../HWAXPortal/backend/config/core_vocab.json` 을 읽는다(cae00 은 `~/Projects/` 아래 형제). 못 읽으면 막히지는
 않고 종전 동작으로 돈다 — 3절의 `/health` 가 말한다.
@@ -57,7 +59,7 @@ cd ~/Projects/HWAXPortal && ./infra/scripts/drive-drift.sh heax
   - `core_vocab.loaded: True`. False 면 `error` 가 까닭이다(`없음` 이면 포털 리포가 형제 자리에 없다).
   - `self_check` 의 `counts`(fixed · suspect · ok)와 `ms.p95` 를 지난 재시험 값과 견준다. `suspect` 의 까닭이 '바꿀 곳을 초안에서 찾지 못했다' 로 많으면 dev 에 보낸다.
 - **화면** — 답을 기다리며 다른 탭에 20초 넘게 있다 돌아오면 끝난 답이 보인다. 중지 단추가 곧바로 풀린다.
-- **StepForge** — 챗에서 과제의 마케팅명으로 물으면 `find_plm_task` 가 `matched_by` `project:<프로젝트 키>` 로 과제를 낸다. 응답의 `sync` 에 `types` 가 없다.
+- **StepForge**(D-647 이 든 뒤) — 챗에서 과제의 마케팅명으로 물으면 `find_plm_task` 가 `matched_by` `project:<프로젝트 키>` 로 과제를 낸다. 응답의 `sync` 에 `types` 가 없다.
 
 ## 4. 사람 몫 — 박스 설정 · 시험
 
