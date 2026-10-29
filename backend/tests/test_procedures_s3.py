@@ -4,6 +4,7 @@
 # 실호출 고정물(tests/fixtures/procedures/smarttwin_text_responses.json), 스키마는 게이트웨이 tools/list 에서 옮긴
 # 것(smarttwin_schemas.json)으로 본다. 단위 규칙은 docs/procedures/context-notes.md W-91, 평문은 W-90.
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,8 @@ import yaml
 
 from app.procedures import template
 from app.procedures.judge import judge
-from app.procedures.models import ProcedureSpec, check_against_schemas, coerce_inputs, validate_spec
+from app.procedures.models import (ProcedureSpec, SpecError, check_against_schemas, coerce_inputs,
+                                   omit_empty_optionals, validate_spec)
 
 ROOT = Path(__file__).resolve().parents[2]
 FIX = Path(__file__).parent / "fixtures" / "procedures"
@@ -43,7 +45,9 @@ def schemas() -> dict:
 
 
 def _examples(spec: ProcedureSpec) -> dict:
-    return {v.key: (v.example if v.example is not None else "/data/templates/MinimumModel.k") for v in spec.vars}
+    """예시로 채운 입력 — 예시 없는 **선택** 변수는 비운다(사람이 안 채운 모양, W-102)."""
+    return {v.key: (v.example if v.example is not None else "/data/templates/MinimumModel.k")
+            for v in spec.vars if v.required or v.example is not None}
 
 
 def _params(spec: ProcedureSpec) -> dict:
@@ -189,12 +193,53 @@ def test_제출_직후_후처리를_예약하고_토큰은_나르지_않는다(s
     fx = json.loads((FIX / "dynaforge_session_schemas.json").read_text(encoding="utf-8"))["responses"]
     got = {"slurm_job_id": template.extract("✅ 제출 완료 — job_id=12345", spec.steps[2].save["slurm_job_id"]),
            "df_session": template.extract(fx["create_session"], sess.save["df_session"])}
-    args = template.substitute(post.args, {**coerce_inputs(spec, _examples(spec)), **got})
+    args = template.substitute(post.args, omit_empty_optionals(spec, {**coerce_inputs(spec, _examples(spec)), **got}))
     assert args["session_id"] == fx["create_session"]["id"]
     assert args["args"]["job_key"] == "stcx:12345", "드라이버 잡의 slurm id — 후처리 잡(C)의 id 가 아니다"
     assert isinstance(args["args"]["height"], int), "높이는 수로 간다(통째 치환이 문자열로 만들면 DynaForge 가 drop_height 를 못 채운다)"
     assert args["args"]["job_name"] == _examples(spec)["job_name"]
+    assert not (META & set(args["args"])), "비운 과제 메타는 칸이 빠진다 — null 이면 옛 DynaForge 가 422 다(W-102)"
     assert template.extract(fx["run_operation"], post.save["postprocess_job_id"]) == fx["run_operation"]["id"]
+    # 채우면 그 값이 문자열로 간다
+    filled = {**_examples(spec), "project": "P-77", "dev_rev": "dv1", "variation": "rib", "doe": "D2"}
+    args = template.substitute(post.args, omit_empty_optionals(spec, {**coerce_inputs(spec, filled), **got}))
+    assert {k: args["args"][k] for k in META} == {"project": "P-77", "dev_rev": "dv1", "variation": "rib", "doe": "D2"}
+
+
+META = {"project", "dev_rev", "variation", "doe"}
+
+
+# DynaForge 가 반입 때 받는 개발 차수 꼴(KooRemapper report_svc parse_stage 의 _STAGE_RE 사본 — 그 리포를 import 하지 않는다)
+_DF_STAGE = re.compile(r"^(pre|dv|pv|pra|mp)([123r])?$")
+
+
+def _df_stage_ok(v: str) -> bool:
+    m = _DF_STAGE.match(v)
+    return bool(m) and (m.group(1) in ("dv", "pv")) == bool(m.group(2))
+
+
+def test_과제_메타는_선택이고_예시가_없다(seed):
+    """남은 예시가 리포트 묶음 열쇠(project)로 들어가면 비교 화면이 엉뚱한 과제로 묶는다(W-36 · W-102)."""
+    _, spec = seed
+    meta = {v.key: v for v in spec.vars if v.key in META}
+    assert set(meta) == META
+    assert all(not v.required and v.example is None for v in meta.values())
+    assert {meta[k].type for k in ("project", "variation", "doe")} == {"string"}
+    assert {k: spec.steps[4].args["args"][k] for k in META} == {k: f"{{{{{k}}}}}" for k in META}, "통째 자리라야 비웠을 때 칸이 빠진다"
+
+
+def test_개발_차수는_DynaForge_가_받는_꼴만_고른다(seed):
+    """`pv` · `DV1` · `dv1 ` 는 예약은 통과하고 잡이 끝난 뒤(최대 167시간) 반입에서야 실패한다 — 고르기로 막아 제출 전에 422 로(W-102 검토)."""
+    _, spec = seed
+    dev = next(v for v in spec.vars if v.key == "dev_rev")
+    assert dev.type == "enum" and all(_df_stage_ok(x) for x in dev.values)
+    assert set(dev.values) == {f"{a}{b}" for a in ("dv", "pv") for b in "123r"} | {"pre", "pra", "mp"}, "받는 꼴 전부"
+    assert "pv" not in dev.label.replace("pv2", ""), "라벨 예시가 차수 없는 pv 를 보이면 안 된다"
+    base = {k: v for k, v in _examples(spec).items()}
+    for bad in ("pv", "DV1", "dv1 "):
+        with pytest.raises(SpecError):
+            coerce_inputs(spec, {**base, "dev_rev": bad})
+    assert "dev_rev" not in coerce_inputs(spec, {**base, "dev_rev": ""}), "고르지 않으면 칸이 빠진다"
 
 
 # ── 평문 추출(re:) — 제출 씨앗이 잡 ID 를 넘기는 길 ─────────────────────────────────────────
