@@ -83,6 +83,9 @@ dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다.
   결과로 4차의 남은 셋(E-2 앱 역할 순위 · E-4 개인 Claude 묶음 · E-5 페르소나 연결)을 정한다(결정 D-7).
 - **안 쓴 도구 보고(E-3)** — `cd ~/Projects/HWAXMcpGateway && python3 tool_usage_report.py --out ~/unused-tools-$(date +%F).md` → 앱 주인에게 넘긴다(부른 사람 · 주소는 싣지 않는다).
 - **SignalForge SG-04** — [signalforge-sg04-question.md](signalforge-sg04-question.md) 를 SignalForge 주인에게 넘긴다(P8 · PH8 제품 코드 — 데이터 결정, 안 셋).
+- **StepForge 운영 결정** — [stepforge-ops-decisions.md](stepforge-ops-decisions.md)(StepForge 세션이 쓴 글, 10-29). 운영이 정할 것 셋 — ① 응답 공개 주소
+  `APPTAINERENV_STEPFORGE_PUBLIC_BASE` ② MaterialTwin 주소의 정본(`.env` 그대로 · 허브가 `HEAX_APP_URL_<SLUG>` 로 넣기) ③ 게이트웨이 비밀 머리
+  `X-Heax-Gateway-Secret`(막는 도구를 붙이기 전에 닫는다) — 와 알림 하나(이어 받기 시한 45초) · 확인 하나(cae00 챗 실사용 1건).
 
 ## 5. 되돌리기 — 손잡이
 

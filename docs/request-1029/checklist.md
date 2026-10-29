@@ -73,6 +73,7 @@
 ## 관련 프로젝트 — 이 박스에서 고칠 수 있는 것(사용자 지시 10-29, C-17)
 
 - [x] StepForge — `find_plm_task` 가 과제의 프로젝트 별칭(마케팅명)으로도 찾는다(OT-15 no_match) — StepForge D-647(C-28)
+- [ ] StepForge 운영 결정 셋 · 알림 · 확인 — [stepforge-ops-decisions.md](stepforge-ops-decisions.md)(cae00 사람 몫, server-setup 4절)
 - [x] StepForge — `find_plm_task` 응답의 sync 칸을 줄인다(0 ~ 2행에 11 ~ 12천 자, N-10) — StepForge D-647 · D-637 의 '본문 그대로' 를 사용자 지시로 뒤집음(C-28)
 - [-] SignalForge SG-04(P8 마케팅명 → PH8 제품 코드) — 제품 카탈로그 · 태깅 사전의 구조 결정이고 요청서의 P8 · PH8 은 가린 이름이다. 묻는 글 [signalforge-sg04-question.md](signalforge-sg04-question.md)(C-29)
 - [-] Datahub 플랫폼 DP-01 ~ 05 · objects_summary 오류 문구 · FailureTrace DP-02 · CAE 그룹 허브 해석 기록 · ARP · ODB 허브 — 이 박스에 코드가 없다(cae00 · 바깥 시스템, C-17)
