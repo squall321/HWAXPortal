@@ -7,18 +7,18 @@
 - [x] 조사 넷 — 절차 기능 · 챗 루틴 모드 · MCP 길 · 예시 연쇄의 플랫폼 지도(10-29, 읽기만)
 - [x] 계획 `PLAN.md` · 이 체크리스트 · `context-notes.md`(10-29)
 - [x] 사용자 결정 — Q1 저절로 · Q2/Q4 건너뛰고 끝까지 · Q7 둘 다(10-30, C-7) · 나머지는 권고 기본값
-- [ ] `contracts.md` — RoutineSpec JSON Schema · 단계 봉투 · SSE `routine` 이벤트 · MCP 도구 입출력
-- [ ] 계약 시험 뼈대(포털 · 게이트웨이 · 에이전트가 같은 스키마 파일을 읽는다)
+- [x] `contracts.md` — 스펙 · 상태 · 단계 봉투 · /routines-api · MCP 도구 · SSE · 보고서 렌더(10-30) — 스펙의 정본은 `app/procedures/routines.py`
+- [ ] 계약 시험 뼈대 — R2 에서 게이트웨이 도구와 함께(포털 `routine_contract.json` 을 형제 파일로 읽는다)
 
 ## R1 포털 — 짜고 저장하기
 
-- [ ] 저장 — `routines` · `routine_versions`(불변) · `routine_runs` · `routine_stages`(같은 `procedures.sqlite`, 새 표)
-- [ ] 검증 — 스펙 꼴 · 참조(`{{var}}` · `{{steps.<id>.<key>}}`) · 플랫폼 id 가 권한표에 있나 · 단계 안 쓰기 금지 · 비밀 상수
-- [ ] 준비도 — 단계마다 이 사람이 부를 수 있나(권한 · 연결 토큰 · 이 박스 게이트웨이에 있나)
-- [ ] `/routines-api` — 목록 · 읽기 · 판 더하기(주인만) · 공개 범위 · YAML 내보내기/가져오기 · 세션과 PAT 둘 다
-- [ ] 권한 키(Q5) — `access.yaml` 기능 줄 · 시험
-- [ ] 절차 탭 '루틴' 편집기 — 내 권한 · 이 박스의 플랫폼만 고르기 · 순서 끌기 · 할 일 · 기대 출력 · 정책 · 보고서 절 · 판 · 준비도 미리 보기
-- [ ] 예시 루틴 둘 — cae00 시장불량 연쇄 · dev 시연 연쇄(SignalForge → 심의 → DynaForge → 보고서)
+- [x] 저장 — `routines` · `routine_versions`(불변, 같은 `procedures.sqlite`) — 실행 · 단계 표는 R2
+- [x] 검증 — 스펙 꼴 · 참조(`{{var}}` · `{{steps.<id>.<key>}}` · `{{run.started}}`) · 앞 단계만 · 단계 안 쓰기 금지 · 비밀처럼 생긴 글 · YAML 1.1 함정(C-8)
+- [x] 준비도 — 단계마다 allowed · denied · not_connected · unavailable · 없는 도구
+- [x] `/routines-api` — health · platforms · 목록 · 읽기 · 판 더하기(주인만) · 보관 · 준비도 · 검증 · YAML 내보내기/가져오기, 쓰기는 세션 + CSRF · 읽기는 PAT 도
+- [x] 권한 키(Q5) — `access.yaml` 기능 `routines` · 라우트 전수 403 시험
+- [x] 절차 탭 '루틴' — 목록 · 보기(판 · 준비도 표지) · 편집기(내 권한의 플랫폼 · 도구 고르기 · 위로 · 아래로 · 할 일 · 앞 단계 · 넘길 키 · 예산 · 막히면 · 보고서 · 공개) · YAML 가져오기, 임시 포털 캡처
+- [x] 예시 루틴 둘 — `examples/market-defect.yaml`(cae00, Q7 둘 다) · `examples/dev-demo.yaml` — 시험이 저장 검증을 돌린다
 
 ## R2 게이트웨이 · Claude 길
 

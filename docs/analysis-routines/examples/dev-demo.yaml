@@ -1,0 +1,33 @@
+# dev 시연 연쇄 — dev 에 있는 플랫폼(SignalForge · 심의 · DynaForge · MX 백서)만으로 길을 끝까지 본다. RA 는 dev 에서 내려가 있어 초안은 건너뛰고 알린다.
+version: 1
+title: 불량 VOC → 메커니즘 → 해석 근거(dev 시연)
+purpose: "{{product}} 의 {{symptom}} 불만 — 원인과 해석 근거"
+vars:
+  - {key: product, label: 제품, type: string}
+  - {key: symptom, label: 증상, type: string}
+steps:
+  - id: voc
+    title: 관련 VOC
+    backends: [signalforge]
+    goal: "{{product}} 의 제품 코드를 풀고 {{symptom}} VOC 를 부품 × 증상 × 심각도로 본다."
+    tools: [resolve_product_keyword, search_voc, defect_profile]
+    expect: {keys: [product_code]}
+  - id: delib
+    title: 메커니즘(전문가 심의)
+    kind: deliberation
+    goal: "{{symptom}} 불만의 메커니즘을 밝힌다."
+    uses: [voc]
+  - id: sim
+    title: 해석 근거(DynaForge)
+    backends: [heax-kooremapper_mcp]
+    goal: "{{product}} 와 맞닿은 기존 낙하 · 충격 해석 보고서와 최악 사례를 찾는다(있는 결과만)."
+    uses: [delib]
+  - id: refs
+    title: 백서 인용
+    kind: cite
+    backends: [mx-white-paper]
+    goal: "{{symptom}} 를 다룬 백서 문서를 찾아 인용한다."
+    uses: [voc]
+report:
+  title: "{{product}} {{symptom}} — 원인과 근거"
+limits: {minutes: 60, calls: 60}

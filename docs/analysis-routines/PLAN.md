@@ -113,7 +113,7 @@ steps:
     uses: []                                     # 앞 단계 출력(요약 · 키 · 근거 id)
     expect: {keys: [failure_mode], fields: {period: string}}
     budget: {calls: 6, seconds: 300}
-    on: {empty: continue, denied: skip, unavailable: skip}
+    blocked: {empty: continue, denied: skip, unavailable: skip}
   - id: delib
     title: 메커니즘
     kind: deliberation
