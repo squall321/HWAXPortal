@@ -839,10 +839,11 @@ stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치�
 ## 2026-10-30 반영분 — 낙하 트윈(DynaForge 후처리 반입)
 
 cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main
-`0649005` — §5 · §7 을 고친 판)이고, 명령 · 기대값은 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
+`597cfb3` — §1 소스 줄 · §4-2 를 고친 판)이고, 명령 · 기대값은 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
 `docs/01-plan/features/{postprocess-reservation-1028,sphere-risk-map-1029}.plan.md` · 총괄 `drop-twin-1028.checklist.md`, KooSlurm 쪽은 KooSlurm
 `docs/sso_enable_20261029/{icn401_apply_check,sso_enable_procedure}.md`(origin `46c647e4`). 포털 쪽 몫은 R2a 제출 씨앗의 후처리 예약(`9ce09b6`,
-절차 context-notes W-101)이다 — 기존 씨앗을 들인 사람은 절차 › 정본 예제 '다시 가져오기' 로 새 판을 받는다.
+절차 context-notes W-101)과 과제 메타 넷(`project` · `dev_rev` · `variation` · `doe` — 선택 변수, 비우면 그 칸이 빠진다, W-102)이다 — 기존 씨앗을 들인 사람은
+절차 › 정본 예제 '다시 가져오기' 로 새 판을 받는다.
 
 ### 0. 순서 — 한 줄씩
 
@@ -858,12 +859,14 @@ SSO 켜기는 **이번에 하지 않는다**(아래 7 — 조건이 안 섰다).
 ### 1. cae00 — DynaForge 받기(update-all 뒤)
 
 이번 판에 든 것 — 반입 속도(raw_decode `288afb7` · sphere 블록 분리 `c7970dc`) · 후처리 예약 `postprocess`(`4ff9a79` → 위임 창구 `e62f601` · rc 3 경고) ·
-구면 위험도 맵(3D · 허용비 · 상위 N, `f366816`) · 렌더 결과 반입 C-11(`85ba2f0`). **마이그레이션 둘**(0015 · 0016 — null 허용 칸 · 유일 제약, 옛 코드에
+구면 위험도 맵(3D · 허용비 · 상위 N, `f366816`) · 렌더 결과 반입 C-11(`85ba2f0`) · postprocess 의 비운 선택 칸 null 을 없는 칸으로(`07679d7`) ·
+`dev_rev` 를 예약 때 반입 규칙으로(`3574342`) — 둘 다 파이썬만, git 으로 온다. **마이그레이션 둘**(0015 · 0016 — null 허용 칸 · 유일 제약, 옛 코드에
 영향 없음). 바이너리는 그대로(`8c7c4f87`).
 
 | 확인 | 명령 | 기대값 |
 |---|---|---|
 | 판 | `curl -s http://127.0.0.1:8700/api/health` | `"status":"ok"` · `revision` 이 이번 게시 BUILD_INFO 의 커밋(`c9bc426`) |
+| 소스 | KooRemapper 리포 루트에서 `git log -1 --oneline` | `3574342` 이거나 그 뒤 — 위 `revision` 은 Drive 판의 커밋이라 파이썬만 바뀐 커밋은 여기서만 보인다. 앞이면 null 을 보내는 손님(MCP 직접 호출 — Claude 등)이 비운 선택 칸에서 422 를 받고(포털 R2a 는 칸째 빼고 보내 영향 없음 — W-102), 틀린 `dev_rev` 가 예약은 되고 잡이 끝난 뒤 반입에서야 실패한다 |
 | 마이그레이션 | KooRemapper 리포 루트에서 `bash platform/infra/scripts/migrate.sh` | 「Running upgrade」 줄 없이 「✓ migrations applied」 = 이미 0016 까지 올라 있다(빠졌으면 이 명령이 그 자리에서 올린다 — 0015 · 0016) |
 | MCP 도구 | 게이트웨이 tools/list 에서 kooremapper 도구 수, 또는 `platform/mcp_server/venv/bin/python platform/mcp_server/smoke.py` | 81개(`attach_render` 가 새로 있다) · `MCP SMOKE: PASS` |
 | 화면 | 세션 → 전각도 리포트 펼치기 → 「부품 위치·방향 시각화」 → 보기 「구(3D)」 | 3D 구가 뜬다(three.js 는 묶음 안에 있다 — 망 밖에 안 나간다) · 허용값을 넣으면 「초과 · 경고」 수가 보인다 |
@@ -912,7 +915,8 @@ KooSlurm `docs/sso_enable_20261029/icn401_apply_check.md` 그대로. 요점 —
    정상이면 `COMPLETED 0:0` · `ok: true` · 리포트 sha256 이 파일과 같다. 없으면 `FAILED 3:0` · `reason` · `log_tail` — 그 줄을 KooSlurm 에 넘긴다(없으면 C 로
    다시 거는 curl 이 문서에 있다).
 2. **DynaForge 예약** — 그 잡을 제출한 절차(포털 R2a, `9ce09b6`)가 걸어 둔 `postprocess` 잡이 `succeeded` 가 되고 `resolved_cmd.report_ids` 에 리포트 id 가
-   생긴다. 리포트가 예약자 명의 · 과제 메타로 들어왔는지, 리포트 상세의 `external_job_key` = `stcx:<잡 id>` 인지 본다.
+   생긴다. 리포트가 예약자 명의로 들어왔는지(제출 때 과제 메타 — `project` · `dev_rev` · `variation` · `doe` — 를 채웠으면 그 값도), 리포트 상세의
+`external_job_key` = `stcx:<잡 id>` 인지 본다.
 3. 실패면 잡의 `error_summary` 가 매니페스트 까닭을 그대로 싣는다 — 그 문구를 DynaForge 에 넘긴다.
 
 ### 5. stcx viz 노드 — 읽기만(SceneForge · S1)
@@ -966,6 +970,7 @@ KooSlurm `docs/sso_enable_20261029/sso_enable_procedure.md`. 켜기 전에 설 �
 ### 9. 남은 사람 결정(참고)
 
 옛 결과 리포트 셸 다시 만들기 `--regen-sh`(pyKooCAE — 옛 부분충격 결과는 이것 없이 7-1 로 못 받는다) · SSO 켤 시각(위 7) · 렌더 결과를 붙이는 명의
-(소유자만 / 같은 소속) · 보고 영상 「접촉 앞」 해석 밖 구간 · 과제 키 검증(7-4) · pyKooCAE F 예제 · R2a 씨앗의 과제 메타(project · dev_rev · variation · doe —
-제출 절차가 그 값을 묻지 않아 지금은 비어 들어간다 — 메타 없이 반입된 리포트는 find_reports · report_facets 의 과제 간 비교에서 빠진다.
-묻게 하려면 씨앗에 선택 변수를 더한다 — DynaForge 가 빈 값을 어떻게 받는지 확인한 뒤).
+(소유자만 / 같은 소속) · 보고 영상 「접촉 앞」 해석 밖 구간 · 과제 키 검증(7-4) · pyKooCAE F 예제. R2a 씨앗의 과제 메타(project · dev_rev · variation · doe)는
+10-30 판부터 선택 변수로 묻는다(W-102) — 비우면 그 칸이 빠지고, 메타 없이 반입된 리포트는 find_reports · report_facets 의 과제 간 비교에서 빠진다.
+`dev_rev` 는 DynaForge 가 반입 때 받는 꼴(pre · dv1~3 · dvr · pv1~3 · pvr · pra · mp)에서 고른다 — DynaForge `3574342` 부터는 틀린 꼴이 예약 때 422 다
+(그 앞 판은 잡이 끝난 뒤 반입에서야 실패했다).
