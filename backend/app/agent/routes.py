@@ -792,6 +792,8 @@ async def _relay_stream(
         payload["documents"] = [d.model_dump() for d in body.documents]
     if body.images:  # 올린 그림 — 에이전트 서버가 저장하고 주소를 돌려준다(user_images)
         payload["images"] = [i.model_dump() for i in body.images]
+    if body.conversation_id:  # 서버 대화 id — 에이전트가 챗 LLM 호출의 대화 머리(X-Session-Affinity)로만 쓴다(docs/request-1029 W-1)
+        payload["conversation_id"] = body.conversation_id
     # 침묵 한도 — 심의는 공유 클라이언트의 값(AGENT_STREAM_IDLE_TIMEOUT_S), 챗은 짧은 값(AGENT_CHAT_IDLE_TIMEOUT_S)을 이 요청에만 준다(P-1 ④).
     delib = _is_delib_message(body.message)
     if delib:
