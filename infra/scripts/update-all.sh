@@ -3147,6 +3147,21 @@ else
   TM_OK=0
   fail "게이트웨이 /tools-map 을 읽지 못함 — MCP 앱 도구 수를 판정할 수 없다(게이트웨이 확인)."
 fi
+# ── 새 앱 점검 — 처음 본 앱을 infra/.state/app-checks.json 에 적고, 붙은 지 14일 동안 영역 · 권한 행 · 이름 겹침 · 인자 설명을 본다 ──
+# 지금은 손 체크리스트뿐이었다(docs/request-1029 E-6). 막지 않는다(⚠) — 권한 행이 없는 백엔드는 위 '권한 표 구멍' 이 ✗ 로 막는다.
+# 기록이 없던 첫 실행은 지금 앱을 전부터 있던 것으로 적기만 한다. 권한 정책은 위 '권한 표 대조' 가 받은 것(_apol)을 파일로 넘긴다.
+if [ "$TM_OK" = 1 ]; then
+  _acm="$(mktemp)"; printf '%s' "$TM" > "$_acm"
+  _acp=""; if [ -n "${_apol:-}" ]; then _acp="$(mktemp)"; printf '%s' "$_apol" > "$_acp"; fi
+  _acrc=0
+  _aco="$(python3 "$SELF_REPO/infra/scripts/app-checks.py" --tools-map "$_acm" ${_acp:+--policy "$_acp"} \
+            --state "$SELF_REPO/infra/.state/app-checks.json")" || _acrc=$?
+  rm -f "$_acm"; [ -n "$_acp" ] && rm -f "$_acp"
+  while IFS=$'\t' read -r _ack _act; do
+    case "$_ack" in ok) ok "$_act" ;; warn) bad "$_act" ;; info) echo "  · $_act" ;; esac
+  done <<<"$_aco"
+  [ "$_acrc" = 0 ] || bad "새 앱 점검을 하지 못했다(rc $_acrc) — python3 infra/scripts/app-checks.py 를 손으로 돌려 본다"
+fi
 
 # 도구 수는 tools/list 의 응답 길이일 뿐이다 — tools/list 는 답하면서 tools/call 은 전부
 # 거절하는 백엔드가 실재한다(DynaForge MCP: 도구 22개 표시, 호출 성공 0건, 2026-08-01~08-12).
