@@ -731,6 +731,16 @@ async def _echo_stream(message: str, principal: Principal, audit: AuditLog) -> A
     yield sse_event("done", {})
 
 
+# 심의 트리거 — 에이전트 서버 deliberation.py 의 DELIBERATE_TRIGGERS · SIM_DELIBERATE_TRIGGERS · TEST_PLAN_TRIGGERS 와 같다(시험
+# tests/test_chat_idle_split.py 가 형제 리포의 실제 값과 대조한다). 중계의 침묵 한도를 고르는 데만 쓴다 — 심의를 여는 판정은 에이전트 서버가 한다.
+_DELIB_TRIGGERS = ("/심의", "/deliberate", "/토의", "/시뮬심의", "/시뮬레이션심의", "/simdeliberate",
+                   "/시험계획", "/시험설계", "/testplan", "/DOE")
+
+
+def _is_delib_message(message: str | None) -> bool:
+    return (message or "").strip().startswith(_DELIB_TRIGGERS)
+
+
 async def _relay_stream(
     body: "ChatRequest", principal: Principal, audit: AuditLog,
     settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None, affiliation: str = ""
@@ -782,9 +792,18 @@ async def _relay_stream(
         payload["documents"] = [d.model_dump() for d in body.documents]
     if body.images:  # 올린 그림 — 에이전트 서버가 저장하고 주소를 돌려준다(user_images)
         payload["images"] = [i.model_dump() for i in body.images]
+    # 침묵 한도 — 심의는 공유 클라이언트의 값(AGENT_STREAM_IDLE_TIMEOUT_S), 챗은 짧은 값(AGENT_CHAT_IDLE_TIMEOUT_S)을 이 요청에만 준다(P-1 ④).
+    delib = _is_delib_message(body.message)
+    if delib:
+        stream_kw: dict = {}
+        idle, knob = client.timeout.read, "AGENT_STREAM_IDLE_TIMEOUT_S"
+    else:
+        _t = settings.agent_chat_idle_timeout_s
+        stream_kw = {"timeout": httpx.Timeout(settings.agent_request_timeout, read=_t if _t > 0 else None)}
+        idle, knob = stream_kw["timeout"].read, "AGENT_CHAT_IDLE_TIMEOUT_S"
     try:
         async with client.stream(
-            "POST", f"{settings.agent_server_url}/chat", json=payload
+            "POST", f"{settings.agent_server_url}/chat", json=payload, **stream_kw
         ) as r:
             if r.status_code != 200:
                 # 감사에만 남긴다(브라우저에는 코드만). 422 의 사유는 어느 칸이 넘었는지를 말하는데 종전엔 200자에서 표식 없이
@@ -806,16 +825,18 @@ async def _relay_stream(
         # '연결 못 함' 과 가른다: 사람이 할 일이 다르다(이쪽은 서버에서 심의가 아직 돌 수 있어, 곧바로 다시 시작하면
         # 두 번째 심의가 나란히 돈다). 엔진 ping 은 그대로 넘기고 여기서 따로 만들지 않는다 — 릴레이가 만들면
         # 멈춘 엔진이 바깥에서 살아 있는 것으로 보인다.
-        idle = client.timeout.read
         audit.record(principal=principal.subject, event="chat_error", chat_id=chat_id,
                      status="error", meta={"reason": "agent_stream_idle", "idle_s": idle})
-        logger.warning("에이전트 서버 스트림이 %s초 동안 조용해 구독을 끊었다(AGENT_STREAM_IDLE_TIMEOUT_S) sub=%s",
-                       idle, principal.subject)
-        yield sse_event("error", {
-            "code": "agent_stream_idle",
-            "message": (f"에이전트 서버가 {idle:.0f}초 동안 아무 신호도 보내지 않아 구독을 끊었다"
-                        "(AGENT_STREAM_IDLE_TIMEOUT_S). 심의는 서버에서 계속 돌 수 있다 — 다시 시작하기 전에 "
-                        "Report Archive 와 대화 목록을 확인하라")})
+        logger.warning("에이전트 서버 스트림이 %s초 동안 조용해 구독을 끊었다(%s) sub=%s", idle, knob, principal.subject)
+        if delib:
+            msg = (f"에이전트 서버가 {idle:.0f}초 동안 아무 신호도 보내지 않아 구독을 끊었다"
+                   "(AGENT_STREAM_IDLE_TIMEOUT_S). 심의는 서버에서 계속 돌 수 있다 — 다시 시작하기 전에 "
+                   "Report Archive 와 대화 목록을 확인하라")
+        else:
+            # 챗 턴은 끊으면 에이전트 서버에서도 멈춘다(중계가 상류를 닫는다) — 다시 물어도 겹치지 않는다.
+            msg = (f"에이전트 서버가 {idle:.0f}초 동안 아무 신호도 보내지 않아 답을 끊었다(AGENT_CHAT_IDLE_TIMEOUT_S). "
+                   "챗 스트림은 15초마다 신호를 내므로 에이전트 서버가 멈춘 것이다 — 다시 물어보고, 되풀이되면 관리자에게 알려라")
+        yield sse_event("error", {"code": "agent_stream_idle", "message": msg})
         yield sse_event("done", {})
         return
     except httpx.HTTPError as exc:

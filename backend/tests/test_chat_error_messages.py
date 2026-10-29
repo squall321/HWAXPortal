@@ -183,6 +183,25 @@ _WHY_LIMIT = "LLM 호출이 1,800초 안에 끝나지 않았다(2회 시도 · A
 _WHY_CONN = "LLM 서버에 연결하지 못했다(APIConnectionError) — LLM 서버 주소와 상태를 확인하라"
 
 
+def test_챗_중계의_침묵_한도는_포털이_준_문구를_그대로_보인다(front):
+    """챗은 AGENT_CHAT_IDLE_TIMEOUT_S(900초)에 끊긴다(docs/request-1029 P-1 ④). 그 이름 안의 'TIMEOUT' 때문에 아래 LLM 한도 갈래로 새면 챗
+    사용자에게 심의 손잡이(timeout_s · DELIB_TIMEOUT_S)를 올리라고 말한다. 문구는 포털 중계(routes.py _relay_stream)가 낸 그대로다."""
+    import asyncio
+
+    from tests.test_agent_stream_idle import _HEAD, _frames, _relay_against
+
+    async def stalled(reader, writer):
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(_HEAD)
+        await writer.drain()
+        await asyncio.sleep(30)
+    got_raw, _a, _t = asyncio.run(_relay_against(stalled, idle=30.0, message="안녕", chat_idle=0.3))
+    msg = [d for e, d in _frames(got_raw) if e == "error"][0]["message"]
+    (got,) = front(friendly=[msg])["friendly"]
+    assert got == {"title": "에이전트 서버의 신호가 끊겨 구독을 닫았습니다", "hint": msg, "retry": True}
+    assert "DELIB_TIMEOUT_S" not in got["hint"] and "timeout_s" not in got["hint"]
+
+
 def test_챗의_LLM_한도는_엔진이_말한_손잡이를_그대로_보인다(front):
     """심의가 아닌 챗에서 LLM 응답이 한도에 걸리면 엔진이 걸린 값과 손잡이(LLM_TIMEOUT_S)를 글에 싣는다. 그 이름 안의 'TIMEOUT'
     이라는 글자 때문에 심의 한도 문구로 새면, 챗 사용자에게 '호출 타임아웃(timeout_s)·DELIB_TIMEOUT_S 를 올려라, 라운드 수나 좌석을

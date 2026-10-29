@@ -50,7 +50,7 @@ export function friendlyError(raw: string): { title: string; hint?: string; retr
   const r = raw || '';
   if (/취소/.test(r)) return { title: '중단되었습니다', retry: true };
   // 포털 릴레이의 침묵 한도 — 포털이 준 문구에 초·손잡이·확인할 곳이 다 들어 있다. 그대로 보인다.
-  if (r.includes('AGENT_STREAM_IDLE_TIMEOUT_S'))
+  if (r.includes('AGENT_STREAM_IDLE_TIMEOUT_S') || r.includes('AGENT_CHAT_IDLE_TIMEOUT_S'))
     return { title: '에이전트 서버의 신호가 끊겨 구독을 닫았습니다', hint: r, retry: true };
   // 챗(심의가 아닌)의 LLM 응답 한도 — 엔진이 걸린 값과 손잡이(LLM_TIMEOUT_S)를 글에 싣는다. 그대로 보인다. 그 이름 안의
   // 'TIMEOUT' 때문에 아래 심의 한도 문구로 새면 챗에서 timeout_s·DELIB_TIMEOUT_S 를 올리라고 말한다 — 걸린 것과 다른 손잡이다.

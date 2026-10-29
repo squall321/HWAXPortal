@@ -43,15 +43,16 @@ def _frames(raw: bytes) -> list[tuple[str, dict]]:
     return out
 
 
-async def _relay_against(handler, *, idle: float) -> tuple[bytes, _Audit, float]:
-    """handler(reader, writer) 로 답하는 진짜 TCP 서버를 띄우고 릴레이를 끝까지 돌린다."""
+async def _relay_against(handler, *, idle: float, message: str = "/심의 x", chat_idle: float = 900.0) -> tuple[bytes, _Audit, float]:
+    """handler(reader, writer) 로 답하는 진짜 TCP 서버를 띄우고 릴레이를 끝까지 돌린다. 심의는 공유 클라이언트의 read(idle), 챗은
+    AGENT_CHAT_IDLE_TIMEOUT_S(chat_idle)를 요청마다 받는다(docs/request-1029 P-1 ④)."""
     server = await asyncio.start_server(handler, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
     audit = _Audit()
-    settings = Settings(_env_file=None, agent_server_url=f"http://127.0.0.1:{port}")
+    settings = Settings(_env_file=None, agent_server_url=f"http://127.0.0.1:{port}", agent_chat_idle_timeout_s=chat_idle)
     t0 = time.monotonic()
     async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, read=idle), trust_env=False) as client:
-        got = b"".join([c async for c in _relay_stream(ChatRequest(message="x"), _WHO, audit, settings, client)])
+        got = b"".join([c async for c in _relay_stream(ChatRequest(message=message), _WHO, audit, settings, client)])
     took = time.monotonic() - t0
     server.close()
     return got, audit, took
