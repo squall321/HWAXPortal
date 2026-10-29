@@ -60,6 +60,14 @@
 - [ ] E-7 검색 보정 옵션화 — 손 동의어 · 낱말 묶음 · 가중치를 설정으로(항목마다 owner · source_fix) · 박스 덧씌우기 · 묶음별 끄기 · 덧씌우기 지문(/health · update-all · 평가) · 규칙별 기여 기록 · 평가 '보정 끔' 비교(D-8 — QA 뒤)
 - [ ] E-8 플랫폼별 피드백 보고서 — 보정 덕에만 찾아진 질의 · 인자 설명 · 안 불린 도구 · 큰 응답 · 실패, cae00 기록으로 cae00 에서 · 고쳐지면 규칙을 걷는다(D-8 — QA 뒤)
 - [ ] E-9 cae00 닫힌 고리 — 굴러가는 질의 기록 + '찾기 → 부르기 → 성공' 신호 · 16문항 회귀 · 포털 화면 검토(박스 파일) · cae00 에서 덧씌우기 켜고 끈 비교 · dev 기본값으로 올리기는 선택(D-8 — QA 뒤)
+  - [ ] ① 게이트웨이 search_tuning.json(지금 상수 그대로) · 박스 덧씌우기 · 묶음별 끄기 · 순위 바이트 같음(_SEARCH_TOOLS_MASTER · 147쌍)
+  - [ ] ② 어휘표 덧씌우기 core_vocab.local.json — 게이트웨이 · 에이전트 · 포털 gitignore
+  - [ ] ③ 지문 — 게이트웨이 · 에이전트 /health · update-all §6 · 평가 · 기록
+  - [ ] ④ 귀속 · boost_only · 날짜별 굴러가는 질의 기록 · 뒤이은 호출 결과 줄
+  - [ ] ⑤ 창구 /search-log · /search-review · /search-eval · run.py live
+  - [ ] ⑥ platform_feedback_report.py
+  - [ ] ⑦ 포털 관리자 '도구 검색 검토' 화면 + 백엔드(관리자 · CSRF → 게이트웨이 공유 비밀)
+  - [ ] 문서(README 셋 · server-setup · 가이드) · 이력 · push · 화면 Drive
 - [x] E-6 새 앱 등록 자동 점검 — update-all §6 '새 앱 점검'(95f9274 · `infra/scripts/app-checks.py`, C-27) · 찾은 DocForge 미분류는 게이트웨이 44f4b8d
 
 ## 관련 프로젝트 — 이 박스에서 고칠 수 있는 것(사용자 지시 10-29, C-17)
