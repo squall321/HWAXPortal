@@ -1,0 +1,11 @@
+{
+ "_note": "스키마는 실물 — dev 게이트웨이 tools/list(2026-10-30, heax-kooremapper_mcp)에서 옮겼다. 응답은 꼴만 실물이다 — DynaForge MCP 는 {success, data} 봉투를 벗겨 data 만 준다(mcp_server/server.py _unwrap). create_session 은 SessionRead, run_operation 은 JobRead(KooRemapper platform/backend app/modules/sessions/schemas.py · jobs/schemas.py). 값은 지어낸 것이다.",
+ "schemas": {
+  "create_session": {"properties": {"name": {"title": "Name", "type": "string"}, "description": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Description"}}, "required": ["name"], "title": "create_sessionArguments", "type": "object"},
+  "run_operation": {"properties": {"session_id": {"title": "Session Id", "type": "string"}, "operation": {"title": "Operation", "type": "string"}, "args": {"additionalProperties": true, "title": "Args", "type": "object"}}, "required": ["session_id", "operation", "args"], "title": "run_operationArguments", "type": "object"}
+ },
+ "responses": {
+  "create_session": {"id": "5f0c9a1e2b3d4c5e", "name": "후처리 예약 — drop-demo-01", "description": null, "status": "active", "visibility": "private", "created_at": "2026-10-30T07:00:00", "updated_at": "2026-10-30T07:00:00", "file_count": 0},
+  "run_operation": {"id": "9a8b7c6d5e4f3a2b", "session_id": "5f0c9a1e2b3d4c5e", "operation": "postprocess", "args": {"job_key": "stcx:12345", "sim_type": "fullangle_drop"}, "resolved_cmd": null, "status": "queued", "progress": null, "exit_code": null, "input_file_ids": null, "output_file_ids": null, "error_summary": null, "warnings": null, "created_at": "2026-10-30T07:00:01", "started_at": null}
+ }
+}

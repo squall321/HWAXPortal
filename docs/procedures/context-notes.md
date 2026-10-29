@@ -2454,3 +2454,18 @@ add_report_tags / publish_report   같은 모양
 재현·시험·검토 실행이 `/data/svc/mcp-gateway/audit.jsonl` 에 남긴 줄이 **약 247줄**(휴리스틱 — 신원 없음 · 09-17 23:23 과
 09-18 22:55~23:12 창 · 가짜 백엔드 도구명), 그중 파괴 도구 **성공처럼 보이는 것 47줄**이다. 감사원장을 고치는 일이라
 손대지 않았다. 정확히 가르려면 줄 단위 판독이 필요하다(같은 창의 실제 호출과 섞였을 수 있다).
+
+## W-101. 제출 씨앗이 곧바로 DynaForge 후처리를 예약한다 — 토큰 칸 없이(낙하 트윈 P1, 10-30)
+
+R2a 두 씨앗(`fullangle-drop-submit` · `partial-impact-submit`)의 게이트 제출 뒤에 두 단계를 붙였다 — `create_session`(세션 id 를 `$.id` 로)과
+`run_operation(session_id, "postprocess", {job_key: "stcx:{{slurm_job_id}}", sim_type, job_name, height})`(예약 잡 id 를 `$.id` 로).
+W-93 이 '결과 귀환' 을 DynaForge 몫으로 정했고, DynaForge 가 10-29 에 그 연산을 지었다(KooRemapper REQUEST-postprocess-operation §10).
+
+- **토큰을 나르지 않는다.** 첫 판(`4ff9a79`)은 `kst_token` 을 인자로 받았지만, 인자는 이 원장(`run_steps.args_json`) · 백업 · 실행 화면에
+  평문으로 남는다. 사용자 결정으로 KooSlurm 위임 창구가 잡 소유자 이름으로 받게 바뀌었고, 인자에 토큰이 오면 DynaForge 가 422 로 거절한다.
+- **job_key 는 드라이버(KooChainRun) 잡의 slurm id 다** — 제출 단계가 평문에서 뽑은 그 값(W-94). 후처리 잡(C)의 id 가 아니다.
+- 세션은 그 사람 것이면 아무것이나 된다(연산이 세션 파일을 읽지도 고치지도 않는다) — 그래서 예약마다 새로 하나 만든다(이름 `후처리 예약 — <잡 이름>`).
+- 게이트를 더하지 않았다 — 예약은 클러스터에 손대지 않고 기다림만 거는 일이라 취소하면 그만이다(제출 게이트를 이미 지났다).
+- 선택 칸(project · dev_rev · variation · doe · floor · preset · position_doe)은 묻지 않는다 — 필요하면 변수로 더한다.
+- 스키마는 dev 게이트웨이 tools/list 실물, 응답 꼴은 DynaForge 소스의 SessionRead · JobRead 로 고정물(`tests/fixtures/procedures/dynaforge_session_schemas.json`)에 두고
+  `test_procedures_s3.py` 가 맞댄다. 운영에서 B(드라이버가 매니페스트를 쓰는 것)는 첫 실제 전각도 잡에서 확인한다 — KooSlurm 운영 적용 전에는 예약이 기한(7일)까지 기다린다.

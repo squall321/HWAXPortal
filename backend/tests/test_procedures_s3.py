@@ -56,8 +56,10 @@ def test_씨앗이_경고_없이_저장된다(seed):
     name, spec = seed
     assert validate_spec(spec) == []
     assert [(s.tool, s.gate) for s in spec.steps] == [
-        ("smarttwin_scenario_options", None), ("smarttwin_submit", None), ("smarttwin_submit", "human")]
-    assert {s.args["sim_type"] for s in spec.steps} == {SUBMIT[name][0]}
+        ("smarttwin_scenario_options", None), ("smarttwin_submit", None), ("smarttwin_submit", "human"),
+        ("create_session", None), ("run_operation", None)]
+    assert {s.args["sim_type"] for s in spec.steps[:3]} == {SUBMIT[name][0]}
+    assert spec.steps[4].args["args"]["sim_type"] == SUBMIT[name][0], "후처리 예약도 같은 해석 종류(받을 리포트)"
 
 
 def test_템플릿_dry_run_은_여전히_게이트를_권한다():
@@ -72,7 +74,8 @@ def test_템플릿_dry_run_은_여전히_게이트를_권한다():
 
 def test_인자가_실제_도구_스키마와_맞는다(seed, schemas):
     _, spec = seed
-    table = {st.alias: schemas[st.tool] for st in spec.steps}
+    df = json.loads((FIX / "dynaforge_session_schemas.json").read_text(encoding="utf-8"))["schemas"]
+    table = {st.alias: {**schemas, **df}[st.tool] for st in spec.steps}
     assert check_against_schemas(spec, table, missing_is_error=True) == []
 
 
@@ -90,7 +93,8 @@ def test_디스패치_키가_없고_잡_ID_는_제출_단계만_평문에서_뽑
     _, spec = seed
     ov = spec.steps[1].args["scenario_overrides"]
     assert not ({"mode", "model_file", "output_dir", "project_name", "environment"} & set(ov))
-    assert [st.save for st in spec.steps] == [None, None, {"slurm_job_id": "re:job_id=(\\d+)"}]
+    assert [st.save for st in spec.steps] == [None, None, {"slurm_job_id": "re:job_id=(\\d+)"},
+                                              {"df_session": "$.id"}, {"postprocess_job_id": "$.id"}]
     got = template.extract(text["submit_ok"], spec.steps[2].save["slurm_job_id"])
     assert got == "12345"
     with pytest.raises(template.TemplateError):
@@ -150,7 +154,7 @@ def test_예시로_채우면_인자가_선언한_형으로_간다(seed):
 def test_단계별_판정이_실물_평문에서_맞다(seed, text):
     name, spec = seed
     _, cat_key, dry_key = SUBMIT[name]
-    cat, preview, submit = spec.steps
+    cat, preview, submit = spec.steps[:3]
 
     def ok(st, body):
         return judge(is_error=False, text=body, raw=st.raw, unwrap=st.unwrap, ok_text=st.ok_text)
@@ -170,9 +174,27 @@ def test_단계별_판정이_실물_평문에서_맞다(seed, text):
 def test_단계가_엇갈린_응답을_성공으로_보지_않는다(seed, text):
     """제출 단계가 미리보기 응답을 받았다 = 아무것도 안 나갔다. 미리보기 단계가 제출 완료를 받았다 = dry_run 이 깨졌다."""
     name, spec = seed
-    _, preview, submit = spec.steps
+    _, preview, submit = spec.steps[:3]
     assert not judge(is_error=False, text=text[SUBMIT[name][2]], raw=True, ok_text=submit.ok_text).ok
     assert not judge(is_error=False, text=text["submit_ok"], raw=True, ok_text=preview.ok_text).ok
+
+
+def test_제출_직후_후처리를_예약하고_토큰은_나르지_않는다(seed):
+    """낙하 트윈 P1(10-30) — 드라이버 잡의 slurm id 로 DynaForge 후처리를 예약한다(KooRemapper REQUEST-postprocess-operation §10).
+    토큰은 위임 창구가 잡 소유자 이름으로 받는다 — 인자에 토큰 칸이 있으면 원장 · 백업 · 화면에 평문으로 남는다(그래서 422 로 거절된다)."""
+    name, spec = seed
+    sess, post = spec.steps[3], spec.steps[4]
+    assert sess.backend == post.backend == "heax-kooremapper_mcp" and post.args["operation"] == "postprocess"
+    assert "token" not in json.dumps(post.args).lower(), "토큰 칸은 없다"
+    fx = json.loads((FIX / "dynaforge_session_schemas.json").read_text(encoding="utf-8"))["responses"]
+    got = {"slurm_job_id": template.extract("✅ 제출 완료 — job_id=12345", spec.steps[2].save["slurm_job_id"]),
+           "df_session": template.extract(fx["create_session"], sess.save["df_session"])}
+    args = template.substitute(post.args, {**coerce_inputs(spec, _examples(spec)), **got})
+    assert args["session_id"] == fx["create_session"]["id"]
+    assert args["args"]["job_key"] == "stcx:12345", "드라이버 잡의 slurm id — 후처리 잡(C)의 id 가 아니다"
+    assert isinstance(args["args"]["height"], int), "높이는 수로 간다(통째 치환이 문자열로 만들면 DynaForge 가 drop_height 를 못 채운다)"
+    assert args["args"]["job_name"] == _examples(spec)["job_name"]
+    assert template.extract(fx["run_operation"], post.save["postprocess_job_id"]) == fx["run_operation"]["id"]
 
 
 # ── 평문 추출(re:) — 제출 씨앗이 잡 ID 를 넘기는 길 ─────────────────────────────────────────

@@ -11,6 +11,9 @@
 # 그래서 임팩터 물성을 **늘 명시**하고 label 에 단위를 박는다. 단위계를 고르는 변수는 두지 않는다 — 넘길 키가 없어
 # 고른 척만 하는 스위치가 된다. 벽(바닥판) 물성은 pyKooCAE 가 tonne-mm 기본값을 명시 기입하므로 묻지 않는다.
 #
+# 제출 직후 DynaForge 후처리 예약(`run_operation postprocess`, job_key `stcx:<잡 ID>`)을 건다 — 드라이버 잡이 끝나면 DynaForge 가
+# 결과를 리포트로 들인다(KooRemapper REQUEST-postprocess-operation §10 · 낙하 트윈 P1, 10-30). 토큰은 나르지 않는다(위임 창구).
+#
 # 제출 결과는 **평문**이다(W-90) — `✅ 제출 완료 — job_id=N`. JSON 경로로는 못 뽑아 평문 정규식(`re:`)으로 잡 ID 를
 # `slurm_job_id` 에 담는다. 회수·예약 단계가 그 잡 ID 와 이 잡 이름으로 리포트를 찾는다(W-92·W-93).
 
@@ -117,3 +120,24 @@ steps:
     ok_text: "✅ 제출 완료"                  # 머리 없는 실패(제출 응답 파싱 실패)도 여기서 걸린다
     save: {slurm_job_id: "re:job_id=(\\d+)"} # 평문에서 잡 ID — 회수·예약 단계가 잡 키로 쓴다(W-93)
     note: 실제 제출 — 앞 단계 scenario.json 의 물성(tonne-mm)·높이·위치를 확인하고 승인한다
+
+  - backend: heax-kooremapper_mcp
+    tool: create_session
+    args:
+      name: "후처리 예약 — {{job_name}}"
+      description: "부분충격 {{job_name}} — 드라이버 잡이 끝나면 DynaForge 가 결과를 리포트로 들인다"
+    save: {df_session: "$.id"}
+    note: DynaForge 세션 — 후처리 예약은 세션 파일을 읽지도 고치지도 않는다(그 사람 세션이면 아무것이나 된다, KooRemapper REQUEST-postprocess-operation §10)
+
+  - backend: heax-kooremapper_mcp
+    tool: run_operation
+    args:
+      session_id: "{{df_session}}"
+      operation: postprocess
+      args:
+        job_key: "stcx:{{slurm_job_id}}"     # 드라이버(KooChainRun) 잡의 slurm id — 후처리 잡(C)의 id 가 아니다
+        sim_type: partial_impact
+        job_name: "{{job_name}}"
+        height: "{{impact_height_mm}}"
+    save: {postprocess_job_id: "$.id"}
+    note: 결과 반입 예약 — 곧바로 잡 id 가 온다. 진행은 get_job(job_id) — running 은 매니페스트를 기다리는 중, 성공이면 resolved_cmd.report_ids[0] 이 리포트다. 토큰 칸은 없다(KooSlurm 위임 창구 — 잡 소유자 이름으로 받는다)
