@@ -41,7 +41,7 @@
 - [x] W-5 같은 도구 네 번째 알림 · 허브 접기 셋 더(견본 없이 일반 규칙 — C-22) · `invoke_tool` 안쪽 이름(HWAXAgentServer d01a53b)
 - [x] P-1 ② 다시 보일 때 서버 사본과 맞추기(bd01b0c)
 - [x] P-1 ④ 챗 스트림 ping 15초(HWAXAgentServer 670778f, C-20) · 포털 `agent_chat_idle_timeout_s` 900초(fd49ede)
-- [ ] 2차 업데이트 이력 · cae00 가이드 · push · 빌드 + Drive · cae00 재시험
+- [x] 2 · 3 · 4차 업데이트 이력 · cae00 안내(server-setup.md) · push · 화면 Drive(images-20261029-114227Z) · KooRemapper 화면 Drive(dist-20261029-115148Z) — cae00 재시험은 위 1차 줄과 함께(사람)
 
 ## 3차(결정 뒤)
 
