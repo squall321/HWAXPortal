@@ -206,3 +206,212 @@ def test_게이트웨이가_넘긴_PAT_로도_읽는다(client):
     assert c.get(f"{PREFIX}/routines", headers=auth).json()["count"] == 1
     assert c.get(f"{PREFIX}/routines/{rid}", headers=auth).status_code == 200
     assert c.post(f"{PREFIX}/routines", json={"spec": SPEC}, headers=auth).status_code in (401, 403), "짜기는 화면(세션 + CSRF)만"
+
+
+# ── 실행 원장(R2) — 계획 · 울타리 · 예산 · 단계 닫기(원장과 맞대기) · 근거 · 보고서 · RA 결과 ─────────────────────────────────
+RUN_SPEC = copy.deepcopy(SPEC)
+RUN_SPEC["steps"][0]["budget"] = {"calls": 2}
+
+
+def _start(c, spec=None, inputs=None, h=None):
+    rid = _create(c, h, spec or RUN_SPEC)["id"]
+    r = c.post(f"{PREFIX}/runs", json={"routine_id": rid, "inputs": {"model": "S26"} if inputs is None else inputs}, headers=h)
+    return rid, r
+
+
+def _call(c, run_id, step="voc", backend="signalforge", tool="search_voc", result='{"product_code": "SM-S938", "n": 3}', ok=True, h=None):
+    return c.post(f"{PREFIX}/runs/{run_id}/calls", json={"step": step, "backend": backend, "tool": tool, "args": {"q": "x"},
+                                                        "ok": ok, "ms": 12, "result": result}, headers=h)
+
+
+def test_실행은_계획을_찍고_막힌_단계는_그_상태로_닫혀_시작한다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _, r = _start(c, h=h)
+    assert r.status_code == 201, r.text
+    v = r.json()
+    assert v["run"]["state"] == "running" and v["purpose"] == "S26 의 불량" and v["next_step"] == "voc"
+    by = {s["id"]: s for s in v["steps"]}
+    assert by["voc"]["allowed"] == {"signalforge": ["search_voc", "defect_profile"]}, "도구를 적었으면 그 차례로 · 내 목록에 있는 것만"
+    assert by["voc"]["goal"] == "S26 VOC 를 본다" and by["voc"]["state"] == "pending"
+    assert by["ra"]["state"] == "not_connected" and "/tokens?tab=connect" in by["ra"]["reason"]
+    assert by["ft"]["state"] == "unavailable" and by["risk"]["state"] == "denied"
+    assert by["delib"]["backends"] == ["hwax-deliberation"] and by["delib"]["allowed"] == {"hwax-deliberation": ["deliberate_start"]}
+    assert v["report"] == {"title": "VOC → 심의", "sections": ["voc", "ra", "ft", "risk", "delib", "insight"], "upload": "auto"}
+    assert c.get(f"{PREFIX}/runs").json()["count"] == 1
+    _login(c, "peer@corp.com")
+    assert c.get(f"{PREFIX}/runs/{v['run']['id']}").status_code == 404, "실행은 주인만"
+
+
+def test_입력은_선언한_형으로_받고_모르는_키와_빠진_필수는_422(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _, r = _start(c, inputs={}, h=h)
+    assert r.status_code == 422 and "모델(model)" in r.json()["detail"]
+    _, r = _start(c, inputs={"model": "S26", "modle": "x"}, h=h)
+    assert r.status_code == 422 and "modle" in r.json()["detail"]
+
+
+def test_멈춤으로_짠_단계가_막히면_실행이_failed_로_시작한다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    spec = copy.deepcopy(RUN_SPEC)
+    spec["steps"][2]["blocked"] = {"unavailable": "stop"}         # ft — 이 박스에 없음
+    _, r = _start(c, spec=spec, h=h)
+    v = r.json()
+    assert v["run"]["state"] == "failed" and "단계 ft(FailureTrace)" in v["run"]["reason"] and "멈춤" in v["run"]["reason"]
+
+
+def test_호출_원장은_울타리_예산_상태를_본다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _, r = _start(c, h=h)
+    run_id = r.json()["run"]["id"]
+    assert _call(c, run_id, backend="reportarchive", tool="search_reports", h=h).status_code == 409, "다른 단계의 백엔드"
+    assert _call(c, run_id, tool="submit_job", h=h).status_code == 409, "쓰기 도구는 허용 목록에 없다"
+    assert _call(c, run_id, step="ra", backend="reportarchive", tool="search_reports", h=h).status_code == 409, "닫힌 단계"
+    assert [_call(c, run_id, h=h).json()["call_id"] for _ in range(2)] == ["voc.c1", "voc.c2"]
+    r = _call(c, run_id, h=h)
+    assert r.status_code == 409 and "호출 예산(2번)" in r.json()["detail"]
+    v = c.get(f"{PREFIX}/runs/{run_id}").json()
+    assert v["run"]["calls"] == 2 and next(s for s in v["steps"] if s["id"] == "voc")["state"] == "running"
+    long = c.post(f"{PREFIX}/runs/{run_id}/calls", json={"step": "delib", "backend": "hwax-deliberation", "tool": "deliberate_start",
+                                                         "args": {}, "ok": True, "result": "가" * 130_000}, headers=h).json()["call_id"]
+    p2 = c.get(f"{PREFIX}/runs/{run_id}/calls/{long}", params={"page": 3}).json()
+    assert (p2["pages"], p2["page"], len(p2["text"])) == (3, 3, 10_000)
+    assert c.get(f"{PREFIX}/runs/{run_id}/calls/{long}", params={"page": 4}).status_code == 404
+
+
+def test_단계_닫기는_원장과_맞대_상태를_고치고_다음_단계를_준다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _, r = _start(c, h=h)
+    run_id = r.json()["run"]["id"]
+    done = c.post(f"{PREFIX}/runs/{run_id}/steps/voc/done", json={"status": "ok", "summary": "요약"}, headers=h).json()
+    assert done["state"] == "skipped" and "호출 없이" in done["flags"][0], "호출 없이 '했다' 는 건너뜀"
+    _, r = _start(c, h=h)
+    run_id = r.json()["run"]["id"]
+    _call(c, run_id, h=h)
+    body = {"status": "ok", "summary": "3건 [voc.c1]", "keys": {"product_code": "SM-S938", "nope": "x"},
+            "findings": [{"text": "스웰링이 많다", "refs": ["voc.c1", "voc.c9"]}]}
+    done = c.post(f"{PREFIX}/runs/{run_id}/steps/voc/done", json=body, headers=h).json()
+    assert done["state"] == "ok" and done["next_step"]["id"] == "delib"
+    assert any("계획에 없는 키" in f for f in done["flags"]) and any("voc.c9" in f for f in done["flags"])
+    v = c.get(f"{PREFIX}/runs/{run_id}").json()
+    voc = next(s for s in v["steps"] if s["id"] == "voc")
+    assert voc["keys"] == {"product_code": "SM-S938"}
+    body["keys"] = {"product_code": "SM-X000"}
+    _, r = _start(c, h=h)
+    run2 = r.json()["run"]["id"]
+    _call(c, run2, h=h)
+    done = c.post(f"{PREFIX}/runs/{run2}/steps/voc/done", json=body, headers=h).json()
+    assert any("글자 그대로 없는 키" in f for f in done["flags"]), "지어낸 키 · 잘못 이은 제품은 넘기지 않는다"
+    _, r = _start(c, h=h)
+    run3 = r.json()["run"]["id"]
+    _call(c, run3, ok=False, result="boom", h=h)
+    assert c.post(f"{PREFIX}/runs/{run3}/steps/voc/done", json={"status": "ok"}, headers=h).json()["state"] == "failed"
+    assert c.post(f"{PREFIX}/runs/{run3}/steps/voc/done", json={"status": "ok"}, headers=h).status_code == 409, "닫힌 단계"
+    assert c.post(f"{PREFIX}/runs/{run3}/steps/delib/done", json={"status": "weird"}, headers=h).status_code == 422
+
+
+def test_고를_것이_있으면_기다리고_사람이_고르면_이어진다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _, r = _start(c, h=h)
+    run_id = r.json()["run"]["id"]
+    _call(c, run_id, result='[{"key": "SM-S938", "label": "S26"}, {"key": "SM-S931", "label": "S26 FE"}]', h=h)
+    amb = {"status": "ambiguous", "candidates": [{"label": "S26", "key": "SM-S938"}, {"label": "S26 FE", "key": "SM-S931"}]}
+    done = c.post(f"{PREFIX}/runs/{run_id}/steps/voc/done", json=amb, headers=h).json()
+    assert done["state"] == "ambiguous" and done["run_state"] == "waiting" and done["next_step"]["id"] == "voc"
+    assert c.post(f"{PREFIX}/runs/{run_id}/steps/voc/pick", json={"key": "SM-X"}, headers=h).status_code == 422
+    got = c.post(f"{PREFIX}/runs/{run_id}/steps/voc/pick", json={"key": "SM-S931"}, headers=h).json()
+    assert got["state"] == "ok" and got["next_step"]["id"] == "delib"
+    v = c.get(f"{PREFIX}/runs/{run_id}").json()
+    assert v["run"]["state"] == "running" and next(s for s in v["steps"] if s["id"] == "voc")["keys"] == {"product_code": "SM-S931"}
+
+
+def test_결과_없음을_멈춤으로_짠_단계는_실행을_멈춘다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    spec = copy.deepcopy(RUN_SPEC)
+    spec["steps"][0]["blocked"] = {"empty": "stop"}
+    _, r = _start(c, spec=spec, h=h)
+    run_id = r.json()["run"]["id"]
+    _call(c, run_id, result="[]", h=h)
+    done = c.post(f"{PREFIX}/runs/{run_id}/steps/voc/done", json={"status": "empty", "reason": "0건"}, headers=h).json()
+    assert done["run_state"] == "failed"
+    assert _call(c, run_id, h=h).status_code == 409
+
+
+def test_심의_근거는_앞_단계의_성공한_원문이고_결론은_넘기지_않는다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _, r = _start(c, h=h)
+    run_id = r.json()["run"]["id"]
+    _call(c, run_id, result="가" * 20_000, h=h)
+    _call(c, run_id, ok=False, result="boom", h=h)
+    ev = c.get(f"{PREFIX}/runs/{run_id}/evidence", params={"step": "delib"}).json()
+    assert [e["key"] for e in ev["evidence"]] == ["voc.c1"] and len(ev["evidence"][0]["result"]) == 15_000
+    assert ev["evidence"][0]["source"] == "signalforge:search_voc" and ev["evidence"][0]["args"] == {"q": "x"}
+
+
+def test_보고서는_단계가_다_닫힌_뒤_렌더하고_실행을_끝낸다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _, r = _start(c, h=h)
+    run_id = r.json()["run"]["id"]
+    assert c.post(f"{PREFIX}/runs/{run_id}/report", json={}, headers=h).status_code == 409, "열린 단계가 있다"
+    _call(c, run_id, h=h)
+    c.post(f"{PREFIX}/runs/{run_id}/steps/voc/done", json={"status": "ok", "summary": "VOC 요약 [voc.c1]",
+                                                           "keys": {"product_code": "SM-S938"}}, headers=h)
+    c.post(f"{PREFIX}/runs/{run_id}/calls", json={"step": "delib", "backend": "hwax-deliberation", "tool": "deliberate_start",
+                                                  "args": {"question": "왜"}, "ok": True, "result": '{"job_id": "j1"}'}, headers=h)
+    c.post(f"{PREFIX}/runs/{run_id}/steps/delib/done", json={"status": "ok", "summary": "메커니즘 [delib.c1]"}, headers=h)
+    long = "문장이다. " * 600
+    rep = c.post(f"{PREFIX}/runs/{run_id}/report", json={"sections": {"insight": f"스웰링 3건이다.\n\n근거가 있다 [voc.c1] [voc.c7]\n\n{long}",
+                                                                      "elsewhere": "x"}}, headers=h)
+    assert rep.status_code == 200, rep.text
+    out = rep.json()
+    md = out["report_md"]
+    assert md.startswith("# VOC → 심의") and "## VOC" in md and "VOC 요약 [voc.c1]" in md and "## 근거 부록" in md
+    assert "- [voc.c1] signalforge:search_voc" in md and "## FailureTrace" in md and "이 박스에 없음" in md
+    assert "**커버리지**" in md and "FailureTrace(ft) — 이 박스에 없음" in md, "건너뛴 단계와 까닭을 숨기지 않는다"
+    assert any("voc.c7" in w for w in out["warnings"]) and any("근거 없는 수치 문단 1개" in w for w in out["warnings"])
+    assert any("elsewhere" in w for w in out["warnings"])
+    ra = out["ra"]
+    assert ra["upload"] == "auto" and ra["title"] == "VOC → 심의" and ra["tags"] == ["분석 루틴", "VOC → 심의"]
+    assert set(ra["blocks"]) == {"background", "results", "recommendation", "minutes"}
+    assert all(len(x) <= 1900 for v in ra["blocks"].values() for x in v) and len(ra["blocks"]["recommendation"]) >= 2, "RA 항목은 1,900자 이하로 나눈다"
+    v = c.get(f"{PREFIX}/runs/{run_id}").json()
+    assert v["run"]["state"] == "done" and v["run"]["report_ready"] is True
+    assert c.post(f"{PREFIX}/runs/{run_id}/report", json={}, headers=h).status_code == 409
+    assert c.post(f"{PREFIX}/runs/{run_id}/ra", json={"report_id": "58"}, headers=h).json() == {"ok": True}
+    assert c.get(f"{PREFIX}/runs/{run_id}").json()["run"]["ra_report_id"] == "58"
+
+
+def test_멈추면_더_부르지_않는다(client):
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _, r = _start(c, h=h)
+    run_id = r.json()["run"]["id"]
+    assert c.post(f"{PREFIX}/runs/{run_id}/cancel", headers=h).json() == {"ok": True, "state": "cancelled"}
+    assert _call(c, run_id, h=h).status_code == 409
+    assert c.post(f"{PREFIX}/runs/{run_id}/cancel", headers=h).status_code == 409
+
+
+def test_RA_나눔은_에이전트_서버_엔진과_같은_결과다():
+    """포털 렌더의 ra_split 과 엔진 deliberation._ra_split 을 같은 글로 돌려 맞댄다 — 엔진 원문 글에서 함수 · 상수를 떼어 돌린다(엔진을 import 하지
+    않는다 — 포털 venv 에 엔진 의존성이 없다)."""
+    import re
+    from pathlib import Path
+
+    from app.procedures.routines import RA_ITEM_MAX, ra_split
+    src = (Path(__file__).resolve().parents[3] / "HWAXAgentServer" / "deliberation.py").read_text(encoding="utf-8")
+    item = re.search(r'^_RA_ITEM_MAX = _env_int\("DELIB_RA_ITEM_MAX", (\d+)\)', src, re.M)
+    assert item and int(item.group(1)) == RA_ITEM_MAX, "상한이 엔진과 다르다"
+    split_re = re.search(r"^(_RA_SPLIT_RE = re\.compile\(.*\))$", src, re.M).group(1)
+    fn = re.search(r"^def _ra_split\(s: str\) -> list\[str\]:\n(?:(?:    .*|)\n)+?(?=\n\S)", src, re.M).group(0)
+    ns = {"re": re, "_RA_ITEM_MAX": RA_ITEM_MAX}
+    exec(split_re + "\n" + fn, ns)
+    for s in ("", "짧다", "가" * 5000, ("문장이다. " * 900) + "\n끝", "\n".join(["줄" * 700] * 9), "a.b " * 2000):
+        assert ra_split(s) == ns["_ra_split"](s), s[:30]

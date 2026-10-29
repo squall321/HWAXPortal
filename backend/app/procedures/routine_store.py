@@ -7,7 +7,12 @@
   자기 것을 만든다(절차 add_version 과 같은 까닭).
 - 없는 것과 못 보는 것은 같은 None 이다(라우트가 같은 404 로 낸다) — id 를 넣어 보는 것만으로 남의 루틴이 있는지 알 수 없게.
 - 지우지 않고 보관한다(archived) — 실행 원장이 그 판을 가리킨다. 보관한 루틴은 목록에서 빠지고 주인만 읽는다.
+
+실행 원장(R2) — 실행 · 단계 · 호출 표 셋. 호출 결과는 gzip 으로 두고(2MB 넘으면 앞부분 · 표시), 덧붙이기만 한다. 실행은 주인만 본다 — 결과에
+그 사람 시야의 데이터가 담긴다(절차 실행과 같은 까닭). 단계 상태 · 호출 수는 여기서 세고, 판정(울타리 · 예산 · 상태 고치기)은 라우트가 한다.
 """
+import gzip
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
@@ -22,7 +27,25 @@ _DDL = (
         spec_json TEXT NOT NULL, author_sub TEXT NOT NULL, created_at INTEGER NOT NULL,
         UNIQUE (routine_id, version_no))""",
     "CREATE INDEX IF NOT EXISTS ix_routines_owner ON routines (owner_sub, updated_at DESC)",
+    """CREATE TABLE IF NOT EXISTS routine_runs (
+        id TEXT PRIMARY KEY, owner_sub TEXT NOT NULL, routine_id TEXT NOT NULL, version_id TEXT NOT NULL,
+        version_no INTEGER NOT NULL, title TEXT NOT NULL, inputs_json TEXT NOT NULL, plan_json TEXT NOT NULL,
+        executor TEXT NOT NULL, conversation_id TEXT, state TEXT NOT NULL, reason TEXT,
+        calls INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL, deadline INTEGER NOT NULL, ended_at INTEGER,
+        report_md TEXT, ra_report_id TEXT, ra_error TEXT)""",
+    """CREATE TABLE IF NOT EXISTS routine_stages (
+        run_id TEXT NOT NULL, step_id TEXT NOT NULL, ix INTEGER NOT NULL, state TEXT NOT NULL,
+        calls INTEGER NOT NULL DEFAULT 0, reason TEXT, envelope_json TEXT, flags_json TEXT,
+        started_at INTEGER, ended_at INTEGER, PRIMARY KEY (run_id, step_id))""",
+    """CREATE TABLE IF NOT EXISTS routine_calls (
+        run_id TEXT NOT NULL, call_id TEXT NOT NULL, step_id TEXT NOT NULL, n INTEGER NOT NULL,
+        backend TEXT NOT NULL, tool TEXT NOT NULL, args_json TEXT NOT NULL, args_sha256 TEXT NOT NULL,
+        ok INTEGER NOT NULL, ms INTEGER, result_gz BLOB, result_chars INTEGER NOT NULL DEFAULT 0,
+        result_sha256 TEXT, truncated INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+        PRIMARY KEY (run_id, call_id))""",
+    "CREATE INDEX IF NOT EXISTS ix_routine_runs_owner ON routine_runs (owner_sub, started_at DESC)",
 )
+RESULT_MAX = 2_000_000        # 원장에 두는 결과 글자 상한(게이트웨이 ROUTINE_LEDGER_CHARS 와 같다) — 넘으면 앞부분과 truncated
 
 
 def _now() -> int:
@@ -98,7 +121,7 @@ class RoutineStore:
             " ORDER BY version_no DESC", (routine_id,)).fetchall()
         return [dict(r) for r in rows]
 
-    def list(self, *, sub: str, q: str = "", limit: int = 200) -> list[dict]:
+    def list_routines(self, *, sub: str, q: str = "", limit: int = 200) -> list[dict]:
         """내 것 + 공개된 것(보관 제외), 최근 고친 것 먼저. 판의 단계 수 · 단계 백엔드를 곁들인다(고르는 화면 · routine_list)."""
         rows = self._conn().execute(
             "SELECT r.*, v.spec_json FROM routines r JOIN routine_versions v"
@@ -118,3 +141,113 @@ class RoutineStore:
             d["mine"] = d["owner_sub"] == sub
             out.append(d)
         return out
+
+    # ── 실행 원장(R2) ──────────────────────────────────────────────────────────────────────────────────────────
+    def create_run(self, *, owner_sub: str, routine: dict, version: dict, inputs: dict, plan: dict, executor: str,
+                   conversation_id: str | None, deadline: int, state: str, reason: str | None,
+                   stages: list[tuple[str, str, str | None]]) -> str:
+        """stages — 계획 차례대로 (단계 id, 첫 상태, 까닭)."""
+        run_id, now = uuid.uuid4().hex, _now()
+        c = self._conn()
+        with c:
+            c.execute("INSERT INTO routine_runs (id, owner_sub, routine_id, version_id, version_no, title, inputs_json, plan_json,"
+                      " executor, conversation_id, state, reason, started_at, deadline, ended_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (run_id, owner_sub, routine["id"], version["version_id"], version["version_no"], routine["title"],
+                       json.dumps(inputs, ensure_ascii=False), json.dumps(plan, ensure_ascii=False), executor, conversation_id,
+                       state, reason, now, deadline, now if state not in ("queued", "running", "waiting") else None))
+            for ix, (step_id, st, why) in enumerate(stages):
+                c.execute("INSERT INTO routine_stages (run_id, step_id, ix, state, reason, ended_at) VALUES (?,?,?,?,?,?)",
+                          (run_id, step_id, ix, st, why, now if st not in ("pending", "running") else None))
+        return run_id
+
+    def get_run(self, *, run_id: str, owner_sub: str) -> dict | None:
+        row = self._conn().execute("SELECT * FROM routine_runs WHERE id=? AND owner_sub=?", (run_id, owner_sub)).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["inputs"] = json.loads(d.pop("inputs_json"))
+        d["plan"] = json.loads(d.pop("plan_json"))
+        return d
+
+    def list_runs(self, *, owner_sub: str, routine_id: str | None = None, limit: int = 50) -> list[dict]:
+        q, args = ("SELECT id, routine_id, version_no, title, executor, state, reason, calls, started_at, ended_at, ra_report_id"
+                   " FROM routine_runs WHERE owner_sub=?"), [owner_sub]
+        if routine_id:
+            q += " AND routine_id=?"
+            args.append(routine_id)
+        rows = self._conn().execute(q + " ORDER BY started_at DESC LIMIT ?", (*args, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def stages(self, run_id: str) -> list[dict]:
+        out = []
+        for r in self._conn().execute("SELECT * FROM routine_stages WHERE run_id=? ORDER BY ix", (run_id,)).fetchall():
+            d = dict(r)
+            d["envelope"] = json.loads(d.pop("envelope_json") or "null")
+            d["flags"] = json.loads(d.pop("flags_json") or "[]")
+            out.append(d)
+        return out
+
+    def set_run(self, run_id: str, **fields) -> None:
+        if not fields:
+            return
+        if fields.get("state") in ("done", "failed", "cancelled", "interrupted"):
+            fields.setdefault("ended_at", _now())
+        cols = ", ".join(f"{k}=?" for k in fields)
+        c = self._conn()
+        with c:
+            c.execute(f"UPDATE routine_runs SET {cols} WHERE id=?", (*fields.values(), run_id))
+
+    def set_stage(self, run_id: str, step_id: str, *, state: str, reason: str | None = None, envelope: dict | None = None,
+                  flags: list | None = None) -> None:
+        closed = state not in ("pending", "running", "ambiguous")
+        c = self._conn()
+        with c:
+            c.execute("UPDATE routine_stages SET state=?, reason=?, envelope_json=COALESCE(?, envelope_json),"
+                      " flags_json=COALESCE(?, flags_json), started_at=COALESCE(started_at, ?), ended_at=? WHERE run_id=? AND step_id=?",
+                      (state, reason, json.dumps(envelope, ensure_ascii=False) if envelope is not None else None,
+                       json.dumps(flags, ensure_ascii=False) if flags is not None else None, _now(),
+                       _now() if closed else None, run_id, step_id))
+
+    def add_call(self, *, run_id: str, step_id: str, backend: str, tool: str, args: dict, ok: bool, ms: int | None,
+                 result: str, truncated: bool) -> str:
+        """호출 한 줄 — 단계 · 실행 호출 수를 함께 올리고 call_id(<단계>.c<n>)를 낸다. 단계는 running 이 된다."""
+        text = result[:RESULT_MAX]
+        cut = truncated or len(result) > RESULT_MAX
+        args_json = json.dumps(args, ensure_ascii=False, sort_keys=True)
+        c = self._conn()
+        with c:
+            row = c.execute("SELECT calls FROM routine_stages WHERE run_id=? AND step_id=?", (run_id, step_id)).fetchone()
+            n = int(row["calls"]) + 1
+            call_id = f"{step_id}.c{n}"
+            c.execute("INSERT INTO routine_calls (run_id, call_id, step_id, n, backend, tool, args_json, args_sha256, ok, ms,"
+                      " result_gz, result_chars, result_sha256, truncated, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (run_id, call_id, step_id, n, backend, tool, args_json, hashlib.sha256(args_json.encode()).hexdigest(),
+                       1 if ok else 0, ms, gzip.compress(text.encode("utf-8")), len(text),
+                       hashlib.sha256(text.encode("utf-8")).hexdigest(), 1 if cut else 0, _now()))
+            c.execute("UPDATE routine_stages SET calls=calls+1, state='running', started_at=COALESCE(started_at, ?)"
+                      " WHERE run_id=? AND step_id=?", (_now(), run_id, step_id))
+            c.execute("UPDATE routine_runs SET calls=calls+1 WHERE id=?", (run_id,))
+        return call_id
+
+    def calls(self, run_id: str, step_ids: list[str] | None = None, *, with_result: bool = False) -> list[dict]:
+        q, args = "SELECT * FROM routine_calls WHERE run_id=?", [run_id]
+        if step_ids is not None:
+            if not step_ids:
+                return []
+            q += f" AND step_id IN ({','.join('?' * len(step_ids))})"
+            args += step_ids
+        out = []
+        for r in self._conn().execute(q + " ORDER BY created_at, n", args).fetchall():
+            d = dict(r)
+            gz = d.pop("result_gz")
+            d["args"] = json.loads(d.pop("args_json"))
+            d["ok"] = bool(d["ok"])
+            d["truncated"] = bool(d["truncated"])
+            if with_result:
+                d["result"] = gzip.decompress(gz).decode("utf-8") if gz else ""
+            out.append(d)
+        return out
+
+    def get_call(self, run_id: str, call_id: str) -> dict | None:
+        rows = [c for c in self.calls(run_id, with_result=True) if c["call_id"] == call_id]
+        return rows[0] if rows else None

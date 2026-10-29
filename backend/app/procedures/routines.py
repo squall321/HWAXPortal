@@ -6,6 +6,7 @@
 저장 때 막는 것 — 꼴 · 길이 · 단계 id 고유 · `uses` 는 앞 단계만 · 참조가 풀린다 · 쓰기 도구 없음(v1, AR-D5) · 비밀 같은 글.
 막지 않는 것 — 백엔드가 이 박스에 있나 · 이 사람이 부를 수 있나(실행 때 준비도가 단계 상태로 말한다 — cae00 에서 짠 루틴을 dev 로 가져올 수 있다).
 """
+import json
 import re
 from typing import Literal
 
@@ -242,3 +243,203 @@ def render(text: str, inputs: dict, keys: dict[str, dict[str, str]] | None = Non
         val = inputs.get(ref)
         return str(val) if val not in (None, "") else m.group(0)
     return _REF.sub(sub, text or "")
+
+
+# ── 실행(R2) — 단계 봉투 · 계획 · 보고서 ─────────────────────────────────────────────────────────────────────────────
+DELIB_BACKEND = "hwax-deliberation"
+DELIB_TOOLS = ("deliberate_start", "deliberate_status", "deliberate_result")
+EXECUTORS = ("mcp", "chat", "web")
+CLOSED = ("ok", "empty", "denied", "not_connected", "unavailable", "failed", "skipped")
+STATE_LABEL = {"pending": "아직", "running": "도는 중", "ok": "끝남", "empty": "결과 없음", "ambiguous": "고를 것 있음",
+               "denied": "권한 없음", "not_connected": "토큰 없음", "unavailable": "이 박스에 없음", "failed": "실패",
+               "skipped": "건너뜀"}
+RA_ITEM_MAX = 1900                     # 에이전트 서버 _RA_ITEM_MAX 와 같다(서버 상한 2,000 에 여유) — 계약 시험이 맞댄다
+_RA_SPLIT_RE = re.compile(r"(?<=[.!?。])\s+|\n")
+_CALL_REF = re.compile(r"\[([a-z][a-z0-9_]{0,23}\.c\d+)\]")
+
+
+class Finding(BaseModel):
+    model_config = {"extra": "forbid"}
+    text: str = Field(min_length=1, max_length=500)
+    refs: list[str] = Field(default_factory=list, max_length=10)
+
+
+class Candidate(BaseModel):
+    model_config = {"extra": "forbid"}
+    label: str = Field(min_length=1, max_length=200)
+    key: str = Field(min_length=1, max_length=200)
+
+
+class Envelope(BaseModel):
+    """실행자가 단계를 닫으며 보내는 것(contracts.md §2). 상태는 포털이 원장과 맞대 고친다."""
+    model_config = {"extra": "forbid"}
+    status: Literal["ok", "empty", "ambiguous", "denied", "not_connected", "unavailable", "failed", "skipped"]
+    reason: str = Field("", max_length=500)
+    summary: str = Field("", max_length=6000)
+    keys: dict[str, str] = Field(default_factory=dict, max_length=16)
+    findings: list[Finding] = Field(default_factory=list, max_length=20)
+    candidates: list[Candidate] = Field(default_factory=list, max_length=20)
+
+    @field_validator("keys", mode="before")
+    @classmethod
+    def _keys(cls, v):
+        if not isinstance(v, dict):
+            return v
+        return {str(k)[:32]: (v2 if isinstance(v2, str) else str(v2))[:200] for k, v2 in v.items() if v2 is not None}
+
+
+def plan_steps(spec: RoutineSpec, mine: dict[str, dict], readiness: list[dict]) -> list[dict]:
+    """실행 계획의 단계 — 울타리(backends)와 허용 도구 {백엔드: [원래 이름]}. 허용 도구는 이 사람의 도구 목록에서 고른다 — 단계가 도구를 적었으면
+    그 가운데 내 목록에 있는 것, 안 적었으면 그 백엔드의 읽기 도구 전부(단계 안 쓰기 금지 v1). 심의 단계는 심의 도구 셋."""
+    rd = {r["step"]: r for r in readiness}
+    out = []
+    for s in spec.steps:
+        if s.kind == "deliberation":
+            backends = [DELIB_BACKEND]
+            allowed = {DELIB_BACKEND: [t for t in DELIB_TOOLS if t in (mine.get(DELIB_BACKEND) or {})]}
+        else:
+            backends = list(s.backends)
+            allowed = {}
+            for b in backends:
+                have = mine.get(b) or {}
+                allowed[b] = ([t for t in s.tools if t in have] if s.tools
+                              else sorted(t for t in have if not is_write_tool(t)))
+        r = rd.get(s.id) or {}
+        out.append({"id": s.id, "title": s.title, "kind": s.kind, "backends": backends, "allowed": allowed,
+                    "goal": s.goal, "uses": list(s.uses), "expect": s.expect.model_dump(), "budget": s.budget.model_dump(),
+                    "blocked": s.blocked.model_dump(),
+                    "readiness": {"state": r.get("state") or "unavailable", "reason": r.get("reason") or ""}})
+    return out
+
+
+def first_states(steps: list[dict]) -> tuple[list[tuple[str, str, str | None]], str | None]:
+    """단계의 첫 상태와(막힌 단계는 그 상태로 닫는다) '멈춤' 으로 짠 단계가 막혔을 때의 실행 멈춤 까닭."""
+    out, stop = [], None
+    for ps in steps:
+        rs, why = ps["readiness"]["state"], ps["readiness"]["reason"]
+        if rs == "allowed" and not any(ps["allowed"].values()):
+            rs, why = "unavailable", "고른 도구가 이 박스 · 내 도구 목록에 없다"
+        if rs == "allowed":
+            out.append((ps["id"], "pending", None))
+            continue
+        out.append((ps["id"], rs, why))
+        policy = ps["blocked"]["unavailable" if rs == "unavailable" else "denied"]
+        if policy == "stop" and stop is None:
+            stop = f"단계 {ps['id']}({ps['title']}) — {STATE_LABEL.get(rs, rs)}: {why} · '멈춤' 으로 짠 단계라 실행을 멈췄다"
+    return out, stop
+
+
+def ra_split(s: str) -> list[str]:
+    """긴 글을 RA_ITEM_MAX 이하 조각으로 — 버리지 않는다(에이전트 서버 deliberation._ra_split 과 같은 결과, 계약 시험)."""
+    s = str(s or "")
+    if len(s) <= RA_ITEM_MAX:
+        return [s] if s else []
+    out: list[str] = []
+    buf = ""
+    for part in _RA_SPLIT_RE.split(s):
+        if not part:
+            continue
+        if len(buf) + len(part) + 1 > RA_ITEM_MAX:
+            if buf:
+                out.append(buf.strip())
+                buf = ""
+            while len(part) > RA_ITEM_MAX:
+                out.append(part[:RA_ITEM_MAX])
+                part = part[RA_ITEM_MAX:]
+        buf = f"{buf}\n{part}" if buf else part
+    if buf.strip():
+        out.append(buf.strip())
+    return out
+
+
+def ra_blocks(blocks: dict) -> dict:
+    return {k: [c for item in v for c in ra_split(item)] for k, v in blocks.items()}
+
+
+def coverage_of(steps: list[dict], stages: list[dict]) -> dict:
+    by = {st["step_id"]: st for st in stages}
+    counts: dict[str, int] = {}
+    blocked = []
+    for ps in steps:
+        st = by.get(ps["id"]) or {}
+        state = st.get("state") or "pending"
+        counts[state] = counts.get(state, 0) + 1
+        if state != "ok":
+            blocked.append({"step": ps["id"], "title": ps["title"], "state": state, "reason": st.get("reason") or ""})
+    return {"counts": counts, "not_ok": blocked}
+
+
+def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: list[dict], calls: list[dict],
+                  sections: dict, title: str | None) -> dict:
+    """보고서 — 절은 루틴의 report.sections 차례. 실행자가 쓴 절을 쓰고, 안 쓴 단계 절은 단계 요약으로 채운다. 포털이 덧붙이는 것 —
+    입력 · 커버리지(건너뛴 단계와 까닭, 숨기지 않는다) · 근거 부록(원장) · 경고(모르는 인용 · 근거 없는 수치 문단)."""
+    inputs = run.get("inputs") or {}
+    by = {st["step_id"]: st for st in stages}
+    known = {c["call_id"] for c in calls}
+    keys = {sid: ((st.get("envelope") or {}).get("keys") or {}) for sid, st in by.items()}
+    head = render(title or spec.report.title or spec.title, inputs, keys)
+    purpose = render(spec.purpose, inputs, keys)
+    cov = coverage_of(steps, stages)
+    cov_line = " · ".join(f"{STATE_LABEL.get(k, k)} {v}" for k, v in cov["counts"].items())
+    skipped = [f"{b['title']}({b['step']}) — {STATE_LABEL.get(b['state'], b['state'])}" + (f": {b['reason']}" if b["reason"] else "")
+               for b in cov["not_ok"]]
+    titles = {ps["id"]: ps["title"] for ps in steps}
+    warnings: list[str] = []
+    unknown_sections = sorted(k for k in sections if k not in spec.report.sections)
+    if unknown_sections:
+        warnings.append(f"루틴에 없는 절은 뺐다: {', '.join(unknown_sections)}")
+    md = [f"# {head}", "",
+          f"> 루틴 「{spec.title}」 판 {run.get('version_no')} · 실행 {str(run.get('id'))[:8]} · {run.get('executor')}", ""]
+    if purpose:
+        md += [purpose, ""]
+    if inputs:
+        md += ["**입력** — " + " · ".join(f"{k}={v}" for k, v in inputs.items()), ""]
+    md += [f"**커버리지** — {cov_line}"] + [f"- {x}" for x in skipped] + [""]
+    results, insight = [], ""
+    for sec in spec.report.sections:
+        text = str(sections.get(sec) or "").strip()[:20000]
+        if sec == "insight":
+            insight = text
+            md += ["## 인사이트", "", text or "_(쓰지 않았다)_", ""]
+            if not text:
+                warnings.append("인사이트 절을 쓰지 않았다")
+            continue
+        if sec == "cite":
+            cites = [f"- {f['text']} " + " ".join(f"[{r}]" for r in f.get("refs") or [])
+                     for ps in steps if ps["kind"] == "cite"
+                     for f in ((by.get(ps["id"]) or {}).get("envelope") or {}).get("findings") or []]
+            text = text or "\n".join(cites)
+            md += ["## 인용", "", text or "_(인용할 보고서를 찾지 못했다)_", ""]
+            results.append(f"인용\n{text}" if text else "")
+            continue
+        st = by.get(sec) or {}
+        env = st.get("envelope") or {}
+        body = text or (env.get("summary") or "").strip() or \
+            f"_(이 단계는 {STATE_LABEL.get(st.get('state'), st.get('state'))}" + (f" — {st.get('reason')}" if st.get("reason") else "") + ")_"
+        extra = []
+        if env.get("keys"):
+            extra.append("넘긴 키 — " + " · ".join(f"{k}={v}" for k, v in env["keys"].items()))
+        for f in env.get("findings") or []:
+            extra.append(f"- {f['text']} " + " ".join(f"[{r}]" for r in f.get("refs") or []))
+        md += [f"## {titles.get(sec, sec)}", "", body] + ([""] + extra if extra else []) + [""]
+        results.append(f"{titles.get(sec, sec)}\n{body}" + ("\n" + "\n".join(extra) if extra else ""))
+    cited = set(_CALL_REF.findall("\n".join(md)))
+    bad = sorted(cited - known)
+    if bad:
+        warnings.append(f"원장에 없는 인용: {', '.join(bad[:10])}")
+    bare = [p for p in re.split(r"\n\s*\n", insight) if re.search(r"\d", p) and not _CALL_REF.search(p)]
+    if bare:
+        warnings.append(f"인사이트에 근거 없는 수치 문단 {len(bare)}개 — [call_id] 로 인용하라")
+    appendix = [f"- [{c['call_id']}] {c['backend']}:{c['tool']} {json.dumps(c['args'], ensure_ascii=False)[:160]}"
+                f" — {'성공' if c['ok'] else '실패'}" + (f" · {c['ms']}ms" if c.get("ms") is not None else "")
+                + (" · 결과 일부만 원장에" if c.get("truncated") else "") for c in calls]
+    md += ["## 근거 부록", ""] + (appendix or ["_(호출 없음)_"])
+    blocks = {"background": [x for x in (f"루틴 「{spec.title}」 판 {run.get('version_no')} — {purpose}" if purpose else
+                                           f"루틴 「{spec.title}」 판 {run.get('version_no')}",
+                                           "입력 — " + " · ".join(f"{k}={v}" for k, v in inputs.items()) if inputs else "",
+                                           "커버리지 — " + cov_line + ("\n" + "\n".join(skipped) if skipped else "")) if x],
+              "results": [x for x in results if x],
+              "recommendation": [insight] if insight else [],
+              "minutes": ["\n".join(appendix)] if appendix else []}
+    return {"title": head, "report_md": "\n".join(md), "coverage": cov, "warnings": warnings,
+            "blocks": ra_blocks(blocks), "tags": ["분석 루틴", spec.title[:40]]}
