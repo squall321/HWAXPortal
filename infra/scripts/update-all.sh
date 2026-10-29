@@ -1721,10 +1721,10 @@ _sso_generic_pairs() {  # → 줄마다 "<per_user 키> <ENV 접두>"  ($1=dups 
     if [ "${1:-}" != dups ]; then printf '%s %s\n' "$k" "$p"; fi
   done
 }
-_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다) — 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL <접두>_MCP_URL <접두>_SEND_PLAT
+_sso_generic_names() {  # → 자식에게 넘길 변수 **이름**(값은 다루지 않는다) — 접두마다 <접두>_SSO_SECRET <접두>_SSO_URL <접두>_MCP_URL <접두>_SEND_PLAT <접두>_SSO_CLIENT
   local _k p
   while read -r _k p; do
-    if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL %s_MCP_URL %s_SEND_PLAT ' "$p" "$p" "$p" "$p"; fi
+    if [ -n "$p" ]; then printf '%s_SSO_SECRET %s_SSO_URL %s_MCP_URL %s_SEND_PLAT %s_SSO_CLIENT ' "$p" "$p" "$p" "$p" "$p"; fi
   done <<<"$(_sso_generic_pairs)"
 }
 # 게이트웨이가 직접 만드는 백엔드 이름(provision-config.sh 의 MANAGED) — $1=그 파일 → 공백 구분 이름, 못 읽으면 빈 값. 목록은 그 파일에서
@@ -1774,7 +1774,7 @@ PY
 _sso_deleg_drift() {  # $1=gateway_config.json → 어긋난 위임(공백 구분, 예: reportarchive_sso). 읽지 못하면 빈 값.
   ( export PER_USER_SSO_APPS $(_sso_generic_names)
   RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" GEN="$(_sso_generic_pairs)" UNL="$(_sso_generic_unlisted "$1")" python3 - "$1" <<'PY' 2>/dev/null || true
-import json, os, sys
+import json, os, re, sys
 try: d = json.load(open(sys.argv[1]))
 except Exception: raise SystemExit(0)
 pu = (d.get("heax_registry") or {}).get("per_user_sso") or {}
@@ -1801,6 +1801,13 @@ for k, p in sorted(ln.split() for ln in (os.environ.get("GEN") or "").splitlines
         sp = os.environ.get(f"{p}_SEND_PLAT")
         if sp is not None and (sp.strip().lower() in ("1", "true", "yes", "on")) != ((cur or {}).get("send_plat") is True):
             out.append(f"{k}_sso_plat")
+        # 발급 요청의 클라이언트 이름 — 게이트웨이 provision 과 같은 규칙: <접두>_SSO_CLIENT(영숫자 · . · _ · - 64자까지), 비거나 못 읽으면 gateway.
+        # 이 줄이 없으면 provision.env 에서 이름을 갈라도 재프로비저닝이 돌지 않아, 한 발급처의 두 위임이 서로의 토큰을 계속 회수한다.
+        cl = (os.environ.get(f"{p}_SSO_CLIENT") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", cl):
+            cl = "gateway"
+        if (cur or {}).get("client") != cl:
+            out.append(f"{k}_sso_client")
 # 목록에서 뺀 일반 앱(_sso_generic_unlisted) — 비밀도 접두도 이 실행에는 없다. 표지가 붙은 채 남은 위임이 곧 방아쇠다.
 out += [t for t in (f"{k}_sso_off" for k in (os.environ.get("UNL") or "").split()) if t not in out]
 print(" ".join(out))
@@ -2096,6 +2103,7 @@ PY
             *) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — HWAXMcpGateway/provision.env 에서 그 앱의 비밀을 비웠거나 PER_USER_SSO_APPS 에서 뺐는데 게이트웨이는 아직 위임으로 부른다(일반 앱은 사람별 호출이 서비스 계정으로 되돌아간다)" ;;
           esac ;;
         *_sso_plat) echo "  · 사람별 위임 plat 전달 드리프트: ${_k%_sso_plat} — HWAXMcpGateway/provision.env 의 그 앱 <접두>_SEND_PLAT 과 게이트웨이 설정(send_plat)이 다르다(재프로비저닝으로 맞춘다)" ;;
+        *_sso_client) echo "  · 사람별 위임 클라이언트 이름 드리프트: ${_k%_sso_client} — HWAXMcpGateway/provision.env 의 그 앱 <접두>_SSO_CLIENT(비면 gateway)와 게이트웨이 설정(client)이 다르다(재프로비저닝으로 맞춘다)" ;;
         *) echo "  · 사람별 위임 드리프트: ${_k%_sso} — 게이트웨이 설정에 위임이 없거나 비밀이 infra/.env 와 다르다(일반 앱은 provision.env 의 비밀·주소)" ;;
       esac
       MISSING="${MISSING:+$MISSING }$_k"

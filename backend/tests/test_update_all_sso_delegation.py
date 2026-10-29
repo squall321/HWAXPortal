@@ -231,7 +231,8 @@ def _drift(tmp_path: Path, cfg, *, ra="", ts="", ts_x="1", box: str = "") -> str
 
 
 def _cfg(**pu) -> dict:
-    return {"heax_registry": {"per_user_sso": {k: {"sso_url": "http://x/sso", "secret": v} for k, v in pu.items()}}}
+    # 게이트웨이 provision 이 쓰는 꼴 그대로 — RA · TestScope · 일반 앱 항목은 client 를 늘 적는다(gateway, 일반 앱은 <접두>_SSO_CLIENT).
+    return {"heax_registry": {"per_user_sso": {k: {"sso_url": "http://x/sso", "secret": v, "client": "gateway"} for k, v in pu.items()}}}
 
 
 def test_missing_or_stale_ra_delegation_triggers_reprovisioning(tmp_path):
@@ -379,13 +380,13 @@ def test_no_generic_list_means_nothing_extra_is_exported(tmp_path):
 
 
 @pytest.mark.parametrize("apps,names", [
-    ("newapp:NEWAPP", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL NEWAPP_SEND_PLAT"),
-    ("  newapp:NEWAPP\tother:OTHER_APP ", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL NEWAPP_SEND_PLAT OTHER_APP_SSO_SECRET OTHER_APP_SSO_URL OTHER_APP_MCP_URL OTHER_APP_SEND_PLAT"),
-    ("콜론없음 :NOKEY nopfx: bad:9X bad2:A-B bad3:A:B ok:OK_1", "OK_1_SSO_SECRET OK_1_SSO_URL OK_1_MCP_URL OK_1_SEND_PLAT"),
+    ("newapp:NEWAPP", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL NEWAPP_SEND_PLAT NEWAPP_SSO_CLIENT"),
+    ("  newapp:NEWAPP\tother:OTHER_APP ", "NEWAPP_SSO_SECRET NEWAPP_SSO_URL NEWAPP_MCP_URL NEWAPP_SEND_PLAT NEWAPP_SSO_CLIENT OTHER_APP_SSO_SECRET OTHER_APP_SSO_URL OTHER_APP_MCP_URL OTHER_APP_SEND_PLAT OTHER_APP_SSO_CLIENT"),
+    ("콜론없음 :NOKEY nopfx: bad:9X bad2:A-B bad3:A:B ok:OK_1", "OK_1_SSO_SECRET OK_1_SSO_URL OK_1_MCP_URL OK_1_SEND_PLAT OK_1_SSO_CLIENT"),
     ("reportarchive:RA testscope:TS ste:STE hwax_risk:HR kooremapper_mcp:KR", ""),   # 게이트웨이가 직접 만드는 다섯 — 순회로 덮지 않는다
     ("*:STAR 'q:Q $(id):X", ""),                                                      # 키가 이름 꼴이 아니면 다루지 않는다
-    ("dup:FOO dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL FOO_SEND_PLAT"),                                # 한 키를 두 번 — 먼저 적힌 쌍만
-    ("dup:9X dup:FOO other:O dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL FOO_SEND_PLAT O_SSO_SECRET O_SSO_URL O_MCP_URL O_SEND_PLAT"),   # 못 읽은 쌍은 '먼저' 가 아니다
+    ("dup:FOO dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL FOO_SEND_PLAT FOO_SSO_CLIENT"),                                # 한 키를 두 번 — 먼저 적힌 쌍만
+    ("dup:9X dup:FOO other:O dup:BAR", "FOO_SSO_SECRET FOO_SSO_URL FOO_MCP_URL FOO_SEND_PLAT FOO_SSO_CLIENT O_SSO_SECRET O_SSO_URL O_MCP_URL O_SEND_PLAT O_SSO_CLIENT"),   # 못 읽은 쌍은 '먼저' 가 아니다
     ("", ""),
 ])
 def test_generic_pairs_are_read_with_the_gateway_rule(tmp_path, apps, names):
@@ -414,6 +415,28 @@ def test_generic_delegation_drift_follows_the_ra_rule(tmp_path):
     assert GEN_SECRET not in _fn("_sso_deleg_drift")
 
 
+def test_generic_delegation_drift_sees_the_client_name(tmp_path):
+    """<접두>_SSO_CLIENT 를 바꾼 것도 방아쇠다 — 한 발급처(KooSlurm)의 두 위임이 같은 이름으로 받으면 같은 사람의 토큰을 서로 회수한다
+    (낙하 트윈 10-29). 비거나 못 읽은 값은 gateway(게이트웨이 provision 과 같은 규칙)."""
+    on = f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\nNEWAPP_SSO_URL="http://x/sso"\n'
+    plain = _cfg(newapp=GEN_SECRET)
+    named = {"heax_registry": {"per_user_sso": {"newapp": {"sso_url": "http://x/sso", "secret": GEN_SECRET,
+                                                           "client": "gateway-newapp"}}}}
+    assert _drift(tmp_path, plain, box=on) == "", "안 적으면 gateway — 지금 있는 위임은 조용하다"
+    assert _drift(tmp_path, plain, box=on + "NEWAPP_SSO_CLIENT=gateway-newapp\n") == "newapp_sso_client"
+    assert _drift(tmp_path, named, box=on + "NEWAPP_SSO_CLIENT=gateway-newapp\n") == ""
+    assert _drift(tmp_path, named, box=on) == "newapp_sso_client", "지우면 gateway 로 돌아간다(provision 과 같다)"
+    assert _drift(tmp_path, plain, box=on + 'NEWAPP_SSO_CLIENT="gate way"\n') == "", "못 읽은 값은 gateway — provision 도 gateway 로 둔다"
+    i = UA.index('for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do')
+    loop = UA[i:UA.index("\n    done\n", i)]
+    script = "\n".join([
+        "set -uo pipefail", 'bad() { echo "BAD:$*"; }', "MISSING=''",
+        '_sso_deleg_drift() { echo "newapp_sso_client"; }', 'GW_DIR="/nonexistent"', loop, "    done", 'echo "MISSING=[$MISSING]"'])
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    assert "MISSING=[newapp_sso_client]" in r.stdout and "클라이언트 이름 드리프트: newapp" in r.stdout and "SSO_CLIENT" in r.stdout
+
+
 def test_generic_delegation_drift_sees_send_plat(tmp_path):
     """<접두>_SEND_PLAT 을 켜거나 끈 것도 방아쇠다 — 비밀 · 주소가 같으면 재프로비저닝이 돌지 않아, provision.env 에서 켜도 게이트웨이가
     plat 권한을 싣지 않았다(MX 백서 위키의 plat: 범위가 조용히 닫힌 채 — docs/mxwp-wiki MW-D9). 안 적은 박스는 config 를 잇는다
@@ -421,7 +444,7 @@ def test_generic_delegation_drift_sees_send_plat(tmp_path):
     on = f'{GEN_APPS}\nNEWAPP_SSO_SECRET="{GEN_SECRET}"\nNEWAPP_SSO_URL="http://x/sso"\n'
     plain = _cfg(newapp=GEN_SECRET)
     with_plat = {"heax_registry": {"per_user_sso": {"newapp": {"sso_url": "http://x/sso", "secret": GEN_SECRET,
-                                                               "send_plat": True}}}}
+                                                               "client": "gateway", "send_plat": True}}}}
     assert _drift(tmp_path, plain, box=on + "NEWAPP_SEND_PLAT=1\n") == "newapp_sso_plat"
     assert _drift(tmp_path, with_plat, box=on + "NEWAPP_SEND_PLAT=1\n") == ""
     assert _drift(tmp_path, with_plat, box=on + "NEWAPP_SEND_PLAT=0\n") == "newapp_sso_plat", "0 이면 끈다 — config 에 남은 것이 어긋남"
