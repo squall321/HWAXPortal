@@ -119,7 +119,7 @@ function EvalResult({ ev }: { ev: SearchEval }) {
         기록에는 섞지 않는다.
       </p>
       <div className="adm-table-wrap">
-        <table className="adm-table">
+        <table className="adm-table tsr-eval">
           <thead>
             <tr>
               <th>판</th>
@@ -150,7 +150,7 @@ function EvalResult({ ev }: { ev: SearchEval }) {
         <>
           <h3>판마다 정답 순위가 다른 쌍 — {ev.changed_count}개</h3>
           <div className="adm-table-wrap">
-            <table className="adm-table">
+            <table className="adm-table tsr-eval">
               <thead>
                 <tr>
                   <th>질의</th>
@@ -257,7 +257,7 @@ export default function ToolSearchReviewPage() {
         }}
         className="adm-filter"
       >
-        <input id="tsr-q" className="tsr-q" placeholder="질의에 든 글" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input id="tsr-q" placeholder="질의에 든 글" value={q} onChange={(e) => setQ(e.target.value)} />
         <select id="tsr-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
           {[1, 7, 14, 30].map((d) => (
             <option key={d} value={d}>
@@ -285,7 +285,7 @@ export default function ToolSearchReviewPage() {
       {!log && !error && <Spinner label="검색 기록 불러오는 중…" />}
       {log && (
         <div className="adm-table-wrap">
-          <table className="adm-table">
+          <table className="adm-table tsr-log">
             <thead>
               <tr>
                 <th>시각</th>
@@ -339,7 +339,7 @@ export default function ToolSearchReviewPage() {
                         <span className="adm-muted-cell">—</span>
                       )}
                     </td>
-                    <td>
+                    <td className="adm-nowrap">
                       <button type="button" className="btn-secondary" onClick={() => setOpen(open === i ? null : i)}>
                         정답 달기
                       </button>

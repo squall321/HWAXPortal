@@ -158,8 +158,15 @@ span.adm-err {
 }
 
 /* 도구 검색 검토 — 상위 다섯 · 보정 표지 · 정답 달기(docs/request-1029 E-9) */
-.tsr-q {
+.adm-filter #tsr-q {
   min-width: 14rem;
+}
+/* 좁은 화면에서는 표를 상자 안에서 가로로 넘긴다(.adm-table-wrap 의 overflow-x) — 칸이 한 글자 폭으로 눌리지 않게 */
+.tsr-log {
+  min-width: 60rem;
+}
+.tsr-eval {
+  min-width: 36rem;
 }
 .tsr-top {
   margin: 0;
