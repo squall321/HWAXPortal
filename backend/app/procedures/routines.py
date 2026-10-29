@@ -308,6 +308,8 @@ def plan_steps(spec: RoutineSpec, mine: dict[str, dict], readiness: list[dict]) 
         out.append({"id": s.id, "title": s.title, "kind": s.kind, "backends": backends, "allowed": allowed,
                     "goal": s.goal, "uses": list(s.uses), "expect": s.expect.model_dump(), "budget": s.budget.model_dump(),
                     "blocked": s.blocked.model_dump(),
+                    # 심의 단계의 일(job) · 의장 틀 — 실행자(챗 · Claude)가 deliberate_start 에 넘긴다. 다른 단계는 None
+                    "deliberation": s.deliberation.model_dump() if s.deliberation else None,
                     "readiness": {"state": r.get("state") or "unavailable", "reason": r.get("reason") or ""}})
     return out
 

@@ -237,6 +237,8 @@ def test_실행은_계획을_찍고_막힌_단계는_그_상태로_닫혀_시작
     assert by["ra"]["state"] == "not_connected" and "/tokens?tab=connect" in by["ra"]["reason"]
     assert by["ft"]["state"] == "unavailable" and by["risk"]["state"] == "denied"
     assert by["delib"]["backends"] == ["hwax-deliberation"] and by["delib"]["allowed"] == {"hwax-deliberation": ["deliberate_start"]}
+    assert by["delib"]["deliberation"] == {"job": "mechanism", "chair_template": None}, "실행자가 deliberate_start 에 넘길 일 · 의장 틀"
+    assert by["voc"]["deliberation"] is None
     assert v["report"] == {"title": "VOC → 심의", "sections": ["voc", "ra", "ft", "risk", "delib", "insight"], "upload": "auto"}
     assert c.get(f"{PREFIX}/runs").json()["count"] == 1
     _login(c, "peer@corp.com")
