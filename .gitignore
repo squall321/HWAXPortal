@@ -87,3 +87,5 @@ backend/config/systems.local.yaml
 backend/config/systems.*.yaml
 # 박스별 권한 표 덧붙임 — 박스 전용 플랫폼과 SSO Claim → 소속 표(사내 코드가 들어간다, docs/change-request-8-10)
 backend/config/access.local.yaml
+# 코어 어휘표 박스 덧씌우기 — cae00 에서 커밋 없이 고치는 merge patch(게이트웨이 · 에이전트가 읽는다, docs/request-1029 E-7 ②)
+backend/config/core_vocab.local.json

@@ -3498,6 +3498,23 @@ try:
             if last:
                 line += " · 마지막 실패 %s: %s" % (last.get("status"), str(last.get("reason") or "")[:120])
             print("  · %s챗 자기검증: %s" % ("⚠ " if bad else "", line))
+    # 검색 손잡이 · 코어 어휘표 지문(docs/request-1029 E-7 ③) — 박스 덧씌우기가 버려지지 않았나 · 게이트웨이와 에이전트가 같은 어휘표로 도나.
+    # 지문이 다르면 한쪽이 옛 판이거나(재기동 전) 덧씌우기를 버렸다. 옛 판은 칸이 없어 말하지 않는다.
+    st = gh.get("search_tuning")
+    if isinstance(st, dict):
+        ov = st.get("overlay") or {}
+        why = ov.get("error") or st.get("error")
+        tag = ("덧씌우기 %s · 건드린 칸 %s개" % (ov.get("fingerprint") or "?", len(ov.get("changed") or []))) if ov.get("present") else "덧씌우기 없음"
+        print("  · %s검색 손잡이: 지문 %s(기본값 %s · %s)%s" % ("⚠ " if why else "", st.get("fingerprint"), st.get("base"), tag,
+                                                          " — %s" % str(why)[:160] if why else ""))
+    gv, av = gh.get("core_vocab") or {}, ah.get("core_vocab") or {}
+    if gv.get("fingerprint") or av.get("fingerprint"):
+        same = gv.get("fingerprint") == av.get("fingerprint")
+        print("  · %s코어 어휘표 지문: 게이트웨이 %s · 에이전트 %s%s" % ("" if same else "⚠ ", gv.get("fingerprint") or "?",
+              av.get("fingerprint") or "?", "" if same else " — 다르다(한쪽이 옛 판이거나 덧씌우기를 버렸다 — 재기동 · 덧씌우기 파일을 본다)"))
+        for who, v in (("게이트웨이", gv), ("에이전트", av)):
+            if (v.get("overlay") or {}).get("error"):
+                print("  · ⚠ 코어 어휘표 덧씌우기(%s): %s" % (who, str(v["overlay"]["error"])[:160]))
 except Exception:
     pass
 PY

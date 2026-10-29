@@ -58,3 +58,23 @@ def test_HP24_챗_자기검증의_수_시간_마지막_실패를_말한다():
     assert "  · 챗 자기검증: kept 2 · 10/20ms(p50/p95, 2턴)" in out and "⚠ 챗 자기검증" not in out
     assert "챗 자기검증: 꺼짐" in _run({"self_check": {"on": False}}, {"tools": 1})
     assert "자기검증" not in _run({"tool_max": 0}, {"tools": 1}), "옛 판(칸 없음)은 말하지 않는다"
+
+
+def test_E7_검색_손잡이와_코어_어휘표_지문을_말하고_다르면_경고한다():
+    """게이트웨이 /health 의 search_tuning · core_vocab 과 에이전트 /health 의 core_vocab(docs/request-1029 E-7 ③). 칸 꼴은 게이트웨이
+    `_tuning_health` · `_core_vocab_health` 와 에이전트 `_core_vocab_health` 가 내는 그대로다."""
+    gh = {"tools": 10,
+          "search_tuning": {"fingerprint": "aaa111", "base": "bbb222", "switches_off": [], "synonyms": 73,
+                            "overlay": {"present": True, "fingerprint": "ccc333", "changed": ["synonyms.낙하", "switches.quality"]}},
+          "core_vocab": {"loaded": True, "fingerprint": "vvv000", "base": "vvv000", "overlay": {"present": False}}}
+    out = _run({"tool_max": 0, "core_vocab": {"loaded": True, "fingerprint": "vvv000", "base": "vvv000", "overlay": {"present": False}}}, gh)
+    assert "  · 검색 손잡이: 지문 aaa111(기본값 bbb222 · 덧씌우기 ccc333 · 건드린 칸 2개)" in out, out
+    assert "  · 코어 어휘표 지문: 게이트웨이 vvv000 · 에이전트 vvv000" in out and "⚠ 코어" not in out
+    out = _run({"tool_max": 0, "core_vocab": {"loaded": True, "fingerprint": "old999", "base": "old999",
+                                              "overlay": {"present": True, "error": "덧씌우기를 버렸다(ValueError: …)"}}},
+               {**gh, "search_tuning": {**gh["search_tuning"], "overlay": {"present": True, "error": "덧씌우기를 버렸다(TypeError: x)"}}})
+    assert "⚠ 검색 손잡이: 지문 aaa111(기본값 bbb222 · 덧씌우기 ? · 건드린 칸 0개) — 덧씌우기를 버렸다(TypeError: x)" in out, out
+    assert "⚠ 코어 어휘표 지문: 게이트웨이 vvv000 · 에이전트 old999 — 다르다" in out
+    assert "⚠ 코어 어휘표 덧씌우기(에이전트): 덧씌우기를 버렸다(ValueError: …)" in out
+    out = _run({"tool_max": 0}, {"tools": 10})
+    assert "검색 손잡이" not in out and "어휘표" not in out, "옛 판(칸 없음)은 말하지 않는다"
