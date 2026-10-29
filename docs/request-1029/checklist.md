@@ -52,18 +52,18 @@
 
 ## 4차(D-7 뒤 — 재시험 숫자가 필요 없는 E-1 · E-3 · E-6 은 사용자 지시 10-29 로 당긴다, C-17)
 
-- [ ] E-1 권한표에 행 없는 백엔드 알림(update-all §6)
+- [x] E-1 권한표에 행 없는 백엔드 알림(update-all §6) — 이미 있다(10-01 3b61d63 '권한 표 대조' ✗ · 시험 test_update_all_access_table.py, C-25)
 - [ ] E-2 앱 역할 칸(정본 · 형제 · 시험) — 순위 · 접기 · 노출
-- [ ] E-3 오래 안 불린 도구 보고(30일 · 앱별)
+- [x] E-3 오래 안 불린 도구 보고(30일 · 앱별) — 게이트웨이 `tool_usage_report.py`(8b6af6d, C-26)
 - [ ] E-4 개인 Claude 묶음 · 가벼운 모드
 - [ ] E-5 전문가 고르기 기준선(누설 없는 평가셋) → 페르소나 ↔ 분야 ↔ 코어 타입 링크 · AI 데이터 허브 요청서(바인딩 저장소 하나 · 지워진 키)
-- [ ] E-6 새 앱 등록 자동 점검
+- [x] E-6 새 앱 등록 자동 점검 — update-all §6 '새 앱 점검'(95f9274 · `infra/scripts/app-checks.py`, C-27) · 찾은 DocForge 미분류는 게이트웨이 44f4b8d
 
 ## 관련 프로젝트 — 이 박스에서 고칠 수 있는 것(사용자 지시 10-29, C-17)
 
-- [ ] StepForge — `find_plm_task` 가 과제의 프로젝트 별칭(마케팅명)으로도 찾는다(OT-15 no_match)
-- [ ] StepForge — `find_plm_task` 응답의 sync 칸을 줄인다(0 ~ 2행에 11 ~ 12천 자, N-10)
-- [-] SignalForge SG-04(P8 마케팅명 → PH8 제품 코드) — 제품 카탈로그 · 태깅 사전의 구조 결정이고 요청서의 P8 · PH8 은 가린 이름이다. 그쪽에 물을 글로 둔다(C-17)
+- [x] StepForge — `find_plm_task` 가 과제의 프로젝트 별칭(마케팅명)으로도 찾는다(OT-15 no_match) — StepForge D-647(C-28)
+- [x] StepForge — `find_plm_task` 응답의 sync 칸을 줄인다(0 ~ 2행에 11 ~ 12천 자, N-10) — StepForge D-647 · D-637 의 '본문 그대로' 를 사용자 지시로 뒤집음(C-28)
+- [-] SignalForge SG-04(P8 마케팅명 → PH8 제품 코드) — 제품 카탈로그 · 태깅 사전의 구조 결정이고 요청서의 P8 · PH8 은 가린 이름이다. 묻는 글 [signalforge-sg04-question.md](signalforge-sg04-question.md)(C-29)
 - [-] Datahub 플랫폼 DP-01 ~ 05 · objects_summary 오류 문구 · FailureTrace DP-02 · CAE 그룹 허브 해석 기록 · ARP · ODB 허브 — 이 박스에 코드가 없다(cae00 · 바깥 시스템, C-17)
 
 ## 박스 · 다른 쪽(포털 코드 아님)
