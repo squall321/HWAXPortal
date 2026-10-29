@@ -61,8 +61,9 @@ visibility: private                               # private(기본) | all
   `interrupted` 는 실행자가 사라졌을 때(에이전트 서버 재기동 · Claude 세션 종료) — 저절로 다시 돌지 않고 '이어서' 로 끝난 단계를 건너뛴다.
 - 단계 상태 — `pending · running · ok · empty · ambiguous · denied · not_connected · unavailable · failed · skipped`. **포털이 정한다** — 실행자가 보낸 봉투를
   원장과 맞대 고친다(호출 0 인데 ok 면 skipped, 결과가 다 오류면 failed, 이 박스에 없는 백엔드면 unavailable).
-- 호출 원장 — `routine_call` 하나가 한 줄이다(`call_id` = `<단계 id>.c<n>`, 백엔드 · 원래 이름 · 인자 · 결과(gzip, 2MB 넘으면 해시 · 앞 4KB) · ok · ms).
-  단계의 호출들은 절차 원장(`runs` · `run_steps`)에 `trigger_kind=routine` · `trigger_ref=<실행 id>:<단계 id>` 로 남는다 — 좋은 단계는 절차로 굳힐 수 있다.
+- 호출 원장 — `routine_call` 하나가 `routine_calls` 표의 한 줄이다(`call_id` = `<단계 id>.c<n>`, 백엔드 · 원래 이름 · 인자(sha256) · 결과(gzip, 2,000,000자
+  넘으면 앞부분과 truncated) · ok · ms). 절차 원장(`runs` · `run_steps`)과 따로 둔 까닭 — 그 표의 칸(schema_fp · expect · 게이트)은 절차 것이라 루틴 호출에
+  맞지 않는다(R2, 10-30). 좋은 단계를 절차로 굳히는 길(derive)은 그 뒤에 이 표를 읽어 짓는다.
 
 ### 단계 봉투(실행자 → 포털, `routine_step_done`)
 
@@ -75,7 +76,8 @@ visibility: private                               # private(기본) | all
 
 - `keys` 의 값은 그 단계 호출 결과 어딘가에 글자 그대로 있어야 원장에 든다 — 없으면 `unsourced_keys` 로 표시하고 다음 단계에 넘기지 않는다.
 - `refs` 는 그 실행의 `call_id` 여야 한다 — 없는 것은 `bad_refs`. `findings` 20개 · `text` 500자 · `candidates` 20개까지.
-- `status=ambiguous` 면 `candidates`(`{label, key}`)가 있어야 한다 — 실행은 `waiting` 이 되고 사람이 고르면 그 단계가 `ok` 로 닫힌다.
+- `status=ambiguous` 면 `candidates`(`{label, key}`)가 있어야 한다 — 실행은 `waiting` 이 되고 사람이 고르면 그 단계가 `ok` 로 닫힌다. 고르는 길은 둘 —
+  화면의 `/pick`, 또는 실행자가 같은 단계를 `status=ok` + 고른 후보의 키로 다시 닫는다(Claude 가 대화에서 사람에게 물은 뒤).
 
 ## 3. 포털 `/routines-api`
 
@@ -100,9 +102,9 @@ visibility: private                               # private(기본) | all
 | 도구 | 입력 | 하는 일 |
 |---|---|---|
 | `routine_list` | `q?` | 볼 수 있는 루틴 · 단계마다 지금 부를 수 있나 |
-| `routine_get` | `routine_id` · `version?` 또는 `run_id` | 계획(단계 · 울타리 · 할 일 · 기대 출력 · 예산 · 보고서 절) 또는 진행과 다음 단계 |
+| `routine_get` | `routine_id` · `version?` 또는 `run_id`(+ `call_id` · `page`) | 계획(단계 · 울타리 · 허용 도구 · 할 일 · 기대 출력 · 예산 · 보고서 절) 또는 진행과 다음 단계 — `call_id` 면 원장의 큰 결과 한 쪽(60,000자) |
 | `routine_run_start` | `routine_id` · `version?` · `inputs` | 실행 id 와 계획 |
-| `routine_call` | `run_id` · `step` · `name` · `arguments` | 단계 울타리 안의 도구를 부른다 — `invoke_tool` 검사를 다 받고(절차 면제 없음) 원장에 남긴다(`corr=run_id`). 큰 결과는 원장에 다 두고 응답은 쪽 |
+| `routine_call` | `run_id` · `step` · `name` · `arguments` | 단계 울타리 안의 도구를 부른다 — 계획의 허용 도구 `{백엔드: [원래 이름]}` 만(포털이 실행을 시작할 때 그 사람의 목록에서 읽기 도구만 찍는다 — 쓰기 분류의 정본은 포털 하나). 이름은 원래 이름 · 노출 이름 · `백엔드:원래 이름`(두 백엔드에 같은 이름이면 이 꼴만). 정상 호출 길을 그대로 타고(절차 면제 없음) 감사 corr 는 `routine:<실행>:<단계>`, 원장에 남긴다. 큰 결과는 원장에 다 두고 응답은 쪽. 심의 단계 `deliberate_start` 는 evidence 를 비우면 앞 단계 원 근거로 채운다 |
 | `routine_step_done` | `run_id` · `step` · 봉투 | 단계 상태 · 다음 단계 또는 보고서 틀 |
 | `routine_report_submit` | `run_id` · `sections` · `citations?` | 포털이 렌더 → `ra.upload=auto` 면 게이트웨이가 호출자 이름으로 `create_report_draft`(RA 토큰 없으면 건너뛰고 알림 — 서비스 계정 없음) |
 
@@ -121,3 +123,14 @@ visibility: private                               # private(기본) | all
 - 포털이 덧붙인다 — 커버리지(한 단계 · 건너뜀 · 권한 없음 · 이 박스에 없음 — 숨기지 않는다) · 근거 부록(원장) · 출처 없는 수치 표지.
 - RA — 템플릿 `deliberation` v1 블록 넷으로 렌더한다: `background`(목적 · 입력 · 기준 키 · 커버리지) · `results`(단계 절) · `recommendation`(인사이트 · 인용) ·
   `minutes`(근거 부록). 항목은 2,000자 이하로 나눈다(에이전트 서버 `_ra_split` 과 같은 결과 — 계약 시험). 태그 `분석 루틴` · 루틴 제목.
+
+## 7. R2 에서 정한 것(10-30)
+
+- 실행 보기(`GET /runs/{id}`)는 계획에 단계 상태 · 호출 수 · 넘긴 키 · 요약 · 고친 표지(flags)를 얹고, 할 일의 참조를 지금까지 넘긴 키로 푼다. `run.limit_reached` 는
+  시간 · 호출 상한에 닿았을 때의 까닭이다(게이트웨이가 부르기 전에 보고 거절한다 — 포털도 원장 쓰기에서 다시 본다).
+- 실행 시작은 '멈춤' 으로 짠 단계가 막혔으면 `failed` 로 시작한다(까닭과 함께). 입력은 선언한 형으로 맞추고 모르는 키 · 빠진 필수는 422.
+- 심의 근거(`GET /runs/{id}/evidence?step=`)는 그 단계가 쓰는 앞 단계들의 **성공한** 호출 원문 — 120건 · 건마다 15,000자까지(엔진이 창에 맞게 더 줄인다).
+- 보고서는 모든 단계가 닫힌 뒤에만 낸다(`done` 으로 끝낸다). RA 블록은 deliberation v1 넷 · 항목마다 1,900자 이하(엔진 `_ra_split` 과 같은 결과 — 포털
+  시험이 엔진 원문 글에서 함수를 떼어 맞댄다). 경고 — 루틴에 없는 절 · 원장에 없는 인용 · 근거 없는 수치 문단.
+- 읽기 전용 PAT 는 `routine_list` · `routine_get` 만(게이트웨이 `_readonly_denial` — 루틴 도구는 경로에 없는 로컬 도구라 따로 막는다).
+- 일반 챗(에이전트 서버 ReAct)은 루틴 도구 여섯을 묶지도 `invoke_tool` 로 부르지도 않는다 — 루틴은 사람이 골라 켜는 것이다(R3 의 루틴 모드는 코드가 부른다).

@@ -8,7 +8,7 @@
 - [x] 계획 `PLAN.md` · 이 체크리스트 · `context-notes.md`(10-29)
 - [x] 사용자 결정 — Q1 저절로 · Q2/Q4 건너뛰고 끝까지 · Q7 둘 다(10-30, C-7) · 나머지는 권고 기본값
 - [x] `contracts.md` — 스펙 · 상태 · 단계 봉투 · /routines-api · MCP 도구 · SSE · 보고서 렌더(10-30) — 스펙의 정본은 `app/procedures/routines.py`
-- [ ] 계약 시험 뼈대 — R2 에서 게이트웨이 도구와 함께(포털 `routine_contract.json` 을 형제 파일로 읽는다)
+- [x] 계약 시험 — 공유 JSON 대신 실물 맞대기로 했다(R2): 포털 RA 나눔 ↔ 엔진 `_ra_split` 원문 · 게이트웨이 시험의 계획 꼴 = 포털 run_view 꼴 · 에이전트 거부 목록
 
 ## R1 포털 — 짜고 저장하기
 
@@ -22,11 +22,13 @@
 
 ## R2 게이트웨이 · Claude 길
 
-- [ ] `routine_list` · `routine_get` · `routine_run_start` · `routine_call` · `routine_step_done` · `routine_report_submit`(호출자 PAT 를 포털로)
-- [ ] `routine_call` — 단계 울타리 · `invoke_tool` 검사 그대로(절차 면제 없음) · 원장 기록 · `corr=run_id` · 큰 결과는 쪽
-- [ ] prompts `routine-<slug>` · `_INSTRUCTIONS` 한 항목(포털이 답할 때만) · `/tools-map` · 영역표 · 읽기 전용 PAT 규칙
-- [ ] 포털 실행 원장 · 보고서 렌더 · RA 초안(게이트웨이가 호출자 이름으로 — 토큰 없으면 거부)
-- [ ] 시험 — 각본 MCP 클라이언트로 끝까지 · 울타리 밖 도구 거부 · 판 엇갈림('포털이 낡았다')
+- [x] `routine_list` · `routine_get` · `routine_run_start` · `routine_call` · `routine_step_done` · `routine_report_submit`(호출자 PAT 를 포털로 — 게이트웨이 공유 비밀은 거절)
+- [x] `routine_call` — 단계 울타리 `{백엔드: [원래 이름]}` · 정상 호출 길 그대로(절차 면제 없음) · 원장 기록 · corr `routine:<실행>:<단계>` · 큰 결과는 쪽 · 같은 이름은 `백엔드:이름` · 심의 근거 채움
+- [x] `/tools-map`(`_gateway` 수) · 영역표(앱 단위 system) · 읽기 전용 PAT 규칙 · 일반 챗 거부(에이전트 `_ROUTINE_TOOLS`)
+- [ ] prompts `routine-<slug>` · `_INSTRUCTIONS` 한 항목 — R3 뒤(도구 설명이 순서를 이미 말한다)
+- [x] 포털 실행 원장(실행 · 단계 · 호출 표) · 단계 닫기(원장과 맞대기) · 고르기 · 근거 · 보고서 렌더 · RA 초안(게이트웨이가 호출자 이름으로 — 토큰 없으면 건너뛰고 까닭을 원장에)
+- [x] 시험 — 게이트웨이(가짜 포털로 울타리 · 원장 · 쪽 · 심의 근거 · RA 셋 · 낡은 포털 · 읽기 전용) · 포털(실행 원장 전부 · RA 나눔 계약)
+- [ ] 각본 MCP 클라이언트로 포털 + 게이트웨이를 끝까지 한 번(실물 — R3 과 함께)
 
 ## R3 Qwen 길
 
