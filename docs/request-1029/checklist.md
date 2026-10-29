@@ -74,5 +74,5 @@
 - [ ] O-5 '(시험)' 라벨 바로잡기
 - [-] O-11 본답 출력 상한 — 사용자 결정 D-6(두지 않는다)
 - [ ] O-12 허브 응답 견본(사람 이름 지운 것)
-- [ ] O-13 박스 권한표에 허브 셋 · componentcore · plm-search-agent · simengbay · 시험 사본 행이 있는지
+- [ ] O-13 박스 권한표에 허브 셋 · componentcore · plm-search-agent · simengbay · 시험 사본 행이 있는지 — cae00 의 마지막 update-all 로그 §6 '권한 표 대조' · '권한 표 구멍' 줄이 답한다(C-25)
 - [ ] 플랫폼 몫(요청서 5.5) — DP-01 ~ 06 · StepForge · SignalForge SG-04 · CAE 그룹 허브 해석 기록 — 그쪽 요청서로
