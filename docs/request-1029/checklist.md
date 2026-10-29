@@ -57,16 +57,16 @@
 - [x] E-3 오래 안 불린 도구 보고(30일 · 앱별) — 게이트웨이 `tool_usage_report.py`(8b6af6d, C-26)
 - [ ] E-4 개인 Claude 묶음 · 가벼운 모드
 - [ ] E-5 전문가 고르기 기준선(누설 없는 평가셋) → 페르소나 ↔ 분야 ↔ 코어 타입 링크 · AI 데이터 허브 요청서(바인딩 저장소 하나 · 지워진 키)
-- [ ] E-7 검색 보정 옵션화 — 손 동의어 · 낱말 묶음 · 가중치를 설정으로(항목마다 owner · source_fix) · 박스 덧씌우기 · 묶음별 끄기 · 덧씌우기 지문(/health · update-all · 평가) · 규칙별 기여 기록 · 평가 '보정 끔' 비교(D-8 — QA 뒤)
-- [ ] E-8 플랫폼별 피드백 보고서 — 보정 덕에만 찾아진 질의 · 인자 설명 · 안 불린 도구 · 큰 응답 · 실패, cae00 기록으로 cae00 에서 · 고쳐지면 규칙을 걷는다(D-8 — QA 뒤)
-- [ ] E-9 cae00 닫힌 고리 — 굴러가는 질의 기록 + '찾기 → 부르기 → 성공' 신호 · 16문항 회귀 · 포털 화면 검토(박스 파일) · cae00 에서 덧씌우기 켜고 끈 비교 · dev 기본값으로 올리기는 선택(D-8 — QA 뒤)
-  - [ ] ① 게이트웨이 search_tuning.json(지금 상수 그대로) · 박스 덧씌우기 · 묶음별 끄기 · 순위 바이트 같음(_SEARCH_TOOLS_MASTER · 147쌍)
-  - [ ] ② 어휘표 덧씌우기 core_vocab.local.json — 게이트웨이 · 에이전트 · 포털 gitignore
-  - [ ] ③ 지문 — 게이트웨이 · 에이전트 /health · update-all §6 · 평가 · 기록
-  - [ ] ④ 귀속 · boost_only · 날짜별 굴러가는 질의 기록 · 뒤이은 호출 결과 줄
-  - [ ] ⑤ 창구 /search-log · /search-review · /search-eval · run.py live
-  - [ ] ⑥ platform_feedback_report.py
-  - [ ] ⑦ 포털 관리자 '도구 검색 검토' 화면 + 백엔드(관리자 · CSRF → 게이트웨이 공유 비밀)
+- [x] E-7 검색 보정 옵션화 — 손 동의어 · 낱말 묶음 · 가중치를 설정으로(항목마다 owner · source_fix) · 박스 덧씌우기 · 묶음별 끄기 · 덧씌우기 지문(/health · update-all · 평가) · 규칙별 기여 기록 · 평가 '보정 끔' 비교(D-8 — QA 뒤)
+- [x] E-8 플랫폼별 피드백 보고서 — 보정 덕에만 찾아진 질의 · 인자 설명 · 안 불린 도구 · 큰 응답 · 실패, cae00 기록으로 cae00 에서 · 고쳐지면 규칙을 걷는다(D-8 — QA 뒤)
+- [x] E-9 cae00 닫힌 고리(코드 · 문서 — 16문항 회귀 · 박스에서 켜고 끈 비교는 cae00 사람 몫, server-setup 7.3) — 굴러가는 질의 기록 + '찾기 → 부르기 → 성공' 신호 · 16문항 회귀 · 포털 화면 검토(박스 파일) · cae00 에서 덧씌우기 켜고 끈 비교 · dev 기본값으로 올리기는 선택(D-8 — QA 뒤)
+  - [x] ① 게이트웨이 search_tuning.json(지금 상수 그대로) · 박스 덧씌우기 · 묶음별 끄기 · 순위 바이트 같음(_SEARCH_TOOLS_MASTER · 평가 142쌍) — 게이트웨이 1539b5b
+  - [x] ② 어휘표 덧씌우기 core_vocab.local.json — 게이트웨이 8dc2719 · 에이전트 ab87137(형제 리포 원문 대조 가드) · 포털 gitignore
+  - [x] ③ 지문 — 게이트웨이 · 에이전트 /health · update-all §7(챗 도구 가시성 줄 곁 — 설계의 '§6' 은 자리를 잘못 적었다) · 평가 · 기록
+  - [x] ④ 귀속 · boost_only · 날짜별 굴러가는 질의 기록 · 뒤이은 호출 결과 줄 — 게이트웨이 1539b5b(손잡이와 한 커밋)
+  - [x] ⑤ 창구 /search-log · /search-review · /search-eval · run.py live — 게이트웨이 1c7fcc1 · 9e9a8c0
+  - [x] ⑥ platform_feedback_report.py — 게이트웨이 ed94439(손잡이 지문은 게이트웨이와 같다 — 시험이 맞댄다 · dev 실데이터 0.2초 · 신원 0건)
+  - [x] ⑦ 포털 관리자 '도구 검색 검토' 화면 + 백엔드(관리자 · CSRF → 게이트웨이 공유 비밀)
   - [ ] 문서(README 셋 · server-setup · 가이드) · 이력 · push · 화면 Drive
 - [x] E-6 새 앱 등록 자동 점검 — update-all §6 '새 앱 점검'(95f9274 · `infra/scripts/app-checks.py`, C-27) · 찾은 DocForge 미분류는 게이트웨이 44f4b8d
 
