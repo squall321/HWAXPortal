@@ -6,7 +6,7 @@
 
 - [x] 조사 넷 — 절차 기능 · 챗 루틴 모드 · MCP 길 · 예시 연쇄의 플랫폼 지도(10-29, 읽기만)
 - [x] 계획 `PLAN.md` · 이 체크리스트 · `context-notes.md`(10-29)
-- [ ] 사용자 결정 Q1 ~ Q10(PLAN 8절) — 받은 답을 context-notes 에 적는다
+- [x] 사용자 결정 — Q1 저절로 · Q2/Q4 건너뛰고 끝까지 · Q7 둘 다(10-30, C-7) · 나머지는 권고 기본값
 - [ ] `contracts.md` — RoutineSpec JSON Schema · 단계 봉투 · SSE `routine` 이벤트 · MCP 도구 입출력
 - [ ] 계약 시험 뼈대(포털 · 게이트웨이 · 에이전트가 같은 스키마 파일을 읽는다)
 
