@@ -784,3 +784,44 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 - 보는 것 — OT-06 ~ 10 에서 정본 허브 호출이 1회 이상인지, OT-07 · 08 · 10 · 11 의 첫 도구가 코어인지, OT-11 고장모드 수가 71 인지, 자기검증 ms p95
   (`/health` `self_check`)와 '고친 답이 비어 초안 그대로' 가 주는지. 결과로 4차(E-1 ~ E-6)를 정한다(결정 D-7).
 - '낙하 해석 담당' 은 코어 낱말이 없어 어휘표가 닿지 않는다 — 이 질의가 다시 코어를 건너뛰어도 1차가 고친 것과 무관하다(C-14).
+
+## 2026-10-29 반영분 — 10-29 웹 챗 온톨로지 QA 후속(2 · 3차 · 4차 일부)
+
+정본은 같은 [request-1029/](request-1029/)(checklist 2 · 3 · 4차, context-notes C-18 ~ C-29)다. 받는 길은 그대로 `git pull && update-all` 이다.
+⚠ **포털과 에이전트 서버를 같은 판으로 받는다** — 포털의 챗 침묵 한도 900초(`AGENT_CHAT_IDLE_TIMEOUT_S`)는 에이전트 서버가 챗 스트림에도 15초마다 ping 을
+내야 맞다. ping 없는 옛 에이전트 서버에 900초를 걸면 생각 · 비스트리밍 호출이 긴 답이 끊긴다(update-all 은 둘을 함께 올린다).
+StepForge 몫(D-647 — `find_plm_task` 프로젝트 별칭 · `sync` 요약)은 StepForge 배치(Drive SIF) 뒤에 든다.
+
+### 받은 뒤 — 확인
+
+- **게이트웨이** — `/health` `core_vocab.staging_hidden` 이 이 박스에서 숨긴 시험 사본이다(`dynaforge-prod` · `stepforge-prod` 가 이 박스에 있으면 둘).
+  웹 챗 · 개인 Claude 목록 · `search_tools` 에서 빠지고, 이름으로 부르면 그대로 닿는다.
+- **에이전트 서버** — `/health` `self_check` 의 `counts`(fixed · suspect)와 `ms.p95` 를 1차 재시험 수와 견준다. 자기검증은 이제 고칠 곳만 받는다(W-4).
+  `suspect` 의 까닭이 '바꿀 곳을 초안에서 찾지 못했다' 로 많이 나오면 dev 에 보낸다(모델이 원문을 다르게 옮긴다는 뜻이다).
+- **update-all §6 새 줄** — `· 새 앱 점검 — 기록이 없어 지금 앱 N개를 전부터 있던 것으로 적었다` 가 첫 실행에 한 번 나온다(정상 — 기록
+  `infra/.state/app-checks.json`). 다음 실행부터 새로 붙은 앱만 14일 동안 ⚠ 로 짚는다(영역 · 권한 행 · 이름 겹침 · 인자 설명). 막지 않는다.
+
+### 사람 몫 — 박스 설정
+
+- **O-2 챗 LLM 부하분산기의 대화 고정** — 에이전트 서버가 챗 LLM 호출마다 `X-Session-Affinity` 머리(서버 대화 id 의 해시)를 싣는다. stcx 챗 LLM 앞
+  nginx(`~/stcx-llm/nginx.conf`)가 그 머리로 복제본을 고르게 한다. `map` 은 http 블록에, `hash` 는 그 upstream 블록 맨 위에 둔다.
+
+  ```nginx
+  map $http_x_session_affinity $chat_affinity {
+      ""      $request_id;                  # 머리가 없는 요청(다른 클라이언트)은 요청마다 다른 값 — 지금처럼 고르게 퍼진다
+      default $http_x_session_affinity;
+  }
+  upstream <지금 이름 그대로> {
+      hash $chat_affinity consistent;
+      server …;                               # 지금 줄 그대로
+  }
+  ```
+
+  `nginx -t` 뒤 다시 읽힌다(`nginx -s reload`). 확인은 같은 대화의 이어진 두 호출이 같은 복제본으로 가는지다(10-29 은 117쌍 중 1쌍).
+- **O-3 도구 설명 예산 견주기** — 에이전트 서버 `.env` 에 `CHAT_TOOL_SCHEMA_BUDGET=30000` 을 적고 재기동한다(도는 심의가 없을 때
+  `cd ~/Projects/HWAXAgentServer && ./start.sh -d`). 같은 16문항을 잰다. `40000` 으로 한 번 더 잰 뒤 나은 값을 남기거나 줄을 지운다(비면 종전대로
+  챗 창의 45% — 호출마다 약 8.8만 토큰). 줄이면 `search_tools` → `invoke_tool` 왕복이 늘 수 있다 — 답의 질과 함께 본다.
+- **안내 자리(W-3)** — 재시험에서 지시를 따르는 정도가 떨어지면 에이전트 서버 `.env` 에 `CHAT_STABLE_PREFIX=0`(종전 자리)을 적고 재기동한다.
+- **오래 안 불린 도구 보고(E-3)** — `cd ~/Projects/HWAXMcpGateway && python3 tool_usage_report.py --out ~/unused-tools-$(date +%F).md`.
+  앱마다 30일 동안 안 불린 도구가 나온다. 앱 주인에게 넘긴다(부른 사람 · 주소는 싣지 않는다).
+- **SignalForge SG-04** — [request-1029/signalforge-sg04-question.md](request-1029/signalforge-sg04-question.md) 를 SignalForge 주인에게 넘긴다(P8 · PH8 제품 코드 — 데이터 결정).
