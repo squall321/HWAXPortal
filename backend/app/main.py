@@ -155,6 +155,7 @@ async def lifespan(app: FastAPI):
     #   공유되므로** 모듈만 끄고 챗 릴레이(/agent/)는 살린다.
     app.state.procedures_store = None
     app.state.procedures_runner = None
+    app.state.routine_store = None      # 분석 루틴 — 절차 저장소의 연결을 같이 쓴다(docs/analysis-routines)
     try:
         from app.procedures.pat import mint as _wb_mint
         from app.procedures.runner import ProceduresRunner
@@ -165,6 +166,9 @@ async def lifespan(app: FastAPI):
         if _stale:
             _log.warning("절차: 재기동으로 %d개 단계를 unknown 으로 마감했다", _stale)
         app.state.procedures_store = _wb
+        from app.procedures.routine_store import RoutineStore
+
+        app.state.routine_store = RoutineStore(_wb)
         app.state.procedures_runner = ProceduresRunner(
             settings=settings, store=_wb,
             mint_pat=lambda p, run, ix: _wb_mint(app.state.keystore, settings, p, run, ix),
@@ -252,6 +256,9 @@ try:
     from app.procedures import routes as procedures_routes
 
     app.include_router(procedures_routes.router)
+    from app.procedures import routine_routes
+
+    app.include_router(routine_routes.router)
 except Exception as exc:  # noqa: BLE001
     app.state.procedures_error = f"{type(exc).__name__}: {exc}"
     _log.error("절차 라우터 등록 실패 — 포털은 계속 뜬다", exc_info=True)

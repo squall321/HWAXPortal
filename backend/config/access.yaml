@@ -50,6 +50,9 @@ features:
   - id: procedures
     label: 절차 · 업무 절차
     desc: 도구를 한 단계씩 돌린 기록을 절차로 굳혀 대상만 바꿔 재생한다. 도구 인가는 각자 권한 그대로다.
+  - id: routines
+    label: 분석 루틴
+    desc: 내 권한의 플랫폼을 순서대로 엮어 두고, 챗 · 개인 Claude 가 그 연쇄로 분석해 보고서를 쓴다. 단계마다 각자 권한 그대로다.
 
 platforms:
   - id: heaxhub
