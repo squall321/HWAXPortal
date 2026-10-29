@@ -468,3 +468,50 @@ textarea.pr-input {
 .pr-mr-1 {
   margin-right: var(--sp-1);
 }
+
+/* ── 분석 루틴(docs/analysis-routines) — 단계 사슬 · 준비도 표지 · 플랫폼 칩 ── */
+.rt-chain {
+  overflow-wrap: anywhere;
+}
+.rt-goal {
+  margin: var(--sp-1) 0 0;
+  white-space: pre-wrap;
+}
+.rt-step-view {
+  border-left-color: var(--border-strong);
+}
+.rt-ready {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.rt-ready.is-allowed {
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.rt-ready.is-not_connected {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.rt-ready.is-denied {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.rt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-13);
+}
+.rt-tools {
+  margin-top: var(--sp-2);
+}

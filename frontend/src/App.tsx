@@ -54,7 +54,7 @@ const router = createBrowserRouter([
         // ⚠ API 접두사는 '/procedures-api' 다(겹치면 새로고침이 JSON 을 받는다).
         path: '/procedures/*',
         element: (
-          <RequireEntitlement need="feat:procedures">
+          <RequireEntitlement need={['feat:procedures', 'feat:routines']}>
             {/* 페이지 스코프 Provider — App() 루트에 두지 않고 useChat 도 쓰지 않는다. */}
             <ProceduresProvider>
               <ProceduresPage />

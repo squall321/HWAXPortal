@@ -1,8 +1,8 @@
-// 절차 셸 — 탭 셋(만들기·절차·실행 이력)과 자식 라우트
+// 절차 셸 — 탭 넷(만들기·절차·실행 이력·루틴)과 자식 라우트 — 절차 탭은 feat:procedures, 루틴 탭은 feat:routines
 //
 // 루트는 `.container` 다 — AppShell 의 ChatDock 이 열릴 때 자리를 비켜 주는 클래스다.
 // 우하단은 비워 둔다(닫힌 독의 💬 FAB 가 거기 고정이라 겹친다).
-import { NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { ChangelogBold as Bold } from '../../components/layout/ChangelogBold';
 import { Page, PageHeader } from '../../components/ui/Page';
 import { useCallback, useEffect, useState } from 'react';
@@ -35,29 +35,53 @@ import {
   type SeedRow,
 } from '../../api/procedures.api';
 import BuildView from './BuildView';
+import { RoutineDetailView, RoutineList, RoutineNew } from './RoutinesView';
+import { useCan } from '../../auth/useCan';
 import { RunSteps } from './RunSteps';
 import '../../styles/procedures.css';
 
 export default function ProceduresPage() {
+  const can = useCan();
+  const proc = can('feat:procedures');
+  const routines = can('feat:routines');
   return (
     <Page width="wide">
-      <PageHeader title="절차" desc="한 번 해낸 일을 절차로 굳혀 두었다가, 대상만 바꿔 다시 돌립니다." />
+      <PageHeader
+        title="절차"
+        desc="한 번 해낸 일을 절차로 굳혀 두었다가 대상만 바꿔 다시 돌리고, 플랫폼을 엮은 분석 루틴을 짜 둡니다."
+      />
 
       <nav className="pr-tabs">
-        <Tab to="/procedures" end>
-          만들기
-        </Tab>
-        <Tab to="/procedures/saved">절차</Tab>
-        <Tab to="/procedures/runs">실행 이력</Tab>
+        {proc && (
+          <>
+            <Tab to="/procedures" end>
+              만들기
+            </Tab>
+            <Tab to="/procedures/saved">절차</Tab>
+            <Tab to="/procedures/runs">실행 이력</Tab>
+          </>
+        )}
+        {routines && <Tab to="/procedures/routines">루틴</Tab>}
       </nav>
 
       <Routes>
-        <Route index element={<BuildView />} />
-        <Route path="saved" element={<ProcedureList />} />
-        <Route path="saved/:id" element={<ProcedureDetail />} />
-        <Route path="runs" element={<RunList />} />
-        <Route path="runs/:id" element={<RunDetailView />} />
-        <Route path="batches/:id" element={<BatchView />} />
+        <Route index element={proc ? <BuildView /> : <Navigate to="/procedures/routines" replace />} />
+        {proc && (
+          <>
+            <Route path="saved" element={<ProcedureList />} />
+            <Route path="saved/:id" element={<ProcedureDetail />} />
+            <Route path="runs" element={<RunList />} />
+            <Route path="runs/:id" element={<RunDetailView />} />
+            <Route path="batches/:id" element={<BatchView />} />
+          </>
+        )}
+        {routines && (
+          <>
+            <Route path="routines" element={<RoutineList />} />
+            <Route path="routines/new" element={<RoutineNew />} />
+            <Route path="routines/:id" element={<RoutineDetailView />} />
+          </>
+        )}
       </Routes>
     </Page>
   );
