@@ -356,6 +356,8 @@ export function ChatProvider({
     }
   }, [scopedPrefix, storagePrefix]);
   const abortRef = useRef<AbortController | null>(null);
+  // 도는 스트림의 '중지됨' 정리 — 중지 단추가 읽기 루프를 기다리지 않고 부른다(docs/request-1029 P-1 ③)
+  const stopUiRef = useRef<(() => void) | null>(null);
   // 스트리밍 중인 대화 id — 그 대화가 삭제되면 스트림도 중단하기 위해 추적.
   const streamConvRef = useRef<string | null>(null);
   // 도는 스트림의 생존 신호 — 프레임이 올 때마다 시각만 적는다. 여기서 스트림을 끊지 않는다(표시용).
@@ -718,6 +720,31 @@ export function ChatProvider({
         endStream();
         if (streamDoneRef.current.get(cid) === streamEnded) streamDoneRef.current.delete(cid);
       };
+      // 이 스트림의 끝 정리(마지막 메시지 고침 · 공용 상태 풀기)는 한 번만 한다 — 끝(done) · 중지 · 오류가 모두 이리로 온다. 중지가 화면을
+      // 먼저 풀면 사용자가 곧바로 다음 발화를 보낼 수 있다 — 늦게 온 옛 스트림의 끝이 새 스트림의 상태(streaming · 중지 대상)를 지우면 안 된다.
+      let settled = false;
+      const settle = (last: (m: Message) => Message) => {
+        if (settled) return;
+        settled = true;
+        patch(cid, botId, last);
+        setStreaming(false);
+        liveRef.current = null;
+        abortRef.current = null;
+        streamConvRef.current = null;
+        stopUiRef.current = null;
+        finishStream();
+      };
+      const cancelled = () =>
+        settle((m) => ({
+          ...m,
+          streaming: false,
+          status: undefined,
+          // 토큰이 이미 조금 왔으면 부분 응답을 그대로 두고, 아니면 취소를 표기.
+          error: m.error ?? (m.text ? undefined : '취소됨'),
+        }));
+      // 중지는 화면을 곧바로 푼다 — 읽기 루프가 멈춰 있으면(숨은 탭 · 멈춘 연결) abort 의 거절이 늦거나 오지 않아 '생각 중' 이
+      // 그대로였다(OT-07). 거절이 나중에 와도 위 settled 가 두 번 하지 않는다.
+      stopUiRef.current = cancelled;
 
       // 심의 페이지 등에서 서버 트리거 프리픽스를 자동 부착 — "첫 발화"에만(이후 발화는
       // 일반 챗으로 흘려 심의 로그 위에서 GLM 이어가기가 되게 한다). 직접 입력했으면 존중.
@@ -832,38 +859,12 @@ export function ChatProvider({
         onSignal: (ev) => {
           if (liveRef.current) noteFrame(liveRef.current, ev, Date.now());
         },
-        onDone: () => {
-          patch(cid, botId, (m) => ({ ...m, streaming: false, status: undefined }));
-          setStreaming(false);
-          liveRef.current = null;
-          abortRef.current = null;
-          streamConvRef.current = null;
-          finishStream();
-        },
+        onDone: () => settle((m) => ({ ...m, streaming: false, status: undefined })),
         });
       })().catch((err) => {
         // AbortError is expected on stop(); surface anything else.
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
-          patch(cid, botId, (m) => ({
-            ...m,
-            error: String(err),
-            streaming: false,
-            status: undefined,
-          }));
-        } else {
-          patch(cid, botId, (m) => ({
-            ...m,
-            streaming: false,
-            status: undefined,
-            // 토큰이 이미 조금 왔으면 부분 응답을 그대로 두고, 아니면 취소를 표기.
-            error: m.error ?? (m.text ? undefined : '취소됨'),
-          }));
-        }
-        setStreaming(false);
-        liveRef.current = null;
-        abortRef.current = null;
-        streamConvRef.current = null;
-        finishStream();
+        if (err instanceof DOMException && err.name === 'AbortError') cancelled();
+        else settle((m) => ({ ...m, error: String(err), streaming: false, status: undefined }));
       });
     },
     [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can, setAttachedImages],
@@ -1052,6 +1053,7 @@ export function ChatProvider({
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
+    stopUiRef.current?.();
   }, []);
 
   const newConversation = useCallback(() => {
@@ -1066,7 +1068,10 @@ export function ChatProvider({
 
   const deleteConversation = useCallback(
     (id: string) => {
-      if (streamConvRef.current === id) abortRef.current?.abort();
+      if (streamConvRef.current === id) {
+        abortRef.current?.abort();
+        stopUiRef.current?.();
+      }
       const sid = conversations.find((c) => c.id === id)?.serverId;
       if (sid) {
         serverMetaRef.current.delete(sid);
