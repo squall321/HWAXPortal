@@ -1,0 +1,45 @@
+{
+  "_doc": "코어 어휘표 — 코어 질문(PLM 과제 · 부품 · 고장모드 · 시험 · 가상검증 · 관리 기준 · 물성)을 정본 허브로 보내는 낱말 · 도구 · 관계의 정본(docs/request-1029 B-1 · 사용자 결정 D-1). 같은 박스의 형제 리포가 이 파일을 읽는다 — 에이전트 서버는 챗 코어 규칙(rule_words · relations · apps 의 noncore)을, 게이트웨이는 도구 검색 동의어(search)와 정본 도구 설명 앞 소개(canonical.tagline)를 만든다. 파일이 없으면 둘 다 지금 동작으로 돈다. 고치면 다음 요청부터 반영된다(바뀐 시각을 본다). 칸의 뜻 — canonical: 정본 허브(게이트웨이 백엔드 키 · 화면 이름 · 소개 한 줄) · rule_words: 이 낱말이 나오면 정본에서 먼저 resolve 한다(모델에게 주는 규칙의 발동 목록) · search: 낱말 → 도구 이름(타입 이름이 아니라 도구 이름에 잇는다 — 도구 이름 · 설명에 없는 타입 이름은 점수가 0 이다. 띄어 쓴 꼴은 붙여 쓴 꼴이 질의에 있으면 조각마다 잇는다. rule_words 보다 좁다 — '메커니즘 규명' · '원인 규명' 같은 심의 업무 낱말을 가로채지 않게 코어 객체를 가리키는 낱말만 둔다) · relations: 자주 묻는 관계 낱말 → 관계 이름 · apps: 앱 역할(sibling 형제 코어 사본 · staging 시험 사본 · noncore 코어 객체를 갖지 않는 앱 — note 는 그 앱이 갖는 것).",
+  "version": 1,
+  "canonical": {
+    "app": "rootdesigndatahub",
+    "label": "자주검증 Datahub(rootdesign)",
+    "tagline": "사내 코어 정본 — 고장모드 · 시험항목 · 가상검증 · 관리 기준 · 해석 방법 · 물성 · PLM 과제"
+  },
+  "rule_words": [
+    "PLM 과제", "개발모델", "프로젝트", "부품", "고장모드", "메커니즘", "원인", "대책", "시험항목", "시험군", "부하",
+    "가상검증", "관리 기준", "해석 방법", "물성"
+  ],
+  "search": [
+    {
+      "words": [
+        "과제", "과제코드", "개발모델", "모델코드", "고장모드", "고장 모드", "실패모드", "실패 모드", "시험항목", "시험 항목", "시험군",
+        "가상검증", "가상 검증", "관리기준", "관리 기준", "기준", "해석 방법", "물성", "영률", "대책",
+        "failure mode", "test item", "virtual validation", "criterion"
+      ],
+      "tools": ["object_resolve", "objects_list", "objects_summary", "graph_neighbors", "object_get"]
+    },
+    {
+      "words": ["전작", "후속"],
+      "tools": ["graph_neighbors"]
+    }
+  ],
+  "relations": [
+    {"phrase": "부품에서 나는 고장", "relation": "occurs_in_part"},
+    {"phrase": "시험이 잡는 고장", "relation": "detects"},
+    {"phrase": "해석이 예측하는 고장", "relation": "predicts"},
+    {"phrase": "기준이 막는 고장", "relation": "guards_against"}
+  ],
+  "apps": {
+    "failuretrace": {"role": "sibling", "label": "FailureTrace"},
+    "caegroupdatahub": {"role": "sibling", "label": "CAE 그룹 Datahub"},
+    "stepforge-prod": {"role": "staging", "label": "StepForge 시험 사본"},
+    "dynaforge-prod": {"role": "staging", "label": "DynaForge 시험 사본"},
+    "reportarchive": {"role": "noncore", "label": "Report Archive"},
+    "matnexus": {"role": "noncore", "label": "MatNexus"},
+    "componentcore": {"role": "noncore", "label": "ComponentCore"},
+    "fmea": {"role": "noncore", "label": "FMEA", "note": "사내 규격 · 사례"},
+    "arp": {"role": "noncore", "label": "ARP", "note": "해석 실측"},
+    "odb-hub": {"role": "noncore", "label": "ODB 허브", "note": "보드 규칙"}
+  }
+}

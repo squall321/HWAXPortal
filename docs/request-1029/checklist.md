@@ -15,9 +15,9 @@
 
 ## 1차(P0)
 
-- [ ] B-1 코어 어휘표 — 포털 `backend/config/core_vocab.yaml` · `/internal/core-vocab`(GW_TOKEN) · 꼴 검사 시험
-- [ ] B-1 게이트웨이 — 받기(정책과 같은 주기) · 내장 기본값 · `/tools-map` 의 `core_vocab` · 시험
-- [ ] B-1 에이전트 — `/tools-map` 에서 받기 · 내장 기본값 · 규칙 글 만들기 · 시험
+- [x] B-1 코어 어휘표 — 포털 `backend/config/core_vocab.json`(C-11 — 형제 리포가 파일로 읽는다) · 꼴 검사 시험 `tests/test_core_vocab.py`
+- [ ] B-1 게이트웨이 — 형제 파일 읽기(바뀐 시각) · 없으면 지금 동작 · `/health` 의 `core_vocab` · 시험이 실제 파일을 읽는다
+- [ ] B-1 에이전트 — 형제 파일 읽기(바뀐 시각) · 없으면 지금 규칙 글 · 규칙 글 만들기 · `/health` 의 `core_vocab` · 시험이 실제 파일을 읽는다
 - [ ] R-1 · R-7 코어 규칙 발동 낱말 넓히기 · '첫 걸음은 정본 resolve 하나'
 - [ ] R-2 규칙 ⑦ 에 FMEA · ARP · ODB 허브
 - [ ] R-8 관계 대응표 한 줄
