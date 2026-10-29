@@ -156,3 +156,59 @@ span.adm-err {
   white-space: nowrap;
   cursor: help;
 }
+
+/* 도구 검색 검토 — 상위 다섯 · 보정 표지 · 정답 달기(docs/request-1029 E-9) */
+.tsr-q {
+  min-width: 14rem;
+}
+.tsr-top {
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: var(--fs-13);
+}
+.tsr-top li {
+  margin: 2px 0;
+}
+.tsr-tag {
+  margin-left: var(--sp-1);
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.tsr-tag.is-boost,
+.tsr-tag.is-miss {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.tsr-tag.is-called {
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.tsr-tag.is-fail {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.tsr-rules {
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+.tsr-editor {
+  display: grid;
+  gap: var(--sp-2);
+  max-width: 48rem;
+  padding: var(--sp-2) 0;
+}
+.tsr-editor fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
