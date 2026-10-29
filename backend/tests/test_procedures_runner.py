@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.procedures.models import ProcedureSpec, Step, schema_fingerprint
+from app.procedures.models import ProcedureSpec, Step, Var, schema_fingerprint
 from app.procedures.runner import ProceduresRunner, RunnerError
 from app.procedures.store import ProceduresStore
 
@@ -786,6 +786,86 @@ def test_승인한_인자_그대로_나간다(kit):
         assert out2["state"] == "done", out2
         sent = [c for c in g.calls if c["arguments"].get("name") == "b_w"]
         assert sent and sent[0]["arguments"]["arguments"] == {"who": "u1@x.io", "n": 1}
+    asyncio.run(go(*kit))
+
+
+# ── 비운 선택 변수(W-102) ─────────────────────────────────────────────────
+def _opt_spec(args, gate=None):
+    st = {"backend": "b", "tool": "w", "args": args, **({"gate": gate} if gate else {})}
+    return ProcedureSpec(title="t", vars=[Var(key="p", label="p", required=False)], steps=[Step(**st)])
+
+
+def test_비운_선택_변수는_도구에_칸_없이_간다(kit):
+    """비운 선택 변수를 쓰는 단계가 '변수 없음' 으로 멈췄다 — 제출 뒤의 후처리 예약이면 제출만 나가고 예약은 안 걸린다."""
+    async def go(store, build):
+        g = Gate(tools={"b_w": {}}, replies={"b_w": ok({"done": 1})})
+        r = build(g)
+        spec = _opt_spec({"p": "{{p}}", "n": 1})
+        rid = _run(store, spec)
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL))["state"] == "done"
+        rid2 = _run(store, spec, inputs={"p": "DEMO"})
+        assert (await r.run(run_id=rid2, spec=spec, principal=PRINCIPAL))["state"] == "done"
+        await r.aclose()
+        assert [c["arguments"]["arguments"] for c in g.calls] == [{"n": 1}, {"p": "DEMO", "n": 1}]
+        assert "p" not in (store.get_run(rid)["inputs"] or {}), "자리표는 원장에 안 남는다"
+    asyncio.run(go(*kit))
+
+
+def test_비운_선택_변수를_문자열_안에_쓰면_그_단계에서_멈춘다(kit):
+    async def go(store, build):
+        g = Gate(tools={"b_w": {}}, replies={"b_w": ok({})})
+        r = build(g)
+        spec = _opt_spec({"title": "과제 {{p}}"})
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "failed" and out["kind"] == "args_missing", out
+        assert g.calls == [], "못 푼 인자로 부르지 않는다"
+        err = store.get_run(rid)["steps"][0]["error"]
+        assert "선택 변수가 비었다: p" in err and "앞 단계가" not in err, "앞 단계 탓이 아니다 — 채우거나 통째 자리로"
+    asyncio.run(go(*kit))
+
+
+def test_비운_선택_변수가_목록_원소면_그_이름을_대고_멈춘다(kit):
+    async def go(store, build):
+        g = Gate(tools={"b_w": {}}, replies={"b_w": ok({})})
+        r = build(g)
+        spec = _opt_spec({"tags": ["{{p}}", "x"]})
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "failed" and out["kind"] == "args_missing", out
+        err = store.get_run(rid)["steps"][0]["error"]
+        assert "선택 변수가 비었다: p" in err and "앞 단계가" not in err
+        assert g.calls == []
+    asyncio.run(go(*kit))
+
+
+def test_비운_선택_변수도_게이트_지문이_재개_뒤에_같다(kit):
+    """자리표는 원장에 없고 실행마다 다시 채운다 — 재개 때 지문이 달라지면 승인이 영영 안 맞는다."""
+    async def go(store, build):
+        g = Gate(tools={"b_w": {}}, replies={"b_w": ok({"done": 1})})
+        r = build(g)
+        spec = _opt_spec({"p": "{{p}}", "who": "{{me.email}}"}, gate="human")
+        rid = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        assert out["state"] == "gated", out
+        store.ack_gate(rid, 0, by="u1", args_sha256=out["args_sha256"])
+        out2 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL, start_at=0)
+        await r.aclose()
+        assert out2["state"] == "done", out2
+        assert g.calls[-1]["arguments"]["arguments"] == {"who": "u1@x.io"}
+    asyncio.run(go(*kit))
+
+
+def test_계획_모드도_빠진_칸으로_보인다(kit):
+    async def go(store, build):
+        r = build(Gate())
+        spec = _opt_spec({"p": "{{p}}", "n": 1})
+        rid = store.create_run(owner_sub="u1", mode="plan", inputs={})
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["calls"][0]["args"] == {"n": 1} and out["calls"][0]["unverified"] is False, out
     asyncio.run(go(*kit))
 
 

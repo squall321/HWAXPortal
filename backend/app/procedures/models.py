@@ -382,6 +382,18 @@ def coerce_inputs(spec: ProcedureSpec, raw: dict) -> dict:
     return out
 
 
+def omit_empty_optionals(spec: ProcedureSpec, scope: dict) -> dict:
+    """비운 선택 변수를 `template.OMIT` 으로 채운다(W-102) — 객체의 통째 자리면 그 칸이 빠진다.
+
+    `coerce_inputs` 가 빈 선택 변수를 범위에서 뺀다. 그대로 두면 그 변수를 쓰는 단계가 '변수 없음' 으로
+    멈춘다 — 앞 단계(제출)가 이미 나간 뒤다. 원장(`inputs`)에는 넣지 않는다 — 실행마다 여기서 다시 채운다.
+    """
+    for v in spec.vars:
+        if not v.required and v.key not in scope:
+            scope[v.key] = template.OMIT
+    return scope
+
+
 def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
     """절차를 저장해도 되는지 본다. 문제를 **전부** 모아 돌려준다(첫 건에서 멈추지 않는다).
 
@@ -394,6 +406,7 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
         errs.append(f"단계가 {len(spec.steps)}개다 — 상한 {max_steps}")
 
     declared = {v.key for v in spec.vars}
+    optional = {v.key for v in spec.vars if not v.required}
     produced: set[str] = set()
 
     for i, st in enumerate(spec.steps, 1):
@@ -451,6 +464,15 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
                 continue
             if name not in declared and name not in produced:
                 errs.append(f"{at}: {{{{{name}}}}} 을 어디서도 안 만든다")
+        # 비운 선택 변수는 객체의 통째 자리에서만 칸이 빠진다(W-102) — 문자열 안 · 목록 원소면 그 단계에서 멈춘다
+        dr_var = template.whole_ref(st.args.get("dry_run"))
+        if dr_var in optional:
+            errs.append(f"warn:{at}: dry_run 이 선택 변수 {{{{{dr_var}}}}} 다 — 비우면 칸이 빠져 도구 기본값(대개 실제 실행)으로 돈다. "
+                        f"미리보기를 바라면 required 로 둔다")
+        for name in template.fixed_refs(st.args):
+            if name in optional:
+                errs.append(f"warn:{at}: 선택 변수 {{{{{name}}}}} 가 문자열 안이나 목록 원소에 있다 — "
+                            f"비우면 이 단계에서 멈춘다(객체의 칸 하나를 통째로 \"{{{{{name}}}}}\" 로 두면 비웠을 때 그 칸이 빠진다)")
 
         # ⑦ 추출 — 토큰을 save 로 넘겨 2단 확인을 우회하지 않는다
         for key, path in (st.save or {}).items():

@@ -22,7 +22,7 @@ import httpx
 from app.procedures import dispatch
 from app.procedures import judge as J
 from app.procedures import template
-from app.procedures.models import MUST_GATE, ProcedureSpec, Step, schema_fingerprint
+from app.procedures.models import MUST_GATE, ProcedureSpec, Step, omit_empty_optionals, schema_fingerprint
 from app.procedures.store import ProceduresStore
 
 logger = logging.getLogger(__name__)
@@ -189,6 +189,8 @@ class ProceduresRunner:
             raise RunnerError(f"실행이 없다: {run_id}")
         mode = run.get("mode") or "plan"
         scope = dict(scope or run.get("inputs") or {})
+        # 비운 선택 변수 — 통째 자리면 그 칸을 빼고 나간다(W-102). 실행마다 다시 채우므로 재개 · 게이트 지문이 같다.
+        omit_empty_optionals(spec, scope)
         # ⚠ **덮어쓴다, 양보하지 않는다.** `setdefault` 면 `inputs` 에 먼저 들어간 값이
         # 이긴다 — 신원은 부르는 사람에게서 나와야 하고 입력이 정할 것이 아니다.
         scope["run_id"] = run_id
@@ -667,9 +669,10 @@ class ProceduresRunner:
         except template.TemplateError as exc:
             self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=st.args,
                                   schema_fp=st.schema_fp, expect=st.expect, mode="live")
-            self.store.finish_step(
-                run_id, ix, ok=False, stage="args",
-                error=f"{exc} — 앞 단계가 그 값을 안 냈다(건너뛰었거나 뽑지 못했다)")
+            # 비운 선택 변수(W-102)는 앞 단계 탓이 아니다 — 저장 검증이 save · select 이름과 변수가 겹치는 것을 막는다
+            why = ("선택 변수를 채워 다시 돌리거나, 절차에서 그 변수를 객체의 칸 하나에 통째로(\"{{변수}}\") 두면 비웠을 때 그 칸이 빠진다"
+                   if isinstance(exc, template.OmitError) else "앞 단계가 그 값을 안 냈다(건너뛰었거나 뽑지 못했다)")
+            self.store.finish_step(run_id, ix, ok=False, stage="args", error=f"{exc} — {why}")
             return None, J.Verdict(False, "args", "args_missing", error=str(exc))
 
     async def _one(self, run_id, ix, st: Step, scope, principal, sess, *, args: dict,

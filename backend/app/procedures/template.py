@@ -23,6 +23,26 @@ class TemplateError(ValueError):
     """치환·추출이 값을 못 찾았거나 표기가 틀렸다."""
 
 
+class OmitError(TemplateError):
+    """비운 선택 변수가 뺄 칸이 없는 자리(문자열 안 · 목록 원소 · 인자 전체)에 있다(W-102) — 앞 단계 탓이 아니다."""
+
+
+class _Omit:
+    """비운 선택 변수의 자리표(W-102). 객체의 **통째 자리**(`{"k": "{{var}}"}`)면 그 칸 `k` 를 뺀다.
+
+    null 을 넣지 않는 까닭 — 스키마가 `type: string` 이면 null 은 거절이다(KooRemapper 실측 422).
+    칸이 없으면 도구는 '안 줬다' 로 읽고 제 기본값을 쓴다. 문자열 안이나 목록 원소에는 뺄 칸이
+    없어 지금처럼 `TemplateError` 로 그 단계에서 멈춘다.
+    """
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<OMIT>"
+
+
+OMIT = _Omit()
+
+
 # 인자 트리 순회 깊이 상한. **여기가 정본이다** — 이 모듈의 순회기를 부르는 쪽이
 # 여럿이라(저장 검증·미사용 변수 계산·실행 시 치환), 호출부마다 재면 하나는 빠진다.
 # 넘으면 `TemplateError` 다 — 그래야 호출부가 '거절' 로 다루지 파이썬 재귀 한계에
@@ -54,7 +74,10 @@ def refs(value):
 
 
 def substitute(value, scope: dict, _depth: int = 0):
-    """인자 트리의 문자열 리프에 `scope` 를 채운다. 없는 변수는 TemplateError."""
+    """인자 트리의 문자열 리프에 `scope` 를 채운다. 없는 변수는 TemplateError.
+
+    `scope` 의 값이 `OMIT`(비운 선택 변수)이면 객체의 그 칸을 뺀다 — 다른 자리면 TemplateError.
+    """
     if _depth > DEPTH_MAX:
         raise TemplateError(f"인자가 너무 깊다({DEPTH_MAX}단 초과)")
     if isinstance(value, str):
@@ -63,21 +86,69 @@ def substitute(value, scope: dict, _depth: int = 0):
             name = whole.group(1)
             if name not in scope:
                 raise TemplateError(f"변수 없음: {name}")
-            return scope[name]  # ← 형 그대로. 숫자·객체·배열이 문자열이 되지 않는다.
+            v = scope[name]
+            if v is OMIT and _depth == 0:
+                raise OmitError(f"선택 변수가 비었다: {name} — 뺄 칸이 없다")
+            return v  # ← 형 그대로. 숫자·객체·배열이 문자열이 되지 않는다. OMIT 은 부른 객체가 칸을 뺀다.
 
         def one(m):
             name = m.group(1)
             if name not in scope:
                 raise TemplateError(f"변수 없음: {name}")
             v = scope[name]
+            if v is OMIT:
+                raise OmitError(f"선택 변수가 비었다: {name} — 문자열 안에 섞인 자리는 뺄 수 없다")
             return v if isinstance(v, str) else _compact(v)
 
         return _INLINE.sub(one, value)
     if isinstance(value, dict):
-        return {k: substitute(v, scope, _depth + 1) for k, v in value.items()}
+        out = {}
+        for k, v in value.items():
+            got = substitute(v, scope, _depth + 1)
+            if got is not OMIT:
+                out[k] = got
+        return out
     if isinstance(value, list):
-        return [substitute(v, scope, _depth + 1) for v in value]
+        out = [substitute(v, scope, _depth + 1) for v in value]
+        # OMIT 은 통째 자리 문자열에서만 나온다(객체는 객체를 돌려준다) — 그 자리의 변수 이름을 댄다
+        names = [whole_ref(src) for src, got in zip(value, out) if got is OMIT]
+        if names:
+            raise OmitError(f"선택 변수가 비었다: {', '.join(names)} — 목록 원소 자리는 뺄 수 없다")
+        return out
     return value  # 숫자·불리언·None 은 그대로
+
+
+def whole_ref(value) -> str | None:
+    """값이 정확히 `"{{var}}"` 하나면 그 변수 이름, 아니면 None."""
+    m = _WHOLE.match(value) if isinstance(value, str) else None
+    return m.group(1) if m else None
+
+
+def fixed_refs(value) -> list[str]:
+    """비면 **뺄 수 없는** 자리의 변수 — 문자열 안에 섞였거나 목록 원소다(`OMIT` 이 갈 칸이 없다).
+
+    저장 검증이 선택 변수를 이 자리에 쓴 절차에 경고를 단다 — 비우면 그 단계에서 멈춘다.
+    """
+    out: list[str] = []
+
+    def walk(v, in_dict: bool, d=0):
+        if d > DEPTH_MAX:
+            raise TemplateError(f"인자가 너무 깊다({DEPTH_MAX}단 초과)")
+        if isinstance(v, str):
+            if in_dict and _WHOLE.match(v):
+                return
+            for m in _INLINE.finditer(v):
+                if m.group(1) not in out:
+                    out.append(m.group(1))
+        elif isinstance(v, dict):
+            for x in v.values():
+                walk(x, True, d + 1)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x, False, d + 1)
+
+    walk(value, False)
+    return out
 
 
 def _compact(v):

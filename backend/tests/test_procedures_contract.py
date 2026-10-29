@@ -51,6 +51,64 @@ def test_refs_collects_in_order():
     assert template.refs({"a": "{{x}}", "b": ["{{y}}", "{{x}}"]}) == ["x", "y"]
 
 
+# ── 비운 선택 변수(W-102) ────────────────────────────────────────────────
+def test_비운_선택_변수는_통째_자리의_칸을_뺀다():
+    """null 을 넣으면 `type: string` 스키마가 거절한다(KooRemapper 실측 422) — 칸이 없으면 도구가 제 기본값을 쓴다."""
+    out = template.substitute({"a": 1, "p": "{{p}}", "nest": {"q": "{{p}}", "r": "{{r}}"}},
+                              {"p": template.OMIT, "r": 2})
+    assert out == {"a": 1, "nest": {"r": 2}}
+
+
+def test_목록_원소인_객체의_칸도_뺀다():
+    assert template.substitute({"l": [{"k": "{{p}}", "v": 1}]}, {"p": template.OMIT}) == {"l": [{"v": 1}]}
+
+
+@pytest.mark.parametrize("args", [{"t": "과제 {{p}}"}, {"l": ["{{p}}"]}, {"l": ["x {{p}}"]}])
+def test_비운_선택_변수는_뺄_칸이_없으면_멈춘다(args):
+    """문자열 안 · 목록 원소에는 뺄 칸이 없다 — `<OMIT>` 글자나 자리 밀린 목록이 나가면 안 된다."""
+    with pytest.raises(template.TemplateError, match="선택 변수가 비었다"):
+        template.substitute(args, {"p": template.OMIT})
+
+
+def test_비운_선택_변수가_인자_전체면_멈춘다():
+    with pytest.raises(template.TemplateError, match="뺄 칸이 없다"):
+        template.substitute("{{p}}", {"p": template.OMIT})
+
+
+def test_목록_원소_자리는_비운_변수_이름을_댄다():
+    with pytest.raises(template.OmitError, match="선택 변수가 비었다: b"):
+        template.substitute({"tags": ["{{a}}", "{{b}}"]}, {"a": "x", "b": template.OMIT})
+
+
+def test_dry_run_을_선택_변수로_두면_저장_때_경고한다():
+    """비우면 칸이 빠져 도구 기본값(append_rows 는 실제 쓰기)으로 돈다 — 미리보기를 바라면 required 로(W-102 검토)."""
+    s = ProcedureSpec.model_validate({
+        "title": "t", "vars": [{"key": "pv", "label": "미리보기", "type": "boolean", "required": False}],
+        "steps": [{"backend": "reportarchive", "tool": "append_rows", "args": {"report_id": 1, "dry_run": "{{pv}}"}}]})
+    assert any(e.startswith("warn:") and "dry_run" in e and "required" in e for e in validate_spec(s))
+
+
+def test_fixed_refs_는_뺄_수_없는_자리만_모은다():
+    args = {"a": "{{w}}", "s": "x {{i}}", "l": ["{{e}}", {"k": "{{d}}"}], "n": {"m": "{{w2}}"}}
+    assert template.fixed_refs(args) == ["i", "e"]
+
+
+def test_선택_변수를_뺄_수_없는_자리에_쓰면_저장_때_경고한다():
+    def spec(args, required=False):
+        return ProcedureSpec.model_validate({
+            "title": "t", "vars": [{"key": "p", "label": "p", "required": required}],
+            "steps": [{"backend": "b", "tool": "x", "args": args}]})
+
+    def opt(args, **kw):
+        return [e for e in validate_spec(spec(args, **kw)) if "선택 변수" in e]
+
+    assert opt({"p": "{{p}}"}) == []
+    w = opt({"t": "과제 {{p}}"})
+    assert len(w) == 1 and w[0].startswith("warn:") and "멈춘다" in w[0]
+    assert opt({"l": ["{{p}}"]})
+    assert opt({"t": "과제 {{p}}"}, required=True) == [], "필수 변수는 비울 수 없으니 경고하지 않는다"
+
+
 # ── 기계장치 ② 추출 ─────────────────────────────────────────────────────
 def test_extract_dot_and_index():
     data = {"ap": {"x": 12.32}, "items": [{"id": "a"}, {"id": "b"}]}
