@@ -787,6 +787,7 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 
 ## 2026-10-29 반영분 — 10-29 웹 챗 온톨로지 QA 후속(2 · 3차 · 4차 일부)
 
+**받기 전에 [request-1029/server-setup.md](request-1029/server-setup.md) 를 읽는다** — 1 ~ 4차 전체의 수정 사항 · 받을 때 주의점 · 확인 · 사람 몫 · 되돌리기를 한 장에 모았다.
 정본은 같은 [request-1029/](request-1029/)(checklist 2 · 3 · 4차, context-notes C-18 ~ C-29)다. 받는 길은 그대로 `git pull && update-all` 이다.
 ⚠ **포털과 에이전트 서버를 같은 판으로 받는다** — 포털의 챗 침묵 한도 900초(`AGENT_CHAT_IDLE_TIMEOUT_S`)는 에이전트 서버가 챗 스트림에도 15초마다 ping 을
 내야 맞다. ping 없는 옛 에이전트 서버에 900초를 걸면 생각 · 비스트리밍 호출이 긴 답이 끊긴다(update-all 은 둘을 함께 올린다).
