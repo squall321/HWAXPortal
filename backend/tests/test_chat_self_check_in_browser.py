@@ -125,7 +125,8 @@ async function turn(browser, check) {
   await page.evaluate((f) => window.__push(f), frame('reasoning', { delta: '생각: 나사 규격을 떠올린다' })
     + frame('reasoning', { delta: '\n\n— 초안(검증 전) —\n' }) + frame('reasoning', { delta: DRAFT })
     + frame('status', { step: '답을 검증하는 중 — 질문 · 근거 · 수치를 대조합니다', tool: null })
-    + frame('reasoning', { delta: '\n\n— 검증 —\n[판정] 고침\n[고친 점]\n- 12.5 는 근거가 없어 추정으로 표시\n[답] — 고친 답은 본문에 냅니다' }));
+    + frame('reasoning', { delta: '\n\n— 검증 —\n[판정] 고침\n[고친 점]\n- 12.5 는 근거가 없어 추정으로 표시\n[바꿀 곳]\n[원문]\n12.5 N·m 입니다.\n'
+      + '[새 글]\n12.5 N·m (근거 없음 — 추정) 입니다.' }));
   await page.waitForFunction(() => (document.querySelector('.msg-reasoning-body') || {}).textContent?.includes('— 검증 —'));
   const mid = await look(page);
   const final = check && check.status === 'suspect' ? DRAFT : check && check.status === 'fixed' ? FIXED : DRAFT;
