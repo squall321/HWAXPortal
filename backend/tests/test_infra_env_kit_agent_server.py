@@ -291,3 +291,25 @@ def test_앞부분_고정_손잡이의_설명은_안내를_사람_발화의_머�
     assert "시스템 칸" not in note, note
     for must in ("사람 발화의 머리", "System message must be at the beginning", "자동 재시도", "첫 시스템 메시지에 합쳐"):
         assert must in note, must
+
+
+# ── 챗 관문 넷 구획(10-30) — 바꾸면 재기동이 필요한지 ───────────────────────────────────────────────────────────────────
+def test_10_30_챗_관문_손잡이는_바꾸면_재기동이라고_적는다():
+    """에이전트 서버의 start.sh 는 .env 를 기동 때 한 번 export 하고 서버는 .env 를 다시 읽지 않는다 — 코드가 손잡이를 턴마다 os.environ 에서
+    읽어도 떠 있는 프로세스의 값은 그대로다. '턴마다 읽는다(재기동 없음)' 을 믿고 CHAT_SELF_CHECK_GATE=0 을 .env 에만 적고 재기동을 건너뛰면
+    관문이 그대로 돈다(10-30 반대 검토)."""
+    block = KIT[KIT.index("# --- 챗 관문 넷(10-30"):]
+    nxt = block.find("\n# --- ", 1)
+    block = block if nxt < 0 else block[:nxt + 1]
+    assert "재기동 없음" not in block and "턴마다 읽는다" not in block, block
+    assert "모두 바꾸면 에이전트 서버를 재기동해야 먹는다" in block
+    knobs = re.findall(r"^# ([A-Z][A-Z0-9_]*)=", block, re.M)
+    assert knobs == ["CHAT_SELF_CHECK_GATE", "CHAT_SELF_CHECK_RAW_CHARS", "CHAT_STATUS_WAIT_MAX_S", "CHAT_STATUS_WAIT_POLL_S",
+                     "CHAT_STATUS_TOOLS", "CHAT_CONFIRM_GATE", "CONFIRM_LISTS_PATH", "CHAT_XHUB_ID_GATE"], knobs
+    if not ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {ENGINE}")
+    # 그 말의 근거 — 에이전트 서버가 .env 를 싣는 곳은 start.sh 하나다(서버 코드는 .env 를 읽지 않는다)
+    start = (ENGINE / "start.sh").read_text(encoding="utf-8")
+    assert "done < .env" in start and 'export "$_k=$_v"' in start, "start.sh 가 .env 를 싣는 꼴이 바뀌었다 — 이 구획의 '재기동' 말을 다시 본다"
+    app = (ENGINE / "app.py").read_text(encoding="utf-8")
+    assert "load_dotenv" not in app and "dotenv_values" not in app, "서버가 .env 를 스스로 읽게 됐다 — 이 구획의 '재기동' 말을 다시 본다"

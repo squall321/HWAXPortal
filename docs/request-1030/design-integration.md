@@ -238,4 +238,5 @@ _turn_sc_raw.set(_sc_raw_box() if box is not None else None)                    
 - DW-02 · DW-03 후속 — 카드가 뜨는 것이 기대값이다(9절 9). 단추를 누른 턴에서 상태 조회가 LLM 왕복 없이 기다리고 진행 줄이 30초 안팎으로 오른다.
 - OT-04 · 08 · 09 · DW-05 — 초안 값이 그대로 나가고 `self_check.gate.counts` 의 drop · demote 수가 는다.
 - OT-07 — 에이전트 로그 `[gate] … 다른 허브` 줄과 `xhub_gate.blocked`.
-- 손잡이 표(C-9) — `CHAT_SELF_CHECK_GATE` 는 재기동 없이, 나머지 넷은 재기동 뒤에 먹는다.
+- 손잡이 표(C-9) — 다섯 모두 에이전트 서버 `.env` 를 바꾸면 재기동 뒤에 먹는다. `CHAT_SELF_CHECK_GATE` 도 그렇다 — 코드는 턴마다 환경을 읽지만
+  start.sh 가 `.env` 를 기동 때 한 번 싣고 서버는 `.env` 를 다시 읽지 않는다(10-30 반대 검토 — 이 줄은 처음에 '재기동 없이' 로 적었다).
