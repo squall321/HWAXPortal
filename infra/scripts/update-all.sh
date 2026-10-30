@@ -397,9 +397,28 @@ _stash_names() {
     || { git stash show --name-only 'stash@{0}' 2>/dev/null; git ls-tree -r --name-only 'stash@{0}^3' 2>/dev/null; }
 }
 
+# cae00 받은 편지함(docs/cae00-inbox) — 이번 git 받기로 새로 들었거나 바뀐 글을 찍는다(사용자 지시 10-31 — 바깥 답이 필요한 물음은 마크다운으로 이
+# 리포에 실어 보내고 cae00 이 읽는다, docs/request-1030 C-20). 알리기만 한다 — 경고 수 · 종료코드에 들지 않는다. 끝 요약이 다시 낼 줄은 INBOX_NOTE 에 둔다.
+# 받기 전 판은 §1 이 재실행에 넘긴 HWAX_UA_HEAD_BEFORE, 없으면 git reset · merge 가 남긴 ORIG_HEAD 다(옛 판의 §1 이 받은 실행 — 이 함수가 처음 드는 판).
+# git 이 그 판을 모르면 '없다' 가 아니라 '가리지 못했다' 로 말한다. 목록은 먼저 받아 두고 센다(파이프로 판정하지 않는다).
+_inbox_notice() {
+  local from list files
+  from="${HWAX_UA_HEAD_BEFORE:-$(git -C "$SELF_REPO" rev-parse -q --verify ORIG_HEAD 2>/dev/null || true)}"
+  INBOX_NOTE=""
+  if [ -z "$from" ] || ! list="$(git -C "$SELF_REPO" diff --name-only --diff-filter=AMR "$from" HEAD -- 'docs/cae00-inbox/*.md' 2>/dev/null)"; then
+    INBOX_NOTE="  · cae00 받은 편지함 — 받기 전 판을 몰라 새로 든 글을 가리지 못했다(docs/cae00-inbox/ 를 직접 본다)"$'\n'
+  elif [ -n "$list" ]; then
+    mapfile -t files <<<"$list"
+    INBOX_NOTE="  → cae00 받은 편지함 — 이번 판(${from:0:7} → $(git -C "$SELF_REPO" rev-parse --short HEAD 2>/dev/null))에 새로 들었거나 바뀐 글 ${#files[@]}개, 읽고 답은 사용자에게(docs/cae00-inbox/README.md)"$'\n'
+    INBOX_NOTE+="$(printf '      %s\n' "${files[@]}")"$'\n'
+  fi
+  printf '%s' "$INBOX_NOTE"
+}
+
 # ── 1) 자기 자신 최신화 — 스크립트가 구버전이면 갱신 후 새 버전으로 재실행(1회 한정) ──
 hr "1) 포털 레포 최신화"
 if [ "${UPDATE_ALL_REEXEC:-0}" != "1" ]; then
+  _ua_before="$(git -C "$SELF_REPO" rev-parse HEAD 2>/dev/null || true)"   # 받기 전 판 — 재실행이 받은 편지함의 새 글을 가린다(_inbox_notice)
   ( cd "$SELF_REPO"
     branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
     git fetch origin "$branch" --quiet 2>/dev/null || echo "  ⚠ git fetch 실패(오프라인?) — 현재 체크아웃으로 진행"
@@ -425,9 +444,11 @@ if [ "${UPDATE_ALL_REEXEC:-0}" != "1" ]; then
     [ "$before" = "$after" ] && echo "  · git: 최신 ($after)" || echo "  · git: $before → $after" )
   # 스크립트 자신이 바뀌었을 수 있으므로 새 버전으로 1회 재실행
   rm -f "$HWAX_SKIP_LEDGER" 2>/dev/null     # 재실행 전의 장부 — 새 판이 자기 것을 만든다(안 지우면 실행마다 하나 남는다)
-  exec env UPDATE_ALL_REEXEC=1 HWAX_UPDATE_ALL_REEXEC_PID=$$ bash "$SELF_REPO/infra/scripts/update-all.sh" "$@"   # PID 결합 — 0b 가 '내 재실행' 을 이것으로 판정한다
+  exec env UPDATE_ALL_REEXEC=1 HWAX_UPDATE_ALL_REEXEC_PID=$$ HWAX_UA_HEAD_BEFORE="$_ua_before" bash "$SELF_REPO/infra/scripts/update-all.sh" "$@"   # PID 결합 — 0b 가 '내 재실행' 을 이것으로 판정한다
 fi
 ok "포털 레포 최신 (재실행 완료)"
+_inbox_notice
+unset HWAX_UA_HEAD_BEFORE    # 이 실행이 띄우는 데몬 · 자식에게 물려주지 않는다(그 환경에서 시작한 다른 실행이 옛 판을 '받기 전' 으로 읽지 않게)
 
 # ── 1a) 이름호출 워크플로 동기화 — 정본(infra/pipeline)을 gitignore 런타임 사본(.claude/workflows)에
 #        맞춘다. pull 로 정본이 바뀌어도 사본은 안 따라오므로(이름호출이 옛 사본을 쓴다) 여기서 덮는다. ──
@@ -3689,6 +3710,8 @@ _hwax_delib_pause_finish   # §4 가 에이전트 서버를 재기동하며 세�
 _hwax_board_resume      # 1b2 의 경보 멈춤 — 5b 가 이미 풀었으면 아무것도 하지 않는다
 hwax_skip_summary
 rm -f "$HWAX_SKIP_LEDGER"
+# 받은 편지함 — §1 뒤에 찍은 새 글을 끝에서 다시 낸다(수백 줄을 거슬러 오르지 않아도 보이게). 경고가 아니라 경고 수 · 종료코드에 들지 않는다.
+[ -z "${INBOX_NOTE:-}" ] || printf '%s' "$INBOX_NOTE"
 # ⚠ 경고 요약 — 종료코드에는 안 들어가지만 실패 목록처럼 끝에 다시 낸다(위로 거슬러 올라가지 않아도 보이게).
 if [ -n "${WARN_ITEMS:-}" ]; then
   printf '  \033[1;33m⚠\033[0m 경고 %s건 — 아래는 종료코드에 들어가지 않는 비치명 항목이다\n' "$(printf '%s' "$WARN_ITEMS" | grep -c '^  · ' || true)"
