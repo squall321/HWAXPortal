@@ -68,3 +68,11 @@ def test_HA32_요청서가_이름을_댄_타입_대응():
     d = _load()
     assert {"고장모드": "failure_mode", "관리 기준": "criterion", "시험항목": "test_item"}.items() <= d["types"].items()
     assert "management_standard" not in d["types"].values()
+
+
+def test_HP56_전작은_발동_낱말이고_맨_후속은_아니다():
+    """10-30 HP-56 — '전작' 은 세 리포에서 코어(앞 모델)로만 쓰이고, 맨 '후속' 은 '후속 심의(이어하기)' · '후속 라운드' · '후속 조치' 같은 심의 ·
+    일반 말이다. 발동 낱말은 모델에게 '이 낱말이 나오면 첫 걸음은 정본 resolve' 라 말하므로 맨 '후속' 은 심의를 가로챈다 — '후속 모델' 로 둔다."""
+    d = _load()
+    assert "전작" in d["rule_words"] and "후속 모델" in d["rule_words"]
+    assert "후속" not in d["rule_words"], "맨 '후속' 은 '후속 심의' 를 가로챈다"
