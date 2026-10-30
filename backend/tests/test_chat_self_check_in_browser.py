@@ -6,6 +6,9 @@
   · 고쳤으면 — 본문은 고친 답, 답 아래에 '검증에서 N곳을 고쳤습니다'(펼치면 고친 점), 모델 표시 옆 배지는 없다.
   · 고칠 것 없음 · 생략 — 답 아래는 비고, 모델 표시 옆에 조용히('검증 ✓' · '검증 생략').
   · 검증 못 함(suspect 등) — 답 아래에 늘 '검증하지 못해 초안을 그대로 보였습니다' + 까닭 + 검토자가 짚은 곳(반영 안 함).
+  · 짚기만 함(flagged, 10-30 HA-27) — '짚었습니다 — 답은 고치지 않았습니다' 와 짚은 곳 · 까닭. 고친 답의 짚은 곳(flags)은 고친 곳 아래 따로,
+    검증 못 한 답은 고친 점과 짚은 곳을 한 목록으로(같은 고침을 두 번 보이지 않는다). 버린 고침(dropped) · 관문 수(gate)는 QA 용이라
+    보이지 않고 브라우저 사본에도 남지 않는다.
   · self_check 가 없는 옛 서버의 답 — 아무것도 더하지 않는다.
 """
 import json
@@ -81,12 +84,22 @@ const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n
 const DRAFT = 'M3 나사의 권장 체결 토크는 12.5 N·m 입니다.';
 const FIXED = 'M3 나사의 권장 체결 토크는 12.5 N·m (근거 없음 — 추정) 입니다.';
 const META = { models: { 'qwen3.8-flash-next': 2 }, chat_model: 'qwen3.8-flash-next', thinking: true, effort: 'xhigh', fallback_to: null };
+const FLAG = '12.5 → 13.0 — 반영 안 함: 새 수치 13.0 은 조회 결과 원문에도 없다';
+const DROP = 'M3 → M4 — 버림: 초안의 수치 3 은 조회 결과 원문에 있다';
+const GATED = '검토자의 고침을 조회 결과 원문과 대조해 답에 넣지 않았다 — 짚은 곳만 보인다';
 const CHECKS = {
   fixed: { status: 'fixed', fixes: ['12.5 는 근거가 없어 추정으로 표시'], ms: 2300 },
   ok: { status: 'ok', ms: 1200 },
   skipped: { status: 'skipped', reason: '근거(조회 · 붙인 문서 · 그림)도 수치도 없는 짧은 답', ms: 0 },
   suspect: { status: 'suspect', reason: '고친 답이 초안의 그림 1개를 잃었다 — 초안을 그대로 냈다', fixes: ['그림 설명을 줄임'], ms: 4100 },
   none: null,
+  // 10-30 HA-27 — 에이전트 서버 _sc_judge_gated 가 내는 꼴(flagged 의 fixes 는 flags 와 같다 · suspect 는 짚음 쌍을 fixes 와 flags 에 함께 싣는다)
+  flagged: { status: 'flagged', fixes: [FLAG], flags: [FLAG], dropped: [DROP], reason: GATED,
+             gate: { applied: 0, demote_unsourced_number: 1, drop_sourced_number: 1, reviewer_flags: 0, reviewer_fixed: true }, ms: 2100 },
+  fixed_flags: { status: 'fixed', fixes: ['12.5 는 근거가 없어 추정으로 표시'], flags: ['토크 단위가 N·m 인지 원문에서 확인 필요'], dropped: [DROP],
+                 gate: { applied: 1, drop_sourced_number: 1, reviewer_flags: 1, reviewer_fixed: true }, ms: 2300 },
+  suspect_gated: { status: 'suspect', reason: '고친 답이 초안보다 지나치게 짧다(120자 → 20자) — 초안을 그대로 냈다',
+                   fixes: ['3 → 4', '7 → 9'], flags: ['토크 단위가 N·m 인지 원문에서 확인 필요', '7 → 9 — 반영 안 함: 새 수치 9 는 조회 결과 원문에도 없다'], ms: 4100 },
 };
 
 async function open(browser) {
@@ -139,9 +152,15 @@ async function turn(browser, check) {
     await page.click('.msg-check > summary');
     opened = await page.evaluate(() => [...document.querySelectorAll('.msg-check li')].map((li) => li.textContent));
   }
+  const stored = await (await page.waitForFunction(() => {
+    const raw = localStorage.getItem('hwax.chat.u1@corp.example.conversations');
+    const ms = raw ? (JSON.parse(raw)[0] || {}).messages || [] : [];
+    const bot = ms[ms.length - 1];
+    return bot && bot.role === 'assistant' && bot.content ? bot.meta || {} : null;
+  })).jsonValue();
   const errors = page.__errors;
   await page.close();
-  return { mid, end, opened, errors };
+  return { mid, end, opened, stored, errors };
 }
 
 (async () => {
@@ -221,3 +240,45 @@ def test_검증_못_함은_답_아래에_늘_까닭과_짚은_곳(seen):
 def test_self_check_가_없는_옛_서버의_답은_그대로(seen):
     end = seen("none")["end"]
     assert end["check"] is None and "검증" not in end["actions"] and DRAFT in end["body"]
+
+
+# ── 10-30 HA-27 — 관문이 짚기만 한 답 · 고친 답의 짚은 곳 · 검증 못 한 답의 한 목록 · 버린 고침은 안 보인다 ─────────────────────────────
+FLAG = "12.5 → 13.0 — 반영 안 함: 새 수치 13.0 은 조회 결과 원문에도 없다"
+DROP = "M3 → M4 — 버림: 초안의 수치 3 은 조회 결과 원문에 있다"
+
+
+def test_짚기만_한_답은_고쳤다고_하지_않고_짚은_곳과_까닭을_보인다(seen):
+    s = seen("flagged")
+    end = s["end"]
+    assert DRAFT in end["body"] and FIXED not in end["body"], "짚기만 했다 — 본문은 초안이다"
+    assert end["check"] == "검증에서 1곳을 짚었습니다 — 답은 고치지 않았습니다 · 2.1초" and end["check_warn"], end
+    assert s["opened"] == [FLAG], "fixes 와 flags 가 같은 줄이다 — 한 번만 보인다"
+    assert "검토자의 고침을 조회 결과 원문과 대조해 답에 넣지 않았다" in end["check_open_text"]
+    assert "검증 ✓" not in end["actions"], "답 아래 칸이 말한다 — 모델 표시 옆 배지는 없다"
+
+
+def test_고친_답의_짚은_곳은_고친_곳_아래에_따로_보인다(seen):
+    s = seen("fixed_flags")
+    end = s["end"]
+    assert FIXED in end["body"] and end["check"] == "검증에서 1곳을 고쳤습니다 · 2.3초" and not end["check_warn"], end
+    assert s["opened"] == ["12.5 는 근거가 없어 추정으로 표시", "토크 단위가 N·m 인지 원문에서 확인 필요"], s["opened"]
+    assert "짚은 곳(반영하지 않음)" in end["check_open_text"]
+
+
+def test_검증_못_한_답은_고친_점과_짚은_곳을_한_번씩만_보인다(seen):
+    """관문 길의 suspect 는 짚음이 된 쌍을 fixes 에 설명으로, flags 에 '… — 반영 안 함: 까닭' 으로 함께 싣는다 — 두 머리 아래 같은 고침이 섰다."""
+    s = seen("suspect_gated")
+    end = s["end"]
+    assert DRAFT in end["body"] and end["check"] == "검증하지 못해 초안을 그대로 보였습니다 · 4.1초"
+    assert s["opened"] == ["3 → 4", "7 → 9 — 반영 안 함: 새 수치 9 는 조회 결과 원문에도 없다", "토크 단위가 N·m 인지 원문에서 확인 필요"], s["opened"]
+    assert end["check_open_text"].count("반영하지 않음") == 1, end["check_open_text"]
+
+
+@pytest.mark.parametrize("name", ["flagged", "fixed_flags"])
+def test_버린_고침과_관문_수는_화면에도_브라우저_사본에도_없다(seen, name):
+    s = seen(name)
+    assert DROP not in s["end"]["check_open_text"] and "버림" not in s["end"]["check_open_text"], "버린 고침은 QA 용이다"
+    sc = s["stored"].get("self_check") or {}
+    assert sc.get("status") == ("flagged" if name == "flagged" else "fixed"), s["stored"]
+    assert "dropped" not in sc and "gate" not in sc, f"브라우저 사본에 QA 칸이 남았다 — {sorted(sc)}"
+    assert sc.get("flags"), "짚은 곳은 사본에 남아 새로고침 뒤에도 보인다"

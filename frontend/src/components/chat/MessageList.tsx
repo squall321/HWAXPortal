@@ -254,22 +254,36 @@ function CheckNote({ check }: { check: SelfCheck }) {
       </details>
     );
   }
+  // 검증 못 함 — 본문이 초안이라 고친 점도 짚은 곳도 반영하지 않았다. 한 목록으로 보인다(같은 고침이 두 머리 아래 두 번 서지 않게).
+  const unapplied = mergeUnapplied(fixes, flags);
   return (
     <details className="msg-check warn">
       <summary>검증하지 못해 초안을 그대로 보였습니다{secs(check)}</summary>
       <p>{check.reason || '까닭을 받지 못했습니다.'}</p>
-      {fixes.length > 0 && (
+      {unapplied.length > 0 && (
         <>
           <p>검토자가 짚은 곳(반영하지 않음)</p>
-          <ul>{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>
+          <ul>{unapplied.map((f, i) => <li key={i}>{f}</li>)}</ul>
         </>
       )}
-      {flags.length > 0 && <FlagList flags={flags} />}
     </details>
   );
 }
 
-/** 짚은 곳(반영하지 않음) — 고친 답 · 검증 못 한 답에도 따로 붙는다(HA-27 flags). */
+/** 고친 점(fixes)과 짚은 곳(flags)을 한 목록으로. 관문이 짚은 쌍은 flags 에 '<고친 점> — 반영 안 함: 까닭' 으로 또 온다(에이전트 서버
+ *  _sc_judge_gated 의 suspect) — 그 고친 점 자리에 까닭이 붙은 줄을 한 번만 두고, 나머지 짚은 곳(검토자의 [짚은 점])은 뒤에 둔다. */
+function mergeUnapplied(fixes: string[], flags: string[]): string[] {
+  const used = new Set<number>();
+  const out = fixes.map((f) => {
+    const j = flags.findIndex((g, k) => !used.has(k) && g.startsWith(f));
+    if (j < 0) return f;
+    used.add(j);
+    return flags[j];
+  });
+  return [...out, ...flags.filter((_, k) => !used.has(k))];
+}
+
+/** 짚은 곳(반영하지 않음) — 고친 답의 고친 곳 아래에 따로 붙는다(HA-27 flags). 검증 못 한 답은 mergeUnapplied 가 고친 점과 한 목록으로 보인다. */
 function FlagList({ flags }: { flags: string[] }) {
   return (
     <>
