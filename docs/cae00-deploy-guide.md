@@ -827,6 +827,19 @@ StepForge 몫(D-647 — `find_plm_task` 프로젝트 별칭 · `sync` 요약)은
   앱마다 30일 동안 안 불린 도구가 나온다. 앱 주인에게 넘긴다(부른 사람 · 주소는 싣지 않는다).
 - **SignalForge SG-04** — [request-1029/signalforge-sg04-question.md](request-1029/signalforge-sg04-question.md) 를 SignalForge 주인에게 넘긴다(P8 · PH8 제품 코드 — 데이터 결정).
 
+## 2026-10-30 반영분 — 분석 루틴(R1 ~ R3 — 절차 탭의 플랫폼 연쇄를 챗 · Claude 가 같은 계약으로)
+
+사람 몫 · 확인의 정본은 [docs/analysis-routines/server-setup.md](analysis-routines/server-setup.md) 다. 요점만 —
+
+- **들어오는 것** — 포털(`/routines-api` · 챗 중계의 루틴 턴 · 화면 '루틴' 알약 · 실행 보기) · 게이트웨이(루틴 도구 여섯 · `/tools-map` 의 `routine_read` · prompts) ·
+  에이전트 서버(`routine.py` · `/health` 의 `routine_active` · `routine_parked` · `routine_max`). 셋 다 update-all 이 재기동한다(에이전트 서버는 도는 심의 · 루틴을 기다린다 —
+  심의 멈춤을 기다리며 쉬는 루틴은 세지 않는다). sqlite 표는 `procedures.sqlite` 안에 저절로 생긴다.
+- **권한** — `feat:routines` 는 기본 부여가 아니다(CAEG 는 전부). 쓸 소속은 `access.local.yaml` 의 그 소속 `grants`, 사람마다면 '내 권한' 요청 → 관리자 승인.
+- **단계는 읽기로 확인된 도구만** — 앱이 readOnlyHint 를 안 단 읽기 도구가 이름 규칙으로 막히면 게이트웨이 리포의 `read_tools.local.json`(gitignore)에 `<백엔드>:<원래 이름>` 을
+  더한다(재기동 없이 읽는다). ⚠ 이 파일은 **새 판을 받은 뒤에** 만든다 — update-all §1 의 stash 는 옛 .gitignore 로 돈다(검색 손잡이 덧씌우기와 같은 주의).
+- **확인** — `curl -s http://127.0.0.1:8723/routines-api/health` → `{"ok": true, "contract": 1}` · `/tools-map` 의 `routine_read` 수 > 0 · 에이전트 `/health` 의
+  `routine_active` 0 · `routine_max` 2. R5 받아들이기(예시 연쇄 한 번 · 잰 값)는 server-setup.md 5절.
+
 ## 2026-10-30 반영분 — 검색 고리(E-7 ~ E-9 — 손잡이 · 덧씌우기 · 굴러가는 기록 · 검토 화면 · 피드백 보고서)
 
 **받기 전에 [request-1029/server-setup.md](request-1029/server-setup.md) 7절을 읽는다.** 기본값은 지금 순위와 바이트까지 같다 — 덧씌우기 파일을 만들기 전에는

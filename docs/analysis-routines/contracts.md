@@ -1,8 +1,8 @@
 # 분석 루틴 — 계약(R0, 10-30)
 
 계획 [PLAN.md](PLAN.md) · 판단 [context-notes.md](context-notes.md). 이 문서는 포털 · 게이트웨이 · 에이전트 서버가 함께 지키는 꼴이다.
-기계가 읽는 정본은 포털 `backend/config/routine_contract.json`(봉투 · 상태 · 도구 입력)이고, 스펙의 정본은 포털 `app/procedures/routines.py` 의
-pydantic 모델이다. 세 리포의 시험이 그 파일을 읽어 맞댄다(코어 어휘표와 같은 형제 파일 방식).
+스펙 · 봉투 · 상태의 정본은 포털 `app/procedures/routines.py` 의 pydantic 모델과 상수다(따로 둔 JSON 계약 파일은 없다 — R2 에서 실물 맞대기로
+바꿨다). 세 리포의 시험이 서로의 실물(원문 · AST · 가짜의 꼴)을 맞댄다. **R3 의 정본 계약은 [R3-design.md](R3-design.md)** 다.
 
 ## 1. 루틴 스펙(RoutineSpec v1)
 
@@ -96,6 +96,14 @@ visibility: private                               # private(기본) | all
 | `POST /runs/{id}/calls` | 호출 한 줄(게이트웨이 `routine_call` 이 쓴다) |
 | `POST /runs/{id}/steps/{step}/done` · `POST /runs/{id}/steps/{step}/pick` | 단계 봉투 · 사람이 고른 후보 |
 | `POST /runs/{id}/report` · `POST /runs/{id}/ra` · `POST /runs/{id}/cancel` | 절 → 렌더(RA 블록) · RA 결과 · 멈춤 |
+| `POST /runs/{id}/resume` | 이어서(R3) — running · interrupted → running, 시간 상한에 닿았으면 마감을 '지금 + minutes'. waiting · 끝난 실행은 409 |
+| `GET /runs/{id}/report` | 보고서 다시 읽기(R3) — `{run_id, state, report_ready, report_md, ra_upload, ra_report_id, ra_error}` |
+
+R3 에서 더한 칸(정본 [R3-design.md](R3-design.md) 3.5 · 8) — `GET /routines` 의 변수 `required` · 계획(`/routines/{id}/plan` · 실행)의 단계 `label` · `dropped_write`
+(쓰기로 분류돼 뺀 도구 `백엔드:원래 이름`) · 계획 `write_class`(`gateway` = 게이트웨이 `/tools-map` 의 `write` 를 따랐다 · `name` = 옛 게이트웨이라 이름 규칙만) ·
+실행 보기의 단계 `findings` · `run.limit_kind`(`time` · `calls` · null — 둘 다 닿았으면 calls) · 할 일의 `{{run.started}}`(KST) · 끝난 실행의 `POST /report` 는 저장본
+(`ra_report_id` · `ra_error` · `ra_upload` 포함). 실행 쓰기 길(`POST /runs` · `/resume` · `/calls` · `/steps/*/done` · `/pick` · `/report` · `/ra` · `/cancel`)은 읽기 전용
+PAT 를 403 으로 거절한다.
 
 ## 4. 게이트웨이 MCP 도구(로컬 — 호출자 PAT 를 포털로 넘긴다)
 
@@ -111,11 +119,14 @@ visibility: private                               # private(기본) | all
 - 포털이 `/routines-api/health` 에 답하지 않으면 도구는 '포털이 이 판보다 낡았다' 를 낸다('루틴 없음' 이 아니다).
 - 읽기 전용 PAT 는 `routine_list` · `routine_get` 만 — 실행은 원장을 쓰므로 막는다.
 
-## 5. 챗(Qwen)
+## 5. 챗(Qwen) — R3(10-30, 정본 [R3-design.md](R3-design.md))
 
-- 요청 칸 `routine = {id, version?, inputs, run_id?}` — 포털 · 에이전트 서버 두 곳에 선언한다(안 하면 조용히 버려진다). 포털 중계가 실행을 만들고 계획을 붙여 넘긴다.
-- SSE 이벤트 `routine` 하나 — `{kind: plan | step | step_done | gate | report | done, run_id, step?, status?, title?, detail?}`. `token` 은 최종 보고서만.
-- 에이전트 서버는 단계마다 그 백엔드 도구만 묶고(안내대 도구 없음) 도구 호출을 `routine_call` 로 감싼다 — 울타리와 원장이 Claude 길과 같다.
+- 요청 칸 `routine = {id, version?, inputs}`(새 실행) 또는 `{run_id}`(이어서 · 다시 붙기) — 포털 · 에이전트 서버 두 곳에 선언한다(안 하면 조용히 버려진다).
+- **실행은 에이전트 서버의 실행기가 게이트웨이 `routine_run_start` 로 만든다**(conversation_id 를 실어) — 처음 계약의 '포털 중계가 만든다' 를 뒤집었다(R3-D1:
+  두 실행자가 같은 도구 · 같은 계약을 타고, 중계는 얇게 둔다). 중계는 `feat:routines` · 챗 PAT · 긴 idle · 브라우저가 떠나도 끝까지 읽기 · `meta.routine` 만 맡는다.
+- SSE 이벤트 `routine` 하나 — `{kind: plan | step | step_done | gate | report | done, run_id, …}`(칸은 R3-design 3.2). `token` 은 최종 보고서만, 단계 글은 '생각' 칸(`reasoning`).
+- 에이전트 서버는 단계마다 그 단계 허용 도구만 묶고(안내대 도구 없음) 도구 호출을 `routine_call` 로 감싼다 — 울타리와 원장이 Claude 길과 같다. 루틴 도구는 MCP 원 세션으로
+  부른다(일반 로더는 루틴 도구를 거른다 — R2 의 일반 챗 거부 그대로).
 
 ## 6. 보고서
 
@@ -134,3 +145,14 @@ visibility: private                               # private(기본) | all
   시험이 엔진 원문 글에서 함수를 떼어 맞댄다). 경고 — 루틴에 없는 절 · 원장에 없는 인용 · 근거 없는 수치 문단.
 - 읽기 전용 PAT 는 `routine_list` · `routine_get` 만(게이트웨이 `_readonly_denial` — 루틴 도구는 경로에 없는 로컬 도구라 따로 막는다).
 - 일반 챗(에이전트 서버 ReAct)은 루틴 도구 여섯을 묶지도 `invoke_tool` 로 부르지도 않는다 — 루틴은 사람이 골라 켜는 것이다(R3 의 루틴 모드는 코드가 부른다).
+
+## 8. R3 에서 바뀐 것(10-30, 정본 [R3-design.md](R3-design.md) 3.4 · 3.5)
+
+- 게이트웨이 — `routine_run_start` 에 `conversation_id` · `run_id`(이어서 — 포털 `/runs/{id}/resume`). `routine_call` 은 **읽기로 확인된 도구만** 부른다(게이트웨이 `_routine_read` — 막는 목록 → readOnlyHint ·
+  destructiveHint → 읽기 목록(`read_tools.json` ∪ 박스 `read_tools.local.json`) → 읽기 낱말이 있고 쓰기 동사가 없는 이름, 모르면 막는다. 심의 단계의 심의 도구 셋만 예외 —
+  `deliberate_start` 인자는 다듬는다: tools · apps 를 빼고 save_report · wiki 는 거짓). 시간 상한 · 단계 예산에 닿아도 `deliberate_result` 는 부른다(이미 시작한 심의의
+  결과 읽기). `/tools-map` 에 `write` · `routine_read` 목록. `routine_run_start(run_id, cancel=true)` 로 실행을 멈춘다(그 실행이 시작한 심의도 접는다). 5xx 는 '포털 오류(HTTP n)'(낡은 포털로 오독하지 않는다).
+  MCP prompts `routine-<루틴 id>` · 지침 12번.
+- 포털 — `POST /runs/{id}/resume` · `GET /runs/{id}/report` · 실행 보기에 단계 `findings` · `run.limit_kind` · `{{run.started}}` · 끝난 실행의 `POST /report` 는 저장본(RA `ask`
+  다시 올리기 — R2 에선 늘 409 였다) · 보고서는 실행이 묶인 판의 스펙으로 · 호출 원장 쓰기는 한 트랜잭션 · 계획의 쓰기 분류는 게이트웨이 `write` 를 따른다(R2 의
+  `is_write_tool` 은 `create_document` · `run_operation` · `recipe_run` 같은 쓰기를 통과시켰다) · 읽기 전용 PAT 는 실행 쓰기 길에서 403.
