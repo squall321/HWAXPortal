@@ -81,13 +81,40 @@
         "도구 목록에 없는 기능을 있는 것처럼 말하지 않는다. 이 앱 도구가 안 보이면 연결 문제라고 말한다."
       ],
       "tool_map": true,
-      "todo": "cae00 에서 실제 도구를 보고 작업 순서·함정·key_tools 를 보강한다.",
+      "todo": "cae00 /tools-map 으로 입구 도구 이름을 확인해 맞는 것을 key_tools 필수 칸으로 옮기고(노출 꼴대로 — 겹치면 접두 · 아니면 맨 이름, 에이전트는 입구 도구를 노출 이름으로 찾아 먼저 묶는다), 작업 순서 · 함정을 cae00 실주행(DW-02 다시 보기 — HA-28 · HA-29 뒤)으로 보강한다. 보탤 함정 후보는 09-16 odb-hub 레퍼런스(docs/procedures/fixtures/odb-hub/reference.md)의 셋이다 — run_* 은 task_id 만 주고 get_task 의 status 가 error 일 때만 실패다 · get_violation_map 의 빈 배열은 '위반 없음' 과 똑같이 생겼다(list_results 로 체크리스트를 돌렸는지 먼저 본다) · 실패가 예외가 아니라 200 응답의 error 칸으로 온다. 10-31 — 운영자를 둔다(OB-26 사용자 결정). 쓰기 목록은 10-30 cae00 /tools-map 대조로 채웠다. 입구 도구 다섯은 그 도구가 게이트웨이에 있을 때만 잇는다(optional · needs_tool) — get_task(10-30 DW-02) · find_job · list_jobs(10-29 QA OT-11, list_jobs 는 cae00 에서 접두로 나온다) · list_results · get_checklist_result(09-16 레퍼런스 — cae00 게이트웨이로는 아직 못 봤다). 선택 칸의 이름은 접두 별칭(odbhub_<이름>)이다 — 맨 이름으로 나오든 접두로 나오든 부를 수 있어, 이름이 틀리면 동기화가 멈추지 않고 미리보기에 '· 일부' 로 찍히고 다른 앱과 겹쳐 접두로만 나와도 멈추지 않는다.",
       "key_tools": [],
       "writes": ["run_checklist", "run_analysis", "run_compare", "run_curvature", "create_modified_odb", "import_modified_odb"],
       "confirm": [],
       "samples": [
         "이 보드 ODB++ 설계 체크리스트 점검 결과 보여줘",
         "ECAD 허브에 올라온 설계 목록 알려줘"
+      ],
+      "optional": [
+        {
+          "app": "odb-hub",
+          "needs_tool": "find_job",
+          "key_tools": ["odbhub_find_job"]
+        },
+        {
+          "app": "odb-hub",
+          "needs_tool": "list_jobs",
+          "key_tools": ["odbhub_list_jobs"]
+        },
+        {
+          "app": "odb-hub",
+          "needs_tool": "list_results",
+          "key_tools": ["odbhub_list_results"]
+        },
+        {
+          "app": "odb-hub",
+          "needs_tool": "get_checklist_result",
+          "key_tools": ["odbhub_get_checklist_result"]
+        },
+        {
+          "app": "odb-hub",
+          "needs_tool": "get_task",
+          "key_tools": ["odbhub_get_task"]
+        }
       ]
     },
     {

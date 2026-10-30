@@ -580,7 +580,7 @@ def test_HP53_잡_쓰기_도구가_writes_confirm_에_있다():
     assert "recipe_run" not in by_key["he-sim-dynaforge"]["writes"]
     # 코어 허브 도구는 허브 셋이 같은 이름을 낸다 — 정본 허브 접두로 적는다(key_tools 와 같은 까닭)
     assert not [n for fld in _TOOL_FIELDS for n in by_key["he-data-coreontology"][fld] if not n.startswith("rootdesigndatahub_")]
-    # ODB 운영자의 할 일 · 입구 도구는 OB-26(운영자를 둘지) 뒤다 — 목록만 지금 채운다(docs/request-1030 context-notes C-5)
+    # ODB 운영자는 둔다(10-31 OB-26 사용자 결정) — 입구 도구는 cae00 에서만 보이는 이름이라 필수 칸은 비우고 선택 칸(needs_tool)에 둔다(아래 OB-26 시험)
     assert by_key["he-cad-odbhub"]["key_tools"] == [] and by_key["he-cad-odbhub"].get("todo")
 
 
@@ -637,6 +637,47 @@ def test_HP53_채운_이름은_cae00_꼴_게이트웨이에서_멈추지_않는�
             rows, skipped, errors = sync.plan(one, {"map": m, "areas": {}, "area_meta": [], "apps": [{"app": app, "label": app}]})
             assert not errors and not skipped and len(rows) == 1, (key, errors, skipped)
             assert len(rows[0]["system_prompt"]) <= sync.PROMPT_MAX
+
+
+# ── OB-26(10-31 사용자 결정 — ODB 허브 운영자를 둔다) ────────────────────────────────────────────────────────────────────────
+# 입구 도구 이름은 cae00 에서만 볼 수 있다(dev 게이트웨이에 odb-hub 가 없다). 필수 칸(key_tools)의 이름 하나가 그 박스 게이트웨이에 없으면 동기화가
+# 운영자 전부를 멈추므로(K8-1 · C-8 과 같은 까닭) 선택 칸(needs_tool)에 하나씩 둔다 — 있을 때만 잇고 없으면 '· 일부' 로 알린다. 이름은 접두 별칭
+# (odbhub_<이름>)이다. needs_tool 은 맨 이름 노출과 접두 노출을 둘 다 받으므로, 맨 이름을 적으면 접두로만 나온 박스(다른 앱과 겹치는 박스 —
+# list_jobs 는 cae00 에서 이미 odbhub_list_jobs 다, 10-29 QA OT-11)에서 '이 앱에 없는 도구' 로 멈춘다.
+def _odb_map(reads: tuple[str, ...], *, prefixed: bool = False) -> dict:
+    p = _one("he-cad-odbhub")["personas"][0]
+    names = set(p["writes"]) | {f"odbhub_{n}" if prefixed else n for n in reads}
+    return {"map": dict.fromkeys(names, "odb-hub"), "areas": {}, "area_meta": [],
+            "apps": [{"app": "odb-hub", "label": "ECAD Automation Hub"}]}
+
+
+def test_OB26_ODB_운영자는_입구_도구를_게이트웨이에_있을_때만_잇는다():
+    sync = _sync()
+    one = _one("he-cad-odbhub")
+    opt = one["personas"][0].get("optional") or []
+    needs = tuple(o.get("needs_tool") for o in opt)
+    assert {o["app"] for o in opt} == {"odb-hub"} and all(needs), "같은 앱 안의 도구 — needs_tool 로 하나씩 묶는다(이름 하나가 틀려도 나머지는 잇는다)"
+    assert "get_task" in needs, "DW-02(10-30) — run_checklist 를 건 뒤 get_task 로 끝을 본다"
+    assert [o["key_tools"] for o in opt] == [[f"odbhub_{n}"] for n in needs], "입구 도구는 접두 별칭으로 적는다"
+    assert not any(o.get(f) for o in opt for f in ("writes", "confirm")), "쓰기 · 확인 목록은 필수 칸 그대로다(HP-53)"
+    every = [f"odbhub_{n}" for n in needs]
+    for reads, prefixed, want in ((needs, False, every),                   # cae00 꼴 — 맨 이름으로 나온다
+                                  (needs, True, every),                    # 다른 앱과 겹쳐 접두로만 나온다
+                                  (("get_task",), False, ["odbhub_get_task"]),
+                                  ((), False, [])):                        # 이름이 다 다르다 — 그래도 운영자는 만든다
+        notes: list[str] = []
+        rows, skipped, errors = sync.plan(one, _odb_map(reads, prefixed=prefixed), notes)
+        assert not errors and not skipped and len(rows) == 1, (reads, prefixed, errors, skipped)
+        rc = rows[0]["response_config"]
+        assert rc["key_tools"] == want and rc["mcp_apps"] == ["odb-hub"], (reads, prefixed, rc)
+        gone = [f"odb-hub 의 {n}" for n in needs if n not in reads]
+        assert notes == ([f"he-cad-odbhub: {', '.join(gone)} 없이 만든다(선택 앱)"] if gone else []), notes
+    # 맨 이름으로 적은 사본은 접두로만 나온 박스에서 멈춘다 — 그래서 별칭이다
+    bare = json.loads(json.dumps(one))
+    for o in bare["personas"][0]["optional"]:
+        o["key_tools"] = [o["needs_tool"]]
+    _rows, _skipped, errors = sync.plan(bare, _odb_map(needs, prefixed=True))
+    assert errors and "key_tools" in errors[0], errors
 
 
 def _write_map(persona_key: str, extra_write: set[str], read_ok: set[str], exposed: dict[str, str] | None = None) -> dict:
