@@ -73,3 +73,10 @@
 
 - KooRemapper 사용자 결정은 레시피 등록을 'LLM 자동 + 자동 관문' 그대로 두는 것이다(10-26 결정 유지, 10-30 답). 사용자는 게이트웨이에 바로 붙은 MCP 손님이 확인 카드를 지나지 않는다는 것을 듣고 정했다.
 - 그래서 포털 HP-53 의 DynaForge 운영자 confirm 에 든 `recipe_register` 는 그대로 둔다. 웹 챗(HA-29 확인 카드)에서는 사람이 한 번 누르고, 개인 Claude 같은 MCP 직결은 KooRemapper 의 자동 관문에 기댄다. 두 결정은 서로 다른 출구를 다룬다.
+
+## C-13 높음 넷 합치기 — 블랙박스 맞대기에서 정한 것 둘(10-31)
+
+- 설계서만 읽고 쓴 블랙박스 시험 넷(HA-30 45 · HA-28 193 · HA-29 98 · HA-27 63)을 합친 가지에 올렸다. 어긋난 것은 둘이고, 둘 다 시험의 가정이 플랫폼의 답을 몰랐던 것이다.
+- **숫자 status 는 도구 오류다.** `{"status": 404, "state": "running"}` 를 '도는 중' 으로 읽게 한 가정을 버렸다 — DocForge 답(숫자 status 면 잡 상태가 아니라 오류로 보고 기다리기를 끝낸다).
+- **StepForge 잡의 작업량은 잡 꼴로 묻는다.** `run_job(project_id, kind, params)` 의 작업량은 `estimate_cost(project_id, job=kind, args=params)` 다 — 맨 위 `tool` 은 잡이 아닌 한 도구 호출용이다(StepForge 답 · `estimate_cost` 시그니처).
+- 카드의 작업량 줄은 StepForge `work_outlook`(ST-12 `b2c70f1`)을 먼저 본다 — `model_s` 는 '모형 값' 이지 예상 시간이 아니다(하한도 상한도 아니다), 근거는 같은 인자로 끝난 잡의 `seen_s`.
