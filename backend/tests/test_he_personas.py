@@ -80,6 +80,13 @@ FAKE_MAP = {
         "activate_model": "heax-thermal_shock_mcp",
         "arp_search": "arp",
         "arp_get": "arp",
+        # ARP 운영자가 정본에 적은 도구(docs/request-1030 HP-53) — 조회 둘은 cae00 챗이 부른 이름, 올리기 넷은 10-30 cae00 /tools-map
+        "search_data": "arp",
+        "compare_items": "arp",
+        "arp_upload_create": "arp",
+        "arp_upload_stage": "arp",
+        "arp_upload_register": "arp",
+        "arp_upload_discard": "arp",
     },
     "areas": {"predict_sed": "calc", "arp_search": "knowledge"},
     "area_meta": [
@@ -511,7 +518,10 @@ def test_MX_백서_운영자는_위키가_꺼진_박스에서도_멈추지_않�
 def _onto_map(hubs: tuple[str, ...]) -> dict:
     """cae00 꼴 — 허브 셋이 같은 도구 이름을 내놓아 게이트웨이가 모두 접두로 낸다(HWAXAgentServer _ONTO_CORE 의 노출 이름)."""
     core = {"rootdesigndatahub": ("object_resolve", "objects_resolve_many", "objects_list", "objects_summary", "object_get",
-                                  "object_fields", "graph_neighbors", "search"),
+                                  "object_fields", "graph_neighbors", "search",
+                                  # 쓰기 · 잡(10-30 cae00 /tools-map — docs/request-1030 HP-53)
+                                  "object_create", "object_update", "objects_delete", "object_merge", "datasource_sync",
+                                  "bundle_import", "job_apply"),
             "failuretrace": ("object_resolve", "objects_list", "objects_summary", "graph_neighbors"),
             "caegroupdatahub": ("object_resolve", "objects_list", "objects_summary")}
     return {"map": {f"{h}_{t}": h for h in hubs for t in core[h]}, "areas": {}, "area_meta": [],
@@ -537,3 +547,124 @@ def test_HP20_코어_온톨로지_운영자는_정본_허브를_몰고_붙은_�
     assert any("failuretrace" in n and "caegroupdatahub" in n for n in notes), notes
     _rows, skipped, errors = sync.plan(one, _onto_map(("failuretrace",)))
     assert not errors and skipped, "정본 허브가 없으면 건너뛴다(dev)"
+
+
+# ── HP-53(docs/request-1030) — 운영자 정의의 writes · confirm 을 채운다 ─────────────────────────────────────────────
+# 10-30 cae00 /tools-map 과 대조한 목록 밖 도구다. 잡 · 쓰기는 writes(요청했을 때만 부른다), 지우기 · 권한 · 되돌리기 어려운 것은
+# confirm(무엇이 바뀌는지 말하고 확인 뒤). 에이전트서버의 확인 관문(HA-29)이 이 두 목록을 읽는다 — 빠지면 확인 없이 불린다(DW-03).
+_HP53 = {
+    "he-cad-odbhub": ({"run_checklist", "run_analysis", "run_compare", "run_curvature", "create_modified_odb",
+                       "import_modified_odb"}, set()),
+    "he-data-arp": ({"arp_upload_create", "arp_upload_stage"}, {"arp_upload_register", "arp_upload_discard"}),
+    "he-data-coreontology": ({"rootdesigndatahub_object_create", "rootdesigndatahub_object_update"},
+                             {"rootdesigndatahub_objects_delete", "rootdesigndatahub_object_merge",
+                              "rootdesigndatahub_datasource_sync", "rootdesigndatahub_bundle_import",
+                              "rootdesigndatahub_job_apply"}),
+    "he-expert-risk": ({"risk_start_job", "risk_create_project", "risk_create_diff"}, set()),
+    "he-cad-stepforge": ({"run_recipe", "save_recipe", "set_revision"}, {"set_admin"}),
+    "he-sim-dynaforge": ({"recipe_propose", "heaxkooremapper_mcp_recipe_run"}, {"recipe_register"}),
+}
+
+
+def test_HP53_잡_쓰기_도구가_writes_confirm_에_있다():
+    by_key = {p["key"]: p for p in _load()["personas"]}
+    for key, (writes, confirm) in _HP53.items():
+        p = by_key[key]
+        assert writes <= set(p["writes"]), (key, sorted(writes - set(p["writes"])))
+        assert confirm <= set(p["confirm"]), (key, sorted(confirm - set(p["confirm"])))
+    # recipe_run 은 smart-twin-mcp 와 이름이 겹친다(dev /tools-map 이 양쪽 다 접두로 낸다) — 맨 이름은 그 박스에서 없는 도구다
+    assert "recipe_run" not in by_key["he-sim-dynaforge"]["writes"]
+    # 코어 허브 도구는 허브 셋이 같은 이름을 낸다 — 정본 허브 접두로 적는다(key_tools 와 같은 까닭)
+    assert not [n for fld in _TOOL_FIELDS for n in by_key["he-data-coreontology"][fld] if not n.startswith("rootdesigndatahub_")]
+    # ODB 운영자의 할 일 · 입구 도구는 OB-26(운영자를 둘지) 뒤다 — 목록만 지금 채운다(docs/request-1030 context-notes C-5)
+    assert by_key["he-cad-odbhub"]["key_tools"] == [] and by_key["he-cad-odbhub"].get("todo")
+
+
+def test_HP53_ARP_운영자는_낙하_높이를_cm_로_읽는다():
+    """ARP 의 낙하 높이 칸에는 단위가 없어 챗이 152 를 mm 로 읽었다(DW-06 · OT-08). ARP 가 단위를 싣기(AR-9) 전까지 함정 줄로 메운다."""
+    one = _one("he-data-arp")
+    p = one["personas"][0]
+    line = next((s for s in p["pitfalls"] if s.startswith("낙하 높이 칸은 단위가 없다 — 시험 조건은 cm")), None)
+    assert line is not None, p["pitfalls"]
+    assert p["key_tools"], "ARP 운영자의 입구 도구가 비었다"
+    rows, skipped, errors = _sync().plan(one, FAKE_MAP)
+    assert not errors and not skipped, (errors, skipped)
+    prompt = rows[0]["system_prompt"]
+    assert line in prompt
+    state = prompt.split("## 상태를 바꾸는 도구", 1)[1]
+    assert "arp_upload_create" in state.split("되돌리기 어렵다", 1)[0], "올리기 준비는 요청했을 때만"
+    assert "arp_upload_register" in state.split("되돌리기 어렵다", 1)[1], "등록은 공유 저장소로 나간다 — 확인 뒤"
+
+
+def test_HP53_채운_이름은_cae00_꼴_게이트웨이에서_멈추지_않는다():
+    """dev 에는 odb-hub · arp · 코어 허브가 없다. 오류가 하나라도 있으면 cae00 동기화는 아무도 안 올린다 — 정본 이름이 cae00 꼴 표에서
+    통과하는지 본다. 접두로 적은 운영자(ARP · 코어)는 원래 이름으로 낸 표와 접두로 낸 표(겹치는 상대가 붙은 박스) 둘 다 통과해야 한다."""
+    sync = _sync()
+    for key in ("he-cad-odbhub", "he-data-arp", "he-data-coreontology"):
+        one = _one(key)
+        p = one["personas"][0]
+        app = p["apps"][0]
+        pre = app.replace("-", "") + "_"
+        names = {n for fld in _TOOL_FIELDS for n in p[fld]}
+        maps = [{_native(n, p["apps"]): app for n in names}]
+        if all(n.startswith(pre) for n in names):
+            maps.append({pre + _native(n, p["apps"]): app for n in names})
+        for m in maps:
+            rows, skipped, errors = sync.plan(one, {"map": m, "areas": {}, "area_meta": [], "apps": [{"app": app, "label": app}]})
+            assert not errors and not skipped and len(rows) == 1, (key, errors, skipped)
+            assert len(rows[0]["system_prompt"]) <= sync.PROMPT_MAX
+
+
+def _write_map(persona_key: str, extra_write: set[str], read_ok: set[str], exposed: dict[str, str] | None = None) -> dict:
+    """그 운영자가 적은 이름(원래 이름으로 낸 꼴) + 더한 도구 — write 칸에는 정본의 writes · confirm 과 extra_write 를 싣는다."""
+    p = _one(persona_key)["personas"][0]
+    app = p["apps"][0]
+    names = {_native(n, p["apps"]) for fld in _TOOL_FIELDS for n in p[fld]} | extra_write | read_ok
+    m = {**dict.fromkeys(names, app), **(exposed or {})}
+    listed = {_native(n, p["apps"]) for n in [*p["writes"], *p["confirm"]]} | extra_write | read_ok
+    return {"map": m, "areas": {}, "area_meta": [], "apps": [{"app": app, "label": app}],
+            "write": sorted(n for n in m if _native(n, p["apps"]) in listed), "routine_read": sorted(read_ok)}
+
+
+def test_HP53_미리보기는_목록_밖_쓰기_도구를_알리고_막지_않는다():
+    sync = _sync()
+    one = _one("he-calc-thermalshock")
+    warns: list[str] = []
+    # recompute_cache — 쓰기 꼴인데 두 목록 어디에도 없다 · get_record_view — 이름은 쓰기 꼴(record)이지만 읽기로 확인된 것
+    rows, skipped, errors = sync.plan(one, _write_map("he-calc-thermalshock", {"recompute_cache"}, {"get_record_view"}), None, warns)
+    assert rows and not errors and not skipped, "알리기만 한다 — 오류로 세면 동기화가 통째로 멈춘다"
+    assert warns == ["목록 밖 쓰기 he-calc-thermalshock: 1개 — recompute_cache(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)"], warns
+    # 다 적혀 있으면 조용하다 · warns 를 안 주면(옛 호출) 지금과 같다
+    warns = []
+    sync.plan(one, _write_map("he-calc-thermalshock", set(), set()), None, warns)
+    assert warns == []
+    assert sync.plan(one, _write_map("he-calc-thermalshock", {"recompute_cache"}, set()))[2] == []
+
+
+def test_HP53_목록_밖_쓰기는_접두_별칭으로_적은_이름도_적힌_것으로_센다():
+    """정본은 겹치는 도구를 접두 별칭(heaxkooremapper_mcp_recipe_run)으로 적는다 — 겹치는 상대가 없는 박스는 맨 이름(recipe_run)으로 낸다.
+    노출 이름과만 견주면 적어 둔 도구를 '목록 밖' 이라 거짓으로 알린다."""
+    sync = _sync()
+    one = _one("he-sim-dynaforge")
+    warns: list[str] = []
+    rows, _s, errors = sync.plan(one, _write_map("he-sim-dynaforge", set(), set()), None, warns)
+    assert rows and not errors and warns == [], warns
+    # 겹치는 박스(smart-twin-mcp 가 붙은 dev) — 양쪽 다 접두로 낸다
+    tm = _write_map("he-sim-dynaforge", set(), set())
+    tm["map"].pop("recipe_run")
+    tm["map"]["heaxkooremapper_mcp_recipe_run"] = "heax-kooremapper_mcp"
+    tm["write"] = sorted({*tm["write"], "heaxkooremapper_mcp_recipe_run"} - {"recipe_run"})
+    warns = []
+    rows, _s, errors = sync.plan(one, tm, None, warns)
+    assert rows and not errors and warns == [], warns
+
+
+def test_HP53_write_칸이_없는_옛_게이트웨이면_건너뛰었다고_한_줄_남긴다():
+    sync = _sync()
+    tm = _write_map("he-calc-thermalshock", {"recompute_cache"}, set())
+    del tm["write"]
+    warns: list[str] = []
+    rows, _s, errors = sync.plan(_one("he-calc-thermalshock"), tm, None, warns)
+    assert rows and not errors
+    assert warns == ["목록 밖 쓰기 점검 건너뜀 — 이 게이트웨이 /tools-map 에 write 칸이 없다(옛 판)"], warns
+

@@ -17,6 +17,9 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 그 박스 게이트웨이에 붙은 앱으로 만들어진다. 선택 앱(페르소나의 optional)은 다르다 — 붙어 있으면 그 칸을 정본 뒤에 잇고,
 없으면 빼고 만든다(건너뛰지 않는다. 미리보기에 '· 일부' 로 찍는다).
 
+막지 않고 알리기만 하는 것이 하나 더 있다(docs/request-1030). 운영자 앱의 쓰기 꼴 도구(/tools-map 의 write) 가운데 writes · confirm
+어디에도 없는 것은 '· 목록 밖 쓰기' 로 찍는다(HP-53).
+
   GATEWAY_HTTP_BASE  기본 http://127.0.0.1:9110
   AIDH_HTTP_BASE     기본 http://127.0.0.1:8001
 """
@@ -41,6 +44,7 @@ ACTOR = "he-team-sync"
 PROMPT_MAX = 8000
 NO_GUIDE = "<!-- no-tool-guide -->"   # AIDataHub 가 지식카드 도구 안내를 덧붙이지 않게 하는 표지
 MANAGED = ("name", "description", "common_tags", "sample_queries", "system_prompt", "response_config")
+LOOSE_SHOW = 8                         # 목록 밖 쓰기 도구를 몇 개까지 적나
 
 
 def _http(method: str, url: str, body: dict | None = None) -> tuple[int, object]:
@@ -112,8 +116,10 @@ def _with_optional(p: dict, by_app: dict) -> tuple[dict, list[str]]:
     return q, absent
 
 
-def plan(spec: dict, tmap: dict, notes: list[str] | None = None) -> tuple[list[dict], list[str], list[str]]:
-    """정본 + 게이트웨이 → 올릴 페이로드 목록, 건너뛴 사유, 오류. notes 를 주면 선택 앱을 빼고 만든 페르소나를 적는다."""
+def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
+         warns: list[str] | None = None) -> tuple[list[dict], list[str], list[str]]:
+    """정본 + 게이트웨이 → 올릴 페이로드 목록, 건너뛴 사유, 오류. notes 를 주면 선택 앱을 빼고 만든 페르소나를, warns 를 주면
+    writes · confirm 어디에도 없는 쓰기 꼴 도구를 적는다(막지 않는다)."""
     tool_app: dict = tmap.get("map") or {}
     areas: dict = tmap.get("areas") or {}
     area_label = {a["area"]: a.get("label") or a["area"] for a in (tmap.get("area_meta") or []) if a.get("area")}
@@ -121,6 +127,12 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None) -> tuple[list[d
     by_app: dict[str, list[str]] = {}
     for t, a in tool_app.items():
         by_app.setdefault(a, []).append(t)
+    # 쓰기 꼴 판정은 게이트웨이 몫이다(/tools-map 의 write — 앱의 표지 → 이름 낱말). 읽기로 확인된 것(routine_read — 읽기 목록 ·
+    # readOnlyHint)은 이름이 쓰기 꼴이어도 뺀다(get_record 의 record). write 칸이 없는 옛 게이트웨이면 보지 않았다고 한 줄 남긴다.
+    write = set(tmap["write"]) if isinstance(tmap.get("write"), list) else None
+    read_ok = set(tmap.get("routine_read") or [])
+    if warns is not None and write is None:
+        warns.append("목록 밖 쓰기 점검 건너뜀 — 이 게이트웨이 /tools-map 에 write 칸이 없다(옛 판)")
 
     out, skipped, errors = [], [], []
     for p in spec["personas"]:
@@ -151,6 +163,16 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None) -> tuple[list[d
         both = sorted(set(p["writes"]) & set(p["confirm"]))
         if both:
             errors.append(f"{key}: writes 와 confirm 에 같이 있다 — {', '.join(both)}")
+        # 운영자 앱의 쓰기 꼴 도구가 두 목록 어디에도 없다(docs/request-1030 HP-53) — 프롬프트의 '요청했을 때만 · 확인을 받은 뒤' 줄에도,
+        # 에이전트서버의 확인 관문(HA-29)이 읽는 목록에도 빠진다. 정본은 노출 이름이나 접두 별칭으로 적으므로 둘 다 대조한다.
+        if warns is not None and write is not None:
+            listed = set(p["writes"]) | set(p["confirm"])
+            loose = [t for t in tools if t in write and t not in read_ok and t not in listed
+                     and f"{tool_app[t].replace('-', '')}_{t}" not in listed]
+            if loose:
+                more = f" 외 {len(loose) - LOOSE_SHOW}개" if len(loose) > LOOSE_SHOW else ""
+                warns.append(f"목록 밖 쓰기 {key}: {len(loose)}개 — {', '.join(loose[:LOOSE_SHOW])}{more}"
+                             "(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)")
         tool_map: dict[str, list[str]] = {}
         for t in tools:
             tool_map.setdefault(area_label.get(areas.get(t, ""), "미분류"), []).append(t)
@@ -185,11 +207,14 @@ def main() -> int:
         print(f"✗ 게이트웨이 /tools-map 을 못 읽었다({st}) — {GATEWAY}", file=sys.stderr)
         return 2
     notes: list[str] = []
-    rows, skipped, errors = plan(spec, tmap, notes)
+    warns: list[str] = []
+    rows, skipped, errors = plan(spec, tmap, notes, warns)
     for s in skipped:
         print(f"  · 건너뜀 {s}")
     for n in notes:
         print(f"  · 일부 {n}")
+    for w in warns:
+        print(f"  · {w}")
     if errors:
         for e in errors:
             print(f"✗ {e}", file=sys.stderr)

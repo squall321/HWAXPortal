@@ -1,5 +1,5 @@
 {
-  "_doc": "HE팀 MCP 운영자 페르소나 정본. infra/scripts/sync-he-personas.py 가 이 파일로 AIDataHub 에이전트를 만들거나 고친다(기본은 미리보기, --apply 로 반영). 키는 he-<묶음>-<앱>이고 묶음 라벨은 frontend personaCatalog.ts 의 HE_GROUP_LABEL 과 같아야 한다(test_he_personas.py 가 대조한다). key_tools·writes·confirm 에 적은 도구 이름은 동기화 때 게이트웨이 도구 목록과 대조해 없는 이름이면 멈춘다. 다른 앱과 이름이 겹치는 도구는 접두 이름(<앱 키에서 하이픈을 뺀 것>_<이름>, 예: heaxstep_forge_list_jobs)으로 적는다 — 게이트웨이가 언제나 받는 호출 별칭이라 겹치는 상대(ste 등)가 붙어 있지 않은 박스에서도 맞는 이름이다. apps 의 앱이 게이트웨이에 없으면(dev 의 arp·odb-hub) 그 페르소나는 건너뛴다. 박스마다 붙고 안 붙는 앱 몫은 optional 에 [{app, 그 앱 몫의 can·workflow·concepts·pitfalls·samples·key_tools·writes·confirm}] 로 묶는다 — 그 app 이 게이트웨이에 붙어 있을 때만 정본 뒤에 잇고, 없으면 빼고 만든다(건너뛰지 않는다).",
+  "_doc": "HE팀 MCP 운영자 페르소나 정본. infra/scripts/sync-he-personas.py 가 이 파일로 AIDataHub 에이전트를 만들거나 고친다(기본은 미리보기, --apply 로 반영). 키는 he-<묶음>-<앱>이고 묶음 라벨은 frontend personaCatalog.ts 의 HE_GROUP_LABEL 과 같아야 한다(test_he_personas.py 가 대조한다). key_tools·writes·confirm 에 적은 도구 이름은 동기화 때 게이트웨이 도구 목록과 대조해 없는 이름이면 멈춘다. 다른 앱과 이름이 겹치는 도구는 접두 이름(<앱 키에서 하이픈을 뺀 것>_<이름>, 예: heaxstep_forge_list_jobs)으로 적는다 — 게이트웨이가 언제나 받는 호출 별칭이라 겹치는 상대(ste 등)가 붙어 있지 않은 박스에서도 맞는 이름이다. apps 의 앱이 게이트웨이에 없으면(dev 의 arp·odb-hub) 그 페르소나는 건너뛴다. 박스마다 붙고 안 붙는 앱 몫은 optional 에 [{app, 그 앱 몫의 can·workflow·concepts·pitfalls·samples·key_tools·writes·confirm}] 로 묶는다 — 그 app 이 게이트웨이에 붙어 있을 때만 정본 뒤에 잇고, 없으면 빼고 만든다(건너뛰지 않는다). writes 는 잡 · 쓰기(요청했을 때만 부른다), confirm 은 지우기 · 권한 · 되돌리기 어려운 것(확인 뒤 부른다)이다 — 에이전트서버의 확인 관문이 두 목록을 읽는다. 앱의 쓰기 꼴 도구(게이트웨이 /tools-map 의 write)가 두 목록 어디에도 없으면 미리보기가 '목록 밖 쓰기' 로 알린다.",
   "groups": {
     "cad": "설계 데이터(CAD·ECAD)",
     "sim": "시뮬레이션·해석 결과",
@@ -48,8 +48,8 @@
         "rename_part 는 관계·메시 등록부·접촉 YAML 의 이름 키까지 함께 바꾼다."
       ],
       "key_tools": ["list_projects", "get_project_meta", "measurement_guide", "job_params_guide", "part_info", "find_parts", "inspect_report", "heaxstep_forge_job_status", "heaxstep_forge_list_jobs", "upload_instructions"],
-      "writes": ["intake", "create_project", "upload_step", "import_archive", "run_job", "set_project_meta", "set_part_metadata", "apply_naming_rules", "set_file_transform", "transform_instance", "set_part_rules", "set_interface", "remesh_parts", "export_step", "build_cavity", "register_materials", "register_materials_csv", "heaxstep_forge_register_material"],
-      "confirm": ["delete_project", "heaxstep_forge_cancel_job", "rename_part", "remove_part", "confirm_interfaces"],
+      "writes": ["intake", "create_project", "upload_step", "import_archive", "run_job", "set_project_meta", "set_part_metadata", "apply_naming_rules", "set_file_transform", "transform_instance", "set_part_rules", "set_interface", "remesh_parts", "export_step", "build_cavity", "register_materials", "register_materials_csv", "heaxstep_forge_register_material", "run_recipe", "save_recipe", "set_revision"],
+      "confirm": ["delete_project", "heaxstep_forge_cancel_job", "rename_part", "remove_part", "confirm_interfaces", "set_admin"],
       "samples": [
         "DV2 낙하해석 과제 파트 몇 개고 어디까지 진행됐어?",
         "쉴드캔과 PCB 사이 축방향 간극 재 줘",
@@ -83,7 +83,7 @@
       "tool_map": true,
       "todo": "cae00 에서 실제 도구를 보고 작업 순서·함정·key_tools 를 보강한다.",
       "key_tools": [],
-      "writes": [],
+      "writes": ["run_checklist", "run_analysis", "run_compare", "run_curvature", "create_modified_odb", "import_modified_odb"],
       "confirm": [],
       "samples": [
         "이 보드 ODB++ 설계 체크리스트 점검 결과 보여줘",
@@ -163,8 +163,8 @@
         "report_part_series 는 다운샘플이다 — 원본 점 수와 함께 전한다."
       ],
       "key_tools": ["list_operations", "describe_operation", "run_operation", "heaxkooremapper_mcp_get_job", "list_sessions", "report_facets", "find_reports", "report_summary", "report_worst_cases", "report_part_risk"],
-      "writes": ["create_session", "upload_kfile", "run_operation", "update_session", "ingest_report", "update_report_meta", "attach_report_scenario", "publish_report_to_datahub"],
-      "confirm": ["delete_session", "delete_file", "delete_report", "heaxkooremapper_mcp_cancel_job"],
+      "writes": ["create_session", "upload_kfile", "run_operation", "update_session", "ingest_report", "update_report_meta", "attach_report_scenario", "publish_report_to_datahub", "recipe_propose", "heaxkooremapper_mcp_recipe_run"],
+      "confirm": ["delete_session", "delete_file", "delete_report", "heaxkooremapper_mcp_cancel_job", "recipe_register"],
       "samples": [
         "이 K파일 재료카드 교체하는 오퍼레이션 뭐 있어?",
         "최근 전각도 낙하 리포트에서 최악 방향 5개 알려줘",
@@ -396,13 +396,14 @@
         "ARP 는 CAE 그룹의 AI Ready 데이터 허브다. 사내망 전용이라 cae00 게이트웨이에서만 도구가 붙는다."
       ],
       "pitfalls": [
-        "없는 데이터를 있는 것처럼 말하지 않는다. 이 앱 도구가 안 보이면 연결 문제라고 말한다."
+        "없는 데이터를 있는 것처럼 말하지 않는다. 이 앱 도구가 안 보이면 연결 문제라고 말한다.",
+        "낙하 높이 칸은 단위가 없다 — 시험 조건은 cm 다. mm 로 읽지 않는다(예: 152 는 152 cm)."
       ],
       "tool_map": true,
-      "todo": "cae00 에서 실제 도구를 보고 작업 순서·함정·key_tools 를 보강한다.",
-      "key_tools": [],
-      "writes": [],
-      "confirm": [],
+      "todo": "cae00 /tools-map 으로 나머지 조회 도구를 확인해 key_tools · 작업 순서를 더 보강한다(10-30 — 쓰기 · 확인 목록과 낙하 높이 단위 함정은 채웠고, key_tools 는 cae00 챗이 실제로 부른 둘이다). ARP 가 낙하 높이에 단위를 실으면(AR-9) 그 함정 줄을 걷는다.",
+      "key_tools": ["arp_search_data", "arp_compare_items"],
+      "writes": ["arp_upload_create", "arp_upload_stage"],
+      "confirm": ["arp_upload_register", "arp_upload_discard"],
       "samples": [
         "ARP 에 있는 최근 낙하 해석 데이터 찾아줘",
         "이 과제 시뮬레이션 데이터가 ARP 에 뭐 있어?"
@@ -446,8 +447,8 @@
         "rootdesigndatahub_graph_neighbors",
         "rootdesigndatahub_object_get"
       ],
-      "writes": [],
-      "confirm": [],
+      "writes": ["rootdesigndatahub_object_create", "rootdesigndatahub_object_update"],
+      "confirm": ["rootdesigndatahub_objects_delete", "rootdesigndatahub_object_merge", "rootdesigndatahub_datasource_sync", "rootdesigndatahub_bundle_import", "rootdesigndatahub_job_apply"],
       "samples": [
         "이 부품 코드가 정본 허브에서 어떤 객체야?",
         "이 모델에 이어진 과제랑 불량 몇 건이야?",
@@ -822,7 +823,7 @@
         "nodes·edges·events 조회는 상위 500건에서 잘린다(truncated). 잘렸다는 사실을 함께 말한다."
       ],
       "key_tools": ["risk_list_projects", "risk_get_coverage", "risk_list_panels", "risk_get_diff", "risk_get_precedents", "risk_taxonomy", "risk_get_registry"],
-      "writes": [],
+      "writes": ["risk_start_job", "risk_create_project", "risk_create_diff"],
       "confirm": ["risk_submit_panel_result", "risk_add_finding"],
       "samples": [
         "심사 과제 목록이랑 커버리지 보여줘",
