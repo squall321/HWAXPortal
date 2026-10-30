@@ -114,7 +114,7 @@ cd ../HWAXAgentServer && ./start.sh -d      # 재기동(백그라운드, 로그 
 |---|---|
 | 함정·사고 기록 | `docs/gotchas.md` |
 | cae00 배포(update-all 전 읽기 전용 사전 점검 `infra/scripts/update-preflight.py` — 받기 전엔 `git show origin/main:… \| python3 -`, 10-25) | `docs/cae00-deploy-guide.md` |
-| 낙하 트윈 cae00 점검(DynaForge 후처리 반입 · 위임 창구 비밀 두 곳 · icn401 KooSlurm 반영 · 첫 실제 전각도 잡 · stcx viz 노드 읽기만 · SSO 는 이번에 안 켬, 원문 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(`1956326` — stcx Post v42 설치는 운영 측 · S1 자리 `Output/s1.h5`); 포털 몫은 R2a 씨앗의 후처리 예약 `9ce09b6` · 절차 W-101 · 과제 메타 넷(비우면 칸이 빠진다 — 절차 W-102)) | `docs/cae00-deploy-guide.md` 「2026-10-30 반영분 — 낙하 트윈」 |
+| 낙하 트윈 cae00 점검(DynaForge 후처리 반입 · 위임 창구 비밀 두 곳 · icn401 KooSlurm 반영 · 첫 실제 전각도 잡 · stcx viz 노드 읽기만 · SSO 는 이번에 안 켬, 원문 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(`352a8fd` — Drive 판 `dist-20261030-032145Z` · 변형 뷰어 1단계 · stcx Post v42 설치는 운영 측 · S1 자리 `Output/s1.h5`); 포털 몫은 R2a 씨앗의 후처리 예약 `9ce09b6` · 절차 W-101 · 과제 메타 넷(비우면 칸이 빠진다 — 절차 W-102)) | `docs/cae00-deploy-guide.md` 「2026-10-30 반영분 — 낙하 트윈」 |
 | 챗 업로드 목적지 라우팅 | `docs/upload/` (PLAN·checklist·context-notes) |
 | 심의 품질·방법 메뉴 | `docs/deliberation-quality/` |
 | 띵킹 모드(답할 수 있는 전문가만 각자 답한다) | `docs/thinking-mode/` |
