@@ -8,6 +8,7 @@
 """
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
@@ -228,6 +229,14 @@ def parse_spec(raw: dict) -> RoutineSpec:
         raise SpecError(" / ".join(msgs)) from None
 
 
+KST = timezone(timedelta(hours=9), "KST")      # 한국은 일광 절약 시간이 없다 — 고정 오프셋이면 tzdata 없이도 같다
+
+
+def started_kst(ts: int | None) -> str:
+    """`{{run.started}}` 의 값 — 실행 시작 시각(KST 'YYYY-MM-DD HH:MM'). 시각이 없으면 빈 글이다(render 가 자리를 그대로 둔다)."""
+    return datetime.fromtimestamp(int(ts), tz=KST).strftime("%Y-%m-%d %H:%M") if ts else ""
+
+
 def render(text: str, inputs: dict, keys: dict[str, dict[str, str]] | None = None, started: str = "") -> str:
     """참조를 값으로 — 변수 · 앞 단계 키 · 실행 시각. 값이 없으면 자리를 그대로 둔다(빈칸으로 지우면 할 일이 다른 뜻이 된다)."""
     keys = keys or {}
@@ -288,29 +297,102 @@ class Envelope(BaseModel):
         return {str(k)[:32]: (v2 if isinstance(v2, str) else str(v2))[:200] for k, v2 in v.items() if v2 is not None}
 
 
+def _gw_write(meta) -> bool:
+    """게이트웨이가 쓰기로 분류한 도구인가(_catalog 가 /tools-map 의 write 로 단 표지). 표지가 None(옛 게이트웨이 — 모름)이면 아니다."""
+    return isinstance(meta, dict) and meta.get("write") is True
+
+
+def _gw_read(meta) -> bool:
+    """게이트웨이가 읽기로 확인한 도구인가(_catalog 가 /tools-map 의 routine_read 로 단 표지 read). 모르면 아니다(C-12)."""
+    return isinstance(meta, dict) and meta.get("read") is True
+
+
+def _read_mode(s: Step, mine: dict[str, dict]) -> bool:
+    """이 단계 백엔드의 내 도구에 읽기 표지(read)가 달렸나 — 게이트웨이가 routine_read 를 주면 _catalog 가 모든 도구에 참 · 거짓을 단다.
+    달렸으면 '읽기로 확인된 것만' 판정이고, 없으면(routine_read 를 안 주는 옛 게이트웨이) 종전 판정(write · 이름 꼴)이다."""
+    return any(isinstance(m, dict) and m.get("read") is not None for b in s.backends for m in (mine.get(b) or {}).values())
+
+
+def allowed_tools(s: Step, mine: dict[str, dict]) -> tuple[dict[str, list[str]], list[str]]:
+    """플랫폼 · 인용 단계의 허용 도구 {백엔드: [원래 이름]}와 뺀 적은 도구('백엔드:이름') — 계획(plan_steps)과 준비도(readiness_of)가 같은
+    판정을 쓴다. 게이트웨이가 읽기 목록(/tools-map 의 routine_read)을 주면 **읽기로 확인된 것만** 묶는다(R3 반대 검토 C-12 — 이름 동사 규칙은
+    risk_job_action · single_drop_simulation 같은 쓰기를 '쓰기 아님' 으로 통과시켰다): (적은 도구, 안 적었으면 내 도구 전부) ∩ 내 목록 ∩ 읽기 목록
+    − 이름 꼴(is_write_tool), 적은 도구 가운데 이 판정으로 빠진 것은 뺀 목록에. 읽기 목록이 없으면(옛 게이트웨이) 종전대로(R3-D6) — 도구를 적었으면
+    그 가운데 내 목록에 있고 게이트웨이 쓰기가 아닌 것, 안 적었으면 그 백엔드의 도구에서 이름 꼴(is_write_tool)과 게이트웨이 쓰기를 뺀 것."""
+    allowed: dict[str, list[str]] = {}
+    dropped: list[str] = []
+    read = _read_mode(s, mine)
+    for b in s.backends:
+        have = mine.get(b) or {}
+        if read:
+            picked = [t for t in s.tools if t in have] if s.tools else sorted(have)
+            allowed[b] = [t for t in picked if _gw_read(have[t]) and not is_write_tool(t)]
+            if s.tools:
+                dropped += [f"{b}:{t}" for t in picked if t not in allowed[b]]
+        elif s.tools:
+            picked = [t for t in s.tools if t in have]
+            dropped += [f"{b}:{t}" for t in picked if _gw_write(have[t])]
+            allowed[b] = [t for t in picked if not _gw_write(have[t])]
+        else:
+            allowed[b] = sorted(t for t in have if not is_write_tool(t) and not _gw_write(have[t]))
+    return allowed, dropped
+
+
+_READ_HINT = "단계 안에서는 읽기로 확인된 도구만 v1 · 읽기 도구라면 앱이 readOnlyHint 를 달거나 박스의 read_tools.local.json 에 더한다"
+
+
+def write_reason(s: Step, allowed: dict[str, list[str]], dropped: list[str], mine: dict[str, dict] | None = None) -> str:
+    """뺀 것의 준비도 까닭 — 뺀 것이 없으면 빈 글. 빼서 단계가 비었으면 그 단계는 이 까닭으로 '이 박스에 없음' 이다('목록에 없다' 가
+    아니다 — first_states · readiness_of). 부르는 쪽은 준비도가 allowed 일 때만 쓴다(그 백엔드가 내 목록에 있어야 '모두 쓰기' 가 참이다).
+    `mine` 이 읽기 표지를 달았으면(읽기 목록 판정) '읽기로 확인되지 않았다' 로 말한다 — 모르는 도구도 빠지므로 '쓰기로 분류' 는 틀린 말이다."""
+    if mine is not None and _read_mode(s, mine):
+        if dropped and any(allowed.values()):
+            return f"고른 도구 가운데 {', '.join(dropped)} 는 읽기로 확인되지 않았다 — 빼고 남은 도구로 돈다({_READ_HINT})"
+        if dropped:
+            return f"고른 도구가 읽기로 확인되지 않았다 — {', '.join(dropped)} 를 뺐다({_READ_HINT})"
+        if not s.tools and not any(allowed.values()):
+            return f"이 플랫폼에서 부를 수 있는 도구가 하나도 읽기로 확인되지 않았다({_READ_HINT})"
+        return ""
+    if dropped and any(allowed.values()):
+        return f"고른 도구 가운데 쓰기로 분류된 것은 뺐다(단계 안 쓰기 금지 v1) — {', '.join(dropped)} · 남은 도구로 돈다"
+    if dropped:
+        return f"고른 도구가 쓰기로 분류돼 뺐다(단계 안 쓰기 금지 v1) — {', '.join(dropped)}"
+    if not s.tools and not any(allowed.values()):
+        return "이 플랫폼에서 부를 수 있는 도구가 모두 쓰기로 분류된다 — 단계에는 읽기 도구만 묶는다(단계 안 쓰기 금지 v1)"
+    return ""
+
+
 def plan_steps(spec: RoutineSpec, mine: dict[str, dict], readiness: list[dict]) -> list[dict]:
     """실행 계획의 단계 — 울타리(backends)와 허용 도구 {백엔드: [원래 이름]}. 허용 도구는 이 사람의 도구 목록에서 고른다 — 단계가 도구를 적었으면
-    그 가운데 내 목록에 있는 것, 안 적었으면 그 백엔드의 읽기 도구 전부(단계 안 쓰기 금지 v1). 심의 단계는 심의 도구 셋."""
+    그 가운데 내 목록에 있고 쓰기가 아닌 것, 안 적었으면 그 백엔드의 읽기 도구 전부(단계 안 쓰기 금지 v1). 심의 단계는 심의 도구 셋.
+    판정의 정본은 게이트웨이다 — 읽기 목록(`mine` 의 read, /tools-map 의 routine_read)을 주면 읽기로 확인된 것만(allowed_tools), 안 주는 옛 판이면
+    종전대로 쓰기 분류(R3-D6 — `mine` 의 write)와 이름 꼴(is_write_tool, 도구를 비운 단계). 적은 도구를 뺐으면 dropped_write('백엔드:이름')와
+    준비도 까닭에 남긴다(단계가 비면 그 까닭으로 닫힌다).
+    행마다 스펙의 앱 라벨(label, 안 적었으면 빈 글)을 싣는다 — 챗의 plan 프레임 · 화면이 단계마다 보인다(R3-design 3.2)."""
     rd = {r["step"]: r for r in readiness}
     out = []
     for s in spec.steps:
+        r = rd.get(s.id) or {}
+        ready = {"state": r.get("state") or "unavailable", "reason": r.get("reason") or ""}
+        dropped: list[str] = []
         if s.kind == "deliberation":
             backends = [DELIB_BACKEND]
             allowed = {DELIB_BACKEND: [t for t in DELIB_TOOLS if t in (mine.get(DELIB_BACKEND) or {})]}
         else:
             backends = list(s.backends)
-            allowed = {}
-            for b in backends:
-                have = mine.get(b) or {}
-                allowed[b] = ([t for t in s.tools if t in have] if s.tools
-                              else sorted(t for t in have if not is_write_tool(t)))
-        r = rd.get(s.id) or {}
-        out.append({"id": s.id, "title": s.title, "kind": s.kind, "backends": backends, "allowed": allowed,
+            allowed, dropped = allowed_tools(s, mine)
+            # 뺀 도구(쓰기 · 읽기로 확인되지 않은 것)는 단계가 남아도 준비도 까닭에 적는다(R3-design 3.5 ⑦ — 계획을 읽는 실행자 · 사람이 그 도구가 왜 없는지 안다).
+            # 쓰기를 빼서 단계가 비었으면 first_states 가 이 단계를 '이 박스에 없음' 으로 닫을 때 까닭이 이것이어야 한다('목록에 없다' 가 아니다).
+            # readiness_of 도 같은 판정으로 적어 온다(그 단계는 이미 unavailable) — 여기서 다시 보는 것은 준비도를 따로 받은 호출도 같게
+            if ready["state"] == "allowed":
+                ready["reason"] = write_reason(s, allowed, dropped, mine) or ready["reason"]
+        out.append({"id": s.id, "title": s.title, "kind": s.kind, "backends": backends, "label": s.label, "allowed": allowed,
+                    "dropped_write": dropped,
                     "goal": s.goal, "uses": list(s.uses), "expect": s.expect.model_dump(), "budget": s.budget.model_dump(),
                     "blocked": s.blocked.model_dump(),
                     # 심의 단계의 일(job) · 의장 틀 — 실행자(챗 · Claude)가 deliberate_start 에 넘긴다. 다른 단계는 None
                     "deliberation": s.deliberation.model_dump() if s.deliberation else None,
-                    "readiness": {"state": r.get("state") or "unavailable", "reason": r.get("reason") or ""}})
+                    "readiness": ready})
     return out
 
 
@@ -320,7 +402,7 @@ def first_states(steps: list[dict]) -> tuple[list[tuple[str, str, str | None]], 
     for ps in steps:
         rs, why = ps["readiness"]["state"], ps["readiness"]["reason"]
         if rs == "allowed" and not any(ps["allowed"].values()):
-            rs, why = "unavailable", "고른 도구가 이 박스 · 내 도구 목록에 없다"
+            rs, why = "unavailable", why or "고른 도구가 이 박스 · 내 도구 목록에 없다"      # 계획이 적은 까닭(쓰기로 뺐다)이 먼저다
         if rs == "allowed":
             out.append((ps["id"], "pending", None))
             continue
@@ -358,6 +440,11 @@ def ra_blocks(blocks: dict) -> dict:
     return {k: [c for item in v for c in ra_split(item)] for k, v in blocks.items()}
 
 
+def _squash(s: str) -> str:
+    """공백을 하나로 — 글이 같은지 맞댈 때 줄바꿈 · 겹친 띄어쓰기를 다르게 치지 않는다."""
+    return " ".join(str(s or "").split())
+
+
 def coverage_of(steps: list[dict], stages: list[dict]) -> dict:
     by = {st["step_id"]: st for st in stages}
     counts: dict[str, int] = {}
@@ -379,8 +466,9 @@ def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: li
     by = {st["step_id"]: st for st in stages}
     known = {c["call_id"] for c in calls}
     keys = {sid: ((st.get("envelope") or {}).get("keys") or {}) for sid, st in by.items()}
-    head = render(title or spec.report.title or spec.title, inputs, keys)
-    purpose = render(spec.purpose, inputs, keys)
+    started = started_kst(run.get("started_at"))
+    head = render(title or spec.report.title or spec.title, inputs, keys, started)
+    purpose = render(spec.purpose, inputs, keys, started)
     cov = coverage_of(steps, stages)
     cov_line = " · ".join(f"{STATE_LABEL.get(k, k)} {v}" for k, v in cov["counts"].items())
     skipped = [f"{b['title']}({b['step']}) — {STATE_LABEL.get(b['state'], b['state'])}" + (f": {b['reason']}" if b["reason"] else "")
@@ -421,7 +509,12 @@ def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: li
         extra = []
         if env.get("keys"):
             extra.append("넘긴 키 — " + " · ".join(f"{k}={v}" for k, v in env["keys"].items()))
+        # 실행자가 쓴 절에 이미 있는 발견은 다시 붙이지 않는다 — 에이전트 실행기의 단계 절이 요약 + '- 발견 [ref]' 줄이라 그대로 붙이면
+        # report_md 와 RA results 에 발견이 두 번 실렸다. 공백을 줄여 맞댄다. 절이 없으면 지금처럼 요약 · 키 · 발견 전부
+        said = _squash(text)
         for f in env.get("findings") or []:
+            if text and _squash(f["text"]) in said:
+                continue
             extra.append(f"- {f['text']} " + " ".join(f"[{r}]" for r in f.get("refs") or []))
         md += [f"## {titles.get(sec, sec)}", "", body] + ([""] + extra if extra else []) + [""]
         results.append(f"{titles.get(sec, sec)}\n{body}" + ("\n" + "\n".join(extra) if extra else ""))
