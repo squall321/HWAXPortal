@@ -15,7 +15,7 @@
 | 에이전트 서버 | `d6c3a84` | HA-27(자기검증 관문) · HA-28(상태 기다리기) · HA-29(확인 카드) · HA-30(다른 허브 id) — 맞물림 시험 I-1 ~ I-8 · 반대 검토 두 차례 | 올림 — 확인 · 손잡이 · 다시 볼 시험은 6절 |
 | 게이트웨이 | `c70ec21` · `602bbb2` | HG-21(소수부를 IMEI 로 가리던 것 — dev 출력에서 2,780곳) · HG-22(사람 칸 이름 · 메일 · 성씨 계정 · 사설 IP · `rest_call`), `602bbb2` 는 시험만(어휘표 OB-04 뒤 — 시험 사본 숨김 시험이 실제 표의 셋에 기대지 않게) | 올림 — 가림 범위는 판단 C-11 |
 | 포털 | `6a76f58` · `dbbb943` | HP-51(운영자 앱 없음 표지) · HP-52(씨앗 `from: items`) · HP-53(writes · confirm · ARP 함정 줄 · 저장 뒤 500 견딤) · HP-55(update-all 문구) · HP-56 · HA-32(어휘표 types · '전작' · '후속 모델'), 그 뒤 확인 카드 단추 · 짚기만 한 자기검증(화면) · 운영자 목록 C-15 · update-all §7 관문 줄 · env 킷 손잡이 · OB-26(ODB 허브 운영자) · OB-04(어휘표) | 올림 — 화면은 Drive `images-20261030-220551Z`(drive-drift 포털 일치) |
-| AIDataHub | `df7d45b` | AD-19 · AD-20(추천 · 기록 목록) · AD-21(저장 뒤 500) · AD-03(DRM 머리) · AD-07(`as_of`) · AD-01 코드(하위 절 평탄화 · 다시 짓기 명령) | 올림 — 데이터 단계는 5절 |
+| AIDataHub | `df7d45b` · `6f496fa` | AD-19 · AD-20(추천 · 기록 목록) · AD-21(저장 뒤 500) · AD-03(DRM 머리) · AD-07(`as_of`) · AD-01 코드(하위 절 평탄화 · 다시 짓기 명령), `6f496fa` 는 병합이 표본 임베딩을 전문가 단위로 맞추고 순번을 올린다(AD-21 후속) | 올림 — 받은 뒤 병합 한 번(8절) · 데이터 단계는 5 · 8절 |
 | MX 백서 | `bb0a6a1` · `bd2e79b` | MW-12 · MW-01 | 올림(그쪽 세션) |
 | SignalForge | `0e2ac46` · `ec40075` · `f004cd0` · `404fe42` | SG-19 · SG-04 주의 칸, `404fe42` 는 그쪽 cae00 문서 2026-10-31(제품 행 하나를 둘로 · 다시 태깅은 dev 에서만) | 올림(그쪽 세션) — 차례는 3절 |
 | SmartTwinExplorer | `4f5e0e0` | PA-20 | 올림 — Drive staging 번들(3절) |
@@ -28,7 +28,8 @@
 평소처럼 돌린다. 도는 심의가 있으면 에이전트 서버 재기동이 미뤄진다(○ 줄) — 끝난 뒤 `cd ~/Projects/HWAXAgentServer && ./start.sh -d`.
 
 - MX 백서는 `migrate.sh` 가 이관 0059 · 0060 을 돈다(위키 표 · 알림 종류만 더한다 — 위키가 꺼진 박스에서는 쓰이지 않는다).
-- AIDataHub 는 코드만 바뀐다(이관 · 데이터 작업 없음). API 가 새 판으로 뜨면 1 · 4절 확인으로 본다.
+- AIDataHub 는 코드만 바뀐다(이관 · 데이터 작업 없음). API 가 새 판으로 뜨면 1 · 4절 확인으로 본다. `6f496fa` 는 병합 스크립트 고침이라
+  Drive 덤프가 그대로면 이번 update-all 에서 돌지 않는다 — 끝난 뒤 병합을 한 번 손으로 돈다(8절).
 - **받은 편지함** — git 받기 뒤 `→ cae00 받은 편지함 — …` 줄이 이번 판에 새로 들었거나 바뀐 글을 찍고, 끝 요약에서 다시 낸다(경고가 아니다).
   이번 판에는 [`../cae00-inbox/2026-10-31.md`](../cae00-inbox/2026-10-31.md) 가 든다. [`../cae00-inbox/README.md`](../cae00-inbox/README.md) 대로 읽고 답은 사용자에게 준다.
   이 줄은 이번 판에서 처음 들어 옛 판의 §1 이 git 을 받는다 — 그래도 재실행이 git 이 남긴 ORIG_HEAD 로 새 글을 가린다. 줄이 아예 없으면 `ls ~/Projects/HWAXPortal/docs/cae00-inbox/` 로 본다.
@@ -78,12 +79,12 @@
 
 ## 5. 사용자 OK 를 기다리는 데이터 단계(AIDataHub)
 
-아래는 명령만 지어 두었고 어느 박스에서도 돌리지 않았다. 사용자 OK 뒤에 한다.
+아래는 명령만 지어 두었고 어느 박스에서도 돌리지 않았다(10-30). 사용자 OK 뒤에 한다. 10-31 에 셋이 정해졌다 — 줄마다 적었다.
 
 - **AD-01 다시 짓기** — 154장은 평탄화 고침과 다시 짓기로는 고쳐지지 않는다. MX 백서 동기화 자리표시(본문 한 절 · 글 없음)라 원천을 다시 받아야 한다. 그런데 dev 의 MX 백서 정기 동기화는 10-18 21:26 UTC 뒤 1,122번이 모두 401 이다(AIDataHub 의 `MXWP_INTERNAL_KEY` 가 없다). cae00 은 URL 가드가 막는다. 키 · 가드를 먼저 정하고, 다시 받은 뒤 `deploy/apptainer/reindex-sections.sh`(기본은 셈만 · `--apply` 앞에 백업)를 돈다.
-- **AD-05 · AD-06** — dev 원본의 빈 전문가 둘과 데모 카드 셋 지우기(그 뒤 cae00 은 OB-87).
-- **AD-04** — dev DB 사본에서 본문 검색 속도 재기(`EXPLAIN ANALYZE`).
-- **AD-21 의 cae00 원인 후보** — `merge-from-drive.sh` 가 `agent_sample_embeddings` 를 dev 의 대리 키(id)로 덮어쓰고 순번을 올리지 않는다. 그래서 cae00 의 다음 표본 행이 겹친 id 로 거절될 수 있다(검토 에이전트가 버리는 PG 에서 재현). 스크립트 고침은 cae00 데이터 흐름을 바꾸므로 결정 뒤에 한다.
+- **AD-05 · AD-06** — dev 원본의 빈 전문가 둘과 데모 카드 셋 지우기(그 뒤 cae00 은 OB-87). **10-31 — 사용자가 dev 에서 직접 돌린다**(`apply.sh` · 판단 C-17). cae00 차례는 8-3.
+- **AD-04** — dev DB 사본에서 본문 검색 속도 재기(`EXPLAIN ANALYZE`). **10-31 — 쟀다**(끔 8 ms · 지금 코드로 켜면 6.4 s / 찬 상태 45 s 넘게) → OB-89 는 끈 채로 둔다(판단 C-16).
+- **AD-21 의 cae00 원인 후보 — 고쳤다(AIDataHub `6f496fa`, 사용자 결정 A · B · C — 판단 C-18).** 예전 `merge-from-drive.sh` 는 `agent_sample_embeddings` 를 dev 의 대리 키(id)로 덮어쓰고 순번을 올리지 않아, cae00 의 다음 표본 행이 겹친 id 로 거절될 수 있었다(검토 에이전트가 버리는 PG 에서 재현). 이제 전문가 단위로 맞추고 순번을 표의 가장 큰 id 뒤로 민다. cae00 은 받은 뒤 병합을 한 번 손으로 돈다(8-1).
 
 ## 6. 챗 관문 넷(HA-27 ~ HA-30) — 받은 뒤 확인 · 손잡이 · 다시 볼 시험
 
@@ -184,6 +185,54 @@ cae00 에서 사람이 SSO 로 로그인한 웹 챗으로 본다(두 QA 와 같�
 
    라벨에 '(시험)' 이 없으면 된다. 그대로면 그 라벨은 다른 자리(게이트웨이 백엔드 설정 · 허브 등록)에서 온다 — 어느 자리인지 dev 에 알린다.
    라벨의 '(시험)' 은 게이트웨이가 같은 도구 사본의 정본을 고를 때 사본 표지로도 읽는다 — 걷어야 점수가 같을 때 두 앱이 뒤로 가지 않는다.
+
+## 8. AIDataHub — 받은 뒤 병합 한 번(`6f496fa`) · 데이터 단계 차례(사용자 결정 10-31)
+
+### 8-1. 병합 한 번(결정 A — 판단 C-18)
+
+update-all 은 Drive 덤프가 바뀌었을 때만 병합한다. 덤프가 그대로면 `AIDH 덤프 변화 없음 — merge 생략` 이 찍히고 새 병합 코드가 돌지 않는다.
+그래서 받은 뒤 한 번 손으로 돈다 — 도는 심의가 없고, 디스크에 운영 직전 스냅샷(몇 GB) 자리가 있을 때.
+
+```bash
+cd ~/Projects/AIDataHub && ./deploy/apptainer/merge-from-drive.sh
+```
+
+비파괴 병합이다(행을 지우지 않는다 · 운영 직전 스냅샷을 `/data/backups/aidh/pre-merge-<시각>.sql.gz` 에 남긴다). 볼 줄 —
+
+- `✓ agent_sample_embeddings: 덤프 판으로 다시 지은 agent N · 지우기만 M · 순번을 X 로 올림 (총 K행)` — '순번을 … 로 올림' 은 예전 병합이 남긴 겹침을
+  걷었다는 뜻이다(보통 첫 번에만 나온다). 같은 덤프로 다시 돌리면 바꿀 것이 없다.
+- `⚠ agent_sample_embeddings: 색인된 표본 글이 sample_queries 와 다른 agent N개 — … 이 박스의 임베더로 다시 지어야 한다: <이름들> — 끝난 뒤 이 박스에서:
+  curl -fsS -X POST http://127.0.0.1:<API 포트>/api/agents/resync-samples-all` — 병합 실패가 아니다(결정 B — 알리기만 한다). 다시 지을지는 사람이 정한다.
+  지으면 그 curl 한 번이다(쓰기 — 모든 전문가의 표본 임베딩을 이 박스의 임베더로 다시 계산한다). update-all 은 이 줄을 경고로 세지 않는다(결정 C).
+- 끝이 `✗ merge 일부 실패` 면 `/tmp/aidh-merge.log` 를 본다(나머지 표는 반영됐다). `⚠ merge 는 됐지만 dev 에만 있는 열이 빠졌다` 면 API 가 이관을 마친 뒤 한 번 더 돈다.
+
+### 8-2. 읽기 확인(쓰지 않는다)
+
+```bash
+cd ~/Projects/AIDataHub/deploy/apptainer && ( source ./_common.sh && load_env &&
+  apptainer exec "instance://$INST_POSTGRES" psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c \
+  "SELECT (SELECT max(id) FROM public.agent_sample_embeddings), s.last_value FROM pg_sequences s
+    WHERE format('%I.%I', s.schemaname, s.sequencename) = pg_get_serial_sequence('public.agent_sample_embeddings', 'id')" )
+```
+
+`가장 큰 id|순번` 한 줄이 나온다. 순번이 가장 큰 id 보다 작지 않으면 맞다. 그 뒤 운영자 동기화(4절 AD-21 줄)에서 저장 뒤 500 · 표본 색인 실패가 다시 나오지
+않는지, 같은 줄의 로그 grep 에 새 줄이 없는지 본다.
+
+### 8-3. 데이터 단계 차례 — dev 지우기 → OB-73 → 병합 → OB-87(판단 C-17)
+
+1. **dev — 사용자가 직접.** `bash /data/backups/aidh/ad05-ad06-20261030T211507Z/apply.sh`(dev 박스, 13:45 KST 매일 덤프 전). 적용 직전 목록이 백업 때와 다르면
+   멈춘다. 되돌리기는 같은 폴더의 `restore.sql` 이다. 데모 레코드 셋을 소프트 삭제하고 두 전문가(kooremapper-modelmeta · dynaforge-report)를 지운다.
+2. **cae00 — OB-73 먼저.** 박스 화면 확인(10-27 표의 넷 — 원문 [`../request_1015.md`](../request_1015.md)).
+   - K9 — 데모 카드 `…012` 를 열면 JSON 원문이 코드 칸으로 보인다. **dev 지우기가 실린 덤프가 이 박스에 병합되기 전에** 본다 — 병합이 레코드의 소프트 삭제를
+     옮겨 카드가 목록에서 빠진다(10-27 AD-13 'dev 에서만 지우면'). 이미 병합됐으면 볼 수 없었다고 적는다.
+   - K2 — 로그인이 만료되면 전문가 상세 · 카드 화면이 로그인 화면으로 가고, 상세 실패는 공용 문구와 '다시 시도' 로 보인다.
+   - K6-5 — 설명도 역할 문서도 없는 전문가(dynaforge-report)의 상세에 '아직 등록되지 않은 전문가' 가 보인다.
+   - K7 — 역할이 빈 전문가가 심의 좌석에 이름 · 키로 앉고 `persona_role_empty` 경고가 난다.
+   - 빈 전문가 행은 병합이 지우지 않아 OB-87 까지 남는다 — K6-5 · K7 은 병합 뒤에도 볼 수 있다.
+3. **cae00 — 병합.** dev 지우기가 실린 덤프를 update-all(또는 8-1)이 병합한다. 0 으로 끝나 표식이 적혔는지 본다 — 3 으로 끝나면 표식이 남지 않아 옛 덤프가
+   다시 든다(10-27 AD-13).
+4. **cae00 — OB-87.** 이 박스에서 두 전문가를 지운다(AD-13 순서 5 — 병합은 행을 지우지 않는다). dev 와 같은 길이다 — AIDataHub API 의
+   `DELETE /api/agents/<키>`(쓰기 — 사람이 한다). 다음 병합 뒤 다시 들어오지 않았는지 본다(순서 6).
 
 ## 9. 아직 오지 않은 것
 
