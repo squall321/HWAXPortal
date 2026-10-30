@@ -12,7 +12,9 @@
 
 import importlib.util
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -669,13 +671,36 @@ def test_HP53_write_칸이_없는_옛_게이트웨이면_건너뛰었다고_한_
     assert warns == ["목록 밖 쓰기 점검 건너뜀 — 이 게이트웨이 /tools-map 에 write 칸이 없다(옛 판)"], warns
 
 
+def test_HP53_목록_밖_쓰기는_붙은_선택_앱의_도구까지_본다():
+    """선택 앱(smart-twin-cluster)이 붙은 박스에서는 그 앱 도구도 이 운영자가 부른다 — 기본 앱만 보면 클러스터 쪽 쓰기를 놓친다."""
+    _mcp_only, both = _smarttwin_maps()
+    tm = {**both, "map": {**both["map"], "slurm_drain_node": "smart-twin-cluster"}, "write": ["slurm_drain_node"], "routine_read": []}
+    warns: list[str] = []
+    rows, skipped, errors = _sync().plan(_one("he-sim-smarttwin"), tm, None, warns)
+    assert rows and not errors and not skipped, (errors, skipped)
+    assert warns == ["목록 밖 쓰기 he-sim-smarttwin: 1개 — slurm_drain_node(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)"], warns
+
+
+def test_HP53_목록_밖_쓰기가_많으면_앞_여덟만_적고_나머지는_수로_말한다():
+    sync = _sync()
+    extra = {f"recompute_cache_{i:02d}" for i in range(11)}
+    warns: list[str] = []
+    sync.plan(_one("he-calc-thermalshock"), _write_map("he-calc-thermalshock", extra, set()), None, warns)
+    n = sync.LOOSE_SHOW
+    assert n < len(extra)
+    shown = ", ".join(sorted(extra)[:n])
+    assert warns == [f"목록 밖 쓰기 he-calc-thermalshock: 11개 — {shown} 외 {11 - n}개(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)"], warns
+
+
 # ── 미리보기 · 반영 본체(main) — 게이트웨이와 AIDataHub 를 흉내 낸다 ─────────────────────────────────────────────
 class _FakeHub:
-    """게이트웨이 /tools-map + AIDataHub /api/agents. save_status 가 5xx 이면 AD-21 꼴 — 저장(saves)은 하고 응답만 500 이다."""
+    """게이트웨이 /tools-map + AIDataHub /api/agents. save_status 가 5xx 이면 AD-21 꼴 — 저장(saves)은 하고 응답만 500 이다.
+    row_status 를 주면 한 명씩 읽기(GET /api/agents/<key>)가 그 코드로 실패한다."""
 
-    def __init__(self, tmap: dict, rows: dict | None = None, save_status: int = 200, saves: bool = True, list_status: int = 200):
+    def __init__(self, tmap: dict, rows: dict | None = None, save_status: int = 200, saves: bool = True, list_status: int = 200,
+                 row_status: int | None = None):
         self.tmap, self.rows = tmap, {k: dict(v) for k, v in (rows or {}).items()}
-        self.save_status, self.saves, self.list_status = save_status, saves, list_status
+        self.save_status, self.saves, self.list_status, self.row_status = save_status, saves, list_status, row_status
         self.calls: list[tuple[str, str]] = []
 
     def __call__(self, method, url, body=None):
@@ -694,6 +719,8 @@ class _FakeHub:
             if self.saves:
                 self.rows[key] = {**self.rows[key], **body}
             return self.save_status, ("Internal Server Error" if self.save_status >= 300 else self.rows[key])
+        if self.row_status is not None:
+            return self.row_status, "boom"
         return (200, dict(self.rows[key])) if key in self.rows else (404, "not found")
 
 
@@ -717,13 +744,16 @@ def test_HP51_미리보기가_앱이_이_게이트웨이에_없는_운영자를_
     rows = {"he-sim-smarttwin": _op_row("he-sim-smarttwin", ["smart-twin-mcp", "smart-twin-cluster"]),   # dev 판 — 선택 앱까지
             "he-doc-reportarchive": _op_row("he-doc-reportarchive", ["reportarchive"]),
             "he-calc-old": _op_row("he-calc-old", ["smart-twin-mcp"]),                                     # 앱이 다 있다
+            "he-calc-legacy": _op_row("he-calc-legacy", ["ghost-app"]),                                    # 정본에 없는 운영자
             "pcb-warpage": {"agent_type": "pcb-warpage", "name": "x", "response_config": {}}}               # 운영자가 아니다
     rc, out, err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, rows))
     assert rc == 0, err
     assert "  ! 운영자 앱이 이 게이트웨이에 없다 — he-doc-reportarchive: reportarchive · 챗에서 고르면 그 앱 도구 없이 답한다" in out, out
     assert ("  ! 운영자 앱이 이 게이트웨이에 없다 — he-sim-smarttwin: smart-twin-cluster · smart-twin-mcp 도구로만 답한다") in out, out
+    # 사람이 만들었거나 정본에서 빠진 운영자도 조직도에서 고를 수 있다 — 정본 키만 보면 놓친다
+    assert "  ! 운영자 앱이 이 게이트웨이에 없다 — he-calc-legacy: ghost-app · 챗에서 고르면 그 앱 도구 없이 답한다" in out, out
     gone = [ln for ln in out.splitlines() if ln.startswith("  ! ")]
-    assert len(gone) == 2, gone
+    assert len(gone) == 3, gone
     assert "  ~ he-sim-smarttwin 고친다" in out, "어긋남(+ · ~)은 그대로 따로 찍는다 — --apply 하면 없는 선택 앱이 빠진다"
 
 
@@ -732,6 +762,47 @@ def test_HP51_AIDataHub_목록을_못_읽으면_건너뛰었다고_말한다(mon
     rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, list_status=500))
     assert rc == 0
     assert "  · AIDataHub 전문가 목록을 못 읽었다(500) — 정본에 없는 he-* · 운영자 앱 점검을 건너뛴다" in out, out
+
+
+def _name_error_map() -> dict:
+    """smart-twin-mcp 만 붙은 박스에서 he-sim-smarttwin 의 key_tools 하나(list_recent_jobs)가 없다 — 정본 이름 오류(계획 오류)."""
+    mcp_only, _both = _smarttwin_maps()
+    return {**mcp_only, "map": {k: v for k, v in mcp_only["map"].items() if k != "list_recent_jobs"}}
+
+
+def test_HP51_정본_이름_오류로_멈춰도_운영자_앱_줄은_찍는다(monkeypatch, capsys):
+    """이름 하나가 이 게이트웨이에 없으면 계획 오류로 멈춘다(rc 2). '!' 는 계획과 상관이 없다 — 같이 사라지면 update-all 에는 '미리보기를 못
+    했다' 만 남고, 그 박스에서 운영자 앱이 없다는 것을 알 길이 다시 없어진다(종전 동작)."""
+    rows = {"he-doc-reportarchive": _op_row("he-doc-reportarchive", ["reportarchive"])}
+    rc, out, err = _run_main(monkeypatch, capsys, _FakeHub(_name_error_map(), rows))
+    assert rc == 2 and "✗ he-sim-smarttwin: key_tools 에 이 앱에 없는 도구 — list_recent_jobs" in err, (out, err)
+    assert "  ! 운영자 앱이 이 게이트웨이에 없다 — he-doc-reportarchive: reportarchive · 챗에서 고르면 그 앱 도구 없이 답한다" in out, out
+    # --show 는 프롬프트 하나를 찍는 손 명령이다 — 알림을 섞지 않는다
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(_name_error_map(), rows), "--show", "he-sim-smarttwin")
+    assert rc == 2 and "  ! " not in out, out
+
+
+def test_HP51_행_조회가_실패해_멈춰도_운영자_앱_줄은_찍는다(monkeypatch, capsys):
+    mcp_only, _both = _smarttwin_maps()
+    rows = {"he-doc-reportarchive": _op_row("he-doc-reportarchive", ["reportarchive"])}
+    rc, out, err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, rows, row_status=500))
+    assert rc == 1 and "✗ he-sim-smarttwin 조회 실패 500" in err, (out, err)
+    assert "  ! 운영자 앱이 이 게이트웨이에 없다 — he-doc-reportarchive: reportarchive" in out, out
+    assert "미리보기(--apply 로 반영)" not in out, "멈춘 실행은 요약 줄을 찍지 않는다(종전과 같다)"
+
+
+def test_HP51_HP53_check_는_알림_줄만_찍고_행마다_묻지_않는다(monkeypatch, capsys):
+    """update-all §6 이 실행마다 부른다. 정본 이름 오류가 있어도 알림 줄은 다 찍고 0 으로 끝난다(점검은 했다 — 이름 오류 · 어긋남은 미리보기
+    몫이다). 행마다 조회하지 않고 + · ~ 도 찍지 않는다."""
+    tm = _name_error_map()
+    tm = {**tm, "map": {**tm["map"], "purge_results": "smart-twin-mcp"}, "write": ["purge_results"], "routine_read": []}
+    hub = _FakeHub(tm, {"he-doc-reportarchive": _op_row("he-doc-reportarchive", ["reportarchive"])})
+    rc, out, err = _run_main(monkeypatch, capsys, hub, "--check")
+    assert rc == 0 and err == "", (out, err)
+    assert "  ! 운영자 앱이 이 게이트웨이에 없다 — he-doc-reportarchive: reportarchive" in out, out
+    assert "  · 목록 밖 쓰기 he-sim-smarttwin: 1개 — purge_results(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)" in out, out
+    assert not [c for c in hub.calls if c[1].startswith("agents/")], hub.calls
+    assert not [ln for ln in out.splitlines() if ln.startswith(("  + ", "  ~ "))], out
 
 
 # ── AD-21(AIDataHub) — 저장은 됐는데 500 이면 다시 읽어 확인하고 이어 간다 ──────────────────────────────────────────
@@ -772,3 +843,70 @@ def test_AD21_거절은_다시_읽지_않고_멈춘다(monkeypatch, capsys):
     rc, _out, err = _run_main(monkeypatch, capsys, hub, "--apply")
     assert rc == 1 and "✗ he-sim-smarttwin 생성 실패 422" in err, err
     assert hub.calls.count(("GET", "agents/he-sim-smarttwin")) == 1
+# ── update-all §6 — HE팀 운영자 점검(HP-51 · HP-53)을 실행마다 ─────────────────────────────────────────────────────
+# §3 의 미리보기(HP-35)는 새 덤프를 병합한 실행에만 돌고 갱신 전 게이트웨이를 본다 — 덤프가 그대로인 실행(대부분)은 '!' 를 못 봤고,
+# '목록 밖 쓰기' 는 어느 실행에도 올라오지 않았다. 블록은 원문을 떼어 ok · bad 를 셸 함수로 갈아 돌린다(스크립트는 대역).
+_UA = (_ROOT / "infra" / "scripts" / "update-all.sh").read_text(encoding="utf-8")
+_GONE = "  ! 운영자 앱이 이 게이트웨이에 없다 — he-sim-smarttwin: smart-twin-mcp · 챗에서 고르면 그 앱 도구 없이 답한다\n"
+_LOOSE = ("  · 목록 밖 쓰기 he-sim-dynaforge: 2개 — remove_task_alias, unlink_report_revision"
+          "(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)\n")
+
+
+def _s6_block() -> str:
+    i = _UA.index("# ── HE팀 운영자 점검 — 실행마다")
+    return _UA[i:_UA.index("\nfi\n", i) + 4]
+
+
+def _s6(tmp_path, out: str, rc: int = 0, tm_ok: int = 1) -> str:
+    repo = tmp_path / "repo"
+    (repo / "infra" / "scripts").mkdir(parents=True)
+    (repo / "infra" / "scripts" / "sync-he-personas.py").write_text(
+        "import sys, pathlib\n"
+        f"pathlib.Path({str(tmp_path / 'called')!r}).write_text(' '.join(sys.argv[1:]))\n"
+        f"sys.stdout.write({out!r})\nsys.exit({rc})\n", encoding="utf-8")
+    script = "\n".join(["set -uo pipefail",                       # update-all 과 같은 셸 설정
+                        'ok() { echo "OK:$*"; }', 'bad() { echo "BAD:$*"; }',
+                        f"SELF_REPO='{repo}'", f"TM_OK={tm_ok}", _s6_block(), "echo END"])
+    p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
+                       env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)})
+    assert p.returncode == 0 and p.stdout.endswith("END\n"), p.stdout + p.stderr
+    return p.stdout[:-len("END\n")]
+
+
+def test_update_all_6_은_운영자_점검을_check_로_부르고_경고로_올린다(tmp_path):
+    out = _s6(tmp_path, "  · 건너뜀 he-data-arp: 이 게이트웨이에 앱이 없다(arp)\n" + _GONE + _LOOSE)
+    assert (tmp_path / "called").read_text() == "--check", "쓰지 않는 알림 모드다(--apply 아님 · 행마다 조회 없음)"
+    assert "BAD:HE팀 운영자 1명의 앱이 이 게이트웨이에 없다 — 조직도에서 고르면 그 앱 도구 없이 답한다" in out, out
+    assert "    ! 운영자 앱이 이 게이트웨이에 없다 — he-sim-smarttwin: smart-twin-mcp" in out, out
+    assert "BAD:HE팀 운영자 1명의 앱에 writes · confirm 어디에도 없는 쓰기 도구가 있다" in out, out
+    assert "    · 목록 밖 쓰기 he-sim-dynaforge: 2개 — remove_task_alias" in out, out
+    assert "OK:" not in out and "건너뜀 he-data-arp" not in out, out
+
+
+def test_update_all_6_은_다_맞으면_초록_한_줄이다(tmp_path):
+    out = _s6(tmp_path, "  · 건너뜀 he-data-arp: 이 게이트웨이에 앱이 없다(arp)\n  ? 정본에 없는 he-* 에이전트 1명 — he-old (지우지 않았다)\n")
+    assert out == "OK:HE팀 운영자 — 모는 앱이 다 이 게이트웨이에 있고 목록 밖 쓰기 도구가 없다\n", out
+
+
+def test_update_all_6_은_점검을_건너뛰었으면_초록이라_하지_않고_그_줄을_보인다(tmp_path):
+    skipped = ("  · 목록 밖 쓰기 점검 건너뜀 — 이 게이트웨이 /tools-map 에 write 칸이 없다(옛 판)\n"
+               "  · AIDataHub 전문가 목록을 못 읽었다(500) — 정본에 없는 he-* · 운영자 앱 점검을 건너뛴다\n")
+    assert _s6(tmp_path, skipped) == skipped
+
+
+def test_update_all_6_은_스크립트가_실패하면_못_했다고_말한다(tmp_path):
+    out = _s6(tmp_path, "✗ 게이트웨이 /tools-map 을 못 읽었다(0) — http://127.0.0.1:9110\n", rc=2)
+    assert out == "BAD:HE팀 운영자 점검을 하지 못했다(rc 2) — python3 infra/scripts/sync-he-personas.py --check 를 손으로 돌려 본다\n", out
+
+
+def test_update_all_6_은_게이트웨이_지도를_못_읽었으면_부르지_않는다(tmp_path):
+    assert _s6(tmp_path, _GONE, tm_ok=0) == "" and not (tmp_path / "called").exists()
+
+
+def test_update_all_운영자_점검은_재기동_뒤_6_에서_올리고_3_은_어긋남만_본다():
+    b = _s6_block()
+    assert _UA.index('hr "5) 게이트웨이 config 정합') < _UA.index(b) < _UA.index('hr "6b) 등록 정합'), "재기동 · 재프로비저닝을 마친 게이트웨이로 본다"
+    assert _UA.index("# ── 새 앱 점검 — 처음 본 앱을") < _UA.index(b) < _UA.index("SMOKE_PY="), "갱신한 지도를 읽은(TM_OK) 뒤 · 스모크 앞"
+    s3 = _UA[_UA.index('hr "3) AIDataHub 데이터'):_UA.index('hr "2c) ste 코드 최신화')]
+    assert 'sync-he-personas.py" 2>&1' in s3, "§3 은 merge 뒤 미리보기(HP-35)를 그대로 돈다"
+    assert "'^  ! '" not in s3 and "목록 밖 쓰기" not in s3, "§3 은 갱신 전 게이트웨이다 — 두 알림은 §6 한 곳에서만 올린다(두 번 찍지 않는다)"

@@ -1184,13 +1184,6 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
       else
         ok "HE팀 운영자 페르소나 — merge 뒤에도 이 박스 판 그대로(미리보기)"
       fi
-      # 운영자 앱이 이 게이트웨이에 없다(docs/request-1030 HP-51) — 이 박스 AIDataHub 의 운영자(dev 덤프로 들어온 것 포함)가 모는 앱이
-      # 여기 없으면 조직도에서 고를 수는 있어도 챗을 보낸 뒤에야 주의가 떴다(DW-12). 미리보기가 '  ! ' 줄로 찍는다 — 막지 않는다.
-      _hp_gone="$(printf '%s\n' "$_hp_out" | grep -E '^  ! ' || true)"
-      if [ -n "$_hp_gone" ]; then
-        bad "HE팀 운영자 $(printf '%s\n' "$_hp_gone" | grep -c .)명의 앱이 이 게이트웨이에 없다 — 챗에서 고르면 그 앱 도구 없이 답한다(입력창 전문가 알약에 표지가 붙는다)"
-        printf '%s\n' "$_hp_gone" | head -10 | sed 's/^/  /'
-      fi
     fi
   fi
 else
@@ -3168,6 +3161,30 @@ if [ "$TM_OK" = 1 ]; then
     case "$_ack" in ok) ok "$_act" ;; warn) bad "$_act" ;; info) echo "  · $_act" ;; esac
   done <<<"$_aco"
   [ "$_acrc" = 0 ] || bad "새 앱 점검을 하지 못했다(rc $_acrc) — python3 infra/scripts/app-checks.py 를 손으로 돌려 본다"
+fi
+# ── HE팀 운영자 점검 — 실행마다, 재기동 · 재프로비저닝을 마친 게이트웨이로 본다(docs/request-1030 HP-51 · HP-53) ──
+# '! ' 는 이 박스 AIDataHub 의 운영자(dev 덤프로 들어온 것 포함)가 모는 앱이 이 게이트웨이에 없다는 줄이다 — 조직도에서 고를 수는 있어도
+# 챗을 보낸 뒤에야 주의가 떴다(DW-12). '목록 밖 쓰기' 는 운영자 앱의 쓰기 꼴 도구가 정본 writes · confirm 어디에도 없다는 줄이다. 막지 않는다(⚠).
+# §3 의 운영자 미리보기(HP-35)는 새 덤프를 병합한 실행에만 돌고 갱신 전 게이트웨이를 본다 — 거기에 두면 덤프가 그대로인 실행은 말이 없다.
+if [ "$TM_OK" = 1 ]; then
+  _hpc_rc=0; _hpc="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" --check 2>&1)" || _hpc_rc=$?
+  _hpc_gone="$(printf '%s\n' "$_hpc" | grep -E '^  ! ' || true)"
+  _hpc_loose="$(printf '%s\n' "$_hpc" | grep -E '^  · 목록 밖 쓰기 he-' || true)"
+  _hpc_skip="$(printf '%s\n' "$_hpc" | grep -E '^  · (목록 밖 쓰기 점검 건너뜀|AIDataHub 전문가 목록을 못 읽었다)' || true)"
+  if [ "$_hpc_rc" != 0 ]; then
+    bad "HE팀 운영자 점검을 하지 못했다(rc $_hpc_rc) — python3 infra/scripts/sync-he-personas.py --check 를 손으로 돌려 본다"
+  elif [ -z "$_hpc_gone$_hpc_loose$_hpc_skip" ]; then
+    ok "HE팀 운영자 — 모는 앱이 다 이 게이트웨이에 있고 목록 밖 쓰기 도구가 없다"
+  fi
+  if [ -n "$_hpc_gone" ]; then
+    bad "HE팀 운영자 $(printf '%s\n' "$_hpc_gone" | grep -c .)명의 앱이 이 게이트웨이에 없다 — 조직도에서 고르면 그 앱 도구 없이 답한다"
+    printf '%s\n' "$_hpc_gone" | head -10 | sed 's/^/  /'
+  fi
+  if [ -n "$_hpc_loose" ]; then
+    bad "HE팀 운영자 $(printf '%s\n' "$_hpc_loose" | grep -c .)명의 앱에 writes · confirm 어디에도 없는 쓰기 도구가 있다 — infra/personas/he-team.json 의 맞는 쪽에 넣는다"
+    printf '%s\n' "$_hpc_loose" | head -10 | sed 's/^/  /'
+  fi
+  [ -z "$_hpc_skip" ] || printf '%s\n' "$_hpc_skip"
 fi
 
 # 도구 수는 tools/list 의 응답 길이일 뿐이다 — tools/list 는 답하면서 tools/call 은 전부

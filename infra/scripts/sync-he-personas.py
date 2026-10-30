@@ -18,8 +18,10 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 없으면 빼고 만든다(건너뛰지 않는다. 미리보기에 '· 일부' 로 찍는다).
 
 막지 않고 알리기만 하는 것이 둘 더 있다(docs/request-1030). 운영자 앱의 쓰기 꼴 도구(/tools-map 의 write) 가운데 writes · confirm
-어디에도 없는 것은 '· 목록 밖 쓰기' 로(HP-53), 이 박스 AIDataHub 의 운영자가 모는 앱이 이 게이트웨이에 없는 것은 '! ' 로 찍는다(HP-51 —
-update-all §2b 가 ⚠ 로 올린다). --apply 에서 저장 요청이 5xx 면 다시 읽어 저장됐는지 보고, 저장됐으면 알리고 이어 간다(AIDataHub AD-21).
+어디에도 없는 것은 '· 목록 밖 쓰기' 로(HP-53), 이 박스 AIDataHub 의 운영자가 모는 앱이 이 게이트웨이에 없는 것은 '! ' 로 찍는다(HP-51).
+'! ' 는 정본의 이름 오류 · 저장 실패와 상관없이 /tools-map 을 읽었으면 늘 본다. --check 는 이 두 알림만 찍는다 — update-all §6 이
+실행마다(재기동 · 재프로비저닝을 마친 게이트웨이로) 불러 ⚠ 로 올린다. --apply 에서 저장 요청이 5xx 면 다시 읽어 저장됐는지 보고,
+저장됐으면 알리고 이어 간다(AIDataHub AD-21).
 
   GATEWAY_HTTP_BASE  기본 http://127.0.0.1:9110
   AIDH_HTTP_BASE     기본 http://127.0.0.1:8001
@@ -173,8 +175,9 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
         both = sorted(set(p["writes"]) & set(p["confirm"]))
         if both:
             errors.append(f"{key}: writes 와 confirm 에 같이 있다 — {', '.join(both)}")
-        # 운영자 앱의 쓰기 꼴 도구가 두 목록 어디에도 없다(docs/request-1030 HP-53) — 프롬프트의 '요청했을 때만 · 확인을 받은 뒤' 줄에도,
-        # 에이전트서버의 확인 관문(HA-29)이 읽는 목록에도 빠진다. 정본은 노출 이름이나 접두 별칭으로 적으므로 둘 다 대조한다.
+        # 운영자 앱의 쓰기 꼴 도구가 두 목록 어디에도 없다(docs/request-1030 HP-53) — 프롬프트의 '요청했을 때만 · 확인을 받은 뒤' 줄에서
+        # 빠지고, 에이전트서버의 확인 관문(HA-29)이 들어가면 그 관문이 읽을 목록에서도 빠진다. 정본은 노출 이름이나 접두 별칭으로 적으므로
+        # 둘 다 대조한다.
         if warns is not None and write is not None:
             listed = set(p["writes"]) | set(p["confirm"])
             loose = [t for t in tools if t in write and t not in read_ok and t not in listed
@@ -205,75 +208,13 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
     return out, skipped, errors
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="HE팀 MCP 운영자 페르소나를 AIDataHub 에 동기화")
-    ap.add_argument("--apply", action="store_true", help="실제로 쓴다(없으면 미리보기)")
-    ap.add_argument("--show", metavar="KEY", help="이 페르소나의 system_prompt 를 찍고 끝낸다")
-    args = ap.parse_args()
-
-    spec = json.loads(SPEC.read_text(encoding="utf-8"))
-    st, tmap = _http("GET", f"{GATEWAY}/tools-map")
-    if st != 200 or not isinstance(tmap, dict) or not tmap.get("map"):
-        print(f"✗ 게이트웨이 /tools-map 을 못 읽었다({st}) — {GATEWAY}", file=sys.stderr)
-        return 2
-    notes: list[str] = []
-    warns: list[str] = []
-    rows, skipped, errors = plan(spec, tmap, notes, warns)
-    for s in skipped:
-        print(f"  · 건너뜀 {s}")
-    for n in notes:
-        print(f"  · 일부 {n}")
-    for w in warns:
-        print(f"  · {w}")
-    if errors:
-        for e in errors:
-            print(f"✗ {e}", file=sys.stderr)
-        return 2
-
-    if args.show:
-        row = next((r for r in rows if r["agent_type"] == args.show), None)
-        if not row:
-            print(f"✗ {args.show} 는 이 박스에서 만들 수 없다(정본에 없거나 건너뜀)", file=sys.stderr)
-            return 2
-        print(row["system_prompt"])
-        print(f"\n({len(row['system_prompt'])}자)")
-        return 0
-
-    created = updated = same = 0
-    for r in rows:
-        key = r["agent_type"]
-        st, cur = _http("GET", f"{AIDH}/api/agents/{key}")
-        if st == 404:
-            print(f"  + {key} 새로 만든다 ({len(r['system_prompt'])}자)")
-            if args.apply:
-                st2, res = _http("POST", f"{AIDH}/api/agents", r)
-                if st2 not in (200, 201):
-                    if not _saved_anyway(st2, key, r):
-                        print(f"✗ {key} 생성 실패 {st2}: {res}", file=sys.stderr)
-                        return 1
-                    print(f"  ⚠ {key} 생성 응답이 {st2} 였지만 다시 읽으니 저장됐다 — 이어 간다(AIDataHub AD-21)")
-            created += 1
-            continue
-        if st != 200 or not isinstance(cur, dict):
-            print(f"✗ {key} 조회 실패 {st}: {cur}", file=sys.stderr)
-            return 1
-        patch = {k: r[k] for k in MANAGED if cur.get(k) != r[k]}
-        if not patch:
-            same += 1
-            continue
-        print(f"  ~ {key} 고친다: {', '.join(patch)}")
-        if args.apply:
-            st2, res = _http("PATCH", f"{AIDH}/api/agents/{key}", patch)
-            if st2 != 200:
-                if not _saved_anyway(st2, key, patch):
-                    print(f"✗ {key} 수정 실패 {st2}: {res}", file=sys.stderr)
-                    return 1
-                print(f"  ⚠ {key} 수정 응답이 {st2} 였지만 다시 읽으니 저장됐다 — 이어 간다(AIDataHub AD-21)")
-        updated += 1
-
-    # 정본에서 빠진 he-* 는 지우지 않고 알리기만 한다 — 사람이 만든 것일 수 있다.
+def _report_agents(spec: dict, tmap: dict) -> None:
+    """이 박스 AIDataHub 의 전문가 목록으로 알리기만 하는 둘 — 정본에 없는 he-*(?) · 운영자 앱이 이 게이트웨이에 없다(!).
+    정본 계획 · 행마다 조회 · 저장과 상관없이 부른다 — 정본의 이름 오류 하나에 '!' 줄까지 사라지면 그 박스에서는 운영자 앱이 없다는 것을
+    알 길이 다시 없어진다(docs/request-1030 HP-51)."""
     st, allrows = _http("GET", f"{AIDH}/api/agents")
     if st == 200 and isinstance(allrows, list):
+        # 정본에서 빠진 he-* 는 지우지 않고 알리기만 한다 — 사람이 만든 것일 수 있다.
         known = {p["key"] for p in spec["personas"]}
         stray = sorted(a.get("agent_type", "") for a in allrows
                        if str(a.get("agent_type", "")).startswith("he-") and a.get("agent_type") not in known)
@@ -295,6 +236,89 @@ def main() -> int:
                       + (f" · {', '.join(rest)} 도구로만 답한다" if rest else " · 챗에서 고르면 그 앱 도구 없이 답한다"))
     else:
         print(f"  · AIDataHub 전문가 목록을 못 읽었다({st}) — 정본에 없는 he-* · 운영자 앱 점검을 건너뛴다")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="HE팀 MCP 운영자 페르소나를 AIDataHub 에 동기화")
+    ap.add_argument("--apply", action="store_true", help="실제로 쓴다(없으면 미리보기)")
+    ap.add_argument("--show", metavar="KEY", help="이 페르소나의 system_prompt 를 찍고 끝낸다")
+    ap.add_argument("--check", action="store_true",
+                    help="알림 줄만 찍는다 — 목록 밖 쓰기 · 운영자 앱이 이 게이트웨이에 없다(update-all §6 이 실행마다 부른다)")
+    args = ap.parse_args()
+
+    spec = json.loads(SPEC.read_text(encoding="utf-8"))
+    st, tmap = _http("GET", f"{GATEWAY}/tools-map")
+    if st != 200 or not isinstance(tmap, dict) or not tmap.get("map"):
+        print(f"✗ 게이트웨이 /tools-map 을 못 읽었다({st}) — {GATEWAY}", file=sys.stderr)
+        return 2
+    notes: list[str] = []
+    warns: list[str] = []
+    rows, skipped, errors = plan(spec, tmap, notes, warns)
+    for s in skipped:
+        print(f"  · 건너뜀 {s}")
+    for n in notes:
+        print(f"  · 일부 {n}")
+    for w in warns:
+        print(f"  · {w}")
+    if args.check:
+        # 알림 줄만 — 정본 이름 오류 · 어긋남(+ · ~)은 미리보기 몫이라 여기서는 세지 않는다(오류가 있어도 '!' 는 본다).
+        _report_agents(spec, tmap)
+        return 0
+    if errors:
+        for e in errors:
+            print(f"✗ {e}", file=sys.stderr)
+        if not args.show:
+            _report_agents(spec, tmap)
+        return 2
+
+    if args.show:
+        row = next((r for r in rows if r["agent_type"] == args.show), None)
+        if not row:
+            print(f"✗ {args.show} 는 이 박스에서 만들 수 없다(정본에 없거나 건너뜀)", file=sys.stderr)
+            return 2
+        print(row["system_prompt"])
+        print(f"\n({len(row['system_prompt'])}자)")
+        return 0
+
+    created = updated = same = 0
+    failed = 0   # 멈춘 까닭이 있어도 아래 알림(_report_agents)은 찍고 끝낸다
+    for r in rows:
+        key = r["agent_type"]
+        st, cur = _http("GET", f"{AIDH}/api/agents/{key}")
+        if st == 404:
+            print(f"  + {key} 새로 만든다 ({len(r['system_prompt'])}자)")
+            if args.apply:
+                st2, res = _http("POST", f"{AIDH}/api/agents", r)
+                if st2 not in (200, 201):
+                    if not _saved_anyway(st2, key, r):
+                        print(f"✗ {key} 생성 실패 {st2}: {res}", file=sys.stderr)
+                        failed = 1
+                        break
+                    print(f"  ⚠ {key} 생성 응답이 {st2} 였지만 다시 읽으니 저장됐다 — 이어 간다(AIDataHub AD-21)")
+            created += 1
+            continue
+        if st != 200 or not isinstance(cur, dict):
+            print(f"✗ {key} 조회 실패 {st}: {cur}", file=sys.stderr)
+            failed = 1
+            break
+        patch = {k: r[k] for k in MANAGED if cur.get(k) != r[k]}
+        if not patch:
+            same += 1
+            continue
+        print(f"  ~ {key} 고친다: {', '.join(patch)}")
+        if args.apply:
+            st2, res = _http("PATCH", f"{AIDH}/api/agents/{key}", patch)
+            if st2 != 200:
+                if not _saved_anyway(st2, key, patch):
+                    print(f"✗ {key} 수정 실패 {st2}: {res}", file=sys.stderr)
+                    failed = 1
+                    break
+                print(f"  ⚠ {key} 수정 응답이 {st2} 였지만 다시 읽으니 저장됐다 — 이어 간다(AIDataHub AD-21)")
+        updated += 1
+
+    _report_agents(spec, tmap)
+    if failed:
+        return failed
 
     verb = "반영" if args.apply else "미리보기(--apply 로 반영)"
     print(f"{verb} — 새로 {created} · 고침 {updated} · 그대로 {same} · 건너뜀 {len(skipped)}")
