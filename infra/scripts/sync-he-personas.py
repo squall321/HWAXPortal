@@ -89,8 +89,10 @@ def build_prompt(p: dict, app_labels: list[str], n_tools: int, tool_map: list[tu
         if p["writes"]:
             lines.append(f"- 사용자가 그 작업을 요청했을 때만 부른다 — {', '.join(p['writes'])}.")
         if p["confirm"]:
-            lines.append("- 되돌리기 어렵다. 무엇이 바뀌는지 먼저 말하고 확인을 받은 뒤 부른다 — "
-                         f"{', '.join(p['confirm'])}.")
+            # 확인하는 길은 박스마다 다르다 — 에이전트서버의 확인 관문(10-30 HA-29)이 켜진 박스는 서버가 카드로 받고, 꺼진 박스는 글로 묻는다.
+            # 그 갈림은 에이전트서버의 시스템 규칙이 안다 — 여기서 '먼저 말하고 확인' 을 박으면 관문이 켜진 박스에서 두 번 묻는다(C-15).
+            lines.append("- 되돌리기 어렵다. 사람의 확인을 받은 뒤에만 실행된다 — 확인하는 길은 시스템 규칙을 따른다(서버의 확인 카드가 켜진 "
+                         f"박스는 글로 따로 묻지 않는다) — {', '.join(p['confirm'])}.")
     if p.get("tool_map"):
         # 사전 지식이 아직 얇은 앱(cae00 전용)은 도구 이름이라도 영역별로 준다.
         lines += ["", "## 도구 지도", *[f"- {label}: {', '.join(names)}" for label, names in tool_map]]
@@ -186,6 +188,14 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
                 more = f" 외 {len(loose) - LOOSE_SHOW}개" if len(loose) > LOOSE_SHOW else ""
                 warns.append(f"목록 밖 쓰기 {key}: {len(loose)}개 — {', '.join(loose[:LOOSE_SHOW])}{more}"
                              "(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)")
+            # 거꾸로 — 두 목록에 적었는데 게이트웨이가 읽기로 확인한 도구(routine_read)다. 확인 관문(HA-29)이 사람이 시키지 않은 조회마다
+            # 카드를 세운다(C-15). 막지는 않는다 — 읽기 표지가 틀렸을 수도 있어 사람이 본다.
+            readish = sorted(n for n in listed if (n in read_ok) or any(n == f"{a.replace('-', '')}_{t}" and t in read_ok
+                                                                        for a in p["apps"] for t in by_app[a]))
+            if readish:
+                more = f" 외 {len(readish) - LOOSE_SHOW}개" if len(readish) > LOOSE_SHOW else ""
+                warns.append(f"읽기를 쓰기로 {key}: {len(readish)}개 — {', '.join(readish[:LOOSE_SHOW])}{more}"
+                             "(게이트웨이가 읽기로 확인했다 — 확인 관문이 조회마다 카드를 세운다, 맞는지 본다)")
         tool_map: dict[str, list[str]] = {}
         for t in tools:
             tool_map.setdefault(area_label.get(areas.get(t, ""), "미분류"), []).append(t)

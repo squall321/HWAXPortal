@@ -837,7 +837,7 @@
       ],
       "key_tools": ["risk_list_projects", "risk_get_coverage", "risk_list_panels", "risk_get_diff", "risk_get_precedents", "risk_taxonomy", "risk_get_registry"],
       "writes": ["risk_start_job", "risk_create_project", "risk_create_diff"],
-      "confirm": ["risk_submit_panel_result", "risk_add_finding"],
+      "confirm": ["risk_submit_panel_result", "risk_add_finding", "risk_job_action"],
       "samples": [
         "심사 과제 목록이랑 커버리지 보여줘",
         "이 과제 최근 변경 diff 요약하고 선례 있나 봐줘",

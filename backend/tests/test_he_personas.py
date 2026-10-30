@@ -564,7 +564,7 @@ _HP53 = {
                              {"rootdesigndatahub_objects_delete", "rootdesigndatahub_object_merge",
                               "rootdesigndatahub_datasource_sync", "rootdesigndatahub_bundle_import",
                               "rootdesigndatahub_job_apply"}),
-    "he-expert-risk": ({"risk_start_job", "risk_create_project", "risk_create_diff"}, set()),
+    "he-expert-risk": ({"risk_start_job", "risk_create_project", "risk_create_diff"}, {"risk_job_action"}),
     "he-cad-stepforge": ({"run_recipe", "save_recipe", "set_revision"}, {"set_admin"}),
     "he-sim-dynaforge": ({"recipe_propose", "heaxkooremapper_mcp_recipe_run"}, {"recipe_register"}),
 }
@@ -959,3 +959,29 @@ def test_update_all_운영자_점검은_재기동_뒤_6_에서_올리고_3_은_�
     s3 = _UA[_UA.index('hr "3) AIDataHub 데이터'):_UA.index('hr "2c) ste 코드 최신화')]
     assert 'sync-he-personas.py" 2>&1' in s3, "§3 은 merge 뒤 미리보기(HP-35)를 그대로 돈다"
     assert "'^  ! '" not in s3 and "목록 밖 쓰기" not in s3, "§3 은 갱신 전 게이트웨이다 — 두 알림은 §6 한 곳에서만 올린다(두 번 찍지 않는다)"
+
+
+# ── C-15(docs/request-1030 design-integration) — 확인 관문(HA-29)과 운영자 정의의 맞물림 ─────────────────────────────────────────
+def test_C15_confirm_줄은_확인하는_길을_시스템_규칙에_맡긴다():
+    """관문이 켜진 박스는 서버가 카드로 묻는다 — 운영자 글이 '먼저 말하고 확인을 받은 뒤' 를 박으면 사람에게 두 번 묻는다."""
+    one = _one("he-expert-risk")
+    rows, skipped, errors = _sync().plan(one, _write_map("he-expert-risk", set(), set()))
+    assert rows and not errors and not skipped, (errors, skipped)
+    state = rows[0]["system_prompt"].split("## 상태를 바꾸는 도구", 1)[1]
+    assert "확인하는 길은 시스템 규칙을 따른다" in state and "risk_job_action" in state
+    assert "먼저 말하고 확인을 받은 뒤 부른다" not in state
+
+
+def test_C15_미리보기는_읽기로_확인된_도구를_쓰기_목록에_적으면_알린다():
+    sync = _sync()
+    one = _one("he-calc-thermalshock")
+    p = one["personas"][0]
+    listed = [*p["writes"], *p["confirm"]]
+    assert listed, "시험 운영자는 쓰기 목록이 있어야 한다"
+    victim = listed[0]
+    tm = _write_map("he-calc-thermalshock", set(), set())
+    tm["routine_read"] = sorted({*tm["routine_read"], _native(victim, p["apps"])})
+    warns: list[str] = []
+    rows, _s, errors = sync.plan(one, tm, None, warns)
+    assert rows and not errors, "알리기만 한다"
+    assert any(w.startswith("읽기를 쓰기로 he-calc-thermalshock: 1개 — ") and victim in w for w in warns), warns
