@@ -59,8 +59,15 @@ def test_요청서가_짚은_낱말과_앱이_들어_있다():
     assert {"object_resolve", "objects_summary", "graph_neighbors"} <= set(hub["tools"]), "타입 이름이 아니라 허브 읽기 도구 이름에 잇는다(R-4)"
     noncore = {k for k, a in d["apps"].items() if a["role"] == "noncore"}
     assert {"fmea", "arp", "odb-hub", "reportarchive", "matnexus", "componentcore"} <= noncore
-    assert {k for k, a in d["apps"].items() if a["role"] == "staging"} == {"stepforge-prod", "dynaforge-prod"}
     assert {r["relation"] for r in d["relations"]} == {"occurs_in_part", "detects", "predicts", "guards_against"}
+
+
+def test_OB04_운영_앱_둘은_시험_사본으로_숨기지_않는다():
+    """10-31 OB-04(사용자 결정 — 10-29 D-2 를 뒤집음) — dynaforge-prod · stepforge-prod 는 운영 앱이다. 역할 staging(시험 사본)이면 게이트웨이가
+    목록 · 검색에서 숨긴다(R-6). 다른 역할로 적어도 뜻이 바뀐다 — sibling 이면 다른 허브 id 막이(HA-30)의 허브가 되고, noncore 면 챗 코어 규칙 ⑦ 에
+    '코어 객체를 갖지 않는다' 로 실린다. 그래서 어휘표에 두지 않는다(보통 앱). 역할 staging 은 남는다 — 박스 덧씌우기가 시험 사본을 숨기는 길이다."""
+    d = _load()
+    assert not {"dynaforge-prod", "stepforge-prod"} & set(d["apps"]), d["apps"]
 
 
 def test_HA32_요청서가_이름을_댄_타입_대응():
