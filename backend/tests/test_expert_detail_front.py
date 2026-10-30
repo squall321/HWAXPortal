@@ -142,7 +142,8 @@ def test_심층_보기의_빈_카드_문구도_연결_상태를_본다():
 
 # ── HP-51(docs/request-1030) 운영자의 앱이 이 서버에 없다는 것을 보내기 전에 ───────────────────────────────────
 # cae00 에서 he-sim-smarttwin 의 앱이 게이트웨이에 없는데 챗을 보낸 뒤에야 '연결돼 있지 않습니다' 주의가 떴다(DW-12). 그 주의(에이전트서버
-# operator_app_missing)와 같은 판정 — 상세(/agent/catalog/agent)의 apps[].connected — 으로 고르는 자리와 입력창 알약에 단다.
+# operator_app_missing)와 같은 판정 — 상세(/agent/catalog/agent)의 apps[].connected — 으로 고르는 자리(상세칸)와 입력창 알약 · 지정 칩에
+# 단다. 조직도 · 빠른 선택기의 줄마다 다는 것은 풀 응답에 운영자 앱 연결이 없어 못 한다(줄마다 상세를 부르게 된다).
 def test_HP51_시작_패널도_운영자_앱_줄을_보인다():
     """조직도 · 좌석 · 심층 보기 상세칸은 OperatorApps 로 '이 서버에 연결 안 됨' 을 보였는데 시작 패널만 빠졌다."""
     sp = _src("StartPicker.tsx")
@@ -164,13 +165,36 @@ def test_HP51_앱이_하나라도_없으면_그_앱_라벨을_준다():
     assert ".filter((a) => a.connected === false)" in fn, "null(매핑을 못 받음)은 없다고 단정하지 않는다 — 에이전트서버와 같은 규칙"
 
 
-def test_HP51_입력창_전문가_알약이_보내기_전에_표지를_단다():
-    src = _src("ExpertToggle.tsx")
+def test_HP51_운영자_앱_표지는_같은_판정을_쓰고_오래_붙들지_않는다():
+    """알약 · 칩이 같이 쓰는 훅이다. 게이트웨이는 끊긴 앱을 60초마다 다시 붙이고 update-all 은 앱을 다시 띄운다 — 한 번 받은 값을 탭이 닫힐
+    때까지 쓰면 돌아온 앱에도 표지가 남고 나중에 끊긴 앱은 못 짚었다(종전 모듈 캐시)."""
+    src = _src("useOperatorGone.ts")
     assert "import { operatorGoneApps } from './AgentFacts';" in src
-    eff = src[src.index("const [gone, setGone] = useState<string[]>([]);"):]
-    eff = eff[:eff.index("}, [pinnedAgent]);")]
+    eff = src[src.index("export function useOperatorGone(key: string | null | undefined): string[] {"):]
+    eff = eff[:eff.index("}, [key]);")]
     assert "if (!key?.startsWith('he-')) {" in eff, "운영자 키만 묻는다 — 풀의 전문가마다 상세를 부르지 않는다"
     assert "fetchAgentDetail(key)" in eff and "if (d.error) return;" in eff, "상세를 못 받으면 없다고 단정하지 않는다"
-    assert "goneCache.set(key, g);" in eff and "if (alive) setGone(g);" in eff, "늦게 온 응답이 바뀐 전문가의 알약을 덮지 않는다"
+    assert "const TTL_MS = 60_000;" in src and "if (hit && Date.now() - hit.at < TTL_MS) return;" in eff, "붙든 값은 60초까지만"
+    assert "cache.set(key, { apps: g, at: Date.now() });" in eff and "if (alive) setGone(g);" in eff, (
+        "늦게 온 응답이 바뀐 전문가의 표지를 덮지 않는다")
+
+
+def test_HP51_입력창_전문가_알약이_보내기_전에_표지를_단다():
+    src = _src("ExpertToggle.tsx")
+    assert "import { useOperatorGone } from './useOperatorGone';" in src
+    assert "const gone = useOperatorGone(pinnedAgent);" in src
     assert "${conflict || gone.length > 0 ? ' is-warn' : ''}" in src, "Thinking 충돌과 같은 표지(is-warn)를 쓴다"
     assert "이 서버 게이트웨이에 연결돼 있지 않아 그 앱 도구 없이 답합니다" in src
+
+
+def test_HP51_알약이_없는_입력창의_지정_칩도_같은_표지를_단다():
+    """독 · 심의 입력창에는 전문가 알약이 없고 지정 전문가가 칩으로만 보인다 — 거기서 보내도 보낸 뒤에야 주의가 떴다."""
+    src = _src("Composer.tsx")
+    assert "import { useOperatorGone } from './useOperatorGone';" in src
+    assert "const pinGone = useOperatorGone(showExpert ? null : pinnedAgent);" in src, "알약이 있는 입력창은 알약이 묻는다 — 두 번 묻지 않는다"
+    chip = src[src.index("{pinnedAgent && !showExpert && ("):]
+    chip = chip[:chip.index("</span>")]
+    assert "className={`composer-pin composer-pin-agent${pinGone.length > 0 ? ' is-warn' : ''}`}" in chip
+    assert "이 서버 게이트웨이에 연결돼 있지 않아 그 앱 도구 없이 답합니다" in chip
+    css = (_CHAT.parents[1] / "styles" / "chat.css").read_text("utf-8")
+    assert re.search(r"\.composer-pin\.is-warn \{[^}]*var\(--warn-fg\)", css), "알약의 is-warn 과 같은 색 표지"

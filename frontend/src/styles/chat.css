@@ -1508,6 +1508,8 @@ body.dock-open .page-wide {
 }
 /* 앱 칩 — 도구 칩과 같은 줄에 서므로 서체로 구분한다(도구는 mono, 앱은 본문체). */
 .composer-pin-app { font-family: inherit; font-weight: 600; }
+/* 지정 전문가(운영자)의 앱이 이 서버 게이트웨이에 없다(HP-51) — 입력창 알약의 is-warn 과 같은 표지 */
+.composer-pin.is-warn { color: var(--warn-fg); border-color: var(--warn-border); background: var(--warn-bg); }
 .composer-pin-x {
   border: none; background: rgba(255, 255, 255, 0.08); color: var(--fg);
   width: 14px; height: 14px; border-radius: 999px; line-height: 1;

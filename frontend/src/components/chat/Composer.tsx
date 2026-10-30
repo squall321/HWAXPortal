@@ -31,6 +31,7 @@ import { DocActions } from './DocActions';
 import { UploadRouter } from './UploadRouter';
 import { DocDispatchPanel } from './DocDispatchPanel';
 import { DocforgeResume } from './DocforgeResume';
+import { useOperatorGone } from './useOperatorGone';
 
 export interface ComposerHandle {
   focus: () => void;
@@ -107,6 +108,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setArmedRoutine,
   } = useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // 알약이 없는 입력창(독 · 심의)의 지정 전문가 칩도 보내기 전에 같은 표지를 단다(docs/request-1030 HP-51 — 알약이 있으면 알약이 묻는다).
+  const pinGone = useOperatorGone(showExpert ? null : pinnedAgent);
   // 보내기 · PC 도우미는 기다린 뒤에 부른다 — 그 사이 사람이 쓴 글 · 붙인 문서를 낡은 값으로 덮지 않게 가장 새 값을 읽는다.
   const latest = useRef({ input, attachedDocs });
   latest.current = { input, attachedDocs };
@@ -441,8 +444,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             // 기계 키가 아니라 사람 이름을 보여 준다(전문가 알약이 있으면 거기서 보이고 해제한다) — 키는 툴팁으로 남긴다(구 저장분은 이름이 없어
             // 키가 그대로 보인다).
             <span
-              className="composer-pin composer-pin-agent"
-              title={`지정 전문가 페르소나 — ${pinnedAgent}`}
+              className={`composer-pin composer-pin-agent${pinGone.length > 0 ? ' is-warn' : ''}`}
+              title={
+                `지정 전문가 페르소나 — ${pinnedAgent}` +
+                (pinGone.length > 0
+                  ? ` · 모는 앱(${pinGone.join(', ')})이 이 서버 게이트웨이에 연결돼 있지 않아 그 앱 도구 없이 답합니다`
+                  : '')
+              }
             >
               <IconUser className="ico" width={14} height={14} /> {shortName(pinnedAgentName || pinnedAgent)}
               <button
