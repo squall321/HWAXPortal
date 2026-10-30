@@ -111,7 +111,9 @@ export function ChatActionBar() {
     }
     if (!a.prompt) return;
     // 쓰던 초안이 있으면 바로 보내지 않고 덧붙여 채운다 — sendMessage 가 입력창을 비워 초안이 사라진다.
-    if (a.mode === 'send' && !input.trim()) sendMessage(a.prompt);
+    // 켜 둔 분석 루틴은 쓰지도 싣지도 않는다(null) — 실리면 이 요청이 루틴의 '덧붙인 말' 이 되어 루틴이 돌고 이 일은 안 된다(R3 반대 검토 #35).
+    // 루틴은 입력창 보내기의 것이다 — 켜 둔 채 다음 발화를 기다린다.
+    if (a.mode === 'send' && !input.trim()) sendMessage(a.prompt, undefined, null);
     else {
       setInput(fillText(input, a.prompt));
       // 채운 뒤 바로 고칠 수 있게 — 페이지의 fillPrompt 와 같다(두 화면 모두 스레드 입력창은 .cx-composer-dock 안).

@@ -9,6 +9,7 @@ import { copyText } from './clipboard';
 import { wikiNotice } from './uploadNotice';
 import { AgentCatalogBlock } from './AgentCatalogBlock';
 import { DelibView } from './DelibView';
+import { RoutineView } from './RoutineView';
 import { ThinkView } from './ThinkView';
 import { ToolCatalogBlock } from './ToolCatalogBlock';
 import { IconArrowDown, IconCheck, IconCopy } from './icons';
@@ -121,13 +122,13 @@ function Row({ msg }: { msg: Message }) {
   const hasThink = Boolean(msg.think?.seats?.length);
 
   // ⚠ 이 지역 변수의 뜻은 '스트리밍 중인데 아직 내용이 없다' 이지 띵킹 모드가 아니다.
-  //   이름이 겹치므로 헷갈리지 말 것(모드 쪽은 hasThink).
-  const thinking = Boolean(msg.streaming) && !msg.text && !hasDelib && !hasThink;
+  //   이름이 겹치므로 헷갈리지 말 것(모드 쪽은 hasThink). 루틴 턴은 RoutineView 가 진행을 그린다.
+  const thinking = Boolean(msg.streaming) && !msg.text && !hasDelib && !hasThink && !msg.routine;
   // A finished assistant turn with no text/error (e.g. the model only called a tool
   // and produced no closing text) would otherwise render empty — show a fallback.
   const emptyDone =
     !msg.streaming && !msg.text && !msg.error && !msg.status && !hasDelib && !hasThink &&
-    !msg.toolCatalog && !msg.agentCatalog;
+    !msg.toolCatalog && !msg.agentCatalog && !msg.routine;
 
   // 페르소나 말풍선 — 지정 전문가로 보낸 발화의 답이면 심의 회의록처럼 '누가 말했는지'를 세운다.
   // 심의·띵킹 메시지에는 붙이지 않는다 — 그쪽은 좌석마다 자기 버블을 이미 그린다.
@@ -151,6 +152,8 @@ function Row({ msg }: { msg: Message }) {
       >
         {/* 챗 서버의 생각 글 — 접힌 칸. 답이 나오기 전엔 '생각 중' 으로(1~2분 동안 화면이 멈춰 보이지 않게, docs/chat-depth-context C2). */}
         {msg.reasoning && <ReasoningBlock text={msg.reasoning} live={Boolean(msg.streaming) && !msg.text} />}
+        {/* 분석 루틴 — 단계 칩 · 고를 것 · 이어서 · 멈춤. 보고서는 아래 글 칸(token)이다(docs/analysis-routines R3 §6). */}
+        {msg.routine && <RoutineView msg={msg} />}
         {hasDelib ? (
           <DelibView msg={msg} />
         ) : hasThink ? (

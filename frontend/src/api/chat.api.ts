@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 import { rejectedMessage, streamCutMessage } from '../lib/chatErrors';
-import type { AgentCatalog, DelibEvent, ErrorEvent, ResultBlock, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta } from '../types/chat';
+import type { AgentCatalog, DelibEvent, ErrorEvent, ResultBlock, RoutineEvent, RoutineRequest, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -32,6 +32,8 @@ export interface StreamHandlers {
   onMeta?: (e: TurnMeta) => void;
   /** 이 발화에 올린 그림을 서버가 저장한 주소(SSE user_images) — 사람 메시지에 남겨 다음 턴 이력에 싣는다. */
   onUserImages?: (e: { urls: string[] }) => void;
+  /** 분석 루틴 실행(SSE routine) — plan · step · step_done · gate · report · done 을 kind 로 가른다(docs/analysis-routines R3). */
+  onRoutine?: (e: RoutineEvent) => void;
   onDone?: () => void;
   /** 프레임이 하나 올 때마다(이벤트 이름) — 서버 heartbeat(`ping`)를 포함한다. 내용이 아니라 '살아 있다' 는 신호다. */
   onSignal?: (event: string) => void;
@@ -98,6 +100,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'user_images':
       h.onUserImages?.(payload as { urls: string[] });
+      break;
+    case 'routine':
+      h.onRoutine?.(payload as RoutineEvent);
       break;
     case 'error':
       h.onError?.(payload as ErrorEvent);
@@ -490,11 +495,14 @@ export async function streamChat(
     documents?: { name: string; kind?: string; text: string }[];
     /** 이 발화에 올린 그림(긴 변 1,568px 로 줄인 data URL). 서버가 저장하고 주소를 user_images 로 돌려준다. */
     images?: { name: string; mime: string; data: string }[];
+    /** 분석 루틴 — 새 실행 {id, version?, inputs, note?} 또는 이어서 · 다시 붙기 {run_id}(RA 초안 올리기는 upload_ra 를 더한다). 본문 맨 위 칸
+     *  `routine` 으로 간다(delib_opts 가 아니다). */
+    routine?: RoutineRequest;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, routine, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -530,6 +538,20 @@ export async function streamChat(
       ...(documents && documents.length > 0 ? { documents: documents.slice(0, 10) } : {}),
       // 장수는 붙이는 자리(Composer · IMAGES_MAX)가 막는다 — 넘으면 포털이 422 로 알린다.
       ...(images && images.length > 0 ? { images } : {}),
+      // 분석 루틴(R3) — 포털 RoutineReq 는 모르는 칸을 422 로 거절한다(extra=forbid). 아는 칸만 골라 싣는다 — 이어서는 run_id 하나(다른 칸은
+      // 서버가 안 본다 — RA 초안 올리기만 upload_ra 를 참으로 더한다), 새 실행은 id · version · inputs · 덧붙인 말(note, 비면 싣지 않는다).
+      ...(routine?.run_id
+        ? { routine: { run_id: routine.run_id, ...(routine.upload_ra === true ? { upload_ra: true } : {}) } }
+        : routine?.id
+          ? {
+              routine: {
+                id: routine.id,
+                ...(routine.version ? { version: routine.version } : {}),
+                inputs: routine.inputs ?? {},
+                ...(routine.note ? { note: routine.note } : {}),
+              },
+            }
+          : {}),
     }),
     signal,
   });

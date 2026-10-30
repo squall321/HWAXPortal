@@ -182,6 +182,70 @@ export interface DelibEvent {
   [k: string]: unknown;
 }
 
+// ── 분석 루틴(docs/analysis-routines R3) — 챗에서 켠 루틴을 에이전트 서버의 실행기가 단계로 돈다 ──
+// 단계 · 실행 상태의 정본은 포털 원장이다(app/procedures/routines.py STAGE_STATES · RUN_STATES). 화면은 SSE 와 GET /routines-api/runs/{id} 로 읽는다.
+export type RoutineStepState = 'pending' | 'running' | 'ok' | 'empty' | 'ambiguous' | 'denied' | 'not_connected' | 'unavailable' | 'failed' | 'skipped';
+export type RoutineRunState = 'queued' | 'running' | 'waiting' | 'done' | 'failed' | 'cancelled' | 'interrupted';
+/** SSE `routine` 이벤트 payload — kind 로 가른다(R3-design §3.2). 모든 프레임에 run_id 가 있다. */
+export interface RoutineEvent {
+  kind: 'plan' | 'step' | 'step_done' | 'gate' | 'report' | 'done';
+  run_id: string;
+  [k: string]: unknown;
+}
+/** 고를 것 하나 — 기준 키 후보가 여럿일 때 사람이 고른다(POST /routines-api/runs/{id}/steps/{step}/pick). */
+export interface RoutineCandidate {
+  label: string;
+  key: string;
+}
+export interface RoutineStepView {
+  id: string;
+  title: string;
+  kind: string;
+  /** 포털이 원장과 맞대 고친 상태(RoutineStepState) — 모르는 값이 와도 그대로 둔다. */
+  state: string;
+  summary?: string;
+  reason?: string;
+  flags?: string[];
+  calls?: number;
+  /** 도는 동안의 한 줄(심의 진행 '라운드 2/3 · 좌석 발언' 같은 것) — 단계가 닫히면 지운다. */
+  detail?: string;
+  backends?: string[];
+  label?: string;
+}
+/** 메시지에 붙는 루틴 실행 — 흐르는 동안 SSE 로 채우고, 흐르지 않는 메시지는 화면이 run_id 로 포털에서 다시 읽는다. */
+export interface RoutineState {
+  run_id: string;
+  routine_id?: string;
+  title: string;
+  /** 실행 상태(RoutineRunState). 서버 사본에서 되살렸는데 상태가 없으면 '' 다(모른다). */
+  state: string;
+  steps: RoutineStepView[];
+  gate?: { step: string; candidates: RoutineCandidate[]; message?: string };
+  report?: {
+    ra_upload?: string;
+    ra_report_id?: string | number | null;
+    ra_error?: string | null;
+    ra_next?: string | null;
+    warnings?: string[];
+  };
+  /** 이 턴이 이어서 · 다시 붙기로 시작했다(plan 프레임의 resumed). */
+  resumed?: boolean;
+  reason?: string;
+}
+/** 요청 칸 `routine`(포털 RoutineReq · extra=forbid) — 새 실행은 id · version · inputs · note, 이어서 · 다시 붙기는 run_id 만,
+ *  끝난 실행의 RA 초안 올리기는 run_id · upload_ra. */
+export interface RoutineRequest {
+  id?: string;
+  version?: number;
+  inputs?: Record<string, unknown>;
+  /** 사용자가 덧붙인 말 — 루틴을 켜 두고 사람이 쓴 글(없으면 ""). 글 없이 보낼 때 싣는 '루틴: <제목>' 은 덧붙인 말이 아니다.
+   *  새 실행에만 간다 — 실행기가 원장에 남겨 이어서 · 고른 뒤 잇기에도 그 말을 쓴다(포털 상한 2,000자). */
+  note?: string;
+  run_id?: string;
+  /** 끝난 실행의 저장 보고서를 RA 초안으로 올린다(ra.upload 'ask' — 화면의 'RA 초안 올리기'). run_id 와 함께만 보낸다. */
+  upload_ra?: boolean;
+}
+
 // 도구 카탈로그(SSE `tools` 이벤트) — '/도구' 검색 시 서버가 추천+전체 목록을 내려준다.
 // 사용자가 직접 선택한 도구는 대화의 pinnedTools 가 되어 이후 발화에서 우선 사용된다.
 export interface ToolInfo {
@@ -272,6 +336,8 @@ export interface Message {
   reasoning?: string;
   /** 이 턴에 답한 모델 · 생각 설정(SSE meta) — 넘김이 일어나면 같은 질문에 답의 깊이가 달라진다. 영속됨(작다). */
   meta?: TurnMeta;
+  /** 분석 루틴 턴의 실행(SSE routine — mergeRoutine). 영속됨(단계 12개까지라 작다). 서버 사본은 포인터(run_id · 제목 · 상태)만 쥔다. */
+  routine?: RoutineState;
 }
 
 /** 에이전트 서버가 턴 끝에 내는 meta — models 는 이 턴의 모델 호출 수(모델 이름 → 횟수). docs/chat-depth-context C3. */

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { streamChat } from '../api/chat.api';
+import { listRuns } from '../api/routines.api';
 import {
   appendServerMessage,
   createServerConversation,
@@ -23,8 +24,10 @@ import {
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
 import { useCan } from '../auth/useCan';
-import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
+import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
+import { isRoutineTerminal, mergeRoutine } from '../components/chat/routine';
+import { ROUTINE_STOPPED_BEFORE_RUN } from '../lib/chatErrors';
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import type { AttachedImage } from '../components/chat/imageAttach';
 import { buildHistory } from '../components/chat/history';
@@ -44,6 +47,55 @@ import {
   type DraftPins,
 } from './chatStore';
 
+/** 챗에서 켜 둔 분석 루틴(docs/analysis-routines R3) — 다음 발화 한 번에 실려 간다. title 은 보이기용이라 서버로 가지 않는다. */
+export interface ArmedRoutine {
+  id: string;
+  version?: number;
+  title: string;
+  inputs: Record<string, unknown>;
+  /** 이 값으로 보낸 시작이 실행을 만들기 전에 끝난 까닭(서버의 거절 글 등) — 실패한 턴이 보낸 값을 되살려 켜 둘 때 단다. 고르기 창이 칸 옆에
+   *  보이고, 고쳐서 다시 켜면 지워진다. */
+  reason?: string;
+}
+
+/** 루틴 턴에 보낸 요청 — 실행 id 를 받기 전에 실패하면 되살리기 · 다시 시도에 쓴다. title 은 보이기용이다(chat.api 가 아는 칸만 실어
+ *  서버로 가지 않는다). */
+type SentRoutine = RoutineRequest & { title?: string };
+
+// 덧붙인 말(note)의 상한 — 포털 중계 RoutineReq.note · 포털 RunIn.note · 게이트웨이 routine_run_start 가 같은 2,000자(파이썬 글자 수 = 코드 포인트)다.
+// 넘으면 중계가 요청 전체를 422 로 거절해 루틴이 시작조차 못 했다. 선에 싣는 덧붙인 말만 자른다 — 사람 말풍선과 message 는 그대로 간다.
+const ROUTINE_NOTE_MAX = 2000;
+
+/** 덧붙인 말을 상한까지 — 코드 포인트로 센다. UTF-16 으로 자르면 그림 글자(😀)를 반으로 갈라 짝 없는 대리 글자가 가고, 포털이 그 글을 글로
+ *  읽지 못해 또 422(string_unicode)다. */
+function clipNote(s: string): string {
+  return s.length <= ROUTINE_NOTE_MAX ? s : Array.from(s).slice(0, ROUTINE_NOTE_MAX).join('');
+}
+
+/** 실행 id 를 받기 전에 끝난 루틴 턴(■ 로 끊음 · 받던 중 끊김 · 게이트웨이 · 실행기 오류 · 침묵 한도)이 서버에 만든 실행을 내 실행 목록에서
+ *  찾는다 — 같은 루틴 · 이 대화의 실행 가운데 이 대화의 메시지가 아직 가리키지 않는 가장 새것(목록이 최근 시작부터다). 없으면 null 이다.
+ *  시각으로 가르지 않는다 — 포털 started_at 은 서버 시계이고 보낸 때는 이 PC 의 시계라, 두 시계가 어긋나면 그 턴의 실행을 놓쳐 실행이 둘이
+ *  되거나 앞 턴의 실행에 붙었다(R3 반대 검토 2차 #6 · #13). 메시지가 가리키는 실행(앞 턴의 답 · 이어서)은 그 턴의 것이다. */
+async function findLostRun(routineId: string, conversationId: string | undefined, shown: Set<string>): Promise<string | null> {
+  // 대화 id 없이 보낸 턴(서버 대화 저장 미가용)의 실행은 대화에 묶이지 않았다 — 이 대화의 것인지 가릴 수 없다
+  if (!conversationId) return null;
+  try {
+    const { runs } = await listRuns(routineId);
+    // 목록이 conversation_id 를 싣지 않는 포털이면 아무것도 맞지 않는다 — 다른 대화(다른 탭 · 다른 입력)의 실행을 잇지 않는다(닫힌 쪽)
+    const hit = runs.find((r) => r.routine_id === routineId && r.conversation_id === conversationId && !shown.has(r.id));
+    return hit?.id ?? null;
+  } catch {
+    // 목록을 못 읽었다 — 부른 쪽이 예전처럼 보낸 요청을 다시 보낸다(그 턴의 실행이 서버에서 돌고 있었으면 실행이 둘이 된다)
+    return null;
+  }
+}
+
+// 실행 id 를 받기 전에 이 오류로 끝난 새 루틴 턴은 실행이 서버에 생겼을 수 있다 — 받던 중의 끊김 · 중계의 침묵 한도(AGENT_STREAM_IDLE_TIMEOUT_S) ·
+// 중계가 에이전트 스트림을 읽다 끊김 · 게이트웨이 오류(포털이 게이트웨이 시간 한도보다 늦었거나 보낸 뒤 답이 끊겼으면 원장에는 남았다) · 실행기
+// 오류. 다시 시도는 같은 요청을 또 보내기 전에 그 실행을 찾는다(R3 반대 검토 2차 #11 — 게이트웨이 오류를 거절로만 보아 실행이 둘이 되고 앞 것은
+// 아무도 돌리지 않는 running 으로 남았다).
+const ROUTINE_MAYBE_STARTED = new Set(['stream_cut', 'agent_stream_idle', 'agent_unreachable', 'routine_gateway', 'routine_internal']);
+
 interface ChatContextValue {
   // 다중 대화
   conversations: Conversation[];
@@ -53,8 +105,15 @@ interface ChatContextValue {
   messages: Message[];
   input: string;
   streaming: boolean;
+  /** 흐르는 턴이 루틴 턴이다 — 그 턴의 ■ 는 화면 받기만 끊고 실행은 서버에서 돈다(입력창 힌트가 그렇게 말한다). */
+  routineStreaming: boolean;
+  /** 흐르는 루틴 턴의 실행이 이미 끝났다(RA 초안 올리기 턴 · 끝남 · 실패 · 멈춤 계획을 받은 턴) — 그칠 실행이 없어 ■ 힌트가 '멈춤' 을 말하지 않는다. */
+  routineClosed: boolean;
   setInput: (v: string) => void;
-  sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>) => void;
+  /** 글을 보낸다. 켜 둔 루틴(armedRoutine)이 있으면 이 발화에 실어 보내고 끈다(한 번 쓰기) — 사람이 쓴 글이 루틴에 덧붙인 말(note)이고,
+   *  글이 비면 '루틴: <제목>' 을 글로 싣는다(덧붙인 말이 아니다). extraDelibOpts 를 준 발화(심의 넘기기 · 이어하기)는 켜 둔 루틴을 쓰지 않는다.
+   *  routineOpt — 값으로 넘기는 루틴 요청(이어서 · 다시 시도). null 이면 켜 둔 루틴을 쓰지도 싣지도 않는다(한 번 누름 보내기 — ChatActionBar). */
+  sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: RoutineRequest | null) => void;
   /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 후속 심의를 스티어링. roster 를 주면 그 명단으로
    *  간다(사람이 좌석을 직접 고름 — 재심사가 좌석을 더 얹지 않는다). 없으면 같은 전문가 + 재심사. */
   continueDeliberation: (prior: DelibData, opinion: string, roster?: { key: string; role?: string }[]) => void;
@@ -97,6 +156,14 @@ interface ChatContextValue {
   /** 띵킹 모드 — 답할 수 있는 전문가만 각자 답한다(회의 아님). 세션 토글이라 매 발화에 실린다. */
   thinking: boolean;
   setThinking: (v: boolean) => void;
+  /** 켜 둔 분석 루틴 — 다음 발화 한 번에 실려 가고 꺼진다. 세션 토글이다(저장하지 않는다). 권한(feat:routines)이 없으면 싣지 않는다. */
+  armedRoutine: ArmedRoutine | null;
+  setArmedRoutine: (r: ArmedRoutine | null) => void;
+  /** 루틴 실행을 잇는다 — 활성 대화에 '루틴 이어서: <제목>' 발화로 run_id 를 보낸다. 에이전트 서버에 살아 있으면 다시 붙고(지금까지의
+   *  프레임을 다시 받는다), 아니면 포털 원장에서 끝난 단계를 건너뛰고 잇는다. 보낸 뒤 바로 풀린다(턴이 끝나기를 기다리지 않는다).
+   *  uploadRa — 끝난 실행의 저장 보고서를 RA 초안으로 올린다('RA 초안 올리기: <제목>' 발화로 {run_id, upload_ra: true}, ra.upload 'ask' · 저절로
+   *  올리기(auto)가 실패한 실행의 다시 올리기). */
+  resumeRoutine: (runId: string, title?: string, opts?: { uploadRa?: boolean }) => Promise<void>;
   /** 붙인 문서(브라우저에서 읽은 추출문). 보내도 **비우지 않는다** — 대화에는 본문을 남기지 않으므로(쿼터) 칩을 떼기 전까지 매 발화에
    *  다시 실려 뒤따르는 질문을 받는다(처음 1901dbf 부터 그랬다 — 주석만 '비운다' 로 낡아 있었다, docs/chat-ppt PP-D6).
    *  원본 파일은 서버로 가지 않는다(DRM 전제: 추출은 PC 의 Office COM 에서 끝난다). */
@@ -328,6 +395,10 @@ export function ChatProvider({
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  // 흐르는 턴이 루틴 턴인가 — sendMessage 가 켜고 그 스트림의 끝 정리(settle)가 끈다
+  const [routineStreaming, setRoutineStreaming] = useState(false);
+  // 그 루틴 턴의 실행이 이미 끝났나(올리기 턴 · 끝난 계획) — ■ 힌트가 '멈춤' 을 가리키지 않게. 같은 자리에서 켜고 끈다
+  const [routineClosed, setRoutineClosed] = useState(false);
   // 심의 손잡이(웹 토글) — 상태는 UI 바인딩용, ref 는 전송 시점 읽기용(sendMessage 재생성·스테일 방지).
   const [delibOpts, setDelibOptsState] = useState<DelibOpts>({});
   const delibOptsRef = useRef<DelibOpts>(delibOpts);
@@ -381,6 +452,31 @@ export function ChatProvider({
     thinkingRef.current = v;
     setThinkingState(v);
   }, []);
+  // 켜 둔 분석 루틴 — 띵킹 토글과 같은 꼴(상태는 화면, ref 는 보내는 순간 읽기). 보내면 꺼진다(sendMessage).
+  const [armedRoutine, setArmedRoutineState] = useState<ArmedRoutine | null>(null);
+  const armedRoutineRef = useRef<ArmedRoutine | null>(null);
+  const setArmedRoutine = useCallback((r: ArmedRoutine | null) => {
+    armedRoutineRef.current = r;
+    setArmedRoutineState(r);
+  }, []);
+  // 루틴 턴에 보낸 요청(사람 발화 id → 요청) — 실행 id 를 받기 전에 실패한 턴(동시 상한 routine_busy 등)을 '다시 시도' 가 같은 요청으로
+  // 다시 보내게 한다. 일반 챗 글로 다시 가면 '루틴: <제목>' 이 질문으로 답해진다. 화면 세션 동안만 쥔다(작다).
+  const routineSentRef = useRef<Map<string, SentRoutine>>(new Map());
+  // 실행 id 를 받기 전에 끝난 루틴 턴(사람 발화 id) — ■ 로 끊었거나 받던 중에 끊겼거나 실행이 생겼을 수 있는 오류(ROUTINE_MAYBE_STARTED)로 끝났다.
+  // 실행이 서버에 생겼는지 모른다 — 중계는 브라우저가 떠나도 상류를 끝까지 읽고 실행기는 구독이 끊겨도 돈다(R3-design D7 · D9). '다시 시도' 는 같은
+  // 요청을 또 보내기 전에 그 실행을 찾는다(retryLast).
+  const routineUnknownRef = useRef<Set<string>>(new Set());
+  // 계정이 바뀌면(로그아웃 · 다른 사람의 로그인) 앞 사람이 켜 둔 루틴과 그 입력 · 다시 보낼 요청을 버린다 — 이메일 로그인 · 로그아웃은 페이지를
+  // 다시 읽지 않아 루트 ChatProvider 가 그대로 살고, 앞 사람의 루틴이 다음 사람의 발화에 실렸다(R3 반대 검토 #36). 계정별 캐시 네임스페이스
+  // (scopedPrefix)가 바뀌는 때다 — 같은 사람의 /auth/me 다시 받기(창 포커스)는 바뀌지 않는다. 세는 값은 보낸 뒤 계정이 바뀐 턴이 실패해도
+  // 그 루틴을 되살리지 않게 한다(sendMessage 의 rearm).
+  const accountEpochRef = useRef(0);
+  useEffect(() => {
+    accountEpochRef.current += 1;
+    setArmedRoutine(null);
+    routineSentRef.current.clear();
+    routineUnknownRef.current.clear();
+  }, [scopedPrefix, setArmedRoutine]);
   // 붙인 문서도 전송 시점 읽기다(같은 스테일 함정). 보내도 비우지 않는다 — 대화에 본문을 남기지 않으므로 칩을 떼기 전까지 매 발화에
   // 다시 실려 뒤따르는 질문을 받는다(그림과 다르다 — 그림은 서버 주소가 이력으로 다시 간다). 처음부터 그 동작이었고 주석만 낡았다(PP-D6).
   const [attachedDocs, setAttachedDocsState] = useState<AttachedDoc[]>([]);
@@ -607,9 +703,42 @@ export function ChatProvider({
   }, []);
 
   const sendMessage = useCallback(
-    (message: string, extraDelibOpts?: Record<string, unknown>) => {
-      const text = message.trim();
-      if (!text || streaming) return;
+    // routineOpt — 셋째 인자(값으로 넘기는 이어서 · 다시 시도 · 한 번 누름 보내기). undefined 면 켜 둔 루틴을 쓰고, null 이면 루틴 없이 보낸다.
+    (message: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: SentRoutine | null) => {
+      // 분석 루틴(R3) — 넘겨받은 요청이 먼저고, 없으면 켜 둔 루틴을 한 번 쓰고 끈다. 심의 넘기기 · 이어하기(extraDelibOpts)는 켜 둔 루틴을
+      // 쓰지 않는다 — 에이전트 서버는 루틴 가지를 심의보다 먼저 보므로 그 심의가 루틴 실행으로 바뀐다. 권한이 없으면 싣지 않는다.
+      const armed = routineOpt === undefined && !extraDelibOpts ? armedRoutineRef.current : null;
+      // 사람이 쓴 글이 루틴에 덧붙인 말(note)이다 — 실행기가 단계 · 인사이트 프롬프트에 싣고 원장에 남겨 이어서에도 쓴다(R3 C3). 글 없이 보내면
+      // 서버가 받는 글(1자 이상)로 '루틴: <제목>' 을 싣는다 — 이것은 덧붙인 말이 아니다. 루틴이 실리지 않으면(권한 없음) 빈 글은 보내지 않는다.
+      const typed = message.trim();
+      const text = typed || (armed && can('feat:routines') ? `루틴: ${armed.title}` : '');
+      // 한 번에 한 스트림 — streaming 은 이 함수를 만든 때의 값이라, 기다린 뒤에 부르는 쪽(고르기 뒤 잇기 등)은 받는 중인데도 거짓을 본다. 스트림이
+      // 시작하며 곧바로 쥐고 그 스트림의 끝 정리만 놓는 abortRef 로도 막는다(R3 반대 검토 2차 #12 — 둘째 스트림이 열려 먼저 끝난 쪽이 다른 쪽의 ■ 를 지웠다).
+      if (!text || streaming || abortRef.current) return;
+      if (armed) setArmedRoutine(null);
+      const routineReq: SentRoutine | null = !can('feat:routines')
+        ? null
+        : (routineOpt ??
+          (armed
+            ? { id: armed.id, ...(armed.version ? { version: armed.version } : {}), inputs: armed.inputs, note: clipNote(typed), title: armed.title }
+            : null));
+      // 실행을 만들기 전에 끝난 새 루틴 턴(포털 · 중계의 거절 · 동시 상한 · 연결 실패) — 보낸 값을 다시 켜 두고 까닭을 단다. 고르기 창이 그 값과
+      // 까닭을 칸 옆에 보이고, '다시 시도' 는 그 값(고쳤으면 고친 값)으로 보낸다(R3 반대 검토 #14 — 거절 하나에 적은 값이 다 사라졌다). 실행이 생긴
+      // 뒤(routine 프레임이 왔다 — 모든 routine 프레임에 run_id 가 있다)는 되살리지 않는다(다시 보내면 실행이 둘이다). 그새 다른 루틴을 켰거나
+      // 계정이 바뀌었으면 건드리지 않는다. 사람이 ■ 로 끊은 것 · 받던 중에 끊긴 것은 실행 전의 거절이 아니다(실행은 서버에서 돌 수 있다).
+      let runSeen = false;
+      const epoch = accountEpochRef.current;
+      const rearm = (reason: string) => {
+        if (!routineReq?.id || routineReq.run_id || runSeen) return;
+        if (armedRoutineRef.current || accountEpochRef.current !== epoch) return;
+        setArmedRoutine({
+          id: routineReq.id,
+          ...(routineReq.version ? { version: routineReq.version } : {}),
+          title: routineReq.title || routineReq.id,
+          inputs: routineReq.inputs ?? {},
+          reason,
+        });
+      };
 
       const now = Date.now();
 
@@ -635,7 +764,9 @@ export function ChatProvider({
         : []).slice(0, 4);
 
       // 붙인 문서 — 이 발화에만 실린다. 본문은 대화에 남기지 않고(쿼터) 이름·길이만 남긴다.
-      const docs = attachedDocsRef.current;
+      // 루틴 턴(이어서 · 고른 뒤 잇기 · RA 초안 올리기 · 다시 시도)은 붙인 그림 · 문서를 싣지도 비우지도 않는다 — 실행기가 읽지 않아 그림은 저장되지
+      // 않은 채 칩에서만 사라졌다(R3 반대 검토 2차 #14). 다음 일반 턴의 것으로 남긴다. 켜 둔 루틴을 보내는 입력창은 붙인 것이 있으면 보내지 않는다.
+      const docs: AttachedDoc[] = routineReq ? [] : attachedDocsRef.current;
       // 사전 근거 — 붙인 문서(앞, 사람이 방금 고른 것) + 일회성 extra(핸드오프·이어하기)의 근거. 포털 상한(EVID_ITEMS — 엔진과
       // 같은 수)을 넘으면 422 라 여기 **한 자리**에서 끊고, 넘친 수를 이 답의 근거 카드(알림)로 남긴다 — 엔진은 받은 것만 알아
       // 이 절단을 알릴 수 없다. 종전엔 대화 근거·이어하기 승계 근거·문서 병합이 저마다 말없이 120건에서 끊었다.
@@ -644,7 +775,7 @@ export function ChatProvider({
         ...(Array.isArray(extraDelibOpts?.evidence) ? (extraDelibOpts?.evidence as HandoffEvidence[]) : []),
       ];
       const evDropped = Math.max(0, evAll.length - EVID_ITEMS);
-      const imgs = attachedImagesRef.current;
+      const imgs: AttachedImage[] = routineReq ? [] : attachedImagesRef.current;
       const userMsg: Message = {
         id: newId(), role: 'user', text, ts: now,
         ...(docs.length ? { docs: docs.map((d) => ({ name: d.name, chars: d.chars, kind: d.meta?.kind })) } : {}),
@@ -652,15 +783,17 @@ export function ChatProvider({
         ...(imgs.length ? { localImages: imgs.map((i) => i.dataUrl) } : {}),
       };
       const botId = newId();
+      if (routineReq) routineSentRef.current.set(userMsg.id, routineReq);
       // 이 답이 누구 것인지는 **보낼 때** 찍는다 — 나중에 전문가를 바꿔도 과거 답의 주인이
       // 바뀌지 않고, 새로고침해도 남는다(대화 상태만 보면 둘 다 깨진다).
+      // 루틴 턴의 답은 지정 전문가의 것이 아니다 — 루틴 가지가 먼저라 그 발화에 전문가가 쓰이지 않는다.
       const botMsg: Message = {
         id: botId,
         role: 'assistant',
         text: '',
         ts: now,
         streaming: true,
-        ...(effPinnedAgent ? { persona: { key: effPinnedAgent, name: effPinnedAgentName } } : {}),
+        ...(effPinnedAgent && !routineReq ? { persona: { key: effPinnedAgent, name: effPinnedAgentName } } : {}),
         ...(evDropped
           ? {
               delib: {
@@ -708,6 +841,9 @@ export function ChatProvider({
       setInput('');
       if (imgs.length) setAttachedImages([]);
       setStreaming(true);
+      setRoutineStreaming(Boolean(routineReq));
+      // RA 초안 올리기는 끝난 실행에만 간다 — 그칠 실행이 없다(끝난 계획을 받은 이어서도 그렇다 — 아래 onRoutine)
+      setRoutineClosed(Boolean(routineReq?.upload_ra));
       liveRef.current = startLive(now);
       const controller = new AbortController();
       abortRef.current = controller;
@@ -731,20 +867,33 @@ export function ChatProvider({
         settled = true;
         patch(cid, botId, last);
         setStreaming(false);
+        setRoutineStreaming(false);
+        setRoutineClosed(false);
         liveRef.current = null;
         abortRef.current = null;
         streamConvRef.current = null;
         stopUiRef.current = null;
         finishStream();
       };
-      const cancelled = () =>
+      // 실행 id 를 받기 전에 새 루틴 턴이 끝났다(■ · 받던 중 끊김 · ROUTINE_MAYBE_STARTED 의 오류) — 실행이 서버에 생겼는지 모른다. 다시 시도가 내
+      // 실행 목록에서 먼저 찾는다. 그런 턴이면 참이다
+      const unknownRun = (): boolean => {
+        if (!routineReq?.id || routineReq.run_id || runSeen) return false;
+        routineUnknownRef.current.add(userMsg.id);
+        return true;
+      };
+      const cancelled = () => {
+        // 실행 id 를 받기 전에 ■ 로 끊은 새 루틴 턴은 루틴 칸이 아직 없다 — 오류 상자가 실행은 서버에서 돌 수 있고 다시 시도가 그것을 찾는다고
+        // 말한다(lib/chatErrors). '중단되었습니다' 만으로는 루틴이 멈춘 것으로 읽혔다(R3 반대 검토 2차 #16)
+        const lost = !settled && unknownRun();
         settle((m) => ({
           ...m,
           streaming: false,
           status: undefined,
           // 토큰이 이미 조금 왔으면 부분 응답을 그대로 두고, 아니면 취소를 표기.
-          error: m.error ?? (m.text ? undefined : '취소됨'),
+          error: m.error ?? (m.text ? undefined : lost ? ROUTINE_STOPPED_BEFORE_RUN : '취소됨'),
         }));
+      };
       // 중지는 화면을 곧바로 푼다 — 읽기 루프가 멈춰 있으면(숨은 탭 · 멈춘 연결) abort 의 거절이 늦거나 오지 않아 '생각 중' 이
       // 그대로였다(OT-07). 거절이 나중에 와도 위 settled 가 두 번 하지 않는다.
       stopUiRef.current = cancelled;
@@ -793,6 +942,8 @@ export function ChatProvider({
         // 띵킹 모드 — 켠 동안 모든 발화에 실린다. 서버는 명시 슬래시 트리거(/심의 등)를
         // 먼저 보므로, 모드가 켜져 있어도 그 턴에 대놓고 심의를 부르면 심의가 이긴다.
         ...(thinkingRef.current && can('feat:thinking') ? { thinking: true } : {}),
+        // 분석 루틴 — 본문 맨 위 칸 routine 으로 간다(아래 delib_opts 에 넣지 않는다). 에이전트 서버는 이 칸을 심의 · 띵킹 · 슬래시보다 먼저 본다.
+        ...(routineReq ? { routine: routineReq } : {}),
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
@@ -840,6 +991,13 @@ export function ChatProvider({
           patch(cid, botId, (m) => ({ ...m, text: m.text + e.delta, status: undefined })),
         onDelib: (e) => patch(cid, botId, (m) => ({ ...m, delib: mergeDelib(m.delib, e) })),
         onThink: (e) => patch(cid, botId, (m) => ({ ...m, think: mergeThink(m.think, e) })),
+        // 루틴 실행 — 계획 · 단계 · 고를 것 · 보고서 · 끝을 이 답의 실행 상태로 합친다(보고서 글은 token 으로 따로 온다).
+        onRoutine: (e) => {
+          // 끝난 실행의 계획 · 끝('이미 끝났다' 이어서 · 실행의 끝) — 그칠 실행이 없다. 끝 정리 뒤 늦게 온 프레임은 다음 턴의 표시를 건드리지 않는다
+          if (!settled && (e.kind === 'plan' || e.kind === 'done') && typeof e.state === 'string' && isRoutineTerminal(e.state))
+            setRoutineClosed(true);
+          patch(cid, botId, (m) => ({ ...m, routine: mergeRoutine(m.routine, e) }));
+        },
         onTools: (e: ToolCatalog) =>
           patch(cid, botId, (m) => ({ ...m, toolCatalog: e, status: undefined })),
         onAgents: (e: AgentCatalog) =>
@@ -858,8 +1016,16 @@ export function ChatProvider({
         // 올린 그림의 서버 주소 — 이 발화(사람 메시지)에 남겨 다음 턴 이력에 싣는다. 썸네일도 이 주소로 바꾼다(data URL 은 버린다).
         onUserImages: (e) =>
           patch(cid, userMsg.id, (m) => ({ ...m, images: (e.urls ?? []).filter((u) => typeof u === 'string'), localImages: undefined })),
-        onError: (e) => patch(cid, botId, (m) => ({ ...m, error: e.message, status: undefined })),
+        onError: (e) => {
+          patch(cid, botId, (m) => ({ ...m, error: e.message, status: undefined }));
+          // 실행이 서버에 생겼을 수 있는 오류(ROUTINE_MAYBE_STARTED) — 다시 시도는 ■ 로 끊은 턴과 같이 그 실행을 먼저 찾고, 없으면 보낸 요청 그대로다
+          if (ROUTINE_MAYBE_STARTED.has(e.code)) unknownRun();
+          // 받던 중에 끊긴 것 · 침묵 한도는 실행 전의 거절이 아니다(응답이 흐르기 시작했다) — 되살려 다시 보내게 이끌지 않는다. 게이트웨이 · 실행기
+          // 오류는 실행 전의 거절(입력 값)일 수도 있어 값을 되살린다 — 다시 시도가 실행을 찾으면 그 되살린 것은 끈다(retryLast)
+          if (e.code !== 'stream_cut' && e.code !== 'agent_stream_idle') rearm(e.message);
+        },
         onSignal: (ev) => {
+          if (ev === 'routine') runSeen = true; // 실행이 생겼다 — 이 턴이 실패해도 되살리지 않는다(rearm)
           if (liveRef.current) noteFrame(liveRef.current, ev, Date.now());
         },
         onDone: () => settle((m) => ({ ...m, streaming: false, status: undefined })),
@@ -867,10 +1033,13 @@ export function ChatProvider({
       })().catch((err) => {
         // AbortError is expected on stop(); surface anything else.
         if (err instanceof DOMException && err.name === 'AbortError') cancelled();
-        else settle((m) => ({ ...m, error: String(err), streaming: false, status: undefined }));
+        else {
+          settle((m) => ({ ...m, error: String(err), streaming: false, status: undefined }));
+          rearm(String(err));
+        }
       });
     },
-    [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can, setAttachedImages],
+    [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can, setAttachedImages, setArmedRoutine, searchSources],
   );
 
   // 이어하기(사람 개입 스티어링) — 끝난 심의에 사람 의견을 넣어, 같은 전문가가 이전 결정을
@@ -972,17 +1141,82 @@ export function ChatProvider({
     [conversations, activeId, streaming, sendMessage],
   );
 
+  // 루틴 실행 잇기(R3-design D8) — 활성 대화에 '루틴 이어서: <제목>' 발화로 run_id 를 보낸다. 고를 것을 고른 뒤(pickCandidate)에도,
+  // 재기동 뒤 running 으로 남은 실행에도 이 길이다. 켜 둔 루틴은 건드리지 않는다(다음 발화의 것이다). 덧붙인 말은 다시 보내지 않는다 — 실행기가
+  // 원장(note)에서 읽는다(이 발화 글은 덧붙인 말이 아니다). uploadRa — 끝난 실행의 저장 보고서를 RA 초안으로 올린다(ra.upload 'ask', R3 C4 · 저절로
+  // 올리기(auto)가 실패한 실행의 다시 올리기 — 게이트웨이는 초안이 이미 있으면 다시 만들지 않는다).
+  const resumeRoutine = useCallback(
+    async (runId: string, title?: string, opts?: { uploadRa?: boolean }) => {
+      const id = runId.trim();
+      if (!id || !can('feat:routines')) return;
+      if (opts?.uploadRa) {
+        sendMessage(`RA 초안 올리기: ${title?.trim() || id}`, undefined, { run_id: id, upload_ra: true });
+        return;
+      }
+      sendMessage(`루틴 이어서: ${title?.trim() || id}`, undefined, { run_id: id });
+    },
+    [can, sendMessage],
+  );
+
   // 실패 재시도 — 활성 대화의 마지막 사용자 발화를 다시 보낸다. 심의 페이지(sendPrefix)에서는
   // 트리거를 강제로 붙여 심의를 재실행한다(재시도는 '첫 발화'가 아니라 prefix 자동적용이 안 됨).
   const retryLast = useCallback(() => {
     if (streaming) return;
     const conv = conversations.find((c) => c.id === activeId);
-    const lastUser = [...(conv?.messages ?? [])].reverse().find((m) => m.role === 'user');
+    const msgs = conv?.messages ?? [];
+    const lastUser = [...msgs].reverse().find((m) => m.role === 'user');
     if (!lastUser?.text) return;
+    // 루틴 턴은 같은 글을 일반 챗으로 다시 보내지 않는다 — 실행 id 를 받았으면 그 실행을 잇고(새 실행을 또 만들지 않는다), 받기 전에
+    // 실패했으면(동시 상한 등) 그때 보낸 요청을 다시 보낸다.
+    const reply = msgs.slice(msgs.indexOf(lastUser) + 1).find((m) => m.role === 'assistant');
+    const sentRoutine = routineSentRef.current.get(lastUser.id);
+    if (reply?.routine?.run_id) {
+      // RA 초안 올리기 턴이면 올리기를 다시 — 그 실행은 끝났다(그냥 이어서는 '이미 끝났다' 로 끝난다)
+      if (sentRoutine?.upload_ra) void resumeRoutine(reply.routine.run_id, reply.routine.title, { uploadRa: true });
+      else void resumeRoutine(reply.routine.run_id, reply.routine.title);
+      return;
+    }
+    if (sentRoutine) {
+      if (!can('feat:routines')) return;
+      // 실패가 보낸 값을 다시 켜 두었다(sendMessage 의 rearm). 켜 둔 것이 같은 루틴이면 그 값(고르기 창에서 고쳤으면 고친 값)으로 보내고 켜 둔
+      // 것을 쓴다 — 고친 값을 두고 옛 값을 또 보내 같은 거절을 되풀이하지 않고, 성공한 뒤 같은 루틴이 다음 발화에 또 실리지 않게. 덧붙인 말은
+      // 그때 보낸 것 그대로다(이 발화 글이 '루틴: <제목>' 이어도 덧붙인 말이 되지 않는다).
+      const resend = () => {
+        const cur = armedRoutineRef.current;
+        if (sentRoutine.id && cur?.id === sentRoutine.id) {
+          setArmedRoutine(null);
+          sendMessage(lastUser.text, undefined, { ...sentRoutine, version: cur.version, inputs: cur.inputs, title: cur.title });
+        } else sendMessage(lastUser.text, undefined, sentRoutine);
+      };
+      // 실행 id 를 받기 전에 끝난 턴(■ · 받던 중 끊김 · 게이트웨이 · 실행기 오류 · 침묵 한도) — 그 실행이 서버에서 돌고 있을 수 있어 같은 요청을 또
+      // 보내면 실행이 둘이다. 내 실행 목록에서 같은 루틴 · 이 대화의 실행 가운데 이 대화의 메시지가 아직 가리키지 않는 가장 새것을 찾아 있으면 그것을
+      // 잇는다(메시지가 가리키는 실행은 앞 턴의 것이다 — 시각으로 가르지 않는다, findLostRun). 없거나 목록을 못 읽으면 예전처럼 다시 보낸다.
+      if (sentRoutine.id && !sentRoutine.run_id && routineUnknownRef.current.has(lastUser.id)) {
+        const shown = new Set(msgs.map((m) => m.routine?.run_id).filter((x): x is string => Boolean(x)));
+        const epoch = accountEpochRef.current;
+        void findLostRun(sentRoutine.id, conv?.serverId, shown).then((runId) => {
+          // 찾는 사이에 다른 턴이 흐르기 시작했거나 계정이 바뀌었다 — 둘을 함께 흘리지 않고, 앞 사람의 요청을 다음 사람의 이름으로 보내지 않는다(#36)
+          if (streamConvRef.current || accountEpochRef.current !== epoch) return;
+          if (!runId) {
+            resend();
+            return;
+          }
+          // 그 턴의 실패가 되살려 켜 둔 같은 루틴(까닭이 달렸다 — 고르기 창에서 고쳐 켜면 까닭이 지워진다)은 이 턴의 값이다. 실행을 찾아 이으니 끈다 —
+          // 남기면 다음 발화가 같은 루틴을 또 시작해 실행이 둘이다
+          const cur = armedRoutineRef.current;
+          if (cur && cur.id === sentRoutine.id && cur.reason) setArmedRoutine(null);
+          void resumeRoutine(runId, sentRoutine.title);
+        });
+        return;
+      }
+      resend();
+      return;
+    }
     const trig = sendPrefix.trim();
     const text = trig && !lastUser.text.startsWith(trig) ? sendPrefix + lastUser.text : lastUser.text;
-    sendMessage(text);
-  }, [conversations, activeId, streaming, sendMessage, sendPrefix]);
+    // 다시 보내는 것은 그 발화 그대로다 — 그새 켜 둔 루틴을 싣지 않는다(null)
+    sendMessage(text, undefined, null);
+  }, [conversations, activeId, streaming, sendMessage, sendPrefix, resumeRoutine, can, setArmedRoutine]);
 
   // 지정 도구 갱신 — 활성 대화가 있으면 대화에 저장(localStorage 영속), 대화 전(랜딩)이면
   // 다음 새 대화용 draft 에 저장. 빈 배열이면 해제.
@@ -1153,6 +1387,8 @@ export function ChatProvider({
         messages,
         input,
         streaming,
+        routineStreaming,
+        routineClosed,
         setInput,
         sendMessage,
         continueDeliberation,
@@ -1182,6 +1418,9 @@ export function ChatProvider({
         setPinnedHelpers,
         thinking,
         setThinking,
+        armedRoutine,
+        setArmedRoutine,
+        resumeRoutine,
         stop,
         streamLive,
         newConversation,

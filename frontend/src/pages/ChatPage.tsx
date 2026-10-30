@@ -157,6 +157,7 @@ export default function ChatPage() {
                 autoFocus
                 showHint
                 showExpert
+                showRoutine
                 placeholder={
                   can('feat:deliberation')
                     ? '무엇이든 물어보세요 — /심의 로 시작하면 전문가 심의'
@@ -211,6 +212,7 @@ export default function ChatPage() {
                 autoFocus
                 showHint
                 showExpert
+                showRoutine
                 placeholder="답장을 입력하세요…"
               />
             </div>

@@ -19,6 +19,7 @@ import { shortName } from './personaColor';
 import { SearchToggle } from './SourcePanel';
 import { ThinkToggle } from './ThinkPanel';
 import { ExpertToggle } from './ExpertToggle';
+import { RoutineToggle } from './RoutineToggle';
 import { IconFile, IconPlus, IconSend, IconStop, IconUser } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
@@ -42,6 +43,14 @@ const ACCEPT_EXTS = ACCEPT.split(',').map((x) => x.slice(1));
 // 나가거나 Esc 로 그만둔 것은 dragleave 만으로는 브라우저마다 다르게 알린다.
 const DRAG_IDLE_MS = 800;
 const isFileDrag = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes('Files');
+// 루틴 턴의 ■ — 중계는 브라우저가 떠나도 상류를 끝까지 읽고 실행기는 구독이 끊겨도 돈다(R3-design D7 · D9). 실행 id 를 받기 전에 끊어도 그렇다.
+// 실행을 그치는 것은 루틴 칸의 '멈춤'(cancelRun)이다 — 힌트 줄(챗 화면)과 단추 풀이(힌트 줄이 없는 독)가 같은 말을 한다.
+const ROUTINE_STOP_HINT = '■ 는 이 화면의 연결만 끊습니다 — 루틴은 서버에서 계속 돌고, 그치려면 루틴 칸의 ‘멈춤’';
+// 실행이 이미 끝난 루틴 턴(RA 초안 올리기 · '이미 끝났다' 이어서 — routineClosed)의 ■ — 그칠 실행이 없어 '멈춤' 은 어디에도 없다. 중계는 그 턴도
+// 끝까지 읽으므로 '연결만 끊는다' 는 그대로다(R3 반대 검토 2차 #16).
+const ROUTINE_CLOSED_HINT = '■ 는 이 화면의 연결만 끊습니다 — 올리기 · 안내는 서버에서 마칩니다';
+// 켜 둔 루틴이 실릴 발화에 붙인 그림 · 문서가 있다 — 실행기는 그것을 읽지 않는다. 말없이 버리거나 비우지 않고 보내기를 멈춘다(R3 반대 검토 2차 #14)
+const ROUTINE_ATTACH_BLOCK = '켜 둔 루틴은 붙인 그림 · 문서를 쓰지 않습니다 — 그림 · 문서를 떼거나 루틴을 끈 뒤 보냅니다. 붙인 것은 그대로 둡니다.';
 
 interface ComposerProps {
   autoFocus?: boolean;
@@ -52,6 +61,8 @@ interface ComposerProps {
   onSubmitText?: (text: string) => void;
   /** 도구 줄에 '전문가' 알약 — 챗 화면만(심의는 좌석을 ExpertPicker 로 정하고, 독은 좁다). */
   showExpert?: boolean;
+  /** 도구 줄에 '루틴' 알약 — 챗 화면만(독은 좁고, 심의 화면은 대화가 따로다). 켜 둔 루틴은 알약이 없는 입력창에서도 칩으로 보인다. */
+  showRoutine?: boolean;
   /** 화면 어디에 끌어다 놓아도 이 입력창으로 올린다 — 입력창이 그 화면의 주인인 챗 · 심의 화면만. 독은 닫혀도 붙어 있어 켜지 않는다
    *  (켜면 '앱' 화면의 끌기를 닫힌 독이 가로챈다) — 독은 입력창 위에 놓을 때만 받는다(docs/chat-ppt PP-D16). */
   dropAnywhere?: boolean;
@@ -64,6 +75,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     showHint = false,
     onSubmitText,
     showExpert = false,
+    showRoutine = false,
     dropAnywhere = false,
   },
   ref,
@@ -74,6 +86,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     sendMessage,
     stop,
     streaming,
+    routineStreaming,
+    routineClosed,
     pinnedTools,
     setPinnedTools,
     pinnedApps,
@@ -89,6 +103,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setAttachedImages,
     addUploadNotice,
     activeConversation,
+    armedRoutine,
+    setArmedRoutine,
   } = useChat();
   const taRef = useRef<HTMLTextAreaElement>(null);
   // 보내기 · PC 도우미는 기다린 뒤에 부른다 — 그 사이 사람이 쓴 글 · 붙인 문서를 낡은 값으로 덮지 않게 가장 새 값을 읽는다.
@@ -343,13 +359,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (autoFocus) taRef.current?.focus();
   }, [autoFocus]);
 
+  // 켜 둔 루틴이 이 입력창의 다음 보내기에 실리는데(권한이 있고 심의 가로채기가 아니다 — sendMessage 가 싣는 조건) 붙인 그림 · 문서가 있다.
+  // 실행기는 그것을 읽지 않는다 — 보내면 그림은 저장되지 않은 채 칩에서만 사라졌다(R3 반대 검토 2차 #14). 보내지 않고 까닭을 말한다(붙인 것은 둔다).
+  // 말은 보내려 한 뒤에만 내고, 붙인 것을 떼거나 루틴을 끄면 저절로 거둔다.
+  const attachClash =
+    Boolean(armedRoutine) && !onSubmitText && can('feat:routines') && (attachedImages.length > 0 || attachedDocs.length > 0);
+  const [attachTried, setAttachTried] = useState(false);
+
+  // 루틴을 켜 두었으면 글 없이도 보낸다 — 빈 글이면 sendMessage 가 '루틴: <제목>' 을 글로 싣는다(서버는 글 1자 이상을 받는다). 그 글은 루틴에
+  // 덧붙인 말이 아니다 — 덧붙인 말(note)은 사람이 쓴 글뿐이라 여기서 대신 지어 넘기지 않는다(docs/analysis-routines R3 §3.1 · C3)
   const submit = useCallback(() => {
     if (streaming) return;
+    if (attachClash) {
+      setAttachTried(true);
+      return;
+    }
+    setAttachTried(false);
     const text = input.trim();
+    if (!text && armedRoutine && !onSubmitText) {
+      sendMessage('');
+      return;
+    }
     if (!text) return;
     if (onSubmitText) onSubmitText(text);
     else sendMessage(input);
-  }, [streaming, sendMessage, input, onSubmitText]);
+  }, [streaming, sendMessage, input, onSubmitText, armedRoutine, attachClash]);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -364,7 +398,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
   };
 
-  const canSend = input.trim().length > 0 && !streaming;
+  // 빈 글 보내기는 루틴이 실릴 때만 뜻이 있다 — 권한이 없으면 sendMessage 가 빈 글을 보내지 않는다(눌러도 아무 일 없는 단추가 되지 않게)
+  const canSend = (input.trim().length > 0 || (Boolean(armedRoutine) && !onSubmitText && can('feat:routines'))) && !streaming;
+  const routinePill = showRoutine && can('feat:routines');
+  const routineHint = routineClosed ? ROUTINE_CLOSED_HINT : ROUTINE_STOP_HINT;
 
   return (
     <form className={dragOn && !dropAnywhere ? 'composer composer-drop' : 'composer'} onSubmit={onSubmit} {...formDrop}>
@@ -382,8 +419,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       {(pinnedTools.length > 0 ||
         pinnedApps.length > 0 ||
         (pinnedAgent && !showExpert) ||
+        (armedRoutine && !showRoutine) ||
         pinnedHelpers.length > 0) && (
         <div className="composer-pins" aria-label="지정 전문가·앱·도구">
+          {armedRoutine && !showRoutine && (
+            // 루틴 알약이 없는 입력창(독) — 챗 화면에서 켜 둔 루틴이 여기서 보내도 실린다. 보이고 끌 수 있어야 한다.
+            <span className="composer-pin composer-pin-app composer-pin-routine" title="켜 둔 분석 루틴 — 다음 발화 한 번에 실립니다">
+              <span className="composer-pin-text">루틴 · {armedRoutine.title}</span>
+              <button
+                type="button"
+                className="composer-pin-x"
+                onClick={() => setArmedRoutine(null)}
+                aria-label={`루틴 ${armedRoutine.title} 끄기`}
+                title="루틴 끄기"
+              >
+                ×
+              </button>
+            </span>
+          )}
           {pinnedAgent && !showExpert && (
             // 기계 키가 아니라 사람 이름을 보여 준다(전문가 알약이 있으면 거기서 보이고 해제한다) — 키는 툴팁으로 남긴다(구 저장분은 이름이 없어
             // 키가 그대로 보인다).
@@ -555,6 +608,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ⚠ {upErr}
         </div>
       )}
+      {attachTried && attachClash && (
+        <div className="upl-err" role="alert">
+          ⚠ {ROUTINE_ATTACH_BLOCK}
+        </div>
+      )}
       <div className="composer-box">
         <textarea
           ref={taRef}
@@ -563,11 +621,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          placeholder={placeholder}
+          placeholder={armedRoutine && !onSubmitText ? '루틴에 덧붙일 말(비워서 보내도 됩니다)' : placeholder}
           aria-label="메시지 입력"
         />
         {/* 도구 줄 — 첨부·검색·Thinking 을 입력창 안에(종전엔 입력창 위 전폭 막대 두 줄이 입력창보다 크게 자리를 차지했다) */}
-        <div className="composer-tools">
+        <div className={`composer-tools${routinePill ? ' has-routine' : ''}`}>
           {canUp && !streaming && (
             <>
               <input
@@ -597,6 +655,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           {can('plat:webresearch') && <SearchToggle />}
           {can('feat:thinking') && <ThinkToggle />}
           {showExpert && can('feat:expert-chat') && <ExpertToggle />}
+          {routinePill && <RoutineToggle />}
           <span className="composer-tools-gap" />
           {streaming ? (
             <button
@@ -604,7 +663,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               className="composer-btn composer-stop"
               onClick={stop}
               aria-label="응답 중지"
-              title="응답 중지"
+              title={routineStreaming ? routineHint : '응답 중지'}
             >
               <IconStop width={17} height={17} />
             </button>
@@ -623,7 +682,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       </div>
       {showHint && (
         <div className="composer-hint" aria-hidden="true">
-          {streaming ? '응답 생성 중… 중지하려면 ■ 버튼' : 'Enter 전송 · Shift+Enter 줄바꿈 · 그림은 붙여넣기(Ctrl+V)'}
+          {streaming
+            ? routineStreaming
+              ? routineHint
+              : '응답 생성 중… 중지하려면 ■ 버튼'
+            : 'Enter 전송 · Shift+Enter 줄바꿈 · 그림은 붙여넣기(Ctrl+V)'}
         </div>
       )}
     </form>

@@ -38,6 +38,22 @@ export function rejectedMessage(status: number, body: unknown): string {
   return parts.length ? `${REJECTED}(${status}) — ${parts.slice(0, 3).join(' / ')}` : `Request failed (${status})`;
 }
 
+// ■(중지)로 받기를 끊은 턴의 글자 — ChatContext 가 글이 비었을 때 '취소됨' 을 적는다.
+const STOPPED = /취소/;
+
+/** 실행 id 를 받기 전에 ■ 로 끊은 새 루틴 턴의 글(ChatContext) — 루틴 칸이 아직 없어 '중단되었습니다' 만으로는 실행이 멈춘 것으로 읽힌다.
+ *  '취소' 를 담는다 — ■ 판정(STOPPED · routineStopNote)이 그대로 돈다. */
+export const ROUTINE_STOPPED_BEFORE_RUN = '취소됨 — 루틴 실행 id 를 받기 전';
+
+/** 루틴 턴에서 ■ 로 받기를 끊었을 때의 뜻 — 아니면 null. 오류 상자는 다른 턴과 같은 '중단되었습니다' 지만, 루틴 실행은 서버에서
+ *  계속 돈다(포털 중계가 상류를 끝까지 읽고 에이전트 실행은 따로 돈다, docs/analysis-routines R3 D7 · D9). 그치는 것은 루틴 칸의
+ *  '멈춤' 이라, 루틴 칸(RoutineView)이 실행이 아직 도는 동안 이 글을 단추 곁에 붙인다. */
+export function routineStopNote(raw: string | undefined): string | null {
+  return raw && STOPPED.test(raw)
+    ? "받기만 끊었습니다 — 실행은 서버에서 계속 돕니다. 그치려면 '멈춤' 을 누릅니다."
+    : null;
+}
+
 const afterDash = (r: string) => r.slice(r.indexOf('—') + 1).trim();
 // LLM 호출 한도에 걸렸을 때 늘릴 손잡이 둘(요청·서버). 줄이라고 권하지 않는다 — 좌석이 많은 패널은 공유 LLM 에 줄을 서는 시간까지
 // 이 시계에 들어간다.
@@ -48,7 +64,15 @@ const LLM_LIMIT_HINT =
 /** 원문 오류를 사용자용 안내(원인 + 다음 행동)로 — 막다른 원문 대신 뭘 해야 할지 알려준다. */
 export function friendlyError(raw: string): { title: string; hint?: string; retry: boolean } {
   const r = raw || '';
-  if (/취소/.test(r)) return { title: '중단되었습니다', retry: true };
+  // 중계는 브라우저가 떠나도 상류를 끝까지 읽고 실행기는 구독이 끊겨도 돈다(R3 D7 · D9) — 실행이 서버에 생겼을 수 있다. 다시 시도는 내 실행 목록에서
+  // 이 대화의 그 실행을 먼저 찾는다(ChatContext retryLast).
+  if (r === ROUTINE_STOPPED_BEFORE_RUN)
+    return {
+      title: '중단되었습니다',
+      hint: "받기만 끊었습니다 — 루틴 실행은 서버에서 돌고 있을 수 있습니다. '다시 시도' 가 이 대화의 그 실행을 찾아 다시 붙고(못 찾으면 다시 보냅니다), 그 칸의 '멈춤' 으로 그칩니다.",
+      retry: true,
+    };
+  if (STOPPED.test(r)) return { title: '중단되었습니다', retry: true };
   // 포털 릴레이의 침묵 한도 — 포털이 준 문구에 초·손잡이·확인할 곳이 다 들어 있다. 그대로 보인다.
   if (r.includes('AGENT_STREAM_IDLE_TIMEOUT_S') || r.includes('AGENT_CHAT_IDLE_TIMEOUT_S'))
     return { title: '에이전트 서버의 신호가 끊겨 구독을 닫았습니다', hint: r, retry: true };

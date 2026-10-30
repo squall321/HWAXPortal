@@ -1,6 +1,6 @@
 // 서버 대화 저장소 REST 클라이언트 — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본
 import { apiFetch } from './client';
-import type { ActivityItem, Conversation, DelibTurn, Message } from '../types/chat';
+import type { ActivityItem, Conversation, DelibTurn, Message, RoutineState } from '../types/chat';
 import { newId } from '../state/chatStore';
 
 export type ConvKind = 'chat' | 'deliberation';
@@ -74,6 +74,20 @@ export async function renameServerConversation(id: string, title: string): Promi
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
   });
+}
+
+/** 답의 meta.routine(분석 루틴 턴, R3-design §3.3) → 화면의 실행 상태. 서버 사본은 포인터 {run_id, routine_id, title, state} 만 쥔다 —
+ *  단계 · 보고서의 정본은 포털 원장이라 단계는 비워 두고 화면이 run_id 로 다시 읽는다. 실행 id 가 없으면 되살리지 않는다. */
+function routineFromMeta(meta: Record<string, unknown> | null): RoutineState | undefined {
+  const r = meta?.routine as Record<string, unknown> | null | undefined;
+  if (!r || typeof r !== 'object' || typeof r.run_id !== 'string' || !r.run_id) return undefined;
+  return {
+    run_id: r.run_id,
+    ...(typeof r.routine_id === 'string' ? { routine_id: r.routine_id } : {}),
+    title: typeof r.title === 'string' ? r.title : '',
+    state: typeof r.state === 'string' ? r.state : '',
+    steps: [],
+  };
 }
 
 /** 서버 메시지 → 런타임 Message[]. persona 발언 묶음은 다음 assistant 에 delib(turns/decision)로
@@ -150,12 +164,14 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 서버 meta 에 영속된 도구 활동(status) 복원 — 리로드·크로스디바이스에서도 심의 핸드오프
       // 근거 추출(conversationEvidence)이 동작하게 한다.
       const act = (m.meta as { activity?: ActivityItem[] } | null)?.activity;
+      const routine = m.role === 'assistant' ? routineFromMeta(m.meta) : undefined;
       out.push({
         id: newId(),
         role: m.role,
         text: m.content,
         ts,
         ...(Array.isArray(act) ? { activity: act } : {}),
+        ...(routine ? { routine } : {}),
       });
     }
   }

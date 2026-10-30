@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, Conversation, DelibData, DelibOpts, Message, Role, ThinkData, TurnMeta } from '../types/chat';
+import type { ActivityItem, Conversation, DelibData, DelibOpts, Message, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -23,6 +23,8 @@ interface StoredMessage {
   meta?: TurnMeta;
   /** 이 발화에 올린 그림의 서버 주소 — 주소만 남긴다(그림 원본 · data URL 은 남기지 않는다 — 쿼터). */
   images?: string[];
+  /** 분석 루틴 턴의 실행(단계 요약 · 상태) — 단계 12개 · 요약 600자까지라 작다. 정본은 포털 원장이다. */
+  routine?: RoutineState;
 }
 interface StoredConversation {
   id: string;
@@ -73,6 +75,10 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           ...(m.meta && typeof m.meta.models === 'object' ? { meta: m.meta } : {}),
           ...(Array.isArray(m.images) && m.images.length
             ? { images: m.images.filter((u): u is string => typeof u === 'string' && u.startsWith('/agent/artifacts/')) }
+            : {}),
+          // 실행 id 가 없는 것은 버린다 — 화면이 그 id 로 포털에서 단계를 다시 읽는다
+          ...(m.routine && typeof m.routine === 'object' && typeof m.routine.run_id === 'string' && m.routine.run_id
+            ? { routine: { ...m.routine, steps: Array.isArray(m.routine.steps) ? m.routine.steps : [] } }
             : {}),
         });
       }
@@ -173,6 +179,7 @@ function keepHandoffBudget(acts: ActivityItem[], budget: { left: number }, cut: 
       return a;
     }
     cut.any = true;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 날것(result_full)만 떼어 내는 구조 분해다(떼어 낸 값은 쓰지 않는다)
     const { result_full: _drop, ...rest } = a;
     return rest;
   });
@@ -189,7 +196,8 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       const messages = c.messages
         // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
         // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).
-        .filter((m) => m.text || m.error || m.delib || m.think || m.role === 'user')
+        // 루틴 턴도 보고서(token) 전까지 글이 비고 실행은 서버에서 계속 돈다 — 실행 id 를 잃지 않게 routine 으로도 남긴다.
+        .filter((m) => m.text || m.error || m.delib || m.think || m.routine || m.role === 'user')
         .map((m) => {
           if ((m.activity?.length ?? 0) > 60) cut.any = true;
           return {
@@ -205,6 +213,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ...(m.persona ? { persona: m.persona } : {}),
             ...(m.meta ? { meta: m.meta } : {}),
             ...(m.images?.length ? { images: m.images } : {}),
+            ...(m.routine ? { routine: m.routine } : {}),
           };
         });
       return {

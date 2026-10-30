@@ -14,7 +14,6 @@ import {
   routinePlatforms,
   routineReadiness,
   type Platforms,
-  type Readiness,
   type RoutineDetail,
   type RoutineRow,
   type RoutineSpec,
@@ -22,19 +21,11 @@ import {
   type StepKind,
   type StepReadiness,
 } from '../../api/routines.api';
+// 준비도 라벨 · 사슬 글은 챗의 루틴 고르기와 함께 쓴다(R3) — 화면 조각 밖(.ts)에 둔다
+import { READY_LABEL, chain } from '../../components/chat/routine';
 
 const KIND_LABEL: Record<StepKind, string> = { platform: '플랫폼', cite: '기존 보고서 인용', deliberation: '전문가 심의' };
-const READY_LABEL: Record<Readiness, string> = {
-  allowed: '부를 수 있음',
-  not_connected: '토큰 등록 필요',
-  denied: '권한 없음',
-  unavailable: '이 박스에 없음',
-};
 const UPLOAD_LABEL = { auto: '저절로 초안을 만든다', ask: '끝에 묻는다', off: '올리지 않는다' } as const;
-
-function chain(steps: { title: string }[]): string {
-  return steps.map((s) => s.title).join(' → ');
-}
 
 function blankStep(n: number): RoutineStep {
   return {
