@@ -42,3 +42,20 @@
 - DocForge 가 HH-14 를 끝내며(`e72cbe5` · `ab5547e`) `he-doc-docforge` 의 key_tools · can · pitfalls 고침 셋을 제안했다.
 - 운영자 동기화(`sync-he-personas.py`)는 게이트웨이에 없는 도구 이름을 만나면 멈춘다. 포털과 HEAXHub 앱은 같은 update-all 로 cae00 에 가지만, DocForge 배치(release · Drive)는 그 세션의 사용자 승인을 기다린다. 포털이 먼저 닿으면 동기화가 멈춘다.
 - 그래서 그 셋은 DocForge 가 Drive 판 이름을 알린 뒤에 커밋한다. 그때까지는 체크리스트에만 둔다.
+
+## C-9 높음 넷은 설계서대로 짓는다(design-ha27 ~ 30 · design-integration)
+
+설계 에이전트 다섯이 코드를 읽고 낸 안을 받아들였다. 각 설계서의 '열린 질문' 은 권고 답을 그대로 고른다. 요청서와 다른 점은 설계서마다 'request_wrong' 으로 적혀 있다.
+
+- **HA-27 자기검증 관문** — 새 순수 모듈 `sc_gate.py` 가 검토자의 바꿀 곳(쌍)을 넣기 전에 이번 턴 도구 결과 **원문(접기 · 자르기 전)** 과 대조해 넣음 · 짚음 · 버림을 정한다. 원문은 `capped` 성공 길의 `_sc_keep_raw` 가 턴 그릇에 붙잡는다(턴당 600만 자 · 결과당 200만 자). ② 원문에 있는 수를 지우거나 다른 수로 바꾸는 쌍 · 원문 수에 '근거 없음' 을 다는 쌍은 버린다. ① 새로 더한 수가 원문에도, 글에 나온 원문 값끼리의 합 · 차 · 비율 · 곱에도 없으면 짚는다. OT-08(다른 항목의 값으로 바꿈)은 '원문 값(글)을 빼는 쌍은 짚음' 으로 막는다. ③ 검토자 입력은 결과마다 나눠 담고 잘린 결과에 '(잘림 — 까닭)' 머리와 '잘린 결과의 수치는 짚기만' 지시를 단다. 새 상태 `flagged`, meta `flags` · `dropped` · `gate`, `/health` `fixed_ratio` · `gate`. 손잡이 `CHAT_SELF_CHECK_GATE`(1 · num · 0) · `CHAT_SELF_CHECK_RAW_CHARS`. 검토자에게 다시 묻지 않는다(턴이 길어진다).
+- **HA-28 상태 기다리기** — 새 모듈 `status_wait.py`. 상태 도구는 원래 이름 목록(get_task · job_status · get_job_status · get_job · docforge_status · doe_status · study_get, 앱 접두는 tools-map 으로 벗김)이고, 게이트웨이가 `routine_read` 를 주면 그 안의 도구만 연다. **기다리는 때는 이 턴에 건 잡이 낸 id 이거나 같은 호출의 되풀이일 때만**이다(상태만 묻는 질문을 10분 붙잡지 않는다). 10초 간격 · 턴 합 600초(`CHAT_STATUS_WAIT_MAX_S`) · 다시 조회 한 번은 min(120, 남은 몫)초. 진행은 status SSE 로 흘리고, LLM 은 마지막 결과와 '[코드 기다림 — …]' 한 줄만 받는다. W-5 꼬리 · 화면 반복 경고는 면제한다. 중지는 기다림만 멈추고 잡은 돈다. 받은 답으로 정한 상태 낱말 — StepForge pending · running / done · failed · cancelled(정정 답, `cancel_requested` 는 따로 칸), DocForge queued · running / done · failed · cancelled 와 **숫자 status 는 도구 오류라 기다리기를 끝냄**, 모르는 값은 '모름' 이라 기다리지 않는다.
+- **HA-29 확인 카드** — 막는 부류 셋. job 은 에이전트 코드의 바닥 목록(요청서가 댄 잡 · 클러스터 제출 · StepForge 잡 · 심의 시작 · 리스크 잡), write 는 he-team.json writes, confirm 은 he-team.json confirm(늘 카드). 목록은 에이전트가 형제 리포 `../HWAXPortal/infra/personas/he-team.json` 을 바뀐 시각을 보고 직접 읽는다(코어 어휘표와 같은 선례 — AD-21 동기화와 무관). 게이트웨이 write 표지는 쓰지 않는다(dev 실측에서 docforge_convert · 낙하 제출을 놓치고 읽기를 쓰기로 적는다). '시켰다' 는 이번 사람 발화 원문만 본다 — job 은 주문 동사 + 도구 · 대상 이름을 글자로 불렀을 때, write 는 질문 · 부정 없는 주문 동사일 때 통과. 막으면 부르지 않고 그 단계 뒤 다음 모델 호출 앞에서 턴을 끊어 카드(SSE confirm + 본문 끝 카드 글, 번호 cf-…, 서버 메모리 30분)를 낸다. 승인은 다음 턴 발화로 받고 **서버가 저장한 호출을 처음 꼴 그대로 한 번** 보낸다(사용자 토큰이 거절되면 서비스 계정으로 내려가지 않는다). StepForge run_job 은 `estimate_cost` 로 작업량을 미리 묻는다(15초 상한). 손잡이 `CHAT_CONFIRM_GATE`.
+- **HA-30 다른 허브 id** — 허브 id 는 설치마다 다른 UUID 라 같은 객체도 허브마다 id 가 다르다. 이번 턴 허브 결과에서 UUID → 허브를 배우고, 허브 도구 인자 어디에든(칸 이름 · 깊이와 상관없이) 다른 허브에서만 본 UUID 가 있으면 부르지 않고 '그 허브의 object_resolve(type_slug, key) 로 다시 풀어라' 를 돌려준다. 코드가 대신 다시 풀지 않는다(모르는 key · 다른 type · 쓰기 도구 · 감사에 안 보이는 숨은 호출). 손잡이 `CHAT_XHUB_ID_GATE`, `/health` `xhub_gate`.
+
+## C-10 합치는 차례(design-integration)
+
+- 넷이 `_cap_tool.capped` 의 같은 열 줄과 턴 머리 한 줄을 고친다. 그래서 작은 가지(ha34 → ha26r → ha31 → vocab → ha33 · ha08, 포털 ops → seed → ua → vocab)를 먼저 합치고, **동작이 같은 골격 커밋**(`_refuse` · 성공 길 한 갈래 · `_eff` 한 번 · 자리 주석)을 main 에 둔 뒤 그 위에서 넷을 짓는다. 합치는 차례는 HA-30 → HA-28 → HA-29 → HA-27 이다.
+- `capped` 한 차례 — G1 invoke_tool 안쪽 거부 → G2 외부 응답자 거부 → G3 유령 ID → **G4 HA-30** → **G5 HA-29** → G6 챗 인자 기본값 → 호출 → **HA-28 기다림** → 머리 · 꼬리 → 원문 한 갈래 → **HA-27 원문 붙잡기** → 접기(HA-34 계수) → 자르기 → 힌트 → id 배우기(HA-30 포함) → 머리 + 본문 + 기다림 안내 + 꼬리.
+- 루트 conftest 가 `CHAT_CONFIRM_GATE=0` · `CHAT_STATUS_WAIT_MAX_S=0` 을 걸고 목록 경로를 '없음' 으로 돌린다 — 각 행 시험이 제 손으로 켠다(기존 턴 시험이 새 관문에 걸리지 않게).
+- 공유 문서(checklist · context-notes · server-setup) · env 킷 · README 는 워크트리에서 고치지 않고 합치는 세션이 한 번 쓴다.
+- 화면(HA-29 카드 · HA-27 flagged)은 포털 가지 하나(`wt1030/chatui`)에서 에이전트 main 에 두 행이 든 뒤 함께 짓고, 빌드 · Drive 는 한 번.
