@@ -5,7 +5,8 @@
 ## 0. 준비
 
 - [x] 요청서 정본 저장(붙인 글 그대로 — 1 ~ 4절 17행 · 끝 절 34행, 표의 건수와 맞음)
-- [ ] 다른 플랫폼에 보냄(SendMessage) · 사람이 보낼 글(`outbound.md`)
+- [x] 다른 플랫폼에 보냄(SendMessage 일곱 세션) · 사람이 보낼 글(`outbound.md` — AIDataHub · Datahub · ARP)
+- [ ] 받은 답을 `outbound.md` · `server-setup.md` 에 옮김
 
 ## 1. 에이전트 서버
 
@@ -37,6 +38,19 @@
 - [-] HP-54 조건부 — OB-92 에서 둘째 길을 고르면(C-4)
 - [-] HP-21(다시) 조건부 — AD-04 · OB-89 뒤(C-3)
 - [-] HP-42(다시) 2단계 — 에이전트 HA-20 뒤(C-2)
+
+## 3b. AIDataHub(사용자 결정 C-7 — 코드 행은 이 세션)
+
+- [ ] AD-19 · AD-20 추천 점수의 요청 낱말 · 신호 0 전문가, 잇는 저장소 둘을 하나로
+- [ ] AD-21 POST · PATCH `/api/agents` 저장 뒤 500
+- [ ] AD-03(다시) NASCA DRM 머리 → DRM_PROTECTED
+- [ ] AD-07(다시) agent_search `as_of` → 그 뒤 에이전트 HA-11(10-27 행)
+- [ ] AD-01(다시) 코드 — 하위 절 평탄화 · 박스별 다시 짓기 명령(실행은 사람 · OK 뒤)
+- [-] AD-05 · AD-06(다시) dev 지우기 · AD-04(다시) 측정 — 데이터 단계, 사용자 OK 뒤
+
+## 3c. 받은 답에서 생긴 우리 몫
+
+- [ ] DocForge 0.3.1 이 cae00 게이트웨이에 실린 뒤 `he-doc-docforge` 고침 셋(C-8)
 
 ## 4. 합치기 · 검토 · 올리기
 
