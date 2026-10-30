@@ -31,7 +31,8 @@ def _gate_py() -> str:
 def _run(ah: dict, gh: dict, **knobs) -> str:
     """knobs — CTSB · TSB(에이전트 서버 .env 의 CHAT_TOOL_SCHEMA_BUDGET · TOOL_SCHEMA_BUDGET) · AGSTALE(이번 실행이 에이전트 서버 재기동을
     미뤘다 — 장부) — 구획이 넘기는 이름이다."""
-    env = {k: v for k, v in os.environ.items() if k not in ("CTSB", "TSB", "AGSTALE")}
+    # HWAX_SKIP_LEDGER — 이 셸이 update-all 안에서 돌면 진짜 장부에 적는다(꺼진 관문 ○ 줄). 시험이 넘길 때만 쓴다
+    env = {k: v for k, v in os.environ.items() if k not in ("CTSB", "TSB", "AGSTALE", "HWAX_SKIP_LEDGER")}
     r = subprocess.run(["python3", "-c", _gate_py()], capture_output=True, text=True, timeout=30,
                        env={**env, "AH": json.dumps(ah), "GH": json.dumps(gh), **knobs})
     assert r.returncode == 0, r.stderr
@@ -258,25 +259,78 @@ def test_E7_검색_손잡이와_코어_어휘표_지문을_말하고_다르면_�
     assert "검색 손잡이" not in out and "어휘표" not in out, "옛 판(칸 없음)은 말하지 않는다"
 
 
+# 에이전트 서버 /health 의 10-30 칸 — 코드가 내는 꼴 그대로(app._sc_health · status_wait.health · _confirm_health · _xhub_gate_health ·
+# _hub_fold_health). 셈 칸은 늘 다 실려 온다(0 부터) — 시험이 고른 몇 칸만 주면 '아직 센 것 없음' 같은 갈래가 진짜 꼴에서 닿는지 모른다.
+_SC_CODES = ("drop_sourced_number", "demote_weak_source", "drop_marks_sourced", "demote_removes_value", "demote_unsourced_number",
+             "demote_coupled")
+_CF_KEYS = ("cards", "held_calls", "approved", "executed", "declined", "unknown_reply", "ordered")
+
+
+def _ah_10_30(mode: str = "1", **cf) -> dict:
+    gate = {"mode": mode, "turns": 6, "reviewer_fixed": 5, "raw_partial": 0,
+            "counts": {**dict.fromkeys(("applied", *_SC_CODES, "reviewer_flags"), 0),
+                       "applied": 1, "drop_sourced_number": 2, "drop_marks_sourced": 1, "demote_removes_value": 1, "reviewer_flags": 2}}
+    return {"self_check": {"on": True, "counts": {"ok": 3, "fixed": 1, "flagged": 2}, "ms": {"n": 0, "p50": None, "p95": None},
+                           "last_error": None, "fixed_ratio": 0.167, "gate": gate},
+            "status_wait": {"on": True, "poll_s": 10.0, "max_s": 600.0, "waits": 2, "ended": 1, "capped": 1, "failed": 0},
+            "confirm_gate": {"on": True, "lists": {"loaded": True, "error": None, "jobs": 24, "writes": 90, "confirm": 37},
+                             "pending": 1, "counts": {**dict.fromkeys(_CF_KEYS, 0), **cf}},
+            "xhub_gate": {"on": True, "blocked": 3}, "hub_fold": {"count": 12, "chars_in": 1250000, "chars_out": 210000}}
+
+
 def test_10_30_관문_넷과_접기를_말하고_목록을_못_읽으면_경고한다():
     """10-30 HA-27 · HA-28 · HA-29 · HA-30 · HA-34 의 /health 칸 — cae00 재시험(docs/request-1030 server-setup)이 이 줄로 켜졌는지 · 도는지 본다.
-    운영자 목록을 못 읽은 확인 관문은 바닥 목록만 돌아 쓰기 도구가 카드 없이 나간다 — 그때만 ⚠."""
-    ah = {"self_check": {"on": True, "counts": {"ok": 3, "fixed": 1}, "ms": {}, "fixed_ratio": 0.25,
-                         "gate": {"mode": "1", "turns": 4, "raw_partial": 0,
-                                  "counts": {"applied": 1, "drop_sourced_number": 2, "demote_removes_value": 1}}},
-          "status_wait": {"on": True, "poll_s": 10.0, "max_s": 600.0, "waits": 2, "ended": 1, "capped": 1, "failed": 0},
-          "confirm_gate": {"on": True, "lists": {"loaded": True, "error": None, "jobs": 24, "writes": 90, "confirm": 37},
-                           "pending": 1, "counts": {"cards": 2, "approved": 1}},
-          "xhub_gate": {"on": True, "blocked": 3}, "hub_fold": {"count": 12, "chars_in": 1250000, "chars_out": 210000}}
-    out = _run(ah, {})
-    assert "· 자기검증 관문: 모드 1 · 관문 턴 4 · 넣음 1 · 짚음 1 · 버림 2 · 고친 비율 0.25" in out, out
+    운영자 목록을 못 읽은 확인 관문은 바닥 목록만 돌아 쓰기 도구가 카드 없이 나간다 — 그때만 ⚠. 관문 줄의 검토자 고침(관문 앞의 버릇)은
+    지시 ③ 의 효과를 읽는 값이다(design-ha27 8.4 · 8.5 — 검토자 고침 ÷ 관문 턴)."""
+    out = _run(_ah_10_30(cards=2, held_calls=3, approved=1), {})
+    assert ("· 자기검증 관문: 모드 1 · 관문 턴 6 · 검토자 고침 5 · 넣음 1 · 짚음 1 · 버림 3 · 검토자 짚은 점 2 · 고친 비율 0.167") in out, out
     assert "· 상태 기다림: 10.0초 간격 · 턴 합 600.0초 · 기다림 2 · 끝남 1 · 상한 1 · 실패 0" in out, out
-    assert "· 확인 관문: 목록 잡 24 · 쓰기 90 · 확인 37 · 살아 있는 카드 1 · approved 1 · cards 2" in out, out
+    assert "· 확인 관문: 목록 잡 24 · 쓰기 90 · 확인 37 · 살아 있는 카드 1 · approved 1 · cards 2 · held_calls 3" in out, out
     assert "· 다른 허브 id 막이: 켬 · 막은 호출 3" in out and "· 허브 응답 접기: 12번 · 1,250,000자 → 210,000자" in out, out
-    bad = {**ah, "confirm_gate": {"on": True, "lists": {"loaded": False, "error": "없음", "jobs": 24, "writes": 0, "confirm": 0},
-                                  "pending": 0, "counts": {}}}
+    # 기동 뒤 아직 카드가 없다 — 에이전트 서버는 일곱 칸을 0 으로 채워 온다
+    assert "· 확인 관문: 목록 잡 24 · 쓰기 90 · 확인 37 · 살아 있는 카드 1 · 아직 센 것 없음" in _run(_ah_10_30(), {})
+    bad = _ah_10_30()
+    bad["confirm_gate"]["lists"] = {"loaded": False, "error": "없음", "jobs": 24, "writes": 0, "confirm": 0}
+    bad["confirm_gate"]["pending"] = 0
     assert "· ⚠ 확인 관문: 목록 잡 24 · 쓰기 0 · 확인 0 · 살아 있는 카드 0 · 아직 센 것 없음 — 운영자 목록을 못 읽었다(없음)" in _run(bad, {})
-    off = _run({"status_wait": {"on": False}, "confirm_gate": {"on": False}, "xhub_gate": {"on": False, "blocked": 0}}, {})
-    assert "상태 기다림: 꺼짐" in off and "확인 관문: 꺼짐" in off and "다른 허브 id 막이: 꺼짐(CHAT_XHUB_ID_GATE=0)" in off, off
     # 옛 판(칸 없음)은 말하지 않는다
     assert "관문" not in _run({}, {}) and "접기" not in _run({}, {})
+
+
+def test_10_30_손잡이로_끈_관문은_안_켠_기능으로_말하고_장부에_적는다(tmp_path):
+    """끈 것은 ○ 와 '켜려면' 으로(사용자 지시 09-25 '안 켠 기능도 로그에' — design-integration 6절). hwax_skip 과 같은 꼴로 찍고 장부에 적어
+    update-all 끝 요약(hwax_skip_summary)이 다시 말한다. 자기검증 관문 모드 0 도 '모드 0 · 관문 턴 0 · …' 로 켠 것처럼 찍지 않는다."""
+    ah = _ah_10_30(mode="0")
+    ah["status_wait"] = {"on": False, "poll_s": 10.0, "max_s": 0.0, "waits": 0, "ended": 0, "capped": 0, "failed": 0}
+    ah["confirm_gate"]["on"] = False
+    ah["xhub_gate"] = {"on": False, "blocked": 0}
+    led = tmp_path / "ledger"
+    led.write_text("", encoding="utf-8")
+    out = _run(ah, {}, HWAX_SKIP_LEDGER=str(led))
+    rows = [ln.split("\t") for ln in led.read_text(encoding="utf-8").splitlines()]
+    want = {"챗 자기검증 관문": "CHAT_SELF_CHECK_GATE=0", "챗 상태 기다림": "CHAT_STATUS_WAIT_MAX_S=0", "챗 확인 관문": "CHAT_CONFIRM_GATE=0",
+            "챗 다른 허브 id 막이": "CHAT_XHUB_ID_GATE=0"}
+    assert [r[0] for r in rows] == list(want), rows
+    for name, knob in want.items():
+        assert f"\033[1;35m○\033[0m {name} — 꺼짐(에이전트 서버 {knob})" in out, out
+        row = next(r for r in rows if r[0] == name)
+        assert len(row) == 3 and knob in row[1] and "재기동" in row[2], row
+    assert out.count("      켜려면: 에이전트 서버 .env 의 ") == 4, out
+    assert "자기검증 관문: 모드" not in out and "상태 기다림:" not in out and "확인 관문:" not in out, "끈 관문을 켠 것처럼 찍지 않는다"
+    # 장부가 없으면(update-all 밖에서 돌린 구획) 찍기만 한다
+    assert "○ 챗 확인 관문" in _run(ah, {}).replace("\033[1;35m", "").replace("\033[0m", "")
+
+
+def test_10_30_칸_하나의_꼴이_달라도_그_줄만_말하고_뒤의_어휘표_점검은_찍는다():
+    """새 줄은 §7 전체를 싼 try … except 안에 있다 — 칸 하나가 꼴이 다르면 뒤의 '⚠ 코어 어휘표 지문 … 다르다' 까지 말없이 사라졌다(10-30 반대 검토)."""
+    vocab = ({"core_vocab": {"fingerprint": "old999"}}, {"core_vocab": {"fingerprint": "vvv000"}})
+    for field, broken, name in (("hub_fold", {"count": "12", "chars_in": 1, "chars_out": 1}, "허브 응답 접기"),
+                                ("confirm_gate", {"on": True, "lists": {}, "pending": 0, "counts": ["cards"]}, "확인 관문"),
+                                ("status_wait", {"on": True, "poll_s": 10.0, "max_s": 600.0, "waits": None}, None),
+                                ("self_check", {**_ah_10_30()["self_check"], "gate": {"mode": "1", "counts": {"drop_x": "많음"}}}, "자기검증 관문")):
+        ah = {**_ah_10_30(), field: broken, **vocab[0]}
+        out = _run(ah, vocab[1])
+        assert "⚠ 코어 어휘표 지문: 게이트웨이 vvv000 · 에이전트 old999 — 다르다" in out, (field, out)
+        assert "· 다른 허브 id 막이: 켬 · 막은 호출 3" in out, (field, out)
+        if name:
+            assert f"· ⚠ {name}: 에이전트 서버 /health 칸의 꼴이 이 구획과 다르다(" in out, (field, out)

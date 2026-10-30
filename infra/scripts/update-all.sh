@@ -3572,45 +3572,85 @@ try:
             if last:
                 line += " · 마지막 실패 %s: %s" % (last.get("status"), str(last.get("reason") or "")[:120])
             print("  · %s챗 자기검증: %s" % ("⚠ " if bad else "", line))
-            # 자기검증 관문(10-30 HA-27) — 검토자의 고침을 원문과 대조해 넣음 · 짚음 · 버림. 버림 · 짚음이 늘고 고친 비율이 내려가면 관문이 도는 것이다.
-            gate = sc.get("gate")
-            if isinstance(gate, dict):
-                gc = gate.get("counts") or {}
-                drops = sum(int(v or 0) for k, v in gc.items() if k.startswith("drop_"))
-                demotes = sum(int(v or 0) for k, v in gc.items() if k.startswith("demote_"))
-                fr = sc.get("fixed_ratio")
-                print("  · 자기검증 관문: 모드 %s · 관문 턴 %s · 넣음 %s · 짚음 %s · 버림 %s · 고친 비율 %s%s" % (
-                    gate.get("mode"), gate.get("turns", 0), gc.get("applied", 0), demotes, drops, "-" if fr is None else fr,
-                    " — 원문이 잘린 턴 %s(CHAT_SELF_CHECK_RAW_CHARS 를 올린다)" % gate["raw_partial"] if gate.get("raw_partial") else ""))
-    # 상태 기다림 · 확인 관문 · 다른 허브 id 막이 · 허브 응답 접기(10-30 HA-28 · HA-29 · HA-30 · HA-34) — 옛 판은 칸이 없어 말하지 않는다.
-    sw = ah.get("status_wait")
-    if isinstance(sw, dict):
+    # ── 10-30 챗 관문 넷과 허브 응답 접기(HA-27 · HA-28 · HA-29 · HA-30 · HA-34) — 옛 판은 칸이 없어 말하지 않는다. 칸 하나의 꼴이 이 구획과 달라도
+    # 그 줄만 ⚠ 로 말하고 다음 줄로 간다 — 이 구획 전체를 싼 try 가 뒤의 검색 손잡이 · 코어 어휘표 지문 줄까지 말없이 삼키지 않게.
+    def _line(name, fn, v):
+        if not isinstance(v, dict):
+            return
+        try:
+            fn(v)
+        except Exception as e:
+            print("  · ⚠ %s: 에이전트 서버 /health 칸의 꼴이 이 구획과 다르다(%s) — 이 줄만 건너뛴다" % (name, type(e).__name__))
+
+    def _off(name, why, how):
+        # 손잡이로 끈 관문 — 안 켠 기능도 로그에(사용자 지시 09-25). hwax_skip 과 같은 꼴로 찍고 장부에 적어 끝 요약에서 다시 말한다.
+        print("  \033[1;35m○\033[0m %s — %s\n      켜려면: %s" % (name, why, how))
+        if os.environ.get("HWAX_SKIP_LEDGER"):
+            try:
+                with open(os.environ["HWAX_SKIP_LEDGER"], "a", encoding="utf-8") as f:
+                    f.write("%s\t%s\t%s\n" % (name, why, how))
+            except OSError:
+                pass
+
+    def _how(knob, dflt):
+        return "에이전트 서버 .env 의 %s=0 줄을 지우고(기본 %s) 에이전트 서버를 재기동한다(.env 는 기동 때 한 번 싣는다)" % (knob, dflt)
+
+    def _sc_gate(gate, fr):
+        # 자기검증 관문(HA-27) — 검토자의 고침을 원문과 대조해 넣음 · 짚음 · 버림. 버림 · 짚음이 늘고 고친 비율이 내려가면 관문이 도는 것이다.
+        # 검토자 고침(관문 앞에서 검토자가 '고침' 이라 한 턴) ÷ 관문 턴이 지시 ③ 의 효과다(design-ha27 8.4 · 8.5).
+        if str(gate.get("mode")) == "0":
+            _off("챗 자기검증 관문", "꺼짐(에이전트 서버 CHAT_SELF_CHECK_GATE=0) — 검토자의 고침을 조회 결과 원문과 대조하지 않고 종전대로 다 넣는다",
+                 _how("CHAT_SELF_CHECK_GATE", "1 — 수만 보려면 num"))
+            return
+        gc = gate.get("counts") or {}
+        drops = sum(int(v or 0) for k, v in gc.items() if k.startswith("drop_"))
+        demotes = sum(int(v or 0) for k, v in gc.items() if k.startswith("demote_"))
+        print("  · 자기검증 관문: 모드 %s · 관문 턴 %s · 검토자 고침 %s · 넣음 %s · 짚음 %s · 버림 %s · 검토자 짚은 점 %s · 고친 비율 %s%s" % (
+            gate.get("mode"), gate.get("turns", 0), gate.get("reviewer_fixed", 0), gc.get("applied", 0), demotes, drops,
+            gc.get("reviewer_flags", 0), "-" if fr is None else fr,
+            " — 원문이 잘린 턴 %s(CHAT_SELF_CHECK_RAW_CHARS 를 올린다)" % gate["raw_partial"] if gate.get("raw_partial") else ""))
+
+    def _status_wait(sw):
         if not sw.get("on"):
-            print("  · 상태 기다림: 꺼짐(에이전트 서버 CHAT_STATUS_WAIT_MAX_S=0)")
-        else:
-            print("  · 상태 기다림: %s초 간격 · 턴 합 %s초 · 기다림 %s · 끝남 %s · 상한 %s · 실패 %s" % (
-                sw.get("poll_s"), sw.get("max_s"), sw.get("waits", 0), sw.get("ended", 0), sw.get("capped", 0), sw.get("failed", 0)))
-    cg = ah.get("confirm_gate")
-    if isinstance(cg, dict):
+            _off("챗 상태 기다림", "꺼짐(에이전트 서버 CHAT_STATUS_WAIT_MAX_S=0) — 이 턴에 건 잡의 상태 조회를 코드가 기다리지 않고 LLM 이 되풀이해 묻는다",
+                 _how("CHAT_STATUS_WAIT_MAX_S", "600초"))
+            return
+        print("  · 상태 기다림: %s초 간격 · 턴 합 %s초 · 기다림 %s · 끝남 %s · 상한 %s · 실패 %s" % (
+            sw.get("poll_s"), sw.get("max_s"), sw.get("waits", 0), sw.get("ended", 0), sw.get("capped", 0), sw.get("failed", 0)))
+
+    def _confirm(cg):
         if not cg.get("on"):
-            print("  · 확인 관문: 꺼짐(에이전트 서버 CHAT_CONFIRM_GATE=0 — 잡 · 쓰기를 사람이 시키지 않아도 보낸다)")
-        else:
-            li = cg.get("lists") or {}
-            cc = cg.get("counts") or {}
-            line = "목록 잡 %s · 쓰기 %s · 확인 %s · 살아 있는 카드 %s · %s" % (
-                li.get("jobs"), li.get("writes"), li.get("confirm"), cg.get("pending", 0),
-                " · ".join("%s %s" % kv for kv in sorted(cc.items())) or "아직 센 것 없음")
-            if not li.get("loaded"):
-                line += " — 운영자 목록을 못 읽었다(%s): 형제 리포 HWAXPortal/infra/personas/he-team.json · CONFIRM_LISTS_PATH 를 본다(바닥 목록만 돈다)" % (
-                    li.get("error") or "?")
-            print("  · %s확인 관문: %s" % ("" if li.get("loaded") else "⚠ ", line))
-    xg = ah.get("xhub_gate")
-    if isinstance(xg, dict):
-        print("  · 다른 허브 id 막이: %s · 막은 호출 %s" % ("켬" if xg.get("on") else "꺼짐(CHAT_XHUB_ID_GATE=0)", xg.get("blocked", 0)))
-    hf = ah.get("hub_fold")
-    if isinstance(hf, dict) and hf.get("count"):
-        print("  · 허브 응답 접기: %s번 · %s자 → %s자" % (format(hf["count"], ","), format(hf.get("chars_in") or 0, ","),
-                                                     format(hf.get("chars_out") or 0, ",")))
+            _off("챗 확인 관문", "꺼짐(에이전트 서버 CHAT_CONFIRM_GATE=0) — 잡 · 쓰기를 사람이 시키지 않아도 보낸다(프롬프트 규칙만 남는다)",
+                 _how("CHAT_CONFIRM_GATE", "1"))
+            return
+        li = cg.get("lists") or {}
+        # 에이전트 서버는 셈 일곱 칸을 늘 0 부터 채워 온다 — 0 이 아닌 것만 말한다(다 0 이면 아직 센 것이 없다)
+        seen = " · ".join("%s %s" % (k, v) for k, v in sorted((cg.get("counts") or {}).items()) if v) or "아직 센 것 없음"
+        line = "목록 잡 %s · 쓰기 %s · 확인 %s · 살아 있는 카드 %s · %s" % (
+            li.get("jobs"), li.get("writes"), li.get("confirm"), cg.get("pending", 0), seen)
+        if not li.get("loaded"):
+            line += " — 운영자 목록을 못 읽었다(%s): 형제 리포 HWAXPortal/infra/personas/he-team.json · CONFIRM_LISTS_PATH 를 본다(바닥 목록만 돈다)" % (
+                li.get("error") or "?")
+        print("  · %s확인 관문: %s" % ("" if li.get("loaded") else "⚠ ", line))
+
+    def _xhub(xg):
+        if not xg.get("on"):
+            _off("챗 다른 허브 id 막이", "꺼짐(에이전트 서버 CHAT_XHUB_ID_GATE=0) — 다른 허브 결과에서만 본 id 를 실은 허브 호출을 막지 않는다",
+                 _how("CHAT_XHUB_ID_GATE", "1"))
+            return
+        print("  · 다른 허브 id 막이: 켬 · 막은 호출 %s" % xg.get("blocked", 0))
+
+    def _fold(hf):
+        if hf.get("count"):
+            print("  · 허브 응답 접기: %s번 · %s자 → %s자" % (format(hf["count"], ","), format(hf.get("chars_in") or 0, ","),
+                                                         format(hf.get("chars_out") or 0, ",")))
+
+    if isinstance(sc, dict) and sc.get("on"):
+        _line("자기검증 관문", lambda g: _sc_gate(g, sc.get("fixed_ratio")), sc.get("gate"))
+    _line("상태 기다림", _status_wait, ah.get("status_wait"))
+    _line("확인 관문", _confirm, ah.get("confirm_gate"))
+    _line("다른 허브 id 막이", _xhub, ah.get("xhub_gate"))
+    _line("허브 응답 접기", _fold, ah.get("hub_fold"))
     # 검색 손잡이 · 코어 어휘표 지문(docs/request-1029 E-7 ③) — 박스 덧씌우기가 버려지지 않았나 · 게이트웨이와 에이전트가 같은 어휘표로 도나.
     # 지문이 다르면 한쪽이 옛 판이거나(재기동 전) 덧씌우기를 버렸다. 옛 판은 칸이 없어 말하지 않는다.
     st = gh.get("search_tuning")
