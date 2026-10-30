@@ -40,7 +40,7 @@ steps:
     # 결과는 목록이 아니라 봉투 `{items, total, reason, truncated}` 다(KR-08) — 후보는 items 에서 고른다.
     # `from: "$"` 면 봉투 하나가 후보가 되어 0건이어도 on_none 대신 select:no_field 로 멈췄다(HP-52).
     select: {from: items, save: id, as: report_id, label: label, on_many: ask, on_none: fail}
-    note: 잡 키로 리포트를 찾는다 — 0건이면 아직 반입 전이다(사람이 REST intake 로 올린다)
+    note: 잡 키로 리포트를 찾는다 — 0건이면 아직 반입 전이다(사람이 REST intake 로 올린다). 올렸으면 5분 뒤에 새로 실행한다 — 게이트웨이가 이 조회를 300초 캐시하고(0건도 담는다) REST intake 는 그 캐시를 비우지 않아, 그 안에 다시 돌리면 앞서 받은 0건이 그대로 온다(PLAN §5-9)
 
   - backend: heax-kooremapper_mcp
     tool: report_summary

@@ -516,10 +516,11 @@ class ProceduresRunner:
         후보를 돌려주고 **고르지 않는다**"(D-170). 기본이 `ask` 인 이유다.
         """
         sel = st.select
+        missing = False
         try:
             cand = template.extract(v.parsed, sel.from_)
         except Exception:  # noqa: BLE001 — 경로가 안 풀리면 후보 없음과 같다
-            cand = None
+            cand, missing = None, True
         raw_rows = cand if isinstance(cand, list) else ([] if cand is None else [cand])
         rows = [r for r in raw_rows if isinstance(r, dict)]
         if raw_rows and not rows:
@@ -543,11 +544,16 @@ class ProceduresRunner:
             # 절차의 `from` 이라 그렇게 말한다. 몰래 벗기지는 않는다 — `$` 의 뜻이 바뀌면
             # 이미 저장된 판본의 뜻이 바뀐다(PLAN §2). 옛 씨앗을 가져온 사람은 다시 받기 전까지
             # 이 글을 본다.
+            # ⚠ 다시 받아도 **이 실행**은 옛 판본에 묶여 있다 — '다시 돌리기' · '재개' 는 실행의
+            # 판본 id 로 돈다(PLAN §2). 받으라고만 하면 받은 사람이 이 실행으로 돌아와 다시 돌리고
+            # 같은 글을 또 본다(반대 검토). 그래서 절차 화면에서 새로 재생하라고까지 말한다.
             env = (sel.from_.strip() == "$" and isinstance(cand, dict)
                    and isinstance(cand.get("items"), list))
             hint = (f" · 결과가 목록이 아니라 봉투다(`items` 에 후보 {len(cand['items'])}개) — "
                     "`from: items` 로 고친다. 정본 예제에서 가져온 절차는 '최신으로' 로 "
-                    "다시 받으면 고친 판본이 오른다" if env else "")
+                    "다시 받으면 고친 판본이 오른다. 고친 판본은 절차 화면에서 새로 '재생' 해야 "
+                    "돈다 — 이 실행의 '이 값으로 다시 돌리기' · '재개' 는 그때 판본으로 다시 돈다"
+                    if env else "")
             self.store.finish_step(
                 run_id, ix, ok=False, stage="select:no_field",
                 error=f"고른 {len(rows)}개 어디에도 `{sel.save}` 칸이 없다 — "
@@ -563,8 +569,17 @@ class ProceduresRunner:
                                        stage="select:none",
                                        notes={"select": "룰이 아무것도 못 골랐다 — 건너뛴다"})
                 return None
+            # ⚠ 경로가 **안 풀린 것**을 "비었다" 로 말하지 않는다. 멈추는 길(on_none)은 같지만,
+            # 결과 꼴이 바뀐 것(봉투 이전의 맨 목록 · 칸 이름 변경)이 0건과 같은 글이면 사람은
+            # '아직 없다' 로 읽는다 — 씨앗이 `from: items` 에 기대게 된 뒤의 HP-52 거울상이다.
+            p = v.parsed
+            seen = (f"있는 칸: {sorted(p)[:12]}" if isinstance(p, dict)
+                    else f"결과가 목록이다({len(p)}개)" if isinstance(p, list)
+                    else "결과가 객체가 아니다")
+            why = (f"`{sel.from_}` 가 결과에 없다 — 0건이 아니라 결과 꼴이 다르다 · {seen}"
+                   if missing else f"`{sel.from_}` 가 비었다")
             self.store.finish_step(run_id, ix, ok=False, stage="select:none",
-                                   error=f"룰이 아무것도 못 골랐다 (`{sel.from_}` 가 비었다)")
+                                   error=f"룰이 아무것도 못 골랐다 ({why})")
             self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
             return {"state": "failed", "stopped_at": ix, "kind": "select_none",
                     "error": "룰이 아무것도 못 골랐다"}

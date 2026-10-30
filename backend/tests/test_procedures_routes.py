@@ -746,6 +746,27 @@ def test_옛_판본과_그_이력은_판본이_올라도_남는다(user):
     assert [r["id"] for r in hist] == [rid] and hist[0]["version_no"] == 1
 
 
+def test_다시_받은_판본은_새_재생에만_간다(user):
+    """지난 실행의 '다시 돌리기' 는 **그때 판본**으로 돈다(PLAN §2 — 재생은 판본 id 로).
+    옛 씨앗의 봉투 안내(HP-52)가 '다시 받은 뒤에는 절차 화면에서 새로 재생한다' 고
+    말하는 근거다 — 이게 바뀌면 그 글도 바꾼다."""
+    c, h = user
+    name = "fullangle-drop-part-report"
+    vars_ = {"job_name": "drop-demo-01", "slurm_job_id": "12345", "part_id": "3"}
+    a = c.post(f"{PREFIX}/seeds/{name}/import", headers=h).json()
+    old = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": a["id"], "mode": "plan", "vars": vars_}).json()["run_id"]
+
+    b = c.post(f"{PREFIX}/seeds/{name}/import", headers=h).json()   # '최신으로' — 판본 2
+    assert b["id"] == a["id"] and b["version_no"] == 2, b
+    again = c.post(f"{PREFIX}/runs/{old}/replay", json={"mode": "plan"}, headers=h).json()["run_id"]
+    assert c.get(f"{PREFIX}/runs/{again}", headers=h).json()["version_no"] == 1, \
+        "다시 돌리기가 새 판본으로 돌았다 — 봉투 안내(runner._pick)의 '그때 판본으로' 를 고친다"
+    fresh = c.post(f"{PREFIX}/runs", headers=h, json={
+        "procedure_id": a["id"], "mode": "plan", "vars": vars_}).json()["run_id"]
+    assert c.get(f"{PREFIX}/runs/{fresh}", headers=h).json()["version_no"] == 2
+
+
 # ── 실행 → 절차 초안 (도출) ──────────────────────────────────────────────
 def test_챗_실행을_절차_초안으로_편다(user):
     """**한 고리의 마지막 칸이다.** 챗에서 한 일이 원장에 남았으면 절차로 펴 본다."""

@@ -310,7 +310,7 @@ def _reports(items: list) -> dict:
                                           "(도구 실패가 아니다)")}
 
 
-def _pick_report(step, body: dict):
+def _pick_report(step, body: dict | list):
     from tests.test_procedures_select import _Store
 
     from app.procedures.runner import ProceduresRunner
@@ -330,6 +330,32 @@ def test_리포트가_0건이면_on_none_으로_멈춘다(collect):
     out, scope, store = _pick_report(spec.steps[0], _reports([]))
     assert out["kind"] == "select_none", out
     assert store.finished[-1]["stage"] == "select:none" and "report_id" not in scope
+    assert "`items` 가 비었다" in store.finished[-1]["error"], store.finished[-1]
+
+
+@pytest.mark.parametrize("body", [
+    [{"id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9", "label": "drop-demo-01"}],      # 봉투 이전의 맨 목록
+    {"reports": [{"id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9"}], "total": 1},      # 칸 이름이 바뀐 봉투
+])
+def test_결과_꼴이_바뀌면_0건이라고_하지_않는다(collect, body):
+    """씨앗이 `from: items` 에 기대므로 봉투가 아니게 오면 경로가 안 풀려 on_none 으로 멈춘다.
+    그 글이 0건과 같으면 note 의 '0건이면 아직 반입 전' 으로 읽힌다 — HP-52 의 거울상(반대 검토)."""
+    _, spec = collect
+    out, scope, store = _pick_report(spec.steps[0], body)
+    assert out["kind"] == "select_none" and "report_id" not in scope, out
+    err = store.finished[-1]["error"]
+    assert "`items` 가 결과에 없다" in err and "결과 꼴이 다르다" in err, err
+    assert "비었다" not in err, err
+
+
+def test_0건_안내가_올린_뒤_캐시_5분을_말한다(collect):
+    """게이트웨이는 find_reports 를 300초 캐시한다(0건도 — PLAN §5-9). REST intake 는
+    게이트웨이를 안 지나 그 캐시를 못 비운다 — note 대로 올리고 바로 다시 돌리면 앞서 받은
+    0건이 또 온다(반대 검토)."""
+    _, spec = collect
+    st = spec.steps[0]
+    assert st.cacheable, "게이트웨이 캐시 규칙(gateway_caches)에서 빠졌다 — note 를 다시 본다"
+    assert "5분" in (st.note or "") and "캐시" in st.note, st.note
 
 
 def test_리포트가_한_건이면_그것을_고르고_여럿이면_묻는다(collect):
@@ -350,7 +376,9 @@ def test_리포트가_한_건이면_그것을_고르고_여럿이면_묻는다(c
 @pytest.mark.parametrize("n", [0, 1])
 def test_옛_씨앗_꼴은_봉투라고_말하고_벗겨_고르지_않는다(collect, n):
     """이미 가져간 옛 판본(`from: "$"`)은 다시 받기 전까지 그대로다 — 무엇을 고칠지 말해야 한다.
-    실행기가 봉투를 몰래 벗기면 `$` 의 뜻이 바뀐다(PLAN §2) — 고르지 않고 멈춘다."""
+    실행기가 봉투를 몰래 벗기면 `$` 의 뜻이 바뀐다(PLAN §2) — 고르지 않고 멈춘다.
+    다시 받아도 이 실행의 '다시 돌리기' · '재개' 는 그때 판본으로 돈다 — 새로 재생하라고까지 말해야
+    같은 글을 또 보지 않는다(반대 검토, 전제는 test_procedures_routes 가 건다)."""
     _, spec = collect
     st = spec.steps[0]
     old = st.model_copy(update={"select": st.select.model_copy(update={"from_": "$"})})
@@ -359,6 +387,7 @@ def test_옛_씨앗_꼴은_봉투라고_말하고_벗겨_고르지_않는다(col
     err = store.finished[-1]["error"]
     assert "봉투" in err and "`from: items`" in err, err
     assert f"후보 {n}개" in err and "최신으로" in err, err
+    assert "새로 '재생'" in err and "다시 돌리기" in err and "재개" in err, err
     assert "from: items" in out["error"], out
     assert "report_id" not in scope and store.inputs == {}, "봉투를 벗겨 골랐다"
 

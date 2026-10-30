@@ -136,6 +136,9 @@ def test_경로가_안_풀리면_후보_없음과_같다():
     r.store = _Store()
     out = r._pick("run", 0, st, Verdict(True, "json", "ok", parsed={"parts": [{"name": "A"}]}), {})
     assert out["kind"] == "select_none"
+    # 멈추는 길은 0건과 같아도 글은 다르다 — "비었다" 면 사람은 '아직 없다' 로 읽는다(HP-52 거울상).
+    err = r.store.finished[-1]["error"]
+    assert "결과에 없다" in err and "parts" in err and "비었다" not in err, err
 
 
 # ── "못 골랐다" 와 구분해야 하는 것들(2026-09-15 감사) ──────────────────────
@@ -170,6 +173,23 @@ def test_봉투가_아니면_봉투라고_하지_않는다():
         out = r._pick("run", 0, st, Verdict(True, "json", "ok", parsed=parsed), {})
         assert out["kind"] == "select_no_field", out
         assert "봉투" not in r.store.finished[-1]["error"] and "봉투" not in out["error"], parsed
+
+
+def test_안쪽_봉투에는_from_items_를_권하지_않는다():
+    """봉투 안내는 `from: "$"` 일 때만이다. `from: data` 가 `{items: […]}` 를 가리키면
+    맞는 길은 `data.items` 라 '`from: items` 로 고친다' 는 틀린 고침이다 — 이 조건을
+    떼도 깨지는 시험이 없었다(반대 검토)."""
+    from app.procedures.runner import ProceduresRunner
+
+    st = Step.model_validate({"backend": "b", "tool": "t",
+                              "select": {"from": "data", "save": "id", "as": "rid"}})
+    r = ProceduresRunner.__new__(ProceduresRunner)
+    r.store = _Store()
+    parsed = {"data": {"items": [{"id": 1}], "total": 1}}
+    out = r._pick("run", 0, st, Verdict(True, "json", "ok", parsed=parsed), {})
+    assert out["kind"] == "select_no_field", out
+    err = r.store.finished[-1]["error"]
+    assert "봉투" not in err and "from: items" not in err and "봉투" not in out["error"], err
 
 
 def test_고른_것의_값이_비면_다음_단계로_안_넘긴다():
