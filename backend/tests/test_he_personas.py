@@ -82,7 +82,8 @@ FAKE_MAP = {
         "activate_model": "heax-thermal_shock_mcp",
         "arp_search": "arp",
         "arp_get": "arp",
-        # ARP 운영자가 정본에 적은 도구(docs/request-1030 HP-53) — 조회 둘은 cae00 챗이 부른 이름, 올리기 넷은 10-30 cae00 /tools-map
+        # ARP 운영자가 정본에 적은 도구(docs/request-1030 HP-53) — 조회 둘은 10-29 QA 가 적은 이름(선택 칸 — 있을 때만 잇는다),
+        # 올리기 넷은 10-30 cae00 /tools-map
         "search_data": "arp",
         "compare_items": "arp",
         "arp_upload_create": "arp",
@@ -553,7 +554,8 @@ def test_HP20_코어_온톨로지_운영자는_정본_허브를_몰고_붙은_�
 
 # ── HP-53(docs/request-1030) — 운영자 정의의 writes · confirm 을 채운다 ─────────────────────────────────────────────
 # 10-30 cae00 /tools-map 과 대조한 목록 밖 도구다. 잡 · 쓰기는 writes(요청했을 때만 부른다), 지우기 · 권한 · 되돌리기 어려운 것은
-# confirm(무엇이 바뀌는지 말하고 확인 뒤). 에이전트서버의 확인 관문(HA-29)이 이 두 목록을 읽는다 — 빠지면 확인 없이 불린다(DW-03).
+# confirm(무엇이 바뀌는지 말하고 확인 뒤). 지금은 프롬프트의 두 줄이 되고, 에이전트서버의 확인 관문(HA-29)이 들어가면 그 관문도 이 두
+# 목록을 읽는다 — 빠지면 안내도 관문도 그 도구를 비켜 간다(DW-03 은 확인 없이 잡을 걸었다).
 _HP53 = {
     "he-cad-odbhub": ({"run_checklist", "run_analysis", "run_compare", "run_curvature", "create_modified_odb",
                        "import_modified_odb"}, set()),
@@ -588,14 +590,34 @@ def test_HP53_ARP_운영자는_낙하_높이를_cm_로_읽는다():
     p = one["personas"][0]
     line = next((s for s in p["pitfalls"] if s.startswith("낙하 높이 칸은 단위가 없다 — 시험 조건은 cm")), None)
     assert line is not None, p["pitfalls"]
-    assert p["key_tools"], "ARP 운영자의 입구 도구가 비었다"
     rows, skipped, errors = _sync().plan(one, FAKE_MAP)
     assert not errors and not skipped, (errors, skipped)
+    assert rows[0]["response_config"]["key_tools"] == ["arp_search_data", "arp_compare_items"], "조회 도구가 있는 박스에서는 입구 도구로 잇는다"
     prompt = rows[0]["system_prompt"]
     assert line in prompt
+    assert "arp_upload_register 로 등록한다" in prompt.split("## 기본 작업 순서", 1)[0], "할 수 있는 일에 올리기도 적는다 — 조회만 하는 운영자로 읽혔다"
     state = prompt.split("## 상태를 바꾸는 도구", 1)[1]
     assert "arp_upload_create" in state.split("되돌리기 어렵다", 1)[0], "올리기 준비는 요청했을 때만"
     assert "arp_upload_register" in state.split("되돌리기 어렵다", 1)[1], "등록은 공유 저장소로 나간다 — 확인 뒤"
+
+
+def test_HP53_ARP_조회_도구_이름이_다른_박스에서도_동기화가_멈추지_않는다():
+    """조회 둘(search_data · compare_items)은 10-29 QA 가 적은 이름이라 cae00 /tools-map 으로 맞춰 보지 못했다. 필수 칸(key_tools)에 두면
+    이름 하나만 틀려도 그 박스 동기화가 운영자 전부를 멈춘다(context-notes C-8 과 같은 까닭) — 그 도구가 있을 때만 잇고 없으면 '· 일부' 로."""
+    sync = _sync()
+    one = _one("he-data-arp")
+    up = {"arp_upload_create", "arp_upload_stage", "arp_upload_register", "arp_upload_discard"}
+    both = ["arp_search_data", "arp_compare_items"]
+    for reads, want in (({"search_data", "compare_items"}, both),
+                        ({"arp_search_data", "arp_compare_items"}, both),   # 앱이 접두를 붙여 낸다
+                        ({"arp_search", "arp_compare"}, [])):               # 이름이 다르다
+        notes: list[str] = []
+        tm = {"map": dict.fromkeys(up | reads, "arp"), "areas": {}, "area_meta": [], "apps": [{"app": "arp", "label": "ARP"}]}
+        rows, skipped, errors = sync.plan(one, tm, notes)
+        assert not errors and not skipped and len(rows) == 1, (reads, errors, skipped)
+        assert rows[0]["response_config"]["key_tools"] == want, reads
+        assert rows[0]["response_config"]["mcp_apps"] == ["arp"], "같은 앱을 두 번 싣지 않는다(도구 수 · 라벨이 두 번 센다)"
+        assert notes == ([] if want else ["he-data-arp: arp 의 search_data, arp 의 compare_items 없이 만든다(선택 앱)"]), notes
 
 
 def test_HP53_채운_이름은_cae00_꼴_게이트웨이에서_멈추지_않는다():

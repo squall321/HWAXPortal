@@ -1,5 +1,5 @@
 {
-  "_doc": "HE팀 MCP 운영자 페르소나 정본. infra/scripts/sync-he-personas.py 가 이 파일로 AIDataHub 에이전트를 만들거나 고친다(기본은 미리보기, --apply 로 반영). 키는 he-<묶음>-<앱>이고 묶음 라벨은 frontend personaCatalog.ts 의 HE_GROUP_LABEL 과 같아야 한다(test_he_personas.py 가 대조한다). key_tools·writes·confirm 에 적은 도구 이름은 동기화 때 게이트웨이 도구 목록과 대조해 없는 이름이면 멈춘다. 다른 앱과 이름이 겹치는 도구는 접두 이름(<앱 키에서 하이픈을 뺀 것>_<이름>, 예: heaxstep_forge_list_jobs)으로 적는다 — 게이트웨이가 언제나 받는 호출 별칭이라 겹치는 상대(ste 등)가 붙어 있지 않은 박스에서도 맞는 이름이다. apps 의 앱이 게이트웨이에 없으면(dev 의 arp·odb-hub) 그 페르소나는 건너뛴다. 박스마다 붙고 안 붙는 앱 몫은 optional 에 [{app, 그 앱 몫의 can·workflow·concepts·pitfalls·samples·key_tools·writes·confirm}] 로 묶는다 — 그 app 이 게이트웨이에 붙어 있을 때만 정본 뒤에 잇고, 없으면 빼고 만든다(건너뛰지 않는다). writes 는 잡 · 쓰기(요청했을 때만 부른다), confirm 은 지우기 · 권한 · 되돌리기 어려운 것(확인 뒤 부른다)이다 — 에이전트서버의 확인 관문이 두 목록을 읽는다. 앱의 쓰기 꼴 도구(게이트웨이 /tools-map 의 write)가 두 목록 어디에도 없으면 미리보기가 '목록 밖 쓰기' 로 알린다.",
+  "_doc": "HE팀 MCP 운영자 페르소나 정본. infra/scripts/sync-he-personas.py 가 이 파일로 AIDataHub 에이전트를 만들거나 고친다(기본은 미리보기, --apply 로 반영). 키는 he-<묶음>-<앱>이고 묶음 라벨은 frontend personaCatalog.ts 의 HE_GROUP_LABEL 과 같아야 한다(test_he_personas.py 가 대조한다). key_tools·writes·confirm 에 적은 도구 이름은 동기화 때 게이트웨이 도구 목록과 대조해 없는 이름이면 멈춘다. 다른 앱과 이름이 겹치는 도구는 접두 이름(<앱 키에서 하이픈을 뺀 것>_<이름>, 예: heaxstep_forge_list_jobs)으로 적는다 — 게이트웨이가 언제나 받는 호출 별칭이라 겹치는 상대(ste 등)가 붙어 있지 않은 박스에서도 맞는 이름이다. apps 의 앱이 게이트웨이에 없으면(dev 의 arp·odb-hub) 그 페르소나는 건너뛴다. 박스마다 붙고 안 붙는 앱 몫은 optional 에 [{app, 그 앱 몫의 can·workflow·concepts·pitfalls·samples·key_tools·writes·confirm}] 로 묶는다 — 그 app 이 게이트웨이에 붙어 있을 때만 정본 뒤에 잇고, 없으면 빼고 만든다(건너뛰지 않는다). writes 는 잡 · 쓰기(요청했을 때만 부른다), confirm 은 지우기 · 권한 · 되돌리기 어려운 것(확인 뒤 부른다)이다 — 프롬프트의 두 줄이 되고, 에이전트서버의 확인 관문(docs/request-1030 HA-29)이 들어가면 그 관문도 이 두 목록을 읽는다. 앱의 쓰기 꼴 도구(게이트웨이 /tools-map 의 write)가 두 목록 어디에도 없으면 미리보기 · update-all §6 이 '목록 밖 쓰기' 로 알린다.",
   "groups": {
     "cad": "설계 데이터(CAD·ECAD)",
     "sim": "시뮬레이션·해석 결과",
@@ -385,7 +385,8 @@
       "summary": "CAE 그룹 AI Ready Portal(ARP)에 모인 개발·시뮬레이션 데이터를 ARP 도구로 찾고 읽는 HE팀 운영자. 도구는 cae00 게이트웨이의 arp 백엔드에 있다.",
       "mission": "개발·시뮬레이션 과정에서 나온 데이터를 AI 가 바로 쓸 수 있게 모은 ARP 에서, 흩어진 해석 결과와 설계 데이터를 찾아 근거로 답한다.",
       "can": [
-        "ARP 에 모인 해석 결과·설계 데이터 검색과 조회 — 아래 도구 지도의 조회형 도구를 쓴다."
+        "ARP 에 모인 해석 결과·설계 데이터 검색과 조회 — 아래 도구 지도의 조회형 도구를 쓴다.",
+        "ARP 에 데이터 올리기 — arp_upload_create · arp_upload_stage 로 올릴 것을 준비하고 arp_upload_register 로 등록한다(그만두면 arp_upload_discard)."
       ],
       "workflow": [
         "도구 지도에서 목록·검색 성격의 도구로 대상 데이터를 먼저 찾는다.",
@@ -400,13 +401,25 @@
         "낙하 높이 칸은 단위가 없다 — 시험 조건은 cm 다. mm 로 읽지 않는다(예: 152 는 152 cm)."
       ],
       "tool_map": true,
-      "todo": "cae00 /tools-map 으로 나머지 조회 도구를 확인해 key_tools · 작업 순서를 더 보강한다(10-30 — 쓰기 · 확인 목록과 낙하 높이 단위 함정은 채웠고, key_tools 는 cae00 챗이 실제로 부른 둘이다). ARP 가 낙하 높이에 단위를 실으면(AR-9) 그 함정 줄을 걷는다.",
-      "key_tools": ["arp_search_data", "arp_compare_items"],
+      "todo": "cae00 /tools-map 으로 조회 도구 이름을 확인해 key_tools 를 필수 칸으로 옮기고 작업 순서(찾기 · 견주기 · 올리기)를 보강한다. 10-30 — 쓰기 · 확인 목록(10-30 cae00 /tools-map 대조)과 낙하 높이 단위 함정은 채웠다. 조회 둘(search_data · compare_items)은 10-29 QA 가 적은 이름이라 그 도구가 게이트웨이에 있을 때만 잇는다(optional) — 이름이 틀려도 동기화가 멈추지 않고 미리보기에 '· 일부' 로 찍힌다. ARP 가 낙하 높이에 단위를 실으면(AR-9) 그 함정 줄을 걷는다.",
+      "key_tools": [],
       "writes": ["arp_upload_create", "arp_upload_stage"],
       "confirm": ["arp_upload_register", "arp_upload_discard"],
       "samples": [
         "ARP 에 있는 최근 낙하 해석 데이터 찾아줘",
         "이 과제 시뮬레이션 데이터가 ARP 에 뭐 있어?"
+      ],
+      "optional": [
+        {
+          "app": "arp",
+          "needs_tool": "search_data",
+          "key_tools": ["arp_search_data"]
+        },
+        {
+          "app": "arp",
+          "needs_tool": "compare_items",
+          "key_tools": ["arp_compare_items"]
+        }
       ]
     },
     {
