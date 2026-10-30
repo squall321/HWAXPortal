@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, Conversation, DelibData, DelibOpts, Message, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
+import type { ActivityItem, ConfirmCard, Conversation, DelibData, DelibOpts, Message, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -25,7 +25,19 @@ interface StoredMessage {
   images?: string[];
   /** 분석 루틴 턴의 실행(단계 요약 · 상태) — 단계 12개 · 요약 600자까지라 작다. 정본은 포털 원장이다. */
   routine?: RoutineState;
+  /** 확인 카드(HA-29) — 단추를 다시 그린다. 작다. */
+  confirm?: ConfirmCard;
 }
+/** 자기검증의 버린 고침(dropped)과 관문 수(gate)는 QA 용이라 브라우저 사본에 남기지 않는다(10-30 HA-27 — 화면에 보이지 않는다). */
+function storedMeta(meta: TurnMeta): TurnMeta {
+  const sc = meta.self_check;
+  if (!sc || (sc.dropped === undefined && sc.gate === undefined)) return meta;
+  const keep = { ...sc };
+  delete keep.dropped;
+  delete keep.gate;
+  return { ...meta, self_check: keep };
+}
+
 interface StoredConversation {
   id: string;
   title: string;
@@ -80,6 +92,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           ...(m.routine && typeof m.routine === 'object' && typeof m.routine.run_id === 'string' && m.routine.run_id
             ? { routine: { ...m.routine, steps: Array.isArray(m.routine.steps) ? m.routine.steps : [] } }
             : {}),
+          ...(m.confirm && typeof m.confirm.id === 'string' && Array.isArray(m.confirm.calls) ? { confirm: m.confirm } : {}),
         });
       }
       convs.push({
@@ -211,9 +224,10 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ...(m.delib ? { delib: trimDelib(m.delib, cut) } : {}),
             ...(m.think ? { think: trimThink(m.think) } : {}),
             ...(m.persona ? { persona: m.persona } : {}),
-            ...(m.meta ? { meta: m.meta } : {}),
+            ...(m.meta ? { meta: storedMeta(m.meta) } : {}),
             ...(m.images?.length ? { images: m.images } : {}),
             ...(m.routine ? { routine: m.routine } : {}),
+            ...(m.confirm ? { confirm: m.confirm } : {}),
           };
         });
       return {

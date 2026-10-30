@@ -1013,6 +1013,10 @@ export function ChatProvider({
         // 생각 글 — 접힌 칸에만(다음 턴 이력 · 영속에는 넣지 않는다). 답한 모델 · 강도는 메시지 아래 표시로.
         onReasoning: (e) => patch(cid, botId, (m) => ({ ...m, reasoning: (m.reasoning ?? '') + (e.delta ?? '') })),
         onMeta: (e) => patch(cid, botId, (m) => ({ ...m, meta: e })),
+        // 확인 카드(HA-29) — 단추를 그릴 카드. 본문의 카드 글은 token 으로 따로 온다
+        onConfirm: (e) => {
+          if (e && typeof e.id === 'string' && Array.isArray(e.calls)) patch(cid, botId, (m) => ({ ...m, confirm: e }));
+        },
         // 올린 그림의 서버 주소 — 이 발화(사람 메시지)에 남겨 다음 턴 이력에 싣는다. 썸네일도 이 주소로 바꾼다(data URL 은 버린다).
         onUserImages: (e) =>
           patch(cid, userMsg.id, (m) => ({ ...m, images: (e.urls ?? []).filter((u) => typeof u === 'string'), localImages: undefined })),

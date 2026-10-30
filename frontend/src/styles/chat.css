@@ -506,6 +506,19 @@ ol.md-list li.md-li-d2 {
   margin: 0.3rem 0 0;
 }
 
+/* 확인 카드(10-30 HA-29) — 본문의 카드 글 아래 단추 줄. 답했거나 30분이 지나면 단추가 잠긴다 */
+.msg-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.msg-confirm-note {
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
 /* 올린 그림 — 입력창의 붙일 그림(썸네일 + 떼기)과 사람 말풍선 아래의 그림. docs/chat-depth-context T5 */
 .img-chips {
   display: flex;

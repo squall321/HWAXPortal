@@ -338,6 +338,8 @@ export interface Message {
   meta?: TurnMeta;
   /** 분석 루틴 턴의 실행(SSE routine — mergeRoutine). 영속됨(단계 12개까지라 작다). 서버 사본은 포인터(run_id · 제목 · 상태)만 쥔다. */
   routine?: RoutineState;
+  /** 확인 카드(SSE confirm, HA-29) — 단추를 그린다. 영속됨(작다). 서버 사본에는 본문의 카드 글만 있다. */
+  confirm?: ConfirmCard;
 }
 
 /** 에이전트 서버가 턴 끝에 내는 meta — models 는 이 턴의 모델 호출 수(모델 이름 → 횟수). docs/chat-depth-context C3. */
@@ -351,13 +353,39 @@ export interface TurnMeta {
   self_check?: SelfCheck | null;
 }
 
-// 챗 자기검증 결과 — ok 고칠 것 없음 · fixed 고친 답이 본문 · skipped 짧은 잡담이라 건너뜀 ·
-// suspect · failed · unreadable 은 검증하지 못해 초안이 본문이다(reason 이 까닭).
+// 챗 자기검증 결과 — ok 고칠 것 없음 · fixed 고친 답이 본문 · flagged 짚기만 했다(초안이 본문, 10-30 HA-27) ·
+// skipped 짧은 잡담이라 건너뜀 · suspect · failed · unreadable 은 검증하지 못해 초안이 본문이다(reason 이 까닭).
 export interface SelfCheck {
-  status: 'ok' | 'fixed' | 'skipped' | 'suspect' | 'failed' | 'unreadable';
+  status: 'ok' | 'fixed' | 'flagged' | 'skipped' | 'suspect' | 'failed' | 'unreadable';
   fixes?: string[];
+  /** 짚은 곳(반영하지 않음) — 검토자의 [짚은 점]과, 조회 결과 원문과 어긋나 답에 넣지 않은 고침(HA-27). */
+  flags?: string[];
+  /** 원문에 있는 값을 지우거나 바꿔 버린 고침 — QA 용이라 화면에 보이지 않고 브라우저 사본에 남기지 않는다(chatStore). */
+  dropped?: string[];
+  /** 관문이 돈 턴만 — 넣음 · 짚음 · 버림 수(QA 용). */
+  gate?: Record<string, unknown>;
   reason?: string;
   ms?: number;
+}
+
+/** 확인 카드의 호출 하나(SSE confirm, 10-30 HA-29) — 무엇 · 인자 · 예상 작업량은 본문의 카드 글에도 같다. */
+export interface ConfirmCall {
+  tool: string;
+  app?: string;
+  kind: 'job' | 'write' | 'confirm';
+  args_text: string;
+  workload?: string;
+  again: boolean;
+}
+
+/** 확인 카드(SSE confirm) — 사람이 이번 말로 시키지 않았거나 되돌리기 어려운 작업은 에이전트 서버가 보내지 않고 멈춘다.
+ *  단추는 approve_text · decline_text 를 다음 말로 보낸다. 서버는 카드를 30분 · 한 번만 받는다(expires_at — epoch ms). */
+export interface ConfirmCard {
+  id: string;
+  expires_at: number;
+  calls: ConfirmCall[];
+  approve_text: string;
+  decline_text: string;
 }
 
 // 대화 한 건 — localStorage('hwax.chat.*') 영속 단위 (chatStore.ts가 직렬화 담당).

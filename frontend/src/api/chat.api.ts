@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 import { rejectedMessage, streamCutMessage } from '../lib/chatErrors';
-import type { AgentCatalog, DelibEvent, ErrorEvent, ResultBlock, RoutineEvent, RoutineRequest, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta } from '../types/chat';
+import type { AgentCatalog, ConfirmCard, DelibEvent, ErrorEvent, ResultBlock, RoutineEvent, RoutineRequest, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -34,6 +34,8 @@ export interface StreamHandlers {
   onUserImages?: (e: { urls: string[] }) => void;
   /** 분석 루틴 실행(SSE routine) — plan · step · step_done · gate · report · done 을 kind 로 가른다(docs/analysis-routines R3). */
   onRoutine?: (e: RoutineEvent) => void;
+  /** 확인 카드(SSE confirm, 10-30 HA-29) — 에이전트 서버가 보내지 않고 멈춘 잡 · 쓰기. 단추가 승인 · 거절 글을 다음 말로 보낸다. */
+  onConfirm?: (e: ConfirmCard) => void;
   onDone?: () => void;
   /** 프레임이 하나 올 때마다(이벤트 이름) — 서버 heartbeat(`ping`)를 포함한다. 내용이 아니라 '살아 있다' 는 신호다. */
   onSignal?: (event: string) => void;
@@ -103,6 +105,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'routine':
       h.onRoutine?.(payload as RoutineEvent);
+      break;
+    case 'confirm':
+      h.onConfirm?.(payload as ConfirmCard);
       break;
     case 'error':
       h.onError?.(payload as ErrorEvent);

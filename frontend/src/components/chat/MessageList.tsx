@@ -8,6 +8,7 @@ import type { Message, SelfCheck, TurnMeta } from '../../types/chat';
 import { copyText } from './clipboard';
 import { wikiNotice } from './uploadNotice';
 import { AgentCatalogBlock } from './AgentCatalogBlock';
+import { ConfirmCard } from './ConfirmCard';
 import { DelibView } from './DelibView';
 import { RoutineView } from './RoutineView';
 import { ThinkView } from './ThinkView';
@@ -104,7 +105,7 @@ function UserImages({ msg }: { msg: Message }) {
   );
 }
 
-function Row({ msg }: { msg: Message }) {
+function Row({ msg, answered = false }: { msg: Message; answered?: boolean }) {
   if (msg.role === 'user') {
     return (
       <div className="msg user">
@@ -187,6 +188,7 @@ function Row({ msg }: { msg: Message }) {
           <div className="msg-warn" role="status">⚠ {msg.warn}</div>
         )}
         {msg.error && <ErrorBlock raw={msg.error} />}
+        {!msg.streaming && msg.confirm && <ConfirmCard card={msg.confirm} answered={answered} />}
         {!msg.streaming && msg.meta?.self_check && <CheckNote check={msg.meta.self_check} />}
       </div>
       {!msg.streaming && msg.text && (
@@ -228,13 +230,26 @@ const secs = (c: SelfCheck) => (typeof c.ms === 'number' ? ` · ${(c.ms / 1000).
 /** 자기검증 — 고쳤거나 검증하지 못했으면 답 아래에 늘 보인다(펼치면 무엇을 왜). 초안은 '생각' 칸에 남아 있다(docs/chat-self-check). */
 function CheckNote({ check }: { check: SelfCheck }) {
   const fixes = check.fixes ?? [];
+  const flags = check.flags ?? [];
   if (check.status === 'ok' || check.status === 'skipped') return null;
   if (check.status === 'fixed') {
     return (
       <details className="msg-check">
         <summary>검증에서 {fixes.length ? `${fixes.length}곳을` : '답을'} 고쳤습니다{secs(check)}</summary>
         {fixes.length > 0 && <ul>{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>}
+        {flags.length > 0 && <FlagList flags={flags} />}
         <p>고치기 전 초안은 위 &lsquo;생각&rsquo; 칸에 있습니다.</p>
+      </details>
+    );
+  }
+  if (check.status === 'flagged') {
+    // 짚기만 한 턴(HA-27) — 검토자의 고침이 조회 결과 원문과 어긋나 넣지 않았거나 검토자가 짚기만 했다. 본문은 초안 그대로다
+    const list = flags.length ? flags : fixes;
+    return (
+      <details className="msg-check warn">
+        <summary>검증에서 {list.length ? `${list.length}곳을` : '답을'} 짚었습니다 — 답은 고치지 않았습니다{secs(check)}</summary>
+        {list.length > 0 && <ul>{list.map((f, i) => <li key={i}>{f}</li>)}</ul>}
+        <p>{check.reason || '조회 결과 원문과 대조해 고치지 않고 짚기만 했습니다.'}</p>
       </details>
     );
   }
@@ -248,7 +263,18 @@ function CheckNote({ check }: { check: SelfCheck }) {
           <ul>{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>
         </>
       )}
+      {flags.length > 0 && <FlagList flags={flags} />}
     </details>
+  );
+}
+
+/** 짚은 곳(반영하지 않음) — 고친 답 · 검증 못 한 답에도 따로 붙는다(HA-27 flags). */
+function FlagList({ flags }: { flags: string[] }) {
+  return (
+    <>
+      <p>짚은 곳(반영하지 않음)</p>
+      <ul>{flags.map((f, i) => <li key={i}>{f}</li>)}</ul>
+    </>
   );
 }
 
@@ -289,6 +315,9 @@ export function MessageList({ messages }: { messages: Message[] }) {
     endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   };
 
+  // 확인 카드는 그 뒤에 사람 말이 하나라도 있으면 답한 것이다 — 단추를 잠근다(서버도 다음 말 하나로 카드를 닫는다)
+  const lastUser = messages.map((m) => m.role).lastIndexOf('user');
+
   return (
     <div className="msg-wrap">
       <div className="chat-body" ref={bodyRef} onScroll={onScroll}>
@@ -300,8 +329,8 @@ export function MessageList({ messages }: { messages: Message[] }) {
               </div>
             </div>
           )}
-          {messages.map((m) => (
-            <Row key={m.id} msg={m} />
+          {messages.map((m, i) => (
+            <Row key={m.id} msg={m} answered={i < lastUser} />
           ))}
           <div ref={endRef} />
         </div>
