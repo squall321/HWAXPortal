@@ -3572,6 +3572,45 @@ try:
             if last:
                 line += " · 마지막 실패 %s: %s" % (last.get("status"), str(last.get("reason") or "")[:120])
             print("  · %s챗 자기검증: %s" % ("⚠ " if bad else "", line))
+            # 자기검증 관문(10-30 HA-27) — 검토자의 고침을 원문과 대조해 넣음 · 짚음 · 버림. 버림 · 짚음이 늘고 고친 비율이 내려가면 관문이 도는 것이다.
+            gate = sc.get("gate")
+            if isinstance(gate, dict):
+                gc = gate.get("counts") or {}
+                drops = sum(int(v or 0) for k, v in gc.items() if k.startswith("drop_"))
+                demotes = sum(int(v or 0) for k, v in gc.items() if k.startswith("demote_"))
+                fr = sc.get("fixed_ratio")
+                print("  · 자기검증 관문: 모드 %s · 관문 턴 %s · 넣음 %s · 짚음 %s · 버림 %s · 고친 비율 %s%s" % (
+                    gate.get("mode"), gate.get("turns", 0), gc.get("applied", 0), demotes, drops, "-" if fr is None else fr,
+                    " — 원문이 잘린 턴 %s(CHAT_SELF_CHECK_RAW_CHARS 를 올린다)" % gate["raw_partial"] if gate.get("raw_partial") else ""))
+    # 상태 기다림 · 확인 관문 · 다른 허브 id 막이 · 허브 응답 접기(10-30 HA-28 · HA-29 · HA-30 · HA-34) — 옛 판은 칸이 없어 말하지 않는다.
+    sw = ah.get("status_wait")
+    if isinstance(sw, dict):
+        if not sw.get("on"):
+            print("  · 상태 기다림: 꺼짐(에이전트 서버 CHAT_STATUS_WAIT_MAX_S=0)")
+        else:
+            print("  · 상태 기다림: %s초 간격 · 턴 합 %s초 · 기다림 %s · 끝남 %s · 상한 %s · 실패 %s" % (
+                sw.get("poll_s"), sw.get("max_s"), sw.get("waits", 0), sw.get("ended", 0), sw.get("capped", 0), sw.get("failed", 0)))
+    cg = ah.get("confirm_gate")
+    if isinstance(cg, dict):
+        if not cg.get("on"):
+            print("  · 확인 관문: 꺼짐(에이전트 서버 CHAT_CONFIRM_GATE=0 — 잡 · 쓰기를 사람이 시키지 않아도 보낸다)")
+        else:
+            li = cg.get("lists") or {}
+            cc = cg.get("counts") or {}
+            line = "목록 잡 %s · 쓰기 %s · 확인 %s · 살아 있는 카드 %s · %s" % (
+                li.get("jobs"), li.get("writes"), li.get("confirm"), cg.get("pending", 0),
+                " · ".join("%s %s" % kv for kv in sorted(cc.items())) or "아직 센 것 없음")
+            if not li.get("loaded"):
+                line += " — 운영자 목록을 못 읽었다(%s): 형제 리포 HWAXPortal/infra/personas/he-team.json · CONFIRM_LISTS_PATH 를 본다(바닥 목록만 돈다)" % (
+                    li.get("error") or "?")
+            print("  · %s확인 관문: %s" % ("" if li.get("loaded") else "⚠ ", line))
+    xg = ah.get("xhub_gate")
+    if isinstance(xg, dict):
+        print("  · 다른 허브 id 막이: %s · 막은 호출 %s" % ("켬" if xg.get("on") else "꺼짐(CHAT_XHUB_ID_GATE=0)", xg.get("blocked", 0)))
+    hf = ah.get("hub_fold")
+    if isinstance(hf, dict) and hf.get("count"):
+        print("  · 허브 응답 접기: %s번 · %s자 → %s자" % (format(hf["count"], ","), format(hf.get("chars_in") or 0, ","),
+                                                     format(hf.get("chars_out") or 0, ",")))
     # 검색 손잡이 · 코어 어휘표 지문(docs/request-1029 E-7 ③) — 박스 덧씌우기가 버려지지 않았나 · 게이트웨이와 에이전트가 같은 어휘표로 도나.
     # 지문이 다르면 한쪽이 옛 판이거나(재기동 전) 덧씌우기를 버렸다. 옛 판은 칸이 없어 말하지 않는다.
     st = gh.get("search_tuning")

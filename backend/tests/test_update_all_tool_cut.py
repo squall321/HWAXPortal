@@ -256,3 +256,27 @@ def test_E7_검색_손잡이와_코어_어휘표_지문을_말하고_다르면_�
     assert "⚠ 코어 어휘표 덧씌우기(에이전트): 덧씌우기를 버렸다(ValueError: …)" in out
     out = _run({"tool_max": 0}, {"tools": 10})
     assert "검색 손잡이" not in out and "어휘표" not in out, "옛 판(칸 없음)은 말하지 않는다"
+
+
+def test_10_30_관문_넷과_접기를_말하고_목록을_못_읽으면_경고한다():
+    """10-30 HA-27 · HA-28 · HA-29 · HA-30 · HA-34 의 /health 칸 — cae00 재시험(docs/request-1030 server-setup)이 이 줄로 켜졌는지 · 도는지 본다.
+    운영자 목록을 못 읽은 확인 관문은 바닥 목록만 돌아 쓰기 도구가 카드 없이 나간다 — 그때만 ⚠."""
+    ah = {"self_check": {"on": True, "counts": {"ok": 3, "fixed": 1}, "ms": {}, "fixed_ratio": 0.25,
+                         "gate": {"mode": "1", "turns": 4, "raw_partial": 0,
+                                  "counts": {"applied": 1, "drop_sourced_number": 2, "demote_removes_value": 1}}},
+          "status_wait": {"on": True, "poll_s": 10.0, "max_s": 600.0, "waits": 2, "ended": 1, "capped": 1, "failed": 0},
+          "confirm_gate": {"on": True, "lists": {"loaded": True, "error": None, "jobs": 24, "writes": 90, "confirm": 37},
+                           "pending": 1, "counts": {"cards": 2, "approved": 1}},
+          "xhub_gate": {"on": True, "blocked": 3}, "hub_fold": {"count": 12, "chars_in": 1250000, "chars_out": 210000}}
+    out = _run(ah, {})
+    assert "· 자기검증 관문: 모드 1 · 관문 턴 4 · 넣음 1 · 짚음 1 · 버림 2 · 고친 비율 0.25" in out, out
+    assert "· 상태 기다림: 10.0초 간격 · 턴 합 600.0초 · 기다림 2 · 끝남 1 · 상한 1 · 실패 0" in out, out
+    assert "· 확인 관문: 목록 잡 24 · 쓰기 90 · 확인 37 · 살아 있는 카드 1 · approved 1 · cards 2" in out, out
+    assert "· 다른 허브 id 막이: 켬 · 막은 호출 3" in out and "· 허브 응답 접기: 12번 · 1,250,000자 → 210,000자" in out, out
+    bad = {**ah, "confirm_gate": {"on": True, "lists": {"loaded": False, "error": "없음", "jobs": 24, "writes": 0, "confirm": 0},
+                                  "pending": 0, "counts": {}}}
+    assert "· ⚠ 확인 관문: 목록 잡 24 · 쓰기 0 · 확인 0 · 살아 있는 카드 0 · 아직 센 것 없음 — 운영자 목록을 못 읽었다(없음)" in _run(bad, {})
+    off = _run({"status_wait": {"on": False}, "confirm_gate": {"on": False}, "xhub_gate": {"on": False, "blocked": 0}}, {})
+    assert "상태 기다림: 꺼짐" in off and "확인 관문: 꺼짐" in off and "다른 허브 id 막이: 꺼짐(CHAT_XHUB_ID_GATE=0)" in off, off
+    # 옛 판(칸 없음)은 말하지 않는다
+    assert "관문" not in _run({}, {}) and "접기" not in _run({}, {})
