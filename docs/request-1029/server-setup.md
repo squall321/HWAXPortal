@@ -11,7 +11,7 @@ cae00 에서 이 묶음(1 · 2 · 3차와 4차 일부, 2026-10-29 — 저녁에 
 | 포털(HWAXPortal) | main — 이 문서가 든 판 | 코어 어휘표 `backend/config/core_vocab.json`(정본) · 챗 중계가 상류 읽기를 화면 쓰기와 뗀다(숨은 탭에서도 답이 끝까지 저장된다) · 챗 침묵 한도 900초(심의와 뗐다) · 서버 대화 id 를 에이전트 서버에 싣는다 · 화면(중지 단추가 곧바로 풀린다 · 숨은 탭에서 돌아오면 서버 사본과 맞춘다) · update-all §6 '새 앱 점검' · env 킷 주석 손잡이 둘 |
 | 에이전트 서버(HWAXAgentServer) | main `969e723` | 코어 데이터 규칙을 어휘표로 짓는다 · 챗 스트림에도 15초마다 ping · 자기검증은 바꿀 곳([원문] · [새 글])만 받는다(상한 4,096) · 도구 결과 머리에 앱 이름 · 같은 도구 네 번째에 '앞 결과를 써라' · 허브 큰 응답 접기 · 한자 · 가나 낱말을 자기검증에 짚는다 · 챗 LLM 호출에 대화 머리(`X-Session-Affinity`) · 프롬프트 앞부분 고정 · 도구 설명 예산 손잡이 |
 | 게이트웨이(HWAXMcpGateway) | master `44f4b8d` | 코어 낱말 → 허브 읽기 도구(search_tools) · 정본 도구 설명 앞 소개 줄 · 같은 도구 사본은 정본 한 줄로 · 코어 질문은 '심의 · 토의 · 회의' 를 말할 때만 심의 도구를 올린다 · 시험 사본(stepforge-prod · dynaforge-prod)을 목록 · 검색에서 뺀다 · `tool_usage_report.py`(안 쓴 도구 보고) · DocForge 도구 영역 |
-| StepForge | main `c65c92a`(D-647) · Drive SIF — **올렸다(10-30 KST — push 와 SIF `dist-20261029-213610Z`, `drive-drift.sh heax` ✓)**. 이 판 뒤의 update-all 에서 든다 | `find_plm_task` 가 과제가 속한 프로젝트의 이름 · 별칭(마케팅명)으로도 찾는다(`matched_by` `project:<키>`) · 응답의 `sync` 는 요약(타입마다의 줄은 `system_capabilities.plm_hub` 에만) |
+| StepForge | main `ff308d1`(D-648, `c65c92a` D-647 위에 하나) · Drive SIF — **올렸다(10-30 KST — SIF `dist-20261030-034158Z`, sha256 `020a27e1…` · SIF 안 BUILD_INFO = `ff308d1`)**. 이 판 뒤의 update-all 에서 든다 | `find_plm_task` 가 과제가 속한 프로젝트의 이름 · 별칭(마케팅명)으로도 찾는다(`matched_by` `project:<키>`) · 응답의 `sync` 는 요약(타입마다의 줄은 `system_capabilities.plm_hub` 에만) · **D-648** 낙하 트윈 fe_cad 판 열쇠에 짝 · 파트 표가 읽은 DB 값의 지문(`key_parts.tables`)이 든다 — 사람이 이름 · 재질 · 색을 고치면 새 열쇠가 된다(DynaForge 리포트의 받는 쪽 검사가 '같은 열쇠면 같은 바이트' 에 기댄다) |
 
 받는 판에는 이 묶음 밖의 커밋(다른 작업)도 함께 든다. 리포마다 무엇이 드는지는 받기 전에 본다(2절 ①).
 
