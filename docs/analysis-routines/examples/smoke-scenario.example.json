@@ -1,0 +1,34 @@
+{
+  "routine_id": "<절차 › 루틴의 루틴 id — 예시 examples/dev-demo.yaml 을 'YAML 가져오기' 로 들인 것>",
+  "inputs": {
+    "model": "S26"
+  },
+  "note": "각본 점검(infra/scripts/routine-smoke.py)",
+  "calls": {
+    "voc": [
+      {
+        "name": "signalforge:search_voc",
+        "arguments": {
+          "keyword": "발열",
+          "limit": 5
+        }
+      }
+    ],
+    "sim": [
+      {
+        "name": "heax-kooremapper_mcp:find_reports",
+        "arguments": {}
+      }
+    ],
+    "refs": [
+      {
+        "name": "mx-white-paper:wiki_search",
+        "arguments": {
+          "query": "낙하 충격"
+        }
+      }
+    ]
+  },
+  "fence_probe": "heax-hwax_risk:risk_job_action",
+  "cancel_probe": true
+}

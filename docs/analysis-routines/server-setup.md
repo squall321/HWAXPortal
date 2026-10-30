@@ -67,7 +67,9 @@
    같은 길이다(`curl -s http://127.0.0.1:9110/tools-map` 의 `routine_read` 와 견준다). 안 열면 기준 키 단계가 막혀 루틴이 시작부터 멈춘다(그 단계는 '멈춤' 으로 짠다).
 
 1. 절차 › 루틴 › YAML 가져오기로 `docs/analysis-routines/examples/market-defect.yaml` 을 들인다(또는 그 꼴로 짠다).
-2. 챗 입력창의 '루틴' → 그 루틴 → 모델 · 증상 입력 → 켜기 → 보낸다.
+2. **각본 점검 먼저(LLM 없이)** — 사람 PAT(feat:routines)를 환경변수로 주고
+   `HWAX_GATEWAY_PAT=<PAT> python3 infra/scripts/routine-smoke.py --scenario <각본.json>` — 계획 · 실행 · 단계 울타리 안 실제 호출 · 단계 닫기 · 보고서 · 울타리 거절 ·
+   멈춤 · prompts 를 한 번에 본다(각본 꼴은 `examples/smoke-scenario.example.json`). 그 다음 챗 입력창의 '루틴' → 그 루틴 → 모델 · 증상 입력 → 켜기 → 보낸다.
 3. 본다 — 단계 칩이 차례로 바뀌는가 · 막힌 단계(권한 · 토큰 · 이 박스에 없음)가 까닭과 함께 건너뛰어지는가 · 기준 키 후보가 여럿이면 고르기가 뜨는가 · 보고서에 커버리지와 근거 부록이
    있는가 · RA 초안이 그 사람 이름으로 생겼는가.
 4. 잰다 — 단계별 호출 수 · 시간(`GET /routines-api/runs/{id}`) · 토큰(호출 추적) · 커버리지를 10-29 기준선(질문당 108,275 토큰 · 50 ~ 105초)과 견준다 — 결과는
