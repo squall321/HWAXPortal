@@ -128,6 +128,8 @@
   커밋 `f7485c0`). 온톨로지 엔진 `object_types` · `property_defs` · `relation_types` · 범용 `objects`(key · label · properties JSONB · previous_keys · 별칭).
 - 과제 정보 — `plm_project` · `plm_task`(key = 과제코드 · label = 과제명 · project · task_status · test_site · test_kind …) · `plm_model`(key = 모델명 원문 ·
   task · 모델명 해석 base_code · series · region · model_revision …) · 관계 `plm_derived_from` · 담당 부서 · 담당자 · 참여는 관계(`work-core.json`).
+  > 10-31 정정(cae00 HH-03 · DocForge R-D48) — 위는 SP `f7485c0` 의 정의다. 실제 공개(rootdesign)는 `plm_task` 의 key 가 **과제명**이고 과제코드는
+  > `properties.task_code`(별칭은 `properties.aliases`), 관계는 `plm_project` 의 `compare_baseline` · `predecessor` · `predecessor_by_name` 셋뿐, 타입은 35종쯤이다.
 - 받는 길 — 허브의 Core API(`GET /api/core` 카탈로그 · `/api/core/{type}?since=&cursor=` · `/relations` · 토큰 범위 `core:read`). 수신 키트
   `backend/app/modules/coreapi/kit/sp_core_pull.py`(requests + sqlite3 · 증분 · 삭제 · reset) · 수신 규칙 열하나.
 - StepForge 가 한 것 — 키트를 `core/sp_core.py` 로 옮김 · 자체 정의 `core/data/ontology/stepforge-core.json`(SP 정의 꼴 — `cad_revision` · `revision_of` ·
