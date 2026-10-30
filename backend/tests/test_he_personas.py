@@ -733,3 +733,42 @@ def test_HP51_AIDataHub_목록을_못_읽으면_건너뛰었다고_말한다(mon
     assert rc == 0
     assert "  · AIDataHub 전문가 목록을 못 읽었다(500) — 정본에 없는 he-* · 운영자 앱 점검을 건너뛴다" in out, out
 
+
+# ── AD-21(AIDataHub) — 저장은 됐는데 500 이면 다시 읽어 확인하고 이어 간다 ──────────────────────────────────────────
+def test_AD21_만들기가_500_이어도_저장됐으면_이어_간다(monkeypatch, capsys):
+    mcp_only, _both = _smarttwin_maps()
+    hub = _FakeHub(mcp_only, save_status=500)
+    rc, out, err = _run_main(monkeypatch, capsys, hub, "--apply")
+    assert rc == 0, err
+    assert "  ⚠ he-sim-smarttwin 생성 응답이 500 였지만 다시 읽으니 저장됐다 — 이어 간다(AIDataHub AD-21)" in out, out
+    assert "반영 — 새로 1" in out
+    assert hub.calls.count(("GET", "agents/he-sim-smarttwin")) == 2, "저장 뒤 다시 읽어 봐야 안다"
+
+
+def test_AD21_고치기가_500_이어도_저장됐으면_이어_간다(monkeypatch, capsys):
+    mcp_only, _both = _smarttwin_maps()
+    old = {**_op_row("he-sim-smarttwin", ["smart-twin-mcp"]), "description": "옛 설명", "common_tags": [], "sample_queries": [],
+           "system_prompt": "옛 역할"}
+    rc, out, err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, {"he-sim-smarttwin": old}, save_status=500), "--apply")
+    assert rc == 0, err
+    assert "  ⚠ he-sim-smarttwin 수정 응답이 500 였지만 다시 읽으니 저장됐다 — 이어 간다(AIDataHub AD-21)" in out, out
+    assert "반영 — 새로 0 · 고침 1" in out
+
+
+def test_AD21_저장되지_않았으면_멈춘다(monkeypatch, capsys):
+    mcp_only, _both = _smarttwin_maps()
+    rc, out, err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, save_status=500, saves=False), "--apply")
+    assert rc == 1 and "✗ he-sim-smarttwin 생성 실패 500" in err, (out, err)
+    old = {**_op_row("he-sim-smarttwin", ["smart-twin-mcp"]), "description": "옛 설명"}
+    rc, out, err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, {"he-sim-smarttwin": old}, save_status=500, saves=False), "--apply")
+    assert rc == 1 and "✗ he-sim-smarttwin 수정 실패 500" in err, (out, err)
+    assert "다시 읽으니 저장됐다" not in out
+
+
+def test_AD21_거절은_다시_읽지_않고_멈춘다(monkeypatch, capsys):
+    """4xx 는 저장 전에 거절한 것이다 — 다시 읽어 '저장됐다' 로 넘기면 안 된다."""
+    mcp_only, _both = _smarttwin_maps()
+    hub = _FakeHub(mcp_only, save_status=422)
+    rc, _out, err = _run_main(monkeypatch, capsys, hub, "--apply")
+    assert rc == 1 and "✗ he-sim-smarttwin 생성 실패 422" in err, err
+    assert hub.calls.count(("GET", "agents/he-sim-smarttwin")) == 1

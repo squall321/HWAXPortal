@@ -19,7 +19,7 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 
 막지 않고 알리기만 하는 것이 둘 더 있다(docs/request-1030). 운영자 앱의 쓰기 꼴 도구(/tools-map 의 write) 가운데 writes · confirm
 어디에도 없는 것은 '· 목록 밖 쓰기' 로(HP-53), 이 박스 AIDataHub 의 운영자가 모는 앱이 이 게이트웨이에 없는 것은 '! ' 로 찍는다(HP-51 —
-update-all §2b 가 ⚠ 로 올린다).
+update-all §2b 가 ⚠ 로 올린다). --apply 에서 저장 요청이 5xx 면 다시 읽어 저장됐는지 보고, 저장됐으면 알리고 이어 간다(AIDataHub AD-21).
 
   GATEWAY_HTTP_BASE  기본 http://127.0.0.1:9110
   AIDH_HTTP_BASE     기본 http://127.0.0.1:8001
@@ -58,6 +58,15 @@ def _http(method: str, url: str, body: dict | None = None) -> tuple[int, object]
             return r.status, (json.loads(raw) if raw else None)
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode("utf-8", "replace")[:300]
+
+
+def _saved_anyway(st: int, key: str, want: dict) -> bool:
+    """저장 요청이 5xx 였는데 실제로는 저장됐나 — AIDataHub 가 저장(commit)한 뒤 응답을 만들다 500 을 낸다(AD-21, 10-28 실측). 그때 멈추면
+    동기화가 첫 운영자에서 끝난다. 다시 읽어 보낸 칸이 그대로면 저장된 것으로 본다. 4xx 는 거절이라 저장되지 않았다."""
+    if st < 500:
+        return False
+    st2, cur = _http("GET", f"{AIDH}/api/agents/{key}")
+    return st2 == 200 and isinstance(cur, dict) and all(cur.get(k) == want[k] for k in MANAGED if k in want)
 
 
 def _bullets(items: list[str]) -> list[str]:
@@ -239,8 +248,10 @@ def main() -> int:
             if args.apply:
                 st2, res = _http("POST", f"{AIDH}/api/agents", r)
                 if st2 not in (200, 201):
-                    print(f"✗ {key} 생성 실패 {st2}: {res}", file=sys.stderr)
-                    return 1
+                    if not _saved_anyway(st2, key, r):
+                        print(f"✗ {key} 생성 실패 {st2}: {res}", file=sys.stderr)
+                        return 1
+                    print(f"  ⚠ {key} 생성 응답이 {st2} 였지만 다시 읽으니 저장됐다 — 이어 간다(AIDataHub AD-21)")
             created += 1
             continue
         if st != 200 or not isinstance(cur, dict):
@@ -254,8 +265,10 @@ def main() -> int:
         if args.apply:
             st2, res = _http("PATCH", f"{AIDH}/api/agents/{key}", patch)
             if st2 != 200:
-                print(f"✗ {key} 수정 실패 {st2}: {res}", file=sys.stderr)
-                return 1
+                if not _saved_anyway(st2, key, patch):
+                    print(f"✗ {key} 수정 실패 {st2}: {res}", file=sys.stderr)
+                    return 1
+                print(f"  ⚠ {key} 수정 응답이 {st2} 였지만 다시 읽으니 저장됐다 — 이어 간다(AIDataHub AD-21)")
         updated += 1
 
     # 정본에서 빠진 he-* 는 지우지 않고 알리기만 한다 — 사람이 만든 것일 수 있다.
