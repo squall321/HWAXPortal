@@ -795,8 +795,10 @@ StepForge 몫(D-647 — `find_plm_task` 프로젝트 별칭 · `sync` 요약)은
 
 ### 받은 뒤 — 확인
 
-- **게이트웨이** — `/health` `core_vocab.staging_hidden` 이 이 박스에서 숨긴 시험 사본이다(`dynaforge-prod` · `stepforge-prod` 가 이 박스에 있으면 둘).
-  웹 챗 · 개인 Claude 목록 · `search_tools` 에서 빠지고, 이름으로 부르면 그대로 닿는다.
+- **게이트웨이** — `/health` `core_vocab.staging_hidden` 이 이 박스에서 숨긴 시험 사본이다. 포털 `dbbb943`(10-31) 부터는 `[]` 가 맞다 — `dynaforge-prod` ·
+  `stepforge-prod` 는 운영 앱이라 어휘표에서 뺐고(OB-04 사용자 결정 — [request-1030/context-notes.md](request-1030/context-notes.md) C-14), 웹 챗 · 개인 Claude 목록 ·
+  `search_tools` 에 보통 앱으로 보인다. 시험 사본을 숨기려면 박스 덧씌우기 `backend/config/core_vocab.local.json` 에 그 백엔드를 역할 `staging` 으로 적는다
+  (`{"apps": {"<백엔드 키>": {"role": "staging", "label": "<이름> 시험 사본"}}}`) — 그 앱이 여기에 들고, 이름으로 부르면 그대로 닿는다.
 - **에이전트 서버** — `/health` `self_check` 의 `counts`(fixed · suspect)와 `ms.p95` 를 1차 재시험 수와 견준다. 자기검증은 이제 고칠 곳만 받는다(W-4).
   `suspect` 의 까닭이 '바꿀 곳을 초안에서 찾지 못했다' 로 많이 나오면 dev 에 보낸다(모델이 원문을 다르게 옮긴다는 뜻이다).
 - **update-all §6 새 줄** — `· 새 앱 점검 — 기록이 없어 지금 앱 N개를 전부터 있던 것으로 적었다` 가 첫 실행에 한 번 나온다(정상 — 기록

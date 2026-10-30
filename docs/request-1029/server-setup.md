@@ -10,7 +10,7 @@ cae00 에서 이 묶음(1 · 2 · 3차와 4차 일부, 2026-10-29 — 저녁에 
 |---|---|---|
 | 포털(HWAXPortal) | main — 이 문서가 든 판 | 코어 어휘표 `backend/config/core_vocab.json`(정본) · 챗 중계가 상류 읽기를 화면 쓰기와 뗀다(숨은 탭에서도 답이 끝까지 저장된다) · 챗 침묵 한도 900초(심의와 뗐다) · 서버 대화 id 를 에이전트 서버에 싣는다 · 화면(중지 단추가 곧바로 풀린다 · 숨은 탭에서 돌아오면 서버 사본과 맞춘다) · update-all §6 '새 앱 점검' · env 킷 주석 손잡이 둘 |
 | 에이전트 서버(HWAXAgentServer) | main `969e723` | 코어 데이터 규칙을 어휘표로 짓는다 · 챗 스트림에도 15초마다 ping · 자기검증은 바꿀 곳([원문] · [새 글])만 받는다(상한 4,096) · 도구 결과 머리에 앱 이름 · 같은 도구 네 번째에 '앞 결과를 써라' · 허브 큰 응답 접기 · 한자 · 가나 낱말을 자기검증에 짚는다 · 챗 LLM 호출에 대화 머리(`X-Session-Affinity`) · 프롬프트 앞부분 고정 · 도구 설명 예산 손잡이 |
-| 게이트웨이(HWAXMcpGateway) | master `44f4b8d` | 코어 낱말 → 허브 읽기 도구(search_tools) · 정본 도구 설명 앞 소개 줄 · 같은 도구 사본은 정본 한 줄로 · 코어 질문은 '심의 · 토의 · 회의' 를 말할 때만 심의 도구를 올린다 · 시험 사본(stepforge-prod · dynaforge-prod)을 목록 · 검색에서 뺀다 · `tool_usage_report.py`(안 쓴 도구 보고) · DocForge 도구 영역 |
+| 게이트웨이(HWAXMcpGateway) | master `44f4b8d` | 코어 낱말 → 허브 읽기 도구(search_tools) · 정본 도구 설명 앞 소개 줄 · 같은 도구 사본은 정본 한 줄로 · 코어 질문은 '심의 · 토의 · 회의' 를 말할 때만 심의 도구를 올린다 · 시험 사본(stepforge-prod · dynaforge-prod)을 목록 · 검색에서 뺀다(10-31 — 두 앱은 운영 앱이라 다시 보인다, 6절) · `tool_usage_report.py`(안 쓴 도구 보고) · DocForge 도구 영역 |
 | StepForge | main `ff308d1`(D-648, `c65c92a` D-647 위에 하나) · Drive SIF — **올렸다(10-30 KST — SIF `dist-20261030-034158Z`, sha256 `020a27e1…` · SIF 안 BUILD_INFO = `ff308d1`)**. 이 판 뒤의 update-all 에서 든다 | `find_plm_task` 가 과제가 속한 프로젝트의 이름 · 별칭(마케팅명)으로도 찾는다(`matched_by` `project:<키>`) · 응답의 `sync` 는 요약(타입마다의 줄은 `system_capabilities.plm_hub` 에만) · **D-648** 낙하 트윈 fe_cad 판 열쇠에 짝 · 파트 표가 읽은 DB 값의 지문(`key_parts.tables`)이 든다 — 사람이 이름 · 재질 · 색을 고치면 새 열쇠가 된다(DynaForge 리포트의 받는 쪽 검사가 '같은 열쇠면 같은 바이트' 에 기댄다) |
 
 받는 판에는 이 묶음 밖의 커밋(다른 작업)도 함께 든다. 리포마다 무엇이 드는지는 받기 전에 본다(2절 ①).
@@ -53,6 +53,7 @@ dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다.
   - '권한 표 대조' 줄은 종전 그대로다. 허브 셋 · componentcore · plm-search-agent · simengbay · 시험 사본이 박스 권한표(`access.local.yaml`)에 없으면 여기서 ✗(권한 표 구멍)다.
 - **게이트웨이** — `curl -s --noproxy '*' 127.0.0.1:9110/health | python3 -c 'import json,sys;print(json.load(sys.stdin)["core_vocab"])'`
   - `loaded: True` · `canonical: rootdesigndatahub` · `canonical_backend: True` · `tagline_applied: True` · `staging_hidden` 에 이 박스의 시험 사본.
+    포털 `dbbb943`(10-31) 부터는 `staging_hidden: []` 가 맞다 — dynaforge-prod · stepforge-prod 는 운영 앱이라 어휘표에서 뺐다(10-31 OB-04 사용자 결정으로 뒤집음 — 6절 · [`../request-1030/context-notes.md`](../request-1030/context-notes.md) C-14).
   - `canonical_backend` 가 False 면 이 박스의 정본 허브 백엔드 키가 어휘표와 다르다 — 키를 dev 에 알린다(소개 줄 · 정본 대표 접기가 꺼진 채다).
   - `curl -s --noproxy '*' 127.0.0.1:9110/tools-map | python3 -c 'import json,sys;print(json.load(sys.stdin)["unclassified"])'` 에 `docforge_*` 가 없다.
 - **에이전트 서버** — `curl -s --noproxy '*' 127.0.0.1:9009/health | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["core_vocab"]);print(d["self_check"])'`
@@ -102,7 +103,9 @@ dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다.
 ## 6. 알아 둘 것
 
 - '낙하 해석 담당' 질의는 코어 낱말이 없어 어휘표가 닿지 않는다 — 다시 코어를 건너뛰어도 이 묶음과 무관하다(C-14).
-- 시험 사본(stepforge-prod · dynaforge-prod)을 일부러 쓰는 사람은 도구 이름으로 부른다 — 목록 · 검색에서만 빠졌다(C-18).
+- 시험 사본은 목록 · 검색에서만 빠지고, 도구 이름으로 부르면 그대로 닿는다(C-18). stepforge-prod · dynaforge-prod 는 10-31 부터 시험 사본이 아니다 — 운영 앱이라
+  어휘표에서 뺐고 목록 · 검색에 보통 앱으로 보인다(10-31 OB-04 사용자 결정으로 뒤집음, 포털 `dbbb943`). 박스 권한표의 '(시험)' 라벨은 사람이 고친다
+  ([`../request-1030/server-setup.md`](../request-1030/server-setup.md) 7절).
 - 자기검증이 고칠 곳을 초안에서 못 찾으면 고치지 않고 초안을 그대로 낸다 — 답 아래 '검증하지 못해 초안을 그대로 보였습니다' 와 까닭이 뜬다(정상 동작).
 
 ## 7. 검색 고리 — 손잡이 · 기록 · 검토 · 평가 · 피드백 보고서(E-7 ~ E-9, 10-29 저녁)
