@@ -537,13 +537,25 @@ class ProceduresRunner:
         if rows and not any(sel.save in r for r in rows):
             # 칸 이름이 틀린 것도 "비었다" 와 다르다. 이걸 안 가르면 후보가 전부
             # `value: null` 로 뜨고, 사람이 그중 하나를 고르면 None 이 다음 단계로 간다.
+            # ⚠ **목록을 봉투로 싸 주는 도구**(KooRemapper `find_reports` 의
+            # `{items, total, reason, truncated}`)를 `from: "$"` 로 읽으면 봉투 하나가 후보가
+            # 되어 여기서 멈춘다 — 0건이어도 `on_none` 이 아니라 이 오류다(HP-52). 고칠 곳은
+            # 절차의 `from` 이라 그렇게 말한다. 몰래 벗기지는 않는다 — `$` 의 뜻이 바뀌면
+            # 이미 저장된 판본의 뜻이 바뀐다(PLAN §2). 옛 씨앗을 가져온 사람은 다시 받기 전까지
+            # 이 글을 본다.
+            env = (sel.from_.strip() == "$" and isinstance(cand, dict)
+                   and isinstance(cand.get("items"), list))
+            hint = (f" · 결과가 목록이 아니라 봉투다(`items` 에 후보 {len(cand['items'])}개) — "
+                    "`from: items` 로 고친다. 정본 예제에서 가져온 절차는 '최신으로' 로 "
+                    "다시 받으면 고친 판본이 오른다" if env else "")
             self.store.finish_step(
                 run_id, ix, ok=False, stage="select:no_field",
                 error=f"고른 {len(rows)}개 어디에도 `{sel.save}` 칸이 없다 — "
-                      f"있는 칸: {sorted(rows[0])[:12]}")
+                      f"있는 칸: {sorted(rows[0])[:12]}{hint}")
             self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
             return {"state": "failed", "stopped_at": ix, "kind": "select_no_field",
-                    "error": f"`{sel.save}` 칸이 없다"}
+                    "error": f"`{sel.save}` 칸이 없다"
+                             + (" — 봉투다(`from: items` 로 고른다)" if env else "")}
 
         if not rows:
             if sel.on_none == "skip":

@@ -37,7 +37,9 @@ steps:
   - backend: heax-kooremapper_mcp
     tool: find_reports
     args: {project: "{{job_name}}_{{slurm_job_id}}", kind: sphere, limit: 20}
-    select: {from: "$", save: id, as: report_id, label: label, on_many: ask, on_none: fail}
+    # 결과는 목록이 아니라 봉투 `{items, total, reason, truncated}` 다(KR-08) — 후보는 items 에서 고른다.
+    # `from: "$"` 면 봉투 하나가 후보가 되어 0건이어도 on_none 대신 select:no_field 로 멈췄다(HP-52).
+    select: {from: items, save: id, as: report_id, label: label, on_many: ask, on_none: fail}
     note: 잡 키로 리포트를 찾는다 — 0건이면 아직 반입 전이다(사람이 REST intake 로 올린다)
 
   - backend: heax-kooremapper_mcp

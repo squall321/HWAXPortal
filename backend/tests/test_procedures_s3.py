@@ -296,8 +296,71 @@ def test_리포트를_report_id_가_아니라_잡_키로_찾는다(collect):
     assert declared == {"job_name", "slurm_job_id", "part_id"}, declared
     assert spec.steps[0].args["project"] == "{{job_name}}_{{slurm_job_id}}"
     sel = spec.steps[0].select
-    assert (sel.from_, sel.save, sel.var) == ("$", "id", "report_id")
+    assert (sel.from_, sel.save, sel.var) == ("items", "id", "report_id"), \
+        "find_reports 는 봉투 {items, …} 로 준다 — `$` 면 봉투 하나가 후보가 된다(HP-52)"
     assert (sel.on_many, sel.on_none) == ("ask", "fail"), "여럿이면 사람이 고르고 0건은 실패다"
+
+
+# 실행기가 실제로 고르는 길(`_pick`)로 본다 — 경로만 풀어 보던 아래 시험은 고정물이 목록 꼴일 때
+# 봉투를 읽는 씨앗의 `from: "$"` 를 못 잡았다(HP-52). 응답 꼴은 KooRemapper find_reports(KR-08)다.
+def _reports(items: list) -> dict:
+    """find_reports 봉투 — 0건도 빈 봉투다(도구 실패와 구분된다)."""
+    return {**DF["find_reports"], "items": items, "total": len(items),
+            "reason": None if items else ("리포트 없음 — 이 조건에 맞는 리포트가 없다"
+                                          "(도구 실패가 아니다)")}
+
+
+def _pick_report(step, body: dict):
+    from tests.test_procedures_select import _Store
+
+    from app.procedures.runner import ProceduresRunner
+
+    v = judge(is_error=False, text=_text(body), raw=step.raw, unwrap=step.unwrap)
+    assert v.ok, (v.kind, v.error)
+    r = ProceduresRunner.__new__(ProceduresRunner)
+    r.store = _Store()
+    scope: dict = {}
+    return r._pick("run", 0, step, v, scope), scope, r.store
+
+
+def test_리포트가_0건이면_on_none_으로_멈춘다(collect):
+    """0건은 '아직 반입 전' 이다 — 절차가 틀렸다는 `select:no_field` 가 아니라
+    on_none(fail)이어야 한다."""
+    _, spec = collect
+    out, scope, store = _pick_report(spec.steps[0], _reports([]))
+    assert out["kind"] == "select_none", out
+    assert store.finished[-1]["stage"] == "select:none" and "report_id" not in scope
+
+
+def test_리포트가_한_건이면_그것을_고르고_여럿이면_묻는다(collect):
+    _, spec = collect
+    one = DF["find_reports"]["items"][0]
+    out, scope, store = _pick_report(spec.steps[0], _reports([one]))
+    assert out is None and scope["report_id"] == one["id"]
+    assert store.inputs == {"report_id": one["id"]}, "재개 · 다시 돌리기용으로 기록에 남겨야 한다"
+
+    two = [one, {**one, "id": "01JAX7Q4Z9P8K3T2N5M6R7S8W0", "label": "drop-demo-01 다시 반입"}]
+    out, scope, _ = _pick_report(spec.steps[0], _reports(two))
+    assert out["kind"] == "select_ask", out
+    assert [c["value"] for c in out["candidates"]] == [x["id"] for x in two]
+    assert [c["label"] for c in out["candidates"]] == [x["label"] for x in two]
+    assert "report_id" not in scope, "묻기도 전에 골랐다"
+
+
+@pytest.mark.parametrize("n", [0, 1])
+def test_옛_씨앗_꼴은_봉투라고_말하고_벗겨_고르지_않는다(collect, n):
+    """이미 가져간 옛 판본(`from: "$"`)은 다시 받기 전까지 그대로다 — 무엇을 고칠지 말해야 한다.
+    실행기가 봉투를 몰래 벗기면 `$` 의 뜻이 바뀐다(PLAN §2) — 고르지 않고 멈춘다."""
+    _, spec = collect
+    st = spec.steps[0]
+    old = st.model_copy(update={"select": st.select.model_copy(update={"from_": "$"})})
+    out, scope, store = _pick_report(old, _reports(DF["find_reports"]["items"][:n]))
+    assert out["kind"] == "select_no_field", out
+    err = store.finished[-1]["error"]
+    assert "봉투" in err and "`from: items`" in err, err
+    assert f"후보 {n}개" in err and "최신으로" in err, err
+    assert "from: items" in out["error"], out
+    assert "report_id" not in scope and store.inputs == {}, "봉투를 벗겨 골랐다"
 
 
 def test_인자가_DynaForge_실제_스키마와_맞는다(collect):

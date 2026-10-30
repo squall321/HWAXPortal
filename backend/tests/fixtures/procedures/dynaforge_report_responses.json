@@ -1,5 +1,5 @@
 {
-  "_note": "⚠ 전부 **합성**이다(_synthetic). dev 에는 리포트가 0건이라(report_corpus 0) 실측을 못 뜬다. 모양은 KooRemapper 소스에서 유도했다 — find_reports=ReportListItem(schemas.py:41-56), part_risk=services.part_risk 반환(services.py:453-468), findings=routes 가 r.findings 리스트를 그대로(routes.py:561-572). MCP 는 {success,data} 봉투를 벗겨 준다(mcp_server _unwrap). cae00 실행 뒤 실측으로 갈아야 한다.",
+  "_note": "⚠ 전부 **합성**이다(_synthetic). dev 에는 리포트가 0건이라(report_corpus 0) 실측을 못 뜬다. 모양은 KooRemapper 소스에서 유도했다 — find_reports=목록이 아니라 봉투 {items, total, reason, truncated}(mcp_server find_reports, KR-08 — 0건도 빈 봉투)이고 items 가 ReportListItem(schemas.py:41-56), part_risk=services.part_risk 반환(services.py:453-468), findings=routes 가 r.findings 리스트를 그대로(routes.py:561-572). MCP 는 {success,data} 봉투를 벗겨 준다(mcp_server _unwrap). cae00 실행 뒤 실측으로 갈아야 한다.",
   "schemas": {
     "find_reports": {
       "properties": {
@@ -170,25 +170,30 @@
       "type": "object"
     }
   },
-  "find_reports": [
-    {
-      "_synthetic": true,
-      "id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9",
-      "kind": "sphere",
-      "label": "drop-demo-01 전각도 26방향",
-      "focus": null,
-      "project_name": "drop-demo-01_12345",
-      "doe_strategy": "cuboid_26",
-      "scenario_type": "cuboid_geometry",
-      "drop_height": 1500.0,
-      "worst_stress": 412.7,
-      "max_severity": "WARNING",
-      "source_kfile_id": null,
-      "eng_meta": null,
-      "n_cases": 26,
-      "created_at": "2026-09-17T02:00:00Z"
-    }
-  ],
+  "find_reports": {
+    "items": [
+      {
+        "_synthetic": true,
+        "id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9",
+        "kind": "sphere",
+        "label": "drop-demo-01 전각도 26방향",
+        "focus": null,
+        "project_name": "drop-demo-01_12345",
+        "doe_strategy": "cuboid_26",
+        "scenario_type": "cuboid_geometry",
+        "drop_height": 1500.0,
+        "worst_stress": 412.7,
+        "max_severity": "WARNING",
+        "source_kfile_id": null,
+        "eng_meta": null,
+        "n_cases": 26,
+        "created_at": "2026-09-17T02:00:00Z"
+      }
+    ],
+    "total": 1,
+    "reason": null,
+    "truncated": false
+  },
   "report_summary": {
     "_synthetic": true,
     "report_id": "01JAX7Q4Z9P8K3T2N5M6R7S8V9",

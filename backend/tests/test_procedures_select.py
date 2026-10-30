@@ -157,6 +157,21 @@ def test_칸_이름이_틀리면_그렇게_말한다():
     assert "pid" in store.finished[-1]["error"] and "label" in store.finished[-1]["error"]
 
 
+def test_봉투가_아니면_봉투라고_하지_않는다():
+    """`from: "$"` 가 객체 하나인데 `items` 목록이 없으면 그냥 칸 이름 문제다 —
+    그때 봉투 안내(HP-52)를 붙이면 엉뚱한 고침을 권하게 된다."""
+    from app.procedures.runner import ProceduresRunner
+
+    st = Step.model_validate({"backend": "b", "tool": "t",
+                              "select": {"from": "$", "save": "id", "as": "rid"}})
+    for parsed in ({"report": {"id": 1}}, {"items": {"id": 1}}):
+        r = ProceduresRunner.__new__(ProceduresRunner)
+        r.store = _Store()
+        out = r._pick("run", 0, st, Verdict(True, "json", "ok", parsed=parsed), {})
+        assert out["kind"] == "select_no_field", out
+        assert "봉투" not in r.store.finished[-1]["error"] and "봉투" not in out["error"], parsed
+
+
 def test_고른_것의_값이_비면_다음_단계로_안_넘긴다():
     """`save` 경로는 이미 이러고 있다(PLAN §5-6). 여기만 안 보고 있었다 —
     `find_parts(name=null)` 은 대개 '필터 없음' 으로 읽혀 **전부**가 돌아온다."""
