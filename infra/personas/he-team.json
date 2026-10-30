@@ -49,7 +49,7 @@
       ],
       "key_tools": ["list_projects", "get_project_meta", "measurement_guide", "job_params_guide", "part_info", "find_parts", "inspect_report", "heaxstep_forge_job_status", "heaxstep_forge_list_jobs", "upload_instructions"],
       "writes": ["intake", "create_project", "upload_step", "import_archive", "run_job", "set_project_meta", "set_part_metadata", "apply_naming_rules", "set_file_transform", "transform_instance", "set_part_rules", "set_interface", "remesh_parts", "export_step", "build_cavity", "register_materials", "register_materials_csv", "heaxstep_forge_register_material", "run_recipe", "save_recipe", "set_revision"],
-      "confirm": ["delete_project", "heaxstep_forge_cancel_job", "rename_part", "remove_part", "confirm_interfaces", "set_admin"],
+      "confirm": ["delete_project", "heaxstep_forge_cancel_job", "rename_part", "remove_part", "confirm_interfaces", "set_admin", "forget_dimension"],
       "samples": [
         "DV2 낙하해석 과제 파트 몇 개고 어디까지 진행됐어?",
         "쉴드캔과 PCB 사이 축방향 간극 재 줘",
@@ -836,8 +836,8 @@
         "nodes·edges·events 조회는 상위 500건에서 잘린다(truncated). 잘렸다는 사실을 함께 말한다."
       ],
       "key_tools": ["risk_list_projects", "risk_get_coverage", "risk_list_panels", "risk_get_diff", "risk_get_precedents", "risk_taxonomy", "risk_get_registry"],
-      "writes": ["risk_start_job", "risk_create_project", "risk_create_diff"],
-      "confirm": ["risk_submit_panel_result", "risk_add_finding", "risk_job_action"],
+      "writes": ["risk_start_job", "risk_create_project", "risk_create_diff", "risk_capture_snapshot", "risk_open_target"],
+      "confirm": ["risk_submit_panel_result", "risk_add_finding", "risk_job_action", "risk_add_source", "risk_ack_gate", "risk_decide_sameas", "risk_repersist_panel"],
       "samples": [
         "심사 과제 목록이랑 커버리지 보여줘",
         "이 과제 최근 변경 diff 요약하고 선례 있나 봐줘",

@@ -934,7 +934,7 @@ def test_update_all_6_은_운영자_점검을_check_로_부르고_경고로_올�
 
 def test_update_all_6_은_다_맞으면_초록_한_줄이다(tmp_path):
     out = _s6(tmp_path, "  · 건너뜀 he-data-arp: 이 게이트웨이에 앱이 없다(arp)\n  ? 정본에 없는 he-* 에이전트 1명 — he-old (지우지 않았다)\n")
-    assert out == "OK:HE팀 운영자 — 모는 앱이 다 이 게이트웨이에 있고 목록 밖 쓰기 도구가 없다\n", out
+    assert out == "OK:HE팀 운영자 — 모는 앱이 다 이 게이트웨이에 있고 목록 밖 쓰기 도구 · 읽기를 막는 목록이 없다\n", out
 
 
 def test_update_all_6_은_점검을_건너뛰었으면_초록이라_하지_않고_그_줄을_보인다(tmp_path):
@@ -958,7 +958,8 @@ def test_update_all_운영자_점검은_재기동_뒤_6_에서_올리고_3_은_�
     assert _UA.index("# ── 새 앱 점검 — 처음 본 앱을") < _UA.index(b) < _UA.index("SMOKE_PY="), "갱신한 지도를 읽은(TM_OK) 뒤 · 스모크 앞"
     s3 = _UA[_UA.index('hr "3) AIDataHub 데이터'):_UA.index('hr "2c) ste 코드 최신화')]
     assert 'sync-he-personas.py" 2>&1' in s3, "§3 은 merge 뒤 미리보기(HP-35)를 그대로 돈다"
-    assert "'^  ! '" not in s3 and "목록 밖 쓰기" not in s3, "§3 은 갱신 전 게이트웨이다 — 두 알림은 §6 한 곳에서만 올린다(두 번 찍지 않는다)"
+    assert "'^  ! '" not in s3 and "목록 밖 쓰기" not in s3 and "읽기를 쓰기로" not in s3, \
+        "§3 은 갱신 전 게이트웨이다 — 알림은 §6 한 곳에서만 올린다(두 번 찍지 않는다)"
 
 
 # ── C-15(docs/request-1030 design-integration) — 확인 관문(HA-29)과 운영자 정의의 맞물림 ─────────────────────────────────────────
@@ -970,6 +971,12 @@ def test_C15_confirm_줄은_확인하는_길을_시스템_규칙에_맡긴다():
     state = rows[0]["system_prompt"].split("## 상태를 바꾸는 도구", 1)[1]
     assert "확인하는 길은 시스템 규칙을 따른다" in state and "risk_job_action" in state
     assert "먼저 말하고 확인을 받은 뒤 부른다" not in state
+    # 이 글은 관문을 끈 박스 · MCP 직결(게이트웨이 use_experts 가 role_doc 으로 그대로 넘긴다)에도 간다 — 카드가 없는 곳의 갈래를 적고,
+    # '확인을 받은 뒤에만 실행된다' 처럼 서버가 막아 준다고 약속하지 않는다(10-30 반대 검토)
+    line = next(ln for ln in state.splitlines() if ln.startswith("- 되돌리기 어렵다"))
+    assert "서버가 확인 카드를 띄운다는 규칙이 있으면 글로 따로 묻지 말고" in line, line
+    assert "그런 규칙이 없으면 무엇이 바뀌는지 먼저 말해 사람의 확인을 받고 부른다" in line, line
+    assert "실행된다" not in line, line
 
 
 def test_C15_미리보기는_읽기로_확인된_도구를_쓰기_목록에_적으면_알린다():
@@ -985,3 +992,73 @@ def test_C15_미리보기는_읽기로_확인된_도구를_쓰기_목록에_적�
     rows, _s, errors = sync.plan(one, tm, None, warns)
     assert rows and not errors, "알리기만 한다"
     assert any(w.startswith("읽기를 쓰기로 he-calc-thermalshock: 1개 — ") and victim in w for w in warns), warns
+
+
+def test_C15_거꾸로_점검은_관문처럼_다른_앱의_같은_꼬리_읽기_도구도_본다():
+    """확인 관문은 모든 운영자의 목록을 모든 도구에 이름 그대로이거나 '_<이름>' 으로 끝나는 꼴로 건다(에이전트서버 _confirm_class — 접두 별칭은
+    접두를 뗀 꼴도). 운영자 자기 앱의 도구만 보면 다른 앱의 같은 꼬리 읽기 도구가 카드에 걸리는 것을 놓친다(10-30 반대 검토)."""
+    sync = _sync()
+    one = _one("he-cad-stepforge")
+    p = one["personas"][0]
+    assert "set_admin" in p["confirm"] and "heaxstep_forge_cancel_job" in p["confirm"]
+    tm = _write_map("he-cad-stepforge", set(), set())
+    # ste_list_nodes — 같은 꼬리가 없는 읽기 도구는 걸리지 않는다
+    tm["map"].update({"other_set_admin": "heax-other", "ste_cancel_job": "ste", "ste_list_nodes": "ste"})
+    tm["apps"] = [*tm["apps"], {"app": "heax-other", "label": "다른 앱"}, {"app": "ste", "label": "ste"}]
+    tm["routine_read"] = ["other_set_admin", "ste_cancel_job", "ste_list_nodes"]
+    warns: list[str] = []
+    rows, _s, errors = sync.plan(one, tm, None, warns)
+    assert rows and not errors, errors
+    assert warns == ["읽기를 쓰기로 he-cad-stepforge: 2개 — other_set_admin ← set_admin, ste_cancel_job ← heaxstep_forge_cancel_job"
+                     "(게이트웨이가 읽기로 확인했다 — 확인 관문이 조회마다 카드를 세운다, 맞는지 본다)"], warns
+
+
+def test_C15_거꾸로_점검은_앱이_없는_운영자의_목록도_본다():
+    """관문은 정본 파일을 통째로 읽는다 — 이 게이트웨이에 앱이 없어 동기화가 건너뛰는 운영자(he-cad-odbhub)의 목록도 이 박스의 도구에 걸린다."""
+    sync = _sync()
+    one = _one("he-cad-odbhub")
+    assert "run_checklist" in one["personas"][0]["writes"]
+    tm = {"map": {"x_run_checklist": "heax-x"}, "areas": {}, "area_meta": [], "apps": [{"app": "heax-x", "label": "x"}],
+          "write": [], "routine_read": ["x_run_checklist"]}
+    warns: list[str] = []
+    rows, skipped, _e = sync.plan(one, tm, None, warns)
+    assert not rows and skipped, "앱이 없으니 동기화는 건너뛴다"
+    assert any(w.startswith("읽기를 쓰기로 he-cad-odbhub: 1개 — x_run_checklist ← run_checklist") for w in warns), warns
+
+
+def test_update_all_6_은_읽기를_막는_목록을_경고로_올린다(tmp_path):
+    """거꾸로 점검 줄만 있는 박스에서 §6 이 '목록 밖 쓰기 도구가 없다' 초록을 찍었다 — §3 도 그 줄을 내지 않아 cae00 에서는 아무도 못 봤다."""
+    line = ("  · 읽기를 쓰기로 he-expert-risk: 1개 — risk_get_registry(게이트웨이가 읽기로 확인했다 — 확인 관문이 조회마다 카드를 세운다,"
+            " 맞는지 본다)\n")
+    out = _s6(tmp_path, line)
+    assert "OK:" not in out, out
+    assert "BAD:HE팀 운영자 1명의 writes · confirm 이 게이트웨이가 읽기로 확인한 도구를 막는다" in out, out
+    assert "    · 읽기를 쓰기로 he-expert-risk: 1개 — risk_get_registry" in out, out
+
+
+# ── 10-30 반대 검토 — 운영자 목록이 관문에 빠뜨린 쓰기 ──────────────────────────────────────────────────────────────────────────
+_RISK_MCP = _ROOT.parent / "HWAXRisk" / "backend" / "app" / "mcp_server.py"
+
+
+def test_리스크_앱이_쓰기라고_적은_도구는_운영자_목록에_있다():
+    """리스크 앱의 MCP 설명이 '쓰기: … 사용자에게 확인한 뒤 부른다' 로 적은 도구는 he-expert-risk 의 writes · confirm 어딘가에 있어야 한다 —
+    없으면 확인 관문(HA-29)이 부류 없음으로 보아 사람이 시키지 않아도 카드 없이 나간다. 게이트웨이 쓰기 표지가 없는 것(캡처 · 대상 열기 ·
+    다시 저장)은 '목록 밖 쓰기' 미리보기에도 안 걸린다(risk_job_action 과 같은 처지 — design-ha29 10절 10)."""
+    if not _RISK_MCP.exists():
+        pytest.skip(f"형제 리포 없음: {_RISK_MCP}")
+    import ast
+    tree = ast.parse(_RISK_MCP.read_text(encoding="utf-8"))
+    writes = sorted(n.name for n in tree.body if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name.startswith("risk_")
+                    and "쓰기:" in (ast.get_docstring(n) or "").split("—", 1)[-1][:40])
+    assert len(writes) >= 10, writes
+    p = _one("he-expert-risk")["personas"][0]
+    missing = [t for t in writes if t not in {*p["writes"], *p["confirm"]}]
+    assert not missing, f"he-expert-risk 의 writes · confirm 에 없다 — {missing}"
+    # 되돌리기 어려운 것은 confirm(늘 카드) — 소스는 지울 수 없고, 게이트 사유 · same-as 는 사람 판정이고, 다시 저장은 포기(discard)할 수 있다
+    assert {"risk_add_source", "risk_ack_gate", "risk_decide_sameas", "risk_repersist_panel", "risk_job_action"} <= set(p["confirm"])
+
+
+def test_StepForge_의_되돌릴_수_없는_치수_지우기는_confirm_에_있다():
+    """forget_dimension 은 StepForge 가 '⚠ 되돌릴 수 없다' 로 적은 지우기다 — 목록 밖이면 확인 관문이 사람이 시키지 않아도 보낸다."""
+    p = _one("he-cad-stepforge")["personas"][0]
+    assert "forget_dimension" in p["confirm"] and "forget_dimension" not in p["writes"]

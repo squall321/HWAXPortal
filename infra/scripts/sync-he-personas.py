@@ -17,10 +17,11 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 그 박스 게이트웨이에 붙은 앱으로 만들어진다. 선택 앱(페르소나의 optional)은 다르다 — 붙어 있으면 그 칸을 정본 뒤에 잇고,
 없으면 빼고 만든다(건너뛰지 않는다. 미리보기에 '· 일부' 로 찍는다).
 
-막지 않고 알리기만 하는 것이 둘 더 있다(docs/request-1030). 운영자 앱의 쓰기 꼴 도구(/tools-map 의 write) 가운데 writes · confirm
-어디에도 없는 것은 '· 목록 밖 쓰기' 로(HP-53), 이 박스 AIDataHub 의 운영자가 모는 앱이 이 게이트웨이에 없는 것은 '! ' 로 찍는다(HP-51).
-'! ' 는 정본의 이름 오류 · 저장 실패와 상관없이 /tools-map 을 읽었으면 늘 본다. --check 는 이 두 알림만 찍는다 — update-all §6 이
-실행마다(재기동 · 재프로비저닝을 마친 게이트웨이로) 불러 ⚠ 로 올린다. --apply 에서 저장 요청이 5xx 면 다시 읽어 저장됐는지 보고,
+막지 않고 알리기만 하는 것이 셋 더 있다(docs/request-1030). 운영자 앱의 쓰기 꼴 도구(/tools-map 의 write) 가운데 writes · confirm
+어디에도 없는 것은 '· 목록 밖 쓰기' 로(HP-53), 거꾸로 두 목록이 게이트웨이가 읽기로 확인한 도구(routine_read)를 막는 것은 '· 읽기를 쓰기로'
+로(C-15 — 에이전트서버의 확인 관문이 그 조회마다 카드를 세운다), 이 박스 AIDataHub 의 운영자가 모는 앱이 이 게이트웨이에 없는 것은 '! ' 로
+찍는다(HP-51). '! ' 는 정본의 이름 오류 · 저장 실패와 상관없이 /tools-map 을 읽었으면 늘 본다. --check 는 이 알림 줄만 찍는다 — update-all
+§6 이 실행마다(재기동 · 재프로비저닝을 마친 게이트웨이로) 불러 ⚠ 로 올린다. --apply 에서 저장 요청이 5xx 면 다시 읽어 저장됐는지 보고,
 저장됐으면 알리고 이어 간다(AIDataHub AD-21).
 
   GATEWAY_HTTP_BASE  기본 http://127.0.0.1:9110
@@ -89,10 +90,12 @@ def build_prompt(p: dict, app_labels: list[str], n_tools: int, tool_map: list[tu
         if p["writes"]:
             lines.append(f"- 사용자가 그 작업을 요청했을 때만 부른다 — {', '.join(p['writes'])}.")
         if p["confirm"]:
-            # 확인하는 길은 박스마다 다르다 — 에이전트서버의 확인 관문(10-30 HA-29)이 켜진 박스는 서버가 카드로 받고, 꺼진 박스는 글로 묻는다.
-            # 그 갈림은 에이전트서버의 시스템 규칙이 안다 — 여기서 '먼저 말하고 확인' 을 박으면 관문이 켜진 박스에서 두 번 묻는다(C-15).
-            lines.append("- 되돌리기 어렵다. 사람의 확인을 받은 뒤에만 실행된다 — 확인하는 길은 시스템 규칙을 따른다(서버의 확인 카드가 켜진 "
-                         f"박스는 글로 따로 묻지 않는다) — {', '.join(p['confirm'])}.")
+            # 확인하는 길은 부르는 곳마다 다르다 — 에이전트서버의 확인 관문(10-30 HA-29)이 켜진 웹 챗은 서버가 카드로 받고, 관문을 끈 박스 · MCP 직결
+            # (게이트웨이 use_experts 가 이 글을 그대로 넘긴다)은 모델이 글로 묻는다. 그 갈림은 그쪽 시스템 규칙이 안다 — 여기서 '먼저 말하고 확인'
+            # 을 박으면 관문이 켜진 웹 챗에서 두 번 묻고, '확인을 받은 뒤 실행된다' 고 약속하면 카드가 없는 곳의 모델이 묻지 않고 부른다(C-15).
+            lines.append("- 되돌리기 어렵다 — 확인하는 길은 시스템 규칙을 따른다. 서버가 확인 카드를 띄운다는 규칙이 있으면 글로 따로 묻지 말고 무엇을 "
+                         "왜 하는지 한 줄 말한 뒤 부르고, 그런 규칙이 없으면 무엇이 바뀌는지 먼저 말해 사람의 확인을 받고 부른다 — "
+                         f"{', '.join(p['confirm'])}.")
     if p.get("tool_map"):
         # 사전 지식이 아직 얇은 앱(cae00 전용)은 도구 이름이라도 영역별로 준다.
         lines += ["", "## 도구 지도", *[f"- {label}: {', '.join(names)}" for label, names in tool_map]]
@@ -133,7 +136,7 @@ def _with_optional(p: dict, by_app: dict) -> tuple[dict, list[str]]:
 def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
          warns: list[str] | None = None) -> tuple[list[dict], list[str], list[str]]:
     """정본 + 게이트웨이 → 올릴 페이로드 목록, 건너뛴 사유, 오류. notes 를 주면 선택 앱을 빼고 만든 페르소나를, warns 를 주면
-    writes · confirm 어디에도 없는 쓰기 꼴 도구를 적는다(막지 않는다)."""
+    writes · confirm 어디에도 없는 쓰기 꼴 도구와 두 목록이 막는 읽기 도구(_warn_readish)를 적는다(막지 않는다)."""
     tool_app: dict = tmap.get("map") or {}
     areas: dict = tmap.get("areas") or {}
     area_label = {a["area"]: a.get("label") or a["area"] for a in (tmap.get("area_meta") or []) if a.get("area")}
@@ -188,14 +191,6 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
                 more = f" 외 {len(loose) - LOOSE_SHOW}개" if len(loose) > LOOSE_SHOW else ""
                 warns.append(f"목록 밖 쓰기 {key}: {len(loose)}개 — {', '.join(loose[:LOOSE_SHOW])}{more}"
                              "(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)")
-            # 거꾸로 — 두 목록에 적었는데 게이트웨이가 읽기로 확인한 도구(routine_read)다. 확인 관문(HA-29)이 사람이 시키지 않은 조회마다
-            # 카드를 세운다(C-15). 막지는 않는다 — 읽기 표지가 틀렸을 수도 있어 사람이 본다.
-            readish = sorted(n for n in listed if (n in read_ok) or any(n == f"{a.replace('-', '')}_{t}" and t in read_ok
-                                                                        for a in p["apps"] for t in by_app[a]))
-            if readish:
-                more = f" 외 {len(readish) - LOOSE_SHOW}개" if len(readish) > LOOSE_SHOW else ""
-                warns.append(f"읽기를 쓰기로 {key}: {len(readish)}개 — {', '.join(readish[:LOOSE_SHOW])}{more}"
-                             "(게이트웨이가 읽기로 확인했다 — 확인 관문이 조회마다 카드를 세운다, 맞는지 본다)")
         tool_map: dict[str, list[str]] = {}
         for t in tools:
             tool_map.setdefault(area_label.get(areas.get(t, ""), "미분류"), []).append(t)
@@ -215,7 +210,43 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
                                 "key_tools": p["key_tools"],
                                 "managed_by": "HWAXPortal/infra/personas/he-team.json"},
         })
+    if warns is not None and read_ok:
+        _warn_readish(spec, read_ok, warns)
     return out, skipped, errors
+
+
+def _gate_names(p: dict) -> dict[str, str]:
+    """확인 관문(에이전트서버 _confirm_lists)이 이 운영자에게서 읽는 이름 → 정본에 적힌 이름. 선택 앱의 목록도 넣고, 접두 별칭(<앱 키에서 하이픈을
+    뺀 것>_<이름>)은 접두를 뗀 꼴도 넣는다 — 관문과 같은 셈이다(소문자)."""
+    opts = p.get("optional") or []
+    pre = [str(a).replace("-", "").lower() + "_" for a in [*p.get("apps", []), *(o["app"] for o in opts)] if a]
+    out: dict[str, str] = {}
+    for n in [*p.get("writes", []), *p.get("confirm", []), *(x for o in opts for x in [*(o.get("writes") or []), *(o.get("confirm") or [])])]:
+        low = n.strip().lower()
+        out.setdefault(low, n)
+        for x in pre:
+            if low.startswith(x) and len(low) > len(x):
+                out.setdefault(low[len(x):], n)
+    return out
+
+
+def _warn_readish(spec: dict, read_ok: set, warns: list[str]) -> None:
+    """거꾸로(C-15) — 운영자의 두 목록이 게이트웨이가 읽기로 확인한 도구(routine_read)를 막는다. 확인 관문(HA-29)은 모든 운영자의 목록을 이 박스의
+    모든 도구에 이름 그대로이거나 '_<이름>' 으로 끝나는 꼴로 건다(에이전트서버 _confirm_class) — 그래서 다른 앱의 같은 꼬리 읽기 도구도 걸리고,
+    앱이 이 게이트웨이에 없는 운영자의 목록도 걸린다. 그 조회마다 카드가 선다. 막지는 않는다 — 읽기 표지가 틀렸을 수도 있어 사람이 본다."""
+    for p in spec["personas"]:
+        names = _gate_names(p)
+        hit: list[str] = []
+        for r in sorted(read_ok):
+            low = r.lower()
+            m = [t for t in names if low == t or low.endswith("_" + t)]
+            if m:
+                src = names[max(m, key=len)]
+                hit.append(r if src.lower() == low else f"{r} ← {src}")
+        if hit:
+            more = f" 외 {len(hit) - LOOSE_SHOW}개" if len(hit) > LOOSE_SHOW else ""
+            warns.append(f"읽기를 쓰기로 {p['key']}: {len(hit)}개 — {', '.join(hit[:LOOSE_SHOW])}{more}"
+                         "(게이트웨이가 읽기로 확인했다 — 확인 관문이 조회마다 카드를 세운다, 맞는지 본다)")
 
 
 def _report_agents(spec: dict, tmap: dict) -> None:
@@ -253,7 +284,7 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="실제로 쓴다(없으면 미리보기)")
     ap.add_argument("--show", metavar="KEY", help="이 페르소나의 system_prompt 를 찍고 끝낸다")
     ap.add_argument("--check", action="store_true",
-                    help="알림 줄만 찍는다 — 목록 밖 쓰기 · 운영자 앱이 이 게이트웨이에 없다(update-all §6 이 실행마다 부른다)")
+                    help="알림 줄만 찍는다 — 목록 밖 쓰기 · 읽기를 쓰기로 · 운영자 앱이 이 게이트웨이에 없다(update-all §6 이 실행마다 부른다)")
     args = ap.parse_args()
 
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
