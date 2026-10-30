@@ -19,7 +19,7 @@
 | SmartTwinExplorer | `4f5e0e0` | PA-20 | 올림 — Drive staging 번들(3절) |
 | DocForge | `e72cbe5` · `ab5547e`(0.3.1) | HH-14 | 코드 끝 — 배치는 그 세션의 사용자 승인 대기 |
 | KooRemapper | `0c1113f` · `f36270f` · `a3eff43` | KR-23 — 레시피 자동 관문을 MCP 설명에 적음(사용자 결정 그대로) · KR-01 · KR-16 — 과제 검색이 별칭을 대조하고 순위를 매긴 뒤 자른다(행마다 match_kind) | 올림(그쪽 세션) — update-all 하나, 재기동 때 이관 0018 · 화면은 다음 Drive |
-| StepForge | 다음 판 | ST-12 | 그쪽 세션 |
+| StepForge | `b2c70f1` · Drive `dist-20261030-135126Z` | ST-12 — 합치기 진행률(경과 시간) · `work_outlook` · owner 가림(+ 온톨로지 그래프 도구 일곱) | 올림(그쪽 세션) — `dist-from-drive.sh` 로 step_forge 교체, 교체 전 도는 잡이 없는지 본다 |
 
 ## 1. update-all 한 번
 
