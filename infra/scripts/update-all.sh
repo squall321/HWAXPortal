@@ -1372,7 +1372,11 @@ PY
   # 박스가 적은 값은 덮지 않는다(docs/request-1027 HP-07) — 종전엔 원격 LLM 이면 늘 0 으로 다시 써서, 무캡 경로의 캐시 결함(에이전트 HA-01)이
   # 고쳐지기 전에 캡 경로(TOOL_MAX>0 + TOOL_SCHEMA_BUDGET)를 고를 길이 없었다. 값이 없을 때만 0 을 적는다. '전량 바인딩' 도 아니다 —
   # 무캡이어도 챗 창 예산 안에서 질의 관련도 순으로 고른다(cae00 10-27 실측 1,613 → 225). 실제로 묶인 수는 7) 의 '챗 도구 절단' 줄이다.
-  if [ "$REMOTE_LLM" = "1" ]; then
+  # 박스 값 0 은 원격이든 로컬이든 그대로다 — 종전엔 로컬로 읽힌 박스(루프백 주소)에서 맨 끝 가지로 떨어져, 0 이 적혀 있는데도
+  # '미설정 → 기본 200' 이라 적었다(cae00 10-29 로그, docs/request-1030 HP-55). 비교는 아래 가지의 -gt 와 같은 수 비교다.
+  if [ -n "${TM:-}" ] && [ "$TM" -eq 0 ] 2>/dev/null; then
+    ok "TOOL_MAX=$TM 그대로(무캡 — 도구 설명 예산 안에서 질의 관련도 순으로 고른다, 예산 · 출처 · 묶인 수는 7) 의 '챗 도구' 줄)"
+  elif [ "$REMOTE_LLM" = "1" ]; then
     if [ -z "${TM:-}" ]; then
       printf 'TOOL_MAX=0\n' >> "$AGENT_ENV"
       ok "원격 LLM 감지 → TOOL_MAX=0(무캡 — 챗 창 예산 안에서 질의마다 고른다, 묶인 수는 7) 의 '챗 도구 절단')"
@@ -3482,28 +3486,52 @@ else
     || tail -n 40 /tmp/agent-server.log 2>/dev/null \
     || echo "  (로그 파일 없음 — /tmp/hwax-services/agent-server.log 확인)"
 fi
-# 챗 도구 바인딩 가시성 — TOOL_MAX 가 게이트웨이 도구를 캡하면 heax-hub 등 일부 도구가
-# 챗 에이전트에 안 실린다(프로드는 TOOL_MAX=0 무제한 권장 — 대형 컨텍스트 GLM 이라 전부 실림).
+# 챗 도구 바인딩 가시성 — TOOL_MAX 가 게이트웨이 도구를 캡하면 heax-hub 등 일부 도구가 챗 에이전트에 안 실린다. 캡이 없어도(TOOL_MAX=0 — cae00)
+# 도구 설명 예산을 넘는 만큼은 관련도 낮은 것부터 빠진다 — 그 예산 · 출처(CHAT_TOOL_SCHEMA_BUDGET, 없으면 챗 창의 45%) · 뺀 수를 말한다(docs/request-1030 HP-55).
 AH="$(curl -s -m 4 http://127.0.0.1:9009/health 2>/dev/null || true)"
 if [ -n "$AH" ]; then
   # 게이트웨이 도구 수는 여기서 다시 읽는다 — $H 는 6절 앞에서 받아 둔 것이라 6절의 재프로비저닝 뒤 수와 달랐다(657 → 665, 10-17 리뷰 P8).
-  AH="$AH" GH="$(gw_health 2>/dev/null || true)" python3 - <<'PY' || true
+  # 예산의 출처를 가를 손잡이 둘 — /health 는 값(tool_cut.budget)만 싣는다. 에이전트 서버 .env 를 모르는 박스는 비운다(코드 기본값으로 가른다).
+  _ctsb=""; _tsb=""
+  if [ -n "${AGENT_ENV:-}" ] && [ -f "$AGENT_ENV" ]; then
+    _ctsb="$(_envfile_value "$AGENT_ENV" CHAT_TOOL_SCHEMA_BUDGET)"; _tsb="$(_envfile_value "$AGENT_ENV" TOOL_SCHEMA_BUDGET)"
+  fi
+  AH="$AH" GH="$(gw_health 2>/dev/null || true)" CTSB="$_ctsb" TSB="$_tsb" python3 - <<'PY' || true
 import json, os
 try:
     ah = json.loads(os.environ["AH"]); gh = json.loads(os.environ.get("GH") or "{}")
     tmax = ah.get("tool_max", 0); gtools = gh.get("tools")
+    cut = ah.get("tool_cut") or {}
+    # 도구 설명 예산의 출처 — 에이전트 서버 _select_tools 의 규칙이다. 캡이 안 걸리는 길(TOOL_MAX=0 · 도구가 TOOL_MAX 개 이하)은
+    # CHAT_TOOL_SCHEMA_BUDGET 이 있으면 그 값, 없으면 챗 턴 창(챗 전용 LLM 이면 출력 몫을 뗀 값)의 45% 이고, 캡 길은 TOOL_SCHEMA_BUDGET(기본 40,000)이다.
+    # /health 는 값만 싣는다 — 손잡이 값과 같으면 그 손잡이다. .env 를 고치고 아직 재기동하지 않았으면 값이 달라 그 프로세스의 출처(창의 45%)로 읽는다.
+    def _num(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 0
+    ctsb, tsb = _num(os.environ.get("CTSB")), _num(os.environ.get("TSB") or 40000)
+
+    def _src(b):
+        if b > 0 and b == ctsb:
+            return "CHAT_TOOL_SCHEMA_BUDGET"
+        if b > 0 and tmax and b == tsb:
+            return "TOOL_SCHEMA_BUDGET"
+        return "챗 창의 45%"
     if tmax and gtools and tmax < gtools:
         print("  · ⚠ 챗 도구 캡: TOOL_MAX=%s < 게이트웨이 %s개 → 일부 도구(heax-hub 등) 챗 미바인딩. 프로드는 TOOL_MAX=0 권장" % (tmax, gtools))
     elif gtools:
-        print("  · 챗 도구: TOOL_MAX=%s (0=무제한) → 게이트웨이 %s개 — 스키마 예산(챗 창의 45%%) 안이면 전부 바인딩" % (tmax, gtools))
+        # 값은 마지막 절단의 상한, 절단이 없으면 손잡이 값이다. 둘 다 없으면(창의 45% · 아직 안 잘림) 출처만 말한다.
+        b = cut.get("budget") or ctsb
+        print("  · 챗 도구: TOOL_MAX=%s (0=무제한) → 게이트웨이 %s개 — 도구 설명 예산%s(%s) 안에서 질의 관련도 순으로 싣는다"
+              % (tmax, gtools, " %s토큰" % format(b, ",") if b > 0 else "", _src(b)))
     # 스키마 예산 절단 — 개수 캡이 없어도 창이 작으면 잘린다(stcx 262,144 → 상한 117,964 — 수정 제안서 F1 · F3). 마지막 챗 턴(위 7)의
     # 스모크 포함)의 값이다. 관련도 낮은 것부터 뺐고 안내대로 닿지만, 뺀 앱이 크면 사람이 안다.
-    cut = ah.get("tool_cut") or {}
     if cut.get("before") and cut.get("after") is not None and cut["after"] < cut["before"]:
         apps = " · ".join("%s %s" % (k, v) for k, v in list((cut.get("dropped_apps") or {}).items())[:8])
-        print("  · ⚠ 챗 도구 절단: 마지막 챗 턴에서 %s개 중 %s개만 실었다(스키마 상한 %s토큰 — 챗 창의 45%%) · 뺀 것: %s"
-              " — 관련도 낮은 것부터 뺐고 안내대(search_tools · invoke_tool)로 닿는다. 다 실으려면 챗 서버 창을 넓힌다"
-              "(docs/chat-llm-stcx/server-setup.md 9절)" % (cut["before"], cut["after"], format(cut.get("budget") or 0, ","), apps or "?"))
+        print("  · ⚠ 챗 도구 절단: 마지막 챗 턴에서 %s개 중 %s개만 실었다(스키마 상한 %s토큰 — %s) · 뺀 것: %s"
+              " — 관련도 낮은 것부터 뺐고 안내대(search_tools · invoke_tool)로 닿는다"
+              % (cut["before"], cut["after"], format(cut.get("budget") or 0, ","), _src(cut.get("budget") or 0), apps or "?"))
     elif cut == {} and ah.get("tool_cut", 0) is None:
         print("  · 챗 도구 절단: 마지막 챗 턴에서 잘린 도구 없음")
     # 챗 자기검증(에이전트 HA-13) — 위 스모크 턴까지 센 결과 수 · 걸린 시간 · 마지막 실패. 옛 판은 칸이 없어 말하지 않는다(docs/request-1027 HP-24).

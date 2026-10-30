@@ -826,6 +826,7 @@ def _block_35() -> str:
     ("RECORDED", None, "0"),                                   # 1i 가 기록한 라우터 주소도 라우터다
     (DIRECT, None, "0"), (DIRECT, "40", "40"),                  # 원격 GLM 직접 — 박스가 적은 값은 덮지 않는다(request-1027 HP-07)
     ("http://127.0.0.1:8000/v1", "40", None), ("http://127.0.0.1:8000/v1", None, None),   # 로컬 vLLM — 종전 그대로(기본 200)
+    ("http://127.0.0.1:8000/v1", "0", "0"),                    # 로컬로 읽힌 박스의 0 — cae00 10-29 로그(request-1030 HP-55)
 ])
 def test_3장5_는_라우터_주소를_원격_LLM_으로_읽는다(box, router, old_router, vb, tm, want):
     """**M3 회귀** — 라우터 주소(127.0.0.1)를 로컬 LLM 으로 읽어, 사본이 라우터로 가는 순간 원격 GLM 의 TOOL_MAX=0 이 빠지고(없으면 안 더하고
@@ -840,6 +841,10 @@ def test_3장5_는_라우터_주소를_원격_LLM_으로_읽는다(box, router, 
     got = re.findall(r"^TOOL_MAX=(.*)$", agent.read_text(), re.M)
     assert got == ([want] if want is not None else []), (got, out)
     assert "TOOL_MAX 미설정" not in out or want is None, "TOOL_MAX=0 이 있는데 '미설정 → 기본 80' 이라고 말했다"
+    # 박스 값 0 은 원격이든 로컬이든 '그대로(무캡)' 다 — 종전엔 로컬로 읽힌 박스(cae00)에서 '미설정 → 기본 200' 이었다(request-1030 HP-55).
+    if tm == "0":
+        assert any(ln.startswith("OK:TOOL_MAX=0 그대로(무캡") for ln in _lines(out, "OK:")), out
+        assert "기본 200" not in out and "상위 0개" not in out, out
 
 
 # ── §4 — §2 뒤에 라우터를 한 번 더 본다(M2) ────────────────────────────────────────────────────────────
