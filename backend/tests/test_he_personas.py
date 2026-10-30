@@ -865,6 +865,33 @@ def test_AD21_거절은_다시_읽지_않고_멈춘다(monkeypatch, capsys):
     rc, _out, err = _run_main(monkeypatch, capsys, hub, "--apply")
     assert rc == 1 and "✗ he-sim-smarttwin 생성 실패 422" in err, err
     assert hub.calls.count(("GET", "agents/he-sim-smarttwin")) == 1
+
+
+def test_AD21_다시_읽은_행이_보낸_칸과_모두_같고_200_일_때만_저장된_것으로_본다(monkeypatch):
+    """칸 하나만 같아도 '저장됐다' 로 넘기면 반쯤 쓴 행 · 옛 행을 맞다고 하고 다음 운영자로 간다."""
+    sync = _sync()
+    want = {"name": "새 이름", "system_prompt": "새 역할", "response_config": {"persona_kind": "mcp_operator", "mcp_apps": ["a"]}}
+    calls: list[str] = []
+
+    def reads(st, cur):
+        def fake(method, url, body=None):
+            calls.append(method)
+            return st, cur
+        monkeypatch.setattr(sync, "_http", fake)
+
+    reads(200, {**want, "id": 7})
+    assert sync._saved_anyway(500, "he-x", want) is True
+    reads(200, {**want, "system_prompt": "옛 역할"})
+    assert sync._saved_anyway(500, "he-x", want) is False, "한 칸이라도 다르면 저장되지 않은 것이다"
+    reads(202, dict(want))
+    assert sync._saved_anyway(503, "he-x", want) is False, "다시 읽기도 200 이어야 한다"
+    reads(404, "not found")
+    assert sync._saved_anyway(500, "he-x", want) is False
+    calls.clear()
+    reads(200, dict(want))
+    assert sync._saved_anyway(422, "he-x", want) is False and calls == [], "4xx 는 거절이다 — 다시 읽지 않는다"
+
+
 # ── update-all §6 — HE팀 운영자 점검(HP-51 · HP-53)을 실행마다 ─────────────────────────────────────────────────────
 # §3 의 미리보기(HP-35)는 새 덤프를 병합한 실행에만 돌고 갱신 전 게이트웨이를 본다 — 덤프가 그대로인 실행(대부분)은 '!' 를 못 봤고,
 # '목록 밖 쓰기' 는 어느 실행에도 올라오지 않았다. 블록은 원문을 떼어 ok · bad 를 셸 함수로 갈아 돌린다(스크립트는 대역).
