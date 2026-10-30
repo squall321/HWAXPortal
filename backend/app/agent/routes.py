@@ -15,6 +15,7 @@ StreamingResponse → nginx buffering-off → fetch+ReadableStream) with no Agen
 
 import asyncio
 import codecs
+import contextlib
 import hashlib
 import json
 import logging
@@ -278,6 +279,52 @@ class ChatDocument(BaseModel):
     text: str = Field(min_length=1, max_length=2000000)
 
 
+# 루틴 입력의 폭주 방지선(docs/analysis-routines R3-design 3.1) — 루틴 변수는 12개까지라(RoutineSpec) 키는 넉넉히 두 배, 길이는 입력 전체를
+# JSON 으로 적은 글자 수다. 형 맞추기 · 모르는 키 · 빠진 필수는 실행을 만드는 포털 /routines-api(_coerce)가 422 로 말한다.
+_ROUTINE_INPUT_KEYS = 24
+_ROUTINE_INPUT_CHARS = 20_000
+
+
+class RoutineReq(BaseModel):
+    """챗 루틴 모드 한 턴(R3-design 3.1) — 새 실행은 {id, version?, inputs, note?}, 이어서 · 다시 붙기는 {run_id}, 끝난 실행의 RA 초안 올리기는
+    {run_id, upload_ra: true}(R3-design 8). 에이전트 서버의 실행기가 게이트웨이 routine_run_start 로 실행을 만들거나 잇는다(R3 D1). 모르는 칸은
+    422 다 — 칸 이름을 틀리게 보낸 루틴이 조용히 다르게 돌지 않게."""
+    model_config = {"extra": "forbid"}
+
+    id: str = Field(default="", max_length=64)
+    version: int | None = Field(default=None, ge=1)
+    inputs: dict[str, str | int | float | bool | dict | list] = Field(default_factory=dict)
+    run_id: str = Field(default="", max_length=64)
+    # 사용자가 덧붙인 말 — 실행기가 새 실행의 routine_run_start(note=…)로 원장에 한 번 남기고, 프롬프트는 이어서 · 다시 붙기에서도 원장 값을 쓴다
+    # (화면 글 '루틴 이어서: <제목>' 이 덧붙인 말을 덮지 않게). 상한은 포털 RunIn · 게이트웨이 routine_run_start 와 같은 2,000자다.
+    note: str = Field(default="", max_length=2000)
+    # 끝난 실행의 저장 보고서를 RA 초안으로 올린다(ra.upload 'ask' — 화면의 'RA 초안 올리기'). 바깥에 글을 만드는 동작이라 참거짓만 받는다 —
+    # "true" · 1 을 true 로 바꿔 올리지 않는다(DelibOpts.consent_external 과 같은 까닭).
+    upload_ra: StrictBool = False
+
+    @field_validator("inputs")
+    @classmethod
+    def _inputs_cap(cls, v: dict) -> dict:
+        if len(v) > _ROUTINE_INPUT_KEYS:
+            raise ValueError(f"루틴 입력 {len(v)}개가 상한 {_ROUTINE_INPUT_KEYS}개를 넘는다")
+        n = len(json.dumps(v, ensure_ascii=False))
+        if n > _ROUTINE_INPUT_CHARS:
+            raise ValueError(f"루틴 입력(JSON) {n:,}자가 상한 {_ROUTINE_INPUT_CHARS:,}자를 넘는다")
+        return v
+
+    @model_validator(mode="after")
+    def _id_or_run_id(self) -> "RoutineReq":
+        if not (self.id or self.run_id):
+            raise ValueError("루틴 요청에는 id(새 실행)나 run_id(이어서)가 있어야 한다")
+        return self
+
+    @model_validator(mode="after")
+    def _upload_needs_run_id(self) -> "RoutineReq":
+        if self.upload_ra and not self.run_id:
+            raise ValueError("upload_ra(RA 초안 올리기)는 끝난 실행의 run_id 와 함께 보낸다 — 새 실행에는 올릴 보고서가 아직 없다")
+        return self
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=_WINDOW_CHARS)  # 폭주 방지선 — 창 하나(종전 65,536)
     system_id: str | None = Field(default=None, max_length=128)  # sub-page → tool scope (Phase 2)
@@ -312,6 +359,9 @@ class ChatRequest(BaseModel):
     # delib_opts 가 아니라 top-level 인 이유는 매 턴 켜져 있어야 하는 모드이기 때문이다
     # (프론트 슬래시 접두사는 첫 발화에만 붙는다). 여기 선언하지 않으면 조용히 유실된다.
     thinking: bool = False
+    # 분석 루틴(챗 루틴 모드, docs/analysis-routines R3-design) — 권한 feat:routines. message 는 그대로 필수다(사람 글이 없으면 '루틴: <제목>').
+    # 에이전트 서버 ChatRequest 에도 같은 칸이 있어야 한다 — 없으면 조용히 버려져 그 글이 일반 챗으로 돈다(시험이 AST 로 본다).
+    routine: RoutineReq | None = None
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -755,6 +805,15 @@ async def _relay_stream(
     chat_id = "relay"
     audit.record(principal=principal.subject, event="chat_start", chat_id=chat_id,
                  meta={"agent": settings.agent_server_url, "system_id": body.system_id})
+    routine = body.routine is not None
+    if routine and not user_pat:
+        # 루틴은 사람 PAT 로만 돈다(AR-D4) — 발급이 실패하면 일반 챗처럼 서비스 계정(GW_TOKEN)으로 떨어지지 않고(게이트웨이도 거절한다)
+        # 에이전트 서버를 부르지 않는다. 실행을 만들기 전이라 원장에 남는 것이 없다.
+        audit.record(principal=principal.subject, event="chat_error", chat_id=chat_id,
+                     status="error", meta={"reason": "routine_no_pat"})
+        yield sse_event("error", {"code": "routine_no_pat", "message": "루틴은 사람 토큰으로만 돈다 — 다시 로그인한 뒤 보낸다"})
+        yield sse_event("done", {})
+        return
     payload = {
         "message": body.message,
         "system_id": body.system_id,
@@ -794,9 +853,13 @@ async def _relay_stream(
         payload["images"] = [i.model_dump() for i in body.images]
     if body.conversation_id:  # 서버 대화 id — 에이전트가 챗 LLM 호출의 대화 머리(X-Session-Affinity)로만 쓴다(docs/request-1029 W-1)
         payload["conversation_id"] = body.conversation_id
+    if routine:  # 분석 루틴 — 채운 칸만(새 실행은 id · version · inputs · note, 이어서는 run_id, RA 초안 올리기는 run_id · upload_ra).
+        # version 은 1 이상이라 참거짓으로 걸러도 된다. 빈 note · 거짓 upload_ra 도 싣지 않는다 — 칸이 없으면 실행기는 종전 그대로다
+        payload["routine"] = {k: v for k, v in body.routine.model_dump().items() if v}
     # 침묵 한도 — 심의는 공유 클라이언트의 값(AGENT_STREAM_IDLE_TIMEOUT_S), 챗은 짧은 값(AGENT_CHAT_IDLE_TIMEOUT_S)을 이 요청에만 준다(P-1 ④).
+    # 루틴 턴도 심의 쪽이다 — 단계 하나(작은 ReAct · 심의 단계)가 챗 한도보다 오래 조용할 수 있다(R3 D9).
     delib = _is_delib_message(body.message)
-    if delib:
+    if delib or routine:
         stream_kw: dict = {}
         idle, knob = client.timeout.read, "AGENT_STREAM_IDLE_TIMEOUT_S"
     else:
@@ -830,7 +893,12 @@ async def _relay_stream(
         audit.record(principal=principal.subject, event="chat_error", chat_id=chat_id,
                      status="error", meta={"reason": "agent_stream_idle", "idle_s": idle})
         logger.warning("에이전트 서버 스트림이 %s초 동안 조용해 구독을 끊었다(%s) sub=%s", idle, knob, principal.subject)
-        if delib:
+        if routine:
+            # 루틴은 에이전트 서버에서 떼어 낸 작업이다(R3 D7) — 구독이 끊겨도 서버에서 돈다. 새로 시작하면 두 번째 실행이 나란히 돈다.
+            msg = (f"에이전트 서버가 {idle:.0f}초 동안 아무 신호도 보내지 않아 구독을 끊었다"
+                   "(AGENT_STREAM_IDLE_TIMEOUT_S). 루틴은 서버에서 계속 돌 수 있다 — 새로 시작하기 전에 "
+                   "'이어서' 로 그 실행에 다시 붙어라")
+        elif delib:
             msg = (f"에이전트 서버가 {idle:.0f}초 동안 아무 신호도 보내지 않아 구독을 끊었다"
                    "(AGENT_STREAM_IDLE_TIMEOUT_S). 심의는 서버에서 계속 돌 수 있다 — 다시 시작하기 전에 "
                    "Report Archive 와 대화 목록을 확인하라")
@@ -2373,6 +2441,57 @@ async def deliberate_voc(
 # 않게 한다. 보통 챗 한 턴은 수 MB 안이다(생각 글 24만 자도 1 MB 남짓). 넘으면 그 스트림만 종전처럼 상류 읽기를 멈춘다.
 _RELAY_BUFFER_BYTES = 64 * 1024 * 1024
 _RELAY_DONE = object()
+# 브라우저가 떠난 뒤에도 상류를 끝까지 읽는 루틴 턴의 pump(R3 D9) — 아무도 await 하지 않는 작업은 이벤트 루프가 약한 참조만 쥐어 도는
+# 중에 GC 될 수 있다. 끝나면 빠진다.
+_DETACHED_RELAYS: set[asyncio.Task] = set()
+
+
+def _detached_relay_done(task: asyncio.Task) -> None:
+    _DETACHED_RELAYS.discard(task)
+    if not task.cancelled() and task.exception() is not None:
+        # 받아 줄 쪽이 없다 — 남기지 않으면 'Task exception was never retrieved' 만 GC 때 찍힌다.
+        logger.warning("루틴 턴 중계 — 브라우저가 떠난 뒤 상류를 읽다 실패했다", exc_info=task.exception())
+
+
+# 떼어 낸 pump 의 상한 — 하나가 챗 퍼밋 하나와 에이전트 서버 연결 하나를 실행이 끝날 때까지(분 ~ 시간) 쥔다. 넘으면 그 턴은 일반 턴처럼
+# 브라우저가 떠날 때 상류를 끊고 로그 한 줄을 남긴다. 실행은 에이전트 서버가 따로 떼어 낸 작업이라 그대로 돈다 — 대화에는 받은 데까지와
+# 실행 포인터(meta.routine)가 남아 '이어서' 로 다시 붙는다. 에이전트 서버 동시 실행(ROUTINE_MAX_RUNNING, 기본 2)과 다시 붙은 탭 몫을 넉넉히
+# 덮는다. 박스 설정에 같은 꼴의 손잡이가 없어 상수로 둔다.
+_DETACHED_RELAYS_MAX = 8
+# 답 글 없이 끝난 루틴 턴의 답 — 중계가 침묵 한도에 끊겼거나(ReadTimeout) 에이전트 서버가 루틴 프레임 뒤에 죽었다. 글이 없다고 답을 버리면
+# 대화에서 run_id 가 사라져 그 실행으로 돌아갈 길이 없다(화면은 meta.routine.run_id 로 원장을 읽는다). 루틴이 아닌 턴은 종전대로 빈 답을 남기지 않는다.
+_ROUTINE_EMPTY_REPLY = "(루틴 실행 — 단계와 보고서는 위 실행 보기에서 이어서 본다)"
+# 실행의 끝 상태 — 이 상태의 같은 글 답은 (대화, 실행)마다 하나만 남긴다(_routine_save_lock · _routine_answered).
+_ROUTINE_TERMINAL = ("done", "failed", "cancelled")
+# (대화 id, 실행 id) → [잠금, 쥐거나 기다리는 수]. 마지막으로 놓는 쪽이 지운다 — 실행마다 하나씩 쌓이지 않게.
+_ROUTINE_SAVE_LOCKS: dict[tuple[str, str], list] = {}
+
+
+@contextlib.asynccontextmanager
+async def _routine_save_lock(key: tuple[str, str]) -> AsyncIterator[None]:
+    """끝난 루틴 턴의 답 저장을 (대화 id, 실행 id)마다 하나씩 한다. 두 탭(떼어 낸 첫 턴과 '이어서' 로 다시 붙은 턴)이 같은 실행을 끝까지
+    읽으면 둘 다 '아직 없다' 를 본 뒤 둘 다 넣어 보고서가 두 번 남는다 — 확인과 넣기는 이 잠금 안의 스레드 호출 하나다(포털은 루프 하나다)."""
+    slot = _ROUTINE_SAVE_LOCKS.setdefault(key, [asyncio.Lock(), 0])
+    slot[1] += 1
+    try:
+        async with slot[0]:
+            yield
+    finally:
+        slot[1] -= 1
+        if not slot[1]:
+            _ROUTINE_SAVE_LOCKS.pop(key, None)
+
+
+def _routine_answered(conv: dict | None, run_id: str, state: str, reply: str) -> bool:
+    """대화에 이 실행의 같은 끝 상태 · 같은 글 답이 이미 있는가 — 스레드에서, _routine_save_lock 안에서 부른다. 글까지 본다 — 같은 실행의
+    같은 끝이라도 글이 다르면 다른 턴의 답이다(끝난 실행의 'RA 초안 올리기' 안내 — 종전엔 보고서에 가려 버려졌다). 공백만 다른 글은 같은 글이다."""
+    norm = " ".join(reply.split())
+    for m in (conv or {}).get("messages") or []:
+        rt = (m.get("meta") or {}).get("routine") if m.get("role") == "assistant" else None
+        if (isinstance(rt, dict) and rt.get("run_id") == run_id and rt.get("state") == state
+                and " ".join(str(m.get("content") or "").split()) == norm):
+            return True
+    return False
 
 
 class _ReleasingStream(StreamingResponse):
@@ -2407,6 +2526,10 @@ async def chat(
     # 권한 — 메뉴를 숨겨도 요청은 직접 보낼 수 있다. 세마포어를 잡기 전에 거절한다.
     check_chat(request.app.state.access.get(), principal, thinking=body.thinking,
                pinned_agent=body.pinned_agent, pinned_agents=body.pinned_agents)
+    # 분석 루틴 — 메뉴를 숨겨도 요청은 직접 보낼 수 있다(R3-design 5). 에이전트 서버도 entitlements 로 한 번 더 본다.
+    routine_turn = body.routine is not None
+    if routine_turn:
+        ensure(principal, "feat:routines")
     sem = _sem(request)
     audit = _audit(request)
     # SSE holds a worker for the stream's lifetime → cap, and reject (not queue) over the cap.
@@ -2428,6 +2551,15 @@ async def chat(
         if not released:
             released = True
             sem.release()
+
+    # 루틴 턴은 pump 가 돌기 시작하면 퍼밋을 pump 가 끝날 때 돌려준다 — 브라우저가 먼저 떠나도 상류를 끝까지 읽는 동안 쥔다(R3 D9).
+    # 에이전트 서버로 가는 풀(max_connections)이 퍼밋 수와 같아, 퍼밋 없이 도는 상류 연결은 다른 챗을 풀 대기(agent_unreachable)로
+    # 밀어낸다 — 넘치면 들어올 때 429 로 말하는 편이 정직하다. pump 가 돌기 전에 끝나면(헤더를 보내다 끊김) 종전처럼 응답이 돌려준다.
+    pumping = False
+
+    def _on_close() -> None:
+        if not (routine_turn and pumping):
+            _release()
 
     # ⚠ acquire 와 gen() 사이는 반드시 보호한다. 여기서 예외가 나면 gen() 이 아예
     # 만들어지지 않으므로 그 안의 finally(sem.release) 가 영원히 실행되지 않는다 —
@@ -2477,6 +2609,7 @@ async def chat(
         activity: list[dict] = []    # status 이벤트(도구 호출·결과) 누적 — 심의 핸드오프 스냅샷 서버 영속
         delib_ev: list[dict] = []    # 심의 근거 카드(좌석 조회 결과·엔진의 '줄였다·뺐다' 알림) — 서버 사본에도 남긴다
         user_images: list[str] = []  # 이 발화에 올린 그림의 주소(user_images) — 서버 사본의 답 meta 에 남겨 다른 기기의 이력에도 그림이 실리게
+        routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
         # 청크는 글자 경계와도 안 맞는다 — 한글 한 자(3바이트)가 두 청크로 갈리면 청크마다 따로 풀 때 그 자리가 '�' 로
         # 깨져 서버 사본에 들어간다. 발언이 길수록(줄이지 않은 글은 수만 자다) 걸린다. 이어지는 바이트를 쥐고 푼다.
@@ -2484,10 +2617,12 @@ async def chat(
         # 상류 읽기를 브라우저 쓰기와 뗀다(HWAXPortal docs/request-1029 P-1 ① · C-5). 숨은 탭은 끊긴 것이 아니라 읽기가 멈춘 것이다 — 종전엔
         # 그동안 이 생성기가 yield 에 서서 상류도 읽지 않아, 에이전트 응답 · 서버 사본 저장 · 퍼밋이 탭을 깨울 때까지 묶였다(OT-07 25분 ·
         # OT-13 5분 반). 이제 pump 가 상류를 끝까지 읽어 저장하고 퍼밋을 돌려준다. 브라우저가 끊으면(중지 · 탭 닫기) 종전처럼 상류도 끊는다.
+        # 루틴 턴만 다르다 — 브라우저가 떠나도 상류를 끝까지 읽어 대화에 남긴다(R3 D9). 멈춤은 화면이 실행을 멈추는 것(/cancel)이다.
         q: asyncio.Queue = asyncio.Queue()
         room = asyncio.Event()
         pending = 0                  # 브라우저가 아직 안 읽은 바이트 — _RELAY_BUFFER_BYTES 를 넘으면 그때만 종전처럼 상류 읽기를 멈춘다
         warned = False
+        detached = False             # 루틴 턴 — 브라우저가 떠났다(아래 finally). 그 뒤 프레임은 저장할 것만 모으고 큐에 쌓지 않는다
 
         async def pump() -> None:
             nonlocal final, decision, user_images, buf, pending, warned
@@ -2542,6 +2677,17 @@ async def chat(
                                 # 주소 꼴만 받는다 — 이력 항목(ChatHistoryMessage.images)이 받는 꼴과 같아야 다음 턴에 422 가 안 난다.
                                 user_images = [u for u in data["urls"]
                                                if isinstance(u, str) and _ARTIFACT_IMAGE_RE.fullmatch(u)][:_IMAGES_MAX]
+                            elif evt == "routine" and isinstance(data.get("run_id"), str) and data["run_id"]:
+                                # 분석 루틴(R3-design 3.2 · 3.3) — 대화에는 포인터만 남긴다(정본은 포털 원장, 단계 · 보고서는 화면이 run_id 로 읽는다).
+                                # 실행 id 는 모든 프레임에, 루틴 id · 제목은 plan 에, 실행 상태는 plan · done 에 있다. 마지막 값이 이긴다.
+                                # ⚠ step · step_done 의 state 는 단계 상태다 — 실행 상태로 읽으면 끝난 실행이 'ok' 로 남는다.
+                                routine_ptr["run_id"] = data["run_id"]
+                                if data.get("kind") == "plan":
+                                    for _k in ("routine_id", "title"):
+                                        if isinstance(data.get(_k), str):
+                                            routine_ptr[_k] = data[_k]
+                                if data.get("kind") in ("plan", "done") and isinstance(data.get("state"), str):
+                                    routine_ptr["state"] = data["state"]
                             elif evt == "status" and data.get("tool"):
                                 # 도구가 붙은 status 만 근거로 남긴다(진행 텍스트만 있는 건 스냅샷 대상 아님).
                                 activity.append({
@@ -2575,13 +2721,17 @@ async def chat(
                                     "result_full": (str(data["result_full"]) if data.get("result_full") else None),
                                 })
                     n = len(frame)
-                    while pending and pending + n > _RELAY_BUFFER_BYTES:
+                    # 루틴 턴에서 브라우저가 떠났으면(detached) 상한 대기도 큐도 건너뛴다 — 아무도 읽지 않으니 기다리면 상류 읽기가 영영 멈추고,
+                    # 쌓으면 pump 가 끝날 때까지 메모리만 쥔다.
+                    while not detached and pending and pending + n > _RELAY_BUFFER_BYTES:
                         if not warned:
                             warned = True
                             logger.warning("챗 중계 — 브라우저가 %s바이트를 읽지 않아 상한(%s)에 닿았다. 읽을 때까지 상류 읽기를 멈춘다 sub=%s",
                                            f"{pending:,}", f"{_RELAY_BUFFER_BYTES:,}", owner)
                         room.clear()
                         await room.wait()
+                    if detached:
+                        continue
                     pending += n
                     q.put_nowait(frame)
             finally:
@@ -2596,6 +2746,10 @@ async def chat(
                     # ⚠ 가려야(shield) 한다. 브라우저가 도중에 떠나면 Starlette 가 이 태스크를 취소하고, 취소된 채로 만난 await 는
                     #   곧바로 CancelledError 다 — 가리지 않으면 떠난 사람의 심의는 받은 발언이 하나도 저장되지 않는다(사본 재현 —
                     #   저장된 역할이 ['user', 'persona'] 에서 ['user'] 로). 긴 심의일수록 사람은 창을 닫고 떠난다.
+                    # 끝난 루틴 턴의 같은 글 답은 (대화, 실행)마다 하나다 — 아래 저장을 그 잠금 안에서 한다(_routine_save_lock).
+                    _rt_key = ((cid, routine_ptr["run_id"])
+                               if routine_turn and routine_ptr.get("state") in _ROUTINE_TERMINAL else None)
+
                     def _save() -> None:
                         # ⚠ 저장이 실패하면 **로그로 말한다.** 여기는 스트림이 닫힌 뒤라 예외가 나도 화면에 갈 길이 없고,
                         #   로그가 없으면 몇 시간 돈 심의의 서버 사본이 빠진 것을 아무도 모른다(브라우저 사본만 남는다).
@@ -2632,22 +2786,32 @@ async def chat(
                                              round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
                                              meta=(_m or None))
                             reply = final if final is not None else (decision or "".join(acc))
+                            if not reply and routine_turn and routine_ptr:
+                                reply = _ROUTINE_EMPTY_REPLY   # 글 없이 끊긴 루틴 턴 — 그래도 남겨 run_id 를 잃지 않는다
                             if reply:
                                 _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
                                                          ("user_images", user_images)) if v}
-                                store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
-                                             meta=(_am or None))
+                                if routine_ptr:      # 분석 루틴 — 네 칸을 늘 싣는다(모르는 값은 null)
+                                    _am["routine"] = {k: routine_ptr.get(k) for k in ("run_id", "routine_id", "title", "state")}
+                                # 다른 탭의 중계가 같은 실행의 같은 끝 · 같은 글을 이미 남겼으면 넣지 않는다 — 보고서가 두 번 남지 않게. 이 턴의
+                                # 사용자 발화는 시작할 때 이미 남았다. 글이 다르면(끝난 실행의 RA 초안 올리기 안내) 이 턴의 답이라 남긴다.
+                                if _rt_key is None or not _routine_answered(store.get(cid, owner), _rt_key[1],
+                                                                            routine_ptr["state"], reply):
+                                    store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
+                                                 meta=(_am or None))
                         except sqlite3.Error as exc:
                             logger.warning("대화 저장 실패 — %s(잠금 대기 CONV_STORE_BUSY_TIMEOUT_S=%s초), cid=%s · 심의 발언 %d건과 "
                                            "최종 응답 중 일부가 서버 대화에 없다", exc, settings.conv_store_busy_timeout_s, cid,
                                            len(turns))
 
                     with anyio.CancelScope(shield=True):
-                        await anyio.to_thread.run_sync(_save)
+                        async with (_routine_save_lock(_rt_key) if _rt_key else contextlib.nullcontext()):
+                            await anyio.to_thread.run_sync(_save)
                     # 이 턴의 도구 호출을 **절차 원장**에도 남긴다 — 하나의 원장, 세 생산자
                     # (PLAN §9-9). 대화 저장과 별개이고, 실패해도 챗을 막지 않는다.
+                    # 루틴 턴은 건너뛴다 — 그 호출은 루틴 원장(routine_calls)에 이미 있어 여기 또 넣으면 두 벌이다(R3 D9).
                     _pstore = getattr(request.app.state, "procedures_store", None)
-                    if _pstore is not None and activity and cid:
+                    if _pstore is not None and activity and cid and not routine_turn:
                         from app.procedures import from_chat as _fc
 
                         _fc.record(_pstore, owner_sub=owner, conversation_id=cid,
@@ -2655,7 +2819,9 @@ async def chat(
                                    title=(str(body.message or "")[:60].strip() or None))
 
 
+        nonlocal pumping
         task = asyncio.create_task(pump())
+        pumping = True               # 루틴 턴의 퍼밋은 이제 pump 의 finally 가 돌려준다(_on_close 는 손대지 않는다)
         try:
             while True:
                 frame = await q.get()
@@ -2664,15 +2830,34 @@ async def chat(
                 pending -= len(frame)
                 room.set()
                 yield frame
-            await task               # 상류 쪽 예외는 종전처럼 응답을 끊는다
+            # 상류 쪽 예외는 종전처럼 응답을 끊는다. 루틴 턴은 가린다 — pump 의 finally 를 기다리는 사이 브라우저가 떠나면 이 취소가
+            # 기다리던 pump 로 번진다. finally 를 감싼 anyio CancelScope(shield) 는 asyncio 취소를 막지 못해(실측), 상류를 닫는 await
+            # (pump 가 터져 끝났을 때)에서 끊기면 퍼밋 반납 · 저장을 건너뛴다 — 루틴 턴은 퍼밋을 pump 만 돌려주므로 영영 샌다.
+            await (asyncio.shield(task) if routine_turn else task)
         finally:
-            if not task.done():
-                task.cancel()        # 브라우저가 떠났다 — 상류도 끊는다(pump 의 finally 가 받은 것까지 저장한다)
-            with anyio.CancelScope(shield=True):
-                await asyncio.gather(task, return_exceptions=True)
-            _release()
+            if routine_turn and not task.done() and len(_DETACHED_RELAYS) < _DETACHED_RELAYS_MAX:
+                # 브라우저가 떠났다 — 루틴 턴은 상류를 끝까지 읽어 대화에 남긴다(R3 D9). 취소하지 않고 기다리지도 않는다(실행은 분 ~ 시간이다).
+                # 이벤트 루프는 작업을 약하게만 쥐므로 모듈 집합이 쥔다. 저장 · 퍼밋 반납은 pump 의 finally 가 한 번 한다.
+                detached = True
+                room.set()           # 상한 대기(room.wait)에 서 있던 pump 를 깨운다
+                while not q.empty():
+                    q.get_nowait()   # 아무도 안 읽을 프레임 — 메모리를 놓는다
+                _DETACHED_RELAYS.add(task)
+                task.add_done_callback(_detached_relay_done)
+            else:
+                if routine_turn and not task.done():
+                    # 떼어 낸 중계가 상한만큼 돈다 — 이 루틴 턴은 일반 턴처럼 상류를 끊는다. 에이전트 서버의 실행은 따로 떼어 낸 작업이라 계속 돌고,
+                    # 받은 데까지와 실행 포인터는 pump 의 finally 가 남긴다. 퍼밋은 아래에서 돌려준다(_on_close 는 루틴 턴에 손대지 않는다).
+                    logger.warning("루틴 턴 중계 — 떼어 낸 중계가 상한 %d개에 닿아 브라우저가 떠난 이 턴은 상류를 끊는다. 실행은 에이전트 "
+                                   "서버에서 계속 돈다('이어서' 로 다시 붙는다) run_id=%s sub=%s",
+                                   _DETACHED_RELAYS_MAX, routine_ptr.get("run_id"), owner)
+                if not task.done():
+                    task.cancel()        # 브라우저가 떠났다 — 상류도 끊는다(pump 의 finally 가 받은 것까지 저장한다)
+                with anyio.CancelScope(shield=True):
+                    await asyncio.gather(task, return_exceptions=True)
+                _release()
 
-    return _ReleasingStream(gen(), _release, media_type="text/event-stream", headers=SSE_HEADERS)
+    return _ReleasingStream(gen(), _on_close, media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 # ── 카드 대조 중계(리스크 심사 재설계 M2 · WP3a P1) ─────────────────────────────────────────────────────
