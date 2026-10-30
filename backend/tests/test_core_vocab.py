@@ -4,6 +4,7 @@
 각자의 리포에서 이 파일을 실제로 읽어 본다.
 """
 import json
+import re
 from pathlib import Path
 
 VOCAB = Path(__file__).resolve().parents[1] / "config" / "core_vocab.json"
@@ -32,6 +33,11 @@ def test_꼴과_필수_칸():
         seen |= set(e["words"])
     for r in d["relations"]:
         assert r["phrase"].strip() and r["relation"] == r["relation"].strip() and " " not in r["relation"]
+    vocab_words = set(d["rule_words"]) | {w for e in d["search"] for w in e["words"]}
+    assert d["types"] and isinstance(d["types"], dict)
+    for w, slug in d["types"].items():
+        assert w in vocab_words, f"타입 대응의 낱말은 어휘표 낱말(rule_words · search)이다 — {w}"
+        assert re.fullmatch(r"[a-z][a-z0-9_]*", slug), f"타입 이름은 허브의 slug 꼴이다 — {slug}"
     for key, a in d["apps"].items():
         assert a["role"] in ROLES, (key, a)
         assert a.get("label", "").strip(), key
@@ -54,3 +60,11 @@ def test_요청서가_짚은_낱말과_앱이_들어_있다():
     assert {"fmea", "arp", "odb-hub", "reportarchive", "matnexus", "componentcore"} <= noncore
     assert {k for k, a in d["apps"].items() if a["role"] == "staging"} == {"stepforge-prod", "dynaforge-prod"}
     assert {r["relation"] for r in d["relations"]} == {"occurs_in_part", "detects", "predicts", "guards_against"}
+
+
+def test_HA32_요청서가_이름을_댄_타입_대응():
+    """10-30 HA-32 — 챗이 없는 타입 이름을 지어냈다(DW-22 의 management_standard, 실제는 criterion). 요청서가 이름을 댄 대응 셋이 빠지면 고친 것이
+    사라진다."""
+    d = _load()
+    assert {"고장모드": "failure_mode", "관리 기준": "criterion", "시험항목": "test_item"}.items() <= d["types"].items()
+    assert "management_standard" not in d["types"].values()
