@@ -839,7 +839,7 @@ stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치�
 ## 2026-10-30 반영분 — 낙하 트윈(DynaForge 후처리 반입)
 
 cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main
-`3b867b1` — §0 7번 · §1 소스 줄 · §4-2 · §5 S1 자리 · §5-1 을 고친 판)이고, 명령 · 기대값은 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
+`1956326` — §0 7번 · §1 소스 줄 · §4-2 · §5 S1 자리(정해짐 — `Output/s1.h5`) · §5-1 을 고친 판)이고, 명령 · 기대값은 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
 `docs/01-plan/features/{postprocess-reservation-1028,sphere-risk-map-1029}.plan.md` · 총괄 `drop-twin-1028.checklist.md`, KooSlurm 쪽은 KooSlurm
 `docs/sso_enable_20261029/{icn401_apply_check,sso_enable_procedure}.md`(origin `46c647e4`). 포털 쪽 몫은 R2a 제출 씨앗의 후처리 예약(`9ce09b6`,
 절차 context-notes W-101)과 과제 메타 넷(`project` · `dev_rev` · `variation` · `doe` — 선택 변수, 비우면 그 칸이 빠진다, W-102)이다 — 기존 씨앗을 들인 사람은
@@ -931,9 +931,9 @@ bash stcx_viz_readcheck.sh <viz 파티션> <노드> <S1 결과 폴더>    # 2단
 ```
 
 - 2단계 앞뒤로 cae00 에서 `~/stcx-llm/llmctl.sh status`(챗 LLM 이 그대로인지).
-- **<S1 결과 폴더>** — S1 은 아직 나오지 않았다(KooD3plotReader 추출기 계약 대기). 둘 자리는 추출기 쪽(KooD3plotReader)이 정한다 — 후보는 각도 run 폴더 안
-  `Output/s1.h5` 와 결과 옆 `<RESULT_DIR>/output/s1/` 둘이고, 둘 다 `<RESULT_DIR>/output` 아래다. 그러니 지금은 운영 전각도 잡 하나의 `<RESULT_DIR>/output`
-  (sphere_report.html 이 있는 곳 — 귀환 매니페스트의 `job.result_dir`)로 마운트를 본다.
+- **<S1 결과 폴더>** — S1 은 아직 나오지 않았다(KooD3plotReader 추출기 계약 대기). 둘 자리는 정해졌다 — 각도 run 폴더의 `Output/s1.h5`(KooD3plotReader
+  계약 초안 2, 10-30 — `<RESULT_DIR>/output` 아래). 추출기는 아직 운영 이미지에 없다(libhdf5 를 넣은 다음 판 대기). 그러니 지금은 운영 전각도 잡 하나의
+  `<RESULT_DIR>/output`(sphere_report.html 이 있는 곳 — 귀환 매니페스트의 `job.result_dir`)로 마운트를 본다.
 - 스크립트를 못 옮기면 한 줄씩 — SceneForge `docs/requests/dynaforge-sceneforge-tasks-reply-2026-10-29.md` 「cae00 명령」 절(sinfo · squeue · 챗 LLM
   sbatch gres · scontrol config · `nvidia-smi` · `ldconfig -p` 로 GL/EGL/NVENC/Vulkan 라이브러리 · `apptainer --version` · `ls -la <폴더>`).
 - 제어면 준비로 둘 더 — SceneForge 를 돌릴 cae00 계정에서 `ssh -o BatchMode=yes stcx true && echo ok`(sbatch 낼 길이 비밀번호 없이 열리나, C-13) ·
