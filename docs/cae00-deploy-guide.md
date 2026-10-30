@@ -1019,3 +1019,19 @@ SP 허브 주소 · `core:read` 토큰(받기를 켜는 조건 — 넣으면 시
 10-30 판부터 선택 변수로 묻는다(W-102) — 비우면 그 칸이 빠지고, 메타 없이 반입된 리포트는 find_reports · report_facets 의 과제 간 비교에서 빠진다.
 `dev_rev` 는 DynaForge 가 반입 때 받는 꼴(pre · dv1~3 · dvr · pv1~3 · pvr · pra · mp)에서 고른다 — DynaForge `3574342` 부터는 틀린 꼴이 예약 때 422 다
 (그 앞 판은 잡이 끝난 뒤 반입에서야 실패했다).
+
+## 2026-10-31 반영분 — 10-30 수정 요청(웹 챗 재시험 · 디지털 워커 QA) · 받은 편지함
+
+**받기 전에 [request-1030/server-setup.md](request-1030/server-setup.md) 를 읽는다** — 받는 판 표 · 확인 · 손잡이 · 다시 볼 시험 · 사람 몫이 한 장이다.
+정본은 같은 [request-1030/](request-1030/)(PLAN · checklist · context-notes C-1 ~ C-23 · outbound)다. 받는 길은 그대로 `git pull && update-all` 이다.
+받기 전에 읽으려면 `git fetch` 뒤 `git show origin/main:docs/request-1030/server-setup.md` 로 본다(작업 트리는 그대로다).
+
+- ⚠ **AIDataHub 데이터 단계에는 차례가 있다** — dev 지우기(사용자가 직접)가 실린 덤프가 이 박스에 병합되기 **전에** OB-73 의 K9(데모 카드 `…012`)을
+  본다. 병합이 레코드의 소프트 삭제를 옮겨 카드가 목록에서 빠진다(server-setup 8-3).
+- **챗 관문 넷(HA-27 ~ HA-30)** — 에이전트 서버와 포털(화면 Drive `images-20261030-220551Z`)을 같은 판으로 받는다. 받은 뒤 `/health` 넷과 update-all §7 줄을
+  본다(6-1). 손잡이는 모두 에이전트 서버 재기동 뒤에 먹는다(6-2).
+- **받은 편지함** — update-all 이 git 받기 뒤 `→ cae00 받은 편지함 — …` 줄로 이번 판의 새 글을 알리고 끝 요약에서 다시 낸다.
+  [cae00-inbox/README.md](cae00-inbox/README.md) 대로 이 박스에서 읽기만으로 답하고, 답은 리포 밖 파일로 사용자에게 준다 — 이 박스에서 리포에 커밋하지 않는다.
+- **AIDataHub 병합** — `6f496fa` 는 병합 스크립트 고침이라 Drive 덤프가 그대로면 update-all 이 돌리지 않는다. 받은 뒤 `./deploy/apptainer/merge-from-drive.sh` 를
+  한 번 손으로 돈다(8-1).
+- **OB-04 · OB-26** — 박스 권한표의 '(시험)' 라벨 고치기와 ODB 허브 입구 도구 노출 꼴 확인(7절).
