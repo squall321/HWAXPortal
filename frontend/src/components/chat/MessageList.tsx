@@ -9,6 +9,7 @@ import { copyText } from './clipboard';
 import { wikiNotice } from './uploadNotice';
 import { AgentCatalogBlock } from './AgentCatalogBlock';
 import { ConfirmCard } from './ConfirmCard';
+import { confirmState, type ConfirmState } from './confirm';
 import { DelibView } from './DelibView';
 import { RoutineView } from './RoutineView';
 import { ThinkView } from './ThinkView';
@@ -105,7 +106,7 @@ function UserImages({ msg }: { msg: Message }) {
   );
 }
 
-function Row({ msg, answered = false }: { msg: Message; answered?: boolean }) {
+function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
   if (msg.role === 'user') {
     return (
       <div className="msg user">
@@ -188,7 +189,7 @@ function Row({ msg, answered = false }: { msg: Message; answered?: boolean }) {
           <div className="msg-warn" role="status">⚠ {msg.warn}</div>
         )}
         {msg.error && <ErrorBlock raw={msg.error} />}
-        {!msg.streaming && msg.confirm && <ConfirmCard card={msg.confirm} answered={answered} />}
+        {!msg.streaming && msg.confirm && card && <ConfirmCard card={msg.confirm} state={card} />}
         {!msg.streaming && msg.meta?.self_check && <CheckNote check={msg.meta.self_check} />}
       </div>
       {!msg.streaming && msg.text && (
@@ -315,8 +316,8 @@ export function MessageList({ messages }: { messages: Message[] }) {
     endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   };
 
-  // 확인 카드는 그 뒤에 사람 말이 하나라도 있으면 답한 것이다 — 단추를 잠근다(서버도 다음 말 하나로 카드를 닫는다)
-  const lastUser = messages.map((m) => m.role).lastIndexOf('user');
+  // 확인 카드는 바로 다음 말 하나로만 답한다 — 뒤에 무엇이든 붙었으면 단추를 잠근다(confirm.ts — 서버의 답 판정과 같은 조건)
+  const now = Date.now();
 
   return (
     <div className="msg-wrap">
@@ -330,7 +331,7 @@ export function MessageList({ messages }: { messages: Message[] }) {
             </div>
           )}
           {messages.map((m, i) => (
-            <Row key={m.id} msg={m} answered={i < lastUser} />
+            <Row key={m.id} msg={m} card={m.confirm ? confirmState(messages, i, now) : undefined} />
           ))}
           <div ref={endRef} />
         </div>

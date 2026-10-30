@@ -506,13 +506,21 @@ ol.md-list li.md-li-d2 {
   margin: 0.3rem 0 0;
 }
 
-/* 확인 카드(10-30 HA-29) — 본문의 카드 글 아래 단추 줄. 답했거나 30분이 지나면 단추가 잠긴다 */
+/* 확인 카드(10-30 HA-29) — 본문의 카드 글 아래 단추 줄. 답할 수 없는 카드 · 입력창에 쓰던 글이 있을 때는 단추가 잠긴다 */
 .msg-confirm {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.6rem;
+}
+/* 잠긴 단추 — .btn-secondary 에는 :disabled 꼴이 없어 잠긴 '취소' 가 켜진 단추와 똑같이 보였다(.btn-primary:disabled 와 같은 꼴로) */
+.msg-confirm button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.msg-confirm .btn-secondary:disabled:hover {
+  background: transparent;
 }
 .msg-confirm-note {
   color: var(--fg-muted);
