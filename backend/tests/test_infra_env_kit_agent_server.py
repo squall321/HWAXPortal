@@ -280,3 +280,14 @@ def test_킷의_수치로_안쪽_한도가_바깥보다_작다():
     assert k["KNOWLEDGE_TIMEOUT_S"] < k["MCP_CALL_TIMEOUT_S"], "지식카드 한도는 도구 호출 기한 안에서 먼저 걸려 폴백으로 넘어간다"
     # Claude 길 — 엔진은 과제 하나의 최악이 논리 호출 1회의 최악보다 작지 않으면 그 길을 닫은 채 뜬다(킷 값 그대로 적어도 열려야 한다)
     assert 2 * k["EXTERNAL_LLM_WAIT_S"] + 2 * k["EXTERNAL_LLM_ANSWER_S"] < attempts * k["DELIB_TIMEOUT_S"] + 8
+
+
+# ── 앞부분 고정 구획 — 설명이 엔진의 지금 꼴을 적는다 ───────────────────────────────────────────────
+def test_앞부분_고정_손잡이의_설명은_안내를_사람_발화의_머리에_싣는다고_적는다():
+    """HA-26(docs/request_261030.md) — 안내를 이번 발화 바로 앞의 시스템 칸(둘째 시스템 메시지)에 두던 W-3 의 꼴은 Qwen 채팅 틀이 400
+    으로 거절했다. 박스 우회(=0)를 걷는 사람(OB-91)이 이 설명을 읽는다 — 옛 꼴로 적혀 있으면 걷어 낸 꼴을 지금 동작으로 읽는다."""
+    i = KIT.index("\n# CHAT_STABLE_PREFIX=")
+    note = KIT[KIT.rindex("\n# CHAT_TOOL_SCHEMA_BUDGET=", 0, i):i]
+    assert "시스템 칸" not in note, note
+    for must in ("사람 발화의 머리", "System message must be at the beginning", "자동 재시도", "첫 시스템 메시지에 합쳐"):
+        assert must in note, must
