@@ -252,7 +252,9 @@ def test_HP26_게이트웨이_설정이_없거나_깨지면_조용히_지나간�
 
 
 # ── HP-35 §2b — AIDH merge 뒤 HE팀 운영자 미리보기 ─────────────────────────────────────────────────────
-_S2B_PERSONA = _region("    # merge 는 updated_at 이 더 새 쪽을 고른다", '이 박스 판 그대로(미리보기)"\n      fi\n    fi\n')
+# 끝은 10-30 HP-51 의 '운영자 앱이 이 게이트웨이에 없다' 줄까지다 — 같은 미리보기 출력을 읽는 같은 구획이다.
+_S2B_PERSONA = _region("    # merge 는 updated_at 이 더 새 쪽을 고른다",
+                       "printf '%s\\n' \"$_hp_gone\" | head -10 | sed 's/^/  /'\n      fi\n    fi\n")
 
 
 def _persona_preview(tmp: Path, mrc: int, out: str, rc: int = 0) -> subprocess.CompletedProcess:
@@ -285,3 +287,30 @@ def test_HP35_미리보기를_못_하면_모른다고_말한다(tmp_path):
 def test_HP35_merge_가_실패하면_미리보기를_부르지_않는다(tmp_path):
     r = _persona_preview(tmp_path, 1, "  ~ he-x 고친다: name\n")
     assert "HE팀" not in r.stdout and not (tmp_path / "called").exists(), r.stdout
+
+
+# ── HP-51(docs/request-1030) §2b — 운영자 앱이 이 게이트웨이에 없다 ─────────────────────────────────────
+# 이 박스 AIDataHub 의 운영자(dev 덤프로 들어온 he-sim-smarttwin)가 모는 앱이 cae00 게이트웨이에 없어, 챗을 보낸 뒤에야 주의가 떴다(DW-12).
+# 미리보기가 '  ! ' 줄로 찍고 update-all 이 ⚠ 로 올린다. 어긋남(+ · ~)과 따로 센다 — 그대로여도 앱이 없을 수 있다.
+_GONE = ("  ! 운영자 앱이 이 게이트웨이에 없다 — he-sim-smarttwin: smart-twin-mcp, smart-twin-cluster · 챗에서 고르면 그 앱 도구 없이 답한다\n"
+         "  ! 운영자 앱이 이 게이트웨이에 없다 — he-doc-docforge: reportarchive · heax-doc_forge 도구로만 답한다\n")
+
+
+def test_HP51_운영자_앱이_없으면_어긋남이_없어도_경고하고_줄을_보인다(tmp_path):
+    r = _persona_preview(tmp_path, 0, "  · 건너뜀 he-sim-smarttwin: 이 게이트웨이에 앱이 없다(smart-twin-mcp)\n" + _GONE + "미리보기 — …\n")
+    assert "OK:HE팀 운영자 페르소나 — merge 뒤에도 이 박스 판 그대로" in r.stdout, r.stdout
+    assert "BAD:HE팀 운영자 2명의 앱이 이 게이트웨이에 없다" in r.stdout and "그 앱 도구 없이 답한다" in r.stdout, r.stdout
+    assert "  ! 운영자 앱이 이 게이트웨이에 없다 — he-sim-smarttwin: smart-twin-mcp, smart-twin-cluster" in r.stdout
+    assert "he-doc-docforge: reportarchive" in r.stdout
+    assert "건너뜀" not in r.stdout, "건너뜀 줄은 올리지 않는다(정본에 있는 운영자를 이 박스에서 안 만든 것뿐)"
+
+
+def test_HP51_어긋남과_앱_없음은_따로_센다(tmp_path):
+    r = _persona_preview(tmp_path, 3, "  ~ he-sim-smarttwin 고친다: response_config\n" + _GONE.splitlines(True)[0] + "미리보기 — …\n")
+    assert "BAD:HE팀 운영자 페르소나 1명이 이 박스 판과 다르다" in r.stdout, r.stdout
+    assert "BAD:HE팀 운영자 1명의 앱이 이 게이트웨이에 없다" in r.stdout, r.stdout
+
+
+def test_HP51_앱이_다_있으면_말하지_않는다(tmp_path):
+    r = _persona_preview(tmp_path, 0, "  ? 정본에 없는 he-* 에이전트 1명 — he-old (지우지 않았다)\n미리보기 — 새로 0 · 고침 0\n")
+    assert "앱이 이 게이트웨이에 없다" not in r.stdout and "BAD:" not in r.stdout, r.stdout

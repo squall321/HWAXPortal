@@ -668,3 +668,68 @@ def test_HP53_write_칸이_없는_옛_게이트웨이면_건너뛰었다고_한_
     assert rows and not errors
     assert warns == ["목록 밖 쓰기 점검 건너뜀 — 이 게이트웨이 /tools-map 에 write 칸이 없다(옛 판)"], warns
 
+
+# ── 미리보기 · 반영 본체(main) — 게이트웨이와 AIDataHub 를 흉내 낸다 ─────────────────────────────────────────────
+class _FakeHub:
+    """게이트웨이 /tools-map + AIDataHub /api/agents. save_status 가 5xx 이면 AD-21 꼴 — 저장(saves)은 하고 응답만 500 이다."""
+
+    def __init__(self, tmap: dict, rows: dict | None = None, save_status: int = 200, saves: bool = True, list_status: int = 200):
+        self.tmap, self.rows = tmap, {k: dict(v) for k, v in (rows or {}).items()}
+        self.save_status, self.saves, self.list_status = save_status, saves, list_status
+        self.calls: list[tuple[str, str]] = []
+
+    def __call__(self, method, url, body=None):
+        path = url.split("/api/", 1)[1] if "/api/" in url else url.rsplit("/", 1)[1]
+        self.calls.append((method, path))
+        if path == "tools-map":
+            return 200, self.tmap
+        if path == "agents":
+            if method == "POST":
+                if self.saves:
+                    self.rows[body["agent_type"]] = dict(body)
+                return self.save_status, ("Internal Server Error" if self.save_status >= 300 else dict(body))
+            return (self.list_status, list(self.rows.values())) if self.list_status == 200 else (self.list_status, "boom")
+        key = path.split("/", 1)[1]
+        if method == "PATCH":
+            if self.saves:
+                self.rows[key] = {**self.rows[key], **body}
+            return self.save_status, ("Internal Server Error" if self.save_status >= 300 else self.rows[key])
+        return (200, dict(self.rows[key])) if key in self.rows else (404, "not found")
+
+
+def _run_main(monkeypatch, capsys, hub: _FakeHub, *args: str) -> tuple[int, str, str]:
+    sync = _sync()
+    monkeypatch.setattr(sync, "_http", hub)
+    monkeypatch.setattr(sync.sys, "argv", ["sync-he-personas.py", *args])
+    rc = sync.main()
+    cap = capsys.readouterr()
+    return rc, cap.out, cap.err
+
+
+def _op_row(key: str, apps: list[str]) -> dict:
+    return {"agent_type": key, "name": key, "response_config": {"persona_kind": "mcp_operator", "mcp_apps": apps}}
+
+
+def test_HP51_미리보기가_앱이_이_게이트웨이에_없는_운영자를_알린다(monkeypatch, capsys):
+    """이 박스 AIDataHub 의 운영자(dev 덤프로 들어온 것)가 모는 앱이 이 게이트웨이에 없으면 조직도에서는 고를 수 있는데 챗을 보낸 뒤에야 주의가
+    떴다(DW-12). 정본이 아니라 올라가 있는 행의 mcp_apps 를 본다 — 에이전트서버가 그 주의를 낼 때 보는 값이다."""
+    mcp_only, _both = _smarttwin_maps()
+    rows = {"he-sim-smarttwin": _op_row("he-sim-smarttwin", ["smart-twin-mcp", "smart-twin-cluster"]),   # dev 판 — 선택 앱까지
+            "he-doc-reportarchive": _op_row("he-doc-reportarchive", ["reportarchive"]),
+            "he-calc-old": _op_row("he-calc-old", ["smart-twin-mcp"]),                                     # 앱이 다 있다
+            "pcb-warpage": {"agent_type": "pcb-warpage", "name": "x", "response_config": {}}}               # 운영자가 아니다
+    rc, out, err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, rows))
+    assert rc == 0, err
+    assert "  ! 운영자 앱이 이 게이트웨이에 없다 — he-doc-reportarchive: reportarchive · 챗에서 고르면 그 앱 도구 없이 답한다" in out, out
+    assert ("  ! 운영자 앱이 이 게이트웨이에 없다 — he-sim-smarttwin: smart-twin-cluster · smart-twin-mcp 도구로만 답한다") in out, out
+    gone = [ln for ln in out.splitlines() if ln.startswith("  ! ")]
+    assert len(gone) == 2, gone
+    assert "  ~ he-sim-smarttwin 고친다" in out, "어긋남(+ · ~)은 그대로 따로 찍는다 — --apply 하면 없는 선택 앱이 빠진다"
+
+
+def test_HP51_AIDataHub_목록을_못_읽으면_건너뛰었다고_말한다(monkeypatch, capsys):
+    mcp_only, _both = _smarttwin_maps()
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, list_status=500))
+    assert rc == 0
+    assert "  · AIDataHub 전문가 목록을 못 읽었다(500) — 정본에 없는 he-* · 운영자 앱 점검을 건너뛴다" in out, out
+

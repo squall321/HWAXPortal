@@ -27,6 +27,14 @@ export function operatorOffline(detail: AgentDetail | null | undefined): boolean
   return !!detail?.operator && apps.length > 0 && apps.every((a) => a.connected === false);
 }
 
+/** 운영자가 모는 앱 가운데 이 서버 게이트웨이에 없는 것(라벨) — 하나라도 있으면 챗을 보낸 뒤 '연결돼 있지 않습니다' 주의가 뜬다
+ *  (에이전트서버 _op_missing 은 일부만 빠져도 낸다). 보내기 전에 표지를 다는 데 쓴다(docs/request-1030 HP-51). null 은 모르는 것이라 넣지 않는다. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function operatorGoneApps(detail: AgentDetail | null | undefined): string[] {
+  if (!detail?.operator) return [];
+  return (detail.apps ?? []).filter((a) => a.connected === false).map((a) => a.label || a.key);
+}
+
 /** HE팀 MCP 운영자 — 보유 지식이 0건인 게 정상이라, 무엇으로 답하는지(앱·도구 수)를 대신 보인다.
  *  이 서버 게이트웨이에 없는 앱(cae00 전용 arp·odb-hub 를 dev 에서 본 경우)은 그렇다고 적는다. */
 export function OperatorApps({ detail }: { detail: AgentDetail }) {

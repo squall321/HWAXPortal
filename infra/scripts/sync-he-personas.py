@@ -17,8 +17,9 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 그 박스 게이트웨이에 붙은 앱으로 만들어진다. 선택 앱(페르소나의 optional)은 다르다 — 붙어 있으면 그 칸을 정본 뒤에 잇고,
 없으면 빼고 만든다(건너뛰지 않는다. 미리보기에 '· 일부' 로 찍는다).
 
-막지 않고 알리기만 하는 것이 하나 더 있다(docs/request-1030). 운영자 앱의 쓰기 꼴 도구(/tools-map 의 write) 가운데 writes · confirm
-어디에도 없는 것은 '· 목록 밖 쓰기' 로 찍는다(HP-53).
+막지 않고 알리기만 하는 것이 둘 더 있다(docs/request-1030). 운영자 앱의 쓰기 꼴 도구(/tools-map 의 write) 가운데 writes · confirm
+어디에도 없는 것은 '· 목록 밖 쓰기' 로(HP-53), 이 박스 AIDataHub 의 운영자가 모는 앱이 이 게이트웨이에 없는 것은 '! ' 로 찍는다(HP-51 —
+update-all §2b 가 ⚠ 로 올린다).
 
   GATEWAY_HTTP_BASE  기본 http://127.0.0.1:9110
   AIDH_HTTP_BASE     기본 http://127.0.0.1:8001
@@ -265,6 +266,22 @@ def main() -> int:
                        if str(a.get("agent_type", "")).startswith("he-") and a.get("agent_type") not in known)
         if stray:
             print(f"  ? 정본에 없는 he-* 에이전트 {len(stray)}명 — {', '.join(stray)} (지우지 않았다)")
+        # 운영자 앱이 이 게이트웨이에 없다(docs/request-1030 HP-51) — 이 박스 AIDataHub 의 운영자는 조직도에서 고를 수 있는데, 모는 앱이
+        # 이 게이트웨이에 없으면 챗을 보낸 뒤에야 주의가 떴다(DW-12 — dev 덤프 merge 로 들어온 he-sim-smarttwin). 정본이 아니라 올라가 있는
+        # 행(response_config.mcp_apps)을 본다 — 에이전트서버가 그 주의를 낼 때 보는 값이다. 판정도 같다(/tools-map 에 도구가 하나도 없는 앱).
+        have = set((tmap.get("map") or {}).values())
+        for a in sorted(allrows, key=lambda a: str(a.get("agent_type", ""))):
+            rc = a.get("response_config") if isinstance(a.get("response_config"), dict) else {}
+            if rc.get("persona_kind") != "mcp_operator":
+                continue
+            apps = [x for x in rc.get("mcp_apps") or [] if isinstance(x, str) and x.strip()]
+            gone = [x for x in apps if x not in have]
+            if gone:
+                rest = [x for x in apps if x in have]
+                print(f"  ! 운영자 앱이 이 게이트웨이에 없다 — {a.get('agent_type')}: {', '.join(gone)}"
+                      + (f" · {', '.join(rest)} 도구로만 답한다" if rest else " · 챗에서 고르면 그 앱 도구 없이 답한다"))
+    else:
+        print(f"  · AIDataHub 전문가 목록을 못 읽었다({st}) — 정본에 없는 he-* · 운영자 앱 점검을 건너뛴다")
 
     verb = "반영" if args.apply else "미리보기(--apply 로 반영)"
     print(f"{verb} — 새로 {created} · 고침 {updated} · 그대로 {same} · 건너뜀 {len(skipped)}")

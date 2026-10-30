@@ -1184,6 +1184,13 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
       else
         ok "HE팀 운영자 페르소나 — merge 뒤에도 이 박스 판 그대로(미리보기)"
       fi
+      # 운영자 앱이 이 게이트웨이에 없다(docs/request-1030 HP-51) — 이 박스 AIDataHub 의 운영자(dev 덤프로 들어온 것 포함)가 모는 앱이
+      # 여기 없으면 조직도에서 고를 수는 있어도 챗을 보낸 뒤에야 주의가 떴다(DW-12). 미리보기가 '  ! ' 줄로 찍는다 — 막지 않는다.
+      _hp_gone="$(printf '%s\n' "$_hp_out" | grep -E '^  ! ' || true)"
+      if [ -n "$_hp_gone" ]; then
+        bad "HE팀 운영자 $(printf '%s\n' "$_hp_gone" | grep -c .)명의 앱이 이 게이트웨이에 없다 — 챗에서 고르면 그 앱 도구 없이 답한다(입력창 전문가 알약에 표지가 붙는다)"
+        printf '%s\n' "$_hp_gone" | head -10 | sed 's/^/  /'
+      fi
     fi
   fi
 else

@@ -13,7 +13,7 @@ import { useChat } from '../../state/ChatContext';
 import { useCan } from '../../auth/useCan';
 import { AgentDeepView } from './AgentDeepView';
 import { PersonaBrowser } from './PersonaBrowser';
-import { DetailError } from './AgentFacts';
+import { DetailError, OperatorApps } from './AgentFacts';
 import { shortName } from './personaColor';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
@@ -300,6 +300,9 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
               {detail.tags.length > 0 && (
                 <p className="sp-dim">태그: {detail.tags.slice(0, 12).join(' · ')}</p>
               )}
+              {/* HE팀 운영자 — 모는 앱이 이 서버에 붙었는지. 조직도 · 좌석 상세칸과 같은 조각이다 — 여기만 빠져 보낸 뒤에야
+                  '연결돼 있지 않습니다' 를 봤다(docs/request-1030 HP-51). */}
+              <OperatorApps detail={detail} />
               {detail.samples.length > 0 && (
                 <>
                   <div className="sp-sub sp-dim">이런 걸 물을 수 있어요</div>

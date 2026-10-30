@@ -49,7 +49,7 @@ def test_세_칸_모두_목록_블록_바로_뒤에_실패_문구를_둔다():
     assert re.search(r"import \{[^}]*\bDetailError\b[^}]*\} from './AgentFacts';", sb)
     sp = _src("StartPicker.tsx")
     assert '<DetailError detail={detail} className="sp-warn" />' in _after_records(sp, "sp-detail-list sp-scroll")
-    assert "import { DetailError } from './AgentFacts';" in sp
+    assert re.search(r"import \{[^}]*\bDetailError\b[^}]*\} from './AgentFacts';", sp)
 
 
 def test_시작_패널이_고정된_전문가로_열리면_상세를_불러온다():
@@ -138,3 +138,39 @@ def test_심층_보기의_빈_카드_문구도_연결_상태를_본다():
     assert "? operatorOffline(detail)" in blk
     assert "'지식카드가 없습니다 — 이 운영자의 앱이 이 서버에 연결돼 있지 않아 지금은 도구로도 답하지 못합니다.'" in blk
     assert "'지식카드가 없습니다 — 이 전문가는 지식카드가 아니라 앱 도구를 직접 호출해 답합니다.'" in blk
+
+
+# ── HP-51(docs/request-1030) 운영자의 앱이 이 서버에 없다는 것을 보내기 전에 ───────────────────────────────────
+# cae00 에서 he-sim-smarttwin 의 앱이 게이트웨이에 없는데 챗을 보낸 뒤에야 '연결돼 있지 않습니다' 주의가 떴다(DW-12). 그 주의(에이전트서버
+# operator_app_missing)와 같은 판정 — 상세(/agent/catalog/agent)의 apps[].connected — 으로 고르는 자리와 입력창 알약에 단다.
+def test_HP51_시작_패널도_운영자_앱_줄을_보인다():
+    """조직도 · 좌석 · 심층 보기 상세칸은 OperatorApps 로 '이 서버에 연결 안 됨' 을 보였는데 시작 패널만 빠졌다."""
+    sp = _src("StartPicker.tsx")
+    assert re.search(r"import \{[^}]*\bOperatorApps\b[^}]*\} from './AgentFacts';", sp)
+    blk = sp[sp.index('<p className="sp-dim">태그: '):]
+    blk = blk[:blk.index("이런 걸 물을 수 있어요")]
+    assert "<OperatorApps detail={detail} />" in blk, "태그 뒤 · 샘플 질의 앞(조직도 상세칸과 같은 자리)에 둔다"
+
+
+def test_HP51_앱이_하나라도_없으면_그_앱_라벨을_준다():
+    """에이전트서버 _op_missing 은 일부만 빠져도 주의를 낸다 — 다 빠졌을 때만 보는 operatorOffline 과 따로 둔다."""
+    src = _src("AgentFacts.tsx")
+    assert ("// eslint-disable-next-line react-refresh/only-export-components\n"
+            "export function operatorGoneApps(detail: AgentDetail | null | undefined): string[] {") in src, (
+        "컴포넌트가 아닌 함수를 내보내면 pnpm lint(--max-warnings 0)가 걸린다")
+    fn = src[src.index("export function operatorGoneApps"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "if (!detail?.operator) return [];" in fn
+    assert ".filter((a) => a.connected === false)" in fn, "null(매핑을 못 받음)은 없다고 단정하지 않는다 — 에이전트서버와 같은 규칙"
+
+
+def test_HP51_입력창_전문가_알약이_보내기_전에_표지를_단다():
+    src = _src("ExpertToggle.tsx")
+    assert "import { operatorGoneApps } from './AgentFacts';" in src
+    eff = src[src.index("const [gone, setGone] = useState<string[]>([]);"):]
+    eff = eff[:eff.index("}, [pinnedAgent]);")]
+    assert "if (!key?.startsWith('he-')) {" in eff, "운영자 키만 묻는다 — 풀의 전문가마다 상세를 부르지 않는다"
+    assert "fetchAgentDetail(key)" in eff and "if (d.error) return;" in eff, "상세를 못 받으면 없다고 단정하지 않는다"
+    assert "goneCache.set(key, g);" in eff and "if (alive) setGone(g);" in eff, "늦게 온 응답이 바뀐 전문가의 알약을 덮지 않는다"
+    assert "${conflict || gone.length > 0 ? ' is-warn' : ''}" in src, "Thinking 충돌과 같은 표지(is-warn)를 쓴다"
+    assert "이 서버 게이트웨이에 연결돼 있지 않아 그 앱 도구 없이 답합니다" in src
