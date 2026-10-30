@@ -46,7 +46,7 @@
 
 - [x] 절 쓰기(단계 절은 포털이 봉투로 — 준 글에 있는 발견은 다시 안 붙인다) · 인사이트 인용 · 출처 없는 수치면 한 번 고쳐 쓰기 · 근거 부록 · 커버리지 · 출처 없는 수치 표지
 - [x] RA 초안(`deliberation` v1 블록 · `_ra_blocks` 계약 시험 · ask 는 챗의 'RA 초안 올리기' · 이미 올렸으면 다시 안 만든다) — 대화 `kind=routine` 은 만들지 않는다(R3-D10)
-- [ ] 이력(changelog) · CLAUDE.md 문서 표 · cae00 안내(`server-setup.md`) · 화면 Drive
+- [x] 이력(changelog) · CLAUDE.md 문서 표 · cae00 안내(`server-setup.md` · 배포 가이드 「분석 루틴」 절) · 화면 Drive(10-30 `images-20261030-054724Z`, drift ✓ · e2e 20 통과) — 포털 `2cfdc7a` · `aa5cb8a` · `e3d0a48` · `0c6742d` · 게이트웨이 `67d8d00` · 에이전트 `d673846`
 
 ## R5 cae00 받아들이기(사람)
 
