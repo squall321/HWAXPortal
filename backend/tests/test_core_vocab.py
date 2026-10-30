@@ -37,7 +37,8 @@ def test_꼴과_필수_칸():
     assert d["types"] and isinstance(d["types"], dict)
     for w, slug in d["types"].items():
         assert w in vocab_words, f"타입 대응의 낱말은 어휘표 낱말(rule_words · search)이다 — {w}"
-        assert re.fullmatch(r"[a-z][a-z0-9_]*", slug), f"타입 이름은 허브의 slug 꼴이다 — {slug}"
+        assert re.fullmatch(r"[a-z][a-z0-9_]{0,31}", slug), \
+            f"타입 이름은 허브의 slug 꼴이다(StandardPlatform SLUG_RE — 에이전트 서버가 같은 꼴로 거르고, 아니면 이 표를 버린다) — {slug}"
     for key, a in d["apps"].items():
         assert a["role"] in ROLES, (key, a)
         assert a.get("label", "").strip(), key
