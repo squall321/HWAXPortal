@@ -827,6 +827,8 @@ def _block_35() -> str:
     (DIRECT, None, "0"), (DIRECT, "40", "40"),                  # 원격 GLM 직접 — 박스가 적은 값은 덮지 않는다(request-1027 HP-07)
     ("http://127.0.0.1:8000/v1", "40", None), ("http://127.0.0.1:8000/v1", None, None),   # 로컬 vLLM — 종전 그대로(기본 200)
     ("http://127.0.0.1:8000/v1", "0", "0"),                    # 로컬로 읽힌 박스의 0 — cae00 10-29 로그(request-1030 HP-55)
+    ("http://127.0.0.1:8000/v1", '"0"', '"0"'), ("http://127.0.0.1:8000/v1", "0\r", "0"), (DIRECT, '"0"', '"0"'),   # CRLF 줄은 남는다(read_text 가 \r 을 접는다)
+    ("http://127.0.0.1:8000/v1", '"40"', None),               # 따옴표 · CRLF 도 에이전트 서버 start.sh 에는 그 수다 — 종전엔 '미설정' 이라 적었다
 ])
 def test_3장5_는_라우터_주소를_원격_LLM_으로_읽는다(box, router, old_router, vb, tm, want):
     """**M3 회귀** — 라우터 주소(127.0.0.1)를 로컬 LLM 으로 읽어, 사본이 라우터로 가는 순간 원격 GLM 의 TOOL_MAX=0 이 빠지고(없으면 안 더하고
@@ -842,9 +844,27 @@ def test_3장5_는_라우터_주소를_원격_LLM_으로_읽는다(box, router, 
     assert got == ([want] if want is not None else []), (got, out)
     assert "TOOL_MAX 미설정" not in out or want is None, "TOOL_MAX=0 이 있는데 '미설정 → 기본 80' 이라고 말했다"
     # 박스 값 0 은 원격이든 로컬이든 '그대로(무캡)' 다 — 종전엔 로컬로 읽힌 박스(cae00)에서 '미설정 → 기본 200' 이었다(request-1030 HP-55).
-    if tm == "0":
+    if tm is not None and tm.strip('"\r') == "0":
         assert any(ln.startswith("OK:TOOL_MAX=0 그대로(무캡") for ln in _lines(out, "OK:")), out
         assert "기본 200" not in out and "상위 0개" not in out, out
+    # 원격에서 0 을 적을 때도 같은 말이다 — 예산은 CHAT_TOOL_SCHEMA_BUDGET 일 수 있어 '챗 창 예산' 이 아니다(request-1030 HP-55)
+    if tm is None and want == "0":
+        assert any("TOOL_MAX=0(무캡 — 도구 설명 예산 안에서" in ln for ln in _lines(out, "OK:")) and "챗 창 예산" not in out, out
+
+
+@pytest.mark.parametrize("lines,want,said", [
+    ("TOOL_MAX=40\nTOOL_MAX=0\n", ["40", "0"], "OK:TOOL_MAX=0 그대로(무캡"),   # 서버는 0 으로 돈다 — 앞 줄로 갈라 둘 다 지우면 200 캡이 된다
+    ("TOOL_MAX=0\nTOOL_MAX=40\n", [], "OK:TOOL_MAX=40 제거 → 기본 200"),     # 서버는 40 으로 돈다 — '0 그대로(무캡)' 이 아니다
+])
+def test_3장5_는_TOOL_MAX_를_에이전트_서버가_싣는_줄로_읽는다(box, lines, want, said):
+    """에이전트 서버 start.sh 는 `TOOL_MAX=` 줄의 **마지막** 것을 싣는다(따옴표 · CR 은 벗긴다). 종전엔 첫 줄을 날것으로 읽어 줄이 둘인 박스에서
+    서버가 쓰지 않는 값으로 갈랐다(반대 검토 — docs/request-1030 HP-55). 로컬로 읽히는 박스(루프백)다."""
+    box.env(f"LLM_BASE_URL={DIRECT}\nLLM_ROUTER_PORT={_dead_port()}\n")
+    agent = box.copy("agent-server")
+    agent.write_text("VLLM_BASE_URL=http://127.0.0.1:8000/v1\n" + lines)
+    out = box.run(first=False, pre=f'AGENT_DIR="{agent.parent}"\n', blocks=(_block_35(),))
+    assert re.findall(r"^TOOL_MAX=(.*)$", agent.read_text(), re.M) == want, out
+    assert any(ln.startswith(said) for ln in _lines(out, "OK:")), out
 
 
 # ── §4 — §2 뒤에 라우터를 한 번 더 본다(M2) ────────────────────────────────────────────────────────────

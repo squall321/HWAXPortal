@@ -1348,8 +1348,8 @@ PY
   # ── 3.5c 끝
   # TOOL_MAX 정리(prod) — dev 전용 소형 캡(40 등)을 제거해 agent-server 기본값(200)을 쓰게 한다.
   # 200 은 '무조건 절단'이 아니라 질의 관련도(어휘+시맨틱 RRF) 상위 200개 선택이라, 도구가 수백 개로
-  # 늘어도 필요한 도구가 남고 컨텍스트도 보호된다. 전량 바인딩이 필요하면 .env 에 TOOL_MAX=0 명시.
-  # 원격 LLM(상암 GLM 등 대형 컨텍스트)이면 캡을 아예 푼다(TOOL_MAX=0). 기본 80 을 두면
+  # 늘어도 필요한 도구가 남고 컨텍스트도 보호된다. 캡 없이 고르려면 .env 에 TOOL_MAX=0 명시(전량 바인딩은 아니다 — 아래 HP-07).
+  # 원격 LLM 이면 캡을 푼다(TOOL_MAX=0 — 값이 없을 때만 적는다, 아래 HP-07). 기본 80 을 두면
   # 게이트웨이 도구가 100 개를 넘는 순간 heax-hub 계열이 챗에 안 실려, 아래 헬스게이트가
   # "TOOL_MAX=80 < 게이트웨이 N개" 경고를 내면서도 스크립트는 계속 80 을 강제하는 자기모순이
   # 된다. 로컬 vLLM(작은 컨텍스트)에서는 종전대로 기본값에 맡긴다.
@@ -1357,7 +1357,9 @@ PY
   # 예산(챗 창의 45%)을 넘으면 관련도 순으로 세워 뒤에서 빼고 안내대(search_tools · invoke_tool · list_tool_apps)는 늘 남긴다
   # (HWAXAgentServer 2806672 — 종전엔 게이트웨이 순서 뒤에서부터 잘라 MaterialTwin 34종 · 안내대가 통째로 빠졌다, 수정 제안서 F1 · F3).
   # 얼마나 잘렸는지는 아래 7)의 '챗 도구 절단' 줄이 에이전트 서버 /health 의 tool_cut 으로 말한다.
-  TM="$(grep -E '^TOOL_MAX=' "$AGENT_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  # 값은 에이전트 서버 start.sh 가 싣는 줄로 읽는다 — 맨 앞이 `TOOL_MAX=` 인 줄의 마지막 것이고 따옴표 · CR 은 벗긴다(아래 DELIB_TIMEOUT_S 와 같다).
+  # 종전엔 첫 줄을 날것으로 읽어 `TOOL_MAX="0"` · CRLF 의 0 을 '미설정 → 기본 200' 으로 적었고, 줄이 둘이면 서버가 쓰지 않는 앞 줄로 갈랐다(docs/request-1030 HP-55).
+  TM="$(sed -n 's/^TOOL_MAX=//p' "$AGENT_ENV" 2>/dev/null | tail -1 | tr -d '"'"'"' \r')"
   case "${VB:-}" in
     ''|*127.0.0.1*|*localhost*) REMOTE_LLM=0 ;;
     *)                          REMOTE_LLM=1 ;;
@@ -1379,7 +1381,7 @@ PY
   elif [ "$REMOTE_LLM" = "1" ]; then
     if [ -z "${TM:-}" ]; then
       printf 'TOOL_MAX=0\n' >> "$AGENT_ENV"
-      ok "원격 LLM 감지 → TOOL_MAX=0(무캡 — 챗 창 예산 안에서 질의마다 고른다, 묶인 수는 7) 의 '챗 도구 절단')"
+      ok "원격 LLM 감지 → TOOL_MAX=0(무캡 — 도구 설명 예산 안에서 질의 관련도 순으로 고른다, 예산 · 출처 · 묶인 수는 7) 의 '챗 도구' 줄)"
     else
       ok "TOOL_MAX=$TM 그대로(박스 값 — update-all 은 덮지 않는다${TM:+, 0 이면 무캡 · 그 밖은 질의 관련도 상위 $TM개})"
     fi
@@ -3491,40 +3493,60 @@ fi
 AH="$(curl -s -m 4 http://127.0.0.1:9009/health 2>/dev/null || true)"
 if [ -n "$AH" ]; then
   # 게이트웨이 도구 수는 여기서 다시 읽는다 — $H 는 6절 앞에서 받아 둔 것이라 6절의 재프로비저닝 뒤 수와 달랐다(657 → 665, 10-17 리뷰 P8).
-  # 예산의 출처를 가를 손잡이 둘 — /health 는 값(tool_cut.budget)만 싣는다. 에이전트 서버 .env 를 모르는 박스는 비운다(코드 기본값으로 가른다).
-  _ctsb=""; _tsb=""
+  # 예산의 출처를 가를 손잡이 둘 — /health 는 값(tool_cut.budget)만 싣는다. 값은 에이전트 서버 start.sh 가 싣는 줄로 읽는다(맨 앞이 `KEY=` 인
+  # 줄의 마지막 것 · 따옴표 · CR 을 벗긴다 — export · 들여쓴 줄은 그 서버가 건너뛴다, 3.5 의 TOOL_MAX 와 같다). 에이전트 서버 .env 를 모르는 박스는 비운다.
+  # 이번 실행이 에이전트 서버 재기동을 미뤘으면(장부의 'agent-server 재기동 건너뜀' — update-sites) 그 프로세스는 아직 옛 .env 로 돈다.
+  _ctsb=""; _tsb=""; _agstale=0
   if [ -n "${AGENT_ENV:-}" ] && [ -f "$AGENT_ENV" ]; then
-    _ctsb="$(_envfile_value "$AGENT_ENV" CHAT_TOOL_SCHEMA_BUDGET)"; _tsb="$(_envfile_value "$AGENT_ENV" TOOL_SCHEMA_BUDGET)"
+    _ctsb="$(sed -n 's/^CHAT_TOOL_SCHEMA_BUDGET=//p' "$AGENT_ENV" 2>/dev/null | tail -1 | tr -d '"'"'"' \r')"
+    _tsb="$(sed -n 's/^TOOL_SCHEMA_BUDGET=//p' "$AGENT_ENV" 2>/dev/null | tail -1 | tr -d '"'"'"' \r')"
   fi
-  AH="$AH" GH="$(gw_health 2>/dev/null || true)" CTSB="$_ctsb" TSB="$_tsb" python3 - <<'PY' || true
+  awk -F'\t' '$1 == "agent-server 재기동 건너뜀" { f = 1 } END { exit !f }' "${HWAX_SKIP_LEDGER:-/dev/null}" 2>/dev/null && _agstale=1
+  AH="$AH" GH="$(gw_health 2>/dev/null || true)" CTSB="$_ctsb" TSB="$_tsb" AGSTALE="$_agstale" python3 - <<'PY' || true
 import json, os
 try:
     ah = json.loads(os.environ["AH"]); gh = json.loads(os.environ.get("GH") or "{}")
     tmax = ah.get("tool_max", 0); gtools = gh.get("tools")
     cut = ah.get("tool_cut") or {}
     # 도구 설명 예산의 출처 — 에이전트 서버 _select_tools 의 규칙이다. 캡이 안 걸리는 길(TOOL_MAX=0 · 도구가 TOOL_MAX 개 이하)은
-    # CHAT_TOOL_SCHEMA_BUDGET 이 있으면 그 값, 없으면 챗 턴 창(챗 전용 LLM 이면 출력 몫을 뗀 값)의 45% 이고, 캡 길은 TOOL_SCHEMA_BUDGET(기본 40,000)이다.
-    # /health 는 값만 싣는다 — 손잡이 값과 같으면 그 손잡이다. .env 를 고치고 아직 재기동하지 않았으면 값이 달라 그 프로세스의 출처(창의 45%)로 읽는다.
+    # CHAT_TOOL_SCHEMA_BUDGET 이 있으면 그 값, 없으면 챗 턴 창의 45%(바닥 4,000)이고, 캡 길(절단의 앞 수가 TOOL_MAX)은 TOOL_SCHEMA_BUDGET(기본 40,000)이다.
+    # 챗 턴 창은 _agent_stream 의 셈이다 — 챗 전용 LLM 이면 그 창(chat_llm.ctx_tokens)과 context_tokens 중 작은 값에서 출력 몫을 떼되 창의 절반까지만,
+    # 아니면 context_tokens. /health 는 예산의 값만 싣는다 — 값이 같은 출처만 말하고, 같은 것이 없으면 모른다고 한다(재기동을 미뤄 옛 손잡이로
+    # 돈다 · 그 뒤 창이 바뀌었다 · 챗 턴 밖의 절단). 챗 서버 창을 아직 모르면(첫 챗 턴 전) 45% 값도 모른다.
     def _num(v):
         try:
             return int(v)
         except (TypeError, ValueError):
             return 0
     ctsb, tsb = _num(os.environ.get("CTSB")), _num(os.environ.get("TSB") or 40000)
+    stale = os.environ.get("AGSTALE") == "1"
+    cl = ah.get("chat_llm") or {}
+    win = _num(ah.get("context_tokens"))
+    if cl.get("enabled"):
+        win = min(win, _num(cl.get("ctx_tokens")))
+        win -= min(_num(cl.get("output_reserve") or cl.get("max_tokens")), win // 2)
+    w45 = max(4000, int(win * 0.45)) if win > 0 else 0
+    capped = bool(tmax) and _num(cut.get("before")) >= _num(tmax)
 
     def _src(b):
-        if b > 0 and b == ctsb:
-            return "CHAT_TOOL_SCHEMA_BUDGET"
-        if b > 0 and tmax and b == tsb:
-            return "TOOL_SCHEMA_BUDGET"
-        return "챗 창의 45%"
+        # 캡 길은 TOOL_SCHEMA_BUDGET 을 먼저 본다 — 두 손잡이가 같은 값이어도 그 길의 상한은 이것이다. 캡이 안 걸린 길은 이것을 쓰지 않는다.
+        for name, v in ((("TOOL_SCHEMA_BUDGET", tsb),) if capped else ()) + (("CHAT_TOOL_SCHEMA_BUDGET", ctsb), ("챗 창의 45%", w45)):
+            if b > 0 and b == v:
+                return name
+        return "출처 모름 · 손잡이 값%s과 다르다%s" % (" · 챗 창의 45%% %s토큰" % format(w45, ",") if w45 else "",
+                                                   " · 이번 실행이 에이전트 서버 재기동을 미뤄 옛 .env 로 돈다" if stale else "")
     if tmax and gtools and tmax < gtools:
-        print("  · ⚠ 챗 도구 캡: TOOL_MAX=%s < 게이트웨이 %s개 → 일부 도구(heax-hub 등) 챗 미바인딩. 프로드는 TOOL_MAX=0 권장" % (tmax, gtools))
+        print("  · ⚠ 챗 도구 캡: TOOL_MAX=%s < 게이트웨이 %s개 → 일부 도구(heax-hub 등) 챗 미바인딩. 캡을 풀려면 TOOL_MAX=0"
+              "(도구 설명 예산 안에서 질의 관련도 순으로 고른다)" % (tmax, gtools))
     elif gtools:
-        # 값은 마지막 절단의 상한, 절단이 없으면 손잡이 값이다. 둘 다 없으면(창의 45% · 아직 안 잘림) 출처만 말한다.
+        # 값은 마지막 절단의 상한(그 프로세스의 값), 절단이 없으면 .env 의 CHAT_TOOL_SCHEMA_BUDGET 이다. 둘 다 없으면 출처(창의 45%)만 말한다.
+        # .env 값은 이번 실행이 재기동을 미뤘으면 아직 그 프로세스의 것이 아닐 수 있다 — 미루지 않았으면 그 .env 로 떴다(지문에 .env 가 든다).
         b = cut.get("budget") or ctsb
+        src = _src(b) if b > 0 else "챗 창의 45%"
+        if stale and not cut.get("budget"):
+            src += " — 이번 실행이 에이전트 서버 재기동을 미뤄 아직 안 실렸을 수 있다"
         print("  · 챗 도구: TOOL_MAX=%s (0=무제한) → 게이트웨이 %s개 — 도구 설명 예산%s(%s) 안에서 질의 관련도 순으로 싣는다"
-              % (tmax, gtools, " %s토큰" % format(b, ",") if b > 0 else "", _src(b)))
+              % (tmax, gtools, " %s토큰" % format(b, ",") if b > 0 else "", src))
     # 스키마 예산 절단 — 개수 캡이 없어도 창이 작으면 잘린다(stcx 262,144 → 상한 117,964 — 수정 제안서 F1 · F3). 마지막 챗 턴(위 7)의
     # 스모크 포함)의 값이다. 관련도 낮은 것부터 뺐고 안내대로 닿지만, 뺀 앱이 크면 사람이 안다.
     if cut.get("before") and cut.get("after") is not None and cut["after"] < cut["before"]:
