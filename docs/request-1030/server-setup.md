@@ -18,7 +18,7 @@
 | SignalForge | `0e2ac46` · `ec40075` · `f004cd0` | SG-19 · SG-04 주의 칸 | 올림(그쪽 세션) |
 | SmartTwinExplorer | `4f5e0e0` | PA-20 | 올림 — Drive staging 번들(3절) |
 | DocForge | `e72cbe5` · `ab5547e`(0.3.1) | HH-14 | 코드 끝 — 배치는 그 세션의 사용자 승인 대기 |
-| KooRemapper | `0c1113f` | KR-23 — 레시피 자동 관문을 MCP 설명 · TOOLS.md · SKILL.md 에 적음(사용자 결정 그대로) · KR-01 · KR-16 은 진행 중 | 올림(그쪽 세션) — update-all 하나, MCP 도 다시 뜬다 |
+| KooRemapper | `0c1113f` · `f36270f` · `a3eff43` | KR-23 — 레시피 자동 관문을 MCP 설명에 적음(사용자 결정 그대로) · KR-01 · KR-16 — 과제 검색이 별칭을 대조하고 순위를 매긴 뒤 자른다(행마다 match_kind) | 올림(그쪽 세션) — update-all 하나, 재기동 때 이관 0018 · 화면은 다음 Drive |
 | StepForge | 다음 판 | ST-12 | 그쪽 세션 |
 
 ## 1. update-all 한 번
