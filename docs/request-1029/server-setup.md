@@ -186,7 +186,7 @@ dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다.
 
 | 리포 | 받을 판 | 바뀐 것 |
 |---|---|---|
-| 게이트웨이 | 이 묶음이 든 master(`9b37b31` · `4c17be8` · `cfb32a8`) | 역할 읽기 · `/health core_vocab.roles` · `role` 칸 · 가족 접기 · 가족은 늘 접두(옛 맨 이름은 호출 별칭) · 형제 소개 줄 칸 · 비코어 낮추기 손잡이(끔) · 보기 셋(tools/list 에만) · `list_tool_apps` 의 `view` · `/health tools_list_by_view` |
+| 게이트웨이 | 이 묶음이 든 master(`9b37b31` · `4c17be8` · `8186d9a` · 문서 `cfb32a8` · `19895c2`) | 역할 읽기 · `/health core_vocab.roles` · `role` 칸 · 가족 접기 · 가족은 늘 접두(옛 맨 이름은 호출 별칭) · 형제 소개 줄 칸 · 비코어 낮추기 손잡이(끔) · 보기 셋(tools/list 에만) · `list_tool_apps` 의 `view` · `/health tools_list_by_view` · 피드백 보고서가 감점 규칙(`demote:noncore`)을 '보정 덕에만' 에 싣지 않는다 |
 | 포털 | 이 문서가 든 main | `users.hub_view` 칸(기동 때 저절로 생긴다) · `GET · PUT /auth/access/view` · 권한 응답 `view` · 토큰 화면 '허브에 보일 앱' 탭 위 보기 고르기(화면은 Drive 판) · 리포 `.mcp.json` 의 `X-HWAX-View` · 어휘표 꼴 시험(형제 소개 줄) |
 | 에이전트 서버 | 바뀐 것 없음 | 웹 챗은 GW_TOKEN 이라 늘 전체다. `/tools-map` 의 앱 줄에 `role` 이 더 붙는다(읽지 않는다) |
 
