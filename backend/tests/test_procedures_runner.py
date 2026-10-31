@@ -657,6 +657,29 @@ def test_한_단계씩_돌린_미리보기도_확인_토큰을_원장에_남기�
     asyncio.run(go(*kit))
 
 
+def test_승인_뒤_미리보기가_한_번_실패해도_다음_카드는_승인한_것과의_차이를_보인다(kit):
+    """실패 행이 승인 지문과 승인한 미리보기를 지운 동안, 재개한 카드는 '바뀐 줄' 없이 처음 보는 카드처럼 떴다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid, _ = await _gated_then_acked(store, r, spec)          # 사람이 이 미리보기를 보고 승인했다
+        keep = g.replies["reportarchive_preview_publish"]
+        g.replies["reportarchive_preview_publish"] = lambda a: _ra({"error": "잠깐 불통"})
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL))["state"] == "failed"
+        st = store.list_steps(rid)[0]
+        assert (st["state"], st["stage"]) == ("failed", "preview") and "잠깐 불통" in st["error"]
+        g.replies["reportarchive_preview_publish"] = keep
+        ra.boards["dept-b"] = {**BOARDS["dept-b"], "audience": 340}  # 그사이 볼 사람이 늘었다
+        out3 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)  # 재개
+        await r.aclose()
+        assert out3["state"] == "gated" and ra.published == [], out3
+        assert out3["changed"] == ["dept-b 볼 수 있는 사람: 30 → 340"]
+        assert store.list_steps(rid)[0]["notes"]["publish_changed"] == ["dept-b 볼 수 있는 사람: 30 → 340"]
+    asyncio.run(go(*kit))
+
+
 # ── 취소·소유자 ──────────────────────────────────────────────────────────
 def test_cancel_is_seen_at_the_step_boundary(kit):
     async def go(store, build):

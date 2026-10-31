@@ -731,19 +731,24 @@ class ProceduresRunner:
         돌려주는 것 — 멈출 때는 `_loop` 가 그대로 돌려줄 결과(`state` 가 있다), 갈 때는 `{fp, token, view}`.
         """
         got = await self._preview(run_id, ix, st, args, principal, sess)
+        ack = self.store.gate_ack(run_id, ix)
+        seen = self._approved_view(run_id, ix, ack)
         if isinstance(got, J.Verdict):
-            # 사람에게 보일 대상이 없다 — 게이트를 세울 것이 없으니 그 단계에서 멈춘다(재개하면 미리보기부터 다시 받는다)
+            # 사람에게 보일 대상이 없다 — 게이트를 세울 것이 없으니 그 단계에서 멈춘다(재개하면 미리보기부터 다시 받는다).
+            # 승인이 있으면 그 지문과 승인한 미리보기를 이 행에 그대로 둔다 — 행을 새로 쓰며 지우면 재개한 카드가 '승인한 뒤
+            # 바뀐 것' 을 못 보이고 처음 보는 카드처럼 뜬다.
             why = J.short_error(got)
             self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
-                                  schema_fp=st.schema_fp, expect=st.expect, mode="live")
+                                  schema_fp=st.schema_fp, expect=st.expect, mode="live",
+                                  fingerprint=ack["args_sha256"] if seen is not None else None)
             self.store.finish_step(run_id, ix, ok=False, stage="preview",
-                                   error=f"게시 미리보기({PREVIEW_TOOL})를 못 받았다 — {why}")
+                                   error=f"게시 미리보기({PREVIEW_TOOL})를 못 받았다 — {why}",
+                                   notes={"publish_preview": seen} if seen is not None else None)
             self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
             return {"state": "failed", "stopped_at": ix, "kind": got.kind, "error": why}
         view, token = got
         fp = _sha({"args": args, "publish_preview": view})
         blocked = _publish_blockers(view, token)
-        ack = self.store.gate_ack(run_id, ix)
         if ack is not None and ack["args_sha256"] == fp:
             if not blocked:
                 return {"fp": fp, "token": token, "view": view}
@@ -756,14 +761,11 @@ class ProceduresRunner:
                                    notes={"publish_preview": view, "publish_blocked": blocked})
             self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
             return {"state": "failed", "stopped_at": ix, "kind": "publish_blocked", "error": why}
-        # 승인한 뒤 바뀌었으면 그 차이를 싣는다 — 승인 지문이 지금 행의 것과 같을 때만 그 행의 미리보기가 '사람이 본 것' 이다
-        row = next((s for s in self.store.list_steps(run_id) if s["ix"] == ix), None)
-        seen = ((row.get("notes") or {}).get("publish_preview")
-                if ack is not None and row is not None and row["args_sha256"] == ack["args_sha256"] else None)
+        # 승인한 뒤 바뀌었으면 그 차이를 싣는다
         notes: dict = {"publish_preview": view}
         if blocked:
             notes["publish_blocked"] = blocked
-        if isinstance(seen, dict):
+        if seen is not None:
             notes["publish_changed"] = _preview_changes(seen, view)
         self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
                               schema_fp=st.schema_fp, expect=st.expect, mode="live", fingerprint=fp)
@@ -773,6 +775,16 @@ class ProceduresRunner:
         if "publish_changed" in notes:
             out["changed"] = notes["publish_changed"]
         return out
+
+    def _approved_view(self, run_id, ix, ack) -> dict | None:
+        """사람이 승인한 미리보기 — 승인 지문이 지금 행의 것과 같을 때만 그 행의 미리보기가 '사람이 본 것' 이다."""
+        if ack is None:
+            return None
+        row = next((s for s in self.store.list_steps(run_id) if s["ix"] == ix), None)
+        if row is None or row["args_sha256"] != ack["args_sha256"]:
+            return None
+        pv = (row.get("notes") or {}).get("publish_preview")
+        return pv if isinstance(pv, dict) else None
 
     async def _preview(self, run_id, ix, st: Step, args: dict, principal, sess):
         """`preview_publish` 한 번 — `(토큰을 뺀 미리보기, 토큰)` 또는 실패 판정. 결과 원문은 남기지 않는다(토큰이 들어 있다)."""
