@@ -427,3 +427,19 @@ def test_진짜_에이전트_서버_모듈과_한_바퀴(box, tmp_path, monkeypa
     finally:
         for m in ("seat_questions", "seat_probe"):
             sys.modules.pop(m, None)
+
+
+# ── 반대 검토(10-31) — 켠 뒤 실시간으로 모은 글도 화면에 낼 때 원장 이름을 지운다(context-notes C-48) ────────────────
+def test_R13_실시간으로_모은_글도_화면에는_원장_이름_메일_앞부분을_지워_낸다(box):
+    """에이전트 서버는 그 사람 메일의 이름 조각만 지운다(원장이 없다) — 화면에 내기 전에 포털이 원장 이름 · 메일 앞부분을 지운다. 지어낸 글이다."""
+    c, _s, agent, _seen = box
+    live = {"qid": "H-dddddddddddd", "d": "2026-10-31", "src": "thinking", "mine": None, "others": 0,
+            "text": "안녕하세요 홍길동입니다. 둘째 책임이 준 PCB 휨 해석 결과를 third 와 함께 검토해 주세요"}
+    agent["reply"] = lambda req: (httpx.Response(200, json={**VIEW, "items": [live]})
+                                  if req.url.path == "/seat-questions" else _route(req))
+    _login(c, "boss@corp.com")
+    d = c.get(f"{BASE}/items").json()
+    txt = d["items"][0]["text"]
+    assert "홍길동" not in txt and "둘째" not in txt, txt
+    assert txt == "안녕하세요 [이름]입니다. [이름] 책임이 준 PCB 휨 해석 결과를 third 와 함께 검토해 주세요", \
+        "원장 이름은 지우고 원장에 없는 낱말은 둔다(메일 앞부분은 점 · 숫자 등이 든 것만 — 'third' 같은 낱말 꼴은 두는 규칙 그대로)"

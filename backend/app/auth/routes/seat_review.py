@@ -6,6 +6,9 @@
 더 하는 것 셋.
   · 누설 규칙 L6(design-e5 2.1) — 에이전트 서버가 무엇을 실어 보내든 허용 목록으로 다시 걸러, 순위 · 점수 · 지금 좌석(사람이 고른 전문가 · 답한
     좌석)이 화면에 닿지 않게 한다. 전문가 카드는 키 · 이름 · 설명만이다(표본 질문은 표본 신호가 새는 길 L1 이라 싣지 않는다).
+  · 사람 이름 — 질문 글은 화면에 낼 때마다 포털 원장의 이름 · 메일 앞부분을 '[이름]' 으로 지운다(지난 날 모으기와 같은 규칙 — harvest.name_re).
+    켠 뒤 에이전트 서버가 실시간으로 모은 글은 그 사람 메일의 이름 조각만 지워진 채 박스 파일에 있다(원장은 포털에만 있다). 원장에 없는 이름 ·
+    별명은 남는다.
   · 켜기 전의 날들 — 이 박스 대화 저장소에서 출처 셋(지목 전문가 챗 · 띵킹 · '/전문가')을 떼어(이름 · 메일 · 대화 id 를 뗀다) ingest 로 민다.
     에이전트 서버 쪽 스위치(SEAT_QUESTIONS_COLLECT — 기본 꺼짐, D-E5-2)가 꺼져 있으면 저장소를 읽지도 않는다. 창(일)도 그쪽 값을 쓴다.
   · 다는 사람 — 표시자 이름(by)은 이 관리자의 메일(소문자)이다. 누가 다는지는 사람이 정해 에이전트 서버 SEAT_QUESTIONS_LABELERS 에 적는다.
@@ -23,7 +26,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, model_validator
 
 from app.access.policy import ADMIN_GROUP
-from app.agent.seat_review_harvest import harvest
+from app.agent.seat_review_harvest import harvest, name_re, scrub
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
@@ -78,10 +81,10 @@ def _mine_view(lb) -> dict | None:
             "memo": str(lb.get("memo") or "")[:300], "t": lb["t"] if _is_int(lb.get("t")) else None}
 
 
-def items_view(d: dict, by: str) -> dict:
+def items_view(d: dict, by: str, nre: re.Pattern | None = None) -> dict:
     """에이전트 서버 /seat-questions 답 → 화면 답(L6 허용 목록). 질문마다 qid · 날짜 · 출처 · 글 · 내 표시 · 남의 표시 수뿐이다 — 그 밖의 칸(순위 ·
-    점수 · 좌석 · picked …)은 에이전트 서버가 실어 보내도 여기서 떨어진다. 차례는 그쪽 그대로(출처를 번갈아 · 출처 안은 qid 의 해시 — 시스템 점수가
-    아니다)."""
+    점수 · 좌석 · picked …)은 에이전트 서버가 실어 보내도 여기서 떨어진다. 글은 nre(원장 이름 · 메일 앞부분)와 메일을 지워 낸다. 차례는 그쪽
+    그대로(출처를 번갈아 · 출처 안은 qid 의 해시 — 시스템 점수가 아니다)."""
     rows = []
     for it in d.get("items") or []:
         if not isinstance(it, dict):
@@ -91,7 +94,7 @@ def items_view(d: dict, by: str) -> dict:
             continue
         day = it.get("d")
         rows.append({"qid": qid, "d": day if isinstance(day, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) else None,
-                     "src": src, "text": text[:2000], "mine": _mine_view(it.get("mine")),
+                     "src": src, "text": scrub(text, nre)[:2000], "mine": _mine_view(it.get("mine")),
                      "others": it["others"] if _is_int(it.get("others")) else 0})
     lab = d.get("labeled") if isinstance(d.get("labeled"), dict) else {}
     labelers = [x for x in (d.get("labelers") or []) if isinstance(x, str)]
@@ -150,6 +153,12 @@ class LabelIn(BaseModel):
         return self
 
 
+async def _ledger(request: Request) -> tuple[list[str], list[str]]:
+    """포털 원장의 사람 이름 · 메일 앞부분 — 질문 글에서 지울 것(이벤트 루프 밖에서 읽는다)."""
+    users = await asyncio.to_thread(request.app.state.user_store.list_users)
+    return [str(u.get("name") or "") for u in users], [str(u.get("email") or "").split("@", 1)[0] for u in users]
+
+
 async def _agent(settings: Settings, method: str, path: str, *, params: dict | None = None, body: dict | None = None,
                  timeout: float = 30.0, need: str = "") -> dict:
     """에이전트 서버를 공유 비밀로 부른다. need 는 200 답에 있어야 하는 칸이다(없으면 꼴이 다른 판 — 502)."""
@@ -186,19 +195,21 @@ async def _agent(settings: Settings, method: str, path: str, *, params: dict | N
 
 @router.get("/items")
 async def seat_review_items(
+    request: Request,
     src: str = Query("", max_length=16),
     offset: int = Query(0, ge=0, le=1_000_000),
     limit: int = Query(100, ge=1, le=500),
     settings: Settings = Depends(get_settings),
     admin: Principal = Depends(require_role(ADMIN_GROUP)),
 ) -> dict:
-    """후보(출처를 번갈아)와 내 표시. 순위 · 점수 · 지금 좌석은 싣지 않는다(L6)."""
+    """후보(출처를 번갈아)와 내 표시. 순위 · 점수 · 지금 좌석은 싣지 않는다(L6). 글은 원장 이름 · 메일 앞부분을 지워 낸다."""
     if src and src not in SOURCES:
         raise AuthError(f"src 는 {list(SOURCES)} 가운데 하나다", status_code=422)
     by = by_of(admin)
     d = await _agent(settings, "GET", "/seat-questions", need="items",
                      params={"src": src, "by": by, "limit": limit, "offset": offset})
-    return items_view(d, by)
+    names, locals_ = await _ledger(request)
+    return items_view(d, by, await asyncio.to_thread(name_re, names, locals_))
 
 
 @router.get("/catalog")
@@ -259,9 +270,7 @@ async def seat_review_collect(
                             "(사용자 결정 D-E5-2 · docs/request-1029 server-setup 9절). 꺼져 있는 동안 포털은 대화 저장소를 읽지 않는다",
                             status_code=409)
         days = state["days"] if _is_int(state.get("days")) and state["days"] > 0 else 60
-        users = await asyncio.to_thread(request.app.state.user_store.list_users)
-        names = [str(u.get("name") or "") for u in users]
-        locals_ = [str(u.get("email") or "").split("@", 1)[0] for u in users]
+        names, locals_ = await _ledger(request)
         try:
             items, stats = await asyncio.to_thread(harvest, settings.resolve(settings.conv_store_path), days=days,
                                                    names=names, locals_=locals_)
