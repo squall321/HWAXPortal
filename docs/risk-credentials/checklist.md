@@ -52,4 +52,4 @@
 - [x] `server-setup-m1.md` 키 표 · `cred.key` 옮기기(7절·7-1·7-2)
 - [x] cae00 절차서 [server-setup.md](server-setup.md) — update-all 판정도 넓혔다(`260a62f`, 항목이 있어도 두 칸이 없으면 재프로비저닝)
 - [x] 업데이트 이력(기술·수정) · push(10-14 — 연결 하나·기술 셋, `cecb31c`)
-- [ ] 화면 세션에 요청서 전달 확인
+- [ ] 화면 세션에 요청서 전달 확인 — 사용자 결정 10-31 A32: (가) 리스크 앱 화면 요청서 넷(m3 · risk-credentials · claude-delib-parity · ecad-1031)과 이번 화면 몫을 한 세션으로 묶어 돌린다 — 리스크 화면 워크플로가 돈다(10-31) (10-31 정리)

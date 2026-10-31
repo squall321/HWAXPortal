@@ -53,4 +53,4 @@
 - [x] 엔진 heartbeat·LLM 제한·의장 실패 폴백 · 게이트웨이 호출 600초 · 포털 릴레이·nginx·토큰 · 리스크 앱 벽시계 12시간 · AIDataHub 워치독
 - [x] 층 순서 검토 → 확정 26건 수정 → 전체 시험
 - [x] push · hwax-risk SIF · Drive · dev 재기동 · 서버 절차서 갱신
-- [ ] (미룸) 웹 심의 잡 원장(engine-26) · KooRemapper·HEAXHub 네 건 · 리스크 앱 화면의 마지막 신호
+- [ ] (미룸) 웹 심의 잡 원장(engine-26) · KooRemapper·HEAXHub 네 건 · 리스크 앱 화면의 마지막 신호 — 사용자 결정 10-31 A24: (나) 취소만(엔진 창구 · 화면 '멈춤' — dev 작업 진행 중(10-31)) · 이 줄은 그것과 리스크 화면의 마지막 신호(B34) · 시간 제한 넷 요청서(B38)가 닫힐 때 함께 닫는다(docs/leftovers-1017/triage-1031.md) (10-31 정리)

@@ -42,30 +42,30 @@
 - [x] **mx-white-paper**(D4·D3) 12:31 — pg 275M(72표 일치)·minio 14M. **1차 시도 롤백**(minio 파일수 568→554: `.minio.sys/tmp` 를 시작·종료마다 갈아치움 → 대조 규칙 수정) · stop.sh 가 mxwp_api 를 세워 mxwp-mcp 도 죽음 → `restart_also` · 게이트웨이 revive 루프가 1~2분 뒤 재부착(372 도구 복귀)
 - [x] **kooremapper**(D4·D3) 12:33 — pg 64M(8표)·storage 4M. needs_bind 사전 재기동 → 컨테이너 `/data/svc/kooremapper` ✓ · `KOORM_STORAGE_DIR` env ✓
 - [x] **heax-hub**(D4·D2·D3) 12:35 — pg 70M(23표)·app_data 1035M → `/data/appdata` 루트 심링크·job_storage. 48s(heal.sh 40s). 게이트: /health 200 · 앱 인스턴스 16 · materialtwin 49,386행 동일 · 앱 컨테이너 `/data` 에 materialtwin.db ✓ · materialtwin web 200·stepforge 401(인증 요구=생존) · 런처 가드 `resolve()` 양쪽이라 심링크 루트 허용(실측)
-  - [ ] `.agent_work` → `/data/appdata/materialtwin_web/sources/agent_work/` + `source.local_path` 18행 UPDATE(MTW, D2 잔여) · `.pre-*` 13 legacy tar·0바이트 materialtwin.db 정리(D7 사람) · `SECRET_ENCRYPTION_KEY` sha256 매니페스트 기록 · `register_material` 1회(수동)
+  - [ ] `.agent_work` → `/data/appdata/materialtwin_web/sources/agent_work/` + `source.local_path` 18행 UPDATE(MTW, D2 잔여) · `.pre-*` 13 legacy tar·0바이트 materialtwin.db 정리(D7 사람) · `SECRET_ENCRYPTION_KEY` sha256 매니페스트 기록 · `register_material` 1회(수동) — 사용자 결정 10-31 A4: ① MaterialTwin 담당 세션에 넘긴다(followups-1017 X1 ~ X3 '데이터 정리는 MaterialTwin 담당' 과 같은 길) — 요청서는 따로 낸다 (10-31 정리)
 - [x] **signalforge**(D4) 12:37 — pg 1.9G(11표 일치) · reports·audit 는 추적 파일 → 등록만(`enabled:false`)
 - [x] **ai-data-hub**(D4·D3) 12:48 — pg 9.8G(21표 일치)·attachments·figures·mcp_uploads 570M + db_paths 치환 `record_attachments.file_path` 18행·`mcp_uploads.manifest` 4행. **1차 시도(12:41) 롤백**: 치환 SQL 리터럴을 `shlex.quote` 로 만들어 슬래시만 있는 경로가 인용되지 않음(`syntax error at or near "/"`) → `sql_lit()` 로 수정. 롤백이 pg 9.8G 사본 포함 4개를 `.rolled-back-20260905-123758` 로 비켜둠(사람이 지운다). 재실행은 3시간 안의 daily 덤프를 재사용해 21s
 - [x] **공통 게이트**: `services.sh data --check` rc 0(이동 종류 전부 same) · 심링크가 `--bind` 소스여도 커널이 해석(mxwp·koorm·heax·sf pg 인스턴스가 `/data/pg/<svc>/pgdata/postmaster.pid` 갱신 — 실측) · 크론 23줄 매번 복원 · 원장 `/data/hwax/state/data-migrate/journal.jsonl`
 - [x] 유예 뒤 `.pre-move-*`(8리포)·`.rolled-back-*`(`/data/pg/mxwp.…-122907`·`/data/svc/mxwp/minio.…-122907`·`/data/pg/aidh.…-123758` 9.8G·`/data/svc/aidh/{attachments,figures,mcp_uploads}.…-123758`) 삭제 — 사람(D7) — **지움(10-18 — 사용자 '목록대로 모두', dev 29개 · 24.0GB — docs/followups-1017 FU-D15)**
 
 ## D5 — 동기화 배선 (P3.1b) — 기존 스크립트 + ssh
-- [ ] `infra/boxes.yaml`(gitignore) + ssh 키 확인(dev↔cae00↔prod BatchMode)
-- [ ] `db-sync.sh push|pull|mirror|status|rollback` 얇은 래퍼(~150줄) — rsync → pre-sync(backup-local) → 기존 merge 호출 → 원장
-- [ ] 로컬 입력 입구 6줄: SF `merge-from-drive.sh:33-37` `SF_MERGE_DUMP` · HEAX `appdata-merge-from-drive.sh:20-22` `HEAX_APPDATA_TAR` (AIDH 는 이미 있음)
-- [ ] 기존 merge 소규모 수정(PLAN §8.4 순서): AIDH embeddings 제외 → agents DO NOTHING+보고 → records 자연키 → SF update_cols(결정 5 에 따라) → HEAX 시드 `--exclude`
+- [ ] `infra/boxes.yaml`(gitignore) + ssh 키 확인(dev↔cae00↔prod BatchMode) — 사용자 결정 10-31 A2: ① 보류 유지 — 운영 전환(10-31) 중이고 같은 병합 스크립트를 다른 갈래가 고친다(AIDataHub `6f496fa` · SignalForge `396af7c`) (10-31 정리)
+- [ ] `db-sync.sh push|pull|mirror|status|rollback` 얇은 래퍼(~150줄) — rsync → pre-sync(backup-local) → 기존 merge 호출 → 원장 — 사용자 결정 10-31 A2: ① 보류 유지 — 운영 전환(10-31) 중이고 같은 병합 스크립트를 다른 갈래가 고친다(AIDataHub `6f496fa` · SignalForge `396af7c`) (10-31 정리)
+- [ ] 로컬 입력 입구 6줄: SF `merge-from-drive.sh:33-37` `SF_MERGE_DUMP` · HEAX `appdata-merge-from-drive.sh:20-22` `HEAX_APPDATA_TAR` (AIDH 는 이미 있음) — 사용자 결정 10-31 A2: ① 보류 유지 — 운영 전환(10-31) 중이고 같은 병합 스크립트를 다른 갈래가 고친다(AIDataHub `6f496fa` · SignalForge `396af7c`) (10-31 정리)
+- [ ] 기존 merge 소규모 수정(PLAN §8.4 순서): AIDH embeddings 제외 → agents DO NOTHING+보고 → records 자연키 → SF update_cols(결정 5 에 따라) → HEAX 시드 `--exclude` — 사용자 결정 10-31 A2: ① 보류 유지 — 운영 전환(10-31) 중이고 같은 병합 스크립트를 다른 갈래가 고친다(AIDataHub `6f496fa` · SignalForge `396af7c`) · PLAN §8.4 ⑤ 의 MaterialTwin 크론(라이브 DB export)은 D5 와 무관하게 MaterialTwin 담당 몫(A4 와 같은 길) (10-31 정리)
   - 10-31 — 첫 걸음(AIDH embeddings)은 다른 길로 들어갔다. `agent_sample_embeddings` 를 빼지 않고 **전문가 단위로 맞추고 순번을 표의 가장 큰 id 뒤로 민다**(AIDataHub `6f496fa` — cae00 의 표본 저장이 겹친 id 로 거절되던 원인 후보, docs/request-1030 AD-21 후속). 사용자 결정 셋 — cae00 은 받은 뒤 `merge-from-drive.sh` 를 한 번 손으로 돈다 · 덤프로 고칠 수 없는 전문가는 다시 짓는 명령과 함께 알리기만 한다 · update-all 은 그 줄을 경고로 세지 않는다(docs/request-1030 context-notes C-18 · server-setup 8절). 이 걸음에서 그 표를 동기화에서 빼면 이 고침이 사라진다 — 빼지 않는다. 나머지 걸음은 그대로다.
-- [ ] mirror: Koorm·HEAX `pg_restore --clean` 4줄 + `exclude_on_mirror` TRUNCATE + `provision-config.sh --force` · sqlite `.backup` rsync→`mv -T`
-- [ ] update-all §3·deploy-all SF/heax merge 를 `DB_SYNC` 플래그로 이중화(기본 0) → 같은 덤프로 결과 diff 0 → 기본값 전환
-- [ ] SF·MTW `*/30` Drive push 정지 · AIDH 이중 덤프 통합 · Drive db-dumps 3세대
-- [ ] Drive 로 나가는 DB 덤프(SF · AIDH 일 1회)를 age 로 암호화 — D5 와 함께(10-17 — 사용자, 결정 18). 리스크 앱 백업이 쓰는 같은 방식(공개키만 박스에, 개인키는 사용자)
-- [ ] **게이트**: 원장 1건 · 롤백 리허설(pre-sync 복원) 1회 · `divergent` 0 · `db-sync status` 0 · Drive 채널(코드) 무변경 확인
+- [ ] mirror: Koorm·HEAX `pg_restore --clean` 4줄 + `exclude_on_mirror` TRUNCATE + `provision-config.sh --force` · sqlite `.backup` rsync→`mv -T` — 사용자 결정 10-31 A2: ① 보류 유지 — 운영 전환(10-31) 중이고 같은 병합 스크립트를 다른 갈래가 고친다(AIDataHub `6f496fa` · SignalForge `396af7c`) (10-31 정리)
+- [ ] update-all §3·deploy-all SF/heax merge 를 `DB_SYNC` 플래그로 이중화(기본 0) → 같은 덤프로 결과 diff 0 → 기본값 전환 — 사용자 결정 10-31 A2: ① 보류 유지 — 운영 전환(10-31) 중이고 같은 병합 스크립트를 다른 갈래가 고친다(AIDataHub `6f496fa` · SignalForge `396af7c`) (10-31 정리)
+- [ ] SF·MTW `*/30` Drive push 정지 · AIDH 이중 덤프 통합 · Drive db-dumps 3세대 — 사용자 결정 10-31 A2: ① 보류 유지 — 운영 전환(10-31) 중이고 같은 병합 스크립트를 다른 갈래가 고친다(AIDataHub `6f496fa` · SignalForge `396af7c`) · MTW 30분 번들(소비자 없음)은 D5 와 무관하게 MaterialTwin 담당 몫(A4 와 같은 길) (10-31 정리)
+- [ ] Drive 로 나가는 DB 덤프(SF · AIDH 일 1회)를 age 로 암호화 — D5 와 함께(10-17 — 사용자, 결정 18). 리스크 앱 백업이 쓰는 같은 방식(공개키만 박스에, 개인키는 사용자) — 사용자 결정 10-31 A2: ① 보류 유지 — 암호화는 D5 와 함께(결정 18 — 먼저 암호화하면 cae00 병합이 개인키 없이 멈춘다) (10-31 정리)
+- [ ] **게이트**: 원장 1건 · 롤백 리허설(pre-sync 복원) 1회 · `divergent` 0 · `db-sync status` 0 · Drive 채널(코드) 무변경 확인 — 사용자 결정 10-31 A2: ① 보류 유지 — 운영 전환(10-31) 중이고 같은 병합 스크립트를 다른 갈래가 고친다(AIDataHub `6f496fa` · SignalForge `396af7c`) (10-31 정리)
 
 ## D6 — prod 편입
 
 > 시험 서버로 보내는 사본(prod → staging mirror)은 **원문으로, 토큰 · 비밀만 뺀다**(10-17 — 사용자, 결정 22 — PLAN §12-4). 새 운영 서버는 당분간 없다(결정 14).
-- [ ] prod 박스 준비(결정 2) · `HWAX_DATA_ROOT=/data` 레이아웃 · update-all 1회
-- [ ] 키 봉투 수동 전달(HEAX SECRET_ENCRYPTION_KEY · 포털 jwt · HWAXRisk cred.key · rclone.conf) — 어느 채널에도 안 실림
-- [ ] cae00 쓰기 정지(포털 maintenance) → `seed`(콘텐츠 publish + 사용자 데이터 1회) → prod `provision-config.sh` 새로 → 소유권 전환(cae00 `HWAX_BOX_ROLE=staging`) — (10-17 — 사용자: §12 #15 의 cae00 정리는 D6 직전에(기본값 확정) — D6 은 새 운영 서버가 생길 때다(당분간 없음 — 결정 14))
+- [ ] prod 박스 준비(결정 2) · `HWAX_DATA_ROOT=/data` 레이아웃 · update-all 1회 — 사용자 결정 10-31 A3: ① 보류 유지 — 포털 스택의 운영 서버가 정해지면 연다(결정 14 — 10-31 의 HWAXProd 운영 노드는 StepForge · DynaForge 만 받았다) (10-31 정리)
+- [ ] 키 봉투 수동 전달(HEAX SECRET_ENCRYPTION_KEY · 포털 jwt · HWAXRisk cred.key · rclone.conf) — 어느 채널에도 안 실림 — 사용자 결정 10-31 A3: ① 보류 유지 — 포털 스택의 운영 서버가 정해지면 연다(결정 14 — 10-31 의 HWAXProd 운영 노드는 StepForge · DynaForge 만 받았다) (10-31 정리)
+- [ ] cae00 쓰기 정지(포털 maintenance) → `seed`(콘텐츠 publish + 사용자 데이터 1회) → prod `provision-config.sh` 새로 → 소유권 전환(cae00 `HWAX_BOX_ROLE=staging`) — (10-17 — 사용자: §12 #15 의 cae00 정리는 D6 직전에(기본값 확정) — D6 은 새 운영 서버가 생길 때다(당분간 없음 — 결정 14)) — 사용자 결정 10-31 A3: ① 보류 유지 — 포털 스택의 운영 서버가 정해지면 연다(결정 14 — 10-31 의 HWAXProd 운영 노드는 StepForge · DynaForge 만 받았다) (10-31 정리)
 - [x] ~~RA 블루-그린(§7.9) 컷오버~~ — 닫음(10-17 — 사용자: RA 담당이 09-26~27 에 RA 를 자기 서버 두 대로 옮겼고 포털은 다시 연결했다 — 포털 쪽 블루-그린이 없어졌다)
-- [ ] 첫 `mirror prod→staging`(결정 4 마스킹) · 오프박스 백업 rsync
-- [ ] **게이트**: prod 전 서비스 health · cae00 발급 PAT 가 prod 게이트웨이에서 유효 · RA rat_ 토큰 유효 · 첫 mirror 성공 · 오프박스 백업 도착 · DNS 전환
+- [ ] 첫 `mirror prod→staging`(결정 4 마스킹) · 오프박스 백업 rsync — 사용자 결정 10-31 A3: ① 보류 유지 — 포털 스택의 운영 서버가 정해지면 연다(결정 14 — 10-31 의 HWAXProd 운영 노드는 StepForge · DynaForge 만 받았다) · 다시 열면 '결정 4 마스킹' 은 결정 22(원문으로, 토큰 · 비밀만 뺀다)로 읽는다 (10-31 정리)
+- [ ] **게이트**: prod 전 서비스 health · cae00 발급 PAT 가 prod 게이트웨이에서 유효 · RA rat_ 토큰 유효 · 첫 mirror 성공 · 오프박스 백업 도착 · DNS 전환 — 사용자 결정 10-31 A3: ① 보류 유지 — 포털 스택의 운영 서버가 정해지면 연다(결정 14 — 10-31 의 HWAXProd 운영 노드는 StepForge · DynaForge 만 받았다) · 다시 열면 RA 칸은 '사람별 RA 연결이 그 박스에서 산다' 로 읽는다 (10-31 정리)
