@@ -6,7 +6,7 @@
 ## 착수 게이트
 - [x] 전 박스 ssh 가능(2026-09-05) → 동기화 매체 rsync/ssh, Drive 데이터 채널 불필요
 - [x] PLAN §12 결정 1(토폴로지 개정)·2(prod hostname·/data 종류)·5(SF 소유권)·6(upload-staging) 사용자 답 — **확정(10-17 — 사용자: §12 결정 — 1 방향 승인 · 실행은 나중(결정 13) · 2 새 운영 서버 당분간 없음(결정 14) · 5 VOC 수집은 dev 만(결정 19) · 6 업로드 임시칸은 지금처럼 홈 폴더(기본값 확정 — 결정 20))**
-- [ ] `docs/cluster-deploy/context-notes.md` 에 토폴로지 개정 + `/data/svc` 한 줄 추가 기록(D1 전)
+- [x] `docs/cluster-deploy/context-notes.md` 에 토폴로지 개정 + `/data/svc` 한 줄 추가 기록(D1 전) — 풀림 docs/cluster-deploy/context-notes.md 「2026-10-31 — 데이터 이관 계획이 바꾼 두 가지 · 계획 v2 걷음」 ①② — D1(09-05) 전이 아니라 뒤에 적었다 (10-31 정리)
 - [x] 작업 중 `hwax-stack.service` 부팅 갱신기 일시 disable — dev 에서 disable(2026-09-05, D0 끝나면 enable) → **재enable 완료**(2026-09-05 dev D1~D4 뒤)
 
 ## D0 — 무영향 추가 (P0.3) — 사전점검 2회 반영판
