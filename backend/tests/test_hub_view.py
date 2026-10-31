@@ -135,14 +135,14 @@ def test_영역_수는_내_권한_안이고_끈_앱_형제_허브_허브_자체�
     assert [o["label"] for o in body["area_options"]][:2] == ["CAD", "MESH"], "라벨 · 차례는 게이트웨이 area_meta 그대로"
 
 
-@pytest.mark.parametrize("mode,areas", [("everything", []), ("bundle", []), ("bundle", ["nosuch"]), ("bundle", ["cad", "CAD!"]),
-                                        ("bundle", ["x" * 40])])
-def test_틀린_보기와_모르는_영역은_받지_않는다(env, mode, areas):
+@pytest.mark.parametrize("mode,areas,why", [("everything", [], "모르는 보기"), ("bundle", [], "하나 이상"), ("bundle", ["nosuch"], "모르는 영역"),
+                                            ("bundle", ["cad", "CAD!"], "모르는 영역"), ("bundle", ["x" * 40], "모르는 영역")])
+def test_틀린_보기와_모르는_영역은_받지_않는다(env, mode, areas, why):
     c, _ = env
     h = _login(c, "user@corp.com")
     assert _put(c, h, "bundle", ["cad"]).status_code == 200
     r = _put(c, h, mode, areas)
-    assert r.status_code == 400, r.text
+    assert r.status_code == 400 and why in r.json()["detail"], r.text
     assert _ent(c, "user@corp.com")["view"] == "bundle:cad", "거절하면 그대로다"
 
 
