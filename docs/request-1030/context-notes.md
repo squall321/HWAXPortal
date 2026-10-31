@@ -186,3 +186,10 @@
 - SignalForge — cae00 이 새 코드를 받은 뒤 다시 태깅이 병합될 때까지의 빈 결과 창은 받아들인다(server-setup 3절).
 - 설계 셋(E-2 · E-4 · E-5 · HA-09 · HA-20 / HP-42)은 권장안대로 단계별로 짓는다. HA-09 의 결함 고침(S0 — 재기동으로 끊긴 심의가 늘 처음부터 도는 것)부터다.
   cae00 측정이 필요한 것은 받은 편지함으로 묻고 기다린다.
+
+## C-29 SP 상시 규칙은 SignalForge · DocForge · StepForge · KooRemapper 넷에 — ReportArchive 는 뺀다(사용자 지시 10-31)
+
+- 사용자가 '레포아카는 내가 다루는 리포가 아니다' 라고 했다. ReportArchive 에 보낸 SP 어댑터 대조 요청은 거뒀다.
+- 나머지 셋(SignalForge · DocForge · StepForge)에도 CLAUDE.md 에 규칙을 넣으라고 전했다. KooRemapper 는 사용자 확인을 받아 이미 넣었다(`9670fc7`).
+  세 세션은 피어 전언을 승인으로 쓰지 않으므로, 그쪽 확인 질문에는 사용자가 그 세션에서 답한다.
+
