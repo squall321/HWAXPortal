@@ -425,7 +425,9 @@ def test_중계가_멈춤_사건을_받으면_발언과_멈춤을_대화에_남�
     assert [m["role"] for m in msgs] == ["user", "persona", "assistant"], msgs
     assert msgs[1]["content"] == "초기 입장" and msgs[1]["meta"] == {"delib_run": RID}
     assert msgs[2]["content"] == _STOP
-    assert msgs[2]["meta"] == {"delib_cancelled": {"message": _STOP, "by": OWNER, "run_id": RID}, "delib_run": RID}
+    # 심의 프레임을 받은 턴의 답에는 중계가 answered_by='delib' 도 적는다(백로그 B11 — 다시 열 때 전문가 말풍선을 붙이지 않는다)
+    assert msgs[2]["meta"] == {"delib_cancelled": {"message": _STOP, "by": OWNER, "run_id": RID}, "delib_run": RID,
+                               "answered_by": "delib"}
     assert (cid, RID) not in relay._DELIB_RELAYS, "끝난 중계의 기록이 표에 남았다"
     # 다른 기기 · 새로고침이 되살린 심의 — 멈춤은 멈춤으로, 결정문으로 그리지 않는다(conversations.api.ts serverMessagesToLocal)
     local = _restore(msgs)
