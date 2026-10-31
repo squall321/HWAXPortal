@@ -54,6 +54,14 @@ export function routineStopNote(raw: string | undefined): string | null {
     : null;
 }
 
+/** 결정문 없이 끝나 보이는 심의가 서버에서 아직 돌 수 있나 — 받기만 끊긴 것(■ · 스트림 절단 · 중계의 침묵 한도)이거나 오류가 없는 것(서버
+ *  사본에서 되살렸다 · done 없이 닫혔다)이다. 엔진이 알린 오류(결정문 없음 · 게이트웨이 · 페르소나 · 심의 오류)는 심의가 끝난 것이다. 심의 칸의
+ *  '멈춤' 이 이 판정으로 남는다(docs/leftovers-1017 triage A24). */
+export function delibMayStillRun(raw: string | undefined): boolean {
+  const r = raw || '';
+  return !r || STOPPED.test(r) || r.startsWith(STREAM_CUT) || r.includes('AGENT_STREAM_IDLE_TIMEOUT_S');
+}
+
 const afterDash = (r: string) => r.slice(r.indexOf('—') + 1).trim();
 // LLM 호출 한도에 걸렸을 때 늘릴 손잡이 둘(요청·서버). 줄이라고 권하지 않는다 — 좌석이 많은 패널은 공유 LLM 에 줄을 서는 시간까지
 // 이 시계에 들어간다.

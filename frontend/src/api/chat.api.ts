@@ -324,6 +324,46 @@ export async function fetchDeliberateClarify(
   }
 }
 
+// ── 도는 웹 심의 멈춤(docs/leftovers-1017 triage A24) ─────────────────────────
+/** 멈춤의 답 — 포털 POST /agent/deliberate/cancel 이 에이전트 서버의 답(code · message · status)을 그대로 넘긴다. 포털이 막은 것(인증 ·
+ *  CSRF)은 {detail} 꼴이라 같은 칸으로 펴서 준다. http 0 은 닿지 못한 것이다. */
+export interface DelibCancelResult {
+  ok: boolean;
+  http: number;
+  code: string;
+  message: string;
+  /** cancelling(접는 중) · cancelled(이미 멈췄다) · done · error · interrupted(409 already_finished — 이미 끝났다) · running(409 finishing) */
+  status?: string;
+  already?: boolean;
+  /** 포털이 서버 대화에 남긴 멈춤 글(받는 중계가 없을 때 — 받기가 끊긴 심의). 받는 중인 심의는 멈춤 사건이 그 글을 가져온다. */
+  stopNote?: string;
+}
+
+/** 그 심의(runId — 첫 심의 사건의 run_id) 하나를 서버에서 멈춘다. 대화 id 만으로는 보내지 않는다 — 같은 대화의 다른 심의를 접지 않게. */
+export async function cancelDeliberation(conversationId: string, runId: string): Promise<DelibCancelResult> {
+  try {
+    const res = await apiFetch('/agent/deliberate/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: conversationId, run_id: runId }),
+    });
+    const b = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const d = b.detail;
+    const dd = d && typeof d === 'object' ? (d as Record<string, unknown>) : {};
+    return {
+      ok: res.ok,
+      http: res.status,
+      code: String(b.code ?? dd.code ?? (res.ok ? '' : `http_${res.status}`)),
+      message: String(b.message ?? dd.message ?? (typeof d === 'string' ? d : '')),
+      ...(typeof b.status === 'string' ? { status: b.status } : {}),
+      ...(b.already === true ? { already: true } : {}),
+      ...(typeof b.stop_note === 'string' && b.stop_note ? { stopNote: b.stop_note } : {}),
+    };
+  } catch (e) {
+    return { ok: false, http: 0, code: 'network', message: String(e) };
+  }
+}
+
 // ── 심의 전 'VOC 먼저 보기' ────────────────────────────────────────────────
 export interface VocItem {
   id: number | string;
