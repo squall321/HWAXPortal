@@ -167,7 +167,7 @@ def _restart(tmp_path: Path, url: str, tail: str = "", **env):
     svc.chmod(0o755)
     script = (f'set -uo pipefail\nSVC="{svc}"\n{LIBS}export HWAX_RESTART_STATE_DIR="{st}" HWAX_WAIT_DOWN_MAX=1 HWAX_WAIT_UP_MAX=1 '
               f'HWAX_SKIP_LEDGER="{ledger}"\nshow_cause() {{ :; }}\n{_restart_svc_block()}\n'
-              f'restart_svc agent-server; echo "rc=$?"; echo "DEFERRED=[$DEFERRED_RESTART] RAISED=[$DELIB_PAUSE_RAISED]"\n{tail}')
+              f'restart_svc agent-server; echo "rc=$?"; echo "DEFERRED=[$DEFERRED_RESTART] RAISED=[${{HWAX_DELIB_PAUSE_RAISED:-0}}]"\n{tail}')
     r = _sh(script, HWAX_DELIB_WAIT_POLL_S="1", **env)
     return r.stdout + r.stderr, (log.read_text().splitlines() if log.exists() else []), ledger.read_text()
 
@@ -305,9 +305,26 @@ def test_4장_블록은_lib_없이도_조용히_지나간다(tmp_path):
 
 
 def _o2_block() -> str:
-    i = UA.index("export HWAX_DELIB_PAUSE_BY=update-all")
+    i = UA.index('_ag0=""; command -v hwax_agent_ident')
     j = UA.index("\n# 1i 의 뒤처리", i)
     return UA[i:j]
+
+
+def _head_export() -> str:
+    """멈춤 주인 · 표지 · 판정 파일을 물려주는 머리의 export 한 줄(10-31 A25 — §2 의 SignalForge 도 쓰게 §4 에서 머리로 옮겼다)."""
+    return next(ln for ln in UA.splitlines() if ln.startswith("export HWAX_DELIB_GATE="))
+
+
+def test_멈춤_주인과_표지는_2장_앞에서_물려준다():
+    """§2 의 SignalForge 가 세운 멈춤도 끝맺음이 내려야 한다 — 표지가 §4 에서야 정해지면 §2 가 세운 멈춤은 수명(기다림 + 30분)까지 새 심의를 막는다."""
+    line = _head_export()
+    assert "HWAX_DELIB_PAUSE_BY=update-all" in line and 'HWAX_DELIB_PAUSE_MARK="${HWAX_SKIP_LEDGER}.delib-pause"' in line, line
+    at = UA.index(line)
+    assert UA.index('HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER') < at, "장부 옆 파일이다 — 장부를 만든 뒤에 정한다"
+    assert at < UA.index('"$SELF_REPO/infra/scripts/deploy-all-from-drive.sh"') < UA.index(
+        '"$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server')
+    code = [ln for ln in UA.splitlines() if not ln.lstrip().startswith("#")]
+    assert sum("HWAX_DELIB_PAUSE_BY=" in ln for ln in code) == 1, "주인을 두 곳에서 정하면 한쪽만 고쳐진다"
 
 
 @pytest.mark.parametrize("restarted,requeued,paused,want", [
@@ -325,7 +342,7 @@ def test_에이전트가_다시_떴으면_다시_선_줄_수를_찍는다(tmp_pa
     us.chmod(0o755)
     # 리스너 판정만 대역 — update-sites 가 다시 띄웠으면(flip) 다른 pid 를 답한다. 다시 선 줄 수는 진짜 lib 가 지어낸 서버에 묻는다.
     stub = f'hwax_agent_ident() {{ if [ -f "{tmp_path / "flip"}" ]; then echo "222:900"; else echo "111:100"; fi; }}\n'
-    r = _sh(f'set -uo pipefail\n. "{BUSY_LIB}"\n{stub}fail() {{ echo "FAIL:$*"; }}\nSELF_REPO="{repo}"\n{_o2_block()}\necho END',
+    r = _sh(f'set -uo pipefail\n. "{BUSY_LIB}"\n{stub}fail() {{ echo "FAIL:$*"; }}\nSELF_REPO="{repo}"\n{_head_export()}\n{_o2_block()}\necho END',
             HWAX_AGENT_URL=agent["base"], HWAX_SKIP_LEDGER=str(tmp_path / "ledger"))
     assert not r.stderr and "PAUSE_BY=update-all" in r.stdout and "END" in r.stdout, r.stdout + r.stderr
     if want is None:

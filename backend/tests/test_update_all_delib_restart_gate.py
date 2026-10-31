@@ -221,11 +221,13 @@ def test_강행하면_심의가_돌아도_재기동한다(tmp_path, health):
     assert "down agent-server" in calls and "up agent-server" in calls and "건너뜀" not in out and ledger == ""
 
 
-def test_다른_서비스는_묻지_않는다(tmp_path, health):
-    """게이트웨이·signalforge-mcp 의 재기동은 심의를 지우지 않는다(도구 호출이 한 번 실패할 뿐이다) — 넓히면 배포가 안 된다."""
+def test_혼자_돈_update_sites_는_다른_서비스를_묻지_않는다(tmp_path, health):
+    """게이트웨이·signalforge-mcp 의 재기동은 심의를 지우지 않는다(그 순간의 도구 호출이 실패할 뿐이다). 10-31 A25(사용자 결정 (가)) 부터
+    update-all 아래(HWAX_DELIB_GATE)에서는 둘도 같은 기다림 하나를 지난다(test_delib_wait_once). 혼자 돈 update-sites — 손으로 게이트웨이만
+    다시 띄우는 일 — 는 종전대로 묻지 않는다."""
     health["body"] = {"delib_active": 2, "delib_queued": 1}
     out, calls, _, _ = _restart(tmp_path, health["url"], name="mcp-gateway")
-    assert "down mcp-gateway" in calls and "up mcp-gateway" in calls and "건너뜀" not in out
+    assert "down mcp-gateway" in calls and "up mcp-gateway" in calls and "건너뜀" not in out and "기다린" not in out
 
 
 def test_미룬_실행에서_갱신이_실패했으면_종료코드는_올린다(tmp_path, health):

@@ -4,9 +4,10 @@
 #   ./infra/scripts/update-all.sh                # 전부 (표준 운영 최신화)
 #   SF_RESTORE_DB=1 ./infra/scripts/update-all.sh   # SignalForge DB를 Drive 최신 덤프로 시드/갱신
 #   NO_GIT_RESET=1  ./infra/scripts/update-all.sh   # 로컬 수정 보존(soft pull) 모드
-#   AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh   # 도는·줄 선 심의가 있어도 포털·nginx·허브·에이전트 서버를 재기동(심의가 전부 끊긴다)
-#       기본은 그 반대다 — 심의가 있으면 포털·nginx·허브 재기동(§2), 에이전트 서버 재기동(§4), 게이트웨이 재프로비저닝(§5)을
-#       건너뛰고 ○ 로 남긴다. 포털과 허브는 그 동안 새 이미지·frontend/dist·앱 SIF 도 받지 않는다(옛 프로세스가 그대로 돈다).
+#   AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh   # 도는·줄 선 심의가 있어도 포털·nginx·허브·에이전트 서버·게이트웨이·SignalForge 를 재기동(심의가 전부 끊긴다)
+#       기본은 그 반대다 — 심의가 있으면 포털·nginx·허브 재기동(§2), 게이트웨이 재프로비저닝(§5)을 건너뛰고 ○ 로 남긴다. SignalForge(§2) ·
+#       signalforge-mcp · 게이트웨이 · 에이전트 서버(§4) 재기동은 먼저 도는 심의를 한 번 기다리고(아래 HWAX_DELIB_WAIT_S — 기다림은 그 실행에
+#       하나다, 10-31 A25), 못 끝나면 건너뛰고 ○ 로 남긴다. 포털과 허브는 그 동안 새 이미지·frontend/dist·앱 SIF 도 받지 않는다(옛 프로세스가 그대로 돈다).
 #       강행하면 1h 의 비우기 깃발은 세우되 도는 카드 대조를 기다리지 않는다.
 #   LLM_ROUTER_RESTART_FORCE=1 ./infra/scripts/update-all.sh   # LLM 라우터를 지나는 요청이 있어도 라우터를 재기동한다(풀을 껐으면 내린다) —
 #       그 스트림이 끊긴다. 기본은 미루고 ○ 로 남긴다(1i · §4 · §4 뒤). 넘는 것은 **도는 요청 검사 하나뿐이다** — 풀을 끈 뒤 내리기는 강행해도
@@ -21,10 +22,13 @@
 #     HWAX_DRAIN_GRACE_S=1800   재기동을 미룬 실행의 끝 — 도는 심의가 0 이 된 뒤 새 패널을 멈춰 두는 창(초). 그 안에 다시 돌리면 미룸 없이 지나간다.
 #     HWAX_DRAIN_MAX_S=46800    그 깃발의 최대 수명(초).
 #     HWAX_AGENT_URL=http://127.0.0.1:9009   비우기가 부르는 에이전트 서버(시험이 바꿔 끼운다).
-#   §4) 에이전트 서버 재기동 앞의 새 심의 멈춤(docs/delib-ops O1 — 엔진이 /drain scope delib 을 아는 판부터).
-#     HWAX_DELIB_WAIT_S=600     재기동할 에이전트 서버에 도는 심의가 있으면 새 심의를 멈추고(새 시작 · 이어하기는 '점검 중' 으로 거절되고 줄
-#                               선 심의는 붙잡힌다) 도는 것이 끝나기를 기다리는 한도(초, 0 = 종전대로 곧바로 미룬다). 넘기면 종전대로 재기동을
-#                               미루고 멈춤을 내린다. 재기동했으면 멈춤은 이 실행의 끝에서 내린다(다시 선 줄이 그때 든다 — 몇 건인지 §4 가 찍는다).
+#   §2·§4) 에이전트 서버 · 게이트웨이 · SignalForge 재기동 앞의 새 심의 멈춤(docs/delib-ops O1 — 엔진이 /drain scope delib 을 아는 판부터,
+#     10-31 A25 — 게이트웨이 · SignalForge 까지 넓혔다. 도는 좌석은 게이트웨이로 도구를 부른다).
+#     HWAX_DELIB_WAIT_S=600     셋 가운데 처음으로 재기동할 것(§2 의 SignalForge → §4 의 signalforge-mcp · 게이트웨이 · 에이전트 서버 차례)에서
+#                               도는 심의가 있으면 새 심의를 멈추고(새 시작 · 이어하기는 '점검 중' 으로 거절되고 줄 선 심의는 붙잡힌다) 도는 것이
+#                               끝나기를 기다리는 한도(초, 0 = 종전대로 곧바로 미룬다). 기다림은 이 실행에 한 번이다 — 끝나면 멈춤을 세워 둔 채 셋을
+#                               재기동하고, 넘기면 셋 다 미루고 멈춤을 내린다(뒤의 재기동은 다시 기다리지 않는다). 재기동했으면 멈춤은 이 실행의
+#                               끝에서 내린다(다시 선 줄이 그때 든다 — 몇 건인지 §4 가 찍는다). 바뀌지 않아 재기동하지 않는 실행은 기다리지 않는다.
 #
 # 순서:
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
@@ -100,10 +104,10 @@ hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
          [ -n "${FAIL_ITEMS:-}" ] && printf '  지금까지의 ✗:\n%s' "$FAIL_ITEMS"
          # 비우기 끝맺음은 장부를 지우기 전에 — 미룬 재기동 줄을 장부에서 읽는다(1h).
          command -v _hwax_drain_finish >/dev/null 2>&1 && _hwax_drain_finish
-         command -v _hwax_delib_pause_finish >/dev/null 2>&1 && _hwax_delib_pause_finish   # §4 가 세운 새 심의 멈춤(O1)
+         command -v _hwax_delib_pause_finish >/dev/null 2>&1 && _hwax_delib_pause_finish   # §2·§4 가 세운 새 심의 멈춤(O1 · A25)
          command -v _hwax_board_resume >/dev/null 2>&1 && _hwax_board_resume     # 1b2 의 경보 멈춤(5b 전에 멈췄다)
          command -v hwax_skip_summary >/dev/null 2>&1 && hwax_skip_summary
-         rm -f "${HWAX_SKIP_LEDGER:-}" 2>/dev/null; exit 143; fi
+         rm -f "${HWAX_SKIP_LEDGER:-}" ${HWAX_DELIB_GATE:+"$HWAX_DELIB_GATE"} 2>/dev/null; exit 143; fi
        export HWAX_UPDATE_ALL_LAST_HR="$*"      # §1 exec 재실행을 넘어가야 하니 환경변수
        printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"
        # 1h 의 비우기 깃발을 § 머리마다 돌본다(늘리기 · 남이 내렸으면 멈추기 · 남의 깃발이 사라졌으면 세우기) — _hwax_drain_tick.
@@ -125,6 +129,10 @@ app_bad() { local c="$1"; shift; if [ "$c" = 1 ]; then fail "$@"; else bad "$@";
 HWAX_SKIP_LEDGER="$(mktemp)"; export HWAX_SKIP_LEDGER
 # 도는·줄 선 심의가 있으면 에이전트 서버를 재기동하지 않는다(§4 는 update-sites 가, §5 는 재프로비저닝 앞에서 묻는다).
 . "$SELF_REPO/infra/scripts/lib/delib-busy.sh"
+# 한 번 기다리기(docs/delib-ops O1 · 10-31 A25) — §2 의 SignalForge · §4 의 signalforge-mcp · 게이트웨이 · 에이전트 서버 재기동이 같은 기다림 하나를
+#   쓴다(lib/delib-busy.sh 의 hwax_delib_gate). 판정(HWAX_DELIB_GATE)과 멈춤 표지(HWAX_DELIB_PAUSE_MARK)는 장부 옆 파일이다 — 자식(deploy-all ·
+#   update-sites)이 적고 이 실행의 끝맺음(_hwax_delib_pause_finish)이 읽는다. 세우는 멈춤의 주인은 update-all 이다.
+export HWAX_DELIB_GATE="${HWAX_SKIP_LEDGER}.delib-gate" HWAX_DELIB_PAUSE_BY=update-all HWAX_DELIB_PAUSE_MARK="${HWAX_SKIP_LEDGER}.delib-pause"
 # 리스크 검토 비우기(1h) — 에이전트 서버 /drain 깃발을 세우고, § 머리마다 늘리고, 끝에서 내리거나 새 패널만 멈춘 채로 둔다.
 . "$SELF_REPO/infra/scripts/lib/review-drain.sh"
 # LLM 서버 풀(1i · §4 뒤 라우터 내리기 · §6) — LLM_UPSTREAMS 한 줄의 규칙(목록 검사·라우터 주소·사본 바꾸기)은 이 lib 한 곳에 있다.
@@ -171,8 +179,9 @@ _hwax_drain_finish() {
   fi
   return 0
 }
-# 새 심의 멈춤 끝맺음(docs/delib-ops O1) — §4 의 update-sites 가 에이전트 서버를 재기동하며 세운 멈춤(by update-all)을 내린다(다시 선 줄이
-#   든다). 세운 것은 자식(update-sites)이라 셸 변수로 못 넘긴다 — 자식이 남긴 표지 파일(HWAX_DELIB_PAUSE_MARK)이 있을 때만 엔진에 묻고(켜져
+# 새 심의 멈춤 끝맺음(docs/delib-ops O1) — §2 의 deploy-all(SignalForge) 이나 §4 의 update-sites(signalforge-mcp · 게이트웨이 · 에이전트 서버)가
+#   재기동 앞에서 기다리며 세운 멈춤(by update-all — 10-31 A25)을 내린다(다시 선 줄이 든다).
+#   세운 것은 자식(deploy-all · update-sites)이라 셸 변수로 못 넘긴다 — 자식이 남긴 표지 파일(HWAX_DELIB_PAUSE_MARK)이 있을 때만 엔진에 묻고(켜져
 #   있고 by update-all 인 것만) 내린다. 표지가 없으면 묻지도 않는다. 사람이나 다른 주체의 멈춤은 건드리지 않는다. 멈춤을 모르는 엔진(옛 판)에는 보내지 않는다(hwax_delib_pause — 옛 엔진은 /drain 의 scope 를 안 봐 카드 대조 깃발 끄기로
 #   읽는다). 완주 끝과 hr() 정지 경로에서 부른다. 실패는 ⚠ 다 — 멈춤은 수명(기다림 + 30분)이 지나면 스스로 풀린다.
 _hwax_delib_pause_finish() {
@@ -1456,7 +1465,7 @@ hr "4) update-sites (챗 스택: mcp-gateway·agent-server·signalforge-mcp)"
 # 실제 장애는 아니었지만, 매 배포마다 가짜 DOWN 이 뜨면 진짜 장애와 구분이 안 된다.
 # ⚠ 갱신 실패를 **실패로 센다.** 헬스게이트는 "떠 있나" 만 보므로, git pull 이 막혀 옛 코드로 떠도
 # 초록이었다(2026-09-17 cae00 점검 — 절차가 옛 게이트웨이에 걸려 있었다).
-# 3 은 실패가 아니다 — 도는·줄 선 심의가 있어 에이전트 서버 재기동을 미뤘다(update-sites 가 사유를 찍고 장부 ○ 에 적었다).
+# 3 은 실패가 아니다 — 도는·줄 선 심의가 있어 에이전트 서버(10-31 부터 게이트웨이 · signalforge-mcp 도) 재기동을 미뤘다(update-sites 가 사유를 찍고 장부 ○ 에 적었다).
 # 몇 시간 돈 패널을 배포 한 번이 말없이 지우지 않게 한다. 강행은 AGENT_RESTART_FORCE=1 을 주고 재실행.
 # 같은 보호가 §2 에도 있다 — deploy-all 이 포털·nginx·허브를 내리기 전에 같은 물음을 묻는다(포털·nginx 를 내리면 구독이 끊기고
 # 허브를 내리면 리스크 앱이 같이 내려가, 여기서 에이전트 서버를 살려 둬도 리스크 패널은 이미 멈춘 뒤다).
@@ -1471,10 +1480,10 @@ if [ "$_llm_ups_rc" = 0 ] && [ "$_llm_router_rc" = 0 ]; then
     *) fail "LLM 라우터를 §2 뒤에 다시 띄우지 못했다 — update-sites llm-router rc $_llm_us4_rc(위 ✗ 줄). 새 portal.sif 로 못 떴으면 옛 프로세스가 옛 이미지로 돈다" ;;
   esac
 fi
-# 에이전트 서버를 재기동할 때 도는 심의가 있으면 update-sites 가 새 심의를 멈추고 기다린다(O1) — 그 멈춤의 주인을 update-all 로 해 둔다
-# (재기동했으면 이 실행의 끝에서 내린다 — _hwax_delib_pause_finish, 표지 파일로 넘겨받는다). 이번에 다시 떴는지는 리스너(pid · 시작 시각)로
-# 본다(O2 — lib/delib-busy.sh 의 hwax_agent_ident). command -v 로 감싼다 — §4 를 떼어 도는 시험 사본은 그 lib 를 읽지 않는다.
-export HWAX_DELIB_PAUSE_BY=update-all HWAX_DELIB_PAUSE_MARK="${HWAX_SKIP_LEDGER}.delib-pause"
+# signalforge-mcp · 게이트웨이 · 에이전트 서버를 재기동할 때 도는 심의가 있으면 update-sites 가 새 심의를 멈추고 한 번 기다린다(O1 · A25 — §2 의
+# SignalForge 와 같은 기다림 하나다. 멈춤의 주인 update-all · 표지 · 판정 파일은 머리에서 물려준다 — 재기동했으면 이 실행의 끝에서 내린다,
+# _hwax_delib_pause_finish). 이번에 다시 떴는지는 리스너(pid · 시작 시각)로 본다(O2 — lib/delib-busy.sh 의 hwax_agent_ident).
+# command -v 로 감싼다 — §4 를 떼어 도는 시험 사본은 그 lib 를 읽지 않는다.
 _ag0=""; command -v hwax_agent_ident >/dev/null 2>&1 && _ag0="$(hwax_agent_ident)"
 "$SELF_REPO/infra/scripts/update-sites.sh" signalforge-mcp mcp-gateway agent-server; _us_rc=$?
 case "$_us_rc" in
@@ -3725,10 +3734,10 @@ fi
 [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ] && echo "  · 종료 요청이 있었지만 남은 §가 없어 끝까지 갔다 — 아래 요약은 전부 실제로 한 것이다" >&2
 # 1h 비우기 끝맺음 — 장부(미룬 재기동 줄)를 읽으므로 요약·장부 지우기 앞이다.
 _hwax_drain_finish
-_hwax_delib_pause_finish   # §4 가 에이전트 서버를 재기동하며 세운 새 심의 멈춤(O1) — 다시 선 줄이 이제 든다
+_hwax_delib_pause_finish   # §2·§4 가 재기동 앞에서 기다리며 세운 새 심의 멈춤(O1 · A25) — 다시 선 줄이 이제 든다
 _hwax_board_resume      # 1b2 의 경보 멈춤 — 5b 가 이미 풀었으면 아무것도 하지 않는다
 hwax_skip_summary
-rm -f "$HWAX_SKIP_LEDGER"
+rm -f "$HWAX_SKIP_LEDGER" ${HWAX_DELIB_GATE:+"$HWAX_DELIB_GATE"}   # 한 번 기다리기의 판정 파일도 함께(머리에서 장부 옆에 정했다)
 # 받은 편지함 — §1 뒤에 찍은 새 글을 끝에서 다시 낸다(수백 줄을 거슬러 오르지 않아도 보이게). 경고가 아니라 경고 수 · 종료코드에 들지 않는다.
 # 다시 낸 뒤에야 그 판을 알린 판으로 적는다 — 끝 요약 앞에서 끊긴 실행은 다음 실행이 다시 알린다(실패로 끝나는 실행도 여기는 지난다).
 [ -z "${INBOX_NOTE:-}" ] || printf '%s' "$INBOX_NOTE"

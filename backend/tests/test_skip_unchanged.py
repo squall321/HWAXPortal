@@ -672,8 +672,9 @@ def test_deploy_all_wires_every_service_and_nginx_through_the_restart_cycle():
     assert '_ngrc=0\n' in DEPLOY_ALL and ') || _ngrc=$?' in DEPLOY_ALL and 'skip "nginx 재기동 실패(rc=$_ngrc)' in DEPLOY_ALL, "nginx 사이클 rc 는 집계에 든다(3라운드)"
     assert DEPLOY_ALL.count("hwax_mark_started") == 1, "기록은 사이클 안에서만(nginx 는 포털 start.sh 가 함께 띄운 것을 적는다)"
     needed = [ln for ln in DEPLOY_ALL.splitlines() if "hwax_restart_needed" in ln]
-    assert len(needed) <= 1 and all("HWAX_RESTART_SKIPPED_FILE= hwax_restart_needed kooremapper" in ln for ln in needed), \
-        "사이클 밖에서는 장부를 적지 않는 묻기만 — DynaForge 도는 작업 보호(10-25)가 재기동이 필요한지 먼저 묻는다"
+    asks = ("HWAX_RESTART_SKIPPED_FILE= hwax_restart_needed kooremapper", "HWAX_RESTART_SKIPPED_FILE= hwax_restart_needed signalforge")
+    assert len(needed) <= 2 and all(any(a in ln for a in asks) for ln in needed), \
+        "사이클 밖에서는 장부를 적지 않는 묻기만 — DynaForge 도는 작업 보호(10-25)와 SignalForge 심의 기다림(10-31 A25)이 재기동이 필요한지 먼저 묻는다"
     assert '[ "${HWAX_RESTARTED:-0}" = 1 ] && hwax_mark_started nginx "$(_ngfp)"' in DEPLOY_ALL
     assert 'HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$PORTAL_DIR/infra/.state/restart-fp}"' in DEPLOY_ALL
     assert '"$HWAX_RESTART_SKIPPED_FILE"\' EXIT' in DEPLOY_ALL, "끊긴 실행이 장부 파일을 /tmp 에 남기지 않는다"
