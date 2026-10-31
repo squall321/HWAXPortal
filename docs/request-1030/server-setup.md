@@ -35,6 +35,9 @@
 | StepForge | `e8bf3d8` · Drive `dist-20261031-072639Z` | `mesh_size_advice` 기본 `store=false`(쓰기는 `store=true` 를 줄 때만) · 도구 176 전부 표지(readOnlyHint · destructiveHint) | 올림(그쪽 세션) — `dist-from-drive.sh` 로 step_forge 를 받는다 |
 | MX 백서 | `48da3fd` 까지 · Drive `images-20261031-073148Z` | 위키 화면 W7 · 어두운 모드 링크 색 — 위키가 꺼진 이 박스에서는 보이는 차이가 없다 | 올림(그쪽 세션) — update-all 이 latest/ 를 받는다 |
 | HEAXHub | `7b9a8ed` | Drive 되돌림 판 보존 3 → 5(dev 의 올리기 스크립트만 — 이 박스에는 영향 없음, 사용자 결정 10-31) | 올림 |
+| 게이트웨이 | `63fbc4f`(병합 — B16 ① `c9c3419` · HA-20 `0bef377` 계열) | `KOORM_SEND_PLAT`(KooRemapper 위임에 plat 서명 머리 — provision.env 에 적으면 update-all 이 싣는다) · 패널 PAT 검증 · `/tools-map` 의 `panel_read`(HA-20 — 포털 손잡이 `MCP_APPS_HOST` 가 꺼져 있으면 패널은 뜨지 않는다) | 올림 — 게이트웨이 재기동으로 켜진다 |
+| WebResearchMCP | `d76911a` · Drive(HEAXHub) `dist-20261031-075456Z` | 호스트별 잠금으로 나감 간격 · 줄 상한 · 한 연결씩 · 서킷 다시 보기(B20 · B21) | 올림 — `dist-from-drive.sh` 로 받는다 |
+| LaminateAnalyzerMCP | `113405d` · Drive(HEAXHub) `dist-20261031-081703Z` | 절차 씨앗이 쓰는 도구 넷의 인자 설명 22개(B37 §2-1 — 형 · 기본값 그대로) | 올림(그쪽 세션 · Drive 는 포털 세션) — `dist-from-drive.sh` 로 받는다 |
 | 게이트웨이 | `5f4ba5f`(병합 — `9b37b31` ~ `10bb6ec`) | 10-29 4차 E-2 · E-4 — 앱 역할로 검색 순위 · 접기 · 노출(허브 가족은 늘 접두 · 옛 맨 이름은 호출 별칭) · 개인 Claude 보기 셋(전체 · 묶음 · 가벼운) | 올림 — 게이트웨이 재기동으로 켜진다. 받은 뒤 확인은 [`../request-1029/server-setup.md`](../request-1029/server-setup.md) 8절 · 받은 편지함 Q14 |
 | 포털 | `d31bca1` · `4034845` · Drive `images-20261031-055500Z` | 같은 묶음의 포털 몫 — 사람 설정 `users.hub_view` · 토큰 화면 보기 고르기 · 등록 배치 머리 `X-HWAX-View: portal` · Q-2 확인(목록은 늘 접두, 사용자 10-31) | 올림 — 화면은 Drive 판. 확인은 위와 같다 |
 

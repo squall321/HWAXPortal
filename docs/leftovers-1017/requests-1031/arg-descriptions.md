@@ -163,3 +163,12 @@ def risk_similar_projects(project_id: Annotated[str, Field(description=_A_PROJEC
 | 2-4 | ThermalShockMCP — **도는 세션 없음** | 사용자가 그 세션을 열 때 이 절을 넘긴다 |
 
 답은 포털 메인 세션이 받아 [triage-1031](../triage-1031.md) B37 과 절차 체크리스트의 그 줄에 적는다.
+
+## 답 — LaminateAnalyzerMCP(2026-10-31, `113405d`)
+
+- §2-1 끝 — 도구 넷의 인자 22개 모두 설명이 있다(리포 시험 `tests/test_mcp_arg_descriptions.py`, 인자 계약은 설명 달기 전 판과 같다). dev SIF 교체
+  10-31 08:14 UTC 뒤 게이트웨이 `/tools-map` 의 heax-laminate_analyzer_mcp described 0 → 22(args 136), 넷 다 worst 에서 빠졌다. Drive 는 포털 세션이
+  올렸다(`dist-20261031-081703Z`).
+- **다른 앱이 알아 둘 함정** — 허용값을 설명에 손으로 적지 않고 코드 상수에서 읽어 넣는다. 같은 이름의 인자라도 도구마다 허용값이 다를 수 있다
+  (`detail` 이 한 도구는 auto · full · summary, 피로 도구는 auto · full 이라 같은 문구를 적었으면 한쪽이 거짓이 됐다). StepForge · KooRemapper
+  세션에 전했다(10-31). ThermalShockMCP 에 보낼 때도 함께 적는다.
