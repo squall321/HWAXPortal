@@ -163,3 +163,4 @@ Office · PDF 는 25MB → R4. ⑤ `create_report` 는 `entity_ids` 를 커밋 �
 문서는 'M3 부터 기본 true' 라 적었다(그 리포 docs/ARCHITECTURE.md §3) — 이 결정으로 바뀌는지는 DocForge 세션에 넘긴다. — 넘기는 글
 [requests/docforge-vlm-default-1031.md](requests/docforge-vlm-default-1031.md)(앱 기본 false 유지 · 포털 목적지는 vlm=True — ARCHITECTURE §3 을 맞추거나
 M3 에서 달라야 할 까닭을 알려 달라) (10-31 정리)
+- **DocForge 답(10-31, `27b1a97`)** — vlm 기본 false 그대로 · 포털 「정밀 변환」 은 vlm=true 그대로 · M3 에서 바꿀 까닭은 금 표본 수치가 나올 때까지 없다(그쪽 R-D52). 요청서 4절.

@@ -35,6 +35,16 @@ evidence:
   - "포털 절차 씨앗 docs/procedures/fixtures/laminate-bend-life.yaml:55-66 — `laminate` 변수의 why '강도·피로를 주는 도구가 없다', 사람이 예시 값을 넣는다"
 
 request: ../requests/materialtwin-lamina-strength.md
+# 답(MaterialTwinWeb 세션 10-31 — 조사만, 읽기 전용). status 는 사람이 바꾼다.
+answer:
+  - "새 키는 필요 없다 — Xt · Yt 는 tensile_strength, Xc · Yc 는 compressive_strength 에 direction 조건으로, S 는 shear_strength(조건축 shear_plane —
+     층간 전단 ILSS 와 섞지 않는다), ply S-N 은 fatigue_strength(cycles · stress_ratio_R · loading_mode) 또는 Basquin 계수 · 지수로 담긴다.
+     한 재료의 전 물성 · 조건 · 출처는 get_material_properties 한 번으로 받는다"
+  - "결손은 도구가 아니라 데이터다 — 다섯 강도를 다 가진 카드가 0 이다. 가장 가까운 것은 재료 1380(E-glass/epoxy UD, Vf 0.57)으로 축 · 횡의
+     인장 · 압축 넷이 있고 면내 전단강도 S 가 없다(있는 것은 전단 탄성률이다)"
+  - "방향 표기 — 조건축에 axial · TD · MD · in-plane 이 섞여 있다. 라미네이트 입력(Xt · Xc = 1 섬유 방향, Yt · Yc = 2 횡, S = 12 면내 전단,
+     압축은 양수 크기 — LaminateAnalyzerMCP app/schemas.py:20-23)에 맞춰 1 · 2 · 12 로 정규화한다(포털 답 10-31 — MD 는 출처를 보고 건마다)"
+  - "남은 둘은 그쪽 사용자 승인 뒤에 움직인다 — UD 라미나 한 종을 한 출처로 다섯 강도까지 닫는 데이터 파동, 조건축 정규화"
 status: open                  # open | confirmed | fixed | wontfix
 confirmed_by: null            # 사람이 확정할 때 채운다
 
