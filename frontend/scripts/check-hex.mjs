@@ -12,6 +12,12 @@ const BASELINE = fileURLToPath(new URL('./hex-baseline.json', import.meta.url));
 const TOKENS = join('styles', 'tokens.css');
 // #rgb · #rgba · #rrggbb · #rrggbbaa. 대소문자는 같은 색으로 센다.
 const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/g;
+// 같은 색은 한 값으로 센다 — 소문자로 바꾸고 짧은 꼴(#rgb · #rgba)은 긴 꼴(#rrggbb · #rrggbbaa)로 편다. 종전엔 기준에 #fff 가 있어도
+// #ffffff 를 새 색으로 세어, 같은 흰색을 긴 꼴로 쓴 가지(HA-20 패널의 chat.css)를 합치면 빌드가 90 → 91 로 멈췄다. 기준 파일의 값도 편다.
+const norm = (v) => {
+  const h = v.slice(1).toLowerCase();
+  return `#${h.length <= 4 ? [...h].map((c) => c + c).join('') : h}`;
+};
 
 function walk(dir) {
   return readdirSync(dir).flatMap((n) => {
@@ -27,7 +33,7 @@ for (const file of walk(SRC)) {
   if (rel === TOKENS) continue;
   readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
     for (const m of line.matchAll(HEX)) {
-      const v = m[0].toLowerCase();
+      const v = norm(m[0]);
       seen.set(v, [...(seen.get(v) ?? []), `${rel}:${i + 1}`]);
       places += 1;
     }
@@ -36,7 +42,7 @@ for (const file of walk(SRC)) {
 
 const values = [...seen.keys()].sort();
 const base = JSON.parse(readFileSync(BASELINE, 'utf8'));
-const allowed = new Set(base.values ?? []);
+const allowed = new Set((base.values ?? []).map(norm));
 const save = (note) =>
   writeFileSync(BASELINE, JSON.stringify({ note, unique: values.length, places, values }, null, 2) + '\n');
 

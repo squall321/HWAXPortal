@@ -60,6 +60,24 @@ def test_새_hex_하나가_든_사본에서_pnpm_build_가_실패한다(tmp_path
     assert not (fe / "dist").exists(), "래칫에서 끊겨야 한다 — 번들이 만들어졌다"
 
 
+def test_짧은_꼴과_긴_꼴은_같은_색으로_센다(tmp_path):
+    """#fff 와 #ffffff 는 같은 색이다 — 기준에 #fff 가 있으면 #FFFFFF 를 더해도 늘지 않는다. 종전엔 새 색으로 세어, 같은 흰색을 긴 꼴로 쓴
+    가지(HA-20 패널 chat.css 의 `background: #ffffff`)를 합치면 pnpm build 가 '90 → 91' 로 멈췄다. 새 색은 두 꼴로 써도 하나로 센다."""
+    fe = _copy(tmp_path)
+    base = json.loads((fe / "scripts" / "hex-baseline.json").read_text("utf-8"))
+    have = set(base["values"])
+    assert have & {"#fff", "#ffffff"} and have & {"#000", "#000000"} and not have & {"#a1b", "#aa11bb"}, \
+        "전제 — 흰색 · 검은색은 기준에 있고 시험 색은 없다"
+    css = fe / "src" / "styles" / "chatpage.css"
+    css.write_text(css.read_text("utf-8") + "\n.zz-probe { background: #FFFFFF; color: #000000; border-color: #fff; }\n", encoding="utf-8")
+    r = _run(fe)
+    assert r.returncode == 0 and f"고유 hex {base['unique']}개(" in r.stdout, r.stdout + r.stderr
+    css.write_text(css.read_text("utf-8") + "\n.zz-probe2 { color: #a1b; border-color: #AA11BB; }\n", encoding="utf-8")
+    r = _run(fe)
+    assert r.returncode == 1 and f"{base['unique']} → {base['unique'] + 1}개" in r.stderr, r.stdout + r.stderr
+    assert "#aa11bb" in r.stderr and "#a1b " not in r.stderr, r.stderr
+
+
 def test_tokens_css_의_hex_는_세지_않는다(tmp_path):
     fe = _copy(tmp_path)
     tokens = fe / "src" / "styles" / "tokens.css"
