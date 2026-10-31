@@ -42,6 +42,11 @@ def test_꼴과_필수_칸():
     for key, a in d["apps"].items():
         assert a["role"] in ROLES, (key, a)
         assert a.get("label", "").strip(), key
+        if "tagline" in a:
+            # 형제 소개 줄(docs/request-1029 E-2 · E2-4) — 게이트웨이가 그 형제 도구 설명 앞에 붙인다. 형제에만 쓴다(비코어 · 시험 앱의 설명은 그쪽
+            # 몫 — 게이트웨이도 읽지 않는다). 웹 챗 묶음에 늘 드는 형제 도구 넷의 설명이 이 길이만큼 는다 — 120자 이내.
+            assert a["role"] == "sibling", f"소개 줄은 형제에만 — {key}"
+            assert isinstance(a["tagline"], str) and 0 < len(a["tagline"].strip()) <= 120, (key, a["tagline"])
     assert d["canonical"]["app"] not in d["apps"], "정본은 apps 에 다시 적지 않는다"
 
 
