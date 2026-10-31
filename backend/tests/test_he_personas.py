@@ -565,7 +565,8 @@ _HP53 = {
                               "rootdesigndatahub_datasource_sync", "rootdesigndatahub_bundle_import",
                               "rootdesigndatahub_job_apply"}),
     "he-expert-risk": ({"risk_start_job", "risk_create_project", "risk_create_diff"}, {"risk_job_action"}),
-    "he-cad-stepforge": ({"run_recipe", "save_recipe", "set_revision"}, {"set_admin"}),
+    # save_recipe 는 10-31 StepForge 세션의 분류(되돌리기 어려운 여덟)로 confirm 에 옮겼다 — 아래 HA-29 StepForge 시험
+    "he-cad-stepforge": ({"run_recipe", "set_revision"}, {"set_admin", "save_recipe"}),
     "he-sim-dynaforge": ({"recipe_propose", "heaxkooremapper_mcp_recipe_run"}, {"recipe_register"}),
 }
 
@@ -1103,3 +1104,61 @@ def test_StepForge_의_되돌릴_수_없는_치수_지우기는_confirm_에_있�
     """forget_dimension 은 StepForge 가 '⚠ 되돌릴 수 없다' 로 적은 지우기다 — 목록 밖이면 확인 관문이 사람이 시키지 않아도 보낸다."""
     p = _one("he-cad-stepforge")["personas"][0]
     assert "forget_dimension" in p["confirm"] and "forget_dimension" not in p["writes"]
+
+
+# ── HA-29(10-31) — StepForge 의 수정 도구 마흔하나를 StepForge 세션이 가른 대로 ────────────────────────────────────────────────────
+# StepForge 는 readOnlyHint 를 달지 않고 카탈로그 범주(@register(mcp, MODIFY))로 수정 도구를 가른다. 확인 관문(HA-29)은 이름만 보므로 그 마흔하나가
+# 모두 writes · confirm 에 있어야 한다 — 빠진 것은 사람이 시키지 않아도 카드 없이 나간다. 게이트웨이 쓰기 표지는 이름 낱말이라 export_step · shape_op ·
+# align_image_to_geometry 처럼 '목록 밖 쓰기' 미리보기에도 안 걸리는 것이 있다. 되돌리기 어려운 여덟만 confirm(늘 카드)이고 나머지는 writes(이번 말로
+# 시켰을 때만)다. 그래서 늘 카드였던 rename_part · remove_part · confirm_interfaces 는 시키면 나가고, upload_step · import_archive · save_recipe 는 늘 카드다.
+_SF_MCP = _ROOT.parent / "StepForge" / "app" / "mcp_server.py"
+_SF_CONFIRM = frozenset({"delete_project", "forget_dimension", "upload_step", "import_archive", "cancel_job", "set_admin",
+                         "save_failure_mode", "save_recipe"})
+
+
+def test_HA29_StepForge_는_되돌리기_어려운_여덟만_confirm_이다():
+    p = _one("he-cad-stepforge")["personas"][0]
+    confirm = {_native(n, p["apps"]) for n in p["confirm"]}
+    writes = {_native(n, p["apps"]) for n in p["writes"]}
+    assert confirm == _SF_CONFIRM, sorted(confirm ^ _SF_CONFIRM)
+    assert not writes & confirm and len(writes) == len(p["writes"]) == 33, sorted(writes)
+    assert {"rename_part", "remove_part", "confirm_interfaces", "mesh_size_advice", "shape_op", "record_dimension"} <= writes
+    # 다른 앱과 겹치는 둘은 접두 별칭이다(dev /tools-map — ste · DynaForge 의 cancel_job, MaterialTwin 의 register_material)
+    assert "heaxstep_forge_cancel_job" in p["confirm"] and "heaxstep_forge_register_material" in p["writes"]
+
+
+def test_HA29_StepForge_가_MODIFY_로_등록한_도구는_모두_writes_confirm_에_있다():
+    """StepForge 소스의 MODIFY 도구와 두 목록이 같은지 — 앱이 수정 도구를 더하면 목록에 넣고, 읽기로 바꾸면 목록에서 뺀다(읽기를 막으면 조회마다
+    카드가 선다). 형제 리포가 없는 박스(cae00)에서는 건너뛴다."""
+    if not _SF_MCP.exists():
+        pytest.skip(f"형제 리포 없음: {_SF_MCP}")
+    import ast
+    tree = ast.parse(_SF_MCP.read_text(encoding="utf-8"))
+    modify = {n.name for n in tree.body if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef))
+              for d in n.decorator_list
+              if isinstance(d, ast.Call) and getattr(d.func, "id", None) == "register" and len(d.args) > 1
+              and ast.unparse(d.args[1]) == "MODIFY"}
+    assert len(modify) >= 41, sorted(modify)
+    p = _one("he-cad-stepforge")["personas"][0]
+    listed = {_native(n, p["apps"]) for n in [*p["writes"], *p["confirm"]]}
+    assert not modify - listed, f"he-cad-stepforge 의 writes · confirm 에 없다 — {sorted(modify - listed)}"
+    assert not listed - modify, f"StepForge 가 수정 도구로 등록하지 않았다 — {sorted(listed - modify)}"
+
+
+def test_HA29_StepForge_인자로_덮어쓰는_도구는_함정_줄이_말한다():
+    """관문은 이름만 본다 — overwrite=true · redefine=true · 같은 name 처럼 인자 하나로 덮어쓰는 호출도 그 도구의 부류(write)대로 사람이 시키면
+    지나간다. 그래서 함정 줄이 그 인자는 사람이 바꾸라고 할 때만 쓰라고 말한다. 본문의 이름은 부를 수 있는 꼴이다(register_material 은 겹친다)."""
+    one = _one("he-cad-stepforge")
+    p = one["personas"][0]
+    line = next((s for s in p["pitfalls"] if s.startswith("인자 하나로 덮어쓰는 도구가 있다")), None)
+    assert line is not None, p["pitfalls"]
+    for word in ("heaxstep_forge_register_material", "register_materials_csv", "overwrite=true", "record_dimension(redefine=true)",
+                 "align_image_to_geometry", 'region="none"', "region_mask_transfer", "사람이 바꾸라고 하지 않았으면"):
+        assert word in line, word
+    assert not re.search(r"(?<![a-z_])register_material(?![a-z_])", line), "맨 이름 register_material 은 MaterialTwin 과 겹쳐 없는 도구다"
+    advice = next((s for s in p["pitfalls"] if s.startswith("mesh_size_advice 는 store 기본이 true")), None)
+    assert advice is not None and "store=false" in advice, p["pitfalls"]
+    rows, skipped, errors = _sync().plan(one, _write_map("he-cad-stepforge", set(), set()))
+    assert rows and not errors and not skipped, (errors, skipped)
+    prompt = rows[0]["system_prompt"]
+    assert line in prompt and advice in prompt and len(prompt) <= _sync().PROMPT_MAX

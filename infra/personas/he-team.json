@@ -45,11 +45,13 @@
         "material_lookup 은 비슷한 이름으로 대신 주지 않는다(found:false). 없는 재질은 등록하거나 사람에게 묻는다.",
         "mesh_forecast 는 추정이다. size:auto·얇은 파트는 모델 밖이고, tet 는 요소 수 배수를 곱해야 한다.",
         "view_3d 는 사람용 링크다. 형상을 직접 봐야 하면 render_3d(이미지)를 쓴다.",
-        "rename_part 는 관계·메시 등록부·접촉 YAML 의 이름 키까지 함께 바꾼다."
+        "rename_part 는 관계·메시 등록부·접촉 YAML 의 이름 키까지 함께 바꾼다.",
+        "인자 하나로 덮어쓰는 도구가 있다 — heaxstep_forge_register_material·register_materials·register_materials_csv(overwrite=true)는 있는 재질 값을 바꾸고, record_dimension(redefine=true)은 그 키의 옛 기록을 지운다. align_image_to_geometry 는 같은 name 의 정합·영역을 바꾸고(region=\"none\" 이면 지운다), region_mask_transfer 는 대상 과제의 같은 이름 영역을 바꾼다. 사람이 바꾸라고 하지 않았으면 그 인자·이름을 쓰지 말고 무엇이 바뀌는지 먼저 말한다.",
+        "mesh_size_advice 는 store 기본이 true 라 권장값을 파트 메타에 적는다. 권장값만 볼 때는 store=false 로 부른다."
       ],
       "key_tools": ["list_projects", "get_project_meta", "measurement_guide", "job_params_guide", "part_info", "find_parts", "inspect_report", "heaxstep_forge_job_status", "heaxstep_forge_list_jobs", "upload_instructions"],
-      "writes": ["intake", "create_project", "upload_step", "import_archive", "run_job", "set_project_meta", "set_part_metadata", "apply_naming_rules", "set_file_transform", "transform_instance", "set_part_rules", "set_interface", "remesh_parts", "export_step", "build_cavity", "register_materials", "register_materials_csv", "heaxstep_forge_register_material", "run_recipe", "save_recipe", "set_revision"],
-      "confirm": ["delete_project", "heaxstep_forge_cancel_job", "rename_part", "remove_part", "confirm_interfaces", "set_admin", "forget_dimension"],
+      "writes": ["intake", "create_project", "run_job", "set_project_meta", "set_part_metadata", "rename_part", "apply_naming_rules", "set_file_transform", "transform_instance", "remove_part", "set_part_rules", "set_joint", "set_interface", "confirm_interfaces", "mesh_size_advice", "remesh_parts", "export_step", "export_sidecar", "export_part_fragment", "extract_surface_to_cad", "build_cavity", "shape_op", "align_image_to_geometry", "region_mask_transfer", "record_part_lineage", "record_dimension", "apply_dimension", "set_risk_verdict", "register_materials", "register_materials_csv", "heaxstep_forge_register_material", "run_recipe", "set_revision"],
+      "confirm": ["delete_project", "forget_dimension", "upload_step", "import_archive", "heaxstep_forge_cancel_job", "set_admin", "save_failure_mode", "save_recipe"],
       "samples": [
         "DV2 낙하해석 과제 파트 몇 개고 어디까지 진행됐어?",
         "쉴드캔과 PCB 사이 축방향 간극 재 줘",
