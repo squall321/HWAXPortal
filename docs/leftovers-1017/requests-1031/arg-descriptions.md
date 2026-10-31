@@ -1,4 +1,4 @@
-# 도구 인자 설명 — 절차 씨앗이 부르는 도구부터(요청 · 2026-10-31)
+# 도구 인자 설명 — 절차가 쓰는 도구부터(요청 · 2026-10-31)
 
 | 항목 | 내용 |
 |---|---|
@@ -26,7 +26,10 @@
 칸(`unit_or_range`)은 설명에 단위 · 범위 낱말이 있거나 스키마가 `enum` · 숫자 경계를 가질 때 오른다. 이 요청의 기준은 설명이다 — 값에 단위가 있으면
 단위를, 허용값이 정해져 있으면 허용값을 함께 적는다.
 
-**범위** — 포털 절차 씨앗(`docs/procedures/fixtures/`)이 실제로 부르는 도구 17개 · 인자 84개만 청한다. 앱 전체로 넓힐지는 그쪽이 정한다(요청이 아니다).
+**범위** — 포털 절차가 실제로 쓰는 도구 17개 · 인자 84개만 청한다. 열다섯은 절차 씨앗(`docs/procedures/fixtures/`)이 부른다(StepForge 는 R1 의
+`bend_profile` 하나). 나머지 둘은 StepForge 의 `find_parts` · `stackup_profile` 로, 씨앗이 아니라 절차의 다른 자리가 쓴다 — `find_parts` 는 고르기
+단계(`select`)의 본보기 조회(`backend/app/procedures/models.py:184` · `backend/tests/test_procedures_select.py:21`)이고 `stackup_profile` 은 §10-7
+환원 규약의 둘째 도구다([reduction-contract](../../procedures/reduction-contract.md)). 앱 전체로 넓힐지는 그쪽이 정한다(요청이 아니다).
 
 ## 2. 무엇을 — 도구와 지금 인자
 
@@ -53,6 +56,9 @@
 | `find_parts` | :2103 | `project_id: str`(필수) · `name: str = ""` · `material: str = ""` · `min_volume: float \| None = None` · `max_volume: float \| None = None` · `has_mesh: bool \| None = None` · `tag: str = ""` · `role: str = ""` · `limit: int = 100` · `offset: int = 0` · `fields: list[str] \| None = None` | :2107-2133(`name` 은 글롭 · `tag` 는 정확히 같은 것 · 한 쪽 1~500행) |
 | `stackup_profile` | :17900 | `project_id: str`(필수) · `parts: list \| None = None` · `name: str = ""` · `axis: str = ""` · `full: bool = False` · `nonadjacent_in_budget: bool = False` | :17902-17959 |
 | `bend_profile` | :24791 | `project_id: str`(필수) · `part: str \| None = None` · `limit: int = 10` | :24793-24825 |
+
+씨앗이 부르는 것은 `bend_profile`(R1)뿐이다. `find_parts` 는 절차의 고르기 단계가 대상 파트를 규칙으로 고를 때 쓰는 조회이고, `stackup_profile` 은
+절차 환원 규약(§10-7)이 맞댄 둘째 환원 도구라 함께 청한다(1절 '범위').
 
 도구는 `register`(`app/catalog.py:57-77`)가 여러 겹으로 감싸 등록한다(이력 · 과제 이름으로 부르기 · 응답 고리 — :76). 감싼 뒤에도 설명이
 inputSchema 에 남는지를 `mcp.list_tools()` 로 보는 시험을 먼저 둔다(3절의 리스크 앱 시험 `_schemas()` 꼴). `project_id` 는 id 만이 아니라 과제
