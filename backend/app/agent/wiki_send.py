@@ -13,6 +13,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.auth.errors import AuthError
+from app.procedures.from_chat import TOKEN_ECHO_MIN
+from app.procedures.models import PUBLISH_TOKEN
+from app.procedures.runner import _TOKEN_FIELD, _mask_publish_token, _redact
 
 EVIDENCE_MAX = 20     # 근거 줄 수 상한 — 한 턴의 도구 호출이 많아도 원천 하나가 근거로 넘치지 않게
 EXCERPT_MAX = 300     # 근거 발췌 상한 — MX 백서 규칙서의 인용 상한(V10)과 같은 값
@@ -63,14 +66,21 @@ def pick_turn(messages: list[dict], text: str) -> tuple[int, str, dict] | None:
 
 
 def _evidence(activity: Any) -> list[dict]:
-    """답 메시지의 활동 기록 → 근거 줄. 끝난 호출(결과 미리보기가 있는 줄)만, 같은 것은 한 번. 사람이 올린 문서는 doc, 도구는 tool."""
+    """답 메시지의 활동 기록 → 근거 줄. 끝난 호출(결과 미리보기가 있는 줄)만, 같은 것은 한 번. 사람이 올린 문서는 doc, 도구는 tool.
+
+    Report Archive 게시 확인 토큰은 가린다(사용자 결정 10-31 '내보내는 곳만 가린다') — 대화 저장소의 원본은 다음 턴의 게시가 읽어 그대로
+    두고, 오래 남는 위키에는 싣지 않는다. 가림은 챗 턴 기록(procedures.from_chat)과 같다 — 칸을 가리고, 그렇게 찾은 값이 다른 꼴로
+    되비친 곳도 가린다. 자르기 · 같은 것 거르기보다 먼저 가린다(잘린 토큰 조각이 남지 않게)."""
     out: list[dict] = []
     seen: set[tuple[str, str, str]] = set()
-    for a in activity if isinstance(activity, list) else []:
-        if not isinstance(a, dict):
-            continue
+    rows = [a for a in activity if isinstance(a, dict)] if isinstance(activity, list) else []
+    tokens = {m.group(2) for a in rows for k in ("result_preview", "detail")
+              for m in _TOKEN_FIELD.finditer(str(a.get(k) or "")) if len(m.group(2)) >= TOKEN_ECHO_MIN}
+    for a in rows:
         tool = str(a.get("tool") or "").strip()
-        excerpt = " ".join(str(a.get("result_preview") or "").split())
+        excerpt = _mask_publish_token(" ".join(str(a.get("result_preview") or "").split()))
+        for tok in tokens:
+            excerpt = _redact(excerpt, {PUBLISH_TOKEN: tok})
         if not tool or not excerpt:
             continue
         kind, ref = "tool", tool

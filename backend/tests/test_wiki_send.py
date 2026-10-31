@@ -209,3 +209,16 @@ def test_HP16_꺼진_박스에서는_상태가_false_고_보내기는_해결됨�
     assert calls == [], "꺼진 박스에서는 게이트웨이를 부르지 않는다(502 로 끝나던 길)"
     c.wiki_tools["names"] = None
     assert c.get("/agent/wiki/status", headers=h).json() == {"enabled": None}
+
+
+def test_RA_게시_확인_토큰은_위키_근거에_싣지_않는다():
+    """챗의 게시 미리보기가 준 확인 토큰(600초 동안 그 보고서를 그 게시판에 올린다)은 대화 저장소에는 남지만(다음 턴의 게시가 읽는다) 오래 남는
+    위키 근거에는 가린다 — 칸도, 다른 꼴로 되비친 값도(사용자 결정 10-31 '내보내는 곳만 가린다')."""
+    tok = "rat_" + "Z9" * 25
+    act = [{"tool": "reportarchive_preview_publish", "result_preview": '{"slug": "b-1", "confirm_token": "' + tok + '"}'},
+           {"tool": "reportarchive_publish_report", "result_preview": "검증 오류 — 받은 인자 {'confirm_token': '" + tok + "'}"}]
+    ev = W._evidence(act)
+    text = " ".join(e["excerpt"] for e in ev)
+    assert tok not in text, text
+    assert '"confirm_token": "[가림:confirm_token]"' in text and "[가림:confirm_token]'" in text, text
+    assert '"slug": "b-1"' in text, "토큰 밖의 칸은 그대로다"
