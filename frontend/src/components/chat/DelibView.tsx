@@ -388,32 +388,54 @@ function ContinueBar({ d }: { d: DelibData }) {
 }
 
 // 멈춤 결과를 사람의 말로 — 포털 · 에이전트 서버의 code 로 가른다. 모르는 거절은 서버가 준 글을 그대로 붙인다.
-function stopSaid(r: DelibCancelResult): string {
-  if (r.ok) return r.already ? '이미 멈춘 심의입니다.' : '멈춤을 요청했습니다 — 서버가 심의를 접고 있습니다(지금까지의 발언은 남습니다).';
+function stopSaid(r: DelibCancelResult, cut: boolean): string {
+  if (r.ok) return r.already ? '이미 멈춘 심의입니다.' : '멈춤을 요청했습니다 — 서버가 심의를 접고 있습니다(지금까지 받은 발언은 남습니다).';
+  if (r.code === 'finishing')
+    return (
+      '의장이 결정문을 이미 냈습니다 — 쉬운 설명 · 보고서 저장으로 마무리하는 중이라 멈추지 않습니다' +
+      (cut ? '. 받기가 끊긴 화면에는 오지 않으니 결과는 Report Archive 에서 찾으세요.' : '(곧 이 칸에 결정문이 옵니다).')
+    );
   if (r.code === 'already_finished') return '이미 끝난 심의입니다 — 멈출 것이 없습니다.';
   if (r.code === 'delib_not_found') return '서버에서 도는 이 심의를 찾지 못했습니다 — 이미 끝났거나 서버가 다시 떴습니다.';
   return `멈추지 못했습니다 — ${r.message || r.code}`;
 }
 
+// 확인 창 — 멈춘 단의 결정문 · 보고서는 없지만, 다단 심의의 앞 단 · 이어하기의 앞 회차가 낸 결정문과 Report Archive 초안은 그대로다(단정하지
+// 않는다). 받기가 끊긴 심의는 끊긴 뒤 서버에서 나온 발언이 어디에도 남지 않았다 — 받는 중인 심의와 말이 다르다.
+const STOP_KEEPS = '앞 단 · 앞 회차에서 이미 낸 결정문과 Report Archive 에 저장된 초안은 그대로 있습니다.';
+const STOP_CONFIRM_LIVE = `이 심의를 서버에서 멈출까요? 지금까지 받은 발언은 남고, 이 단의 결정문 · 보고서는 만들지 않습니다. ${STOP_KEEPS}`;
+const STOP_CONFIRM_CUT =
+  `이 심의를 서버에서 멈출까요? 받기가 끊긴 뒤 서버에서 나온 발언은 남지 않고, 이 단의 결정문 · 보고서는 만들지 않습니다. ${STOP_KEEPS}`;
+// 포털이 서버 대화에 남긴 글(stop_note)이 없을 때 — 받는 중계가 남기기로 했거나(드물다) 옛 포털이다.
+const STOP_NOTE_CUT = '사람이 멈췄다(받기가 끊긴 뒤) — 끊긴 뒤 서버에서 나온 발언은 남지 않았다';
+
 // 멈춤 — 도는 웹 심의를 서버에서 그친다(docs/leftovers-1017 triage A24 (나)). 입력창의 ■ 는 받기만 끊고 심의는 서버에서 끝까지 돈다 — 그치는
 // 길은 이 단추다(포털 POST /agent/deliberate/cancel → 에이전트 서버). 받는 중인 심의와, 받기가 끊긴 채(■ · 끊김 · 새로고침) 결정문 없이 멈춰
-// 보이는 마지막 심의에 보인다 — 끊긴 쪽도 서버에서 아직 돌 수 있다(아니면 서버가 '이미 끝났다' · '찾지 못했다' 로 답한다). 누른 동안 잠그고
-// 결과를 단추 옆에 적는다. 받는 중에 멈추면 곧 멈춤 사건이 와 이 줄 대신 아래 '멈춤' 알림이 남는다.
-function StopBar({ cut }: { cut: boolean }) {
-  const { activeConversation } = useChat();
+// 보이는 마지막 심의에 보인다 — 끊긴 쪽도 서버에서 아직 돌 수 있다(아니면 서버가 '이미 끝났다' · '찾지 못했다' 로 답한다). 이 칸의 실행 id 로
+// 그 심의 하나만 짚는다 — 대화 id 만으로 멈추면 낡은 화면이 같은 대화의 새 심의를 접는다. 누른 동안 잠그고 결과를 단추 옆에 적는다. 받는 중에
+// 멈추면 곧 멈춤 사건이 와 이 줄 대신 아래 '멈춤' 알림이 남는다. 받기가 끊긴 심의는 사건이 오지 않으므로 멈춤을 칸에 적는다(새로고침 뒤에도
+// 남게 — 포털은 같은 글을 서버 대화에 남긴다).
+function StopBar({ msgId, runId, cut }: { msgId: string; runId: string; cut: boolean }) {
+  const { activeConversation, markDelibStopped } = useChat();
   const sid = activeConversation?.serverId;
   const [busy, setBusy] = useState(false);
   const [stopped, setStopped] = useState(false);
   const [said, setSaid] = useState<{ text: string; bad: boolean } | null>(null);
   const stop = async () => {
     if (!sid || busy) return;
-    if (!window.confirm('이 심의를 서버에서 멈출까요? 지금까지의 발언은 남고, 결정문과 보고서는 만들지 않습니다.')) return;
+    if (!window.confirm(cut ? STOP_CONFIRM_CUT : STOP_CONFIRM_LIVE)) return;
     setBusy(true);
     setSaid(null);
-    const r = await cancelDeliberation(sid);
+    const r = await cancelDeliberation(sid, runId);
     setBusy(false);
-    if (r.ok) setStopped(true);
-    setSaid({ text: stopSaid(r), bad: !r.ok && r.code !== 'already_finished' && r.code !== 'delib_not_found' });
+    if (r.ok) {
+      setStopped(true);
+      if (cut) markDelibStopped(msgId, r.stopNote || STOP_NOTE_CUT);
+    }
+    setSaid({
+      text: stopSaid(r, cut),
+      bad: !r.ok && !['already_finished', 'delib_not_found', 'finishing'].includes(r.code),
+    });
   };
   return (
     <div className="dv-stop">
@@ -452,10 +474,12 @@ export function DelibView({ msg }: { msg: Message }) {
   // 받기가 끊긴 채 결정문 없이 멈춰 보이는 대화의 마지막 심의 — 서버에서 아직 돌 수 있다(멈춤 단추를 남긴다).
   const cut =
     !live && !d.decision && !d.outcome && !d.cancelled && delibMayStillRun(msg.error) && messages[messages.length - 1]?.id === msg.id;
+  // 멈출 열쇠(실행 id)가 있고, 의장이 결정문을 낸 뒤의 마무리가 아닐 때만 — 마무리에는 에이전트가 멈추지 않는다(다 만든 결정문을 버리지 않게).
+  const stoppable = (live || cut) && !d.cancelled && !d.finishing && Boolean(d.runId);
   return (
     <div className="dv-root">
       <Stepper d={d} live={live} />
-      {(live || cut) && !d.cancelled && <StopBar cut={cut} />}
+      {stoppable && <StopBar msgId={msg.id} runId={d.runId ?? ''} cut={cut} />}
       {d.cancelled && (
         <p className="dv-stopped" role="status">
           멈춤 — {d.cancelled.message || '사람이 멈췄다'}

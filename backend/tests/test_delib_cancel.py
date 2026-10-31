@@ -1,16 +1,22 @@
-# 도는 웹 심의 멈춤(POST /agent/deliberate/cancel) — 세션 + CSRF · 대화 주인만 · 에이전트 서버의 답을 그대로 넘기고, 중계는 멈춤 사건을 대화에 남긴다
+# 도는 웹 심의 멈춤(POST /agent/deliberate/cancel) — 세션 + CSRF · 대화 주인만 · 실행 id 로 그 심의 하나만 · 에이전트 서버의 답을 넘기고, 멈춘 사실을 중계나 창구가 대화에 한 번 남긴다
 """docs/leftovers-1017 triage A24 (나) — 사용자 결정 10-31.
 
 웹 심의는 에이전트 서버의 분리 태스크라 화면이 떠나도 서버에서 끝까지 돌았고 멈출 길이 없었다(docs/change-request-8-10/server-setup §6).
 포털 창구가 대화 주인을 확인하고 에이전트 서버 POST /deliberate/cancel 을 부른다. 고정하는 것.
-  · 주인은 멈춘다 — 에이전트에 대화 id · 누가(by) · 그 사람(user_email)을 싣는다(에이전트는 그 사람의 심의만 접는다).
+  · 주인은 멈춘다 — 에이전트에 대화 id · 실행 id(run_id — 화면의 심의 칸이 쥔다) · 누가(by) · 그 사람(user_email)을 싣는다(에이전트는 그
+    사람의 그 심의 하나만 접는다 — 낡은 화면이 같은 대화의 새 심의를 접지 않게, A24 검토). 실행 id 가 없으면 422 이고 에이전트를 부르지 않는다.
   · 남의 대화는 403 not_owner — 관리자도 같다(MCP deliberate_cancel 의 규칙). 없는 대화는 404 conversation_not_found. 둘 다 에이전트를 부르지 않는다.
   · CSRF 가 없거나 어긋나면 403, 세션이 없으면 401(PAT 는 받지 않는다).
   · 에이전트의 답(200 · 404 delib_not_found · 409 already_finished)은 상태 · 본문 그대로. code 없는 404 는 agent_outdated, 닿지 못하면 502,
     늦으면 504, code 없는 5xx 는 502 agent_5xx.
-  · 중계가 멈춤 사건(delib kind=cancelled)을 받으면 받은 발언과 멈춤을 서버 대화에 남긴다(결정문으로 남기지 않는다).
+  · 중계가 멈춤 사건(delib kind=cancelled)을 받으면 받은 발언과 멈춤을 서버 대화에 남긴다(결정문으로 남기지 않는다). 발언 · 답에는 실행 id 를
+    meta.delib_run 으로 남긴다(새로고침 · 다른 기기의 화면이 그 심의를 짚는다).
+  · 받는 중계가 없으면(받기가 끊긴 화면 · 다른 기기) 창구가 멈춘 사실을 끊긴 판 글로 대화에 남기고 stop_note 로 돌려준다 — 남기지 않으면 새로고침
+    뒤 같은 심의가 다시 '아직 돌 수 있다' 와 '멈춤' 으로 보였다(A24 검토). 받는 중계가 있으면 중계가 남긴다(사건 전에 끊기면 끊긴 판 글로). 같은
+    실행의 멈춤은 한 번만 남긴다.
 에이전트 서버는 httpx.MockTransport 로 흉내 낸다. 에이전트 쪽 실제 프로세스 시험은 HWAXAgentServer tests/test_web_delib_cancel_e2e.py 다.
 """
+import asyncio
 import json
 import shutil
 from pathlib import Path
@@ -20,6 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.access.policy import AccessPolicy
+from app.agent import routes as relay
 from app.agent.conv_store import ConversationStore
 from app.auth.user_store import UserStore
 from app.catalog.registry import CatalogRegistry
@@ -29,6 +36,7 @@ from app.main import app
 _CONFIG = Path(__file__).resolve().parents[1] / "config"
 OWNER, OTHER, ADMIN = "user@corp.com", "other@corp.com", "boss@corp.com"
 _OK = {"conversation_id": "", "status": "cancelling", "runs": 1, "message": "멈춤을 요청했다"}
+RID = "0a1b2c3d4e5f6a7b"
 
 
 class _Agent:
@@ -86,8 +94,12 @@ def _conv(c: TestClient, h: dict) -> str:
     return r.json()["id"]
 
 
-def _cancel(c: TestClient, cid: str, h: dict | None):
-    return c.post("/agent/deliberate/cancel", json={"conversation_id": cid}, headers=h or {})
+def _cancel(c: TestClient, cid: str, h: dict | None, rid: str = RID):
+    return c.post("/agent/deliberate/cancel", json={"conversation_id": cid, "run_id": rid}, headers=h or {})
+
+
+def _stored(c: TestClient, cid: str, h: dict) -> list[dict]:
+    return c.get(f"/agent/conversations/{cid}", headers=h).json()["messages"]
 
 
 def _audit_rows() -> list[dict]:
@@ -97,19 +109,30 @@ def _audit_rows() -> list[dict]:
 
 
 # ── 주인 ─────────────────────────────────────────────────────────────────────────────────────────
-def test_주인은_멈추고_에이전트에_대화_id_와_그_사람을_싣는다(portal):
+def test_주인은_멈추고_에이전트에_대화_id_와_실행_id_와_그_사람을_싣는다(portal):
     c, agent = portal
     h = _login(c, OWNER)
     cid = _conv(c, h)
     n = len(_audit_rows())
     r = _cancel(c, cid, h)
     assert r.status_code == 200, r.text
-    assert r.json() == {**_OK, "conversation_id": cid}, "에이전트의 답이 그대로 온다"
+    assert r.json() == {**_OK, "conversation_id": cid, "stop_note": relay._DELIB_CUT_STOP_NOTE}, "에이전트의 답에 남긴 멈춤 글이 붙어 온다"
     (req,) = agent.seen
     assert (req.method, req.url.path) == ("POST", "/deliberate/cancel")
-    assert json.loads(req.content) == {"conversation_id": cid, "by": OWNER, "user_email": OWNER}
+    assert json.loads(req.content) == {"conversation_id": cid, "run_id": RID, "by": OWNER, "user_email": OWNER}
     row = _audit_rows()[n:]
-    assert row == [{"event": "delib_cancel", "status": "ok", "meta": {"conversation": cid, "upstream": 200}}], row
+    assert row == [{"event": "delib_cancel", "status": "ok", "meta": {"conversation": cid, "run": RID, "upstream": 200}}], row
+
+
+@pytest.mark.parametrize("body", [{}, {"run_id": ""}, {"run_id": "r" * 65}], ids=["없음", "빈", "긺"])
+def test_실행_id_가_없거나_어긋나면_422_이고_에이전트를_부르지_않는다(portal, body):
+    """대화 id 만으로 멈추면 낡은 화면의 '멈춤' 이 같은 대화에서 다른 기기가 띄운 새 심의를 접는다(A24 검토) — 화면은 그 칸의 실행 id 를 싣는다."""
+    c, agent = portal
+    h = _login(c, OWNER)
+    cid = _conv(c, h)
+    r = c.post("/agent/deliberate/cancel", json={"conversation_id": cid, **body}, headers=h)
+    assert r.status_code == 422, r.text
+    assert agent.seen == []
 
 
 # ── 남 · 없는 대화 · 관리자 ──────────────────────────────────────────────────────────────────────────
@@ -119,7 +142,8 @@ def test_남의_대화는_403_not_owner_이고_에이전트를_부르지_않는�
     r = _cancel(c, cid, _login(c, OTHER))
     assert r.status_code == 403 and r.json()["code"] == "not_owner", r.text
     assert agent.seen == []
-    assert _audit_rows()[-1] == {"event": "delib_cancel", "status": "rejected", "meta": {"conversation": cid, "code": "not_owner"}}
+    assert _audit_rows()[-1] == {"event": "delib_cancel", "status": "rejected",
+                                 "meta": {"conversation": cid, "run": RID, "code": "not_owner"}}
 
 
 def test_관리자도_남의_심의는_멈추지_못한다(portal):
@@ -162,26 +186,26 @@ def test_본문의_모르는_칸은_422_다(portal):
     c, agent = portal
     h = _login(c, OWNER)
     cid = _conv(c, h)
-    r = c.post("/agent/deliberate/cancel", json={"conversation_id": cid, "user_email": ADMIN}, headers=h)
+    r = c.post("/agent/deliberate/cancel", json={"conversation_id": cid, "run_id": RID, "user_email": ADMIN}, headers=h)
     assert r.status_code == 422, "호출자가 실은 신원 칸은 받지 않는다 — 에이전트에 가는 신원은 세션의 것뿐이다"
     assert agent.seen == []
 
 
 # ── 에이전트의 답 ─────────────────────────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("status, body", [
-    (404, {"code": "delib_not_found", "conversation_id": "X", "message": "이 대화에서 도는 웹 심의가 없다"}),
-    (409, {"code": "already_finished", "conversation_id": "X", "status": "done", "message": "이미 끝난 심의다"}),
-    (200, {"conversation_id": "X", "status": "cancelled", "runs": 0, "already": True, "message": "이미 멈춘 심의다"}),
-], ids=["404", "409", "already"])
-def test_에이전트의_답은_상태와_본문_그대로_온다(portal, status, body):
+    (404, {"code": "delib_not_found", "conversation_id": "X", "run_id": RID, "message": "이 대화에서 도는 그 웹 심의가 없다"}),
+    (409, {"code": "already_finished", "conversation_id": "X", "run_id": RID, "status": "done", "message": "이미 끝난 심의다"}),
+    (409, {"code": "finishing", "conversation_id": "X", "run_id": RID, "status": "running", "message": "의장이 결정문을 이미 냈다"}),
+], ids=["404", "409", "finishing"])
+def test_에이전트의_거절은_상태와_본문_그대로_오고_대화에_아무것도_남기지_않는다(portal, status, body):
     c, agent = portal
     h = _login(c, OWNER)
     cid = _conv(c, h)
     agent.answer = lambda req: httpx.Response(status, json=body)
     r = _cancel(c, cid, h)
     assert (r.status_code, r.json()) == (status, body)
-    assert _audit_rows()[-1]["meta"] == {"conversation": cid, "upstream": status,
-                                         **({"code": body["code"]} if "code" in body else {})}
+    assert _audit_rows()[-1]["meta"] == {"conversation": cid, "run": RID, "upstream": status, "code": body["code"]}
+    assert _stored(c, cid, h) == [], "멈추지 않았는데 대화에 멈춤을 남겼다"
 
 
 @pytest.mark.parametrize("answer, status, code", [
@@ -213,8 +237,165 @@ def test_에이전트에_닿지_못하거나_늦으면_502_504(portal, exc, stat
     assert _audit_rows()[-1]["status"] == "error"
 
 
+# ── 받는 중계가 없으면 창구가 멈춘 사실을 대화에 남긴다(받기가 끊긴 화면 · 다른 기기 — A24 검토) ───────────────────────────────
+def _cut_run(c: TestClient, cid: str) -> None:
+    """받기가 끊긴 웹 심의 — 중계는 끊기며 받은 발언까지 남겼고(답 없음) 실행 id 를 발언에 남겼다. 그 뒤로 이 대화를 받는 중계는 없다."""
+    store = app.state.conv_store
+    store.append(conversation_id=cid, owner_sub=OWNER, role="user", content="/심의 힌지")
+    store.append(conversation_id=cid, owner_sub=OWNER, role="persona", content="초기 입장", persona="mech-a", round=1,
+                 meta={"delib_run": RID})
+
+
+def test_받는_중계가_없으면_창구가_끊긴_판_글로_대화에_남기고_같은_실행은_한_번만_남긴다(portal):
+    """끊긴 화면의 '멈춤' 이 200 을 받아도 대화에는 아무것도 남지 않아, 새로고침 · 다른 기기에서 같은 심의가 다시 '아직 돌 수 있다' 와 '멈춤'
+    으로 보였다. 끊긴 뒤 서버에서 나온 발언은 남지 않았으므로 '지금까지의 발언은 남는다' 가 아닌 글로 남긴다."""
+    c, agent = portal
+    h = _login(c, OWNER)
+    cid = _conv(c, h)
+    _cut_run(c, cid)
+    first = _cancel(c, cid, h)
+    agent.answer = lambda req: httpx.Response(200, json={"conversation_id": cid, "run_id": RID, "status": "cancelled", "runs": 0,
+                                                          "already": True, "message": "이미 멈춘 심의다"})
+    again = _cancel(c, cid, h)
+    assert first.status_code == 200 and first.json()["stop_note"] == relay._DELIB_CUT_STOP_NOTE, first.text
+    assert again.status_code == 200 and again.json()["already"] is True and again.json()["stop_note"] == relay._DELIB_CUT_STOP_NOTE
+    msgs = _stored(c, cid, h)
+    assert [m["role"] for m in msgs] == ["user", "persona", "assistant"], "같은 실행의 멈춤을 두 번 남겼거나 남기지 않았다"
+    note = msgs[2]
+    assert note["content"] == relay._DELIB_CUT_STOP_NOTE and "끊긴 뒤 서버에서 나온 발언은 남지 않았" in note["content"]
+    assert "지금까지의 발언은 남" not in note["content"]
+    assert note["meta"] == {"delib_cancelled": {"message": relay._DELIB_CUT_STOP_NOTE, "by": OWNER, "run_id": RID, "cut": True},
+                            "delib_run": RID}
+    # 새로고침 · 다른 기기 — 멈춘 심의로 되살아난다('아직 돌 수 있다' 와 '멈춤' 이 아니다)
+    local = _restore(msgs)
+    assert local[-1]["delib"]["cancelled"] == {"message": relay._DELIB_CUT_STOP_NOTE} and "decision" not in local[-1]["delib"]
+    assert local[-1]["delib"]["runId"] == RID
+
+
+def test_답_없이_끊긴_심의를_되살리면_발언에_남은_실행_id_를_쥔다():
+    """새로고침 · 다른 기기에서 연 끊긴 심의 — '멈춤' 이 그 심의를 짚을 열쇠가 발언의 meta.delib_run 에 있다(없으면 단추가 없다)."""
+    local = _restore([{"role": "user", "persona": None, "round": None, "content": "/심의 힌지", "meta": None, "ts": 1},
+                      {"role": "persona", "persona": "mech-a", "round": 1, "content": "발언", "meta": {"delib_run": RID}, "ts": 2}])
+    assert local[-1]["delib"]["runId"] == RID and "cancelled" not in local[-1]["delib"]
+    bare = _restore([{"role": "persona", "persona": "mech-a", "round": 1, "content": "발언", "meta": None, "ts": 2}])
+    assert "runId" not in bare[-1]["delib"], "MCP 심의 · 옛 저장분은 실행 id 가 없다 — 멈출 열쇠가 없다"
+
+
+# ── 받는 중계가 있으면 중계가 남긴다 — 화면이 받는 중인 심의를 멈춘다(실제 /agent/chat 중계를 ASGI 로 돌린다) ───────────────────────────
+class _Upstream:
+    """에이전트 서버 대역 — /chat 은 시험이 밀어 넣는 SSE 를 흘리고(push · end), /deliberate/cancel 은 200 cancelling 으로 답한다(받은 본문을 적는다)."""
+
+    def __init__(self) -> None:
+        self.q: asyncio.Queue = asyncio.Queue()
+        self.cancels: list[dict] = []
+
+    def push(self, *frames: tuple[str, dict]) -> None:
+        for ev, d in frames:
+            self.q.put_nowait(f"event: {ev}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n".encode())
+
+    def end(self) -> None:
+        self.q.put_nowait(None)
+
+    def __call__(self, req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/deliberate/cancel":
+            body = json.loads(req.content)
+            self.cancels.append(body)
+            return httpx.Response(200, json={"conversation_id": body["conversation_id"], "run_id": body["run_id"],
+                                             "status": "cancelling", "runs": 1, "message": "멈춤을 요청했다"})
+        q = self.q
+
+        class _Live(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                while (chunk := await q.get()) is not None:
+                    yield chunk
+
+        return httpx.Response(200, stream=_Live(), headers={"content-type": "text/event-stream"})
+
+
+def _session(c: TestClient) -> dict:
+    return {"cookie": "; ".join(f"{k}={v}" for k, v in c.cookies.items()), "x-csrf-token": c.cookies.get("hwax_csrf")}
+
+
+async def _chat(c: TestClient, cid: str, gone: asyncio.Event) -> None:
+    """브라우저 하나가 /agent/chat 으로 웹 심의를 받는다 — gone 이 서면 떠난다(■ · 탭 닫기). 받은 바이트는 버린다."""
+    body = json.dumps({"message": "/심의 힌지", "conversation_id": cid}).encode()
+    head = [(b"host", b"testserver"), (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
+    head += [(k.encode(), v.encode()) for k, v in _session(c).items()]
+    scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"}, "http_version": "1.1", "method": "POST",
+             "scheme": "http", "path": "/agent/chat", "raw_path": b"/agent/chat", "query_string": b"", "root_path": "",
+             "client": ("127.0.0.1", 1), "server": ("testserver", 80), "app": app, "state": {}, "headers": head}
+    first = [True]
+
+    async def receive():
+        if first[0]:
+            first[0] = False
+            return {"type": "http.request", "body": body, "more_body": False}
+        await gone.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(_msg):
+        return None
+
+    await app(scope, receive, send)
+
+
+async def _acancel(c: TestClient, cid: str) -> httpx.Response:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as ac:
+        return await ac.post("/agent/deliberate/cancel", json={"conversation_id": cid, "run_id": RID}, headers=_session(c))
+
+
+async def _until(pred, timeout: float = 5.0) -> None:
+    for _ in range(int(timeout / 0.02)):
+        if pred():
+            return
+        await asyncio.sleep(0.02)
+    assert pred(), "기다린 일이 일어나지 않았다"
+
+
+@pytest.mark.parametrize("ends", ["사건", "끊김"])
+def test_받는_중계가_있으면_창구는_남기지_않고_중계가_한_번_남긴다(portal, ends):
+    """받는 중인 심의를 멈추면 창구는 대화에 남기지 않는다 — 그 심의를 받는 중계가 멈춤 사건의 글로 남긴다(창구가 먼저 남기면 답이 받은
+    발언보다 앞에 선다). 멈춤을 청한 뒤 사건이 오기 전에 받기가 끊기면(■ · 탭 닫기) 중계가 끊긴 판 글로 남긴다."""
+    c, _agent = portal
+    h = _login(c, OWNER)
+    cid = _conv(c, h)
+    seen: dict = {}
+
+    async def run():
+        up, gone = _Upstream(), asyncio.Event()
+        app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(up))
+        chat = asyncio.create_task(_chat(c, cid, gone))
+        up.push(("delib", {"kind": "stage", "stage": "r1", "run_id": RID}),
+                ("delib", {"kind": "turn", "round": 1, "persona": "mech-a", "say": "초기 입장"}))
+        await _until(lambda: (cid, RID) in relay._DELIB_RELAYS)
+        r = await _acancel(c, cid)
+        seen["cancel"], seen["sent"] = (r.status_code, r.json()), list(up.cancels)
+        seen["mid"] = [m["role"] for m in app.state.conv_store.get(cid, OWNER)["messages"]]
+        if ends == "사건":
+            up.push(("delib", {"kind": "cancelled", "by": OWNER, "message": _STOP, "run_id": RID}), ("done", {}))
+            up.end()
+        else:
+            gone.set()
+        await asyncio.wait_for(chat, 10)
+
+    c.portal.call(run)
+    status, body = seen["cancel"]
+    assert status == 200 and body["status"] == "cancelling" and "stop_note" not in body, body
+    assert seen["sent"] == [{"conversation_id": cid, "run_id": RID, "by": OWNER, "user_email": OWNER}]
+    assert seen["mid"] == ["user"], "받는 중계가 있는데 창구가 대화에 남겼다"
+    msgs = _stored(c, cid, h)
+    assert [m["role"] for m in msgs] == ["user", "persona", "assistant"], msgs
+    note = msgs[2]
+    if ends == "사건":
+        assert note["content"] == _STOP and note["meta"]["delib_cancelled"] == {"message": _STOP, "by": OWNER, "run_id": RID}
+    else:
+        assert note["content"] == relay._DELIB_CUT_STOP_NOTE
+        assert note["meta"]["delib_cancelled"] == {"message": relay._DELIB_CUT_STOP_NOTE, "by": OWNER, "run_id": RID, "cut": True}
+    assert (cid, RID) not in relay._DELIB_RELAYS
+
+
 # ── 중계가 멈춤 사건을 대화에 남긴다 ─────────────────────────────────────────────────────────────────────
-_STOP = "사람이 멈췄다 — 지금까지의 발언은 남고, 결정문 · 보고서는 만들지 않았다"
+_STOP = "사람이 멈췄다 — 의장이 결정문을 내기 전에 멈춰 이 단의 결정문 · 보고서는 없다"
 
 
 class _Body(httpx.AsyncByteStream):
@@ -232,9 +413,9 @@ def test_중계가_멈춤_사건을_받으면_발언과_멈춤을_대화에_남�
     c, _agent = portal
     h = _login(c, OWNER)
     cid = _conv(c, h)
-    frames = [("delib", {"kind": "stage", "stage": "r1"}),
+    frames = [("delib", {"kind": "stage", "stage": "r1", "run_id": RID}),
               ("delib", {"kind": "turn", "round": 1, "persona": "mech-a", "say": "초기 입장"}),
-              ("delib", {"kind": "cancelled", "by": OWNER, "message": _STOP}), ("done", {})]
+              ("delib", {"kind": "cancelled", "by": OWNER, "message": _STOP, "run_id": RID}), ("done", {})]
     raw = "".join(f"event: {ev}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n" for ev, d in frames).encode()
     app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(
         lambda req: httpx.Response(200, stream=_Body(raw), headers={"content-type": "text/event-stream"})))
@@ -242,12 +423,14 @@ def test_중계가_멈춤_사건을_받으면_발언과_멈춤을_대화에_남�
     assert r.status_code == 200 and '"cancelled"' in r.text
     msgs = c.get(f"/agent/conversations/{cid}", headers=h).json()["messages"]
     assert [m["role"] for m in msgs] == ["user", "persona", "assistant"], msgs
-    assert msgs[1]["content"] == "초기 입장"
-    assert msgs[2]["content"] == _STOP and msgs[2]["meta"]["delib_cancelled"] == {"message": _STOP, "by": OWNER}
+    assert msgs[1]["content"] == "초기 입장" and msgs[1]["meta"] == {"delib_run": RID}
+    assert msgs[2]["content"] == _STOP
+    assert msgs[2]["meta"] == {"delib_cancelled": {"message": _STOP, "by": OWNER, "run_id": RID}, "delib_run": RID}
+    assert (cid, RID) not in relay._DELIB_RELAYS, "끝난 중계의 기록이 표에 남았다"
     # 다른 기기 · 새로고침이 되살린 심의 — 멈춤은 멈춤으로, 결정문으로 그리지 않는다(conversations.api.ts serverMessagesToLocal)
     local = _restore(msgs)
     assert local[-1]["delib"].get("cancelled") == {"message": _STOP} and "decision" not in local[-1]["delib"], local[-1]
-    assert [t["say"] for t in local[-1]["delib"]["turns"]] == ["초기 입장"]
+    assert [t["say"] for t in local[-1]["delib"]["turns"]] == ["초기 입장"] and local[-1]["delib"]["runId"] == RID
 
 
 def test_결정문_뒤에_멈춘_심의는_결정문과_멈춤을_함께_되살린다():

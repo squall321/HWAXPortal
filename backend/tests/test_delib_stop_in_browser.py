@@ -1,7 +1,8 @@
-# 심의 화면의 '멈춤' 단추를 헤드리스 브라우저에 실제로 올려 누른다 — 받는 동안 잠기고 결과를 적으며, 멈춤 사건이 오면 '멈춤' 알림으로 바뀐다(가짜 fetch)
+# 심의 화면의 '멈춤' 단추를 헤드리스 브라우저에 실제로 올려 누른다 — 받는 동안 잠기고 그 심의의 실행 id 로 멈추며, 마무리 중에는 거두고, 끊긴 심의를 멈추면 새로고침 뒤에도 멈춤으로 남는다(가짜 fetch)
 """docs/leftovers-1017 triage A24 (나) — 도는 웹 심의를 서버에서 그치는 '멈춤'(포털 POST /agent/deliberate/cancel). 입력창의 ■ 는 받기만 끊고
 심의는 서버에서 끝까지 돈다 — 그치는 길은 심의 칸의 이 단추다. 타입 검사로는 '누르는 동안 잠기는가', '무엇을 보내는가', '결과를 어떻게
-말하는가', '받기가 끊긴 심의에도 남는가' 를 못 본다. test_delib_stream_in_browser 와 같은 길이다 — 실제 ChatProvider · MessageList(심의 칸
+말하는가', '받기가 끊긴 심의에도 남는가' 를 못 본다. A24 검토로 더한 것 — 실행 id(첫 심의 사건의 run_id)를 싣는다 · 실행 id 가 없으면 단추가
+없다 · 의장이 결정문을 낸 뒤의 마무리(finishing)에는 단추를 거둔다 · 끊긴 심의를 멈추면(200) 칸에 멈춤을 적어 새로고침 뒤에도 남는다. test_delib_stream_in_browser 와 같은 길이다 — 실제 ChatProvider · MessageList(심의 칸
 DelibView)를 esbuild 로 묶어 빈 문서에 올리고, fetch 는 시험이 한 프레임씩 밀어 넣는 스트림과 손으로 답하는 멈춤 창구로 바꾼다.
 도구는 프론트가 이미 가진 것만 쓴다. 없으면 건너뛴다(운영 박스).
 """
@@ -54,6 +55,8 @@ function Probe() {
   );
 };
 """
+
+STOP_MSG = "사람이 멈췄다 — 의장이 결정문을 내기 전에 멈춰 이 단의 결정문 · 보고서는 없다"
 
 _BUILD = r"""
 const { createRequire } = require('module');
@@ -108,10 +111,11 @@ const [FE, OUT] = process.argv.slice(2);
 const { chromium } = createRequire(path.join(FE, 'package.json'))('@playwright/test');
 
 const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-const STOP_MSG = '사람이 멈췄다 — 지금까지의 발언은 남고, 결정문 · 보고서는 만들지 않았다';
+const STOP_MSG = '사람이 멈췄다 — 의장이 결정문을 내기 전에 멈춰 이 단의 결정문 · 보고서는 없다';
 
-async function open(browser, { confirm = true } = {}) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+// where — 브라우저(새 저장소) 또는 같은 저장소의 컨텍스트(새로고침 흉내)
+async function open(where, { confirm = true } = {}) {
+  const page = await where.newPage({ viewport: { width: 1280, height: 800 } });
   page.setDefaultTimeout(10000);
   page.__errors = [];
   page.__dialogs = [];
@@ -128,11 +132,12 @@ async function open(browser, { confirm = true } = {}) {
   return page;
 }
 const push = (page, text) => page.evaluate((t) => window.__push(t), text);
-// 심의를 열고 1라운드 발언 하나까지 흘린다 — 받는 중인 심의 칸이다
-async function start(page) {
+const RUN = 'run-1';
+// 심의를 열고 1라운드 발언 하나까지 흘린다 — 받는 중인 심의 칸이다. 에이전트는 첫 심의 사건에 실행 id 를 싣는다(runId 가 null 이면 옛 에이전트)
+async function start(page, runId = RUN) {
   await page.locator('#send').click();
   await page.waitForFunction(() => typeof window.__push === 'function');
-  await push(page, frame('delib', { kind: 'stage', stage: 'discover' }));
+  await push(page, frame('delib', { kind: 'stage', stage: 'discover', ...(runId ? { run_id: runId } : {}) }));
   await push(page, frame('delib', { kind: 'personas', personas: [{ key: 'mech-a', role: '기구' }], totalRounds: 2 }));
   await push(page, frame('delib', { kind: 'stage', stage: 'r1', n: 1 }));
   await push(page, frame('delib', { kind: 'turn', round: 1, persona: 'mech-a', say: '초기 입장' }));
@@ -145,6 +150,7 @@ const look = (page) => page.evaluate(() => {
     said: (document.querySelector('.dv-stop-said') || {}).textContent || '',
     note: (document.querySelector('.dv-stop-note') || {}).textContent || '',
     stopped: (document.querySelector('.dv-stopped') || {}).textContent || '',
+    plain: (document.querySelector('.dv-plain') || {}).textContent || '',
     error: Boolean(document.querySelector('.chat-error')),
     streaming: document.getElementById('streaming').textContent,
   };
@@ -165,7 +171,7 @@ const SCENARIOS = {
     await page.evaluate(() => window.__answer(200, { conversation_id: 'srv-1', status: 'cancelling', runs: 1, message: '멈춤을 요청했다' }));
     await page.locator('.dv-stop-said').waitFor();
     const answered = await look(page);
-    await push(page, frame('delib', { kind: 'cancelled', by: 'u1@corp.example', message: STOP_MSG }));
+    await push(page, frame('delib', { kind: 'cancelled', by: 'u1@corp.example', message: STOP_MSG, run_id: 'run-1' }));
     await push(page, frame('done', {}));
     await page.evaluate(() => window.__end());
     await page.waitForFunction(() => document.getElementById('streaming').textContent === 'false');
@@ -183,7 +189,63 @@ const SCENARIOS = {
     await page.waitForFunction(() => typeof window.__answer === 'function');
     await page.evaluate(() => window.__answer(404, { code: 'delib_not_found', message: '이 대화에서 도는 웹 심의가 없다' }));
     await page.locator('.dv-stop-said').waitFor();
-    return { halted, answered: await look(page), errors: page.__errors };
+    return { halted, answered: await look(page), dialogs: page.__dialogs, sent: await cancels(page), errors: page.__errors };
+  },
+  // 받기가 끊긴 심의를 멈춘다(200) — 멈춤 사건이 오지 않는다. 칸에 멈춤(포털이 대화에 남긴 글)을 적고, 같은 저장소로 다시 열어도 멈춤으로 남는다
+  async cut_stopped(browser) {
+    const ctx = await browser.newContext();
+    const page = await open(ctx);
+    await start(page);
+    await page.evaluate(() => window.__break('network error'));
+    await page.locator('.chat-error').waitFor();
+    await page.locator('.dv-stop-btn').click();
+    await page.waitForFunction(() => typeof window.__answer === 'function');
+    await page.evaluate(() => window.__answer(200, { conversation_id: 'srv-1', run_id: 'run-1', status: 'cancelling', runs: 1,
+      message: '멈춤을 요청했다', stop_note: '사람이 멈췄다(받기가 끊긴 뒤) — 끊긴 뒤 서버에서 나온 발언은 남지 않았다(포털)' }));
+    await page.locator('.dv-stopped').waitFor();
+    const answered = await look(page);
+    await page.waitForTimeout(800);                 // 브라우저 사본 저장(250ms 디바운스) 뒤
+    const again = await open(ctx);                  // 새로고침 — 같은 저장소
+    await again.getByText('초기 입장').first().waitFor();
+    const reloaded = await look(again);
+    const errors = [...page.__errors, ...again.__errors];
+    await ctx.close();
+    return { answered, reloaded, dialogs: page.__dialogs, errors };
+  },
+  // 의장이 결정문을 냈다(finishing) — 마무리(쉬운 설명 · 보고서 저장) 동안 에이전트는 멈추지 않는다. 단추를 거두고, 결정문이 오면 끝난 심의다
+  async finishing(browser) {
+    const page = await open(browser);
+    await start(page);
+    const before = await look(page);
+    await push(page, frame('delib', { kind: 'stage', stage: 'decide' }));
+    await push(page, frame('delib', { kind: 'finishing' }));
+    await push(page, frame('delib', { kind: 'stage', stage: 'explain' }));
+    await push(page, frame('delib', { kind: 'plain', text: '### 한마디로\n간극을 되돌린다' }));
+    await push(page, frame('delib', { kind: 'stage', stage: 'report' }));
+    await page.locator('.dv-plain').waitFor();
+    const tail = await look(page);
+    return { before, tail, sent: await cancels(page), errors: page.__errors };
+  },
+  // 다단 심의 — 1단 결정문 뒤 2단 라운드에서는 다시 멈출 수 있다
+  async next_stage(browser) {
+    const page = await open(browser);
+    await start(page);
+    await push(page, frame('delib', { kind: 'finishing' }));
+    const tail = await look(page);
+    await push(page, frame('delib', { kind: 'decision', text: '1단 결정문' }));
+    await push(page, frame('delib', { kind: 'stage', stage: 'r1', n: 1 }));
+    await push(page, frame('delib', { kind: 'turn', round: 1, persona: 'mech-a', say: '2단 입장' }));
+    await page.getByText('2단 입장').first().waitFor();
+    return { tail, stage2: await look(page), errors: page.__errors };
+  },
+  // 실행 id 를 싣지 않는 옛 에이전트 — 멈출 열쇠가 없다(대화 id 만으로는 보내지 않는다)
+  async no_run(browser) {
+    const page = await open(browser);
+    await start(page, null);
+    const live = await look(page);
+    await page.evaluate(() => window.__break('network error'));
+    await page.locator('.chat-error').waitFor();
+    return { live, halted: await look(page), errors: page.__errors };
   },
   // 이미 끝난 심의(409) · 확인 창에서 '취소' — 보내지 않는다
   async finished(browser) {
@@ -256,12 +318,14 @@ def test_받는_중에_멈추면_누른_동안_잠기고_결과를_적고_멈춤
     assert s["in_flight"]["btn"] == {"text": "멈추는 중…", "disabled": True, "busy": "true"}, "요청이 도는 동안 잠긴다"
     assert len(s["sent"]) == 1, "잠긴 단추를 다시 눌러도 두 번 보내지 않는다"
     (call,) = s["sent"]
-    assert call["method"] == "POST" and call["body"] == {"conversation_id": "srv-1"}, "서버 대화 id 로 멈춘다"
+    assert call["method"] == "POST" and call["body"] == {"conversation_id": "srv-1", "run_id": "run-1"}, "서버 대화 id 와 그 심의의 실행 id 로 멈춘다"
     assert call["csrf"] == "csrf-1", "상태를 바꾸는 요청은 CSRF 를 싣는다"
-    assert s["dialogs"] == ["이 심의를 서버에서 멈출까요? 지금까지의 발언은 남고, 결정문과 보고서는 만들지 않습니다."]
+    (asked,) = s["dialogs"]
+    assert asked.startswith("이 심의를 서버에서 멈출까요? 지금까지 받은 발언은 남고") and "Report Archive 에 저장된 초안은 그대로" in asked, asked
+    assert "결정문과 보고서는 만들지 않습니다" not in asked, "앞 단 · 앞 회차가 낸 결정문 · 보고서까지 없다고 단정했다"
     assert s["answered"]["said"].startswith("멈춤을 요청했습니다") and s["answered"]["btn"] is None, s["answered"]
     after = s["after"]
-    assert after["stopped"] == "멈춤 — 사람이 멈췄다 — 지금까지의 발언은 남고, 결정문 · 보고서는 만들지 않았다", after
+    assert after["stopped"] == f"멈춤 — {STOP_MSG}", after
     assert after["btn"] is None and after["said"] == "" and not after["error"], "멈춤은 실패가 아니다 — 오류 상자가 없다"
 
 
@@ -273,6 +337,38 @@ def test_받기가_끊긴_심의에도_단추가_남고_서버가_찾지_못했�
     a = s["answered"]
     assert a["said"] == "서버에서 도는 이 심의를 찾지 못했습니다 — 이미 끝났거나 서버가 다시 떴습니다.", a
     assert a["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"}, "멈추지 못했으면 다시 누를 수 있다"
+    assert [c["body"] for c in s["sent"]] == [{"conversation_id": "srv-1", "run_id": "run-1"}]
+    (asked,) = s["dialogs"]
+    assert "받기가 끊긴 뒤 서버에서 나온 발언은 남지 않고" in asked and "지금까지 받은 발언은 남고" not in asked, asked
+
+
+def test_끊긴_심의를_멈추면_칸에_멈춤을_적고_새로고침_뒤에도_멈춤으로_남는다(seen):
+    """A24 검토 — 종전엔 멈춘 사실이 단추 칸의 상태에만 있어, 같은 저장소로 다시 열면 '아직 돌 수 있다' 와 '멈춤' 이 다시 보였다."""
+    s = seen("cut_stopped")
+    note = "사람이 멈췄다(받기가 끊긴 뒤) — 끊긴 뒤 서버에서 나온 발언은 남지 않았다(포털)"
+    for look in (s["answered"], s["reloaded"]):
+        assert look["stopped"] == f"멈춤 — {note}", look
+        assert look["btn"] is None and look["note"] == "", look
+
+
+def test_의장이_결정문을_낸_뒤의_마무리에는_멈춤을_거둔다(seen):
+    """A24 검토 — 보고 단계(Report Archive 저장)에서 누르면 다 만든 결정문이 버려졌다. 에이전트도 그때는 409 finishing 이다."""
+    s = seen("finishing")
+    assert s["before"]["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"}, s["before"]
+    assert s["tail"]["btn"] is None and s["tail"]["plain"], s["tail"]
+    assert s["sent"] == []
+
+
+def test_다단_심의는_앞_단의_결정문_뒤_다음_단에서_다시_멈출_수_있다(seen):
+    s = seen("next_stage")
+    assert s["tail"]["btn"] is None
+    assert s["stage2"]["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"}, s["stage2"]
+
+
+def test_실행_id_가_없으면_멈춤_단추가_없다(seen):
+    """옛 에이전트(실행 id 를 싣지 않는다) — 대화 id 만으로 보내면 같은 대화의 다른 심의를 접을 수 있다. 단추를 내지 않는다."""
+    s = seen("no_run")
+    assert s["live"]["btn"] is None and s["halted"]["btn"] is None and s["halted"]["error"], s
 
 
 def test_이미_끝난_심의는_그렇게_적고_확인_창에서_물리면_보내지_않는다(seen):

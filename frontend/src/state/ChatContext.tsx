@@ -175,6 +175,9 @@ interface ChatContextValue {
   /** 보내기 결과를 대화에 남긴다 — 어시스턴트 알림 한 건 + 업로드 근거(docs/chat-ppt A2 · PP-D3). 대화가 없으면 새로 만든다.
    *  서버 사본에도 붙인다(답을 받는 중인 대화면 그 답이 저장된 뒤). 종전엔 결과가 업로드 패널 안에서만 끝나 다음 질문이 몰랐다. */
   addUploadNotice: (n: UploadNotice) => void;
+  /** 받기가 끊긴 심의를 서버에서 멈췄다(포털 POST /agent/deliberate/cancel 200) — 그 메시지에 멈춤을 적는다(브라우저 사본에도 남는다).
+   *  받는 중인 심의는 멈춤 사건(SSE delib cancelled)이 적으므로 부르지 않는다(triage A24). */
+  markDelibStopped: (msgId: string, message: string) => void;
   stop: () => void;
   /** 지금 도는 스트림의 생존 신호(마지막 프레임·마지막 진행 시각). 돌지 않으면 null. 상태가 아니라 읽는 함수다 —
    *  토큰마다 다시 그리지 않고, 보여 주는 쪽(StreamPulse)이 1초마다 읽는다. */
@@ -198,6 +201,8 @@ const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 /** 심의 delib 이벤트를 메시지의 DelibData 로 병합 — kind 별 리듀서. */
 function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
   const d: DelibData = { ...(prev ?? {}) };
+  // 실행 id — 에이전트 서버가 첫 심의 사건에 싣는다(triage A24). '멈춤' 이 이 심의 하나만 짚는 열쇠다.
+  if (typeof e.run_id === 'string' && e.run_id && !d.runId) d.runId = e.run_id;
   switch (e.kind) {
     case 'stage': {
       const stage = String(e.stage ?? '');
@@ -246,6 +251,7 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     }
     case 'decision':
       d.decision = String(e.text ?? '');
+      d.finishing = false; // 마무리가 끝났다 — 다단 심의는 다음 단에서 다시 멈출 수 있다
       break;
     case 'plain':
       d.plain = String(e.text ?? '');
@@ -261,6 +267,10 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'cancelled':
       // 사람이 멈췄다(에이전트 POST /deliberate/cancel — triage A24) — 오류가 아니다. 뒤따르는 done 이 받기를 닫는다.
       d.cancelled = { message: String(e.message ?? '') };
+      break;
+    case 'finishing':
+      // 의장이 결정문을 냈다 — 그 단의 결정문까지는 마무리(요약 · 쉬운 설명 · Report Archive 저장)라 에이전트가 멈추지 않는다(409 finishing).
+      d.finishing = true;
       break;
   }
   return d;
@@ -701,6 +711,23 @@ export function ChatProvider({
               ...c,
               updatedAt: Date.now(),
               messages: c.messages.map((m) => (m.id === msgId ? fn(m) : m)),
+            },
+      ),
+    );
+  }, []);
+
+  // 멈춤 응답을 기다리는 동안 다른 대화로 옮겨 갔어도 그 메시지가 든 대화에 적는다(활성 대화에 묶지 않는다).
+  const markDelibStopped = useCallback((msgId: string, message: string) => {
+    setConversations((prev) =>
+      prev.map((c) =>
+        !c.messages.some((m) => m.id === msgId)
+          ? c
+          : {
+              ...c,
+              updatedAt: Date.now(),
+              messages: c.messages.map((m) =>
+                m.id === msgId && m.delib ? { ...m, delib: { ...m.delib, cancelled: { message } } } : m,
+              ),
             },
       ),
     );
@@ -1415,6 +1442,7 @@ export function ChatProvider({
         attachedImages,
         setAttachedImages,
         addUploadNotice,
+        markDelibStopped,
         pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
         pinnedAgentName: activeConversation
           ? (activeConversation.pinnedAgentName ?? null)

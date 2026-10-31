@@ -87,8 +87,15 @@ export interface DelibData {
     tally?: DelibTally;
     unanimous?: boolean;
   };
-  /** 사람이 멈춘 심의(SSE delib kind=cancelled · 서버 사본 meta.delib_cancelled — docs/leftovers-1017 triage A24). 결정문 · 보고서가 없다. */
+  /** 사람이 멈춘 심의(SSE delib kind=cancelled · 서버 사본 meta.delib_cancelled — docs/leftovers-1017 triage A24). 멈춘 단의 결정문 · 보고서는
+   *  없다(다단 심의의 앞 단 · 이어하기의 앞 회차가 낸 결정문과 Report Archive 초안은 그대로다). */
   cancelled?: { message: string };
+  /** 에이전트 서버가 이 심의에 붙인 실행 id(첫 심의 사건의 run_id · 서버 사본 meta.delib_run) — '멈춤' 이 이 심의 하나만 짚는다(같은 대화의 새
+   *  심의를 접지 않게). 없으면 멈출 열쇠가 없다(옛 에이전트 · MCP 심의 · 대화 사본 없는 심의). */
+  runId?: string;
+  /** 의장이 결정문을 이미 냈고 마무리(요약 · 쉬운 설명 · Report Archive 저장) 중이다 — SSE delib kind=finishing 부터 그 단의 결정문까지.
+   *  에이전트는 이때 멈추지 않는다(409 finishing) — '멈춤' 을 거둔다. */
+  finishing?: boolean;
 }
 // 심의 손잡이(웹 토글) — 켠 것만 서버로 전송, 나머지는 agent-server env 기본값. GLM 리뷰 §5.
 // 불리언=0/1 플래그, chair_bestof=의장 후보 수(1=끔), timeout_s=호출당 타임아웃(초·미지정=기본).
@@ -180,7 +187,7 @@ export interface ThinkEvent {
 
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
 export interface DelibEvent {
-  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome' | 'cancelled';
+  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome' | 'cancelled' | 'finishing';
   [k: string]: unknown;
 }
 
