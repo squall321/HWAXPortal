@@ -206,14 +206,22 @@ cae00 에서 사람이 SSO 로 로그인한 웹 챗으로 본다(두 QA 와 같�
 
 ### 8-1. 병합 한 번(결정 A — 판단 C-18)
 
+**먼저 8-3 의 K9 차례를 본다.** dev 에서 `apply.sh`(데모 카드 지우기)가 돌았으면 그 지우기가 실린 덤프가 update-all 의 자동 병합이나 이 병합으로 든다.
+그러면 K9 의 카드 `…012` 가 목록에서 빠지니 K9 은 **update-all 을 돌리기 전에**(지금 판 화면으로) 본다. 돌았는지는 사용자에게 묻는다(10-31 09시 KST 대조 — dev 에는 아직 돌지 않았다, `apply.log` 없음).
+
 update-all 은 Drive 덤프가 바뀌었을 때만 병합한다. 덤프가 그대로면 `AIDH 덤프 변화 없음 — merge 생략` 이 찍히고 새 병합 코드가 돌지 않는다.
-그래서 받은 뒤 한 번 손으로 돈다 — 도는 심의가 없고, 디스크에 운영 직전 스냅샷(몇 GB) 자리가 있을 때.
+그래서 받은 뒤 한 번 손으로 돈다 — 도는 심의가 없고, 디스크에 운영 직전 스냅샷(몇 GB) 자리가 있을 때. 덤프는 update-all 이 받아 둔 것을 그대로 쓴다 —
+`AIDH_MERGE_DUMP` 를 주지 않으면 스크립트가 Drive 최신(약 11 GB)을 임시 자리에 다시 받아 staging DB 에 푼다.
 
 ```bash
-cd ~/Projects/AIDataHub && ./deploy/apptainer/merge-from-drive.sh
+cd ~/Projects/AIDataHub && AIDH_MERGE_DUMP="$(readlink -f "$(find deploy -maxdepth 3 -name latest.sql.gz | head -1)")" ./deploy/apptainer/merge-from-drive.sh
+cd ~/Projects/HWAXPortal && python3 infra/scripts/sync-he-personas.py    # 미리보기(쓰지 않는다) — update-all 은 제 병합 뒤에만 이것을 돈다
 ```
 
-비파괴 병합이다(행을 지우지 않는다 · 운영 직전 스냅샷을 `/data/backups/aidh/pre-merge-<시각>.sql.gz` 에 남긴다). 볼 줄 —
+받아 둔 덤프가 없거나 심링크만 있으면 스크립트가 알아서 Drive 에서 받는다(같은 명령). 레코드 · 전문가 행은 지우지 않는다 — 양쪽에 있으면 updated_at 이 새 쪽이고,
+dev 의 소프트 삭제는 옮겨 온다. 표본 임베딩(`agent_sample_embeddings`)만은 전문가 단위로 지우고 덤프 판으로 다시 넣는다(아래 줄의 '지우기만 M'). 운영 직전
+스냅샷을 `/data/backups/aidh/pre-merge-<시각>.sql.gz` 에 남긴다. 미리보기에 `+` · `~` 줄이 있으면 병합이 이 박스 판의 운영자(he-*)를 덮은 것이다 — 4절 HP-53 ·
+HP-51 줄대로 보고 `--apply` 한다. 병합의 볼 줄 —
 
 - `✓ agent_sample_embeddings: 덤프 판으로 다시 지은 agent N · 지우기만 M · 순번을 X 로 올림 (총 K행)` — '순번을 … 로 올림' 은 예전 병합이 남긴 겹침을
   걷었다는 뜻이다(보통 첫 번에만 나온다). 같은 덤프로 다시 돌리면 바꿀 것이 없다.
@@ -240,13 +248,14 @@ cd ~/Projects/AIDataHub/deploy/apptainer && ( source ./_common.sh && load_env &&
    멈춘다. 되돌리기는 같은 폴더의 `restore.sql` 이다. 데모 레코드 셋을 소프트 삭제하고 두 전문가(kooremapper-modelmeta · dynaforge-report)를 지운다.
 2. **cae00 — OB-73 먼저.** 박스 화면 확인(10-27 표의 넷 — 원문 [`../request_1015.md`](../request_1015.md)).
    - K9 — 데모 카드 `…012` 를 열면 JSON 원문이 코드 칸으로 보인다. **dev 지우기가 실린 덤프가 이 박스에 병합되기 전에** 본다 — 병합이 레코드의 소프트 삭제를
-     옮겨 카드가 목록에서 빠진다(10-27 AD-13 'dev 에서만 지우면'). 이미 병합됐으면 볼 수 없었다고 적는다.
+     옮겨 카드가 목록에서 빠진다(10-27 AD-13 'dev 에서만 지우면'). 1 이 돌았으면 **update-all 을 돌리기 전에**(지금 판 화면으로) 본다 — update-all §3 은 새
+     덤프를 스스로 병합하고, 8-1 의 손 병합도 같은 덤프를 쓴다. 그래서 8-1 은 K9 뒤다. 이미 병합됐으면 볼 수 없었다고 적는다.
    - K2 — 로그인이 만료되면 전문가 상세 · 카드 화면이 로그인 화면으로 가고, 상세 실패는 공용 문구와 '다시 시도' 로 보인다.
    - K6-5 — 설명도 역할 문서도 없는 전문가(dynaforge-report)의 상세에 '아직 등록되지 않은 전문가' 가 보인다.
    - K7 — 역할이 빈 전문가가 심의 좌석에 이름 · 키로 앉고 `persona_role_empty` 경고가 난다.
    - 빈 전문가 행은 병합이 지우지 않아 OB-87 까지 남는다 — K6-5 · K7 은 병합 뒤에도 볼 수 있다.
-3. **cae00 — 병합.** dev 지우기가 실린 덤프를 update-all(또는 8-1)이 병합한다. 0 으로 끝나 표식이 적혔는지 본다 — 3 으로 끝나면 표식이 남지 않아 옛 덤프가
-   다시 든다(10-27 AD-13).
+3. **cae00 — 병합.** dev 지우기가 실린 덤프를 update-all(또는 K9 뒤의 8-1)이 병합한다. 0 으로 끝나 표식이 적혔는지 본다 — 3 으로 끝나면 표식이 남지 않아 옛 덤프가
+   다시 든다(10-27 AD-13). 손으로 병합했으면 8-1 의 운영자 미리보기도 돈다.
 4. **cae00 — OB-87.** 이 박스에서 두 전문가를 지운다(AD-13 순서 5 — 병합은 행을 지우지 않는다). dev 와 같은 길이다 — AIDataHub API 의
    `DELETE /api/agents/<키>`(쓰기 — 사람이 한다). 다음 병합 뒤 다시 들어오지 않았는지 본다(순서 6).
 

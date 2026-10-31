@@ -1027,7 +1027,8 @@ SP 허브 주소 · `core:read` 토큰(받기를 켜는 조건 — 넣으면 시
 받기 전에 읽으려면 `git fetch` 뒤 `git show origin/main:docs/request-1030/server-setup.md` 로 본다(작업 트리는 그대로다).
 
 - ⚠ **AIDataHub 데이터 단계에는 차례가 있다** — dev 지우기(사용자가 직접)가 실린 덤프가 이 박스에 병합되기 **전에** OB-73 의 K9(데모 카드 `…012`)을
-  본다. 병합이 레코드의 소프트 삭제를 옮겨 카드가 목록에서 빠진다(server-setup 8-3).
+  본다. 병합이 레코드의 소프트 삭제를 옮겨 카드가 목록에서 빠진다(server-setup 8-3). dev 지우기가 돌았으면 K9 은 **update-all 을 돌리기 전에** 본다 —
+  update-all 이 새 덤프를 스스로 병합하고, 손 병합(8-1)도 그 뒤다.
 - ⚠ **SignalForge** — 이 판을 받는 update-all 은 SignalForge 코드가 바뀌었으면 sf-mcp 를 곧바로 새 코드로 다시 띄운다. 그쪽 10-31 cae00 문서의 재기동 차례(병합 뒤)와
   어긋나므로 받기 전에 server-setup 3절의 사용자 결정 줄을 본다. 받은 뒤에는 그 절의 PLM 처음 받기를 바로 한다.
 - **챗 관문 넷(HA-27 ~ HA-30)** — 에이전트 서버와 포털(화면 Drive `images-20261030-220551Z`)을 같은 판으로 받는다. 받은 뒤 `/health` 넷과 update-all §7 줄을
@@ -1035,6 +1036,6 @@ SP 허브 주소 · `core:read` 토큰(받기를 켜는 조건 — 넣으면 시
 - **받은 편지함** — update-all 이 git 받기 뒤 `→ cae00 받은 편지함 — …` 줄로 이 박스에 마지막으로 알린 뒤의 새 글을 알리고 끝 요약에서 다시 낸다
   (기준은 `infra/.state/inbox-head` — `git pull` 을 먼저 해도 빠지지 않는다. 기록이 없는 첫 실행은 글을 모두 찍는다).
   [cae00-inbox/README.md](cae00-inbox/README.md) 대로 이 박스에서 읽기만으로 답하고, 답은 리포 밖 파일로 사용자에게 준다 — 이 박스에서 리포에 커밋하지 않는다.
-- **AIDataHub 병합** — `6f496fa` 는 병합 스크립트 고침이라 Drive 덤프가 그대로면 update-all 이 돌리지 않는다. 받은 뒤 `./deploy/apptainer/merge-from-drive.sh` 를
-  한 번 손으로 돈다(8-1).
+- **AIDataHub 병합** — `6f496fa` 는 병합 스크립트 고침이라 Drive 덤프가 그대로면 update-all 이 돌리지 않는다. 받은 뒤(K9 뒤) 병합을 한 번 손으로 돈다 —
+  update-all 이 받아 둔 덤프를 `AIDH_MERGE_DUMP` 로 넘기고(안 넘기면 약 11 GB 를 다시 받는다) 운영자 미리보기를 한 번 더 본다(8-1 의 두 줄).
 - **OB-04 · OB-26** — 박스 권한표의 '(시험)' 라벨 고치기와 ODB 허브 입구 도구 노출 꼴 확인(7절).
