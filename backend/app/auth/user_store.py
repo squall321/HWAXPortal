@@ -91,6 +91,9 @@ class UserStore:
         # 허브에서 끈 앱(게이트웨이 앱 키 JSON 배열) — 본인이 고른다. 도구를 **덜 보게만** 하므로 본인이 바꿔도 되지만
         # 권한(grants)과 섞지 않는다(docs/mcp-app-toggle D-5). 게이트웨이가 개인 MCP 시야에서 숨긴다.
         self._add_column("hub_muted_apps", "TEXT NOT NULL DEFAULT '[]'")
+        # 개인 Claude 보기(full · bundle:<영역>,… · light — app/access/hub_view.py 의 글) — 본인이 고른다. 끄기와 같은 자리다(선호이지 권한이
+        # 아니다 — 목록만 줄이고 검색 · 부르기는 그대로, docs/request-1029 E-4). 빈 값은 전체다.
+        self._add_column("hub_view", "TEXT NOT NULL DEFAULT ''")
         # 업데이트 이력 '본 날짜'(ISO) — 종전엔 브라우저 저장소에만 있어 새 PC·캐시 삭제 뒤 첫 로그인에
         # '마지막으로 보신 뒤' 가 비어 처음 온 사람처럼 다뤄졌다(docs/ui-refresh 단계 4). 앞으로만 간다.
         self._add_column("changelog_seen", "TEXT NOT NULL DEFAULT ''")
@@ -415,6 +418,16 @@ class UserStore:
             self._conn.execute("UPDATE users SET hub_muted_apps = ? WHERE email = ?", (json.dumps(new), key))
             self._commit()
             return new
+
+    def set_hub_view(self, email: str, view: str) -> str | None:
+        """개인 Claude 보기 글을 바꾼다(꼴 검사는 부르는 쪽 — app/access/hub_view.py). 행이 없으면 None, 있으면 저장한 글."""
+        key = norm_email(email)
+        with self._lock:
+            cur = self._conn.execute("UPDATE users SET hub_view = ? WHERE email = ?", (view, key))
+            if cur.rowcount == 0:
+                return None
+            self._commit()
+            return view
 
     # ── 배선 설정 '확인함' ──────────────────────────────────────────────────
     def setup_acks(self) -> dict[str, dict]:

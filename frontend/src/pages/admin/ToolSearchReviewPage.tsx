@@ -26,6 +26,21 @@ const VARIANT_LABEL: Record<string, string> = {
   '-write_penalty': '쓰기 감점 끔',
   '-copy_fold': '사본 접기 끔',
 };
+// 평가 판의 손잡이 — 켜진 묶음은 하나씩 끈 판(-), 꺼진 손잡이(기본 끔인 비코어 낮추기 · 박스가 끈 묶음)는 하나씩 켠 판(+)으로 잰다(E-2 E2-5)
+const SWITCH_LABEL: Record<string, string> = {
+  synonyms: '손 동의어',
+  core_vocab: '코어 어휘표',
+  delib_narrow: '심의 좁히기',
+  quality: '품질 가중',
+  write_penalty: '쓰기 감점',
+  copy_fold: '사본 접기',
+  noncore_demote: '비코어 낮추기',
+};
+
+function variantLabel(name: string): string {
+  const sw = SWITCH_LABEL[name.slice(1)];
+  return VARIANT_LABEL[name] ?? (sw ? `${sw} ${name[0] === '+' ? '켬' : '끔'}` : name);
+}
 const GROUPS = ['전체', 'doc', 'auto', 'box'];
 
 function ruleText(rule: string): string {
@@ -36,6 +51,7 @@ function ruleText(rule: string): string {
   if (kind === 'vocab') return `어휘표 '${word}'`;
   if (kind === 'quality') return '품질 가중';
   if (kind === 'embedding') return '의미 순위';
+  if (kind === 'demote') return '비코어 낮추기(감점)';
   return rule;
 }
 
@@ -134,7 +150,7 @@ function EvalResult({ ev }: { ev: SearchEval }) {
             {Object.entries(ev.variants).flatMap(([name, by]) =>
               GROUPS.filter((g) => by[g]?.n).map((g) => (
                 <tr key={`${name}-${g}`}>
-                  <td>{VARIANT_LABEL[name] ?? name}</td>
+                  <td>{variantLabel(name)}</td>
                   <td>{g}</td>
                   <td className="adm-num">{by[g].n}</td>
                   <td className="adm-num">{pct(by[g]['hit@1'])}</td>

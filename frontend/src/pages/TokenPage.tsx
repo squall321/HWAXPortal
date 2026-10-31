@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { createPat, listPats, revokePat, type PatCreated, type PatMeta } from '../api/pat.api';
 import { fetchMyAccess, type MyAccess } from '../api/access.api';
 import HubAppsPanel from '../components/HubAppsPanel';
+import HubViewPanel from '../components/HubViewPanel';
 import { Page, PageHeader } from '../components/ui/Page';
 import { Tabs } from '../components/ui/Tabs';
 import { ErrorBanner } from '../components/common/ErrorBanner';
@@ -113,6 +114,8 @@ export default function TokenPage() {
   const [batBusy, setBatBusy] = useState(false);
   const [batError, setBatError] = useState<string | null>(null);
   const [certError, setCertError] = useState<string | null>(null);
+  // '허브에 보일 앱' 을 바꾼 횟수 — 같은 탭의 보기 칸이 끈 앱을 뺀 영역 수를 다시 읽는다
+  const [hubRev, setHubRev] = useState(0);
 
   // 인증서만 따로(10-20 사용자 요청) — 배치를 못 쓰는 PC · 손으로 설정하는 사람 몫이라 토큰을 발급하지 않아도 받는다.
   // 링크(<a download>)로 걸지 않고 받아서 PEM 인지 본 뒤 저장한다 — 실패를 화면에 말하고, 오류 응답이 .crt 이름으로 저장되지 않게.
@@ -293,7 +296,13 @@ export default function TokenPage() {
           { key: 'connect', label: '외부 연결' },
         ]}
       >
-        {tab === 'apps' && <HubAppsPanel />}
+        {/* 개인 Claude 보기(전체 · 묶음 · 가벼운 — docs/request-1029 E-4)는 앱 끄기와 같은 탭 위에 둔다. 끄기를 바꾸면 보기의 영역 수를 다시 읽는다 */}
+        {tab === 'apps' && (
+          <>
+            <HubViewPanel rev={hubRev} />
+            <HubAppsPanel onChanged={() => setHubRev((n) => n + 1)} />
+          </>
+        )}
         {tab === 'connect' && (
           <>
             <RaConnectionCard />

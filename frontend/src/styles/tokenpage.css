@@ -237,6 +237,64 @@
   }
 }
 
+/* 개인 Claude 보기(components/HubViewPanel) — 고르기 셋은 한 줄씩, 영역은 좁은 화면에서 접혀 흐른다(숫자는 쪼개지 않는다) */
+.hub-view-modes,
+.hub-view-areas {
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  border: 0;
+}
+.hub-view-legend {
+  margin-bottom: var(--sp-2);
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.hub-view-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  cursor: pointer;
+}
+.hub-view-mode input {
+  margin-top: 3px;
+}
+.hub-view-now {
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+}
+.hub-view-desc {
+  display: block;
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.hub-view-areas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+}
+.hub-view-areas .hub-view-legend {
+  flex-basis: 100%;
+}
+.hub-view-area {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hub-view-notes {
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-5);
+  font-size: var(--fs-13);
+}
+.hub-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
 /* Report Archive 연결(components/RaConnectionCard) — 입력칸·고르기는 클래스 없이 두어 전역 폼 기본값(36px·가라앉은 바탕)을 받는다 */
 .ra-card {
   padding: var(--sp-4) var(--sp-5);
