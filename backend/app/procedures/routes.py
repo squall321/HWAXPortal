@@ -41,6 +41,7 @@ from app.procedures.models import (
     check_against_schemas,
     coerce_inputs,
     normalized,
+    publish_token_vars,
     schema_fingerprint,
     validate_spec,
 )
@@ -796,7 +797,8 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
     # 함께 물려줘야 한다 — 선언 변수만 넘기면 `{{proj}}` 같은 앞 단계 산출이 비어
     # 첫 치환에서 `TemplateError` 로 죽는다(단계 0개짜리 실패 N건이 되어 비교표가
     # **이유 없이** 실패만 보인다). 이름은 짐작하지 않고 **명세에서 센다.**
-    declared = {v.key for v in spec.vars}
+    # 옛 판본이 게시 확인 토큰을 받던 변수는 입력이 아니다 — 고치기 전에 만든 실행에 남은 값을 자식에 옮기지 않는다.
+    declared = {v.key for v in spec.vars} - publish_token_vars(spec)
     for st in spec.steps[:ix + 1]:
         declared |= set((st.save or {}).keys())
         if st.select is not None:

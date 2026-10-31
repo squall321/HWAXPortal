@@ -716,6 +716,49 @@ def test_빈_실행은_다시_돌릴_절차가_없다(user):
     assert r.status_code == 422 and "절차" in r.text
 
 
+def test_옛_게시_판본은_확인_토큰을_요구하지도_실행_입력에_남기지도_않는다(user):
+    """B3 전 판본은 confirm_token 을 변수로 받아야 저장됐다(저장 대조가 필수 칸으로 요구했다). 실행기가 그 칸을 떼는데도
+    시작은 그 변수를 요구했고, 붙여 넣은 토큰을 실행 입력(원장)에 그대로 남겼다 — 다시 돌리기 · 펼치기도 그 값을 옮긴다."""
+    c, h = user
+    store = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    old = {"title": "옛 게시",
+           "vars": [{"key": "project_id", "label": "과제"}, {"key": "tok", "label": "확인 토큰"}],
+           "steps": [{"backend": "heax-step_forge", "tool": "find_parts", "args": {"project_id": "{{project_id}}"},
+                      "select": {"from": "parts", "save": "name", "as": "part"}},
+                     {"backend": "reportarchive", "tool": "publish_report", "gate": "human",
+                      "args": {"report_id": 41, "boards": ["{{part}}"], "confirm_token": "{{tok}}"}}]}
+    # 판본은 불변이다 — 지금 저장 검증이 거절하는 옛 꼴을 저장소에 바로 넣는다
+    vid = store.create_procedure(owner_sub=me, spec=old, title="옛 게시")["version_id"]
+    pasted = "1793400000.PASTED-REAL-LOOKING-TOKEN"
+
+    r = c.post(f"{PREFIX}/runs", headers=h, json={"version_id": vid, "mode": "plan", "vars": {"project_id": "p"}})
+    assert r.status_code == 202, r.text
+    r = c.post(f"{PREFIX}/runs", headers=h,
+               json={"version_id": vid, "mode": "plan", "vars": {"project_id": "p", "tok": pasted}})
+    assert r.status_code == 202, r.text
+    rid = r.json()["run_id"]
+    assert c.get(f"{PREFIX}/runs/{rid}", headers=h).json()["inputs"] == {"project_id": "p"}
+
+    # 고치기 전에 만든 실행에는 남아 있다 — 다시 돌리기가 그 값을 새 실행으로 옮기지 않는다
+    store.merge_inputs(rid, {"tok": pasted})
+    again = c.post(f"{PREFIX}/runs/{rid}/replay", json={"mode": "plan"}, headers=h).json()["run_id"]
+    assert c.get(f"{PREFIX}/runs/{again}", headers=h).json()["inputs"] == {"project_id": "p"}
+
+    # 펼치기도 — 고르기에서 멈춘 옛 실행의 후보마다 새 실행을 만들 때
+    parent = store.create_run(owner_sub=me, run_by=me, procedure_version_id=vid, mode="live", origin="replay",
+                              inputs={"project_id": "p", "tok": pasted})
+    store.begin_step(parent, 0, backend="heax-step_forge", tool="find_parts", args={}, mode="live")
+    store.finish_step(parent, 0, ok=False, state="pending", stage="select:ask", error=None,
+                      notes={"pick_into": "part",
+                             "candidates": [{"i": 0, "label": "dept-a", "value": "dept-a"}]})
+    store.set_run_state(parent, "gated", stage="step:0")
+    got = c.post(f"{PREFIX}/runs/{parent}/steps/0/fan-out", json={"mode": "plan"}, headers=h)
+    assert got.status_code == 202, got.text
+    child = got.json()["runs"][0]["run_id"]
+    assert c.get(f"{PREFIX}/runs/{child}", headers=h).json()["inputs"] == {"project_id": "p", "part": "dept-a"}
+
+
 def test_같은_씨앗을_다시_가져오면_사본이_아니라_판본이_올라간다(user):
     """씨앗은 리포와 함께 자란다(예시가 늘고 경고가 붙는다). 가져올 때마다 사본이 생기면
     목록이 같은 이름으로 채워지고 어느 것이 최신인지 사람이 알 수 없다."""

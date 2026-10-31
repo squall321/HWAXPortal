@@ -254,6 +254,23 @@ def test_챗에서_편_게시_초안은_따로_둔_미리보기_단계도_지우
     assert not any("preview_publish" in e for e in validate_spec(alone))
 
 
+def test_옛_판본의_게시_토큰_변수는_입력이_아니다():
+    """B3 전 판본은 confirm_token 을 변수로 받아야 저장됐다 — 실행기가 그 칸을 떼므로 받지도 요구하지도 않는다(받으면
+    붙여 넣은 토큰이 실행 입력, 곧 원장에 남는다)."""
+    from app.procedures.models import coerce_inputs
+
+    def old(note="절차가 올린다"):
+        return ProcedureSpec(title="옛 게시", vars=[Var(key="report_id", label="보고서", type="number"),
+                                                    Var(key="tok", label="확인 토큰")], steps=[Step(
+            backend="reportarchive", tool="publish_report", gate="human",
+            args={"report_id": "{{report_id}}", "boards": ["dept-a"], "note": note, "confirm_token": "{{tok}}"})])
+
+    assert coerce_inputs(old(), {"report_id": "41"}) == {"report_id": 41}
+    assert coerce_inputs(old(), {"report_id": "41", "tok": "1793400000.PASTED"}) == {"report_id": 41}
+    # 다른 칸에도 쓰이는 변수는 그대로 입력이다 — 게시 토큰만 받던 변수가 아니다
+    assert coerce_inputs(old(note="{{tok}}"), {"report_id": "41", "tok": "x"}) == {"report_id": 41, "tok": "x"}
+
+
 def test_secret_constant_rejected_but_variable_allowed():
     errs = _hard(validate_spec(_spec([
         {"backend": "b", "tool": "some_tool", "args": {"api_key": "AKIA-real-secret"}}])))

@@ -369,13 +369,16 @@ def coerce_inputs(spec: ProcedureSpec, raw: dict) -> dict:
     # `setdefault` 로 신원을 심으므로 **먼저 들어간 위조 값이 이겼고**, `{{me.email}}` 을
     # 보고서·태그에 찍는 절차가 남의 이름으로 돌았다. 흔적은 그 실행의 inputs 뿐이다.
     # 뒤 단계가 쓸 `save` 이름을 미리 심는 것도 같은 길이었다.
-    declared = {v.key for v in spec.vars}
+    # 옛 판본이 게시 확인 토큰을 받던 변수도 입력이 아니다(`publish_token_vars`) — 받지도 요구하지도 않는다.
+    declared = {v.key for v in spec.vars} - publish_token_vars(spec)
     dropped = sorted(set(raw or {}) - declared)
     if dropped:
         logger.info("선언 안 한 입력을 버렸다: %s", dropped)
     out = {k: v for k, v in (raw or {}).items() if k in declared}
     missing: list[str] = []
     for v in spec.vars:
+        if v.key not in declared:
+            continue
         if v.key not in out or out[v.key] is None or out[v.key] == "":
             out.pop(v.key, None)
             if v.required:
@@ -385,6 +388,21 @@ def coerce_inputs(spec: ProcedureSpec, raw: dict) -> dict:
     if missing:
         raise SpecError("채워야 할 값이 비어 있습니다 — " + ", ".join(missing))
     return out
+
+
+def publish_token_vars(spec: ProcedureSpec) -> set[str]:
+    """게시 확인 토큰만 받던 변수 — B3 전 판본은 `publish_report` 의 `confirm_token` 을 `{{변수}}` 로 적어야 저장됐다.
+
+    실행기가 그 칸을 떼고 승인 뒤 미리보기의 토큰을 넣으므로(runner `_without_token` · `_publish_gate`) 입력이 아니다.
+    받으면 사람이 붙여 넣은 토큰이 실행 입력, 곧 원장에 남는다. 다른 칸에도 쓰이는 변수는 그대로 입력이다.
+    """
+    in_token: set[str] = set()
+    elsewhere: set[str] = set()
+    for st in spec.steps:
+        for k, v in st.args.items():
+            roots = {r.split(".")[0] for r in _refs_or_empty(v)}
+            (in_token if st.tool == PUBLISH_TOOL and k == PUBLISH_TOKEN else elsewhere).update(roots)
+    return (in_token - elsewhere) & {v.key for v in spec.vars}
 
 
 def omit_empty_optionals(spec: ProcedureSpec, scope: dict) -> dict:

@@ -611,6 +611,27 @@ def test_옛_판본이_인자에_적은_확인_토큰은_버리고_미리보기�
     asyncio.run(go(*kit))
 
 
+def test_옛_판본의_토큰_변수는_실행_입력에_없어도_돈다(kit):
+    """옛 판본이 토큰을 받던 변수는 이제 입력이 아니다(coerce_inputs 가 받지도 남기지도 않는다) — 그 칸을 치환 전에 떼야 돈다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = ProcedureSpec(title="옛 게시", vars=[Var(key="tok", label="확인 토큰")], steps=[Step(
+            backend="reportarchive", tool="publish_report", gate="human",
+            args={"report_id": 41, "boards": ["dept-a"], "confirm_token": "{{tok}}"})])
+        plan = store.create_run(owner_sub="u1", mode="plan", inputs={})
+        out_p = await r.run(run_id=plan, spec=spec, principal=PRINCIPAL)
+        assert out_p["calls"][0]["args"] == {"report_id": 41, "boards": ["dept-a"]}
+        assert out_p["unverified"] == [], "토큰 변수가 비었다고 계획이 '확인 못 함' 으로 남는다"
+
+        rid, _ = await _gated_then_acked(store, r, spec, inputs={})
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL))["state"] == "done"
+        await r.aclose()
+        assert _inner(g, "reportarchive_publish_report")[0]["confirm_token"] == ra.issued[1][0]
+    asyncio.run(go(*kit))
+
+
 def _preview_then_publish_spec() -> ProcedureSpec:
     """챗 기록을 편 초안(derive)에서 저장 거절 셋(save 토큰 · 게이트 · confirm_token)만 고친 꼴 — 미리보기 단계가 남는다."""
     return ProcedureSpec(title="챗에서 온 게시", vars=[Var(key="report_id", label="보고서", type="number")], steps=[

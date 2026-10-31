@@ -234,12 +234,12 @@ class ProceduresRunner:
         calls, unknown = [], []
         known = set(scope)
         for ix, st in enumerate(spec.steps):
+            tpl = _without_token(st, st.args)   # 실제로 나갈 것을 보인다 — 게시 토큰은 실행기가 넣는다
             try:
-                args = template.substitute(st.args, scope) if _resolvable(st, known) else st.args
-                pending = not _resolvable(st, known)
+                args = template.substitute(tpl, scope) if _resolvable(tpl, known) else tpl
+                pending = not _resolvable(tpl, known)
             except template.TemplateError:
-                args, pending = st.args, True
-            args = _without_token(st, args)   # 실제로 나갈 것을 보인다 — 게시 토큰은 실행기가 넣는다
+                args, pending = tpl, True
             calls.append({"ix": ix, "backend": st.backend, "tool": st.tool,
                           "alias": st.alias, "gate": _gate_of(st), "expect": st.expect,
                           "args": args, "unverified": pending})
@@ -305,7 +305,6 @@ class ProceduresRunner:
                 return {"state": "failed", "stopped_at": ix, "kind": bad.kind,
                         "error": J.short_error(bad)}
 
-            args = _without_token(st, args)   # 게시 확인 토큰은 실행기가 넣는다 — 옛 판본이 적은 칸은 뗀다
             pub = None
 
             # 게이트 — 승인이 없으면 여기서 멈춘다. 인자 지문에 묶인 1회용 승인이다.
@@ -705,11 +704,15 @@ class ProceduresRunner:
         남는다(2026-09-17 재현: 앞 단계가 `select on_none: skip` 으로 건너뛰면 뒤 단계가
         쓸 변수가 없다). 화면에는 도는 것처럼 보이고, 끝나지 않으니 재개도 취소도 아니다 —
         runner.py:309 가 적어 둔 그 사고의 **다른 입구**다.
+
+        게시 확인 토큰 칸은 **치환 전에** 뗀다(`_without_token`) — 옛 판본이 그 칸에 적은 변수는 이제 입력이 아니어서
+        (`coerce_inputs`) 범위에 없다. 치환 뒤에 떼면 없는 변수로 이 단계가 멈춘다.
         """
+        tpl = _without_token(st, st.args)
         try:
-            return template.substitute(st.args, scope), None
+            return template.substitute(tpl, scope), None
         except template.TemplateError as exc:
-            self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=st.args,
+            self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=tpl,
                                   schema_fp=st.schema_fp, expect=st.expect, mode="live")
             # 비운 선택 변수(W-102)는 앞 단계 탓이 아니다 — 저장 검증이 save · select 이름과 변수가 겹치는 것을 막는다
             why = ("선택 변수를 채워 다시 돌리거나, 절차에서 그 변수를 객체의 칸 하나에 통째로(\"{{변수}}\") 두면 비웠을 때 그 칸이 빠진다"
@@ -945,6 +948,7 @@ def _without_token(st: Step, args):
 
     옛 판본은 이 칸을 변수로 적어야만 저장됐다(저장 대조가 스키마의 필수 칸으로 요구했다). 그대로 두면 그 값이 단계
     인자 · 승인 지문에 남고 카드는 나가지 않을 값을 보인다. 저장 검증은 이제 그 판본을 거절하지만 판본은 불변이다.
+    그 변수는 입력도 아니다(`models.publish_token_vars` — 실행 입력에 안 남는다). 그래서 **치환 전에** 뗀다.
     """
     if st.tool == PUBLISH_TOOL and isinstance(args, dict) and PUBLISH_TOKEN in args:
         return {k: v for k, v in args.items() if k != PUBLISH_TOKEN}
@@ -1024,8 +1028,8 @@ def _gate_of(st: Step) -> str | None:
     return "human" if (st.gate == "human" or st.tool in MUST_GATE) else st.gate
 
 
-def _resolvable(st: Step, known: set) -> bool:
-    for name in template.refs(st.args):
+def _resolvable(args, known: set) -> bool:
+    for name in template.refs(args):
         root = name.split(".")[0]
         if root == "me" or name == "run_id":
             continue
