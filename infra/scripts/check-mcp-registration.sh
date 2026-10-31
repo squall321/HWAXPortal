@@ -23,7 +23,8 @@ set -uo pipefail
 
 GW_CONFIG="${GATEWAY_CONFIG:-/home/koopark/claude/HWAXMcpGateway/gateway_config.json}"
 GW_HTTP="${GW_HTTP:-http://127.0.0.1:9110}"
-HUB_ROOT="${HUB_ROOT:-/home/koopark/claude/HEAXHub}"
+# 허브 리포는 이 리포의 형제(../HEAXHub)다 — 절대경로를 박으면 리포 루트가 다른 박스(cae00 은 ~/Projects)에서 조용히 못 찾는다.
+HUB_ROOT="${HUB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/HEAXHub}"
 REVIVE_S="${GATEWAY_REVIVE_INTERVAL:-60}"   # 게이트웨이 재폴링 주기(기본 60초)
 AGENT_CACHE_S=300                            # agent-server 의 /tools-map·apps 캐시 TTL
 
@@ -93,6 +94,63 @@ summary() {
   fi
 }
 
+# 허브가 실제로 도는 매니페스트 값 — 추적 manifest.yaml 위에 박스 덮어쓰기(같은 폴더의 manifest.local.yaml, HEAXHub HH-15 · RFC 7386)를
+# 얹은 효과 값이다. 추적 파일만 grep 하면 덮어쓴 박스(dev)에서 추적 업스트림을 두드려 멀쩡한 앱을 '업스트림 무응답' 으로 읽는다.
+# 허브와 같은 규칙(병합 · 보류)으로 읽도록 허브 리포의 로더(backend/app/services/integration_manifest.py)를 그 리포의 venv 로 부른다
+# (HEAXHub scripts/diagnose-app.sh 와 같은 길). 출력은 KEY=값 줄이고 rc 0=셌다 · 3=로더가 없다(옛 HEAXHub · venv 없음) · 그 밖=못 셌다.
+hub_effective() {   # $1=추적 manifest.yaml  $2=앱 id
+  local py="${HUB_ROOT}/backend/.venv/bin/python"
+  [ -x "$py" ] || { echo "WHY=${py#"$HUB_ROOT"/} 없음"; return 3; }
+  ( cd "${HUB_ROOT}/backend" && "$py" - "$1" "${HUB_ROOT}/var/integration_state/$2.json" 2>&1 <<'PY'
+import json, logging, sys
+from pathlib import Path
+logging.disable(logging.CRITICAL)   # 로더의 로그는 stdout 으로 나간다(app.core.logger) — 아래 KEY=값 줄에 섞이지 않게
+try:
+    from app.services.integration_manifest import load_file_with_override
+except Exception as exc:  # noqa: BLE001 — HH-15 전의 허브에는 로더가 없다(그 허브는 덮어쓰기도 읽지 않는다)
+    print(f"WHY=로더 없음({type(exc).__name__}: {' '.join(str(exc).split())})"); sys.exit(3)
+try:
+    m, o = load_file_with_override(Path(sys.argv[1]))
+except Exception as exc:  # noqa: BLE001 — 추적 파일부터 못 읽었다(허브도 그 앱을 못 읽는다)
+    print(f"WHY=추적 파일을 못 읽었다({type(exc).__name__}: {' '.join(str(exc).split())})"); sys.exit(4)
+m = m if isinstance(m, dict) else {}
+la = m.get("launch") if isinstance(m.get("launch"), dict) else {}
+mc = m.get("mcp") if isinstance(m.get("mcp"), dict) else {}
+if o is not None:
+    print(f"LOCAL={o.path}")
+    if o.held:
+        # 보류 — 허브는 그 앱을 건너뛰어 마지막으로 얹은 값으로 돈다. 위 m 은 추적 값이라 업스트림으로 쓰지 않는다.
+        # 지금 걸린 업스트림은 상태 파일의 마지막 proxy 기록이 안다(HEAXHub diagnose-app.sh 와 같다).
+        print("HELD=" + " ".join(str(o.error or "까닭 없음").split()))
+        try:
+            st = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            st = {}
+        if isinstance(st, dict) and st.get("mode") == "proxy" and st.get("upstream"):
+            print(f"LASTUP={st['upstream']}")
+    elif o.applied:
+        print(f"CHANGED={', '.join(o.changed_keys) or '-'}")
+        if o.rejected_keys:
+            print(f"REJECTED={', '.join(o.rejected_keys)}")
+    else:
+        print("NOTAPPLIED=" + " ".join(str(o.error or "").split()))
+print(f"EXPOSE={1 if mc.get('expose') else 0}")      # 레지스트리(HEAXHub api/v1/mcp.py)와 같은 판정 — 참이면 노출 후보
+print(f"MODE={la.get('mode') or ''}")
+print(f"UPSTREAM={la.get('upstream') or ''}")
+sub = str(mc.get("path") or "/mcp")
+print(f"MCPPATH={sub if sub.startswith('/') else '/' + sub}")
+PY
+  )
+}
+# hub_effective 출력에서 한 키의 값 — 파이프 없이 읽는다(판정에 쓰는 값이다).
+kv() {   # $1=키  $2=출력
+  local line v=""
+  while IFS= read -r line; do
+    case "$line" in "$1="*) v="${line#"$1="}" ;; esac
+  done <<<"$2"
+  printf '%s' "$v"
+}
+
 detail() {
   local id="$1" reg tm rc=0
   printf '앱 %s%s%s 등록 체인 점검\n\n' "$C_OK" "$id" "$C_0"
@@ -100,15 +158,48 @@ detail() {
   # ── 1) 매니페스트 ─────────────────────────────────────────────────────────
   printf '1) 매니페스트 선언\n'
   local mf
-  mf=$(grep -rl "^[[:space:]]*id:[[:space:]]*['\"]\?${id}['\"]\?[[:space:]]*$" \
+  # id 줄은 따옴표 · 꼬리 주석을 달 수 있다(step_forge 는 `id: step_forge   # …`) — 줄 끝에 바로 앵커를 걸면 그런 앱을 못 찾는다.
+  mf=$(grep -rlE "^[[:space:]]*id:[[:space:]]*['\"]?${id}['\"]?[[:space:]]*(#.*)?\$" \
          "${HUB_ROOT}/integrations"/*/.portal/manifest.yaml 2>/dev/null | head -1)
+  # eff=1 이면 아래 단계는 허브 로더가 센 효과 값을 쓰고, 0 이면 예전처럼 추적 파일을 grep 한다(로더가 없는 옛 HEAXHub 의 박스).
+  local eout="" erc=0 eff=0 held="" lf=""
+  if [ -n "$mf" ]; then
+    eout=$(hub_effective "$mf" "$id") || erc=$?
+    if [ "$erc" = 0 ]; then eff=1; held=$(kv HELD "$eout"); lf=$(kv LOCAL "$eout"); fi
+  fi
   if [ -z "$mf" ]; then
     ng "manifest.yaml 을 찾지 못했습니다 (integrations/*/.portal/manifest.yaml 에 id: ${id} 없음)"
     dim "매니페스트의 id 가 곧 App.id 이자 상태파일 이름이자 게이트웨이 키(heax-<id>)입니다"
     rc=1
   else
     ok "매니페스트: ${mf#$HUB_ROOT/}"
-    if grep -qE '^[[:space:]]*expose:[[:space:]]*true' "$mf"; then
+    local exposed=0
+    if [ "$eff" = 0 ]; then
+      # 덮어쓰기 파일이 없으면 추적 값이 곧 효과 값이다(허브 판과 상관없다). 있으면(끊긴 심링크도 — 허브는 그 앱을 보류한다) 다를 수 있다.
+      local why note="박스 덮어쓰기가 없어 허브도 이 값으로 돈다"
+      why=$(kv WHY "$eout"); why="${why:-${eout##*$'\n'}}"
+      if [ -e "${mf%/*}/manifest.local.yaml" ] || [ -L "${mf%/*}/manifest.local.yaml" ]; then
+        note="옆의 manifest.local.yaml(박스 덮어쓰기)을 반영하지 못해 허브 값과 다를 수 있다"
+      fi
+      warn "HEAXHub 로더를 못 불러 추적 manifest.yaml 로 읽는다(${why:-까닭 모름}) — ${note}"
+      if grep -qE '^[[:space:]]*expose:[[:space:]]*true' "$mf"; then exposed=1; fi
+    else
+      if [ "$(kv EXPOSE "$eout")" = 1 ]; then exposed=1; fi
+      if [ -n "$held" ]; then
+        ng "보류 — 박스 덮어쓰기 ${lf#$HUB_ROOT/} 을 얹지 못해 허브가 이 앱을 건너뛴다: ${held}"
+        dim "허브는 고칠 때까지 라우트 · 기동 · 스냅숏을 마지막으로 얹은 값 그대로 둔다 — 추적 manifest.yaml 값으로 돌지 않는다."
+        dim "고치면 다음 reconcile(45초 안)에 따른다. 그때까지 아래는 추적 값이 아니라 상태 파일의 마지막 기록과 레지스트리로 본다."
+        rc=1
+      elif [ -n "$(kv NOTAPPLIED "$eout")" ]; then
+        warn "박스 덮어쓰기 ${lf#$HUB_ROOT/} 을 얹지 않았다($(kv NOTAPPLIED "$eout")) — 추적 값 그대로다"
+      elif [ -n "$lf" ]; then
+        local rej; rej=$(kv REJECTED "$eout")
+        warn "박스 덮어쓰기 ${lf#$HUB_ROOT/} 을 얹은 효과 값으로 본다(허브와 같은 로더) — 바뀐 최상위 키: $(kv CHANGED "$eout")${rej:+ (받지 않은 키: ${rej})}"
+      fi
+    fi
+    if [ -n "$held" ]; then
+      dim "mcp.expose 는 4) 레지스트리 노출로 본다 — 보류 중에는 허브가 마지막으로 얹은 선언으로 돈다."
+    elif [ "$exposed" = 1 ]; then
       ok "mcp.expose: true"
     else
       ng "mcp.expose 가 true 가 아닙니다 — 선언이 없으면 레지스트리 후보가 아닙니다"
@@ -121,11 +212,17 @@ detail() {
   # 프록시만 할 뿐이라, 그 업스트림이 죽으면 등록은 멀쩡한데 도구가 0개가 된다.
   # 게다가 SIF 가 없어 Drive 아티팩트 경로를 타지 않으므로 배포 누락을 알아채기 어렵다.
   local upstream=""
-  if [ -n "$mf" ] && grep -qE '^[[:space:]]*mode:[[:space:]]*proxy' "$mf"; then
+  if [ -n "$held" ]; then
+    # 보류 — 지금 걸린 업스트림은 상태 파일의 마지막 proxy 기록이 안다(없으면 아래 상태 파일 갈래로 간다).
+    upstream=$(kv LASTUP "$eout")
+  elif [ "$eff" = 1 ]; then
+    if [ "$(kv MODE "$eout")" = proxy ]; then upstream=$(kv UPSTREAM "$eout"); fi
+  elif [ -n "$mf" ] && grep -qE '^[[:space:]]*mode:[[:space:]]*proxy' "$mf"; then
     upstream=$(grep -oP '^\s*upstream:\s*\K\S+' "$mf" | head -1)
   fi
   if [ -n "$upstream" ]; then
     printf '\n2) 업스트림(external_proxy — 자체 프로세스 없음)\n'
+    if [ -n "$held" ]; then dim "보류 중이라 상태 파일의 마지막 proxy 기록을 두드린다(var/integration_state/${id}.json)"; fi
     local ucode
     ucode=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 6 "$upstream" 2>/dev/null)
     if [ "${ucode:-000}" = "000" ]; then
@@ -165,7 +262,11 @@ detail() {
   # 실제로 걸어 Mcp-Session-Id 가 오는지로 판정한다.
   [ -n "$upstream" ] || printf '\n3) MCP 프로토콜 응답\n'
   local sub url hdr body status
-  sub=$( [ -n "$mf" ] && sed -n '/^mcp:/,/^[^[:space:]]/p' "$mf" | grep -oP 'path:\s*\K\S+' | head -1 )
+  if [ "$eff" = 1 ]; then
+    sub=$(kv MCPPATH "$eout")   # 보류 중이면 추적 값이다 — mcp.path 는 박스마다 바꿀 일이 드물어 그대로 쓴다
+  else
+    sub=$( [ -n "$mf" ] && sed -n '/^mcp:/,/^[^[:space:]]/p' "$mf" | grep -oP 'path:\s*\K\S+' | head -1 )
+  fi
   sub="${sub:-/mcp}"
   url="${HEAX_BASE}/apps/${id}${sub}"
   hdr=$(mktemp); body=$(mktemp)
