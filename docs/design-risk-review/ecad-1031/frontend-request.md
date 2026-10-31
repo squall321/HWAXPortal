@@ -87,7 +87,7 @@
 | code | HTTP | 언제 | 화면 |
 |---|---|---|---|
 | `ecad_pat_absent` | 409 | **결정 1** — 그 사람의 등록된 포털 PAT 가 없다 · 폐기됐다 · 풀리지 않는다 · 곧 끝난다. 찾기 · 붙이기 모두다. | '내 포털 PAT 가 없어 ODB 허브를 부르지 않았다' 와 설정 화면으로 가는 길(자동 등록 스위치 · 「포털에서 발급해 등록」). |
-| `ecad_credential_absent` | 409 | `76fe9a8` 판 — 그 사람의 PAT 도 박스 PAT 도 없을 때만. 결정 반영 커밋 뒤에는 나오지 않는다. | 섞인 판이 도는 동안 `ecad_pat_absent` 와 같은 안내. |
+| `ecad_credential_absent` | — | `9bd5f48` 부터 없다(지웠다) — 옛 판(`76fe9a8` 이전)에서만 나온다. | 옛 판이 도는 박스에서 받으면 `ecad_pat_absent` 와 같은 안내. |
 | `ecad_gateway_unreadable` | 409 | 게이트웨이 도구 지도(`/tools-map`)를 못 읽었다. 못 읽은 지도는 캐시하지 않는다. | '게이트웨이를 못 읽었다 — 잠시 뒤 다시 찾는다'. 다시 찾기 단추. |
 | `ecad_unavailable` | 409 | 게이트웨이의 `odb-hub` 백엔드에 `find_job` 이 없다(detail `tools_missing`). | 'ODB 허브가 게이트웨이에 붙어 있지 않다 — 운영자 몫'. |
 | `ecad_unreachable` | 409 | `find_job` 호출이 실패했다(detail `tool`). | `message` 그대로와 다시 찾기 단추. |
@@ -194,10 +194,19 @@ ECAD 칸을 그리다 보면 닿는 자리라 함께 적는다. 둘 다 `ecad8c8
 
 ## 반영
 
-- 백엔드 칸이 들어간 커밋 — HWAXRisk 가지 `wt1031/ecad`(2026-10-31, 아직 push · main 합침 전).
+- 백엔드 칸이 들어간 커밋 — HWAXRisk main `9bd5f48`(2026-10-31 push, 가지 `wt1031/ecad` 를 앞으로 당겨 합침).
   - `bba3492` 1단계 어댑터(`adapters/ecad.py`) · 발견(백엔드 `odb-hub` + 원래 이름) · 표지 열 · `meta/adapters` 의 ecad 상태.
   - `5a06231` 보드 고르기 — `GET /api/ecad/boards` · `PUT · DELETE /api/projects/{id}/ecad-board` · MCP `risk_find_ecad_boards` · `risk_set_ecad_board` · 일반 연결의 422 `ecad_board_route`.
   - `444c8c5` same-as — ECAD 노드가 실려도 쌍 비교의 지문 단계는 MCAD · dyna 끼리 돈다.
   - `cc0539f` 반대 검토 고침 — board 노드 · `comparability.ecad` · `components_unavailable` · `layers_unavailable` · 호출 없이 끝난 실패는 결측 + 경고 · 409 `ecad_gateway_unreadable` · ECAD 하나뿐인 캡처의 409 `source_unreachable` · ECAD 카드를 어댑터 결과로 · diff 대상의 ECAD 도메인 대기.
   - `76fe9a8` 계약 문서 · 판단 기록 · 작업 대장.
-- 사용자 결정 셋(10-31)을 반영하는 커밋 — 이 글을 쓸 때 같은 가지에서 진행 중이다. 들어오면 여기에 커밋과 바뀐 칸(pwr · rf 를 미루는 까닭 code, `model_too_large` detail 에 ECAD 부품 수를 싣는지)을 적는다.
+- 사용자 결정 셋(10-31)을 반영한 커밋(같은 main) — `8a205f9`(결정 1) · `7d28b8c`(결정 2) · `b7ead6d`(결정 3) · `05b64f3` · `5c8d4be` · `9bd5f48`(시험 · 기록). 바뀐 칸은 이렇다.
+  - **결정 1(그 사람 PAT 만)** — `GET /api/ecad/boards` · `PUT /api/projects/{id}/ecad-board` · MCP 찾기 · 붙이기가 그 사람 PAT 가 없거나 쓸 수 없으면(폐기 · 풀리지 않음 ·
+    1800초 안에 끝남) 게이트웨이를 부르기 전에 409 `ecad_pat_absent`(detail `app_key: "odb-hub"` · `fix: "portal_pat"`)다. 박스 PAT 가 있어도 같다.
+    떼기(DELETE)는 PAT 없이도 된다. 캡처 — 보드만 실은 과제는 409 `source_unreachable`(detail `kind: "ecad"` · `reason: "ecad_pat_absent"`, 잡 `failed`, 카드는
+    '못 읽음'), MCAD 와 섞인 과제는 스냅샷이 서고 `credentials.mcp: "service"` · `missing.ecad_absent: true` · `ecad_capture_failed: false` · 경고 `ecad_pat_absent` 다
+    (MCAD · dyna 는 지금처럼 박스 PAT 로 내려간다).
+  - **결정 2(pwr · rf 는 2단계까지)** — 1단계 보드를 실은 스냅샷 대상에서 pwr · rf 는 ECAD 부재와 같은 꼴이다 — 영역 1순위 좌석은 앉고 2순위부터 `deferred` 다.
+    좌석 coverage 의 `reason` 은 `ecad_nets_deferred`, 리뷰 순서의 `input_gaps` 는 pwr · rf 좌석 모두 `["ecad_nets_deferred"]` 다. 2단계 스위치는 백엔드 한 곳이다.
+  - **결정 3(상한에 ECAD 부품)** — 409 `model_too_large` 의 detail 에 `leaf_mcad` · `leaf_ecad` 가 붙고 `leaf` 는 그 합이다. 메시지는 '리프 N/상한(MCAD 리프 m · ECAD 부품 e)'
+    이고 잡 오류에도 같은 글이 남는다. 분류된 부품이 1,500 을 넘는 보드는 그것만으로 `allow_large=true` 가 든다.

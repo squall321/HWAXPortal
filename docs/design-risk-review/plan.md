@@ -1228,11 +1228,12 @@ truncated = sum(counts.values()) > len(interfaces)
 ### 2.13.5 `adapters/ecad.py`(1단계, 스텁 대체)
 
 - 보드가 없거나 kinds 가 ecad 를 빼면 스텁 시절과 같은 결측 행(`adapter_version` `0.0-stub` · `ecad_absent` · INFO)이다.
+- **자격(사용자 결정 10-31).** ECAD 는 그 사람의 등록된 포털 PAT 만 쓴다 — 없거나 쓸 수 없으면 찾기 · 붙이기는 409 `ecad_pat_absent`(게이트웨이를 부르지 않는다), 보드만 실은 캡처는 409 `source_unreachable`(`reason` `ecad_pat_absent`), MCAD 와 섞인 캡처는 결측 + 경고(`credentials.mcp` `service`)다. MCAD · dyna 는 지금처럼 박스 PAT 로 내려간다.
 - 호출 없이 끝난 실패(`ecad_pat_absent` · `ecad_gateway_unreadable` · `ecad_tools_missing`)는 결측 + 경고이고, `ecad_capture_failed` 는 `find_job` 실패 · 그 job_id 없음 · 드리프트일 때만이다. 읽은 카드가 ECAD 하나뿐인데 보드를 못 읽었으면 스냅샷을 만들지 않는다(409 `source_unreachable`, 잡 `failed`, 호출 원문은 스냅샷 없이 남는다). 선택 호출 실패는 `capture_partial` 이다. ECAD 카드는 어댑터 결과로 잰다(`capture_mode` `mcp`).
 - 쌍 비교에서 ECAD 의 실패 · 한쪽만 · 세대 차이는 ECAD 항목에만 효과를 준다 — §3.3.6 의 `capture_parity` · `adapter_parity` 를 kind 별로(`comparability.ecad`) 따진다. 못 읽음 · 부분은 `capture_partial`, 한쪽에만 실림은 `partial_scope`(항목은 남고 의미 이벤트를 만들지 않는다), 세대 차이는 ECAD 항목에만 `parser_differs` 이고, 전역 두 키는 ecad 를 세지 않는다.
 - 1단계 쌍 비교는 ECAD 노드를 refdes · 층 이름으로 대응만 하고 칸 변화(층 두께 · 재료 · 품번 · 패키지 · 핀 수 · 높이)는 싣지 않는다.
-- **ECAD 의존 도메인 6(§6, 사용자 결정 10-31).** 보드를 실은 스냅샷 대상에서는 `pcb · soc · passive · mem` 이 deferred 에서 풀린다. 넷 · 배치가 있어야 판단하는 `pwr · rf` 는 2단계까지 지금처럼 deferred 다(ECAD 부재 규칙 — 영역 1순위가 아닌 좌석) — 1단계에는 좌표 · 넷이 없어 그 판단이 undetermined 로만 나온다. diff 대상에서는 1단계 동안 여섯 다 deferred · 입력 결손이며(위의 칸 변화가 없어서다), 대상 결측 블록이 그 까닭을 싣는다. §3.3.5 `ecad.*` 예약 이벤트를 1단계 칸으로 켤지(거르기 표 승인과 함께) 정하면 이 규칙을 걷는다.
-- **모델 크기 상한(§2.11.3, 사용자 결정 10-31).** `risk_max_leaf`(1500)는 ECAD 부품(`list_parts.total` — 분류된 부품)도 센다. 심사 비용을 막는 상한이라 넘으면 409 `model_too_large` 이고 `allow_large` 로 동결한다.
+- **ECAD 의존 도메인 6(§6, 사용자 결정 10-31).** 보드를 실은 스냅샷 대상에서는 `pcb · soc · passive · mem` 이 deferred 에서 풀린다. 넷 · 배치가 있어야 판단하는 `pwr · rf` 는 2단계까지 지금처럼 deferred 다(ECAD 부재 규칙 — 영역 1순위가 아닌 좌석) — 1단계에는 좌표 · 넷이 없어 그 판단이 undetermined 로만 나온다. 좌석 coverage 의 까닭 code 는 `ecad_nets_deferred` 이고 리뷰 순서의 `input_gaps` 에도 같은 code 가 선다. 2단계 스위치는 `adapters/ecad.py` 한 곳(`STAGE` · `NET_DOMAINS`)이다. diff 대상에서는 1단계 동안 여섯 다 deferred · 입력 결손이며(위의 칸 변화가 없어서다), 대상 결측 블록이 그 까닭을 싣는다. §3.3.5 `ecad.*` 예약 이벤트를 1단계 칸으로 켤지(거르기 표 승인과 함께) 정하면 이 규칙을 걷는다.
+- **모델 크기 상한(§2.11.3, 사용자 결정 10-31).** `risk_max_leaf`(1500)는 ECAD 부품(`list_parts.total` — 분류된 부품)도 센다. 심사 비용을 막는 상한이라 넘으면 409 `model_too_large`(detail `leaf_mcad` · `leaf_ecad` · `leaf` 는 합)이고 `allow_large` 로 동결한다. 층과 board 노드는 세지 않는다.
 
 ## 2.14 스키마·픽스처·검증
 
