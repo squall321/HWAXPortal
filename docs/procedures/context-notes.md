@@ -2562,3 +2562,26 @@ W-93 이 '결과 귀환' 을 DynaForge 몫으로 정했고, DynaForge 가 10-29 
   호출 뒤 `queued` 로 덮었고, 고르기(pick)도 재개 계열이라(`_spawn` 주석의 ack · pick · resume) 창구 거절에 넣었다.
 - **남은 틈.** 다시 읽기와 쓰기 사이는 원자적이지 않다 — 중단 창구는 동기 함수라 스레드에서 돌고, 그 사이(같은 이벤트 루프 차례 안, 기다림 없음)에
   들어온 중단은 덮일 수 있다. `_publish_gate` 와 같은 크기의 틈이다. 닫으려면 상태 쓰기를 `WHERE state <> 'cancelled'` 로 거는 저장소 변경이 든다.
+
+## W-106. 대화 저장소의 확인 토큰은 가리지 않았다 — 다음 턴의 게시가 그 값을 읽는다(10-31, W-104 '본 것' 후속)
+
+- **물음.** 챗이 RA 에 게시한 턴의 확인 토큰이 대화 저장소(어시스턴트 meta 의 `activity` — `detail_full` · `result_full`)에 그대로 남는다
+  (W-104 '본 것'). 같은 가림을 거기에도 걸 수 있나 — 저장된 값을 다시 읽어 쓰는 흐름이 없을 때만 건다(메인 세션 지시).
+- **기대는 흐름이 있다 — 다음 턴의 게시.** RA 는 미리보기 → 사람에게 확인 → 게시를 시킨다(`preview_publish` 설명 — 확인받은 뒤 '여기서 받은
+  confirm_token 으로' 게시). 확인은 사람의 다음 말이라 토큰이 턴을 건넌다. 건너는 길이 이력의 근거다. 화면이 앞 턴의 `activity` 에서 근거를
+  모으고(`frontend/src/components/chat/history.ts` `turnEvidence` — `result_full ?? result_preview` 와 `detail`), 에이전트 서버가 그 턴의 물음
+  뒤에 '시스템 첨부' 로 싣고 '같은 값을 다시 물으면 다시 조회하지 말고 이것을 인용하라' 고 한다(HWAXAgentServer `app.py` `_HIST_EVID_HEAD` ·
+  `_hist_evidence`).
+- **그 `activity` 는 자주 서버 사본이다.** 화면은 서버를 정본으로 둔다(ChatContext '정본=서버, localStorage=캐시'). 열 때 서버가 더 새로우면
+  바꾸고(`refreshFromServer`), 숨은 탭이 돌아오면 턴이 끝난 대화를 서버 사본으로 바꾸고(request-1029 P-1 ②), 줄인 캐시를 서버 사본으로
+  되채운다(`fillTrimmed`). 다른 기기는 서버 사본뿐이다(`serverMessagesToLocal` 이 `meta.activity` 를 되살린다). 저장분을 가리면 그 다음 턴은
+  `[가림:confirm_token]` 을 받는다 — RA 가 거절하고, 모델이 미리보기를 다시 받아야 이어진다.
+- **기대지 않는 것.** HA-29 확인 카드 승인(에이전트 서버 메모리에 카드 번호로 둔 호출을 보낸다 — `_confirm_store` · `_confirm_take`) · 절차
+  원장 기록(`from_chat` — 스트림의 목록을 받아 스스로 가린다, W-104) · 위키 남기기(`wiki_send._evidence` — 300자 발췌) · 심의 넘기기
+  (`handoff.ts` — 근거로 읽을 뿐) · `/보고서`(`run_report_save` — 이력에서 블록을 짓는다). 이 다섯은 가려도 깨지지 않는다. 오히려 토큰이
+  위키 · RA 보고서로 가는 길이 닫힌다.
+- **그래서 바꾸지 않았다.** 가리려면 위 흐름을 먼저 바꿔야 한다 — 다음 턴이 게시 전에 미리보기를 다시 받게 하거나(토큰 수명은 600초라 지난
+  턴의 것은 자주 이미 죽었다), 토큰을 대화가 아닌 곳(에이전트 서버 메모리)으로 넘기거나. 어느 쪽이든 에이전트 서버 · 화면의 결정이다.
+- **본 것, 고치지 않음.** HA-29 가 `publish_report` 를 붙잡으면(he-team.json `he-doc-reportarchive` 의 confirm) 카드 글이 인자를
+  `confirm_token=…` 로 펼쳐 답 본문 끝에 붙인다. 값 상한 80자(`_CARD_VALUE_MAX`)가 54자 토큰보다 커서 통째로 보이고, 그 본문이 대화 저장소의
+  content 와 다음 턴 이력에 남는다(에이전트 서버 리포 몫).
