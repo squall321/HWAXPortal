@@ -1,6 +1,6 @@
 // 화면 점검 — 가로 넘침·밝은 패널·마크다운 기호 노출·헤더 줄바꿈을 경로×폭마다 단언하고 캡처를 남긴다(docs/ui-refresh 단계 0)
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -359,5 +359,22 @@ test('사내 연계(Knox) — 라우트가 없으면 /apps 타일도, 챗 · 심
   const ids = ((await (await page.request.get('/systems')).json()) as { id: string }[]).map((t) => t.id);
   expect(ids).not.toContain('knox-bridge');
   expect(asked).toEqual([]);
+  await page.context().close();
+});
+
+// 층마다 /apps 에 보이는 타일 수 — 층 사이 견주기(CAEG 층 > 기본 층)는 ui-check.sh 가 끝에서 한다(UI_STATE). CAEG 층은 소속이 정말
+// 들어갔는지도 본다 — 빈 임시 원장에 SSO_DEFAULT_AFFILIATION=CAEG 로 띄워 첫 로그인이 그 소속으로 생긴다.
+test('/apps — 이 층에 보이는 타일 수', async ({ browser }) => {
+  const page = await login(browser, 1440);
+  const me = await (await page.request.get('/auth/me')).json();
+  if (TIER === 'caeg') expect(me.affiliation, 'CAEG 층인데 소속이 다르다').toBe('CAEG');
+  if (TIER === 'basic') expect(me.affiliation ?? '', '기본 층에 소속이 들어갔다').toBe('');
+  await page.goto('/apps');
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.apps-grid, .apps-empty').first()).toBeVisible();
+  const n = await page.locator('.apps-grid .app-card').count();
+  // 기본 층(feat:chat 만)은 쓸 수 있는 타일이 없을 수 있다 — 관리자 · CAEG 층은 있어야 한다
+  if (TIER !== 'basic') expect(n).toBeGreaterThan(0);
+  if (process.env.UI_STATE) writeFileSync(join(process.env.UI_STATE, `${TIER}.apps`), String(n));
   await page.context().close();
 });
