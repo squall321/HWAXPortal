@@ -238,7 +238,7 @@ export function AgentDeepView({ agent, path, initialDetail, actions, onAsk, onCl
             <button type="button" className="pv-icon" onClick={onClose} aria-label="조직도로 돌아가기">
               ←
             </button>
-            <span className="pv-card-av dv-av" style={{ background: colorOf(agent.name) }}>
+            <span className="pv-card-av dv-av" style={{ background: colorOf(agent.key) }}>
               {initialOf(agent.name)}
             </span>
             <div className="dv-id">

@@ -134,6 +134,7 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
 
   // 페르소나 말풍선 — 지정 전문가로 보낸 발화의 답이면 심의 회의록처럼 '누가 말했는지'를 세운다.
   // 심의·띵킹 메시지에는 붙이지 않는다 — 그쪽은 좌석마다 자기 버블을 이미 그린다.
+  // 색은 키로 뽑는다 — 회의록 · 관계도 · 띵킹과 같은 입력이어야 같은 사람이 같은 색이다(personaColor.ts).
   const persona = !hasDelib && !hasThink ? msg.persona : undefined;
   const who = persona ? persona.name || persona.key : '';
 
@@ -141,7 +142,7 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
     <div className={`msg assistant${persona ? ' is-persona' : ''}`}>
       {persona && (
         <div className="msg-who">
-          <span className="msg-av" style={{ background: colorOf(who) }} aria-hidden="true">
+          <span className="msg-av" style={{ background: colorOf(persona.key) }} aria-hidden="true">
             {initialOf(who)}
           </span>
           <span className="msg-who-name" title={who}>{shortName(who)}</span>
@@ -150,7 +151,7 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
       )}
       <div
         className="msg-content"
-        style={persona ? { borderLeftColor: colorOf(who) } : undefined}
+        style={persona ? { borderLeftColor: colorOf(persona.key) } : undefined}
       >
         {/* 챗 서버의 생각 글 — 접힌 칸. 답이 나오기 전엔 '생각 중' 으로(1~2분 동안 화면이 멈춰 보이지 않게, docs/chat-depth-context C2). */}
         {msg.reasoning && <ReasoningBlock text={msg.reasoning} live={Boolean(msg.streaming) && !msg.text} />}

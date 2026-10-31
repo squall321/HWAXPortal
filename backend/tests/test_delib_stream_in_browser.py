@@ -283,6 +283,42 @@ const SCENARIOS = {
     await late.waitForFunction(() => !document.querySelector('.cq-skip'));
     return { waiting, topic_skipped, seats_skipped, timed_out: await look(late), errors: [...page.__errors, ...late.__errors] };
   },
+  // 띵킹 — 좌석 넷을 소집해 하나는 예심 탈락, 셋은 답함 · 기권(넘길 곳 지목) · 응답 실패로 갈린다. 머리 줄의 셈과 '진행 중' 이 끝에 사라지는지
+  async thinking(browser) {
+    const think = (d) => frame('think', d);
+    const look = (page) => page.evaluate(() => ({
+      counts: Array.from(document.querySelectorAll('.tv-counts > *')).map((el) => el.textContent),
+      answers: Array.from(document.querySelectorAll('.tv-answer')).map((el) => el.textContent),
+      refer: Array.from(document.querySelectorAll('.tv-refer-chip')).map((el) => el.textContent),
+      passed: Array.from(document.querySelectorAll('.tv-passed li')).map((el) => el.textContent),
+      skipped: (document.querySelector('.tv-skip-toggle') || {}).textContent || '',
+      waiting: Boolean(document.querySelector('.tv-wait')),
+    }));
+    const page = await open(browser);
+    await page.locator('#send').click();
+    await page.waitForFunction(() => typeof window.__push === 'function');
+    await push(page, think({ kind: 'roster', hop: 0, seats: [
+      { key: 'mech-a', name: '기구 강도 전문가', domain: 'mech' }, { key: 'cae-b', name: '구조 해석 전문가', domain: 'cae' },
+      { key: 'rel-c', name: '신뢰성 전문가', domain: 'rel' }, { key: 'mat-d', name: '소재 전문가', domain: 'mat' }] }));
+    await page.locator('.tv-wait').waitFor();
+    const rostered = await look(page);
+    await push(page, think({ kind: 'screen', key: 'mat-d', passed: false, hits: 0, reason: '근거 0건' }));
+    for (const k of ['mech-a', 'cae-b', 'rel-c']) await push(page, think({ kind: 'screen', key: k, passed: true, hits: 3, reason: '' }));
+    await push(page, think({ kind: 'verdict', key: 'mech-a', verdict: 'answer', scope: '힌지 응력' }));
+    await push(page, think({ kind: 'verdict', key: 'cae-b', verdict: 'pass', scope: '열 변형은 소관 밖', refer: ['열 해석'] }));
+    await push(page, think({ kind: 'verdict', key: 'rel-c', verdict: 'error', scope: '', error: 'LLM 응답 시간 초과(600초)' }));
+    await push(page, think({ kind: 'answer', key: 'mech-a', name: '기구 강도 전문가', domain: 'mech',
+                             text: '힌지 브래킷 R 이 작아 응력이 몰립니다.', basis: ['지식카드 #12'] }));
+    await page.locator('.tv-answer').waitFor();
+    const live = await look(page);
+    await push(page, think({ kind: 'summary', answered: 1, passed: 1, screened_out: 1, errored: 1, capped: 0, hops: 0, no_answer: false }));
+    await push(page, frame('done', {})); await page.evaluate(() => window.__end());
+    await page.waitForFunction(() => document.getElementById('streaming').textContent === 'false');
+    const done = await look(page);
+    await page.locator('.tv-skip-toggle').click();
+    const skip_list = await page.evaluate(() => Array.from(document.querySelectorAll('.tv-skip-list li')).map((el) => el.textContent));
+    return { rostered, live, done, skip_list, errors: page.__errors };
+  },
 };
 
 const IDLE = '에이전트 서버가 46800초 동안 아무 신호도 보내지 않아 구독을 끊었다(AGENT_STREAM_IDLE_TIMEOUT_S). ' +
@@ -412,3 +448,22 @@ def test_근거가_아닌_알림_카드는_알림이라고_뜬다(seen):
         ["의장 전사 상한 초과", "알림"],
         ["좌석 유실", "알림"],
     ]
+
+
+def test_띵킹은_좌석마다_답함_기권_응답_실패를_가르고_끝나면_진행_중이_사라진다(seen):
+    """띵킹 화면을 브라우저에 올린 적이 없었다(docs/thinking-mode D6 — 로그인 자격이 없어 데이터 경로만 봤다). 셈의 갈래가 핵심이다 —
+    응답 실패를 기권으로 세면 묻지 못한 전문가가 거절한 것처럼 읽히고, 예심 탈락을 기권으로 세면 묻지도 않은 사람이 거절한 것이 된다."""
+    s = seen("thinking")
+    assert s["rostered"]["waiting"] and s["rostered"]["counts"] == ["진행 중 · 소집 4명"], s["rostered"]
+    live = s["live"]
+    assert live["counts"] == ["1명 답변", "1명 기권", "1명 응답 실패", "진행 중 · 소집 4명"], live
+    assert not live["waiting"], "답이 오면 '판정하는 중' 안내는 거둔다"
+    done = s["done"]
+    assert done["counts"] == ["1명 답변", "1명 기권", "1명 응답 실패"], "끝나면 '진행 중' 이 사라진다"
+    assert len(done["answers"]) == 1 and "힌지 브래킷 R 이 작아 응력이 몰립니다." in done["answers"][0], done["answers"]
+    assert "근거 — 지식카드 #12" in done["answers"][0] and "mech-a" in done["answers"][0]
+    assert done["refer"] == ["열 해석"], "기권한 좌석이 지목한 곳이 칩으로"
+    assert len(done["passed"]) == 1 and "cae-b" in done["passed"][0] and "열 변형은 소관 밖" in done["passed"][0], done["passed"]
+    assert done["skipped"].endswith("묻지 않은 좌석 1명 · 응답 실패 1명"), done["skipped"]
+    assert any("mat-d" in t and "예심 탈락 — 근거 0건" in t for t in s["skip_list"]), s["skip_list"]
+    assert any("rel-c" in t and "응답 실패(기권 아님)" in t and "LLM 응답 시간 초과(600초)" in t for t in s["skip_list"]), s["skip_list"]

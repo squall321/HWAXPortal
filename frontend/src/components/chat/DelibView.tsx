@@ -11,7 +11,7 @@ import { InlineMd, TextBlock } from './renderers/TextBlock';
 import { usePersonaName } from './usePersonaPool';
 import { IconChat, IconOrg } from './icons';
 
-// 색·이니셜은 공용 모듈에서 온다 — 챗 페르소나 말풍선이 같은 함수를 써야
+// 색·이니셜은 공용 모듈에서 온다 — 챗 페르소나 말풍선이 같은 함수에 같은 입력(키)을 넣어야
 // 같은 전문가가 심의와 챗에서 같은 색으로 보인다.
 
 // 라운드 수는 가변(2~8) — 절차는 환기·발굴 + r1..rN + 의결·보고로 동적 구성한다.

@@ -32,7 +32,7 @@ export function AgentCatalogBlock({ catalog }: { catalog: AgentCatalog }) {
           onClick={() => setPinnedAgent(on ? null : key, name)}
           title={desc}
         >
-          <span className="ac-av" style={{ background: colorOf(name) }}>
+          <span className="ac-av" style={{ background: colorOf(key) }}>
             {initialOf(name)}
           </span>
           <span className="ac-body">

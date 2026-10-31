@@ -34,7 +34,7 @@ export function ExpertToggle() {
         title={title}
       >
         {pinnedAgent ? (
-          <span className="tool-av" style={{ background: colorOf(label) }} aria-hidden="true">
+          <span className="tool-av" style={{ background: colorOf(pinnedAgent) }} aria-hidden="true">
             {initialOf(label)}
           </span>
         ) : (

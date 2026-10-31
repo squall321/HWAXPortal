@@ -95,6 +95,14 @@ function routineFromMeta(meta: Record<string, unknown> | null): RoutineState | u
 export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
   const out: Message[] = [];
   let turns: DelibTurn[] = [];
+  // 지정 전문가의 답이었는지 — 화면은 보낼 때 답에 persona 를 찍는데(docs/persona-chat D-3) 서버 사본의 답에는 그 칸이 없고, 사람 발화의
+  // meta 에 고른 전문가(pinned_agent · pinned_agent_name)가 남는다. 그 발화의 첫 답에 되살린다 — 없으면 서버 사본으로 화면을 바꾸는 길
+  // (사본이 더 새로운 새로고침 · 다른 기기 · 숨은 탭에서 돌아옴)에서 말풍선이 사라져 그 답이 일반 어시스턴트의 것으로 읽혔다.
+  // 무엇이 답했는지로 거른다 — 보낸 요청의 Thinking 켜짐이 아니다(확인 카드의 답은 켜 두어도 고른 전문가가 답하고, '/띵킹' 은 꺼 두어도
+  // 띵킹이 답한다). 포털 중계가 그 턴의 프레임으로 적은 answered_by('think' 띵킹 · 'delib' 심의 — 발언 없이 끝난 심의도) · 발언이 앞선 심의
+  // 결정문 · 분석 루틴의 답에는 붙이지 않는다(라이브도 띵킹 · 심의 화면에는 말풍선을 그리지 않는다 — MessageList). 보내기 알림은 건너뛴다
+  // (사람 발화의 답이 아니다). answered_by 를 적기 전의 포털이 남긴 띵킹의 답은 가를 수 없어 고른 전문가가 있었으면 말풍선이 붙는다(드물다).
+  let pinned: Message['persona'];
   for (const m of server) {
     const ts = (m.ts ?? 0) * 1000;
     if (m.role === 'persona') {
@@ -129,6 +137,18 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
           break;
         }
       }
+    }
+    if (m.role === 'user') {
+      const meta = (m.meta ?? {}) as Record<string, unknown>;
+      pinned = typeof meta.pinned_agent === 'string' && meta.pinned_agent
+        ? { key: meta.pinned_agent, ...(typeof meta.pinned_agent_name === 'string' ? { name: meta.pinned_agent_name } : {}) }
+        : undefined;
+    }
+    let persona: Message['persona'];
+    const am = m.role === 'assistant' ? ((m.meta ?? {}) as Record<string, unknown>) : null;
+    if (am && am.upload !== true) {
+      if (!am.answered_by && turns.length === 0 && !routineFromMeta(m.meta)) persona = pinned;
+      pinned = undefined; // 그 발화의 첫 답에만
     }
     if (m.role === 'assistant' && turns.length > 0) {
       // 저장된 round 는 이어하기를 이어 센 번호다(웹·MCP 공통). 한 회차의 라운드는 offset+1 부터
@@ -170,6 +190,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         role: m.role,
         text: m.content,
         ts,
+        ...(persona ? { persona } : {}),
         ...(Array.isArray(act) ? { activity: act } : {}),
         ...(routine ? { routine } : {}),
       });

@@ -23,7 +23,7 @@ function AgentCard({
   return (
     <li>
       <button type="button" className={`pv-card${active ? ' is-on' : ''}`} onClick={onOpen}>
-        <span className="pv-card-av" style={{ background: colorOf(agent.name) }}>
+        <span className="pv-card-av" style={{ background: colorOf(agent.key) }}>
           {initialOf(agent.name)}
         </span>
         <span className="pv-card-body">
@@ -243,7 +243,7 @@ export function PersonaBrowser({
               ) : (
                 <>
                   <div className="pv-detail-head">
-                    <span className="pv-card-av" style={{ background: colorOf(sel.name) }}>
+                    <span className="pv-card-av" style={{ background: colorOf(sel.key) }}>
                       {initialOf(sel.name)}
                     </span>
                     <div>

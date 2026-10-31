@@ -1,6 +1,6 @@
 // 화면 점검 — 가로 넘침·밝은 패널·마크다운 기호 노출·헤더 줄바꿈을 경로×폭마다 단언하고 캡처를 남긴다(docs/ui-refresh 단계 0)
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -323,5 +323,58 @@ test('대화상자 — 네이티브 dialog: 열면 안으로 포커스, Esc 로 
   await page.keyboard.press('Escape');
   await expect(page.locator('dialog[open]')).toHaveCount(0);
   expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+  await page.context().close();
+});
+
+// 사내 연계(Knox) — 목적지(routes 의 knox-bridge=)가 없는 박스에서는 타일이 숨고(곧 공개도 아니다) 챗 · 심의 툴바가 매니페스트를 부르지
+// 않는다(docs/chat-actions A-1 · A-12). ui-check.sh 의 임시 routes 에는 그 줄이 없다 — 넣은 사본에서는 이 시험이 실패해야 한다.
+test('사내 연계(Knox) — 라우트가 없으면 /apps 타일도, 챗 · 심의 화면의 매니페스트 요청도 없다', async ({ browser }) => {
+  const page = await login(browser, 1440);
+  const asked: string[] = [];
+  page.on('request', (r) => {
+    if (new URL(r.url()).pathname.startsWith('/knox-bridge/')) asked.push(r.url());
+  });
+  // 챗 — 시드 대화를 열어 대화 툴바(사내 연계 버튼 자리)가 선 뒤 기다린다
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.getByText('열충격 해석 결과 검토', { exact: false }).first().click();
+  await expect(page.getByRole('toolbar', { name: '대화 도구' })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(800);
+  // 심의 — 저장된 심의를 연다(심의 권한이 있는 층만 — 기본 층은 화면만 열고 본다)
+  await page.goto('/deliberate');
+  await page.waitForLoadState('networkidle');
+  if (await page.getByText('어떤 판단이 필요하세요?').count()) {
+    await page.getByText('배터리 스웰링 대응 심의').first().click({ timeout: 10000 });
+    await expect(page.getByRole('toolbar', { name: '대화 도구' })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+  }
+  expect(asked, '목적지가 없는데 매니페스트를 불렀다').toEqual([]);
+  // 앱 목록 — 타일이 없다(곧 공개로도 안 보인다). 화면과 /systems 응답 둘 다 본다. 기본 층은 쓸 수 있는 타일이 0개라 빈 안내가 뜬다
+  await page.goto('/apps');
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.apps-grid, .apps-empty').first()).toBeVisible();
+  expect(await page.locator('.app-card-name', { hasText: 'Knox' }).count(), '/apps 에 Knox 타일').toBe(0);
+  const ids = ((await (await page.request.get('/systems')).json()) as { id: string }[]).map((t) => t.id);
+  expect(ids).not.toContain('knox-bridge');
+  expect(asked).toEqual([]);
+  await page.context().close();
+});
+
+// 층마다 /apps 에 보이는 타일 수 — 층 사이 견주기(CAEG 층 > 기본 층)는 ui-check.sh 가 끝에서 한다(UI_STATE). CAEG 층은 소속이 정말
+// 들어갔는지도 본다 — 빈 임시 원장에 SSO_DEFAULT_AFFILIATION=CAEG 로 띄워 첫 로그인이 그 소속으로 생긴다.
+test('/apps — 이 층에 보이는 타일 수', async ({ browser }) => {
+  const page = await login(browser, 1440);
+  const me = await (await page.request.get('/auth/me')).json();
+  if (TIER === 'caeg') expect(me.affiliation, 'CAEG 층인데 소속이 다르다').toBe('CAEG');
+  if (TIER === 'basic') expect(me.affiliation ?? '', '기본 층에 소속이 들어갔다').toBe('');
+  await page.goto('/apps');
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.apps-grid, .apps-empty').first()).toBeVisible();
+  const n = await page.locator('.apps-grid .app-card').count();
+  // 기본 층(feat:chat 만)은 쓸 수 있는 타일이 없을 수 있다 — 관리자 · CAEG 층은 있어야 한다
+  if (TIER !== 'basic') expect(n).toBeGreaterThan(0);
+  if (process.env.UI_STATE) writeFileSync(join(process.env.UI_STATE, `${TIER}.apps`), String(n));
   await page.context().close();
 });
