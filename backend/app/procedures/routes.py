@@ -83,6 +83,14 @@ def _owned(request: Request, principal: Principal, run_id: str) -> dict:
     return run
 
 
+def _not_cancelled(run: dict) -> None:
+    """중단한 실행은 이어 가지 않는다 — 승인 · 고르기 · 재개는 실행기를 다시 띄우고, 실행기는 running 을 써 중단을 지운 채 남은 단계를
+    돌았다. 화면은 중단한 실행에 그 단추를 안 보인다(API 로만 닿던 길). 실행기도 세션을 연 뒤 한 번 더 본다(runner `run`)."""
+    if run["state"] == "cancelled":
+        raise AuthError("중단한 실행입니다 — 이어 가지 않습니다. 같은 값으로 다시 하려면 '이 값으로 다시 돌리기' 로 "
+                        "새 실행을 만드세요", status_code=409)
+
+
 def _writey(tool: str) -> bool:
     """되돌리기 어렵거나 자원을 쓰는 도구인가. 분류의 정본은 `models.py` 다 —
     여기서 목록을 다시 만들면 두 곳이 어긋난다."""
@@ -684,6 +692,7 @@ async def pick(request: Request, run_id: str, ix: int, body: PickIn,
     """
     store = _store(request)
     run = _owned(request, principal, run_id)
+    _not_cancelled(run)
     steps = {s["ix"]: s for s in run["steps"]}
     if ix not in steps:
         raise AuthError("그 단계가 없습니다", status_code=404)
@@ -861,6 +870,7 @@ async def ack(request: Request, run_id: str, ix: int, body: AckIn,
     확인 뒤 인자가 바뀌면 무효다. 그래서 사람이 본 것과 실제로 나가는 것이 같다.
     """
     run = _owned(request, principal, run_id)
+    _not_cancelled(run)
     steps = {s["ix"]: s for s in run["steps"]}
     if ix not in steps:
         raise AuthError("그 단계가 없습니다", status_code=404)
@@ -887,6 +897,7 @@ async def resume(request: Request, run_id: str,
     `unknown` 인 쓰기 단계는 사람이 확인한 뒤에만 돈다 — 실행 여부를 모르기 때문이다.
     """
     run = _owned(request, principal, run_id)
+    _not_cancelled(run)
     version = _store(request).get_version(run["procedure_version_id"] or "")
     if version is None:
         raise AuthError("빈 실행은 재개하지 않습니다 — 단계를 다시 실행하세요", status_code=409)

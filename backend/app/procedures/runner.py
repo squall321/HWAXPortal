@@ -210,6 +210,12 @@ class ProceduresRunner:
             try:
                 await sess.open(pat)
                 catalog = await sess.list_tools(pat)
+                # 자리 · 세션을 기다리는 사이 누른 중단을 다시 본다 — `queued` 인 실행을 중단해도 아래가 running(또는 드리프트 failed)을 써
+                # 중단이 지워지고 단계가 돌았다. 재개 계열(ack · pick · resume)도 이 길을 탄다. failed 는 보지 않는다 — 실패한 단계부터
+                # 재개하는 실행은 failed 에서 출발한다.
+                run = self.store.get_run(run_id)
+                if run is None or run["state"] == "cancelled":
+                    return {"state": run["state"] if run else "unknown", "stopped_at": start_at}
                 drift = self._check_drift(spec, catalog)
                 if drift:
                     # ⚠ 이유를 stage 에 실어 원장에 남긴다. 예전엔 `schema_drift` 한 낱말뿐이라
@@ -332,11 +338,17 @@ class ProceduresRunner:
                                 caveat=(caveats or {}).get(ix),
                                 secret={PUBLISH_TOKEN: pub["token"]} if pub else None,
                                 fingerprint=pub["fp"] if pub else None)
-            if v is None:  # warmup — 결과를 버린다
-                continue
-            if pub:
+            if pub and v is not None:
                 # 무엇을 보고 승인해 어디에 올렸나 — 게이트 카드의 미리보기를 게시 기록에도 남긴다(토큰은 없다)
                 self.store.annotate_step(run_id, ix, {"publish_preview": pub["view"]})
+            # 호출을 기다리는 사이 누른 중단을 다시 본다 — 중단은 단계 경계(위)에서만 봤고 그 뒤 호출을 기다렸다. 안 보면 아래 쓰기가 덮는다
+            # — 마지막 단계면 done, 실패면 failed, 고르기면 확인 대기(gated). 미리보기를 기다린 뒤 다시 보는 `_publish_gate` 와 같은 자리다.
+            # 호출의 기록은 `_one` 이 이미 남겼다(이미 나갔다).
+            run = self.store.get_run(run_id)
+            if run is None or run["state"] in ("cancelled", "failed"):
+                return {"state": run["state"] if run else "unknown", "stopped_at": ix}
+            if v is None:  # warmup — 결과를 버린다
+                continue
             if not v.ok:
                 self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
                 return {"state": "failed", "stopped_at": ix, "kind": v.kind,
@@ -432,6 +444,10 @@ class ProceduresRunner:
                 await sess.open(pat)
                 # 실행 경로와 같은 경고(합성 데이터 모델) — 이 길이 절차 기능의 진입점이다(독스트링). 빠지면 한 단계씩 돌린 기록에 없다.
                 caveat = J.description_caveat(_meta(await sess.list_tools(pat), step).get("description"))
+                # 세션을 여는 사이 누른 중단 — 아래 running 이 지운다(실행 `run` 과 같은 자리). failed 는 보지 않는다 — 빈 실행은
+                # 실패한 단계 뒤에도 단계를 더 받는다(add_step 이 막는 것은 cancelled · gated 다).
+                if (self.store.get_run(run_id) or {}).get("state") == "cancelled":
+                    return {"ix": ix, "state": "cancelled"}
                 self.store.set_run_state(run_id, "running")
                 args, bad = self._args(run_id, ix, step, scope)
                 if bad is not None:
@@ -442,6 +458,9 @@ class ProceduresRunner:
                                     caveat=caveat)
                 if v is None:
                     return {"ix": ix, "state": "skipped"}
+                # 호출을 기다리는 사이 누른 중단 — 아래 queued 가 지워 실행이 단계를 다시 받았다(화면은 단계가 도는 동안 '중단' 을 보인다).
+                if (self.store.get_run(run_id) or {}).get("state") == "cancelled":
+                    return {"ix": ix, "state": "cancelled"}
                 saved = {}
                 if v.ok:
                     for key, path in (step.save or {}).items():

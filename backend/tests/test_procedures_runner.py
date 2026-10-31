@@ -781,6 +781,112 @@ def test_cancel_is_seen_at_the_step_boundary(kit):
     asyncio.run(go(*kit))
 
 
+@pytest.mark.parametrize("reply,steps,was", [
+    (ok({"n": 1}), [{"backend": "b", "tool": "a"}], "done"),         # 마지막 단계 — 뒤 경계가 없어 done 으로 덮였다
+    (err("boom"), [{"backend": "b", "tool": "a"}], "failed"),        # 실패 — failed 로 덮였다
+    (ok({"parts": [{"name": "P1"}, {"name": "P2"}]}),                # 고르기(여럿 — 사람에게 묻는다) — 확인 대기로 덮였다
+     [{"backend": "b", "tool": "a", "select": {"from": "parts", "save": "name", "as": "part"}},
+      {"backend": "b", "tool": "c", "args": {"p": "{{part}}"}}], "gated"),
+])
+def test_호출을_기다리는_사이_누른_중단이_남는다(kit, reply, steps, was):
+    """중단은 단계 경계에서만 봤다 — 호출이 도는 사이 누른 중단을 그 뒤 쓰기가 덮었다(미리보기를 기다리는 사이의 중단과 같은 자리 —
+    B3 검토 ③). 호출 자체의 기록은 그대로 둔다(이미 나갔다)."""
+    async def go(store, build):
+        box = {}
+
+        def call_then_cancel(_a):
+            store.cancel_run(box["rid"], "u1")   # 호출이 도는 사이 사람이 '중단' 을 눌렀다
+            return reply
+
+        g = Gate(tools={"b_a": {}, "b_c": {}}, replies={"b_a": call_then_cancel})
+        r = build(g)
+        spec = _spec(steps)
+        rid = box["rid"] = _run(store, spec)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        run = store.get_run(rid)
+        assert run["state"] == "cancelled", f"중단이 {run['state']} 로 덮였다(종전 {was})"
+        assert out == {"state": "cancelled", "stopped_at": 0}, out
+        assert len(g.calls) == 1 and run["cancelled_by"] == "u1"
+        assert store.list_steps(rid)[0]["state"] == ("failed" if was == "failed" else "done")
+    asyncio.run(go(*kit))
+
+
+def test_세션을_여는_사이_누른_중단은_running_으로_덮이지_않는다(kit):
+    """`queued` 인 실행을 중단해도 실행기가 자리 · 세션을 기다린 뒤 running 을 써 중단이 사라지고 단계가 돌았다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})
+        spec = _spec([{"backend": "b", "tool": "a"}])
+        rid = _run(store, spec)
+        inner = g.transport().handler
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            if req.content and json.loads(req.content).get("method") == "tools/list":
+                store.cancel_run(rid, "u1")   # 세션을 여는 사이 사람이 '중단' 을 눌렀다
+            return await inner(req)
+
+        g.transport = lambda: httpx.MockTransport(handler)
+        r = build(g)
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out == {"state": "cancelled", "stopped_at": 0}, out
+        assert store.get_run(rid)["state"] == "cancelled"
+        assert g.calls == [] and store.list_steps(rid) == [], "중단한 실행의 단계가 돌았다"
+        assert g.deleted == ["s1"], "연 세션은 닫는다"
+    asyncio.run(go(*kit))
+
+
+def test_한_단계씩_돌리는_사이_누른_중단도_남는다(kit):
+    """빈 실행(절차 기능의 진입점) — 화면은 단계가 도는 동안 '중단' 을 보인다. 그 단계가 끝나며 queued 로 덮어 중단이 사라지고 단계를 다시
+    받았다. 세션을 여는 사이 누른 중단도 같다(running 으로 덮였다)."""
+    async def go(store, build):
+        rid = store.create_run(owner_sub="u1", mode="live", inputs={})
+
+        def call_then_cancel(_a):
+            store.cancel_run(rid, "u1")
+            return ok({"n": 1})
+
+        g = Gate(tools={"b_a": {}}, replies={"b_a": call_then_cancel})
+        r = build(g)
+        got = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="a"))
+        assert store.get_run(rid)["state"] == "cancelled", got
+        assert got["state"] == "cancelled" and store.list_steps(rid)[0]["state"] == "done"
+
+        rid2 = store.create_run(owner_sub="u1", mode="live", inputs={})
+        inner = g.transport().handler
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            if req.content and json.loads(req.content).get("method") == "tools/list":
+                store.cancel_run(rid2, "u1")
+            return await inner(req)
+
+        g.transport = lambda: httpx.MockTransport(handler)
+        r2 = build(g)
+        got2 = await r2.step_once(run_id=rid2, principal=PRINCIPAL, step=Step(backend="b", tool="a"))
+        await r.aclose()
+        await r2.aclose()
+        assert got2 == {"ix": 0, "state": "cancelled"}, got2
+        assert store.get_run(rid2)["state"] == "cancelled" and store.list_steps(rid2) == []
+        assert len(g.calls) == 1, "세션을 여는 사이 중단한 실행의 단계가 돌았다"
+    asyncio.run(go(*kit))
+
+
+def test_실패한_빈_실행은_단계를_더_받는다(kit):
+    """위 중단 확인의 짝 — 끝은 중단뿐이다. 빈 실행은 실패한 단계 뒤에도 사람이 단계를 더 붙인다(add_step 이 막는 것은 cancelled · gated).
+    확인이 failed 까지 보면 이 길이 조용히 막힌다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}, "b_c": {}}, replies={"b_a": err("boom"), "b_c": ok({"n": 1})})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live", inputs={})
+        assert (await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="a")))["ok"] is False
+        assert store.get_run(rid)["state"] == "failed"
+        got = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="c"))
+        await r.aclose()
+        assert got["ok"] is True and len(g.calls) == 2, got
+        assert store.get_run(rid)["state"] == "queued"
+    asyncio.run(go(*kit))
+
+
 def test_inactive_owner_stops_before_minting_a_pat(kit):
     async def go(store, build):
         g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})

@@ -285,6 +285,46 @@ def test_취소는_소유자와_관리자만(user, client):
     assert st.get_run(rid3)["state"] != "cancelled"
 
 
+def test_중단한_실행은_승인_재개_고르기로_다시_돌지_않는다(user):
+    """화면은 중단한 실행에 그 단추를 안 보이지만 API 로는 닿았다 — 승인 · 재개 · 고르기가 실행기를 다시 띄우면 running 으로 덮여 중단이
+    사라지고 남은 단계가 돌았다. 409 와 함께 무엇을 하면 되는지 말하고, 원장에는 아무것도 적지 않는다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spawned: list[str] = []
+
+    def _rec(**kw):   # 실행기를 다시 띄우려 했는지 — 라우트가 부르는 그 순간 적는다
+        spawned.append(kw["run_id"])
+
+        async def _noop():
+            return None
+        return _noop()
+
+    c.app.state.procedures_runner.run = _rec
+    spec = {"title": "t", "vars": [],
+            "steps": [{"backend": "ra", "tool": "add_report_tags", "gate": "human", "args": {"x": 1}}]}
+    got = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec}, headers=h).json()
+    gated = st.create_run(owner_sub=me, run_by=me, procedure_version_id=got["version_id"],
+                          inputs={}, origin="replay", mode="live")
+    st.begin_step(gated, 0, backend="ra", tool="add_report_tags", args={"x": 1}, mode="live")
+    st.finish_step(gated, 0, ok=False, state="pending", stage="gate")
+    st.set_run_state(gated, "gated", stage="step:0")
+    unknown, _ = _run_with_unknown_write(c, h, "find_reports")
+    picking = _gated_pick_run(c, h)
+    for rid in (gated, unknown, picking):
+        assert c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h).status_code == 200
+
+    sha = st.get_run(gated)["steps"][0]["args_sha256"]
+    for r in (c.post(f"{PREFIX}/runs/{gated}/steps/0/ack", json={"args_sha256": sha}, headers=h),
+              c.post(f"{PREFIX}/runs/{unknown}/resume", headers=h),
+              c.post(f"{PREFIX}/runs/{picking}/steps/0/pick", json={"value": "PANEL_2"}, headers=h)):
+        assert r.status_code == 409 and "중단한 실행" in r.text, (r.request.url.path, r.status_code, r.text[:200])
+    assert spawned == [], "중단한 실행을 실행기가 다시 띄웠다"
+    assert [st.get_run(x)["state"] for x in (gated, unknown, picking)] == ["cancelled"] * 3
+    assert st.gate_ack(gated, 0) is None, "중단한 실행의 승인을 원장에 적었다"
+    assert "part" not in st.get_run(picking)["inputs"], "중단한 실행에 고른 값을 넣었다"
+
+
 def test_빈_실행은_재개하지_않는다(user):
     c, h = user
     rid = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
