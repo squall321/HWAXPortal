@@ -29,8 +29,10 @@ class _FakeGW:
     """게이트웨이 대역 — /tools-map 과 /mcp(JSON-RPC: initialize · tools/list · resources/read · tools/call · DELETE). 받은 요청을 남긴다.
     tools/list 는 진짜 게이트웨이의 패널 PAT 범위를 흉내 내지 않고 일부러 앱 밖 · 막음 도구를 섞는다 — 포털의 거르기를 따로 본다."""
 
-    def __init__(self, *, mime="text/html;profile=mcp-app", html=_HTML, read=("list_runs", "open_workflow_panel"), csp=None, missing=False):
+    def __init__(self, *, mime="text/html;profile=mcp-app", html=_HTML, read=("list_runs", "open_workflow_panel"), csp=None, missing=False,
+                 old_key=False):
         self.mime, self.html, self.read, self.csp, self.missing = mime, html, read, csp, missing
+        self.old_key = old_key             # 패널 도구가 옛 키("ui/resourceUri")만 단다 — 다른 판의 앱(B7 사양 판 어긋남)
         self.reqs: list[dict] = []
         self.sids: set[str] = set()
         self.deleted: list[str] = []
@@ -67,7 +69,8 @@ class _FakeGW:
         if m == "tools/list":
             tools = [{"name": n, "inputSchema": {"type": "object"}} for n in ("list_runs", "submit_run", "trash_report", "arp_list",
                                                                                   "invoke_tool")]
-            tools.append({"name": "open_workflow_panel", "inputSchema": {"type": "object"}, "_meta": {"ui": {"resourceUri": _URI}}})
+            tools.append({"name": "open_workflow_panel", "inputSchema": {"type": "object"},
+                          "_meta": {"ui/resourceUri": _URI} if self.old_key else {"ui": {"resourceUri": _URI}}})
             tools.append({"name": "model_only", "inputSchema": {"type": "object"}, "_meta": {"ui": {"visibility": ["model"]}}})
             return self._sse(body["id"], {"tools": tools})
         if m == "resources/read":
@@ -200,6 +203,16 @@ def test_P3_열면_패널_PAT_로_게이트웨이를_부르고_HTML_과_허용_�
     with pytest.raises(jwt.InvalidAudienceError):
         jwt.decode(tok, pub, algorithms=["RS256"], audience=s.pat_chat_audience)    # 챗 · MCP 청중으로는 통하지 않는다
     assert all(x["corr"].startswith("panel:") for x in gw.reqs if x["method"] in ("tools/list", "resources/read"))
+    assert gw.calls() == [], "열기(기록의 '다시 열기' 포함)는 도구를 부르지 않는다 — 목록 · 리소스 읽기뿐이다(B7 두 번 실행)"
+
+
+def test_P3_옛_키_ui_resourceUri_만_단_패널_도구도_연다(kit):
+    """B7 사양 판 어긋남 — 앱이 옛 키("ui/resourceUri")를 내면 게이트웨이가 그대로 옮긴다(HG-07). 포털이 새 키만 보면 그 패널은 늘 404 다."""
+    c, gw, _ = kit(fake=_FakeGW(old_key=True))
+    h = _login(c, "boss@corp.com")
+    r = _open(c, h)
+    assert r.status_code == 200 and r.json()["html"] == _HTML, r.text
+    assert _open(c, h, uri="ui://simflow/other").json()["detail"]["code"] == "panel_uri_mismatch", "옛 키도 그 도구가 단 주소만 연다"
 
 
 @pytest.mark.parametrize("mime,html,code,status", [
