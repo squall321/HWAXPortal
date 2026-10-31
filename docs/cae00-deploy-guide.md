@@ -860,7 +860,7 @@ stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치�
 
 ## 2026-10-30 반영분 — 낙하 트윈(DynaForge 후처리 반입)
 
-cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `eea5098` — 10-31 판, Drive 판 `dist-20261031-214338Z`(`57a41bf`) · §0 · §1 · §1-2(새 절) · §8 을 고친 판, 그 앞 판 `40d3d55` 는 SP 받는 쪽 전부 `24bca1c`)이고, 명령 · 기대값은
+cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `bd03428` — 10-31 판, Drive 판 `dist-20261031-214338Z`(`57a41bf`) · §0 · §1 · §1-2(새 절 — 끝 문단은 7-1 꾸러미 싣기 `77c10a0` · 어휘 0.4 `bd03428`) · §8 을 고친 판, 그 앞 판 `40d3d55` 는 SP 받는 쪽 전부 `24bca1c`)이고, 명령 · 기대값은
 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
 `docs/01-plan/features/{postprocess-reservation-1028,sphere-risk-map-1029}.plan.md` · 총괄 `drop-twin-1028.checklist.md`, KooSlurm 쪽은 KooSlurm
 `docs/sso_enable_20261029/{icn401_apply_check,sso_enable_procedure}.md`(origin `46c647e4`). 포털 쪽 몫은 R2a 제출 씨앗의 후처리 예약(`9ce09b6`,
@@ -926,9 +926,12 @@ SP 키트 2026-10-21 판(규칙 16 · 시험장 8단계 자동 시험) 받기 ·
 | 해석 온톨로지 — 붙이기 | 후처리 산출 폴더의 `<리포트 이름>.ontology.json`(리포트 HTML 과 같은 줄기)을 「꾸러미 붙이기」 로 | 파트 판정(위험한 것부터) · 하중 경로(충격량 큰 것부터) 표. 남의 리포트 꾸러미면 「이 리포트의 꾸러미가 아니다」 로 거절되고 아무것도 안 바뀐다 |
 | MCP | `report_cae(report_id)` · `find_cae_parts(min_severity="CRITICAL")` | 붙인 리포트면 `loaded: true` 와 파트 목록, 아니면 `loaded: false` 와 붙이는 길. 찾기는 읽을 수 있는 리포트(소유 · 같은 소속)의 것만 |
 
-운영에서 꾸러미가 생기는 것은 `koo_ontology` 가 든 후처리 이미지가 깔린 뒤다(KooD3plotReader `post_analyze` 마지막 단계) — 그전에는 「없음」 이
-정상이다. 후처리 예약(7-1) 길은 아직 꾸러미를 저절로 받지 않는다 — 그 길에서는 꾸러미가 생기지 않고(생산 쪽에 물음) 귀환 매니페스트에도 칸이
-없다(KooSlurm 에 청함 — KooRemapper `docs/requests/kooslurm-ontology-manifest-request-2026-10-31.md`).
+운영에서 꾸러미가 생기는 것은 꾸러미를 내는 후처리 이미지가 stcx 에 깔린 뒤다 — 그전에는 「없음」 이 정상이다. 후처리 예약(7-1) 반입은
+귀환 매니페스트의 꾸러미(`reports[].ontology`)를 저절로 싣는다. 세 자리가 다 서야 실제로 실린다 — KooSlurm 작성기(`b6a3d75c`, icn401 반영 뒤
+제출한 잡부터) · 리포트 도구가 `-o` HTML 곁에 꾸러미를 쓰는 후처리 이미지(KooD3plotReader (A), 판 이름 대기) · 이 판의 DynaForge. 하나라도 없으면
+리포트만 반입되고 잡 `external_ref.ontology.state` 가 `no_field`(옛 작성기) · `absent`(꾸러미 없음)다 — 둘 다 정상이고 경고가 아니다.
+이 싣기(`77c10a0`)와 어휘 0.4 판(0.3 꾸러미도 그대로 받는다, `bd03428`)은 **파이썬 · 데이터만 바뀐 커밋**이라 Drive 판은 그대로다 —
+`update-all` 의 git 갱신으로 들어간다(위 1 「소스」 줄의 `git log -1` 로 본다).
 
 ### 2. cae00 — 후처리 예약(7-1) 설정
 
