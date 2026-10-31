@@ -16,6 +16,7 @@ import TokenPage from './pages/TokenPage';
 import RiskLaunchPage from './pages/risk/RiskLaunchPage';
 import AccessHistoryPage from './pages/admin/AccessHistoryPage';
 import ToolSearchReviewPage from './pages/admin/ToolSearchReviewPage';
+import SeatReviewPage from './pages/admin/SeatReviewPage';
 import UsersAdminPage from './pages/admin/UsersAdminPage';
 import ProceduresPage from './pages/procedures/ProceduresPage';
 import { ProceduresProvider } from './state/ProceduresContext';
@@ -98,6 +99,10 @@ const router = createBrowserRouter([
       {
         path: '/admin/tool-search',
         element: <ToolSearchReviewPage />,
+      },
+      {
+        path: '/admin/seat-review',
+        element: <SeatReviewPage />,
       },
       {
         path: '/risk',

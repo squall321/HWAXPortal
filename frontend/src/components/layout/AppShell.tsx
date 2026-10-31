@@ -10,7 +10,7 @@ import { StePrimer } from './StePrimer';
 const TITLES: [string, string][] = [
   ['/deliberate', '심의'], ['/procedures', '절차'], ['/apps', '앱'], ['/tokens', '개인 토큰'], ['/updates', '업데이트 이력'],
   ['/access', '내 권한'], ['/admin/users', '사용자 관리'], ['/admin/access', '접속 이력'], ['/admin/tool-search', '도구 검색 검토'], ['/risk', '리스크 심사'],
-  ['/launch', '앱 여는 중'],
+  ['/admin/seat-review', '전문가 고르기 검토'], ['/launch', '앱 여는 중'],
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

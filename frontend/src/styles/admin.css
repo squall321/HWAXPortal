@@ -219,3 +219,129 @@ span.adm-err {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
+
+/* 전문가 고르기 검토 — 질문 · 표시 · 조직도에서 고르기(docs/request-1029 E-5 · E5-2). 조직도 트리는 챗 조직도(.pv-tree)를 그대로 쓴다 */
+.srv-table {
+  min-width: 52rem;
+}
+.srv-table .srv-q {
+  min-width: 20rem;
+  white-space: pre-wrap;
+}
+.srv-editor {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+}
+.srv-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.srv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  min-height: var(--control-h);
+  align-items: center;
+}
+.srv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-13);
+}
+.srv-chip.is-primary {
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+}
+.srv-chip button {
+  padding: 0 var(--sp-1);
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.srv-via {
+  color: var(--fg-muted);
+}
+.srv-picker {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr) 18rem;
+  height: 26rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.srv-pick-main {
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-3);
+}
+.srv-search {
+  width: 100%;
+  margin-bottom: var(--sp-2);
+}
+.srv-experts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.srv-experts li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--border);
+}
+.srv-experts li.is-on {
+  background: var(--surface-2);
+}
+.srv-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: var(--fs-14);
+  text-align: left;
+  cursor: pointer;
+}
+.srv-name code {
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+.srv-pick-btns {
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+.srv-card {
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 1px solid var(--border);
+  font-size: var(--fs-13);
+}
+.srv-card-name {
+  font-weight: 600;
+}
+.srv-memo {
+  max-width: 48rem;
+}
+@media (max-width: 768px) {
+  .srv-picker {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+  .srv-picker .pv-tree {
+    max-height: 14rem;
+  }
+  .srv-card {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}

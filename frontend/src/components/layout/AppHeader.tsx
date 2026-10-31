@@ -88,6 +88,7 @@ export function AppHeader() {
         { to: '/admin/users', label: '사용자 관리', badge: setupN },
         { to: '/admin/access', label: '접속 이력' },
         { to: '/admin/tool-search', label: '도구 검색 검토' },
+        { to: '/admin/seat-review', label: '전문가 고르기 검토' },
       ]
     : [];
   const account: Item[] = [
