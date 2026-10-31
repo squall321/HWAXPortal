@@ -28,8 +28,8 @@
 |---|---|---|
 | Xt · Yt | `mechanical.tensile_strength`(:19) | 정의의 조건 축이 `temperature_k` 하나다. 값에 `direction` 조건이 실리기는 한다(dev 1,441행 중 325행 — MD · TD · in-plane …). 그러나 정규 방향 어휘(`backend/app/direction_vocab.py:31-39` — in-plane · through-thickness · MD · TD · axial · radial · circumferential · isotropic)에 라미나 1 · 2 축이 없다 |
 | Xc · Yc | `mechanical.compressive_strength`(:137) | 같다 — 조건 축 `temperature_k` 하나, dev 88행 중 방향 조건 7행 |
-| S | `mechanical.shear_strength`(:126-127) | 금속 · 적층판을 한 키에 담는다(펀치 전단 포함). 면내(12) 전단강도를 고를 규칙이 없다 |
-| S-N(log_linear k) | 없음 | 정규화 S-N 을 받을 키가 없다 |
+| S | `mechanical.shear_strength`(:126-127) | 금속 · 적층판을 한 키에 담는다(펀치 전단 포함). 면내(12) 전단강도를 고를 규칙이 없다. 조건 축 `shear_plane`(:127)이 있지만 어휘가 없는 자유 글이고(:122-125 주석 — 시험규격과 OR), dev 18행 중 3행에만 실렸고 셋 다 'through-thickness (punch, across laminations)' 다 — 펀치 전단에만 쓰여 12 면을 고르는 규칙이 되지 못한다 |
+| S-N(log_linear k) | 없음 | 정적 강도로 정규화한 S-N 을 받을 키가 없다. 이름이 비슷한 `mechanical.fatigue_strength_coefficient_normalized`(:320-321, σ'f/E — dev 14행)는 E 로 나눈 꼴(변형률–수명 식의 탄성 항 계수)이다. log_linear k 는 정적 강도로 나눈 기울기라 다른 양이고, 하나에서 다른 하나를 만들면 역산이다 |
 | S-N(basquin b) | `mechanical.fatigue_strength_exponent`(:324-325) | 금속 Basquin(σa = σf'(2Nf)^b)이라 부호 · 정규화 관례가 다르고, 조건 축(`model` · `stress_ratio_R`)에 방향이 없다 |
 | (헷갈리기 쉬운 것) | `mechanical.interlaminar_shear_strength`(:108-109) | 층간 전단이다 — S 가 아니다 |
 | (참고) 카드 내보내기 | `backend/app/dyna_export.py:1317-1321` | 방향이 엇갈린 재료에 '*MAT_ORTHOTROPIC 계열을 쓰라' 고 알리기만 한다 — 이방성 카드 길이 없다 |

@@ -23,6 +23,10 @@ evidence:
   - "MaterialTwinWeb `4273720` backend/app/property_taxonomy.py — tensile_strength(:19) · compressive_strength(:137)의 조건 축은 temperature_k
      하나 · shear_strength(:126-127)는 금속 · 적층판 한 키(면내 12 전단을 고를 규칙 없음) · fatigue_strength(:135-136)는 단일 피로한도 ·
      Basquin 계수 · 지수(:322-325)는 금속 꼴(model · stress_ratio_R, 방향 축 없음) · 정규화 S-N 키 없음"
+  - "이미 있는 길 하나 — shear_strength 의 조건 축 `shear_plane`(property_taxonomy.py:127)은 어휘 없는 자유 글이다. dev 18행 중 3행에만 실렸고
+     셋 다 'through-thickness (punch, across laminations)' 라 면내 12 전단을 고르는 규칙이 되지 못한다"
+  - "이미 있는 길 둘 — `fatigue_strength_coefficient_normalized`(:320-321, σ'f/E — dev 14행)는 E 로 나눈 꼴(변형률–수명 식의 탄성 항 계수)이다.
+     LaminateAnalyzer 의 log_linear k 는 정적 강도로 나눈 기울기라 다른 양이고, 하나에서 다른 하나를 만들면 역산이다"
   - "MaterialTwinWeb backend/app/direction_vocab.py:31-39 — 정규 방향 어휘 여덟(in-plane · through-thickness · MD · TD · axial · radial ·
      circumferential · isotropic)에 라미나 1 · 2 축이 없다"
   - "MaterialTwinWeb backend/app/dyna_export.py:1317-1321 — 방향이 엇갈린 재료에 '*MAT_ORTHOTROPIC 계열을 쓰라' 고 알리기만 한다(이방성 카드 길 없음)"
