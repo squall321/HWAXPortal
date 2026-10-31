@@ -326,7 +326,7 @@ merge 스크립트를 그대로 두고, (1) 입력 덤프가 Drive 다운로드�
 `mirror→canonical`·`own→타박스` 거부. 목록(`tables:`)에 없는 표는 대상 아님. staging→prod publish 는 **자동 없음** — update-all(staging) 헬스게이트 뒤 사람이 `db-sync push --to prod`.
 
 ### 8.4 기존 스크립트 안의 소규모 수정 (충돌 처방 — 우선순위순)
-1. AIDH `agent_sample_embeddings`(autoincrement 대리키) 동기화 제외·대상 재계산 — 1줄 삭제. **10-31 — 다른 길로 들어갔다**: 빼지 않고 전문가 단위로 맞추며 순번을 올린다(AIDataHub `6f496fa`, docs/request-1030 context-notes C-18). 이 1줄 삭제는 하지 않는다.
+1. AIDH `agent_sample_embeddings`(autoincrement 대리키) 동기화 제외·대상 재계산 — 1줄 삭제. **10-31 — 다른 길로 들어갔다.** 빼지 않고 전문가 단위로 맞추며 순번을 올린다(AIDataHub `6f496fa`, docs/request-1030 context-notes C-18). 이 1줄 삭제는 하지 않는다.
 2. AIDH `agents` 기존 행 `DO NOTHING`(신규만 삽입) + 다른 행은 `conflicts/<TS>.jsonl` 보고 — 양 박스 create_agent 덮어쓰기 방지.
 3. AIDH `records` 충돌키를 자연키 `(data_type,team,group,year,seq)`(`models.py:72-80`)로, id 제외·자식 FK 재매핑(`_materialtwin_merge.py:539-556` 방식).
 4. SF `voc_records` `DO UPDATE SET` 을 `update_cols` 허용목록으로(§5 실측 컬럼 — `updated_at` 없음), FK 로 버린 행 수 보고. (§12 결정 5 가 "prod 단일 크롤" 이면 이 표는 publish 대상에서 빠져 수정 불필요.)

@@ -53,7 +53,7 @@
 - [ ] `db-sync.sh push|pull|mirror|status|rollback` 얇은 래퍼(~150줄) — rsync → pre-sync(backup-local) → 기존 merge 호출 → 원장
 - [ ] 로컬 입력 입구 6줄: SF `merge-from-drive.sh:33-37` `SF_MERGE_DUMP` · HEAX `appdata-merge-from-drive.sh:20-22` `HEAX_APPDATA_TAR` (AIDH 는 이미 있음)
 - [ ] 기존 merge 소규모 수정(PLAN §8.4 순서): AIDH embeddings 제외 → agents DO NOTHING+보고 → records 자연키 → SF update_cols(결정 5 에 따라) → HEAX 시드 `--exclude`
-  - 10-31 — 첫 걸음(AIDH embeddings)은 다른 길로 들어갔다: `agent_sample_embeddings` 를 빼지 않고 **전문가 단위로 맞추고 순번을 표의 가장 큰 id 뒤로 민다**(AIDataHub `6f496fa` — cae00 의 표본 저장이 겹친 id 로 거절되던 원인 후보, docs/request-1030 AD-21 후속). 사용자 결정 셋 — cae00 은 받은 뒤 `merge-from-drive.sh` 를 한 번 손으로 돈다 · 덤프로 고칠 수 없는 전문가는 다시 짓는 명령과 함께 알리기만 한다 · update-all 은 그 줄을 경고로 세지 않는다(docs/request-1030 context-notes C-18 · server-setup 8절). 이 걸음에서 그 표를 동기화에서 빼면 이 고침이 사라진다 — 빼지 않는다. 나머지 걸음은 그대로다.
+  - 10-31 — 첫 걸음(AIDH embeddings)은 다른 길로 들어갔다. `agent_sample_embeddings` 를 빼지 않고 **전문가 단위로 맞추고 순번을 표의 가장 큰 id 뒤로 민다**(AIDataHub `6f496fa` — cae00 의 표본 저장이 겹친 id 로 거절되던 원인 후보, docs/request-1030 AD-21 후속). 사용자 결정 셋 — cae00 은 받은 뒤 `merge-from-drive.sh` 를 한 번 손으로 돈다 · 덤프로 고칠 수 없는 전문가는 다시 짓는 명령과 함께 알리기만 한다 · update-all 은 그 줄을 경고로 세지 않는다(docs/request-1030 context-notes C-18 · server-setup 8절). 이 걸음에서 그 표를 동기화에서 빼면 이 고침이 사라진다 — 빼지 않는다. 나머지 걸음은 그대로다.
 - [ ] mirror: Koorm·HEAX `pg_restore --clean` 4줄 + `exclude_on_mirror` TRUNCATE + `provision-config.sh --force` · sqlite `.backup` rsync→`mv -T`
 - [ ] update-all §3·deploy-all SF/heax merge 를 `DB_SYNC` 플래그로 이중화(기본 0) → 같은 덤프로 결과 diff 0 → 기본값 전환
 - [ ] SF·MTW `*/30` Drive push 정지 · AIDH 이중 덤프 통합 · Drive db-dumps 3세대

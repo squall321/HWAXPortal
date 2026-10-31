@@ -119,11 +119,11 @@ for k in ("self_check", "status_wait", "confirm_gate", "xhub_gate"):
 | 칸 | 기대 | 다르면 |
 |---|---|---|
 | `self_check.gate.mode` | `"1"` | `"num"` · `"0"` 이면 에이전트 서버 `.env` 의 `CHAT_SELF_CHECK_GATE` 줄 |
-| `status_wait.on` | `true` · `poll_s` 10 · `max_s` 600 | `false` 면 `.env` 의 `CHAT_STATUS_WAIT_MAX_S=0` |
+| `status_wait.on` | `true` · `poll_s` 10.0 · `max_s` 600.0(값은 실수로 온다) | `false` 면 `.env` 의 `CHAT_STATUS_WAIT_MAX_S=0` |
 | `confirm_gate.on` · `lists.loaded` | 둘 다 `true` · `lists.error` 는 `null`. 같은 포털 판이면 목록은 잡 25 · 쓰기 115 · 확인 59(dev 10-31) | `loaded: false` 면 `lists.error` 가 까닭이다 — 형제 리포 `../HWAXPortal/infra/personas/he-team.json`(또는 `CONFIRM_LISTS_PATH`)부터 본다. 그동안 관문은 잡 바닥 목록만으로 돈다 |
 | `xhub_gate.on` | `true` | `false` 면 `.env` 의 `CHAT_XHUB_ID_GATE=0` |
 
-update-all §7 도 같은 칸을 한 줄씩 찍는다 — `· 자기검증 관문: 모드 1 · …` · `· 상태 기다림: 10초 간격 · 턴 합 600초 · …` · `· 확인 관문: 목록 잡 25 · …` ·
+update-all §7 도 같은 칸을 한 줄씩 찍는다 — `· 자기검증 관문: 모드 1 · …` · `· 상태 기다림: 10.0초 간격 · 턴 합 600.0초 · …` · `· 확인 관문: 목록 잡 25 · …` ·
 `· 다른 허브 id 막이: 켬 · …`. 손잡이로 끈 관문은 `○ … 켜려면` 으로 찍히고 끝 요약에서 다시 나온다(실패가 아니다). 운영자 목록을 못 읽었으면 `⚠ 확인 관문` 이다.
 
 ### 6-2. 손잡이 — 모두 에이전트 서버 재기동 뒤에 먹는다
