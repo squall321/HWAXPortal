@@ -2,11 +2,11 @@
 """설계 docs/request-1027/design-ha09-ha20.md B5.4 · 사용자 결정 10-31(B-1 ~ B-7 전부 (가)).
 
 창구 다섯 — 모두 세션 쿠키 + CSRF 로만 받는다. Bearer PAT 는 받지 않는다(패널은 브라우저 탭에서만 산다 — B-4 (가)). 박스 손잡이
-MCP_APPS_HOST 가 꺼져 있으면 다섯 다 404 이고, 권한은 feat:panels 다(B-1 (가)).
+MCP_APPS_HOST 가 꺼져 있으면 다섯 다 404 이고 — 인증 · CSRF 보다 먼저 본다(라우터 의존성 _knob) — 권한은 feat:panels 다(B-1 (가)).
 
   POST /agent/panel/open    {uri, tool, call?}             리소스를 읽어 패널 세션을 연다 → {panel_id, html, csp, prefers_border, …}
   POST /agent/panel/call    {panel_id, name, arguments}    패널의 tools/call — 허용 도구 · 크기 · 누적 · 첫 쓰기 확인 → CallToolResult 그대로
-  POST /agent/panel/read    {panel_id, uri}                패널의 resources/read — 같은 앱의 ui:// 만(게이트웨이가 다시 막는다)
+  POST /agent/panel/read    {panel_id, uri}                패널의 resources/read — 같은 앱의 ui:// 만(게이트웨이가 다시 막는다) · 동시 · 읽은 양 상한
   POST /agent/panel/confirm {panel_id, token}              첫 쓰기 확인(B-2 (가) — 패널 세션마다 한 번)
   POST /agent/panel/close   {panel_id}                     패널 세션과 게이트웨이 MCP 세션을 닫는다
 
@@ -33,7 +33,7 @@ from urllib.parse import urlparse
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -46,7 +46,16 @@ from app.deps import ensure, get_current_principal, require_csrf
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/agent/panel", tags=["agent-panel"])
+
+def _knob(settings: Settings = Depends(get_settings)) -> None:
+    """박스 손잡이 MCP_APPS_HOST 가 꺼져 있으면 없는 창구와 같은 404 다. 라우터 의존성이라 인증 · CSRF 의존성보다 먼저 돈다 — 꺼진 박스에서는
+    익명 · CSRF 없는 세션 · Bearer PAT 도 401 · 403 이 아니라 같은 404 를 받는다(반대 검토 10-31). 본문이 JSON 이 아니면 FastAPI 가 그보다 먼저
+    422 를 낸다(본문 해석이 의존성보다 앞이다)."""
+    if not settings.mcp_apps_host:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+router = APIRouter(prefix="/agent/panel", tags=["agent-panel"], dependencies=[Depends(_knob)])
 
 FEATURE = "feat:panels"
 UI_HOST_TOKEN = "mcp-apps/1"        # 화면이 호스트 부품을 가졌다는 표지 — 에이전트 서버 ui_panels.HOST_TOKEN 과 같은 글자(두 리포 시험)
@@ -54,8 +63,9 @@ UI_HOST_TOKEN = "mcp-apps/1"        # 화면이 호스트 부품을 가졌다는
 # ── SimFlow 가정(Q-S1 ~ Q-S9 의 답 전) ───────────────────────────────────────────────────────────────────────────
 # ASSUME_MIME — 패널 HTML 의 mimeType(MCP Apps 판의 text/html;profile=mcp-app 과 그냥 text/html). 다른 꼴이면 열지 않는다(Q-S7).
 ASSUME_MIME = ("text/html", "text/html;profile=mcp-app")
-# ASSUME_WRITE_IS_UNKNOWN — 쓰기 판정. 게이트웨이가 읽기로 확인한 도구(/tools-map 의 routine_read)가 아니면 쓰기로 본다. 이름 규칙은 울타리로
-# 쓰지 않는다 — 모르면 확인을 묻는다(Q-S2 의 답이 오면 그 앱의 되돌릴 수 없는 도구 목록과 맞대 본다).
+# ASSUME_WRITE_IS_UNKNOWN — 쓰기 판정. 게이트웨이가 읽기로 확인한 도구(/tools-map 의 panel_read — 앱 표지 readOnlyHint · 박스 읽기 목록 − deny)가
+# 아니면 쓰기로 본다. 이름 규칙은 울타리로 쓰지 않는다 — routine_read(루틴 단계 판정)는 이름의 조회 낱말로도 열어 보지 않는다. 모르면 확인을
+# 묻는다(Q-S2 의 답이 오면 그 앱의 되돌릴 수 없는 도구 목록과 맞대 본다).
 ASSUME_WRITE_IS_UNKNOWN = True
 # ASSUME_CSP_FIELDS — 리소스 _meta.ui.csp 의 칸(Q-S3). 그 밖의 칸(frameDomains · baseUriDomains)은 1단계에서 받지 않는다(frame-src · base-uri 'none').
 ASSUME_CSP_FIELDS = ("connectDomains", "resourceDomains")
@@ -81,13 +91,7 @@ _RESULT_MAX_BYTES = 16 * 1024 * 1024  # 게이트웨이 리소스 상한과 같�
 _client_factory = lambda timeout: httpx.AsyncClient(timeout=timeout)  # noqa: E731
 
 
-def _on(settings: Settings) -> None:
-    """손잡이가 꺼져 있으면 없는 창구와 같다(404) — 켜지 않은 박스에서 이 길이 있는지도 흘리지 않는다."""
-    if not settings.mcp_apps_host:
-        raise AuthError("not found", status_code=404)
-
-
-# ── 게이트웨이 도구 지도(/tools-map) — 도구 → 앱 · 읽기로 확인된 도구 · 앱 라벨. 60초 붙잡고 못 읽으면 마지막으로 읽은 지도(HP-32 와 같다) ──
+# ── 게이트웨이 도구 지도(/tools-map) — 도구 → 앱 · 패널 확인용 읽기(panel_read) · 앱 라벨. 60초 붙잡고 못 읽으면 마지막으로 읽은 지도(HP-32 와 같다) ──
 _GW_MAP: dict = {"at": float("-inf"), "map": None, "read": None, "labels": {}}
 _GW_MAP_TTL_S = 60.0
 
@@ -103,7 +107,7 @@ async def gw_map(settings: Settings) -> dict:
         body = r.json() if r.status_code < 400 else {}
         m = body.get("map")
         if isinstance(m, dict) and m:
-            rr = body.get("routine_read")
+            rr = body.get("panel_read")          # routine_read 가 아니다 — 그것은 이름 낱말로도 연다(울타리가 아니다). 없으면 모른다(다 묻는다)
             _GW_MAP.update(at=now, map={str(k): str(v) for k, v in m.items()},
                            read=frozenset(x for x in rr if isinstance(x, str)) if isinstance(rr, list) else None,
                            labels={str(a.get("app")): str(a.get("label") or a.get("app")) for a in body.get("apps") or []
@@ -266,6 +270,7 @@ class _Panel:
     write_ok: bool = False          # 첫 쓰기 확인을 받았나(B-2 (가) — 세션마다 한 번)
     pending: dict = field(default_factory=dict)   # 기다리는 확인 {토큰: 도구} — 한꺼번에 온 쓰기 여럿이 확인 하나로 풀리게(최근 8개)
     used: int = 0                   # 보낸 인자 바이트 누적(PANEL_SESSION_MAX_MB)
+    read_bytes: int = 0             # 읽기(resources/read)로 받은 바이트 누적 — 보낸 몫과 따로 같은 상한(PANEL_SESSION_MAX_MB)
     calls: int = 0
     sem: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(_INFLIGHT_PER_PANEL))
 
@@ -482,7 +487,6 @@ def _app_tools(tools: list, app: str, gwmap: dict) -> frozenset:
 @router.post("/open")
 async def panel_open(request: Request, body: PanelOpenIn, principal: Principal = Depends(get_current_principal),
                      _csrf: None = Depends(require_csrf), settings: Settings = Depends(get_settings)) -> dict:
-    _on(settings)
     ensure(principal, FEATURE)
     if not body.uri.startswith("ui://"):
         raise AuthError("패널 주소는 ui:// 만 받는다", status_code=422, code="panel_bad_uri")
@@ -534,7 +538,8 @@ async def panel_open(request: Request, body: PanelOpenIn, principal: Principal =
 
 
 def _is_write(name: str, gwmap: dict) -> bool:
-    """쓰기로 보나 — 게이트웨이가 읽기로 확인한 도구만 읽기다. 읽기 목록을 모르면(옛 게이트웨이 · 못 읽음) 다 쓰기로 본다(ASSUME_WRITE_IS_UNKNOWN)."""
+    """쓰기로 보나 — 게이트웨이가 읽기로 확인한 도구(panel_read)만 읽기다. 그 목록을 모르면(옛 게이트웨이 · 못 읽음) 다 쓰기로 본다
+    (ASSUME_WRITE_IS_UNKNOWN)."""
     read = gwmap.get("read")
     return ASSUME_WRITE_IS_UNKNOWN if read is None else name not in read
 
@@ -542,7 +547,6 @@ def _is_write(name: str, gwmap: dict) -> bool:
 @router.post("/call")
 async def panel_call(request: Request, body: PanelCallIn, principal: Principal = Depends(get_current_principal),
                      _csrf: None = Depends(require_csrf), settings: Settings = Depends(get_settings)):
-    _on(settings)
     ensure(principal, FEATURE)
     p = _own(body.panel_id, principal, settings)
     if body.name not in p.allowed or body.name in _DENY_EXACT:
@@ -593,17 +597,26 @@ async def panel_call(request: Request, body: PanelCallIn, principal: Principal =
 @router.post("/read")
 async def panel_read(request: Request, body: PanelReadIn, principal: Principal = Depends(get_current_principal),
                      _csrf: None = Depends(require_csrf), settings: Settings = Depends(get_settings)) -> dict:
-    _on(settings)
     ensure(principal, FEATURE)
     p = _own(body.panel_id, principal, settings)
     if not body.uri.startswith("ui://"):
         raise AuthError("패널은 ui:// 리소스만 읽는다", status_code=422, code="panel_bad_uri")
-    try:
-        res = await p.conn.request("resources/read", {"uri": body.uri}, corr=f"panel:{p.id[:8]}:read")
-    except PanelUpstreamError as exc:
-        if exc.rpc is not None:
-            return {"error": exc.rpc}
-        raise AuthError(f"패널 리소스 읽기 실패 — {exc.message}", status_code=502, code=exc.code) from None
+    cap = settings.panel_session_max_mb * 1024 * 1024
+    over = AuthError(f"이 패널 세션이 읽은 양이 상한 {settings.panel_session_max_mb} MB(PANEL_SESSION_MAX_MB)에 닿았다 — 패널을 다시 연다",
+                     status_code=413, code="session_read_cap")
+    if p.read_bytes >= cap:
+        raise over
+    # /call 과 같은 줄(패널당 동시 _INFLIGHT_PER_PANEL) — 끝없는 루프 패널이 읽기로 게이트웨이를 두드리거나 큰 답을 한꺼번에 쥐지 않게(반대 검토 10-31)
+    async with p.sem:
+        try:
+            res = await p.conn.request("resources/read", {"uri": body.uri}, corr=f"panel:{p.id[:8]}:read")
+        except PanelUpstreamError as exc:
+            if exc.rpc is not None:
+                return {"error": exc.rpc}
+            raise AuthError(f"패널 리소스 읽기 실패 — {exc.message}", status_code=502, code=exc.code) from None
+        p.read_bytes += len(json.dumps(res, ensure_ascii=False).encode("utf-8"))
+        if p.read_bytes > cap:
+            raise over                  # 받은 것은 세되 화면으로 옮기지 않는다 — 다음 읽기는 게이트웨이에 묻지 않는다
     return {"result": res}
 
 
@@ -611,7 +624,6 @@ async def panel_read(request: Request, body: PanelReadIn, principal: Principal =
 async def panel_confirm(request: Request, body: PanelConfirmIn, principal: Principal = Depends(get_current_principal),
                         _csrf: None = Depends(require_csrf), settings: Settings = Depends(get_settings)) -> dict:
     """첫 쓰기 확인 — 포털이 그린 확인 창의 단추가 부른다(패널은 이 창구에 닿지 못한다 — 브리지는 tools/call 만 옮긴다). 기다리는 확인의 토큰만 받는다."""
-    _on(settings)
     ensure(principal, FEATURE)
     p = _own(body.panel_id, principal, settings)
     tool = next((t for k, t in p.pending.items() if secrets.compare_digest(k, body.token)), None)
@@ -625,8 +637,7 @@ async def panel_confirm(request: Request, body: PanelConfirmIn, principal: Princ
 
 @router.post("/close")
 async def panel_close(request: Request, body: PanelCloseIn, principal: Principal = Depends(get_current_principal),
-                      _csrf: None = Depends(require_csrf), settings: Settings = Depends(get_settings)) -> dict:
-    _on(settings)
+                      _csrf: None = Depends(require_csrf)) -> dict:
     p = _TABLE.get(body.panel_id)
     if p is None or p.owner != principal.subject:
         return {"ok": True}          # 이미 닫혔거나 남의 것 — 같은 답(있다는 사실을 흘리지 않는다)

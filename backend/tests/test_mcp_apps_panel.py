@@ -4,9 +4,11 @@
 (패널 PAT 의 꼴 · 서명 · 부르는 도구)를 가짜가 받은 그대로 판정한다.
 """
 import ast
+import asyncio
 import json
 import os
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -31,6 +33,8 @@ class _FakeGW:
 
     def __init__(self, *, mime="text/html;profile=mcp-app", html=_HTML, read=("list_runs", "open_workflow_panel"), csp=None, missing=False,
                  old_key=False):
+        # read — 게이트웨이가 확인한 읽기(/tools-map 의 panel_read — 표지 · 읽기 목록). None 이면 panel_read 칸이 없는 게이트웨이(옛 판)다.
+        # routine_read(루틴 단계 판정 — 이름 낱말로도 연다)는 늘 싣는다 — 포털 패널 확인이 그것을 보지 않는지 가린다.
         self.mime, self.html, self.read, self.csp, self.missing = mime, html, read, csp, missing
         self.old_key = old_key             # 패널 도구가 옛 키("ui/resourceUri")만 단다 — 다른 판의 앱(B7 사양 판 어긋남)
         self.reqs: list[dict] = []
@@ -42,8 +46,9 @@ class _FakeGW:
         if request.url.path == "/tools-map":
             return httpx.Response(200, json={
                 "map": {"open_workflow_panel": "simflow", "list_runs": "simflow", "submit_run": "simflow", "model_only": "simflow",
-                        "trash_report": "simflow", "arp_list": "arp", "invoke_tool": "_gateway"},
-                "routine_read": list(self.read) if self.read is not None else None,
+                        "trash_report": "simflow", "job_info_cleanup": "simflow", "arp_list": "arp", "invoke_tool": "_gateway"},
+                "routine_read": sorted({*(self.read or ()), "list_runs", "job_info_cleanup"}),
+                **({"panel_read": list(self.read)} if self.read is not None else {}),
                 "apps": [{"app": "simflow", "label": "SimFlow"}, {"app": "arp", "label": "ARP"}]})
         assert request.url.path == "/mcp", request.url
         sid = request.headers.get("mcp-session-id", "")
@@ -68,7 +73,7 @@ class _FakeGW:
             return httpx.Response(404, json={"error": "session not found"})
         if m == "tools/list":
             tools = [{"name": n, "inputSchema": {"type": "object"}} for n in ("list_runs", "submit_run", "trash_report", "arp_list",
-                                                                                  "invoke_tool")]
+                                                                                  "invoke_tool", "job_info_cleanup")]
             tools.append({"name": "open_workflow_panel", "inputSchema": {"type": "object"},
                           "_meta": {"ui/resourceUri": _URI} if self.old_key else {"ui": {"resourceUri": _URI}}})
             tools.append({"name": "model_only", "inputSchema": {"type": "object"}, "_meta": {"ui": {"visibility": ["model"]}}})
@@ -149,6 +154,25 @@ def test_P3_손잡이가_끄면_다섯_창구가_다_404(kit):
     assert gw.reqs == [], "꺼진 박스는 게이트웨이를 부르지 않는다"
 
 
+def test_P3_손잡이가_끄면_인증_CSRF_보다_먼저_404_다(kit):
+    """B-1 (가) — 꺼진 박스의 패널 창구는 없는 창구와 같다. 로그인하지 않은 요청 · CSRF 없는 세션 · Bearer PAT 도 401 · 403 이 아니라 같은 404 다
+    (종전엔 인증 · CSRF 의존성이 손잡이 검사보다 먼저 돌아 익명은 401, CSRF 없는 세션은 403 이었다 — 반대 검토 10-31)."""
+    c, gw, _ = kit(on=False)
+    body = {"uri": _URI, "tool": "open_workflow_panel"}
+    anon = [c.post(f"/agent/panel/{p}", json=b) for p, b in (("open", body), ("call", {"panel_id": "x" * 10, "name": "list_runs"}),
+                                                              ("close", {"panel_id": "x" * 10}))]
+    h = _login(c, "boss@corp.com")
+    no_csrf = c.post("/agent/panel/open", json=body)
+    full = c.post("/agent/panel/open", json=body, headers=h)
+    pat = c.post("/auth/pat", json={"name": "t", "ttl_days": 1}, headers=h).json()["token"]
+    c.cookies.clear()
+    bearer = c.post("/agent/panel/open", json=body, headers={"Authorization": f"Bearer {pat}"})
+    got = [*anon, no_csrf, full, bearer]
+    assert [r.status_code for r in got] == [404] * len(got), [(r.status_code, r.text) for r in got]
+    assert len({r.text for r in got}) == 1, "누가 어떻게 물어도 같은 답이다"
+    assert gw.reqs == []
+
+
 def test_P3_세션과_CSRF_로만_받는다_PAT_는_받지_않는다(kit):
     c, gw, _ = kit()
     h = _login(c, "boss@corp.com")
@@ -190,7 +214,7 @@ def test_P3_열면_패널_PAT_로_게이트웨이를_부르고_HTML_과_허용_�
     j = r.json()
     assert j["html"] == _HTML and j["app"] == "simflow" and j["app_label"] == "SimFlow" and j["uri"] == _URI
     assert j["prefers_border"] is False and j["csp"] == {"connectDomains": [], "resourceDomains": []}
-    assert j["tools"] == ["list_runs", "open_workflow_panel", "submit_run"], "앱 밖 · 막음 · 모델 전용 도구는 뺀다"
+    assert j["tools"] == ["job_info_cleanup", "list_runs", "open_workflow_panel", "submit_run"], "앱 밖 · 막음 · 모델 전용 도구는 뺀다"
     auths = {x["auth"] for x in gw.reqs}
     assert len(auths) == 1
     tok = auths.pop().removeprefix("Bearer ")
@@ -290,11 +314,23 @@ def test_P3_첫_쓰기는_확인을_묻고_확인_뒤에는_묻지_않는다(kit
     for _ in range(2):
         assert c.post("/agent/panel/call", json={"panel_id": pid, "name": "submit_run", "arguments": {}}, headers=h).status_code == 200
     assert len(gw.calls()) == 2
-    # 읽기 목록을 모르는 게이트웨이(옛 판)면 읽기 도구도 쓰기로 본다(모르면 묻는다)
+    # 패널 확인용 읽기 목록(panel_read)이 없는 게이트웨이(옛 판)면 읽기 도구도 쓰기로 본다(모르면 묻는다) — 루틴 판정(routine_read)으로 떨어지지 않는다
     c2, gw2, _ = kit(fake=_FakeGW(read=None))
     h2 = _login(c2, "boss@corp.com")
     pid2 = _open(c2, h2).json()["panel_id"]
     assert c2.post("/agent/panel/call", json={"panel_id": pid2, "name": "list_runs", "arguments": {}}, headers=h2).status_code == 409
+
+
+def test_P3_첫_쓰기_확인은_게이트웨이가_확인한_읽기만_읽기로_보고_이름_낱말로_읽기인_도구는_묻는다(kit):
+    """B-2 (가) — 쓰기 판정은 /tools-map 의 panel_read(앱 표지 readOnlyHint · 박스 읽기 목록 − deny)만 본다. routine_read 는 루틴 단계 판정이라 이름의
+    조회 낱말로도 연다 — job_info_cleanup(info) 같은 쓰기 꼴이 그 목록에 들어 패널의 첫 호출이 확인 없이 지났다(반대 검토 10-31)."""
+    c, gw, _ = kit()
+    h = _login(c, "boss@corp.com")
+    pid = _open(c, h).json()["panel_id"]
+    r = c.post("/agent/panel/call", json={"panel_id": pid, "name": "job_info_cleanup", "arguments": {}}, headers=h)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "confirm_required" and gw.calls() == [], r.text
+    assert c.post("/agent/panel/call", json={"panel_id": pid, "name": "list_runs", "arguments": {}}, headers=h).status_code == 200, \
+        "확인된 읽기(panel_read)는 묻지 않는다"
 
 
 def test_P3_한꺼번에_온_쓰기_둘은_확인_하나로_풀린다(kit):
@@ -343,6 +379,63 @@ def test_P3_게이트웨이를_재기동해_세션을_잃으면_한_번_다시_�
     gw.sids.clear()                                        # 게이트웨이가 다시 떴다 — 옛 세션 id 는 404
     r = c.post("/agent/panel/call", json={"panel_id": pid, "name": "list_runs", "arguments": {}}, headers=h)
     assert r.status_code == 200 and len(gw.calls()) == 1 and gw.n == 2
+
+
+class _SlowGW(_FakeGW):
+    """느린 게이트웨이 — 시작 뒤(ready) resources/read · tools/call 을 0.3초 붙잡고 동시에 든 수의 꼭대기를 센다."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.now = {"resources/read": 0, "tools/call": 0}
+        self.peak = {"resources/read": 0, "tools/call": 0}
+        self.ready = False
+
+    async def ahandler(self, request: httpx.Request) -> httpx.Response:
+        m = json.loads(request.content).get("method") if request.url.path == "/mcp" and request.method == "POST" else None
+        if self.ready and m in self.now:
+            self.now[m] += 1
+            self.peak[m] = max(self.peak[m], self.now[m])
+            await asyncio.sleep(0.3)
+            self.now[m] -= 1
+        return self.handler(request)
+
+
+def test_P3_패널의_리소스_읽기도_호출처럼_패널당_동시_4_까지만_게이트웨이에_간다(kit, monkeypatch):
+    """B7 무거운 패널 — 끝없는 루프 패널이 resources/read 를 브리지 상한(초당 50)까지 되풀이해도 한 패널의 게이트웨이 요청은 동시 4 까지다
+    (_INFLIGHT_PER_PANEL — /call 과 같은 줄). 종전엔 읽기가 줄을 서지 않아 24건이 한꺼번에 게이트웨이에 닿았다(반대 검토 10-31)."""
+    gw = _SlowGW()
+    c, _gw, _ = kit(fake=gw)
+    transport = httpx.MockTransport(gw.ahandler)
+    monkeypatch.setattr(P, "_client_factory", lambda timeout: httpx.AsyncClient(timeout=timeout, transport=transport))
+    h = _login(c, "boss@corp.com")
+    pid = _open(c, h).json()["panel_id"]
+    gw.ready = True
+    with ThreadPoolExecutor(16) as ex:
+        reads = list(ex.map(lambda _i: c.post("/agent/panel/read", json={"panel_id": pid, "uri": _URI}, headers=h).status_code, range(16)))
+    with ThreadPoolExecutor(16) as ex:
+        calls = list(ex.map(lambda _i: c.post("/agent/panel/call", json={"panel_id": pid, "name": "list_runs", "arguments": {}},
+                                              headers=h).status_code, range(16)))
+    assert reads == [200] * 16 and calls == [200] * 16
+    assert 1 < gw.peak["resources/read"] <= P._INFLIGHT_PER_PANEL, gw.peak   # 1 보다 크다 — 동시에 들어오기는 했다(빈 판정이 아니다)
+    assert 1 < gw.peak["tools/call"] <= P._INFLIGHT_PER_PANEL, gw.peak
+
+
+def test_P3_패널이_읽은_양에도_세션_상한이_있다(kit):
+    """B7 업로드 크기 · 무거운 패널 — 읽기로 받은 바이트도 세션마다 센다(PANEL_SESSION_MAX_MB, 보낸 인자와 따로). 넘긴 읽기는 화면으로 옮기지 않고,
+    다 쓴 세션은 게이트웨이에 묻지 않고 413 이다(다시 열면 새 세션)."""
+    c, gw, _ = kit(panel_session_max_mb=1)
+    h = _login(c, "boss@corp.com")
+    pid = _open(c, h).json()["panel_id"]
+    assert c.post("/agent/panel/read", json={"panel_id": pid, "uri": _URI}, headers=h).status_code == 200
+    P._TABLE[pid].read_bytes = 1024 * 1024 - 10
+    n = len(gw.calls("resources/read"))
+    over = c.post("/agent/panel/read", json={"panel_id": pid, "uri": _URI}, headers=h)
+    assert over.status_code == 413 and over.json()["detail"]["code"] == "session_read_cap" and _HTML not in over.text, over.text
+    assert len(gw.calls("resources/read")) == n + 1
+    again = c.post("/agent/panel/read", json={"panel_id": pid, "uri": _URI}, headers=h)
+    assert again.status_code == 413 and len(gw.calls("resources/read")) == n + 1, "다 쓴 세션은 게이트웨이에 묻지 않는다"
+    assert c.post("/agent/panel/call", json={"panel_id": pid, "name": "list_runs", "arguments": {}}, headers=h).status_code == 200, \
+        "읽은 양은 보낸 인자의 몫(호출)과 따로다"
 
 
 def test_P3_패널의_리소스_읽기는_ui_주소만(kit):
@@ -497,6 +590,18 @@ def test_P3_게이트웨이_판별_글자가_포털_발급기와_같다():
         panel_pat.PANEL_PURPOSE, panel_pat.PANEL_JTI_PREFIX, panel_pat.PANEL_AUDIENCE)
     assert panel_pat.PANEL_TTL_S <= lit["PANEL_MAX_TTL_S"]
     assert Settings().panel_pat_audience == panel_pat.PANEL_AUDIENCE
+
+
+def test_P3_게이트웨이_tools_map_이_패널_확인용_읽기_칸을_싣는다():
+    """포털 쓰기 판정(_is_write)은 /tools-map 의 panel_read 칸만 본다 — 칸 이름이 어긋나면 모든 패널 호출이 확인을 묻는다(닫힌 쪽이라 새지는 않지만
+    파일럿이 쓸 수 없다). 패널 PAT 를 아는 게이트웨이면 그 칸과 판정기(_panel_read)가 있어야 한다."""
+    gw = _sibling("HWAX_GATEWAY_REPO", "HWAXMcpGateway") / "gateway.py"
+    if not gw.exists():
+        pytest.skip(f"형제 게이트웨이 리포 없음: {gw}")
+    src = gw.read_text(encoding="utf-8")
+    if "PANEL_PURPOSE" not in _module_literals(gw):
+        pytest.skip("형제 게이트웨이가 아직 패널 PAT 를 모른다 — 패널 창구가 열리지 않는다")
+    assert '"panel_read": sorted(' in src and "def _panel_read(" in src, "게이트웨이 /tools-map 에 panel_read 가 없다"
 
 
 def test_P3_에이전트_서버_표지_글자와_요청_칸이_같다():
