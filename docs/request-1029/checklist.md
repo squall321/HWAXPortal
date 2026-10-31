@@ -58,7 +58,8 @@
   - [x] E2-2 가족 접기 — 원래 이름으로 한 줄 · `same_in` 의 `differs` · 설명이 같으면 기준본과 바이트까지 같다(같은 커밋, C-34)
   - [x] E2-3 가족은 늘 접두 — 옛 맨 이름은 호출 별칭으로 남기고 알린다(Q-2 — C-33) · 가족 · 형제 소개 줄이 바뀌면 다시 집계(같은 커밋)
   - [x] E2-4 형제 소개 줄 칸 — 게이트웨이(같은 커밋) · 포털 꼴 시험(형제에만 · 120자) · 표 설명(4ebf32e) — 문안은 운영자(아래 사람 몫)
-  - [x] E2-5 비코어 낮추기 손잡이 `noncore_demote`(기본 끔 — C-36) · `weights.noncore` 0.5 · `/search-eval` 의 `+noncore_demote` 판(같은 커밋)
+  - [x] E2-5 비코어 낮추기 손잡이 `noncore_demote`(기본 끔 — C-36) · `weights.noncore` 0.5 · `/search-eval` 의 `+noncore_demote` 판(같은 커밋) ·
+    피드백 보고서가 감점 규칙을 '보정 덕에만' 에 싣지 않는다(8186d9a) · 검토 화면의 판 · 규칙 이름(462887b)
   - [~] E2-6 형제 순위 신호(S-A) — 미룸(설계 1.4 — cae00 M-5 · M-6 에서 형제가 잘못 오르거나 밀릴 때만)
   - [ ] cae00 반영 뒤 M-2 · M-3 다시 — 바뀐 이름 0(`roles.family_prefixed.count`) · 접힌 줄 그대로(사람 · cae00 세션, server-setup 8절)
   - [ ] 비코어 낮추기 켜기 — cae00 `/search-eval` 의 `+noncore_demote` 판을 본 뒤 박스 덧씌우기(사람, Q-1 · server-setup 8.3)
