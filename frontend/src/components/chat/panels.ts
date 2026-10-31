@@ -15,7 +15,8 @@ export function panelPointer(e: UiResourceEvent | null | undefined): PanelPointe
     tool: e.tool.slice(0, 200),
     app: String(e.app ?? '').slice(0, 120),
     uri: e.uri,
-    ...(okInput(e.input) ? { input: e.input } : {}),
+    // 상한을 넘어 입력을 뺀 사건(input_cut — 에이전트가 {} 로 비운다)은 입력을 모르는 것이다 — 빈 인자로 남기지 않는다(다시 열 때 지어 보내지 않게)
+    ...(okInput(e.input) && !e.input_cut ? { input: e.input } : {}),
   };
   rememberLive(panelKey(p), e.result && typeof e.result === 'object' ? e.result : null);
   return p;

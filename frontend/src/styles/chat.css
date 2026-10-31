@@ -571,15 +571,35 @@ ol.md-list li.md-li-d2 {
 .mcp-panel-reopen {
   margin-left: auto;
 }
+/* 첫 쓰기 확인 — iframe 위의 덮개다(흐름에 끼우면 패널이 밀려 사람의 다음 누름이 '허용' 에 떨어진다 — B-2 클릭재킹, 반대 검토 10-31) */
+.mcp-panel-body {
+  position: relative;
+}
 .mcp-panel-ask {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.6rem;
-  background: var(--warn-bg);
-  border-bottom: 1px solid var(--warn-border);
+  justify-content: center;
+  padding: 0.6rem;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.55);
+}
+.mcp-panel-ask-box {
+  max-width: 34rem;
+  padding: 0.7rem 0.8rem;
+  background: var(--surface-1);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-2);
   font-size: 0.85rem;
+}
+.mcp-panel-ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
 }
 .mcp-panel-note {
   padding: 0.35rem 0.6rem;

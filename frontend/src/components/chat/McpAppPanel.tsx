@@ -5,10 +5,15 @@
 //    크기 · 초당 수 상한. 모르는 요청은 오류로 답한다(조용히 삼키지 않는다).
 //  · 패널이 부르는 tools/call · resources/read 는 포털 창구(/agent/panel/*)로만 간다 — 패널 PAT(그 앱 · 그 주소 · 15분)로 게이트웨이에 닿는다.
 //  · 모델 맥락을 바꾸는 메서드(ui/update-model-context · ui/message)는 1단계에서 받지 않는다(B-5 (가)).
-//  · 패널이 스스로 다른 문서로 이동하면(두 번째 load) 접는다 — sandbox · CSP 로 막을 수 없는 길이다(B7 자료 빼내기).
+//  · 패널 문서가 떠나면(beforeunload · pagehide — 포털이 패널 문서 맨 앞에 넣은 시작 스크립트가 이 열기의 열쇠로 알린다) 그 자리에서 브리지를 닫고
+//    (동기 dead 표지 — onMessage · post 맨 앞) 포털 세션을 닫는다. 바깥 출처로의 자기 이동은 포털 문서의 CSP(frame-src, index.html)가 막고, 같은 출처로 가더라도 새 문서는 브리지를
+//    넘겨받지 못한다(B7 자료 빼내기 · 대리 호출 — 반대 검토 10-31). 두 번째 load 도 그대로 접는다(알림이 오지 않는 꼴의 덧막이).
+//  · tool-input · tool-result 는 열 때 한 번만 보낸다. 입력을 모르면(서버 사본) tool-input 을 지어 보내지 않는다.
+//  · 첫 쓰기 확인은 패널을 밀지 않는 덮개다 — 묻는 동안 iframe 은 누름을 받지 않고, 뜬 뒤 ASK_ARM_MS 동안 '허용' 은 눌리지 않는다(B-2 클릭재킹).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callPanel, closePanel, confirmPanel, openPanel, PanelError, readPanel, type PanelOpened } from '../../api/panel.api';
 import {
+  ASK_ARM_MS,
   ASSUME_PROTOCOL_VERSIONS,
   HEIGHT_DEFAULT,
   HEIGHT_MAX,
@@ -18,8 +23,10 @@ import {
   buildPanelDoc,
   claimSlot,
   clampHeight,
+  isLeave,
   linkAllowed,
   liveResult,
+  newLeaveKey,
   panelKey,
   rateGate,
   releaseSlot,
@@ -56,6 +63,8 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
   const [height, setHeight] = useState(HEIGHT_DEFAULT);
   const [note, setNote] = useState('');
   const [ask, setAsk] = useState<{ tool: string; resolve: (ok: boolean) => void } | null>(null);
+  const [armed, setArmed] = useState(false); // 확인이 뜬 뒤 ASK_ARM_MS 가 지나야 '허용' 을 받는다
+  const [leaveKey, setLeaveKey] = useState(''); // 이 열기의 떠남 알림 열쇠 — 패널 문서의 시작 스크립트에 싣는다
   const frame = useRef<HTMLIFrameElement | null>(null);
   const openedRef = useRef<PanelOpened | null>(null);
   const loads = useRef(0);
@@ -64,8 +73,11 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
   const autoDone = useRef(liveResult(key) === undefined);   // 기록에서 온 포인터는 저절로 열지 않는다
   const gen = useRef(0);    // 여는 차례 — 여는 중에 접히거나 닫히면 늦게 온 열기 답을 버리고 그 세션을 닫는다
   const asking = useRef<Promise<boolean> | null>(null);   // 묻는 확인 하나 — 한꺼번에 온 쓰기 여럿이 같은 답을 기다린다
+  const dead = useRef(false); // 패널 문서가 떠났다 — 그 iframe 창과는 더 주고받지 않는다(다시 열면 새 iframe 이라 푼다)
+  const fed = useRef(false);  // tool-input · tool-result 를 보냈다 — 열 때 한 번만
 
   const post = useCallback((msg: RpcMsg) => {
+    if (dead.current) return; // 떠난 문서 자리에 온 새 문서(바깥 · 같은 출처)에는 답 · 알림을 보내지 않는다
     frame.current?.contentWindow?.postMessage(msg, '*');
   }, []);
 
@@ -91,6 +103,7 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
         if (wait) await done;
         pending.current.delete(id);
       }
+      dead.current = true; // 이제 iframe 을 치운다 — 그 문서가 내려가며 보내는 떠남 알림 · 메시지는 받지 않는다(닫기를 '이동' 으로 읽지 않게)
       if (o) void closePanel(o.panel_id);
       setOpened(null);
       setNote(why);
@@ -98,6 +111,12 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
     },
     [key, post],
   );
+
+  /** 패널 문서가 떠났다(떠남 알림 · 두 번째 load) — 동기로 dead 를 세워 그 뒤 메시지를 받지도 보내지도 않고, 기다리지 않고 포털 세션을 닫는다. */
+  const left = useCallback(() => {
+    dead.current = true;
+    void shut('folded', '패널이 다른 문서로 이동하려 해 닫았다', false);
+  }, [shut]);
 
   const open = useCallback(async () => {
     const my = ++gen.current;
@@ -108,10 +127,13 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
     try {
       const o = await openPanel(pointer.uri, pointer.tool, pointer.call);
       if (gen.current !== my) {
-        void closePanel(o.panel_id); // 여는 중에 접혔다 · 닫혔다 — 막 연 포털 세션을 닫는다(그리지 않는다)
+        void closePanel(o.panel_id); // 여는 중에 접혔다 · 닫혔다 · 내려갔다 — 막 연 포털 세션을 닫는다(그리지 않는다)
         return;
       }
+      dead.current = false; // 새 iframe — 옛 iframe 창의 메시지는 event.source 가 달라 받지 않는다
+      fed.current = false;
       openedRef.current = o;
+      setLeaveKey(newLeaveKey());
       setOpened(o);
       setHeight(HEIGHT_DEFAULT);
       setPhase('open');
@@ -131,15 +153,31 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
     }
   }, [phase, open]);
 
-  // 메시지가 지워지거나(언마운트) 탭을 떠나면 teardown 을 보내고 닫는다(기다리지 않는다)
+  // 메시지가 지워지거나(언마운트) 탭을 떠나면 teardown 을 보내고 닫는다(기다리지 않는다). 여는 중에 내려가면(대화 옮김 · 서버 사본 교체로 줄이
+  // 다시 선다) 차례(gen)를 올려 늦게 온 열기 답의 포털 세션을 open 이 닫게 하고 자리도 돌려준다(반대 검토 10-31 — 종전엔 세션이 청소까지 남았다).
   useEffect(() => {
     const away = () => void shut('closed', '', false);
     window.addEventListener('pagehide', away);
     return () => {
       window.removeEventListener('pagehide', away);
-      if (openedRef.current) away();
+      if (openedRef.current) {
+        away();
+        return;
+      }
+      gen.current += 1;
+      releaseSlot(key);
+      // StrictMode(개발)는 붙자마자 정리를 한 번 흉내 내고 다시 붙인다 — 저절로 열기를 되돌려 다시 붙을 때 다시 연다(실제 언마운트는 다시 붙지 않는다)
+      autoDone.current = liveResult(key) === undefined;
     };
-  }, [shut]);
+  }, [shut, key]);
+
+  // 확인이 뜨면 잠깐 '허용' 을 받지 않는다 — 패널이 고른 순간에 띄운 확인에 사람의 다음 누름이 떨어지지 않게(B-2 클릭재킹)
+  useEffect(() => {
+    setArmed(false);
+    if (!ask) return;
+    const t = window.setTimeout(() => setArmed(true), ASK_ARM_MS);
+    return () => window.clearTimeout(t);
+  }, [ask]);
 
   // 브리지
   useEffect(() => {
@@ -160,11 +198,16 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
         }),
       ));
 
+    // 열 때 한 번만 — initialized 를 되풀이해 입력 · 결과(_meta 포함)를 다시 받는 길로 쓰이지 않게. 입력을 모르면(서버 사본 · 큰 입력은 브라우저
+    // 사본에 없다) 빈 인자를 지어 보내지 않는다 — 패널이 '인자 없이 불렸다' 로 읽는다(반대 검토 10-31).
     const sendInput = () => {
-      post({ jsonrpc: '2.0', method: 'ui/notifications/tool-input', params: { arguments: pointer.input ?? {} } });
+      if (fed.current) return;
+      fed.current = true;
+      if (pointer.input) post({ jsonrpc: '2.0', method: 'ui/notifications/tool-input', params: { arguments: pointer.input } });
       const res = liveResult(key);
       if (res) post({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { ...res, isError: false } });
-      else if (res === undefined) setNote('결과는 그 탭에만 있었다 — 입력만 다시 보냈다');
+      else if (res === undefined)
+        setNote(pointer.input ? '결과는 그 탭에만 있었다 — 입력만 다시 보냈다' : '입력 · 결과가 이 기기에 없다 — 패널을 입력 없이 열었다');
     };
 
     const callTool = async (m: RpcMsg) => {
@@ -251,6 +294,9 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
     };
 
     const onMessage = (ev: MessageEvent) => {
+      if (dead.current) return; // 떠난 문서의 자리에 온 새 문서는 같은 창(WindowProxy)이라 event.source 로는 가를 수 없다
+      // 떠남 알림은 열쇠로만 가린다 — 떠나는 문서의 event.source 는 그 iframe 창과 같지 않을 수 있다(10-31 실측). 열쇠는 이 패널 문서에만 있다
+      if (isLeave(ev.data, leaveKey)) return left();
       const win = frame.current?.contentWindow;
       if (!win || ev.source !== win) return; // 다른 창 · 다른 패널의 메시지는 받지 않는다
       const m = rpcOf(ev.data);
@@ -265,14 +311,14 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [phase, opened, pointer.input, pointer.tool, key, post]);
+  }, [phase, opened, pointer.input, pointer.tool, key, post, leaveKey, left]);
 
   const onLoad = () => {
     loads.current += 1;
-    if (loads.current > 1) void shut('folded', '패널이 다른 문서로 이동하려 해 닫았다', false);
+    if (loads.current > 1) left(); // 떠남 알림이 오지 않은 꼴의 덧막이(load 를 미루는 문서에는 늦다 — 알림이 먼저다)
   };
 
-  const doc = useMemo(() => (opened ? buildPanelDoc(opened.html, opened.csp) : ''), [opened]);
+  const doc = useMemo(() => (opened ? buildPanelDoc(opened.html, opened.csp, leaveKey) : ''), [opened, leaveKey]);
   const label = opened?.app_label || pointer.title || pointer.app || '앱';
   return (
     <section className={`mcp-panel is-${phase}`} data-panel={key}>
@@ -291,33 +337,45 @@ export function McpAppPanel({ pointer }: { pointer: PanelPointer }) {
           </button>
         )}
       </header>
-      {ask && (
-        <div className="mcp-panel-ask" role="alertdialog" aria-label="패널 쓰기 확인">
-          <span>
-            ⚠ {label} 패널이 쓰기 · 작업 제출 도구 <code>{ask.tool}</code> 을(를) 부르려 한다. 이 패널 세션에서 허용할까?
-          </span>
-          <button type="button" className="btn-primary mcp-panel-allow" onClick={() => { ask.resolve(true); setAsk(null); }}>
-            허용
-          </button>
-          <button type="button" className="btn-secondary mcp-panel-deny" onClick={() => { ask.resolve(false); setAsk(null); }}>
-            거절
-          </button>
-        </div>
-      )}
       {note && <div className="mcp-panel-note">{note}</div>}
       {phase === 'opening' && <div className="mcp-panel-note">패널을 여는 중…</div>}
       {phase === 'open' && opened && (
-        <iframe
-          ref={frame}
-          className={`mcp-panel-frame${opened.prefers_border ? ' has-border' : ''}`}
-          title={`${label} 패널`}
-          sandbox={SANDBOX}
-          referrerPolicy="no-referrer"
-          allow=""
-          srcDoc={doc}
-          style={{ height }}
-          onLoad={onLoad}
-        />
+        <div className="mcp-panel-body">
+          <iframe
+            ref={frame}
+            className={`mcp-panel-frame${opened.prefers_border ? ' has-border' : ''}`}
+            title={`${label} 패널`}
+            sandbox={SANDBOX}
+            referrerPolicy="no-referrer"
+            allow=""
+            srcDoc={doc}
+            style={{ height, ...(ask ? { pointerEvents: 'none' as const } : {}) }}
+            onLoad={onLoad}
+          />
+          {/* 첫 쓰기 확인 — iframe 위의 덮개라 패널을 밀지 않는다(흐름에 끼우면 패널이 밀려 사람의 다음 누름이 '허용' 에 떨어진다 — B-2 클릭재킹) */}
+          {ask && (
+            <div className="mcp-panel-ask" role="alertdialog" aria-modal="true" aria-label="패널 쓰기 확인">
+              <div className="mcp-panel-ask-box">
+                <span>
+                  ⚠ {label} 패널이 쓰기 · 작업 제출 도구 <code>{ask.tool}</code> 을(를) 부르려 한다. 이 패널 세션에서 허용할까?
+                </span>
+                <div className="mcp-panel-ask-actions">
+                  <button
+                    type="button"
+                    className="btn-primary mcp-panel-allow"
+                    disabled={!armed}
+                    onClick={() => { ask.resolve(true); setAsk(null); }}
+                  >
+                    허용
+                  </button>
+                  <button type="button" className="btn-secondary mcp-panel-deny" onClick={() => { ask.resolve(false); setAsk(null); }}>
+                    거절
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </section>
   );

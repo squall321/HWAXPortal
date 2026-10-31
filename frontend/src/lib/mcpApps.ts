@@ -15,6 +15,8 @@ export const HEIGHT_DEFAULT = 360;
 export const MAX_OPEN = 2; // 탭에 열어 두는 패널 수 — 셋째를 열면 가장 오래된 것을 접는다
 export const RATE_PER_SEC = 50; // 패널 하나가 1초에 보낼 수 있는 메시지 — 넘으면 답하지 않고 버린다(끝없는 루프 패널)
 export const MSG_MAX_CHARS = 5 * 1024 * 1024; // 메시지 하나의 JSON 길이 위쪽(포털 호출 상한 4 MiB + 여유)
+// 첫 쓰기 확인이 뜬 뒤 '허용' 을 받지 않는 시간 — 패널이 고른 순간에 띄운 확인에 사람의 다음 누름(두 번 누르기 · 마법사의 '다음')이 떨어지지 않게(B-2 클릭재킹)
+export const ASK_ARM_MS = 800;
 
 // 1단계에서 받지 않는 패널 메서드(B-5 (가)) — '지원 안 함' 오류로 답한다(조용히 삼키지 않는다)
 export const UNSUPPORTED = new Set(['ui/update-model-context', 'ui/message', 'ui/request-display-mode']);
@@ -53,12 +55,39 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
-/** srcdoc 문서 — CSP 메타가 문서 맨 앞(head 의 첫 자식)이다. 앱 문서를 그 뒤에 그대로 잇는다(두 번째 doctype · html · head 는 파서가 버리고
- *  앱의 head 내용이 우리 head 에 이어진다). 앱이 제 CSP 를 더 넣어도 둘 다 걸려 더 좁아질 뿐이다. */
-export function buildPanelDoc(html: string, csp: PanelCsp | undefined): string {
+/** 떠남 알림의 열쇠 — 패널을 열 때마다 새로 짓는다. 시작 스크립트가 pagehide 에 싣고, 화면은 이 열쇠가 맞는 알림만 떠남으로 본다. */
+export function newLeaveKey(): string {
+  const b = new Uint32Array(4);
+  crypto.getRandomValues(b); // 보안 문맥이 아니어도 있다(randomUUID 와 다르다)
+  return Array.from(b, (x) => x.toString(16).padStart(8, '0')).join('');
+}
+
+/** 패널 문서가 떠난다는 알림인가 — 시작 스크립트가 보낸 꼴({hwaxPanelLeave: 열쇠})이고 열쇠가 이 패널의 것일 때만. */
+export function isLeave(data: unknown, key: string): boolean {
+  return !!key && !!data && typeof data === 'object' && (data as { hwaxPanelLeave?: unknown }).hwaxPanelLeave === key;
+}
+
+/** 시작 스크립트 — 패널 문서가 떠나려 할 때(beforeunload — 스스로 다른 문서로 가는 이동이 시작될 때, 새 문서의 요청보다 먼저) 와 내려갈 때(pagehide
+ *  — 다시 읽기 · 지워짐 등 beforeunload 가 없는 길) 떠남을 알린다. 앱 스크립트보다 먼저 돌아 부모 창을 먼저 쥐고(앱이 parent 를 바꿔 끼워도 알림은
+ *  간다), 듣기도 먼저 단다. 화면은 이 알림에서 브리지를 바로 닫는다 — 새 문서(바깥 · 같은 출처)가 브리지를 넘겨받지 못하게(B7 자료 빼내기 · 대리
+ *  호출). pagehide 만으로는 늦을 수 있다 — 다른 프로세스로 가는 이동은 새 문서가 먼저 돌 수 있다(10-31 실측). load 를 세는 것은 load 를 미루는
+ *  문서에 늦는다. 떠나는 문서의 event.source 는 그 iframe 창과 같지 않을 수 있어(실측) 화면은 열쇠로만 가린다. */
+function leaveScript(key: string): string {
+  return (
+    '<script>(function(){var p=window.parent,k="' + key.replace(/[^0-9a-f]/g, '') + '";' +
+    'function s(){try{p.postMessage({hwaxPanelLeave:k},"*")}catch(e){}}' +
+    'window.addEventListener("beforeunload",s,true);window.addEventListener("pagehide",s,true)})()</script>'
+  );
+}
+
+/** srcdoc 문서 — CSP 메타가 문서 맨 앞(head 의 첫 자식)이고, 바로 뒤에 떠남 알림 시작 스크립트(leaveKey 가 있을 때)가 온다. 앱 문서를 그 뒤에
+ *  그대로 잇는다(두 번째 doctype · html · head 는 파서가 버리고 앱의 head 내용이 우리 head 에 이어진다). 앱이 제 CSP 를 더 넣어도 둘 다 걸려 더
+ *  좁아질 뿐이다. */
+export function buildPanelDoc(html: string, csp: PanelCsp | undefined, leaveKey = ''): string {
   return (
     '<!doctype html><html><head>' +
     `<meta http-equiv="Content-Security-Policy" content="${escapeAttr(buildCsp(csp))}">` +
+    (leaveKey ? leaveScript(leaveKey) : '') +
     '<meta name="referrer" content="no-referrer">' +
     html
   );

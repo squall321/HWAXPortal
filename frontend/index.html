@@ -2,6 +2,9 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
+    <!-- 포털 문서가 띄우는 틀은 같은 출처(SSO 미리 태우기)와 srcdoc(미리보기 · MCP Apps 패널)뿐이다 — 패널이 스스로 바깥 문서로 가는 이동을 막는다
+         (docs/request-1027 HA-20 반대 검토 10-31). frame-src 밖의 지시어를 더하면 srcdoc 패널이 물려받아 깨질 수 있다(설계 B7 '뒤늦은 포털 CSP'). -->
+    <meta http-equiv="Content-Security-Policy" content="frame-src 'self'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>HWAX Portal</title>
