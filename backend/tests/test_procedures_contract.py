@@ -182,6 +182,95 @@ def test_token_cannot_be_saved_forward():
     assert any("2단 확인" in e for e in errs)
 
 
+# RA 실물 스키마(mcp 1.28 FastMCP 가 `publish_report(report_id: int, boards: list, confirm_token: str, ctx, note="",
+# folder_ids=None)` 에서 짓는 것 그대로) — confirm_token 이 필수 칸이다.
+RA_PUBLISH_SCHEMA = {
+    "properties": {"report_id": {"title": "Report Id", "type": "integer"},
+                   "boards": {"items": {}, "title": "Boards", "type": "array"},
+                   "confirm_token": {"title": "Confirm Token", "type": "string"},
+                   "note": {"default": "", "title": "Note", "type": "string"},
+                   "folder_ids": {"anyOf": [{"items": {}, "type": "array"}, {"type": "null"}],
+                                  "default": None, "title": "Folder Ids"}},
+    "required": ["report_id", "boards", "confirm_token"],
+    "title": "publish_reportArguments", "type": "object"}
+
+
+def test_publish_step_does_not_carry_the_confirm_token():
+    """확인 토큰은 실행기가 게시 직전 미리보기에서 받아 넣는다(B3) — 절차가 변수로 받으면 실행 입력(원장)에 남는다."""
+    pub = {"backend": "reportarchive", "tool": "publish_report", "gate": "human",
+           "args": {"report_id": 3, "boards": ["dept-a"], "confirm_token": "{{tok}}"}}
+    errs = _hard(validate_spec(_spec([pub], [Var(key="tok", label="토큰")])))
+    assert any("confirm_token" in e and "실행기" in e for e in errs), errs
+    ok = dict(pub, args={"report_id": 3, "boards": ["dept-a"]})
+    assert _hard(validate_spec(_spec([ok]))) == []
+
+
+def test_schema_check_leaves_the_confirm_token_to_the_runner():
+    """스키마의 필수 칸이지만 실행기가 채운다 — 저장 대조가 요구하면 게시 단계를 저장할 길이 없다(종전)."""
+    table = {"reportarchive_publish_report": RA_PUBLISH_SCHEMA}
+    ok = _spec([{"backend": "reportarchive", "tool": "publish_report", "gate": "human",
+                 "args": {"report_id": 3, "boards": ["dept-a"]}}])
+    assert check_against_schemas(ok, table) == []
+    # 나머지 필수 칸은 그대로 본다
+    bad = _spec([{"backend": "reportarchive", "tool": "publish_report", "gate": "human",
+                  "args": {"boards": ["dept-a"]}}])
+    assert check_against_schemas(bad, table) == ["1단계 publish_report: 필수 인자가 빠졌다 — report_id"]
+    # 다른 도구의 confirm_token 은 면제가 아니다
+    other = _spec([{"backend": "b", "tool": "other_tool", "args": {}}])
+    assert check_against_schemas(other, {"b_other_tool": {"properties": {"confirm_token": {}},
+                                                          "required": ["confirm_token"]}}) == [
+        "1단계 other_tool: 필수 인자가 빠졌다 — confirm_token"]
+
+
+def test_챗에서_편_게시_초안은_따로_둔_미리보기_단계도_지우라고_말한다():
+    """챗 턴(미리보기 → 게시)을 초안으로 펴면(derive) 미리보기가 단계로 남는다. 거절 사유 셋을 고치고 나서도 그 단계는
+    남는데, 게시 단계가 게이트 앞뒤로 스스로 미리보기를 받으므로 필요 없다 — 거절 글과 경고가 그렇게 말한다."""
+    from app.procedures import derive
+
+    tok = "1793406421.Zk3vQx_9-abcdefghijklmnopqrstuvwxyzABCDEFG"
+    prev = {"report_id": 41, "title": "낙하 해석 보고서", "confirm_token": tok,
+            "targets": [{"slug": "dept-a", "name": "가 부서", "audience": 12, "blocked": None}]}
+    got = derive.draft(
+        [{"tool": "preview_publish", "args": {"report_id": 41, "boards": ["dept-a"]}, "result": json.dumps(prev)},
+         {"tool": "publish_report", "args": {"report_id": 41, "boards": ["dept-a"], "confirm_token": tok},
+          "result": json.dumps({"items": []})}],
+        tool_backend={"preview_publish": "reportarchive", "publish_report": "reportarchive"},
+        asked="41번 보고서를 dept-a 게시판에 게시해 줘")
+    spec = got["spec"]
+    errs = _hard(validate_spec(ProcedureSpec.model_validate(spec)))
+    assert any("confirm_token" in e and "preview_publish" in e and "지운다" in e for e in errs), errs
+    # 사람이 거절 사유 셋만 고친다 — 저장은 되지만 미리보기 단계는 지우라고 경고한다
+    spec["steps"][0].pop("save", None)
+    spec["steps"][1]["args"].pop("confirm_token")
+    spec["steps"][1]["gate"] = "human"
+    errs = validate_spec(ProcedureSpec.model_validate(spec))
+    assert _hard(errs) == [], errs
+    assert [e for e in errs if "preview_publish" in e] == [
+        "warn:1단계 preview_publish: 게시 단계(2단계)가 게이트 앞뒤로 스스로 미리보기를 받는다 — 이 단계는 지운다"
+        "(남기면 Report Archive 를 한 번 더 부를 뿐이고, 그 결과의 확인 토큰은 기록에서 가린다)"]
+    # 미리보기만 하는 절차(게시 없음)는 그대로다
+    alone = _spec([{"backend": "reportarchive", "tool": "preview_publish",
+                    "args": {"report_id": 41, "boards": ["dept-a"]}}])
+    assert not any("preview_publish" in e for e in validate_spec(alone))
+
+
+def test_옛_판본의_게시_토큰_변수는_입력이_아니다():
+    """B3 전 판본은 confirm_token 을 변수로 받아야 저장됐다 — 실행기가 그 칸을 떼므로 받지도 요구하지도 않는다(받으면
+    붙여 넣은 토큰이 실행 입력, 곧 원장에 남는다)."""
+    from app.procedures.models import coerce_inputs
+
+    def old(note="절차가 올린다"):
+        return ProcedureSpec(title="옛 게시", vars=[Var(key="report_id", label="보고서", type="number"),
+                                                    Var(key="tok", label="확인 토큰")], steps=[Step(
+            backend="reportarchive", tool="publish_report", gate="human",
+            args={"report_id": "{{report_id}}", "boards": ["dept-a"], "note": note, "confirm_token": "{{tok}}"})])
+
+    assert coerce_inputs(old(), {"report_id": "41"}) == {"report_id": 41}
+    assert coerce_inputs(old(), {"report_id": "41", "tok": "1793400000.PASTED"}) == {"report_id": 41}
+    # 다른 칸에도 쓰이는 변수는 그대로 입력이다 — 게시 토큰만 받던 변수가 아니다
+    assert coerce_inputs(old(note="{{tok}}"), {"report_id": "41", "tok": "x"}) == {"report_id": 41, "tok": "x"}
+
+
 def test_secret_constant_rejected_but_variable_allowed():
     errs = _hard(validate_spec(_spec([
         {"backend": "b", "tool": "some_tool", "args": {"api_key": "AKIA-real-secret"}}])))

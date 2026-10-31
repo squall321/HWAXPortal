@@ -4,7 +4,10 @@
 # 프로토콜은 실물 그대로 — initialize → mcp-session-id → notifications/initialized →
 # tools/call, 응답은 SSE `data:` 줄.
 import asyncio
+import gzip
+import hashlib
 import json
+import sqlite3
 import time
 import types
 
@@ -268,11 +271,13 @@ def test_warnings_reach_notes(kit):
 
 
 # ── 게이트 ───────────────────────────────────────────────────────────────
+# 되돌리기 어려운 도구 일반의 게이트다. 게시(publish_report)는 게이트 **전에** 미리보기를 부르는 따로 길이 있다 —
+# 아래 '게시 2단 확인' 절(남은 일 B3).
 def test_gate_stops_before_calling_and_holds_no_slot(kit):
     async def go(store, build):
-        g = Gate(tools={"reportarchive_publish_report": {}})
+        g = Gate(tools={"reportarchive_trash_report": {}})
         r = build(g)
-        spec = _spec([{"backend": "reportarchive", "tool": "publish_report",
+        spec = _spec([{"backend": "reportarchive", "tool": "trash_report",
                        "gate": "human", "args": {"id": 1}}])
         rid = _run(store, spec)
         out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
@@ -287,10 +292,10 @@ def test_gate_stops_before_calling_and_holds_no_slot(kit):
 def test_gate_ack_lets_it_through_and_stale_ack_does_not(kit):
     """승인은 (run, step, 치환된 인자 sha256) 에 묶인 1회용이다."""
     async def go(store, build):
-        g = Gate(tools={"reportarchive_publish_report": {}},
-                 replies={"reportarchive_publish_report": ok({"published": True})})
+        g = Gate(tools={"reportarchive_trash_report": {}},
+                 replies={"reportarchive_trash_report": ok({"trashed": True})})
         r = build(g)
-        spec = _spec([{"backend": "reportarchive", "tool": "publish_report",
+        spec = _spec([{"backend": "reportarchive", "tool": "trash_report",
                        "gate": "human", "args": {"id": "{{rid}}"}}])
         rid = _run(store, spec, inputs={"rid": "R-1"})
         out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
@@ -305,6 +310,442 @@ def test_gate_ack_lets_it_through_and_stale_ack_does_not(kit):
         out2 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
         await r.aclose()
         assert out2["state"] == "done" and len(g.calls) == 1
+    asyncio.run(go(*kit))
+
+
+# ── 게시 2단 확인(RA preview_publish → publish_report — PLAN §5-4 · 남은 일 B3) ──────────────────────
+# 가짜 RA 는 실물 꼴이다 — `mounts/routes.py` preview_mount 의 data 를 MCP `_unwrap` 이 벗기고 FastMCP 가 들여쓴 JSON 글
+# 하나로 낸다(mcp 1.28 은 `-> dict` 에 outputSchema 가 없어 structuredContent 도 없다). 실패도 isError=false 의 `{error}`
+# 봉투다. 토큰은 미리보기마다 새로 나오고 (사용자, 보고서, 게시판 집합)에 묶인다(`mounts/confirm.py` — `<만료초>.<서명>`).
+# 막힌 게시판이 하나라도 있으면 실물 게시는 커밋 없이 통째로 거절된다(`services.mount_report`) — 가짜도 그렇다.
+RA_PREVIEW_SCHEMA = {"properties": {"report_id": {"title": "Report Id", "type": "integer"},
+                                    "boards": {"items": {}, "title": "Boards", "type": "array"}},
+                     "required": ["report_id", "boards"], "title": "preview_publishArguments", "type": "object"}
+BOARDS = {"dept-a": {"name": "가 부서", "parent_slug": "div-x", "audience": 12},
+          "dept-b": {"name": "나 부서", "parent_slug": "div-x", "audience": 30, "descendant_boards": 2}}
+BLOCKED = "이 게시판에 게시할 권한이 없습니다."
+
+
+def _ra(obj) -> dict:
+    """RA MCP 의 도구 결과 꼴 — 들여쓴 JSON 글 하나, isError 는 false."""
+    return {"content": [{"type": "text", "text": json.dumps(obj, ensure_ascii=False, indent=2)}], "isError": False}
+
+
+class FakeRA:
+    """RA 의 게시 두 도구. 미리보기 · 게시를 따로 센다."""
+
+    def __init__(self, boards: dict, title: str = "낙하 해석 보고서"):
+        self.boards = boards
+        self.title = title
+        self.issued: list[tuple] = []      # (토큰, 보고서, 게시판 집합)
+        self.previews: list[dict] = []
+        self.published: list[dict] = []
+
+    def gate(self) -> "Gate":
+        from tests.test_procedures_contract import RA_PUBLISH_SCHEMA
+        return Gate(tools={"reportarchive_preview_publish": {"inputSchema": RA_PREVIEW_SCHEMA},
+                           "reportarchive_publish_report": {"inputSchema": RA_PUBLISH_SCHEMA}},
+                    replies={"reportarchive_preview_publish": self.preview,
+                             "reportarchive_publish_report": self.publish})
+
+    def preview(self, a: dict) -> dict:
+        self.previews.append(dict(a))
+        targets = []
+        for slug in a["boards"]:
+            b = self.boards.get(slug)
+            if b is None:
+                targets.append({"slug": slug, "error": "게시판을 찾을 수 없습니다."})
+                continue
+            targets.append({"slug": slug, "name": b["name"], "parent_slug": b.get("parent_slug"),
+                            "audience": b["audience"], "descendant_boards": b.get("descendant_boards", 0),
+                            "already_mounted": b.get("already_mounted", False), "blocked": b.get("blocked")})
+        token = None
+        if any(not t.get("blocked") and not t.get("error") for t in targets):
+            exp = 1793406421 + len(self.issued)
+            raw = f"7:{a['report_id']}:{','.join(sorted(a['boards']))}:{exp}"
+            token = f"{exp}.{hashlib.sha256(raw.encode()).hexdigest()[:43]}"
+            self.issued.append((token, a["report_id"], tuple(sorted(a["boards"]))))
+        return _ra({"report_id": a["report_id"], "title": self.title, "targets": targets, "confirm_token": token,
+                    "note": "실제로 게시되지 않았습니다. 사용자에게 대상 게시판을 확인받은 뒤 confirm_token 과 함께 게시하세요."})
+
+    def publish(self, a: dict) -> dict:
+        tok = a.get("confirm_token")
+        if not tok or "." not in tok:
+            return _ra({"error": "게시 전에 미리보기가 필요합니다 — POST /api/mounts/preview 로 어디에 게시되는지 "
+                                 "확인한 뒤 받은 confirm_token 을 함께 보내세요."})
+        if (tok, a["report_id"], tuple(sorted(a["boards"]))) not in self.issued:
+            return _ra({"error": "확인 토큰이 이 요청과 맞지 않습니다(보고서·게시판이 미리보기와 다름). "
+                                 "게시할 대상 그대로 미리보기를 다시 받으세요."})
+        new = [s for s in a["boards"] if not self.boards.get(s, {}).get("already_mounted")]
+        bad = [s for s in new if s not in self.boards or self.boards[s].get("blocked")]
+        if bad:
+            return _ra({"error": f"{BLOCKED[:-1]}: {bad[0]}"})
+        self.published.append(dict(a))
+        return _ra({"items": [{"report_id": a["report_id"], "workspace_slug": s, "edit_policy": "default",
+                               "mounted_by_user_id": 7, "via": "mcp", "mounted_at": "2026-10-31T09:00:00",
+                               "note": a.get("note", ""), "can_unmount": None, "takedown_pending": None,
+                               "folder_ids": [], "folder_id": None, "workspace_name": None, "folder_name": None,
+                               "folder_names": []} for s in new]})
+
+
+def _publish_spec(boards=("dept-a", "dept-b")) -> ProcedureSpec:
+    return ProcedureSpec(title="게시", vars=[Var(key="report_id", label="보고서", type="number")], steps=[
+        Step(backend="reportarchive", tool="publish_report", gate="human",
+             args={"report_id": "{{report_id}}", "boards": list(boards), "note": "절차가 올린다"})])
+
+
+def _inner(g: "Gate", alias: str) -> list[dict]:
+    """그 도구로 나간 인자들(invoke_tool 안쪽)."""
+    return [c["arguments"]["arguments"] for c in g.calls if c["arguments"].get("name") == alias]
+
+
+def _ledger_cells(path: str) -> list[str]:
+    """원장 sqlite 의 모든 표 · 모든 칸을 글로(gzip 결과는 풀어서)."""
+    con = sqlite3.connect(path)
+    try:
+        out = []
+        for (table,) in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+            for row in con.execute(f'SELECT * FROM "{table}"'):
+                for v in row:
+                    if isinstance(v, bytes):
+                        try:
+                            v = gzip.decompress(v).decode("utf-8")
+                        except OSError:
+                            v = v.decode("utf-8", "replace")
+                    if v is not None:
+                        out.append(str(v))
+        return out
+    finally:
+        con.close()
+
+
+async def _gated_then_acked(store, r, spec, inputs=None) -> tuple[str, dict]:
+    """게이트까지 돌리고 사람이 그 카드를 승인한다 — 승인은 화면이 보낸 그 행의 지문이다."""
+    rid = _run(store, spec, inputs=inputs or {"report_id": 41})
+    out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+    assert out["state"] == "gated", out
+    assert out["args_sha256"] == store.list_steps(rid)[0]["args_sha256"]
+    store.ack_gate(rid, 0, by="u1", args_sha256=out["args_sha256"])
+    return rid, out
+
+
+def test_게시_단계는_게이트_전에_미리보기를_카드에_싣는다(kit):
+    """① 대상 · 볼 사람 수 · 못 올리는 사유(RA 미리보기 그대로)를 게이트 카드에 — 게시는 부르지 않는다."""
+    async def go(store, build):
+        ra = FakeRA({**BOARDS, "dept-b": {**BOARDS["dept-b"], "blocked": BLOCKED}})
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid = _run(store, spec, inputs={"report_id": 41})
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "gated" and out["stopped_at"] == 0, out
+        assert _inner(g, "reportarchive_preview_publish") == [{"report_id": 41, "boards": ["dept-a", "dept-b"]}]
+        assert _inner(g, "reportarchive_publish_report") == [] and ra.published == []
+        st = store.list_steps(rid)[0]
+        assert (st["state"], st["stage"]) == ("pending", "gate")
+        assert st["args"] == {"report_id": 41, "boards": ["dept-a", "dept-b"], "note": "절차가 올린다"}
+        pv = st["notes"]["publish_preview"]
+        assert (pv["report_id"], pv["title"]) == (41, "낙하 해석 보고서")
+        assert [(t["slug"], t["name"], t["audience"], t["descendant_boards"], t["blocked"]) for t in pv["targets"]] == [
+            ("dept-a", "가 부서", 12, 0, None), ("dept-b", "나 부서", 30, 2, BLOCKED)]
+        assert st["notes"]["publish_blocked"] == [f"dept-b: {BLOCKED}"]
+        assert ra.issued[0][0] not in json.dumps(st, ensure_ascii=False), "카드 · 지문에 토큰이 실렸다"
+        assert store.get_run(rid)["state"] == "gated"
+        assert r.sem._value == int(r.settings.procedures_concurrency)   # 슬롯을 놓았다
+    asyncio.run(go(*kit))
+
+
+def test_승인_뒤_미리보기가_달라지면_게시하지_않고_차이를_보이며_다시_멈춘다(kit):
+    """② 다르면 게시 0회 — 사람이 본 대상과 지금의 대상이 다르다. 새 미리보기를 승인하면 그때 간다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid, out = await _gated_then_acked(store, r, spec)
+
+        ra.boards["dept-b"] = {**BOARDS["dept-b"], "audience": 340}    # 승인 뒤 볼 사람이 늘었다(상위 조직이 붙었다)
+        out2 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        assert out2["state"] == "gated" and out2["stopped_at"] == 0, out2
+        assert _inner(g, "reportarchive_publish_report") == [] and ra.published == []
+        st = store.list_steps(rid)[0]
+        assert (st["state"], st["stage"]) == ("pending", "gate")
+        assert st["notes"]["publish_changed"] == ["dept-b 볼 수 있는 사람: 30 → 340"]
+        assert st["notes"]["publish_preview"]["targets"][1]["audience"] == 340
+        assert st["args_sha256"] != out["args_sha256"], "옛 승인이 새 미리보기에 통한다"
+
+        store.ack_gate(rid, 0, by="u1", args_sha256=st["args_sha256"])   # 새 카드를 승인하면 그때 간다
+        out3 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out3["state"] == "done", out3
+        assert len(ra.published) == 1 and len(ra.previews) == 3
+    asyncio.run(go(*kit))
+
+
+def test_승인_뒤_미리보기가_같으면_그때_받은_토큰으로_한_번_게시한다(kit):
+    """② 같으면 1회 — 두 번째 미리보기의 토큰으로 곧바로(사람 대기가 사이에 없어 토큰 수명 600초에 안 걸린다)."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid, _ = await _gated_then_acked(store, r, spec)
+        out2 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out2["state"] == "done", out2
+        assert [c["arguments"]["name"] for c in g.calls] == [
+            "reportarchive_preview_publish", "reportarchive_preview_publish", "reportarchive_publish_report"]
+        assert _inner(g, "reportarchive_publish_report") == [
+            {"report_id": 41, "boards": ["dept-a", "dept-b"], "note": "절차가 올린다",
+             "confirm_token": ra.issued[1][0]}], "두 번째 미리보기의 토큰이 아니다"
+        assert len(ra.published) == 1
+        st = store.list_steps(rid)[0]
+        assert (st["state"], st["ok"]) == ("done", 1)
+        assert st["args"] == {"report_id": 41, "boards": ["dept-a", "dept-b"], "note": "절차가 올린다"}
+        assert [t["slug"] for t in st["notes"]["publish_preview"]["targets"]] == ["dept-a", "dept-b"]
+        assert [m["workspace_slug"] for m in json.loads(store.step_result(rid, 0))["items"]] == ["dept-a", "dept-b"]
+    asyncio.run(go(*kit))
+
+
+def test_원장_어디에도_확인_토큰이_남지_않는다(kit):
+    """③ 실행 입력 · 단계 인자 · 노트 · 결과 · 승인 지문 — sqlite 의 모든 칸을 글로 풀어 본다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        r = build(ra.gate())
+        spec = _publish_spec()
+        rid, out = await _gated_then_acked(store, r, spec)
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL))["state"] == "done"
+        await r.aclose()
+        toks = [t for t, _, _ in ra.issued]
+        assert len(toks) == 2 and len(ra.published) == 1
+        cells = _ledger_cells(store.health()["path"])
+        assert any("dept-a" in c for c in cells), "원장을 못 읽었다"
+        assert [c for c in cells for t in toks if t in c or t.split(".")[1] in c] == []
+        # 승인 지문은 토큰과 무관하다 — 미리보기마다 토큰이 바뀌어도 같은 대상이면 같은 지문이다
+        assert store.gate_ack(rid, 0)["args_sha256"] == out["args_sha256"] == store.list_steps(rid)[0]["args_sha256"]
+    asyncio.run(go(*kit))
+
+
+def test_게시_응답에_되비친_토큰도_원장에_남지_않는다(kit):
+    """pydantic 의 '칸 없음' 오류는 받은 인자를 통째로 되비친다(input_value={…}) — 결과 · 오류 글에서 가린다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        g.replies["reportarchive_publish_report"] = lambda a: err(
+            "Error executing tool publish_report: 1 validation error for publish_reportArguments\n"
+            f"boards\n  Field required [type=missing, input_value={a!r}, input_type=dict]")
+        r = build(g)
+        spec = _publish_spec()
+        rid, _ = await _gated_then_acked(store, r, spec)
+        out2 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out2["state"] == "failed", out2
+        tok = ra.issued[1][0]
+        assert _inner(g, "reportarchive_publish_report")[0]["confirm_token"] == tok     # 나가기는 했다
+        assert [c for c in _ledger_cells(store.health()["path"]) if tok in c] == []
+        assert "[가림:confirm_token]" in store.step_result(rid, 0)
+    asyncio.run(go(*kit))
+
+
+def test_막힌_대상이_그대로면_승인해도_게시하지_않는다(kit):
+    """막힌 게시판이 하나라도 있으면 RA 는 게시 전체를 거절한다 — 알면서 부르지 않고 사유를 남긴다."""
+    async def go(store, build):
+        ra = FakeRA({**BOARDS, "dept-b": {**BOARDS["dept-b"], "blocked": BLOCKED}})
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid, _ = await _gated_then_acked(store, r, spec)
+        out2 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out2["state"] == "failed" and out2["stopped_at"] == 0, out2
+        assert _inner(g, "reportarchive_publish_report") == []
+        st = store.list_steps(rid)[0]
+        assert (st["state"], st["stage"]) == ("failed", "publish:blocked")
+        assert f"dept-b: {BLOCKED}" in st["error"]
+        assert st["notes"]["publish_preview"]["targets"][1]["blocked"] == BLOCKED
+        assert store.get_run(rid)["state"] == "failed"
+    asyncio.run(go(*kit))
+
+
+def test_미리보기가_실패하면_게이트_없이_그_단계에서_멈춘다(kit):
+    """RA 가 `{error}` 봉투로 답하면(isError=false — PLAN §5-6 ④) 사람에게 보일 대상이 없다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        g.replies["reportarchive_preview_publish"] = lambda a: _ra({"error": "보고서를 찾을 수 없습니다: 41"})
+        r = build(g)
+        spec = _publish_spec()
+        rid = _run(store, spec, inputs={"report_id": 41})
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out["state"] == "failed" and out["stopped_at"] == 0, out
+        assert _inner(g, "reportarchive_publish_report") == []
+        st = store.list_steps(rid)[0]
+        assert st["stage"] == "preview" and "보고서를 찾을 수 없습니다" in st["error"]
+        assert store.get_run(rid)["state"] == "failed"
+    asyncio.run(go(*kit))
+
+
+def test_옛_판본이_인자에_적은_확인_토큰은_버리고_미리보기의_것을_쓴다(kit):
+    """저장 검증이 이제 거절하지만 판본은 불변이다 — 적힌 값이 단계 인자 · 지문에 들어가지 않게 실행기가 뗀다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = ProcedureSpec(title="옛 게시", steps=[Step(
+            backend="reportarchive", tool="publish_report", gate="human",
+            args={"report_id": 41, "boards": ["dept-a"], "confirm_token": "{{tok}}"})])
+        # 계획 모드도 실제로 나갈 것을 보인다
+        plan = store.create_run(owner_sub="u1", mode="plan", inputs={"tok": "1793400000.stale"})
+        out_p = await r.run(run_id=plan, spec=spec, principal=PRINCIPAL)
+        assert out_p["calls"][0]["args"] == {"report_id": 41, "boards": ["dept-a"]}
+        assert "confirm_token" not in store.list_steps(plan)[0]["args"]
+
+        rid, _ = await _gated_then_acked(store, r, spec, inputs={"tok": "1793400000.stale"})
+        assert "confirm_token" not in store.list_steps(rid)[0]["args"]
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL))["state"] == "done"
+        await r.aclose()
+        assert _inner(g, "reportarchive_publish_report")[0]["confirm_token"] == ra.issued[1][0]
+        assert "1793400000.stale" not in json.dumps(store.list_steps(rid), ensure_ascii=False)
+    asyncio.run(go(*kit))
+
+
+def test_옛_판본의_토큰_변수는_실행_입력에_없어도_돈다(kit):
+    """옛 판본이 토큰을 받던 변수는 이제 입력이 아니다(coerce_inputs 가 받지도 남기지도 않는다) — 그 칸을 치환 전에 떼야 돈다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = ProcedureSpec(title="옛 게시", vars=[Var(key="tok", label="확인 토큰")], steps=[Step(
+            backend="reportarchive", tool="publish_report", gate="human",
+            args={"report_id": 41, "boards": ["dept-a"], "confirm_token": "{{tok}}"})])
+        plan = store.create_run(owner_sub="u1", mode="plan", inputs={})
+        out_p = await r.run(run_id=plan, spec=spec, principal=PRINCIPAL)
+        assert out_p["calls"][0]["args"] == {"report_id": 41, "boards": ["dept-a"]}
+        assert out_p["unverified"] == [], "토큰 변수가 비었다고 계획이 '확인 못 함' 으로 남는다"
+
+        rid, _ = await _gated_then_acked(store, r, spec, inputs={})
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL))["state"] == "done"
+        await r.aclose()
+        assert _inner(g, "reportarchive_publish_report")[0]["confirm_token"] == ra.issued[1][0]
+    asyncio.run(go(*kit))
+
+
+def _preview_then_publish_spec() -> ProcedureSpec:
+    """챗 기록을 편 초안(derive)에서 저장 거절 셋(save 토큰 · 게이트 · confirm_token)만 고친 꼴 — 미리보기 단계가 남는다."""
+    return ProcedureSpec(title="챗에서 온 게시", vars=[Var(key="report_id", label="보고서", type="number")], steps=[
+        Step(backend="reportarchive", tool="preview_publish", args={"report_id": "{{report_id}}", "boards": ["dept-a"]}),
+        Step(backend="reportarchive", tool="publish_report", gate="human",
+             args={"report_id": "{{report_id}}", "boards": ["dept-a"]})])
+
+
+def test_따로_둔_미리보기_단계의_결과도_확인_토큰을_가려_남긴다(kit):
+    """그 단계의 결과 원문에는 600초짜리 토큰이 들어 있다 — 원장에 넣기 전에 가린다. 나머지(대상 · 볼 사람 수)는 그대로다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        r = build(ra.gate())
+        spec = _preview_then_publish_spec()
+        rid = _run(store, spec, inputs={"report_id": 41})
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        assert out["state"] == "gated" and out["stopped_at"] == 1, out
+        store.ack_gate(rid, 1, by="u1", args_sha256=out["args_sha256"])
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL, start_at=1))["state"] == "done"
+        await r.aclose()
+        toks = [t for t, _, _ in ra.issued]
+        assert len(toks) == 3 and len(ra.published) == 1
+        cells = _ledger_cells(store.health()["path"])
+        assert [c[:80] for c in cells for t in toks if t in c or t.split(".")[1] in c] == []
+        first = json.loads(store.step_result(rid, 0))
+        assert first["confirm_token"] == "[가림:confirm_token]"
+        assert [(t["slug"], t["audience"]) for t in first["targets"]] == [("dept-a", 12)]
+    asyncio.run(go(*kit))
+
+
+def test_한_단계씩_돌린_미리보기도_확인_토큰을_원장에_남기지_않는다(kit):
+    """빈 실행에 한 단계씩 붙이는 길(절차 기능의 진입점)도 같은 `_one` 을 탄다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        r = build(ra.gate())
+        rid = store.create_run(owner_sub="u1", mode="live", inputs={})
+        got = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(
+            backend="reportarchive", tool="preview_publish", args={"report_id": 41, "boards": ["dept-a"]}))
+        await r.aclose()
+        assert got["ok"] is True, got
+        tok = ra.issued[0][0]
+        assert [c[:80] for c in _ledger_cells(store.health()["path"]) if tok in c] == []
+        assert json.loads(store.step_result(rid, 0))["confirm_token"] == "[가림:confirm_token]"
+    asyncio.run(go(*kit))
+
+
+def test_승인_뒤_미리보기가_한_번_실패해도_다음_카드는_승인한_것과의_차이를_보인다(kit):
+    """실패 행이 승인 지문과 승인한 미리보기를 지운 동안, 재개한 카드는 '바뀐 줄' 없이 처음 보는 카드처럼 떴다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid, _ = await _gated_then_acked(store, r, spec)          # 사람이 이 미리보기를 보고 승인했다
+        keep = g.replies["reportarchive_preview_publish"]
+        g.replies["reportarchive_preview_publish"] = lambda a: _ra({"error": "잠깐 불통"})
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL))["state"] == "failed"
+        st = store.list_steps(rid)[0]
+        assert (st["state"], st["stage"]) == ("failed", "preview") and "잠깐 불통" in st["error"]
+        g.replies["reportarchive_preview_publish"] = keep
+        ra.boards["dept-b"] = {**BOARDS["dept-b"], "audience": 340}  # 그사이 볼 사람이 늘었다
+        out3 = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)  # 재개
+        await r.aclose()
+        assert out3["state"] == "gated" and ra.published == [], out3
+        assert out3["changed"] == ["dept-b 볼 수 있는 사람: 30 → 340"]
+        assert store.list_steps(rid)[0]["notes"]["publish_changed"] == ["dept-b 볼 수 있는 사람: 30 → 340"]
+    asyncio.run(go(*kit))
+
+
+def test_승인_뒤_미리보기를_기다리는_사이_중단하면_게시하지_않는다(kit):
+    """중단은 단계 경계에서만 봤다 — 두 번째 미리보기(네트워크)를 기다린 뒤 되돌릴 수 없는 게시를 그대로 보냈다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid, _ = await _gated_then_acked(store, r, spec)
+        orig = g.replies["reportarchive_preview_publish"]
+
+        def preview_then_cancel(a):
+            got = orig(a)
+            store.cancel_run(rid, "u1")   # 미리보기 응답이 오기 전에 사람이 '중단' 을 눌렀다
+            return got
+
+        g.replies["reportarchive_preview_publish"] = preview_then_cancel
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out == {"state": "cancelled", "stopped_at": 0}, out
+        assert _inner(g, "reportarchive_publish_report") == [] and ra.published == []
+        assert store.get_run(rid)["state"] == "cancelled"
+    asyncio.run(go(*kit))
+
+
+def test_게이트_전_미리보기를_기다리는_사이_중단하면_확인_대기로_덮지_않는다(kit):
+    """덮이면 중단한 실행이 확인 대기 맨 위로 돌아온다 — 승인하면 게시까지 간다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid = _run(store, spec, inputs={"report_id": 41})
+        orig = g.replies["reportarchive_preview_publish"]
+
+        def preview_then_cancel(a):
+            got = orig(a)
+            store.cancel_run(rid, "u1")
+            return got
+
+        g.replies["reportarchive_preview_publish"] = preview_then_cancel
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out == {"state": "cancelled", "stopped_at": 0}, out
+        assert store.get_run(rid)["state"] == "cancelled"
+        assert store.list_steps(rid) == [], "중단한 뒤 게이트 카드를 썼다"
     asyncio.run(go(*kit))
 
 

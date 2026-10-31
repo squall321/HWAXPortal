@@ -247,6 +247,7 @@ function StepCard({
             되돌리기 어려운 단계입니다. 아래는 <b>치환이 끝난 실제 인자</b>입니다 — 확인 뒤 인자가
             바뀌면 이 확인은 무효가 됩니다.
           </p>
+          {notes.publish_preview != null && <PublishPreview notes={notes} />}
           <pre className="pr-pre pr-step-pre">{JSON.stringify(step.args, null, 2)}</pre>
           <button type="button" onClick={confirm} disabled={busy} className="btn-primary pr-btn">
             {busy ? '확인 중…' : '확인하고 계속'}
@@ -290,6 +291,78 @@ function StepCard({
       {body && <pre className="pr-pre pr-step-pre pr-pre-tall">{body}</pre>}
       {err && <p className="pr-danger pr-fs-13">{err}</p>}
     </li>
+  );
+}
+
+/** 게시 대상 한 줄 — Report Archive `preview_publish` 의 대상 칸 그대로다(실행기 runner `_TARGET_KEYS`). */
+type PublishTarget = {
+  slug?: string;
+  name?: string;
+  audience?: number;
+  descendant_boards?: number;
+  already_mounted?: boolean;
+  blocked?: string | null;
+  error?: string | null;
+};
+
+/** 게시 단계의 게이트 카드 — 실행기가 게이트 전에 받아 단계 노트에 실은 미리보기(확인 토큰은 기록에도 화면에도 없다).
+ *  확인하면 실행기가 미리보기를 한 번 더 받아 이 카드와 같을 때만 곧바로 게시하고, 다르면 바뀐 것을 싣고 다시 멈춘다. */
+function PublishPreview({ notes }: { notes: Record<string, unknown> }) {
+  const pv = notes.publish_preview as {
+    report_id?: number;
+    title?: string;
+    targets?: PublishTarget[];
+    warnings?: unknown[];
+  };
+  const blocked = (notes.publish_blocked ?? []) as string[];
+  const changed = (notes.publish_changed ?? []) as string[];
+  return (
+    <div className="pr-mb-1">
+      {changed.length > 0 && (
+        <>
+          <p className="pr-warn pr-fs-13 pr-m-0">
+            <b>확인한 뒤 미리보기가 바뀌어 게시하지 않았습니다</b> — 바뀐 것을 보고 다시 확인해
+            주세요.
+          </p>
+          <ul className="pr-bullets pr-warn pr-fs-13">
+            {changed.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p className="pr-meta pr-m-0">
+        게시할 보고서 <b>{pv.title || '(제목 없음)'}</b>{' '}
+        <span className="pr-note">#{String(pv.report_id ?? '?')}</span> — 확인하면 미리보기를 한 번
+        더 받아 <b>이 카드와 같을 때만</b> 곧바로 게시합니다.
+      </p>
+      <ul className="pr-bullets pr-fs-13">
+        {(pv.targets ?? []).map((t, i) => (
+          <li key={t.slug ?? i}>
+            <b>{t.name || t.slug}</b> <code>{t.slug}</code> — {t.audience ?? '?'}명이 봅니다
+            {t.descendant_boards ? ` · 하위 게시판 ${t.descendant_boards}개` : ''}
+            {t.already_mounted ? ' · 이미 게시됨' : ''}
+            {(t.blocked || t.error) && (
+              <span className="pr-danger"> · 못 올림: {t.blocked || t.error}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {/* 미리보기가 준 경고(태그 없음 등)도 승인 지문에 든다 — 본 것만 승인하게 보인다 */}
+      {Array.isArray(pv.warnings) && pv.warnings.length > 0 && (
+        <ul className="pr-bullets pr-warn pr-fs-13">
+          {pv.warnings.map((w, i) => (
+            <li key={i}>{String(w)}</li>
+          ))}
+        </ul>
+      )}
+      {blocked.length > 0 && (
+        <p className="pr-danger pr-fs-13 pr-m-0">
+          이대로는 게시되지 않습니다 — 막힌 게시판이 하나라도 있으면 Report Archive 가 게시 전체를
+          거절합니다. 원인을 고친 뒤 확인하면 미리보기를 다시 받아 바뀐 것을 보여 줍니다.
+        </p>
+      )}
+    </div>
   );
 }
 

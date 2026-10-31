@@ -29,6 +29,11 @@ MUST_GATE = frozenset({
     "publish_report_to_datahub",
 })
 
+# 게시 2단 확인(ReportArchive) — `publish_report` 는 `preview_publish` 가 준 확인 토큰을 요구한다. 토큰은 **실행기가**
+# 게이트 승인 뒤 미리보기를 다시 받아 곧바로 넣는다(runner `_publish_gate`, PLAN §5-4 · 남은 일 B3). 절차는 이 인자를
+# 적지 않는다 — 변수로 받으면 토큰이 실행 입력(원장)에 남는다. 스키마의 필수 칸이지만 저장 대조가 요구하지 않는 까닭이다.
+PUBLISH_TOOL, PREVIEW_TOOL, PUBLISH_TOKEN = "publish_report", "preview_publish", "confirm_token"
+
 # 자원을 쓰거나 잡을 만든다 — 거절이 아니라 경고. must-gate 로 하면 S5 일괄 재생이 죽는다.
 WARN_PREFIX = ("submit_", "register_", "upload_", "ingest_")
 WARN_EXACT = frozenset({"run_job", "train_model", "smarttwin_submit", "slurm_submit_job"})
@@ -364,13 +369,16 @@ def coerce_inputs(spec: ProcedureSpec, raw: dict) -> dict:
     # `setdefault` 로 신원을 심으므로 **먼저 들어간 위조 값이 이겼고**, `{{me.email}}` 을
     # 보고서·태그에 찍는 절차가 남의 이름으로 돌았다. 흔적은 그 실행의 inputs 뿐이다.
     # 뒤 단계가 쓸 `save` 이름을 미리 심는 것도 같은 길이었다.
-    declared = {v.key for v in spec.vars}
+    # 옛 판본이 게시 확인 토큰을 받던 변수도 입력이 아니다(`publish_token_vars`) — 받지도 요구하지도 않는다.
+    declared = {v.key for v in spec.vars} - publish_token_vars(spec)
     dropped = sorted(set(raw or {}) - declared)
     if dropped:
         logger.info("선언 안 한 입력을 버렸다: %s", dropped)
     out = {k: v for k, v in (raw or {}).items() if k in declared}
     missing: list[str] = []
     for v in spec.vars:
+        if v.key not in declared:
+            continue
         if v.key not in out or out[v.key] is None or out[v.key] == "":
             out.pop(v.key, None)
             if v.required:
@@ -380,6 +388,21 @@ def coerce_inputs(spec: ProcedureSpec, raw: dict) -> dict:
     if missing:
         raise SpecError("채워야 할 값이 비어 있습니다 — " + ", ".join(missing))
     return out
+
+
+def publish_token_vars(spec: ProcedureSpec) -> set[str]:
+    """게시 확인 토큰만 받던 변수 — B3 전 판본은 `publish_report` 의 `confirm_token` 을 `{{변수}}` 로 적어야 저장됐다.
+
+    실행기가 그 칸을 떼고 승인 뒤 미리보기의 토큰을 넣으므로(runner `_without_token` · `_publish_gate`) 입력이 아니다.
+    받으면 사람이 붙여 넣은 토큰이 실행 입력, 곧 원장에 남는다. 다른 칸에도 쓰이는 변수는 그대로 입력이다.
+    """
+    in_token: set[str] = set()
+    elsewhere: set[str] = set()
+    for st in spec.steps:
+        for k, v in st.args.items():
+            roots = {r.split(".")[0] for r in _refs_or_empty(v)}
+            (in_token if st.tool == PUBLISH_TOOL and k == PUBLISH_TOKEN else elsewhere).update(roots)
+    return (in_token - elsewhere) & {v.key for v in spec.vars}
 
 
 def omit_empty_optionals(spec: ProcedureSpec, scope: dict) -> dict:
@@ -408,6 +431,7 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
     declared = {v.key for v in spec.vars}
     optional = {v.key for v in spec.vars if not v.required}
     produced: set[str] = set()
+    publish_at = next((i for i, st in enumerate(spec.steps, 1) if st.tool == PUBLISH_TOOL), None)
 
     for i, st in enumerate(spec.steps, 1):
         at = f"{i}단계 {st.tool}"
@@ -415,6 +439,13 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
         # ① 사람 자리 — 작성자가 끌 수 없다
         if st.tool in MUST_GATE and st.gate != "human":
             errs.append(f"{at}: 되돌리기 어려운 도구라 gate: human 이 필수다")
+        if st.tool == PUBLISH_TOOL and PUBLISH_TOKEN in st.args:
+            errs.append(f"{at}: {PUBLISH_TOKEN} 는 적지 않는다 — 실행기가 게이트 앞뒤로 미리보기를 받아 그 토큰을 "
+                        f"넣는다(변수로 받으면 토큰이 실행 기록에 남는다). 토큰을 받으려고 따로 둔 {PREVIEW_TOOL} 단계도 지운다")
+        if st.tool == PREVIEW_TOOL and publish_at is not None:
+            # 챗 기록(미리보기 → 게시)을 편 초안에 남는다. 그 결과의 토큰은 실행기가 기록에서 가린다(runner `_one`).
+            errs.append(f"warn:{at}: 게시 단계({publish_at}단계)가 게이트 앞뒤로 스스로 미리보기를 받는다 — 이 단계는 지운다"
+                        f"(남기면 Report Archive 를 한 번 더 부를 뿐이고, 그 결과의 확인 토큰은 기록에서 가린다)")
         if st.tool in WARN_EXACT or st.tool.startswith(WARN_PREFIX):
             # 자기 dry_run 을 가진 도구(DRY_RUN_TOOLS)에 **리터럴** `dry_run: true` 가 박힌 미리보기 단계는
             # 아무것도 만들지 않는다. 템플릿(`"{{dry_run}}"`)은 실행 때 무엇이 올지 모르므로 계속 경고한다.
@@ -671,7 +702,8 @@ def check_against_schemas(spec: ProcedureSpec, schemas: dict[str, dict],
                 if k not in props:
                     errs.append(f"{at}: 스키마에 없는 인자 — {k} (백엔드가 조용히 버린다)")
         for k in req:
-            if k not in st.args:
+            # 게시 확인 토큰은 실행기가 채운다(PUBLISH_TOKEN 주석) — 요구하면 게시 단계를 저장할 길이 없다
+            if k not in st.args and not (st.tool == PUBLISH_TOOL and k == PUBLISH_TOKEN):
                 errs.append(f"{at}: 필수 인자가 빠졌다 — {k}")
         errs += check_dispatch_payload(st, at, second_stage)
     return errs

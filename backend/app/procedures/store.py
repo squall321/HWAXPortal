@@ -333,11 +333,15 @@ class ProceduresStore:
     # ── 단계 ──────────────────────────────────────────────────────────────
     def begin_step(self, run_id: str, ix: int, *, backend: str, tool: str, args: dict,
                    schema_fp: str | None = None, expect: str = "fast",
-                   mode: str = "live", identity_note: str | None = None) -> None:
+                   mode: str = "live", identity_note: str | None = None,
+                   fingerprint: str | None = None) -> None:
         """도구를 부르기 **전에** running 을 먼저 저장한다.
 
         재기동이 이 사이에 나면 그 단계는 `unknown(stage=restart)` 로 마감된다 — 쓰기가
         뒤늦게 완료됐을 수 있어 `failed` 가 아니다.
+
+        `args_sha256` 은 게이트 승인이 묶이는 지문이다 — 기본은 인자의 sha256 이고, `fingerprint` 를
+        주면 그것이다(게시 단계는 인자에 더해 **사람이 본 미리보기**에 묶인다 — runner `_publish_gate`).
         """
         blob = json.dumps(args, ensure_ascii=False, sort_keys=True)
         with self._conn() as c:
@@ -346,7 +350,7 @@ class ProceduresStore:
                 " expect, args_json, args_sha256, state, started_at, mode, identity_note)"
                 " VALUES (?,?,?,?,?,?,?,?,'running',?,?,?)",
                 (run_id, ix, backend, tool, schema_fp, expect, blob,
-                 hashlib.sha256(blob.encode("utf-8")).hexdigest(), _now(), mode,
+                 fingerprint or hashlib.sha256(blob.encode("utf-8")).hexdigest(), _now(), mode,
                  identity_note),
             )
 
