@@ -31,6 +31,13 @@ entries:
       - "한 허브에서 받은 id 를 다른 허브 도구에 넘기면 부르지 않고, 그 허브에서 key 로 다시 풀라고 돌려줍니다. 허브마다 id 가 달라 엉뚱한 객체를 읽던 일을 막습니다."
       - "이 관문들은 웹 챗에만 걸립니다. 개인 Claude(MCP 직결) · 분석 루틴 · 심의 좌석은 그대로입니다."
   - date: 2026-10-31
+    title: "챗 — StepForge 운영자의 확인 카드가 StepForge 가 가른 대로 뜹니다"
+    tag: 챗
+    items:
+      - "StepForge 에서 되돌리기 어려운 여덟(과제 지우기 · 치수 기록 지우기 · STEP 등록 · zip 반입 · 잡 취소 · 관리자 지정 · 실패모드 사전 고치기 · 분석 레시피 저장)은 이번 말로 시켰어도 늘 확인 카드가 뜹니다."
+      - "그 밖의 수정 도구 서른셋(파트 이름 바꾸기 · 파트 빼기 · 관계 확정 · 형상 연산 · 그림 정합 · 영역 옮기기 · 치수 기록 · 재질 등록 등)은 이번 말로 시켰을 때만 카드 없이 나가고, 시키지 않았으면 카드가 뜹니다."
+      - "메시 크기 권장도 권장값을 파트 메타에 적는 수정 도구라, 묻기만 한 말에는 카드가 뜹니다."
+  - date: 2026-10-31
     title: "챗 자기검증 — 맞는 수치를 지우지 않고, 근거를 찾지 못한 수치는 짚기만 합니다"
     tag: 챗
     items:
@@ -58,6 +65,13 @@ entries:
       - "코어 어휘표에서 dynaforge-prod · stepforge-prod 를 지워 게이트웨이 /health 의 core_vocab.staging_hidden 이 [] 입니다. 역할 staging 은 박스 덧씌우기로 진짜 시험 사본을 숨기는 길로 남습니다. 박스 권한표의 '(시험)' 라벨은 cae00 운영자가 고칩니다."
       - "update-all 이 git 받기 뒤 cae00 받은 편지함(docs/cae00-inbox)에 그 박스에 마지막으로 알린 뒤 새로 들었거나 바뀐 글을 찍고 끝 요약에서 다시 냅니다. 알린 판은 끝 요약을 낸 뒤 infra/.state/inbox-head 에 적어, git pull 을 먼저 해도 빠지지 않고 끊긴 실행 뒤에는 다시 알립니다(기록이 없는 첫 실행은 글을 모두 찍습니다). 바깥 답이 필요한 물음을 마크다운으로 실어 보내 운영 박스가 읽고, 답은 사용자를 거쳐 돌아옵니다."
       - "AIDataHub — 병합이 전문가 표본 임베딩을 dev 의 id 로 덮지 않고 전문가 단위로 맞춥니다. 순번을 표의 가장 큰 id 뒤로 올리고(cae00 표본 저장이 겹친 id 로 거절되던 원인 후보), 덤프로 고칠 수 없는 전문가는 다시 짓는 명령과 함께 알립니다."
+  - date: 2026-10-31
+    title: "10-31 점검 — 스크립트 둘이 허브의 박스 덮어쓰기를 따르고, StepForge 운영자 목록이 앱의 수정 도구와 같아집니다"
+    tag: 기술
+    items:
+      - "check-mcp-registration.sh 가 허브와 같은 효과 매니페스트(추적 manifest.yaml 위에 박스 덮어쓰기 manifest.local.yaml — HEAXHub HH-15)로 업스트림 · 선언을 봅니다. 덮어쓴 dev 에서 추적 업스트림을 두드려 멀쩡한 앱을 '업스트림 무응답' NG · rc 1 로 읽던 것, 꼬리 주석이 달린 id 를 '매니페스트 없음' 으로 읽던 것을 고쳤습니다. 허브 · 게이트웨이 설정은 이 리포의 형제(../HEAXHub · ../HWAXMcpGateway)에서 찾습니다 — 박힌 dev 경로라 cae00 에서 못 찾았습니다(HUB_ROOT · GATEWAY_CONFIG 로 덮어씁니다)."
+      - "drive-drift.sh 가 박스 덮어쓰기가 있는 앱의 SIF 크기 · 캐시 열쇠가 Drive 와 달라도 예상된 것(○)이라 하고 처방(보내는 앱은 빌드 박스에서 덮어쓰지 않는다)을 적습니다 — 허브 dist-to-drive 가 그 SIF 를 기본으로 싣지 않습니다. 열쇠 대조의 ✗ 는 받은 글에서 바로 셉니다 — grep -q 파이프는 대조 글이 길면 SIGPIPE 로 실패해 드리프트를 '✓ 일치' 로 알렸습니다."
+      - "운영자 정의 he-cad-stepforge 의 writes 33 · confirm 8 이 StepForge 가 수정 도구로 등록한 마흔하나와 같습니다(시험이 형제 리포 소스와 견줍니다). rename_part · remove_part · confirm_interfaces 는 confirm 에서 writes 로, upload_step · import_archive · save_recipe 는 writes 에서 confirm 으로 옮겼고, save_failure_mode 와 목록 밖이던 열둘을 더했습니다. 함정 줄에 인자 하나로 덮어쓰는 호출(overwrite=true · redefine=true · 같은 이름)과 mesh_size_advice 의 store=false 를 적었습니다. 동기화 미리보기 · update-all §6 에 '읽기를 쓰기로 he-cad-stepforge: 1개 — mesh_size_advice' 가 섭니다 — 게이트웨이가 이름의 advice 낱말로 읽기로 확인하지만 store 기본이 쓰기입니다(게이트웨이 읽기 목록의 deny 로 닫을 일입니다)."
   - date: 2026-10-30
     title: "챗 — 다른 물음이 든 전문가 질문은 챗이 답하고, 이 박스에 없는 운영자는 미리 표시합니다"
     tag: 챗
