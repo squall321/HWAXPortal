@@ -239,7 +239,7 @@ class DelibOpts(BaseModel):
     # 날짜 없는 카드는 '날짜 미확인' 으로 남기며, 날짜와 셈을 결정문 머리에 찍는다(docs/request-1027 HA-11 · 사용자 결정 10-31 A-keep).
     # None=거르지 않는다. 꼴은 엔진 deliberation._as_of_ok 와 같다 — 틀린 꼴 · 없는 날(2025-02-30)은 여기서 422 이고, 엔진도 시작 전에
     # 거절한다(못 읽은 날을 버리고 거르지 않은 채 돌면 그 결정문이 기준일로 거른 심의처럼 남는다). 여기서 떨어지면 기준일을 준 소급 검증이
-    # 오늘의 카드로 돈다 — 웹 화면(심의 옵션 '기준일')이 보내는 자리다.
+    # 오늘의 카드로 돈다 — 웹 화면(심의 옵션 '기준일')이 보내는 자리다. 받는 엔진인지는 중계가 /health 로 먼저 본다(_engine_takes_as_of).
     as_of: Annotated[str, StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")] | None = None
     # 보고서 저장 끄기(0)·켜기(1). None=엔진 기본(저장). 쟁점 패널이 패널마다 RA 보고서를 만들지 않게 하려는 자리다 —
     # 여기서 떨어지면 저장을 끈 줄 아는 심의가 보고서를 만든다. 지금은 보내는 곳이 없다(선언만 한다).
@@ -805,6 +805,18 @@ def _is_delib_message(message: str | None) -> bool:
     return (message or "").strip().startswith(_DELIB_TRIGGERS)
 
 
+async def _engine_takes_as_of(client: httpx.AsyncClient, settings: Settings) -> bool | None:
+    """떠 있는 에이전트 서버가 심의 기준일(delib_opts.as_of)을 받는 판인가 — /health 의 delib_as_of(에이전트 서버 wt1031/ha11). 참 · 거짓,
+    답이 없거나 못 읽으면 None(모른다). 옛 판에는 그 칸이 없다(거짓으로 읽는다)."""
+    try:
+        r = await client.get(f"{settings.agent_server_url}/health", timeout=_unary_timeout(settings))
+        if r.status_code != 200:
+            return None
+        return r.json().get("delib_as_of") is True
+    except (httpx.HTTPError, ValueError, AttributeError):
+        return None
+
+
 async def _relay_stream(
     body: "ChatRequest", principal: Principal, audit: AuditLog,
     settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None, affiliation: str = ""
@@ -873,6 +885,21 @@ async def _relay_stream(
     # 침묵 한도 — 심의는 공유 클라이언트의 값(AGENT_STREAM_IDLE_TIMEOUT_S), 챗은 짧은 값(AGENT_CHAT_IDLE_TIMEOUT_S)을 이 요청에만 준다(P-1 ④).
     # 루틴 턴도 심의 쪽이다 — 단계 하나(작은 ReAct · 심의 단계)가 챗 한도보다 오래 조용할 수 있다(R3 D9).
     delib = _is_delib_message(body.message)
+    if delib and body.delib_opts is not None and body.delib_opts.as_of:
+        # 기준일 심의는 그것을 받는 엔진에만 넘긴다(docs/request-1027 HA-11 반대 검토 10-31). 옛 엔진은 delib_opts.as_of 를 말없이 버려(_resolve_opts
+        # 에 칸이 없다) 기준일을 준 소급 검증이 오늘의 지식카드로 돈다 — 포털을 먼저 올리고 에이전트 서버 재기동이 미뤄진 창(update-all §2 포털 뒤
+        # §4 가 도는 심의를 기다리다 재기동을 미룬다 · dev 에서 포털만 다시 띄움)에서 그렇게 됐고 경고도 없었다. 모르면(답 없음)도 넘기지 않는다(닫힌 쪽).
+        takes = await _engine_takes_as_of(client, settings)
+        if takes is not True:
+            why = ("받지 않는 판이다(/health 에 delib_as_of 가 없다)" if takes is False
+                   else "받는지 확인하지 못했다(/health 무응답)")
+            audit.record(principal=principal.subject, event="chat_error", chat_id=chat_id, status="error",
+                         meta={"reason": "as_of_unsupported", "engine": "old" if takes is False else "unknown"})
+            yield sse_event("error", {"code": "as_of_unsupported",
+                                      "message": f"에이전트 서버가 심의 기준일을 {why} — 그대로 보내면 기준일 없이 오늘의 지식카드로 돈다. "
+                                                 "에이전트 서버를 이 판으로 다시 띄운 뒤 보내거나, 심의 옵션의 기준일을 비우고 보낸다."})
+            yield sse_event("done", {})
+            return
     if delib or routine:
         stream_kw: dict = {}
         idle, knob = client.timeout.read, "AGENT_STREAM_IDLE_TIMEOUT_S"

@@ -377,6 +377,30 @@ def test_기준일이_심의_중계_길에서_엔진_본문에_그대로_닿는�
     assert seen[1]["delib_opts"] == {"rounds": 3}, "기준일을 안 준 심의에 기준일 칸이 생겼다"
 
 
+@pytest.mark.parametrize("health", [{"status": "ok"}, {"status": "ok", "delib_as_of": False}, "down"],
+                         ids=["old-engine", "flag-false", "health-down"])
+def test_기준일을_받지_않는_엔진이면_포털이_기준일_심의를_넘기지_않는다(health):
+    """옛 엔진은 delib_opts.as_of 를 말없이 버린다(_resolve_opts 에 칸이 없다) — 포털을 먼저 올리고 에이전트 서버 재기동이 미뤄진 창(update-all §2
+    포털 뒤 §4 가 도는 심의를 기다리다 재기동을 미룬다)에서 웹 '기준일' 심의가 경고 없이 오늘의 카드로 돌았다(반대 검토 10-31). 엔진 /health 의
+    delib_as_of 가 참일 때만 넘기고, 아니면(모름 포함) 엔진을 부르지 않고 SSE 오류로 끝낸다. 기준일 없는 심의는 묻지도 않는다."""
+    texts, probes = [], []
+    codes, seen = _relay_chat({"message": "/심의 화두", "delib_opts": {"as_of": "2025-06-01", "rounds": 3}},
+                              {"message": "/심의 화두", "delib_opts": {"rounds": 3}},
+                              health=health, texts=texts, probes=probes)
+    assert codes == [200, 200]
+    assert len(seen) == 1 and seen[0]["delib_opts"] == {"rounds": 3}, f"기준일 심의가 기준일을 모르는 엔진으로 나갔다 — {[x.get('delib_opts') for x in seen]}"
+    assert "event: error" in texts[0] and '"code": "as_of_unsupported"' in texts[0] and "event: done" in texts[0], texts[0]
+    assert "기준일" in texts[0] and "다시 띄운" in texts[0], texts[0]
+    assert len(probes) == 1, f"기준일 없는 심의에도 /health 를 물었다 — {len(probes)}번"
+
+
+def test_기준일을_받는_엔진이면_한_번_묻고_그대로_넘긴다():
+    texts, probes = [], []
+    codes, seen = _relay_chat({"message": "/심의 화두", "delib_opts": {"as_of": "2025-06-01"}}, texts=texts, probes=probes)
+    assert codes == [200] and len(probes) == 1 and seen[0]["delib_opts"] == {"as_of": "2025-06-01"}
+    assert "as_of_unsupported" not in texts[0]
+
+
 def test_심의_옵션_화면이_기준일을_싣는다():
     """화면 입구 — 심의 옵션의 date 입력칸이 delibOpts.as_of 를 고치고, delibOptsToWire 가 꼴이 맞을 때만 싣는다(포털 422 를 피한다)."""
     panel = (_FRONT.parent / "components" / "chat" / "DelibOptsPanel.tsx").read_text(encoding="utf-8")
@@ -488,8 +512,13 @@ _SHAPES = {
 }
 
 
-def _relay_chat(*bodies: dict) -> tuple[list[int], list[dict]]:
-    """POST /agent/chat 을 차례로 부르고 (상태들, 엔진 /chat 이 받은 본문들)을 돌려준다. 엔진은 MockTransport 대역이다."""
+_HEALTH_NEW = {"status": "ok", "delib_as_of": True}      # 기준일을 받는 판의 /health(에이전트 서버 wt1031/ha11)
+
+
+def _relay_chat(*bodies: dict, health: dict | str = _HEALTH_NEW, texts: list | None = None,
+                probes: list | None = None) -> tuple[list[int], list[dict]]:
+    """POST /agent/chat 을 차례로 부르고 (상태들, 엔진 /chat 이 받은 본문들)을 돌려준다. 엔진은 MockTransport 대역이다 — /health 는
+    health(사전, 또는 'down' 이면 연결 실패)로 답한다. texts 를 주면 응답 본문(SSE)을, probes 를 주면 /health 를 물은 횟수를 담는다."""
     import json
 
     import httpx
@@ -502,6 +531,12 @@ def _relay_chat(*bodies: dict) -> tuple[list[int], list[dict]]:
     seen: list[dict] = []
 
     def engine(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/health":
+            if probes is not None:
+                probes.append(1)
+            if health == "down":
+                raise httpx.ConnectError("에이전트 서버 대역 — /health 무응답", request=req)
+            return httpx.Response(200, json=health)
         assert req.url.path == "/chat"
         seen.append(json.loads(req.content))
         return httpx.Response(200, stream=httpx.ByteStream(b"event: done\ndata: {}\n\n"))
@@ -513,7 +548,12 @@ def _relay_chat(*bodies: dict) -> tuple[list[int], list[dict]]:
             real = app.state.agent_client
             app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(engine))
             try:
-                codes = [c.post("/agent/chat", json=b).status_code for b in bodies]
+                codes = []
+                for b in bodies:
+                    r = c.post("/agent/chat", json=b)
+                    codes.append(r.status_code)
+                    if texts is not None:
+                        texts.append(r.text)
             finally:
                 app.state.agent_client = real
     finally:
