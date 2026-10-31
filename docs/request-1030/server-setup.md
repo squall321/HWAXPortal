@@ -51,6 +51,7 @@
 | 포털 | `d31bca1` · `4034845` · Drive `images-20261031-055500Z` | 같은 묶음의 포털 몫 — 사람 설정 `users.hub_view` · 토큰 화면 보기 고르기 · 등록 배치 머리 `X-HWAX-View: portal` · Q-2 확인(목록은 늘 접두, 사용자 10-31) | 올림 — 화면은 Drive 판. 확인은 위와 같다 |
 | StepForge | `4253453` · Drive(HEAXHub) `dist-20261031-101810Z` | 인자 설명(B37 §2-2) — find_parts 11 · stackup_profile 6 · bend_profile 3, 그리고 접는 도구 78 이 함께 받는 `full` 한 자리(dev `/tools-map` described 0 → 98 / 827) · 측정 잡 접수가 `Annotated` 형을 글로 읽어 bool 인자의 "yes" 를 받던 이음매 고침(형 · 기본값 · 필수 · 차례는 그대로) | 올림(그쪽 세션) — `dist-from-drive.sh` 로 step_forge 교체 |
 | AIDataHub | `fccb0e5`(`3dc1bb5` 포함) | 조회는 read_count · last_accessed_at 만 올리고 updated_at 은 그대로(사용자 결정 10-31) · 병합이 이미 있는 행을 dev 판으로 덮어도 이 박스의 read_count · last_accessed_at 은 지킨다(새 행만 dev 값 — 반대 검토 고침) · 병합 끝 요약의 조회 몫은 updated_at 과 last_accessed_at 이 서로 1초 안일 때만 센다 | 올림 — update-all 이 받는다(API 재기동 · 이관 없음 — 이관 0032 트리거에 기댄다). 예전 조회로 올라간 행은 그대로 남아 계속 센다. dev 는 10-31 10:21 UTC 재기동 |
+| 에이전트 서버 | `82e3729`(병합 — B17 `f3a714f` · `458eced` · `81589ae`) | 이어하기 좌석 재심사가 사람 의견(없으면 원 질문)에서 짓는 짧은 축으로 묻는다 — 축마다 추천 40명 · 넓은 접두(sw · xd)는 둘째 마디까지를 앉은 도메인으로 · 축은 하나씩 묻다 자리가 차면 멈춤 · 기한 `DELIB_RESCREEN_TIMEOUT_S` 600초. 끊긴 잡 잇기는 재심사를 걸지 않고, 첫 실행(이전 결론 없음)은 예전 한 덩이 그대로(사용자 결정 10-31). 포털 정본 파이프라인 `hwax-deliberate.js` 의 좌석 계약 주석도 같은 뜻으로 고쳤다 | 올림 — 에이전트 서버 재기동(dev 10-31 10:37 UTC) · 포털 쪽은 update-all 의 sync 가 받는다. 받아들임은 4절 B17 줄 |
 
 ## 1. update-all 한 번
 
@@ -109,6 +110,7 @@
 | AD-21 | 운영자 동기화(`python3 infra/scripts/sync-he-personas.py` 미리보기 뒤 `--apply`)가 첫 건에서 멈추지 않는다. 원래 거절 까닭은 AIDataHub 로그에서 읽기만 한다 — `grep -n 'sample embedding sync failed twice\|validation errors for AgentOut' deploy/apptainer/logs/uvicorn.log* \| tail -20` |
 | AD-03 | M-6 — [`platforms/90-OURS.md`](platforms/90-OURS.md) 의 'AIDataHub 쪽 M-6 의 바른 길'(NASCA **.xlsx** 로 본다) |
 | AD-07 | 게이트웨이 `tools/list` 의 `agent_search` 입력에 `as_of` · `as_of_undated` 가 있다(소스가 아니라 목록으로 본다) |
+| B17 | deliberation-quality 42 줄의 심의(경시성 — 원 질문 · 원 사람 의견 그대로)를 이어하기로 한 번 다시 돌린다. 상태줄 `이어하기 재심사 — 신규 좌석 <키>(<축>)` 에 서비스 운영 · 필드 데이터 계열이 1명 이상 오르고, 이전 좌석은 전원 유임(좌석 사건 personas)이다. `검색 축을 짓지 못해(…)` 가 나오면 GLM 이 답하는지 먼저 본다. 결과(신규 좌석 키 · 축)는 사용자에게 알린다 — dev 는 축 LLM 이 없어 보지 못했다 |
 
 ### 포털 · 게이트웨이(올린 것)
 
