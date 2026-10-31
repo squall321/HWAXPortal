@@ -874,6 +874,32 @@ def test_초안은_남의_실행을_안_보여준다(user):
     assert c.get(f"{PREFIX}/runs/{rid}/draft", headers=boss).status_code == 404
 
 
+def test_챗에서_한_게시의_확인_토큰은_읽는_길_어디에도_없다(user, monkeypatch):
+    """챗 턴 기록이 원장에 넣기 전에 가렸으면 읽는 길(실행 보기 · 단계 결과 · 초안 · 초안 저장의 거절 글)에도 없다 — 읽는 쪽마다 따로
+    가리지 않는다. 초안 저장은 종전처럼 거절하고 무엇을 지울지 말한다 — 가린 값도 앞 단계 결과와 같아 그 단계에서 이어진 값으로 읽힌다."""
+    from tests.test_procedures_from_chat import TOKEN, _publish_turn
+
+    from app.procedures import from_chat
+    from app.procedures import routes as R
+
+    async def _map(_request):   # 게이트웨이 `/tools-map` 대역 — 챗 기록에는 어느 앱인지 없다(오프라인 실행기는 지도를 못 준다)
+        return {"map": {"preview_publish": "reportarchive", "publish_report": "reportarchive"}}
+
+    monkeypatch.setattr(R, "_tools_map", _map)
+    c, h = user
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    rid = from_chat.record(c.app.state.procedures_store, owner_sub=me, conversation_id="c",
+                           title="41번 보고서를 dept-a 에 게시", activity=_publish_turn())
+    sig = TOKEN.split(".")[1]
+    got = [c.get(f"{PREFIX}/runs/{rid}", headers=h), c.get(f"{PREFIX}/runs/{rid}/draft", headers=h),
+           *(c.get(f"{PREFIX}/runs/{rid}/steps/{i}/result", headers=h) for i in range(3))]
+    assert [r.status_code for r in got] == [200] * 5, [r.text[:120] for r in got]
+    assert [r.request.url.path for r in got if sig in r.text] == []
+    r = c.post(f"{PREFIX}/runs/{rid}/draft/save", json={"title": "게시"}, headers=h)
+    assert r.status_code == 422 and sig not in r.text, r.text[:300]
+    assert "confirm_token" in r.text and "preview_publish" in r.text and "지운다" in r.text, r.text[:600]
+
+
 def test_절차를_도구_계약으로_낸다(user):
     """절차는 사실상 도구다 — 계약을 같은 모양으로 내면 부르는 쪽이 같아진다(PLAN §9)."""
     c, h = user
