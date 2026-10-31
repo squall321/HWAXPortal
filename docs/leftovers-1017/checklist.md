@@ -30,4 +30,4 @@
 - [x] 보고서 triage-1031.md · 받은 편지함 [`2026-10-31-backlog.md`](../cae00-inbox/2026-10-31-backlog.md) Q1 ~ Q20 · 문서 가드 시험
 - [ ] 사용자 결정 32 물음(표 A) 받기 — 답은 그 줄과 각 폴더 context-notes 로
 - [ ] dev 작업 38(표 B) — 사용자가 고른 것부터
-- [ ] cae00 답(backlog Q1 ~ Q20)을 그 줄로 옮기기
+- [ ] cae00 답(backlog Q1 ~ Q20)을 그 줄로 옮기기 — Q21 · Q22 를 더했다(요청서 둘이 기다리는 cae00 읽기 — time-limits 1-2 · MaterialTwin 이관 잔여, 답은 그 요청서의 받는 곳에 넘긴다) (10-31 정리)

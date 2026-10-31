@@ -5,7 +5,7 @@
 | 받는 곳 | MaterialTwinWeb 세션(데이터 주인). |
 | 근거 | 데이터 이관 [checklist](../checklist.md) D2 잔여 줄('`.agent_work` → … `source.local_path` 18행 UPDATE …' — 10-31 판 45줄)에 붙은 사용자 결정 10-31 A4 ①('MaterialTwin 담당 세션에 넘긴다' — followups-1017 X1 ~ X3 '데이터 정리는 MaterialTwin 담당' 과 같은 길) · 같은 날 A2 ①(D5 는 보류 유지, 그러나 D5 줄의 MaterialTwin 크론 둘은 D5 와 무관하게 MaterialTwin 담당 몫 — 10-31 판 55줄 ⑤ · 59줄) · [PLAN](../PLAN.md) §7.4 · §7.15 · §9 · §12 8번(결정 17) · [triage-1031](../../leftovers-1017/triage-1031.md) A2 · A4 |
 | 대조한 것 | MaterialTwinWeb main `4273720` · dev 박스 2026-10-31 15:00 KST 무렵. 크기는 `du`, 행 수는 운영 DB 를 읽기 전용(`immutable`)으로 열어 셌다. 옮기거나 지운 것은 없다. |
-| 범위 | dev 박스다. cae00 에 같은 것이 있는지는 그쪽이 본다. |
+| 범위 | dev 박스다. cae00 에 같은 것(① 작업 폴더 · ② 행 · ③ 사본)이 있는지는 포털이 받은 편지함 [backlog Q22](../../cae00-inbox/2026-10-31-backlog.md) 로 받아 넘긴다 — dev 세션은 cae00 을 읽지 못한다. |
 
 경로는 MaterialTwinWeb 리포 기준이거나 앱 데이터 자리(`$HEAX_DATA_DIR` — 허브가 컨테이너에 `/data` 로 붙인다. dev 호스트에서는 허브
 `var/app_data/materialtwin_web` 이 가리키는 `<데이터 루트>/appdata/materialtwin_web/`) 기준이다.
