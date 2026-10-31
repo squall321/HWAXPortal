@@ -2498,3 +2498,33 @@ W-93 이 '결과 귀환' 을 DynaForge 몫으로 정했고, DynaForge 가 10-29 
   ③ `dry_run` 을 선택 변수로 두면 비웠을 때 칸이 빠져 도구 기본값(append_rows 는 실제 쓰기)으로 돈다 — 저장 때 `warn:`.
   반박된 것 셋 — 도구가 필수로 받는 인자를 선택 변수로 채우면 칸이 빠져 도구가 거절한다(고침 전에도 같은 단계에서 멈췄다 — 까닭 글만 다르다) · `dry_run` 칸 빠짐 자체는
   정한 규칙이다(③ 의 경고로 알린다) · DynaForge 쪽 기록의 'null 로 넘긴다' 는 그쪽 기록이다(알렸다).
+
+## W-103. 환원 도구 셋이 §10-7 의 칸과 맞았다 — 제안을 규약으로 올린다(10-31, 남은 일 B4)
+
+- **무엇을 했나.** `bend_profile`(StepForge `core/bending.py`) · `stackup_profile`(StepForge `core/profile.py`) · `sed_sample_from_odb`(ThermalShockMCP
+  `app/reduce_odb.py`)의 응답 키를 §10-7 의 여섯 칸과 §10-2 규율 1(못 읽으면 값 대신 까닭)에 칸마다 맞댔다. 표와 파일:줄은
+  [reduction-contract.md](reduction-contract.md) 다(형제 리포는 읽기만 — StepForge `51c8788` · ThermalShockMCP `6e6a6db`). 응답 꼴은 이 리포의 실물
+  고정물(R1 · R3)과 StepForge 회귀(`tests/test_profile.py:146-168`)로 한 번 더 봤다.
+- **맞은 것.** 셋 다 `basis` · `notes` · `<x>_check`(`agree`) · `for_<해석>_analysis` 를 내고, 못 읽은 것을 값으로 지어내지 않는다. §10-7 이 적은 조건
+  ('두 번째 환원 도구가 같은 모양이면 규약으로')을 둘이 넘었다 — PLAN §10-7 을 규약으로 고쳤다(PLAN 은 기록이 아니라 따르는 글이다).
+- **다른 것 셋 — 규약을 실물에 맞춰 넓혔다.**
+  ① `primary` 는 `bend_profile` 만 낸다. 고를 것이 여럿인 도구(한 정의에 굽힘이 여럿)만의 칸이다 — 적층은 묶음 하나가 대상이고, SED 는 부르는
+  쪽이 AP · PKG 를 지목한다. 그래서 '고를 것이 여럿일 때만' 이다.
+  ② `basis` 가 결과 하나의 글(굽힘마다 · 적층축)이거나 칸 → 글 사전(SED 입력 15칸은 칸마다 읽은 길이 다르다)이다. 둘 다 받는다.
+  ③ `<x>_check` 가 역할마다 갈리고(`center_check.ap` · `.pkg`), 대조할 수 없으면 `checked: false` + `why` 다(`agree` 를 지어내지 않는다).
+  `bend_profile` 은 최소 벽 두께를 못 재면 칸을 내지 않는다. 둘 다 받는다.
+  못 읽었을 때의 신호도 둘이다 — 통째형(`is_bent_plate` · `is_stack` 이 거짓 + `reason`)과 칸 단위형(`needs_human` · `complete` · `missing`).
+  SED 입력은 15칸 가운데 일부만 비는 것이 정상이라 칸 단위가 맞다.
+- **왜 도구를 고치라고 하지 않고 규약을 넓혔나.** 제안일 때 §10-7 이 적은 경고 그대로다 — 규약을 먼저 박고 도구를 맞추면 실물이 안 맞을 때
+  규약이 거짓말을 한다. 세 차이는 다 대상이 달라서 생긴 것이지 규율을 어긴 것이 아니다. 그래서 요청서는 없다.
+- **규약이 정하는 것은 칸 이름과 뜻이다.** 자리는 앱마다 다르다 — ThermalShockMCP 는 봉투(`data.`) 아래, `bend_profile` 은 정의마다 `parts[i].`
+  아래, `stackup_profile` 은 맨 위다. 옛 §10-7 의 'save 경로가 앱마다 달라지지 않는다' 는 꼬리(`for_*_analysis.<칸>`)에만 맞다 — 머리는 W-88 대로
+  그 앱의 실제 응답으로 본다.
+- **정적 시험** `backend/tests/test_procedures_reduction_contract.py` — 씨앗(`docs/procedures/fixtures/*.yaml`)에서 환원 도구 단계가 `for_*_analysis`
+  를 지나는 save 를 하나 이상 갖는지, 그 단계가 저장한 값을 뒤 단계가 통째 인자(`"{{var}}"` — 형 그대로 넘는 값)로 받으면 그 값이
+  `for_*_analysis` 에서 왔는지 본다. 보고서 제목처럼 글 안에 섞인 자리와 보고서 근거로만 남기는 save(`bend_basis` · `needs_human`)는 묻지 않는다.
+  지금 씨앗 둘(R1 · R3)이 걸린다. 변이 셋을 메모리 사본에서 넣어 셋 다 잡혔다 — R1 `r_designed` 를 `parts[0].primary.radius_mid` 로 ·
+  R3 `sample` 을 `data.basis` 로 · R1 `r_designed` 를 이름 일부만 같은 `…for_bending_analysis_note` 로.
+- **본 것, 고치지 않음.** 결손 장부 `gaps/stepforge-stackup-profile.yaml` 은 아직 `status: open` 이다 — StepForge 가 09-15 에 지었다(D-291 · 체크리스트
+  S9 'StepForge 회신 대기' 줄). 상태를 바꾸는 것은 사람이다(§9-6 '등재는 사람이') — 여기 적어 알린다. PLAN §10-2 의 '없는 것 — 스택업 환원' 과
+  §10-6 의 스택업 줄에는 '섰다' 를 달았다.

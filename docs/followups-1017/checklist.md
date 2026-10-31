@@ -39,8 +39,8 @@
 - [x] 감시 보강(사용자 결정 10-19 '감시 보강만', FU-D24) — 포털 `services.py heal`(매니페스트 `watch: true` 다섯 · 포트 연결 거부 세 번일 때만 down · up · 백오프 · update-all 동안 건너뜀) · `install-watchdog.sh` · update-all 은 `HWAX_WATCHDOG=1` 일 때만(꺼져 있으면 ○ 로 남김) · dev 크론 설치 · searxng 로 끝까지 확인. KooRemapper 감시가 MCP 연결도 본다(`559f582`). smarttwin-mcp 는 dev systemd drop-in `Restart=always`
 
 ## 사람 몫(cae00 · 사용자)
-- [ ] 150쌍 검토(검토 화면) — 표시가 끝나면 Claude 에게 '검토 표시를 되돌려' → 내려받기 · `apply_review.py`(먼저 보고 `--write`) · 재측정
-- [ ] 30일 뒤(첫 줄 날짜 + 30일) — 모은 질의(`queries.local.jsonl`)에 정답을 달아 `source: usage` 로 재측정 · RRF 판정(cae00 · dev 각자)
+- [x] 150쌍 검토(검토 화면) — 표시가 끝나면 Claude 에게 '검토 표시를 되돌려' → 내려받기 · `apply_review.py`(먼저 보고 `--write`) · 재측정 — 걷음: request-1029 E-9 ② 가 정답 달기를 포털 '도구 검색 검토'(관리 → 박스의 pairs.local.jsonl)로 바꿨다(docs/request-1029/PLAN.md:89 · server-setup.md:161-162) — 사람 몫은 request-1029 server-setup 7.3 (10-31 정리)
+- [x] 30일 뒤(첫 줄 날짜 + 30일) — 모은 질의(`queries.local.jsonl`)에 정답을 달아 `source: usage` 로 재측정 · RRF 판정(cae00 · dev 각자) — 걷음: 질의 모으기가 일회성 30일에서 굴러가는 창(날짜별 queries-<날>.local.jsonl · 기본 30일 — HWAXMcpGateway gateway.py:2808-2814)으로 바뀌었다 — 정답 달기는 request-1029 server-setup 7.3, RRF 판정은 improvement-1015 4번 줄 (10-31 정리)
 - [ ] cae00 update-all 뒤 묶음 B 확인 — `server-setup.md` 8절
 - [ ] stcx LLM 잡 만료 — **11-14 전** `~/stcx-llm/llmctl.sh rolling`(리뷰 4절)
 - [ ] cae00 — 옛 stash 확인 뒤 drop · PG 시한 한 줄 · 리스크 백업 키 · 데이터허브 바인드 확인

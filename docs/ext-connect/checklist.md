@@ -16,7 +16,7 @@
 - [x] PB11 `connection_services(email)`
 - [x] PB12 합성 권한 `feat:connect`
 - [x] PB13 추적 권한표 주석(matnexus · fmea · 머리)
-- [~] PB14(선택) — 하지 않는다(EC-D5)
+- [x] PB14(선택) — 하지 않는다(EC-D5) — 풀림 포털 `41749f3`(10-27 HP-23) — check-egress 가 박스 권한표 connect: 의 mcp_url 호스트도 센다(infra/scripts/check-egress.sh:63 · :109-122) (10-31 정리)
 - [x] 시험 — 파싱 · 오버레이 · 재기동 없는 반영 · 내부 정책 불변식 · ext 목록 · PUT · DELETE · 합성 권한 · 호환(`test_ext_connections.py` 68)
 - [x] 포털 전체 시험 — 3,202 통과 · 2 실패(HEAD 에서도 같다, EC-D6)
 
@@ -64,7 +64,7 @@
 - [x] push(포털 · 게이트웨이) · 화면 빌드 → Drive(포털 `latest/` 일치) · 포털 전체 시험 3,204 통과 · 2 실패(EC-D6 과 같은 둘)
 
 ## 남은 것 — 사람 몫 · 결정
-- [ ] cae00 반영 — 요청서 4절 순서(포털 update-all → 게이트웨이 리포를 새 판으로 · 재기동(한가할 때) → 박스 권한표 `connect:` → 권한 → 사람이 토큰 등록). 절차는 [sso-delegation server-setup](../sso-delegation/server-setup.md) C · D
-- [ ] FMEA 목록 계정 — 목록 전용 FMEA 로컬 계정 + 그 토큰을 등록할 포털 계정(`list_auth`) 정하기(server-setup D)
-- [ ] 요청서 1-9 남은 질문 — 기본값으로 구현했다(EC-D2). 특히 ③ 평문 토큰(cae00 `users.sqlite` 0644)은 사람이 정한다
-- [ ] dev 게이트웨이 · 포털 백엔드가 새 코드로 다시 뜨는 것 — 확인 뒤(재기동은 사용자 몫)
+- [x] cae00 반영 — 요청서 4절 순서(포털 update-all → 게이트웨이 리포를 새 판으로 · 재기동(한가할 때) → 박스 권한표 `connect:` → 권한 → 사람이 토큰 등록). 절차는 [sso-delegation server-setup](../sso-delegation/server-setup.md) C · D — 풀림 10-29 cae00 웹 챗 QA 에서 FMEA · MatNexus 도구가 불렸다(docs/request_261029.md:55 · :57 · :61 · :63) — 다섯 걸음이 다 섰다 (10-31 정리)
+- [x] FMEA 목록 계정 — 목록 전용 FMEA 로컬 계정 + 그 토큰을 등록할 포털 계정(`list_auth`) 정하기(server-setup D) — 풀림 FMEA 도구 넷이 10-29 cae00 목록에 있고 불렸다(docs/request_261029.md:55 · :57 · :63 — initialize 부터 토큰을 요구해 목록 세션이 서 있어야 그렇다) — 상태는 게이트웨이 /health conn_platforms 로 본다 (10-31 정리)
+- [x] 요청서 1-9 남은 질문 — 기본값으로 구현했다(EC-D2). 특히 ③ 평문 토큰(cae00 `users.sqlite` 0644)은 사람이 정한다 — 풀림 ③ 평문 토큰은 request-1027 결정 D-5 로 정해 `f2ffa60`(10-28 — 박스 키로 암호화 · sqlite 0600) · ⑤ 절차 시작 전 알림(changelog 10-28) · ⑦ 도구 영역(게이트웨이 tool_areas.json fmea · matnexus) — 나머지는 EC-D2 기본값으로 운영 중 (10-31 정리)
+- [x] dev 게이트웨이 · 포털 백엔드가 새 코드로 다시 뜨는 것 — 확인 뒤(재기동은 사용자 몫) — 풀림 10-31 읽기 확인 — dev 게이트웨이 리스너(10-31 01:51 시작) /health 에 conn_platforms · dev 포털 /auth/connections/ext 가 404 가 아니라 401 (10-31 정리)

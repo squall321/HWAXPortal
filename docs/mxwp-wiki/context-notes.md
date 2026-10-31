@@ -135,3 +135,10 @@
 - 게이트웨이 `/health` 에는 위임 목록이 없다 — provision 이 `✓ <키> 사람별 위임 — <주소>` 를 찍는다.
 - 포털 진입 토큰 클레임 — `downstream.py` `JwtDownstreamIssuer.mint`(소속 없음 — `plat:` 은 `groups` 에 원래 실린다. 처음엔 '플랫폼 없음' 으로 잘못 읽었다 → MW-D8).
 - 시장불량 원천 후보 — `plm-defect`(cae00 게이트웨이에만, `access.yaml` `plmdefect` · 알려진 도구 `plm_case_detail` · `plm_similar_cases`) · SignalForge.
+
+## 2026-10-31
+
+- **MW-D23 사용자 결정(10-31) — 위키 워커 PAT 에 `plat:plmdefect` 를 준다.** 옛 남은 일 정리 A23 ①([triage-1031](../leftovers-1017/triage-1031.md)) —
+  MX 백서 요청서 §11 Q8 의 권장안(둘 다 · PLM 결함 먼저 · 사례 단위(사람 정보 뗌) · 위키 범위 `plat:plmdefect` — 그 권한이 있는 사람만 본다)에
+  사용자가 10-31 에 답했다. Q8 의 답은 메인 세션이 MX 백서 세션에 알린다(정본 요청서는 그 리포 `docs/llm-wiki/request.md`). 권한을 실제로 주는
+  것은 권한표 담당의 cae00 걸음이고 MX 백서 W8(실원천 · cae00)과 같은 때다(checklist 45줄).

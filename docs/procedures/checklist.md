@@ -180,7 +180,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       기본을 변수로 올린다
 - [x] 재생 전 "되돌리기 어려운 단계 N개" 목록 · 게이트 카드에 실제 인자와 직전 결과 · 확인 대기 실행 상단
 - [x] 절차 YAML export/import — 본문만 옮기고 **들이는 쪽도 같은 검증**을 탄다(W-61)
-- [ ] ⚠ StepForge 전체 스위트가 180초를 넘는다(형상 연산) — 도는 길을 따로 마련할 것
+- [x] ⚠ StepForge 전체 스위트가 180초를 넘는다(형상 연산) — 도는 길을 따로 마련할 것 — 풀림 전체 스위트는 StepForge 세션이 돌린다(StepForge CLAUDE.md 회귀 줄 · `4b543a9` 10-03 전체 회귀 통과) — 포털 교차 검증(W-62)은 전체를 돌리지 않는다 (10-31 정리)
 - [x] 레이아웃 — 루트는 `.container`(ChatDock 자리 예약). 고정 액션 바는 우하단 비우고 상단·좌측.
       `AppShell` 은 손대지 않는다. `ProceduresContext` 는 `/procedures/*` 요소 안, `useChat` 안 씀,
       localStorage 는 입력 중 인자 초안에만
@@ -303,7 +303,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] ⑦ 성공 기록의 `error` 오남용 제거 — 칸을 갈랐다. 정적 검사로 재발 방지(W-47)
 - [x] 절차 실행의 상관 ID 가 감사에 남는다(실측 `corr: run-TEST123`)
 - [x] ~~⚠ 챗은 상관 ID 미결 — 도구 연결이 그룹 캐시라 대화별로 못 붙인다(원장 직접 쓰기로 대체)~~ — 버림(10-17 — 원장 직접 쓰기로 대체 — from_chat.record() 가 챗 턴을 run_steps 에 남김(S7a ⑤, L297 체크됨))
-- [ ] 실제 챗 한 턴을 돌려 원장에 제대로 남는지 확인(사람)
+- [x] 실제 챗 한 턴을 돌려 원장에 제대로 남는지 확인(사람) — 풀림 dev 원장(backend/data/procedures.sqlite)에 10-01 · 10-11 실제 챗 턴(trigger_kind conversation · origin chat — 인자 · 결과 · 성패 · 소요), 기록 자리는 backend/app/agent/routes.py:2817 — 09-15 21:00 실행(제목 q · tool_00~59)은 시험이 남긴 흔적으로 보인다, 지울지는 사람 (10-31 정리)
 - [x] **도출** — `derive.find_path()` 가 값의 출처를 역으로 찾는다(키워드 목록 아님, W-48)
 - [x] R1 실행을 넣으면 R1 체인이 그대로 나온다 · 결손도 같이 나온다
 - [x] 찾은 경로는 `template.extract` 로 **대조**한다 · 짧은 값은 안 믿는다
@@ -335,7 +335,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       뒀는데, **어떤 모양으로 오면 우리가 안 고치는지**는 그쪽이 알아야 정한다.
       실측으로 아직 안 왔다(연산 47종 · 후처리 0건)
 - [x] ~~DynaForge 회신 대기 — 세 갈래 중 어느 쪽인지(연산 / 독립 도구 / 오래 걸림)~~ — 버림(10-17 — W-93 사용자 결정(후처리 예약 연산 — KooRemapper REQUEST-postprocess-operation.md §7)으로 대체 · DynaForge 회신 §9(09-19))
-- [ ] ② 두 번째 환원 도구가 `bend_profile` 과 **같은 모양인지** 보고 규약으로 올린다(§10-7)
+- [x] ② 두 번째 환원 도구가 `bend_profile` 과 **같은 모양인지** 보고 규약으로 올린다(§10-7) — 풀림 대조표 docs/procedures/reduction-contract.md(`stackup_profile` · `sed_sample_from_odb` 둘 다 같은 모양 — StepForge `51c8788` · ThermalShockMCP `6e6a6db`) · PLAN §10-7 규약 · W-103 · 씨앗 정적 시험 backend/tests/test_procedures_reduction_contract.py (10-31 정리) — 정정: '둘 다 같은 모양' 은 넘친다 — 셋 다 `basis` · `notes` · `<x>_check` · `for_<해석>_analysis` 를 내지만 `primary` 는 `bend_profile` 만 내고 `basis` · `<x>_check` 의 꼴이 다르다 — 그 셋은 규약을 넓혀 맞췄다(reduction-contract.md §2 · W-103) (10-31 정리)
 - [ ] **③ 보강 — 라미나 물성**(강도·피로) 조달 경로 → MaterialTwin ↔ 적층 해석기 결손
 - [x] S5 와 이었다 — `fan-out` 이 후보마다 실행을 하나씩 만든다(W-57)
 - [x] 배치 = **새 실행 N개**라 게이트·재개·다시 돌리기·도출이 그대로 돈다
@@ -351,7 +351,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 게이트웨이에서 베낀 상수 대조 — `_CACHEABLE`·`_INVOKE_DENY_*` · **시간 상한 관계**
 - [x] 검출기가 `catalog_run` 을 못 찾던 것 수정(접두만 봤다, W-67)
 - [x] 못 미는 것은 **등록부에 데이터로**(`detector_finds: false`) — 규칙을 안 늘린다
-- [ ] 인구조사 갱신을 주기적으로 — 지금은 사람이 생각날 때 돌린다
+- [x] 인구조사 갱신을 주기적으로 — 지금은 사람이 생각날 때 돌린다 — 걷음: 정기 갱신은 짓지 않기로 했다(LO-D4 — 갱신은 사람이 돌린다 · dev 와 cae00 카탈로그가 다르다) · 대신 --check 가 내려간 백엔드 탓 '사라짐' 을 가르고 그때 갱신을 막는다(`e76691d`) (10-31 정리)
 - [x] ⚠ 가드가 **두 번째**로 잡았다(2026-09-15 오후) — 470→471 `rigid_body_check`.
       사람이 보고 판단: 읽기 전용 점검이라 게이트 불필요(StepForge D-296)
 
@@ -408,8 +408,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 5차 가드가 자기가 잡으려던 회귀를 통과시키던 것 — 줄 단위로 고치고 자기검사 추가
 - [x] 심의 셋 — 중단이 AI 머리말에 덮이던 것 · 공용 근거 무표식 절단 · 상태줄 과대보고
 - [x] 내부 IP 가 **public GitHub** 추적 파일에 있는 것 — 늘지 않게 가드(정리·히스토리는 사람)
-- [ ] 추적 파일 내부 IP 15개 정리 + 히스토리 세탁 여부 — **사람 결정**(force-push)
-- [ ] 8차 — 7차 수정 대상. 미탐으로 남은 것: 챗 스트리밍·`conv_store`·docx 내보내기
+- [x] 추적 파일 내부 IP 15개 정리 + 히스토리 세탁 여부 — **사람 결정**(force-push) — 풀림 추적 파일 0(`3b85873` — backend/tests/test_no_internal_ips.py KNOWN_FILES 0) · 10-17 결정 1 '히스토리는 다시 쓰지 않는다'(docs/followups-1017/PLAN.md:13 · :98) (10-31 정리)
+- [x] 8차 — 7차 수정 대상. 미탐으로 남은 것: 챗 스트리밍·`conv_store`·docx 내보내기 — 걷음: 09-16 라운드 대상이 그 뒤 코드로 덮였고 세 영역은 뒤 수정 라운드를 지났다(챗 스트리밍 `a01da0e` · `bd01b0c`, conv_store `7e21e7a` · `ec46b36` · `1387808`, docx `cf2eb6f` · `79a93f1`) — 새 감사는 새 요청으로 (10-31 정리)
 
 ## S3 · R2 낙하·충격 — 제출/회수 두 절차 (S1 만 선행)
 
@@ -418,7 +418,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 된다. 지금 사슬을 박으면 그 절차는 전부 거짓말이 된다(`gaps/dynaforge-postprocess.yaml`).
 
 - [x] 이음매를 문서에 박았다 — 얻는 쪽/읽는 쪽을 갈랐고 옮겨 올 때 필요한 것을 미리 적었다
-- [ ] 옮겨 온 뒤 — 연산으로 오면 등록부 그대로, 직접 도구로 오면 인자 스키마를 받아야 한다
+- [x] 옮겨 온 뒤 — 연산으로 오면 등록부 그대로, 직접 도구로 오면 인자 스키마를 받아야 한다 — 풀림 `9ce09b6` — 후처리가 연산(run_operation postprocess)으로 와 등록부(docs/procedures/dispatchers.yaml) 그대로, 스키마는 실물 고정물 dynaforge_session_schemas.json 으로 맞댄다 (10-31 정리)
 - [x] 결과 귀환 지도(2026-09-16, W-92) — 자동은 `sphere_report.html` 까지, 부분충격은 리포트 0건, 완료 알림·밀기 없음,
       후처리 실패도 `COMPLETED 0:0`. 우리 서술 둘(`job_postprocess` 사슬·"운반이 사라진다")이 틀려 고쳤다
 - [x] **결정**(2026-09-17, W-93) — DynaForge 후처리 연산이 클러스터에 잡을 걸고 **HTML 만 받는다**. 길은 대시보드 REST 기본·ssh
@@ -438,9 +438,9 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] cae00 절차 미동작 점검·수정(2026-09-17, W-95) — 게이트웨이 실패를 502+이유로, 드리프트 이유를 원장에,
       update-all 헬스게이트에 절차·dist 신선도, git pull 실패를 종료코드로
 - [x] 포털 — 회수/부품 보고서 씨앗(W-96) · 축 태그 붙이기 R2c(W-97)
-- [ ] 포털 — 제출 씨앗 **예약 단계**(DynaForge 연산이 와야 한다) + 그 앞의 **과제 목록 단계**
+- [x] 포털 — 제출 씨앗 **예약 단계**(DynaForge 연산이 와야 한다) + 그 앞의 **과제 목록 단계**
       → 목록 선택은 새 기계가 필요 없다(목록 도구 + `select {on_many: ask}`). 어휘가 dev 에 0건이고
-      붙을 자리가 예약 단계라 **예약과 같이 막혀 있다**(W-99)
+      붙을 자리가 예약 단계라 **예약과 같이 막혀 있다**(W-99) — 걷음: 과제 목록 단계는 두지 않는다 — 사용자 결정 10-31 A11 (A): project 는 자유 입력 그대로, 정본 잇기는 DynaForge 가 반입 뒤 SP 과제로 · 예약 단계는 `9ce09b6`(10-29)로 섰다 (10-31 정리)
 - [x] KooRemapper 요청서에 결정 반영(`REQUEST-postprocess-operation.md` §7)
 
 
@@ -448,8 +448,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 아래 두고, 제출과 회수를 가른다**(드라이버 walltime **167시간**).
 
 ### R2a 제출 (dev 는 `dry_run` 까지)
-- [ ] `save_result_to_path`(gate) → `smarttwin_scenario_options`(`raw: true` — 반환이 텍스트
-      카탈로그다) → `smarttwin_submit`(**must-gate**)
+- [x] `save_result_to_path`(gate) → `smarttwin_scenario_options`(`raw: true` — 반환이 텍스트
+      카탈로그다) → `smarttwin_submit`(**must-gate**) — 풀림 두 제출 씨앗이 이 사슬이다(fixtures/fullangle-drop-submit.yaml · partial-impact-submit.yaml — 옵션 → 미리보기 → 게이트 제출), save_result_to_path 는 model_path 변수로 갈음(475줄) (10-31 정리)
 - [x] `sim_type` 만 바꾼 판본 둘 — `fullangle_drop`(각도 프리셋) · `partial_impact`
       (`locations.mode` = grid|list|lhs|part_center, `impactor` Sphere|Cylinder)
       → **부분충격 완료**(2026-09-16) — 씨앗 `fixtures/partial-impact-submit.yaml`: 카탈로그 → 미리보기(리터럴
@@ -495,12 +495,12 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] `sphere`/`impact` 는 리포트 `kind` — `sim_type` 과 짝이다. `ingest_report` 가 자동 판별한다 (확인 10-17 — 씨앗 report_summary 에 kind == sphere|impact 단언(L558) — backend/tests/test_procedures_s3.py:337)
 - [x] ⚠ **부분충격은 scenario 첨부를 생략**한다 — 파서가 `scenarios` 배열을 요구하는데 평탄
       구조라 `ScenarioParseError` 로 **인제스트 전체가 실패**한다 (확인 10-17 — fixtures/partial-impact-part-report.yaml:14 — 부분충격은 scenario 를 리포트에 붙이지 않음(첨부 단계 없음))
-- [ ] ⚠ 구버전 SIF 는 `impact_report` 를 **`exit 0` 으로 조용히 건너뛴다** — 산출이 없는데 성공으로
-      보인다. 실행 기록에 산출 파일 유무를 남긴다
-- [ ] 과제 메타(`project`·`dev_rev`·`variation`·`doe`·`focus`)를 안 넣으면 `find_reports` 로 다시 못 찾는다
+- [x] ⚠ 구버전 SIF 는 `impact_report` 를 **`exit 0` 으로 조용히 건너뛴다** — 산출이 없는데 성공으로
+      보인다. 실행 기록에 산출 파일 유무를 남긴다 — 풀림 pyKooCAE `ce61cd4`(건너뜀은 rc 3 · 구버전 impact 는 4) · DynaForge 회수 판정이 리포트 유무를 ok 보다 먼저 본다(KooRemapper platform/backend/app/worker/postprocess_return.py:128-131) (10-31 정리)
+- [x] 과제 메타(`project`·`dev_rev`·`variation`·`doe`·`focus`)를 안 넣으면 `find_reports` 로 다시 못 찾는다 — 풀림 `fbc11d4`(예약에 과제 메타 넷 — W-102) · 잡 키 조회(KooRemapper platform/backend/app/modules/reports/services.py:888-893 OR 거름) — focus 는 예약 연산 계약에 없다(W-101) (10-31 정리)
 - [ ] ⚠ **dev 에서 검증 불가** — `report_corpus` 가 0건이다. 계약만 확인하고 실동작은 cae00
-- [ ] 이 판독 도구 묶음이 **심의 좌석에 주는 도구 목록**이다(PLAN §6 심의 경계). 제출 계열은 좌석에서
-      뺀다 — 심의는 잡을 걸지 않고 이미 있는 `report_id` 를 읽는다
+- [x] 이 판독 도구 묶음이 **심의 좌석에 주는 도구 목록**이다(PLAN §6 심의 경계). 제출 계열은 좌석에서
+      뺀다 — 심의는 잡을 걸지 않고 이미 있는 `report_id` 를 읽는다 — 풀림 HWAXAgentServer deliberation.py:3511-3555(허용 목록 — 제출 계열 없음) · :948-957(판독 도구는 앱 조건) (10-31 정리)
 
 ## S4 · R3 ODB 어댑터 + 열충격 SED (S0 선행)
 
@@ -546,7 +546,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] **cae00 실주행 검증** — 여기서만 진짜 확인된다. 허브가 사용자별 스코프면 "토큰 주인 시야로만 돈다"
       를 context-notes 에 적는다
 - [ ] 워피지 — `copper_imbalance_pct`·`stackup_asymmetry`(산식은 dev 에서 정한다)·`board_thickness_mm` +
-      선택 `diagonal_mm`·`peak_temp_c` 가 같은 다리로 열리는지
+      선택 `diagonal_mm`·`peak_temp_c` 가 같은 다리로 열리는지 — 사용자 결정 10-31 A12: (A) 보류 — 대상 모델이 합성 데이터 데모라 다리를 지어도 판정 근거가 못 된다, 실모델과 `get_copper_result` 성공 표본이 생기면 다시 (10-31 정리)
 - [x] 보고서 경로 — `create_report_draft`(gate) → `suggest_report_tags`(후보만) → gate → `add_report_tags`.
       `create_report_from_run` 은 못 쓴다(적재 실행 `status=ready` 전용)
       → 초안(게이트)·후보까지 씨앗에 붙였다. 위젯 형식은 **실제 dry_run** 으로 확인(warnings 0). RA MCP 가 봉투를
@@ -577,15 +577,15 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 ## S6 · 과제 키 레지스트리 (S5 뒤)
 
-- [ ] 결정 — HWAXRisk `rr_sources`·`rr_projects` 확장인가 신규인가(PLAN §7 #8)
-- [ ] 매핑 표 — StepForge `project_id`(23-hex) · DynaForge `session_id`(ULID) · ThermalShock `project` ·
+- [ ] 결정 — HWAXRisk `rr_sources`·`rr_projects` 확장인가 신규인가(PLAN §7 #8) — 사용자 결정 10-31 A13: (A) SP 과제 키를 앱 사이 정본으로 — 따로 짓지 않고 SP 받기(core:read 토큰)가 켜진 뒤 안 받는 앱(HWAXRisk · ThermalShock)에 SP 키를 받게 요청한다 · 먼저 cae00 `/procedures-api/stats`(받은 편지함 2026-10-31-backlog Q17)로 §6-1 쓸모를 보고 미달이면 S5 이후 보류 (10-31 정리)
+- [x] 매핑 표 — StepForge `project_id`(23-hex) · DynaForge `session_id`(ULID) · ThermalShock `project` ·
       ReportArchive `project` · HWAXRisk `target_key` · **ODB 잡 메타의 과제 필드**(S0 에서 있으면)
-      + **소유 주체 열**(사용자 위임 / 서비스 계정) + **시야 열**
-- [ ] 시야 제약을 앱별로 정확히 — DynaForge `list_sessions`·`find_reports` 는 user_id 스코프(서비스 계정
+      + **소유 주체 열**(사용자 위임 / 서비스 계정) + **시야 열** — 풀림 docs/procedures/app-project-keys.md 1절(앱 여섯 — 키 꼴 · 행의 주인과 게이트웨이 자격 · 시야 · SP 과제 키 · 조직 단위 모아 보기, 칸마다 파일:줄) · 2절(ODB 잡 메타 `project` 는 있다 — fixtures/odb-hub/reference.md:109) · 3절(SP 과제 키 = 허브 `plm_task` key) (10-31 정리)
+- [x] 시야 제약을 앱별로 정확히 — DynaForge `list_sessions`·`find_reports` 는 user_id 스코프(서비스 계정
       0건) · HWAXRisk `risk_list_projects` 는 소유∪멤버∪org 공개분 · RA 는 게시판 권한 기준(소유분만이
       아니다) · StepForge `list_projects`·ThermalShock 은 전사. 조직 단위 모아 보기는 DynaForge·HWAXRisk 에
-      한해 관리자 자격이나 별도 원장이 필요하다
-- [ ] 이름·코드로도 찾기(StepForge 가 이미 그렇게 한다)
+      한해 관리자 자격이나 별도 원장이 필요하다 — 풀림 docs/procedures/app-project-keys.md 1절 — DynaForge 는 그 뒤 바뀌었다: 세션은 소유분 + 공개 범위, 리포트는 소유분 + 같은 소속 공유분이고 관리자는 전사(KooRemapper platform/backend/app/modules/sessions/services.py:40-55 · reports/services.py:833-843 · :874-875 — MCP `list_sessions` 설명만 옛 글) · 모아 보기는 DynaForge 리포트 · RA 가 관리자 자격, DynaForge 세션 · HWAXRisk 가 별도 원장 (10-31 정리)
+- [x] 이름·코드로도 찾기(StepForge 가 이미 그렇게 한다) — 걷음: 사용자 결정 10-31 A13 (A) — 따로 짓는 레지스트리가 없어 찾기 자리도 없다(과제 키 정본은 SP 과제 키) (10-31 정리)
 - [ ] 검증: 실제 과제 하나로 앱을 오가며 키가 안 끊기는지
 
 ## S7 · 챗 → 절차 도출 (S7a 관측 위에서 — **본선**, PLAN §9-1)
@@ -601,26 +601,26 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 합격 기준 확인 — `predict_sed` 병렬 5회가 **각각 다른 인자에 짝지어지는지** 실제로 본다
 - [x] 초안 확정 화면 — 사람이 정할 자리마다 체크상자·이름 칸, 고른 것만 변수로(W-59)
 - [x] 결손 → 장부 **초안**(`POST /gaps/draft`) + 화면 버튼. ⚠ 파일은 포털이 안 쓴다(W-64)
-- [ ] 절차를 게이트웨이에 **실제 도구로 등록**(계약은 섰다 — 등록 경로는 사람 결정)
-- [ ] 실행의 '챗으로 가져가기' — `conv_store.create_with_messages(kind='procedures')`
+- [ ] 절차를 게이트웨이에 **실제 도구로 등록**(계약은 섰다 — 등록 경로는 사람 결정) — 사용자 결정 10-31 A14: (A) cae00 stats 로 §6-1 쓸모를 본 뒤 정한다(FU-D3 그대로) (10-31 정리)
+- [ ] 실행의 '챗으로 가져가기' — `conv_store.create_with_messages(kind='procedures')` — 사용자 결정 10-31 A15: (A) §6-1 쓸모 판정 뒤로 (10-31 정리)
 
 ## S8 · 리스크 패턴화 (가장 뒤)
 
 - [ ] **실행 → 심의 다리** — 실행 상세 "심의로 넘기기". 단계 기록을 `[{source, tool, args, result}]` 로 바꿔
       `POST /agent/conversations` → `POST /agent/chat`(`'/심의 ' + 화두`, `delib_opts.evidence`,
-      `chair_template: "risk-review"`). 새 엔드포인트 아님. 상한 40건·결과 150,000자·**인자 1,200자**
-- [ ] **심의 좌석 도구는 읽기 전용 판독 도구만** — `report_summary`·`report_worst_cases`·
+      `chair_template: "risk-review"`). 새 엔드포인트 아님. 상한 40건·결과 150,000자·**인자 1,200자** — 사용자 결정 10-31 A16: (A) §6-1 쓸모 판정 뒤로 (10-31 정리)
+- [x] **심의 좌석 도구는 읽기 전용 판독 도구만** — `report_summary`·`report_worst_cases`·
       `report_directional`·`report_part_risk`·`report_findings`·`report_query`·`report_case`·
       `report_angle_stats`·`report_scatter`·`report_energy_flow`·`report_part_series`·
-      `compare_reports`. `smarttwin_submit`·`slurm_submit_job`·`run_job`·`submit_lsdyna_job` 은 **뺀다**
-- [ ] `compare_reports`(리비전 비교)·`report_corpus`(반복 findings = 설계 규칙 후보)가 패턴화 재료
-- [ ] 선행 결손 — `delibTaxonomy.ts:5-12` `JobId` 에 `risk-review`
-- [ ] 선행 결손 — `conversations.api.ts:6` `ConvKind` 에 `'risk-review'`(없으면 `ChatContext.tsx:457` 필터에서
-      조용히 걸러진다)
+      `compare_reports`. `smarttwin_submit`·`slurm_submit_job`·`run_job`·`submit_lsdyna_job` 은 **뺀다** — 풀림 HWAXAgentServer deliberation.py:3511-3555 · :948-957(제출 계열 없음 · 판독 도구 앱 조건) — report_query · report_angle_stats 는 지정 도구 길(tests/test_delib_sealed.py:210) (10-31 정리)
+- [ ] `compare_reports`(리비전 비교)·`report_corpus`(반복 findings = 설계 규칙 후보)가 패턴화 재료 — 사용자 결정 10-31 A16: (A) 609줄(실행 → 심의 다리)을 따른다 — §6-1 쓸모 판정 뒤로 (10-31 정리)
+- [x] 선행 결손 — `delibTaxonomy.ts:5-12` `JobId` 에 `risk-review` — 걷음: 사용자 결정 10-31 A17 (A) — 8번째 카드 '리스크 심사' 를 두지 않는다, 입구는 `/risk` · 리스크 앱 하나(LO-D3 — 같은 일을 하는 길이 둘이면 원장에 안 쌓이는 단발 심사가 생긴다) (10-31 정리)
+- [x] 선행 결손 — `conversations.api.ts:6` `ConvKind` 에 `'risk-review'`(없으면 `ChatContext.tsx:457` 필터에서
+      조용히 걸러진다) — 걷음: 대화 종류는 바꾸지 않는다(LO-D2 — 바꾸면 심의 탭에서 사라진다) · 포털 백엔드는 risk-review 를 받는다(backend/app/agent/routes.py:382-385) (10-31 정리)
 - [ ] 결과 → `risk_add_finding`(must-gate). `cites` 0건이면 `{"error":"cites_required"}`(isError=false — §5-6 ④).
-      `claim` ≤2000자
+      `claim` ≤2000자 — 사용자 결정 10-31 A16: (A) 609줄(실행 → 심의 다리)을 따른다 — §6-1 쓸모 판정 뒤로 (10-31 정리)
 - [ ] `risk_taxonomy` 어휘를 **코드가 대조**한다 — `mechanism`·`domain` 은 서버 검증이 없어 오타가 그대로
-      저장된다(422 는 `severity`·`judgement`·`direction` 뿐)
+      저장된다(422 는 `severity`·`judgement`·`direction` 뿐) — 사용자 결정 10-31 A18: (A) HWAXRisk 가 검사한다 — 422 + 허용값, unclassified 허용, dev 작업 진행 중(10-31) (10-31 정리)
 
 ---
 

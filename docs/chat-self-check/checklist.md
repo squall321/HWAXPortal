@@ -16,5 +16,5 @@
 
 ## 문서
 - [x] 계획 · 결정(SC-D1~D11) · 업데이트 이력 · CLAUDE.md 행 · 기억
-- [ ] dev 에이전트 서버 재기동(사용자 확인 뒤) — 그 전까지 dev 챗은 종전 그대로(화면은 self_check 가 없으면 아무것도 더하지 않는다)
-- [ ] cae00 반영(update-all — 사람) · 실모델에서 `meta.self_check.ms` 와 고친 곳 표본 보기
+- [x] dev 에이전트 서버 재기동(사용자 확인 뒤) — 그 전까지 dev 챗은 종전 그대로(화면은 self_check 가 없으면 아무것도 더하지 않는다) — 풀림 dev 리스너 10-31 01:06 UTC ⊇ `d8011e0` · /health self_check.on true (10-31 정리)
+- [x] cae00 반영(update-all — 사람) · 실모델에서 `meta.self_check.ms` 와 고친 곳 표본 보기 — 풀림 cae00 기준 판 `969e723` ⊇ `d8011e0` · 고친 곳 표본 request_261030.md HA-27 · 검토 시간 분포는 받은 편지함 2026-10-31 Q5 (10-31 정리)

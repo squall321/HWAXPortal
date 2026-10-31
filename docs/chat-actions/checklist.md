@@ -22,9 +22,9 @@
 ## 반영(사내) — 순서를 지킨다
 - [x] 커밋·push (확인 10-17 — 3a1e093 · 1487848 이 origin/main 에 있음(main = origin/main))
 - [ ] **사이드카가 먼저** — `/knox-bridge/ui/actions.json` 이 `application/json` 으로 나오는지 사이드카 포트에서 확인
-- [ ] **게이트웨이 키가 먼저** — 사이드카 bridge MCP 를 게이트웨이에 붙이기 전(또는 같은 변경)에 그 백엔드 키를
-      `access.yaml` `knoxbridge.gateway` 에 넣고, `feat:chat` 만 있는 계정의 `tools/list` 에 bridge 도구가 없는지 본다
-- [ ] cae00 — `git pull` → `cd frontend && pnpm build`
+- [x] **게이트웨이 키가 먼저** — 사이드카 bridge MCP 를 게이트웨이에 붙이기 전(또는 같은 변경)에 그 백엔드 키를
+      `access.yaml` `knoxbridge.gateway` 에 넣고, `feat:chat` 만 있는 계정의 `tools/list` 에 bridge 도구가 없는지 본다 — 풀림 backend/config/access.yaml:122-126(knoxbridge.gateway — `3b61d63` 10-01) · 표에 없는 게이트웨이 백엔드는 update-all §6 이 막는다 · 숨긴 플랫폼도 정책은 그대로(backend/tests/test_chat_actions_killswitch.py:94) — 기본 계정 tools/list 대조는 29줄 cae00 확인 때 (10-31 정리)
+- [x] cae00 — `git pull` → `cd frontend && pnpm build` — 걷음: cae00 은 pnpm build 를 돌리지 않는다(docs/cae00-deploy-guide.md:407-408 — dev 빌드가 Drive 로 온다) · 챗 액션 커밋 `3a1e093` · `1487848` 은 cae00 이 10-17 에 돌린 판 `70f9e5e` 의 조상 (10-31 정리)
 - [ ] `routes.local.env` 에 `knox-bridge=` → `gen-nginx-conf.sh` → nginx reload → `POST /systems/reload`(또는 포털 재기동)
 - [ ] CAEG 계정으로 챗·심의 툴바 버튼 확인, 비CAEG 계정으로 매니페스트 요청 0 확인
 - [ ] 개통 확인 뒤 `changelog.yaml` 에 "Knox 개통 환경에서" 한정 문구로 항목 추가(모든 박스가 같은 팝업을 본다)

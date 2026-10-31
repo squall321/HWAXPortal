@@ -44,7 +44,7 @@
 
 - [x] dev 리스크 앱 교체(고아 인스턴스 먼저 확인 — 메모 heax-orphan-instance-same-name) · 게이트웨이·포털 재기동(10-14 — 옛 고아를 내린 뒤 지금 인스턴스의 기록 파일까지 사라져 있어 그 네임스페이스 init 으로 내리고 교체, 9408·스키마 v4·러너 잠금 새 인스턴스, 게이트웨이 리스크 도구 29종, 게이트웨이 설정에 두 칸 손으로 더함·기동 경고 없음)
 - [ ] Claude(hwax MCP) → `risk_next_step` → 교환 → 등록이 실제로 일어난다(토큰 목록에 `hwax-risk` 하나, 앞선 것은 폐기) — 10-14 dev 실호출은 `portal-pat:skipped-aud-unavailable`(데모 계정의 등록 PAT·이 세션 PAT 둘 다 step-forge 없음 — 되풀이 방지가 설계대로 섰다). 교환 끝까지는 청중 전부의 PAT 로 다시 본다
-- [ ] PAT 없는 사람의 패널 잡이 서비스로 내려가지 않고 멈춘다 — 시험으로만 확인(PAT 없는 dev 계정이 없다)
+- [x] PAT 없는 사람의 패널 잡이 서비스로 내려가지 않고 멈춘다 — 시험으로만 확인(PAT 없는 dev 계정이 없다) — 풀림 HWAXRisk `5d47690`(U-3 — owner 의 포털 PAT 만, 없으면 422 pat_unavailable) · tests/test_runner_panel.py:231 · :364 — dev 에 PAT 없는 계정이 없어 시험이 그 자리를 덮는다 (10-31 정리)
 - [ ] 위임 캡처가 REST 로 `/tree` 를 읽어 G6 이 「모름」이 아니다 — 10-14 dev 는 다리가 닫힌 까닭(`no_site_audience`)과 고칠 길을 길잡이가 사실대로 말하는 데까지 봤다. 읽기는 step-forge 청중이 있는 PAT 로 다시 본다
 
 ## P6 마무리
@@ -52,4 +52,4 @@
 - [x] `server-setup-m1.md` 키 표 · `cred.key` 옮기기(7절·7-1·7-2)
 - [x] cae00 절차서 [server-setup.md](server-setup.md) — update-all 판정도 넓혔다(`260a62f`, 항목이 있어도 두 칸이 없으면 재프로비저닝)
 - [x] 업데이트 이력(기술·수정) · push(10-14 — 연결 하나·기술 셋, `cecb31c`)
-- [ ] 화면 세션에 요청서 전달 확인
+- [ ] 화면 세션에 요청서 전달 확인 — 사용자 결정 10-31 A32: (가) 리스크 앱 화면 요청서 넷(m3 · risk-credentials · claude-delib-parity · ecad-1031)과 이번 화면 몫을 한 세션으로 묶어 돌린다 — 리스크 화면 워크플로가 돈다(10-31) (10-31 정리)

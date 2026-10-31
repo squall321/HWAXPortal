@@ -6,7 +6,7 @@
 - [x] 조사 — RA 형식 · 넣는 길 · 엔티티 · 지금 변환기 셋 · VLM · SP · HEAX 앱 바탕 · 바깥 도구(research.md)
 - [x] 계획 · 원칙 · 단계 · 평가 · 위험(PLAN.md) · 결정 기록(DF-D1~D8)
 - [x] 사람이 정할 것 §12-1 어디에(새 HEAX 앱 DocForge) · §12-3 VLM(stcx Qwen) — 10-24
-- [ ] 사람이 정할 것 §12 남은 것 — 2 RA 에 넣는 길 · 4 금 표본 · 5 기준 숫자 · 6 형식 범위 · 7 Word 쪽 나누기 · 8 판독 자리 · 9 원본 슬라이드 그림 · 10 SP ↔ RA 엔티티 · 11 구조화 출력
+- [ ] 사람이 정할 것 §12 남은 것 — 2 RA 에 넣는 길 · 4 금 표본 · 5 기준 숫자 · 6 형식 범위 · 7 Word 쪽 나누기 · 8 판독 자리 · 9 원본 슬라이드 그림 · 10 SP ↔ RA 엔티티 · 11 구조화 출력 — 사용자 결정 10-31 A19: (A) 지금 박힌 기본값으로 정한다 — 2 · 6 ~ 11 은 PLAN §12 에 적었다(DF-D25) · 4 · 5 는 cae00 금 표본 때 (10-31 정리)
 
 ## 뼈대 · 인계(10-24, dev)
 - [x] DocForge 리포(`squall321/DocForge` 비공개 · main · release `9f0d2e9`) — 앱 · 계약 · 걸어 다니는 뼈대 · 단계 명세 · 시험 16 + 명세 8 · 스크립트 · 문서(CLAUDE.md · docs/*)
@@ -21,10 +21,10 @@
 - [ ] 금 표본 — 실문서 40건 + DRM 5건(사람) · cae00 개발 데이터 폴더(리포 밖) · 정답 뽑기(원본 XML → 글 · 숫자 · 표 · 차트 값)
 - [ ] 기준선 — RA 가져오기(+ ai-draft) · AIDH `convert_file` 을 금 표본에 · 지표 표
 - [ ] Docling — cae00(길 A venv · 길 B 앱 SIF) · 금 표본 · 글 회계 · 표 · 차트 · 노트 · 기하 · 쪽당 시간(CPU · GPU) · 모델 무게 · 라이선스
-- [ ] 형식별 직접 해부 — python-pptx · python-docx · openpyxl 로 Docling 이 놓치는 것(차트 XML 캐시 · 노트 · SmartArt · OMML · 병합 · 기하)
+- [x] 형식별 직접 해부 — python-pptx · python-docx · openpyxl 로 Docling 이 놓치는 것(차트 XML 캐시 · 노트 · SmartArt · OMML · 병합 · 기하) — 풀림 DocForge docforge/parse/pptx_native.py · docx_native.py + omml.py · xlsx_native.py · docs/m0-results.md dev 절(10-24) — 금 표본 대조는 23 · 43줄 (10-31 정리)
 - [ ] Pydantic AI — 우리 GLM · Qwen 에 `NativeOutput` · `ToolOutput` · 비스트리밍 · 스키마 준수율(목표 ≥ 99%) · 대체재(vLLM json_schema 직접)와 견주기
 - [ ] VLM 판독 — 공학 그림 · 그림 차트 값 · 그림 속 한국어 글 · 장당 시간 · 지어낸 수치 · Docling 그림 설명이 원격 VLM 을 부르나
-- [ ] 그리기 — LibreOffice 헤드리스 + 한글 글꼴을 SIF 에 · 슬라이드 그림 · EMF → PNG
+- [x] 그리기 — LibreOffice 헤드리스 + 한글 글꼴을 SIF 에 · 슬라이드 그림 · EMF → PNG — 풀림 DocForge docs/DEPLOY.md:88-89(SIF 에 LibreOffice 25.2.3 · 한글 글꼴 42) · docforge/render/libreoffice.py(쪽 그림 · EMF → PNG) — 실문서 표본은 cae00 M0 (10-31 정리)
 - [ ] RA — dev RA 에 엄격 생성(`POST /api/reports`) · `GET /api/widgets` 판 · 엔티티 API · MCP resolve · 제안 큐에 넣는 길 · 큰 파일 상한
 - [ ] SP — 가짜 허브(수신 규칙 열하나) · 과제코드 · 모델명 꼴
 - [ ] 결정 기록 — §7 의 선택을 수치로
@@ -65,4 +65,4 @@
 
 ## M5 운영
 - [ ] cae00 — 굵은 SIF(모델 · LibreOffice · 글꼴) · Drive(지문 목록 합치기) · server-setup(사람 몫)
-- [ ] 상태판 · RA 에서 고친 것을 평가 표본으로 · 절차서
+- [x] 상태판 · RA 에서 고친 것을 평가 표본으로 · 절차서 — 풀림 infra/scripts/gen-status-config.py:257-271(백엔드별 검사 — heax-doc_forge) · DocForge `d2808ea`(E16 사람 편집량) · docs/doc-to-ra/server-setup.md — 실데이터로 쌓는 것은 cae00 실사용 뒤 (10-31 정리)

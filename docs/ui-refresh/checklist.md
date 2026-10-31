@@ -29,11 +29,11 @@
 - [x] 한국어 글꼴 번들 · [x] 굵기 4단 정리(adc29e9)
 - [x] 폼 컨트롤 전역 기본값
 - [x] 헤더 3구역 + 관리 ▾ · 계정 ▾ + 반응형(1100 이름 숨김 · 900 시트)
-- [x] 레이아웃 라우트 · 폭 2등급 · PageHeader · 404 셸 안 · [ ] PageState · EmptyState(단계 3)
-- [x] 용어집 일부(개인 토큰) · [ ] 나머지(앱 허브 제목·사이드바 브랜드 — 단계 4)
+- [x] 레이아웃 라우트 · 폭 2등급 · PageHeader · 404 셸 안 · [x] PageState · EmptyState(단계 3) — 걷음: 사용자 결정 10-31 A30 (가) — 원형 공사를 닫는다, 있는 원형(Modal · Tabs · Menu · Page)으로 두고 나머지는 새 화면이 필요로 할 때 (10-31 정리)
+- [x] 용어집 일부(개인 토큰) · [x] 나머지(앱 허브 제목·사이드바 브랜드 — 단계 4) — 풀림 앱 허브 제목 '앱'(`6b9e4a8` — frontend/src/pages/PortalHomePage.tsx:83-84) · 사이드바 머리 '심의' · '대화'(`305d6fe` — ChatSidebar.tsx:169) (10-31 정리)
 
 ## 단계 3 — 원형과 이행
-- [ ] ui/ 원형 10종 + ui.css
+- [x] ui/ 원형 10종 + ui.css — 걷음: 사용자 결정 10-31 A30 (가) — 원형 공사를 닫는다(frontend/src/components/ui 의 Modal · Tabs · Menu · Page 로 둔다), PageState · EmptyState · Button · Field · Card · Badge · Banner · Table 은 새 화면이 필요로 할 때 (10-31 정리)
 - [x] 대화상자 7개 → 네이티브 dialog Modal(D-22) · [x] Tabs 원형
 - [x] 이모지 UI 아이콘 → 선 아이콘(화면 장식만, D-24)
 - [x] 인라인 스타일 이행 — 관리·토큰·RA 카드 0곳, 절차 216→9(상태 색만, D-25) · [x] ESLint style 금지(0곳 된 파일) · [ ] hex 래칫

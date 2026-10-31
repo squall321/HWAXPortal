@@ -153,3 +153,13 @@ RA 도구(get_report_outline · get_report)는 **선택 앱**이다 — RA 가 �
 틀릴 곳도 적다 → R3(축 · 유일성 · 외부 키를 RA 가 정한다). key_value `meta.is_entity_id` 는 읽는 잡이 없어 쓰지 않는다. ④ 파일 상한은 확장자로만 갈려
 Office · PDF 는 25MB → R4. ⑤ `create_report` 는 `entity_ids` 를 커밋 뒤에 검증한다(틀린 id 면 400 인데 보고서는 남는다) — 우리는 보내지 않는다(R5).
 요청서를 RA 쪽에 건네는 것은 사람 몫이다.
+
+**DF-D25 §12 남은 것은 지금 박힌 기본값으로(2026-10-31, 사용자 결정 — 옛 남은 일 정리 A19 (A)).** 사용자가 [triage-1031](../leftovers-1017/triage-1031.md)
+표 A 를 읽고 추천안대로 답했다. PLAN §12 를 정한 값으로 고쳤다 — 2 DF-D17(포털이 사용자 명의로 엄격 생성) · 6 PPTX · DOCX · XLSX + PDF, HWP · HWPX
+없음 · 7 제목 1 마다 쪽 · 8 caption + rich_text, 기본 끔 · 9 끔(선택) · 10 RA 자동 태깅(DF-D24 — RA 쪽 요청서는 사람이 건넨다) · 11 대체재 허락
+유지. 4 · 5(금 표본 · 기준 숫자)는 cae00 금 표본 때 정한다. 지금 코드가 이미 그 값이라 새로 짓는 것은 없다 — DocForge `docforge_convert` 의
+`vlm` · `snapshot_page` 기본 false(그 리포 docforge/mcp_server.py:66) · `word_split` 기본 h1(docforge/structure/mapper.py:420). 8 의 '기본 끔' 은
+앱 옵션의 기본값이다 — 포털 「정밀 변환」 목적지는 이름이 '그림 판독' 이라 켜서 맡긴다(DF-D17 ②, backend/app/agent/routes.py:1399-1400). DocForge
+문서는 'M3 부터 기본 true' 라 적었다(그 리포 docs/ARCHITECTURE.md §3) — 이 결정으로 바뀌는지는 DocForge 세션에 넘긴다. — 넘기는 글
+[requests/docforge-vlm-default-1031.md](requests/docforge-vlm-default-1031.md)(앱 기본 false 유지 · 포털 목적지는 vlm=True — ARCHITECTURE §3 을 맞추거나
+M3 에서 달라야 할 까닭을 알려 달라) (10-31 정리)

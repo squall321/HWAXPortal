@@ -5,20 +5,20 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 
 ## 착수 게이트 (2026-08-02 사용자 결정 — 계획 경화 먼저, 구현은 그 뒤)
 
-- [ ] plan §11 결정 중 최소 2건 확정: 배포 서버 지정 · 18노드 동질성 — 보류(10-17 — 사용자, 결정 15 — 장비가 정해지면 이 줄부터 다시 연다)
-- [ ] plan §14 실험 중 dev 에서 가능한 것(E3·E6) 완료
-- [ ] 계획 리뷰 1회전(이 문서 기준으로 사용자와 합의) 후 Phase 0 착수
+- [x] plan §11 결정 중 최소 2건 확정: 배포 서버 지정 · 18노드 동질성 — 보류(10-17 — 사용자, 결정 15 — 장비가 정해지면 이 줄부터 다시 연다) — 걷음: 사용자 결정 10-31 A1 ① — 클러스터 배포 계획 v2(08-02 — 새 18대 · /data 1PB 전제)를 걷는다 · 전제 셋이 바뀌었다(RA 는 RA 담당 서버로 · 임베더는 BGE-M3 · 운영 노드는 HWAXProd 길 — CPU 노드 둘 · 공유 NFS) · plan.md 는 기록으로 두고 장비가 오면 HWAXProd 기준으로 새로 짠다(context-notes 2026-10-31) (10-31 정리)
+- [x] plan §14 실험 중 dev 에서 가능한 것(E3·E6) 완료 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 계획 리뷰 1회전(이 문서 기준으로 사용자와 합의) 후 Phase 0 착수 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
 ## Phase 0 — 기반 (기존 동작 무영향)
 
 ### 0.1 endpoints 계층 (v1 승계)
 
-- [ ] `infra/scripts/gen-endpoints.sh` (cluster.yaml 없으면 전부 127.0.0.1)
-- [ ] routes.env 를 endpoints 에서 생성 — 현행과 diff 0 확인
-- [ ] provision-config.sh 백엔드 URL env 화(기본값=현행 127.0.0.1)
-- [ ] update-all 헬스게이트 endpoints 소비
-- [ ] agent mcp_servers.json 게이트웨이 주소 env 화
-- [ ] 검증: dev 풀런 — 생성물 diff 0 + 헬스게이트 통과
+- [x] `infra/scripts/gen-endpoints.sh` (cluster.yaml 없으면 전부 127.0.0.1) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] routes.env 를 endpoints 에서 생성 — 현행과 diff 0 확인 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] provision-config.sh 백엔드 URL env 화(기본값=현행 127.0.0.1) — 풀림 HWAXMcpGateway `716ced6`(08-11 — 백엔드 주소 env > 직전 config > 같은 박스 루프백, provision-config.sh:467 · :591) — 남은 리터럴(포털 JWKS · 폐기 목록 · 에이전트 mcp_servers.json)은 노드가 갈릴 때만 뜻이 있다(20줄) (10-31 정리)
+- [x] update-all 헬스게이트 endpoints 소비 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] agent mcp_servers.json 게이트웨이 주소 env 화 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 검증: dev 풀런 — 생성물 diff 0 + 헬스게이트 통과 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
 ### 0.2 RA — 보류 (사용자 결정 2026-08-02)
 
@@ -27,74 +27,74 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 
 ### 0.3 /data 스테이징 계층
 
-- [ ] /data/hwax 레이아웃 생성 스크립트 (versions/current/secrets/state)
-- [ ] `infra/scripts/stage-to-data.sh` — 버전 스테이징 + sha256 manifest + 멱등
-- [ ] GC (최근 5세대 + last-good 보존)
-- [ ] 검증: dev 로컬 /data 에서 스테이징·재실행 멱등·GC 실측. 기존 서비스 무영향 확인
+- [x] /data/hwax 레이아웃 생성 스크립트 (versions/current/secrets/state) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] `infra/scripts/stage-to-data.sh` — 버전 스테이징 + sha256 manifest + 멱등 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] GC (최근 5세대 + last-good 보존) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 검증: dev 로컬 /data 에서 스테이징·재실행 멱등·GC 실측. 기존 서비스 무영향 확인 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
 ## Phase 1 — 1노드 클러스터 경로 (dev 동등성)
 
-- [ ] `infra/cluster.yaml.example` (schema 2) + 파서 — 스키마 검증·singleton 가드·미정의 노드 거부
-- [ ] `infra/scripts/update-node.sh` (로컬 동작만 — ssh 중첩 없음)
-- [ ] services `--services` 필터 + current 경로 소비 (env, 기본값=현행 레포 경로)
-- [ ] update-all: cluster.yaml 존재 시 2.5~2.7(스테이징·preflight·스위치)·4'(fan-out)·6'(클러스터 게이트) 분기
-- [ ] 수용 테스트: dev 1노드 yaml — 헬스게이트 출력·게이트웨이 tools 수·챗 스모크 ≡ no-yaml
-- [ ] 회귀 테스트: cluster.yaml 부재 경로 = 현행 러닝북 그대로 (자동 비교 스크립트)
-- [ ] 롤백 리허설: current 를 직전 버전으로 → 이전 버전 서빙 실측
-- [ ] 원자 스위치 리허설: 가동 중 스위치 → 기존 인스턴스 무중단 실측
+- [x] `infra/cluster.yaml.example` (schema 2) + 파서 — 스키마 검증·singleton 가드·미정의 노드 거부 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] `infra/scripts/update-node.sh` (로컬 동작만 — ssh 중첩 없음) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] services `--services` 필터 + current 경로 소비 (env, 기본값=현행 레포 경로) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] update-all: cluster.yaml 존재 시 2.5~2.7(스테이징·preflight·스위치)·4'(fan-out)·6'(클러스터 게이트) 분기 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 수용 테스트: dev 1노드 yaml — 헬스게이트 출력·게이트웨이 tools 수·챗 스모크 ≡ no-yaml — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 회귀 테스트: cluster.yaml 부재 경로 = 현행 러닝북 그대로 (자동 비교 스크립트) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 롤백 리허설: current 를 직전 버전으로 → 이전 버전 서빙 실측 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 원자 스위치 리허설: 가동 중 스위치 → 기존 인스턴스 무중단 실측 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
 ## Phase 2 — 다노드 fan-out (파일럿 2~3대)
 
-진입 조건: [ ] Phase 1 수용 테스트 통과
+진입 조건: [x] Phase 1 수용 테스트 통과 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
-- [ ] 노드 초기화(--init): ssh-copy-id · bootstrap.sh(apptainer 무sudo 설치 — 기존 스크립트 재사용) · NO_PROXY
-- [ ] `infra/scripts/preflight-cluster.sh` — ssh 도달성·/data 마운트 동일성·hard mount·
-      디스크 여유·시계 동기·sha256 재검증·NO_PROXY
-- [ ] fan-out (순서: DB·백엔드 → 게이트웨이 → 소비자, 복제는 노드별 롤링)
-- [ ] 클러스터 헬스게이트 (전 노드 × 전 서비스 + replica 전수) + last-good 갱신
-- [ ] 파일럿: laminate MCP 2노드 배치 — 게이트웨이 도구 수 불변
-- [ ] DB 이동 리허설: aidh PGDATA → /data/pg/aidh — singleton 락·hard mount 가드 실측
-- [ ] 의도적 이중 기동 시도 → 거부되는 것 실측
-- [ ] 복구 리허설 재실행 (/data 배치 후에도 백업·복원 동작)
+- [x] 노드 초기화(--init): ssh-copy-id · bootstrap.sh(apptainer 무sudo 설치 — 기존 스크립트 재사용) · NO_PROXY — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] `infra/scripts/preflight-cluster.sh` — ssh 도달성·/data 마운트 동일성·hard mount·
+      디스크 여유·시계 동기·sha256 재검증·NO_PROXY — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] fan-out (순서: DB·백엔드 → 게이트웨이 → 소비자, 복제는 노드별 롤링) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 클러스터 헬스게이트 (전 노드 × 전 서비스 + replica 전수) + last-good 갱신 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 파일럿: laminate MCP 2노드 배치 — 게이트웨이 도구 수 불변 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] DB 이동 리허설: aidh PGDATA → /data/pg/aidh — singleton 락·hard mount 가드 실측 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 의도적 이중 기동 시도 → 거부되는 것 실측 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 복구 리허설 재실행 (/data 배치 후에도 백업·복원 동작) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
 ## Phase 3 — 본 배치 (18노드)
 
-- [ ] 서비스별 이관 (한 번에 한 서비스, 각각 헬스 통과 후 다음)
-- [ ] search-llm all-nodes 롤아웃 (모델·서빙 방식은 §11 결정 후)
-- [ ] 데이터 동기·백업 노드 인식화 (plan §3.1b — merge·backup·SF restore 를 DB 소유 노드로 위임)
+- [x] 서비스별 이관 (한 번에 한 서비스, 각각 헬스 통과 후 다음) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] search-llm all-nodes 롤아웃 (모델·서빙 방식은 §11 결정 후) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 데이터 동기·백업 노드 인식화 (plan §3.1b — merge·backup·SF restore 를 DB 소유 노드로 위임) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 - [x] ~~RA 블루-그린 (plan §3.2): 새 인스턴스 기동 → 기계 검증(웹·MCP·스케줄러, 선택 SSO)~~ — 닫음(10-17 — 사용자: RA 담당이 09-26~27 에 RA 를 자기 서버 두 대로 옮겼고 포털은 다시 연결했다)
-- [ ]   컷오버: 구 RA 쓰기 정지 → pg_dump + upload 파일 rsync → 복원 → 연동 확인(기존 rat_ 토큰 생존 확인)
-- [ ]   구 인스턴스 완전 정지(스케줄러 중복 방지) → 포털 라우트 전환 → 롤백 경로 확인
-- [ ] cae00 병행 운영 확인 (클러스터 작업이 cae00 에 영향 0)
+- [x]   컷오버: 구 RA 쓰기 정지 → pg_dump + upload 파일 rsync → 복원 → 연동 확인(기존 rat_ 토큰 생존 확인) — 걷음: 부모 줄(65줄 RA 블루-그린)이 10-17 에 닫혔다(`7fae400` — RA 담당이 자기 서버로 옮겼다) · 포털은 RA_HOST 하나로 다시 이었다(`aeb46ef`) — 컷오버는 RA 담당 몫 (10-31 정리)
+- [x]   구 인스턴스 완전 정지(스케줄러 중복 방지) → 포털 라우트 전환 → 롤백 경로 확인 — 걷음: 부모 줄이 10-17 에 닫혔다(`7fae400`) · 라우트 전환은 RA_HOST 유도가 대신했다(`aeb46ef` — services.yaml 의 로컬 RA 두 항목 unless_env) — 구 인스턴스 정지 · 롤백은 RA 담당 몫 (10-31 정리)
+- [x] cae00 병행 운영 확인 (클러스터 작업이 cae00 에 영향 0) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
 ## Phase 4 — 이중화·100명 대비
 
-- [ ] secrets → /data/hwax/secrets 정본화 (세션 로그아웃 1회 — 공지 후 야간)
-- [ ] PAT store SQLite → Postgres (스냅샷 → 이중 read → 완전 전환, 롤백 절차 사전 문서화)
-- [ ] portal·agent-server 복제 + entry nginx upstream (gen-nginx-conf upstream 블록 — v1 승계)
-- [ ] 헬스게이트 replica 전수 프로브 (v1 승계)
-- [ ] pgbouncer + PG 튜닝(shared_buffers 등) + 앱 커넥션 풀 명시
-- [ ] 진입점 VIP (사내 협의 결과에 따라)
+- [x] secrets → /data/hwax/secrets 정본화 (세션 로그아웃 1회 — 공지 후 야간) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] PAT store SQLite → Postgres (스냅샷 → 이중 read → 완전 전환, 롤백 절차 사전 문서화) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] portal·agent-server 복제 + entry nginx upstream (gen-nginx-conf upstream 블록 — v1 승계) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 헬스게이트 replica 전수 프로브 (v1 승계) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] pgbouncer + PG 튜닝(shared_buffers 등) + 앱 커넥션 풀 명시 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 진입점 VIP (사내 협의 결과에 따라) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
 ## Phase 5 — HEAX 앱 노드 배치 (v1 Phase 3 승계)
 
-- [ ] 선행조사: 허브 Caddy 앱 프록시 정의 위치 확정 (v1 승계)
-- [ ] 앱 상태 var/integration_state JSON → DB (`node` 컬럼)
-- [ ] 원격 기동 (services.py ssh 경로 재사용)
-- [ ] `resources:` 필수화 — 미기재 앱 등록 거부 + 노드 용량 인식 배치
-- [ ] /data/appdata 앱별 바인드 마운트 격리 강제
-- [ ] cluster.yaml `heax-apps:` 지원 (v1 승계 — v2 재작성에서 누락됐던 항목 복원)
-- [ ] 앱 SIF 를 허브 로컬 var/sifs → /data 스테이징으로 (어느 노드든 앱 기동 가능하게)
+- [x] 선행조사: 허브 Caddy 앱 프록시 정의 위치 확정 (v1 승계) — 풀림 HEAXHub backend/app/services/proxy_manager.py — Caddy Admin API 로 앱 경로를 그때그때 만든다(register_app_route :279 → _build_route :127 · 외부 업스트림 register_external_proxy_route :407), 다른 노드로 보내는 길은 external_proxy 매니페스트(10-31 운영 노드 전환 `5e2cafa`) (10-31 정리)
+- [x] 앱 상태 var/integration_state JSON → DB (`node` 컬럼) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 원격 기동 (services.py ssh 경로 재사용) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] `resources:` 필수화 — 미기재 앱 등록 거부 + 노드 용량 인식 배치 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] /data/appdata 앱별 바인드 마운트 격리 강제 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] cluster.yaml `heax-apps:` 지원 (v1 승계 — v2 재작성에서 누락됐던 항목 복원) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 앱 SIF 를 허브 로컬 var/sifs → /data 스테이징으로 (어느 노드든 앱 기동 가능하게) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 - [ ] 스테이징 완전성 검사: integrations/ 중 SIF 필요 앱(process 형) 전수 vs var/sifs 존재 대조,
       누락 시 경고 — var/sifs/*.sif 글롭은 "빌드된 것만" 올려 새 앱이 무언 탈락한다(실측 확인).
       external_proxy 형(DynaForge 등)은 설계상 대상 아님을 검사에서 명시적으로 제외 표기.
-- [ ] manifest `state:`/`endpoint:` + 허브 프록시/upstream + sqlite singleton 가드 (v1 승계)
-- [ ] 검증: laminate 2-replica + materialtwin 단일 강제 + 게이트웨이 도구 수 유지 (v1 승계)
+- [x] manifest `state:`/`endpoint:` + 허브 프록시/upstream + sqlite singleton 가드 (v1 승계) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
+- [x] 검증: laminate 2-replica + materialtwin 단일 강제 + 게이트웨이 도구 수 유지 (v1 승계) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 
 ## cae00 전환 (마지막 — 별도 결정 후)
 
 > 방향(10-17 — 사용자, 결정 13): 새 운영 서버(데이터 이관 D6) 뒤 cae00 을 시험 서버로 — 실행은 새 운영 서버가 생길 때(당분간 없음 — 결정 14).
 
-- [ ] cae00 데이터 스냅샷 → 클러스터 DB merge (비파괴 패턴 재사용)
-- [ ] DNS/진입점 전환
-- [ ] cae00 예비 강등 + 롤백 경로 확인
+- [x] cae00 데이터 스냅샷 → 클러스터 DB merge (비파괴 패턴 재사용) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다 · cae00 전환은 데이터 이관 D6 이 맡는다(docs/data-migration/checklist.md D6 — 사용자 결정 10-31 A3 보류 유지) (10-31 정리)
+- [x] DNS/진입점 전환 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다 · cae00 전환은 데이터 이관 D6 이 맡는다(docs/data-migration/checklist.md D6 — 사용자 결정 10-31 A3 보류 유지) (10-31 정리)
+- [x] cae00 예비 강등 + 롤백 경로 확인 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다 · cae00 전환은 데이터 이관 D6 이 맡는다(docs/data-migration/checklist.md D6 — 사용자 결정 10-31 A3 보류 유지) (10-31 정리)

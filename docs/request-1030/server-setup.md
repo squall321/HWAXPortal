@@ -2,7 +2,7 @@
 
 요청서 정본 [`../request_261030.md`](../request_261030.md) · 플랫폼별 시트 [`platforms/`](platforms/00-INDEX.md) · 받은 답 [`outbound.md`](outbound.md).
 이 문서는 판이 올라갈 때마다 고친다. **0절 표에 '올림' 이라 적힌 판만 update-all 로 받는다.** 아직 오지 않은 판은 '예정' 이다.
-10-31 에 6절부터를 더했다 — 챗 관문 넷(HA-27 ~ HA-30)의 확인 · 손잡이 · 다시 볼 시험, OB-26 · OB-04, AIDataHub 병합 한 번과 데이터 단계 차례, 아직 오지 않은 것.
+10-31 에 6절부터를 더했다 — 챗 관문 넷(HA-27 ~ HA-30)의 확인 · 손잡이 · 다시 볼 시험, OB-26 · OB-04, AIDataHub 병합 한 번과 데이터 단계 차례, 아직 오지 않은 것, 서비스 감시 켜기(10절 — 사용자 결정 A28).
 바깥 답이 필요한 물음은 이 문서가 아니라 받은 편지함 [`../cae00-inbox/`](../cae00-inbox/README.md) 에 든다(판단 C-20).
 
 > 명령의 경로는 cae00 기준(`~/Projects/<리포>`)이다. 비밀 값은 화면 · 로그 · 채팅에 붙이지 않는다. 에이전트 서버 주소 `127.0.0.1:9009` 는 루프백이라 `--noproxy '*'` 를 붙인다.
@@ -295,3 +295,19 @@ cd ~/Projects/AIDataHub/deploy/apptainer && ( source ./_common.sh && load_env &&
   코드는 같다. HH-01(긴 재료 카드를 절 여러 개로 — `a3563b6`, cae00 사본 `6e45b40` 보다 61 커밋 앞)이 같은 판에 든다. HH-10(박스마다 다른 id)은 받은 편지함 Q1 이다.
 - **SmartTwinMCP PA-16 · PA-19** — 10-31 다시 청했다. 답이 오면 OB-92 · OB-34 · OB-25 의 길을 더한다.
 - **HA-33 덧붙임**(SignalForge 주의 줄을 VOC 미리보기에) — 에이전트 `8dd579a` 에 들었다(dev 재기동 10-31 01:06 UTC). cae00 은 에이전트 서버를 받은 뒤 심의 VOC 미리보기에서 '주의 —' 줄이 행이 있어도 보이는지 본다(그 제품 코드가 여러 프로젝트에 걸리는 질문으로).
+
+## 10. 서비스 감시 켜기(사용자 결정 10-31 A28)
+
+cae00 도 서비스 감시를 켠다 — [`../followups-1017/server-setup.md`](../followups-1017/server-setup.md) 9절 그대로다. 포털 · 게이트웨이 · 에이전트 서버 ·
+mxwp-mcp · searxng 가 **죽었을 때만**(그 포트에 연결 거부 세 번) 다시 띄우고, update-all 이 도는 동안은 건너뛴다.
+
+```bash
+cd ~/Projects/HWAXPortal
+echo 'HWAX_WATCHDOG=1' >> infra/.env      # 줄 끝에 주석을 붙이지 않는다 — 다음 update-all 부터는 이 줄을 보고 스스로 건다
+./infra/scripts/install-watchdog.sh       # 지금 건다(update-all 을 다시 돌리지 않아도 된다)
+crontab -l | grep hwax-watchdog           # 한 줄이 나오면 된다
+```
+
+- **손으로 오래 내릴 때는 감시를 먼저 끈다** — `./infra/scripts/install-watchdog.sh --remove`. 끄지 않으면 일부러 내려 둔 서비스를 감시가 몇 분 안에
+  다시 띄운다. 다 올린 뒤 `./infra/scripts/install-watchdog.sh` 로 다시 건다(`infra/.env` 의 줄이 남아 있으면 다음 update-all 도 다시 건다).
+- 일이 있을 때만 `~/.local/state/hwax/watchdog.log` 에 `✗ <이름> 죽었다 … → down · up` · `✓ … 복구 성공` 이 남는다.

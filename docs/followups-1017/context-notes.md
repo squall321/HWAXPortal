@@ -36,7 +36,7 @@ P3 · A1~A3 는 리뷰 본문과 안내서 문구를 기준으로 고친다.
 시각으로 올렸다(08-26 21시 27,078건 · 07-27 21시 17,027건처럼 몰린 것). 그러면 '그 병합이 쓴 덤프 뒤 ~ 그 병합 전' 에 dev 에서 바뀐 레코드는
 다음 병합에서 '운영이 더 새롭다' 로 건너뛰어진다 — 그 레코드가 dev 에서 다시 바뀔 때까지 cae00 은 한 판 옛것이다. 운영의 진짜 편집과 병합이
 올린 시각을 가를 방법이 없어 되돌리지 않았다. 이번 판부터 병합이 운영 `updated_at` 을 dev 값 그대로 두어 새로 생기지는 않는다. 크기는
-병합 중 staging 과 견줘 '운영이 더 새롭다는데 `content_hash` 가 다른 레코드' 를 세면 안다 — 필요하면 사용자 판단으로 연다.
+병합 중 staging 과 견줘 '운영이 더 새롭다는데 `content_hash` 가 다른 레코드' 를 세면 안다 — 필요하면 사용자 판단으로 연다. — 사용자 결정 10-31 A27: (나) 병합 끝 요약에 '운영이 더 새롭다는데 `content_hash` 가 다른 레코드 수' 한 줄(읽기만 — AIDataHub), dev 작업 진행 중(10-31) · 다음 cae00 병합에서 크기를 본 뒤 정한다 (10-31 정리)
 
 **FU-D8 PG 30분 시한은 약속한 대로 나눴다.** 결정 카드에 '새 연결부터 들고, cae00 은 병합 · 백업이 없을 때 운영자가 한 줄로(dev 는 제가)'
 라고 적었다. dev 는 10-17 에 걸었고(병합 · 덤프가 돌지 않는 것을 보고 · 새 연결에서 `30min`), cae00 한 줄은 AIDataHub
@@ -133,7 +133,7 @@ cae00 update-all 에 실린다. MXWP 전체 시험의 401 실패(개발용 인�
 복구 — 포털 `apptainer instance stop hwax_portal && start.sh` · 게이트웨이 · mxwp-mcp · searxng `services.sh up` · smarttwin-mcp `sudo systemctl start`
 · KooRemapper MCP 는 인스턴스를 내려 KooRemapper 감시가 다시 띄우게. 메모리를 먹는 쪽은 서비스가 아니다 — `cpptools` 3개 42GB · `code` 226개
 31GB · VM 16GB · Claude 세션 52개 9GB, 우리 서비스는 합쳐 15GB 남짓. 빈틈 넷(포털 · 게이트웨이 · KooRemapper MCP · smarttwin-mcp 는 죽어도
-안 돌아온다)과 earlyoom 설정은 사용자 결정으로 넘긴다.
+안 돌아온다)과 earlyoom 설정은 사용자 결정으로 넘긴다. — 풀림 사용자 결정 10-19 '감시 보강만'(FU-D24) — 포털 services.py heal(watch: true 다섯) · KooRemapper 감시가 MCP 연결도 본다(`559f582`) · smarttwin-mcp systemd Restart=always(묶음 C) — earlyoom 설정은 그대로 둔다 (10-31 정리)
 
 **FU-D23 두 좌석의 태그 조건(10-19).** `mx-whitepaper-analyst` 는 `required_tags=[whitepaper]` 인데 묶인 427장은 전부 `doc_type=whitepaper` 이고
 그 태그는 0장, `market-voc-analyst` 는 `[voc]` 인데 2장은 `voc:camera` 같은 갈래 태그뿐이다 — 두 좌석 모두 `required_doc_type` 에 이미 맞는 종류가
@@ -151,3 +151,11 @@ fd 는 자식에게 안 물려진다 — 예전 flock 사고 없음). ④ 박스
 덧붙여 — 변이 확인 뒤 `WATCH_TRIES = 3→1` 처럼 **크기가 같은 변이를 같은 초에 되돌리면** 파이썬이 `__pycache__` 의 변이된 바이트코드를 계속
 쓴다(크기 · 초 단위 시각으로만 판정). 해시로 원본을 확인해도 import 쪽은 낡은 코드를 돈다 — 복원 뒤 그 모듈의 pyc 를 지운다.
 
+**FU-D25 요청서 2절의 MCP 문단을 서명 헤더 길로 고쳐 썼다(2026-10-31).** 그 문단은 'MCP 길에서 그 사람의 그룹을 어떻게 받을지 — 사람 단언에서
+읽거나 포털에 묻기 — 알려 달라' 고 물었는데, 그사이 게이트웨이가 답을 지었다 — 위임 호출에 `X-Heax-User-Plat` · `X-Heax-Plat-Proof`(소속 증명과
+같은 HMAC 규칙 · 앱별 `send_plat`, 게이트웨이 `baa2880` · mxwp-wiki MW-D9). 요청서는 아직 KooRemapper 에 넘어가지 않았고(남은 일 정리 B16) 받는
+쪽이 따르는 글이지 기록이 아니라서, 옛 물음을 남기면 받는 쪽이 이미 정해진 일을 다시 묻는다 — 그래서 그 문단만 고쳐 썼다(기록 파일은 덧붙임만 —
+leftovers-1017 LO-D8). 헤더 이름 · 서명 대상 · 키 · 수명은 게이트웨이 master `5f4ba5f` 에서 읽었고, DynaForge 가 할 일(MCP 서버가 두 장을 나르기 ·
+`verified_affiliation` 꼴 검증 · `create_job` 에서 `stcx_fullangle_drop` 막기)은 KooRemapper `d3d777c` 의 파일:줄로 적었다. 게이트웨이 몫
+(`KOORM_SEND_PLAT` — kooremapper_mcp 위임은 `PER_USER_SSO_APPS` 순회 밖이라 `<접두>_SEND_PLAT` 를 못 받는다, `provision-config.sh:697-701` ·
+`:808-816`, 같은 판)은 다른 작업이 넣는다. 차례는 게이트웨이 → DynaForge 다 — 헤더가 오기 전에 막기를 켜면 MCP 제출이 모두 막힌다.

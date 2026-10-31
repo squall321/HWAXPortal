@@ -1,0 +1,44 @@
+# 결손 하나 = 파일 하나 (PLAN §9-6). 검출은 코드가, **등재는 사람이** 한다.
+id: lamina-strength-fatigue
+title: 라미나 강도(Xt · Xc · Yt · Yc · S)와 ply 피로(S-N)를 적층 해석이 먹는 꼴로 주는 곳이 없다
+
+flow: R1 굽힘 수명 — 형상에서 굽힘을 읽고(StepForge bend_profile) → 적층 해석(LaminateAnalyzer)으로 층별 응력 · 파손 · 피로 수명
+step: ③ 보강 — 적층 정의(`laminate`)의 ply 마다 strength · fatigue 를 채우는 자리(PLAN §10-3)
+kind: 1                       # ① 도구 없음 (§9-3) — 주인은 그 기록을 바꾸는 앱
+owner_candidate: heax-materialtwin_web ↔ heax-laminate_analyzer_mcp   # 기록은 MaterialTwin, 받는 꼴은 LaminateAnalyzer
+
+# ⚠ 후보 소유자는 **후보다**. 아래 확인을 거쳤다(§9-3 순서 ② → ③ → ① → ④).
+checked:
+  - "② 숨어 있나 — MaterialTwin 물성 키(정의 276종)와 방향 어휘를 봤다. 강도 · 피로 키는 있으나 라미나 축(섬유 1 · 횡 2)으로 가를 축 · 어휘가
+     없고, 정규화 S-N(log_linear k) 키가 없다. 강도 행에 `direction` 조건을 다는 길은 쓰이고 있어(MD · TD …) 숨은 길일 수 있다 — 요청서에
+     '이미 되는 길이 있으면 알려 달라' 를 함께 적었다"
+  - "③ 안 이어지나 — 아니다. 두 앱 사이에 이을 출력이 없다(등방 E · 수지 실측만 이어진다 — LaminateAnalyzer 안내의 MaterialTwin 연계는 E 뿐)"
+  - "④ 재현 불가인가 — 아니다. 강도 · S-N 은 시험으로 재는 재료 값이다(규격 시험 · 데이터시트에 인쇄된다)"
+
+evidence:
+  - "받는 꼴 — LaminateAnalyzerMCP `2d35565` app/schemas.py:17-24 `Strength`(Xt · Xc · Yt · Yc · S, 모두 > 0) · :27-36 `FatigueSN`
+     (log_linear k 또는 basquin b, 0 < 값 ≤ 1 — 정적 강도로 정규화). recover_ply_stresses(app/mcp_server.py:191) · estimate_fatigue_life(:292)가
+     ply 마다 요구하고(:198-200 · :299) 없으면 그 ply 를 빼고 W120 만 낸다"
+  - "LaminateAnalyzerMCP app/mcp_server.py:200 '강도는 materialtwin property registry에서 조달 가능' — 안내의 MaterialTwin 연계(:735-739)는 E 만 다룬다"
+  - "MaterialTwinWeb `4273720` backend/app/property_taxonomy.py — tensile_strength(:19) · compressive_strength(:137)의 조건 축은 temperature_k
+     하나 · shear_strength(:126-127)는 금속 · 적층판 한 키(면내 12 전단을 고를 규칙 없음) · fatigue_strength(:135-136)는 단일 피로한도 ·
+     Basquin 계수 · 지수(:322-325)는 금속 꼴(model · stress_ratio_R, 방향 축 없음) · 정규화 S-N 키 없음"
+  - "이미 있는 길 하나 — shear_strength 의 조건 축 `shear_plane`(property_taxonomy.py:127)은 어휘 없는 자유 글이다. dev 18행 중 3행에만 실렸고
+     셋 다 'through-thickness (punch, across laminations)' 라 면내 12 전단을 고르는 규칙이 되지 못한다"
+  - "이미 있는 길 둘 — `fatigue_strength_coefficient_normalized`(:320-321, σ'f/E — dev 14행)는 E 로 나눈 꼴(변형률–수명 식의 탄성 항 계수)이다.
+     LaminateAnalyzer 의 log_linear k 는 정적 강도로 나눈 기울기라 다른 양이고, 하나에서 다른 하나를 만들면 역산이다"
+  - "MaterialTwinWeb backend/app/direction_vocab.py:31-39 — 정규 방향 어휘 여덟(in-plane · through-thickness · MD · TD · axial · radial ·
+     circumferential · isotropic)에 라미나 1 · 2 축이 없다"
+  - "MaterialTwinWeb backend/app/dyna_export.py:1317-1321 — 방향이 엇갈린 재료에 '*MAT_ORTHOTROPIC 계열을 쓰라' 고 알리기만 한다(이방성 카드 길 없음)"
+  - "dev 운영 DB(10-31, 읽기 전용) — tensile_strength 1,441행 중 direction 조건 325행(MD 134 · TD 96 · in-plane 41 …) · compressive_strength
+     88행 중 7행 · 정의의 condition_axes 에는 방향이 없다"
+  - "포털 절차 씨앗 docs/procedures/fixtures/laminate-bend-life.yaml:55-66 — `laminate` 변수의 why '강도·피로를 주는 도구가 없다', 사람이 예시 값을 넣는다"
+
+request: ../requests/materialtwin-lamina-strength.md
+status: open                  # open | confirmed | fixed | wontfix
+confirmed_by: null            # 사람이 확정할 때 채운다
+
+note: >-
+  ⚠ 'MaterialTwin 에 강도가 없다' 가 아니다 — 등방 강도 · 금속 피로 키는 많다. 없는 것은 적층 해석이 먹는 꼴(라미나 축으로 갈린 다섯 강도와
+  정적 강도로 정규화한 S-N)이다. §9-4 에서 숨은 역량(DynaForge run_operation 뒤의 matdb · matswap)을 결손으로 오판한 적이 있어 요청서에
+  '이미 되는 길이 있으면 알려 달라' 를 함께 적었다. 그때까지 R1 은 `laminate` 변수로 사람이 넣는다.
