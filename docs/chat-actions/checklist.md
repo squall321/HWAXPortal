@@ -17,7 +17,7 @@
 - [x] 프론트 — 변경 파일 eslint 0 · `pnpm build`(tsc -b) 통과. 전체 lint 의 12건은 기존 파일의 것
 - [x] 반박 검토 1라운드(킬 스위치·보안·회귀·요청서/권한, 지적 39 → 확인된 것 반영, 기각 6) — A-9
 - [x] 반박 검토 2라운드(1라운드 수정분, 지적 13 전부 확인 → 반영, 범위 밖은 A-11) — A-9-2
-- [ ] dev 실측 — 카탈로그 재적재 뒤 타일 coming_soon, `/knox-bridge/ui/actions.json` 요청이 안 나간다
+- [x] dev 실측 — 카탈로그 재적재 뒤 타일 coming_soon, `/knox-bridge/ui/actions.json` 요청이 안 나간다 — 10-31 끝(B10): 포털 `ea901be`(병합 `f255323`) — ui-check(임시 포털 · mock 로그인)가 관리자 · 기본 · CAEG 층에서 챗 · 심의 화면을 연 동안 그 매니페스트 요청 0 · `/apps` 에 그 타일 없음을 단언한다(frontend/e2e/ui.spec.ts — A-12 뒤 기대는 coming_soon 이 아니라 숨김), 임시 routes 에 그 목적지를 넣은 사본에서는 관리자 · CAEG 층이 실패
 
 ## 반영(사내) — 순서를 지킨다
 - [x] 커밋·push (확인 10-17 — 3a1e093 · 1487848 이 origin/main 에 있음(main = origin/main))

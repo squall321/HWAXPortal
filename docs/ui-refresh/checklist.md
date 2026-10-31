@@ -8,7 +8,7 @@
 ## 단계 0 — 안전망 (f56669b·03ccf2d·c8879a3)
 - [x] 화면 점검 `frontend/scripts/ui-check.sh` — 경로 11 × 폭 5 × 권한 2(관리자·기본) + 대화·팝업·첨부·로그인. 픽셀 기준선 대신 결함 단언(D-9)
 - [x] 단언 — 가로 넘침(범인 요소 표시) · 밝은 패널 · 마크다운 기호 · 헤더 줄바꿈 / 미정의 CSS 변수는 빌드·백엔드 시험에서
-- [ ] CAEG 권한 층(원장 소속 시드 필요) · Windows 글꼴 캡처
+- [ ] CAEG 권한 층(원장 소속 시드 필요) · Windows 글꼴 캡처 — 10-31 진행(B13): CAEG 층은 끝 — 포털 `353d11b`(병합 `f255323`), ui-check 가 빈 임시 원장에 `SSO_DEFAULT_AFFILIATION=CAEG` 로 띄워 mock 사용자가 CAEG 로 든다, `UI_TIERS='admin basic caeg'` 통과 · CAEG 층 `/apps` 타일 10 대 기본 0, 남은 것 Windows 글꼴 캡처(사람)
 
 ## 단계 1 — 깨져 보이는 것 (9f73d5f·2f352e6)
 - [x] `**` 노출 — 업데이트 제목(팝업·이력) · [x] 전문가 설명(InlineMd — 선택기·조직도·심층 보기·회의록)

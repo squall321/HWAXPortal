@@ -125,8 +125,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       면제 호출은 감사원장에 `purpose` 칸으로 남는다
 - [x] 운영 감사원장의 시험·재현 흔적 약 247줄(성공 모양 47줄) — **사용자 결정 대기**(W-100) — **확정(10-17 — 사용자: 그대로 두고 안내문 유지)**
 - [x] `save` 로 `confirm_token`·`*_token` 을 뽑아 다음 인자로 쓰는 절차는 저장 거절
-- [ ] `publish_report` 게이트 — preview(카드) → 사람 확인 → preview 재호출 → 그 토큰으로 즉시 publish.
-      대상이 다르면 다시 멈춤
+- [x] `publish_report` 게이트 — preview(카드) → 사람 확인 → preview 재호출 → 그 토큰으로 즉시 publish.
+      대상이 다르면 다시 멈춤 — 10-31 끝(B3): 포털 `caee8f4` · `483907a` · 반대 검토 `009c4d8` · `3db8d1f` · `2f6b828` · `d7f07f7`(병합 `e84387f` — a694e19c 판 올림 · dev 반영) — 게이트 전에 preview_publish 로 대상 · 볼 사람 수 · 못 올리는 사유를 카드에 싣고, 승인 뒤 다시 받아 같을 때만 그 토큰으로 게시 한 번, 다르면 바뀐 줄을 보이고 다시 멈춘다. 토큰은 원장 · 노트 · 승인 지문에 남지 않는다 — 가짜 게이트웨이(httpx.MockTransport) 시험(카드 미리보기 · 다르면 0회 · 같으면 1회 · 원장 토큰 0)과 `*_token` 저장 거절 유지, 절차 시험 222 통과, 실물 게시 한 번은 cae00(사람 RA 토큰 — 쓰는 씨앗은 아직 0)
 - [x] 게이트 확인 — 소유자만, `(run_id, step, sha256(치환 인자))` 귀속, `run_gate_acks` 에 기록
 - [x] **`dry_run` 두 뜻**(PLAN §5-7) — 계획 모드 기본. 스키마에 `dry_run` 없는 도구의 `args` 에 적혀 있으면
       저장 거절. 단계마다 `mode: plan|dry|live`
@@ -336,7 +336,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       실측으로 아직 안 왔다(연산 47종 · 후처리 0건)
 - [x] ~~DynaForge 회신 대기 — 세 갈래 중 어느 쪽인지(연산 / 독립 도구 / 오래 걸림)~~ — 버림(10-17 — W-93 사용자 결정(후처리 예약 연산 — KooRemapper REQUEST-postprocess-operation.md §7)으로 대체 · DynaForge 회신 §9(09-19))
 - [x] ② 두 번째 환원 도구가 `bend_profile` 과 **같은 모양인지** 보고 규약으로 올린다(§10-7) — 풀림 대조표 docs/procedures/reduction-contract.md(`stackup_profile` · `sed_sample_from_odb` 둘 다 같은 모양 — StepForge `51c8788` · ThermalShockMCP `6e6a6db`) · PLAN §10-7 규약 · W-103 · 씨앗 정적 시험 backend/tests/test_procedures_reduction_contract.py (10-31 정리) — 정정: '둘 다 같은 모양' 은 넘친다 — 셋 다 `basis` · `notes` · `<x>_check` · `for_<해석>_analysis` 를 내지만 `primary` 는 `bend_profile` 만 내고 `basis` · `<x>_check` 의 꼴이 다르다 — 그 셋은 규약을 넓혀 맞췄다(reduction-contract.md §2 · W-103) (10-31 정리)
-- [ ] **③ 보강 — 라미나 물성**(강도·피로) 조달 경로 → MaterialTwin ↔ 적층 해석기 결손
+- [x] **③ 보강 — 라미나 물성**(강도·피로) 조달 경로 → MaterialTwin ↔ 적층 해석기 결손 — 10-31 끝(B5): 결손 장부 `gaps/lamina-strength-fatigue.yaml` · MaterialTwinWeb 요청서 `requests/materialtwin-lamina-strength.md`(`6c223e8` · 반대 검토 `3405e0a`) — 답(`9e3a1fb`)은 새 키가 필요 없고 결손은 데이터다(다섯 강도를 다 가진 카드 0 · 방향 표기는 1 · 2 · 12 로), 데이터 채우기 · 조건축 정규화는 그쪽 사용자 승인 뒤, 그때까지 R1 은 `laminate` 변수로 사람이 넣는다
 - [x] S5 와 이었다 — `fan-out` 이 후보마다 실행을 하나씩 만든다(W-57)
 - [x] 배치 = **새 실행 N개**라 게이트·재개·다시 돌리기·도출이 그대로 돈다
 - [x] 첫 게이트에서 **각자 멈춘다** — 초안 N개가 안 만들어진다(구조가 그렇다, 막는 코드 없음)
@@ -619,8 +619,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       조용히 걸러진다) — 걷음: 대화 종류는 바꾸지 않는다(LO-D2 — 바꾸면 심의 탭에서 사라진다) · 포털 백엔드는 risk-review 를 받는다(backend/app/agent/routes.py:382-385) (10-31 정리)
 - [ ] 결과 → `risk_add_finding`(must-gate). `cites` 0건이면 `{"error":"cites_required"}`(isError=false — §5-6 ④).
       `claim` ≤2000자 — 사용자 결정 10-31 A16: (A) 609줄(실행 → 심의 다리)을 따른다 — §6-1 쓸모 판정 뒤로 (10-31 정리)
-- [ ] `risk_taxonomy` 어휘를 **코드가 대조**한다 — `mechanism`·`domain` 은 서버 검증이 없어 오타가 그대로
-      저장된다(422 는 `severity`·`judgement`·`direction` 뿐) — 사용자 결정 10-31 A18: (A) HWAXRisk 가 검사한다 — 422 + 허용값, unclassified 허용, dev 작업 진행 중(10-31) (10-31 정리)
+- [x] `risk_taxonomy` 어휘를 **코드가 대조**한다 — `mechanism`·`domain` 은 서버 검증이 없어 오타가 그대로
+      저장된다(422 는 `severity`·`judgement`·`direction` 뿐) — 사용자 결정 10-31 A18: (A) HWAXRisk 가 검사한다 — 422 + 허용값, unclassified 허용, dev 작업 진행 중(10-31) (10-31 정리) — 10-31 끝: 리스크 앱 `756e84d`(사람 finding 의 mechanism · domain 을 risk_taxonomy 로 대조 — 밖이면 422 + 허용값, unclassified 허용, MCP 도 같은 422) · 반대 검토 `560d386`(A18 전 코드 꼴 행을 별칭으로 잇는 일회 스크립트 `rekey_human_codes.py` — dry-run 기본) — 병합 `616ddcf`(7b1042d 판 올림 · Drive dist-20261031-091813Z · dev 교체), 리스크 앱 전체 3,548 통과, cae00 에서 그 스크립트 한 번(dry-run → `--apply`)은 사람 몫으로 리스크 앱 checklist 가 잇는다
 
 ---
 

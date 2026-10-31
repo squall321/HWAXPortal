@@ -85,9 +85,9 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 - [x] /data/appdata 앱별 바인드 마운트 격리 강제 — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 - [x] cluster.yaml `heax-apps:` 지원 (v1 승계 — v2 재작성에서 누락됐던 항목 복원) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 - [x] 앱 SIF 를 허브 로컬 var/sifs → /data 스테이징으로 (어느 노드든 앱 기동 가능하게) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
-- [ ] 스테이징 완전성 검사: integrations/ 중 SIF 필요 앱(process 형) 전수 vs var/sifs 존재 대조,
+- [x] 스테이징 완전성 검사: integrations/ 중 SIF 필요 앱(process 형) 전수 vs var/sifs 존재 대조,
       누락 시 경고 — var/sifs/*.sif 글롭은 "빌드된 것만" 올려 새 앱이 무언 탈락한다(실측 확인).
-      external_proxy 형(DynaForge 등)은 설계상 대상 아님을 검사에서 명시적으로 제외 표기.
+      external_proxy 형(DynaForge 등)은 설계상 대상 아님을 검사에서 명시적으로 제외 표기. — 10-31 끝(B1): 포털 `9248d51`(병합 `1c599f5` — a694e19c 판 올림) — `drive-drift.sh` 허브 구역이 매니페스트(@{u} 판 먼저)의 launch.mode 가 service · job_runner 인데 `var/sifs/<폴더>.sif` 가 없으면 ✗ 한 줄 · DRIFT=1, proxy · iframe · url · static 은 '○ SIF 대상 아님 N개' 한 줄, 박스 덮어쓰기 앱은 종전대로 ○ — 시험 backend/tests/test_drive_drift_heax_unbuilt.py 10(옛 판에서 9 실패) · 변이 6/6, dev 실주행 새 ✗ 0('○ SIF 대상 아님 10개')
 - [x] manifest `state:`/`endpoint:` + 허브 프록시/upstream + sqlite singleton 가드 (v1 승계) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 - [x] 검증: laminate 2-replica + materialtwin 단일 강제 + 게이트웨이 도구 수 유지 (v1 승계) — 걷음: 사용자 결정 10-31 A1 ① — 계획 v2 를 걷는다, 장비가 오면 HWAXProd 기준으로 새로 짠다(8줄 · context-notes 2026-10-31) (10-31 정리)
 

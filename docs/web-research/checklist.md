@@ -68,8 +68,8 @@
 ## P5 — 캐시·레이트리밋·서킷·SEARCH_MODE
 
 - [x] SQLite 캐시(WAL) — 2회차 소켓 0건
-- [ ] 토큰버킷 3중 + arXiv 3초/1회·PubMed 3rps 준수
-- [ ] 서킷브레이커 — 5회 실패 후 소켓 미개방 (`ss -tn` 실측)
+- [x] 토큰버킷 3중 + arXiv 3초/1회·PubMed 3rps 준수 — 10-31 끝(B20): WebResearchMCP `566ed1d`(호스트별 잠금 — 읽기 → 기다림 → 기록) · 반대 검토 `0bfb1ef`(arXiv 는 응답이 끝날 때까지 한 연결 · 간격은 응답 끝에서) · `9abaf05`(호스트마다 기다리는 줄 8 · 30초 상한 · 헬스체크는 일꾼 스레드 없이) — 병합 `d76911a`(올림 · Drive dist-20261031-075456Z · dev 교체 07:54 UTC), test_throttle_spaces_concurrent_calls_to_same_host(간격 0.2초 · 잠금을 빼는 변이에서 실패) · 전체 45 통과, 토큰버킷 3중 · 일일 쿼터는 일반 웹을 접어(결정 9) 범위에서 뺐다(app/net.py 주석)
+- [x] 서킷브레이커 — 5회 실패 후 소켓 미개방 (`ss -tn` 실측) — 10-31 끝(B21): WebResearchMCP `b984fb0`(test_circuit_opens_after_consecutive_failures — connect 후킹으로 다섯 번 실패 뒤 여섯째는 소켓 0 · blocked · '연속 실패로 차단', 쿨다운 뒤 다시 연다 — `ss -tn` 실측을 갈음) · 반대 검토 `2869a1e`(줄에 선 동안 열린 서킷도 나가기 직전에 다시 본다 — test_circuit_stops_calls_already_in_queue) — 병합 `d76911a`(올림 · Drive dist-20261031-075456Z · dev 교체), 서킷 검사를 빼는 변이에서 실패 · 전체 45 통과
 - [x] offline → 소켓 0건, 캐시는 정상 응답
 - [x] 전역 OFF 소스는 UI 에서 비활성 + 사유 표시
 
@@ -78,7 +78,7 @@
 - [x] 웹 소스 켜지면 인용 계약 강제(끌 수 없음)
 - [x] `[W:doc_id#i]` ↔ `get_quote` 대조기 — 날조는 결정문에 경고
 - [ ] 심의 10건 — 날조 인용률 0%
-- [ ] 근거 0 심의에서 `[가설 단계]` 태깅
+- [x] 근거 0 심의에서 `[가설 단계]` 태깅 — 10-31 끝(B19): 에이전트 `c681f0e` · 반대 검토 `e552723` · `44a7a4b`(병합 `460d2e0` — 1159376 판 올림 · dev 10:37 UTC 재기동) — 웹 리서치 봉투의 data.status 가 blocked · empty(또는 degraded 인데 0건)면 지정 도구 · 챗이 넘긴 근거(챗 머리 줄이 붙은 꼴까지) · 좌석 자유 조회 세 자리 모두 근거로 세지 않고 상태 · 기록 도구도 세지 않는다 — 그런 봉투뿐인 심의의 근거 프로파일에 '가설 단계' · 의장 지시에 [가설 단계], tests/test_web_envelope_evidence.py 64(옛 판에서 24 실패) · 변이 잡힘 · 에이전트 전체 3,725 · 포털 test_delib_opts_contract 48 통과(웹 엔진 몫 — Claude 길에는 근거 프로파일 자체가 없다)
 - [x] RA 보고서 부록에 `queries_sent` 전문 — 걷음: 사용자 결정 10-31 A21 ① — 일반 웹을 접어(결정 9) 보안 검토가 닫혔고 보낸 질의 전량은 egress 원장 · `list_egress_log` 에 남는다 (10-31 정리)
 
 ## P7 — 일반 웹 🔒 (승인 + 시크릿 경로 + 키)

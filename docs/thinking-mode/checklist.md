@@ -65,6 +65,6 @@
 
 ## 남은 것
 
-- [ ] 브라우저 렌더 실측 — 로그인 자격이 없어 못 했다(D6). 데이터 경로는 전부 확인됨.
+- [x] 브라우저 렌더 실측 — 로그인 자격이 없어 못 했다(D6). 데이터 경로는 전부 확인됨. — 10-31 끝(B9): 포털 `0401e4d`(병합 `f255323`) — backend/tests/test_delib_stream_in_browser.py 의 띵킹 장면(진짜 ChatProvider · 가짜 SSE — 소집 넷 → 예심 탈락 하나 → 답함 · 기권(넘길 곳 지목) · 응답 실패 → 답 글 → 요약)이 머리 줄 '1명 답변 · 1명 기권 · 1명 응답 실패' · 넘길 곳 칩 · 답 글 · 끝난 뒤 '진행 중' 사라짐을 단언, 셈 갈래를 바꾼 변이 둘(응답 실패 · 예심 탈락을 기권으로)에서 실패
 - [x] `test_app.py::test_agent_for_caches_by_group_set` 사전 실패 — 가짜 `app.state` 에
       `tool_snapshot` 이 없다. 내 변경과 무관하고(변경 전에도 실패) 고치지 않았다. (확인 10-17 — HWAXAgentServer 8f85c3c(09-09)가 가짜 app.state 에 tool_snapshot 을 넣어 고침(test_app.py:87))
