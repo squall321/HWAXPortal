@@ -191,15 +191,20 @@ cae00 에서 사람이 SSO 로 로그인한 웹 챗으로 본다(두 QA 와 같�
 3. `backend/config/access.local.yaml` 에서 게이트웨이 백엔드 `dynaforge-prod` · `stepforge-prod` 를 든 플랫폼 항목의 `label:` 에서 '(시험)' 을 걷는다. 새 이름은 사람이 정한다.
    같은 항목의 안내 문구(10-27 HG-19 가 짚은 줄)에 '시험 사본' 이 있으면 함께 고친다. `id` · `gateway` · 주소 · 토큰 칸은 건드리지 않는다.
    포털은 이 파일을 요청마다 바뀐 시각으로 다시 읽는다(재기동 없음).
-4. 확인 — 게이트웨이는 포털 정책을 60초마다 다시 받는다. 1분 뒤에 아래로 본다.
+4. 확인 — 게이트웨이는 포털 정책을 60초마다 다시 받고, 라벨은 따로 도는 재활 주기(60초)에서 바뀐다 — 고친 뒤 길면 2분쯤 걸린다. 2분 뒤에 보거나,
+   곧바로 보려면 게이트웨이 `/refresh`(두 주기를 한 번에 돈다 — 토큰은 화면에 내지 않는다) 뒤에 본다.
 
    ```bash
+   python3 -c 'import json,os;print("header = \"Authorization: Bearer %s\"" % json.load(open(os.path.expanduser("~/Projects/HWAXMcpGateway/gateway_config.json")))["_gateway"]["token"])' \
+     | curl -s --noproxy '*' -K - -X POST http://127.0.0.1:9110/refresh      # 선택 — 2분을 기다리지 않을 때
    curl -s --noproxy '*' 127.0.0.1:9110/tools-map | python3 -c 'import json,sys
    for a in json.load(sys.stdin)["apps"]:
        if a["app"] in ("dynaforge-prod", "stepforge-prod"): print(a["app"], "—", a["label"], "· 도구", a["tool_count"])'
    ```
 
-   라벨에 '(시험)' 이 없으면 된다. 그대로면 그 라벨은 다른 자리(게이트웨이 백엔드 설정 · 허브 등록)에서 온다 — 어느 자리인지 dev 에 알린다.
+   **두 줄이 나와야 한다.** 줄이 모자라면(하나도 없거나 하나뿐) 빠진 앱의 백엔드가 이 박스 게이트웨이에 없다는 뜻이다 — 그 앱의 라벨은 볼 수 없었으니 '못 봄' 과
+   함께 그 출력을 알린다(빈 출력은 통과가 아니다). 나온 줄의 라벨에 '(시험)' 이 없으면 된다. 2분(또는 `/refresh`) 뒤에도 그대로면 그 라벨은 다른 자리(게이트웨이 백엔드 설정 · 허브 등록)에서 온다 —
+   어느 자리인지 dev 에 알린다.
    라벨의 '(시험)' 은 게이트웨이가 같은 도구 사본의 정본을 고를 때 사본 표지로도 읽는다 — 걷어야 점수가 같을 때 두 앱이 뒤로 가지 않는다.
 
 ## 8. AIDataHub — 받은 뒤 병합 한 번(`6f496fa`) · 데이터 단계 차례(사용자 결정 10-31)
