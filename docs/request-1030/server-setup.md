@@ -17,7 +17,8 @@
 | 포털 | `6a76f58` · `dbbb943` | HP-51(운영자 앱 없음 표지) · HP-52(씨앗 `from: items`) · HP-53(writes · confirm · ARP 함정 줄 · 저장 뒤 500 견딤) · HP-55(update-all 문구) · HP-56 · HA-32(어휘표 types · '전작' · '후속 모델'), 그 뒤 확인 카드 단추 · 짚기만 한 자기검증(화면) · 운영자 목록 C-15 · update-all §7 관문 줄 · env 킷 손잡이 · OB-26(ODB 허브 운영자) · OB-04(어휘표) | 올림 — 화면은 Drive `images-20261030-220551Z`(drive-drift 포털 일치) |
 | AIDataHub | `df7d45b` · `6f496fa` | AD-19 · AD-20(추천 · 기록 목록) · AD-21(저장 뒤 500) · AD-03(DRM 머리) · AD-07(`as_of`) · AD-01 코드(하위 절 평탄화 · 다시 짓기 명령), `6f496fa` 는 병합이 표본 임베딩을 전문가 단위로 맞추고 순번을 올린다(AD-21 후속) | 올림 — 받은 뒤 병합 한 번(8절) · 데이터 단계는 5 · 8절 |
 | MX 백서 | `bb0a6a1` · `bd2e79b` | MW-12 · MW-01 | 올림(그쪽 세션) |
-| SignalForge | `0e2ac46` · `ec40075` · `f004cd0` · `404fe42` | SG-19 · SG-04 주의 칸, `404fe42` 는 그쪽 cae00 문서 2026-10-31(제품 행 하나를 둘로 · 다시 태깅은 dev 에서만) | 올림(그쪽 세션) — 차례는 3절 |
+| SignalForge | `0e2ac46` · `ec40075` · `f004cd0` | SG-19 · SG-04 주의 칸 | 올림(그쪽 세션) — 차례는 3절 |
+| SignalForge | `404fe42` | 그쪽 cae00 문서 2026-10-31(그 리포 `docs/DEPLOY_CAE00_2026-10-31.md`) | 올림(그쪽 세션) — 차례는 3절 |
 | SmartTwinExplorer | `4f5e0e0` | PA-20 | 올림 — Drive staging 번들(3절) |
 | DocForge | `e72cbe5` · `ab5547e`(0.3.1) | HH-14 | 코드 끝 — 배치는 그 세션의 사용자 승인 대기 |
 | KooRemapper | `0c1113f` · `f36270f` · `a3eff43` | KR-23 — 레시피 자동 관문을 MCP 설명에 적음(사용자 결정 그대로) · KR-01 · KR-16 — 과제 검색이 별칭을 대조하고 순위를 매긴 뒤 자른다(행마다 match_kind) | 올림(그쪽 세션) — update-all 하나, 재기동 때 이관 0018 · 화면은 다음 Drive |
@@ -46,7 +47,8 @@
 ## 3. 다른 플랫폼 반영(그쪽 세션이 알려 온 것)
 
 - **SignalForge** — update-all 로 받은 뒤 sf-mcp · sf-backend 를 워치독 락을 쥐고 하나씩 재기동한다. 명령은 SignalForge `docs/DEPLOY_CAE00_2026-10-30.md` 1절 그대로이고, 'sf-mcp semantic import ok' 를 확인한다. 2절대로 시간과 `plm_caution` 을 본다(실제 이름은 `~/ontology-test/`).
-  - 10-31 — SignalForge 가 이어지는 문서 `docs/DEPLOY_CAE00_2026-10-31.md`(`404fe42`)를 냈다. 받는 코드에 그 판(제품 행 하나를 둘로 나누는 카탈로그 · 매처)이 들면 **sf-mcp 재기동 차례는 그 문서를 따른다** — 그 문서는 '다시 태깅이 병합으로 들어온 뒤 재기동' 이라 적었다(먼저 띄우면 나눈 쪽 제품의 질의가 글 없는 새 코드로 풀린다). 다시 태깅 `--apply` 는 cae00 에서 하지 않는다(dev 에서만). 같은 문서 2절의 dry-run 은 읽기 전용이다 — 받은 편지함 2026-10-31 Q3 이 그 수를 묻는다.
+  - 10-31 — SignalForge 10-31 cae00 문서(그 리포 `docs/DEPLOY_CAE00_2026-10-31.md`)대로 한다. **sf-mcp 재기동 차례는 그 문서를 따른다**(그 문서 4절 — 병합으로 들어온 뒤).
+    그 문서의 `--apply` 는 cae00 에서 하지 않는다(dev 에서만). 2절 dry-run 은 읽기 전용이다 — 받은 편지함 2026-10-31 Q9 가 그 결과를 묻는다.
 - **SmartTwinExplorer(ste — 24대)** — Drive `ApptainerImages:SmartTwinExplorer/staging` 번들(`4f5e0e0`)을 `STE_DEPLOY=1 infra/scripts/deploy-ste.sh` 로 반영한다(MCP `ste-mcp.service` 도 함께 다시 뜬다). DW-12 다시 보기는 게이트웨이 HG-22 가 든 뒤에 한다.
 - **DocForge** — 0.3.1 배치(그 세션의 사용자 승인) 뒤에 한다. 브라우저 `/apps/doc_forge/api/v1/capabilities` 의 version 이 0.3.1 인지, 게이트웨이 `/refresh` 뒤 tools-map 에 `docforge_*` 가 여섯인지 본다. OB-94 시험 파일은 `~/Projects/HEAXHub/var/app_data/doc_forge/inbox/` 에 평문 pptx 하나를 둔다(상자의 파일은 DocForge 가 지우지 않는다 — 운영자가 치운다).
 - **MX 백서** — 위키가 꺼진 박스라 `mxwp-mcp` `tools/list` 의 `wiki_*` 가 0개여야 한다. MCP 가 API 보다 먼저 떴다면 로그에 '위키 도구를 미루고 다시 본다' 한 줄이 있고 '미뤄 둔 위키 도구 N개를 실었다' 줄은 없어야 맞다.
