@@ -22,6 +22,7 @@ from app import routes_health
 from app.access import routes as access_routes
 from app.access.policy import AccessPolicy, sso_default_problems
 from app.agent import routes as agent_routes
+from app.agent import panel as agent_panel   # MCP Apps 패널 호스트(docs/request-1027 HP-42 — 손잡이 MCP_APPS_HOST 기본 꺼짐)
 from app.agent.audit import AuditLog
 from app.agent.conv_store import ConversationStore
 from app.auth.downstream import JwtDownstreamIssuer
@@ -185,6 +186,7 @@ async def lifespan(app: FastAPI):
 
     yield
     # Shutdown: close the pooled client + the audit sqlite connection.
+    await agent_panel.close_all()          # 열린 패널의 게이트웨이 MCP 세션 — 게이트웨이는 세션 유휴 만료가 없다
     await app.state.agent_client.aclose()
     await app.state.card_review_client.aclose()
     app.state.agent_audit.close()
@@ -250,6 +252,7 @@ app.include_router(auth_pat.router)
 app.include_router(mail_routes.router)
 app.include_router(mcp_routes.router)
 app.include_router(agent_routes.router)
+app.include_router(agent_panel.router)
 
 # 절차 — SPA 폴백보다 위. 등록이 실패해도 포털(챗 릴레이)은 뜬다.
 try:

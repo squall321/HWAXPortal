@@ -51,6 +51,7 @@ from app.agent import docforge_delivery as _dfd
 from app.agent import pc_upload as _pc
 from app.agent import upload as _upload
 from app.agent import wiki_send as _wiki
+from app.agent import panel as _panel
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
 logger = logging.getLogger(__name__)
@@ -362,6 +363,10 @@ class ChatRequest(BaseModel):
     # 분석 루틴(챗 루틴 모드, docs/analysis-routines R3-design) — 권한 feat:routines. message 는 그대로 필수다(사람 글이 없으면 '루틴: <제목>').
     # 에이전트 서버 ChatRequest 에도 같은 칸이 있어야 한다 — 없으면 조용히 버려져 그 글이 일반 챗으로 돈다(시험이 AST 로 본다).
     routine: RoutineReq | None = None
+    # 화면이 MCP Apps 패널을 그릴 수 있다는 표지(docs/request-1027 HA-20 · HP-42) — 화면은 호스트 부품이 있고 feat:panels 가 있을 때 "mcp-apps/1" 을
+    # 싣는다(캐시된 옛 화면은 싣지 않아 그대로다). 넓게 받고 좁게 옮긴다 — 다른 판의 글자도 422 로 막지 않지만, 에이전트 서버에는 박스 손잡이
+    # (MCP_APPS_HOST) · feat:panels · 세션 쿠키 요청 · 정확한 글자가 다 맞을 때만 싣는다(_relay_ui_host). 에이전트 서버 ChatRequest 에도 같은 칸이 있다.
+    ui_host: str | None = Field(default=None, max_length=32)
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -791,9 +796,17 @@ def _is_delib_message(message: str | None) -> bool:
     return (message or "").strip().startswith(_DELIB_TRIGGERS)
 
 
+def _relay_ui_host(request: Request, body: "ChatRequest", principal: Principal, settings: Settings) -> bool:
+    """에이전트 서버에 패널 표지(ui_host)를 실을까(HA-20) — 박스 손잡이 MCP_APPS_HOST 가 켜져 있고, feat:panels 가 있고, 화면이 정확한 글자를 보냈고,
+    세션 쿠키 요청일 때만. PAT(스크립트 · 개인 Claude)로 온 챗은 패널을 그릴 화면이 없다 — 싣지 않는다(패널 창구도 세션만 받는다)."""
+    return (settings.mcp_apps_host and (body.ui_host or "") == _panel.UI_HOST_TOKEN and _panel.FEATURE in principal.groups
+            and request.headers.get("authorization", "")[:7].lower() != "bearer ")
+
+
 async def _relay_stream(
     body: "ChatRequest", principal: Principal, audit: AuditLog,
-    settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None, affiliation: str = ""
+    settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None, affiliation: str = "",
+    ui_host: bool = False,
 ) -> AsyncIterator[bytes]:
     """Relay the remote Agent Server's SSE stream byte-for-byte to the browser.
 
@@ -853,6 +866,8 @@ async def _relay_stream(
         payload["images"] = [i.model_dump() for i in body.images]
     if body.conversation_id:  # 서버 대화 id — 에이전트가 챗 LLM 호출의 대화 머리(X-Session-Affinity)로만 쓴다(docs/request-1029 W-1)
         payload["conversation_id"] = body.conversation_id
+    if ui_host:  # 패널을 그리는 화면의 턴(HA-20) — 부르는 쪽(_relay_ui_host)이 손잡이 · 권한 · 세션 · 글자를 다 봤다
+        payload["ui_host"] = _panel.UI_HOST_TOKEN
     if routine:  # 분석 루틴 — 채운 칸만(새 실행은 id · version · inputs · note, 이어서는 run_id, RA 초안 올리기는 run_id · upload_ra).
         # version 은 1 이상이라 참거짓으로 걸러도 된다. 빈 note · 거짓 upload_ra 도 싣지 않는다 — 칸이 없으면 실행기는 종전 그대로다
         payload["routine"] = {k: v for k, v in body.routine.model_dump().items() if v}
@@ -2530,6 +2545,7 @@ async def chat(
     routine_turn = body.routine is not None
     if routine_turn:
         ensure(principal, "feat:routines")
+    relay_ui = _relay_ui_host(request, body, principal, settings)    # 패널 표지를 실을까(HA-20) — 서버 사본의 포인터도 이 턴만 모은다
     sem = _sem(request)
     audit = _audit(request)
     # SSE holds a worker for the stream's lifetime → cap, and reject (not queue) over the cap.
@@ -2574,7 +2590,7 @@ async def chat(
         else:
             source = _relay_stream(body, principal, audit, settings, _agent_client(request),
                                    _chat_user_pat(request.app.state.keystore, settings, principal),
-                                   _wiki.known_affiliation(request))
+                                   _wiki.known_affiliation(request), ui_host=relay_ui)
 
         # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
         # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).
@@ -2610,6 +2626,7 @@ async def chat(
         delib_ev: list[dict] = []    # 심의 근거 카드(좌석 조회 결과·엔진의 '줄였다·뺐다' 알림) — 서버 사본에도 남긴다
         user_images: list[str] = []  # 이 발화에 올린 그림의 주소(user_images) — 서버 사본의 답 meta 에 남겨 다른 기기의 이력에도 그림이 실리게
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
+        panels: list[dict] = []      # 패널(ui_resource) 포인터(app · tool · uri · call · 제목) — 답 meta.panels 로 남긴다. 결과 · 입력 · _meta 는 남기지 않는다(B-4 · B-6)
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
         # 청크는 글자 경계와도 안 맞는다 — 한글 한 자(3바이트)가 두 청크로 갈리면 청크마다 따로 풀 때 그 자리가 '�' 로
         # 깨져 서버 사본에 들어간다. 발언이 길수록(줄이지 않은 글은 수만 자다) 걸린다. 이어지는 바이트를 쥐고 푼다.
@@ -2677,6 +2694,10 @@ async def chat(
                                 # 주소 꼴만 받는다 — 이력 항목(ChatHistoryMessage.images)이 받는 꼴과 같아야 다음 턴에 422 가 안 난다.
                                 user_images = [u for u in data["urls"]
                                                if isinstance(u, str) and _ARTIFACT_IMAGE_RE.fullmatch(u)][:_IMAGES_MAX]
+                            elif evt == "ui_resource" and relay_ui:
+                                _pp = _panel.pointer_of(data)
+                                if _pp is not None and len(panels) < 16:
+                                    panels.append(_pp)
                             elif evt == "routine" and isinstance(data.get("run_id"), str) and data["run_id"]:
                                 # 분석 루틴(R3-design 3.2 · 3.3) — 대화에는 포인터만 남긴다(정본은 포털 원장, 단계 · 보고서는 화면이 run_id 로 읽는다).
                                 # 실행 id 는 모든 프레임에, 루틴 id · 제목은 plan 에, 실행 상태는 plan · done 에 있다. 마지막 값이 이긴다.
@@ -2790,7 +2811,7 @@ async def chat(
                                 reply = _ROUTINE_EMPTY_REPLY   # 글 없이 끊긴 루틴 턴 — 그래도 남겨 run_id 를 잃지 않는다
                             if reply:
                                 _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
-                                                         ("user_images", user_images)) if v}
+                                                         ("user_images", user_images), ("panels", panels)) if v}
                                 if routine_ptr:      # 분석 루틴 — 네 칸을 늘 싣는다(모르는 값은 null)
                                     _am["routine"] = {k: routine_ptr.get(k) for k in ("run_id", "routine_id", "title", "state")}
                                 # 다른 탭의 중계가 같은 실행의 같은 끝 · 같은 글을 이미 남겼으면 넣지 않는다 — 보고서가 두 번 남지 않게. 이 턴의
