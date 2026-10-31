@@ -456,11 +456,14 @@ class ProceduresRunner:
                             "error": J.short_error(bad)}
                 v = await self._one(run_id, ix, step, scope, principal, sess, args=args,
                                     caveat=caveat)
-                if v is None:
-                    return {"ix": ix, "state": "skipped"}
                 # 호출을 기다리는 사이 누른 중단 — 아래 queued 가 지워 실행이 단계를 다시 받았다(화면은 단계가 도는 동안 '중단' 을 보인다).
                 if (self.store.get_run(run_id) or {}).get("state") == "cancelled":
                     return {"ix": ix, "state": "cancelled"}
+                if v is None:
+                    # 웜업 — `_loop` 처럼 단계로 남기지 않고(타임아웃도 실패가 아니다) 실행을 잇는다. 빈 실행이 잇는 자리는 단계 사이(queued)다 —
+                    # 종전엔 위 running 에 남아 화면이 '도는 중' 과 '중단' 을 계속 보였다.
+                    self.store.set_run_state(run_id, "queued")
+                    return {"ix": ix, "state": "skipped"}
                 saved = {}
                 if v.ok:
                     for key, path in (step.save or {}).items():

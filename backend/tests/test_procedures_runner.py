@@ -887,6 +887,33 @@ def test_실패한_빈_실행은_단계를_더_받는다(kit):
     asyncio.run(go(*kit))
 
 
+def test_한_단계씩_돌린_웜업은_실행을_도는_중에_두지_않는다(kit):
+    """`_loop` 는 웜업을 단계로 남기지 않고(타임아웃도 실패가 아니다) 실행을 잇는다(test_warmup_discards_result_and_survives_timeout).
+    빈 실행이 잇는 자리는 단계 사이(queued)다 — 종전엔 running 에 남아 화면이 '도는 중' 과 '중단' 을 계속 보였다.
+    웜업을 기다리는 사이 누른 중단은 그대로 남는다(queued 로 덮지 않는다)."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": httpx.ReadTimeout("콜드스타트")})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live", inputs={})
+        got = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="a", warmup=True))
+        assert got == {"ix": 0, "state": "skipped"}, got
+        assert len(g.calls) == 1 and store.list_steps(rid) == [], "부르기는 하고 단계로 남기지는 않는다(_loop 와 같다)"
+        assert store.get_run(rid)["state"] == "queued"
+
+        rid2 = store.create_run(owner_sub="u1", mode="live", inputs={})
+
+        def warm_then_cancel(_a):
+            store.cancel_run(rid2, "u1")
+            return ok({})
+
+        g.replies["b_a"] = warm_then_cancel
+        got2 = await r.step_once(run_id=rid2, principal=PRINCIPAL, step=Step(backend="b", tool="a", warmup=True))
+        await r.aclose()
+        assert got2 == {"ix": 0, "state": "cancelled"}, got2
+        assert store.get_run(rid2)["state"] == "cancelled"
+    asyncio.run(go(*kit))
+
+
 def test_inactive_owner_stops_before_minting_a_pat(kit):
     async def go(store, build):
         g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})
