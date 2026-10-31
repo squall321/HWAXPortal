@@ -31,6 +31,7 @@ import { ROUTINE_STOPPED_BEFORE_RUN, delibMayStillRun } from '../lib/chatErrors'
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import type { AttachedImage } from '../components/chat/imageAttach';
 import { buildHistory } from '../components/chat/history';
+import { startsWithDelibTrigger } from '../components/chat/delibTaxonomy';
 import type { UploadNotice } from '../components/chat/uploadNotice';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import { panelPointer } from '../components/chat/panels';
@@ -941,8 +942,11 @@ export function ChatProvider({
 
       // 심의 페이지 등에서 서버 트리거 프리픽스를 자동 부착 — "첫 발화"에만(이후 발화는
       // 일반 챗으로 흘려 심의 로그 위에서 GLM 이어가기가 되게 한다). 직접 입력했으면 존중.
+      // 이미 심의 트리거(/시뮬심의 · /시험계획 …)로 시작하면 붙이지 않는다 — 방법 메뉴의 해석 · 시험 · 구축 계획이 '/심의 /시뮬심의 …' 로 나가
+      // 에이전트가 일반 심의로 열었다(트리거는 글 머리로 가른다).
       const applyPrefix = sendPrefix && (isFirstTurn || text.startsWith(sendPrefix.trim()));
-      const outbound = applyPrefix && !text.startsWith(sendPrefix.trim()) ? sendPrefix + text : text;
+      const outbound =
+        applyPrefix && !text.startsWith(sendPrefix.trim()) && !startsWithDelibTrigger(text) ? sendPrefix + text : text;
 
       void (async () => {
         // 서버 정본 확보 — serverKind 설정 시 이 대화의 서버 id 를 보장(없으면 생성).
@@ -1269,7 +1273,8 @@ export function ChatProvider({
       return;
     }
     const trig = sendPrefix.trim();
-    const text = trig && !lastUser.text.startsWith(trig) ? sendPrefix + lastUser.text : lastUser.text;
+    // 이미 심의 트리거로 시작하는 발화(/시뮬심의 · /시험계획 …)는 그대로 — 첫 발화와 같은 규칙(sendMessage)
+    const text = trig && !lastUser.text.startsWith(trig) && !startsWithDelibTrigger(lastUser.text) ? sendPrefix + lastUser.text : lastUser.text;
     // 다시 보내는 것은 그 발화 그대로다 — 그새 켜 둔 루틴을 싣지 않는다(null)
     sendMessage(text, undefined, null);
   }, [conversations, activeId, streaming, sendMessage, sendPrefix, resumeRoutine, can, setArmedRoutine]);
