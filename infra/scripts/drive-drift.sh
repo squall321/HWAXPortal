@@ -292,7 +292,7 @@ fi
 
 if [ "$DRIFT" = 1 ]; then
   echo
-  echo "→ 올려야 한다 — 구역마다 따로(전체 build-all-to-drive.sh 는 쓰지 않는다: 허브 dist-to-drive 가 되돌림 판을 셋만 남기고 지우고,"
+  echo "→ 올려야 한다 — 구역마다 따로(전체 build-all-to-drive.sh 는 쓰지 않는다: 허브 dist-to-drive 가 되돌림 판을 다섯만 남기고 지우고,"
   echo "  SHA256SUMS 를 이번에 올린 것만으로 덮고, app-data 가 dev 데이터를 cae00 에 씨앗으로 싣는다 — 10-25 cae00 업데이트 점검):"
   echo "    (포털)        ./infra/scripts/build-all-to-drive.sh portal"
   echo "    (허브 앱 SIF) SLUG=<앱> bash ../DocForge/scripts/drive-push-sif.sh --dry-run   # 본 뒤 --dry-run 없이 — 목록을 합쳐 맨 끝에 올린다"

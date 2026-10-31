@@ -354,3 +354,16 @@ production)에서 죽었고, provision 은 **`heax_registry` 의 토큰 · 주�
   넘긴다. 걸리는 것은 `_common.sh` 처럼 `set -a` 로 infra/.env 를 통째 export 한 셸에서 provision 을 부를 때다.
 - 남은 약점(고치지 않음) — heax 자동 발급이 실패한 실행은 직전 config 의 heax 토큰을 이어받지 않는다(mxwp 토큰은 이어받는다). 다른 까닭으로
   발급이 실패해도(허브가 내려가 있음 등) 같은 꼴로 허브 앱이 빠진다.
+
+## HEAXHub `dist-to-drive.sh` 로 앱 하나를 올리면 Drive 의 되돌림 판이 지워진다 — 앱 하나는 `drive-push-sif.sh` (2026-10-31)
+
+- **무엇이** — 10-31 02:17 UTC 포털 세션이 리스크 앱 SIF 하나를 `HEAX_DRIVE_APP_SIFS=hwax-risk bash deploy/apptainer/dist-to-drive.sh` 로 올렸다.
+  그 스크립트는 앱 몇 개만 올리는 부분 실행에서도 보존 규칙(`HEAX_DRIVE_RETAIN`, 그때 기본 3)을 돌려 `dist-*` 를 최근 셋만 남기고 `rclone purge`
+  한다. 10-17 ~ 10-31 00:54 의 스물넷이 Drive 휴지통으로 갔다(StepForge 세션이 알려 왔다). latest/ 와 SHA256SUMS 는 멀쩡했다.
+- **고친 것** — 기본 보존 수를 5로(HEAXHub `7b9a8ed`, 사용자 결정 10-31). 지운 판은 되살리지 않고 그대로 둔다(사용자 결정 — 휴지통에 30일 남는다).
+- **앱 하나 올리기는 DocForge `scripts/drive-push-sif.sh`** — `SLUG=<앱> bash ../DocForge/scripts/drive-push-sif.sh --dry-run` 을 본 뒤 `--dry-run`
+  없이. 아무것도 지우지 않고, 원격 SHA256SUMS 의 다른 줄을 서버 쪽 sha256 으로 대조한 뒤 합쳐서 맨 끝에 올린다. `infra/scripts/drive-drift.sh` 의
+  '올려야 한다' 안내도 이 길을 적는다.
+- **되살리기(필요할 때만)** — `rclone lsd <remote> --drive-trashed-only` 로 이름을 보고 `rclone backend untrash <remote> --dry-run` 으로 되살릴 목록을 본다.
+  휴지통 안의 폴더 하나를 하위 인자로 고를 수는 없다('directory not found') — `--interactive` 로 하나씩 고르거나, 되살린 뒤 필요 없는 것을 다시
+  지운다. 휴지통은 30일 뒤 비워진다.
