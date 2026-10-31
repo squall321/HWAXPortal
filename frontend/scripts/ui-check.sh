@@ -6,6 +6,8 @@
 #   ./frontend/scripts/ui-check.sh -g '/tokens'   # 나머지 인자는 playwright test 로 넘긴다(한 화면만 다시 보기)
 #
 # 실 저장소는 하나도 안 건드린다 — 포털이 쓰는 경로를 전부 임시 디렉토리로 돌린다(docs/ui-refresh D-1).
+# 라우트도 임시 사본이다 — 리포의 backend/config/routes.env 만 옮기고 박스 오버레이(routes.local.env)는 읽지 않는다. 목적지가 있어야
+# 열리는 타일(사내 연계 knox-bridge 등)이 이 박스 설정에 따라 열리고 닫히면 같은 점검이 박스마다 다른 화면을 본다.
 # 포털 프로세스는 이 스크립트가 띄운 PID 로만 내린다(pkill -f 금지 — 자기 명령줄을 맞힌다).
 set -euo pipefail
 FE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,10 +32,12 @@ for tier in $TIERS; do
   [ "$tier" = admin ] && admins="hong.gildong@corp.com"
   D="$TMP/$tier"
   mkdir -p "$D/stage"
+  cp "$ROOT/backend/config/routes.env" "$D/routes.env"
   (cd "$ROOT/backend" && exec env AUTH_PROVIDER=mock APP_ENV=dev SERVE_FRONTEND=1 \
       PUBLIC_BASE_URL="http://127.0.0.1:$PORT" FRONTEND_URL="http://127.0.0.1:$PORT" \
       SESSION_SECRET="ui-check-session-secret-not-a-real-one-000000" COOKIE_SECURE=false \
       MOCK_USER_EMAIL=hong.gildong@corp.com MOCK_USER_NAME=홍길동 MOCK_USER_GROUPS="" PORTAL_ADMIN_EMAILS="$admins" \
+      ROUTES_PATH="$D/routes.env" \
       USER_STORE_PATH="$D/users.sqlite" TOKEN_STORE_PATH="$D/tok.sqlite" CONV_STORE_PATH="$D/conv.sqlite" \
       PROCEDURES_STORE_PATH="$D/proc.sqlite" AGENT_AUDIT_LOG_PATH="$D/audit.sqlite" JWT_KEYS_DIR="$D/jwt" \
       JWT_AUTOGEN_KEYS=true PROCEDURES_ARTIFACT_ROOT="$D/art" DELIB_ARCHIVE_ROOT="$D/delib" UPLOAD_STAGING_DIR="$D/stage" \
