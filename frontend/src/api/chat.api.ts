@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 import { rejectedMessage, streamCutMessage } from '../lib/chatErrors';
-import type { AgentCatalog, ConfirmCard, DelibEvent, ErrorEvent, ResultBlock, RoutineEvent, RoutineRequest, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta } from '../types/chat';
+import type { AgentCatalog, ConfirmCard, DelibEvent, ErrorEvent, ResultBlock, RoutineEvent, RoutineRequest, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta, UiResourceEvent } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -36,6 +36,8 @@ export interface StreamHandlers {
   onRoutine?: (e: RoutineEvent) => void;
   /** 확인 카드(SSE confirm, 10-30 HA-29) — 에이전트 서버가 보내지 않고 멈춘 잡 · 쓰기. 단추가 승인 · 거절 글을 다음 말로 보낸다. */
   onConfirm?: (e: ConfirmCard) => void;
+  /** MCP Apps 패널(SSE ui_resource, docs/request-1027 HA-20) — 패널 도구를 부른 호출 하나에 하나. 화면이 그 답 안에 패널을 연다. */
+  onUiResource?: (e: UiResourceEvent) => void;
   onDone?: () => void;
   /** 프레임이 하나 올 때마다(이벤트 이름) — 서버 heartbeat(`ping`)를 포함한다. 내용이 아니라 '살아 있다' 는 신호다. */
   onSignal?: (event: string) => void;
@@ -108,6 +110,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'confirm':
       h.onConfirm?.(payload as ConfirmCard);
+      break;
+    case 'ui_resource':
+      h.onUiResource?.(payload as UiResourceEvent);
       break;
     case 'error':
       h.onError?.(payload as ErrorEvent);
@@ -503,11 +508,13 @@ export async function streamChat(
     /** 분석 루틴 — 새 실행 {id, version?, inputs, note?} 또는 이어서 · 다시 붙기 {run_id}(RA 초안 올리기는 upload_ra 를 더한다). 본문 맨 위 칸
      *  `routine` 으로 간다(delib_opts 가 아니다). */
     routine?: RoutineRequest;
+    /** 이 화면이 MCP Apps 패널을 그릴 수 있다는 표지(HA-20) — 포털이 박스 손잡이 · feat:panels 를 보고 에이전트 서버에 옮긴다. */
+    uiHost?: string;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, routine, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, routine, uiHost, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -543,6 +550,8 @@ export async function streamChat(
       ...(documents && documents.length > 0 ? { documents: documents.slice(0, 10) } : {}),
       // 장수는 붙이는 자리(Composer · IMAGES_MAX)가 막는다 — 넘으면 포털이 422 로 알린다.
       ...(images && images.length > 0 ? { images } : {}),
+      // 패널 표지 — 호스트 부품이 있는 이 화면만 싣는다(포털이 손잡이 · 권한 · 세션을 다시 본다)
+      ...(uiHost ? { ui_host: uiHost } : {}),
       // 분석 루틴(R3) — 포털 RoutineReq 는 모르는 칸을 422 로 거절한다(extra=forbid). 아는 칸만 골라 싣는다 — 이어서는 run_id 하나(다른 칸은
       // 서버가 안 본다 — RA 초안 올리기만 upload_ra 를 참으로 더한다), 새 실행은 id · version · inputs · 덧붙인 말(note, 비면 싣지 않는다).
       ...(routine?.run_id

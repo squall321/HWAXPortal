@@ -527,6 +527,75 @@ ol.md-list li.md-li-d2 {
   font-size: 0.8rem;
 }
 
+/* MCP Apps 패널(docs/request-1027 HP-42) — 머리는 포털이 그린다(앱이 그린 화면이라는 표지 · 닫기 · 다시 열기). iframe 안은 앱의 문서다 */
+.mcp-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+.mcp-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+.mcp-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.mcp-panel-app {
+  font-weight: 600;
+}
+.mcp-panel-uri {
+  color: var(--fg-muted);
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-panel-mark {
+  color: var(--warn-fg);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-pill);
+  padding: 0 0.5rem;
+}
+.mcp-panel-close,
+.mcp-panel-reopen {
+  margin-left: auto;
+}
+.mcp-panel-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--warn-bg);
+  border-bottom: 1px solid var(--warn-border);
+  font-size: 0.85rem;
+}
+.mcp-panel-note {
+  padding: 0.35rem 0.6rem;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+.mcp-panel-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: #ffffff;
+}
+.mcp-panel-frame.has-border {
+  border-top: 1px solid var(--border);
+}
+
 /* 올린 그림 — 입력창의 붙일 그림(썸네일 + 떼기)과 사람 말풍선 아래의 그림. docs/chat-depth-context T5 */
 .img-chips {
   display: flex;

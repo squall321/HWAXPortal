@@ -1,5 +1,6 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, ConfirmCard, Conversation, DelibData, DelibOpts, Message, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
+import type { ActivityItem, ConfirmCard, Conversation, DelibData, DelibOpts, Message, PanelPointer, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
+import { panelsFromMeta, storedPanels } from '../components/chat/panels';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -27,6 +28,8 @@ interface StoredMessage {
   routine?: RoutineState;
   /** 확인 카드(HA-29) — 단추를 다시 그린다. 작다. */
   confirm?: ConfirmCard;
+  /** MCP Apps 패널 포인터(HA-20) — 포인터와 작은 입력만(결과 · _meta 는 남기지 않는다 — B-4 · B-6). */
+  panels?: PanelPointer[];
 }
 /** 자기검증의 버린 고침(dropped)과 관문 수(gate)는 QA 용이라 브라우저 사본에 남기지 않는다(10-30 HA-27 — 화면에 보이지 않는다). */
 function storedMeta(meta: TurnMeta): TurnMeta {
@@ -93,6 +96,11 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
             ? { routine: { ...m.routine, steps: Array.isArray(m.routine.steps) ? m.routine.steps : [] } }
             : {}),
           ...(m.confirm && typeof m.confirm.id === 'string' && Array.isArray(m.confirm.calls) ? { confirm: m.confirm } : {}),
+          // 패널 포인터(HA-20) — 입력은 이 브라우저 사본에만 있다(다시 열 때 tool-input 으로 보낸다)
+          ...(() => {
+            const panels = panelsFromMeta(m.panels, true);
+            return panels ? { panels } : {};
+          })(),
         });
       }
       convs.push({
@@ -210,7 +218,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
         // 스트리밍 도중 닫힌 빈 어시스턴트 placeholder는 저장하지 않는다.
         // 심의 메시지는 decision 도착 전까지 text가 비므로 delib 존재로도 보존한다(F5 소실 방지).
         // 루틴 턴도 보고서(token) 전까지 글이 비고 실행은 서버에서 계속 돈다 — 실행 id 를 잃지 않게 routine 으로도 남긴다.
-        .filter((m) => m.text || m.error || m.delib || m.think || m.routine || m.role === 'user')
+        .filter((m) => m.text || m.error || m.delib || m.think || m.routine || m.panels?.length || m.role === 'user')
         .map((m) => {
           if ((m.activity?.length ?? 0) > 60) cut.any = true;
           return {
@@ -228,6 +236,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ...(m.images?.length ? { images: m.images } : {}),
             ...(m.routine ? { routine: m.routine } : {}),
             ...(m.confirm ? { confirm: m.confirm } : {}),
+            ...(m.panels?.length ? { panels: storedPanels(m.panels) } : {}),
           };
         });
       return {

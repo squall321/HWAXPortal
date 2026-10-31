@@ -340,6 +340,26 @@ export interface Message {
   routine?: RoutineState;
   /** 확인 카드(SSE confirm, HA-29) — 단추를 그린다. 영속됨(작다). 서버 사본에는 본문의 카드 글만 있다. */
   confirm?: ConfirmCard;
+  /** MCP Apps 패널 포인터(SSE ui_resource, docs/request-1027 HA-20 · HP-42) — 영속되는 것은 포인터(+작은 입력)뿐이다. 결과 · _meta 는 그 탭에만
+   *  있다(B-4 · B-6 (가) — lib/mcpApps 의 live). 새로고침 · 다른 기기에서는 '다시 열기' 카드다. */
+  panels?: PanelPointer[];
+}
+
+/** 패널 포인터 — 서버 사본은 app · tool · uri · call · title 만 쥔다(포털 panel.pointer_of). input 은 이 브라우저 사본에만, 작을 때만. */
+export interface PanelPointer {
+  call: string;
+  tool: string;
+  app: string;
+  uri: string;
+  title?: string;
+  input?: Record<string, unknown>;
+}
+
+/** SSE ui_resource — 에이전트 서버 ui_panels.event 의 꼴. result 는 상한을 넘으면 빠지고 cut(원래 바이트)이 실린다. */
+export interface UiResourceEvent extends PanelPointer {
+  result?: { content?: unknown[]; structuredContent?: unknown; _meta?: unknown };
+  cut?: number;
+  input_cut?: boolean;
 }
 
 /** 에이전트 서버가 턴 끝에 내는 meta — models 는 이 턴의 모델 호출 수(모델 이름 → 횟수). docs/chat-depth-context C3. */
