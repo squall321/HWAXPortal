@@ -860,8 +860,7 @@ stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치�
 
 ## 2026-10-30 반영분 — 낙하 트윈(DynaForge 후처리 반입)
 
-cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main
-`40d3d55` — Drive 판 `dist-20261030-142622Z`(`24bca1c`, SP 받는 쪽 전부) · §0 1번 · §1 · §1-1(새 절) · §8 · §9 를 고친 판, 그 앞 판 `352a8fd` 는 변형 뷰어 1단계)이고, 명령 · 기대값은
+cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `eea5098` — 10-31 판, Drive 판 `dist-20261031-214338Z`(`57a41bf`) · §0 · §1 · §1-2(새 절) · §8 을 고친 판, 그 앞 판 `40d3d55` 는 SP 받는 쪽 전부 `24bca1c`)이고, 명령 · 기대값은
 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
 `docs/01-plan/features/{postprocess-reservation-1028,sphere-risk-map-1029}.plan.md` · 총괄 `drop-twin-1028.checklist.md`, KooSlurm 쪽은 KooSlurm
 `docs/sso_enable_20261029/{icn401_apply_check,sso_enable_procedure}.md`(origin `46c647e4`). 포털 쪽 몫은 R2a 제출 씨앗의 후처리 예약(`9ce09b6`,
@@ -870,7 +869,7 @@ cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다
 
 ### 0. 순서 — 한 줄씩
 
-1. **cae00** — `git pull && update-all`(update-all §2 가 kooremapper 의 Drive 판 `dist-20261030-142622Z` 를 받는다) → 아래 1 · 1-1.
+1. **cae00** — `git pull && update-all`(update-all §2 가 kooremapper 의 Drive 판 `dist-20261031-214338Z` 를 받는다) → 아래 1 · 1-1 · 1-2.
 2. **icn401** — `git pull && sudo ./dashboard/start_production.sh` → 아래 3(KooSlurm 문서 §2).
 3. **비밀 하나를 두 곳에** — icn401 `HEAX_GATEWAY_SECRET`(backend_5010/.env) = cae00 `KOORM_KOOSLURM_SSO_SECRET`(KooRemapper platform/.env) → 아래 2 · 3-3.
 4. **cae00** — `KOORM_STCX_BACKEND_URL` 확인 → DynaForge 재기동 → 아래 2 확인.
@@ -885,17 +884,17 @@ SSO 켜기는 **이번에 하지 않는다**(아래 7 — 조건이 안 섰다).
 이번 판에 든 것 — 반입 속도(raw_decode `288afb7` · sphere 블록 분리 `c7970dc`) · 후처리 예약 `postprocess`(`4ff9a79` → 위임 창구 `e62f601` · rc 3 경고) ·
 구면 위험도 맵(3D · 허용비 · 상위 N, `f366816`) · 렌더 결과 반입 C-11(`85ba2f0`) · postprocess 의 비운 선택 칸 null 을 없는 칸으로(`07679d7`) ·
 `dev_rev` 를 예약 때 반입 규칙으로(`3574342`) · **변형 뷰어 1단계** — 리포트에 StepForge fe_cad 묶음 붙이기(REST `POST /reports/{id}/cad` · MCP `attach_cad`,
-`aa63e2a`) · 맵에서 각도를 고르면 「형상 보기」(`d37fcbb`) · **SP 받는 쪽 전부**(아래 1-1, `f36270f` · `a3eff43` · `306346d` · `80a862a` · `24bca1c`). **마이그레이션 다섯**(0015 · 0016 · 0017 — 모두 null 허용 칸 · 유일 제약, 0018 — 새 표 셋과 null 허용 칸 둘, 0019 — 트리거, 옛 코드에 영향 없음).
+`aa63e2a`) · 맵에서 각도를 고르면 「형상 보기」(`d37fcbb`) · **SP 받는 쪽 전부**(아래 1-1, `f36270f` · `a3eff43` · `306346d` · `80a862a` · `24bca1c`) · **10-31 반영분**(아래 1-2 — `3929a4e` · `0e9c9da` · `220df28` · `4ada7ba` · `57a41bf`). **마이그레이션 여섯**(0015 · 0016 · 0017 — 모두 null 허용 칸 · 유일 제약, 0018 — 새 표 셋과 null 허용 칸 둘, 0019 — 트리거, 0020 — null 허용 칸 셋(FK 둘 · JSONB 하나), 옛 코드에 영향 없음).
 바이너리는 그대로(`8c7c4f87`).
 
 | 확인 | 명령 | 기대값 |
 |---|---|---|
-| 판 | `curl -s http://127.0.0.1:8700/api/health` | `"status":"ok"` · `revision` 이 이번 게시 BUILD_INFO 의 커밋(`24bca1c`) |
-| 소스 | KooRemapper 리포 루트에서 `git log -1 --oneline` | `24bca1c` 이거나 그 뒤 — 위 `revision` 은 Drive 판의 커밋이라 그 뒤에 파이썬만 바뀐 커밋은 여기서만 보인다. 앞이면 null 을 보내는 손님(MCP 직접 호출 — Claude 등)이 비운 선택 칸에서 422 를 받고(포털 R2a 는 칸째 빼고 보내 영향 없음 — W-102), 틀린 `dev_rev` 가 예약은 되고 잡이 끝난 뒤 반입에서야 실패한다 |
-| 마이그레이션 | KooRemapper 리포 루트에서 `bash platform/infra/scripts/migrate.sh` | 「Running upgrade」 줄 없이 「✓ migrations applied」 = 이미 0019 까지 올라 있다(빠졌으면 이 명령이 그 자리에서 올린다 — 0015 · 0016 · 0017 · 0018 · 0019). ★0019 는 **지운 리포트의 개정 선**을 한 번 지운다 — 개정 비교의 「리포트」 수가 지운 리포트만큼 줄 수 있다(정상, 사용자 결정 10-30) |
-| MCP 도구 | 게이트웨이 tools/list 에서 kooremapper 도구 수, 또는 `platform/mcp_server/venv/bin/python platform/mcp_server/smoke.py` | 85개(`attach_render` · `attach_cad` · `ontology_types` · `ontology_find` · `ontology_object` 가 새로 있다) · `MCP SMOKE: PASS` |
+| 판 | `curl -s http://127.0.0.1:8700/api/health` | `"status":"ok"` · `revision` 이 이번 게시 BUILD_INFO 의 커밋(`57a41bf`) |
+| 소스 | KooRemapper 리포 루트에서 `git log -1 --oneline` | `57a41bf` 이거나 그 뒤 — 위 `revision` 은 Drive 판의 커밋이라 그 뒤에 파이썬만 바뀐 커밋은 여기서만 보인다. 앞이면 null 을 보내는 손님(MCP 직접 호출 — Claude 등)이 비운 선택 칸에서 422 를 받고(포털 R2a 는 칸째 빼고 보내 영향 없음), 틀린 `dev_rev` 가 예약은 되고 잡이 끝난 뒤 반입에서야 실패한다 |
+| 마이그레이션 | KooRemapper 리포 루트에서 `bash platform/infra/scripts/migrate.sh` | 「Running upgrade」 줄 없이 「✓ migrations applied」 = 이미 0020 까지 올라 있다(빠졌으면 이 명령이 그 자리에서 올린다 — 0015 · 0016 · 0017 · 0018 · 0019 · 0020). ★0019 는 **지운 리포트의 개정 선**을 한 번 지운다 — 개정 비교의 「리포트」 수가 지운 리포트만큼 줄 수 있다(정상, 사용자 결정 10-30) |
+| MCP 도구 | 게이트웨이 tools/list 에서 kooremapper 도구 수, 또는 `platform/mcp_server/venv/bin/python platform/mcp_server/smoke.py` | 89개(`attach_render` · `attach_cad` · `ontology_types` · `ontology_find` · `ontology_object` · `attach_cae_package` · `report_cae` · `find_cae_parts` · `find_cae_load_paths` 가 새로 있다) · `MCP SMOKE: PASS` |
 | 화면 | 세션 → 전각도 리포트 펼치기 → 「부품 위치·방향 시각화」 → 보기 「구(3D)」 | 3D 구가 뜬다(three.js 는 묶음 안에 있다 — 망 밖에 안 나간다) · 허용값을 넣으면 「초과 · 경고」 수가 보인다 |
-| 형상 보기 | 같은 맵의 상위 표에서 각도 한 줄을 누른다 | 「고른 각도 …」 줄이 생긴다. CAD 묶음을 붙인 리포트면 「형상 보기」 로 glb 가 열리고 파트가 칠해진다(「속 보기」 로 속 파트). 안 붙였으면 붙이는 길(MCP `attach_cad` · REST)이 적힌다 — 운영에서 누가 붙일지는 아래 9 |
+| 형상 보기 | 같은 맵의 상위 표에서 각도 한 줄을 누른다 | 「고른 각도 …」 줄이 생긴다. CAD 묶음을 붙인 리포트면 「형상 보기」 로 glb 가 열리고 파트가 칠해진다(「속 보기」 로 속 파트). 안 붙였으면 붙이는 길(MCP `attach_cad` · REST)이 적힌다 — 운영에서 누가 붙일지는 §9 |
 
 ### 1-1. cae00 — SP 받는 쪽(이번 판에 더해진 것)
 
@@ -912,6 +911,24 @@ SP 키트 2026-10-21 판(규칙 16 · 시험장 8단계 자동 시험) 받기 ·
 
 ⚠ 화면이 옛것이면 — dist 는 받았는데 API 가 옛 index 를 내는 것이다. `update-all` 이 재기동을 건너뛰었는지(§2 의 지문 — '바뀐 것만 재기동') 보고,
 아니면 KooRemapper `platform/infra/scripts/restart-api-only.sh`(도는 잡 0 확인 뒤).
+
+### 1-2. cae00 — 10-31 반영분(MCP 인자 설명 · 시간 한도 · 해석 온톨로지)
+
+포털 10-31 요청 ①②(`3929a4e` — 도구 8 · 인자 36 에 설명, MCP → REST 시간 한도를 손잡이 하나와 호출별 기한으로) · 해석 어휘(`cae_*`)
+채택 · 적재 · 질의(`0e9c9da` · `220df28` · `4ada7ba` · `57a41bf`, 사용자 결정 10-31 (가) — 후처리 꾸러미를 리포트에 캠페인 수준으로 싣는다).
+**마이그레이션 0020**(행 · 선에 `report_id` FK, 리포트에 `ontology` 칸 — 모두 null 허용).
+
+| 확인 | 어디서 | 기대값 |
+|---|---|---|
+| 인자 설명 | 게이트웨이 `/tools-map` 의 kooremapper `arg_scores` | 0 이 아니다(dev 10-31 — 0 → 36/248, cae 도구 넷 전) |
+| 시간 한도 | `platform/.env` 의 `KOORM_MCP_API_TIMEOUT_S` | 비어 있으면 540초. 넣는다면 게이트웨이 600 **미만**(넘으면 게이트웨이가 먼저 끊어 손님이 까닭을 못 받는다) |
+| 해석 온톨로지 — 없음 | 세션 → 리포트 펼치기 | 「원본 리포트 보기」 위에 「해석 온톨로지 없음 — …」 한 줄과 「꾸러미 붙이기」. 꾸러미를 안 붙인 리포트는 모두 이렇다(정상) |
+| 해석 온톨로지 — 붙이기 | 후처리 산출 폴더의 `<리포트 이름>.ontology.json`(리포트 HTML 과 같은 줄기)을 「꾸러미 붙이기」 로 | 파트 판정(위험한 것부터) · 하중 경로(충격량 큰 것부터) 표. 남의 리포트 꾸러미면 「이 리포트의 꾸러미가 아니다」 로 거절되고 아무것도 안 바뀐다 |
+| MCP | `report_cae(report_id)` · `find_cae_parts(min_severity="CRITICAL")` | 붙인 리포트면 `loaded: true` 와 파트 목록, 아니면 `loaded: false` 와 붙이는 길. 찾기는 읽을 수 있는 리포트(소유 · 같은 소속)의 것만 |
+
+운영에서 꾸러미가 생기는 것은 `koo_ontology` 가 든 후처리 이미지가 깔린 뒤다(KooD3plotReader `post_analyze` 마지막 단계) — 그전에는 「없음」 이
+정상이다. 후처리 예약(7-1) 길은 아직 꾸러미를 저절로 받지 않는다 — 그 길에서는 꾸러미가 생기지 않고(생산 쪽에 물음) 귀환 매니페스트에도 칸이
+없다(KooSlurm 에 청함 — KooRemapper `docs/requests/kooslurm-ontology-manifest-request-2026-10-31.md`).
 
 ### 2. cae00 — 후처리 예약(7-1) 설정
 
@@ -1011,9 +1028,8 @@ KooSlurm `docs/sso_enable_20261029/sso_enable_procedure.md`. 켜기 전에 설 �
 
 ### 8. 되돌리기
 
-- **DynaForge** — 아티팩트: `rclone copy ApptainerImages:KooRemapper/dist/dist-<이전 판>/ ApptainerImages:KooRemapper/dist/latest/`(이번 판 바로 앞은
-  `dist-20261030-032145Z`) 뒤 `update-all`(또는 `dist-from-drive.sh --restart`). 코드: 이전 커밋으로. 마이그레이션 0015 · 0016 · 0017 은 null 허용 칸 · 유일
-  제약, 0018 은 새 표 셋과 null 허용 칸 둘, 0019 는 트리거라 옛 코드가 그대로 돈다 — 되돌리지 않아도 된다(0019 가 지운 「지운 리포트의 선」 은 되살리지 않는다 —
+- **DynaForge** — 아티팩트: `rclone copy ApptainerImages:KooRemapper/dist/dist-<이전 판>/ ApptainerImages:KooRemapper/dist/latest/`(이번 판 바로 앞은 `dist-20261030-142622Z`) 뒤 `update-all`(또는 `dist-from-drive.sh --restart`). 코드: 이전 커밋으로. 마이그레이션 0015 · 0016 · 0017 은 null 허용 칸 · 유일
+  제약, 0018 은 새 표 셋과 null 허용 칸 둘, 0019 는 트리거, 0020 은 null 허용 칸 셋(FK 둘 · JSONB 하나)이라 옛 코드가 그대로 돈다 — 되돌리지 않아도 된다(0019 가 지운 「지운 리포트의 선」 은 되살리지 않는다 —
   리포트가 없다).
 - **KooSlurm** — 그쪽 문서의 되돌리기 절.
 - **포털 R2a 씨앗** — 예약 두 단계(④ 세션 · ⑤ 후처리)를 빼고 싶으면 그 절차를 고친 새 판을 저장한다(지난 판은 그대로 남는다).
