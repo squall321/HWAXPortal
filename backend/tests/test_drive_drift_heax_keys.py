@@ -18,6 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,7 +61,9 @@ class Box:
         stub = tmp / "stub"
         stub.mkdir()
         rc = stub / "rclone"
-        rc.write_text(f'#!/usr/bin/env bash\ncase "$1" in\n  copy) cp "{self.drive}"/*.sif.hash "$3"/ 2>/dev/null; exit 0 ;;\nesac\nexit 0\n')
+        self.lsl = tmp / "drive-lsl"   # Drive latest/ 의 `rclone lsl` 답(크기 · 이름) — 시험이 쓰지 않으면 빈 목록이다
+        rc.write_text(f'#!/usr/bin/env bash\ncase "$1" in\n  copy) cp "{self.drive}"/*.sif.hash "$3"/ 2>/dev/null; exit 0 ;;\n'
+                      f'  lsl) case "$2" in */dist/latest/) cat "{self.lsl}" 2>/dev/null ;; esac; exit 0 ;;\nesac\nexit 0\n')
         rc.chmod(0o755)
         self.env = {**os.environ, **_GIT, "PATH": f"{stub}:{os.environ['PATH']}", "HOME": str(tmp)}
         self.portal = portal
@@ -100,6 +103,22 @@ class Box:
             ws = self.hub / "var/integration_workspaces" / d / "upstream"
             ws.parent.mkdir(parents=True, exist_ok=True)
             _git(self.tmp, "clone", "-q", str(work), str(ws))
+
+    def sif(self, d: str, size: int, drive_size: int | None) -> None:
+        """dev 의 var/sifs/<d>.sif(size 바이트)와 Drive latest/ 의 그 파일 크기(None 이면 Drive 에 없다)."""
+        (self.hub / "var/sifs" / f"{d}.sif").write_bytes(b"s" * size)
+        if drive_size is not None:
+            with self.lsl.open("a", encoding="utf-8") as fh:
+                fh.write(f"{drive_size:>12} 2026-10-25 07:00:00.000000000 {d}.sif\n")
+
+    def local_override(self, d: str, kind: str = "file") -> None:
+        """이 박스의 덮어쓰기(integrations/<d>/.portal/manifest.local.yaml) — 'dangling' 은 대상이 없는 심링크(dist-to-drive 도 '있다' 로 친다)."""
+        lo = self.hub / "integrations" / d / ".portal/manifest.local.yaml"
+        lo.parent.mkdir(parents=True, exist_ok=True)
+        if kind == "dangling":
+            os.symlink(self.tmp / "gone.yaml", lo)
+        else:
+            lo.write_text("resources: {memory_gb: 16}\n", encoding="utf-8")
 
     def run(self) -> subprocess.CompletedProcess:
         return subprocess.run(["bash", str(self.portal / "infra/scripts/drive-drift.sh"), "heax"],
@@ -152,3 +171,44 @@ def test_갈래_끝이_지은_커밋보다_앞이면_다시_짓고_올리라고_
     b.built("vr", built, _key(built, man), _key(built, man), work=work)
     out = b.run()
     assert out.returncode == 1 and "✗ vr — Drive SIF 는" in out.stdout and "redeploy-app.sh --rebuild vr" in out.stdout, out.stdout + out.stderr
+
+
+# ─── 박스 덮어쓰기(HEAXHub HH-15) — 그 앱의 SIF 는 dist-to-drive 가 기본으로 싣지 않으므로(HEAXHub d4a6fe6) Drive 와 다른 것이 예상된 것이다 ───
+# 이 박스의 열쇠는 효과 매니페스트로 센 것이라 받는 박스(추적 매니페스트)와 맞지 않는다. 그런 앱에 '✗ 다시 짓고 올린다' 를 내면
+# dev 에서 다시 지어도 같은 열쇠가 나와 끝나지 않는다 — 처방은 '보내는 앱은 빌드 박스에서 덮어쓰지 않는다' 다(HEAXHub cutover 「포털에 알릴 것」).
+
+
+@pytest.mark.parametrize("drive_size,kind", [(7, "file"), (None, "file"), (7, "dangling")],
+                         ids=["크기가_다르다", "Drive_에_없다", "끊긴_심링크"])
+def test_덮어쓴_앱의_SIF_가_Drive_와_달라도_예상된_것이라고_한다(tmp_path, drive_size, kind):
+    b = Box(tmp_path)
+    b.manifest("sf", {"name": "sf", "status": "beta", "build": {"stack": "fastapi"}})
+    b.local_override("sf", kind)
+    b.sif("sf", 5, drive_size)                               # dev 는 덮어쓰기로 다시 지었고 dist-to-drive 는 싣지 않았다
+    out = b.run()
+    assert out.returncode == 0 and "✓ 일치" in out.stdout and "✗" not in out.stdout, out.stdout + out.stderr
+    assert "○ sf.sif — " in out.stdout and "dist-to-drive 가 기본으로 싣지 않는다" in out.stdout, out.stdout
+
+
+@pytest.mark.parametrize("kind", ["file", "dangling"], ids=["파일", "끊긴_심링크"])
+def test_덮어쓴_앱의_열쇠가_맞지_않아도_다시_지으라고_하지_않는다(tmp_path, kind):
+    b = Box(tmp_path)
+    work, _, man = b.app("vr")
+    old = _git(work, "rev-parse", "HEAD")
+    head = b.commit(work)                                    # 새 커밋 — dev 는 덮어쓴 효과 값으로 다시 지었고 Drive 는 덮어쓰기 전 판
+    b.local_override("vr", kind)
+    b.built("vr", head, _key(head, {**man, "resources": {"memory_gb": 16}}), _key(old, man))
+    out = b.run()
+    assert out.returncode == 0 and "○ vr — 열쇠가 Drive 와 다르지만 예상된 것이다" in out.stdout, out.stdout + out.stderr
+    assert "redeploy-app.sh --rebuild vr" not in out.stdout and "✗" not in out.stdout, out.stdout
+
+
+def test_덮어쓰지_않은_앱은_예전처럼_드리프트다(tmp_path):
+    b = Box(tmp_path)
+    for d in ("sf", "mt"):
+        b.manifest(d, {"name": d, "status": "beta", "build": {"stack": "fastapi"}})
+        b.sif(d, 5, 7)
+    b.local_override("sf")
+    out = b.run()
+    assert out.returncode == 1 and "✗ mt.sif — 로컬 5 ≠ Drive 7" in out.stdout, out.stdout + out.stderr
+    assert "○ sf.sif — 로컬 5 ≠ Drive 7" in out.stdout and "✗ sf.sif" not in out.stdout, out.stdout

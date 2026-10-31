@@ -93,6 +93,18 @@ if want heax; then
         [ -e "$f" ] || continue
         b="$(basename "$f")"; ls_="$(stat -c%s "$f")"
         ds="$(awk -v n="$b" '$2==n{print $1}' "$TMP")"
+        # 박스 덮어쓰기(integrations/<앱>/.portal/manifest.local.yaml, HEAXHub HH-15)가 있는 앱의 SIF 는 허브 dist-to-drive 가 기본으로 싣지 않는다
+        # (그 열쇠는 이 박스 값으로 센 것이라 받는 박스와 맞지 않는다 — HEAXHub D-19). 그래서 Drive 와 다른 것이 예상된 것이고 드리프트로 치지 않는다.
+        # '있다' 는 dist-to-drive 의 _has_local 과 같은 판정이다 — 끊긴 심링크도 있다로 친다(허브도 그 앱을 보류한다).
+        _lo="$D/integrations/${b%.sif}/.portal/manifest.local.yaml"
+        if [ -e "$_lo" ] || [ -L "$_lo" ]; then
+          _why=""
+          if [ -z "$ds" ]; then _why="Drive 에 없다"; elif [ "$ls_" != "$ds" ]; then _why="로컬 $ls_ ≠ Drive $ds"; fi
+          if [ -n "$_why" ]; then
+            echo "  ○ $b — ${_why}. 예상된 것이다 — 이 박스 덮어쓰기(integrations/${b%.sif}/.portal/manifest.local.yaml)로 지은 SIF 라 dist-to-drive 가 기본으로 싣지 않는다. cae00 에 보내야 하는 앱이면 빌드 박스에서 덮어쓰지 않는다(HEAXHub MANIFEST_SPEC 10절)"
+          fi
+          continue
+        fi
         if [ -z "$ds" ]; then
           echo "  ✗ $b — Drive 에 없다(한 번도 안 올라갔다)"; DRIFT=1; h=1
         elif [ "$ls_" != "$ds" ]; then
@@ -143,6 +155,9 @@ for hf in sorted(kd.glob("*.sif.hash")):
     drive, want = hf.read_text().strip(), key(head, man, tpl)
     if drive == want:
         continue
+    lo = hub / "integrations" / d / ".portal" / "manifest.local.yaml"
+    if lo.exists() or lo.is_symlink():   # 박스 덮어쓰기 — 위 크기 대조와 같은 판정(dist-to-drive 의 _has_local)
+        print(f"○ {d} — 열쇠가 Drive 와 다르지만 예상된 것이다 — 이 박스 덮어쓰기(integrations/{d}/.portal/manifest.local.yaml)로 지은 앱이라 dist-to-drive 가 기본으로 싣지 않는다(dev 에서 다시 지어도 이 박스 값으로 센 열쇠가 나온다). cae00 에 보내야 하는 앱이면 빌드 박스에서 덮어쓰지 않는다(HEAXHub MANIFEST_SPEC 10절)"); continue
     lk = hub / "var/sifs" / f"{d}.sif.hash"
     local = lk.read_text().strip() if lk.is_file() else ""
     if local == want:
