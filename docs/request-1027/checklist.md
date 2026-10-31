@@ -44,7 +44,9 @@
 - [x] HA-16 도구 의미 색인 서명별 LRU(4 — 862ea74)
 - [x] HA-17 좌석 그림 판독 전용 env `DELIB_SEAT_VISION_MAX` + `/health` seat_vision(f01286e)
 - [x] HA-18 긴 카드 절단점을 펜스 · $$ 밖의 빈 줄로(44f3d20)
-- [~] HA-11 as_of — AIDataHub AD-07 뒤
+- [x] HA-11 as_of — A-keep(사용자 결정 10-31). `delib_opts.as_of` 를 준 심의만 좌석 지식카드 agent_search(사전 검색 · 자유 조회 · 지정 도구)에
+  as_of · as_of_undated=keep 을 박고, 메아리가 없으면 그 조회의 카드를 버린다 · 날짜 없는 카드는 '날짜 미확인' · 결정문 머리 기준일 줄 ·
+  심의 옵션 '기준일'(에이전트 88a4b5b · 포털 734cef7). cae00 의 valid_from 채움 비율은 읽기 질의로 본다(사람)
 - [~] HA-19 SIM 카드 표 — '나중에'
 - [~] HA-20 `ui_resource` SSE — HG-07 뒤(2단계)
 - [-] HA-23 '(시험)' 앱 — D-1 라벨 바로잡기(박스, 코드 없음)
