@@ -15,6 +15,7 @@ JSON-RPC `error` 만 보고 `result.isError` 를 버리며, `content[0]` 만 취
 import asyncio
 import json
 import logging
+import re
 import time
 
 import httpx
@@ -854,6 +855,10 @@ class ProceduresRunner:
         text, other = J.join_content(content)
         # 보내기만 한 값이 응답에 되비쳐 오면 가린다 — pydantic 의 '칸 없음' 오류는 받은 인자를 통째로 싣는다
         text = _redact(text, secret)
+        if st.tool == PREVIEW_TOOL:
+            # 게시 미리보기를 단계로 둔 절차(챗 기록을 편 초안) · 한 단계씩 돌린 미리보기 — 결과 원문에 600초짜리 확인 토큰이
+            # 있다. 판정 · save · 원장에 넣기 전에 가린다. 게시 단계는 이 토큰을 쓰지 않는다(`_publish_gate` 가 따로 받는다).
+            text = _mask_publish_token(text)
         v = J.judge(is_error=is_error, text=text, raw=st.raw, unwrap=st.unwrap, ok_text=st.ok_text)
 
         # 값 단언 — **save 보다 먼저** 본다. 엉뚱한 대상의 응답에서 값을 뽑아 다음 단계로
@@ -935,6 +940,15 @@ def _redact(text: str, secret: dict | None) -> str:
         if isinstance(v, str) and v:
             text = text.replace(v, f"[가림:{k}]")
     return text
+
+
+# 결과 글의 확인 토큰 칸 `"confirm_token": "<값>"` — 결과가 JSON 글 안에 한 겹 더(문자열로) 싸여 와도 잡는다(따옴표 앞 역빗금).
+_TOKEN_FIELD = re.compile(r'(\\*"' + PUBLISH_TOKEN + r'\\*"\s*:\s*\\*")([^"\\]+)')
+
+
+def _mask_publish_token(text: str) -> str:
+    """미리보기 결과의 확인 토큰 값을 가린다 — 나머지(대상 · 볼 사람 수)는 그대로 남는다. 토큰이 없으면(null) 그대로다."""
+    return _TOKEN_FIELD.sub(lambda m: f"{m.group(1)}[가림:{PUBLISH_TOKEN}]", text)
 
 
 # 게시 미리보기에서 카드에 싣고 승인 지문에 넣는 칸 — RA `mounts/routes.py` preview_mount 의 대상 칸 그대로다.

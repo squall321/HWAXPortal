@@ -611,6 +611,52 @@ def test_옛_판본이_인자에_적은_확인_토큰은_버리고_미리보기�
     asyncio.run(go(*kit))
 
 
+def _preview_then_publish_spec() -> ProcedureSpec:
+    """챗 기록을 편 초안(derive)에서 저장 거절 셋(save 토큰 · 게이트 · confirm_token)만 고친 꼴 — 미리보기 단계가 남는다."""
+    return ProcedureSpec(title="챗에서 온 게시", vars=[Var(key="report_id", label="보고서", type="number")], steps=[
+        Step(backend="reportarchive", tool="preview_publish", args={"report_id": "{{report_id}}", "boards": ["dept-a"]}),
+        Step(backend="reportarchive", tool="publish_report", gate="human",
+             args={"report_id": "{{report_id}}", "boards": ["dept-a"]})])
+
+
+def test_따로_둔_미리보기_단계의_결과도_확인_토큰을_가려_남긴다(kit):
+    """그 단계의 결과 원문에는 600초짜리 토큰이 들어 있다 — 원장에 넣기 전에 가린다. 나머지(대상 · 볼 사람 수)는 그대로다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        r = build(ra.gate())
+        spec = _preview_then_publish_spec()
+        rid = _run(store, spec, inputs={"report_id": 41})
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        assert out["state"] == "gated" and out["stopped_at"] == 1, out
+        store.ack_gate(rid, 1, by="u1", args_sha256=out["args_sha256"])
+        assert (await r.run(run_id=rid, spec=spec, principal=PRINCIPAL, start_at=1))["state"] == "done"
+        await r.aclose()
+        toks = [t for t, _, _ in ra.issued]
+        assert len(toks) == 3 and len(ra.published) == 1
+        cells = _ledger_cells(store.health()["path"])
+        assert [c[:80] for c in cells for t in toks if t in c or t.split(".")[1] in c] == []
+        first = json.loads(store.step_result(rid, 0))
+        assert first["confirm_token"] == "[가림:confirm_token]"
+        assert [(t["slug"], t["audience"]) for t in first["targets"]] == [("dept-a", 12)]
+    asyncio.run(go(*kit))
+
+
+def test_한_단계씩_돌린_미리보기도_확인_토큰을_원장에_남기지_않는다(kit):
+    """빈 실행에 한 단계씩 붙이는 길(절차 기능의 진입점)도 같은 `_one` 을 탄다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        r = build(ra.gate())
+        rid = store.create_run(owner_sub="u1", mode="live", inputs={})
+        got = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(
+            backend="reportarchive", tool="preview_publish", args={"report_id": 41, "boards": ["dept-a"]}))
+        await r.aclose()
+        assert got["ok"] is True, got
+        tok = ra.issued[0][0]
+        assert [c[:80] for c in _ledger_cells(store.health()["path"]) if tok in c] == []
+        assert json.loads(store.step_result(rid, 0))["confirm_token"] == "[가림:confirm_token]"
+    asyncio.run(go(*kit))
+
+
 # ── 취소·소유자 ──────────────────────────────────────────────────────────
 def test_cancel_is_seen_at_the_step_boundary(kit):
     async def go(store, build):

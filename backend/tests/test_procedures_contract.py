@@ -222,6 +222,38 @@ def test_schema_check_leaves_the_confirm_token_to_the_runner():
         "1단계 other_tool: 필수 인자가 빠졌다 — confirm_token"]
 
 
+def test_챗에서_편_게시_초안은_따로_둔_미리보기_단계도_지우라고_말한다():
+    """챗 턴(미리보기 → 게시)을 초안으로 펴면(derive) 미리보기가 단계로 남는다. 거절 사유 셋을 고치고 나서도 그 단계는
+    남는데, 게시 단계가 게이트 앞뒤로 스스로 미리보기를 받으므로 필요 없다 — 거절 글과 경고가 그렇게 말한다."""
+    from app.procedures import derive
+
+    tok = "1793406421.Zk3vQx_9-abcdefghijklmnopqrstuvwxyzABCDEFG"
+    prev = {"report_id": 41, "title": "낙하 해석 보고서", "confirm_token": tok,
+            "targets": [{"slug": "dept-a", "name": "가 부서", "audience": 12, "blocked": None}]}
+    got = derive.draft(
+        [{"tool": "preview_publish", "args": {"report_id": 41, "boards": ["dept-a"]}, "result": json.dumps(prev)},
+         {"tool": "publish_report", "args": {"report_id": 41, "boards": ["dept-a"], "confirm_token": tok},
+          "result": json.dumps({"items": []})}],
+        tool_backend={"preview_publish": "reportarchive", "publish_report": "reportarchive"},
+        asked="41번 보고서를 dept-a 게시판에 게시해 줘")
+    spec = got["spec"]
+    errs = _hard(validate_spec(ProcedureSpec.model_validate(spec)))
+    assert any("confirm_token" in e and "preview_publish" in e and "지운다" in e for e in errs), errs
+    # 사람이 거절 사유 셋만 고친다 — 저장은 되지만 미리보기 단계는 지우라고 경고한다
+    spec["steps"][0].pop("save", None)
+    spec["steps"][1]["args"].pop("confirm_token")
+    spec["steps"][1]["gate"] = "human"
+    errs = validate_spec(ProcedureSpec.model_validate(spec))
+    assert _hard(errs) == [], errs
+    assert [e for e in errs if "preview_publish" in e] == [
+        "warn:1단계 preview_publish: 게시 단계(2단계)가 게이트 앞뒤로 스스로 미리보기를 받는다 — 이 단계는 지운다"
+        "(남기면 Report Archive 를 한 번 더 부를 뿐이고, 그 결과의 확인 토큰은 기록에서 가린다)"]
+    # 미리보기만 하는 절차(게시 없음)는 그대로다
+    alone = _spec([{"backend": "reportarchive", "tool": "preview_publish",
+                    "args": {"report_id": 41, "boards": ["dept-a"]}}])
+    assert not any("preview_publish" in e for e in validate_spec(alone))
+
+
 def test_secret_constant_rejected_but_variable_allowed():
     errs = _hard(validate_spec(_spec([
         {"backend": "b", "tool": "some_tool", "args": {"api_key": "AKIA-real-secret"}}])))

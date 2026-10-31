@@ -413,6 +413,7 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
     declared = {v.key for v in spec.vars}
     optional = {v.key for v in spec.vars if not v.required}
     produced: set[str] = set()
+    publish_at = next((i for i, st in enumerate(spec.steps, 1) if st.tool == PUBLISH_TOOL), None)
 
     for i, st in enumerate(spec.steps, 1):
         at = f"{i}단계 {st.tool}"
@@ -421,8 +422,12 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
         if st.tool in MUST_GATE and st.gate != "human":
             errs.append(f"{at}: 되돌리기 어려운 도구라 gate: human 이 필수다")
         if st.tool == PUBLISH_TOOL and PUBLISH_TOKEN in st.args:
-            errs.append(f"{at}: {PUBLISH_TOKEN} 는 적지 않는다 — 실행기가 승인 뒤 미리보기를 다시 받아 그 토큰을 "
-                        f"넣는다(변수로 받으면 토큰이 실행 기록에 남는다)")
+            errs.append(f"{at}: {PUBLISH_TOKEN} 는 적지 않는다 — 실행기가 게이트 앞뒤로 미리보기를 받아 그 토큰을 "
+                        f"넣는다(변수로 받으면 토큰이 실행 기록에 남는다). 토큰을 받으려고 따로 둔 {PREVIEW_TOOL} 단계도 지운다")
+        if st.tool == PREVIEW_TOOL and publish_at is not None:
+            # 챗 기록(미리보기 → 게시)을 편 초안에 남는다. 그 결과의 토큰은 실행기가 기록에서 가린다(runner `_one`).
+            errs.append(f"warn:{at}: 게시 단계({publish_at}단계)가 게이트 앞뒤로 스스로 미리보기를 받는다 — 이 단계는 지운다"
+                        f"(남기면 Report Archive 를 한 번 더 부를 뿐이고, 그 결과의 확인 토큰은 기록에서 가린다)")
         if st.tool in WARN_EXACT or st.tool.startswith(WARN_PREFIX):
             # 자기 dry_run 을 가진 도구(DRY_RUN_TOOLS)에 **리터럴** `dry_run: true` 가 박힌 미리보기 단계는
             # 아무것도 만들지 않는다. 템플릿(`"{{dry_run}}"`)은 실행 때 무엇이 올지 모르므로 계속 경고한다.
