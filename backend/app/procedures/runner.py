@@ -22,7 +22,8 @@ import httpx
 from app.procedures import dispatch
 from app.procedures import judge as J
 from app.procedures import template
-from app.procedures.models import MUST_GATE, ProcedureSpec, Step, omit_empty_optionals, schema_fingerprint
+from app.procedures.models import (MUST_GATE, PREVIEW_TOOL, PUBLISH_TOKEN, PUBLISH_TOOL, ProcedureSpec, Step,
+                                   omit_empty_optionals, schema_fingerprint)
 from app.procedures.store import ProceduresStore
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,7 @@ class ProceduresRunner:
                 pending = not _resolvable(st, known)
             except template.TemplateError:
                 args, pending = st.args, True
+            args = _without_token(st, args)   # 실제로 나갈 것을 보인다 — 게시 토큰은 실행기가 넣는다
             calls.append({"ix": ix, "backend": st.backend, "tool": st.tool,
                           "alias": st.alias, "gate": _gate_of(st), "expect": st.expect,
                           "args": args, "unverified": pending})
@@ -302,12 +304,19 @@ class ProceduresRunner:
                 return {"state": "failed", "stopped_at": ix, "kind": bad.kind,
                         "error": J.short_error(bad)}
 
+            args = _without_token(st, args)   # 게시 확인 토큰은 실행기가 넣는다 — 옛 판본이 적은 칸은 뗀다
+            pub = None
+
             # 게이트 — 승인이 없으면 여기서 멈춘다. 인자 지문에 묶인 1회용 승인이다.
             # ⚠ `_gate_of` — 저장된 판본의 `gate` 만 보면 **MUST_GATE 가 나중에 늘었을 때** 옛 판본이
             # 확인 없이 지나간다(`publish_report_to_datahub` 는 09-15 에야 들었다). 판본은 불변이라
             # 저장 검증을 다시 안 탄다. 게이트웨이가 절차 호출에 파괴 도구 차단을 면제하는 근거가
             # "포털이 사람 확인을 받았다" 이므로(W-100) 그 전제를 **여기서** 참으로 만든다.
-            if _gate_of(st) == "human":
+            if st.tool == PUBLISH_TOOL:   # MUST_GATE 라 늘 사람 자리다 — 게이트 앞뒤로 미리보기를 받는 따로 길
+                pub = await self._publish_gate(run_id, ix, st, args, principal, sess)
+                if "state" in pub:   # 게이트 · 실패 — 게시는 나가지 않았다
+                    return pub
+            elif _gate_of(st) == "human":
                 ack = self.store.gate_ack(run_id, ix)
                 want = _sha(args)
                 if ack is None or ack["args_sha256"] != want:
@@ -320,9 +329,14 @@ class ProceduresRunner:
                     return {"state": "gated", "stopped_at": ix, "args_sha256": want}
 
             v = await self._one(run_id, ix, st, scope, principal, sess, args=args,
-                                caveat=(caveats or {}).get(ix))
+                                caveat=(caveats or {}).get(ix),
+                                secret={PUBLISH_TOKEN: pub["token"]} if pub else None,
+                                fingerprint=pub["fp"] if pub else None)
             if v is None:  # warmup — 결과를 버린다
                 continue
+            if pub:
+                # 무엇을 보고 승인해 어디에 올렸나 — 게이트 카드의 미리보기를 게시 기록에도 남긴다(토큰은 없다)
+                self.store.annotate_step(run_id, ix, {"publish_preview": pub["view"]})
             if not v.ok:
                 self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
                 return {"state": "failed", "stopped_at": ix, "kind": v.kind,
@@ -702,11 +716,102 @@ class ProceduresRunner:
             self.store.finish_step(run_id, ix, ok=False, stage="args", error=f"{exc} — {why}")
             return None, J.Verdict(False, "args", "args_missing", error=str(exc))
 
+    async def _publish_gate(self, run_id, ix, st: Step, args: dict, principal, sess) -> dict:
+        """게시(RA `publish_report`)의 2단 확인 — PLAN §5-4 · 남은 일 B3.
+
+        승인 전에는 `preview_publish` 의 대상 · 볼 사람 수 · 못 올리는 사유를 게이트 카드(단계 노트)에 놓고 멈춘다.
+        승인 뒤에는 미리보기를 **다시** 받아 사람이 본 것과 같을 때만 그때 받은 토큰을 돌려준다 — 호출부가 곧바로
+        게시한다(두 호출 사이에 사람 대기가 없어 토큰 수명 600초에 안 걸린다). 다르면 차이를 카드에 싣고 다시 멈춘다.
+
+        승인 지문은 치환된 인자와 **토큰을 뺀 미리보기**의 sha256 이다. 그래서 미리보기가 바뀌면 같은 인자라도 승인이
+        무효가 되고, 미리보기마다 새로 나오는 토큰은 지문을 바꾸지 않는다. 토큰은 원장(단계 인자 · 노트 · 결과 · 실행
+        입력) 어디에도 넣지 않는다 — 돌려준 값은 이 실행의 이 호출 안에서만 산다.
+
+        돌려주는 것 — 멈출 때는 `_loop` 가 그대로 돌려줄 결과(`state` 가 있다), 갈 때는 `{fp, token, view}`.
+        """
+        got = await self._preview(run_id, ix, st, args, principal, sess)
+        if isinstance(got, J.Verdict):
+            # 사람에게 보일 대상이 없다 — 게이트를 세울 것이 없으니 그 단계에서 멈춘다(재개하면 미리보기부터 다시 받는다)
+            why = J.short_error(got)
+            self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
+                                  schema_fp=st.schema_fp, expect=st.expect, mode="live")
+            self.store.finish_step(run_id, ix, ok=False, stage="preview",
+                                   error=f"게시 미리보기({PREVIEW_TOOL})를 못 받았다 — {why}")
+            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            return {"state": "failed", "stopped_at": ix, "kind": got.kind, "error": why}
+        view, token = got
+        fp = _sha({"args": args, "publish_preview": view})
+        blocked = _publish_blockers(view, token)
+        ack = self.store.gate_ack(run_id, ix)
+        if ack is not None and ack["args_sha256"] == fp:
+            if not blocked:
+                return {"fp": fp, "token": token, "view": view}
+            # 사람이 승인했지만 이대로는 RA 가 게시 전체를 거절한다(막힌 게시판이 하나라도 있으면 커밋 없이 오류 —
+            # ReportArchive mounts/services.py mount_report). 알면서 부르지 않는다.
+            why = "게시하지 않았다 — " + " · ".join(blocked)
+            self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
+                                  schema_fp=st.schema_fp, expect=st.expect, mode="live", fingerprint=fp)
+            self.store.finish_step(run_id, ix, ok=False, stage="publish:blocked", error=why,
+                                   notes={"publish_preview": view, "publish_blocked": blocked})
+            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            return {"state": "failed", "stopped_at": ix, "kind": "publish_blocked", "error": why}
+        # 승인한 뒤 바뀌었으면 그 차이를 싣는다 — 승인 지문이 지금 행의 것과 같을 때만 그 행의 미리보기가 '사람이 본 것' 이다
+        row = next((s for s in self.store.list_steps(run_id) if s["ix"] == ix), None)
+        seen = ((row.get("notes") or {}).get("publish_preview")
+                if ack is not None and row is not None and row["args_sha256"] == ack["args_sha256"] else None)
+        notes: dict = {"publish_preview": view}
+        if blocked:
+            notes["publish_blocked"] = blocked
+        if isinstance(seen, dict):
+            notes["publish_changed"] = _preview_changes(seen, view)
+        self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
+                              schema_fp=st.schema_fp, expect=st.expect, mode="live", fingerprint=fp)
+        self.store.finish_step(run_id, ix, ok=False, state="pending", error=None, stage="gate", notes=notes)
+        self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
+        out = {"state": "gated", "stopped_at": ix, "args_sha256": fp}
+        if "publish_changed" in notes:
+            out["changed"] = notes["publish_changed"]
+        return out
+
+    async def _preview(self, run_id, ix, st: Step, args: dict, principal, sess):
+        """`preview_publish` 한 번 — `(토큰을 뺀 미리보기, 토큰)` 또는 실패 판정. 결과 원문은 남기지 않는다(토큰이 들어 있다)."""
+        alias = f"{st.backend.replace('-', '')}_{PREVIEW_TOOL}"   # 게시 단계와 같은 앱 — `Step.alias` 와 같은 식
+        timeout = EXPECT_TIMEOUT.get(st.expect, 30.0)
+        # 미리보기의 인자는 둘이다(RA mcp_server `preview_publish`) — note · folder_ids 는 게시에만 간다
+        pargs = {k: args[k] for k in ("report_id", "boards") if k in args}
+        try:
+            is_error, content = await asyncio.wait_for(sess.call(
+                "invoke_tool", {"name": alias, "arguments": pargs},
+                self.mint_pat(principal, run_id, ix), timeout), timeout)
+        except (httpx.TimeoutException, asyncio.TimeoutError):
+            return J.Verdict(False, "mcp", "timeout", error=f"{timeout:.0f}초 안에 응답이 없다", retriable=True)
+        except Exception as exc:  # noqa: BLE001
+            return J.Verdict(False, "mcp", "transport", error=f"{type(exc).__name__}: {exc}", retriable=True)
+        v = J.judge(is_error=is_error, text=J.join_content(content)[0])
+        if not v.ok:
+            return v
+        p = v.parsed
+        if not isinstance(p, dict) or not isinstance(p.get("targets"), list):
+            # 대상을 못 읽으면 사람에게 보일 것이 없다 — 꼴이 바뀐 것을 '대상 없음' 으로 읽지 않는다
+            seen = sorted(p)[:12] if isinstance(p, dict) else type(p).__name__
+            return J.Verdict(False, "envelope", "preview_shape",
+                             error=f"미리보기에 대상 목록(targets)이 없다 — 응답 꼴이 바뀌었다(있는 칸: {seen})")
+        view = {"report_id": p.get("report_id"), "title": p.get("title"),
+                "targets": [{k: t[k] for k in _TARGET_KEYS if k in t}
+                            for t in p["targets"] if isinstance(t, dict)]}
+        if p.get("warnings"):
+            view["warnings"] = p["warnings"]
+        tok = p.get(PUBLISH_TOKEN)
+        return view, (tok if isinstance(tok, str) and tok else None)
+
     async def _one(self, run_id, ix, st: Step, scope, principal, sess, *, args: dict,
-                   caveat: str | None = None):
+                   caveat: str | None = None, secret: dict | None = None,
+                   fingerprint: str | None = None):
         """단계 하나 — 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다.
 
         인자는 이미 치환된 것을 받는다(`_args`) — 게이트가 승인한 지문 그대로 나간다.
+        `secret` 은 **보내기만 하고 남기지 않는** 인자다(게시 확인 토큰 — `_publish_gate`). 원장의 인자 ·
+        결과 · 오류 어디에도 안 들어가고, 그 단계의 승인 지문은 `fingerprint` 다.
         """
         pat = self.mint_pat(principal, run_id, ix)
         timeout = WARMUP_TIMEOUT if st.warmup else EXPECT_TIMEOUT.get(st.expect, 30.0)
@@ -721,14 +826,16 @@ class ProceduresRunner:
             return None
 
         self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
-                              schema_fp=st.schema_fp, expect=st.expect, mode="live")
+                              schema_fp=st.schema_fp, expect=st.expect, mode="live",
+                              fingerprint=fingerprint)
         t0 = time.perf_counter()
         lock = self._blk(st.backend) if st.expect == "slow" else _NULL_LOCK
         try:
             async with lock:
                 # 기한은 잠금 **안**에서 센다 — 잠금을 기다린 시간은 이 단계의 몫이 아니고, 기한이 차면 잠금도 같이 놓는다.
                 is_error, content = await asyncio.wait_for(sess.call(
-                    "invoke_tool", {"name": st.alias, "arguments": args}, pat, timeout), timeout)
+                    "invoke_tool", {"name": st.alias, "arguments": {**args, **(secret or {})}}, pat, timeout),
+                    timeout)
         except (httpx.TimeoutException, asyncio.TimeoutError):
             ms = int((time.perf_counter() - t0) * 1000)
             # 클라이언트가 먼저 포기했다 — 쓰기는 그 뒤 완료됐을 수 있다. failed 가 아니다.
@@ -740,11 +847,13 @@ class ProceduresRunner:
         except Exception as exc:  # noqa: BLE001
             ms = int((time.perf_counter() - t0) * 1000)
             self.store.finish_step(run_id, ix, ok=False, state="unknown", stage="transport",
-                                   duration_ms=ms, error=f"{type(exc).__name__}: {exc}")
-            return J.Verdict(False, "mcp", "transport", error=str(exc), retriable=True)
+                                   duration_ms=ms, error=_redact(f"{type(exc).__name__}: {exc}", secret))
+            return J.Verdict(False, "mcp", "transport", error=_redact(str(exc), secret), retriable=True)
 
         ms = int((time.perf_counter() - t0) * 1000)
         text, other = J.join_content(content)
+        # 보내기만 한 값이 응답에 되비쳐 오면 가린다 — pydantic 의 '칸 없음' 오류는 받은 인자를 통째로 싣는다
+        text = _redact(text, secret)
         v = J.judge(is_error=is_error, text=text, raw=st.raw, unwrap=st.unwrap, ok_text=st.ok_text)
 
         # 값 단언 — **save 보다 먼저** 본다. 엉뚱한 대상의 응답에서 값을 뽑아 다음 단계로
@@ -807,6 +916,71 @@ def _sha(args: dict) -> str:
 
     blob = json.dumps(args, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _without_token(st: Step, args):
+    """게시 단계의 확인 토큰 칸을 뗀다 — 실행기가 승인 뒤 미리보기에서 받아 넣는다(`_publish_gate`).
+
+    옛 판본은 이 칸을 변수로 적어야만 저장됐다(저장 대조가 스키마의 필수 칸으로 요구했다). 그대로 두면 그 값이 단계
+    인자 · 승인 지문에 남고 카드는 나가지 않을 값을 보인다. 저장 검증은 이제 그 판본을 거절하지만 판본은 불변이다.
+    """
+    if st.tool == PUBLISH_TOOL and isinstance(args, dict) and PUBLISH_TOKEN in args:
+        return {k: v for k, v in args.items() if k != PUBLISH_TOKEN}
+    return args
+
+
+def _redact(text: str, secret: dict | None) -> str:
+    """보내기만 한 값(`_one` 의 secret)을 글에서 가린다 — 원장에 남기지 않는다."""
+    for k, v in (secret or {}).items():
+        if isinstance(v, str) and v:
+            text = text.replace(v, f"[가림:{k}]")
+    return text
+
+
+# 게시 미리보기에서 카드에 싣고 승인 지문에 넣는 칸 — RA `mounts/routes.py` preview_mount 의 대상 칸 그대로다.
+# 토큰과 안내문(note)은 넣지 않는다.
+_TARGET_KEYS = ("slug", "name", "parent_slug", "audience", "descendant_boards", "already_mounted",
+                "blocked", "error")
+_TARGET_LABEL = {"name": "이름", "parent_slug": "상위 게시판", "audience": "볼 수 있는 사람",
+                 "descendant_boards": "하위 게시판", "already_mounted": "이미 게시됨", "blocked": "못 올리는 사유",
+                 "error": "오류"}
+
+
+def _publish_blockers(view: dict, token: str | None) -> list[str]:
+    """이대로는 게시되지 않는 까닭. 막힌 게시판이 하나라도 있으면 RA 는 게시 전체를 거절한다 — 이미 게시된 곳은 건너뛴다."""
+    out = [f"{t.get('slug')}: {t.get('blocked') or t.get('error')}" for t in view["targets"]
+           if (t.get("blocked") or t.get("error")) and not t.get("already_mounted")]
+    if not token and not out:
+        out.append("확인 토큰이 없다 — 미리보기가 올릴 수 있는 대상을 못 찾았다")
+    return out
+
+
+def _preview_changes(before: dict, after: dict) -> list[str]:
+    """사람이 승인한 미리보기와 지금 것의 차이 — 게이트 카드에 그대로 싣는 줄들."""
+    out = []
+    for k, lab in (("report_id", "보고서"), ("title", "제목")):
+        if before.get(k) != after.get(k):
+            out.append(f"{lab}: {_show(before.get(k))} → {_show(after.get(k))}")
+    b = {t.get("slug"): t for t in before.get("targets") or [] if isinstance(t, dict)}
+    a = {t.get("slug"): t for t in after.get("targets") or [] if isinstance(t, dict)}
+    out += [f"{s}: 대상에서 빠졌다" for s in b if s not in a]
+    out += [f"{s}: 새 대상" for s in a if s not in b]
+    for s in (x for x in a if x in b):
+        for k, lab in _TARGET_LABEL.items():
+            if b[s].get(k) != a[s].get(k):
+                out.append(f"{s} {lab}: {_show(b[s].get(k))} → {_show(a[s].get(k))}")
+    if before.get("warnings") != after.get("warnings"):
+        out.append("경고가 바뀌었다")
+    # 보이는 칸이 같은데 지문이 다르면 인자가 바뀐 것이다 — '같다' 로 보이게 두지 않는다
+    return out or ["미리보기나 인자가 바뀌었다"]
+
+
+def _show(v) -> str:
+    if v is None:
+        return "없음"
+    if isinstance(v, bool):
+        return "예" if v else "아니오"
+    return str(v)
 
 
 def _meta(catalog: dict, st: Step) -> dict:

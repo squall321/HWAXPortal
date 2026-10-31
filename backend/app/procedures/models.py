@@ -29,6 +29,11 @@ MUST_GATE = frozenset({
     "publish_report_to_datahub",
 })
 
+# 게시 2단 확인(ReportArchive) — `publish_report` 는 `preview_publish` 가 준 확인 토큰을 요구한다. 토큰은 **실행기가**
+# 게이트 승인 뒤 미리보기를 다시 받아 곧바로 넣는다(runner `_publish_gate`, PLAN §5-4 · 남은 일 B3). 절차는 이 인자를
+# 적지 않는다 — 변수로 받으면 토큰이 실행 입력(원장)에 남는다. 스키마의 필수 칸이지만 저장 대조가 요구하지 않는 까닭이다.
+PUBLISH_TOOL, PREVIEW_TOOL, PUBLISH_TOKEN = "publish_report", "preview_publish", "confirm_token"
+
 # 자원을 쓰거나 잡을 만든다 — 거절이 아니라 경고. must-gate 로 하면 S5 일괄 재생이 죽는다.
 WARN_PREFIX = ("submit_", "register_", "upload_", "ingest_")
 WARN_EXACT = frozenset({"run_job", "train_model", "smarttwin_submit", "slurm_submit_job"})
@@ -415,6 +420,9 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
         # ① 사람 자리 — 작성자가 끌 수 없다
         if st.tool in MUST_GATE and st.gate != "human":
             errs.append(f"{at}: 되돌리기 어려운 도구라 gate: human 이 필수다")
+        if st.tool == PUBLISH_TOOL and PUBLISH_TOKEN in st.args:
+            errs.append(f"{at}: {PUBLISH_TOKEN} 는 적지 않는다 — 실행기가 승인 뒤 미리보기를 다시 받아 그 토큰을 "
+                        f"넣는다(변수로 받으면 토큰이 실행 기록에 남는다)")
         if st.tool in WARN_EXACT or st.tool.startswith(WARN_PREFIX):
             # 자기 dry_run 을 가진 도구(DRY_RUN_TOOLS)에 **리터럴** `dry_run: true` 가 박힌 미리보기 단계는
             # 아무것도 만들지 않는다. 템플릿(`"{{dry_run}}"`)은 실행 때 무엇이 올지 모르므로 계속 경고한다.
@@ -671,7 +679,8 @@ def check_against_schemas(spec: ProcedureSpec, schemas: dict[str, dict],
                 if k not in props:
                     errs.append(f"{at}: 스키마에 없는 인자 — {k} (백엔드가 조용히 버린다)")
         for k in req:
-            if k not in st.args:
+            # 게시 확인 토큰은 실행기가 채운다(PUBLISH_TOKEN 주석) — 요구하면 게시 단계를 저장할 길이 없다
+            if k not in st.args and not (st.tool == PUBLISH_TOOL and k == PUBLISH_TOKEN):
                 errs.append(f"{at}: 필수 인자가 빠졌다 — {k}")
         errs += check_dispatch_payload(st, at, second_stage)
     return errs

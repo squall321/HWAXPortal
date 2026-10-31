@@ -182,6 +182,46 @@ def test_token_cannot_be_saved_forward():
     assert any("2단 확인" in e for e in errs)
 
 
+# RA 실물 스키마(mcp 1.28 FastMCP 가 `publish_report(report_id: int, boards: list, confirm_token: str, ctx, note="",
+# folder_ids=None)` 에서 짓는 것 그대로) — confirm_token 이 필수 칸이다.
+RA_PUBLISH_SCHEMA = {
+    "properties": {"report_id": {"title": "Report Id", "type": "integer"},
+                   "boards": {"items": {}, "title": "Boards", "type": "array"},
+                   "confirm_token": {"title": "Confirm Token", "type": "string"},
+                   "note": {"default": "", "title": "Note", "type": "string"},
+                   "folder_ids": {"anyOf": [{"items": {}, "type": "array"}, {"type": "null"}],
+                                  "default": None, "title": "Folder Ids"}},
+    "required": ["report_id", "boards", "confirm_token"],
+    "title": "publish_reportArguments", "type": "object"}
+
+
+def test_publish_step_does_not_carry_the_confirm_token():
+    """확인 토큰은 실행기가 게시 직전 미리보기에서 받아 넣는다(B3) — 절차가 변수로 받으면 실행 입력(원장)에 남는다."""
+    pub = {"backend": "reportarchive", "tool": "publish_report", "gate": "human",
+           "args": {"report_id": 3, "boards": ["dept-a"], "confirm_token": "{{tok}}"}}
+    errs = _hard(validate_spec(_spec([pub], [Var(key="tok", label="토큰")])))
+    assert any("confirm_token" in e and "실행기" in e for e in errs), errs
+    ok = dict(pub, args={"report_id": 3, "boards": ["dept-a"]})
+    assert _hard(validate_spec(_spec([ok]))) == []
+
+
+def test_schema_check_leaves_the_confirm_token_to_the_runner():
+    """스키마의 필수 칸이지만 실행기가 채운다 — 저장 대조가 요구하면 게시 단계를 저장할 길이 없다(종전)."""
+    table = {"reportarchive_publish_report": RA_PUBLISH_SCHEMA}
+    ok = _spec([{"backend": "reportarchive", "tool": "publish_report", "gate": "human",
+                 "args": {"report_id": 3, "boards": ["dept-a"]}}])
+    assert check_against_schemas(ok, table) == []
+    # 나머지 필수 칸은 그대로 본다
+    bad = _spec([{"backend": "reportarchive", "tool": "publish_report", "gate": "human",
+                  "args": {"boards": ["dept-a"]}}])
+    assert check_against_schemas(bad, table) == ["1단계 publish_report: 필수 인자가 빠졌다 — report_id"]
+    # 다른 도구의 confirm_token 은 면제가 아니다
+    other = _spec([{"backend": "b", "tool": "other_tool", "args": {}}])
+    assert check_against_schemas(other, {"b_other_tool": {"properties": {"confirm_token": {}},
+                                                          "required": ["confirm_token"]}}) == [
+        "1단계 other_tool: 필수 인자가 빠졌다 — confirm_token"]
+
+
 def test_secret_constant_rejected_but_variable_allowed():
     errs = _hard(validate_spec(_spec([
         {"backend": "b", "tool": "some_tool", "args": {"api_key": "AKIA-real-secret"}}])))
