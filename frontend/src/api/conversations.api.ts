@@ -138,6 +138,9 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 근거 카드 — 좌석이 조회한 것(이어하기가 승계한다)과 엔진의 '줄였다·뺐다' 알림. 서버 사본에 없으면 다른 기기에서는 사라진다.
       const ev = (m.meta as { delib_evidence?: { source?: unknown; text?: unknown; included?: unknown; notice?: unknown }[] } | null)
         ?.delib_evidence;
+      // 사람이 멈춘 심의 — 포털 중계가 멈춤을 답으로 남겼다(meta.delib_cancelled, triage A24). 그 글은 결정문이 아니다.
+      const cx = (m.meta as { delib_cancelled?: { message?: unknown } } | null)?.delib_cancelled;
+      const stopNote = cx ? String(cx.message ?? '') : '';
       out.push({
         id: newId(),
         role: 'assistant',
@@ -145,7 +148,8 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ts,
         delib: {
           turns: local,
-          decision: m.content,
+          ...(cx && m.content === stopNote ? {} : { decision: m.content }),
+          ...(cx ? { cancelled: { message: stopNote } } : {}),
           totalRounds: Math.max(...local.map((t) => t.round)),
           ...(Array.isArray(ev) && ev.length
             ? {

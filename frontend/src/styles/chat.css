@@ -1316,6 +1316,42 @@ body.dock-open .page-wide {
   line-height: 1.5;
 }
 
+/* ── 심의 멈춤(도는 웹 심의를 서버에서 그친다 — docs/leftovers-1017 triage A24) ──────────── */
+.dv-stop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 6px 0 10px;
+  font-size: var(--fs-12);
+  color: var(--fg-muted);
+}
+.dv-stop-btn {
+  height: 26px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  cursor: pointer;
+}
+.dv-stop-btn:hover:not(:disabled) { background: var(--danger-bg); }
+.dv-stop-btn:disabled { opacity: 0.5; cursor: default; }
+.dv-stop-said.is-bad { color: var(--danger); }
+.dv-stopped {
+  margin: 6px 0 10px;
+  padding: 7px 11px;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-md);
+  background: var(--warn-bg);
+  color: var(--fg);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
 /* ── 심의 이어하기(사람 개입 스티어링) 입력 ─────────────────────────────── */
 .dv-continue {
   margin: 12px 0 4px;

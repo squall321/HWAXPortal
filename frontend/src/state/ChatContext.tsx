@@ -258,6 +258,10 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
         unanimous: Boolean(e.unanimous),
       };
       break;
+    case 'cancelled':
+      // 사람이 멈췄다(에이전트 POST /deliberate/cancel — triage A24) — 오류가 아니다. 뒤따르는 done 이 받기를 닫는다.
+      d.cancelled = { message: String(e.message ?? '') };
+      break;
   }
   return d;
 }

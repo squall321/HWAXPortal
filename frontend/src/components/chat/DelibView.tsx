@@ -1,5 +1,7 @@
-// 심의 라이브 뷰 — 절차 스테퍼 + 근거 카드 + 라이브 회의 버블 + 수렴/소수의견 배지 + 산출물 카드
+// 심의 라이브 뷰 — 절차 스테퍼 + 멈춤 + 근거 카드 + 라이브 회의 버블 + 수렴/소수의견 배지 + 산출물 카드
 import { useMemo, useState } from 'react';
+import { cancelDeliberation, type DelibCancelResult } from '../../api/chat.api';
+import { delibMayStillRun } from '../../lib/chatErrors';
 import { useChat } from '../../state/ChatContext';
 import { useCan } from '../../auth/useCan';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
@@ -385,14 +387,80 @@ function ContinueBar({ d }: { d: DelibData }) {
   );
 }
 
+// 멈춤 결과를 사람의 말로 — 포털 · 에이전트 서버의 code 로 가른다. 모르는 거절은 서버가 준 글을 그대로 붙인다.
+function stopSaid(r: DelibCancelResult): string {
+  if (r.ok) return r.already ? '이미 멈춘 심의입니다.' : '멈춤을 요청했습니다 — 서버가 심의를 접고 있습니다(지금까지의 발언은 남습니다).';
+  if (r.code === 'already_finished') return '이미 끝난 심의입니다 — 멈출 것이 없습니다.';
+  if (r.code === 'delib_not_found') return '서버에서 도는 이 심의를 찾지 못했습니다 — 이미 끝났거나 서버가 다시 떴습니다.';
+  return `멈추지 못했습니다 — ${r.message || r.code}`;
+}
+
+// 멈춤 — 도는 웹 심의를 서버에서 그친다(docs/leftovers-1017 triage A24 (나)). 입력창의 ■ 는 받기만 끊고 심의는 서버에서 끝까지 돈다 — 그치는
+// 길은 이 단추다(포털 POST /agent/deliberate/cancel → 에이전트 서버). 받는 중인 심의와, 받기가 끊긴 채(■ · 끊김 · 새로고침) 결정문 없이 멈춰
+// 보이는 마지막 심의에 보인다 — 끊긴 쪽도 서버에서 아직 돌 수 있다(아니면 서버가 '이미 끝났다' · '찾지 못했다' 로 답한다). 누른 동안 잠그고
+// 결과를 단추 옆에 적는다. 받는 중에 멈추면 곧 멈춤 사건이 와 이 줄 대신 아래 '멈춤' 알림이 남는다.
+function StopBar({ cut }: { cut: boolean }) {
+  const { activeConversation } = useChat();
+  const sid = activeConversation?.serverId;
+  const [busy, setBusy] = useState(false);
+  const [stopped, setStopped] = useState(false);
+  const [said, setSaid] = useState<{ text: string; bad: boolean } | null>(null);
+  const stop = async () => {
+    if (!sid || busy) return;
+    if (!window.confirm('이 심의를 서버에서 멈출까요? 지금까지의 발언은 남고, 결정문과 보고서는 만들지 않습니다.')) return;
+    setBusy(true);
+    setSaid(null);
+    const r = await cancelDeliberation(sid);
+    setBusy(false);
+    if (r.ok) setStopped(true);
+    setSaid({ text: stopSaid(r), bad: !r.ok && r.code !== 'already_finished' && r.code !== 'delib_not_found' });
+  };
+  return (
+    <div className="dv-stop">
+      {!stopped && (
+        <button
+          type="button"
+          className="dv-stop-btn"
+          onClick={() => void stop()}
+          disabled={busy || !sid}
+          aria-busy={busy}
+          title={
+            !sid
+              ? '서버 대화 사본이 없어 멈출 수 없습니다 — ■ 로 받기만 끊을 수 있습니다'
+              : '서버에서 도는 이 심의를 멈춥니다 — ■ 는 받기만 끊고 심의는 서버에서 계속 돕니다'
+          }
+        >
+          {busy ? '멈추는 중…' : '멈춤'}
+        </button>
+      )}
+      {cut && !said && <span className="dv-stop-note">받기가 끊겼습니다 — 심의는 서버에서 아직 돌 수 있습니다.</span>}
+      {said && (
+        <span className={`dv-stop-said${said.bad ? ' is-bad' : ''}`} role="status">
+          {said.text}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function DelibView({ msg }: { msg: Message }) {
   const d = msg.delib!;
   const live = Boolean(msg.streaming);
   const can = useCan();
+  const { messages } = useChat();
   const decision = useMemo(() => d.decision ?? '', [d.decision]);
+  // 받기가 끊긴 채 결정문 없이 멈춰 보이는 대화의 마지막 심의 — 서버에서 아직 돌 수 있다(멈춤 단추를 남긴다).
+  const cut =
+    !live && !d.decision && !d.outcome && !d.cancelled && delibMayStillRun(msg.error) && messages[messages.length - 1]?.id === msg.id;
   return (
     <div className="dv-root">
       <Stepper d={d} live={live} />
+      {(live || cut) && !d.cancelled && <StopBar cut={cut} />}
+      {d.cancelled && (
+        <p className="dv-stopped" role="status">
+          멈춤 — {d.cancelled.message || '사람이 멈췄다'}
+        </p>
+      )}
       <PersonaIntro d={d} />
       <EvidenceCard d={d} />
       <Meeting d={d} live={live} />

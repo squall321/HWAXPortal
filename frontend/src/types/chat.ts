@@ -87,6 +87,8 @@ export interface DelibData {
     tally?: DelibTally;
     unanimous?: boolean;
   };
+  /** 사람이 멈춘 심의(SSE delib kind=cancelled · 서버 사본 meta.delib_cancelled — docs/leftovers-1017 triage A24). 결정문 · 보고서가 없다. */
+  cancelled?: { message: string };
 }
 // 심의 손잡이(웹 토글) — 켠 것만 서버로 전송, 나머지는 agent-server env 기본값. GLM 리뷰 §5.
 // 불리언=0/1 플래그, chair_bestof=의장 후보 수(1=끔), timeout_s=호출당 타임아웃(초·미지정=기본).
@@ -178,7 +180,7 @@ export interface ThinkEvent {
 
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
 export interface DelibEvent {
-  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome';
+  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome' | 'cancelled';
   [k: string]: unknown;
 }
 

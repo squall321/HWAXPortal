@@ -120,6 +120,15 @@ class ConversationStore:
         )
         return cur.fetchone() is not None
 
+    def owner_state(self, cid: str, owner_sub: str) -> str:
+        """'mine'(주인) · 'other'(남의 대화) · 'none'(없다). 남의 대화의 내용도 주인도 돌려주지 않는다. 웹 심의 멈춤(POST
+        /agent/deliberate/cancel)이 '없는 대화(404)' 와 '남의 대화(403)' 를 가를 때만 쓴다 — 다른 대화 REST 는 종전대로 둘을 같은 404 로 답한다."""
+        with self._lock:
+            row = self._conn.execute("SELECT owner_sub FROM conversations WHERE id = ?", (cid,)).fetchone()
+        if row is None:
+            return "none"
+        return "mine" if row[0] == owner_sub else "other"
+
     # ── append ──────────────────────────────────────────────────────────────
     def append(self, *, conversation_id: str, owner_sub: str, role: str, content: str,
                persona: str | None = None, round: int | None = None,
