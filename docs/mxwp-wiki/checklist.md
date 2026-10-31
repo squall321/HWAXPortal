@@ -42,4 +42,4 @@
 
 ## 사람(cae00)
 - [ ] 비밀 → 게이트웨이 provision.env 넷 · MXWP `.env` · update-all · 타일 로그인 확인(PLAN §6)
-- [ ] 위키 워커 PAT 의 `plat:plmdefect` 여부(권한표 담당)
+- [ ] 위키 워커 PAT 의 `plat:plmdefect` 여부(권한표 담당) — 사용자 결정 10-31 A23: ① 준다 — MX 백서 요청서 §11 Q8 권장안(PLM 결함 먼저 · 사례 단위 · 사람 정보 뗌 · 위키 범위 `plat:plmdefect`)을 사용자가 10-31 에 답했다(MW-D23) · 권한표에 넣는 것은 cae00 W8 (10-31 정리)
