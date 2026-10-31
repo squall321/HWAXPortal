@@ -58,6 +58,8 @@
 #     PER_USER_SSO_APPS="<per_user 키>:<ENV 접두> …" # 여섯 번째 앱부터의 사람별 위임 — <접두>_SSO_SECRET · <접두>_SSO_URL 과 함께 적는다
 #                                                    #   heax-hub 밖 앱(MatNexus 등)은 <접두>_MCP_URL 도 — 같은 키의 MCP 백엔드가 붙는다
 #                                                    #   <접두>_SEND_PLAT=1 — 위임 호출에 그 사람의 plat: 권한을 서명과 함께(MX 백서 위키, docs/mxwp-wiki P4)
+#     KOORM_SEND_PLAT=1            # DynaForge 위임에 같은 plat: 서명 — 적으면 §5 가 싣는다(빈 값도 '끔'). KooRemapper 가 막기를 올리기 전에는
+#                                  #   적지 않는다 — 빈 자리표시도(docs/followups-1017/requests.md §2 · docs/request-1030/server-setup.md 0절)
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
@@ -1830,7 +1832,7 @@ PY
 # 일반 앱의 비밀은 이름이 정해져 있지 않아 대입어로 못 넘긴다 — 서브셸 안에서만 export 한다(이 뒤에 뜨는 서비스가 물려받지 않게).
 # 주소가 없어 게이트웨이가 만들지 못하는 일반 앱은 `<키>_sso_nourl` 로 따로 표지한다 — 방아쇠로 삼으면 매 실행 재프로비저닝이 헛돈다.
 _sso_deleg_drift() {  # $1=gateway_config.json → 어긋난 위임(공백 구분, 예: reportarchive_sso). 읽지 못하면 빈 값.
-  ( export PER_USER_SSO_APPS $(_sso_generic_names)
+  ( export PER_USER_SSO_APPS KOORM_SEND_PLAT $(_sso_generic_names)
   RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" GEN="$(_sso_generic_pairs)" UNL="$(_sso_generic_unlisted "$1")" python3 - "$1" <<'PY' 2>/dev/null || true
 import json, os, re, sys
 try: d = json.load(open(sys.argv[1]))
@@ -1866,6 +1868,13 @@ for k, p in sorted(ln.split() for ln in (os.environ.get("GEN") or "").splitlines
             cl = "gateway"
         if (cur or {}).get("client") != cl:
             out.append(f"{k}_sso_client")
+# DynaForge(kooremapper_mcp) 위임의 plat 전달 — 게이트웨이 provision 과 같은 규칙: KOORM_SEND_PLAT 이 **적혀 있을 때만** 그 값이 정한다
+# (1 · true · yes · on 이면 켬, 빈 값을 포함해 그 밖은 끔). 이 위임은 위 순회 밖이라 <접두>_SEND_PLAT 을 받지 않는다. 비밀은 보지 않는다 —
+# KooRemapper .env 에 있어 이 실행이 못 읽을 수 있고, 게이트웨이는 비밀 없이 이어받은 항목에도 이 값을 먹인다. 위임이 없으면 짚지 않는다 —
+# provision 은 위임 없이 이 칸을 쓰지 않아, 짚으면 매 실행 재프로비저닝(게이트웨이 · 에이전트서버 재기동)이 헛돈다(_sso_nourl 과 같은 까닭).
+krm, ksp = pu.get("kooremapper_mcp"), os.environ.get("KOORM_SEND_PLAT")
+if isinstance(krm, dict) and ksp is not None and (ksp.strip().lower() in ("1", "true", "yes", "on")) != (krm.get("send_plat") is True):
+    out.append("kooremapper_mcp_sso_plat")
 # 목록에서 뺀 일반 앱(_sso_generic_unlisted) — 비밀도 접두도 이 실행에는 없다. 표지가 붙은 채 남은 위임이 곧 방아쇠다.
 out += [t for t in (f"{k}_sso_off" for k in (os.environ.get("UNL") or "").split()) if t not in out]
 print(" ".join(out))
@@ -2160,6 +2169,8 @@ PY
             reportarchive|testscope) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — infra/.env 의 비밀이 비었는데 게이트웨이는 아직 위임으로 부른다(토큰 등록으로 되돌린다)" ;;
             *) echo "  · 사람별 위임 끄기: ${_k%_sso_off} — HWAXMcpGateway/provision.env 에서 그 앱의 비밀을 비웠거나 PER_USER_SSO_APPS 에서 뺐는데 게이트웨이는 아직 위임으로 부른다(일반 앱은 사람별 호출이 서비스 계정으로 되돌아간다)" ;;
           esac ;;
+        # DynaForge 위임은 일반 순회 밖이라 손잡이 이름이 따로다 — 아래 일반 문구로 알리면 사람이 PER_USER_SSO_APPS 에서 접두를 찾는다.
+        kooremapper_mcp_sso_plat) echo "  · 사람별 위임 plat 전달 드리프트: kooremapper_mcp — HWAXMcpGateway/provision.env 의 KOORM_SEND_PLAT 과 게이트웨이 설정(send_plat)이 다르다(재프로비저닝으로 맞춘다)" ;;
         *_sso_plat) echo "  · 사람별 위임 plat 전달 드리프트: ${_k%_sso_plat} — HWAXMcpGateway/provision.env 의 그 앱 <접두>_SEND_PLAT 과 게이트웨이 설정(send_plat)이 다르다(재프로비저닝으로 맞춘다)" ;;
         *_sso_client) echo "  · 사람별 위임 클라이언트 이름 드리프트: ${_k%_sso_client} — HWAXMcpGateway/provision.env 의 그 앱 <접두>_SSO_CLIENT(비면 gateway)와 게이트웨이 설정(client)이 다르다(재프로비저닝으로 맞춘다)" ;;
         *) echo "  · 사람별 위임 드리프트: ${_k%_sso} — 게이트웨이 설정에 위임이 없거나 비밀이 infra/.env 와 다르다(일반 앱은 provision.env 의 비밀·주소)" ;;
@@ -2199,10 +2210,14 @@ PY
       #     PER_USER_SSO_APPS 가 온다 — 인자 없는 export 는 환경 전체(비밀 포함)를 이 로그에 찍는다. 목록에 남기고 비밀만 비운 앱은
       #     RA·TestScope 처럼 PER_USER_SSO_OFF 에 더한다. 목록에서 **뺀** 앱(_sso_generic_unlisted — 순회가 쓴 표지가 붙은 채 남은
       #     위임)의 이름도 더한다 — 게이트웨이는 이름이 와야 끈다(목록이 비었다고 스스로 지우지 않는다).
+      #   · KOORM_SEND_PLAT — DynaForge(kooremapper_mcp) 위임의 plat 전달(게이트웨이 c9c3419). 그 위임은 위 순회 밖이라 <접두>_SEND_PLAT 을
+      #     받지 않는다. 게이트웨이는 **적혀 있을 때만** 그 값으로 정한다(빈 값도 끔 · 안 적으면 직전 config) — 대입어 사슬에 `${…:-}` 로
+      #     넣으면 안 적은 박스가 빈 값(끔)으로 넘어간다. 그래서 export 표지만 붙인다(안 적었으면 아무것도 넘어가지 않는다). 이것이 없던
+      #     동안은 자동 복구(repair_mcp — set -a 로 소싱)만 그 값을 실어, 마지막에 돈 길에 따라 결과가 달랐다.
       _sso_off="$([ -n "${RA_SSO_SECRET:-}" ] || printf 'reportarchive ')$([ -n "${TESTSCOPE_SSO_SECRET:-}" ] || printf 'testscope')"
       _sso_off="$_sso_off$(while read -r _gk _gp; do _gv="${_gp:+${_gp}_SSO_SECRET}"; if [ -n "$_gv" ] && [ -z "${!_gv:-}" ]; then printf ' %s' "$_gk"; fi; done <<<"$(_sso_generic_pairs)")"
       _sso_off="$_sso_off$(for _gk in $(_sso_generic_unlisted "$GW_DIR/gateway_config.json"); do printf ' %s' "$_gk"; done)"
-      if ( cd "$GW_DIR" && export PER_USER_SSO_APPS $(_sso_generic_names) && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
+      if ( cd "$GW_DIR" && export PER_USER_SSO_APPS KOORM_SEND_PLAT $(_sso_generic_names) && RAT_TOKEN="${RAT_TOKEN:-}" HEAX_MCP_TOKEN="${HEAX_MCP_TOKEN:-}" \
           HEAX_MCP_SERVERS_URL="${HEAX_MCP_SERVERS_URL:-}" HEAX_MCP_BASE="${HEAX_MCP_BASE:-}" \
           ODB_HUB_TOKEN="${ODB_HUB_TOKEN:-}" ODB_HUB_BASE="${ODB_HUB_BASE:-}" \
           ARP_BASE="${ARP_BASE:-}" ARP_TOKEN="${ARP_TOKEN:-}" \
