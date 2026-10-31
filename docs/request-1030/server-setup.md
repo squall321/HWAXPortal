@@ -60,6 +60,7 @@
 | 에이전트 서버 | `fdfd7dd`(`57ccf1f` · `2fc01f1` · `b541787` · `4025a6e`) | 결정문이 나온 뒤(마무리 중)의 MCP `deliberate_cancel` 은 거절하고 끝까지 돈다(웹 409 와 같은 뜻) · /시뮬심의 · 구축 계획 스트림은 끝 신호(done)를 한 번만 · 끊긴 심의를 되살릴 때 조회 · 결정 단계 알림을 한 번만(일지 `e:round_in` · `e:note`) · RA 게시 확인 토큰을 확인 카드 글 · 심의 근거 · `/보고서` 에서 가린다(사용자 결정 10-31) | 올림 — 에이전트 서버 재기동(dev 10-31 20:55 UTC) |
 | 포털 | `1fa76c8f` | 위키로 보내는 대화 근거 발췌에서 RA 게시 확인 토큰을 가린다(대화 저장소 원본은 다음 턴 게시가 읽어 그대로 — 사용자 결정 10-31) | 올림 — 백엔드만(git) · 포털 재기동(dev 10-31 20:55 UTC) |
 | KooRemapper(DynaForge) | `57a41bf` · Drive `dist-20261031-214338Z` | 해석 온톨로지(사용자 결정 10-31 (가) — 후처리 꾸러미를 리포트에, `0e9c9da` · `220df28` · `4ada7ba`) · 이관 0020(null 허용 칸 셋) · MCP 89(`report_cae` · `find_cae_parts` 등 넷 더함) — 인자 설명 · 시간 한도(`3929a4e`)도 이 판에 든다 | 올림(그쪽 세션) — update-all 이 Drive 판을 받는다. 확인은 `../cae00-deploy-guide.md` 「2026-10-30 반영분 — 낙하 트윈」 1 · 1-2 |
+| 리스크 앱(HWAXRisk) | `2460cd0`(병합 — 구성원 · 쓰기 `224b04e` 까지 · 동시 실행 `33c0d85` 까지) · Drive(HEAXHub) `dist-20261031-234240Z` | 구성원(편집자 · 보기)이 과제가 보이는 것 전부를 읽는다 · 편집자는 계획서대로 쓴다(주인 전용 — 멤버 · 이양 · 폐기 · 공개 범위 등은 그대로) · 같은 짝 확정 · 거절은 짝의 두 과제 편집자 이상만, 주인 원장으로 지킨다(남의 행을 뒤집던 구멍 High) · 들여오기는 제 과제가 참조하는 부품 키만(선점 막기) · 두 과제를 모두 넘겨받으면 비교도 옮긴다 · 남이 과제에 매단 대상 · 줄은 열리지 않는다 · 잡의 동시 실행(1 ~ 2)이 실제로 돈다(같은 잡의 패널 둘까지, Claude · 쟁점 잡은 1) — 사용자 결정 10-31 | 올림 — `dist-from-drive.sh` 로 받고 `redeploy-app.sh hwax-risk`(dev 11-01 KST 08:42). **받기 전에** 4절 리스크 줄 둘(셈 · 동시 2 로 저장된 잡) |
 
 ## 1. update-all 한 번
 
@@ -120,7 +121,8 @@
 | AD-07 | 게이트웨이 `tools/list` 의 `agent_search` 입력에 `as_of` · `as_of_undated` 가 있다(소스가 아니라 목록으로 본다) |
 | B17 | deliberation-quality 42 줄의 심의(경시성 — 원 질문 · 원 사람 의견 그대로)를 이어하기로 한 번 다시 돌린다. 상태줄 `이어하기 재심사 — 신규 좌석 <키>(<축>)` 에 서비스 운영 · 필드 데이터 계열이 1명 이상 오르고, 이전 좌석은 전원 유임(좌석 사건 personas)이다. `검색 축을 짓지 못해(…)` 가 나오면 GLM 이 답하는지 먼저 본다. 결과(신규 좌석 키 · 축)는 사용자에게 알린다 — dev 는 축 LLM 이 없어 보지 못했다 |
 | HA-09 | 시험 심의 하나(작게 — 좌석 둘 · 라운드 셋)를 MCP 로 띄우고 2라운드 도중 `AGENT_RESTART_FORCE=1 ./start.sh -d`. `deliberate_status` 의 `resume.seat_resume`(spoken · todo)를 보고 `deliberate_continue` 한 번 — 같은 잡 id 로 잇고, 전사에 좌석마다 라운드당 한 번, 끝난 라운드의 LLM 호출은 다시 없다. 보고서를 켠 심의는 보고서 저장 뒤에 끊어 이으면 같은 RA 번호 하나다 |
-| 리스크 앱 셈 둘 | 읽기만 — ① 고침 전에 들여오기로 선 남의 멤버 행(편집자 · 보기)이 있는지 ② 확정인데 병합 대상이 남은 부품 키가 있는지. 질의는 HWAXRisk context-notes(RD-6 · RD-10 과 다음 판의 MB 절)에 있다. 나오면 지울지 사용자에게 알린다(dev 는 둘 다 0) |
+| 리스크 앱 셈(받기 전) | 읽기만(앱 데이터 디렉터리에서 `sqlite3 -readonly risk_review.db`) — 구성원 읽기 · 편집자 쓰기가 열려 고침 전 들여오기가 남긴 행이 닿는 곳이 넓어졌다. 질의는 HWAXRisk context-notes **MB-9** — ① 이양으로 다시 찍히지 않은 남의 편집자 · 보기 멤버 행 ② 만든 흔적(member.put · project.transfer 감사)이 없는 편집자 · 보기 행 ③ 주인 아닌 사람의 owner 멤버 행, 그리고 RD-6 의 확정인데 병합 대상이 남은 부품 키. 나오면 지울지 사용자에게 알린다(dev 는 모두 0) |
+| 리스크 앱 동시 2 로 저장된 잡(CC-25) | 받기 전에 센다 — `sqlite3 -readonly risk_review.db "SELECT id, target_key, tier, state, concurrency FROM rr_jobs WHERE state IN ('queued','running','paused') AND COALESCE(mode,'panels') = 'panels' AND concurrency > 1"`. 칸이 아무 일도 않던 동안 동시 2 로 만든 살아 있는 잡은 이 판부터 패널 둘을 함께 돈다(전역 자리는 그대로, Claude 잡은 늘 1). 묶으려면 그 잡을 취소하고 동시 1 로 다시 만든다(화면). 박스 전체는 `HWAXRISK_CONCURRENCY=1` 인데 이 앱의 env 는 매니페스트 `launch.env` 로만 닿아 dev 에 알린다. 앱이 떠 있는 동안 DB 를 손으로 고치지 않는다 |
 
 ### 포털 · 게이트웨이(올린 것)
 
