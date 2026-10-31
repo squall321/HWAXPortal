@@ -936,7 +936,11 @@ def cancel(request: Request, run_id: str, principal: Principal = Depends(_me)) -
         raise AuthError("실행을 찾을 수 없습니다", status_code=404)
     if run["owner_sub"] != principal.subject and ADMIN_GROUP not in principal.groups:
         raise AuthError("실행을 찾을 수 없습니다", status_code=404)
-    store.cancel_run(run_id, principal.subject)
+    if not store.cancel_run(run_id, principal.subject):
+        # 끝난 실행 — 그대로 둔다(성패 기록 · 누가 언제 멈췄는지). 화면은 도는 실행에만 '중단' 을 보인다(API 로만 닿던 길).
+        cur = (store.get_run(run_id) or {}).get("state")
+        raise AuthError("이미 중단한 실행입니다 — 그대로 둡니다" if cur == "cancelled" else
+                        f"이미 끝난 실행입니다({cur}) — 중단하지 않고 기록은 그대로 둡니다", status_code=409)
     return {"cancelled": True}
 
 

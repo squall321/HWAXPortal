@@ -285,6 +285,32 @@ def test_취소는_소유자와_관리자만(user, client):
     assert st.get_run(rid3)["state"] != "cancelled"
 
 
+def test_끝난_실행은_중단하지_않고_그대로_둔다(user):
+    """중단은 무조건 cancelled 로 덮었다 — 끝난 실행(done · failed)이 '중단됨' 으로 바뀌어 성패 기록이 사라졌고, 이미 중단한 실행은 누가
+    언제 멈췄는지가 다시 쓰였다. 409 와 함께 까닭을 말하고 원장은 그대로 둔다(화면은 도는 실행에만 '중단' 을 보인다 — API 로만 닿던 길).
+    확인과 쓰기는 한 문장이다 — 그 사이에 실행이 끝나도 끝난 것을 덮지 않는다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    keep = ("state", "stage", "ended_at", "cancelled_by", "cancelled_at")
+    for state in ("done", "failed", "cancelled"):
+        rid = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
+        if state == "cancelled":
+            assert c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h).status_code == 200
+        else:
+            st.set_run_state(rid, state, stage="step:0", ended=True)
+        before = {k: st.get_run(rid)[k] for k in keep}
+        r = c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h)
+        assert r.status_code == 409, (state, r.status_code, r.text[:200])
+        assert ("이미 중단한 실행" if state == "cancelled" else f"이미 끝난 실행입니다({state})") in r.text, r.text[:200]
+        assert {k: st.get_run(rid)[k] for k in keep} == before, state
+        assert st.cancel_run(rid, "u") is False, "저장소도 끝난 실행을 덮지 않는다"
+    for state in ("queued", "running", "gated"):   # 도는 · 확인 대기 실행은 그대로 세운다
+        rid = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
+        st.set_run_state(rid, state)
+        assert c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h).status_code == 200, state
+        assert st.get_run(rid)["state"] == "cancelled"
+
+
 def test_중단한_실행은_승인_재개_고르기로_다시_돌지_않는다(user):
     """화면은 중단한 실행에 그 단추를 안 보이지만 API 로는 닿았다 — 승인 · 재개 · 고르기가 실행기를 다시 띄우면 running 으로 덮여 중단이
     사라지고 남은 단계가 돌았다. 409 와 함께 무엇을 하면 되는지 말하고, 원장에는 아무것도 적지 않는다."""
