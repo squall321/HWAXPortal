@@ -28,6 +28,7 @@
 | StepForge | `b2c70f1` · Drive `dist-20261030-135126Z` | ST-12 — 합치기 진행률(경과 시간) · `work_outlook` · owner 가림(+ 온톨로지 그래프 도구 일곱) | 올림(그쪽 세션) — `dist-from-drive.sh` 로 step_forge 교체, 교체 전 도는 잡이 없는지 본다 |
 | StepForge | `a166d2a` · `51c8788` · Drive `dist-20261031-014632Z` | SP 키트 2026-10-21 수신부 · 그래프 따라잡기 · CLAUDE.md SP 규칙(빌드는 main 끝 — `005407Z` 는 코드가 같은 앞 판) | 올림(그쪽 세션) — `dist-from-drive.sh` 로 `014632Z` 를 받는다 |
 | HEAXHub | `055b023` · `5e2cafa` · `beebec5` | HH-15 박스 덮어쓰기 · HH-16 남은 서비스 정리 · 검토 아홉 고침, cae00 박스 파일 넷과 전환 차례, 시험 가드 | 올림 — update-all §2 가 받는다. 받기 전 점검과 전환은 9절 · 받은 편지함 Q8 |
+| 리스크 앱(HWAXRisk) | `9bd5f48` · Drive(HEAXHub) `dist-20261031-021740Z` | ECAD 1단계(ODB 보드 싣기 · 사람이 고르는 보드 · 보드 노드 · 정직한 표지) + 사용자 결정 셋(그 사람 PAT 만 · pwr/rf 2단계까지 · 상한에 ECAD 부품) — MCP 도구 31 → 33 | 올림 — `dist-from-drive.sh` 로 받고 `redeploy-app.sh hwax-risk` 로 바꾼다. 화면은 리스크 화면 세션 몫(`docs/design-risk-review/ecad-1031/frontend-request.md`) |
 | MaterialTwinWeb | `a3563b6` · `4273720` | HH-01(긴 재료 카드를 절 여러 개로) · 저장소 비공개 전환 적용 문서 | 올림(그쪽 세션) — 비공개 전환 차례는 9절(먼저 받고 → 사용자가 비공개 → 토큰) |
 
 ## 1. update-all 한 번
