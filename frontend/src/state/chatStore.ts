@@ -318,9 +318,13 @@ export function saveDelibOpts(opts: DelibOpts, prefix: string = DEFAULT_PREFIX):
 // (backend/tests/test_delib_timeout_cap_contract.py). 입력칸 max(DelibOptsPanel)도 이 상수를 쓴다.
 export const DELIB_TIMEOUT_MAX_S = 14400;
 
+// 기준일 꼴 — 포털 DelibOpts.as_of 의 pattern · 엔진 _as_of_ok 와 같다(YYYY-MM-DD, ASCII 숫자). 꼴이 아니면 보내지 않는다 —
+// 보내면 포털이 요청째 422 로 막는다. 달력에 없는 날(2025-02-30)은 date 입력칸이 만들지 않고, 손으로 넣은 것은 포털이 막는다.
+export const AS_OF_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
 // 손잡이 상태 → 서버 전송용(켠 것만). 나머지는 agent-server env 기본값 유지.
-export function delibOptsToWire(o: DelibOpts): Record<string, number> {
-  const w: Record<string, number> = {};
+export function delibOptsToWire(o: DelibOpts): Record<string, number | string> {
+  const w: Record<string, number | string> = {};
   for (const k of ['evidence_prepass', 'rebut_quote', 'prose_first', 'cross_exam', 'anchor', 'chair_cite'] as const) {
     if (o[k]) w[k] = 1;
   }
@@ -336,6 +340,8 @@ export function delibOptsToWire(o: DelibOpts): Record<string, number> {
   if (o.stop_after_round === 1) w.stop_after_round = 1;
   // MX 백서 위키에도 결정문 남기기 — 백엔드 DelibOpts.wiki 와 짝이다(위와 같은 까닭으로 둘 다 있어야 한다).
   if (o.wiki) w.wiki = 1;
+  // 기준일 — 백엔드 DelibOpts.as_of 와 짝이다(docs/request-1027 HA-11). 엔진이 그 날까지의 지식카드만 찾고 결정문 머리에 찍는다.
+  if (o.as_of && AS_OF_RE.test(o.as_of)) w.as_of = o.as_of;
   return w;
 }
 

@@ -105,6 +105,9 @@ export interface DelibOpts {
   stop_after_round?: number;
   /** MX 백서 LLM 위키에도 결정문을 남긴다(기본 꺼짐). 범위는 내 소속이고, 소속이 없으면 '내 후보' 로 간다(docs/mxwp-wiki P8). */
   wiki?: boolean;
+  /** 기준일 'YYYY-MM-DD' — 좌석 지식카드를 그 날까지의 것만 찾는다(날짜 없는 카드는 '날짜 미확인' 으로 남긴다 · docs/request-1027 HA-11).
+   *  비우면 거르지 않는다. 다른 손잡이처럼 저장돼 다음 심의에도 걸리니, 소급 검증이 끝나면 비운다. */
+  as_of?: string;
   // ── 이어하기(사람 개입 스티어링) 필드 — 손잡이가 아니라 승계 데이터다 ──
   /** 이번 회차에서 패널이 반드시 정면으로 다뤄야 할 사람의 의견. 매 라운드 프롬프트에 주입된다. */
   human_note?: string;

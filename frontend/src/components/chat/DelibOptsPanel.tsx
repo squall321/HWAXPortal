@@ -26,6 +26,10 @@ const WIKI_HINT =
   + '켜 두면 이후 심의마다 남는다';
 
 const WIKI_OFF_HINT = '이 박스에서는 MX 백서 위키가 꺼져 있다 — 켜 둔 것을 끄기만 할 수 있다(켜 두면 결정문 끝에 실패 문구가 붙는다)';
+// 기준일 — 소급 검증용(docs/request-1027 HA-11 · 사용자 결정 10-31 A-keep). 무엇을 거르지 않는지까지 적는다 — 감추면 '그 날 자료로만 돈 심의' 로 읽힌다.
+const AS_OF_HINT =
+  '이 날까지의 지식카드만 찾는다(소급 검증용). 날짜 없는 카드는 \'날짜 미확인\' 으로 남고, 날짜와 셈이 결정문 머리에 찍힌다. '
+  + 'VOC · 보고서 · 다른 조회는 날짜로 거르지 않는다 — 그때 있던 자료만으로 보려면 봉인 실행이다. 켜 두면 이후 심의에도 걸린다';
 
 // mods — 심의 첫 화면만 준다: '얹을 층'(방법 보강)은 새 심의를 시작할 때만 쓰여, 이어 묻는 화면에는 없다.
 // 종전엔 첫 화면 한가운데 칩 줄로 나와 목적 카드·입력창 사이를 갈랐다(docs/ui-refresh 단계 4).
@@ -47,6 +51,7 @@ export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; tog
     (delibOpts.chair_bestof && delibOpts.chair_bestof > 1 ? 1 : 0) +
     (delibOpts.stop_after_round === 1 ? 1 : 0) +
     (delibOpts.wiki ? 1 : 0) +
+    (delibOpts.as_of ? 1 : 0) +
     (mods?.on.size ?? 0);
 
   return (
@@ -118,6 +123,18 @@ export function DelibOptsPanel({ mods }: { mods?: { on: ReadonlySet<string>; tog
               ))}
             </select>
             <span className="do-hint">1 초기입장 + 중간 심화·반박 + 마지막 수렴. 늘릴수록 깊어지지만 느려집니다</span>
+          </li>
+          <li className="do-item">
+            <span className="do-label">기준일</span>
+            {/* date 입력칸은 YYYY-MM-DD 만 낸다 — 비우면 거르지 않는다(보내기 전에 delibOptsToWire 가 꼴을 한 번 더 본다). */}
+            <input
+              type="date"
+              className="do-num"
+              aria-label="기준일"
+              value={delibOpts.as_of ?? ''}
+              onChange={(e) => setDelibOpts({ ...delibOpts, as_of: e.target.value || undefined })}
+            />
+            <span className="do-hint">{AS_OF_HINT}</span>
           </li>
         </ul>
         <p className="do-warn">아래 손잡이는 한 번에 하나씩 켜서 비교하세요 — 여러 개를 동시에 켜면 효과가 상쇄되고 부하가 커집니다.</p>

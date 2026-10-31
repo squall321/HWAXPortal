@@ -11,6 +11,7 @@ non_negotiables·stop_after_round·rounds_so_far·append_to_report_id 네 개가
 리팩터링으로 추출이 깨지면 테스트가 조용히 통과하는 것이 최악이다.
 """
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -295,6 +296,125 @@ def test_포털이_낸_값을_엔진이_실제로_읽는다():
         assert read["unread"] == {} and read["cut"] == {}, (
             f"포털을 지난 값을 엔진이 못 읽거나 줄였다 — 두 리포의 모양·상한이 갈라졌다: {read}")
 
+
+
+# ── 기준일(as_of) — docs/request-1027 HA-11 · 사용자 결정 10-31 A-keep ───────────────────────────────────────────────────
+# 엔진은 delib_opts.as_of('YYYY-MM-DD')가 오면 그 심의의 좌석 지식카드 검색(agent_search)을 그 날까지의 카드로 거르고 결정문 머리에 찍는다.
+# 포털에 선언이 없으면 model_dump(exclude_none=True) 에서 말없이 떨어져, 기준일을 준 소급 검증이 오늘의 카드로 돈다. 꼴은 엔진 _as_of_ok 와
+# 같아야 한다 — 포털이 넓으면 포털을 지난 값을 엔진이 시작 전에 거절하고(웹 심의가 오류로 끝난다), 좁으면 엔진이 받는 날을 포털이 422 로 막는다.
+_AS_OF_CASES = ["2025-06-01", "2024-02-29", "2025-02-30", "2025-13-01", "2025-6-1", " 2025-06-01", "2025-06-01 ",
+                "2025-06-01\n", "2025-06-01T09:00:00", "20250601", "", "２０２５-０６-０１", "٢٠٢٥-٠٦-٠١"]
+
+
+def _portal_takes_as_of(v) -> bool:
+    from pydantic import ValidationError
+    try:
+        DelibOpts(as_of=v)
+    except ValidationError:
+        return False
+    return True
+
+
+def test_기준일이_포털을_지나_살아_나온다():
+    from app.agent.routes import ChatRequest
+
+    wire = ChatRequest(message="/심의 화두", delib_opts={"as_of": "2025-06-01"}).delib_opts.model_dump(exclude_none=True)
+    assert wire == {"as_of": "2025-06-01"}, "기준일이 포털에서 사라졌거나 모양이 바뀌었다 — 엔진이 거르지 않고 돈다"
+    # 안 보내면 안 나간다 — 빈 값을 채워 보내지 않는다.
+    assert "as_of" not in ChatRequest(message="/심의 화두", delib_opts={}).delib_opts.model_dump(exclude_none=True)
+
+
+@pytest.mark.parametrize("bad", ["2025-02-30", "2025-13-01", "2025-6-1", " 2025-06-01", "2025-06-01T09:00:00",
+                                 "20250601", "", "２０２５-０６-０１", 20250601, ["2025-06-01"]],
+                         ids=["no-day", "no-month", "short", "space", "datetime", "compact", "empty", "fullwidth", "int", "list"])
+def test_기준일_꼴이_틀리면_422(bad):
+    """틀린 날을 말없이 버리면 보낸 쪽은 기준일로 거른 줄 안다 — 소리 내 막는다."""
+    assert not _portal_takes_as_of(bad)
+
+
+_ENGINE_AS_OF = (
+    "import json, sys, deliberation as d\n"
+    "out = []\n"
+    "for v in json.load(sys.stdin):\n"
+    "    o = d._resolve_opts({'as_of': v})\n"
+    "    out.append({'ok': d._as_of_ok(v), 'read': o.as_of, 'unread': o.req_unread,\n"
+    "                'refused': (d._as_of_refusal({'as_of': v}) or {}).get('code')})\n"
+    "print(json.dumps(out, ensure_ascii=False))\n"
+)
+
+
+def test_기준일_꼴은_엔진과_같고_포털이_낸_값을_엔진이_그대로_읽는다():
+    if not _ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {_ENGINE}")
+    import json
+    import os
+    import subprocess
+    import sys
+
+    portal = [_portal_takes_as_of(v) for v in _AS_OF_CASES]
+    assert portal[:2] == [True, True] and not any(portal[2:]), f"시험 전제 — 포털이 받는 것: {portal}"
+    r = subprocess.run([sys.executable, "-c", _ENGINE_AS_OF], input=json.dumps(_AS_OF_CASES, ensure_ascii=False),
+                       cwd=_ENGINE.parent, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                       capture_output=True, text=True, timeout=120)
+    # 형제 리포가 있는데 엔진을 못 부르면 건너뛰지 않는다 — 건너뜀은 통과가 아니다.
+    assert r.returncode == 0, f"엔진 _resolve_opts · _as_of_ok 를 이 venv 로 부르지 못했다 — {r.stderr.strip()[-600:]}"
+    got = json.loads(r.stdout.strip().splitlines()[-1])
+    assert [g["ok"] for g in got] == portal, f"기준일 꼴이 포털과 엔진에서 갈라졌다 — {list(zip(_AS_OF_CASES, portal, got))}"
+    for v, ok, g in zip(_AS_OF_CASES, portal, got):
+        if ok:     # 포털이 낸 값을 엔진이 그대로 읽는다 — 못 읽거나 거절하면 웹 심의가 시작조차 안 된다
+            assert g["read"] == v and g["unread"] == {} and g["refused"] is None, (v, g)
+        elif v:    # 포털을 거치지 않고 엔진에 닿은 틀린 꼴(MCP)은 엔진이 시작 전에 거절한다. 빈 값은 '안 줬다' 다
+            assert g["read"] == "" and g["refused"] == "bad_request", (v, g)
+
+
+def test_기준일이_심의_중계_길에서_엔진_본문에_그대로_닿는다():
+    codes, seen = _relay_chat({"message": "/심의 화두", "delib_opts": {"as_of": "2025-06-01", "rounds": 3}},
+                              {"message": "/심의 화두", "delib_opts": {"as_of": "2025-02-30"}},
+                              {"message": "/심의 화두", "delib_opts": {"rounds": 3}})
+    assert codes == [200, 422, 200]
+    assert len(seen) == 2, "422 로 막힌 요청이 엔진으로 나갔다"
+    assert seen[0]["delib_opts"] == {"as_of": "2025-06-01", "rounds": 3}
+    assert seen[1]["delib_opts"] == {"rounds": 3}, "기준일을 안 준 심의에 기준일 칸이 생겼다"
+
+
+def test_심의_옵션_화면이_기준일을_싣는다():
+    """화면 입구 — 심의 옵션의 date 입력칸이 delibOpts.as_of 를 고치고, delibOptsToWire 가 꼴이 맞을 때만 싣는다(포털 422 를 피한다)."""
+    panel = (_FRONT.parent / "components" / "chat" / "DelibOptsPanel.tsx").read_text(encoding="utf-8")
+    blk = panel[panel.index('<span className="do-label">기준일</span>'):]
+    blk = blk[:blk.index("</li>")]
+    assert 'type="date"' in blk and "delibOpts.as_of" in blk and "as_of: e.target.value || undefined" in blk, blk
+    store = (_FRONT / "chatStore.ts").read_text(encoding="utf-8")
+    body = store[store.index("export function delibOptsToWire"):]
+    body = body[: body.index("\n}")]
+    assert "if (o.as_of && AS_OF_RE.test(o.as_of)) w.as_of = o.as_of;" in body, body[-400:]
+    m = re.search(r"^export const AS_OF_RE = /(.+)/;$", store, re.M)
+    pats = [x.get("pattern") for x in DelibOpts.model_json_schema()["properties"]["as_of"].get("anyOf", []) if x.get("pattern")]
+    assert m and pats == [m.group(1)], f"프론트의 기준일 꼴({m and m.group(1)})이 포털 pattern({pats})과 다르다"
+
+
+@pytest.mark.skipif(not (_FRONT.parents[1] / "node_modules/typescript").exists() or not shutil.which("node"),
+                    reason="frontend node_modules(typescript) 또는 node 가 없다 — 보내기 함수를 돌려 볼 수 없다")
+def test_프론트는_꼴이_맞는_기준일만_싣는다(tmp_path):
+    """chatStore.ts 를 옮겨 적어 node 로 부른다(test_delib_timeout_cap_contract 와 같은 길) — 틀린 꼴을 실으면 포털이 요청째 422 로 막는다."""
+    import json
+    import subprocess
+
+    (tmp_path / "run.cjs").write_text(
+        "const ts = require('typescript'); const fs = require('fs');\n"
+        f"const js = ts.transpileModule(fs.readFileSync({json.dumps(str(_FRONT / 'chatStore.ts'))}, 'utf8'),\n"
+        "  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019 } });\n"
+        "fs.writeFileSync(__dirname + '/chatStore.js', js.outputText);\n"
+        "const { delibOptsToWire } = require('./chatStore.js');\n"
+        "const sent = JSON.parse(process.argv[2]).map((v) => delibOptsToWire({ as_of: v }).as_of ?? null);\n"
+        "process.stdout.write(JSON.stringify(sent));\n", encoding="utf-8")
+    vals = ["2025-06-01", "2025-6-1", " 2025-06-01", "2025-06-01T09:00:00", "", "２０２５-０６-０１"]
+    r = subprocess.run(["node", "run.cjs", json.dumps(vals, ensure_ascii=False)], cwd=str(tmp_path), capture_output=True,
+                       text=True, timeout=120, env={"PATH": "/usr/bin:/bin:" + str(Path(shutil.which("node")).parent),
+                                                    "NODE_PATH": str(_FRONT.parents[1] / "node_modules")})
+    assert r.returncode == 0, r.stdout + r.stderr
+    sent = json.loads(r.stdout)
+    assert sent == ["2025-06-01", None, None, None, None, None], sent
+    assert all(_portal_takes_as_of(v) for v in sent if v is not None), "프론트가 실은 기준일을 포털이 받지 않는다"
 
 
 @pytest.mark.parametrize("v", ["human", "app"])
