@@ -206,6 +206,9 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
   const d: DelibData = { ...(prev ?? {}) };
   // 실행 id — 에이전트 서버가 첫 심의 사건에 싣는다(triage A24). '멈춤' 이 이 심의 하나만 짚는 열쇠다.
   if (typeof e.run_id === 'string' && e.run_id && !d.runId) d.runId = e.run_id;
+  // 다단 심의(/시뮬심의) — 앞 단의 결정문 뒤에 다음 단이 열렸다(엔진의 단 경계 표지 checkpoint, 또는 결정문 뒤에 온 단 사건). 그 단의 결정문에서
+  // 내린다. 한 단 심의는 결정문 뒤에 단 사건이 오지 않아 서지 않는다 — 받기가 끊긴 칸의 '멈춤' 이 이것으로 남는다(DelibView).
+  if (e.kind === 'checkpoint' || (d.decision && (e.kind === 'stage' || e.kind === 'personas' || e.kind === 'turn'))) d.nextStage = true;
   switch (e.kind) {
     case 'stage': {
       const stage = String(e.stage ?? '');
@@ -255,6 +258,7 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'decision':
       d.decision = String(e.text ?? '');
       d.finishing = false; // 마무리가 끝났다 — 다단 심의는 다음 단에서 다시 멈출 수 있다
+      d.nextStage = false; // 열린 단이 결정문을 냈다 — 또 다음 단이 있으면 엔진이 표지를 다시 낸다
       break;
     case 'plain':
       d.plain = String(e.text ?? '');

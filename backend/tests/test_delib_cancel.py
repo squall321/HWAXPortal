@@ -443,6 +443,59 @@ def test_결정문_뒤에_멈춘_심의는_결정문과_멈춤을_함께_되살�
     assert local[-1]["delib"]["decision"] == "1단 결정문" and local[-1]["delib"]["cancelled"] == {"message": _STOP}
 
 
+def _relay(c: TestClient, h: dict, cid: str, frames: list, message: str) -> list[dict]:
+    """에이전트 서버가 frames 를 흘리고 상류가 닫히는 /agent/chat 한 턴을 중계에 돌리고, 서버 대화에 남은 메시지를 돌려준다."""
+    raw = "".join(f"event: {ev}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n" for ev, d in frames).encode()
+    app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda req: httpx.Response(200, stream=_Body(raw), headers={"content-type": "text/event-stream"})))
+    r = c.post("/agent/chat", json={"message": message, "conversation_id": cid}, headers=h)
+    assert r.status_code == 200, r.text
+    return _stored(c, cid, h)
+
+
+# /시뮬심의 의 1단 끝 — 엔진이 실제로 내는 차례다(의결 뒤 마무리 표지 → 결정문 · 결과 → 1단의 done — 시뮬 래퍼가 단마다의 done 을 그대로 흘린다)
+_SIM_STAGE1 = [("delib", {"kind": "stage", "stage": "r1", "run_id": RID}),
+               ("delib", {"kind": "turn", "round": 1, "persona": "mech-a", "say": "1단 입장"}),
+               ("delib", {"kind": "finishing"}),
+               ("delib", {"kind": "decision", "text": "1단 결정문"}),
+               ("delib", {"kind": "outcome", "report_id": 41, "title": "t"}),
+               ("result", {"type": "text", "content": "1단 결정문"}),
+               ("done", {})]
+# 2단의 처음 — 단 경계 표지(checkpoint) 뒤 2단 라운드
+_SIM_STAGE2 = [("delib", {"kind": "checkpoint", "stage": "sim-1", "decision_a": "1단 결정문"}),
+               ("delib", {"kind": "stage", "stage": "r1", "n": 1}),
+               ("delib", {"kind": "turn", "round": 1, "persona": "cae-b", "say": "2단 입장"})]
+
+
+def test_다단_심의가_다음_단을_도는_중에_끊기면_답에_남기고_다른_기기도_끝나지_않은_심의로_되살린다(portal):
+    """/시뮬심의 는 1단 결정문 뒤 2단을 돈다. 2단 도중에 받기가 끊기면 서버 사본의 답은 1단 결정문이다 — 다음 단이 열렸다는 표지
+    (meta.delib_next_stage)가 없으면 다른 기기 · 새로고침의 화면이 끝난 심의로 읽어, 서버에서 아직 도는 2단에 '멈춤' 을 내지 않는다."""
+    c, _agent = portal
+    h = _login(c, OWNER)
+    # 상류가 닫힌(끊긴) 자리 둘 — 단 경계 표지 뒤 좌석 전환 중(2단의 심의 사건이 아직 없다) · 2단 라운드 중
+    for tail, personas in ((_SIM_STAGE2[:1], 1), (_SIM_STAGE2, 2)):
+        cid = _conv(c, h)
+        msgs = _relay(c, h, cid, _SIM_STAGE1 + tail, "/시뮬심의 힌지")
+        assert [m["role"] for m in msgs] == ["user"] + ["persona"] * personas + ["assistant"], msgs
+        ans = msgs[-1]
+        assert ans["content"] == "1단 결정문" and ans["meta"]["delib_next_stage"] is True and ans["meta"]["delib_run"] == RID, ans
+        d = _restore(msgs)[-1]["delib"]
+        assert d["decision"] == "1단 결정문" and d.get("nextStage") is True and d["runId"] == RID, d
+
+
+def test_다단_심의를_끝까지_받았거나_한_단_심의면_다음_단_표지를_남기지_않는다(portal):
+    c, _agent = portal
+    h = _login(c, OWNER)
+    stage2_end = [("delib", {"kind": "finishing"}), ("delib", {"kind": "decision", "text": "2단 결정문"}),
+                  ("delib", {"kind": "outcome", "report_id": 42, "title": "t"}),
+                  ("result", {"type": "text", "content": "2단 결정문"}), ("done", {})]
+    for frames, message in ((_SIM_STAGE1 + _SIM_STAGE2 + stage2_end, "/시뮬심의 힌지"), (_SIM_STAGE1, "/심의 힌지")):
+        cid = _conv(c, h)
+        ans = _relay(c, h, cid, frames, message)[-1]
+        assert ans["role"] == "assistant" and "delib_next_stage" not in ans["meta"], ans
+        assert "nextStage" not in _restore(_stored(c, cid, h))[-1]["delib"]
+
+
 # 프론트에는 단위 시험 러너가 없어 그 파일을 typescript 로 옮겨 적어 node 로 부른다(test_conv_save_full 과 같은 길).
 _FE = Path(__file__).resolve().parents[2] / "frontend"
 

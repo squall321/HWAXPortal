@@ -2,7 +2,8 @@
 """docs/leftovers-1017 triage A24 (나) — 도는 웹 심의를 서버에서 그치는 '멈춤'(포털 POST /agent/deliberate/cancel). 입력창의 ■ 는 받기만 끊고
 심의는 서버에서 끝까지 돈다 — 그치는 길은 심의 칸의 이 단추다. 타입 검사로는 '누르는 동안 잠기는가', '무엇을 보내는가', '결과를 어떻게
 말하는가', '받기가 끊긴 심의에도 남는가' 를 못 본다. A24 검토로 더한 것 — 실행 id(첫 심의 사건의 run_id)를 싣는다 · 실행 id 가 없으면 단추가
-없다 · 의장이 결정문을 낸 뒤의 마무리(finishing)에는 단추를 거둔다 · 끊긴 심의를 멈추면(200) 칸에 멈춤을 적어 새로고침 뒤에도 남는다. test_delib_stream_in_browser 와 같은 길이다 — 실제 ChatProvider · MessageList(심의 칸
+없다 · 의장이 결정문을 낸 뒤의 마무리(finishing)에는 단추를 거둔다 · 끊긴 심의를 멈추면(200) 칸에 멈춤을 적어 새로고침 뒤에도 남는다. 10-31 화면 틈 —
+다단 심의(/시뮬심의)가 1단 결정문 뒤 2단 도중에 끊기면 단추가 남는다(한 단 심의는 결정문 뒤에 없다). test_delib_stream_in_browser 와 같은 길이다 — 실제 ChatProvider · MessageList(심의 칸
 DelibView)를 esbuild 로 묶어 빈 문서에 올리고, fetch 는 시험이 한 프레임씩 밀어 넣는 스트림과 손으로 답하는 멈춤 창구로 바꾼다.
 도구는 프론트가 이미 가진 것만 쓴다. 없으면 건너뛴다(운영 박스).
 """
@@ -143,6 +144,29 @@ async function start(page, runId = RUN) {
   await push(page, frame('delib', { kind: 'turn', round: 1, persona: 'mech-a', say: '초기 입장' }));
   await page.getByText('초기 입장').first().waitFor();
 }
+// 다단 심의(/시뮬심의)의 1단 끝 — 에이전트가 실제로 내는 차례다. 의결 → 마무리 표지 → 결정문 · 결과 · 글 → 1단의 done(엔진의 단 하나가 done 으로
+// 끝나고 시뮬 래퍼가 그대로 흘린다 — 화면은 여기서 받기를 마친 것으로 본다) → 단 경계 표지(checkpoint) → 좌석 전환(도구 호출 — 몇 초 걸린다) →
+// 2단 라운드. stage2=false 면 좌석 전환에서 멈춘다(2단의 심의 사건이 아직 없다)
+async function stage1Done(page, { stage2 = true } = {}) {
+  await push(page, frame('delib', { kind: 'stage', stage: 'decide' }));
+  await push(page, frame('delib', { kind: 'finishing' }));
+  await push(page, frame('delib', { kind: 'decision', text: '1단 결정문' }));
+  await push(page, frame('delib', { kind: 'outcome', report_id: 41, title: 't' }));
+  await push(page, frame('token', { delta: '1단 결정문' }));
+  await push(page, frame('result', { type: 'text', content: '1단 결정문' }));
+  await push(page, frame('done', {}));
+  await push(page, frame('delib', { kind: 'checkpoint', stage: 'sim-1', decision_a: '1단 결정문' }));
+  await push(page, frame('status', { step: '좌석 전환 — CAE 전문가 발굴', tool: 'recommend_agents' }));
+  if (!stage2) {
+    await page.getByText('좌석 전환 — CAE 전문가 발굴').first().waitFor();
+    return;
+  }
+  await push(page, frame('status', { step: '2단 — 해석 설계 심의', tool: null }));
+  await push(page, frame('delib', { kind: 'stage', stage: 'discover' }));
+  await push(page, frame('delib', { kind: 'stage', stage: 'r1', n: 1 }));
+  await push(page, frame('delib', { kind: 'turn', round: 1, persona: 'cae-b', say: '2단 입장' }));
+  await page.getByText('2단 입장').first().waitFor();
+}
 const look = (page) => page.evaluate(() => {
   const btn = document.querySelector('.dv-stop-btn');
   return {
@@ -151,6 +175,7 @@ const look = (page) => page.evaluate(() => {
     note: (document.querySelector('.dv-stop-note') || {}).textContent || '',
     stopped: (document.querySelector('.dv-stopped') || {}).textContent || '',
     plain: (document.querySelector('.dv-plain') || {}).textContent || '',
+    decision: (document.querySelector('.dv-decision') || {}).textContent || '',
     error: Boolean(document.querySelector('.chat-error')),
     streaming: document.getElementById('streaming').textContent,
   };
@@ -226,7 +251,7 @@ const SCENARIOS = {
     const tail = await look(page);
     return { before, tail, sent: await cancels(page), errors: page.__errors };
   },
-  // 다단 심의 — 1단 결정문 뒤 2단 라운드에서는 다시 멈출 수 있다
+  // 다단 심의 — 1단 결정문 뒤 2단 라운드에서는 다시 멈출 수 있고, 2단 도중에 받기가 끊겨도 멈춤이 남는다(단 사이 done · 표지가 없는 차례)
   async next_stage(browser) {
     const page = await open(browser);
     await start(page);
@@ -236,7 +261,62 @@ const SCENARIOS = {
     await push(page, frame('delib', { kind: 'stage', stage: 'r1', n: 1 }));
     await push(page, frame('delib', { kind: 'turn', round: 1, persona: 'mech-a', say: '2단 입장' }));
     await page.getByText('2단 입장').first().waitFor();
-    return { tail, stage2: await look(page), errors: page.__errors };
+    const stage2 = await look(page);
+    await page.evaluate(() => window.__break('network error'));
+    await page.locator('.chat-error').waitFor();
+    return { tail, stage2, cut2: await look(page), errors: page.__errors };
+  },
+  // 다단 심의의 실제 차례(1단의 done · 단 경계 표지) — 2단 도중에 받기가 끊겼다. 보이는 결정문은 1단의 것이고 2단은 서버에서 아직 돈다. 멈춤이
+  // 남고, 같은 저장소로 다시 열어도 남으며, 그 심의의 실행 id 로 멈춘다
+  async stage2_cut(browser) {
+    const ctx = await browser.newContext();
+    const page = await open(ctx);
+    await start(page);
+    await stage1Done(page);
+    await page.evaluate(() => window.__break('network error'));
+    await page.locator('.chat-error').waitFor();
+    const halted = await look(page);
+    await page.waitForTimeout(800);                 // 브라우저 사본 저장(250ms 디바운스) 뒤
+    const again = await open(ctx);                  // 새로고침 — 같은 저장소
+    await again.getByText('2단 입장').first().waitFor();
+    const reloaded = await look(again);
+    if (reloaded.btn) {                             // 단추가 없으면(종전) 누르지 않고 본 것을 돌려준다 — 시험이 단추 없음으로 붉어진다
+      await again.locator('.dv-stop-btn').click();
+      await again.waitForFunction(() => typeof window.__answer === 'function');
+    }
+    const sent = await cancels(again);
+    const errors = [...page.__errors, ...again.__errors];
+    await ctx.close();
+    return { halted, reloaded, sent, dialogs: again.__dialogs, errors };
+  },
+  // 단 경계 표지 뒤 좌석 전환 중에 끊겼다 — 2단의 심의 사건은 아직 없지만 엔진은 다음 단을 잇는다고 알렸다
+  async seat_change_cut(browser) {
+    const page = await open(browser);
+    await start(page);
+    await stage1Done(page, { stage2: false });
+    await page.evaluate(() => window.__break('network error'));
+    await page.locator('.chat-error').waitFor();
+    return { halted: await look(page), errors: page.__errors };
+  },
+  // 결정문을 받은 뒤 끊겼다 — 한 단 심의는 결정문이 끝이라 멈춤이 없다(종전 그대로). 다단 심의도 마지막 단의 결정문 뒤에는 없다
+  async decided_cut(browser) {
+    const one = await open(browser);
+    await start(one);
+    await push(one, frame('delib', { kind: 'stage', stage: 'decide' }));
+    await push(one, frame('delib', { kind: 'finishing' }));
+    await push(one, frame('delib', { kind: 'decision', text: '결정문 — 보강한다' }));
+    await one.getByText('결정문 — 보강한다').first().waitFor();
+    await one.evaluate(() => window.__break('network error'));
+    await one.locator('.chat-error').waitFor();
+    const multi = await open(browser);
+    await start(multi);
+    await stage1Done(multi);
+    await push(multi, frame('delib', { kind: 'finishing' }));
+    await push(multi, frame('delib', { kind: 'decision', text: '2단 결정문' }));
+    await multi.getByText('2단 결정문').first().waitFor();
+    await multi.evaluate(() => window.__break('network error'));
+    await multi.locator('.chat-error').waitFor();
+    return { single: await look(one), multi: await look(multi), errors: [...one.__errors, ...multi.__errors] };
   },
   // 실행 id 를 싣지 않는 옛 에이전트 — 멈출 열쇠가 없다(대화 id 만으로는 보내지 않는다)
   async no_run(browser) {
@@ -363,6 +443,37 @@ def test_다단_심의는_앞_단의_결정문_뒤_다음_단에서_다시_멈�
     s = seen("next_stage")
     assert s["tail"]["btn"] is None
     assert s["stage2"]["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"}, s["stage2"]
+    # 2단 도중에 받기가 끊겼다 — 1단 결정문이 보여도 2단은 서버에서 아직 돈다(종전엔 결정문이 있으면 끊긴 칸으로 보지 않아 단추가 사라졌다)
+    cut2 = s["cut2"]
+    assert cut2["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"} and cut2["error"], cut2
+    assert cut2["note"] == "받기가 끊겼습니다 — 심의는 서버에서 아직 돌 수 있습니다." and "1단 결정문" in cut2["decision"], cut2
+
+
+def test_다단_심의의_실제_차례에서_2단_도중에_끊기면_멈춤이_남고_새로고침_뒤에도_그_실행으로_멈춘다(seen):
+    """/시뮬심의 는 단마다 done 을 내고(1단의 done 에서 화면은 받기를 마친다) 단 경계 표지(checkpoint) 뒤 2단을 돈다. 2단 도중에 받기가 끊기면
+    보이는 결정문은 1단의 것이고 2단은 서버에서 아직 돈다 — 멈춤이 남아야 한다(10-31 A24 검토가 남긴 화면 틈 1)."""
+    s = seen("stage2_cut")
+    for look in (s["halted"], s["reloaded"]):
+        assert look["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"}, look
+        assert look["note"] == "받기가 끊겼습니다 — 심의는 서버에서 아직 돌 수 있습니다." and look["error"], look
+        assert "1단 결정문" in look["decision"] and look["stopped"] == "", look
+    assert [c["body"] for c in s["sent"]] == [{"conversation_id": "srv-1", "run_id": "run-1"}], "그 심의의 실행 id 로 멈춘다"
+    (asked,) = s["dialogs"]
+    assert "받기가 끊긴 뒤 서버에서 나온 발언은 남지 않고" in asked, asked
+
+
+def test_단_경계_표지_뒤_좌석_전환_중에_끊겨도_멈춤이_남는다(seen):
+    """엔진은 1단 결정문 뒤 단 경계 표지(checkpoint)를 내고 좌석 전환(도구 호출)을 한 뒤 2단을 연다 — 그사이에 끊겨도 다음 단은 서버에서 돈다."""
+    h = seen("seat_change_cut")["halted"]
+    assert h["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"} and h["error"] and "1단 결정문" in h["decision"], h
+
+
+def test_결정문을_받은_뒤_끊긴_한_단_심의와_마지막_단을_마친_다단_심의에는_멈춤이_없다(seen):
+    """한 단 심의는 결정문이 끝이다(종전 규칙 그대로) — 다단 심의도 마지막 단의 결정문 뒤에는 다음 단이 없다."""
+    s = seen("decided_cut")
+    for look in (s["single"], s["multi"]):
+        assert look["btn"] is None and look["note"] == "" and look["error"], look
+    assert "2단 결정문" in s["multi"]["decision"]
 
 
 def test_실행_id_가_없으면_멈춤_단추가_없다(seen):

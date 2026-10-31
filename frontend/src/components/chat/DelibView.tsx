@@ -481,9 +481,11 @@ export function DelibView({ msg }: { msg: Message }) {
   const can = useCan();
   const { messages } = useChat();
   const decision = useMemo(() => d.decision ?? '', [d.decision]);
-  // 받기가 끊긴 채 결정문 없이 멈춰 보이는 대화의 마지막 심의 — 서버에서 아직 돌 수 있다(멈춤 단추를 남긴다).
+  // 받기가 끊긴 채 끝나지 않은 대화의 마지막 심의 — 서버에서 아직 돌 수 있다(멈춤 단추를 남긴다). 끝나지 않았다 — 결정문이 아직 없다(한 단 심의는
+  // 결정문이 끝이다 — 결정문 뒤에는 단추를 내지 않는다), 또는 다단 심의(/시뮬심의)의 앞 단 결정문 뒤에 다음 단이 열렸다(nextStage).
+  const unfinished = (!d.decision && !d.outcome) || Boolean(d.nextStage);
   const cut =
-    !live && !d.decision && !d.outcome && !d.cancelled && delibMayStillRun(msg.error) && messages[messages.length - 1]?.id === msg.id;
+    !live && unfinished && !d.cancelled && delibMayStillRun(msg.error) && messages[messages.length - 1]?.id === msg.id;
   // 멈출 열쇠(실행 id)가 있고, 의장이 결정문을 낸 뒤의 마무리가 아닐 때만 — 마무리에는 에이전트가 멈추지 않는다(다 만든 결정문을 버리지 않게).
   const stoppable = (live || cut) && !d.cancelled && !d.finishing && Boolean(d.runId);
   return (

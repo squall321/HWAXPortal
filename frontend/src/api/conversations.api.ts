@@ -166,6 +166,9 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       const stopNote = cx ? String(cx.message ?? '') : '';
       const dr = (m.meta as { delib_run?: unknown } | null)?.delib_run;
       const rid = typeof dr === 'string' && dr ? dr : runId;
+      // 다단 심의(/시뮬심의)가 다음 단을 도는 중에 받기가 끊겼다 — 포털 중계가 meta.delib_next_stage 로 남긴다. 답의 글은 앞 단의 결정문이고
+      // 심의는 서버에서 아직 돌 수 있다(라이브의 nextStage 와 같은 뜻 — 끝난 심의로 읽으면 '멈춤' 이 사라진다).
+      const nx = (m.meta as { delib_next_stage?: unknown } | null)?.delib_next_stage === true;
       out.push({
         id: newId(),
         role: 'assistant',
@@ -176,6 +179,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
           ...(cx && m.content === stopNote ? {} : { decision: m.content }),
           ...(cx ? { cancelled: { message: stopNote } } : {}),
           ...(rid ? { runId: rid } : {}),
+          ...(nx ? { nextStage: true } : {}),
           totalRounds: Math.max(...local.map((t) => t.round)),
           ...(Array.isArray(ev) && ev.length
             ? {
