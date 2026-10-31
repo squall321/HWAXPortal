@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { fetchHubApps, saveHubApp, type HubApps } from '../api/access.api';
 import '../styles/tokenpage.css';
 
-export default function HubAppsPanel() {
+// onChanged — 저장이 된 뒤 부른다(같은 탭의 보기 칸이 끈 앱을 뺀 영역 수를 다시 읽는다)
+export default function HubAppsPanel({ onChanged }: { onChanged?: () => void }) {
   const [data, setData] = useState<HubApps | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export default function HubAppsPanel() {
     setError(null);
     try {
       setData(await saveHubApp(app, muted));
+      onChanged?.();
     } catch (e) {
       setError((e as Error).message);
       // 실패하면 서버의 지금 상태로 다시 그린다 — 옛 화면을 들고 있으면 다른 탭에서 바꾼 것과 어긋난 채 남는다.

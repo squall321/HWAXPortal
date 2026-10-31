@@ -98,6 +98,46 @@ export async function saveHubApp(app: string, muted: boolean): Promise<HubApps> 
   return (await res.json()) as HubApps;
 }
 
+/** 개인 Claude 보기 — 허브 도구 목록(tools/list)만 줄인다. 검색 · 부르기 · 권한은 그대로다(docs/request-1029 E-4). */
+export type HubViewMode = 'full' | 'bundle' | 'light';
+
+export interface HubViewArea {
+  area: string;
+  label: string;
+  description: string;
+  /** 내 권한 안의 도구 수 — 끈 앱 · 형제 허브 사본 · 허브 자체 도구는 세지 않는다(묶음이 실제로 싣는 셈). */
+  tool_count: number;
+}
+
+export interface HubView {
+  mode: HubViewMode;
+  /** 묶음일 때 고른 영역(게이트웨이 tool_areas.json 의 키). */
+  areas: string[];
+  /** 저장해 둔 영역 가운데 지금 게이트웨이에 없는 것. */
+  unknown_areas: string[];
+  area_options: HubViewArea[];
+  /** 영역이 없는 도구 수 — 어느 묶음에도 들지 않는다(찾기로 닿는다). */
+  unclassified: number;
+  note: string;
+}
+
+export async function fetchHubView(): Promise<HubView> {
+  const res = await apiFetch('/auth/access/view');
+  if (!res.ok) throw await detail(res, '보기 설정을 불러오지 못했습니다.');
+  return (await res.json()) as HubView;
+}
+
+/** 보기를 바꾼다 — 서버가 영역을 게이트웨이 키로 확인하고 게이트웨이 캐시를 바로 깬다(새 연결부터 먹는다). */
+export async function saveHubView(mode: HubViewMode, areas: string[]): Promise<HubView> {
+  const res = await apiFetch('/auth/access/view', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode, areas }),
+  });
+  if (!res.ok) throw await detail(res, '보기를 저장하지 못했습니다.');
+  return (await res.json()) as HubView;
+}
+
 export async function fetchAccessPolicy(): Promise<AccessPolicy> {
   const res = await apiFetch('/auth/access/policy');
   if (!res.ok) throw await detail(res, '권한 정책을 불러오지 못했습니다.');
