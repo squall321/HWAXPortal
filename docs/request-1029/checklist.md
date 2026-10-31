@@ -53,9 +53,26 @@
 ## 4차(D-7 뒤 — 재시험 숫자가 필요 없는 E-1 · E-3 · E-6 은 사용자 지시 10-29 로 당긴다, C-17)
 
 - [x] E-1 권한표에 행 없는 백엔드 알림(update-all §6) — 이미 있다(10-01 3b61d63 '권한 표 대조' ✗ · 시험 test_update_all_access_table.py, C-25)
-- [ ] E-2 앱 역할 칸(정본 · 형제 · 시험) — 순위 · 접기 · 노출
+- [x] E-2 앱 역할 칸(정본 · 형제 · 시험) — 순위 · 접기 · 노출([design-e2-e4.md](design-e2-e4.md) 1.4 · 사용자 결정 10-31 권장안 그대로 — C-32 ~ C-37)
+  - [x] E2-1 역할 읽기 · 보이기 — 가족 · 비코어 · 시험 · `/health core_vocab.roles` · `list_tool_apps` · `/tools-map` · 검색 줄의 `role`(HWAXMcpGateway 9b37b31)
+  - [x] E2-2 가족 접기 — 원래 이름으로 한 줄 · `same_in` 의 `differs` · 설명이 같으면 기준본과 바이트까지 같다(같은 커밋, C-34)
+  - [x] E2-3 가족은 늘 접두 — 옛 맨 이름은 호출 별칭으로 남기고 알린다(Q-2 — C-33) · 가족 · 형제 소개 줄이 바뀌면 다시 집계(같은 커밋)
+  - [x] E2-4 형제 소개 줄 칸 — 게이트웨이(같은 커밋) · 포털 꼴 시험(형제에만 · 120자) · 표 설명(4ebf32e) — 문안은 운영자(아래 사람 몫)
+  - [x] E2-5 비코어 낮추기 손잡이 `noncore_demote`(기본 끔 — C-36) · `weights.noncore` 0.5 · `/search-eval` 의 `+noncore_demote` 판(같은 커밋)
+  - [~] E2-6 형제 순위 신호(S-A) — 미룸(설계 1.4 — cae00 M-5 · M-6 에서 형제가 잘못 오르거나 밀릴 때만)
+  - [ ] cae00 반영 뒤 M-2 · M-3 다시 — 바뀐 이름 0(`roles.family_prefixed.count`) · 접힌 줄 그대로(사람 · cae00 세션, server-setup 8절)
+  - [ ] 비코어 낮추기 켜기 — cae00 `/search-eval` 의 `+noncore_demote` 판을 본 뒤 박스 덧씌우기(사람, Q-1 · server-setup 8.3)
+  - [ ] 형제 소개 줄 문안 — 운영자가 cae00 `core_vocab.local.json` 에(사람, Q-3 — M-8 이 바탕)
 - [x] E-3 오래 안 불린 도구 보고(30일 · 앱별) — 게이트웨이 `tool_usage_report.py`(8b6af6d, C-26)
-- [ ] E-4 개인 Claude 묶음 · 가벼운 모드
+- [x] E-4 개인 Claude 묶음 · 가벼운 모드([design-e2-e4.md](design-e2-e4.md) 2.4 · 사용자 결정 10-31 — C-32 · C-38 · C-39)
+  - [x] E4-1 · E4-2 게이트웨이 — 보기 셋을 tools/list 에만(`_listed_tools`) · 머리 > 포털 설정 > 전체 · 웹 챗 · 절차 · GW_TOKEN 은 전체 · `list_tool_apps` 의 `view` ·
+    `/health tools_list_by_view`(HWAXMcpGateway 4c17be8)
+  - [x] E4-3 포털 저장 · 창구 — `users.hub_view` · `GET · PUT /auth/access/view` · 권한 응답 `view`(b0a050b)
+  - [x] E4-4 포털 화면 — 토큰 화면 '허브에 보일 앱' 탭 위 보기 고르기 · 영역 칸 · 알림 넷(2444a89) — 프론트 형식 검사(`tsc -b`) 통과
+  - [x] E4-5 리포 `.mcp.json` 보기 머리(늘 full) · mcp-app-toggle PLAN '2단계 대신 보기' · 업데이트 이력 · cae00 안내(server-setup 8절)
+  - [ ] 임시 포털 캡처로 좁은 화면 확인 · 화면 빌드 + Drive(cae00 은 짓지 못한다) — 올릴 때
+  - [ ] dev 실검증 — 개인 PAT 로 보기 셋(게이트웨이 · 포털 재기동은 사용자 확인 뒤 — 다른 세션의 미반영 커밋도 켜진다)
+  - [ ] cae00 M-3 · M-4(목록 크기 · 개인 PAT 영역 분포) · Q-11(쓰는 클라이언트 · 불편) — 사람 · cae00 세션(설계 5절)
 - [ ] E-5 전문가 고르기 기준선(누설 없는 평가셋) → 페르소나 ↔ 분야 ↔ 코어 타입 링크 · AI 데이터 허브 요청서(바인딩 저장소 하나 · 지워진 키)
 - [x] E-7 검색 보정 옵션화 — 손 동의어 · 낱말 묶음 · 가중치를 설정으로(항목마다 owner · source_fix) · 박스 덧씌우기 · 묶음별 끄기 · 덧씌우기 지문(/health · update-all · 평가) · 규칙별 기여 기록 · 평가 '보정 끔' 비교(D-8 — QA 뒤)
 - [x] E-8 플랫폼별 피드백 보고서 — 보정 덕에만 찾아진 질의 · 인자 설명 · 안 불린 도구 · 큰 응답 · 실패, cae00 기록으로 cae00 에서 · 고쳐지면 규칙을 걷는다(D-8 — QA 뒤)

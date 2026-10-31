@@ -1,7 +1,7 @@
 # 10-29 웹 챗 온톨로지 QA 후속 — cae00 반영 안내(수정 사항 · 받을 때 주의점 · 확인 · 사람 몫)
 
 cae00 에서 이 묶음(1 · 2 · 3차와 4차 일부, 2026-10-29 — 저녁에 더한 검색 고리 E-7 ~ E-9 는 7절)을 받기 전에 읽는다. 무엇을 왜 바꿨는지는 같은 폴더의 [PLAN.md](PLAN.md) ·
-[checklist.md](checklist.md) · [context-notes.md](context-notes.md)(C-1 ~ C-29)가 정본이다. 받는 길은 그대로
+[checklist.md](checklist.md) · [context-notes.md](context-notes.md)(C-1 ~ C-40 — E-2 · E-4 는 8절)가 정본이다. 받는 길은 그대로
 `git pull && update-all` 이다 — 포털 화면 · StepForge 는 dev 가 올린 Drive 판을 받는다.
 
 ## 1. 무엇이 바뀌었나
@@ -176,3 +176,64 @@ dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다.
 | 코어 어휘표 덧씌우기 | `backend/config/core_vocab.local.json` 을 지운다 | 다음 검색 · 챗 턴부터 |
 | 질의 기록 모으기 | 게이트웨이를 띄우는 프로세스의 env 에 `GATEWAY_TOOL_QUERY_LOG=0`(창은 `GATEWAY_TOOL_QUERY_LOG_DAYS`, 기본 30) | 게이트웨이 재기동 |
 | 박스 정답 하나 | 화면의 '표시 지우기' | 즉시 |
+
+## 8. 앱 역할 · 개인 Claude 보기(E-2 · E-4, 10-31)
+
+어휘표의 앱 역할(가족 = 정본 + 형제 · 비코어 · 시험)을 게이트웨이가 다 읽어 검색 순위 · 접기 · 노출에 쓰고(E-2), 개인 Claude 의 허브 도구 목록을 보기 셋
+(전체 · 묶음 · 가벼운)으로 고르게 한다(E-4). 설계는 [design-e2-e4.md](design-e2-e4.md), 결정은 [context-notes.md](context-notes.md) C-32 ~ C-40 이다.
+**기본값에서는 검색 답 · 목록이 지금과 같다** — 비코어 낮추기는 꺼진 채 들어오고, 보기는 모두 전체로 시작한다. 바뀌는 것은 허브 가족 도구의 이름
+규칙(늘 접두 — cae00 은 셋 다 이미 접두라 바뀔 이름 0 으로 본다)과 새 칸들이다.
+
+| 리포 | 받을 판 | 바뀐 것 |
+|---|---|---|
+| 게이트웨이 | 이 묶음이 든 master(`9b37b31` · `4c17be8` · `cfb32a8`) | 역할 읽기 · `/health core_vocab.roles` · `role` 칸 · 가족 접기 · 가족은 늘 접두(옛 맨 이름은 호출 별칭) · 형제 소개 줄 칸 · 비코어 낮추기 손잡이(끔) · 보기 셋(tools/list 에만) · `list_tool_apps` 의 `view` · `/health tools_list_by_view` |
+| 포털 | 이 문서가 든 main | `users.hub_view` 칸(기동 때 저절로 생긴다) · `GET · PUT /auth/access/view` · 권한 응답 `view` · 토큰 화면 '허브에 보일 앱' 탭 위 보기 고르기(화면은 Drive 판) · 리포 `.mcp.json` 의 `X-HWAX-View` · 어휘표 꼴 시험(형제 소개 줄) |
+| 에이전트 서버 | 바뀐 것 없음 | 웹 챗은 GW_TOKEN 이라 늘 전체다. `/tools-map` 의 앱 줄에 `role` 이 더 붙는다(읽지 않는다) |
+
+### 8.1 받기 전에
+
+- **게이트웨이 · 포털을 같은 판으로 받는다(update-all 한 번).** 새 포털 화면이 옛 게이트웨이와 붙으면 보기 칸의 영역 수에서 형제 허브가 빠지지 않고(옛 `/tools-map` 에
+  `role` 이 없다), 고른 보기는 저장되지만 게이트웨이가 읽지 않아 전체로 돈다. 옛 포털과 새 게이트웨이는 권한 응답에 `view` 가 없어 전체로 돈다(안전한 쪽).
+- 받기 전 5절의 M-2(허브 가족 이름)를 한 번 재 두면 받은 뒤 바뀐 이름을 바로 견줄 수 있다(재지 않았어도 받은 뒤 `/health` 가 말한다 — 8.2).
+
+### 8.2 받은 뒤 — 확인
+
+- **허브 가족 이름** — `curl -s --noproxy '*' 127.0.0.1:9110/health | python3 -c 'import json,sys;print(json.load(sys.stdin)["core_vocab"]["roles"])'`
+  - `family` — `rootdesigndatahub` · `failuretrace` · `caegroupdatahub` 가 모두 `True`(이 박스 백엔드에 있다). `False` 면 어휘표 키가 박스의 백엔드 키와 다르다 —
+    덧씌우기(`backend/config/core_vocab.local.json`)의 키를 고친다.
+  - `noncore` — 박스에 붙은 비코어 앱(fmea · arp · odb-hub · matnexus · reportarchive · componentcore)이 `True`.
+  - `family_prefixed.count` — **0 이어야 한다**(허브 셋이 같은 판의 같은 도구를 내면 셋 다 이미 접두다). 0 이 아니면 `names` 의 도구가 이번에 맨 이름에서 접두
+    이름으로 바뀌었다 — 한 허브만 판을 올렸거나(판 어긋남) 허브가 하나만 붙어 있다. 옛 맨 이름도 부르면 그대로 닿는다(호출 별칭). 그 이름을 외운 클라이언트 ·
+    허용 규칙만 접두 이름으로 고친다. 게이트웨이 로그에도 '허브 가족은 늘 접두를 단다' 한 줄이 있다.
+- **검색 손잡이** — `/health` 의 `search_tuning` 에 `switches_off: []` 그대로이고 `switches_on` 이 없다(비코어 낮추기는 꺼져 있다). 지문(`fingerprint`)은 새
+  손잡이 칸 때문에 바뀐다 — update-all §7 의 '검색 손잡이' 줄에 새 지문이 보인다(덧씌우기가 없으면 기본값 지문과 같다).
+- **보기** — 토큰 화면 '허브에 보일 앱' 탭 위에 '개인 Claude 보기' 칸이 보인다(화면 Drive 판을 받은 뒤). `/health` 의 `tools_list_by_view` 가 기동 뒤 보기별
+  tools/list 수를 센다(처음엔 모두 `full`).
+
+### 8.3 사람 몫
+
+- **비코어 낮추기를 켤지(결정 Q-1)** — 5절 M-6 의 정답(HG-01 원문 여덟 등)을 단 뒤 관리 → '도구 검색 검토' 의 '평가 돌리기'(또는 `run.py live --detail`)에서
+  `+noncore_demote` 판을 본다. doc · box 의 hit@5 를 떨어뜨리지 않고 코어 box 쌍을 올리면 게이트웨이 `search_tuning.local.json` 에
+  `{"switches": {"noncore_demote": true}}` 를 적는다(재기동 없이 다음 검색부터). 켜면 `/health` 에 `switches_on: ["noncore_demote"]` 가 붙고, 질의 기록 `via` 에
+  `demote:noncore` 가 남는다. 그 뒤 16문항 재시험(OT-06 ~ 10 의 첫 도구가 코어인지). 끄려면 그 줄을 지운다.
+- **형제 소개 줄 문안(결정 Q-3)** — 운영자가 `~/Projects/HWAXPortal/backend/config/core_vocab.local.json` 에 쓴다. 라벨로 시작하고 120자 이내로, 사내 과제 이름 ·
+  사람 이름은 넣지 않는다(에이전트 서버는 '[' 로 시작하는 설명에 앱 라벨을 다시 붙이지 않는다).
+
+  ```json
+  {"apps": {"failuretrace": {"tagline": "FailureTrace — <이 허브가 담은 것 한 줄>"},
+            "caegroupdatahub": {"tagline": "CAE 그룹 Datahub — <이 허브가 담은 것 한 줄>"}}}
+  ```
+
+  저장하면 다음 재활 회차(60초)에 다시 집계해 그 형제 도구 설명 앞에 붙는다. `/health core_vocab.roles.sibling_taglines` 에 그 키가 보인다. 웹 챗 묶음의
+  FailureTrace 도구 넷의 설명이 줄 길이만큼 는다. 바탕은 5절 M-8(허브의 자기소개)이다. Datahub DP-03(설치 소개를 도구 설명에)이 들어오면 이 줄을 걷는다.
+- **보기 안내** — 개인 Claude 를 쓰는 사람에게 '허브에 보일 앱' 탭의 보기 칸을 알린다(기본은 모두 전체 — 결정 Q-9). 열린 세션은 재연결해야 목록이 바뀐다.
+  리포에서 Claude Code 로 심의 · 리스크 워크플로를 돌리는 사람은 리포 `.mcp.json` 이 늘 full 을 청하므로 영향이 없다(`HWAX_GATEWAY_VIEW` 로만 바꾼다).
+
+### 8.4 되돌리기
+
+| 무엇 | 끄는 법 | 반영 |
+|---|---|---|
+| 비코어 낮추기 | `search_tuning.local.json` 의 `noncore_demote` 줄을 지운다 | 다음 검색부터 |
+| 형제 소개 줄 | `core_vocab.local.json` 의 그 `tagline` 을 지운다(`null`) | 다음 재활 회차 |
+| 한 사람의 보기 | 그 사람이 토큰 화면에서 '전체' 로 저장(또는 연결 머리 `X-HWAX-View: full`) | 새 연결부터 |
+| 허브 가족의 늘 접두 | 손잡이가 없다 — 옛 맨 이름은 호출 별칭으로 늘 닿는다(C-33). 목록에서도 옛 이름이 꼭 필요하면 dev 에 알린다 | — |
