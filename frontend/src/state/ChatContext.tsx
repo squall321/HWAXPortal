@@ -27,10 +27,11 @@ import { useCan } from '../auth/useCan';
 import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { isRoutineTerminal, mergeRoutine } from '../components/chat/routine';
-import { ROUTINE_STOPPED_BEFORE_RUN } from '../lib/chatErrors';
+import { ROUTINE_STOPPED_BEFORE_RUN, delibMayStillRun } from '../lib/chatErrors';
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import type { AttachedImage } from '../components/chat/imageAttach';
 import { buildHistory } from '../components/chat/history';
+import { startsWithDelibTrigger } from '../components/chat/delibTaxonomy';
 import type { UploadNotice } from '../components/chat/uploadNotice';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import { panelPointer } from '../components/chat/panels';
@@ -178,8 +179,9 @@ interface ChatContextValue {
   /** 보내기 결과를 대화에 남긴다 — 어시스턴트 알림 한 건 + 업로드 근거(docs/chat-ppt A2 · PP-D3). 대화가 없으면 새로 만든다.
    *  서버 사본에도 붙인다(답을 받는 중인 대화면 그 답이 저장된 뒤). 종전엔 결과가 업로드 패널 안에서만 끝나 다음 질문이 몰랐다. */
   addUploadNotice: (n: UploadNotice) => void;
-  /** 받기가 끊긴 심의를 서버에서 멈췄다(포털 POST /agent/deliberate/cancel 200) — 그 메시지에 멈춤을 적는다(브라우저 사본에도 남는다).
-   *  받는 중인 심의는 멈춤 사건(SSE delib cancelled)이 적으므로 부르지 않는다(triage A24). */
+  /** 심의를 서버에서 멈췄다(포털 POST /agent/deliberate/cancel 200) — 그 메시지에 멈춤을 적는다(브라우저 사본에도 남는다). 받기가 끊겼다는
+   *  오류 상자는 걷는다(엔진이 알린 오류는 둔다). 그 칸을 아직 받는 중이면 멈춤 사건(SSE delib cancelled)이 적고, 사건 전에 턴이 끝나면(끊김 · ■)
+   *  이 글로 적는다(triage A24). */
   markDelibStopped: (msgId: string, message: string) => void;
   stop: () => void;
   /** 지금 도는 스트림의 생존 신호(마지막 프레임·마지막 진행 시각). 돌지 않으면 null. 상태가 아니라 읽는 함수다 —
@@ -206,6 +208,9 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
   const d: DelibData = { ...(prev ?? {}) };
   // 실행 id — 에이전트 서버가 첫 심의 사건에 싣는다(triage A24). '멈춤' 이 이 심의 하나만 짚는 열쇠다.
   if (typeof e.run_id === 'string' && e.run_id && !d.runId) d.runId = e.run_id;
+  // 다단 심의(/시뮬심의) — 앞 단의 결정문 뒤에 다음 단이 열렸다(엔진의 단 경계 표지 checkpoint, 또는 결정문 뒤에 온 단 사건). 그 단의 결정문에서
+  // 내린다. 한 단 심의는 결정문 뒤에 단 사건이 오지 않아 서지 않는다 — 받기가 끊긴 칸의 '멈춤' 이 이것으로 남는다(DelibView).
+  if (e.kind === 'checkpoint' || (d.decision && (e.kind === 'stage' || e.kind === 'personas' || e.kind === 'turn'))) d.nextStage = true;
   switch (e.kind) {
     case 'stage': {
       const stage = String(e.stage ?? '');
@@ -255,6 +260,7 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'decision':
       d.decision = String(e.text ?? '');
       d.finishing = false; // 마무리가 끝났다 — 다단 심의는 다음 단에서 다시 멈출 수 있다
+      d.nextStage = false; // 열린 단이 결정문을 냈다 — 또 다음 단이 있으면 엔진이 표지를 다시 낸다
       break;
     case 'plain':
       d.plain = String(e.text ?? '');
@@ -277,6 +283,12 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
       break;
   }
   return d;
+}
+
+/** 멈춘 심의 칸 — 멈춤을 적고, 받기가 끊겼다는 오류(스트림 절단 · ■ · 중계의 침묵 한도 — 심의가 서버에서 아직 돌 수 있다는 뜻)는 걷는다. 멈춤이
+ *  그 칸의 끝이다. 엔진이 알린 오류는 그대로 둔다(가리지 않는다). */
+function stoppedDelib(m: Message, message: string): Message {
+  return { ...m, delib: { ...m.delib, cancelled: { message } }, ...(delibMayStillRun(m.error) ? { error: undefined } : {}) };
 }
 
 /** 이어하기에 실을 **미해결 쟁점** 블록 — 누가 누구의 무엇을 반박했는지.
@@ -451,6 +463,10 @@ export function ChatProvider({
   const stopUiRef = useRef<(() => void) | null>(null);
   // 스트리밍 중인 대화 id — 그 대화가 삭제되면 스트림도 중단하기 위해 추적.
   const streamConvRef = useRef<string | null>(null);
+  // 받는 중인 턴의 답 id — 멈춤(markDelibStopped)이 받는 중인 칸인지 가른다. 그 턴의 끝 정리(settle)가 지운다.
+  const liveBotRef = useRef<string | null>(null);
+  // 받는 중에 받아들여진 멈춤(포털 200) — 보통은 곧 오는 멈춤 사건이 칸에 적는다. 사건 전에 턴이 끝나면(끊김 · ■) 끝 정리가 이 글로 적는다.
+  const pendingStopRef = useRef<{ msgId: string; message: string } | null>(null);
   // 도는 스트림의 생존 신호 — 프레임이 올 때마다 시각만 적는다. 여기서 스트림을 끊지 않는다(표시용).
   const liveRef = useRef<StreamLive | null>(null);
   const streamLive = useCallback(() => liveRef.current, []);
@@ -719,8 +735,13 @@ export function ChatProvider({
     );
   }, []);
 
-  // 멈춤 응답을 기다리는 동안 다른 대화로 옮겨 갔어도 그 메시지가 든 대화에 적는다(활성 대화에 묶지 않는다).
+  // 멈춤 응답을 기다리는 동안 다른 대화로 옮겨 갔어도 그 메시지가 든 대화에 적는다(활성 대화에 묶지 않는다). 그 칸을 아직 받는 중이면 지금 적지
+  // 않고 맡겨 둔다 — 곧 오는 멈춤 사건이 엔진의 글로 적고, 사건 전에 턴이 끝나면(끊김 · ■) 끝 정리(settle)가 이 글로 적는다(pendingStopRef).
   const markDelibStopped = useCallback((msgId: string, message: string) => {
+    if (liveBotRef.current === msgId) {
+      pendingStopRef.current = { msgId, message };
+      return;
+    }
     setConversations((prev) =>
       prev.map((c) =>
         !c.messages.some((m) => m.id === msgId)
@@ -728,9 +749,7 @@ export function ChatProvider({
           : {
               ...c,
               updatedAt: Date.now(),
-              messages: c.messages.map((m) =>
-                m.id === msgId && m.delib ? { ...m, delib: { ...m.delib, cancelled: { message } } } : m,
-              ),
+              messages: c.messages.map((m) => (m.id === msgId && m.delib ? stoppedDelib(m, message) : m)),
             },
       ),
     );
@@ -882,6 +901,7 @@ export function ChatProvider({
       const controller = new AbortController();
       abortRef.current = controller;
       streamConvRef.current = convId;
+      liveBotRef.current = botId;
       const cid = convId;
       // 이 스트림의 끝 — 받는 중에 온 보내기 알림이 서버 사본에 붙을 때를 기다린다(addUploadNotice)
       let endStream: () => void = () => undefined;
@@ -899,7 +919,15 @@ export function ChatProvider({
       const settle = (last: (m: Message) => Message) => {
         if (settled) return;
         settled = true;
-        patch(cid, botId, last);
+        // 받는 중에 받아들여진 멈춤인데 멈춤 사건 없이 이 턴이 끝났다(끊김 · ■) — 그 응답으로 칸에 멈춤을 적는다(markDelibStopped). 적지 않으면
+        // 받기가 끊겼다는 상자가 남고 새로고침 뒤 '멈춤' 이 다시 났다. 사건이 왔으면(cancelled) 엔진의 글 그대로 둔다.
+        const pend = pendingStopRef.current?.msgId === botId ? pendingStopRef.current : null;
+        if (pend) pendingStopRef.current = null;
+        if (liveBotRef.current === botId) liveBotRef.current = null;
+        patch(cid, botId, (m) => {
+          const n = last(m);
+          return pend && n.delib && !n.delib.cancelled ? stoppedDelib(n, pend.message) : n;
+        });
         setStreaming(false);
         setRoutineStreaming(false);
         setRoutineClosed(false);
@@ -934,8 +962,11 @@ export function ChatProvider({
 
       // 심의 페이지 등에서 서버 트리거 프리픽스를 자동 부착 — "첫 발화"에만(이후 발화는
       // 일반 챗으로 흘려 심의 로그 위에서 GLM 이어가기가 되게 한다). 직접 입력했으면 존중.
+      // 이미 심의 트리거(/시뮬심의 · /시험계획 …)로 시작하면 붙이지 않는다 — 방법 메뉴의 해석 · 시험 · 구축 계획이 '/심의 /시뮬심의 …' 로 나가
+      // 에이전트가 일반 심의로 열었다(트리거는 글 머리로 가른다).
       const applyPrefix = sendPrefix && (isFirstTurn || text.startsWith(sendPrefix.trim()));
-      const outbound = applyPrefix && !text.startsWith(sendPrefix.trim()) ? sendPrefix + text : text;
+      const outbound =
+        applyPrefix && !text.startsWith(sendPrefix.trim()) && !startsWithDelibTrigger(text) ? sendPrefix + text : text;
 
       void (async () => {
         // 서버 정본 확보 — serverKind 설정 시 이 대화의 서버 id 를 보장(없으면 생성).
@@ -1262,7 +1293,8 @@ export function ChatProvider({
       return;
     }
     const trig = sendPrefix.trim();
-    const text = trig && !lastUser.text.startsWith(trig) ? sendPrefix + lastUser.text : lastUser.text;
+    // 이미 심의 트리거로 시작하는 발화(/시뮬심의 · /시험계획 …)는 그대로 — 첫 발화와 같은 규칙(sendMessage)
+    const text = trig && !lastUser.text.startsWith(trig) && !startsWithDelibTrigger(lastUser.text) ? sendPrefix + lastUser.text : lastUser.text;
     // 다시 보내는 것은 그 발화 그대로다 — 그새 켜 둔 루틴을 싣지 않는다(null)
     sendMessage(text, undefined, null);
   }, [conversations, activeId, streaming, sendMessage, sendPrefix, resumeRoutine, can, setArmedRoutine]);

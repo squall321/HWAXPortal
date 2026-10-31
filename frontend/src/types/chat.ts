@@ -96,6 +96,10 @@ export interface DelibData {
   /** 의장이 결정문을 이미 냈고 마무리(요약 · 쉬운 설명 · Report Archive 저장) 중이다 — SSE delib kind=finishing 부터 그 단의 결정문까지.
    *  에이전트는 이때 멈추지 않는다(409 finishing) — '멈춤' 을 거둔다. */
   finishing?: boolean;
+  /** 다단 심의(/시뮬심의 — 1단 메커니즘 → 2단 해석 설계 → 3단 구축 계획)의 앞 단 결정문 뒤에 다음 단이 열렸다 — 엔진의 단 경계 표지(SSE delib
+   *  kind=checkpoint)나 결정문 뒤에 온 단 사건(stage · personas · turn)으로 서고 그 단의 결정문에서 내린다(서버 사본 meta.delib_next_stage).
+   *  보이는 결정문은 앞 단의 것이고 심의는 끝나지 않았다 — 받기가 끊긴 칸에 '멈춤' 이 남는다. 한 단 심의는 서지 않는다(결정문이 끝이다). */
+  nextStage?: boolean;
 }
 // 심의 손잡이(웹 토글) — 켠 것만 서버로 전송, 나머지는 agent-server env 기본값. GLM 리뷰 §5.
 // 불리언=0/1 플래그, chair_bestof=의장 후보 수(1=끔), timeout_s=호출당 타임아웃(초·미지정=기본).
@@ -191,7 +195,7 @@ export interface ThinkEvent {
 
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
 export interface DelibEvent {
-  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome' | 'cancelled' | 'finishing';
+  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome' | 'cancelled' | 'finishing' | 'checkpoint';
   [k: string]: unknown;
 }
 

@@ -63,6 +63,14 @@ export interface JobRouting {
   opts?: Record<string, unknown>; // 추가 delib_opts(예: build_plan). sendMessage 2번째 인자로 병합.
 }
 
+// 심의 트리거 전부 — 에이전트 서버가 글 머리(앞뒤 공백을 뗀 뒤 startswith)로 심의 · 시뮬 다단 · 시험 계획을 가른다. 포털 routes._DELIB_TRIGGERS 와
+// 같은 목록이다(backend tests/test_delib_trigger_prefix.py 가 대조하고, 포털 목록은 test_chat_idle_split 이 에이전트 서버와 대조한다).
+export const DELIB_TRIGGERS = ['/심의', '/deliberate', '/토의', '/시뮬심의', '/시뮬레이션심의', '/simdeliberate', '/시험계획', '/시험설계', '/testplan', '/DOE'] as const;
+
+/** 글이 이미 심의 트리거로 시작하나 — 심의 페이지의 첫 발화 · 다시 시도가 '/심의 ' 를 또 붙이지 않게(붙이면 '/심의 /시뮬심의 …' 가 되어
+ *  에이전트가 일반 심의로 연다). */
+export const startsWithDelibTrigger = (text: string): boolean => DELIB_TRIGGERS.some((t) => text.trim().startsWith(t));
+
 export const JOB_ROUTING: Record<JobId, JobRouting> = {
   diagnosis: { trigger: '/심의 ', chair: 'diagnosis' },
   'option-select': { trigger: '/심의 ', chair: 'option-select' },

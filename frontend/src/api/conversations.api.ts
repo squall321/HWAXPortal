@@ -147,6 +147,16 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ? { key: meta.pinned_agent, ...(typeof meta.pinned_agent_name === 'string' ? { name: meta.pinned_agent_name } : {}) }
         : undefined;
     }
+    // 받기가 끊긴 뒤 멈춤 창구가 남긴 멈춤 답 — 그 실행의 발언 · 앞 단 결정문이 이미 앞 답으로 남아(다단 심의) 발언 없이 따로 왔다. 같은 실행의 앞
+    // 심의 칸에 멈춤으로 붙인다 — 따로 그리면 멈춤 글이 일반 답 말풍선이 되고 그 심의는 끝난 결정문처럼 보였다(멈춘 화면에서는 그 칸에 적힌다).
+    const lone = m.role === 'assistant' && turns.length === 0
+      ? (m.meta as { delib_cancelled?: { message?: unknown; run_id?: unknown }; delib_run?: unknown } | null)
+      : null;
+    const prev = out[out.length - 1];
+    if (lone?.delib_cancelled && prev?.delib?.runId && prev.delib.runId === (lone.delib_run ?? lone.delib_cancelled.run_id)) {
+      out[out.length - 1] = { ...prev, delib: { ...prev.delib, cancelled: { message: String(lone.delib_cancelled.message ?? '') } } };
+      continue;
+    }
     let persona: Message['persona'];
     const am = m.role === 'assistant' ? ((m.meta ?? {}) as Record<string, unknown>) : null;
     if (am && am.upload !== true) {
@@ -166,6 +176,12 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       const stopNote = cx ? String(cx.message ?? '') : '';
       const dr = (m.meta as { delib_run?: unknown } | null)?.delib_run;
       const rid = typeof dr === 'string' && dr ? dr : runId;
+      // 다단 심의(/시뮬심의)가 다음 단을 도는 중에 받기가 끊겼다 — 포털 중계가 meta.delib_next_stage 로 남긴다. 답의 글은 앞 단의 결정문이고
+      // 심의는 서버에서 아직 돌 수 있다(라이브의 nextStage 와 같은 뜻 — 끝난 심의로 읽으면 '멈춤' 이 사라진다).
+      const nx = (m.meta as { delib_next_stage?: unknown } | null)?.delib_next_stage === true;
+      // 결정문 없이 받기가 끝난 심의 — 답의 글은 엔진이 먼저 흘린 앞머리(불량 환기 VOC 등)뿐이다(meta.delib_undecided — 포털 중계). 결정문으로
+      // 읽으면 끝난 심의가 되어 서버에서 아직 도는 심의에 '멈춤' 이 사라진다(라이브 칸에서도 그 글은 결정문이 아니다)
+      const undecided = (m.meta as { delib_undecided?: unknown } | null)?.delib_undecided === true;
       out.push({
         id: newId(),
         role: 'assistant',
@@ -173,9 +189,10 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ts,
         delib: {
           turns: local,
-          ...(cx && m.content === stopNote ? {} : { decision: m.content }),
+          ...((cx && m.content === stopNote) || undecided ? {} : { decision: m.content }),
           ...(cx ? { cancelled: { message: stopNote } } : {}),
           ...(rid ? { runId: rid } : {}),
+          ...(nx ? { nextStage: true } : {}),
           totalRounds: Math.max(...local.map((t) => t.round)),
           ...(Array.isArray(ev) && ev.length
             ? {

@@ -2815,6 +2815,10 @@ async def chat(
         cancelled: dict = {}         # 사람이 멈춘 웹 심의의 멈춤 사건(delib kind=cancelled) — 답 meta.delib_cancelled 로 남긴다
         run_key = ""                 # 웹 심의의 실행 id(첫 심의 사건의 run_id) — 발언 · 답의 meta.delib_run 으로 남기고 멈춤 창구가 이 중계를 찾는다
         stop_rec: dict | None = None  # _DELIB_RELAYS 에 넣은 이 중계의 기록 — 멈춤 창구가 stop_by 를 적는다
+        # 다단 심의(/시뮬심의)의 앞 단 결정문 뒤에 다음 단이 열렸다(엔진의 단 경계 checkpoint · 결정문 뒤의 단 사건 — 화면 mergeDelib 과 같은 판정).
+        # 그 단의 결정문에서 내린다. 선 채로 끝나면(받기가 끊겼다) 답 meta.delib_next_stage 로 남긴다 — 답의 글은 앞 단의 결정문이라, 남기지 않으면
+        # 다른 기기 · 새로고침의 화면이 서버에서 아직 도는 다음 단을 끝난 심의로 읽어 '멈춤' 을 내지 않는다.
+        next_stage = False
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
         # 청크는 글자 경계와도 안 맞는다 — 한글 한 자(3바이트)가 두 청크로 갈리면 청크마다 따로 풀 때 그 자리가 '�' 로
         # 깨져 서버 사본에 들어간다. 발언이 길수록(줄이지 않은 글은 수만 자다) 걸린다. 이어지는 바이트를 쥐고 푼다.
@@ -2830,7 +2834,7 @@ async def chat(
         detached = False             # 루틴 턴 — 브라우저가 떠났다(아래 finally). 그 뒤 프레임은 저장할 것만 모으고 큐에 쌓지 않는다
 
         async def pump() -> None:
-            nonlocal final, decision, user_images, cancelled, run_key, stop_rec, buf, pending, warned
+            nonlocal final, decision, user_images, cancelled, run_key, stop_rec, next_stage, buf, pending, warned
             try:
                 async for frame in source:
                     if store is not None:
@@ -2853,6 +2857,8 @@ async def chat(
                                     # 웹 심의의 실행 id(에이전트가 첫 심의 사건에 싣는다 — triage A24) — 멈춤 창구가 이 중계를 찾게 적는다
                                     run_key = data["run_id"][:64]
                                     stop_rec = _DELIB_RELAYS.setdefault((cid, run_key), {"stop_by": ""})
+                                if k == "checkpoint" or (decision and k in ("stage", "personas", "turn")):
+                                    next_stage = True    # 다단 심의 — 앞 단의 결정문 뒤 다음 단이 열렸다(위 next_stage)
                                 if k == "turn" and isinstance(data.get("say"), str):
                                     # say 는 회의 버블용으로 줄인 글이다. 엔진은 줄였을 때만 줄이지 않은 글(say_full)과
                                     # 그 원래 길이(say_full_chars)를 같은 이벤트에 따로 싣는다 — 서버 사본(다른 기기·이어가기·
@@ -2879,6 +2885,7 @@ async def chat(
                                                   "rebut": data.get("rebut")})
                                 elif k == "decision" and isinstance(data.get("text"), str):
                                     decision = data["text"]
+                                    next_stage = False   # 열린 단이 결정문을 냈다
                                 elif k == "cancelled":
                                     # 사람이 멈춘 웹 심의(에이전트 POST /deliberate/cancel — triage A24) — 서버 사본에 멈춤으로 남긴다. 남기지
                                     # 않으면 발언만 있고 답이 없는 대화가 되어 다른 기기에서는 '비정상 종료' 로 보인다(실패가 아니다).
@@ -3008,7 +3015,12 @@ async def chat(
                                              persona=(str(t["persona"])[:120] if t.get("persona") else None),
                                              round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
                                              meta=(_m or None))
-                            reply = final if final is not None else (decision or "".join(acc))
+                            head = "".join(acc)
+                            reply = final if final is not None else (decision or head)
+                            # 심의가 결정문 · 결과 없이 받기가 끝났는데(끊김 · 멈춤) 엔진이 먼저 흘린 앞머리(불량 환기 VOC 등 token)가 있어 그 글이 답이
+                            # 된다 — 결정문이 아니다. 표지(meta.delib_undecided)가 없으면 다른 기기 · 새로고침의 화면이 결정문으로 읽어 끝난 심의가 되고
+                            # 서버에서 아직 도는 심의에 '멈춤' 을 내지 않는다(serverMessagesToLocal)
+                            head_only = final is None and not decision and bool(head) and "delib" in answered_by
                             if not reply and routine_turn and routine_ptr:
                                 reply = _ROUTINE_EMPTY_REPLY   # 글 없이 끊긴 루틴 턴 — 그래도 남겨 run_id 를 잃지 않는다
                             if not reply and cancelled:
@@ -3021,6 +3033,11 @@ async def chat(
                                     _am["delib_cancelled"] = cancelled
                                 if run_key:
                                     _am["delib_run"] = run_key
+                                if next_stage:
+                                    # 다단 심의의 다음 단이 결정문 없이 열린 채 받기가 끝났다(위 next_stage) — 화면이 끝난 심의로 읽지 않는다(serverMessagesToLocal)
+                                    _am["delib_next_stage"] = True
+                                if head_only:
+                                    _am["delib_undecided"] = True   # 답의 글은 심의의 앞머리뿐이다(위 head_only)
                                 if routine_ptr:      # 분석 루틴 — 네 칸을 늘 싣는다(모르는 값은 null)
                                     _am["routine"] = {k: routine_ptr.get(k) for k in ("run_id", "routine_id", "title", "state")}
                                 if answered_by:      # 띵킹 · 심의가 답했다(위 answered_by) — 발언 없이 끝난 심의도 'delib' 다
