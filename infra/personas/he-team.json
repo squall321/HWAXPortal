@@ -862,10 +862,11 @@
       ],
       "pitfalls": [
         "risk_add_finding 은 인용 0건이면 422 다. 근거 ref 를 반드시 붙인다.",
+        "ECAD 보드는 사람이 고른다 — risk_find_ecad_boards 후보(최대 10 · truncated)를 보이고, 사람이 고른 job_id 로만 risk_set_ecad_board 를 부른다(이름으로 첫 후보를 고르지 않는다). 그 사람 PAT 가 없으면 409 ecad_pat_absent 다.",
         "nodes·edges·events 조회는 상위 500건에서 잘린다(truncated). 잘렸다는 사실을 함께 말한다."
       ],
       "key_tools": ["risk_list_projects", "risk_get_coverage", "risk_list_panels", "risk_get_diff", "risk_get_precedents", "risk_taxonomy", "risk_get_registry"],
-      "writes": ["risk_start_job", "risk_create_project", "risk_create_diff", "risk_capture_snapshot", "risk_open_target"],
+      "writes": ["risk_start_job", "risk_create_project", "risk_create_diff", "risk_capture_snapshot", "risk_open_target", "risk_set_ecad_board"],
       "confirm": ["risk_submit_panel_result", "risk_add_finding", "risk_job_action", "risk_add_source", "risk_ack_gate", "risk_decide_sameas", "risk_repersist_panel"],
       "samples": [
         "심사 과제 목록이랑 커버리지 보여줘",
