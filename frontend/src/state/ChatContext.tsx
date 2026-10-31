@@ -34,6 +34,7 @@ import { buildHistory } from '../components/chat/history';
 import type { UploadNotice } from '../components/chat/uploadNotice';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import {
+  decisionAsOf,
   delibOptsToWire,
   loadActiveId,
   loadConversations,
@@ -1099,6 +1100,10 @@ export function ChatProvider({
         //   의 delibOptsToWire), 켜 둔 채 이어하면 이어하기도 1라운드에서 또 멈춘다.
         //   사용자는 "이어가라고 했는데 또 멈췄다" 를 보게 된다. 여기서 명시적으로 끈다.
         stop_after_round: 0,
+        // 기준일 — 앞 회차 글 머리의 값이 이긴다(없었으면 없이 — undefined 는 JSON 에서 빠지고 패널 값도 덮는다). 패널 값은 브라우저마다 따로라
+        // 다른 기기에서 연 대화 · 패널을 비운 뒤의 이어하기가 기준일 없이 오늘의 카드로 돌았다(docs/request-1027 HA-11 반대 검토 10-31 — MCP 는
+        // 원장의 _CONT_CARRY 가 잇는다). 패널 값과 다르면 이어가기 칸이 그렇다고 밝힌다(DelibView ContinueBar).
+        as_of: decisionAsOf(prior.decision),
       });
     },
     [conversations, activeId, streaming, sendMessage],

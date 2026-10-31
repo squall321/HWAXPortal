@@ -441,6 +441,91 @@ def test_프론트는_꼴이_맞는_기준일만_싣는다(tmp_path):
     assert all(_portal_takes_as_of(v) for v in sent if v is not None), "프론트가 실은 기준일을 포털이 받지 않는다"
 
 
+# ── 이어하기의 기준일 — 앞 회차 글 머리에서 읽어 잇는다(반대 검토 10-31) ───────────────────────────────────────────────────
+# 웹 이어하기는 기준일을 그 브라우저의 심의 옵션 값(localStorage)에서만 실었다 — 다른 기기에서 서버 대화로 연 심의 · 패널을 비운 뒤의 이어하기가
+# 기준일 없이 오늘의 카드로 돌아 같은 RA 보고서에 다음 장으로 붙었다(MCP 이어하기는 원장의 _CONT_CARRY 로 잇는다). 엔진이 결정문 · 체크포인트 글
+# 머리에 찍는 '■ 기준일 — YYYY-MM-DD.' 줄이 두 길(실시간 · 서버에서 되살린 대화)에 모두 남는 값이다.
+_DEC_CASES = [
+    ("■ 기준일 — 2025-06-01. 좌석 지식카드 검색 …\n\n■ 핵심 요약\n요약\n\n본문", "2025-06-01"),
+    ("■ 외부 응답자 실행 — 판단은 외부\n\n■ 봉인 실행 — 닫았다\n\n■ 기준일 — 2025-06-01. 셈\n\n본문", "2025-06-01"),
+    ("■ 기준일 — 2025-06-01. 셈\n\n[체크포인트 — 1라운드(초기입장)에서 멈춤]\n좌석", "2025-06-01"),
+    ("■ 핵심 요약\n요약\n\n■ 기준일 — 2024-01-01. 본문이 인용한 줄", None),     # 머리(핵심 요약 앞)가 아니다
+    ("본문\n\n■ 기준일 — 2024-01-01. 앞 회차를 옮겨 적은 줄", None),
+    ("■ 기준일 — 2025-6-1. 꼴이 다르다", None),
+    ("[체크포인트 — 1라운드(초기입장)에서 멈춤]\n좌석", None),
+    ("", None),
+]
+
+
+def _decision_as_of_in_node(tmp_path, texts: list) -> list:
+    import json
+    import subprocess
+
+    (tmp_path / "dec.cjs").write_text(
+        "const ts = require('typescript'); const fs = require('fs');\n"
+        f"const js = ts.transpileModule(fs.readFileSync({json.dumps(str(_FRONT / 'chatStore.ts'))}, 'utf8'),\n"
+        "  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019 } });\n"
+        "fs.writeFileSync(__dirname + '/chatStore.js', js.outputText);\n"
+        "const { decisionAsOf } = require('./chatStore.js');\n"
+        "const got = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).map((t) => decisionAsOf(t) ?? null);\n"
+        "process.stdout.write(JSON.stringify(got));\n", encoding="utf-8")
+    (tmp_path / "texts.json").write_text(json.dumps(texts, ensure_ascii=False), encoding="utf-8")
+    r = subprocess.run(["node", "dec.cjs", str(tmp_path / "texts.json")], cwd=str(tmp_path), capture_output=True, text=True,
+                       timeout=120, env={"PATH": "/usr/bin:/bin:" + str(Path(shutil.which("node")).parent),
+                                         "NODE_PATH": str(_FRONT.parents[1] / "node_modules")})
+    assert r.returncode == 0, r.stdout + r.stderr
+    return json.loads(r.stdout)
+
+
+@pytest.mark.skipif(not (_FRONT.parents[1] / "node_modules/typescript").exists() or not shutil.which("node"),
+                    reason="frontend node_modules(typescript) 또는 node 가 없다 — 읽기 함수를 돌려 볼 수 없다")
+def test_앞_회차_글_머리에서만_기준일을_읽는다(tmp_path):
+    got = _decision_as_of_in_node(tmp_path, [t for t, _w in _DEC_CASES])
+    assert got == [w for _t, w in _DEC_CASES], list(zip([t[:40] for t, _w in _DEC_CASES], got))
+
+
+_ENGINE_AS_OF_HEAD = (
+    "import json, deliberation as d\n"
+    "pre = {'asked': 2, 'lines': 4, 'undated': 2, 'later': 6, 'unconfirmed': []}\n"
+    "line = '■ 기준일 — ' + d._as_of_line('2025-06-01', pre, {}, {'calls': 1, 'undated': 1, 'dropped': 0})\n"
+    "print(json.dumps([line + '\\n\\n■ 핵심 요약\\n요약\\n\\n본문',\n"
+    "                  '■ 봉인 실행 — ' + d._SEALED_LINE + '\\n\\n' + line + '\\n\\n본문'], ensure_ascii=False))\n"
+)
+
+
+@pytest.mark.skipif(not (_FRONT.parents[1] / "node_modules/typescript").exists() or not shutil.which("node"),
+                    reason="frontend node_modules(typescript) 또는 node 가 없다 — 읽기 함수를 돌려 볼 수 없다")
+def test_엔진이_찍는_기준일_줄을_프론트가_그대로_읽는다(tmp_path):
+    """생산자(엔진 _as_of_line · 봉인 줄)의 실제 출력을 소비자(chatStore.decisionAsOf)에 넣는다 — 한쪽 글이 바뀌면 이어하기가 말없이 기준일을 놓는다."""
+    if not _ENGINE.exists():
+        pytest.skip(f"형제 리포 없음: {_ENGINE}")
+    import json
+    import os
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, "-c", _ENGINE_AS_OF_HEAD], cwd=_ENGINE.parent, capture_output=True, text=True, timeout=120,
+                       env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+    assert r.returncode == 0, f"엔진 _as_of_line 을 이 venv 로 부르지 못했다 — {r.stderr.strip()[-600:]}"
+    texts = json.loads(r.stdout.strip().splitlines()[-1])
+    assert _decision_as_of_in_node(tmp_path, texts) == ["2025-06-01", "2025-06-01"], [t[:120] for t in texts]
+
+
+def test_이어하기는_앞_회차의_기준일을_싣고_그_값이_패널_값을_덮는다():
+    src = (_FRONT / "ChatContext.tsx").read_text(encoding="utf-8")
+    body = src[src.index("const continueDeliberation = useCallback("):]
+    body = body[: body.index("\n  );\n")]
+    call = body[body.index("sendMessage('/심의 ' + topic, {"):]
+    assert "as_of: decisionAsOf(prior.decision)," in call, call[-600:]
+    # 이어하기의 칸은 패널 값 뒤에 덮인다 — 앞 회차 값(없었으면 undefined — JSON 에서 빠진다)이 이긴다
+    merge = "{ ...delibOptsToWire(delibOptsRef.current),\n                      search_sources: effSources, ...(extraDelibOpts ?? {}) }"
+    assert merge in src, "sendMessage 의 병합 순서가 바뀌었다 — 이어하기의 기준일이 패널 값에 덮일 수 있다"
+    view = (_FRONT.parent / "components" / "chat" / "DelibView.tsx").read_text(encoding="utf-8")
+    bar = view[view.index("function ContinueBar("):]
+    bar = bar[: bar.index("\n}\n")]
+    assert "decisionAsOf(d.decision)" in bar and "delibOpts.as_of" in bar and 'className="dv-continue-asof"' in bar, bar[:400]
+
+
 @pytest.mark.parametrize("v", ["human", "app"])
 def test_누가_띄운_심의인지가_포털을_지나_살아_나온다(v):
     """M3 #26 — 리스크 앱 러너가 패널마다 started_by:"app" 을 싣는다. 선언이 없으면 model_dump(exclude_none=True) 에서 조용히
