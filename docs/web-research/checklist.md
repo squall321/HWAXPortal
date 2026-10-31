@@ -94,7 +94,7 @@
 
 - [x] ~~`build-all-to-drive.sh` WANT 목록 반영~~ — 버림(10-17 — HEAX 일반 경로로 대체 — build-all-to-drive.sh:83 → HEAXHub dist-to-drive.sh:85 가 var/sifs/*.sif 전부 운반)
 - [x] ~~`deploy-all-from-drive.sh` 반영~~ — 버림(10-17 — HEAX 일반 경로로 대체 — deploy-all-from-drive.sh:339 → HEAXHub dist-from-drive.sh:77 이 앱 SIF 를 var/sifs 에 설치)
-- [ ] `var/sifs` 스테이징 완전성 검사 (일부러 지워보고 경고 확인)
+- [x] `var/sifs` 스테이징 완전성 검사 (일부러 지워보고 경고 확인) — 걷음: 포털 WANT 목록 길(95 · 96줄)이 HEAX 일반 경로로 대체돼 둘 자리가 없다 — 앱 SIF 누락 · 낡음은 infra/scripts/drive-drift.sh heax 구역과 update-all 웹 리서치 점검이 드러낸다, '지어지지 않은 앱' 검사는 cluster-deploy 88줄 작업 (10-31 정리)
 - [x] `update-all.sh` 웹 리서치 소스 점검(비치명)
 
 ## P9 — 평가

@@ -6,14 +6,14 @@
 - [x] `ste-doctor --report` 를 cae00 에서 1회 실행, 출력을 `context-notes.md` §F 에 붙인다 (확인 10-17 — context-notes §F(09-27) — 사용자가 돌린 ste-doctor 출력을 붙였다(--report JSON 이 아니라 글 형태))
 - [x] 확정할 것: ste-tunnel 의 `-L` 포트(15810 만/15812 도) · `systemctl --user cat ste-tunnel` (확인 10-17 — context-notes --check — 리포 유닛 active · 15810 200(15812 는 000 = 헤드의 옛 코드), D-30 에서 15812 터널을 열어 헤드에 닿았다)
 - [x] 확정할 것: 포털 인증서 종류(`/tls/info` 의 `self_signed`, 체인이 공개 루트에 닿는가) (확인 10-17 — context-notes §F(09-27) — tls 사설 · 자체서명, 인증서 = 자체서명(https 켜짐))
-- [ ] 확정할 것: 헤드 `/opt/ste/.env` 의 `STE_SSO_SECRET` 일치 여부·`STE_MCP_TOKEN` 유무
-- [ ] 확정할 것: Teleport 인증서 TTL·`port_forwarding` 허용·비대화식 만료 거동 — `ste-doctor` 의 teleport 항목이 `tsh status` 를 읽는다(형식 미확인이라 못 읽으면 "모름")
-- [ ] 확정할 것: `provision.env` 의 `STE_MCP_URL`·`STE_SSO_URL` 명시 여부, `HEAX_MCP_TOKEN` 자동 발급 성공 여부
-- [ ] 확정할 것: Drive `SmartTwinExplorer/staging` 의 `ste-code.commit` 이 dev HEAD·헤드 배포본과 같은가
+- [x] 확정할 것: 헤드 `/opt/ste/.env` 의 `STE_SSO_SECRET` 일치 여부·`STE_MCP_TOKEN` 유무 — 풀림 10-30 cae00 QA 에서 ste 도구가 사람 명의로 성공했다(docs/request_261030.md:60 — 위임은 STE_SSO_SECRET 으로만 선다) · STE_MCP_TOKEN 은 더 읽지 않는다(SmartTwinExplorer `3c3ce91` 폴백 제거) (10-31 정리)
+- [x] 확정할 것: Teleport 인증서 TTL·`port_forwarding` 허용·비대화식 만료 거동 — `ste-doctor` 의 teleport 항목이 `tsh status` 를 읽는다(형식 미확인이라 못 읽으면 "모름") — 풀림 port_forwarding — 터널 경유 도달(context-notes §F 09-27 · D-30) · 10-30 cae00 QA 의 ste 호출, TTL · 만료는 tbot 무인화(51줄 · D-31)와 ste-doctor 인증서 행(52줄)으로 바뀌어 거동은 cae00-deploy-guide 에 적혔다 (10-31 정리)
+- [x] 확정할 것: `provision.env` 의 `STE_MCP_URL`·`STE_SSO_URL` 명시 여부, `HEAX_MCP_TOKEN` 자동 발급 성공 여부 — 풀림 기본값(터널 루프백, HWAXMcpGateway provision-config.sh:585 · :736-739)으로 cae00 게이트웨이의 ste 호출이 선다(docs/request_261030.md:60) · 허브 앱이 cae00 게이트웨이에 붙어 있다(docs/request_261029.md) · ste 위임은 HEAX 토큰과 뗐다(게이트웨이 `8c7021d`) (10-31 정리)
+- [x] 확정할 것: Drive `SmartTwinExplorer/staging` 의 `ste-code.commit` 이 dev HEAD·헤드 배포본과 같은가 — 걷음: S2 가 자동 대조로 바꿨다 — infra/scripts/drive-drift.sh(Drive ste-code.commit ↔ HEAD) · deploy-ste.sh(Drive ↔ 헤드 배포 마커) · ste-doctor.sh deployed 행 (10-31 정리)
 
 ## S1 — 시크릿 유출 차단 + 죽어도 초록인 자리 넷
 - [x] `refresh-code.sh` §8 → `sync-sso-secret.sh` 호출로 교체(argv 에 시크릿 0건) · FORCE 분기도 stdin — ste `41ef116`, dev VM ps 6,240줄 샘플에 값 0건
-- [ ] 이미 argv 판으로 배포된 회차가 있으면 시크릿 회전(`FORCE_SSO_SECRET=1`) — S0 결과에 따라
+- [x] 이미 argv 판으로 배포된 회차가 있으면 시크릿 회전(`FORCE_SSO_SECRET=1`) — S0 결과에 따라 — 걷음: argv 판으로 시크릿이 심긴 회차가 없다 — 09-27 헤드는 옛 코드 · 배포 마커 없음 · 시크릿 없음(§F · D-28), 그 뒤 배포 판은 모두 stdin 판 뒤(SmartTwinExplorer `41ef116` ⊂ `a28cf32` · `f64fb8b` · `4f5e0e0`) (10-31 정리)
 - [x] ste `POST /api/auth/sso/verify`(204/401, JIT 없음) + §6 이 포털 실제 값으로 2차 판정 — ste `3317f85`, 1차 프로브(옛 판·404 판별)는 유지
 - [x] §6 이 `/health.backends.ste == true` 를 본다 · 15812 프로브(살아 있으면 406/200) · STE_ROUTED=1 이고 DOWN 이면 fail + 터널 -L 15812 힌트
 - [x] §6 `access_policy_loaded == 0` → fail · 게이트웨이 per_user 백엔드 정책 미적재 = 거부(`_deny_reason` → `policy_not_ready`, 테스트로 확인)
@@ -44,7 +44,7 @@
 - [x] 적대 검토 1라운드 8건 수정(TLS 경로 앵커·리프 대체 거짓·거부 사유·만료·옛 백엔드 창) — D-17
 - [x] 적대 검토 2라운드 10건 수정(체인 -untrusted·공유 TTL 상태·모름 상태·스니펫 잠금·사유 전파·doctor tls 행) — D-18
 - [x] 적대 검토 3라운드 10건 수정(검증 안 된 후보 금지·모름이면 잠금·리프만 안내·체인 만료·doctor ca_error·시크릿 stdin·REST 403 사유·judge 재시도) — D-19
-- [ ] Claude Code `~/.claude/settings.json` env 의 `NODE_EXTRA_CA_CERTS` 경로 — **S0 판정 뒤**(cae00 인증서 종류 + 그 env 가 Node 기동 전에 적용되는지 실측 필요, 여기서는 못 한다)
+- [x] Claude Code `~/.claude/settings.json` env 의 `NODE_EXTRA_CA_CERTS` 경로 — **S0 판정 뒤**(cae00 인증서 종류 + 그 env 가 Node 기동 전에 적용되는지 실측 필요, 여기서는 못 한다) — 걷음: 설치 배치가 hwax MCP 항목 env 에 NODE_EXTRA_CA_CERTS 를 넣는다(frontend/src/lib/setupBat.ts:112-113 · :481, docs/token-bat TB-D1 10-20) — Windows 확인은 docs/token-bat/checklist.md 14 · 22줄이 잇는다 (10-31 정리)
 - [x] 검증(dev, 게이트웨이 실호출): "파일 올려 돌리고 결과 받기" 끝까지 **통과**(티켓→PUT 81B→제출→재제출 409→COMPLETED→꼬리 3줄→없는 파일 404→sync 토글, D-15) · 모델 출력에 파일 바이트 0 · 권한 없는 호출자의 `list_tool_apps` 실호출(plat:smarttwin 만 → 거부 14개 라벨·요청 경로, D-16) · 권한 없는 계정으로 TokenPage 문구 **화면 확인 완료**(임시 포털·플레이라이트, D-21)
 
 ## S4 — 무인화
@@ -59,7 +59,7 @@
 - [x] `ste-gateway-check.py` — `deleg`(위임 유무·게이트웨이 시크릿 대조·`--no-verify`) · `probe --as`(포털 권한 그대로, 잡 목록·cluster_info 실호출, 이름은 tools-map 에서)
 - [x] ste-doctor 행(gw-deleg · user-token · user-slurm, `--as`) · update-all §5 드리프트 · §6 점검(이메일 없으면 ○) · `.env.example` 에 `HWAX_STE_PROBE_EMAIL`
 - [x] 시험(게이트웨이 118 · 포털 신규 22) · 변이 10건 전부 사망 · dev 실검증(게이트웨이 재기동 뒤 probe·ste-doctor 전부 초록, 권한 없는 계정은 forbidden 으로 토큰 발급 전에 막힘)
-- [ ] 푸시 · cae00: `ste-doctor.sh --as <본인 이메일>` 로 원인 확정(토큰 경로 ✗ 면 update-all 이 재프로비저닝, slurm 경로 ✗ 면 헤드 slurm)
+- [x] 푸시 · cae00: `ste-doctor.sh --as <본인 이메일>` 로 원인 확정(토큰 경로 ✗ 면 update-all 이 재프로비저닝, slurm 경로 ✗ 면 헤드 slurm) — 풀림 09-30 의 cluster_info 실패는 10-30 cae00 QA 에서 사라졌다(docs/request_261030.md:60 · request-1030/platforms/14-Partner-apps.md:29) · 올림 — 게이트웨이 `1f9a883` · `8c7021d` · 포털 `0fc3bbd` · `b7c478c` (10-31 정리)
 
 ## 사용자 결정 (2026-09-25 확정)
 - [x] 셋업/갱신 분리 + 세 신호 게이트 — **채택.** 새 옵션에도 쓰이게 **공용 함수**로(D-13)

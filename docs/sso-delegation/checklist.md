@@ -32,10 +32,10 @@
 - [x] update-all 이름 넘기기 · 기대 목록(게이트웨이 MANAGED 이름은 빼고) / check-egress 일반 앱 목적지(시험 3 · 기대값 5 갱신 · 변이 4)
 - [x] 권한표 · 타일 — `matnexus` · `fmea`(둘 다 주소가 없으면 숨김) (D-20)
 - [x] 문서 — PLAN 5 · server-setup C(MatNexus) · B-2(TestScope 위임, v0.51.0+) · D(FMEA) · fmea-request · D-18~D-20
-- [ ] 커밋 · push(포털 · 게이트웨이) · 업데이트 이력
-- [ ] 비밀 — 포털 운영자가 서비스마다 `openssl rand -hex 32` 하나씩(MatNexus 전용 · TestScope 전용) → 그쪽 운영에 안전한 길로
-- [ ] MatNexus 운영 — 운영 판에 창구가 있는지(verify) · `HEAX_SSO_SECRET` · (선택) `HEAX_SSO_ALLOWED_IPS` · `MCP_ALLOWED_HOSTS` · 방화벽 8012
+- [x] 커밋 · push(포털 · 게이트웨이) · 업데이트 이력 — 풀림 게이트웨이 `8e30ee5` · 포털 `726d7a6` · `acf985b`(10-20) · 업데이트 이력 backend/config/changelog.yaml:671-684 (10-31 정리)
+- [x] 비밀 — 포털 운영자가 서비스마다 `openssl rand -hex 32` 하나씩(MatNexus 전용 · TestScope 전용) → 그쪽 운영에 안전한 길로 — 걷음: MatNexus 는 10-21 외부 연결 connect:(토큰 등록)로 바뀌어 비밀을 만들지 않는다(41줄 덧붙임) · TestScope 비밀은 B-2 를 고를 때만이라 38 · 39줄이 잇는다 (10-31 정리)
+- [x] MatNexus 운영 — 운영 판에 창구가 있는지(verify) · `HEAX_SSO_SECRET` · (선택) `HEAX_SSO_ALLOWED_IPS` · `MCP_ALLOWED_HOSTS` · 방화벽 8012 — 걷음: MatNexus 는 외부 연결 connect: 로 붙었고 10-29 cae00 에서 불렸다(docs/request_261029.md:61) — 위임 창구 설정은 이 길로 하지 않는다 (10-31 정리)
 - [ ] TestScope 운영 — v0.51.0 이상 · `HEAX_SSO_SECRET` · `MCP_ALLOWED_HOSTS` · 방화벽 8022
 - [ ] cae00 — server-setup C3~C6 · B2~B5 + B-2 · `NO_PROXY` · update-all
-- [ ] FMEA Agent — fmea-request 답 → server-setup D(타일 소개 문구도 맞춘다)
+- [x] FMEA Agent — fmea-request 답 → server-setup D(타일 소개 문구도 맞춘다) — 걷음: FMEA 는 connect: 로, server-setup D 는 목록 계정 절차로 다시 썼다(`dba4c1e`) · 10-29 cae00 에서 FMEA 도구가 불렸다 — 남은 답(fmea-request 3절)이 오면 타일 소개 문구(backend/config/systems.yaml:138-142)만 맞춘다 (10-31 정리)
 - **10-21 — MatNexus · FMEA 는 토큰 등록(외부 연결 `connect:`)으로 바뀜** — 위 MatNexus 운영 · 비밀 · cae00 C3~C6 · FMEA 답 줄은 그 길로는 하지 않는다. 할 일은 [docs/ext-connect/checklist.md](../ext-connect/checklist.md) · 절차는 [server-setup.md](server-setup.md) C · D(다시 씀).

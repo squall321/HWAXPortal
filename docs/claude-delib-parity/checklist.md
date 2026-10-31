@@ -23,4 +23,4 @@
 ## P5 문서
 - [x] MCP 안내(엔진 · 리스크 앱) · 심의 메뉴 limits_external(C5 — CP-D9) · README 외부 응답자 절 · risk-claude-engine PLAN 5절 · 업데이트 이력 · CLAUDE.md
 - [ ] 프론트 요청 — 리스크 앱 웹 패널 잡 만들기에 Claude 선택(다른 세션 몫, [frontend-request.md](frontend-request.md))
-- [ ] 사람 몫 — dev 에이전트 서버 재기동(확인 뒤) · cae00 update-all
+- [x] 사람 몫 — dev 에이전트 서버 재기동(확인 뒤) · cae00 update-all — 풀림 dev 에이전트 서버 리스너 10-31 01:06 UTC ⊇ `82c8f37` · `235e493` · `63554c0` · `e436d15` · cae00 기준 판 에이전트 `969e723` · 포털 `aec8e29` ⊇ `d4f15de` · 리스크 앱 사본 `ecad8c8` ⊇ `3b6e42e` (10-31 정리)

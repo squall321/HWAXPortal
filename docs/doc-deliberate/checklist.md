@@ -2,7 +2,7 @@
 
 ## 0. 선행 확인(막히면 설계가 바뀐다)
 - [x] 실제 DRM 문서로 COM 읽기가 되는지 확인(Word `Content.Text`, PPT `TextRange.Text`)
-- [ ] `SaveAs2` 가 DRM 에 막히는지 확인(막히면 직접 읽기만 쓴다)
+- [x] `SaveAs2` 가 DRM 에 막히는지 확인(막히면 직접 읽기만 쓴다) — 걷음: 다시 저장 길을 쓰지 않는다 — 추출은 직접 읽기만(D-1 · D-6) · 다시 저장한 PPTX 보내기는 넣지 않기로 했다(docs/chat-ppt/context-notes.md PP-D1 ②) (10-31 정리)
 - [ ] 대상 PC 의 Office 버전·PDF 열기 가능 여부
 
 ## 1. 추출 코어
@@ -31,4 +31,4 @@
 ## 4. (선택) 포털 업로드 경로
 - [x] ~~추출기 → 포털 POST(PAT 인증)~~ — 버림(10-17 — D-34 로 대체 — DRM 이 브라우저 읽기에 투명, 추출문은 docAttach.ts 가 브라우저에서 읽음(L24, 서버 업로드 없음))
 - [x] ~~기존 업로드 오케스트레이션에 연결~~ — 버림(10-17 — D-34 로 대체 — 포털은 각 서비스 취입기로 배달(DESTINATIONS: RA import · AIDataHub convert_file), K파일은 D-25 업로드 경로)
-- [ ] 문서 텍스트 서버 전송에 대한 사내 판단 확인
+- [x] 문서 텍스트 서버 전송에 대한 사내 판단 확인 — 풀림 chat-ppt PP-D1 ①(10-22 — 보안 정책 확인은 사용자가 받았다, docs/chat-ppt/context-notes.md:7) (10-31 정리)

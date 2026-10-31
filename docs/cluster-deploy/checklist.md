@@ -15,7 +15,7 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 
 - [ ] `infra/scripts/gen-endpoints.sh` (cluster.yaml 없으면 전부 127.0.0.1)
 - [ ] routes.env 를 endpoints 에서 생성 — 현행과 diff 0 확인
-- [ ] provision-config.sh 백엔드 URL env 화(기본값=현행 127.0.0.1)
+- [x] provision-config.sh 백엔드 URL env 화(기본값=현행 127.0.0.1) — 풀림 HWAXMcpGateway `716ced6`(08-11 — 백엔드 주소 env > 직전 config > 같은 박스 루프백, provision-config.sh:467 · :591) — 남은 리터럴(포털 JWKS · 폐기 목록 · 에이전트 mcp_servers.json)은 노드가 갈릴 때만 뜻이 있다(20줄) (10-31 정리)
 - [ ] update-all 헬스게이트 endpoints 소비
 - [ ] agent mcp_servers.json 게이트웨이 주소 env 화
 - [ ] 검증: dev 풀런 — 생성물 diff 0 + 헬스게이트 통과
@@ -63,8 +63,8 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 - [ ] search-llm all-nodes 롤아웃 (모델·서빙 방식은 §11 결정 후)
 - [ ] 데이터 동기·백업 노드 인식화 (plan §3.1b — merge·backup·SF restore 를 DB 소유 노드로 위임)
 - [x] ~~RA 블루-그린 (plan §3.2): 새 인스턴스 기동 → 기계 검증(웹·MCP·스케줄러, 선택 SSO)~~ — 닫음(10-17 — 사용자: RA 담당이 09-26~27 에 RA 를 자기 서버 두 대로 옮겼고 포털은 다시 연결했다)
-- [ ]   컷오버: 구 RA 쓰기 정지 → pg_dump + upload 파일 rsync → 복원 → 연동 확인(기존 rat_ 토큰 생존 확인)
-- [ ]   구 인스턴스 완전 정지(스케줄러 중복 방지) → 포털 라우트 전환 → 롤백 경로 확인
+- [x]   컷오버: 구 RA 쓰기 정지 → pg_dump + upload 파일 rsync → 복원 → 연동 확인(기존 rat_ 토큰 생존 확인) — 걷음: 부모 줄(65줄 RA 블루-그린)이 10-17 에 닫혔다(`7fae400` — RA 담당이 자기 서버로 옮겼다) · 포털은 RA_HOST 하나로 다시 이었다(`aeb46ef`) — 컷오버는 RA 담당 몫 (10-31 정리)
+- [x]   구 인스턴스 완전 정지(스케줄러 중복 방지) → 포털 라우트 전환 → 롤백 경로 확인 — 걷음: 부모 줄이 10-17 에 닫혔다(`7fae400`) · 라우트 전환은 RA_HOST 유도가 대신했다(`aeb46ef` — services.yaml 의 로컬 RA 두 항목 unless_env) — 구 인스턴스 정지 · 롤백은 RA 담당 몫 (10-31 정리)
 - [ ] cae00 병행 운영 확인 (클러스터 작업이 cae00 에 영향 0)
 
 ## Phase 4 — 이중화·100명 대비
@@ -78,7 +78,7 @@ Phase 게이트: 이전 Phase 의 "검증" 항목이 전부 체크되기 전에�
 
 ## Phase 5 — HEAX 앱 노드 배치 (v1 Phase 3 승계)
 
-- [ ] 선행조사: 허브 Caddy 앱 프록시 정의 위치 확정 (v1 승계)
+- [x] 선행조사: 허브 Caddy 앱 프록시 정의 위치 확정 (v1 승계) — 풀림 HEAXHub backend/app/services/proxy_manager.py — Caddy Admin API 로 앱 경로를 그때그때 만든다(register_app_route :279 → _build_route :127 · 외부 업스트림 register_external_proxy_route :407), 다른 노드로 보내는 길은 external_proxy 매니페스트(10-31 운영 노드 전환 `5e2cafa`) (10-31 정리)
 - [ ] 앱 상태 var/integration_state JSON → DB (`node` 컬럼)
 - [ ] 원격 기동 (services.py ssh 경로 재사용)
 - [ ] `resources:` 필수화 — 미기재 앱 등록 거부 + 노드 용량 인식 배치

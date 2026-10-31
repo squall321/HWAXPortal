@@ -21,10 +21,10 @@
 - [ ] 금 표본 — 실문서 40건 + DRM 5건(사람) · cae00 개발 데이터 폴더(리포 밖) · 정답 뽑기(원본 XML → 글 · 숫자 · 표 · 차트 값)
 - [ ] 기준선 — RA 가져오기(+ ai-draft) · AIDH `convert_file` 을 금 표본에 · 지표 표
 - [ ] Docling — cae00(길 A venv · 길 B 앱 SIF) · 금 표본 · 글 회계 · 표 · 차트 · 노트 · 기하 · 쪽당 시간(CPU · GPU) · 모델 무게 · 라이선스
-- [ ] 형식별 직접 해부 — python-pptx · python-docx · openpyxl 로 Docling 이 놓치는 것(차트 XML 캐시 · 노트 · SmartArt · OMML · 병합 · 기하)
+- [x] 형식별 직접 해부 — python-pptx · python-docx · openpyxl 로 Docling 이 놓치는 것(차트 XML 캐시 · 노트 · SmartArt · OMML · 병합 · 기하) — 풀림 DocForge docforge/parse/pptx_native.py · docx_native.py + omml.py · xlsx_native.py · docs/m0-results.md dev 절(10-24) — 금 표본 대조는 23 · 43줄 (10-31 정리)
 - [ ] Pydantic AI — 우리 GLM · Qwen 에 `NativeOutput` · `ToolOutput` · 비스트리밍 · 스키마 준수율(목표 ≥ 99%) · 대체재(vLLM json_schema 직접)와 견주기
 - [ ] VLM 판독 — 공학 그림 · 그림 차트 값 · 그림 속 한국어 글 · 장당 시간 · 지어낸 수치 · Docling 그림 설명이 원격 VLM 을 부르나
-- [ ] 그리기 — LibreOffice 헤드리스 + 한글 글꼴을 SIF 에 · 슬라이드 그림 · EMF → PNG
+- [x] 그리기 — LibreOffice 헤드리스 + 한글 글꼴을 SIF 에 · 슬라이드 그림 · EMF → PNG — 풀림 DocForge docs/DEPLOY.md:88-89(SIF 에 LibreOffice 25.2.3 · 한글 글꼴 42) · docforge/render/libreoffice.py(쪽 그림 · EMF → PNG) — 실문서 표본은 cae00 M0 (10-31 정리)
 - [ ] RA — dev RA 에 엄격 생성(`POST /api/reports`) · `GET /api/widgets` 판 · 엔티티 API · MCP resolve · 제안 큐에 넣는 길 · 큰 파일 상한
 - [ ] SP — 가짜 허브(수신 규칙 열하나) · 과제코드 · 모델명 꼴
 - [ ] 결정 기록 — §7 의 선택을 수치로
@@ -65,4 +65,4 @@
 
 ## M5 운영
 - [ ] cae00 — 굵은 SIF(모델 · LibreOffice · 글꼴) · Drive(지문 목록 합치기) · server-setup(사람 몫)
-- [ ] 상태판 · RA 에서 고친 것을 평가 표본으로 · 절차서
+- [x] 상태판 · RA 에서 고친 것을 평가 표본으로 · 절차서 — 풀림 infra/scripts/gen-status-config.py:257-271(백엔드별 검사 — heax-doc_forge) · DocForge `d2808ea`(E16 사람 편집량) · docs/doc-to-ra/server-setup.md — 실데이터로 쌓는 것은 cae00 실사용 뒤 (10-31 정리)

@@ -3,7 +3,7 @@
 > 각 절은 따로 떼어 보내도 읽히게 썼다. 배경은 [PLAN.md](PLAN.md) 2절(cae00 업데이트 리뷰 판정)과 [context-notes.md](context-notes.md).
 > 주소 · 토큰은 적지 않는다(이 리포는 공개다). 포털 쪽에서 이미 고친 것은 각 절 끝에 적었다.
 
-## 1. StepForge — `part_history` 의 인자 조건을 스키마로(리뷰 X5)
+## 1. StepForge — `part_history` 의 인자 조건을 스키마로(리뷰 X5) — 풀림 StepForge `f82e11e`(10-27 D-637 · ST-08 — 인자 없이 부르면 거절 대신 needs_input 안내, app/mcp_server.py · 답신 docs/REPLY-2026-10-27-ops.md) (10-31 정리)
 
 **무엇** — `part_history` 는 `projects` 와 `task_code` 중 하나가 있어야 하는데 MCP 입력 스키마의 `required` 에 아무것도 없다. 인자 없이
 부르면 `ValueError` 다. 스키마만 보는 쪽(포털 update-all 의 MCP 스모크 · Claude 같은 MCP 클라이언트)은 '인자 없이 불러도 되는 도구' 로
@@ -52,7 +52,7 @@
 나중에 채워지는 보강 필드). 빼도 출처가 유일하다(dev 3,165/3,165). 그래서 앞으로의 병합은 같은 중복을 새로 만들지 않는다 — 이미 들어간
 것만 위처럼 정리하면 된다.
 
-## 4. StepForge — MaterialTwin 기본 주소를 허브가 띄운 자리로(수정 제안서 S1 · 10-18 추가)
+## 4. StepForge — MaterialTwin 기본 주소를 허브가 띄운 자리로(수정 제안서 S1 · 10-18 추가) — 풀림 StepForge `f82e11e`(D-637 · ST-07 · ST-11 — 주소 차례 · 닿지 않음을 null 과 갈라 알림, core/materials.py) · HEAXHub `fed086f`(HH-09 — HEAX_APP_URL_<SLUG>) — 3(루프백이 프록시를 타나)은 cae00 의 system_capabilities.materialtwin 으로 본다 (10-31 정리)
 
 **무엇** — `core/materials.py` 의 `TWIN_DEFAULT = "http://127.0.0.1:9233"`. 허브가 띄운 MaterialTwin 은 허브가 배정한 앱 포트(cae00 은 지금
 9107 — 앱 포트는 허브 포트 풀 9100~9999 에서 배정된다)에 있고, 허브 프록시로는 `<허브 오리진>/apps/materialtwin_web` 이다. 기본값이 빗나가면
