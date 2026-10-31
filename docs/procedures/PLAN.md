@@ -335,6 +335,9 @@ StepForge·DynaForge·RA 를 HWAXRisk `project_id` 아래 **부분적으로** �
 `project` 와 RA 해석 실행 `project` 문자열이다. v1 은 절차 `vars` 에 앱별 키를 명시하고 실행
 기록에 그대로 남기는 것까지다.
 
+앱별 키 꼴 · 행의 주인 · 시야 · ODB 잡 메타의 과제 칸 · SP 과제 키를 받는지는 [app-project-keys.md](app-project-keys.md)(2026-10-31 대조 —
+위 표 뒤로 바뀐 것도 거기 있다)다. 사용자 결정 10-31 A13 의 결정 표로 쓴다.
+
 ### 5-4. 사람 자리 넷 — 그리고 게이트는 실행기가 강제한다
 
 전부 **의도된 설계**다.

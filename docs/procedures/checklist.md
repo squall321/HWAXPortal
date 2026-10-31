@@ -578,13 +578,13 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 ## S6 · 과제 키 레지스트리 (S5 뒤)
 
 - [ ] 결정 — HWAXRisk `rr_sources`·`rr_projects` 확장인가 신규인가(PLAN §7 #8) — 사용자 결정 10-31 A13: (A) SP 과제 키를 앱 사이 정본으로 — 따로 짓지 않고 SP 받기(core:read 토큰)가 켜진 뒤 안 받는 앱(HWAXRisk · ThermalShock)에 SP 키를 받게 요청한다 · 먼저 cae00 `/procedures-api/stats`(받은 편지함 2026-10-31-backlog Q17)로 §6-1 쓸모를 보고 미달이면 S5 이후 보류 (10-31 정리)
-- [ ] 매핑 표 — StepForge `project_id`(23-hex) · DynaForge `session_id`(ULID) · ThermalShock `project` ·
+- [x] 매핑 표 — StepForge `project_id`(23-hex) · DynaForge `session_id`(ULID) · ThermalShock `project` ·
       ReportArchive `project` · HWAXRisk `target_key` · **ODB 잡 메타의 과제 필드**(S0 에서 있으면)
-      + **소유 주체 열**(사용자 위임 / 서비스 계정) + **시야 열**
-- [ ] 시야 제약을 앱별로 정확히 — DynaForge `list_sessions`·`find_reports` 는 user_id 스코프(서비스 계정
+      + **소유 주체 열**(사용자 위임 / 서비스 계정) + **시야 열** — 풀림 docs/procedures/app-project-keys.md 1절(앱 여섯 — 키 꼴 · 행의 주인과 게이트웨이 자격 · 시야 · SP 과제 키 · 조직 단위 모아 보기, 칸마다 파일:줄) · 2절(ODB 잡 메타 `project` 는 있다 — fixtures/odb-hub/reference.md:109) · 3절(SP 과제 키 = 허브 `plm_task` key) (10-31 정리)
+- [x] 시야 제약을 앱별로 정확히 — DynaForge `list_sessions`·`find_reports` 는 user_id 스코프(서비스 계정
       0건) · HWAXRisk `risk_list_projects` 는 소유∪멤버∪org 공개분 · RA 는 게시판 권한 기준(소유분만이
       아니다) · StepForge `list_projects`·ThermalShock 은 전사. 조직 단위 모아 보기는 DynaForge·HWAXRisk 에
-      한해 관리자 자격이나 별도 원장이 필요하다
+      한해 관리자 자격이나 별도 원장이 필요하다 — 풀림 docs/procedures/app-project-keys.md 1절 — DynaForge 는 그 뒤 바뀌었다: 세션은 소유분 + 공개 범위, 리포트는 소유분 + 같은 소속 공유분이고 관리자는 전사(KooRemapper platform/backend/app/modules/sessions/services.py:40-55 · reports/services.py:833-843 · :874-875 — MCP `list_sessions` 설명만 옛 글) · 모아 보기는 DynaForge 리포트 · RA 가 관리자 자격, DynaForge 세션 · HWAXRisk 가 별도 원장 (10-31 정리)
 - [x] 이름·코드로도 찾기(StepForge 가 이미 그렇게 한다) — 걷음: 사용자 결정 10-31 A13 (A) — 따로 짓는 레지스트리가 없어 찾기 자리도 없다(과제 키 정본은 SP 과제 키) (10-31 정리)
 - [ ] 검증: 실제 과제 하나로 앱을 오가며 키가 안 끊기는지
 
