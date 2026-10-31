@@ -45,13 +45,16 @@ function Colours() {
     </>
   );
 }
-// 챗 화면 — 전문가를 고르고 보내 답을 받는다. 같은 대화를 서버 사본으로 다시 여는 단추도 둔다.
+// 챗 화면 — 전문가를 고르고 보내 답을 받는다. 같은 대화를 서버 사본으로 다시 여는 단추도 둔다. 슬래시 트리거로 보내는 단추 둘은
+// 고른 전문가 대신 띵킹 · 심의가 답하는 발화다(에이전트 서버가 트리거로 가른다).
 function Chat() {
   const { messages, sendMessage, setPinnedAgent, selectConversation, streaming } = useChat();
   return (
     <>
       <button id="pin" type="button" onClick={() => setPinnedAgent(KEY, NAME)}>pin</button>
       <button id="send" type="button" onClick={() => sendMessage('힌지 강도 봐 줘')}>send</button>
+      <button id="send-think" type="button" onClick={() => sendMessage('/띵킹 힌지 강도 봐 줘')}>think</button>
+      <button id="send-delib" type="button" onClick={() => sendMessage('/심의 힌지 파손 원인')}>delib</button>
       <button id="open" type="button" onClick={() => selectConversation('srv-1')}>open</button>
       <span id="streaming">{String(streaming)}</span>
       <MessageList messages={messages} />
@@ -216,6 +219,47 @@ const SCENARIOS = {
     return { live, chat: chat && chat.body, reloaded, reload_gets, elsewhere,
              errors: [...page.__errors, ...again.__errors, ...other.__errors] };
   },
+  // 전문가를 고른 채 '/띵킹 …' · '/심의 …' 를 보낸다 — 답은 고른 전문가가 아니라 띵킹 · 심의다. 라이브는 띵킹 · 심의 화면이고 말풍선이
+  // 없다. 새로고침 · 다른 기기에서 서버 사본으로 열어도 말풍선이 없어야 한다. 서버 사본은 시험(파이썬)이 같은 프레임을 포털 중계
+  // (agent/routes.py)에 흘려 남긴 그대로다(routed.json) — 손으로 옮겨 적은 사본이면 포털이 적는 꼴과 어긋나도 모른다.
+  async routed(browser) {
+    const routed = JSON.parse(require('fs').readFileSync(path.join(OUT, 'routed.json'), 'utf8'));
+    const look = (page) => page.evaluate(() => ({
+      bubble: Boolean(document.querySelector('.msg.is-persona')),
+      think: Boolean(document.querySelector('.msg .tv')),
+      delib: Boolean(document.querySelector('.msg .dv-root')),
+      text: Array.from(document.querySelectorAll('.msg.assistant')).map((el) => el.textContent).join(' | '),
+    }));
+    const out = {};
+    for (const [name, { button, frames, copy, text }] of Object.entries(routed)) {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await open(browser, 'chat', { ctx });
+      await page.locator('#pin').click();
+      await page.locator(button).click();
+      await page.waitForFunction(() => typeof window.__push === 'function');
+      await page.evaluate((f) => { window.__push(f); window.__end(); }, frames);
+      await page.waitForFunction(() => document.getElementById('streaming').textContent === 'false');
+      const live = await look(page);
+      const sent = (await page.evaluate(() => window.__calls)).find((c) => c.url.startsWith('/agent/chat'));
+      const later = Math.floor(Date.now() / 1000) + 60;
+      const conv = { id: 'srv-1', title: name, kind: 'chat', source: 'web', created_at: later, updated_at: later,
+                     messages: copy.map((m) => ({ ...m, ts: later })) };
+      const before = `window.__convs = [${JSON.stringify(conv)}].map(({ messages, ...m }) => m); window.__conv = ${JSON.stringify(conv)};`;
+      const again = await open(browser, 'chat', { ctx, before });           // 새로고침 — 서버 사본이 더 새로워 사본으로 바뀐다
+      await again.getByText(text).first().waitFor();
+      await again.waitForFunction(() => window.__calls.some((c) => c.url === '/agent/conversations/srv-1'));
+      await again.waitForTimeout(300);
+      const reloaded = await look(again);
+      const other = await open(browser, 'chat', { before });                 // 다른 기기 — 서버 사본만으로 연다
+      await other.locator('#open').click();
+      await other.getByText(text).first().waitFor();
+      await other.waitForTimeout(300);
+      const elsewhere = await look(other);
+      await ctx.close();
+      out[name] = { live, sent: sent && sent.body, reloaded, elsewhere, errors: [...page.__errors, ...again.__errors, ...other.__errors] };
+    }
+    return out;
+  },
 };
 
 (async () => {
@@ -239,6 +283,17 @@ def seen(tmp_path_factory):
     (out / "harness.tsx").write_text(_HARNESS.replace("__FE__", str(FE)), encoding="utf-8")
     for name, body in (("build.cjs", _BUILD), ("stub.js", _STUB), ("drive.cjs", _DRIVE)):
         (out / name).write_text(body, encoding="utf-8")
+    # 띵킹 · 심의가 답한 턴의 서버 사본 — 화면이 라이브로 받을 프레임을 포털 중계에 그대로 흘려 남긴다(routed 시나리오)
+    from tests.test_pinned_agent_persist import DELIB_HEAD, DELIB_NO_TURNS, THINK_SUMMARY, THINK_TURN, relay_turn
+
+    pin = {"pinned_agent": "mech-a", "pinned_agent_name": "기구 강도 전문가 (Mechanical Strength Expert)"}
+    routed = {
+        "think": {"button": "#send-think", "frames": THINK_TURN, "text": THINK_SUMMARY,
+                  "copy": relay_turn(THINK_TURN, message="/띵킹 힌지 강도 봐 줘", **pin)},
+        "delib": {"button": "#send-delib", "frames": DELIB_NO_TURNS, "text": DELIB_HEAD,
+                  "copy": relay_turn(DELIB_NO_TURNS, message="/심의 힌지 파손 원인", **pin)},
+    }
+    (out / "routed.json").write_text(json.dumps(routed, ensure_ascii=False), encoding="utf-8")
     r = subprocess.run(["node", "build.cjs", str(FE), str(out)], cwd=str(out), capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, "화면을 묶지 못했다:\n" + r.stdout + r.stderr
     r = subprocess.run(["node", "drive.cjs", str(FE), str(out)], cwd=str(out), capture_output=True, text=True, timeout=300)
@@ -288,3 +343,16 @@ def test_전문가를_지정해_보낸_답은_말풍선이고_새로고침해도
         got = s[where]
         assert got == {**live, "text": got and got["text"]}, f"{where}: 서버 사본으로 연 대화에서 말풍선이 사라졌다 — {got}"
         assert "응력이 몰립니다" in got["text"]
+
+
+@pytest.mark.parametrize("name, view", [("think", "think"), ("delib", "delib")])
+def test_전문가를_고른_채_띵킹_심의로_보낸_답은_다시_열어도_말풍선이_아니다(seen, name, view):
+    """'/띵킹' · '/심의' 는 고른 전문가 대신 띵킹 · 심의가 답한다(에이전트 서버가 트리거로 먼저 가른다 — 요청의 thinking 은 거짓이다).
+    라이브는 띵킹 · 심의 화면이고 말풍선이 없다. 서버 사본으로 다시 열 때 고른 전문가의 말풍선이 되면 여러 전문가의 요약 · 심의의 앞글이
+    그 사람의 답으로 읽힌다(docs/leftovers-1017 B11 반대 검토). 발언 없이 끝난 심의도 같다 — 결정문이 아니라 일반 답처럼 생겼다."""
+    s = seen("routed")[name]
+    assert not s["errors"], s["errors"]
+    assert s["sent"]["pinned_agent"] == "mech-a" and "thinking" not in s["sent"], f"전제 — 전문가를 고르고 Thinking 은 끈 채 보냈다: {s['sent']}"
+    assert s["live"]["bubble"] is False and s["live"][view] is True, f"라이브: {s['live']}"
+    for where in ("reloaded", "elsewhere"):
+        assert s[where]["bubble"] is False, f"{where}: 서버 사본으로 연 {name} 의 답이 고른 전문가의 말풍선이 됐다 — {s[where]}"

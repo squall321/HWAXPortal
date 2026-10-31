@@ -2590,10 +2590,6 @@ async def chat(
                                       ("pinned_agent_name", body.pinned_agent_name)) if v}
             if body.pinned_agents:
                 _pin["pinned_agents"] = list(body.pinned_agents)
-            # 띵킹으로 보낸 발화는 고른 전문가가 답하지 않는다(에이전트 서버가 띵킹을 먼저 본다). 화면이 서버 사본에서 말풍선을 되살릴 때
-            # 그 답을 고른 전문가의 것으로 붙이지 않게 같이 적는다(frontend api/conversations.api.ts serverMessagesToLocal).
-            if _pin and body.thinking:
-                _pin["thinking"] = True
             # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
             if await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
                                        role="user", content=body.message, meta=_pin or None):
@@ -2612,6 +2608,11 @@ async def chat(
         turns: list[dict] = []       # 심의 persona 발언 — MCP 경로와 대칭으로 서버에 남긴다
         activity: list[dict] = []    # status 이벤트(도구 호출·결과) 누적 — 심의 핸드오프 스냅샷 서버 영속
         delib_ev: list[dict] = []    # 심의 근거 카드(좌석 조회 결과·엔진의 '줄였다·뺐다' 알림) — 서버 사본에도 남긴다
+        # 이 턴에 흐른 think · delib 프레임 — 왔으면 고른 전문가가 아니라 띵킹 · 심의가 답했다. 답 meta.answered_by 로 남긴다(아래 _save).
+        # 보낸 요청(thinking)으로 가르지 않는다 — 에이전트 서버는 '/띵킹' 같은 슬래시 트리거로도 띵킹을 열고, 확인 카드의 답은 Thinking 을
+        # 켜 두어도 일반 챗으로 보낸다(HWAXAgentServer app.py chat). 화면은 이 표지로 서버 사본의 답에 말풍선을 붙이지 않는다
+        # (frontend api/conversations.api.ts serverMessagesToLocal — 라이브는 띵킹 · 심의 화면이라 말풍선을 그리지 않는다).
+        answered_by: set[str] = set()
         user_images: list[str] = []  # 이 발화에 올린 그림의 주소(user_images) — 서버 사본의 답 meta 에 남겨 다른 기기의 이력에도 그림이 실리게
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
@@ -2640,6 +2641,8 @@ async def chat(
                             if parsed is None:
                                 continue
                             evt, data = parsed
+                            if evt in ("think", "delib"):
+                                answered_by.add(evt)
                             if evt == "result" and isinstance(data.get("content"), str):
                                 final = data["content"]
                             elif evt == "token" and isinstance(data.get("delta"), str):
@@ -2797,6 +2800,8 @@ async def chat(
                                                          ("user_images", user_images)) if v}
                                 if routine_ptr:      # 분석 루틴 — 네 칸을 늘 싣는다(모르는 값은 null)
                                     _am["routine"] = {k: routine_ptr.get(k) for k in ("run_id", "routine_id", "title", "state")}
+                                if answered_by:      # 띵킹 · 심의가 답했다(위 answered_by) — 발언 없이 끝난 심의도 'delib' 다
+                                    _am["answered_by"] = "delib" if "delib" in answered_by else "think"
                                 # 다른 탭의 중계가 같은 실행의 같은 끝 · 같은 글을 이미 남겼으면 넣지 않는다 — 보고서가 두 번 남지 않게. 이 턴의
                                 # 사용자 발화는 시작할 때 이미 남았다. 글이 다르면(끝난 실행의 RA 초안 올리기 안내) 이 턴의 답이라 남긴다.
                                 if _rt_key is None or not _routine_answered(store.get(cid, owner), _rt_key[1],
