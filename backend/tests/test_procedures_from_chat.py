@@ -4,6 +4,8 @@
 # 여기서 거는 것은 **접는 규칙**이다 — 짝 키가 없으면 접지 않는다. 이름으로 묶으면
 # 같은 도구를 N번 부른 턴에서 마지막 인자와 마지막 결과가 붙어 서로 다른 호출이
 # 한 줄이 된다(화면이 그렇게 하고 있고, 그래서 §5-5 가 났다).
+import json
+
 import pytest
 
 from app.config import Settings
@@ -209,3 +211,56 @@ def test_반쯤_쓴_실행을_도는_중으로_두지_않는다(tmp_path):
                             activity=[_start("r1", "t", "{}"), _end("r1", "t", "x")]) is None
     got = real.get_run(s.rid)
     assert got["state"] == "failed" and got["ended_at"], got
+
+
+# ── 게시 확인 토큰 — 원장 어디에도 남기지 않는다(남은 일 B3 ③) ─────────────────────────────
+# 챗이 RA 에 게시하면 한 턴에 미리보기 결과(토큰을 준다)와 게시 인자(토큰을 받는다)가 같이 온다. 그 값은 600초 동안 그 보고서를 그
+# 게시판에 올릴 수 있다. 실행기는 같은 원장에 넣기 전에 가린다(runner `_one`) — 챗 기록도 같은 가림을 탄다.
+TOKEN = "1793406421.Zk3vQx_9-abcdefghijklmnopqrstuvwxyzABCDEFG"   # RA 꼴 — <만료초>.<서명 43자>(mounts/confirm.py)
+
+
+def _publish_turn(prefix: str = "", tok: str = TOKEN) -> list[dict]:
+    """미리보기 → 게시 → 인자를 틀린 두 번째 게시. 셋째의 결과는 RA 의 검증 오류가 받은 인자를 **파이썬 꼴**로 되비친 것이다."""
+    pv, pub = f"{prefix}preview_publish", f"{prefix}publish_report"
+    return [
+        {"tool": pv, "call": "c1", "detail_full": json.dumps({"report_id": 41, "boards": ["dept-a"]})},
+        {"tool": pv, "call": "c1", "ok": True, "result_full": json.dumps(
+            {"report_id": 41, "targets": [{"slug": "dept-a", "audience": 12}], "confirm_token": tok})},
+        {"tool": pub, "call": "c2", "detail_full": json.dumps({"report_id": 41, "boards": ["dept-a"], "confirm_token": tok})},
+        {"tool": pub, "call": "c2", "ok": True, "result_full": json.dumps({"items": [{"workspace_slug": "dept-a"}]})},
+        {"tool": pub, "call": "c3", "detail": json.dumps({"report_id": "41번", "confirm_token": tok}, ensure_ascii=False)},
+        {"tool": pub, "call": "c3", "ok": False, "result_preview":
+            "Error executing tool publish_report: 1 validation error for publish_reportArguments\nboards\n  Field required "
+            f"[type=missing, input_value={{'report_id': '41번', 'confirm_token': '{tok}'}}, input_type=dict]"},
+    ]
+
+
+@pytest.mark.parametrize("prefix", ["", "reportarchive_"])   # 챗 기록의 이름은 게이트웨이 노출 이름이다 — 앱 접두가 붙어 올 수 있다
+def test_게시_확인_토큰은_원장_어디에도_남지_않는다(store, prefix):
+    """미리보기 결과 · 게시 인자 · 되비친 오류 글 — 셋 다 가린다. 가림 표지가 그 자리에 남고 나머지(대상 · 볼 사람 수)는 그대로다."""
+    from tests.test_procedures_runner import _ledger_cells
+
+    rid = from_chat.record(store, owner_sub="u", conversation_id="c1", title="41번 보고서 게시",
+                           activity=_publish_turn(prefix))
+    assert rid
+    sig = TOKEN.split(".")[1]
+    assert [c[:80] for c in _ledger_cells(store.health()["path"]) if sig in c] == [], "원장에 확인 토큰이 남았다"
+    steps = store.get_run(rid, owner_sub="u")["steps"]
+    assert [s["tool"] for s in steps] == [f"{prefix}preview_publish"] + [f"{prefix}publish_report"] * 2
+    prev = json.loads(store.step_result(rid, 0))
+    assert prev["confirm_token"] == "[가림:confirm_token]"
+    assert prev["targets"] == [{"slug": "dept-a", "audience": 12}] and prev["report_id"] == 41
+    assert json.loads(steps[1]["args"]["_text"]) == {"report_id": 41, "boards": ["dept-a"],
+                                                      "confirm_token": "[가림:confirm_token]"}
+    assert "input_value={'report_id': '41번', 'confirm_token': '[가림:confirm_token]'}" in store.step_result(rid, 2)
+
+
+def test_짧은_가짜_토큰은_칸만_가리고_다른_글자는_건드리지_않는다(store):
+    """모델이 지어낸 짧은 값(RA 가 거절한다 — 살아 있지 않다)을 글자 그대로 가리면 같은 글자가 든 숫자 · 낱말까지 지워진다.
+    칸(`"confirm_token": "…"`)은 가리고, 다른 꼴로 되비친 값을 글자 그대로 찾아 가리는 것은 RA 토큰 길이의 값만 한다."""
+    rid = from_chat.record(store, owner_sub="u", conversation_id="c1", activity=_publish_turn(tok="1"))
+    steps = store.get_run(rid, owner_sub="u")["steps"]
+    assert json.loads(steps[1]["args"]["_text"]) == {"report_id": 41, "boards": ["dept-a"],
+                                                      "confirm_token": "[가림:confirm_token]"}
+    assert json.loads(store.step_result(rid, 0))["targets"] == [{"slug": "dept-a", "audience": 12}]
+    assert "input_value={'report_id': '41번', 'confirm_token': '1'}" in store.step_result(rid, 2)

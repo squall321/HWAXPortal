@@ -273,11 +273,17 @@ class ProceduresStore:
             c.execute("UPDATE runs SET state=?, stage=?, ended_at=? WHERE id=?",
                       (state, stage, _now() if ended else None, run_id))
 
-    def cancel_run(self, run_id: str, by: str) -> None:
-        """다음 단계 경계에서 반영된다. 진행 중 호출은 끝까지 간다."""
+    def cancel_run(self, run_id: str, by: str) -> bool:
+        """다음 단계 경계에서 반영된다. 진행 중 호출은 끝까지 간다.
+
+        ⚠ **끝난 실행은 덮지 않는다** — done · failed 를 cancelled 로 바꾸면 성패 기록이 사라지고, 이미 중단한 실행은 누가 언제 멈췄는지가
+        다시 쓰인다. 확인과 쓰기를 한 문장에 둔다 — 따로 읽고 쓰면 그 사이에 끝난 실행을 덮는다. 바꿨으면 True.
+        """
         with self._conn() as c:
-            c.execute("UPDATE runs SET state='cancelled', cancelled_by=?, cancelled_at=?,"
-                      " ended_at=? WHERE id=?", (by, _now(), _now(), run_id))
+            n = c.execute("UPDATE runs SET state='cancelled', cancelled_by=?, cancelled_at=?,"
+                          " ended_at=? WHERE id=? AND state NOT IN ('done', 'failed', 'cancelled')",
+                          (by, _now(), _now(), run_id)).rowcount
+        return n > 0
 
     def get_run(self, run_id: str, *, owner_sub: str | None = None) -> dict | None:
         row = self._conn().execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()

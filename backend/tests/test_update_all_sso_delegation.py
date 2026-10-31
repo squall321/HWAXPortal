@@ -463,6 +463,89 @@ def test_generic_delegation_drift_sees_send_plat(tmp_path):
     assert "plat 전달 드리프트: newapp" in r.stdout and "SEND_PLAT" in r.stdout and "비밀이" not in r.stdout
 
 
+# ── DynaForge(kooremapper_mcp) 위임의 plat 손잡이 KOORM_SEND_PLAT(게이트웨이 c9c3419 · 남은 일 B16 ①) ─────────────────────────
+# 그 위임은 일반 순회(PER_USER_SSO_APPS) 밖이라 <접두>_SEND_PLAT 가 닿지 않는다. 게이트웨이 provision 은 KOORM_SEND_PLAT 가 **적혀 있을
+# 때만** 그 값으로 정한다(빈 값도 끔 · 안 적으면 직전 config). §5 재설치가 넘기지 않고 어긋남도 보지 않아 자동 복구(repair_mcp — set -a 로
+# 소싱)만 그 값을 실었다 — 마지막에 돈 길에 따라 결과가 달랐다(게이트웨이 검토 10-31).
+KRM = {"sso_url": "http://127.0.0.1:8700/api/v1/auth/sso", "secret": "krm-secret", "client": "deliberation"}
+
+
+def _krm_cfg(entry) -> dict:
+    return {"heax_registry": {"per_user_sso": {} if entry is None else {"kooremapper_mcp": entry}}}
+
+
+def test_koorm_send_plat_reaches_the_provisioner_only_when_written(tmp_path):
+    """적은 값은 그대로(빈 값은 빈 값 — 끔), 안 적었으면 아무것도 넘기지 않는다(직전 config 를 잇는다). 실행으로 본다."""
+    gw = tmp_path / "gw"; gw.mkdir()
+    (gw / "provision-config.sh").write_text('#!/usr/bin/env bash\nprintf "%s" "${KOORM_SEND_PLAT-<unset>}" > "$PWD/sp.marker"\n')
+    for box, want in (("KOORM_SEND_PLAT=1\n", "1"), ("KOORM_SEND_PLAT=\n", ""), ("", "<unset>")):
+        script = (f'set -uo pipefail; GW_DIR="{gw}"\n{box}{_reprovision_cmd()}\necho rc=$?\n'
+                  """bash -c 'printf "AFTER=%s\\n" "${KOORM_SEND_PLAT-<unset>}"'""")
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+        assert "rc=0" in r.stdout and not r.stderr, r.stdout + r.stderr
+        assert (gw / "sp.marker").read_text() == want, box
+        assert "AFTER=<unset>" in r.stdout, "export 는 재프로비저닝 서브셸 안에서만 — 뒤에 뜨는 서비스가 물려받지 않는다"
+
+
+def test_koorm_send_plat_drift_needs_the_delegation_and_a_written_knob(tmp_path):
+    """적힌 값과 config 의 send_plat 이 다르면 방아쇠다. 비밀은 보지 않는다 — 그 비밀은 KooRemapper .env 에 있어 이 실행이 못 읽을 수 있고,
+    게이트웨이는 비밀 없이 이어받은 항목에도 이 값을 먹인다. 위임이 없으면 짚지 않는다 — provision 은 위임 없이 그 칸을 쓰지 않아, 짚으면
+    매 실행 재프로비저닝(게이트웨이 · 에이전트 서버 재기동)이 헛돈다(일반 앱의 `_sso_nourl` 과 같은 까닭)."""
+    plain, on = _krm_cfg(KRM), _krm_cfg({**KRM, "send_plat": True})
+    assert _drift(tmp_path, plain, box="KOORM_SEND_PLAT=1\n") == "kooremapper_mcp_sso_plat"
+    assert _drift(tmp_path, on, box="KOORM_SEND_PLAT=1\n") == ""
+    assert _drift(tmp_path, on, box='KOORM_SEND_PLAT=" On "\n') == "", "게이트웨이와 같이 앞뒤 공백 · 대소문자를 고르게 읽는다"
+    assert _drift(tmp_path, on, box="KOORM_SEND_PLAT=0\n") == "kooremapper_mcp_sso_plat", "0 이면 끈다 — config 에 남은 것이 어긋남"
+    assert _drift(tmp_path, on, box="KOORM_SEND_PLAT=\n") == "kooremapper_mcp_sso_plat", "빈 값도 끔이다(게이트웨이와 같다)"
+    assert _drift(tmp_path, plain, box="KOORM_SEND_PLAT=0\n") == ""
+    assert _drift(tmp_path, on) == "" and _drift(tmp_path, plain) == "", "안 적은 박스는 config 를 잇는다"
+    assert _drift(tmp_path, _krm_cfg(None), box="KOORM_SEND_PLAT=1\n") == "", "위임이 없으면 짚지 않는다"
+    assert _drift(tmp_path, _krm_cfg("str"), ra=SECRET, box="KOORM_SEND_PLAT=1\n") == "reportarchive_sso", \
+        "꼴이 이상한 항목에서 판정이 터져 다른 위임의 어긋남까지 삼키지 않는다"
+    # 알림 — 일반 앱 문구(<접두>_SEND_PLAT)로 읽히면 사람이 PER_USER_SSO_APPS 에서 접두를 찾는다
+    i = UA.index('for _k in $(_sso_deleg_drift "$GW_DIR/gateway_config.json"); do')
+    loop = UA[i:UA.index("\n    done\n", i)]
+    script = "\n".join([
+        "set -uo pipefail", 'bad() { echo "BAD:$*"; }', "MISSING=''",
+        '_sso_deleg_drift() { echo "kooremapper_mcp_sso_plat newapp_sso_plat"; }', 'GW_DIR="/nonexistent"', loop, "    done",
+        'echo "MISSING=[$MISSING]"'])
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    assert "MISSING=[kooremapper_mcp_sso_plat newapp_sso_plat]" in r.stdout, "재프로비저닝이 맞추는 어긋남이다"
+    krm = next(ln for ln in r.stdout.splitlines() if "kooremapper_mcp" in ln)
+    assert "KOORM_SEND_PLAT" in krm and "<접두>" not in krm, krm
+    assert "<접두>_SEND_PLAT" in next(ln for ln in r.stdout.splitlines() if "newapp" in ln)
+
+
+def _gateway_krm_block():
+    """게이트웨이 프로비저너의 KOORM_SEND_PLAT 블록(`_krm_sp = …` 부터 리스크 앱 위임 앞까지)을 원문에서 꺼낸다."""
+    prov = ROOT.parent / "HWAXMcpGateway" / "provision-config.sh"
+    if not prov.exists():
+        pytest.skip("게이트웨이 리포가 옆에 없다")
+    src = prov.read_text(encoding="utf-8")
+    head = '_krm_sp = e.get("KOORM_SEND_PLAT")'
+    if head not in src:
+        pytest.skip("옆의 게이트웨이가 아직 KOORM_SEND_PLAT 를 모르는 판이다")
+    i = src.index(head)
+    return src[i:src.index('\nif e.get("HWAXRISK_SSO_SECRET"):', i)]
+
+
+@pytest.mark.parametrize("knob", [None, "1", "0", "", " On ", "off"])
+@pytest.mark.parametrize("entry", [None, KRM, {**KRM, "send_plat": True}])
+def test_koorm_send_plat_trigger_agrees_with_the_gateway(tmp_path, knob, entry):
+    """**정본은 게이트웨이다** — 그 블록을 원문에서 꺼내 같은 입력으로 돌린다. update-all 이 짚는 것은 정확히 재프로비저닝이 바꿔 놓을
+    것이어야 하고(더 넓으면 매 실행 헛돈다, 더 좁으면 적어도 안 켜진다), 한 번 돈 뒤에는 조용하다."""
+    prev = _krm_cfg(entry)["heax_registry"]["per_user_sso"]
+    e = {} if knob is None else {"KOORM_SEND_PLAT": knob}
+    per_user = json.loads(json.dumps(prev))
+    exec(_gateway_krm_block(), {"e": e, "per_user": per_user, "print": lambda *a, **k: None})  # noqa: S102 — 옆 리포의 추적 파일 발췌
+    box = "" if knob is None else f"KOORM_SEND_PLAT={json.dumps(knob)}\n"
+    flagged = "kooremapper_mcp_sso_plat" in _drift(tmp_path, {"heax_registry": {"per_user_sso": prev}}, box=box).split()
+    assert flagged == (per_user != prev), (knob, entry, per_user)
+    after = _drift(tmp_path, {"heax_registry": {"per_user_sso": per_user}}, box=box).split()
+    assert "kooremapper_mcp_sso_plat" not in after, after
+
+
 def test_a_generic_secret_without_an_address_is_reported_not_reprovisioned(tmp_path):
     """게이트웨이는 주소가 없으면 위임을 만들지 않는다(기본 호스트가 없다). 그 앱을 방아쇠로 삼으면 매 실행 재프로비저닝이
     헛돌고 그때마다 게이트웨이·에이전트서버가 내려갔다 올라온다 — 따로 표지해 알리기만 한다."""

@@ -159,3 +159,16 @@ leftovers-1017 LO-D8). 헤더 이름 · 서명 대상 · 키 · 수명은 게이
 `verified_affiliation` 꼴 검증 · `create_job` 에서 `stcx_fullangle_drop` 막기)은 KooRemapper `d3d777c` 의 파일:줄로 적었다. 게이트웨이 몫
 (`KOORM_SEND_PLAT` — kooremapper_mcp 위임은 `PER_USER_SSO_APPS` 순회 밖이라 `<접두>_SEND_PLAT` 를 못 받는다, `provision-config.sh:697-701` ·
 `:808-816`, 같은 판)은 다른 작업이 넣는다. 차례는 게이트웨이 → DynaForge 다 — 헤더가 오기 전에 막기를 켜면 MCP 제출이 모두 막힌다.
+
+**FU-D26 update-all §5 가 KOORM_SEND_PLAT 를 넘기고, 어긋나면 재설치한다(2026-10-31).** 게이트웨이 검토(10-31)가 찾았다 — §5 재설치는 이
+손잡이를 넘기지 않았고(provision.env 는 소싱만 한다 — export 가 아니다) 어긋남 판정도 없었다. 자동 복구(`repair_mcp`)만 `set -a` 로 소싱해
+실어, 마지막에 돈 길에 따라 결과가 달랐다. 고침 셋 — ① §5 서브셸의 `export` 표지에 이름을 더했다. 대입어 사슬의 `${…:-}` 는 안 적은 박스를
+빈 값(끔)으로 넘기고, export 표지는 안 적었으면 아무것도 넘기지 않는다(직전 config 를 잇는다). ② `_sso_deleg_drift` 가
+`kooremapper_mcp_sso_plat` 를 낸다 — 항목이 있고, 손잡이가 적혀 있고, 켬 여부가 config 의 `send_plat` 과 다를 때만. 비밀은 보지 않는다 —
+KooRemapper .env 에 있어 못 읽는 실행이 있고, 게이트웨이는 비밀 없이 이어받은 항목에도 이 값을 먹인다. 항목이 없으면 짚지 않는다 — provision 은
+위임 없이 그 칸을 쓰지 않아, 짚으면 매 실행 재설치 · 재기동이 헛돈다(`_sso_nourl` 과 같은 까닭). 판정이 게이트웨이와 같은지는 그 블록을
+원문에서 꺼내 같은 입력으로 돌려 맞댄다(손잡이 여섯 × 항목 셋 — 한 번 돈 뒤 조용하다). ③ 알림 문구가 `<접두>_SEND_PLAT` 가 아니라
+`KOORM_SEND_PLAT` 를 댄다. cae00 안내 — KooRemapper 가 머리 나르기 · 검증(요청서 §2 의 ① · ②)을 올리기 전에는 provision.env 에 적지 않는다.
+빈 자리표시도 적지 않는다(빈 값은 끔). request-1030 server-setup 0절과 requests §2 머리 줄에 적었다. 남은 위험 — 옆 게이트웨이 리포가 이
+손잡이를 모르는 옛 판이면(당기기 실패) 손잡이를 적은 박스는 매 실행 재설치가 돈다. 재설치 뒤 재검증의 ✗ 로 드러난다(일반 앱의
+`<접두>_SEND_PLAT` 과 같은 자리 · 같은 위험).

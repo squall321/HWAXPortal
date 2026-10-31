@@ -13,10 +13,17 @@ from __future__ import annotations
 
 import logging
 
+from app.procedures.models import PUBLISH_TOKEN
+from app.procedures.runner import _TOKEN_FIELD, _mask_publish_token, _redact
+
 logger = logging.getLogger(__name__)
 
 # 한 턴에서 원장에 남길 호출 수 상한. 활동 스냅샷(60)과 같은 자리에서 잘린다.
 MAX_STEPS = 60
+# 칸에서 찾은 확인 토큰을 **글자 그대로** 다른 글에서도 가리는 값의 최소 길이. RA 토큰은 `<만료초>.<서명 43자>` 54자다
+# (ReportArchive mounts/confirm.py). 모델이 지어낸 짧은 값('1' · 'yes')은 RA 가 거절해 살아 있지 않고, 글자 그대로 가리면
+# 같은 글자가 든 숫자 · 낱말까지 지워진다 — 그런 값은 칸만 가린다.
+TOKEN_ECHO_MIN = 20
 
 
 def pair(activity: list[dict]) -> list[dict]:
@@ -71,6 +78,22 @@ def record(store, *, owner_sub: str, conversation_id: str, activity: list[dict],
         return None
     run_id = None
     try:
+        # ⚠ **게시 확인 토큰을 남기지 않는다**(남은 일 B3 ③ — 원장에 토큰 0). 챗이 RA 에 게시하면 미리보기 결과(토큰을 준다)와
+        # 게시 인자(토큰을 받는다)가 이 턴에 같이 오고, 그 값은 600초 동안 그 보고서를 그 게시판에 올릴 수 있다. 실행기 `_one` 과
+        # 같은 가림을 쓴다 — 칸을 가리고(`_mask_publish_token`), 그렇게 찾은 값이 다른 꼴로 되비친 곳(검증 오류가 받은 인자를 파이썬
+        # 꼴 `'confirm_token': '…'` 로 싣는다 — `_redact` 를 둔 까닭과 같다)도 가린다. 도구 이름은 보지 않는다 — 챗 기록의 이름은
+        # 게이트웨이 노출 이름이라 앱 접두가 붙어 올 수 있고, `confirm_token` 칸은 RA 게시 확인뿐이다(형제 리포 대조 10-31).
+        # 가리기 전에는 아무것도 쓰지 않는다 — 여기서 터지면 아래 except 가 받아 아무것도 남기지 않는다.
+        seen = {m.group(2) for st in steps for t in (st["args_text"], st["result_text"]) if t
+                for m in _TOKEN_FIELD.finditer(t)}
+        for st in steps:
+            for k in ("args_text", "result_text"):
+                if st[k]:
+                    t = _mask_publish_token(st[k])
+                    for tok in seen:
+                        if len(tok) >= TOKEN_ECHO_MIN:
+                            t = _redact(t, {PUBLISH_TOKEN: tok})
+                    st[k] = t
         run_id = store.create_run(
             owner_sub=owner_sub, run_by=owner_sub, procedure_version_id=None,
             inputs={}, origin=origin, mode="live", title=title,

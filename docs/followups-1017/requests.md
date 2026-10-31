@@ -19,7 +19,7 @@
 않고 다음 후보를 부르며, 인자 칸 없는 도구부터 고른다(포털 `e908b62`). 그래서 급하지 않다 — 스키마가 맞으면 Claude 가 첫 호출부터
 맞게 부른다.
 
-## 2. DynaForge(KooRemapper) — stcx 제출 전에 그 사람의 SmartTwin 권한을 본다(사용자 결정 8) — 10-31 진행(B16): ① 게이트웨이 손잡이 `KOORM_SEND_PLAT`(1 이면 send_plat, 안 적으면 직전 값 — HWAXMcpGateway `5b75ae1` · 반대 검토 `5e2810d` · `9a16e52` · `546fbaf`, 병합 `c9c3419` · 63fbc4f 판 올림, 시험이 `KOORM_SEND_PLAT=1` → `per_user_sso.kooremapper_mcp.send_plat` 참을 본다 · 전체 727 통과) · ② 이 절의 MCP 문단을 서명 헤더 길로(`9047a2d`) — 남은 것 KooRemapper 의 막기(그쪽 사용자 결정으로 이번에 안 한다 — 이 문서 끝 10-31 답) · 포털 update-all §5 재설치가 이 손잡이를 넘기지 않는다(자동 복구 길만 넘긴다 — 포털 세션)
+## 2. DynaForge(KooRemapper) — stcx 제출 전에 그 사람의 SmartTwin 권한을 본다(사용자 결정 8) — 10-31 진행(B16): ① 게이트웨이 손잡이 `KOORM_SEND_PLAT`(1 이면 send_plat, 안 적으면 직전 값 — HWAXMcpGateway `5b75ae1` · 반대 검토 `5e2810d` · `9a16e52` · `546fbaf`, 병합 `c9c3419` · 63fbc4f 판 올림, 시험이 `KOORM_SEND_PLAT=1` → `per_user_sso.kooremapper_mcp.send_plat` 참을 본다 · 전체 727 통과) · ② 이 절의 MCP 문단을 서명 헤더 길로(`9047a2d`) — 남은 것 KooRemapper 의 막기(그쪽 사용자 결정으로 이번에 안 한다 — 이 문서 끝 10-31 답) · 포털 update-all §5 재설치가 이 손잡이를 넘기지 않는다(자동 복구 길만 넘긴다 — 포털 세션) → 고침(10-31 포털 — §5 가 넘기고, DynaForge 위임이 있는데 게이트웨이 설정과 다르면 재설치한다. 막기 몫을 올리기 전에는 cae00 provision.env 에 적지 않는다 — 빈 자리표시도, 빈 값은 '끔')
 
 **무엇** — stcx(356대) 해석 잡은 공용 토큰 한 명 이름으로 나간다. 그래서 포털에서 SmartTwin 권한이 없는 DynaForge 사용자도 그 토큰으로
 잡을 낼 수 있는 것으로 보인다(포털 쪽에서 본 것이고 DynaForge 코드로는 확인하지 않았다).

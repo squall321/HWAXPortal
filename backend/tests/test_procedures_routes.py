@@ -285,6 +285,72 @@ def test_취소는_소유자와_관리자만(user, client):
     assert st.get_run(rid3)["state"] != "cancelled"
 
 
+def test_끝난_실행은_중단하지_않고_그대로_둔다(user):
+    """중단은 무조건 cancelled 로 덮었다 — 끝난 실행(done · failed)이 '중단됨' 으로 바뀌어 성패 기록이 사라졌고, 이미 중단한 실행은 누가
+    언제 멈췄는지가 다시 쓰였다. 409 와 함께 까닭을 말하고 원장은 그대로 둔다(화면은 도는 실행에만 '중단' 을 보인다 — API 로만 닿던 길).
+    확인과 쓰기는 한 문장이다 — 그 사이에 실행이 끝나도 끝난 것을 덮지 않는다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    keep = ("state", "stage", "ended_at", "cancelled_by", "cancelled_at")
+    for state in ("done", "failed", "cancelled"):
+        rid = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
+        if state == "cancelled":
+            assert c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h).status_code == 200
+        else:
+            st.set_run_state(rid, state, stage="step:0", ended=True)
+        before = {k: st.get_run(rid)[k] for k in keep}
+        r = c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h)
+        assert r.status_code == 409, (state, r.status_code, r.text[:200])
+        assert ("이미 중단한 실행" if state == "cancelled" else f"이미 끝난 실행입니다({state})") in r.text, r.text[:200]
+        assert {k: st.get_run(rid)[k] for k in keep} == before, state
+        assert st.cancel_run(rid, "u") is False, "저장소도 끝난 실행을 덮지 않는다"
+    for state in ("queued", "running", "gated"):   # 도는 · 확인 대기 실행은 그대로 세운다
+        rid = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
+        st.set_run_state(rid, state)
+        assert c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h).status_code == 200, state
+        assert st.get_run(rid)["state"] == "cancelled"
+
+
+def test_중단한_실행은_승인_재개_고르기로_다시_돌지_않는다(user):
+    """화면은 중단한 실행에 그 단추를 안 보이지만 API 로는 닿았다 — 승인 · 재개 · 고르기가 실행기를 다시 띄우면 running 으로 덮여 중단이
+    사라지고 남은 단계가 돌았다. 409 와 함께 무엇을 하면 되는지 말하고, 원장에는 아무것도 적지 않는다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spawned: list[str] = []
+
+    def _rec(**kw):   # 실행기를 다시 띄우려 했는지 — 라우트가 부르는 그 순간 적는다
+        spawned.append(kw["run_id"])
+
+        async def _noop():
+            return None
+        return _noop()
+
+    c.app.state.procedures_runner.run = _rec
+    spec = {"title": "t", "vars": [],
+            "steps": [{"backend": "ra", "tool": "add_report_tags", "gate": "human", "args": {"x": 1}}]}
+    got = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec}, headers=h).json()
+    gated = st.create_run(owner_sub=me, run_by=me, procedure_version_id=got["version_id"],
+                          inputs={}, origin="replay", mode="live")
+    st.begin_step(gated, 0, backend="ra", tool="add_report_tags", args={"x": 1}, mode="live")
+    st.finish_step(gated, 0, ok=False, state="pending", stage="gate")
+    st.set_run_state(gated, "gated", stage="step:0")
+    unknown, _ = _run_with_unknown_write(c, h, "find_reports")
+    picking = _gated_pick_run(c, h)
+    for rid in (gated, unknown, picking):
+        assert c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h).status_code == 200
+
+    sha = st.get_run(gated)["steps"][0]["args_sha256"]
+    for r in (c.post(f"{PREFIX}/runs/{gated}/steps/0/ack", json={"args_sha256": sha}, headers=h),
+              c.post(f"{PREFIX}/runs/{unknown}/resume", headers=h),
+              c.post(f"{PREFIX}/runs/{picking}/steps/0/pick", json={"value": "PANEL_2"}, headers=h)):
+        assert r.status_code == 409 and "중단한 실행" in r.text, (r.request.url.path, r.status_code, r.text[:200])
+    assert spawned == [], "중단한 실행을 실행기가 다시 띄웠다"
+    assert [st.get_run(x)["state"] for x in (gated, unknown, picking)] == ["cancelled"] * 3
+    assert st.gate_ack(gated, 0) is None, "중단한 실행의 승인을 원장에 적었다"
+    assert "part" not in st.get_run(picking)["inputs"], "중단한 실행에 고른 값을 넣었다"
+
+
 def test_빈_실행은_재개하지_않는다(user):
     c, h = user
     rid = c.post(f"{PREFIX}/runs", json={}, headers=h).json()["run_id"]
@@ -872,6 +938,32 @@ def test_초안은_남의_실행을_안_보여준다(user):
                                      {"tool": "t", "call": "a", "ok": True, "result_preview": "{}"}])
     boss = _login(c, "boss@corp.com")
     assert c.get(f"{PREFIX}/runs/{rid}/draft", headers=boss).status_code == 404
+
+
+def test_챗에서_한_게시의_확인_토큰은_읽는_길_어디에도_없다(user, monkeypatch):
+    """챗 턴 기록이 원장에 넣기 전에 가렸으면 읽는 길(실행 보기 · 단계 결과 · 초안 · 초안 저장의 거절 글)에도 없다 — 읽는 쪽마다 따로
+    가리지 않는다. 초안 저장은 종전처럼 거절하고 무엇을 지울지 말한다 — 가린 값도 앞 단계 결과와 같아 그 단계에서 이어진 값으로 읽힌다."""
+    from tests.test_procedures_from_chat import TOKEN, _publish_turn
+
+    from app.procedures import from_chat
+    from app.procedures import routes as R
+
+    async def _map(_request):   # 게이트웨이 `/tools-map` 대역 — 챗 기록에는 어느 앱인지 없다(오프라인 실행기는 지도를 못 준다)
+        return {"map": {"preview_publish": "reportarchive", "publish_report": "reportarchive"}}
+
+    monkeypatch.setattr(R, "_tools_map", _map)
+    c, h = user
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    rid = from_chat.record(c.app.state.procedures_store, owner_sub=me, conversation_id="c",
+                           title="41번 보고서를 dept-a 에 게시", activity=_publish_turn())
+    sig = TOKEN.split(".")[1]
+    got = [c.get(f"{PREFIX}/runs/{rid}", headers=h), c.get(f"{PREFIX}/runs/{rid}/draft", headers=h),
+           *(c.get(f"{PREFIX}/runs/{rid}/steps/{i}/result", headers=h) for i in range(3))]
+    assert [r.status_code for r in got] == [200] * 5, [r.text[:120] for r in got]
+    assert [r.request.url.path for r in got if sig in r.text] == []
+    r = c.post(f"{PREFIX}/runs/{rid}/draft/save", json={"title": "게시"}, headers=h)
+    assert r.status_code == 422 and sig not in r.text, r.text[:300]
+    assert "confirm_token" in r.text and "preview_publish" in r.text and "지운다" in r.text, r.text[:600]
 
 
 def test_절차를_도구_계약으로_낸다(user):
