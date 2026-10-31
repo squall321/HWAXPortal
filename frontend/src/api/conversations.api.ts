@@ -103,12 +103,15 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
   // 결정문 · 분석 루틴의 답에는 붙이지 않는다(라이브도 띵킹 · 심의 화면에는 말풍선을 그리지 않는다 — MessageList). 보내기 알림은 건너뛴다
   // (사람 발화의 답이 아니다). answered_by 를 적기 전의 포털이 남긴 띵킹의 답은 가를 수 없어 고른 전문가가 있었으면 말풍선이 붙는다(드물다).
   let pinned: Message['persona'];
+  // 웹 심의의 실행 id — 포털 중계가 발언 · 답의 meta.delib_run 에 남긴다(triage A24). 답 없이 끊긴 심의도 이것으로 '멈춤' 이 그 심의를 짚는다.
+  let runId = '';
   for (const m of server) {
     const ts = (m.ts ?? 0) * 1000;
     if (m.role === 'persona') {
       // meta 에 영속된 관계·입장을 되살린다 — 없으면 다른 기기에서 연 심의는 관계도가 비고
       // 이어하기가 양보 불가 조항을 승계하지 못한다(구 저장분은 meta 가 없어 그대로 비어 온다).
       const meta = (m.meta ?? {}) as Record<string, unknown>;
+      if (typeof meta.delib_run === 'string' && meta.delib_run) runId = meta.delib_run;
       turns.push({
         round: m.round ?? 0,
         persona: m.persona ?? '',
@@ -158,6 +161,11 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 근거 카드 — 좌석이 조회한 것(이어하기가 승계한다)과 엔진의 '줄였다·뺐다' 알림. 서버 사본에 없으면 다른 기기에서는 사라진다.
       const ev = (m.meta as { delib_evidence?: { source?: unknown; text?: unknown; included?: unknown; notice?: unknown }[] } | null)
         ?.delib_evidence;
+      // 사람이 멈춘 심의 — 포털 중계나 멈춤 창구가 멈춤을 답으로 남겼다(meta.delib_cancelled, triage A24). 그 글은 결정문이 아니다.
+      const cx = (m.meta as { delib_cancelled?: { message?: unknown } } | null)?.delib_cancelled;
+      const stopNote = cx ? String(cx.message ?? '') : '';
+      const dr = (m.meta as { delib_run?: unknown } | null)?.delib_run;
+      const rid = typeof dr === 'string' && dr ? dr : runId;
       out.push({
         id: newId(),
         role: 'assistant',
@@ -165,7 +173,9 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ts,
         delib: {
           turns: local,
-          decision: m.content,
+          ...(cx && m.content === stopNote ? {} : { decision: m.content }),
+          ...(cx ? { cancelled: { message: stopNote } } : {}),
+          ...(rid ? { runId: rid } : {}),
           totalRounds: Math.max(...local.map((t) => t.round)),
           ...(Array.isArray(ev) && ev.length
             ? {
@@ -180,6 +190,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         },
       });
       turns = [];
+      runId = '';
     } else {
       // 서버 meta 에 영속된 도구 활동(status) 복원 — 리로드·크로스디바이스에서도 심의 핸드오프
       // 근거 추출(conversationEvidence)이 동작하게 한다.
@@ -200,8 +211,8 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
     }
   }
   if (turns.length > 0) {
-    // 결정문 없이 끝난 심의(비정상 종료) — 발언만이라도 보이게 남긴다.
-    out.push({ id: newId(), role: 'assistant', text: '', ts: Date.now(), delib: { turns } });
+    // 결정문 없이 끝난 심의(비정상 종료) — 발언만이라도 보이게 남긴다. 실행 id 가 있으면 서버에서 아직 돌 수 있는 그 심의를 멈출 수 있다.
+    out.push({ id: newId(), role: 'assistant', text: '', ts: Date.now(), delib: { turns, ...(runId ? { runId } : {}) } });
   }
   return out;
 }

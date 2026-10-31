@@ -2493,6 +2493,144 @@ async def deliberate_voc(
         return {"items": [], "keywords": [], **_unary_fail(exc, settings, "deliberate/voc")}
 
 
+# ── 웹 심의 멈춤(docs/leftovers-1017 triage A24 (나) — 사용자 결정 10-31) ────────────────────────────────────────────────
+# 웹 심의(/심의 · /시뮬심의 · /시험계획)는 에이전트 서버의 분리 태스크라 화면이 떠나도(■ · 탭 닫기 · 끊김) 서버에서 끝까지 돈다 — 중계는 브라우저가
+# 끊으면 상류를 끊을 뿐이다(docs/request-1029 P-1). 그것을 멈추는 길이 이 창구다. 에이전트 서버 POST /deliberate/cancel 을 그 대화 id 와 실행 id 로
+# 부른다(에이전트는 /chat 이 실은 conversation_id 로 태스크를 적어 두고, 실행 id 를 스트림의 첫 심의 사건에 run_id 로 싣는다).
+#   · 인증 — 세션 + CSRF 만. PAT 는 받지 않는다(화면의 '멈춤' 단추가 부르는 자리다).
+#   · 주인 — 그 대화의 주인만. 없는 대화는 404 conversation_not_found, 남의 대화는 403 not_owner(이 창구의 계약 — 다른 대화 REST 는 둘 다 404).
+#     관리자도 남의 심의는 멈추지 못한다 — MCP deliberate_cancel(에이전트 delib_jobs.cancel 의 _foreign)과 같은 규칙이다(관리자는 볼 수 있어도
+#     접지는 못한다). 운영이 접을 일은 에이전트 서버의 루프백 창구를 직접 부른다(신원 없이 — 그 대화의 웹 심의 전부).
+#   · 실행 id(run_id) — 화면이 그 심의 칸에 쥔 것이다. 에이전트는 그 심의 하나만 접는다 — 대화 id 만으로 접으면 끊긴 채 남은 낡은 화면의 '멈춤' 이
+#     같은 대화에서 다른 기기가 띄운 새 심의를 접었다(A24 검토). 에이전트에는 user_email 도 싣는다(그 사람이 띄운 심의만 — 남이 내 대화 id 를
+#     실어 띄운 심의는 건드리지 않는다).
+#   · 답 — 에이전트의 답(200 · 404 delib_not_found · 409 finishing · 409 already_finished · 422)을 상태 그대로 넘긴다. code 없는 404 는 이 창구를
+#     모르는 옛 에이전트 서버라 404 agent_outdated, code 없는 5xx 는 502 agent_5xx, 닿지 못하면 502 agent_unreachable, 늦으면 504 agent_timeout.
+#   · 대화에 남기기 — 멈췄으면(200) 그 사실을 서버 대화에 남긴다. 그 심의를 받는 중계가 있으면 중계가 남긴다(멈춤 사건이 오면 그 글로, 사건 전에
+#     끊기면 끊긴 판 글로 — _DELIB_RELAYS). 없으면(받기가 끊긴 화면 · 다른 기기 — 중계는 끊기며 받은 발언까지만 남겼다) 이 창구가 끊긴 판 글을
+#     답으로 남기고 그 글을 stop_note 로 돌려준다. 남기지 않으면 새로고침 · 다른 기기에서 같은 심의가 다시 '아직 돌 수 있다' 와 '멈춤' 으로 보였다
+#     (A24 검토). 같은 실행의 멈춤은 한 번만 남긴다.
+#   · 감사 — delib_cancel 한 줄(대화 · 실행 · 상류 상태 · code).
+_DELIB_CANCEL_TIMEOUT = httpx.Timeout(10.0, read=30.0)   # 창구는 태스크 취소만 하고 곧바로 답한다 — 단추가 오래 잠기지 않게 짧게 둔다
+# 받기가 끊긴 뒤 멈춘 심의의 답 글 — 끊긴 뒤 서버에서 나온 발언은 중계가 받지 못해 어디에도 남지 않았다(라이브 멈춤의 '여기까지의 발언은 남는다' 와 다르다).
+_DELIB_CUT_STOP_NOTE = ("사람이 멈췄다(받기가 끊긴 뒤) — 끊기기 전에 받은 발언만 남는다. 끊긴 뒤 서버에서 나온 발언은 남지 않았고, 이 단의 결정문 · "
+                        "보고서는 없다(앞 단 · 앞 회차에서 이미 낸 결정문과 Report Archive 에 저장된 초안은 그대로 있다)")
+# (대화 id, 실행 id) → 그 웹 심의를 지금 받는 중계의 기록 {stop_by}. 중계가 첫 심의 사건(run_id)에서 넣고 끝의 저장 잠금 안에서 뺀다. 멈춤 창구는
+# 기록이 있으면 stop_by 만 적고(중계가 남긴다), 없으면 같은 잠금(_routine_save_lock 의 (대화, 'delib:' + 실행) 열쇠) 뒤에서 남긴다 — 중계가 받은
+# 발언을 저장하는 중이면 그 뒤에 선다(답이 발언보다 앞에 서지 않게). 포털은 프로세스 하나에 루프 하나라 이 표 하나로 된다.
+_DELIB_RELAYS: dict[tuple[str, str], dict] = {}
+
+
+class DelibCancelReq(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    conversation_id: str = Field(min_length=1, max_length=64)
+    run_id: str = Field(min_length=1, max_length=64)
+
+
+def _delib_stop_key(cid: str, run_id: str) -> tuple[str, str]:
+    """웹 심의 한 실행의 저장 잠금 열쇠 — 루틴 턴의 열쇠((대화, 실행 id))와 겹치지 않게 앞에 'delib:' 를 붙인다."""
+    return (cid, f"delib:{run_id}")
+
+
+def _delib_stop_saved(conv: dict | None, run_id: str) -> str | None:
+    """대화에 이 실행의 멈춤 답이 이미 있으면 그 글 — 스레드에서, 저장 잠금 안에서 부른다."""
+    for m in (conv or {}).get("messages") or []:
+        cx = (m.get("meta") or {}).get("delib_cancelled") if m.get("role") == "assistant" else None
+        if isinstance(cx, dict) and cx.get("run_id") == run_id:
+            return str(m.get("content") or "")
+    return None
+
+
+async def _delib_stop_record(request: Request, cid: str, run_id: str, owner: str, by: str) -> str | None:
+    """에이전트가 멈춤을 받았다(200) — 대화에 남긴다(위 머리글 '대화에 남기기'). 받는 중계가 남길 것이면 None, 아니면 대화에 남은 멈춤 글."""
+    rec = _DELIB_RELAYS.get((cid, run_id))
+    if rec is not None:
+        rec["stop_by"] = by          # 기다림 없이 — 중계가 빼기 전이면 중계가 읽는다(같은 루프라 사이에 끼지 못한다)
+        return None
+    store = _conv(request)
+    cancelled = {"message": _DELIB_CUT_STOP_NOTE, "by": by, "run_id": run_id, "cut": True}
+
+    def _put() -> str:
+        got = _delib_stop_saved(store.get(cid, owner), run_id)
+        if got is not None:
+            return got
+        store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=_DELIB_CUT_STOP_NOTE,
+                     meta={"delib_cancelled": cancelled, "delib_run": run_id})
+        return _DELIB_CUT_STOP_NOTE
+
+    try:
+        with anyio.CancelScope(shield=True):     # 브라우저가 떠나도 남긴다 — 에이전트는 이미 접었다
+            async with _routine_save_lock(_delib_stop_key(cid, run_id)):
+                return await anyio.to_thread.run_sync(_put)
+    except sqlite3.Error as exc:
+        logger.warning("심의 멈춤을 대화에 남기지 못했다 — %s(잠금 대기 CONV_STORE_BUSY_TIMEOUT_S), cid=%s run=%s — 심의는 멈췄지만 "
+                       "새로고침 뒤 화면은 다시 '아직 돌 수 있다' 로 보인다", exc, cid, run_id)
+        return None
+
+
+def _dc_reply(status: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"code": code, "message": message})
+
+
+@router.post("/deliberate/cancel")
+async def deliberate_cancel(
+    request: Request,
+    body: DelibCancelReq,
+    principal: Principal = Depends(get_current_principal),
+    _csrf: None = Depends(require_csrf),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """도는 웹 심의를 멈춘다(위 머리글) — 대화 주인만, 에이전트 서버의 답을 그대로 넘긴다."""
+    cid, rid = body.conversation_id, body.run_id
+    audit = _audit(request)
+    try:
+        state = await asyncio.to_thread(_conv(request).owner_state, cid, principal.subject)
+    except sqlite3.OperationalError as exc:
+        raise _store_busy(exc) from exc
+    if state != "mine":
+        status, code, msg = ((404, "conversation_not_found", "그런 대화가 없습니다") if state == "none"
+                             else (403, "not_owner", "이 대화를 시작한 사람만 심의를 멈출 수 있습니다"))
+        audit.record(principal=principal.subject, event="delib_cancel", status="rejected",
+                     meta={"conversation": cid, "run": rid, "code": code})
+        return _dc_reply(status, code, msg)
+    by = principal.email or principal.subject
+    try:
+        r = await _agent_client(request).post(
+            f"{settings.agent_server_url}/deliberate/cancel", timeout=_DELIB_CANCEL_TIMEOUT,
+            json={"conversation_id": cid, "run_id": rid, "by": by, "user_email": principal.email or ""})
+    except httpx.HTTPError as exc:
+        late = isinstance(exc, httpx.ReadTimeout)
+        code = "agent_timeout" if late else "agent_unreachable"
+        audit.record(principal=principal.subject, event="delib_cancel", status="error",
+                     meta={"conversation": cid, "run": rid, "code": code})
+        return _dc_reply(504 if late else 502, code,
+                         "에이전트 서버의 답이 늦습니다 — 잠시 뒤 다시 누르세요" if late else
+                         f"에이전트 서버에 닿지 못했습니다({type(exc).__name__}) — 잠시 뒤 다시 누르세요")
+    code = _cr_upstream_code(r)
+    out: Response
+    if code is None and r.status_code == 404:
+        code = "agent_outdated"
+        out = _dc_reply(404, code, "에이전트 서버에 심의 멈춤 창구가 없습니다 — 옛 판입니다(에이전트 서버를 올린 뒤 다시 누르세요)")
+    elif code is None and r.status_code >= 500:
+        code = "agent_5xx"
+        out = _dc_reply(502, code, f"에이전트 서버 오류(HTTP {r.status_code})")
+    else:
+        out = Response(content=r.content, status_code=r.status_code,
+                       media_type=r.headers.get("content-type", "application/json"))
+        try:
+            got = r.json() if r.status_code == 200 else None
+        except ValueError:
+            got = None
+        if isinstance(got, dict) and got.get("status") in ("cancelling", "cancelled"):
+            note = await _delib_stop_record(request, cid, rid, principal.subject, by)
+            if note is not None:
+                out = JSONResponse(status_code=200, content={**got, "stop_note": note})
+    audit.record(principal=principal.subject, event="delib_cancel", status="ok" if r.status_code < 400 else "error",
+                 meta={"conversation": cid, "run": rid, "upstream": r.status_code, **({"code": code} if code else {})})
+    return out
+
+
 # 챗 중계가 브라우저에 아직 못 보낸 프레임의 상한(HWAXPortal docs/request-1029 P-1 ①) — 끝없이 읽지 않는 클라이언트가 포털 메모리를 쌓지
 # 않게 한다. 보통 챗 한 턴은 수 MB 안이다(생각 글 24만 자도 1 MB 남짓). 넘으면 그 스트림만 종전처럼 상류 읽기를 멈춘다.
 _RELAY_BUFFER_BYTES = 64 * 1024 * 1024
@@ -2526,7 +2664,8 @@ _ROUTINE_SAVE_LOCKS: dict[tuple[str, str], list] = {}
 @contextlib.asynccontextmanager
 async def _routine_save_lock(key: tuple[str, str]) -> AsyncIterator[None]:
     """끝난 루틴 턴의 답 저장을 (대화 id, 실행 id)마다 하나씩 한다. 두 탭(떼어 낸 첫 턴과 '이어서' 로 다시 붙은 턴)이 같은 실행을 끝까지
-    읽으면 둘 다 '아직 없다' 를 본 뒤 둘 다 넣어 보고서가 두 번 남는다 — 확인과 넣기는 이 잠금 안의 스레드 호출 하나다(포털은 루프 하나다)."""
+    읽으면 둘 다 '아직 없다' 를 본 뒤 둘 다 넣어 보고서가 두 번 남는다 — 확인과 넣기는 이 잠금 안의 스레드 호출 하나다(포털은 루프 하나다).
+    웹 심의 한 실행의 끝 저장과 멈춤 창구의 기록도 이 잠금을 쓴다(열쇠 _delib_stop_key — 멈춤 답이 받은 발언보다 앞에 서지 않게)."""
     slot = _ROUTINE_SAVE_LOCKS.setdefault(key, [asyncio.Lock(), 0])
     slot[1] += 1
     try:
@@ -2673,6 +2812,9 @@ async def chat(
         user_images: list[str] = []  # 이 발화에 올린 그림의 주소(user_images) — 서버 사본의 답 meta 에 남겨 다른 기기의 이력에도 그림이 실리게
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         panels: list[dict] = []      # 패널(ui_resource) 포인터(app · tool · uri · call · 제목) — 답 meta.panels 로 남긴다. 결과 · 입력 · _meta 는 남기지 않는다(B-4 · B-6)
+        cancelled: dict = {}         # 사람이 멈춘 웹 심의의 멈춤 사건(delib kind=cancelled) — 답 meta.delib_cancelled 로 남긴다
+        run_key = ""                 # 웹 심의의 실행 id(첫 심의 사건의 run_id) — 발언 · 답의 meta.delib_run 으로 남기고 멈춤 창구가 이 중계를 찾는다
+        stop_rec: dict | None = None  # _DELIB_RELAYS 에 넣은 이 중계의 기록 — 멈춤 창구가 stop_by 를 적는다
         buf = ""                     # relay 는 청크가 프레임 경계와 안 맞음 → 완결 프레임만 파싱
         # 청크는 글자 경계와도 안 맞는다 — 한글 한 자(3바이트)가 두 청크로 갈리면 청크마다 따로 풀 때 그 자리가 '�' 로
         # 깨져 서버 사본에 들어간다. 발언이 길수록(줄이지 않은 글은 수만 자다) 걸린다. 이어지는 바이트를 쥐고 푼다.
@@ -2688,7 +2830,7 @@ async def chat(
         detached = False             # 루틴 턴 — 브라우저가 떠났다(아래 finally). 그 뒤 프레임은 저장할 것만 모으고 큐에 쌓지 않는다
 
         async def pump() -> None:
-            nonlocal final, decision, user_images, buf, pending, warned
+            nonlocal final, decision, user_images, cancelled, run_key, stop_rec, buf, pending, warned
             try:
                 async for frame in source:
                     if store is not None:
@@ -2707,6 +2849,10 @@ async def chat(
                                 acc.append(data["delta"])
                             elif evt == "delib":
                                 k = data.get("kind")
+                                if not run_key and isinstance(data.get("run_id"), str) and data["run_id"]:
+                                    # 웹 심의의 실행 id(에이전트가 첫 심의 사건에 싣는다 — triage A24) — 멈춤 창구가 이 중계를 찾게 적는다
+                                    run_key = data["run_id"][:64]
+                                    stop_rec = _DELIB_RELAYS.setdefault((cid, run_key), {"stop_by": ""})
                                 if k == "turn" and isinstance(data.get("say"), str):
                                     # say 는 회의 버블용으로 줄인 글이다. 엔진은 줄였을 때만 줄이지 않은 글(say_full)과
                                     # 그 원래 길이(say_full_chars)를 같은 이벤트에 따로 싣는다 — 서버 사본(다른 기기·이어가기·
@@ -2733,6 +2879,11 @@ async def chat(
                                                   "rebut": data.get("rebut")})
                                 elif k == "decision" and isinstance(data.get("text"), str):
                                     decision = data["text"]
+                                elif k == "cancelled":
+                                    # 사람이 멈춘 웹 심의(에이전트 POST /deliberate/cancel — triage A24) — 서버 사본에 멈춤으로 남긴다. 남기지
+                                    # 않으면 발언만 있고 답이 없는 대화가 되어 다른 기기에서는 '비정상 종료' 로 보인다(실패가 아니다).
+                                    cancelled = {"message": str(data.get("message") or "")[:400], "by": str(data.get("by") or "")[:200],
+                                                 **({"run_id": run_key} if run_key else {})}
                                 elif k == "evidence":
                                     # 근거 카드는 엔진이 '좌석에 주지 않았다·줄였다·좌석이 유실됐다' 를 알리는 유일한
                                     # 길이다(notice). 종전엔 서버 사본에 남지 않아 다른 기기·새로고침 뒤에는 알림이 사라지고,
@@ -2849,6 +3000,9 @@ async def chat(
                                 if isinstance(t.get("say_full_chars"), int) and t["say_full_chars"] > len(_content):
                                     # 엔진이 줄이지 않은 글마저 DELIB_TRANSCRIPT_CLIP 에서 잘랐다 — 원래 길이를 남긴다.
                                     _m["say_full_chars"] = t["say_full_chars"]
+                                if run_key:
+                                    # 그 심의의 실행 id — 답 없이 끊긴 심의도 다른 기기 · 새로고침의 화면이 이 id 로 멈춘다(serverMessagesToLocal)
+                                    _m["delib_run"] = run_key
                                 store.append(conversation_id=cid, owner_sub=owner, role="persona",
                                              content=_content,
                                              persona=(str(t["persona"])[:120] if t.get("persona") else None),
@@ -2857,9 +3011,16 @@ async def chat(
                             reply = final if final is not None else (decision or "".join(acc))
                             if not reply and routine_turn and routine_ptr:
                                 reply = _ROUTINE_EMPTY_REPLY   # 글 없이 끊긴 루틴 턴 — 그래도 남겨 run_id 를 잃지 않는다
+                            if not reply and cancelled:
+                                # 결정문 없이 멈춘 심의 — 멈춤을 답으로 남긴다. 화면은 meta.delib_cancelled.message 와 같은 글을 결정문으로 읽지 않는다
+                                reply = cancelled["message"] = cancelled["message"] or "(심의를 멈췄다)"
                             if reply:
                                 _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
                                                          ("user_images", user_images), ("panels", panels)) if v}
+                                if cancelled:   # 사람이 멈춘 심의(triage A24) — 화면은 이 글을 결정문으로 읽지 않는다(serverMessagesToLocal)
+                                    _am["delib_cancelled"] = cancelled
+                                if run_key:
+                                    _am["delib_run"] = run_key
                                 if routine_ptr:      # 분석 루틴 — 네 칸을 늘 싣는다(모르는 값은 null)
                                     _am["routine"] = {k: routine_ptr.get(k) for k in ("run_id", "routine_id", "title", "state")}
                                 if answered_by:      # 띵킹 · 심의가 답했다(위 answered_by) — 발언 없이 끝난 심의도 'delib' 다
@@ -2875,8 +3036,16 @@ async def chat(
                                            "최종 응답 중 일부가 서버 대화에 없다", exc, settings.conv_store_busy_timeout_s, cid,
                                            len(turns))
 
+                    # 웹 심의는 그 실행의 멈춤 기록과 같은 잠금 안에서 저장한다 — 멈춤 창구는 이 중계가 표에서 빠진 뒤로 이 잠금 뒤에서 남긴다.
+                    _lock = _rt_key or (_delib_stop_key(cid, run_key) if run_key else None)
                     with anyio.CancelScope(shield=True):
-                        async with (_routine_save_lock(_rt_key) if _rt_key else contextlib.nullcontext()):
+                        async with (_routine_save_lock(_lock) if _lock else contextlib.nullcontext()):
+                            if stop_rec is not None:
+                                _DELIB_RELAYS.pop((cid, run_key), None)
+                                if not cancelled and stop_rec["stop_by"]:
+                                    # 멈춤을 청한 뒤 사건이 오기 전에 받기가 끊겼다(■ · 탭 닫기) — 끊긴 판 글로 남긴다(창구는 중계에 맡겼다)
+                                    cancelled = {"message": _DELIB_CUT_STOP_NOTE, "by": stop_rec["stop_by"], "run_id": run_key,
+                                                 "cut": True}
                             await anyio.to_thread.run_sync(_save)
                     # 이 턴의 도구 호출을 **절차 원장**에도 남긴다 — 하나의 원장, 세 생산자
                     # (PLAN §9-9). 대화 저장과 별개이고, 실패해도 챗을 막지 않는다.
