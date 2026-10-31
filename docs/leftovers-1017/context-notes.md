@@ -65,3 +65,19 @@ server-setup 10절(A28 — cae00 서비스 감시 켜기) · deliberation-qualit
 리포마다 워크플로로 돈다(포털 · 게이트웨이 · 에이전트 서버 · 웹 리서치 · 리스크 앱 백엔드 · 리스크 앱 화면 — 화면은 A32 (가) 로 한 세션). 결정에
 딸린 dev 일(A18 · A24 (나) · A25 (가) · A27 (나))도 같은 길이고 A29 는 측정이 돈다. 다른 세션에 넘길 요청서(A4 MaterialTwinWeb 등)는 다음
 걸음에서 쓴다. B7 은 사용자 PAT 한 줄(dev 포털 `/auth/pat`)을 기다리고, B37 · B38 은 그 리포 세션에 넘기는 요청서다.
+
+**LO-D10 다른 세션에 넘길 요청서 — 여섯 갈래(2026-10-31).** LO-D9 의 '다음 걸음' 이다. 쓴 곳 — B37 [requests-1031/arg-descriptions.md](requests-1031/arg-descriptions.md)
+(LaminateAnalyzerMCP · StepForge · KooRemapper · ThermalShockMCP) · B38 [requests-1031/time-limits.md](requests-1031/time-limits.md)(KooRemapper · HEAXHub)
+· B16 ② followups-1017 requests 2절의 MCP 문단(고쳐 씀 — FU-D25) · A4 · A2 data-migration [requests/materialtwin-leftovers-1031.md](../data-migration/requests/materialtwin-leftovers-1031.md)
+· B5 procedures [gaps/lamina-strength-fatigue.yaml](../procedures/gaps/lamina-strength-fatigue.yaml) + [requests/materialtwin-lamina-strength.md](../procedures/requests/materialtwin-lamina-strength.md)
+· A23 [mxwp-wiki/answers.md](../mxwp-wiki/answers.md). 형제 리포는 읽기만 했고 파일:줄은 그 리포의 10-31 HEAD 다(게이트웨이는 다른 갈래의 합치기로
+줄이 밀려 master `5f4ba5f` 에 박았다). 대조하며 판정 표를 바로잡은 것 셋 — ① B38 의 '전처리 잡 벽시계 1800초를 설정 손잡이로' 는 낡았다. 이미
+`KOORM_JOB_TIMEOUT_SEC`(06-17 `4310a7f`)이라 요청은 '걸렸을 때 값과 손잡이를 문구에' 로 좁혔다. 같은 파일의 한도는 60초 일곱 곳에 더해 120 ·
+180 · 300 열한 곳이고, 한 호출이 REST 를 여러 번 부르는 자리(compare_reports · 그림 잡 기다림 — 잠 1초만 센다)가 게이트웨이 600초를 넘을 수 있어
+'호출 하나의 벽시계 기한' 을 함께 청했다. ② B37 의 받아들임 '`/tools-map` 의 arg_scores 에서 described == args' 는 그대로 읽을 수 없다 — 점수판은
+앱 합계와 설명이 빠진 도구 다섯만 싣는다. 그래서 앱의 described 가 요청한 인자 수 이상 오르고 그 도구가 `worst` 에 없는지로 읽고, 도구별 확인은
+그 리포 시험이 한다고 적었다. ③ LaminateAnalyzerMCP · ThermalShockMCP 는 pydantic 모델에 설명이 있는데(ThermalShock 주석은 'MCP 스키마로 그대로
+간다' 고 적었다) 도구가 `dict` 로 받아 inputSchema 에 닿지 않는다. 형을 바꾸면 오류 봉투가 FastMCP 검증 오류로 바뀌므로 맨 위 인자에 설명만 달라고
+적었다. 그 밖 — HEAXHub 요청은 그쪽 10-31 운영 전환 뒤에 넘긴다. ThermalShockMCP 는 도는 세션이 없다(사용자가 세션을 열 때 넘긴다). B5 의
+결손은 'MaterialTwin 에 강도가 없다' 가 아니다 — 강도 행에 방향 조건이 실리기는 한다(dev tensile 1,441행 중 325행 MD · TD …). 그래서 '이미 되는
+길이 있으면 알려 달라' 를 앞에 두었다. 원 줄(체크리스트 · 절차서)에는 이번에 덧붙이지 않았다 — 메인 세션이 보낸 뒤 적는다.
