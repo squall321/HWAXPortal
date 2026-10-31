@@ -358,3 +358,29 @@ D9 목록의 나머지 라우트 묶음. 그리고 `risk_pat_require_read_only` 
 것은 사람의 잡 pause 라 `job.pause` 한 행을 남긴다(엔진이 알린 사람 · 검증되지 않은 행위자 · 입구 web). 반대 검토가 짚은 '검토 잡 취소의
 감사 행이 취소 트랜잭션 밖에서 쓰인다' 는 같은 트랜잭션으로 옮겨 고쳤다. 범위 밖으로 드러난 셋(MCP 로 만든 잡의 job.create 가 검증됨으로
 적힘 · 코드 보류 잡을 MCP 로 멈출 때 응답 changed false · 이력 탭 이름표)은 사용자 결정(10-31 — 지금 고친다)으로 가지 `wt1031/risk-gaps` 에서 고친다.
+
+## 옛 남은 일 리스크 몫(B22 ~ B36) — 계획과 다르게 선 API 넷 · Tier C 후속(2026-10-31)
+옛 남은 일 표 B([triage-1031](../leftovers-1017/triage-1031.md) B22 ~ B36)를 리스크 앱이 지었다 — 백엔드 병합 `616ddcf` · `92d5ade` ·
+`b493965`(`7b1042d` 판), 화면 `dbe5f93`, 화면이 청한 읽기 · 흐름은 `3a188f3` 판이다. 그 작업이 계획서 §8.2.3 표와 다르게 세운 API 넷을
+여기 적는다. 계획서 줄은 고치지 않았다 — 앱 쪽 결정과 까닭은 HWAXRisk context-notes '10-31 백로그' 절 BL-1 ~ BL-3 이다('캡처 · diff
+백로그' 절에도 같은 번호가 있다).
+- `GET /targets/{key}/audit` 은 구성원이 아닌 사람에게 403 `not_a_member` 가 아니라 없는 대상과 같은 404 다. 앱의 남 숨김 규칙(구성원이
+  아니면 대상이 있다는 것도 흘리지 않는다 — 시험 `tests/rr/test_review1_stranger.py`)을 따랐고, viewer 가 바닥이라 구성원의 403 은 없다.
+- 그 응답은 계획의 `{rows, next_since}` 가 아니라 과제 감사와 같은 `{target_key, total, limit, offset, entries[…]}` 다(limit 1 ~ 200 ·
+  offset 으로 넘긴다). 과제 감사가 이미 이 꼴이라 화면 이력 탭이 두 감사를 한 그림으로 그린다.
+- `POST /projects/{id}/sources` 의 `duplicate_of` 는 부른 사람이 구성원(소유 · 멤버)인 활성 과제만 싣는다. 모든 과제를 실으면 남의 과제
+  id · 코드 · 소유자 메일이 샌다(앱 D45 '구성원은 하나'). 그래서 남끼리 같은 원천을 붙인 것은 알리지 못하고, 폐기된 과제도 뺀다.
+- `POST /targets/{key}/jobs` 의 `exclude_evidence` 는 항목 키 E2 ~ E9 만 받는다 — ref · E0 · E0c · E1 · M 은 422
+  `exclude_evidence_invalid`(허용값을 함께 준다). 계획이 스스로 어긋나 있다 — §8.2.3 은 'E키 또는 ref', §5.7 RecallPreview 는 '항목 제외만
+  가능, 추가·편집 불가' 다. 앱은 §5.7 을 따랐다(항목 안의 줄을 빼면 항목 편집이 된다).
+- API 밖에서 계획 글보다 넓히거나 고른 것 넷 — same-as 6단계 건너뜀에 배정 행렬의 변 1,600 상한을 더했다(§2.6.3 은 곱 800×800 만 적는데
+  곱만 보면 한쪽이 큰 나머지가 10분을 넘는다 — 그쪽 '캡처 · diff 백로그' BL-6). `truncated` 제외가 명명 치수 · kind 별 롤업 · 고아 전이 ·
+  검토 근거 줄까지 간다(BL-7 ~ BL-9). persona_rev 는 박스마다 세는 판번호가 아니라 role_sha 앞 7자다(반출 · 들여오기로 박스를 넘어도 같은
+  값 — BE-4). 계면 별칭 철회는 계획 REST 목록에 길이 없어 POST /sameas/decide 의 새 결정 `revoke_iface_alias` 로 열었다(BE-7).
+
+**Tier C 후속은 GLM 이다(정책).** Claude 로 돈 Tier B 잡 뒤에 러너가 C3 마감으로 세우는 자동 후속 Tier C 는 GLM 으로 돈다 — 의도된
+동작이다. 반출 동의는 잡마다 사람이 한다(사용자 결정 10-15). 사람이 동의하지 않은 잡이 그 대상의 자료(브리프 · 좌석 조회 결과)를
+Claude 로 보내지 않는다. 후속은 메모 · 층 · 브리프 제외를 물려받고 판단 LLM(`llm` · `consent_external`)은 물려받지 않는다. 그 Tier C 도
+Claude 로 돌리려면 사람이 그 잡을 만들며 동의한다. 패널 잡의 동의 글이 '동의는 이 잡에만 — Tier C 후속은 GLM' 을 말한다. 검토 잡의
+사슬(쟁점 · 종합)이 판단 LLM 을 물려받는 것과 다르다 — 그쪽은 동의 글이 사슬이 내보내는 것까지 말하고 사람이 그 글에 동의한다. 근거는
+HWAXRisk context-notes RD-7 · RF-11 · RF-7 과 시험 `test_the_c3_follow_up_of_a_claude_tier_b_job_stays_on_glm` 이다.
