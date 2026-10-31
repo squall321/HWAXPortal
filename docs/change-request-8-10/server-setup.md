@@ -142,7 +142,7 @@ bash -c 'set -euo pipefail; set -a; . ./infra/.env; echo ok'
 포털 리포 루트에서 `./infra/scripts/update-all.sh` 를 돌린다. 받기와 재기동을 한 실행에서 하므로 도중에 끊지 않는다(끊겼으면 다시 돌린다).
 아래 줄은 조건이 맞을 때만 나온다 — 안 나오는 것은 실패가 아니다. 표는 나오는 순서다.
 새 에이전트서버가 뜬 뒤의 실행은 심의가 돌거나 줄 서 있으면 포털·nginx·HEAX Hub·에이전트서버 재기동과 게이트웨이 재프로비저닝을 미루고 `○ … 건너뜀` 으로 남긴다(끝의 `○ 있는데 안 켠 것` 요약에도 다시 실린다). 그 줄이 있는 실행은 반영이 끝난 것이 아니다 — 심의가 끝난 뒤 한 번 더 돌린다.
-(2026-10-31 덧붙임) 게이트웨이(코드가 바뀐 재기동) · SignalForge(§2) · signalforge-mcp 재기동도 이제 보호를 받는다 — 에이전트서버와 같은 기다림 하나(새 심의 멈춤 → 최대 `HWAX_DELIB_WAIT_S` 600초)를 지나고, 못 끝나면 셋 다 `○ … 재기동 건너뜀` 으로 미룬다([delib-ops/server-setup.md](../delib-ops/server-setup.md) §4 덧붙임 · 사용자 결정 A25).
+(2026-10-31 덧붙임) 게이트웨이(코드가 바뀐 재기동) · SignalForge(§2) · signalforge-mcp 재기동도 이제 보호를 받는다 — 에이전트서버와 같은 기다림 하나(새 심의 멈춤 → 최대 `HWAX_DELIB_WAIT_S` 600초)를 지나고, 못 끝나면 에이전트서버까지 넷 다 `○ … 재기동 건너뜀` 으로 미룬다([delib-ops/server-setup.md](../delib-ops/server-setup.md) §4 덧붙임 · 사용자 결정 A25). 단 Drive 에서 SignalForge SIF 가 새로 왔으면(의존성이 바뀐 판) SignalForge 는 기다리지 않고 곧바로 재기동한다 — 받기가 떠 있는 인스턴스의 이미지를 이미 덮어써서다(그때 도는 좌석의 VOC 도구 호출은 끊긴다).
 
 | 출력 | 뜻 | 할 일 |
 |---|---|---|
@@ -155,7 +155,8 @@ bash -c 'set -euo pipefail; set -a; . ./infra/.env; echo ok'
 | `○ 포털·nginx 재기동 건너뜀 — 심의 N건 진행 중, M건 대기 — …` | 도는·줄 선 심의가 있어 포털을 내리지 않았다. 새 이미지와 `frontend/dist` 도 받지 않았다(리포의 코드만 당겨졌고 포털은 옛 프로세스다). 실패가 아니고 종료코드도 그대로다. 심의가 도는 동안에는 실행마다 나온다 | 심의가 끝난 뒤 update-all 을 다시 돌린다. 지금 끊어도 되면 `AGENT_RESTART_FORCE=1 ./infra/scripts/update-all.sh` — 웹 심의와 리스크 패널의 구독, 도는·줄 선 심의가 전부 끊긴다 |
 | `⚠ portal not ready in 30s` 와 그 아래 로그 끝의 `database is locked`, 이어서 `⚠ skip: portal failed (see above)` | 새 판은 첫 기동에 원장에 부서 코드·사번 칸을 더한다. 그 순간 잠금에 걸렸다 | update-all 을 한 번 더 돌린다. 포털이 다시 뜨면서 스스로 낫는다 |
 | `○ heax 재기동 건너뜀 — 심의 N건 진행 중, M건 대기 — …` | 도는·줄 선 심의가 있어 HEAX Hub 를 내리지 않았다. 새 앱 SIF(리스크 앱 포함)·`frontend/dist` 를 받지 않았다(리포의 코드만 당겨졌고 허브와 앱은 옛 것이다). 묻는 자리는 둘이다 — 시작할 때 심의가 있었으면 앱 데이터 병합도 하지 않았고(사유에 `앱 데이터 병합도 하지 않았다`), 병합·모델을 받는 사이에 심의가 시작됐으면 그것까지는 받아 두고 SIF 를 덮기 전에 멈췄다(사유에 `앱 데이터 병합·모델·미러는 받았지만`). 허브를 내리면 리스크 앱이 같이 내려가 도는 패널이 `restart` 로 닫힌다. 실패가 아니고 종료코드도 그대로다. 심의가 도는 동안에는 받을 것이 없어도 실행마다 나온다. 덮기(바뀐 SIF 받기)가 도는 몇 분 사이에 시작한 심의는 여전히 재기동에 끊긴다 | 위 `○ 포털·nginx 재기동 건너뜀` 과 같다. 지금 끊어도 되면 `AGENT_RESTART_FORCE=1` — 도는 리스크 패널이 `restart` 로 닫혀 사람이 재개해야 한다 |
-| (2026-10-31) `· signalforge: 새 심의 멈춤 on(by update-all …) — 도는 심의 N건이 끝나기를 최대 600초 기다린 뒤 재기동한다(…)` — §4 의 `signalforge-mcp` · `mcp-gateway` · `agent-server` 이름으로 나올 수도 있다 | 다시 띄울 것이 있는데 심의가 돈다 — 새 심의를 멈추고 기다린다. 이 실행의 기다림은 이 하나다(그 셋 가운데 처음 재기동할 것에서 한 번 — 사용자 결정 A25). 멈춘 동안 새 심의 · 이어하기는 '점검 중' 으로 거절된다 | 없음. 끝나면 `도는 심의가 끝났다(N초) — 재기동한다` 가 잇고 멈춤은 실행 끝에서 내린다. 못 끝나면 아래 `○ … 재기동 건너뜀` 이다 |
+| (2026-10-31) `· signalforge: 새 심의 멈춤 on(by update-all …) — 도는 심의 N건이 끝나기를 최대 600초 기다린 뒤 재기동한다(…)` — §4 의 `signalforge-mcp` · `mcp-gateway` · `agent-server` 이름으로 나올 수도 있다 | 다시 띄울 것이 있는데 심의가 돈다 — 새 심의를 멈추고 기다린다. 이 실행의 기다림은 이 하나다(그 셋 가운데 처음 재기동할 것에서 한 번 — 사용자 결정 A25). 멈춘 동안 새 심의 · 이어하기는 '점검 중' 으로 거절된다 | 없음. 끝나면 `도는 심의가 끝났다(N초) — 재기동한다` 가 잇고 멈춤은 실행 끝에서 내린다. 못 끝나면 아래 `○ … 재기동 건너뜀` 이다. §4 에서 그 앞에 `· <서비스>: 앞에서 기다렸지만 update-all 의 새 심의 멈춤이 지금은 서 있지 않다 … 한 번 더 기다린다` 가 있으면 §2 의 멈춤이 수명(기다림 + 30분)으로 풀린 뒤에 시작된 심의를 한 번 더 기다리는 것이다(멈춤이 서 있는 동안만 기다림 하나가 덮는다) |
+| (2026-10-31) `· signalforge: 받기가 떠 있는 인스턴스 밑의 SIF 를 갈았다 — 도는 심의를 묻지 않고 지금 재기동한다(…)` | Drive 에서 SignalForge SIF 가 새로 왔다(의존성이 바뀐 판). 받기가 떠 있는 인스턴스의 이미지를 이미 덮어써, 기다리거나 미루면 깨진 이미지 위에서 돈다 — 그래서 심의가 돌아도 기다리지 않고 다시 띄운다. 그 순간 도는 좌석의 VOC 도구 호출은 끊긴다 | 심의가 돌고 있었으면 그 심의의 VOC 근거가 빠졌을 수 있다 — 쓰는 사람들에게 알린다. 피하려면 SIF 가 바뀌는 판은 심의가 없을 때 받는다 |
 | (2026-10-31) `○ signalforge 재기동 건너뜀 — 심의 N건 진행 중, M건 대기 — …` | 기다려도 심의가 끝나지 않아 SignalForge 를 내리지 않았다(`down.sh` 가 MCP 까지 내려 좌석의 VOC 도구 호출이 끊긴다). 코드는 당겼지만 옛 프로세스가 돌고 DB 병합도 하지 않았다. 실패가 아니다 | 위 `○ 포털·nginx 재기동 건너뜀` 과 같다 |
 | `○ nginx 재기동 건너뜀 — 심의 N건 진행 중, M건 대기 — …` | 새 라우팅 conf 는 만들었지만 nginx 는 옛 conf 로 돈다(리스크 앱이 nginx 를 거쳐 포털에 붙어 있다) | 위 `○ 포털·nginx 재기동 건너뜀` 과 같다 |
 | `✗ NGINX_AGENT_READ_TIMEOUT 값('…')을 쓰지 않는다` 또는 `⚠ NGINX_AGENT_READ_TIMEOUT(…)이 포털의 AGENT_STREAM_IDLE_TIMEOUT_S(…초)보다 크지 않다`(포털 기동 출력이나 `✓ nginx reloaded with current routes` 아래) | `infra/.env` 에 적은 nginx 침묵 한도가 모양이 틀려 기본값으로 만들었거나(이 `✗` 는 종료코드를 세우지 않는다), 포털 쪽 한도보다 크지 않아 순서가 뒤집혔다 | §4-8 대로 고쳐 적고 반영한다. 안 적은 박스에는 안 나온다 |
@@ -163,6 +164,7 @@ bash -c 'set -euo pipefail; set -a; . ./infra/.env; echo ok'
 | `· agent-server: /health 가 도는 심의 수(delib_active·delib_queued)를 싣지 않는다(옛 판) — 묻지 못하고 재기동한다` | 떠 있던 에이전트서버가 옛 판이라 심의 보호가 걸리지 않았다. 이번 첫 실행에서는 정상이다(§1 확인 12) | 없음. 다음 실행에도 나오면 agent-server 의 `갱신(git pull) 실패` 를 찾는다 |
 | `○ agent-server 재기동 건너뜀 — 심의 N건 진행 중, M건 대기 — …` 와 `▶ ○ 재기동 미룸(심의가 돌거나 줄 서 있다): agent-server` | 에이전트서버의 새 코드·설정이 아직 반영되지 않았다(옛 프로세스가 돈다). 실패가 아니다 | 위 `○ 포털·nginx 재기동 건너뜀` 과 같다. 에이전트서버만이면 끝난 뒤 `./infra/scripts/update-sites.sh agent-server` |
 | (2026-10-31) `○ signalforge-mcp 재기동 건너뜀 …` · `○ mcp-gateway 재기동 건너뜀 …` — 그 앞에 `· <서비스>: 앞에서 기다린 심의가 아직 끝나지 않았다 …` 또는 `이 실행의 기다림은 앞에서 썼다 …` | 이 실행의 기다림(위 `· …: 새 심의 멈춤 on …`)이 못 끝났거나, 기다린 뒤에 다시 시작된 심의가 돈다 — 다시 기다리지 않고 미뤘다. 게이트웨이를 내리면 도는 좌석의 도구 호출이 그 순간 실패한다. 실패가 아니다 | 위 `○ 포털·nginx 재기동 건너뜀` 과 같다. 그 서비스만이면 끝난 뒤 `./infra/scripts/update-sites.sh mcp-gateway`(또는 `signalforge-mcp`) — 손으로 돌리면 묻지 않는다 |
+| (2026-10-31) `○ signalforge-mcp 재기동 건너뜀 — 이 실행이 §2 에서 SignalForge 재기동을 미뤘다 …` | §2 에서 SignalForge 를 미뤘다(위 `○ signalforge 재기동 건너뜀`). 그 사이 심의가 끝나 §4 에서 묻는 순간 비었어도 sf-mcp 만 새 코드로 띄우지 않는다 — 백엔드는 옛 프로세스이고 DB 이관(`SF_MIGRATE=1`) · 병합을 하지 않아, 새 sf-mcp 가 이관 안 된 DB 를 읽게 된다. 실패가 아니다 | 심의가 끝난 뒤 update-all 을 다시 돌린다 — SignalForge 와 함께 다시 뜬다(sf-mcp 만 손으로 띄우지 않는다) |
 | `· agent-server: /health 가 연속으로 4초 안에 답하지 않았다(듣고는 있다 — 매달린 것으로 본다). 도는 심의 수를 확인하지 못한 채 재기동한다` | 에이전트서버가 답을 못 해 다시 띄웠다. 돌던 심의가 있었다면 끊겼다 | 쓰는 사람들에게 알린다(끊긴 MCP 심의는 `interrupted` 로 남는다) |
 | `▶ ⚠ 갱신(git pull) 실패: <서비스>` 와 `✗ update-sites 실패` | 그 서비스는 옛 코드로 돈다(게이트웨이면 §1 확인 1 을 놓친 것이다) | 그 리포에서 `git status --short` 로 로컬 수정을 찾아 걷고 다시 돌린다 |
 | `○ ARP MCP 도구(챗의 AI Ready Portal)` | ARP 주소는 있는데 `ARP_TOKEN` 이 없어 arp 백엔드를 등재하지 않았다 | 토큰을 받으면 §4-2 |
@@ -501,7 +503,9 @@ grep -a 'env .*파싱 실패' "$(readlink /proc/$(lsof -t -i:9009 -sTCP:LISTEN)/
 > 받는다**(사용자 결정 A25 (가)). 에이전트서버와 같은 기다림 하나(새 심의 멈춤 → 도는 심의를 최대 `HWAX_DELIB_WAIT_S` 600초)를 셋 가운데 처음
 > 재기동할 것 앞에서 한 번 하고, 못 끝나면 셋 다 미룬다(§2 표의 2026-10-31 줄들 · [delib-ops/server-setup.md](../delib-ops/server-setup.md) §4).
 > AIDataHub · KooRemapper · MX White Paper · 자기치유의 `redeploy-app.sh` · 인자 없는 `update-sites.sh` 의 포털 재기동 · 손으로 돌리는
-> `update-sites.sh mcp-gateway`(또는 `signalforge-mcp`) · `deploy-all-from-drive.sh signalforge` · 손으로 내리는 것은 그대로다.
+> `update-sites.sh mcp-gateway`(또는 `signalforge-mcp`) · `deploy-all-from-drive.sh signalforge` · 손으로 내리는 것은 그대로다. Drive 에서
+> SignalForge SIF 가 새로 온 실행(의존성이 바뀐 판)의 SignalForge 재기동도 보호 밖이다 — 받기가 떠 있는 인스턴스의 이미지를 이미 덮어써 기다리지
+> 않고 곧바로 다시 띄운다(그 순간 도는 좌석의 VOC 도구 호출이 끊긴다).
 
 ## 7. 되돌리기
 

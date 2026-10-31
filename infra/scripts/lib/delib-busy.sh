@@ -213,6 +213,8 @@ hwax_delib_wait() {
 #       표지 HWAX_DELIB_PAUSE_MARK 가 있으면 그 파일을 남겨 update-all 끝맺음이 내린다), 못 끝나면 멈춤을 그 자리에서 내리고 미룬다. 그 뒤의
 #       재기동은 다시 기다리지 않는다 — 묻는 순간 비었으면 재기동하고 돌면 미룬다. 판정(waited · deferred)은 HWAX_DELIB_GATE 파일에 둔다 — update-all 이
 #       물려주어 같은 실행의 deploy-all(§2 SignalForge)과 update-sites(§4 signalforge-mcp · 게이트웨이 · 에이전트 서버)가 함께 쓴다. 없으면 이 셸에만 둔다.
+#       단 기다림 하나가 덮는 것은 그 멈춤이 서 있는 동안뿐이다(반대 검토 10-31) — waited 인데 멈춤이 이 주인(by)의 것으로 서 있지 않으면(수명이
+#       지났다 · 내려갔다 · 남의 것이다) 그 사이 새 심의가 시작될 수 있었다. 그때는 미루지 않고 처음처럼 한 번 더 기다린다(O1 혼자일 때와 같다).
 #   기다릴 수 없으면 곧바로 미룬다(종전 그대로 — 판정은 남기지 않아 뒤의 재기동이 다시 본다) — 기다림 0 · 줄을 못 넘기는 엔진에 줄 선 심의가 있다
 #       (멈춤 동안 줄은 그대로 선다) · 멈춤을 모르는 엔진(옛 판 — 보내지 않는다) · 멈춤을 세우지 못했다. 남의 멈춤(409)이 서 있으면 그 아래서
 #       기다리기만 한다(내리지 않는다). 수명은 기다림 + 30분이다 — 부른 실행이 죽어도 스스로 풀린다.
@@ -226,7 +228,7 @@ _hwax_delib_gate_put() {
   return 0
 }
 hwax_delib_gate() {
-  local name="$1" url="${2:-${HWAX_AGENT_URL:-http://127.0.0.1:9009}/health}" by="${3:-}" b="" brc=0 st dws prc=0 pout t0 wrc=0 wb label
+  local name="$1" url="${2:-${HWAX_AGENT_URL:-http://127.0.0.1:9009}/health}" by="${3:-}" b="" brc=0 st dws prc=0 pout t0 wrc=0 wb label ps="" psrc=0
   HWAX_DELIB_GATE_BUSY=""
   b="$(hwax_delib_busy "$url")" || brc=$?
   HWAX_DELIB_GATE_PROBE="$brc"
@@ -234,7 +236,15 @@ hwax_delib_gate() {
   HWAX_DELIB_GATE_BUSY="$b"
   st="$(_hwax_delib_gate_get)"
   case "$st" in
-    waited)   echo "  · $name: 이 실행의 기다림은 앞에서 썼다 — 그 뒤에 시작된 심의 ${b% *}건이 돈다. 다시 기다리지 않고 재기동을 미룬다"; return 3 ;;
+    waited)
+      # 앞의 기다림은 그 멈춤이 서 있는 동안만 덮는다. 멈춤의 수명은 기다림 + 30분이다 — §2 에서 기다린 실행의 2b · 3 · 2c · 2d · 3.5 가 그보다
+      # 길면 §4 전에 풀려 새 심의가 시작된다. 그때 미루기만 하면 O1 혼자일 때(멈추고 기다린 뒤 재기동)보다 못하다 — 한 번 더 기다린다.
+      # 멈춤이 이 주인의 것으로 서 있으면(멈춤을 지나는 리스크 앱 패널 등) 종전대로 미룬다. 멈춤을 읽지 못하면 끊지 않는 쪽 — 미룬다.
+      ps="$(hwax_delib_pause_state "$url")" || psrc=$?
+      if [ "$psrc" != 0 ] || { [ "${ps%% *}" = 1 ] && [ "${ps#* }" = "$by" ]; }; then
+        echo "  · $name: 이 실행의 기다림은 앞에서 썼다 — 그 뒤에 시작된 심의 ${b% *}건이 돈다. 다시 기다리지 않고 재기동을 미룬다"; return 3
+      fi
+      echo "  · $name: 앞에서 기다렸지만 $by 의 새 심의 멈춤이 지금은 서 있지 않다(수명이 지났거나 내려갔다) — 그 사이 시작된 심의 ${b% *}건을 한 번 더 기다린다" ;;
     deferred) echo "  · $name: 앞에서 기다린 심의가 아직 끝나지 않았다(${b% *}건 진행 중) — 다시 기다리지 않고 재기동을 미룬다"; return 3 ;;
   esac
   dws="${HWAX_DELIB_WAIT_S:-600}"; case "$dws" in ''|*[!0-9]*) dws=600 ;; esac

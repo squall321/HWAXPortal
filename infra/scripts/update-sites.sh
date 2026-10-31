@@ -229,13 +229,26 @@ restart_svc() {
   # 줄 선 것 · 못 넘기는 줄 · 옛 엔진 · 남의 멈춤의 규칙은 그 함수 머리 주석).
   # A25(10-31 사용자 결정 (가)) — update-all 아래(HWAX_DELIB_GATE 가 있다)에서는 게이트웨이 · signalforge-mcp 도 같은 기다림 하나를 지난다. 도는
   # 좌석은 게이트웨이로 도구를 부른다 — 심의 중에 내리면 그 순간의 호출이 실패한다. 기다림은 그 실행에 한 번이다(§2 의 SignalForge 와 함께) —
-  # 끝나면 셋 다 재기동하고, 못 끝나면 셋 다 미룬다. 그 서비스가 답하지 않으면(내려가 있다) 끊을 호출이 없어 묻지 않는다. 혼자 돈 update-sites 는
-  # 종전대로 에이전트 서버만 묻는다.
+  # 끝나면 셋 다 재기동하고, 못 끝나면 셋 다 미룬다(그 멈춤이 수명으로 풀린 뒤면 한 번 더 기다린다 — hwax_delib_gate 머리 주석). 그 서비스가
+  # 답하지 않으면(내려가 있다) 끊을 호출이 없어 묻지 않는다. 혼자 돈 update-sites 는 종전대로 에이전트 서버만 묻는다.
   case "$name" in
     agent-server) [ "${#_urls[@]}" -gt 0 ] && { _gated=1; _gurl="${_urls[0]}"; } ;;
     mcp-gateway|signalforge-mcp)
       if [ -n "${HWAX_DELIB_GATE:-}" ] && [ "${#_urls[@]}" -gt 0 ] && hwax_alive "${_urls[0]}"; then _gated=1; fi ;;
   esac
+  # 반대 검토(A25 · 10-31) — 이 실행의 §2 가 SignalForge 재기동을 미뤘으면(장부의 ○ signalforge 재기동 건너뜀) signalforge-mcp 는 묻지 않고 함께
+  # 미룬다. 그 미룸은 up.sh(SF_MIGRATE=1 — alembic)도 DB 병합도 건너뛰었다. sf-mcp 는 DB 를 바로 읽는다 — 그 사이 심의가 끝나 묻는 순간 비었다고
+  # 새 코드만 띄우면 이관 안 된 DB 와 어긋난다(A25 전에는 §2 가 늘 SF_MIGRATE=1 로 먼저 다시 띄웠다). 판정 파일이 아니라 장부로 안다 — 기다리지
+  # 못해 곧바로 미룬 실행(기다림 0 · 못 넘기는 줄 · 옛 엔진)은 판정을 남기지 않지만 장부 줄은 늘 남긴다. 떠 있는 것을 그대로 두는 것이라 살아
+  # 있을 때만이다(_gated — 내려가 있으면 종전대로 띄운다).
+  if [ "$_gated" = 1 ] && [ "$name" = signalforge-mcp ] && [ -n "${HWAX_SKIP_LEDGER:-}" ] \
+     && awk -F'\t' '$1 == "signalforge 재기동 건너뜀" { f = 1 } END { exit !f }' "$HWAX_SKIP_LEDGER" 2>/dev/null; then
+    hwax_skip "$name 재기동 건너뜀" "이 실행이 §2 에서 SignalForge 재기동을 미뤘다(위 ○ signalforge 재기동 건너뜀) — 백엔드는 옛 프로세스이고 DB 이관(alembic) · 병합도 하지 않았다. sf-mcp 는 DB 를 바로 읽어 새 코드만 띄우면 이관 안 된 DB 와 어긋난다. 옛 프로세스가 그대로 돈다" \
+      "심의가 끝난 뒤 update-all 을 다시 돌린다(SignalForge 와 함께 다시 뜬다 — sf-mcp 만 손으로 띄우지 않는다) · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
+    DEFERRED_RESTART="$DEFERRED_RESTART $name"; rm -f "$tmp" "$tmpu"
+    if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 종료코드만 올린다" >&2; return 2; fi
+    return 0
+  fi
   if [ "$_gated" = 1 ]; then
     _grc=0; hwax_delib_gate "$name" "$_gurl" "$DELIB_PAUSE_BY" || _grc=$?
     if [ "$_grc" = 3 ]; then

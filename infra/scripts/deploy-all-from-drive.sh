@@ -389,6 +389,8 @@ if want signalforge; then
       # 도는 심의가 있으면 내리기 전에 한 번 기다린다 — update-all 아래(HWAX_DELIB_GATE)만(docs/delib-ops O1 · 10-31 A25, 사용자 결정 (가)).
       # down.sh 는 MCP 까지 내린다 — 도는 좌석의 VOC 도구 호출이 그 순간 실패한다. 기다림은 그 실행에 하나다(§4 의 signalforge-mcp · 게이트웨이 ·
       # 에이전트 서버와 함께 — lib/delib-busy.sh 의 hwax_delib_gate). 못 끝나면 내리지 않고 ○ 로 미룬다(DB 병합도 하지 않는다 — 다음 실행이 한다).
+      # 미룬 장부 줄의 이름('signalforge 재기동 건너뜀')은 계약이다 — §4 의 update-sites 가 그 줄을 보고 signalforge-mcp 도 함께 미룬다(옛 백엔드 ·
+      # 이관 안 된 DB 위에 새 sf-mcp 만 뜨지 않게).
       # 재기동이 정해졌을 때만 묻는다(묻기의 장부 줄은 아래 cycle 이 한 번만 적게 비운다 — kooremapper 구역과 같은 꼴). 받기가 SIF 를 갈았으면
       # 묻지 않는다 — 떠 있는 인스턴스 밑을 이미 덮어 미루면 깨진 squashfs 위에서 돈다(기다리는 동안도 그렇다). NO_RESTART=1 이면 내리지 않으니 묻지 않는다.
       if [ -n "${HWAX_DELIB_GATE:-}" ] && [ "${RESTART:-0}" != 1 ] \

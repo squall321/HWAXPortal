@@ -588,7 +588,8 @@ grep -c FROM_RA ../HWAXAgentServer/.env                          # 0 — 마커�
   단 이번 첫 실행은 떠 있는 에이전트서버가 옛 판이라 그 보호가 걸리지 않는다 — 도는 심의가 없을 때 돌린다.
   (2026-10-31 덧붙임) 에이전트서버 · 게이트웨이(코드가 바뀐 재기동) · SignalForge(MCP 포함)는 곧바로 미루지 않고 새 심의를 멈춘 뒤 도는 심의를
   한 번 기다린다(`HWAX_DELIB_WAIT_S` 600초 — 셋 가운데 처음 재기동할 것 앞에서 하나). 끝나면 셋을 재기동하고 못 끝나면 셋 다 `○ … 재기동 건너뜀` 이다
-  — [delib-ops/server-setup.md](delib-ops/server-setup.md) §4 덧붙임(사용자 결정 A25).
+  — [delib-ops/server-setup.md](delib-ops/server-setup.md) §4 덧붙임(사용자 결정 A25). 단 Drive 에서 SignalForge SIF 가 새로 왔으면(의존성이 바뀐 판)
+  SignalForge 는 기다리지 않고 곧바로 재기동한다 — 받기가 떠 있는 인스턴스의 이미지를 이미 덮어써서다(그때 도는 좌석의 VOC 도구 호출은 끊긴다).
 
 ## 2026-10-17 반영분 — 업데이트 리뷰 후속 · 사용자 결정
 
@@ -1038,7 +1039,9 @@ SP 허브 주소 · `core:read` 토큰(받기를 켜는 조건 — 넣으면 시
 - ⚠ **SignalForge** — 이 판을 받는 update-all 은 SignalForge 코드가 바뀌었으면 sf-mcp 를 곧바로 새 코드로 다시 띄운다. 그쪽 10-31 cae00 문서의 재기동 차례(병합 뒤)와
   어긋나므로 받기 전에 server-setup 3절의 사용자 결정 줄을 본다. 받은 뒤에는 그 절의 PLM 처음 받기를 바로 한다.
   (2026-10-31 덧붙임, A25 판부터) 심의가 돌면 '곧바로' 가 아니다 — SignalForge · sf-mcp 재기동도 도는 심의를 한 번 기다리고, 못 끝나면
-  `○ signalforge 재기동 건너뜀` 으로 미룬다(옛 프로세스 그대로 · DB 병합도 다음 실행) — [delib-ops/server-setup.md](delib-ops/server-setup.md) §4 덧붙임.
+  `○ signalforge 재기동 건너뜀` · `○ signalforge-mcp 재기동 건너뜀` 으로 함께 미룬다(옛 프로세스 그대로 · DB 이관 · 병합도 다음 실행 — §4 에서 심의가
+  끝났어도 sf-mcp 만 먼저 뜨지 않는다) — [delib-ops/server-setup.md](delib-ops/server-setup.md) §4 덧붙임. 단 Drive 에서 SignalForge SIF 가 새로
+  왔으면(의존성이 바뀐 판) 기다리지 않고 곧바로 재기동한다 — 받기가 떠 있는 인스턴스의 이미지를 이미 덮어써서다(그때 도는 좌석의 VOC 도구 호출은 끊긴다).
 - **챗 관문 넷(HA-27 ~ HA-30)** — 에이전트 서버와 포털(화면 Drive `images-20261030-220551Z`)을 같은 판으로 받는다. 받은 뒤 `/health` 넷과 update-all §7 줄을
   본다(6-1). 손잡이는 모두 에이전트 서버 재기동 뒤에 먹는다(6-2).
 - **받은 편지함** — update-all 이 git 받기 뒤 `→ cae00 받은 편지함 — …` 줄로 이 박스에 마지막으로 알린 뒤의 새 글을 알리고 끝 요약에서 다시 낸다

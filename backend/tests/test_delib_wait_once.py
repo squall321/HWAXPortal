@@ -60,6 +60,10 @@ def agent(tmp_path):
             st["posts"].append(body)
             with st["events"].open("a", encoding="utf-8") as fh:
                 fh.write(f"POST {'on' if body.get('on') else 'off'}\n")
+            if body.get("on") and st["paused"] and st["by"] != body.get("by"):
+                # 엔진과 같다 — 다른 주체가 세운 살아 있는 멈춤에는 합치지 않는다(review_gate.DrainState.set_on 의 409 drain_owned)
+                self._send(409, {"code": "drain_owned", "drain": {"on": True, "by": st["by"], "scope": "delib", "hold": False}})
+                return
             st["paused"], st["by"] = bool(body.get("on")), (body.get("by") if body.get("on") else None)
             self._send(200, {"on": st["paused"], "scope": "delib" if st["paused"] else None, "by": st["by"],
                              "until": 1e12 if st["paused"] else None, "hold": False})
@@ -113,13 +117,17 @@ def _gate_state(tmp_path: Path) -> str | None:
 
 
 # ── §4 update-sites — signalforge-mcp · 게이트웨이 · 에이전트 서버 ──────────────────────────────────────────────
-def _sites(tmp_path: Path, agent, svc_url: str, names: str, *, under: bool = True, last_fp: dict | None = None, **env):
+def _sites(tmp_path: Path, agent, svc_url: str, names: str, *, under: bool = True, last_fp: dict | None = None,
+           keep_ledger: bool = False, **env):
     """update-sites 의 restart_svc 부터 끝까지(요약 · 종료코드 포함)를 대역 services.sh 로 돌린다 → (결과, 걸린 초, 장부).
-    대역은 health 로 agent-server 엔 지어낸 에이전트 서버를, 나머지엔 svc_url 을 답하고 down · up 을 사건 파일에 적는다."""
+    대역은 health 로 agent-server 엔 지어낸 에이전트 서버를, 나머지엔 svc_url 을 답하고 down · up 을 사건 파일에 적는다.
+    keep_ledger 면 앞의 _deploy_sf 가 적은 장부를 그대로 잇는다(update-all 은 §2 · §4 가 장부 하나를 나눠 쓴다)."""
     st = tmp_path / "state"; st.mkdir(exist_ok=True)
     for n, fp in (last_fp or {}).items():
         (st / n).write_text(fp + "\n")
-    ledger = tmp_path / "ledger"; ledger.write_text("")
+    ledger = tmp_path / "ledger"
+    if not keep_ledger:
+        ledger.write_text("")
     stub = tmp_path / "svc.sh"
     stub.write_text('#!/usr/bin/env bash\n'
                     'case "$1" in update) echo "  · $2  updated: a → b";; fp) echo f-new;; status) echo "  ✓ up  $2";;\n'
@@ -184,8 +192,9 @@ def test_기다림_하나가_셋을_덮는다_못_끝나면_셋_다_미룬다(tm
 
 @pytest.mark.parametrize("state,active,restarted", [("deferred", 1, False), ("waited", 1, False), ("waited", 0, True), ("deferred", 0, True)])
 def test_앞에서_쓴_기다림의_판정을_따른다(tmp_path, agent, svc, state, active, restarted):
-    """§2 의 SignalForge 가 기다림을 썼으면 §4 는 다시 기다리지 않는다 — 묻는 순간 비었으면 재기동하고 돌면 미룬다."""
-    agent.update(active=active, queued=0)
+    """§2 의 SignalForge 가 기다림을 썼으면 §4 는 다시 기다리지 않는다 — 묻는 순간 비었으면 재기동하고 돌면 미룬다.
+    waited 는 그 기다림이 세운 멈춤이 아직 서 있는 때다(update-all 의 것) — 풀린 뒤는 아래 반대 검토 2 의 시험이 본다."""
+    agent.update(active=active, queued=0, paused=state == "waited", by="update-all" if state == "waited" else None)
     (tmp_path / "ledger.delib-gate").write_text(state + "\n")
     r, took, ledger = _sites(tmp_path, agent, svc, "mcp-gateway", HWAX_DELIB_WAIT_S="30")
     assert agent["posts"] == [] and took < 10, (agent["posts"], took)
@@ -321,6 +330,59 @@ def test_2장에서_쓴_기다림을_4장이_다시_쓰지_않는다(tmp_path, a
     assert [p["on"] for p in agent["posts"]] == [True, False] and took < 10, (agent["posts"], took)
     assert [ln.split("\t", 1)[0] for ln in ledger.splitlines()] == ["mcp-gateway 재기동 건너뜀", "agent-server 재기동 건너뜀"], ledger
     assert r.returncode == 3, r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("wait_s", ["2", "0"])
+def test_2장에서_SignalForge_를_미뤘으면_4장이_한가해도_sf_mcp_를_함께_미룬다(tmp_path, agent, svc, wait_s):
+    """**반대 검토 1** — §2 가 SignalForge 를 미루면 up.sh(SF_MIGRATE=1 — alembic)가 돌지 않아 백엔드는 옛 프로세스이고 DB 는 이관 전이다.
+    그 사이 심의가 끝나 §4 에서 묻는 순간 비었다고 signalforge-mcp 만 새 코드로 다시 띄우면(그것은 DB 를 바로 읽는다) 이관 안 된 DB 와
+    어긋나는데, 짝이 갈렸다는 줄도 없었다. 기다리지 못해 곧바로 미룬 실행(WAIT_S 0 — 판정을 남기지 않는다)도 같다. 게이트웨이 · 에이전트
+    서버는 SignalForge 와 상관없어 재기동한다."""
+    agent.update(active=1, queued=0)
+    _deploy_sf(tmp_path, agent, svc, HWAX_DELIB_WAIT_S=wait_s)
+    agent.update(active=0)                                      # §2 와 §4 사이에 심의가 끝났다
+    r, _, ledger = _sites(tmp_path, agent, svc, "signalforge-mcp mcp-gateway agent-server", keep_ledger=True, HWAX_DELIB_WAIT_S=wait_s)
+    ev = _events(agent)
+    assert not any(e.endswith(" signalforge-mcp") for e in ev), (ev, r.stdout + r.stderr)
+    assert "down mcp-gateway" in ev and "down agent-server" in ev, (ev, r.stdout + r.stderr)
+    assert [ln.split("\t", 1)[0] for ln in ledger.splitlines()] == ["signalforge 재기동 건너뜀", "signalforge-mcp 재기동 건너뜀"], ledger
+    line = ledger.splitlines()[1]
+    assert "SignalForge 재기동을 미뤘다" in line and "이관" in line and "AGENT_RESTART_FORCE=1" in line, line
+    # 종료코드는 보지 않는다 — 대역 서비스는 이 시험 프로세스 안이라 재기동한 둘이 '같은 프로세스가 답한다' ✗ 가 된다(하네스의 한계)
+    assert "▶ ○ 재기동 미룸(심의가 돌거나 줄 서 있다): signalforge-mcp  —" in r.stdout, r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("case", ["sf_mcp_가_내려가_있다", "혼자_돈_update_sites"])
+def test_SignalForge_를_미룬_장부가_있어도_미루지_않는_갈래(tmp_path, agent, svc, case):
+    """함께 미루는 것은 update-all 아래에서 떠 있는 옛 sf-mcp 를 그대로 두는 것이다 — 내려가 있으면 그대로 둘 것이 없어 종전대로 띄우고,
+    혼자 돈 update-sites 는 이 실행의 §2 가 없다(장부가 물려져 있어도)."""
+    agent.update(active=0)
+    (tmp_path / "ledger").write_text("signalforge 재기동 건너뜀\t심의 1건 진행 중, 0건 대기 — …\t…\n")
+    r, _, ledger = _sites(tmp_path, agent, DEAD if case == "sf_mcp_가_내려가_있다" else svc,
+                          "signalforge-mcp", under=case != "혼자_돈_update_sites", keep_ledger=True, HWAX_DELIB_WAIT_S="30")
+    assert "down signalforge-mcp" in _events(agent) and "signalforge-mcp 재기동 건너뜀" not in ledger, (case, r.stdout + r.stderr)
+
+
+@pytest.mark.parametrize("lapse", ["수명이_지났다", "남의_멈춤이_섰다"])
+def test_2장의_멈춤이_4장_전에_풀렸으면_그_사이_시작된_심의를_한_번_더_기다린다(tmp_path, agent, svc, lapse):
+    """**반대 검토 2** — 기다림 하나가 셋을 덮는 것은 그 기다림이 세운 멈춤이 서 있는 동안뿐이다. §2 가 기다려 SignalForge 를 다시 띄우며 세운
+    멈춤은 수명(기다림 + 30분)이 지나면 풀린다 — 2b · 3 · 2c · 2d · 3.5 가 그보다 길면 §4 전에 새 심의가 시작된다. 그때 '기다림은 앞에서
+    썼다' 로 게이트웨이 · 에이전트 서버를 미루면 O1 혼자일 때(멈추고 기다린 뒤 재기동)보다 못하다 — 한 번 더 기다린다. 우리 멈춤이 풀린 뒤
+    남이 세운 멈춤(409)이면 그 아래서 기다리기만 한다."""
+    agent.update(active=[1, 0], queued=0)
+    _deploy_sf(tmp_path, agent, svc, HWAX_DELIB_WAIT_S="30")
+    assert _gate_state(tmp_path) == "waited" and agent["paused"] and agent["by"] == "update-all", (_events(agent), agent["posts"])
+    # 우리 멈춤이 풀렸고(수명) 그 사이 새 심의가 시작됐다 — 남의 멈춤이면 그 뒤에 남이 세웠다
+    agent.update(paused=lapse == "남의_멈춤이_섰다", by="operator" if lapse == "남의_멈춤이_섰다" else None, active=[1, 1, 1, 0])
+    r, _, ledger = _sites(tmp_path, agent, svc, "mcp-gateway agent-server", HWAX_DELIB_WAIT_S="30")
+    ev = _events(agent)
+    assert "down mcp-gateway" in ev and "down agent-server" in ev and ledger == "", (ev, r.stdout + r.stderr)
+    assert "▶ ○ 재기동 미룸" not in r.stdout, r.stdout
+    assert [p["on"] for p in agent["posts"]] == [True, True] and ev.index("POST on", ev.index("up.sh")) < ev.index("down mcp-gateway"), \
+        (ev, agent["posts"])
+    assert "멈춤이 지금은 서 있지 않다" in r.stdout and r.stdout.count("기다린 뒤 재기동한다") == 1, r.stdout
+    assert _gate_state(tmp_path) == "waited"
+    assert agent["by"] == ("operator" if lapse == "남의_멈춤이_섰다" else "update-all"), "남의 멈춤은 건드리지 않는다"
 
 
 # ── lib · 원문 — 기다릴 수 없으면 판정을 남기지 않는다 · 세 자리가 모두 문을 지난다 ────────────────────────────────
