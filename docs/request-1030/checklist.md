@@ -82,7 +82,7 @@
 - [x] SP 킷 맞추기를 청함(StepForge · DocForge · SignalForge · ReportArchive, C-22)
   - [x] DocForge(`213c411` — HH-03 `8444575` 포함) · SignalForge(`06a506b`)는 킷 2026-10-21 로 올림 끝(10-31 ls-remote) — StepForge · ReportArchive 는 답 기다림
   - [ ] 'SP 최신을 먼저 본다' 상시 규칙 — 사용자가 세션마다 정한다
-- [x] cae00 받은 편지함 · update-all 알림 · 2026-10-31 물음 여덟(가지 `wt1031/docs`, C-20)
-  - [ ] 답 받기 — Q1 ~ Q7(답은 사용자를 거쳐 온다)
+- [x] cae00 받은 편지함 · update-all 알림 · 2026-10-31 물음 아홉(가지 `wt1031/docs`, C-20 — Q9 는 10-31 반대 검토에서 Q3 을 나눠 더함)
+  - [ ] 답 받기 — Q1 ~ Q7 · Q9(답은 사용자를 거쳐 온다)
 - [ ] cae00 — AIDataHub 병합 한 번(`server-setup.md` 8-1) · OB-73 → 병합 → OB-87(8-3)
 - [ ] HEAXHub 10-31 HH-14 ~ HH-16 — 다른 워크플로가 짓는 중(자리만, C-23)
