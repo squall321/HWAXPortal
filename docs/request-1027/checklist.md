@@ -46,7 +46,7 @@
 - [x] HA-18 긴 카드 절단점을 펜스 · $$ 밖의 빈 줄로(44f3d20)
 - [~] HA-11 as_of — AIDataHub AD-07 뒤
 - [~] HA-19 SIM 카드 표 — '나중에'
-- [~] HA-20 `ui_resource` SSE — HG-07 뒤(2단계)
+- [~] HA-20 `ui_resource` SSE — 1단계 P1 끝(브랜치 wt1031/ha20 — 사용자 결정 10-31 B-1 ~ B-7 전부 (가), context-notes 'HA-20 · HP-42' 절). 표지 `ui_host` 턴만 패널 도구를 묶고 호출마다 사건 하나 · 심의 · 루틴 · 카탈로그는 늘 안 묶음 · invoke_tool 경유 거절 · 256 KiB 넘으면 cut · 결과 `_meta` 는 모델에 안 감. 남은 것 P5 끝에서 끝(SimFlow 답 C1 뒤) · 병합 · 재기동(사람)
 - [-] HA-23 '(시험)' 앱 — D-1 라벨 바로잡기(박스, 코드 없음)
 - [-] HA-25 이름 가림 — D-4 원천(FailureTrace DP-08)
 
@@ -59,6 +59,7 @@
 - [x] HG-06 감사 — 오류 봉투면 ok=false · 사유(be7570f — 포털 판정기를 오라클로)
 - [x] HG-05 tool_areas — 코어 정규식 → knowledge · apps 기본값 · include_tools=false 를 영역 요약에도(7845ccf)
 - [x] HG-07 `_meta` 옮기기 · resources 처리기(bbd5c87 — ui:// 만, 메모리 전송 왕복 시험) — 확인은 cae00 Desktop(사람)
+- [~] HA-20 게이트웨이 몫(HG-07 뒤 새 행) — 패널 PAT(청중 `mcp-app-panel` · 그 앱 · 그 ui:// · 15분) 판별 · via=mcp-app 과 감사 uri · 앱 밖 도구 · 리소스 거절 · 막음 목록 · 꼴이 틀리면 401(일반 PAT 로 안 떨어뜨림) · 챗 PAT 와 안 섞임 · 포털 발급기와 두 리포 계약 시험(브랜치 wt1031/ha20). 남은 것 병합 · 재기동(사람)
 - [x] HG-20 나가는 응답 개인정보 기본 가림(D-2, 2a2cba6 — 칸 이름 · IMEI Luhn, 끄기 GATEWAY_PII_MASK=0)
 - [x] HG-09 목록 계정 백오프 60 → 600초 · 상태 바뀔 때만 로그 · `/health` conn_since(bde1017)
 - [x] HG-10 list_tool_apps needs_connect(5fe6ea0)
@@ -95,7 +96,7 @@
 - [-] HP-10 MX 백서 `--reload` — MX 백서 MW-03 이 고쳤다(APP_ENV=development 일 때만 --reload, 10-28 그쪽 알림) · 포털 할 일 없음
 - [~] HP-33 X-Workspace-Slug — RA RP-01 회신 뒤
 - [~] HP-34 DRM 버튼 하나 — 정보보호 지침(우리 몫) 뒤 · 보류
-- [~] HP-42 MCP Apps 패널 호스트 — HG-07 · HA-20 뒤(2단계)
+- [~] HP-42 MCP Apps 패널 호스트 — 1단계 P3 · P4 끝(브랜치 wt1031/ha20). 창구 `/agent/panel/{open,call,read,confirm,close}`(세션 + CSRF · `feat:panels` · 손잡이 `MCP_APPS_HOST` 끄면 404 · ui:// 만 · mime · 크기 · 허용 도구 · 첫 쓰기 확인 · 누적 상한 · 남의 panel_id 거절 · 서버 사본은 포인터만 · 감사), 화면 `McpAppPanel`(sandbox=allow-scripts 하나 · CSP 메타 맨 앞 · event.source 검사 · open-link 허용 출처 · 높이 120 ~ 1,200 · 닫기에 teardown · 탭에 둘) · 헤드리스 브라우저 시험(가짜 패널). 남은 것 P5 끝에서 끝 · P6(B-5 (나) · B-3 (나)) · 병합 · 빌드 · 재기동(사람)
 - [~] HP-50 RA 회수 창구 — RA RP-02 뒤
 
 ## 5. 질문 답(answers.md)
