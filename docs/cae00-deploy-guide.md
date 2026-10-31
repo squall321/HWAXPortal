@@ -641,6 +641,9 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 있으면 받은 SIF 로 그대로 띄운다. 커밋이 바뀌면 캐시 열쇠 `sha256(커밋 + 등록 사본 + 틀)` 을 받은 SIF 의 `.sif.hash` 와 견주고, 다르면
 다시 지으려다(이 박스는 못 짓는다) 실패해 **그 회차엔 앱을 띄우지 않는다** — 허브가 다시 뜨면 그 앱은 꺼진 채 남는다. 그래서 앱 리포에
 문서만 올려도 dev 가 다시 지어 Drive 로 보내야 한다. dev 에서 `./infra/scripts/drive-drift.sh heax` 가 10-25 부터 이 열쇠까지 견준다.
+(2026-10-31 덧붙임) 같은 검사가 **지어지지 않은 앱**도 `✗` 로 센다 — 이 박스가 받을 매니페스트의 `launch.mode` 가 service · job_runner 인데 dev 의
+`var/sifs/<앱>.sif` 가 없으면 허브 dist-to-drive 가 싣지 않아(있는 SIF 만 싣는다) 이 박스는 그 앱을 띄우지 못한다. proxy · iframe · url · static 은
+`○ SIF 대상 아님 N개` 한 줄이고, 박스 덮어쓰기(`manifest.local.yaml`)가 있는 앱은 종전대로 `○` 다.
 - MaterialTwinWeb — dev 리포가 GitHub 보다 61커밋 앞이다(09-05 뒤 push 안 함). dev 허브는 로컬 리포에서 받아 지었고 이 박스는 GitHub 을
   받는다. 지금은 커밋이 그대로라 받은 SIF 로 뜨지만, GitHub `main` 이 지은 커밋(a3563b6)이 아닌 곳으로 움직이면 뜨지 못한다. push 는
   사용자 결정 대기다(실을 범위). 다시 쓴 커밋을 올리게 되면 dev 가 그 커밋으로 지은 SIF 를 Drive 에 먼저 올린 뒤 push 하고, 이 박스의
