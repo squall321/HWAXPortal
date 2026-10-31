@@ -483,6 +483,29 @@ def test_다단_심의가_다음_단을_도는_중에_끊기면_답에_남기고
         assert d["decision"] == "1단 결정문" and d.get("nextStage") is True and d["runId"] == RID, d
 
 
+def test_끊긴_다단_심의를_받지_않는_화면에서_멈추면_되살릴_때_그_심의_칸에_멈춤으로_붙는다(portal):
+    """2단 도중에 받기가 끊기면 중계는 1단 결정문을 답으로 남긴다. 그 뒤 받지 않는 화면(끊긴 화면 · 다른 기기)에서 멈추면 창구가 멈춤 답을 따로
+    남긴다 — 되살릴 때 그 답이 일반 답 말풍선으로 따로 그려지고 1단 결정문은 끝난 심의처럼 보였다. 같은 실행의 앞 심의 칸에 멈춤으로 붙는다."""
+    c, agent = portal
+    h = _login(c, OWNER)
+    cid = _conv(c, h)
+    _relay(c, h, cid, _SIM_STAGE1 + _SIM_STAGE2, "/시뮬심의 힌지")            # 2단 도중에 끊겼다
+    app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(agent))   # 멈춤 창구가 부를 에이전트 대역(200 cancelling)
+    r = _cancel(c, cid, h)
+    assert r.status_code == 200 and r.json()["stop_note"] == relay._DELIB_CUT_STOP_NOTE, r.text
+    msgs = _stored(c, cid, h)
+    assert [m["role"] for m in msgs] == ["user", "persona", "persona", "assistant", "assistant"], msgs
+    local = _restore(msgs)
+    assert [m["role"] for m in local] == ["user", "assistant"], local
+    d = local[-1]["delib"]
+    assert d["decision"] == "1단 결정문" and d["cancelled"] == {"message": relay._DELIB_CUT_STOP_NOTE} and d["runId"] == RID, d
+    # 다른 실행의 멈춤 답은 붙이지 않는다 — 그 심의의 멈춤이 아니다
+    stray = {**msgs[-1], "meta": {**msgs[-1]["meta"], "delib_run": "f" * 16,
+                                  "delib_cancelled": {**msgs[-1]["meta"]["delib_cancelled"], "run_id": "f" * 16}}}
+    apart = _restore(msgs[:-1] + [stray])
+    assert [m["role"] for m in apart] == ["user", "assistant", "assistant"] and "cancelled" not in apart[1]["delib"], apart
+
+
 def test_다단_심의를_끝까지_받았거나_한_단_심의면_다음_단_표지를_남기지_않는다(portal):
     c, _agent = portal
     h = _login(c, OWNER)

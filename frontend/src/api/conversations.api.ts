@@ -147,6 +147,16 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ? { key: meta.pinned_agent, ...(typeof meta.pinned_agent_name === 'string' ? { name: meta.pinned_agent_name } : {}) }
         : undefined;
     }
+    // 받기가 끊긴 뒤 멈춤 창구가 남긴 멈춤 답 — 그 실행의 발언 · 앞 단 결정문이 이미 앞 답으로 남아(다단 심의) 발언 없이 따로 왔다. 같은 실행의 앞
+    // 심의 칸에 멈춤으로 붙인다 — 따로 그리면 멈춤 글이 일반 답 말풍선이 되고 그 심의는 끝난 결정문처럼 보였다(멈춘 화면에서는 그 칸에 적힌다).
+    const lone = m.role === 'assistant' && turns.length === 0
+      ? (m.meta as { delib_cancelled?: { message?: unknown; run_id?: unknown }; delib_run?: unknown } | null)
+      : null;
+    const prev = out[out.length - 1];
+    if (lone?.delib_cancelled && prev?.delib?.runId && prev.delib.runId === (lone.delib_run ?? lone.delib_cancelled.run_id)) {
+      out[out.length - 1] = { ...prev, delib: { ...prev.delib, cancelled: { message: String(lone.delib_cancelled.message ?? '') } } };
+      continue;
+    }
     let persona: Message['persona'];
     const am = m.role === 'assistant' ? ((m.meta ?? {}) as Record<string, unknown>) : null;
     if (am && am.upload !== true) {
