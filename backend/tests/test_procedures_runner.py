@@ -680,6 +680,54 @@ def test_승인_뒤_미리보기가_한_번_실패해도_다음_카드는_승인
     asyncio.run(go(*kit))
 
 
+def test_승인_뒤_미리보기를_기다리는_사이_중단하면_게시하지_않는다(kit):
+    """중단은 단계 경계에서만 봤다 — 두 번째 미리보기(네트워크)를 기다린 뒤 되돌릴 수 없는 게시를 그대로 보냈다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid, _ = await _gated_then_acked(store, r, spec)
+        orig = g.replies["reportarchive_preview_publish"]
+
+        def preview_then_cancel(a):
+            got = orig(a)
+            store.cancel_run(rid, "u1")   # 미리보기 응답이 오기 전에 사람이 '중단' 을 눌렀다
+            return got
+
+        g.replies["reportarchive_preview_publish"] = preview_then_cancel
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out == {"state": "cancelled", "stopped_at": 0}, out
+        assert _inner(g, "reportarchive_publish_report") == [] and ra.published == []
+        assert store.get_run(rid)["state"] == "cancelled"
+    asyncio.run(go(*kit))
+
+
+def test_게이트_전_미리보기를_기다리는_사이_중단하면_확인_대기로_덮지_않는다(kit):
+    """덮이면 중단한 실행이 확인 대기 맨 위로 돌아온다 — 승인하면 게시까지 간다."""
+    async def go(store, build):
+        ra = FakeRA(dict(BOARDS))
+        g = ra.gate()
+        r = build(g)
+        spec = _publish_spec()
+        rid = _run(store, spec, inputs={"report_id": 41})
+        orig = g.replies["reportarchive_preview_publish"]
+
+        def preview_then_cancel(a):
+            got = orig(a)
+            store.cancel_run(rid, "u1")
+            return got
+
+        g.replies["reportarchive_preview_publish"] = preview_then_cancel
+        out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        await r.aclose()
+        assert out == {"state": "cancelled", "stopped_at": 0}, out
+        assert store.get_run(rid)["state"] == "cancelled"
+        assert store.list_steps(rid) == [], "중단한 뒤 게이트 카드를 썼다"
+    asyncio.run(go(*kit))
+
+
 # ── 취소·소유자 ──────────────────────────────────────────────────────────
 def test_cancel_is_seen_at_the_step_boundary(kit):
     async def go(store, build):

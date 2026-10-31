@@ -731,6 +731,11 @@ class ProceduresRunner:
         돌려주는 것 — 멈출 때는 `_loop` 가 그대로 돌려줄 결과(`state` 가 있다), 갈 때는 `{fp, token, view}`.
         """
         got = await self._preview(run_id, ix, st, args, principal, sess)
+        # 미리보기를 기다리는 사이 사람이 '중단' 을 눌렀으면 여기서 멈춘다 — 중단은 단계 경계(`_loop`)에서 봤고 그 뒤 네트워크를
+        # 기다렸다. 다시 안 보면 승인 뒤에는 되돌릴 수 없는 게시가 나가고, 승인 전에는 게이트 카드가 중단을 '확인 대기' 로 덮는다.
+        run = self.store.get_run(run_id)
+        if run is None or run["state"] in ("cancelled", "failed"):
+            return {"state": run["state"] if run else "unknown", "stopped_at": ix}
         ack = self.store.gate_ack(run_id, ix)
         seen = self._approved_view(run_id, ix, ack)
         if isinstance(got, J.Verdict):
