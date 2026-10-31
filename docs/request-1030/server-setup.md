@@ -18,7 +18,7 @@
 | AIDataHub | `df7d45b` · `6f496fa` · `684765b` | AD-19 · AD-20(추천 · 기록 목록) · AD-21(저장 뒤 500) · AD-03(DRM 머리) · AD-07(`as_of`) · AD-01 코드(하위 절 평탄화 · 다시 짓기 명령), `6f496fa` 는 병합이 표본 임베딩을 전문가 단위로 맞추고 순번을 올린다(AD-21 후속), `684765b` 는 `.env.example` 의 내부 주소 예외를 끈다(AD-17 (나) — 이미 있는 `.env` 는 그대로, 판단 C-24) | 올림 — 받은 뒤 병합 한 번(8절) · 데이터 단계는 5 · 8절 |
 | MX 백서 | `bb0a6a1` · `bd2e79b` | MW-12 · MW-01 | 올림(그쪽 세션) |
 | SignalForge | `0e2ac46` · `ec40075` · `f004cd0` | SG-19 · SG-04 주의 칸 | 올림(그쪽 세션) — 차례는 3절 |
-| SignalForge | `404fe42` · `06a506b` · 지금 main `1ce924a` | 그쪽 cae00 문서 2026-10-31 · 2026-10-31-plm-kit(PLM 거울 받기를 SP 키트 2026-10-21 로) | 올림(그쪽 세션) — **update-all 이 sf-mcp 를 곧바로 다시 띄운다 — 사용자 결정 대기**(3절) |
+| SignalForge | `404fe42` · `06a506b` · 지금 main `4859b0d` | 그쪽 cae00 문서 2026-10-31 · 2026-10-31-plm-kit(PLM 거울 받기를 SP 키트 2026-10-21 로) | 올림(그쪽 세션) — **update-all 이 sf-mcp 를 곧바로 다시 띄운다 — 사용자 결정 대기**(3절) |
 | SmartTwinExplorer | `4f5e0e0` | PA-20 | 올림 — Drive staging 번들(3절) |
 | DocForge | `e72cbe5` · `ab5547e`(0.3.1) · `8444575` · `213c411` | HH-14 · HH-03(SP 거울을 실제 공개에) · SP 킷 2026-10-21 | 코드 끝(main `213c411`) — 배치는 그 세션의 사용자 승인 대기(release 는 `3ba0f6f` 0.3.0) |
 | KooRemapper | `0c1113f` · `f36270f` · `a3eff43` | KR-23 — 레시피 자동 관문을 MCP 설명에 적음(사용자 결정 그대로) · KR-01 · KR-16 — 과제 검색이 별칭을 대조하고 순위를 매긴 뒤 자른다(행마다 match_kind) | 올림(그쪽 세션) — update-all 하나, 재기동 때 이관 0018 · 화면은 다음 Drive |
@@ -57,6 +57,9 @@
       그동안 PLM 칸(과제 · 개발모델 검색 · `plm_caution`)이 빈다. 박스 cron(6시간마다)을 기다리지 말고 update-all 바로 뒤에 처음 받기를 한다(아래).
     - **사용자 결정(10-31) — 빈 결과 창을 받아들인다.** update-all 바로 뒤 처음 받기(`plm-sync.sh --full`)를 하고, 10-31 문서 2절 dry-run(읽기)을 돌려 결과를
       사용자에게만 알린다(받은 편지함 Q9). 사용자가 '적용' 하면 dev 에서 적용하고 다음 덤프 병합(약 30분 간격)으로 창이 닫힌다. 새 매처를 손잡이 뒤로 숨기지 않는다.
+      ⚠ update-all 없이 손으로 `git pull` 만 하면 sf-mcp 가 옛 코드로 남는다. 그 채로 다시 태깅이 병합되면 옛 매처가 'Fold8 Ultra' 를 GZF8 로 풀어, 비는 것이
+      아니라 Ultra 글이 빠진 답(틀린 답)이 나온다 — 그때는 sf-mcp 재기동을 꼭 한다(SignalForge `4859b0d` 문서 4절). update-all 4단계는 새 코드로 다시 띄우므로
+      이 일이 없다.
   - plm-kit 문서의 cae00 몫(받은 뒤 — 그 문서 1 · 3 · 4절) — ① 처음 받기 `cd ~/Projects/SignalForge && bash scripts/plm-sync.sh --full; echo "exit=$?"`(연결 점검을 겸한다 —
     0 정상 · 2 확인 필요(`problems` 를 본다) · 1 멈춤(`error` 가 까닭)) → ② 옛 거울과 건수 대조(그 문서 1절 명령 — 거의 같은 수) → ③ get_ontology 의 plm 이 새 수 ·
     `last_result` ok(그 문서 3절) → ④ 맞으면 옛 거울 파일 `crawler/data/plm/sp_mirror.sqlite` 를 지운다(그 문서 4절 — 쓰기라 사람이 한다). sf-mcp 를 따로 다시 띄울
