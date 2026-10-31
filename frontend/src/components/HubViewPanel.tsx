@@ -50,9 +50,11 @@ export default function HubViewPanel({ rev = 0 }: { rev?: number }) {
     };
   }, [rev]);
 
+  // 고른 영역은 차례와 상관없이 견준다 — 껐다 다시 켠 영역이 '바뀜' 으로 보이지 않게
+  const sameAreas = (a: string[], b: string[]) =>
+    [...a].sort().join(',') === [...b].sort().join(',');
   const dirty =
-    !!data &&
-    (mode !== data.mode || (mode === 'bundle' && areas.join(',') !== data.areas.join(',')));
+    !!data && (mode !== data.mode || (mode === 'bundle' && !sameAreas(areas, data.areas)));
   const valid = mode !== 'bundle' || areas.length > 0;
 
   const toggleArea = (area: string) => {
