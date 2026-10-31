@@ -45,7 +45,20 @@ function Colours() {
     </>
   );
 }
-(window as unknown as { __mount: (what?: string) => void }).__mount = () => {
+// 챗 화면 — 전문가를 고르고 보내 답을 받는다. 같은 대화를 서버 사본으로 다시 여는 단추도 둔다.
+function Chat() {
+  const { messages, sendMessage, setPinnedAgent, selectConversation, streaming } = useChat();
+  return (
+    <>
+      <button id="pin" type="button" onClick={() => setPinnedAgent(KEY, NAME)}>pin</button>
+      <button id="send" type="button" onClick={() => sendMessage('힌지 강도 봐 줘')}>send</button>
+      <button id="open" type="button" onClick={() => selectConversation('srv-1')}>open</button>
+      <span id="streaming">{String(streaming)}</span>
+      <MessageList messages={messages} />
+    </>
+  );
+}
+(window as unknown as { __mount: (what?: string) => void }).__mount = (what) => {
   const user = { subject: 'u1@corp.example', email: 'u1@corp.example', display_name: 'U', groups: [] };
   createRoot(document.getElementById('root')!).render(
     <AuthContext.Provider
@@ -53,7 +66,7 @@ function Colours() {
     >
       <MemoryRouter>
         <ChatProvider storagePrefix="hwax.chat" serverKind="chat">
-          <Colours />
+          {what === 'chat' ? <Chat /> : <Colours />}
         </ChatProvider>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -61,20 +74,34 @@ function Colours() {
 };
 """
 
-# 가짜 백엔드 — 전문가 명부(회의록이 키를 이름으로 바꾸고 고르기 화면이 찾는다)와 빈 서버 대화 목록만 준다.
+# 가짜 백엔드 — 전문가 명부(회의록이 키를 이름으로 바꾸고 고르기 화면이 찾는다), 서버 대화(만들기 · 목록 __convs · 사본 __conv),
+# 챗 스트림(__push · __end). 부른 차례를 __calls 에 적는다.
 _STUB = r"""
 (() => {
   window.__calls = [];
+  window.__convs = [];
+  window.__conv = null;
+  const enc = new TextEncoder();
   const json = (body, status = 200) =>
     Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
   window.fetch = (url, init = {}) => {
     const u = String(url);
     const method = (init.method || 'GET').toUpperCase();
-    window.__calls.push({ url: u, method });
+    window.__calls.push({ url: u, method, body: typeof init.body === 'string' ? JSON.parse(init.body) : null });
     if (u.startsWith('/agent/deliberate/experts')) return json({ recommended: [], pool: [
       { key: 'mech-a', name: '기구 강도 전문가 (Mechanical Strength Expert)', tags: [] },
       { key: 'cae-b', name: '구조 해석 전문가 (Structural Analysis Expert)', tags: [] }] });
-    if (u === '/agent/conversations' && method === 'GET') return json({ conversations: [] });
+    if (u === '/agent/conversations' && method === 'GET') return json({ conversations: window.__convs });
+    if (u === '/agent/conversations' && method === 'POST') return json({ id: 'srv-1' });
+    if (u === '/agent/conversations/srv-1' && method === 'GET')
+      return window.__conv ? json(window.__conv) : json({ detail: 'not found' }, 404);
+    if (u.startsWith('/agent/chat')) {
+      const body = new ReadableStream({ start(c) {
+        window.__push = (text) => c.enqueue(enc.encode(text));
+        window.__end = () => c.close();
+      } });
+      return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
+    }
     return json({ detail: 'stub: no route ' + u }, 404);
   };
 })();
@@ -86,8 +113,9 @@ const path = require('path');
 const [FE, OUT] = process.argv.slice(2);
 const { chromium } = createRequire(path.join(FE, 'package.json'))('@playwright/test');
 
-async function open(browser, what = '') {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+// ctx 를 넘기면 그 브라우저 문맥(같은 localStorage)에 새 탭을 연다 — 새로고침 · 다시 열기. 없으면 새 문맥(다른 기기)이다.
+async function open(browser, what = '', { ctx = null, before = null } = {}) {
+  const page = ctx ? await ctx.newPage() : await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(10000);
   page.__errors = [];
   page.on('pageerror', (e) => page.__errors.push(String(e)));
@@ -96,9 +124,31 @@ async function open(browser, what = '') {
   await page.goto('http://harness.invalid/');
   await page.addScriptTag({ path: path.join(OUT, 'stub.js') });
   await page.addScriptTag({ path: path.join(OUT, 'bundle.js') });
+  if (before) await page.evaluate(before);                 // 띄우기 전에 가짜 서버 값을 둔다(띄우자마자 목록을 읽는다)
   await page.evaluate((w) => window.__mount(w), what);
   return page;
 }
+const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+// 지정 전문가의 말풍선 — 이름 · 키 · 아바타 색 · 테두리 색 · 본문
+const bubble = (page) => page.evaluate(() => {
+  const el = document.querySelector('.msg.is-persona');
+  return el && {
+    name: el.querySelector('.msg-who-name').textContent,
+    key: el.querySelector('.msg-who-key').textContent,
+    av: getComputedStyle(el.querySelector('.msg-av')).backgroundColor,
+    edge: getComputedStyle(el.querySelector('.msg-content')).borderLeftColor,
+    text: el.querySelector('.msg-content').textContent,
+  };
+});
+// 포털이 서버 대화에 남기는 꼴 그대로 — 사람 발화의 meta 에 고른 전문가(routes.py `_pin`), 답은 본문만(agent/routes.py 의 _save)
+const SERVER_COPY = (ts) => ({
+  id: 'srv-1', title: '힌지 강도 봐 줘', kind: 'chat', source: 'web', created_at: ts, updated_at: ts,
+  messages: [
+    { role: 'user', persona: null, round: null, content: '힌지 강도 봐 줘', ts,
+      meta: { pinned_agent: 'mech-a', pinned_agent_name: '기구 강도 전문가 (Mechanical Strength Expert)' } },
+    { role: 'assistant', persona: null, round: null, content: '힌지 브래킷 R 이 작아 응력이 몰립니다.', ts: ts + 5, meta: null },
+  ],
+});
 
 const SCENARIOS = {
   // 같은 사람(mech-a)이 그려지는 자리마다 계산된 색 — 아바타는 배경, 버블은 왼쪽 테두리
@@ -130,6 +180,41 @@ const SCENARIOS = {
       };
     });
     return { ...seen, errors: page.__errors };
+  },
+  // 전문가를 지정해 보내고 답을 받는다 → 말풍선. 같은 브라우저로 다시 열면(새로고침) · 다른 기기에서 서버 사본으로 열면 말풍선이 남는가
+  async pinned(browser) {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await open(browser, 'chat', { ctx });
+    await page.locator('#pin').click();
+    await page.locator('#send').click();
+    await page.waitForFunction(() => typeof window.__push === 'function');
+    await page.evaluate((f) => { window.__push(f); window.__end(); },
+      frame('token', { delta: '힌지 브래킷 R 이 작아 ' }) + frame('result', { type: 'text', content: '힌지 브래킷 R 이 작아 응력이 몰립니다.' }) +
+      frame('done', {}));
+    await page.waitForFunction(() => document.getElementById('streaming').textContent === 'false');
+    const live = await bubble(page);
+    const chat = (await page.evaluate(() => window.__calls)).find((c) => c.url.startsWith('/agent/chat'));
+    // 새로고침 — 같은 브라우저(localStorage 사본)로 다시 띄운다. 서버 목록에는 그 대화가 그 사이 갱신된 것으로 온다(포털이 답을 스트림
+    // 끝에 적는다 — 사본이 더 새로우면 화면은 서버 사본으로 바꾼다)
+    const later = Math.floor(Date.now() / 1000) + 60;
+    const again = await open(browser, 'chat', { ctx, before: `window.__convs = [${JSON.stringify(SERVER_COPY(later))}].map(
+      ({ messages, ...m }) => m); window.__conv = ${JSON.stringify(SERVER_COPY(later))};` });
+    // 고르지 않는다 — 브라우저 사본이 마지막에 연 대화(activeId)를 되살린다
+    await again.getByText('응력이 몰립니다').first().waitFor();
+    await again.waitForFunction(() => window.__calls.some((c) => c.url === '/agent/conversations/srv-1'));
+    await again.waitForTimeout(300);
+    const reloaded = await bubble(again);
+    const reload_gets = (await again.evaluate(() => window.__calls)).filter((c) => c.url === '/agent/conversations/srv-1').length;
+    // 다른 기기 — 빈 브라우저에서 서버 목록 · 사본만으로 연다
+    const other = await open(browser, 'chat', { before: `window.__convs = [${JSON.stringify(SERVER_COPY(later))}].map(
+      ({ messages, ...m }) => m); window.__conv = ${JSON.stringify(SERVER_COPY(later))};` });
+    await other.locator('#open').click();
+    await other.getByText('응력이 몰립니다').first().waitFor();
+    await other.waitForTimeout(300);
+    const elsewhere = await bubble(other);
+    await ctx.close();
+    return { live, chat: chat && chat.body, reloaded, reload_gets, elsewhere,
+             errors: [...page.__errors, ...again.__errors, ...other.__errors] };
   },
 };
 
@@ -186,3 +271,20 @@ def test_같은_전문가는_챗_말풍선과_회의록_띵킹_알약_고르기_
         "발언 버블 테두리": turns["mech-a"][1], "띵킹 좌석": s["think_av"], "입력창 알약": s["pill_av"], "고르기 화면": picker[0],
     } == dict.fromkeys(("말풍선 테두리", "회의록 소개", "회의록 발언", "발언 버블 테두리", "띵킹 좌석", "입력창 알약", "고르기 화면"), one), \
         f"같은 사람(mech-a)이 화면마다 다른 색이다 — 말풍선 아바타 {one}: {s}"
+
+
+def test_전문가를_지정해_보낸_답은_말풍선이고_새로고침해도_다른_기기에서_열어도_남는다(seen):
+    """지정 전문가의 답이면 말풍선(이름 · 키 · 색)으로 '누가 답했는지' 를 세운다(docs/persona-chat D-3). 누가 답했는지는 보낼 때 찍고
+    서버에는 사람 발화의 meta(pinned_agent · pinned_agent_name)로 남는다. 서버 사본으로 화면을 바꾸는 길(사본이 더 새로운 새로고침 ·
+    다른 기기 · 숨은 탭에서 돌아옴)에서 말풍선이 사라지면 같은 답이 일반 어시스턴트의 것으로 읽힌다."""
+    s = seen("pinned")
+    assert s["chat"]["pinned_agent"] == "mech-a" and s["chat"]["pinned_agent_name"].startswith("기구 강도 전문가"), s["chat"]
+    live = s["live"]
+    assert live and live["name"] == "기구 강도 전문가" and live["key"] == "mech-a", live
+    assert live["edge"] == live["av"] and live["av"].startswith("rgb("), "테두리와 아바타가 한 색이다"
+    assert "응력이 몰립니다" in live["text"]
+    assert s["reload_gets"] >= 1, "전제 — 서버 사본이 더 새로워 화면이 사본으로 바뀌는 길을 탔다"
+    for where in ("reloaded", "elsewhere"):
+        got = s[where]
+        assert got == {**live, "text": got and got["text"]}, f"{where}: 서버 사본으로 연 대화에서 말풍선이 사라졌다 — {got}"
+        assert "응력이 몰립니다" in got["text"]

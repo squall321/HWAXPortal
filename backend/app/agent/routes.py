@@ -2590,6 +2590,10 @@ async def chat(
                                       ("pinned_agent_name", body.pinned_agent_name)) if v}
             if body.pinned_agents:
                 _pin["pinned_agents"] = list(body.pinned_agents)
+            # 띵킹으로 보낸 발화는 고른 전문가가 답하지 않는다(에이전트 서버가 띵킹을 먼저 본다). 화면이 서버 사본에서 말풍선을 되살릴 때
+            # 그 답을 고른 전문가의 것으로 붙이지 않게 같이 적는다(frontend api/conversations.api.ts serverMessagesToLocal).
+            if _pin and body.thinking:
+                _pin["thinking"] = True
             # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
             if await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
                                        role="user", content=body.message, meta=_pin or None):
