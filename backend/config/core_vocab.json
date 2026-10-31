@@ -43,5 +43,21 @@
     "fmea": {"role": "noncore", "label": "FMEA", "note": "사내 규격 · 사례"},
     "arp": {"role": "noncore", "label": "ARP", "note": "해석 실측"},
     "odb-hub": {"role": "noncore", "label": "ODB 허브", "note": "보드 규칙"}
+  },
+  "personas": {
+    "_doc": "페르소나 연결(docs/request-1029 design-e5 3.1 · 결정 D-E5-3 (가) — 사용자 10-31). domains: 도메인 코드 → core_types · areas · apps(도메인은 조직도 라벨 정본 frontend/src/components/chat/orgTaxonomy.json 의 domain_label, 타입은 이 표 types 의 값, 영역 · 앱은 게이트웨이 tool_areas.json 의 키만 쓴다 — A-dev 와 도메인 검토로 짓고 연결을 쓰는 사람은 실사용 H 를 보지 않는다(누설 규칙 L7) — 그래서 첫 판은 비었다) · experts: 자기 앱이 있는 지식 전문가만 그 앱 키로 덮어쓴다(전문가마다 줄을 쓰지 않는다 — 운영자 he 는 infra/personas/he-team.json 이 맡는다) · data_types: 조회가 답인 코어 타입(그 타입만 묻는 질문은 '전문가 몫이 아님 — 정본 허브') · no_tools: 도구를 일부러 주지 않는 도메인(줄이 없는 도메인은 '아직 모름'). 에이전트 서버가 줄마다 검증해 틀린 줄만 버리고(/health core_vocab.personas — 그 박스 게이트웨이 도구 지도에 없는 앱을 적은 줄도 버린다) 켠 쪽이 골랐을 도구 · 좌석을 그림자로만 적는다 — 고르기는 바꾸지 않는다(E5-4 · 관문 G0 전). 게이트웨이는 이 칸을 읽지 않는다 — 도구 검색 순위는 그대로이고 어휘표 지문만 바뀐다.",
+    "domains": {},
+    "experts": {
+      "sim-structural-calc": {"apps": ["heax-laminate_analyzer_mcp", "heax-materialtwin_web"]},
+      "sim-thermal-sed": {"apps": ["heax-thermal_shock_mcp"]},
+      "material-twin-analyst": {"apps": ["heax-materialtwin_web"]},
+      "dynaforge-report": {"apps": ["heax-kooremapper_mcp"]},
+      "kooremapper-iga": {"apps": ["heax-kooremapper_mcp"]},
+      "kooremapper-modelmeta": {"apps": ["heax-kooremapper_mcp"]},
+      "mx-whitepaper-analyst": {"apps": ["mx-white-paper"]},
+      "market-voc-analyst": {"apps": ["signalforge"]}
+    },
+    "data_types": [],
+    "no_tools": []
   }
 }
