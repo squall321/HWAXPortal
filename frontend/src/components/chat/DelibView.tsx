@@ -424,7 +424,8 @@ const STOP_NOTE_CUT = '사람이 멈췄다(받기가 끊긴 뒤) — 끊긴 뒤 
 // 보이는 마지막 심의에 보인다 — 끊긴 쪽도 서버에서 아직 돌 수 있다(아니면 서버가 '이미 끝났다' · '찾지 못했다' 로 답한다). 이 칸의 실행 id 로
 // 그 심의 하나만 짚는다 — 대화 id 만으로 멈추면 낡은 화면이 같은 대화의 새 심의를 접는다. 누른 동안 잠그고 결과를 단추 옆에 적는다. 받는 중에
 // 멈추면 곧 멈춤 사건이 와 이 줄 대신 아래 '멈춤' 알림이 남는다. 받기가 끊긴 심의는 사건이 오지 않으므로 멈춤을 칸에 적는다(새로고침 뒤에도
-// 남게 — 포털은 같은 글을 서버 대화에 남긴다). 받기가 끊겼다는 오류 상자는 그때 걷힌다(markDelibStopped — 엔진이 알린 오류는 그대로 둔다).
+// 남게 — 포털은 같은 글을 서버 대화에 남긴다). 받는 중에 멈췄는데 사건 전에 받기가 끊겨도 그 응답으로 적는다. 받기가 끊겼다는 오류 상자는 그때
+// 걷힌다(markDelibStopped — 엔진이 알린 오류는 그대로 둔다).
 function StopBar({ msgId, runId, cut }: { msgId: string; runId: string; cut: boolean }) {
   const { activeConversation, markDelibStopped } = useChat();
   const sid = activeConversation?.serverId;
@@ -440,7 +441,8 @@ function StopBar({ msgId, runId, cut }: { msgId: string; runId: string; cut: boo
     setBusy(false);
     if (r.ok) {
       setStopped(true);
-      if (cut) markDelibStopped(msgId, r.stopNote || STOP_NOTE_CUT);
+      // 받는 중이었으면 ChatContext 가 맡아 두었다가 멈춤 사건 없이 턴이 끝날 때(끊김 · ■) 적는다 — 누를 때의 cut 으로 가르면 그 사이 끊긴 칸이 남았다
+      markDelibStopped(msgId, r.stopNote || STOP_NOTE_CUT);
     }
     setSaid({
       text: stopSaid(r, cut),

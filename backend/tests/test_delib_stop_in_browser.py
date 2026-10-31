@@ -205,6 +205,38 @@ const SCENARIOS = {
     await page.locator('.dv-stopped').waitFor();
     return { before, in_flight, sent, answered, after: await look(page), dialogs: page.__dialogs, errors: page.__errors };
   },
+  // 받는 중에 멈췄고(200 — 받는 중계가 있어 포털은 멈춤 글을 돌려주지 않는다) 멈춤 사건이 오기 전에 받기가 끊겼다 — 응답이 먼저 · 끊김이 먼저 ·
+  // 응답 뒤 ■. 응답으로 칸에 멈춤을 적어 끊김 상자가 남지 않고, 같은 저장소로 다시 열어도 멈춤 단추가 다시 나지 않는다
+  async live_stop_cut(browser) {
+    const out = {};
+    for (const order of ['answer_first', 'cut_first', 'square']) {
+      const ctx = await browser.newContext();
+      const page = await open(ctx);
+      await start(page);
+      await page.locator('.dv-stop-btn').click();
+      await page.waitForFunction(() => typeof window.__answer === 'function');
+      const ok = () => page.evaluate(() => window.__answer(200, { conversation_id: 'srv-1', run_id: 'run-1', status: 'cancelling', runs: 1,
+        message: '멈춤을 요청했다' }));
+      if (order === 'cut_first') {
+        await page.evaluate(() => window.__break('network error'));
+        await page.locator('.chat-error').waitFor();
+        await ok();
+      } else {
+        await ok();
+        await page.locator('.dv-stop-said').waitFor();
+        if (order === 'square') await page.locator('#stop').click();
+        else await page.evaluate(() => window.__break('network error'));
+      }
+      await page.locator('.dv-stopped').waitFor({ timeout: 3000 }).catch(() => undefined);   // 종전엔 오지 않는다 — 본 것으로 붉어진다
+      const after = await look(page);
+      await page.waitForTimeout(800);                 // 브라우저 사본 저장(250ms 디바운스) 뒤
+      const again = await open(ctx);                  // 새로고침 — 같은 저장소
+      await again.getByText('초기 입장').first().waitFor();
+      out[order] = { after, reloaded: await look(again), errors: [...page.__errors, ...again.__errors] };
+      await ctx.close();
+    }
+    return out;
+  },
   // 받기가 끊긴 심의 — 결정문 없이 멈춰 보여도 서버에서 아직 돌 수 있다. 단추가 남고, 서버가 '찾지 못했다' 고 하면 그렇게 적는다
   async cut(browser) {
     const page = await open(browser);
@@ -444,6 +476,18 @@ def test_받는_중에_멈추면_누른_동안_잠기고_결과를_적고_멈춤
     after = s["after"]
     assert after["stopped"] == f"멈춤 — {STOP_MSG}", after
     assert after["btn"] is None and after["said"] == "" and not after["error"], "멈춤은 실패가 아니다 — 오류 상자가 없다"
+
+
+def test_받는_중에_멈췄는데_멈춤_사건_전에_끊기면_응답으로_칸에_멈춤을_적고_새로고침_뒤에도_단추가_다시_나지_않는다(seen):
+    """종전엔 누를 때 받는 중이면 멈춤 사건만 기다렸다 — 사건 전에 끊기면 끊김 상자가 남고, 새로고침 뒤 '아직 돌 수 있다' 와 멈춤 단추가 다시 났다
+    (서버 대화에는 중계가 끊긴 판 멈춤 글을 남긴다)."""
+    s = seen("live_stop_cut")
+    note = "사람이 멈췄다(받기가 끊긴 뒤) — 끊긴 뒤 서버에서 나온 발언은 남지 않았다"
+    for order in ("answer_first", "cut_first", "square"):
+        assert not s[order]["errors"], s[order]["errors"]
+        for look in (s[order]["after"], s[order]["reloaded"]):
+            assert look["stopped"] == f"멈춤 — {note}", (order, look)
+            assert look["btn"] is None and look["note"] == "" and not look["error"], (order, look)
 
 
 def test_받기가_끊긴_심의에도_단추가_남고_서버가_찾지_못했다고_하면_그렇게_적는다(seen):
