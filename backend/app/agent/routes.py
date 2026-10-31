@@ -3015,7 +3015,12 @@ async def chat(
                                              persona=(str(t["persona"])[:120] if t.get("persona") else None),
                                              round=(int(t["round"]) if isinstance(t.get("round"), int) else None),
                                              meta=(_m or None))
-                            reply = final if final is not None else (decision or "".join(acc))
+                            head = "".join(acc)
+                            reply = final if final is not None else (decision or head)
+                            # 심의가 결정문 · 결과 없이 받기가 끝났는데(끊김 · 멈춤) 엔진이 먼저 흘린 앞머리(불량 환기 VOC 등 token)가 있어 그 글이 답이
+                            # 된다 — 결정문이 아니다. 표지(meta.delib_undecided)가 없으면 다른 기기 · 새로고침의 화면이 결정문으로 읽어 끝난 심의가 되고
+                            # 서버에서 아직 도는 심의에 '멈춤' 을 내지 않는다(serverMessagesToLocal)
+                            head_only = final is None and not decision and bool(head) and "delib" in answered_by
                             if not reply and routine_turn and routine_ptr:
                                 reply = _ROUTINE_EMPTY_REPLY   # 글 없이 끊긴 루틴 턴 — 그래도 남겨 run_id 를 잃지 않는다
                             if not reply and cancelled:
@@ -3031,6 +3036,8 @@ async def chat(
                                 if next_stage:
                                     # 다단 심의의 다음 단이 결정문 없이 열린 채 받기가 끝났다(위 next_stage) — 화면이 끝난 심의로 읽지 않는다(serverMessagesToLocal)
                                     _am["delib_next_stage"] = True
+                                if head_only:
+                                    _am["delib_undecided"] = True   # 답의 글은 심의의 앞머리뿐이다(위 head_only)
                                 if routine_ptr:      # 분석 루틴 — 네 칸을 늘 싣는다(모르는 값은 null)
                                     _am["routine"] = {k: routine_ptr.get(k) for k in ("run_id", "routine_id", "title", "state")}
                                 if answered_by:      # 띵킹 · 심의가 답했다(위 answered_by) — 발언 없이 끝난 심의도 'delib' 다

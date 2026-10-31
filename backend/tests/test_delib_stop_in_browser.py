@@ -32,7 +32,8 @@ import { ChatProvider, useChat } from '__FE__/src/state/ChatContext';
 import { MessageList } from '__FE__/src/components/chat/MessageList';
 
 function Probe() {
-  const { messages, sendMessage, streaming, stop } = useChat();
+  const { messages, sendMessage, streaming, stop, selectConversation } = useChat();
+  (window as unknown as { __select: (id: string) => void }).__select = selectConversation;
   return (
     <>
       <button id="send" type="button" onClick={() => sendMessage('힌지 파손 원인')}>send</button>
@@ -88,8 +89,12 @@ _STUB = r"""
     window.__calls.push({ url: u, method, body: init.body ? JSON.parse(init.body) : null,
                           csrf: new Headers(init.headers || {}).get('X-CSRF-Token') });
     if (u === '/agent/conversations' && method === 'POST') return json({ id: 'srv-1' });
-    if (u === '/agent/conversations') return json({ conversations: [] });
-    if (u.startsWith('/agent/conversations/')) return json({ detail: 'conversation not found' }, 404);
+    // 서버 대화 사본 — 시험이 window.__serverList · __serverDetail 로 줄 수 있다(다른 기기에서 여는 꼴). 없으면 빈 목록 · 404
+    if (u === '/agent/conversations') return json({ conversations: window.__serverList || [] });
+    if (u.startsWith('/agent/conversations/')) {
+      const got = (window.__serverDetail || {})[decodeURIComponent(u.slice('/agent/conversations/'.length))];
+      return got ? json(got) : json({ detail: 'conversation not found' }, 404);
+    }
     if (u.startsWith('/agent/chat')) {
       const body = new ReadableStream({ start(c) {
         window.__push = (text) => c.enqueue(enc.encode(text));
@@ -115,8 +120,8 @@ const { chromium } = createRequire(path.join(FE, 'package.json'))('@playwright/t
 const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 const STOP_MSG = '사람이 멈췄다 — 의장이 결정문을 내기 전에 멈춰 이 단의 결정문 · 보고서는 없다';
 
-// where — 브라우저(새 저장소) 또는 같은 저장소의 컨텍스트(새로고침 흉내)
-async function open(where, { confirm = true } = {}) {
+// where — 브라우저(새 저장소) 또는 같은 저장소의 컨텍스트(새로고침 흉내). server — 가짜 백엔드가 줄 서버 대화 사본({list, detail})
+async function open(where, { confirm = true, server = null } = {}) {
   const page = await where.newPage({ viewport: { width: 1280, height: 800 } });
   page.setDefaultTimeout(10000);
   page.__errors = [];
@@ -129,11 +134,14 @@ async function open(where, { confirm = true } = {}) {
   await page.goto('http://harness.invalid/');
   await page.evaluate(() => { document.cookie = 'hwax_csrf=csrf-1; path=/'; });
   await page.addScriptTag({ path: path.join(OUT, 'stub.js') });
+  if (server) await page.evaluate((s) => { window.__serverList = s.list; window.__serverDetail = s.detail; }, server);
   await page.addScriptTag({ path: path.join(OUT, 'bundle.js') });
   await page.evaluate(() => window.__mount());
   return page;
 }
 const push = (page, text) => page.evaluate((t) => window.__push(t), text);
+// 서버 대화 사본(포털 중계 · 멈춤 창구가 남긴 꼴 — test_delib_cancel 이 그 꼴을 고정한다). 이름 → 메시지들
+const SERVER = __SERVER_COPIES__;
 const RUN = 'run-1';
 // 심의를 열고 1라운드 발언 하나까지 흘린다 — 받는 중인 심의 칸이다. 에이전트는 첫 심의 사건에 실행 id 를 싣는다(runId 가 null 이면 옛 에이전트)
 async function start(page, runId = RUN) {
@@ -179,6 +187,8 @@ const look = (page) => page.evaluate(() => {
     decision: (document.querySelector('.dv-decision') || {}).textContent || '',
     error: Boolean(document.querySelector('.chat-error')),
     errorTitle: (document.querySelector('.chat-error-title') || {}).textContent || '',
+    assistants: document.querySelectorAll('.msg.assistant').length,
+    evidence: [...document.querySelectorAll('.dv-evidence summary')].map((e) => e.textContent),
     streaming: document.getElementById('streaming').textContent,
   };
 });
@@ -204,6 +214,22 @@ const SCENARIOS = {
     await page.waitForFunction(() => document.getElementById('streaming').textContent === 'false');
     await page.locator('.dv-stopped').waitFor();
     return { before, in_flight, sent, answered, after: await look(page), dialogs: page.__dialogs, errors: page.__errors };
+  },
+  // 다른 기기 — 이 브라우저에는 사본이 없고 서버 대화 사본만 있다. 목록에서 그 대화를 열면 서버 사본으로 되살린다
+  async other_device(browser) {
+    const out = {};
+    for (const [name, messages] of Object.entries(SERVER)) {
+      const meta = { id: 'srv-9', title: '심의', kind: 'deliberation', source: 'web', created_at: 1, updated_at: 2 };
+      const page = await open(browser, { server: { list: [meta], detail: { 'srv-9': { ...meta, messages } } } });
+      // 기동 효과(계정별 캐시 로드)가 돈 뒤에 고른다 — 서버 대화 목록 요청은 같은 커밋의 뒤 효과가 낸다
+      await page.waitForFunction(() => window.__calls.some((c) => c.url === '/agent/conversations' && c.method === 'GET'));
+      await page.evaluate(() => window.__select('srv-9'));
+      await page.locator('.dv-root').first().waitFor();
+      await page.waitForTimeout(200);
+      out[name] = { look: await look(page), errors: page.__errors };
+      await page.close();
+    }
+    return out;
   },
   // 받는 중에 멈췄고(200 — 받는 중계가 있어 포털은 멈춤 글을 돌려주지 않는다) 멈춤 사건이 오기 전에 받기가 끊겼다 — 응답이 먼저 · 끊김이 먼저 ·
   // 응답 뒤 ■. 응답으로 칸에 멈춤을 적어 끊김 상자가 남지 않고, 같은 저장소로 다시 열어도 멈춤 단추가 다시 나지 않는다
@@ -439,12 +465,42 @@ const SCENARIOS = {
 """
 
 
+# 다른 기기가 여는 서버 대화 사본 — 포털 중계 · 멈춤 창구가 남기는 꼴 그대로다(test_delib_cancel 이 그 꼴을 실제 중계로 고정한다)
+_RUN = "run-1"
+_VOC = "■ 최근 불량 이슈(SignalForge) — 힌지 크랙 3건"
+_STOP_CUT = "사람이 멈췄다(받기가 끊긴 뒤) — 끊기기 전에 받은 발언만 남는다(포털 창구)"
+
+
+def _sm(role: str, content: str, meta: dict | None = None, persona: str | None = None, rnd: int | None = None) -> dict:
+    return {"role": role, "persona": persona, "round": rnd, "content": content, "meta": meta, "ts": 1}
+
+
+_STAGE2_CUT = [_sm("user", "/시뮬심의 힌지"),
+               _sm("persona", "1단 입장", {"delib_run": _RUN}, "mech-a", 1),
+               _sm("persona", "2단 입장", {"delib_run": _RUN}, "cae-b", 1),
+               _sm("assistant", "1단 결정문", {"delib_run": _RUN, "delib_next_stage": True, "answered_by": "delib"})]
+SERVER_COPIES = {
+    # 불량 환기 앞머리만 받고 끊긴 한 단 심의 — 답의 글은 앞머리뿐이다(delib_undecided)
+    "voc_cut": [_sm("user", "/심의 힌지"),
+                _sm("persona", "초기 입장", {"delib_run": _RUN}, "mech-a", 1),
+                _sm("assistant", _VOC + "\n\n", {"delib_evidence": [{"source": "SignalForge VOC", "text": _VOC, "included": True}],
+                                                 "delib_run": _RUN, "delib_undecided": True, "answered_by": "delib"})],
+    # 2단 도중에 끊긴 다단 심의 — 답의 글은 1단 결정문이다(delib_next_stage)
+    "stage2_cut": _STAGE2_CUT,
+    # 그 심의를 받지 않는 화면에서 멈췄다 — 멈춤 창구가 멈춤 답을 발언 없이 따로 남긴다
+    "stage2_stopped": _STAGE2_CUT + [_sm("assistant", _STOP_CUT, {"delib_cancelled": {"message": _STOP_CUT, "by": "u1@corp.example",
+                                                                                       "run_id": _RUN, "cut": True},
+                                                                   "delib_run": _RUN})],
+}
+
+
 @pytest.fixture(scope="module")
 def seen(tmp_path_factory):
     """화면을 한 번 묶고 시나리오를 한 번에 돌려, 시나리오 이름 → 본 것을 돌려준다."""
     out = tmp_path_factory.mktemp("stop")
     (out / "harness.tsx").write_text(_HARNESS.replace("__FE__", str(FE)), encoding="utf-8")
-    for name, text in (("build.cjs", _BUILD), ("stub.js", _STUB), ("drive.cjs", _DRIVE)):
+    drive = _DRIVE.replace("__SERVER_COPIES__", json.dumps(SERVER_COPIES, ensure_ascii=False))
+    for name, text in (("build.cjs", _BUILD), ("stub.js", _STUB), ("drive.cjs", drive)):
         (out / name).write_text(text, encoding="utf-8")
     r = subprocess.run(["node", "build.cjs", str(FE), str(out)], cwd=str(out), capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, "화면을 묶지 못했다:\n" + r.stdout + r.stderr
@@ -488,6 +544,24 @@ def test_받는_중에_멈췄는데_멈춤_사건_전에_끊기면_응답으로_
         for look in (s[order]["after"], s[order]["reloaded"]):
             assert look["stopped"] == f"멈춤 — {note}", (order, look)
             assert look["btn"] is None and look["note"] == "" and not look["error"], (order, look)
+
+
+def test_다른_기기는_서버_사본으로_끊긴_심의에_멈춤을_내고_멈춘_심의는_그_칸의_멈춤으로_보인다(seen):
+    """다른 기기(서버 대화 사본만 있다) — 불량 환기 앞머리만 받고 끊긴 한 단 심의는 결정문이 없는 끊긴 심의로(종전엔 앞머리를 결정문으로 읽어 단추가
+    없었다), 2단 도중에 끊긴 다단 심의는 1단 결정문과 함께 끊긴 심의로 보이고 멈춤 단추가 난다. 받지 않는 화면에서 멈춘 다단 심의는 그 칸에 멈춤이
+    붙고 멈춤 글이 따로 답 말풍선으로 그려지지 않는다."""
+    s = seen("other_device")
+    cut_note = "받기가 끊겼습니다 — 심의는 서버에서 아직 돌 수 있습니다."
+    for name in SERVER_COPIES:
+        assert not s[name]["errors"], s[name]["errors"]
+    voc = s["voc_cut"]["look"]
+    assert voc["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"} and voc["note"] == cut_note, voc
+    assert voc["decision"] == "" and any("SignalForge VOC" in e for e in voc["evidence"]) and not voc["error"], voc
+    cut = s["stage2_cut"]["look"]
+    assert cut["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"} and "1단 결정문" in cut["decision"], cut
+    stopped = s["stage2_stopped"]["look"]
+    assert stopped["btn"] is None and stopped["stopped"] == f"멈춤 — {_STOP_CUT}" and "1단 결정문" in stopped["decision"], stopped
+    assert stopped["assistants"] == 1, "멈춤 글이 따로 답 말풍선으로 그려졌다"
 
 
 def test_받기가_끊긴_심의에도_단추가_남고_서버가_찾지_못했다고_하면_그렇게_적는다(seen):

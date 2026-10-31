@@ -179,6 +179,9 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 다단 심의(/시뮬심의)가 다음 단을 도는 중에 받기가 끊겼다 — 포털 중계가 meta.delib_next_stage 로 남긴다. 답의 글은 앞 단의 결정문이고
       // 심의는 서버에서 아직 돌 수 있다(라이브의 nextStage 와 같은 뜻 — 끝난 심의로 읽으면 '멈춤' 이 사라진다).
       const nx = (m.meta as { delib_next_stage?: unknown } | null)?.delib_next_stage === true;
+      // 결정문 없이 받기가 끝난 심의 — 답의 글은 엔진이 먼저 흘린 앞머리(불량 환기 VOC 등)뿐이다(meta.delib_undecided — 포털 중계). 결정문으로
+      // 읽으면 끝난 심의가 되어 서버에서 아직 도는 심의에 '멈춤' 이 사라진다(라이브 칸에서도 그 글은 결정문이 아니다)
+      const undecided = (m.meta as { delib_undecided?: unknown } | null)?.delib_undecided === true;
       out.push({
         id: newId(),
         role: 'assistant',
@@ -186,7 +189,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ts,
         delib: {
           turns: local,
-          ...(cx && m.content === stopNote ? {} : { decision: m.content }),
+          ...((cx && m.content === stopNote) || undecided ? {} : { decision: m.content }),
           ...(cx ? { cancelled: { message: stopNote } } : {}),
           ...(rid ? { runId: rid } : {}),
           ...(nx ? { nextStage: true } : {}),
