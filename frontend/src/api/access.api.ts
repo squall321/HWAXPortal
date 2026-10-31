@@ -119,6 +119,8 @@ export interface HubView {
   /** 영역이 없는 도구 수 — 어느 묶음에도 들지 않는다(찾기로 닿는다). */
   unclassified: number;
   note: string;
+  /** 게이트웨이가 보기를 아나(`/tools-map` 의 views) — false 면 저장은 되지만 게이트웨이를 새 판으로 올리기 전까지 목록은 전체다. */
+  view_supported: boolean;
 }
 
 export async function fetchHubView(): Promise<HubView> {

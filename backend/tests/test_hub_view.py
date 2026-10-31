@@ -31,6 +31,8 @@ TOOLS_MAP = {
              {"app": "rootdesigndatahub", "label": "자주검증 Datahub", "tool_count": 1, "reachable": True, "role": "canonical"},
              {"app": "failuretrace", "label": "FailureTrace", "tool_count": 1, "reachable": True, "role": "sibling"}],
     "area_meta": [{"area": a, "label": a.upper(), "description": f"{a} 영역"} for a in ("cad", "mesh", "voc", "sim", "knowledge", "system")],
+    # 게이트웨이가 아는 보기 — 없으면(보기 이전 판) 포털은 저장하되 '아직 전체로 돈다' 고 알린다(검토 10-31)
+    "views": ["full", "bundle", "light"],
 }
 
 
@@ -38,13 +40,14 @@ class _Gateway:
     def __init__(self):
         self.calls: list[tuple[str, str, dict]] = []
         self.down = False
+        self.tools_map = TOOLS_MAP
 
     def handle(self, req: httpx.Request) -> httpx.Response:
         self.calls.append((req.method, req.url.path, dict(req.url.params)))
         if self.down:
             raise httpx.ConnectError("gateway down")
         if req.url.path.endswith("/tools-map"):
-            return httpx.Response(200, json=TOOLS_MAP)
+            return httpx.Response(200, json=self.tools_map)
         if req.url.path.endswith("/conn-invalidate"):
             return httpx.Response(200, json={"ok": True})
         return httpx.Response(404)
@@ -97,11 +100,27 @@ def test_보기는_기본이_전체이고_권한_응답에_실린다(env):
     c, _ = env
     _login(c, "user@corp.com")
     body = c.get("/auth/access/view").json()
-    assert (body["mode"], body["areas"], body["unknown_areas"]) == ("full", [], [])
+    assert (body["mode"], body["areas"], body["unknown_areas"], body["view_supported"]) == ("full", [], [], True)
     assert "재연결" in body["note"] and "invoke_tool" in body["note"]
     assert f"{HEADER_NAME}: {HEADER_PORTAL}" in body["note"] and "서버" in body["note"], \
         "보기는 청한 연결(포털 배치 · 등록 명령)에만 먹는다 — 내 토큰으로 서버에서 도는 앱 · 스크립트는 늘 전체다(검토 10-31)"
     assert _ent(c, "user@corp.com")["view"] == "full"
+
+
+def test_보기를_모르는_옛_게이트웨이면_저장하되_아직_전체로_돈다고_알린다(env):
+    """보기 이전 게이트웨이는 권한 응답의 view 를 읽지 않는다 — 종전 화면은 '저장했습니다' 만 말하고 목록은 그대로 전체였다(실패가 성공처럼 보였다, 검토
+    10-31). 게이트웨이 `/tools-map` 의 views 로 안다고 말할 때만 view_supported 다. 저장은 한다 — 게이트웨이를 새 판으로 올리면 그때부터 먹는다."""
+    c, gw = env
+    gw.tools_map = {k: v for k, v in TOOLS_MAP.items() if k != "views"}
+    h = _login(c, "user@corp.com")
+    assert c.get("/auth/access/view").json()["view_supported"] is False
+    r = _put(c, h, "light")
+    assert r.status_code == 200 and r.json()["view_supported"] is False and r.json()["mode"] == "light", r.text
+    assert _ent(c, "user@corp.com")["view"] == "light"
+    gw.tools_map = {**TOOLS_MAP, "views": ["full"]}
+    assert c.get("/auth/access/view").json()["view_supported"] is False, "보기 셋을 다 알아야 한다"
+    gw.tools_map = TOOLS_MAP
+    assert c.get("/auth/access/view").json()["view_supported"] is True
 
 
 def test_묶음을_고르면_저장되고_게이트웨이_캐시를_깨고_권한_응답에_실린다(env):

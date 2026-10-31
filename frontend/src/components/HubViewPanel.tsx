@@ -96,6 +96,12 @@ export default function HubViewPanel({ rev = 0 }: { rev?: number }) {
         !error && <p className="tok-muted">불러오는 중…</p>
       ) : (
         <>
+          {!data.view_supported && (
+            <p role="status" className="tok-danger">
+              지금 허브(게이트웨이)는 보기를 아직 모릅니다 — 고른 보기는 저장되지만, 게이트웨이가 새
+              판으로 바뀌기 전까지 도구 목록은 전체 그대로입니다.
+            </p>
+          )}
           <fieldset className="hub-view-modes">
             <legend className="hub-view-legend">보기</legend>
             {MODES.map((m) => (
@@ -187,7 +193,9 @@ export default function HubViewPanel({ rev = 0 }: { rev?: number }) {
             )}
             {saved && !dirty && (
               <span role="status" className="tok-muted">
-                저장했습니다 — 새로 연결할 때부터 적용됩니다.
+                {data.view_supported
+                  ? '저장했습니다 — 새로 연결할 때부터 적용됩니다.'
+                  : '저장했습니다 — 다만 지금 게이트웨이는 보기를 몰라 목록이 전체로 돕니다(게이트웨이가 새 판으로 바뀐 뒤부터 먹습니다).'}
               </span>
             )}
           </div>

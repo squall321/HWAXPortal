@@ -248,11 +248,15 @@ def _hub_view_body(policy, ents, tm: dict, view: str, muted: set[str]) -> dict:
             unclassified += 1
     meta = [m for m in tm.get("area_meta") or [] if isinstance(m, dict) and m.get("area")]
     known = {str(m["area"]) for m in meta}
+    # 게이트웨이가 보기를 아나 — `/tools-map` 의 views 가 보기 셋을 다 말할 때만. 모르는 옛 게이트웨이는 권한 응답의 view 를 읽지 않아 늘 전체로 돈다 —
+    # 저장은 하되 화면이 그렇다고 알린다(종전엔 '저장했습니다' 만 보였다, 검토 10-31).
+    views = tm.get("views")
     return {"mode": mode, "areas": areas, "unknown_areas": [a for a in areas if a not in known],
             "area_options": [{"area": str(m["area"]), "label": str(m.get("label") or m["area"]),
                               "description": str(m.get("description") or "")[:300], "tool_count": by_area.get(str(m["area"]), 0)}
                              for m in meta],
-            "unclassified": unclassified, "note": _VIEW_NOTE}
+            "unclassified": unclassified, "note": _VIEW_NOTE,
+            "view_supported": isinstance(views, list) and set(MODES) <= {str(v) for v in views}}
 
 
 @router.get("/auth/access/view")
@@ -280,7 +284,8 @@ async def set_hub_view(body: HubViewIn, request: Request,
                        settings: Settings = Depends(get_settings),
                        _csrf: None = Depends(require_csrf)) -> dict:
     """보기를 바꾼다. 묶음은 영역이 하나 이상이고, 영역은 지금 게이트웨이의 영역 키(`/tools-map` 의 area_meta)만 받는다 — 오타가 빈 묶음이 되지
-    않게. 바꾼 뒤 게이트웨이 캐시를 바로 깬다(끄기와 같다 — 새 연결부터 먹는다, 열린 세션은 재연결)."""
+    않게. 바꾼 뒤 게이트웨이 캐시를 바로 깬다(끄기와 같다 — 새 연결부터 먹는다, 열린 세션은 재연결). 게이트웨이가 보기를 모르면(옛 판) 저장은 하고
+    응답의 view_supported 가 false 다 — 화면이 '아직 전체로 돈다' 고 알린다."""
     mode = body.mode.strip().lower()
     if mode not in MODES:
         raise AuthError(f"모르는 보기입니다: {body.mode[:10]} — full · bundle · light", status_code=400)
