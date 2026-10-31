@@ -3,15 +3,8 @@ import { useMemo, useState } from 'react';
 import type { Message, ThinkSeat } from '../../types/chat';
 import { TextBlock } from './renderers/TextBlock';
 import { IconLightbulb } from './icons';
-
-// 좌석 → 고정 색(이름 해시). DelibView 와 같은 계열이라 두 모드의 아바타가 같은 사람으로 읽힌다.
-const PALETTE = ['#c0673a', '#3f7d80', '#7a5aa6', '#4a7a3c', '#b08a2a', '#a24a5e', '#3a6ea0', '#6b8e23'];
-function colorOf(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return PALETTE[h % PALETTE.length];
-}
-const initialOf = (name: string) => (name.replace(/[^0-9A-Za-z가-힣]/g, '')[0] ?? '·').toUpperCase();
+// 좌석 색 · 이니셜은 공용 모듈에서 — 회의록 · 챗 말풍선과 같은 함수 · 같은 입력(키)이라 같은 사람이 같은 색이다.
+import { colorOf, initialOf } from './personaColor';
 
 function Seat({ s }: { s: ThinkSeat }) {
   const label = s.name || s.key;

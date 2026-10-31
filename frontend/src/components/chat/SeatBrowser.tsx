@@ -92,7 +92,7 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
             onClick={() => openAgent(a)}
             aria-label={`${a.name} 상세 보기`}
           >
-            <span className="pv-card-av" style={{ background: colorOf(a.name) }}>
+            <span className="pv-card-av" style={{ background: colorOf(a.key) }}>
               {initialOf(a.name)}
             </span>
             <span className="pv-card-body">
@@ -167,7 +167,7 @@ export function SeatBrowser({ pool, candidates, selected, onToggle, min, max, on
               ) : (
                 <>
                   <div className="pv-detail-head">
-                    <span className="pv-card-av" style={{ background: colorOf(sel.name) }}>
+                    <span className="pv-card-av" style={{ background: colorOf(sel.key) }}>
                       {initialOf(sel.name)}
                     </span>
                     <div>

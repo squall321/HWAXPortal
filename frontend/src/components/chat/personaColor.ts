@@ -1,10 +1,15 @@
-// 전문가 한 명에 색 하나 — 심의 회의록과 챗 말풍선이 같은 함수를 써야 같은 사람으로 읽힌다
+// 전문가 한 명에 색 하나 — 모든 화면이 같은 함수에 같은 입력(키)을 넣어야 같은 사람으로 읽힌다
 const PALETTE = ['#c0673a', '#3f7d80', '#7a5aa6', '#4a7a3c', '#b08a2a', '#a24a5e', '#3a6ea0', '#6b8e23'];
 
-/** 이름 해시 → 고정 색. 같은 키는 언제 어디서 그려도 같은 색이다. */
-export function colorOf(name: string): string {
+/** 전문가 **키** 해시 → 고정 색. 같은 키는 언제 어디서 그려도 같은 색이다.
+ *
+ *  ⚠ 이름을 넣지 않는다. 이름은 화면마다 다른 꼴로 온다 — 고르기 화면 · 챗 말풍선은 카탈로그의 원래 이름
+ *  (`… 전문가 (… Expert)`), 회의록 · 관계도는 명부로 찾은 축약형이고 못 찾으면 키다. 심의 발언에는 처음부터 키만 실린다
+ *  (엔진 · MCP 워크플로가 좌석 키를 싣는다). 이름으로 뽑는 화면과 키로 뽑는 화면이 섞여 같은 사람이 화면마다 다른 색이었다
+ *  (docs/leftovers-1017/triage-1031.md B12). 키는 어느 화면에나 있고 꼴이 하나다. */
+export function colorOf(key: string): string {
   let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
 
@@ -19,8 +24,7 @@ export const initialOf = (name: string) =>
  *  ⚠ 괄호가 중첩된다 — `… (Fingerprint Sensor (Ultrasonic & Optical) Expert)`. 정규식
  *  하나로는 못 잘라서 뒤에서부터 깊이를 세며 짝을 찾는다.
  *
- *  ⚠ **색은 원래 이름으로 뽑는다.** 축약형으로 뽑으면 같은 사람이 심의(원래 이름)와
- *  챗에서 다른 색이 된다. */
+ *  ⚠ 이 결과로 색을 뽑지 않는다 — 색은 키로 뽑는다(colorOf). 축약은 표시만 줄인다. */
 export function shortName(name: string): string {
   const t = name.trim();
   if (!t.endsWith(')')) return name;

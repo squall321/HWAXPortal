@@ -41,7 +41,7 @@ export function RosterEditor({
             <li key={s.key}>
               <label className={`re-seat${on ? '' : ' is-off'}${isNew ? ' is-new' : ''}`}>
                 <input type="checkbox" checked={on} onChange={() => toggle(s)} />
-                <span className="re-av" style={{ background: colorOf(nameOf(s.key)) }}>
+                <span className="re-av" style={{ background: colorOf(s.key) }}>
                   {initialOf(nameOf(s.key))}
                 </span>
                 <span className="re-name" title={s.key}>

@@ -49,7 +49,7 @@ export function PersonaPicker({ onClose, onExpand }: { onClose: () => void; onEx
         className={`pp-row${pinnedAgent === key ? ' is-on' : ''}`}
         onClick={() => pick(key, name)}
       >
-        <span className="pp-av" style={{ background: colorOf(name) }}>
+        <span className="pp-av" style={{ background: colorOf(key) }}>
           {initialOf(name)}
         </span>
         <span className="pp-row-body">
