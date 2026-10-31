@@ -18,7 +18,7 @@
 | AIDataHub | `df7d45b` · `6f496fa` | AD-19 · AD-20(추천 · 기록 목록) · AD-21(저장 뒤 500) · AD-03(DRM 머리) · AD-07(`as_of`) · AD-01 코드(하위 절 평탄화 · 다시 짓기 명령), `6f496fa` 는 병합이 표본 임베딩을 전문가 단위로 맞추고 순번을 올린다(AD-21 후속) | 올림 — 받은 뒤 병합 한 번(8절) · 데이터 단계는 5 · 8절 |
 | MX 백서 | `bb0a6a1` · `bd2e79b` | MW-12 · MW-01 | 올림(그쪽 세션) |
 | SignalForge | `0e2ac46` · `ec40075` · `f004cd0` | SG-19 · SG-04 주의 칸 | 올림(그쪽 세션) — 차례는 3절 |
-| SignalForge | `404fe42` | 그쪽 cae00 문서 2026-10-31(그 리포 `docs/DEPLOY_CAE00_2026-10-31.md`) | 올림(그쪽 세션) — 차례는 3절 |
+| SignalForge | `404fe42` · `06a506b` · 지금 main `1ce924a` | 그쪽 cae00 문서 2026-10-31 · 2026-10-31-plm-kit(PLM 거울 받기를 SP 키트 2026-10-21 로) | 올림(그쪽 세션) — **update-all 이 sf-mcp 를 곧바로 다시 띄운다 — 사용자 결정 대기**(3절) |
 | SmartTwinExplorer | `4f5e0e0` | PA-20 | 올림 — Drive staging 번들(3절) |
 | DocForge | `e72cbe5` · `ab5547e`(0.3.1) | HH-14 | 코드 끝 — 배치는 그 세션의 사용자 승인 대기 |
 | KooRemapper | `0c1113f` · `f36270f` · `a3eff43` | KR-23 — 레시피 자동 관문을 MCP 설명에 적음(사용자 결정 그대로) · KR-01 · KR-16 — 과제 검색이 별칭을 대조하고 순위를 매긴 뒤 자른다(행마다 match_kind) | 올림(그쪽 세션) — update-all 하나, 재기동 때 이관 0018 · 화면은 다음 Drive |
@@ -47,8 +47,21 @@
 ## 3. 다른 플랫폼 반영(그쪽 세션이 알려 온 것)
 
 - **SignalForge** — update-all 로 받은 뒤 sf-mcp · sf-backend 를 워치독 락을 쥐고 하나씩 재기동한다. 명령은 SignalForge `docs/DEPLOY_CAE00_2026-10-30.md` 1절 그대로이고, 'sf-mcp semantic import ok' 를 확인한다. 2절대로 시간과 `plm_caution` 을 본다(실제 이름은 `~/ontology-test/`).
-  - 10-31 — SignalForge 10-31 cae00 문서(그 리포 `docs/DEPLOY_CAE00_2026-10-31.md`)대로 한다. **sf-mcp 재기동 차례는 그 문서를 따른다**(그 문서 4절 — 병합으로 들어온 뒤).
-    그 문서의 `--apply` 는 cae00 에서 하지 않는다(dev 에서만). 2절 dry-run 은 읽기 전용이다 — 받은 편지함 2026-10-31 Q9 가 그 결과를 묻는다.
+  - 10-31 — SignalForge 10-31 cae00 문서 둘(그 리포 `docs/DEPLOY_CAE00_2026-10-31.md` · `docs/DEPLOY_CAE00_2026-10-31-plm-kit.md`)대로 한다. 그 문서의 `--apply` 는
+    cae00 에서 하지 않는다(dev 에서만). 2절 dry-run 은 읽기 전용이다 — 받은 편지함 2026-10-31 Q9 가 그 결과를 묻는다.
+  - ⚠ **update-all 이 그 문서의 재기동 차례를 앞당긴다.** 그 문서는 'sf-mcp 재기동은 다시 태깅이 병합으로 들어온 뒤(4절) — 코드는 지금 받아도 떠 있는 인스턴스는
+    재기동 전까지 옛 코드' 를 전제로 한다(손 `git pull`). 그런데 update-all §2(deploy-all signalforge)는 받은 git 판이 지문을 바꿔 `scripts/down.sh` → `scripts/up.sh` 로
+    sf-mcp 까지 새 코드로 다시 띄우고, §4 의 update-sites signalforge-mcp 도 지문으로 재기동한다.
+    - 새 매처로 뜬 sf-mcp 는 그 문서 '순서' 절이 적은 빈 결과를 낸다 — dev 적용 → 덤프 → 다음 병합까지(그 문서 3 · 4절).
+    - plm-kit 문서의 새 PLM 받기도 같은 재기동에 걸린다. 새 코드는 새 거울 자리(`crawler/data/plm/sp-core/`)만 읽고(30초마다 다시 본다) 그 자리는 처음 받기 전까지 비어,
+      그동안 PLM 칸(과제 · 개발모델 검색 · `plm_caution`)이 빈다. 박스 cron(6시간마다)을 기다리지 말고 update-all 바로 뒤에 처음 받기를 한다(아래).
+    - **사용자 결정 대기(10-31)** — (가) 빈 결과 창을 받아들이고 update-all 바로 뒤 처음 받기를 한다. (나) 다시 태깅이 병합으로 들어올 때까지 이 박스의 SignalForge
+      받기를 미룬다 — update-all 에 앱 하나만 빼는 손잡이가 없으니 그쪽 세션에 새 매처를 손잡이 뒤로 두게 청하는 길이 함께 든다. 정해지기 전이면 이 판을 받는
+      update-all 은 사용자에게 묻고 돈다.
+  - plm-kit 문서의 cae00 몫(받은 뒤 — 그 문서 1 · 3 · 4절) — ① 처음 받기 `cd ~/Projects/SignalForge && bash scripts/plm-sync.sh --full; echo "exit=$?"`(연결 점검을 겸한다 —
+    0 정상 · 2 확인 필요(`problems` 를 본다) · 1 멈춤(`error` 가 까닭)) → ② 옛 거울과 건수 대조(그 문서 1절 명령 — 거의 같은 수) → ③ get_ontology 의 plm 이 새 수 ·
+    `last_result` ok(그 문서 3절) → ④ 맞으면 옛 거울 파일 `crawler/data/plm/sp_mirror.sqlite` 를 지운다(그 문서 4절 — 쓰기라 사람이 한다). sf-mcp 를 따로 다시 띄울
+    일은 없다 — update-all 이 이미 띄웠으면 새 코드가 30초 안에 새 거울을 읽는다.
 - **SmartTwinExplorer(ste — 24대)** — Drive `ApptainerImages:SmartTwinExplorer/staging` 번들(`4f5e0e0`)을 `STE_DEPLOY=1 infra/scripts/deploy-ste.sh` 로 반영한다(MCP `ste-mcp.service` 도 함께 다시 뜬다). DW-12 다시 보기는 게이트웨이 HG-22 가 든 뒤에 한다.
 - **DocForge** — 0.3.1 배치(그 세션의 사용자 승인) 뒤에 한다. 브라우저 `/apps/doc_forge/api/v1/capabilities` 의 version 이 0.3.1 인지, 게이트웨이 `/refresh` 뒤 tools-map 에 `docforge_*` 가 여섯인지 본다. OB-94 시험 파일은 `~/Projects/HEAXHub/var/app_data/doc_forge/inbox/` 에 평문 pptx 하나를 둔다(상자의 파일은 DocForge 가 지우지 않는다 — 운영자가 치운다).
 - **MX 백서** — 위키가 꺼진 박스라 `mxwp-mcp` `tools/list` 의 `wiki_*` 가 0개여야 한다. MCP 가 API 보다 먼저 떴다면 로그에 '위키 도구를 미루고 다시 본다' 한 줄이 있고 '미뤄 둔 위키 도구 N개를 실었다' 줄은 없어야 맞다.
