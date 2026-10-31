@@ -1,6 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
 import type { ActivityItem, ConfirmCard, Conversation, DelibData, DelibOpts, Message, PanelPointer, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
-import { panelsFromMeta, storedPanels } from '../components/chat/panels';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -57,6 +56,43 @@ interface StoredConversation {
   pinnedAgentName?: string;
   // 보조 전문가 — 주 전문가(pinnedAgent) 뒤에 서서 판단 기준·도구만 빌려준다(한 목소리로 답한다).
   pinnedHelpers?: { key: string; name?: string }[];
+}
+
+// ── MCP Apps 패널 포인터의 저장 꼴(docs/request-1027 HP-42) — 포인터와 작은 입력만 남긴다(결과 · _meta 는 그 탭에만 — B-4 · B-6 (가)).
+// 이 파일에 두는 까닭 — 이 파일과 conversations.api.ts 는 시험이 따로 옮겨 적어(transpileModule) 돌리므로 다른 모듈을 새로 읽으면 그 시험들이
+// 'Cannot find module' 로 깨진다(10-31 재개 점검 — 포털 묶음에서 실패 38 · 설정 오류 8). 이 탭의 결과를 다루는 panelPointer 는 components/chat/panels.ts 에 있다.
+// 브라우저 사본에 남기는 입력의 JSON 길이 위쪽 — 다시 열 때 tool-input 으로 보낸다. 넘으면 남기지 않는다(쿼터 · 큰 입력은 그 탭에만).
+const PANEL_INPUT_KEEP_CHARS = 4096;
+
+function panelInput(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+/** 저장된 포인터 → 화면 포인터. 서버 사본(meta.panels)에는 입력이 없다(다른 기기에서 다시 열면 입력 없이 연다) — 브라우저 사본을 읽을 때만
+ *  keepInput 으로 입력을 되살린다. */
+export function panelsFromMeta(raw: unknown, keepInput = false): PanelPointer[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw
+    .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+    .filter((p) => typeof p.uri === 'string' && p.uri.startsWith('ui://') && typeof p.tool === 'string' && p.tool)
+    .map((p) => ({
+      call: String(p.call ?? ''),
+      tool: String(p.tool),
+      app: String(p.app ?? ''),
+      uri: String(p.uri),
+      ...(typeof p.title === 'string' && p.title ? { title: p.title } : {}),
+      ...(keepInput && panelInput(p.input) ? { input: p.input } : {}),
+    }));
+  return out.length ? out.slice(0, 8) : undefined;
+}
+
+/** 브라우저 사본(localStorage)에 남길 꼴 — 포인터와 작은 입력만. */
+export function storedPanels(list: PanelPointer[] | undefined): PanelPointer[] | undefined {
+  if (!list?.length) return undefined;
+  return list.slice(0, 8).map((p) => {
+    const keep = p.input && JSON.stringify(p.input).length <= PANEL_INPUT_KEEP_CHARS;
+    return { call: p.call, tool: p.tool, app: p.app, uri: p.uri, ...(p.title ? { title: p.title } : {}), ...(keep ? { input: p.input } : {}) };
+  });
 }
 
 let seq = 0;

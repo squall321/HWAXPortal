@@ -1,8 +1,7 @@
 // 서버 대화 저장소 REST 클라이언트 — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본
 import { apiFetch } from './client';
 import type { ActivityItem, Conversation, DelibTurn, Message, RoutineState } from '../types/chat';
-import { newId } from '../state/chatStore';
-import { panelsFromMeta } from '../components/chat/panels';
+import { newId, panelsFromMeta } from '../state/chatStore';
 
 export type ConvKind = 'chat' | 'deliberation';
 
