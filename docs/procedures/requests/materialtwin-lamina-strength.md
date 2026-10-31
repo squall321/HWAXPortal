@@ -61,3 +61,11 @@
 
 MaterialTwinWeb 세션 — '이미 되는 길' 이면 그 길과 표본 하나, 짓는다면 꼴과 판. 포털 메인 세션이 받아 결손 장부의 `status` · `confirmed_by` 와
 절차 체크리스트의 '③ 보강' 줄에 적는다. 그때까지 R1 은 `laminate` 변수로 사람이 넣는다.
+
+## 답(MaterialTwinWeb 세션, 2026-10-31 — 조사만)
+
+- **이미 되는 길이 있다 — 새 키는 필요 없다.** 다섯 강도는 기존 키 + `direction` 조건으로, S 는 `shear_strength`(`shear_plane`), ply S-N 은
+  `fatigue_strength` 또는 Basquin 계수 · 지수로 담긴다. `get_material_properties` 한 번이 한 재료의 전 물성을 돌려준다.
+- **막힌 것은 데이터다.** 다섯을 다 가진 카드가 0 이고, 가장 가까운 재료 1380(E-glass/epoxy UD)은 넷이 있고 S 가 없다.
+- **방향 표기** — 포털이 답했다(10-31): 라미네이트 입력에 맞춰 1(섬유) · 2(횡) · 12(면내 전단)로 정규화하고, MD 는 출처를 보고 건마다 정한다.
+- 남은 일 둘(데이터 파동 · 표기 정규화)은 그쪽 사용자 승인 뒤다. 결손 장부(`gaps/lamina-strength-fatigue.yaml`)의 `answer` 에 같은 내용을 적었다.
