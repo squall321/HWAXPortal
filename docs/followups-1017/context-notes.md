@@ -151,3 +151,11 @@ fd 는 자식에게 안 물려진다 — 예전 flock 사고 없음). ④ 박스
 덧붙여 — 변이 확인 뒤 `WATCH_TRIES = 3→1` 처럼 **크기가 같은 변이를 같은 초에 되돌리면** 파이썬이 `__pycache__` 의 변이된 바이트코드를 계속
 쓴다(크기 · 초 단위 시각으로만 판정). 해시로 원본을 확인해도 import 쪽은 낡은 코드를 돈다 — 복원 뒤 그 모듈의 pyc 를 지운다.
 
+**FU-D25 요청서 2절의 MCP 문단을 서명 헤더 길로 고쳐 썼다(2026-10-31).** 그 문단은 'MCP 길에서 그 사람의 그룹을 어떻게 받을지 — 사람 단언에서
+읽거나 포털에 묻기 — 알려 달라' 고 물었는데, 그사이 게이트웨이가 답을 지었다 — 위임 호출에 `X-Heax-User-Plat` · `X-Heax-Plat-Proof`(소속 증명과
+같은 HMAC 규칙 · 앱별 `send_plat`, 게이트웨이 `baa2880` · mxwp-wiki MW-D9). 요청서는 아직 KooRemapper 에 넘어가지 않았고(남은 일 정리 B16) 받는
+쪽이 따르는 글이지 기록이 아니라서, 옛 물음을 남기면 받는 쪽이 이미 정해진 일을 다시 묻는다 — 그래서 그 문단만 고쳐 썼다(기록 파일은 덧붙임만 —
+leftovers-1017 LO-D8). 헤더 이름 · 서명 대상 · 키 · 수명은 게이트웨이 master `5f4ba5f` 에서 읽었고, DynaForge 가 할 일(MCP 서버가 두 장을 나르기 ·
+`verified_affiliation` 꼴 검증 · `create_job` 에서 `stcx_fullangle_drop` 막기)은 KooRemapper `d3d777c` 의 파일:줄로 적었다. 게이트웨이 몫
+(`KOORM_SEND_PLAT` — kooremapper_mcp 위임은 `PER_USER_SSO_APPS` 순회 밖이라 `<접두>_SEND_PLAT` 를 못 받는다, `provision-config.sh:697-701` ·
+`:808-816`, 같은 판)은 다른 작업이 넣는다. 차례는 게이트웨이 → DynaForge 다 — 헤더가 오기 전에 막기를 켜면 MCP 제출이 모두 막힌다.

@@ -32,9 +32,26 @@
   `smart-twin-mcp` · `smart-twin-cluster` · `ste`). DynaForge 자체는 `plat:dynaforge` 다.
 - 웹(jwt-handoff) — 포털이 실행할 때 주는 90초 실행 토큰의 `groups` 에 그 사람의 합성 권한(`plat:*` · `feat:*`)이 **그 순간 계산값으로**
   실린다. DynaForge 가 그 값을 자기 세션에 들고 있으면 제출 때 볼 수 있다(권한을 거둔 것은 다음 로그인부터 먹는다).
-- MCP(게이트웨이 경유) — 게이트웨이의 허가는 **백엔드 단위**라 DynaForge 의 제출 도구 하나만 `plat:smarttwin` 으로 막을 수 없다(백엔드
-  전체에 걸면 SmartTwin 권한 없는 사람이 DynaForge 도구를 전부 잃는다). 그 길의 신원(게이트웨이가 넘기는 사람 단언)에서 그룹을 읽거나,
-  포털에 묻는 길을 따로 정해야 한다 — 어느 쪽이 맞는지 알려 주면 포털 쪽 배선을 맞춘다.
+- MCP(게이트웨이 경유) — **서명 헤더 두 장으로 받는다.** 게이트웨이의 허가는 **백엔드 단위**라 DynaForge 의 제출 도구 하나만 `plat:smarttwin`
+  으로 막을 수 없다(백엔드 전체에 걸면 SmartTwin 권한 없는 사람이 DynaForge 도구를 전부 잃는다). 그래서 막는 판단은 DynaForge 가 하고, 게이트웨이는
+  사람별 위임 호출(`per_user_sso.kooremapper_mcp` — 그 사람의 kr_ PAT 로 부르는 MCP 길과 REST 다리)에 그 사람의 `plat:` 권한을 서명과 함께 싣는다
+  (게이트웨이 master `5f4ba5f` — 헤더 이름 `gateway.py:257-262` · 서명 `_plat_proof` `:335-343` · 싣는 자리 MCP `:6609-6613` · REST 다리 `:7215-7219`).
+  - `X-Heax-User-Plat` — 게이트웨이가 확인한 그룹 가운데 `plat:` 만, 정렬해 쉼표로 이은 것(퍼센트 인코딩 — `,` · `:` 는 그대로 둔다). 하나도
+    없으면 두 장 다 싣지 않는다.
+  - `X-Heax-Plat-Proof` — `v1.<exp>.<hmac>`. 서명 대상은 `v1|<이메일>|<정렬해 쉼표로 이은 목록>|<exp>`, HMAC-SHA256 16진이다. 키는 소속 증명과 같은
+    위임 비밀(DynaForge `KOORM_HEAX_GATEWAY_SECRET` = 게이트웨이 provision 의 `KOORM_SSO_SECRET`)이고 수명은 120초(`GATEWAY_AFF_PROOF_TTL`)다. 소속
+    두 장(`X-Heax-User-Affiliation` · `X-Heax-Aff-Proof`)과 같은 규칙이다.
+  - DynaForge 가 할 일 셋 — ① MCP 서버가 두 장도 백엔드로 나른다(`platform/mcp_server/server.py:42` — 지금은 소속 두 장만 나른다. MX 백서 MCP 서버가
+    같은 자리를 고쳤다 — MXWhitePaper `39c3c98`). ② 백엔드가 `platform/backend/app/shared/affiliation.py:30-48` `verified_affiliation` 과 같은 꼴로
+    검증한다 — 퍼센트 디코딩 → 쉼표로 나눠 정렬해 다시 잇기 → `v1` · 만료 전 · 그 PAT 주인의 이메일로 다시 셈한 서명과 `compare_digest` → 하나라도
+    어긋나면 빈 목록. ③ stcx 로 나가는 잡을 만드는 자리(`platform/backend/app/modules/jobs/routes.py:41` `create_job` — 카탈로그의 `invocation: external`
+    인 `stcx_fullangle_drop`. 후처리 예약 `postprocess` 는 잡을 내지 않으니 뺀다)에서 검증한 목록에 `plat:smarttwin` 이 없으면 잡을 내지 않는다.
+    10-31 대조로는 지금 `create_job` 에 권한 확인이 없고 stcx 제출은 공용 `KOORM_GATEWAY_PAT` 로 나간다(`platform/backend/app/worker/runner_loop.py:273-274`).
+  - 헤더가 없거나 서명이 틀리면 권한 없음으로 읽는다(닫힌 쪽). 게이트웨이를 거치지 않고 kr_ PAT 로 앱에 바로 붙은 손님은 증명이 없어 stcx 제출이
+    막힌다 — 그 길이 실제로 쓰이면 알려 달라(포털에 묻는 길을 따로 정한다).
+  - 게이트웨이 쪽 몫 — kooremapper_mcp 위임에 `send_plat` 을 켜는 provision 손잡이 `KOORM_SEND_PLAT` 는 포털 쪽 다른 작업이 게이트웨이에 넣는다
+    (남은 일 정리 B16 ①). 그 손잡이가 켜지기 전에는 두 장이 오지 않으므로 ③을 먼저 켜면 MCP 제출이 모두 막힌다 — 차례는 게이트웨이 → DynaForge 다
+    (막기는 손잡이로 두고 두 장이 오는 것을 본 뒤 켠다).
 
 **바라는 것** — 제출 경로(웹 · MCP 모두)에서 요청자에게 `plat:smarttwin` 이 없으면 잡을 내지 않고 '권한 없음 — 포털에서 SmartTwin 권한을
 요청하라' 를 돌려준다. 막은 기록(누가 · 언제 · 무엇을)을 DynaForge 잡 기록에 남긴다.
