@@ -1,6 +1,7 @@
 // 심의 라이브 뷰 — 절차 스테퍼 + 근거 카드 + 라이브 회의 버블 + 수렴/소수의견 배지 + 산출물 카드
 import { useMemo, useState } from 'react';
 import { useChat } from '../../state/ChatContext';
+import { decisionAsOf } from '../../state/chatStore';
 import { useCan } from '../../auth/useCan';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
 import { DelibGraph } from './DelibGraph';
@@ -318,7 +319,7 @@ function OutcomeCards({ d }: { d: DelibData }) {
 /** 심의 메시지의 본문 렌더 — msg.delib 이 있으면 MessageList 가 TextBlock 대신 이걸 쓴다. */
 // 이어하기(사람 개입 스티어링) — 끝난 심의에 의견을 넣어 같은 전문가로 후속 심의를 유도한다.
 function ContinueBar({ d }: { d: DelibData }) {
-  const { continueDeliberation, streaming } = useChat();
+  const { continueDeliberation, streaming, delibOpts } = useChat();
   const [note, setNote] = useState('');
   // 좌석 조정 — 한 회차를 돌고 명단을 사람이 고른다(요청 3번 '토론이 잘 안 되면 한 번 돌고 로스터 선택').
   // 현재 좌석은 personas 정본, 복원된 심의(personas 없음)는 발언자로 채운다.
@@ -337,6 +338,14 @@ function ContinueBar({ d }: { d: DelibData }) {
     (roster.length !== current.length || roster.some((s) => !current.some((c) => c.key === s.key)));
   if (!d.decision) return null;
   const tooFew = edited && seats.length < 2;
+  // 기준일 — 이어하기는 앞 회차의 값으로 돈다(ChatContext continueDeliberation). 심의 옵션의 값과 다르면 어느 쪽인지 여기서 밝힌다(HA-11).
+  const priorAsOf = decisionAsOf(d.decision);
+  const panelAsOf = delibOpts.as_of || undefined;
+  const asOfNote = priorAsOf
+    ? `기준일 ${priorAsOf}(앞 회차)로 잇는다${panelAsOf && panelAsOf !== priorAsOf ? ` — 심의 옵션의 기준일 ${panelAsOf} 는 이 이어하기에 쓰지 않는다` : ''}`
+    : panelAsOf
+      ? `앞 회차가 기준일 없이 돌아 이어하기도 기준일 없이 돈다 — 심의 옵션의 기준일 ${panelAsOf} 는 쓰지 않는다(그 날로 보려면 새 심의를 연다)`
+      : '';
   const submit = () => {
     if (streaming || tooFew) return;
     const n = note.trim();
@@ -363,6 +372,7 @@ function ContinueBar({ d }: { d: DelibData }) {
         </button>
       </div>
       {editing && <RosterEditor current={current} roster={seats} onChange={setRoster} />}
+      {asOfNote && <div className="dv-continue-asof">{asOfNote}</div>}
       <div className="dv-continue-row">
         <textarea
           className="dv-continue-input"

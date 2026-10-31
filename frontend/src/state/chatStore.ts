@@ -318,9 +318,13 @@ export function saveDelibOpts(opts: DelibOpts, prefix: string = DEFAULT_PREFIX):
 // (backend/tests/test_delib_timeout_cap_contract.py). 입력칸 max(DelibOptsPanel)도 이 상수를 쓴다.
 export const DELIB_TIMEOUT_MAX_S = 14400;
 
+// 기준일 꼴 — 포털 DelibOpts.as_of 의 pattern · 엔진 _as_of_ok 와 같다(YYYY-MM-DD, ASCII 숫자). 꼴이 아니면 보내지 않는다 —
+// 보내면 포털이 요청째 422 로 막는다. 달력에 없는 날(2025-02-30)은 date 입력칸이 만들지 않고, 손으로 넣은 것은 포털이 막는다.
+export const AS_OF_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
 // 손잡이 상태 → 서버 전송용(켠 것만). 나머지는 agent-server env 기본값 유지.
-export function delibOptsToWire(o: DelibOpts): Record<string, number> {
-  const w: Record<string, number> = {};
+export function delibOptsToWire(o: DelibOpts): Record<string, number | string> {
+  const w: Record<string, number | string> = {};
   for (const k of ['evidence_prepass', 'rebut_quote', 'prose_first', 'cross_exam', 'anchor', 'chair_cite'] as const) {
     if (o[k]) w[k] = 1;
   }
@@ -336,7 +340,21 @@ export function delibOptsToWire(o: DelibOpts): Record<string, number> {
   if (o.stop_after_round === 1) w.stop_after_round = 1;
   // MX 백서 위키에도 결정문 남기기 — 백엔드 DelibOpts.wiki 와 짝이다(위와 같은 까닭으로 둘 다 있어야 한다).
   if (o.wiki) w.wiki = 1;
+  // 기준일 — 백엔드 DelibOpts.as_of 와 짝이다(docs/request-1027 HA-11). 엔진이 그 날까지의 지식카드만 찾고 결정문 머리에 찍는다.
+  if (o.as_of && AS_OF_RE.test(o.as_of)) w.as_of = o.as_of;
   return w;
+}
+
+/** 앞 회차의 기준일 — 엔진이 결정문(체크포인트 글 포함) 머리에 찍는 '■ 기준일 — YYYY-MM-DD.' 줄에서 읽는다(docs/request-1027 HA-11).
+ *  머리는 '■ ' 로 시작하는 문단들이다(외부 응답자 · 봉인 줄이 그 위에 온다 — '■ 핵심 요약' 에서 멈춘다). 없으면 undefined — 기준일 없이 돈
+ *  회차다. 서버에서 되살린 대화(다른 기기)도 결정문 글은 남아 같은 값을 읽는다. 웹 이어하기가 이 값을 잇는다(MCP 는 원장의 _CONT_CARRY). */
+export function decisionAsOf(decision?: string): string | undefined {
+  for (const para of (decision ?? '').split('\n\n').slice(0, 4)) {
+    if (!para.startsWith('■ ') || para.startsWith('■ 핵심 요약')) break;
+    const m = /^■ 기준일 — ([0-9]{4}-[0-9]{2}-[0-9]{2})\.(?: |$)/.exec(para);
+    if (m && AS_OF_RE.test(m[1])) return m[1];
+  }
+  return undefined;
 }
 
 /** 대화 시작 전(랜딩)에 고른 전문가·도구. 새로고침에 날아가면 사용자는 **여전히 골라 둔 줄**
