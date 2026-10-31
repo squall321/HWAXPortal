@@ -700,7 +700,7 @@ HEAX 앱 `hwax_risk`(표시명 HWAX Risk Review, 경로 `/apps/hwax_risk`, 리�
 
 | 플래그 | true 조건 |
 |---|---|
-| ecad_absent | ecad 소스가 없거나 어댑터 4도구가 게이트웨이에 없다. |
+| ecad_absent | 보드가 없거나 붙은 보드를 읽지 못했다(그 사람의 PAT 없음 · 게이트웨이 도구 지도를 못 읽음 · 1단계 도구가 없음 · 필수 호출 `find_job` 실패, §2.13.5). |
 | dyna_absent | dyna 소스가 없다(러너 자격 (b) 소유자 포털 PAT 부재 포함 — §0.1.6). |
 | dyna_result_absent | dyna 는 있으나 결속된 리포트가 없다. |
 | result_kind_mismatch | 지정한 report_ids 의 kind 가 서로 다르다. 이때 `results=null`. |
@@ -716,11 +716,11 @@ HEAX 앱 `hwax_risk`(표시명 HWAX Risk Review, 경로 `/apps/hwax_risk`, 리�
 | 필드 | 타입 | 규칙 |
 |---|---|---|
 | nid | str | `'p:' + sha1(canon_key)[:12]`. 재파싱으로 StepForge `n{seq}` 가 바뀌어도 불변. |
-| canon_key | str | mcad `'mcad:' + path(프로젝트명 접두 제거, 예 `/a_stack.step/STACK_ASM/PLATE_1`)`. dyna `'dyna:' + sha256[:8] + ':' + pid`(sha256 은 K파일). dyna 가상 접촉 노드 `'dyna:' + sha256[:8] + ':contact:' + contact_index`. ecad `'ecad:' + refdes`, 넷 `'ecad:net:' + net_name`, 레이어 `'ecad:layer:' + idx`. |
+| canon_key | str | mcad `'mcad:' + path(프로젝트명 접두 제거, 예 `/a_stack.step/STACK_ASM/PLATE_1`)`. dyna `'dyna:' + sha256[:8] + ':' + pid`(sha256 은 K파일). dyna 가상 접촉 노드 `'dyna:' + sha256[:8] + ':contact:' + contact_index`. ecad `'ecad:' + refdes`, 보드 `'ecad:board'`, 넷 `'ecad:net:' + net_name`(2단계), 레이어 `'ecad:layer:' + idx`. |
 | domain | enum | `mcad \| dyna \| ecad`. dyna_result 는 노드를 만들지 않고 dyna 노드의 `results` 오버레이로만 존재한다. |
-| kind | enum | `part \| assembly \| file \| pid \| contact_set \| component \| net \| layer`. mcad 리프 인스턴스(shape_def 보유)가 `part`, XCAF assembly 가 `assembly`, step-file 노드가 `file`. project-root·file-group 은 만들지 않는다. |
-| label | str | 소스 표시명 원문(mcad name, dyna title, ecad refdes). |
-| local_key | str | 소스 고유키 원문(mcad path 전체, dyna pid 정수 문자열, ecad refdes). |
+| kind | enum | `part \| assembly \| file \| pid \| contact_set \| board \| component \| net \| layer`. mcad 리프 인스턴스(shape_def 보유)가 `part`, XCAF assembly 가 `assembly`, step-file 노드가 `file`. project-root·file-group 은 만들지 않는다. |
+| label | str | 소스 표시명 원문(mcad name, dyna title, ecad refdes · 층 이름, 보드는 늘 `board`). |
+| local_key | str | 소스 고유키 원문(mcad path 전체, dyna pid 정수 문자열, ecad refdes · 층 이름, 보드는 허브 job_id). |
 | name_norm | str | §2.7.1 규칙으로 정규화한 표시명. |
 | name_norm_canon | str | name_norm 에 `rr_dim_vocab` 과 같은 사전·정규식을 적용한 과제 무관 정규명(§2.7.1). ckey 계산 입력. |
 | group | str/null | dyna 는 리포트 파서 `_group_of` 규칙(`\` 또는 `/` 앞부분, 없으면 `Other`)을 K파일 title 에 재적용한 값. mcad 는 부모 assembly 의 name_norm. ecad 는 side(top/bottom). |
@@ -766,9 +766,10 @@ attrs — dyna `contact_set`(single_surface 하이퍼엣지의 가상 노드).
 {contact_index, contact_type: "*CONTACT_AUTOMATIC_SINGLE_SURFACE", title, n_members}
 ```
 
-attrs — ecad(계약 §2.13.5, 스텁).
+attrs — ecad(1단계, §2.5.3 · §2.13.5). 길이는 mm 다. 1단계에서 x · y · rot · nets · value 는 null 이고 net 노드는 없다(2단계).
 
 ```
+board:     {board_id, name, revision, units, outline_bbox|null, outline{x_mm, y_mm, area_mm2}, thickness, stackup_verdict, stackup_id, ecad_stackup_total, layer_count, n_components, n_components_placed, n_nets|null, odb_version|null, source_hash}
 component: {refdes, part_number|null, footprint|null, side: top|bottom, x, y, rot, pin_count, nets[], height|null, value|null}
 net:       {net_name, pin_count, layers[], net_class|null}
 layer:     {idx, name, type: signal|plane|dielectric|soldermask|silkscreen, thickness|null, material|null, copper_weight|null}
@@ -803,7 +804,7 @@ kind 강도 순위(diff 의 coupling 방향 판정용) — `interference:3 > tie
 
 ## 2.5 소스 매핑표 3
 
-각 표는 "소스 필드 → rr_ir 필드" 이고 세 번째 열이 손실·주의다. 어댑터 코드(`adapters/mcad.py·dyna.py·ecad_stub.py`)는 이 표 밖의 필드를 만들지 않는다.
+각 표는 "소스 필드 → rr_ir 필드" 이고 세 번째 열이 손실·주의다. 어댑터 코드(`adapters/mcad.py·dyna.py·ecad.py`)는 이 표 밖의 필드를 만들지 않는다.
 
 ### 2.5.1 StepForge → rr_ir(mcad)
 
@@ -862,18 +863,24 @@ kind 강도 순위(diff 의 coupling 방향 판정용) — `interference:3 > tie
 | `publish_report_to_datahub` 의 `eng_meta{project, dev_revision{phase, round}, design_variation}` | `rr_projects.stage` 규약 참조(정규식 `(pre\|dv\|pv\|pra\|mp)([123r])?`) | 호출하지 않는다(쓰기). 규약만 채택. |
 | MCP `heaxkooremapper_mcp_system_status` | `sources[dyna].app_version` · `sources[dyna_result].app_version`(같은 값 복제) | mcad 와 같은 규칙 — 실패하면 `app_version_unknown`, ir_hash 제외. |
 
-### 2.5.3 ODB hub 어댑터 계약 → rr_ir(ecad, ir_version '1.1')
+### 2.5.3 ODB 허브 → rr_ir(ecad, ir_version '1.1') — 1단계
 
-계약 정본은 앱 리포 `HWAXRisk/docs/odb-adapter-contract.md`(어댑터 코드 `adapters/ecad_stub.py`·`ecad.py` 와 같은 리포, 실존 — 포털 `docs/design-risk-review/` 에는 사본을 두지 않는다)이고 아래가 그 필드 표다. ODB hub 가 이 4도구를 게이트웨이 manifest `mcp:{}` 로 노출하면 `adapters/registry.py` 가 발견하고 `ecad_stub.py` 가 `ecad.py`(P7)로 교체된다. 그 전까지 스냅샷은 `missing.ecad_absent=true` 다.
+정본은 앱 리포 `HWAXRisk/docs/odb-adapter-contract.md`(어댑터 `adapters/ecad.py`)이고, 개정 근거는 요청서 [`ecad-1031/request.md`](ecad-1031/request.md)(cae00 10-31 실측 — 표본 보드 둘)다. 계약 4도구(`odb_get_board` · `odb_list_components` · `odb_list_nets` · `odb_get_stackup`)는 기다리지 않는다 — 허브는 게이트웨이 백엔드 `odb-hub` 로 도구 39개를 내고, 사용자 결정 D-1 = (가)에 따라 1단계는 지금 도구로 보드 · 적층 · 분류된 부품을 싣는다. 2단계(부품 좌표 · 넷 · 분류 안 된 부품)는 ODB 허브 OH-01 ~ OH-04 뒤 ER-06 이다. 이 절과 §2.13.5 가 2026-10-31 개정판이다 — 이 계획의 다른 절(§0 · §1.3 · §2.2 · §2.8 · §2.12 · §3.2.2 · §8 · §9 · §10.2)에 남은 계약 4도구 · `ecad_stub.py` 이야기는 개정 전 판이고 이 절이 이긴다. 1단계의 단위는 허브가 mm 로 맞춰 주므로(층 두께만 µm) `unit_converted_mil` 은 나오지 않는다.
 
-| 도구(인자) | 응답 필드 | rr_ir 필드 | 상한·주의 |
-|---|---|---|---|
-| `odb_get_board(job_ref)` | `{board_id, name, units: mm\|mil, outline_bbox[4], thickness, layer_count, n_components, n_nets, odb_version, source_hash}` | `sources[ecad].ref.{board_id, name}`, `source_hash`, G6 입력(units 가 mil 이면 어댑터가 mm 로 환산하고 `degraded: unit_converted_mil`) | 보드 1장 = 소스 1건. |
-| `odb_list_components(job_ref, side?, offset, limit)` | `items[{refdes, part_number, footprint, side, x, y, rot, pin_count, nets[], height, value}]`, `total`, `next_offset` | kind `component` 노드, `attrs.ecad.component`, kind `net` 엣지(component→net, pin 당 1건 아니라 넷 당 1건) | limit ≤2000/호출, 총 상한 2000(초과 시 `degraded: components_truncated`). x·y 는 보드 원점 기준 mm. |
-| `odb_list_nets(job_ref, offset, limit)` | `items[{net_name, pin_count, layers[], net_class}]`, `total`, `next_offset` | kind `net` 노드 | 총 상한 5000(`degraded: nets_truncated`). |
-| `odb_get_stackup(job_ref)` | `layers[{idx, name, type, thickness, material, copper_weight}]` | kind `layer` 노드, `dims_named` 자동 후보 `ecad_stackup_total`(두께 합, §2.8 시드 예약 이름) | type 어휘는 §2.3 attrs 의 5종으로 고정. |
+- **발견.** 게이트웨이 `/tools-map` 의 `map`(실이름 → 백엔드)에서 백엔드 `odb-hub` 와 원래 이름(맨 이름 또는 `odbhub_` 접두)으로 `find_job` · `get_board_layers` · `check_job_stackup` · `get_volume_result` · `get_odb_download` · `list_parts` 를 찾는다. 다른 백엔드의 같은 이름은 보지 않는다. 여섯이 다 있으면 `ready`, 하나라도 없으면 `unavailable`(`tools_missing`), 지도를 못 읽었으면 `planned` 다. 못 읽은 지도는 캐시하지 않는다.
+- **보드는 사람이 고른다.** 과제의 ECAD 보드는 소스 카드(kind `ecad`) 한 장이고 ref 는 `{odb_job_id}`(허브 job_id, 16자리 16진)다. 찾기는 `find_job` 후보(10 · `truncated`)를 보일 뿐이고, 붙이기 · 캡처는 그 job_id 와 같은 행만 쓴다 — 같은 모델의 다른 판이 함께 나오므로 이름으로 고르지 않는다. 길은 REST `GET /api/ecad/boards` · `PUT · DELETE /api/projects/{id}/ecad-board`, MCP `risk_find_ecad_boards` · `risk_set_ecad_board` 이고, 일반 소스 연결의 kind `ecad` 는 422 `ecad_board_route` 다(화면은 [`ecad-1031/frontend-request.md`](ecad-1031/frontend-request.md)).
+- **자격(사용자 결정 10-31).** 찾기 · 붙이기 확인 · 캡처는 그 사람의 등록된 포털 PAT 만 쓴다. odb-hub 는 사람별 격리가 없고 게이트웨이의 `plat:odbhub` 로만 막히므로 박스 읽기 PAT 로 내려가지 않는다 — 내려가면 그 문을 서비스 계정으로 지나 ODB 허브 권한이 없는 사람도 보드를 본다. PAT 가 없으면(없음 · 폐기 · 풀리지 않음 · 곧 끝남) 찾기 · 붙이기는 409 `ecad_pat_absent`, 캡처는 결측 + 경고 `ecad_pat_absent` 다(§2.13.5).
 
-계약 조건. (1) 4도구 전부 읽기 전용이고 `job_ref` 는 ODB hub 가 발급한 불투명 문자열이다. (2) 인증은 게이트웨이 PAT 전달 규약(DynaForge 와 같음)을 따른다. (3) 응답은 JSON 이고 좌표·두께 단위는 `odb_get_board.units` 로 선언한다. (4) ecad↔mcad/dyna same-as 는 1차에서 `ledger·title_norm/name_norm(refdes 또는 part_number 토큰)` 만 허용하고 기하 지문(footprint bbox ↔ mcad part bbox)은 계약 이행 후 P7 에서 켠다. (5) 계약 밖 필드(패드·비아·트레이스 폭)는 이 버전에서 가정하지 않는다.
+사상(1단계).
+
+1. **보드** — 소스 1건이면서 board 노드 1건이다. canon_key `ecad:board`, label `board`(판이 바뀌어도 같다 — 쌍 비교가 두 판의 보드를 이름으로 맞춘다), local_key = job_id, attrs `{board_id, name, revision, units, outline_bbox: null, outline{x_mm, y_mm, area_mm2}, thickness, stackup_verdict, stackup_id, ecad_stackup_total, layer_count(동박층), n_components(list_parts total), n_components_placed(면별 count, 없으면 counted), n_nets: null, odb_version: null, source_hash}`. ir_hash 는 노드 · 엣지만 보므로 이 노드가 없으면 배치 · 배선만 바꾼 판으로 바꿔 붙였을 때 앞 판의 스냅샷이 재사용으로 돌아온다. `sources[ecad]` 의 ref 는 `{board_id, name}`, `source_hash` 는 `get_odb_download.sha256` 이다.
+2. **layer** — `get_board_layers` 행을 5종(signal · plane · dielectric · soldermask · silkscreen)으로 거르고 위에서 아래로 idx 를 1부터 매긴다. thickness 는 `thickness_um` ÷ 1000(mm)이고, material 은 판정(`check_job_stackup.verdict`)이 standard 이고 표준 적층과 층 구분이 하나하나 맞을 때만 싣는다.
+3. **component** — 분류된 부품(`list_parts` 행, 100행씩 쪽 넘김)의 refdes · part_number · footprint · side · pin_count · height(면마다 큰 부품 10개)다. x · y · rot · nets · value 는 null 이다. 총 상한 2000(넘으면 `components_truncated`).
+4. **다 받았는지** — 서로 다른 행 수로 total 과 견주고 모자라면 `capture_partial` 이다. 쪽 수는 ceil(min(total, 2000) / 100) + 1 을 넘기지 않는다(닿으면 `capture_partial` + `odb_paging_capped`).
+
+표지 — `ecad_nets_deferred` · `component_xy_deferred` · `components_unclassified_omitted` · `outline_origin_unknown` · `stackup_material_unmatched` · `copper_weight_absent` · `plane_type_unknown` · `odb_version_absent` · `component_value_absent` · `component_height_partial` · `components_unavailable` · `layers_unavailable`. 선택 호출의 200 + error 는 그 칸만 비우는 경고(`odb_error_body`)다. 다만 `list_parts` · `get_board_layers` 가 그러면 노드 가족이 통째로 빠지므로 `components_unavailable` · `layers_unavailable` 를 세우고 그 수는 미측정이다. 배치 수가 분류된 부품 수보다 작으면 경고(`placed_below_classified`)를 남기고 `components_unclassified_omitted` 는 그대로 세운다.
+
+계약 조건 다섯은 그대로다. (1) 부르는 도구는 전부 읽기다(잡 시작 · 업로드 도구는 부르지 않는다). (2) 인증은 게이트웨이 PAT 전달 규약을 따르되 그 사람의 PAT 만이다(위 자격). (3) 응답은 JSON 이고 단위는 mm 다(층 두께만 µm → mm). (4) ecad↔mcad/dyna same-as 는 1차에서 `ledger · name_norm(refdes 또는 part_number 토큰)` 만이고 기하 지문(footprint bbox ↔ mcad part bbox)은 좌표가 오는 2단계에서 켠다. (5) 계약 밖 필드(패드 · 비아 · 트레이스 폭, 부품 분류 category · 패키지 치수)는 싣지 않는다 — 실으려면 계약에 먼저 적는다.
 
 ## 2.6 크로스도메인 same-as 사다리
 
@@ -1096,11 +1103,11 @@ ir_hash = sha256(canonical_json({
 
 잡은 `rr_snapshot_jobs`(§5.2.2 B) 1행이고 상태는 `queued → running → done | partial | failed` 다. 아래 단계마다 실패 지점을 `error_json{stage, kind, tool, call_id, message}` 에 적는다.
 
-1. `adapters/registry.py` probe — 각 소스 kind 의 app_key 가 게이트웨이에 있고 필요한 도구가 전부 보이는지 확인하고, 도달한 kind 마다 `*_system_status` 를 1회 호출해 `sources[].app_version` 을 채운다(실패는 `app_version_unknown`, §2.5.1). **요청 `kinds[]` 가 전부 도달 불가일 때만 `409 source_unreachable`** 이다 — 한 kind 라도 도달하면 나머지는 `missing.<kind>_absent` + `degraded` 로 세우고 계속한다. mcad 부재는 정상 경로이고(`missing.mcad_absent=true` · `degraded: mcad_absent`) `primary_source` 가 dyna 또는 ecad 로 내려간다(§2.2). 같은 단계에서 모델 규모를 먼저 잰다 — mcad `tree.json summary.leaf_instances`(또는 MCP `project_tree` stats)와 계면 총수, dyna `meta.parts`·`contacts_total`, ecad `odb_get_board.n_components` 를 읽어 리프 > `risk_max_leaf`(1500) 또는 계면 > `risk_max_interfaces`(6000)면 `409 model_too_large {leaf, interfaces, caps, hint:'scope 를 좁히거나 allow_large=true 로 재요청'}` 를 내고 잡을 만들지 않는다. 요청에 `allow_large: true` 가 있으면 예산을 600 s 로 올리고 `degraded: large_model` 로 진행한다(캡을 없애는 것이 아니라 사람이 한 번 승인하게 하는 문이다).
+1. `adapters/registry.py` probe — 각 소스 kind 의 app_key 가 게이트웨이에 있고 필요한 도구가 전부 보이는지 확인하고, 도달한 kind 마다 `*_system_status` 를 1회 호출해 `sources[].app_version` 을 채운다(실패는 `app_version_unknown`, §2.5.1). **요청 `kinds[]` 가 전부 도달 불가일 때만 `409 source_unreachable`** 이다 — 한 kind 라도 도달하면 나머지는 `missing.<kind>_absent` + `degraded` 로 세우고 계속한다. mcad 부재는 정상 경로이고(`missing.mcad_absent=true` · `degraded: mcad_absent`) `primary_source` 가 dyna 또는 ecad 로 내려간다(§2.2). 같은 단계에서 모델 규모를 먼저 잰다 — mcad `tree.json summary.leaf_instances`(또는 MCP `project_tree` stats)와 계면 총수, dyna `meta.parts`·`contacts_total`, ecad `list_parts.total`(분류된 부품 — ECAD 부품도 센다, 사용자 결정 10-31) 를 읽어 리프 > `risk_max_leaf`(1500) 또는 계면 > `risk_max_interfaces`(6000)면 `409 model_too_large {leaf, interfaces, caps, hint:'scope 를 좁히거나 allow_large=true 로 재요청'}` 를 내고 잡을 만들지 않는다. 요청에 `allow_large: true` 가 있으면 예산을 600 s 로 올리고 `degraded: large_model` 로 진행한다(캡을 없애는 것이 아니라 사람이 한 번 승인하게 하는 문이다).
 2. mcad 캡처 — `job_status(detect_job_id)` 가 done 이 아니면 `409 detect_not_done`, detect 잡 자체가 없으면 `409 detect_absent {hint:'StepForge 에서 계면 검출을 먼저 실행하세요'}`(자동 실행 금지). 정상 경로는 **REST 5**(`GET /projects/{id}`(tol_config) → `/tree` → `/artifacts/graph/` → `/parts` → `/interfaces?limit=5000`) + **MCP 3**(`job_status` → `part_mesh_map` → `inspect_report`(검증))이다. REST `/interfaces?limit=5000` 한 번이 MCP `list_interfaces`×kind 4 를 대체한다. REST 실패 시 폴백은 MCP `project_tree`·`list_parts`·`list_interfaces`×kind 4 를 더해 **MCP 7** 이 되고 `mcp_degraded` 가 선다. 폴백 응답에 `nodes` 키가 없으면(리프 > 500) `degraded: tree_truncated` 를 세우고 mcad 를 통째로 버린다(`missing.mcad_capture_failed`) — 요약만으로는 노드·엣지를 만들 수 없기 때문이고, 이때 남은 kind 가 있으면 잡은 `done` 이다.
 3. dyna 캡처 — **두 갈래로 나눈다**(2026-08-31 실측: 전사 집계 4도구는 러너 자격 (b) 없이도 실데이터를 돌려준다). **3a 전사 집계(자격 무관)** — `corpus_summary` → `material_usage` → `section_contact_usage` → `operation_usage` 를 서비스 자격으로 호출해 봉투 최상위 `context.corpus_usage` 를 채운다(§2.2). `missing.dyna_absent` 여도 돌고, 4호출 전부 실패면 `context.corpus_usage=null`. **3b 세션·파일(자격 필요)** — 요청자(`rr_projects.owner_sub`)의 `_user_credentials` 행(러너 자격 (b), §0.1.6)이 없으면 `missing.dyna_absent` + `dyna_pat_absent` 로 건너뛴다. 있으면 `list_session_files` → `inspect_file` → (detect 결과 파일 지정 시) `download_result`. 3b 를 건너뛰어도 3a 는 수행한다 — dyna 부재 하나로 조직 집계까지 버리지 않는다.
 4. dyna_result 캡처 — `report_summary` → `report_part_risk` → `report_findings` → `report_energy_flow` → `report_worst_cases(limit 5)`, 리포트 ≤3건. kind 불일치면 `results=null` + `result_kind_mismatch`.
-5. ecad — `ecad_stub.discover` 만. 부재면 `ecad_absent`.
+5. ecad — 보드 카드가 있고 kinds 가 비었거나 ecad 를 담으면 `adapters/ecad.py`(§2.5.3 · §2.13.5). 그 사람의 PAT 로만 부르고, 보드가 없거나 읽지 못하면 `ecad_absent`.
 6. 조립 — `primary_source` 확정(§2.2) → 노드·엣지 → `rr_iface_ledger` 재적용 → same-as 사다리(+`rr_sameas`) → 클러스터·dn·ckey(+`rr_part_keys`) → asm_key(primary_source 기준, §2.7.4) → dims_named 재평가 → rollups → results 오버레이 → warnings.
 7. `state.py` 호출 — 게이트 G1~G6·`rr_requirements` 대조(`sig:req.margin`·`sig:req.scenario_coverage`·`missing.req_absent`·`missing.scenario_uncovered`, §2.8b)·character_seed·feature_vector·rule_hits 를 계산해 rr_ir.gates 등에 복사한다(정의는 §3). 요구 대조 결과는 rr_state 에만 살고 rr_ir 에는 들어가지 않는다(ir_hash 불변).
 8. `ir_hash` 계산 → `(project_id, ir_hash)` 존재하면 기존 `snapshot_id` 를 `{reused: true}` 로 반환하고 이번 호출 로그는 그 스냅샷에 덧붙인다. 없으면 `rr_snapshots` 삽입 + `rr_ir_nodes·rr_ir_edges` 펼침 + `rr_states` 삽입.
@@ -1112,8 +1119,8 @@ G6 fail(`blocked=true`)이어도 스냅샷은 저장된다. 차단되는 것은 
 
 | 실패 | 판정 | IR 표기 | 잡 상태 |
 |---|---|---|---|
-| kind 의 **필수 호출** 실패(mcad `/tree`·MCP 폴백 둘 다, dyna `inspect_file`, ecad `odb_get_board`) | 그 kind 를 통째로 버린다 | `missing.<kind>_capture_failed=true` + `missing.<kind>_absent=true` + warnings `capture_call_failed{kind, tool, call_id}` | 남은 kind 가 있으면 `done`, 하나도 없으면 `failed` |
-| kind 의 **선택 호출** 실패(`list_interfaces` 일부 kind, `part_mesh_map`, `report_energy_flow`, `odb_list_nets` 등) | 그 부분만 비운다 | `degraded: capture_partial` + 해당 플래그(계면이면 `missing.iface_kinds_absent=true`) + warnings `capture_call_failed` | `partial` |
+| kind 의 **필수 호출** 실패(mcad `/tree`·MCP 폴백 둘 다, dyna `inspect_file`, ecad `find_job`) | 그 kind 를 통째로 버린다 | `missing.<kind>_capture_failed=true` + `missing.<kind>_absent=true` + warnings `capture_call_failed{kind, tool, call_id}` | 남은 kind 가 있으면 `done`, 하나도 없으면 `failed` |
+| kind 의 **선택 호출** 실패(`list_interfaces` 일부 kind, `part_mesh_map`, `report_energy_flow`, ecad `get_board_layers` · `check_job_stackup` · `get_volume_result` · `get_odb_download` · `list_parts` 쪽 등) | 그 부분만 비운다 | `degraded: capture_partial` + 해당 플래그(계면이면 `missing.iface_kinds_absent=true`) + warnings `capture_call_failed` | `partial` |
 | 예산 초과(180 s, `allow_large` 면 600 s) | 그 시점까지 캡처한 것으로 조립 | `degraded: capture_partial` + `error_json.stage='budget'` | `partial` |
 
 `partial` 잡의 스냅샷도 저장되고 `rr_snapshots.capture_partial=1` 이 선다. 그 스냅샷에서 (a) G3·R-001 은 `pass=null`(간섭 0 을 '간섭 없음' 으로 읽지 않는다, §3.2.2), (b) pair diff 의 구조·파라메트릭 항목은 `excluded_reason='capture_partial'` 이고 의미 이벤트 `iface.*`·`topology.*` 를 만들지 않으며(간섭 0 인 IR 이 '개선' 으로 등록부에 되먹여지는 경로를 끊는다), (c) E0 에 `부분 캡처(실패 호출 N건: <tool>…)` 가 실린다. 앱 재기동 시 `state='running'` 인 행은 `failed`(`error_json.stage='restart'`)로 마감한다.
@@ -1218,9 +1225,14 @@ truncated = sum(counts.values()) > len(interfaces)
 - 결속 `binding.method` 는 §2.2 규칙. `report_parts_mismatch` 가 리포트 파트의 30% 를 넘으면 결속을 `same_session_weak` 로 강등하고 warnings 에 남긴다.
 - **dyna 단독 스냅샷.** mcad 없이 `kinds=['dyna']` 또는 `['dyna','dyna_result']` 만으로 캡처하는 경로가 정식이다(CAD 리비전보다 메시·조건 리비전이 잦다). 그때 `primary_source='dyna'`, `asm_key` 는 `_group_of(title)` 한 층(§2.7.4), 예약 치수는 `sources[dyna].stats` 원천(§2.8), same-as pair 는 3단계를 건너뛴다(§2.6.2). `bridge` 엣지·`pid_map` 단계는 mcad 가 없어 성립하지 않으므로 `degraded` 에 넣지 않고 조용히 비운다. G7 `result_parity` 는 그대로 작동해 같은 K파일 계보의 리포트 두 건을 비교할 수 있다 — 이것이 mcad 없는 과제에서도 `result_delta` 와 `rr_diffs` 가 성립하는 이유다.
 
-### 2.13.5 `adapters/ecad_stub.py` → `adapters/ecad.py`(P7)
+### 2.13.5 `adapters/ecad.py`(1단계, 스텁 대체)
 
-스텁은 `discover` 만 구현하고 `capture` 는 빈 결과 + `ecad_absent` 다. 계약(§2.5.3)이 이행되어 4도구가 발견되면 `ecad.py` 가 component/net/layer 노드와 `net` 엣지를 만들고 ir_version 을 '1.1' 로 올린다. 그 전에 ecad 를 가정하는 코드는 `missing.ecad_absent` 분기뿐이다(§6 ECAD 의존 도메인 deferred).
+- 보드가 없거나 kinds 가 ecad 를 빼면 스텁 시절과 같은 결측 행(`adapter_version` `0.0-stub` · `ecad_absent` · INFO)이다.
+- 호출 없이 끝난 실패(`ecad_pat_absent` · `ecad_gateway_unreadable` · `ecad_tools_missing`)는 결측 + 경고이고, `ecad_capture_failed` 는 `find_job` 실패 · 그 job_id 없음 · 드리프트일 때만이다. 읽은 카드가 ECAD 하나뿐인데 보드를 못 읽었으면 스냅샷을 만들지 않는다(409 `source_unreachable`, 잡 `failed`, 호출 원문은 스냅샷 없이 남는다). 선택 호출 실패는 `capture_partial` 이다. ECAD 카드는 어댑터 결과로 잰다(`capture_mode` `mcp`).
+- 쌍 비교에서 ECAD 의 실패 · 한쪽만 · 세대 차이는 ECAD 항목에만 효과를 준다 — §3.3.6 의 `capture_parity` · `adapter_parity` 를 kind 별로(`comparability.ecad`) 따진다. 못 읽음 · 부분은 `capture_partial`, 한쪽에만 실림은 `partial_scope`(항목은 남고 의미 이벤트를 만들지 않는다), 세대 차이는 ECAD 항목에만 `parser_differs` 이고, 전역 두 키는 ecad 를 세지 않는다.
+- 1단계 쌍 비교는 ECAD 노드를 refdes · 층 이름으로 대응만 하고 칸 변화(층 두께 · 재료 · 품번 · 패키지 · 핀 수 · 높이)는 싣지 않는다.
+- **ECAD 의존 도메인 6(§6, 사용자 결정 10-31).** 보드를 실은 스냅샷 대상에서는 `pcb · soc · passive · mem` 이 deferred 에서 풀린다. 넷 · 배치가 있어야 판단하는 `pwr · rf` 는 2단계까지 지금처럼 deferred 다(ECAD 부재 규칙 — 영역 1순위가 아닌 좌석) — 1단계에는 좌표 · 넷이 없어 그 판단이 undetermined 로만 나온다. diff 대상에서는 1단계 동안 여섯 다 deferred · 입력 결손이며(위의 칸 변화가 없어서다), 대상 결측 블록이 그 까닭을 싣는다. §3.3.5 `ecad.*` 예약 이벤트를 1단계 칸으로 켤지(거르기 표 승인과 함께) 정하면 이 규칙을 걷는다.
+- **모델 크기 상한(§2.11.3, 사용자 결정 10-31).** `risk_max_leaf`(1500)는 ECAD 부품(`list_parts.total` — 분류된 부품)도 센다. 심사 비용을 막는 상한이라 넘으면 409 `model_too_large` 이고 `allow_large` 로 동결한다.
 
 ## 2.14 스키마·픽스처·검증
 
@@ -1600,7 +1612,7 @@ self-diff(같은 스냅샷 둘) 는 이벤트 0·changed 0 이어야 한다.
 
 `excluded_reason ∈ tol_differs | tol_unknown | result_kind_differs | sim_params_differ | unit_scale | partial_scope | suspect_coords | null_one_side | sameas_pending | bridge_stale | source_drift | capture_partial | truncated`. 제외된 항목은 diff_json 에 남고(수치도 남는다) 의미 이벤트를 만들지 않으며 summary_text 에는 `[제외] tol_differs 12건` 처럼 건수만 실린다. 브리프 E2·E3·E4 는 제외 항목을 싣지 않되 E0 에 제외 사유별 건수를 적는다(§5).
 
-`comparability` 는 기존 `ir_version_parity`·`tol_parity`·`result_parity` 에 소스 3종을 더한다.
+`comparability` 는 기존 `ir_version_parity`·`tol_parity`·`result_parity` 에 소스 3종을 더한다. ECAD 는 kind 별로 따로 따진다(`comparability.ecad`, 2026-10-31).
 
 | 키 | true 조건 | false 일 때 |
 |---|---|---|
@@ -1609,8 +1621,9 @@ self-diff(같은 스냅샷 둘) 는 이벤트 0·changed 0 이어야 한다.
 | `source_schema_parity` | 양쪽 다 `degraded` 에 `schema_drift` 가 없다 | 그 kind 의 파라메트릭·result 항목 전부 `excluded_reason='source_drift'`(계약 위반 응답에서 나온 수치는 비교 대상이 아니다) |
 | `capture_parity` | 양쪽 다 `capture_partial` 이 아니고 `<kind>_capture_failed` 가 없다 | 부분 쪽에 없는 kind·계면 종류의 항목 전부 `excluded_reason='capture_partial'`, 해당 의미 이벤트 미생성(간섭 0 이 '해소' 로 읽히지 않게 한다) |
 | `primary_source_parity` | base·target 의 `primary_source` 가 같다 | 구조층은 그대로 만들되 `asm_key` 기준이 달라 rollup delta 를 만들지 않고 `excluded_reason='partial_scope'` 를 쓴다. E0 에 `primary_source mcad→dyna` 로 실린다 |
+| `ecad`(객체 `{base, target, excluded_reason, adapter_parity}`) | 두 쪽 다 보드를 온전히 실었다(`present`) — 쪽마다 `present` · `absent`(보드 없음 · 읽지 않음) · `failed`(못 읽음 · `capture_partial` · `components_unavailable` · `layers_unavailable`) | 한쪽이라도 `failed` 면 ECAD 항목에 `excluded_reason='capture_partial'`, 한쪽에만 실렸으면 `partial_scope` — 항목은 남고 의미 이벤트를 만들지 않는다. 두 쪽 다 실렸는데 어댑터 세대가 다르면(`adapter_parity=false`) ECAD 항목 · 이벤트에만 `caveat='parser_differs'` 와 등급 한 단계 낮춤이다. 전역 `capture_parity` 는 `ecad_capture_failed` 를, 전역 `adapter_parity` 는 ecad 를 세지 않는다(§2.13.5) |
 
-이 다섯은 전부 `false` 여도 diff 생성을 막지 않는다(막는 것은 G6 하나다). E0·summary_text 첫 블록에 `[비교 가능성]` 줄로 실리고, `character_seed` 는 `app_version_parity=false` 인 pair 에서 `char:change_style:dimension_tuning` 를 붙이지 않는다 — 파서 세대가 섞인 수치 변화를 설계 성향으로 학습하지 않기 위해서다.
+이 다섯은 전부 `false` 여도(`ecad` 가 어떤 값이어도) diff 생성을 막지 않는다(막는 것은 G6 하나다). E0·summary_text 첫 블록에 `[비교 가능성]` 줄로 실리고, `character_seed` 는 `app_version_parity=false` 인 pair 에서 `char:change_style:dimension_tuning` 를 붙이지 않는다 — 파서 세대가 섞인 수치 변화를 설계 성향으로 학습하지 않기 위해서다.
 
 ## 3.4 summary_text 생성 규칙(render.py)
 
@@ -3372,7 +3385,7 @@ rank by (exact > alias_candidate), sev3 desc, support desc, updated_at desc → 
 - 도메인 집합 HWXD 도메인 15 = `xd · sim · cam · rel · soc · disp · mech · pcb · rf · passive · pwr · sh · mem · std · material` — `list_agent_domains` 결과에서 `sw`(408), `oss`, `misc`, `kooremapper`, `dynaforge` 를 제외한 것. 코드 상수가 아니라 Settings `risk_roster_domains`(기본값 위 15개)로 두어 사용자가 조정한다(cam·soc·std·material 포함 여부는 열린 질문 §10).
 - 로스터 생성 시점 = 타깃 생성(`POST /api/targets`, consent:true) 시점. 코드가 도메인마다 `list_agents(compact=true, domain=d)` 로 키를 모아 `rr_roster{target_key, agent_key, domain, relevance, rank_in_domain, frozen_at, owner_sub}` 에 **고정**(`rr_targets.roster_frozen_at`)하고 같은 키로 `rr_coverage` 행을 `pending` 으로 만든다. 도메인은 `_dom_of(agent_key)` = 키의 첫 `-` 앞 접두사이며 `list_agents` 의 domain 값과 대조해 다르면 `list_agents` 값을 쓴다.
 - 관련도 `relevance` = `recommend_agents(q=<summary_text 또는 rr_state 요약 앞 500자>, top 60)` 의 점수(목록 밖은 0). 도메인 내 정렬 = relevance desc, agent_key asc → `rank_in_domain`(1부터). 이 순서가 Tier 편성 순서다. 전문가별 이력 보정(§7.2 과거 IR 인용률)은 P6 이후 relevance 에 가산한다.
-- ECAD 의존 도메인 6 = Settings `risk_ecad_domains`(기본 `pcb · pwr · rf · soc · passive · mem`). 타깃 스냅샷의 `missing.ecad_absent=true` 이면 이 도메인의 로스터 행은 `rank_in_domain=1` 대표 1석만 `pending` 으로 두고 나머지는 처음부터 `deferred(reason=ecad_absent)` 종결 상태로 만든다. 같은 과제에 ECAD 가 있는 스냅샷이 동결되어 새 타깃이 생기면 그 타깃의 로스터에서 `pending` 으로 되살아난다.
+- ECAD 의존 도메인 6 = Settings `risk_ecad_domains`(기본 `pcb · pwr · rf · soc · passive · mem`). 타깃 스냅샷의 `missing.ecad_absent=true` 이면 이 도메인의 로스터 행은 `rank_in_domain=1` 대표 1석만 `pending` 으로 두고 나머지는 처음부터 `deferred(reason=ecad_absent)` 종결 상태로 만든다. 같은 과제에 ECAD 가 있는 스냅샷이 동결되어 새 타깃이 생기면 그 타깃의 로스터에서 `pending` 으로 되살아난다. ECAD 1단계(2026-10-31)부터는 둘이 더 받는다 — 보드를 실은 스냅샷 대상의 `pwr · rf`(넷 · 배치가 필요해 2단계까지, 사용자 결정 10-31)와 diff 대상의 여섯 전부(1단계 비교에 ECAD 칸 변화가 없다)다(§2.13.5).
 - 로스터 갱신은 사용자가 `POST /api/targets/{key}/refresh_roster` 를 누를 때만 일어난다. `list_agents` 에 새로 생긴 키만 `pending` 행으로 추가하고 `rank_in_domain` 은 기존 최대값 다음부터 붙인다(이미 편성된 패널의 결정론을 깨지 않는다). 기존 행(종결·비종결)은 불변이다.
 - 실측 규모 ≈350(xd 122 · sim 22 · cam 21 · rel 20 · soc 20 · disp 19 · mech 19 · pcb 19 · rf 19 · passive 18 · pwr 18 · sh 17 · mem 16 · std 8 · material 1). ECAD 부재 시 deferred = 110 − 6 = 104 ≈105 석이고 pending ≈245 석이다. 이 수치는 `POST /api/targets` 응답 `{roster_size, deferred, tier_plan, cost_estimate}` 로 사용자에게 먼저 보이고 동의를 받는다.
 
