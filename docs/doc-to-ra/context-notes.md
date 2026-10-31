@@ -160,4 +160,6 @@ Office · PDF 는 25MB → R4. ⑤ `create_report` 는 `entity_ids` 를 커밋 �
 유지. 4 · 5(금 표본 · 기준 숫자)는 cae00 금 표본 때 정한다. 지금 코드가 이미 그 값이라 새로 짓는 것은 없다 — DocForge `docforge_convert` 의
 `vlm` · `snapshot_page` 기본 false(그 리포 docforge/mcp_server.py:66) · `word_split` 기본 h1(docforge/structure/mapper.py:420). 8 의 '기본 끔' 은
 앱 옵션의 기본값이다 — 포털 「정밀 변환」 목적지는 이름이 '그림 판독' 이라 켜서 맡긴다(DF-D17 ②, backend/app/agent/routes.py:1399-1400). DocForge
-문서는 'M3 부터 기본 true' 라 적었다(그 리포 docs/ARCHITECTURE.md §3) — 이 결정으로 바뀌는지는 DocForge 세션에 넘긴다.
+문서는 'M3 부터 기본 true' 라 적었다(그 리포 docs/ARCHITECTURE.md §3) — 이 결정으로 바뀌는지는 DocForge 세션에 넘긴다. — 넘기는 글
+[requests/docforge-vlm-default-1031.md](requests/docforge-vlm-default-1031.md)(앱 기본 false 유지 · 포털 목적지는 vlm=True — ARCHITECTURE §3 을 맞추거나
+M3 에서 달라야 할 까닭을 알려 달라) (10-31 정리)
