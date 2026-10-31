@@ -143,8 +143,15 @@
 
 - SP 최신은 `778db2f`(0.4.67, 킷 2026-10-21)다. StepForge · DocForge · SignalForge 는 10-14 킷(`f7485c0`)으로 받고 있어 올리기와 '작업을 시작할 때 SP 최신을 본다' 는 상시 규칙을 청했다. KooRemapper 는 이미 최신이고 0.4.67 의 영향이 없다고 답했다. ReportArchive 는 자체 SP 어댑터가 있어 킷과 견주기를 청했다([`outbound.md`](outbound.md) 3절).
 - 세션은 다른 세션의 청으로 제 CLAUDE.md 를 고치지 않는다. 그래서 상시 규칙을 둘지는 사용자가 세션마다 정한다.
+- 10-31 — DocForge(`213c411`, HH-03 `8444575` 포함) · SignalForge(`92e2f7e` · `e5001e4` · `06a506b`)는 킷 2026-10-21 로 올렸다. StepForge(`b2c70f1`) · ReportArchive 는 답을 기다린다(10-31 ls-remote).
 
 ## C-23 HEAXHub 10-31 행의 번호가 10-30 요청서의 HH-14 와 겹친다
 
 - HEAXHub 요청의 10-31 행 HH-14(운영 노드 터널로 가는 매니페스트 — 전환 창에서만 합친다) · HH-15(dev 박스도 그 매니페스트 넷을 쓴다 — 박스별 매니페스트 덧씌우기가 먼저) · HH-16 은 10-30 요청서 4절의 HH-14(DocForge 입력 목록 도구)와 번호가 겹친다.
 - 이 폴더의 글에서는 회차를 붙여 'HEAXHub 10-31 HH-14' 로 적는다. 셋은 다른 워크플로가 짓는 중이라, 결과 자리를 [`server-setup.md`](server-setup.md) 9절과 받은 편지함 2026-10-31 Q8 에 비워 두었다.
+
+## C-24 AIDataHub 정기 동기화는 cae00 에서 켜지 않는다 — 덤프 병합이 정본(사용자 결정 10-31 AD-17 (나))
+
+- 10-27 AD-17 의 두 안 가운데 (나)다(검토자 권고 그대로 — [`../request-1027/review-10-AIDataHub.md`](../request-1027/review-10-AIDataHub.md) 5절). cae00 의 정기 동기화 셋(mxwp · signalforge-gs · materialtwin)은 내부 주소 가드에 막힌 지금 그대로 두고, 원천 글은 dev 동기화 → 매일 덤프 → cae00 병합으로 받는다. 쓰는 박스가 하나라 id 가 겹치지 않고 SSRF 문도 닫힌 채다.
+- AIDataHub `684765b` 는 `.env.example` 의 `AIDH_SYNC_ALLOW_INTERNAL` 을 주석으로 바꿨을 뿐이다 — `.env` 가 없으면 예시가 그대로 복사되어 새 박스가 내부 주소를 연 채 떴다(10-27 검토 N4). 이미 있는 cae00 `.env` 는 바뀌지 않는다.
+- 그래서 AD-01 의 154장은 cae00 에서 다시 받지 않는다. dev 의 MX 백서 동기화가 키(`MXWP_INTERNAL_KEY`)를 얻어 다시 돌고 그 덤프가 병합으로 온다 — 남은 것은 dev 의 키다([`server-setup.md`](server-setup.md) 5절).

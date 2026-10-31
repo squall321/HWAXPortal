@@ -75,10 +75,12 @@
 - [x] OB-26 — ODB 허브 운영자를 둔다 · 입구 도구 다섯은 선택 칸(`7067f94`, C-15)
   - [ ] cae00 — 입구 도구 노출 꼴(받은 편지함 Q4) → 필수 `key_tools` 채우기
 - [x] OB-89 — 지식카드 본문 검색 스위치는 끈 채로(C-16)
+- [x] AD-17 — 정기 동기화는 cae00 에서 켜지 않는다 · 덤프 병합이 정본(AIDataHub `684765b` 는 예시만 — C-24)
 - [x] SignalForge 공개 이력 그대로 · 정리 커밋 둘은 그 세션이 올림(C-19)
   - [ ] C-19 를 그대로 둘지 다시 정하기 — 사용자(10-31 반대 검토 · 까닭은 사용자에게 따로 알렸다)
 - [ ] SignalForge 10-31 cae00 문서 — update-all 이 sf-mcp 를 곧바로 새 코드로 다시 띄우는 것을 받아들일지(가) · 이 박스의 받기를 미룰지(나) — 사용자(`server-setup.md` 3절)
 - [x] SP 킷 맞추기를 청함(StepForge · DocForge · SignalForge · ReportArchive, C-22)
+  - [x] DocForge(`213c411` — HH-03 `8444575` 포함) · SignalForge(`06a506b`)는 킷 2026-10-21 로 올림 끝(10-31 ls-remote) — StepForge · ReportArchive 는 답 기다림
   - [ ] 'SP 최신을 먼저 본다' 상시 규칙 — 사용자가 세션마다 정한다
 - [x] cae00 받은 편지함 · update-all 알림 · 2026-10-31 물음 여덟(가지 `wt1031/docs`, C-20)
   - [ ] 답 받기 — Q1 ~ Q7(답은 사용자를 거쳐 온다)

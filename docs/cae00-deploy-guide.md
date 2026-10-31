@@ -1023,7 +1023,7 @@ SP 허브 주소 · `core:read` 토큰(받기를 켜는 조건 — 넣으면 시
 ## 2026-10-31 반영분 — 10-30 수정 요청(웹 챗 재시험 · 디지털 워커 QA) · 받은 편지함
 
 **받기 전에 [request-1030/server-setup.md](request-1030/server-setup.md) 를 읽는다** — 받는 판 표 · 확인 · 손잡이 · 다시 볼 시험 · 사람 몫이 한 장이다.
-정본은 같은 [request-1030/](request-1030/)(PLAN · checklist · context-notes C-1 ~ C-23 · outbound)다. 받는 길은 그대로 `git pull && update-all` 이다.
+정본은 같은 [request-1030/](request-1030/)(PLAN · checklist · context-notes C-1 ~ C-24 · outbound)다. 받는 길은 그대로 `git pull && update-all` 이다.
 받기 전에 읽으려면 `git fetch` 뒤 `git show origin/main:docs/request-1030/server-setup.md` 로 본다(작업 트리는 그대로다).
 
 - ⚠ **AIDataHub 데이터 단계에는 차례가 있다** — dev 지우기(사용자가 직접)가 실린 덤프가 이 박스에 병합되기 **전에** OB-73 의 K9(데모 카드 `…012`)을
