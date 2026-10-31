@@ -11,6 +11,7 @@ import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
+from app.access.hub_view import AREAS_MAX, MODES, format_view, parse_view
 from app.access.policy import ADMIN_GROUP, compute
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
@@ -122,19 +123,26 @@ _HUB_NOTE = ("끈 앱은 개인 Claude(Code·Desktop 등)의 허브 도구 목�
              "Desktop: 완전히 종료 후 다시 실행). 포털 웹 챗·웹 심의에는 영향이 없다.")
 
 
-async def _gateway_apps(settings: Settings) -> list[dict] | None:
-    """게이트웨이 `/tools-map` 의 apps[](라벨·도구 수·연결) — 브라우저는 못 닿는다(nginx 404).
-    `_gateway`(허브 자체 도구)는 끌 수 없으므로 뺀다. 못 닿으면 None."""
+async def _gateway_tools_map(settings: Settings) -> dict | None:
+    """게이트웨이 `/tools-map` 전체(무인증 — 브라우저는 못 닿는다, nginx 404). 못 닿거나 꼴이 틀리면 None — '모름'이다(502)."""
     base = (settings.mcp_gateway_url or "").rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=10) as cli:
             r = await cli.get(f"{base}/tools-map")
         if r.status_code != 200:
             return None
-        apps = (r.json() or {}).get("apps") or []
+        body = r.json()
     except Exception:  # noqa: BLE001 — 게이트웨이 불통은 '목록 없음'이 아니라 '모름'이다(502)
         return None
-    return [a for a in apps if isinstance(a, dict) and a.get("app") and a.get("app") != "_gateway"]
+    return body if isinstance(body, dict) else None
+
+
+async def _gateway_apps(settings: Settings) -> list[dict] | None:
+    """게이트웨이 `/tools-map` 의 apps[](라벨·도구 수·연결) — `_gateway`(허브 자체 도구)는 끌 수 없으므로 뺀다. 못 닿으면 None."""
+    tm = await _gateway_tools_map(settings)
+    if tm is None:
+        return None
+    return [a for a in tm.get("apps") or [] if isinstance(a, dict) and a.get("app") and a.get("app") != "_gateway"]
 
 
 def _hub_apps_view(policy, ents, apps: list[dict], muted: set[str]) -> dict:
@@ -201,6 +209,99 @@ async def set_hub_app(key: str, body: HubAppIn, request: Request,
         policy, groups=principal.groups, row=store.get(principal.email),
         admin_emails=settings.portal_admin_email_set)
     return _hub_apps_view(policy, ents, apps, set(new))
+
+
+# ── 개인 Claude 보기(docs/request-1029 E-4 — 사용자 결정 10-31) ──────────────────────────────────────────
+# 전체(지금 그대로) · 묶음(고른 영역 + 정본 읽기 도구 + 허브 자체 도구, 형제 허브 사본은 뺀다) · 가벼운(search_tools · invoke_tool 둘). 게이트웨이가
+# **개인 PAT 의 tools/list 에만** 얹는다 — 검색 · 부르기 · 이름 · 권한은 그대로다(선호이지 권한이 아니다). 끄기와 같은 길(권한 응답 · 같은 면제 ·
+# 같은 캐시 깨기)이고, 연결 머리 X-HWAX-View 가 이 설정을 덮는다(리포 .mcp.json 은 늘 full — 리포 파이프라인은 늘 전체 목록으로 돈다).
+_VIEW_NOTE = ("보기는 개인 Claude 의 허브 도구 목록(tools/list)만 줄인다 — 목록 밖 도구도 search_tools 로 찾아 invoke_tool 로 부르고, 권한은 그대로다. "
+              "열려 있는 Claude 세션의 목록은 재연결해야 바뀐다. 포털 웹 챗 · 웹 심의 · 절차와 리포 파이프라인(.mcp.json)은 늘 전체다.")
+
+
+def _hub_view_body(policy, ents, tm: dict, view: str, muted: set[str]) -> dict:
+    """보기 화면의 표 — 지금 보기 · 영역 골라 쓰기(영역마다 내 권한 안의 도구 수) · 미분류 수. 셈은 게이트웨이 `/tools-map` 의 map · areas 와 포털
+    권한 표로 한다 — 끈 앱과 형제 허브 사본(apps[].role == sibling — 묶음 보기가 싣지 않는다)과 허브 자체 도구(늘 실린다)는 세지 않는다."""
+    mode, areas = parse_view(view) or ("full", [])
+    roles = {str(a.get("app")): a.get("role") for a in tm.get("apps") or [] if isinstance(a, dict)}
+
+    def counted(key: str) -> bool:
+        if key == "_gateway" or key in muted or roles.get(key) == "sibling":
+            return False
+        need = policy.keys_for_gateway([key])
+        return (not need) or bool(set(need) & set(ents.keys))
+    by_area: dict[str, int] = {}
+    unclassified = 0
+    names_area = tm.get("areas") or {}
+    for name, key in (tm.get("map") or {}).items():
+        if not counted(str(key)):
+            continue
+        a = str(names_area.get(name) or "")
+        if a:
+            by_area[a] = by_area.get(a, 0) + 1
+        else:
+            unclassified += 1
+    meta = [m for m in tm.get("area_meta") or [] if isinstance(m, dict) and m.get("area")]
+    known = {str(m["area"]) for m in meta}
+    return {"mode": mode, "areas": areas, "unknown_areas": [a for a in areas if a not in known],
+            "area_options": [{"area": str(m["area"]), "label": str(m.get("label") or m["area"]),
+                              "description": str(m.get("description") or "")[:300], "tool_count": by_area.get(str(m["area"]), 0)}
+                             for m in meta],
+            "unclassified": unclassified, "note": _VIEW_NOTE}
+
+
+@router.get("/auth/access/view")
+async def my_hub_view(request: Request, principal: Principal = Depends(get_current_principal),
+                      settings: Settings = Depends(get_settings)) -> dict:
+    """내 개인 Claude 보기 — 지금 보기와 영역 골라 쓰기(영역마다 도구 수)."""
+    policy = _policy(request)
+    row = _store(request).get(principal.email) or {}
+    ents = getattr(request.state, "entitlements", None) or compute(
+        policy, groups=principal.groups, row=row or None, admin_emails=settings.portal_admin_email_set)
+    tm = await _gateway_tools_map(settings)
+    if tm is None:
+        raise AuthError("게이트웨이에 닿지 못해 영역 목록을 만들 수 없습니다 — 잠시 뒤 다시 여세요", status_code=502)
+    return _hub_view_body(policy, ents, tm, str(row.get("hub_view") or ""), set(row.get("hub_muted_apps") or []))
+
+
+class HubViewIn(BaseModel):
+    mode: str = Field(max_length=10)
+    areas: list[str] = Field(default_factory=list, max_length=AREAS_MAX)
+
+
+@router.put("/auth/access/view")
+async def set_hub_view(body: HubViewIn, request: Request,
+                       principal: Principal = Depends(get_current_principal),
+                       settings: Settings = Depends(get_settings),
+                       _csrf: None = Depends(require_csrf)) -> dict:
+    """보기를 바꾼다. 묶음은 영역이 하나 이상이고, 영역은 지금 게이트웨이의 영역 키(`/tools-map` 의 area_meta)만 받는다 — 오타가 빈 묶음이 되지
+    않게. 바꾼 뒤 게이트웨이 캐시를 바로 깬다(끄기와 같다 — 새 연결부터 먹는다, 열린 세션은 재연결)."""
+    mode = body.mode.strip().lower()
+    if mode not in MODES:
+        raise AuthError(f"모르는 보기입니다: {body.mode[:10]} — full · bundle · light", status_code=400)
+    tm = await _gateway_tools_map(settings)
+    if tm is None:
+        raise AuthError("게이트웨이에 닿지 못해 영역을 확인할 수 없습니다 — 잠시 뒤 다시 시도하세요", status_code=502)
+    areas = list(dict.fromkeys(a.strip().lower() for a in body.areas if a.strip())) if mode == "bundle" else []
+    if mode == "bundle":
+        known = {str(m.get("area")) for m in tm.get("area_meta") or [] if isinstance(m, dict) and m.get("area")}
+        if not areas:
+            raise AuthError("묶음 보기는 영역을 하나 이상 고릅니다", status_code=400)
+        bad = [a for a in areas if a not in known]
+        if bad:
+            raise AuthError(f"모르는 영역입니다: {', '.join(bad)[:120]}", status_code=400)
+    text = format_view(mode, areas)
+    if parse_view(text) is None:                  # 게이트웨이가 못 읽는 글은 저장하지 않는다(영역 꼴 — hub_view.AREA_RE)
+        raise AuthError("영역 이름의 꼴이 틀렸습니다", status_code=400)
+    store = _store(request)
+    if store.set_hub_view(principal.email, text) is None:
+        raise AuthError("계정 원장에 없는 사용자입니다 — 로그아웃 후 다시 로그인하세요", status_code=404)
+    await _invalidate_gateway_cache(settings, principal.email)
+    row = store.get(principal.email) or {}
+    policy = _policy(request)
+    ents = getattr(request.state, "entitlements", None) or compute(
+        policy, groups=principal.groups, row=row or None, admin_emails=settings.portal_admin_email_set)
+    return _hub_view_body(policy, ents, tm, text, set(row.get("hub_muted_apps") or []))
 
 
 # ── 관리자 ──────────────────────────────────────────────────────────────────
@@ -364,7 +465,10 @@ def internal_entitlements(request: Request, email: str = Query(min_length=3, max
             "affiliation_label": str(known.get("label") or ""),
             "is_admin": ents.is_admin,
             # 허브에서 끈 앱 — 게이트웨이가 개인 PAT 시야에서 숨긴다(docs/mcp-app-toggle). 권한과 무관한 선호다.
-            "muted_apps": sorted((row or {}).get("hub_muted_apps") or [])}
+            "muted_apps": sorted((row or {}).get("hub_muted_apps") or []),
+            # 개인 Claude 보기(app/access/hub_view.py 의 글) — 게이트웨이가 개인 PAT 의 tools/list 에만 얹는다(docs/request-1029 E-4). 끄기처럼 선호다.
+            # 칸 이름 · 글 꼴을 바꾸면 사람 설정이 조용히 전체로 떨어진다 — 게이트웨이 시험이 hub_view.py 를 읽어 맞댄다.
+            "view": str((row or {}).get("hub_view") or "full")}
 
 @router.get("/internal/org-taxonomy")
 def internal_org_taxonomy(request: Request, settings: Settings = Depends(get_settings)) -> dict:

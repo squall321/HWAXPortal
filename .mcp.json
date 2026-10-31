@@ -4,14 +4,17 @@
     "종전에는 ~/.claude.json 의 projects['/home/koopark/claude/HWAXPortal'] 아래에만 있어서,",
     "리포 경로가 다른 박스(cae00 은 ~/Projects/<Repo>)에서는 키가 안 맞아 이 서버가",
     "'에러도 없이 그냥 없는' 상태로 세션이 시작됐다. 이 파일은 리포와 함께 이동한다.",
-    "토큰은 여기 적지 않는다 — 환경변수로 주입한다. 발급법은 CLAUDE.md 참조."
+    "토큰은 여기 적지 않는다 — 환경변수로 주입한다. 발급법은 CLAUDE.md 참조.",
+    "X-HWAX-View 는 늘 full(전체 목록)이다 — 리포 파이프라인(infra/pipeline/*.js)이 이 등록으로 돌므로, 포털에서 고른 개인 보기(묶음 · 가벼운)가",
+    "심의 · 리스크 워크플로의 도구 목록을 줄이지 않게 연결 머리로 덮는다(docs/request-1029 E-4). 바꾸려면 HWAX_GATEWAY_VIEW 환경변수."
   ],
   "mcpServers": {
     "hwax": {
       "type": "http",
       "url": "${HWAX_GATEWAY_URL:-http://127.0.0.1:9110/mcp}",
       "headers": {
-        "Authorization": "Bearer ${HWAX_GATEWAY_PAT}"
+        "Authorization": "Bearer ${HWAX_GATEWAY_PAT}",
+        "X-HWAX-View": "${HWAX_GATEWAY_VIEW:-full}"
       }
     }
   }
