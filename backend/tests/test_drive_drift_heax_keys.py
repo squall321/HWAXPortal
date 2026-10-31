@@ -212,3 +212,19 @@ def test_덮어쓰지_않은_앱은_예전처럼_드리프트다(tmp_path):
     out = b.run()
     assert out.returncode == 1 and "✗ mt.sif — 로컬 5 ≠ Drive 7" in out.stdout, out.stdout + out.stderr
     assert "○ sf.sif — 로컬 5 ≠ Drive 7" in out.stdout and "✗ sf.sif" not in out.stdout, out.stdout
+
+
+def test_열쇠_대조의_X_줄은_출력이_길어도_드리프트로_센다(tmp_path):
+    """✗ 판정은 받은 글에서 바로 본다 — `printf … | grep -q '^✗'` 는 grep 이 첫 ✗ 에서 끝나 아직 쓰던 printf 가 SIGPIPE(141)로 죽고, pipefail 아래서
+    파이프 전체가 실패라 `&&` 뒤의 DRIFT=1 이 돌지 않았다 — 드리프트를 '✓ 일치' · 0 으로 알렸다(docs/gotchas · 판정 파이프 함정). 대조 글이 파이프
+    버퍼(64KiB)보다 길 때 늘 난다 — 열쇠 대조 대역(이 Box 의 python)이 ✗ 한 줄 뒤에 1MiB 남짓을 더 낸다(앱 데이터 레지스트리 읽기에는 아무것도 안 낸다)."""
+    b = Box(tmp_path)
+    fake = b.portal / "backend/.venv/bin/python"
+    fake.unlink()
+    fake.write_text("#!/usr/bin/env bash\ncat >/dev/null\n[ $# -eq 3 ] || exit 0\n"
+                    "echo '✗ big — Drive SIF 의 열쇠가 main 끝 deadbeef 와 맞지 않는다'\n"
+                    "yes '· 채움 줄 — 대조 글이 파이프 버퍼보다 길다' | head -n 20000\n", encoding="utf-8")
+    fake.chmod(0o755)
+    out = b.run()
+    assert "  ✗ big — Drive SIF 의 열쇠가" in out.stdout, out.stdout[:400] + out.stderr
+    assert out.returncode == 1 and "✓ 일치" not in out.stdout, (out.returncode, out.stdout[-300:], out.stderr[-300:])

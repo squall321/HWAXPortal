@@ -21,7 +21,8 @@
 # 토큰은 스크립트에 넣지 않는다 — 게이트웨이 설정 파일(600)에서 읽는다.
 set -uo pipefail
 
-GW_CONFIG="${GATEWAY_CONFIG:-/home/koopark/claude/HWAXMcpGateway/gateway_config.json}"
+# 게이트웨이 설정도 형제 리포(../HWAXMcpGateway)에서 찾는다 — 아래 HUB_ROOT 와 같은 까닭이다(GATEWAY_CONFIG 를 주면 그 값).
+GW_CONFIG="${GATEWAY_CONFIG:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/HWAXMcpGateway/gateway_config.json}"
 GW_HTTP="${GW_HTTP:-http://127.0.0.1:9110}"
 # 허브 리포는 이 리포의 형제(../HEAXHub)다 — 절대경로를 박으면 리포 루트가 다른 박스(cae00 은 ~/Projects)에서 조용히 못 찾는다.
 HUB_ROOT="${HUB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/HEAXHub}"

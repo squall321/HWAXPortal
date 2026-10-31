@@ -241,3 +241,28 @@ def test_허브는_이_리포의_형제에서_찾는다(tmp_path):
     assert "매니페스트: integrations/sibling-probe/.portal/manifest.yaml" in r.stdout, out
     assert "업스트림 응답 (HTTP 200): http://127.0.0.1:8702" in r.stdout, "형제 허브의 로더로 덮어쓴 값을 읽어야 한다 — " + out
     assert r.returncode == 0, out
+
+
+def test_게이트웨이_설정도_이_리포의_형제에서_찾는다(tmp_path):
+    """GATEWAY_CONFIG 를 주지 않으면 ../HWAXMcpGateway/gateway_config.json 이다 — 박힌 절대경로(/home/…/claude/HWAXMcpGateway)는 리포 루트가 다른
+    cae00(~/Projects)에서 '게이트웨이 설정을 읽을 수 없습니다' 로 끝난다. 주면 그 값이 이긴다. 레지스트리 주소를 둘 다 다르게 적어 어느 설정을
+    읽었는지 curl 이 받은 주소로 가른다(이 박스의 실 게이트웨이 설정을 읽으면 그 주소가 찍힌다)."""
+    assert "/home/" not in SCRIPT.read_text(encoding="utf-8"), "박스 홈 절대경로가 스크립트에 남았다"
+    b = Box(tmp_path)
+    b.app("sibling-probe", "sibling_probe", _KRM_TRACKED.replace("id: kooremapper_mcp", "id: sibling_probe"),
+          {"launch": {"upstream": "http://127.0.0.1:8702"}}, state={"mode": "proxy", "upstream": "http://127.0.0.1:8702"})
+    sib = tmp_path / "HWAXMcpGateway" / "gateway_config.json"
+    sib.parent.mkdir()
+    sib.write_text(json.dumps({"heax_registry": {"servers_url": "http://127.0.0.1:9/sibling/api/v1/mcp/servers",
+                                                 "base": "http://127.0.0.1:9", "token": "t"}}), encoding="utf-8")
+    del b.env["GATEWAY_CONFIG"]
+    r, called = b.run("sibling_probe", live="http://127.0.0.1:8702")
+    out = r.stdout + r.stderr
+    assert "게이트웨이 설정을 읽을 수 없습니다" not in out and r.returncode == 0, out
+    assert "http://127.0.0.1:9/sibling/api/v1/mcp/servers" in called, f"형제 리포의 설정을 읽지 않았다: {called}"
+    # 덮어쓰기는 그대로 — 주면 그 설정이다(Box 의 tmp/gw 는 레지스트리 주소가 /api/v1/mcp/servers 다)
+    b.curl_log.unlink()
+    b.env["GATEWAY_CONFIG"] = str(tmp_path / "gw" / "gateway_config.json")
+    r, called = b.run("sibling_probe", live="http://127.0.0.1:8702")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "http://127.0.0.1:9/api/v1/mcp/servers" in called and not any("/sibling/" in u for u in called), called

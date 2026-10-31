@@ -178,7 +178,9 @@ PY
       rm -rf "$_kd"
       if [ -n "$_keys" ]; then
         printf '%s\n' "$_keys" | sed 's/^/  /'
-        printf '%s\n' "$_keys" | grep -q '^✗' && { DRIFT=1; h=1; }
+        # ✗ 줄은 받은 글에서 바로 본다 — `printf | grep -q` 는 grep 이 첫 ✗ 에서 끝나 아직 쓰던 printf 가 SIGPIPE 로 죽고, pipefail 아래서
+        # 파이프 전체가 실패라 DRIFT 를 안 세웠다(글이 파이프 버퍼보다 길면 늘 — 드리프트를 '✓ 일치' 로 알린다).
+        case $'\n'"$_keys" in *$'\n✗'*) DRIFT=1; h=1 ;; esac
       fi
       # app-data(재료·장비 DB 등)는 tar 로 올라가므로 '가장 최근에 바뀐 DB' 와 tar 시각을 견준다.
       # -L — var/app_data 는 /data 이관 뒤 심링크다(dev · cae00). 안 따라가면 DB 를 하나도 못 찾아 이 검사가 늘 통과였다(10-25 점검).
