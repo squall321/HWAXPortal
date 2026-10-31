@@ -155,15 +155,16 @@ async function start(page, runId = RUN) {
 }
 // 다단 심의(/시뮬심의)의 1단 끝 — 에이전트가 실제로 내는 차례다. 의결 → 마무리 표지 → 결정문 · 결과 · 글 → 1단의 done(엔진의 단 하나가 done 으로
 // 끝나고 시뮬 래퍼가 그대로 흘린다 — 화면은 여기서 받기를 마친 것으로 본다) → 단 경계 표지(checkpoint) → 좌석 전환(도구 호출 — 몇 초 걸린다) →
-// 2단 라운드. stage2=false 면 좌석 전환에서 멈춘다(2단의 심의 사건이 아직 없다)
-async function stage1Done(page, { stage2 = true } = {}) {
+// 2단 라운드. stage2=false 면 좌석 전환에서 멈춘다(2단의 심의 사건이 아직 없다). innerDone=false 는 단 사이 done 을 걷은 에이전트의 꼴이다 —
+// 시뮬 래퍼가 마지막 단의 done 하나만 낸다(받는 턴이 2단까지 이어진다)
+async function stage1Done(page, { stage2 = true, innerDone = true } = {}) {
   await push(page, frame('delib', { kind: 'stage', stage: 'decide' }));
   await push(page, frame('delib', { kind: 'finishing' }));
   await push(page, frame('delib', { kind: 'decision', text: '1단 결정문' }));
   await push(page, frame('delib', { kind: 'outcome', report_id: 41, title: 't' }));
   await push(page, frame('token', { delta: '1단 결정문' }));
   await push(page, frame('result', { type: 'text', content: '1단 결정문' }));
-  await push(page, frame('done', {}));
+  if (innerDone) await push(page, frame('done', {}));
   await push(page, frame('delib', { kind: 'checkpoint', stage: 'sim-1', decision_a: '1단 결정문' }));
   await push(page, frame('status', { step: '좌석 전환 — CAE 전문가 발굴', tool: 'recommend_agents' }));
   if (!stage2) {
@@ -383,6 +384,39 @@ const SCENARIOS = {
       message: '멈춤을 요청했다', stop_note: '사람이 멈췄다(받기가 끊긴 뒤) — 오류(포털)' }));
     await page.locator('.dv-stopped').waitFor();
     return { before, after: await look(page), errors: page.__errors };
+  },
+  // 다단 심의의 두 꼴 — 'a' 오늘의 에이전트(1단의 done 에서 받는 턴이 끝난다), 'b' 단 사이 done 을 걷은 에이전트(받는 턴이 2단까지 이어진다).
+  // 2단이 이어지는 동안(끊기지 않았다) 멈춤이 나고 그 심의의 실행 id 로 멈추며, 멈춤 사건이 오면 칸에 엔진의 멈춤 글이 남는다
+  async shapes_live(browser) {
+    const out = {};
+    for (const shape of ['a', 'b']) {
+      const page = await open(browser);
+      await start(page);
+      await stage1Done(page, { innerDone: shape === 'a' });
+      const stage2 = await look(page);
+      await page.locator('.dv-stop-btn').click();
+      await page.waitForFunction(() => typeof window.__answer === 'function');
+      await page.evaluate(() => window.__answer(200, { conversation_id: 'srv-1', run_id: 'run-1', status: 'cancelling', runs: 1,
+        message: '멈춤을 요청했다' }));
+      await page.waitForTimeout(200);
+      const answered = await look(page);
+      await push(page, frame('delib', { kind: 'cancelled', by: 'u1@corp.example', message: STOP_MSG, run_id: 'run-1' }));
+      await push(page, frame('done', {}));
+      await page.evaluate(() => window.__end());
+      await page.waitForFunction((m) => (document.querySelector('.dv-stopped') || {}).textContent === `멈춤 — ${m}`, STOP_MSG);
+      out[shape] = { stage2, answered, after: await look(page), sent: await cancels(page), dialogs: page.__dialogs, errors: page.__errors };
+      await page.close();
+    }
+    return out;
+  },
+  // 단 사이 done 을 걷은 에이전트('b')에서 2단 도중에 받기가 끊겼다 — 받는 중이던 칸이 끊긴 칸이 된다
+  async shape_b_cut(browser) {
+    const page = await open(browser);
+    await start(page);
+    await stage1Done(page, { innerDone: false });
+    await page.evaluate(() => window.__break('network error'));
+    await page.locator('.chat-error').waitFor();
+    return { halted: await look(page), errors: page.__errors };
   },
   // 단 경계 표지 뒤 좌석 전환 중에 끊겼다 — 2단의 심의 사건은 아직 없지만 엔진은 다음 단을 잇는다고 알렸다
   async seat_change_cut(browser) {
@@ -640,6 +674,36 @@ def test_멈춤이_200_이어도_엔진이_알린_오류는_가리지_않는다(
     a = s["after"]
     assert a["stopped"] == "멈춤 — 사람이 멈췄다(받기가 끊긴 뒤) — 오류(포털)", a
     assert a["error"] and a["errorTitle"] == "⚠ 심의가 완료되지 못했습니다", a
+
+
+_BTN = {"text": "멈춤", "disabled": False, "busy": "false"}
+
+
+def test_다단_심의의_두_꼴_모두_2단이_이어지는_동안_멈추고_단_사이_done_이_없으면_받는_중_문구다(seen):
+    """오늘의 에이전트(a)는 단마다 done 을 내 1단의 done 에서 받는 턴이 끝난다. 에이전트가 단 사이 done 을 걷으면(b) 받는 턴이 2단까지 이어진다
+    — 그때 2단은 받는 중인 심의다: ■ 가 살아 있고 멈춤은 받는 중의 문구로 묻고 답한다(끊김 문구가 아니다). 두 꼴 모두 그 실행 id 로 멈추고
+    멈춤 사건이 오면 엔진의 멈춤 글이 남는다."""
+    s = seen("shapes_live")
+    for shape in ("a", "b"):
+        r = s[shape]
+        assert not r["errors"], r["errors"]
+        assert r["stage2"]["btn"] == _BTN and "1단 결정문" in r["stage2"]["decision"], (shape, r["stage2"])
+        assert [c["body"] for c in r["sent"]] == [{"conversation_id": "srv-1", "run_id": "run-1"}], shape
+        after = r["after"]
+        assert after["stopped"] == f"멈춤 — {STOP_MSG}" and after["btn"] is None and not after["error"], (shape, after)
+        assert after["streaming"] == "false", (shape, after)
+    b = s["b"]
+    assert b["stage2"]["streaming"] == "true" and b["stage2"]["note"] == "", b["stage2"]
+    (asked,) = b["dialogs"]
+    assert asked.startswith("이 심의를 서버에서 멈출까요? 지금까지 받은 발언은 남고") and "받기가 끊긴" not in asked, asked
+    assert b["answered"]["said"].startswith("멈춤을 요청했습니다") and b["answered"]["stopped"] == "", b["answered"]
+    assert s["a"]["stage2"]["streaming"] == "false", "오늘의 에이전트 — 1단의 done 에서 받는 턴이 끝난다(2단에 ■ 가 없다)"
+
+
+def test_단_사이_done_이_없는_다단_심의도_2단_도중에_끊기면_끊긴_칸의_멈춤이_난다(seen):
+    h = seen("shape_b_cut")["halted"]
+    assert h["btn"] == _BTN and h["note"] == "받기가 끊겼습니다 — 심의는 서버에서 아직 돌 수 있습니다." and h["error"], h
+    assert "1단 결정문" in h["decision"] and h["streaming"] == "false", h
 
 
 def test_단_경계_표지_뒤_좌석_전환_중에_끊겨도_멈춤이_남는다(seen):
