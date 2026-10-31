@@ -195,17 +195,29 @@ _GW_VOCAB_FNS = ("_core_vocab", "_core_vocab_parse", "_core_vocab_health")
 
 
 def _gateway_parse():
-    """게이트웨이 gateway._core_vocab_parse 를 형제 리포 원문에서 떼어 온다(게이트웨이 의존을 포털 venv 에 들이지 않는다) — 함수와, 어휘표를 읽는 자리
-    셋의 원문."""
+    """게이트웨이 gateway._core_vocab_parse 를 형제 리포 원문에서 떼어 온다(게이트웨이 의존을 포털 venv 에 들이지 않는다) — 그 함수가 부르는 게이트웨이
+    모듈 함수(10-31 E2-5 의 _label_names 처럼)까지 함께 떼어 온다(하나만 떼면 NameError 로 붉었다 — 반대 검토 10-31 · C-48). 돌려주는 것은 함수와,
+    어휘표를 읽는 자리 셋 · 함께 떼어 온 함수의 원문이다."""
     p = GW / "gateway.py"
     if not p.exists():
         pytest.skip(f"형제 리포 HWAXMcpGateway 가 없다: {p}")
     src = p.read_text(encoding="utf-8")
-    fns = {n.name: n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name in _GW_VOCAB_FNS}
+    top = {n.name: n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef)}
+    fns = {k: top[k] for k in _GW_VOCAB_FNS if k in top}
     assert set(fns) == set(_GW_VOCAB_FNS), f"게이트웨이에 {sorted(set(_GW_VOCAB_FNS) - set(fns))} 가 없다 — 어휘표를 읽는 자리가 바뀌었으면 이 시험도 고쳐라"
+    need, todo = [], ["_core_vocab_parse"]
+    while todo:
+        name = todo.pop()
+        if name in need:
+            continue
+        need.append(name)
+        todo += [x.id for x in ast.walk(top[name]) if isinstance(x, ast.Name) and x.id in top and x.id not in need]
     ns: dict = {"re": re}
-    exec(compile(ast.get_source_segment(src, fns["_core_vocab_parse"]), "gateway:_core_vocab_parse", "exec"), ns)  # noqa: S102 — 형제 리포 원문
-    return ns["_core_vocab_parse"], {k: ast.get_source_segment(src, n) for k, n in fns.items()}
+    for name in reversed(need):
+        exec(compile(ast.get_source_segment(src, top[name]), f"gateway:{name}", "exec"), ns)  # noqa: S102 — 형제 리포 원문
+    bodies = {k: ast.get_source_segment(src, n) for k, n in fns.items()}
+    bodies.update({k: ast.get_source_segment(src, top[k]) for k in need})
+    return ns["_core_vocab_parse"], bodies
 
 
 def test_personas_를_더해도_게이트웨이_검색이_읽는_것은_같다():
