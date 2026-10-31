@@ -33,6 +33,8 @@ import type { AttachedImage } from '../components/chat/imageAttach';
 import { buildHistory } from '../components/chat/history';
 import type { UploadNotice } from '../components/chat/uploadNotice';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
+import { panelPointer } from '../components/chat/panels';
+import { UI_HOST_TOKEN } from '../lib/mcpApps';
 import {
   decisionAsOf,
   delibOptsToWire,
@@ -945,6 +947,8 @@ export function ChatProvider({
         ...(thinkingRef.current && can('feat:thinking') ? { thinking: true } : {}),
         // 분석 루틴 — 본문 맨 위 칸 routine 으로 간다(아래 delib_opts 에 넣지 않는다). 에이전트 서버는 이 칸을 심의 · 띵킹 · 슬래시보다 먼저 본다.
         ...(routineReq ? { routine: routineReq } : {}),
+        // MCP Apps 패널 표지(HA-20) — 이 화면에는 호스트 부품(McpAppPanel)이 있다. 권한이 없으면 싣지 않는다(포털이 손잡이 · 권한을 다시 본다)
+        ...(can('feat:panels') ? { uiHost: UI_HOST_TOKEN } : {}),
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
@@ -1017,6 +1021,11 @@ export function ChatProvider({
         // 확인 카드(HA-29) — 단추를 그릴 카드. 본문의 카드 글은 token 으로 따로 온다
         onConfirm: (e) => {
           if (e && typeof e.id === 'string' && Array.isArray(e.calls)) patch(cid, botId, (m) => ({ ...m, confirm: e }));
+        },
+        // MCP Apps 패널(HA-20) — 포인터는 메시지에, 결과는 이 탭에만(panels.panelPointer 가 lib/mcpApps 의 live 에 둔다)
+        onUiResource: (e) => {
+          const p = panelPointer(e);
+          if (p) patch(cid, botId, (m) => ({ ...m, panels: [...(m.panels ?? []), p].slice(-8) }));
         },
         // 올린 그림의 서버 주소 — 이 발화(사람 메시지)에 남겨 다음 턴 이력에 싣는다. 썸네일도 이 주소로 바꾼다(data URL 은 버린다).
         onUserImages: (e) =>

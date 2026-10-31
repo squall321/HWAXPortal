@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.agent.panel_pat import PANEL_AUDIENCE  # 표준 라이브러리만 쓰는 작은 모듈 — config 를 읽지 않는다(순환 없음)
+
 # backend/  (parent of the app package) — anchor .env here so it loads regardless of CWD.
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -317,6 +319,22 @@ class Settings(BaseSettings):
     # 만료는 실패가 아니라 **기본값으로 진행**이다(첫 발화가 화두, 좌석은 심의가 자동 발굴) — 응답의 error 가 agent_timeout 이다.
     agent_unary_timeout_s: float = 600.0
     max_concurrent_chats: int = 64                     # SSE connections hold a worker → cap + 429
+    # ── 포털 챗의 MCP Apps 패널(docs/request-1027 HA-20 · HP-42 · 사용자 결정 10-31 B-1 ~ B-7 전부 (가)) ──
+    # 박스 손잡이 — 끄면(기본) /agent/panel/* 가 404 이고 챗 중계가 ui_host 를 싣지 않는다(에이전트 서버는 HA-05 그대로). 켜도 권한 feat:panels 가
+    # 있는 사람만 쓴다(파일럿 소속에만 먼저 — access.yaml). 크기 기본값은 SimFlow 의 답(설계 C1 Q-S6 · Q-S7) 전 값이다.
+    mcp_apps_host: bool = False
+    panel_pat_audience: str = PANEL_AUDIENCE           # 패널 PAT 의 청중 — 게이트웨이 portal.panel_audience 와 같아야 한다(두 리포 계약 시험)
+    panel_html_max_bytes: int = 2 * 1024 * 1024        # 패널 HTML(resources/read) 상한 — 넘으면 열지 않는다
+    panel_call_max_bytes: int = 4 * 1024 * 1024        # 패널 tools/call 한 번의 인자 상한 — 넘으면 413(파일 올리기 HP-15 로 안내)
+    panel_session_max_mb: int = 32                     # 패널 세션 하나가 보내는 인자 누적 상한(MB)
+    panel_idle_s: int = 1800                           # 패널 세션 유휴 한도(초)
+    panel_max_s: int = 14400                           # 패널 세션 최대 수명(초) — 그동안 패널 PAT(15분)은 포털이 다시 찍는다
+    panel_mcp_idle_s: int = 600                        # 패널이 쥔 게이트웨이 MCP 세션의 유휴 한도(초) — 넘으면 닫고 다음 호출이 다시 연다
+    # 패널 CSP 에 넣을 수 있는 바깥 출처(쉼표, scheme://host[:port]) — 리소스 _meta.ui.csp 가 청한 것과의 교집합만 들어간다. 비면(기본) 패널은
+    # 바깥에 닿지 못한다(connect · img · font 모두 'none' 또는 data: 만).
+    panel_allowed_origins: str = ""
+    # 패널의 ui/open-link 가 열 수 있는 출처(쉼표) — 그 앱 플랫폼의 포털 타일 주소에 더한다. 나머지는 화면이 거절한다.
+    panel_link_origins: str = ""
     # 카드 대조 중계(/agent/card-review/run, 리스크 심사 재설계 M2)의 동시 수. 챗과 따로 센다 — 전용 세마포어(넘으면 429 engine_busy,
     # 30초 뒤 같은 호출)와 전용 연결 풀(이 값 + 4, limits·pack·plan 몫)이다. 챗 풀(위 64)을 같이 쓰면 챗이 차면 카드 대조가 연결을
     # 못 얻고, 카드 대조 수천 건이 챗을 막는다(P-14). 줄을 세우는 곳은 엔진 관문(CARD_REVIEW_CONCURRENCY 4) 하나이고, 리스크 앱

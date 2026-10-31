@@ -9,6 +9,7 @@ import { copyText } from './clipboard';
 import { wikiNotice } from './uploadNotice';
 import { AgentCatalogBlock } from './AgentCatalogBlock';
 import { ConfirmCard } from './ConfirmCard';
+import { McpAppPanels } from './McpAppPanel';
 import { confirmState, type ConfirmState } from './confirm';
 import { DelibView } from './DelibView';
 import { RoutineView } from './RoutineView';
@@ -164,6 +165,8 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
         ) : (
           msg.text && <TextBlock text={msg.text} cursor={Boolean(msg.streaming)} />
         )}
+        {/* MCP Apps 패널(HA-20 · HP-42) — 앱이 그린 화면. 이 탭이 받은 사건이면 바로 열고, 기록에서 온 것은 '다시 열기' 카드다. */}
+        {msg.panels && msg.panels.length > 0 && <McpAppPanels panels={msg.panels} />}
         {/* 도구 카탈로그('/도구' 검색) — 사용자가 직접 선택·변경해 지정 도구로 확정하는 카드. */}
         {msg.toolCatalog && <ToolCatalogBlock catalog={msg.toolCatalog} />}
         {/* 전문가 카탈로그('/전문가' 검색) — 도구와 같은 대우. 여기서 바로 페르소나를 지정한다. */}

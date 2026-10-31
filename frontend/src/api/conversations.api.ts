@@ -1,7 +1,7 @@
 // 서버 대화 저장소 REST 클라이언트 — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본
 import { apiFetch } from './client';
 import type { ActivityItem, Conversation, DelibTurn, Message, RoutineState } from '../types/chat';
-import { newId } from '../state/chatStore';
+import { newId, panelsFromMeta } from '../state/chatStore';
 
 export type ConvKind = 'chat' | 'deliberation';
 
@@ -185,6 +185,8 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 근거 추출(conversationEvidence)이 동작하게 한다.
       const act = (m.meta as { activity?: ActivityItem[] } | null)?.activity;
       const routine = m.role === 'assistant' ? routineFromMeta(m.meta) : undefined;
+      // 패널 포인터(HA-20) — 서버 사본은 포인터만 쥔다. 다른 기기 · 새로고침에서는 '다시 열기' 카드로 그린다(입력 · 결과 없이)
+      const panels = m.role === 'assistant' ? panelsFromMeta((m.meta as { panels?: unknown } | null)?.panels) : undefined;
       out.push({
         id: newId(),
         role: m.role,
@@ -193,6 +195,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ...(persona ? { persona } : {}),
         ...(Array.isArray(act) ? { activity: act } : {}),
         ...(routine ? { routine } : {}),
+        ...(panels ? { panels } : {}),
       });
     }
   }

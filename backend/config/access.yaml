@@ -53,6 +53,9 @@ features:
   - id: routines
     label: 분석 루틴
     desc: 내 권한의 플랫폼을 순서대로 엮어 두고, 챗 · 개인 Claude 가 그 연쇄로 분석해 보고서를 쓴다. 단계마다 각자 권한 그대로다.
+  - id: panels
+    label: 앱 패널(MCP Apps)
+    desc: 챗에서 앱이 그린 화면(패널)을 연다 — 패널은 그 앱의 도구만 부른다. 박스 손잡이(MCP_APPS_HOST)를 켠 박스에서만 동작한다(파일럿 — docs/request-1027 B-1).
 
 platforms:
   - id: heaxhub

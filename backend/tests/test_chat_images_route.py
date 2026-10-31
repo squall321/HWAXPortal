@@ -59,7 +59,9 @@ def test_심의_전_도우미에는_그림도_넘기지_않는다():
 
 def test_서버_대화_사본은_돌려받은_그림_주소를_답의_meta_에_남긴다():
     assert 'elif evt == "user_images" and isinstance(data.get("urls"), list):' in SRC
-    assert '("user_images", user_images)) if v}' in SRC
+    # 답 meta 묶음(_am) 안에 있으면 된다 — 뒤에 칸이 더 붙어도(패널 포인터 panels, docs/request-1027 HP-42) 그림 주소는 그대로 남는다
+    start = SRC.index("_am = {k: v for k, v in (")
+    assert '("user_images", user_images)' in SRC[start:SRC.index(") if v}", start)]
     assert R._ARTIFACT_IMAGE_RE.fullmatch("/agent/artifacts/abc.webp") and not R._ARTIFACT_IMAGE_RE.fullmatch("/x/abc.webp")
 
 
