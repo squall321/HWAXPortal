@@ -151,7 +151,7 @@
 
 #### 지금 판에서의 자리
 
-- 박스 데이터 행이라 정본 근거에 `파일:줄` 이 없다. 두 전문가가 dev · cae00 에 아직 있는지는 대조 못 함 — 이 시트는 DB 와 API 를 부르지 않았다(레코드 단건 GET 은 read_count · updated_at 을 바꾼다 — 10-27 검토 AD-01).
+- 박스 데이터 행이라 정본 근거에 `파일:줄` 이 없다. 두 전문가가 dev · cae00 에 아직 있는지는 대조 못 함 — 이 시트는 DB 와 API 를 부르지 않았다(레코드 단건 GET 은 read_count · updated_at 을 바꾼다 — 10-27 검토 AD-01; 10-31 덧붙임 — AIDataHub `fccb0e5` 부터 조회는 read_count · last_accessed_at 만 올린다, 사용자 결정 10-31).
 - 지우는 길은 HEAD 에 그대로다. 전문가는 `DELETE /api/agents/{agent_type}`(`routes/agents.py:208-216`)가 `agent_svc.delete_agent`(`services/agent_svc.py:201-224`)를 불러, 같은 트랜잭션에서 `records.agents` 배열의 키를 빼고(`:218-221`) 행을 지운다. `agent_records` 는 FK CASCADE 로 따라 지워진다(`db/models.py:484`). 이 경로에는 API 키 검사(`require_api_key`)가 없다(10-27 검토 N5 그대로).
 - 레코드 소프트 삭제는 `DELETE /api/records/{record_id}`(`routes/records.py:244`)다. 병합으로 퍼지는 삭제는 이것뿐이다(10-27 검토 AD-06 · AD-13).
 - 빈 전문가가 생긴 길은 적재의 stub 만들기(`ingest/db_writer.py:853-864`)이고, 지금은 엄격 검증을 끈 때만 생긴다(주석 `:840-841`). 빈 설명은 추천 맥락에서 'Help the user with: (no description)' 이 된다(`services/recommend_svc.py:843` · `:849`).
@@ -231,4 +231,4 @@
   - K6-1 · K6-2 확인(AD-05 · AD-06) — `GET /api/agents/` 에서 이름=키 전문가가 빠지고, `?agent=kooremapper-modelmeta` 의 total 이 3 → 0 이다.
   - K5 확인(AD-04) — 스위치를 켜고 5분 지나서(게이트웨이 `list_*` 캐시 300초) 본문 낱말로 찾는다.
   - M-6(AD-03) — NASCA 로 암호화된 .pptx 를 넣어 DRM 문서라는 별도 문구가 나온다.
-  - 전수 점검(AD-01 · AD-04 · AD-05 · AD-06) — cae00 `~/kc-check/kc_sweep.py`(읽기만)를 다시 돌린다. 확인에는 목록 조회만 쓴다(단건 조회는 read_count · updated_at 을 바꾼다).
+  - 전수 점검(AD-01 · AD-04 · AD-05 · AD-06) — cae00 `~/kc-check/kc_sweep.py`(읽기만)를 다시 돌린다. 확인에는 목록 조회만 쓴다(단건 조회는 read_count 를 바꾼다 — updated_at 은 AIDataHub `fccb0e5`(10-31) 부터 그대로).

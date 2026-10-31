@@ -112,7 +112,7 @@
 | 지식카드 K6-4 확인 | 목록 조회로 '427 · 빈 요약 320 · 속 빈 154' 를 다시 센다.<br>동기화 뒤 빈 요약이 줄고, 154장 정리 뒤 속 빈 카드가 0이어야 한다. | AD-01 · AD-17 |
 | 지식카드 K6-1 · K6-2 확인 | `GET /api/agents/` 에서 이름=키 전문가가 빠지고, `?agent=kooremapper-modelmeta` 의 total 이 3 → 0 이어야 한다. | AD-05 · AD-06 |
 | 지식카드 K5 확인 | 스위치를 켜고 5분 지나서(게이트웨이 `list_*` 캐시 300초) 본문 낱말로 찾는다. | AD-04 |
-| 전수 점검 | 모두 들어간 뒤 cae00 `~/kc-check/kc_sweep.py`(읽기만)를 다시 돌린다.<br>확인에는 목록 조회만 쓴다(단건 조회는 read_count · updated_at 을 바꾼다). | AD-01 · AD-04 · AD-05 · AD-06 |
+| 전수 점검 | 모두 들어간 뒤 cae00 `~/kc-check/kc_sweep.py`(읽기만)를 다시 돌린다.<br>확인에는 목록 조회만 쓴다(단건 조회는 read_count 를 바꾼다 — updated_at 은 AIDataHub `fccb0e5`(10-31) 부터 그대로). | AD-01 · AD-04 · AD-05 · AD-06 |
 
 
 ## 8. 이 문서에서 뺀 것

@@ -172,3 +172,17 @@ def risk_similar_projects(project_id: Annotated[str, Field(description=_A_PROJEC
 - **다른 앱이 알아 둘 함정** — 허용값을 설명에 손으로 적지 않고 코드 상수에서 읽어 넣는다. 같은 이름의 인자라도 도구마다 허용값이 다를 수 있다
   (`detail` 이 한 도구는 auto · full · summary, 피로 도구는 auto · full 이라 같은 문구를 적었으면 한쪽이 거짓이 됐다). StepForge · KooRemapper
   세션에 전했다(10-31). ThermalShockMCP 에 보낼 때도 함께 적는다.
+
+## 답 — KooRemapper(2026-10-31, `3929a4e`)
+
+- §2-3 끝 — 도구 여덟의 인자 36개에 설명(시간 한도 요청서와 한 판 — 그 답은 [time-limits.md](time-limits.md) 「답 — KooRemapper」). 파이썬만 바뀌어 그 리포의 재기동 길로 MCP 인스턴스가 새로 뜬다. 백엔드 전체 798 통과 · dev 스모크 MCP 85 PASS.
+
+## 답 — StepForge(2026-10-31, `4253453`)
+
+- §2-2 끝 — 리포 시험 `tests/test_d654_arg_descriptions.py` 가 `mcp.list_tools()` 로 본 세 도구의 맨 위 인자 전부에 설명이 있음을 본다(find_parts 11 · stackup_profile 6 · bend_profile 3, 그리고 넷째 인자 `full`). 형 · 기본값 · 필수 · 차례는 바꾸기 전 main(`e8bf3d8`)과 같다(서명 지문 + 인자 차례로 본다).
+- dev SIF 교체 10-31 10:17 UTC(포트 9491) 뒤 게이트웨이 `/tools-map` 의 heax-step_forge described 0 → 98(args 827). `full` 은 챗 접기 래퍼가 접는 도구에 더하는 인자라 그 한 자리에 단 설명을 접는 도구 78 이 함께 받았다 — 그래서 20 이 아니라 98 이다. 세 도구는 worst 다섯에서 빠졌다. Drive `dist-20261031-101810Z`(SIF = main 끝, 지운 판 없음).
+- 설명은 도구마다 따로 둔 상수이고, 수 · 허용값은 코드에서 짓는다(쪽 상한 · find_parts 줄 칸 이름 · 적층 축). 시험이 설명의 축 · 칸 이름 · 쪽 범위를 실제로 받고 거절하는 동작과 맞댄다(LaminateAnalyzerMCP 답의 함정 대비).
+- **다른 앱이 알아 둘 함정 둘째** — 인자를 `Annotated[..., Field(description=...)]` 로 바꾸면 서명의 형 글자가 바뀐다. 형을 글로 읽어 검사하는 자리(StepForge 는 측정 잡 접수 · 레시피 단계 검사)가 있으면 bool 인자에 "yes" 같은 값을 받게 된다. StepForge 는 겉을 벗기는 한 자리로 고쳤다(전체 회귀가 잡았다). ThermalShockMCP 에 보낼 때 함께 적는다.
+- 나머지 173 도구는 요청 범위 밖이라 하지 않았다(넓힐지는 그쪽이 정한다).
+
+**B37 남은 것** — §2-4 ThermalShockMCP(도구 둘 · 인자 6) 하나다. 도는 세션이 없어 사용자가 그 세션을 열 때 이 절과 위 함정 둘을 넘긴다.

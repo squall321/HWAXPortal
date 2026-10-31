@@ -326,7 +326,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 화면 — 후보 목록에서 고르기(W-53). 만들어 놓고 안 만들어 막다른 길이 돼 있었다
 - [x] 스키마에 없으면 **도구 산문에서 인용**한다(`from_prose`) — 인자 설명이 1%뿐이다(W-58)
 - [x] 설명 없는 인자 결손을 **한 줄로 모은다** — 99%에서 울리면 검출기가 아니다(W-58)
-- [ ] 전 앱이 인자 `description` 을 채운다 — `gaps/hub-arg-descriptions.yaml`(절차에 쓰는 도구부터)
+- [ ] 전 앱이 인자 `description` 을 채운다 — `gaps/hub-arg-descriptions.yaml`(절차에 쓰는 도구부터) — 10-31 진행(B37): 절차에 쓰는 도구 17 가운데 LaminateAnalyzerMCP 4(`113405d`) · KooRemapper 8(`3929a4e`) · StepForge 3(`4253453` — dev described 98) 끝, 남은 것 ThermalShockMCP 2(도는 세션 없음 — [요청서](../leftovers-1017/requests-1031/arg-descriptions.md) §2-4). 전 앱 · 전 도구는 그 뒤
 - [x] **② 환원 — 스택업** 결손을 장부에 등재 + **StepForge 에 요청서**를 냈다
       (`gaps/stepforge-stackup-profile.yaml` · `StepForge/docs/REQUEST-stackup-profile.md`)
 - [x] StepForge 회신 대기 — "이미 되는 길이 있으면 알려 달라" 를 함께 물었다 (확인 10-17 — StepForge 가 stackup_profile 구현으로 답함 — StepForge 1106469(09-15, D-291), dev 게이트웨이 /tools-map 에 있음)
