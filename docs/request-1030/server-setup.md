@@ -29,7 +29,9 @@
 | StepForge | `a166d2a` · `51c8788` · Drive `dist-20261031-014632Z` | SP 키트 2026-10-21 수신부 · 그래프 따라잡기 · CLAUDE.md SP 규칙(빌드는 main 끝 — `005407Z` 는 코드가 같은 앞 판) | 올림(그쪽 세션) — `dist-from-drive.sh` 로 `014632Z` 를 받는다 |
 | HEAXHub | `055b023` · `5e2cafa` · `beebec5` | HH-15 박스 덮어쓰기 · HH-16 남은 서비스 정리 · 검토 아홉 고침, cae00 박스 파일 넷과 전환 차례, 시험 가드 | 올림 — update-all §2 가 받는다. 받기 전 점검과 전환은 9절 · 받은 편지함 Q8 |
 | 리스크 앱(HWAXRisk) | `9bd5f48` · Drive(HEAXHub) `dist-20261031-021740Z` | ECAD 1단계(ODB 보드 싣기 · 사람이 고르는 보드 · 보드 노드 · 정직한 표지) + 사용자 결정 셋(그 사람 PAT 만 · pwr/rf 2단계까지 · 상한에 ECAD 부품) — MCP 도구 31 → 33 | 올림 — `dist-from-drive.sh` 로 받고 `redeploy-app.sh hwax-risk` 로 바꾼다. 화면은 리스크 화면 세션 몫(`docs/design-risk-review/ecad-1031/frontend-request.md`) |
-| MaterialTwinWeb | `a3563b6` · `4273720` | HH-01(긴 재료 카드를 절 여러 개로) · 저장소 비공개 전환 적용 문서 | 올림(그쪽 세션) — 비공개 전환 차례는 9절(먼저 받고 → 사용자가 비공개 → 토큰) |
+| MaterialTwinWeb | `a3563b6` · `4273720` · Drive(HEAXHub) `dist-20261031-055937Z` | HH-01(긴 재료 카드를 절 여러 개로) · 저장소 비공개 전환 적용 문서 | 올림(그쪽 세션) — 비공개 전환 차례는 9절(먼저 받고 → 사용자가 비공개 → 토큰). `4273720` 판 SIF 는 10-31 포털 세션이 Drive 에 올렸다(문서 커밋 뒤 다시 지은 SIF — 앱 커밋과 캐시 열쇠가 맞아야 이 박스 허브가 띄운다) |
+| 게이트웨이 | `5f4ba5f`(병합 — `9b37b31` ~ `10bb6ec`) | 10-29 4차 E-2 · E-4 — 앱 역할로 검색 순위 · 접기 · 노출(허브 가족은 늘 접두 · 옛 맨 이름은 호출 별칭) · 개인 Claude 보기 셋(전체 · 묶음 · 가벼운) | 올림 — 게이트웨이 재기동으로 켜진다. 받은 뒤 확인은 [`../request-1029/server-setup.md`](../request-1029/server-setup.md) 8절 · 받은 편지함 Q14 |
+| 포털 | `d31bca1` · `4034845` · Drive `images-20261031-055500Z` | 같은 묶음의 포털 몫 — 사람 설정 `users.hub_view` · 토큰 화면 보기 고르기 · 등록 배치 머리 `X-HWAX-View: portal` · Q-2 확인(목록은 늘 접두, 사용자 10-31) | 올림 — 화면은 Drive 판. 확인은 위와 같다 |
 
 ## 1. update-all 한 번
 
