@@ -54,6 +54,8 @@
 | 에이전트 서버 | `82e3729`(병합 — B17 `f3a714f` · `458eced` · `81589ae`) | 이어하기 좌석 재심사가 사람 의견(없으면 원 질문)에서 짓는 짧은 축으로 묻는다 — 축마다 추천 40명 · 넓은 접두(sw · xd)는 둘째 마디까지를 앉은 도메인으로 · 축은 하나씩 묻다 자리가 차면 멈춤 · 기한 `DELIB_RESCREEN_TIMEOUT_S` 600초. 끊긴 잡 잇기는 재심사를 걸지 않고, 첫 실행(이전 결론 없음)은 예전 한 덩이 그대로(사용자 결정 10-31). 포털 정본 파이프라인 `hwax-deliberate.js` 의 좌석 계약 주석도 같은 뜻으로 고쳤다 | 올림 — 에이전트 서버 재기동(dev 10-31 10:37 UTC) · 포털 쪽은 update-all 의 sync 가 받는다. 받아들임은 4절 B17 줄 |
 | 리스크 앱(HWAXRisk) | `b71a262`(병합 — 사람 조작 감사 `e21ca9a` · `bcff65e` · `69e18d6` · `6f345d0`) · Drive(HEAXHub) `dist-20261031-112337Z` | 잡 멈춤 · 재개 · 취소 · 등록부 status · verdict 확정이 감사 행을 남긴다(바뀜과 같은 트랜잭션 · 코드 어휘만, 사용자 결정 10-31 '남긴다 — 계획서대로') · 포털 화면 '멈춤'(A24)으로 멈춘 패널 잡도 job.pause 한 행 — 대상 감사와 보고서 '사람 개입 요약' 에 선다 | 올림 — `dist-from-drive.sh` 로 받고 `redeploy-app.sh hwax-risk`(dev 10-31 11:23 UTC). 이력 탭의 새 이름표는 다음 판(가지 `wt1031/risk-gaps`) |
 | 리스크 앱(HWAXRisk) | `4145b2c`(감사 틈 셋 — `4eea6b6` · `c232e55` · `29a3bc3` · `77e5480`) · Drive(HEAXHub) `dist-20261031-121154Z` | MCP 도구가 남기는 감사 행은 입구 mcp · 검증되지 않은 행위자로(종전엔 job.create · gate.ack · finding.create 등이 검증됨으로 적혔다) · MCP 잡 제어의 changed 가 감사 행과 같은 판정(코드 보류 잡을 사람이 멈춰도 바뀜으로) · 대상 감사 이력 탭에 새 감사 다섯의 이름표와 앞 → 뒤 글 표시 — 사용자 결정 10-31 | 올림 — `dist-from-drive.sh` 로 받고 `redeploy-app.sh hwax-risk`(dev 10-31 12:11 UTC). 웹 쪽 행의 입구는 이제 rest 대신 web 으로 적힌다(채널로 거르는 곳은 없다) |
+| 에이전트 서버 | `27f0229`(병합 — HA-09 S1 ~ S4 · 반대 검토 고침 `d66d7d9`) | 재기동으로 끊긴 심의를 같은 잡에서 제자리로 잇는다 — 끝난 라운드는 되살리고 끊긴 라운드는 남은 좌석만 · 결정문 · 보고서 · 위키는 한 번만 · 다단 · 시험 설계는 끊긴 단 안에서(사용자 결정 10-31 권장안). 주인이 값을 바꾸거나 남이 이으면 까닭과 함께 요약 길 | 올림 — 에이전트 서버 재기동(dev 10-31 12:56 UTC). `/health` 에 `delib_journal{on, max_mb, errors}` · `delib_folded`. 확인은 4절 HA-09 줄 |
+| 리스크 앱(HWAXRisk) | `3a188f3`(병합 — 화면 읽기 `2beb7e2` · 흐름 `cee55fd` · 이력 탭 이름표 `f32e0fb`) · Drive(HEAXHub) `dist-20261031-125835Z` | 과제 상세 · 목록을 구성원이 연다 · 들여오기가 남의 과제에 줄을 매달지 못한다(High — 남의 부모 · 남의 owner 멤버 행은 그 줄만 거절) · 키 대장 읽기(mine) · 게이트 ack 를 지금 값으로 · sameas pair_key · 잡 signals · 병합된 키 확정 409 · 쟁점 outcome · 마감 갱신 · 요구 여유 · 잡 차례 · 보류 코드 · 동의 문구 · 등록 실패 기록(길마다 쉼) · 감사 이력 탭의 모든 행위 이름표 · '미확인' 풍선 | 올림 — `dist-from-drive.sh` 로 받고 `redeploy-app.sh hwax-risk`(dev 10-31 12:58 UTC). 받은 뒤 4절 리스크 줄의 셈 둘 |
 
 ## 1. update-all 한 번
 
@@ -113,6 +115,8 @@
 | AD-03 | M-6 — [`platforms/90-OURS.md`](platforms/90-OURS.md) 의 'AIDataHub 쪽 M-6 의 바른 길'(NASCA **.xlsx** 로 본다) |
 | AD-07 | 게이트웨이 `tools/list` 의 `agent_search` 입력에 `as_of` · `as_of_undated` 가 있다(소스가 아니라 목록으로 본다) |
 | B17 | deliberation-quality 42 줄의 심의(경시성 — 원 질문 · 원 사람 의견 그대로)를 이어하기로 한 번 다시 돌린다. 상태줄 `이어하기 재심사 — 신규 좌석 <키>(<축>)` 에 서비스 운영 · 필드 데이터 계열이 1명 이상 오르고, 이전 좌석은 전원 유임(좌석 사건 personas)이다. `검색 축을 짓지 못해(…)` 가 나오면 GLM 이 답하는지 먼저 본다. 결과(신규 좌석 키 · 축)는 사용자에게 알린다 — dev 는 축 LLM 이 없어 보지 못했다 |
+| HA-09 | 시험 심의 하나(작게 — 좌석 둘 · 라운드 셋)를 MCP 로 띄우고 2라운드 도중 `AGENT_RESTART_FORCE=1 ./start.sh -d`. `deliberate_status` 의 `resume.seat_resume`(spoken · todo)를 보고 `deliberate_continue` 한 번 — 같은 잡 id 로 잇고, 전사에 좌석마다 라운드당 한 번, 끝난 라운드의 LLM 호출은 다시 없다. 보고서를 켠 심의는 보고서 저장 뒤에 끊어 이으면 같은 RA 번호 하나다 |
+| 리스크 앱 셈 둘 | 읽기만 — ① 고침 전에 들여오기로 선 남의 멤버 행(편집자 · 보기)이 있는지 ② 확정인데 병합 대상이 남은 부품 키가 있는지. 질의는 HWAXRisk context-notes(RD-6 · RD-10 과 다음 판의 MB 절)에 있다. 나오면 지울지 사용자에게 알린다(dev 는 둘 다 0) |
 
 ### 포털 · 게이트웨이(올린 것)
 
