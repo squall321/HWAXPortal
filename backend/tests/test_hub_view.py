@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.access.hub_view import AREA_RE, MODES, format_view, parse_view
+from app.access.hub_view import AREA_RE, HEADER_NAME, HEADER_PORTAL, MODES, format_view, parse_view
 from app.auth.user_store import UserStore
 from app.config import Settings, get_settings
 from app.main import app
@@ -99,6 +99,8 @@ def test_보기는_기본이_전체이고_권한_응답에_실린다(env):
     body = c.get("/auth/access/view").json()
     assert (body["mode"], body["areas"], body["unknown_areas"]) == ("full", [], [])
     assert "재연결" in body["note"] and "invoke_tool" in body["note"]
+    assert f"{HEADER_NAME}: {HEADER_PORTAL}" in body["note"] and "서버" in body["note"], \
+        "보기는 청한 연결(포털 배치 · 등록 명령)에만 먹는다 — 내 토큰으로 서버에서 도는 앱 · 스크립트는 늘 전체다(검토 10-31)"
     assert _ent(c, "user@corp.com")["view"] == "full"
 
 
@@ -188,6 +190,7 @@ def test_보기_글의_꼴():
                       ("bundle:" + ",".join(f"a{i}" for i in range(33)), None), ("all", None), ("", None), (None, None)):
         assert parse_view(raw) == want, raw
     assert format_view("bundle", ["cad", "mesh", "cad"]) == "bundle:cad,mesh" and format_view("light", ["cad"]) == "light"
+    assert parse_view(HEADER_PORTAL) is None, "연결 머리의 portal 은 보기 글이 아니다 — '포털 설정을 따른다' 는 표지라 저장하지 않는다"
 
 
 def test_리포_mcp_json_은_보기_머리로_늘_전체를_청한다():
@@ -216,5 +219,7 @@ def _gateway_literal(name: str):
 
 
 def test_게이트웨이와_머리_이름_영역_꼴이_같다():
-    assert _gateway_literal("VIEW_HEADER") == "x-hwax-view" == "X-HWAX-View".lower()
+    assert _gateway_literal("VIEW_HEADER") == "x-hwax-view" == HEADER_NAME.lower()
     assert _gateway_literal("_VIEW_AREA_RE") == AREA_RE.pattern
+    # 포털 등록 배치(setupBat.ts)가 다는 표지 — 게이트웨이가 이 값의 머리로 청한 연결에만 포털 보기를 얹는다(어긋나면 배치로 붙인 Claude 가 늘 전체다)
+    assert _gateway_literal("VIEW_PORTAL") == HEADER_PORTAL

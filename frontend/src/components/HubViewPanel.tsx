@@ -83,7 +83,7 @@ export default function HubViewPanel({ rev = 0 }: { rev?: number }) {
     <section className="tok-sec hub-view" aria-labelledby="hub-view-title">
       <h2 id="hub-view-title">개인 Claude 보기</h2>
       <p className="tok-muted hub-lead">
-        개인 Claude(Code · Desktop 등)가 허브에서 받는 도구 목록의 크기를 고릅니다. 보기는 목록만
+        개인 Claude(Code · Desktop)가 허브에서 받는 도구 목록의 크기를 고릅니다. 보기는 목록만
         줄입니다 — 목록 밖 도구도 <code>search_tools</code> 로 찾아 <code>invoke_tool</code> 로
         부르고, 권한은 그대로입니다. 아래 표에서 끈 앱은 어느 보기에서도 빠집니다.
       </p>
@@ -157,8 +157,14 @@ export default function HubViewPanel({ rev = 0 }: { rev?: number }) {
               </li>
             )}
             <li>
-              리포 파이프라인(리포 <code>.mcp.json</code> 으로 도는 심의 · 리스크 워크플로)은 늘
-              전체입니다. 포털 웹 챗 · 웹 심의 · 절차에도 영향이 없습니다.
+              보기는 이 화면의 등록 배치 · 명령으로 붙인 Claude Code · Desktop 에만 먹습니다(연결 머리{' '}
+              <code>X-HWAX-View: portal</code>). 이 기능 전에 받은 배치로 등록했으면 새 토큰으로
+              배치를 다시 받아 돌리거나, 등록 설정의 hwax 머리에 그 줄을 더하세요.
+            </li>
+            <li>
+              그 머리가 없는 연결은 늘 전체입니다 — 내 토큰으로 서버에서 도는 앱(리스크 심사 · 위키
+              등), 스크립트, Gemini · Codex, 리포 파이프라인(리포 <code>.mcp.json</code> 으로 도는
+              심의 · 리스크 워크플로). 포털 웹 챗 · 웹 심의 · 절차에도 영향이 없습니다.
             </li>
           </ul>
           {data.unknown_areas.length > 0 && (

@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from app.access.hub_view import AREAS_MAX, MODES, format_view, parse_view
+from app.access.hub_view import AREAS_MAX, HEADER_NAME, HEADER_PORTAL, MODES, format_view, parse_view
 from app.access.policy import ADMIN_GROUP, compute
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
@@ -215,8 +215,13 @@ async def set_hub_app(key: str, body: HubAppIn, request: Request,
 # 전체(지금 그대로) · 묶음(고른 영역 + 정본 읽기 도구 + 허브 자체 도구, 형제 허브 사본은 뺀다) · 가벼운(search_tools · invoke_tool 둘). 게이트웨이가
 # **개인 PAT 의 tools/list 에만** 얹는다 — 검색 · 부르기 · 이름 · 권한은 그대로다(선호이지 권한이 아니다). 끄기와 같은 길(권한 응답 · 같은 면제 ·
 # 같은 캐시 깨기)이고, 연결 머리 X-HWAX-View 가 이 설정을 덮는다(리포 .mcp.json 은 늘 full — 리포 파이프라인은 늘 전체 목록으로 돈다).
-_VIEW_NOTE = ("보기는 개인 Claude 의 허브 도구 목록(tools/list)만 줄인다 — 목록 밖 도구도 search_tools 로 찾아 invoke_tool 로 부르고, 권한은 그대로다. "
-              "열려 있는 Claude 세션의 목록은 재연결해야 바뀐다. 포털 웹 챗 · 웹 심의 · 절차와 리포 파이프라인(.mcp.json)은 늘 전체다.")
+# ⚠ 게이트웨이는 이 설정을 머리 `X-HWAX-View: portal` 로 청한 연결에만 얹는다 — 이 화면의 등록 배치 · 명령이 Claude Code · Desktop 에 단다. 머리 없는
+#   연결(내 토큰으로 서버에서 도는 리스크 심사 · 위키 앱, 스크립트)은 늘 전체다. 모든 개인 PAT 에 얹던 때는 가벼운을 고른 사람의 리스크 심사가 도구가
+#   없다고 읽어 live_denied 로 굳었다(검토 10-31, docs/request-1029 C-41).
+_VIEW_NOTE = (f"보기는 이 화면의 등록 배치 · 명령으로 붙인 개인 Claude(Code · Desktop — 연결 머리 {HEADER_NAME}: {HEADER_PORTAL})의 허브 도구 "
+              "목록(tools/list)만 줄인다 — 목록 밖 도구도 search_tools 로 찾아 invoke_tool 로 부르고, 권한은 그대로다. 그 머리가 없는 연결(이 기능 전에 "
+              "등록한 Claude, 내 토큰으로 서버에서 도는 앱, 스크립트, Gemini · Codex)은 늘 전체다. 열려 있는 Claude 세션의 목록은 재연결해야 바뀐다. "
+              "포털 웹 챗 · 웹 심의 · 절차와 리포 파이프라인(.mcp.json)도 늘 전체다.")
 
 
 def _hub_view_body(policy, ents, tm: dict, view: str, muted: set[str]) -> dict:
