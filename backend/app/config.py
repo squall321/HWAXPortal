@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     local_auth_enabled: bool = True
     user_store_path: str = "data/users.sqlite"
     # 테이블이 비어 있을 때 이 명단의 이메일이 가입하면 즉시 active+portal-admin(첫 관리자).
-    local_bootstrap_admins: str = "hwax.demo@samsung.com"
+    local_bootstrap_admins: str = "demo@example.com"
     # 언제나 관리자인 이메일(콤마) — 원장 groups 와 **매 요청** OR 한다(10차 요청 §3). 관리자가 원장 값 하나로만 유지돼, 그 값이
     # 지워지면 화면으로 되돌릴 길이 없었다(위 부트스트랩은 로컬 계정이 0개일 때 한 번뿐이고 SSO 경로에서는 읽히지 않는다).
     # 정지(status=disabled)가 이것보다 먼저다. 원장에 행이 없는 주소는 목록에 있어도 관리자가 아니다 — 로그인해 행이 생긴 뒤부터다.

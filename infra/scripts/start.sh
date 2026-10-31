@@ -202,7 +202,7 @@ else
     --env "RA_SSO_SECRET=${RA_SSO_SECRET:-}" \
     --env "TESTSCOPE_SSO_SECRET=${TESTSCOPE_SSO_SECRET:-}" \
     --env "AUTH_PROVIDER=${AUTH_PROVIDER:-mock}" \
-    --env "MOCK_USER_EMAIL=${MOCK_USER_EMAIL:-hwax.demo@samsung.com}" \
+    --env "MOCK_USER_EMAIL=${MOCK_USER_EMAIL:-demo@example.com}" \
     --env "MOCK_USER_NAME=${MOCK_USER_NAME:-HWAX Demo User}" \
     --env "MOCK_USER_GROUPS=${MOCK_USER_GROUPS:-portal-admin}" \
     --env "ROUTES_PATH=${ROUTES_PATH}" \
