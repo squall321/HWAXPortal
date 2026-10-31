@@ -11,6 +11,11 @@ import re
 MODES = ("full", "bundle", "light")
 AREA_RE = re.compile(r"[a-z][a-z0-9_-]{0,31}")
 AREAS_MAX = 32
+# 연결 머리 — 값이 보기 글이면 그 연결의 보기다. 값 `portal` 은 보기 글이 아니라 '포털에서 고른 보기를 따른다' 는 표지다(저장하지 않는다). 게이트웨이는
+# 이 표지로 청한 연결에만 포털 보기를 얹는다 — 포털 등록 배치 · 명령(frontend/src/lib/setupBat.ts)이 Claude Code · Desktop 에 단다. 머리가 없는 연결
+# (내 토큰으로 서버에서 도는 앱 · 스크립트 · 그 밖의 클라이언트)은 늘 전체다(docs/request-1029 context-notes C-41).
+HEADER_NAME = "X-HWAX-View"
+HEADER_PORTAL = "portal"
 
 
 def parse_view(raw) -> tuple[str, list[str]] | None:

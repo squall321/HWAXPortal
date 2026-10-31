@@ -41,6 +41,7 @@ def gen(tmp_path_factory):
         "const s = makeSnippets(process.argv[2]);\n"
         "process.stdout.write(process.argv[4] === 'desktop' ? s.claudeDesktopSnippet('" + TOKEN + "', process.argv[5] || null)\n"
         "  : process.argv[4] === 'guide' ? JSON.stringify(s.certGuide(process.argv[5] === 'notoken' ? null : '" + TOKEN + "'))\n"
+        "  : process.argv[4] === 'code' ? s.claudeCodeSnippet('" + TOKEN + "')\n"
         "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem));\n")
 
     def run(origin="https://hwax.example.net", pem=True, what="bat", cert=""):
@@ -199,7 +200,7 @@ def test_the_cli_path_is_unchanged_and_skips_the_direct_write(gen):
         assert ls[b - 1] == "goto :desktop", "CLI 결과 분기는 :no_cli 로 흘러들지 않는다"
     assert _cli_add_line(gen(pem=False)) == (
         f'>>"%HWAX_CLI_CMD%" echo "%%HWAX_CLAUDE%%" mcp add -s user --transport http hwax {url}'
-        f' --header "Authorization: Bearer {TOKEN}"')
+        f' --header "Authorization: Bearer {TOKEN}" --header "X-HWAX-View: portal"')
 
 
 def test_no_cli_merge_backs_up_writes_a_temp_reparses_then_swaps(gen):
@@ -624,6 +625,35 @@ def test_cert_download_does_not_need_a_new_token():
     assert "<CertGuide token={created.token}" in page
     assert page.count("onClick={() => void downloadCert()}") == 2
     assert "pem.includes('-----BEGIN CERTIFICATE-----')" in page and 'download="hwax-portal.crt"' not in page
+
+
+# ── 개인 Claude 보기(docs/request-1029 E-4 · C-41) — 포털 보기는 청한 연결에만 ──────────────────────────────────
+def test_claude_registrations_ask_for_the_portal_view_and_others_do_not(gen):
+    """게이트웨이는 연결 머리 X-HWAX-View: portal 로 청한 연결에만 포털에서 고른 보기(전체 · 묶음 · 가벼운)를 얹는다 — 머리 없는 개인 PAT(내 토큰으로
+    서버에서 도는 리스크 심사 · 위키 앱, 스크립트)는 늘 전체다(검토 10-31 — 가벼운을 고른 사람의 리스크 심사가 live_denied 로 굳었다). 그래서 이
+    배치 · 등록 명령 · 직접 설정 안내가 Claude Code · Desktop 에 그 머리를 단다. mcp-remote 는 머리를 'Name:value'(빈칸 없이)로 받는다 — Authorization
+    과 같다. 손으로 넣은 머리는 남긴다(http 항목). Gemini · Codex 는 '개인 Claude' 가 아니라 달지 않는다(늘 전체)."""
+    from app.access.hub_view import HEADER_NAME, HEADER_PORTAL
+    http_arg, remote = f'--header "{HEADER_NAME}: {HEADER_PORTAL}"', f"{HEADER_NAME}:{HEADER_PORTAL}"
+    plain = gen(pem=False)
+    assert _cli_add_line(plain).endswith(f' --header "Authorization: Bearer {TOKEN}" {http_arg}')
+    for ps in (_ccj_ps(_no_cli_block(plain)), _desk_ps(plain)):
+        assert ("if(@($h.Keys | Where-Object {$_ -ieq '" + HEADER_NAME + "'}).Count -eq 0){$h['" + HEADER_NAME + "']='" + HEADER_PORTAL + "'};"
+                in ps), "http 항목 — 손으로 넣은 보기 머리(대소문자 무시)가 있으면 그대로 둔다"
+    pem = gen(pem=True)
+    cli = _cli_add_line(pem)
+    assert cli.endswith(f' --header "Authorization:${{AUTH}}" --header "{remote}"'), cli
+    for ps in (_ccj_ps(_no_cli_block(pem)), _desk_ps(pem)):
+        assert f"'--header','Authorization:${{AUTH}}','--header','{remote}');" in ps
+    assert json.loads(gen(what="desktop"))["mcpServers"]["hwax"]["headers"][HEADER_NAME] == HEADER_PORTAL
+    assert json.loads(gen(what="desktop", cert=r"C:\Users\<사용자>\.hwax\hwax-ca-bundle.pem"))["mcpServers"]["hwax"]["args"][-2:] == ["--header", remote]
+    assert gen(what="code").endswith(f' --header "Authorization: Bearer {TOKEN}" {http_arg}')
+    guide = json.loads(gen(what="guide"))
+    assert guide[3]["label"].startswith("④") and guide[3]["text"].endswith(f'--header "{remote}"')
+    assert guide[4]["label"].startswith("⑤") and f'"{remote}"' in guide[4]["text"]
+    for bat in (plain, pem):
+        others = [l for l in _lines(bat) if "mcp-remote" in l and ("gemini mcp add" in l or "codex mcp add" in l or "HWAX_TOML" in l)]
+        assert len(others) == 3 and not [l for l in others if HEADER_NAME in l], others
 
 
 # ── PC 문서 도우미 설치 배치(docs/chat-ppt B5 · PP-D9) ─────────────────────────────────────
