@@ -27,7 +27,7 @@ import { useCan } from '../auth/useCan';
 import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { isRoutineTerminal, mergeRoutine } from '../components/chat/routine';
-import { ROUTINE_STOPPED_BEFORE_RUN } from '../lib/chatErrors';
+import { ROUTINE_STOPPED_BEFORE_RUN, delibMayStillRun } from '../lib/chatErrors';
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import type { AttachedImage } from '../components/chat/imageAttach';
 import { buildHistory } from '../components/chat/history';
@@ -179,7 +179,7 @@ interface ChatContextValue {
    *  서버 사본에도 붙인다(답을 받는 중인 대화면 그 답이 저장된 뒤). 종전엔 결과가 업로드 패널 안에서만 끝나 다음 질문이 몰랐다. */
   addUploadNotice: (n: UploadNotice) => void;
   /** 받기가 끊긴 심의를 서버에서 멈췄다(포털 POST /agent/deliberate/cancel 200) — 그 메시지에 멈춤을 적는다(브라우저 사본에도 남는다).
-   *  받는 중인 심의는 멈춤 사건(SSE delib cancelled)이 적으므로 부르지 않는다(triage A24). */
+   *  받기가 끊겼다는 오류 상자는 걷는다(엔진이 알린 오류는 둔다). 받는 중인 심의는 멈춤 사건(SSE delib cancelled)이 적으므로 부르지 않는다(triage A24). */
   markDelibStopped: (msgId: string, message: string) => void;
   stop: () => void;
   /** 지금 도는 스트림의 생존 신호(마지막 프레임·마지막 진행 시각). 돌지 않으면 null. 상태가 아니라 읽는 함수다 —
@@ -723,7 +723,8 @@ export function ChatProvider({
     );
   }, []);
 
-  // 멈춤 응답을 기다리는 동안 다른 대화로 옮겨 갔어도 그 메시지가 든 대화에 적는다(활성 대화에 묶지 않는다).
+  // 멈춤 응답을 기다리는 동안 다른 대화로 옮겨 갔어도 그 메시지가 든 대화에 적는다(활성 대화에 묶지 않는다). 받기가 끊겼다는 오류(스트림 절단 · ■ ·
+  // 중계의 침묵 한도 — 심의가 서버에서 아직 돌 수 있다는 뜻)는 걷는다 — 멈춤이 그 칸의 끝이다. 엔진이 알린 오류는 그대로 둔다(가리지 않는다).
   const markDelibStopped = useCallback((msgId: string, message: string) => {
     setConversations((prev) =>
       prev.map((c) =>
@@ -733,7 +734,9 @@ export function ChatProvider({
               ...c,
               updatedAt: Date.now(),
               messages: c.messages.map((m) =>
-                m.id === msgId && m.delib ? { ...m, delib: { ...m.delib, cancelled: { message } } } : m,
+                m.id === msgId && m.delib
+                  ? { ...m, delib: { ...m.delib, cancelled: { message } }, ...(delibMayStillRun(m.error) ? { error: undefined } : {}) }
+                  : m,
               ),
             },
       ),

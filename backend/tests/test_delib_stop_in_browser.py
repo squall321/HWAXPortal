@@ -3,7 +3,8 @@
 심의는 서버에서 끝까지 돈다 — 그치는 길은 심의 칸의 이 단추다. 타입 검사로는 '누르는 동안 잠기는가', '무엇을 보내는가', '결과를 어떻게
 말하는가', '받기가 끊긴 심의에도 남는가' 를 못 본다. A24 검토로 더한 것 — 실행 id(첫 심의 사건의 run_id)를 싣는다 · 실행 id 가 없으면 단추가
 없다 · 의장이 결정문을 낸 뒤의 마무리(finishing)에는 단추를 거둔다 · 끊긴 심의를 멈추면(200) 칸에 멈춤을 적어 새로고침 뒤에도 남는다. 10-31 화면 틈 —
-다단 심의(/시뮬심의)가 1단 결정문 뒤 2단 도중에 끊기면 단추가 남는다(한 단 심의는 결정문 뒤에 없다). test_delib_stream_in_browser 와 같은 길이다 — 실제 ChatProvider · MessageList(심의 칸
+다단 심의(/시뮬심의)가 1단 결정문 뒤 2단 도중에 끊기면 단추가 남는다(한 단 심의는 결정문 뒤에 없다) · 끊긴 심의를 멈추면 받기가 끊겼다는 오류 상자가
+걷힌다(엔진이 알린 오류는 남는다). test_delib_stream_in_browser 와 같은 길이다 — 실제 ChatProvider · MessageList(심의 칸
 DelibView)를 esbuild 로 묶어 빈 문서에 올리고, fetch 는 시험이 한 프레임씩 밀어 넣는 스트림과 손으로 답하는 멈춤 창구로 바꾼다.
 도구는 프론트가 이미 가진 것만 쓴다. 없으면 건너뛴다(운영 박스).
 """
@@ -177,6 +178,7 @@ const look = (page) => page.evaluate(() => {
     plain: (document.querySelector('.dv-plain') || {}).textContent || '',
     decision: (document.querySelector('.dv-decision') || {}).textContent || '',
     error: Boolean(document.querySelector('.chat-error')),
+    errorTitle: (document.querySelector('.chat-error-title') || {}).textContent || '',
     streaming: document.getElementById('streaming').textContent,
   };
 });
@@ -280,14 +282,49 @@ const SCENARIOS = {
     const again = await open(ctx);                  // 새로고침 — 같은 저장소
     await again.getByText('2단 입장').first().waitFor();
     const reloaded = await look(again);
+    let stopped = null;
     if (reloaded.btn) {                             // 단추가 없으면(종전) 누르지 않고 본 것을 돌려준다 — 시험이 단추 없음으로 붉어진다
       await again.locator('.dv-stop-btn').click();
       await again.waitForFunction(() => typeof window.__answer === 'function');
+      await again.evaluate(() => window.__answer(200, { conversation_id: 'srv-1', run_id: 'run-1', status: 'cancelling', runs: 1,
+        message: '멈춤을 요청했다', stop_note: '사람이 멈췄다(받기가 끊긴 뒤) — 다단(포털)' }));
+      await again.locator('.dv-stopped').waitFor();
+      stopped = await look(again);
     }
     const sent = await cancels(again);
     const errors = [...page.__errors, ...again.__errors];
     await ctx.close();
-    return { halted, reloaded, sent, dialogs: again.__dialogs, errors };
+    return { halted, reloaded, sent, stopped, dialogs: again.__dialogs, errors };
+  },
+  // ■ 로 받기만 끊은 심의를 멈춘다(200) — '중단되었습니다' 상자도 받기가 끊겼다는 뜻이라 멈춤으로 바뀐다
+  async square_stopped(browser) {
+    const page = await open(browser);
+    await start(page);
+    await page.locator('#stop').click();
+    await page.locator('.chat-error').waitFor();
+    const halted = await look(page);
+    await page.locator('.dv-stop-btn').click();
+    await page.waitForFunction(() => typeof window.__answer === 'function');
+    await page.evaluate(() => window.__answer(200, { conversation_id: 'srv-1', run_id: 'run-1', status: 'cancelling', runs: 1,
+      message: '멈춤을 요청했다', stop_note: '사람이 멈췄다(받기가 끊긴 뒤) — ■(포털)' }));
+    await page.locator('.dv-stopped').waitFor();
+    return { halted, stopped: await look(page), errors: page.__errors };
+  },
+  // 멈춤을 청한 사이에 엔진이 실패를 알렸다 — 다단 심의의 실제 차례에서 1단의 done 뒤 화면은 받기를 마쳤다고 보지만 2단 사건은 계속 온다. 멈춤이
+  // 200 이어도 엔진이 알린 오류는 가리지 않는다(받기가 끊겼다는 오류만 걷는다)
+  async stop_vs_engine_error(browser) {
+    const page = await open(browser);
+    await start(page);
+    await stage1Done(page);
+    const before = await look(page);
+    await page.locator('.dv-stop-btn').click();
+    await page.waitForFunction(() => typeof window.__answer === 'function');
+    await push(page, frame('error', { code: 'deliberation_error', message: '심의 처리 중 오류: 시험이 낸 실패' }));
+    await page.locator('.chat-error').waitFor();
+    await page.evaluate(() => window.__answer(200, { conversation_id: 'srv-1', run_id: 'run-1', status: 'cancelling', runs: 1,
+      message: '멈춤을 요청했다', stop_note: '사람이 멈췄다(받기가 끊긴 뒤) — 오류(포털)' }));
+    await page.locator('.dv-stopped').waitFor();
+    return { before, after: await look(page), errors: page.__errors };
   },
   // 단 경계 표지 뒤 좌석 전환 중에 끊겼다 — 2단의 심의 사건은 아직 없지만 엔진은 다음 단을 잇는다고 알렸다
   async seat_change_cut(browser) {
@@ -417,6 +454,7 @@ def test_받기가_끊긴_심의에도_단추가_남고_서버가_찾지_못했�
     a = s["answered"]
     assert a["said"] == "서버에서 도는 이 심의를 찾지 못했습니다 — 이미 끝났거나 서버가 다시 떴습니다.", a
     assert a["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"}, "멈추지 못했으면 다시 누를 수 있다"
+    assert a["error"] and a["errorTitle"] == "⚠ 스트림이 끊겼습니다", "멈추지 못했으면 받기가 끊겼다는 상자는 그대로다"
     assert [c["body"] for c in s["sent"]] == [{"conversation_id": "srv-1", "run_id": "run-1"}]
     (asked,) = s["dialogs"]
     assert "받기가 끊긴 뒤 서버에서 나온 발언은 남지 않고" in asked and "지금까지 받은 발언은 남고" not in asked, asked
@@ -429,6 +467,8 @@ def test_끊긴_심의를_멈추면_칸에_멈춤을_적고_새로고침_뒤에�
     for look in (s["answered"], s["reloaded"]):
         assert look["stopped"] == f"멈춤 — {note}", look
         assert look["btn"] is None and look["note"] == "", look
+        # 10-31 화면 틈 2 — 종전엔 멈춘 뒤에도 '스트림이 끊겼습니다 … 서버에서 계속 돌 수 있습니다 · 다시 시도' 상자가 남았다
+        assert not look["error"], look
 
 
 def test_의장이_결정문을_낸_뒤의_마무리에는_멈춤을_거둔다(seen):
@@ -460,6 +500,28 @@ def test_다단_심의의_실제_차례에서_2단_도중에_끊기면_멈춤이
     assert [c["body"] for c in s["sent"]] == [{"conversation_id": "srv-1", "run_id": "run-1"}], "그 심의의 실행 id 로 멈춘다"
     (asked,) = s["dialogs"]
     assert "받기가 끊긴 뒤 서버에서 나온 발언은 남지 않고" in asked, asked
+    # 멈추면(200) 1단 결정문은 그대로 두고 멈춤을 적으며, 받기가 끊겼다는 상자는 걷힌다(화면 틈 2)
+    st = s["stopped"]
+    assert st["stopped"] == "멈춤 — 사람이 멈췄다(받기가 끊긴 뒤) — 다단(포털)" and "1단 결정문" in st["decision"], st
+    assert st["btn"] is None and not st["error"], st
+
+
+def test_중지로_받기만_끊은_심의를_멈추면_중단_상자도_멈춤으로_바뀐다(seen):
+    """■ 는 받기만 끊는다 — '중단되었습니다' 상자는 심의가 서버에서 아직 돌 수 있다는 뜻이다. 멈추면(200) 멈춤이 그 칸의 끝이다."""
+    s = seen("square_stopped")
+    h = s["halted"]
+    assert h["errorTitle"] == "⚠ 중단되었습니다" and h["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"}, h
+    st = s["stopped"]
+    assert st["stopped"] == "멈춤 — 사람이 멈췄다(받기가 끊긴 뒤) — ■(포털)" and not st["error"] and st["btn"] is None, st
+
+
+def test_멈춤이_200_이어도_엔진이_알린_오류는_가리지_않는다(seen):
+    """걷는 것은 받기가 끊겼다는 오류(스트림 절단 · ■ · 중계의 침묵 한도)뿐이다 — 멈춤을 청한 사이에 엔진이 알린 실패는 남는다."""
+    s = seen("stop_vs_engine_error")
+    assert s["before"]["btn"] == {"text": "멈춤", "disabled": False, "busy": "false"} and not s["before"]["error"], s["before"]
+    a = s["after"]
+    assert a["stopped"] == "멈춤 — 사람이 멈췄다(받기가 끊긴 뒤) — 오류(포털)", a
+    assert a["error"] and a["errorTitle"] == "⚠ 심의가 완료되지 못했습니다", a
 
 
 def test_단_경계_표지_뒤_좌석_전환_중에_끊겨도_멈춤이_남는다(seen):
