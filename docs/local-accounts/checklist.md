@@ -19,7 +19,7 @@
 ## 마감
 - [x] 포털 재기동 + 정문(:8088) curl e2e(가입→승인→로그인→401/403 음성 케이스)
 - [x] 브라우저 실검증(playwright — 폼 로그인·관리자 화면·내비 노출)
-- [x] 부트스트랩 관리자 생성(hwax.demo@samsung.com, 임시 비번 — 변경 필요)
+- [x] 부트스트랩 관리자 생성(<데모 계정>, 임시 비번 — 변경 필요)
 - [x] RA 연동 조사 결과 context-notes 반영
 - [x] 커밋·푸시(cae00 은 pull + pnpm build + portal 재기동) (확인 10-17 — 82dd82d · 7667763 이 origin/main 에 있다, cae00 은 그 뒤 update-all 을 돌렸다(예: 09-27, ste-cae00 context-notes §F))
 - [x] ~~(후속) RA 신원 전달 — 게이트웨이 per_user_sso 확장 + RA 측 /auth/sso (RA 리포는 hands-off, 별도 결정 필요)~~ — 버림(10-17 — docs/sso-delegation 으로 대체 — RA_SSO_SECRET → per_user_sso(포털 f90a9eb · 게이트웨이 674a843), RA 쪽은 거기서 추적)

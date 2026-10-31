@@ -18,10 +18,10 @@ RA /api/me (dev@hwax.local)
   memberships: slug='dev'        kind='org'      name='Dev (개발)'
                slug='personal-2' kind='personal' name='Dev Admin (개인)'
 
-포털 connections 표: 1행 — hwax.demo@samsung.com  workspace='dev'
+포털 connections 표: 1행 — <데모 계정>  workspace='dev'
 ```
 
-그리고 결정적 증거 하나 — 등록자 `hwax.demo@samsung.com` 의 멤버십에 **`personal-3`** 이
+그리고 결정적 증거 하나 — 등록자 `<데모 계정>` 의 멤버십에 **`personal-3`** 이
 있고, 이번 세션에 본 진단용 보고서 #53 이 정확히 `/w/personal-3/reports/53` 에 있었다.
 개인함으로 가는 경로가 실재한다는 뜻이다.
 
