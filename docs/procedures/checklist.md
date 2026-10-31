@@ -335,7 +335,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       뒀는데, **어떤 모양으로 오면 우리가 안 고치는지**는 그쪽이 알아야 정한다.
       실측으로 아직 안 왔다(연산 47종 · 후처리 0건)
 - [x] ~~DynaForge 회신 대기 — 세 갈래 중 어느 쪽인지(연산 / 독립 도구 / 오래 걸림)~~ — 버림(10-17 — W-93 사용자 결정(후처리 예약 연산 — KooRemapper REQUEST-postprocess-operation.md §7)으로 대체 · DynaForge 회신 §9(09-19))
-- [ ] ② 두 번째 환원 도구가 `bend_profile` 과 **같은 모양인지** 보고 규약으로 올린다(§10-7)
+- [x] ② 두 번째 환원 도구가 `bend_profile` 과 **같은 모양인지** 보고 규약으로 올린다(§10-7) — 풀림 대조표 docs/procedures/reduction-contract.md(`stackup_profile` · `sed_sample_from_odb` 둘 다 같은 모양 — StepForge `51c8788` · ThermalShockMCP `6e6a6db`) · PLAN §10-7 규약 · W-103 · 씨앗 정적 시험 backend/tests/test_procedures_reduction_contract.py (10-31 정리)
 - [ ] **③ 보강 — 라미나 물성**(강도·피로) 조달 경로 → MaterialTwin ↔ 적층 해석기 결손
 - [x] S5 와 이었다 — `fan-out` 이 후보마다 실행을 하나씩 만든다(W-57)
 - [x] 배치 = **새 실행 N개**라 게이트·재개·다시 돌리기·도출이 그대로 돈다
