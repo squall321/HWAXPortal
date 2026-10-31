@@ -13,6 +13,8 @@
 #   ./infra/scripts/drive-drift.sh          # 전부 확인
 #   ./infra/scripts/drive-drift.sh heax     # 지정한 것만 (portal | heax | koorm | mxwp | ste)
 #
+# heax 는 넷을 본다 — 앱 SIF 크기 · 지어지지 않은 앱(SIF 가 있어야 하는 앱인데 var/sifs 에 없다, 10-31) · 캐시 열쇠(10-25) · app-data tar 시각.
+#
 # 종료코드 0=일치, 1=드리프트 있음(올려야 함), 2=확인 불가.
 set -uo pipefail
 
@@ -112,6 +114,76 @@ if want heax; then
         fi
       done
       _py="$SELF_REPO/backend/.venv/bin/python"; [ -x "$_py" ] || _py=python3
+      # 지어지지 않은 앱(10-31 — docs/cluster-deploy 88) — 위 크기 대조는 var/sifs 에 **있는** SIF 만 본다. 허브 dist-to-drive 도 var/sifs/*.sif 글롭이라
+      # 한 번도 지어지지 않은 앱은 Drive 에 없는 채 말이 없고, cae00 허브는 그 앱을 짓지 못해(빌드 박스가 아니다) 띄우지 않는다. 앱 목록과 매니페스트는
+      # cae00 이 받을 판(@{u}, 없으면 작업 트리)으로 읽는다 — launch.mode 가 service · job_runner 면 var/sifs/<폴더>.sif 가 있어야 한다. proxy · iframe ·
+      # url · static(그리고 installer 처럼 SIF 를 짓지 않는 모드)은 '대상 아님' 한 줄로 센다. 박스 덮어쓰기가 있는 앱은 위 크기 대조와 같은 판정으로 ○.
+      # 인자는 둘이다(- 와 허브) — 아래 열쇠 대조는 셋이다(시험 대역이 인자 수로 둘을 가른다).
+      _unbuilt="$("$_py" - "$D" <<'PY' 2>&1
+import subprocess, sys
+from pathlib import Path
+try:
+    import yaml
+except ImportError:
+    print("? 지어지지 않은 앱을 보지 못했다 — 이 python 에 PyYAML 이 없다"); sys.exit(0)
+hub = Path(sys.argv[1])
+SIF = {"service", "job_runner"}                                                            # 허브가 var/sifs/<앱>.sif 로 띄운다
+NO_SIF = {"proxy", "iframe", "url", "static", "installer", "remote_agent", "local_protocol"}  # Caddy 라우트 · 정적 파일 · 바깥 주소 · PC — 지을 SIF 가 없다
+def git(*a):
+    return subprocess.run(["git", "-C", str(hub), *a], capture_output=True)
+r = git("ls-tree", "-d", "--name-only", "@{u}", "integrations/")
+up = r.returncode == 0
+if up:                                                     # cae00 이 받을 판의 앱 — 받지 않은 앱도 보고, 올리지 않은 앱은 보지 않는다
+    dirs = sorted({Path(p).name for p in r.stdout.decode(errors="replace").splitlines() if p.strip()})
+else:
+    base = hub / "integrations"
+    dirs = sorted(p.name for p in base.iterdir() if p.is_dir()) if base.is_dir() else []
+def show(rel):  # 아래 열쇠 대조와 같다 — @{u}, 없으면 작업 트리
+    if up:
+        s = git("show", f"@{{u}}:{rel}")
+        if s.returncode == 0:
+            return s.stdout
+    p = hub / rel
+    return p.read_bytes() if p.is_file() else None
+miss, local, skip, unknown = [], [], [], []
+for d in dirs:
+    raw = show(f"integrations/{d}/.portal/manifest.yaml")
+    if raw is None:
+        continue                                           # 매니페스트가 없는 폴더는 앱이 아니다(허브도 건너뛴다)
+    try:
+        man = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        man = None
+    launch = man.get("launch") if isinstance(man, dict) else None
+    mode = launch.get("mode") if isinstance(launch, dict) else None
+    if mode in NO_SIF:
+        skip.append(f"{d}({mode})")
+    elif mode not in SIF:
+        unknown.append(d)
+    elif not (hub / "var/sifs" / f"{d}.sif").is_file():
+        lo = hub / "integrations" / d / ".portal" / "manifest.local.yaml"
+        if lo.exists() or lo.is_symlink():                 # 박스 덮어쓰기 — 위 크기 대조와 같은 판정(dist-to-drive 의 _has_local)
+            local.append(d)
+        else:
+            miss.append((d, mode))
+for d, mode in miss:
+    how = ("dev 의 허브가 아직 받지 않은 앱이다 — HEAXHub 를 받으면(git pull) 허브 스캔이 짓는다. 지어진 뒤 올린다" if not (hub / "integrations" / d).is_dir()
+           else f"허브 빌드 기록(var/logs/sif_build_{d}.log)을 보고 지은 뒤(deploy/apptainer/redeploy-app.sh {d} --rebuild) 올린다")
+    print(f"✗ {d} — launch.mode {mode} 인데 var/sifs/{d}.sif 가 없다(이 박스에서 지어지지 않았다). dist-to-drive 는 var/sifs 에 있는 SIF 만 싣는다 — "
+          f"cae00 허브는 짓지 못해 이 앱을 띄우지 않는다. {how}")
+for d in local:
+    print(f"○ {d} — var/sifs/{d}.sif 가 없다. 예상된 것이다 — 이 박스 덮어쓰기(integrations/{d}/.portal/manifest.local.yaml)가 있는 앱이라 dist-to-drive 가 "
+          f"기본으로 싣지 않는다. cae00 에 보내야 하는 앱이면 빌드 박스에서 덮어쓰지 않는다(HEAXHub MANIFEST_SPEC 10절)")
+if skip:
+    print(f"○ SIF 대상 아님 {len(skip)}개 — {', '.join(skip)}. Caddy 라우트 · 정적 파일 · 바깥 주소라 지을 SIF 가 없다")
+if unknown:
+    print(f"? launch.mode 를 못 읽은 앱 {len(unknown)}개({', '.join(unknown)}) — 지어졌는지 보지 않았다")
+PY
+)"
+      if [ -n "$_unbuilt" ]; then
+        printf '%s\n' "$_unbuilt" | sed 's/^/  /'
+        case $'\n'"$_unbuilt" in *$'\n✗'*) DRIFT=1; h=1 ;; esac    # 받은 글에서 바로 본다 — 아래 열쇠 대조와 같은 까닭(파이프로 판정하지 않는다)
+      fi
       # 캐시 열쇠 — cae00 허브는 앱 소스를 GitHub(매니페스트 source.ref)에서 받고, 커밋이 바뀌면 sha256(커밋 + 매니페스트 + 틀)을
       # 받은 SIF 의 .sif.hash 와 견준다. 다르면 다시 지으려다(그 박스는 못 짓는다) 실패해 그 회차엔 앱을 띄우지 않는다(HEAXHub
       # integrations_scanner — 빌드 실패는 기동 없음). 크기만 보면 dev 와 Drive 가 같이 낡은 앱을 놓친다(10-25 — StepForge 는 문서 커밋

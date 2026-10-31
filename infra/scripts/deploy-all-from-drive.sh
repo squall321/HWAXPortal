@@ -10,6 +10,7 @@
 #   SF_RESTORE_DB=1 ./infra/scripts/deploy-all-from-drive.sh signalforge  # 최초 시드/갱신 시에만 DB 복원
 #   AGENT_RESTART_FORCE=1 ./infra/scripts/deploy-all-from-drive.sh portal # 도는·줄 선 심의가 있어도 포털·nginx 를 재기동(구독이 전부 끊긴다)
 #       기본은 그 반대다 — 심의가 있으면 포털 구획(이미지 받기·재기동)·heax 구획(SIF 받기·허브 재기동)과 nginx 재기동을 건너뛰고 ○ 로 남긴다.
+#       update-all 아래(HWAX_DELIB_GATE)면 SignalForge 재기동도 도는 심의를 한 번 기다리고(HWAX_DELIB_WAIT_S), 못 끝나면 건너뛴다(10-31 A25).
 #
 # Prereqs (once): an rclone remote configured on cae00 (likely ALREADY there from another project —
 # we auto-detect ApptainerImages:, else the first remote, else pass --remote=). You do NOT need to
@@ -376,13 +377,36 @@ fi
 if want signalforge; then
   if [ -n "$SF_DIR" ]; then
     hr "SignalForge  ($SF_DIR)"
+    _src=0
     ( cd "$SF_DIR"
       git_update
       [ -f .env ] || { [ -f .env.example ] && cp .env.example .env; }   # 최초엔 example → 시크릿은 별도 채움
+      _sif0="$(hwax_fp apptainer/sif)"                # 받기 전 SIF — 아래 심의 기다림이 '받기가 SIF 를 갈았나' 를 본다
       ./scripts/sync-from-drive.sh || exit 1          # SIF(+.env.example) — Drive→apptainer/sif/ (SF 자체 remote 자동감지)
       _cur="$(_fp_git; hwax_fp apptainer/sif .env)"
       _stop()  { bash scripts/down.sh 2>/dev/null || true; }
       _start() { SF_MIGRATE=1 ./scripts/up.sh; }        # SIF 있으면 build skip; 배포라 alembic 멱등 실행
+      # 도는 심의가 있으면 내리기 전에 한 번 기다린다 — update-all 아래(HWAX_DELIB_GATE)만(docs/delib-ops O1 · 10-31 A25, 사용자 결정 (가)).
+      # down.sh 는 MCP 까지 내린다 — 도는 좌석의 VOC 도구 호출이 그 순간 실패한다. 기다림은 그 실행에 하나다(§4 의 signalforge-mcp · 게이트웨이 ·
+      # 에이전트 서버와 함께 — lib/delib-busy.sh 의 hwax_delib_gate). 못 끝나면 내리지 않고 ○ 로 미룬다(DB 병합도 하지 않는다 — 다음 실행이 한다).
+      # 미룬 장부 줄의 이름('signalforge 재기동 건너뜀')은 계약이다 — §4 의 update-sites 가 그 줄을 보고 signalforge-mcp 도 함께 미룬다(옛 백엔드 ·
+      # 이관 안 된 DB 위에 새 sf-mcp 만 뜨지 않게).
+      # 재기동이 정해졌을 때만 묻는다(묻기의 장부 줄은 아래 cycle 이 한 번만 적게 비운다 — kooremapper 구역과 같은 꼴). 받기가 SIF 를 갈았으면
+      # 묻지 않는다 — 떠 있는 인스턴스 밑을 이미 덮어 미루면 깨진 squashfs 위에서 돈다(기다리는 동안도 그렇다). NO_RESTART=1 이면 내리지 않으니 묻지 않는다.
+      if [ -n "${HWAX_DELIB_GATE:-}" ] && [ "${RESTART:-0}" != 1 ] \
+         && HWAX_RESTART_SKIPPED_FILE= hwax_restart_needed signalforge "$_cur" http://127.0.0.1:18000/health http://127.0.0.1:17370/ >/dev/null; then
+        if [ "$(hwax_fp apptainer/sif)" != "$_sif0" ]; then
+          echo "  · signalforge: 받기가 떠 있는 인스턴스 밑의 SIF 를 갈았다 — 도는 심의를 묻지 않고 지금 재기동한다(기다리거나 미루면 깨진 마운트로 돈다)"
+        elif hwax_alive http://127.0.0.1:18000/health; then
+          _g=0; hwax_delib_gate signalforge "" "${HWAX_DELIB_PAUSE_BY:-update-all}" || _g=$?
+          if [ "$_g" = 3 ]; then
+            _b="$HWAX_DELIB_GATE_BUSY"
+            hwax_skip "signalforge 재기동 건너뜀" "심의 ${_b% *}건 진행 중, ${_b#* }건 대기 — SignalForge 를 내리면(MCP 도 함께 내린다) 좌석의 VOC 도구 호출이 그 순간 실패한다. 리포의 코드는 당겼지만(Drive 의 SIF 는 그대로였다) 떠 있는 SignalForge 는 옛 프로세스 그대로고 DB 병합도 하지 않았다" \
+              "심의가 끝난 뒤 update-all 을 다시 돌린다 · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
+            exit 3
+          fi
+        fi
+      fi
       hwax_restart_cycle signalforge "$_cur" _stop _start http://127.0.0.1:18000/health http://127.0.0.1:17370/ || exit 1   # API 와 프론트 둘 다
       # ── DATA: 기본 = 비파괴 MERGE(dev 신규 VOC 반영 + cae00 축적 유지, DROP 안 함).
       #    SF_RESTORE_DB=1 은 파괴적 통짜 복원(최초 시드/재구축용 오버라이드). ──
@@ -396,7 +420,10 @@ if want signalforge; then
         bash scripts/drive-sync/merge-from-drive.sh || echo "  ⚠ SF merge 실패 — 사전 스냅샷으로 롤백 가능(운영 무손상)"
       else
         echo "  · DB 보존(merge 스크립트 없음)."
-      fi ) && ok "signalforge up" || skip "signalforge failed (see above)"
+      fi
+      true ) || _src=$?
+    # 3 = 심의 때문에 미뤘다(○ 를 이미 찍었다) — 허브 구역과 같은 꼴로 실패로 세지 않고, 올라왔다고도 말하지 않는다.
+    case "$_src" in 0) ok "signalforge up" ;; 3) ;; *) skip "signalforge failed (see above)" ;; esac
   else skip "SignalForge repo not found (set SF_DIR=)"; fi
 fi
 

@@ -586,6 +586,10 @@ grep -c FROM_RA ../HWAXAgentServer/.env                          # 0 — 마커�
   기본값이 이 박스에만 안 먹는다) · 절차 원장에서 선언한 상한(30초·110초)보다 오래 걸린 단계를 찾는다 · 포털 대화 저장소가 로컬 디스크인지 본다.
 - **심의가 도는 동안에는 update-all 이 포털·nginx·HEAX Hub 재기동(새 앱 SIF 받기 포함)·에이전트서버 재기동과 게이트웨이 재프로비저닝을 미루고 `○` 로 남긴다**(강행은 `AGENT_RESTART_FORCE=1`).
   단 이번 첫 실행은 떠 있는 에이전트서버가 옛 판이라 그 보호가 걸리지 않는다 — 도는 심의가 없을 때 돌린다.
+  (2026-10-31 덧붙임) 에이전트서버 · 게이트웨이(코드가 바뀐 재기동) · SignalForge(MCP 포함)는 곧바로 미루지 않고 새 심의를 멈춘 뒤 도는 심의를
+  한 번 기다린다(`HWAX_DELIB_WAIT_S` 600초 — 셋 가운데 처음 재기동할 것 앞에서 하나). 끝나면 셋을 재기동하고 못 끝나면 셋 다 `○ … 재기동 건너뜀` 이다
+  — [delib-ops/server-setup.md](delib-ops/server-setup.md) §4 덧붙임(사용자 결정 A25). 단 Drive 에서 SignalForge SIF 가 새로 왔으면(의존성이 바뀐 판)
+  SignalForge 는 기다리지 않고 곧바로 재기동한다 — 받기가 떠 있는 인스턴스의 이미지를 이미 덮어써서다(그때 도는 좌석의 VOC 도구 호출은 끊긴다).
 
 ## 2026-10-17 반영분 — 업데이트 리뷰 후속 · 사용자 결정
 
@@ -641,6 +645,9 @@ cd ~/Projects/HWAXPortal && git fetch -q origin main && git show origin/main:inf
 있으면 받은 SIF 로 그대로 띄운다. 커밋이 바뀌면 캐시 열쇠 `sha256(커밋 + 등록 사본 + 틀)` 을 받은 SIF 의 `.sif.hash` 와 견주고, 다르면
 다시 지으려다(이 박스는 못 짓는다) 실패해 **그 회차엔 앱을 띄우지 않는다** — 허브가 다시 뜨면 그 앱은 꺼진 채 남는다. 그래서 앱 리포에
 문서만 올려도 dev 가 다시 지어 Drive 로 보내야 한다. dev 에서 `./infra/scripts/drive-drift.sh heax` 가 10-25 부터 이 열쇠까지 견준다.
+(2026-10-31 덧붙임) 같은 검사가 **지어지지 않은 앱**도 `✗` 로 센다 — 이 박스가 받을 매니페스트의 `launch.mode` 가 service · job_runner 인데 dev 의
+`var/sifs/<앱>.sif` 가 없으면 허브 dist-to-drive 가 싣지 않아(있는 SIF 만 싣는다) 이 박스는 그 앱을 띄우지 못한다. proxy · iframe · url · static 은
+`○ SIF 대상 아님 N개` 한 줄이고, 박스 덮어쓰기(`manifest.local.yaml`)가 있는 앱은 종전대로 `○` 다.
 - MaterialTwinWeb — dev 리포가 GitHub 보다 61커밋 앞이다(09-05 뒤 push 안 함). dev 허브는 로컬 리포에서 받아 지었고 이 박스는 GitHub 을
   받는다. 지금은 커밋이 그대로라 받은 SIF 로 뜨지만, GitHub `main` 이 지은 커밋(a3563b6)이 아닌 곳으로 움직이면 뜨지 못한다. push 는
   사용자 결정 대기다(실을 범위). 다시 쓴 커밋을 올리게 되면 dev 가 그 커밋으로 지은 SIF 를 Drive 에 먼저 올린 뒤 push 하고, 이 박스의
@@ -1031,6 +1038,10 @@ SP 허브 주소 · `core:read` 토큰(받기를 켜는 조건 — 넣으면 시
   update-all 이 새 덤프를 스스로 병합하고, 손 병합(8-1)도 그 뒤다.
 - ⚠ **SignalForge** — 이 판을 받는 update-all 은 SignalForge 코드가 바뀌었으면 sf-mcp 를 곧바로 새 코드로 다시 띄운다. 그쪽 10-31 cae00 문서의 재기동 차례(병합 뒤)와
   어긋나므로 받기 전에 server-setup 3절의 사용자 결정 줄을 본다. 받은 뒤에는 그 절의 PLM 처음 받기를 바로 한다.
+  (2026-10-31 덧붙임, A25 판부터) 심의가 돌면 '곧바로' 가 아니다 — SignalForge · sf-mcp 재기동도 도는 심의를 한 번 기다리고, 못 끝나면
+  `○ signalforge 재기동 건너뜀` · `○ signalforge-mcp 재기동 건너뜀` 으로 함께 미룬다(옛 프로세스 그대로 · DB 이관 · 병합도 다음 실행 — §4 에서 심의가
+  끝났어도 sf-mcp 만 먼저 뜨지 않는다) — [delib-ops/server-setup.md](delib-ops/server-setup.md) §4 덧붙임. 단 Drive 에서 SignalForge SIF 가 새로
+  왔으면(의존성이 바뀐 판) 기다리지 않고 곧바로 재기동한다 — 받기가 떠 있는 인스턴스의 이미지를 이미 덮어써서다(그때 도는 좌석의 VOC 도구 호출은 끊긴다).
 - **챗 관문 넷(HA-27 ~ HA-30)** — 에이전트 서버와 포털(화면 Drive `images-20261030-220551Z`)을 같은 판으로 받는다. 받은 뒤 `/health` 넷과 update-all §7 줄을
   본다(6-1). 손잡이는 모두 에이전트 서버 재기동 뒤에 먹는다(6-2).
 - **받은 편지함** — update-all 이 git 받기 뒤 `→ cae00 받은 편지함 — …` 줄로 이 박스에 마지막으로 알린 뒤의 새 글을 알리고 끝 요약에서 다시 낸다

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 에이전트 서버에 도는·줄 선 심의가 있는지 묻는다 — update-all 이 그 서버를 재기동하기 전에 본다(§4 update-sites · §5 재프로비저닝).
+# 10-31 부터 게이트웨이 · SignalForge 재기동 앞에서도 같은 기다림 하나를 쓴다(아래 hwax_delib_gate — docs/delib-ops O1 · 사용자 결정 A25 (가)).
 #
 # 왜 — 좌석 20석 넘는 심의는 몇 시간 돈다. 에이전트 서버의 재기동은 2초 유예 뒤 강제 종료라, 코드나 설정이 바뀐 update-all 한 번이
 # 도는 심의와 줄 선 심의를 말없이 지운다(재개가 없다 — 줄은 메모리에만 있다). 유예를 늘려서는 몇 시간짜리를 살리지 못한다.
@@ -67,6 +68,7 @@ PY
 #       이 lib 만 읽는 쪽(update-all 머리 · 시험 사본)에서도 돌게 따로 둔다.
 #   hwax_delib_wait <health url> <max_s>  hwax_delib_busy 가 '없다'(1) · '내려갔다'(2)가 될 때까지 HWAX_DELIB_WAIT_POLL_S(기본 10)초마다 본다.
 #       마지막에 본 "<진행> <대기>" 를 찍는다. 0 = 비었다 · 1 = 시간이 다 됐다(또는 매달렸다 — 4 — 기다릴 수 없다).
+#   hwax_delib_gate · hwax_delib_gate_lower   위 함수들을 엮은 '한 번 기다리기' — 정의 위의 머리 주석을 본다.
 #   주소는 health url 에서 /health 를 뗀 것이다. health url 을 비우면 ${HWAX_AGENT_URL:-http://127.0.0.1:9009}/health 다(update-all 이 이 꼴로
 #   부른다 — 시험이 HWAX_AGENT_URL 로 바꿔 끼운다). 호출은 전부 --noproxy '*' · -m 4 다(위 hwax_delib_busy 와 같은 까닭).
 # ⚠ 0 아닌 값을 정상으로 돌려준다 — `set -e` 스크립트에서는 `_out="$(hwax_delib_pause …)" || _rc=$?` 로 받는다.
@@ -197,4 +199,90 @@ hwax_delib_wait() {
     [ $((SECONDS - t0)) -ge "$max" ] && { echo "$last"; return 1; }
     sleep "$gap"
   done
+}
+
+# ── 한 번 기다리기 — 에이전트 서버 · 게이트웨이 · SignalForge 를 내리기 전(docs/delib-ops O1 · 10-31 A25, 사용자 결정 (가)) ──────────────
+#   hwax_delib_gate <이름> <에이전트 서버 health url> <멈춤 주인>   줄을 찍는다. url 을 비우면 ${HWAX_AGENT_URL:-http://127.0.0.1:9009}/health 다.
+#       재기동이 정해진 뒤 그 서비스를 내리기 직전에 부른다 — 바뀌지 않아 생략하는 실행 · 내려가 있는 서비스에는 부르지 않는다(부르는 쪽 몫).
+#       0 = 내린다(도는 심의가 없다 · 끝나기를 기다렸다 · 심의 수를 모른다 — 2 · 4 · 강행 AGENT_RESTART_FORCE=1).
+#       3 = 미룬다(도는 심의가 끝나지 않았다) — ○ 줄은 부르는 쪽이 적는다(서비스마다 끊기는 것이 다르다).
+#       남기는 셸 변수 — HWAX_DELIB_GATE_PROBE(hwax_delib_busy 의 rc) · HWAX_DELIB_GATE_BUSY("<진행> <대기>") · HWAX_DELIB_PAUSE_RAISED ·
+#       HWAX_DELIB_PAUSE_URL(이 셸이 세운 멈춤 — hwax_delib_gate_lower 가 내린다).
+#   기다림은 한 실행에 한 번이다. 처음 만난 재기동이 새 심의 멈춤을 세우고(새 시작 · 이어하기는 '점검 중' 으로 거절 · 줄 선 심의는 붙잡힌다)
+#       HWAX_DELIB_WAIT_S(기본 600 · 0 = 기다리지 않고 미룬다)까지 기다린다. 끝나면 멈춤을 세워 둔 채 재기동하고(멈춤은 그 실행의 끝에서 내린다 —
+#       표지 HWAX_DELIB_PAUSE_MARK 가 있으면 그 파일을 남겨 update-all 끝맺음이 내린다), 못 끝나면 멈춤을 그 자리에서 내리고 미룬다. 그 뒤의
+#       재기동은 다시 기다리지 않는다 — 묻는 순간 비었으면 재기동하고 돌면 미룬다. 판정(waited · deferred)은 HWAX_DELIB_GATE 파일에 둔다 — update-all 이
+#       물려주어 같은 실행의 deploy-all(§2 SignalForge)과 update-sites(§4 signalforge-mcp · 게이트웨이 · 에이전트 서버)가 함께 쓴다. 없으면 이 셸에만 둔다.
+#       단 기다림 하나가 덮는 것은 그 멈춤이 서 있는 동안뿐이다(반대 검토 10-31) — waited 인데 멈춤이 이 주인(by)의 것으로 서 있지 않으면(수명이
+#       지났다 · 내려갔다 · 남의 것이다) 그 사이 새 심의가 시작될 수 있었다. 그때는 미루지 않고 처음처럼 한 번 더 기다린다(O1 혼자일 때와 같다).
+#   기다릴 수 없으면 곧바로 미룬다(종전 그대로 — 판정은 남기지 않아 뒤의 재기동이 다시 본다) — 기다림 0 · 줄을 못 넘기는 엔진에 줄 선 심의가 있다
+#       (멈춤 동안 줄은 그대로 선다) · 멈춤을 모르는 엔진(옛 판 — 보내지 않는다) · 멈춤을 세우지 못했다. 남의 멈춤(409)이 서 있으면 그 아래서
+#       기다리기만 한다(내리지 않는다). 수명은 기다림 + 30분이다 — 부른 실행이 죽어도 스스로 풀린다.
+# ⚠ 셸 변수를 남기므로 명령 치환 없이 부른다 — `hwax_delib_gate … || _rc=$?`.
+_hwax_delib_gate_get() {
+  if [ -n "${HWAX_DELIB_GATE:-}" ]; then head -n 1 "$HWAX_DELIB_GATE" 2>/dev/null || true; else printf '%s' "${_HWAX_DELIB_GATE_STATE:-}"; fi
+}
+_hwax_delib_gate_put() {
+  _HWAX_DELIB_GATE_STATE="$1"
+  if [ -n "${HWAX_DELIB_GATE:-}" ]; then { printf '%s\n' "$1" > "$HWAX_DELIB_GATE"; } 2>/dev/null || true; fi
+  return 0
+}
+hwax_delib_gate() {
+  local name="$1" url="${2:-${HWAX_AGENT_URL:-http://127.0.0.1:9009}/health}" by="${3:-}" b="" brc=0 st dws prc=0 pout t0 wrc=0 wb label ps="" psrc=0
+  HWAX_DELIB_GATE_BUSY=""
+  b="$(hwax_delib_busy "$url")" || brc=$?
+  HWAX_DELIB_GATE_PROBE="$brc"
+  [ "$brc" = 0 ] || return 0
+  HWAX_DELIB_GATE_BUSY="$b"
+  st="$(_hwax_delib_gate_get)"
+  case "$st" in
+    waited)
+      # 앞의 기다림은 그 멈춤이 서 있는 동안만 덮는다. 멈춤의 수명은 기다림 + 30분이다 — §2 에서 기다린 실행의 2b · 3 · 2c · 2d · 3.5 가 그보다
+      # 길면 §4 전에 풀려 새 심의가 시작된다. 그때 미루기만 하면 O1 혼자일 때(멈추고 기다린 뒤 재기동)보다 못하다 — 한 번 더 기다린다.
+      # 멈춤이 이 주인의 것으로 서 있으면(멈춤을 지나는 리스크 앱 패널 등) 종전대로 미룬다. 멈춤을 읽지 못하면 끊지 않는 쪽 — 미룬다.
+      ps="$(hwax_delib_pause_state "$url")" || psrc=$?
+      if [ "$psrc" != 0 ] || { [ "${ps%% *}" = 1 ] && [ "${ps#* }" = "$by" ]; }; then
+        echo "  · $name: 이 실행의 기다림은 앞에서 썼다 — 그 뒤에 시작된 심의 ${b% *}건이 돈다. 다시 기다리지 않고 재기동을 미룬다"; return 3
+      fi
+      echo "  · $name: 앞에서 기다렸지만 $by 의 새 심의 멈춤이 지금은 서 있지 않다(수명이 지났거나 내려갔다) — 그 사이 시작된 심의 ${b% *}건을 한 번 더 기다린다" ;;
+    deferred) echo "  · $name: 앞에서 기다린 심의가 아직 끝나지 않았다(${b% *}건 진행 중) — 다시 기다리지 않고 재기동을 미룬다"; return 3 ;;
+  esac
+  dws="${HWAX_DELIB_WAIT_S:-600}"; case "$dws" in ''|*[!0-9]*) dws=600 ;; esac
+  [ "$dws" -gt 0 ] || return 3
+  { [ "${b#* }" = 0 ] || hwax_delib_durable "$url"; } || return 3
+  case "$name" in agent-server) label="에이전트 서버" ;; mcp-gateway) label="게이트웨이" ;; signalforge*) label="SignalForge" ;; *) label="$name" ;; esac
+  pout="$(hwax_delib_pause on "$url" "$by" "$((dws + 1800))" "$label 재기동 — 도는 심의가 끝나기를 기다린다($by)")" || prc=$?
+  case "$prc" in
+    0) HWAX_DELIB_PAUSE_RAISED=1; HWAX_DELIB_PAUSE_URL="$url"
+       if [ -n "${HWAX_DELIB_PAUSE_MARK:-}" ]; then { printf '%s\n' "$url" > "$HWAX_DELIB_PAUSE_MARK"; } 2>/dev/null || true; fi ;;
+    5|7) ;;                                            # 남의 멈춤 — 그 아래서 기다리기만 한다
+    3) return 3 ;;                                     # 멈춤을 모르는 엔진 — 보내지 않았다
+    *) echo "  · $name: 새 심의를 멈추지 못했다($pout) — 기다리지 않고 종전대로 미룬다"; return 3 ;;
+  esac
+  echo "  · $name: $pout — 도는 심의 ${b% *}건이 끝나기를 최대 ${dws}초 기다린 뒤 재기동한다(HWAX_DELIB_WAIT_S · 그동안 새 심의는 '점검 중' 으로 거절된다 · 이 실행의 다른 재기동도 이 기다림 하나로 덮는다)"
+  t0=$SECONDS; wb="$(hwax_delib_wait "$url" "$dws")" || wrc=$?
+  if [ "$wrc" = 0 ]; then
+    _hwax_delib_gate_put waited
+    echo "  · $name: 도는 심의가 끝났다($((SECONDS - t0))초) — 재기동한다(줄 선 심의는 재기동 뒤 같은 차례로 다시 선다)"
+    return 0
+  fi
+  [ -n "$wb" ] && HWAX_DELIB_GATE_BUSY="$wb"
+  _hwax_delib_gate_put deferred
+  echo "  · $name: ${dws}초 안에 끝나지 않았다 — 재기동을 미룬다"
+  hwax_delib_gate_lower "$by"                          # 이번에 재기동하지 않는다 — 새 심의를 막고 있을 까닭이 없다
+  return 3
+}
+# hwax_delib_gate_lower <멈춤 주인>   이 셸이 세운 멈춤을 내리고 표지를 지운다(세우지 않았으면 아무것도 하지 않는다 · 늘 0).
+hwax_delib_gate_lower() {
+  local o r=0
+  [ "${HWAX_DELIB_PAUSE_RAISED:-0}" = 1 ] || return 0
+  HWAX_DELIB_PAUSE_RAISED=0
+  o="$(hwax_delib_pause off "${HWAX_DELIB_PAUSE_URL:-}" "$1")" || r=$?
+  if [ "$r" = 0 ]; then
+    if [ -n "${HWAX_DELIB_PAUSE_MARK:-}" ]; then rm -f "$HWAX_DELIB_PAUSE_MARK"; fi
+    echo "  · 새 심의 멈춤을 내렸다(by $1) — 새 심의를 다시 받고 줄 선 심의가 든다"
+  else
+    echo "  ⚠ 새 심의 멈춤을 내리지 못했다($o) — 수명이 지나면 스스로 풀린다(지금 풀려면 curl -s --noproxy '*' -X POST ${HWAX_DELIB_PAUSE_URL%/health}/drain -H 'content-type: application/json' -d '{\"on\":false,\"scope\":\"delib\",\"by\":\"$1\"}')" >&2
+  fi
+  return 0
 }

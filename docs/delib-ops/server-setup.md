@@ -101,6 +101,23 @@ curl -s --noproxy '*' -X POST http://127.0.0.1:9009/drain -H 'content-type: appl
 않는다 — 줄은 재기동 뒤 같은 차례로 다시 선다) → 멈춤을 내린다. update-all 은 이것을 저절로 한다(O1 — 도는 심의를 `HWAX_DELIB_WAIT_S`
 기본 600초까지 기다리고, 못 기다리면 종전대로 미룬다. 재기동 뒤 '다시 선 줄 N건' 을 찍는다).
 
+> **2026-10-31 덧붙임 — 게이트웨이 · SignalForge 도 같은 기다림 하나를 지난다(사용자 결정 A25 (가)).** 도는 좌석은 게이트웨이로 도구를
+> 부른다 — 심의 중에 게이트웨이나 SignalForge(그 `down.sh` 는 MCP 까지 내린다)를 내리면 그 순간의 호출이 실패한다. 그래서 update-all 은
+> 셋 가운데 **처음으로 재기동할 것**(§2 의 SignalForge → §4 의 signalforge-mcp · 게이트웨이 · 에이전트 서버 차례) 앞에서 위 멈춤을 세우고
+> 한 번 기다린다. 끝나면 멈춤을 세워 둔 채 셋을 다 재기동하고(멈춤은 실행 끝에서 내린다), 600초 안에 못 끝나면 셋 다 미루고 멈춤을 그
+> 자리에서 내린다 — 뒤의 재기동은 다시 기다리지 않는다(묻는 순간 비었으면 재기동한다). 미룬 것은 `○ signalforge 재기동 건너뜀` ·
+> `○ signalforge-mcp 재기동 건너뜀` · `○ mcp-gateway 재기동 건너뜀` · `○ agent-server 재기동 건너뜀` 으로 남는다(끝 요약에도). 바뀌지
+> 않아 재기동하지 않는 실행 · 내려가 있는 서비스는 기다리지 않는다. 강행은 그대로 `AGENT_RESTART_FORCE=1` 이다. 손으로 돌리는
+> `update-sites.sh mcp-gateway` · `deploy-all-from-drive.sh signalforge` 는 종전대로 묻지 않는다. AIDataHub · KooRemapper · 자기치유
+> (`redeploy-app.sh`)는 그대로다. 멈춤의 수명은 기다림 + 30분이다 — §2 에서 세워지면 실행 끝이나 그 수명 가운데 먼저 오는 때까지 새 심의를
+> '점검 중' 으로 받는다. 기다림 하나가 덮는 것은 그 멈춤이 서 있는 동안뿐이라, §2 에서 기다렸는데 §4 까지가 수명보다 길어 멈춤이 풀렸으면
+> §4 는 그 사이 시작된 심의를 한 번 더 기다린다(`· …: 앞에서 기다렸지만 update-all 의 새 심의 멈춤이 지금은 서 있지 않다 … 한 번 더 기다린다`
+> — O1 과 같다). §2 가 SignalForge 를 미뤘으면 §4 의 signalforge-mcp 도 묻지 않고 함께 미룬다(`○ signalforge-mcp 재기동 건너뜀 — 이 실행이 §2 에서
+> SignalForge 재기동을 미뤘다 …`) — 그 사이 심의가 끝났어도 DB 이관(`SF_MIGRATE=1`) · 병합 없이 sf-mcp 만 새 코드로 뜨지 않게 한다.
+> **예외 하나 — Drive 에서 SignalForge SIF 가 새로 왔으면(의존성이 바뀐 판) SignalForge 는 기다리지 않고 곧바로 재기동한다**
+> (`· signalforge: 받기가 떠 있는 인스턴스 밑의 SIF 를 갈았다 — 도는 심의를 묻지 않고 지금 재기동한다`). 받기가 떠 있는 인스턴스의 이미지를
+> 이미 덮어써, 기다리거나 미루면 깨진 이미지 위에서 돈다 — 그때 도는 좌석의 VOC 도구 호출은 끊긴다(심의가 없을 때 돌리면 피한다).
+
 ## 5. 끊긴 심의 이어하기(R3)
 
 재기동으로 끊긴 MCP 심의는 진행 조회(`deliberate_status`)의 `resume` 에 끝난 라운드 수와 이어 돌 라운드 수가 있다. `deliberate_continue(previous_job_id=<그 잡>)`
