@@ -120,6 +120,11 @@ class FakeHubWDA:
             run["render"] = {"status": "queued", "targets": run["render_opts"]["targets"], "requested": run["render_opts"]["targets"],
                              "outputs": {}, "skipped": [], "error": None}
 
+    def render_to(self, run_id: str, status: str):
+        """렌더의 가운데 차례 — WDA 는 queued(렌더 자리를 기다림 · WDA_RENDER_CONCURRENCY) → building(준비) → rendering → done | failed 다(11-01)."""
+        assert status in ("building", "rendering")
+        self.runs[run_id]["render"]["status"] = status
+
     def rendered(self, run_id: str, *, skip: dict | None = None):
         run = self.runs[run_id]
         req = run["render"]["requested"]
@@ -243,7 +248,7 @@ class FakeHubWDA:
             n, t = self._text_blocks(body["report_json"], fmt)
             if not t:
                 return self.env(422, message=f"ValueError: 텍스트를 가진 블록이 없다 (블록 {n}개, 텍스트 0개)", code="INVALID")
-            rid = f"wr-{uuid.uuid4().hex}"
+            rid = f"wr-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}-{uuid.uuid4().hex}"    # WDA 의 주인 있는 실행 id 꼴(runs.py new_run_id)
             self.runs[rid] = {"run_id": rid, "owner": email, "status": "queued", "error": None, "render": None,
                               "format": fmt, "render_opts": body.get("render"),
                               "stages": [{"stage": s, "status": "pending", "error": None} for s in ("ingest", "fragmentize", "scenario", "build")]}
@@ -789,6 +794,12 @@ def test_진행을_보고_끝나면_단추를_누른_대화에_알림_한_건(bo
     fake.built(rid)
     st = c.get(f"/agent/deck/jobs/{job}").json()
     assert (st["state"], st["step"]) == ("rendering", "차례 기다림")
+    fake.render_to(rid, "building")                          # WDA 렌더의 차례(11-01) — 자리를 얻고 준비
+    st = c.get(f"/agent/deck/jobs/{job}").json()
+    assert (st["state"], st["step"], st["progress"], st["next"]) == ("rendering", "준비", 70, None)
+    fake.render_to(rid, "rendering")
+    st = c.get(f"/agent/deck/jobs/{job}").json()
+    assert (st["state"], st["step"], st["progress"]) == ("rendering", "만드는 중", 80)
     fake.rendered(rid)
     st = c.get(f"/agent/deck/jobs/{job}").json()
     assert (st["state"], st["next"]) == ("done", "finish")

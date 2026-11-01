@@ -265,6 +265,16 @@ WDA 둘째 답(11-01 저녁) — 심의 꼴 `delib-16x9` 를 지었다(WDA 로�
 4. 시간 · 크기 — 파이프라인 0.5초 + 렌더(pptx + pdf) 5.0초 = 5.5초, pptx 1,200 KB · pdf 1,926 KB. **보존 없음 · 동시 상한 없음** — W-13 · W-14.
 5. 장면의 새 칸 `camera` · `transition` 은 기본값이 있어 계약에 영향이 없다.
 
+6. **셋째 답(11-01 밤) — W-1 ~ W-15 · W-22 를 지었다**(WDA `d1f144b` · `3b7b5d2` · `e72e54d`). **로컬 판이다 — 사용자가 push 하기 전에는 허브에 없다**(P-1).
+   - `/api/health` 의 `features` — `doc_formats` · `error_codes` · `format:delib-16x9` · `idempotency` · `interrupted` · `owner` · `render_chain` ·
+     `skipped_report`. `formats["delib-16x9"]` 는 `active` 다(심의 뼈대가 6장면이 되고 쟁점 장면이 더해졌다).
+   - `render.status` 는 `queued → building → rendering → done | failed` 다. `queued` 는 WDA 의 렌더 자리(`WDA_RENDER_CONCURRENCY=2`)를 기다리는 것이다.
+     포털은 차례 기다림 · 준비 · 만드는 중으로 접는다(포털 시험의 가짜 WDA 도 `building` 을 낸다).
+   - W-2(주인만)는 미들웨어 한 곳에서 건다. W-11(내려받기 머리)은 렌더 잡 경로에도 건다.
+   - 주인 있는 실행 id 는 `wr-<UTC 시각>-<16진 32자>` 다(포털의 `_RUN_RE` 가 받는다 · 가짜 WDA 도 이 꼴).
+   - **보존(W-13)은 끈 채로 둔다 — 사용자 결정(11-01)**. 파일은 지우지 않는다. 포털의 알림은 그대로 '7일 뒤에는 받지 못할 수 있다' 고 말한다(포털의
+     잡 기록이 7일 뒤 지워진다). 404 · 410 을 '지워짐' 으로 다루는 길(WD-D62 · D77)은 나중을 위해 남긴다.
+
 블록 글자 규칙(WDA 가 알려 준 것 — 포털 시험의 가짜 WDA 가 그대로 따른다) — `rich_text` 의 글은 `content.markdown`, `heading` 은 `content.text` 다.
 heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항목이 없는 블록은 글자 0 이다. 모든 블록의 글자가 0 이면 거절한다(지금 문구
 `ValueError: 텍스트를 가진 블록이 없다 (블록 8개, 텍스트 0개)` — W-10 이 들어오면 `INVALID` 로). 포털은 RA 의 ReportRead 를 **바꾸지 않고** 넘긴다.
@@ -285,18 +295,20 @@ heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항�
 | W-10 | 오류 봉투에 `code` | M0 필수 |
 | W-11 | 내려받기 머리(attachment · Content-Length · nosniff · HTML 은 CSP sandbox) | M0 필수 |
 | W-12 | 재기동에 끊긴 실행 · 렌더를 failed(interrupted) | M0 필수 |
-| W-13 | 보존 기한 · 지운 뒤 404/410 — 지금 아무것도 지우지 않는다 | **강하게 권장** |
-| W-14 | 렌더 동시 상한(줄) — 지금 상한 없음 | **강하게 권장** |
+| W-13 | 보존 기한 · 지운 뒤 404/410 — 지금 아무것도 지우지 않는다 | **강하게 권장** — 11-01 밤 지었으나 **끈 채로 둔다**(사용자 결정 11-01, 10의 6) |
+| W-14 | 렌더 동시 상한(줄) — 지금 상한 없음 | **강하게 권장** — 11-01 밤 지음(`WDA_RENDER_CONCURRENCY=2` · 기다리는 동안 `queued`) |
 | W-15 | Idempotency-Key — 포털이 '결과 모름' 재시도에 같은 키를 보낸다 | 권장(11-01 밤 올림) |
 | W-22 | `Authorization` 머리를 쓰지도 남기지도 않는다(허브가 포털 토큰을 WDA 까지 넘긴다 — 12) | 권장 |
 | W-23 | `/api/health` 에 도는 실행 · 렌더 수(또는 줄 길이)를 싣는다 — 포털의 박스 상한이 WDA 의 실제 일감으로 센다(12) | 권장 |
-| W-21 | 심의 보고서 꼴 `delib-16x9` — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400(11-01 저녁 지음 · draft · 허브 SIF 전) | 심의 자리 단추의 전제 — 포털은 `active` 일 때만 연다(사용자 결정 11-01 — draft 는 숨김) |
+| W-21 | 심의 보고서 꼴 `delib-16x9` — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400(11-01 저녁 지음 · draft · 허브 SIF 전 → 11-01 밤 `active` — 로컬 판, 10의 6) | 심의 자리 단추의 전제 — 포털은 `active` 일 때만 연다(사용자 결정 11-01 — draft 는 숨김) |
 | W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 |
 | W-19 | 슬라이드 PDF | 청하지 않는다(사용자 결정 11-01) |
 | P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 |
 | P-2 | 매니페스트 `launch.portal_auth: true` | 반영됨 — HEAXHub `385783f`(WDA 할 일 없음) |
 
 ## 12. 포털이 적대 검토 두 차례 뒤 바꾼 것(11-01 밤 — WDA 에 닿는 것만)
+
+WDA 의 셋째 답(10의 6)과 맞춰 본 것 — 아래 가운데 202 의 `owner` 확인 · 오류 `code`(W-10) · 같은 키 재시도(W-15) · `Authorization` 을 쓰지 않기(W-22)는 WDA 가 지었다(로컬 판).
 
 - **202 의 `data.owner` 를 포털이 확인한다** — 맡긴 사람의 이메일(대소문자 무시)이 아니면(없거나 다르면) 포털은 그 실행을 따라가지 않고 잡을 실패로 남긴다
   (포털 WD-D57). W-1 이 들어올 때 202 에 `owner` 를 꼭 실어 달라(4.1 의 응답 꼴 그대로).
