@@ -944,6 +944,8 @@ function RunDetailView() {
   const nav = useNavigate();
   const { watch, watched, refreshWatched } = useProcedures();
   const [err, setErr] = useState<string | null>(null);
+  // 누르는 동안 단추를 막는다(확인 · 고르기 카드와 같은 꼴) — 두 번 누르면 재개가 실행기를 둘 띄웠다(W-110, 서버도 둘째를 409 로 막는다)
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => watch(id), [id, watch]);
 
@@ -951,12 +953,15 @@ function RunDetailView() {
   if (!watched) return <Spinner label="실행을 불러오는 중…" />;
 
   const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
     setErr(null);
     try {
       await fn();
       await refreshWatched();
     } catch (e) {
       setErr((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -985,7 +990,7 @@ function RunDetailView() {
           {!running && watched.procedure_version_id && (
             // 이력이 값을 들고 있는데 다시 돌릴 길이 없으면 사람이 칸을 손으로 옮겨 적는다.
             // 옮겨 적는 순간 "같은 입력" 이라는 보장이 사라진다.
-            <button type="button" className="btn-primary pr-btn"
+            <button type="button" className="btn-primary pr-btn" disabled={busy}
                     onClick={() => act(async () => {
                       const r = await replayRun(watched.id, 'live');
                       watch(r.run_id);
@@ -995,12 +1000,14 @@ function RunDetailView() {
             </button>
           )}
           {(watched.state === 'failed' || watched.state === 'unknown') && (
-            <button type="button" className="btn-secondary pr-btn" onClick={() => act(() => resumeRun(watched.id))}>
+            <button type="button" className="btn-secondary pr-btn" disabled={busy}
+                    onClick={() => act(() => resumeRun(watched.id))}>
               재개
             </button>
           )}
           {running && (
-            <button type="button" className="btn-secondary pr-btn" onClick={() => act(() => cancelRun(watched.id))}>
+            <button type="button" className="btn-secondary pr-btn" disabled={busy}
+                    onClick={() => act(() => cancelRun(watched.id))}>
               중단
             </button>
           )}

@@ -546,6 +546,24 @@ def test_실행_상태_쓰기는_중단을_덮지_않고_썼는지_돌려준다(
         store.set_run_state(run, "running", unless=("canceled",))   # 철자가 틀린 가드는 조용히 아무것도 막지 않는다 — 거절한다
 
 
+def test_기다리는_실행을_잡는_쓰기는_그_자리에서만_한_번_쓴다(store):
+    """W-110 — 승인 · 재개 · 고르기 창구는 실행을 기다리는 자리(`only_from`)에서 running 으로 잡고, 잡은 요청만 실행기를 띄운다. 둘째는
+    이미 running 이라 못 쓴다(False)."""
+    run = store.create_run(owner_sub="u1")
+    store.set_run_state(run, "gated", stage="step:0")
+    assert store.set_run_state(run, "running", only_from=("gated",)) is True
+    assert store.set_run_state(run, "running", only_from=("gated",)) is False, "둘째도 잡았다"
+    assert (store.get_run(run)["state"], store.get_run(run)["stage"]) == ("running", None)
+    store.set_run_state(run, "failed", stage="step:0", ended=True)
+    assert store.set_run_state(run, "running", only_from=("gated",)) is False
+    assert store.set_run_state(run, "running", only_from=("failed", "unknown")) is True
+    assert store.cancel_run(run, "u1")
+    assert store.set_run_state(run, "running", only_from=("cancelled",)) is False, "기본 가드(중단)는 그대로다"
+    for bad in ((), ("waiting",)):
+        with pytest.raises(ValueError):
+            store.set_run_state(run, "running", only_from=bad)
+
+
 def test_stats_needs_fields_that_cannot_be_recovered_later(store):
     """§6-1 판정에 쓰는 네 수 — created_by·run_by·origin 이 없으면 영영 못 센다."""
     r = store.create_procedure(owner_sub="author", spec={}, title="t")

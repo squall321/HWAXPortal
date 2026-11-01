@@ -335,7 +335,7 @@ def test_중단한_실행은_승인_재개_고르기로_다시_돌지_않는다(
     st.begin_step(gated, 0, backend="ra", tool="add_report_tags", args={"x": 1}, mode="live")
     st.finish_step(gated, 0, ok=False, state="pending", stage="gate")
     st.set_run_state(gated, "gated", stage="step:0")
-    unknown, _ = _run_with_unknown_write(c, h, "find_reports")
+    unknown, _ = _run_with_unknown_write(c, h, "find_reports", state="running")
     picking = _gated_pick_run(c, h)
     for rid in (gated, unknown, picking):
         assert c.post(f"{PREFIX}/runs/{rid}/cancel", headers=h).status_code == 200
@@ -349,6 +349,220 @@ def test_중단한_실행은_승인_재개_고르기로_다시_돌지_않는다(
     assert [st.get_run(x)["state"] for x in (gated, unknown, picking)] == ["cancelled"] * 3
     assert st.gate_ack(gated, 0) is None, "중단한 실행의 승인을 원장에 적었다"
     assert "part" not in st.get_run(picking)["inputs"], "중단한 실행에 고른 값을 넣었다"
+
+
+# ── 같은 실행에 실행기가 둘 뜨던 것(W-110) ─────────────────────────────────────────────────────
+# 승인 · 재개 · 고르기는 중단만 거절하고 실행이 지금 그 자리를 기다리는지 보지 않은 채 실행기를 띄웠다. 실행기는 세션을 연 뒤에야 running 을
+# 써서, 그 사이(게이트웨이를 기다린다) 둘째 요청도 기다리는 실행으로 읽고 실행기를 또 띄웠다 — 두 실행기가 같은 단계를 불러 승인한 쓰기가
+# 두 번 나갔다. 아래 가짜 게이트웨이는 세션 열기를 붙잡아 그 순서를 그대로 짓는다(첫 실행기가 running 을 쓰기 전에 둘째 요청이 닿는다).
+class _HeldGateway:
+    """세션 열기(initialize)를 `release` 까지 붙잡는다. 부른 도구(invoke_tool 안쪽 이름)와 인자를 적는다."""
+
+    def __init__(self, tools):
+        import threading
+
+        self.tools = tools
+        self.release = threading.Event()
+        self.calls: list[tuple[str, dict]] = []
+
+    async def handler(self, req):
+        import asyncio as _a
+
+        import httpx
+
+        body = json.loads(req.content or b"{}") if req.content else {}
+        m = body.get("method")
+        if m == "initialize":
+            for _ in range(500):   # 5초 상한 — 풀어 주지 않아도 시험이 매달리지 않는다
+                if self.release.is_set():
+                    break
+                await _a.sleep(0.01)
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {}}, headers={"mcp-session-id": "held"})
+        sse = {"content-type": "text/event-stream"}
+        if m == "tools/list":
+            out = {"jsonrpc": "2.0", "id": 3, "result": {"tools": [
+                {"name": n, "description": "", "inputSchema": {}} for n in self.tools]}}
+            return httpx.Response(200, text=f"data: {json.dumps(out)}\n\n", headers=sse)
+        if m == "tools/call":
+            a = body["params"]["arguments"]
+            self.calls.append((a.get("name"), a.get("arguments") or {}))
+            out = {"jsonrpc": "2.0", "id": 2, "result": {"isError": False, "content": [{"type": "text", "text": '{"ok": true}'}]}}
+            return httpx.Response(200, text=f"data: {json.dumps(out)}\n\n", headers=sse)
+        return httpx.Response(200)
+
+    def install(self, c) -> tuple[list, list]:
+        """이 게이트웨이 위의 진짜 실행기를 앱에 건다 — 뜬 실행기와 끝난 실행기를 센다(픽스처가 끝에 걷는다)."""
+        import httpx
+
+        from app.procedures.runner import ProceduresRunner
+
+        runner = ProceduresRunner(settings=c.app.state.procedures_runner.settings, store=c.app.state.procedures_store,
+                                  client=httpx.AsyncClient(transport=httpx.MockTransport(self.handler), timeout=10.0),
+                                  mint_pat=lambda p, run, ix: "pat-held")
+        started: list[str] = []
+        finished: list[str] = []
+        real = runner.run
+
+        async def counted(**kw):
+            started.append(kw["run_id"])
+            try:
+                return await real(**kw)
+            finally:
+                finished.append(kw["run_id"])
+
+        runner.run = counted
+        c.app.state.procedures_runner = runner
+        return started, finished
+
+
+def _until(cond, what: str, deadline_s: float = 5.0) -> None:
+    import time as _t
+
+    end = _t.monotonic() + deadline_s
+    while not cond():
+        assert _t.monotonic() < end, f"기다렸지만 오지 않았다 — {what}"
+        _t.sleep(0.02)
+
+
+def _held_run(c, h, kind: str):
+    """그 창구가 기다리는 자리의 실행 — (실행 id, 두 번 보낼 요청, 바깥 쓰기 도구의 노출 이름)."""
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    if kind == "ack":       # 확인 카드 — 되돌리기 어려운 쓰기(MUST_GATE)
+        steps = [{"backend": "ra", "tool": "add_report_tags", "gate": "human", "args": {"x": 1}}]
+    elif kind == "resume":  # 실패한 쓰기 단계(게이트 없는 쓰기 — submit_)
+        steps = [{"backend": "ra", "tool": "submit_job", "args": {"x": 1}}]
+    else:                   # 고르기 대기 — 고른 대상으로 다음 단계가 쓴다
+        steps = [{"backend": "ra", "tool": "find_parts", "args": {},
+                  "select": {"from": "parts", "save": "name", "as": "part"}},
+                 {"backend": "ra", "tool": "register_part", "args": {"part": "{{part}}"}}]
+    vid = st.create_procedure(owner_sub=me, spec={"title": "t", "vars": [], "steps": steps}, title="t")["version_id"]
+    rid = st.create_run(owner_sub=me, run_by=me, procedure_version_id=vid, inputs={}, origin="replay", mode="live")
+    st.begin_step(rid, 0, backend="ra", tool=steps[0]["tool"], args=steps[0]["args"], mode="live")
+    if kind == "ack":
+        st.finish_step(rid, 0, ok=False, state="pending", stage="gate")
+        st.set_run_state(rid, "gated", stage="step:0")
+        sha = st.list_steps(rid)[0]["args_sha256"]
+        return rid, ("steps/0/ack", {"args_sha256": sha}), "ra_add_report_tags"
+    if kind == "resume":
+        st.finish_step(rid, 0, ok=False, error="잠깐 불통", stage="tool_error")
+        st.set_run_state(rid, "failed", stage="step:0", ended=True)
+        return rid, ("resume", None), "ra_submit_job"
+    st.finish_step(rid, 0, ok=False, state="pending", stage="select:ask", error=None,
+                   notes={"pick_into": "part", "candidates": [{"i": 0, "label": "P1", "value": "PANEL_1"},
+                                                              {"i": 1, "label": "P2", "value": "PANEL_2"}]})
+    st.set_run_state(rid, "gated", stage="step:0")
+    return rid, ("steps/0/pick", {"value": "PANEL_1"}), "ra_register_part"
+
+
+@pytest.mark.parametrize("kind", ["ack", "resume", "pick"])
+def test_같은_실행을_두_번_이어도_실행기는_하나만_돌고_바깥_쓰기는_한_번이다(user, kind):
+    """첫 요청이 띄운 실행기가 세션을 여는 사이 같은 요청이 한 번 더 온다(두 번 누름 · 동시 요청). 둘째는 409 이고 아무것도 띄우지 않는다 —
+    종전엔 둘 다 200 이고 실행기가 둘 떠 바깥 쓰기가 두 번 나갔다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    rid, (path, body), tool = _held_run(c, h, kind)
+    gw = _HeldGateway([tool, "ra_find_parts"])
+    started, finished = gw.install(c)
+    first = c.post(f"{PREFIX}/runs/{rid}/{path}", json=body, headers=h)
+    second = c.post(f"{PREFIX}/runs/{rid}/{path}",
+                    json={"value": "PANEL_2"} if kind == "pick" else body, headers=h)
+    gw.release.set()
+    _until(lambda: started and len(finished) == len(started), "실행기가 끝나기")
+    assert first.status_code == 200, first.text
+    assert second.status_code == 409 and "이미 진행 중인 실행" in second.json()["detail"], (second.status_code, second.text[:200])
+    assert len(started) == 1, f"같은 실행에 실행기가 {len(started)}개 떴다"
+    assert [n for n, _ in gw.calls].count(tool) == 1, f"바깥 쓰기가 {[n for n, _ in gw.calls].count(tool)}번 나갔다"
+    run = st.get_run(rid)
+    assert run["state"] == "done", run["state"]
+    if kind == "pick":   # 거절한 둘째의 값은 원장에 적지 않는다 — 첫째 실행기가 읽을 자리를 덮지 않는다
+        assert run["inputs"]["part"] == "PANEL_1" and dict(gw.calls)[tool] == {"part": "PANEL_1"}
+
+
+def _spawn_recorder(c) -> list[str]:
+    """실행기를 다시 띄웠는지 — 라우트가 부르는 그 순간 적는다(실행은 하지 않는다)."""
+    spawned: list[str] = []
+
+    def _rec(**kw):
+        spawned.append(kw["run_id"])
+
+        async def _noop():
+            return None
+        return _noop()
+
+    c.app.state.procedures_runner.run = _rec
+    return spawned
+
+
+def test_지나간_단계는_승인으로_다시_돌리지_않는다(user):
+    """승인은 확인 카드(기다리는 단계)에만 — 이미 지나간 단계를 승인하면 그 단계부터 다시 돌아 승인한 쓰기가 또 나갔다(뒤 단계가 실패해
+    멈춘 실행에서 앞의 쓰기 단계 지문으로 승인을 보내면 됐다). 실행 여부를 모르는 단계의 승인은 멈춘 실행을 잇는다(재개 창구가 요구한다)."""
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spawned = _spawn_recorder(c)
+    steps = [{"backend": "ra", "tool": "add_report_tags", "gate": "human", "args": {"x": 1}},
+             {"backend": "ra", "tool": "find_reports", "args": {}}]
+    vid = st.create_procedure(owner_sub=me, spec={"title": "t", "vars": [], "steps": steps}, title="t")["version_id"]
+    rid = st.create_run(owner_sub=me, run_by=me, procedure_version_id=vid, inputs={}, origin="replay", mode="live")
+    st.begin_step(rid, 0, backend="ra", tool="add_report_tags", args={"x": 1}, mode="live")
+    st.finish_step(rid, 0, ok=True, result_text="{}")                     # 승인받아 나간 쓰기
+    st.begin_step(rid, 1, backend="ra", tool="find_reports", args={}, mode="live")
+    st.finish_step(rid, 1, ok=False, error="잠깐 불통", stage="tool_error")
+    st.set_run_state(rid, "failed", stage="step:1", ended=True)
+    sha = st.list_steps(rid)[0]["args_sha256"]
+    r = c.post(f"{PREFIX}/runs/{rid}/steps/0/ack", json={"args_sha256": sha}, headers=h)
+    assert r.status_code == 409 and "확인을 기다리지 않습니다" in r.json()["detail"], r.text
+    assert spawned == [] and st.get_run(rid)["state"] == "failed" and st.gate_ack(rid, 0) is None
+
+    # 실행 여부를 모르는 쓰기 — 확인한 사람의 승인이 멈춘 실행을 그 단계부터 잇는다
+    unknown, _ = _run_with_unknown_write(c, h, "add_report_tags")
+    sha = st.list_steps(unknown)[0]["args_sha256"]
+    r = c.post(f"{PREFIX}/runs/{unknown}/steps/0/ack", json={"args_sha256": sha}, headers=h)
+    assert r.status_code == 200 and r.json()["resumed"] is True, r.text
+    assert spawned == [unknown] and st.get_run(unknown)["state"] == "running"
+
+
+def test_재개는_멈춘_실행만_다시_고르기는_끝난_실행에서도_된다(user):
+    """재개는 failed · unknown 에서만 잡는다 — 확인 대기(gated)는 그 단계의 확인 · 고르기가 잇는다. 다시 고르기는 끝난 실행(done)에서도
+    된다(다른 후보로 뒤 단계를 다시 돌린다). 둘 다 잡은 요청 하나만 실행기를 띄운다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    spawned = _spawn_recorder(c)
+    gated = _gated_pick_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{gated}/resume", headers=h)
+    assert r.status_code == 409 and "확인을 기다리는 실행" in r.json()["detail"], r.text
+    assert spawned == [] and st.get_run(gated)["state"] == "gated"
+
+    # 다시 고르기 — 고른 뒤 끝난 실행
+    assert c.post(f"{PREFIX}/runs/{gated}/steps/0/pick", json={"value": "PANEL_1"}, headers=h).status_code == 200
+    st.set_run_state(gated, "done", ended=True)
+    r = c.post(f"{PREFIX}/runs/{gated}/steps/0/pick", json={"value": "PANEL_2"}, headers=h)
+    assert r.status_code == 200 and r.json()["resumed"] is True, r.text
+    assert spawned == [gated, gated] and st.get_run(gated)["inputs"]["part"] == "PANEL_2"
+
+
+def test_확인과_잡기_사이에_든_중단도_중단으로_거절한다(user):
+    """중단 확인(`_not_cancelled`)은 읽기다 — 그 뒤 잡기 전에 든 중단은 잡기가 못 쓰는 것으로 드러난다. 같은 글로 거절하고 아무것도 띄우지 않는다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    spawned = _spawn_recorder(c)
+    rid = _gated_pick_run(c, h)
+    real = st.set_run_state
+
+    def cancel_first(run_id, state, **kw):
+        if kw.get("only_from"):
+            st.cancel_run(run_id, "u")   # 잡기 직전에 사람이 '중단' 을 눌렀다
+        return real(run_id, state, **kw)
+
+    st.set_run_state = cancel_first
+    try:
+        r = c.post(f"{PREFIX}/runs/{rid}/steps/0/pick", json={"value": "PANEL_2"}, headers=h)
+    finally:
+        st.set_run_state = real
+    assert r.status_code == 409 and "중단한 실행" in r.json()["detail"], r.text
+    assert spawned == [] and st.get_run(rid)["state"] == "cancelled"
+    assert "part" not in st.get_run(rid)["inputs"], "거절한 고르기의 값을 적었다"
 
 
 def test_빈_실행은_재개하지_않는다(user):
@@ -1363,7 +1577,7 @@ def test_남의_실행으로는_결손을_못_만든다(user):
 
 
 # ── 재개 — 약속만 있고 확인이 없던 자리(2026-09-15 감사) ──────────────────
-def _run_with_unknown_write(c, h, tool: str):
+def _run_with_unknown_write(c, h, tool: str, state: str = "failed"):
     """쓰기 단계가 `unknown` 으로 끝난 실행을 만든다 — 타임아웃·재기동이 남기는 모양이다."""
     spec = {"title": "t", "vars": [],
             "steps": [{"backend": "ra", "tool": tool, "gate": "human", "args": {"x": 1}}]}
@@ -1374,6 +1588,9 @@ def _run_with_unknown_write(c, h, tool: str):
                         procedure_version_id=r.json()["version_id"], mode="live")
     st.begin_step(rid, 0, backend="ra", tool=tool, args={"x": 1})
     st.finish_step(rid, 0, ok=False, state="unknown", stage="timeout")
+    # 실행기는 그 단계에서 실행을 failed 로 닫는다(재기동이면 close_stale) — 재개 · 승인 창구는 멈춘 실행만 잡는다(W-110).
+    # 중단을 보는 시험은 도는 동안(running) 누른 중단을 짓는다 — 끝난 실행은 중단하지 않는다(W-107)
+    st.set_run_state(rid, state, stage="step:0", ended=state == "failed")
     return rid, st
 
 

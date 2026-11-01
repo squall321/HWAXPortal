@@ -268,22 +268,32 @@ class ProceduresStore:
                       (json.dumps(cur, ensure_ascii=False), run_id))
 
     def set_run_state(self, run_id: str, state: str, *, stage: str | None = None,
-                      ended: bool = False, unless: tuple[str, ...] = ("cancelled",)) -> bool:
+                      ended: bool = False, unless: tuple[str, ...] = ("cancelled",),
+                      only_from: tuple[str, ...] | None = None) -> bool:
         """지금 상태가 `unless` 가운데 하나면 쓰지 않는다 — 썼으면 True. 못 썼으면 부른 쪽이 멈춘다.
 
         ⚠ **기본이 '중단을 덮지 않는다' 다.** 실행기는 호출 · 세션을 기다린 뒤 원장을 다시 읽고 쓰는데(W-105), 읽기와 쓰기가 따로면 그 사이에
         든 중단(중단 창구는 동기 함수라 스레드에서 돈다)을 쓰기가 덮었다. 확인과 쓰기를 한 문장에 둔다(W-109 — `cancel_run` 과 같은 꼴).
         실행기가 쥔 실행에 쓰는 자리는 `ENDED` 를 준다 — 재개(failed 에서 출발)와 실패 뒤에도 단계를 받는 빈 실행은 기본(중단만)이다.
+
+        `only_from` 을 주면 지금 상태가 그 가운데 하나일 때만 쓴다 — 승인 · 재개 · 고르기 창구가 기다리는 실행을 running 으로 잡는 자리다
+        (W-110). 둘이 같이 잡으려 하면 한쪽만 쓴다.
         """
         if state not in RUN_STATES:
             raise ValueError(f"모르는 실행 상태: {state}")
-        if not set(unless) <= set(RUN_STATES):   # 철자가 틀린 가드는 아무것도 막지 않는다 — 조용히 넘기지 않는다
-            raise ValueError(f"모르는 실행 상태: {unless}")
+        for guard in (unless, only_from or ()):   # 철자가 틀린 가드는 아무것도 막지 않는다 — 조용히 넘기지 않는다
+            if not set(guard) <= set(RUN_STATES):
+                raise ValueError(f"모르는 실행 상태: {guard}")
+        if only_from is not None and not only_from:
+            raise ValueError("only_from 이 비었다 — 아무 상태에서도 쓰지 않는다")
         sql = "UPDATE runs SET state=?, stage=?, ended_at=? WHERE id=?"
         if unless:
             sql += f" AND state NOT IN ({', '.join('?' for _ in unless)})"
+        if only_from:
+            sql += f" AND state IN ({', '.join('?' for _ in only_from)})"
         with self._conn() as c:
-            n = c.execute(sql, (state, stage, _now() if ended else None, run_id, *unless)).rowcount
+            n = c.execute(sql, (state, stage, _now() if ended else None, run_id, *unless,
+                                *(only_from or ()))).rowcount
         return n > 0
 
     def cancel_run(self, run_id: str, by: str) -> bool:
