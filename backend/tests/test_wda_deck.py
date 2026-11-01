@@ -1115,6 +1115,15 @@ def test_없는_잡이나_남의_잡을_숨겨도_잠금이_쌓이지_않는다(
     assert len(W._LOCKS) == n, "꼴이 틀리거나 없거나 남의 잡이면 잠금을 만들지 않는다"
 
 
+def test_쓴_잠금은_남지_않는다(box):
+    """잡 id 마다 만든 잠금이 메모리에 쌓였다(적대 검토, WD-D60) — 쓰고 나면 지운다."""
+    job = _finished(box)
+    box["c"].post(f"/agent/deck/jobs/{job}/advance")
+    box["c"].post(f"/agent/deck/jobs/{job}/dismiss")
+    box["c"].get("/agent/deck/jobs")
+    assert W._LOCKS == {}
+
+
 def test_잡_기록은_스테이징_청소에서_빠지고_기한_뒤에_지운다(box):
     from app.agent.upload import sweep_expired
     s = box["s"]

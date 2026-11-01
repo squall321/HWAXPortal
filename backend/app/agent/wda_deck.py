@@ -25,6 +25,7 @@ import sqlite3
 import time
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
@@ -77,14 +78,27 @@ CAPS_TTL_S = 60.0
 # WDA 만들기 60초 + 탐침 10초)보다 길게 — 이보다 오래된 예약은 끊긴 것(프로세스가 죽었다)으로 보고 세지 않는다(WD-D56)
 RESERVE_TTL_S = 300.0
 
-_LOCKS: dict[str, asyncio.Lock] = {}
+_LOCKS: dict[str, list] = {}     # 열쇠 → [잠금, 쥔 수 + 기다리는 수] — 아무도 없으면 지운다(WD-D60)
 _CAPS: dict[str, Any] = {"at": 0.0, "features": None, "formats": {}, "version": None}
 
 router = APIRouter(prefix="/agent/deck", tags=["agent-deck"])
 
 
-def lock(key: str) -> asyncio.Lock:
-    return _LOCKS.setdefault(key, asyncio.Lock())
+@asynccontextmanager
+async def lock(key: str) -> AsyncIterator[None]:
+    """잡 · 만들기 잠금. 쥔 쪽도 기다리는 쪽도 없으면 지운다 — 잡 id 마다 잠금이 메모리에 쌓이지 않게(적대 검토, WD-D60). 한 이벤트 루프 안이라
+    찾기 · 세기 · 지우기 사이에 다른 작업이 끼지 않는다(await 가 없다)."""
+    ent = _LOCKS.get(key)
+    if ent is None:
+        ent = _LOCKS[key] = [asyncio.Lock(), 0]
+    ent[1] += 1
+    try:
+        async with ent[0]:
+            yield
+    finally:
+        ent[1] -= 1
+        if ent[1] == 0 and _LOCKS.get(key) is ent:
+            del _LOCKS[key]
 
 
 def _knob(settings: Settings = Depends(get_settings)) -> None:
