@@ -754,6 +754,32 @@ def test_md_plain_은_마크다운_구문이_되는_글자를_전각으로(raw):
         assert ch not in out, (raw, out)
 
 
+@pytest.mark.parametrize("how", ["no_hub_account", "jwks_down", "wda_502"])
+def test_WDA_에_묻지_못해도_6시간_그물은_끝을_적는다(box, how):
+    """적대 검토(묻지 못한 잡이 영영) — 허브가 그 사람을 막거나(계정 · JWKS) WDA 가 답하지 않으면 6시간 그물이 걸리지 않아 줄이 잡을 영영 열어 뒀다(WD-D55)."""
+    c, fake, s = box["c"], box["fake"], box["s"]
+    job = _make(box).json()["job_id"]
+    rec = W.load(s, job, "kim@corp.com")
+    rec["created_at"] -= s.wda_deck_give_up_s + 3600
+    W.save(s, rec)
+    if how == "no_hub_account":
+        fake.no_hub_account.add("kim@corp.com")
+    elif how == "jwks_down":
+        fake.jwks_down = True
+    else:
+        orig = fake.wda
+        fake.wda = lambda req, path, email: httpx.Response(502) if path.startswith("/api/runs/") else orig(req, path, email)
+    (j,) = c.get("/agent/deck/jobs").json()["jobs"]
+    assert (j["state"], j["step"], j["next"]) == ("failed", "시간 초과", "finish")
+    one = c.get(f"/agent/deck/jobs/{job}")
+    assert one.status_code == 200 and one.json()["state"] == "failed"
+    a = c.post(f"/agent/deck/jobs/{job}/advance")
+    assert a.status_code == 200 and a.json()["state"] == "failed" and "6시간" in a.json()["notice"]["text"]
+    assert len(_messages(box)) == 1
+    (j,) = c.get("/agent/deck/jobs").json()["jobs"]
+    assert j["next"] is None, "끝을 적었다 — 줄이 더 묻지 않는다"
+
+
 # ── 주인 · 받기 ─────────────────────────────────────────────────────────────────────────────────
 def _finished(box) -> str:
     job = _make(box, targets=["pptx", "pdf", "html"]).json()["job_id"]

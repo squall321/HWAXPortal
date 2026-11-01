@@ -481,9 +481,7 @@ def fold(run: dict | None, *, rec: dict, now: float, settings: Settings) -> dict
     elapsed = now - float(rec.get("created_at") or now)
     if out["state"] not in TERMINAL:
         if elapsed > settings.wda_deck_give_up_s:
-            hours = settings.wda_deck_give_up_s / 3600
-            out.update(state="failed", step="시간 초과", next=None,
-                       error=f"{hours:g}시간이 지나도 끝나지 않았습니다 — WDA 가 재기동에 끊긴 실행일 수 있습니다.")
+            out.update(state="failed", step="시간 초과", next=None, error=_give_up_error(settings))
         else:
             video = "video" in rec["options"]["targets"]
             limit = (settings.wda_deck_late_prepare_s if out["state"] in ("queued", "preparing")
@@ -492,6 +490,19 @@ def fold(run: dict | None, *, rec: dict, now: float, settings: Settings) -> dict
     if out["state"] in TERMINAL and not rec.get("finished"):
         out["next"] = "finish"
     return out
+
+
+def _give_up_error(settings: Settings) -> str:
+    return f"{settings.wda_deck_give_up_s / 3600:g}시간이 지나도 끝나지 않았습니다 — WDA 가 재기동에 끊긴 실행일 수 있습니다."
+
+
+def gave_up(rec: dict, *, now: float, settings: Settings) -> dict | None:
+    """WDA 에 묻지 못해도 6시간 그물은 건다(목록 · 진행 · advance) — 끊긴 WDA · 거둔 허브 계정 앞에서 잡이 영영 열려 있지 않게(WD-D55).
+    그물을 넘었으면 fold 와 같은 꼴의 '시간 초과' 실패(next=finish — advance 가 끝을 적는다), 아니면 None."""
+    if now - float(rec.get("created_at") or now) <= settings.wda_deck_give_up_s:
+        return None
+    return {"state": "failed", "step": "시간 초과", "progress": 0, "error": _give_up_error(settings), "late": False, "next": "finish",
+            "skipped": [], "raw_error": None}
 
 
 def view(rec: dict, f: dict | None = None, now: float | None = None) -> dict:
@@ -713,7 +724,7 @@ async def deck_jobs(
             try:
                 run = await wda_run(base, token, r["wda"]["run_id"])
             except DeckError:
-                return r["job_id"], None
+                return r["job_id"], gave_up(r, now=now, settings=settings)    # 그물 전이면 None('묻지 못했다')
             return r["job_id"], fold(run, rec=r, now=now, settings=settings)
 
         folded = dict(await asyncio.gather(*(one(r) for r in open_)))
@@ -739,11 +750,14 @@ async def deck_job(
     if rec.get("finished"):
         return view(rec)
     base, token = _base_and_token(request, settings, principal)
+    now = time.time()
     try:
         run = await wda_run(base, token, rec["wda"]["run_id"])
     except DeckError as exc:
+        if (f := gave_up(rec, now=now, settings=settings)) is not None:
+            return view(rec, f, now=now)
         raise _http_error(exc) from exc
-    return view(rec, fold(run, rec=rec, now=time.time(), settings=settings))
+    return view(rec, fold(run, rec=rec, now=now, settings=settings), now=now)
 
 
 @router.post("/jobs/{job_id}/advance", dependencies=[Depends(_knob)])
@@ -766,10 +780,16 @@ async def deck_advance(
         if fin:
             return {**view(rec), "notice": fin.get("notice"), "noticed": bool(fin.get("saved"))}
         base, token = _base_and_token(request, settings, principal)
+        now = time.time()
         try:
             run = await wda_run(base, token, rec["wda"]["run_id"])
-            now = time.time()
             f = fold(run, rec=rec, now=now, settings=settings)
+        except DeckError as exc:
+            # WDA 에 묻지 못해도 그물을 넘었으면 '시간 초과' 로 끝을 적는다(WD-D55) — 아니면 종전처럼 실패를 돌려준다(화면이 다시 묻는다)
+            if (f := gave_up(rec, now=now, settings=settings)) is None:
+                raise _http_error(exc) from exc
+            run = None
+        try:
             if f["next"] == "render":
                 await wda_render(base, token, rec["wda"]["run_id"], rec)
                 rec["render_submitted_at"] = now
