@@ -36,7 +36,7 @@ import anyio
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator, model_validator
 
 from app.access.agent_guard import check_chat, filter_experts
@@ -513,6 +513,53 @@ def _site_pat(keystore, settings: Settings, principal: Principal, site: str, ttl
     except Exception:  # noqa: BLE001 — 발급 실패는 부른 쪽이 401 로 알린다
         logger.warning("업로드용 사이트 PAT 발급 실패(%s)", site, exc_info=True)
         return None
+
+
+# RA 보고서 주소 — RA 화면은 /w/<공간>/reports/<번호> 만 있다(공간 없는 길이 없다). 심의 결과 카드가 공간 이름 'dev' 를 박아 다른 박스 · 다른
+# 공간에서 열리지 않았다(docs/wda-deck WD-D67).
+_RA_PUBLIC = "/report-archive"
+_RA_OPEN_MAX = 16 * 1024 * 1024
+
+
+@router.get("/ra/reports/{report_id}/open")
+async def open_ra_report(
+    report_id: Annotated[int, Field(gt=0)],
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> RedirectResponse:
+    """그 보고서를 그 보고서의 공간 주소로 연다 — 그 사람 명의로 RA 보고서를 읽어 workspace_slug 를 받는다(서비스 계정 없음). 못 읽으면 그 사람의
+    RA 연결에 묶인 공간, 그것도 없으면 RA 첫 화면(RA 가 그 사람의 기본 공간으로 보낸다). 새 탭에서 여는 링크라 오류 JSON 대신 늘 옮긴다."""
+    ensure(principal, "plat:reportarchive")
+    fallback = f"{_RA_PUBLIC}/"
+    try:
+        token, _via, conn = await _ra_user_token(request, settings, principal)
+    except AuthError:
+        return RedirectResponse(fallback, status_code=302)
+    if conn.get("workspace"):
+        fallback = f"{_RA_PUBLIC}/w/{quote(str(conn['workspace']), safe='')}/reports/{report_id}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if conn.get("workspace"):
+        headers["X-Workspace-Slug"] = conn["workspace"]
+    slug = None
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as cli:
+            async with cli.stream("GET", f"{settings.ra_base_url.rstrip('/')}/api/reports/{report_id}", headers=headers) as r:
+                if r.status_code == 200:
+                    buf = bytearray()
+                    async for chunk in r.aiter_bytes():
+                        buf += chunk
+                        if len(buf) > _RA_OPEN_MAX:
+                            break
+                    else:
+                        data = (json.loads(buf) or {}).get("data") if buf else None
+                        if isinstance(data, dict) and isinstance(data.get("workspace_slug"), str):
+                            slug = data["workspace_slug"]
+    except (httpx.HTTPError, ValueError, AttributeError):
+        slug = None
+    if slug and re.fullmatch(r"[A-Za-z0-9._-]{1,120}", slug):
+        return RedirectResponse(f"{_RA_PUBLIC}/w/{slug}/reports/{report_id}", status_code=302)
+    return RedirectResponse(fallback, status_code=302)
 
 
 @router.get("/conversations")

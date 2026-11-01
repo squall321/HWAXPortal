@@ -5,6 +5,7 @@ import { delibMayStillRun } from '../../lib/chatErrors';
 import { useChat } from '../../state/ChatContext';
 import { decisionAsOf } from '../../state/chatStore';
 import { useCan } from '../../auth/useCan';
+import { config } from '../../config';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
 import { DelibGraph } from './DelibGraph';
 import { DeckSpot } from './DeckSpot';
@@ -291,7 +292,7 @@ function OutcomeCards({ d }: { d: DelibData }) {
       {o.report_id != null && (
         <a
           className="dv-card report"
-          href={`/report-archive/w/dev/reports/${o.report_id}`}
+          href={`${config.apiBase}/agent/ra/reports/${o.report_id}/open`}
           target="_blank"
           rel="noreferrer"
         >
