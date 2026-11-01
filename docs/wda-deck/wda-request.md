@@ -2,9 +2,9 @@
 
 > 대상 — WebDesignAgents(WDA) 세션 · 2026-11-01 · 보낸 쪽 — HWAX 포털(`docs/wda-deck/`, 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md)).
 > 이 글만으로 읽히게 썼다. 줄 번호는 WDA `9dabf86` · HEAXHub `7b9a8ed` · 게이트웨이 `63fbc4f` 판이다.
-> 요약 — 포털은 **허브 Caddy 를 거쳐 WDA 웹 REST** 를 그 사람 이름으로 부른다(MCP 는 부르지 않는다). WDA 가 할 일은 셋이다 —
+> 요약 — 포털은 **허브 Caddy 를 거쳐 WDA 웹 REST** 를 그 사람 이름으로 부른다(MCP 는 부르지 않는다). WDA 가 할 일은 넷이다 —
 > ① 허브가 실어 주는 `X-Heax-User-Email` 로 **주인을 정하고 주인만 보게** 하기(깨지 않는 꼴) ② 빌드 뒤 **이어서 렌더**하고 뺀 출력을 말하기
-> ③ 능력 · 오류 · 재기동 처리를 기계가 읽게 하기. 그리고 **main 을 GitHub 에 올려 허브 SIF 를 다시 짓는 것**이 먼저다 — **사용자가 손으로 push 한다**(11-01 결정,
+> ③ 능력 · 오류 · 재기동 처리를 기계가 읽게 하기 ④ 심의 보고서 꼴을 지으면 `format:deliberation` 을 알리기(W-21). 그리고 **main 을 GitHub 에 올려 허브 SIF 를 다시 짓는 것**이 먼저다 — **사용자가 손으로 push 한다**(11-01 결정,
 > WDA 세션은 push 하지 않는다).
 
 ## 1. 배경 — 사용자 결정(2026-11-01)
@@ -129,6 +129,23 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 만 보니 칸을 더해도 깨지지 않는다(`app.py:124-127`). **포털은 `owner` 가 없거나 이 응답을 못 읽으면 단추를 숨긴다**(옛 SIF 로 되돌린 박스에 본문을 넘기지 않게).
 포털은 이것도 그 사람의 포털 PAT 로 부른다 — `portal_auth` 가 켜지면 허브 게이트가 익명을 막는다.
 
+### 4.6-2 심의 보고서 꼴 — W-21 `format:deliberation`(심의 자리의 단추를 세우는 표지)
+
+WDA 답(11-01, Q2) — `deliberation` 템플릿 보고서(화두 · 라운드 요지 · 의사결정문 · 액션아이템)를 넣으면 조각은 바르게 뽑히지만 장면이 제품 소개 뼈대
+(opening → problem → concept → process → differentiators → evidence → closing)로 눌려 결정문이 `problem` 장면에 한 번 묻히고 액션아이템 · 라운드 요지가
+사라지며 '보고서 참조' 같은 채움 글이 영상에 나간다. WDA 는 심의 꼴(화두 → 쟁점 → 라운드 → 수렴 → 결정 → 액션)을 다음 일로 짓는다고 했다.
+
+- **W-21** 그 꼴이 들어오면 `/api/health` 의 `features` 에 `format:deliberation` 을 싣는다.
+- 포털의 문 — RA 보고서의 템플릿(최상위 `template_id` 와 페이지마다의 `template_id`) 가운데 하나라도 `deliberation` 이면 `owner` **와** `format:deliberation`
+  이 둘 다 있을 때만 단추를 보이고 만들기를 받는다. 그 밖의 템플릿(지금 단추 자리에서는 RA 보내기 알림의 `__import_blank__`)은 `owner` 만 본다.
+  포털의 세 자리 가운데 심의 결과 카드와 `/보고서` 저장 답이 `deliberation` 템플릿이고(에이전트 서버 `deliberation.py:7631,7892`), RA 보내기 알림이
+  `__import_blank__` 다.
+- 알아 둘 사실(코드 읽기) — RA 의 `deliberation` 보고서는 블록 정의를 보고서에 싣지 않는다. 페이지의 `content` 에 템플릿 블록 id(background · results ·
+  recommendation · minutes) 만 있고 타입은 RA 템플릿 스키마에 있다(ReportArchive `modules/reports/routes.py:677-722` — 템플릿 블록은 `content` 로,
+  `extra_blocks` 는 빈 채). 지금 `_page_blocks`(`src/wdpipeline/ingest.py:407-442`)는 정의 없는 `content` 키를 건너뛰므로 실물 심의 보고서는 블록 0개가
+  될 것이다. 심의 꼴을 지을 때 타입을 RA 템플릿 스키마(`GET /api/templates/{id}/versions/{version}`)로 알아야 한다면, 포털이 그 사람 명의로 읽어 만들기
+  본문에 `template_schemas: {"<id>@<version>": <schema>}` 로 함께 넘길 수 있다 — 필요하면 칸 이름 · 꼴을 정해 달라.
+
 ### 4.7 오류 꼴(W-10)
 
 `{"success": false, "data": null, "message": "<사람이 읽을 까닭>", "code": "NOT_FOUND | TOO_LARGE | NOT_BUILT | BUSY | INVALID | INTERNAL"}` 와 맞는 HTTP 상태.
@@ -148,8 +165,10 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
   넘으면 부르지 않는다.
 - **W-12 재기동에 끊긴 실행** — 파이프라인 · 렌더는 데몬 스레드라(`runs.py:172-176,283-288`) 재기동하면 원장이 running 인 채로 남고 재개도 running 을 거절한다
   (`runs.py:303-304`). 기동 때 running · queued(파이프라인) · queued · rendering(렌더)으로 남은 것을 `failed`(error `interrupted`)로 적어 달라.
-- **W-13 보존** — 실행 · 산출물을 얼마나 두는지 알려 달라. 지운 산출물은 404 또는 410. 포털은 잡 기록을 7일 둔다.
-- **W-14 렌더 줄(권장)** — 렌더(chromium)를 동시에 몇 개까지 돌릴지 정하고 넘치면 `queued` 로 기다리게. 포털은 사람당 동시 2 로 묶는다.
+- **W-13 보존 — 강하게 권한다.** WDA 답(11-01) — 지금은 **아무것도 지우지 않는다**(실행 60건에 372 MB). 남의 보고서 본문이 든 실행 · 산출물이 끝없이 쌓인다.
+  보존 기한을 정해 지우고, 지운 산출물은 404 또는 410 으로 답해 달라. 포털은 잡 기록을 7일 두고, 그 뒤 받기는 '지워졌다' 로 말한다.
+- **W-14 렌더 줄 — 강하게 권한다.** WDA 답 — 지금은 **동시 상한이 없다**(요청마다 스레드). 렌더(chromium)를 동시에 몇 개까지 돌릴지 정하고 넘치면
+  `queued` 로 기다리게 해 달라. 포털은 사람당 동시 2 · 박스 전체 동시 4 로 막지만, WDA 콘솔 · MCP 로 들어오는 일은 포털이 막지 못한다.
 - **W-15 같은 키 두 번(선택)** — `Idempotency-Key` 머리(포털 잡 id)가 같은 두 번째 만들기에 같은 run 을 돌려주면 시간 초과 뒤 다시 보낸 요청이 run 을 둘 만들지 않는다.
 - 시간 — 보통 보고서로 PPT + PDF 가 몇 분인지, 영상을 더하면 몇 분인지 실측을 알려 달라. 포털 화면은 준비 30분 · 렌더 60분 · 영상 180분을 넘으면 '오래 걸린다'
   만 말하고(잡은 그대로), 24시간이 지나도 running 이면 포털이 실패로 닫는다.
@@ -195,13 +214,20 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
   `per_user_sso.web_design_agents` 를 켠다. 들어오면 W-4 를 '확인된 주인이면 연다' 로 넓힌다.
 - **W-19 슬라이드 PDF** — 지금은 청하지 않는다(사용자 결정 11-01). **W-20 취소**(지금 웹 · MCP 둘 다 없다).
 
-## 10. 확인해 달라는 것
+## 10. WDA 세션의 답(11-01)
 
-1. W-1 ~ W-12 를 이 꼴로 받는지, 받기 어려운 것이 있으면 무엇인지.
-2. `report_json` 에 RA ReportRead(심의 템플릿 `deliberation` 보고서 — rich_text 목록 블록 넷)를 넣으면 장면이 제대로 서는지 — 표본 하나로.
-3. 기본 장면 꼴(wide-16x9 — `formats/wide-16x9/format.yaml:18` outputs `[video, pptx]`)에서 PPT + PDF 가 둘 다 나오는지.
-4. 실측 시간 · 보존 기한 · 렌더 동시 상한(6).
-5. 이 요청에 없는데 포털이 알아야 할 바뀜(오늘 들어온 `scenes[].camera` · `scenes[].transition` 은 계약에 영향이 없다고 들었다).
+1. **W-1 ~ W-12 는 지금 하나도 없다** — `src/wdweb/` 어디서도 신원을 읽지 않고, health 는 `{"status": "ok"}` 뿐이고, 본문 상한 · 오류 `code` 가 없고,
+   run_id 는 `wr-{UTC 시각}-{16진 4자}`(무작위 16비트)다. 사용자가 직접 시킬 때만 짓겠다고 했다 — 포털은 이 요청서의 계약대로 짓고 시험의 가짜 WDA 가
+   그 계약을 따른다(봉투 `{success, data, message, code}` · 상태 낱말 · 남과 신원 없음에 404 · 아래 블록 글자 규칙). 단추는 W-6 의 `owner` 가 보일 때까지
+   어디에도 서지 않는다.
+2. **심의 보고서는 꼴이 맞지 않는다** — 4.6-2 · W-21.
+3. wide-16x9 에서 pptx · pdf 가 둘 다 나온다 — 문서 출력은 장면 꼴 거르기에서 빠진다(허용 docx · html · pdf · pptx · video).
+4. 시간 · 크기 — 파이프라인 0.5초 + 렌더(pptx + pdf) 5.0초 = 5.5초, pptx 1,200 KB · pdf 1,926 KB. **보존 없음 · 동시 상한 없음** — W-13 · W-14.
+5. 장면의 새 칸 `camera` · `transition` 은 기본값이 있어 계약에 영향이 없다.
+
+블록 글자 규칙(WDA 가 알려 준 것 — 포털 시험의 가짜 WDA 가 그대로 따른다) — `rich_text` 의 글은 `content.markdown`, `heading` 은 `content.text` 다.
+heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항목이 없는 블록은 글자 0 이다. 모든 블록의 글자가 0 이면 거절한다(지금 문구
+`ValueError: 텍스트를 가진 블록이 없다 (블록 8개, 텍스트 0개)` — W-10 이 들어오면 `INVALID` 로). 포털은 RA 의 ReportRead 를 **바꾸지 않고** 넘긴다.
 
 ## 11. WDA 체크리스트
 
@@ -219,9 +245,10 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 | W-10 | 오류 봉투에 `code` | M0 필수 |
 | W-11 | 내려받기 머리(attachment · Content-Length · nosniff · HTML 은 CSP sandbox) | M0 필수 |
 | W-12 | 재기동에 끊긴 실행 · 렌더를 failed(interrupted) | M0 필수 |
-| W-13 | 보존 기한 알리기 · 지운 뒤 404/410 | 권장 |
-| W-14 | 렌더 동시 상한(줄) | 권장 |
+| W-13 | 보존 기한 · 지운 뒤 404/410 — 지금 아무것도 지우지 않는다 | **강하게 권장** |
+| W-14 | 렌더 동시 상한(줄) — 지금 상한 없음 | **강하게 권장** |
 | W-15 | Idempotency-Key | 선택 |
+| W-21 | `format:deliberation` — 심의 보고서 꼴(WDA 의 다음 일) | 심의 자리 단추의 전제 |
 | W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 |
 | W-19 | 슬라이드 PDF | 청하지 않는다(사용자 결정 11-01) |
 | P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 |

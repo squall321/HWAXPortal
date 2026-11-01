@@ -104,6 +104,14 @@ WDA(WebDesignAgents) 세션이 포털에 '발표자료' 행선지를 청했다 �
 - **그림.** RA 보고서의 file_id 그림은 WDA 가 `WDA_RA_*` **서비스 자격**이 있을 때만 받는다(`src/wdpipeline/assets.py:92-121`). 사람 명의 원칙과
   맞지 않으니 포털 길에서는 쓰지 않는다(§10 · M2).
 
+- **WDA 세션의 답(11-01)** — W-1 ~ W-12 는 지금 하나도 없다(사용자가 직접 시킬 때만 짓는다 — 포털은 요청서의 계약대로 짓고 시험의 가짜 WDA 가
+  그것을 따른다). 심의(`deliberation` 템플릿) 보고서는 장면이 제품 소개 뼈대로 눌려 결정문 · 액션아이템이 사라진다 — 심의 꼴을 다음 일로 짓고
+  `format:deliberation` 으로 알린다(W-21). wide-16x9 에서 pptx · pdf 가 둘 다 나온다. 시간은 파이프라인 0.5초 + 렌더(pptx + pdf) 5.0초 = 5.5초,
+  크기는 pptx 1,200 KB · pdf 1,926 KB. **보존이 없고(실행 60건에 372 MB) 동시 상한이 없다(요청마다 스레드)** — W-13 · W-14 를 강하게 권했다.
+- 템플릿 — 심의 결과 카드와 `/보고서` 저장 답의 보고서는 `deliberation` 템플릿이고(에이전트 서버 `deliberation.py:7631,7892`), RA 보내기 알림의 보고서는
+  `__import_blank__` 다. `deliberation` 보고서는 블록 정의를 보고서에 싣지 않는다(타입은 RA 템플릿 스키마 — ReportArchive
+  `modules/reports/routes.py:677-722`) — WDA 의 지금 ingest 는 정의 없는 content 키를 건너뛴다(`ingest.py:407-442`).
+
 ### 2.5 단추를 막을 권한 키
 
 `plat:webdesign` 이 이미 있다 — 플랫폼 `webdesign` · 게이트웨이 `heax-web_design_agents`(`backend/config/access.yaml:147-149`). RA 읽기는
@@ -165,6 +173,9 @@ WDA(WebDesignAgents) 세션이 포털에 '발표자료' 행선지를 청했다 �
 - **능력 탐침** — `GET /agent/deck/status` 가 WDA `/api/health` 의 `features` 에 `owner` 가 있는지 본다(60초 붙잡음). 없거나 **모르면 숨긴다** —
   모르는 채로 보이면 주인 없는 WDA(옛 SIF 로 되돌린 박스)에 본문을 넘기게 된다. DocForge 목적지의 '모르면 숨기지 않는다'(DF-D21 ②)와 반대인 까닭은
   위험의 종류가 다르기 때문이다(그쪽은 실패, 이쪽은 누출).
+- **템플릿 문(W-21)** — RA 보고서의 템플릿 가운데 하나라도 `deliberation` 이면 `owner` 에 더해 `format:deliberation` 이 있어야 한다. 화면은 자리마다
+  템플릿을 안다(심의 결과 카드 · `/보고서` = deliberation, RA 보내기 알림 = 그 밖) — `status` 가 `formats.deliberation` 을 알려 주고, 만들기는 RA 에서 읽은
+  실제 템플릿으로 다시 본다(아니면 409 와 까닭). 사용자에게 '심의 결과 카드 단추를 W-21 전까지 둘지' 를 묻는 중이다(U-6) — 문은 어느 쪽이든 짓는다.
 - 허브 계정 — 허브 게이트는 포털 PAT 의 이메일로 허브 사용자를 찾고, 없으면 403 '허브 계정이 없다 — 포털에서 HEAX Hub 타일을 한 번 눌러…' 를 낸다
   (HEAXHub `authz.py:61-74`). 포털은 그 글을 그대로 보인다. 허브 타일이 보이는 사람은 화면이 미리 로그인해 계정이 생긴다
   (`frontend/src/components/layout/SsoPrimer.tsx:7`, `backend/app/auth/routes/launch.py:24`).
@@ -202,12 +213,12 @@ job_id 는 포털이 짓는 32자 16진 무작위다. 칸 — `owner_sub` · `ow
 ### 7.3 한 번만 · 늦음 · 끝
 
 - 같은 사람 · 같은 보고서 · 같은 옵션의 잡이 돌면 새로 만들지 않고 그 잡을 준다. 끝난 지 보존 기한 안이면 그것을 주고 '다시 만들기'(`again`)만 새로 만든다.
-- 사람당 동시 상한 `wda_deck_inflight_max`(2) — 넘으면 429 와 까닭.
+- 사람당 동시 상한 `wda_deck_inflight_max`(2) · 박스 전체 동시 상한 `wda_deck_inflight_box_max`(4) — 넘으면 429 와 까닭. WDA 에 동시 상한이 없어서다(W-14).
 - `advance` 는 잡 잠금 안에서 기록을 다시 읽는다 — 렌더 맡기기는 `render_submitted_at` 이 비었을 때만, 알림은 `finished` 가 비었을 때만. 두 번 눌러도
   알림은 하나다.
-- 늦음 — 준비 30분 · 렌더 60분 · 영상이 있으면 180분을 넘으면 상태에 `late: true` 를 싣고 화면이 '오래 걸린다' 를 말한다(잡은 그대로).
-  WDA 가 24시간이 지나도 running 이면 포털이 실패로 닫는다(`wda_deck_give_up_s`). WDA 가 재기동에 끊긴 실행을 failed 로 적으면(W-12) 이 그물은 거의
-  걸리지 않는다.
+- 늦음 — WDA 실측이 5.5초(11-01)라 문턱을 넉넉히 낮췄다. 준비 5분 · 렌더 15분 · 영상이 있으면 60분을 넘으면 상태에 `late: true` 를 싣고 화면이
+  '오래 걸린다' 를 말한다(잡은 그대로). 6시간이 지나도 끝나지 않으면 포털이 실패로 닫는다(`wda_deck_give_up_s`) — WDA 는 재기동에 끊긴 실행을
+  running 으로 남긴다(W-12 전까지 이 그물이 유일하다).
 - 끝(done · failed)을 본 화면은 저절로 `advance` 를 부른다 — 패널이든 입력창 위 줄이든. 알림은 그 사람의 대화에만 쓰므로 사람에게 다시 묻지 않는다
   (WD-D10). 단추를 누른 대화가 답을 받는 중이면 끝날 때까지 기다렸다 부른다(PP-D3 ⑤의 순서).
 - 취소는 M1 에 없다 — WDA 에 취소가 없다. '숨기기' 는 목록에서만 뺀다(WDA 는 끝까지 돈다).
@@ -308,3 +319,4 @@ M1 은 스위치를 꺼 둔 채 올린다 — M0 이 끝나지 않은 박스에�
 | U-3 | 허브 매니페스트에 `launch.portal_auth: true` 를 켤까 | **켠다.** HEAXHub 변경과 dev 반영은 다른 에이전트가 한다 — 이 가지는 HEAXHub 를 건드리지 않는다(WD-D26) |
 | U-4 | 'PDF' 는 무엇인가 | **WDA 의 정식 보고서 문서(`doc_style=report`)가 기본, 요약(brief) · 메모(memo)는 고를 수 있게.** 슬라이드 PDF(W-19)는 지금 청하지 않는다(WD-D27) |
 | U-5 | M1 의 단추 자리 | **셋 모두** — 심의 결과 카드 · `/보고서` 저장 답 · RA 보내기 알림. 분석 루틴 RA 초안은 M2(WD-D28) |
+| U-6 | (묻는 중) 심의 결과 카드 단추를 W-21(`format:deliberation`) 전까지 둘까 | 코디네이터가 사용자에게 묻고 있다. 문은 어느 쪽이든 짓는다 — W-21 이 없으면 `deliberation` 보고서의 단추는 서지 않는다(WD-D29) |
