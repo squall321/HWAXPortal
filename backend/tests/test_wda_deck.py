@@ -558,6 +558,26 @@ def test_만들기의_답을_잃으면_결과를_모른다고_말하고_다시_�
     assert W.load(s, rec["job_id"], "kim@corp.com")["wda"]["run_id"] in fake.runs
 
 
+def test_결과를_모르는_잡을_다시_누르다_다른_까닭으로_실패해도_잡_id_를_버리지_않는다(box):
+    """다시 누른 만들기가 RA 읽기 등에서 실패해도 앞선 실행이 WDA 에 있을 수 있다 — 잡 id 를 지우면 다음에 새 키로 보내 실행이 둘이 된다(WD-D58)."""
+    c, fake, s = box["c"], box["fake"], box["s"]
+    fake.lose_create_response = 1
+    assert _make(box).status_code == 504
+    (rec,) = W.records(s)
+    orig = fake.ra
+
+    def ra_down(req):
+        return httpx.Response(503, json={"detail": "RA 가 잠시 내려갔다"})
+
+    fake.ra = ra_down
+    assert _make(box).status_code == 502
+    (again,) = W.records(s)
+    assert again["job_id"] == rec["job_id"] and again["wda"]["create_unknown"] is True, "잡 id 를 그대로 — 결과는 여전히 모른다"
+    fake.ra = orig
+    r = _make(box)
+    assert r.status_code == 200 and r.json()["job_id"] == rec["job_id"] and len(fake.runs) == 1
+
+
 def test_연결조차_못_했으면_연결하지_못했다고_말하고_예약을_놓는다(box):
     box["fake"].refuse_connect = 1
     r = _make(box)

@@ -789,6 +789,7 @@ async def deck_create(
                     rec = r          # 앞선 만들기의 결과를 모른다 — 같은 잡 id(Idempotency-Key)로 다시 묻는다(WD-D58). 자리는 이미 잡혀 있다
                     break
                 return {**(_reserved_view(r, now) if reserving(r) else view(r, now=now)), "created": False}
+        retrying = rec is not None
         if rec is not None:
             rec = await asyncio.to_thread(load, settings, rec["job_id"], owner)     # records() 는 읽기 전용이다(WD-D61)
             rec["wda"]["create_unknown"] = False
@@ -840,7 +841,12 @@ async def deck_create(
         raise _http_error(exc) from exc
     except DeckError as exc:
         async with lock(job_id):
-            await asyncio.to_thread(drop, settings, job_id)
+            if retrying:
+                # 앞선 만들기의 결과는 여전히 모른다(WDA 에 실행이 있을 수 있다) — 잡 id 를 버리지 않는다. 다음에 다시 누르면 같은 키로 묻는다
+                rec["wda"]["create_unknown"] = True
+                await asyncio.to_thread(save, settings, rec)
+            else:
+                await asyncio.to_thread(drop, settings, job_id)
         _audit(request, principal, "deck_create", "failed", job_id=job_id, report_id=body.report_id, error=exc.message[:300])
         raise _http_error(exc) from exc
     title = data.get("title") if isinstance(data.get("title"), str) else ""
