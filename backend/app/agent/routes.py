@@ -2643,7 +2643,8 @@ _TALLY_KEYS = ("agree", "conditional", "oppose", "abstain", "total", "responded"
 def _report_id_of(v) -> int | None:
     if isinstance(v, bool):
         return None
-    if isinstance(v, str) and v.strip().isdigit():
+    # ASCII 숫자만 — str.isdigit 는 '²' · '٣' 도 참이라 int('²') 가 터지고(중계가 그 답을 못 남긴다) '٣' 은 3 이 됐다(docs/wda-deck WD-D45)
+    if isinstance(v, str) and re.fullmatch(r"[0-9]+", v.strip()):
         v = int(v.strip())
     return v if isinstance(v, int) and v > 0 else None
 

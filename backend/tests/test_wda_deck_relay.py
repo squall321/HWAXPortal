@@ -99,7 +99,8 @@ def test_보고서_저장_답의_ra_report_를_답_meta_로_남긴다(run):
 
 
 @pytest.mark.parametrize("bad", [{"id": "abc", "title": "t"}, {"id": 0, "title": "t"}, {"id": -3, "title": "t"},
-                                 {"id": True, "title": "t"}, {"title": "t"}, "58", None])
+                                 {"id": True, "title": "t"}, {"title": "t"}, "58", None,
+                                 {"id": "²", "title": "t"}, {"id": "٣", "title": "t"}, {"id": "５８", "title": "t"}])
 def test_꼴이_틀린_ra_report_는_남기지_않는다(run, bad):
     msgs = run("/보고서", [("result", {"type": "text", "content": "저장", "ra_report": bad}), ("done", {})])
     assert "ra_report" not in (_answer(msgs)["meta"] or {})
