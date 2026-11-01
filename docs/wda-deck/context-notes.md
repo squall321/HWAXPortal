@@ -527,3 +527,5 @@ DocForge 호출은 허브 관리자로 접혀 DocForge 의 주인 검사가 모�
 
 ③ WDA 는 장면 꼴이 내지 않는 출력을 말없이 거른다(`runs.py:366-367`) —
 요청 W-9 로 이름과 까닭을 돌려 달라 했다.
+
+**WD-D85 U-2 뒤집힘 — WDA push · 허브 SIF · dev 확인은 WDA 세션이 맡는다(사용자 결정 2026-11-01 밤).** 사용자가 WDA 세션에 직접 맡겼다("니가 해줘"). 그 세션이 HTTPS 토큰의 workflow 권한 막힘을 SSH 로 돌아 77커밋을 올렸고(`6d6abb6..df446ae`, rebase · force 없음 — 문서가 인용한 해시는 살아 있다) WDA 리포의 `remote.origin.pushurl` 을 SSH 로 고정했다. 포털 세션에서 사용자에게 확인했다 — '맞다, 그대로 둔다'. 허브는 앱 커밋이 바뀌면 SIF 를 저절로 짓는다(커밋 게이트 — 매니페스트 version 을 올릴 필요 없음). 같은 때 사용자 결정 — dev 포털에서 박스 스위치 `WDA_DECK_ENABLED` 를 켜고 server-setup 2절을 돈 뒤 **켜 둔다**(cae00 은 그대로 꺼짐).

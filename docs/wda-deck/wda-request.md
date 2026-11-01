@@ -303,7 +303,7 @@ heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항�
 | W-21 | 심의 보고서 꼴 `delib-16x9` — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400(11-01 저녁 지음 · draft · 허브 SIF 전 → 11-01 밤 `active` — 로컬 판, 10의 6) | 심의 자리 단추의 전제 — 포털은 `active` 일 때만 연다(사용자 결정 11-01 — draft 는 숨김) |
 | W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 |
 | W-19 | 슬라이드 PDF | 청하지 않는다(사용자 결정 11-01) |
-| P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 |
+| P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 → 11-01 밤 뒤집힘 — 사용자가 WDA 세션에 직접 맡겼고 그 세션이 SSH 로 올렸다(`6d6abb6..df446ae`, 역사 그대로 · WD-D85) |
 | P-2 | 매니페스트 `launch.portal_auth: true` | 반영됨 — HEAXHub `385783f`(WDA 할 일 없음) |
 
 ## 12. 포털이 적대 검토 두 차례 뒤 바꾼 것(11-01 밤 — WDA 에 닿는 것만)
