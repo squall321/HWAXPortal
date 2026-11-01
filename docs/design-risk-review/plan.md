@@ -1488,7 +1488,7 @@ R-004·R-005 가 `mcp_degraded` 에서 '위반 없음(pass=true)' 으로 나오�
 ### 3.3.1 봉투
 
 ```json
-{"diff_version":"1.0","diff_id":"<hex32>","project_id":"<hex32>",
+{"diff_version":"1.0","diff_id":"<hex32>","project_id":"<hex32>","pair_kind":"same_project_revision",
  "base":{"snapshot_id":"…","ir_hash":"…","label":"F7-DV1 2026-07-02"},
  "target":{"snapshot_id":"…","ir_hash":"…","label":"F7-DV2 2026-08-20"},
  "taxonomy_version":"1.0","rule_version":"rules-1.0",
@@ -1511,6 +1511,8 @@ R-004·R-005 가 `mcp_degraded` 에서 '위반 없음(pass=true)' 으로 나오�
 ```
 
 `base_blocked`·`target_blocked` 는 두 rr_state 의 `blocked` 이고 어느 하나라도 true 면 `POST /api/diffs` 는 409 `{gates}` 로 끝나 diff 행이 생기지 않는다.
+
+`pair_kind ∈ same_project_revision | cross_project` 는 `rr_diffs.pair_kind` 열(§5.2.2)의 사본이고 늘 싣는다(필수) — 비교 화면의 '짝' 칸이 본문에서 읽어 다른 과제 비교를 같은 과제 리비전으로 보이지 않게 한다. `semantic.blocked_by ∈ G2 | capture_partial | null` 이다 — `G2` 는 same-as 미확정(§3.2.2 표 G2), `capture_partial` 은 §3.3.6 `capture_parity` 거짓의 '의미 이벤트 미생성' 을 적는 자리다(2026-11-01, 리스크 앱 계약 `rr_diff.v1.json` 을 생산자 본문에 맞춘 것 — 앱 context-notes OI-1).
 
 ### 3.3.2 cid — 항목 id 규칙
 
@@ -1565,6 +1567,8 @@ R-004·R-005 가 `mcp_degraded` 에서 '위반 없음(pass=true)' 으로 나오�
  "confidence":"high","design_relevant":true,"unconfirmed":false,"lower_bound":false,"excluded_reason":null,
  "text":"HINGE_PLATE_L↔DISPLAY_PANEL kind tied→touching (rank 2→1) min_gap=0.000→0.018 mm [c:5b0e…]"}
 ```
+
+`subject.dns` 는 cid 의 `key_a`·`key_b`(§3.3.2)를 싣는다. 대부분의 code 는 노드 dn(`p:…`)이지만 다섯 code 는 꼴이 다르고 계약이 code 마다 묶는다 — `asm.rollup_changed` → `asm:<asm_key>`, `dim.named_changed`·`dim.named_unmeasured` → `dim:<name>`, `contact.scope_changed` → `contact#<n>`(dyna 접촉 번호, §3.3.3 dyna.scope_changed 의 contact_index), `result.part_metric_shift` → `[dn, metric]` 정확히 둘(metric 은 `result_delta[].metric` 과 같은 어휘). 소비처(브리프 이름 후보 · ECAD caveat · 화면)는 노드가 아닌 열쇠에도 그대로 돈다(2026-11-01, 리스크 앱 context-notes OI-1).
 
 | code | change_kind | 전제·임계 | 비고 |
 |---|---|---|---|
