@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DECK_CHANGED, DeckHttpError, advanceDeck, deckJobs, dismissDeck, type DeckJob } from '../../api/deck.api';
 import { useCan } from '../../auth/useCan';
 import { useChat } from '../../state/ChatContext';
-import { DECK_HIDDEN_BACKOFF, deckOpen, deckStateText } from './deck';
+import { DECK_HIDDEN_BACKOFF, deckOpen, deckSettled, deckStateText } from './deck';
 import { forgetDeckStatus, useDeckStatus, useTabVisible } from './useDeckStatus';
 
 // 끝나지 않은 잡이 있을 때만 다시 묻는다 — 없으면 화면을 열 때 한 번뿐이다.
@@ -48,13 +48,17 @@ export function DeckResume() {
         if (openCount.current) setRound((r) => r + 1);
         return;
       }
-      // 끝(next)인 잡은 저절로 한 걸음 — 렌더 맡기기 · 끝 알림(숨긴 잡도). 알림은 그 사람의 대화에만 쓰므로 다시 묻지 않는다(WD-D10)
+      // 끝(next)인 잡은 저절로 한 걸음 — 렌더 맡기기 · 끝 알림(숨긴 잡도). 알림은 그 사람의 대화에만 쓰므로 다시 묻지 않는다(WD-D10).
+      // 한 걸음은 곧바로 간다 — 그 대화에 질문이 돌면 서버가 끝(파일 · 링크)은 적고 대화 알림만 미룬다(다음 차례에 다시, WD-D75)
       for (const j of list.filter((x) => x.next)) {
         if (stop) return;
         try {
-          if (j.next === 'finish') await cb.current.afterStream(j.conversation_id);
           const a = await advanceDeck(j.job_id);
-          if (a.notice) cb.current.addDeckNotice(a.conversation_id, a.notice);
+          if (a.notice) {
+            // 서버 사본에는 남았다 — 화면 사본에는 이 탭이 그 대화의 답을 받는 중이면 끝난 뒤에 붙인다
+            await cb.current.afterStream(a.conversation_id);
+            cb.current.addDeckNotice(a.conversation_id, a.notice);
+          }
           list = list.map((x) => (x.job_id === a.job_id ? { ...a, dismissed: x.dismissed } : x));
         } catch {
           // 다음 차례에 다시
@@ -63,7 +67,8 @@ export function DeckResume() {
       if (stop) return;
       const live = list.filter(deckOpen);
       openCount.current = live.length;
-      setJobs(live.filter((j) => !j.dismissed));
+      // 줄에는 아직 만드는 잡만 — 끝을 적고 알림만 기다리는 잡은 보이지 않고 다음 차례에 알림을 남긴다(WD-D75)
+      setJobs(live.filter((j) => !j.dismissed && !deckSettled(j)));
       if (live.length) setRound((r) => r + 1);
     })();
     return () => {

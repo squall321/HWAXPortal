@@ -628,8 +628,10 @@ def view(rec: dict, f: dict | None = None, now: float | None = None) -> dict:
     fin = rec.get("finished")
     if fin:
         # 파일이 WDA 에서 지워졌으면(받기가 404 · 410 — WD-D62) 링크를 싣지 않는다 — 화면은 '다시 만들기' 를 보인다
+        # 알림만 미뤄 둔 잡(WD-D75)은 next 가 finish 로 남는다 — 화면이 다음 걸음(advance)으로 알림을 남긴다
         return {**base, "state": fin["state"], "step": fin.get("step") or "", "progress": 100 if fin["state"] == "done" else None,
-                "error": fin.get("error"), "late": False, "next": None, "skipped": fin.get("skipped") or [],
+                "error": fin.get("error"), "late": False, "next": "finish" if fin.get("pending") else None,
+                "notice_pending": bool(fin.get("pending")), "skipped": fin.get("skipped") or [],
                 "expired": bool(fin.get("expired")),
                 "files": [] if fin.get("expired") else [{**x, "label": LABEL.get(x["kind"], x["kind"]), "url": file_url(rec["job_id"], x["kind"])}
                                                         for x in fin.get("files") or []]}
@@ -916,8 +918,10 @@ async def deck_jobs(
     ensure(principal, *NEEDS)      # 만들기만이 아니다 — 거둔 권한으로 진행 · 받기가 이어지지 않게(WD-D50)
     now = time.time()
     # 숨긴 잡도 끝나지 않았으면 싣는다(dismissed 표지) — 줄이 계속 한 걸음씩 가 끝 알림을 남긴다. 숨긴 것을 화면에 보이지는 않는다(WD-D59)
+    # 알림만 미뤄 둔 잡(WD-D75)도 숨겼든 아니든 싣는다 — 줄이 다음 걸음으로 알림을 남긴다
     mine = [r for r in await asyncio.to_thread(records, settings)
-            if r.get("owner_sub") == principal.subject and (not r.get("dismissed") or not r.get("finished"))][:20]
+            if r.get("owner_sub") == principal.subject
+            and (not r.get("dismissed") or not r.get("finished") or r["finished"].get("pending"))][:20]
     open_ = [r for r in mine if not r.get("finished") and not reserving(r)]      # 예약은 WDA 에 묻지 않는다(WD-D56)
     for r in open_:
         seen(r["job_id"], now)
@@ -971,11 +975,14 @@ async def deck_job(
 
 async def step(request: Request, settings: Settings, job_id: str, who: Principal) -> dict:
     """잡을 한 걸음 — 렌더 맡기기(WDA 가 이어서 하지 않는 판) 또는 끝(알림 한 건, 단추를 누른 그 대화에). 잡마다 잠금 · 두 번 불러도 알림은 하나.
-    who 는 그 잡의 주인이다(advance 는 부른 사람 = 주인, 만들기 앞의 정리는 기록의 주인 — WD-D59). 거절은 DeckError · AuthError 로 올린다."""
+    who 는 그 잡의 주인이다(advance 는 부른 사람 = 주인, 만들기 앞의 정리는 기록의 주인 — WD-D59). 거절은 DeckError · AuthError 로 올린다.
+    끝(파일 · 링크 · 상한에서 빠짐)은 늘 곧바로 적고, 대화 알림만 그 대화에 질문이 돌면 미뤄 다음 걸음이 남긴다(_post_notice — WD-D75)."""
     async with lock(job_id):
         rec = await asyncio.to_thread(load, settings, job_id, who.subject)
         fin = rec.get("finished")
         if fin:
+            if fin.get("pending"):
+                return await _post_notice(request, settings, rec, who)
             return {**view(rec), "notice": fin.get("notice"), "noticed": bool(fin.get("saved"))}
         if reserving(rec):
             return _reserved_view(rec, time.time())
@@ -997,11 +1004,6 @@ async def step(request: Request, settings: Settings, job_id: str, who: Principal
             return view(rec, fold(run, rec=rec, now=now, settings=settings), now=now)
         if f["next"] != "finish":
             return view(rec, f, now=now)
-        from app.agent.routes import turn_active     # 지연 import — 중계가 세는 '도는 챗 턴'(routes 는 이 모듈을 부르지 않는다)
-        if turn_active(rec["conversation_id"]):
-            # 그 대화에 질문이 돌고 있다(다른 탭 · 기기 포함 — 이 포털의 중계가 센다). 지금 알림을 남기면 서버 사본에서 질문과 답 사이에 낀다 —
-            # 끝을 아직 적지 않고 미룬다(next 는 그대로 finish — 화면이 다시 부른다, WD-D66)
-            return {**view(rec, f, now=now), "deferred": True}
         files: list[dict] = []
         skipped = list(f["skipped"])
         state, error, step_ = f["state"], f["error"], f["step"]
@@ -1021,20 +1023,37 @@ async def step(request: Request, settings: Settings, job_id: str, who: Principal
             if not files:
                 state, step_, error = "failed", "파일 만들기에서 멈춤", "WDA 가 끝났다고 했지만 받을 파일이 하나도 없습니다."
         n = notice(rec, state=state, files=files, skipped=skipped, error=error, step=step_, keep_days=settings.wda_deck_job_days)
-        store = request.app.state.conv_store
-        try:
-            saved = await asyncio.to_thread(
-                store.append, conversation_id=rec["conversation_id"], owner_sub=rec["owner_sub"], role="assistant",
-                content=n["text"], meta={"activity": n["activity"], "upload": True, "deck": n["deck"]},
-                msg_id=f"deck-{job_id}")      # 잡마다 정해진 id — 덧붙인 뒤 기록이 실패해 다시 와도 하나(WD-D54)
-        except sqlite3.OperationalError as exc:
-            # 끝을 적지 않는다 — 화면이 다시 부르면 그때 남긴다(알림 없이 끝난 잡이 되지 않게)
-            raise AuthError("대화 저장소가 바쁩니다 — 잠시 뒤 다시 시도합니다.", status_code=503) from exc
+        # 끝을 먼저 적는다 — 받기 링크가 지금부터 서고 상한에서 빠진다. 알림은 그다음이고 못 남기면(질문이 도는 대화 · 저장소가 바쁨) 미뤄 둔 채
+        # 다음 걸음이 남긴다(pending — 화면에는 next 가 finish 로 남는다, 2차 적대 검토 D · WD-D75)
         rec["finished"] = {"state": state, "step": step_, "error": error, "files": files, "skipped": skipped,
-                           "at": time.time(), "notice": n, "saved": bool(saved)}
+                           "at": time.time(), "notice": n, "saved": False, "pending": True}
         await asyncio.to_thread(save, settings, rec)
-    _audit(request, who, "deck_finish", "ok" if state == "done" else "failed", job_id=job_id, report_id=rec["report"]["id"],
-           files=[x["kind"] for x in files], skipped=[s["target"] for s in skipped], noticed=bool(saved))
+        _audit(request, who, "deck_finish", "ok" if state == "done" else "failed", job_id=job_id, report_id=rec["report"]["id"],
+               files=[x["kind"] for x in files], skipped=[s["target"] for s in skipped])
+        return await _post_notice(request, settings, rec, who)
+
+
+async def _post_notice(request: Request, settings: Settings, rec: dict, who: Principal) -> dict:
+    """끝을 적은 잡의 알림을 단추를 누른 그 대화에 남긴다 — 잡 잠금 안에서 부른다. 그 대화에 질문이 돌고 있으면(다른 탭 · 기기 포함 — 이 포털의
+    중계가 센다) 지금 남기면 서버 사본에서 질문과 답 사이에 낀다 — 미뤄 둔다(WD-D66). 화면의 줄이 다음 차례에 다시 부른다(WD-D75)."""
+    from app.agent.routes import turn_active     # 지연 import — 중계가 세는 '도는 챗 턴'(routes 는 이 모듈을 부르지 않는다)
+    fin = rec["finished"]
+    if turn_active(rec["conversation_id"]):
+        return {**view(rec), "notice": None, "noticed": False, "deferred": True}
+    n = fin["notice"]
+    store = request.app.state.conv_store
+    try:
+        saved = await asyncio.to_thread(
+            store.append, conversation_id=rec["conversation_id"], owner_sub=rec["owner_sub"], role="assistant",
+            content=n["text"], meta={"activity": n["activity"], "upload": True, "deck": n["deck"]},
+            msg_id=f"deck-{rec['job_id']}")      # 잡마다 정해진 id — 덧붙인 뒤 기록이 실패해 다시 와도 하나(WD-D54)
+    except sqlite3.OperationalError as exc:
+        # 미뤄 둔 채 둔다 — 화면이 다시 부르면 그때 남긴다(알림 없이 끝난 잡이 되지 않게)
+        raise AuthError("대화 저장소가 바쁩니다 — 잠시 뒤 다시 시도합니다.", status_code=503) from exc
+    fin["pending"] = False
+    fin["saved"] = bool(saved)
+    await asyncio.to_thread(save, settings, rec)
+    _audit(request, who, "deck_notice", "ok" if saved else "failed", job_id=rec["job_id"], report_id=rec["report"]["id"])
     return {**view(rec), "notice": n, "noticed": bool(saved)}
 
 

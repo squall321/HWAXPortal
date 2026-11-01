@@ -56,6 +56,9 @@ export interface DeckJob {
   created?: boolean;
   notice?: DeckNotice | null;
   noticed?: boolean;
+  /** 끝(파일 · 링크)은 적었고 대화 알림만 미뤄 두었다 — 그 대화에 질문이 돌고 있었다. next 는 finish 로 남아 다음 걸음이 알림을 남긴다(WD-D75). */
+  notice_pending?: boolean;
+  deferred?: boolean;
 }
 
 /** 발표자료 창구의 거절 — 화면이 상태로 가른다(404 = 박스 스위치가 꺼졌거나 그 잡이 없다 — 묻기를 멈춘다, WD-D65). */

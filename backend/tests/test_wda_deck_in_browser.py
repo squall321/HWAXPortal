@@ -85,7 +85,12 @@ _STUB = r"""
       return json({ jobs: window.__list || [], keep_days: 7 });
     }
     if (u.startsWith('/agent/deck/jobs/')) {
-      if (u.endsWith('/advance')) { window.__list = []; return json(window.__advanced); }
+      if (u.endsWith('/advance')) {
+        // __advQueue — 차례대로 줄 답(알림만 미룬 끝 등). 다 쓰면 __advanced. 아직 next 가 있는 답이면 목록에 남긴다
+        const a = window.__advQueue && window.__advQueue.length ? window.__advQueue.shift() : window.__advanced;
+        window.__list = a && a.next ? [a] : [];
+        return json(a);
+      }
       if (u.endsWith('/dismiss')) return json({ dismissed: true });
       if (window.__jobOff) return json({ detail: 'Not Found' }, 404);
       return json(window.__states.length > 1 ? window.__states.shift() : window.__states[0]);
@@ -350,6 +355,32 @@ const SCENARIOS = {
     return { after: (await gets()) - n0, note: await page.evaluate(() => (document.querySelector('.deck-panel .upl-err') || {}).textContent || ''),
              errors: page.__errors };
   },
+  // 그 대화에 질문이 도는 동안 끝난 잡 — 끝(받기 링크)은 곧바로 보이고 칸은 묻기를 멈춘다. 대화 알림은 줄이 다음 차례들에 남긴다(WD-D75)
+  async deferred(browser) {
+    const page = await open(browser);
+    const PENDING = { ...DONE, next: 'finish', notice: null, noticed: false, notice_pending: true, deferred: true };
+    // 맡길 때 줄이 목록을 한 번 못 읽는다 — 줄은 쉬고 있다(끝나지 않은 잡을 본 적이 없다). 칸이 끝을 보고 알려야 줄이 넘겨받는다
+    await page.evaluate(([q, r, f, p, d]) => { window.__created = q; window.__states = [r, f]; window.__advQueue = [p, p, p];
+      window.__advanced = d; window.__list = [q]; window.__listFail = 1; }, [QUEUED, RENDERING, FINISH, PENDING, DONE]);
+    await page.locator('.deck-go').first().click();
+    await page.locator('.deck-panel .upl-go').click();
+    await page.getByText('발표자료 만드는 중').first().waitFor();
+    await forward(page, 3100);
+    await forward(page, 3100);
+    await page.getByText('발표자료를 만들었습니다').first().waitFor();
+    const links = await page.evaluate(() => Array.from(document.querySelectorAll('.deck-panel .deck-file')).map((a) => a.getAttribute('href')));
+    const gets = async () => (await calls(page, '/agent/deck/jobs/')).filter((c) => c.method === 'GET').length;
+    const g0 = await gets();
+    // 칸이 끝을 보면 줄에 알린다 — 줄이 곧바로 한 번 걷는다(아직 질문이 돈다)
+    const mid = { counts: await text(page, 'counts') };
+    await forward(page, 10500);                                          // 줄의 차례 — 아직 질문이 돈다(알림을 또 미룬다)
+    mid.strip = await page.evaluate(() => !!document.querySelector('.deck-resume'));
+    mid.counts2 = await text(page, 'counts');
+    await forward(page, 10500);                                          // 다음 차례 — 질문이 끝났다(알림)
+    await page.waitForFunction(() => document.getElementById('lastA').textContent.includes('발표자료를 만들었습니다'));
+    return { links, mid, spotGets: (await gets()) - g0, counts: await text(page, 'counts'),
+             advances: (await calls(page, '/agent/deck/jobs/')).filter((c) => c.url.endsWith('/advance')).length, errors: page.__errors };
+  },
   // 숨긴 잡도 끝 알림을 남긴다 — 줄은 그 잡을 계속 한 걸음씩 가되 화면에는 보이지 않는다(WD-D59)
   async dismissedFinish(browser) {
     const page = await open(browser);
@@ -444,6 +475,17 @@ def test_목록을_한_번_못_읽어도_줄이_다시_묻고_알림을_남긴�
     assert s["mid"]["strip"] is True and "발표자료를 만들었습니다" not in s["mid"]["last"], "못 읽은 차례에는 줄을 그대로 둔다"
     assert s["counts"] == "srv-A:4,srv-B:2", "다음 차례에 다시 물어 끝 알림을 A 에"
     assert s["lists"] >= 3
+
+
+def test_질문이_도는_대화의_잡은_끝을_곧바로_보이고_알림은_줄이_나중에(seen):
+    """2차 적대 검토 D — 미룸이 긴 턴 내내 잡을 열어 두었다(링크 없이 · 3초마다 · 상한을 먹으며). 끝은 곧바로 보이고 칸은 묻기를 멈추며,
+    대화 알림은 줄이 다음 차례들에 남긴다(WD-D75)."""
+    s = seen("deferred")
+    assert s["links"] == [f"/agent/deck/jobs/{'f' * 32}/files/pptx", f"/agent/deck/jobs/{'f' * 32}/files/pdf"], "받기 링크는 곧바로"
+    assert s["spotGets"] == 0, "끝을 적은 잡은 칸이 더 묻지 않는다"
+    assert s["mid"]["counts"] == "srv-A:3,srv-B:2" and s["mid"]["counts2"] == "srv-A:3,srv-B:2", "알림은 아직 — 서버가 미뤘다"
+    assert s["mid"]["strip"] is False, "끝을 적은 잡은 '만들고 있는 발표자료' 줄에 보이지 않는다"
+    assert s["counts"] == "srv-A:4,srv-B:2" and s["advances"] == 4, "칸 한 번 · 줄이 넘겨받아 곧바로 한 번 · 차례마다 — 알림 한 건"
 
 
 def test_숨긴_잡도_끝_알림을_남기고_줄에는_보이지_않는다(seen):

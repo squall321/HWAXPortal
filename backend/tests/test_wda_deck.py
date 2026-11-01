@@ -16,6 +16,7 @@ import asyncio
 import copy
 import json
 import os
+import sqlite3
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -810,9 +811,67 @@ def test_그_대화에_질문이_도는_동안은_알림을_미룬다(box):
     end = R._turn_begin(box["conv"]["kim@corp.com"])
     try:
         a = c.post(f"/agent/deck/jobs/{job}/advance").json()
-        assert a.get("deferred") is True and a["next"] == "finish" and _messages(box) == [], "미룬다 — 끝을 아직 적지 않는다"
+        assert a.get("deferred") is True and a["next"] == "finish" and _messages(box) == [], "알림만 미룬다 — 다음 걸음이 남긴다"
     finally:
         end()
+    a = c.post(f"/agent/deck/jobs/{job}/advance").json()
+    assert a["noticed"] is True and len(_messages(box)) == 1
+
+
+def test_질문이_도는_대화의_잡도_끝은_곧바로_적고_알림만_미룬다(box):
+    """2차 적대 검토 D — 미룸(WD-D66)이 긴 턴(심의 · 루틴은 몇 시간) 내내 잡을 열어 두었다 — 받기 링크 없이, 3초마다 묻고, 상한을 먹으며. 끝(파일 ·
+    링크)은 곧바로 적고 대화 알림만 미룬다(WD-D75)."""
+    from app.agent import routes as R
+    c, fake, s = box["c"], box["fake"], box["s"]
+    s.wda_deck_inflight_max = 1
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.rendered(rid)
+    end = R._turn_begin(box["conv"]["kim@corp.com"])
+    try:
+        a = c.post(f"/agent/deck/jobs/{job}/advance").json()
+        assert a["state"] == "done" and [f["kind"] for f in a["files"]] == ["pptx", "pdf"], "받기 링크는 지금부터"
+        assert a["deferred"] is True and a["notice_pending"] is True and a["next"] == "finish" and a["notice"] is None
+        assert _messages(box) == [], "대화 알림만 미룬다"
+        g = c.get(f"/agent/deck/jobs/{job}").json()
+        assert g["files"][0]["url"] == f"/agent/deck/jobs/{job}/files/pptx" and g["next"] == "finish"
+        assert c.get(f"/agent/deck/jobs/{job}/files/pptx").status_code == 200
+        assert _make(box, doc_style="memo").status_code == 200, "끝을 적은 잡은 사람당 상한을 먹지 않는다"
+        assert c.post(f"/agent/deck/jobs/{job}/dismiss").status_code == 200
+        (j,) = [x for x in c.get("/agent/deck/jobs").json()["jobs"] if x["job_id"] == job]
+        assert j["next"] == "finish" and j["notice_pending"] is True, "숨긴 잡도 알림이 남을 때까지 목록에 — 줄이 다음 걸음을 간다"
+    finally:
+        end()
+    a = c.post(f"/agent/deck/jobs/{job}/advance").json()
+    assert a["noticed"] is True and a["notice"]["deck"]["job_id"] == job and a["next"] is None and a["notice_pending"] is False
+    (m,) = _messages(box)
+    assert m["content"] == a["notice"]["text"]
+    assert c.post(f"/agent/deck/jobs/{job}/advance").json()["noticed"] is True and len(_messages(box)) == 1
+    assert job not in [x["job_id"] for x in c.get("/agent/deck/jobs").json()["jobs"]], "숨겼고 알림까지 남긴 잡은 빠진다"
+
+
+def test_대화_저장소가_바빠도_끝은_적고_알림은_다음_걸음에(box, monkeypatch):
+    """끝을 먼저 적는다 — 알림을 덧붙이다 저장소가 바쁘면(503) 끝 · 링크는 남고 다음 걸음이 알림을 남긴다(WD-D75)."""
+    c, fake = box["c"], box["fake"]
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.rendered(rid)
+    store = app.state.conv_store
+    real = store.append
+    hit = {"n": 0}
+
+    def busy(**kw):
+        if not hit["n"]:
+            hit["n"] = 1
+            raise sqlite3.OperationalError("database is locked")
+        return real(**kw)
+
+    monkeypatch.setattr(store, "append", busy)
+    assert c.post(f"/agent/deck/jobs/{job}/advance").status_code == 503
+    g = c.get(f"/agent/deck/jobs/{job}").json()
+    assert g["state"] == "done" and len(g["files"]) == 2 and g["next"] == "finish", "끝은 적었다 — 알림만 남았다"
     a = c.post(f"/agent/deck/jobs/{job}/advance").json()
     assert a["noticed"] is True and len(_messages(box)) == 1
 
@@ -839,7 +898,7 @@ def test_알림을_덧붙인_뒤_기록이_실패해도_다시_오면_알림은_
     hit = {"n": 0}
 
     def flaky(settings, rec):
-        if rec.get("finished") and not hit["n"]:
+        if (rec.get("finished") or {}).get("saved") and not hit["n"]:      # 알림을 덧붙인 뒤의 기록
             hit["n"] = 1
             raise OSError(28, "No space left on device")
         return real(settings, rec)

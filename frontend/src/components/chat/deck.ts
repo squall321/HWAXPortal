@@ -91,7 +91,12 @@ export const DECK_DOC_STYLES: { id: DeckDocStyle; label: string }[] = [
 /** 문서 꼴(report · brief · memo)이 뜻을 갖는 출력 — PDF · Word · HTML 은 WDA 의 '읽는 문서' 다(WD-D17). */
 export const DECK_DOC_TARGETS: DeckTarget[] = ['pdf', 'docx', 'html'];
 
-/** 끝나지 않은 잡 — 아직 끝을 적지 않았거나(next) 진행 중이다. */
+/** 끝나지 않은 잡 — 아직 끝을 적지 않았거나(next) 진행 중이다. 알림만 미뤄 둔 잡도 여기 든다(줄이 다음 차례에 알림을 남긴다). */
 export function deckOpen(j: Pick<DeckJob, 'state' | 'next'>): boolean {
   return j.next != null || (j.state !== 'done' && j.state !== 'failed');
+}
+
+/** 끝을 적은 잡 — 받기 링크 · 까닭이 섰다. 대화 알림만 미뤄 둔 잡(notice_pending — next 는 finish 로 남는다, WD-D75)도 끝이다. */
+export function deckSettled(j: Pick<DeckJob, 'state' | 'next' | 'notice_pending'>): boolean {
+  return (j.state === 'done' || j.state === 'failed') && (!j.next || Boolean(j.notice_pending));
 }

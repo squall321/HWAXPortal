@@ -1,19 +1,15 @@
 // 포털이 만든 RA 보고서 옆 '발표자료로' 단추 — 출력을 고르고 맡기면 진행을 보이고, 끝나면 단추를 누른 그 대화에 받기 링크 알림을 남긴다(docs/wda-deck)
 import { useEffect, useRef, useState } from 'react';
-import { DeckHttpError, advanceDeck, createDeck, deckJob, type DeckDocStyle, type DeckJob, type DeckTarget } from '../../api/deck.api';
+import { DECK_CHANGED, DeckHttpError, advanceDeck, createDeck, deckJob, type DeckDocStyle, type DeckJob, type DeckTarget } from '../../api/deck.api';
 import { useCan } from '../../auth/useCan';
 import { config } from '../../config';
 import { useChat } from '../../state/ChatContext';
-import { DECK_DOC_STYLES, DECK_DOC_TARGETS, DECK_HIDDEN_BACKOFF, DECK_TARGETS, deckSize, deckStateText, type DeckReport } from './deck';
+import { DECK_DOC_STYLES, DECK_DOC_TARGETS, DECK_HIDDEN_BACKOFF, DECK_TARGETS, deckSettled, deckSize, deckStateText, type DeckReport } from './deck';
 import { forgetDeckStatus, useDeckStatus, useTabVisible } from './useDeckStatus';
 
 // 화면이 진행을 묻는 박자 — WDA 실측 5.5초(11-01)라 3초면 두 번이면 끝난다. 묻기는 포털이 한 번 WDA 에 묻는 가벼운 일이다.
 const POLL_MS = 3000;
 const POLL_ERR_MAX = 3;
-
-function finishedJob(j: DeckJob): boolean {
-  return !j.next && (j.state === 'done' || j.state === 'failed');
-}
 
 export function DeckSpot({ report }: { report: DeckReport }) {
   const can = useCan();
@@ -35,20 +31,25 @@ export function DeckSpot({ report }: { report: DeckReport }) {
   const cb = useRef({ addDeckNotice, afterStream });
   cb.current = { addDeckNotice, afterStream };
 
-  // 진행 — 끝을 적을 때까지. 끝(next)이면 advance 로 한 걸음(렌더 맡기기 · 끝 알림 — 그 대화가 답을 받는 중이면 끝난 뒤에). 이 칸이 사라져도 잡은
-  // WDA 에서 돈다 — 입력창 위 '만들고 있는 발표자료' 줄이 이어 보고 끝을 적는다(WD-D9 · D10).
+  // 진행 — 끝을 적을 때까지. 끝(next)이면 advance 로 한 걸음(렌더 맡기기 · 끝 적기 — 곧바로. 그 대화에 질문이 돌면 서버가 대화 알림만 미룬다,
+  // WD-D75). 이 칸이 사라져도 잡은 WDA 에서 돈다 — 입력창 위 '만들고 있는 발표자료' 줄이 이어 보고 끝을 적는다(WD-D9 · D10).
   useEffect(() => {
-    if (!job || paused || stopped || finishedJob(job)) return;
+    if (!job || paused || stopped || deckSettled(job)) return;
     let stop = false;
     const timer = window.setTimeout(async () => {
       try {
         let j = await deckJob(job.job_id);
         if (stop) return;
-        if (j.next === 'finish') await cb.current.afterStream(j.conversation_id);
-        if (stop) return;
         if (j.next) j = await advanceDeck(j.job_id);
         if (stop) return;
-        if (j.notice) cb.current.addDeckNotice(j.conversation_id, j.notice);
+        if (j.notice) {
+          // 서버 사본에는 남았다 — 화면 사본에는 이 탭이 그 대화의 답을 받는 중이면 끝난 뒤에 붙인다(그 사이 칸이 사라져도 붙인다)
+          await cb.current.afterStream(j.conversation_id);
+          cb.current.addDeckNotice(j.conversation_id, j.notice);
+          if (stop) return;
+        }
+        // 끝은 적었고 알림만 미뤄 두었다 — 이 칸은 묻기를 멈추고 입력창 위 줄이 다음 차례에 알림을 남긴다(지금 목록을 다시 읽게 알린다)
+        if (j.next && deckSettled(j)) window.dispatchEvent(new Event(DECK_CHANGED));
         errs.current = 0;
         setJob(j);
       } catch (e) {
@@ -97,7 +98,7 @@ export function DeckSpot({ report }: { report: DeckReport }) {
   const name = report.title || `보고서 ${report.id}`;
 
   if (job) {
-    const done = finishedJob(job);
+    const done = deckSettled(job);
     // 같은 보고서 · 옵션의 잡이 다른 대화에서 돌고 있으면 그 잡을 받는다 — 알림은 그 대화에 남는다(WD-D62)
     const here = job.conversation_id === sid;
     const where = here
