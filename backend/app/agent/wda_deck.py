@@ -749,6 +749,18 @@ async def deck_status(
     return out
 
 
+async def _release_reservation(settings: Settings, rec: dict, retrying: bool) -> None:
+    """만들기가 WDA 의 답 없이 실패했다 — 새 잡이면 예약을 놓고, 결과를 모르는 잡을 다시 누른 것이면 결과 모름으로 되돌린다(앞선 실행이 WDA 에
+    있을 수 있어 잡 id 를 버리지 않는다, WD-D58). 취소된 요청에서도 끝까지 한다(가린다)."""
+    with anyio.CancelScope(shield=True):
+        async with lock(rec["job_id"]):
+            if retrying:
+                rec["wda"]["create_unknown"] = True
+                await asyncio.to_thread(save, settings, rec)
+            else:
+                await asyncio.to_thread(drop, settings, rec["job_id"])
+
+
 @router.post("/jobs", dependencies=[Depends(_knob)])
 async def deck_create(
     request: Request,
@@ -844,15 +856,14 @@ async def deck_create(
         _audit(request, principal, "deck_create", "unknown", job_id=job_id, report_id=body.report_id)
         raise _http_error(exc) from exc
     except DeckError as exc:
-        async with lock(job_id):
-            if retrying:
-                # 앞선 만들기의 결과는 여전히 모른다(WDA 에 실행이 있을 수 있다) — 잡 id 를 버리지 않는다. 다음에 다시 누르면 같은 키로 묻는다
-                rec["wda"]["create_unknown"] = True
-                await asyncio.to_thread(save, settings, rec)
-            else:
-                await asyncio.to_thread(drop, settings, job_id)
+        await _release_reservation(settings, rec, retrying)
         _audit(request, principal, "deck_create", "failed", job_id=job_id, report_id=body.report_id, error=exc.message[:300])
         raise _http_error(exc) from exc
+    except BaseException:
+        # DeckError 밖의 실패도 — RA 연결 없음(AuthError) · 끊긴 요청(취소) · 뜻밖의 오류. 예약을 남기면 300초 동안 '맡기는 중' 유령이 상한 · 중복을
+        # 먹었다(2차 적대 검토 R1 · R3, WD-D72)
+        await _release_reservation(settings, rec, retrying)
+        raise
     title = data.get("title") if isinstance(data.get("title"), str) else ""
     async with lock(job_id):
         rec.update(report={"id": body.report_id, "title": title[:300]}, images_not_sent=len(file_refs(data.get("pages"))))

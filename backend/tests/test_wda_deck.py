@@ -578,6 +578,33 @@ def test_결과를_모르는_잡을_다시_누르다_다른_까닭으로_실패�
     assert r.status_code == 200 and r.json()["job_id"] == rec["job_id"] and len(fake.runs) == 1
 
 
+def test_RA_연결이_없어_실패해도_예약을_놓고_결과_모름은_지킨다(box):
+    """2차 적대 검토 R1 · R3 — RA 연결 없음(AuthError)은 DeckError 가 아니라 예약 정리를 건너뛰었다. 새 잡이면 300초 동안 '맡기는 중' 유령이
+    상한 · 중복을 먹었고, 결과를 모르는 잡을 다시 누른 것이면 결과 모름 표지가 지워졌다(WD-D72)."""
+    c, fake, s = box["c"], box["fake"], box["s"]
+    park = Principal(subject="park@corp.com", email="park@corp.com", display_name="박", groups=NEEDS)
+    box["who"]["p"] = park
+    cid = c.post("/agent/conversations", json={"title": "t", "kind": "chat"}).json()["id"]
+    app.state.user_store.delete_connection(email="park@corp.com", service="reportarchive")
+    r = c.post("/agent/deck/jobs", json={"report_id": 41, "conversation_id": cid})
+    assert r.status_code == 400 and W.records(s) == [], "유령 예약을 남기지 않는다"
+    app.state.user_store.set_connection(email="park@corp.com", service="reportarchive", token="rat_kim")
+    try:
+        r2 = c.post("/agent/deck/jobs", json={"report_id": 41, "conversation_id": cid})
+        assert r2.status_code == 200 and r2.json()["created"] is True
+    finally:
+        app.state.user_store.delete_connection(email="park@corp.com", service="reportarchive")   # 다른 시험의 '연결 없는 박' 을 지킨다
+    # 결과를 모르는 잡을 연결 없이 다시 누른다 — 표지를 지키고 잡 id 를 버리지 않는다
+    box["who"]["p"] = KIM
+    fake.lose_create_response = 1
+    assert _make(box).status_code == 504
+    unknown = next(r for r in W.records(s) if r["owner_sub"] == "kim@corp.com")
+    app.state.user_store.delete_connection(email="kim@corp.com", service="reportarchive")
+    assert _make(box).status_code == 400
+    assert W.load(s, unknown["job_id"], "kim@corp.com")["wda"]["create_unknown"] is True
+    app.state.user_store.set_connection(email="kim@corp.com", service="reportarchive", token="rat_kim")
+
+
 def test_연결조차_못_했으면_연결하지_못했다고_말하고_예약을_놓는다(box):
     box["fake"].refuse_connect = 1
     r = _make(box)
