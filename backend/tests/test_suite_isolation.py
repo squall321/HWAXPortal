@@ -47,3 +47,37 @@ def test_기동이_여는_저장소는_이_박스의_실_저장소가_아니다(
 def test_저장소마다_다른_파일이다(opened):
     """한 임시 파일을 여럿이 나눠 쓰면 표 이름이 겹칠 때 서로의 스키마를 본다."""
     assert len(set(opened.values())) == len(opened), opened
+
+
+# ── LLM/GPU 현황 수집기(docs/ops-dashboard) — 포털 밖의 호스트 서비스지만 시험이 그 모듈을 부른다 ───────────────────────────────────
+def test_수집기가_여는_저장소와_읽는_설정은_이_박스의_실_자리가_아니다():
+    """인자 없이(= 시험이 기본값을 탈 때) 수집기가 여는 sqlite 와 읽는 infra/.env — conftest 가 둘 다 임시 자리로 돌린다. 없으면 수집기 시험
+    하나가 이 박스의 infra/.state/llm-status 에 표본을 쌓거나, 실제 infra/.env 의 키로 실 LLM 서버를 부른다. 실제로 연 파일은 sqlite 에 묻는다."""
+    import argparse
+    import importlib.util
+    import sys
+    root = BACKEND_DIR.parent / "infra"
+    keep, sys.dont_write_bytecode = sys.dont_write_bytecode, True     # 지문(services.yaml fp: infra/llm-status)의 폴더에 __pycache__ 를 남기지 않는다
+    try:
+        spec = importlib.util.spec_from_file_location("llm_status_collector_iso", root / "llm-status" / "collector.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+    finally:
+        sys.dont_write_bytecode = keep
+    args = argparse.Namespace(state_dir=None, env_file=None)
+    real = root.resolve()
+    env_file = Path(m._env_file(args)).resolve()
+    assert real not in env_file.parents, f"수집기가 이 리포의 infra/ 아래 설정을 읽는다 — {env_file}"
+    st = m.state_dir(args).resolve()
+    for r in (*REAL_ROOTS, real):                  # 열기 **전에** 본다 — 실 자리면 여는 순간 그 자리에 폴더 · DB 가 생긴다
+        assert r not in st.parents, f"수집기 저장 자리가 실 자리다 — {st}"
+    lock, store, why = m.open_state(st)
+    assert store is not None, why
+    try:
+        db = _db_file(store.conn)
+        for r in (*REAL_ROOTS, real):
+            assert r not in db.parents, f"수집기가 실 저장소를 열었다 — {db}"
+    finally:
+        store.close()
+        lock.close()
+

@@ -31,3 +31,7 @@ for _key, _name in (("TOKEN_STORE_PATH", "token_store.sqlite"), ("CONV_STORE_PAT
 # Settings 에 주소·비밀을 직접 주고 HTTP 대역을 건다(test_suspend_revokes_app_credentials).
 os.environ.setdefault("MCP_GATEWAY_URL", "http://127.0.0.1:9")
 os.environ.setdefault("STE_SSO_SECRET", "")
+# LLM/GPU 현황 수집기(docs/ops-dashboard) — 시험이 이 박스의 수집기 저장소(infra/.state/llm-status)에 쓰거나, 실제 infra/.env 의 키를 읽어 실 LLM
+# 서버를 두드리지 않게. 수집기는 이 둘을 환경에서 먼저 본다(collector.py). 무엇을 여는지는 test_suite_isolation 이 수집기의 기본 자리를 열어 본다.
+os.environ.setdefault("LLM_STATUS_STATE_DIR", tempfile.mkdtemp(prefix="hwax-test-llm-status-"))
+os.environ.setdefault("LLM_STATUS_ENV_FILE", os.path.join(tempfile.mkdtemp(prefix="hwax-test-llm-status-env-"), "infra.env"))
