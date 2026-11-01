@@ -16,3 +16,8 @@ search_tools 압축) → cae00 측정 → 중간(P2 · P4b) → 나머지로 둔
 
 **TS-4 심의 결과 요약(P4a)의 기본은 full 이다.** 루틴의 심의 단계가 결정문을 쪽마다 다 읽는다(`../HWAXAgentServer/routine.py:1769-1782`) — 기본을 바꾸면 루틴이 말없이
 요약만 받는다.
+
+**TS-5 사용자 결정(2026-11-02 KST) — 작은 코드 셋을 지금 짓고, 서버 엔진을 기본 길로 안내한다.** 작은 코드 셋 — 에이전트 서버 `deliberate_status(wait_s, brief)` ·
+`deliberate_result(view="summary")`(골라 쓰기 — 기본 full), 게이트웨이 `search_tools` 촘촘한 JSON · `detail=true` 상한. 결과 줄이기(P4b) · 근거 참조(P2)는 cae00 측정
+(받은 편지함 Q13) 뒤에 정한다. 안내 — 스킬 · 등록 배치 · MCP 서버 안내 글에 'deliberate_start · 리스크 잡 llm=glm 을 먼저, Claude 워크플로는 품질을 따로 재야
+할 때만' 을 적는다.
