@@ -1,6 +1,6 @@
 // 서버 대화 저장소 REST 클라이언트 — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본
 import { apiFetch } from './client';
-import type { ActivityItem, Conversation, DelibTurn, Message, RoutineState } from '../types/chat';
+import type { ActivityItem, Conversation, DelibData, DelibTally, DelibTurn, Message, RoutineState } from '../types/chat';
 import { newId, panelsFromMeta } from '../state/chatStore';
 
 export type ConvKind = 'chat' | 'deliberation';
@@ -92,6 +92,34 @@ function routineFromMeta(meta: Record<string, unknown> | null): RoutineState | u
 
 /** 서버 메시지 → 런타임 Message[]. persona 발언 묶음은 다음 assistant 에 delib(turns/decision)로
  *  붙여 기존 DelibView 렌더를 그대로 재사용한다(MCP 심의가 웹 심의처럼 보이게). */
+const TALLY_KEYS = ['agree', 'conditional', 'oppose', 'abstain', 'total', 'responded'] as const;
+
+/** 답 meta.delib_outcome → delib.outcome. 꼴이 틀리면 없다. 번호는 양의 정수만(없는 보고서로 단추가 서지 않게). */
+function outcomeFromMeta(raw: unknown): DelibData['outcome'] | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const rid = typeof o.report_id === 'number' && Number.isInteger(o.report_id) && o.report_id > 0 ? o.report_id : null;
+  const t = (o.tally && typeof o.tally === 'object' ? o.tally : {}) as Record<string, unknown>;
+  const tally: Record<string, number> = {};
+  for (const k of TALLY_KEYS) if (typeof t[k] === 'number') tally[k] = t[k] as number;
+  return {
+    report_id: rid,
+    title: typeof o.title === 'string' ? o.title : '',
+    // 집계 카드는 넷(동의 · 조건부 · 반대 · 착석)이 다 있어야 그린다 — 반쪽 집계로 '동의 undefined' 를 그리지 않는다
+    ...((['agree', 'conditional', 'oppose', 'total'] as const).every((k) => typeof tally[k] === 'number')
+      ? { tally: tally as unknown as DelibTally } : {}),
+    unanimous: o.unanimous === true,
+  };
+}
+
+/** 답 meta.ra_report → raReport — 번호가 양의 정수일 때만. */
+function raReportFromMeta(raw: unknown): Message['raReport'] | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== 'number' || !Number.isInteger(r.id) || r.id <= 0) return undefined;
+  return { id: r.id, title: typeof r.title === 'string' ? r.title : '' };
+}
+
 export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
   const out: Message[] = [];
   let turns: DelibTurn[] = [];
@@ -182,6 +210,9 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 결정문 없이 받기가 끝난 심의 — 답의 글은 엔진이 먼저 흘린 앞머리(불량 환기 VOC 등)뿐이다(meta.delib_undecided — 포털 중계). 결정문으로
       // 읽으면 끝난 심의가 되어 서버에서 아직 도는 심의에 '멈춤' 이 사라진다(라이브 칸에서도 그 글은 결정문이 아니다)
       const undecided = (m.meta as { delib_undecided?: unknown } | null)?.delib_undecided === true;
+      // 심의 결과(보고서 번호 · 제목 · 집계) — 포털 중계가 답 meta.delib_outcome 으로 남긴다(docs/wda-deck WD-D12). 없으면(옛 사본) 종전대로 없다 —
+      // 그때 결과 카드 · '보고' 단계 · '발표자료로' 단추는 서지 않는다.
+      const outcome = outcomeFromMeta((m.meta as { delib_outcome?: unknown } | null)?.delib_outcome);
       out.push({
         id: newId(),
         role: 'assistant',
@@ -193,6 +224,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
           ...(cx ? { cancelled: { message: stopNote } } : {}),
           ...(rid ? { runId: rid } : {}),
           ...(nx ? { nextStage: true } : {}),
+          ...(outcome ? { outcome } : {}),
           totalRounds: Math.max(...local.map((t) => t.round)),
           ...(Array.isArray(ev) && ev.length
             ? {
@@ -215,6 +247,9 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       const routine = m.role === 'assistant' ? routineFromMeta(m.meta) : undefined;
       // 패널 포인터(HA-20) — 서버 사본은 포인터만 쥔다. 다른 기기 · 새로고침에서는 '다시 열기' 카드로 그린다(입력 · 결과 없이)
       const panels = m.role === 'assistant' ? panelsFromMeta((m.meta as { panels?: unknown } | null)?.panels) : undefined;
+      // '/보고서' 가 만든 RA 보고서 · 발표자료 알림의 잡(docs/wda-deck) — 단추와 같은 알림을 두 번 붙이지 않는 열쇠
+      const raReport = m.role === 'assistant' ? raReportFromMeta((m.meta as { ra_report?: unknown } | null)?.ra_report) : undefined;
+      const dj = m.role === 'assistant' ? (m.meta as { deck?: { job_id?: unknown } } | null)?.deck?.job_id : undefined;
       out.push({
         id: newId(),
         role: m.role,
@@ -224,6 +259,8 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ...(Array.isArray(act) ? { activity: act } : {}),
         ...(routine ? { routine } : {}),
         ...(panels ? { panels } : {}),
+        ...(raReport ? { raReport } : {}),
+        ...(typeof dj === 'string' && dj ? { deckJob: dj } : {}),
       });
     }
   }

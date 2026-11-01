@@ -31,6 +31,7 @@ import { DocActions } from './DocActions';
 import { UploadRouter } from './UploadRouter';
 import { DocDispatchPanel } from './DocDispatchPanel';
 import { DocforgeResume } from './DocforgeResume';
+import { DeckResume } from './DeckResume';
 import { useOperatorGone } from './useOperatorGone';
 
 export interface ComposerHandle {
@@ -519,6 +520,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       {!staged && !resume && canUp && can('plat:docforge') && (
         <DocforgeResume refresh={resumeTick} onResume={setResume} />
       )}
+      {/* 만들고 있는 발표자료(docs/wda-deck) — 권한 · 박스 스위치 · WDA 능력은 그 안에서 본다 */}
+      {!staged && <DeckResume />}
       {!staged && resume && (
         <DocDispatchPanel
           key={resume.job_id}
