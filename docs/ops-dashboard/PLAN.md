@@ -1,7 +1,7 @@
 # 운영 현황 — 이용 통계 · LLM/GPU 현황 계획
 
 > 사용자 요청(2026-11-02 KST) — "포탈에 이용자 통계도 나오고 gpu 잡, 즉 llm서비스로 사용되는 하드웨어 현황이 조회되면 좋을것 같아".
-> 지금은 **계획만** 있다(구현 전). 조사는 읽기만 했고, 근거 줄은 dev 판 기준이다 — 포털 `ad3c0ca6` · 게이트웨이 master `63fbc4f` · 에이전트 서버 `9f08507`.
+> 이용 통계 M1(관리자 화면 `/admin/usage` · `GET /auth/admin/usage`)은 지었다(11-02, 가지 `wt1102/usage-stats` — 결정 OD-5 ~ OD-12). 나머지는 계획이다. 조사는 읽기만 했고, 근거 줄은 dev 판 기준이다 — 포털 `ad3c0ca6` · 게이트웨이 master `63fbc4f` · 에이전트 서버 `9f08507`.
 > dev 의 숫자는 cae00 과 다르다(dev 로그인 원장은 계정 둘) — 숫자는 cae00 에서 다시 잰다. 결정은 [context-notes.md](context-notes.md), 할 일은 [checklist.md](checklist.md).
 
 ## 1. 판정
