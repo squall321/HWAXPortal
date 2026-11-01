@@ -23,6 +23,7 @@ import re
 import os
 import shutil
 import sqlite3
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -2667,6 +2668,36 @@ def _ra_report_of(v) -> dict | None:
 # 브라우저가 떠난 뒤에도 상류를 끝까지 읽는 루틴 턴의 pump(R3 D9) — 아무도 await 하지 않는 작업은 이벤트 루프가 약한 참조만 쥐어 도는
 # 중에 GC 될 수 있다. 끝나면 빠진다.
 _DETACHED_RELAYS: set[asyncio.Task] = set()
+# 대화마다 이 프로세스에서 도는 챗 턴(사용자 발화를 남긴 뒤 ~ 답을 남길 때까지)의 시작 시각 — 발표자료 알림이 다른 탭 · 기기의 질문과 답 사이에
+# 끼지 않게 그 사이에는 미룬다(docs/wda-deck WD-D66). 끝 정리가 새더라도 알림을 영영 막지 않게 _TURN_STALE_S 가 지난 턴은 세지 않는다.
+_ACTIVE_TURNS: dict[str, list[float]] = {}
+_TURN_STALE_S = 6 * 3600
+
+
+def turn_active(cid: str) -> bool:
+    """그 대화에 지금 도는 챗 턴이 있나(발표자료 advance 가 알림을 미룰지 — wda_deck.step)."""
+    now = time.monotonic()
+    return any(now - t < _TURN_STALE_S for t in _ACTIVE_TURNS.get(cid, ()))
+
+
+def _turn_begin(cid: str) -> Callable[[], None]:
+    """도는 턴을 하나 센다 — 돌려준 함수를 한 번 부르면 뺀다(두 번 불러도 한 번)."""
+    t0 = time.monotonic()
+    _ACTIVE_TURNS.setdefault(cid, []).append(t0)
+    done = False
+
+    def end() -> None:
+        nonlocal done
+        if done:
+            return
+        done = True
+        left = _ACTIVE_TURNS.get(cid) or []
+        if t0 in left:
+            left.remove(t0)
+        if not left:
+            _ACTIVE_TURNS.pop(cid, None)
+
+    return end
 
 
 def _detached_relay_done(task: asyncio.Task) -> None:
@@ -2781,10 +2812,13 @@ async def chat(
     # 에이전트 서버로 가는 풀(max_connections)이 퍼밋 수와 같아, 퍼밋 없이 도는 상류 연결은 다른 챗을 풀 대기(agent_unreachable)로
     # 밀어낸다 — 넘치면 들어올 때 429 로 말하는 편이 정직하다. pump 가 돌기 전에 끝나면(헤더를 보내다 끊김) 종전처럼 응답이 돌려준다.
     pumping = False
+    turn_end: list[Callable[[], None]] = [lambda: None]     # 이 대화의 도는 턴 — 답을 남긴 뒤(또는 pump 가 돌지 못하고 끝나면) 뺀다(WD-D66)
 
     def _on_close() -> None:
         if not (routine_turn and pumping):
             _release()
+        if not pumping:
+            turn_end[0]()
 
     # ⚠ acquire 와 gen() 사이는 반드시 보호한다. 여기서 예외가 나면 gen() 이 아예
     # 만들어지지 않으므로 그 안의 finally(sem.release) 가 영원히 실행되지 않는다 —
@@ -2818,12 +2852,13 @@ async def chat(
             # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
             if await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
                                        role="user", content=body.message, meta=_pin or None):
-                pass
+                turn_end[0] = _turn_begin(cid)
             else:
                 store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
 
     except BaseException:
         _release()
+        turn_end[0]()
         raise
 
     async def gen() -> AsyncIterator[bytes]:
@@ -3093,15 +3128,18 @@ async def chat(
 
                     # 웹 심의는 그 실행의 멈춤 기록과 같은 잠금 안에서 저장한다 — 멈춤 창구는 이 중계가 표에서 빠진 뒤로 이 잠금 뒤에서 남긴다.
                     _lock = _rt_key or (_delib_stop_key(cid, run_key) if run_key else None)
-                    with anyio.CancelScope(shield=True):
-                        async with (_routine_save_lock(_lock) if _lock else contextlib.nullcontext()):
-                            if stop_rec is not None:
-                                _DELIB_RELAYS.pop((cid, run_key), None)
-                                if not cancelled and stop_rec["stop_by"]:
-                                    # 멈춤을 청한 뒤 사건이 오기 전에 받기가 끊겼다(■ · 탭 닫기) — 끊긴 판 글로 남긴다(창구는 중계에 맡겼다)
-                                    cancelled = {"message": _DELIB_CUT_STOP_NOTE, "by": stop_rec["stop_by"], "run_id": run_key,
-                                                 "cut": True}
-                            await anyio.to_thread.run_sync(_save)
+                    try:
+                        with anyio.CancelScope(shield=True):
+                            async with (_routine_save_lock(_lock) if _lock else contextlib.nullcontext()):
+                                if stop_rec is not None:
+                                    _DELIB_RELAYS.pop((cid, run_key), None)
+                                    if not cancelled and stop_rec["stop_by"]:
+                                        # 멈춤을 청한 뒤 사건이 오기 전에 받기가 끊겼다(■ · 탭 닫기) — 끊긴 판 글로 남긴다(창구는 중계에 맡겼다)
+                                        cancelled = {"message": _DELIB_CUT_STOP_NOTE, "by": stop_rec["stop_by"], "run_id": run_key,
+                                                     "cut": True}
+                                await anyio.to_thread.run_sync(_save)
+                    finally:
+                        turn_end[0]()      # 답을 남겼다(또는 못 남겼다) — 이 대화의 미뤄 둔 발표자료 알림이 이제 들어간다(WD-D66)
                     # 이 턴의 도구 호출을 **절차 원장**에도 남긴다 — 하나의 원장, 세 생산자
                     # (PLAN §9-9). 대화 저장과 별개이고, 실패해도 챗을 막지 않는다.
                     # 루틴 턴은 건너뛴다 — 그 호출은 루틴 원장(routine_calls)에 이미 있어 여기 또 넣으면 두 벌이다(R3 D9).

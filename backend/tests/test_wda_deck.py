@@ -699,6 +699,24 @@ def test_진행을_보고_끝나면_단추를_누른_대화에_알림_한_건(bo
     assert c.get(f"/agent/deck/jobs/{job}").json()["files"][0]["url"] == f"/agent/deck/jobs/{job}/files/pptx"
 
 
+def test_그_대화에_질문이_도는_동안은_알림을_미룬다(box):
+    """다른 탭 · 기기에서 질문이 도는 동안 알림을 남기면 서버 사본에서 질문과 답 사이에 낀다 — 미루고, 턴이 끝나면 남긴다(WD-D66)."""
+    from app.agent import routes as R
+    c, fake = box["c"], box["fake"]
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.rendered(rid)
+    end = R._turn_begin(box["conv"]["kim@corp.com"])
+    try:
+        a = c.post(f"/agent/deck/jobs/{job}/advance").json()
+        assert a.get("deferred") is True and a["next"] == "finish" and _messages(box) == [], "미룬다 — 끝을 아직 적지 않는다"
+    finally:
+        end()
+    a = c.post(f"/agent/deck/jobs/{job}/advance").json()
+    assert a["noticed"] is True and len(_messages(box)) == 1
+
+
 def test_advance_를_동시에_불러도_알림은_하나(box):
     job = _make(box).json()["job_id"]
     rid = _run_id(box)

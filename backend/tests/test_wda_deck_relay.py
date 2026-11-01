@@ -120,3 +120,94 @@ def test_보고서도_심의도_아닌_답에는_칸이_없다(run):
     msgs = run("안녕", [("result", {"type": "text", "content": "안녕하세요"}), ("done", {})])
     meta = _answer(msgs)["meta"] or {}
     assert "ra_report" not in meta and "delib_outcome" not in meta
+
+
+# ── 도는 챗 턴 — 발표자료 알림을 질문과 답 사이에 끼우지 않으려고 중계가 센다(docs/wda-deck WD-D66) ───────────────────────────
+@pytest.mark.parametrize("upstream", ["ok", "down"])
+def test_챗_턴이_도는_동안만_그_대화는_도는_턴이다(upstream):
+    from fastapi.testclient import TestClient
+
+    from app.agent import routes as R
+    from app.auth.provider import Principal
+    from app.deps import principal_pat_or_session
+    from app.main import app
+
+    app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
+        subject="u1", email="u1@hwax.local", display_name="U", groups=["feat:chat"])
+    seen: dict = {}
+    raw = _sse([("result", {"type": "text", "content": "답"}), ("done", {})])
+
+    def agent(req):
+        seen["during"] = R.turn_active(seen["cid"])
+        if upstream == "down":
+            raise httpx.ConnectError("에이전트 서버가 없다", request=req)
+        return httpx.Response(200, stream=_Body(raw), headers={"content-type": "text/event-stream"})
+
+    try:
+        with TestClient(app) as c:
+            real = app.state.agent_client
+            app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(agent))
+            try:
+                seen["cid"] = c.post("/agent/conversations", json={"title": "t", "kind": "chat"}).json()["id"]
+                assert R.turn_active(seen["cid"]) is False
+                c.post("/agent/chat", json={"message": "질문", "conversation_id": seen["cid"]})
+            finally:
+                app.state.agent_client = real
+    finally:
+        app.dependency_overrides.pop(principal_pat_or_session, None)
+    assert seen["during"] is True, "사용자 발화를 남긴 뒤 상류를 부르는 동안 그 대화는 도는 턴이다"
+    assert R.turn_active(seen["cid"]) is False and seen["cid"] not in R._ACTIVE_TURNS, "답을 남기면(상류가 없어도) 뺀다"
+
+
+def test_끝_정리가_새어도_오래된_턴은_세지_않는다(monkeypatch):
+    from app.agent import routes as R
+    end = R._turn_begin("c-stale")
+    assert R.turn_active("c-stale") is True
+    real = R.time.monotonic
+    monkeypatch.setattr(R.time, "monotonic", lambda: real() + R._TURN_STALE_S + 1)
+    assert R.turn_active("c-stale") is False, "새어 남은 턴이 알림을 영영 막지 않는다"
+    monkeypatch.undo()
+    end()
+    end()
+    assert "c-stale" not in R._ACTIVE_TURNS
+
+
+def test_응답을_보내기_전에_끊겨도_턴을_뺀다():
+    """머리를 보내다 끊기면(ASGI 2.4) 생성기가 한 번도 돌지 않는다 — 퍼밋처럼 턴도 응답의 on_close 가 뺀다(WD-D66)."""
+    from fastapi.testclient import TestClient
+
+    from app.agent import routes as R
+    from app.auth.provider import Principal
+    from app.deps import principal_pat_or_session
+    from app.main import app
+
+    app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
+        subject="u1", email="u1@hwax.local", display_name="U", groups=["feat:chat"])
+    try:
+        with TestClient(app) as c:
+            cid = c.post("/agent/conversations", json={"title": "t", "kind": "chat"}).json()["id"]
+            body = json.dumps({"message": "질문", "conversation_id": cid}).encode()
+            msgs = [{"type": "http.request", "body": body, "more_body": False}]
+
+            async def receive():
+                return msgs.pop(0) if msgs else {"type": "http.disconnect"}
+
+            async def send(m):
+                if m["type"] == "http.response.start":
+                    raise OSError("브라우저가 떠났다")
+
+            scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http",
+                     "path": "/agent/chat", "raw_path": b"/agent/chat", "query_string": b"", "root_path": "",
+                     "headers": [(b"content-type", b"application/json"), (b"host", b"testserver")],
+                     "client": ("127.0.0.1", 1), "server": ("testserver", 80), "app": app}
+
+            async def call():
+                try:
+                    await app(scope, receive, send)
+                except OSError:
+                    pass
+
+            c.portal.call(call)
+            assert R.turn_active(cid) is False and cid not in R._ACTIVE_TURNS
+    finally:
+        app.dependency_overrides.pop(principal_pat_or_session, None)

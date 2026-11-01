@@ -948,6 +948,11 @@ async def step(request: Request, settings: Settings, job_id: str, who: Principal
             return view(rec, fold(run, rec=rec, now=now, settings=settings), now=now)
         if f["next"] != "finish":
             return view(rec, f, now=now)
+        from app.agent.routes import turn_active     # 지연 import — 중계가 세는 '도는 챗 턴'(routes 는 이 모듈을 부르지 않는다)
+        if turn_active(rec["conversation_id"]):
+            # 그 대화에 질문이 돌고 있다(다른 탭 · 기기 포함 — 이 포털의 중계가 센다). 지금 알림을 남기면 서버 사본에서 질문과 답 사이에 낀다 —
+            # 끝을 아직 적지 않고 미룬다(next 는 그대로 finish — 화면이 다시 부른다, WD-D66)
+            return {**view(rec, f, now=now), "deferred": True}
         files: list[dict] = []
         skipped = list(f["skipped"])
         state, error, step_ = f["state"], f["error"], f["step"]
