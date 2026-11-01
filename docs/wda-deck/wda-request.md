@@ -310,6 +310,12 @@ heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항�
 - **W-22 `Authorization` 을 쓰지도 남기지도 말아 달라** — 허브 게이트는 신원 머리만 지우고 다시 실을 뿐 원 요청의 `Authorization`(포털이 찍은 그 사람의
   `heax-hub` 토큰, 10분)을 WDA 까지 넘긴다. 그 토큰은 그 사람이 볼 수 있는 모든 허브 앱에 통한다 — WDA 가 로그 · 원장 · 오류 글에 그 머리를 남기면 10분
   동안 다른 허브 앱을 그 사람으로 부를 수 있다. 허브 쪽 고침(넘기기 전에 지우기)은 사용자에게 가져갔다(포털 PLAN §8, WD-D47).
+- **받기의 404 · 410 은 WDA 봉투일 때만 '지워짐' 으로 적는다**(포털 WD-D77) — W-10 봉투(`success: false` · `message`)나 `code: NOT_FOUND` 가 실린
+  404 · 410 만 파일이 지워진 것으로 적는다(링크를 걷고, 다시 누르면 새로 만든다). 몸이 봉투가 아니면(허브 쪽 404 일 수 있다) 지운 것으로 적지 않고 받기만
+  실패한다 — W-10 이 없는 판에서는 지워짐을 알아채지 못한다.
+- **받기의 답을 본다**(포털 WD-D77) — 머리의 꼴(4.5 · `_DOWNLOAD_META` 의 media type, `application/octet-stream` 도 받는다)과 앞 바이트(pptx · docx
+  `PK\x03\x04`, pdf `%PDF`, mp4 `ftyp`)를 본다. html 은 `text/html` 과 `content-disposition: attachment`(FileResponse 의 filename)가 둘 다 있어야
+  받는다 — 허브 Caddy 가 앱 경로가 없을 때 주는 SPA 첫 화면(200 index.html)과 가르는 머리다. 받기의 media type · 그 머리를 바꾸면 포털 받기가 502 다.
 - **W-23 `/api/health` 에 지금 도는 일의 수를 실어 달라** — 예 `"load": {"runs_running": n, "renders_running": n, "renders_queued": n}`. 포털은 박스 상한을
   자기 잡 기록으로 세는데, 남의 잡은 그 사람 이름으로 묻지 않기로 해(2차 적대 검토 — 남의 이름으로 허브 토큰을 찍지 않는다, 포털 WD-D74) 끝났는지 모른다.
   지금은 '갓 맡겼거나(15분) 그 주인의 화면이 최근에 물었으면(5분) 센다' 로 어림한다. WDA 가 제 일감을 알려 주면 그 어림을 걷는다(W-14 의 줄과 짝).

@@ -447,6 +447,17 @@ advance 앞에서 그 탭의 스트림(`afterStream`)을 기다려 같은 탭의
 뺀다 — WD-D66 에서 시험으로 재현하지 못한 그 줄이 이제 실제로 일하고 시험이 붙었다. 끝 정리가 샌 턴은 6시간 뒤 세지 않을 뿐 메모리에 남았다 — 새 턴을
 셀 때 6시간이 지난 것을 걷는다(지금 도는 턴 수만큼의 일이다).
 
+**WD-D77 받기는 WDA 가 낸 답만 믿는다 — 지워짐은 WDA 봉투로, 흘리는 것은 꼴과 앞 바이트로.** 2차 검토 E · R6 — ① 받기의 404 · 410 이면 무엇이든
+'지워졌다' 로 적었다(WD-D62). 허브 쪽 404 도 그렇게 적혀 링크가 사라지고, 다시 누르면 새로 만들었다. 이제 WDA 오류 봉투(W-10 — `success: false` ·
+`message`)나 WDA 오류 어휘 `code: NOT_FOUND` 가 실린 404 · 410 만 지워짐으로 적는다. 그 밖의 404 · 410 은 502 '허브에서 닿지 못했다 — 파일은 남아 있을 수
+있다' 로 말하고 기록은 그대로 둔다. W-10 이전의 WDA(detail 하나)는 지워짐을 알아채지 못하고 받기만 실패한다 — WDA main 은 W-10 을 갖췄다(코드 읽기).
+허브 게이트(authz)는 401 · 403 과 `detail` 만 내므로 봉투와 겹치지 않는다(HEAXHub `authz.py` 읽기). ② 허브 Caddy 는 앱 경로가 없으면 SPA 첫 화면을 200
+으로 준다(HEAXHub `caddy_bootstrap.json` 의 `try_files`). 포털은 그것을 `deck.pptx` 로 흘렸다. 이제 흘리기 전에 머리의 꼴과 앞 8바이트를 본다. 꼴은 WDA 가
+꼴마다 다는 media type(`_DOWNLOAD_META`)이고 `application/octet-stream` 도 받는다. 앞 바이트는 pptx · docx 가 zip 의 `PK\x03\x04`, pdf 가 `%PDF`, mp4 가
+4번째 바이트부터 `ftyp` 이다. html 은 바이트로는 허브의 index.html 과 가를 수 없어 WDA 가 늘 다는 `content-disposition: attachment`(FileResponse 의
+filename)를 함께 본다 — 허브의 정적 파일에는 없다. 맞지 않으면 502 로 말하고 흘리지 않으며 지워짐으로도 적지 않는다(허브가 돌아오면 받는다). 본 바이트는
+흘리는 몸의 앞에 그대로 붙인다. 가짜 WDA 의 받기 머리를 진짜 꼴(꼴마다 media type)로 고쳤다.
+
 ## 관찰(고치지 않음)
 
 ① 포털 주석 '(DocForge 쪽) 주인 검사도 한 번 더 걸린다'(`routes.py:1997-1999`)는 지금 배선에서 참이 아니다 — 게이트웨이 경유

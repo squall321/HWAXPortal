@@ -58,6 +58,12 @@ DELIB = {"id": 58, "workspace_slug": "personal-5", "template_id": "deliberation"
              "content": {"background": {"markdown": "심의 주제: 굽힘"}, "recommendation": {"markdown": "결정 — 12um 는 쓰지 않는다"}}}]}
 
 
+WDA_MEDIA = {"pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation", "pdf": "application/pdf",
+             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "html": "text/html; charset=utf-8",
+             "mp4": "video/mp4"}
+SPA_INDEX = b"<!doctype html><html><head><title>HEAX Hub</title></head><body><div id=root></div></body></html>"
+
+
 class FakeHubWDA:
     """허브 게이트(포털 PAT 검증 → X-Heax-User-Email) + 요청서 계약의 WDA + RA."""
 
@@ -278,7 +284,8 @@ class FakeHubWDA:
                 outs = {{"video": "mp4"}.get(t, t) for t in ((run["render"] or {}).get("outputs") or {})}
                 if k not in outs:
                     return self.env(404, message=f"FileNotFoundError: /data/wda/renders/{parts[3]}/{k}", code="NOT_FOUND")
-                return httpx.Response(200, content=self.files[k], headers={"content-type": "application/octet-stream",
+                # WDA 의 내려받기 머리(app.py _DOWNLOAD_META · FileResponse filename — 늘 attachment)
+                return httpx.Response(200, content=self.files[k], headers={"content-type": WDA_MEDIA[k],
                                                                           "content-disposition": f'attachment; filename="{parts[3]}-{k}"'})
         return self.env(404, message="Not Found", code="NOT_FOUND")
 
@@ -1104,6 +1111,7 @@ def test_파일은_주인에게만_흘리고_머리를_단다(box):
     assert h.status_code == 200 and h.headers["content-security-policy"] == "sandbox" and h.headers["content-disposition"].startswith("attachment;")
     assert c.get(f"/agent/deck/jobs/{job}/files/docx").status_code == 404, "만들지 않은 파일"
     assert c.get(f"/agent/deck/jobs/{job}/files/exe").status_code == 404
+    box["fake"].error_codes = True                            # WDA 의 오류 봉투(W-10) — 지운 것은 WDA 가 말한다
     box["fake"].runs.clear()
     gone = c.get(f"/agent/deck/jobs/{job}/files/pdf")
     assert gone.status_code == 404 and "지워졌습니다" in gone.json()["detail"] and "다시 만들기" in gone.json()["detail"]
@@ -1126,6 +1134,7 @@ def test_WDA_가_파일을_지웠으면_지워진_것으로_적고_다시_누르
     fake.built(rid)
     fake.rendered(rid)
     c.post(f"/agent/deck/jobs/{job}/advance")
+    fake.error_codes = True                                   # WDA 의 오류 봉투(W-10) — 지운 것은 WDA 가 말한다
     fake.runs.clear()                                         # WDA 보존 기한(W-13) · 데이터 정리
     gone = c.get(f"/agent/deck/jobs/{job}/files/pptx")
     assert gone.status_code == 404 and "다시 만들기" in gone.json()["detail"]
@@ -1133,6 +1142,83 @@ def test_WDA_가_파일을_지웠으면_지워진_것으로_적고_다시_누르
     assert j["expired"] is True and j["files"] == [], "지워진 파일의 링크를 싣지 않는다"
     again = _make(box)                                        # DeckSpot 의 '발표자료로' 는 again 없이 보낸다
     assert again.status_code == 200 and again.json()["created"] is True and again.json()["job_id"] != job
+
+
+def _done_with(box, target: str) -> str:
+    job = _make(box, targets=[target]).json()["job_id"]
+    rid = _run_id(box)
+    box["fake"].built(rid)
+    box["fake"].rendered(rid)
+    assert box["c"].post(f"/agent/deck/jobs/{job}/advance").json()["state"] == "done"
+    return job
+
+
+@pytest.mark.parametrize("target", ["pptx", "html"])
+def test_허브가_SPA_첫_화면을_200_으로_주면_그것을_파일로_흘리지_않는다(box, target):
+    """2차 적대 검토 R6 — WDA 경로가 허브에 없으면 허브 Caddy 가 index.html 을 200 으로 준다(try_files). 그것을 deck.pptx 로 흘렸다(WD-D77)."""
+    c, fake = box["c"], box["fake"]
+    job = _done_with(box, target)
+    orig = fake.wda
+
+    def spa(req, path, email):
+        if "/download/" in path:
+            return httpx.Response(200, content=SPA_INDEX, headers={"content-type": "text/html; charset=utf-8"})
+        return orig(req, path, email)
+
+    fake.wda = spa
+    r = c.get(f"/agent/deck/jobs/{job}/files/{target}")
+    assert r.status_code == 502 and b"HEAX Hub" not in r.content and "WebDesignAgents 가 아닌" in r.json()["detail"]
+    j = c.get(f"/agent/deck/jobs/{job}").json()
+    assert not j["expired"] and len(j["files"]) == 1, "지워진 것으로 적지 않는다 — 허브가 돌아오면 받는다"
+    fake.wda = orig
+    assert c.get(f"/agent/deck/jobs/{job}/files/{target}").status_code == 200
+
+
+@pytest.mark.parametrize("target,kind", [("pptx", "pptx"), ("docx", "docx"), ("pdf", "pdf"), ("video", "mp4")])
+def test_받은_바이트가_그_꼴의_파일이_아니면_흘리지_않는다(box, target, kind):
+    """머리의 꼴이 맞아도 앞 바이트가 그 꼴이 아니면(zip PK · %PDF · mp4 ftyp) 흘리지 않는다(WD-D77)."""
+    job = _done_with(box, target)
+    box["fake"].files[kind] = SPA_INDEX
+    r = box["c"].get(f"/agent/deck/jobs/{job}/files/{target}")
+    assert r.status_code == 502 and b"HEAX Hub" not in r.content
+
+
+def test_머리의_꼴이_다르면_바이트가_맞아도_흘리지_않는다(box):
+    """WDA 는 꼴마다 정해진 media type 을 단다(app.py _DOWNLOAD_META) — text/html 로 온 pptx 는 WDA 의 답이 아니다(WD-D77)."""
+    c, fake = box["c"], box["fake"]
+    job = _done_with(box, "pptx")
+    orig = fake.wda
+    fake.wda = lambda req, path, email: (httpx.Response(200, content=fake.files["pptx"], headers={"content-type": "text/html"})
+                                         if "/download/" in path else orig(req, path, email))
+    assert c.get(f"/agent/deck/jobs/{job}/files/pptx").status_code == 502
+    fake.wda = lambda req, path, email: (httpx.Response(200, content=fake.files["pptx"], headers={"content-type": "application/octet-stream"})
+                                         if "/download/" in path else orig(req, path, email))
+    assert c.get(f"/agent/deck/jobs/{job}/files/pptx").status_code == 200, "일반 바이너리 꼴은 받는다(앞 바이트로 가린다)"
+
+
+def test_꼴이_맞으면_흘린다_영상과_문서도(box):
+    for target, kind in (("docx", "docx"), ("video", "mp4")):
+        job = _done_with(box, target)
+        r = box["c"].get(f"/agent/deck/jobs/{job}/files/{target}")
+        assert r.status_code == 200 and r.content == box["fake"].files[kind]
+        box["fake"].runs.clear()
+
+
+def test_허브의_404_는_파일이_지워진_것으로_적지_않는다(box):
+    """2차 적대 검토 E — WDA 봉투(success · message) · 오류 어휘(code) 없는 404 는 허브 쪽 것일 수 있다(WD-D77). 지운 것으로 적으면 링크가
+    사라지고 다시 누르면 새로 만든다."""
+    c, fake = box["c"], box["fake"]
+    job = _done_with(box, "pptx")
+    orig = fake.wda
+    fake.wda = lambda req, path, email: (httpx.Response(404, json={"detail": "Not Found"}) if "/download/" in path
+                                         else orig(req, path, email))
+    r = c.get(f"/agent/deck/jobs/{job}/files/pptx")
+    assert r.status_code == 502 and "지워졌습니다" not in r.json()["detail"]
+    j = c.get(f"/agent/deck/jobs/{job}").json()
+    assert not j["expired"] and len(j["files"]) == 1
+    fake.wda = lambda req, path, email: (httpx.Response(410, content=b"Gone") if "/download/" in path else orig(req, path, email))
+    assert c.get(f"/agent/deck/jobs/{job}/files/pptx").status_code == 502
+    assert not c.get(f"/agent/deck/jobs/{job}").json()["expired"]
 
 
 # ── 한 번만 · 상한 · 목록 ───────────────────────────────────────────────────────────────────────────

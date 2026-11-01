@@ -1118,6 +1118,33 @@ async def deck_dismiss(
     return {"job_id": job_id, "dismissed": True}
 
 
+# 받기의 답이 그 꼴의 WDA 파일인가(2차 적대 검토 E, WD-D77) — 허브 Caddy 는 앱 경로가 없으면 SPA 의 index.html 을 200 으로 준다(HEAXHub
+# caddy_bootstrap.json try_files). 머리의 꼴(WDA app.py _DOWNLOAD_META — 꼴마다 정해진 media type, 일반 바이너리도 받는다)과 앞 바이트(zip PK ·
+# %PDF · mp4 ftyp)를 본다. HTML 은 html 출력에만이고 바이트로는 허브의 index.html 과 가를 수 없어 WDA 가 늘 다는 내려받기 머리(FileResponse
+# filename → content-disposition: attachment)를 본다 — 허브의 정적 파일에는 없다.
+_SNIFF = 8
+_MAGIC = {"pptx": lambda b: b.startswith(b"PK\x03\x04"), "docx": lambda b: b.startswith(b"PK\x03\x04"),
+          "pdf": lambda b: b.startswith(b"%PDF"), "video": lambda b: b[4:8] == b"ftyp"}
+
+
+def _is_wda_file(kind: str, headers: httpx.Headers, head: bytes) -> bool:
+    ctype = headers.get("content-type", "").split(";")[0].strip().lower()
+    want = _FILE[kind][1].split(";")[0]
+    if kind == "html":
+        return ctype == want and "attachment" in headers.get("content-disposition", "").lower()
+    return ctype in (want, "application/octet-stream") and _MAGIC[kind](head)
+
+
+def _wda_gone(body: bytes) -> bool:
+    """받기의 404 · 410 을 WDA 가 냈나 — WDA 오류 봉투(success: false · message)나 WDA 오류 어휘 NOT_FOUND 가 실렸을 때만(W-10, WD-D77).
+    허브의 404 · 다른 몸은 파일이 지워졌다는 뜻이 아니다 — 지운 것으로 적으면 링크가 사라지고 다시 누르면 새로 만든다."""
+    try:
+        j = json.loads(body)
+    except ValueError:
+        return False
+    return isinstance(j, dict) and ((j.get("success") is False and "message" in j) or j.get("code") == "NOT_FOUND")
+
+
 def _filename(title: str, kind: str) -> str:
     ext = _FILE[kind][0]
     base = re.sub(r"[\x00-\x1f\x7f/\\:*?\"<>|]+", " ", title or "").strip()[:80] or "발표자료"
@@ -1178,6 +1205,12 @@ async def deck_file(
         finally:
             await up.aclose()
             await cli.aclose()
+        if up.status_code in (404, 410) and not _wda_gone(bytes(head[:_ERR_BODY_MAX])):
+            # WDA 의 봉투가 아니다 — 허브 쪽 404 일 수 있다. 파일은 남아 있을 수 있으니 지운 것으로 적지 않는다(WD-D77)
+            logger.warning("발표자료 받기 — 잡 %s 의 %s 가 WDA 봉투 없는 HTTP %s(허브 쪽일 수 있다) 까닭=%r", job_id, kind, up.status_code,
+                           bytes(head[:300]))
+            raise AuthError("허브에서 WebDesignAgents 의 파일에 닿지 못했습니다 — 파일은 남아 있을 수 있으니 잠시 뒤 다시 받으세요.",
+                            status_code=502)
         if up.status_code in (404, 410):
             # WDA 가 지웠다(보존 기한 W-13 · 정리) — 그 잡의 파일을 지워진 것으로 적는다. 화면은 받기 링크 대신 '다시 만들기' 를 보이고,
             # 같은 보고서 · 옵션을 다시 눌러도 이 잡을 돌려주지 않는다(새로 만든다, WD-D62)
@@ -1190,6 +1223,25 @@ async def deck_file(
         # 머리는 옮기지 않는다 — 풀어 읽은 바이트에 원래의 content-encoding 을 붙이면 다시 풀려다 깨진다
         err = _wda_error(httpx.Response(up.status_code, content=bytes(head[:_ERR_BODY_MAX])), "내려받기")
         raise AuthError(err.message, status_code=err.status)
+    # 무엇을 흘리는지 앞 바이트를 본다 — 허브의 SPA 첫 화면 등 WDA 파일이 아닌 답을 deck.pptx 로 흘리지 않는다(WD-D77)
+    it = up.aiter_bytes()
+    first = b""
+    try:
+        while len(first) < _SNIFF:
+            first += await it.__anext__()
+    except StopAsyncIteration:
+        pass
+    except httpx.HTTPError as exc:
+        await up.aclose()
+        await cli.aclose()
+        raise AuthError(f"WDA 에서 받다 끊겼습니다({exc.__class__.__name__}).", status_code=502) from exc
+    if not _is_wda_file(kind, up.headers, first):
+        logger.warning("발표자료 받기 — 잡 %s 의 %s 가 WDA 파일 꼴이 아니다(content-type=%r · disposition=%r · 앞 %r) — 허브의 대체 응답일 수 있다",
+                       job_id, kind, up.headers.get("content-type"), up.headers.get("content-disposition"), first[:_SNIFF])
+        await up.aclose()
+        await cli.aclose()
+        raise AuthError("WebDesignAgents 가 아닌 곳의 답을 받았습니다 — 허브에서 앱 경로가 바뀌었거나 내려가 있습니다. 잠시 뒤 다시 받으세요.",
+                        status_code=502)
     headers = {"Content-Disposition": f"attachment; filename=\"deck{_FILE[kind][0]}\"; filename*=UTF-8''{quote(_filename(rec['report'].get('title') or '', kind))}",
                "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"}
     if kind == "html":
@@ -1199,7 +1251,9 @@ async def deck_file(
     _audit(request, principal, "deck_download", "ok", job_id=job_id, kind=kind, bytes=up.headers.get("content-length"))
 
     async def body() -> AsyncIterator[bytes]:
-        async for chunk in up.aiter_bytes():
+        if first:
+            yield first
+        async for chunk in it:
             yield chunk
 
     return _DeckFileStream(up, cli, body(), media_type=_FILE[kind][1], headers=headers)
