@@ -726,18 +726,29 @@ export function ChatProvider({
     [activeId, serverKind],
   );
 
+  const activeIdRef = useRef<string | null>(activeId);
+  activeIdRef.current = activeId;
+
   const addDeckNotice = useCallback(
     (serverId: string, n: { text: string; activity: ActivityItem[]; deck: { job_id: string } }) => {
       const now = Date.now();
+      // 서버가 이미 남겼다 — 화면 사본은 불러온 대화에만 붙인다. 서버 목록에서 온 자리표시자(messages: [])에 붙이면 메시지가 생겨 열 때 서버
+      // 사본을 읽지 않고, 그 대화의 이력이 알림 하나로 가려진다(적대 검토, docs/wda-deck WD-D63). 자리표시자는 그대로 두면 열 때 서버에서
+      // 읽는다 — 지금 보는 대화면 곧바로 읽는다.
+      const target = convsRef.current.find((c) => (c.serverId ?? c.id) === serverId);
+      if (target && target.messages.length === 0) {
+        if (target.id === activeIdRef.current && target.serverId && streamConvRef.current !== target.id) refreshFromServer(target.serverId);
+        return;
+      }
       setConversations((prev) =>
         prev.map((c) => {
-          if ((c.serverId ?? c.id) !== serverId || c.messages.some((m) => m.deckJob === n.deck.job_id)) return c;
+          if ((c.serverId ?? c.id) !== serverId || c.messages.length === 0 || c.messages.some((m) => m.deckJob === n.deck.job_id)) return c;
           const msg: Message = { id: newId(), role: 'assistant', text: n.text, ts: now, activity: n.activity, deckJob: n.deck.job_id };
           return { ...c, updatedAt: now, messages: [...c.messages, msg] };
         }),
       );
     },
-    [],
+    [refreshFromServer],
   );
 
   const afterStream = useCallback(async (serverId: string) => {

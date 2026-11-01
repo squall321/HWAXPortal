@@ -29,14 +29,16 @@ function Probe() {
       <span id="active">{activeConversation?.serverId ?? ''}</span>
       <span id="counts">{conversations.map((c) => `${c.serverId}:${c.messages.length}`).join(',')}</span>
       <span id="lastA">{conversations.find((c) => c.serverId === 'srv-A')?.messages.slice(-1)[0]?.text ?? ''}</span>
+      <span id="textsC">{JSON.stringify(conversations.find((c) => c.serverId === 'srv-C')?.messages.map((m) => m.text) ?? null)}</span>
       <button id="toA" type="button" onClick={() => selectConversation('cA')}>A</button>
       <button id="toB" type="button" onClick={() => selectConversation('cB')}>B</button>
+      <button id="toC" type="button" onClick={() => selectConversation('srv-C')}>C</button>
       <DeckResume />
       <MessageList messages={messages} />
     </>
   );
 }
-(window as unknown as { __mount: (ents?: string[]) => void }).__mount = (ents) => {
+(window as unknown as { __mount: (ents?: string[] | null, serverKind?: 'chat') => void }).__mount = (ents, serverKind) => {
   const user = { subject: 'u1@corp.example', email: 'u1@corp.example', display_name: 'U', groups: [],
                  entitlements: ents ?? ['feat:chat', 'plat:webdesign', 'plat:reportarchive'] };
   createRoot(document.getElementById('root')!).render(
@@ -44,7 +46,7 @@ function Probe() {
       value={{ user, status: 'authenticated', login: () => undefined, logout: async () => undefined, refresh: async () => undefined }}
     >
       <MemoryRouter>
-        <ChatProvider>
+        <ChatProvider serverKind={serverKind}>
           <Probe />
         </ChatProvider>
       </MemoryRouter>
@@ -63,6 +65,10 @@ _STUB = r"""
     const method = (init.method || 'GET').toUpperCase();
     window.__calls.push({ url: u, method, body: typeof init.body === 'string' ? JSON.parse(init.body) : null });
     if (u === '/agent/deck/status') return json(window.__status);
+    if (u === '/agent/conversations' && method === 'GET' && window.__convList) return json({ conversations: window.__convList });
+    if (u.startsWith('/agent/conversations/') && method === 'GET' && window.__convDetail && window.__convDetail[u.slice(21)]) {
+      return json(window.__convDetail[u.slice(21)]);
+    }
     if (u === '/agent/deck/jobs' && method === 'POST') return json(window.__created);
     if (u === '/agent/deck/jobs' && method === 'GET') {
       if (window.__listFail > 0) { window.__listFail -= 1; return json({ detail: '잠시 답하지 않는다' }, 502); }
@@ -111,7 +117,7 @@ const SEED = JSON.stringify([
   { id: 'cB', serverId: 'srv-B', title: 'B', createdAt: 1, updatedAt: 1, messages: [
     { role: 'user', content: '안녕', ts: 1 }, { role: 'assistant', content: '안녕하세요', ts: 2 } ] } ]);
 
-async function open(browser, { status, ents } = {}) {
+async function open(browser, { status, ents, serverKind, before } = {}) {
   const page = await browser.newPage();
   page.setDefaultTimeout(10000);
   page.__errors = [];
@@ -127,8 +133,9 @@ async function open(browser, { status, ents } = {}) {
     window.__status = st;
     window.__states = [];
   }, [SEED, status === undefined ? STATUS(false) : status]);
+  if (before) await page.evaluate(before);
   await page.addScriptTag({ path: path.join(OUT, 'bundle.js') });
-  await page.evaluate((e) => window.__mount(e), ents || null);
+  await page.evaluate(([e, k]) => window.__mount(e, k), [ents || null, serverKind || null]);
   await page.waitForTimeout(80);
   return page;
 }
@@ -243,6 +250,29 @@ const SCENARIOS = {
     await page.locator('.deck-panel .upl-go').click();
     await page.waitForTimeout(120);
     return { text: await page.evaluate(() => (document.querySelector('.deck-panel .upl-note') || {}).textContent || ''), errors: page.__errors };
+  },
+  // 서버 목록에서 온 자리표시자 대화(C — 다른 기기에서 쓴 대화)에 알림이 오면 화면 사본에 붙이지 않는다 — 붙이면 열 때 서버 사본을 읽지 않아
+  // 그 대화의 이력이 알림 하나로 가려졌다(적대 검토, WD-D63)
+  async placeholder(browser) {
+    const before = () => {
+      window.__convList = [{ id: 'srv-A', title: 'A', kind: 'chat', source: 'web', created_at: 1, updated_at: 2 },
+                           { id: 'srv-C', title: 'C', kind: 'chat', source: 'web', created_at: 1, updated_at: 1700000000 }];
+      window.__convDetail = { 'srv-C': { id: 'srv-C', title: 'C', kind: 'chat', source: 'web', created_at: 1, updated_at: 1700000000, messages: [
+        { role: 'user', persona: null, round: null, content: '/보고서', meta: null, ts: 1 },
+        { role: 'assistant', persona: null, round: null, content: 'SAVED-ON-OTHER-DEVICE', meta: { ra_report: { id: 41, title: 't' } }, ts: 2 },
+        { role: 'assistant', persona: null, round: null, content: 'NOTICE-FROM-SERVER', meta: { deck: { job_id: 'f'.repeat(32) } }, ts: 3 } ] } };
+    };
+    const page = await open(browser, { serverKind: 'chat', before });
+    await page.evaluate(([f, d]) => { window.__list = [{ ...f, conversation_id: 'srv-C' }];
+      window.__advanced = { ...d, conversation_id: 'srv-C' }; }, [FINISH, DONE]);
+    await page.evaluate(() => window.dispatchEvent(new Event('hwax:deck-changed')));
+    await page.waitForFunction(() => window.__calls.some((c) => c.url.endsWith('/advance')));
+    await page.waitForTimeout(120);
+    const beforeOpen = await text(page, 'textsC');
+    await page.locator('#toC').click();
+    await page.waitForFunction(() => (document.getElementById('textsC').textContent || '').includes('SAVED-ON-OTHER-DEVICE'));
+    return { beforeOpen, afterOpen: await text(page, 'textsC'),
+             detailGets: (await calls(page, '/agent/conversations/srv-C')).length, errors: page.__errors };
   },
   // 숨긴 잡도 끝 알림을 남긴다 — 줄은 그 잡을 계속 한 걸음씩 가되 화면에는 보이지 않는다(WD-D59)
   async dismissedFinish(browser) {
@@ -364,3 +394,9 @@ def test_지워진_파일은_링크_대신_다시_만들기(seen):
 def test_다른_대화의_잡을_받으면_알림이_갈_대화를_말한다(seen):
     s = seen("elsewhere")
     assert "「B」 대화에" in s["text"] and "그 대화에서 맡긴 같은 발표자료" in s["text"] and "이 대화에" not in s["text"]
+
+
+def test_자리표시자_대화에는_알림을_붙이지_않고_열_때_서버_사본을_읽는다(seen):
+    s = seen("placeholder")
+    assert s["beforeOpen"] == "[]", "자리표시자에 화면 알림을 붙이지 않는다"
+    assert s["detailGets"] >= 1 and "SAVED-ON-OTHER-DEVICE" in s["afterOpen"] and "NOTICE-FROM-SERVER" in s["afterOpen"]
