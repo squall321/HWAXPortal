@@ -2716,8 +2716,9 @@ def _ra_report_of(v) -> dict | None:
 # 브라우저가 떠난 뒤에도 상류를 끝까지 읽는 루틴 턴의 pump(R3 D9) — 아무도 await 하지 않는 작업은 이벤트 루프가 약한 참조만 쥐어 도는
 # 중에 GC 될 수 있다. 끝나면 빠진다.
 _DETACHED_RELAYS: set[asyncio.Task] = set()
-# 대화마다 이 프로세스에서 도는 챗 턴(사용자 발화를 남긴 뒤 ~ 답을 남길 때까지)의 시작 시각 — 발표자료 알림이 다른 탭 · 기기의 질문과 답 사이에
-# 끼지 않게 그 사이에는 미룬다(docs/wda-deck WD-D66). 끝 정리가 새더라도 알림을 영영 막지 않게 _TURN_STALE_S 가 지난 턴은 세지 않는다.
+# 대화마다 이 프로세스에서 도는 챗 턴(사용자 발화를 남기기 직전 ~ 답을 남길 때까지)의 시작 시각 — 발표자료 알림이 다른 탭 · 기기의 질문과 답
+# 사이에 끼지 않게 그 사이에는 미룬다(docs/wda-deck WD-D66 · D76). 끝 정리가 새더라도 알림을 영영 막지 않게 _TURN_STALE_S 가 지난 턴은 세지 않고,
+# 새 턴을 셀 때 걷어 낸다(메모리에 쌓이지 않게).
 _ACTIVE_TURNS: dict[str, list[float]] = {}
 _TURN_STALE_S = 6 * 3600
 
@@ -2729,8 +2730,14 @@ def turn_active(cid: str) -> bool:
 
 
 def _turn_begin(cid: str) -> Callable[[], None]:
-    """도는 턴을 하나 센다 — 돌려준 함수를 한 번 부르면 뺀다(두 번 불러도 한 번)."""
+    """도는 턴을 하나 센다 — 돌려준 함수를 한 번 부르면 뺀다(두 번 불러도 한 번). 세기 전에 낡은 턴(끝 정리가 샌 것)을 걷어 낸다."""
     t0 = time.monotonic()
+    for k in list(_ACTIVE_TURNS):
+        fresh = [t for t in _ACTIVE_TURNS[k] if t0 - t < _TURN_STALE_S]
+        if fresh:
+            _ACTIVE_TURNS[k] = fresh
+        else:
+            del _ACTIVE_TURNS[k]
     _ACTIVE_TURNS.setdefault(cid, []).append(t0)
     done = False
 
@@ -2897,11 +2904,13 @@ async def chat(
                                       ("pinned_agent_name", body.pinned_agent_name)) if v}
             if body.pinned_agents:
                 _pin["pinned_agents"] = list(body.pinned_agents)
+            # 도는 턴은 발화를 남기기 **전에** 센다 — 남긴 뒤에 세면 그 사이(저장 스레드)에 발표자료 알림이 질문 뒤 · 답 앞에 끼었다
+            # (2차 적대 검토, docs/wda-deck WD-D76). 남기다 터지면 아래 except 가 뺀다.
+            turn_end[0] = _turn_begin(cid)
             # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
-            if await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
-                                       role="user", content=body.message, meta=_pin or None):
-                turn_end[0] = _turn_begin(cid)
-            else:
+            if not await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
+                                           role="user", content=body.message, meta=_pin or None):
+                turn_end[0]()  # 남의 대화(또는 없음)를 도는 턴으로 세지 않는다 — 그 주인의 알림을 이 스트림 동안 미루게 된다
                 store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
 
     except BaseException:

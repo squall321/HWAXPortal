@@ -212,3 +212,95 @@ def test_응답을_보내기_전에_끊겨도_턴을_뺀다():
             assert R.turn_active(cid) is False and cid not in R._ACTIVE_TURNS
     finally:
         app.dependency_overrides.pop(principal_pat_or_session, None)
+
+
+def _chat_spying_append(spy, *, owner_other: bool = False) -> dict:
+    """사용자 발화를 남기는 store.append 를 spy(kw, orig) 로 감싸 한 턴을 돌린다 — 상류는 답 하나. 상류를 부르는 동안의 turn_active 도 적는다."""
+    from fastapi.testclient import TestClient
+
+    from app.agent import routes as R
+    from app.auth.provider import Principal
+    from app.deps import principal_pat_or_session
+    from app.main import app
+
+    who = {"p": Principal(subject="u1", email="u1@hwax.local", display_name="U", groups=["feat:chat"])}
+    app.dependency_overrides[principal_pat_or_session] = lambda: who["p"]
+    seen: dict = {}
+    raw = _sse([("result", {"type": "text", "content": "답"}), ("done", {})])
+
+    def agent(req):
+        seen["during"] = R.turn_active(seen["cid"])
+        return httpx.Response(200, stream=_Body(raw), headers={"content-type": "text/event-stream"})
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            real = app.state.agent_client
+            app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(agent))
+            store = app.state.conv_store
+            orig = store.append
+            store.append = lambda **kw: spy(kw, orig)
+            try:
+                if owner_other:
+                    who["p"] = Principal(subject="u2", email="u2@hwax.local", display_name="V", groups=["feat:chat"])
+                seen["cid"] = c.post("/agent/conversations", json={"title": "t", "kind": "chat"}).json()["id"]
+                who["p"] = Principal(subject="u1", email="u1@hwax.local", display_name="U", groups=["feat:chat"])
+                seen["status"] = c.post("/agent/chat", json={"message": "질문", "conversation_id": seen["cid"]}).status_code
+            finally:
+                store.append = orig
+                app.state.agent_client = real
+    finally:
+        app.dependency_overrides.pop(principal_pat_or_session, None)
+    seen["after"] = R.turn_active(seen["cid"]) or seen["cid"] in R._ACTIVE_TURNS
+    return seen
+
+
+def test_사용자_발화를_남기기_전에_도는_턴을_센다():
+    """2차 적대 검토 — 발화를 남긴 뒤에 세면 그 사이(저장 스레드)에 advance 가 알림을 질문 뒤 · 답 앞에 끼울 수 있었다(WD-D76)."""
+    from app.agent import routes as R
+
+    def spy(kw, orig):
+        if kw.get("role") == "user":
+            spy.at = R.turn_active(kw["conversation_id"])
+        return orig(**kw)
+
+    seen = _chat_spying_append(spy)
+    assert spy.at is True, "발화를 남기는 순간에 이미 도는 턴이다"
+    assert seen["during"] is True and seen["after"] is False
+
+
+def test_발화를_남기다_터지면_도는_턴을_뺀다():
+    """생성기를 만들기 전의 예외 갈래(except) — 턴을 먼저 세므로 이 갈래의 정리가 실제로 일한다(WD-D76 — WD-D66 이 남긴 틈)."""
+    import sqlite3
+
+    def spy(kw, orig):
+        if kw.get("role") == "user":
+            raise sqlite3.OperationalError("database is locked")
+        return orig(**kw)
+
+    seen = _chat_spying_append(spy)
+    assert seen["status"] == 500 and seen["after"] is False, "터진 요청이 그 대화를 도는 턴으로 남기지 않는다"
+
+
+def test_남의_대화로_보낸_챗은_그_대화를_도는_턴으로_세지_않는다():
+    """발화를 남기지 못하면(없거나 남의 대화) 곧바로 뺀다 — 세 둔 채면 그 주인의 발표자료 알림이 이 스트림 동안 밀린다(WD-D76)."""
+    seen = _chat_spying_append(lambda kw, orig: orig(**kw), owner_other=True)
+    assert seen["status"] == 200 and seen["during"] is False and seen["after"] is False
+
+
+def test_새_턴을_셀_때_낡은_턴을_걷어_낸다():
+    """끝 정리가 샌 턴은 세지 않을 뿐 남아 있었다 — 새 턴을 셀 때 6시간이 지난 것을 걷는다(WD-D76)."""
+    import time
+
+    from app.agent import routes as R
+    old = time.monotonic() - R._TURN_STALE_S - 1
+    R._ACTIVE_TURNS["c-gone"] = [old]
+    R._ACTIVE_TURNS["c-mixed"] = [old, time.monotonic()]
+    end = R._turn_begin("c-new")
+    try:
+        assert "c-gone" not in R._ACTIVE_TURNS and len(R._ACTIVE_TURNS["c-mixed"]) == 1
+        assert R.turn_active("c-mixed") is True and R.turn_active("c-new") is True
+    finally:
+        end()
+        R._ACTIVE_TURNS.pop("c-mixed", None)
+        R._ACTIVE_TURNS.pop("c-gone", None)
+    assert "c-new" not in R._ACTIVE_TURNS
