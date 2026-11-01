@@ -2774,6 +2774,33 @@ def _detached_relay_done(task: asyncio.Task) -> None:
         logger.warning("루틴 턴 중계 — 브라우저가 떠난 뒤 상류를 읽다 실패했다", exc_info=task.exception())
 
 
+# 끝맺는 pump(상류 닫기 · 저장)를 생성기가 기다리는 상한(docs/wda-deck WD-D81). 저장은 대화 저장소의 잠금 대기(CONV_STORE_BUSY_TIMEOUT_S, 기본
+# 30초)의 첫 실패에서 멈추므로 정상이면 여기에 닿지 않는다 — 그 네 배를 둔다. 넘기면 기다리기만 멈추고 크게 남긴다. 저장은 끊지 않는다 — 뒤에서
+# 끝까지 두고 끝나면 그것도 남긴다. 막힌 저장이 ASGI 호출(과 그 연결)을 끝없이 붙잡지 않게 하는 그물이다(WD-D79 가 pump 를 끊지 않게 한 뒤에 생긴 틈).
+_RELAY_FINISH_WAIT_S = 120.0
+_LATE_PUMPS: set[asyncio.Task] = set()     # 상한을 넘겨 뒤에 둔 pump — 끝날 때까지 쥔다(루프는 작업을 약하게만 쥔다)
+
+
+async def _wait_pump(task: asyncio.Task, cid: str | None, owner: str) -> bool:
+    """끝맺는 pump 를 _RELAY_FINISH_WAIT_S 까지 기다린다. 기다리는 쪽이 끊겨도 pump 는 끊지 않는다(asyncio.wait 는 기다리던 작업을 취소하지
+    않는다 — gather 는 취소한다). 그 안에 끝나면 True. 넘기면 크게 남기고 pump 를 뒤에 두어(_LATE_PUMPS) 끝나는 때를 남긴다 — False."""
+    done, _pending = await asyncio.wait({task}, timeout=_RELAY_FINISH_WAIT_S)
+    if done:
+        return True
+    t0 = time.monotonic()
+    logger.error("챗 중계 — 끝맺는 pump(상류 닫기 · 저장)가 상한 %s초 안에 끝나지 않았다(저장이 막힌 듯) — 응답은 닫고 저장은 끊지 않고 뒤에서 "
+                 "끝까지 둔다 cid=%s sub=%s", _RELAY_FINISH_WAIT_S, cid, owner)
+    _LATE_PUMPS.add(task)
+
+    def _late_done(t: asyncio.Task) -> None:
+        _LATE_PUMPS.discard(t)
+        why = "취소됨" if t.cancelled() else (repr(t.exception()) if t.exception() is not None else "정상")
+        logger.warning("챗 중계 — 뒤에 둔 pump 가 상한 뒤 %.1f초 만에 늦게 끝났다(%s) cid=%s sub=%s", time.monotonic() - t0, why, cid, owner)
+
+    task.add_done_callback(_late_done)
+    return False
+
+
 # 떼어 낸 pump 의 상한 — 하나가 챗 퍼밋 하나와 에이전트 서버 연결 하나를 실행이 끝날 때까지(분 ~ 시간) 쥔다. 넘으면 그 턴은 일반 턴처럼
 # 브라우저가 떠날 때 상류를 끊고 로그 한 줄을 남긴다. 실행은 에이전트 서버가 따로 떼어 낸 작업이라 그대로 돈다 — 대화에는 받은 데까지와
 # 실행 포인터(meta.routine)가 남아 '이어서' 로 다시 붙는다. 에이전트 서버 동시 실행(ROUTINE_MAX_RUNNING, 기본 2)과 다시 붙은 탭 몫을 넉넉히
@@ -2971,6 +2998,7 @@ async def chat(
         # 취소하면 그 취소가 저장 스레드 앞(anyio.to_thread.run_sync)에 떨어져 다 받은 답이 남지 않았다(있던 결함 — 사용자 결정 11-01, docs/wda-deck
         # WD-D79). 도중에 떠나면(아직 끝맺지 않음) 종전처럼 취소해 상류를 끊는다.
         finishing = False
+        waited_out = False           # 끝맺는 pump 를 상한까지 기다렸고 뒤에 두었다(_wait_pump) — finally 에서 또 기다리지 않는다(WD-D81)
 
         async def pump() -> None:
             nonlocal final, decision, user_images, cancelled, outcome, ra_report, run_key, stop_rec, next_stage, buf, pending, warned
@@ -3241,10 +3269,16 @@ async def chat(
             # 상류 쪽 예외는 종전처럼 응답을 끊는다(가려도 pump 의 예외는 여기서 다시 난다). 가린다 — pump 의 finally(상류 닫기 · 저장)를 기다리는
             # 사이 브라우저가 떠나면 이 await 를 끊는 취소가 기다리던 pump 로 번진다. finally 를 감싼 anyio CancelScope(shield) 는 asyncio 취소를
             # 막지 못해(실측) 저장 · 퍼밋 반납을 건너뛴다 — 루틴 턴은 퍼밋을 pump 만 돌려주므로 영영 샜고, 일반 턴은 다 받은 답이 서버 사본에
-            # 남지 않았다(WD-D79). 여기 오면 상류는 이미 끝났다(끝 표지) — 끊을 것이 없다.
-            await asyncio.shield(task)
+            # 남지 않았다(WD-D79). 여기 오면 상류는 이미 끝났다(끝 표지) — 끊을 것이 없다. 기다림은 상한까지다 — 막힌 저장이 연결을 끝없이 붙잡지
+            # 않게, 넘기면 응답을 닫고 저장은 뒤에서 끝까지 둔다(WD-D81).
+            if await _wait_pump(task, cid, owner):
+                task.result()            # pump 의 예외(상류 쪽)는 종전처럼 응답을 끊는다
+            else:
+                waited_out = True
         finally:
-            if routine_turn and not task.done() and len(_DETACHED_RELAYS) < _DETACHED_RELAYS_MAX:
+            if waited_out:
+                _release()               # 상한을 넘긴 pump 는 뒤에 두었다 — 끊지도 다시 기다리지도 않는다(퍼밋은 pump 가 저장 앞에서 이미 돌려줬다)
+            elif routine_turn and not task.done() and len(_DETACHED_RELAYS) < _DETACHED_RELAYS_MAX:
                 # 브라우저가 떠났다 — 루틴 턴은 상류를 끝까지 읽어 대화에 남긴다(R3 D9). 취소하지 않고 기다리지도 않는다(실행은 분 ~ 시간이다).
                 # 이벤트 루프는 작업을 약하게만 쥐므로 모듈 집합이 쥔다. 저장 · 퍼밋 반납은 pump 의 finally 가 한 번 한다.
                 detached = True
@@ -3263,7 +3297,7 @@ async def chat(
                 if not task.done() and not finishing:
                     task.cancel()        # 브라우저가 떠났다 — 상류도 끊는다(pump 의 finally 가 받은 것까지 저장한다). 끝맺는 중이면 끊지 않는다(WD-D79)
                 with anyio.CancelScope(shield=True):
-                    await asyncio.gather(task, return_exceptions=True)
+                    await _wait_pump(task, cid, owner)       # 상한까지 — 넘기면 뒤에 둔다(WD-D81)
                 _release()
 
     return _ReleasingStream(gen(), _on_close, media_type="text/event-stream", headers=SSE_HEADERS)
