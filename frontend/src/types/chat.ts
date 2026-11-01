@@ -83,6 +83,8 @@ export interface DelibData {
   plain?: string;
   outcome?: {
     report_id?: number | null;
+    /** RA 가 준 보고서 주소(/w/<공간>/reports/<번호>) — 결과 카드가 이리로 바로 연다. 없으면 번호로 물어 연다(docs/wda-deck WD-D78). */
+    url?: string;
     title?: string;
     tally?: DelibTally;
     unanimous?: boolean;
@@ -360,6 +362,10 @@ export interface Message {
   /** MCP Apps 패널 포인터(SSE ui_resource, docs/request-1027 HA-20 · HP-42) — 영속되는 것은 포인터(+작은 입력)뿐이다. 결과 · _meta 는 그 탭에만
    *  있다(B-4 · B-6 (가) — lib/mcpApps 의 live). 새로고침 · 다른 기기에서는 '다시 열기' 카드다. */
   panels?: PanelPointer[];
+  /** '/보고서' 가 만든 RA 보고서(SSE result 의 ra_report · 서버 사본 meta.ra_report) — 이 답 옆에 '발표자료로' 단추가 선다(docs/wda-deck). 영속됨(작다). */
+  raReport?: { id: number; title: string };
+  /** 이 알림을 남긴 발표자료 잡(서버 사본 meta.deck.job_id) — 같은 알림을 두 번 붙이지 않는 열쇠(docs/wda-deck). */
+  deckJob?: string;
 }
 
 /** 패널 포인터 — 서버 사본은 app · tool · uri · call · title 만 쥔다(포털 panel.pointer_of). input 은 이 브라우저 사본에만, 작을 때만. */

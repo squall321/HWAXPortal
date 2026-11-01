@@ -7,6 +7,9 @@ import { decisionAsOf } from '../../state/chatStore';
 import { useCan } from '../../auth/useCan';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
 import { DelibGraph } from './DelibGraph';
+import { DeckSpot } from './DeckSpot';
+import { deckReportOf } from './deck';
+import { RA_HOME, openRaReport, raReportHref } from './raLink';
 import { RosterEditor, type Seat } from './RosterEditor';
 import { colorOf, initialOf } from './personaColor';
 import { InlineMd, TextBlock } from './renderers/TextBlock';
@@ -284,14 +287,22 @@ function Convergence({ d }: { d: DelibData }) {
 function OutcomeCards({ d }: { d: DelibData }) {
   const o = d.outcome;
   if (!o) return null;
+  // RA 가 준 주소가 있으면 그리로 바로(포털 세션이 필요 없다). 없는 옛 카드는 눌렀을 때 포털에 물어 연다 — 가운데 단추 · 주소 복사는 RA 첫 화면으로
+  // (오류 JSON 을 보이지 않는다, docs/wda-deck WD-D78)
+  const rid = o.report_id;
+  const raHref = rid != null ? raReportHref(o.url, rid) : null;
   return (
     <div className="dv-outcome">
-      {o.report_id != null && (
+      {rid != null && (
         <a
           className="dv-card report"
-          href={`/report-archive/w/dev/reports/${o.report_id}`}
+          href={raHref ?? RA_HOME}
           target="_blank"
           rel="noreferrer"
+          onClick={raHref ? undefined : (e) => {
+            e.preventDefault();
+            void openRaReport(rid);
+          }}
         >
           <span className="dv-card-k">Report Archive</span>
           <span className="dv-card-t">{o.title || '심의 보고서'}</span>
@@ -490,6 +501,7 @@ export function DelibView({ msg }: { msg: Message }) {
     !live && unfinished && !d.cancelled && delibMayStillRun(msg.error) && messages[messages.length - 1]?.id === msg.id;
   // 멈출 열쇠(실행 id)가 있고, 의장이 결정문을 낸 뒤의 마무리가 아닐 때만 — 마무리에는 에이전트가 멈추지 않는다(다 만든 결정문을 버리지 않게).
   const stoppable = (live || cut) && !d.cancelled && !d.finishing && Boolean(d.runId);
+  const deckRep = deckReportOf(msg);
   return (
     <div className="dv-root">
       <Stepper d={d} live={live} />
@@ -526,6 +538,8 @@ export function DelibView({ msg }: { msg: Message }) {
         </section>
       )}
       <OutcomeCards d={d} />
+      {/* 심의 결과 보고서를 발표자료로(docs/wda-deck) — 끝난 심의만. 심의 보고서는 WDA 의 심의 꼴(delib-16x9)이 준비돼야 보인다(U-6). */}
+      {!live && deckRep && <DeckSpot report={deckRep} />}
       {/* 지난 심의를 보는 것은 누구나, 이어 돌리는 것은 심의 권한이 있어야 한다. */}
       {!live && can('feat:deliberation') && <ContinueBar d={d} />}
     </div>

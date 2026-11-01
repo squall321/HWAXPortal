@@ -471,6 +471,31 @@ const SCENARIOS = {
     await nope.waitForTimeout(200);
     return { answered, dismissed: { look: await look(nope), sent: await cancels(nope) }, errors: [...page.__errors, ...nope.__errors] };
   },
+  // 심의 결과 카드의 RA 링크(docs/wda-deck WD-D78) — 받는 중에 온 outcome 의 주소 · 다른 기기가 서버 사본(meta.delib_outcome)으로 되살린 주소로
+  // 바로 연다(포털 길을 거치지 않는다)
+  async ra_link(browser) {
+    const page = await open(browser);
+    await start(page);
+    await push(page, frame('delib', { kind: 'decision', text: '결정문 — 링크' }));
+    await push(page, frame('delib', { kind: 'outcome', report_id: 41, url: '/w/team-cae/reports/41', title: 't' }));
+    await push(page, frame('done', {}));
+    await page.evaluate(() => window.__end());
+    await page.locator('.dv-card.report').first().waitFor();
+    const live = await page.evaluate(() => document.querySelector('.dv-card.report').getAttribute('href'));
+    const meta = { id: 'srv-9', title: '심의', kind: 'deliberation', source: 'web', created_at: 1, updated_at: 2 };
+    const messages = [
+      { role: 'user', persona: null, round: null, content: '/심의 힌지', meta: null, ts: 1 },
+      { role: 'persona', persona: 'mech-a', round: 1, content: '초기 입장', meta: null, ts: 1 },
+      { role: 'assistant', persona: null, round: null, content: '결정문', ts: 1,
+        meta: { answered_by: 'delib', delib_outcome: { report_id: 41, url: '/w/team-cae/reports/41', title: 't', unanimous: false } } },
+    ];
+    const other = await open(browser, { server: { list: [meta], detail: { 'srv-9': { ...meta, messages } } } });
+    await other.waitForFunction(() => window.__calls.some((c) => c.url === '/agent/conversations' && c.method === 'GET'));
+    await other.evaluate(() => window.__select('srv-9'));
+    await other.locator('.dv-card.report').first().waitFor();
+    const restored = await other.evaluate(() => document.querySelector('.dv-card.report').getAttribute('href'));
+    return { live, restored, errors: [...page.__errors, ...other.__errors] };
+  },
   // 결정문까지 받은 심의에는 단추가 없다
   async decided(browser) {
     const page = await open(browser);
@@ -730,6 +755,12 @@ def test_이미_끝난_심의는_그렇게_적고_확인_창에서_물리면_보
     s = seen("finished")
     assert s["answered"]["said"] == "이미 끝난 심의입니다 — 멈출 것이 없습니다.", s["answered"]
     assert s["dismissed"]["sent"] == [] and s["dismissed"]["look"]["said"] == ""
+
+
+def test_심의_결과_카드는_받은_RA_주소로_바로_연다_라이브와_서버_사본_모두(seen):
+    """2차 적대 검토 — 카드가 포털 길로 새 탭을 열어 세션이 지나면 401 JSON 이 떴다. RA 가 준 주소로 바로 연다(docs/wda-deck WD-D78)."""
+    s = seen("ra_link")
+    assert s["live"] == "/report-archive/w/team-cae/reports/41" and s["restored"] == s["live"]
 
 
 def test_결정문까지_받은_심의에는_멈춤이_없다(seen):

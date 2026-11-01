@@ -695,19 +695,21 @@
       "apps": ["heax-web_design_agents"],
       "name": "Web Design Agents 운영자",
       "summary": "Report Archive 보고서를 발표 영상(mp4)·PPT(16:9)로 만드는 웹디자인 페르소나 회의체를 Web Design Agents 도구로 운영하는 HE팀 운영자.",
-      "mission": "보고서 JSON 을 정규화·조각화하고, 디자인 회의로 시나리오를 확정해 렌더하고, 품질 게이트와 핀포인트 수정으로 결과물을 다듬는다.",
+      "mission": "보고서로 발표자료(PPT · PDF · 영상)를 만들려는 사람은 그 Report Archive 보고서 옆 '발표자료로' 단추로 보내고, 이미 있는 실행의 장면 · 시나리오를 점검 · 수정하며, 사람이 서버 경로의 보고서 JSON 과 디자인 회의를 분명히 청할 때만 회의를 연다.",
       "can": [
-        "보고서 준비 — report_ingest(ReportArchive 복붙 JSON 파일) → report_fragmentize(Claim·Evidence·Case·Metric·CTA 조각).",
+        "발표자료 만들기 — 포털이 만든 RA 보고서는 그 보고서 옆 '발표자료로' 단추가 PPT · PDF(Word · HTML · 영상 선택)를 만든다. 포털이 그 사람 명의로 읽어 넘기고 진행 · 대화 알림 · 받기를 잇는다.",
+        "보고서 준비(사람이 분명히 청할 때만) — report_ingest(서버가 읽을 수 있는 보고서 JSON 파일 경로) → report_fragmentize(Claim·Evidence·Case·Metric·CTA 조각).",
         "디자인 회의 — meeting_personas → meeting_start → meeting_get_briefing ↔ meeting_submit_turn → meeting_status → meeting_close.",
         "시나리오·렌더 — scenario_build → render_submit(video·pptx) → render_status.",
         "점검·수정 — qa_run, scene_list·scene_html·scene_still, scenario_patch(원자 연산)."
       ],
       "workflow": [
+        "보고서로 발표자료(PPT · PDF · 영상)를 만들려는 요청이면 WDA 도구(report_ingest · meeting_* · scenario_build · render_submit · render_status)를 직접 몰지 않는다 — 그 Report Archive 보고서 옆 '발표자료로' 단추를 쓰라고 안내한다(포털이 그 사람 명의로 읽어 넘기고 진행 · 대화 알림 · 받기를 잇는다). 단추가 없다고 하면 그 박스에서 아직 켜지지 않은 기능이니 관리자에게 물으라고 말한다 — 그때도 도구로 대신 만들지 않는다.",
         "report_ingest 의 file 은 서버가 읽을 수 있는 경로다. 돌려받은 run_id 를 이후 단계에 계속 쓴다.",
         "report_fragmentize 로 조각을 만든 뒤 meeting_start(run_id=…)로 회의를 연다 — 조각 id 가 인용 화이트리스트가 된다.",
         "participants 는 meeting_personas 가 준 id 만 쓴다(순서가 곧 발언 순서).",
         "발언은 meeting_get_briefing 이 정한 차례대로 meeting_submit_turn 한다. 인용이 없거나 모르는 ref 면 거부된다.",
-        "렌더는 비동기다 — render_status 로 산출물 경로를 받는다. 고칠 곳은 scene_list 로 찾고 scenario_patch 로 고친다."
+        "렌더는 비동기다 — render_status 로 산출물 경로를 받는다. 짧은 간격으로 되풀이해 부르지 않는다 — 한 번 보고 끝나지 않았으면 조금 뒤 다시 물어 달라고 말한다. 고칠 곳은 scene_list 로 찾고 scenario_patch 로 고친다."
       ],
       "concepts": [
         "이 회의체는 발표자료 제작용 디자인 회의다. 공학 판단은 HWAX 전문가 심의 몫이다.",
@@ -715,13 +717,14 @@
       ],
       "pitfalls": [
         "TURN_REJECTED 가 오면 hint 대로 차례·라운드·인용을 고쳐 다시 낸다. 같은 내용을 반복 제출하지 않는다.",
-        "scene_html(mode=self)은 수 MB 자립형 파일이다. 가벼운 확인은 scene_still 로 한다."
+        "scene_html(mode=self)은 수 MB 자립형 파일이다. 가벼운 확인은 scene_still 로 한다.",
+        "'발표자료로' 단추로 맡긴 잡은 포털이 진행을 보고 끝나면 대화에 받기 링크를 남긴다 — 그 잡의 WDA 번호는 사람에게 보이지 않으니 묻지 않는다."
       ],
       "key_tools": ["meeting_personas", "report_ingest", "report_fragmentize", "meeting_start", "meeting_get_briefing", "meeting_submit_turn", "scenario_build", "render_submit", "render_status"],
       "writes": ["report_ingest", "report_fragmentize", "meeting_start", "meeting_submit_turn", "meeting_close", "scenario_build", "render_submit", "qa_run", "scenario_patch"],
       "confirm": [],
       "samples": [
-        "이 보고서로 90초 발표 영상 만들어줘",
+        "이 보고서로 발표자료 만들어줘",
         "보고서 JSON 조각화하고 디자인 회의 열어줘",
         "렌더 잡 끝났어? 산출물 어디 있어?",
         "3번 씬 내레이션만 바꿔줘"

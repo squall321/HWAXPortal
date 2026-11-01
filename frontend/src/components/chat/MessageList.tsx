@@ -12,6 +12,8 @@ import { ConfirmCard } from './ConfirmCard';
 import { McpAppPanels } from './McpAppPanel';
 import { confirmState, type ConfirmState } from './confirm';
 import { DelibView } from './DelibView';
+import { DeckSpot } from './DeckSpot';
+import { deckReportOf } from './deck';
 import { RoutineView } from './RoutineView';
 import { ThinkView } from './ThinkView';
 import { ToolCatalogBlock } from './ToolCatalogBlock';
@@ -137,6 +139,7 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
   // 심의·띵킹 메시지에는 붙이지 않는다 — 그쪽은 좌석마다 자기 버블을 이미 그린다.
   // 색은 키로 뽑는다 — 회의록 · 관계도 · 띵킹과 같은 입력이어야 같은 사람이 같은 색이다(personaColor.ts).
   const persona = !hasDelib && !hasThink ? msg.persona : undefined;
+  const deck = deckReportOf(msg);
   const who = persona ? persona.name || persona.key : '';
 
   return (
@@ -196,6 +199,8 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
         {!msg.streaming && msg.confirm && card && <ConfirmCard card={msg.confirm} state={card} />}
         {!msg.streaming && msg.meta?.self_check && <CheckNote check={msg.meta.self_check} />}
       </div>
+      {/* '/보고서' 저장 답 · RA 보내기 알림의 보고서를 발표자료로(docs/wda-deck) — 심의 결과는 DelibView 가 결과 카드 옆에 둔다 */}
+      {!hasDelib && deck && <DeckSpot report={deck} />}
       {!msg.streaming && msg.text && (
         <div className="msg-actions">
           <CopyAction text={msg.text} />

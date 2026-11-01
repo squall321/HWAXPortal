@@ -406,6 +406,17 @@ def test_심의_운영자는_줄_선_심의를_다시_시작하지_않는다():
         assert "queued" in src and "queue.position" in src, "엔진의 대기열 계약이 바뀌었다 — 이 안내문을 다시 맞춘다"
 
 
+def test_발표자료_운영자는_도구를_직접_몰지_않고_발표자료로_단추를_안내한다():
+    """보고서로 발표자료를 만들려는 요청은 늘 '발표자료로' 단추로 — 모델은 그 단추가 그 사람 화면에 보이는지 알 수 없다(2차 검토, WD-D71 —
+    WD-D46 의 '보일 때만' 을 거둔다). 견본도 비싼 디자인 회의(report_ingest → meeting → scenario_build — 렌더에서 멈춘다)로 이끌지 않는다."""
+    spec = _one("he-doc-webdesign")["personas"][0]
+    (line,) = [w for w in spec["workflow"] if "발표자료로" in w]
+    assert "직접 몰지 않는다" in line and "보일 때" not in line, "단추가 보이는지에 기대지 않는 늘 같은 규칙"
+    assert all(t in line for t in ("report_ingest", "render_submit", "render_status"))
+    assert "90초 발표 영상" not in " ".join(spec["samples"]), "견본이 회의 · 렌더 도구로 이끌지 않는다"
+    assert "발표자료로" in spec["can"][0] and "발표자료로" in spec["mission"]
+
+
 def test_심의_운영자는_남의_심의를_접으라고_권하지_않는다():
     """엔진은 신원이 다른 사람의 심의를 접지 못하게 한다. '막히면 필요 없는 것을 접으라' 는 옛 안내는 남의 심의를 가리킨다."""
     spec = _one("he-expert-deliberation")["personas"][0]

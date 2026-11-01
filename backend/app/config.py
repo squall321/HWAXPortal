@@ -240,8 +240,9 @@ class Settings(BaseSettings):
     # 주면 그대로 실린다. 그래서 여기 늘리는 일의 뜻은 "아무 말 없이 발급하면 이만큼 덮는다" 다 —
     # 발급 화면은 청중을 **보내지 않아** 이 목록을 그대로 받는다(토큰 하나로 하위 사이트 공용).
     # 게이트웨이 REST 다리의 사이트 키와 같아야 한다(rest.<site> / portal.audience_ok).
-    # heax-hub 는 아직 소비처가 없다 — /apps/* 는 HEAXHub 자기 게이트가 막고 그쪽은 이 RS256
-    # 토큰을 안 본다. 지우지 않고 남긴다(그 배선을 여는 결정이 아직 안 났다).
+    # heax-hub — HEAXHub 게이트(/apps/*)가 이 RS256 토큰을 받는다(포털 PAT 를 그 이메일의 허브 사용자로 잇고 허브 권한 can_view_app 만 본다,
+    # followups-1017 결정 ⑦). 포털 쪽 첫 쓰임은 발표자료로(docs/wda-deck — wda_hub_audience)다. 그 사람 이름의 10분짜리 PAT 를 서버에서 찍어
+    # 허브 Caddy 경유로 WebDesignAgents 를 부른다. 종전 주석('소비처가 없다 · 허브가 이 토큰을 안 본다')은 허브가 포털 PAT 를 받기 전의 말이다.
     # simflow — 게이트웨이가 위임(per_user_sso simflow)이 있으면 REST 다리 사이트로 연다(HWAXMcpGateway HG-04, docs/request-1027 HP-15).
     pat_default_audiences: str = ("mx-white-paper,heax-hub,ai-data-hub,signalforge,"
                                  "ste,dyna-forge,step-forge,simflow,mcp-gateway")
@@ -297,6 +298,22 @@ class Settings(BaseSettings):
     # 정밀 변환 잡 기록(맡긴 사람)을 두는 날 수 — DocForge 잡 보존 기한(기본 7일)과 같게. 스테이징 청소(6시간)에서 빠지고, 그 안에는 창을 닫아
     # 넣지 못한 잡을 입력창 위 '끝나지 않은 정밀 변환' 에서 다시 열어 넣는다(DocForge E15).
     docforge_job_days: int = 7
+    # 발표자료로(docs/wda-deck) — 포털이 만든 RA 보고서를 그 사람 명의로 읽어 WebDesignAgents 로 PPT · PDF. 박스 스위치는 기본 꺼짐 — WDA 의 주인 기능
+    # (요청 W-1 ~ W-6)이 배치된 박스에서 사람이 켠다. 켜도 WDA /api/health 의 features 에 owner 가 있어야 단추가 보인다(사용자 결정 11-01 U-1).
+    wda_deck_enabled: bool = False
+    wda_base_url: str = ""                  # 빈 값 = routes.env 의 apps(허브 Caddy) + web_design_agents — 루프백 포트에 직결하지 않는다
+    wda_hub_audience: str = "heax-hub"      # 허브 게이트(HEAXHub PORTAL_AUDIENCE)가 받는 포털 PAT 청중
+    wda_hub_pat_ttl_s: int = 600            # 그 사람 이름으로 찍는 짧은 PAT 의 수명 — 저장하지 않는다
+    wda_deck_job_days: int = 7              # 잡 기록을 두는 날 수(스테이징 청소에서 빠진다)
+    wda_deck_report_max_mb: int = 16        # 넘는 RA 보고서는 WDA 를 부르지 않는다(요청 W-7)
+    wda_deck_inflight_max: int = 2          # 사람당 동시 잡
+    wda_deck_inflight_box_max: int = 4      # 박스 전체 동시 잡 — WDA 에 동시 상한이 없다(11-01 답, 요청 W-14)
+    # '늦음' 문턱(초) — WDA 실측 5.5초(11-01). 넘으면 화면이 '오래 걸린다' 만 말한다. 끝내 give_up 이 지나면 포털이 실패로 닫는다 — WDA 는 재기동에
+    # 끊긴 실행을 running 으로 남긴다(요청 W-12 전).
+    wda_deck_late_prepare_s: int = 300
+    wda_deck_late_render_s: int = 900
+    wda_deck_late_video_s: int = 3600
+    wda_deck_give_up_s: int = 21600
     mcp_gateway_url: str = "http://127.0.0.1:9110"    # MCP Gateway (HWAXMcpGateway; aggregates the 3 MCPs). :9100 was node_exporter.
     mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
     agent_token_audience: str = "agent-server"         # aud for the RS256 handoff token

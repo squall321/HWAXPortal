@@ -24,7 +24,7 @@ import {
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
 import { useCan } from '../auth/useCan';
-import type { AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
+import type { ActivityItem, AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { isRoutineTerminal, mergeRoutine } from '../components/chat/routine';
 import { ROUTINE_STOPPED_BEFORE_RUN, delibMayStillRun } from '../lib/chatErrors';
@@ -179,6 +179,11 @@ interface ChatContextValue {
   /** 보내기 결과를 대화에 남긴다 — 어시스턴트 알림 한 건 + 업로드 근거(docs/chat-ppt A2 · PP-D3). 대화가 없으면 새로 만든다.
    *  서버 사본에도 붙인다(답을 받는 중인 대화면 그 답이 저장된 뒤). 종전엔 결과가 업로드 패널 안에서만 끝나 다음 질문이 몰랐다. */
   addUploadNotice: (n: UploadNotice) => void;
+  /** 발표자료 잡의 끝 알림을 그 대화(서버 id)의 **화면 사본에만** 붙인다 — 서버 사본에는 포털이 이미 남겼다(docs/wda-deck WD-D11). 같은 잡의 알림이
+   *  이미 있으면 붙이지 않는다. 그 대화를 이 화면이 아직 안 읽었으면 아무것도 하지 않는다(열 때 서버 사본에서 온다). */
+  addDeckNotice: (serverId: string, n: { text: string; activity: ActivityItem[]; deck: { job_id: string } }) => void;
+  /** 그 대화(서버 id)가 답을 받는 중이면 그 스트림이 끝나고 잠시 뒤에 풀린다 — 알림이 답보다 앞서 서버에 적히지 않게(PP-D3 ⑤). */
+  afterStream: (serverId: string) => Promise<void>;
   /** 심의를 서버에서 멈췄다(포털 POST /agent/deliberate/cancel 200) — 그 메시지에 멈춤을 적는다(브라우저 사본에도 남는다). 받기가 끊겼다는
    *  오류 상자는 걷는다(엔진이 알린 오류는 둔다). 그 칸을 아직 받는 중이면 멈춤 사건(SSE delib cancelled)이 적고, 사건 전에 턴이 끝나면(끊김 · ■)
    *  이 글로 적는다(triage A24). */
@@ -268,6 +273,7 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'outcome':
       d.outcome = {
         report_id: (e.report_id as number | null) ?? null,
+        ...(typeof e.url === 'string' ? { url: e.url } : {}),
         title: String(e.title ?? ''),
         tally: e.tally as DelibTally | undefined,
         unanimous: Boolean(e.unanimous),
@@ -404,6 +410,10 @@ interface ChatProviderProps {
 
 // 다시 보일 때 서버 사본과 맞추는 침묵 문턱 — 챗 · 심의 스트림 모두 15초마다 ping 을 낸다(P-1 ②)
 const RESYNC_QUIET_MS = 20_000;
+
+type DeckNoticeLike = { text: string; activity: ActivityItem[]; deck: { job_id: string } };
+// 발표자료 알림을 다른 챗 제공자에게 알리는 창 신호(WD-D64)
+const DECK_NOTICE_EVENT = 'hwax:deck-notice';
 
 export function ChatProvider({
   children,
@@ -720,6 +730,59 @@ export function ChatProvider({
     },
     [activeId, serverKind],
   );
+
+  const activeIdRef = useRef<string | null>(activeId);
+  activeIdRef.current = activeId;
+
+  const applyDeckNotice = useCallback(
+    (serverId: string, n: DeckNoticeLike) => {
+      const now = Date.now();
+      // 서버가 이미 남겼다 — 화면 사본은 불러온 대화에만 붙인다. 서버 목록에서 온 자리표시자(messages: [])에 붙이면 메시지가 생겨 열 때 서버
+      // 사본을 읽지 않고, 그 대화의 이력이 알림 하나로 가려진다(적대 검토, docs/wda-deck WD-D63). 자리표시자는 그대로 두면 열 때 서버에서
+      // 읽는다 — 지금 보는 대화면 곧바로 읽는다.
+      const target = convsRef.current.find((c) => (c.serverId ?? c.id) === serverId);
+      if (target && target.messages.length === 0) {
+        if (target.id === activeIdRef.current && target.serverId && streamConvRef.current !== target.id) refreshFromServer(target.serverId);
+        return;
+      }
+      setConversations((prev) =>
+        prev.map((c) => {
+          if ((c.serverId ?? c.id) !== serverId || c.messages.length === 0 || c.messages.some((m) => m.deckJob === n.deck.job_id)) return c;
+          const msg: Message = { id: newId(), role: 'assistant', text: n.text, ts: now, activity: n.activity, deckJob: n.deck.job_id };
+          return { ...c, updatedAt: now, messages: [...c.messages, msg] };
+        }),
+      );
+    },
+    [refreshFromServer],
+  );
+
+  // 챗 제공자는 둘일 수 있다(앱 전체 · '/deliberate' 페이지 안) — 한쪽이 받은 알림을 다른 쪽도 그 대화의 화면 사본에 붙인다(적대 검토, WD-D64).
+  // 서버는 이미 남겼다 — 이 신호는 화면 사본만 맞춘다. 같은 잡의 알림은 한 번만(잡 id) · 자리표시자에는 붙이지 않는다(applyDeckNotice).
+  const providerIdRef = useRef(newId());
+  const addDeckNotice = useCallback(
+    (serverId: string, n: DeckNoticeLike) => {
+      applyDeckNotice(serverId, n);
+      window.dispatchEvent(new CustomEvent(DECK_NOTICE_EVENT, { detail: { serverId, notice: n, from: providerIdRef.current } }));
+    },
+    [applyDeckNotice],
+  );
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ serverId: string; notice: DeckNoticeLike; from: string }>).detail;
+      if (!d || d.from === providerIdRef.current) return;
+      applyDeckNotice(d.serverId, d.notice);
+    };
+    window.addEventListener(DECK_NOTICE_EVENT, on);
+    return () => window.removeEventListener(DECK_NOTICE_EVENT, on);
+  }, [applyDeckNotice]);
+
+  const afterStream = useCallback(async (serverId: string) => {
+    const conv = convsRef.current.find((c) => (c.serverId ?? c.id) === serverId);
+    const waitFor = conv && streamConvRef.current === conv.id ? streamDoneRef.current.get(conv.id) : undefined;
+    if (!waitFor) return;
+    await waitFor;
+    await new Promise((r) => window.setTimeout(r, NOTICE_AFTER_STREAM_MS));
+  }, []);
 
   const patch = useCallback((convId: string, msgId: string, fn: (m: Message) => Message) => {
     setConversations((prev) =>
@@ -1070,12 +1133,19 @@ export function ChatProvider({
         onAgents: (e: AgentCatalog) =>
           patch(cid, botId, (m) => ({ ...m, agentCatalog: e, status: undefined })),
         onResult: (block) =>
-          patch(cid, botId, (m) => ({
-            ...m,
-            result: block,
-            text: block.type === 'text' ? block.content : m.text,
-            status: undefined,
-          })),
+          patch(cid, botId, (m) => {
+            // '/보고서' 가 만든 RA 보고서(에이전트 서버 result 의 ra_report) — 이 답 옆에 '발표자료로' 단추가 선다(docs/wda-deck WD-D12)
+            const rr = (block as { ra_report?: { id?: unknown; title?: unknown } }).ra_report;
+            const raReport = rr && typeof rr.id === 'number' && Number.isInteger(rr.id) && rr.id > 0
+              ? { id: rr.id, title: typeof rr.title === 'string' ? rr.title : '' } : undefined;
+            return {
+              ...m,
+              result: block,
+              text: block.type === 'text' ? block.content : m.text,
+              status: undefined,
+              ...(raReport ? { raReport } : {}),
+            };
+          }),
         onWarning: (e) => patch(cid, botId, (m) => ({ ...m, warn: e.message })),
         // 생각 글 — 접힌 칸에만(다음 턴 이력 · 영속에는 넣지 않는다). 답한 모델 · 강도는 메시지 아래 표시로.
         onReasoning: (e) => patch(cid, botId, (m) => ({ ...m, reasoning: (m.reasoning ?? '') + (e.delta ?? '') })),
@@ -1488,6 +1558,8 @@ export function ChatProvider({
         attachedImages,
         setAttachedImages,
         addUploadNotice,
+        addDeckNotice,
+        afterStream,
         markDelibStopped,
         pinnedAgent: activeConversation ? (activeConversation.pinnedAgent ?? null) : (draftPins.agent ?? null),
         pinnedAgentName: activeConversation

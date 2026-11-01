@@ -23,6 +23,7 @@ from app.access import routes as access_routes
 from app.access.policy import AccessPolicy, sso_default_problems
 from app.agent import routes as agent_routes
 from app.agent import panel as agent_panel   # MCP Apps 패널 호스트(docs/request-1027 HP-42 — 손잡이 MCP_APPS_HOST 기본 꺼짐)
+from app.agent import wda_deck as agent_deck  # 발표자료로 — RA 보고서를 WebDesignAgents 로(docs/wda-deck — 박스 스위치 WDA_DECK_ENABLED 기본 꺼짐)
 from app.agent.audit import AuditLog
 from app.agent.conv_store import ConversationStore
 from app.auth.downstream import JwtDownstreamIssuer
@@ -255,6 +256,7 @@ app.include_router(mail_routes.router)
 app.include_router(mcp_routes.router)
 app.include_router(agent_routes.router)
 app.include_router(agent_panel.router)
+app.include_router(agent_deck.router)
 
 # 절차 — SPA 폴백보다 위. 등록이 실패해도 포털(챗 릴레이)은 뜬다.
 try:

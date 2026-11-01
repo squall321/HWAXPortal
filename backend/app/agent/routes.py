@@ -23,6 +23,7 @@ import re
 import os
 import shutil
 import sqlite3
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -512,6 +513,57 @@ def _site_pat(keystore, settings: Settings, principal: Principal, site: str, ttl
     except Exception:  # noqa: BLE001 — 발급 실패는 부른 쪽이 401 로 알린다
         logger.warning("업로드용 사이트 PAT 발급 실패(%s)", site, exc_info=True)
         return None
+
+
+# RA 보고서 주소 — RA 화면은 /w/<공간>/reports/<번호> 만 있다(공간 없는 길이 없다). 심의 결과 카드가 공간 이름 'dev' 를 박아 다른 박스 · 다른
+# 공간에서 열리지 않았다(docs/wda-deck WD-D67).
+_RA_PUBLIC = "/report-archive"
+# 옛 카드의 보고서 열기 — 보고서를 통째로(16 MB 상한) 읽지 않는다. 공간 이름은 ReportRead 의 둘째 칸(id 다음, ReportArchive
+# reports/schemas.py)이라 RA 응답의 앞에 있다 — 앞 64 KB 에서 첫 "workspace_slug" 하나만 본다(뒤에 오는 본문 속 같은 이름의 칸은 보지 않는다).
+_RA_OPEN_HEAD = 64 * 1024
+_RA_SLUG_AT = re.compile(rb'"workspace_slug"\s*:\s*"((?:[^"\\]|\\.){0,240})"')
+_RA_SLUG_OK = re.compile(r"(?!\.{1,2}$)[A-Za-z0-9._-]{1,120}")
+
+
+@router.get("/ra/reports/{report_id}/open")
+async def open_ra_report(
+    report_id: Annotated[int, Field(gt=0)],
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """RA 주소가 없는 옛 심의 결과 카드가 그 보고서를 열 곳을 묻는다 — {"url": 포털의 RA 경로}. 새 카드는 RA 가 준 주소로 바로 연다(docs/wda-deck
+    WD-D78). 화면은 apiFetch 로 부른다(세션이 지났으면 되살려 다시 묻는다) — 그래도 401 · 403 이면 화면이 RA 첫 화면을 연다(JSON 을 보이지 않는다).
+    그 사람 명의로 RA 보고서의 앞 64 KB 만 읽어 공간 이름을 찾는다(서비스 계정 없음). 못 찾으면 그 사람의 RA 연결에 묶인 공간, 그것도 없으면 RA
+    첫 화면(RA 가 그 사람의 기본 공간으로 보낸다)."""
+    ensure(principal, "plat:reportarchive")
+    home = f"{_RA_PUBLIC}/"
+    try:
+        token, _via, conn = await _ra_user_token(request, settings, principal)
+    except AuthError:
+        return {"url": home}
+    ws = conn.get("workspace")
+    fallback = f"{_RA_PUBLIC}/w/{ws}/reports/{report_id}" if isinstance(ws, str) and _RA_SLUG_OK.fullmatch(ws) else home
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if ws:
+        headers["X-Workspace-Slug"] = ws
+    slug = None
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as cli:
+            async with cli.stream("GET", f"{settings.ra_base_url.rstrip('/')}/api/reports/{report_id}", headers=headers) as r:
+                if r.status_code == 200:
+                    head = bytearray()
+                    async for chunk in r.aiter_bytes():
+                        head += chunk
+                        if len(head) >= _RA_OPEN_HEAD:
+                            break
+                    m = _RA_SLUG_AT.search(bytes(head[:_RA_OPEN_HEAD]))
+                    slug = m.group(1).decode("utf-8", "replace") if m else None
+    except httpx.HTTPError:
+        slug = None
+    if slug and _RA_SLUG_OK.fullmatch(slug):
+        return {"url": f"{_RA_PUBLIC}/w/{slug}/reports/{report_id}"}
+    return {"url": fallback}
 
 
 @router.get("/conversations")
@@ -2635,9 +2687,84 @@ async def deliberate_cancel(
 # 않게 한다. 보통 챗 한 턴은 수 MB 안이다(생각 글 24만 자도 1 MB 남짓). 넘으면 그 스트림만 종전처럼 상류 읽기를 멈춘다.
 _RELAY_BUFFER_BYTES = 64 * 1024 * 1024
 _RELAY_DONE = object()
+# RA 보고서 번호를 서버 사본에 남길 때의 꼴(docs/wda-deck WD-D12) — 화면의 '발표자료로' 단추가 이 번호로 선다. 양의 정수(숫자 글도)만 받는다 —
+# 참거짓 · 0 이하 · 다른 꼴은 없는 것으로(없는 보고서로 단추가 서면 안 된다).
+_TALLY_KEYS = ("agree", "conditional", "oppose", "abstain", "total", "responded")
+
+
+def _report_id_of(v) -> int | None:
+    if isinstance(v, bool):
+        return None
+    # ASCII 숫자만 — str.isdigit 는 '²' · '٣' 도 참이라 int('²') 가 터지고(중계가 그 답을 못 남긴다) '٣' 은 3 이 됐다(docs/wda-deck WD-D45)
+    # 18자리까지 — 그보다 긴 글은 int() 의 자릿수 상한(4300)에 닿을 수 있고 RA 번호일 수 없다(docs/wda-deck WD-D69)
+    if isinstance(v, str) and re.fullmatch(r"[0-9]{1,18}", v.strip()):
+        v = int(v.strip())
+    return v if isinstance(v, int) and v > 0 else None
+
+
+# RA 가 준 보고서 주소(/w/<공간>/reports/<번호> — 에이전트가 outcome 에 싣는다, docs/wda-deck WD-D78) — 결과 카드가 이 주소로 바로 연다.
+_RA_REPORT_URL = re.compile(r"/w/(?!\.{1,2}/)[A-Za-z0-9._-]{1,120}/reports/([0-9]{1,18})")
+
+
+def _delib_outcome_of(data: dict) -> dict:
+    """심의 outcome 사건 → 답 meta.delib_outcome — 화면이 되살리는 delib.outcome 과 같은 칸(번호 · 주소 · 제목 · 집계 · 만장일치). 주소는 꼴이 맞고
+    번호가 같을 때만 남긴다."""
+    tally = data.get("tally") if isinstance(data.get("tally"), dict) else {}
+    t = {k: tally[k] for k in _TALLY_KEYS if isinstance(tally.get(k), int) and not isinstance(tally.get(k), bool)}
+    rid = _report_id_of(data.get("report_id"))
+    url = data.get("url")
+    hit = _RA_REPORT_URL.fullmatch(url) if isinstance(url, str) and rid is not None else None
+    return {"report_id": rid, **({"url": url} if hit and int(hit.group(1)) == rid else {}),
+            "title": data["title"][:300] if isinstance(data.get("title"), str) else "",
+            **({"tally": t} if t else {}), "unanimous": data.get("unanimous") is True}
+
+
+def _ra_report_of(v) -> dict | None:
+    """'/보고서' result 의 ra_report {id, title} — 번호가 맞을 때만."""
+    rid = _report_id_of(v.get("id")) if isinstance(v, dict) else None
+    if rid is None:
+        return None
+    return {"id": rid, "title": v["title"][:300] if isinstance(v.get("title"), str) else ""}
 # 브라우저가 떠난 뒤에도 상류를 끝까지 읽는 루틴 턴의 pump(R3 D9) — 아무도 await 하지 않는 작업은 이벤트 루프가 약한 참조만 쥐어 도는
 # 중에 GC 될 수 있다. 끝나면 빠진다.
 _DETACHED_RELAYS: set[asyncio.Task] = set()
+# 대화마다 이 프로세스에서 도는 챗 턴(사용자 발화를 남기기 직전 ~ 답을 남길 때까지)의 시작 시각 — 발표자료 알림이 다른 탭 · 기기의 질문과 답
+# 사이에 끼지 않게 그 사이에는 미룬다(docs/wda-deck WD-D66 · D76). 끝 정리가 새더라도 알림을 영영 막지 않게 _TURN_STALE_S 가 지난 턴은 세지 않고,
+# 새 턴을 셀 때 걷어 낸다(메모리에 쌓이지 않게).
+_ACTIVE_TURNS: dict[str, list[float]] = {}
+_TURN_STALE_S = 6 * 3600
+
+
+def turn_active(cid: str) -> bool:
+    """그 대화에 지금 도는 챗 턴이 있나(발표자료 advance 가 알림을 미룰지 — wda_deck.step)."""
+    now = time.monotonic()
+    return any(now - t < _TURN_STALE_S for t in _ACTIVE_TURNS.get(cid, ()))
+
+
+def _turn_begin(cid: str) -> Callable[[], None]:
+    """도는 턴을 하나 센다 — 돌려준 함수를 한 번 부르면 뺀다(두 번 불러도 한 번). 세기 전에 낡은 턴(끝 정리가 샌 것)을 걷어 낸다."""
+    t0 = time.monotonic()
+    for k in list(_ACTIVE_TURNS):
+        fresh = [t for t in _ACTIVE_TURNS[k] if t0 - t < _TURN_STALE_S]
+        if fresh:
+            _ACTIVE_TURNS[k] = fresh
+        else:
+            del _ACTIVE_TURNS[k]
+    _ACTIVE_TURNS.setdefault(cid, []).append(t0)
+    done = False
+
+    def end() -> None:
+        nonlocal done
+        if done:
+            return
+        done = True
+        left = _ACTIVE_TURNS.get(cid) or []
+        if t0 in left:
+            left.remove(t0)
+        if not left:
+            _ACTIVE_TURNS.pop(cid, None)
+
+    return end
 
 
 def _detached_relay_done(task: asyncio.Task) -> None:
@@ -2752,10 +2879,13 @@ async def chat(
     # 에이전트 서버로 가는 풀(max_connections)이 퍼밋 수와 같아, 퍼밋 없이 도는 상류 연결은 다른 챗을 풀 대기(agent_unreachable)로
     # 밀어낸다 — 넘치면 들어올 때 429 로 말하는 편이 정직하다. pump 가 돌기 전에 끝나면(헤더를 보내다 끊김) 종전처럼 응답이 돌려준다.
     pumping = False
+    turn_end: list[Callable[[], None]] = [lambda: None]     # 이 대화의 도는 턴 — 답을 남긴 뒤(또는 pump 가 돌지 못하고 끝나면) 뺀다(WD-D66)
 
     def _on_close() -> None:
         if not (routine_turn and pumping):
             _release()
+        if not pumping:
+            turn_end[0]()
 
     # ⚠ acquire 와 gen() 사이는 반드시 보호한다. 여기서 예외가 나면 gen() 이 아예
     # 만들어지지 않으므로 그 안의 finally(sem.release) 가 영원히 실행되지 않는다 —
@@ -2786,15 +2916,18 @@ async def chat(
                                       ("pinned_agent_name", body.pinned_agent_name)) if v}
             if body.pinned_agents:
                 _pin["pinned_agents"] = list(body.pinned_agents)
+            # 도는 턴은 발화를 남기기 **전에** 센다 — 남긴 뒤에 세면 그 사이(저장 스레드)에 발표자료 알림이 질문 뒤 · 답 앞에 끼었다
+            # (2차 적대 검토, docs/wda-deck WD-D76). 남기다 터지면 아래 except 가 뺀다.
+            turn_end[0] = _turn_begin(cid)
             # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
-            if await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
-                                       role="user", content=body.message, meta=_pin or None):
-                pass
-            else:
+            if not await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
+                                           role="user", content=body.message, meta=_pin or None):
+                turn_end[0]()  # 남의 대화(또는 없음)를 도는 턴으로 세지 않는다 — 그 주인의 알림을 이 스트림 동안 미루게 된다
                 store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
 
     except BaseException:
         _release()
+        turn_end[0]()
         raise
 
     async def gen() -> AsyncIterator[bytes]:
@@ -2813,6 +2946,8 @@ async def chat(
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         panels: list[dict] = []      # 패널(ui_resource) 포인터(app · tool · uri · call · 제목) — 답 meta.panels 로 남긴다. 결과 · 입력 · _meta 는 남기지 않는다(B-4 · B-6)
         cancelled: dict = {}         # 사람이 멈춘 웹 심의의 멈춤 사건(delib kind=cancelled) — 답 meta.delib_cancelled 로 남긴다
+        outcome: dict = {}           # 심의 outcome(RA 보고서 번호 · 집계) — 답 meta.delib_outcome 으로 남긴다(docs/wda-deck WD-D12, 새로고침 뒤 단추)
+        ra_report: dict = {}         # '/보고서' result 의 ra_report — 답 meta.ra_report 로 남긴다(같은 까닭)
         run_key = ""                 # 웹 심의의 실행 id(첫 심의 사건의 run_id) — 발언 · 답의 meta.delib_run 으로 남기고 멈춤 창구가 이 중계를 찾는다
         stop_rec: dict | None = None  # _DELIB_RELAYS 에 넣은 이 중계의 기록 — 멈춤 창구가 stop_by 를 적는다
         # 다단 심의(/시뮬심의)의 앞 단 결정문 뒤에 다음 단이 열렸다(엔진의 단 경계 checkpoint · 결정문 뒤의 단 사건 — 화면 mergeDelib 과 같은 판정).
@@ -2832,9 +2967,14 @@ async def chat(
         pending = 0                  # 브라우저가 아직 안 읽은 바이트 — _RELAY_BUFFER_BYTES 를 넘으면 그때만 종전처럼 상류 읽기를 멈춘다
         warned = False
         detached = False             # 루틴 턴 — 브라우저가 떠났다(아래 finally). 그 뒤 프레임은 저장할 것만 모으고 큐에 쌓지 않는다
+        # pump 가 끝맺는 중이다(finally 에 들었다 — 상류를 닫고 받은 것을 저장한다). 그 뒤 브라우저가 떠나도 생성기는 pump 를 취소하지 않고 기다린다 —
+        # 취소하면 그 취소가 저장 스레드 앞(anyio.to_thread.run_sync)에 떨어져 다 받은 답이 남지 않았다(있던 결함 — 사용자 결정 11-01, docs/wda-deck
+        # WD-D79). 도중에 떠나면(아직 끝맺지 않음) 종전처럼 취소해 상류를 끊는다.
+        finishing = False
 
         async def pump() -> None:
-            nonlocal final, decision, user_images, cancelled, run_key, stop_rec, next_stage, buf, pending, warned
+            nonlocal final, decision, user_images, cancelled, outcome, ra_report, run_key, stop_rec, next_stage, buf, pending, warned
+            nonlocal finishing
             try:
                 async for frame in source:
                     if store is not None:
@@ -2849,6 +2989,7 @@ async def chat(
                                 answered_by.add(evt)
                             if evt == "result" and isinstance(data.get("content"), str):
                                 final = data["content"]
+                                ra_report = _ra_report_of(data.get("ra_report")) or ra_report
                             elif evt == "token" and isinstance(data.get("delta"), str):
                                 acc.append(data["delta"])
                             elif evt == "delib":
@@ -2891,6 +3032,8 @@ async def chat(
                                     # 않으면 발언만 있고 답이 없는 대화가 되어 다른 기기에서는 '비정상 종료' 로 보인다(실패가 아니다).
                                     cancelled = {"message": str(data.get("message") or "")[:400], "by": str(data.get("by") or "")[:200],
                                                  **({"run_id": run_key} if run_key else {})}
+                                elif k == "outcome":
+                                    outcome = _delib_outcome_of(data)
                                 elif k == "evidence":
                                     # 근거 카드는 엔진이 '좌석에 주지 않았다·줄였다·좌석이 유실됐다' 를 알리는 유일한
                                     # 길이다(notice). 종전엔 서버 사본에 남지 않아 다른 기기·새로고침 뒤에는 알림이 사라지고,
@@ -2962,6 +3105,7 @@ async def chat(
                     pending += n
                     q.put_nowait(frame)
             finally:
+                finishing = True             # 이 뒤로는 생성기가 취소하지 않는다(위 finishing) — 끝 표지보다 먼저 세운다
                 q.put_nowait(_RELAY_DONE)
                 _close = getattr(source, "aclose", None)
                 if _close is not None:
@@ -3029,6 +3173,10 @@ async def chat(
                             if reply:
                                 _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
                                                          ("user_images", user_images), ("panels", panels)) if v}
+                                if outcome:     # 심의가 낸 보고서 번호 · 집계 — 새로고침 뒤에도 결과 카드와 '발표자료로' 단추가 선다
+                                    _am["delib_outcome"] = outcome
+                                if ra_report:   # '/보고서' 가 만든 보고서 — 그 답 옆에 '발표자료로' 단추가 선다
+                                    _am["ra_report"] = ra_report
                                 if cancelled:   # 사람이 멈춘 심의(triage A24) — 화면은 이 글을 결정문으로 읽지 않는다(serverMessagesToLocal)
                                     _am["delib_cancelled"] = cancelled
                                 if run_key:
@@ -3055,15 +3203,18 @@ async def chat(
 
                     # 웹 심의는 그 실행의 멈춤 기록과 같은 잠금 안에서 저장한다 — 멈춤 창구는 이 중계가 표에서 빠진 뒤로 이 잠금 뒤에서 남긴다.
                     _lock = _rt_key or (_delib_stop_key(cid, run_key) if run_key else None)
-                    with anyio.CancelScope(shield=True):
-                        async with (_routine_save_lock(_lock) if _lock else contextlib.nullcontext()):
-                            if stop_rec is not None:
-                                _DELIB_RELAYS.pop((cid, run_key), None)
-                                if not cancelled and stop_rec["stop_by"]:
-                                    # 멈춤을 청한 뒤 사건이 오기 전에 받기가 끊겼다(■ · 탭 닫기) — 끊긴 판 글로 남긴다(창구는 중계에 맡겼다)
-                                    cancelled = {"message": _DELIB_CUT_STOP_NOTE, "by": stop_rec["stop_by"], "run_id": run_key,
-                                                 "cut": True}
-                            await anyio.to_thread.run_sync(_save)
+                    try:
+                        with anyio.CancelScope(shield=True):
+                            async with (_routine_save_lock(_lock) if _lock else contextlib.nullcontext()):
+                                if stop_rec is not None:
+                                    _DELIB_RELAYS.pop((cid, run_key), None)
+                                    if not cancelled and stop_rec["stop_by"]:
+                                        # 멈춤을 청한 뒤 사건이 오기 전에 받기가 끊겼다(■ · 탭 닫기) — 끊긴 판 글로 남긴다(창구는 중계에 맡겼다)
+                                        cancelled = {"message": _DELIB_CUT_STOP_NOTE, "by": stop_rec["stop_by"], "run_id": run_key,
+                                                     "cut": True}
+                                await anyio.to_thread.run_sync(_save)
+                    finally:
+                        turn_end[0]()      # 답을 남겼다(또는 못 남겼다) — 이 대화의 미뤄 둔 발표자료 알림이 이제 들어간다(WD-D66)
                     # 이 턴의 도구 호출을 **절차 원장**에도 남긴다 — 하나의 원장, 세 생산자
                     # (PLAN §9-9). 대화 저장과 별개이고, 실패해도 챗을 막지 않는다.
                     # 루틴 턴은 건너뛴다 — 그 호출은 루틴 원장(routine_calls)에 이미 있어 여기 또 넣으면 두 벌이다(R3 D9).
@@ -3087,10 +3238,11 @@ async def chat(
                 pending -= len(frame)
                 room.set()
                 yield frame
-            # 상류 쪽 예외는 종전처럼 응답을 끊는다. 루틴 턴은 가린다 — pump 의 finally 를 기다리는 사이 브라우저가 떠나면 이 취소가
-            # 기다리던 pump 로 번진다. finally 를 감싼 anyio CancelScope(shield) 는 asyncio 취소를 막지 못해(실측), 상류를 닫는 await
-            # (pump 가 터져 끝났을 때)에서 끊기면 퍼밋 반납 · 저장을 건너뛴다 — 루틴 턴은 퍼밋을 pump 만 돌려주므로 영영 샌다.
-            await (asyncio.shield(task) if routine_turn else task)
+            # 상류 쪽 예외는 종전처럼 응답을 끊는다(가려도 pump 의 예외는 여기서 다시 난다). 가린다 — pump 의 finally(상류 닫기 · 저장)를 기다리는
+            # 사이 브라우저가 떠나면 이 await 를 끊는 취소가 기다리던 pump 로 번진다. finally 를 감싼 anyio CancelScope(shield) 는 asyncio 취소를
+            # 막지 못해(실측) 저장 · 퍼밋 반납을 건너뛴다 — 루틴 턴은 퍼밋을 pump 만 돌려주므로 영영 샜고, 일반 턴은 다 받은 답이 서버 사본에
+            # 남지 않았다(WD-D79). 여기 오면 상류는 이미 끝났다(끝 표지) — 끊을 것이 없다.
+            await asyncio.shield(task)
         finally:
             if routine_turn and not task.done() and len(_DETACHED_RELAYS) < _DETACHED_RELAYS_MAX:
                 # 브라우저가 떠났다 — 루틴 턴은 상류를 끝까지 읽어 대화에 남긴다(R3 D9). 취소하지 않고 기다리지도 않는다(실행은 분 ~ 시간이다).
@@ -3108,8 +3260,8 @@ async def chat(
                     logger.warning("루틴 턴 중계 — 떼어 낸 중계가 상한 %d개에 닿아 브라우저가 떠난 이 턴은 상류를 끊는다. 실행은 에이전트 "
                                    "서버에서 계속 돈다('이어서' 로 다시 붙는다) run_id=%s sub=%s",
                                    _DETACHED_RELAYS_MAX, routine_ptr.get("run_id"), owner)
-                if not task.done():
-                    task.cancel()        # 브라우저가 떠났다 — 상류도 끊는다(pump 의 finally 가 받은 것까지 저장한다)
+                if not task.done() and not finishing:
+                    task.cancel()        # 브라우저가 떠났다 — 상류도 끊는다(pump 의 finally 가 받은 것까지 저장한다). 끝맺는 중이면 끊지 않는다(WD-D79)
                 with anyio.CancelScope(shield=True):
                     await asyncio.gather(task, return_exceptions=True)
                 _release()

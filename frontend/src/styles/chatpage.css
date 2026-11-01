@@ -1350,6 +1350,22 @@
 .df-resume-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .df-resume-list .upl-note { width: auto; flex: 1 1 160px; }
 .df-resume-list .upl-actions { margin-top: 0; }
+/* 발표자료로(docs/wda-deck) — 메시지 아래 단추 · 출력 고르기 · 받기 링크. 색은 토큰만 */
+.deck-spot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.deck-opts { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.deck-opts label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.deck-opts em { color: var(--muted); font-style: normal; font-size: 12px; }
+.deck-style { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.deck-style select {
+  padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--fg); font-size: 13px;
+}
+.deck-files { flex-wrap: wrap; }
+.deck-file {
+  padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--fg); text-decoration: none; font-size: 13px;
+}
+.deck-file:hover { border-color: var(--accent); }
 
 /* 심의 목적(Job) 그리드 — DeliberatePage 히어로(얹을 층은 심의 옵션 안으로 옮겼다). method-picker 클래스(.cx-brief-*) 재사용 */
 .cx-jobgroup-wide { width: 100%; margin-top: 10px; text-align: left; }

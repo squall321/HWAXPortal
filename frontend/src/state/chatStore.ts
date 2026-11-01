@@ -29,6 +29,9 @@ interface StoredMessage {
   confirm?: ConfirmCard;
   /** MCP Apps 패널 포인터(HA-20) — 포인터와 작은 입력만(결과 · _meta 는 남기지 않는다 — B-4 · B-6). */
   panels?: PanelPointer[];
+  /** '/보고서' 가 만든 RA 보고서 · 발표자료 알림의 잡(docs/wda-deck) — 작다. 없으면 새로고침 뒤 단추가 서버를 다시 읽을 때까지 사라진다. */
+  raReport?: { id: number; title: string };
+  deckJob?: string;
 }
 /** 자기검증의 버린 고침(dropped)과 관문 수(gate)는 QA 용이라 브라우저 사본에 남기지 않는다(10-30 HA-27 — 화면에 보이지 않는다). */
 function storedMeta(meta: TurnMeta): TurnMeta {
@@ -132,6 +135,10 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
             ? { routine: { ...m.routine, steps: Array.isArray(m.routine.steps) ? m.routine.steps : [] } }
             : {}),
           ...(m.confirm && typeof m.confirm.id === 'string' && Array.isArray(m.confirm.calls) ? { confirm: m.confirm } : {}),
+          ...(m.raReport && Number.isInteger(m.raReport.id) && m.raReport.id > 0
+            ? { raReport: { id: m.raReport.id, title: typeof m.raReport.title === 'string' ? m.raReport.title : '' } }
+            : {}),
+          ...(typeof m.deckJob === 'string' && m.deckJob ? { deckJob: m.deckJob } : {}),
           // 패널 포인터(HA-20) — 입력은 이 브라우저 사본에만 있다(다시 열 때 tool-input 으로 보낸다)
           ...(() => {
             const panels = panelsFromMeta(m.panels, true);
@@ -273,6 +280,8 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ...(m.routine ? { routine: m.routine } : {}),
             ...(m.confirm ? { confirm: m.confirm } : {}),
             ...(m.panels?.length ? { panels: storedPanels(m.panels) } : {}),
+            ...(m.raReport ? { raReport: m.raReport } : {}),
+            ...(m.deckJob ? { deckJob: m.deckJob } : {}),
           };
         });
       return {

@@ -62,6 +62,11 @@ class CatalogRegistry:
                     routes[key.strip()] = value
         return routes
 
+    def route(self, key: str) -> str | None:
+        """라우트 파일(routes.env + routes.local.env)의 한 항목 — 포털 백엔드가 같은 박스의 프록시 대상을 알아야 할 때(발표자료로의 허브 Caddy,
+        docs/wda-deck). 읽을 때마다 파일을 본다 — 박스 오버레이를 바꾸면 재기동 없이 따른다."""
+        return self._load_routes().get(key)
+
     def _apply_route(self, s: LinkedSystem, routes: dict[str, str]) -> None:
         """Resolve a destination URL (env var > routes file > yaml) and flip the tile live.
 

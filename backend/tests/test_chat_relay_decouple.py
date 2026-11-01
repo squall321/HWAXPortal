@@ -225,3 +225,54 @@ def test_보내다_끊기면_생성기를_닫아_상류를_곧바로_끊는다(p
     c.portal.call(run)
     assert seen["kept"] and seen["sent"] == 1, seen
     assert seen["closed"], "끊긴 응답의 생성기가 닫히지 않아 상류 연결이 남았다"
+
+
+@pytest.mark.parametrize("save_delay", [0.0, 0.3])
+@pytest.mark.parametrize("spec", ["2.3", "2.4"])
+def test_상류가_끝난_직후_브라우저가_떠나도_답을_남긴다(portal, spec, save_delay):
+    """2차 적대 검토(있던 결함 — 사용자 결정 11-01로 고친다, docs/wda-deck WD-D79) — 상류가 끝나 pump 가 finally 에서 상류를 닫고 저장하는 사이에
+    브라우저가 떠나면(done 프레임을 받은 직후), 생성기 쪽 취소가 pump 로 번져 저장 스레드 앞(anyio.to_thread.run_sync)에 떨어졌다 — 서버
+    사본에 사용자 발화만 남았다. 2.3 은 끊김을 receive 로(http.disconnect), 2.4 는 send 의 실패로 안다."""
+    import time as _time
+
+    c, app, _path = portal
+    cid = c.post("/agent/conversations", json={"title": "t"}).json()["id"]
+    _agent(app, _Turn(n=3))
+    store = app.state.conv_store
+    orig = store.append
+
+    def slow(**kw):
+        if kw.get("role") == "assistant" and save_delay:
+            _time.sleep(save_delay)                 # 저장이 잠금을 기다리는 꼴
+        return orig(**kw)
+
+    async def run():
+        body = json.dumps({"message": "질문", "conversation_id": cid}).encode()
+        given, done_sent = [False], asyncio.Event()
+
+        async def receive():
+            if not given[0]:
+                given[0] = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            await (done_sent.wait() if spec == "2.3" else asyncio.Event().wait())
+            return {"type": "http.disconnect"}
+
+        async def send(msg):
+            if msg["type"] == "http.response.body" and b"event: done" in (msg.get("body") or b""):
+                if spec == "2.4":
+                    raise OSError("client gone")    # 2.4 — 마지막 프레임을 보내다 끊김을 안다
+                done_sent.set()
+
+        try:
+            await asyncio.wait_for(app(_scope(body, spec, app), receive, send), 10)
+        except Exception:  # noqa: BLE001 — 끊긴 연결의 ASGI 호출은 예외로 끝날 수 있다
+            pass
+        await asyncio.sleep(save_delay + 0.5)       # 저장 스레드가 끝날 틈
+
+    store.append = slow
+    try:
+        c.portal.call(run)
+    finally:
+        store.append = orig
+    assert _messages(app, cid) == [("user", "질문"), ("assistant", _RESULT)], "다 받은 답을 서버 사본에 남긴다"
+    assert not relay.turn_active(cid)
