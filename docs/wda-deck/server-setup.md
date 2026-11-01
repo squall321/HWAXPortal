@@ -6,7 +6,7 @@
 
 ## 0. 먼저 — WDA 쪽
 
-1. WDA 가 요청서 W-1 ~ W-12 를 main 에 커밋하고 GitHub 에 push 한다 — WDA 세션이 맡는다(11-01 밤 뒤집힘 — 사용자가 WDA 세션에 직접 맡겼고 그 세션이 SSH 로 올렸다(`6d6abb6..df446ae`, 역사 그대로 · WD-D85)). 허브가 앱 커밋이 바뀐 것을 보고 SIF 를 저절로 새로 짓는다.
+1. WDA 가 요청서 W-1 ~ W-12 를 main 에 커밋하고 GitHub 에 push 한다 — WDA 세션이 맡는다(11-01 밤 뒤집힘 — 사용자가 WDA 세션에 직접 맡겼고 그 세션이 SSH 로 올렸다(`6d6abb6..df446ae`, 역사 그대로 · WD-D85)). 허브가 앱 커밋이 바뀐 것을 보고 SIF 를 저절로 새로 짓는다. **짓기만으로는 떠 있는 인스턴스가 바뀌지 않는다** — dev 는 `cd ../HEAXHub && bash deploy/apptainer/redeploy-app.sh web-design-agents` 로 바꾸고, cae00 은 Drive 판을 `dist-from-drive.sh` 로 받은 뒤 같은 `redeploy-app.sh web-design-agents` 로 바꾼다(WDA 세션 실측 11-01 — 새 SIF 가 서도 10-10 에 뜬 인스턴스가 그대로 돌았다).
 2. 허브 매니페스트 `launch.portal_auth: true`(HEAXHub `385783f`)가 이 박스에 들어와 있다 — 포털 주소로 익명
    `/apps/web_design_agents/api/health` 를 부르면 401 이다.
 3. 심의 결과 카드 · `/보고서` 저장 답의 단추는 WDA 의 심의 꼴이 준비된 뒤에만 선다(U-6 — 심의 형식이 설 때까지 숨긴다) — `/api/health` 의 features 에
