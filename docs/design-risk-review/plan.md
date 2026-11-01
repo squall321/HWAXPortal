@@ -3662,7 +3662,7 @@ pending ──────────► assigned ─────────�
 ### 6.8.3 회계 불변식(`backend/tests/test_coverage_sm.py`) `[gap 수정 — extra_seats 정의 강화]`
 
 1. 상태별 카운트 합 = `roster_size`.
-2. `running` 좌석 수 ≤ 5 × `running` 패널 수, 타깃당 `running` 패널 ≤ 1.
+2. `running` 좌석 수 ≤ 5 × `running` 패널 수, 타깃당 `running` 패널 ≤ 그 타깃의 살아 있는 잡 가운데 가장 큰 자리 수(2026-10-31 개정 — 자리 수는 잡의 `concurrency` 1 ~ 2 를 박스 상한 `HWAXRISK_CONCURRENCY` 로 죈 값이고 Claude 판단 · 쟁점 잡은 1, 앱 `planner.check_invariants`. 동시 1 잡뿐이면 종전대로 ≤ 1).
 3. `done | done_weak | abstain` 좌석은 `opinion_id` 를 보유하고, `carried` 는 `carried_from_opinion_id` 를 보유한다.
 4. 패널 `personas` SSE 이벤트의 좌석 키 집합 == `seats(로스터 5) ∪ {'delib-baseline-defender'}` **이고 `extra_seats == ∅`**. 러너가 `human_note`·`continue_summary` 를 싣지 않으므로 `_RESCREEN` 경로가 발동하지 않는 것이 보장 조건이며, 위반은 `quality.flag=rescreen_seats` 로 기록하되 패널 결과는 버리지 않는다(추가 좌석의 발언은 원장 미집계, 의견은 `origin='new'` 로 저장).
 5. `seats_json` 의 좌석은 전부 `rr_roster` 에 존재한다(로스터 외 편성 0).
