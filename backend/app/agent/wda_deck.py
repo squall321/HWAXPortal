@@ -652,6 +652,7 @@ async def deck_jobs(
 ) -> dict:
     """내 잡(새것부터 20 · 숨긴 것 빼고) — 창을 닫은 잡을 입력창 위 줄에서 다시 연다. 아직 끝을 적지 않은 잡만 WDA 에 지금 상태를 묻는다.
     못 물은 잡도 목록에 남긴다('묻지 못했다' — 다음 차례에 다시 묻는다). 빼면 줄이 그 잡을 잃고 다시 묻기를 멈춰 끝 알림이 남지 않는다."""
+    ensure(principal, *NEEDS)      # 만들기만이 아니다 — 거둔 권한으로 진행 · 받기가 이어지지 않게(WD-D50)
     now = time.time()
     mine = [r for r in await asyncio.to_thread(records, settings)
             if r.get("owner_sub") == principal.subject and not r.get("dismissed")][:20]
@@ -682,6 +683,7 @@ async def deck_job(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """화면이 몇 초마다 본다 — 부작용이 없다(렌더 맡기기 · 알림은 advance)."""
+    ensure(principal, *NEEDS)
     try:
         rec = await asyncio.to_thread(load, settings, job_id, principal.subject)
     except DeckError as exc:
@@ -704,6 +706,7 @@ async def deck_advance(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """잡을 한 걸음 — 렌더 맡기기(WDA 가 이어서 하지 않는 판) 또는 끝(알림 한 건, 단추를 누른 그 대화에). 잡마다 잠금 · 두 번 불러도 알림은 하나."""
+    ensure(principal, *NEEDS)
     try:
         await asyncio.to_thread(load, settings, job_id, principal.subject)
     except DeckError as exc:
@@ -770,6 +773,7 @@ async def deck_dismiss(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """입력창 위 '끝나지 않은 발표자료' 줄에서 숨긴다 — 기록 · WDA 실행은 그대로(WDA 에 취소가 없다)."""
+    ensure(principal, *NEEDS)
     try:
         # 잠금보다 먼저 — 꼴이 틀리거나 없거나 남의 잡이면 잠금을 만들지 않는다(아무 id 로 부른 만큼 잠금이 쌓이지 않게 · advance 와 같다)
         await asyncio.to_thread(load, settings, job_id, principal.subject)
@@ -813,6 +817,7 @@ async def deck_file(
     settings: Settings = Depends(get_settings),
 ):
     """맡긴 사람만 — 요청한 사람의 이름으로 WDA 에서 받아 그대로 흘린다(attachment · nosniff · no-store · HTML 은 CSP sandbox, WD-D14)."""
+    ensure(principal, *NEEDS)
     try:
         rec = await asyncio.to_thread(load, settings, job_id, principal.subject)
     except DeckError as exc:

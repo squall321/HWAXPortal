@@ -347,6 +347,24 @@ def test_권한_둘_중_하나라도_없으면_403_이고_status_는_permission(
     assert box["fake"].created == []
 
 
+def test_권한을_거두면_목록_진행_advance_받기_숨기기도_403_이고_허브_토큰을_찍지_않는다(box):
+    """적대 검토 R4 — 만들기만 ensure 했다. 거둔 권한으로 받기 · 진행 · advance 가 이어지고 허브 토큰이 찍혔다(WD-D50)."""
+    c, fake = box["c"], box["fake"]
+    done = _make(box, targets=["pptx"]).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.rendered(rid)
+    c.post(f"/agent/deck/jobs/{done}/advance")
+    running = _make(box, doc_style="memo").json()["job_id"]
+    n_pats = len(fake.pats)
+    for groups in ([], ["plat:webdesign"], ["plat:reportarchive"]):
+        box["who"]["p"] = Principal(subject="kim@corp.com", email="kim@corp.com", display_name="김", groups=groups)
+        for r in (c.get(f"/agent/deck/jobs/{done}/files/pptx"), c.get(f"/agent/deck/jobs/{running}"), c.get("/agent/deck/jobs"),
+                  c.post(f"/agent/deck/jobs/{running}/advance"), c.post(f"/agent/deck/jobs/{running}/dismiss")):
+            assert r.status_code == 403, (groups, r.request.url, r.status_code)
+    assert len(fake.pats) == n_pats, "권한이 없는 사람 이름으로 허브 토큰을 찍지 않는다"
+
+
 def test_스위치가_꺼지면_창구는_없고_status_는_off(box):
     box["s"].wda_deck_enabled = False
     assert _make(box).status_code == 404
