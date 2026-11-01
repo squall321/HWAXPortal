@@ -29,7 +29,9 @@ export function DeckResume() {
       try {
         list = (await deckJobs()).jobs;
       } catch {
-        return;                                   // 못 읽으면 줄을 띄우지 않는다
+        // 못 읽으면 지금 줄을 그대로 두고 다음 차례에 다시 묻는다 — 같은 배열이면 다시 묻기가 멈춰 끝 알림이 남지 않는다(새 배열로 다음 차례를 건다)
+        if (!stop) setJobs((xs) => (xs.length ? [...xs] : xs));
+        return;
       }
       // 끝(next)인 잡은 저절로 한 걸음 — 렌더 맡기기 · 끝 알림(알림은 그 사람의 대화에만 쓰므로 다시 묻지 않는다, WD-D10)
       for (const j of list.filter((x) => x.next)) {

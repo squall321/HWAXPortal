@@ -5,6 +5,7 @@
     owner 만 있으면 선다. 권한 둘 중 하나가 없거나 스위치가 꺼졌으면 어디에도 없다.
   · 맡기기 — 출력 PPT · PDF 와 정식 보고서 꼴이 기본이고 단추를 누른 대화의 서버 id 가 간다.
   · 끝 — 진행을 보다가 끝나면 advance 한 번, 알림은 **단추를 누른 그 대화**에 남는다 — 다른 대화로 옮겨 가 단추 칸이 사라져도 입력창 위 줄이 잇는다.
+  · 다시 묻기 — 줄이 목록을 한 번 못 읽어도 다음 차례에 다시 묻는다(멈추면 끝 알림이 남지 않는다).
 """
 import json
 import subprocess
@@ -63,7 +64,10 @@ _STUB = r"""
     window.__calls.push({ url: u, method, body: typeof init.body === 'string' ? JSON.parse(init.body) : null });
     if (u === '/agent/deck/status') return json(window.__status);
     if (u === '/agent/deck/jobs' && method === 'POST') return json(window.__created);
-    if (u === '/agent/deck/jobs' && method === 'GET') return json({ jobs: window.__list || [], keep_days: 7 });
+    if (u === '/agent/deck/jobs' && method === 'GET') {
+      if (window.__listFail > 0) { window.__listFail -= 1; return json({ detail: '잠시 답하지 않는다' }, 502); }
+      return json({ jobs: window.__list || [], keep_days: 7 });
+    }
     if (u.startsWith('/agent/deck/jobs/')) {
       if (u.endsWith('/advance')) { window.__list = []; return json(window.__advanced); }
       if (u.endsWith('/dismiss')) return json({ dismissed: true });
@@ -192,6 +196,21 @@ const SCENARIOS = {
     return { active: await text(page, 'active'), counts: await text(page, 'counts'),
              advances: (await calls(page, '/agent/deck/jobs/')).filter((c) => c.url.endsWith('/advance')).length, errors: page.__errors };
   },
+  // 목록을 한 번 못 읽어도 줄이 다시 묻기를 멈추지 않는다 — 다음 차례에 끝을 보고 알림을 A 에
+  async blip(browser) {
+    const page = await open(browser);
+    await makeJob(page);
+    await page.locator('#toB').click();
+    await page.waitForTimeout(60);
+    await page.evaluate((f) => { window.__list = [f]; window.__listFail = 1; }, FINISH);
+    await forward(page, 10500);                                         // 이 차례는 못 읽는다
+    const mid = { last: await text(page, 'lastA'), strip: await page.evaluate(() => !!document.querySelector('.deck-resume')) };
+    await forward(page, 10500);                                         // 다음 차례에 다시 묻는다
+    await page.waitForFunction(() => document.getElementById('lastA').textContent.includes('발표자료를 만들었습니다'));
+    return { mid, counts: await text(page, 'counts'),
+             lists: (await calls(page, '/agent/deck/jobs')).filter((c) => c.method === 'GET' && c.url === '/agent/deck/jobs').length,
+             errors: page.__errors };
+  },
 };
 
 (async () => {
@@ -257,3 +276,10 @@ def test_다른_대화로_옮겨_가도_알림은_단추를_누른_대화에(see
     assert s["active"] == "srv-B"
     assert s["counts"] == "srv-A:4,srv-B:2", "알림은 A 에 — 지금 보는 B 가 아니다"
     assert s["advances"] == 1
+
+
+def test_목록을_한_번_못_읽어도_줄이_다시_묻고_알림을_남긴다(seen):
+    s = seen("blip")
+    assert s["mid"]["strip"] is True and "발표자료를 만들었습니다" not in s["mid"]["last"], "못 읽은 차례에는 줄을 그대로 둔다"
+    assert s["counts"] == "srv-A:4,srv-B:2", "다음 차례에 다시 물어 끝 알림을 A 에"
+    assert s["lists"] >= 3

@@ -410,6 +410,7 @@ def test_허브가_계정_없음으로_막으면_그_까닭을_그대로(box):
     box["who"]["p"] = LEE
     r = _make(box)
     assert r.status_code == 403 and "허브 계정이 없다" in r.json()["detail"]
+    assert r.json()["detail"].startswith("허브가 만들기 요청을 막았습니다(HTTP 403)")
 
 
 def test_허브가_탐침을_401_로_막으면_모름으로_숨기고_붙잡지_않는다(box):
@@ -581,8 +582,22 @@ def test_내_목록은_끝나지_않은_잡의_지금_상태와_숨기기(box):
     box["fake"].stage(_run_id(box), "build")
     (j,) = box["c"].get("/agent/deck/jobs").json()["jobs"]
     assert (j["job_id"], j["state"], j["step"]) == (job, "preparing", "화면 굽기")
+    box["fake"].reject_all = True                            # WDA 를 못 묻는 동안에도 목록이 그 잡을 잃지 않는다(줄이 다시 묻기를 멈추지 않게)
+    (j,) = box["c"].get("/agent/deck/jobs").json()["jobs"]
+    assert (j["job_id"], j["state"], j["next"]) == (job, "preparing", None) and "묻지 못했습니다" in j["step"]
+    box["fake"].reject_all = False
     assert box["c"].post(f"/agent/deck/jobs/{job}/dismiss").json() == {"job_id": job, "dismissed": True}
     assert box["c"].get("/agent/deck/jobs").json()["jobs"] == []
+
+
+def test_없는_잡이나_남의_잡을_숨겨도_잠금이_쌓이지_않는다(box):
+    job = _make(box).json()["job_id"]
+    n = len(W._LOCKS)
+    for jid in [uuid.uuid4().hex for _ in range(5)] + ["../x", "z" * 32]:
+        assert box["c"].post(f"/agent/deck/jobs/{jid}/dismiss").status_code == 404
+    box["who"]["p"] = LEE
+    assert box["c"].post(f"/agent/deck/jobs/{job}/dismiss").status_code == 404
+    assert len(W._LOCKS) == n, "꼴이 틀리거나 없거나 남의 잡이면 잠금을 만들지 않는다"
 
 
 def test_잡_기록은_스테이징_청소에서_빠지고_기한_뒤에_지운다(box):

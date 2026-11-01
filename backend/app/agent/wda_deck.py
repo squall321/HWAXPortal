@@ -196,11 +196,11 @@ def _wda_error(r: httpx.Response, what: str) -> DeckError:
     code = j.get("code") if isinstance(j.get("code"), str) else ""
     if r.status_code in (401, 403) and not code:
         # WDA 에 닿기 전 — 허브 게이트(계정 없음 · 앱 권한 · 포털 토큰 거절). 허브가 준 까닭을 그대로.
-        return DeckError(f"허브가 {what} 을 막았습니다(HTTP {r.status_code})" + (f" — {why}" if why else "."), 403)
+        return DeckError(f"허브가 {what} 요청을 막았습니다(HTTP {r.status_code})" + (f" — {why}" if why else "."), 403)
     if r.status_code == 413 or code == "TOO_LARGE":
         return DeckError(f"WDA 가 크기 한도로 받지 않았습니다(HTTP {r.status_code})" + (f" — {why}" if why else "."), 413)
     tag = f"HTTP {r.status_code}" + (f" · {code}" if code else "")
-    return DeckError(f"WDA 가 {what} 을 받지 않았습니다({tag})" + (f" — {why}" if why else "."), 502)
+    return DeckError(f"WDA 가 {what} 요청을 받지 않았습니다({tag})" + (f" — {why}" if why else "."), 502)
 
 
 class Caps(NamedTuple):
@@ -610,12 +610,13 @@ async def deck_jobs(
     principal: Principal = Depends(principal_pat_or_session),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    """내 잡(새것부터 20 · 숨긴 것 빼고) — 창을 닫은 잡을 입력창 위 줄에서 다시 연다. 아직 끝을 적지 않은 잡만 WDA 에 지금 상태를 묻는다(못 물으면 st 없음)."""
+    """내 잡(새것부터 20 · 숨긴 것 빼고) — 창을 닫은 잡을 입력창 위 줄에서 다시 연다. 아직 끝을 적지 않은 잡만 WDA 에 지금 상태를 묻는다.
+    못 물은 잡도 목록에 남긴다('묻지 못했다' — 다음 차례에 다시 묻는다). 빼면 줄이 그 잡을 잃고 다시 묻기를 멈춰 끝 알림이 남지 않는다."""
     now = time.time()
     mine = [r for r in await asyncio.to_thread(records, settings)
             if r.get("owner_sub") == principal.subject and not r.get("dismissed")][:20]
     open_ = [r for r in mine if not r.get("finished")]
-    folded: dict[str, dict] = {}
+    folded: dict[str, dict | None] = {}
     if open_:
         base, token = _base_and_token(request, settings, principal)
 
@@ -626,13 +627,10 @@ async def deck_jobs(
                 return r["job_id"], None
             return r["job_id"], fold(run, rec=r, now=now, settings=settings)
 
-        folded = {jid: f for jid, f in await asyncio.gather(*(one(r) for r in open_)) if f is not None}
-    jobs = []
-    for r in mine:
-        if r.get("finished"):
-            jobs.append(view(r, now=now))
-        elif r["job_id"] in folded:
-            jobs.append(view(r, folded[r["job_id"]], now=now))
+        folded = dict(await asyncio.gather(*(one(r) for r in open_)))
+    unasked = {"state": "preparing", "step": "WDA 에 묻지 못했습니다 — 다시 묻습니다", "progress": None, "error": None, "late": False,
+               "next": None, "skipped": []}
+    jobs = [view(r, now=now) if r.get("finished") else view(r, folded.get(r["job_id"]) or unasked, now=now) for r in mine]
     return {"jobs": jobs, "keep_days": settings.wda_deck_job_days}
 
 
@@ -729,11 +727,13 @@ async def deck_dismiss(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """입력창 위 '끝나지 않은 발표자료' 줄에서 숨긴다 — 기록 · WDA 실행은 그대로(WDA 에 취소가 없다)."""
+    try:
+        # 잠금보다 먼저 — 꼴이 틀리거나 없거나 남의 잡이면 잠금을 만들지 않는다(아무 id 로 부른 만큼 잠금이 쌓이지 않게 · advance 와 같다)
+        await asyncio.to_thread(load, settings, job_id, principal.subject)
+    except DeckError as exc:
+        raise _http_error(exc) from exc
     async with lock(job_id):
-        try:
-            rec = await asyncio.to_thread(load, settings, job_id, principal.subject)
-        except DeckError as exc:
-            raise _http_error(exc) from exc
+        rec = await asyncio.to_thread(load, settings, job_id, principal.subject)
         rec["dismissed"] = time.time()
         await asyncio.to_thread(save, settings, rec)
     return {"job_id": job_id, "dismissed": True}
