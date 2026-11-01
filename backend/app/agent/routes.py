@@ -2635,6 +2635,34 @@ async def deliberate_cancel(
 # 않게 한다. 보통 챗 한 턴은 수 MB 안이다(생각 글 24만 자도 1 MB 남짓). 넘으면 그 스트림만 종전처럼 상류 읽기를 멈춘다.
 _RELAY_BUFFER_BYTES = 64 * 1024 * 1024
 _RELAY_DONE = object()
+# RA 보고서 번호를 서버 사본에 남길 때의 꼴(docs/wda-deck WD-D12) — 화면의 '발표자료로' 단추가 이 번호로 선다. 양의 정수(숫자 글도)만 받는다 —
+# 참거짓 · 0 이하 · 다른 꼴은 없는 것으로(없는 보고서로 단추가 서면 안 된다).
+_TALLY_KEYS = ("agree", "conditional", "oppose", "abstain", "total", "responded")
+
+
+def _report_id_of(v) -> int | None:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, str) and v.strip().isdigit():
+        v = int(v.strip())
+    return v if isinstance(v, int) and v > 0 else None
+
+
+def _delib_outcome_of(data: dict) -> dict:
+    """심의 outcome 사건 → 답 meta.delib_outcome — 화면이 되살리는 delib.outcome 과 같은 칸(번호 · 제목 · 집계 · 만장일치)."""
+    tally = data.get("tally") if isinstance(data.get("tally"), dict) else {}
+    t = {k: tally[k] for k in _TALLY_KEYS if isinstance(tally.get(k), int) and not isinstance(tally.get(k), bool)}
+    return {"report_id": _report_id_of(data.get("report_id")),
+            "title": data["title"][:300] if isinstance(data.get("title"), str) else "",
+            **({"tally": t} if t else {}), "unanimous": data.get("unanimous") is True}
+
+
+def _ra_report_of(v) -> dict | None:
+    """'/보고서' result 의 ra_report {id, title} — 번호가 맞을 때만."""
+    rid = _report_id_of(v.get("id")) if isinstance(v, dict) else None
+    if rid is None:
+        return None
+    return {"id": rid, "title": v["title"][:300] if isinstance(v.get("title"), str) else ""}
 # 브라우저가 떠난 뒤에도 상류를 끝까지 읽는 루틴 턴의 pump(R3 D9) — 아무도 await 하지 않는 작업은 이벤트 루프가 약한 참조만 쥐어 도는
 # 중에 GC 될 수 있다. 끝나면 빠진다.
 _DETACHED_RELAYS: set[asyncio.Task] = set()
@@ -2813,6 +2841,8 @@ async def chat(
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         panels: list[dict] = []      # 패널(ui_resource) 포인터(app · tool · uri · call · 제목) — 답 meta.panels 로 남긴다. 결과 · 입력 · _meta 는 남기지 않는다(B-4 · B-6)
         cancelled: dict = {}         # 사람이 멈춘 웹 심의의 멈춤 사건(delib kind=cancelled) — 답 meta.delib_cancelled 로 남긴다
+        outcome: dict = {}           # 심의 outcome(RA 보고서 번호 · 집계) — 답 meta.delib_outcome 으로 남긴다(docs/wda-deck WD-D12, 새로고침 뒤 단추)
+        ra_report: dict = {}         # '/보고서' result 의 ra_report — 답 meta.ra_report 로 남긴다(같은 까닭)
         run_key = ""                 # 웹 심의의 실행 id(첫 심의 사건의 run_id) — 발언 · 답의 meta.delib_run 으로 남기고 멈춤 창구가 이 중계를 찾는다
         stop_rec: dict | None = None  # _DELIB_RELAYS 에 넣은 이 중계의 기록 — 멈춤 창구가 stop_by 를 적는다
         # 다단 심의(/시뮬심의)의 앞 단 결정문 뒤에 다음 단이 열렸다(엔진의 단 경계 checkpoint · 결정문 뒤의 단 사건 — 화면 mergeDelib 과 같은 판정).
@@ -2834,7 +2864,7 @@ async def chat(
         detached = False             # 루틴 턴 — 브라우저가 떠났다(아래 finally). 그 뒤 프레임은 저장할 것만 모으고 큐에 쌓지 않는다
 
         async def pump() -> None:
-            nonlocal final, decision, user_images, cancelled, run_key, stop_rec, next_stage, buf, pending, warned
+            nonlocal final, decision, user_images, cancelled, outcome, ra_report, run_key, stop_rec, next_stage, buf, pending, warned
             try:
                 async for frame in source:
                     if store is not None:
@@ -2849,6 +2879,7 @@ async def chat(
                                 answered_by.add(evt)
                             if evt == "result" and isinstance(data.get("content"), str):
                                 final = data["content"]
+                                ra_report = _ra_report_of(data.get("ra_report")) or ra_report
                             elif evt == "token" and isinstance(data.get("delta"), str):
                                 acc.append(data["delta"])
                             elif evt == "delib":
@@ -2891,6 +2922,8 @@ async def chat(
                                     # 않으면 발언만 있고 답이 없는 대화가 되어 다른 기기에서는 '비정상 종료' 로 보인다(실패가 아니다).
                                     cancelled = {"message": str(data.get("message") or "")[:400], "by": str(data.get("by") or "")[:200],
                                                  **({"run_id": run_key} if run_key else {})}
+                                elif k == "outcome":
+                                    outcome = _delib_outcome_of(data)
                                 elif k == "evidence":
                                     # 근거 카드는 엔진이 '좌석에 주지 않았다·줄였다·좌석이 유실됐다' 를 알리는 유일한
                                     # 길이다(notice). 종전엔 서버 사본에 남지 않아 다른 기기·새로고침 뒤에는 알림이 사라지고,
@@ -3029,6 +3062,10 @@ async def chat(
                             if reply:
                                 _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
                                                          ("user_images", user_images), ("panels", panels)) if v}
+                                if outcome:     # 심의가 낸 보고서 번호 · 집계 — 새로고침 뒤에도 결과 카드와 '발표자료로' 단추가 선다
+                                    _am["delib_outcome"] = outcome
+                                if ra_report:   # '/보고서' 가 만든 보고서 — 그 답 옆에 '발표자료로' 단추가 선다
+                                    _am["ra_report"] = ra_report
                                 if cancelled:   # 사람이 멈춘 심의(triage A24) — 화면은 이 글을 결정문으로 읽지 않는다(serverMessagesToLocal)
                                     _am["delib_cancelled"] = cancelled
                                 if run_key:
