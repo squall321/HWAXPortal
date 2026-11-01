@@ -2967,9 +2967,14 @@ async def chat(
         pending = 0                  # 브라우저가 아직 안 읽은 바이트 — _RELAY_BUFFER_BYTES 를 넘으면 그때만 종전처럼 상류 읽기를 멈춘다
         warned = False
         detached = False             # 루틴 턴 — 브라우저가 떠났다(아래 finally). 그 뒤 프레임은 저장할 것만 모으고 큐에 쌓지 않는다
+        # pump 가 끝맺는 중이다(finally 에 들었다 — 상류를 닫고 받은 것을 저장한다). 그 뒤 브라우저가 떠나도 생성기는 pump 를 취소하지 않고 기다린다 —
+        # 취소하면 그 취소가 저장 스레드 앞(anyio.to_thread.run_sync)에 떨어져 다 받은 답이 남지 않았다(있던 결함 — 사용자 결정 11-01, docs/wda-deck
+        # WD-D79). 도중에 떠나면(아직 끝맺지 않음) 종전처럼 취소해 상류를 끊는다.
+        finishing = False
 
         async def pump() -> None:
             nonlocal final, decision, user_images, cancelled, outcome, ra_report, run_key, stop_rec, next_stage, buf, pending, warned
+            nonlocal finishing
             try:
                 async for frame in source:
                     if store is not None:
@@ -3100,6 +3105,7 @@ async def chat(
                     pending += n
                     q.put_nowait(frame)
             finally:
+                finishing = True             # 이 뒤로는 생성기가 취소하지 않는다(위 finishing) — 끝 표지보다 먼저 세운다
                 q.put_nowait(_RELAY_DONE)
                 _close = getattr(source, "aclose", None)
                 if _close is not None:
@@ -3232,10 +3238,11 @@ async def chat(
                 pending -= len(frame)
                 room.set()
                 yield frame
-            # 상류 쪽 예외는 종전처럼 응답을 끊는다. 루틴 턴은 가린다 — pump 의 finally 를 기다리는 사이 브라우저가 떠나면 이 취소가
-            # 기다리던 pump 로 번진다. finally 를 감싼 anyio CancelScope(shield) 는 asyncio 취소를 막지 못해(실측), 상류를 닫는 await
-            # (pump 가 터져 끝났을 때)에서 끊기면 퍼밋 반납 · 저장을 건너뛴다 — 루틴 턴은 퍼밋을 pump 만 돌려주므로 영영 샌다.
-            await (asyncio.shield(task) if routine_turn else task)
+            # 상류 쪽 예외는 종전처럼 응답을 끊는다(가려도 pump 의 예외는 여기서 다시 난다). 가린다 — pump 의 finally(상류 닫기 · 저장)를 기다리는
+            # 사이 브라우저가 떠나면 이 await 를 끊는 취소가 기다리던 pump 로 번진다. finally 를 감싼 anyio CancelScope(shield) 는 asyncio 취소를
+            # 막지 못해(실측) 저장 · 퍼밋 반납을 건너뛴다 — 루틴 턴은 퍼밋을 pump 만 돌려주므로 영영 샜고, 일반 턴은 다 받은 답이 서버 사본에
+            # 남지 않았다(WD-D79). 여기 오면 상류는 이미 끝났다(끝 표지) — 끊을 것이 없다.
+            await asyncio.shield(task)
         finally:
             if routine_turn and not task.done() and len(_DETACHED_RELAYS) < _DETACHED_RELAYS_MAX:
                 # 브라우저가 떠났다 — 루틴 턴은 상류를 끝까지 읽어 대화에 남긴다(R3 D9). 취소하지 않고 기다리지도 않는다(실행은 분 ~ 시간이다).
@@ -3253,8 +3260,8 @@ async def chat(
                     logger.warning("루틴 턴 중계 — 떼어 낸 중계가 상한 %d개에 닿아 브라우저가 떠난 이 턴은 상류를 끊는다. 실행은 에이전트 "
                                    "서버에서 계속 돈다('이어서' 로 다시 붙는다) run_id=%s sub=%s",
                                    _DETACHED_RELAYS_MAX, routine_ptr.get("run_id"), owner)
-                if not task.done():
-                    task.cancel()        # 브라우저가 떠났다 — 상류도 끊는다(pump 의 finally 가 받은 것까지 저장한다)
+                if not task.done() and not finishing:
+                    task.cancel()        # 브라우저가 떠났다 — 상류도 끊는다(pump 의 finally 가 받은 것까지 저장한다). 끝맺는 중이면 끊지 않는다(WD-D79)
                 with anyio.CancelScope(shield=True):
                     await asyncio.gather(task, return_exceptions=True)
                 _release()
