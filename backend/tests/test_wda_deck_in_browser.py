@@ -175,7 +175,9 @@ const SCENARIOS = {
     await page.getByText('발표자료를 만들었습니다').first().waitFor();
     const links = await page.evaluate(() => Array.from(document.querySelectorAll('.deck-file')).map((a) => a.getAttribute('href')));
     const advances = (await calls(page, '/agent/deck/jobs/')).filter((c) => c.url.endsWith('/advance')).length;
-    return { before, opts, create: create && create.body, mid, links, advances, after: await text(page, 'counts'),
+    // 대화에 남은 알림의 받기 링크도 눌리는 링크다(같은 오리진 절대경로 — md.ts)
+    const noticeLinks = await page.evaluate(() => Array.from(document.querySelectorAll('.msg .md-link')).map((a) => a.getAttribute('href')));
+    return { before, opts, create: create && create.body, mid, links, noticeLinks, advances, after: await text(page, 'counts'),
              last: await text(page, 'lastA'), errors: page.__errors };
   },
   // 다른 대화로 옮겨 간다 — 단추 칸이 사라져도 입력창 위 줄이 잇고, 알림은 단추를 누른 A 에 남는다(B 가 아니라)
@@ -247,6 +249,7 @@ def test_맡기면_진행을_보이고_끝나면_그_대화에_알림과_포털_
     assert s["links"] == [f"/agent/deck/jobs/{'f' * 32}/files/pptx", f"/agent/deck/jobs/{'f' * 32}/files/pdf"], "받기는 포털 경로 — WDA 주소가 아니다"
     assert s["advances"] == 1
     assert s["before"] == "srv-A:3,srv-B:2" and s["after"] == "srv-A:4,srv-B:2" and "발표자료를 만들었습니다" in s["last"]
+    assert s["noticeLinks"] == s["links"], "대화에 남은 알림의 받기 링크도 눌린다"
 
 
 def test_다른_대화로_옮겨_가도_알림은_단추를_누른_대화에(seen):
