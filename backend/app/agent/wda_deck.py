@@ -185,22 +185,49 @@ def _json(r: httpx.Response) -> dict:
 
 
 def _why(r: httpx.Response) -> str:
-    """상대가 밝힌 까닭 — WDA 봉투의 message, 허브 게이트의 detail, 아니면 본문 앞."""
+    """상대가 밝힌 까닭 — WDA 봉투의 message, 허브 게이트의 detail, 아니면 본문 앞. **서버 로그에만** 쓴다(WD-D49)."""
     j = _json(r)
     msg = j.get("message") or j.get("detail") or (r.text or "")
     return (msg if isinstance(msg, str) else json.dumps(msg, ensure_ascii=False))[:300]
 
 
+# 마크다운이 되는 글자 → 같은 모양의 전각 글자. 포털 챗 글(md.ts)에는 역슬래시 이스케이프가 없고 `\(..\)` 는 수식이라 \ 를 붙이면 오히려
+# 수식 · 글자 그대로의 \ 가 된다 — 바꿔 끼운다(WD-D49). 줄바꿈 · 제어 · 방향 바꾸기 글자는 빈칸으로(제목 · 인용 · 표 · 코드 울타리가 서지 않게).
+_MD_PLAIN = str.maketrans({"[": "［", "]": "］", "(": "（", ")": "）", "!": "！", "*": "＊", "_": "＿", "\\": "＼", "`": "｀",
+                           "#": "＃", ">": "＞", "|": "｜", "$": "＄", "~": "～", "<": "＜"})
+_UNSEEN = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+
+
+def md_plain(v: Any, limit: int = 300) -> str:
+    """사람 · WDA 가 쓴 글을 알림(마크다운) · LLM 근거에 넣기 전에 — 링크 · 그림 · 제목 · 콜아웃 · 코드가 되지 않는 한 줄로."""
+    s = re.sub(r"\s+", " ", _UNSEEN.sub(" ", str(v or ""))).strip()
+    return s.translate(_MD_PLAIN)[:limit]
+
+
 def _wda_error(r: httpx.Response, what: str) -> DeckError:
-    j, why = _json(r), _why(r)
+    """허브 · WDA 의 거절 → 사람에게 보일 정해진 글(코드 · 상태로 고른다). 상대의 글(WDA 예외 글 — 경로 · run_id 가 실린다)은 서버 로그에만(WD-D49)."""
+    j = _json(r)
     code = j.get("code") if isinstance(j.get("code"), str) else ""
-    if r.status_code in (401, 403) and not code:
-        # WDA 에 닿기 전 — 허브 게이트(계정 없음 · 앱 권한 · 포털 토큰 거절). 허브가 준 까닭을 그대로.
-        return DeckError(f"허브가 {what} 요청을 막았습니다(HTTP {r.status_code})" + (f" — {why}" if why else "."), 403)
-    if r.status_code == 413 or code == "TOO_LARGE":
-        return DeckError(f"WDA 가 크기 한도로 받지 않았습니다(HTTP {r.status_code})" + (f" — {why}" if why else "."), 413)
-    tag = f"HTTP {r.status_code}" + (f" · {code}" if code else "")
-    return DeckError(f"WDA 가 {what} 요청을 받지 않았습니다({tag})" + (f" — {why}" if why else "."), 502)
+    st = r.status_code
+    logger.warning("발표자료 — %s 요청이 거절됐다 HTTP %s code=%s 까닭=%r", what, st, code or "-", _why(r))
+    if st == 401 and not code:
+        return DeckError("허브가 포털 토큰을 받지 않았습니다 — 다시 로그인한 뒤 누르세요.", 403)
+    if st == 403 and not code:
+        return DeckError("허브가 막았습니다 — 허브 계정이 없거나(포털에서 HEAX Hub 타일을 한 번 눌러 허브에 로그인한 뒤 다시) 이 앱을 볼 권한이 "
+                         "없습니다.", 403)
+    if st == 413 or code == "TOO_LARGE":
+        return DeckError("보고서가 커서 WDA 가 받지 않았습니다.", 413)
+    if st in (404, 410) or code == "NOT_FOUND":
+        return DeckError("WDA 가 그 실행을 모릅니다(지웠거나 다른 박스).", 404)
+    if st == 409 or code in ("BUSY", "NOT_BUILT"):
+        return DeckError("WDA 가 지금 그 요청을 받을 수 없습니다(이미 하는 중이거나 아직 준비 전) — 잠시 뒤 다시.", 409)
+    if st == 422 or (code == "INVALID" and st != 400):
+        return DeckError("WDA 가 이 보고서를 다루지 못했습니다 — 글이 있는 블록이 없거나 꼴이 맞지 않습니다.", 422)
+    if st == 400 or code == "INVALID":
+        return DeckError(f"WDA 가 {what} 요청의 꼴을 받지 않았습니다 — WDA 판이 바뀌었을 수 있습니다.", 502)
+    if st == 429 or st >= 500 or code == "INTERNAL":
+        return DeckError(f"허브 또는 WDA 가 지금 {what} 요청에 답하지 못합니다(HTTP {st}) — 잠시 뒤 다시 누르세요.", 503 if st != 429 else 429)
+    return DeckError(f"WDA 가 {what} 요청을 받지 않았습니다(HTTP {st}).", 502)
 
 
 class Caps(NamedTuple):
@@ -290,7 +317,8 @@ async def read_report(request: Request, settings: Settings, principal: Principal
     if r.status_code == 404:
         raise DeckError("그 보고서가 Report Archive 에 없습니다.", 404)
     if r.status_code >= 400:
-        raise DeckError(f"Report Archive 가 보고서를 주지 않았습니다(HTTP {r.status_code}) — {_why(r)}", 502)
+        logger.warning("발표자료 — RA 가 보고서 %s 를 주지 않았다 HTTP %s 까닭=%r", report_id, r.status_code, _why(r))
+        raise DeckError(f"Report Archive 가 보고서를 주지 않았습니다(HTTP {r.status_code}) — 잠시 뒤 다시 누르세요.", 502)
     size = len(r.content)
     if size > settings.wda_deck_report_max_mb * 1024 * 1024:
         raise DeckError(f"보고서가 커서({size / 1048576:.1f} MB) 발표자료로 만들 수 없습니다 — 상한 {settings.wda_deck_report_max_mb} MB.", 413)
@@ -353,7 +381,8 @@ async def wda_render(base: str, token: str, run_id: str, rec: dict) -> None:
             r = await cli.post(f"{base}/api/runs/{quote(run_id, safe='')}/render", json=body, headers=_auth(token))
     except httpx.HTTPError as exc:
         raise DeckError(f"WDA 에 연결하지 못했습니다({exc.__class__.__name__}).", 502) from exc
-    if r.status_code == 409 and _json(r).get("code") == "BUSY":
+    if r.status_code == 409:
+        # 이미 렌더 중(BUSY) — 지금 WDA 는 code 를 싣지 않는다(W-10 전). NOT_BUILT 는 생기지 않는다(빌드가 끝난 실행에만 맡긴다)
         return
     if r.status_code >= 400:
         raise _wda_error(r, "렌더")
@@ -380,8 +409,10 @@ async def wda_artifacts(base: str, token: str, run_id: str) -> dict[str, int | N
 # ── 상태 접기(PLAN §7.2) ────────────────────────────────────────────────────────────────────────────
 def fold(run: dict | None, *, rec: dict, now: float, settings: Settings) -> dict:
     """WDA 실행 원장(또는 None — WDA 가 모른다) → 화면 낱말 하나(queued · preparing · rendering · done · failed).
-    돌려주는 것 — state · step · progress(단계 기준) · error · late · next(render | finish | None) · skipped."""
-    out: dict[str, Any] = {"state": "preparing", "step": "", "progress": 0, "error": None, "late": False, "next": None, "skipped": []}
+    돌려주는 것 — state · step · progress(단계 기준) · error · late · next(render | finish | None) · skipped. error 는 포털의 정해진 글이고 WDA 의
+    예외 글(경로 · run_id 가 실린다)은 raw_error 로만 둔다 — 화면 · 알림에는 싣지 않고 끝을 적을 때 서버 로그에 남긴다(WD-D49)."""
+    out: dict[str, Any] = {"state": "preparing", "step": "", "progress": 0, "error": None, "late": False, "next": None, "skipped": [],
+                           "raw_error": None}
     if run is None:
         out.update(state="failed", step="WDA 가 이 실행을 모릅니다(지웠거나 다른 박스)", error="WDA 가 이 실행을 모릅니다(지웠거나 다른 박스).")
     else:
@@ -391,7 +422,8 @@ def fold(run: dict | None, *, rec: dict, now: float, settings: Settings) -> dict
         if st == "failed":
             bad = next((s for s in stages if s.get("status") == "failed"), {})
             name = STEPS.get(str(bad.get("stage")), "보고서 다루기")
-            out.update(state="failed", step=f"{name} 에서 멈춤", error=str(bad.get("error") or run.get("error") or "까닭을 받지 못했습니다")[:300])
+            out.update(state="failed", step=f"{name} 에서 멈춤", error=f"WDA 가 '{name}' 단계에서 실패했습니다.",
+                       raw_error=str(bad.get("error") or run.get("error") or "")[:500] or None)
         elif st == "queued":
             out.update(state="queued", step="줄 서는 중", progress=0)
         elif st == "running" or st not in ("done",):
@@ -405,12 +437,13 @@ def fold(run: dict | None, *, rec: dict, now: float, settings: Settings) -> dict
                 out.update(state="preparing", step="렌더 맡기기", progress=60, next="render")
         else:
             rs = render.get("status")
-            skipped = [{"target": str(x.get("target")), "reason": str(x.get("reason") or "")[:200]}
+            skipped = [{"target": md_plain(x.get("target"), 20), "reason": md_plain(x.get("reason"), 120)}
                        for x in (render.get("skipped") or []) if isinstance(x, dict) and x.get("target")]
             if rs == "done":
                 out.update(state="done", step="끝", progress=100, skipped=skipped)
             elif rs == "failed":
-                out.update(state="failed", step="파일 만들기에서 멈춤", error=str(render.get("error") or "까닭을 받지 못했습니다")[:300])
+                out.update(state="failed", step="파일 만들기에서 멈춤", error="WDA 가 파일을 만들다 실패했습니다.",
+                           raw_error=str(render.get("error") or "")[:500] or None)
             elif rs == "queued":
                 out.update(state="rendering", step="차례 기다림", progress=65)
             elif rs == "building":
@@ -455,10 +488,14 @@ def file_url(job_id: str, kind: str) -> str:
 # ── 알림(PP-D3 꼴 — 어시스턴트 글 + 활동 하나 origin upload) ─────────────────────────────────────────────────
 def notice(rec: dict, *, state: str, files: list[dict], skipped: list[dict], error: str | None, step: str,
            keep_days: int, now_ms: int | None = None) -> dict:
-    """끝난 잡 → 대화 알림 한 건. 글에 포털 링크(받기)를 박고, 활동 근거에는 번호 · 제목 · 수만(본문 · WDA 번호 없음)."""
+    """끝난 잡 → 대화 알림 한 건. 글에 포털 링크(받기)를 박고, 활동 근거에는 번호 · 제목 · 수만(본문 · WDA 번호 없음).
+    사람(RA 제목) · WDA(뺀 출력의 까닭)가 쓴 글은 md_plain 으로 — 알림은 마크다운으로 그려지고 다음 턴의 LLM 근거가 된다(WD-D49). error · step 은
+    포털의 정해진 글뿐이다(fold · advance)."""
     rep = rec["report"]
     opts = rec["options"]
-    head = f"보고서 {rep['id']}" + (f"「{rep['title']}」" if rep.get("title") else "")
+    title = md_plain(rep.get("title"), 120)
+    skipped = [{"target": md_plain(x.get("target"), 20), "reason": md_plain(x.get("reason"), 120)} for x in skipped]
+    head = f"보고서 {rep['id']}" + (f"「{title}」" if title else "")
     if state == "done":
         names = []
         for x in files:
@@ -476,7 +513,7 @@ def notice(rec: dict, *, state: str, files: list[dict], skipped: list[dict], err
     else:
         text = (f"{head}로 발표자료를 만들지 못했습니다 — {step or '실패'}" + (f"({error})" if error else "")
                 + ". 다시 만들려면 그 보고서의 '발표자료로' 를 다시 누르세요.")
-    facts = {"report_id": rep["id"], "title": rep.get("title") or None, "state": state, "targets": opts["targets"],
+    facts = {"report_id": rep["id"], "title": md_plain(rep.get("title"), 300) or None, "state": state, "targets": opts["targets"],
              "doc_style": opts["doc_style"], "files": [{"kind": x["kind"], "bytes": x.get("bytes")} for x in files],
              "skipped": skipped, "images_not_sent": rec.get("images_not_sent") or 0, "error": error}
     full = json.dumps(facts, ensure_ascii=False)
@@ -692,6 +729,9 @@ async def deck_advance(
             files: list[dict] = []
             skipped = list(f["skipped"])
             state, error, step = f["state"], f["error"], f["step"]
+            if f.get("raw_error"):
+                # WDA 의 예외 글은 사람에게 보이지 않는다 — 끝을 적을 때 한 번 서버 로그에(WD-D49)
+                logger.warning("발표자료 잡 %s — WDA 실패 까닭=%r", job_id, f["raw_error"])
             if state == "done":
                 arts = await wda_artifacts(base, token, rec["wda"]["run_id"])
                 for t in rec["options"]["targets"]:

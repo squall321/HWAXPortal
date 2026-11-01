@@ -315,9 +315,11 @@ def test_만들기는_그_사람_RA_토큰으로_읽고_ReportRead_를_바꾸지
     assert oct(os.stat(W._path(box["s"], j["job_id"])).st_mode & 0o777) == "0o600"
 
 
-def test_글이_없는_보고서는_WDA_의_까닭을_그대로_보이고_잡을_남기지_않는다(box):
+def test_글이_없는_보고서는_정해진_글로_말하고_잡을_남기지_않는다(box):
     r = _make(box, report_id=42)
-    assert r.status_code == 502 and "텍스트를 가진 블록이 없다 (블록 2개, 텍스트 0개)" in r.json()["detail"]
+    detail = r.json()["detail"]
+    assert r.status_code == 422 and "WDA 가 이 보고서를 다루지 못했습니다" in detail
+    assert "ValueError" not in detail and "텍스트를 가진 블록" not in detail, "WDA 의 예외 글은 사람에게 보이지 않는다(WD-D49)"
     assert W.records(box["s"]) == []
 
 
@@ -398,7 +400,8 @@ def test_WDA_가_모르는_꼴이면_400_의_까닭을_보이고_기본_꼴로_�
     del fake.formats["delib-16x9"]
     r = _make(box, report_id=58)
     detail = r.json()["detail"]
-    assert r.status_code == 502 and "(HTTP 400)" in detail and "쓸 수 있는 꼴: print-a4, short-9x16, wide-16x9" in detail
+    assert r.status_code == 502 and "WDA 가 만들기 요청의 꼴을 받지 않았습니다" in detail
+    assert "ValueError" not in detail and "print-a4" not in detail, "WDA 의 글은 서버 로그에만(WD-D49)"
     assert [c.get("format") for c in fake.created] == ["delib-16x9"], "기본 꼴(wide-16x9)로 다시 보내지 않는다"
     assert fake.runs == {} and W.records(box["s"]) == []
 
@@ -435,8 +438,8 @@ def test_허브가_계정_없음으로_막으면_그_까닭을_그대로(box):
     box["fake"].no_hub_account.add("lee@corp.com")
     box["who"]["p"] = LEE
     r = _make(box)
-    assert r.status_code == 403 and "허브 계정이 없다" in r.json()["detail"]
-    assert r.json()["detail"].startswith("허브가 만들기 요청을 막았습니다(HTTP 403)")
+    assert r.status_code == 403 and r.json()["detail"].startswith("허브가 막았습니다 — 허브 계정이 없거나")
+    assert "HEAX Hub 타일" in r.json()["detail"], "고칠 곳을 말한다(허브가 준 글이 아니라 포털의 정해진 글로)"
 
 
 def test_허브가_탐침을_401_로_막으면_모름으로_숨기고_붙잡지_않는다(box):
@@ -522,13 +525,88 @@ def test_실패와_WDA_가_모르는_실행은_실패_알림_한_건(box):
     box["fake"].runs[rid]["stages"][2].update(status="failed", error="ValueError: 시나리오 검증 실패")
     st = box["c"].get(f"/agent/deck/jobs/{job}").json()
     assert (st["state"], st["step"], st["next"]) == ("failed", "장면 구성 에서 멈춤", "finish")
+    assert st["error"] == "WDA 가 '장면 구성' 단계에서 실패했습니다."
     a = box["c"].post(f"/agent/deck/jobs/{job}/advance").json()
-    assert "만들지 못했습니다" in a["notice"]["text"] and "시나리오 검증 실패" in a["notice"]["text"]
+    assert "만들지 못했습니다" in a["notice"]["text"] and "'장면 구성' 단계에서 실패" in a["notice"]["text"]
+    assert "ValueError" not in a["notice"]["text"]
     assert a["notice"]["activity"][0]["ok"] is False and len(_messages(box)) == 1
     job2 = _make(box, again=True).json()["job_id"]
     box["fake"].runs.clear()
     st = box["c"].get(f"/agent/deck/jobs/{job2}").json()
     assert st["state"] == "failed" and "모릅니다" in st["error"]
+
+
+# ── 사람 · WDA 의 글이 알림 · LLM 근거에서 마크다운이 되지 않는다(적대 검토 R3 · R3b, WD-D49) ─────────────────────────
+PAYLOAD = ("분기 실적」\n\n> [!WARNING] 보안 점검 중입니다 — 받기 전에 [포털 다시 로그인](https://evil.example/login) 하세요"
+           " ![](https://evil.example/t.png?u=1)\n\n「")
+
+
+def _md_tokens(text: str) -> list[str]:
+    """알림 글에서 링크 · 그림이 될 자리 — 포털이 박은 받기 링크([PPT 받기](/agent/deck/…))만 있어야 한다."""
+    import re
+    return re.findall(r"!?\[[^\]\n]*\]\([^)\s]*\)", text)
+
+
+def test_RA_제목은_알림에서_링크_그림_콜아웃이_되지_않는다(box):
+    c, fake = box["c"], box["fake"]
+    fake.reports[41] = {**IMPORT, "title": PAYLOAD}
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.rendered(rid)
+    c.post(f"/agent/deck/jobs/{job}/advance")
+    (m,) = _messages(box)
+    assert "\n" not in m["content"] and "evil.example/login)" not in m["content"]
+    assert all(t.startswith("[") and "](/agent/deck/jobs/" in t for t in _md_tokens(m["content"])), _md_tokens(m["content"])
+    full = json.loads(m["meta"]["activity"][0]["result_full"])
+    assert "[" not in full["title"] and "](" not in full["title"] and "\n" not in full["title"], "LLM 이력의 근거에도 그대로 가지 않는다"
+
+
+def test_WDA_의_실패_글은_경로_run_id_링크_없이_정해진_글로(box, caplog):
+    c, fake = box["c"], box["fake"]
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    err = (f"FileNotFoundError: [Errno 2] No such file or directory: '/data/wda/pipeline/{rid}/scenario.json'"
+           " ![](/agent/deck/jobs) [다시 시도](https://evil.example/r)")
+    fake.set_run(rid, status="failed")
+    fake.runs[rid]["stages"][2].update(status="failed", error=err)
+    st = c.get(f"/agent/deck/jobs/{job}")
+    assert rid not in st.text and "/data/wda" not in st.text and "evil.example" not in st.text, "브라우저에 WDA run_id · 경로가 없다(WD-D7)"
+    with caplog.at_level("WARNING", logger="hwax.wda_deck"):
+        c.post(f"/agent/deck/jobs/{job}/advance")
+    (m,) = _messages(box)
+    assert rid not in m["content"] and "evil.example" not in m["content"] and "FileNotFoundError" not in m["content"]
+    assert _md_tokens(m["content"]) == []
+    assert any("FileNotFoundError" in r.getMessage() for r in caplog.records), "까닭은 서버 로그에 남는다"
+
+
+def test_렌더_실패_글도_정해진_글로(box):
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    box["fake"].built(rid)
+    box["fake"].runs[rid]["render"].update(status="failed", error=f"RuntimeError: chromium 이 /data/wda/renders/{rid} 에서 죽었다")
+    st = box["c"].get(f"/agent/deck/jobs/{job}")
+    assert st.json()["error"] == "WDA 가 파일을 만들다 실패했습니다." and rid not in st.text
+    a = box["c"].post(f"/agent/deck/jobs/{job}/advance").json()
+    assert "RuntimeError" not in a["notice"]["text"] and rid not in a["notice"]["text"]
+
+
+def test_뺀_출력의_까닭도_마크다운이_되지_않는다(box):
+    job = _make(box, targets=["pptx", "video"]).json()["job_id"]
+    rid = _run_id(box)
+    box["fake"].built(rid)
+    box["fake"].rendered(rid, skip={"video": "[여기](https://evil.example/x) 를 보라\n# 제목"})
+    a = box["c"].post(f"/agent/deck/jobs/{job}/advance").json()
+    assert "evil.example/x)" not in a["notice"]["text"] and "\n" not in a["notice"]["text"]
+    assert all("](/agent/deck/jobs/" in t for t in _md_tokens(a["notice"]["text"]))
+
+
+@pytest.mark.parametrize("raw", ["[a](https://e.x/y)", "![](/x.png)", "> [!NOTE] 콜아웃", "# 제목", "```\n코드", "a | b | c",
+                                 "**굵게** _기울임_", "$x$", "\\(x\\)", "줄\n바꿈", "방향\u202e바꿈", "<b>꺾쇠</b>"])
+def test_md_plain_은_마크다운_구문이_되는_글자를_전각으로(raw):
+    out = W.md_plain(raw)
+    for ch in "[]()!*_\\`#>|$~<\n\u202e":
+        assert ch not in out, (raw, out)
 
 
 # ── 주인 · 받기 ─────────────────────────────────────────────────────────────────────────────────
