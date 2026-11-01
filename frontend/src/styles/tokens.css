@@ -37,6 +37,11 @@
   --ok-bg: color-mix(in srgb, var(--ok) 12%, transparent);
   --ok-border: color-mix(in srgb, var(--ok) 32%, transparent);
 
+  /* 차트 — 한 계열 막대(이용 통계, docs/ops-dashboard). 카드 표면(--surface-1) 위에서 dataviz 검사를 지난 값이다(OKLCH L 0.48–0.67 ·
+     대비 3:1 이상). --primary 는 2.98:1 로 모자라고 --accent-fg 는 너무 밝다 — 그래서 마우스가 올라간 막대에만 쓴다. */
+  --chart-1: var(--primary-hover);
+  --chart-1-hover: var(--accent-fg);
+
   /* 글꼴 — Pretendard 는 빌드에 번들된다(main.tsx, 런타임 CDN 없음 — cae00 은 TLS 프록시 뒤). 굵기는 400/500/600/700 만. */
   --font-sans: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo',
     'Noto Sans KR', sans-serif;

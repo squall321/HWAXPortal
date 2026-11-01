@@ -1,0 +1,172 @@
+/* 이용 통계(관리자 /admin/usage, docs/ops-dashboard) — 수 타일 · 칸 카드 · 한 계열 막대 그림. 색은 토큰 이름만 쓴다(hex 래칫) */
+
+/* 기간 줄 — 그림들 위 한 줄(모든 칸이 같은 기간을 본다) */
+.uc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+.uc-meta {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.uc-excluded {
+  margin: 0 0 var(--sp-3);
+}
+/* 다시 읽는 동안 앞 그림을 흐리게 둔다(틀이 튀지 않게) */
+.uc-body.is-loading {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+/* 수 타일 */
+.uc-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-4);
+}
+.uc-tile {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.uc-tile-label {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.uc-tile-value {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-24);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+}
+.uc-tile-sub {
+  margin-top: var(--sp-1);
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+
+/* 칸 카드 — 넓으면 두 줄, 좁으면 한 줄 */
+.uc-grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+.uc-card {
+  min-width: 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.uc-card > h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-18);
+}
+.uc-block h3 {
+  margin: var(--sp-3) 0 var(--sp-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-14);
+  font-weight: 500;
+}
+.uc-note {
+  margin: var(--sp-1) 0 var(--sp-3);
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+  line-height: var(--lh-body);
+}
+.uc-empty {
+  margin: var(--sp-1) 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+
+/* 막대 그림 — 막대는 한 색, 눈금 · 기준선은 머리카락 굵기, 글자는 글자 토큰 */
+.uc {
+  margin: var(--sp-2) 0 0;
+}
+.uc figcaption {
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-14);
+}
+.uc-plot {
+  position: relative;
+  border-radius: var(--r-sm);
+  outline: none;
+}
+.uc-plot:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+.uc-plot svg {
+  display: block;
+}
+.uc-bar {
+  fill: var(--chart-1);
+}
+.uc-bar.is-hi {
+  fill: var(--chart-1-hover);
+}
+.uc-bar.is-partial {
+  opacity: 0.5;
+}
+.uc-grid,
+.uc-base {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.uc-axis {
+  fill: var(--fg-muted);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.uc-gap {
+  fill: var(--surface-2);
+}
+.uc-gap-label {
+  fill: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+.uc-tip {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  transform: translate(-50%, -100%);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  box-shadow: var(--e-2);
+  font-size: var(--fs-13);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.uc-tip b {
+  margin-right: var(--sp-1);
+  font-weight: 600;
+}
+.uc-tip span {
+  color: var(--fg-muted);
+}
+.uc-table summary {
+  margin-top: var(--sp-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.uc-table .adm-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+}
+.uc-spark {
+  display: block;
+  margin-left: auto;
+}
+.uc-spark rect {
+  fill: var(--chart-1);
+}

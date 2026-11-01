@@ -31,6 +31,7 @@ from app.auth.errors import AuthError
 from app.auth.keystore import KeyStore
 from app.auth.routes import access_history as auth_access_history
 from app.auth.routes import tool_search_review as auth_tool_search_review
+from app.auth.routes import usage as auth_usage
 from app.auth.routes import seat_review as auth_seat_review
 from app.auth.routes import jwks as auth_jwks
 from app.auth.routes import launch as auth_launch
@@ -249,6 +250,7 @@ app.include_router(catalog_routes.router)
 app.include_router(auth_launch.router)
 app.include_router(auth_access_history.router)
 app.include_router(auth_tool_search_review.router)
+app.include_router(auth_usage.router)
 app.include_router(auth_seat_review.router)
 app.include_router(auth_ste_credential.router)
 app.include_router(auth_pat.router)
