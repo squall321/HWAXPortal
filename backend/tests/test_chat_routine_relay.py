@@ -498,7 +498,7 @@ def test_pump_의_끝을_기다리는_사이_떠나도_퍼밋은_pump_가_돌려
 
 
 @pytest.mark.parametrize("spec", ["2.3", "2.4"])
-def test_루틴이_아닌_턴은_브라우저가_떠나면_종전처럼_상류도_끊는다(portal, spec):
+def test_루틴이_아닌_턴은_브라우저가_떠나면_종전처럼_상류도_끊는다(portal, spec, caplog):
     c, app, _path = portal
     cid = c.post("/agent/conversations", json={"title": "t"}).json()["id"]
     turn = _Turn(hang=30)
@@ -518,10 +518,12 @@ def test_루틴이_아닌_턴은_브라우저가_떠나면_종전처럼_상류�
         finally:
             app.state.agent_semaphore = saved_sem
 
-    c.portal.call(run)
+    with caplog.at_level(logging.WARNING, logger=relay.logger.name):
+        c.portal.call(run)
     assert seen["took"] < 5 and seen["closed"] and not seen["finished"], seen
     assert seen["permit_back"] and seen["kept"] == 0, seen
     assert [(m["role"], m["content"]) for m in _saved(app, cid)] == [("user", "질문"), ("assistant", "조각0 ")]
+    assert not [r for r in caplog.records if "루틴 턴 중계" in r.getMessage()], "루틴이 아닌 턴에 루틴 상한 로그를 남기지 않는다(WD-D83)"
 
 
 def test_떼어_낸_중계가_상한이면_다음_루틴_턴은_일반_턴처럼_상류를_끊고_로그를_남긴다(portal, monkeypatch, caplog):
@@ -567,6 +569,42 @@ def test_떼어_낸_중계가_상한이면_다음_루틴_턴은_일반_턴처럼
     msgs_b = _saved(app, cid_b)
     assert [(m["role"], m["content"]) for m in msgs_b] == [("user", f"루틴: {_TITLE}"), ("assistant", relay._ROUTINE_EMPTY_REPLY)]
     assert msgs_b[1]["meta"]["routine"]["run_id"] == "run-1", "끊긴 턴도 실행 포인터를 남긴다 — '이어서' 로 다시 붙는다"
+
+
+def test_상한에_닿은_루틴_턴이_끝맺는_중에_떠나면_끊는다는_로그를_남기지_않는다(portal, monkeypatch, caplog):
+    """3차 적대 검토(docs/wda-deck WD-D83) — 떼어 낸 중계가 상한이면 '…상류를 끊는다' 를 남겼는데, pump 가 이미 끝맺는 중이면(WD-D79) 끊지 않고
+    기다린다 — 로그가 한 일과 달랐다. 끊을 때만 남긴다(끊으면 종전처럼 — 위 시험)."""
+    c, app, _path = portal
+    _as_routine_user(app)
+    monkeypatch.setattr(relay, "_DETACHED_RELAYS_MAX", 0)              # 늘 상한 — 떠나면 일반 턴의 갈래로 간다
+    cid = c.post("/agent/conversations", json={"title": "r"}).json()["id"]
+    turn = _RoutineTurn()
+    _agent(app, turn)
+    seen: dict = {}
+
+    async def run():
+        body = json.dumps(_routine_body(cid)).encode()
+        given, done_sent = [False], asyncio.Event()
+
+        async def receive():
+            if not given[0]:
+                given[0] = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            await done_sent.wait()                                         # done 프레임을 받은 직후 떠난다 — pump 는 끝맺는 중이다
+            return {"type": "http.disconnect"}
+
+        async def send(msg):
+            if msg["type"] == "http.response.body" and b"event: done" in (msg.get("body") or b""):
+                done_sent.set()
+
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(app(_scope(body, "2.3", app), receive, send), 10)
+        seen["saved"] = await _until(lambda: any(m["role"] == "assistant" for m in _saved(app, cid)), 5.0)
+
+    with caplog.at_level(logging.WARNING, logger=relay.logger.name):
+        c.portal.call(run)
+    assert turn.finished and seen["saved"], f"시험 전제 — 끝맺는 중이었다 {seen}"
+    assert not [r for r in caplog.records if "상류를 끊는다" in r.getMessage()], "끊지 않았는데 끊는다고 남겼다"
 
 
 # ── 저장 ─────────────────────────────────────────────────────────────────────────────────────────────────

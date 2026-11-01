@@ -3292,13 +3292,14 @@ async def chat(
                 _DETACHED_RELAYS.add(task)
                 task.add_done_callback(_detached_relay_done)
             else:
-                if routine_turn and not task.done():
-                    # 떼어 낸 중계가 상한만큼 돈다 — 이 루틴 턴은 일반 턴처럼 상류를 끊는다. 에이전트 서버의 실행은 따로 떼어 낸 작업이라 계속 돌고,
-                    # 받은 데까지와 실행 포인터는 pump 의 finally 가 남긴다. 퍼밋은 아래에서 돌려준다(_on_close 는 루틴 턴에 손대지 않는다).
-                    logger.warning("루틴 턴 중계 — 떼어 낸 중계가 상한 %d개에 닿아 브라우저가 떠난 이 턴은 상류를 끊는다. 실행은 에이전트 "
-                                   "서버에서 계속 돈다('이어서' 로 다시 붙는다) run_id=%s sub=%s",
-                                   _DETACHED_RELAYS_MAX, routine_ptr.get("run_id"), owner)
                 if not task.done() and not finishing:
+                    if routine_turn:
+                        # 떼어 낸 중계가 상한만큼 돈다 — 이 루틴 턴은 일반 턴처럼 상류를 끊는다. 에이전트 서버의 실행은 따로 떼어 낸 작업이라 계속
+                        # 돌고, 받은 데까지와 실행 포인터는 pump 의 finally 가 남긴다. 퍼밋은 아래에서 돌려준다(_on_close 는 루틴 턴에 손대지
+                        # 않는다). 끝맺는 중이면(WD-D79) 끊지 않으니 남기지 않는다 — 로그가 한 일과 같게(WD-D83)
+                        logger.warning("루틴 턴 중계 — 떼어 낸 중계가 상한 %d개에 닿아 브라우저가 떠난 이 턴은 상류를 끊는다. 실행은 에이전트 "
+                                       "서버에서 계속 돈다('이어서' 로 다시 붙는다) run_id=%s sub=%s",
+                                       _DETACHED_RELAYS_MAX, routine_ptr.get("run_id"), owner)
                     task.cancel()        # 브라우저가 떠났다 — 상류도 끊는다(pump 의 finally 가 받은 것까지 저장한다). 끝맺는 중이면 끊지 않는다(WD-D79)
                 with anyio.CancelScope(shield=True):
                     await _wait_pump(task, cid, owner)       # 상한까지 — 넘기면 뒤에 둔다(WD-D81)
