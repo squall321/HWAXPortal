@@ -21,7 +21,7 @@
 
 ## M0 — WDA 세션(요청서 §11)
 
-- [ ] 요청서를 받고 W-1 ~ W-12 를 받을지 · 어려운 것을 답한다(요청서 §10 의 다섯 물음 포함)
+- [x] 요청서를 받고 답했다(11-01, 요청서 §10) — W-1 ~ W-12 는 지금 하나도 없고 **사용자가 직접 시킬 때** 짓는다. 포털은 그 계약대로 지었다(가짜 WDA 로 시험)
 - [ ] W-1 REST 만들기에 `X-Heax-User-Email` 로 owner(본문의 owner 는 믿지 않는다 · `/mcp` 는 정하지 않는다)
 - [ ] W-2 주인 있는 run 의 run 단위 REST 전부 주인만(다른 사람 · 신원 없음 = 404)
 - [ ] W-3 `GET /api/runs` = 내 것 + 주인 없는 것
@@ -48,40 +48,44 @@
 ## M1 — 포털(dev)
 
 백엔드
-- [ ] 먼저 실패하는 시험 셋 — 중계가 심의 outcome 의 보고서 번호를 남긴다 · 서버 사본이 그것을 되살린다(node) · 중계가 `/보고서` 답의 `ra_report` 를 남긴다
-- [ ] 설정 — `wda_deck_enabled`(기본 False) · `wda_base_url`(빈 값이면 routes.env 의 `apps` + `web_design_agents`) · `wda_hub_audience`(heax-hub) ·
-      `wda_deck_job_days`(7) · `wda_deck_report_max_mb`(16) · `wda_deck_inflight_max`(2) · `wda_deck_inflight_box_max`(4) · 늦음 문턱 셋(300 · 900 · 3600) · `wda_deck_give_up_s`(21600) · `.env.example` · 시험 격리
-- [ ] `backend/app/agent/wda_deck.py` — 잡 기록(`#deck-jobs` · 0600 · 바꿔 끼우기 · 주인만 404 · 목록 · 숨기기 · 잠금) · 상태 낱말 접기(PLAN §7.2) · 알림 글 · 활동 짓기
-- [ ] 짧은 허브 PAT 찍기(청중 heax-hub · scope api · 10분 · 무작위 jti · 로그인 그룹만) — 저장 · 로그 없음 · `config.py:243-245` 주석 고치기
-- [ ] RA 읽기 — `_ra_user_token`(위임 401 은 한 번 새로) · 403 · 404 · 상한이면 WDA 를 부르지 않는다 · 그림(file_id) 수 세기
-- [ ] WDA 부르기 — 만들기(render 칸) · 진행 · 렌더(대체 길) · artifacts · 내려받기 흘리기 · health 능력 탐침(60초 붙잡음, 모르면 숨김)
-- [ ] 라우트 — `GET /agent/deck/status` · `POST /agent/deck/jobs` · `GET /agent/deck/jobs` · `GET /agent/deck/jobs/{job}` · `POST …/advance` · `GET …/files/{kind}` ·
+- [x] 먼저 실패하는 시험 셋 — 중계가 심의 outcome 의 보고서 번호를 남긴다 · 서버 사본이 그것을 되살린다(node) · 중계가 `/보고서` 답의 `ra_report` 를 남긴다
+- [x] 설정 — `wda_deck_enabled`(기본 False) · `wda_base_url`(빈 값이면 routes.env 의 `apps` + `web_design_agents`) · `wda_hub_audience`(heax-hub) ·
+      `wda_deck_job_days`(7) · `wda_deck_report_max_mb`(16) · `wda_deck_inflight_max`(2) · `wda_deck_inflight_box_max`(4) · 늦음 문턱 셋(300 · 900 · 3600) · `wda_deck_give_up_s`(21600) — 경로 설정이 없어 시험 격리는 따로 없다 · `.env.example` 에는 넣지 않는다(박스 스위치는
+      `backend/.env` — 다른 박스 손잡이와 같다, server-setup.md)
+- [x] `backend/app/agent/wda_deck.py` — 잡 기록(`#deck-jobs` · 0600 · 바꿔 끼우기 · 주인만 404 · 목록 · 숨기기 · 잠금) · 상태 낱말 접기(PLAN §7.2) · 알림 글 · 활동 짓기
+- [x] 짧은 허브 PAT 찍기(청중 heax-hub · scope api · 10분 · 무작위 jti · 로그인 그룹만) — 저장 · 로그 없음 · `config.py:243-245` 주석 고치기
+- [x] RA 읽기 — `_ra_user_token`(위임 401 은 한 번 새로) · 403 · 404 · 상한이면 WDA 를 부르지 않는다 · 그림(file_id) 수 세기
+- [x] WDA 부르기 — 만들기(render 칸) · 진행 · 렌더(대체 길) · artifacts · 내려받기 흘리기 · health 능력 탐침(60초 붙잡음, 모르면 숨김)
+- [x] 라우트 — `GET /agent/deck/status` · `POST /agent/deck/jobs` · `GET /agent/deck/jobs` · `GET /agent/deck/jobs/{job}` · `POST …/advance` · `GET …/files/{kind}` ·
       `POST …/dismiss` — 모두 `principal_pat_or_session`(POST 는 CSRF) · `ensure(plat:webdesign, plat:reportarchive)` · 대화 주인 검사
-- [ ] 한 번만 — 같은 보고서 · 같은 옵션은 하나로 · `again` · 사람당 동시 상한 · 박스 전체 동시 상한(429) · `advance` 잠금 안에서 렌더 맡기기 · 알림(서버 사본에 직접 — `conv_store.append`, 스레드에서)
-- [ ] 템플릿 문 — RA 보고서의 템플릿에 `deliberation` 이 있으면 `format:deliberation` 이 있어야 만든다(409) · status 가 `formats.deliberation` 을 알린다
-- [ ] 내려받기 머리 — attachment(보고서 제목으로 이름, RFC 5987) · nosniff · `Cache-Control: private, no-store` · HTML 은 CSP sandbox · 응답에 WDA 주소 · id 없음
-- [ ] 스테이징 청소에서 `#deck-jobs` 빼고 기한 뒤 지우기(`upload.py` sweep)
-- [ ] 감사 — `deck_create` · `deck_render` · `deck_finish` · `deck_download`(본문 · 제목 전문 없음)
-- [ ] 중계 — 심의 outcome → 답 meta `delib_outcome` · `result` 의 `ra_report` → 답 meta `ra_report`
+- [x] 한 번만 — 같은 보고서 · 같은 옵션은 하나로 · `again` · 사람당 동시 상한 · 박스 전체 동시 상한(429) · `advance` 잠금 안에서 렌더 맡기기 · 알림(서버 사본에 직접 — `conv_store.append`, 스레드에서)
+- [x] 템플릿 문 — RA 보고서의 템플릿에 `deliberation` 이 있으면 `format:deliberation` 이 있어야 만든다(409) · status 가 `formats.deliberation` 을 알린다
+- [x] 내려받기 머리 — attachment(보고서 제목으로 이름, RFC 5987) · nosniff · `Cache-Control: private, no-store` · HTML 은 CSP sandbox · 응답에 WDA 주소 · id 없음
+- [x] 스테이징 청소에서 `#deck-jobs` 빼고 기한 뒤 지우기(`upload.py` sweep)
+- [x] 감사 — `deck_create` · `deck_render` · `deck_finish` · `deck_download`(본문 · 제목 전문 없음)
+- [x] 중계 — 심의 outcome → 답 meta `delib_outcome` · `result` 의 `ra_report` → 답 meta `ra_report`
 
 에이전트 서버(한 칸)
-- [ ] `run_report_save` 의 `result` 사건에 `ra_report: {id, title}`(HWAXAgentServer `deliberation.py:7913-7914`) · 시험 — 재기동은 확인 뒤(남의 미반영 커밋을 같이 켠다)
+- [x] `run_report_save` 의 `result` 사건에 `ra_report: {id, title}`(HWAXAgentServer `deliberation.py:7913-7914`) · 시험 — 재기동은 확인 뒤(남의 미반영 커밋을 같이 켠다)
 
 화면
-- [ ] `api/deck.api.ts` · `DeckButton`(출력 · 문서 꼴 고르기 · 진행 칸 · 실패 까닭 · 다시 만들기) · 입력창 위 '끝나지 않은 발표자료' 줄(끝난 잡은 저절로 `advance`)
-- [ ] 자리 셋 — `DelibView` 결과 카드 · `/보고서` 답(meta `ra_report`) · RA 보내기 알림(활동 report_id) · 권한 둘과 status enabled 일 때만
-- [ ] `serverMessagesToLocal` 이 `delib_outcome` 을 `delib.outcome` 으로 · live `result` 의 `ra_report` 를 메시지에
-- [ ] 알림은 응답을 그 대화(서버 id)의 화면 사본에만 붙인다(서버에 다시 쓰지 않는다) · 그 대화가 답을 받는 중이면 끝난 뒤 `advance`
-- [ ] `cd frontend && pnpm build`(컨테이너는 dist 를 낸다)
+- [x] `api/deck.api.ts` · `DeckButton`(출력 · 문서 꼴 고르기 · 진행 칸 · 실패 까닭 · 다시 만들기) · 입력창 위 '끝나지 않은 발표자료' 줄(끝난 잡은 저절로 `advance`)
+- [x] 자리 셋 — `DelibView` 결과 카드 · `/보고서` 답(meta `ra_report`) · RA 보내기 알림(활동 report_id) · 권한 둘과 status enabled 일 때만
+- [x] `serverMessagesToLocal` 이 `delib_outcome` 을 `delib.outcome` 으로 · live `result` 의 `ra_report` 를 메시지에
+- [x] 알림은 응답을 그 대화(서버 id)의 화면 사본에만 붙인다(서버에 다시 쓰지 않는다) · 그 대화가 답을 받는 중이면 끝난 뒤 `advance`
+- [x] `cd frontend && pnpm build`(컨테이너는 dist 를 낸다)
 
 시험
-- [ ] 백엔드(가짜 RA · 가짜 WDA — PLAN §11 목록 전부) · node 순수 함수 · 브라우저(결과 카드 → 진행 → 그 대화에 알림 · 권한 없으면 단추 없음 · 새로고침 뒤에도 산다 · 답 받는 중이면 뒤에)
-- [ ] 회귀 — `backend` 전체 pytest(파이프로 rc 를 가리지 않는다) · 프론트 타입 검사 · 빌드
+- [x] 백엔드(가짜 RA · 가짜 WDA — PLAN §11 목록 전부) · node 순수 함수 · 브라우저(결과 카드 → 진행 → 그 대화에 알림 · 권한 없으면 단추 없음 · 새로고침 뒤에도 산다 · 답 받는 중이면 뒤에)
+- [ ] 회귀 — `backend` 전체 pytest(파이프로 rc 를 가리지 않는다) · 프론트 타입 검사 · 빌드 · 린트(아래 '결과' 에 적는다)
 
 문서 · 기타
-- [ ] 운영자 페르소나 `he-doc-webdesign` 글 — 포털 보고서는 '발표자료로' 단추로 · `render_status` 되풀이 금지(동기화 시험)
-- [ ] 변경 이력(`docs/changelog.md`, KST 날짜) · 이 체크리스트 · context-notes 덧붙이기
-- [ ] dev 실주행 — 스위치를 켜고 실제 심의 보고서 하나로 PPT + PDF · 남의 계정으로 404 · 익명으로 WDA 목록에 안 보이는지
+- [x] 운영자 페르소나 `he-doc-webdesign` 글 — 포털 보고서는 '발표자료로' 단추로 · `render_status` 되풀이 금지(동기화 시험)
+- [x] 변경 이력(`backend/config/changelog.yaml` 11-01 — 연결 · 기술 · 수정) · 이 체크리스트 · context-notes 덧붙이기 · server-setup.md
+- [ ] dev 실주행 — WDA 가 W-1 ~ W-12 를 배치한 뒤(지금은 owner 가 없어 단추가 숨는다). 스위치를 켜고 RA 보내기 알림 하나로 PPT + PDF ·
+      남의 계정으로 404 · 익명으로 WDA 목록에 안 보이는지(server-setup.md §2)
+- [ ] 에이전트 서버 재기동(`ra_report`) — 사람 확인 뒤(남의 미반영 커밋을 같이 켠다) · 포털 재기동 · 화면 빌드 반영 — 이 가지는 하지 않는다
+- [x] 같은 오리진 절대경로 링크 고침(md.ts — 알림의 받기 링크가 글로 보이던 것, db0c364a 의 뜻을 마저)
 
 ## M2
 

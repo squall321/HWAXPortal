@@ -2,7 +2,8 @@
 
 > 체크리스트 [checklist.md](checklist.md) · 결정과 까닭 [context-notes.md](context-notes.md) · WDA 세션에 그대로 보낼 요청서 [wda-request.md](wda-request.md).
 > 설계는 11-01 오전에 끝났고, 같은 날 사용자가 §13 의 다섯을 모두 정했다(권장안 그대로 — U-2 는 사용자가 손으로 push).
-> M1(포털 · 에이전트 서버 한 칸)은 이 가지에서 짓는다. WDA 쪽 계약(W-1 ~ W-12)은 아직 없으니 단추는 스위치와 능력 탐침에 막혀 보이지 않는다.
+> M1(포털 · 에이전트 서버 한 칸)을 이 가지에서 지었다(11-01 — 커밋 · 시험은 체크리스트, 결정은 context-notes WD-D33 ~ D38). WDA 쪽 계약(W-1 ~ W-12)은
+> 아직 없으니 단추는 스위치와 능력 탐침에 막혀 보이지 않는다. 박스에서 켜는 법은 [server-setup.md](server-setup.md).
 > 줄 번호는 2026-11-01 판 기준이다 — 포털 `7aef6141` · WDA `9dabf86` · 게이트웨이 `63fbc4f` · HEAXHub `7b9a8ed` · 에이전트 서버 `63ad54b`.
 
 ## 1. 무엇을 · 왜
