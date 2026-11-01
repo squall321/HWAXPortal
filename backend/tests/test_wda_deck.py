@@ -66,6 +66,9 @@ class FakeHubWDA:
         self.formats = {"wide-16x9": "active", "short-9x16": "active", "print-a4": "draft"}
         self.version = "0.1.0"                         # 패키지 판(허브 매니페스트 판과 같다 — WDA 11-01)
         self.run_formats: dict[str, str] | None = None  # 만들기가 받는 꼴 — None 이면 formats 와 같다(health 와 어긋나는 판을 흉내 낼 때만)
+        self.idem: dict[str, str] = {}                 # Idempotency-Key → run_id(요청서 W-15 — 같은 키의 두 번째 만들기는 같은 run)
+        self.lose_create_response = 0                  # 만들기를 받아 실행을 만든 뒤 답을 잃는다(읽기 시간 초과) — 남은 횟수
+        self.refuse_connect = 0                        # 만들기에 연결 자체를 거절한다 — 남은 횟수
         self.runs: dict[str, dict] = {}
         self.reports = {41: IMPORT, 42: EMPTY, 58: DELIB}
         self.calls: list[tuple[str, str]] = []          # (메서드, 경로)
@@ -213,6 +216,13 @@ class FakeHubWDA:
                                              "features": sorted(self.features | {f"format:{k}" for k in self.formats}),
                                              "formats": dict(self.formats)})
         if path == "/api/runs" and req.method == "POST":
+            if self.refuse_connect:
+                self.refuse_connect -= 1
+                raise httpx.ConnectError("연결 거절", request=req)
+            key = req.headers.get("idempotency-key")
+            if key and key in self.idem:
+                rid = self.idem[key]
+                return self.env(202, {"run_id": rid, "slug": json.loads(req.content)["slug"], "owner": self.runs[rid]["owner"]})
             if len(req.content) > self.max_bytes:
                 return self.env(413, message="PayloadTooLarge: 본문이 크다", code="TOO_LARGE")
             body = json.loads(req.content)
@@ -230,6 +240,11 @@ class FakeHubWDA:
             self.runs[rid] = {"run_id": rid, "owner": email, "status": "queued", "error": None, "render": None,
                               "format": fmt, "render_opts": body.get("render"),
                               "stages": [{"stage": s, "status": "pending", "error": None} for s in ("ingest", "fragmentize", "scenario", "build")]}
+            if key:
+                self.idem[key] = rid
+            if self.lose_create_response:
+                self.lose_create_response -= 1
+                raise httpx.ReadTimeout("답을 잃었다", request=req)
             return self.env(202, {"run_id": rid, "slug": body["slug"], "owner": email})
         parts = path.split("/")          # ['', 'api', 'runs', id, ...]
         if len(parts) >= 4 and parts[1:3] == ["api", "runs"]:
@@ -524,6 +539,30 @@ def test_WDA_가_모르는_꼴이면_400_의_까닭을_보이고_기본_꼴로_�
 ])
 def test_꼴_정책은_하나다_features_와_active_가_둘_다(features, formats, want):
     assert W.format_ready(W.Caps(frozenset(features), formats), "delib-16x9") is want
+
+
+# ── 만들기의 답을 잃으면 '결과를 모른다' — 다시 누르면 같은 잡 id 로(WD-D58) ─────────────────────────────────────────────
+def test_만들기의_답을_잃으면_결과를_모른다고_말하고_다시_누르면_같은_키로_묻는다(box):
+    c, fake, s = box["c"], box["fake"], box["s"]
+    fake.lose_create_response = 1
+    r = _make(box)
+    assert r.status_code == 504 and "만들어졌는지 모릅니다" in r.json()["detail"] and "연결하지 못했" not in r.json()["detail"]
+    (rec,) = W.records(s)
+    assert W.reserving(rec) and rec["wda"]["create_unknown"] and W.inflight(rec, s, time.time()), "자리는 그대로(WDA 에서 돌 수 있다)"
+    (j,) = c.get("/agent/deck/jobs").json()["jobs"]
+    assert (j["state"], j["step"]) == ("failed", "결과 모름")
+    keys = [k for k in fake.idem]
+    r2 = _make(box)
+    assert r2.status_code == 200 and r2.json()["job_id"] == rec["job_id"], "같은 잡을 잇는다"
+    assert list(fake.idem) == keys == [rec["job_id"]] and len(fake.runs) == 1, "같은 Idempotency-Key — 실행이 둘이 되지 않는다"
+    assert W.load(s, rec["job_id"], "kim@corp.com")["wda"]["run_id"] in fake.runs
+
+
+def test_연결조차_못_했으면_연결하지_못했다고_말하고_예약을_놓는다(box):
+    box["fake"].refuse_connect = 1
+    r = _make(box)
+    assert r.status_code == 502 and "연결하지 못했습니다" in r.json()["detail"] and W.records(box["s"]) == []
+    assert _make(box).status_code == 200
 
 
 # ── 만들기는 탐침을 새로 하고 202 의 주인을 본다(적대 검토 R5, WD-D57) ─────────────────────────────────────────────────────

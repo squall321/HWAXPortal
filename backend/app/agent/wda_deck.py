@@ -99,6 +99,18 @@ class DeckError(Exception):
         self.message, self.status = message, status
 
 
+class DeckUnknownError(DeckError):
+    """WDA 에 만들기를 보냈지만 답을 받지 못했다(읽기 시간 초과 · 끊김) — 만들어졌는지 모른다. 예약을 남겨 다시 누르면 같은 잡 id(Idempotency-Key)로
+    다시 묻는다(WD-D58)."""
+
+    def __init__(self) -> None:
+        super().__init__("WDA 가 답하지 않아 만들어졌는지 모릅니다 — 같은 출력으로 다시 누르면 같은 잡으로 다시 묻습니다.", 504)
+
+
+# 요청이 WDA 에 닿지 않은 것이 확실한 실패 — 이때만 '연결하지 못했다' 다. 나머지(읽기 시간 초과 · 끊김)는 만들어졌을 수 있다
+_NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+
+
 class DeckOwnerError(DeckError):
     """WDA 가 실행을 만들었지만 그 주인이 맡긴 사람이 아니다(없거나 다르다) — 따라가지 않는다. run_id 는 기록에 남겨 둔다(WD-D57)."""
 
@@ -404,8 +416,10 @@ async def wda_create(base: str, token: str, *, data: dict, report_id: int, targe
     try:
         async with _http(httpx.Timeout(60.0, connect=10.0)) as cli:
             r = await cli.post(f"{base}/api/runs", json=body, headers={**_auth(token), "Idempotency-Key": job_id})
-    except httpx.HTTPError as exc:
+    except _NOT_SENT as exc:
         raise DeckError(f"WDA 에 연결하지 못했습니다({exc.__class__.__name__}).", 502) from exc
+    except httpx.HTTPError as exc:
+        raise DeckUnknownError() from exc
     if r.status_code >= 400:
         raise _wda_error(r, "만들기")
     d = _json(r).get("data") if isinstance(_json(r).get("data"), dict) else {}
@@ -656,7 +670,10 @@ def _base_and_token(request: Request, settings: Settings, principal: Principal) 
 
 def _reserved_view(rec: dict, now: float) -> dict:
     """예약 — WDA 에 묻지 않는다. 막 맡기는 중이면 '맡기는 중', 오래됐으면(끊김) 실패로 보인다(끝을 적을 것은 없다 — WDA 에 간 것이 없다)."""
-    if now - float(rec.get("created_at") or now) < RESERVE_TTL_S:
+    if (rec.get("wda") or {}).get("create_unknown"):
+        f = {"state": "failed", "step": "결과 모름", "progress": None, "error": DeckUnknownError().message, "late": False, "next": None,
+             "skipped": []}
+    elif now - float(rec.get("created_at") or now) < RESERVE_TTL_S:
         f = {"state": "queued", "step": "맡기는 중", "progress": 0, "error": None, "late": False, "next": None, "skipped": []}
     else:
         f = {"state": "failed", "step": "맡기다 끊김", "progress": None, "error": "맡기는 도중 포털이 끊겼습니다 — 다시 누르세요.", "late": False,
@@ -726,22 +743,30 @@ async def deck_create(
     async with lock("create"):
         now = time.time()
         recs = await asyncio.to_thread(records, settings)
+        rec = None
         for r in recs:
             if (r.get("owner_sub") == owner and r["report"]["id"] == body.report_id
                     and r["options"]["targets"] == targets and r["options"]["doc_style"] == body.doc_style
                     and (inflight(r, settings, now) or (not body.again and (r.get("finished") or {}).get("state") == "done"))):
+                if reserving(r) and (r.get("wda") or {}).get("create_unknown"):
+                    rec = r          # 앞선 만들기의 결과를 모른다 — 같은 잡 id(Idempotency-Key)로 다시 묻는다(WD-D58). 자리는 이미 잡혀 있다
+                    break
                 return {**(_reserved_view(r, now) if reserving(r) else view(r, now=now)), "created": False}
-        live = [r for r in recs if inflight(r, settings, now)]
-        if sum(1 for r in live if r.get("owner_sub") == owner) >= settings.wda_deck_inflight_max:
-            raise AuthError(f"만드는 중인 발표자료가 {settings.wda_deck_inflight_max}건입니다 — 끝난 뒤에 다시 누르세요.", status_code=429)
-        if len(live) >= settings.wda_deck_inflight_box_max:
-            raise AuthError("지금 발표자료를 만드는 사람이 많습니다 — 잠시 뒤 다시 누르세요.", status_code=429)
-        job_id = secrets.token_hex(16)
-        rec = {"job_id": job_id, "owner_sub": owner, "owner_email": principal.email or owner,
-               "conversation_id": body.conversation_id, "report": {"id": body.report_id, "title": ""},
-               "options": {"targets": targets, "doc_style": body.doc_style, "pptx_mode": PPTX_MODE},
-               "wda": {"run_id": None, "format": None, "version": caps.version}, "state": "queued", "created_at": now,
-               "render_submitted_at": None, "images_not_sent": 0, "finished": None, "dismissed": None}
+        if rec is not None:
+            rec["wda"]["create_unknown"] = False
+            rec["created_at"] = now
+        else:
+            live = [r for r in recs if inflight(r, settings, now)]
+            if sum(1 for r in live if r.get("owner_sub") == owner) >= settings.wda_deck_inflight_max:
+                raise AuthError(f"만드는 중인 발표자료가 {settings.wda_deck_inflight_max}건입니다 — 끝난 뒤에 다시 누르세요.", status_code=429)
+            if len(live) >= settings.wda_deck_inflight_box_max:
+                raise AuthError("지금 발표자료를 만드는 사람이 많습니다 — 잠시 뒤 다시 누르세요.", status_code=429)
+            rec = {"job_id": secrets.token_hex(16), "owner_sub": owner, "owner_email": principal.email or owner,
+                   "conversation_id": body.conversation_id, "report": {"id": body.report_id, "title": ""},
+                   "options": {"targets": targets, "doc_style": body.doc_style, "pptx_mode": PPTX_MODE},
+                   "wda": {"run_id": None, "format": None, "version": caps.version}, "state": "queued", "created_at": now,
+                   "render_submitted_at": None, "images_not_sent": 0, "finished": None, "dismissed": None}
+        job_id = rec["job_id"]
         await asyncio.to_thread(save, settings, rec)
     # ② 잠금 밖 — RA 읽기 · 꼴 문 · WDA 만들기. 실패하면 예약을 놓는다(WDA 에 간 것이 없다 — 상한 · 중복에서 빠진다)
     try:
@@ -766,6 +791,13 @@ async def deck_create(
             await asyncio.to_thread(save, settings, rec)
         _audit(request, principal, "deck_create", "failed", job_id=job_id, report_id=body.report_id, error="owner_mismatch",
                owner_seen=(exc.owner or "")[:200])
+        raise _http_error(exc) from exc
+    except DeckUnknownError as exc:
+        # 만들어졌을 수 있다 — 예약을 남겨(상한을 먹는다 — WDA 에서 돌 수 있다) 다시 누르면 같은 잡 id 로 다시 묻는다
+        async with lock(job_id):
+            rec["wda"]["create_unknown"] = True
+            await asyncio.to_thread(save, settings, rec)
+        _audit(request, principal, "deck_create", "unknown", job_id=job_id, report_id=body.report_id)
         raise _http_error(exc) from exc
     except DeckError as exc:
         async with lock(job_id):
