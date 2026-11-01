@@ -1,0 +1,92 @@
+# 발표자료로(RA 보고서 → WebDesignAgents) — 체크리스트
+
+> 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md) · WDA 요청서 [wda-request.md](wda-request.md).
+> 지금은 설계 단계다(11-01) — 아래 M1 은 WDA 세션이 계약을 확인하고 사람 결정이 난 뒤에 시작한다.
+
+## 설계(11-01)
+
+- [x] DocForge 배달 꼴 조사(잡 기록 · 주인만 404 · 세션 + CSRF · 한 번만 · 화면이 몬다 · 다시 열기 · 알림) — PLAN §2.1
+- [x] 포털이 만든 RA 보고서의 화면 자리 조사(심의 outcome 은 서버 사본에 없다 · `/보고서` 는 글뿐) — PLAN §2.2
+- [x] WDA 신원 · 주인 · 익명 접근 · 배치 판 조사(익명 200 실측 · 게이트웨이가 신원을 안 싣는다 · origin/main 에 pdf 없음) — PLAN §2.4
+- [x] 문서 넷(PLAN · checklist · context-notes · wda-request) · CLAUDE.md 문서 표 한 줄
+
+## M0 — 사람 결정
+
+- [ ] U-1 WDA 주인 기능을 단추를 켜는 전제로(권장 예)
+- [ ] U-2 WDA push 방법(권장 — workflow 범위가 있는 자격 또는 사용자가 손으로 · 역사를 다시 쓰지 않는다)
+- [ ] U-3 허브 매니페스트 `launch.portal_auth: true`(권장 예)
+- [ ] U-4 'PDF' 의 뜻(권장 — WDA '읽는 문서' 정식 보고서를 기본, 요약 · 메모를 고르게)
+- [ ] U-5 M1 단추 자리 셋(권장 — 심의 결과 · `/보고서` · RA 보내기 알림)
+
+## M0 — WDA 세션(요청서 §11)
+
+- [ ] 요청서를 받고 W-1 ~ W-12 를 받을지 · 어려운 것을 답한다(요청서 §10 의 다섯 물음 포함)
+- [ ] W-1 REST 만들기에 `X-Heax-User-Email` 로 owner(본문의 owner 는 믿지 않는다 · `/mcp` 는 정하지 않는다)
+- [ ] W-2 주인 있는 run 의 run 단위 REST 전부 주인만(다른 사람 · 신원 없음 = 404)
+- [ ] W-3 `GET /api/runs` = 내 것 + 주인 없는 것
+- [ ] W-4 MCP 의 run_id · job_id · 경로 도구와 렌더 잡 내려받기는 주인 있는 run 에 닿지 않는다
+- [ ] W-5 주인 있는 새 run id 128비트 무작위 · run_id 꼴 검사
+- [ ] W-6 `/api/health` 에 version · features(`owner` · `render_chain` · `doc_formats` · `skipped_report` · `interrupted`)
+- [ ] W-7 본문 16MB(넘으면 413 TOO_LARGE)
+- [ ] W-8 만들기의 `render` 칸 — 빌드 뒤 이어서 렌더
+- [ ] W-9 `render.requested` · `render.skipped[{target, reason}]`
+- [ ] W-10 오류 봉투에 `code`
+- [ ] W-11 내려받기 머리(attachment · Content-Length · nosniff · HTML 은 `Content-Security-Policy: sandbox`) · 생성 HTML 의 보고서 글 이스케이프
+- [ ] W-12 재기동에 끊긴 실행 · 렌더를 `failed`(interrupted)로
+- [ ] (권장) W-13 보존 기한 알리기 · W-14 렌더 동시 상한 · (선택) W-15 Idempotency-Key
+- [ ] 주인 있는 run 은 `WDA_RA_*` 서비스 자격으로 RA 그림을 받지 않는다
+- [ ] P-1 (U-2 뒤) main push → 허브 SIF 재빌드(dev) — push 는 사용자 결정 전에 시도하지 않는다
+- [ ] dev 확인 — `/api/health` features 에 `owner` · 신원 없는 `GET /api/runs` 에 주인 있는 run 이 없다 · 게이트웨이 `tools/list` 로 도구 판을 대조한다
+
+## M0 — HEAXHub 세션
+
+- [ ] P-2 (U-3 뒤) `integrations/web-design-agents/.portal/manifest.yaml` 에 `launch.portal_auth: true` · 익명 `GET /apps/web_design_agents/api/runs` 가 401 인지 확인
+
+## M1 — 포털(dev)
+
+백엔드
+- [ ] 먼저 실패하는 시험 셋 — 중계가 심의 outcome 의 보고서 번호를 남긴다 · 서버 사본이 그것을 되살린다(node) · 중계가 `/보고서` 답의 `ra_report` 를 남긴다
+- [ ] 설정 — `wda_deck_enabled`(기본 False) · `wda_base_url`(빈 값이면 routes.env 의 `apps` + `web_design_agents`) · `wda_hub_audience`(heax-hub) ·
+      `wda_deck_job_days`(7) · `wda_deck_report_max_mb`(16) · `wda_deck_inflight_max`(2) · 늦음 문턱 셋 · `wda_deck_give_up_s`(86400) · `.env.example` · 시험 격리
+- [ ] `backend/app/agent/wda_deck.py` — 잡 기록(`#deck-jobs` · 0600 · 바꿔 끼우기 · 주인만 404 · 목록 · 숨기기 · 잠금) · 상태 낱말 접기(PLAN §7.2) · 알림 글 · 활동 짓기
+- [ ] 짧은 허브 PAT 찍기(청중 heax-hub · scope api · 10분 · 무작위 jti · 로그인 그룹만) — 저장 · 로그 없음 · `config.py:243-245` 주석 고치기
+- [ ] RA 읽기 — `_ra_user_token`(위임 401 은 한 번 새로) · 403 · 404 · 상한이면 WDA 를 부르지 않는다 · 그림(file_id) 수 세기
+- [ ] WDA 부르기 — 만들기(render 칸) · 진행 · 렌더(대체 길) · artifacts · 내려받기 흘리기 · health 능력 탐침(60초 붙잡음, 모르면 숨김)
+- [ ] 라우트 — `GET /agent/deck/status` · `POST /agent/deck/jobs` · `GET /agent/deck/jobs` · `GET /agent/deck/jobs/{job}` · `POST …/advance` · `GET …/files/{kind}` ·
+      `POST …/dismiss` — 모두 `principal_pat_or_session`(POST 는 CSRF) · `ensure(plat:webdesign, plat:reportarchive)` · 대화 주인 검사
+- [ ] 한 번만 — 같은 보고서 · 같은 옵션은 하나로 · `again` · 사람당 동시 상한 429 · `advance` 잠금 안에서 렌더 맡기기 · 알림(서버 사본에 직접 — `conv_store.append`, 스레드에서)
+- [ ] 내려받기 머리 — attachment(보고서 제목으로 이름, RFC 5987) · nosniff · `Cache-Control: private, no-store` · HTML 은 CSP sandbox · 응답에 WDA 주소 · id 없음
+- [ ] 스테이징 청소에서 `#deck-jobs` 빼고 기한 뒤 지우기(`upload.py` sweep)
+- [ ] 감사 — `deck_create` · `deck_render` · `deck_finish` · `deck_download`(본문 · 제목 전문 없음)
+- [ ] 중계 — 심의 outcome → 답 meta `delib_outcome` · `result` 의 `ra_report` → 답 meta `ra_report`
+
+에이전트 서버(한 칸)
+- [ ] `run_report_save` 의 `result` 사건에 `ra_report: {id, title}`(HWAXAgentServer `deliberation.py:7913-7914`) · 시험 — 재기동은 확인 뒤(남의 미반영 커밋을 같이 켠다)
+
+화면
+- [ ] `api/deck.api.ts` · `DeckButton`(출력 · 문서 꼴 고르기 · 진행 칸 · 실패 까닭 · 다시 만들기) · 입력창 위 '끝나지 않은 발표자료' 줄(끝난 잡은 저절로 `advance`)
+- [ ] 자리 셋 — `DelibView` 결과 카드 · `/보고서` 답(meta `ra_report`) · RA 보내기 알림(활동 report_id) · 권한 둘과 status enabled 일 때만
+- [ ] `serverMessagesToLocal` 이 `delib_outcome` 을 `delib.outcome` 으로 · live `result` 의 `ra_report` 를 메시지에
+- [ ] 알림은 응답을 그 대화(서버 id)의 화면 사본에만 붙인다(서버에 다시 쓰지 않는다) · 그 대화가 답을 받는 중이면 끝난 뒤 `advance`
+- [ ] `cd frontend && pnpm build`(컨테이너는 dist 를 낸다)
+
+시험
+- [ ] 백엔드(가짜 RA · 가짜 WDA — PLAN §11 목록 전부) · node 순수 함수 · 브라우저(결과 카드 → 진행 → 그 대화에 알림 · 권한 없으면 단추 없음 · 새로고침 뒤에도 산다 · 답 받는 중이면 뒤에)
+- [ ] 회귀 — `backend` 전체 pytest(파이프로 rc 를 가리지 않는다) · 프론트 타입 검사 · 빌드
+
+문서 · 기타
+- [ ] 운영자 페르소나 `he-doc-webdesign` 글 — 포털 보고서는 '발표자료로' 단추로 · `render_status` 되풀이 금지(동기화 시험)
+- [ ] 변경 이력(`docs/changelog.md`, KST 날짜) · 이 체크리스트 · context-notes 덧붙이기
+- [ ] dev 실주행 — 스위치를 켜고 실제 심의 보고서 하나로 PPT + PDF · 남의 계정으로 404 · 익명으로 WDA 목록에 안 보이는지
+
+## M2
+
+- [ ] 분석 루틴 RA 초안 자리(`routine.report.ra_report_id`)
+- [ ] RA 그림 함께 보내기(WDA W-16 뒤 — 포털이 그 사람 명의로 `GET /api/files/{id}`)
+- [ ] 다시 시도(WDA resume) · WDA 지우기(W-17) · PDF 미리보기(CSP sandbox) · MCP 쪽 주인(W-18 · 게이트웨이 `per_user_sso.web_design_agents`)
+
+## M3 — cae00(사람 몫 — server-setup 은 M1 끝에 쓴다)
+
+- [ ] WDA SIF 가 W-1 ~ W-12 판인지(`/api/health` features) · (U-3 이면) 익명 401
+- [ ] 박스 스위치 `wda_deck_enabled` 켜기 · 포털 재기동
+- [ ] 쓸 사람의 허브 계정(허브 타일 한 번) · 실제 보고서 하나로 확인
