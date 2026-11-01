@@ -65,6 +65,7 @@ class FakeHubWDA:
         # WDA 의 꼴 등록부(꼴 id → 상태) — features 에 format:<id> 가 저절로 실린다. 심의 꼴(delib-16x9)은 시험이 넣는다
         self.formats = {"wide-16x9": "active", "short-9x16": "active", "print-a4": "draft"}
         self.version = "0.1.0"                         # 패키지 판(허브 매니페스트 판과 같다 — WDA 11-01)
+        self.run_formats: dict[str, str] | None = None  # 만들기가 받는 꼴 — None 이면 formats 와 같다(health 와 어긋나는 판을 흉내 낼 때만)
         self.runs: dict[str, dict] = {}
         self.reports = {41: IMPORT, 42: EMPTY, 58: DELIB}
         self.calls: list[tuple[str, str]] = []          # (메서드, 경로)
@@ -217,7 +218,7 @@ class FakeHubWDA:
             body = json.loads(req.content)
             self.created.append(body)
             fmt = body.get("format", "wide-16x9")
-            if fmt not in self.formats:
+            if fmt not in (self.formats if self.run_formats is None else self.run_formats):
                 # 11-01 저녁 판 — 모르는 꼴은 곧바로 400 이고 봉투(code 없음)에 쓸 수 있는 꼴을 싣는다
                 return httpx.Response(400, json={"success": False, "data": None,
                                                  "message": f"ValueError: 모르는 format '{fmt}' — 쓸 수 있는 꼴: {', '.join(sorted(self.formats))}",
@@ -501,11 +502,12 @@ def test_심의_보고서는_delib_16x9_가_active_일_때만_서고_그_꼴을_
 
 
 def test_WDA_가_모르는_꼴이면_400_의_까닭을_보이고_기본_꼴로_다시_보내지_않는다(box):
-    """탐침(60초 붙잡음) 뒤 WDA 가 그 꼴을 잃었다(옛 판으로 되돌림) — 만들기가 곧바로 400 INVALID(쓸 수 있는 꼴을 message 에)."""
+    """만들기는 탐침을 늘 새로 하므로(WD-D57) 꼴을 잃은 WDA 에는 409 로 멈춘다. 그래도 health 와 만들기가 어긋나는 WDA(탐침과 만들기 사이에
+    되돌림)는 만들기가 곧바로 400 이다 — 그 까닭을 정해진 글로 말하고 기본 꼴로 다시 보내지 않는다."""
     fake = box["fake"]
     fake.formats["delib-16x9"] = "active"
     assert box["c"].get("/agent/deck/status").json()["formats"] == {"deliberation": True}
-    del fake.formats["delib-16x9"]
+    fake.run_formats = {k: v for k, v in fake.formats.items() if k != "delib-16x9"}
     r = _make(box, report_id=58)
     detail = r.json()["detail"]
     assert r.status_code == 502 and "WDA 가 만들기 요청의 꼴을 받지 않았습니다" in detail
@@ -522,6 +524,63 @@ def test_WDA_가_모르는_꼴이면_400_의_까닭을_보이고_기본_꼴로_�
 ])
 def test_꼴_정책은_하나다_features_와_active_가_둘_다(features, formats, want):
     assert W.format_ready(W.Caps(frozenset(features), formats), "delib-16x9") is want
+
+
+# ── 만들기는 탐침을 새로 하고 202 의 주인을 본다(적대 검토 R5, WD-D57) ─────────────────────────────────────────────────────
+def test_되돌린_WDA_에는_60초_안에도_본문을_넘기지_않는다(box):
+    c, fake = box["c"], box["fake"]
+    assert c.get("/agent/deck/status").json()["enabled"] is True        # 탐침이 60초 붙잡힌다(화면용)
+    fake.features = set()                                               # 옛 SIF 로 되돌림 — owner 없음
+    r = _make(box)
+    assert r.status_code == 409 and fake.created == [], "만들기는 붙잡은 능력을 쓰지 않는다"
+
+
+def _owner_in_202(fake, owner):
+    orig = fake.wda
+
+    def w(req, path, email):
+        resp = orig(req, path, email)
+        if path == "/api/runs" and req.method == "POST" and resp.status_code == 202:
+            j = json.loads(resp.content)
+            if owner is None:
+                j["data"].pop("owner", None)
+            else:
+                j["data"]["owner"] = owner
+            return httpx.Response(202, json=j)
+        return resp
+
+    fake.wda = w
+
+
+@pytest.mark.parametrize("owner", [None, "", "admin@hub.local", "lee@corp.com"])
+def test_202_의_주인이_맡긴_사람이_아니면_따라가지_않고_실패로_남긴다(box, owner):
+    fake, s = box["fake"], box["s"]
+    _owner_in_202(fake, owner)
+    r = _make(box)
+    assert r.status_code == 502 and "주인을 맡긴 사람으로 확인해 주지 않았습니다" in r.json()["detail"]
+    (rec,) = W.records(s)
+    assert rec["finished"]["state"] == "failed" and rec["wda"]["run_id"] in fake.runs, "WDA 의 run_id 는 진단용으로 남긴다"
+    assert not W.inflight(rec, s, time.time()), "따라가지 않는다 — 상한을 먹지 않는다"
+    rows = app.state.agent_audit._conn.execute(
+        "SELECT status, meta FROM agent_audit WHERE event = 'deck_create' ORDER BY rowid DESC LIMIT 1").fetchone()
+    assert rows[0] == "failed" and "owner_mismatch" in rows[1]
+
+
+def test_202_의_주인은_대소문자를_가리지_않는다(box):
+    _owner_in_202(box["fake"], "KIM@Corp.COM")
+    assert _make(box).status_code == 200
+
+
+@pytest.mark.parametrize("how,status,said", [("not_viewable", 403, "허브가 막았습니다"), ("jwks_down", 503, "HTTP 503"),
+                                             ("no_hub_account", 403, "허브 계정이 없거나")])
+def test_만들기의_탐침_거절은_정해진_글로(box, how, status, said):
+    fake = box["fake"]
+    if how == "jwks_down":
+        fake.jwks_down = True
+    else:
+        getattr(fake, how).add("kim@corp.com")
+    r = _make(box)
+    assert r.status_code == status and said in r.json()["detail"] and fake.created == []
 
 
 def test_RA_가_거절하거나_없거나_보고서가_크면_WDA_를_부르지_않는다(box):
@@ -564,7 +623,8 @@ def test_허브가_탐침을_401_로_막으면_모름으로_숨기고_붙잡지_
     box["fake"].reject_all = True
     st = box["c"].get("/agent/deck/status")
     assert st.status_code == 200 and st.json()["enabled"] is False and st.json()["reason"] == "unknown"
-    assert _make(box).status_code == 503 and box["fake"].created == []
+    r = _make(box)
+    assert r.status_code == 403 and "허브가 포털 토큰을 받지 않았습니다" in r.json()["detail"] and box["fake"].created == []
     box["fake"].reject_all = False
     assert box["c"].get("/agent/deck/status").json()["enabled"] is True, "실패는 붙잡지 않는다 — 풀리면 곧바로 선다"
     assert box["fake"].pats and all(p["email"] == "kim@corp.com" for p in box["fake"].pats), "탐침도 그 사람의 PAT 로"

@@ -99,6 +99,14 @@ class DeckError(Exception):
         self.message, self.status = message, status
 
 
+class DeckOwnerError(DeckError):
+    """WDA 가 실행을 만들었지만 그 주인이 맡긴 사람이 아니다(없거나 다르다) — 따라가지 않는다. run_id 는 기록에 남겨 둔다(WD-D57)."""
+
+    def __init__(self, message: str, run_id: str, owner: str | None):
+        super().__init__(message, 502)
+        self.run_id, self.owner = run_id, owner
+
+
 def _http_error(exc: DeckError) -> AuthError:
     return AuthError(exc.message, status_code=exc.status)
 
@@ -261,17 +269,26 @@ def format_ready(caps: Caps, fmt: str) -> bool:
 
 async def capabilities(base: str, token: str) -> Caps | None:
     """WDA /api/health 의 features · formats(요청 W-6 · W-21). 못 읽으면 None(모른다 — 화면은 숨긴다). 읽은 값만 60초 붙잡는다 — 한 사람의
-    실패(허브 계정 없음)가 모두의 단추를 숨기지 않게."""
+    실패(허브 계정 없음)가 모두의 단추를 숨기지 않게. 화면(status)만 붙잡은 값을 쓴다 — 만들기는 probe 로 늘 새로 묻는다(WD-D57)."""
     now = time.monotonic()
     if _CAPS["features"] is not None and now - _CAPS["at"] < CAPS_TTL_S:
         return Caps(_CAPS["features"], _CAPS["formats"], _CAPS["version"])
     try:
+        return await probe(base, token)
+    except DeckError:
+        return None
+
+
+async def probe(base: str, token: str) -> Caps:
+    """health 를 지금 묻는다(붙잡은 값을 쓰지 않는다) — 거절은 정해진 글의 DeckError(WD-D49). 읽은 값은 화면용으로 붙잡아 둔다."""
+    now = time.monotonic()
+    try:
         async with _http(10.0) as cli:
             r = await cli.get(f"{base}/api/health", headers={"Authorization": f"Bearer {token}"})
-    except httpx.HTTPError:
-        return None
+    except httpx.HTTPError as exc:
+        raise DeckError(f"WDA 에 연결하지 못했습니다({exc.__class__.__name__}).", 503) from exc
     if r.status_code != 200:
-        return None
+        raise _wda_error(r, "상태 확인")
     j = _json(r)
     feats, fmts, ver = j.get("features"), j.get("formats"), j.get("version")
     got = Caps(frozenset(str(f) for f in feats if isinstance(f, str)) if isinstance(feats, list) else frozenset(),
@@ -376,7 +393,7 @@ def _auth(token: str) -> dict:
 
 
 async def wda_create(base: str, token: str, *, data: dict, report_id: int, targets: list[str], doc_style: str, job_id: str,
-                     fmt: str | None) -> str:
+                     fmt: str | None, owner_email: str) -> str:
     """WDA `POST /api/runs` — 본문은 RA ReportRead 를 **바꾸지 않고**(WD-D31). render 칸이 있으면 WDA 가 빌드 뒤 이어서 렌더한다(요청 W-8).
     `format` 은 꼴이 정해진 템플릿(심의 → delib-16x9)일 때만 싣는다 — 없으면 WDA 기본(wide-16x9). WDA 가 모르는 꼴이면 곧바로 400 이다(실행 없음)."""
     body = {"report_json": data, "slug": f"ra-{report_id}",
@@ -391,9 +408,15 @@ async def wda_create(base: str, token: str, *, data: dict, report_id: int, targe
         raise DeckError(f"WDA 에 연결하지 못했습니다({exc.__class__.__name__}).", 502) from exc
     if r.status_code >= 400:
         raise _wda_error(r, "만들기")
-    rid = (_json(r).get("data") or {}).get("run_id") if isinstance(_json(r).get("data"), dict) else None
+    d = _json(r).get("data") if isinstance(_json(r).get("data"), dict) else {}
+    rid = d.get("run_id")
     if not isinstance(rid, str) or not _RUN_RE.fullmatch(rid):
         raise DeckError("WDA 가 실행 번호를 주지 않았습니다 — 만들어졌는지 알 수 없습니다.", 502)
+    # 202 의 주인이 맡긴 사람(대소문자 무시)이어야 따라간다 — 없거나 다르면 주인 없는 run(로그인한 누구에게나 열린다)이거나 남의 이름이다(WD-D57)
+    owner = d.get("owner") if isinstance(d.get("owner"), str) else None
+    if not owner or owner.strip().lower() != owner_email.strip().lower():
+        raise DeckOwnerError("WDA 가 이 실행의 주인을 맡긴 사람으로 확인해 주지 않았습니다 — 보고서를 넘겼지만 따라가지 않습니다(WDA 관리자에게 "
+                             "알리세요).", rid, owner)
     return rid
 
 
@@ -691,9 +714,11 @@ async def deck_create(
     if whose != "mine":
         raise AuthError("그 대화가 없습니다.", status_code=404)
     base = _base(request, settings)
-    caps = await capabilities(base, _token(request, settings, principal))
-    if caps is None:
-        raise AuthError("WDA 상태를 읽지 못했습니다 — 잠시 뒤 다시 누르세요.", status_code=503)
+    try:
+        # 만들기는 붙잡은 능력을 쓰지 않는다 — 옛 판(주인 없는 WDA)으로 되돌린 지 60초 안에도 본문을 넘기지 않게(적대 검토 R5, WD-D57)
+        caps = await probe(base, _token(request, settings, principal))
+    except DeckError as exc:
+        raise _http_error(exc) from exc
     if "owner" not in caps.features:
         raise AuthError("WDA 에 아직 주인 기능이 없습니다 — 보고서를 넘기지 않습니다(사용자 결정 11-01).", status_code=409)
     # ① 잠금 안은 기록뿐이다 — 중복 · 상한을 보고 자리를 잡는다(예약). RA 읽기 · WDA 만들기는 잠금 밖이다 — 한 사람의 느린 RA 가 박스 전체의
@@ -729,7 +754,19 @@ async def deck_create(
                               "액션아이템이 빠진다, 사용자 결정 11-01 U-6).", 409)
         fmt = fmts[0] if fmts else None
         run_id = await wda_create(base, _token(request, settings, principal), data=data, report_id=body.report_id,
-                                  targets=targets, doc_style=body.doc_style, job_id=job_id, fmt=fmt)
+                                  targets=targets, doc_style=body.doc_style, job_id=job_id, fmt=fmt,
+                                  owner_email=principal.email or owner)
+    except DeckOwnerError as exc:
+        # WDA 에는 실행이 생겼다 — 따라가지 않되 run_id 를 실패한 잡으로 남긴다(진단 · 지우기). 알림은 없다(맡긴 사람이 지금 이 답을 본다)
+        logger.warning("발표자료 잡 %s — WDA 202 의 주인이 맡긴 사람이 아니다 owner=%r run_id=%s", job_id, exc.owner, exc.run_id)
+        async with lock(job_id):
+            rec["wda"].update(run_id=exc.run_id, owner_seen=exc.owner)
+            rec["finished"] = {"state": "failed", "step": "주인 확인 실패", "error": exc.message, "files": [], "skipped": [],
+                               "at": time.time(), "notice": None, "saved": False}
+            await asyncio.to_thread(save, settings, rec)
+        _audit(request, principal, "deck_create", "failed", job_id=job_id, report_id=body.report_id, error="owner_mismatch",
+               owner_seen=(exc.owner or "")[:200])
+        raise _http_error(exc) from exc
     except DeckError as exc:
         async with lock(job_id):
             await asyncio.to_thread(drop, settings, job_id)
