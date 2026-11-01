@@ -365,6 +365,61 @@ def test_권한을_거두면_목록_진행_advance_받기_숨기기도_403_이�
     assert len(fake.pats) == n_pats, "권한이 없는 사람 이름으로 허브 토큰을 찍지 않는다"
 
 
+# ── 진짜 인증 길 — 위 시험은 principal_pat_or_session 을 덮는다. 이 둘은 덮지 않는다(적대 검토 R7, WD-D51) ──────────────
+def _real_auth(box, monkeypatch):
+    import app.deps as deps
+    app.dependency_overrides.pop(principal_pat_or_session, None)
+    # 권한 원장은 박스마다 다르다 — 로그인 그룹에서 권한 키를 셈하는 자리(entitled)만 두 권한으로 고정한다
+    monkeypatch.setattr(deps, "entitled", lambda request, p, admin=frozenset(): p.model_copy(update={"groups": list(NEEDS)}))
+    box["c"].cookies.clear()
+
+
+def _pat(box, scopes):
+    from datetime import UTC, datetime, timedelta
+    ks = app.state.keystore
+    now = datetime.now(tz=UTC)
+    claims = {"iss": box["s"].jwt_issuer, "sub": "kim@corp.com", "email": "kim@corp.com", "name": "김", "groups": [],
+              "aud": [box["s"].pat_chat_audience], "scope": "api", "jti": f"t-{time.time_ns()}", "iat": now, "exp": now + timedelta(days=1)}
+    if scopes is not None:
+        claims["scopes"] = list(scopes)
+    return jwt.encode(claims, ks.private_pem, algorithm="RS256", headers={"kid": ks.active_kid})
+
+
+def test_세션_길은_CSRF_가_있어야_맡긴다(box, monkeypatch):
+    _real_auth(box, monkeypatch)
+    c = box["c"]
+    c.cookies.set("hwax_session", app.state.jwt_service.issue_session(KIM))
+    c.cookies.set("hwax_csrf", "csrf-1")
+    body = {"report_id": 41, "conversation_id": box["conv"]["kim@corp.com"]}
+    assert c.post("/agent/deck/jobs", json=body).status_code == 403, "CSRF 머리 없는 쿠키 POST"
+    assert box["fake"].created == []
+    r = c.post("/agent/deck/jobs", json=body, headers={"X-CSRF-Token": "csrf-1"})
+    assert r.status_code == 200 and r.json()["created"] is True
+    job = r.json()["job_id"]
+    assert c.get(f"/agent/deck/jobs/{job}").status_code == 200, "읽기(GET)는 세션만으로"
+    assert c.post(f"/agent/deck/jobs/{job}/advance").status_code == 403
+    assert c.post(f"/agent/deck/jobs/{job}/advance", headers={"X-CSRF-Token": "csrf-1"}).status_code == 200
+    c.cookies.clear()
+
+
+@pytest.mark.parametrize("scopes,writes", [(["read"], False), (["chat"], False), (["read", "write"], True), (None, True)])
+def test_PAT_길은_write_범위가_있어야_맡기고_바꾼다(box, monkeypatch, scopes, writes):
+    _real_auth(box, monkeypatch)
+    c = box["c"]
+    h = {"Authorization": f"Bearer {_pat(box, scopes)}"}
+    body = {"report_id": 41, "conversation_id": box["conv"]["kim@corp.com"]}
+    r = c.post("/agent/deck/jobs", json=body, headers=h)
+    assert c.get("/agent/deck/jobs", headers=h).status_code == 200, "읽기는 어느 범위든"
+    if not writes:
+        assert r.status_code == 403 and "쓰기 범위" in r.json()["detail"]
+        assert box["fake"].created == [] and not any(m == "POST" for m, _ in box["fake"].calls), "허브에 쓰기가 나가지 않는다"
+        jid = "a" * 32
+        assert c.post(f"/agent/deck/jobs/{jid}/advance", headers=h).status_code == 403
+        assert c.post(f"/agent/deck/jobs/{jid}/dismiss", headers=h).status_code == 403
+    else:
+        assert r.status_code == 200 and r.json()["created"] is True
+
+
 def test_스위치가_꺼지면_창구는_없고_status_는_off(box):
     box["s"].wda_deck_enabled = False
     assert _make(box).status_code == 404

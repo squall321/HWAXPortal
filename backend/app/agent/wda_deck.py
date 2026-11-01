@@ -543,6 +543,25 @@ class DeckJobIn(BaseModel):
     again: StrictBool = False                                     # 끝난 같은 잡이 있어도 새로 만든다
 
 
+def _write_capable(request: Request) -> None:
+    """맡기기 · advance · 숨기기는 쓰기다 — 세션(쿠키 + CSRF, principal_pat_or_session 이 본다)이거나 scopes 에 write 가 있는 PAT 만(WD-D51).
+    scopes 칸이 없는 옛 PAT 은 /auth/pat 의 기본값(read · write)으로 본다. 서명 · 청중 · 만료 · 폐기는 principal_pat_or_session 이 이미 봤다 —
+    그 뒤(라우트 본문)에서만 부르고 여기서는 scopes 칸만 읽는다. 읽기 전용 PAT(['read']) · 챗 PAT(['chat'])으로는 허브에 쓰기(POST /api/runs)가 나가지
+    않는다(적대 검토 R7)."""
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() != "bearer ":
+        return
+    try:
+        raw = jwt.decode(auth[7:].strip(), options={"verify_signature": False}).get("scopes")
+    except jwt.PyJWTError:
+        return
+    if raw is None:
+        return
+    if not (isinstance(raw, list) and "write" in {str(x).strip().lower() for x in raw}):
+        raise AuthError("이 토큰에는 쓰기 범위(write)가 없습니다 — 발표자료를 맡기거나 바꾸려면 포털 화면이나 쓰기 범위의 토큰을 쓰세요.",
+                        status_code=403)
+
+
 def _base_and_token(request: Request, settings: Settings, principal: Principal) -> tuple[str, str]:
     base = wda_base(settings, getattr(request.app.state, "catalog", None))
     if not base:
@@ -589,6 +608,7 @@ async def deck_create(
 ) -> dict:
     """그 사람 명의로 RA 보고서를 읽어 WDA 에 맡긴다. 같은 보고서 · 같은 옵션의 잡이 돌면(또는 끝났고 again 이 아니면) 그 잡을 준다."""
     ensure(principal, *NEEDS)
+    _write_capable(request)
     targets = [t for t in TARGETS if t in body.targets]
     owner = principal.subject
     store = request.app.state.conv_store
@@ -707,6 +727,7 @@ async def deck_advance(
 ) -> dict:
     """잡을 한 걸음 — 렌더 맡기기(WDA 가 이어서 하지 않는 판) 또는 끝(알림 한 건, 단추를 누른 그 대화에). 잡마다 잠금 · 두 번 불러도 알림은 하나."""
     ensure(principal, *NEEDS)
+    _write_capable(request)
     try:
         await asyncio.to_thread(load, settings, job_id, principal.subject)
     except DeckError as exc:
@@ -769,11 +790,13 @@ async def deck_advance(
 @router.post("/jobs/{job_id}/dismiss", dependencies=[Depends(_knob)])
 async def deck_dismiss(
     job_id: str,
+    request: Request,
     principal: Principal = Depends(principal_pat_or_session),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """입력창 위 '끝나지 않은 발표자료' 줄에서 숨긴다 — 기록 · WDA 실행은 그대로(WDA 에 취소가 없다)."""
     ensure(principal, *NEEDS)
+    _write_capable(request)
     try:
         # 잠금보다 먼저 — 꼴이 틀리거나 없거나 남의 잡이면 잠금을 만들지 않는다(아무 id 로 부른 만큼 잠금이 쌓이지 않게 · advance 와 같다)
         await asyncio.to_thread(load, settings, job_id, principal.subject)
