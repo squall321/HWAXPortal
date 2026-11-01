@@ -43,7 +43,7 @@
 
 ## M0 — HEAXHub(다른 에이전트 — 이 가지는 건드리지 않는다)
 
-- [ ] P-2 (U-3 결정) `integrations/web-design-agents/.portal/manifest.yaml` 에 `launch.portal_auth: true` · dev 반영 · 익명 `GET /apps/web_design_agents/api/runs` 가 401 인지 확인
+- [x] P-2 (U-3 결정) `integrations/web-design-agents/.portal/manifest.yaml` 에 `launch.portal_auth: true` · dev 반영 · 익명 `/apps/web_design_agents/…`(health · runs · mcp · 내려받기) 401 확인 — HEAXHub `385783f`(올림, 11-01). 허브 세션 · 유효한 PAT 은 200, 게이트웨이 WDA 도구 16개 그대로
 
 ## M1 — 포털(dev)
 

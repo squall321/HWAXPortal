@@ -14,7 +14,7 @@
 2. **기본 출력은 PPT + PDF**(`pptx_mode` hybrid). 영상 · HTML · Word 는 단추에서 고를 수 있다.
 
 같은 날 오후 사용자가 포털 계획의 물음 다섯을 정했다 — ① WDA 의 주인 기능(W-1 ~ W-6)이 단추를 보이는 **전제**다. ② WDA 는 **사용자가 손으로 push** 한다
-(누구도 대신 push 하거나 역사를 다시 쓰지 않는다). ③ 허브 매니페스트 `launch.portal_auth: true` 를 **켠다** — 포털 쪽이 HEAXHub 에 반영한다(7 P-2).
+(누구도 대신 push 하거나 역사를 다시 쓰지 않는다). ③ 허브 매니페스트 `launch.portal_auth: true` 를 **켠다** — 반영됐다(HEAXHub `385783f`, 7 P-2).
 ④ 기본 PDF 는 WDA 의 **정식 보고서 문서**(`doc_style=report`), 요약(brief) · 메모(memo)는 고를 수 있다 — 슬라이드 PDF 는 청하지 않는다. ⑤ 단추 자리는
 심의 결과 카드 · `/보고서` 저장 답 · RA 보내기 알림 셋이다.
 
@@ -55,7 +55,7 @@
 - **주인 없는 run 은 비공개가 아니다.** 신원 없이 만든 run(옛 것 · CLI · 신원 없는 MCP · 직결)은 이 기능이 들어간 뒤에도 영영 지금처럼 열려 있다. 그래서
   포털은 **늘** 허브 Caddy 를 거쳐 신원을 싣는다. (지금 WDA 는 허브 매니페스트가 company + stable 이고 `launch.portal_auth` 가 없어 **로그인 없이**
   닿는다 — 2026-11-01 dev 실측, 포털 nginx 를 거친 `/apps/web_design_agents/api/runs` 가 익명 200. HEAXHub `authz.py:83-99,138-146`. 사용자 결정으로
-  `launch.portal_auth: true` 를 켜면(7 P-2) 익명은 401 이 되지만, **주인 없는 run 은 로그인한 누구에게나 여전히 열린다.**)
+  `launch.portal_auth: true` 를 켰다(7 P-2 — 익명은 이제 401). 그래도 **주인 없는 run 은 로그인한 누구에게나 여전히 열린다.**)
 - **W-4 MCP 는 주인 있는 run 에 닿지 않는다.** MCP 의 신원은 확인할 수 없으므로(3.1), run_id · job_id · 서버 경로를 받는 도구 — `report_fragmentize` ·
   `scenario_build` · `scenario_patch` · `scenario_revise` · `scene_list` · `scene_html` · `scene_still` · `render_submit`(scenario_path · build_dir · run_dir) ·
   `render_status` · `qa_run`(build_path) — 는 대상이 주인 있는 run(그 `pipeline/<run_id>` · `build/<slug>` · `renders/<slug>` 아래)이면 `NOT_FOUND` 로
@@ -187,7 +187,7 @@ WDA 답(11-01, Q2) — `deliberation` 템플릿 보고서(화두 · 라운드 �
   `e4dc40e`(08-28) · `8d5a453`(10-24)가 그 파일을 만든다. `git push --dry-run` 은 서버 쪽 검사에 닿지 않으니 통과해도 풀린 것이 아니다. 11-01 에 다시 해 본
   실제 push 도 같은 거절이었다. **결정 — 사용자가 손으로 올린다. WDA 세션 · 포털 세션 · 코디네이터 누구도 push 하거나 역사를 다시 쓰지 않는다**(해시가 바뀌면
   문서가 인용한 커밋이 사라진다). WDA 세션은 W-1 ~ W-12 를 main 에 커밋해 두면 된다 — 올리는 것은 사용자다. 그 뒤 허브 SIF 재빌드는 HEAXHub 반영 순서를 따른다.
-- **P-2 허브 매니페스트 `launch.portal_auth: true` — 결정됨(11-01), 포털 쪽이 HEAXHub 에 반영하는 중이다**(다른 에이전트가 매니페스트와 dev 반영을 맡는다).
+- **P-2 허브 매니페스트 `launch.portal_auth: true` — 반영됐다(HEAXHub `385783f`, 11-01).** dev 에서 익명 요청은 health · runs · mcp · 내려받기 모두 401, 허브 세션 · 유효한 PAT 은 200 이다.
   WDA 세션이 할 일은 없다. 켜지면 주인 없는 옛 run 과 WDA 콘솔까지 익명이 닫힌다(게이트가 익명에 401 — `authz.py:138-146`). 포털 길은 그 사람의 PAT 로
   지나므로 바뀌지 않는다.
 - 포털 단추는 박스 스위치(기본 꺼짐)와 W-6 의 `owner` 능력이 **둘 다** 있어야 보인다. W-1 ~ W-12 가 배치된 뒤에 사람이 켠다.
@@ -253,4 +253,4 @@ heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항�
 | W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 |
 | W-19 | 슬라이드 PDF | 청하지 않는다(사용자 결정 11-01) |
 | P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 |
-| P-2 | 매니페스트 `launch.portal_auth: true` | 결정됨 — 포털 쪽이 HEAXHub 에 반영 중(WDA 할 일 없음) |
+| P-2 | 매니페스트 `launch.portal_auth: true` | 반영됨 — HEAXHub `385783f`(WDA 할 일 없음) |
