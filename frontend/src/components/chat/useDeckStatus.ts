@@ -17,9 +17,20 @@ function ask(): Promise<DeckStatus | null> {
   return p;
 }
 
-/** 시험용 — 붙잡은 답을 버린다. */
+/** 붙잡은 답을 버린다 — 창구가 404(박스 스위치가 꺼졌다)를 주면 다음 화면이 다시 묻게(WD-D65). 시험도 쓴다. */
 export function forgetDeckStatus(): void {
   cache = null;
+}
+
+/** 탭이 보이는가 — 숨은 탭에서는 진행을 천천히 묻는다(WD-D65). */
+export function useTabVisible(): boolean {
+  const [visible, setVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
+  useEffect(() => {
+    const on = () => setVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', on);
+    return () => document.removeEventListener('visibilitychange', on);
+  }, []);
+  return visible;
 }
 
 /** 상태 · null(모름 — 아직 못 물었거나 실패). `askIt` 이 거짓이면(권한 없음) 묻지 않는다. */

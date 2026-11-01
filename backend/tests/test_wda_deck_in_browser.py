@@ -80,12 +80,14 @@ _STUB = r"""
     }
     if (u === '/agent/deck/jobs' && method === 'POST') return json(window.__created);
     if (u === '/agent/deck/jobs' && method === 'GET') {
+      if (window.__listOff) return json({ detail: 'Not Found' }, 404);
       if (window.__listFail > 0) { window.__listFail -= 1; return json({ detail: '잠시 답하지 않는다' }, 502); }
       return json({ jobs: window.__list || [], keep_days: 7 });
     }
     if (u.startsWith('/agent/deck/jobs/')) {
       if (u.endsWith('/advance')) { window.__list = []; return json(window.__advanced); }
       if (u.endsWith('/dismiss')) return json({ dismissed: true });
+      if (window.__jobOff) return json({ detail: 'Not Found' }, 404);
       return json(window.__states.length > 1 ? window.__states.shift() : window.__states[0]);
     }
     return json({ detail: 'stub: no route ' + u }, 404);
@@ -292,6 +294,62 @@ const SCENARIOS = {
     await page.waitForTimeout(150);
     return { lastA: await text(page, 'lastA'), counts: await text(page, 'counts'), errors: page.__errors };
   },
+  // 숨은 탭은 천천히 묻고(10배) 보이게 되면 곧 박자로 돌아온다 · 창구가 404(스위치 꺼짐)면 묻기를 멈춘다(WD-D65)
+  async hiddenTab(browser) {
+    const page = await open(browser);
+    const RUN = { ...base, state: 'rendering', step: '만드는 중', progress: 80, elapsed_s: 4 };
+    await page.evaluate((r) => { window.__list = [r];
+      window.__vis = 'visible';
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__vis }); }, RUN);
+    await page.evaluate(() => window.dispatchEvent(new Event('hwax:deck-changed')));
+    await page.waitForTimeout(80);
+    const lists = async () => (await calls(page, '/agent/deck/jobs')).filter((c) => c.method === 'GET' && c.url === '/agent/deck/jobs').length;
+    const n0 = await lists();
+    await page.evaluate(() => { window.__vis = 'hidden'; document.dispatchEvent(new Event('visibilitychange')); });
+    await forward(page, 30000);
+    const hidden30 = (await lists()) - n0;
+    await forward(page, 75000);
+    const hidden105 = (await lists()) - n0;
+    await page.evaluate(() => { window.__vis = 'visible'; document.dispatchEvent(new Event('visibilitychange')); });
+    const n1 = await lists();
+    await forward(page, 10500);
+    const shown = (await lists()) - n1;
+    return { hidden30, hidden105, shown, errors: page.__errors };
+  },
+  async stop404(browser) {
+    const page = await open(browser);
+    const RUN = { ...base, state: 'rendering', step: '만드는 중', progress: 80, elapsed_s: 4 };
+    await page.evaluate((r) => { window.__list = [r]; }, RUN);
+    await page.evaluate(() => window.dispatchEvent(new Event('hwax:deck-changed')));
+    await page.waitForTimeout(80);
+    await page.evaluate(() => { window.__listOff = true; });
+    await forward(page, 10500);
+    const lists = async () => (await calls(page, '/agent/deck/jobs')).filter((c) => c.method === 'GET' && c.url === '/agent/deck/jobs').length;
+    const n0 = await lists();
+    await forward(page, 60000);
+    await page.evaluate(() => window.dispatchEvent(new Event('hwax:deck-changed')));   // 다른 칸이 맡겨도 — 다시 열 때까지 묻지 않는다
+    await page.waitForTimeout(80);
+    return { after: (await lists()) - n0, strip: await page.evaluate(() => !!document.querySelector('.deck-resume')), errors: page.__errors };
+  },
+  async spot404(browser) {
+    const page = await open(browser);
+    await makeJob(page);
+    await page.evaluate(() => { window.__jobOff = true; });
+    await forward(page, 3100);
+    const gets = async () => (await calls(page, '/agent/deck/jobs/')).filter((c) => c.method === 'GET').length;
+    const n0 = await gets();
+    await forward(page, 3100);
+    // 탭을 숨겼다 다시 보여도(박자가 바뀌어 효과가 다시 돈다) — 다시 열 때까지 묻지 않는다
+    await page.evaluate(() => { window.__vis = 'hidden';
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__vis });
+      document.dispatchEvent(new Event('visibilitychange')); });
+    await page.waitForTimeout(60);
+    await page.evaluate(() => { window.__vis = 'visible'; document.dispatchEvent(new Event('visibilitychange')); });
+    await page.waitForTimeout(60);
+    await forward(page, 3100);
+    return { after: (await gets()) - n0, note: await page.evaluate(() => (document.querySelector('.deck-panel .upl-err') || {}).textContent || ''),
+             errors: page.__errors };
+  },
   // 숨긴 잡도 끝 알림을 남긴다 — 줄은 그 잡을 계속 한 걸음씩 가되 화면에는 보이지 않는다(WD-D59)
   async dismissedFinish(browser) {
     const page = await open(browser);
@@ -423,3 +481,20 @@ def test_자리표시자_대화에는_알림을_붙이지_않고_열_때_서버_
 def test_안쪽_챗_제공자가_받은_알림을_바깥_제공자의_대화도_받는다(seen):
     s = seen("nested")
     assert "발표자료를 만들었습니다" in s["lastA"] and s["counts"] == "srv-A:4,srv-B:2"
+
+
+def test_숨은_탭은_천천히_묻고_보이면_곧_돌아온다(seen):
+    s = seen("hiddenTab")
+    assert s["hidden30"] == 0, "숨은 탭에서 10초 박자로 묻지 않는다"
+    assert s["hidden105"] >= 1, "숨은 탭도 아주 멈추지는 않는다(10배 박자)"
+    assert s["shown"] >= 1, "보이면 곧 박자로 돌아온다"
+
+
+def test_창구가_404_면_줄이_묻기를_멈춘다(seen):
+    s = seen("stop404")
+    assert s["after"] == 0 and s["strip"] is False
+
+
+def test_단추_칸도_404_면_묻기를_멈추고_까닭을_말한다(seen):
+    s = seen("spot404")
+    assert s["after"] == 0 and "멈춥니다" in s["note"]

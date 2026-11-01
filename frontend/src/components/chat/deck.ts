@@ -1,5 +1,8 @@
 // 발표자료로 — 메시지에서 단추가 설 RA 보고서를 찾고(자리 셋) 잡 상태를 사람 말로 옮기는 순수 함수(docs/wda-deck)
 import type { DeckDocStyle, DeckJob, DeckTarget } from '../../api/deck.api';
+
+/** 숨은 탭에서 묻는 박자를 몇 배로 늦출까 — 보이게 되면 곧바로 다시 묻는다(WD-D65). */
+export const DECK_HIDDEN_BACKOFF = 10;
 import type { Message } from '../../types/chat';
 
 /** 단추가 설 보고서. template 은 화면이 자리로 아는 값이다 — 서버는 RA 에서 읽은 실제 템플릿으로 다시 막는다(WD-D29). */

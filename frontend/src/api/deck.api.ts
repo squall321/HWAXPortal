@@ -58,9 +58,18 @@ export interface DeckJob {
   noticed?: boolean;
 }
 
+/** 발표자료 창구의 거절 — 화면이 상태로 가른다(404 = 박스 스위치가 꺼졌거나 그 잡이 없다 — 묻기를 멈춘다, WD-D65). */
+export class DeckHttpError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function json<T>(r: Response, fallback: string): Promise<T> {
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(errorDetail(j?.detail, `${fallback} (HTTP ${r.status}).`));
+  if (!r.ok) throw new DeckHttpError(errorDetail(j?.detail, `${fallback} (HTTP ${r.status}).`), r.status);
   return j as T;
 }
 
