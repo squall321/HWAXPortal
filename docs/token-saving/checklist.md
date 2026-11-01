@@ -12,10 +12,10 @@
 - [ ] PC CLAUDE.md 습관(상태 고리 금지 · search_tools detail 없이 · list_agents compact · risk_next_step 부터)
 
 ## T2. 작은 코드(S)
-- [ ] 에이전트 서버 — `deliberate_status(wait_s, brief)`(review_task_next 꼴 · 게이트웨이 비우기 때 일찍 · 상태 변화에 일찍)
-- [ ] 에이전트 서버 — `deliberate_result(view="summary")` 골라 쓰기(기본 full — 루틴이 전부 읽는다)
-- [ ] 게이트웨이 — `search_tools` 촘촘한 JSON(골라 쓰기) · `detail=true` 크기 상한
-- [ ] 안내 글 — 등록 배치 · 스킬에 서버 엔진 길(결정 뒤)
+- [x] 에이전트 서버 — `deliberate_status(wait_s, brief)` — `aadd591`(11-02, dev 반영)
+- [x] 에이전트 서버 — `deliberate_result(view="summary")` 골라 쓰기(기본 full) — `aadd591` · 루틴 쪽 view 버림은 게이트웨이 `95fdbe9`
+- [x] 게이트웨이 — `search_tools` 촘촘한 JSON(소비처가 모두 JSON 으로 읽어 기본으로) · `detail=true` 상한 25,000자 — `6dc4abc`(11-02, dev 반영)
+- [x] 안내 글 — 게이트웨이 서버 지침 13번(`6dc4abc`) · 워크플로 다섯의 설명(`6327d0fb`). 등록 배치는 안내 글을 깔지 않아 손대지 않음
 
 ## T3. 중간(M) — 측정 뒤
 - [ ] P2 `{tool, args}` 근거 — 확인된 읽기 울타리 · 사람 없으면 막기 · 봉인 · 기준일 · 출처 표지
