@@ -19,7 +19,7 @@ export function DeckSpot({ report }: { report: DeckReport }) {
   const can = useCan();
   const allowed = can('plat:webdesign') && can('plat:reportarchive');
   const status = useDeckStatus(allowed);
-  const { activeConversation, addDeckNotice, afterStream } = useChat();
+  const { activeConversation, conversations, addDeckNotice, afterStream } = useChat();
   const sid = activeConversation?.serverId ?? null;
   const [open, setOpen] = useState(false);
   const [targets, setTargets] = useState<DeckTarget[]>(['pptx', 'pdf']);
@@ -89,6 +89,11 @@ export function DeckSpot({ report }: { report: DeckReport }) {
 
   if (job) {
     const done = finishedJob(job);
+    // 같은 보고서 · 옵션의 잡이 다른 대화에서 돌고 있으면 그 잡을 받는다 — 알림은 그 대화에 남는다(WD-D62)
+    const here = job.conversation_id === sid;
+    const where = here
+      ? '이 대화에'
+      : `「${conversations.find((c) => c.serverId === job.conversation_id)?.title || '맡긴 대화'}」 대화에`;
     return (
       <div className="upl-panel deck-panel" role="group" aria-label="발표자료">
         <div className="upl-head">
@@ -98,8 +103,12 @@ export function DeckSpot({ report }: { report: DeckReport }) {
         </div>
         {!done && (
           <p className="upl-note" role="status">
-            {deckStateText(job)} — 창을 닫아도 계속되고, 끝나면 이 대화에 받기 링크를 남깁니다.
+            {deckStateText(job)} — 창을 닫아도 계속되고, 끝나면 {where} 받기 링크를 남깁니다
+            {here ? '' : '(그 대화에서 맡긴 같은 발표자료입니다)'}.
           </p>
+        )}
+        {done && job.state === 'done' && job.expired && (
+          <p className="upl-note">파일이 WebDesignAgents 에서 지워졌습니다 — 다시 만들 수 있습니다.</p>
         )}
         {done && job.state === 'done' && job.files.length > 0 && (
           <div className="upl-actions deck-files">
@@ -117,9 +126,10 @@ export function DeckSpot({ report }: { report: DeckReport }) {
         )}
         {done && job.state === 'failed' && <div className="upl-err" role="alert">⚠ {job.error || job.step || '까닭을 받지 못했습니다'}</div>}
         {err && <div className="upl-err" role="alert">⚠ {err}</div>}
-        {done && job.state === 'failed' && (
+        {done && (
           <div className="upl-actions">
-            <button type="button" className="upl-go" disabled={busy} onClick={() => void go(true)}>{busy ? '맡기는 중…' : '다시 만들기'}</button>
+            <button type="button" className={job.state === 'failed' || job.expired ? 'upl-go' : undefined} disabled={busy}
+              onClick={() => void go(true)}>{busy ? '맡기는 중…' : '다시 만들기'}</button>
           </div>
         )}
       </div>

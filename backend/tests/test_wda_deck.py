@@ -921,7 +921,7 @@ def test_파일은_주인에게만_흘리고_머리를_단다(box):
     assert c.get(f"/agent/deck/jobs/{job}/files/exe").status_code == 404
     box["fake"].runs.clear()
     gone = c.get(f"/agent/deck/jobs/{job}/files/pdf")
-    assert gone.status_code == 404 and "지워졌습니다" in gone.json()["detail"]
+    assert gone.status_code == 404 and "지워졌습니다" in gone.json()["detail"] and "다시 만들기" in gone.json()["detail"]
 
 
 def test_받기가_실패하면_몸을_상한까지만_읽는다(box):
@@ -931,6 +931,23 @@ def test_받기가_실패하면_몸을_상한까지만_읽는다(box):
     r = box["c"].get(f"/agent/deck/jobs/{job}/files/pptx")
     assert r.status_code == 503 and "HTTP 500" in r.json()["detail"]
     assert box["fake"].chunks_sent <= 3, f"거절 응답의 몸을 다 읽지 않는다(보낸 덩어리 {box['fake'].chunks_sent}/64)"
+
+
+def test_WDA_가_파일을_지웠으면_지워진_것으로_적고_다시_누르면_새로_만든다(box):
+    """적대 검토 R8 — 지워진 파일의 '다시 누르세요' 가 같은 죽은 잡 · 같은 링크를 돌려줬다(WD-D62)."""
+    c, fake = box["c"], box["fake"]
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.rendered(rid)
+    c.post(f"/agent/deck/jobs/{job}/advance")
+    fake.runs.clear()                                         # WDA 보존 기한(W-13) · 데이터 정리
+    gone = c.get(f"/agent/deck/jobs/{job}/files/pptx")
+    assert gone.status_code == 404 and "다시 만들기" in gone.json()["detail"]
+    j = c.get(f"/agent/deck/jobs/{job}").json()
+    assert j["expired"] is True and j["files"] == [], "지워진 파일의 링크를 싣지 않는다"
+    again = _make(box)                                        # DeckSpot 의 '발표자료로' 는 again 없이 보낸다
+    assert again.status_code == 200 and again.json()["created"] is True and again.json()["job_id"] != job
 
 
 # ── 한 번만 · 상한 · 목록 ───────────────────────────────────────────────────────────────────────────

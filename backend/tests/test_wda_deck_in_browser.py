@@ -211,6 +211,39 @@ const SCENARIOS = {
              lists: (await calls(page, '/agent/deck/jobs')).filter((c) => c.method === 'GET' && c.url === '/agent/deck/jobs').length,
              errors: page.__errors };
   },
+  // 끝난 잡에도 '다시 만들기'(again) · 지워진 파일은 링크 대신 다시 만들기 · 다른 대화의 잡을 받으면 알림이 갈 대화를 말한다(WD-D62)
+  async regen(browser) {
+    const page = await open(browser);
+    await makeJob(page);
+    await forward(page, 3100);
+    await forward(page, 3100);
+    await page.getByText('발표자료를 만들었습니다').first().waitFor();
+    const againBtn = await page.locator('.deck-panel button', { hasText: '다시 만들기' }).count();
+    await page.evaluate((q) => { window.__created = q; window.__states = [q]; }, { ...QUEUED, job_id: 'e'.repeat(32) });
+    await page.locator('.deck-panel button', { hasText: '다시 만들기' }).click();
+    await page.waitForTimeout(80);
+    const create = (await calls(page, '/agent/deck/jobs')).filter((c) => c.method === 'POST' && c.url === '/agent/deck/jobs').pop();
+    return { againBtn, againBody: create && create.body, errors: page.__errors };
+  },
+  async expired(browser) {
+    const page = await open(browser);
+    const GONE = { ...DONE, expired: true, files: [], notice: null, noticed: false };
+    await page.evaluate(([g]) => { window.__created = { ...g, created: false }; window.__list = []; }, [GONE]);
+    await page.locator('.deck-go').first().click();
+    await page.locator('.deck-panel .upl-go').click();
+    await page.waitForTimeout(120);
+    return { text: await page.evaluate(() => document.querySelector('.deck-panel').textContent),
+             links: await page.evaluate(() => document.querySelectorAll('.deck-panel .deck-file').length), errors: page.__errors };
+  },
+  async elsewhere(browser) {
+    const page = await open(browser);
+    await page.evaluate((q) => { window.__created = { ...q, created: false, conversation_id: 'srv-B' }; window.__states = [{ ...q, conversation_id: 'srv-B' }];
+      window.__list = []; }, QUEUED);
+    await page.locator('.deck-go').first().click();
+    await page.locator('.deck-panel .upl-go').click();
+    await page.waitForTimeout(120);
+    return { text: await page.evaluate(() => (document.querySelector('.deck-panel .upl-note') || {}).textContent || ''), errors: page.__errors };
+  },
   // 숨긴 잡도 끝 알림을 남긴다 — 줄은 그 잡을 계속 한 걸음씩 가되 화면에는 보이지 않는다(WD-D59)
   async dismissedFinish(browser) {
     const page = await open(browser);
@@ -316,3 +349,18 @@ def test_숨긴_잡만_남아도_다시_묻기를_이어_간다(seen):
     s = seen("dismissedLater")
     assert s["stripWhileRunning"] is False, "숨긴 잡은 줄에 보이지 않는다"
     assert s["counts"] == "srv-A:4,srv-B:2", "그래도 다음 차례에 다시 물어 끝 알림을 남긴다"
+
+
+def test_끝난_잡에도_다시_만들기가_있고_again_을_보낸다(seen):
+    s = seen("regen")
+    assert s["againBtn"] == 1 and s["againBody"]["again"] is True
+
+
+def test_지워진_파일은_링크_대신_다시_만들기(seen):
+    s = seen("expired")
+    assert s["links"] == 0 and "지워졌습니다" in s["text"] and "다시 만들기" in s["text"]
+
+
+def test_다른_대화의_잡을_받으면_알림이_갈_대화를_말한다(seen):
+    s = seen("elsewhere")
+    assert "「B」 대화에" in s["text"] and "그 대화에서 맡긴 같은 발표자료" in s["text"] and "이 대화에" not in s["text"]

@@ -595,10 +595,12 @@ def view(rec: dict, f: dict | None = None, now: float | None = None) -> dict:
             "dismissed": bool(rec.get("dismissed"))}
     fin = rec.get("finished")
     if fin:
+        # 파일이 WDA 에서 지워졌으면(받기가 404 · 410 — WD-D62) 링크를 싣지 않는다 — 화면은 '다시 만들기' 를 보인다
         return {**base, "state": fin["state"], "step": fin.get("step") or "", "progress": 100 if fin["state"] == "done" else None,
                 "error": fin.get("error"), "late": False, "next": None, "skipped": fin.get("skipped") or [],
-                "files": [{**x, "label": LABEL.get(x["kind"], x["kind"]), "url": file_url(rec["job_id"], x["kind"])}
-                          for x in fin.get("files") or []]}
+                "expired": bool(fin.get("expired")),
+                "files": [] if fin.get("expired") else [{**x, "label": LABEL.get(x["kind"], x["kind"]), "url": file_url(rec["job_id"], x["kind"])}
+                                                        for x in fin.get("files") or []]}
     f = f or {"state": rec.get("state") or "queued", "step": "", "progress": 0, "error": None, "late": False, "next": None, "skipped": []}
     return {**base, **{k: f[k] for k in ("state", "step", "progress", "error", "late", "next", "skipped")}, "files": []}
 
@@ -781,7 +783,8 @@ async def deck_create(
         for r in recs:
             if (r.get("owner_sub") == owner and r["report"]["id"] == body.report_id
                     and r["options"]["targets"] == targets and r["options"]["doc_style"] == body.doc_style
-                    and (inflight(r, settings, now) or (not body.again and (r.get("finished") or {}).get("state") == "done"))):
+                    and (inflight(r, settings, now) or (not body.again and (r.get("finished") or {}).get("state") == "done"
+                                                         and not (r.get("finished") or {}).get("expired")))):
                 if reserving(r) and (r.get("wda") or {}).get("create_unknown"):
                     rec = r          # 앞선 만들기의 결과를 모른다 — 같은 잡 id(Idempotency-Key)로 다시 묻는다(WD-D58). 자리는 이미 잡혀 있다
                     break
@@ -1101,7 +1104,14 @@ async def deck_file(
             await up.aclose()
             await cli.aclose()
         if up.status_code in (404, 410):
-            raise AuthError("파일이 지워졌습니다 — 그 보고서의 '발표자료로' 를 다시 누르세요.", status_code=404)
+            # WDA 가 지웠다(보존 기한 W-13 · 정리) — 그 잡의 파일을 지워진 것으로 적는다. 화면은 받기 링크 대신 '다시 만들기' 를 보이고,
+            # 같은 보고서 · 옵션을 다시 눌러도 이 잡을 돌려주지 않는다(새로 만든다, WD-D62)
+            async with lock(job_id):
+                cur = await asyncio.to_thread(load, settings, job_id, principal.subject)
+                if cur.get("finished"):
+                    cur["finished"]["expired"] = time.time()
+                    await asyncio.to_thread(save, settings, cur)
+            raise AuthError("파일이 지워졌습니다 — 그 보고서의 '발표자료로' 에서 '다시 만들기' 를 누르세요.", status_code=404)
         # 머리는 옮기지 않는다 — 풀어 읽은 바이트에 원래의 content-encoding 을 붙이면 다시 풀려다 깨진다
         err = _wda_error(httpx.Response(up.status_code, content=bytes(head[:_ERR_BODY_MAX])), "내려받기")
         raise AuthError(err.message, status_code=err.status)

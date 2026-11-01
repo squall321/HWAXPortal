@@ -51,6 +51,8 @@ export interface DeckJob {
   next: 'render' | 'finish' | null;
   skipped: { target: string; reason: string }[];
   files: DeckFile[];
+  /** 끝난 잡의 파일이 WDA 에서 지워졌다(받기가 404 · 410) — 링크 대신 '다시 만들기'(WD-D62). */
+  expired?: boolean;
   created?: boolean;
   notice?: DeckNotice | null;
   noticed?: boolean;
