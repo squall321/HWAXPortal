@@ -509,6 +509,46 @@ def test_gate_ack_is_bound_to_args(store):
     assert store.gate_ack(run, 1)["args_sha256"] == sha
 
 
+def test_승인은_한_번_쓴다(store):
+    """W-111 — 승인은 그 지문으로 한 번만 보낸다. 쓰는 것은 확인과 쓰기가 한 문장이라 둘이 같이 써도 한쪽만 쓴다. 쓴 승인은 아무것도 허락하지
+    않고(`gate_ack` 가 안 돌려준다) 기록은 남는다. 사람이 다시 승인하면 새 한 번이다."""
+    run = store.create_run(owner_sub="u1")
+    store.begin_step(run, 0, backend="b", tool="t", args={"a": 1})
+    sha = store.list_steps(run)[0]["args_sha256"]
+    assert store.use_gate_ack(run, 0, sha) is False, "승인이 없는데 썼다"
+    store.ack_gate(run, 0, by="u1", args_sha256=sha)
+    assert store.use_gate_ack(run, 0, "다른지문") is False and store.gate_ack(run, 0) is not None
+    assert store.use_gate_ack(run, 0, sha) is True
+    assert store.gate_ack(run, 0) is None, "쓴 승인이 아직 허락한다"
+    assert store.use_gate_ack(run, 0, sha) is False, "한 번 쓴 승인을 또 썼다"
+    row = store._conn().execute("SELECT ack_by, used_at FROM run_gate_acks WHERE run_id=?", (run,)).fetchone()
+    assert row["ack_by"] == "u1" and row["used_at"], "쓴 승인의 기록이 사라졌다"
+    store.ack_gate(run, 0, by="u2", args_sha256=sha)   # 사람이 다시 승인 — 새 한 번
+    assert store.gate_ack(run, 0)["ack_by"] == "u2" and store.use_gate_ack(run, 0, sha) is True
+
+
+def test_승인_쓴_때_칸은_돌던_원장에도_붙는다(tmp_path):
+    """`CREATE TABLE IF NOT EXISTS` 는 있는 표를 고치지 않는다 — 칸을 DDL 에만 더하면 돌던 원장(dev · cae00)에서는 승인을 쓰는 순간 터진다."""
+    import sqlite3
+
+    path = tmp_path / "old.sqlite"
+    con = sqlite3.connect(path)
+    con.execute("""CREATE TABLE run_gate_acks (
+        run_id TEXT NOT NULL, step_ix INTEGER NOT NULL,
+        ack_by TEXT NOT NULL, ack_at INTEGER NOT NULL,
+        args_sha256 TEXT NOT NULL, args_override_json TEXT,
+        PRIMARY KEY (run_id, step_ix))""")
+    con.execute("INSERT INTO run_gate_acks VALUES ('r', 0, 'u1', 1, 'fp', NULL)")   # 옛 판에서 받은 승인 — 아직 안 썼다
+    con.commit()
+    con.close()
+    st = ProceduresStore(Settings(procedures_store_path=str(path)))
+    try:
+        assert st.gate_ack("r", 0)["ack_by"] == "u1"
+        assert st.use_gate_ack("r", 0, "fp") is True and st.gate_ack("r", 0) is None
+    finally:
+        st.close()
+
+
 def test_restart_marks_unknown_not_failed(store):
     """쓰기가 뒤늦게 완료됐을 수 있다 — 재실행 전에 사람이 본다."""
     run = store.create_run(owner_sub="u1")

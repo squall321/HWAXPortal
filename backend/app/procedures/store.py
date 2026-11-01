@@ -66,7 +66,7 @@ _DDL = (
     """CREATE TABLE IF NOT EXISTS run_gate_acks (
         run_id TEXT NOT NULL, step_ix INTEGER NOT NULL,
         ack_by TEXT NOT NULL, ack_at INTEGER NOT NULL,
-        args_sha256 TEXT NOT NULL, args_override_json TEXT,
+        args_sha256 TEXT NOT NULL, args_override_json TEXT, used_at INTEGER,
         PRIMARY KEY (run_id, step_ix))""",
     "CREATE INDEX IF NOT EXISTS ix_runs_owner ON runs (owner_sub, started_at DESC)",
     "CREATE INDEX IF NOT EXISTS ix_runs_state ON runs (state)",
@@ -97,7 +97,8 @@ class ProceduresStore:
     #    더하면 새 DB 에서는 되고 돌고 있는 DB 에서는 조용히 없다 — 그러면 그 칼럼을 읽는
     #    코드가 운영에서만 터진다. 더하는 칼럼은 여기 한 줄씩 적는다(멱등).
     _ADD_COLUMNS = (("procedures", "from_seed", "TEXT"),
-                    ("runs", "batch_id", "TEXT"))
+                    ("runs", "batch_id", "TEXT"),
+                    ("run_gate_acks", "used_at", "INTEGER"))
 
     @classmethod
     def _migrate(cls, c: sqlite3.Connection) -> None:
@@ -473,20 +474,31 @@ class ProceduresStore:
 
     def ack_gate(self, run_id: str, ix: int, *, by: str, args_sha256: str,
                  override: dict | None = None) -> None:
-        """게이트 승인은 별도 행 — 승인자와 실행자가 달라도 감사가 된다."""
+        """게이트 승인은 별도 행 — 승인자와 실행자가 달라도 감사가 된다. 새로 승인하면 새 한 번이다(`used_at` 을 비운다, W-111)."""
         with self._conn() as c:
             c.execute(
                 "INSERT OR REPLACE INTO run_gate_acks (run_id, step_ix, ack_by, ack_at,"
-                " args_sha256, args_override_json) VALUES (?,?,?,?,?,?)",
+                " args_sha256, args_override_json, used_at) VALUES (?,?,?,?,?,?,NULL)",
                 (run_id, ix, by, _now(), args_sha256,
                  json.dumps(override, ensure_ascii=False) if override else None),
             )
 
     def gate_ack(self, run_id: str, ix: int) -> dict | None:
+        """아직 쓰지 않은 승인만 — 한 번 보낸 승인은 아무것도 허락하지 않는다(W-111). 쓴 승인의 행(누가 언제 승인했나)은 남는다."""
         row = self._conn().execute(
-            "SELECT * FROM run_gate_acks WHERE run_id=? AND step_ix=?",
+            "SELECT * FROM run_gate_acks WHERE run_id=? AND step_ix=? AND used_at IS NULL",
             (run_id, ix)).fetchone()
         return dict(row) if row else None
+
+    def use_gate_ack(self, run_id: str, ix: int, args_sha256: str) -> bool:
+        """승인을 쓴 것으로 적는다 — 그 지문의 아직 안 쓴 승인이 있을 때만, 확인과 쓰기를 한 문장에. 적었으면 True(W-111).
+
+        실행기가 요청을 보내기 바로 앞에서 부른다. 응답이 없어 실행 여부를 모르게 끝나도(unknown) 승인은 쓴 것이다 — 요청이 닿았을 수 있다.
+        """
+        with self._conn() as c:
+            n = c.execute("UPDATE run_gate_acks SET used_at=? WHERE run_id=? AND step_ix=? AND args_sha256=?"
+                          " AND used_at IS NULL", (_now(), run_id, ix, args_sha256)).rowcount
+        return n > 0
 
     # ── 기동 회복 ─────────────────────────────────────────────────────────
     def close_stale(self) -> int:

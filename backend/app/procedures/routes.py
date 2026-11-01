@@ -951,7 +951,10 @@ async def resume(request: Request, run_id: str,
     # 타임아웃·재기동으로 '실행 여부를 모른다' 는 뜻인데, 그대로 다시 부르면 업로드·등록이
     # 두 번 나간다. 게이트 승인 기구가 이미 있으니 그것을 쓴다(인자 지문에 묶인 1회용).
     was = next((s for s in run["steps"] if s["ix"] == at), None)
-    if was and was["state"] == "unknown" and _writey(spec.steps[at].tool):
+    # 확인 단계는 실행기의 확인 카드가 다시 묻는다 — 승인은 한 번 쓰므로 지난 승인으로 못 지나가고, 카드가 '지난 호출의 실행 여부를 모른다' 고
+    # 말한다(W-111). 여기서 막으면 화면에는 승인할 단추가 없다. 확인 단계가 없는 쓰기만 이 창구가 승인을 묻는다.
+    at_gate = spec.steps[at].gate == "human" or spec.steps[at].tool in MUST_GATE
+    if was and was["state"] == "unknown" and _writey(spec.steps[at].tool) and not at_gate:
         ack = _store(request).gate_ack(run_id, at)
         if ack is None or ack["args_sha256"] != was["args_sha256"]:
             raise AuthError(

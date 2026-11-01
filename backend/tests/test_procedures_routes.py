@@ -1577,10 +1577,10 @@ def test_남의_실행으로는_결손을_못_만든다(user):
 
 
 # ── 재개 — 약속만 있고 확인이 없던 자리(2026-09-15 감사) ──────────────────
-def _run_with_unknown_write(c, h, tool: str, state: str = "failed"):
+def _run_with_unknown_write(c, h, tool: str, state: str = "failed", gate: str | None = "human"):
     """쓰기 단계가 `unknown` 으로 끝난 실행을 만든다 — 타임아웃·재기동이 남기는 모양이다."""
     spec = {"title": "t", "vars": [],
-            "steps": [{"backend": "ra", "tool": tool, "gate": "human", "args": {"x": 1}}]}
+            "steps": [{"backend": "ra", "tool": tool, "args": {"x": 1}, **({"gate": gate} if gate else {})}]}
     r = c.post(f"{PREFIX}/procedures", json={"title": "t", "spec": spec}, headers=h)
     assert r.status_code == 201, r.text
     st = c.app.state.procedures_store
@@ -1597,9 +1597,11 @@ def _run_with_unknown_write(c, h, tool: str, state: str = "failed"):
 def test_실행_여부를_모르는_쓰기는_승인_없이_재개하지_않는다(user):
     """독스트링은 여태 '사람이 확인한 뒤에만 돈다' 고 했는데 **확인이 없었다.**
     타임아웃 뒤 재기동하면 `close_stale()` 이 진행 중 단계를 전부 unknown 으로 만든다 —
-    그 상태로 재개를 한 번 누르면 중단된 쓰기가 전부 다시 나간다."""
+    그 상태로 재개를 한 번 누르면 중단된 쓰기가 전부 다시 나간다.
+
+    확인 단계가 없는 쓰기(submit_)라 창구가 묻는다 — 확인 단계는 실행기의 확인 카드가 다시 묻는다(아래 · W-111)."""
     c, h = user
-    rid, st = _run_with_unknown_write(c, h, "add_report_tags")   # MUST_GATE
+    rid, st = _run_with_unknown_write(c, h, "submit_job", gate=None)
     r = c.post(f"{PREFIX}/runs/{rid}/resume", headers=h)
     assert r.status_code == 409, r.text
     assert "실행 여부를 모르는 쓰기" in r.text
@@ -1608,6 +1610,18 @@ def test_실행_여부를_모르는_쓰기는_승인_없이_재개하지_않는�
     sha = st.get_run(rid)["steps"][0]["args_sha256"]
     st.ack_gate(rid, 0, by="u", args_sha256=sha)
     assert c.post(f"{PREFIX}/runs/{rid}/resume", headers=h).status_code == 200
+
+
+def test_실행_여부를_모르는_확인_단계는_재개하면_실행기의_확인_카드가_다시_묻는다(user):
+    """승인은 한 번 쓴다(W-111) — 보낸 뒤 실행 여부를 모르게 끝난 확인 단계는 지난 승인으로 못 지나간다. 창구는 막지 않고 실행기를 띄우고,
+    실행기의 확인 카드가 '지난 호출의 실행 여부를 모른다' 와 함께 다시 묻는다(화면에서 승인할 수 있다 — 창구가 409 로 막으면 화면에는 승인할
+    단추가 없다). 종전엔 창구가 지난 승인으로 지나가 실행기가 확인 없이 다시 보냈다."""
+    c, h = user
+    spawned = _spawn_recorder(c)
+    rid, _st = _run_with_unknown_write(c, h, "add_report_tags")   # MUST_GATE — 승인 없이 남았다
+    r = c.post(f"{PREFIX}/runs/{rid}/resume", headers=h)
+    assert r.status_code == 200 and r.json()["resumed_at"] == 0, r.text
+    assert spawned == [rid]
 
 
 def test_읽기_단계는_그대로_재개한다(user):
