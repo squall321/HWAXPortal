@@ -315,6 +315,25 @@ def test_만들기는_그_사람_RA_토큰으로_읽고_ReportRead_를_바꾸지
     assert oct(os.stat(W._path(box["s"], j["job_id"])).st_mode & 0o777) == "0o600"
 
 
+@pytest.mark.parametrize("rid", [".", "..", "a/b", "", "x" * 129])
+def test_WDA_가_준_실행_번호가_경로를_바꿀_꼴이면_받지_않는다(box, rid):
+    """적대 검토 R9 — '..' 를 받으면 다음 부르기의 /api/runs/../download/pptx 가 /api/download/pptx 로 정규화된다."""
+    orig = box["fake"].wda
+
+    def odd(req, path, email):
+        resp = orig(req, path, email)
+        if path == "/api/runs" and req.method == "POST" and resp.status_code == 202:
+            j = json.loads(resp.content)
+            j["data"]["run_id"] = rid
+            return httpx.Response(202, json=j)
+        return resp
+
+    box["fake"].wda = odd
+    r = _make(box)
+    assert r.status_code == 502 and "실행 번호" in r.json()["detail"] and W.records(box["s"]) == []
+    assert W._RUN_RE.fullmatch("wr-20261101-0a1b.c_d")
+
+
 def test_글이_없는_보고서는_정해진_글로_말하고_잡을_남기지_않는다(box):
     r = _make(box, report_id=42)
     detail = r.json()["detail"]
