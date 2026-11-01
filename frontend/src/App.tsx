@@ -16,6 +16,7 @@ import TokenPage from './pages/TokenPage';
 import RiskLaunchPage from './pages/risk/RiskLaunchPage';
 import AccessHistoryPage from './pages/admin/AccessHistoryPage';
 import ToolSearchReviewPage from './pages/admin/ToolSearchReviewPage';
+import UsageStatsPage from './pages/admin/UsageStatsPage';
 import SeatReviewPage from './pages/admin/SeatReviewPage';
 import UsersAdminPage from './pages/admin/UsersAdminPage';
 import ProceduresPage from './pages/procedures/ProceduresPage';
@@ -99,6 +100,10 @@ const router = createBrowserRouter([
       {
         path: '/admin/tool-search',
         element: <ToolSearchReviewPage />,
+      },
+      {
+        path: '/admin/usage',
+        element: <UsageStatsPage />,
       },
       {
         path: '/admin/seat-review',
