@@ -140,6 +140,16 @@ else
   for k in AGENT_STREAM_IDLE_TIMEOUT_S AGENT_UNARY_TIMEOUT_S CHAT_PAT_TTL_S CONV_STORE_BUSY_TIMEOUT_S; do
     [ -n "${!k:-}" ] && TIME_ENVS+=(--env "$k=${!k}")
   done
+  # LLM/GPU 현황 수집기(docs/ops-dashboard) — infra/.env 에 LLM_STATUS 가 **있을 때만** 그 주소를 넘긴다(관리자 화면이 수집기를 대신 묻는다).
+  #   켜는 줄 하나(LLM_STATUS)로 수집기와 화면이 함께 켜진다 — backend/.env 에 주소를 따로 적지 않는다(적은 값은 LLM_STATUS 가 없을 때만 산다).
+  #   포트는 수집기와 같은 값이다(LLM_STATUS_PORT, 기본 8760). 수가 아니면 넘기지 않는다 — 화면은 '꺼져 있다'(503), 수집기는 그 값으로 뜨지 않는다.
+  LLMST_ENVS=()
+  if [ -n "${LLM_STATUS:-}" ]; then
+    case "${LLM_STATUS_PORT:-8760}" in
+      ''|*[!0-9]*) echo "  ⚠ infra/.env 의 LLM_STATUS_PORT 가 포트 번호가 아니라 관리자 화면에 LLM/GPU 현황 수집기 주소를 넘기지 않는다(기본 8760)" ;;
+      *) LLMST_ENVS+=(--env "LLM_STATUS_URL=http://127.0.0.1:${LLM_STATUS_PORT:-8760}") ;;
+    esac
+  fi
   # NO_PROXY 도 **명시해서** 넘긴다 — 위 SAML 과 같은 이유다(9차 변경 요청 §4-(5)). 상속이 끊기면 포털의 RA·TestScope 호출이 사내
   # 프록시를 타고 상대의 IP 허용목록에 걸린다(게이트웨이는 그 모양으로 사람별 위임이 403 이었다 — 2026-10-03 실측).
   # 두 철자를 **합쳐**(중복 없이) 같은 값으로 넘긴다 — 대문자만 읽어 넘기면 소문자(no_proxy)만 둔 박스에서 빈 값이 넘어가고,
@@ -178,7 +188,7 @@ else
   done
   "$APPTAINER" instance start \
     ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} ${SAML_ENVS[@]+"${SAML_ENVS[@]}"} \
-    ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} ${TIME_ENVS[@]+"${TIME_ENVS[@]}"} \
+    ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} ${TIME_ENVS[@]+"${TIME_ENVS[@]}"} ${LLMST_ENVS[@]+"${LLMST_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \

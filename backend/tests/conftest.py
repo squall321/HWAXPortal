@@ -35,3 +35,5 @@ os.environ.setdefault("STE_SSO_SECRET", "")
 # 서버를 두드리지 않게. 수집기는 이 둘을 환경에서 먼저 본다(collector.py). 무엇을 여는지는 test_suite_isolation 이 수집기의 기본 자리를 열어 본다.
 os.environ.setdefault("LLM_STATUS_STATE_DIR", tempfile.mkdtemp(prefix="hwax-test-llm-status-"))
 os.environ.setdefault("LLM_STATUS_ENV_FILE", os.path.join(tempfile.mkdtemp(prefix="hwax-test-llm-status-env-"), "infra.env"))
+# 포털 관리자 화면(LLM · GPU 현황)은 떠 있는 수집기를 부르지 않게 주소를 비운다(꺼짐 — 그 창구를 보는 시험은 Settings 에 주소를 직접 주고 HTTP 대역을 건다).
+os.environ.setdefault("LLM_STATUS_URL", "")
