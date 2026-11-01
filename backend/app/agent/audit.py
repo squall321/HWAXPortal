@@ -47,6 +47,9 @@ class AuditLog:
             " detail TEXT"                # local·sso·primer·credential·실패 사유
             ")"
         )
+        # 이용 통계(docs/ops-dashboard M1)는 기간으로 잘라 센다 — 이 색인이 없으면 읽을 때마다 원장 전체를 훑는다. 이미 있는 원장에도
+        # 다음 기동에 생긴다(IF NOT EXISTS — 줄은 그대로).
+        self._conn.execute("CREATE INDEX IF NOT EXISTS agent_audit_ts ON agent_audit(ts)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS access_log_email_ts ON access_log(email, ts)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS access_log_ts ON access_log(ts)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS access_log_uid ON access_log(uid)")
