@@ -781,13 +781,17 @@ def test_cancel_is_seen_at_the_step_boundary(kit):
     asyncio.run(go(*kit))
 
 
-@pytest.mark.parametrize("reply,steps,was", [
+# 호출 뒤에 상태를 쓰는 세 자리 — (답, 단계, 중단이 덮이던 상태)
+AFTER_CALL = [
     (ok({"n": 1}), [{"backend": "b", "tool": "a"}], "done"),         # 마지막 단계 — 뒤 경계가 없어 done 으로 덮였다
     (err("boom"), [{"backend": "b", "tool": "a"}], "failed"),        # 실패 — failed 로 덮였다
     (ok({"parts": [{"name": "P1"}, {"name": "P2"}]}),                # 고르기(여럿 — 사람에게 묻는다) — 확인 대기로 덮였다
      [{"backend": "b", "tool": "a", "select": {"from": "parts", "save": "name", "as": "part"}},
       {"backend": "b", "tool": "c", "args": {"p": "{{part}}"}}], "gated"),
-])
+]
+
+
+@pytest.mark.parametrize("reply,steps,was", AFTER_CALL)
 def test_호출을_기다리는_사이_누른_중단이_남는다(kit, reply, steps, was):
     """중단은 단계 경계에서만 봤다 — 호출이 도는 사이 누른 중단을 그 뒤 쓰기가 덮었다(미리보기를 기다리는 사이의 중단과 같은 자리 —
     B3 검토 ③). 호출 자체의 기록은 그대로 둔다(이미 나갔다)."""
@@ -809,6 +813,274 @@ def test_호출을_기다리는_사이_누른_중단이_남는다(kit, reply, st
         assert out == {"state": "cancelled", "stopped_at": 0}, out
         assert len(g.calls) == 1 and run["cancelled_by"] == "u1"
         assert store.list_steps(rid)[0]["state"] == ("failed" if was == "failed" else "done")
+    asyncio.run(go(*kit))
+
+
+# ── 다시 읽기와 쓰기 사이(W-105 의 남은 틈 → W-109) ──────────────────────────────────────────────
+# 실행기는 기다린 뒤 원장을 다시 읽고(중단이면 멈춘다) 상태를 쓴다. 중단 창구는 동기 함수라 스레드에서 돌아, 다시 읽기가 돌려준 뒤 쓰기 전
+# (같은 이벤트 루프 차례 안 — 기다림이 없다)에도 든다. 아래는 그 순서를 그대로 짓는다 — 다시 읽기는 중단 전의 값을 돌려주고, 쓰기는 그 뒤에 닿는다.
+def _after_reread(store, rid, when, act):
+    """`when(읽은 실행)` 이 참인 첫 다시 읽기가 값을 읽은 **뒤** `act` 가 든다(한 번). 다시 읽기가 본 상태 목록과 원래 `get_run` 을 돌려준다."""
+    real = store.get_run
+    seen: list[str] = []
+
+    def patched(run_id, **kw):
+        d = real(run_id, **kw)
+        if not seen and run_id == rid and d is not None and when(d):
+            seen.append(d["state"])
+            act()
+        return d
+
+    store.get_run = patched
+    return seen, real
+
+
+def _listing(g: Gate) -> list:
+    """게이트웨이가 tools/list 를 받으면 적는다 — 세션을 연 뒤의 다시 읽기를 가리키는 표지."""
+    listed: list = []
+    inner = g.transport().handler
+
+    async def handler(req: httpx.Request) -> httpx.Response:
+        if req.content and json.loads(req.content).get("method") == "tools/list":
+            listed.append(1)
+        return await inner(req)
+
+    g.transport = lambda: httpx.MockTransport(handler)
+    return listed
+
+
+_SEL = {"from": "parts", "save": "name", "as": "part"}
+# 고르기(`_pick`)가 상태를 쓰는 나머지 자리 — (답, 단계, 중단이 덮이던 상태)
+PICK_ENDS = [
+    (ok({"parts": ["P1", "P2"]}), [{"backend": "b", "tool": "a", "select": _SEL}], "failed"),         # 후보가 객체가 아니다
+    (ok({"parts": [{"id": 1}]}), [{"backend": "b", "tool": "a", "select": _SEL}], "failed"),          # 꺼낼 칸이 없다
+    (ok({"parts": []}), [{"backend": "b", "tool": "a", "select": _SEL}], "failed"),                   # 아무것도 못 골랐다
+    (ok({"parts": [{"name": ""}]}), [{"backend": "b", "tool": "a", "select": _SEL}], "failed"),       # 고른 값이 비었다
+    (ok({"parts": [{"name": "P1"}, {"name": "P2"}]}),                                                 # 여럿이면 실패로
+     [{"backend": "b", "tool": "a", "select": {**_SEL, "on_many": "fail"}}], "failed"),
+    (ok({"parts": [{"name": "P1"}, {"name": ""}]}),                                                   # 여럿 고르기 — 빈 값
+     [{"backend": "b", "tool": "a", "select": {**_SEL, "multi": True}}], "failed"),
+    (ok({"parts": [{"name": "P1"}, {"name": "P2"}]}),                                                 # 여럿 고르기 — 사람에게 묻는다
+     [{"backend": "b", "tool": "a", "select": {**_SEL, "multi": True}}], "gated"),
+]
+
+
+def _interleave(store, rid, act: str, was: str):
+    """다시 읽기와 쓰기 사이에 드는 것 — `cancel`(사람의 중단) 또는 `end`(같은 실행을 도는 다른 실행기가 먼저 적은 끝 — 승인을 두 번 눌렀다).
+    `end` 는 그 자리가 쓰려던 것과 다른 끝이다. (드는 일, 그 뒤 남아야 할 상태)를 돌려준다."""
+    if act == "cancel":
+        return (lambda: store.cancel_run(rid, "u1")), "cancelled"
+    other = "failed" if was == "done" else "done"
+    return (lambda: store.set_run_state(rid, other, stage="다른 실행기", ended=True)), other
+
+
+@pytest.mark.parametrize("act", ["cancel", "end"])
+@pytest.mark.parametrize("reply,steps,was", AFTER_CALL + PICK_ENDS)
+def test_호출_뒤_다시_읽고_쓰기_전에_든_중단도_덮이지_않는다(kit, reply, steps, was, act):
+    """W-105 는 호출 뒤 원장을 다시 읽었지만 다시 읽기와 쓰기는 따로였다 — 그 사이에 든 중단을 done · failed · 확인 대기가 덮었다. 상태 쓰기가
+    확인과 한 문장이 되어(W-109) 못 쓰면 실행기는 그 자리에서 멈추고 지금 상태를 돌려준다. 실행기가 쥔(running) 실행이라 다른 끝(done · failed
+    — 같은 실행을 두 실행기가 돌 때 먼저 끝난 쪽)도 덮지 않는다. 종전엔 늦게 끝난 쪽이 앞의 끝을 덮어 실패 기록이 사라졌다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}, "b_c": {}}, replies={"b_a": reply})
+        r = build(g)
+        spec = _spec(steps)
+        rid = _run(store, spec)
+        hit, want = _interleave(store, rid, act, was)
+        seen, real = _after_reread(store, rid, lambda _d: len(g.calls) == 1, hit)
+        try:
+            out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        finally:
+            store.get_run = real
+            await r.aclose()
+        run = store.get_run(rid)
+        assert seen == ["running"], f"시험 전제 — 호출 뒤 다시 읽기는 그 전의 도는 실행을 봤다: {seen}"
+        assert run["state"] == want, f"다시 읽은 뒤 든 {want} 이 {run['state']} 로 덮였다(종전 {was})"
+        assert out == {"state": want, "stopped_at": len(steps) if was == "done" else 0}, out
+        assert len(g.calls) == 1
+        assert (run["cancelled_by"] == "u1") if act == "cancel" else (run["stage"] == "다른 실행기")
+    asyncio.run(go(*kit))
+
+
+@pytest.mark.parametrize("act", ["cancel", "end"])
+@pytest.mark.parametrize("case", ["owner_inactive", "args", "gate"])
+def test_단계_경계에서_다시_읽고_쓰기_전에_든_중단도_덮이지_않는다(kit, case, act):
+    """경계의 다시 읽기 바로 뒤의 쓰기 셋 — 주인 비활성(failed) · 인자를 못 풂(failed) · 사람 확인(gated). 기다림은 없어도 중단 창구는 스레드라
+    그 사이에 든다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})
+        r = build(g, is_active=(lambda _e: False) if case == "owner_inactive" else None)
+        step = {"backend": "b", "tool": "a", **({"args": {"x": "{{missing}}"}} if case == "args" else {}),
+                **({"gate": "human"} if case == "gate" else {})}
+        spec = _spec([step])
+        rid = _run(store, spec)
+        hit, want = _interleave(store, rid, act, "gated" if case == "gate" else "failed")
+        seen, real = _after_reread(store, rid, lambda d: d["state"] == "running", hit)
+        try:
+            out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        finally:
+            store.get_run = real
+            await r.aclose()
+        assert seen == ["running"], seen
+        assert out == {"state": want, "stopped_at": 0}, out
+        assert store.get_run(rid)["state"] == want and g.calls == []
+    asyncio.run(go(*kit))
+
+
+def test_세션을_연_뒤_다시_읽고_쓰기_전에_든_중단도_running_으로_덮이지_않는다(kit):
+    """실행(`run`)과 한 단계씩(`step_once`) 둘 다 — 세션을 연 뒤 다시 읽고 running 을 쓴다. 그 사이에 든 중단을 running 이 덮으면 단계가 돈다.
+    스키마가 바뀐 실행은 같은 자리에서 failed 를 쓴다 — 그것도 중단을 덮지 않는다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})
+        listed = _listing(g)
+        r = build(g)
+        for spec in (_spec([{"backend": "b", "tool": "a"}]),
+                     _spec([{"backend": "b", "tool": "a", "schema_fp": "옛지문"}])):   # 드리프트 — failed 를 쓰던 자리
+            listed.clear()
+            rid = _run(store, spec)
+            seen, real = _after_reread(store, rid, lambda _d: bool(listed), lambda rid=rid: store.cancel_run(rid, "u1"))
+            try:
+                out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+            finally:
+                store.get_run = real
+            assert seen == ["queued"], seen
+            assert out == {"state": "cancelled", "stopped_at": 0}, out
+            assert store.get_run(rid)["state"] == "cancelled"
+            assert g.calls == [] and store.list_steps(rid) == [], "중단한 실행의 단계가 돌았다"
+
+        listed.clear()
+        rid2 = store.create_run(owner_sub="u1", mode="live", inputs={})
+        seen2, real = _after_reread(store, rid2, lambda _d: bool(listed), lambda: store.cancel_run(rid2, "u1"))
+        try:
+            got = await r.step_once(run_id=rid2, principal=PRINCIPAL, step=Step(backend="b", tool="a"))
+        finally:
+            store.get_run = real
+            await r.aclose()
+        assert seen2 == ["queued"], seen2
+        assert got == {"ix": 0, "state": "cancelled"}, got
+        assert store.get_run(rid2)["state"] == "cancelled"
+        assert g.calls == [] and store.list_steps(rid2) == [], "중단한 빈 실행의 단계가 돌았다"
+    asyncio.run(go(*kit))
+
+
+@pytest.mark.parametrize("reply,warmup,was", [
+    (ok({"n": 1}), False, "queued"),     # 성공 — 단계 사이(queued)로 덮였다
+    (err("boom"), False, "failed"),      # 실패 — failed 로 덮였다
+    (ok({}), True, "queued"),            # 웜업 — 단계 사이(queued)로 덮였다(W-108)
+])
+def test_한_단계씩_돌린_뒤_다시_읽고_쓰기_전에_든_중단도_남는다(kit, reply, warmup, was):
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": reply})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live", inputs={})
+        seen, real = _after_reread(store, rid, lambda _d: len(g.calls) == 1, lambda: store.cancel_run(rid, "u1"))
+        try:
+            got = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(backend="b", tool="a", warmup=warmup))
+        finally:
+            store.get_run = real
+            await r.aclose()
+        assert seen == ["running"], seen
+        assert store.get_run(rid)["state"] == "cancelled", f"다시 읽은 뒤 든 중단이 {store.get_run(rid)['state']} 로 덮였다(종전 {was})"
+        assert got == {"ix": 0, "state": "cancelled"}, got
+    asyncio.run(go(*kit))
+
+
+def _cancel_on_begin(store, rid):
+    """단계를 원장에 적은 **뒤** 사람이 '중단' 을 누른다 — 다시 읽기 없이 이어지는 쓰기 둘 사이(계획 모드 · 인자를 못 푼 단계). 원래 함수를 돌려준다."""
+    real = store.begin_step
+
+    def begin_then_cancel(*a, **kw):
+        real(*a, **kw)
+        store.cancel_run(rid, "u1")
+
+    store.begin_step = begin_then_cancel
+    return real
+
+
+@pytest.mark.parametrize("act", ["cancel", "end"])
+@pytest.mark.parametrize("case", ["gate", "preview_failed", "blocked"])
+def test_게시_미리보기_뒤_다시_읽고_쓰기_전에_든_중단도_덮이지_않는다(kit, case, act):
+    """`_publish_gate` 의 다시 읽기(B3 검토 ③)와 그 뒤 쓰기 셋 — 게이트 카드(gated) · 미리보기 실패(failed) · 승인했지만 막힌 대상(failed).
+    확인 대기로 덮이면 중단한 실행이 확인 대기 맨 위로 돌아오고, 승인하면 게시까지 간다."""
+    async def go(store, build):
+        boards = {**BOARDS, "dept-b": {**BOARDS["dept-b"], "blocked": BLOCKED}} if case == "blocked" else dict(BOARDS)
+        ra = FakeRA(boards)
+        g = ra.gate()
+        if case == "preview_failed":
+            g.replies["reportarchive_preview_publish"] = lambda a: _ra({"error": "보고서를 찾을 수 없습니다: 41"})
+        r = build(g)
+        spec = _publish_spec()
+        if case == "blocked":
+            rid, _ = await _gated_then_acked(store, r, spec)   # 승인까지 — 다음 실행이 막힌 대상을 보고 failed 를 쓴다
+        else:
+            rid = _run(store, spec, inputs={"report_id": 41})
+        calls = len(g.calls)
+        hit, want = _interleave(store, rid, act, "gated" if case == "gate" else "failed")
+        seen, real = _after_reread(store, rid, lambda _d: len(g.calls) == calls + 1, hit)
+        try:
+            out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        finally:
+            store.get_run = real
+            await r.aclose()
+        assert seen == ["running"], seen
+        assert out == {"state": want, "stopped_at": 0}, out
+        assert store.get_run(rid)["state"] == want
+        assert _inner(g, "reportarchive_publish_report") == [] and ra.published == []
+    asyncio.run(go(*kit))
+
+
+def test_다시_읽기_없이_잇는_쓰기_사이에_든_중단도_덮이지_않는다(kit):
+    """계획 모드(단계를 적고 done)와 한 단계씩 인자를 못 푼 단계(running 뒤 단계를 적고 failed) — 기다림이 없어도 중단 창구는 스레드라 두 쓰기
+    사이에 든다. 마지막 쓰기가 그것을 덮었다."""
+    async def go(store, build):
+        g = Gate(tools={"b_a": {}}, replies={"b_a": ok({})})
+        r = build(g)
+        spec = _spec([{"backend": "b", "tool": "a"}])
+        rid = _run(store, spec, mode="plan")
+        real = _cancel_on_begin(store, rid)
+        try:
+            out = await r.run(run_id=rid, spec=spec, principal=PRINCIPAL)
+        finally:
+            store.begin_step = real
+        assert store.get_run(rid)["state"] == "cancelled"
+        assert out == {"state": "cancelled", "stopped_at": 1}, out
+        assert g.calls == [] and g.sessions == []
+
+        rid2 = store.create_run(owner_sub="u1", mode="live", inputs={})
+        real = _cancel_on_begin(store, rid2)
+        try:
+            got = await r.step_once(run_id=rid2, principal=PRINCIPAL, step=Step(backend="b", tool="a", args={"x": "{{missing}}"}))
+        finally:
+            store.begin_step = real
+            await r.aclose()
+        assert store.get_run(rid2)["state"] == "cancelled", f"인자를 못 푼 단계가 중단을 {store.get_run(rid2)['state']} 로 덮었다"
+        assert got == {"ix": 0, "state": "cancelled"}, got
+        assert g.calls == [] and store.list_steps(rid2)[0]["stage"] == "args"
+    asyncio.run(go(*kit))
+
+
+def test_세션을_여는_사이_중단한_빈_실행은_세션이_실패해도_중단으로_남는다(kit):
+    """`_step_and_log`(라우트)는 실행기가 단계를 시작조차 못 하면(RunnerError) 실행을 failed 로 적는다 — 다시 읽기도 없어, 세션을 여는 사이
+    (게이트웨이를 기다리는 동안) 누른 중단을 그 쓰기가 덮었다. 상태 쓰기의 기본이 '중단을 덮지 않는다' 라 이 자리도 닫힌다."""
+    from app.procedures.routes import _step_and_log
+
+    async def go(store, build):
+        rid = store.create_run(owner_sub="u1", mode="live", inputs={})
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            if req.content and json.loads(req.content).get("method") == "initialize":
+                store.cancel_run(rid, "u1")   # 세션을 여는 사이 사람이 '중단' 을 눌렀다
+                return httpx.Response(502)    # 그리고 게이트웨이가 답하지 못한다
+            return httpx.Response(400)
+
+        g = Gate()
+        g.transport = lambda: httpx.MockTransport(handler)
+        r = build(g)
+        req = types.SimpleNamespace(app=types.SimpleNamespace(state=types.SimpleNamespace(
+            procedures_runner=r, procedures_store=store)))
+        await _step_and_log(req, rid, Step(backend="b", tool="a"), PRINCIPAL)
+        await r.aclose()
+        run = store.get_run(rid)
+        assert (run["state"], run["cancelled_by"]) == ("cancelled", "u1"), f"중단이 {run['state']}({run['stage']}) 로 덮였다"
     asyncio.run(go(*kit))
 
 

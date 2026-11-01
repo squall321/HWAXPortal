@@ -69,8 +69,11 @@ class _Store:
         self.finished, self.state, self.inputs = [], None, {}
 
     def finish_step(self, run_id, ix, **kw): self.finished.append(kw)
-    def set_run_state(self, run_id, state, **kw): self.state = state
     def merge_inputs(self, run_id, extra): self.inputs.update(extra)
+
+    def set_run_state(self, run_id, state, **kw):
+        self.state = state
+        return True   # 진짜처럼 썼는지 돌려준다 — 실행기는 못 썼으면 멈춘다(W-109)
 
 
 def _pick(rows, **sel):

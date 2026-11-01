@@ -520,6 +520,32 @@ def test_restart_marks_unknown_not_failed(store):
     assert store.get_run(run, owner_sub="u1")["state"] == "failed"
 
 
+def test_실행_상태_쓰기는_중단을_덮지_않고_썼는지_돌려준다(store):
+    """W-105 의 남은 틈(W-109) — 실행기는 기다린 뒤 원장을 다시 읽고 상태를 쓴다. 따로 읽고 쓰면 그 사이(중단 창구는 스레드에서 돈다)에 든
+    중단을 덮었다. 확인과 쓰기를 한 문장에 두고(`cancel_run` 과 같은 꼴) 썼는지를 돌려준다 — 못 썼으면 부른 쪽이 멈춘다."""
+    from app.procedures.store import ENDED
+
+    keep = ("state", "stage", "ended_at", "cancelled_by", "cancelled_at")
+    run = store.create_run(owner_sub="u1")
+    assert store.set_run_state(run, "running") is True
+    assert store.cancel_run(run, "u1")
+    before = {k: store.get_run(run)[k] for k in keep}
+    for state in ("running", "queued", "gated", "done", "failed"):
+        assert store.set_run_state(run, state, stage="step:0", ended=state in ("done", "failed")) is False, state
+        assert store.set_run_state(run, state, unless=ENDED) is False, state
+    assert {k: store.get_run(run)[k] for k in keep} == before, "중단한 실행의 기록이 바뀌었다"
+    # 실행기가 쥔 실행에 쓰는 자리(ENDED)는 다른 끝도 덮지 않는다. 기본(중단만)은 재개(failed 에서 출발) · 실패 뒤에도 단계를 받는 빈 실행 몫이다
+    for end in ("done", "failed"):
+        other = store.create_run(owner_sub="u1")
+        assert store.set_run_state(other, end, stage="step:0", ended=True) is True
+        assert store.set_run_state(other, "gated", stage="step:1", unless=ENDED) is False, end
+        assert (store.get_run(other)["state"], store.get_run(other)["stage"]) == (end, "step:0")
+        assert store.set_run_state(other, "running") is True, end
+    assert store.set_run_state("없는-실행", "running") is False
+    with pytest.raises(ValueError):
+        store.set_run_state(run, "running", unless=("canceled",))   # 철자가 틀린 가드는 조용히 아무것도 막지 않는다 — 거절한다
+
+
 def test_stats_needs_fields_that_cannot_be_recovered_later(store):
     """§6-1 판정에 쓰는 네 수 — created_by·run_by·origin 이 없으면 영영 못 센다."""
     r = store.create_procedure(owner_sub="author", spec={}, title="t")
