@@ -455,6 +455,10 @@ async def wda_create(base: str, token: str, *, data: dict, report_id: int, targe
         raise DeckError(f"WDA 에 연결하지 못했습니다({exc.__class__.__name__}).", 502) from exc
     except httpx.HTTPError as exc:
         raise DeckUnknownError() from exc
+    if r.status_code in (502, 503, 504) and not any(k in _json(r) for k in ("detail", "message", "code", "success")):
+        # 허브 Caddy 의 관문 오류(상류가 답하다 끊겼다 · 늦었다) — WDA 가 실행을 만들었을 수 있다. WDA · 허브 게이트가 까닭을 실은 거절(JSON)만 확실한
+        # 실패다(2차 적대 검토 R5, WD-D73)
+        raise DeckUnknownError()
     if r.status_code >= 400:
         raise _wda_error(r, "만들기")
     d = _json(r).get("data") if isinstance(_json(r).get("data"), dict) else {}
@@ -797,13 +801,17 @@ async def deck_create(
         recs = await asyncio.to_thread(records, settings)
         rec = None
         for r in recs:
-            if (r.get("owner_sub") == owner and r["report"]["id"] == body.report_id
-                    and r["options"]["targets"] == targets and r["options"]["doc_style"] == body.doc_style
-                    and (inflight(r, settings, now) or (not body.again and (r.get("finished") or {}).get("state") == "done"
-                                                         and not (r.get("finished") or {}).get("expired")))):
-                if reserving(r) and (r.get("wda") or {}).get("create_unknown"):
-                    rec = r          # 앞선 만들기의 결과를 모른다 — 같은 잡 id(Idempotency-Key)로 다시 묻는다(WD-D58). 자리는 이미 잡혀 있다
-                    break
+            if not (r.get("owner_sub") == owner and r["report"]["id"] == body.report_id
+                    and r["options"]["targets"] == targets and r["options"]["doc_style"] == body.doc_style):
+                continue
+            if (reserving(r) and (r.get("wda") or {}).get("create_unknown") and not r.get("finished")
+                    and now - float(r.get("created_at") or 0) < settings.wda_deck_give_up_s):
+                # 앞선 만들기의 결과를 모른다 — 6시간 그물까지는 같은 잡 id(Idempotency-Key)로 다시 묻는다(WD-D58 · D73). 300초가 지나도 새 키로
+                # 보내지 않는다(그러면 WDA 에 실행이 둘)
+                rec = r
+                break
+            if inflight(r, settings, now) or (not body.again and (r.get("finished") or {}).get("state") == "done"
+                                              and not (r.get("finished") or {}).get("expired")):
                 return {**(_reserved_view(r, now) if reserving(r) else view(r, now=now)), "created": False}
         retrying = rec is not None
         if rec is not None:

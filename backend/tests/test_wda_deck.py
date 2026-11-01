@@ -605,6 +605,58 @@ def test_RA_연결이_없어_실패해도_예약을_놓고_결과_모름은_지�
     app.state.user_store.set_connection(email="kim@corp.com", service="reportarchive", token="rat_kim")
 
 
+def _age(box, job_id, seconds):
+    p = W._path(box["s"], job_id)
+    rec = json.loads(p.read_text())
+    rec["created_at"] = time.time() - seconds
+    p.write_text(json.dumps(rec))
+
+
+def test_결과_모름은_300초가_지나도_같은_키로_묻고_상한은_놓는다(box):
+    """2차 적대 검토 R2 — 결과를 모르는 잡의 id 는 300초(RESERVE_TTL_S)만 살아, 그 뒤 다시 누르면 새 키로 보내 WDA 에 실행이 둘 생겼다(WD-D73)."""
+    fake, s = box["fake"], box["s"]
+    s.wda_deck_inflight_max = 1
+    fake.lose_create_response = 1
+    assert _make(box).status_code == 504
+    (rec,) = W.records(s)
+    _age(box, rec["job_id"], W.RESERVE_TTL_S + 1)
+    assert _make(box, doc_style="memo").status_code == 200, "300초가 지난 결과 모름은 자리를 먹지 않는다"
+    r = _make(box)
+    assert r.status_code == 200 and r.json()["job_id"] == rec["job_id"], "그래도 같은 보고서 · 옵션은 같은 잡 id(같은 키)로 다시 묻는다"
+    assert len([x for x in fake.runs.values() if x["render_opts"]["doc_style"] == "report"]) == 1, "WDA 실행이 둘이 되지 않는다"
+
+
+@pytest.mark.parametrize("status", [502, 503, 504])
+def test_허브의_관문_오류는_결과_모름이다(box, status):
+    """2차 적대 검토 R5 — 허브 Caddy 의 502 · 503 · 504(몸이 WDA 의 것이 아님)는 WDA 가 실행을 만든 뒤일 수 있다 — 확실한 실패로 보고 예약을
+    지우면 다시 누를 때 실행이 둘이 됐다(WD-D73)."""
+    fake = box["fake"]
+    orig = fake.wda
+    n = {"x": 0}
+
+    def flaky(req, path, email):
+        resp = orig(req, path, email)
+        if path == "/api/runs" and req.method == "POST" and n["x"] == 0:
+            n["x"] = 1
+            return httpx.Response(status)
+        return resp
+
+    fake.wda = flaky
+    r = _make(box)
+    assert r.status_code == 504 and "만들어졌는지 모릅니다" in r.json()["detail"]
+    (rec,) = W.records(box["s"])
+    r2 = _make(box)
+    assert r2.status_code == 200 and r2.json()["job_id"] == rec["job_id"] and len(fake.runs) == 1
+
+
+def test_까닭을_실은_503_은_확실한_실패다(box):
+    orig = box["fake"].wda
+    box["fake"].wda = lambda req, path, email: (httpx.Response(503, json={"detail": "WDA 가 바쁘다"})
+                                                if path == "/api/runs" and req.method == "POST" else orig(req, path, email))
+    r = _make(box)
+    assert r.status_code == 503 and W.records(box["s"]) == [], "까닭을 실은 거절은 WDA 가 받지 않은 것이다 — 예약을 놓는다"
+
+
 def test_연결조차_못_했으면_연결하지_못했다고_말하고_예약을_놓는다(box):
     box["fake"].refuse_connect = 1
     r = _make(box)
