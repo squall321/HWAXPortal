@@ -254,7 +254,7 @@ export function parseBlocks(text: string): Block[] {
 // 링크도 같은 오리진 절대경로를 고른다 — db0c364a 가 아래 검사만 넓혀 이 고르기에서 걸러졌다(발표자료 받기 링크 · 앱 영상, docs/wda-deck).
 // 링크 주소에는 \ 를 받지 않는다 — 브라우저는 /\host 를 //host 로 읽는다(다른 사이트, docs/wda-deck WD-D44).
 const RE_INLINE =
-  /(`[^`\n]+`)|(\\\([^\n]+?\\\))|(\$(?=\S)(?:[^$\n]*\S)?\$)|(\*\*[^*\n]+?\*\*)|(\*(?=\S)[^*\n]+?\*)|(~~[^~\n]+?~~)|(!\[[^\]\n]*\]\((?:https?:\/\/|\/)[^\s)]+\))|(\[[^\]\n]+\]\((?:https?:\/\/|\/(?![\/\\]))[^\s)\\]+\))/g;
+  /(`[^`\n]+`)|(\\\([^\n]+?\\\))|(\$(?=\S)(?:[^$\n]*\S)?\$)|(\*\*[^*\n]+?\*\*)|(\*(?=\S)[^*\n]+?\*)|(~~[^~\n]+?~~)|(!\[[^\]\n]*\]\((?:https?:\/\/|\/)[^\s)]+\))|(\[[^\]\n]+\]\((?:https?:\/\/|\/(?![/\\]))[^\s)\\]+\))/g;
 
 export function parseInline(s: string): Inline[] {
   const out: Inline[] = [];
@@ -277,9 +277,9 @@ export function parseInline(s: string): Inline[] {
     }
     else {
       // 링크 [text](url) — http(s) 또는 같은 오리진 절대경로(/apps/… 앱 산출물 열람 URL).
-      // `\/(?![\/\\])` 로 프로토콜 상대(//evil.com · 브라우저가 같게 읽는 /\evil.com)를 막고, 주소 안의 \ 도 받지 않는다.
+      // `\/(?![/\\])` 로 프로토콜 상대(//evil.com · 브라우저가 같게 읽는 /\evil.com)를 막고, 주소 안의 \ 도 받지 않는다.
       // 스킴이 없으니 javascript: 류도 불가.
-      const lm = tok.match(/^\[([^\]\n]+)\]\(((?:https?:\/\/|\/(?![\/\\]))[^\s)\\]+)\)$/);
+      const lm = tok.match(/^\[([^\]\n]+)\]\(((?:https?:\/\/|\/(?![/\\]))[^\s)\\]+)\)$/);
       if (lm) out.push({ t: 'link', s: lm[1], href: lm[2] });
       else out.push({ t: 'text', s: tok });
     }
