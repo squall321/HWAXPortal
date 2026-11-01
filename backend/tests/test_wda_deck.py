@@ -65,6 +65,7 @@ class FakeHubWDA:
         self.pats: list[dict] = []
         self.ra_auth: list[str] = []
         self.no_hub_account: set[str] = set()
+        self.reject_all = False                        # 허브 게이트가 모든 자격을 거절한다(portal_auth 앱의 익명 · 깨진 토큰 — HEAXHub 385783f)
         self.health_down = False
         self.slow = 0.0
         self.max_bytes = 16 * 1024 * 1024
@@ -118,6 +119,8 @@ class FakeHubWDA:
         if "x-heax-user-email" in req.headers:
             self.client_identity.append(req.headers["x-heax-user-email"])
         auth = req.headers.get("authorization", "")
+        if self.reject_all or not auth.startswith("Bearer "):
+            return httpx.Response(401, json={"detail": "로그인이 필요하다"})   # portal_auth: true — 익명은 health 까지 401
         try:
             claims = jwt.decode(auth[7:], self.keystore.public_pem(self.keystore.active_kid), algorithms=["RS256"], audience="heax-hub",
                                 options={"require": ["exp", "jti", "sub"]})
@@ -366,6 +369,17 @@ def test_허브가_계정_없음으로_막으면_그_까닭을_그대로(box):
     box["who"]["p"] = LEE
     r = _make(box)
     assert r.status_code == 403 and "허브 계정이 없다" in r.json()["detail"]
+
+
+def test_허브가_탐침을_401_로_막으면_모름으로_숨기고_붙잡지_않는다(box):
+    """portal_auth: true(HEAXHub 385783f)부터 익명은 /api/health 도 401 이다 — 탐침은 그 사람의 PAT 를 싣고, 막히면 '모름' 으로 숨긴다(오류 되풀이 없음)."""
+    box["fake"].reject_all = True
+    st = box["c"].get("/agent/deck/status")
+    assert st.status_code == 200 and st.json()["enabled"] is False and st.json()["reason"] == "unknown"
+    assert _make(box).status_code == 503 and box["fake"].created == []
+    box["fake"].reject_all = False
+    assert box["c"].get("/agent/deck/status").json()["enabled"] is True, "실패는 붙잡지 않는다 — 풀리면 곧바로 선다"
+    assert box["fake"].pats and all(p["email"] == "kim@corp.com" for p in box["fake"].pats), "탐침도 그 사람의 PAT 로"
 
 
 # ── 진행 · 끝 · 알림 ─────────────────────────────────────────────────────────────────────────────
