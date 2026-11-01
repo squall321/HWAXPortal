@@ -211,6 +211,28 @@ const SCENARIOS = {
              lists: (await calls(page, '/agent/deck/jobs')).filter((c) => c.method === 'GET' && c.url === '/agent/deck/jobs').length,
              errors: page.__errors };
   },
+  // 숨긴 잡도 끝 알림을 남긴다 — 줄은 그 잡을 계속 한 걸음씩 가되 화면에는 보이지 않는다(WD-D59)
+  async dismissedFinish(browser) {
+    const page = await open(browser);
+    await page.evaluate(([f, d]) => { window.__list = [{ ...f, dismissed: true }]; window.__advanced = d; }, [FINISH, DONE]);
+    await page.evaluate(() => window.dispatchEvent(new Event('hwax:deck-changed')));
+    await page.waitForFunction(() => document.getElementById('lastA').textContent.includes('발표자료를 만들었습니다'));
+    return { strip: await page.evaluate(() => !!document.querySelector('.deck-resume')), counts: await text(page, 'counts'),
+             advances: (await calls(page, '/agent/deck/jobs/')).filter((c) => c.url.endsWith('/advance')).length, errors: page.__errors };
+  },
+  // 숨긴 잡만 남아도 다시 묻기를 이어 간다 — 끝나면 그때 알림
+  async dismissedLater(browser) {
+    const page = await open(browser);
+    const RUN = { ...base, state: 'rendering', step: '만드는 중', progress: 80, elapsed_s: 4, dismissed: true };
+    await page.evaluate((r) => { window.__list = [r]; }, RUN);
+    await page.evaluate(() => window.dispatchEvent(new Event('hwax:deck-changed')));
+    await page.waitForTimeout(80);
+    const stripWhileRunning = await page.evaluate(() => !!document.querySelector('.deck-resume'));
+    await page.evaluate(([f, d]) => { window.__list = [{ ...f, dismissed: true }]; window.__advanced = d; }, [FINISH, DONE]);
+    await forward(page, 10500);
+    await page.waitForFunction(() => document.getElementById('lastA').textContent.includes('발표자료를 만들었습니다'));
+    return { stripWhileRunning, counts: await text(page, 'counts'), errors: page.__errors };
+  },
 };
 
 (async () => {
@@ -283,3 +305,14 @@ def test_목록을_한_번_못_읽어도_줄이_다시_묻고_알림을_남긴�
     assert s["mid"]["strip"] is True and "발표자료를 만들었습니다" not in s["mid"]["last"], "못 읽은 차례에는 줄을 그대로 둔다"
     assert s["counts"] == "srv-A:4,srv-B:2", "다음 차례에 다시 물어 끝 알림을 A 에"
     assert s["lists"] >= 3
+
+
+def test_숨긴_잡도_끝_알림을_남기고_줄에는_보이지_않는다(seen):
+    s = seen("dismissedFinish")
+    assert s["strip"] is False and s["advances"] == 1 and s["counts"] == "srv-A:4,srv-B:2"
+
+
+def test_숨긴_잡만_남아도_다시_묻기를_이어_간다(seen):
+    s = seen("dismissedLater")
+    assert s["stripWhileRunning"] is False, "숨긴 잡은 줄에 보이지 않는다"
+    assert s["counts"] == "srv-A:4,srv-B:2", "그래도 다음 차례에 다시 물어 끝 알림을 남긴다"

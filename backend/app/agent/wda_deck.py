@@ -560,7 +560,8 @@ def view(rec: dict, f: dict | None = None, now: float | None = None) -> dict:
     """화면에 주는 잡 — 포털 잡 id · 보고서 · 옵션 · 상태. WDA 의 run_id · 주소는 싣지 않는다."""
     now = time.time() if now is None else now
     base = {"job_id": rec["job_id"], "report": rec["report"], "options": rec["options"], "conversation_id": rec.get("conversation_id"),
-            "created_at": rec.get("created_at"), "elapsed_s": round(now - float(rec.get("created_at") or now))}
+            "created_at": rec.get("created_at"), "elapsed_s": round(now - float(rec.get("created_at") or now)),
+            "dismissed": bool(rec.get("dismissed"))}
     fin = rec.get("finished")
     if fin:
         return {**base, "state": fin["state"], "step": fin.get("step") or "", "progress": 100 if fin["state"] == "done" else None,
@@ -738,6 +739,8 @@ async def deck_create(
         raise _http_error(exc) from exc
     if "owner" not in caps.features:
         raise AuthError("WDA 에 아직 주인 기능이 없습니다 — 보고서를 넘기지 않습니다(사용자 결정 11-01).", status_code=409)
+    # 상한을 세기 전에 끝나지 않은 잡을 WDA 에 물어 끝난 것은 끝을 적는다 — 아무도 advance 하지 않은 잡이 6시간 자리를 먹지 않게(WD-D59)
+    await settle_open(request, settings)
     # ① 잠금 안은 기록뿐이다 — 중복 · 상한을 보고 자리를 잡는다(예약). RA 읽기 · WDA 만들기는 잠금 밖이다 — 한 사람의 느린 RA 가 박스 전체의
     #    만들기를 세우지 않게(적대 검토 R2, WD-D56). 예약은 상한 · 중복에 센다.
     async with lock("create"):
@@ -762,6 +765,7 @@ async def deck_create(
             if len(live) >= settings.wda_deck_inflight_box_max:
                 raise AuthError("지금 발표자료를 만드는 사람이 많습니다 — 잠시 뒤 다시 누르세요.", status_code=429)
             rec = {"job_id": secrets.token_hex(16), "owner_sub": owner, "owner_email": principal.email or owner,
+                   "owner_name": principal.display_name or "",
                    "conversation_id": body.conversation_id, "report": {"id": body.report_id, "title": ""},
                    "options": {"targets": targets, "doc_style": body.doc_style, "pptx_mode": PPTX_MODE},
                    "wda": {"run_id": None, "format": None, "version": caps.version}, "state": "queued", "created_at": now,
@@ -824,8 +828,9 @@ async def deck_jobs(
     못 물은 잡도 목록에 남긴다('묻지 못했다' — 다음 차례에 다시 묻는다). 빼면 줄이 그 잡을 잃고 다시 묻기를 멈춰 끝 알림이 남지 않는다."""
     ensure(principal, *NEEDS)      # 만들기만이 아니다 — 거둔 권한으로 진행 · 받기가 이어지지 않게(WD-D50)
     now = time.time()
+    # 숨긴 잡도 끝나지 않았으면 싣는다(dismissed 표지) — 줄이 계속 한 걸음씩 가 끝 알림을 남긴다. 숨긴 것을 화면에 보이지는 않는다(WD-D59)
     mine = [r for r in await asyncio.to_thread(records, settings)
-            if r.get("owner_sub") == principal.subject and not r.get("dismissed")][:20]
+            if r.get("owner_sub") == principal.subject and (not r.get("dismissed") or not r.get("finished"))][:20]
     open_ = [r for r in mine if not r.get("finished") and not reserving(r)]      # 예약은 WDA 에 묻지 않는다(WD-D56)
     folded: dict[str, dict | None] = {}
     if open_:
@@ -874,67 +879,59 @@ async def deck_job(
     return view(rec, fold(run, rec=rec, now=now, settings=settings), now=now)
 
 
-@router.post("/jobs/{job_id}/advance", dependencies=[Depends(_knob)])
-async def deck_advance(
-    job_id: str,
-    request: Request,
-    principal: Principal = Depends(principal_pat_or_session),
-    settings: Settings = Depends(get_settings),
-) -> dict:
-    """잡을 한 걸음 — 렌더 맡기기(WDA 가 이어서 하지 않는 판) 또는 끝(알림 한 건, 단추를 누른 그 대화에). 잡마다 잠금 · 두 번 불러도 알림은 하나."""
-    ensure(principal, *NEEDS)
-    _write_capable(request)
-    try:
-        await asyncio.to_thread(load, settings, job_id, principal.subject)
-    except DeckError as exc:
-        raise _http_error(exc) from exc
+def _owner_principal(rec: dict) -> Principal:
+    """잡을 맡긴 사람 — 그 사람 이름으로 WDA 에 묻는다(허브는 이메일로 허브 사용자를 찾는다 · 그룹은 싣지 않는다, WD-D59)."""
+    email = rec.get("owner_email") or rec["owner_sub"]
+    return Principal(subject=rec["owner_sub"], email=email, display_name=rec.get("owner_name") or email, groups=[])
+
+
+async def step(request: Request, settings: Settings, job_id: str, who: Principal) -> dict:
+    """잡을 한 걸음 — 렌더 맡기기(WDA 가 이어서 하지 않는 판) 또는 끝(알림 한 건, 단추를 누른 그 대화에). 잡마다 잠금 · 두 번 불러도 알림은 하나.
+    who 는 그 잡의 주인이다(advance 는 부른 사람 = 주인, 만들기 앞의 정리는 기록의 주인 — WD-D59). 거절은 DeckError · AuthError 로 올린다."""
     async with lock(job_id):
-        rec = await asyncio.to_thread(load, settings, job_id, principal.subject)
+        rec = await asyncio.to_thread(load, settings, job_id, who.subject)
         fin = rec.get("finished")
         if fin:
             return {**view(rec), "notice": fin.get("notice"), "noticed": bool(fin.get("saved"))}
         if reserving(rec):
             return _reserved_view(rec, time.time())
-        base, token = _base_and_token(request, settings, principal)
+        base, token = _base_and_token(request, settings, who)
         now = time.time()
         try:
             run = await wda_run(base, token, rec["wda"]["run_id"])
             f = fold(run, rec=rec, now=now, settings=settings)
-        except DeckError as exc:
+        except DeckError:
             # WDA 에 묻지 못해도 그물을 넘었으면 '시간 초과' 로 끝을 적는다(WD-D55) — 아니면 종전처럼 실패를 돌려준다(화면이 다시 묻는다)
             if (f := gave_up(rec, now=now, settings=settings)) is None:
-                raise _http_error(exc) from exc
+                raise
             run = None
-        try:
-            if f["next"] == "render":
-                await wda_render(base, token, rec["wda"]["run_id"], rec)
-                rec["render_submitted_at"] = now
-                await asyncio.to_thread(save, settings, rec)
-                _audit(request, principal, "deck_render", "ok", job_id=job_id)
-                return view(rec, fold(run, rec=rec, now=now, settings=settings), now=now)
-            if f["next"] != "finish":
-                return view(rec, f, now=now)
-            files: list[dict] = []
-            skipped = list(f["skipped"])
-            state, error, step = f["state"], f["error"], f["step"]
-            if f.get("raw_error"):
-                # WDA 의 예외 글은 사람에게 보이지 않는다 — 끝을 적을 때 한 번 서버 로그에(WD-D49)
-                logger.warning("발표자료 잡 %s — WDA 실패 까닭=%r", job_id, f["raw_error"])
-            if state == "done":
-                arts = await wda_artifacts(base, token, rec["wda"]["run_id"])
-                for t in rec["options"]["targets"]:
-                    size = arts.get(WDA_KIND[t])
-                    if size is not None:
-                        files.append({"kind": t, "bytes": size})
-                made = {x["kind"] for x in files}
-                told = {s["target"] for s in skipped}
-                skipped = [s for s in skipped if s["target"] not in made] + [
-                    {"target": t, "reason": "WDA 가 만들지 않았습니다"} for t in rec["options"]["targets"] if t not in made and t not in told]
-                if not files:
-                    state, step, error = "failed", "파일 만들기에서 멈춤", "WDA 가 끝났다고 했지만 받을 파일이 하나도 없습니다."
-        except DeckError as exc:
-            raise _http_error(exc) from exc
-        n = notice(rec, state=state, files=files, skipped=skipped, error=error, step=step, keep_days=settings.wda_deck_job_days)
+        if f["next"] == "render":
+            await wda_render(base, token, rec["wda"]["run_id"], rec)
+            rec["render_submitted_at"] = now
+            await asyncio.to_thread(save, settings, rec)
+            _audit(request, who, "deck_render", "ok", job_id=job_id)
+            return view(rec, fold(run, rec=rec, now=now, settings=settings), now=now)
+        if f["next"] != "finish":
+            return view(rec, f, now=now)
+        files: list[dict] = []
+        skipped = list(f["skipped"])
+        state, error, step_ = f["state"], f["error"], f["step"]
+        if f.get("raw_error"):
+            # WDA 의 예외 글은 사람에게 보이지 않는다 — 끝을 적을 때 한 번 서버 로그에(WD-D49)
+            logger.warning("발표자료 잡 %s — WDA 실패 까닭=%r", job_id, f["raw_error"])
+        if state == "done":
+            arts = await wda_artifacts(base, token, rec["wda"]["run_id"])
+            for t in rec["options"]["targets"]:
+                size = arts.get(WDA_KIND[t])
+                if size is not None:
+                    files.append({"kind": t, "bytes": size})
+            made = {x["kind"] for x in files}
+            told = {s["target"] for s in skipped}
+            skipped = [s for s in skipped if s["target"] not in made] + [
+                {"target": t, "reason": "WDA 가 만들지 않았습니다"} for t in rec["options"]["targets"] if t not in made and t not in told]
+            if not files:
+                state, step_, error = "failed", "파일 만들기에서 멈춤", "WDA 가 끝났다고 했지만 받을 파일이 하나도 없습니다."
+        n = notice(rec, state=state, files=files, skipped=skipped, error=error, step=step_, keep_days=settings.wda_deck_job_days)
         store = request.app.state.conv_store
         try:
             saved = await asyncio.to_thread(
@@ -944,12 +941,49 @@ async def deck_advance(
         except sqlite3.OperationalError as exc:
             # 끝을 적지 않는다 — 화면이 다시 부르면 그때 남긴다(알림 없이 끝난 잡이 되지 않게)
             raise AuthError("대화 저장소가 바쁩니다 — 잠시 뒤 다시 시도합니다.", status_code=503) from exc
-        rec["finished"] = {"state": state, "step": step, "error": error, "files": files, "skipped": skipped,
+        rec["finished"] = {"state": state, "step": step_, "error": error, "files": files, "skipped": skipped,
                            "at": time.time(), "notice": n, "saved": bool(saved)}
         await asyncio.to_thread(save, settings, rec)
-    _audit(request, principal, "deck_finish", "ok" if state == "done" else "failed", job_id=job_id, report_id=rec["report"]["id"],
+    _audit(request, who, "deck_finish", "ok" if state == "done" else "failed", job_id=job_id, report_id=rec["report"]["id"],
            files=[x["kind"] for x in files], skipped=[s["target"] for s in skipped], noticed=bool(saved))
     return {**view(rec), "notice": n, "noticed": bool(saved)}
+
+
+async def settle_open(request: Request, settings: Settings) -> None:
+    """만들기 앞에서 — 끝을 적지 않은 잡(숨긴 것 · 창을 닫은 것 · PAT 스크립트가 맡긴 것)을 그 주인의 이름으로 한 걸음씩. WDA 에서 이미 끝났으면
+    끝을 적고(알림 한 건) 상한에서 빠진다. 사람당 상한은 그 사람 것을, 박스 상한은 모두의 것을 센다 — 그래서 모두의 것을 본다(적대 검토 R1, WD-D59).
+    한 잡의 실패는 만들기를 막지 않는다(로그만)."""
+    now = time.time()
+    recs = await asyncio.to_thread(records, settings)
+    open_ = [r for r in recs if inflight(r, settings, now) and not reserving(r)]
+
+    async def one(r: dict) -> None:
+        try:
+            await step(request, settings, r["job_id"], _owner_principal(r))
+        except (DeckError, AuthError, OSError, sqlite3.OperationalError) as exc:
+            logger.warning("발표자료 — 만들기 앞의 정리가 잡 %s 를 끝내지 못했다: %s", r["job_id"], getattr(exc, "message", exc))
+
+    await asyncio.gather(*(one(r) for r in open_))
+
+
+@router.post("/jobs/{job_id}/advance", dependencies=[Depends(_knob)])
+async def deck_advance(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """잡을 한 걸음(step) — 렌더 맡기기 또는 끝(알림 한 건). 부른 사람의 잡만."""
+    ensure(principal, *NEEDS)
+    _write_capable(request)
+    try:
+        await asyncio.to_thread(load, settings, job_id, principal.subject)
+    except DeckError as exc:
+        raise _http_error(exc) from exc
+    try:
+        return await step(request, settings, job_id, principal)
+    except DeckError as exc:
+        raise _http_error(exc) from exc
 
 
 @router.post("/jobs/{job_id}/dismiss", dependencies=[Depends(_knob)])

@@ -14,9 +14,13 @@ export function DeckResume() {
   const allowed = can('plat:webdesign') && can('plat:reportarchive');
   const status = useDeckStatus(allowed);
   const { addDeckNotice, afterStream } = useChat();
+  // 줄에 보일 것 — 끝나지 않았고 숨기지 않은 잡. 숨긴 잡도 끝날 때까지 한 걸음씩 가고 끝 알림을 남긴다(화면에만 없다, WD-D59)
   const [jobs, setJobs] = useState<DeckJob[]>([]);
   const [open, setOpen] = useState(false);
   const [tick, setTick] = useState(0);
+  // 다시 묻기 차례 — 끝나지 않은 잡(숨긴 것 포함)이 있으면 다음 차례를 건다. 못 읽은 차례도 그 앞의 수로 건다(WD-D41)
+  const [round, setRound] = useState(0);
+  const openCount = useRef(0);
   const cb = useRef({ addDeckNotice, afterStream });
   cb.current = { addDeckNotice, afterStream };
   const on = Boolean(allowed && status?.enabled);
@@ -29,23 +33,27 @@ export function DeckResume() {
       try {
         list = (await deckJobs()).jobs;
       } catch {
-        // 못 읽으면 지금 줄을 그대로 두고 다음 차례에 다시 묻는다 — 같은 배열이면 다시 묻기가 멈춰 끝 알림이 남지 않는다(새 배열로 다음 차례를 건다)
-        if (!stop) setJobs((xs) => (xs.length ? [...xs] : xs));
+        // 못 읽으면 지금 줄을 그대로 두고 다음 차례에 다시 묻는다 — 끝나지 않은 잡이 있었을 때만
+        if (!stop && openCount.current) setRound((r) => r + 1);
         return;
       }
-      // 끝(next)인 잡은 저절로 한 걸음 — 렌더 맡기기 · 끝 알림(알림은 그 사람의 대화에만 쓰므로 다시 묻지 않는다, WD-D10)
+      // 끝(next)인 잡은 저절로 한 걸음 — 렌더 맡기기 · 끝 알림(숨긴 잡도). 알림은 그 사람의 대화에만 쓰므로 다시 묻지 않는다(WD-D10)
       for (const j of list.filter((x) => x.next)) {
         if (stop) return;
         try {
           if (j.next === 'finish') await cb.current.afterStream(j.conversation_id);
           const a = await advanceDeck(j.job_id);
           if (a.notice) cb.current.addDeckNotice(a.conversation_id, a.notice);
-          list = list.map((x) => (x.job_id === a.job_id ? a : x));
+          list = list.map((x) => (x.job_id === a.job_id ? { ...a, dismissed: x.dismissed } : x));
         } catch {
           // 다음 차례에 다시
         }
       }
-      if (!stop) setJobs(list.filter(deckOpen));
+      if (stop) return;
+      const live = list.filter(deckOpen);
+      openCount.current = live.length;
+      setJobs(live.filter((j) => !j.dismissed));
+      if (live.length) setRound((r) => r + 1);
     })();
     return () => {
       stop = true;
@@ -53,10 +61,10 @@ export function DeckResume() {
   }, [on, tick]);
 
   useEffect(() => {
-    if (!jobs.length) return;
+    if (!round) return;
     const t = window.setTimeout(() => setTick((n) => n + 1), REFRESH_MS);
     return () => window.clearTimeout(t);
-  }, [jobs]);
+  }, [round]);
 
   // 단추가 새 잡을 맡기면 목록을 다시 읽는다 — 그 칸이 다른 대화로 옮겨 가 사라져도 이 줄이 진행을 잇고 끝을 적는다
   useEffect(() => {

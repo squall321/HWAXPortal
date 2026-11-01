@@ -40,6 +40,8 @@ export interface DeckJob {
   conversation_id: string;
   created_at: number;
   elapsed_s: number;
+  /** 입력창 위 줄에서 숨겼다 — 끝나지 않았으면 목록에 실리고 줄이 계속 한 걸음씩 간다(화면에는 보이지 않는다, WD-D59). */
+  dismissed?: boolean;
   state: DeckState;
   step: string;
   progress: number | null;

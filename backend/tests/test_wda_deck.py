@@ -1032,6 +1032,44 @@ def test_끊긴_예약은_상한에_세지_않고_실패로_보인다(box):
     assert _make(box).status_code == 200, "끊긴 예약은 자리를 먹지 않는다"
 
 
+# ── 아무도 advance 하지 않는 잡이 자리를 먹지 않는다(적대 검토 R1, WD-D59) ─────────────────────────────────────────────────
+def test_숨기거나_버려진_잡이_WDA_에서_끝났으면_만들기_앞에서_끝을_적고_자리를_놓는다(box):
+    c, fake, s = box["c"], box["fake"], box["s"]
+    fake.reports[43] = {**IMPORT, "id": 43, "title": "다른 보고서"}
+    a = _make(box).json()["job_id"]
+    b = _make(box, doc_style="memo").json()["job_id"]
+    for rid in list(fake.runs):            # WDA 는 둘 다 몇 초 만에 끝냈다
+        fake.built(rid)
+        fake.rendered(rid)
+    for j in (a, b):                       # 입력창 위 줄의 '숨기기' — 그 뒤 아무도 advance 하지 않는다(창을 닫았다)
+        assert c.post(f"/agent/deck/jobs/{j}/dismiss").status_code == 200
+    r = _make(box, report_id=43)
+    assert r.status_code == 200, r.text
+    assert len(_messages(box)) == 2, "끝난 두 잡의 알림이 남았다(숨겨도 알림은 남긴다)"
+    # 박스 전체 — 이도 둘을 맡기고 떠났다(PAT 스크립트 · 닫은 창). 셋째 사람의 만들기가 그 둘을 이의 이름으로 정리한다
+    box["who"]["p"] = LEE
+    la = _make(box).json()["job_id"]
+    lb = _make(box, doc_style="memo").json()["job_id"]
+    for rid, run in list(fake.runs.items()):
+        if run["status"] != "done":
+            fake.built(rid)
+            fake.rendered(rid)
+    app.state.user_store.set_connection(email="park@corp.com", service="reportarchive", token="rat_lee")
+    s.wda_deck_inflight_box_max = 3
+    park = Principal(subject="park@corp.com", email="park@corp.com", display_name="박", groups=NEEDS)
+    box["who"]["p"] = park
+    pconv = c.post("/agent/conversations", json={"title": "t", "kind": "chat"}).json()["id"]
+    n0 = len(fake.pat_calls)
+    r = c.post("/agent/deck/jobs", json={"report_id": 41, "conversation_id": pconv})
+    assert r.status_code == 200, r.text
+    lee_runs = {W.load(s, j, "lee@corp.com")["wda"]["run_id"] for j in (la, lb)}
+    asked = {(path.rsplit("/", 1)[-1], next(p["email"] for p in fake.pats if p["jti"] == jti))
+             for m, path, jti in fake.pat_calls[n0:] if m == "GET" and path.startswith("/api/runs/") and path.count("/") == 3}
+    assert {(rid, "lee@corp.com") for rid in lee_runs} <= asked, "남의 잡은 그 주인의 이름으로 묻는다(WDA 의 주인 검사를 지난다)"
+    assert all(W.load(s, j, "lee@corp.com")["finished"]["state"] == "done" for j in (la, lb))
+    assert len(_messages(box, LEE)) == 2, "이의 대화에 이의 알림이 남는다"
+
+
 def test_사람당_박스_전체_동시_상한(box):
     box["s"].wda_deck_inflight_max = 1
     assert _make(box).status_code == 200
@@ -1059,7 +1097,12 @@ def test_내_목록은_끝나지_않은_잡의_지금_상태와_숨기기(box):
     assert (j["job_id"], j["state"], j["next"]) == (job, "preparing", None) and "묻지 못했습니다" in j["step"]
     box["fake"].reject_all = False
     assert box["c"].post(f"/agent/deck/jobs/{job}/dismiss").json() == {"job_id": job, "dismissed": True}
-    assert box["c"].get("/agent/deck/jobs").json()["jobs"] == []
+    (j,) = box["c"].get("/agent/deck/jobs").json()["jobs"]
+    assert j["dismissed"] is True, "숨긴 잡도 끝나지 않았으면 싣는다 — 줄이 계속 한 걸음씩(화면에는 숨긴다, WD-D59)"
+    box["fake"].built(_run_id(box))
+    box["fake"].rendered(_run_id(box))
+    assert box["c"].post(f"/agent/deck/jobs/{job}/advance").json()["noticed"] is True, "숨긴 잡도 끝 알림을 남긴다"
+    assert box["c"].get("/agent/deck/jobs").json()["jobs"] == [], "숨겼고 끝난 잡은 목록에서 빠진다"
 
 
 def test_없는_잡이나_남의_잡을_숨겨도_잠금이_쌓이지_않는다(box):
