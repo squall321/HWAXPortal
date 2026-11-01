@@ -1,7 +1,7 @@
 # 발표자료로(RA 보고서 → WebDesignAgents) — 체크리스트
 
 > 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md) · WDA 요청서 [wda-request.md](wda-request.md).
-> 지금은 설계 단계다(11-01) — 아래 M1 은 WDA 세션이 계약을 확인하고 사람 결정이 난 뒤에 시작한다.
+> 설계 11-01 오전 · 사람 결정 11-01 오후(다섯 모두 — PLAN §13). M1 은 이 가지에서 짓는다 — WDA 계약(W-1 ~ W-12)이 들어오기 전에는 단추가 보이지 않는다.
 
 ## 설계(11-01)
 
@@ -12,11 +12,11 @@
 
 ## M0 — 사람 결정
 
-- [ ] U-1 WDA 주인 기능을 단추를 켜는 전제로(권장 예)
-- [ ] U-2 WDA push 방법(권장 — workflow 범위가 있는 자격 또는 사용자가 손으로 · 역사를 다시 쓰지 않는다)
-- [ ] U-3 허브 매니페스트 `launch.portal_auth: true`(권장 예)
-- [ ] U-4 'PDF' 의 뜻(권장 — WDA '읽는 문서' 정식 보고서를 기본, 요약 · 메모를 고르게)
-- [ ] U-5 M1 단추 자리 셋(권장 — 심의 결과 · `/보고서` · RA 보내기 알림)
+- [x] U-1 WDA 주인 기능을 단추를 켜는 전제로 — **예**(WD-D24)
+- [x] U-2 WDA push 방법 — **사용자가 손으로**, 누구도 대신 push · 역사 다시 쓰기 하지 않는다(WD-D25)
+- [x] U-3 허브 매니페스트 `launch.portal_auth: true` — **켠다**, HEAXHub 변경 · dev 반영은 다른 에이전트(WD-D26)
+- [x] U-4 'PDF' 의 뜻 — **정식 보고서 문서(report) 기본, brief · memo 선택**, 슬라이드 PDF(W-19)는 청하지 않는다(WD-D27)
+- [x] U-5 M1 단추 자리 — **셋 모두**(심의 결과 · `/보고서` · RA 보내기 알림), 루틴 RA 초안은 M2(WD-D28)
 
 ## M0 — WDA 세션(요청서 §11)
 
@@ -35,12 +35,12 @@
 - [ ] W-12 재기동에 끊긴 실행 · 렌더를 `failed`(interrupted)로
 - [ ] (권장) W-13 보존 기한 알리기 · W-14 렌더 동시 상한 · (선택) W-15 Idempotency-Key
 - [ ] 주인 있는 run 은 `WDA_RA_*` 서비스 자격으로 RA 그림을 받지 않는다
-- [ ] P-1 (U-2 뒤) main push → 허브 SIF 재빌드(dev) — push 는 사용자 결정 전에 시도하지 않는다
+- [ ] P-1 사용자가 손으로 main push(U-2) → 허브 SIF 재빌드(dev) — WDA 세션은 커밋까지만, push 하지 않는다
 - [ ] dev 확인 — `/api/health` features 에 `owner` · 신원 없는 `GET /api/runs` 에 주인 있는 run 이 없다 · 게이트웨이 `tools/list` 로 도구 판을 대조한다
 
-## M0 — HEAXHub 세션
+## M0 — HEAXHub(다른 에이전트 — 이 가지는 건드리지 않는다)
 
-- [ ] P-2 (U-3 뒤) `integrations/web-design-agents/.portal/manifest.yaml` 에 `launch.portal_auth: true` · 익명 `GET /apps/web_design_agents/api/runs` 가 401 인지 확인
+- [ ] P-2 (U-3 결정) `integrations/web-design-agents/.portal/manifest.yaml` 에 `launch.portal_auth: true` · dev 반영 · 익명 `GET /apps/web_design_agents/api/runs` 가 401 인지 확인
 
 ## M1 — 포털(dev)
 

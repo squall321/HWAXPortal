@@ -4,13 +4,19 @@
 > 이 글만으로 읽히게 썼다. 줄 번호는 WDA `9dabf86` · HEAXHub `7b9a8ed` · 게이트웨이 `63fbc4f` 판이다.
 > 요약 — 포털은 **허브 Caddy 를 거쳐 WDA 웹 REST** 를 그 사람 이름으로 부른다(MCP 는 부르지 않는다). WDA 가 할 일은 셋이다 —
 > ① 허브가 실어 주는 `X-Heax-User-Email` 로 **주인을 정하고 주인만 보게** 하기(깨지 않는 꼴) ② 빌드 뒤 **이어서 렌더**하고 뺀 출력을 말하기
-> ③ 능력 · 오류 · 재기동 처리를 기계가 읽게 하기. 그리고 **main 을 GitHub 에 올려 허브 SIF 를 다시 짓는 것**이 먼저다(사용자 결정).
+> ③ 능력 · 오류 · 재기동 처리를 기계가 읽게 하기. 그리고 **main 을 GitHub 에 올려 허브 SIF 를 다시 짓는 것**이 먼저다 — **사용자가 손으로 push 한다**(11-01 결정,
+> WDA 세션은 push 하지 않는다).
 
 ## 1. 배경 — 사용자 결정(2026-11-01)
 
 1. **포털이 맡고 알린다.** 포털이 만든 RA 보고서 옆 '발표자료로' 단추. 포털이 그 보고서를 **그 사람 명의로** 읽어 본문을 WDA 에 넘기고(요청 R2 (나)),
    잡 기록(누가 맡겼나)을 남기고, 화면이 진행을 보이고, 끝나면 그 대화에 받기 링크 알림을 남긴다. 챗 LLM 은 잡을 폴링하지 않는다.
 2. **기본 출력은 PPT + PDF**(`pptx_mode` hybrid). 영상 · HTML · Word 는 단추에서 고를 수 있다.
+
+같은 날 오후 사용자가 포털 계획의 물음 다섯을 정했다 — ① WDA 의 주인 기능(W-1 ~ W-6)이 단추를 보이는 **전제**다. ② WDA 는 **사용자가 손으로 push** 한다
+(누구도 대신 push 하거나 역사를 다시 쓰지 않는다). ③ 허브 매니페스트 `launch.portal_auth: true` 를 **켠다** — 포털 쪽이 HEAXHub 에 반영한다(7 P-2).
+④ 기본 PDF 는 WDA 의 **정식 보고서 문서**(`doc_style=report`), 요약(brief) · 메모(memo)는 고를 수 있다 — 슬라이드 PDF 는 청하지 않는다. ⑤ 단추 자리는
+심의 결과 카드 · `/보고서` 저장 답 · RA 보내기 알림 셋이다.
 
 ## 2. 포털이 하는 일(흐름)
 
@@ -48,7 +54,8 @@
 - **W-3 목록을 거른다.** `GET /api/runs` 는 내 run 과 주인 없는 run 만 준다. 신원이 없으면 주인 없는 run 만.
 - **주인 없는 run 은 비공개가 아니다.** 신원 없이 만든 run(옛 것 · CLI · 신원 없는 MCP · 직결)은 이 기능이 들어간 뒤에도 영영 지금처럼 열려 있다. 그래서
   포털은 **늘** 허브 Caddy 를 거쳐 신원을 싣는다. (지금 WDA 는 허브 매니페스트가 company + stable 이고 `launch.portal_auth` 가 없어 **로그인 없이**
-  닿는다 — 2026-11-01 dev 실측, 포털 nginx 를 거친 `/apps/web_design_agents/api/runs` 가 익명 200. HEAXHub `authz.py:83-99,138-146`.)
+  닿는다 — 2026-11-01 dev 실측, 포털 nginx 를 거친 `/apps/web_design_agents/api/runs` 가 익명 200. HEAXHub `authz.py:83-99,138-146`. 사용자 결정으로
+  `launch.portal_auth: true` 를 켜면(7 P-2) 익명은 401 이 되지만, **주인 없는 run 은 로그인한 누구에게나 여전히 열린다.**)
 - **W-4 MCP 는 주인 있는 run 에 닿지 않는다.** MCP 의 신원은 확인할 수 없으므로(3.1), run_id · job_id · 서버 경로를 받는 도구 — `report_fragmentize` ·
   `scenario_build` · `scenario_patch` · `scenario_revise` · `scene_list` · `scene_html` · `scene_still` · `render_submit`(scenario_path · build_dir · run_dir) ·
   `render_status` · `qa_run`(build_path) — 는 대상이 주인 있는 run(그 `pipeline/<run_id>` · `build/<slug>` · `renders/<slug>` 아래)이면 `NOT_FOUND` 로
@@ -120,6 +127,7 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 
 `{"status": "ok", "version": "x.y.z", "features": ["owner", "render_chain", "doc_formats", "skipped_report", "interrupted"]}` — 허브 health_check 는 `status`
 만 보니 칸을 더해도 깨지지 않는다(`app.py:124-127`). **포털은 `owner` 가 없거나 이 응답을 못 읽으면 단추를 숨긴다**(옛 SIF 로 되돌린 박스에 본문을 넘기지 않게).
+포털은 이것도 그 사람의 포털 PAT 로 부른다 — `portal_auth` 가 켜지면 허브 게이트가 익명을 막는다.
 
 ### 4.7 오류 꼴(W-10)
 
@@ -152,15 +160,16 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 
 ## 7. 먼저 풀어야 할 것(전제)
 
-- **P-1 main 을 GitHub 에 올리고 허브 SIF 를 다시 짓는다 — 방법은 사용자 결정.** 허브는 GitHub 에서 SIF 를 짓는다(HEAXHub
+- **P-1 main 을 GitHub 에 올리고 허브 SIF 를 다시 짓는다 — 사용자가 손으로 push 한다(11-01 결정).** 허브는 GitHub 에서 SIF 를 짓는다(HEAXHub
   `integrations/web-design-agents/.portal/manifest.yaml:70-73`). 허브의 `web-design-agents.sif` 는 2026-08-19 판이고 WDA main 은 origin/main 보다 68 커밋 앞선다
   (11-01). origin/main 의 렌더 출력은 `("video", "pptx")` 뿐이고 `pdf` · `doc_style` · `pptx_mode` · `resume` 이 없다 — **기본 PPT + PDF 가 지금 배치에서 돌지
   않는다.** 10-30 의 거절은 `refusing to allow a Personal Access Token to create or update workflow .github/workflows/ci.yml without workflow scope` 였고, 역사의
-  `e4dc40e`(08-28) · `8d5a453`(10-24)가 그 파일을 만든다. `git push --dry-run` 은 서버 쪽 검사에 닿지 않으니 통과해도 풀린 것이 아니다. 포털의 권장 —
-  workflow 범위가 있는 자격으로 올리거나 사용자가 손으로 올린다. 역사를 다시 쓰지 않는다(해시가 바뀌어 문서가 인용한 커밋이 사라진다). **WDA 세션은 push 를
-  시도하지 말고 사용자 결정을 기다려 달라.**
-- **P-2 허브 매니페스트 `launch.portal_auth: true`(권장 · 사용자 결정)** — 주인 없는 옛 run 과 WDA 콘솔까지 익명을 닫는다(게이트가 익명에 401 —
-  `authz.py:138-146`). 매니페스트는 HEAXHub 리포에 있어 HEAXHub 세션이 고친다. 익명으로 쓰던 사람에게는 바뀜이다.
+  `e4dc40e`(08-28) · `8d5a453`(10-24)가 그 파일을 만든다. `git push --dry-run` 은 서버 쪽 검사에 닿지 않으니 통과해도 풀린 것이 아니다. 11-01 에 다시 해 본
+  실제 push 도 같은 거절이었다. **결정 — 사용자가 손으로 올린다. WDA 세션 · 포털 세션 · 코디네이터 누구도 push 하거나 역사를 다시 쓰지 않는다**(해시가 바뀌면
+  문서가 인용한 커밋이 사라진다). WDA 세션은 W-1 ~ W-12 를 main 에 커밋해 두면 된다 — 올리는 것은 사용자다. 그 뒤 허브 SIF 재빌드는 HEAXHub 반영 순서를 따른다.
+- **P-2 허브 매니페스트 `launch.portal_auth: true` — 결정됨(11-01), 포털 쪽이 HEAXHub 에 반영하는 중이다**(다른 에이전트가 매니페스트와 dev 반영을 맡는다).
+  WDA 세션이 할 일은 없다. 켜지면 주인 없는 옛 run 과 WDA 콘솔까지 익명이 닫힌다(게이트가 익명에 401 — `authz.py:138-146`). 포털 길은 그 사람의 PAT 로
+  지나므로 바뀌지 않는다.
 - 포털 단추는 박스 스위치(기본 꺼짐)와 W-6 의 `owner` 능력이 **둘 다** 있어야 보인다. W-1 ~ W-12 가 배치된 뒤에 사람이 켠다.
 
 ## 8. R1 ~ R4 에 대한 답
@@ -173,8 +182,8 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 - **R3 돌아오는 길 — 포털이 묻고, 알리고, 중계한다.** 포털이 3초마다 4.2 를 묻고(챗 LLM 은 묻지 않는다), 끝나면 포털이 그 대화에 알림을 남기고, 받기는 포털
   라우트가 4.5 를 서버에서 받아 흘린다. HTML 끼워 보기는 M1 에 하지 않는다(5 — 같은 오리진). 장면 HTML 은 쓰지 않는다.
 - **R4 기본 출력 — `targets=["pptx","pdf"]` · `pptx_mode="hybrid"` · `doc_style="report"` · `narration=false`.** 영상 · html · docx 는 사람이 고를 때만.
-  단추는 문서 꼴(report · brief · memo)을 고르게 한다. 확인할 것 하나 — WDA 의 pdf 는 슬라이드 PDF 가 아니라 '읽는 문서' 다(`src/wdrender/exporter_doc.py:1`).
-  사용자에게 이 뜻이 맞는지 묻고 있다 — 슬라이드 PDF 가 필요하다고 하면 W-19 로 다시 청한다.
+  WDA 의 pdf 는 슬라이드 PDF 가 아니라 '읽는 문서' 다(`src/wdrender/exporter_doc.py:1`). **사용자 결정(11-01) — 기본 PDF 는 정식 보고서 문서(`doc_style=report`),
+  요약(brief) · 메모(memo)는 단추에서 고른다.** 슬라이드 PDF(W-19)는 지금 청하지 않는다.
 
 ## 9. 나중(M2 — 단추를 켜는 데는 필요 없다)
 
@@ -184,7 +193,7 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 - **W-18 MCP 사람별 위임** — 개인 Claude 로 내 발표자료를 보려면 MCP 신원이 확인돼야 한다. HWAXRisk 꼴 — WDA 에 `/auth/sso`(공유 비밀 `X-Heax-Gateway-Secret` +
   게이트웨이가 실은 `X-Hwax-Delegate-Email` → 그 사람의 단기 단언, HWAXRisk `backend/app/routes.py:437-477`)와 단언 검증(`token_header`)을 두고, 게이트웨이
   `per_user_sso.web_design_agents` 를 켠다. 들어오면 W-4 를 '확인된 주인이면 연다' 로 넓힌다.
-- **W-19 슬라이드 PDF**(U-4 가 그쪽이면) · **W-20 취소**(지금 웹 · MCP 둘 다 없다).
+- **W-19 슬라이드 PDF** — 지금은 청하지 않는다(사용자 결정 11-01). **W-20 취소**(지금 웹 · MCP 둘 다 없다).
 
 ## 10. 확인해 달라는 것
 
@@ -213,6 +222,7 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 | W-13 | 보존 기한 알리기 · 지운 뒤 404/410 | 권장 |
 | W-14 | 렌더 동시 상한(줄) | 권장 |
 | W-15 | Idempotency-Key | 선택 |
-| W-16 ~ W-20 | 그림 · 지우기 · MCP 위임 · 슬라이드 PDF · 취소 | M2 |
-| P-1 | main push → 허브 SIF 재빌드 | 사용자 결정 뒤 |
-| P-2 | 매니페스트 `launch.portal_auth: true` | 사용자 결정 뒤(HEAXHub 세션) |
+| W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 |
+| W-19 | 슬라이드 PDF | 청하지 않는다(사용자 결정 11-01) |
+| P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 |
+| P-2 | 매니페스트 `launch.portal_auth: true` | 결정됨 — 포털 쪽이 HEAXHub 에 반영 중(WDA 할 일 없음) |
