@@ -1,8 +1,12 @@
 # 발표자료로 — 그 사람 명의 RA 읽기 · 허브 Caddy 경유 WDA · 주인만 · 한 번만 알림 · 상태 낱말 하나 · 받기 중계(docs/wda-deck)
 """가짜 RA 와 가짜 '허브 게이트 + WDA'(httpx MockTransport)로 포털 창구를 끝에서 끝까지 본다.
 
-가짜 WDA 는 **요청서(docs/wda-deck/wda-request.md)의 계약**을 그대로 따른다 — WDA 에는 아직 없다(11-01 답 Q1). 봉투 {success, data, message, code} ·
-상태 낱말(파이프라인 queued/running/done/failed · 단계 pending/running/done/failed · 렌더 queued/rendering/done/failed) · 남과 신원 없음에 404 ·
+가짜 WDA 는 **요청서(docs/wda-deck/wda-request.md)의 계약**을 따르되, 오류는 **지금 WDA 의 꼴**이다(적대 검토 11-01, WD-D48) — 4xx 는
+`{"detail"}` 이고 code 가 없으며(W-10 전), 글은 진짜 WDA 처럼 `f"{type(exc).__name__}: {exc}"` 다(경로 · run_id 가 실릴 수 있다). 모르는 꼴의 400 만
+봉투 `{success, data, message}` 다(11-01 저녁 판). `error_codes=True` 면 요청서 W-10 의 봉투 + code 로 답한다. 허브 게이트도 진짜 꼴 — 익명 401 은 몸이
+비고, 거절된 포털 토큰 401 · 허브 계정 없음 403 · JWKS 를 못 읽음 503 은 `{"detail"}`, 앱을 볼 수 없음 403 은 몸이 비며, 읽기 전용 포털 토큰의 GET 밖은
+403 이다(HEAXHub authz.py · portal_sso.py). 상태 낱말(파이프라인 queued/running/done/failed · 단계 pending/running/done/failed · 렌더 queued/rendering/
+done/failed) · 남과 신원 없음에 404 ·
 features(owner · 꼴마다 format:<id>) · formats(꼴마다 상태 draft · active — WDA 의 꼴 등록부, 11-01 답) · 만들기의 format 칸(없으면 wide-16x9 ·
 모르는 꼴이면 곧바로 400 INVALID 와 쓸 수 있는 꼴). 허브 게이트는 포털 PAT 의 서명 · 청중 · scope 를 보고 그 이메일을 X-Heax-User-Email 로 싣는
 Caddy 를 흉내 낸다. 만들기 본문은 WDA 가 알려 준 블록 글자 규칙으로 센다 — rich_text 는 content.markdown, heading 은 content.text, props.default_text 는
@@ -56,8 +60,8 @@ DELIB = {"id": 58, "workspace_slug": "personal-5", "template_id": "deliberation"
 class FakeHubWDA:
     """허브 게이트(포털 PAT 검증 → X-Heax-User-Email) + 요청서 계약의 WDA + RA."""
 
-    def __init__(self, keystore, *, features=("owner",), chain=True):
-        self.keystore, self.features, self.chain = keystore, set(features), chain
+    def __init__(self, keystore, *, features=("owner",), chain=True, error_codes=False):
+        self.keystore, self.features, self.chain, self.error_codes = keystore, set(features), chain, error_codes
         # WDA 의 꼴 등록부(꼴 id → 상태) — features 에 format:<id> 가 저절로 실린다. 심의 꼴(delib-16x9)은 시험이 넣는다
         self.formats = {"wide-16x9": "active", "short-9x16": "active", "print-a4": "draft"}
         self.version = "0.1.0"                         # 패키지 판(허브 매니페스트 판과 같다 — WDA 11-01)
@@ -69,7 +73,9 @@ class FakeHubWDA:
         self.pats: list[dict] = []
         self.ra_auth: list[str] = []
         self.no_hub_account: set[str] = set()
-        self.reject_all = False                        # 허브 게이트가 모든 자격을 거절한다(portal_auth 앱의 익명 · 깨진 토큰 — HEAXHub 385783f)
+        self.not_viewable: set[str] = set()            # 허브 계정은 있으나 이 앱을 볼 수 없다(can_view_app 거절 — 몸 없는 403)
+        self.jwks_down = False                         # 허브가 포털 JWKS 를 못 읽는다(503)
+        self.reject_all = False                        # 허브 게이트가 모든 포털 토큰을 거절한다(서명 · 만료 · 청중 — 401 detail)
         self.health_down = False
         self.slow = 0.0
         self.max_bytes = 16 * 1024 * 1024
@@ -108,8 +114,10 @@ class FakeHubWDA:
 
     # ── 처리 ──
     def env(self, status: int, data=None, message: str = "", code: str | None = None):
+        if status >= 400 and not self.error_codes:
+            return httpx.Response(status, json={"detail": message})       # 지금 WDA 의 4xx — detail 하나, code 없음
         body = {"success": status < 400, "data": data, "message": message}
-        if code:
+        if code and self.error_codes:
             body["code"] = code
         return httpx.Response(status, json=body)
 
@@ -123,18 +131,27 @@ class FakeHubWDA:
         if "x-heax-user-email" in req.headers:
             self.client_identity.append(req.headers["x-heax-user-email"])
         auth = req.headers.get("authorization", "")
-        if self.reject_all or not auth.startswith("Bearer "):
-            return httpx.Response(401, json={"detail": "로그인이 필요하다"})   # portal_auth: true — 익명은 health 까지 401
+        if not auth.startswith("Bearer "):
+            return httpx.Response(401)                                        # portal_auth: true — 익명은 health 까지 몸 없는 401
+        if self.jwks_down:
+            return httpx.Response(503, json={"detail": "포털 공개키(JWKS)를 못 읽었다 — 잠시 뒤 다시"})
         try:
+            if self.reject_all:
+                raise jwt.InvalidTokenError("거절")
             claims = jwt.decode(auth[7:], self.keystore.public_pem(self.keystore.active_kid), algorithms=["RS256"], audience="heax-hub",
                                 options={"require": ["exp", "jti", "sub"]})
         except jwt.PyJWTError:
-            return httpx.Response(401, json={"detail": "포털 토큰이 거절됐다"})
+            return httpx.Response(401, json={"detail": "포털 토큰이 거절됐다(서명 · 만료 · 청중 heax-hub)"})
         assert claims["scope"] == "api"
         self.pats.append(claims)
         email = str(claims.get("email") or "").lower()
         if email in self.no_hub_account:
             return httpx.Response(403, json={"detail": "허브 계정이 없다 — 포털에서 HEAX Hub 타일을 한 번 눌러 허브에 로그인한 뒤 다시 시도한다"})
+        if email in self.not_viewable:
+            return httpx.Response(403)                                        # can_view_app 거절 — 몸 없음
+        scopes = {str(x).lower() for x in claims.get("scopes") or []}
+        if "read" in scopes and "write" not in scopes and req.method not in ("GET", "HEAD"):
+            return httpx.Response(403, json={"detail": "읽기 전용 포털 토큰 — GET · HEAD 만 연다"})
         path = req.url.path.removeprefix("/apps/web_design_agents")
         return self.wda(req, path, email)
 
@@ -182,12 +199,15 @@ class FakeHubWDA:
                                              "formats": dict(self.formats)})
         if path == "/api/runs" and req.method == "POST":
             if len(req.content) > self.max_bytes:
-                return self.env(413, message="본문이 크다", code="TOO_LARGE")
+                return self.env(413, message="PayloadTooLarge: 본문이 크다", code="TOO_LARGE")
             body = json.loads(req.content)
             self.created.append(body)
             fmt = body.get("format", "wide-16x9")
             if fmt not in self.formats:
-                return self.env(400, message=f"모르는 format '{fmt}' — 쓸 수 있는 꼴: {', '.join(sorted(self.formats))}", code="INVALID")
+                # 11-01 저녁 판 — 모르는 꼴은 곧바로 400 이고 봉투(code 없음)에 쓸 수 있는 꼴을 싣는다
+                return httpx.Response(400, json={"success": False, "data": None,
+                                                 "message": f"ValueError: 모르는 format '{fmt}' — 쓸 수 있는 꼴: {', '.join(sorted(self.formats))}",
+                                                 **({"code": "INVALID"} if self.error_codes else {})})
             n, t = self._text_blocks(body["report_json"], fmt)
             if not t:
                 return self.env(422, message=f"ValueError: 텍스트를 가진 블록이 없다 (블록 {n}개, 텍스트 0개)", code="INVALID")
@@ -200,15 +220,15 @@ class FakeHubWDA:
         if len(parts) >= 4 and parts[1:3] == ["api", "runs"]:
             run = self._mine(parts[3], email)
             if run is None:
-                return self.env(404, message="실행을 찾을 수 없습니다", code="NOT_FOUND")
+                return self.env(404, message=f"FileNotFoundError: /data/wda/pipeline/{parts[3]}/run.json", code="NOT_FOUND")
             rest = parts[4:]
             if not rest and req.method == "GET":
                 return self.env(200, {k: v for k, v in run.items() if k != "render_opts"})
             if rest == ["render"] and req.method == "POST":
                 if run["status"] != "done":
-                    return self.env(409, message="빌드 전", code="NOT_BUILT")
+                    return self.env(409, message="RuntimeError: 빌드 전", code="NOT_BUILT")
                 if run["render"] and run["render"]["status"] in ("queued", "rendering"):
-                    return self.env(409, message="이미 렌더 중", code="BUSY")
+                    return self.env(409, message=f"RuntimeError: 이미 렌더 중 — {parts[3]}", code="BUSY")
                 b = json.loads(req.content)
                 run["render"] = {"status": "queued", "targets": b["targets"], "requested": b["targets"], "outputs": {}, "skipped": [], "error": None}
                 return self.env(202, {"run_id": run["run_id"]})
@@ -224,10 +244,10 @@ class FakeHubWDA:
                 k = rest[1]
                 outs = {{"video": "mp4"}.get(t, t) for t in ((run["render"] or {}).get("outputs") or {})}
                 if k not in outs:
-                    return self.env(404, message="산출물이 아직 없습니다", code="NOT_FOUND")
+                    return self.env(404, message=f"FileNotFoundError: /data/wda/renders/{parts[3]}/{k}", code="NOT_FOUND")
                 return httpx.Response(200, content=self.files[k], headers={"content-type": "application/octet-stream",
                                                                           "content-disposition": f'attachment; filename="{parts[3]}-{k}"'})
-        return self.env(404, message="경로 없음", code="NOT_FOUND")
+        return self.env(404, message="Not Found", code="NOT_FOUND")
 
 
 @pytest.fixture()
@@ -378,7 +398,7 @@ def test_WDA_가_모르는_꼴이면_400_의_까닭을_보이고_기본_꼴로_�
     del fake.formats["delib-16x9"]
     r = _make(box, report_id=58)
     detail = r.json()["detail"]
-    assert r.status_code == 502 and "(HTTP 400 · INVALID)" in detail and "쓸 수 있는 꼴: print-a4, short-9x16, wide-16x9" in detail
+    assert r.status_code == 502 and "(HTTP 400)" in detail and "쓸 수 있는 꼴: print-a4, short-9x16, wide-16x9" in detail
     assert [c.get("format") for c in fake.created] == ["delib-16x9"], "기본 꼴(wide-16x9)로 다시 보내지 않는다"
     assert fake.runs == {} and W.records(box["s"]) == []
 
