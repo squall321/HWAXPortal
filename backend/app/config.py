@@ -240,8 +240,9 @@ class Settings(BaseSettings):
     # 주면 그대로 실린다. 그래서 여기 늘리는 일의 뜻은 "아무 말 없이 발급하면 이만큼 덮는다" 다 —
     # 발급 화면은 청중을 **보내지 않아** 이 목록을 그대로 받는다(토큰 하나로 하위 사이트 공용).
     # 게이트웨이 REST 다리의 사이트 키와 같아야 한다(rest.<site> / portal.audience_ok).
-    # heax-hub 는 아직 소비처가 없다 — /apps/* 는 HEAXHub 자기 게이트가 막고 그쪽은 이 RS256
-    # 토큰을 안 본다. 지우지 않고 남긴다(그 배선을 여는 결정이 아직 안 났다).
+    # heax-hub — HEAXHub 게이트(/apps/*)가 이 RS256 토큰을 받는다(포털 PAT 를 그 이메일의 허브 사용자로 잇고 허브 권한 can_view_app 만 본다,
+    # followups-1017 결정 ⑦). 포털 쪽 첫 쓰임은 발표자료로(docs/wda-deck — wda_hub_audience)다. 그 사람 이름의 10분짜리 PAT 를 서버에서 찍어
+    # 허브 Caddy 경유로 WebDesignAgents 를 부른다. 종전 주석('소비처가 없다 · 허브가 이 토큰을 안 본다')은 허브가 포털 PAT 를 받기 전의 말이다.
     # simflow — 게이트웨이가 위임(per_user_sso simflow)이 있으면 REST 다리 사이트로 연다(HWAXMcpGateway HG-04, docs/request-1027 HP-15).
     pat_default_audiences: str = ("mx-white-paper,heax-hub,ai-data-hub,signalforge,"
                                  "ste,dyna-forge,step-forge,simflow,mcp-gateway")
