@@ -803,7 +803,8 @@ async def deck_advance(
         try:
             saved = await asyncio.to_thread(
                 store.append, conversation_id=rec["conversation_id"], owner_sub=rec["owner_sub"], role="assistant",
-                content=n["text"], meta={"activity": n["activity"], "upload": True, "deck": n["deck"]})
+                content=n["text"], meta={"activity": n["activity"], "upload": True, "deck": n["deck"]},
+                msg_id=f"deck-{job_id}")      # 잡마다 정해진 id — 덧붙인 뒤 기록이 실패해 다시 와도 하나(WD-D54)
         except sqlite3.OperationalError as exc:
             # 끝을 적지 않는다 — 화면이 다시 부르면 그때 남긴다(알림 없이 끝난 잡이 되지 않게)
             raise AuthError("대화 저장소가 바쁩니다 — 잠시 뒤 다시 시도합니다.", status_code=503) from exc

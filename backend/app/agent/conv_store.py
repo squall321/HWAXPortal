@@ -132,12 +132,17 @@ class ConversationStore:
     # ── append ──────────────────────────────────────────────────────────────
     def append(self, *, conversation_id: str, owner_sub: str, role: str, content: str,
                persona: str | None = None, round: int | None = None,
-               meta: dict | None = None) -> bool:
-        """메시지 1건 추가. 소유자만. 대화 없으면 실패(False)."""
+               meta: dict | None = None, msg_id: str | None = None) -> bool:
+        """메시지 1건 추가. 소유자만. 대화 없으면 실패(False).
+
+        msg_id 를 주면 한 번만이다 — 그 id 의 메시지가 이미 있으면 다시 넣지 않고 True 다(덧붙인 뒤 부른 쪽의 기록이 실패해 다시 불러도
+        둘이 되지 않게 — 발표자료 알림, docs/wda-deck WD-D54). 없으면 종전처럼 새 id."""
         now = _now()
         with self._lock, self._conn:
             if not self._owns(conversation_id, owner_sub):
                 return False
+            if msg_id is not None and self._conn.execute("SELECT 1 FROM messages WHERE id = ?", (msg_id,)).fetchone():
+                return True
             cur = self._conn.execute(
                 "SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE conversation_id = ?",
                 (conversation_id,),
@@ -146,7 +151,7 @@ class ConversationStore:
             self._conn.execute(
                 "INSERT INTO messages (id, conversation_id, seq, role, persona, round, content, meta, ts) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (_uid(), conversation_id, seq, role, persona, round, content,
+                (msg_id or _uid(), conversation_id, seq, role, persona, round, content,
                  json.dumps(meta, ensure_ascii=False) if meta else None, now),
             )
             self._conn.execute(

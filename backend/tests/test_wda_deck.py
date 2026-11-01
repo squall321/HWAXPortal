@@ -606,6 +606,39 @@ def test_advance_를_동시에_불러도_알림은_하나(box):
     assert {o["state"] for o in outs} == {"done"} and len(_messages(box)) == 1
 
 
+def test_알림을_덧붙인_뒤_기록이_실패해도_다시_오면_알림은_하나(box, monkeypatch):
+    """적대 검토 R6 — 알림을 덧붙인 뒤 잡 기록(finished) 저장이 실패하면, 다음 advance 가 알림을 한 번 더 썼다(WD-D54)."""
+    c, fake = box["c"], box["fake"]
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.rendered(rid)
+    real = W.save
+    hit = {"n": 0}
+
+    def flaky(settings, rec):
+        if rec.get("finished") and not hit["n"]:
+            hit["n"] = 1
+            raise OSError(28, "No space left on device")
+        return real(settings, rec)
+
+    monkeypatch.setattr(W, "save", flaky)
+    with pytest.raises(OSError):
+        c.post(f"/agent/deck/jobs/{job}/advance")
+    a = c.post(f"/agent/deck/jobs/{job}/advance")
+    assert a.status_code == 200 and a.json()["state"] == "done"
+    assert len(_messages(box)) == 1, "같은 잡의 알림은 하나"
+
+
+def test_대화_저장소의_한_번만_덧붙이기(box):
+    store = app.state.conv_store
+    cid = box["conv"]["kim@corp.com"]
+    for _ in range(3):
+        assert store.append(conversation_id=cid, owner_sub="kim@corp.com", role="assistant", content="x", msg_id="deck-" + "b" * 32)
+    assert store.append(conversation_id=cid, owner_sub="lee@corp.com", role="assistant", content="x", msg_id="deck-" + "c" * 32) is False
+    assert [m["content"] for m in _messages(box)] == ["x"]
+
+
 def test_렌더를_이어서_하지_않는_판이면_advance_가_한_번_맡긴다(box):
     box["fake"].chain = False
     job = _make(box).json()["job_id"]
