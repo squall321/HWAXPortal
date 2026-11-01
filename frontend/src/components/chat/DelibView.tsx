@@ -5,11 +5,11 @@ import { delibMayStillRun } from '../../lib/chatErrors';
 import { useChat } from '../../state/ChatContext';
 import { decisionAsOf } from '../../state/chatStore';
 import { useCan } from '../../auth/useCan';
-import { config } from '../../config';
 import type { DelibData, DelibTurn, Message } from '../../types/chat';
 import { DelibGraph } from './DelibGraph';
 import { DeckSpot } from './DeckSpot';
 import { deckReportOf } from './deck';
+import { RA_HOME, openRaReport, raReportHref } from './raLink';
 import { RosterEditor, type Seat } from './RosterEditor';
 import { colorOf, initialOf } from './personaColor';
 import { InlineMd, TextBlock } from './renderers/TextBlock';
@@ -287,14 +287,22 @@ function Convergence({ d }: { d: DelibData }) {
 function OutcomeCards({ d }: { d: DelibData }) {
   const o = d.outcome;
   if (!o) return null;
+  // RA 가 준 주소가 있으면 그리로 바로(포털 세션이 필요 없다). 없는 옛 카드는 눌렀을 때 포털에 물어 연다 — 가운데 단추 · 주소 복사는 RA 첫 화면으로
+  // (오류 JSON 을 보이지 않는다, docs/wda-deck WD-D78)
+  const rid = o.report_id;
+  const raHref = rid != null ? raReportHref(o.url, rid) : null;
   return (
     <div className="dv-outcome">
-      {o.report_id != null && (
+      {rid != null && (
         <a
           className="dv-card report"
-          href={`${config.apiBase}/agent/ra/reports/${o.report_id}/open`}
+          href={raHref ?? RA_HOME}
           target="_blank"
           rel="noreferrer"
+          onClick={raHref ? undefined : (e) => {
+            e.preventDefault();
+            void openRaReport(rid);
+          }}
         >
           <span className="dv-card-k">Report Archive</span>
           <span className="dv-card-t">{o.title || '심의 보고서'}</span>

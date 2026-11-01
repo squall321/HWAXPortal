@@ -78,6 +78,13 @@ _STUB = r"""
     if (u.startsWith('/agent/conversations/') && method === 'GET' && window.__convDetail && window.__convDetail[u.slice(21)]) {
       return json(window.__convDetail[u.slice(21)]);
     }
+    // 옛 심의 결과 카드의 RA 열기(docs/wda-deck WD-D78) — __raOpen401 번은 세션이 지난 401, __raOpenStatus 면 그 거절, 아니면 열 곳
+    if (u.startsWith('/agent/ra/reports/')) {
+      if (window.__raOpen401 > 0) { window.__raOpen401 -= 1; return json({ detail: 'session expired' }, 401); }
+      if (window.__raOpenStatus) return json({ detail: 'denied' }, window.__raOpenStatus);
+      return json({ url: window.__raOpenUrl || '/report-archive/' });
+    }
+    if (u === '/auth/refresh') return json({ ok: true });
     if (u === '/agent/deck/jobs' && method === 'POST') return json(window.__created);
     if (u === '/agent/deck/jobs' && method === 'GET') {
       if (window.__listOff) return json({ detail: 'Not Found' }, 404);
@@ -381,6 +388,44 @@ const SCENARIOS = {
     return { links, mid, spotGets: (await gets()) - g0, counts: await text(page, 'counts'),
              advances: (await calls(page, '/agent/deck/jobs/')).filter((c) => c.url.endsWith('/advance')).length, errors: page.__errors };
   },
+  // 심의 결과 카드의 RA 링크 — RA 가 준 주소면 그리로 바로, 없는(옛) 카드는 눌렀을 때 포털에 물어(세션을 되살려) 연다. 못 물으면 RA 첫 화면(WD-D78)
+  async raCard(browser) {
+    const before = () => {
+      const k = 'hwax.chat.u1@corp.example.conversations';
+      const convs = JSON.parse(localStorage.getItem(k));
+      const d = (outcome) => ({ role: 'assistant', content: '결정문', ts: 5,
+        delib: { turns: [{ round: 1, persona: 'mech', say: '말' }], decision: '결정문', outcome } });
+      convs[0].messages.push(d({ report_id: 58, url: '/w/team-cae/reports/58', title: '새 카드' }), d({ report_id: 59, title: '옛 카드' }),
+                             d({ report_id: 60, url: '/w/../reports/60', title: '틀린 주소' }),
+                             d({ report_id: 61, url: '/w/team-cae/reports/62', title: '다른 번호' }));
+      localStorage.setItem(k, JSON.stringify(convs));
+      window.__opened = [];
+      window.__replaced = [];
+      window.open = (u, t, f) => {
+        const w = { opener: 'me', location: { replace: (x) => window.__replaced.push(x) } };
+        window.__opened.push({ u, t, f, w });
+        return w;
+      };
+    };
+    const page = await open(browser, { before });
+    const hrefs = await page.evaluate(() => Array.from(document.querySelectorAll('.dv-card.report')).map((a) => a.getAttribute('href')));
+    const early = (await calls(page, '/agent/ra/')).length;
+    await page.evaluate(() => { window.__raOpen401 = 1; window.__raOpenUrl = '/report-archive/w/team-x/reports/59'; });
+    await page.locator('.dv-card.report').nth(1).click();
+    await page.waitForFunction(() => window.__replaced.length === 1);
+    const first = await page.evaluate(() => ({ opened: window.__opened.map((o) => o.u), opener: window.__opened[0].w.opener,
+                                               replaced: [...window.__replaced] }));
+    const refreshed = (await calls(page, '/auth/refresh')).length;
+    await page.evaluate(() => { window.__raOpenStatus = 403; });
+    await page.locator('.dv-card.report').nth(1).click();
+    await page.waitForFunction(() => window.__replaced.length === 2);
+    await page.evaluate(() => { window.__raOpenStatus = 0; window.__raOpenUrl = 'https://evil.example/x'; });
+    await page.locator('.dv-card.report').nth(1).click();
+    await page.waitForFunction(() => window.__replaced.length === 3);
+    return { hrefs, early, first, refreshed, denied: await page.evaluate(() => window.__replaced[1]),
+             outside: await page.evaluate(() => window.__replaced[2]),
+             asked: (await calls(page, '/agent/ra/reports/')).map((c) => c.url), errors: page.__errors };
+  },
   // 숨긴 잡도 끝 알림을 남긴다 — 줄은 그 잡을 계속 한 걸음씩 가되 화면에는 보이지 않는다(WD-D59)
   async dismissedFinish(browser) {
     const page = await open(browser);
@@ -486,6 +531,19 @@ def test_질문이_도는_대화의_잡은_끝을_곧바로_보이고_알림은_
     assert s["mid"]["counts"] == "srv-A:3,srv-B:2" and s["mid"]["counts2"] == "srv-A:3,srv-B:2", "알림은 아직 — 서버가 미뤘다"
     assert s["mid"]["strip"] is False, "끝을 적은 잡은 '만들고 있는 발표자료' 줄에 보이지 않는다"
     assert s["counts"] == "srv-A:4,srv-B:2" and s["advances"] == 4, "칸 한 번 · 줄이 넘겨받아 곧바로 한 번 · 차례마다 — 알림 한 건"
+
+
+def test_심의_결과_카드는_RA_주소로_바로_열고_옛_카드는_포털에_물어_연다(seen):
+    """2차 적대 검토 — 카드가 포털 길(/open)로 새 탭을 열어 15분 세션이 지나면 401 JSON, 권한이 없으면 403 JSON 이 떴다(WD-D78)."""
+    s = seen("raCard")
+    assert s["hrefs"] == ["/report-archive/w/team-cae/reports/58", "/report-archive/", "/report-archive/", "/report-archive/"], \
+        "주소가 맞고 번호가 같으면 바로 · 아니면 RA 첫 화면"
+    assert s["early"] == 0, "그리는 동안 포털에 묻지 않는다"
+    assert s["first"]["opened"] == [""] and s["first"]["opener"] is None, "누른 순간 빈 탭을 열고(팝업 막기) 오프너를 끊는다"
+    assert s["first"]["replaced"] == ["/report-archive/w/team-x/reports/59"] and s["refreshed"] == 1, "세션이 지났으면 되살려 다시 묻는다"
+    assert s["denied"] == "/report-archive/", "못 물으면 JSON 대신 RA 첫 화면"
+    assert s["outside"] == "/report-archive/", "포털의 RA 경로가 아닌 답은 따르지 않는다"
+    assert s["asked"] == ["/agent/ra/reports/59/open"] * 4
 
 
 def test_숨긴_잡도_끝_알림을_남기고_줄에는_보이지_않는다(seen):

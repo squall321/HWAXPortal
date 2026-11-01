@@ -104,6 +104,8 @@ function outcomeFromMeta(raw: unknown): DelibData['outcome'] | undefined {
   for (const k of TALLY_KEYS) if (typeof t[k] === 'number') tally[k] = t[k] as number;
   return {
     report_id: rid,
+    // RA 가 준 보고서 주소 — 결과 카드가 꼴을 다시 보고 쓴다(raReportHref, docs/wda-deck WD-D78)
+    ...(rid && typeof o.url === 'string' ? { url: o.url } : {}),
     title: typeof o.title === 'string' ? o.title : '',
     // 집계 카드는 넷(동의 · 조건부 · 반대 · 착석)이 다 있어야 그린다 — 반쪽 집계로 '동의 undefined' 를 그리지 않는다
     ...((['agree', 'conditional', 'oppose', 'total'] as const).every((k) => typeof tally[k] === 'number')

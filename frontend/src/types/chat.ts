@@ -83,6 +83,8 @@ export interface DelibData {
   plain?: string;
   outcome?: {
     report_id?: number | null;
+    /** RA 가 준 보고서 주소(/w/<공간>/reports/<번호>) — 결과 카드가 이리로 바로 연다. 없으면 번호로 물어 연다(docs/wda-deck WD-D78). */
+    url?: string;
     title?: string;
     tally?: DelibTally;
     unanimous?: boolean;

@@ -273,6 +273,7 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'outcome':
       d.outcome = {
         report_id: (e.report_id as number | null) ?? null,
+        ...(typeof e.url === 'string' ? { url: e.url } : {}),
         title: String(e.title ?? ''),
         tally: e.tally as DelibTally | undefined,
         unanimous: Boolean(e.unanimous),

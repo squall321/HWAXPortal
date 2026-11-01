@@ -77,6 +77,29 @@ def test_심의_결과의_보고서_번호를_답_meta_로_남긴다(run):
     assert (a["meta"] or {}).get("delib_outcome") == {"report_id": 58, "title": "심의 — x", "tally": TALLY, "unanimous": False}
 
 
+def test_심의_결과의_RA_주소를_답_meta_로_남긴다(run):
+    """에이전트가 outcome 에 RA 가 준 보고서 주소를 싣는다 — 새로고침 뒤에도 결과 카드가 그리로 바로 연다(docs/wda-deck WD-D78)."""
+    msgs = run("/심의 x", [
+        ("delib", {"kind": "decision", "text": "결정문"}),
+        ("delib", {"kind": "outcome", "report_id": 58, "url": "/w/team-cae/reports/58", "title": "심의 — x", "tally": TALLY,
+                   "unanimous": False}),
+        ("done", {}),
+    ])
+    assert _answer(msgs)["meta"]["delib_outcome"]["url"] == "/w/team-cae/reports/58"
+
+
+@pytest.mark.parametrize("url", ["/w/team-cae/reports/59", "/w/../reports/58", "//evil.example/w/x/reports/58",
+                                 "https://evil.example/w/x/reports/58", "/w/a b/reports/58", "/w/a/reports/58?x", 58, None])
+def test_꼴이_틀리거나_번호가_다른_RA_주소는_남기지_않는다(run, url):
+    msgs = run("/심의 x", [
+        ("delib", {"kind": "decision", "text": "결정문"}),
+        ("delib", {"kind": "outcome", "report_id": 58, "url": url, "title": "심의 — x", "tally": TALLY, "unanimous": False}),
+        ("done", {}),
+    ])
+    out = _answer(msgs)["meta"]["delib_outcome"]
+    assert out["report_id"] == 58 and "url" not in out
+
+
 def test_보고서_없이_끝난_심의도_집계는_남기고_번호는_비운다(run):
     msgs = run("/심의 x", [
         ("delib", {"kind": "decision", "text": "결정문"}),

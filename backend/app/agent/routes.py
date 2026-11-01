@@ -36,7 +36,7 @@ import anyio
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, StrictBool, StringConstraints, field_validator, model_validator
 
 from app.access.agent_guard import check_chat, filter_experts
@@ -518,7 +518,11 @@ def _site_pat(keystore, settings: Settings, principal: Principal, site: str, ttl
 # RA 보고서 주소 — RA 화면은 /w/<공간>/reports/<번호> 만 있다(공간 없는 길이 없다). 심의 결과 카드가 공간 이름 'dev' 를 박아 다른 박스 · 다른
 # 공간에서 열리지 않았다(docs/wda-deck WD-D67).
 _RA_PUBLIC = "/report-archive"
-_RA_OPEN_MAX = 16 * 1024 * 1024
+# 옛 카드의 보고서 열기 — 보고서를 통째로(16 MB 상한) 읽지 않는다. 공간 이름은 ReportRead 의 둘째 칸(id 다음, ReportArchive
+# reports/schemas.py)이라 RA 응답의 앞에 있다 — 앞 64 KB 에서 첫 "workspace_slug" 하나만 본다(뒤에 오는 본문 속 같은 이름의 칸은 보지 않는다).
+_RA_OPEN_HEAD = 64 * 1024
+_RA_SLUG_AT = re.compile(rb'"workspace_slug"\s*:\s*"((?:[^"\\]|\\.){0,240})"')
+_RA_SLUG_OK = re.compile(r"(?!\.{1,2}$)[A-Za-z0-9._-]{1,120}")
 
 
 @router.get("/ra/reports/{report_id}/open")
@@ -527,39 +531,39 @@ async def open_ra_report(
     request: Request,
     principal: Principal = Depends(principal_pat_or_session),
     settings: Settings = Depends(get_settings),
-) -> RedirectResponse:
-    """그 보고서를 그 보고서의 공간 주소로 연다 — 그 사람 명의로 RA 보고서를 읽어 workspace_slug 를 받는다(서비스 계정 없음). 못 읽으면 그 사람의
-    RA 연결에 묶인 공간, 그것도 없으면 RA 첫 화면(RA 가 그 사람의 기본 공간으로 보낸다). 새 탭에서 여는 링크라 오류 JSON 대신 늘 옮긴다."""
+) -> dict:
+    """RA 주소가 없는 옛 심의 결과 카드가 그 보고서를 열 곳을 묻는다 — {"url": 포털의 RA 경로}. 새 카드는 RA 가 준 주소로 바로 연다(docs/wda-deck
+    WD-D78). 화면은 apiFetch 로 부른다(세션이 지났으면 되살려 다시 묻는다) — 그래도 401 · 403 이면 화면이 RA 첫 화면을 연다(JSON 을 보이지 않는다).
+    그 사람 명의로 RA 보고서의 앞 64 KB 만 읽어 공간 이름을 찾는다(서비스 계정 없음). 못 찾으면 그 사람의 RA 연결에 묶인 공간, 그것도 없으면 RA
+    첫 화면(RA 가 그 사람의 기본 공간으로 보낸다)."""
     ensure(principal, "plat:reportarchive")
-    fallback = f"{_RA_PUBLIC}/"
+    home = f"{_RA_PUBLIC}/"
     try:
         token, _via, conn = await _ra_user_token(request, settings, principal)
     except AuthError:
-        return RedirectResponse(fallback, status_code=302)
-    if conn.get("workspace"):
-        fallback = f"{_RA_PUBLIC}/w/{quote(str(conn['workspace']), safe='')}/reports/{report_id}"
+        return {"url": home}
+    ws = conn.get("workspace")
+    fallback = f"{_RA_PUBLIC}/w/{ws}/reports/{report_id}" if isinstance(ws, str) and _RA_SLUG_OK.fullmatch(ws) else home
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    if conn.get("workspace"):
-        headers["X-Workspace-Slug"] = conn["workspace"]
+    if ws:
+        headers["X-Workspace-Slug"] = ws
     slug = None
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as cli:
             async with cli.stream("GET", f"{settings.ra_base_url.rstrip('/')}/api/reports/{report_id}", headers=headers) as r:
                 if r.status_code == 200:
-                    buf = bytearray()
+                    head = bytearray()
                     async for chunk in r.aiter_bytes():
-                        buf += chunk
-                        if len(buf) > _RA_OPEN_MAX:
+                        head += chunk
+                        if len(head) >= _RA_OPEN_HEAD:
                             break
-                    else:
-                        data = (json.loads(buf) or {}).get("data") if buf else None
-                        if isinstance(data, dict) and isinstance(data.get("workspace_slug"), str):
-                            slug = data["workspace_slug"]
-    except (httpx.HTTPError, ValueError, AttributeError):
+                    m = _RA_SLUG_AT.search(bytes(head[:_RA_OPEN_HEAD]))
+                    slug = m.group(1).decode("utf-8", "replace") if m else None
+    except httpx.HTTPError:
         slug = None
-    if slug and re.fullmatch(r"[A-Za-z0-9._-]{1,120}", slug):
-        return RedirectResponse(f"{_RA_PUBLIC}/w/{slug}/reports/{report_id}", status_code=302)
-    return RedirectResponse(fallback, status_code=302)
+    if slug and _RA_SLUG_OK.fullmatch(slug):
+        return {"url": f"{_RA_PUBLIC}/w/{slug}/reports/{report_id}"}
+    return {"url": fallback}
 
 
 @router.get("/conversations")
@@ -2698,11 +2702,19 @@ def _report_id_of(v) -> int | None:
     return v if isinstance(v, int) and v > 0 else None
 
 
+# RA 가 준 보고서 주소(/w/<공간>/reports/<번호> — 에이전트가 outcome 에 싣는다, docs/wda-deck WD-D78) — 결과 카드가 이 주소로 바로 연다.
+_RA_REPORT_URL = re.compile(r"/w/(?!\.{1,2}/)[A-Za-z0-9._-]{1,120}/reports/([0-9]{1,18})")
+
+
 def _delib_outcome_of(data: dict) -> dict:
-    """심의 outcome 사건 → 답 meta.delib_outcome — 화면이 되살리는 delib.outcome 과 같은 칸(번호 · 제목 · 집계 · 만장일치)."""
+    """심의 outcome 사건 → 답 meta.delib_outcome — 화면이 되살리는 delib.outcome 과 같은 칸(번호 · 주소 · 제목 · 집계 · 만장일치). 주소는 꼴이 맞고
+    번호가 같을 때만 남긴다."""
     tally = data.get("tally") if isinstance(data.get("tally"), dict) else {}
     t = {k: tally[k] for k in _TALLY_KEYS if isinstance(tally.get(k), int) and not isinstance(tally.get(k), bool)}
-    return {"report_id": _report_id_of(data.get("report_id")),
+    rid = _report_id_of(data.get("report_id"))
+    url = data.get("url")
+    hit = _RA_REPORT_URL.fullmatch(url) if isinstance(url, str) and rid is not None else None
+    return {"report_id": rid, **({"url": url} if hit and int(hit.group(1)) == rid else {}),
             "title": data["title"][:300] if isinstance(data.get("title"), str) else "",
             **({"tally": t} if t else {}), "unanimous": data.get("unanimous") is True}
 
