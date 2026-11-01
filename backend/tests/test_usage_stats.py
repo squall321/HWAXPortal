@@ -334,7 +334,7 @@ def test_원장의_첫_줄_전_날은_0_이_아니라_null(tmp_path):
     rows = box.build(days=7)["sections"]["logins_daily"]["rows"]
     assert [r["logins"] for r in rows] == [None, None, None, 1, 0, 0, 0]       # 10-27 ~ 11-02, 첫 줄은 10-30
     weekly = box.build(days=14)["sections"]["logins_weekly"]["rows"]
-    assert weekly[0] == {"week": "2026-10-19", "accounts": None, "partial": True}
+    assert weekly[0] == {"week": "2026-10-19", "accounts": None, "partial": False}, "기록 전 칸은 값이 없을 뿐 — 일부만이 아니다"
     assert weekly[1] == {"week": "2026-10-26", "accounts": 1, "partial": True}, "원장이 그 주 중간에 시작했다"
 
 

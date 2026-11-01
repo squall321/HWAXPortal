@@ -126,12 +126,13 @@ def _first_day(c: sqlite3.Connection, table: str, col: str = "ts") -> str | None
 
 
 def _buckets(spans: list[tuple[str, date, date]], w: Window, first: str | None, got: dict) -> list[dict]:
-    """주 · 달 칸 — 기록 전 칸은 None, 기간 앞뒤에 걸치거나 아직 끝나지 않았거나 기록이 그 칸 중간에 시작했으면 partial."""
+    """주 · 달 칸 — 기록 전 칸은 None(partial 은 값이 있는 칸에만 — 거짓), 기간 앞뒤에 걸치거나 아직 끝나지 않았거나 기록이 그 칸
+    중간에 시작했으면 partial."""
     f = date.fromisoformat(first) if first else None
     out = []
     for key, start, end in spans:
         if f is None or end < f:
-            out.append({"key": key, "value": None, "partial": True})
+            out.append({"key": key, "value": None, "partial": False})
             continue
         partial = start < w.first or end >= w.last or start < f
         out.append({"key": key, "value": got.get(key, 0), "partial": partial})
