@@ -17,7 +17,7 @@
 - [x] U-3 허브 매니페스트 `launch.portal_auth: true` — **켠다**, HEAXHub 변경 · dev 반영은 다른 에이전트(WD-D26)
 - [x] U-4 'PDF' 의 뜻 — **정식 보고서 문서(report) 기본, brief · memo 선택**, 슬라이드 PDF(W-19)는 청하지 않는다(WD-D27)
 - [x] U-5 M1 단추 자리 — **셋 모두**(심의 결과 · `/보고서` · RA 보내기 알림), 루틴 RA 초안은 M2(WD-D28)
-- [ ] U-6 (코디네이터가 묻는 중) 심의 결과 카드 단추를 W-21 전까지 둘까 — 문은 어느 쪽이든 짓는다(WD-D29)
+- [x] U-6 심의(deliberation 템플릿) 보고서의 단추 — **심의 형식(W-21 `format:deliberation`)이 설 때까지 숨긴다**(WD-D32). `/보고서` 도 deliberation 템플릿이라 같은 문에 걸린다
 
 ## M0 — WDA 세션(요청서 §11)
 

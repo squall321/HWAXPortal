@@ -175,7 +175,7 @@ WDA(WebDesignAgents) 세션이 포털에 '발표자료' 행선지를 청했다 �
   위험의 종류가 다르기 때문이다(그쪽은 실패, 이쪽은 누출).
 - **템플릿 문(W-21)** — RA 보고서의 템플릿 가운데 하나라도 `deliberation` 이면 `owner` 에 더해 `format:deliberation` 이 있어야 한다. 화면은 자리마다
   템플릿을 안다(심의 결과 카드 · `/보고서` = deliberation, RA 보내기 알림 = 그 밖) — `status` 가 `formats.deliberation` 을 알려 주고, 만들기는 RA 에서 읽은
-  실제 템플릿으로 다시 본다(아니면 409 와 까닭). 사용자에게 '심의 결과 카드 단추를 W-21 전까지 둘지' 를 묻는 중이다(U-6) — 문은 어느 쪽이든 짓는다.
+  실제 템플릿으로 다시 본다(아니면 409 와 까닭). 사용자 결정(11-01, U-6) — **심의 형식이 설 때까지 숨긴다.**
 - 허브 계정 — 허브 게이트는 포털 PAT 의 이메일로 허브 사용자를 찾고, 없으면 403 '허브 계정이 없다 — 포털에서 HEAX Hub 타일을 한 번 눌러…' 를 낸다
   (HEAXHub `authz.py:61-74`). 포털은 그 글을 그대로 보인다. 허브 타일이 보이는 사람은 화면이 미리 로그인해 계정이 생긴다
   (`frontend/src/components/layout/SsoPrimer.tsx:7`, `backend/app/auth/routes/launch.py:24`).
@@ -319,4 +319,4 @@ M1 은 스위치를 꺼 둔 채 올린다 — M0 이 끝나지 않은 박스에�
 | U-3 | 허브 매니페스트에 `launch.portal_auth: true` 를 켤까 | **켠다.** HEAXHub 변경과 dev 반영은 다른 에이전트가 한다 — 이 가지는 HEAXHub 를 건드리지 않는다(WD-D26) |
 | U-4 | 'PDF' 는 무엇인가 | **WDA 의 정식 보고서 문서(`doc_style=report`)가 기본, 요약(brief) · 메모(memo)는 고를 수 있게.** 슬라이드 PDF(W-19)는 지금 청하지 않는다(WD-D27) |
 | U-5 | M1 의 단추 자리 | **셋 모두** — 심의 결과 카드 · `/보고서` 저장 답 · RA 보내기 알림. 분석 루틴 RA 초안은 M2(WD-D28) |
-| U-6 | (묻는 중) 심의 결과 카드 단추를 W-21(`format:deliberation`) 전까지 둘까 | 코디네이터가 사용자에게 묻고 있다. 문은 어느 쪽이든 짓는다 — W-21 이 없으면 `deliberation` 보고서의 단추는 서지 않는다(WD-D29) |
+| U-6 | 심의(deliberation 템플릿) 보고서의 단추를 W-21(`format:deliberation`) 전에도 보일까 | **심의 형식이 설 때까지 숨긴다**(사용자 결정 11-01). WDA `/api/health` 의 features 에 `format:deliberation` 이 있을 때만 그 보고서의 단추가 선다. 그 밖의 템플릿은 `owner` 와 박스 스위치만. 주의 — `/보고서` 저장 답의 보고서도 `deliberation` 템플릿이라(에이전트 서버 `deliberation.py:7892`) 같은 문에 걸린다. W-21 전에는 RA 보내기 알림 자리에서만 단추가 선다(WD-D32) |

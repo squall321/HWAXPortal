@@ -135,11 +135,12 @@ WDA 답(11-01, Q2) — `deliberation` 템플릿 보고서(화두 · 라운드 �
 (opening → problem → concept → process → differentiators → evidence → closing)로 눌려 결정문이 `problem` 장면에 한 번 묻히고 액션아이템 · 라운드 요지가
 사라지며 '보고서 참조' 같은 채움 글이 영상에 나간다. WDA 는 심의 꼴(화두 → 쟁점 → 라운드 → 수렴 → 결정 → 액션)을 다음 일로 짓는다고 했다.
 
-- **W-21** 그 꼴이 들어오면 `/api/health` 의 `features` 에 `format:deliberation` 을 싣는다.
+- **W-21** 그 꼴이 들어오면 `/api/health` 의 `features` 에 `format:deliberation` 을 싣는다. **사용자 결정(11-01) — '심의 형식이 설 때까지 숨긴다'.**
+  까닭은 WDA 의 Q2 실측 그대로다(결정문 · 액션아이템이 사라지고 채움 글이 영상에 나갔다). 이 표지가 없으면 심의 보고서의 단추는 서지 않는다.
 - 포털의 문 — RA 보고서의 템플릿(최상위 `template_id` 와 페이지마다의 `template_id`) 가운데 하나라도 `deliberation` 이면 `owner` **와** `format:deliberation`
   이 둘 다 있을 때만 단추를 보이고 만들기를 받는다. 그 밖의 템플릿(지금 단추 자리에서는 RA 보내기 알림의 `__import_blank__`)은 `owner` 만 본다.
   포털의 세 자리 가운데 심의 결과 카드와 `/보고서` 저장 답이 `deliberation` 템플릿이고(에이전트 서버 `deliberation.py:7631,7892`), RA 보내기 알림이
-  `__import_blank__` 다.
+  `__import_blank__` 다. 그래서 W-21 이 들어오기 전에는 RA 보내기 알림 자리에서만 단추가 선다.
 - 알아 둘 사실(코드 읽기) — RA 의 `deliberation` 보고서는 블록 정의를 보고서에 싣지 않는다. 페이지의 `content` 에 템플릿 블록 id(background · results ·
   recommendation · minutes) 만 있고 타입은 RA 템플릿 스키마에 있다(ReportArchive `modules/reports/routes.py:677-722` — 템플릿 블록은 `content` 로,
   `extra_blocks` 는 빈 채). 지금 `_page_blocks`(`src/wdpipeline/ingest.py:407-442`)는 정의 없는 `content` 키를 건너뛰므로 실물 심의 보고서는 블록 0개가
