@@ -361,6 +361,9 @@ class Settings(BaseSettings):
     # 정문 nginx 접근 로그(회전본은 같은 이름 뒤에 붙는다) — 관리자 접속 이력이 계정별 요청을 찾는다(docs/access-history).
     # 컨테이너에서는 리포가 /workspace 라 backend 기준 상대경로로 닿는다.
     nginx_access_log_path: str = "../infra/data/nginx-access.log"
+    # 관리자 이용 통계(/admin/usage, docs/ops-dashboard M1)가 모든 칸에서 뺄 계정 — 시험 · 서비스 계정을 쉼표로(대소문자 무시). 비면(기본) 아무도
+    # 빼지 않는다. 이메일과 주체(subject)로 견준다 — 이 포털은 로컬 · SSO 모두 주체가 이메일이다. 화면이 뺀 계정을 그대로 보인다.
+    usage_exclude_accounts: str = ""
     # 대화 의미검색용 임베더. AIDataHub 가 이미 같은 모델을 /api/embed 로 서비스한다 —
     # 두 벌을 두면 임베딩 공간이 갈라져 코사인이 의미를 잃는다. 그래서 새로 안 띄우고 빌린다.
     embed_base_url: str = "http://127.0.0.1:8001"
