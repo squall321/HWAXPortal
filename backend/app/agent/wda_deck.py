@@ -356,7 +356,7 @@ async def wda_artifacts(base: str, token: str, run_id: str) -> dict[str, int | N
 
 # ── 상태 접기(PLAN §7.2) ────────────────────────────────────────────────────────────────────────────
 def fold(run: dict | None, *, rec: dict, now: float, settings: Settings) -> dict:
-    """WDA 실행 원장(또는 None — WDA 가 모른다) → 화면 낱말 하나: queued · preparing · rendering · done · failed.
+    """WDA 실행 원장(또는 None — WDA 가 모른다) → 화면 낱말 하나(queued · preparing · rendering · done · failed).
     돌려주는 것 — state · step · progress(단계 기준) · error · late · next(render | finish | None) · skipped."""
     out: dict[str, Any] = {"state": "preparing", "step": "", "progress": 0, "error": None, "late": False, "next": None, "skipped": []}
     if run is None:
