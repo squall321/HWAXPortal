@@ -345,3 +345,211 @@ span.adm-err {
     border-top: 1px solid var(--border);
   }
 }
+
+/* LLM · GPU 현황 — 서버 카드 · 작은 그래프(인라인 SVG) · 표지(docs/ops-dashboard). 색은 토큰만 쓴다(hex 래칫) */
+.lls-h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: var(--sp-5) 0 var(--sp-2);
+  font-size: var(--fs-18);
+}
+.lls-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0 0 var(--sp-2);
+}
+.lls-down {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+}
+.lls-down b {
+  color: var(--warn);
+}
+.lls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  gap: var(--sp-3);
+}
+.lls-card {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.lls-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.lls-card-head h3 {
+  margin: 0;
+  font-size: var(--fs-15);
+}
+.lls-addr {
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.lls-badge {
+  margin-left: var(--sp-1);
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.lls-badge.is-ok {
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.lls-badge.is-warn {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.lls-badge.is-bad {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.lls-why {
+  margin: var(--sp-1) 0;
+  color: var(--warn);
+  font-size: var(--fs-13);
+}
+.lls-why-inline {
+  color: var(--warn);
+  font-size: var(--fs-12);
+}
+.lls-unknown {
+  color: var(--fg-subtle);
+}
+.lls-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px var(--sp-3);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-13);
+}
+.lls-kv dt {
+  color: var(--fg-muted);
+}
+.lls-kv dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.lls-sparks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-2) var(--sp-4);
+  margin: var(--sp-2) 0 0;
+}
+.lls-spark-box {
+  margin: 0;
+}
+.lls-spark-box figcaption {
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+.lls-spark {
+  display: block;
+  width: 9rem;
+  height: 2.25rem;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+}
+.lls-spark .is-axis {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.lls-spark .is-run,
+.lls-spark .is-wait {
+  fill: none;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.lls-spark .is-run {
+  stroke: var(--accent-fg);
+}
+.lls-spark .is-wait {
+  stroke: var(--warn);
+}
+.lls-legend {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.lls-legend .is-run {
+  color: var(--accent-fg);
+}
+.lls-legend .is-wait {
+  color: var(--warn);
+}
+.lls-meter {
+  display: inline-block;
+  width: 5rem;
+  height: 0.4rem;
+  margin-right: var(--sp-2);
+  vertical-align: middle;
+}
+.lls-meter .is-bg {
+  fill: var(--surface-3);
+}
+.lls-meter .is-fg {
+  fill: var(--ok);
+}
+.lls-meter .is-fg.is-warn {
+  fill: var(--warn);
+}
+.lls-meter .is-fg.is-bad {
+  fill: var(--danger);
+}
+.lls-ages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin: var(--sp-2) 0 0;
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+.lls-ages .is-stale,
+.lls-sources .lls-stale {
+  color: var(--warn);
+}
+.lls-replicas,
+.lls-upstreams {
+  min-width: 52rem;
+}
+.lls-sources {
+  min-width: 36rem;
+}
+.lls-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: var(--sp-2);
+}
+.lls-tile {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+}
+.lls-tile > span {
+  display: block;
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+}
+.lls-tile > b {
+  display: block;
+  font-size: var(--fs-15);
+  font-variant-numeric: tabular-nums;
+}
