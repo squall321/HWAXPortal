@@ -343,22 +343,20 @@ def test_WDA_에_주인_기능이_없거나_상태를_모르면_만들지_않는
     assert box["fake"].created == [] and box["fake"].ra_auth == [], "주인 기능을 모르는 WDA 에는 보고서를 읽지도 넘기지도 않는다"
 
 
-def test_심의_보고서는_delib_16x9_가_active_일_때만_그_꼴을_실어_만든다(box):
+@pytest.mark.parametrize("state,shown", [(None, False), ("draft", False), ("active", True)])
+def test_심의_보고서는_delib_16x9_가_active_일_때만_서고_그_꼴을_실어_만든다(box, state, shown):
+    """사용자 결정(11-01, WD-D42) — 없음 · draft 는 숨기고(만들기 409 · WDA 에 넘기지 않는다) active 일 때만 연다. draft 를 여는 손잡이는 없다."""
     fake = box["fake"]
+    if state:
+        fake.formats["delib-16x9"] = state
     st = box["c"].get("/agent/deck/status").json()
-    assert st["enabled"] is True and st["formats"] == {"deliberation": False}
+    assert st["enabled"] is True and st["formats"] == {"deliberation": shown}
     r = _make(box, report_id=58)
-    assert r.status_code == 409 and "delib-16x9 — 없음" in r.json()["detail"]
-    fake.formats["delib-16x9"] = "draft"                     # WDA 가 꼴을 지었지만 아직 draft — 사용자 결정 전까지 숨긴다(WD-D39)
-    W._CAPS.update(at=0.0, features=None)
-    assert box["c"].get("/agent/deck/status").json()["formats"] == {"deliberation": False}
-    r = _make(box, report_id=58)
-    assert r.status_code == 409 and "delib-16x9 — draft" in r.json()["detail"]
-    assert fake.created == [], "준비되지 않은 꼴로는 심의 보고서를 넘기지 않는다(사용자 결정 11-01 U-6)"
-    fake.formats["delib-16x9"] = "active"
-    W._CAPS.update(at=0.0, features=None)
-    assert box["c"].get("/agent/deck/status").json()["formats"] == {"deliberation": True}
-    assert _make(box, report_id=58).status_code == 200
+    if not shown:
+        assert r.status_code == 409 and f"delib-16x9 — {state or '없음'}" in r.json()["detail"]
+        assert fake.created == [] and W.records(box["s"]) == [], "준비되지 않은 꼴로는 심의 보고서를 넘기지 않는다(사용자 결정 11-01 U-6 · U-7)"
+        return
+    assert r.status_code == 200
     (sent,) = fake.created
     assert sent["format"] == "delib-16x9" and sent["report_json"] == DELIB, "그 꼴을 싣고 ReportRead 는 그대로"
     assert fake.runs[_run_id(box)]["format"] == "delib-16x9"

@@ -211,7 +211,7 @@ class Caps(NamedTuple):
 
 def format_ready(caps: Caps, fmt: str) -> bool:
     """그 꼴로 넘겨도 되는가 — 정책은 이 함수 하나다(status 의 formats 와 만들기의 문이 함께 쓴다). WDA 가 `format:<id>` 를 알리고 그 꼴의 상태가
-    active 여야 한다 — draft 는 숨긴다(사용자 결정 전까지, WD-D39)."""
+    active 여야 한다 — draft · 없음은 숨긴다. 사용자 결정(11-01, WD-D42) — active 일 때만 열고 draft 를 여는 손잡이는 두지 않는다."""
     return f"format:{fmt}" in caps.features and caps.formats.get(fmt) == "active"
 
 

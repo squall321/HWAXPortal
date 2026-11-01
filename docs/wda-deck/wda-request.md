@@ -150,7 +150,7 @@ WDA 둘째 답(11-01 저녁) — 심의 꼴 `delib-16x9` 를 지었다(WDA 로�
 - 만들기 — `POST /api/runs` 의 `format` 칸(4.1). 없으면 `wide-16x9`(지금과 같다), 모르는 꼴이면 곧바로 400(봉투 · 쓸 수 있는 꼴을 `message` 에).
 - **포털의 문(정책 함수 하나)** — RA 보고서의 템플릿(최상위 `template_id` 와 페이지마다의 `template_id`) 가운데 하나라도 `deliberation` 이면 `owner` 에 더해
   `features` 에 `format:delib-16x9` 가 있고 **`formats["delib-16x9"]` 가 `active`** 여야 단추를 보이고 만들기를 받으며, 만들기에 `"format": "delib-16x9"` 를
-  싣는다. `draft` 는 숨긴다 — 받아도 될지 사용자에게 묻는 중이고, 답이 오기 전까지는 `active` 만이다. 그 밖의 템플릿(지금 단추 자리에서는 RA 보내기
+  싣는다. **`draft` 는 숨긴다 — 사용자 결정(11-01)으로 active 일 때만 열고, draft 를 여는 손잡이는 두지 않는다.** 그 밖의 템플릿(지금 단추 자리에서는 RA 보내기
   알림의 `__import_blank__`)은 `owner` 만 보고 `format` 을 싣지 않는다. 포털의 세 자리 가운데 심의 결과 카드와 `/보고서` 저장 답이 `deliberation`
   템플릿이고(에이전트 서버 `deliberation.py:7631,7892`), RA 보내기 알림이 `__import_blank__` 다. 그래서 `delib-16x9` 가 active 가 되기 전에는 RA 보내기 알림
   자리에서만 단추가 선다.
@@ -285,7 +285,7 @@ heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항�
 | W-13 | 보존 기한 · 지운 뒤 404/410 — 지금 아무것도 지우지 않는다 | **강하게 권장** |
 | W-14 | 렌더 동시 상한(줄) — 지금 상한 없음 | **강하게 권장** |
 | W-15 | Idempotency-Key | 선택 |
-| W-21 | 심의 보고서 꼴 `delib-16x9` — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400(11-01 저녁 지음 · draft · 허브 SIF 전) | 심의 자리 단추의 전제 — 포털은 `active` 만 받는다(draft 는 사용자에게 묻는 중) |
+| W-21 | 심의 보고서 꼴 `delib-16x9` — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400(11-01 저녁 지음 · draft · 허브 SIF 전) | 심의 자리 단추의 전제 — 포털은 `active` 일 때만 연다(사용자 결정 11-01 — draft 는 숨김) |
 | W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 |
 | W-19 | 슬라이드 PDF | 청하지 않는다(사용자 결정 11-01) |
 | P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 |

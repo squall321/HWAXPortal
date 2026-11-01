@@ -1,7 +1,7 @@
 # 발표자료로 — 포털이 만든 RA 보고서를 WebDesignAgents 로 PPT · PDF 만들기 — 계획 (2026-11-01)
 
 > 체크리스트 [checklist.md](checklist.md) · 결정과 까닭 [context-notes.md](context-notes.md) · WDA 세션에 그대로 보낼 요청서 [wda-request.md](wda-request.md).
-> 설계는 11-01 오전에 끝났고, 같은 날 사용자가 §13 의 다섯을 모두 정했다(권장안 그대로 — U-2 는 사용자가 손으로 push).
+> 설계는 11-01 오전에 끝났고, 같은 날 사용자가 §13 의 다섯을 모두 정했다(권장안 그대로 — U-2 는 사용자가 손으로 push). 뒤에 U-6 · U-7 도 정했다.
 > M1(포털 · 에이전트 서버 한 칸)을 이 가지에서 지었다(11-01 — 커밋 · 시험은 체크리스트, 결정은 context-notes WD-D33 ~ D38). WDA 쪽 계약(W-1 ~ W-12)은
 > 아직 없으니 단추는 스위치와 능력 탐침에 막혀 보이지 않는다. 박스에서 켜는 법은 [server-setup.md](server-setup.md).
 > 11-01 저녁 WDA 가 심의 꼴 `delib-16x9` 를 지었다(로컬 판 · draft) — 심의 보고서는 그 꼴이 active 일 때만 그 꼴을 실어 넘긴다(§6 · WD-D39 · D40).
@@ -182,7 +182,7 @@ WDA(WebDesignAgents) 세션이 포털에 '발표자료' 행선지를 청했다 �
   위험의 종류가 다르기 때문이다(그쪽은 실패, 이쪽은 누출).
 - **템플릿 문(W-21)** — RA 보고서의 템플릿 가운데 하나라도 `deliberation` 이면 `owner` 에 더해 WDA 의 심의 꼴 `delib-16x9` 가 준비돼야 한다 — features 에
   `format:delib-16x9` 가 있고 `formats["delib-16x9"]` 가 `active`(정책 함수 하나 `format_ready` — draft 를 받을지는 사용자에게 묻는 중이라 그때까지 active
-  만, U-7). 그때 만들기에 `"format": "delib-16x9"` 를 싣는다. 그 밖의 템플릿은 `format` 을 싣지 않는다(WDA 기본 wide-16x9). 화면은 자리마다 템플릿을
+  만 — 사용자 결정 11-01 U-7 로 확정, 손잡이 없음). 그때 만들기에 `"format": "delib-16x9"` 를 싣는다. 그 밖의 템플릿은 `format` 을 싣지 않는다(WDA 기본 wide-16x9). 화면은 자리마다 템플릿을
   안다(심의 결과 카드 · `/보고서` = deliberation, RA 보내기 알림 = 그 밖) — `status` 가 `formats.deliberation` 을 알려 주고, 만들기는 RA 에서 읽은 실제
   템플릿으로 다시 본다(아니면 409 와 까닭). WDA 가 그 꼴을 모르면(탐침 뒤 되돌림) 만들기가 400 이고 포털은 까닭을 보이며 기본 꼴로 다시 보내지 않는다.
   `block_sections` 는 싣지 않는다(WD-D40). 사용자 결정(11-01, U-6) — **심의 형식이 설 때까지 숨긴다.**
@@ -330,4 +330,4 @@ M1 은 스위치를 꺼 둔 채 올린다 — M0 이 끝나지 않은 박스에�
 | U-4 | 'PDF' 는 무엇인가 | **WDA 의 정식 보고서 문서(`doc_style=report`)가 기본, 요약(brief) · 메모(memo)는 고를 수 있게.** 슬라이드 PDF(W-19)는 지금 청하지 않는다(WD-D27) |
 | U-5 | M1 의 단추 자리 | **셋 모두** — 심의 결과 카드 · `/보고서` 저장 답 · RA 보내기 알림. 분석 루틴 RA 초안은 M2(WD-D28) |
 | U-6 | 심의(deliberation 템플릿) 보고서의 단추를 W-21(`format:deliberation`) 전에도 보일까 | **심의 형식이 설 때까지 숨긴다**(사용자 결정 11-01). WDA `/api/health` 의 features 에 `format:deliberation` 이 있을 때만 그 보고서의 단추가 선다. 그 밖의 템플릿은 `owner` 와 박스 스위치만. 주의 — `/보고서` 저장 답의 보고서도 `deliberation` 템플릿이라(에이전트 서버 `deliberation.py:7892`) 같은 문에 걸린다. W-21 전에는 RA 보내기 알림 자리에서만 단추가 선다(WD-D32). 11-01 저녁 — 표지 이름은 WDA 꼴 등록부의 `format:delib-16x9` 이고 그 꼴의 상태가 active 여야 하며, 만들기에 `format` 을 싣는다(WD-D39) |
-| U-7 | (묻는 중 — 코디네이터가 사용자에게) 심의 꼴이 `draft` 여도 단추를 보일까 | **답이 오기 전까지 `active` 만.** 정책은 함수 하나(`format_ready`) — 답이 'draft 도' 면 그 한 줄만 바꾼다(WD-D39) |
+| U-7 | 심의 꼴이 `draft` 여도 단추를 보일까 | **아니다 — `formats["delib-16x9"] == "active"` 일 때만 연다(사용자 결정 11-01).** draft · 없음은 숨기고 draft 를 여는 손잡이는 두지 않는다. 박스 스위치 · `owner` · `format:delib-16x9` 와 함께 넷이 다 맞아야 한다 — 정책 함수 `format_ready` 하나(WD-D42) |

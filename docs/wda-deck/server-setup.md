@@ -10,7 +10,7 @@
 2. 허브 매니페스트 `launch.portal_auth: true`(HEAXHub `385783f`)가 이 박스에 들어와 있다 — 포털 주소로 익명
    `/apps/web_design_agents/api/health` 를 부르면 401 이다.
 3. 심의 결과 카드 · `/보고서` 저장 답의 단추는 WDA 의 심의 꼴이 준비된 뒤에만 선다(U-6 — 심의 형식이 설 때까지 숨긴다) — `/api/health` 의 features 에
-   `format:delib-16x9` 가 있고 `formats` 에서 그 꼴이 `active` 여야 한다(W-21 · WD-D39 — 11-01 저녁 WDA 로컬 판은 draft). 그 전에는 RA 보내기 알림 자리에서만 선다.
+   `format:delib-16x9` 가 있고 `formats` 에서 그 꼴이 `active` 여야 한다(W-21 · WD-D39 — 11-01 저녁 WDA 로컬 판은 draft, draft 는 숨긴다 — 사용자 결정 WD-D42 · 손잡이 없음). 그 전에는 RA 보내기 알림 자리에서만 선다.
 
 ## 1. 포털 켜기
 
