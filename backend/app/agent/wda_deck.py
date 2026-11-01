@@ -73,6 +73,9 @@ TEMPLATE_FORMAT = {"deliberation": "delib-16x9"}
 STEPS = {"ingest": "보고서 읽기", "fragmentize": "조각 나누기", "scenario": "장면 구성", "build": "화면 굽기"}
 _PROGRESS = {"ingest": 10, "fragmentize": 25, "scenario": 40, "build": 55}
 CAPS_TTL_S = 60.0
+# 만들기의 자리 잡기(예약) — 잠금 밖에서 RA 를 읽고 WDA 에 맡기는 동안 상한 · 중복에 센다. 그 길의 가장 긴 시간(RA 위임 15초 + 읽기 60초 + 다시 60초 +
+# WDA 만들기 60초 + 탐침 10초)보다 길게 — 이보다 오래된 예약은 끊긴 것(프로세스가 죽었다)으로 보고 세지 않는다(WD-D56)
+RESERVE_TTL_S = 300.0
 
 _LOCKS: dict[str, asyncio.Lock] = {}
 _CAPS: dict[str, Any] = {"at": 0.0, "features": None, "formats": {}, "version": None}
@@ -122,6 +125,11 @@ def save(settings: Settings, rec: dict) -> None:
     os.replace(tmp, p)
 
 
+def drop(settings: Settings, job_id: str) -> None:
+    """예약을 놓는다 — WDA 에 간 것이 없을 때만(만들기 실패, WD-D56)."""
+    _path(settings, job_id).unlink(missing_ok=True)
+
+
 def load(settings: Settings, job_id: str, owner_sub: str) -> dict:
     """맡긴 사람의 기록만 — 남의 것 · 없는 것은 똑같이 404(있는지도 알리지 않는다)."""
     p = _path(settings, job_id)
@@ -148,9 +156,15 @@ def records(settings: Settings) -> list[dict]:
     return out
 
 
+def reserving(rec: dict) -> bool:
+    """WDA 에 아직 맡기지 않은 자리 잡기(예약)인가 — run_id 가 없다(WD-D56)."""
+    return not (rec.get("wda") or {}).get("run_id")
+
+
 def inflight(rec: dict, settings: Settings, now: float) -> bool:
-    """아직 도는 잡인가 — 끝을 적지 않았고 give_up 을 넘기지 않은 것(끊긴 채 남은 옛 기록이 상한을 영영 먹지 않게)."""
-    return not rec.get("finished") and now - float(rec.get("created_at") or 0) < settings.wda_deck_give_up_s
+    """아직 도는 잡인가 — 끝을 적지 않았고 give_up 을 넘기지 않은 것(끊긴 채 남은 옛 기록이 상한을 영영 먹지 않게). 예약은 RESERVE_TTL_S 까지만."""
+    age = now - float(rec.get("created_at") or 0)
+    return not rec.get("finished") and age < (RESERVE_TTL_S if reserving(rec) else settings.wda_deck_give_up_s)
 
 
 # ── 자격 · 주소 ─────────────────────────────────────────────────────────────────────────────────────────
@@ -601,11 +615,30 @@ def _write_capable(request: Request) -> None:
                         status_code=403)
 
 
-def _base_and_token(request: Request, settings: Settings, principal: Principal) -> tuple[str, str]:
+def _base(request: Request, settings: Settings) -> str:
     base = wda_base(settings, getattr(request.app.state, "catalog", None))
     if not base:
         raise AuthError("WDA 주소를 모릅니다 — 박스 설정 wda_base_url 또는 routes.env 의 apps 를 확인하세요.", status_code=409)
-    return base, hub_pat(request.app.state.keystore, settings, principal)
+    return base
+
+
+def _token(request: Request, settings: Settings, principal: Principal) -> str:
+    """허브 토큰은 쓰기 바로 앞에서 찍는다 — 긴 RA 읽기를 사이에 두고 들고 있지 않는다(WD-D56 · 허브가 WDA 까지 넘긴다 WD-D47)."""
+    return hub_pat(request.app.state.keystore, settings, principal)
+
+
+def _base_and_token(request: Request, settings: Settings, principal: Principal) -> tuple[str, str]:
+    return _base(request, settings), _token(request, settings, principal)
+
+
+def _reserved_view(rec: dict, now: float) -> dict:
+    """예약 — WDA 에 묻지 않는다. 막 맡기는 중이면 '맡기는 중', 오래됐으면(끊김) 실패로 보인다(끝을 적을 것은 없다 — WDA 에 간 것이 없다)."""
+    if now - float(rec.get("created_at") or now) < RESERVE_TTL_S:
+        f = {"state": "queued", "step": "맡기는 중", "progress": 0, "error": None, "late": False, "next": None, "skipped": []}
+    else:
+        f = {"state": "failed", "step": "맡기다 끊김", "progress": None, "error": "맡기는 도중 포털이 끊겼습니다 — 다시 누르세요.", "late": False,
+             "next": None, "skipped": []}
+    return view(rec, f, now=now)
 
 
 @router.get("/status")
@@ -657,12 +690,14 @@ async def deck_create(
         raise AuthError("대화 저장소가 바쁩니다 — 잠시 뒤 다시 누르세요.", status_code=503) from exc
     if whose != "mine":
         raise AuthError("그 대화가 없습니다.", status_code=404)
-    base, token = _base_and_token(request, settings, principal)
-    caps = await capabilities(base, token)
+    base = _base(request, settings)
+    caps = await capabilities(base, _token(request, settings, principal))
     if caps is None:
         raise AuthError("WDA 상태를 읽지 못했습니다 — 잠시 뒤 다시 누르세요.", status_code=503)
     if "owner" not in caps.features:
         raise AuthError("WDA 에 아직 주인 기능이 없습니다 — 보고서를 넘기지 않습니다(사용자 결정 11-01).", status_code=409)
+    # ① 잠금 안은 기록뿐이다 — 중복 · 상한을 보고 자리를 잡는다(예약). RA 읽기 · WDA 만들기는 잠금 밖이다 — 한 사람의 느린 RA 가 박스 전체의
+    #    만들기를 세우지 않게(적대 검토 R2, WD-D56). 예약은 상한 · 중복에 센다.
     async with lock("create"):
         now = time.time()
         recs = await asyncio.to_thread(records, settings)
@@ -670,33 +705,40 @@ async def deck_create(
             if (r.get("owner_sub") == owner and r["report"]["id"] == body.report_id
                     and r["options"]["targets"] == targets and r["options"]["doc_style"] == body.doc_style
                     and (inflight(r, settings, now) or (not body.again and (r.get("finished") or {}).get("state") == "done"))):
-                return {**view(r, now=now), "created": False}
+                return {**(_reserved_view(r, now) if reserving(r) else view(r, now=now)), "created": False}
         live = [r for r in recs if inflight(r, settings, now)]
         if sum(1 for r in live if r.get("owner_sub") == owner) >= settings.wda_deck_inflight_max:
             raise AuthError(f"만드는 중인 발표자료가 {settings.wda_deck_inflight_max}건입니다 — 끝난 뒤에 다시 누르세요.", status_code=429)
         if len(live) >= settings.wda_deck_inflight_box_max:
             raise AuthError("지금 발표자료를 만드는 사람이 많습니다 — 잠시 뒤 다시 누르세요.", status_code=429)
-        try:
-            data, size = await read_report(request, settings, principal, body.report_id)
-            fmts = sorted({TEMPLATE_FORMAT[t] for t in templates_of(data) if t in TEMPLATE_FORMAT})
-            not_ready = [f for f in fmts if not format_ready(caps, f)]
-            if not_ready:
-                raise DeckError("WDA 의 심의 보고서 꼴(" + ", ".join(f"{f} — {caps.formats.get(f) or '없음'}" for f in not_ready)
-                                + ")이 아직 준비되지 않았습니다 — 준비(active)되기 전에는 심의 보고서를 넘기지 않습니다(기본 꼴로는 결정문 · "
-                                  "액션아이템이 빠진다, 사용자 결정 11-01 U-6).", 409)
-            fmt = fmts[0] if fmts else None
-            job_id = secrets.token_hex(16)
-            run_id = await wda_create(base, token, data=data, report_id=body.report_id, targets=targets,
-                                      doc_style=body.doc_style, job_id=job_id, fmt=fmt)
-        except DeckError as exc:
-            _audit(request, principal, "deck_create", "failed", report_id=body.report_id, error=exc.message[:300])
-            raise _http_error(exc) from exc
-        title = data.get("title") if isinstance(data.get("title"), str) else ""
+        job_id = secrets.token_hex(16)
         rec = {"job_id": job_id, "owner_sub": owner, "owner_email": principal.email or owner,
-               "conversation_id": body.conversation_id, "report": {"id": body.report_id, "title": title[:300]},
+               "conversation_id": body.conversation_id, "report": {"id": body.report_id, "title": ""},
                "options": {"targets": targets, "doc_style": body.doc_style, "pptx_mode": PPTX_MODE},
-               "wda": {"run_id": run_id, "format": fmt, "version": caps.version}, "state": "queued", "created_at": now, "render_submitted_at": None,
-               "images_not_sent": len(file_refs(data.get("pages"))), "finished": None, "dismissed": None}
+               "wda": {"run_id": None, "format": None, "version": caps.version}, "state": "queued", "created_at": now,
+               "render_submitted_at": None, "images_not_sent": 0, "finished": None, "dismissed": None}
+        await asyncio.to_thread(save, settings, rec)
+    # ② 잠금 밖 — RA 읽기 · 꼴 문 · WDA 만들기. 실패하면 예약을 놓는다(WDA 에 간 것이 없다 — 상한 · 중복에서 빠진다)
+    try:
+        data, size = await read_report(request, settings, principal, body.report_id)
+        fmts = sorted({TEMPLATE_FORMAT[t] for t in templates_of(data) if t in TEMPLATE_FORMAT})
+        not_ready = [f for f in fmts if not format_ready(caps, f)]
+        if not_ready:
+            raise DeckError("WDA 의 심의 보고서 꼴(" + ", ".join(f"{f} — {caps.formats.get(f) or '없음'}" for f in not_ready)
+                            + ")이 아직 준비되지 않았습니다 — 준비(active)되기 전에는 심의 보고서를 넘기지 않습니다(기본 꼴로는 결정문 · "
+                              "액션아이템이 빠진다, 사용자 결정 11-01 U-6).", 409)
+        fmt = fmts[0] if fmts else None
+        run_id = await wda_create(base, _token(request, settings, principal), data=data, report_id=body.report_id,
+                                  targets=targets, doc_style=body.doc_style, job_id=job_id, fmt=fmt)
+    except DeckError as exc:
+        async with lock(job_id):
+            await asyncio.to_thread(drop, settings, job_id)
+        _audit(request, principal, "deck_create", "failed", job_id=job_id, report_id=body.report_id, error=exc.message[:300])
+        raise _http_error(exc) from exc
+    title = data.get("title") if isinstance(data.get("title"), str) else ""
+    async with lock(job_id):
+        rec.update(report={"id": body.report_id, "title": title[:300]}, images_not_sent=len(file_refs(data.get("pages"))))
+        rec["wda"].update(run_id=run_id, format=fmt)
         await asyncio.to_thread(save, settings, rec)
     _audit(request, principal, "deck_create", "ok", job_id=job_id, report_id=body.report_id, targets=targets,
            doc_style=body.doc_style, format=fmt, wda_version=caps.version, bytes=size, images=rec["images_not_sent"])
@@ -715,7 +757,7 @@ async def deck_jobs(
     now = time.time()
     mine = [r for r in await asyncio.to_thread(records, settings)
             if r.get("owner_sub") == principal.subject and not r.get("dismissed")][:20]
-    open_ = [r for r in mine if not r.get("finished")]
+    open_ = [r for r in mine if not r.get("finished") and not reserving(r)]      # 예약은 WDA 에 묻지 않는다(WD-D56)
     folded: dict[str, dict | None] = {}
     if open_:
         base, token = _base_and_token(request, settings, principal)
@@ -730,7 +772,8 @@ async def deck_jobs(
         folded = dict(await asyncio.gather(*(one(r) for r in open_)))
     unasked = {"state": "preparing", "step": "WDA 에 묻지 못했습니다 — 다시 묻습니다", "progress": None, "error": None, "late": False,
                "next": None, "skipped": []}
-    jobs = [view(r, now=now) if r.get("finished") else view(r, folded.get(r["job_id"]) or unasked, now=now) for r in mine]
+    jobs = [view(r, now=now) if r.get("finished") else _reserved_view(r, now) if reserving(r)
+            else view(r, folded.get(r["job_id"]) or unasked, now=now) for r in mine]
     return {"jobs": jobs, "keep_days": settings.wda_deck_job_days}
 
 
@@ -749,6 +792,8 @@ async def deck_job(
         raise _http_error(exc) from exc
     if rec.get("finished"):
         return view(rec)
+    if reserving(rec):
+        return _reserved_view(rec, time.time())
     base, token = _base_and_token(request, settings, principal)
     now = time.time()
     try:
@@ -779,6 +824,8 @@ async def deck_advance(
         fin = rec.get("finished")
         if fin:
             return {**view(rec), "notice": fin.get("notice"), "noticed": bool(fin.get("saved"))}
+        if reserving(rec):
+            return _reserved_view(rec, time.time())
         base, token = _base_and_token(request, settings, principal)
         now = time.time()
         try:

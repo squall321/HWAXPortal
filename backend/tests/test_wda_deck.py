@@ -71,6 +71,8 @@ class FakeHubWDA:
         self.created: list[dict] = []                  # 받은 만들기 본문
         self.client_identity: list[str] = []           # 클라이언트가 보낸 X-Heax-User-Email(있으면 안 된다)
         self.pats: list[dict] = []
+        self.pat_calls: list[tuple[str, str, str]] = []     # (메서드, WDA 경로, 그 부르기에 실린 PAT 의 jti)
+        self.ra_delay: dict[str, float] = {}           # RA 토큰 → 늦추는 초(그 사람의 RA 만 느리다)
         self.ra_auth: list[str] = []
         self.no_hub_account: set[str] = set()
         self.not_viewable: set[str] = set()            # 허브 계정은 있으나 이 앱을 볼 수 없다(can_view_app 거절 — 몸 없는 403)
@@ -127,6 +129,8 @@ class FakeHubWDA:
         if self.slow:
             await asyncio.sleep(self.slow)
         if req.url.host == "ra.test":
+            if d := self.ra_delay.get(req.headers.get("authorization", "").removeprefix("Bearer ")):
+                await asyncio.sleep(d)
             return self.ra(req)
         assert req.url.host == "hub.test", req.url
         self.calls.append((req.method, req.url.path))
@@ -146,6 +150,7 @@ class FakeHubWDA:
             return httpx.Response(401, json={"detail": "포털 토큰이 거절됐다(서명 · 만료 · 청중 heax-hub)"})
         assert claims["scope"] == "api"
         self.pats.append(claims)
+        self.pat_calls.append((req.method, req.url.path.removeprefix("/apps/web_design_agents"), claims["jti"]))
         email = str(claims.get("email") or "").lower()
         if email in self.no_hub_account:
             return httpx.Response(403, json={"detail": "허브 계정이 없다 — 포털에서 HEAX Hub 타일을 한 번 눌러 허브에 로그인한 뒤 다시 시도한다"})
@@ -842,6 +847,90 @@ def test_같은_보고서_같은_옵션은_하나로_again_은_새로(box):
     box["c"].post(f"/agent/deck/jobs/{a['job_id']}/advance")
     assert _make(box).json()["job_id"] == a["job_id"], "끝난 같은 잡은 그것을 준다"
     assert _make(box, again=True).json()["created"] is True
+
+
+# ── 만들기의 잠금은 기록만 — RA · WDA 왕복은 잠금 밖, 자리는 예약으로(적대 검토 R2, WD-D56) ───────────────────────────────
+def _by_header(box):
+    from fastapi import Request
+    users = {"kim": KIM, "lee": LEE}
+
+    def who(request: Request) -> Principal:
+        return users[request.headers.get("x-u", "kim")]
+
+    app.dependency_overrides[principal_pat_or_session] = who
+
+
+def test_한_사람의_느린_RA_읽기가_다른_사람의_만들기를_세우지_않는다(box):
+    c, fake = box["c"], box["fake"]
+    _by_header(box)
+    c.get("/agent/deck/status", headers={"x-u": "kim"})
+    fake.ra_delay["rat_kim"] = 2.5
+    kim = {"report_id": 41, "conversation_id": box["conv"]["kim@corp.com"]}
+    lee = {"report_id": 41, "conversation_id": box["conv"]["lee@corp.com"]}
+
+    def lee_after():
+        time.sleep(0.5)
+        t = time.monotonic()
+        r = c.post("/agent/deck/jobs", json=lee, headers={"x-u": "lee"})
+        return r.status_code, time.monotonic() - t
+
+    with ThreadPoolExecutor(2) as ex:
+        fk = ex.submit(lambda: c.post("/agent/deck/jobs", json=kim, headers={"x-u": "kim"}).status_code)
+        fl = ex.submit(lee_after)
+        code, waited = fl.result()
+        assert fk.result() == 200
+    assert code == 200 and waited < 1.5, f"이의 만들기가 김의 RA 읽기를 기다렸다({waited:.2f}초)"
+
+
+def test_예약은_RA_를_읽는_동안에도_상한에_세고_실패하면_놓는다(box):
+    c, fake, s = box["c"], box["fake"], box["s"]
+    s.wda_deck_inflight_max = 1
+    c.get("/agent/deck/status")
+    fake.ra_delay["rat_kim"] = 1.5
+
+    def second():
+        time.sleep(0.4)
+        return _make(box, doc_style="memo")
+
+    with ThreadPoolExecutor(2) as ex:
+        first = ex.submit(lambda: _make(box))
+        r2 = ex.submit(second).result()
+        assert first.result().status_code == 200
+    assert r2.status_code == 429, "첫 잡이 아직 RA 를 읽는 동안에도 자리를 센다"
+    fake.ra_delay.clear()
+    for rec in W.records(s):
+        rec["finished"] = {"state": "done", "files": [], "skipped": []}
+        W.save(s, rec)
+    assert _make(box, report_id=999).status_code == 404
+    assert [r for r in W.records(s) if not r.get("finished")] == [], "실패한 만들기는 예약을 놓는다"
+    assert _make(box, doc_style="brief").status_code == 200, "놓은 자리는 다음 만들기가 쓴다"
+
+
+def test_허브_토큰은_쓰기_바로_앞에서_새로_찍는다(box):
+    """RA 읽기(길 수 있다)를 사이에 두고 탐침 때 찍은 토큰을 들고 있다가 WDA 만들기에 쓰지 않는다(WD-D56 · D47)."""
+    fake = box["fake"]
+    assert _make(box).status_code == 200
+    jtis = {path: jti for _, path, jti in fake.pat_calls}
+    assert jtis["/api/health"] != jtis["/api/runs"]
+
+
+def test_끊긴_예약은_상한에_세지_않고_실패로_보인다(box):
+    c, s = box["c"], box["s"]
+    s.wda_deck_inflight_max = 1
+    stale = {"job_id": "e" * 32, "owner_sub": "kim@corp.com", "owner_email": "kim@corp.com", "conversation_id": box["conv"]["kim@corp.com"],
+             "report": {"id": 43, "title": ""}, "options": {"targets": ["pptx"], "doc_style": "report", "pptx_mode": "hybrid"},
+             "wda": {"run_id": None}, "state": "queued", "created_at": time.time() - W.RESERVE_TTL_S - 1, "render_submitted_at": None,
+             "images_not_sent": 0, "finished": None, "dismissed": None}
+    W.save(s, stale)
+    fresh = {**stale, "job_id": "d" * 32, "created_at": time.time()}
+    W.save(s, fresh)
+    listed = {j["job_id"]: (j["state"], j["step"]) for j in c.get("/agent/deck/jobs").json()["jobs"]}
+    assert listed == {stale["job_id"]: ("failed", "맡기다 끊김"), fresh["job_id"]: ("queued", "맡기는 중")}, "예약은 WDA 에 묻지 않는다"
+    assert c.post(f"/agent/deck/jobs/{fresh['job_id']}/advance").json()["step"] == "맡기는 중"
+    j = c.get(f"/agent/deck/jobs/{stale['job_id']}").json()
+    assert (j["state"], j["step"]) == ("failed", "맡기다 끊김")
+    W._path(s, fresh["job_id"]).unlink()
+    assert _make(box).status_code == 200, "끊긴 예약은 자리를 먹지 않는다"
 
 
 def test_사람당_박스_전체_동시_상한(box):
