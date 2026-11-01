@@ -12,6 +12,8 @@ unset LLM_ROUTER_PORT
 unset STATUS_BOARD_PORT
 # 호출 추적(Phoenix) 포트도 같은 까닭으로 버린다 — call-trace.sh stop 도 환경의 CALL_TRACE_PORT 를 먼저 본다.
 unset CALL_TRACE_PORT
+# LLM/GPU 현황 수집기 포트도 같은 까닭으로 버린다 — llm-status.sh stop 도 환경의 LLM_STATUS_PORT 를 먼저 본다.
+unset LLM_STATUS_PORT
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SVC="$ROOT/infra/scripts/services.sh"
