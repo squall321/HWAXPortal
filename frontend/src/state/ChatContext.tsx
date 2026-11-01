@@ -410,6 +410,10 @@ interface ChatProviderProps {
 // 다시 보일 때 서버 사본과 맞추는 침묵 문턱 — 챗 · 심의 스트림 모두 15초마다 ping 을 낸다(P-1 ②)
 const RESYNC_QUIET_MS = 20_000;
 
+type DeckNoticeLike = { text: string; activity: ActivityItem[]; deck: { job_id: string } };
+// 발표자료 알림을 다른 챗 제공자에게 알리는 창 신호(WD-D64)
+const DECK_NOTICE_EVENT = 'hwax:deck-notice';
+
 export function ChatProvider({
   children,
   storagePrefix = 'hwax.chat',
@@ -729,8 +733,8 @@ export function ChatProvider({
   const activeIdRef = useRef<string | null>(activeId);
   activeIdRef.current = activeId;
 
-  const addDeckNotice = useCallback(
-    (serverId: string, n: { text: string; activity: ActivityItem[]; deck: { job_id: string } }) => {
+  const applyDeckNotice = useCallback(
+    (serverId: string, n: DeckNoticeLike) => {
       const now = Date.now();
       // 서버가 이미 남겼다 — 화면 사본은 불러온 대화에만 붙인다. 서버 목록에서 온 자리표시자(messages: [])에 붙이면 메시지가 생겨 열 때 서버
       // 사본을 읽지 않고, 그 대화의 이력이 알림 하나로 가려진다(적대 검토, docs/wda-deck WD-D63). 자리표시자는 그대로 두면 열 때 서버에서
@@ -750,6 +754,26 @@ export function ChatProvider({
     },
     [refreshFromServer],
   );
+
+  // 챗 제공자는 둘일 수 있다(앱 전체 · '/deliberate' 페이지 안) — 한쪽이 받은 알림을 다른 쪽도 그 대화의 화면 사본에 붙인다(적대 검토, WD-D64).
+  // 서버는 이미 남겼다 — 이 신호는 화면 사본만 맞춘다. 같은 잡의 알림은 한 번만(잡 id) · 자리표시자에는 붙이지 않는다(applyDeckNotice).
+  const providerIdRef = useRef(newId());
+  const addDeckNotice = useCallback(
+    (serverId: string, n: DeckNoticeLike) => {
+      applyDeckNotice(serverId, n);
+      window.dispatchEvent(new CustomEvent(DECK_NOTICE_EVENT, { detail: { serverId, notice: n, from: providerIdRef.current } }));
+    },
+    [applyDeckNotice],
+  );
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ serverId: string; notice: DeckNoticeLike; from: string }>).detail;
+      if (!d || d.from === providerIdRef.current) return;
+      applyDeckNotice(d.serverId, d.notice);
+    };
+    window.addEventListener(DECK_NOTICE_EVENT, on);
+    return () => window.removeEventListener(DECK_NOTICE_EVENT, on);
+  }, [applyDeckNotice]);
 
   const afterStream = useCallback(async (serverId: string) => {
     const conv = convsRef.current.find((c) => (c.serverId ?? c.id) === serverId);

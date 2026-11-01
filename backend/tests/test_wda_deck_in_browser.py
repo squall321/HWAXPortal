@@ -22,7 +22,7 @@ import { ChatProvider, useChat } from '__FE__/src/state/ChatContext';
 import { MessageList } from '__FE__/src/components/chat/MessageList';
 import { DeckResume } from '__FE__/src/components/chat/DeckResume';
 
-function Probe() {
+function Probe({ resume = true }: { resume?: boolean }) {
   const { messages, conversations, activeConversation, selectConversation } = useChat();
   return (
     <>
@@ -33,12 +33,16 @@ function Probe() {
       <button id="toA" type="button" onClick={() => selectConversation('cA')}>A</button>
       <button id="toB" type="button" onClick={() => selectConversation('cB')}>B</button>
       <button id="toC" type="button" onClick={() => selectConversation('srv-C')}>C</button>
-      <DeckResume />
+      {resume && <DeckResume />}
       <MessageList messages={messages} />
     </>
   );
 }
-(window as unknown as { __mount: (ents?: string[] | null, serverKind?: 'chat') => void }).__mount = (ents, serverKind) => {
+// nested — '/deliberate' 처럼 안쪽에 챗 제공자가 하나 더 있다(그 안의 줄이 알림을 받는다 — 바깥 제공자의 대화도 알아야 한다)
+function Inner() {
+  return <div id="inner"><DeckResume /></div>;
+}
+(window as unknown as { __mount: (ents?: string[] | null, serverKind?: 'chat', nested?: boolean) => void }).__mount = (ents, serverKind, nested) => {
   const user = { subject: 'u1@corp.example', email: 'u1@corp.example', display_name: 'U', groups: [],
                  entitlements: ents ?? ['feat:chat', 'plat:webdesign', 'plat:reportarchive'] };
   createRoot(document.getElementById('root')!).render(
@@ -47,7 +51,12 @@ function Probe() {
     >
       <MemoryRouter>
         <ChatProvider serverKind={serverKind}>
-          <Probe />
+          <Probe resume={!nested} />
+          {nested && (
+            <ChatProvider storagePrefix="hwax.delib">
+              <Inner />
+            </ChatProvider>
+          )}
         </ChatProvider>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -117,7 +126,7 @@ const SEED = JSON.stringify([
   { id: 'cB', serverId: 'srv-B', title: 'B', createdAt: 1, updatedAt: 1, messages: [
     { role: 'user', content: '안녕', ts: 1 }, { role: 'assistant', content: '안녕하세요', ts: 2 } ] } ]);
 
-async function open(browser, { status, ents, serverKind, before } = {}) {
+async function open(browser, { status, ents, serverKind, before, nested } = {}) {
   const page = await browser.newPage();
   page.setDefaultTimeout(10000);
   page.__errors = [];
@@ -135,7 +144,7 @@ async function open(browser, { status, ents, serverKind, before } = {}) {
   }, [SEED, status === undefined ? STATUS(false) : status]);
   if (before) await page.evaluate(before);
   await page.addScriptTag({ path: path.join(OUT, 'bundle.js') });
-  await page.evaluate(([e, k]) => window.__mount(e, k), [ents || null, serverKind || null]);
+  await page.evaluate(([e, k, n]) => window.__mount(e, k, n), [ents || null, serverKind || null, Boolean(nested)]);
   await page.waitForTimeout(80);
   return page;
 }
@@ -274,6 +283,15 @@ const SCENARIOS = {
     return { beforeOpen, afterOpen: await text(page, 'textsC'),
              detailGets: (await calls(page, '/agent/conversations/srv-C')).length, errors: page.__errors };
   },
+  // 안쪽 챗 제공자('/deliberate')의 줄이 받은 알림을 바깥(앱 전체) 제공자의 대화도 받는다(적대 검토, WD-D64)
+  async nested(browser) {
+    const page = await open(browser, { nested: true });
+    await page.evaluate(([f, d]) => { window.__list = [f]; window.__advanced = d; }, [FINISH, DONE]);
+    await page.evaluate(() => window.dispatchEvent(new Event('hwax:deck-changed')));
+    await page.waitForFunction(() => window.__calls.some((c) => c.url.endsWith('/advance')));
+    await page.waitForTimeout(150);
+    return { lastA: await text(page, 'lastA'), counts: await text(page, 'counts'), errors: page.__errors };
+  },
   // 숨긴 잡도 끝 알림을 남긴다 — 줄은 그 잡을 계속 한 걸음씩 가되 화면에는 보이지 않는다(WD-D59)
   async dismissedFinish(browser) {
     const page = await open(browser);
@@ -400,3 +418,8 @@ def test_자리표시자_대화에는_알림을_붙이지_않고_열_때_서버_
     s = seen("placeholder")
     assert s["beforeOpen"] == "[]", "자리표시자에 화면 알림을 붙이지 않는다"
     assert s["detailGets"] >= 1 and "SAVED-ON-OTHER-DEVICE" in s["afterOpen"] and "NOTICE-FROM-SERVER" in s["afterOpen"]
+
+
+def test_안쪽_챗_제공자가_받은_알림을_바깥_제공자의_대화도_받는다(seen):
+    s = seen("nested")
+    assert "발표자료를 만들었습니다" in s["lastA"] and s["counts"] == "srv-A:4,srv-B:2"
