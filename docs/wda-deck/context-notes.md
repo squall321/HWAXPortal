@@ -194,6 +194,29 @@ db0c364a 가 링크 href 검사에는 같은 오리진 절대경로를 넣었지
 다시 떠야 중계가 그 번호를 남긴다. 옛 에이전트 서버와 섞이면 그 답에는 단추가 서지 않을 뿐(글을 파싱하지 않는다 — 조용히 없다). 어차피 W-21 전에는
 심의 템플릿이라 숨는다.
 
+## WDA 의 심의 꼴(2026-11-01 저녁)
+
+**WD-D39 심의 꼴의 표지는 `format:delib-16x9` · 상태는 `formats` · 정책은 함수 하나(지금 active 만).** WDA 가 심의 꼴을 지었다(로컬 판 · 허브 SIF 전).
+features 를 꼴 등록부에서 만들어 내므로 이름은 우리가 청한 `format:deliberation` 이 아니라 `format:delib-16x9` 다 — WDA 의 이름을 받았다(WD-D29 · D32 의
+문은 그대로, 표지 이름만 바뀐다). `formats` 가 꼴마다 상태(draft · active …)를 주므로 '꼴이 있다' 와 '써도 된다' 를 가를 수 있다. 정책은 `format_ready`
+하나다 — features 에 `format:delib-16x9` 가 있고 `formats["delib-16x9"] == "active"`. status 의 `formats.deliberation` 과 만들기의 문(409)이 이 함수를
+같이 쓴다. draft 를 받을지는 코디네이터가 사용자에게 묻는 중이라(PLAN U-7) 답이 오기 전까지 active 만 — 바꿀 때는 그 한 줄이다. 준비됐으면 만들기에
+`"format": "delib-16x9"` 를 싣고, 그 밖의 템플릿은 칸을 싣지 않는다(WDA 기본 wide-16x9 — 지금과 같다). 화면의 API(`formats.deliberation` 참거짓)는
+바꾸지 않았다 — 템플릿에서 꼴로 잇는 것은 서버의 `TEMPLATE_FORMAT` 한 곳이다. WDA 는 모르는 꼴에 곧바로 400 을 준다(실행 없음 · 쓸 수 있는 꼴을
+message 에). 포털은 그 까닭을 그대로 보이고(502 — WDA 가 받지 않았다) 잡을 남기지 않으며 **기본 꼴로 다시 보내지 않는다** — 탐침을 60초 붙잡으므로
+그 사이 WDA 가 옛 판으로 되돌아가면 생길 수 있는 일이다. 붙잡은 탐침을 버리는 손은 두지 않았다(60초 뒤 저절로 다시 묻는다).
+
+**WD-D40 `block_sections` 는 M1 에 포털이 만들어 싣지 않는다 — RA 블록 id 에서 단락이 하나로 정해지지 않는다.** WDA 는 머리글 추론을 덮어쓰는
+`block_sections`(RA 단락 낱말 decision · action_item · alternatives · recommendation, 심의 전용 topic · round)를 받는다. 코디네이터의 조건은 'RA 블록에서
+결정적으로 정해질 때만' 이었고, 정해지지 않는다. ① 같은 `deliberation` 템플릿을 세 곳이 다른 뜻으로 채운다 — 심의 결과(에이전트 서버
+`deliberation.py:7589-7602` — `recommendation` 이 결정문 전체), `/보고서`(`:7859-7864` — `recommendation` 이 사람의 결론과 마지막 답), 분석 루틴 초안
+(포털 `procedures/routines.py:532-538` · 게이트웨이 `gateway.py:5303` — `recommendation` 이 인사이트, `minutes` 가 근거 부록). ② 결정과 액션이 한 블록
+(`recommendation`) 안에 문단으로 섞여 있다(핵심 요약 · `(2) 결정사항` · `(6) 미해결 쟁점 + 담당·다음 액션` · 쉬운 설명의 `당장 할 일`) — 블록에
+`decision` 을 붙이면 WDA 가 첫 문장 뒤를 근거로 잘라 액션이 사라진다. ③ RA 자체의 `pages[].block_sections`(블록 id → RA 단락 코드, ReportArchive
+`modules/reports/schemas.py:216-225`)는 이 보고서들에 비어 있다(만드는 쪽이 싣지 않는다). 사람이 RA 에서 단 것은 ReportRead 에 실려 바뀌지 않고 WDA 에
+간다. 그래서 WDA 의 머리글 추론에 맡기고, 우리 보고서에 실제로 있는 낱말(요청서 4.6-2 — '화두' · '라운드 요지' · '액션아이템' 은 그대로는 없다)을
+알렸다. 블록마다 단락을 정하려면 만드는 쪽이 결정 · 액션을 다른 블록으로 나누고 RA `block_sections` 를 실어야 한다 — 그때 다시 본다.
+
 ## 관찰(고치지 않음)
 
 ① 포털 주석 '(DocForge 쪽) 주인 검사도 한 번 더 걸린다'(`routes.py:1997-1999`)는 지금 배선에서 참이 아니다 — 게이트웨이 경유

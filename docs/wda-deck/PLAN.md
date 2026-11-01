@@ -4,6 +4,7 @@
 > 설계는 11-01 오전에 끝났고, 같은 날 사용자가 §13 의 다섯을 모두 정했다(권장안 그대로 — U-2 는 사용자가 손으로 push).
 > M1(포털 · 에이전트 서버 한 칸)을 이 가지에서 지었다(11-01 — 커밋 · 시험은 체크리스트, 결정은 context-notes WD-D33 ~ D38). WDA 쪽 계약(W-1 ~ W-12)은
 > 아직 없으니 단추는 스위치와 능력 탐침에 막혀 보이지 않는다. 박스에서 켜는 법은 [server-setup.md](server-setup.md).
+> 11-01 저녁 WDA 가 심의 꼴 `delib-16x9` 를 지었다(로컬 판 · draft) — 심의 보고서는 그 꼴이 active 일 때만 그 꼴을 실어 넘긴다(§6 · WD-D39 · D40).
 > 줄 번호는 2026-11-01 판 기준이다 — 포털 `7aef6141` · WDA `9dabf86` · 게이트웨이 `63fbc4f` · HEAXHub `7b9a8ed` · 에이전트 서버 `63ad54b`.
 
 ## 1. 무엇을 · 왜
@@ -109,6 +110,11 @@ WDA(WebDesignAgents) 세션이 포털에 '발표자료' 행선지를 청했다 �
   그것을 따른다). 심의(`deliberation` 템플릿) 보고서는 장면이 제품 소개 뼈대로 눌려 결정문 · 액션아이템이 사라진다 — 심의 꼴을 다음 일로 짓고
   `format:deliberation` 으로 알린다(W-21). wide-16x9 에서 pptx · pdf 가 둘 다 나온다. 시간은 파이프라인 0.5초 + 렌더(pptx + pdf) 5.0초 = 5.5초,
   크기는 pptx 1,200 KB · pdf 1,926 KB. **보존이 없고(실행 60건에 372 MB) 동시 상한이 없다(요청마다 스레드)** — W-13 · W-14 를 강하게 권했다.
+- **WDA 세션의 둘째 답(11-01 저녁)** — 심의 꼴 `delib-16x9` 를 지었다(WDA 로컬 판 · 허브 SIF 에는 아직 없다). `/api/health` 가 꼴 등록부에서
+  features(꼴마다 `format:<id>`)와 `formats`(꼴마다 상태 — 지금 `delib-16x9` 는 draft, `wide-16x9` · `short-9x16` 은 active)를 낸다 — 표지 이름은
+  `format:delib-16x9` 다. `POST /api/runs` 가 `format` 칸을 받고(없으면 wide-16x9 · 모르는 꼴 400), 심의 뼈대는 화두 → 라운드 → 결정 → 액션 → 요약이며
+  지어내지 않는다(담당 없음 '미지정' · 때 없음 '후속'). 머리글 추론을 덮어쓰는 `block_sections`(RA 단락 낱말)를 받는다. 쟁점 장면은 다음 일이다. `owner` 는
+  아직 없다(W-1 ~ W-12 는 사용자가 직접 시킬 때).
 - 템플릿 — 심의 결과 카드와 `/보고서` 저장 답의 보고서는 `deliberation` 템플릿이고(에이전트 서버 `deliberation.py:7631,7892`), RA 보내기 알림의 보고서는
   `__import_blank__` 다. `deliberation` 보고서는 블록 정의를 보고서에 싣지 않는다(타입은 RA 템플릿 스키마 — ReportArchive
   `modules/reports/routes.py:677-722`) — WDA 의 지금 ingest 는 정의 없는 content 키를 건너뛴다(`ingest.py:407-442`).
@@ -143,12 +149,12 @@ WDA(WebDesignAgents) 세션이 포털에 '발표자료' 행선지를 청했다 �
 
 | 무엇 | WDA(허브 Caddy 경유, 그 사람의 짧은 포털 PAT) | 주인 |
 |---|---|---|
-| 만들기 | `POST /api/runs {report_json, slug, source, render{targets, doc_style, pptx_mode, narration:false}}` → 202 `{run_id}` | 만든 사람(`X-Heax-User-Email`) |
+| 만들기 | `POST /api/runs {report_json, slug, source, render{targets, doc_style, pptx_mode, narration:false}, format?}` → 202 `{run_id}` — `format` 은 심의 보고서에만 `delib-16x9`(모르는 꼴 400) | 만든 사람(`X-Heax-User-Email`) |
 | 진행 | `GET /api/runs/{run_id}` → `status` · `stages[]` · `render{status, requested, outputs, skipped, error}` | 주인만, 아니면 404 |
 | 렌더(이어서 렌더가 없는 판) | `POST /api/runs/{run_id}/render {targets, doc_style, pptx_mode}` → 202 · 409 | 주인만 |
 | 크기 | `GET /api/runs/{run_id}/artifacts` | 주인만 |
 | 받기 | `GET /api/runs/{run_id}/download/{kind}`(kind pptx · pdf · docx · html · mp4) → 파일 | 주인만, attachment |
-| 능력 | `GET /api/health` → `{status, version, features[]}` — `owner` 가 있어야 단추를 켠다 | 누구나 |
+| 능력 | `GET /api/health` → `{status, version, features[], formats{}}` — `owner` 가 있어야 단추를 켠다 · 심의 보고서는 `format:delib-16x9` 와 `formats` 의 active | 로그인한 사람(허브 portal_auth) |
 
 포털 쪽 라우트(`/agent/deck/…`) — `GET status` · `POST jobs` · `GET jobs` · `GET jobs/{job}` · `POST jobs/{job}/advance` · `GET jobs/{job}/files/{kind}` ·
 `POST jobs/{job}/dismiss`. 모두 `principal_pat_or_session`(POST 는 CSRF) · 잡은 주인만(아니면 404).
@@ -174,9 +180,12 @@ WDA(WebDesignAgents) 세션이 포털에 '발표자료' 행선지를 청했다 �
 - **능력 탐침** — `GET /agent/deck/status` 가 WDA `/api/health` 의 `features` 에 `owner` 가 있는지 본다(60초 붙잡음). 없거나 **모르면 숨긴다** —
   모르는 채로 보이면 주인 없는 WDA(옛 SIF 로 되돌린 박스)에 본문을 넘기게 된다. DocForge 목적지의 '모르면 숨기지 않는다'(DF-D21 ②)와 반대인 까닭은
   위험의 종류가 다르기 때문이다(그쪽은 실패, 이쪽은 누출).
-- **템플릿 문(W-21)** — RA 보고서의 템플릿 가운데 하나라도 `deliberation` 이면 `owner` 에 더해 `format:deliberation` 이 있어야 한다. 화면은 자리마다
-  템플릿을 안다(심의 결과 카드 · `/보고서` = deliberation, RA 보내기 알림 = 그 밖) — `status` 가 `formats.deliberation` 을 알려 주고, 만들기는 RA 에서 읽은
-  실제 템플릿으로 다시 본다(아니면 409 와 까닭). 사용자 결정(11-01, U-6) — **심의 형식이 설 때까지 숨긴다.**
+- **템플릿 문(W-21)** — RA 보고서의 템플릿 가운데 하나라도 `deliberation` 이면 `owner` 에 더해 WDA 의 심의 꼴 `delib-16x9` 가 준비돼야 한다 — features 에
+  `format:delib-16x9` 가 있고 `formats["delib-16x9"]` 가 `active`(정책 함수 하나 `format_ready` — draft 를 받을지는 사용자에게 묻는 중이라 그때까지 active
+  만, U-7). 그때 만들기에 `"format": "delib-16x9"` 를 싣는다. 그 밖의 템플릿은 `format` 을 싣지 않는다(WDA 기본 wide-16x9). 화면은 자리마다 템플릿을
+  안다(심의 결과 카드 · `/보고서` = deliberation, RA 보내기 알림 = 그 밖) — `status` 가 `formats.deliberation` 을 알려 주고, 만들기는 RA 에서 읽은 실제
+  템플릿으로 다시 본다(아니면 409 와 까닭). WDA 가 그 꼴을 모르면(탐침 뒤 되돌림) 만들기가 400 이고 포털은 까닭을 보이며 기본 꼴로 다시 보내지 않는다.
+  `block_sections` 는 싣지 않는다(WD-D40). 사용자 결정(11-01, U-6) — **심의 형식이 설 때까지 숨긴다.**
 - 허브 계정 — 허브 게이트는 포털 PAT 의 이메일로 허브 사용자를 찾고, 없으면 403 '허브 계정이 없다 — 포털에서 HEAX Hub 타일을 한 번 눌러…' 를 낸다
   (HEAXHub `authz.py:61-74`). 포털은 그 글을 그대로 보인다. 허브 타일이 보이는 사람은 화면이 미리 로그인해 계정이 생긴다
   (`frontend/src/components/layout/SsoPrimer.tsx:7`, `backend/app/auth/routes/launch.py:24`).
@@ -320,4 +329,5 @@ M1 은 스위치를 꺼 둔 채 올린다 — M0 이 끝나지 않은 박스에�
 | U-3 | 허브 매니페스트에 `launch.portal_auth: true` 를 켤까 | **켠다.** HEAXHub 변경과 dev 반영은 다른 에이전트가 한다 — 이 가지는 HEAXHub 를 건드리지 않는다(WD-D26) |
 | U-4 | 'PDF' 는 무엇인가 | **WDA 의 정식 보고서 문서(`doc_style=report`)가 기본, 요약(brief) · 메모(memo)는 고를 수 있게.** 슬라이드 PDF(W-19)는 지금 청하지 않는다(WD-D27) |
 | U-5 | M1 의 단추 자리 | **셋 모두** — 심의 결과 카드 · `/보고서` 저장 답 · RA 보내기 알림. 분석 루틴 RA 초안은 M2(WD-D28) |
-| U-6 | 심의(deliberation 템플릿) 보고서의 단추를 W-21(`format:deliberation`) 전에도 보일까 | **심의 형식이 설 때까지 숨긴다**(사용자 결정 11-01). WDA `/api/health` 의 features 에 `format:deliberation` 이 있을 때만 그 보고서의 단추가 선다. 그 밖의 템플릿은 `owner` 와 박스 스위치만. 주의 — `/보고서` 저장 답의 보고서도 `deliberation` 템플릿이라(에이전트 서버 `deliberation.py:7892`) 같은 문에 걸린다. W-21 전에는 RA 보내기 알림 자리에서만 단추가 선다(WD-D32) |
+| U-6 | 심의(deliberation 템플릿) 보고서의 단추를 W-21(`format:deliberation`) 전에도 보일까 | **심의 형식이 설 때까지 숨긴다**(사용자 결정 11-01). WDA `/api/health` 의 features 에 `format:deliberation` 이 있을 때만 그 보고서의 단추가 선다. 그 밖의 템플릿은 `owner` 와 박스 스위치만. 주의 — `/보고서` 저장 답의 보고서도 `deliberation` 템플릿이라(에이전트 서버 `deliberation.py:7892`) 같은 문에 걸린다. W-21 전에는 RA 보내기 알림 자리에서만 단추가 선다(WD-D32). 11-01 저녁 — 표지 이름은 WDA 꼴 등록부의 `format:delib-16x9` 이고 그 꼴의 상태가 active 여야 하며, 만들기에 `format` 을 싣는다(WD-D39) |
+| U-7 | (묻는 중 — 코디네이터가 사용자에게) 심의 꼴이 `draft` 여도 단추를 보일까 | **답이 오기 전까지 `active` 만.** 정책은 함수 하나(`format_ready`) — 답이 'draft 도' 면 그 한 줄만 바꾼다(WD-D39) |

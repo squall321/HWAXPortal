@@ -4,7 +4,8 @@
 > 이 글만으로 읽히게 썼다. 줄 번호는 WDA `9dabf86` · HEAXHub `7b9a8ed` · 게이트웨이 `63fbc4f` 판이다.
 > 요약 — 포털은 **허브 Caddy 를 거쳐 WDA 웹 REST** 를 그 사람 이름으로 부른다(MCP 는 부르지 않는다). WDA 가 할 일은 넷이다 —
 > ① 허브가 실어 주는 `X-Heax-User-Email` 로 **주인을 정하고 주인만 보게** 하기(깨지 않는 꼴) ② 빌드 뒤 **이어서 렌더**하고 뺀 출력을 말하기
-> ③ 능력 · 오류 · 재기동 처리를 기계가 읽게 하기 ④ 심의 보고서 꼴을 지으면 `format:deliberation` 을 알리기(W-21). 그리고 **main 을 GitHub 에 올려 허브 SIF 를 다시 짓는 것**이 먼저다 — **사용자가 손으로 push 한다**(11-01 결정,
+> ③ 능력 · 오류 · 재기동 처리를 기계가 읽게 하기 ④ 심의 보고서 꼴 `delib-16x9` 를 `format:delib-16x9` 와 `formats` 의 상태로 알리기(W-21 — 11-01 저녁
+> WDA 가 지었다, 지금 draft). 그리고 **main 을 GitHub 에 올려 허브 SIF 를 다시 짓는 것**이 먼저다 — **사용자가 손으로 push 한다**(11-01 결정,
 > WDA 세션은 push 하지 않는다).
 
 ## 1. 배경 — 사용자 결정(2026-11-01)
@@ -81,7 +82,10 @@ WDA 가 보는 신원은 `X-Heax-User-Email` 하나다. 응답은 지금의 봉�
 ```
 
 - `source` 는 표시 · 감사용이다(믿지 않아도 된다). `render` 는 **새 선택 칸(W-8)** — 있으면 빌드가 끝난 뒤 그 옵션으로 렌더를 저절로 맡는다. 없으면 지금과 같다.
-- 응답 — `202 {success: true, data: {run_id, slug, owner}}`. 오류 — 400 `INVALID`(꼴) · 413 `TOO_LARGE`(본문 상한, W-7) · 422 `INVALID` · 503 `BUSY`(선택).
+- `format` — WDA 가 11-01 저녁에 낸 칸(W-21). 포털은 **심의(`deliberation` 템플릿) 보고서에만** `"format": "delib-16x9"` 를 싣고, 그 밖의 보고서에는 칸을
+  싣지 않는다(없으면 `wide-16x9` — 지금과 같다). 모르는 꼴이면 WDA 가 곧바로 400 이다(봉투 · 쓸 수 있는 꼴을 `message` 에 — 실행을 만들지 않는다). 포털은
+  그 까닭을 그대로 보이고 **기본 꼴로 다시 보내지 않는다**(심의 보고서를 wide-16x9 로 넣으면 결정문 · 액션아이템이 빠진다 — 4.6-2).
+- 응답 — `202 {success: true, data: {run_id, slug, owner}}`. 오류 — 400 `INVALID`(꼴 · 모르는 format) · 413 `TOO_LARGE`(본문 상한, W-7) · 422 `INVALID` · 503 `BUSY`(선택).
 - 포털은 응답의 run_id 를 서버 기록에만 둔다.
 
 ### 4.2 진행 — `GET {WDA}/api/runs/{run_id}`(주인만)
@@ -125,27 +129,56 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 
 ### 4.6 능력 — `GET {WDA}/api/health`(W-6)
 
-`{"status": "ok", "version": "x.y.z", "features": ["owner", "render_chain", "doc_formats", "skipped_report", "interrupted"]}` — 허브 health_check 는 `status`
-만 보니 칸을 더해도 깨지지 않는다(`app.py:124-127`). **포털은 `owner` 가 없거나 이 응답을 못 읽으면 단추를 숨긴다**(옛 SIF 로 되돌린 박스에 본문을 넘기지 않게).
-포털은 이것도 그 사람의 포털 PAT 로 부른다 — `portal_auth` 가 켜지면 허브 게이트가 익명을 막는다.
+`{"status": "ok", "version": "x.y.z", "features": ["owner", "render_chain", "doc_formats", "skipped_report", "interrupted", "format:wide-16x9", "format:delib-16x9", …],
+"formats": {"wide-16x9": "active", "delib-16x9": "draft", …}}` — 허브 health_check 는 `status` 만 보니 칸을 더해도 깨지지 않는다(`app.py:124-127`).
+`format:<id>` 와 `formats` 는 WDA 가 11-01 저녁에 꼴 등록부에서 만들어 낸다(아래 4.6-2). **포털은 `owner` 가 없거나 이 응답을 못 읽으면 단추를 숨긴다**
+(옛 SIF 로 되돌린 박스에 본문을 넘기지 않게). 포털은 이것도 그 사람의 포털 PAT 로 부른다 — `portal_auth` 가 켜지면 허브 게이트가 익명을 막는다.
 
-### 4.6-2 심의 보고서 꼴 — W-21 `format:deliberation`(심의 자리의 단추를 세우는 표지)
+### 4.6-2 심의 보고서 꼴 — W-21 `format:delib-16x9`(심의 자리의 단추를 세우는 표지)
 
 WDA 답(11-01, Q2) — `deliberation` 템플릿 보고서(화두 · 라운드 요지 · 의사결정문 · 액션아이템)를 넣으면 조각은 바르게 뽑히지만 장면이 제품 소개 뼈대
 (opening → problem → concept → process → differentiators → evidence → closing)로 눌려 결정문이 `problem` 장면에 한 번 묻히고 액션아이템 · 라운드 요지가
-사라지며 '보고서 참조' 같은 채움 글이 영상에 나간다. WDA 는 심의 꼴(화두 → 쟁점 → 라운드 → 수렴 → 결정 → 액션)을 다음 일로 짓는다고 했다.
+사라지며 '보고서 참조' 같은 채움 글이 영상에 나간다. **사용자 결정(11-01, U-6) — '심의 형식이 설 때까지 숨긴다'.**
 
-- **W-21** 그 꼴이 들어오면 `/api/health` 의 `features` 에 `format:deliberation` 을 싣는다. **사용자 결정(11-01) — '심의 형식이 설 때까지 숨긴다'.**
-  까닭은 WDA 의 Q2 실측 그대로다(결정문 · 액션아이템이 사라지고 채움 글이 영상에 나갔다). 이 표지가 없으면 심의 보고서의 단추는 서지 않는다.
-- 포털의 문 — RA 보고서의 템플릿(최상위 `template_id` 와 페이지마다의 `template_id`) 가운데 하나라도 `deliberation` 이면 `owner` **와** `format:deliberation`
-  이 둘 다 있을 때만 단추를 보이고 만들기를 받는다. 그 밖의 템플릿(지금 단추 자리에서는 RA 보내기 알림의 `__import_blank__`)은 `owner` 만 본다.
-  포털의 세 자리 가운데 심의 결과 카드와 `/보고서` 저장 답이 `deliberation` 템플릿이고(에이전트 서버 `deliberation.py:7631,7892`), RA 보내기 알림이
-  `__import_blank__` 다. 그래서 W-21 이 들어오기 전에는 RA 보내기 알림 자리에서만 단추가 선다.
+WDA 둘째 답(11-01 저녁) — 심의 꼴 `delib-16x9` 를 지었다(WDA 로컬 판 · 허브 SIF 에는 아직 없다). 뼈대는 화두 → 라운드 → 결정 → 액션 → 요약이고 지어내지
+않는다(담당이 없으면 '미지정', 때가 없으면 '후속'). 쟁점 장면은 아직 없다(WDA 의 다음 일). 계약은 이렇다.
+
+- **W-21** `/api/health` 의 `features` 에 꼴마다 `format:<id>` 가 실리고(꼴 등록부에서 만들어 낸다), `formats` 가 꼴마다 상태(`draft` · `active` …)를 준다.
+  심의 꼴의 표지는 **`format:delib-16x9`** 다(첫 요청의 이름 `format:deliberation` 대신 WDA 의 이름을 쓴다). 지금 상태는 `draft` 이고 `owner` 는 아직 없다
+  (W-1 ~ W-12 는 사용자가 직접 시킬 때 짓는다).
+- `GET /api/formats` — 꼴마다 id · 이름 · 상태 · 뼈대 · 템플릿 · 출력 · 무대 크기(MCP `format_list` 와 같은 원천). 포털은 부르지 않는다(health 로 충분하다).
+- 만들기 — `POST /api/runs` 의 `format` 칸(4.1). 없으면 `wide-16x9`(지금과 같다), 모르는 꼴이면 곧바로 400(봉투 · 쓸 수 있는 꼴을 `message` 에).
+- **포털의 문(정책 함수 하나)** — RA 보고서의 템플릿(최상위 `template_id` 와 페이지마다의 `template_id`) 가운데 하나라도 `deliberation` 이면 `owner` 에 더해
+  `features` 에 `format:delib-16x9` 가 있고 **`formats["delib-16x9"]` 가 `active`** 여야 단추를 보이고 만들기를 받으며, 만들기에 `"format": "delib-16x9"` 를
+  싣는다. `draft` 는 숨긴다 — 받아도 될지 사용자에게 묻는 중이고, 답이 오기 전까지는 `active` 만이다. 그 밖의 템플릿(지금 단추 자리에서는 RA 보내기
+  알림의 `__import_blank__`)은 `owner` 만 보고 `format` 을 싣지 않는다. 포털의 세 자리 가운데 심의 결과 카드와 `/보고서` 저장 답이 `deliberation`
+  템플릿이고(에이전트 서버 `deliberation.py:7631,7892`), RA 보내기 알림이 `__import_blank__` 다. 그래서 `delib-16x9` 가 active 가 되기 전에는 RA 보내기 알림
+  자리에서만 단추가 선다.
+- **`block_sections` 는 포털이 만들어 싣지 않는다(M1).** WDA 는 머리글 추론을 덮어쓰는 `block_sections`(RA 단락 낱말 — `decision` · `action_item` ·
+  `alternatives` · `recommendation`, 심의 전용 `topic` · `round`)를 받는다. 그러나 RA 블록 id 에서 단락이 하나로 정해지지 않는다. ① 같은 `deliberation`
+  템플릿(블록 `background` · `results` · `recommendation` · `minutes`)을 세 곳이 다른 뜻으로 채운다. 심의 결과의 `recommendation` 은 결정문 전체(핵심 요약 ·
+  결정사항 · 쟁점 · 미해결 쟁점과 담당 · 다음 액션 · 쉬운 설명)이고, `/보고서` 의 `recommendation` 은 사람의 결론과 마지막 답 문단이며, 분석 루틴 초안은
+  `results` 에 절마다 · `recommendation` 에 인사이트 · `minutes` 에 근거 부록을 싣는다. ② 결정과 액션이 **한 블록 안에** 문단으로 섞여 있다 —
+  `recommendation` 에 `decision` 을 붙이면 액션이 근거로 잘려 나간다. ③ RA 자체의 `pages[].block_sections`(블록 id → RA 단락 코드)는 이 보고서들에 비어
+  있다(만드는 쪽이 싣지 않는다). 사람이 RA 에서 단락을 단 보고서는 그 칸이 ReportRead 에 실려 바뀌지 않고 그대로 간다 — WDA 가 거기서 읽으면 된다.
+  그래서 지금은 WDA 의 머리글 추론에 맡긴다. 블록마다 단락이 하나로 정해지게 하려면 만드는 쪽(에이전트 서버)이 결정 · 액션을 다른 블록으로 나누고
+  RA `block_sections` 를 실어야 한다 — 그때 다시 본다.
+- 머리글 추론을 위한 사실(코드 읽기 — 우리 심의 보고서에 실제로 있는 낱말). WDA 가 보는 낱말(화두 · 라운드 요지 · 의사결정문 · 액션아이템 · 쟁점 · 대안 ·
+  권고) 가운데 '화두' · '라운드 요지' · '액션아이템' · '대안' · '권고' 는 그대로는 없다.
+  - `background` — 첫 항목이 `심의 주제: …`(= 화두). 뒤에 VOC 환기 · 정량 근거 선주입이 붙을 수 있다.
+  - `results` — 마지막 심화 라운드의 좌석별 발언(`• ` 로 시작하는 항목마다 한 좌석, = 라운드 요지).
+  - `recommendation` — 결정문. 맨 앞 `■ 핵심 요약`(불릿 3~5줄), 표지 줄(`■ 기준일` · `■ 봉인 실행` · `■ 외부 응답자 실행` — 있을 때만), 의장이 쓴 본문
+    (`## 의사결정문` 머리 아래 번호 항목 `(0)` 커버리지 · `(1) 상황 판단` · `(2) 결정사항` · `(3) 결정 간 관계` · `(4) 쟁점의 축과 소수의견` ·
+    `(5) 뒤집히는 조건` · `(6) 미해결 쟁점 + 담당·다음 액션` · `(7) 신뢰도·전제` · `(8) 수렴 경과` — 항목 이름은 모델이 쓰므로 글자가 조금 다를 수 있다),
+    끝에 `■ 쉬운 설명`(`### 한마디로` · `### 왜 그런가` · `### 당장 할 일 / 다음에 할 일 / 하지 말 것`). 액션은 `(6)` 과 `당장 할 일` 에 있다.
+  - `minutes` — `참여: …` · `N라운드 심의(…)` 줄 뒤에 라운드 머리(`— 1라운드 — 도메인별 초기 입장 —` · `— k라운드 — 상호 반박·심화 —` ·
+    `— N라운드 — 수렴·최종 입장 —`)와 `[좌석] 발언` 줄.
+  - 항목 하나는 2,000자 아래로 나뉘어 있다(에이전트 서버 `_ra_blocks`) — 한 문단이 두 항목으로 이어질 수 있다.
 - 알아 둘 사실(코드 읽기) — RA 의 `deliberation` 보고서는 블록 정의를 보고서에 싣지 않는다. 페이지의 `content` 에 템플릿 블록 id(background · results ·
   recommendation · minutes) 만 있고 타입은 RA 템플릿 스키마에 있다(ReportArchive `modules/reports/routes.py:677-722` — 템플릿 블록은 `content` 로,
   `extra_blocks` 는 빈 채). 지금 `_page_blocks`(`src/wdpipeline/ingest.py:407-442`)는 정의 없는 `content` 키를 건너뛰므로 실물 심의 보고서는 블록 0개가
-  될 것이다. 심의 꼴을 지을 때 타입을 RA 템플릿 스키마(`GET /api/templates/{id}/versions/{version}`)로 알아야 한다면, 포털이 그 사람 명의로 읽어 만들기
-  본문에 `template_schemas: {"<id>@<version>": <schema>}` 로 함께 넘길 수 있다 — 필요하면 칸 이름 · 꼴을 정해 달라.
+  될 것이다 — 심의 꼴이 이것을 다루는지 실물 하나로 확인해 달라. 타입을 RA 템플릿 스키마(`GET /api/templates/{id}/versions/{version}`)로 알아야 한다면,
+  포털이 그 사람 명의로 읽어 만들기 본문에 `template_schemas: {"<id>@<version>": <schema>}` 로 함께 넘길 수 있다 — 필요하면 칸 이름 · 꼴을 정해 달라.
 
 ### 4.7 오류 꼴(W-10)
 
@@ -221,7 +254,8 @@ WDA 답(11-01, Q2) — `deliberation` 템플릿 보고서(화두 · 라운드 �
    run_id 는 `wr-{UTC 시각}-{16진 4자}`(무작위 16비트)다. 사용자가 직접 시킬 때만 짓겠다고 했다 — 포털은 이 요청서의 계약대로 짓고 시험의 가짜 WDA 가
    그 계약을 따른다(봉투 `{success, data, message, code}` · 상태 낱말 · 남과 신원 없음에 404 · 아래 블록 글자 규칙). 단추는 W-6 의 `owner` 가 보일 때까지
    어디에도 서지 않는다.
-2. **심의 보고서는 꼴이 맞지 않는다** — 4.6-2 · W-21.
+2. **심의 보고서는 꼴이 맞지 않는다** — 4.6-2 · W-21. 둘째 답(11-01 저녁) — 심의 꼴 `delib-16x9` 를 지었다(로컬 판 · 허브 SIF 전 · 상태 draft).
+   features 는 꼴 등록부에서 만들어 내므로 표지 이름은 `format:delib-16x9` 이고, 만들기의 `format` 칸 · 모르는 꼴 400 · `block_sections` 는 4.1 · 4.6-2.
 3. wide-16x9 에서 pptx · pdf 가 둘 다 나온다 — 문서 출력은 장면 꼴 거르기에서 빠진다(허용 docx · html · pdf · pptx · video).
 4. 시간 · 크기 — 파이프라인 0.5초 + 렌더(pptx + pdf) 5.0초 = 5.5초, pptx 1,200 KB · pdf 1,926 KB. **보존 없음 · 동시 상한 없음** — W-13 · W-14.
 5. 장면의 새 칸 `camera` · `transition` 은 기본값이 있어 계약에 영향이 없다.
@@ -249,7 +283,7 @@ heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항�
 | W-13 | 보존 기한 · 지운 뒤 404/410 — 지금 아무것도 지우지 않는다 | **강하게 권장** |
 | W-14 | 렌더 동시 상한(줄) — 지금 상한 없음 | **강하게 권장** |
 | W-15 | Idempotency-Key | 선택 |
-| W-21 | `format:deliberation` — 심의 보고서 꼴(WDA 의 다음 일) | 심의 자리 단추의 전제 |
+| W-21 | 심의 보고서 꼴 `delib-16x9` — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400(11-01 저녁 지음 · draft · 허브 SIF 전) | 심의 자리 단추의 전제 — 포털은 `active` 만 받는다(draft 는 사용자에게 묻는 중) |
 | W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 |
 | W-19 | 슬라이드 PDF | 청하지 않는다(사용자 결정 11-01) |
 | P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 |

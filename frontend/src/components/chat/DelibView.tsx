@@ -529,7 +529,7 @@ export function DelibView({ msg }: { msg: Message }) {
         </section>
       )}
       <OutcomeCards d={d} />
-      {/* 심의 결과 보고서를 발표자료로(docs/wda-deck) — 끝난 심의만. 심의 보고서는 WDA 의 심의 꼴(format:deliberation)이 서야 보인다(U-6). */}
+      {/* 심의 결과 보고서를 발표자료로(docs/wda-deck) — 끝난 심의만. 심의 보고서는 WDA 의 심의 꼴(delib-16x9)이 준비돼야 보인다(U-6). */}
       {!live && deckRep && <DeckSpot report={deckRep} />}
       {/* 지난 심의를 보는 것은 누구나, 이어 돌리는 것은 심의 권한이 있어야 한다. */}
       {!live && can('feat:deliberation') && <ContinueBar d={d} />}

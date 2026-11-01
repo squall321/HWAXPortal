@@ -18,6 +18,8 @@
 - [x] U-4 'PDF' 의 뜻 — **정식 보고서 문서(report) 기본, brief · memo 선택**, 슬라이드 PDF(W-19)는 청하지 않는다(WD-D27)
 - [x] U-5 M1 단추 자리 — **셋 모두**(심의 결과 · `/보고서` · RA 보내기 알림), 루틴 RA 초안은 M2(WD-D28)
 - [x] U-6 심의(deliberation 템플릿) 보고서의 단추 — **심의 형식(W-21 `format:deliberation`)이 설 때까지 숨긴다**(WD-D32). `/보고서` 도 deliberation 템플릿이라 같은 문에 걸린다
+      — 11-01 저녁 표지 이름은 WDA 의 `format:delib-16x9` 로(WD-D39)
+- [ ] U-7 (코디네이터가 사용자에게 묻는 중) 심의 꼴이 `draft` 여도 단추를 보일까 — 답이 오기 전까지 `active` 만(`format_ready` 한 줄)
 
 ## M0 — WDA 세션(요청서 §11)
 
@@ -35,7 +37,8 @@
 - [ ] W-11 내려받기 머리(attachment · Content-Length · nosniff · HTML 은 `Content-Security-Policy: sandbox`) · 생성 HTML 의 보고서 글 이스케이프
 - [ ] W-12 재기동에 끊긴 실행 · 렌더를 `failed`(interrupted)로
 - [ ] (강하게 권장 — 지금 보존 · 동시 상한이 없다) W-13 보존 기한 · W-14 렌더 동시 상한 · (선택) W-15 Idempotency-Key
-- [ ] W-21 심의 보고서 꼴 → `features` 에 `format:deliberation`(심의 결과 카드 · `/보고서` 단추의 전제, WDA 의 다음 일)
+- [x] W-21 심의 보고서 꼴 `delib-16x9` 를 지었다(11-01 저녁 — WDA 로컬 판) — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400
+- [ ] `delib-16x9` 가 active 가 된다(지금 draft — 포털은 active 만, U-7) · 허브 SIF 에 들어온다(P-1 뒤) · 실물 심의 보고서(템플릿 블록이 `content` 키뿐)로 확인 · 쟁점 장면(WDA 의 다음 일)
 - [x] 요청서 §10 의 다섯 물음에 답했다(11-01 — W-1 ~ W-12 없음 · 심의 꼴 안 맞음 · pptx + pdf 나옴 · 5.5초 · 보존 · 동시 상한 없음)
 - [ ] 주인 있는 run 은 `WDA_RA_*` 서비스 자격으로 RA 그림을 받지 않는다
 - [ ] P-1 사용자가 손으로 main push(U-2) → 허브 SIF 재빌드(dev) — WDA 세션은 커밋까지만, push 하지 않는다
@@ -60,6 +63,9 @@
       `POST …/dismiss` — 모두 `principal_pat_or_session`(POST 는 CSRF) · `ensure(plat:webdesign, plat:reportarchive)` · 대화 주인 검사
 - [x] 한 번만 — 같은 보고서 · 같은 옵션은 하나로 · `again` · 사람당 동시 상한 · 박스 전체 동시 상한(429) · `advance` 잠금 안에서 렌더 맡기기 · 알림(서버 사본에 직접 — `conv_store.append`, 스레드에서)
 - [x] 템플릿 문 — RA 보고서의 템플릿에 `deliberation` 이 있으면 `format:deliberation` 이 있어야 만든다(409) · status 가 `formats.deliberation` 을 알린다
+- [x] (11-01 저녁 — WD-D39) 템플릿 문을 WDA 의 꼴로 — `format:delib-16x9` 와 `formats` 의 active(정책 함수 `format_ready` 하나) · 만들기에 `"format": "delib-16x9"`
+      (그 밖의 템플릿은 칸 없음) · 모르는 꼴 400 은 까닭을 보이고 잡을 남기지 않는다(기본 꼴로 다시 보내지 않는다) · 가짜 WDA 를 꼴 등록부 · `format` 칸 · 400 으로
+- [x] (WD-D40) `block_sections` 는 싣지 않는다 — RA 블록 id 에서 단락이 하나로 정해지지 않는다 · 우리 보고서의 실제 낱말을 요청서 4.6-2 에
 - [x] 내려받기 머리 — attachment(보고서 제목으로 이름, RFC 5987) · nosniff · `Cache-Control: private, no-store` · HTML 은 CSP sandbox · 응답에 WDA 주소 · id 없음
 - [x] 스테이징 청소에서 `#deck-jobs` 빼고 기한 뒤 지우기(`upload.py` sweep)
 - [x] 감사 — `deck_create` · `deck_render` · `deck_finish` · `deck_download`(본문 · 제목 전문 없음)

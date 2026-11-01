@@ -9,8 +9,8 @@
 1. WDA 가 요청서 W-1 ~ W-12 를 main 에 커밋하고, **사용자가 손으로** GitHub 에 push 한다(U-2 — 다른 누구도 push 하지 않는다). 허브가 SIF 를 새로 짓는다.
 2. 허브 매니페스트 `launch.portal_auth: true`(HEAXHub `385783f`)가 이 박스에 들어와 있다 — 포털 주소로 익명
    `/apps/web_design_agents/api/health` 를 부르면 401 이다.
-3. 심의 결과 카드 · `/보고서` 저장 답의 단추는 WDA 가 W-21(`format:deliberation`)을 알린 뒤에만 선다(U-6 — 심의 형식이 설 때까지 숨긴다).
-   그 전에는 RA 보내기 알림 자리에서만 선다.
+3. 심의 결과 카드 · `/보고서` 저장 답의 단추는 WDA 의 심의 꼴이 준비된 뒤에만 선다(U-6 — 심의 형식이 설 때까지 숨긴다) — `/api/health` 의 features 에
+   `format:delib-16x9` 가 있고 `formats` 에서 그 꼴이 `active` 여야 한다(W-21 · WD-D39 — 11-01 저녁 WDA 로컬 판은 draft). 그 전에는 RA 보내기 알림 자리에서만 선다.
 
 ## 1. 포털 켜기
 
@@ -29,7 +29,7 @@
 
 1. 로그인한 화면에서 `GET /agent/deck/status` — `enabled: true` 여야 한다. 아니면 `reason` 이 까닭이다 — `off`(스위치) · `permission`
    (`plat:webdesign` · `plat:reportarchive`) · `no_base`(WDA 주소) · `unknown`(허브 · WDA 가 답하지 않음 — 그 사람의 허브 계정 · `PORTAL_AUDIENCE`) ·
-   `no_owner`(WDA 판이 낡았다 — 0 의 1). `formats.deliberation` 은 W-21 뒤에 참이 된다.
+   `no_owner`(WDA 판이 낡았다 — 0 의 1). `formats.deliberation` 은 WDA 의 `delib-16x9` 가 active 일 때 참이 된다(W-21).
 2. RA 보내기 알림 하나에서 '발표자료로' → 기본(PPT · PDF · 정식 보고서)으로 만들기 — 몇 초 뒤 그 대화에 받기 링크 알림이 남고, 링크로 PPT · PDF 가
    내려받아진다.
 3. 다른 계정으로 그 받기 링크를 열면 404 다(포털 기록의 주인 · WDA 의 주인 두 겹).

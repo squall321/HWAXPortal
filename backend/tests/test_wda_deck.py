@@ -3,9 +3,10 @@
 
 가짜 WDA 는 **요청서(docs/wda-deck/wda-request.md)의 계약**을 그대로 따른다 — WDA 에는 아직 없다(11-01 답 Q1). 봉투 {success, data, message, code} ·
 상태 낱말(파이프라인 queued/running/done/failed · 단계 pending/running/done/failed · 렌더 queued/rendering/done/failed) · 남과 신원 없음에 404 ·
-features(owner · format:deliberation). 허브 게이트는 포털 PAT 의 서명 · 청중 · scope 를 보고 그 이메일을 X-Heax-User-Email 로 싣는 Caddy 를 흉내 낸다.
-만들기 본문은 WDA 가 알려 준 블록 글자 규칙으로 센다 — rich_text 는 content.markdown, heading 은 content.text, props.default_text 는 대신 쓰지 않고,
-content 에 없는 블록은 글자 0, 모두 0 이면 거절.
+features(owner · 꼴마다 format:<id>) · formats(꼴마다 상태 draft · active — WDA 의 꼴 등록부, 11-01 답) · 만들기의 format 칸(없으면 wide-16x9 ·
+모르는 꼴이면 곧바로 400 INVALID 와 쓸 수 있는 꼴). 허브 게이트는 포털 PAT 의 서명 · 청중 · scope 를 보고 그 이메일을 X-Heax-User-Email 로 싣는
+Caddy 를 흉내 낸다. 만들기 본문은 WDA 가 알려 준 블록 글자 규칙으로 센다 — rich_text 는 content.markdown, heading 은 content.text, props.default_text 는
+대신 쓰지 않고, content 에 없는 블록은 글자 0, 모두 0 이면 거절.
 """
 import asyncio
 import copy
@@ -57,6 +58,8 @@ class FakeHubWDA:
 
     def __init__(self, keystore, *, features=("owner",), chain=True):
         self.keystore, self.features, self.chain = keystore, set(features), chain
+        # WDA 의 꼴 등록부(꼴 id → 상태) — features 에 format:<id> 가 저절로 실린다. 심의 꼴(delib-16x9)은 시험이 넣는다
+        self.formats = {"wide-16x9": "active", "short-9x16": "active", "print-a4": "draft"}
         self.runs: dict[str, dict] = {}
         self.reports = {41: IMPORT, 42: EMPTY, 58: DELIB}
         self.calls: list[tuple[str, str]] = []          # (메서드, 경로)
@@ -145,14 +148,14 @@ class FakeHubWDA:
             return httpx.Response(404, json={"success": False, "message": "Report not found"})
         return httpx.Response(200, json={"success": True, "data": copy.deepcopy(self.reports[rid])})
 
-    def _text_blocks(self, report: dict) -> tuple[int, int]:
+    def _text_blocks(self, report: dict, fmt: str) -> tuple[int, int]:
         """WDA 의 블록 글자 규칙(11-01) — (블록 수, 글자 있는 블록 수)."""
         n = t = 0
         for p in report.get("pages") or []:
             content = p.get("content") or {}
             defs = list(p.get("extra_blocks") or [])
-            if p.get("template_id") == "deliberation" and "format:deliberation" in self.features:
-                defs += [{"id": k, "type": "rich_text"} for k in content]      # 심의 꼴이 들어온 WDA 는 템플릿 블록을 안다(W-21)
+            if p.get("template_id") == "deliberation" and fmt == "delib-16x9":
+                defs += [{"id": k, "type": "rich_text"} for k in content]      # 심의 꼴로 맡긴 실행은 템플릿 블록을 안다(W-21)
             for b in defs:
                 n += 1
                 c = content.get(b["id"], b.get("content"))
@@ -173,18 +176,23 @@ class FakeHubWDA:
         if path == "/api/health":
             if self.health_down:
                 return httpx.Response(503)
-            return httpx.Response(200, json={"status": "ok", "version": "0.2.0", "features": sorted(self.features)})
+            return httpx.Response(200, json={"status": "ok", "version": "0.2.0",
+                                             "features": sorted(self.features | {f"format:{k}" for k in self.formats}),
+                                             "formats": dict(self.formats)})
         if path == "/api/runs" and req.method == "POST":
             if len(req.content) > self.max_bytes:
                 return self.env(413, message="본문이 크다", code="TOO_LARGE")
             body = json.loads(req.content)
             self.created.append(body)
-            n, t = self._text_blocks(body["report_json"])
+            fmt = body.get("format", "wide-16x9")
+            if fmt not in self.formats:
+                return self.env(400, message=f"모르는 format '{fmt}' — 쓸 수 있는 꼴: {', '.join(sorted(self.formats))}", code="INVALID")
+            n, t = self._text_blocks(body["report_json"], fmt)
             if not t:
                 return self.env(422, message=f"ValueError: 텍스트를 가진 블록이 없다 (블록 {n}개, 텍스트 0개)", code="INVALID")
             rid = f"wr-{uuid.uuid4().hex}"
             self.runs[rid] = {"run_id": rid, "owner": email, "status": "queued", "error": None, "render": None,
-                              "render_opts": body.get("render"),
+                              "format": fmt, "render_opts": body.get("render"),
                               "stages": [{"stage": s, "status": "pending", "error": None} for s in ("ingest", "fragmentize", "scenario", "build")]}
             return self.env(202, {"run_id": rid, "slug": body["slug"], "owner": email})
         parts = path.split("/")          # ['', 'api', 'runs', id, ...]
@@ -271,6 +279,7 @@ def test_만들기는_그_사람_RA_토큰으로_읽고_ReportRead_를_바꾸지
     assert fake.ra_auth == ["Bearer rat_kim"], "RA 는 그 사람의 토큰으로만 읽는다"
     (sent,) = fake.created
     assert sent["report_json"] == IMPORT, "RA 의 ReportRead 를 바꾸지 않고 넘긴다(WDA 가 받는 꼴)"
+    assert "format" not in sent, "심의 밖의 템플릿은 format 칸을 싣지 않는다(WDA 기본 wide-16x9)"
     assert sent["render"] == {"targets": ["pptx", "pdf"], "doc_style": "report", "pptx_mode": "hybrid", "narration": False}
     assert sent["slug"] == "ra-41" and sent["source"]["report_id"] == 41
     assert fake.client_identity == [], "X-Heax-User-Email 은 Caddy 가 싣는다 — 포털은 싣지 않는다"
@@ -334,16 +343,48 @@ def test_WDA_에_주인_기능이_없거나_상태를_모르면_만들지_않는
     assert box["fake"].created == [] and box["fake"].ra_auth == [], "주인 기능을 모르는 WDA 에는 보고서를 읽지도 넘기지도 않는다"
 
 
-def test_심의_보고서는_format_deliberation_이_있어야_만든다(box):
+def test_심의_보고서는_delib_16x9_가_active_일_때만_그_꼴을_실어_만든다(box):
+    fake = box["fake"]
     st = box["c"].get("/agent/deck/status").json()
     assert st["enabled"] is True and st["formats"] == {"deliberation": False}
     r = _make(box, report_id=58)
-    assert r.status_code == 409 and "format:deliberation" in r.json()["detail"]
-    assert box["fake"].created == [], "심의 꼴을 모르는 WDA 에는 넘기지 않는다(사용자 결정 11-01 U-6)"
-    box["fake"].features = {"owner", "format:deliberation"}
+    assert r.status_code == 409 and "delib-16x9 — 없음" in r.json()["detail"]
+    fake.formats["delib-16x9"] = "draft"                     # WDA 가 꼴을 지었지만 아직 draft — 사용자 결정 전까지 숨긴다(WD-D39)
+    W._CAPS.update(at=0.0, features=None)
+    assert box["c"].get("/agent/deck/status").json()["formats"] == {"deliberation": False}
+    r = _make(box, report_id=58)
+    assert r.status_code == 409 and "delib-16x9 — draft" in r.json()["detail"]
+    assert fake.created == [], "준비되지 않은 꼴로는 심의 보고서를 넘기지 않는다(사용자 결정 11-01 U-6)"
+    fake.formats["delib-16x9"] = "active"
     W._CAPS.update(at=0.0, features=None)
     assert box["c"].get("/agent/deck/status").json()["formats"] == {"deliberation": True}
     assert _make(box, report_id=58).status_code == 200
+    (sent,) = fake.created
+    assert sent["format"] == "delib-16x9" and sent["report_json"] == DELIB, "그 꼴을 싣고 ReportRead 는 그대로"
+    assert fake.runs[_run_id(box)]["format"] == "delib-16x9"
+
+
+def test_WDA_가_모르는_꼴이면_400_의_까닭을_보이고_기본_꼴로_다시_보내지_않는다(box):
+    """탐침(60초 붙잡음) 뒤 WDA 가 그 꼴을 잃었다(옛 판으로 되돌림) — 만들기가 곧바로 400 INVALID(쓸 수 있는 꼴을 message 에)."""
+    fake = box["fake"]
+    fake.formats["delib-16x9"] = "active"
+    assert box["c"].get("/agent/deck/status").json()["formats"] == {"deliberation": True}
+    del fake.formats["delib-16x9"]
+    r = _make(box, report_id=58)
+    detail = r.json()["detail"]
+    assert r.status_code == 502 and "(HTTP 400 · INVALID)" in detail and "쓸 수 있는 꼴: print-a4, short-9x16, wide-16x9" in detail
+    assert [c.get("format") for c in fake.created] == ["delib-16x9"], "기본 꼴(wide-16x9)로 다시 보내지 않는다"
+    assert fake.runs == {} and W.records(box["s"]) == []
+
+
+@pytest.mark.parametrize("features,formats,want", [
+    ({"format:delib-16x9"}, {"delib-16x9": "active"}, True),
+    ({"format:delib-16x9"}, {"delib-16x9": "draft"}, False),
+    ({"format:delib-16x9"}, {}, False),
+    (set(), {"delib-16x9": "active"}, False),
+])
+def test_꼴_정책은_하나다_features_와_active_가_둘_다(features, formats, want):
+    assert W.format_ready(W.Caps(frozenset(features), formats), "delib-16x9") is want
 
 
 def test_RA_가_거절하거나_없거나_보고서가_크면_WDA_를_부르지_않는다(box):

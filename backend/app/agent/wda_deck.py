@@ -10,7 +10,8 @@
 
 브라우저는 WDA 의 run_id · 주소 · 서버 경로를 보지 않는다(WD-D7). 기록 · 로그 · 감사에는 보고서 본문을 남기지 않는다(번호 · 제목 · 수만).
 켜기 — 박스 스위치 wda_deck_enabled(기본 꺼짐) 와 WDA /api/health 의 features 에 owner(WD-D23 · D24). 심의(deliberation 템플릿) 보고서는
-format:deliberation 도(WD-D29 — WDA 의 심의 꼴이 들어오기 전에는 틀린 발표자료가 나간다).
+WDA 의 심의 꼴 delib-16x9 가 준비됐을 때만(format_ready — features 의 format:delib-16x9 와 그 꼴의 상태) 그 꼴을 실어 넘긴다(WD-D29 · D39 — 기본
+꼴로 넣으면 결정문 · 액션아이템이 빠진 발표자료가 나간다).
 """
 from __future__ import annotations
 
@@ -26,7 +27,7 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 from urllib.parse import quote
 
 import anyio
@@ -65,14 +66,15 @@ _FILE = {"pptx": (".pptx", "application/vnd.openxmlformats-officedocument.presen
          "video": (".mp4", "video/mp4")}
 LABEL = {"pptx": "PPT", "pdf": "PDF", "docx": "Word", "html": "HTML", "video": "영상"}
 DOC_LABEL = {"report": "정식 보고서 문서", "brief": "요약 문서(2~3쪽)", "memo": "1쪽 메모"}
-# 이 템플릿의 RA 보고서는 WDA 가 그 꼴을 알 때만 넘긴다(요청 W-21) — 심의 보고서는 지금 꼴로 넣으면 결정문 · 액션아이템이 사라진다(WDA 11-01 답)
-FORMAT_FEATURE = {"deliberation": "format:deliberation"}
+# RA 템플릿 → WDA 꼴 id(요청 W-21). 이 템플릿의 보고서는 그 꼴이 준비됐을 때만(format_ready) 그 꼴을 실어 넘긴다 — 심의 보고서를 기본 꼴(wide-16x9)로
+# 넣으면 결정문 · 액션아이템이 사라진다(WDA 11-01 답). 그 밖의 템플릿은 format 칸을 싣지 않는다(WDA 기본 wide-16x9).
+TEMPLATE_FORMAT = {"deliberation": "delib-16x9"}
 STEPS = {"ingest": "보고서 읽기", "fragmentize": "조각 나누기", "scenario": "장면 구성", "build": "화면 굽기"}
 _PROGRESS = {"ingest": 10, "fragmentize": 25, "scenario": 40, "build": 55}
 CAPS_TTL_S = 60.0
 
 _LOCKS: dict[str, asyncio.Lock] = {}
-_CAPS: dict[str, Any] = {"at": 0.0, "features": None}
+_CAPS: dict[str, Any] = {"at": 0.0, "features": None, "formats": {}}
 
 router = APIRouter(prefix="/agent/deck", tags=["agent-deck"])
 
@@ -201,12 +203,24 @@ def _wda_error(r: httpx.Response, what: str) -> DeckError:
     return DeckError(f"WDA 가 {what} 을 받지 않았습니다({tag})" + (f" — {why}" if why else "."), 502)
 
 
-async def capabilities(base: str, token: str) -> frozenset[str] | None:
-    """WDA /api/health 의 features(요청 W-6). 못 읽으면 None(모른다 — 화면은 숨긴다). 읽은 값만 60초 붙잡는다 — 한 사람의 실패(허브 계정 없음)가
-    모두의 단추를 숨기지 않게."""
+class Caps(NamedTuple):
+    """WDA /api/health — features(요청 W-6 · 꼴마다 format:<id>)와 꼴마다의 상태(formats — draft · active …, WDA 의 꼴 등록부에서 나온다)."""
+    features: frozenset[str]
+    formats: dict[str, str]
+
+
+def format_ready(caps: Caps, fmt: str) -> bool:
+    """그 꼴로 넘겨도 되는가 — 정책은 이 함수 하나다(status 의 formats 와 만들기의 문이 함께 쓴다). WDA 가 `format:<id>` 를 알리고 그 꼴의 상태가
+    active 여야 한다 — draft 는 숨긴다(사용자 결정 전까지, WD-D39)."""
+    return f"format:{fmt}" in caps.features and caps.formats.get(fmt) == "active"
+
+
+async def capabilities(base: str, token: str) -> Caps | None:
+    """WDA /api/health 의 features · formats(요청 W-6 · W-21). 못 읽으면 None(모른다 — 화면은 숨긴다). 읽은 값만 60초 붙잡는다 — 한 사람의
+    실패(허브 계정 없음)가 모두의 단추를 숨기지 않게."""
     now = time.monotonic()
     if _CAPS["features"] is not None and now - _CAPS["at"] < CAPS_TTL_S:
-        return _CAPS["features"]
+        return Caps(_CAPS["features"], _CAPS["formats"])
     try:
         async with _http(10.0) as cli:
             r = await cli.get(f"{base}/api/health", headers={"Authorization": f"Bearer {token}"})
@@ -214,9 +228,11 @@ async def capabilities(base: str, token: str) -> frozenset[str] | None:
         return None
     if r.status_code != 200:
         return None
-    feats = _json(r).get("features")
-    got = frozenset(str(f) for f in feats if isinstance(f, str)) if isinstance(feats, list) else frozenset()
-    _CAPS.update(at=now, features=got)
+    j = _json(r)
+    feats, fmts = j.get("features"), j.get("formats")
+    got = Caps(frozenset(str(f) for f in feats if isinstance(f, str)) if isinstance(feats, list) else frozenset(),
+               {k: v for k, v in fmts.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(fmts, dict) else {})
+    _CAPS.update(at=now, features=got.features, formats=got.formats)
     return got
 
 
@@ -286,11 +302,15 @@ def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def wda_create(base: str, token: str, *, data: dict, report_id: int, targets: list[str], doc_style: str, job_id: str) -> str:
-    """WDA `POST /api/runs` — 본문은 RA ReportRead 를 **바꾸지 않고**(WD-D31). render 칸이 있으면 WDA 가 빌드 뒤 이어서 렌더한다(요청 W-8)."""
+async def wda_create(base: str, token: str, *, data: dict, report_id: int, targets: list[str], doc_style: str, job_id: str,
+                     fmt: str | None) -> str:
+    """WDA `POST /api/runs` — 본문은 RA ReportRead 를 **바꾸지 않고**(WD-D31). render 칸이 있으면 WDA 가 빌드 뒤 이어서 렌더한다(요청 W-8).
+    `format` 은 꼴이 정해진 템플릿(심의 → delib-16x9)일 때만 싣는다 — 없으면 WDA 기본(wide-16x9). WDA 가 모르는 꼴이면 곧바로 400 이다(실행 없음)."""
     body = {"report_json": data, "slug": f"ra-{report_id}",
             "source": {"system": "report-archive", "report_id": report_id, "client": "hwax-portal"},
             "render": {"targets": list(targets), "doc_style": doc_style, "pptx_mode": PPTX_MODE, "narration": False}}
+    if fmt:
+        body["format"] = fmt
     try:
         async with _http(httpx.Timeout(60.0, connect=10.0)) as cli:
             r = await cli.post(f"{base}/api/runs", json=body, headers={**_auth(token), "Idempotency-Key": job_id})
@@ -496,8 +516,8 @@ async def deck_status(
     principal: Principal = Depends(principal_pat_or_session),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    """화면이 단추를 보일지 — 스위치 · 권한 둘 · WDA 주소 · WDA 능력(owner). formats 는 템플릿 문(심의 보고서는 format:deliberation)."""
-    out: dict[str, Any] = {"enabled": False, "reason": None, "formats": {"deliberation": False},
+    """화면이 단추를 보일지 — 스위치 · 권한 둘 · WDA 주소 · WDA 능력(owner). formats 는 템플릿 문 — RA 템플릿마다 그 꼴이 준비됐나(format_ready)."""
+    out: dict[str, Any] = {"enabled": False, "reason": None, "formats": {t: False for t in TEMPLATE_FORMAT},
                            "targets": list(TARGETS), "doc_styles": list(DOC_STYLES),
                            "defaults": {"targets": list(DEFAULT_TARGETS), "doc_style": "report"}, "keep_days": settings.wda_deck_job_days}
     if not settings.wda_deck_enabled:
@@ -510,13 +530,13 @@ async def deck_status(
     if not base:
         out["reason"] = "no_base"
         return out
-    feats = await capabilities(base, hub_pat(request.app.state.keystore, settings, principal))
-    if feats is None:
+    caps = await capabilities(base, hub_pat(request.app.state.keystore, settings, principal))
+    if caps is None:
         out["reason"] = "unknown"
-    elif "owner" not in feats:
+    elif "owner" not in caps.features:
         out["reason"] = "no_owner"
     else:
-        out.update(enabled=True, formats={"deliberation": FORMAT_FEATURE["deliberation"] in feats})
+        out.update(enabled=True, formats={t: format_ready(caps, f) for t, f in TEMPLATE_FORMAT.items()})
     return out
 
 
@@ -539,10 +559,10 @@ async def deck_create(
     if whose != "mine":
         raise AuthError("그 대화가 없습니다.", status_code=404)
     base, token = _base_and_token(request, settings, principal)
-    feats = await capabilities(base, token)
-    if feats is None:
+    caps = await capabilities(base, token)
+    if caps is None:
         raise AuthError("WDA 상태를 읽지 못했습니다 — 잠시 뒤 다시 누르세요.", status_code=503)
-    if "owner" not in feats:
+    if "owner" not in caps.features:
         raise AuthError("WDA 에 아직 주인 기능이 없습니다 — 보고서를 넘기지 않습니다(사용자 결정 11-01).", status_code=409)
     async with lock("create"):
         now = time.time()
@@ -559,13 +579,16 @@ async def deck_create(
             raise AuthError("지금 발표자료를 만드는 사람이 많습니다 — 잠시 뒤 다시 누르세요.", status_code=429)
         try:
             data, size = await read_report(request, settings, principal, body.report_id)
-            missing = [FORMAT_FEATURE[t] for t in sorted(templates_of(data)) if t in FORMAT_FEATURE and FORMAT_FEATURE[t] not in feats]
-            if missing:
-                raise DeckError("WDA 가 이 보고서의 꼴(심의 보고서)을 아직 모릅니다 — 넘기면 결정문 · 액션아이템이 빠진 발표자료가 나옵니다"
-                                f"({', '.join(missing)} 가 들어온 뒤에 만들 수 있습니다).", 409)
+            fmts = sorted({TEMPLATE_FORMAT[t] for t in templates_of(data) if t in TEMPLATE_FORMAT})
+            not_ready = [f for f in fmts if not format_ready(caps, f)]
+            if not_ready:
+                raise DeckError("WDA 의 심의 보고서 꼴(" + ", ".join(f"{f} — {caps.formats.get(f) or '없음'}" for f in not_ready)
+                                + ")이 아직 준비되지 않았습니다 — 준비(active)되기 전에는 심의 보고서를 넘기지 않습니다(기본 꼴로는 결정문 · "
+                                  "액션아이템이 빠진다, 사용자 결정 11-01 U-6).", 409)
+            fmt = fmts[0] if fmts else None
             job_id = secrets.token_hex(16)
             run_id = await wda_create(base, token, data=data, report_id=body.report_id, targets=targets,
-                                      doc_style=body.doc_style, job_id=job_id)
+                                      doc_style=body.doc_style, job_id=job_id, fmt=fmt)
         except DeckError as exc:
             _audit(request, principal, "deck_create", "failed", report_id=body.report_id, error=exc.message[:300])
             raise _http_error(exc) from exc
@@ -573,11 +596,11 @@ async def deck_create(
         rec = {"job_id": job_id, "owner_sub": owner, "owner_email": principal.email or owner,
                "conversation_id": body.conversation_id, "report": {"id": body.report_id, "title": title[:300]},
                "options": {"targets": targets, "doc_style": body.doc_style, "pptx_mode": PPTX_MODE},
-               "wda": {"run_id": run_id}, "state": "queued", "created_at": now, "render_submitted_at": None,
+               "wda": {"run_id": run_id, "format": fmt}, "state": "queued", "created_at": now, "render_submitted_at": None,
                "images_not_sent": len(file_refs(data.get("pages"))), "finished": None, "dismissed": None}
         await asyncio.to_thread(save, settings, rec)
     _audit(request, principal, "deck_create", "ok", job_id=job_id, report_id=body.report_id, targets=targets,
-           doc_style=body.doc_style, bytes=size, images=rec["images_not_sent"])
+           doc_style=body.doc_style, format=fmt, bytes=size, images=rec["images_not_sent"])
     return {**view(rec, now=now), "created": True}
 
 

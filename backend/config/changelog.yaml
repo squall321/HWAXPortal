@@ -35,6 +35,7 @@ entries:
       - "포털 창구 /agent/deck(상태 · 만들기 · 진행 · 한 걸음 · 받기 · 목록 · 숨기기) — 허브 Caddy 를 거쳐 WebDesignAgents REST 를 그 사람 이름의 짧은 포털 PAT(청중 heax-hub, 10분)로 부르고, 잡 기록은 스테이징 #deck-jobs(주인만, 7일)에 둡니다. 사람당 2 · 박스 전체 4 건까지, 브라우저는 WebDesignAgents 의 주소 · 번호를 보지 않습니다."
       - "중계가 심의 outcome 과 '/보고서' 저장 답의 ra_report 를 서버 사본 meta 로 남기고, 에이전트 서버의 '/보고서' 저장 결과에 ra_report {id, title} 가 실립니다(같이 올려야 그 답의 단추가 섭니다)."
       - "HE팀 운영자 he-doc-webdesign 이 발표자료 요청을 '발표자료로' 단추로 안내하고 render_status 를 되풀이해 부르지 않습니다."
+      - "심의 보고서는 WebDesignAgents 의 심의 꼴(delib-16x9)이 준비(active)됐다고 알릴 때만 그 꼴을 실어 넘깁니다(지금은 draft 라 숨습니다). 그 밖의 보고서는 꼴을 싣지 않고, WebDesignAgents 가 모르는 꼴이라고 답하면 까닭을 보이고 기본 꼴로 다시 보내지 않습니다."
   - date: 2026-11-01
     title: "새로고침한 심의에도 결과 카드가 남습니다"
     tag: 수정
