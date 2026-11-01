@@ -287,8 +287,8 @@ function Convergence({ d }: { d: DelibData }) {
 function OutcomeCards({ d }: { d: DelibData }) {
   const o = d.outcome;
   if (!o) return null;
-  // RA 가 준 주소가 있으면 그리로 바로(포털 세션이 필요 없다). 없는 옛 카드는 눌렀을 때 포털에 물어 연다 — 가운데 단추 · 주소 복사는 RA 첫 화면으로
-  // (오류 JSON 을 보이지 않는다, docs/wda-deck WD-D78)
+  // RA 가 준 주소가 있으면 그리로 바로(포털 세션이 필요 없다). 없는 옛 카드는 RA 첫 화면으로 가는 진짜 링크이고, 누르면 빈 탭을 열어 포털에 물어
+  // 옮긴다 — 가운데 단추 · 주소 복사 · 팝업이 막힌 브라우저는 링크대로 RA 첫 화면으로 간다(오류 JSON 을 보이지 않는다, docs/wda-deck WD-D78 · D84)
   const rid = o.report_id;
   const raHref = rid != null ? raReportHref(o.url, rid) : null;
   return (
@@ -298,10 +298,9 @@ function OutcomeCards({ d }: { d: DelibData }) {
           className="dv-card report"
           href={raHref ?? RA_HOME}
           target="_blank"
-          rel="noreferrer"
+          rel={raHref ? 'noreferrer' : 'noopener'}
           onClick={raHref ? undefined : (e) => {
-            e.preventDefault();
-            void openRaReport(rid);
+            if (openRaReport(rid)) e.preventDefault();      // 빈 탭을 못 열면(팝업 막기) 링크가 그대로 간다
           }}
         >
           <span className="dv-card-k">Report Archive</span>

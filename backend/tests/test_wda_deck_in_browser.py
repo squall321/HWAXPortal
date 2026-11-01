@@ -426,6 +426,30 @@ const SCENARIOS = {
              outside: await page.evaluate(() => window.__replaced[2]),
              asked: (await calls(page, '/agent/ra/reports/')).map((c) => c.url), errors: page.__errors };
   },
+  // 팝업이 막힌 브라우저(window.open 이 null) — 옛 카드를 누르면 링크의 기본 이동(RA 첫 화면 · 새 탭)이 그대로 간다. 기다린 뒤의 window.open 은
+  // 사용자 동작 밖이라 또 막힌다 — 종전엔 기본 이동을 막아 아무 일도 없었다(3차 적대 검토, WD-D84)
+  async raCardBlocked(browser) {
+    const before = () => {
+      const k = 'hwax.chat.u1@corp.example.conversations';
+      const convs = JSON.parse(localStorage.getItem(k));
+      convs[0].messages.push({ role: 'assistant', content: '결정문', ts: 5,
+        delib: { turns: [{ round: 1, persona: 'mech', say: '말' }], decision: '결정문', outcome: { report_id: 59, title: '옛 카드' } } });
+      localStorage.setItem(k, JSON.stringify(convs));
+      window.__opens = 0;
+      window.open = () => { window.__opens += 1; return null; };
+      // React 의 손잡이 뒤(bubble — window 가 마지막)에서 기본 이동이 막혔는지 적고, 시험은 실제 새 탭을 막는다
+      window.addEventListener('click', (e) => {
+        if (e.target && e.target.closest && e.target.closest('.dv-card.report')) { window.__prevented = e.defaultPrevented; e.preventDefault(); }
+      });
+    };
+    const page = await open(browser, { before });
+    const card = page.locator('.dv-card.report').first();
+    const attrs = await card.evaluate((a) => ({ href: a.getAttribute('href'), target: a.getAttribute('target'), rel: a.getAttribute('rel') }));
+    await card.click();
+    await page.waitForTimeout(150);
+    return { attrs, prevented: await page.evaluate(() => window.__prevented), opens: await page.evaluate(() => window.__opens),
+             asked: (await calls(page, '/agent/ra/reports/')).length, errors: page.__errors };
+  },
   // 숨긴 잡도 끝 알림을 남긴다 — 줄은 그 잡을 계속 한 걸음씩 가되 화면에는 보이지 않는다(WD-D59)
   async dismissedFinish(browser) {
     const page = await open(browser);
@@ -544,6 +568,14 @@ def test_심의_결과_카드는_RA_주소로_바로_열고_옛_카드는_포털
     assert s["denied"] == "/report-archive/", "못 물으면 JSON 대신 RA 첫 화면"
     assert s["outside"] == "/report-archive/", "포털의 RA 경로가 아닌 답은 따르지 않는다"
     assert s["asked"] == ["/agent/ra/reports/59/open"] * 4
+
+
+def test_팝업이_막히면_옛_카드는_링크의_기본_이동으로_RA_첫_화면을_연다(seen):
+    """3차 적대 검토(WD-D84) — 빈 탭을 못 열면(window.open 이 null) 기본 이동을 막지 않는다 · 포털에 묻지 않는다 · 옛 카드는 진짜 링크다."""
+    s = seen("raCardBlocked")
+    assert s["attrs"] == {"href": "/report-archive/", "target": "_blank", "rel": "noopener"}, s["attrs"]
+    assert s["opens"] == 1 and s["prevented"] is False, "빈 탭을 못 열면 링크가 그대로 간다"
+    assert s["asked"] == 0, "열 탭이 없으면 묻지 않는다"
 
 
 def test_숨긴_잡도_끝_알림을_남기고_줄에는_보이지_않는다(seen):

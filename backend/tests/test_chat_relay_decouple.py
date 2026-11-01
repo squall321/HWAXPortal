@@ -276,3 +276,67 @@ def test_상류가_끝난_직후_브라우저가_떠나도_답을_남긴다(port
         store.append = orig
     assert _messages(app, cid) == [("user", "질문"), ("assistant", _RESULT)], "다 받은 답을 서버 사본에 남긴다"
     assert not relay.turn_active(cid)
+
+
+@pytest.mark.parametrize("leave", [True, False])
+def test_저장이_막혀도_응답은_상한_안에_닫히고_저장은_뒤에서_끝난다(portal, monkeypatch, caplog, leave):
+    """3차 적대 검토(docs/wda-deck WD-D81) — WD-D79 뒤로 생성기는 끝맺는 pump(상류 닫기 · 저장)를 끊지 않고 기다린다. 저장이 막히면(잠금을 놓지
+    않는 쓰기) 그 기다림에 끝이 없어 ASGI 호출이 저장이 풀릴 때까지 붙잡혔다. 기다림은 상한까지만 — 넘기면 크게 남기고 응답을 닫되, 저장은 끊지
+    않고 뒤에서 끝까지 둔다(끝나면 그것도 남긴다). leave — 브라우저가 done 뒤에 떠났다(아니면 연결을 둔 채 끝을 기다린다)."""
+    import threading
+    import time as _time
+
+    c, app, _path = portal
+    cid = c.post("/agent/conversations", json={"title": "t"}).json()["id"]
+    _agent(app, _Turn(n=2))
+    monkeypatch.setattr(relay, "_RELAY_FINISH_WAIT_S", 0.3, raising=False)
+    store = app.state.conv_store
+    orig = store.append
+    release = threading.Event()
+
+    def stuck(**kw):
+        if kw.get("role") == "assistant":
+            release.wait(5)                         # 잠금을 놓지 않는 쓰기 뒤에 선 저장
+        return orig(**kw)
+
+    seen: dict = {}
+
+    async def run():
+        body = json.dumps({"message": "질문", "conversation_id": cid}).encode()
+        given, done_sent = [False], asyncio.Event()
+
+        async def receive():
+            if not given[0]:
+                given[0] = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            await (done_sent.wait() if leave else asyncio.Event().wait())
+            return {"type": "http.disconnect"}
+
+        async def send(msg):
+            if msg["type"] == "http.response.body" and b"event: done" in (msg.get("body") or b""):
+                done_sent.set()
+
+        t0 = _time.monotonic()
+        try:
+            await asyncio.wait_for(app(_scope(body, "2.3", app), receive, send), 10)
+        except Exception as exc:  # noqa: BLE001
+            seen["exc"] = repr(exc)
+        seen["call_s"] = _time.monotonic() - t0
+        seen["saved_early"] = ("assistant", _RESULT) in _messages(app, cid)
+        release.set()                               # 쓰기가 풀린다 — 뒤에 둔 저장이 끝난다
+        seen["saved_late"] = await _until(lambda: ("assistant", _RESULT) in _messages(app, cid))
+        seen["turn_after"] = await _until(lambda: not relay.turn_active(cid))
+        seen["late_logged"] = await _until(lambda: any("늦게 끝났다" in r.getMessage() for r in caplog.records))
+
+    store.append = stuck
+    try:
+        with caplog.at_level(logging.WARNING, logger=relay.logger.name):
+            c.portal.call(run)
+    finally:
+        release.set()
+        store.append = orig
+    assert seen["call_s"] < 2.0, f"막힌 저장이 응답을 붙잡았다({seen['call_s']:.1f}초) — {seen}"
+    assert not seen["saved_early"], "시험 전제 — 저장이 막혀 있었다"
+    assert seen["saved_late"] and seen["turn_after"], "저장은 끊지 않고 뒤에서 끝낸다"
+    assert sum("상한" in r.getMessage() and "끝맺는" in r.getMessage() for r in caplog.records) == 1, "넘긴 사실을 한 번 크게 남긴다"
+    assert seen["late_logged"], "뒤에서 끝난 것도 남긴다"
