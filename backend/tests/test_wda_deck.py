@@ -291,6 +291,7 @@ def box(tmp_path, monkeypatch):
     app.dependency_overrides[principal_pat_or_session] = lambda: who["p"]
     W._CAPS.update(at=0.0, features=None)
     W._LOCKS.clear()
+    getattr(W, "_SEEN", {}).clear()
     with TestClient(app) as c:
         fake = FakeHubWDA(app.state.keystore)
         real = httpx.AsyncClient
@@ -1188,7 +1189,8 @@ def test_숨기거나_버려진_잡이_WDA_에서_끝났으면_만들기_앞에�
     r = _make(box, report_id=43)
     assert r.status_code == 200, r.text
     assert len(_messages(box)) == 2, "끝난 두 잡의 알림이 남았다(숨겨도 알림은 남긴다)"
-    # 박스 전체 — 이도 둘을 맡기고 떠났다(PAT 스크립트 · 닫은 창). 셋째 사람의 만들기가 그 둘을 이의 이름으로 정리한다
+    # 박스 전체 — 이도 둘을 맡기고 떠났다(PAT 스크립트 · 닫은 창). 셋째 사람의 만들기는 이의 잡을 건드리지 않는다(이의 이름으로 토큰을 찍지 않는다,
+    # WD-D74) — 갓 맡긴 남의 잡은 박스 자리를 세고, 그 주인이 오래 묻지 않은 오래된 잡은 세지 않는다
     box["who"]["p"] = LEE
     la = _make(box).json()["job_id"]
     lb = _make(box, doc_style="memo").json()["job_id"]
@@ -1200,16 +1202,51 @@ def test_숨기거나_버려진_잡이_WDA_에서_끝났으면_만들기_앞에�
     s.wda_deck_inflight_box_max = 3
     park = Principal(subject="park@corp.com", email="park@corp.com", display_name="박", groups=NEEDS)
     box["who"]["p"] = park
-    pconv = c.post("/agent/conversations", json={"title": "t", "kind": "chat"}).json()["id"]
-    n0 = len(fake.pat_calls)
-    r = c.post("/agent/deck/jobs", json={"report_id": 41, "conversation_id": pconv})
-    assert r.status_code == 200, r.text
-    lee_runs = {W.load(s, j, "lee@corp.com")["wda"]["run_id"] for j in (la, lb)}
-    asked = {(path.rsplit("/", 1)[-1], next(p["email"] for p in fake.pats if p["jti"] == jti))
-             for m, path, jti in fake.pat_calls[n0:] if m == "GET" and path.startswith("/api/runs/") and path.count("/") == 3}
-    assert {(rid, "lee@corp.com") for rid in lee_runs} <= asked, "남의 잡은 그 주인의 이름으로 묻는다(WDA 의 주인 검사를 지난다)"
-    assert all(W.load(s, j, "lee@corp.com")["finished"]["state"] == "done" for j in (la, lb))
-    assert len(_messages(box, LEE)) == 2, "이의 대화에 이의 알림이 남는다"
+    try:
+        pconv = c.post("/agent/conversations", json={"title": "t", "kind": "chat"}).json()["id"]
+        n0 = len(fake.pats)
+        r = c.post("/agent/deck/jobs", json={"report_id": 41, "conversation_id": pconv})
+        assert r.status_code == 429, "갓 맡긴 남의 잡(김 1 · 이 2)은 박스 자리를 센다"
+        for j in (la, lb):
+            _age(box, j, W.BOX_FRESH_S + 1)
+        W._SEEN.clear()
+        r = c.post("/agent/deck/jobs", json={"report_id": 41, "conversation_id": pconv})
+        assert r.status_code == 200, "주인이 오래 묻지 않은 오래된 남의 잡은 박스 자리를 먹지 않는다"
+        assert not [p for p in fake.pats[n0:] if p["email"] != "park@corp.com"], "남의 이름으로 허브 토큰을 찍지 않는다"
+        assert all(not W.load(s, j, "lee@corp.com").get("finished") for j in (la, lb)), "이의 잡은 이가 마무리한다"
+        assert _messages(box, LEE) == []
+    finally:
+        app.state.user_store.delete_connection(email="park@corp.com", service="reportarchive")
+
+
+def test_남의_만들기는_정지된_사람의_잡도_그_이름으로_마무리하지_않는다(box):
+    """2차 적대 검토 R4b — 이의 만들기가 정지된 김의 끝난 잡을 김의 이름(허브 토큰)으로 마무리했고 감사는 김이 한 일로 적혔다(WD-D74)."""
+    c, fake = box["c"], box["fake"]
+    j = _make(box, targets=["pptx"]).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.rendered(rid)
+    n0 = len(fake.pats)
+    box["who"]["p"] = LEE
+    _make(box, report_id=42)
+    assert not [p for p in fake.pats[n0:] if p["email"] == "kim@corp.com"], "김의 이름으로 토큰을 찍지 않는다"
+    assert not W.load(box["s"], j, "kim@corp.com").get("finished")
+    rows = app.state.agent_audit._conn.execute(
+        "SELECT principal FROM agent_audit WHERE event = 'deck_finish' AND meta LIKE ?", (f"%{j}%",)).fetchall()
+    assert rows == [], "김이 하지 않은 일을 김의 감사로 적지 않는다"
+
+
+def test_주인의_화면이_최근에_물은_남의_잡은_박스_자리를_센다(box):
+    s = box["s"]
+    s.wda_deck_inflight_box_max = 1
+    box["who"]["p"] = LEE
+    lj = _make(box).json()["job_id"]
+    _age(box, lj, W.BOX_FRESH_S + 1)
+    box["c"].get(f"/agent/deck/jobs/{lj}")              # 이의 화면이 묻는다
+    box["who"]["p"] = KIM
+    assert _make(box).status_code == 429, "주인이 지켜보는 잡은 아직 돈다고 본다"
+    W._SEEN.clear()
+    assert _make(box).status_code == 200
 
 
 def test_사람당_박스_전체_동시_상한(box):
