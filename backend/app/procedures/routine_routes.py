@@ -719,6 +719,9 @@ def ra_result(request: Request, run_id: str, body: RaIn, principal: Principal = 
 # 멈춤이 이 실행이 세운 심의를 접는 데 쓰는 시간 전부(도구 지도 · 세션 열기 · 접기) — 게이트웨이가 늦거나 죽어도 멈춤 답을 붙잡지 않는다
 # (멈춤은 그 전에 원장에 선다). 세션 닫기는 따로 5초까지다
 DELIB_FOLD_S = 15.0
+# 마무리 중이라 엔진이 접기를 거절한 글의 표지 — 의장이 결정문을 낸 뒤(요약 · 쉬운 설명 · 보고서 저장 중)의 deliberate_cancel 은 도구 오류로
+# 거절되고 그 심의는 결정문 · 보고서까지 간다(HWAXAgentServer delib_jobs.DelibFinishing · 2fc01f1). 칸이 없어 글로 읽는다(그쪽 fdfd7dd)
+DELIB_FINISHING = "finishing"
 
 
 def _started_jobs(calls: list[dict]) -> list[str]:
@@ -817,8 +820,13 @@ async def cancel(request: Request, run_id: str, settings: Settings = Depends(get
     reason = "사람이 멈췄다"
     if done:
         reason += f" — 이 실행이 세운 심의 {' · '.join(done)} 를 접었다"
-    if errors:
-        reason += (" — " + " · ".join(f"심의 {e['job_id']} 는 접지 못했다({e['error'][:160]})" for e in errors)
+    # 마무리 중이라 거절된 심의는 곧 결정문 · 보고서까지 끝난다 — 다시 접으라고 하지 않는다(다시 접어도 같은 거절이다). 안내는 다른 까닭에만
+    finishing = [e["job_id"] for e in errors if DELIB_FINISHING in e["error"]]
+    others = [e for e in errors if DELIB_FINISHING not in e["error"]]
+    if finishing:
+        reason += f" — 심의 {' · '.join(finishing)} 는 마무리 중이라 접지 않았다 — 결정문 · 보고서까지 끝난다"
+    if others:
+        reason += (" — " + " · ".join(f"심의 {e['job_id']} 는 접지 못했다({e['error'][:160]})" for e in others)
                    + ". 서버에서 계속 돌 수 있다 — deliberate_cancel 로 접는다")
     store.set_run(run_id, reason=reason)
     return {"ok": True, "state": "cancelled", "delib_cancelled": done, "delib_cancel_errors": errors}

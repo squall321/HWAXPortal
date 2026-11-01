@@ -1290,3 +1290,43 @@ def test_게이트웨이가_실패해도_멈춤은_막히지_않고_접지_못�
     assert r.status_code == 200 and r.json()["delib_cancel_errors"] == [{"job_id": "j-slow", "error": "0.5초 안에 끝나지 않았다"}], r.text
     assert c.get(f"{PREFIX}/runs/{slow}").json()["run"]["state"] == "cancelled"
 
+
+# 에이전트 서버는 마무리 중인 심의(의장이 결정문을 낸 뒤 — 요약 · 쉬운 설명 · 보고서 저장)의 deliberate_cancel 을 거절한다(HWAXAgentServer
+# delib_jobs.DelibFinishing · 2fc01f1). 거절 글은 그 예외의 글이다 — MCP 가 도구 오류로 싣는 꼴(FastMCP 'Error executing tool …')로 짓는다.
+def _finishing(jid: str) -> str:
+    return (f"Error executing tool deliberate_cancel: {jid} 는 접지 않는다(finishing — 마무리 중) — 의장이 결정문을 이미 냈다(끊기기 전에 낸 것도 "
+            "같다). 남은 것은 요약 · 쉬운 설명 · Report Archive 저장이라 접으면 다 만든 결정문이 버려지고 RA 에 들어간 초안은 번호를 잃는다. 곧 "
+            "끝난다 — deliberate_status 로 보고 deliberate_result 로 결정문을 받는다. 다단 심의는 그 단의 결정문 뒤 다음 단에서 다시 접을 수 있다")
+
+
+def test_마무리_중이라_접지_않은_심의에는_접으라고_하지_않는다(client):
+    """마무리 거절은 접기 실패가 아니라 곧 끝난다는 답이다 — 그 심의는 결정문 · 보고서까지 간다. 종전엔 다른 실패와 같이 '서버에서 계속 돌 수
+    있다 — deliberate_cancel 로 접는다' 를 달아 다시 접으라고 했다(다시 접어도 같은 거절이다). 다른 까닭으로 못 접은 심의에는 그 안내를 그대로
+    단다. 답의 delib_cancel_errors 는 그대로다 — 접지 않은 것은 접지 않은 것이고, 거절 글이 무엇을 하면 되는지 말한다."""
+    c, _ = client
+    h = _login(c, "boss@corp.com")
+    _use_handler(_fold_gateway([]))
+
+    def run_with(*jobs) -> str:
+        _, r = _start(c, spec=FOLD_SPEC, h=h)
+        run_id = r.json()["run"]["id"]
+        for jid in jobs:
+            _delib_start(c, run_id, "delib", jid, h)
+        return run_id
+
+    only, mixed = run_with("j-fin", "j-ok"), run_with("j-fin2", "j-gone")
+    _use_handler(_fold_gateway([], answer=lambda jid: (True, _finishing(jid)) if jid.startswith("j-fin")
+                               else (True, f"그런 심의 잡이 없다: {jid}") if jid == "j-gone" else (False, "{}")))
+    r = c.post(f"{PREFIX}/runs/{only}/cancel", headers=h)
+    assert r.status_code == 200 and r.json()["delib_cancelled"] == ["j-ok"], r.text
+    assert r.json()["delib_cancel_errors"] == [{"job_id": "j-fin", "error": _finishing("j-fin")[:300]}]
+    run = c.get(f"{PREFIX}/runs/{only}").json()["run"]
+    assert run["state"] == "cancelled" and run["reason"] == (
+        "사람이 멈췄다 — 이 실행이 세운 심의 j-ok 를 접었다 — 심의 j-fin 는 마무리 중이라 접지 않았다 — 결정문 · 보고서까지 끝난다"), run["reason"]
+
+    r = c.post(f"{PREFIX}/runs/{mixed}/cancel", headers=h)
+    assert r.status_code == 200 and r.json()["delib_cancelled"] == [], r.text
+    assert [e["job_id"] for e in r.json()["delib_cancel_errors"]] == ["j-fin2", "j-gone"]
+    assert c.get(f"{PREFIX}/runs/{mixed}").json()["run"]["reason"] == (
+        "사람이 멈췄다 — 심의 j-fin2 는 마무리 중이라 접지 않았다 — 결정문 · 보고서까지 끝난다 — 심의 j-gone 는 접지 못했다(그런 심의 잡이 "
+        "없다: j-gone). 서버에서 계속 돌 수 있다 — deliberate_cancel 로 접는다")
