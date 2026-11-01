@@ -2692,7 +2692,8 @@ def _report_id_of(v) -> int | None:
     if isinstance(v, bool):
         return None
     # ASCII 숫자만 — str.isdigit 는 '²' · '٣' 도 참이라 int('²') 가 터지고(중계가 그 답을 못 남긴다) '٣' 은 3 이 됐다(docs/wda-deck WD-D45)
-    if isinstance(v, str) and re.fullmatch(r"[0-9]+", v.strip()):
+    # 18자리까지 — 그보다 긴 글은 int() 의 자릿수 상한(4300)에 닿을 수 있고 RA 번호일 수 없다(docs/wda-deck WD-D69)
+    if isinstance(v, str) and re.fullmatch(r"[0-9]{1,18}", v.strip()):
         v = int(v.strip())
     return v if isinstance(v, int) and v > 0 else None
 
