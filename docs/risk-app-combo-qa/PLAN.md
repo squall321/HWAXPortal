@@ -44,6 +44,10 @@
 1. **준비(읽기만)** — 리스크 앱이 `2460cd0` 이상인가 · 에이전트 서버 `EXTERNAL_LLM_ENABLED` · 게이트웨이에 `risk_*` · `review_task_*` 도구가 뜨는가
    (HWAXRisk `scripts/rr_gateway_check.py` — 소스가 아니라 `tools/list` 로 본다) · 돌릴 사람의 포털 PAT 가 리스크 앱에 등록됐는가 · 상자 점검
    `infra/scripts/risk-review-inventory.sh`.
+   - `EXTERNAL_LLM_ENABLED` 가 꺼져 있으면(기본) `docs/risk-review-redesign/server-setup-m3.md` 8절대로 켠다 — 사람이 하고, 켠 뒤 에이전트 서버 재기동.
+   - 돌릴 사람의 리스크 앱 자격 — 앱 화면 설정의 포털 PAT 줄(또는 `GET /api/me`)에서 등록 출처가 게이트웨이 교환이고 청중에 `mcp-gateway` · `step-forge`
+     가 다 있는지 본다(없으면 위임 캡처의 REST 다리가 닫힌다 — RK-02, 화면이 까닭을 말한다). 실제 변경 캡처는 웹 화면으로 해도 된다.
+   - 이 일을 이어받는 cae00 세션의 출발점 — 이 PLAN · [checklist](checklist.md) · 받은 편지함 `docs/cae00-inbox/2026-11-01.md` Q1 · Q2.
 2. **대상 캡처(M0-d — 사람)** — 1절의 조건대로 실제 변경 3쌍. 과제 만들기 → 원천 등록(StepForge · DynaForge · KooRemapper · ODB) → 두 판
    스냅샷 → 비교 대상 열기. 조합 과제(2절 격리)마다 같은 스냅샷이 서도록 같은 원천으로 연다(같은 주인이면 두 과제 사이 비교도 된다).
 3. **실행 기록 만들기** — 한 줄에 한 실행: 대상 · 조합(앱 목록) · 반복 번호 · 모델 · 얼린 브리프 해시 · 팩 해시 · 게이트웨이 도구 지도 해시 ·
