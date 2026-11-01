@@ -265,16 +265,20 @@ def sweep_expired(settings: Settings) -> int:
     if not root.exists():
         return 0
     from app.agent.docforge_delivery import JOBS_DIR
+    from app.agent.wda_deck import JOBS_DIR as DECK_JOBS_DIR
     cutoff = time.time() - settings.upload_staging_ttl_hours * 3600
     # 정밀 변환 잡 기록은 DocForge 보존 기한만큼 둔다 — 창을 닫아 넣지 못한 잡을 다시 열어 넣는다(DocForge E15)
     jobs_cutoff = time.time() - settings.docforge_job_days * 86400
+    # 발표자료 잡 기록도 그 기한만큼(docs/wda-deck) — 6시간이면 다음 날 돌아온 사람이 받기 링크를 잃는다
+    deck_cutoff = time.time() - settings.wda_deck_job_days * 86400
+    keep = {JOBS_DIR: jobs_cutoff, DECK_JOBS_DIR: deck_cutoff}
     n = 0
     # <사용자>/<staging_id 상자>. 파일이 곧바로 오면 폴더로 바꾸기 전에 남은 것이라 같이 지운다.
     for entry in root.glob("*/*"):
         try:
             # 상자 자체의 mtime 으로 판정한다 — 쓰는 중인 상자는 mtime 이 새것이라
             # 청소가 진행 중인 업로드를 지우지 않는다.
-            if entry.stat().st_mtime >= (jobs_cutoff if entry.parent.name == JOBS_DIR else cutoff):
+            if entry.stat().st_mtime >= keep.get(entry.parent.name, cutoff):
                 continue
             if entry.is_file():
                 entry.unlink()
