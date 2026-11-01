@@ -79,6 +79,8 @@ class FakeHubWDA:
         self.health_down = False
         self.slow = 0.0
         self.max_bytes = 16 * 1024 * 1024
+        self.chunks_sent = 0                           # 흘려 보낸 덩어리 수(RA 큰 보고서 · 받기 실패의 큰 몸) — 받는 쪽이 어디서 멈췄나
+        self.download_fails_big = False                # 받기가 500 과 끝없는 몸을 준다
         self.files = {"pptx": b"PK\x03\x04pptx-bytes", "pdf": b"%PDF-1.7 deck", "docx": b"PK\x03\x04docx", "html": b"<html>x</html>",
                       "mp4": b"\x00\x00\x00\x18ftypmp4"}
 
@@ -155,11 +157,18 @@ class FakeHubWDA:
         path = req.url.path.removeprefix("/apps/web_design_agents")
         return self.wda(req, path, email)
 
+    async def _stream(self, n: int, size: int = 64 * 1024):
+        for _ in range(n):
+            self.chunks_sent += 1
+            yield b"x" * size
+
     def ra(self, req: httpx.Request) -> httpx.Response:
         self.ra_auth.append(req.headers.get("authorization", ""))
         rid = int(req.url.path.rsplit("/", 1)[1])
         if req.headers.get("authorization") not in ("Bearer rat_kim", "Bearer rat_lee"):
             return httpx.Response(401, json={"detail": "unauthorized"})
+        if rid == 777:                                  # 4 MB 를 길이 머리 없이 흘린다
+            return httpx.Response(200, content=self._stream(64))
         if rid == 403:
             return httpx.Response(403, json={"detail": "Out of workspace scope"})
         if rid not in self.reports:
@@ -241,6 +250,8 @@ class FakeHubWDA:
                     arts[k] = {"exists": True, "size": len(self.files[k])}
                 return self.env(200, arts)
             if len(rest) == 2 and rest[0] == "download":
+                if self.download_fails_big:
+                    return httpx.Response(500, content=self._stream(64))
                 k = rest[1]
                 outs = {{"video": "mp4"}.get(t, t) for t in ((run["render"] or {}).get("outputs") or {})}
                 if k not in outs:
@@ -517,6 +528,15 @@ def test_RA_가_거절하거나_없거나_보고서가_크면_WDA_를_부르지_
     assert box["fake"].created == []
 
 
+def test_RA_본문은_흘려_받으며_상한에서_멈춘다(box):
+    """적대 검토 — 본문을 다 받은 뒤 재면 상한이 메모리를 지키지 못한다(WD-D53)."""
+    box["s"].wda_deck_report_max_mb = 1
+    r = _make(box, report_id=777)
+    assert r.status_code == 413 and "상한 1 MB" in r.json()["detail"]
+    assert box["fake"].chunks_sent < 32, f"다 받기 전에 멈춘다(보낸 덩어리 {box['fake'].chunks_sent}/64)"
+    assert box["fake"].created == []
+
+
 def test_RA_연결이_없으면_고칠_곳을_말한다(box):
     box["who"]["p"] = Principal(subject="park@corp.com", email="park@corp.com", display_name="박", groups=NEEDS)
     pid = box["c"].post("/agent/conversations", json={"title": "t", "kind": "chat"}).json()["id"]
@@ -739,6 +759,15 @@ def test_파일은_주인에게만_흘리고_머리를_단다(box):
     box["fake"].runs.clear()
     gone = c.get(f"/agent/deck/jobs/{job}/files/pdf")
     assert gone.status_code == 404 and "지워졌습니다" in gone.json()["detail"]
+
+
+def test_받기가_실패하면_몸을_상한까지만_읽는다(box):
+    job = _finished(box)
+    box["fake"].download_fails_big = True
+    box["fake"].chunks_sent = 0
+    r = box["c"].get(f"/agent/deck/jobs/{job}/files/pptx")
+    assert r.status_code == 503 and "HTTP 500" in r.json()["detail"]
+    assert box["fake"].chunks_sent <= 3, f"거절 응답의 몸을 다 읽지 않는다(보낸 덩어리 {box['fake'].chunks_sent}/64)"
 
 
 # ── 한 번만 · 상한 · 목록 ───────────────────────────────────────────────────────────────────────────

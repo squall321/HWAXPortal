@@ -287,14 +287,38 @@ def file_refs(v: Any) -> set[str]:
     return set()
 
 
+_ERR_BODY_MAX = 64 * 1024     # 거절 응답에서 읽는 바이트 상한 — 까닭은 로그에 300자만 쓴다
+
+
+async def _get_capped(cli: httpx.AsyncClient, url: str, headers: dict, cap: int) -> tuple[int, bytes | None]:
+    """GET 을 흘려 받으며 상한을 넘으면 그 자리에서 멈춘다 — 본문 전체를 먼저 쥐지 않는다(WD-D53). 200 이면 cap 바이트까지(넘으면 None),
+    아니면 앞 _ERR_BODY_MAX 바이트만(까닭 로그용)."""
+    async with cli.stream("GET", url, headers=headers) as r:
+        ok = r.status_code == 200
+        limit = cap if ok else _ERR_BODY_MAX
+        cl = r.headers.get("content-length")
+        if ok and cl and cl.isdigit() and int(cl) > cap:
+            return r.status_code, None
+        buf = bytearray()
+        async for chunk in r.aiter_bytes():
+            buf += chunk
+            if len(buf) > limit:
+                if ok:
+                    return r.status_code, None
+                break
+        return r.status_code, bytes(buf[:limit])
+
+
 async def read_report(request: Request, settings: Settings, principal: Principal, report_id: int) -> tuple[dict, int]:
-    """그 사람 명의로 RA `GET /api/reports/{id}` → (ReportRead, 바이트 수). 서비스 계정으로 내려가는 길은 없다(2026-09-29 사고의 교훈)."""
+    """그 사람 명의로 RA `GET /api/reports/{id}` → (ReportRead, 바이트 수). 서비스 계정으로 내려가는 길은 없다(2026-09-29 사고의 교훈).
+    본문은 흘려 받으며 상한(wda_deck_report_max_mb)을 넘는 순간 멈춘다 — 다 받은 뒤 재지 않는다(WD-D53)."""
     # 지연 import — RA 자격은 챗 업로드 · 정밀 변환과 같은 함수 하나로 받는다(위임 먼저 · 등록 토큰 다음 · 둘 다 없으면 고칠 곳을 말한다)
     from app.agent.routes import _ra_user_token
 
     token, via_sso, conn = await _ra_user_token(request, settings, principal)
     email = principal.email or principal.subject
     url = f"{settings.ra_base_url.rstrip('/')}/api/reports/{report_id}"
+    cap = settings.wda_deck_report_max_mb * 1024 * 1024
 
     def hdrs(tok: str) -> dict:
         h = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
@@ -304,29 +328,32 @@ async def read_report(request: Request, settings: Settings, principal: Principal
 
     try:
         async with _http(httpx.Timeout(60.0, connect=10.0)) as cli:
-            r = await cli.get(url, headers=hdrs(token))
-            if r.status_code == 401 and via_sso:
+            st, body = await _get_capped(cli, url, hdrs(token), cap)
+            if st == 401 and via_sso:
                 # 캐시해 둔 위임 토큰을 RA 가 거절했다(회수 · 비밀 교체) — 한 번만 새로 받는다(RA 가지와 같은 규칙)
                 ra_sso.forget(email)
                 fresh = await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
                 if fresh:
-                    r = await cli.get(url, headers=hdrs(fresh))
+                    st, body = await _get_capped(cli, url, hdrs(fresh), cap)
     except httpx.HTTPError as exc:
         raise DeckError(f"Report Archive 에 연결하지 못했습니다({exc.__class__.__name__}).", 502) from exc
-    if r.status_code in (401, 403):
-        raise DeckError(f"이 보고서를 읽을 수 없습니다(HTTP {r.status_code}) — RA 권한과 '외부 연결'(RA 토큰)을 확인하세요.", 403)
-    if r.status_code == 404:
+    if st in (401, 403):
+        raise DeckError(f"이 보고서를 읽을 수 없습니다(HTTP {st}) — RA 권한과 '외부 연결'(RA 토큰)을 확인하세요.", 403)
+    if st == 404:
         raise DeckError("그 보고서가 Report Archive 에 없습니다.", 404)
-    if r.status_code >= 400:
-        logger.warning("발표자료 — RA 가 보고서 %s 를 주지 않았다 HTTP %s 까닭=%r", report_id, r.status_code, _why(r))
-        raise DeckError(f"Report Archive 가 보고서를 주지 않았습니다(HTTP {r.status_code}) — 잠시 뒤 다시 누르세요.", 502)
-    size = len(r.content)
-    if size > settings.wda_deck_report_max_mb * 1024 * 1024:
-        raise DeckError(f"보고서가 커서({size / 1048576:.1f} MB) 발표자료로 만들 수 없습니다 — 상한 {settings.wda_deck_report_max_mb} MB.", 413)
-    data = _json(r).get("data")
+    if st >= 400:
+        logger.warning("발표자료 — RA 가 보고서 %s 를 주지 않았다 HTTP %s 까닭=%r", report_id, st, (body or b"")[:300])
+        raise DeckError(f"Report Archive 가 보고서를 주지 않았습니다(HTTP {st}) — 잠시 뒤 다시 누르세요.", 502)
+    if body is None:
+        raise DeckError(f"보고서가 커서 발표자료로 만들 수 없습니다 — 상한 {settings.wda_deck_report_max_mb} MB.", 413)
+    try:
+        j = json.loads(body)
+    except ValueError:
+        j = None
+    data = j.get("data") if isinstance(j, dict) else None
     if not isinstance(data, dict):
         raise DeckError("Report Archive 응답에 보고서가 없습니다.", 502)
-    return data, size
+    return data, len(body)
 
 
 # ── WDA 부르기 ────────────────────────────────────────────────────────────────────────────────────────
@@ -858,12 +885,22 @@ async def deck_file(
         await cli.aclose()
         raise AuthError(f"WDA 에 연결하지 못했습니다({exc.__class__.__name__}).", status_code=502) from exc
     if up.status_code != 200:
-        await up.aread()
-        await up.aclose()
-        await cli.aclose()
+        # 거절 응답의 몸은 앞 _ERR_BODY_MAX 바이트만 읽는다(까닭은 로그용) — 다 읽지 않는다(WD-D53)
+        head = bytearray()
+        try:
+            async for chunk in up.aiter_bytes():
+                head += chunk
+                if len(head) > _ERR_BODY_MAX:
+                    break
+        except httpx.HTTPError:
+            pass
+        finally:
+            await up.aclose()
+            await cli.aclose()
         if up.status_code in (404, 410):
             raise AuthError("파일이 지워졌습니다 — 그 보고서의 '발표자료로' 를 다시 누르세요.", status_code=404)
-        err = _wda_error(up, "내려받기")
+        # 머리는 옮기지 않는다 — 풀어 읽은 바이트에 원래의 content-encoding 을 붙이면 다시 풀려다 깨진다
+        err = _wda_error(httpx.Response(up.status_code, content=bytes(head[:_ERR_BODY_MAX])), "내려받기")
         raise AuthError(err.message, status_code=err.status)
     headers = {"Content-Disposition": f"attachment; filename=\"deck{_FILE[kind][0]}\"; filename*=UTF-8''{quote(_filename(rec['report'].get('title') or '', kind))}",
                "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"}
