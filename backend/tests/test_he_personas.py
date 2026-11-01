@@ -1156,8 +1156,9 @@ def test_HA29_StepForge_인자로_덮어쓰는_도구는_함정_줄이_말한다
                  "align_image_to_geometry", 'region="none"', "region_mask_transfer", "사람이 바꾸라고 하지 않았으면"):
         assert word in line, word
     assert not re.search(r"(?<![a-z_])register_material(?![a-z_])", line), "맨 이름 register_material 은 MaterialTwin 과 겹쳐 없는 도구다"
-    advice = next((s for s in p["pitfalls"] if s.startswith("mesh_size_advice 는 store 기본이 true")), None)
-    assert advice is not None and "store=false" in advice, p["pitfalls"]
+    # StepForge e8bf3d8 부터 store 기본이 false 다(권장값만 돌려준다) — 적는 것은 store=true 를 줄 때뿐이라 함정 줄이 그것을 말한다.
+    advice = next((s for s in p["pitfalls"] if s.startswith("mesh_size_advice 는 store 기본이 false")), None)
+    assert advice is not None and "store=true" in advice and "쓰기" in advice, p["pitfalls"]
     rows, skipped, errors = _sync().plan(one, _write_map("he-cad-stepforge", set(), set()))
     assert rows and not errors and not skipped, (errors, skipped)
     prompt = rows[0]["system_prompt"]
