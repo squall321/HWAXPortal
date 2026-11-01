@@ -28,6 +28,8 @@ PREVIEW = 4096
 
 RUN_STATES = ("queued", "running", "gated", "done", "failed", "cancelled", "unknown")
 STEP_STATES = ("pending", "running", "done", "failed", "unknown", "skipped")
+# 끝 셋 — 실행기가 쥔(running) 실행에 쓰는 자리는 누가 먼저 적었든 이 셋을 덮지 않는다(runner `_loop`, W-109). `cancel_run` 이 덮지 않는 셋과 같다.
+ENDED = ("done", "failed", "cancelled")
 
 _DDL = (
     """CREATE TABLE IF NOT EXISTS procedures (
@@ -64,7 +66,7 @@ _DDL = (
     """CREATE TABLE IF NOT EXISTS run_gate_acks (
         run_id TEXT NOT NULL, step_ix INTEGER NOT NULL,
         ack_by TEXT NOT NULL, ack_at INTEGER NOT NULL,
-        args_sha256 TEXT NOT NULL, args_override_json TEXT,
+        args_sha256 TEXT NOT NULL, args_override_json TEXT, used_at INTEGER,
         PRIMARY KEY (run_id, step_ix))""",
     "CREATE INDEX IF NOT EXISTS ix_runs_owner ON runs (owner_sub, started_at DESC)",
     "CREATE INDEX IF NOT EXISTS ix_runs_state ON runs (state)",
@@ -95,7 +97,8 @@ class ProceduresStore:
     #    더하면 새 DB 에서는 되고 돌고 있는 DB 에서는 조용히 없다 — 그러면 그 칼럼을 읽는
     #    코드가 운영에서만 터진다. 더하는 칼럼은 여기 한 줄씩 적는다(멱등).
     _ADD_COLUMNS = (("procedures", "from_seed", "TEXT"),
-                    ("runs", "batch_id", "TEXT"))
+                    ("runs", "batch_id", "TEXT"),
+                    ("run_gate_acks", "used_at", "INTEGER"))
 
     @classmethod
     def _migrate(cls, c: sqlite3.Connection) -> None:
@@ -266,12 +269,33 @@ class ProceduresStore:
                       (json.dumps(cur, ensure_ascii=False), run_id))
 
     def set_run_state(self, run_id: str, state: str, *, stage: str | None = None,
-                      ended: bool = False) -> None:
+                      ended: bool = False, unless: tuple[str, ...] = ("cancelled",),
+                      only_from: tuple[str, ...] | None = None) -> bool:
+        """지금 상태가 `unless` 가운데 하나면 쓰지 않는다 — 썼으면 True. 못 썼으면 부른 쪽이 멈춘다.
+
+        ⚠ **기본이 '중단을 덮지 않는다' 다.** 실행기는 호출 · 세션을 기다린 뒤 원장을 다시 읽고 쓰는데(W-105), 읽기와 쓰기가 따로면 그 사이에
+        든 중단(중단 창구는 동기 함수라 스레드에서 돈다)을 쓰기가 덮었다. 확인과 쓰기를 한 문장에 둔다(W-109 — `cancel_run` 과 같은 꼴).
+        실행기가 쥔 실행에 쓰는 자리는 `ENDED` 를 준다 — 재개(failed 에서 출발)와 실패 뒤에도 단계를 받는 빈 실행은 기본(중단만)이다.
+
+        `only_from` 을 주면 지금 상태가 그 가운데 하나일 때만 쓴다 — 승인 · 재개 · 고르기 창구가 기다리는 실행을 running 으로 잡는 자리다
+        (W-110). 둘이 같이 잡으려 하면 한쪽만 쓴다.
+        """
         if state not in RUN_STATES:
             raise ValueError(f"모르는 실행 상태: {state}")
+        for guard in (unless, only_from or ()):   # 철자가 틀린 가드는 아무것도 막지 않는다 — 조용히 넘기지 않는다
+            if not set(guard) <= set(RUN_STATES):
+                raise ValueError(f"모르는 실행 상태: {guard}")
+        if only_from is not None and not only_from:
+            raise ValueError("only_from 이 비었다 — 아무 상태에서도 쓰지 않는다")
+        sql = "UPDATE runs SET state=?, stage=?, ended_at=? WHERE id=?"
+        if unless:
+            sql += f" AND state NOT IN ({', '.join('?' for _ in unless)})"
+        if only_from:
+            sql += f" AND state IN ({', '.join('?' for _ in only_from)})"
         with self._conn() as c:
-            c.execute("UPDATE runs SET state=?, stage=?, ended_at=? WHERE id=?",
-                      (state, stage, _now() if ended else None, run_id))
+            n = c.execute(sql, (state, stage, _now() if ended else None, run_id, *unless,
+                                *(only_from or ()))).rowcount
+        return n > 0
 
     def cancel_run(self, run_id: str, by: str) -> bool:
         """다음 단계 경계에서 반영된다. 진행 중 호출은 끝까지 간다.
@@ -450,20 +474,31 @@ class ProceduresStore:
 
     def ack_gate(self, run_id: str, ix: int, *, by: str, args_sha256: str,
                  override: dict | None = None) -> None:
-        """게이트 승인은 별도 행 — 승인자와 실행자가 달라도 감사가 된다."""
+        """게이트 승인은 별도 행 — 승인자와 실행자가 달라도 감사가 된다. 새로 승인하면 새 한 번이다(`used_at` 을 비운다, W-111)."""
         with self._conn() as c:
             c.execute(
                 "INSERT OR REPLACE INTO run_gate_acks (run_id, step_ix, ack_by, ack_at,"
-                " args_sha256, args_override_json) VALUES (?,?,?,?,?,?)",
+                " args_sha256, args_override_json, used_at) VALUES (?,?,?,?,?,?,NULL)",
                 (run_id, ix, by, _now(), args_sha256,
                  json.dumps(override, ensure_ascii=False) if override else None),
             )
 
     def gate_ack(self, run_id: str, ix: int) -> dict | None:
+        """아직 쓰지 않은 승인만 — 한 번 보낸 승인은 아무것도 허락하지 않는다(W-111). 쓴 승인의 행(누가 언제 승인했나)은 남는다."""
         row = self._conn().execute(
-            "SELECT * FROM run_gate_acks WHERE run_id=? AND step_ix=?",
+            "SELECT * FROM run_gate_acks WHERE run_id=? AND step_ix=? AND used_at IS NULL",
             (run_id, ix)).fetchone()
         return dict(row) if row else None
+
+    def use_gate_ack(self, run_id: str, ix: int, args_sha256: str) -> bool:
+        """승인을 쓴 것으로 적는다 — 그 지문의 아직 안 쓴 승인이 있을 때만, 확인과 쓰기를 한 문장에. 적었으면 True(W-111).
+
+        실행기가 요청을 보내기 바로 앞에서 부른다. 응답이 없어 실행 여부를 모르게 끝나도(unknown) 승인은 쓴 것이다 — 요청이 닿았을 수 있다.
+        """
+        with self._conn() as c:
+            n = c.execute("UPDATE run_gate_acks SET used_at=? WHERE run_id=? AND step_ix=? AND args_sha256=?"
+                          " AND used_at IS NULL", (_now(), run_id, ix, args_sha256)).rowcount
+        return n > 0
 
     # ── 기동 회복 ─────────────────────────────────────────────────────────
     def close_stale(self) -> int:

@@ -25,7 +25,7 @@ from app.procedures import judge as J
 from app.procedures import template
 from app.procedures.models import (MUST_GATE, PREVIEW_TOOL, PUBLISH_TOKEN, PUBLISH_TOOL, ProcedureSpec, Step,
                                    omit_empty_optionals, schema_fingerprint)
-from app.procedures.store import ProceduresStore
+from app.procedures.store import ENDED, ProceduresStore
 
 logger = logging.getLogger(__name__)
 
@@ -220,11 +220,14 @@ class ProceduresRunner:
                 if drift:
                     # ⚠ 이유를 stage 에 실어 원장에 남긴다. 예전엔 `schema_drift` 한 낱말뿐이라
                     # 화면에서 **어느 단계의 어떤 도구가 없는지** 알 길이 없었다(cae00 점검).
-                    self.store.set_run_state(run_id, "failed",
-                                             stage=f"schema_drift: {' / '.join(drift)}"[:400],
-                                             ended=True)
+                    if not self.store.set_run_state(run_id, "failed",
+                                                    stage=f"schema_drift: {' / '.join(drift)}"[:400],
+                                                    ended=True):
+                        return self._stopped(run_id, start_at)
                     return {"state": "failed", "stage": "schema_drift", "detail": drift}
-                self.store.set_run_state(run_id, "running")
+                # 다시 읽은 뒤 이 쓰기 전에 든 중단은 저장소가 덮지 않는다(W-109) — 못 썼으면 단계를 돌지 않는다
+                if not self.store.set_run_state(run_id, "running"):
+                    return self._stopped(run_id, start_at)
                 # 설명에만 있는 경고(합성 데이터 모델)는 실행 기록에 남긴다 — 결과에는 안 실린다(W-7 ③).
                 caveats = {ix: c for ix, st in enumerate(spec.steps)
                            if (c := J.description_caveat(_meta(catalog, st).get("description")))}
@@ -264,8 +267,33 @@ class ProceduresRunner:
                 stage="plan:unverified" if pending else "plan",
                 notes={"plan": {"alias": st.alias, "gate": _gate_of(st),
                                 "unverified": pending}})
-        self.store.set_run_state(run_id, "done", stage="plan", ended=True)
+        if not self.store.set_run_state(run_id, "done", stage="plan", ended=True):
+            return self._stopped(run_id, len(spec.steps))
         return {"state": "done", "stage": "plan", "calls": calls, "unverified": unknown}
+
+    def _stopped(self, run_id: str, ix: int) -> dict:
+        """상태를 못 썼다 — 그사이 중단(또는 다른 끝)이 먼저 섰다(`set_run_state` 가 덮지 않았다, W-109). 다시 읽기에서 멈출 때와 같은 꼴로
+        지금 상태를 돌려준다."""
+        run = self.store.get_run(run_id)
+        return {"state": run["state"] if run else "unknown", "stopped_at": ix}
+
+    def _spend(self, run_id: str, ix: int, fp: str, approved: bool) -> bool:
+        """요청을 보내기 바로 앞 — 그 지문의 승인을 쓴 것으로 적는다(W-111). 승인으로 나가는 단계는 적어야 보낸다(그새 쓰였으면 보내지 않는다).
+
+        응답 없이 끝나도(unknown) 쓴 것이다 — 요청이 닿았을 수 있다. 확인 단계가 없는 쓰기도 같은 지문의 승인이 남아 있으면 쓴다 — 실행 여부를
+        모르는 쓰기를 재개 창구 앞에서 승인한 것이 그 한 번이다.
+        """
+        return self.store.use_gate_ack(run_id, ix, fp) or not approved
+
+    def _sent_before(self, run_id: str, ix: int) -> dict | None:
+        """다시 묻는 확인 카드에 실을 경고 — 이 실행에서 이 단계가 이미 나갔거나(done) 나갔는지 모른다(unknown). 카드가 이 단계의 행을 새로 쓰며
+        그 기록을 덮으므로 덮기 전에 읽는다(W-111). 화면의 단계 카드가 `warnings` 를 보인다."""
+        row = next((s for s in self.store.list_steps(run_id) if s["ix"] == ix), None)
+        if row and row["state"] == "unknown":
+            return {"warnings": [f"지난 호출은 실행 여부를 모른 채 끝났다({row.get('stage') or '?'}) — 실제로 됐는지 확인한 뒤 승인하세요"]}
+        if row and row["state"] == "done":
+            return {"warnings": ["이 실행에서 이 단계는 이미 한 번 나갔다 — 승인하면 한 번 더 나간다"]}
+        return None
 
     def _check_drift(self, spec: ProcedureSpec, catalog: dict) -> list[str]:
         """도구에 판본이 없으니 **변화를 잡아 멈추는 것까지** 한다(PLAN §5-8)."""
@@ -291,6 +319,8 @@ class ProceduresRunner:
         return out
 
     async def _loop(self, run_id, spec, scope, principal, sess, start_at, caveats=None) -> dict:
+        # 여기와 `_pick` · `_publish_gate` 의 상태 쓰기는 `unless=ENDED` 다 — 실행기가 쥔(running) 실행이라 끝(done · failed · cancelled)은
+        # 누가 먼저 적었든 덮지 않는다. 다시 읽기(아래 경계 · 호출 뒤)와 쓰기 사이에 든 중단도 그 확인에 걸린다(W-109). 못 썼으면 멈춘다.
         for ix in range(start_at, len(spec.steps)):
             st = spec.steps[ix]
 
@@ -300,14 +330,16 @@ class ProceduresRunner:
                 return {"state": run["state"] if run else "unknown", "stopped_at": ix}
             email = getattr(principal, "email", "") or ""
             if email and not self.is_active(email):
-                self.store.set_run_state(run_id, "failed", stage="owner_inactive", ended=True)
+                if not self.store.set_run_state(run_id, "failed", stage="owner_inactive", ended=True, unless=ENDED):
+                    return self._stopped(run_id, ix)
                 return {"state": "failed", "stage": "owner_inactive", "stopped_at": ix}
 
             # 인자 치환은 **여기서 한 번**이다. 게이트가 따로 치환하면 승인한 지문과
             # 실제로 나가는 인자가 다른 것을 셀 수 있다 — 같은 값을 아래로 내린다.
             args, bad = self._args(run_id, ix, st, scope)
             if bad is not None:
-                self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                    return self._stopped(run_id, ix)
                 return {"state": "failed", "stopped_at": ix, "kind": bad.kind,
                         "error": J.short_error(bad)}
 
@@ -326,31 +358,35 @@ class ProceduresRunner:
                 ack = self.store.gate_ack(run_id, ix)
                 want = _sha(args)
                 if ack is None or ack["args_sha256"] != want:
+                    again = self._sent_before(run_id, ix)   # 카드가 이 단계의 행을 새로 쓰기 전에 읽는다
                     self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool,
                                           args=args, schema_fp=st.schema_fp,
                                           expect=st.expect, mode="live")
                     self.store.finish_step(run_id, ix, ok=False, state="pending",
-                                           error=None, stage="gate")
-                    self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
+                                           error=None, stage="gate", notes=again)
+                    if not self.store.set_run_state(run_id, "gated", stage=f"step:{ix}", unless=ENDED):
+                        return self._stopped(run_id, ix)
                     return {"state": "gated", "stopped_at": ix, "args_sha256": want}
 
             v = await self._one(run_id, ix, st, scope, principal, sess, args=args,
                                 caveat=(caveats or {}).get(ix),
                                 secret={PUBLISH_TOKEN: pub["token"]} if pub else None,
-                                fingerprint=pub["fp"] if pub else None)
+                                fingerprint=pub["fp"] if pub else None,
+                                approved=_gate_of(st) == "human")
             if pub and v is not None:
                 # 무엇을 보고 승인해 어디에 올렸나 — 게이트 카드의 미리보기를 게시 기록에도 남긴다(토큰은 없다)
                 self.store.annotate_step(run_id, ix, {"publish_preview": pub["view"]})
             # 호출을 기다리는 사이 누른 중단을 다시 본다 — 중단은 단계 경계(위)에서만 봤고 그 뒤 호출을 기다렸다. 안 보면 아래 쓰기가 덮는다
             # — 마지막 단계면 done, 실패면 failed, 고르기면 확인 대기(gated). 미리보기를 기다린 뒤 다시 보는 `_publish_gate` 와 같은 자리다.
-            # 호출의 기록은 `_one` 이 이미 남겼다(이미 나갔다).
+            # 호출의 기록은 `_one` 이 이미 남겼다(이미 나갔다). 이 다시 읽기와 아래 쓰기 사이에 든 중단은 쓰기의 확인이 잡는다(W-109).
             run = self.store.get_run(run_id)
             if run is None or run["state"] in ("cancelled", "failed"):
                 return {"state": run["state"] if run else "unknown", "stopped_at": ix}
             if v is None:  # warmup — 결과를 버린다
                 continue
             if not v.ok:
-                self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                    return self._stopped(run_id, ix)
                 return {"state": "failed", "stopped_at": ix, "kind": v.kind,
                         "error": J.short_error(v)}
             for key, path in (st.save or {}).items():
@@ -399,7 +435,8 @@ class ProceduresRunner:
                 if picked is not None:
                     return picked   # 0개 실패 · 여럿이라 사람에게 묻는다
 
-        self.store.set_run_state(run_id, "done", ended=True)
+        if not self.store.set_run_state(run_id, "done", ended=True, unless=ENDED):
+            return self._stopped(run_id, len(spec.steps))
         return {"state": "done"}
 
     async def step_once(self, *, run_id: str, step: Step, principal,
@@ -448,10 +485,14 @@ class ProceduresRunner:
                 # 실패한 단계 뒤에도 단계를 더 받는다(add_step 이 막는 것은 cancelled · gated 다).
                 if (self.store.get_run(run_id) or {}).get("state") == "cancelled":
                     return {"ix": ix, "state": "cancelled"}
-                self.store.set_run_state(run_id, "running")
+                # 이 아래 쓰기는 기본 가드(중단만 덮지 않는다)다 — 다시 읽기와 쓰기 사이에 든 중단은 저장소가 덮지 않고(W-109) 못 썼으면 멈춘다.
+                # 못 쓴 까닭은 중단뿐이다. 끝(failed · done)은 덮는다 — 빈 실행은 실패한 단계 뒤에도, 챗 기록(done)에도 단계를 더 받는다.
+                if not self.store.set_run_state(run_id, "running"):
+                    return {"ix": ix, "state": "cancelled"}
                 args, bad = self._args(run_id, ix, step, scope)
                 if bad is not None:
-                    self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                    if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True):
+                        return {"ix": ix, "state": "cancelled"}
                     return {"ix": ix, "ok": False, "kind": bad.kind, "saved": {},
                             "error": J.short_error(bad)}
                 v = await self._one(run_id, ix, step, scope, principal, sess, args=args,
@@ -462,7 +503,8 @@ class ProceduresRunner:
                 if v is None:
                     # 웜업 — `_loop` 처럼 단계로 남기지 않고(타임아웃도 실패가 아니다) 실행을 잇는다. 빈 실행이 잇는 자리는 단계 사이(queued)다 —
                     # 종전엔 위 running 에 남아 화면이 '도는 중' 과 '중단' 을 계속 보였다.
-                    self.store.set_run_state(run_id, "queued")
+                    if not self.store.set_run_state(run_id, "queued"):
+                        return {"ix": ix, "state": "cancelled"}
                     return {"ix": ix, "state": "skipped"}
                 saved = {}
                 if v.ok:
@@ -471,9 +513,10 @@ class ProceduresRunner:
                     # 뽑은 값은 실행 입력에 합쳐 다음 단계가 {{key}} 로 쓸 수 있게 한다.
                     if saved:
                         self.store.merge_inputs(run_id, saved)
-                self.store.set_run_state(run_id, "queued" if v.ok else "failed",
-                                         stage=None if v.ok else f"step:{ix}",
-                                         ended=not v.ok)
+                if not self.store.set_run_state(run_id, "queued" if v.ok else "failed",
+                                                stage=None if v.ok else f"step:{ix}",
+                                                ended=not v.ok):
+                    return {"ix": ix, "state": "cancelled"}
                 return {"ix": ix, "ok": v.ok, "kind": v.kind, "saved": saved,
                         "error": None if v.ok else J.short_error(v)}
             finally:
@@ -568,7 +611,8 @@ class ProceduresRunner:
                 run_id, ix, ok=False, stage="select:shape",
                 error=f"`{sel.from_}` 에 {len(raw_rows)}개가 있는데 객체가 아니다"
                       f"({'·'.join(kinds)}) — `save: {sel.save}` 로 꺼낼 칸이 없다")
-            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                return self._stopped(run_id, ix)
             return {"state": "failed", "stopped_at": ix, "kind": "select_shape",
                     "error": f"`{sel.from_}` 가 객체 목록이 아니다"}
         if rows and not any(sel.save in r for r in rows):
@@ -594,7 +638,8 @@ class ProceduresRunner:
                 run_id, ix, ok=False, stage="select:no_field",
                 error=f"고른 {len(rows)}개 어디에도 `{sel.save}` 칸이 없다 — "
                       f"있는 칸: {sorted(rows[0])[:12]}{hint}")
-            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                return self._stopped(run_id, ix)
             return {"state": "failed", "stopped_at": ix, "kind": "select_no_field",
                     "error": f"`{sel.save}` 칸이 없다"
                              + (" — 봉투다(`from: items` 로 고른다)" if env else "")}
@@ -616,7 +661,8 @@ class ProceduresRunner:
                    if missing else f"`{sel.from_}` 가 비었다")
             self.store.finish_step(run_id, ix, ok=False, stage="select:none",
                                    error=f"룰이 아무것도 못 골랐다 ({why})")
-            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                return self._stopped(run_id, ix)
             return {"state": "failed", "stopped_at": ix, "kind": "select_none",
                     "error": "룰이 아무것도 못 골랐다"}
 
@@ -631,7 +677,8 @@ class ProceduresRunner:
                 self.store.finish_step(run_id, ix, ok=False, stage="select:empty",
                                        error=f"후보 {len(empty)}개의 `{sel.save}` 가 빈 값이다 — "
                                              f"빈 값을 다음 단계에 넘기지 않는다")
-                self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                    return self._stopped(run_id, ix)
                 return {"state": "failed", "stopped_at": ix, "kind": "select_empty",
                         "error": f"`{sel.save}` 가 빈 값인 후보가 있다"}
             if len(values) == 1:
@@ -645,7 +692,8 @@ class ProceduresRunner:
                                    error=None,
                                    notes={"candidates": shown, "candidates_total": len(rows),
                                           "pick_into": sel.var, "pick_multi": True})
-            self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
+            if not self.store.set_run_state(run_id, "gated", stage=f"step:{ix}", unless=ENDED):
+                return self._stopped(run_id, ix)
             return {"state": "gated", "stopped_at": ix, "kind": "select_ask_many",
                     "candidates": shown, "candidates_total": len(rows)}
 
@@ -657,14 +705,16 @@ class ProceduresRunner:
                 self.store.finish_step(run_id, ix, ok=False, stage="select:many",
                                        error=f"룰이 {len(rows)}개를 골랐다 — 하나로 좁혀라",
                                        notes={"candidates": shown, "candidates_total": len(rows)})
-                self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+                if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                    return self._stopped(run_id, ix)
                 return {"state": "failed", "stopped_at": ix, "kind": "select_many",
                         "error": f"룰이 {len(rows)}개를 골랐다"}
             # ask — 사람이 고른다. 게이트와 같은 자리에서 멈춘다.
             self.store.finish_step(run_id, ix, ok=False, state="pending", stage="select:ask",
                                    error=None, notes={"candidates": shown, "candidates_total": len(rows),
                                                       "pick_into": sel.var})
-            self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
+            if not self.store.set_run_state(run_id, "gated", stage=f"step:{ix}", unless=ENDED):
+                return self._stopped(run_id, ix)
             return {"state": "gated", "stopped_at": ix, "kind": "select_ask",
                     "candidates": shown, "candidates_total": len(rows)}
 
@@ -676,7 +726,8 @@ class ProceduresRunner:
             self.store.finish_step(run_id, ix, ok=False, stage="select:empty",
                                    error=f"고른 것의 `{sel.save}` 가 빈 값이다 — "
                                          f"다음 단계에 빈 값을 넘기지 않는다")
-            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                return self._stopped(run_id, ix)
             return {"state": "failed", "stopped_at": ix, "kind": "select_empty",
                     "error": f"`{sel.save}` 가 빈 값이다"}
         scope[sel.var] = got
@@ -774,7 +825,8 @@ class ProceduresRunner:
             self.store.finish_step(run_id, ix, ok=False, stage="preview",
                                    error=f"게시 미리보기({PREVIEW_TOOL})를 못 받았다 — {why}",
                                    notes={"publish_preview": seen} if seen is not None else None)
-            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                return self._stopped(run_id, ix)
             return {"state": "failed", "stopped_at": ix, "kind": got.kind, "error": why}
         view, token = got
         fp = _sha({"args": args, "publish_preview": view})
@@ -789,7 +841,8 @@ class ProceduresRunner:
                                   schema_fp=st.schema_fp, expect=st.expect, mode="live", fingerprint=fp)
             self.store.finish_step(run_id, ix, ok=False, stage="publish:blocked", error=why,
                                    notes={"publish_preview": view, "publish_blocked": blocked})
-            self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True)
+            if not self.store.set_run_state(run_id, "failed", stage=f"step:{ix}", ended=True, unless=ENDED):
+                return self._stopped(run_id, ix)
             return {"state": "failed", "stopped_at": ix, "kind": "publish_blocked", "error": why}
         # 승인한 뒤 바뀌었으면 그 차이를 싣는다
         notes: dict = {"publish_preview": view}
@@ -797,10 +850,12 @@ class ProceduresRunner:
             notes["publish_blocked"] = blocked
         if seen is not None:
             notes["publish_changed"] = _preview_changes(seen, view)
+        notes.update(self._sent_before(run_id, ix) or {})   # 카드가 이 단계의 행을 새로 쓰기 전에 읽는다
         self.store.begin_step(run_id, ix, backend=st.backend, tool=st.tool, args=args,
                               schema_fp=st.schema_fp, expect=st.expect, mode="live", fingerprint=fp)
         self.store.finish_step(run_id, ix, ok=False, state="pending", error=None, stage="gate", notes=notes)
-        self.store.set_run_state(run_id, "gated", stage=f"step:{ix}")
+        if not self.store.set_run_state(run_id, "gated", stage=f"step:{ix}", unless=ENDED):
+            return self._stopped(run_id, ix)
         out = {"state": "gated", "stopped_at": ix, "args_sha256": fp}
         if "publish_changed" in notes:
             out["changed"] = notes["publish_changed"]
@@ -849,17 +904,21 @@ class ProceduresRunner:
 
     async def _one(self, run_id, ix, st: Step, scope, principal, sess, *, args: dict,
                    caveat: str | None = None, secret: dict | None = None,
-                   fingerprint: str | None = None):
+                   fingerprint: str | None = None, approved: bool = False):
         """단계 하나 — 호출 → 판정 → 기록. 판정이 실패면 `save` 를 하지 않는다.
 
         인자는 이미 치환된 것을 받는다(`_args`) — 게이트가 승인한 지문 그대로 나간다.
         `secret` 은 **보내기만 하고 남기지 않는** 인자다(게시 확인 토큰 — `_publish_gate`). 원장의 인자 ·
         결과 · 오류 어디에도 안 들어가고, 그 단계의 승인 지문은 `fingerprint` 다.
+        `approved` — 사람의 승인으로 나가는 단계다(확인 단계 · 게시). 승인은 요청을 보내기 바로 앞에서 쓴다(`_spend`, W-111).
         """
         pat = self.mint_pat(principal, run_id, ix)
         timeout = WARMUP_TIMEOUT if st.warmup else EXPECT_TIMEOUT.get(st.expect, 30.0)
+        fp = fingerprint or _sha(args)   # 승인이 묶인 지문 — 게이트가 견준 것과 같다(`_loop` 의 want · 게시의 fp)
 
         if st.warmup:
+            if not self._spend(run_id, ix, fp, approved):
+                return None   # 승인이 그새 쓰였다 — 보내지 않는다(웜업은 결과를 버린다)
             # 콜드스타트를 흡수하는 한 번 버리는 호출. 타임아웃이 나도 실패로 치지 않는다.
             try:
                 await sess.call("invoke_tool", {"name": st.alias, "arguments": args},
@@ -873,12 +932,16 @@ class ProceduresRunner:
                               fingerprint=fingerprint)
         t0 = time.perf_counter()
         lock = self._blk(st.backend) if st.expect == "slow" else _NULL_LOCK
+        spent = True
         try:
             async with lock:
-                # 기한은 잠금 **안**에서 센다 — 잠금을 기다린 시간은 이 단계의 몫이 아니고, 기한이 차면 잠금도 같이 놓는다.
-                is_error, content = await asyncio.wait_for(sess.call(
-                    "invoke_tool", {"name": st.alias, "arguments": {**args, **(secret or {})}}, pat, timeout),
-                    timeout)
+                # 승인은 보내기 바로 앞에서 쓴다 — 잠금을 기다리는 사이 멈추면 보내지 않은 승인이 남는다(W-111)
+                spent = self._spend(run_id, ix, fp, approved)
+                if spent:
+                    # 기한은 잠금 **안**에서 센다 — 잠금을 기다린 시간은 이 단계의 몫이 아니고, 기한이 차면 잠금도 같이 놓는다.
+                    is_error, content = await asyncio.wait_for(sess.call(
+                        "invoke_tool", {"name": st.alias, "arguments": {**args, **(secret or {})}}, pat, timeout),
+                        timeout)
         except (httpx.TimeoutException, asyncio.TimeoutError):
             ms = int((time.perf_counter() - t0) * 1000)
             # 클라이언트가 먼저 포기했다 — 쓰기는 그 뒤 완료됐을 수 있다. failed 가 아니다.
@@ -892,6 +955,11 @@ class ProceduresRunner:
             self.store.finish_step(run_id, ix, ok=False, state="unknown", stage="transport",
                                    duration_ms=ms, error=_redact(f"{type(exc).__name__}: {exc}", secret))
             return J.Verdict(False, "mcp", "transport", error=_redact(str(exc), secret), retriable=True)
+        if not spent:
+            # 승인이 그새 쓰였다(다른 실행기 — W-110 이 막는 자리) — 보내지 않았다. 재개하면 확인 카드가 다시 묻는다
+            self.store.finish_step(run_id, ix, ok=False, stage="approval",
+                                   error="승인이 이미 쓰였다 — 보내지 않았다. 재개하면 다시 승인을 받는다")
+            return J.Verdict(False, "gate", "approval_used", error="승인이 이미 쓰였다")
 
         ms = int((time.perf_counter() - t0) * 1000)
         text, other = J.join_content(content)

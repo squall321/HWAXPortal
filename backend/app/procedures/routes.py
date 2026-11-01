@@ -91,6 +91,31 @@ def _not_cancelled(run: dict) -> None:
                         "새 실행을 만드세요", status_code=409)
 
 
+# 잡지 못했을 때 지금 상태별로 하는 말 — 도는 실행(queued · running)이 두 번째 요청의 자리다
+_NOT_WAITING = {
+    "queued": "이미 진행 중인 실행입니다 — 끝나거나 멈출 때까지 기다리세요(같은 실행을 둘이 돌지 않게 두 번째 요청은 받지 않습니다)",
+    "running": "이미 진행 중인 실행입니다 — 끝나거나 멈출 때까지 기다리세요(같은 실행을 둘이 돌지 않게 두 번째 요청은 받지 않습니다)",
+    "gated": "확인을 기다리는 실행입니다 — 그 단계에서 확인하거나 고르세요",
+    "failed": "멈춘 실행입니다 — 재개로 이어 가세요",
+    "unknown": "멈춘 실행입니다 — 재개로 이어 가세요",
+    "done": "이미 끝난 실행입니다 — 같은 값으로 다시 하려면 '이 값으로 다시 돌리기' 로 새 실행을 만드세요",
+}
+
+
+def _take(store, run_id: str, expect: tuple[str, ...]) -> None:
+    """기다리는 실행을 running 으로 잡는다 — 지금 상태가 `expect` 가운데 하나일 때만, 확인과 쓰기를 한 문장에(W-110). 잡은 요청만 실행기를 띄운다.
+
+    승인 · 재개 · 고르기를 두 번 누르거나 동시에 보내면 둘 다 기다리는 실행으로 읽고 실행기를 하나씩 띄웠다 — 실행기는 세션을 연 뒤에야
+    running 을 써서 그 사이 둘째 요청을 막을 것이 없었고, 두 실행기가 같은 단계를 불러 승인한 쓰기가 두 번 나갈 수 있었다. 못 잡았으면
+    409 이고 원장에 아무것도 적지 않는다(부르는 쪽이 잡은 뒤에만 적는다)."""
+    if store.set_run_state(run_id, "running", only_from=expect):
+        return
+    cur = (store.get_run(run_id) or {}).get("state")
+    if cur == "cancelled":
+        _not_cancelled({"state": cur})   # 앞의 확인과 잡기 사이에 든 중단 — 같은 글로 거절한다
+    raise AuthError(_NOT_WAITING.get(cur, f"이 실행은 지금 {cur} 상태라 이어 가지 않습니다"), status_code=409)
+
+
 def _writey(tool: str) -> bool:
     """되돌리기 어렵거나 자원을 쓰는 도구인가. 분류의 정본은 `models.py` 다 —
     여기서 목록을 다시 만들면 두 곳이 어긋난다."""
@@ -580,6 +605,9 @@ async def add_step(request: Request, run_id: str, body: StepIn,
     if hard:
         raise AuthError("이 단계는 실행할 수 없습니다:\n- " + "\n- ".join(hard), status_code=422)
 
+    # 잡은 요청만 실행기를 띄운다(W-112 — 승인 · 재개 · 고르기와 같은 `_take`). 위의 '도는 단계' 확인은 읽기라, 단계 행은 실행기가 세션을 연
+    # 뒤에야 생겨 빠르게 두 번 보내면 둘 다 받았다. 빈 실행이 쉬는 자리는 단계 사이(queued) · 실패한 단계 뒤(failed) · 챗 기록(done)이다.
+    _take(_store(request), run_id, ("queued", "failed", "done", "unknown"))
     _spawn(_step_and_log(request, run_id, step, principal), f"step {run_id}",
            store=_store(request), run_id=run_id)
     return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}"}
@@ -724,13 +752,19 @@ async def pick(request: Request, run_id: str, ix: int, body: PickIn,
             raise AuthError("보여 준 후보 중에서 골라 주세요", status_code=422)
         picked = body.value
 
+    version = store.get_version(run["procedure_version_id"] or "")
+    if version is None:
+        store.merge_inputs(run_id, {into: picked})
+        store.finish_step(run_id, ix, ok=True, state="done", stage="select:picked",
+                          notes={**notes, "picked": picked})
+        return {"picked": picked, "resumed": False}
+    spec = ProcedureSpec.model_validate(version["spec"])
+    # 잡은 뒤에만 고른 값을 적는다 — 먼저 적으면 둘째 요청의 값이 첫째 실행기가 읽을 자리를 덮는다(W-110). 기다리는 자리는 고르기
+    # 대기(gated)이고, 끝나거나 멈춘 실행(done · failed · unknown)은 다시 고르기다 — 도는 실행 · 중단한 실행만 받지 않는다.
+    _take(store, run_id, ("gated", "done", "failed", "unknown"))
     store.merge_inputs(run_id, {into: picked})
     store.finish_step(run_id, ix, ok=True, state="done", stage="select:picked",
                       notes={**notes, "picked": picked})
-    version = store.get_version(run["procedure_version_id"] or "")
-    if version is None:
-        return {"picked": picked, "resumed": False}
-    spec = ProcedureSpec.model_validate(version["spec"])
     _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=ix + 1),
            f"resume {run_id}",
            store=_store(request), run_id=run_id)
@@ -877,12 +911,22 @@ async def ack(request: Request, run_id: str, ix: int, body: AckIn,
     if steps[ix]["args_sha256"] != body.args_sha256:
         raise AuthError("인자가 바뀌었습니다 — 다시 확인해 주세요", status_code=409)
 
-    _store(request).ack_gate(run_id, ix, by=principal.subject,
-                             args_sha256=body.args_sha256)
-    version = _store(request).get_version(run["procedure_version_id"] or "")
-    if version is None:
+    store = _store(request)
+    version = store.get_version(run["procedure_version_id"] or "")
+    if version is None:   # 빈 실행 — 이어 갈 절차가 없어 승인만 적는다
+        store.ack_gate(run_id, ix, by=principal.subject, args_sha256=body.args_sha256)
         return {"acked": True, "resumed": False}
     spec = ProcedureSpec.model_validate(version["spec"])
+    # 이 단계가 사람을 기다리는가 — 확인 카드(실행은 gated)거나 실행 여부를 모르는 단계의 승인(재개 창구가 요구한다 — 실행은 멈췄다).
+    # 지나간 단계를 승인하면 그 단계부터 다시 돌아 승인한 쓰기가 또 나간다. 잡은 뒤에만 승인을 적고 실행기를 띄운다(W-110).
+    if steps[ix]["state"] == "pending" and steps[ix].get("stage") == "gate":
+        expect: tuple[str, ...] = ("gated",)
+    elif steps[ix]["state"] == "unknown":
+        expect = ("failed", "unknown")
+    else:
+        raise AuthError("이 단계는 확인을 기다리지 않습니다 — 확인 카드나 실행 여부를 모르는 단계만 승인합니다", status_code=409)
+    _take(store, run_id, expect)
+    store.ack_gate(run_id, ix, by=principal.subject, args_sha256=body.args_sha256)
     _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=ix),
            f"resume {run_id}",
            store=_store(request), run_id=run_id)
@@ -910,13 +954,18 @@ async def resume(request: Request, run_id: str,
     # 타임아웃·재기동으로 '실행 여부를 모른다' 는 뜻인데, 그대로 다시 부르면 업로드·등록이
     # 두 번 나간다. 게이트 승인 기구가 이미 있으니 그것을 쓴다(인자 지문에 묶인 1회용).
     was = next((s for s in run["steps"] if s["ix"] == at), None)
-    if was and was["state"] == "unknown" and _writey(spec.steps[at].tool):
+    # 확인 단계는 실행기의 확인 카드가 다시 묻는다 — 승인은 한 번 쓰므로 지난 승인으로 못 지나가고, 카드가 '지난 호출의 실행 여부를 모른다' 고
+    # 말한다(W-111). 여기서 막으면 화면에는 승인할 단추가 없다. 확인 단계가 없는 쓰기만 이 창구가 승인을 묻는다.
+    at_gate = spec.steps[at].gate == "human" or spec.steps[at].tool in MUST_GATE
+    if was and was["state"] == "unknown" and _writey(spec.steps[at].tool) and not at_gate:
         ack = _store(request).gate_ack(run_id, at)
         if ack is None or ack["args_sha256"] != was["args_sha256"]:
             raise AuthError(
                 f"{at + 1}단계 `{spec.steps[at].tool}` 은 실행 여부를 모르는 쓰기입니다 — "
                 "실제로 됐는지 확인한 뒤 그 단계를 승인하면 재개합니다",
                 status_code=409)
+    # 멈춘 실행만 잇는다 — 잡은 요청만 실행기를 띄운다(W-110). 확인 대기(gated)는 그 단계의 확인 · 고르기가 잇는다.
+    _take(_store(request), run_id, ("failed", "unknown"))
     _spawn(_runner(request).run(run_id=run_id, spec=spec, principal=principal, start_at=at),
            f"resume {run_id}",
            store=_store(request), run_id=run_id)

@@ -509,6 +509,46 @@ def test_gate_ack_is_bound_to_args(store):
     assert store.gate_ack(run, 1)["args_sha256"] == sha
 
 
+def test_승인은_한_번_쓴다(store):
+    """W-111 — 승인은 그 지문으로 한 번만 보낸다. 쓰는 것은 확인과 쓰기가 한 문장이라 둘이 같이 써도 한쪽만 쓴다. 쓴 승인은 아무것도 허락하지
+    않고(`gate_ack` 가 안 돌려준다) 기록은 남는다. 사람이 다시 승인하면 새 한 번이다."""
+    run = store.create_run(owner_sub="u1")
+    store.begin_step(run, 0, backend="b", tool="t", args={"a": 1})
+    sha = store.list_steps(run)[0]["args_sha256"]
+    assert store.use_gate_ack(run, 0, sha) is False, "승인이 없는데 썼다"
+    store.ack_gate(run, 0, by="u1", args_sha256=sha)
+    assert store.use_gate_ack(run, 0, "다른지문") is False and store.gate_ack(run, 0) is not None
+    assert store.use_gate_ack(run, 0, sha) is True
+    assert store.gate_ack(run, 0) is None, "쓴 승인이 아직 허락한다"
+    assert store.use_gate_ack(run, 0, sha) is False, "한 번 쓴 승인을 또 썼다"
+    row = store._conn().execute("SELECT ack_by, used_at FROM run_gate_acks WHERE run_id=?", (run,)).fetchone()
+    assert row["ack_by"] == "u1" and row["used_at"], "쓴 승인의 기록이 사라졌다"
+    store.ack_gate(run, 0, by="u2", args_sha256=sha)   # 사람이 다시 승인 — 새 한 번
+    assert store.gate_ack(run, 0)["ack_by"] == "u2" and store.use_gate_ack(run, 0, sha) is True
+
+
+def test_승인_쓴_때_칸은_돌던_원장에도_붙는다(tmp_path):
+    """`CREATE TABLE IF NOT EXISTS` 는 있는 표를 고치지 않는다 — 칸을 DDL 에만 더하면 돌던 원장(dev · cae00)에서는 승인을 쓰는 순간 터진다."""
+    import sqlite3
+
+    path = tmp_path / "old.sqlite"
+    con = sqlite3.connect(path)
+    con.execute("""CREATE TABLE run_gate_acks (
+        run_id TEXT NOT NULL, step_ix INTEGER NOT NULL,
+        ack_by TEXT NOT NULL, ack_at INTEGER NOT NULL,
+        args_sha256 TEXT NOT NULL, args_override_json TEXT,
+        PRIMARY KEY (run_id, step_ix))""")
+    con.execute("INSERT INTO run_gate_acks VALUES ('r', 0, 'u1', 1, 'fp', NULL)")   # 옛 판에서 받은 승인 — 아직 안 썼다
+    con.commit()
+    con.close()
+    st = ProceduresStore(Settings(procedures_store_path=str(path)))
+    try:
+        assert st.gate_ack("r", 0)["ack_by"] == "u1"
+        assert st.use_gate_ack("r", 0, "fp") is True and st.gate_ack("r", 0) is None
+    finally:
+        st.close()
+
+
 def test_restart_marks_unknown_not_failed(store):
     """쓰기가 뒤늦게 완료됐을 수 있다 — 재실행 전에 사람이 본다."""
     run = store.create_run(owner_sub="u1")
@@ -518,6 +558,50 @@ def test_restart_marks_unknown_not_failed(store):
     assert store.list_steps(run)[0]["state"] == "unknown"
     assert store.list_steps(run)[0]["stage"] == "restart"
     assert store.get_run(run, owner_sub="u1")["state"] == "failed"
+
+
+def test_실행_상태_쓰기는_중단을_덮지_않고_썼는지_돌려준다(store):
+    """W-105 의 남은 틈(W-109) — 실행기는 기다린 뒤 원장을 다시 읽고 상태를 쓴다. 따로 읽고 쓰면 그 사이(중단 창구는 스레드에서 돈다)에 든
+    중단을 덮었다. 확인과 쓰기를 한 문장에 두고(`cancel_run` 과 같은 꼴) 썼는지를 돌려준다 — 못 썼으면 부른 쪽이 멈춘다."""
+    from app.procedures.store import ENDED
+
+    keep = ("state", "stage", "ended_at", "cancelled_by", "cancelled_at")
+    run = store.create_run(owner_sub="u1")
+    assert store.set_run_state(run, "running") is True
+    assert store.cancel_run(run, "u1")
+    before = {k: store.get_run(run)[k] for k in keep}
+    for state in ("running", "queued", "gated", "done", "failed"):
+        assert store.set_run_state(run, state, stage="step:0", ended=state in ("done", "failed")) is False, state
+        assert store.set_run_state(run, state, unless=ENDED) is False, state
+    assert {k: store.get_run(run)[k] for k in keep} == before, "중단한 실행의 기록이 바뀌었다"
+    # 실행기가 쥔 실행에 쓰는 자리(ENDED)는 다른 끝도 덮지 않는다. 기본(중단만)은 재개(failed 에서 출발) · 실패 뒤에도 단계를 받는 빈 실행 몫이다
+    for end in ("done", "failed"):
+        other = store.create_run(owner_sub="u1")
+        assert store.set_run_state(other, end, stage="step:0", ended=True) is True
+        assert store.set_run_state(other, "gated", stage="step:1", unless=ENDED) is False, end
+        assert (store.get_run(other)["state"], store.get_run(other)["stage"]) == (end, "step:0")
+        assert store.set_run_state(other, "running") is True, end
+    assert store.set_run_state("없는-실행", "running") is False
+    with pytest.raises(ValueError):
+        store.set_run_state(run, "running", unless=("canceled",))   # 철자가 틀린 가드는 조용히 아무것도 막지 않는다 — 거절한다
+
+
+def test_기다리는_실행을_잡는_쓰기는_그_자리에서만_한_번_쓴다(store):
+    """W-110 — 승인 · 재개 · 고르기 창구는 실행을 기다리는 자리(`only_from`)에서 running 으로 잡고, 잡은 요청만 실행기를 띄운다. 둘째는
+    이미 running 이라 못 쓴다(False)."""
+    run = store.create_run(owner_sub="u1")
+    store.set_run_state(run, "gated", stage="step:0")
+    assert store.set_run_state(run, "running", only_from=("gated",)) is True
+    assert store.set_run_state(run, "running", only_from=("gated",)) is False, "둘째도 잡았다"
+    assert (store.get_run(run)["state"], store.get_run(run)["stage"]) == ("running", None)
+    store.set_run_state(run, "failed", stage="step:0", ended=True)
+    assert store.set_run_state(run, "running", only_from=("gated",)) is False
+    assert store.set_run_state(run, "running", only_from=("failed", "unknown")) is True
+    assert store.cancel_run(run, "u1")
+    assert store.set_run_state(run, "running", only_from=("cancelled",)) is False, "기본 가드(중단)는 그대로다"
+    for bad in ((), ("waiting",)):
+        with pytest.raises(ValueError):
+            store.set_run_state(run, "running", only_from=bad)
 
 
 def test_stats_needs_fields_that_cannot_be_recovered_later(store):
