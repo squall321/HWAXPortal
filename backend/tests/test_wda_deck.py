@@ -1115,6 +1115,30 @@ def test_없는_잡이나_남의_잡을_숨겨도_잠금이_쌓이지_않는다(
     assert len(W._LOCKS) == n, "꼴이 틀리거나 없거나 남의 잡이면 잠금을 만들지 않는다"
 
 
+def test_목록은_바뀌지_않은_기록을_다시_읽지_않는다(box, monkeypatch):
+    """줄이 10초마다 목록을 읽는다 — 박스의 모든 잡 기록을 매번 다시 읽고 풀었다(적대 검토, WD-D61)."""
+    from pathlib import Path
+    s = box["s"]
+    _make(box)
+    _make(box, doc_style="memo")
+    W.records(s)
+    reads: list[str] = []
+    real = Path.read_text
+
+    def counting(self, *a, **k):
+        reads.append(self.name)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", counting)
+    assert len(W.records(s)) == 2 and reads == [], "바뀌지 않은 기록은 붙잡은 것으로"
+    rec = W.load(s, W.records(s)[0]["job_id"], "kim@corp.com")
+    reads.clear()
+    rec["dismissed"] = time.time()
+    W.save(s, rec)
+    got = {r["job_id"]: r for r in W.records(s)}
+    assert reads == [f"{rec['job_id']}.json"] and got[rec["job_id"]]["dismissed"], "바뀐 기록만 다시 읽는다"
+
+
 def test_쓴_잠금은_남지_않는다(box):
     """잡 id 마다 만든 잠금이 메모리에 쌓였다(적대 검토, WD-D60) — 쓰고 나면 지운다."""
     job = _finished(box)

@@ -176,16 +176,33 @@ def load(settings: Settings, job_id: str, owner_sub: str) -> dict:
     return rec
 
 
+_REC_CACHE: dict[str, tuple[int, int, dict]] = {}    # 파일 경로 → (mtime_ns, 크기, 기록) — 바뀌지 않은 기록은 다시 읽지 않는다(WD-D61)
+
+
 def records(settings: Settings) -> list[dict]:
-    """모든 잡 기록(박스 상한 셈 · 내 목록). 깨진 기록은 건너뛴다."""
-    out = []
+    """모든 잡 기록(박스 상한 셈 · 내 목록). 깨진 기록은 건너뛴다. 줄이 10초마다 부르므로 바뀌지 않은 파일(mtime · 크기)은 붙잡아 둔 것을 준다 —
+    **읽기 전용**이다. 고쳐 쓰려면 load() 로 새로 읽는다(붙잡은 것을 고치면 저장 전의 값이 다른 요청에 보인다)."""
+    out, seen = [], set()
     for p in _dir(settings).glob("*.json"):
+        key = str(p)
         try:
-            rec = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            st = p.stat()
+        except OSError:
             continue
+        seen.add(key)
+        hit = _REC_CACHE.get(key)
+        if hit is not None and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+            rec = hit[2]
+        else:
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            _REC_CACHE[key] = (st.st_mtime_ns, st.st_size, rec)
         if isinstance(rec, dict) and _JOB_RE.fullmatch(str(rec.get("job_id") or "")):
             out.append(rec)
+    for key in [k for k in _REC_CACHE if k not in seen]:
+        del _REC_CACHE[key]
     out.sort(key=lambda r: r.get("created_at") or 0, reverse=True)
     return out
 
@@ -770,6 +787,7 @@ async def deck_create(
                     break
                 return {**(_reserved_view(r, now) if reserving(r) else view(r, now=now)), "created": False}
         if rec is not None:
+            rec = await asyncio.to_thread(load, settings, rec["job_id"], owner)     # records() 는 읽기 전용이다(WD-D61)
             rec["wda"]["create_unknown"] = False
             rec["created_at"] = now
         else:
