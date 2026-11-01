@@ -391,7 +391,7 @@ class _HeldGateway:
         return httpx.Response(200)
 
     def install(self, c) -> tuple[list, list]:
-        """이 게이트웨이 위의 진짜 실행기를 앱에 건다 — 뜬 실행기와 끝난 실행기를 센다(픽스처가 끝에 걷는다)."""
+        """이 게이트웨이 위의 진짜 실행기를 앱에 건다 — 뜬 실행기(절차 `run` · 즉석 단계 `step_once`)와 끝난 실행기를 센다(픽스처가 끝에 걷는다)."""
         import httpx
 
         from app.procedures.runner import ProceduresRunner
@@ -401,16 +401,18 @@ class _HeldGateway:
                                   mint_pat=lambda p, run, ix: "pat-held")
         started: list[str] = []
         finished: list[str] = []
-        real = runner.run
 
-        async def counted(**kw):
-            started.append(kw["run_id"])
-            try:
-                return await real(**kw)
-            finally:
-                finished.append(kw["run_id"])
+        def counting(real):
+            async def counted(**kw):
+                started.append(kw["run_id"])
+                try:
+                    return await real(**kw)
+                finally:
+                    finished.append(kw["run_id"])
+            return counted
 
-        runner.run = counted
+        runner.run = counting(runner.run)
+        runner.step_once = counting(runner.step_once)
         c.app.state.procedures_runner = runner
         return started, finished
 
@@ -477,6 +479,35 @@ def test_같은_실행을_두_번_이어도_실행기는_하나만_돌고_바깥
     assert run["state"] == "done", run["state"]
     if kind == "pick":   # 거절한 둘째의 값은 원장에 적지 않는다 — 첫째 실행기가 읽을 자리를 덮지 않는다
         assert run["inputs"]["part"] == "PANEL_1" and dict(gw.calls)[tool] == {"part": "PANEL_1"}
+
+
+def test_즉석_단계를_두_번_보내도_단계는_하나_바깥_호출은_한_번이다(user):
+    """W-112 — 빈 실행에 단계를 붙이는 창구도 같은 꼴이었다. 라우트는 도는 단계가 있는지 읽기로만 봤고 단계 행은 실행기가 세션을 연 뒤에야
+    생겨, 빠르게 두 번 보내면 둘 다 받아 같은 번호의 단계를 둘이 불렀다. 이제 실행을 잡은 요청만 실행기를 띄우고 둘째는 409 다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    rid = c.post(f"{PREFIX}/runs", json={"mode": "live"}, headers=h).json()["run_id"]
+    gw = _HeldGateway(["ra_submit_job"])
+    started, finished = gw.install(c)
+    body = {"backend": "ra", "tool": "submit_job", "args": {"x": 1}}
+    first = c.post(f"{PREFIX}/runs/{rid}/steps", json=body, headers=h)
+    second = c.post(f"{PREFIX}/runs/{rid}/steps", json=body, headers=h)
+    gw.release.set()
+    _until(lambda: started and len(finished) == len(started), "단계가 끝나기")
+    assert first.status_code == 202, first.text
+    assert second.status_code == 409 and "이미 진행 중인 실행" in second.json()["detail"], (second.status_code, second.text[:200])
+    assert len(started) == 1, f"즉석 단계 실행기가 {len(started)}개 떴다"
+    assert [n for n, _ in gw.calls].count("ra_submit_job") == 1, f"바깥 호출이 {[n for n, _ in gw.calls].count('ra_submit_job')}번 나갔다"
+    steps = st.list_steps(rid)
+    assert len(steps) == 1 and steps[0]["state"] == "done", steps
+    assert st.get_run(rid)["state"] == "queued", "단계가 끝난 빈 실행은 다음 단계를 받는 자리(queued)다"
+    # 실패한 단계 뒤 · 챗 기록(done)에도 단계를 더 받는다 — 잡는 자리는 쉬는 상태 전부다
+    for rest in ("failed", "done"):
+        st.set_run_state(rid, rest, ended=True)
+        n = len(started)
+        assert c.post(f"{PREFIX}/runs/{rid}/steps", json=body, headers=h).status_code == 202, rest
+        _until(lambda n=n: len(started) == n + 1 and len(finished) == len(started), f"{rest} 뒤 단계가 끝나기")
+    assert len(st.list_steps(rid)) == 3
 
 
 def _spawn_recorder(c) -> list[str]:

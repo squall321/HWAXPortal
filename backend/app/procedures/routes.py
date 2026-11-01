@@ -605,6 +605,9 @@ async def add_step(request: Request, run_id: str, body: StepIn,
     if hard:
         raise AuthError("이 단계는 실행할 수 없습니다:\n- " + "\n- ".join(hard), status_code=422)
 
+    # 잡은 요청만 실행기를 띄운다(W-112 — 승인 · 재개 · 고르기와 같은 `_take`). 위의 '도는 단계' 확인은 읽기라, 단계 행은 실행기가 세션을 연
+    # 뒤에야 생겨 빠르게 두 번 보내면 둘 다 받았다. 빈 실행이 쉬는 자리는 단계 사이(queued) · 실패한 단계 뒤(failed) · 챗 기록(done)이다.
+    _take(_store(request), run_id, ("queued", "failed", "done", "unknown"))
     _spawn(_step_and_log(request, run_id, step, principal), f"step {run_id}",
            store=_store(request), run_id=run_id)
     return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}"}
