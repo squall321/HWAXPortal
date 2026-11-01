@@ -406,6 +406,15 @@ def test_심의_운영자는_줄_선_심의를_다시_시작하지_않는다():
         assert "queued" in src and "queue.position" in src, "엔진의 대기열 계약이 바뀌었다 — 이 안내문을 다시 맞춘다"
 
 
+def test_발표자료_운영자는_단추가_보일_때만_안내하고_렌더를_대신_몰지_않는다():
+    """'발표자료로' 단추는 박스 스위치 · WDA 주인 기능 · (심의 보고서는) 심의 꼴이 다 있어야 선다 — 오늘 모든 박스에서 숨어 있다.
+    무조건 '단추를 쓰라' 하면 없는 단추로 보낸다(적대 검토 11-01, docs/wda-deck WD-D46)."""
+    spec = _one("he-doc-webdesign")["personas"][0]
+    (line,) = [w for w in spec["workflow"] if "발표자료로" in w]
+    assert "보일 때" in line and "켜지지 않았다" in line, "단추가 없는 박스에서의 답이 없다"
+    assert "render_status" in line and "되풀이해 묻지 않는다" in line
+
+
 def test_심의_운영자는_남의_심의를_접으라고_권하지_않는다():
     """엔진은 신원이 다른 사람의 심의를 접지 못하게 한다. '막히면 필요 없는 것을 접으라' 는 옛 안내는 남의 심의를 가리킨다."""
     spec = _one("he-expert-deliberation")["personas"][0]
