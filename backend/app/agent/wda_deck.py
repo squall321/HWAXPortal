@@ -23,6 +23,7 @@ import re
 import secrets
 import sqlite3
 import time
+import unicodedata
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -261,12 +262,15 @@ def _why(r: httpx.Response) -> str:
 # 수식 · 글자 그대로의 \ 가 된다 — 바꿔 끼운다(WD-D49). 줄바꿈 · 제어 · 방향 바꾸기 글자는 빈칸으로(제목 · 인용 · 표 · 코드 울타리가 서지 않게).
 _MD_PLAIN = str.maketrans({"[": "［", "]": "］", "(": "（", ")": "）", "!": "！", "*": "＊", "_": "＿", "\\": "＼", "`": "｀",
                            "#": "＃", ">": "＞", "|": "｜", "$": "＄", "~": "～", "<": "＜"})
-_UNSEEN = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+def _unseen(ch: str) -> bool:
+    """보이지 않는 글자 — 제어(Cc)와 형식(Cf: 방향 바꾸기 · 폭 없는 · 낱말 잇기 U+2060 · 아랍 글자 표지 U+061C · 몽골 모음 구분 U+180E · 무른
+    줄표 · BOM · 태그 글자 …)를 통째로 — 하나씩 적으면 빠진다(2차 검토가 U+061C · U+2060 을 짚었다, WD-D70)."""
+    return unicodedata.category(ch) in ("Cc", "Cf")
 
 
 def md_plain(v: Any, limit: int = 300) -> str:
     """사람 · WDA 가 쓴 글을 알림(마크다운) · LLM 근거에 넣기 전에 — 링크 · 그림 · 제목 · 콜아웃 · 코드가 되지 않는 한 줄로."""
-    s = re.sub(r"\s+", " ", _UNSEEN.sub(" ", str(v or ""))).strip()
+    s = re.sub(r"\s+", " ", "".join(" " if _unseen(ch) else ch for ch in str(v or ""))).strip()
     return s.translate(_MD_PLAIN)[:limit]
 
 

@@ -922,6 +922,14 @@ def test_WDA_에_묻지_못해도_6시간_그물은_끝을_적는다(box, how):
     assert j["next"] is None, "끝을 적었다 — 줄이 더 묻지 않는다"
 
 
+@pytest.mark.parametrize("ch", ["\u061c", "\u2060", "\u180e", "\u00ad", "\u2061", "\u206a", "\ufff9", "\U000e0041", "\u200d",
+                                "\u202e", "\u2066", "\ufeff", "\x85", "\x07"])
+def test_md_plain_은_보이지_않는_형식_글자를_모두_지운다(ch):
+    """2차 검토 — U+061C(아랍 글자 표지) · U+2060(낱말 잇기)이 빠졌다. 제어(Cc) · 형식(Cf) 글자는 하나씩 적지 않고 통째로(WD-D70)."""
+    out = W.md_plain(f"a{ch}b")
+    assert ch not in out and out in ("a b", "ab"), (repr(ch), repr(out))
+
+
 # ── 주인 · 받기 ─────────────────────────────────────────────────────────────────────────────────
 def _finished(box) -> str:
     job = _make(box, targets=["pptx", "pdf", "html"]).json()["job_id"]
