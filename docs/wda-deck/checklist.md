@@ -67,6 +67,7 @@
 - [x] (11-01 저녁 — WD-D39) 템플릿 문을 WDA 의 꼴로 — `format:delib-16x9` 와 `formats` 의 active(정책 함수 `format_ready` 하나) · 만들기에 `"format": "delib-16x9"`
       (그 밖의 템플릿은 칸 없음) · 모르는 꼴 400 은 까닭을 보이고 잡을 남기지 않는다(기본 꼴로 다시 보내지 않는다) · 가짜 WDA 를 꼴 등록부 · `format` 칸 · 400 으로
 - [x] (WD-D40) `block_sections` 는 싣지 않는다 — RA 블록 id 에서 단락이 하나로 정해지지 않는다 · 우리 보고서의 실제 낱말을 요청서 4.6-2 에
+- [x] (11-01 저녁 — WD-D43) WDA health 의 `version`(패키지 판 = 허브 매니페스트 판)을 잡 기록 `wda.version` · 감사에 남긴다(막지 않는다) · 가짜도 `0.1.0`
 - [x] (11-01 저녁 — WD-D41) 스스로 다시 읽고 고친 셋 — 목록이 WDA 를 못 물은 잡을 남긴다 · 줄이 목록을 못 읽어도 다음 차례에 다시 묻는다 ·
       숨기기는 기록을 확인한 뒤 잠근다 · 오류 글 조사('만들기 요청을')
 - [x] 내려받기 머리 — attachment(보고서 제목으로 이름, RFC 5987) · nosniff · `Cache-Control: private, no-store` · HTML 은 CSP sandbox · 응답에 WDA 주소 · id 없음

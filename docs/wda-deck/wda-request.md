@@ -131,7 +131,8 @@ kind ∈ `pptx · pdf · docx · html · mp4`(지금 `_DOWNLOAD_META` — `app.p
 
 `{"status": "ok", "version": "x.y.z", "features": ["owner", "render_chain", "doc_formats", "skipped_report", "interrupted", "format:wide-16x9", "format:delib-16x9", …],
 "formats": {"wide-16x9": "active", "delib-16x9": "draft", …}}` — 허브 health_check 는 `status` 만 보니 칸을 더해도 깨지지 않는다(`app.py:124-127`).
-`format:<id>` 와 `formats` 는 WDA 가 11-01 저녁에 꼴 등록부에서 만들어 낸다(아래 4.6-2). **포털은 `owner` 가 없거나 이 응답을 못 읽으면 단추를 숨긴다**
+`format:<id>` 와 `formats` 는 WDA 가 11-01 저녁에 꼴 등록부에서 만들어 낸다(아래 4.6-2). `version` 은 패키지 판이고 허브 매니페스트 판과 같다(11-01 지금
+`0.1.0`) — 포털은 만들 때 본 판을 잡 기록에 진단용으로만 남기고 판으로 막지 않는다. **포털은 `owner` 가 없거나 이 응답을 못 읽으면 단추를 숨긴다**
 (옛 SIF 로 되돌린 박스에 본문을 넘기지 않게). 포털은 이것도 그 사람의 포털 PAT 로 부른다 — `portal_auth` 가 켜지면 허브 게이트가 익명을 막는다.
 
 ### 4.6-2 심의 보고서 꼴 — W-21 `format:delib-16x9`(심의 자리의 단추를 세우는 표지)

@@ -74,7 +74,7 @@ _PROGRESS = {"ingest": 10, "fragmentize": 25, "scenario": 40, "build": 55}
 CAPS_TTL_S = 60.0
 
 _LOCKS: dict[str, asyncio.Lock] = {}
-_CAPS: dict[str, Any] = {"at": 0.0, "features": None, "formats": {}}
+_CAPS: dict[str, Any] = {"at": 0.0, "features": None, "formats": {}, "version": None}
 
 router = APIRouter(prefix="/agent/deck", tags=["agent-deck"])
 
@@ -204,9 +204,11 @@ def _wda_error(r: httpx.Response, what: str) -> DeckError:
 
 
 class Caps(NamedTuple):
-    """WDA /api/health — features(요청 W-6 · 꼴마다 format:<id>)와 꼴마다의 상태(formats — draft · active …, WDA 의 꼴 등록부에서 나온다)."""
+    """WDA /api/health — features(요청 W-6 · 꼴마다 format:<id>)와 꼴마다의 상태(formats — draft · active …, WDA 의 꼴 등록부에서 나온다).
+    version 은 WDA 패키지 판(허브 매니페스트 판과 같다) — 잡 기록에 진단용으로만 남기고 막는 데 쓰지 않는다(WD-D43)."""
     features: frozenset[str]
     formats: dict[str, str]
+    version: str | None = None
 
 
 def format_ready(caps: Caps, fmt: str) -> bool:
@@ -220,7 +222,7 @@ async def capabilities(base: str, token: str) -> Caps | None:
     실패(허브 계정 없음)가 모두의 단추를 숨기지 않게."""
     now = time.monotonic()
     if _CAPS["features"] is not None and now - _CAPS["at"] < CAPS_TTL_S:
-        return Caps(_CAPS["features"], _CAPS["formats"])
+        return Caps(_CAPS["features"], _CAPS["formats"], _CAPS["version"])
     try:
         async with _http(10.0) as cli:
             r = await cli.get(f"{base}/api/health", headers={"Authorization": f"Bearer {token}"})
@@ -229,10 +231,11 @@ async def capabilities(base: str, token: str) -> Caps | None:
     if r.status_code != 200:
         return None
     j = _json(r)
-    feats, fmts = j.get("features"), j.get("formats")
+    feats, fmts, ver = j.get("features"), j.get("formats"), j.get("version")
     got = Caps(frozenset(str(f) for f in feats if isinstance(f, str)) if isinstance(feats, list) else frozenset(),
-               {k: v for k, v in fmts.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(fmts, dict) else {})
-    _CAPS.update(at=now, features=got.features, formats=got.formats)
+               {k: v for k, v in fmts.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(fmts, dict) else {},
+               ver[:40] if isinstance(ver, str) and ver else None)
+    _CAPS.update(at=now, features=got.features, formats=got.formats, version=got.version)
     return got
 
 
@@ -596,11 +599,11 @@ async def deck_create(
         rec = {"job_id": job_id, "owner_sub": owner, "owner_email": principal.email or owner,
                "conversation_id": body.conversation_id, "report": {"id": body.report_id, "title": title[:300]},
                "options": {"targets": targets, "doc_style": body.doc_style, "pptx_mode": PPTX_MODE},
-               "wda": {"run_id": run_id, "format": fmt}, "state": "queued", "created_at": now, "render_submitted_at": None,
+               "wda": {"run_id": run_id, "format": fmt, "version": caps.version}, "state": "queued", "created_at": now, "render_submitted_at": None,
                "images_not_sent": len(file_refs(data.get("pages"))), "finished": None, "dismissed": None}
         await asyncio.to_thread(save, settings, rec)
     _audit(request, principal, "deck_create", "ok", job_id=job_id, report_id=body.report_id, targets=targets,
-           doc_style=body.doc_style, format=fmt, bytes=size, images=rec["images_not_sent"])
+           doc_style=body.doc_style, format=fmt, wda_version=caps.version, bytes=size, images=rec["images_not_sent"])
     return {**view(rec, now=now), "created": True}
 
 

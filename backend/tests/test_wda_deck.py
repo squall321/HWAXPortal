@@ -60,6 +60,7 @@ class FakeHubWDA:
         self.keystore, self.features, self.chain = keystore, set(features), chain
         # WDA 의 꼴 등록부(꼴 id → 상태) — features 에 format:<id> 가 저절로 실린다. 심의 꼴(delib-16x9)은 시험이 넣는다
         self.formats = {"wide-16x9": "active", "short-9x16": "active", "print-a4": "draft"}
+        self.version = "0.1.0"                         # 패키지 판(허브 매니페스트 판과 같다 — WDA 11-01)
         self.runs: dict[str, dict] = {}
         self.reports = {41: IMPORT, 42: EMPTY, 58: DELIB}
         self.calls: list[tuple[str, str]] = []          # (메서드, 경로)
@@ -176,7 +177,7 @@ class FakeHubWDA:
         if path == "/api/health":
             if self.health_down:
                 return httpx.Response(503)
-            return httpx.Response(200, json={"status": "ok", "version": "0.2.0",
+            return httpx.Response(200, json={"status": "ok", **({"version": self.version} if self.version else {}),
                                              "features": sorted(self.features | {f"format:{k}" for k in self.formats}),
                                              "formats": dict(self.formats)})
         if path == "/api/runs" and req.method == "POST":
@@ -290,6 +291,7 @@ def test_만들기는_그_사람_RA_토큰으로_읽고_ReportRead_를_바꾸지
     assert _run_id(box) not in r.text and "hub.test" not in r.text, "브라우저는 WDA 의 run_id · 주소를 보지 않는다"
     rec = W.load(box["s"], j["job_id"], "kim@corp.com")
     assert rec["images_not_sent"] == 1 and rec["report"] == {"id": 41, "title": "설계 검토"}
+    assert rec["wda"]["version"] == "0.1.0" and "0.1.0" not in r.text, "만들 때 본 WDA 판을 기록에만 남긴다(진단용)"
     assert oct(os.stat(W._path(box["s"], j["job_id"])).st_mode & 0o777) == "0o600"
 
 
@@ -330,6 +332,12 @@ def test_스위치가_꺼지면_창구는_없고_status_는_off(box):
     st = box["c"].get("/agent/deck/status").json()
     assert st == {**st, "enabled": False, "reason": "off"}
     assert box["fake"].calls == [], "꺼진 박스는 WDA 를 부르지 않는다"
+
+
+def test_WDA_판을_모르면_기록에_비워_두고_막지_않는다(box):
+    box["fake"].version = None
+    j = _make(box).json()
+    assert j["created"] is True and W.load(box["s"], j["job_id"], "kim@corp.com")["wda"]["version"] is None
 
 
 def test_WDA_에_주인_기능이_없거나_상태를_모르면_만들지_않는다(box):
