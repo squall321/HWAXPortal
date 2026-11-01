@@ -310,6 +310,12 @@ def test_남의_대화로_보낸_챗은_그_대화를_도는_턴으로_세지_�
     assert seen["status"] == 200 and seen["during"] is False and seen["after"] is False
 
 
+def test_주인을_본_뒤_그_사이_지워진_대화는_도는_턴으로_남기지_않는다():
+    """주인을 본 뒤 발화를 남기기 전에 그 대화가 지워지면(남기기가 False) 곧바로 뺀다 — 세 둔 채면 스트림 동안 도는 턴으로 남는다(WD-D82)."""
+    seen = _chat_spying_append(lambda kw, orig: False if kw.get("role") == "user" else orig(**kw))
+    assert seen["status"] == 200 and seen["during"] is False and seen["after"] is False
+
+
 def test_새_턴을_셀_때_낡은_턴을_걷어_낸다():
     """끝 정리가 샌 턴은 세지 않을 뿐 남아 있었다 — 새 턴을 셀 때 6시간이 지난 것을 걷는다(WD-D76)."""
     import time
@@ -327,3 +333,71 @@ def test_새_턴을_셀_때_낡은_턴을_걷어_낸다():
         R._ACTIVE_TURNS.pop("c-mixed", None)
         R._ACTIVE_TURNS.pop("c-gone", None)
     assert "c-new" not in R._ACTIVE_TURNS
+
+
+def test_남의_대화는_저장소를_기다리는_동안에도_도는_턴이_아니다():
+    """3차 적대 검토(docs/wda-deck WD-D82) — 턴을 먼저 세고 발화를 남기며 주인을 봤다. 저장소 잠금을 기다리는 동안(다른 쓰기가 쥐고 있다) 남의
+    대화가 '도는 턴' 으로 보여 그 주인의 발표자료 알림이 밀렸다. 주인부터 보고(그 동안 턴 없음) 내 대화일 때만 턴을 센 뒤 발화를 남긴다."""
+    import asyncio
+    import threading
+
+    from fastapi.testclient import TestClient
+
+    from app.agent import routes as R
+    from app.auth.provider import Principal
+    from app.deps import principal_pat_or_session
+    from app.main import app
+    from tests.test_chat_relay_decouple import _scope
+
+    app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
+        subject="u1", email="u1@hwax.local", display_name="U", groups=["feat:chat"])
+    raw = _sse([("result", {"type": "text", "content": "답"}), ("done", {})])
+    seen: dict = {}
+    try:
+        with TestClient(app) as c:
+            real = app.state.agent_client
+            app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda req: httpx.Response(200, stream=_Body(raw), headers={"content-type": "text/event-stream"})))
+            store = app.state.conv_store
+            victim = store.create(owner_sub="victim-wd82", title="v")
+
+            async def run():
+                held, release = threading.Event(), threading.Event()
+
+                def busy():                           # 다른 쓰기가 저장소 잠금을 쥔 동안
+                    with store._lock:
+                        held.set()
+                        release.wait(3)
+
+                th = threading.Thread(target=busy, daemon=True)
+                th.start()
+                held.wait(2)
+                body = json.dumps({"message": "남의 대화에", "conversation_id": victim}).encode()
+                given = [False]
+
+                async def receive():
+                    if not given[0]:
+                        given[0] = True
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    await asyncio.Event().wait()
+
+                async def send(_msg):
+                    return None
+
+                call = asyncio.create_task(app(_scope(body, "2.3", app), receive, send))
+                await asyncio.sleep(0.3)
+                seen["during"] = R.turn_active(victim)
+                release.set()
+                await asyncio.wait_for(call, 10)
+                th.join()
+                seen["after"] = R.turn_active(victim) or victim in R._ACTIVE_TURNS
+                seen["msgs"] = len(store.get(victim, "victim-wd82")["messages"])
+
+            try:
+                c.portal.call(run)
+            finally:
+                app.state.agent_client = real
+    finally:
+        app.dependency_overrides.pop(principal_pat_or_session, None)
+    assert seen["during"] is False, "주인을 보는 동안 남의 대화를 도는 턴으로 세지 않는다"
+    assert seen["after"] is False and seen["msgs"] == 0

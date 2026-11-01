@@ -2943,14 +2943,18 @@ async def chat(
                                       ("pinned_agent_name", body.pinned_agent_name)) if v}
             if body.pinned_agents:
                 _pin["pinned_agents"] = list(body.pinned_agents)
-            # 도는 턴은 발화를 남기기 **전에** 센다 — 남긴 뒤에 세면 그 사이(저장 스레드)에 발표자료 알림이 질문 뒤 · 답 앞에 끼었다
-            # (2차 적대 검토, docs/wda-deck WD-D76). 남기다 터지면 아래 except 가 뺀다.
-            turn_end[0] = _turn_begin(cid)
-            # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음).
-            if not await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
-                                           role="user", content=body.message, meta=_pin or None):
-                turn_end[0]()  # 남의 대화(또는 없음)를 도는 턴으로 세지 않는다 — 그 주인의 알림을 이 스트림 동안 미루게 된다
+            # 소유자 대화가 아니면 조용히 저장 스킵(스트림은 정상 — 채팅 자체는 막지 않음). 주인부터 본다 — 남의 대화(또는 없음)를 도는 턴으로
+            # 세면 저장소 잠금을 기다리는 동안 그 주인의 발표자료 알림이 밀렸다(3차 적대 검토, docs/wda-deck WD-D82).
+            if await asyncio.to_thread(store.owner_state, cid, owner) != "mine":
                 store = None  # 없거나 타인 소유 → 이 요청은 저장 안 함
+            else:
+                # 도는 턴은 발화를 남기기 **전에** 센다 — 남긴 뒤에 세면 그 사이(저장 스레드)에 발표자료 알림이 질문 뒤 · 답 앞에 끼었다
+                # (2차 적대 검토, WD-D76). 남기다 터지면 아래 except 가 뺀다.
+                turn_end[0] = _turn_begin(cid)
+                if not await asyncio.to_thread(store.append, conversation_id=cid, owner_sub=owner,
+                                               role="user", content=body.message, meta=_pin or None):
+                    turn_end[0]()  # 그 사이 지워졌다 — 도는 턴으로 남기지 않는다
+                    store = None
 
     except BaseException:
         _release()
