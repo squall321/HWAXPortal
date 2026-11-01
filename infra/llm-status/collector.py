@@ -91,7 +91,7 @@ AGENT_VALUES = ("up", "delib_active", "delib_queued", "delib_seats_running", "de
 ROUTER_VALUES = ("up", "status", "inflight", "upstreams_up", "upstreams_total", "models_match", "upstreams")
 SOURCES = ("health", "version", "metrics", "models")
 
-# M3 · M4 자리 — 원천이 생기면 같은 꼴(poll · view)의 것으로 갈아 끼운다(docs/ops-dashboard PLAN §3.4).
+# M3 · M4 자리의 '모름' 까닭 — 칸은 아래 Pending · PENDING 이다(docs/ops-dashboard PLAN §3.4).
 SLURM_WHY = ("모름 — stcx(356대) GPU 잡 표는 cae00 에서 사람 없이 `ssh stcx` 가 되는지가 먼저다(받은 편지함 2026-11-02 Q8). "
              "되면 60초마다 ssh 한 번(BatchMode · 정해진 읽기 명령)으로 squeue 를 읽는다(M3)")
 GPU_WHY = ("모름 — GPU 사용률 · 메모리 · 온도 · 전력을 읽는 길이 아직 없다. stcx 노드는 노드 관리자(Q11), GLM 서버는 그 운영 팀(Q12)의 "
@@ -498,6 +498,24 @@ class Cell:
 
 def unknown(source: str, why: str) -> dict:
     return {"value": None, "at": None, "source": source, "error": why, "stale": False, "age_s": None}
+
+
+class Pending(NamedTuple):
+    """원천이 아직 없는 칸 — M3(stcx Slurm 잡 표) · M4(GPU 하드웨어)의 자리. 원천이 생기면 PENDING 의 그 줄을 같은 이름 · 같은 꼴의 것으로 갈아 끼운다.
+      view(now) — 스냅숏의 그 칸이다. 값 꼴 {value, at, source, error, stale, age_s} 에 rows · milestone 을 더한다(화면은 rows 가 비면 error 를 보인다).
+      poll — 원천이 생기면 더한다. tick 이 그 주기(60초)마다 대상과 같은 _kick 규율(제 스레드 · 앞 읽기가 안 끝나면 건너뛴다)로 부른다.
+      M3 rows — 잡마다 {id, name, node, partition, gpus, state, reason, elapsed_s, limit_s, left_s}. ssh 한 번(BatchMode · 정해진 읽기 명령)이고
+              자식 환경에는 물려줄 키가 없다(OD-10). 남은 때가 3일 안이면 화면이 경고한다(PLAN §3.2).
+      M4 rows — GPU 마다 {node, index, util_pct, mem_used_mb, mem_total_mb, temp_c, power_w}."""
+    name: str
+    why: str
+    milestone: str
+
+    def view(self, now: float) -> dict:
+        return {**unknown(self.name, self.why), "rows": [], "milestone": self.milestone}
+
+
+PENDING = (Pending("slurm", SLURM_WHY, "M3"), Pending("gpu", GPU_WHY, "M4"))
 
 
 class Snap(NamedTuple):
@@ -1108,8 +1126,7 @@ class Collector:
             "agent": dict(self._side_view(self.agent, AGENT_VALUES, "agent", now),
                           caption="HWAX 에이전트 서버가 보는 몫만이다 — 같은 LLM 서버를 바로 부르는 다른 서비스(AIDataHub · SignalForge 등)는 들지 않는다"),
             "router": router,
-            "slurm": {**unknown("slurm", SLURM_WHY), "rows": [], "milestone": "M3"},
-            "gpu": {**unknown("gpu", GPU_WHY), "rows": [], "milestone": "M4"},
+            **{p.name: p.view(now) for p in PENDING},
         }
 
     def series_view(self, target: str, metric: str, rng: str) -> tuple[dict, int]:
