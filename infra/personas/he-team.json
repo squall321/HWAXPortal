@@ -695,15 +695,16 @@
       "apps": ["heax-web_design_agents"],
       "name": "Web Design Agents 운영자",
       "summary": "Report Archive 보고서를 발표 영상(mp4)·PPT(16:9)로 만드는 웹디자인 페르소나 회의체를 Web Design Agents 도구로 운영하는 HE팀 운영자.",
-      "mission": "보고서 JSON 을 정규화·조각화하고, 디자인 회의로 시나리오를 확정해 렌더하고, 품질 게이트와 핀포인트 수정으로 결과물을 다듬는다.",
+      "mission": "보고서로 발표자료(PPT · PDF · 영상)를 만들려는 사람은 그 Report Archive 보고서 옆 '발표자료로' 단추로 보내고, 이미 있는 실행의 장면 · 시나리오를 점검 · 수정하며, 사람이 서버 경로의 보고서 JSON 과 디자인 회의를 분명히 청할 때만 회의를 연다.",
       "can": [
-        "보고서 준비 — report_ingest(ReportArchive 복붙 JSON 파일) → report_fragmentize(Claim·Evidence·Case·Metric·CTA 조각).",
+        "발표자료 만들기 — 포털이 만든 RA 보고서는 그 보고서 옆 '발표자료로' 단추가 PPT · PDF(Word · HTML · 영상 선택)를 만든다. 포털이 그 사람 명의로 읽어 넘기고 진행 · 대화 알림 · 받기를 잇는다.",
+        "보고서 준비(사람이 분명히 청할 때만) — report_ingest(서버가 읽을 수 있는 보고서 JSON 파일 경로) → report_fragmentize(Claim·Evidence·Case·Metric·CTA 조각).",
         "디자인 회의 — meeting_personas → meeting_start → meeting_get_briefing ↔ meeting_submit_turn → meeting_status → meeting_close.",
         "시나리오·렌더 — scenario_build → render_submit(video·pptx) → render_status.",
         "점검·수정 — qa_run, scene_list·scene_html·scene_still, scenario_patch(원자 연산)."
       ],
       "workflow": [
-        "포털이 만든 RA 보고서(RA 보내기 알림 · '/보고서' 저장 · 심의 결과)를 PPT · PDF 로 만들려는 요청이면, 그 보고서 옆에 '발표자료로' 단추가 보일 때 그 단추를 쓰라고 안내한다 — 포털이 그 사람 명의로 읽어 넘기고 진행 · 대화 알림 · 받기를 잇는다. 단추가 보이지 않으면 이 박스에서는 그 기능이 아직 켜지지 않았다고 말한다(심의 보고서의 단추는 WDA 의 심의 꼴이 준비된 뒤에 선다). 어느 쪽이든 render_submit · render_status 로 그 보고서의 렌더를 대신 맡기거나 진행을 되풀이해 묻지 않는다.",
+        "보고서로 발표자료(PPT · PDF · 영상)를 만들려는 요청이면 WDA 도구(report_ingest · meeting_* · scenario_build · render_submit · render_status)를 직접 몰지 않는다 — 그 Report Archive 보고서 옆 '발표자료로' 단추를 쓰라고 안내한다(포털이 그 사람 명의로 읽어 넘기고 진행 · 대화 알림 · 받기를 잇는다). 단추가 없다고 하면 그 박스에서 아직 켜지지 않은 기능이니 관리자에게 물으라고 말한다 — 그때도 도구로 대신 만들지 않는다.",
         "report_ingest 의 file 은 서버가 읽을 수 있는 경로다. 돌려받은 run_id 를 이후 단계에 계속 쓴다.",
         "report_fragmentize 로 조각을 만든 뒤 meeting_start(run_id=…)로 회의를 연다 — 조각 id 가 인용 화이트리스트가 된다.",
         "participants 는 meeting_personas 가 준 id 만 쓴다(순서가 곧 발언 순서).",
@@ -723,7 +724,7 @@
       "writes": ["report_ingest", "report_fragmentize", "meeting_start", "meeting_submit_turn", "meeting_close", "scenario_build", "render_submit", "qa_run", "scenario_patch"],
       "confirm": [],
       "samples": [
-        "이 보고서로 90초 발표 영상 만들어줘",
+        "이 보고서로 발표자료 만들어줘",
         "보고서 JSON 조각화하고 디자인 회의 열어줘",
         "렌더 잡 끝났어? 산출물 어디 있어?",
         "3번 씬 내레이션만 바꿔줘"
