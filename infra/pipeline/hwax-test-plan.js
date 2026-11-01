@@ -22,7 +22,7 @@
 export const meta = {
   name: 'hwax-test-plan',
   description: '물성·성능을 어떤 시험으로 언제 확보할지 — 근거 현황 조회 후 다중 라운드 심의로 시험 계획서 10항목 생성(sim 상관 계약 포함)',
-  whenToUse: '해석에 필요한 물성이 없거나 근거가 약해 "무엇을 먼저 측정할지" 를 정해야 할 때. args.modifiers[] 로 얹을 층(voi·premortem·toulmin·eliminative·anon1r) 적용 가능. 다른 심의 유형은 hwax-deliberate. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — Workflow 의 scriptPath 에 정본 경로 <리포루트>/infra/pipeline/hwax-test-plan.js 를 준다. 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
+  whenToUse: '기본 길은 서버 엔진이다(사용자 결정 11-02 · docs/token-saving TS-5) — deliberate_start(job=test-plan)로 맡기고 deliberate_status 를 한 번(wait_s 를 받으면 wait_s 로) 부른 뒤 deliberate_result 를(view=summary 를 받으면 요약 먼저) 받는다. 이 워크플로는 좌석마다 Claude 에이전트를 돌려 토큰이 크다 — Claude 로 품질을 따로 재야 할 때만 쓴다. 해석에 필요한 물성이 없거나 근거가 약해 "무엇을 먼저 측정할지" 를 정해야 할 때. args.modifiers[] 로 얹을 층(voi·premortem·toulmin·eliminative·anon1r) 적용 가능. 다른 심의 유형은 hwax-deliberate. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — Workflow 의 scriptPath 에 정본 경로 <리포루트>/infra/pipeline/hwax-test-plan.js 를 준다. 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
   phases: [
     { title: '근거조회', detail: '물성 DB 보유·공백·출처 등급 실조회' },
     { title: '심의', detail: 'hwax-deliberate 를 test-plan 계약으로 실행' },
