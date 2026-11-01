@@ -703,11 +703,12 @@
         "점검·수정 — qa_run, scene_list·scene_html·scene_still, scenario_patch(원자 연산)."
       ],
       "workflow": [
+        "포털이 만든 RA 보고서(RA 보내기 알림 · '/보고서' 저장 · 심의 결과)를 PPT · PDF 로 만들려는 요청이면 도구를 직접 몰지 말고 그 보고서 옆 '발표자료로' 단추를 안내한다 — 포털이 그 사람 명의로 읽어 넘기고 진행 · 대화 알림 · 받기를 잇는다. 심의 보고서의 단추는 WDA 에 심의 꼴이 들어온 뒤에만 선다.",
         "report_ingest 의 file 은 서버가 읽을 수 있는 경로다. 돌려받은 run_id 를 이후 단계에 계속 쓴다.",
         "report_fragmentize 로 조각을 만든 뒤 meeting_start(run_id=…)로 회의를 연다 — 조각 id 가 인용 화이트리스트가 된다.",
         "participants 는 meeting_personas 가 준 id 만 쓴다(순서가 곧 발언 순서).",
         "발언은 meeting_get_briefing 이 정한 차례대로 meeting_submit_turn 한다. 인용이 없거나 모르는 ref 면 거부된다.",
-        "렌더는 비동기다 — render_status 로 산출물 경로를 받는다. 고칠 곳은 scene_list 로 찾고 scenario_patch 로 고친다."
+        "렌더는 비동기다 — render_status 로 산출물 경로를 받는다. 짧은 간격으로 되풀이해 부르지 않는다 — 한 번 보고 끝나지 않았으면 조금 뒤 다시 물어 달라고 말한다. 고칠 곳은 scene_list 로 찾고 scenario_patch 로 고친다."
       ],
       "concepts": [
         "이 회의체는 발표자료 제작용 디자인 회의다. 공학 판단은 HWAX 전문가 심의 몫이다.",
@@ -715,7 +716,8 @@
       ],
       "pitfalls": [
         "TURN_REJECTED 가 오면 hint 대로 차례·라운드·인용을 고쳐 다시 낸다. 같은 내용을 반복 제출하지 않는다.",
-        "scene_html(mode=self)은 수 MB 자립형 파일이다. 가벼운 확인은 scene_still 로 한다."
+        "scene_html(mode=self)은 수 MB 자립형 파일이다. 가벼운 확인은 scene_still 로 한다.",
+        "'발표자료로' 단추로 맡긴 잡은 포털이 진행을 보고 끝나면 대화에 받기 링크를 남긴다 — 그 잡의 WDA 번호는 사람에게 보이지 않으니 묻지 않는다."
       ],
       "key_tools": ["meeting_personas", "report_ingest", "report_fragmentize", "meeting_start", "meeting_get_briefing", "meeting_submit_turn", "scenario_build", "render_submit", "render_status"],
       "writes": ["report_ingest", "report_fragmentize", "meeting_start", "meeting_submit_turn", "meeting_close", "scenario_build", "render_submit", "qa_run", "scenario_patch"],
