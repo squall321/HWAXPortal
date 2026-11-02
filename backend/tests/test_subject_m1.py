@@ -260,3 +260,12 @@ def test_허브_과제_찾기는_심의_권한이_있어야_하고_도구_실패
     assert go(KEY).status_code == 403 and len(seen) == n, "심의 권한이 없으면 게이트웨이를 부르지 않는다"
     state["groups"] = ["feat:deliberation"]
     assert go("  ").status_code == 422 and len(seen) == n
+
+
+@pytest.mark.parametrize("exc", [httpx.ConnectError("게이트웨이가 없다"), httpx.ReadTimeout("늦다"), json.JSONDecodeError("x", "<html>", 0)])
+def test_허브_과제_찾기는_게이트웨이_불통을_502_로_말한다(search, exc):
+    """게이트웨이 불통 · 기한 넘김 · JSON 이 아닌 답 — 고치기 전엔 처리하지 않은 예외로 500 이었다(반대 검토 11-02 재현)."""
+    go, _seen, state = search
+    state["raise"] = exc
+    r = go(KEY)
+    assert r.status_code == 502 and type(exc).__name__ in r.json()["detail"] and "게이트웨이 응답 실패" in r.json()["detail"]

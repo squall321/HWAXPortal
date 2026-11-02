@@ -2610,8 +2610,13 @@ async def deliberate_subject_search(
     pat = _chat_user_pat(request.app.state.keystore, settings, principal)
     if not pat:
         raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
-    out = await _upload.mcp_call(settings.mcp_gateway_url, pat, _subject.RESOLVER_CALL,
-                                 {"query": q, "limit": _subject.SEARCH_LIMIT, "full": True}, timeout=30.0)
+    try:
+        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, _subject.RESOLVER_CALL,
+                                     {"query": q, "limit": _subject.SEARCH_LIMIT, "full": True}, timeout=30.0)
+    except (httpx.HTTPError, ValueError) as exc:
+        # 게이트웨이 불통 · 기한 넘김 · JSON 이 아닌 답 — 502 로 까닭을 말한다(빈 결과로 바꾸면 '찾아봤는데 없다' 로 읽힌다). 종전엔 500 이었다
+        # (반대 검토 11-02 재현 — 게이트웨이를 내린 채 찾기).
+        raise AuthError(f"허브 과제 찾기를 할 수 없습니다(게이트웨이 응답 실패 — {type(exc).__name__}).", status_code=502) from exc
     return {"query": q, "tool": _subject.RESOLVER_CALL, **_subject.sp_rows(out)}
 
 
