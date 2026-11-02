@@ -96,8 +96,9 @@ class Store:
         self._fresh.clear()
 
     def maintain(self, now: float, *, force: bool = False) -> None:
-        """다 찬 5분 칸을 접고, 48시간 넘은 표본 · 35일 넘은 칸을 지운다. MAINTAIN_EVERY_S 마다 한 번(force 면 곧바로)."""
-        if not force and now - self._last_maint < MAINTAIN_EVERY_S:
+        """다 찬 5분 칸을 접고, 48시간 넘은 표본 · 35일 넘은 칸을 지운다. MAINTAIN_EVERY_S 마다 한 번(force 면 곧바로). 벽시계가 거꾸로 갔으면
+        곧바로 돈다 — 지난 정리 시각이 앞날이면 간격 검사가 그때까지 막는다(OD-34)."""
+        if not force and 0 <= now - self._last_maint < MAINTAIN_EVERY_S:
             return
         self._last_maint = now
         upto = int(now - ROLLUP_GRACE_S) // ROLLUP_S * ROLLUP_S
@@ -106,6 +107,10 @@ class Store:
                 self.conn.execute("BEGIN")
                 done = self._meta("rolled_until")
                 start = int(done) if done is not None else None
+                if start is not None and start > upto:
+                    # 접은 끝 표지가 지금보다 앞이다 — 시계가 앞으로 뛰었다 돌아왔거나 뒤로 갔다. 그대로 두면 지금이 따라잡을 때까지 접지 않는다.
+                    # 지금 앞의 마지막 접은 칸부터 다시 접는다(그 칸은 표본으로 다시 셈한다 — INSERT OR REPLACE). 없으면 처음처럼 가장 이른 표본부터(OD-34)
+                    start = self._last_bucket(upto)
                 if start is None:
                     first = self.conn.execute("SELECT MIN(ts) FROM raw").fetchone()[0]
                     start = None if first is None else int(first) // ROLLUP_S * ROLLUP_S
@@ -127,6 +132,15 @@ class Store:
             except sqlite3.Error as exc:
                 self._rollback()
                 self.error = f"접기 · 지우기 실패 — {type(exc).__name__}: {exc}"[:200]
+
+    def _last_bucket(self, upto: int) -> int | None:
+        """upto 앞의 접은 칸 가운데 가장 늦은 것의 시작 — 계열마다 기본 키 앞부분으로 찾는다(ts 만의 색인이 없다)."""
+        best = None
+        for sid in list(self._sids.values()):
+            row = self.conn.execute("SELECT MAX(ts) FROM rollup WHERE sid = ? AND ts < ?", (sid, upto)).fetchone()
+            if row and row[0] is not None and (best is None or row[0] > best):
+                best = int(row[0])
+        return best
 
     def series(self, target: str, metric: str, rng: str, now: float | None = None) -> dict:
         """{range, step_s, source, points} — raw 는 [ts, 값], 접은 것은 [ts, 평균, 최대]. 그 대상 · 지표를 적은 적이 없으면 points 가 빈다."""

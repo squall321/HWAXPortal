@@ -313,14 +313,15 @@ class Clock:
         self.t += s
 
 
-def _collector(tmp_path: Path, env_text: str, *, store: bool = True, clock=None, interval: float = 15.0):
-    """수집기 하나 — 에이전트 서버는 따로 주지 않으면 닫힌 포트(이 박스의 9009 를 두드리지 않는다)."""
+def _collector(tmp_path: Path, env_text: str, *, store: bool = True, clock=None, mono=None, interval: float = 15.0):
+    """수집기 하나 — 에이전트 서버는 따로 주지 않으면 닫힌 포트(이 박스의 9009 를 두드리지 않는다). 시계를 주면 모델 목록 주기(monotonic)도
+    따로 주지 않는 한 그 시계를 따른다."""
     if "LLM_STATUS_AGENT_URL" not in env_text:
         env_text += f"LLM_STATUS_AGENT_URL=http://127.0.0.1:{_free_port()}\n"
     envf = tmp_path / "infra.env"
     envf.write_text(env_text, encoding="utf-8")
     st = C.Store(tmp_path / "s.sqlite") if store else None
-    coll = C.Collector(envf, st, interval=interval, clock=clock or time.time)
+    coll = C.Collector(envf, st, interval=interval, clock=clock or time.time, mono=mono or clock or time.monotonic)
     coll.reload(force=True)
     return coll
 
@@ -1016,6 +1017,66 @@ def test_시계열_1h_는_표본_24h_는_5분_칸이고_48시간_35일이_지나
     st.maintain(t0 + 36 * 86400, force=True)
     assert st.series("glm", "running", "35d", now=t0 + 36 * 86400)["points"] == [], "35일 지난 칸도 지운다"
     st.close()
+
+
+def test_벽시계가_앞으로_뛰었다_돌아와도_5분_칸_접기가_다시_돈다(tmp_path):
+    """시계가 하루 앞으로 뛰었다 바로잡히면(부팅 직후 NTP 등) rolled_until 이 앞날에 남아 접기가 멈추고 24시간 그래프에 바로잡힌 뒤의 칸이 없었다
+    (반대 검토 11-02 · 재현 clock_jump.py). 지금보다 앞선 표지는 지금 앞의 마지막 칸으로 당긴다(OD-34)."""
+    S = sys.modules["samplestore"]
+    st = S.Store(tmp_path / "x.sqlite")
+    t0 = 1_800_000_000
+    for k in range(0, 3600, 15):
+        st.add("glm", t0 + k, {"running": 2.0})
+    st.maintain(t0 + 3600)
+    st.add("glm", t0 + 3600 + 86400, {"running": 9.0})      # 시계가 하루 앞으로
+    st.maintain(t0 + 3600 + 86400)
+    for k in range(3615, 7200, 15):                          # 바로잡힌 뒤 한 시간
+        st.add("glm", t0 + k, {"running": 3.0})
+    st.maintain(t0 + 7200)                                   # 힘주지 않아도 돈다 — 지난 정리 시각이 앞날이다
+    assert int(st._meta("rolled_until")) <= t0 + 7200, "접은 끝 표지가 지금보다 앞서 있지 않다"
+    pts = st.series("glm", "running", "24h", now=t0 + 7200)["points"]
+    fixed = [p for p in pts if t0 + 3600 <= p[0] < t0 + 6900]
+    assert len(fixed) == 11 and all(p[1] == pytest.approx(3.0) for p in fixed), f"바로잡힌 한 시간의 5분 칸 — {pts}"
+    assert [p for p in pts if t0 <= p[0] < t0 + 3600] and all(p[1] == pytest.approx(2.0) for p in pts if t0 <= p[0] < t0 + 3600), \
+        "뛰기 전의 칸은 그대로다"
+    st.close()
+
+
+def test_벽시계가_뒤로_가도_5분_칸_접기가_멈추지_않는다(tmp_path):
+    """시계가 하루 뒤로 가면 지난 정리 시각과 접은 끝 표지가 앞날이 되어 — 정리는 300초 간격 검사에 막히고 접기는 시작점이 앞서 — 그래프가 멈췄다.
+    정리 간격은 시계가 거꾸로 가면 곧바로 돌고, 접은 끝 표지는 지금 쪽으로 당긴다(OD-34)."""
+    S = sys.modules["samplestore"]
+    st = S.Store(tmp_path / "x.sqlite")
+    t0 = 1_800_000_000
+    for k in range(0, 3600, 15):
+        st.add("glm", t0 + k, {"running": 2.0})
+    st.maintain(t0 + 3600)
+    back = t0 + 3600 - 86400                                 # 하루 뒤로
+    for k in range(0, 3600, 15):
+        st.add("glm", back + k, {"running": 5.0})
+    st.maintain(back + 3600)
+    assert int(st._meta("rolled_until")) <= back + 3600, "접은 끝 표지를 지금 쪽으로 당겼다"
+    pts = st.series("glm", "running", "24h", now=back + 3600)["points"]
+    after = [p for p in pts if back <= p[0] < back + 3300]
+    assert len(after) == 11 and all(p[1] == pytest.approx(5.0) for p in after), f"뒤로 간 뒤의 5분 칸 — {pts}"
+    st.close()
+
+
+def test_모델_목록은_벽시계가_아니라_monotonic_으로_60초마다_묻는다(tmp_path, fakes):
+    """벽시계가 뒤로 가면 '마지막으로 물은 때' 가 앞날이라 /v1/models 를 하루 동안 묻지 않았다(반대 검토 11-02). 주기는 monotonic 으로 잰다(OD-34)."""
+    f = fakes()
+    wall, mono = Clock(), Clock(1000.0)
+    coll = _collector(tmp_path, f"LLM_BASE_URL={f.base}\n", clock=wall, mono=mono)
+    st = _state(coll, "glm")
+    coll.poll_vllm(st)
+    wall.tick(-86400)                                        # 벽시계가 하루 뒤로
+    mono.tick(61)
+    coll.poll_vllm(st)
+    assert [p for p, _ in f.seen].count("/v1/models") == 2, f.seen
+    wall.tick(86400 * 2)                                     # 앞으로 뛰어도 주기를 앞당기지 않는다
+    mono.tick(10)
+    coll.poll_vllm(st)
+    assert [p for p, _ in f.seen].count("/v1/models") == 2, f.seen
 
 
 def test_되돌린_쓰기가_만든_계열_번호는_남기지_않는다(tmp_path):

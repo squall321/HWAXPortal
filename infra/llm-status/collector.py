@@ -590,7 +590,7 @@ class TState:
         self.cells: dict[str, Cell] = {}
         self.src: dict[str, dict] = {}
         self.hist: deque = deque(maxlen=max(4, int(WINDOW_S / interval) + 2))
-        self.models_try: float | None = None
+        self.models_try: float | None = None       # 마지막으로 /v1/models 를 물은 때 — monotonic(벽시계가 뛰어도 주기가 서지 않게, OD-34)
         self.noted: dict[str, str | None] = {}     # 바뀔 때만 로그에 남기려고 — 원천 → 마지막으로 알린 상태
 
     def cell(self, name: str, source: str) -> Cell:
@@ -769,8 +769,9 @@ def derive(hist: deque, interval: float) -> tuple[dict, dict]:
 # ── 수집기 ─────────────────────────────────────────────────────────────────────────────────────────
 class Collector:
     def __init__(self, env_file: Path, store: Store | None, *, interval: float = INTERVAL_S, models_every: float = MODELS_EVERY_S,
-                 store_error: str | None = None, port: int | None = None, clock=time.time):
+                 store_error: str | None = None, port: int | None = None, clock=time.time, mono=time.monotonic):
         self.clock = clock                    # 벽시계(초) — 시험이 바꿔 끼운다. 읽기 기한은 따로 monotonic 이다(fetch)
+        self.mono = mono                      # 모델 목록 주기(OD-34) — 시험이 바꿔 끼운다
         self.env_file = Path(env_file)
         self.store, self.store_error = store, store_error
         self.interval, self.models_every = interval, models_every
@@ -930,7 +931,7 @@ class Collector:
     def poll_vllm(self, st: TState) -> None:
         t = st.t
         a = t.addr
-        want_models = st.models_try is None or self.clock() - st.models_try >= self.models_every
+        want_models = st.models_try is None or self.mono() - st.models_try >= self.models_every
         h = fetch(a, "/health")
         now = self.clock()
         if h.kind in UNREACHABLE:
@@ -943,7 +944,7 @@ class Collector:
                     if src in ("version", "metrics") or (src == "models" and want_models):
                         st.cell(name, src).fail(f"{h.error}(/health 에서 — 묻지 않았다)")
                 if want_models:
-                    st.models_try = now
+                    st.models_try = self.mono()
             self._save(t, now, {"up": 0.0})
             self._note(st, "up", "down:" + h.kind, f"{t.label}({a}) 내려감 — {h.error}")
             return
@@ -1026,7 +1027,7 @@ class Collector:
                     n = d.get("max_model_len")
                     rows.append({"id": scrub(d["id"], 120), "max_model_len": n if isinstance(n, int) and not isinstance(n, bool) else None})
         with st.lock:
-            st.models_try = now
+            st.models_try = self.mono()
             if rows:
                 st.mark("models", now, None)
                 st.cell("models", "models").ok(rows, now)
