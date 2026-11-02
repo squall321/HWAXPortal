@@ -44,7 +44,8 @@ def _card_fields(raw: dict, *, extra_refs: tuple = ()) -> dict:
             "report_id": rid if isinstance(rid, (int, str)) and not isinstance(rid, bool) else None,
             "report_url": _s(raw.get("report_url"), 500) or None, "model": _s(raw.get("model"), 120),
             "calls": calls, "tools": names("tools"), "apps": names("apps"), "apps_unknown": names("apps_unknown"),
-            "refs": [*extra_refs, *names("refs")]}
+            # 범위를 모르는 입력(엔진 contracts §1 — evidence · note · summary · images). 모르는 낱말도 그대로 둔다(닫힌 쪽 — 조직 공개를 막는다).
+            "untracked": names("untracked"), "refs": [*extra_refs, *names("refs")]}
 
 
 def _row(*, cid: str, path: str, source_id: str, stage: str, owner_email: str, owner_sub: str | None, subject: dict,

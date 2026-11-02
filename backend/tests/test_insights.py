@@ -473,7 +473,12 @@ def test_주장_고치기_반박_조직_공개(env):
     assert c.get(f"/insights-api/cards/{a}").json()["disputes"] == [], "보이지 않는 카드로의 잇기는 말하지 않는다"
 
 
-def test_확인할_때_근거_앱은_plat_토큰이_되고_앱을_모르면_그렇다고_단다(env):
+def test_확인할_때_근거_앱은_plat_토큰이_되고_앱을_모르면_그렇다고_단다(env, monkeypatch):
+    from app.access import routes as AR
+
+    async def the_map(_settings):           # 확인은 앱을 몰랐던 도구를 지금 도구 지도로 다시 푼다 — 지도에도 없으면 여전히 모른다
+        return {"map": {"risk_get_diff": "heax-hwax_risk"}}
+    monkeypatch.setattr(AR, "_gateway_tools_map", the_map)
     c, st, _s = env
     _relay(st, cards=({**CARD, "tools": ["risk_get_diff", "x_tool"], "apps": ["heax-hwax_risk"], "apps_unknown": ["x_tool"]},))
     h = _login(c, "me@example.com")
@@ -633,6 +638,11 @@ def test_중계는_에이전트가_낸_카드_거리를_답을_남길_때_들인
 
 
 # ── 반대 검토 11-02 — 재현해 고친 것(context-notes PG-35) ───────────────────────────────────────────────────────────
+def _no_plat_viewer() -> C.Viewer:
+    """같은 소속(CAEG)인데 plat:risk 가 없는 사람 — 시험 원장의 CAEG 는 '*' 라 사람으로는 못 만들어 시야 함수로 본다."""
+    return C.Viewer(email="peer2@example.com", aff="CAEG", groups=frozenset({"feat:insights"}))
+
+
 def test_남의_초안이_많아도_보이는_카드가_목록에서_밀려나지_않는다(env, monkeypatch):
     """읽기 창(최근 N장)이 남의 초안까지 세면 보이는 확인 카드가 목록 · 과제에서 사라졌다(반대 검토 6). 창은 읽는 사람의 것과 공유 상태만 센다."""
     from app.insights import store as S
@@ -679,6 +689,63 @@ def test_당기기는_커서_창이_빽빽해도_따라잡는다(store, monkeypa
     assert store.meta_get("jobs_partial") == "0"
     items.extend(_item(f"k{i}", finished_at=2000.0 + i) for i in range(5))
     assert pull(2) == len(items), "겹쳐 읽는 창이 빽빽해도(상한에서 멈춰도) 그다음 당기기가 새 항목을 들인다"
+
+
+def test_범위를_모르는_입력이_있는_카드는_같은_소속까지만_연다(env):
+    """도구 없는 근거 글 · 사람 의견 · 앞 회차 요약 · 그림(카드 untracked)은 범위를 모른다 — 확인은 같은 소속까지이고 조직 공개는 열리지 않는다
+    (반대 검토 2 — 표지가 비어 '근거 범위를 다 안다' 로 읽혀 조직에 열렸다)."""
+    c, st, _s = env
+    _relay(st, cid="doc", cards=({**CARD, "untracked": ["evidence"]},))
+    cid = "ins:web:doc:r1:default"
+    h = _login(c, "me@example.com")
+    r = c.post(f"/insights-api/cards/{cid}/confirm", headers=h).json()
+    assert r["scope"] == ["aff:CAEG"] and "범위를 모르는 입력" in r["scope_note"] and r["evidence_known"] is False
+    assert c.post(f"/insights-api/cards/{cid}/widen", json={"to": "org"}, headers=h).status_code == 409
+    _relay(st, cid="bare")
+    assert c.post("/insights-api/cards/ins:web:bare:r1:default/confirm", headers=h).json()["evidence_known"] is True, "아무것도 없으면 그대로"
+
+
+def test_도구_지도를_못_받은_때_지은_카드는_확인할_때_다시_푼다(env, monkeypatch):
+    """엔진이 게이트웨이 도구 지도를 못 받은 때 지은 카드는 근거 도구가 다 '앱 모름' 이라 plat 토큰 없이 소속 전체에 열렸다(반대 검토 4). 확인할 때
+    앱을 모르는 도구를 지금 지도로 다시 풀고, 지도를 못 받으면 확인을 미룬다(503)."""
+    from app.access import routes as AR
+    c, st, _s = env
+    down = {**CARD, "calls": [{"ref": "call:1", "tool": "risk_get_diff", "app": None, "args": "{}", "sha256": "0" * 64, "ok": True}],
+            "tools": ["risk_get_diff"], "apps": [], "apps_unknown": ["risk_get_diff"]}
+    _relay(st, cid="down", cards=(down,))
+    cid = "ins:web:down:r1:default"
+    h = _login(c, "me@example.com")
+
+    async def no_map(_settings):
+        return None
+    monkeypatch.setattr(AR, "_gateway_tools_map", no_map)
+    r = c.post(f"/insights-api/cards/{cid}/confirm", headers=h)
+    assert r.status_code == 503 and "도구 지도" in r.json()["detail"] and st.get(cid)["status"] == "draft"
+
+    async def the_map(_settings):
+        return {"map": {"risk_get_diff": "heax-hwax_risk"}}
+    monkeypatch.setattr(AR, "_gateway_tools_map", the_map)
+    r = c.post(f"/insights-api/cards/{cid}/confirm", headers=h).json()
+    assert r["scope"] == ["aff:CAEG", "plat:risk"] and not r.get("scope_note")
+    row = st.get(cid)
+    assert row["card"]["apps"] == ["heax-hwax_risk"] and row["card"]["apps_unknown"] == []
+    assert C.visible(row, _no_plat_viewer())[0] is False
+
+
+def test_앞선_인사이트를_근거로_쓴_카드는_범위를_이어받는_규칙_전까지_주인만_본다(env):
+    """insight_find · insight_get 은 게이트웨이 자체 도구(_gateway)라 plat 토큰이 없어, plat:risk 카드를 근거로 지은 카드가 그 권한 없는 같은 소속에
+    열렸다(반대 검토 3). 원래 카드들의 범위를 이어받는 규칙(M3)이 서기 전까지 확인은 주인만 보고 까닭을 단다."""
+    c, st, _s = env
+    chain = {**CARD, "calls": [{"ref": "call:2", "tool": "insight_find", "app": "_gateway", "args": "{}", "sha256": "1" * 64, "ok": True}],
+             "tools": ["insight_find"], "apps": ["_gateway"], "apps_unknown": []}
+    _relay(st, cid="y", cards=(chain,))
+    cid = "ins:web:y:r1:default"
+    h = _login(c, "me@example.com")
+    r = c.post(f"/insights-api/cards/{cid}/confirm", headers=h).json()
+    assert r["status"] == "confirmed" and r["scope"] == ["user:me@example.com"] and "M3" in r["scope_note"]
+    assert c.post(f"/insights-api/cards/{cid}/widen", json={"to": "org"}, headers=h).status_code == 409
+    _login(c, "peer@example.com")
+    assert c.get(f"/insights-api/cards/{cid}").status_code == 404
 
 
 def test_관리자가_잇기로_본_남의_초안_id_도_감사에_남는다(env):

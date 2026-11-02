@@ -182,7 +182,20 @@ def plat_tokens(apps: list, policy) -> list:
 
 def evidence_known(row: dict) -> bool:
     """근거 범위를 다 아는가 — 조직 공개(org)의 문(PLAN §6.2 '한 칸 다른 자리'). 이 판에서는 근거 표지 · 근거 도구가 없고 앱을 모르는 도구가 없고
-    워크플로가 아닌 카드뿐이다(남의 RA 보고서 · 리포트 같은 근거의 범위를 알 길이 없다)."""
+    범위를 모르는 입력(도구 없는 근거 글 · 사람 의견 · 앞 회차 요약 · 그림 — 카드 untracked)이 없고 워크플로가 아닌 카드뿐이다(남의 RA 보고서 ·
+    리포트 같은 근거의 범위를 알 길이 없다)."""
     card = row.get("card") or {}
     return (row.get("path") != "mcp-workflow" and not card.get("calls") and not card.get("tools")
-            and not card.get("apps_unknown"))
+            and not card.get("apps_unknown") and not card.get("untracked"))
+
+
+# 앞선 인사이트를 읽는 게이트웨이 도구(insight_find · insight_get)의 머리 — 그 도구를 근거로 쓴 카드는 원래 카드들의 범위를 이어받아야 하는데(PLAN
+# §6.2 최소 범위) 어느 카드를 읽었는지 표지가 없다. 이어받는 규칙(M3)이 서기 전까지 확인은 주인만 본다(반대 검토 11-02 의 3).
+INSIGHT_TOOL_HEAD = "insight_"
+
+
+def insight_derived(row: dict) -> bool:
+    """앞선 인사이트를 근거로 썼나 — 근거 도구 · 표지에 insight_ 도구가 있다."""
+    card = row.get("card") or {}
+    names = [*(card.get("tools") or ()), *(c.get("tool") for c in card.get("calls") or () if isinstance(c, dict))]
+    return any(str(n or "").startswith(INSIGHT_TOOL_HEAD) for n in names)

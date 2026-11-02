@@ -348,24 +348,73 @@ async def _save(request: Request, cid: str, v: C.Viewer, r: dict, **fields) -> d
     return {**_view(await asyncio.to_thread(st.get, cid), v), "note": NOTE}
 
 
+async def _apps_now(settings: Settings, card: dict) -> tuple[list, list] | None:
+    """(근거 앱, 여전히 앱을 모르는 도구) — 카드를 지은 때 앱을 몰랐던 도구는 지금 게이트웨이 도구 지도로 다시 푼다. 엔진이 지도를 못 받은 때 지은
+    카드는 근거 도구가 다 '앱 모름' 이라 plat 토큰 없이 열렸다(반대 검토 11-02 의 4). 다시 풀 도구가 있는데 지도를 못 받으면 None(확인을 미룬다).
+    워크플로 표지 같은 괄호 이름('(workflow)')은 도구가 아니라 그대로 둔다."""
+    from app.access.routes import _gateway_tools_map
+    apps = {str(a) for a in card.get("apps") or () if a}
+    unknown = [str(x) for x in card.get("apps_unknown") or () if x]
+    tools = [x for x in unknown if not x.startswith("(")]
+    if not tools:
+        return sorted(apps), unknown
+    tm = await _gateway_tools_map(settings)
+    amap = tm.get("map") if isinstance(tm, dict) else None
+    if not isinstance(amap, dict):
+        return None
+    still = []
+    for x in tools:
+        if amap.get(x):
+            apps.add(str(amap[x]))
+        else:
+            still.append(x)
+    return sorted(apps), still + [x for x in unknown if x.startswith("(")]
+
+
+_UNTRACKED_WORDS = {"evidence": "붙인 근거 글", "note": "사람 의견 · 보강 글", "summary": "앞 회차 요약", "images": "그림"}
+
+
 @router.post("/cards/{cid}/confirm")
-async def confirm(cid: str, request: Request, principal: Principal = Depends(_writer)) -> dict:
-    """주인의 확인 — 초안을 같은 소속에 연다. 범위는 [aff:<주인의 지금 포털 원장 소속>] + 근거 앱의 plat 토큰(포털 권한표로 푼다). 주인에게 소속이
-    없으면 확인은 하되 주인만 보고 까닭을 단다(PLAN §6.2 — 더 좁게 막으면 그 선에서 멈춘다). MCP 잡이 실은 소속(자칭)은 쓰지 않는다."""
+async def confirm(cid: str, request: Request, principal: Principal = Depends(_writer),
+                  settings: Settings = Depends(get_settings)) -> dict:
+    """주인의 확인 — 초안을 같은 소속에 연다. 범위는 [aff:<주인의 지금 포털 원장 소속>] + 근거 앱의 plat 토큰(포털 권한표로 푼다 — 앱을 몰랐던
+    도구는 지금 게이트웨이 도구 지도로 다시 푼다). 주인에게 소속이 없으면 확인은 하되 주인만 보고 까닭을 단다(PLAN §6.2 — 더 좁게 막으면 그 선에서
+    멈춘다). MCP 잡이 실은 소속(자칭)은 쓰지 않는다. 앞선 인사이트(insight_*)를 근거로 쓴 카드는 원래 카드들의 범위를 이어받는 규칙(M3) 전까지
+    주인만 본다(반대 검토 11-02 의 3)."""
     r, v = await _mine_or_404(request, cid, principal)
     if r["status"] != "draft":
         raise AuthError("확인할 수 있는 것은 초안이다" + (" — 주제를 먼저 확인한다(기다림 줄)" if r["status"] == "waiting" else ""),
                         status_code=409)
+    card = dict(r.get("card") or {})
+    now = int(time.time())
+    if C.insight_derived(r):
+        return await _save(request, cid, v, r, status="confirmed", scope=[f"user:{v.email}"], confirmed_at=now, confirmed_by=v.email,
+                           scope_note="앞선 인사이트(insight_find · insight_get)를 근거로 썼다 — 그 카드들의 보이는 범위를 이어받는 규칙(M3)이 "
+                                      "서기 전까지 주인만 본다")
+    got = await _apps_now(settings, card)
+    if got is None:
+        raise AuthError("근거 도구의 앱을 지금 알 수 없다(게이트웨이 도구 지도에 닿지 못했다) — 범위를 정하지 못해 확인을 미룬다. 잠시 뒤 다시 확인한다",
+                        status_code=503)
+    apps, unknown = got
+    fields: dict = {}
+    if apps != sorted(card.get("apps") or []) or unknown != list(card.get("apps_unknown") or []):
+        card.update(apps=apps, apps_unknown=unknown)
+        fields["card"] = card
     policy = getattr(request.app.state, "access", None)
-    plats = C.plat_tokens((r.get("card") or {}).get("apps") or [], policy.get() if policy is not None else None)
+    plats = C.plat_tokens(apps, policy.get() if policy is not None else None)
+    notes = []
     if v.aff:
-        scope, note = [f"aff:{v.aff}", *plats], None
+        scope = [f"aff:{v.aff}", *plats]
     else:
-        scope, note = [f"user:{v.email}"], "소속이 없어 같은 소속에 열지 못했다 — 주인만 본다(관리자가 소속을 정하면 다시 확인한다)"
-    if (r.get("card") or {}).get("apps_unknown"):
-        note = (note + " · " if note else "") + "근거 도구 일부의 앱을 몰라 그 플랫폼 권한은 범위에 넣지 못했다 — 조직 공개는 열리지 않는다"
-    return await _save(request, cid, v, r, status="confirmed", scope=scope, scope_note=note, confirmed_at=int(time.time()),
-                       confirmed_by=v.email)
+        scope = [f"user:{v.email}"]
+        notes.append("소속이 없어 같은 소속에 열지 못했다 — 주인만 본다(관리자가 소속을 정하면 다시 확인한다)")
+    if unknown:
+        notes.append("근거 도구 일부의 앱을 몰라 그 플랫폼 권한은 범위에 넣지 못했다 — 조직 공개는 열리지 않는다")
+    if card.get("untracked"):
+        what = " · ".join(_UNTRACKED_WORDS.get(str(u), str(u)) for u in card["untracked"])
+        notes.append(f"범위를 모르는 입력({what})이 있어 같은 소속까지다 — 조직 공개는 열리지 않는다")
+    return await _save(request, cid, v, r, status="confirmed", scope=scope, scope_note=" · ".join(notes) or None, confirmed_at=now,
+                       confirmed_by=v.email, **fields)
 
 
 class SubjectIn(BaseModel):
