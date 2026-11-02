@@ -49,7 +49,17 @@ export function OntoFirstPanel({ spTask, chair, onChange }: { spTask: string; ch
     });
   };
 
-  const toggle = (id: string) => setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  // 이웃 행을 고르면 주제 과제 칸도 보이게 함께 고른다 — 이웃 근거의 인자(object_id — 허브 id) · 머리(「key」) · 관계 글('이 과제')이 주제 과제를
+  // 가리켜, 고르지 않은 주제 과제의 key · id 가 말없이 나가면 안 된다(반대 검토 11-02 — docs/ontology-first OF-29). 주제 과제를 빼면 고른 이웃 행도 뺀다.
+  const toggle = (id: string) => {
+    const on = !picked.includes(id);
+    setPicked((prev) => (on ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)));
+    if (on) setAnchor(true);
+  };
+  const toggleAnchor = () => {
+    if (anchor) setPicked([]);
+    setAnchor(!anchor);
+  };
 
   if (!open) {
     return (
@@ -106,7 +116,7 @@ export function OntoFirstPanel({ spTask, chair, onChange }: { spTask: string; ch
             <ul className="vf-list">
               <li className={`vf-item${anchor ? ' is-on' : ''}`}>
                 <label className="vf-check">
-                  <input type="checkbox" checked={anchor} onChange={() => setAnchor((v) => !v)} />
+                  <input type="checkbox" checked={anchor} onChange={toggleAnchor} />
                   <span className="vf-meta">
                     <span className="vf-kwtag">주제 과제</span>
                     {res.anchor.line}
@@ -129,6 +139,12 @@ export function OntoFirstPanel({ spTask, chair, onChange }: { spTask: string; ch
                 );
               })}
             </ul>
+          )}
+          {res.state === 'ok' && rows.length > 0 && (
+            <p className="vf-hint">
+              이웃 행을 고르면 주제 과제 칸도 함께 골라집니다 — 관계 글의 &apos;이 과제&apos; 가 주제 과제라 그 key · 허브 id 가 근거에 함께 실립니다.
+              주제 과제를 빼면 고른 이웃 행도 빠집니다.
+            </p>
           )}
           {res.state === 'ok' && rows.length === 0 && <p className="vf-empty">어휘표 타입의 이웃이 없습니다 — 주제 과제 하나만 고를 수 있습니다.</p>}
           {res.state === 'ok' && (res.total ?? 0) > (res.shown ?? 0) && (
