@@ -51,9 +51,16 @@ _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    """루프백의 빈 포트 — 띄우는 스크립트는 그 포트 번호를 듣는 리스너를 주소와 상관없이 본다(ss `sport = :P`). 다른 주소([::] 등)에 남의 리스너가
+    있는 번호는 건너뛴다 — dev 에 다른 계정의 `[::]:<임시 포트>` 리스너가 있어 start 시험이 가끔 '남이다' 로 끝났다(OD-35)."""
+    for _ in range(50):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        r = subprocess.run(["ss", "-ltnH", f"sport = :{port}"], capture_output=True, text=True) if shutil.which("ss") else None
+        if r is None or r.returncode != 0 or not r.stdout.strip():
+            return port
+    raise RuntimeError("빈 포트를 찾지 못했다")
 
 
 def _get(url: str, timeout: float = 5.0) -> tuple[int, dict]:
