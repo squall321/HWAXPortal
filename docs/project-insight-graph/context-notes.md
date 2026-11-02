@@ -117,3 +117,61 @@ risk-review 면 `insight_*` 근거를 뺀다) · M1 은 주제를 RA 보고서�
   M5 의 RA 투영은 포털이 RA 시스템 관리자 자격을 새로 쥐는 일이라 그때 따로 사용자 결정 · 리스크 앱 새 읽기 도구도 엔진 거절 목록에 · `feat:insights`.
 - 검토가 맞다고 확인한 인용은 PLAN 의 근거 줄 대부분이다(D-18 줄 · 루틴 규칙 · RA 시야 · `deliberate_start` · 잡 원장 칸과 일지 지우기 · MX 백서 봉투와 범위
   규칙 · StepForge 개정 줄 · ODB 표본 · 리스크 원장 · RK-01 · 게이트웨이 루틴 도구).
+
+**PG-14 사용자 결정(2026-11-02 KST) — PLAN §11 의 권장 넷 그대로.** 본 세션이 물었고 사용자가 넷 다 권장안을 골랐다. (1) 범위 — 인사이트는 주인만 보는
+초안으로 서고, 주인이 포털에서 확인하면 같은 소속에 열린다(PLAN §3.3 · §6.1). (2) 자리 — 생산자 원장이 정본이고 일반 심의 인사이트만 포털 원장 하나에
+두며, 둘은 읽을 때 합친다(§5.2). (3) D-18 — 범위 그대로 두고 새 길은 열지 않는다. 지금 있는 길은 기록만 한다(§7.2 · §12). (4) 뽑기 — 단마다 결정 카드
+하나를 코드로 짓고(새 LLM 호출 0) 사람이 글을 고친다(§3.2). 버린 안과 그 장단은 1판(`1fad51f9`)의 §11 에 있다. PLAN §11 은 '정한 것' 과 2판의 '남은 것'
+둘로 나눴고, 체크리스트 M0 의 결정 줄을 닫았다. PG-5 · PG-6 · PG-7 · PG-10 의 '사용자 결정 기다림' 은 이 결정으로 풀렸다.
+
+**PG-15 새 요구 둘(2026-11-02 KST) — 개인 Claude 의 심의 · 심사도 (과제, 차수)가 같으면 같은 과제 보기에 모으고, 과제 대상이 아닌 질문은 잇지 않는다.**
+사용자 글 그대로 — "클로드 mcp로 심사한 데이터들도 다 같이 정리되게끔 했으면 좋겠어 과제명과 차수가 일치한다면 말이지" · "과제 대상이 아닌 질문이면
+연결 안되고". 계획에서 바뀐 것은 이렇다.
+
+- **주제 열쇠는 (과제, 차수)다.** 과제명은 SP key 로 읽는다 — 운영 허브의 `plm_task` key 가 과제명이고 과제코드는 `task_code` 칸이다
+  (`docs/procedures/app-project-keys.md:39-41`). A13 그대로 key 는 서버가 부른 풀이의 결과 행에서만 받는다(PG-4).
+- **차수의 원천을 다 대조했다**(PLAN §4.6 표). DynaForge `eng_meta.dev_revision{phase, round, code}` 와 개정 열쇠 `<과제 key>@<code>` — 꼴은
+  `pre · dv1 ~ dv3 · dvr · pv1 ~ pv3 · pvr · pra · mp`(`../KooRemapper/platform/backend/app/reports/datahub.py:35` · `:42-50`,
+  `…/modules/ontology/services.py:38-47`). AIDataHub `eng_meta.dev_revision` 이 같은 어휘다(`../AIDataHub/api_server/src/api/schemas/eng_meta.py:4-35`).
+  리스크 앱 `stage` 는 글이고 웹 폼만 느슨하게 검사하며 만든 뒤 고칠 길이 없다(`../HWAXRisk/frontend/src/pages/RiskHomePage.tsx:48` ·
+  `backend/app/mcp_server.py:227` · `backend/app/routes.py:1132-1135`). StepForge `cad_revisions.rev_label` · `supersedes` 는 CAD 데이터의 판이고 사람이 후보에서
+  고른다(`../StepForge/app/db.py:228-240` · `core/revisions.py:1-12`). ODB `revision` 은 사람 글이다. **SP 의 `plm_task` 에는 단계 · 차수 칸이 없다**(받은
+  어휘 0.4.67 — `../StepForge/external/StandardPlatform/pipeline/core/plm-core.json:34-91`). 대신 `plm_model.model_revision_kind` 의 한 값이 '차수'(`C2` 꼴)다
+  (`:165-180` · StepForge `core/revisions.py:29`). 입력 조사(kg-*.md)에는 SP 쪽 '차수' 가 없었다 — 소스를 읽어 더했다.
+- **'차수' 가 둘이라 짐작하지 않는다.** DynaForge 어휘가 'CAD 데이터의 판(`C2`)' 과 '개발 단계(`dv1`)' 를 다른 축으로 갈랐고(`dynaforge-core.json:13`) 어느
+  원천도 둘의 대응을 적지 않았다. 그래서 정본 꼴 하나 · 사소한 정규화(NFKC · 공백 · 소문자) · 글자 그대로 일치만 둔다. 무엇을 정본 꼴로 할지는 사용자
+  결정이다(§11-6 — 권장 개발 단계 코드. 우리 앱 셋이 같은 어휘이고 그 둘째 마디를 '차수' 라 부르며, 리스크 앱은 새 칸 없이 `stage` 를 쓴다). 차수를 모르는
+  카드를 '차수 모름' 칸에 둘지 잇지 않을지도 사용자 결정이다(§11-5 — 권장 '차수 모름' 칸. 과제 대상인 질문을 잃지 않고 어느 차수에도 섞지 않는다).
+- **원천이 없으면 사람이 시작 때 고른다** — 주제와 같다. MCP 는 호출자가 사람에게 묻도록 도구 설명에 적는다.
+- **Claude 길 다섯**(PLAN §4.7). (a) `deliberate_start(subject)` 는 M1 에 차수만 더한다. (b) 워크플로 `hwax-deliberate.js` 는 포털 대화 저장
+  (`infra/pipeline/hwax-deliberate.js:1170-1177`, 게이트웨이 `../HWAXMcpGateway/gateway.py:2280-2311` · `:2381-2412`, 포털 `ConvCreate` —
+  `backend/app/agent/routes.py:402-408`)에 `subject` · `chair_template` 두 칸을 더해 실어 오고, 포털이 그 저장에서 다시 풀어 들인다. 새 창구가 없고, 주인은
+  포털이 PAT 로 검증한 sub 다. 리스크 심사 계열은 워크플로가 주제를 싣지 않고 포털도 들이지 않는다(두 겹). (c) `hwax-risk-review.js` · `hwax-risk-claude.js`
+  와 (d) MCP 로 연 리스크 잡은 결과가 리스크 앱 원장에 들므로 리스크 과제가 (SP key, 차수)를 쥐면 된다. 가장 작은 변경은 리스크 앱 v6 의
+  `rr_projects.sp_task` 칸 하나 · `stage` 검사(§11-6 (가) 일 때) · ECAD 보드 붙이기와 같은 꼴의 쓰기 길 하나(`../HWAXRisk/backend/app/routes.py:2170-2251`) ·
+  읽기 도구의 거름이다(M2b). 칸 없이 읽을 때 기구 CAD 원천으로 풀면 ECAD · 해석만 붙은 과제를 못 풀고 읽을 때마다 과제 수만큼 StepForge 를 부르게 된다 —
+  칸 하나가 더 작다.
+  (e) 루틴은 세 번째 생산자로 나중이고, 주제는 실행 시작에 고른다.
+- **과제 대상이 아닌 질문은 잇지 않는다**(PLAN §3.4). 1판은 이것을 지키지 않았다 — 카드를 주제와 무관하게 단마다 지었고(1판 §3.2), 주제가 없으면 '주인의
+  초안' 으로 남겼으며(1판 §4.5), 끝에 닿은 설계 자료를 후보로 냈다(1판 §4.2 · M2). 2판은 엔진이 주제가 있는 단만 카드 거리를 짓고, 포털은 SP key 가 확인된
+  것만 카드로 세운다. 주장은 주인의 기다림 줄이고(카드가 아니다), 끝의 후보는 걷었다. PG-4 의 '끝의 짐작은 후보만' 은 이 결정으로 뒤집는다 — 후보를
+  내밀면 과제 대상이 아닌 질문이 사람 손 한 번에 과제에 잇히기 때문이다.
+- **단계** — M1 은 두 리포 그대로(차수 꼴 검사 · 고르기 칸만 더해 반나절), (b) 의 실어 오기와 들이기는 M2(워크플로 · 게이트웨이 · 포털), 리스크 앱 변경은
+  새 단계 M2b 로 뗐다. 가장 작은 첫걸음이 M1 인 것은 그대로다.
+- **바깥 물음** — 받은 편지함 2026-11-02 의 Q14 ~ Q18 에 실었다(이 박스 읽기 셋 · 사용자를 거쳐 SP 허브 팀 · ODB 허브 팀). Report Archive 는 묻지 않는다
+  (10-31 사용자 지시 — `docs/leftovers-1017/triage-1031.md:6`, 1판 §10 이 이 지시를 놓쳤다). MX 백서 물음은 M5 앞에 그 리포 세션에 낸다.
+
+**PG-16 D-18 곁가지 넷을 다시 확인했다(11-02, 읽기만) — 둘은 맞고 둘은 일부만 맞다, 고침은 사용자 결정 대기.** 확인은 서브에이전트가 리스크 앱 `d30bef6` ·
+엔진 `aadd591` · 포털 판에 대고 했고(그쪽이 돌린 시험 — 엔진 D-18 두 묶음 91개 · 리스크 앱 10개 — 은 통과라 적었다), 이 세션이 근거 줄을 다시 읽었다.
+(1) **일부만 맞다.** 브리프 E5 의 subject 경로(`../HWAXRisk/backend/app/brief.py:1355-1369`)와 E7(`:1858`)은 지금 대상만 빼는데 설계대로다 — 계획 §4.8 이
+앞 판의 클러스터를 재검증 대상으로 싣고(`docs/design-risk-review/plan.md:2021-2030`), D-18 을 낳은 권고는 '같은 타깃 … 도구로' 였다
+(`docs/risk-review-redesign/reference/spec-wp1-repairs.md:858` · `:1216`). 그런데 D-18 기록은 '같은 과제' 라 적었고(`docs/risk-review-redesign/context-notes.md:117`)
+엔진은 그 뜻으로 같은 과제의 보고서를 다 가린다(`../HWAXAgentServer/deliberation.py:1083-1105`) — 앱과 엔진의 범위가 다르다. (2) **맞다 — RK-01 을 켜면.** RA
+`risk_finding` 값이 과제 코드로 시작하고 상태를 싣는데(`../HWAXRisk/backend/app/ra_client.py:611-621` · `:719-722`) 엔진 거름은 `search_reports` 만 감싼다
+(`deliberation.py:5773-5774` · `:5847-5849`). 지금은 RK-01 이 꺼져 닿지 않는다. (3) **맞고 더 넓다.** 지정 도구 거절은 넷뿐이라(`:987` · `:5982`)
+`risk_get_precedents` 뿐 아니라 `risk_get_report` · `risk_get_issues` · `risk_get_expert_report` · `risk_get_cells` 도, RA 보고서 읽기도(자유 조회 묶음에서만
+빠진다 — `:5843`) 리스크 심사의 지정 도구로 통한다. (4) **일부만 맞다.** `hwax-deliberate.js` 는 좌석 도구를 막지 못하고(`infra/pipeline/hwax-deliberate.js:671-673`
+· `:631-632`) `hwax-risk-review.js` 의 '도구를 호출하지 말고' 는 지시뿐이다(`:75` · `:415`). `hwax-risk-claude.js` 는 엔진이 D-18 로 거른 좌석 목록 안에서만
+CALL 줄을 실행해 막힌다(`deliberation.py:6859` · `:4366`). 사용자 결정(PG-14 (3))은 D-18 범위를 그대로 두고 새 길을 열지 않는 것이라, 이 넷을 고치는 것은
+그 결정 밖이다 — 고칠지는 본 세션이 사용자에게 묻는다. 고친다면 가장 작은 고침은 PLAN §12 에 적었다(범위를 한 낱말로 · 온톨로지 셋 감싸기 · `risk_*` 지정
+도구 좁히기 · 워크플로 지시 한 줄). 이 계획의 새 리스크 앱 읽기 도구(M2b)는 (3) 의 고침이 정해지면 그 거름에 들고, 아니면 거절 목록에 이름으로 넣는다.
