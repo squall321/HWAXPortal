@@ -15,6 +15,8 @@ import { SeatBrowser } from './SeatBrowser';
 import { SubjectPicker } from './SubjectPicker';
 import { EMPTY_SUBJECT, candidatesFromConversation, subjectWire, type SubjectDraft } from './subject';
 import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
+import { OntoFirstPanel } from './OntoFirstPanel';
+import { EMPTY_ONTO, type OntoChoice } from './ontoEvidence';
 import { ClarifyPanel } from './ClarifyPanel';
 import { mergeEvidence, vocEvidence } from './vocEvidence';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, MODIFIERS, jobsByGroup, suggestJob, type JobId } from './delibTaxonomy';
@@ -29,7 +31,7 @@ const MIN_SEATS = 2;  // 서버 심의는 좌석 2명 이상 필요
 const MAX_SEATS = 20;
 
 export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
-  const { startHandoff, streaming } = useChat();
+  const { startHandoff, streaming, delibOpts } = useChat();
   const derived = useMemo(() => {
     const firstUser = conv.messages.find((m) => m.role === 'user');
     return (firstUser?.text ?? '').replace(/^\/(심의|deliberate|토의)\s*/, '').trim();
@@ -62,6 +64,10 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
   const [loading, setLoading] = useState(false);
   const [browsing, setBrowsing] = useState(false); // 전창 좌석 조직도
   const [voc, setVoc] = useState<VocChoice>({ used: false, picked: [], note: '' });
+  // '온톨로지 먼저 보기'(docs/ontology-first M4) — 주제 과제의 한 걸음 이웃 가운데 사람이 고른 것. 기준일 심의(오늘의 허브라 맞지 않는다)는 그리지 않는다 —
+  // 이 브리프에는 리스크 심사 · 봉인 입구가 없다(delibTaxonomy — 서버가 리스크 심사 계열 의장을 한 번 더 거절한다).
+  const [ontoPick, setOntoPick] = useState<OntoChoice>(EMPTY_ONTO);
+  const ontoOn = !delibOpts.as_of;
   // 심의 주제(docs/project-insight-graph M1) — 후보는 이 대화에서 그 사람이 부른 도구의 결과와 허브 과제 찾기에서만 온다.
   const [subject, setSubject] = useState<SubjectDraft>(EMPTY_SUBJECT);
   const subjectCands = useMemo(() => candidatesFromConversation(conv), [conv]);
@@ -87,8 +93,11 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
     // job 이 바뀌면 다시 뽑는다(무엇을 판단할지가 달라진다). history·derived 는 대화 고정.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job]);
-  // 원천 근거 = 고른 VOC(앞) + 대화 근거, 합쳐 포털 상한(EVID_ITEMS)까지 — 화면 수와 실제 실릴 수가 같아야 한다.
-  const vocEv = useMemo(() => vocEvidence(voc.picked), [voc.picked]);
+  // 원천 근거 = 사람이 고른 것(VOC · 온톨로지 — 앞) + 대화 근거, 합쳐 포털 상한(EVID_ITEMS)까지 — 화면 수와 실제 실릴 수가 같아야 한다.
+  const vocEv = useMemo(
+    () => [...vocEvidence(voc.picked), ...(ontoOn ? ontoPick.evidence : [])],
+    [voc.picked, ontoPick, ontoOn],
+  );
   const { droppedConv } = useMemo(() => mergeEvidence(vocEv, evidence), [vocEv, evidence]);
 
   // 화두로 추천 좌석 발굴(디바운스 + 취소) — AI 제안, 사용자 확정. 상위 N석 기본 선택.
@@ -446,10 +455,22 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
             <VocFirstPanel topic={topic} onChange={setVoc} />
           </div>
 
+          {ontoOn && (
+            <div className="cx-brief-field">
+              {/* 주제 과제가 바뀌면 다시 그린다 — 앞 과제에서 고른 행이 남지 않게 */}
+              <OntoFirstPanel
+                key={subject.spTask}
+                spTask={subject.spTask}
+                chair={JOB_ROUTING[job].chair}
+                onChange={setOntoPick}
+              />
+            </div>
+          )}
+
           <div className="cx-brief-field">
             <span>
               원천 근거 {Math.min(EVID_ITEMS, vocEv.length + evidence.length)}건
-              {vocEv.length > 0 && ` (고른 VOC ${vocEv.length} + 대화 ${evidence.length - droppedConv})`} — 검증 대상이지
+              {vocEv.length > 0 && ` (고른 VOC · 온톨로지 ${vocEv.length} + 대화 ${evidence.length - droppedConv})`} — 검증 대상이지
               결론이 아닙니다
               {droppedConv > 0 && ` · 대화 근거 ${droppedConv}건은 ${EVID_ITEMS}건 상한으로 빠집니다`}
             </span>

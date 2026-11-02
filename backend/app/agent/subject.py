@@ -12,6 +12,8 @@ from __future__ import annotations
 # delib_subject.RESOLVER_CALL 과 같은 이름이어야 한다 — 고르기 화면의 후보와 서버의 확인이 같은 풀이에서 온다(tests/test_subject_m1.py 가 견준다).
 RESOLVER_CALL = "heaxstep_forge_find_plm_task"
 SEARCH_LIMIT = 20
+# 확인에 부르는 행 수 — 에이전트 서버 delib_subject.RESOLVE_LIMIT 와 같다(심의 전 '온톨로지 먼저 보기' 가 닻을 확인할 때 — confirm_rows)
+CONFIRM_LIMIT = 50
 _ROW_TEXT_MAX = 200
 _STATES = ("confirmed", "claimed", "none")
 _ART_KINDS = ("mcad", "ecad", "cae")
@@ -37,6 +39,24 @@ def sp_rows(body: dict) -> dict:
     count = body.get("count")
     return {"rows": rows, "count": count if isinstance(count, int) else len(rows),
             **({"why": {"cause": _s(why.get("cause"), 40), "message": _s(why.get("message"), 400)}} if why else {})}
+
+
+def confirm_rows(body, key: str) -> tuple[bool, str]:
+    """풀이(find_plm_task — CONFIRM_LIMIT 행 · full) 답 + 주제 key → (확인인가, 아니면 까닭). 에이전트 서버 delib_subject.confirm 과 같은 규칙이다 —
+    결과 행 가운데 key 가 글자 그대로 같은 행이 하나이고 그 행이 활성일 때만 확인이다(부분 일치 · 과제코드 · 별칭으로 걸린 행은 key 가 다르다). 포털은
+    심의를 열기 전의 '온톨로지 먼저 보기'(docs/ontology-first M4)가 이것으로 닻을 고른다 — 심의를 열 때 에이전트 서버가 같은 풀이로 다시 확인한다
+    (tests/test_onto_preview.py 가 두 쪽 판정을 견준다). 까닭에는 결과 행의 key 를 싣지 않는다(에이전트 서버와 같은 까닭 — 좁은 근거가 넓은 자리로 간다)."""
+    tasks = body.get("tasks") if isinstance(body, dict) else None
+    rows = [r for r in tasks if isinstance(r, dict)] if isinstance(tasks, list) else []
+    exact = [r for r in rows if r.get("key") == key]
+    if len(exact) == 1 and exact[0].get("active") is False:
+        return False, "허브에서 비활성인 과제다 — 허브 과제 찾기로 지금 산 과제를 골라 그 key 로 단다"
+    if len(exact) == 1:
+        return True, ""
+    if exact:
+        return False, f"풀이 결과에 key 가 글자 그대로 같은 행이 {len(exact)}개다 — 고르지 않는다"
+    return False, (f"풀이 결과 {len(rows)}행 가운데 key 가 글자 그대로 같은 행이 없다 — 허브 과제 찾기로 고른 행의 key(운영 허브는 과제명 — 과제코드가 "
+                   "아니다)를 그대로 준다")
 
 
 def subject_of(raw) -> dict | None:

@@ -410,6 +410,74 @@ export async function fetchDeliberateVoc(
   }
 }
 
+// ── 심의 전 '온톨로지 먼저 보기'(docs/ontology-first M4) ─────────────────────────────────────────────
+/** 정본 허브 한 객체(SP ResolveHit 를 줄인 것) — 닻 · 후보. */
+export interface OntoHit {
+  id: string;
+  key: string | null;
+  label: string;
+  type: string;
+  status: string;
+  matched_by: string;
+}
+/** 닻과 바로 이어진 이웃 한 행 — line 은 포털이 줄인 글(타입 · key · 이름 · 관계(방향))이다. */
+export interface OntoRow {
+  id: string;
+  type: string;
+  type_label: string;
+  key: string | null;
+  label: string;
+  rel: string;
+  line: string;
+}
+export interface OntoCall {
+  tool: string;
+  args: Record<string, unknown>;
+}
+export interface OntoPreview {
+  /** ok(이웃 행) · unavailable(부를 수 없다) · unconfirmed(주제 과제를 확인 못 함) · candidates · none(허브가 없다고 말했다) · mismatch ·
+   *  error(호출 실패 · 답 꼴을 읽지 못함 — '없음' 이 아니라 '못 물어봄'). */
+  state: 'ok' | 'unavailable' | 'unconfirmed' | 'candidates' | 'none' | 'mismatch' | 'error';
+  why?: string;
+  note?: string;
+  notes?: string[];
+  sp_task?: string;
+  canonical?: { app: string; label: string };
+  calls?: { resolve?: OntoCall; neighbors?: OntoCall };
+  anchor?: OntoHit & { line: string };
+  candidates?: OntoHit[];
+  rows?: OntoRow[];
+  total?: number;
+  shown?: number;
+  hub_truncated?: boolean;
+}
+
+/** 그 사람의 PAT 로 정본 허브에서 주제 과제의 한 걸음 이웃을 본다. 서버가 주제 과제를 M1 과 같은 풀이로 다시 확인한다(여기 key 는 근거가 아니다). */
+export async function fetchOntoPreview(spTask: string, chairTemplate?: string, signal?: AbortSignal): Promise<OntoPreview> {
+  const csrf = getCookie('hwax_csrf');
+  try {
+    const res = await apiFetch('/agent/deliberate/onto-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify({ sp_task: spTask, ...(chairTemplate ? { chair_template: chairTemplate } : {}) }),
+      signal,
+    });
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const b = (await res.json()) as { detail?: unknown };
+        detail = typeof b.detail === 'string' ? b.detail : '';
+      } catch {
+        detail = '';
+      }
+      return { state: 'error', why: detail || `http_${res.status}` };
+    }
+    return (await res.json()) as OntoPreview;
+  } catch {
+    return { state: 'error', why: 'network' };
+  }
+}
+
 // ── 심의 주제 고르기 — 허브 과제 찾기(docs/project-insight-graph M1) ─────────────────────────────
 /** 허브 과제 한 행 — key 는 결과 행의 key 칸 그대로다. */
 export interface SubjectTaskRow {

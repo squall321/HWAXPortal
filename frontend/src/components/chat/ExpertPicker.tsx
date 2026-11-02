@@ -5,6 +5,9 @@ import { SeatBrowser } from './SeatBrowser';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
 import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
+import { OntoFirstPanel } from './OntoFirstPanel';
+import { EMPTY_ONTO, type OntoChoice } from './ontoEvidence';
+import type { HandoffEvidence } from './handoff';
 import { ClarifyPanel } from './ClarifyPanel';
 import { splitTopic } from './clarify';
 import { vocEvidence } from './vocEvidence';
@@ -18,7 +21,8 @@ export interface Persona {
 }
 
 export interface DelibExtra {
-  evidence?: ReturnType<typeof vocEvidence>;
+  /** 사람이 고른 원천 — VOC 먼저 보기(앞) · 온톨로지 먼저 보기(호출 하나에 한 항목). */
+  evidence?: HandoffEvidence[];
   human_note?: string;
   voc?: 'off';
 }
@@ -35,6 +39,8 @@ interface ExpertPickerProps {
   job?: string;
   /** 되묻기로 보강된 화두 — 부모가 전문가를 다시 찾는다. 없으면 되묻기를 안 그린다. */
   onAugment?: (topic: string) => void;
+  /** '온톨로지 먼저 보기'(docs/ontology-first M4) — 심의 주제의 과제 key 와 의장 틀. 없으면 패널을 그리지 않는다(기준일 심의 — 부모가 가른다). */
+  onto?: { spTask: string; chair?: string };
 }
 
 const MIN_EXPERTS = 2; // 서버 심의는 전문가 2명 이상 필요
@@ -60,7 +66,7 @@ interface AddRow {
   rank: number;
 }
 
-export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job, onAugment }: ExpertPickerProps) {
+export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job, onAugment, onto }: ExpertPickerProps) {
   // 선택 집합 — key → persona. 관련도순 상위 autoCount 명을 기본 선택으로 시딩한다.
   const [chosen, setChosen] = useState<Record<string, Persona>>({});
   const [autoCount, setAutoCount] = useState(DEFAULT_COUNT);
@@ -73,6 +79,9 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
   const [toolArea, setToolArea] = useState<string | null>(null);   // 영역(하는 일) 필터(1단)
   const [browsing, setBrowsing] = useState(false);  // 전창 좌석 조직도
   const [voc, setVoc] = useState<VocChoice>({ used: false, picked: [], note: '' });
+  const [ontoPick, setOntoPick] = useState<OntoChoice>(EMPTY_ONTO);
+  // 패널을 그리지 않으면(주제 없음 · 기준일) 앞서 고른 것도 싣지 않는다
+  const ontoEv = onto ? ontoPick.evidence : [];
   const seededRef = useRef(false);
 
   // 관련도순 랭킹 — candidates(≈40) 우선, 없으면 recommended 폴백.
@@ -267,6 +276,13 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
           <section className="cx-ep-sec">
             <VocFirstPanel topic={topic} onChange={setVoc} />
           </section>
+
+          {onto && (
+            <section className="cx-ep-sec">
+              {/* 주제 과제가 바뀌면 다시 그린다 — 앞 과제에서 고른 행이 남지 않게 */}
+              <OntoFirstPanel key={onto.spTask} spTask={onto.spTask} chair={onto.chair} onChange={setOntoPick} />
+            </section>
+          )}
 
           <section className="cx-ep-sec">
             <h3 className="cx-ep-sec-title">
@@ -556,7 +572,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
               disabled={!enough}
               onClick={() =>
                 onConfirm(chosenList, [...toolSel], [...appSel], {
-                  ...(voc.picked.length ? { evidence: vocEvidence(voc.picked) } : {}),
+                  ...(voc.picked.length || ontoEv.length ? { evidence: [...vocEvidence(voc.picked), ...ontoEv] } : {}),
                   ...(voc.note ? { human_note: voc.note } : {}),
                   ...(voc.used ? { voc: 'off' as const } : {}),
                 })
@@ -564,7 +580,8 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
               title={enough ? '선정한 전문가·도구로 심의를 시작합니다' : `전문가를 ${MIN_EXPERTS}명 이상 선정하세요`}
             >
               심의 시작 ({chosenList.length}명{toolSel.size > 0 ? ` · 도구 ${toolSel.size}` : ''}
-              {voc.picked.length > 0 ? ` · VOC ${voc.picked.length}` : ''})
+              {voc.picked.length > 0 ? ` · VOC ${voc.picked.length}` : ''}
+              {ontoEv.length > 0 ? ` · 온톨로지 ${ontoPick.rows + (ontoPick.anchor ? 1 : 0)}` : ''})
             </button>
           </div>
           {!enough && <p className="cx-ep-hint">전문가를 {MIN_EXPERTS}명 이상 선정해야 심의를 시작할 수 있습니다.</p>}
