@@ -183,18 +183,30 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
   에이전트 `delib_subject.norm_round` 와 같은 규칙, 시험이 견준다). 과제 만들기(`POST /projects` · `risk_create_project`)의 `stage` 는 종전대로 글이다 —
   거르면 리스크 앱 웹 폼의 `dv` · `pre1` 이 422 가 된다(PG-33). 코드로 적는 길은 아래 쓰기다.
 - **쓰기** — `PUT /api/projects/{id}/sp-subject {sp_task: str | null, round?: str | null}` 와 같은 함수의 MCP `risk_set_project_subject(project_id,
-  sp_task, round?)`. 과제 주인 · 편집자만. `sp_task` 는 리스크 앱이 **그 사람의 포털 PAT**(ECAD 보드 붙이기와 같은 `_ecad_mcp_channel` 자격 — 없으면
-  409)로 게이트웨이 별칭 `heaxstep_forge_find_plm_task({query: sp_task, limit: 50, full: true})` 를 스스로 불러, 결과 행 가운데 `key` 가 글자 그대로
-  같고 `active` 가 거짓이 아닌 행이 꼭 하나일 때만 적는다(에이전트 `delib_subject.confirm` 과 같은 규칙 — 아니면 422 `sp_task_not_confirmed` 와
-  까닭, 결과 행의 key 는 싣지 않는다). `null` 은 뗀다. `round` 는 정규화해 열한 코드면 `stage` 에 코드로 적고, 꼴이 아니면 422, 빼면 `stage` 는 그대로다.
-  바뀌면 감사 한 줄 `project.sp_subject`(before · after · 풀이 지문 `{tool, at, sha256}`). 일반 PATCH 칸에는 넣지 않는다. `GET /api/projects/{id}/sp-subject`
-  는 지금 값과 후보 힌트(붙은 기구 CAD 원천의 `get_project_meta.plm_task` — 확인이 아니라 보일 후보)를 준다.
-- **읽기** — MCP `risk_find_projects_by_subject(sp_task?, round?, artifact_kind?, artifact_id?, limit?)`. 부른 사람이 MCP 로 볼 수 있는 과제
-  (`visible_projects(caller)` — 소유 ∪ 구성원 ∪ 조직 공개)만, `sp_task` 글자 그대로(줄 때) · 차수 정확히(`unknown` 은 차수 모름만) · 설계 자료
-  열쇠(`rr_sources.ref_json` — mcad 는 `stepforge_project_id`, ecad 는 `odb_job_id`, cae 는 `dyna_result` 의 `report_ids[]`). 인자를 다 비우면 `sp_task` 가 있는 보이는 과제 전부.
-  답 — `{caller: user|service, projects: [{project_id, code, name, stage, round, sp_task, my_role, mcp_visibility, classification, targets: [{target_key,
-  kind, level, verdict_candidate, verdict_final, created_at}], registry_top: [...], registry_total}], truncated}`. 등록부 행은 같은 사람이
-  `risk_get_registry` 로 받는 행과 같은 판정(시야 · 행 공개)을 지난다. 리스크 앱의 상태 낱말 · `stale_json` 은 번역하지 않는다.
+  sp_task, round?)`. 과제 주인 · 편집자만(관리자는 편집자 — 쓰기 문 `_project_writer`, 보기 역할은 403 · 남 · 없는 과제는 같은 404 · 폐기된 과제는 409
+  `project_purged`). ECAD 보드 붙이기는 주인만인데 이 칸은 계약대로 편집자에게도 열었다 — 풀이는 편집자 **자신의** PAT 로 돈다. `sp_task` 는 리스크 앱이
+  **그 사람의 등록된 포털 PAT**(ECAD 보드 붙이기와 같은 자격 — 판정을 `_person_pat` 하나로 뗐다, 박스 PAT 로 내려가지 않는다 · 없으면 409 `sp_pat_absent`
+  이고 게이트웨이에 아무것도 보내지 않는다)로 게이트웨이 별칭 `heaxstep_forge_find_plm_task({query: sp_task, limit: 50, full: true})` 를 스스로 불러(기한 20초),
+  결과 행 `tasks[]` 가운데 `key` 가 글자 그대로 같고 `active` 가 거짓이 아닌 행이 꼭 하나일 때만 적는다(에이전트 `delib_subject.confirm` 과 같은 규칙 —
+  같은 key 가 둘이면 하나가 비활성이어도 고르지 않는다 · 아니면 422 `sp_task_not_confirmed` 와 까닭, 결과 행의 key 는 싣지 않는다). `null` 은 풀이 없이
+  뗀다 · 빈 글은 422 `E100`. `round` 는 정규화해 열한 코드면 `stage` 에 코드로 적고, 꼴이 아니면 422 `round_invalid`(`detail.allowed` — 풀이 전), 빼면
+  `stage` 는 그대로다. 답 — `{ok, project_id, sp_task, stage, round, changed, previous: {sp_task, stage}, resolved_by: {tool, at, sha256} | null}`(MCP 는
+  `web` 이 붙고, 위임 신원이 없으면 `delegation_required`). 바뀌었을 때만 감사 한 줄 `project.sp_subject`(앞 · 뒤 · 풀이 지문). 지문 `sha256` 은 구조화된
+  답을 키 정렬한 JSON 의 해시라 에이전트의 `sp_resolved_by.sha256`(원문 글의 해시)과 같은 값이 아니다. 일반 PATCH 칸에는 넣지 않는다.
+  `GET /api/projects/{id}/sp-subject` → `{project_id, sp_task, stage, round, hint: {sp_task, label, active, why, stepforge_project_id, tool} | null,
+  hint_note}` — 힌트는 붙은 기구 CAD 원천의 `<앱 키>_get_project_meta.plm_task` 를 부른 사람의 PAT 로 읽은 보일 후보(확인이 아니다)이고, 못 읽으면 실패하지
+  않고 `hint_note` 에 까닭이다. 구성원(보기 이상) · 관리자가 읽는다.
+- **읽기** — MCP `risk_find_projects_by_subject(sp_task?, round?, artifact_kind?, artifact_id?, limit = 20(1 ~ 50), offset = 0)`. 부른 사람이 MCP 로 볼 수
+  있는 과제(`visible_projects(caller)` — 소유 ∪ 구성원 ∪ 조직 공개, 위임 신원이 없으면 service 로 조직 공개만)에서 폐기된 과제를 빼고, `sp_task` 글자 그대로
+  (앞뒤 공백만 뗀다) · 차수 정확히(`unknown` 은 차수 모름만 · 꼴이 아니면 422 `round_invalid`) · 설계 자료 열쇠(과제 주인의 `rr_sources.ref_json` —
+  mcad 는 `stepforge_project_id`, ecad 는 `odb_job_id`, cae 는 `dyna_result` 의 `report_ids[]`, 대소문자 무시, 종류와 열쇠는 함께)로 거른다. `sp_task` 도
+  설계 자료도 없으면(차수만 줄 때 포함) `sp_task` 가 있는 과제만이고, 설계 자료로 찾을 때는 `sp_task` 가 없는 과제도 든다. 답 — `{caller: user|service,
+  projects: [{project_id, code, name, stage, round, sp_task, my_role, mcp_visibility, classification, targets: [{target_key, kind, level, verdict_candidate,
+  verdict_final, created_at}], registry_top: [...5행까지], registry_total}], total, truncated, next_offset?}`. 대상은 과제 주인의 대체되지 않은 대상이다.
+  등록부 행은 같은 사람이 `risk_get_registry` 로 받는 행과 같은 문(`mcp_scope_owner` → `registry_payload` — 시야 · 행 공개)을 지나 주의 등급 → 우선순위 →
+  지지 영역 · 전문가 수 → 키 차례로 세운 앞 다섯이다. 리스크 앱의 상태 낱말 · `stale_json` 은 번역하지 않는다. 답이 MCP 결과 상한(약 2만 5천 자)을 넘으면
+  과제 수를 줄이고 `truncated` · `next_offset` 으로 나눈다(자르지 않는다 — 계약에 `offset` · `total` · `next_offset` 을 더했다).
 - **좌석에는 싣지 않는다** — `sp_task` 는 브리프 · 스냅샷 · 비교 · 패널 질문에 들지 않는다(D-18 — 리스크 앱 안의 칸이다).
-- **포털 과제 보기** — 읽는 사람의 PAT 로 게이트웨이 별칭 `heaxhwax_risk_risk_find_projects_by_subject` 를 불러 (과제, 차수) 칸에 싣는다. 리스크 권한이
-  없거나 불통이면 그 칸에 까닭을 보이고 일반 심의 카드는 그대로 보인다.
+- **포털 과제 보기** — 읽는 사람의 PAT 로 게이트웨이 별칭 `heaxhwax_risk_risk_find_projects_by_subject` 를 불러(쪽마다 50, `next_offset` 을 따라 네 쪽까지 —
+  더 남으면 '앞 N개만 실었다' 고 말한다) (과제, 차수) 칸에 싣는다. 리스크 권한(`plat:risk`)이 없거나 불통이면 그 칸에 까닭을 보이고 일반 심의 카드는
+  그대로 보인다.

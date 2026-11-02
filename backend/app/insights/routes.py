@@ -33,6 +33,7 @@ NOTE = "앞선 인사이트 — 검증 대상이고 독립 근거가 아니다. 
 RISK_TOOL = "heaxhwax_risk_risk_find_projects_by_subject"
 RISK_PLAT = "plat:risk"
 RISK_TIMEOUT_S = 30.0
+RISK_PAGES_MAX = 4  # 한 화면이 리스크 앱을 이어 부르는 쪽 수 상한(쪽마다 50 과제) — 넘으면 앞쪽만 실었다고 말한다
 FIND_MAX, ADMIN_AUDIT_IDS = 50, 50
 
 
@@ -129,15 +130,29 @@ async def _risk_rows(request: Request, settings: Settings, principal: Principal,
     if not pat:
         return [], "사람 자격(PAT)을 만들지 못해 리스크 앱을 읽지 못했다"
     from app.agent import upload as _upload
-    try:
-        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, RISK_TOOL, args, timeout=RISK_TIMEOUT_S)
-    except AuthError as exc:
-        return [], f"리스크 앱을 읽지 못했다 — {str(exc.message)[:200]}"
-    except Exception as exc:  # noqa: BLE001 — 게이트웨이 불통 · 기한 — 일반 심의 카드는 그대로 보인다
-        return [], f"리스크 앱을 읽지 못했다({type(exc).__name__})"
-    projects = [p for p in (out.get("projects") or []) if isinstance(p, dict)]
-    why = ("리스크 앱이 이 사람을 알아보지 못해(service) 조직 공개 과제만 보였다" if out.get("caller") == "service" else "")
-    return projects, why
+    projects: list[dict] = []
+    notes: list[str] = []
+    page = dict(args)
+    for _ in range(RISK_PAGES_MAX):
+        try:
+            out = await _upload.mcp_call(settings.mcp_gateway_url, pat, RISK_TOOL, page, timeout=RISK_TIMEOUT_S)
+        except AuthError as exc:
+            return projects, " · ".join([*notes, f"리스크 앱을 읽지 못했다 — {str(exc.message)[:200]}"])
+        except Exception as exc:  # noqa: BLE001 — 게이트웨이 불통 · 기한 — 일반 심의 카드는 그대로 보인다
+            return projects, " · ".join([*notes, f"리스크 앱을 읽지 못했다({type(exc).__name__})"])
+        projects += [p for p in (out.get("projects") or []) if isinstance(p, dict)]
+        if out.get("caller") == "service" and not notes:
+            notes.append("리스크 앱이 이 사람을 알아보지 못해(service) 조직 공개 과제만 보였다")
+        if not out.get("truncated"):
+            break
+        nxt = out.get("next_offset")
+        if isinstance(nxt, bool) or not isinstance(nxt, int) or nxt <= int(page.get("offset") or 0):
+            notes.append(f"리스크 앱 답이 남았다는데 다음 쪽이 없어 앞 {len(projects)}개 과제만 실었다")
+            break
+        page = {**args, "offset": nxt}
+    else:
+        notes.append(f"리스크 앱 과제가 많아 앞 {len(projects)}개만 실었다")
+    return projects, " · ".join(notes)
 
 
 def _seen_with_continues(st, rows: list[dict], v: C.Viewer, extra=()) -> set:

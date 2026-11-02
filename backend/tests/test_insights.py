@@ -508,6 +508,35 @@ def test_리스크_행은_읽는_사람의_PAT_로_리스크_앱에서_같은_�
     assert "리스크 앱을 읽지 못했다" in body["risk_error"] and body["rounds"][0]["cards"], "일반 심의 카드는 그대로 보인다"
 
 
+def test_리스크_앱_답이_남으면_다음_쪽을_이어_받고_상한에서_멈추면_말한다(env, monkeypatch):
+    """리스크 앱은 결과 상한(약 2만 5천 자)에서 과제 수를 줄이고 truncated · next_offset 으로 나눈다 — 첫 쪽만 싣고 조용히 끝내지 않는다."""
+    c, st, _s = env
+    calls = []
+
+    def pager(nxt_of):
+        async def fake_mcp(url, pat, tool, args, timeout=0):
+            calls.append(dict(args))
+            off = int(args.get("offset") or 0)
+            nxt = nxt_of(off)
+            return {"caller": "user", "projects": [{"project_id": f"p{off}", "sp_task": f"과제 {off}", "stage": "dv1"}],
+                    "total": 9, "truncated": nxt is not None, **({} if nxt is None else {"next_offset": nxt})}
+        return fake_mcp
+    from app.agent import upload as _upload
+    _login(c, "me@example.com")
+    monkeypatch.setattr(_upload, "mcp_call", pager(lambda off: off + 1 if off < 2 else None))
+    body = c.get("/insights-api/projects").json()
+    assert [a.get("offset") for a in calls] == [None, 1, 2] and "risk_error" not in body
+    assert sorted(p["sp_task"] for p in body["projects"]) == ["과제 0", "과제 1", "과제 2"]
+    calls.clear()
+    monkeypatch.setattr(_upload, "mcp_call", pager(lambda off: off + 1))
+    body = c.get("/insights-api/projects").json()
+    assert len(calls) == IR.RISK_PAGES_MAX and f"앞 {IR.RISK_PAGES_MAX}개만" in body["risk_error"]
+    calls.clear()
+    monkeypatch.setattr(_upload, "mcp_call", pager(lambda off: off))
+    body = c.get("/insights-api/projects").json()
+    assert len(calls) == 1 and "다음 쪽이 없어 앞 1개" in body["risk_error"], "제자리 next_offset 은 돌지 않고 말한다"
+
+
 # ── Claude 워크플로 — 대화 저장 뒤 ─────────────────────────────────────────────────────────────────────────
 WF_DEC = "결정 — 보강한다.\n\n---\n\n■ 쉬운 설명\n### 한마디로\n리브를 보강하라는 결정이다\n### 왜 그런가\n- 응력"
 
