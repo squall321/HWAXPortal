@@ -106,6 +106,7 @@ services:
   # 포트는 HEAXHub 앱 포트 풀(9100~9999) 밖이다(docs/PORT-MAP.md). expect: 200 — 수집기 /health 는 주기가 돌면 200, 멈췄으면 503 이다.
   - name: llm-status
     host: local
+    watch: true                 # 죽으면(포트 연결 거부 세 번) 감시 services.py heal 이 down · up — if_env 라 LLM_STATUS 를 켠 박스만(docs/ops-dashboard OD-38)
     dir: .
     if_env: LLM_STATUS
     update: false

@@ -104,6 +104,32 @@ def test_watch_가_없거나_update_all_이_돌면_건너뛴다(heal, monkeypatc
 def test_매니페스트의_감시_대상():
     m = _mod()
     watched = {s["name"] for s in m.load() if s.get("watch")}
-    assert watched == {"portal", "mcp-gateway", "agent-server", "mxwp-mcp", "searxng"}, watched
+    assert watched == {"portal", "mcp-gateway", "agent-server", "mxwp-mcp", "searxng", "llm-status"}, watched
     portal = next(s for s in m.load() if s["name"] == "portal")
     assert "instance stop" in portal.get("stop", ""), "포털은 인스턴스만 남고 앱이 죽는다 — down 이 인스턴스를 내려야 up 이 새로 띄운다"
+
+
+def test_llm_status_감시는_LLM_STATUS_를_켠_박스에서만이다(tmp_path, monkeypatch):
+    """llm-status 는 기본 꺼짐(if_env: LLM_STATUS)이다. 감시는 enabled_here 를 거치므로 끈 박스에서는 그 포트가 죽어 있어도 띄우지 않고(꺼진 것은
+    꺼진 채로), 켠 박스에서는 죽은 수집기를 다음 update-all 전에 다시 띄운다(반대 검토 11-02 INFO · docs/ops-dashboard OD-38)."""
+    m = _mod()
+    entry = next(s for s in m.load() if s["name"] == "llm-status")
+    assert entry.get("watch") is True and entry.get("if_env") == "LLM_STATUS"
+    port = _closed_port()
+    (tmp_path / "infra").mkdir()
+    monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path)
+    for k in ("LLM_STATUS", "LLM_STATUS_PORT"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(m, "WATCH_STATE", tmp_path / "watchdog")
+    monkeypatch.setattr(m, "WATCH_RECHECK_S", 0)
+    monkeypatch.setattr(m, "_update_all_running", lambda: False)
+    calls = []
+    monkeypatch.setattr(m, "cmd_down", lambda names: calls.append(("down", *names)) or 0)
+    monkeypatch.setattr(m, "cmd_up", lambda names: calls.append(("up", *names)) or 0)
+    monkeypatch.setattr(m, "load", lambda: [entry])
+    (tmp_path / "infra/.env").write_text(f"LLM_STATUS_PORT={port}\n")
+    assert m.health_url(entry) == f"http://127.0.0.1:{port}/health"
+    assert m.cmd_heal([]) == 0 and calls == [], "끈 박스 — 그 포트가 죽어 있어도 띄우지 않는다"
+    (tmp_path / "infra/.env").write_text(f"LLM_STATUS=1\nLLM_STATUS_PORT={port}\n")
+    m.cmd_heal([])
+    assert calls == [("down", "llm-status"), ("up", "llm-status")], "켠 박스 — 죽은 수집기를 다시 띄운다"
