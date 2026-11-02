@@ -2214,6 +2214,29 @@ body.dock-open .page-wide {
 .cx-brief-cancel:hover { color: var(--fg); }
 .cx-brief-go { background: var(--cx-accent); color: #0f1115; font-weight: 600; border-color: var(--cx-accent); }
 .cx-brief-go:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 심의 주제 고르기(docs/project-insight-graph M1) — 심의 시작 화면 · 심의 브리프가 같은 부품을 쓴다. 색은 위 브리프와 같은 토큰이다. */
+.cx-subj { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.cx-subj-label { font-size: 12px; color: var(--muted); }
+.cx-subj-rows { max-height: 200px; }
+.cx-subj-search { display: flex; gap: 6px; align-items: center; }
+.cx-subj-search .cx-brief-seatsearch { margin-top: 0; flex: 1; min-width: 0; }
+.cx-subj-go {
+  flex: 0 0 auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+  background: none; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer;
+}
+.cx-subj-go:disabled { opacity: 0.5; cursor: not-allowed; }
+.cx-subj-more { display: flex; flex-direction: column; gap: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
+.cx-subj-field { display: flex; flex-direction: column; gap: 4px; }
+.cx-subj-field > span { font-size: 12px; color: var(--muted); }
+.cx-subj-field select {
+  width: 100%; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--fg); font: inherit; font-size: 13px; padding: 6px 9px;
+}
+.cx-subj-field .cx-brief-seatsearch { margin-top: 0; }
+.cx-subj-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+/* 심의 칸의 주제 줄 — 서버가 확인한 주제(DelibView) */
+.dv-subject { margin: 4px 0 8px; font-size: 12px; color: var(--muted); }
+.dv-subject b { color: var(--fg); font-weight: 600; }
 
 /* 심의 브리프 2층 메뉴 — 추천 배너 · Job(1층) · 얹을 층(2층). delibTaxonomy 와 정합 */
 .cx-brief-rec {

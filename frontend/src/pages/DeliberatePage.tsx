@@ -1,5 +1,5 @@
 // 심의 전용 페이지 — 화두를 던지면 전문가 다중 라운드 심의(불량 화두면 SignalForge 환기 선행), 이력은 챗과 분리
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useChat } from '../state/ChatContext';
 import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
@@ -8,6 +8,8 @@ import { DelibOptsPanel } from '../components/chat/DelibOptsPanel';
 import { ExpertPicker, type DelibExtra, type Persona } from '../components/chat/ExpertPicker';
 import { ExportBar } from '../components/chat/ExportBar';
 import { MessageList } from '../components/chat/MessageList';
+import { SubjectPicker } from '../components/chat/SubjectPicker';
+import { EMPTY_SUBJECT, candidatesFromConversation, subjectWire, type SubjectDraft } from '../components/chat/subject';
 import { IconFile, IconPanel, IconPencil, IconPlus, IconSpark } from '../components/chat/icons';
 import { fetchDeliberateExperts, type ExpertsResponse } from '../api/chat.api';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, jobsByGroup, type JobId } from '../components/chat/delibTaxonomy';
@@ -68,7 +70,7 @@ const RA_SAVE_PROMPT = '/보고서';
 const RA_TIDY_PROMPT = '/보고서 정리';
 
 export default function DeliberatePage() {
-  const { messages, activeId, setInput, newConversation, sendMessage, streaming } = useChat();
+  const { messages, activeId, activeConversation, setInput, newConversation, sendMessage, streaming } = useChat();
   const composerRef = useRef<ComposerHandle>(null);
   const threadRef = useRef<HTMLDivElement>(null); // 내보내기(HTML)가 캡처할 렌더 루트
   // 데스크톱은 저장된 선호를 따르고, 좁은 화면은 오버레이라 기본 닫힘.
@@ -77,6 +79,9 @@ export default function DeliberatePage() {
   const [picking, setPicking] = useState<{ topic: string; experts: ExpertsResponse | null } | null>(null);
   const [job, setJob] = useState<JobId>('default');
   const [mods, setMods] = useState<Set<string>>(new Set());
+  // 심의 주제(docs/project-insight-graph M1) — 후보는 그 사람의 도구 결과(이 대화 · 허브 과제 찾기)에서만. 고르지 않으면 주제 없이 돈다.
+  const [subject, setSubject] = useState<SubjectDraft>(EMPTY_SUBJECT);
+  const subjectCands = useMemo(() => candidatesFromConversation(activeConversation), [activeConversation]);
   const toggleMod = (id: string) =>
     setMods((s) => {
       const n = new Set(s);
@@ -102,8 +107,12 @@ export default function DeliberatePage() {
     setPicking(null);
     if (!topic) return;
     const route = JOB_ROUTING[job];
+    const subjectOpt = subjectWire(subject);
+    setSubject(EMPTY_SUBJECT);
     sendMessage(route.trigger + topic, {
       personas: personas.map((p) => ({ key: p.key, role: p.role })),
+      // 심의 주제 — 서버가 같은 풀이로 다시 확인한다(브라우저 값은 근거가 아니다). 고르지 않았으면 싣지 않는다.
+      ...(subjectOpt ? { subject: subjectOpt } : {}),
       ...(route.chair ? { chair_template: route.chair } : {}),
       ...(route.opts ?? {}),
       ...(mods.size ? { modifiers: [...mods] } : {}),
@@ -114,7 +123,7 @@ export default function DeliberatePage() {
       ...(extra?.human_note ? { human_note: extra.human_note } : {}),
       ...(extra?.voc ? { voc: extra.voc } : {}),
     });
-  }, [picking, sendMessage, job, mods]);
+  }, [picking, sendMessage, job, mods, subject]);
 
   const cancelPicking = useCallback(() => {
     const topic = picking?.topic ?? '';
@@ -181,6 +190,7 @@ export default function DeliberatePage() {
           <div className={`cx-hero${picking ? ' cx-hero--picking' : ''}`} key={activeId ?? 'new'}>
             {picking ? (
               <div className="cx-hero-inner">
+                <SubjectPicker candidates={subjectCands} value={subject} onChange={setSubject} />
                 <ExpertPicker
                   // 되묻기로 화두가 바뀌면 다시 마운트 — 새 추천으로 좌석을 다시 시딩한다.
                   key={picking.topic}

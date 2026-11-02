@@ -102,6 +102,21 @@ export interface DelibData {
    *  kind=checkpoint)나 결정문 뒤에 온 단 사건(stage · personas · turn)으로 서고 그 단의 결정문에서 내린다(서버 사본 meta.delib_next_stage).
    *  보이는 결정문은 앞 단의 것이고 심의는 끝나지 않았다 — 받기가 끊긴 칸에 '멈춤' 이 남는다. 한 단 심의는 서지 않는다(결정문이 끝이다). */
   nextStage?: boolean;
+  /** 심의 주제 — 에이전트 서버가 확인한 것(SSE delib kind=subject · 서버 사본 답 meta.subject, docs/project-insight-graph M1). 없으면 주제 없이 돈
+   *  심의다(어느 과제에도 잇지 않는다). 브라우저가 보낸 값은 여기 들지 않는다. */
+  subject?: DelibSubject;
+}
+/** 서버가 확인한 심의 주제(HWAXAgentServer delib_subject — confirmed 확인 · claimed 주장 · none 없음). 과제는 SP 허브 plm_task key, 차수는 개발
+ *  단계 코드(모르면 null — '차수 모름'). */
+export interface DelibSubject {
+  sp_task: string | null;
+  sp_state: 'confirmed' | 'claimed' | 'none';
+  sp_resolved_by?: { tool?: string; app?: string; at?: number; sha256?: string } | null;
+  sp_why?: string;
+  round: string | null;
+  round_by?: string | null;
+  text: string;
+  artifacts: { kind: 'mcad' | 'ecad' | 'cae'; id: string; app?: string; rev?: string }[];
 }
 // 심의 손잡이(웹 토글) — 켠 것만 서버로 전송, 나머지는 agent-server env 기본값. GLM 리뷰 §5.
 // 불리언=0/1 플래그, chair_bestof=의장 후보 수(1=끔), timeout_s=호출당 타임아웃(초·미지정=기본).
@@ -197,7 +212,7 @@ export interface ThinkEvent {
 
 // SSE `delib` 이벤트 payload — kind 별로 위 필드의 부분집합이 실려온다.
 export interface DelibEvent {
-  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome' | 'cancelled' | 'finishing' | 'checkpoint';
+  kind: 'stage' | 'evidence' | 'personas' | 'turn' | 'decision' | 'plain' | 'outcome' | 'cancelled' | 'finishing' | 'checkpoint' | 'subject';
   [k: string]: unknown;
 }
 

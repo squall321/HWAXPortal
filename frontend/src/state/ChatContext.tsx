@@ -27,6 +27,7 @@ import { useCan } from '../auth/useCan';
 import type { ActivityItem, AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { isRoutineTerminal, mergeRoutine } from '../components/chat/routine';
+import { subjectFromPrior } from '../components/chat/subject';
 import { ROUTINE_STOPPED_BEFORE_RUN, delibMayStillRun } from '../lib/chatErrors';
 import { docsAsEvidence, type AttachedDoc } from '../components/chat/docAttach';
 import type { AttachedImage } from '../components/chat/imageAttach';
@@ -286,6 +287,10 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
     case 'finishing':
       // 의장이 결정문을 냈다 — 그 단의 결정문까지는 마무리(요약 · 쉬운 설명 · Report Archive 저장)라 에이전트가 멈추지 않는다(409 finishing).
       d.finishing = true;
+      break;
+    case 'subject':
+      // 에이전트 서버가 확인한 심의 주제(docs/project-insight-graph M1) — 브라우저가 보낸 값이 아니라 서버가 다시 푼 결과다. 꼴이 아니면 두지 않는다.
+      if (e.subject && typeof e.subject === 'object' && !Array.isArray(e.subject)) d.subject = e.subject as DelibData['subject'];
       break;
   }
   return d;
@@ -1226,9 +1231,13 @@ export function ChatProvider({
       // 요약 문장에 살아남은 것만 넘어가면 나머지는 사라지고, 다음 회차는 같은 걸 다시
       // 조회하거나 못 하면 기억으로 말한다. 기존 evidence 채널을 쓴다(계약 변경 없음).
       const gathered = priorGatheredEvidence(prior.evidence);
+      // 심의 주제 — 앞 회차에서 서버가 확인한 주제의 받는 칸 넷을 다시 싣는다(MCP 이어하기가 앞 잡의 주제를 물려받는 것과 같다 —
+      // docs/project-insight-graph M1). 서버가 같은 풀이로 다시 확인한다. 앞 회차에 주제가 없었으면 싣지 않는다.
+      const priorSubject = subjectFromPrior(prior.subject);
       sendMessage('/심의 ' + topic, {
         human_note: note,
         ...(gathered.length ? { evidence: gathered } : {}),
+        ...(priorSubject ? { subject: priorSubject } : {}),
         // 결정문 전문 + 쟁점(뒤). 좌석에 싣는 길이는 엔진이 정하고(머리부터 — 결정문이 우선이다) 줄였으면 카드로 알린다.
         // 종전엔 여기서 8,000자로 잘라 보내 결정문 뒤쪽((5)뒤집힘·(7)신뢰도·risk_spec)이 말없이 빠졌다.
         continue_summary: (prior.decision ?? '') + priorIssueBlock(prior.turns),

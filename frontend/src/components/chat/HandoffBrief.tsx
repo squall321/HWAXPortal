@@ -12,6 +12,8 @@ import type { Conversation } from '../../types/chat';
 import { conversationEvidence, EVID_ITEMS } from './handoff';
 import { buildHistory } from './history';
 import { SeatBrowser } from './SeatBrowser';
+import { SubjectPicker } from './SubjectPicker';
+import { EMPTY_SUBJECT, candidatesFromConversation, subjectWire, type SubjectDraft } from './subject';
 import { VocFirstPanel, type VocChoice } from './VocFirstPanel';
 import { ClarifyPanel } from './ClarifyPanel';
 import { mergeEvidence, vocEvidence } from './vocEvidence';
@@ -60,6 +62,9 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
   const [loading, setLoading] = useState(false);
   const [browsing, setBrowsing] = useState(false); // 전창 좌석 조직도
   const [voc, setVoc] = useState<VocChoice>({ used: false, picked: [], note: '' });
+  // 심의 주제(docs/project-insight-graph M1) — 후보는 이 대화에서 그 사람이 부른 도구의 결과와 허브 과제 찾기에서만 온다.
+  const [subject, setSubject] = useState<SubjectDraft>(EMPTY_SUBJECT);
+  const subjectCands = useMemo(() => candidatesFromConversation(conv), [conv]);
   // 도우미(화두 제안·좌석 발굴)는 도는 패널 뒤에 줄을 서면 몇 분이 걸린다. 기다리는 동안 몇 초째인지 보이고,
   // 기다리지 않고 넘어갈 수 있게 한다 — 넘기면 서버가 실패했을 때와 같은 폴백이다(첫 발화 · 심의의 자동 발굴).
   // 브라우저 타임아웃은 두지 않는다. 한도는 포털 한 곳(AGENT_UNARY_TIMEOUT_S)이다.
@@ -193,10 +198,13 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
     const route = JOB_ROUTING[job];
     // VOC 먼저 보기 — 직접 봤으면 자동 환기를 끄고(사람이 뺀 VOC 가 다시 들어오지 않게),
     // 보강 문장은 매 라운드 구속 의견(human_note)으로.
+    // 심의 주제 — 서버가 같은 풀이로 다시 확인한다(브라우저 값은 근거가 아니다). 고르지 않았으면 싣지 않는다(과제에 잇지 않는다).
+    const subjectOpt = subjectWire(subject);
     const extraOpts = {
       ...(route.opts ?? {}),
       ...(voc.used ? { voc: 'off' } : {}),
       ...(voc.note ? { human_note: voc.note } : {}),
+      ...(subjectOpt ? { subject: subjectOpt } : {}),
     };
     startHandoff({
       topic: t,
@@ -302,6 +310,10 @@ export function HandoffBrief({ conv, onClose }: { conv: Conversation; onClose: (
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="cx-brief-field">
+            <SubjectPicker candidates={subjectCands} value={subject} onChange={setSubject} />
           </div>
 
           <div className="cx-brief-field">

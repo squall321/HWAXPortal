@@ -114,6 +114,26 @@ function outcomeFromMeta(raw: unknown): DelibData['outcome'] | undefined {
   };
 }
 
+/** 답 meta.subject → delib.subject — 포털 중계가 에이전트 서버의 확인 사건(delib kind=subject)만 남긴다(docs/project-insight-graph M1).
+ *  상태가 셋 가운데 하나가 아니면 없다. */
+function subjectFromMeta(raw: unknown): DelibData['subject'] | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const s = raw as Record<string, unknown>;
+  if (s.sp_state !== 'confirmed' && s.sp_state !== 'claimed' && s.sp_state !== 'none') return undefined;
+  return {
+    sp_task: typeof s.sp_task === 'string' ? s.sp_task : null,
+    sp_state: s.sp_state,
+    ...(typeof s.sp_why === 'string' ? { sp_why: s.sp_why } : {}),
+    round: typeof s.round === 'string' ? s.round : null,
+    text: typeof s.text === 'string' ? s.text : '',
+    artifacts: Array.isArray(s.artifacts)
+      ? (s.artifacts as Record<string, unknown>[])
+          .filter((a) => a && (a.kind === 'mcad' || a.kind === 'ecad' || a.kind === 'cae') && typeof a.id === 'string')
+          .map((a) => ({ kind: a.kind as 'mcad' | 'ecad' | 'cae', id: String(a.id), ...(typeof a.rev === 'string' ? { rev: a.rev } : {}) }))
+      : [],
+  };
+}
+
 /** 답 meta.ra_report → raReport — 번호가 양의 정수일 때만. */
 function raReportFromMeta(raw: unknown): Message['raReport'] | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -215,6 +235,8 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 심의 결과(보고서 번호 · 제목 · 집계) — 포털 중계가 답 meta.delib_outcome 으로 남긴다(docs/wda-deck WD-D12). 없으면(옛 사본) 종전대로 없다 —
       // 그때 결과 카드 · '보고' 단계 · '발표자료로' 단추는 서지 않는다.
       const outcome = outcomeFromMeta((m.meta as { delib_outcome?: unknown } | null)?.delib_outcome);
+      // 심의 주제 — 에이전트 서버가 확인한 것(답 meta.subject). 이어하기가 이것을 다시 싣는다(ChatContext continueDeliberation).
+      const subject = subjectFromMeta((m.meta as { subject?: unknown } | null)?.subject);
       out.push({
         id: newId(),
         role: 'assistant',
@@ -227,6 +249,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
           ...(rid ? { runId: rid } : {}),
           ...(nx ? { nextStage: true } : {}),
           ...(outcome ? { outcome } : {}),
+          ...(subject ? { subject } : {}),
           totalRounds: Math.max(...local.map((t) => t.round)),
           ...(Array.isArray(ev) && ev.length
             ? {
