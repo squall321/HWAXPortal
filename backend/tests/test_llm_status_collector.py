@@ -707,6 +707,25 @@ def test_키는_그_키의_주소에만_싣고_루프백_별칭은_같은_주소
         not C.same_server(C.Addr("http", "a.example", 1), C.Addr("http", "127.0.0.1", 1))
 
 
+def test_서버별_주소는_끝의_키_표지로_그_키를_싣는다(tmp_path, fakes):
+    """OD-33 뒤로 LLM_BASE_URL · LLM_UPSTREAMS 에 없는 서버별 GLM 주소는 키를 못 받아 창이 '모름' 이었다 — 서버마다 보려는 대상이 바로 그 주소다.
+    주소 끝의 #glm · #chat 은 운영자가 정한 그 서버의 키다 — 그 키만 싣고, 조각은 요청에 실리지 않으며, 모르는 표지는 그 칸을 읽지 않는다(OD-40)."""
+    glm, qwen = fakes(key=KEY, model="glm-test"), fakes(key=CHAT_KEY, model="qwen-test")
+    coll = _collector(tmp_path, f"LLM_STATUS_TARGETS=GLM-1={glm.base}#glm,QWEN-A={qwen.base}#chat,BAD={glm.base}#gpu\n"
+                                f"LLM_BASE_URL=http://127.0.0.1:{_free_port()}/v1\nLLM_API_KEY={KEY}\nCHAT_LLM_API_KEY={CHAT_KEY}\n")
+    assert [(t.id, t.key, t.addr is not None) for t in coll.cfg.targets] == [
+        ("GLM-1", "llm", True), ("QWEN-A", "chat", True), ("BAD", None, False)]
+    coll.poll_all_once(timeout=20)
+    snap = coll.snapshot()
+    assert [a for p, a in glm.seen if p == "/v1/models"] == [f"Bearer {KEY}"], "#glm 은 LLM_API_KEY 만"
+    assert [a for p, a in qwen.seen if p == "/v1/models"] == [f"Bearer {CHAT_KEY}"], "#chat 은 CHAT_LLM_API_KEY 만"
+    assert all("#" not in p for p, _ in glm.seen + qwen.seen), "조각이 요청 경로에 실렸다"
+    assert _vals(snap, "GLM-1")["models"]["value"][0]["id"] == "glm-test"
+    assert _vals(snap, "QWEN-A")["models"]["value"][0]["id"] == "qwen-test"
+    bad = next(t for t in snap["targets"] if t["id"] == "BAD")
+    assert "키 표지 #gpu 를 모른다" in bad["problem"], bad
+
+
 def test_걸린_서버는_다른_대상을_세우지_않고_그_주기는_건너뛴다(tmp_path, fakes, monkeypatch):
     """한 대가 연결은 받고 답하지 않아도 다른 서버는 제 주기에 읽히고, 스냅숏은 곧바로 답한다. 걸린 대상의 다음 주기는 쌓지 않고 건너뛴다."""
     monkeypatch.setattr(C, "READ_S", 1.0)

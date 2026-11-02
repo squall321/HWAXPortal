@@ -9,12 +9,14 @@
 update-all `_envfile_value` 와 같다. 주기마다 파일이 바뀌었는지 보고 바뀌었으면 다시 읽는다(재기동 없음 — 지문에 infra/.env 가 없다).
   LLM_STATUS_TARGETS        `이름=<주소>/v1` 를 쉼표로. 없으면 LLM_UPSTREAMS(GLM-1 · GLM-2 …), 그것도 없으면 LLM_BASE_URL(GLM),
                             그리고 CHAT_LLM_BASE_URL(챗 LLM). 이름은 영숫자 · . _ - 40자까지(그래프 주소에 쓴다) · agent · router 는 못 쓴다.
+                            주소 끝에 `#glm` · `#chat` 을 붙이면 그 서버에 그 키를 싣는다(조각은 서버로 가지 않는다 — OD-40).
   LLM_STATUS_REPLICA_PORTS  챗 LLM 복제본의 포트(예 `18711-18720`) — 호스트 · 스킴은 CHAT_LLM_BASE_URL 의 것이다.
   LLM_STATUS_REPLICA_MAP    포트 → 노드 짝 파일(줄마다 `<포트> <노드>` 또는 JSON {포트: 노드}). 진짜 자리 · 꼴은 받은 편지함 Q7 의 답이다.
   LLM_STATUS_AGENT_URL      에이전트 서버(기본 http://127.0.0.1:9009). 라우터는 LLM_UPSTREAMS 가 있을 때만 127.0.0.1:LLM_ROUTER_PORT 를 본다.
   키 — /v1/models 에만 싣는다. LLM_API_KEY 는 LLM_BASE_URL · LLM_UPSTREAMS 의 서버에만, CHAT_LLM_API_KEY 는 CHAT_LLM_BASE_URL 과 복제본에만
-       (같은 주소 — 스킴 · 포트가 같고 호스트가 같거나 둘 다 루프백 별칭). 그 밖의 주소에는 싣지 않는다(OD-33). /health · /version · /metrics 는
-       키를 묻지 않는다(vLLM — OD-2). 키는 로그 · 답 · 자식 프로세스 어디에도 싣지 않는다(답을 내기 전에 한 번 더 가린다).
+       (같은 주소 — 스킴 · 포트가 같고 호스트가 같거나 둘 다 루프백 별칭), 그리고 `#glm` · `#chat` 을 붙인 대상에. 그 밖의 주소에는
+       싣지 않는다(OD-33 · OD-40). /health · /version · /metrics 는 키를 묻지 않는다(vLLM — OD-2).
+       키는 로그 · 답 · 자식 프로세스 어디에도 싣지 않는다(답을 내기 전에 한 번 더 가린다).
 읽기 — 대상마다 따로 돈다(스레드 하나). 연결 3초 · 읽기 5초(머리부터 몸까지 한 기한 — OD-31 · 에이전트 서버는 12초 — OD-36) — 한 대가 걸려도
   다른 대상은 제 주기에 읽는다. 앞 읽기가 안 끝난 대상은 그 주기를 건너뛴다(값이 낡음으로 보인다). 15초마다 /health · /version · /metrics,
   60초마다 /v1/models(monotonic 으로 잰다 — OD-34).
@@ -176,6 +178,7 @@ _HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a
 _QUAD = re.compile(r"(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
 RESERVED_IDS = frozenset({"agent", "router"})     # 에이전트 서버 · 라우터의 대상 id — 저장 · /series 의 대상 표에서 겹친다(OD-37)
+_KEY_MARKS = {"glm": "llm", "chat": "chat"}         # LLM_STATUS_TARGETS 주소 끝의 #glm · #chat — 그 서버가 받는 키(OD-40)
 _NODE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
 
@@ -354,8 +357,12 @@ def build_config(vals: dict[str, str]) -> Config:
                 rows.append(Target(f"item-{n}", f"칸 {n}", None, None, None, "targets",
                                    f"LLM_STATUS_TARGETS 의 칸 {n} 이름 {label} 은 수집기가 쓰는 이름이다(agent · router) — 다른 이름을 쓴다"))
             else:
+                # 끝의 #glm · #chat 은 그 서버가 받는 키다 — 운영자가 적은 대로만 싣는다(조각은 서버로 가지 않는다, OD-40)
+                url, msep, mark = url.partition("#")
                 a, why = parse_addr(url, v1=True)
-                rows.append(Target(label, label, a, key_for(a), None, "targets",
+                if msep and mark not in _KEY_MARKS:
+                    a, why = None, f"키 표지 #{mark} 를 모른다(#glm · #chat)"
+                rows.append(Target(label, label, a, _KEY_MARKS[mark] if msep and a else key_for(a), None, "targets",
                                    None if why is None else f"LLM_STATUS_TARGETS 의 {label} — {_label_of(url)} {why}"))
     else:
         ups = [t for t in _SPLIT.split(vals.get("LLM_UPSTREAMS", "")) if t]
