@@ -705,6 +705,36 @@ def test_걸린_서버는_다른_대상을_세우지_않고_그_주기는_건너
     assert [p for p, _ in hung.seen] == ["/health"], hung.seen
 
 
+def test_읽기_스레드를_못_띄우면_그_대상만_까닭을_남기고_주기는_이어진다(tmp_path, fakes, monkeypatch):
+    """Thread.start 가 한 번 실패하면(자원 고갈) 그 대상이 영영 바쁨으로 남고 그 주기의 나머지 대상 · 정리까지 끊겼다(반대 검토 11-02 · 재현
+    thread_fail.py). 바쁨을 풀고 그 대상의 원천에 까닭을 남기고 나머지는 그대로 돈다(OD-32)."""
+    a, b = fakes(), fakes()
+    clock = Clock()
+    coll = _collector(tmp_path, f"LLM_STATUS_TARGETS=glm={a.base},B={b.base}\n", clock=clock)
+    real = threading.Thread.start
+    state = {"n": 0}
+
+    def flaky(self):
+        if self.name == "llm-status-glm" and state["n"] == 0:
+            state["n"] += 1
+            raise RuntimeError("can't start new thread")
+        return real(self)
+    monkeypatch.setattr(threading.Thread, "start", flaky)
+    coll.tick()
+    _wait_idle(coll)
+    st = _state(coll, "glm")
+    assert st.busy is False and st.busy_since is None and st.polls == 0, "바쁨을 풀었다"
+    snap = coll.snapshot()
+    g = next(t for t in snap["targets"] if t["id"] == "glm")
+    assert "읽기 스레드를 띄우지 못했다" in g["sources"]["health"]["error"] and "RuntimeError" in g["sources"]["health"]["error"], g["sources"]
+    assert _vals(snap, "B")["up"]["value"] is True, "같은 주기의 다른 대상은 읽었다"
+    assert coll.store._last_maint == clock(), "같은 주기의 정리(접기 · 지우기)도 돌았다"
+    clock.tick(15)
+    coll.tick()
+    _wait_idle(coll)
+    assert _vals(coll.snapshot(), "glm")["up"]["value"] is True and st.polls == 1, "다음 주기에는 읽는다"
+
+
 def test_닫힌_포트는_연결_거부_연결이_안_되면_연결_시간_초과로_말한다(tmp_path, monkeypatch):
     assert (C.CONNECT_S, C.READ_S, C.INTERVAL_S, C.MODELS_EVERY_S, C.STALE_AFTER) == (3.0, 5.0, 15.0, 60.0, 3), "계획서 §3.3 의 수"
     port = _free_port()

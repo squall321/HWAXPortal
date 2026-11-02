@@ -855,21 +855,31 @@ class Collector:
             self.store.maintain(self.clock())
 
     def _kick(self, st: TState, fn) -> None:
-        """앞 읽기가 끝나지 않았으면 이 주기는 건너뛴다 — 걸린 서버가 다른 대상을 세우지 않고, 자기 스레드를 쌓지도 않는다."""
+        """앞 읽기가 끝나지 않았으면 이 주기는 건너뛴다 — 걸린 서버가 다른 대상을 세우지 않고, 자기 스레드를 쌓지도 않는다. 스레드를 못 띄우면
+        (자원 고갈) 바쁨을 풀고 그 대상의 까닭으로 남긴다 — 영영 바쁨으로 남거나 그 주기의 나머지 대상 · 정리를 끊지 않는다(OD-32)."""
         with st.lock:
             if st.busy:
                 st.skipped += 1
                 return
             st.busy, st.busy_since = True, self.clock()
-        threading.Thread(target=self._run, args=(st, fn), name=f"llm-status-{st.t.id}", daemon=True).start()
+        try:
+            threading.Thread(target=self._run, args=(st, fn), name=f"llm-status-{st.t.id}", daemon=True).start()
+        except Exception as exc:  # noqa: BLE001 — RuntimeError("can't start new thread") 등
+            with st.lock:
+                st.busy, st.busy_since = False, None
+            self._fail_sources(st, f"수집기 오류 — 읽기 스레드를 띄우지 못했다({type(exc).__name__})")
+            log(f"⚠ {st.t.label} 읽기 스레드를 띄우지 못했다 — {type(exc).__name__}: {exc}")
+
+    def _fail_sources(self, st: TState, why: str) -> None:
+        with st.lock:
+            for s in ("health",) if st.t.origin in ("agent", "router") else SOURCES:
+                st.mark(s, self.clock(), why)
 
     def _run(self, st: TState, fn) -> None:
         try:
             fn(st)
         except Exception as exc:  # noqa: BLE001 — 한 대상의 결함은 그 대상의 '모름' 으로
-            with st.lock:
-                for s in ("health",) if st.t.origin in ("agent", "router") else SOURCES:
-                    st.mark(s, self.clock(), f"수집기 오류 — {type(exc).__name__}")
+            self._fail_sources(st, f"수집기 오류 — {type(exc).__name__}")
             log(f"⚠ {st.t.label} 읽기 오류 — {type(exc).__name__}: {exc}")
         finally:
             with st.lock:
