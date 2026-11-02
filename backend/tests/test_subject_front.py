@@ -109,8 +109,8 @@ def test_차수_코드와_상한이_에이전트_서버와_같다(js):
     assert stages and caps, "에이전트 서버 delib_subject 의 모양이 바뀌었다 — 이 추출도 고쳐라"
     got = js("const")
     assert got["STAGE_CODES"] == re.findall(r'"([a-z0-9]+)"', stages.group(1))
-    _sp, _r, text_max, _rev, arts_max, _w = (int(x) for x in caps.group(1).split(","))
-    assert (got["TEXT"], got["ARTS"]) == (text_max, arts_max)
+    sp_max, _r, text_max, _rev, arts_max, _w = (int(x) for x in caps.group(1).split(","))
+    assert (got["SP"], got["TEXT"], got["ARTS"]) == (sp_max, text_max, arts_max)
 
 
 def _conv(*activity, text="") -> dict:
@@ -141,16 +141,32 @@ def test_후보는_그_사람의_도구_결과에서만_오고_key_는_결과_�
 
 def test_보드_해석_리포트_차수_후보(js):
     report = {"reports": [{"id": "01hzx3k5q9v8n7m6p5r4s3t2w1", "title": "알파 낙하", "eng_meta": {"dev_revision": {"phase": "dv", "round": "2",
-                                                                                                          "code": "DV2"}}}]}
+                                                                                                          "code": "DV2"}}},
+                          {"id": "01HZX3K5Q9V8N7M6P5R4S3T2W2", "label": "베타 낙하", "eng_meta": {"dev_revision": {"code": "pv1"}}}]}
     odb = {"jobs": [{"job_id": "ABCDEF0123456789", "project": "알파", "model": "SM-A100", "revision": "B", "board_type": "Main"},
                     {"job_id": "abcdef012345678", "project": "짧은 id"}]}
-    risk = {"projects": [{"id": "x" * 32, "stage": "PV1"}, {"id": "y" * 32, "stage": "dv"}]}
+    risk = {"projects": [{"id": "0123456789abcdef0123456", "name": "리스크 과제", "stage": "PV1"}, {"id": "y" * 32, "stage": "dv"}]}
     got = js("candidatesFromConversation", _conv(_act("dynaforge_list_reports", report), _act("find_job", odb),
-                                                 _act("risk_list_projects", risk)))
+                                                 _act("risk_list_projects", risk), _act("odb_list_projects", risk)))
     kinds = {(a["kind"], a["id"]): a for a in got["artifacts"]}
-    assert kinds[("cae", "01HZX3K5Q9V8N7M6P5R4S3T2W1")]["rev"] == "dv2"
-    assert kinds[("ecad", "abcdef0123456789")]["rev"] == "B" and len(kinds) == 2, "16진 16자가 아닌 job_id 는 보드가 아니다"
-    assert [r["code"] for r in got["rounds"]] == ["dv2", "pv1"], "꼴에 맞는 원천 값만(리스크 앱의 'dv' 는 차수가 아니다)"
+    assert kinds[("cae", "01HZX3K5Q9V8N7M6P5R4S3T2W1")]["rev"] == "dv2" and kinds[("cae", "01HZX3K5Q9V8N7M6P5R4S3T2W2")]["rev"] == "pv1"
+    assert kinds[("ecad", "abcdef0123456789")]["rev"] == "B" and len(kinds) == 3, \
+        "16진 16자가 아닌 job_id 는 보드가 아니고, StepForge 가 아닌 앱의 list_projects 는 23자 16진 id 라도 기구 CAD 가 아니다"
+    assert "rounds" not in got, "대화 전체에서 차수를 모으지 않는다 — 다른 과제의 차수가 권해진다(반대 검토 11-02)"
+    cae = kinds[("cae", "01HZX3K5Q9V8N7M6P5R4S3T2W1")]
+    assert js("sourceRounds", [cae]) == [{"code": "dv2", "from": "고른 해석 리포트 알파 낙하의 개발 단계"}]
+    assert js("sourceRounds", [kinds[("ecad", "abcdef0123456789")]]) == [], "보드의 판(rev)은 차수가 아니다"
+    assert [r["code"] for r in js("sourceRounds", [cae, kinds[("cae", "01HZX3K5Q9V8N7M6P5R4S3T2W2")], cae])] == ["dv2", "pv1"]
+
+
+def test_key_가_상한을_넘는_과제는_후보가_아니다(js):
+    """sp_task 상한(200자)을 넘는 key 를 후보로 두면 고른 순간 심의 요청 전체가 422 다(반대 검토 11-02) — 두지 않는다."""
+    long_key = "가" * 201
+    body = {**_FIND, "tasks": [{**_FIND["tasks"][0], "key": long_key}, _FIND["tasks"][0]]}
+    got = js("candidatesFromConversation", _conv(_act("find_plm_task", body)))
+    assert [r["key"] for r in got["sp"]] == [KEY]
+    rows = js("candidatesFromSearch", [{"key": long_key, "active": True}, {"key": "가" * 200, "active": True}], "가")
+    assert [len(r["key"]) for r in rows] == [200]
 
 
 def test_보낼_꼴(js):

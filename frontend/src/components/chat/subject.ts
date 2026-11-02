@@ -3,13 +3,16 @@
 // docs/project-insight-graph PLAN §4.1 · §4.3 · §4.6. 포털은 과제 목록을 쥐지 않는다(A13) — 후보는 이 대화에서 그 사람이 부른 도구의 결과
 // (StepForge find_plm_task · get_project_meta · list_projects, ODB 잡, DynaForge 리포트)와 고르기 화면의 허브 과제 찾기(그 사람의 PAT)에서만 온다.
 // 모델의 글(답 · 결정문)은 보지 않는다. 브라우저가 보낸 주제는 근거가 아니다 — 에이전트 서버가 같은 풀이로 다시 확인한다(여기서는 꼴만 맞춘다).
+// 차수의 원천 값은 고른 해석 리포트의 개발 단계(dev_revision)뿐이다 — 대화의 아무 도구 결과에서 모으면 다른 과제의 차수가 권해진다(반대 검토 11-02).
 import type { Conversation, DelibSubject } from '../../types/chat';
 
 /** 차수 — 개발 단계 코드 열한 개(사용자 결정 11-02 PG-17). 에이전트 서버 delib_subject.STAGES 와 같아야 한다(tests/test_subject_front.py 가 견준다). */
 export const STAGE_CODES = ['pre', 'dv1', 'dv2', 'dv3', 'dvr', 'pv1', 'pv2', 'pv3', 'pvr', 'pra', 'mp'] as const;
 export type StageCode = (typeof STAGE_CODES)[number];
 
-/** 보낼 수 있는 글 상한 — 포털 DelibSubject · 에이전트 서버 delib_subject 와 같은 수다(시험이 견준다). */
+/** 보낼 수 있는 상한 — 포털 DelibSubject · 에이전트 서버 delib_subject 와 같은 수다(시험이 견준다). key 가 SP_TASK_MAX 를 넘는 과제는 후보에
+ *  싣지 않는다 — 실으면 심의 요청 전체가 422 로 떨어진다(반대 검토 11-02). */
+export const SUBJECT_SP_TASK_MAX = 200;
 export const SUBJECT_TEXT_MAX = 500;
 export const SUBJECT_ARTIFACTS_MAX = 8;
 
@@ -42,7 +45,6 @@ export interface RoundCandidate {
 export interface SubjectCandidates {
   sp: SpCandidate[];
   artifacts: ArtifactCandidate[];
-  rounds: RoundCandidate[];
 }
 
 /** 고르기 화면의 상태 — spTask 가 비면 과제 대상이 아니다(어느 과제에도 잇지 않는다). */
@@ -82,7 +84,7 @@ function obj(v: unknown): Record<string, unknown> | null {
 }
 
 function taskRow(t: Record<string, unknown>, from: string): SpCandidate | null {
-  const key = typeof t.key === 'string' && t.key ? t.key : null;
+  const key = typeof t.key === 'string' && t.key && t.key.length <= SUBJECT_SP_TASK_MAX ? t.key : null;
   if (!key) return null;
   const props = obj(t.properties) ?? {};
   const proj = obj(t.project) ?? {};
@@ -118,7 +120,6 @@ function* walk(root: unknown): Generator<Record<string, unknown>> {
 export function candidatesFromConversation(conv: Conversation | null | undefined): SubjectCandidates {
   const sp = new Map<string, SpCandidate>();
   const arts = new Map<string, ArtifactCandidate>();
-  const rounds = new Map<StageCode, RoundCandidate>();
   for (const m of conv?.messages ?? []) {
     for (const a of m.activity ?? []) {
       if (!a.tool || a.ok === false) continue;
@@ -179,16 +180,20 @@ export function candidatesFromConversation(conv: Conversation | null | undefined
                                   ...(str(o.label ?? o.title ?? o.name) ? { label: str(o.label ?? o.title ?? o.name) } : {}),
                                   from: `이 대화의 ${tool}` });
         }
-        if (code && !rounds.has(code)) rounds.set(code, { code, from: `이 대화의 ${tool}(개발 단계 dev_revision)` });
-        // 리스크 앱 과제의 stage — 꼴에 맞을 때만 차수 후보다(웹 폼이 받는 dv · pre1 은 차수가 아니다)
-        if (/^risk_/.test(tool) && typeof o.stage === 'string') {
-          const st = normRound(o.stage);
-          if (st && !rounds.has(st)) rounds.set(st, { code: st, from: `이 대화의 ${tool}(리스크 과제 stage)` });
-        }
       }
     }
   }
-  return { sp: [...sp.values()], artifacts: [...arts.values()].slice(0, 40), rounds: [...rounds.values()] };
+  return { sp: [...sp.values()], artifacts: [...arts.values()].slice(0, 40) };
+}
+
+/** 차수의 원천 값 — 고른 해석 리포트(cae)의 개발 단계(dev_revision 코드 — 후보의 rev)뿐이다. 고르지 않은 리포트 · 다른 도구의 값은 권하지 않는다. */
+export function sourceRounds(picked: ArtifactCandidate[]): RoundCandidate[] {
+  const out = new Map<StageCode, RoundCandidate>();
+  for (const a of picked) {
+    const code = a.kind === 'cae' ? normRound(a.rev) : null;
+    if (code && !out.has(code)) out.set(code, { code, from: `고른 해석 리포트 ${a.label ?? a.id}의 개발 단계` });
+  }
+  return [...out.values()];
 }
 
 /** 허브 과제 찾기의 답(포털 POST /agent/deliberate/subject/search) → 후보 행. */
@@ -196,7 +201,7 @@ export function candidatesFromSearch(rows: { key: string; label?: string | null;
   active?: boolean }[], query: string): SpCandidate[] {
   const out: SpCandidate[] = [];
   for (const r of rows) {
-    if (!r || typeof r.key !== 'string' || !r.key) continue;
+    if (!r || typeof r.key !== 'string' || !r.key || r.key.length > SUBJECT_SP_TASK_MAX) continue;
     out.push({ key: r.key, ...(r.label ? { label: r.label } : {}), ...(r.task_code ? { taskCode: r.task_code } : {}),
                ...(r.project ? { project: r.project } : {}), active: r.active !== false, from: `허브 과제 찾기 「${query}」` });
   }
