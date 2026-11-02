@@ -2540,6 +2540,7 @@ fi
 #   수집기가 주기마다 다시 읽으므로 다시 띄우지 않는다. 관리자 화면은 포털이 수집기 주소(LLM_STATUS_URL)를 start.sh 에서 받는다 — infra/.env 가 바뀌면
 #   §2 가 포털을 다시 띄우므로 같은 실행에서 든다.
 # 꺼져 있으면 ○ 를 남기고, 그 포트에 수집기가 떠 있으면 내린다(켰다 끈 박스 — 5b · 5c 와 같다). 쌓은 기록(infra/.state/llm-status)은 지우지 않는다.
+#   수집기인지는 /health 의 몸으로 본다(llm-status.sh probe — 상태 코드만 보면 그 포트에서 200 을 내는 남의 앱에 stop 을 불러 실행마다 ✗ · ⚠ 가 남는다, OD-28).
 _ls_en=0; "$SVC" enabled llm-status >/dev/null 2>&1 || _ls_en=$?
 _ls_port="$(_envfile_value "$SELF_REPO/infra/.env" LLM_STATUS_PORT)"; _ls_port="${_ls_port:-8760}"
 if [ "$_ls_en" = 0 ]; then
@@ -2554,7 +2555,7 @@ if [ "$_ls_en" = 0 ]; then
     fail "LLM/GPU 현황 수집기를 띄우지 못했다 — update-sites llm-status rc $_ls_us(위 ✗ 줄 · 로그 /tmp/hwax-services/llm-status.log)"
   fi
 else
-  if [ "$_ls_en" = 1 ] && [ "$(http_code "http://127.0.0.1:$_ls_port/health" 3)" = 200 ]; then      # 200 일 때만(5b · 5c 와 같다)
+  if [ "$_ls_en" = 1 ] && "$SELF_REPO/infra/scripts/llm-status.sh" probe >/dev/null 2>&1; then      # 그 포트의 답이 수집기일 때만
     hr "5d) LLM/GPU 현황 수집기 — 꺼짐(LLM_STATUS 없음 → 떠 있는 수집기를 내린다)"
     if "$SELF_REPO/infra/scripts/llm-status.sh" stop; then
       ok "LLM/GPU 현황 수집기(:$_ls_port)를 내렸다 — LLM_STATUS 가 없다(쌓은 기록은 infra/.state/llm-status 에 그대로 남는다)"

@@ -111,3 +111,11 @@ API 서버가 하나면 그 레지스트리를 쓴다(`get_prometheus_registry`)
 키가 (번호, 초)라 같은 초의 값을 서로 덮었다(재현 `store_rollback.py` — glm-1/running 과 chat/kv 가 같은 점). 이번 쓰기가 만든 계열을 따로 적어
 두고(`_fresh`) COMMIT 하면 비우고, 되돌리면 그 열쇠만 캐시에서 지운다 — 다음 쓰기가 다시 INSERT · SELECT 로 제 번호를 받는다. 버린 것 — 되돌릴 때
 캐시 전체를 비우거나 DB 에서 다시 읽기(비우면 다음 쓰기 전까지 그래프 · 접기가 계열을 못 보고, 다시 읽기는 I/O 오류가 난 그 DB 를 또 읽는다).
+
+**OD-28 꺼진 5d 는 /health 의 몸으로 수집기를 알아본다(반대 검토 11-02 — LOW).** 꺼진 박스의 5d 는 그 포트가 200 을 내면 `llm-status.sh stop` 을
+불렀다 — 그 포트에서 남의 앱이 200 을 내면 stop 이 명령줄을 보고 건드리지 않는 것은 맞지만, update-all 마다 5d 머리 · '✗ … 수집기가 아니다' ·
+'⚠ 내리지 못했다'(WARN_ITEMS)가 남아 §0 의 '○ 한 줄' 약속이 깨졌다. 수집기 `/health` 에 `"service":"hwax-llm-status"` 를 싣고, 새 `llm-status.sh probe`
+가 그 몸을 글자 그대로 찾을 때만 0 을 낸다(curl `--noproxy '*'` · 3초, 상태 코드는 보지 않는다 — 멈춘 수집기는 503 이어도 내린다). 5d 는 probe 가 0 일
+때만 머리를 찍고 stop 을 부른다 — 남의 앱이면 ○ 한 줄뿐이다(시험은 진짜 llm-status.sh 와 진짜 http_code 로 — 고치기 전 판에서 머리 · ✗ · ⚠ 가 나는 것을
+본다). PORT-MAP 의 8760 확인은 dev 와 형제 리포뿐이었다 — cae00 은 켜기 전에 사람이 `ss -ltnpH 'sport = :8760'` 로 본다(server-setup.md 2절).
+버린 것 — 5d 안에서 curl 로 몸을 받아 보기(포트 · 표지를 아는 곳이 llm-status.sh 다 · 5d 시험 대역이 http_code 하나만 갈아 끼운다).

@@ -6,7 +6,8 @@
 
 ## 0. 이 판을 받기만 하면 — 아무것도 바뀌지 않는다
 
-`infra/.env` 에 `LLM_STATUS` 가 없으면 update-all 5d 에 ○ 한 줄만 남는다.
+`infra/.env` 에 `LLM_STATUS` 가 없으면 update-all 5d 에 ○ 한 줄만 남는다. 그 포트(8760)에 다른 앱이 떠 있어도 건드리지 않는다 — 수집기인지는
+`/health` 의 몸으로 본다(`llm-status.sh probe` — OD-28).
 
 - `○ LLM/GPU 현황 수집기 — infra/.env 에 LLM_STATUS 가 없다 — … 수집기를 띄우지 않았다`
 - 1c(env-sync)가 `# LLM_STATUS=1` · `# LLM_STATUS_PORT=8760` · `# LLM_STATUS_REPLICA_PORTS=18711-18720` 를 **주석으로** 덧붙인다(선택 설정 — 켜지 않는다).
@@ -41,6 +42,12 @@ print("에이전트 서버", a["value"], a["error"] or "")'
 - `연결 거부` · `연결 시간 초과(3초)` · `읽기 시간 초과(5초)` 는 그 서버의 까닭이다 — 그 서버만 '모름' 이고 다른 서버는 그대로 읽힌다.
 
 ## 2. 켜기 — `infra/.env`
+
+켜기 전에 그 포트를 남이 쓰지 않는지 본다 — cae00 의 8760 은 아직 확인하지 않았다(docs/PORT-MAP.md).
+
+```bash
+ss -ltnpH 'sport = :8760'     # 아무 줄도 나오지 않아야 한다 — 줄이 나오면 아래 LLM_STATUS_PORT 에 빈 포트를 적는다(7절)
+```
 
 ```
 LLM_STATUS=1

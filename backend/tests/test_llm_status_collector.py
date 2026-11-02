@@ -998,7 +998,10 @@ def test_run_은_환경을_비우고_시스템_python3_으로_루프백_한_포�
                                 start_new_session=True)
     try:
         h = _wait_health(port, proc)
-        assert h["status"] == "ok" and h["enabled"] is True and h["targets"] == 1
+        assert h["status"] == "ok" and h["enabled"] is True and h["targets"] == 1 and h["service"] == "hwax-llm-status"
+        pr = subprocess.run(["bash", str(repo / "infra/scripts/llm-status.sh"), "probe"], capture_output=True, text=True, timeout=30,
+                            env=_env(repo))
+        assert pr.returncode == 0 and "수집기의 답이다" in pr.stdout, "update-all 5d 가 내리기 전에 묻는 표지(OD-28)"
         pid = proc.pid                                       # exec 라 bash 의 pid 가 곧 수집기다
         argv = Path(f"/proc/{pid}/cmdline").read_bytes().rstrip(b"\0").split(b"\0")
         env = dict(x.split(b"=", 1) for x in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0") if b"=" in x)

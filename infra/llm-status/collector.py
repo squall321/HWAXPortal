@@ -73,6 +73,7 @@ REPLICA_MAX = 64
 MAP_MAX_BYTES = 1 << 20
 KEY_MIN = 8                      # 이보다 짧은 키는 가리기 대상으로 치지 않는다(낱말을 지운다)
 VERSION = 1
+SERVICE = "hwax-llm-status"      # /health 의 service — llm-status.sh probe 가 글자 그대로 찾는다
 
 # 저장하는 지표 — 대상 종류마다. 나머지는 지금 값만 낸다.
 STORE_MAIN = ("up", "running", "waiting", "kv", "prompt_tps", "gen_tps", "ttft_p50", "ttft_p95", "e2e_p50", "e2e_p95", "queue_p95",
@@ -1202,7 +1203,8 @@ class Collector:
         with self.lock:
             n = len(self.states)
         db = self.store.stats() if self.store is not None else {"error": self.store_error}
-        return ({"status": "ok" if alive else "stalled", "version": VERSION, "now": now, "started_at": self.started_at,
+        # service — 이 답이 수집기의 것이라는 표지다. update-all 5d 가 꺼진 박스에서 내리기 전에 본다(llm-status.sh probe — OD-28)
+        return ({"service": SERVICE, "status": "ok" if alive else "stalled", "version": VERSION, "now": now, "started_at": self.started_at,
                  "last_tick_at": self.last_tick, "tick_age_s": tick_age, "interval_s": self.interval, "targets": n,
                  "agent": self.agent.t.addr is not None, "router": self.cfg.router is not None, "enabled": self.cfg.enabled,
                  "db_error": db.get("error")}, 200 if alive else 503)

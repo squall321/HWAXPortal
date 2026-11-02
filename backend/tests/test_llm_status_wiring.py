@@ -10,8 +10,10 @@ import importlib.util
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -140,7 +142,7 @@ def _ua_region(start: str, end: str) -> str:
 class _Box5d:
     """update-all 5d 를 원문 그대로 임시 포털에서 돌린다 — services.sh enabled · update-sites · llm-status.sh stop 은 부른 사실만 적는 대역이다."""
 
-    def __init__(self, tmp: Path):
+    def __init__(self, tmp: Path, *, real_launcher: bool = False):
         self.tmp = tmp.resolve()
         self.repo = self.tmp / "HWAXPortal"
         (self.repo / "infra/scripts/lib").mkdir(parents=True)
@@ -150,7 +152,12 @@ class _Box5d:
         self.ledger.write_text("")
         sh = {"services.sh": 'echo "services.sh $*" >> "{c}"; [ "$1" = enabled ] && exit "${{STUB_EN:-1}}"; exit 0',
               "update-sites.sh": 'echo "update-sites.sh $*" >> "{c}"; echo "  (대역) update-sites $*"; exit "${{STUB_US:-0}}"',
-              "llm-status.sh": 'echo "llm-status.sh $*" >> "{c}"; echo "  (대역) llm-status $*"; exit "${{STUB_STOP:-0}}"'}
+              "llm-status.sh": 'echo "llm-status.sh $*" >> "{c}"; echo "  (대역) llm-status $*"; '
+                               '[ "$1" = probe ] && exit "${{STUB_PROBE:-1}}"; exit "${{STUB_STOP:-0}}"'}
+        self.real = real_launcher
+        if real_launcher:                   # 진짜 llm-status.sh(probe · stop)와 진짜 http_code(curl) — 그 포트의 리스너는 시험이 띄운다
+            shutil.copy(SCRIPTS / "llm-status.sh", self.repo / "infra/scripts/llm-status.sh")
+            del sh["llm-status.sh"]
         for name, body in sh.items():
             p = self.repo / "infra/scripts" / name
             p.write_text("#!/usr/bin/env bash\n" + body.format(c=self.calls) + "\n", encoding="utf-8")
@@ -164,7 +171,7 @@ class _Box5d:
         script = "\n".join([
             "set -uo pipefail", f'cd "{self.tmp}"', f'SELF_REPO="{self.repo}"', f'SVC="{self.repo}/infra/scripts/services.sh"',
             'hr() { echo "HR:$*"; }; ok() { echo "OK:$*"; }; bad() { echo "BAD:$*"; }; fail() { echo "FAIL:$*"; FAIL=1; }',
-            'http_code() { echo "${STUB_HTTP:-000}"; }',
+            next(ln for ln in UA.splitlines() if ln.startswith("http_code() {")) if self.real else 'http_code() { echo "${STUB_HTTP:-000}"; }',
             f'export HWAX_SKIP_LEDGER="{self.ledger}"', f'. "{self.repo}/infra/scripts/lib/skip-ledger.sh"',
             envfile, body, "echo END",
         ])
@@ -189,7 +196,7 @@ def _tagged(out: str, tag: str) -> list[str]:
 
 def test_5d_꺼져_있으면_안_켠_기능으로_남기고_아무것도_띄우지_않는다(box5d):
     out = box5d.run("OTHER=1\n", STUB_EN="1")
-    assert box5d.called() == ["services.sh enabled llm-status"], box5d.called()
+    assert box5d.called() == ["services.sh enabled llm-status", "llm-status.sh probe"], box5d.called()
     assert not _tagged(out, "HR:") and not _tagged(out, "FAIL:") and not _tagged(out, "BAD:"), out
     led = box5d.ledger.read_text()
     assert led.startswith("LLM/GPU 현황 수집기\t") and "LLM_STATUS=1" in led and "server-setup.md" in led, led
@@ -198,16 +205,69 @@ def test_5d_꺼져_있으면_안_켠_기능으로_남기고_아무것도_띄우�
 
 
 def test_5d_꺼졌는데_수집기가_떠_있으면_내린다(box5d):
-    out = box5d.run("LLM_STATUS_PORT=18766\n", STUB_EN="1", STUB_HTTP="200")
-    assert box5d.called() == ["services.sh enabled llm-status", "llm-status.sh stop"], box5d.called()
+    out = box5d.run("LLM_STATUS_PORT=18766\n", STUB_EN="1", STUB_PROBE="0")
+    assert box5d.called() == ["services.sh enabled llm-status", "llm-status.sh probe", "llm-status.sh stop"], box5d.called()
     assert any(":18766" in ln and "내렸다" in ln for ln in _tagged(out, "OK:")), out
     assert box5d.ledger.read_text().startswith("LLM/GPU 현황 수집기\t"), "내렸어도 꺼짐은 ○ 다"
     box5d.calls.write_text("")
-    out = box5d.run("", STUB_EN="1", STUB_HTTP="200", STUB_STOP="1")
+    out = box5d.run("", STUB_EN="1", STUB_PROBE="0", STUB_STOP="1")
     assert any("내리지 못했다" in ln for ln in _tagged(out, "BAD:")) and not _tagged(out, "FAIL:"), out
     box5d.calls.write_text("")
-    out = box5d.run("", STUB_EN="1", STUB_HTTP="404")
-    assert box5d.called() == ["services.sh enabled llm-status"], "200 이 아니면(그 포트에 남이 답한다) 내리지 않는다"
+    out = box5d.run("", STUB_EN="1", STUB_PROBE="1", STUB_HTTP="200")
+    assert box5d.called() == ["services.sh enabled llm-status", "llm-status.sh probe"], "수집기의 답이 아니면(200 이어도) 내리지 않는다"
+    assert not _tagged(out, "HR:") and not _tagged(out, "BAD:"), out
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _http_app(port: int, body: bytes, *tag: str) -> subprocess.Popen:
+    """루프백 그 포트에서 GET /health 에 200 과 body 를 내는 프로세스 — tag 는 명령줄에 붙는 인자(stop 이 보는 명령줄을 시험이 정한다)."""
+    code = ("import sys, http.server as h\n"
+            "class H(h.BaseHTTPRequestHandler):\n"
+            "    def do_GET(self):\n"
+            "        b = sys.argv[2].encode(); self.send_response(200 if self.path == '/health' else 404)\n"
+            "        self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)\n"
+            "    def log_message(self, *a): pass\n"
+            "h.HTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()\n")
+    p = subprocess.Popen([sys.executable, "-c", code, str(port), body.decode(), *tag], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    end = time.monotonic() + 10
+    while True:
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+            return p
+        except OSError:
+            if time.monotonic() > end or p.poll() is not None:
+                p.kill()
+                raise
+            time.sleep(0.05)
+
+
+def test_5d_꺼졌는데_그_포트에서_남의_앱이_200_을_내면_꺼짐_한_줄만_남긴다(tmp_path):
+    """반대 검토 11-02 LOW — 상태 코드만 보면 그 포트에서 200 을 내는 남의 앱에 stop 을 불러 실행마다 5d 머리 · ✗ · ⚠(WARN_ITEMS)가 남았다.
+    진짜 llm-status.sh 로 — 수집기인지 /health 의 몸(service 표지)으로 본다(OD-28). 수집기의 답이고 명령줄이 수집기면 내린다."""
+    box = _Box5d(tmp_path, real_launcher=True)
+    port = _free_port()
+    other = _http_app(port, b'{"status":"ok"}')
+    try:
+        out = box.run(f"LLM_STATUS_PORT={port}\n", STUB_EN="1")
+        assert not _tagged(out, "HR:") and not _tagged(out, "BAD:") and not _tagged(out, "FAIL:") and "✗" not in out, out
+        assert box.ledger.read_text().startswith("LLM/GPU 현황 수집기\t") and other.poll() is None, "○ 한 줄만 — 남의 앱은 그대로"
+    finally:
+        other.kill()
+        other.wait(10)
+    mine = _http_app(port, b'{"service":"hwax-llm-status","status":"ok"}', "/x/infra/llm-status/collector.py", "serve", "--port", str(port))
+    try:
+        out = box.run(f"LLM_STATUS_PORT={port}\n", STUB_EN="1")
+        assert any(f":{port}" in ln and "내렸다" in ln for ln in _tagged(out, "OK:")), out
+        assert mine.wait(10) is not None and not _tagged(out, "BAD:"), out
+    finally:
+        if mine.poll() is None:
+            mine.kill()
 
 
 def test_5d_켜져_있으면_update_sites_로_띄운다(box5d):

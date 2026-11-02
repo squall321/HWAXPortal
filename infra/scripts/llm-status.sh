@@ -5,6 +5,7 @@
 #   ./infra/scripts/llm-status.sh start   # 손으로 — 뒤에서 띄우고 곧바로 돌아온다(nohup + disown · 로그 /tmp/hwax-services/llm-status.log)
 #   ./infra/scripts/llm-status.sh stop    # 그 포트를 LISTEN 하는 프로세스만, 명령줄이 수집기인지 확인한 뒤 TERM → 기다림 → KILL
 #   LLM_STATUS_PORT=8762 ./infra/scripts/llm-status.sh stop    # stop 만 환경의 포트가 infra/.env 보다 먼저다(포트를 바꾼 뒤 옛 포트의 것을 내릴 때)
+#   ./infra/scripts/llm-status.sh probe   # 그 포트의 /health 가 수집기의 답인가(종료코드 0 · 아니면 1) — update-all 5d 가 내리기 전에 묻는다
 #
 # 포트 — run · start 는 늘 infra/.env 의 LLM_STATUS_PORT(기본 8760)다. 매니페스트 health 와 포털(start.sh 가 넘기는 LLM_STATUS_URL)이 infra/.env
 #   만 읽으므로 운영자 셸에 export 된 값으로 띄우면 아무도 보지 않는 포트에 뜬다 — 환경의 값이 다르면 경고 한 줄을 찍고 infra/.env 로 띄운다.
@@ -16,6 +17,8 @@
 # stop — 포트로 죽일 때 연결 중인 클라이언트까지 잡으면 남을 죽인다(docs/gotchas.md §1). `ss -ltnp` 의 리스너만 보고, 그 명령줄이 수집기
 #   (`…/infra/llm-status/collector.py serve`)가 아니면 손대지 않고 실패로 끝난다. 아무도 안 들으면 이미 내려간 것이다(0). pid 가 안 보이는
 #   리스너(다른 계정)와 ss 가 없는 박스는 '모른다' 라 실패(1)다 — '내려갔다' 로 말하지 않는다.
+# probe — /health 의 몸에 `"service":"hwax-llm-status"` 가 있을 때만 0 이다(상태 코드는 보지 않는다 — 멈춘 수집기는 503 이다). 그 포트에서 남의 앱이
+#   200 을 내도 1 이다 — 꺼진 박스의 update-all 5d 가 그 앱을 두고 ○ 한 줄만 남긴다(docs/ops-dashboard OD-28). 못 물으면(curl 없음 · 안 닿음) 1 이다.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -88,6 +91,14 @@ case "${1:-}" in
     done
     echo "⚠ 수집기(pid $_pid)가 5초 안에 :$PORT 를 듣지 않는다 — 로그 $LOG 를 본다(뒤에서는 계속 돈다)" >&2; exit 1
     ;;
+  probe)
+    _body="$(curl -s --noproxy '*' -m 3 "http://127.0.0.1:$PORT/health" 2>/dev/null || true)"
+    case "$_body" in
+      *'"service":"hwax-llm-status"'*) echo "✓ :$PORT 의 /health 는 LLM/GPU 현황 수집기의 답이다"; exit 0 ;;
+      '') echo "· :$PORT 의 /health 가 답하지 않는다"; exit 1 ;;
+      *) echo "· :$PORT 의 /health 는 수집기의 답이 아니다(그 포트에 다른 것이 떠 있다 — docs/PORT-MAP.md)"; exit 1 ;;
+    esac
+    ;;
   stop)
     command -v ss >/dev/null 2>&1 || {
       echo "✗ ss(iproute2)가 없어 :$PORT 를 듣는 프로세스를 볼 수 없다 — 수집기가 내려갔는지 모른다(내리지 않았다)" >&2; exit 1; }
@@ -128,5 +139,5 @@ case "${1:-}" in
     echo "✗ KILL 뒤에도 pid $(_left) 가 남았다" >&2; exit 1
     ;;
   *)
-    echo "사용법: $(basename "$0") {run|start|stop}" >&2; exit 2 ;;
+    echo "사용법: $(basename "$0") {run|start|stop|probe}" >&2; exit 2 ;;
 esac
