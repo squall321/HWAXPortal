@@ -220,7 +220,7 @@ def _ra_error(r: httpx.Response) -> str:
     try:
         j = r.json()
         msg = j.get("message") or j.get("detail") or j.get("error") or ""
-    except ValueError:
+    except (ValueError, AttributeError):     # JSON 이 아니거나 객체가 아닌 JSON(목록 · 글 · 수) — 본문 그대로(docs/report-figures 반대 검토 F4)
         msg = r.text
     return str(msg)[:300]
 

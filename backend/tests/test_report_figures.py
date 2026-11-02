@@ -49,7 +49,9 @@ def _sha(b: bytes) -> str:
 
 class _RA:
     """가짜 RA — 보고서 한 건(쪽마다 blocks_order). ai-draft PATCH 는 진짜처럼 읽고 · 합치고 · 쓴다(같은 id 는 교체, 새 id 는 끝에).
-    status 로 단계(outline · files · patch)의 답을 바꾸고, delay 는 PATCH 의 읽기와 쓰기 사이를 벌린다(동시 호출 시험)."""
+    dry_run PATCH 는 가드(권한 · 발행 · 편집 잠금)만 보고 바꾸지 않는다(RA _apply_ai_draft 와 같다). status 로 단계의 답을 바꾼다 —
+    outline · files · patch(가드 — dry_run 과 진짜 PATCH 둘 다) · patch_real(진짜 PATCH 만 — 가드를 지난 뒤의 검증 거절). delay 는 PATCH 의
+    읽기와 쓰기 사이를 벌린다(동시 호출 시험)."""
 
     def __init__(self, pages: int = 2, *, status: dict | None = None, drop: bool = False, delay: float = 0.0, rid: int = 41):
         self.rid, self.status, self.drop, self.delay = rid, status or {}, drop, delay
@@ -85,10 +87,14 @@ class _RA:
                                                       "size": 1, "is_image": True, "owner_user_id": 5, "workspace_slug": "personal-5",
                                                       "uploaded_at": "2026-11-02T00:00:00Z"}})
         if path == f"/api/reports/{self.rid}/ai-draft" and req.method == "PATCH":
-            st = self._st("patch", 200)
+            body = json.loads(req.content)
+            st = self._st("patch", 200) if body.get("dry_run") else self._st("patch_real", self._st("patch", 200))
             if st >= 400:
                 return httpx.Response(st, json={"success": False, "message": f"patch {st}"})
-            body = json.loads(req.content)
+            if body.get("dry_run"):
+                return httpx.Response(200, json={"success": True, "data": {"dry_run": True, "report_id": self.rid, "title": "심의",
+                                                                         "page_diff": [], "metadata_changes": {}, "warnings": [],
+                                                                         "mounted_to": [], "note": "적용하지 않았습니다."}})
             p = self.pages[body["page"] - 1]
             order = list(p["blocks_order"])                   # 읽기
             await asyncio.sleep(self.delay)
@@ -177,7 +183,9 @@ def test_그림을_그_사람_명의로_올리고_마지막_쪽_끝에_칸_하�
     sid = f"fig_{_sha(PNG)[:16]}"
     assert out == {"ok": True, "report_id": 41, "file_id": "f1", "page": 2, "block_index": 2, "url": "/w/personal-5/reports/41",
                    "block_id": sid, "replaced": False}
-    assert ra.paths() == ["GET /api/reports/41/outline", "POST /api/files", "PATCH /api/reports/41/ai-draft"]
+    assert ra.paths() == ["GET /api/reports/41/outline", "PATCH /api/reports/41/ai-draft", "POST /api/files",
+                          "PATCH /api/reports/41/ai-draft"]
+    assert json.loads(ra.calls[1].content) == {"page": 2, "dry_run": True}, "올리기 전에 RA 가드를 dry_run 으로 묻는다"
     assert all(q.headers["authorization"] == "Bearer rat_kim" for q in ra.calls), "모든 RA 호출은 그 사람의 RA 토큰으로"
     assert ra.files == [{"filename": "stress_plot.png", "mime": "image/png", "auth": "Bearer rat_kim"}]
     patch = json.loads(ra.calls[-1].content)
@@ -392,19 +400,42 @@ def test_meta_나_file_칸이_없으면_400(portal):
     ("files", 500, 502, "ra_error"),
     ("patch", 403, 403, "not_editable"),
     ("patch", 409, 409, "report_locked"),
-    ("patch", 400, 422, "ra_rejected"),
     ("patch", 404, 404, "report_not_found"),
+    ("patch_real", 400, 422, "ra_rejected"),
+    ("patch_real", 409, 409, "report_locked"),
 ])
 def test_RA_가_거절하면_맞는_상태와_까닭(portal, step, st, want, err):
     c, ra, _s, _tok = portal
     ra.status = {step: st}
     r = _post(c, _meta())
     assert r.status_code == want and r.json() == {"ok": False, "error": err, "detail": r.json()["detail"]}
-    assert f"{step} {st}" in r.json()["detail"] or st == 401, "RA 가 밝힌 까닭을 붙인다"
+    assert f"{step.split('_')[0]} {st}" in r.json()["detail"] or st == 401, "RA 가 밝힌 까닭을 붙인다"
     if step == "patch":
-        assert "f1" in r.json()["detail"] and "남았습니다" in r.json()["detail"], "이미 올린 파일이 RA 에 남았다고 말한다"
+        assert "POST /api/files" not in ra.paths() and "남았습니다" not in r.json()["detail"], \
+            "RA 가드(권한 · 발행 · 편집 잠금)가 거절할 보고서에는 그림 파일을 올리지 않는다 — RA 에 고아 파일을 남기지 않는다"
+    if step == "patch_real":
+        assert "f1" in r.json()["detail"] and "남았습니다" in r.json()["detail"], "가드 뒤에 거절되면 이미 올린 파일이 RA 에 남았다고 말한다"
     (row,) = app.state.agent_audit.rows
     assert row["status"] == "failed" and row["meta"]["error"] == err
+
+
+@pytest.mark.parametrize("body", [["upstream"], "busy", 7])
+def test_RA_오류의_본문이_객체가_아닌_JSON_이어도_계약대로_답한다(portal, monkeypatch, body):
+    """반대 검토 F4 — 목록 · 글 · 수의 JSON 본문이 AttributeError 로 새어 포털 500(text/plain · 감사 없음)이 됐다."""
+    c, _ra, _s, _tok = portal
+    monkeypatch.setattr(F, "_TRANSPORT", httpx.MockTransport(lambda req: httpx.Response(503, json=body)))
+    r = _post(c, _meta())
+    assert r.status_code == 502 and r.json()["ok"] is False and r.json()["error"] == "ra_error"
+    assert app.state.agent_audit.rows[-1]["status"] == "failed"
+
+
+def test_mime_에_매개변수가_붙어도_꼴로_본다(portal):
+    """반대 검토 F6 — 'image/png; charset=binary' 가 415 였다."""
+    c, ra, _s, _tok = portal
+    r = _post(c, _meta(mime="image/png; charset=binary"))
+    assert r.status_code == 200 and r.json()["ok"] is True
+    r = _post(c, _meta(SVG, mime="image/svg+xml; charset=utf-8"), SVG)
+    assert r.status_code == 415 and "SVG" in r.json()["detail"]
 
 
 def test_RA_에_닿지_못하면_502(portal, monkeypatch):
@@ -455,7 +486,7 @@ def test_위임_토큰이_거절되면_한_번만_새로_받는다(portal, monke
     r = _post(c, _meta())
     assert r.status_code == 200, r.text
     assert minted == ["kim@corp.com"]
-    assert [q.headers["authorization"] for q in ra.calls] == ["Bearer stale"] + ["Bearer fresh"] * 3
+    assert [q.headers["authorization"] for q in ra.calls] == ["Bearer stale"] + ["Bearer fresh"] * 4
     assert all(q.headers.get("x-workspace-slug") == "team-a" for q in ra.calls)
 
 

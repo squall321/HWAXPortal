@@ -158,7 +158,7 @@ def _check(meta: dict, raw: bytes, settings: Settings, *, need_report: bool) -> 
         raise FigureError(413, "too_large", f"그림이 Report Archive 상한({settings.docforge_ra_file_max_mb}MB)을 넘습니다.")
     if not raw:
         raise FigureError(400, "empty_file", "그림 파일이 비었습니다.")
-    declared = _text(meta, "mime").lower()
+    declared = _text(meta, "mime").lower().split(";", 1)[0].strip()      # 'image/png; charset=binary' 의 매개변수는 뗀다(반대 검토 F6)
     declared = _MIME_ALIAS.get(declared, declared)
     if "svg" in declared:
         raise FigureError(415, "unsupported_media_type",
@@ -281,6 +281,11 @@ async def _to_report(ra: _dfd.RaSession, fig: dict, raw: bytes) -> dict:
             raise FigureError(400, "bad_page", f"그 보고서에는 {n}쪽까지 있습니다(page={page}). 없으면 마지막 쪽에 넣습니다.")
         cur = pages[page - 1] if len(pages) >= page and isinstance(pages[page - 1], dict) else {}
         had = {b.get("block_id") for b in (cur.get("blocks") or []) if isinstance(b, dict)}
+        # 편집 권한 · 발행 · 편집 잠금은 RA 가 정한다 — 올리기 전에 같은 PATCH 를 dry_run 으로 묻는다. RA 는 그 가드를 지난 뒤에만 미리보기를 내고
+        # 아무것도 바꾸지 않는다(_apply_ai_draft). 거절될 보고서에 그림 파일을 남기지 않는다(반대 검토 F7, RF-6).
+        r = await ra.call(cli, "PATCH", f"/api/reports/{rid}/ai-draft", json={"page": page, "dry_run": True})
+        if r.status_code >= 400:
+            raise _ra_fail(r, "patch")
         fid = await _upload(ra, cli, fig, raw)
         left = f"올린 그림 파일({fid})은 Report Archive 에 남았습니다."
         blk = block(fid, fig["sha256"], fig["caption"], fig["alt"])
