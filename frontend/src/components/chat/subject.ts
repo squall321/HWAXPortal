@@ -163,7 +163,8 @@ export function candidatesFromConversation(conv: Conversation | null | undefined
           arts.set(`ecad:${jid}`, { kind: 'ecad', id: jid, ...(str(o.revision, 120) ? { rev: str(o.revision, 120) } : {}),
                                     ...(label ? { label } : {}), from: `이 대화의 ${tool}` });
         }
-        // DynaForge 리포트 — ULID id 와 eng_meta(개발 단계 dev_revision 이 그 안에 있다)
+        // DynaForge 리포트 — ULID id 와 eng_meta(개발 단계 dev_revision 이 그 안에 있다 — KooRemapper reports/schemas.py ReportRead ·
+        // ReportListItem 의 id · label · eng_meta)
         const em = obj(o.eng_meta);
         const rid = typeof o.report_id === 'string' ? o.report_id : typeof o.id === 'string' ? o.id : '';
         const dev = obj(em?.dev_revision) ?? obj(o.dev_revision);
@@ -171,7 +172,8 @@ export function candidatesFromConversation(conv: Conversation | null | undefined
         if (em && ULID.test(rid.toUpperCase()) && !arts.has(`cae:${rid.toUpperCase()}`)) {
           const id = rid.toUpperCase();
           arts.set(`cae:${id}`, { kind: 'cae', id, ...(code ? { rev: code } : {}),
-                                  ...(str(o.title ?? o.name) ? { label: str(o.title ?? o.name) } : {}), from: `이 대화의 ${tool}` });
+                                  ...(str(o.label ?? o.title ?? o.name) ? { label: str(o.label ?? o.title ?? o.name) } : {}),
+                                  from: `이 대화의 ${tool}` });
         }
         if (code && !rounds.has(code)) rounds.set(code, { code, from: `이 대화의 ${tool}(개발 단계 dev_revision)` });
         // 리스크 앱 과제의 stage — 꼴에 맞을 때만 차수 후보다(웹 폼이 받는 dv · pre1 은 차수가 아니다)

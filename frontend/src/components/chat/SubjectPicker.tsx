@@ -3,7 +3,7 @@
 // docs/project-insight-graph PLAN §4.1. 후보는 이 대화의 도구 결과(candidates)와 허브 과제 찾기(그 사람의 PAT — 포털이 StepForge find_plm_task 를
 // 부른다)에서만 온다. 과제 key 를 손으로 적는 칸은 없다 — 결과 행의 key 칸만 고른다. 고른 주제는 심의 시작 때 에이전트 서버가 같은 풀이로 다시
 // 확인한다(확인되지 않으면 어느 과제에도 잇지 않는다). 과제를 고르지 않으면 주제 없이 돈다(과제 대상이 아닌 질문 — 잇지 않는다).
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { searchSubjectTasks } from '../../api/chat.api';
 import {
   candidatesFromSearch,
@@ -30,6 +30,7 @@ export function SubjectPicker({ candidates, value, onChange }: SubjectPickerProp
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const ctrl = useRef<AbortController | null>(null);
+  const group = useId(); // 라디오 묶음 이름 — 한 화면에 고르기가 둘이어도(심의 시작 · 브리프) 섞이지 않게
 
   // 이 대화의 후보 뒤에 찾은 행 — 같은 key 는 하나다(먼저 본 출처를 둔다).
   const rows = useMemo(() => {
@@ -77,13 +78,13 @@ export function SubjectPicker({ candidates, value, onChange }: SubjectPickerProp
       </span>
       <div className="cx-brief-seats cx-subj-rows" role="radiogroup" aria-label="과제 주제">
         <label className="cx-brief-seat">
-          <input type="radio" name="cx-subj-task" checked={!picked} onChange={() => pick('')} />
+          <input type="radio" name={group} checked={!picked} onChange={() => pick('')} />
           <span className="cx-brief-seat-name">과제 대상이 아님</span>
           <span className="cx-brief-seat-why">어느 과제에도 잇지 않는다</span>
         </label>
         {rows.map((r) => (
           <label key={r.key} className="cx-brief-seat">
-            <input type="radio" name="cx-subj-task" checked={value.spTask === r.key} onChange={() => pick(r.key)} />
+            <input type="radio" name={group} checked={value.spTask === r.key} onChange={() => pick(r.key)} />
             <span className="cx-brief-seat-name">{r.key}</span>
             {r.taskCode && <span className="cx-brief-seat-axis">{r.taskCode}</span>}
             {!r.active && <span className="cx-brief-seat-axis">허브에서 비활성</span>}
