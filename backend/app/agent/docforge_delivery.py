@@ -178,6 +178,44 @@ def summary(conv: dict) -> dict:
 Remint = Callable[[], Awaitable[str | None]]
 
 
+class RaSession:
+    """RA 를 그 사람 명의 토큰으로 부른다 — 공간 머리(X-Workspace-Slug) · 401 이면 한 번만 새 토큰(위임)으로 다시(RA 가지와 같은 규칙).
+    RA 에 파일을 올리는 길은 이것 하나다 — DocForge 배달(deliver)과 보고서 그림 넣기(report_figures, docs/report-figures RF-3)가 같이 쓴다."""
+
+    def __init__(self, base: str, token: str, workspace: str = "", remint: Remint | None = None):
+        self.base, self.token, self.workspace, self.remint = base.rstrip("/"), token, workspace, remint
+        self.reminted = False
+
+    def _headers(self) -> dict:
+        h = {"Authorization": f"Bearer {self.token}"}
+        if self.workspace:
+            h["X-Workspace-Slug"] = self.workspace
+        return h
+
+    async def call(self, cli: httpx.AsyncClient, method: str, path: str, **kw) -> httpx.Response:
+        r = await cli.request(method, self.base + path, headers=self._headers(), **kw)
+        if r.status_code == 401 and self.remint is not None and not self.reminted:
+            # 캐시해 둔 위임 토큰을 RA 가 거절했다(회수 · 비밀 교체) — 한 번만 새로 받아 다시(RA 가지와 같은 규칙)
+            self.reminted = True
+            fresh = await self.remint()
+            if fresh:
+                self.token = fresh
+                if "files" in kw:                       # 올린 스트림은 다시 읽어야 한다
+                    kw["files"]["file"][1].seek(0)
+                r = await cli.request(method, self.base + path, headers=self._headers(), **kw)
+        return r
+
+    async def upload(self, cli: httpx.AsyncClient, name: str, fh, mime: str) -> httpx.Response:
+        """`POST /api/files` 파일 하나 — 답을 그대로 돌려준다(거절 문구는 부른 쪽이 맥락에 맞게 짓는다). 받은 번호는 file_id_of(답)."""
+        return await self.call(cli, "POST", "/api/files", files={"file": (name, fh, mime)})
+
+
+def file_id_of(r: httpx.Response) -> str | None:
+    """RA `POST /api/files` 의 답({success, data: FileMeta}) → file id. 없으면 None."""
+    fid = (r.json().get("data") or {}).get("id")
+    return str(fid) if fid else None
+
+
 def _ra_error(r: httpx.Response) -> str:
     try:
         j = r.json()
@@ -196,28 +234,8 @@ async def deliver(settings: Settings, pkg: Path, *, token: str, workspace: str =
         raise DeliveryError("패키지에 쪽이 없습니다 — 보고서를 만들지 않았습니다.", 502)
     res_dir = (pkg / "resources").resolve()
     limit = int(settings.docforge_ra_file_max_mb) * 1024 * 1024
-    base = settings.ra_base_url.rstrip("/")
     warnings: list[str] = []
-    state = {"token": token, "reminted": False}
-
-    async def post(cli: httpx.AsyncClient, path: str, **kw) -> httpx.Response:
-        def hdrs() -> dict:
-            h = {"Authorization": f"Bearer {state['token']}"}
-            if workspace:
-                h["X-Workspace-Slug"] = workspace
-            return h
-        r = await cli.post(base + path, headers=hdrs(), **kw)
-        if r.status_code == 401 and remint is not None and not state["reminted"]:
-            # 캐시해 둔 위임 토큰을 RA 가 거절했다(회수 · 비밀 교체) — 한 번만 새로 받아 다시(RA 가지와 같은 규칙)
-            state["reminted"] = True
-            fresh = await remint()
-            if fresh:
-                state["token"] = fresh
-                if "files" in kw:                       # 올린 스트림은 다시 읽어야 한다
-                    name, fh, mime = kw["files"]["file"]
-                    fh.seek(0)
-                r = await cli.post(base + path, headers=hdrs(), **kw)
-        return r
+    ra = RaSession(settings.ra_base_url, token, workspace, remint)
 
     ids: dict[str, str | None] = {}
     async with httpx.AsyncClient(timeout=300) as cli:
@@ -233,20 +251,20 @@ async def deliver(settings: Settings, pkg: Path, *, token: str, workspace: str =
                 continue
             mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
             with f.open("rb") as fh:
-                r = await post(cli, "/api/files", files={"file": (name, fh, mime)})
+                r = await ra.upload(cli, name, fh, mime)
             if r.status_code >= 400:
                 raise DeliveryError(f"RA 가 리소스 {name} 를 받지 않았습니다(HTTP {r.status_code} {_ra_error(r)})"
                                     + (f" — 앞서 올린 리소스 {sum(1 for v in ids.values() if v)}개는 RA 에 남았습니다" if ids else ""), 502)
-            fid = ((r.json().get("data") or {}).get("id"))
+            fid = file_id_of(r)
             if not fid:
                 raise DeliveryError(f"RA 가 리소스 {name} 의 번호를 돌려주지 않았습니다.", 502)
-            ids[name] = str(fid)
+            ids[name] = fid
         pages = _swap(pages, ids)
         body = {"template_id": pages[0]["template_id"], "template_version": pages[0]["template_version"],
                 "title": (report.get("title") or "DocForge 변환")[:255], "tags": report.get("tags") or [], "pages": pages}
         if report.get("report_date"):
             body["report_date"] = report["report_date"]
-        r = await post(cli, "/api/reports", json=body)
+        r = await ra.call(cli, "POST", "/api/reports", json=body)
     if r.status_code >= 400:
         hint = " — RA 에 문서 가져오기 템플릿(__import_blank__)이 없으면 RA 웹 '가져오기' 를 한 번 쓰면 생깁니다" \
             if "template" in _ra_error(r).lower() else ""
