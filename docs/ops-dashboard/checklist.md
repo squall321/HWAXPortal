@@ -35,3 +35,4 @@
   - [x] 되돌린 쓰기의 계열 번호 — 캐시는 COMMIT 된 줄만(OD-27)
   - [x] 꺼진 5d — /health 의 service 표지로 수집기를 알아보고 남의 앱이면 ○ 한 줄만(llm-status.sh probe · OD-28) · cae00 8760 확인은 사람(server-setup.md 2절)
   - [x] 재기동 생략 · start 의 '이미 떠 있다' — stop 과 같은 명령줄 판정(llm-status.sh check · update-sites 는 llm-status 만, OD-29)
+  - [x] 오류 — HTTP 5xx 답 · 오류로 끝난 요청을 따로(더하면 한 요청을 두 번 센다 · 카드 · 저장 · 가짜 · 화면 시험, OD-30)

@@ -5,6 +5,7 @@
 도구는 프론트가 이미 가진 것만 쓴다(esbuild · @playwright/test). 없으면 건너뛴다(운영 박스).
 """
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -179,6 +180,9 @@ def _real_data(tmp: Path) -> tuple[dict, dict]:
             for f in (glm, chat, r1, r2):
                 f.running, f.waiting = float(1 + i % 4), float(i % 3)
                 f.step(gen=300 + 10 * i, ttft=0.07 if i % 5 else 0.4)
+            if i == 20:                      # 5xx 둘 — 그 가운데 하나는 엔진 오류로 끝난 요청이다(둘에 함께 든다 — OD-30)
+                glm.c["h5xx"] += 2
+                glm.c["error"] += 1
             for st in coll.states.values():
                 if st.t.problem is None:
                     coll.poll_vllm(st)
@@ -248,6 +252,15 @@ def test_작은_그래프_분위수_어림_창_다름_표지가_실제_수집기
     calls = [c for c in s["calls"] if c.startswith("/auth/admin/llm-status/series?")]
     targets = {c.split("target=")[1].split("&")[0] for c in calls}
     assert targets == {"GLM-1", "GLM-2", "QWEN"}, "그래프는 카드(복제본 · 설정 문제 대상 빼고)만 받는다"
+
+
+def test_오류는_HTTP_5xx_답과_오류로_끝난_요청을_따로_보인다(seen):
+    """vLLM 은 스트리밍이 아닌 요청이 엔진 오류로 끝나면 500 으로도 답한다 — 더하면 한 요청을 두 번 센다(반대 검토 11-02 · OD-30)."""
+    s = seen("ok")
+    v = next(t for t in seen.snap["targets"] if t["id"] == "GLM-1")["values"]
+    assert v["http_5xx_per_min"]["value"] == pytest.approx(0.4) and v["finished_error_per_min"]["value"] == pytest.approx(0.2), v
+    assert re.search(r"HTTP 5xx 답\s*0\.4/분", s["text"]) and re.search(r"오류로 끝난 요청\s*0\.2/분", s["text"]), s["text"]
+    assert "끊김 · 선점" in s["text"]
 
 
 def test_지금_쓰는_일은_HWAX_몫이라고_적고_Slurm_GPU_는_무엇이_필요한지_말한다(seen):

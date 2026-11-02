@@ -77,7 +77,7 @@ SERVICE = "hwax-llm-status"      # /health 의 service — llm-status.sh probe �
 
 # 저장하는 지표 — 대상 종류마다. 나머지는 지금 값만 낸다.
 STORE_MAIN = ("up", "running", "waiting", "kv", "prompt_tps", "gen_tps", "ttft_p50", "ttft_p95", "e2e_p50", "e2e_p95", "queue_p95",
-              "errors_per_min", "preempt_per_min", "prefix_hit")
+              "http_5xx_per_min", "finished_error_per_min", "preempt_per_min", "prefix_hit")
 STORE_REPLICA = ("up", "running", "waiting", "kv", "gen_tps", "ttft_p95")
 STORE_AGENT = ("up", "delib_active", "delib_queued", "delib_seats_running", "routine_active", "review_active", "chat_active")
 STORE_ROUTER = ("up", "inflight")
@@ -86,8 +86,8 @@ APPROX = frozenset({"ttft_p50", "ttft_p95", "e2e_p50", "e2e_p95", "queue_p50", "
 VLLM_VALUES = {"up": "health", "version": "version", "models": "models", "context": "models", "running": "metrics",
                "waiting": "metrics", "kv": "metrics", "prompt_tps": "metrics", "gen_tps": "metrics", "ttft_p50": "metrics",
                "ttft_p95": "metrics", "e2e_p50": "metrics", "e2e_p95": "metrics", "queue_p50": "metrics", "queue_p95": "metrics",
-               "requests_per_min": "metrics", "errors_per_min": "metrics", "aborts_per_min": "metrics", "preempt_per_min": "metrics",
-               "prefix_hit": "metrics"}
+               "requests_per_min": "metrics", "http_5xx_per_min": "metrics", "finished_error_per_min": "metrics", "aborts_per_min": "metrics",
+               "preempt_per_min": "metrics", "prefix_hit": "metrics"}
 AGENT_VALUES = ("up", "delib_active", "delib_queued", "delib_seats_running", "delib_paused", "routine_active", "routine_parked",
                 "routine_max", "review_active", "card_review", "chat_active", "chat", "chat_llm", "context_tokens", "model")
 ROUTER_VALUES = ("up", "status", "inflight", "upstreams_up", "upstreams_total", "models_match", "upstreams")
@@ -687,12 +687,9 @@ def derive(hist: deque, interval: float) -> tuple[dict, dict]:
     now["preempt_per_min"] = _rate(p5, lambda s: s.counters.get("preemptions"), 60.0, thin)
     now["requests_per_min"] = _rate(p5, _labeled("finished", None), 60.0, thin)
     now["aborts_per_min"] = _rate(p5, _labeled("finished", ("abort",)), 60.0, thin)
-
-    def errors(s: Snap):
-        http_ = _labeled("http", ("5xx",))(s)
-        fin = _labeled("finished", ("error",))(s)
-        return None if http_ is None and fin is None else (http_ or 0.0) + (fin or 0.0)
-    now["errors_per_min"] = _rate(p5, errors, 60.0, thin)
+    # 오류는 둘로 따로 낸다(OD-30) — 스트리밍이 아닌 요청이 엔진 오류(finished_reason=error)로 끝나면 vLLM 이 500 으로도 답해 더하면 두 번 센다
+    now["http_5xx_per_min"] = _rate(p5, _labeled("http", ("5xx",)), 60.0, thin)
+    now["finished_error_per_min"] = _rate(p5, _labeled("finished", ("error",)), 60.0, thin)
     hits = qs = 0.0
     n = 0
     for a, b in p5:
@@ -715,7 +712,8 @@ def derive(hist: deque, interval: float) -> tuple[dict, dict]:
             now[f"{h}_{tag}"] = (promtext.quantile(q, acc), why) if acc is not None else (None, why)
     if mixed5:      # 표지 없는 서버의 5분 창에서 카운터가 줄었다 — 그 창의 값은 모두 빈칸이다
         now.update({k: (None, MIXED) for k in now if k not in ("prompt_tps", "gen_tps")})
-    for k in ("preempt_per_min", "errors_per_min", "prefix_hit", "ttft_p50", "ttft_p95", "e2e_p50", "e2e_p95", "queue_p95"):
+    for k in ("preempt_per_min", "http_5xx_per_min", "finished_error_per_min", "prefix_hit", "ttft_p50", "ttft_p95", "e2e_p50", "e2e_p95",
+              "queue_p95"):
         keep[k] = now[k][0]
     return now, keep
 

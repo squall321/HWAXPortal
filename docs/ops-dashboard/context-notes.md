@@ -130,3 +130,11 @@ start 는 남이면 띄우지 않고 1, ss 를 못 쓰면 종전대로 띄운다
 (시험이 llm-router 로 본다). stop 의 문구 · 종료코드는 그대로다. 버린 것 — services.py 에 몸 검사 손잡이(`expect_body` 같은 것)를 더하기(모든 서비스의
 판정 길을 건드린다 — 지시가 몸 검사가 없으면 명령줄로 하라고 정했다), 매니페스트에 `verify:` 같은 일반 고리(쓰는 곳이 하나다 — update-sites 에는 이미
 서비스 이름으로 가르는 자리가 여럿이다).
+
+**OD-30 오류는 둘로 따로 낸다 — HTTP 5xx 답 · 오류로 끝난 요청(반대 검토 11-02 — LOW).** `errors_per_min` 은 `http_requests_total{status="5xx"}` 와
+`vllm:request_success_total{finished_reason="error"}` 를 더했다(OD-20). vLLM 0.23.0 의 `FinishReason.ERROR` 는 '언제나 500 으로 바뀐다' 가 약속이다
+(`vllm/v1/engine/__init__.py` — 이미지 소스에서 확인, 살아 있는 서버로는 재현하지 않았다) — 스트리밍이 아닌 요청 하나가 둘에 함께 들어 두 번 세졌다.
+스트리밍은 200 을 보낸 뒤 스트림 안에서 끝나 5xx 에 들지 않는다. 그래서 더한 값은 무엇을 세는지 말할 수 없다 — `http_5xx_per_min` · `finished_error_per_min`
+으로 나눠 둘 다 쌓고(주 서버 지표 14 → 15) 카드에 'HTTP 5xx 답' · '오류로 끝난 요청' 으로 따로 보인다. 겹칠 수 있다는 것은 server-setup.md 5절에 적었다.
+버린 것 — 한쪽만 내기(5xx 는 라우터 · nginx 쪽 실패와 맞대 보는 수이고, 오류로 끝남은 스트리밍 오류를 세는 유일한 칸이다), 겹친 몫을 빼기(지표만으로는 한
+요청이 둘 다인지 알 수 없다).

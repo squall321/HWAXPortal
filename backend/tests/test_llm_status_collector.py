@@ -114,7 +114,7 @@ class FakeVllm:
         self.mode = "ok"
         self.release = threading.Event()
         self.running, self.waiting, self.kv = 2.0, 1.0, 0.25
-        self.c = dict.fromkeys(("prompt", "gen", "preempt", "pq", "ph", "stop", "abort", "h2xx", "h5xx"), 0.0)
+        self.c = dict.fromkeys(("prompt", "gen", "preempt", "pq", "ph", "stop", "abort", "error", "h2xx", "h5xx"), 0.0)
         self.h = {k: [0.0] * (len(self.BOUNDS) + 1) for k in ("ttft", "e2e", "queue")}   # 칸마다(누적 아님) · 마지막은 +Inf
         self.seen: list[tuple[str, str | None]] = []
         fake = self
@@ -195,7 +195,7 @@ class FakeVllm:
             out += [f"# TYPE vllm:{name}_total counter", f"vllm:{name}_total{{{lab}}} {self.c[key]}",
                     f"vllm:{name}_created{{{lab}}} 1.7e+09"]
         out.append("# TYPE vllm:request_success_total counter")
-        for reason in ("stop", "abort"):
+        for reason in ("stop", "abort", "error"):
             if self.c[reason] or reason == "stop":
                 out.append(f'vllm:request_success_total{{{lab},finished_reason="{reason}"}} {self.c[reason]}')
         for kind, base in (("ttft", "time_to_first_token_seconds"), ("e2e", "e2e_request_latency_seconds"),
@@ -446,7 +446,7 @@ class _FakeText:
     BOUNDS = FakeVllm.BOUNDS
     model, running, waiting, kv = "m", 4.0, 2.0, 0.6
     ident, started = True, 1_793_578_769.76
-    c = dict.fromkeys(("prompt", "gen", "preempt", "pq", "ph", "stop", "abort", "h2xx", "h5xx"), 1.0)
+    c = dict.fromkeys(("prompt", "gen", "preempt", "pq", "ph", "stop", "abort", "error", "h2xx", "h5xx"), 1.0)
     h = {k: [1.0] * (len(FakeVllm.BOUNDS) + 1) for k in ("ttft", "e2e", "queue")}
 
 
@@ -497,7 +497,7 @@ def test_다시_뜬_서버는_새_프로세스의_표본으로만_재고_음수_
     assert [p[0] for p in s["points"]] == [stamps[1], stamps[2], int(clock())], "다시 뜬 첫 표본(t45)은 빈칸 — 줄이 없다"
     assert all(p[1] == pytest.approx(20.0) for p in s["points"]), s["points"]
     assert t_reset not in [p[0] for p in s["points"]]
-    for metric in ("prompt_tps", "gen_tps", "preempt_per_min", "errors_per_min"):
+    for metric in ("prompt_tps", "gen_tps", "preempt_per_min", "http_5xx_per_min", "finished_error_per_min"):
         pts = coll.store.series("glm", metric, "1h", now=clock())["points"]
         assert all(p[1] >= 0 for p in pts), f"{metric} 에 음수가 있다 — {pts}"
 
@@ -611,16 +611,22 @@ def test_히스토그램_지연은_누적이_아니라_창_안의_증가로_잰�
     assert v["ttft_p95"]["approx"] is True and v["e2e_p95"]["approx"] is True, "분위수는 어림 표지가 붙는다"
     assert v["requests_per_min"]["value"] == pytest.approx(40.0), "15초마다 10 건"
     assert v["prefix_hit"]["value"] == pytest.approx(0.25), "적중 100 / 질의 400"
-    assert v["errors_per_min"]["value"] == 0.0 and v["aborts_per_min"]["value"] == 0.0, "라벨이 아직 없으면 0(한 번도 없었다)"
-    f.c["h5xx"] += 3
+    assert v["http_5xx_per_min"]["value"] == 0.0 and v["finished_error_per_min"]["value"] == 0.0 and v["aborts_per_min"]["value"] == 0.0, \
+        "라벨이 아직 없으면 0(한 번도 없었다)"
+    f.c["h5xx"] += 3          # 5xx 셋 — 그 가운데 하나는 엔진 오류로 끝난 요청이다(스트리밍이 아니면 vLLM 이 500 으로 답한다)
+    f.c["error"] += 1
     f.c["abort"] += 2
     f.c["preempt"] += 1
     clock.tick(15)
     f.step()
     coll.poll_vllm(st)
     v = _vals(coll.snapshot(), "glm")
-    assert v["errors_per_min"]["value"] == pytest.approx(3 / 1.0), "5분 창(1분 걸린 넷 쌍)에 5xx 셋 — 분당 3"
+    assert v["http_5xx_per_min"]["value"] == pytest.approx(3 / 1.0), "5분 창(1분 걸린 넷 쌍)에 5xx 셋 — 분당 3"
+    assert v["finished_error_per_min"]["value"] == pytest.approx(1.0), "오류로 끝난 요청은 따로 — 한 요청을 둘에 더해 넷으로 세지 않는다(OD-30)"
+    assert "errors_per_min" not in v, "더한 칸은 없다"
     assert v["aborts_per_min"]["value"] == pytest.approx(2.0) and v["preempt_per_min"]["value"] == pytest.approx(1.0)
+    s = coll.store.series("glm", "finished_error_per_min", "1h", now=clock())
+    assert s["points"] and s["points"][-1][1] == pytest.approx(1.0), "둘 다 쌓는다"
 
 
 def test_v1_models_는_키가_없으면_401_을_까닭으로_보이고_키는_v1_models_에만_싣는다(tmp_path, fakes):

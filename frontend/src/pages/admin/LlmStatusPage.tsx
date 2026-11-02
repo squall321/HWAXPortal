@@ -286,9 +286,17 @@ function TargetCard({ t, ctx, sparks }: { t: LlmTarget; ctx: ContextDiff[]; spar
         <dd>
           <V c={v.requests_per_min} f={fmtPerMin} />
         </dd>
-        <dt>오류 · 끊김 · 선점</dt>
+        <dt>HTTP 5xx 답</dt>
         <dd>
-          <V c={v.errors_per_min} f={fmtPerMin} /> · <V c={v.aborts_per_min} f={fmtPerMin} /> · <V c={v.preempt_per_min} f={fmtPerMin} />
+          <V c={v.http_5xx_per_min} f={fmtPerMin} />
+        </dd>
+        <dt>오류로 끝난 요청</dt>
+        <dd>
+          <V c={v.finished_error_per_min} f={fmtPerMin} />
+        </dd>
+        <dt>끊김 · 선점</dt>
+        <dd>
+          <V c={v.aborts_per_min} f={fmtPerMin} /> · <V c={v.preempt_per_min} f={fmtPerMin} />
         </dd>
         <dt>앞부분 캐시 적중</dt>
         <dd>
