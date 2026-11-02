@@ -965,6 +965,20 @@ def test_기본_대상은_LLM_UPSTREAMS_먼저_없으면_LLM_BASE_URL_그리고_
     assert C.build_config(C.env_values("")).targets == ()
 
 
+def test_대상_이름_agent_router_는_수집기가_쓰는_이름이라_받지_않는다(tmp_path):
+    """agent · router 는 에이전트 서버 · 라우터의 대상 id 다 — 같은 이름의 vLLM 대상을 받으면 저장(("agent", "up"))과 /series 의 대상 표가 겹친다
+    (반대 검토 11-02). 받지 않고 까닭과 함께 대상으로 남긴다(숨기지 않는다 — OD-37)."""
+    cfg = C.build_config(C.env_values("LLM_STATUS_TARGETS=agent=http://127.0.0.1:1/v1,router=http://127.0.0.1:2/v1,ok=http://127.0.0.1:3/v1\n"))
+    assert [t.id for t in cfg.targets] == ["item-1", "item-2", "ok"], [t.id for t in cfg.targets]
+    assert "이름 agent 은 수집기가 쓰는 이름이다" in cfg.targets[0].problem and "router" in cfg.targets[1].problem
+    assert cfg.targets[2].problem is None
+    coll = _collector(tmp_path, "LLM_STATUS_TARGETS=agent=http://127.0.0.1:1/v1\n")
+    t = coll.snapshot()["targets"][0]
+    assert t["id"] == "item-1" and "수집기가 쓰는 이름" in t["problem"], t
+    assert all(c["value"] is None and c["error"].startswith("모름 — ") for c in t["values"].values()), "화면에 까닭과 함께 보인다"
+    assert coll.series_view("agent", "delib_active", "1h")[1] == 200, "agent 는 에이전트 서버 그대로다"
+
+
 def test_짝_파일은_줄_꼴과_JSON_꼴을_읽고_못_읽으면_포트로만_돈다(tmp_path):
     f = tmp_path / "m.txt"
     f.write_text("18711 node-a\nnode-b 18712\n18713: node-c  # 설명\nbad line\n18714 bad/name\n", encoding="utf-8")

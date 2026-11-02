@@ -8,7 +8,7 @@
 설정 — 리포 루트의 infra/.env 를 **직접** 읽는다(파일 위치에서 유도). 키는 argv · 환경으로 받지 않는다(라우터 규칙 LP-D11). 읽는 규칙은
 update-all `_envfile_value` 와 같다. 주기마다 파일이 바뀌었는지 보고 바뀌었으면 다시 읽는다(재기동 없음 — 지문에 infra/.env 가 없다).
   LLM_STATUS_TARGETS        `이름=<주소>/v1` 를 쉼표로. 없으면 LLM_UPSTREAMS(GLM-1 · GLM-2 …), 그것도 없으면 LLM_BASE_URL(GLM),
-                            그리고 CHAT_LLM_BASE_URL(챗 LLM). 이름은 영숫자 · . _ - 40자까지(그래프 주소에 쓴다).
+                            그리고 CHAT_LLM_BASE_URL(챗 LLM). 이름은 영숫자 · . _ - 40자까지(그래프 주소에 쓴다) · agent · router 는 못 쓴다.
   LLM_STATUS_REPLICA_PORTS  챗 LLM 복제본의 포트(예 `18711-18720`) — 호스트 · 스킴은 CHAT_LLM_BASE_URL 의 것이다.
   LLM_STATUS_REPLICA_MAP    포트 → 노드 짝 파일(줄마다 `<포트> <노드>` 또는 JSON {포트: 노드}). 진짜 자리 · 꼴은 받은 편지함 Q7 의 답이다.
   LLM_STATUS_AGENT_URL      에이전트 서버(기본 http://127.0.0.1:9009). 라우터는 LLM_UPSTREAMS 가 있을 때만 127.0.0.1:LLM_ROUTER_PORT 를 본다.
@@ -174,6 +174,7 @@ _BASE = re.compile(r"(https?)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?/?")
 _HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*")
 _QUAD = re.compile(r"(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
+RESERVED_IDS = frozenset({"agent", "router"})     # 에이전트 서버 · 라우터의 대상 id — 저장 · /series 의 대상 표에서 겹친다(OD-37)
 _NODE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
 
@@ -348,6 +349,9 @@ def build_config(vals: dict[str, str]) -> Config:
             elif not _ID.fullmatch(label):
                 rows.append(Target(f"item-{n}", f"칸 {n}", None, None, None, "targets",
                                    f"LLM_STATUS_TARGETS 의 칸 {n} 이름은 영숫자 · . _ - 로 40자까지다"))
+            elif label in RESERVED_IDS:
+                rows.append(Target(f"item-{n}", f"칸 {n}", None, None, None, "targets",
+                                   f"LLM_STATUS_TARGETS 의 칸 {n} 이름 {label} 은 수집기가 쓰는 이름이다(agent · router) — 다른 이름을 쓴다"))
             else:
                 a, why = parse_addr(url, v1=True)
                 rows.append(Target(label, label, a, key_for(a), None, "targets",
