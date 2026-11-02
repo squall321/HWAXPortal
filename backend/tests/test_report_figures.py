@@ -13,10 +13,13 @@
 """
 import asyncio
 import hashlib
+import importlib.util
 import json
 import re
 import secrets
+import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 import jwt
@@ -37,6 +40,7 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
 JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 200
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
 KIM = Principal(subject="kim@corp.com", email="kim@corp.com", display_name="김철수", groups=["plat:reportarchive"])
+_AGENT_RF = Path(__file__).resolve().parents[2].parent / "HWAXAgentServer" / "report_figures.py"
 
 
 def _sha(b: bytes) -> str:
@@ -474,3 +478,31 @@ def test_같은_보고서에_그림_둘을_한꺼번에_넣어도_칸이_사라�
     assert {f"fig_{_sha(PNG)[:16]}", f"fig_{_sha(raw2)[:16]}"} <= set(ra.pages[1]["blocks_order"]), "앞 칸이 덮였다"
     assert a["ok"] and b["ok"]
     F._LOCKS.clear()
+
+
+# ── 에이전트 서버와의 계약 ─────────────────────────────────────────────────────────────────────────────────────
+def test_에이전트_서버의_그림_올리기를_포털이_그대로_받고_같은_칸을_짓는다(real_auth, monkeypatch, tmp_path):
+    """형제 리포 HWAXAgentServer 의 report_figures.attach 를 진짜 포털 앱(ASGI)에 물린다 — 칸 이름 · 자격 · 답의 꼴이 두 쪽에서 같아야 한다.
+    한쪽만 바꾸면(meta 칸 이름 · file_id · 그림 칸의 꼴) 여기서 걸린다."""
+    if not _AGENT_RF.is_file():
+        pytest.skip("형제 리포 HWAXAgentServer 가 없다")
+    spec = importlib.util.spec_from_file_location("agent_report_figures", _AGENT_RF)
+    rf = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, rf)          # dataclass 가 지을 때 자기 모듈을 sys.modules 에서 찾는다
+    spec.loader.exec_module(rf)
+    c, ra, s, _tok = real_auth
+    from app import deps
+    monkeypatch.setattr(deps, "entitled", lambda request, p, admin_emails=frozenset(): p.model_copy(
+        update={"groups": [*p.groups, "plat:reportarchive"]}))
+    chat = R._chat_user_pat(app.state.keystore, s, KIM)
+    name = _sha(PNG)[:20] + ".png"
+    (tmp_path / name).write_bytes(PNG)
+    monkeypatch.setattr(rf, "PORTAL_TRANSPORT", httpx.ASGITransport(app=app))
+    monkeypatch.setattr(rf, "PORTAL_HTTP_BASE", "http://portal.test")
+    out = asyncio.run(rf.attach({"results": [f"응력 ![응력](/agent/artifacts/{name})"]}, user_pat=chat, artifact_dir=str(tmp_path)))
+    assert out.summary() == {"found": 1, "attached": 1, "failed": 0, "reasons": []}, out.failed
+    assert out.blocks["results"] == ["응력 [그림 1 — 응력]"]
+    assert ra.paths() == ["POST /api/files"] and ra.files == [{"filename": name, "mime": "image/png", "auth": "Bearer rat_kim"}]
+    assert out.extra_blocks == [F.block("f1", _sha(PNG), "그림 1 — 응력", "응력")], "그림 칸의 꼴은 포털 to-report 의 것과 같다"
+    (row,) = app.state.agent_audit.rows
+    assert row["event"] == "figure_upload" and row["principal"] == "kim@corp.com"
