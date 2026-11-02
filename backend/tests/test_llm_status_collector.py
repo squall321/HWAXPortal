@@ -719,6 +719,67 @@ def test_닫힌_포트는_연결_거부_연결이_안_되면_연결_시간_초�
     assert r.kind == "connect_timeout" and r.error == "연결 시간 초과(3초)", r
 
 
+class _Drip:
+    """바이트를 조금씩 흘리는 서버 — body(머리는 곧바로 · 몸을 0.2초마다 한 바이트) · headers(머리부터 0.2초마다 한 바이트). recv 하나하나는 소켓
+    시간 초과 안에 들어온다 — 기한을 주기 사이에서만 재면 끝없이 붙든다(반대 검토 11-02 · 재현 drip.py)."""
+
+    def __init__(self, mode: str):
+        self.mode = mode
+        self.srv = socket.socket()
+        self.srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.srv.bind(("127.0.0.1", 0))
+        self.srv.listen(5)
+        self.port = self.srv.getsockname()[1]
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self) -> None:
+        while True:
+            try:
+                c, _ = self.srv.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._drip, args=(c,), daemon=True).start()
+
+    def _drip(self, c: socket.socket) -> None:
+        try:
+            c.recv(65536)
+            if self.mode == "body":
+                c.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 200000\r\n\r\n")
+                data = b"x" * 200000
+            else:
+                data = b"HTTP/1.1 200 OK\r\nX-Slow: " + b"y" * 100000
+            for i in range(len(data)):
+                c.sendall(data[i:i + 1])
+                time.sleep(0.2)
+        except OSError:
+            pass
+        finally:
+            c.close()
+
+    def close(self) -> None:
+        self.srv.close()
+
+
+@pytest.mark.parametrize("mode", ["body", "headers"])
+def test_읽기_기한은_조금씩_흘리는_서버에도_머리부터_몸까지_하나다(mode):
+    """recv 마다는 소켓 시간 초과 안이라 기한을 덩이 사이에서만 재면 끝없이 붙들렸다(20초에도 그대로 — 반대 검토 11-02). 기한이 지나면 소켓을 닫아
+    막힌 recv 를 깨우고, 그 뒤 http.client 가 낸 것(잘린 머리 · 몸)은 모두 읽기 시간 초과다(OD-31)."""
+    d = _Drip(mode)
+    got: dict = {}
+    try:
+        t0 = time.monotonic()
+        th = threading.Thread(target=lambda: got.update(r=C.fetch(C.Addr("http", "127.0.0.1", d.port), "/metrics", read_s=1.0),
+                                                        took=time.monotonic() - t0), daemon=True)
+        th.start()
+        th.join(6)                                # 붙들려도 시험은 끝난다(실패로)
+    finally:
+        d.close()
+    assert "r" in got, "기한 1초인데 6초 뒤에도 붙들려 있다"
+    assert got["took"] < 2.5, f"기한 1초인데 {got['took']:.1f}초 붙들렸다"
+    r = got["r"]
+    assert r.kind == "read_timeout" and r.status is None and r.body == b"" and "읽기 시간 초과(1초)" in r.error, r
+
+
 def test_지표가_vLLM_꼴이_아니면_까닭을_말하고_대상은_남는다(tmp_path, fakes):
     f = fakes()
     f.mode = "garbage"

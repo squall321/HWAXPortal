@@ -406,13 +406,42 @@ UNREACHABLE = frozenset({"refused", "connect_timeout", "dns", "tls", "connect", 
 _SSL_CTX: ssl.SSLContext | None = None
 
 
+class _Deadline:
+    """읽기 기한 하나 — 지나면 소켓을 shutdown 해 막힌 recv 를 깨운다. 바이트를 조금씩 흘리는 서버는 recv 하나하나가 소켓 시간 초과 안에 들어와
+    덩이 사이에서만 재면 끝없이 붙든다(반대 검토 11-02 · OD-31). with 를 나온 뒤에는 손대지 않는다(잠금 — 끝난 연결의 소켓을 건드리지 않는다)."""
+
+    def __init__(self, sock: socket.socket, seconds: float):
+        self.sock, self.fired, self._done, self._lock = sock, False, False, threading.Lock()
+        self._timer = threading.Timer(seconds, self._expire)
+        self._timer.daemon = True
+
+    def _expire(self) -> None:
+        with self._lock:
+            if self._done:
+                return
+            self.fired = True
+            with contextlib.suppress(OSError):
+                self.sock.shutdown(socket.SHUT_RDWR)
+
+    def __enter__(self) -> "_Deadline":
+        self._timer.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        with self._lock:
+            self._done = True
+        self._timer.cancel()
+
+
 def fetch(a: Addr, path: str, *, headers: dict | None = None, connect_s: float | None = None, read_s: float | None = None,
           max_bytes: int = MAX_BODY) -> Resp:
-    """GET 한 번 — 연결 connect_s(기본 CONNECT_S) · 읽기 read_s(기본 READ_S — 머리부터 몸까지의 기한). 프록시를 타지 않는다(http.client 는
-    환경의 프록시를 보지 않는다). 기본값은 부를 때 읽는다(시험이 줄여 쓴다)."""
+    """GET 한 번 — 연결 connect_s(기본 CONNECT_S) · 읽기 read_s(기본 READ_S). 읽기는 머리부터 몸까지 **한** 기한이다 — 지나면 타이머가 소켓을
+    shutdown 해 막힌 읽기를 깨우고, 그 뒤 http.client 가 낸 것(잘린 머리 · 몸 · 끊김)은 모두 읽기 시간 초과다(_Deadline). recv 하나하나도 read_s 를
+    넘지 않는다. 프록시를 타지 않는다(http.client 는 환경의 프록시를 보지 않는다). 기본값은 부를 때 읽는다(시험이 줄여 쓴다)."""
     global _SSL_CTX
     connect_s = CONNECT_S if connect_s is None else connect_s
     read_s = READ_S if read_s is None else read_s
+    late = Resp(None, b"", f"읽기 시간 초과({read_s:g}초) — 서버가 답하지 않는다", "read_timeout")
     if a.scheme == "https":
         _SSL_CTX = _SSL_CTX or ssl.create_default_context()
         conn = http.client.HTTPSConnection(a.host, a.port, timeout=connect_s, context=_SSL_CTX)
@@ -431,33 +460,36 @@ def fetch(a: Addr, path: str, *, headers: dict | None = None, connect_s: float |
             return Resp(None, b"", f"TLS 오류({type(exc).__name__})", "tls")
         except OSError as exc:
             return Resp(None, b"", f"닿지 못했다({type(exc).__name__})", "connect")
-        deadline = time.monotonic() + read_s
         # 소켓을 따로 쥔다 — 서버가 닫는 답이면 getresponse() 가 conn.sock 을 비운다(몸은 그 소켓으로 계속 읽힌다)
         sock = conn.sock
         sock.settimeout(read_s)
-        conn.request("GET", path, headers={"Accept": "*/*", "User-Agent": "hwax-llm-status/1", "Connection": "close",
-                                           **(headers or {})})
-        resp = conn.getresponse()
-        chunks: list[bytes] = []
-        size = 0
-        while not resp.isclosed():          # 몸을 다 읽으면 응답이 소켓을 닫는다 — 그 뒤 settimeout 은 EBADF 다
-            left = deadline - time.monotonic()
-            if left <= 0:
-                raise socket.timeout()
-            sock.settimeout(left)
-            chunk = resp.read(65536)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > max_bytes:
-                return Resp(resp.status, b"", f"답이 너무 크다({max_bytes >> 20} MiB 넘음)", "too_big")
-            chunks.append(chunk)
+        with _Deadline(sock, read_s) as dl:
+            try:
+                conn.request("GET", path, headers={"Accept": "*/*", "User-Agent": "hwax-llm-status/1", "Connection": "close",
+                                                   **(headers or {})})
+                resp = conn.getresponse()
+                chunks: list[bytes] = []
+                size = 0
+                while not resp.isclosed():          # 몸을 다 읽으면 응답이 소켓을 닫는다
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > max_bytes:
+                        return Resp(resp.status, b"", f"답이 너무 크다({max_bytes >> 20} MiB 넘음)", "too_big")
+                    chunks.append(chunk)
+            except (http.client.HTTPException, OSError):
+                if dl.fired:
+                    return late
+                raise
+        if dl.fired:                                # 기한이 지나 깨운 읽기 — 잘린 답이다
+            return late
         body = b"".join(chunks)
         if resp.status != 200:
             return Resp(resp.status, body, f"HTTP {resp.status}", "http")
         return Resp(200, body, None, "ok")
     except socket.timeout:
-        return Resp(None, b"", f"읽기 시간 초과({read_s:g}초) — 서버가 답하지 않는다", "read_timeout")
+        return late
     except (http.client.RemoteDisconnected, http.client.IncompleteRead, ConnectionResetError, BrokenPipeError):
         return Resp(None, b"", "답 도중 연결이 끊겼다", "closed")
     except (http.client.HTTPException, OSError) as exc:
