@@ -43,3 +43,4 @@
   - [x] 에이전트 서버 — 제 기한 12초 · 늦으면 '모름 — 늦음' · 내려감은 연결 거부 · 오류 상태일 때만(OD-36)
   - [x] 대상 이름 agent · router — 받지 않고 까닭과 함께 남긴다(OD-37)
   - [x] 감시 — watch: true(heal 이 if_env 를 따른다 — 끈 박스는 그대로, OD-38)
+  - [x] 짝 파일 자리 — 리포 밖이나 infra/.state/ 아래(update-all §1 의 stash -u, 문서만 · OD-39)

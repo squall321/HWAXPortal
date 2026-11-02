@@ -199,3 +199,8 @@ start 는 남이면 띄우지 않고 1, ss 를 못 쓰면 종전대로 띄운다
 않는다(꺼진 것은 꺼진 채로). 시험이 진짜 매니페스트 항목 · 진짜 `enabled_here` 로 끈 박스는 손대지 않고 켠 박스는 down · up 하는지 본다. 감시 대상
 목록 시험에 llm-status 를 더했다. 켠 박스에서 손으로 내려 두면(`llm-status.sh stop`) 감시가 1분 안팎에 다시 띄운다 — 다른 감시 대상과 같다(오래 내려
 두려면 `LLM_STATUS` 줄을 지운다).
+
+**OD-39 짝 파일은 리포 밖이나 `infra/.state/` 아래에(반대 검토 11-02 INFO — 문서만).** `LLM_STATUS_REPLICA_MAP` 은 리포 루트 기준 상대 경로도 받는다 —
+리포 안의 추적되지 않은 파일(예 `replicas.txt`)은 update-all §1 의 `git stash push -u` 가 치우고, update-preflight 의 훑기도 맨 이름은 놓친다. `-u` 는
+무시된 파일은 건드리지 않으므로 `infra/.state/`(.gitignore) 아래나 리포 밖이면 남는다 — server-setup.md 2절에 한 문장을 더했다. 코드는 그대로다(경로를
+막으면 이미 그렇게 둔 박스가 깨진다 — 문서의 예는 처음부터 리포 밖이다).
