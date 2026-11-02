@@ -51,6 +51,8 @@ export interface InsightCard {
   tools?: string[];
   apps?: string[];
   apps_unknown?: string[];
+  /** 범위를 모르는 입력 — evidence(도구 없는 근거 글) · note(사람 의견) · summary(앞 회차 요약) · images(그림) */
+  untracked?: string[];
   refs?: string[];
   calls_n: number;
   calls?: InsightCall[];
@@ -99,6 +101,9 @@ export interface ProjectView {
   sp_task: string;
   rounds: ProjectCell[];
   risk_error?: string;
+  /** 창이 차면 — '최근 N장만 봤다' */
+  truncated?: boolean;
+  note_rows?: string;
   note: string;
 }
 
@@ -133,7 +138,10 @@ function post<T>(path: string, what: string, body: unknown = {}): Promise<T> {
 const card = (id: string) => `/cards/${encodeURIComponent(id)}`;
 
 export const fetchProjects = (q = '') =>
-  call<{ projects: ProjectRow[]; risk_error?: string; note: string }>(`/projects?${new URLSearchParams({ q })}`, '과제 목록');
+  call<{ projects: ProjectRow[]; risk_error?: string; truncated?: boolean; note_rows?: string; note: string }>(
+    `/projects?${new URLSearchParams({ q })}`,
+    '과제 목록',
+  );
 export const fetchProject = (spTask: string) =>
   call<ProjectView>(`/project?${new URLSearchParams({ sp_task: spTask })}`, '과제 보기');
 export const fetchMine = () => call<MineView>('/mine', '내 카드');

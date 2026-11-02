@@ -62,6 +62,19 @@ function InsightCardView({ card, onChanged }: { card: InsightCard; onChanged: ()
     }
   };
   const t = card.tally;
+  // 거두기 — 기다림 줄 카드도 주인이 거둔다(주제를 확인할 생각이 없으면 버린다)
+  const withdrawBtn = (
+    <button
+      type="button"
+      className="btn-secondary"
+      disabled={busy}
+      onClick={() => {
+        if (window.confirm('이 카드를 거둘까요? 내용이 지워지고 아무에게도 보이지 않습니다.')) void act(() => withdrawCard(card.id));
+      }}
+    >
+      거두기
+    </button>
+  );
   return (
     <article className={`ins-card ins-${card.status}`}>
       <header className="ins-card-head">
@@ -144,18 +157,10 @@ function InsightCardView({ card, onChanged }: { card: InsightCard; onChanged: ()
               반박 표시
             </button>
           )}
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={busy}
-            onClick={() => {
-              if (window.confirm('이 카드를 거둘까요? 내용이 지워지고 아무에게도 보이지 않습니다.')) void act(() => withdrawCard(card.id));
-            }}
-          >
-            거두기
-          </button>
+          {withdrawBtn}
         </div>
       )}
+      {card.mine && card.status === 'waiting' && <div className="ins-actions">{withdrawBtn}</div>}
       {disputing && (
         <div className="ins-edit">
           <input value={byCard} onChange={(e) => setByCard(e.target.value)} placeholder="반박한 카드 id(선택)" aria-label="반박한 카드 id" />
@@ -278,6 +283,7 @@ function ProjectDetail({ spTask }: { spTask: string }) {
     <section className="ins-project">
       <h2>과제 「{view.sp_task}」</h2>
       {view.risk_error && <p className="ins-why">{view.risk_error}</p>}
+      {view.note_rows && <p className="ins-why">{view.note_rows}</p>}
       {view.rounds.length === 0 && <p className="ins-meta">내가 볼 수 있는 카드 · 리스크 심사가 없다.</p>}
       {view.rounds.map((cell) => (
         <div key={cell.round ?? 'unknown'} className="ins-cell">
@@ -302,6 +308,7 @@ function ProjectsTab() {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<ProjectRow[] | null>(null);
   const [riskErr, setRiskErr] = useState('');
+  const [rowsNote, setRowsNote] = useState('');
   const [err, setErr] = useState('');
   const [picked, setPicked] = useState('');
   const load = useCallback((query: string) => {
@@ -310,6 +317,7 @@ function ProjectsTab() {
       (r) => {
         setRows(r.projects);
         setRiskErr(r.risk_error ?? '');
+        setRowsNote(r.note_rows ?? '');
       },
       (e: Error) => setErr(e.message),
     );
@@ -332,6 +340,7 @@ function ProjectsTab() {
         </form>
         {err && <ErrorBanner message={err} />}
         {riskErr && <p className="ins-why">{riskErr}</p>}
+        {rowsNote && <p className="ins-why">{rowsNote}</p>}
         {rows && rows.length === 0 && <p className="ins-meta">내가 볼 수 있는 과제가 없다.</p>}
         <ul className="ins-projects">
           {rows?.map((p) => (

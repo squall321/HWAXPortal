@@ -23,6 +23,7 @@ export default defineConfig({
       '/health': { target: API, changeOrigin: true },
       '/changelog': { target: API, changeOrigin: true },
       '/procedures-api': { target: API, changeOrigin: true },
+      '/insights-api': { target: API, changeOrigin: true },
       '/.well-known': { target: API, changeOrigin: true },
     },
   },
