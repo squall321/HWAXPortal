@@ -183,6 +183,17 @@ def test_exact_가_다른_key_를_가리키면_고르지_않는다(onto):
     assert b["state"] == "mismatch" and _tools(seen) == [S.RESOLVER_CALL, RES] and "alias" in b["why"], b
 
 
+@pytest.mark.parametrize("obj", (None, {"id": 5, "key": KEY}, {"key": KEY}, "알파 개발_C2"), ids=("null", "id_수", "id_없음", "글"))
+def test_exact_인데_객체가_없거나_꼴이_틀리면_없음이_아니라_못_물어봄이다(onto, obj):
+    """'none' 은 '허브가 그런 과제가 없다고 말했다' 다 — exact 라면서 객체를 싣지 않았거나 꼴을 못 읽은 답은 그 말이 아니다(반대 검토 11-02 — OF-27).
+    종전엔 none 으로 보여 '정본 허브에 그 과제가 없다' 고 말했다. 이웃은 부르지 않는다."""
+    go, seen, state = onto
+    state["resolve"] = {"match": "exact", "object": obj, "candidates": [], "hint": "", "truncated": False}
+    b = go({"sp_task": KEY}).json()
+    assert b["state"] == "error" and _tools(seen) == [S.RESOLVER_CALL, RES], b
+    assert "객체" in b["why"] and "rows" not in b and "anchor" not in b, b["why"]
+
+
 @pytest.mark.parametrize("find", (
     {"query": KEY, "count": 0, "tasks": [], "why": {"cause": "no_match"}},
     {"query": KEY, "count": 1, "tasks": [{"key": f"{KEY} 보강", "label": "x", "active": True}]},

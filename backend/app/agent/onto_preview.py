@@ -191,7 +191,8 @@ def _err(exc) -> str:
 
 async def preview(key: str, *, tools_map, call) -> dict:
     """미리보기 한 번 — call(도구, 인자) 는 그 사람의 PAT 로 게이트웨이를 부르는 함수(창구가 준다). 답의 state —
-    ok(이웃 행) · unavailable(부를 수 없다) · unconfirmed(닻을 확인 못 함) · candidates · none · mismatch(exact 가 다른 key) · error(호출 실패)."""
+    ok(이웃 행) · unavailable(부를 수 없다) · unconfirmed(닻을 확인 못 함) · candidates · none(허브가 없다고 말했다) · mismatch(exact 가 다른 key) ·
+    error(호출 실패 · 답 꼴을 읽지 못함 — '없음' 이 아니라 '못 물어봄')."""
     v = vocab()
     if v is None:
         return {"state": "unavailable", "why": "코어 어휘표를 읽지 못했다 — 정본 허브를 모른다", "note": NOTE}
@@ -220,8 +221,12 @@ async def preview(key: str, *, tools_map, call) -> dict:
     if rv["match"] == "candidates":
         return {**base, "calls": calls, "state": "candidates", "candidates": rv["candidates"],
                 "why": "정본 허브에서 여럿과 맞았다 — 고르지 않는다(어느 것인지 허브에서 확인한다)" + (f" · {rv['hint']}" if rv["hint"] else "")}
-    if rv["match"] == "none" or not rv.get("object"):
+    if rv["match"] == "none":
         return {**base, "calls": calls, "state": "none", "why": "정본 허브에 그 과제가 없다 — 짐작하지 않는다" + (f" · {rv['hint']}" if rv["hint"] else "")}
+    if not rv.get("object"):
+        # exact 라면서 객체가 없거나 꼴을 못 읽었다 — 'none'(허브가 그런 과제가 없다고 말했다)이 아니라 못 읽은 것이다(반대 검토 11-02 — OF-27)
+        return {**base, "calls": calls, "state": "error",
+                "why": f"정본 허브 풀이({res_tool})가 exact 라면서 객체를 싣지 않았거나 그 꼴을 읽지 못했다 — '없음' 이 아니다 · 아무것도 고르지 않는다"}
     obj = rv["object"]
     if obj["key"] != key:
         return {**base, "calls": calls, "state": "mismatch", "candidates": [obj],
