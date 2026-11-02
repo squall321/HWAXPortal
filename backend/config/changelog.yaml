@@ -22,6 +22,20 @@
 
 entries:
   - date: 2026-11-02
+    title: "StepForge · DynaForge 그림이 보고서까지 갑니다"
+    tag: 수정
+    items:
+      - "도구가 만든 그림(단면 · 렌더 · 비교 · 리포트 그림 등)이 응답에 '그림 저장 — fig_…' 참조와 함께 서버에 남습니다(7일, 나만). 개인 Claude 는 figure_get 이 주는 주소를 curl 로 받아 파일로 저장하고, md 에 ![캡션](파일) 한 줄로 넣으면 docx 에도 들어갑니다 — 그림 바이트가 모델을 거치지 않고 감사에 남습니다."
+      - "figure_to_report 로 그림을 Report Archive 보고서에 바로 넣습니다(그 사람 권한 · 같은 그림은 바꿔 넣음). SVG 그림은 아직 넣지 못하고 그렇다고 알립니다."
+      - "웹 챗 /보고서 와 심의 보고서가 대화 · 심의 중 도구 그림을 RA 그림 블록으로 싣습니다. 올리지 못한 그림은 그 자리에 까닭을 남기고, 결과에 그림 수를 알립니다."
+  - date: 2026-11-02
+    title: "11-02 내부 — 게이트웨이 그림 보관 · 포털 그림 창구"
+    tag: 기술
+    items:
+      - "게이트웨이 GATEWAY_FIG_STORE(기본 켜짐, 0 이면 끔) — 그림을 주인별로 감사 원장 옆 figures 폴더에(추측 못 하는 이름 · 7일 · 주인 1 GiB · 전체 20 GiB · 8 MiB 넘는 그림은 건너뜀), GET /mcp-gw/fig/<ref>(주인 PAT 또는 1시간 서명 주소 — 그 밖은 같은 404), 감사에 그림 수 · 크기, 로그의 서명 가림."
+      - "포털 POST /agent/figures/to-report · /agent/figures/upload — 그 사람의 RA 토큰으로 편집 · 잠금 · 게시를 먼저 시험한 뒤 올리고 그림 블록을 붙입니다(DocForge 와 같은 RA 올리기 코드). 에이전트 서버는 PORTAL_HTTP_BASE(기본 루프백 8723)로 부릅니다."
+      - "도구 그림 프록시(/agent/artifacts)에 sandbox · nosniff 머리를 싣습니다 — SVG 를 주소로 바로 열어도 스크립트가 돌지 않습니다."
+  - date: 2026-11-02
     title: "과제별 인사이트 — 심의 결론을 과제 · 차수별로 모아 봅니다"
     tag: 심의
     items:
