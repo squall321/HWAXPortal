@@ -38,10 +38,16 @@ Claude 워크플로(hwax-deliberate.js) → save_conversation(subject · chair_t
 | `tally` | `{agree, conditional, oppose, abstain}` | outcome 사건의 집계와 같은 값(착석 수 분모) |
 | `report_id` · `report_url` | 정수 · 글 · null | 그 단의 RA 보고서(없으면 null) |
 | `model` | 글 | 답한 모델 이름(`llm.model_name` · `llm.model`, 외부 응답자는 `external`) |
-| `calls` | `[{ref, tool, app, args, sha256, ok}]` ≤ 60 | 근거 표지 — 좌석 자유 조회(gather_pool) · 호출자 근거(`opts.evidence` 의 `tool` 이 있는 항목) · 지정 도구. `ref = "call:" + sha256(tool · args · 결과 sha256)[:16]`, `args` 는 1,200자까지(엔진 인자 표기 상한), `sha256` 은 결과 글의 전체 지문, `ok` 는 `_delib_tool_result_ok`. 같은 (도구, 인자, 결과)는 하나 |
-| `tools` | 글 목록 | 이 단의 근거에 든 도구 이름 전부 — 위 셋 + 엔진 안의 근거(VOC 환기 · 정량 근거 선주입 · 지식카드 `agent_search`). 제자리 이어하기는 라운드 전 몫을 재개 자료 `e:pre.ins_tools` 에서 되살린다 |
-| `apps` · `apps_unknown` | 글 목록 · 글 목록 | `tools` 의 게이트웨이 백엔드 키(`/tools-map` — 엔진의 `_app_of_tools`, 게이트웨이 자체 도구는 `_gateway`)와 앱을 모르는 도구 이름 |
+| `calls` | `[{ref, tool, app, args, sha256, ok}]` ≤ 60 | 근거 표지 — 좌석 자유 조회(gather_pool) · 호출자 근거(`opts.evidence` 의 `tool` 이 있는 항목) · 지정 도구. `ref = "call:" + sha256(tool · args · 결과 sha256)[:16]`, `args` 는 1,200자까지(엔진 인자 표기 상한), `sha256` 은 엔진이 쥔 결과 글의 지문 — 지정 도구 · 호출자 근거는 받은 글, 좌석 자유 조회는 공용 풀에 실린 몫(좁은 창에서는 앞부분 — 다른 좌석이 본 글)이라 원문 전체의 지문이 아닐 수 있다(앞부분이 같은 두 결과는 표지 하나로 접힌다 — 반대 검토 11-02). `ok` 는 `_delib_tool_result_ok`. 같은 (도구, 인자, 결과)는 하나. 제자리 이어하기는 지정 도구를 다시 부르지 않으므로 그 표지를 재개 자료 `e:pre.ins_calls` 에서 되살린다 |
+| `tools` | 글 목록 | 이 단의 근거에 든 도구 이름 전부 — 위 셋 + 엔진 안의 근거(VOC 환기 · 정량 근거 선주입 · 지식카드 `agent_search`) + 같은 심의의 앞 걸음이 넘긴 것(아래 잇기). 제자리 이어하기는 라운드 전 몫을 재개 자료 `e:pre.ins_tools` 에서 되살린다 |
+| `apps` · `apps_unknown` | 글 목록 · 글 목록 | `tools` 의 게이트웨이 백엔드 키(`/tools-map` — 엔진의 `_app_of_tools`, 게이트웨이 자체 도구는 `_gateway`)와 앱을 모르는 도구 이름(지도를 못 받은 때는 전부 — 포털이 확인할 때 다시 푼다, §6.2) |
+| `untracked` | 글 목록(차례 고정) | 근거 표지가 없어 범위를 모르는 입력 — `evidence`(도구 없는 호출자 근거 글 · 그림 판독문) · `note`(호출자의 사람 의견 — 챗이 넘긴 보강 글일 수 있다) · `summary`(호출자가 준 앞 회차 요약) · `images`(그림 조각) + 앞 걸음이 넘긴 것. 단 준비가 채운 의견 칸(시험 설계 지시문 · 현황 글)과 다단 심의가 넘긴 앞 단 결정문은 넣지 않는다 — 그 범위는 잇기로 간다 |
 | `refs` | 글 목록 | `rpt:<report_id>`(있으면) + `calls[].ref` |
+
+- **잇기**(`deliberation.INSIGHT_CARRY` — 무장하는 쪽이 `{tools, untracked}` 를 건다) — 같은 심의 안의 뒤 단은 앞 단의 결정문에 기대므로 카드를 낼 때마다
+  그 카드의 `tools` · `untracked` 를 쌓아 뒤 단 카드에 담는다. 단 준비가 사람 의견 칸에 붙이는 현황 글(시험 설계의 물성 근거 현황 · 해석 설계 2단의
+  사내 자산 현황)을 지은 도구도 그 단의 `tools` 다(`_snap_with_tools` — 그 await 동안만 `_call` 이 이름을 적는다). 제자리 이어하기는 단에 들 때의
+  재개 자료(`e:stage_in.carry`)와 단 경계 체크포인트(`checkpoint.carry`)로 되살린다(PLAN §6.2 최소 범위).
 
 - 새 LLM 호출은 없다. 시험이 지키는 것 — 무장하지 않은 심의(주제 없음 · 리스크 심사)의 사건 꼴은 종전과 바이트까지 같다.
 
@@ -58,8 +64,8 @@ Claude 워크플로(hwax-deliberate.js) → save_conversation(subject · chair_t
 
 - 인증 — `Authorization: Bearer <GW_TOKEN>`(게이트웨이 연결의 값, 포털 `GATEWAY_SHARED_TOKEN` 과 같다 — `seat_box.authorized`, `/seat-questions` 와
   같은 꼴). 비밀이 없는 박스는 503, 다르면 401. 루프백만 믿지 않는 까닭 — 결정문 요약 · 근거 인자를 낸다.
-- 고르는 잡 — `finished_at >= since` · 상태 `done` · `error`(다단 심의의 끝난 앞 단은 결정문이 있다) · 주인 `user` 에 `@` 가 있다(주인 빈 잡은 내지
-  않는다) · `subject.sp_state ∈ {confirmed, claimed}` · 리스크 심사 계열이 아니다(잡의 `chair_template` · `started_by`, 카드의 `stage` 도 본다) ·
+- 고르는 잡 — `finished_at >= since` · 상태 `done` · `error`(다단 심의의 끝난 앞 단은 결정문이 있다) · 주인 `user` 를 푼 꼴(퍼센트 인코딩을 풀어
+  소문자 — `_norm`)에 `@` 가 있다(주인 빈 잡은 내지 않는다, 답의 `user` 는 원문 그대로) · `subject.sp_state ∈ {confirmed, claimed}` · 리스크 심사 계열이 아니다(잡의 `chair_template` · `started_by`, 카드의 `stage` 도 본다) ·
   카드 거리가 하나 이상. 원장 파일은 mtime 으로 먼저 거르고(끝 쓰기가 `finished_at` 보다 앞서지 않는다) 메모리 원장도 본다.
 - 답 — `{"contract": "insight-cards/1", "items": [...], "next_since": <float>, "complete": <bool>}`. 항목은
   `{job_id, job, user, owner_aff, chair_template, started_by, status, finished_at, continues, subject, cards: [카드 거리...]}` 이고 `finished_at`
@@ -93,7 +99,7 @@ CREATE TABLE IF NOT EXISTS insight_cards (
   round_by TEXT,                  -- person · NULL
   subject_json TEXT NOT NULL,     -- 에이전트가 확인한 주제 기록 그대로(sp_state · sp_resolved_by · sp_why · text · artifacts)
   claim TEXT NOT NULL, claim_from TEXT NOT NULL, claim_edited_by TEXT, claim_edited_at INTEGER,
-  card_json TEXT NOT NULL,        -- tally · report_id · report_url · model · calls · tools · apps · apps_unknown · refs
+  card_json TEXT NOT NULL,        -- tally · report_id · report_url · model · calls · tools · apps · apps_unknown · untracked · refs
   scope_json TEXT NOT NULL,       -- 범위 토큰 목록(§6.1)
   scope_note TEXT,                -- 넓히기가 멈춘 까닭
   continues TEXT,                 -- 앞 카드 id(그 카드가 원장에 있을 때) 또는 delib:<앞 잡 id>
@@ -101,7 +107,7 @@ CREATE TABLE IF NOT EXISTS insight_cards (
   confirmed_at INTEGER, confirmed_by TEXT, withdrawn_at INTEGER, withdrawn_by TEXT)
 CREATE TABLE IF NOT EXISTS insight_links (from_id TEXT, to_id TEXT, kind TEXT, by_email TEXT, note TEXT, at INTEGER,
   PRIMARY KEY (from_id, to_id, kind))       -- kind = disputes(from 이 to 를 반박한다)
-CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_since(MCP 잡 당기기의 커서)
+CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_since(MCP 잡 당기기의 커서) · jobs_partial(앞 당기기가 쪽 상한에서 멈췄나)
 ```
 
 - **멱등** — 같은 id 는 하나다(`INSERT OR IGNORE`). 거둔 카드는 내용을 지운 묘비(id · 주인 · 거둔 사람 · 때)로 남아 다시 들여도 되살지 않는다.
@@ -112,7 +118,7 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
 | 길 | 자리 | id | 주인 | 주제 |
 |---|---|---|---|---|
 | 웹 | `/agent/chat` 중계가 답을 남길 때(`_save`) — 대화와 실행 id 가 있을 때만 | `ins:web:<cid>:<run_key>:<단>` | 포털 principal | 중계가 받은 `delib{kind:"subject"}`(에이전트가 확인한 값) |
-| MCP 잡 | 읽기 창구가 불릴 때 당긴다(`INSIGHT_SYNC_S` 초에 한 번 · 0 이면 끔 · 기본 60) — 커서 `jobs_since` 에서 600초 겹쳐 읽는다 | `ins:delib:<job_id>:<단>` | 잡 원장의 `user`(자칭) | 잡 원장의 `subject` |
+| MCP 잡 | 읽기 창구가 불릴 때 당긴다(`INSIGHT_SYNC_S` 초에 한 번 · 0 이면 끔 · 기본 60) — 커서 `jobs_since` 에서 600초 겹쳐 읽고 쪽을 넘긴다(다섯 쪽 × 200). 쪽 상한에서 멈추면(`jobs_partial`) 다음 당기기는 겹침 없이 커서부터 잇는다 — 겹침 창이 빽빽해도 커서가 넘어간다 | `ins:delib:<job_id>:<단>` | 잡 원장의 `user`(자칭) | 잡 원장의 `subject` |
 | Claude 워크플로 | `POST /agent/conversations`(ConvCreate)가 저장한 **뒤** — 실패해도 저장은 그대로다 | `ins:wf:<cid>` | 포털 principal(게이트웨이가 넘긴 사람 PAT 의 sub) | 받은 `subject` 를 그 사람 PAT 로 다시 푼다(§3.2) |
 
 - **리스크 심사 계열은 빼는 겹** — 웹은 `delib_opts.chair_template` 이 `risk-review` 로 시작하거나 `started_by=app` 이면(리스크 러너 패널은 대화 kind 를
@@ -132,18 +138,27 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
 - 카드가 읽는 사람 R 에게 보이는 때 — 거둔 것이 아니고, ① R 이 주인(메일 소문자 일치)이거나 ② 상태가 `confirmed` · `disputed` 이고 토큰을 다 만족하거나
   (`aff:` 는 R 의 **지금 포털 원장 소속**, `plat:` 은 R 의 지금 권한 그룹, `user:` 는 R 의 메일) ③ R 이 관리자다(범위 밖 읽기는 감사 한 줄
   `insight_admin_read`). 신원 없는 호출은 아무것도 못 본다(창구가 세션 · PAT 를 요구한다).
-- 수 · 잇기(반박 · `continues`)는 보이는 것만 센다 — 보이지 않는 카드는 있다는 것도 말하지 않는다.
+- 수 · 잇기(반박 · `continues`)는 보이는 것만 센다 — 보이지 않는 카드는 있다는 것도 말하지 않는다. 반박 줄은 늘 싣되 반박한 카드가 안 보이면 `by` 만
+  가린다(카드 없이 단 반박과 같은 꼴 — 줄을 빼면 상태만 '반박' 이라 숨은 카드가 있다고 말하는 셈이다).
+- 읽는 창 — 한 번에 최근 2,000장(`store.ROWS_MAX`)이고 관리자가 아니면 그 사람의 것과 공유 상태(확인 · 반박)만 센다(남의 초안이 창을 채워 보이는
+  카드가 밀려나지 않게). 창이 차면 답에 `truncated: true` · `note_rows`('최근 N장만 봤다')를 싣는다. 관리자가 잇기(앞 카드 · 반박 끝)로 범위 밖 카드의
+  id 를 보는 것도 감사 한 줄에 든다.
 
 ### 6.2 확인과 넓히기
 
 - **확인**(`draft → confirmed`, 주인만 · 세션 + CSRF) — 범위를 `[aff:<주인의 지금 소속>] + plat 토큰` 으로 바꾼다. plat 토큰은 카드 `apps` 를 포털 권한표로
-  풀어 `plat:` 키만 단다(`Policy.keys_for_gateway` — 표에 없는 백엔드 · `_gateway` 는 토큰이 없다). 주인에게 소속이 없으면 `[user:<주인>]` 그대로
-  `confirmed` 이고 `scope_note` 에 까닭을 단다. MCP 잡의 `owner_aff` 는 쓰지 않는다.
-- **조직 공개**(`confirmed → org`) — 근거 범위를 다 알 때만이다. 이 판에서는 근거 표지(`calls` · `tools`)가 없고 `apps_unknown` 이 비고 워크플로가 아닌
-  카드뿐이다(남의 RA 보고서 · 리포트 같은 근거의 범위를 모른다 — PLAN §6.2 '한 칸 다른 자리'). 아니면 409 와 까닭. `plat:` 빼기는 짓지 않았다(관리자 몫 —
-  나중).
-- **그 밖의 쓰기**(세션 + CSRF) — 차수 달기(코드 · `unknown`, `round_by=person`), 주장 고치기(500자, 고친 사람 · 때), 반박 표시(주인 · 관리자 —
-  `disputed` 와 반박한 카드 링크), 거두기(주인 · 관리자 — 묘비), 기다림 줄의 주제 확인(§6.3). PAT 로는 쓰지 못한다(사람이 화면에서 한다).
+  풀어 `plat:` 키만 단다(`Policy.keys_for_gateway` — 표에 없는 백엔드 · `_gateway` 는 토큰이 없다). 앱을 몰랐던 도구(`apps_unknown` — 괄호 표지
+  `(workflow)` 는 빼고)는 그때 게이트웨이 `/tools-map` 으로 다시 풀어 카드에 적는다 — 지도를 못 받으면 503 이고 초안 그대로다(엔진이 지도를 못 받은 때
+  지은 카드가 plat 토큰 없이 열리지 않게). 주인에게 소속이 없으면 `[user:<주인>]` 그대로 `confirmed` 이고 `scope_note` 에 까닭을 단다. MCP 잡의
+  `owner_aff` 는 쓰지 않는다. 여전히 앱을 모르는 도구 · 범위를 모르는 입력(`untracked`)이 있으면 같은 소속까지이고 까닭을 단다(PLAN §6.2 '한 칸 다른
+  자리'). **앞선 인사이트를 근거로 쓴 카드**(`tools` · `calls` 에 `insight_*`)는 원래 카드들의 범위를 이어받는 규칙(M3)이 서기 전까지 확인해도
+  `[user:<주인>]` 이고 까닭을 단다 — `insight_*` 는 `_gateway` 라 plat 토큰이 없어, 이어받지 않으면 plat 권한 카드의 결론이 그 권한 없는 같은 소속에
+  열린다(반대 검토 11-02).
+- **조직 공개**(`confirmed → org`) — 근거 범위를 다 알 때만이다. 이 판에서는 근거 표지(`calls` · `tools`)가 없고 `apps_unknown` · `untracked` 가 비고
+  워크플로가 아닌 카드뿐이다(남의 RA 보고서 · 리포트 같은 근거의 범위를 모른다). 아니면 409 와 까닭. `plat:` 빼기는 짓지 않았다(관리자 몫 — 나중).
+- **그 밖의 쓰기**(세션 + CSRF) — 차수 달기(코드 · `unknown`, 둘 다 `round_by=person` — 고른 '모름' 도 사람의 것이라 주제 확인이 되돌리지 않는다),
+  주장 고치기(500자, 고친 사람 · 때), 반박 표시(주인 · 관리자 — `disputed` 와 반박한 카드 링크), 거두기(주인 · 관리자 — 묘비, 기다림 줄 카드 포함),
+  기다림 줄의 주제 확인(§6.3 — 사람이 단 차수를 지킨다). PAT 로는 쓰지 못한다(사람이 화면에서 한다).
 
 ### 6.3 창구
 
@@ -174,6 +189,8 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
   안에서만 실행되므로 같이 닫힌다.
 - 리스크 앱의 새 읽기 도구 `risk_find_projects_by_subject` 는 `risk_` 로 시작해 지정 도구 갈래 `app`(변경 · 스냅샷 밖의 리스크 앱 도구)으로 닫히고,
   자유 조회 접두(`_FREE_ALLOW`)에 걸리지 않는다 — 시험이 이름으로 지킨다.
+- Claude 워크플로의 리스크 심사 좌석(`hwax-deliberate.js` — 그 사람 PAT 의 게이트웨이 도구를 다 쓴다)은 좌석 프롬프트의 D-18 줄(`D18_LINE`)이
+  `insight_find` · `insight_get` · `risk_find_projects_by_subject` 를 이름으로 막는다(반대 검토 11-02).
 
 ## 9. 리스크 앱(M2b)
 
@@ -207,6 +224,9 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
   지지 영역 · 전문가 수 → 키 차례로 세운 앞 다섯이다. 리스크 앱의 상태 낱말 · `stale_json` 은 번역하지 않는다. 답이 MCP 결과 상한(약 2만 5천 자)을 넘으면
   과제 수를 줄이고 `truncated` · `next_offset` 으로 나눈다(자르지 않는다 — 계약에 `offset` · `total` · `next_offset` 을 더했다).
 - **좌석에는 싣지 않는다** — `sp_task` 는 브리프 · 스냅샷 · 비교 · 패널 질문에 들지 않는다(D-18 — 리스크 앱 안의 칸이다).
+- **반출 · 들여오기** — `sp_task` 는 이 박스의 풀이로만 선다. 반출은 싣지 않고 들여오기(`POST /api/import`)는 받지 않는다(새 행은 NULL, 뺀 줄 수는
+  답의 `sp_task_dropped`) — 받으면 풀이 · 감사 없이 아무 key 나 단 과제가 남의 과제 보기에 선다(반대 검토 11-02). 받는 박스에서 주인이 주제 쓰기로
+  다시 단다.
 - **포털 과제 보기** — 읽는 사람의 PAT 로 게이트웨이 별칭 `heaxhwax_risk_risk_find_projects_by_subject` 를 불러(쪽마다 50, `next_offset` 을 따라 네 쪽까지 —
   더 남으면 '앞 N개만 실었다' 고 말한다) (과제, 차수) 칸에 싣는다. 리스크 권한(`plat:risk`)이 없거나 불통이면 그 칸에 까닭을 보이고 일반 심의 카드는
   그대로 보인다.
