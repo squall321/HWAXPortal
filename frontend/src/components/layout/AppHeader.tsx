@@ -80,6 +80,7 @@ export function AppHeader() {
   const primary: Item[] = [
     { to: '/', label: '챗', end: true },
     ...(can('feat:deliberation') ? [{ to: '/deliberate', label: '심의' }] : []),
+    ...(can('feat:insights') ? [{ to: '/insights', label: '과제 인사이트' }] : []),
     { to: '/apps', label: '앱' },
     ...(can('feat:procedures') || can('feat:routines') ? [{ to: '/procedures', label: '절차' }] : []),
   ];

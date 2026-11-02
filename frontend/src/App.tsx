@@ -8,6 +8,7 @@ import AccessPage from './pages/AccessPage';
 import ChangelogPage from './pages/ChangelogPage';
 import ChatPage from './pages/ChatPage';
 import DeliberatePage from './pages/DeliberatePage';
+import InsightsPage from './pages/InsightsPage';
 import LaunchPage from './pages/LaunchPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -62,6 +63,15 @@ const router = createBrowserRouter([
             <ProceduresProvider>
               <ProceduresPage />
             </ProceduresProvider>
+          </RequireEntitlement>
+        ),
+      },
+      {
+        // 과제 인사이트(docs/project-insight-graph M2) — ⚠ API 접두사는 '/insights-api' 다(겹치면 새로고침이 JSON 을 받는다).
+        path: '/insights',
+        element: (
+          <RequireEntitlement need="feat:insights">
+            <InsightsPage />
           </RequireEntitlement>
         ),
       },
