@@ -21,12 +21,12 @@
   - [x] `infra/llm-status/`(collector · promtext · samplestore) · `infra/scripts/llm-status.sh`(run · start · stop) · 포트 8760(PORT-MAP · OD-14)
   - [x] 시험 — 해석기 · 라우터와 같은 셈 · 분위수 · 리셋 빈칸 · 히스토그램 창 · 401 · 걸린 서버 · 연결 거부/시간 초과 · 틀린 지표 · 값 꼴 · 낡음 · 숨기지 않음 ·
         키 가리기 · 기본 대상 · 짝 파일 · 에이전트 · 라우터 · 시계열 · 지우기 · 띄우는 스크립트 · 격리, 한 줄 변이 25개가 모두 잡힌다(스크래치 사본)
-- [ ] M2 — 포털 API · `/admin/llm-status` · update-all 배선(끄면 '꺼짐' 한 줄) · 이력 · 문서
+- [x] M2 — 포털 API · `/admin/llm-status` · update-all 배선(끄면 '꺼짐' 한 줄) · 이력 · 문서 — main 병합 11-02
   - [x] 매니페스트 `if_env: LLM_STATUS`(기본 꺼짐 · 제 파일만의 지문) · update-all 5d(켜면 update-sites · 끄면 ○ 와 떠 있으면 내림) · 예시 설정 · env-sync 는 선택으로
   - [x] 포털 `GET /auth/admin/llm-status` · `/series`(관리자만 — CAEG 도 403 · 꺼짐 503 · 안 닿음 502) · start.sh 가 `LLM_STATUS_URL` 을 넘긴다(OD-15)
   - [x] 화면 `/admin/llm-status`(관리 메뉴) — 머리 · 서버 카드 · 복제본 표 · 라우터 · 지금 쓰는 일 · Slurm/GPU 모름 줄, 브라우저 시험(실제 수집기 답)
   - [x] cae00 절차서 [server-setup.md](server-setup.md)
-  - [ ] 이력(backend/config/changelog.yaml) — 이 가지에서는 쓰지 않았다(올리는 세션이 함께 적는다)
+  - [x] 이력(backend/config/changelog.yaml) — 합칠 때 2026-11-02 두 항목(수정 · 기술)
 - [ ] cae00 에서 켜고 확인 — 사람(server-setup.md 2 ~ 5절) · 받은 편지함 Q4 · Q5(서버별 주소) · Q7(짝 파일) · Q12 1번(긁는 주기)
 - [ ] M3 — Slurm 잡 표 · 남은 때(답 뒤 · cae00 에서만 확인)
 - [ ] M4 — GPU 하드웨어(dev nvidia-smi · stcx 표본은 사람이 sbatch 에 넣은 뒤 · GLM 은 그 팀이 줄 때)
