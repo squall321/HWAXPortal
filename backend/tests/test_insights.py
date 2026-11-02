@@ -347,6 +347,21 @@ def test_MCP_잡_주인의_자칭_소속으로는_넓히지_않는다(env):
     assert st.get(cid)["owner_sub"], "주인이 처음 손댈 때 포털 subject 를 단다"
 
 
+def test_앞_카드는_읽는_사람이_볼_수_있을_때만_잇는다(env):
+    c, st, _s = env
+    I.ingest_jobs(st, [_item("prev"), _item("next", continues="prev", finished_at=1001.0)])
+    h = _login(c, "me@example.com")
+    assert c.post("/insights-api/cards/ins:delib:next:default/confirm", headers=h).status_code == 200
+    mine = {x["id"]: x["continues"] for x in c.get("/insights-api/find").json()["items"]}
+    assert mine["ins:delib:next:default"] == "ins:delib:prev:default", "주인은 자기 앞 카드를 본다"
+    _login(c, "peer@example.com")
+    rows = c.get("/insights-api/find").json()["items"]
+    assert [x["id"] for x in rows] == ["ins:delib:next:default"] and rows[0]["continues"] is None, "초안인 앞 카드는 있다는 것도 말하지 않는다"
+    assert c.get("/insights-api/cards/ins:delib:next:default").json()["continues"] is None
+    cell = c.get("/insights-api/project", params={"sp_task": KEY}).json()["rounds"][0]["cards"]
+    assert cell[0]["continues"] is None
+
+
 def test_관리자는_다_보되_범위_밖_읽기를_감사에_남기고_거둔_것은_못_본다(env):
     c, st, s = env
     _relay(st)

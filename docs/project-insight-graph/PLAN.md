@@ -8,6 +8,8 @@
 > 로컬 사본 `3ece194`(09-27 — 운영 판은 더 새롭다). SP 허브 · ODB 허브는 소스가 우리 쪽에 없어 이 리포 문서로 적었다. 반대 검토 한 번을 거쳤다(PG-13).
 > `../<리포>/…` 는 형제 리포, 앞이 없는 경로는 이 리포다. 결정은 [context-notes.md](context-notes.md), 할 일은 [checklist.md](checklist.md).
 >
+> **M2 · M2b(11-02)** — 칸 · 창구 · 도구의 꼴은 [contracts.md](contracts.md) 가 정본이다(PG-28 부터).
+>
 > **2판(11-02)** — 사용자 결정 넷(§11 권장 그대로 — PG-14), 새 요구 둘('클로드 MCP 로 심사한 데이터도 과제명과 차수가 같으면 같이 정리' · '과제 대상이
 > 아닌 질문은 잇지 않는다' — PG-15), D-18 곁가지 넷의 확인(PG-16)을 반영했다. 같은 판을 다시 읽었고, 더 읽은 것은 SP 사본 `778db2f`(StepForge
 > `external/StandardPlatform`) · 리스크 앱 웹 화면 · 이 리포의 워크플로 다섯(`infra/pipeline/`)이다. 여전히 계획만이다.
@@ -269,7 +271,7 @@
 | 길 | 주제를 어디에 싣나 | 결과가 과제 보기에 닿는 길 | 단계 |
 |---|---|---|---|
 | (a) MCP `deliberate_start` — 엔진 잡. 일반 외부 응답자 잡(`advanced.llm=external`)을 `hwax-risk-claude.js` 가 jobId 로 답하는 것도 이 길이다 | `subject` 인자 하나(`../HWAXAgentServer/mcp_server.py:522-538` 에 더한다) → 엔진이 다시 풀어 잡 원장에 · 이어하기가 물려받는다 | 엔진이 단마다 카드 거리를 지어 잡 원장에 두고 포털이 끝난 잡 창구(공유 비밀 — §5.2)로 들인다 | M1(주제) · M2(카드) |
-| (b) Claude Code 워크플로 `infra/pipeline/hwax-deliberate.js` — 좌석이 Claude Code 에서 돈다 | 워크플로 인자 `subject`(지금은 없다 — 머리 `:2-3`) → 대화 저장 `save_conversation` 에 `subject` · `chair_template` 을 더해 넘긴다. 지금 그 저장은 `title` · `kind="deliberation"` · `source="mcp"` · `messages` 만 넘기고(`:1170-1177`) 게이트웨이도 그 넷과 메시지 meta 두 칸만 옮기며(`../HWAXMcpGateway/gateway.py:2280-2311` · `:2381-2412`) 포털 `ConvCreate` 도 같다(`backend/app/agent/routes.py:402-408`). 포털은 받은 주제를 첫 사용자 메시지 meta 에 둔다(웹 심의가 주제를 싣는 자리와 같다) | 포털이 저장을 받은 뒤(저장을 막지 않는다) 그 사람 PAT 로 다시 풀고, 저장된 결정문에서 카드를 짓는다(§3.2). 큰 심의는 에이전트 저장을 건너뛰고 `infra/scripts/save-delib-conversation.py` 가 REST 로 저장하므로(`hwax-deliberate.js:1160-1167`) 그 스크립트도 같은 두 칸을 싣는다. 다단 워크플로는 자식에 `subject` 를 그대로 넘기고, 대화를 남기는 단만 카드가 된다(`hwax-sim-deliberate.js:199` · `:293`) | M2 |
+| (b) Claude Code 워크플로 `infra/pipeline/hwax-deliberate.js` — 좌석이 Claude Code 에서 돈다 | 워크플로 인자 `subject`(지금은 없다 — 머리 `:2-3`) → 대화 저장 `save_conversation` 에 `subject` · `chair_template` 을 더해 넘긴다. 지금 그 저장은 `title` · `kind="deliberation"` · `source="mcp"` · `messages` 만 넘기고(`:1170-1177`) 게이트웨이도 그 넷과 메시지 meta 두 칸만 옮기며(`../HWAXMcpGateway/gateway.py:2280-2311` · `:2381-2412`) 포털 `ConvCreate` 도 같다(`backend/app/agent/routes.py:402-408`). 포털은 받은 주제를 대화 meta 에 두지 않고 다시 푼 결과를 인사이트 원장(카드 · 기다림 줄)에만 둔다(2판의 '첫 사용자 메시지 meta' 를 M2 에서 고쳤다 — PG-28) | 포털이 저장을 받은 뒤(저장을 막지 않는다) 그 사람 PAT 로 다시 풀고, 저장된 결정문에서 카드를 짓는다(§3.2). 큰 심의는 에이전트 저장을 건너뛰고 `infra/scripts/save-delib-conversation.py` 가 REST 로 저장하므로(`hwax-deliberate.js:1160-1167`) 그 스크립트도 같은 두 칸을 싣는다. 다단 워크플로는 자식에 `subject` 를 그대로 넘기고, 대화를 남기는 단만 카드가 된다(`hwax-sim-deliberate.js:199` · `:293`) | M2 |
 | (c) Claude 리스크 심사 — `hwax-risk-review.js`(앱이 편성한 패널을 Claude 로) · `hwax-risk-claude.js`(엔진의 판단 과제를 Claude 가 답한다) | 리스크 과제가 주제다 — 과제에 (SP key, 차수)를 단다(아래 M2b) | 결과는 리스크 앱 원장에 든다 — 앞의 것은 `risk_submit_panel_result` 로(`hwax-risk-review.js:561`, 자식 심의는 대화를 남기지 않는다 — `:435`), 뒤의 것은 엔진이 원장에 쓴다. 과제 보기가 리스크 앱을 그 사람 신원으로 읽는다 | M2b |
 | (d) MCP 로 연 리스크 앱 잡 — `risk_create_project` · `risk_start_job`(`../HWAXRisk/backend/app/mcp_server.py:628` · `:707`) | 같다 — 과제의 (SP key, 차수). MCP 로 만든 과제의 `stage` 는 지금 검사하지 않는다(`:227`) | 같다 — 리스크 앱 원장 | M2b |
 | (e) 분석 루틴 — 개인 Claude 의 `routine_run_start`(`../HWAXMcpGateway/gateway.py:4857`) · 챗 Qwen | 아직 없다 — 들일 때 실행 시작의 입력에 주제를 둔다(포털이 웹 길처럼 푼다). 단계 `keys`(`backend/app/procedures/routine_routes.py:584-617`)는 '닿았다' 의 증거라 주제로 쓰지 않는다 | 포털 루틴 원장 — 세 번째 생산자로 나중(§5.2 조건 5) | 나중 |

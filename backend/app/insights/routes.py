@@ -95,7 +95,8 @@ def _view(r: dict, v: C.Viewer, *, full: bool = False, links: list | None = None
            "scope_note": r.get("scope_note"), "evidence_known": C.evidence_known(r), "created_at": r["created_at"],
            "updated_at": r["updated_at"], "confirmed_at": r.get("confirmed_at")}
     cont = r.get("continues")
-    out["continues"] = cont if (cont and (cont.startswith("delib:") or seen is None or cont in seen)) else None
+    # 앞 카드는 읽는 사람이 볼 수 있을 때만 말한다(보이지 않는 카드는 있다는 것도 말하지 않는다 — PLAN §6.3). delib:<잡> 은 잡 원장의 열람 규칙이다.
+    out["continues"] = cont if (cont and (cont.startswith("delib:") or (seen is not None and cont in seen))) else None
     if full:
         out["calls"] = calls
         out["subject"]["sp_resolved_by"] = (r.get("subject") or {}).get("sp_resolved_by")
@@ -137,6 +138,17 @@ async def _risk_rows(request: Request, settings: Settings, principal: Principal,
     projects = [p for p in (out.get("projects") or []) if isinstance(p, dict)]
     why = ("리스크 앱이 이 사람을 알아보지 못해(service) 조직 공개 과제만 보였다" if out.get("caller") == "service" else "")
     return projects, why
+
+
+def _seen_with_continues(st, rows: list[dict], v: C.Viewer, extra=()) -> set:
+    """목록 행들의 id 와, 그 행들이 잇는 앞 카드 · 반박 잇기의 다른 끝(extra) 가운데 읽는 사람이 볼 수 있는 것의 id."""
+    seen = {r["id"] for r in rows}
+    for cid in ({r.get("continues") for r in rows} | set(extra)) - seen - {None}:
+        if cid and not cid.startswith("delib:"):
+            o = st.get(cid)
+            if o is not None and C.visible(o, v)[0]:
+                seen.add(cid)
+    return seen
 
 
 def _bucket(rnd) -> str:
@@ -197,8 +209,8 @@ async def project(request: Request, sp_task: str = Query(..., min_length=1, max_
     st = _store(request)
     rows, admin_only = _filter(await asyncio.to_thread(st.rows, sp_task=sp_task), v)
     rows = [r for r in rows if r["status"] != "waiting"]
-    seen = {r["id"] for r in rows}
-    links = await asyncio.to_thread(st.links, sorted(seen))
+    links = await asyncio.to_thread(st.links, sorted({r["id"] for r in rows}))
+    seen = await asyncio.to_thread(_seen_with_continues, st, rows, v, [x for lk in links for x in (lk["from_id"], lk["to_id"]) if x])
     risk, risk_why = await _risk_rows(request, settings, principal, {"sp_task": sp_task, "limit": 50})
     cells: dict = {b: {"round": (None if b == C.ROUND_UNKNOWN else b), "cards": [], "risk": []} for b in (*C.STAGES, C.ROUND_UNKNOWN)}
     for r in rows:
@@ -216,10 +228,12 @@ async def mine(request: Request, principal: Principal = Depends(_reader), settin
     """내 카드 — 기다림 줄(주제를 확인하지 못했다) · 초안 · 그 밖(확인 · 반박)."""
     await _sync(request, settings)
     v = _viewer(request, principal)
-    rows = await asyncio.to_thread(_store(request).rows, owner_email=v.email)
+    st = _store(request)
+    rows = await asyncio.to_thread(st.rows, owner_email=v.email)
+    seen = await asyncio.to_thread(_seen_with_continues, st, rows, v)
     groups: dict = {"waiting": [], "draft": [], "shared": []}
     for r in rows:
-        groups["shared" if r["status"] in C.SHARED else r["status"]].append(_view(r, v))
+        groups["shared" if r["status"] in C.SHARED else r["status"]].append(_view(r, v, seen=seen))
     return {**groups, "note": NOTE}
 
 
@@ -239,9 +253,10 @@ async def find(request: Request, sp_task: str = Query("", max_length=200), round
         raise AuthError("artifact_kind 와 artifact_id 는 함께 준다", status_code=422)
     await _sync(request, settings)
     v = _viewer(request, principal)
-    rows, admin_only = _filter(await asyncio.to_thread(_store(request).rows, sp_task=(sp_task.strip() or None)), v)
+    st = _store(request)
+    rows, admin_only = _filter(await asyncio.to_thread(st.rows, sp_task=(sp_task.strip() or None)), v)
     want_q, aid = q.strip().lower(), artifact_id.strip().lower()
-    out = []
+    picked: list[dict] = []
     for r in rows:
         if r["status"] == "waiting":
             continue
@@ -253,9 +268,11 @@ async def find(request: Request, sp_task: str = Query("", max_length=200), round
         if aid and not any(isinstance(a, dict) and a.get("kind") == artifact_kind and str(a.get("id") or "").lower() == aid
                            for a in subj.get("artifacts") or []):
             continue
-        out.append(_view(r, v))
-        if len(out) >= limit:
+        picked.append(r)
+        if len(picked) >= limit:
             break
+    seen = await asyncio.to_thread(_seen_with_continues, st, picked, v)
+    out = [_view(r, v, seen=seen) for r in picked]
     _audit_admin(request, v, [i for i in admin_only if i in {o["id"] for o in out}], "find")
     return {"items": out, "count": len(out), "note": NOTE}
 
