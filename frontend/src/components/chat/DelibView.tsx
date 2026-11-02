@@ -11,6 +11,7 @@ import { DeckSpot } from './DeckSpot';
 import { deckReportOf } from './deck';
 import { RA_HOME, openRaReport, raReportHref } from './raLink';
 import { RosterEditor, type Seat } from './RosterEditor';
+import { subjectLine } from './subject';
 import { colorOf, initialOf } from './personaColor';
 import { InlineMd, TextBlock } from './renderers/TextBlock';
 import { usePersonaName } from './usePersonaPool';
@@ -508,6 +509,12 @@ export function DelibView({ msg }: { msg: Message }) {
       {d.cancelled && (
         <p className="dv-stopped" role="status">
           멈춤 — {d.cancelled.message || '사람이 멈췄다'}
+        </p>
+      )}
+      {/* 심의 주제 — 에이전트 서버가 확인한 것(docs/project-insight-graph M1). 확인하지 못했으면 그렇다고 말한다(과제에 잇지 않는다). */}
+      {d.subject && (
+        <p className="dv-subject" role="note">
+          <b>주제</b> · {subjectLine(d.subject)}
         </p>
       )}
       <PersonaIntro d={d} />

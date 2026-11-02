@@ -410,6 +410,50 @@ export async function fetchDeliberateVoc(
   }
 }
 
+// ── 심의 주제 고르기 — 허브 과제 찾기(docs/project-insight-graph M1) ─────────────────────────────
+/** 허브 과제 한 행 — key 는 결과 행의 key 칸 그대로다. */
+export interface SubjectTaskRow {
+  key: string;
+  label?: string | null;
+  task_code?: string | null;
+  project?: string | null;
+  active?: boolean;
+}
+export interface SubjectSearch {
+  rows: SubjectTaskRow[];
+  count: number;
+  /** 0건의 까닭(허브 설정 안 됨 · 맞는 것 없음 …) — StepForge 가 말한 그대로. */
+  why?: { cause?: string | null; message?: string | null };
+  /** 찾지 못한 까닭(권한 · 게이트웨이 · 도구 오류) — 있으면 rows 는 비었다. */
+  error?: string;
+}
+
+/** 그 사람의 PAT 로 허브 과제를 찾는다(포털이 StepForge find_plm_task 를 부른다). 고른 행은 심의 시작 때 서버가 다시 확인한다. */
+export async function searchSubjectTasks(query: string, signal?: AbortSignal): Promise<SubjectSearch> {
+  const csrf = getCookie('hwax_csrf');
+  try {
+    const res = await apiFetch('/agent/deliberate/subject/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify({ query }),
+      signal,
+    });
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const b = (await res.json()) as { detail?: unknown; message?: unknown };
+        detail = String(b.detail ?? b.message ?? '');
+      } catch {
+        detail = '';
+      }
+      return { rows: [], count: 0, error: detail || `http_${res.status}` };
+    }
+    return (await res.json()) as SubjectSearch;
+  } catch {
+    return { rows: [], count: 0, error: 'network' };
+  }
+}
+
 // ── 전문가 상세 + 보유 지식(카탈로그 브라우즈) ─────────────────────────────
 export interface AgentDetail {
   key: string;

@@ -50,6 +50,7 @@ from app.auth.provider import Principal
 from app.config import Settings, chat_pat_ttl_s, get_settings
 from app.agent import docforge_delivery as _dfd
 from app.agent import pc_upload as _pc
+from app.agent import subject as _subject
 from app.agent import upload as _upload
 from app.agent import wiki_send as _wiki
 from app.agent import panel as _panel
@@ -143,6 +144,30 @@ class ChatHistoryMessage(BaseModel):
 _KnowledgeQ = Annotated[str, StringConstraints(max_length=600)]
 _KnowledgeQSeat = Annotated[str, StringConstraints(min_length=1, max_length=120)]
 _KnowledgeQBySeat = Annotated[dict[_KnowledgeQSeat, _KnowledgeQ], Field(max_length=64)]
+
+
+class DelibSubjectArtifact(BaseModel):
+    """심의 주제의 설계 자료 하나 — mcad(StepForge project_id) · ecad(ODB 허브 job_id) · cae(DynaForge 리포트 id). 열쇠의 꼴은 에이전트 서버가
+    다시 본다(HWAXAgentServer delib_subject — 여기는 바깥 경계다)."""
+    model_config = {"extra": "forbid"}
+
+    kind: Literal["mcad", "ecad", "cae"]
+    app: str | None = Field(default=None, max_length=80)
+    id: str = Field(min_length=1, max_length=64)
+    rev: str | None = Field(default=None, max_length=120)
+
+
+class DelibSubject(BaseModel):
+    """심의 주제(docs/project-insight-graph M1) — 사람이 시작 때 고른 과제(SP 허브 plm_task key) · 차수(개발 단계 코드) · 글 · 설계 자료.
+    받는 칸은 이 넷뿐이다 — 확인 상태(sp_state) · 지문(sp_resolved_by) · 차수 출처(round_by)를 실어 오면 422 다(브라우저가 확인을 지어내지
+    못하게). 확인은 에이전트 서버가 한다 — 그 사람의 PAT 로 같은 풀이를 다시 불러 결과 행에 key 가 글자 그대로 하나일 때만(PLAN §4.3). 상한은
+    에이전트 서버 delib_subject 와 같다(tests/test_subject_m1.py 가 견준다)."""
+    model_config = {"extra": "forbid"}
+
+    sp_task: str | None = Field(default=None, max_length=200)
+    round: str | None = Field(default=None, max_length=40)
+    text: str | None = Field(default=None, max_length=500)
+    artifacts: list[DelibSubjectArtifact] | None = Field(default=None, max_length=8)
 
 
 class DelibOpts(BaseModel):
@@ -270,6 +295,9 @@ class DelibOpts(BaseModel):
     # Claude Code 워크플로는 제가 맡은 잡의 대상 과제만 답하므로, 이것이 떨어지면 쟁점 패널 과제가 답 없이 시간을 넘겨 잡이 external_worker
     # 로 선다. GLM 심의는 엔진이 이 값을 읽지 않는다. 모양은 엔진의 _RISK_TARGET_KEY_RE 와 같다(diff:·snap: + 64자 안의 영숫자·_·-).
     target_key: Annotated[str, StringConstraints(pattern=r"^(?:diff|snap):[0-9A-Za-z][0-9A-Za-z_-]{0,63}$")] | None = None
+    # 심의 주제(docs/project-insight-graph M1) — 심의 시작의 주제 고르기 · 이어하기가 싣는다. 에이전트 서버가 엔진 앞에서 다시 풀고 확인한 주제를
+    # delib 사건(kind=subject)으로 내면 중계가 그것만 답 meta.subject 로 남긴다(브라우저가 보낸 값은 남기지 않는다). 엔진에는 가지 않는다.
+    subject: DelibSubject | None = None
 
     @field_validator("as_of")
     @classmethod
@@ -397,6 +425,19 @@ class ConvMessageIn(BaseModel):
     persona: str | None = Field(default=None, max_length=120)
     round: int | None = None
     meta: dict | None = None
+
+
+# 중계만 적는 meta 칸 — 에이전트 서버가 확인한 심의 주제(docs/project-insight-graph M1)는 /agent/chat 중계가 그 사건에서만 답 meta.subject 로
+# 남긴다. 대화 REST(만들기 · 덧붙이기)로 실어 온 값은 버린다 — 남기면 브라우저 · PAT 호출이 지어낸 확인 상태(sp_state=confirmed)가 새로고침 뒤
+# 화면과 그 meta 를 읽는 쪽(M2 인사이트 그래프)에 서버가 확인한 주제로 읽힌다(반대 검토 11-02 재현). 화면이 REST 로 남기는 것(보내기 알림)은 이 칸을
+# 쓰지 않는다.
+_RELAY_ONLY_META = ("subject",)
+
+
+def _rest_meta(meta: dict | None) -> dict | None:
+    if not meta:
+        return meta
+    return {k: v for k, v in meta.items() if k not in _RELAY_ONLY_META} or None
 
 
 class ConvCreate(BaseModel):
@@ -589,7 +630,7 @@ def create_conversation(
             cid = _conv(request).create_with_messages(
                 owner_sub=principal.subject, title=body.title, kind=body.kind,
                 source=body.source,
-                messages=[m.model_dump() for m in body.messages],
+                messages=[{**m.model_dump(), "meta": _rest_meta(m.meta)} for m in body.messages],
             )
         else:
             cid = _conv(request).create(
@@ -622,7 +663,7 @@ def append_conversation_message(
     try:
         ok = _conv(request).append(
             conversation_id=cid, owner_sub=principal.subject, role=body.role,
-            content=body.content, persona=body.persona, round=body.round, meta=body.meta,
+            content=body.content, persona=body.persona, round=body.round, meta=_rest_meta(body.meta),
         )
     except sqlite3.OperationalError as exc:
         raise _store_busy(exc) from exc
@@ -2545,6 +2586,40 @@ async def deliberate_voc(
         return {"items": [], "keywords": [], **_unary_fail(exc, settings, "deliberate/voc")}
 
 
+class SubjectSearchReq(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    query: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/deliberate/subject/search")
+async def deliberate_subject_search(
+    request: Request,
+    body: SubjectSearchReq,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """심의 주제 고르기의 허브 과제 찾기(docs/project-insight-graph M1) — 그 사람의 PAT 로 게이트웨이 풀이 도구(StepForge find_plm_task — 허브
+    거울)를 한 번 불러 결과 행을 그대로 돌려준다. 포털은 과제 목록을 쥐지 않는다(A13) — 행은 이 사람의 도구 결과이고, 고른 행의 key 칸이 주제의
+    sp_task 다. 심의 시작 때 에이전트 서버가 같은 풀이로 다시 확인한다(여기 답을 믿지 않는다). 권한은 심의(feat:deliberation)이고, 그 플랫폼의
+    허가는 게이트웨이가 본다(없으면 forbidden 이 502 로 온다)."""
+    ensure(principal, "feat:deliberation")
+    q = body.query.strip()
+    if not q:
+        raise AuthError("찾을 과제 이름 · 코드가 비었다.", status_code=422)
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+    try:
+        out = await _upload.mcp_call(settings.mcp_gateway_url, pat, _subject.RESOLVER_CALL,
+                                     {"query": q, "limit": _subject.SEARCH_LIMIT, "full": True}, timeout=30.0)
+    except (httpx.HTTPError, ValueError) as exc:
+        # 게이트웨이 불통 · 기한 넘김 · JSON 이 아닌 답 — 502 로 까닭을 말한다(빈 결과로 바꾸면 '찾아봤는데 없다' 로 읽힌다). 종전엔 500 이었다
+        # (반대 검토 11-02 재현 — 게이트웨이를 내린 채 찾기).
+        raise AuthError(f"허브 과제 찾기를 할 수 없습니다(게이트웨이 응답 실패 — {type(exc).__name__}).", status_code=502) from exc
+    return {"query": q, "tool": _subject.RESOLVER_CALL, **_subject.sp_rows(out)}
+
+
 # ── 웹 심의 멈춤(docs/leftovers-1017 triage A24 (나) — 사용자 결정 10-31) ────────────────────────────────────────────────
 # 웹 심의(/심의 · /시뮬심의 · /시험계획)는 에이전트 서버의 분리 태스크라 화면이 떠나도(■ · 탭 닫기 · 끊김) 서버에서 끝까지 돈다 — 중계는 브라우저가
 # 끊으면 상류를 끊을 뿐이다(docs/request-1029 P-1). 그것을 멈추는 길이 이 창구다. 에이전트 서버 POST /deliberate/cancel 을 그 대화 id 와 실행 id 로
@@ -2978,6 +3053,9 @@ async def chat(
         cancelled: dict = {}         # 사람이 멈춘 웹 심의의 멈춤 사건(delib kind=cancelled) — 답 meta.delib_cancelled 로 남긴다
         outcome: dict = {}           # 심의 outcome(RA 보고서 번호 · 집계) — 답 meta.delib_outcome 으로 남긴다(docs/wda-deck WD-D12, 새로고침 뒤 단추)
         ra_report: dict = {}         # '/보고서' result 의 ra_report — 답 meta.ra_report 로 남긴다(같은 까닭)
+        # 에이전트 서버가 확인한 심의 주제(delib kind=subject — docs/project-insight-graph M1) — 답 meta.subject 로 남긴다. 사람 발화는 스트림 전에
+        # 남아 확인한 값을 모른다(그림 주소와 같은 까닭). 브라우저가 보낸 delib_opts.subject 는 남기지 않는다 — 확인되지 않은 값이다.
+        subject: dict = {}
         run_key = ""                 # 웹 심의의 실행 id(첫 심의 사건의 run_id) — 발언 · 답의 meta.delib_run 으로 남기고 멈춤 창구가 이 중계를 찾는다
         stop_rec: dict | None = None  # _DELIB_RELAYS 에 넣은 이 중계의 기록 — 멈춤 창구가 stop_by 를 적는다
         # 다단 심의(/시뮬심의)의 앞 단 결정문 뒤에 다음 단이 열렸다(엔진의 단 경계 checkpoint · 결정문 뒤의 단 사건 — 화면 mergeDelib 과 같은 판정).
@@ -3005,7 +3083,7 @@ async def chat(
 
         async def pump() -> None:
             nonlocal final, decision, user_images, cancelled, outcome, ra_report, run_key, stop_rec, next_stage, buf, pending, warned
-            nonlocal finishing
+            nonlocal finishing, subject
             try:
                 async for frame in source:
                     if store is not None:
@@ -3065,6 +3143,8 @@ async def chat(
                                                  **({"run_id": run_key} if run_key else {})}
                                 elif k == "outcome":
                                     outcome = _delib_outcome_of(data)
+                                elif k == "subject":
+                                    subject = _subject.subject_of(data.get("subject")) or subject
                                 elif k == "evidence":
                                     # 근거 카드는 엔진이 '좌석에 주지 않았다·줄였다·좌석이 유실됐다' 를 알리는 유일한
                                     # 길이다(notice). 종전엔 서버 사본에 남지 않아 다른 기기·새로고침 뒤에는 알림이 사라지고,
@@ -3208,6 +3288,8 @@ async def chat(
                                     _am["delib_outcome"] = outcome
                                 if ra_report:   # '/보고서' 가 만든 보고서 — 그 답 옆에 '발표자료로' 단추가 선다
                                     _am["ra_report"] = ra_report
+                                if subject:     # 에이전트 서버가 확인한 심의 주제(위 subject) — 다른 기기 · 새로고침의 화면 · 이어하기가 읽는다
+                                    _am["subject"] = subject
                                 if cancelled:   # 사람이 멈춘 심의(triage A24) — 화면은 이 글을 결정문으로 읽지 않는다(serverMessagesToLocal)
                                     _am["delib_cancelled"] = cancelled
                                 if run_key:
