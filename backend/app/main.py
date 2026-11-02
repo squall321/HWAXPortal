@@ -161,6 +161,7 @@ async def lifespan(app: FastAPI):
     app.state.procedures_store = None
     app.state.procedures_runner = None
     app.state.routine_store = None      # 분석 루틴 — 절차 저장소의 연결을 같이 쓴다(docs/analysis-routines)
+    app.state.insight_store = None      # 과제 인사이트 — 같은 연결(docs/project-insight-graph M2)
     try:
         from app.procedures.pat import mint as _wb_mint
         from app.procedures.runner import ProceduresRunner
@@ -174,6 +175,9 @@ async def lifespan(app: FastAPI):
         from app.procedures.routine_store import RoutineStore
 
         app.state.routine_store = RoutineStore(_wb)
+        from app.insights.store import InsightStore
+
+        app.state.insight_store = InsightStore(_wb)
         app.state.procedures_runner = ProceduresRunner(
             settings=settings, store=_wb,
             mint_pat=lambda p, run, ix: _wb_mint(app.state.keystore, settings, p, run, ix),
@@ -270,6 +274,9 @@ try:
     from app.procedures import routine_routes
 
     app.include_router(routine_routes.router)
+    from app.insights import routes as insight_routes
+
+    app.include_router(insight_routes.router)
 except Exception as exc:  # noqa: BLE001
     app.state.procedures_error = f"{type(exc).__name__}: {exc}"
     _log.error("절차 라우터 등록 실패 — 포털은 계속 뜬다", exc_info=True)

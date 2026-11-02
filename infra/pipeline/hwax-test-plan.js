@@ -4,6 +4,7 @@
 //   - question   : 확보하려는 물성·성능(예: "낙하·충격 해석용 물성 확보")
 //   - context    : (선택) 물성 근거 현황. 안 주면 이 워크플로가 MaterialTwin 도구로 직접 조회한다.
 //   - personas   : (선택) 추가 좌석. 고정 3석 뒤에 붙는다. 안 주면 고정 3석 + 자동 발굴.
+//   - subject    : (선택) 과제 심의면 사람이 고른 주제(hwax-deliberate.js 의 subject) — 자식에 넘겨 대화 저장에만 싣는다.
 //   - deliberateScript: 자식으로 부를 심의 워크플로 경로(기본 'infra/pipeline/hwax-deliberate.js').
 //                  ⚠ 스크립트 안의 workflow() 는 이름으로 .claude/workflows/ 를 못 찾는다 —
 //                  내장 워크플로만 이름 해석된다(실측). 그래서 경로로 부른다.
@@ -103,6 +104,7 @@ const result = await workflow(DELIB, {
   humanNote: [BASE_NOTE, String(A.humanNote || '').trim()].filter(Boolean).join('\n\n'),
   saveReport: A.saveReport,
   saveConversation: A.saveConversation,
+  subject: A.subject,      // 과제 심의면 사람이 고른 주제 — 자식이 대화 저장에만 싣는다(HWAXPortal docs/project-insight-graph contracts §5)
   ...(A.ctxTokens ? { ctxTokens: A.ctxTokens } : {}),   // 자식이 근거·직전 라운드 상한을 이 창에서 유도한다
 })
 

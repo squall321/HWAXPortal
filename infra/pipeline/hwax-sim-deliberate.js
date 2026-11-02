@@ -31,6 +31,8 @@
 //                       심의 본체 3시간에 RA 저장이 1시간 반이었다(페이지마다 에이전트 1개).
 //                       끄더라도 결과는 포털 대화 저장소와 반환값에 전문으로 남는다.
 //   - appendToReportId: 지정 시 최종 결과(3단, buildPlan:false 면 2단)를 그 RA report_id 에 이어붙인다.
+//   - subject         : 과제 심의면 사람이 고른 주제(hwax-deliberate.js 의 subject 와 같다) — 단마다 자식에 그대로 넘긴다. 대화를 남기는 단만
+//                       과제 인사이트 카드가 된다(HWAXPortal docs/project-insight-graph contracts §5).
 //   - deliberateScript: 자식으로 부를 심의 워크플로 경로(기본 'infra/pipeline/hwax-deliberate.js').
 //                       스크립트 안의 workflow() 는 이름으로 .claude/workflows/ 를 찾지 못한다 —
 //                       내장 워크플로(deep-research·code-review)만 이름으로 해석된다(실측 2026-08-07).
@@ -195,6 +197,7 @@ const mech = await workflow(DELIB, {
   chairTemplate: 'mechanism',
   modifiers: MODS,
   groundCards: GROUND,
+  subject: A.subject,
   saveReport: false,       // 최종 저장은 2단 종료 후 한 번만 — 중간 산출물로 RA 를 어지럽히지 않는다
   saveConversation: false,
   ctxTokens: CTX_TOKENS,
@@ -285,6 +288,7 @@ const sim = await workflow(DELIB, {
   chairTemplate: 'sim-plan',
   modifiers: MODS,
   groundCards: GROUND,
+  subject: A.subject,
   continueFrom: { summary: excerptTo(decOnly(mech), span(0.2, 12000), 0.75, '2단 승계'),
                   roundsSoFar: R1, nonNegotiables: NN },
   humanNote: '사내 보유 도구를 우선 검토하라. 파라미터 식별성 판정과 이 해석이 답할 수 없는 것을 비워두지 마라.',
@@ -324,6 +328,7 @@ if (DO_BUILD) {
     chairTemplate: 'build-plan',
     modifiers: MODS,
     groundCards: GROUND,
+    subject: A.subject,
     // 3단 (2)는 2단 계획서 10항목 전부를 승계·분류하므로 요약 상한을 2단(12000)보다 올린다 —
     // 상세 해석 계획서가 길어 후미 항목((8)검증·(9)규모·(10)한계)이 잘리는 것을 완화. 조항은 buildNN 별도 승계.
     continueFrom: { summary: excerptTo(decOnly(sim), span(0.2, 20000), 0.7, '3단 승계'),
@@ -366,13 +371,15 @@ const flags = (st) => st ? {
   evidenceOmitted: st.evidenceOmitted || [], inputNotices: st.inputNotices || [],
   citationAudit: st.citationAudit || null,
 } : null
+// 단의 주제 · 의장 틀 — save-delib-conversation.py 가 단마다 대화를 저장할 때 같이 싣는다(과제 인사이트 카드가 단마다 한 장).
+const subj = (st) => st ? { subject: st.subject || null, chairTemplate: st.chairTemplate || null } : {}
 return {
   question: Q,
-  mechanism: { decision: mech.decision, rounds: mech.rounds, roundLabels: mech.roundLabels, ...flags(mech) },
+  mechanism: { decision: mech.decision, rounds: mech.rounds, roundLabels: mech.roundLabels, ...flags(mech), ...subj(mech) },
   seats: { axes: (seatPick && seatPick.axes) || [], reason: (seatPick && seatPick.reason) || '',
            sim: simSeats, carriedNonNegotiables: NN, seatPickFailed: !seatPick },
-  simPlan: { decision: sim && sim.decision, rounds: sim && sim.rounds, roundLabels: sim && sim.roundLabels, spec: simSpec, ...flags(sim) },
-  buildPlan: build ? { decision: build.decision, rounds: build.rounds, roundLabels: build.roundLabels, ...flags(build) } : null,
+  simPlan: { decision: sim && sim.decision, rounds: sim && sim.rounds, roundLabels: sim && sim.roundLabels, spec: simSpec, ...flags(sim), ...subj(sim) },
+  buildPlan: build ? { decision: build.decision, rounds: build.rounds, roundLabels: build.roundLabels, ...flags(build), ...subj(build) } : null,
   buildFailed,   // DO_BUILD 였는데 3단이 죽음 — 저장이 어디에도 안 된 상태(위 log 참조).
   report: (build && build.report) || (sim && sim.report),
   conversation: (build && build.conversation) || (sim && sim.conversation),

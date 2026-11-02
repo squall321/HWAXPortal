@@ -11,6 +11,8 @@
 #   HWAX_PAT=<포털 PAT> ./save-delib-conversation.py <결과.json> [--base http://127.0.0.1:8723]
 #   입력은 워크플로 태스크 출력 파일(래퍼 {result:...})이든 result 자체든 모두 받는다.
 #   hwax-sim-deliberate 결과(mechanism/simPlan/buildPlan)면 단계마다 대화를 하나씩 만든다.
+#   결과에 심의 주제(subject)와 의장 틀(chairTemplate)이 있으면 같이 싣는다 — 포털이 저장한 뒤 그 사람 권한으로 다시 풀어 과제 인사이트
+#   카드로 들인다(docs/project-insight-graph contracts §5). 리스크 심사(chairTemplate risk-review*)는 주제를 싣지 않는다.
 import argparse
 import json
 import os
@@ -101,14 +103,22 @@ def _msgs_for(stage: dict, question: str, cont: bool) -> list[dict]:
     return msgs
 
 
-def _save(base: str, pat: str, title: str, msgs: list[dict]) -> str:
+def _insight(stage: dict) -> dict:
+    """단의 심의 주제 · 의장 틀 — 포털 ConvCreate 의 subject · chair_template. 주제가 없거나 리스크 심사 계열이면 싣지 않는다."""
+    subj, chair = stage.get("subject"), stage.get("chairTemplate")
+    if not isinstance(subj, dict) or not subj or str(chair or "").lower().startswith("risk-review"):
+        return {}
+    return {"subject": subj, **({"chair_template": chair} if isinstance(chair, str) and chair else {})}
+
+
+def _save(base: str, pat: str, title: str, msgs: list[dict], insight: dict | None = None) -> tuple[str, dict | None]:
     created = _req(base, pat, "/agent/conversations", {
         "title": title[:200], "kind": "deliberation", "source": "mcp",
-        "messages": msgs[:CREATE_MAX]})
+        "messages": msgs[:CREATE_MAX], **(insight or {})})
     cid = created.get("id") or created.get("conversation_id") or ""
     for m in msgs[CREATE_MAX:]:
         _req(base, pat, f"/agent/conversations/{cid}/messages", m)
-    return cid
+    return cid, created.get("insight")
 
 
 def main() -> int:
@@ -136,9 +146,11 @@ def main() -> int:
         return 2
     for tag, stage in stages:
         msgs = _msgs_for(stage, question, cont=tag.startswith(("2", "3")))
-        cid = _save(args.base, pat, f"{tag} — {question[:60]}", msgs)
+        cid, insight = _save(args.base, pat, f"{tag} — {question[:60]}", msgs, _insight(stage))
         total = sum(len(m["content"]) for m in msgs)
-        print(f"  ✓ {tag}: 대화 {cid} — 메시지 {len(msgs)}건 · {total:,}자 (원문 무손실)")
+        print(f"  ✓ {tag}: 대화 {cid} — 메시지 {len(msgs)}건 · {total:,}자 (원문 무손실)"
+              + (f" · 과제 인사이트 {insight.get('id') or ''} {insight.get('status') or insight.get('skipped') or ''}".rstrip()
+                 if isinstance(insight, dict) else ""))
     return 0
 
 

@@ -57,6 +57,11 @@
 //                       페이로드를 반환하므로, 사람이 빠진 관점을 보태 continueFrom+humanNote 로 이어하기를
 //                       호출하면 그 지점부터 이어진다. 좌석 재심사가 사람이 준 방향에 맞는 도메인을 불러온다.
 //   - appendToReportId: 지정 시 새 RA 보고서를 만들지 않고 이 report_id 에 새 페이지로 결과를 이어붙인다.
+//   - subject         : 과제 심의면 사람이 시작 때 고른 주제 {sp_task(허브 과제 key — find_plm_task 결과 행의 key), round(차수 — pre · dv1 ~ dv3 ·
+//                       dvr · pv1 ~ pv3 · pvr · pra · mp), text, artifacts:[{kind: mcad|ecad|cae, app?, id, rev?}]}. 과제 대상이 아닌 질문이면 뺀다.
+//                       대화 저장(save_conversation)에만 싣는다 — 좌석 · 의장 프롬프트와 RA 보고서에는 넣지 않는다. 포털이 저장한 뒤 그 사람
+//                       권한으로 다시 풀어 과제 인사이트 카드로 들인다(HWAXPortal docs/project-insight-graph contracts §5). 리스크 심사(chairTemplate
+//                       risk-review*)는 싣지 않는다.
 // 출력: { question, rounds:[페르소나별 라운드결과 배열...], roundLabels, decision, report, conversation, nextRoundOffset }
 //   — stopAfterRound:1 이면 decision/report/conversation 이 null 이고 checkpoint{stage,seats,positions,ask} 가 붙는다.
 //   — evidenceOmitted:[{source,count,text}] 는 좌석에 주지 않은 근거다(본문 없음 · 건수 상한 초과 · 합계 예산 초과).
@@ -72,7 +77,7 @@
 export const meta = {
   name: 'hwax-deliberate',
   description: '질문을 다중 라운드 전문가 심의로 수렴 — chairTemplate 로 심의 유형(원인규명·안선택·신뢰판정·자유 등), modifiers 로 얹을 층 선택',
-  whenToUse: '기본 길은 서버 엔진이다(사용자 결정 11-02 · docs/token-saving TS-5) — deliberate_start 로 맡기고 deliberate_status 를 한 번(wait_s 를 받으면 wait_s 로) 부른 뒤 deliberate_result 를(view=summary 를 받으면 요약 먼저) 받는다. 이 워크플로는 좌석마다 Claude 에이전트를 돌려 토큰이 크다 — Claude 로 품질을 따로 재야 할 때만 쓴다. 여러 도메인 전문가 의견이 갈리는 결정을 도구 근거 위에서 라운드로 수렴시킬 때. args 는 객체 {question, chairTemplate?, modifiers?, personas?, evidence?, rounds?}. chairTemplate 로 심의 유형을 고른다 — diagnosis(원인규명·FTA↔FMEA·is/is-not·ACH, 반증 지정석 자동) · option-select(안선택·Pugh 2R/Flip) · credibility(신뢰판정·NASA-STD-7009 축별 채점, red-team 지정석 자동) · sim-plan(해석 계획서·sim_spec) · test-plan(시험 계획서) · build-plan(구축 계획서) · risk-review(리스크 심사 보고서·risk_spec, 기준선 옹호 지정석 자동) · default(자유 의사결정문). modifiers[] 로 얹을 층(직교·다중) — voi(교착 정산/VoI) · premortem(사전부검) · toulmin(논증 엄밀) · eliminative(완결 기준) · anon1r(익명 1R). 시뮬 2단(메커니즘→해석 설계)은 hwax-sim-deliberate, 무엇을 먼저 측정할지는 hwax-test-plan 을 쓴다. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — Workflow 의 scriptPath 에 정본 경로 <리포루트>/infra/pipeline/hwax-deliberate.js 를 준다. 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
+  whenToUse: '기본 길은 서버 엔진이다(사용자 결정 11-02 · docs/token-saving TS-5) — deliberate_start 로 맡기고 deliberate_status 를 한 번(wait_s 를 받으면 wait_s 로) 부른 뒤 deliberate_result 를(view=summary 를 받으면 요약 먼저) 받는다. 이 워크플로는 좌석마다 Claude 에이전트를 돌려 토큰이 크다 — Claude 로 품질을 따로 재야 할 때만 쓴다. 여러 도메인 전문가 의견이 갈리는 결정을 도구 근거 위에서 라운드로 수렴시킬 때. args 는 객체 {question, chairTemplate?, modifiers?, personas?, evidence?, rounds?, subject?} — subject 는 과제 심의면 사람에게 물은 과제 key · 차수(과제 대상이 아니면 뺀다). chairTemplate 로 심의 유형을 고른다 — diagnosis(원인규명·FTA↔FMEA·is/is-not·ACH, 반증 지정석 자동) · option-select(안선택·Pugh 2R/Flip) · credibility(신뢰판정·NASA-STD-7009 축별 채점, red-team 지정석 자동) · sim-plan(해석 계획서·sim_spec) · test-plan(시험 계획서) · build-plan(구축 계획서) · risk-review(리스크 심사 보고서·risk_spec, 기준선 옹호 지정석 자동) · default(자유 의사결정문). modifiers[] 로 얹을 층(직교·다중) — voi(교착 정산/VoI) · premortem(사전부검) · toulmin(논증 엄밀) · eliminative(완결 기준) · anon1r(익명 1R). 시뮬 2단(메커니즘→해석 설계)은 hwax-sim-deliberate, 무엇을 먼저 측정할지는 hwax-test-plan 을 쓴다. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — Workflow 의 scriptPath 에 정본 경로 <리포루트>/infra/pipeline/hwax-deliberate.js 를 준다. 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
   phases: [
     { title: '초기입장', detail: '페르소나별 초기 의견(또는 이어하기 개시) — 병렬' },
     { title: '심화라운드', detail: '상호 반박·수치 심화 (가변 회차, 병렬)' },
@@ -158,6 +163,14 @@ const STOP_AFTER = Number(A.stopAfterRound) === 1 ? 1 : 0
 // 의장 산출 템플릿 — 시뮬레이션 심의처럼 결정문의 성격이 다른 경우에만 지정한다.
 // 미지정이면 종전 항목((1)~(5))이 그대로 나가므로 기존 호출은 영향 없다.
 const CHAIR_TEMPLATE = String(A.chairTemplate || 'default')
+// 심의 주제(과제 인사이트) — 받는 칸 넷만 · 빈 값은 뺀다. 리스크 심사 계열이면 싣지 않는다(리스크 심사의 주제는 리스크 앱 과제다 — 포털도 한 번 더 뺀다).
+const SUBJECT_KEYS = ['sp_task', 'round', 'text', 'artifacts']
+const SUBJECT = (() => {
+  const raw = A.subject
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || /^risk-review/i.test(CHAIR_TEMPLATE)) return null
+  const kept = Object.fromEntries(Object.entries(raw).filter(([k, v]) => SUBJECT_KEYS.includes(k) && v != null && v !== ''))
+  return Object.keys(kept).length ? kept : null
+})()
 
 // 신규 Job 전용 지정 좌석 — 방법론의 반대/반증 역할을 좌석 구조로 보장(발굴이 반대석을 안 뽑을 수 있어
 // 프롬프트 지시만으론 아무도 안 맡는다). deliberation.py _CHAIR_ADVERSARY 와 키·역할 정합. 합성 좌석 push.
@@ -417,7 +430,8 @@ const D18_LINE = `[D-18] 같은 과제의 앞 판정에 닿는 도구는 부르�
   `(risk_get_registry · risk_claims_for_ref · risk_get_precedents · risk_list_panels · risk_get_panel_transcript · ` +
   `risk_get_report · risk_get_issues · risk_get_expert_report · risk_get_cells 등 — 리스크 앱에서 볼 수 있는 것은 변경 ` +
   `risk_get_diff 와 스냅샷 risk_get_snapshot 뿐이다)와, 이 과제에 관한 RA 보고서 · 온톨로지 읽기(엔진이 남긴 '심의 — ` +
-  `[리스크심사 …]' 초안, 이 과제 코드로 시작하는 risk_finding 객체). 앞 판정을 따라 말하면 지지 수가 독립 근거 없이 오른다.`
+  `[리스크심사 …]' 초안, 이 과제 코드로 시작하는 risk_finding 객체), 과제 인사이트(insight_find · insight_get — 같은 과제의 앞선 ` +
+  `심의 결론)와 과제 주제로 리스크 과제 찾기(risk_find_projects_by_subject). 앞 판정을 따라 말하면 지지 수가 독립 근거 없이 오른다.`
 // 좌석 역할 — risk-review 면 원본 역할 뒤에 도메인 계약을 접미로 붙인다(합성 지정석은 도메인
 // delib 이라 계약표에 없어 자기 역할 문구만 간다 — deliberation.py 와 같은 규칙). D-18 한 줄은 그 뒤다(지정석 포함).
 const role = k => {
@@ -1185,8 +1199,10 @@ if (A.saveConversation !== false) {
       conversation = await agent(
         `save_conversation 도구가 사용 가능하면 호출해 아래 심의 대화 로그를 포털 대화 저장소에 저장하라.\n` +
         `인자: title="${CONT ? '심의(이어하기) — ' : '심의 — '}${Q.slice(0, 50)}", kind="deliberation", source="mcp",\n` +
+        (SUBJECT ? `subject=${JSON.stringify(SUBJECT)}, chair_template="${CHAIR_TEMPLATE}",\n` : '') +
         `messages=${JSON.stringify(msgs)}\n` +
-        `- messages 값은 **한 글자도 바꾸지 말고 그대로** 인자로 넘겨라(요약·의역·생략 금지).\n` +
+        `- messages 값은 **한 글자도 바꾸지 말고 그대로** 인자로 넘겨라(요약·의역·생략 금지).` +
+        (SUBJECT ? ` subject · chair_template 도 그대로 넘긴다.` : '') + `\n` +
         `- 도구가 없거나 결과가 CONV_UNAVAILABLE 이면 절대 재시도하지 말고 "CONV_UNAVAILABLE" 한 줄만 반환.\n` +
         `- 성공하면 반환된 conversation_id 만 한 줄로.`,
         { label: 'conv-save', phase: 'Report' })
@@ -1229,4 +1245,7 @@ return {
   citationAudit,       // 결정문 수치 ↔ 근거·발언 원문 결정적 대조 결과(원장 (3) — unmatched 는 사람이 훑을 목록)
   conversation,
   nextRoundOffset: finalRoundNo,   // 다음 이어하기 호출의 continueFrom.roundsSoFar 로 그대로 전달
+  // 심의 주제 · 의장 틀 — infra/scripts/save-delib-conversation.py 가 대화를 REST 로 저장할 때 같이 싣는다(리스크 심사면 주제는 null)
+  subject: SUBJECT,
+  chairTemplate: CHAIR_TEMPLATE,
 }
