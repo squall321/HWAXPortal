@@ -227,10 +227,10 @@ class FakeVllm:
 
 
 class FakeJson:
-    """가짜 에이전트 서버 · 라우터 — 경로 → (상태, JSON)."""
+    """가짜 에이전트 서버 · 라우터 — 경로 → (상태, JSON). delay 초만큼 늦게 답한다(LLM 이 안 닿을 때의 에이전트 서버 /health)."""
 
-    def __init__(self, routes: dict):
-        self.routes = routes
+    def __init__(self, routes: dict, delay: float = 0.0):
+        self.routes, self.delay = routes, delay
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -238,6 +238,7 @@ class FakeJson:
                 return
 
             def do_GET(self):
+                time.sleep(fake.delay)
                 code, obj = fake.routes.get(self.path, (404, {}))
                 body = json.dumps(obj).encode()
                 self.send_response(code)
@@ -980,6 +981,38 @@ def test_짝_파일은_줄_꼴과_JSON_꼴을_읽고_못_읽으면_포트로만_
     for bad, needle in (("18720-18711", "거꾸로"), ("1-200", "넘는다"), ("18711,x", "포트")):
         cfg = C.build_config(C.env_values(f"CHAT_LLM_BASE_URL=http://127.0.0.1:18700/v1\nLLM_STATUS_REPLICA_PORTS={bad}\n"))
         assert cfg.targets[-1].id == "chat-replicas" and needle in cfg.targets[-1].problem, (bad, cfg.targets[-1])
+
+
+def test_에이전트_서버가_늦으면_모름이고_내려감은_연결_거부_오류_상태일_때만이다(tmp_path, fakes, monkeypatch):
+    """에이전트 서버 /health 는 LLM 이 안 닿으면 창을 묻느라 5초쯤 걸린다(HWAXAgentServer app.py `_ask_context` — httpx timeout=5.0). 읽기 기한이
+    같은 5초라 LLM 이 죽은 바로 그때 에이전트 서버가 '내려감' 으로 찍혔다(반대 검토 11-02). 에이전트 서버는 제 기한(AGENT_READ_S — 12초)으로 읽고,
+    늦으면 '모름 — 늦음' 이며 저장하지 않는다. 내려감(0)은 연결 거부 · 오류 상태일 때만이다(OD-36)."""
+    assert C.AGENT_READ_S == 12.0 and C.AGENT_READ_S > C.READ_S + 5.0, "에이전트 서버 /health 가 늦는 5초보다 넉넉하다"
+    monkeypatch.setattr(C, "READ_S", 0.5)                                    # 수집기의 다른 읽기 기한(5초)을 줄여 본다
+    slow = fakes(FakeJson, {"/health": (200, {"status": "ok", "delib_active": 1})}, delay=1.0)
+    clock = Clock()
+    coll = _collector(tmp_path, f"LLM_STATUS_AGENT_URL=http://127.0.0.1:{slow.port}\n", clock=clock)
+    coll.poll_agent(coll.agent)
+    a = coll.snapshot()["agent"]["values"]
+    assert a["up"]["value"] is True and a["delib_active"]["value"] == 1, "READ_S 보다 늦어도 에이전트 서버의 기한 안이면 살아 있다"
+    monkeypatch.setattr(C, "AGENT_READ_S", 0.5)
+    clock.tick(15)
+    coll.poll_agent(coll.agent)
+    a = coll.snapshot()["agent"]["values"]
+    assert a["up"]["value"] is None and a["up"]["error"].startswith("늦음") and "0.5초" in a["up"]["error"], a["up"]
+    pts = coll.store.series("agent", "up", "1h", now=clock())["points"]
+    assert [p[1] for p in pts] == [1.0], f"늦음은 내려감(0)으로 저장하지 않는다 — {pts}"
+    err = fakes(FakeJson, {"/health": (500, {"detail": "boom"})})
+    (tmp_path / "e").mkdir()
+    coll = _collector(tmp_path / "e", f"LLM_STATUS_AGENT_URL=http://127.0.0.1:{err.port}\n", clock=clock)
+    coll.poll_agent(coll.agent)
+    assert coll.snapshot()["agent"]["values"]["up"]["value"] is False, "오류 상태는 내려감이다"
+    (tmp_path / "r").mkdir()
+    coll = _collector(tmp_path / "r", "", clock=clock)                       # 닫힌 포트 — 연결 거부
+    coll.poll_agent(coll.agent)
+    a = coll.snapshot()["agent"]["values"]["up"]
+    assert a["value"] is False and "연결 거부" in a["error"], a
+    assert [p[1] for p in coll.store.series("agent", "up", "1h", now=clock())["points"]] == [0.0]
 
 
 def test_라우터는_LLM_UPSTREAMS_가_있을_때만_보고_주소는_호스트_포트만(tmp_path, fakes):

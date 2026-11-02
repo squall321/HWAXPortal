@@ -64,6 +64,9 @@ INTERVAL_S = 15.0
 MODELS_EVERY_S = 60.0
 CONNECT_S = 3.0
 READ_S = 5.0
+# 에이전트 서버 /health 의 읽기 기한 — 그 /health 는 LLM 이 안 닿으면 창을 묻느라 5초쯤 걸린다(../HWAXAgentServer/app.py `_ask_context` 의
+# httpx timeout=5.0). READ_S 와 같으면 LLM 이 죽은 바로 그때 에이전트 서버가 내려감으로 찍힌다(OD-36)
+AGENT_READ_S = 12.0
 STALE_AFTER = 3                  # 놓친 주기 수
 RATE_WINDOW_S = 60.0             # 카드의 토큰 속도 창
 WINDOW_S = 300.0                 # 분위수 · 오류 · 선점 · 캐시 적중의 창
@@ -1052,17 +1055,28 @@ class Collector:
 
     # ── 에이전트 서버 /health — '지금 쓰는 일'(HWAX 몫만) ──
     def poll_agent(self, st: TState) -> None:
-        r = fetch(st.t.addr, "/health")
+        r = fetch(st.t.addr, "/health", read_s=AGENT_READ_S)
         now = self.clock()
         d = _json(r) if r.status == 200 else None
         if not isinstance(d, dict):
-            why = r.error or "/health 가 JSON 이 아니다"
+            # 내려감(0)은 연결 거부 · 오류 상태일 때만이다 — 늦음 · 그 밖의 실패는 모름(None)이고 저장하지 않는다(OD-36)
+            down = r.kind in ("refused", "http")
+            if r.kind == "read_timeout":
+                why = f"늦음 — /health 가 {AGENT_READ_S:g}초 안에 답하지 않았다(LLM 이 안 닿으면 에이전트 서버가 창을 묻느라 늦는다)"
+            else:
+                why = r.error or "/health 가 JSON 이 아니다"
             with st.lock:
                 st.mark("health", now, why)
-                st.cell("up", "agent").ok(False, now, why)
+                up = st.cell("up", "agent")
+                if down:
+                    up.ok(False, now, why)
+                else:
+                    up.value = None
+                    up.fail(why)
                 for name in AGENT_VALUES[1:]:
                     st.cell(name, "agent").fail(why)
-            self._save(st.t, now, {"up": 0.0})
+            if down:
+                self._save(st.t, now, {"up": 0.0})
             self._note(st, "up", why, f"에이전트 서버({st.t.addr})를 못 읽는다 — {why}")
             return
 
