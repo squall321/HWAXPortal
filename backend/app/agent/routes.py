@@ -49,6 +49,7 @@ from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, chat_pat_ttl_s, get_settings
 from app.agent import docforge_delivery as _dfd
+from app.agent import onto_preview as _onto_preview
 from app.agent import pc_upload as _pc
 from app.agent import subject as _subject
 from app.agent import upload as _upload
@@ -2668,6 +2669,43 @@ async def deliberate_subject_search(
         # (반대 검토 11-02 재현 — 게이트웨이를 내린 채 찾기).
         raise AuthError(f"허브 과제 찾기를 할 수 없습니다(게이트웨이 응답 실패 — {type(exc).__name__}).", status_code=502) from exc
     return {"query": q, "tool": _subject.RESOLVER_CALL, **_subject.sp_rows(out)}
+
+
+class OntoPreviewReq(BaseModel):
+    """'온톨로지 먼저 보기' 의 입력 — 심의 주제(M1)의 과제 key 와 그 심의의 의장 틀(리스크 심사 계열이면 거절한다)."""
+    model_config = {"extra": "forbid"}
+
+    sp_task: str = Field(min_length=1, max_length=200)
+    chair_template: str | None = Field(default=None, max_length=40)
+
+
+@router.post("/deliberate/onto-preview")
+async def deliberate_onto_preview(
+    request: Request,
+    body: OntoPreviewReq,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """심의 전 '온톨로지 먼저 보기'(docs/ontology-first M4 · 사용자 결정 OF-14 ③) — 주제 과제를 M1 과 같은 풀이로 그 사람의 PAT 로 확인하고, 정본
+    허브의 object_resolve → exact 이고 key 가 같을 때만 graph_neighbors(depth 1 · 어휘표 타입)를 불러 사람이 고를 행으로 줄인다(app.agent.onto_preview).
+    두 허브 도구가 게이트웨이가 읽기로 확인한 것(routine_read)이 아니면 부르지 않고 까닭을 말한다. 고른 행은 화면이 호출 하나에 근거 한 항목으로
+    delib_opts.evidence 에 싣는다 — 엔진은 바뀌지 않는다. 리스크 심사 계열 의장이면 422(D-18). 권한은 심의(feat:deliberation)이고 플랫폼 허가는
+    게이트웨이가 본다(거절은 그 단계의 까닭으로 돌려준다)."""
+    ensure(principal, "feat:deliberation")
+    if _onto_preview.risk_chair(body.chair_template):
+        raise AuthError("리스크 심사에는 '온톨로지 먼저 보기' 를 쓰지 않는다(D-18 — 같은 과제의 앞 판정에 닿는 길을 넓히지 않는다).", status_code=422)
+    key = body.sp_task.strip()
+    if not key:
+        raise AuthError("주제 과제 key 가 비었다.", status_code=422)
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다.", status_code=401)
+    from app.access.routes import _gateway_tools_map  # noqa: PLC0415 — 접근 창구 모듈의 무인증 /tools-map 읽기(과제 인사이트와 같은 길)
+
+    async def _call(tool: str, args: dict) -> dict:
+        return await _upload.mcp_call(settings.mcp_gateway_url, pat, tool, args, timeout=_onto_preview.CALL_TIMEOUT_S)
+
+    return await _onto_preview.preview(key, tools_map=await _gateway_tools_map(settings), call=_call)
 
 
 # ── 웹 심의 멈춤(docs/leftovers-1017 triage A24 (나) — 사용자 결정 10-31) ────────────────────────────────────────────────
