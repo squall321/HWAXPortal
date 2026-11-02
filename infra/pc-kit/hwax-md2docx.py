@@ -9,6 +9,7 @@
   · 줄에 홀로 있으면 본문 폭(--max-width-cm 까지) 그림과 그 아래 캡션 문단
   · 문단 · 목록 · 제목 안이면 줄 안 그림(제 크기, 남은 폭까지)
   · 표 칸 안이면 그 열 몫의 폭(비율 유지) 그림과 같은 칸 안의 캡션 — 칸의 앞뒤 글은 그대로, 한 칸에 여럿도 된다
+  · 작은 그림은 제 크기(96 dpi)의 두 배까지만 키운다. HTML 주석은 뺀다. HTML <img> · 참조 꼴 ![캡션][이름] 은 그림이 못 된다고 알린다
 src 는 md 기준 상대 경로 · 절대 경로(/a/b.png · H:/a/b.png · H:\\a\\b.png · \\\\서버\\공유\\a.png) · 그림 ref(fig_… · fig:fig_…)다.
 ref 는 (1) md 폴더와 --fig-dir 폴더에서 이름에 ref 가 든 파일(figure_get 의 curl 이 받는 <도구>-<ref>.<확장자>)을 쓰고,
 (2) 없으면 환경 변수 HWAX_GATEWAY_PAT · HWAX_PORTAL_BASE(https://<포털 호스트>)가 있을 때 {base}/mcp-gw/fig/<ref> 에서 받아 md 옆에 둔다.
@@ -21,6 +22,7 @@ png · jpeg · gif · bmp 는 그대로, webp 는 Pillow, svg 는 cairosvg 로 p
 from __future__ import annotations
 
 import argparse
+import http.client
 import io
 import os
 import re
@@ -65,15 +67,9 @@ _TITLE_TAIL = re.compile(r"[ \t]*(?:\"([^\"\n]*)\"|'([^'\n]*)'|\(([^()\n]*)\))?[
 _TITLE_IN = re.compile(r"(.*?)[ \t]+(?:\"([^\"]*)\"|'([^']*)'|\(([^()]*)\))")
 
 
-def match_bracket(s: str, i: int, bang: bool = True) -> Mark | None:
-    """s[i:] 가 ![글](주소)(bang) 또는 [글](주소) 로 시작하면 그 표기, 아니면 None.
-
-    글 안의 대괄호는 짝을 맞춘다. 주소의 역슬래시는 글자 그대로 둔다(Windows 경로 H:\\a\\b.png). 주소는 <…> 로 감싸면 빈칸을 품고,
-    감싸지 않아도 따옴표 · 괄호 제목이 없으면 짝 맞는 닫는 괄호까지가 주소다(H:\\내 문서\\a.png 도 그림이 된다)."""
-    n, j = len(s), i + (2 if bang else 1)
-    if s[i:j] != ("![" if bang else "["):
-        return None
-    depth = 1
+def _bracket_end(s: str, j: int) -> int:
+    """s[j:] 가 '[' 바로 뒤일 때 짝 맞는 ']' 의 자리(없으면 -1) — 안의 대괄호는 짝을 맞추고 역슬래시 다음 글자는 건너뛴다. 빈 줄은 넘지 않는다."""
+    n, depth = len(s), 1
     while j < n:
         c = s[j]
         if c == "\\":
@@ -84,13 +80,25 @@ def match_bracket(s: str, i: int, bang: bool = True) -> Mark | None:
         elif c == "]":
             depth -= 1
             if depth == 0:
-                break
+                return j
         elif c == "\n":
             nl = s.find("\n", j + 1)
             if not s[j + 1:nl if nl >= 0 else n].strip():
-                return None                                 # 빈 줄을 건너는 표기는 없다
+                return -1
         j += 1
-    if j >= n or s[j + 1:j + 2] != "(":
+    return -1
+
+
+def match_bracket(s: str, i: int, bang: bool = True) -> Mark | None:
+    """s[i:] 가 ![글](주소)(bang) 또는 [글](주소) 로 시작하면 그 표기, 아니면 None.
+
+    글 안의 대괄호는 짝을 맞춘다. 주소의 역슬래시는 글자 그대로 둔다(Windows 경로 H:\\a\\b.png). 주소는 <…> 로 감싸면 빈칸을 품고,
+    감싸지 않아도 따옴표 · 괄호 제목이 없으면 짝 맞는 닫는 괄호까지가 주소다(H:\\내 문서\\a.png 도 그림이 된다)."""
+    n, j = len(s), i + (2 if bang else 1)
+    if s[i:j] != ("![" if bang else "["):
+        return None
+    j = _bracket_end(s, j)
+    if j < 0 or s[j + 1:j + 2] != "(":
         return None
     alt, k = s[i + (2 if bang else 1):j], j + 2
     while k < n and s[k] in " \t":
@@ -124,9 +132,18 @@ def match_bracket(s: str, i: int, bang: bool = True) -> Mark | None:
 
 
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
-_QUOTE_PREFIX = re.compile(r"(?: {0,3}>[ \t]?)*")
+_QUOTE_ONE = re.compile(r" {0,3}>[ \t]?")
 _CODE_SPAN = re.compile(r"(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.S)
+# 세기용 줄 안 코드 — 줄을 넘지 않고 이스케이프 안 한 | 도 넘지 않는다(GFM 은 표 칸을 먼저 가른다). 렌더러보다 덜 가린다 — 더 세면 보이는 종료 3
+# 이지만, 덜 세면 렌더러가 놓친 그림과 맞비겨 말없이 빠진다(반대 검토 K2 — 표의 다른 줄끼리 짝지은 ` 가 그림을 가렸다).
+_CODE_SPAN_LINE = re.compile(r"(`+)(?!`)((?:\\\||[^|\n])+?)(?<!`)\1(?!`)")
 _ESCAPABLE = frozenset("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+_REF_DEF = re.compile(r"^ {0,3}(?:>[ \t]?)*\[([^\]\n]+)\]:[ \t]*\S", re.M)
+_LOOKS_IMG = re.compile(r"\.(?:png|jpe?g|gif|bmp|webp|svg)\b|fig_[A-Za-z0-9_-]{22}", re.I)
+_HTML_IMG = re.compile(r"<img\b[^>\n]*>?", re.I)
+WHY_BROKEN = "그림 표기로 읽지 못했다 - ![캡션](경로) 꼴인지 본다(닫는 ] · ( · ) 가 빠졌나)"
+WHY_REFSTYLE = "참조 꼴 ![캡션][이름] 은 읽지 않는다 - ![캡션](경로) 로 쓴다"
+WHY_HTML = "HTML <img> 는 그림으로 넣지 않는다 - ![캡션](경로) 로 쓴다"
 
 
 def _fence_open(line: str) -> str | None:
@@ -141,33 +158,59 @@ def _fence_close(line: str, fence: str) -> bool:
     return bool(m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) and not m.group(2).strip())
 
 
-def count_marks(text: str) -> tuple[list[tuple[int, Mark]], list[tuple[int, str]]]:
-    """md 전체의 그림 표기를 블록 해석과 **따로** 센다 — 울타리 코드 · 줄 안 코드 · 역슬래시 escape 밖만. 저장 뒤 docx 의 그림 수와 견줘
-    변환기가 놓친 표기(표 · 목록 · 인용 어디서든)를 잡는다. 돌려주는 것 — [(줄, 표기)] 와 표기로 읽지 못한 '![' [(줄, 앞 40자)]."""
-    kept, fence, fence_q = [], None, 0
-    for ln in text.split("\n"):
-        q = _QUOTE_PREFIX.match(ln)                          # 인용 안의 울타리도 울타리다 — 인용이 끝나면 함께 끝난다
-        depth, body = q.group(0).count(">"), ln[q.end():]
-        if fence is not None and depth >= fence_q:
-            if _fence_close(body, fence):
-                fence = None
-            kept.append("")
-            continue
+def code_lines(lines: list[str]) -> list[bool]:
+    """줄마다 울타리 코드(여는 줄 · 안 · 닫는 줄)인가. 인용 안의 울타리도 울타리이고 그 인용이 끝나면 함께 끝난다. 닫는 줄은 여는 줄의 인용 깊이만큼만
+    떼고 본다 — 깊이 0 의 울타리 안 '> ```' 는 글이다(반대 검토 K3). 렌더러의 인용 · 울타리 읽기와 같은 끝이다."""
+    out, fence, depth = [], None, 0
+    for ln in lines:
+        if fence is not None:
+            body, got = ln, 0
+            while got < depth and _QUOTE_ONE.match(body):
+                body, got = body[_QUOTE_ONE.match(body).end():], got + 1
+            if got == depth:
+                out.append(True)
+                if _fence_close(body, fence):
+                    fence = None
+                continue
+            fence = None                                     # 인용이 끝났다 — 울타리도 끝, 이 줄은 새로 본다
+        body, depth = ln, 0
+        while _QUOTE_ONE.match(body):
+            body, depth = body[_QUOTE_ONE.match(body).end():], depth + 1
         fence = _fence_open(body)
-        fence_q = depth
-        kept.append("" if fence else ln)
-    orig = "\n".join(kept)
+        out.append(fence is not None)
+    return out
+
+
+def _why_not_image(rest: str, defs: set) -> str | None:
+    """그림 표기가 못 된 '![…' 의 까닭 — 그림을 뜻한 꼴만 잡는다. 정의된 이름의 참조 꼴 · 대괄호 뒤 '(' 가 열렸는데 못 닫힘 · 대괄호가 안 닫혔는데 그림
+    경로 · ref 가 있음. '좋다![1]' · '것![^1]'(인용 번호 · 각주)는 글이다(CommonMark 도 글로 둔다 — 반대 검토 K8)."""
+    e = _bracket_end(rest, 2)
+    if e < 0:
+        return WHY_BROKEN if _LOOKS_IMG.search(rest) else None
+    after = rest[e + 1:]
+    m = re.match(r"\[([^\]\n]*)\]", after)
+    label = ((m.group(1) if m else "") or rest[2:e]).strip().lower()
+    if label and not label.startswith("^") and label in defs:
+        return WHY_REFSTYLE
+    return WHY_BROKEN if re.match(r"[ \t]*\(", after) else None
+
+
+def count_marks(text: str) -> tuple[list[tuple[int, Mark]], list[tuple[int, str, str]]]:
+    """md 전체의 그림 표기를 블록 해석과 **따로** 센다 — 울타리 코드 · 줄 안 코드 · 역슬래시 escape 밖만. 저장 뒤 docx 의 그림 수와 견줘
+    변환기가 놓친 표기(표 · 목록 · 인용 어디서든)를 잡는다. 돌려주는 것 — [(줄, 표기)] 와 그림이 되지 못할 표기 [(줄, 앞 40자, 까닭)] —
+    깨진 '![' · 참조 꼴 ![캡션][이름] · HTML <img>(글자로 남아 그림이 말없이 빠진다)."""
+    lines = text.split("\n")
+    orig = "\n".join("" if code else ln for ln, code in zip(lines, code_lines(lines)))
     s, i, n = list(orig), 0, len(orig)
-    while i < n:                                             # 왼쪽부터 — 역슬래시 escape 와 줄 안 코드를 빈칸으로(줄바꿈은 둔다)
+    while i < n:                                             # 왼쪽부터 — 역슬래시 escape 와 줄 안 코드를 빈칸으로
         if orig[i] == "\\" and i + 1 < n and orig[i + 1] in _ESCAPABLE:
             s[i] = s[i + 1] = " "
             i += 2
         elif orig[i] == "`":
-            m = _CODE_SPAN.match(orig, i)
+            m = _CODE_SPAN_LINE.match(orig, i)
             if m:
                 for k in range(i, m.end()):
-                    if s[k] != "\n":
-                        s[k] = " "
+                    s[k] = " "
                 i = m.end()
             else:
                 while i < n and orig[i] == "`":
@@ -175,6 +218,7 @@ def count_marks(text: str) -> tuple[list[tuple[int, Mark]], list[tuple[int, str]
         else:
             i += 1
     flat = "".join(s)
+    defs = {m.group(1).strip().lower() for m in _REF_DEF.finditer(flat)}
     marks, broken, i = [], [], 0
     while True:
         i = flat.find("![", i)
@@ -185,10 +229,52 @@ def count_marks(text: str) -> tuple[list[tuple[int, Mark]], list[tuple[int, str]
         if mk:
             marks.append((line, mk))
             i = mk.end
-        else:
-            broken.append((line, flat[i:i + 40].split("\n", 1)[0]))
+            continue
+        rest = flat[i:].split("\n", 1)[0]
+        why = _why_not_image(rest, defs)
+        if why:
+            broken.append((line, rest[:40], why))
+        i += 2
+    for m in _HTML_IMG.finditer(flat):
+        broken.append((flat.count("\n", 0, m.start()) + 1, m.group(0)[:40], WHY_HTML))
+    return marks, sorted(broken, key=lambda b: b[0])
+
+
+def drop_comments(text: str) -> str:
+    """HTML 주석(<!-- … -->)을 뺀다 — 렌더된 md 에서 보이지 않는 글이다(반대 검토 K8 — docx 에 글로 실렸고, 그 안의 예시 그림 표기가 '파일이 없다' 로
+    docx 를 막았다). 울타리 코드 · 줄 안 코드 안은 그대로 두고, 줄바꿈은 남겨 줄 번호가 그대로다. 렌더러와 세기가 같은 글을 본다."""
+    if "<!--" not in text:
+        return text
+    code = code_lines(text.split("\n"))
+    out, i, n, li = list(text), 0, len(text), 0
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            li, i = li + 1, i + 1
+        elif code[li]:
+            i += 1
+        elif c == "\\" and i + 1 < n and text[i + 1] in _ESCAPABLE:
             i += 2
-    return marks, broken
+        elif c == "`":
+            m = _CODE_SPAN.match(text, i)
+            if m:
+                li, i = li + text.count("\n", i, m.end()), m.end()
+            else:
+                while i < n and text[i] == "`":
+                    i += 1
+        elif text.startswith("<!--", i) and text.find("-->", i + 4) >= 0:
+            e = text.find("-->", i + 4) + 3
+            nl = text.count("\n", i, e)
+            if any(code[li:li + nl + 1]):                    # 울타리를 넘는 주석은 주석으로 보지 않는다
+                i += 1
+                continue
+            for k in range(i, e):
+                if text[k] != "\n":
+                    out[k] = ""
+            li, i = li + nl, e
+        else:
+            i += 1
+    return "".join(out)
 
 
 # ── 줄 안 글 읽기 — 굵게 · 기울임 · 코드 · 취소선 · 줄바꿈 · 링크 · 그림 ───────────────────────────────────
@@ -208,10 +294,37 @@ class Img:
 
 
 BREAK = object()                                             # 줄바꿈(<br> · 끝 빈칸 둘 · 끝 역슬래시)
-_STRONG_EM = re.compile(r"\*\*\*(?=\S)(.+?)(?<=\S)\*\*\*", re.S)
-_STRONG = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", re.S)
-_EM = re.compile(r"\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?!\*)", re.S)
-_STRIKE = re.compile(r"~~(?=\S)(.+?)(?<=\S)~~", re.S)
+_EMPH = (("***", True, True, False), ("**", True, False, False), ("*", False, True, False), ("~~", False, False, True))
+
+
+def _emph_end(s: str, i: int, d: str) -> int:
+    """s[i:] 의 강조 표지 d(*** · ** · * · ~~)가 닫힌 자리 다음(없으면 -1). 줄 안 코드 · 그림 · 링크 · escape 는 통째로 건너뛴다 — 그 안의 * 로
+    닫지 않는다(CommonMark 도 그것들이 강조보다 먼저 묶인다 — 반대 검토 K3 '*결과: ![σ* 분포](…)*' 의 그림이 글로 깨졌다)."""
+    n, k = len(s), len(d)
+    if not s.startswith(d, i) or i + k >= n or s[i + k].isspace() or s[i + k] == d[0]:
+        return -1
+    j = i + k
+    while j < n:
+        c = s[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "`":
+            m = _CODE_SPAN.match(s, j)
+            if m:
+                j = m.end()
+                continue
+        elif c in "![":
+            mk = match_bracket(s, j, c == "!")
+            if mk:
+                j = mk.end
+                continue
+        if s.startswith(d, j) and not s[j - 1].isspace() and s[j - 1] != d[0] and s[j + k:j + k + 1] != d[0]:
+            return j + k
+        j += 1
+    return -1
+
+
 _BR = re.compile(r"<br\s*/?>", re.I)
 _AUTOLINK = re.compile(r"<((?:https?|ftp|mailto):[^<>\s]+)>")
 
@@ -285,25 +398,18 @@ def parse_inline(s: str, line: int = 1, *, bold=False, italic=False, strike=Fals
                     buf.append(m.group(1))
                 i = m.end()
                 continue
-        elif c == "*":
-            for rx, b, it in ((_STRONG_EM, True, True), (_STRONG, True, False), (_EM, False, True)):
-                m = rx.match(s, i)
-                if m:
+        elif c in "*~":
+            for d, b, it, st in _EMPH:
+                end = _emph_end(s, i, d) if d[0] == c else -1
+                if end > 0:
                     flush()
-                    out.extend(sub(m.group(1), m.start(1), bold=bold or b, italic=italic or it))
-                    i = m.end()
+                    out.extend(sub(s[i + len(d):end - len(d)], i + len(d), bold=bold or b, italic=italic or it, strike=strike or st))
+                    i = end
                     break
             else:
                 buf.append(c)
                 i += 1
             continue
-        elif c == "~":
-            m = _STRIKE.match(s, i)
-            if m:
-                flush()
-                out.extend(sub(m.group(1), m.start(1), strike=True))
-                i = m.end()
-                continue
         elif c == "\n":
             if len(buf) >= 2 and buf[-1] == buf[-2] == " ":
                 while buf and buf[-1] == " ":
@@ -338,6 +444,7 @@ class Block:
 
 _HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
 _HR = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+_SETEXT = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 _QUOTE = re.compile(r"^ {0,3}>[ \t]?(.*)$")
 _LIST = re.compile(r"^([ \t]*)([-*+]|\d{1,9}[.)])(?:[ \t]+(.*))?$")
 _TASK = re.compile(r"\[([ xX])\][ \t]+")
@@ -346,13 +453,19 @@ _PIPE = re.compile(r"(?<!\\)\|")
 
 
 def split_table_row(line: str) -> list[str]:
-    """GFM 표 줄 → 칸 글. 이스케이프한 \\| 는 칸 안의 | 다. 앞뒤 | 는 있어도 없어도 된다."""
+    """GFM 표 줄 → 칸 글. 이스케이프한 \\| 는 칸 안의 | 다. 앞뒤 | 는 있어도 없어도 된다. 그림 표기는 통째로 한 칸에 둔다 — 캡션 · 경로의 | 로
+    가르지 않는다(GFM 은 가른다 — 그 그림이 글자로 깨졌다, 반대 검토 K2)."""
     s = line.strip()
     cells, cur, i = [], [], 0
     while i < len(s):
         if s[i] == "\\" and s[i + 1:i + 2] == "|":
             cur.append("|")
             i += 2
+            continue
+        mk = match_bracket(s, i, True) if s.startswith("![", i) else None
+        if mk:
+            cur.append(s[i:mk.end])
+            i = mk.end
             continue
         if s[i] == "|":
             cells.append("".join(cur))
@@ -439,12 +552,13 @@ def _parse_list(lines: list[str], i: int, base: int) -> tuple[Block, int]:
             if j < n and not _HR.match(lines[j]) and _LIST.match(lines[j]):
                 i = j
                 continue
-            if j < n and _indent(lines[j]) >= first + 2 and not _fence_open(lines[j]):
+            if j < n and _indent(lines[j]) >= first + 2 and not _fence_open(lines[j]) and not _table_start(lines, j):
                 items[-1].paras.append([base + j, ""])
                 i = j
                 continue
             break
-        if (_indent(ln) < 2 and _interrupts(lines, i)) or _fence_open(ln):
+        # 들여 쓴 표도 목록을 끝낸다 — 표로 읽는다(목록 글로 이으면 표 칸 그림이 문단 그림이 됐다, 반대 검토 K5)
+        if (_indent(ln) < 2 and _interrupts(lines, i)) or _fence_open(ln) or _table_start(lines, i):
             break
         para, piece = items[-1].paras[-1], ln.strip()
         if _standalone(piece):
@@ -504,9 +618,14 @@ def parse_blocks(lines: list[str], base: int = 1) -> list[Block]:
             i += 1
             continue
         j = i + 1
-        while j < n and lines[j].strip() and not _interrupts(lines, j):
+        while j < n and lines[j].strip() and not _SETEXT.match(lines[j]) and not _interrupts(lines, j):
             j += 1
-        out.append(Block("para", base + i, text="\n".join(x.lstrip() for x in lines[i:j]).rstrip()))
+        text = "\n".join(x.lstrip() for x in lines[i:j]).rstrip()
+        if j < n and _SETEXT.match(lines[j]):                # 글 줄 밑의 === · --- 는 제목이다(CommonMark setext — 반대 검토 K11)
+            out.append(Block("heading", base + i, level=1 if lines[j].strip()[0] == "=" else 2, text=text))
+            i = j + 1
+            continue
+        out.append(Block("para", base + i, text=text))
         i = j
     return out
 
@@ -627,6 +746,34 @@ def _svg_to_png(blob: bytes) -> bytes:
         raise Problem(f"svg 를 png 로 바꾸지 못했다({type(exc).__name__})") from None
 
 
+def complete(kind: str, blob: bytes) -> bool:
+    """파일이 끝까지 있나 — python-docx 는 jpeg · gif · bmp 의 머리만 읽어 반쪽 파일도 넣고 Word 는 깨진 그림을 그린다(반대 검토 K4 — 끊긴
+    curl -o · 받기가 남긴 꼴). png 는 python-docx 가 IEND 까지 조각을 걸어 이미 거른다. jpeg 은 표지를 길이로 건너 SOS 뒤에 EOI(FFD9)가 있어야 한다 —
+    EXIF 안의 작은 그림 · 뒤에 붙은 영상(모션 사진)에 속지 않는다."""
+    if kind == "jpeg":
+        i, n = 2, len(blob)
+        while i + 4 <= n and blob[i] == 0xFF:
+            while i < n and blob[i] == 0xFF:
+                i += 1
+            if i >= n:
+                return False
+            m, i = blob[i], i + 1
+            if m == 0xD9:
+                return True
+            if m == 0x01 or 0xD0 <= m <= 0xD7:
+                continue
+            seg = int.from_bytes(blob[i:i + 2], "big")
+            if m == 0xDA:
+                return blob.find(b"\xff\xd9", i + seg) >= 0
+            i += seg
+        return False
+    if kind == "gif":
+        return blob.rstrip(b"\x00").endswith(b"\x3b")
+    if kind == "bmp":
+        return len(blob) >= int.from_bytes(blob[2:6], "little")
+    return True
+
+
 def load_picture(blob: bytes, origin: str) -> Picture:
     """바이트 → 넣을 그림. png · jpeg · gif · bmp 는 그대로, webp · svg 는 png 로 바꾼다. 그 밖 · 깨진 것은 Problem."""
     kind, scale = sniff(blob), 1.0
@@ -644,6 +791,8 @@ def load_picture(blob: bytes, origin: str) -> Picture:
         raise Problem(f"그림을 읽지 못했다({type(exc).__name__} - 깨진 파일?)") from None
     if w <= 0 or h <= 0:
         raise Problem("그림 크기가 0 이다")
+    if not complete(kind, blob):
+        raise Problem("파일이 끝까지 있지 않다(받다가 끊긴 파일?) - 다시 받는다")
     return Picture(blob, (w / scale, h / scale), origin)
 
 
@@ -671,6 +820,7 @@ def fetch_ref(ref: str, base: str, pat: str, timeout: float = 60.0) -> bytes:
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + pat, "User-Agent": "hwax-md2docx/1"})
     try:
         with urllib.request.build_opener(_NoRedirect).open(req, timeout=timeout) as r:
+            want = (r.headers.get("Content-Length") or "").strip()
             blob = r.read(MAX_IMAGE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         exc.close()
@@ -680,11 +830,15 @@ def fetch_ref(ref: str, base: str, pat: str, timeout: float = 60.0) -> bytes:
             why = "다른 주소로 넘기려 했다 - 토큰을 따라 보내지 않는다(HWAX_PORTAL_BASE 를 https://… 로 고친다)"
         raise Problem(f"게이트웨이에서 받지 못했다(HTTP {exc.code}{' - ' + why if why else ''}) - "
                       f"개인 Claude 에서 figure_get(ref=\"{ref}\") 을 먼저 불러 curl 로 받는다") from None
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        reason = str(getattr(exc, "reason", "") or type(exc).__name__)[:160]
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as exc:
+        # 까닭은 꼴 이름과 OS 글만 — 서버가 보낸 글(깨진 상태 줄 · 머리)은 싣지 않는다. 받은 머리를 되비추는 서버면 토큰이 거기 있다(반대 검토 K6)
+        r = exc.reason if isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, BaseException) else exc
+        reason = type(r).__name__ + (f" {r.strerror}" if isinstance(r, OSError) and r.strerror else "")
         raise Problem(f"게이트웨이에 닿지 못했다({reason}) - 개인 Claude 에서 figure_get(ref=\"{ref}\") 을 먼저 불러 curl 로 받는다") from None
     if len(blob) > MAX_IMAGE_BYTES:
         raise Problem(f"받은 그림이 {MAX_IMAGE_BYTES // (1024 * 1024)} MB 를 넘는다")
+    if want.isdigit() and len(blob) < int(want):
+        raise Problem(f"받다가 끊겼다({len(blob)}/{want} 바이트) - 다시 돌리거나 figure_get 의 curl 로 받는다")
     return blob
 
 
@@ -696,6 +850,7 @@ class Resolver:
         self.env = os.environ if env is None else env
         self.windows = (os.name == "nt") if windows is None else windows
         self.notes: list[str] = []                          # 받은 그림 · 못 둔 사본 — 끝에 알린다
+        self.warned_http = False
 
     def resolve(self, src: str) -> Picture:
         kind, val = classify_src(src)
@@ -736,6 +891,10 @@ class Resolver:
         if not (pat and base):
             raise Problem(f"이 PC 에 {ref} 파일이 없다 - 개인 Claude 에서 figure_get(ref=\"{ref}\") 을 먼저 불러 나온 curl 한 줄로 "
                           f"md 폴더(또는 --fig-dir)에 받는다. 환경 변수 HWAX_GATEWAY_PAT · HWAX_PORTAL_BASE 를 두면 변환기가 받는다")
+        u = urllib.parse.urlsplit(base)
+        if u.scheme.lower() == "http" and u.hostname not in ("127.0.0.1", "localhost", "::1") and not self.warned_http:
+            self.warned_http = True
+            self.notes.append("HWAX_PORTAL_BASE 가 http:// 다 - 토큰이 암호화 없이 간다(https:// 로 바꾼다)")
         blob = fetch_ref(ref, base, pat)
         pic = load_picture(blob, f"게이트웨이 {ref}")
         dest = self.md_dir / f"{ref}.{sniff(blob)}"
@@ -807,8 +966,12 @@ class Renderer:
         self.placed = self.in_cells = self.placeholders = 0
 
     def render(self, blocks: list[Block], indent: int = 0) -> None:
+        prev = None
         for b in blocks:
+            if b.kind == prev == "table":
+                self.doc.add_paragraph()                     # 붙은 두 표를 Word 가 한 표로 합쳐 보인다(반대 검토 K7)
             getattr(self, "_" + b.kind)(b, indent)
+            prev = b.kind
 
     # 블록
     def _para(self, b, indent):
@@ -971,8 +1134,9 @@ class Renderer:
             self.placeholders += 1
             return
         w_px, h_px = pic.size
-        if natural:
-            width = min(width, int(w_px / NATURAL_DPI * EMU_PER_INCH))
+        nat = int(w_px / NATURAL_DPI * EMU_PER_INCH)
+        # 줄 안은 제 크기까지, 홀로 선 줄 · 표 칸은 제 크기의 두 배까지 — 16 px 아이콘이 칸 폭 14 cm 로 33배 커졌다(반대 검토 K10)
+        width = min(width, nat if natural else 2 * nat)
         width = max(width, int(0.3 * EMU_PER_CM))
         height = int(width * h_px / w_px)
         if height > self.max_h:
@@ -985,6 +1149,7 @@ class Renderer:
 
 # ── 저장 뒤 대조 ──────────────────────────────────────────────────────────────────────────────────────
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_XML_BAD = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
 
 def docx_counts(path: Path | str) -> tuple[int, int]:
@@ -1062,6 +1227,10 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeDecodeError) as exc:
         _say(f"md 를 읽지 못했다 - {md} ({getattr(exc, 'strerror', None) or type(exc).__name__})", err=True)
         return EXIT_USAGE
+    text, bad = _XML_BAD.subn("", text)
+    if bad:                                                  # lxml 이 docx 에 못 싣는다(반대 검토 K9 — 그대로 두면 traceback 으로 죽었다)
+        _say(f"XML 에 못 싣는 제어 문자 {bad}개를 뺐다", err=True)
+    text = drop_comments(text)
     out = Path(a.output) if a.output else md.with_suffix(".docx")
     if out.resolve() == md.resolve():
         _say("출력이 md 자신이다 - -o 로 .docx 를 준다", err=True)
@@ -1086,7 +1255,7 @@ def main(argv: list[str] | None = None) -> int:
                 pictures[img.src], reasons[img.src] = None, str(exc)
         if pictures[img.src] is None:
             problems.append((img.line, img.src, reasons[img.src]))
-    problems += [(line, snip, "그림 표기로 읽지 못했다 - ![캡션](경로) 꼴인지 본다(닫는 ] · ( · ) 가 빠졌나)") for line, snip in broken]
+    problems += broken
     problems.sort(key=lambda x: x[0])
     for note in resolver.notes:
         _say(note)

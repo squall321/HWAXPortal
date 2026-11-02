@@ -1,7 +1,10 @@
 # PC 키트 변환기(infra/pc-kit/hwax-md2docx.py)가 표 칸 · 문단 · 홀로 선 줄의 그림을 docx 에 빠짐없이 넣는지 보는 시험
 """사용자 보고(2026-11-02 KST '표칸그림 필요해') — 현장 변환기(md2docx_z.py)는 줄 하나에 홀로 선 그림 표기만 그림으로 넣고 표 칸 · 문단 안
 그림은 글자로 남겼으며, 없는 파일은 '[그림 없음]' 으로 넘기고 수를 대조하지 않았다. 이 시험은 그 셋을 막는 것을 본다 — 표 칸 그림은
-<w:tc> 안의 <w:drawing>, 빠진 그림은 종료 2 와 docx 없음, 저장 뒤 수 대조(종료 3). 변환기는 PC 에서 혼자 도는 파일이라 경로로 읽는다."""
+<w:tc> 안의 <w:drawing>, 빠진 그림은 종료 2 와 docx 없음, 저장 뒤 수 대조(종료 3). 변환기는 PC 에서 혼자 도는 파일이라 경로로 읽는다.
+변환기가 Python 3.9+ 라 이 시험도 3.9 에서 돈다(annotations 를 미룬다)."""
+from __future__ import annotations
+
 import http.server
 import importlib.util
 import os
@@ -246,11 +249,16 @@ class _FakeGateway:
         class H(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 outer.seen.append((self.path, self.headers.get("Authorization")))
-                status, headers, body = outer.routes.get(self.path, (404, {}, b'{"error":"not found"}'))
+                route = outer.routes.get(self.path, (404, {}, b'{"error":"not found"}'))
+                if callable(route):                                     # 날것 답(깨진 상태 줄 · 끊긴 조각 등)
+                    route(self)
+                    return
+                status, headers, body = route
                 self.send_response(status)
                 for k, v in headers.items():
                     self.send_header(k, v.replace("{port}", str(outer.port)))
-                self.send_header("Content-Length", str(len(body)))
+                if "Content-Length" not in headers:
+                    self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
 
@@ -293,9 +301,157 @@ def test_ref_는_PAT_로_게이트웨이에서_받아_md_옆에_두고_PAT_는_�
         assert "HTTP 404" in r.stderr and "HTTP 302" in r.stderr and r.stderr.count("figure_get") >= 2
         assert sorted(p for p, _a in gwy.seen) == sorted([f"/mcp-gw/fig/{gone}", f"/mcp-gw/fig/{moved}"]), "넘김을 따라가지 않는다"
         assert pat not in r.stdout + r.stderr
+    # 받다가 끊긴 그림(머리는 멀쩡한 PNG 앞부분) — 넣지 않는다(Word 는 빈 그림을 그린다)
+    cut = "fig_" + "C" * 22
+    with _FakeGateway({f"/mcp-gw/fig/{cut}": (200, {"Content-Type": "image/png", "Content-Length": str(len(A_PNG))}, A_PNG[:300])}) as gwy:
+        r = _cli(_md(tmp_path, f"![끊김]({cut})\n", files=(), name="끊김.md"),
+                 env={"HWAX_GATEWAY_PAT": pat, "HWAX_PORTAL_BASE": f"http://127.0.0.1:{gwy.port}"})
+    assert r.returncode == 2 and f"줄 1: {cut} - 받다가 끊겼다(300/{len(A_PNG)} 바이트)" in r.stderr, r.stderr
+    assert not (tmp_path / f"{cut}.png").exists(), "끊긴 것을 md 옆에 두지 않는다"
+    assert pat not in r.stdout + r.stderr
     # 받을 곳을 모르면 받지 않고 figure_get 을 말한다(주소 · 토큰 하나라도 비면)
     r = _cli(_md(tmp_path, f"![x]({gone})\n", files=(), name="주소없음.md"), env={"HWAX_GATEWAY_PAT": pat})
     assert r.returncode == 2 and "figure_get" in r.stderr and pat not in r.stdout + r.stderr
+
+
+def test_받기_서버의_깨진_답에도_죽지_않고_그_답의_글을_찍지_않는다(tmp_path):
+    """반대 검토 K6 — 끊긴 조각(IncompleteRead) · 머리 100개 넘음 · 받은 Authorization 을 되비춘 상태 줄(BadStatusLine 글에 토큰)이 traceback 으로
+    죽었고 마지막 것은 토큰을 찍었다. 이제 그 그림 하나의 실패(종료 2)이고 까닭은 꼴 이름뿐이다."""
+    pat = "hwax-pat-REFLECT-0123456789"
+
+    def chunk_cut(h):
+        h.send_response(200)
+        h.send_header("Transfer-Encoding", "chunked")
+        h.end_headers()
+        h.wfile.write(b"1000\r\n" + b"x" * 10)
+        h.wfile.flush()
+        h.close_connection = True
+
+    def many_headers(h):
+        h.send_response(200)
+        for k in range(120):
+            h.send_header(f"X-H{k}", "v")
+        h.end_headers()
+
+    def reflect(h):
+        h.wfile.write(b"X-Echo " + (h.headers.get("Authorization") or "").encode() + b"\r\n\r\n")
+        h.close_connection = True
+    refs = ["fig_" + c * 22 for c in "KLR"]
+    with _FakeGateway({f"/mcp-gw/fig/{r}": fn for r, fn in zip(refs, (chunk_cut, many_headers, reflect))}) as gwy:
+        md = _md(tmp_path, "".join(f"![{k}]({r})\n\n" for k, r in enumerate(refs)), files=())
+        r = _cli(md, env={"HWAX_GATEWAY_PAT": pat, "HWAX_PORTAL_BASE": f"http://127.0.0.1:{gwy.port}"})
+    assert r.returncode == 2 and "Traceback" not in r.stderr, r.stderr
+    assert all(f"{ref} - " in r.stderr for ref in refs) and r.stderr.count("figure_get") >= 3, r.stderr
+    assert pat not in r.stdout + r.stderr and "X-Echo" not in r.stderr
+
+
+# ── 반대 검토 고침 — 말없이 빠지던 그림 · 거짓 경보 · 표 · 크기 ─────────────────────────────────────────────
+def test_다른_줄끼리_짝지은_역따옴표와_캡션의_파이프에도_표_칸_그림이_빠지지_않는다(tmp_path, capsys):
+    """반대 검토 K2 — 세기가 표의 다른 줄끼리 ` 를 짝지어 그림 둘을 가리고, 렌더러는 캡션의 | 로 칸을 갈라 그림 하나를 잃어 셈이 맞비겼다(종료 0,
+    b.png 빠짐). 세기의 줄 안 코드는 줄 · | 를 넘지 않고, 표 줄 가르기는 그림 표기를 통째로 둔다."""
+    md = ("| 연도 | 그림 |\n|---|---|\n| `23년 | ![23](a.png) |\n| `24년 | ![24](c.png) |\n\n"
+          "| 조건 | 결과 |\n|---|---|\n| A/B 비교 | ![A|B 결과](b.png) |\n\n*결과: ![σ* 분포](a.png)*\n")
+    assert [mk.src for _l, mk in md2.count_marks(md)[0]] == ["a.png", "c.png", "b.png", "a.png"]
+    rc, docx = _convert(tmp_path, md)
+    assert rc == 0 and "그림 표기 4 · docx 그림 4 · 표 칸 안 3" in capsys.readouterr().out
+    root = _root(docx)
+    caps = [_ptext(p) for p in root.iter(W + "p") if _style(p) == "Caption"]
+    assert caps == ["23", "24", "A|B 결과"], caps
+    descr = [d.find(f".//{WP}docPr").get("descr") for d in root.iter(W + "drawing")]
+    assert descr == ["23", "24", "A|B 결과", "σ* 분포"], "마지막은 기울임 문단 안의 줄 안 그림이다(캡션 안의 * 로 강조가 닫히지 않았다)"
+    assert md2.split_table_row("| a | ![x|y](p.png) | b |") == ["a", "![x|y](p.png)", "b"]
+
+
+@pytest.mark.parametrize("md,n", [
+    ("| 연도 | 그림 |\n|---|---|\n| `23년 | ![23](a.png) |\n| `24년 | ![24](c.png) |\n", 2),     # 다른 줄의 ` 끼리
+    ("- `23년 실적\n- ![그림](a.png)\n- `24년 계획\n", 1),                                      # 다른 항목의 ` 끼리
+    ("*결과: ![σ* 분포](a.png)*\n", 1),                                                         # 캡션 안의 * 로 강조가 닫혔다
+    ("```\n> ```\n![x](a.png)\n```\n", 0),                                                    # 울타리 안의 '> ```' 는 글이다
+    ("Title `\n===\n![x](a.png) `\n", 1),                                                      # setext 제목 — ` 가 블록을 넘지 않는다
+])
+def test_맞는_문서는_거짓_종료_3_이_아니다(tmp_path, capsys, md, n):
+    """반대 검토 K3 · K11 — 세기와 렌더러가 줄 안 코드 · 강조 · 울타리 · 제목을 다르게 읽어 맞는 docx 에 종료 3 을 냈다(또는 그림을 둘 다 놓쳤다)."""
+    rc, _docx = _convert(tmp_path, md)
+    assert rc == 0 and f"그림 표기 {n} · docx 그림 {n} ·" in capsys.readouterr().out
+
+
+def test_setext_제목은_제목이다(tmp_path):
+    rc, docx = _convert(tmp_path, "보고서 제목\n===\n\n소제목\n---\n\n본문\n\n---\n")
+    paras = [(_style(p), _ptext(p)) for p in _root(docx).iter(W + "p")]
+    assert rc == 0 and paras[:3] == [("Heading1", "보고서 제목"), ("Heading2", "소제목"), (None, "본문")], paras
+    assert list(_root(docx).iter(W + "pBdr")), "빈 줄 뒤의 --- 는 가로줄 그대로다"
+
+
+JPEG_HEAD = bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffdb004300" + "08" * 64 + "ffc0000b080064006401011100ffc4001f00000105"
+                          "01010101010100000000000000000102030405060708090a0bffda0008010100003f00")
+
+
+def test_끝까지_있지_않은_jpeg_gif_bmp_는_넣지_않는다(tmp_path, capsys):
+    """반대 검토 K4 — python-docx 는 jpeg · gif · bmp 의 머리만 읽어 끊긴 파일(끊긴 curl -o)도 넣었다(Word 는 깨진 그림). png 는 이미 걸렀다."""
+    whole = JPEG_HEAD + b"\x12\x34" * 50 + b"\xff\xd9"
+    assert md2.complete("jpeg", whole) and not md2.complete("jpeg", whole[:-2])
+    assert md2.complete("jpeg", whole + b"ftypmp42" + b"\x00" * 5000), "뒤에 붙은 영상(모션 사진)은 받는다 — EOI 는 SOS 뒤에 있다"
+    exif = JPEG_HEAD[:2] + b"\xff\xe1\x00\x10" + b"\xff\xd8\xff\xda\x00\x02\xff\xd9" + b"\x00" * 4 + JPEG_HEAD[2:] + b"\x12" * 40
+    assert not md2.complete("jpeg", exif), "EXIF 안 작은 그림의 EOI 에 속지 않는다"
+    assert md2.complete("gif", b"GIF89a" + b"\x00" * 20 + b"\x3b") and not md2.complete("gif", b"GIF89a" + b"\x00" * 20)
+    bmp = b"BM" + (60).to_bytes(4, "little") + b"\x00" * 54
+    assert md2.complete("bmp", bmp) and not md2.complete("bmp", bmp[:40])
+    rc, docx = _convert(tmp_path, "![반쪽](half.jpg)\n\n![온전](whole.jpg)\n", files=(("half.jpg", whole[:-2]), ("whole.jpg", whole)))
+    err = capsys.readouterr().err
+    assert rc == 2 and "줄 1: half.jpg - 파일이 끝까지 있지 않다" in err and "whole.jpg" not in err and not docx.exists()
+
+
+def test_목록_밑에_들여_쓴_표도_표_칸_그림이다(tmp_path, capsys):
+    """반대 검토 K5 — 번호 목록 밑에 들여 쓴 표가 목록 글로 이어져 표 칸 그림이 문단 그림이 됐다(표 없음 · 경고 없음)."""
+    rc, docx = _convert(tmp_path, "1. 결과\n\n   | 항목 | 그림 |\n   |---|---|\n   | 응력 | ![최대](a.png) |\n2. 다음\n\n"
+                                  "- 결과\n  | 항목 | 그림 |\n  |---|---|\n  | 변형 | ![변형](c.png) |\n")
+    assert rc == 0 and "그림 표기 2 · docx 그림 2 · 표 칸 안 2" in capsys.readouterr().out
+    root = _root(docx)
+    parents = _parents(root)
+    assert len(list(root.iter(W + "tbl"))) == 2 and all(_in_tc(d, parents) for d in root.iter(W + "drawing"))
+    body = [_ptext(p) for p in root.find(W + "body").findall(W + "p")]
+    assert "1.결과" in body and "2.다음" in body, "표 뒤의 목록은 제 번호로 이어진다(목록 표지와 글 사이는 탭)"
+
+
+def test_붙은_두_표_사이에는_빈_문단을_둔다(tmp_path):
+    """반대 검토 K7 — <w:tbl/><w:tbl/> 로 붙으면 Word 가 한 표로 합쳐 보인다."""
+    rc, docx = _convert(tmp_path, "| a |\n|---|\n| ![x](a.png) |\n\n| b |\n|---|\n| ![y](c.png) |\n")
+    kids = [c.tag.split("}")[1] for c in _root(docx).find(W + "body")]
+    assert rc == 0 and kids[:3] == ["tbl", "p", "tbl"], kids
+
+
+def test_인용_번호_각주는_글이고_HTML_주석은_docx_에서_빠진다(tmp_path, capsys):
+    """반대 검토 K8 — '좋다![1]' · '것![^1]' 이 '그림 표기로 읽지 못했다' 로 docx 를 막았고, 주석 안 예시 '![캡션](경로)' 가 '파일이 없다' 로 막았으며
+    주석은 docx 에 글로 실렸다. 정의된 이름의 참조 꼴은 그대로 거절한다."""
+    md = ("결과가 매우 좋다![1] 그리고 확인할 것![^1]\n\n<!-- 그림은 ![캡션](경로) 꼴로 넣는다\n여러 줄 -->\n\n![진짜](a.png)\n\n"
+          "`<!-- 코드 안은 글 -->` 끝\n\n[^1]: 각주\n")
+    rc, docx = _convert(tmp_path, md)
+    cap = capsys.readouterr()
+    assert rc == 0 and "그림 표기 1 · docx 그림 1" in cap.out, cap.err
+    text = "".join(_ptext(p) for p in _root(docx).iter(W + "p"))
+    assert "그림은" not in text and "여러 줄" not in text and "좋다![1]" in text and "<!-- 코드 안은 글 -->" in text
+    assert md2.drop_comments("a <!-- x\ny --> b\n```\n<!-- 코드 -->\n```\n") == "a \n b\n```\n<!-- 코드 -->\n```\n", "줄 수 · 코드는 그대로"
+    rc, _ = _convert(tmp_path, "![참조][r1]\n\n[r1]: a.png\n")
+    assert rc == 2 and "참조 꼴" in capsys.readouterr().err
+
+
+def test_XML_에_못_싣는_제어_문자는_빼고_알린다(tmp_path, capsys):
+    """반대 검토 K9 — \\x0c · \\x0b · \\x1b 가 lxml ValueError traceback 으로 죽었다."""
+    rc, docx = _convert(tmp_path, "![a\x0cb](a.png)\n\n본문\x1b끝\x0b\n")
+    cap = capsys.readouterr()
+    assert rc == 0 and "제어 문자 3개를 뺐다" in cap.err and "그림 표기 1 · docx 그림 1" in cap.out
+    assert "본문끝" in "".join(_ptext(p) for p in _root(docx).iter(W + "p"))
+
+
+def test_작은_그림은_제_크기의_두_배까지만_키운다(tmp_path):
+    """반대 검토 K10 — 16 px 아이콘이 표 칸 폭(13.9 cm)으로 33배 커졌다. 홀로 선 줄 · 표 칸은 제 크기(96 dpi)의 두 배까지만, 줄 안은 제 크기까지."""
+    icon = png(16, 16)
+    rc, docx = _convert(tmp_path, "| 상태 | 설명 |\n|---|---|\n| ![ok](i.png) | 정상 |\n\n![홀로](i.png)\n\n![큰 그림](a.png)\n",
+                        files=(("i.png", icon), ("a.png", A_PNG)))
+    ext = [_extent(d) for d in _root(docx).iter(W + "drawing")]
+    two = 2 * round(16 / 96 * 914400)
+    assert rc == 0 and ext[0] == (two, two) and ext[1] == (two, two), ext
+    assert ext[2] == (16 * CM, 12 * CM), "보통 그림은 그대로 본문 폭이다"
 
 
 # ── 빠진 그림 · 수 대조 ─────────────────────────────────────────────────────────────────────────────
@@ -336,6 +492,18 @@ def test_저장_뒤_수가_어긋나면_종료_3(tmp_path, capsys, monkeypatch):
     rc, docx = _convert(tmp_path, "| a |\n|---|\n| ![x](a.png) |\n\n![y](b.png)\n")
     err = capsys.readouterr().err
     assert rc == 3 and "그림 수가 맞지 않는다" in err and "md 의 그림 표기 2" in err
+
+
+def test_참조_꼴_HTML_img_잘린_PNG_는_그림이_되지_못한다고_종료_2_로_알린다(tmp_path, capsys):
+    """글자로 남아 그림이 말없이 빠지던 꼴 둘 — 참조 꼴 ![캡션][이름] · HTML <img>. 잘린 PNG(끊긴 curl -o 가 남긴다)는 python-docx 가 IEND 까지
+    조각을 걸으며 거절한다 — 그것도 '못 읽음' 으로 알린다."""
+    md = '![참조][r1]\n\n[r1]: a.png\n\n<img src="a.png" width="300">\n\n![잘림](cut.png)\n\n`<img src="코드는 글">`\n'
+    rc, docx = _convert(tmp_path, md, files=(("a.png", A_PNG), ("cut.png", A_PNG[:200])))
+    err = capsys.readouterr().err
+    assert rc == 2 and not docx.exists()
+    assert "줄 1: ![참조][r1] - 참조 꼴" in err
+    assert '줄 5: <img src="a.png" width="300"> - HTML <img>' in err and err.count("HTML <img>") == 1, "코드 안의 <img> 는 글이다"
+    assert "줄 7: cut.png - 그림을 읽지 못했다" in err
 
 
 def test_svg_는_cairosvg_가_없으면_webp_는_Pillow_가_없으면_분명히_실패한다(tmp_path, capsys, monkeypatch):
