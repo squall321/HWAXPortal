@@ -98,6 +98,26 @@ services:
     health: http://127.0.0.1:${CALL_TRACE_PORT:-8750}/healthz
     tier: 5
 
+  # ── tier 5: LLM/GPU 현황 수집기 — LLM 서버 · 에이전트 서버 · 라우터를 15초마다 읽어 쌓고 관리자 화면(관리 › LLM · GPU 현황)에 낸다(docs/ops-dashboard) ──
+  # infra/.env 에 LLM_STATUS 가 **있는** 박스에서만 다룬다(if_env — 기본 꺼짐, 0 도 켜짐). update-all 5d 가 띄우고 LLM_STATUS 가 빠지면 내린다(5b · 5c 와 같다).
+  # 지문은 수집기 파일 · 띄우는 스크립트뿐이다(fp_git: false + fp:) — 포털 HEAD 를 넣으면 문서 커밋 하나에도 다시 뜬다(쌓던 창이 비어 몇 분 빈칸).
+  #   infra/.env 는 넣지 않는다 — 수집기가 주기마다 다시 읽는다(대상 · 키를 바꿔도 다시 띄우지 않는다). 시스템 python3 으로 돌아 이미지가 없다.
+  # update: false — 포털 리포 안이라 받는 것은 포털 항목이 한다. 정지는 그 포트를 LISTEN 하는 수집기만(llm-status.sh stop — docs/gotchas.md §1).
+  # 포트는 HEAXHub 앱 포트 풀(9100~9999) 밖이다(docs/PORT-MAP.md). expect: 200 — 수집기 /health 는 주기가 돌면 200, 멈췄으면 503 이다.
+  - name: llm-status
+    host: local
+    watch: true                 # 죽으면(포트 연결 거부 세 번) 감시 services.py heal 이 down · up — if_env 라 LLM_STATUS 를 켠 박스만(docs/ops-dashboard OD-38)
+    dir: .
+    if_env: LLM_STATUS
+    update: false
+    fp_git: false
+    fp: [infra/llm-status, infra/scripts/llm-status.sh]
+    start: ./infra/scripts/llm-status.sh run
+    stop: ./infra/scripts/llm-status.sh stop
+    expect: 200
+    health: http://127.0.0.1:${LLM_STATUS_PORT:-8760}/health
+    tier: 5
+
   # ── tier 10: federated sub-services (proxied via routes.env) ──
   - name: mx-white-paper
     host: local

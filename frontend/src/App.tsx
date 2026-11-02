@@ -18,6 +18,7 @@ import AccessHistoryPage from './pages/admin/AccessHistoryPage';
 import ToolSearchReviewPage from './pages/admin/ToolSearchReviewPage';
 import UsageStatsPage from './pages/admin/UsageStatsPage';
 import SeatReviewPage from './pages/admin/SeatReviewPage';
+import LlmStatusPage from './pages/admin/LlmStatusPage';
 import UsersAdminPage from './pages/admin/UsersAdminPage';
 import ProceduresPage from './pages/procedures/ProceduresPage';
 import { ProceduresProvider } from './state/ProceduresContext';
@@ -108,6 +109,10 @@ const router = createBrowserRouter([
       {
         path: '/admin/seat-review',
         element: <SeatReviewPage />,
+      },
+      {
+        path: '/admin/llm-status',
+        element: <LlmStatusPage />,
       },
       {
         path: '/risk',

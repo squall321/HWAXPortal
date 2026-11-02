@@ -17,9 +17,33 @@
 - [ ] cae00 절차서 · 반대 검토
 
 ## LLM/GPU 현황
-- [ ] M1 — 수집기(HTTP · 해석기 · sqlite · 가짜 vLLM 시험 · 라우터 해석기와 같은 결과)
+- [x] M1 — 수집기(HTTP · 해석기 · sqlite · 가짜 vLLM 시험 · 라우터 해석기와 같은 결과) — dev 11-02, 가지 `wt1102/llm-status`(OD-13 ~ OD-22 · OD-24)
+  - [x] `infra/llm-status/`(collector · promtext · samplestore) · `infra/scripts/llm-status.sh`(run · start · stop) · 포트 8760(PORT-MAP · OD-14)
+  - [x] 시험 — 해석기 · 라우터와 같은 셈 · 분위수 · 리셋 빈칸 · 히스토그램 창 · 401 · 걸린 서버 · 연결 거부/시간 초과 · 틀린 지표 · 값 꼴 · 낡음 · 숨기지 않음 ·
+        키 가리기 · 기본 대상 · 짝 파일 · 에이전트 · 라우터 · 시계열 · 지우기 · 띄우는 스크립트 · 격리, 한 줄 변이 25개가 모두 잡힌다(스크래치 사본)
 - [ ] M2 — 포털 API · `/admin/llm-status` · update-all 배선(끄면 '꺼짐' 한 줄) · 이력 · 문서
+  - [x] 매니페스트 `if_env: LLM_STATUS`(기본 꺼짐 · 제 파일만의 지문) · update-all 5d(켜면 update-sites · 끄면 ○ 와 떠 있으면 내림) · 예시 설정 · env-sync 는 선택으로
+  - [x] 포털 `GET /auth/admin/llm-status` · `/series`(관리자만 — CAEG 도 403 · 꺼짐 503 · 안 닿음 502) · start.sh 가 `LLM_STATUS_URL` 을 넘긴다(OD-15)
+  - [x] 화면 `/admin/llm-status`(관리 메뉴) — 머리 · 서버 카드 · 복제본 표 · 라우터 · 지금 쓰는 일 · Slurm/GPU 모름 줄, 브라우저 시험(실제 수집기 답)
+  - [x] cae00 절차서 [server-setup.md](server-setup.md)
+  - [ ] 이력(backend/config/changelog.yaml) — 이 가지에서는 쓰지 않았다(올리는 세션이 함께 적는다)
+- [ ] cae00 에서 켜고 확인 — 사람(server-setup.md 2 ~ 5절) · 받은 편지함 Q4 · Q5(서버별 주소) · Q7(짝 파일) · Q12 1번(긁는 주기)
 - [ ] M3 — Slurm 잡 표 · 남은 때(답 뒤 · cae00 에서만 확인)
 - [ ] M4 — GPU 하드웨어(dev nvidia-smi · stcx 표본은 사람이 sbatch 에 넣은 뒤 · GLM 은 그 팀이 줄 때)
 - [ ] M5(선택) — 에이전트 서버 안 서버별 지연 · 오류 고리
-- [ ] cae00 절차서 · 반대 검토
+- [x] 반대 검토(M1 · M2, 11-02) — MEDIUM 둘 · LOW 열 · INFO 둘. cae00 절차서는 M2 에서 썼다(server-setup.md). 고침은 아래(OD-26 ~)
+  - [x] 결정 번호 — 이 가지의 OD-5 ~ OD-17 을 OD-13 ~ OD-25 로(이용 통계가 main 에서 OD-5 ~ OD-12 를 먼저 썼다)
+  - [x] 묶음 주소의 속도 · 분위수 — 같은 서버 프로세스(process_start_time_seconds)의 표본끼리만 · 표지가 없으면 줄면 그 창을 비운다(OD-26)
+  - [x] 되돌린 쓰기의 계열 번호 — 캐시는 COMMIT 된 줄만(OD-27)
+  - [x] 꺼진 5d — /health 의 service 표지로 수집기를 알아보고 남의 앱이면 ○ 한 줄만(llm-status.sh probe · OD-28) · cae00 8760 확인은 사람(server-setup.md 2절)
+  - [x] 재기동 생략 · start 의 '이미 떠 있다' — stop 과 같은 명령줄 판정(llm-status.sh check · update-sites 는 llm-status 만, OD-29)
+  - [x] 오류 — HTTP 5xx 답 · 오류로 끝난 요청을 따로(더하면 한 요청을 두 번 센다 · 카드 · 저장 · 가짜 · 화면 시험, OD-30)
+  - [x] 읽기 기한 — 머리부터 몸까지 하나 · 지나면 타이머가 소켓을 닫는다(조금씩 흘리는 서버, OD-31)
+  - [x] 읽기 스레드를 못 띄우면 — 바쁨을 풀고 그 대상의 까닭으로 · 주기의 나머지 · 정리는 그대로(OD-32)
+  - [x] 키 — 그 키의 주소에만(LLM_BASE_URL · LLM_UPSTREAMS / CHAT_LLM_BASE_URL · 복제본) · 루프백 별칭은 같은 주소 · 그 밖에는 싣지 않는다(OD-33)
+  - [x] 벽시계가 뛰면 — 앞날의 접은 끝 표지를 당긴다 · 거꾸로 가면 정리가 곧바로 · 모델 목록 주기는 monotonic(OD-34)
+  - [x] 에이전트 서버 — 제 기한 12초 · 늦으면 '모름 — 늦음' · 내려감은 연결 거부 · 오류 상태일 때만(OD-36)
+  - [x] 대상 이름 agent · router — 받지 않고 까닭과 함께 남긴다(OD-37)
+  - [x] 감시 — watch: true(heal 이 if_env 를 따른다 — 끈 박스는 그대로, OD-38)
+  - [x] 짝 파일 자리 — 리포 밖이나 infra/.state/ 아래(update-all §1 의 stash -u, 문서만 · OD-39)
+  - [x] 서버별 주소의 키 표지 `#glm` · `#chat` — OD-33 뒤로 서버별 GLM 대상이 창을 잃던 것(OD-40)

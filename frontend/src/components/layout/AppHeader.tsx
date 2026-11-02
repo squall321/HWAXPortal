@@ -90,6 +90,7 @@ export function AppHeader() {
         { to: '/admin/usage', label: '이용 통계' },
         { to: '/admin/tool-search', label: '도구 검색 검토' },
         { to: '/admin/seat-review', label: '전문가 고르기 검토' },
+        { to: '/admin/llm-status', label: 'LLM · GPU 현황' },
       ]
     : [];
   const account: Item[] = [

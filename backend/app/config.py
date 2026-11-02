@@ -314,6 +314,9 @@ class Settings(BaseSettings):
     wda_deck_late_render_s: int = 900
     wda_deck_late_video_s: int = 3600
     wda_deck_give_up_s: int = 21600
+    # LLM/GPU 현황 수집기(infra/llm-status — docs/ops-dashboard) — 관리자 화면 '관리 › LLM · GPU 현황' 이 이 주소의 /snapshot · /series 를 대신 묻는다.
+    # 비면 꺼진 것이다(화면은 503 '수집기가 꺼져 있다'). start.sh 가 infra/.env 에 LLM_STATUS 가 있을 때만 http://127.0.0.1:<LLM_STATUS_PORT> 를 넘긴다.
+    llm_status_url: str = ""
     mcp_gateway_url: str = "http://127.0.0.1:9110"    # MCP Gateway (HWAXMcpGateway; aggregates the 3 MCPs). :9100 was node_exporter.
     mcp_servers_path: str = "config/mcp_servers.yaml"  # MCP registry (PR-managed; admin reload)
     agent_token_audience: str = "agent-server"         # aud for the RS256 handoff token

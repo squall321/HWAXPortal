@@ -371,7 +371,7 @@ class _Box5c:
             self.agent_env.write_text(agent_env, encoding="utf-8")
             agent_line = f'AGENT_ENV="{self.agent_env}"'
         envfile = _ua_region("_envfile_value() {", "\n}\n") + "\n}\n"
-        body = _ua_region("# ── 5c) 호출 추적(Phoenix)", "# ── 6) 헬스게이트")
+        body = _ua_region("# ── 5c) 호출 추적(Phoenix)", "# ── 5d) LLM/GPU 현황 수집기")   # 다음 구획(5d — docs/ops-dashboard) 앞까지
         assert "/home/" not in body, "구획에 실물 경로가 박혀 있다"
         script = "\n".join([
             "set -uo pipefail", f'cd "{self.tmp}"', f'SELF_REPO="{self.repo}"', f'SVC="{self.repo}/infra/scripts/services.sh"', agent_line,
@@ -464,7 +464,7 @@ def test_5c_update_all_배선():
     assert i5b < i5c < i6, "5c 는 5b 뒤 · §6 앞이다"
     head = UA[:UA.index("set -uo pipefail")]
     assert "5c) 호출 추적" in head and "CALL_TRACE" in head, "사용법의 순서 목록에 있다"
-    for line in _ua_region("# ── 5c) 호출 추적(Phoenix)", "# ── 6) 헬스게이트").splitlines():
+    for line in _ua_region("# ── 5c) 호출 추적(Phoenix)", "# ── 5d) LLM/GPU 현황 수집기").splitlines():
         assert not line.lstrip().startswith("`"), "대입어 사슬 안의 백틱 주석은 다음 대입어를 명령 이름으로 만든다"
 
 

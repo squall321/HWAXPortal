@@ -44,6 +44,7 @@
 #   5b) 상시 상태판               — infra/.env 에 STATUS_BOARD 가 있으면 설정을 다시 만들고 띄운다(없으면 ○ — docs/improvement-1015/status-board.md).
 #                                  1b2 가 1c~§5 동안 건 경보 멈춤도 여기서 풀린다
 #   5c) 호출 추적(Phoenix)        — infra/.env 에 CALL_TRACE 가 있으면 받는 쪽(Phoenix)을 띄운다(없으면 ○ · 떠 있으면 내린다 — docs/improvement-1015/call-trace.md)
+#   5d) LLM/GPU 현황 수집기        — infra/.env 에 LLM_STATUS 가 있으면 수집기를 띄운다(없으면 ○ · 떠 있으면 내린다 — docs/ops-dashboard/server-setup.md)
 #   6) 헬스게이트                — 핵심 체인(portal→agent→gateway) 실패 시 exit 1로 크게 알림
 #
 # 1회 준비물(재프로비저닝용 토큰, 없으면 해당 백엔드만 빠짐):
@@ -82,6 +83,8 @@ unset LLM_ROUTER_PORT
 unset STATUS_BOARD_PORT
 # 호출 추적(Phoenix) 포트도 같은 까닭으로 버린다 — call-trace.sh stop 도 환경의 CALL_TRACE_PORT 를 먼저 본다.
 unset CALL_TRACE_PORT
+# LLM/GPU 현황 수집기 포트도 같은 까닭으로 버린다 — llm-status.sh stop 도 환경의 LLM_STATUS_PORT 를 먼저 본다.
+unset LLM_STATUS_PORT
 
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
@@ -2530,6 +2533,38 @@ else
   fi
   hwax_skip "호출 추적(Phoenix)" "infra/.env 에 CALL_TRACE 가 없다 — LLM·도구 호출의 서버·시간·토큰을 본문 없이 모아 보는 Phoenix 를 띄우지 않았다" \
     "infra/.env 에 CALL_TRACE=1 을 적고 재실행 + 에이전트 서버 .env 에 CALL_TRACE_URL=http://127.0.0.1:$_ct_port(재기동) — docs/improvement-1015/call-trace.md"
+fi
+
+# ── 5d) LLM/GPU 현황 수집기 — infra/.env 의 LLM_STATUS 한 줄로 켠다(docs/ops-dashboard/server-setup.md) ──
+# 켜져 있으면(매니페스트 if_env: LLM_STATUS) update-sites 로 띄운다 — 지문이 수집기 파일 · 띄우는 스크립트라 바뀌었을 때만 다시 뜬다. 대상 · 키(infra/.env)는
+#   수집기가 주기마다 다시 읽으므로 다시 띄우지 않는다. 관리자 화면은 포털이 수집기 주소(LLM_STATUS_URL)를 start.sh 에서 받는다 — infra/.env 가 바뀌면
+#   §2 가 포털을 다시 띄우므로 같은 실행에서 든다.
+# 꺼져 있으면 ○ 를 남기고, 그 포트에 수집기가 떠 있으면 내린다(켰다 끈 박스 — 5b · 5c 와 같다). 쌓은 기록(infra/.state/llm-status)은 지우지 않는다.
+#   수집기인지는 /health 의 몸으로 본다(llm-status.sh probe — 상태 코드만 보면 그 포트에서 200 을 내는 남의 앱에 stop 을 불러 실행마다 ✗ · ⚠ 가 남는다, OD-28).
+_ls_en=0; "$SVC" enabled llm-status >/dev/null 2>&1 || _ls_en=$?
+_ls_port="$(_envfile_value "$SELF_REPO/infra/.env" LLM_STATUS_PORT)"; _ls_port="${_ls_port:-8760}"
+if [ "$_ls_en" = 0 ]; then
+  hr "5d) LLM/GPU 현황 수집기 (LLM_STATUS → 기동)"
+  case "$(_envfile_value "$SELF_REPO/infra/.env" LLM_STATUS | tr 'A-Z' 'a-z')" in
+    0|false|off|no) bad "infra/.env 의 LLM_STATUS 값이 '끔' 처럼 보이지만 켜짐으로 읽힌다(값이 있으면 켠다 — if_env). 끄려면 그 줄을 지운다" ;;
+  esac
+  "$SELF_REPO/infra/scripts/update-sites.sh" llm-status; _ls_us=$?
+  if [ "$_ls_us" = 0 ]; then
+    ok "LLM/GPU 현황 수집기 — http://127.0.0.1:$_ls_port (루프백 — 사람은 포털 관리 › LLM · GPU 현황으로 본다, docs/ops-dashboard/server-setup.md)"
+  else
+    fail "LLM/GPU 현황 수집기를 띄우지 못했다 — update-sites llm-status rc $_ls_us(위 ✗ 줄 · 로그 /tmp/hwax-services/llm-status.log)"
+  fi
+else
+  if [ "$_ls_en" = 1 ] && "$SELF_REPO/infra/scripts/llm-status.sh" probe >/dev/null 2>&1; then      # 그 포트의 답이 수집기일 때만
+    hr "5d) LLM/GPU 현황 수집기 — 꺼짐(LLM_STATUS 없음 → 떠 있는 수집기를 내린다)"
+    if "$SELF_REPO/infra/scripts/llm-status.sh" stop; then
+      ok "LLM/GPU 현황 수집기(:$_ls_port)를 내렸다 — LLM_STATUS 가 없다(쌓은 기록은 infra/.state/llm-status 에 그대로 남는다)"
+    else
+      bad "LLM/GPU 현황 수집기(:$_ls_port)를 내리지 못했다(위 ✗ 줄) — 그 포트에 다른 것이 떠 있거나 모른다. 손으로: ./infra/scripts/llm-status.sh stop"
+    fi
+  fi
+  hwax_skip "LLM/GPU 현황 수집기" "infra/.env 에 LLM_STATUS 가 없다 — LLM 서버 · 에이전트 서버의 살아 있음 · 부하 · 속도를 15초마다 모아 관리자 화면(관리 › LLM · GPU 현황)에 내는 수집기를 띄우지 않았다" \
+    "infra/.env 에 LLM_STATUS=1 을 적고 재실행(포털도 다시 떠 화면이 수집기를 찾는다) — docs/ops-dashboard/server-setup.md"
 fi
 
 # ── 6) 헬스게이트 — 핵심 체인 실패 시 exit 1로 크게 알림 ──
