@@ -159,3 +159,8 @@
   background: var(--surface-2);
   font-size: var(--fs-13);
 }
+.ins-risk-list {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-4);
+  color: var(--fg-subtle);
+}

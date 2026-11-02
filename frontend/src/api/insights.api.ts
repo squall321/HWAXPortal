@@ -65,6 +65,16 @@ export interface InsightCard {
   disputes?: string[];
 }
 
+/** 리스크 앱 등록부의 앞 행 — 그 사람이 risk_get_registry 로 받는 행과 같은 문을 지났다(칸 값 · 상태 낱말 그대로). */
+export interface RiskRegistryRow {
+  target_key: string;
+  cluster_key?: string;
+  status?: string | null;
+  severity?: string | null;
+  attention?: string | null;
+  claim?: string | null;
+}
+
 /** 리스크 앱의 과제 — 리스크 앱이 그 사람 시야로 낸 것을 그대로 싣는다(상태 낱말을 번역하지 않는다). */
 export interface RiskProject {
   project_id: string;
@@ -75,7 +85,7 @@ export interface RiskProject {
   sp_task?: string | null;
   my_role?: string | null;
   targets?: { target_key: string; kind?: string; level?: string | null; verdict_candidate?: string | null; verdict_final?: string | null }[];
-  registry_top?: Record<string, unknown>[];
+  registry_top?: RiskRegistryRow[];
   registry_total?: number;
 }
 

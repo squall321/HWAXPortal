@@ -227,11 +227,39 @@ function SubjectConfirm({ card, onChanged }: { card: InsightCard; onChanged: () 
   );
 }
 
+/** 리스크 심사 행 — 과제 머리 · 지금 대상의 판정 · 등록부 앞 행. 리스크 앱의 낱말(판정 · 상태 · 주의)은 번역하지 않는다. */
 function RiskRow({ p }: { p: RiskProject }) {
+  const targets = p.targets ?? [];
+  const top = p.registry_top ?? [];
   return (
     <li className="ins-risk">
-      <strong>리스크 심사</strong> · {p.code ?? p.project_id} {p.name ? `— ${p.name}` : ''} · 단계 {p.stage || '없음'}
-      {p.my_role ? ` · 내 역할 ${p.my_role}` : ''} · 대상 {p.targets?.length ?? 0} · 등록부 {p.registry_total ?? p.registry_top?.length ?? 0}
+      <div>
+        <strong>리스크 심사</strong> · {p.code ?? p.project_id} {p.name ? `— ${p.name}` : ''} · 단계 {p.stage || '없음'}
+        {p.my_role ? ` · 내 역할 ${p.my_role}` : ''} · 대상 {targets.length} · 등록부 {p.registry_total ?? top.length}
+      </div>
+      {targets.length > 0 && (
+        <ul className="ins-risk-list">
+          {targets.map((t) => (
+            <li key={t.target_key}>
+              대상 {t.target_key}
+              {t.kind ? ` (${t.kind}${t.level ? ` · ${t.level}` : ''})` : ''} · 판정{' '}
+              {t.verdict_final ?? (t.verdict_candidate ? `${t.verdict_candidate}(후보)` : '없음')}
+            </li>
+          ))}
+        </ul>
+      )}
+      {top.length > 0 && (
+        <ul className="ins-risk-list">
+          {top.map((r, i) => (
+            <li key={`${r.target_key}:${r.cluster_key ?? i}`}>
+              등록부 {r.status ?? '상태 없음'}
+              {r.attention ? ` · 주의 ${r.attention}` : ''}
+              {r.severity ? ` · 심각도 ${r.severity}` : ''}
+              {r.claim ? ` — ${r.claim}` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
     </li>
   );
 }
