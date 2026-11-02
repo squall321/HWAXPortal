@@ -70,7 +70,7 @@ const RA_SAVE_PROMPT = '/보고서';
 const RA_TIDY_PROMPT = '/보고서 정리';
 
 export default function DeliberatePage() {
-  const { messages, activeId, activeConversation, setInput, newConversation, sendMessage, streaming } = useChat();
+  const { messages, activeId, activeConversation, setInput, newConversation, sendMessage, streaming, delibOpts } = useChat();
   const composerRef = useRef<ComposerHandle>(null);
   const threadRef = useRef<HTMLDivElement>(null); // 내보내기(HTML)가 캡처할 렌더 루트
   // 데스크톱은 저장된 선호를 따르고, 좁은 화면은 오버레이라 기본 닫힘.
@@ -201,6 +201,9 @@ export default function DeliberatePage() {
                   experts={picking.experts}
                   onConfirm={confirmExperts}
                   onCancel={cancelPicking}
+                  // '온톨로지 먼저 보기'(docs/ontology-first M4) — 주제 과제로 정본 허브의 한 걸음 이웃을 고른다. 기준일 심의는 오늘의 허브라 그리지
+                  // 않는다(이 화면에는 리스크 심사 · 봉인 입구가 없다 — 서버가 리스크 심사 계열 의장을 한 번 더 거절한다).
+                  onto={delibOpts.as_of ? undefined : { spTask: subject.spTask, chair: JOB_ROUTING[job].chair }}
                 />
               </div>
             ) : (
