@@ -16,7 +16,8 @@
 개인 Claude 가 보고서를 PC 에서 Word(docx)로 낼 때의 차례다. 변환기는 PC 에서 혼자 도는 한 파일(`infra/pc-kit/hwax-md2docx.py`)이고 Python 3.9+ 와
 `pip install python-docx` 만 있으면 된다(webp 그림은 Pillow, svg 그림은 cairosvg 도 — 없으면 그렇게 말하고 멈춘다).
 
-1. **변환기 받기** — 게이트웨이 `kit_get` 을 부르면 `curl -fsS -o hwax-md2docx.py "<주소>"` 한 줄이 나온다(주소는 1시간). 보고서 폴더에서 돌린다.
+1. **변환기 받기** — 게이트웨이 `kit_get` 을 부르면 `curl -fsS -o hwax-md2docx.py "<주소>"` 한 줄이 나온다(주소는 1시간). 보고서 폴더에서 돌린다
+   (Windows PowerShell 에서는 `curl` 대신 `curl.exe`).
 2. **그림 받기** — 도구 결과 끝의 `그림 저장 — fig_…` 를 `figure_get(ref)` 로 부르면 curl 한 줄이 나온다(`<도구>-<ref>.<확장자>` 로 받는다). md 폴더나
    따로 둔 그림 폴더(`--fig-dir`)에 받는다. 받지 않아도 환경 변수 `HWAX_GATEWAY_PAT`(내 PAT) · `HWAX_PORTAL_BASE`(`https://<포털 호스트>`)를 두면
    변환기가 없는 ref 를 받아 md 옆에 둔다.
@@ -25,4 +26,4 @@
    `H:\…` · `\\서버\공유\…` 이고, 빈칸이 있으면 `<…>` 로 감싸도 된다.
 4. **돌리기** — `python hwax-md2docx.py 보고서.md -o 보고서.docx --fig-dir 그림폴더`. 끝 줄 `그림 표기 N · docx 그림 N · 표 칸 안 M` 의 두 N 이
    같으면 다 들어갔다. 없는 그림이 있으면 줄마다 알리고 docx 를 쓰지 않는다(종료 2 — `--allow-missing` 이면 빨간 `[그림 없음: …]` 으로 쓴다).
-   수가 어긋나면 종료 3 이다(그 docx 는 쓰지 않는다).
+   수가 어긋나면 종료 3 이다(그 docx 는 쓰지 않는다). HTML `<img>` 와 참조 꼴 `![캡션][이름]` 은 그림이 되지 못한다고 알린다 — `![캡션](경로)` 로 쓴다.
