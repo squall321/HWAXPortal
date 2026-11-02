@@ -435,7 +435,8 @@ export interface OntoCall {
   args: Record<string, unknown>;
 }
 export interface OntoPreview {
-  /** ok(이웃 행) · unavailable(부를 수 없다) · unconfirmed(주제 과제를 확인 못 함) · candidates · none · mismatch · error(호출 실패). */
+  /** ok(이웃 행) · unavailable(부를 수 없다) · unconfirmed(주제 과제를 확인 못 함) · candidates · none(허브가 없다고 말했다) · mismatch ·
+   *  error(호출 실패 · 답 꼴을 읽지 못함 — '없음' 이 아니라 '못 물어봄'). */
   state: 'ok' | 'unavailable' | 'unconfirmed' | 'candidates' | 'none' | 'mismatch' | 'error';
   why?: string;
   note?: string;
