@@ -55,10 +55,14 @@ export interface SubjectDraft {
 
 export const EMPTY_SUBJECT: SubjectDraft = { spTask: '', round: '', text: '', artifacts: [] };
 
+// 정규화가 빼는 '공백' — 유니코드 White_Space 글자 묶음 그대로다. 에이전트 서버 delib_subject._SPACE_RE 와 같은 묶음이다(시험이 견준다). JS 의 \s 는
+// BOM(U+FEFF)까지, 파이썬 str.split 은 정보 분리 문자(U+001C ~ U+001F)까지 공백으로 읽어 두 쪽이 갈렸다(반대 검토 11-02).
+const SPACE_RE = /[\t\n\v\f\r\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/gu; // \t ~ \r = U+0009 ~ U+000D
+
 /** 서버와 같은 사소한 정규화(NFKC · 공백 빼기 · 소문자) 뒤 글자 그대로 — 아니면 null(차수 모름). '2차' · 'C2' · '양산' 은 차수가 아니다. */
 export function normRound(v: unknown): StageCode | null {
   if (typeof v !== 'string') return null;
-  const s = v.normalize('NFKC').replace(/\s+/gu, '').toLowerCase();
+  const s = v.normalize('NFKC').replace(SPACE_RE, '').toLowerCase();
   return (STAGE_CODES as readonly string[]).includes(s) ? (s as StageCode) : null;
 }
 

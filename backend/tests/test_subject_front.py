@@ -2,10 +2,14 @@
 """docs/project-insight-graph PLAN §4.1 · §4.6. 프론트에 단위 시험 러너가 없어 TypeScript 를 옮겨 적어(transpile) node 로 함수를 부른다
 (test_handoff_evidence_cap 과 같은 꼴).
 
-  · 후보는 이 대화에서 부른 도구의 결과(StepForge find_plm_task · get_project_meta · list_projects, ODB 잡, DynaForge 리포트, 리스크 과제 stage)
-    에서만 온다 — 어시스턴트의 글 · 실패한 호출 · JSON 으로 못 읽는(잘린) 결과는 보지 않는다. key 는 결과 행의 key 칸 그대로다.
-  · 차수는 NFKC · 공백 · 소문자만 맞추고 '2차' · 'C2' · '양산' 은 차수가 아니다 — 에이전트 서버와 같은 코드 열한 개다(형제 리포를 읽어 견준다).
+  · 후보는 이 대화에서 부른 도구의 결과(StepForge find_plm_task · get_project_meta · list_projects, ODB 잡, DynaForge 리포트)에서만 온다 —
+    어시스턴트의 글 · 실패한 호출 · JSON 으로 못 읽는(잘린) 결과 · 이름만 비슷한 다른 앱의 도구는 보지 않는다. key 는 결과 행의 key 칸 그대로다.
+    차수의 원천 값은 고른 해석 리포트의 개발 단계뿐이다.
+  · 차수는 NFKC · 공백(유니코드 White_Space) · 소문자만 맞추고 '2차' · 'C2' · '양산' 은 차수가 아니다 — 에이전트 서버와 같은 코드 열한 개 ·
+    같은 정규화다(형제 리포를 읽어 글자마다 견준다).
+  · 서버가 낸 주제(사건 · 답 meta)는 한 함수(대화 복원 모듈의 subjectFromRaw)로 꼴을 본다 — 실시간과 새로고침이 같다.
 """
+import importlib.util
 import json
 import re
 import shutil
@@ -51,7 +55,8 @@ def js(tmp_path_factory):
         "const m = require('./subject.js');\n"
         "const [fn, arg] = process.argv.slice(2);\n"
         "const a = JSON.parse(arg);\n"
-        "const r = fn === 'const' ? { STAGE_CODES: m.STAGE_CODES, TEXT: m.SUBJECT_TEXT_MAX, ARTS: m.SUBJECT_ARTIFACTS_MAX } : m[fn](...a);\n"
+        "const r = fn === 'const' ? { STAGE_CODES: m.STAGE_CODES, SP: m.SUBJECT_SP_TASK_MAX, TEXT: m.SUBJECT_TEXT_MAX, ARTS: m.SUBJECT_ARTIFACTS_MAX }\n"
+        "  : fn === 'map' ? a[1].map((x) => m[a[0]](x)) : m[fn](...a);\n"
         "process.stdout.write(JSON.stringify(r === undefined ? null : r));\n", encoding="utf-8")
 
     def run(fn: str, *args):
@@ -64,9 +69,35 @@ def js(tmp_path_factory):
 
 
 def test_차수는_사소한_정규화_뒤_글자_그대로만(js):
-    for raw, want in (("dv1", "dv1"), (" ＤＶ２ ", "dv2"), ("PVR", "pvr"), ("M P", "mp"), ("2차", None), ("C2", None), ("양산", None),
-                      ("dv-1", None), ("dv", None), ("pre1", None), (None, None), (3, None)):
-        assert js("normRound", raw) == want, raw
+    table = (("dv1", "dv1"), (" ＤＶ２ ", "dv2"), ("PVR", "pvr"), ("M P", "mp"), ("2차", None), ("C2", None), ("양산", None),
+             ("dv-1", None), ("dv", None), ("pre1", None), (None, None), (3, None), ("dv\u00a01", "dv1"), ("dv\u00851", "dv1"),
+             ("\tpv\n1\r", "pv1"), ("dv\ufeff1", None), ("dv\u001c1", None), ("dv\u200b1", None))
+    assert js("map", "normRound", [raw for raw, _ in table]) == [want for _, want in table]
+
+
+def _agent_module():
+    if not AGENT.exists():
+        pytest.skip(f"형제 리포 없음: {AGENT}")
+    spec = importlib.util.spec_from_file_location("_agent_delib_subject", AGENT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)       # 표준 라이브러리만 읽는 모듈이다(에이전트 앱을 띄우지 않는다)
+    return mod
+
+
+# 견줄 글자 — 유니코드 White_Space 전부와, 공백처럼 보이거나 한쪽 언어가 공백으로 읽는 글자(정보 분리 문자 · BOM · 폭 없는 공백 · 몽골 모음
+# 분리자 · 단어 잇기 · 부드러운 하이픈). 종전엔 파이썬 str.split 이 U+001C ~ U+001F 를, JS \s 가 U+FEFF 를 빼서 갈렸다(반대 검토 11-02).
+_EDGE = [chr(c) for c in (*range(0x09, 0x0E), 0x20, 0x85, 0xA0, 0x1680, *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000,
+                          *range(0x1C, 0x20), 0xFEFF, 0x200B, 0x180E, 0x2060, 0x00AD)]
+
+
+def test_차수_정규화가_에이전트_서버와_글자마다_같다(js):
+    norm = _agent_module().norm_round
+    raws = [f"dv{c}1" for c in _EDGE] + [f"{c}PV2{c}" for c in _EDGE] + ["ＤＶ１", "Ｍ\u3000Ｐ", "ｐｒｅ", "2차", "C2", "", "  "]
+    got = js("map", "normRound", raws)
+    want = [norm(r) for r in raws]
+    assert got == want, [(hex(ord(r[2])) if len(r) > 2 else r, g, w) for r, g, w in zip(raws, got, want) if g != w]
+    n = len(_EDGE)
+    assert want[:n].count("dv1") == 25 and want[n:2 * n].count("pv2") == 25, "White_Space 스물다섯 글자만 뺀다(나머지는 차수가 아니다)"
 
 
 def test_차수_코드와_상한이_에이전트_서버와_같다(js):
