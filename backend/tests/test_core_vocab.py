@@ -235,3 +235,120 @@ def test_personas_를_더해도_게이트웨이_검색이_읽는_것은_같다()
     assert repr(parse(d)) == repr(parse(bare)), "personas 가 게이트웨이 검색이 읽는 값을 바꿨다"
     readers = [k for k, body in fns.items() if "personas" in body]
     assert not readers, f"게이트웨이 {readers} 가 personas 칸을 읽는다 — 검색 순위가 그대로인지 다시 잰다"
+
+
+# ── ontology — 온톨로지 먼저(docs/ontology-first PLAN §4 · OF-5 · OF-14 ①④) ─────────────────────────────────────────────────────────────
+# 앱 키 → {tools(원래 이름 — 차례가 웹 챗 고정 몫의 차례), reserve, entry?} 와 심의 미리보기의 facts. 에이전트 서버(onto_links)와 게이트웨이
+# (_onto_entries)가 같은 규칙으로 앱 줄마다 거른다 — 두 쪽이 같은 줄을 받아 같은 입구를 읽는지 여기서 견준다(형제 리포의 실제 코드).
+ONTO_FIELDS = {"_doc", "apps", "facts"}
+ROW_FIELDS = {"tools", "reserve", "entry"}
+FACTS_FIELDS = {"focus", "depth", "limit", "chars"}
+
+
+def _agent_onto_core() -> tuple:
+    """에이전트 서버 app.py 의 옛 고정 몫 _ONTO_CORE(추적 기본값이 옮긴 것) — AST 로 읽는다(무거운 import 없이)."""
+    p = AGENT / "app.py"
+    if not p.exists():
+        pytest.skip(f"형제 리포 HWAXAgentServer 가 없다: {p}")
+    for node in ast.parse(p.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "_ONTO_CORE" for t in node.targets):
+            return tuple(ast.literal_eval(node.value))
+    raise AssertionError("에이전트 app.py 에서 _ONTO_CORE 를 못 찾았다(이름이 바뀌었으면 이 시험도 고쳐라)")
+
+
+def _family(d: dict) -> set:
+    return {d["canonical"]["app"]} | {k for k, a in d["apps"].items() if a["role"] == "sibling"}
+
+
+def test_ontology_꼴():
+    d = _load()
+    o = d["ontology"]
+    assert set(o) == ONTO_FIELDS, sorted(o)
+    assert o["apps"] and isinstance(o["apps"], dict)
+    for key, row in o["apps"].items():
+        assert re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,79}", key), key
+        assert set(row) <= ROW_FIELDS and "tools" in row, (key, row)
+        assert row["tools"] and all(isinstance(t, str) and re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,120}", t) for t in row["tools"]), key
+        assert len(row["tools"]) == len(set(row["tools"])), f"{key} — tools 가 겹친다"
+        assert isinstance(row.get("reserve", False), bool), key
+        if "entry" in row:
+            assert row["entry"] in row["tools"] and key not in _family(d), (key, row)
+    f = o["facts"]
+    assert set(f) == FACTS_FIELDS, f
+    assert f["focus"] in set(d["types"].values()) and f["focus"] == "plm_task", "미리보기의 닻은 확인된 주제의 과제(plm_task)다"
+    assert f["depth"] == 1 and 1 <= f["limit"] <= 200 and 1000 <= f["chars"] <= 20000, f
+
+
+def test_ontology_추적_기본값은_옛_고정_몫을_같은_차례로_옮긴_것이고_입구가_없다():
+    """사용자 결정 OF-14 ④ — 웹 챗 기본은 지금과 바이트까지 같다. 기본 표의 이름 규칙(허브 가족은 접두 · 나머지는 맨 이름)으로 지은 고정 몫이 에이전트
+    서버의 옛 _ONTO_CORE 와 글자 · 차례까지 같고, entry 가 어디에도 없다(입구는 cae00 덧씌우기로 켜고 잰다)."""
+    d = _load()
+    fam = _family(d)
+    names = [f"{k.replace('-', '')}_{t}" if k in fam else t for k, row in d["ontology"]["apps"].items() if row.get("reserve")
+             for t in row["tools"]]
+    assert tuple(names) == _agent_onto_core()
+    assert not [k for k, row in d["ontology"]["apps"].items() if "entry" in row], "추적 기본값에는 입구가 없다(OF-14 ④)"
+
+
+_ONTO_VALIDATE = (
+    "import json, sys\n"
+    "import onto_links as ol\n"
+    "a = json.load(sys.stdin)\n"
+    "out = []\n"
+    "for raw in a['raws']:\n"
+    "    v = ol.validate(raw, family=frozenset(a['family']))\n"
+    "    out.append({'present': v['present'], 'apps': list(v['apps']), 'entries': sorted(map(list, v['entries'])), 'dropped': v['dropped']})\n"
+    "print(json.dumps(out, ensure_ascii=False))\n"
+)
+
+
+def _agent_validate(raws: list, family: set) -> list:
+    if not (AGENT / "onto_links.py").exists():
+        pytest.skip(f"형제 리포에 onto_links.py 가 없다: {AGENT}")
+    r = subprocess.run([sys.executable, "-c", _ONTO_VALIDATE], input=json.dumps({"raws": raws, "family": sorted(family)}, ensure_ascii=False),
+                       cwd=AGENT, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}, capture_output=True, text=True, timeout=120)
+    # 형제 리포가 있는데 읽는 쪽을 못 부르면 건너뛰지 않는다 — 건너뜀은 통과가 아니다.
+    assert r.returncode == 0, f"onto_links.validate 를 이 venv 로 부르지 못했다 — {r.stderr.strip()[-600:]}"
+    return json.loads(r.stdout)
+
+
+def test_ontology_에이전트_서버_읽기가_정본_판의_한_줄도_버리지_않는다():
+    d = _load()
+    v = _agent_validate([d["ontology"]], _family(d))[0]
+    assert v["present"] is True and v["dropped"] == [] and v["entries"] == [], v
+    assert v["apps"] == list(d["ontology"]["apps"]), "어휘표 차례 그대로"
+
+
+# 두 쪽에 같은 줄을 넣는다 — 맞는 줄 둘 · 허브 가족의 entry · 키 꼴 · tools 꼴 · entry 가 tools 밖 · reserve 꼴 · 모르는 칸 · 빈 tools · 줄이 객체가 아님
+_ROWS = {"heax-step_forge": {"tools": ["find_plm_task", "onto_search"], "reserve": True, "entry": "onto_search"},
+         "heax-kooremapper_mcp": {"tools": ["list_tasks", "task_revisions"], "entry": "list_tasks"},
+         "rootdesigndatahub": {"tools": ["object_resolve"], "reserve": True, "entry": "object_resolve"},
+         "Bad Key": {"tools": ["x"], "entry": "x"}, "signalforge": {"tools": "resolve_product_keyword", "entry": "resolve_product_keyword"},
+         "mx-white-paper": {"tools": ["wiki_search"], "entry": "wiki_entity"}, "matnexus": {"tools": ["a"], "entry": "a", "reserve": "yes"},
+         "fmea": {"tools": ["a"], "entry": "a", "weight": 3}, "odb-hub": {"tools": [], "entry": "a"}, "arp": "x"}
+
+
+def test_ontology_게이트웨이와_에이전트_서버가_같은_줄에서_같은_입구를_읽는다():
+    """웹 챗의 표지 · 규칙 ⑧(에이전트 서버)과 개인 Claude 의 검색 손잡이 onto_first(게이트웨이)가 같은 입구를 본다. 한쪽만 받는 줄이 있으면 덧씌우기로 켠
+    입구가 한쪽에서만 선다 — 재는 동안 두 길이 갈린다."""
+    d = _load()
+    fam = _family(d)
+    parse, _fns = _gateway_parse()
+    raws = [{"apps": _ROWS}, {"apps": {}}, {"apps": []}, None]
+    agent = _agent_validate(raws, fam)
+    for raw, a in zip(raws, agent):
+        gw_entries = sorted(map(list, parse({**d, "ontology": raw} if raw is not None else {k: v for k, v in d.items() if k != "ontology"})
+                                ["onto_entries"]))
+        assert gw_entries == a["entries"], (raw, gw_entries, a["entries"])
+    assert agent[0]["entries"] == [["heax-kooremapper_mcp", "list_tasks"], ["heax-step_forge", "onto_search"]], agent[0]
+    assert {x["app"] for x in agent[0]["dropped"]} == set(_ROWS) - {"heax-step_forge", "heax-kooremapper_mcp"}, agent[0]["dropped"]
+
+
+def test_ontology_를_더해도_입구가_없으면_게이트웨이_검색이_읽는_것은_같다():
+    """게이트웨이 검색은 ontology 에서 입구 쌍(onto_entries)만 읽는다 — 추적 기본값에는 입구가 없어 칸이 있든 없든 읽은 값이 바이트까지 같다(순위 그대로)."""
+    parse, fns = _gateway_parse()
+    d = _load()
+    bare = {k: v for k, v in d.items() if k != "ontology"}
+    assert repr(parse(d)) == repr(parse(bare)) and parse(d)["onto_entries"] == frozenset()
+    readers = [k for k, body in fns.items() if '"ontology"' in body and k != "_onto_entries"]
+    assert not readers, f"게이트웨이 {readers} 가 ontology 칸을 _onto_entries 밖에서 읽는다"

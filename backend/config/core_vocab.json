@@ -59,5 +59,19 @@
     },
     "data_types": [],
     "no_tools": []
+  },
+  "ontology": {
+    "_doc": "온톨로지 먼저(docs/ontology-first — 사용자 결정 OF-14). apps: 게이트웨이 백엔드 키 → {tools: 원래 이름 목록(차례가 웹 챗 고정 몫의 차례 — 앞부분 고정 W-3), reserve: 참이면 웹 챗이 도구 예산과 상관없이 남긴다, entry: 그 앱에서 이름 · 코드를 키로 푸는 원래 이름(tools 안 — 있으면)}. 열쇠는 노출 이름이 아니라 (백엔드, 원래 이름)이다 — 에이전트 서버가 게이트웨이 /tools-map(map · orig)으로 이 박스의 노출 이름을 찾는다. 추적 기본값은 옛 고정 몫(에이전트 서버 _ONTO_CORE)을 같은 차례로 옮긴 것이고 entry 가 없다 — 웹 챗의 시스템 프롬프트 · 도구 묶음 · 설명이 바이트까지 그대로다(OF-14 ④). 입구는 박스 덧씌우기(core_vocab.local.json)로 켜고 cae00 에서 16문항 · 운영자 14명으로 재서 정한다(PLAN §7.1). entry 가 하나라도 있으면 웹 챗 코어 규칙 끝에 ⑧ 한 줄과 그 입구 도구 설명의 '온톨로지 입구' 표지(챗 로드만 — 심의 · 리스크 좌석에는 없다)가 서고, 게이트웨이 검색 손잡이 onto_first(기본 끔 — 질의가 그 앱 이름을 부를 때만 · 코어 질문에는 걸지 않는다)가 그 입구를 올린다. 입구는 판정(exact · candidates · none)이나 후보 목록을 돌려주는 도구만 적는다 — StepForge onto_search(resolve=true) · DynaForge list_tasks 는 되고, SignalForge resolve_product_keyword · MX 백서 wiki_entity 는 첫 줄을 스스로 골라 아직 아니다(OF-5). 허브 가족(정본 · 형제)에는 entry 를 적지 않는다(버린다 — 정본의 입구는 규칙 ①). 앱 줄마다 검사한다 — 틀린 줄만 버리고 /health core_vocab.ontology 에 적는다. facts: 심의 '온톨로지 먼저 보기'(포털)가 정본 허브에서 주제 과제의 한 걸음 이웃을 볼 때의 범위 — focus 는 주제 타입, 이웃 타입은 이 표 types 의 값에서 focus 를 뺀 것, depth 는 1, limit 은 이웃 상한, chars 는 줄인 행 글의 상한(PLAN §5.2).",
+    "apps": {
+      "rootdesigndatahub": {
+        "tools": ["object_resolve", "objects_resolve_many", "objects_list", "objects_summary", "object_get", "object_fields",
+                  "graph_neighbors", "search"],
+        "reserve": true
+      },
+      "failuretrace": {"tools": ["object_resolve", "objects_list", "objects_summary", "graph_neighbors"], "reserve": true},
+      "heax-kooremapper_mcp": {"tools": ["list_tasks", "task_revisions", "compare_task_revisions"], "reserve": true},
+      "heax-step_forge": {"tools": ["find_plm_task"], "reserve": true}
+    },
+    "facts": {"focus": "plm_task", "depth": 1, "limit": 60, "chars": 4000}
   }
 }
