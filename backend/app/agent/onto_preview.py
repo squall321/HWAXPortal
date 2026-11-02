@@ -152,9 +152,12 @@ def resolve_view(body) -> dict:
 
 def neighbor_rows(body, focus_id: str, allowed: set, chars: int) -> dict:
     """graph_neighbors 답(SP NeighborhoodOut — nodes · edges · truncated) → {rows, total, shown, hub_truncated}. 닻과 바로 이어진 노드 가운데 어휘표 타입만,
-    줄마다 '타입 · key · 이름 · 관계(방향)' 로 줄이고 chars 안에서 끊는다."""
-    nodes = [n for n in (body.get("nodes") if isinstance(body, dict) else None) or [] if isinstance(n, dict)]
-    edges = [e for e in (body.get("edges") if isinstance(body, dict) else None) or [] if isinstance(e, dict)]
+    줄마다 '타입 · key · 이름 · 관계(방향)' 로 줄이고 chars 안에서 끊는다. 답이 그 꼴(nodes · edges 가 목록인 객체)이 아니면 ValueError — 부르는 쪽이
+    '못 물어봄'(error)으로 말한다. 빈 행으로 돌려주면 '이웃이 없다' 로 읽히고, 그냥 두면 TypeError 가 500 이 됐다(반대 검토 11-02 — OF-26)."""
+    if not isinstance(body, dict) or not isinstance(body.get("nodes"), list) or not isinstance(body.get("edges"), list):
+        raise ValueError("graph_neighbors 답이 NeighborhoodOut 꼴(nodes · edges 목록)이 아니다")
+    nodes = [n for n in body["nodes"] if isinstance(n, dict)]
+    edges = [e for e in body["edges"] if isinstance(e, dict)]
     rel: dict = {}
     for e in edges:
         src, dst, slug = str(e.get("src") or ""), str(e.get("dst") or ""), str(e.get("relation") or "")[:60]
@@ -177,7 +180,7 @@ def neighbor_rows(body, focus_id: str, allowed: set, chars: int) -> dict:
             break
         shown.append(r)
         used += len(r["line"]) + 1
-    return {"rows": shown, "total": total, "shown": len(shown), "hub_truncated": isinstance(body, dict) and body.get("truncated") is True}
+    return {"rows": shown, "total": total, "shown": len(shown), "hub_truncated": body.get("truncated") is True}
 
 
 def _err(exc) -> str:
@@ -232,5 +235,9 @@ async def preview(key: str, *, tools_map, call) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {**base, "calls": calls, "anchor": anchor, "state": "error", "rows": [],
                 "why": f"정본 허브 이웃({nb_tool})을 부르지 못했다 — {_err(exc)}"}
-    rows = neighbor_rows(nb, obj["id"], set(v["types"]), v["facts"]["chars"])
+    try:
+        rows = neighbor_rows(nb, obj["id"], set(v["types"]), v["facts"]["chars"])
+    except (TypeError, ValueError, AttributeError) as exc:
+        return {**base, "calls": calls, "anchor": anchor, "state": "error", "rows": [],
+                "why": f"정본 허브 이웃({nb_tool})의 답 꼴을 읽지 못했다 — 아무것도 고르지 않는다({_err(exc)})"}
     return {**base, "calls": calls, "anchor": anchor, "state": "ok", **rows}

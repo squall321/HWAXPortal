@@ -225,6 +225,25 @@ def test_호출이_실패하면_그_단계의_까닭을_말하고_다음을_부�
         assert b["anchor"]["key"] == KEY and b["rows"] == [], "닻은 보이되 이웃은 못 물어봤다고 말한다"
 
 
+@pytest.mark.parametrize("bad", ({"nodes": 5}, {"edges": "x"}, {"nodes": None}, [], "꼴이 아닌 글", None),
+                         ids=("nodes_수", "edges_글", "nodes_없음", "목록", "글", "null"))
+def test_이웃_답의_꼴이_틀리면_500_도_없음도_아니라_못_물어봄이다(onto, bad):
+    """허브 답이 NeighborhoodOut 꼴(nodes · edges 목록)이 아니면 — 종전엔 행 줄이기가 try 밖이라 TypeError 가 500 이 되거나, 빈 행(ok · '이웃이
+    없습니다')으로 보였다. 꼴을 읽지 못한 것은 '없음' 이 아니라 '못 물어봄'(error)이다(반대 검토 11-02 — OF-26)."""
+    go, seen, state = onto
+    if isinstance(bad, dict):
+        nb = _neighbors()
+        nb.update(bad)
+    else:
+        nb = bad
+    state["neighbors"] = nb
+    r = go({"sp_task": KEY})
+    assert r.status_code == 200, r.text
+    b = r.json()
+    assert b["state"] == "error" and _tools(seen) == [S.RESOLVER_CALL, RES, NB], b
+    assert "답 꼴" in b["why"] and b["rows"] == [] and b["anchor"]["key"] == KEY, "닻은 보이되 이웃은 못 읽었다고 말한다"
+
+
 # ── 막는 길 ─────────────────────────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("chair", ("risk-review", "risk-review-sealed", " Risk-Review "))
 def test_리스크_심사_계열에는_쓰지_않는다(onto, chair):
