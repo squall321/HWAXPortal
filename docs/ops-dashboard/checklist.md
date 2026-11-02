@@ -15,13 +15,13 @@
 - [ ] cae00 절차서 · 반대 검토
 
 ## LLM/GPU 현황
-- [x] M1 — 수집기(HTTP · 해석기 · sqlite · 가짜 vLLM 시험 · 라우터 해석기와 같은 결과) — dev 11-02, 가지 `wt1102/llm-status`(OD-5 ~ OD-14 · OD-16)
-  - [x] `infra/llm-status/`(collector · promtext · samplestore) · `infra/scripts/llm-status.sh`(run · start · stop) · 포트 8760(PORT-MAP · OD-6)
+- [x] M1 — 수집기(HTTP · 해석기 · sqlite · 가짜 vLLM 시험 · 라우터 해석기와 같은 결과) — dev 11-02, 가지 `wt1102/llm-status`(OD-13 ~ OD-22 · OD-24)
+  - [x] `infra/llm-status/`(collector · promtext · samplestore) · `infra/scripts/llm-status.sh`(run · start · stop) · 포트 8760(PORT-MAP · OD-14)
   - [x] 시험 — 해석기 · 라우터와 같은 셈 · 분위수 · 리셋 빈칸 · 히스토그램 창 · 401 · 걸린 서버 · 연결 거부/시간 초과 · 틀린 지표 · 값 꼴 · 낡음 · 숨기지 않음 ·
         키 가리기 · 기본 대상 · 짝 파일 · 에이전트 · 라우터 · 시계열 · 지우기 · 띄우는 스크립트 · 격리, 한 줄 변이 25개가 모두 잡힌다(스크래치 사본)
 - [ ] M2 — 포털 API · `/admin/llm-status` · update-all 배선(끄면 '꺼짐' 한 줄) · 이력 · 문서
   - [x] 매니페스트 `if_env: LLM_STATUS`(기본 꺼짐 · 제 파일만의 지문) · update-all 5d(켜면 update-sites · 끄면 ○ 와 떠 있으면 내림) · 예시 설정 · env-sync 는 선택으로
-  - [x] 포털 `GET /auth/admin/llm-status` · `/series`(관리자만 — CAEG 도 403 · 꺼짐 503 · 안 닿음 502) · start.sh 가 `LLM_STATUS_URL` 을 넘긴다(OD-7)
+  - [x] 포털 `GET /auth/admin/llm-status` · `/series`(관리자만 — CAEG 도 403 · 꺼짐 503 · 안 닿음 502) · start.sh 가 `LLM_STATUS_URL` 을 넘긴다(OD-15)
   - [x] 화면 `/admin/llm-status`(관리 메뉴) — 머리 · 서버 카드 · 복제본 표 · 라우터 · 지금 쓰는 일 · Slurm/GPU 모름 줄, 브라우저 시험(실제 수집기 답)
   - [x] cae00 절차서 [server-setup.md](server-setup.md)
   - [ ] 이력(backend/config/changelog.yaml) — 이 가지에서는 쓰지 않았다(올리는 세션이 함께 적는다)

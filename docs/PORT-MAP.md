@@ -46,7 +46,7 @@
 | 8750 | **호출 추적**(Phoenix — 켠 박스만, `CALL_TRACE`. 화면·API·OTLP 수신이 한 포트다) | 루프백 | `infra/.env` `CALL_TRACE_PORT` |
 | 8760 | **LLM/GPU 현황 수집기**(켠 박스만, `LLM_STATUS` — 관리자 화면 '관리 › LLM · GPU 현황' 이 포털을 거쳐 묻는다, docs/ops-dashboard) | 루프백 | `infra/.env` `LLM_STATUS_PORT` |
 
-**LLM/GPU 현황 수집기는 8760 이다** — 8730 · 8740 · 8750 다음 자리이고 HEAXHub 앱 포트 풀(아래) 밖이다. 8765 는 MX 백서 MCP 가 쓴다(2026-11-02 — 형제 리포 전부 · dev 리스너에서 8760 을 쓰는 곳이 없음을 확인했다, docs/ops-dashboard OD-6).
+**LLM/GPU 현황 수집기는 8760 이다** — 8730 · 8740 · 8750 다음 자리이고 HEAXHub 앱 포트 풀(아래) 밖이다. 8765 는 MX 백서 MCP 가 쓴다(2026-11-02 — 형제 리포 전부 · dev 리스너에서 8760 을 쓰는 곳이 없음을 확인했다, docs/ops-dashboard OD-14).
 
 **LLM 라우터는 8730 이다** — 처음엔 9130(그 전엔 9120 — 게이트웨이 시험의 knox-bridge 예시와 겹쳐 피했다)이었으나 아래 허브 앱 포트 풀 안이라 어디에도 배포하기 전에 옮겼다(2026-10-16, docs/llm-pool LP-D16).
 

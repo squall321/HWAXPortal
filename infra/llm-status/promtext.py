@@ -1,6 +1,6 @@
 # Prometheus 글(텍스트 꼴)을 게이지 · 카운터 · 히스토그램 · 라벨까지 읽고 vLLM 지표 · 증가분 · 분위수를 셈하는 해석기 — 표준 라이브러리만(docs/ops-dashboard PLAN §3.3)
 """LLM 라우터의 해석기(infra/llm-router/llm_router.py parse_metrics)를 넓힌 것이다. 라우터 것은 고치지 않는다 — 라우터 지문(services.yaml
-fp: infra/llm-router)에 들어 있어 바꾸면 라우터가 다시 뜬다(docs/ops-dashboard OD-5). 대신 같은 견본에서 running · waiting · KV 가 라우터와
+fp: infra/llm-router)에 들어 있어 바꾸면 라우터가 다시 뜬다(docs/ops-dashboard OD-13). 대신 같은 견본에서 running · waiting · KV 가 라우터와
 **글자 그대로 같은지** 시험이 본다(backend/tests/test_llm_status_collector.py).
 
 읽는 꼴 — `# HELP` · `# TYPE` · 표본 줄 `이름{라벨="값",…} 값 [시각]`. 라벨 값의 이스케이프(\\\\ \\" \\n)를 푼다. 값은 실수 · NaN · +Inf · -Inf 이고

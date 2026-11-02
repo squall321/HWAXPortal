@@ -505,7 +505,7 @@ class Pending(NamedTuple):
       view(now) — 스냅숏의 그 칸이다. 값 꼴 {value, at, source, error, stale, age_s} 에 rows · milestone 을 더한다(화면은 rows 가 비면 error 를 보인다).
       poll — 원천이 생기면 더한다. tick 이 그 주기(60초)마다 대상과 같은 _kick 규율(제 스레드 · 앞 읽기가 안 끝나면 건너뛴다)로 부른다.
       M3 rows — 잡마다 {id, name, node, partition, gpus, state, reason, elapsed_s, limit_s, left_s}. ssh 한 번(BatchMode · 정해진 읽기 명령)이고
-              자식 환경에는 물려줄 키가 없다(OD-10). 남은 때가 3일 안이면 화면이 경고한다(PLAN §3.2).
+              자식 환경에는 물려줄 키가 없다(OD-18). 남은 때가 3일 안이면 화면이 경고한다(PLAN §3.2).
       M4 rows — GPU 마다 {node, index, util_pct, mem_used_mb, mem_total_mb, temp_c, power_w}."""
     name: str
     why: str
