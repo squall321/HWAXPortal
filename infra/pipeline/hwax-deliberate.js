@@ -406,14 +406,27 @@ const RISK_SEAT_CONTRACT = {
   'std': `[std] 필수: sig:req.standards 의 kind='standard' 요구를 req:<name> 으로 인용(요구 0건이면 check_design_rules 또는 RA search_objects) 권장: search_reports, get_object, search_scholar, search_web 산출: 규격 번호 인용([문헌·규격]) + 그 규격이 이 과제 요구로 등록됐는지 req: 로 명시. 등록돼 있지 않으면 '요구 미등록 — 등록 제안' 을 open_item 으로 낸다`,
 }
 const domOf = k => (String(k || '').includes('-') ? String(k).split('-')[0] : String(k || ''))
+// 리스크 심사의 D-18(docs/risk-review-redesign D-18 · D-58) — 좌석은 같은 과제의 등록부 · 앞 패널 판정을 보지 않는다.
+// ⚠ 프롬프트로 말할 뿐 강제가 아니다 — 이 워크플로의 좌석은 도구 목록 없이 도는 agent() 라 부를 도구를 막을 수 없다. 강제되는
+//   길은 엔진이다(hwax-risk-claude.js · deliberate_start — 엔진이 좌석 도구를 골라 D-18 도구를 거절하고 RA 읽기를 거른다).
+// 그래서 리스크 심사의 좌석에는 보고서 조회 입구(RA_HINT)와 이름 호출 안내(SEAT_BY_NAME — invoke_tool 은 목록에 없는 도구도
+// 부른다)를 싣지 않고, 금지 한 줄(D18_LINE)을 역할 뒤에 붙인다 — 역할은 세 라운드의 좌석 프롬프트에만 실린다(의장 · 보고서
+// 저장 호출은 그대로다). 리스크 심사가 아니면 좌석 프롬프트가 종전과 글자까지 같다.
+const RISK_D18 = CHAIR_TEMPLATE === 'risk-review'
+const D18_LINE = `[D-18] 같은 과제의 앞 판정에 닿는 도구는 부르지 마라 — 리스크 앱의 등록부 · 선례 · 앞 패널 · 보고서 도구` +
+  `(risk_get_registry · risk_claims_for_ref · risk_get_precedents · risk_list_panels · risk_get_panel_transcript · ` +
+  `risk_get_report · risk_get_issues · risk_get_expert_report · risk_get_cells 등 — 리스크 앱에서 볼 수 있는 것은 변경 ` +
+  `risk_get_diff 와 스냅샷 risk_get_snapshot 뿐이다)와, 이 과제에 관한 RA 보고서 · 온톨로지 읽기(엔진이 남긴 '심의 — ` +
+  `[리스크심사 …]' 초안, 이 과제 코드로 시작하는 risk_finding 객체). 앞 판정을 따라 말하면 지지 수가 독립 근거 없이 오른다.`
 // 좌석 역할 — risk-review 면 원본 역할 뒤에 도메인 계약을 접미로 붙인다(합성 지정석은 도메인
-// delib 이라 계약표에 없어 자기 역할 문구만 간다 — deliberation.py 와 같은 규칙).
+// delib 이라 계약표에 없어 자기 역할 문구만 간다 — deliberation.py 와 같은 규칙). D-18 한 줄은 그 뒤다(지정석 포함).
 const role = k => {
   const base = (PERS.find(p => p.key === k) || {}).role || k
   const dom = domOf(k)
-  return (CHAIR_TEMPLATE === 'risk-review' && RISK_SEAT_CONTRACT[dom])
+  const r = (CHAIR_TEMPLATE === 'risk-review' && RISK_SEAT_CONTRACT[dom])
     ? `${base}\n${RISK_SEAT_CONTRACT._common}\n${RISK_SEAT_CONTRACT[dom]}`
     : base
+  return RISK_D18 ? `${r}\n${D18_LINE}` : r
 }
 
 const OP_SCHEMA = {
@@ -628,7 +641,9 @@ phase('초기입장')
 // 빠진다(숨김만, HWAXPortal docs/mcp-app-toggle D-2 정정). 심의가 기대는 도구는 이름으로 부르게 해 저장·근거가 끊기지 않게 한다.
 const BY_NAME = `도구 목록에 없으면 invoke_tool(name='<도구 이름>', arguments={…}) 로 불러라 — 사용자가 허브에서 그 앱을 ` +
   `꺼 둔 경우다(목록에서만 빠지고 이름으로는 된다). `
-const RA_HINT = `과거 보고서 조회는 search_reports/get_reports_digest 부터, Report Archive ` +
+// 좌석에 싣는 둘 — 리스크 심사는 싣지 않는다(위 RISK_D18 · D18_LINE). 보고서 저장 호출의 BY_NAME 은 그대로다.
+const SEAT_BY_NAME = RISK_D18 ? '' : BY_NAME
+const RA_HINT = RISK_D18 ? '' : `과거 보고서 조회는 search_reports/get_reports_digest 부터, Report Archive ` +
   `도구가 낯설면 get_guide 로 사용법을 먼저 보라(list_reports 의 수십 개 인자를 추측으로 채우지 마라). ${BY_NAME}`
 const R1_INSTRUCTION = CONT
   ? `이 논의는 이어하기 라운드다. 위 [이전 심의 요약]을 읽어라(당신이 이전에 참여했다면 거기 당신의 이전 입장도 있을 것이다). [인간 검토자 의견]이 있다면 반드시 정면으로 다뤄라. 당신의 도메인 관점에서: (1) 이전 논의·인간 의견에 대한 구체적 반응(동의/반박/보완, 구체 인용), (2) 갱신되었거나 새로 형성한 권장안, (3) 이 시점에 당신 도메인이 놓치고 있는 것/리스크. 수치엔 (도구)/(경험칙) 표기. 영역 밖은 아는 척 금지. ${RA_HINT}`
@@ -649,10 +664,10 @@ const groundBlock = (k, first) => !GROUND ? ''
     `불러오고, 필요하면 semantic_search(q: 쟁점, agent_type: "${k}") 로 쟁점 관련 근거를 찾아라. ` +
     `수치·임계·정리를 인용할 땐 카드/섹션 출처를 붙이고, 카드에 없어 일반지식으로 답하면 ` +
     `(경험칙)/(expert-judgement)로 표기하라. 도구가 실패하면 그 사실을 한 줄로 남기고 페르소나 ` +
-    `지식으로 답하되 과단정하지 마라. ${BY_NAME}\n\n`
+    `지식으로 답하되 과단정하지 마라. ${SEAT_BY_NAME}\n\n`
   : `[근거 그라운딩] 네 지식카드는 앞 라운드에서 이미 읽었다 — get_context_bundle 을 다시 ` +
     `부르지 마라(같은 결과다). 쟁점이 앞 라운드에서 옮겨가 새 근거가 필요할 때만 ` +
-    `semantic_search(q: 그 쟁점, agent_type: "${k}") 로 좁혀 찾아라. 인용·표기 규칙은 그대로다. ${BY_NAME}\n\n`
+    `semantic_search(q: 그 쟁점, agent_type: "${k}") 로 좁혀 찾아라. 인용·표기 규칙은 그대로다. ${SEAT_BY_NAME}\n\n`
 // 페르소나 정규화 — LLM이 persona 필드에 긴 역할 설명을 붙여 반환하면 포털 저장(persona ≤120자
 // 검증)이 배치째 422로 거부된다(전기박리 심의 대화 유실 사고의 원인). 정본 키로 강제한다.
 const withKey = (k) => (o) => (o ? { ...o, persona: k } : o)
