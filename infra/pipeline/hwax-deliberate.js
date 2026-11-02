@@ -430,7 +430,8 @@ const D18_LINE = `[D-18] 같은 과제의 앞 판정에 닿는 도구는 부르�
   `(risk_get_registry · risk_claims_for_ref · risk_get_precedents · risk_list_panels · risk_get_panel_transcript · ` +
   `risk_get_report · risk_get_issues · risk_get_expert_report · risk_get_cells 등 — 리스크 앱에서 볼 수 있는 것은 변경 ` +
   `risk_get_diff 와 스냅샷 risk_get_snapshot 뿐이다)와, 이 과제에 관한 RA 보고서 · 온톨로지 읽기(엔진이 남긴 '심의 — ` +
-  `[리스크심사 …]' 초안, 이 과제 코드로 시작하는 risk_finding 객체). 앞 판정을 따라 말하면 지지 수가 독립 근거 없이 오른다.`
+  `[리스크심사 …]' 초안, 이 과제 코드로 시작하는 risk_finding 객체), 과제 인사이트(insight_find · insight_get — 같은 과제의 앞선 ` +
+  `심의 결론)와 과제 주제로 리스크 과제 찾기(risk_find_projects_by_subject). 앞 판정을 따라 말하면 지지 수가 독립 근거 없이 오른다.`
 // 좌석 역할 — risk-review 면 원본 역할 뒤에 도메인 계약을 접미로 붙인다(합성 지정석은 도메인
 // delib 이라 계약표에 없어 자기 역할 문구만 간다 — deliberation.py 와 같은 규칙). D-18 한 줄은 그 뒤다(지정석 포함).
 const role = k => {

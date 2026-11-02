@@ -108,3 +108,17 @@ def test_결정적_저장_스크립트는_주제가_없거나_리스크_심사�
     monkeypatch.setattr("sys.argv", ["x", str(f)])
     assert mod.main() == 0
     assert set(sent[0]) == {"title", "kind", "source", "messages"}
+
+
+def test_리스크_심사_좌석의_D18_줄은_과제_인사이트_도구와_주제_찾기를_막는다():
+    """Claude 워크플로의 리스크 심사 좌석은 그 사람 PAT 의 게이트웨이 도구를 다 쓰고 지키는 것은 D-18 한 줄뿐이다 — M2 의 새 도구(insight_find ·
+    insight_get · risk_find_projects_by_subject)도 그 줄이 이름으로 막는다(반대 검토 11-02 의 5). 리스크 심사가 아니면 줄이 없다."""
+    out = _run(_DELIB, {"question": "[리스크심사 P1 T-1] 판정하라", "personas": _SEATS, "rounds": 2, "chairTemplate": "risk-review",
+                        "saveConversation": False, "saveReport": False})
+    seats = [c["prompt"] for c in out["calls"] if "[D-18]" in c["prompt"]]
+    assert seats, "리스크 심사 좌석에 D-18 줄이 있다"
+    for name in ("insight_find", "insight_get", "risk_find_projects_by_subject"):
+        assert all(name in p for p in seats), name
+    plain = _full()
+    assert not [c for c in plain["calls"] if "[D-18]" in c["prompt"]]
+
