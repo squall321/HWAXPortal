@@ -34,3 +34,4 @@
   - [x] 묶음 주소의 속도 · 분위수 — 같은 서버 프로세스(process_start_time_seconds)의 표본끼리만 · 표지가 없으면 줄면 그 창을 비운다(OD-26)
   - [x] 되돌린 쓰기의 계열 번호 — 캐시는 COMMIT 된 줄만(OD-27)
   - [x] 꺼진 5d — /health 의 service 표지로 수집기를 알아보고 남의 앱이면 ○ 한 줄만(llm-status.sh probe · OD-28) · cae00 8760 확인은 사람(server-setup.md 2절)
+  - [x] 재기동 생략 · start 의 '이미 떠 있다' — stop 과 같은 명령줄 판정(llm-status.sh check · update-sites 는 llm-status 만, OD-29)

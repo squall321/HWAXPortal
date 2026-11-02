@@ -119,3 +119,14 @@ API 서버가 하나면 그 레지스트리를 쓴다(`get_prometheus_registry`)
 때만 머리를 찍고 stop 을 부른다 — 남의 앱이면 ○ 한 줄뿐이다(시험은 진짜 llm-status.sh 와 진짜 http_code 로 — 고치기 전 판에서 머리 · ✗ · ⚠ 가 나는 것을
 본다). PORT-MAP 의 8760 확인은 dev 와 형제 리포뿐이었다 — cae00 은 켜기 전에 사람이 `ss -ltnpH 'sport = :8760'` 로 본다(server-setup.md 2절).
 버린 것 — 5d 안에서 curl 로 몸을 받아 보기(포트 · 표지를 아는 곳이 llm-status.sh 다 · 5d 시험 대역이 http_code 하나만 갈아 끼운다).
+
+**OD-29 재기동 생략 · start 의 '이미 떠 있다' 는 명령줄로 수집기인지 본 뒤에만(반대 검토 11-02 — LOW).** services.py `health_ok` 는 상태 코드만 보고
+(몸을 보는 손잡이가 없다) update-sites 는 `services.sh status` 의 '✓ up' 을 믿는다. 켰다 끈 뒤 지문 기록(`infra/.state/restart-fp/sites/llm-status`)이
+남은 박스에서 남의 앱이 그 포트를 쥐고 200 을 내면 다시 켤 때 '재기동 생략 · ✓ up' 과 5d 의 'OK' 로 끝났다(기록이 없으면 이미 크게 실패했다).
+`llm-status.sh start` 도 듣는 것이 있기만 하면 '이미 듣는 프로세스가 있다' 로 0 을 냈다. stop 의 명령줄 판정(인자 하나가 `…/infra/llm-status/collector.py`
+로 끝나고 바로 뒤가 serve)을 함수 하나(`_owned` — 0 수집기 · 1 남 · 2 ss 로 모름 · 3 아무도 없음)로 떼어 stop · start · 새 `check` 가 함께 쓴다 —
+start 는 남이면 띄우지 않고 1, ss 를 못 쓰면 종전대로 띄운다. update-sites 의 생략 조건에 llm-status 만 `llm-status.sh check` 를 더했다 — 아니면 생략하지
+않고 재기동 길로 가서 stop 이 남을 건드리지 않고(✗) 같은 리스너가 답해 '✗ 재기동이 되지 않았다' 로 실패한다. 다른 서비스의 조건은 글자 그대로다
+(시험이 llm-router 로 본다). stop 의 문구 · 종료코드는 그대로다. 버린 것 — services.py 에 몸 검사 손잡이(`expect_body` 같은 것)를 더하기(모든 서비스의
+판정 길을 건드린다 — 지시가 몸 검사가 없으면 명령줄로 하라고 정했다), 매니페스트에 `verify:` 같은 일반 고리(쓰는 곳이 하나다 — update-sites 에는 이미
+서비스 이름으로 가르는 자리가 여럿이다).

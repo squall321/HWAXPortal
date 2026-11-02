@@ -1090,6 +1090,39 @@ def test_stop_은_그_포트를_듣는_수집기만_내린다(repo):
             old.kill()
 
 
+def test_start_check_는_그_포트를_듣는_것이_수집기인지_명령줄로_본다(repo):
+    """반대 검토 11-02 LOW — start 는 그 포트에 듣는 것이 있기만 하면 '이미 떠 있다' 로 0 을 냈다(남의 앱이어도). stop 과 같은 명령줄 판정으로 보고,
+    남이면 띄우지 않고 크게 실패한다. check 는 update-sites 가 재기동을 생략하기 전에 묻는 같은 판정이다(OD-29)."""
+    port = _free_port()
+    (repo / "infra/.env").write_text(f"LLM_STATUS=1\nLLM_STATUS_PORT={port}\n", encoding="utf-8")
+    log = repo.parent / "logs/llm-status.log"
+
+    def run(cmd):
+        return subprocess.run(["bash", str(repo / "infra/scripts/llm-status.sh"), cmd], capture_output=True, text=True, timeout=30,
+                              env=_env(repo, LLM_STATUS_LOG=str(log)))
+    r = run("check")
+    assert r.returncode == 1 and "듣는 프로세스가 없다" in r.stderr, r.stdout + r.stderr
+    other = _listener(port, "--note", "/tmp/infra/llm-status/collector.py.bak", "serve")
+    try:
+        r = run("start")
+        assert r.returncode == 1 and "수집기가 아니다" in r.stderr and "띄우지 않았다" in r.stderr, r.stdout + r.stderr
+        assert not log.exists(), "남이 쥔 포트에 수집기를 띄우지 않는다"
+        r = run("check")
+        assert r.returncode == 1 and "수집기가 아니다" in r.stderr and other.poll() is None, r.stdout + r.stderr
+    finally:
+        other.kill()
+        other.wait(10)
+    mine = _listener(port, "/x/infra/llm-status/collector.py", "serve", "--port", str(port))
+    try:
+        r = run("start")
+        assert r.returncode == 0 and "이미 듣는 수집기가 있다" in r.stdout and f"pid {mine.pid}" in r.stdout, r.stdout + r.stderr
+        r = run("check")
+        assert r.returncode == 0 and "수집기다" in r.stdout and mine.poll() is None, r.stdout + r.stderr
+    finally:
+        mine.kill()
+        mine.wait(10)
+
+
 @pytest.mark.parametrize("line, needle", [("LLM_STATUS_PORT=87x0\n", "LLM_STATUS_PORT='87x0'"), ("LLM_STATUS_PORT=70000\n", "1~65535")])
 def test_run_은_포트_손잡이가_틀리면_띄우지_않는다(repo, line, needle):
     (repo / "infra/.env").write_text(line, encoding="utf-8")

@@ -207,9 +207,13 @@ restart_svc() {
   cur="$("$SVC" fp "$name" 2>/dev/null | tail -1)"; last="$(hwax_last_fp "$name")"
   # 갱신(git pull) 이 실패해도 지문이 같고 살아 있으면 재기동하지 않는다 — 같은 옛 코드를 내렸다 올려도 얻는 게 없고, GitHub 이 며칠 안 닿으면
   # update-all 마다 챗 스택이 끊긴다(3라운드). 실패는 종료코드로만 올린다(요약의 FAILED 에 든다).
+  # llm-status 만 — '살아 있음' 은 상태 코드만 본다(services.py health_ok). 켰다 끈 뒤 지문 기록이 남은 박스에서 남의 앱이 그 포트를 쥐고 200 을 내면
+  # 생략 · ✓ 로 끝났다. 그 포트를 듣는 것이 수집기인지 명령줄로 본다(llm-status.sh check — stop 과 같은 판정, docs/ops-dashboard OD-29). 아니면 생략하지
+  # 않는다 — 아래 재기동 길에서 stop 이 남의 리스너를 건드리지 않고 그 리스너가 그대로 답해 크게 실패한다.
   if [ "${HWAX_RESTART_ALL:-0}" != 1 ] && [ -n "$cur" ] && [ "$cur" = "$last" ] \
      && ! printf ' %s ' "${HWAX_FORCE_RESTART:-}" | grep -q " $name " \
-     && "$SVC" status "$name" 2>/dev/null | grep -q '✓ up'; then
+     && "$SVC" status "$name" 2>/dev/null | grep -q '✓ up' \
+     && { [ "$name" != llm-status ] || "$ROOT/infra/scripts/llm-status.sh" check >/dev/null; }; then
     echo "  · $name: 마지막 기동 뒤 변경 없음(지문 $cur) · 살아 있음 → 재기동 생략 (전부 재기동: HWAX_RESTART_ALL=1)  [$(date '+%H:%M:%S')]"
     SKIPPED_RESTART="$SKIPPED_RESTART $name"; rm -f "$tmp" "$tmpu"
     # rc 2 = '갱신만 실패, 서비스는 정상·무변경'. rc 1 과 갈라야 한다 — 포털 게이트가 rc≠0 을 '재기동 실패' 로 읽어 나머지 전부를

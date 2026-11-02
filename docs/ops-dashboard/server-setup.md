@@ -142,8 +142,9 @@ ls -la infra/.state/llm-status/
 
 - 끄기 — `infra/.env` 의 `LLM_STATUS` 줄을 지우고 update-all. 5d 가 `✓ LLM/GPU 현황 수집기(:8760)를 내렸다 — … 쌓은 기록은 infra/.state/llm-status 에
   그대로 남는다` 와 ○ 를 남긴다. 기록을 지우려면 수집기가 내려간 뒤 그 폴더를 손으로 지운다.
-- 손으로 — `./infra/scripts/llm-status.sh start`(뒤에서 띄우고 곧바로 돌아온다 · 로그 `/tmp/hwax-services/llm-status.log`) · `stop`(그 포트를 듣는
-  수집기만 내린다 — 명령줄이 수집기가 아니면 손대지 않는다). `LLM_STATUS` 가 없는 박스에서 손으로 띄우면 다음 update-all 이 내린다.
+- 손으로 — `./infra/scripts/llm-status.sh start`(뒤에서 띄우고 곧바로 돌아온다 · 로그 `/tmp/hwax-services/llm-status.log` · 그 포트에 이미 듣는 것이
+  수집기가 아니면 띄우지 않고 실패한다) · `stop`(그 포트를 듣는 수집기만 내린다 — 명령줄이 수집기가 아니면 손대지 않는다) · `check`(그 포트를 듣는 것이
+  수집기인가 — update-sites 가 재기동을 생략하기 전에 같은 것을 묻는다, OD-29). `LLM_STATUS` 가 없는 박스에서 손으로 띄우면 다음 update-all 이 내린다.
 
 ## 9. 알아 둘 것
 

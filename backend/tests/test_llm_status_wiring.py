@@ -308,3 +308,59 @@ def test_물려받은_수집기_포트를_버린다():
         r = subprocess.run(["bash", "-c", head + '\necho "[${LLM_STATUS_PORT-없음}]"\n'], capture_output=True, text=True, timeout=30,
                            env={"PATH": os.environ["PATH"], "HOME": "/nonexistent", "LLM_STATUS_PORT": "9555"})
         assert r.stdout.split()[-1:] == ["[없음]"], r.stdout + r.stderr
+
+
+# ── update-sites 의 재기동 생략 ─────────────────────────────────────────────────────────────────────
+US_LIBS = "".join(f'. "{SCRIPTS}/lib/{n}"\n' for n in ("change-detect.sh", "skip-ledger.sh", "delib-busy.sh", "llm-pool.sh"))
+
+
+def _us_restart(tmp: Path, name: str, url: str) -> tuple[str, list[str]]:
+    """update-sites 의 restart_svc 를 원문 그대로 돌린다 — services.sh 는 대역(지문 f1 · '✓ up'), 지문 기록은 f1(켰다 끈 뒤 남은 기록),
+    llm-status.sh 는 진짜다(그 포트의 리스너는 시험이 띄운다). → (화면, services.sh 가 받은 호출)."""
+    root = tmp / "HWAXPortal"
+    (root / "infra/scripts").mkdir(parents=True)
+    shutil.copy(SCRIPTS / "llm-status.sh", root / "infra/scripts/llm-status.sh")
+    (root / "infra/.env").write_text(f"LLM_STATUS=1\nLLM_STATUS_PORT={url.split(':')[2].split('/')[0]}\n", encoding="utf-8")
+    log, st = tmp / "svc.log", tmp / "state"
+    log.write_text("")
+    st.mkdir()
+    (st / name).write_text("f1\n")
+    svc = tmp / "svc.sh"
+    svc.write_text(f'#!/usr/bin/env bash\necho "$*" >> "{log}"\n'
+                   'case "$1" in update) echo "  · $2  skip (update:false)";; fp) echo f1;; status) echo "  ✓ up $2";;\n'
+                   f'  health) echo {url};; enabled) exit 0;; esac\nexit 0\n')
+    svc.chmod(0o755)
+    us = (SCRIPTS / "update-sites.sh").read_text(encoding="utf-8")
+    i = us.index('SKIPPED_RESTART=""')
+    script = (f'set -uo pipefail\nROOT="{root}"\nSVC="{svc}"\n{US_LIBS}export HWAX_RESTART_STATE_DIR="{st}" HWAX_WAIT_DOWN_MAX=1 '
+              f'HWAX_WAIT_UP_MAX=1 HWAX_SKIP_LEDGER="{tmp / "ledger"}"\nshow_cause() {{ :; }}\n{us[i:us.index("# 1) 포털 먼저", i)]}\n'
+              f'restart_svc "{name}"; echo "rc=$?"')
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=90,
+                       env={"PATH": os.environ["PATH"], "HOME": str(tmp)})
+    return r.stdout + r.stderr, log.read_text().splitlines()
+
+
+def test_update_sites_는_그_포트를_듣는_것이_수집기일_때만_재기동을_생략한다(tmp_path):
+    """반대 검토 11-02 LOW — 상태 검사는 상태 코드만 본다(services.py health_ok). 켰다 끈 뒤 지문 기록이 남은 박스에서 남의 앱이 그 포트를 쥐고 200 을
+    내면 '재기동 생략 · ✓ up' 으로 끝났다. llm-status 만 생략하기 전에 llm-status.sh check(stop 과 같은 명령줄 판정)를 묻는다 — 아니면 재기동 길로 가
+    크게 실패한다(OD-29). 다른 서비스의 생략은 그대로다."""
+    port = _free_port()
+    url = f"http://127.0.0.1:{port}/health"
+    other = _http_app(port, b'{"status":"ok"}')
+    try:
+        out, calls = _us_restart(tmp_path / "a", "llm-status", url)
+        assert "재기동 생략" not in out and re.search(r"^rc=1$", out, re.M), out
+        assert "수집기가 아니다" in out and "같은 프로세스가 답한다" in out and "down llm-status" in calls, (calls, out)
+        assert other.poll() is None, "남의 앱은 건드리지 않는다"
+        out, calls = _us_restart(tmp_path / "b", "llm-router", url)
+        assert "재기동 생략" in out and re.search(r"^rc=0$", out, re.M) and "down llm-router" not in calls, "다른 서비스의 생략은 그대로다"
+    finally:
+        other.kill()
+        other.wait(10)
+    mine = _http_app(port, b'{"service":"hwax-llm-status","status":"ok"}', "/x/infra/llm-status/collector.py", "serve", "--port", str(port))
+    try:
+        out, calls = _us_restart(tmp_path / "c", "llm-status", url)
+        assert "재기동 생략" in out and re.search(r"^rc=0$", out, re.M) and "down llm-status" not in calls, (calls, out)
+    finally:
+        mine.kill()
+        mine.wait(10)
