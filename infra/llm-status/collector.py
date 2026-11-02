@@ -18,8 +18,9 @@ update-all `_envfile_value` 와 같다. 주기마다 파일이 바뀌었는지 �
   건너뛴다(값이 낡음으로 보인다). 15초마다 /health · /version · /metrics, 60초마다 /v1/models.
 값 — 모두 {value, at, source, error, stale, age_s} 다. at 은 마지막으로 제대로 읽은 때, error 는 마지막 시도가 실패한 까닭(또는 값이 없는 까닭).
   주기 세 번을 놓치면 stale. 설정된 대상은 숨기지 않는다 — 못 읽으면 `모름 — <까닭>` 이다. 주소는 호스트:포트만 낸다.
-속도 · 분위수 — 카운터는 이웃한 표본의 차로 잰다. 줄어든 쌍(서버 재기동)은 빈칸이다(음수 속도 없음). p50 · p95 는 히스토그램 칸의 증가로 셈한
-  어림(5분 창)이다 — 답에 approx 표지가 붙는다.
+속도 · 분위수 — 카운터는 같은 서버 프로세스(process_start_time_seconds 가 같은) 표본끼리의 차로 잰다 — 묶음 주소에서 다른 서버가 답한 표본 ·
+  재기동 전의 표본은 셈에서 빠진다. 그 줄이 없는 서버는 창 안에서 카운터가 하나라도 줄면 그 창을 비운다(OD-26). 줄어든 쌍은 빈칸이다(음수 속도
+  없음). p50 · p95 는 히스토그램 칸의 증가로 셈한 어림(5분 창)이다 — 답에 approx 표지가 붙는다. 어느 길로 쟀는지는 값의 source 가 말한다.
 저장 — infra/.state/llm-status/(폴더 700 · 파일 600)의 sqlite. 표본 48시간 · 5분 접기 35일(samplestore.py).
 Slurm · GPU — 아직 원천이 없다(M3 · M4). 자리만 있고 `모름 — <무엇이 필요한가>` 를 낸다.
 표준 라이브러리만 쓴다(시스템 python3 3.10 이상).
@@ -519,11 +520,12 @@ PENDING = (Pending("slurm", SLURM_WHY, "M3"), Pending("gpu", GPU_WHY, "M4"))
 
 
 class Snap(NamedTuple):
-    """/metrics 한 번에서 증가분을 셀 것만."""
+    """/metrics 한 번에서 증가분을 셀 것만. ident 는 그 서버 프로세스의 표지(process_start_time_seconds — 없으면 None)."""
     ts: float
     counters: dict
     by_label: dict
     hists: dict
+    ident: float | None = None
 
 
 class TState:
@@ -568,13 +570,42 @@ class TState:
 
 
 # ── 창 셈 ───────────────────────────────────────────────────────────────────────────────────────────
-def _pairs(hist: deque, since: float, max_gap: float) -> list[tuple[Snap, Snap]]:
+THIN = "모름 — 표본이 둘 이상 쌓여야 잰다"
+# 같은 서버 프로세스의 표본만 잰다(OD-26) — 표지가 다른 표본을 뺐더니 쌍이 없다
+THIN_IDENT = ("모름 — 같은 서버 프로세스의 표본이 둘 이상 쌓여야 잰다(process_start_time_seconds 가 다른 표본은 뺐다 — 서버가 다시 떴거나 "
+              "묶음 주소에서 다른 서버가 답했다)")
+MIXED = ("모름 — 창 안에서 카운터가 줄었다(서버가 다시 떴거나 묶음 주소에서 다른 서버가 답했다). 이 서버의 지표에 process_start_time_seconds 가 "
+         "없어 같은 서버의 표본만 고를 수 없다 — 그 창은 빈칸이다")
+# 창 셈 값의 source — 어느 길로 쟀나(OD-26)
+BASIS_IDENT = "metrics/process_start_time_seconds"     # 같은 서버 프로세스의 표본끼리
+BASIS_COUNTERS = "metrics/counters_only"               # 표지가 없다 — 카운터가 줄면 그 창을 비운다
+
+
+def _pairs(hist, since: float, max_gap: float) -> list[tuple[Snap, Snap]]:
     """이웃한 표본 쌍 — 뒤 표본이 since 뒤이고 사이가 0 < 차 <= max_gap 인 것(서버가 오래 안 닿았던 사이는 평균으로 치지 않는다)."""
     xs = list(hist)
     return [(a, b) for a, b in zip(xs, xs[1:]) if b.ts > since and 0 < b.ts - a.ts <= max_gap]
 
 
-def _rate(pairs, get, per: float) -> tuple[float | None, str | None]:
+def _backwards(a: Snap, b: Snap) -> bool:
+    """두 표본 사이에 줄어든 카운터 · 라벨 카운터 · 히스토그램이 있나 — 같은 서버 프로세스라면 줄지 않는다."""
+    for k, x in a.counters.items():
+        y = b.counters.get(k)
+        if not k.startswith("_has_") and x is not None and y is not None and y < x:
+            return True
+    for fam, d in a.by_label.items():
+        e = b.by_label.get(fam) or {}
+        if any(e.get(lab, 0.0) < v for lab, v in d.items()):
+            return True
+    return any(h is not None and b.hists.get(k) is not None and promtext.hist_delta(h, b.hists[k]) is None for k, h in a.hists.items())
+
+
+def _went_back(xs: list, since: float) -> bool:
+    """창 안(뒤 표본이 since 뒤)의 이웃한 표본 사이에서 카운터가 줄었나 — 사이가 벌어진 쌍도 본다(셈에서 뺀 쌍이라도 섞였다는 표지다)."""
+    return any(_backwards(a, b) for a, b in zip(xs, xs[1:]) if b.ts > since)
+
+
+def _rate(pairs, get, per: float, thin: str = THIN) -> tuple[float | None, str | None]:
     """창 안 쌍마다의 증가를 더해 'per 초당' 으로 — 줄어든 쌍(리셋)은 빈칸으로 빼고 음수를 내지 않는다."""
     inc = dur = 0.0
     n = 0
@@ -596,7 +627,7 @@ def _rate(pairs, get, per: float) -> tuple[float | None, str | None]:
         return None, "모름 — 이 판의 vLLM 지표에 그 칸이 없다"
     if reset:
         return None, "카운터가 다시 0 부터 센다(서버가 다시 떴다) — 이 구간은 빈칸이다"
-    return None, "모름 — 표본이 둘 이상 쌓여야 잰다"
+    return None, thin
 
 
 def _labeled(name: str, key: tuple[str, ...] | None):
@@ -610,7 +641,7 @@ def _labeled(name: str, key: tuple[str, ...] | None):
     return get
 
 
-def _hist_window(pairs, name: str) -> tuple[promtext.Hist | None, str | None]:
+def _hist_window(pairs, name: str, thin: str = THIN) -> tuple[promtext.Hist | None, str | None]:
     acc = None
     seen = reset = False
     for a, b in pairs:
@@ -628,31 +659,39 @@ def _hist_window(pairs, name: str) -> tuple[promtext.Hist | None, str | None]:
         return None, "모름 — 이 판의 vLLM 지표에 그 히스토그램이 없다"
     if reset:
         return None, "카운터가 다시 0 부터 센다(서버가 다시 떴다) — 이 구간은 빈칸이다"
-    return None, "모름 — 표본이 둘 이상 쌓여야 잰다"
+    return None, thin
 
 
 def derive(hist: deque, interval: float) -> tuple[dict, dict]:
-    """최근 표본 → (카드의 지금 값 {이름: (값, 까닭)}, 저장할 표본 값 {이름: 값}). 저장하는 속도는 마지막 쌍 하나로 잰다(리셋이면 빈칸)."""
+    """최근 표본 → (카드의 지금 값 {이름: (값, 까닭)}, 저장할 표본 값 {이름: 값}). 저장하는 속도는 마지막 쌍 하나로 잰다(리셋이면 빈칸).
+    같은 서버 프로세스의 표본끼리만 잰다(OD-26) — 마지막 표본과 표지(process_start_time_seconds)가 같은 표본만 고른다. 이어지지 않아도 된다
+    (묶음 주소에서는 다른 서버가 사이사이 답한다 — 그 사이를 건너 이웃으로 친다). 재기동하면 표지가 바뀌어 앞 프로세스의 표본이 저절로 빠진다.
+    표지가 없는 서버(다중 API 서버 vLLM)는 종전대로 이웃한 표본으로 재되, 창 안에서 카운터가 하나라도 줄면 그 창의 값을 모두 비운다 — 줄어든
+    쌍만 빼면 다른 서버의 큰 누적과의 차(늘어난 쪽)가 속도로 잡힌다. 늘기만 한 첫 넘어감은 표지 없이 가려내지 못한다."""
     max_gap = 4 * interval
     last = hist[-1]
-    p60 = _pairs(hist, last.ts - RATE_WINDOW_S, max_gap)
-    p5 = _pairs(hist, last.ts - WINDOW_S, max_gap)
-    p1 = _pairs(hist, last.ts - 1e-6, max_gap)[-1:]
+    xs = [s for s in hist if s.ident == last.ident]
+    thin = THIN_IDENT if len(xs) < len(hist) else THIN
+    p60 = _pairs(xs, last.ts - RATE_WINDOW_S, max_gap)
+    p5 = _pairs(xs, last.ts - WINDOW_S, max_gap)
+    p1 = _pairs(xs, last.ts - 1e-6, max_gap)[-1:]
+    mixed60 = last.ident is None and _went_back(xs, last.ts - RATE_WINDOW_S)
+    mixed5 = last.ident is None and _went_back(xs, last.ts - WINDOW_S)
     now: dict = {}
     keep: dict = {}
     for name, key in (("prompt_tps", "prompt_tokens"), ("gen_tps", "generation_tokens")):
         get = (lambda k: (lambda s: s.counters.get(k)))(key)
-        now[name] = _rate(p60, get, 1.0)
-        keep[name] = _rate(p1, get, 1.0)[0]
-    now["preempt_per_min"] = _rate(p5, lambda s: s.counters.get("preemptions"), 60.0)
-    now["requests_per_min"] = _rate(p5, _labeled("finished", None), 60.0)
-    now["aborts_per_min"] = _rate(p5, _labeled("finished", ("abort",)), 60.0)
+        now[name] = (None, MIXED) if mixed60 else _rate(p60, get, 1.0, thin)
+        keep[name] = None if mixed60 else _rate(p1, get, 1.0, thin)[0]
+    now["preempt_per_min"] = _rate(p5, lambda s: s.counters.get("preemptions"), 60.0, thin)
+    now["requests_per_min"] = _rate(p5, _labeled("finished", None), 60.0, thin)
+    now["aborts_per_min"] = _rate(p5, _labeled("finished", ("abort",)), 60.0, thin)
 
     def errors(s: Snap):
         http_ = _labeled("http", ("5xx",))(s)
         fin = _labeled("finished", ("error",))(s)
         return None if http_ is None and fin is None else (http_ or 0.0) + (fin or 0.0)
-    now["errors_per_min"] = _rate(p5, errors, 60.0)
+    now["errors_per_min"] = _rate(p5, errors, 60.0, thin)
     hits = qs = 0.0
     n = 0
     for a, b in p5:
@@ -666,13 +705,15 @@ def derive(hist: deque, interval: float) -> tuple[dict, dict]:
     elif n:
         now["prefix_hit"] = (None, "요청 없음(5분)")
     else:   # 쓸 쌍이 없다 — 칸이 없는지 · 리셋인지 · 표본이 모자란지(_rate 의 까닭을 빌린다)
-        why = (_rate(p5, lambda s: s.counters.get("prefix_hits"), 1.0)[1]
-               or _rate(p5, lambda s: s.counters.get("prefix_queries"), 1.0)[1] or "모름 — 앞부분 캐시 칸을 셀 수 없다")
+        why = (_rate(p5, lambda s: s.counters.get("prefix_hits"), 1.0, thin)[1]
+               or _rate(p5, lambda s: s.counters.get("prefix_queries"), 1.0, thin)[1] or "모름 — 앞부분 캐시 칸을 셀 수 없다")
         now["prefix_hit"] = (None, why)
     for h in ("ttft", "e2e", "queue"):
-        acc, why = _hist_window(p5, h)
+        acc, why = _hist_window(p5, h, thin)
         for q, tag in ((0.5, "p50"), (0.95, "p95")):
             now[f"{h}_{tag}"] = (promtext.quantile(q, acc), why) if acc is not None else (None, why)
+    if mixed5:      # 표지 없는 서버의 5분 창에서 카운터가 줄었다 — 그 창의 값은 모두 빈칸이다
+        now.update({k: (None, MIXED) for k in now if k not in ("prompt_tps", "gen_tps")})
     for k in ("preempt_per_min", "errors_per_min", "prefix_hit", "ttft_p50", "ttft_p95", "e2e_p50", "e2e_p95", "queue_p95"):
         keep[k] = now[k][0]
     return now, keep
@@ -896,7 +937,7 @@ class Collector:
         for k, d in ex["by_label"].items():   # 라벨 칸이 아직 하나도 없는 것(한 번도 없었다 — 0)과 패밀리가 없는 것(모름)을 가른다(_labeled)
             fam = promtext.BY_LABEL[k][0]
             counters["_has_" + k] = 1.0 if (d or fam in parsed.types or parsed.named(fam)) else None
-        snap = Snap(now, counters, ex["by_label"], ex["hists"])
+        snap = Snap(now, counters, ex["by_label"], ex["hists"], ex["ident"])
         with st.lock:
             if st.hist and now <= st.hist[-1].ts:
                 st.hist.clear()                     # 시계가 거꾸로 갔다 — 창을 새로 쌓는다
@@ -907,8 +948,11 @@ class Collector:
             st.cell("running", "metrics").ok(g["running"], now)
             st.cell("waiting", "metrics").ok(g["waiting"], now)
             st.cell("kv", "metrics").ok(g["kv"], now, None if g["kv"] is not None else "모름 — 이 판의 지표에 KV 캐시 칸이 없다")
+            basis = BASIS_IDENT if snap.ident is not None else BASIS_COUNTERS     # 창 셈을 어느 길로 쟀나(OD-26)
             for name, (val, why) in cur.items():
-                st.cell(name, "metrics").ok(val, now, why)
+                c = st.cell(name, basis)
+                c.source = basis
+                c.ok(val, now, why)
             st.src["metrics"]["bad_lines"] = bad
         self._note(st, "metrics", None, f"{t.label}({t.addr}) 지표를 다시 읽는다", quiet_first_ok=True)
         vals = {"running": g["running"], "waiting": g["waiting"], "kv": g["kv"], **keep}

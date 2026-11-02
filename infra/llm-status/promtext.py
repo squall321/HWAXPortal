@@ -10,7 +10,8 @@ fp: infra/llm-router)에 들어 있어 바꾸면 라우터가 다시 뜬다(docs
   · 이름은 **정확히** 같은 것만 센다 — vLLM 은 `vllm:num_requests_waiting_by_reason{reason=…}` 도 내고 그 합이 waiting 과 같아서 접두로 세면
     두 배가 된다. 라벨 묶음(엔진 · 모델)은 더한다. 대체 이름이 있는 것(옛 vLLM)은 새 이름이 있으면 옛 이름을 보지 않는다(둘을 더하지 않는다).
   · 카운터의 증가분은 이웃한 표본 쌍마다 잰다. 값이 줄어든 쌍(서버가 다시 떠서 0 부터 센다)은 **빈칸**이다 — 음수 속도를 만들지 않고, 리셋 뒤
-    값을 0 부터의 증가로 치지도 않는다. 시각이 거꾸로 가거나 너무 벌어진 쌍도 빈칸이다.
+    값을 0 부터의 증가로 치지도 않는다. 시각이 거꾸로 가거나 너무 벌어진 쌍도 빈칸이다. 어느 표본끼리 쌍을 짓나(같은 서버 프로세스 — `ident`)는
+    수집기가 정한다(collector.py derive · docs/ops-dashboard OD-26).
   · 분위수(p50 · p95)는 히스토그램 칸의 증가분으로 셈한 어림이다(Prometheus histogram_quantile 과 같은 칸 안 선형 보간). 화면은 ≈ 를 붙인다.
 """
 import math
@@ -169,6 +170,8 @@ HISTOGRAMS: dict[str, str] = {
     "e2e": "vllm:e2e_request_latency_seconds",
     "queue": "vllm:request_queue_time_seconds",
 }
+# 서버 프로세스의 표지 — prometheus_client 기본 레지스트리(ProcessCollector)가 내는, 그 프로세스가 뜬 때(초 · 라벨 없음)
+IDENT = "process_start_time_seconds"
 
 
 def _finite(samples: list[Sample]) -> list[float]:
@@ -228,16 +231,25 @@ def histogram(p: Parsed, base: str) -> Hist | None:
     return Hist(bounds, cum, cum[-1] if count is None else count, _counter(p, (base + "_sum",)))
 
 
+def ident(p: Parsed) -> float | None:
+    """그 서버 프로세스의 표지 — 라벨 없는 유한한 IDENT 표본이 정확히 하나일 때 그 값, 아니면 None(표지 없음). 같은 프로세스는 늘 같은 값을
+    낸다(부팅 시각을 한 번 읽어 둔다 — prometheus_client process_collector). 다시 뜨면 바뀐다. vLLM 0.23.0 은 API 서버가 하나면 기본 레지스트리라
+    이 줄이 있고, api_server_count > 1 이면 다중 프로세스 레지스트리라 없다(vllm/v1/metrics/prometheus.py get_prometheus_registry)."""
+    vals = [s.value for s in p.named(IDENT) if not s.labels and math.isfinite(s.value)]
+    return vals[0] if len(vals) == 1 else None
+
+
 def vllm(p: Parsed) -> dict | None:
-    """vLLM 지표 전부 — {gauges: {running, waiting, kv}, counters: {이름: 값|None}, by_label: {finished, http}, hists: {ttft, e2e, queue}}.
-    running · waiting 이 없으면 None(그 서버의 글이 vLLM 지표가 아니다 — 404 페이지 · 다른 앱)."""
+    """vLLM 지표 전부 — {gauges: {running, waiting, kv}, counters: {이름: 값|None}, by_label: {finished, http}, hists: {ttft, e2e, queue},
+    ident: 프로세스 표지|None}. running · waiting 이 없으면 None(그 서버의 글이 vLLM 지표가 아니다 — 404 페이지 · 다른 앱)."""
     g = basic(p)
     if g is None:
         return None
     return {"gauges": g,
             "counters": {k: _counter(p, names) for k, names in COUNTERS.items()},
             "by_label": {k: _by_label(p, name, key) for k, (name, key) in BY_LABEL.items()},
-            "hists": {k: histogram(p, base) for k, base in HISTOGRAMS.items()}}
+            "hists": {k: histogram(p, base) for k, base in HISTOGRAMS.items()},
+            "ident": ident(p)}
 
 
 # ── 증가분 · 분위수 ─────────────────────────────────────────────────────────────────────────────────

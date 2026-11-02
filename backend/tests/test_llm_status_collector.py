@@ -7,7 +7,9 @@
 가짜로 돌린다 — 이 박스에 떠 있는 서비스를 두드리지 않는다. 띄우는 스크립트는 임시 리포 사본에서 돌린다.
 """
 import fcntl
+import http.client
 import importlib.util
+import itertools
 import json
 import os
 import re
@@ -71,13 +73,44 @@ class _Quiet(ThreadingHTTPServer):
         return
 
 
+def _go_float(d: float) -> str:
+    """prometheus_client utils.floatToGoString 그대로(0.25.0, 유한한 수만) — 지표 글의 수 꼴(큰 수는 Go 처럼 지수로)."""
+    s = repr(float(d))
+    dot = s.find(".")
+    if d > 0 and dot > 6:
+        return f"{s[0]}.{s[1:dot]}{s[dot + 1:]}".rstrip("0.") + f"e+0{dot - 1}"
+    return s
+
+
+# prometheus_client 0.25.0 의 ProcessCollector 가 가짜 /proc(btime 1793578000 · 시작 76976 틱 · 100Hz)로 낸 글 그대로(generate_latest).
+# vLLM 0.23.0 은 API 서버가 하나면 기본 레지스트리라 /metrics 에 이 덩이가 든다 — 가짜 vLLM 의 표지 줄이 이 꼴과 같은지 본다.
+REAL_PROCESS = """# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 1.23456789e+08
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 8.388608e+06
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.79357876976e+09
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 0.08
+"""
+_STARTS = itertools.count(1)
+
+
 class FakeVllm:
-    """가짜 vLLM. mode — ok · garbage(200 인데 vLLM 지표가 아니다) · hang(답하기 전에 붙든다 — release 까지) · health503(/health 만 503)."""
+    """가짜 vLLM. mode — ok · garbage(200 인데 vLLM 지표가 아니다) · hang(답하기 전에 붙든다 — release 까지) · health503(/health 만 503).
+    ident — 프로세스 표지(process_start_time_seconds)를 싣는다(API 서버 하나인 vLLM). False 면 싣지 않는다(api_server_count > 1 — 다중 프로세스
+    레지스트리). 가짜마다 뜬 때가 다르고, restart 하면 바뀐다."""
 
     BOUNDS = (0.05, 0.1, 0.5, 1.0, 5.0)
 
-    def __init__(self, *, key: str | None = None, model: str = "glm-test", max_len: int = 200_000, version: str = "0.23.0"):
+    def __init__(self, *, key: str | None = None, model: str = "glm-test", max_len: int = 200_000, version: str = "0.23.0",
+                 ident: bool = True):
         self.key, self.model, self.max_len, self.version = key, model, max_len, version
+        self.ident, self.started = ident, 1_793_578_769.76 + 1000 * next(_STARTS)
         self.mode = "ok"
         self.release = threading.Event()
         self.running, self.waiting, self.kv = 2.0, 1.0, 0.25
@@ -140,15 +173,18 @@ class FakeVllm:
         self.observe("queue", 0.01, done)
 
     def restart(self) -> None:
-        """서버가 다시 떴다 — 카운터 · 히스토그램이 0 부터."""
+        """서버가 다시 떴다 — 카운터 · 히스토그램이 0 부터, 프로세스 표지(뜬 때)가 바뀐다."""
         for k in self.c:
             self.c[k] = 0.0
         for k in self.h:
             self.h[k] = [0.0] * len(self.h[k])
+        self.started += 61.37
 
     def text(self) -> str:
         lab = f'engine="0",model_name="{self.model}"'
-        out = ["# HELP vllm:num_requests_running Number of requests in model execution batches.",
+        out = ["# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.",
+               "# TYPE process_start_time_seconds gauge", f"process_start_time_seconds {_go_float(self.started)}"] if self.ident else []
+        out += ["# HELP vllm:num_requests_running Number of requests in model execution batches.",
                "# TYPE vllm:num_requests_running gauge", f"vllm:num_requests_running{{{lab}}} {self.running}",
                "# TYPE vllm:num_requests_waiting gauge", f"vllm:num_requests_waiting{{{lab}}} {self.waiting}",
                # 함정 — 합이 waiting 과 같은 다른 지표(접두로 세면 두 배)
@@ -205,6 +241,48 @@ class FakeJson:
         self.srv = _Quiet(("127.0.0.1", 0), H)
         self.port = self.srv.server_address[1]
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        self.srv.shutdown()
+        self.srv.server_close()
+
+
+class FakePool:
+    """묶음 주소(요청마다 아무 한 대로 보내는 nginx — OD-2)의 가짜. /metrics 는 뒤 서버들에 차례로, 나머지 경로는 첫 서버로 보낸다(시험이 어느
+    표본이 어느 서버의 것인지 정하게)."""
+
+    def __init__(self, backs: list):
+        self.backs, self.n = backs, 0
+        pool = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                return
+
+            def do_GET(self):
+                back = pool.backs[0]
+                if self.path == "/metrics":
+                    back = pool.backs[pool.n % len(pool.backs)]
+                    pool.n += 1
+                c = http.client.HTTPConnection("127.0.0.1", back.port, timeout=5)
+                try:
+                    c.request("GET", self.path, headers={k: v for k, v in self.headers.items() if k.lower() == "authorization"})
+                    r = c.getresponse()
+                    body = r.read()
+                finally:
+                    c.close()
+                self.send_response(r.status)
+                self.send_header("Content-Type", r.getheader("Content-Type") or "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        self.srv = _Quiet(("127.0.0.1", 0), H)
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    @property
+    def base(self) -> str:
+        return f"http://127.0.0.1:{self.port}/v1"
 
     def close(self) -> None:
         self.srv.shutdown()
@@ -367,6 +445,7 @@ class _FakeText:
     """FakeVllm.text 를 서버 없이 부르려는 껍데기."""
     BOUNDS = FakeVllm.BOUNDS
     model, running, waiting, kv = "m", 4.0, 2.0, 0.6
+    ident, started = True, 1_793_578_769.76
     c = dict.fromkeys(("prompt", "gen", "preempt", "pq", "ph", "stop", "abort", "h2xx", "h5xx"), 1.0)
     h = {k: [1.0] * (len(FakeVllm.BOUNDS) + 1) for k in ("ttft", "e2e", "queue")}
 
@@ -388,8 +467,9 @@ def test_분위수는_칸의_증가분으로_어림하고_Inf_칸이면_앞_칸�
 
 
 # ── 가짜 vLLM 을 읽기 ────────────────────────────────────────────────────────────────────────────────
-def test_카운터가_줄면_빈칸이고_음수_속도를_내지_않는다(tmp_path, fakes):
-    """서버가 다시 떠서 카운터가 0 부터 세면 그 쌍은 빈칸이다 — 그래프(표본마다 잰 속도)에 줄이 없고, 카드의 60초 속도는 앞의 멀쩡한 쌍만 쓴다."""
+def test_다시_뜬_서버는_새_프로세스의_표본으로만_재고_음수_속도를_내지_않는다(tmp_path, fakes):
+    """서버가 다시 뜨면 표지(process_start_time_seconds)가 바뀐다 — 앞 프로세스의 표본은 셈에서 빠지고(OD-26) 새 프로세스의 표본이 둘 쌓이면 잰다.
+    그래프(표본마다 잰 속도)에 다시 뜬 첫 표본의 줄은 없고, 음수 · 0 으로 끌어내린 값도 없다."""
     f = fakes()
     clock = Clock()
     coll = _collector(tmp_path, f"LLM_BASE_URL={f.base}\n", clock=clock)
@@ -400,33 +480,117 @@ def test_카운터가_줄면_빈칸이고_음수_속도를_내지_않는다(tmp_
         coll.poll_vllm(st)
         stamps.append(int(clock()))
         clock.tick(15)
+    v = _vals(coll.snapshot(), "glm")
+    assert v["gen_tps"]["value"] == pytest.approx(20.0) and v["gen_tps"]["source"] == C.BASIS_IDENT, v["gen_tps"]
     f.restart()
     f.step(gen=300)                              # 다시 뜬 서버의 첫 300 — 앞의 900 보다 작다
     coll.poll_vllm(st)
     t_reset = int(clock())
-    v = _vals(coll.snapshot(), "glm")
-    assert v["gen_tps"]["value"] == pytest.approx(20.0), "리셋 쌍을 빼고 앞의 두 쌍으로 잰다(음수 · 0 으로 끌어내리지 않는다)"
+    g = _vals(coll.snapshot(), "glm")["gen_tps"]
+    assert g["value"] is None and "process_start_time_seconds" in g["error"] and "다시 떴거나" in g["error"], \
+        "앞 프로세스의 표본과 섞지 않는다 — 새 프로세스의 표본이 하나뿐이면 값 대신 까닭이다"
     clock.tick(15)
     f.step(gen=300)
     coll.poll_vllm(st)
+    assert _vals(coll.snapshot(), "glm")["gen_tps"]["value"] == pytest.approx(20.0), "새 프로세스의 둘째 표본부터 잰다"
     s = coll.store.series("glm", "gen_tps", "1h", now=clock())
-    assert [p[0] for p in s["points"]] == [stamps[1], stamps[2], int(clock())], "리셋 표본(t45)은 빈칸 — 줄이 없다"
+    assert [p[0] for p in s["points"]] == [stamps[1], stamps[2], int(clock())], "다시 뜬 첫 표본(t45)은 빈칸 — 줄이 없다"
     assert all(p[1] == pytest.approx(20.0) for p in s["points"]), s["points"]
     assert t_reset not in [p[0] for p in s["points"]]
     for metric in ("prompt_tps", "gen_tps", "preempt_per_min", "errors_per_min"):
         pts = coll.store.series("glm", metric, "1h", now=clock())["points"]
         assert all(p[1] >= 0 for p in pts), f"{metric} 에 음수가 있다 — {pts}"
-    # 창 안에 리셋 쌍뿐이면 값 대신 까닭이다
-    (tmp_path / "b").mkdir()
-    coll2 = _collector(tmp_path / "b", f"LLM_BASE_URL={f.base}\n", clock=clock)
-    st2 = _state(coll2, "glm")
-    f.step(gen=300)
-    coll2.poll_vllm(st2)
-    clock.tick(15)
-    f.restart()
-    coll2.poll_vllm(st2)
-    g = _vals(coll2.snapshot(), "glm")["gen_tps"]
-    assert g["value"] is None and "다시 0 부터" in g["error"], g
+
+
+def test_표지가_없는_서버는_창_안에서_카운터가_줄면_그_창을_비운다(tmp_path, fakes):
+    """api_server_count > 1 인 vLLM 은 process_start_time_seconds 를 내지 않는다 — 종전처럼 이웃한 표본으로 재되, 창 안에서 카운터가 하나라도
+    줄면 그 창(카드 60초 · 5분)의 값을 모두 비운다(줄어든 쌍만 빼고 나머지로 재지 않는다 — OD-26). 줄어든 쌍이 창을 나가면 다시 잰다."""
+    f = fakes(ident=False)
+    clock = Clock()
+    coll = _collector(tmp_path, f"LLM_BASE_URL={f.base}\n", clock=clock)
+    st = _state(coll, "glm")
+    t0 = int(clock())
+    for _ in range(3):                           # t0 · t15 · t30
+        f.step(gen=300)
+        coll.poll_vllm(st)
+        clock.tick(15)
+    v = _vals(coll.snapshot(), "glm")
+    assert v["gen_tps"]["value"] == pytest.approx(20.0) and v["gen_tps"]["source"] == C.BASIS_COUNTERS, v["gen_tps"]
+    f.restart()                                  # t45 — 카운터가 0 부터
+    for i in range(5):                           # t45 · t60 · t75 · t90 · t105
+        f.step(gen=300)
+        coll.poll_vllm(st)
+        v = _vals(coll.snapshot(), "glm")
+        if i < 4:                                # 줄어든 쌍(t30 → t45)이 60초 창 안에 있다
+            assert v["gen_tps"]["value"] is None and "창 안에서 카운터가 줄었다" in v["gen_tps"]["error"], (i, v["gen_tps"])
+            assert "process_start_time_seconds 가 없어" in v["gen_tps"]["error"], "어느 길로 쟀는지(표지가 없다) 말한다"
+        assert v["ttft_p95"]["value"] is None and v["requests_per_min"]["value"] is None, "5분 창에는 아직 그 쌍이 있다"
+        clock.tick(15)
+    assert v["gen_tps"]["value"] == pytest.approx(20.0), "그 쌍이 60초 창을 나가면 다시 잰다"
+    pts = coll.store.series("glm", "gen_tps", "1h", now=clock())["points"]
+    assert [p[0] for p in pts] == [t0 + 15, t0 + 30, t0 + 105], f"줄어든 쌍이 창 안에 있는 동안은 저장하지 않는다 — {pts}"
+
+
+def test_묶음_주소는_같은_서버_프로세스의_표본끼리만_잰다(tmp_path, fakes):
+    """묶음 nginx 는 요청마다 아무 한 대로 보낸다(OD-2) — 서로 다른 서버의 누적 차를 속도로 재면 한 대 초당 100 토큰이 수만으로 찍혔다(반대 검토
+    11-02 — 96,766 · 128,989 tok/s). 표지가 같은 표본끼리만 재면 그 한 대의 값이다 — 사이에 다른 서버가 답해도 건너 이웃으로 친다(OD-26)."""
+    a, b = fakes(), fakes()
+    for _ in range(30):
+        b.step(prompt=100_000, gen=20_000, done=50)          # b 는 오래 돌아 누적이 크다
+    pool = fakes(FakePool, [a, b])
+    clock = Clock()
+    coll = _collector(tmp_path, f"LLM_BASE_URL={pool.base}\n", clock=clock)
+    st = _state(coll, "glm")
+    got = []
+    for _ in range(8):                                       # /metrics 는 a · b · a · b … 가 답한다
+        for f in (a, b):
+            f.step(prompt=1500, gen=300, done=5)             # 서버마다 15초에 1500 · 300 토큰 · 5건 — 초당 100 · 20, 분당 20건
+        coll.poll_vllm(st)
+        v = _vals(coll.snapshot(), "glm")
+        got.append({k: (v[k]["value"], v[k]["error"], v[k]["source"]) for k in ("prompt_tps", "gen_tps", "requests_per_min")})
+        clock.tick(15)
+    assert got[1]["prompt_tps"][0] is None and "process_start_time_seconds" in got[1]["prompt_tps"][1], "b 의 첫 표본 — 아직 잴 쌍이 없다"
+    for i, g in enumerate(got[2:], 2):
+        assert g["prompt_tps"][0] == pytest.approx(100.0) and g["gen_tps"][0] == pytest.approx(20.0), (i, g)
+        assert g["requests_per_min"][0] == pytest.approx(20.0) and g["prompt_tps"][2] == C.BASIS_IDENT, (i, g)
+    pts = coll.store.series("glm", "prompt_tps", "1h", now=clock())["points"]
+    assert len(pts) == 6 and all(p[1] == pytest.approx(100.0) for p in pts), f"저장한 속도도 한 대의 값이다 — {pts}"
+
+
+def test_표지가_없는_묶음_주소는_줄어든_카운터를_본_뒤로_속도를_비운다(tmp_path, fakes):
+    """표지가 없으면 같은 서버의 표본만 고를 수 없다 — 다른 서버로 넘어가 카운터가 줄면 그 창을 비운다. 늘기만 한 첫 넘어감(작은 누적 → 큰 누적)은
+    표지 없이 가려낼 수 없다(OD-26 — 그 한 표본은 남는다). 줄어든 쌍을 본 뒤로는 카드도 저장도 비운다."""
+    a, b = fakes(ident=False), fakes(ident=False)
+    for _ in range(30):
+        b.step(prompt=100_000, gen=20_000, done=50)
+    pool = fakes(FakePool, [a, b])
+    clock = Clock()
+    coll = _collector(tmp_path, f"LLM_BASE_URL={pool.base}\n", clock=clock)
+    st = _state(coll, "glm")
+    t0 = int(clock())
+    for i in range(8):
+        for f in (a, b):
+            f.step(prompt=1500, gen=300, done=5)
+        coll.poll_vllm(st)
+        v = _vals(coll.snapshot(), "glm")
+        if i >= 2:                                           # t30 — b → a 에서 카운터가 줄었다
+            for k in ("prompt_tps", "gen_tps", "requests_per_min", "ttft_p95", "prefix_hit"):
+                assert v[k]["value"] is None and "창 안에서 카운터가 줄었다" in v[k]["error"], (i, k, v[k])
+        clock.tick(15)
+    pts = coll.store.series("glm", "prompt_tps", "1h", now=clock())["points"]
+    assert [p[0] for p in pts] == [t0 + 15], f"줄어든 카운터를 본 뒤로는 저장하지 않는다(t15 는 가려내지 못한 첫 넘어감) — {pts}"
+
+
+def test_프로세스_표지는_prometheus_client_가_내는_꼴_그대로_읽는다():
+    p = P.parse(REAL_PROCESS)
+    assert P.ident(p) == 1793578769.76 and p.bad == 0, "prometheus_client 의 ProcessCollector 가 낸 덩이"
+    fake = [ln for ln in FakeVllm.text(_FakeText()).splitlines() if "process_start_time_seconds" in ln]
+    assert fake == [ln for ln in REAL_PROCESS.splitlines() if "process_start_time_seconds" in ln], "가짜 vLLM 의 표지 줄이 실제 꼴과 같다"
+    assert _go_float(1793578001.0) == "1.793578001e+09" and _go_float(0.08) == "0.08", "floatToGoString 과 같은 수 꼴"
+    assert P.vllm(P.parse(FakeVllm.text(_FakeText())))["ident"] == 1793578769.76
+    assert P.ident(P.parse("vllm:num_requests_running 1\n")) is None, "다중 프로세스 레지스트리 — 그 줄이 없다"
+    assert P.ident(P.parse('process_start_time_seconds{pid="1"} 1.7e+09\n')) is None, "라벨이 붙은 것은 표지가 아니다"
+    assert P.ident(P.parse("process_start_time_seconds 1.7e+09\nprocess_start_time_seconds 1.8e+09\n")) is None, "둘이면 모른다"
 
 
 def test_히스토그램_지연은_누적이_아니라_창_안의_증가로_잰다(tmp_path, fakes):
