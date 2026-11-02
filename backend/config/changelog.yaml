@@ -22,6 +22,22 @@
 
 entries:
   - date: 2026-11-02
+    title: "과제별 인사이트 — 심의 결론을 과제 · 차수별로 모아 봅니다"
+    tag: 심의
+    items:
+      - "주제(과제 · 차수)를 단 일반 심의는 단마다 결정 카드를 남깁니다. 처음에는 나만 보는 초안이고, 새 '과제 인사이트' 화면(/insights)에서 확인하면 같은 소속이 봅니다. 글을 고치거나 반박 · 거둘 수 있습니다."
+      - "과제 보기에는 같은 과제 · 차수의 심의 카드와 리스크 앱의 판정이 함께 보입니다. 리스크 판정은 리스크 앱에서 그 사람 권한으로 읽어 옵니다(베끼지 않습니다). 차수를 모르는 결과는 그 과제의 '차수 모름' 칸에 둡니다."
+      - "개인 Claude 가 MCP 로 연 심의와 Claude 워크플로 심의도 같은 과제 · 차수면 함께 모입니다. insight_find · insight_get 으로 찾아볼 수 있습니다."
+      - "과제를 대상으로 하지 않은 질문과 리스크 심사가 낳은 심의는 카드를 만들지 않습니다."
+  - date: 2026-11-02
+    title: "11-02 내부 — 인사이트 원장 · 리스크 앱 스키마 v6"
+    tag: 기술
+    items:
+      - "포털 procedures.sqlite 안에 인사이트 원장 표 셋 · 들이기 길 셋(웹 중계 · MCP 잡 당기기 — INSIGHT_SYNC_S 기본 60초 · Claude 워크플로 저장 — 그 사람 PAT 로 과제 key 를 다시 확인) · 같은 실행은 한 번만 · 읽을 때마다 시야로 거르는 API · 권한 키 feat:insights."
+      - "에이전트 서버 GET /insights/cards(공유 비밀 — 포털의 GATEWAY_SHARED_TOKEN 이 에이전트 서버의 게이트웨이 비밀과 같아야 MCP 잡 카드를 당깁니다) · POST /deliberate/subject/confirm. 게이트웨이 save_conversation 이 subject · chair_template 을 넘기고, insight_find · insight_get 은 사람 PAT 로만 읽습니다."
+      - "리스크 앱 스키마 v6 — rr_projects.sp_task 한 칸과 색인(기동 때 백업 뒤 저절로 이관) · PUT /projects/{id}/sp-subject · MCP risk_set_project_subject(허브 풀이로 확인한 값만) · risk_find_projects_by_subject. 차수는 새 칸 없이 stage 를 읽을 때 정규화합니다."
+      - "리스크 심사 좌석은 insight_* 와 새 리스크 앱 도구를 지정 도구 · 자유 조회 어디로도 쓰지 못합니다(D-18)."
+  - date: 2026-11-02
     title: "심의를 시작할 때 과제와 차수를 고를 수 있습니다"
     tag: 심의
     items:
