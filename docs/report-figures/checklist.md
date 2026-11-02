@@ -52,3 +52,7 @@
 - [ ] PC 키트 반영 — 포털 · 게이트웨이 push · 병합 · 게이트웨이 재기동(kit_get 이 생긴다 · 변환기 파일은 포털 리포 받기만으로 새 판), 업데이트 이력 항목
 - [ ] 실제 Windows PC 에서 한 번 — UNC · 드라이브 경로 · cp949 콘솔 · 사내 인증서(PAT 받기) · Word 로 열어 표 칸 그림 보기(RF-20)
 - [ ] 현장 변환기(md2docx_z.py) 정리 · 개인 Claude 지침에 'docx 는 kit_get 의 변환기로' — 사용자 PC 몫
+- [x] MX 백서 문서에 그림 — 게이트웨이 `figure_to_doc`(그 사람 위임 토큰 · upload_image_bytes → insert_image_block) · MX 백서 401 꼴도 토큰 거절 — 11-02
+- [ ] dev 끝에서 끝까지 — 편집자 시험 신원 · 시험 문서(MX 백서 세션에 부탁)
+- [ ] 후속 — 일회성 세션의 결과 뒤 tools/list 401 로 쓰기 도구가 두 번 도는 틈(RF-26)
+
