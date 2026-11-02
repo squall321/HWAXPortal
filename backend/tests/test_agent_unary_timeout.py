@@ -68,6 +68,24 @@ def test_프록시마다_요청별_read_한도를_준다(portal):
         assert (t["connect"], t["write"], t["pool"]) == (30.0, 30.0, 30.0), f"{path}: 죽은 상대 감지는 짧게 둔다"
 
 
+def test_그림_프록시는_스크립트를_막는_머리를_싣는다(portal):
+    """도구 그림은 포털 오리진에서 나간다 — 에이전트 서버가 SVG 를 SVG 형식으로 주면 주소를 바로 열었을 때 안의 스크립트가
+    포털 오리진에서 돌았다(docs/report-figures RF-14). sandbox · nosniff 를 늘 싣는다 — 형식이 무엇이든."""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=svg, headers={"content-type": "image/svg+xml"})
+
+    portal.app.state.agent_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    for name in ("a.svg", "b.png"):
+        r = portal.get(f"/agent/artifacts/{name}")
+        assert r.status_code == 200, name
+        assert r.headers.get("x-content-type-options") == "nosniff", name
+        csp = r.headers.get("content-security-policy", "")
+        assert csp.startswith("sandbox") and "default-src 'none'" in csp, (name, csp)
+        assert "script-src" not in csp, "스크립트를 다시 여는 지시가 끼면 안 된다"
+
+
 def test_만료는_폴백에_사유와_손잡이를_싣는다(portal):
     def slow(req: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow", request=req)

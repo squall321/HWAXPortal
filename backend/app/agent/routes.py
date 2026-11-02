@@ -1131,9 +1131,13 @@ async def get_artifact(
         r = await client.get(f"{settings.agent_server_url}/artifacts/{name}", timeout=_unary_timeout(settings))
         if r.status_code != 200:
             return Response(status_code=404)
+        # 그림은 포털 오리진에서 나간다 — SVG 를 주소로 바로 열면 안의 스크립트가 포털 오리진에서 돈다(docs/report-figures RF-14).
+        # sandbox 는 스크립트를 막고 nosniff 는 형식 짐작을 막는다. <img> 로 싣는 화면은 그대로다.
         return Response(content=r.content,
                         media_type=r.headers.get("content-type", "application/octet-stream"),
-                        headers={"Cache-Control": "private, max-age=86400"})
+                        headers={"Cache-Control": "private, max-age=86400",
+                                 "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+                                 "X-Content-Type-Options": "nosniff"})
     except httpx.HTTPError as exc:
         _unary_fail(exc, settings, "artifacts")   # 그림이라 실을 본문이 없다 — 시간 초과면 로그만 남긴다
         return Response(status_code=502)
