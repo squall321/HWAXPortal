@@ -531,7 +531,7 @@ def test_에이전트_서버의_그림_올리기를_포털이_그대로_받고_�
     monkeypatch.setattr(rf, "PORTAL_TRANSPORT", httpx.ASGITransport(app=app))
     monkeypatch.setattr(rf, "PORTAL_HTTP_BASE", "http://portal.test")
     out = asyncio.run(rf.attach({"results": [f"응력 ![응력](/agent/artifacts/{name})"]}, user_pat=chat, artifact_dir=str(tmp_path)))
-    assert out.summary() == {"found": 1, "attached": 1, "failed": 0, "reasons": []}, out.failed
+    assert out.summary() == {"found": 1, "attached": 1, "failed": 0, "reasons": [], "failed_refs": []}, out.failed
     assert out.blocks["results"] == ["응력 [그림 1 — 응력]"]
     assert ra.paths() == ["POST /api/files"] and ra.files == [{"filename": name, "mime": "image/png", "auth": "Bearer rat_kim"}]
     assert out.extra_blocks == [F.block("f1", _sha(PNG), "그림 1 — 응력", "응력")], "그림 칸의 꼴은 포털 to-report 의 것과 같다"
