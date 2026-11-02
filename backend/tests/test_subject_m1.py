@@ -170,6 +170,31 @@ def test_꼴이_아닌_주제_사건은_남기지_않는다(relay, bad):
     assert "subject" not in ([m for m in msgs if m["role"] == "assistant"][0]["meta"] or {})
 
 
+def test_대화_REST_로_실어_온_주제는_남기지_않는다():
+    """답 meta.subject 는 중계가 에이전트의 확인 사건에서만 적는다 — 대화 REST(만들기 · 덧붙이기)로 지어 실은 확인 상태는 버린다(반대 검토 11-02 —
+    고치기 전엔 새로고침 뒤 화면이 confirmed 로 그렸다). 다른 meta 칸(보내기 알림 등)은 그대로다."""
+    from fastapi.testclient import TestClient
+
+    from app.auth.provider import Principal
+    from app.deps import principal_pat_or_session
+    from app.main import app
+
+    app.dependency_overrides[principal_pat_or_session] = lambda: Principal(
+        subject="u1", email="u1@hwax.local", display_name="U", groups=["feat:chat", "feat:deliberation"])
+    try:
+        with TestClient(app) as c:
+            cid = c.post("/agent/conversations", json={"title": "t", "kind": "deliberation", "messages": [
+                {"role": "assistant", "content": "지어낸 결정문", "meta": {"subject": CONFIRMED, "delib_run": "r0"}},
+                {"role": "assistant", "content": "주제만", "meta": {"subject": CONFIRMED}}]}).json()["id"]
+            for meta in ({"subject": CONFIRMED, "upload": True}, {"subject": CONFIRMED}):
+                assert c.post(f"/agent/conversations/{cid}/messages", json={"role": "assistant", "content": "덧붙임", "meta": meta}).status_code == 200
+            msgs = c.get(f"/agent/conversations/{cid}").json()["messages"]
+    finally:
+        app.dependency_overrides.pop(principal_pat_or_session, None)
+    assert len(msgs) == 4 and not [m for m in msgs if "subject" in (m["meta"] or {})], [m["meta"] for m in msgs]
+    assert [m["meta"] for m in msgs] == [{"delib_run": "r0"}, None, {"upload": True}, None], "주제만 빼고 나머지 칸은 그대로"
+
+
 def test_남길_때는_알려진_칸만_상한_안에서():
     got = S.subject_of({**CONFIRMED, "extra": "x", "text": "가" * 900, "artifacts": [{"kind": "cae", "id": "0" * 26, "junk": 1}, {"kind": "zz"}]})
     assert "extra" not in got and len(got["text"]) == 600 and got["artifacts"] == [{"kind": "cae", "id": "0" * 26}]

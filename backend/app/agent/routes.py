@@ -427,6 +427,19 @@ class ConvMessageIn(BaseModel):
     meta: dict | None = None
 
 
+# 중계만 적는 meta 칸 — 에이전트 서버가 확인한 심의 주제(docs/project-insight-graph M1)는 /agent/chat 중계가 그 사건에서만 답 meta.subject 로
+# 남긴다. 대화 REST(만들기 · 덧붙이기)로 실어 온 값은 버린다 — 남기면 브라우저 · PAT 호출이 지어낸 확인 상태(sp_state=confirmed)가 새로고침 뒤
+# 화면과 그 meta 를 읽는 쪽(M2 인사이트 그래프)에 서버가 확인한 주제로 읽힌다(반대 검토 11-02 재현). 화면이 REST 로 남기는 것(보내기 알림)은 이 칸을
+# 쓰지 않는다.
+_RELAY_ONLY_META = ("subject",)
+
+
+def _rest_meta(meta: dict | None) -> dict | None:
+    if not meta:
+        return meta
+    return {k: v for k, v in meta.items() if k not in _RELAY_ONLY_META} or None
+
+
 class ConvCreate(BaseModel):
     title: str = Field(default="새 대화", max_length=200)
     # risk-review = 리스크 심사 패널 대화(앱 러너가 생성). 저장은 kind TEXT 그대로라 DDL 변경 없다.
@@ -617,7 +630,7 @@ def create_conversation(
             cid = _conv(request).create_with_messages(
                 owner_sub=principal.subject, title=body.title, kind=body.kind,
                 source=body.source,
-                messages=[m.model_dump() for m in body.messages],
+                messages=[{**m.model_dump(), "meta": _rest_meta(m.meta)} for m in body.messages],
             )
         else:
             cid = _conv(request).create(
@@ -650,7 +663,7 @@ def append_conversation_message(
     try:
         ok = _conv(request).append(
             conversation_id=cid, owner_sub=principal.subject, role=body.role,
-            content=body.content, persona=body.persona, round=body.round, meta=body.meta,
+            content=body.content, persona=body.persona, round=body.round, meta=_rest_meta(body.meta),
         )
     except sqlite3.OperationalError as exc:
         raise _store_busy(exc) from exc
