@@ -47,6 +47,10 @@ def _row(r) -> dict | None:
     return d
 
 
+# 한 번에 읽는 카드 수 상한 — 넘으면 부르는 쪽이 '최근 N장만 봤다' 고 말한다(자르는 것을 숨기지 않는다).
+ROWS_MAX = 2000
+
+
 class InsightStore:
     def __init__(self, base) -> None:
         """base — 열린 ProceduresStore. 연결은 그것의 스레드별 연결을 그대로 쓴다."""
@@ -76,8 +80,11 @@ class InsightStore:
     def get(self, cid: str) -> dict | None:
         return _row(self._conn().execute("SELECT * FROM insight_cards WHERE id=?", (cid,)).fetchone())
 
-    def rows(self, *, sp_task: str | None = None, owner_email: str | None = None, limit: int = 2000) -> list[dict]:
-        """거두지 않은 카드 — 최신 것부터. sp_task 는 글자 그대로, owner_email 은 그 사람의 것만(소문자)."""
+    def rows(self, *, sp_task: str | None = None, owner_email: str | None = None, viewer: str | None = None,
+             limit: int | None = None) -> list[dict]:
+        """거두지 않은 카드 — 최신 것부터 ROWS_MAX 장까지. sp_task 는 글자 그대로, owner_email 은 그 사람의 것만(소문자). viewer(읽는 사람의 메일)를
+        주면 그 사람의 것과 공유 상태(확인 · 반박)만 센다 — 남의 초안 · 기다림이 창을 채워 보이는 카드가 밀려나지 않게(반대 검토 11-02 의 6). 범위
+        토큰은 부르는 쪽이 거른다(cards.visible). 관리자는 viewer 를 주지 않는다(범위 밖도 읽는다)."""
         where, args = ["status != 'withdrawn'"], []
         if sp_task is not None:
             where.append("sp_task = ?")
@@ -85,8 +92,11 @@ class InsightStore:
         if owner_email is not None:
             where.append("owner_email = ?")
             args.append(owner_email.lower())
+        if viewer is not None:
+            where.append("(owner_email = ? OR status IN ('confirmed', 'disputed'))")
+            args.append(viewer.lower())
         q = f"SELECT * FROM insight_cards WHERE {' AND '.join(where)} ORDER BY created_at DESC, id LIMIT ?"
-        return [_row(r) for r in self._conn().execute(q, (*args, int(limit))).fetchall()]
+        return [_row(r) for r in self._conn().execute(q, (*args, int(limit or ROWS_MAX))).fetchall()]
 
     def links(self, ids: list[str]) -> list[dict]:
         """그 카드들에 닿는 잇기(반박) — 한쪽 끝이 ids 안에 있는 것."""

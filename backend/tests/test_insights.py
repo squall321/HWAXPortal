@@ -414,7 +414,7 @@ def test_차수가_다르면_다른_칸이고_차수_모름은_따로다(env):
     assert c.post("/insights-api/cards/ins:web:b:r1:default/round", json={"round": "DV2"}, headers=h).json()["subject"]["round"] == "dv2"
     assert c.post("/insights-api/cards/ins:web:b:r1:default/round", json={"round": "C2"}, headers=h).status_code == 422
     r = c.post("/insights-api/cards/ins:web:b:r1:default/round", json={"round": "unknown"}, headers=h).json()
-    assert r["subject"]["round"] is None and r["subject"]["round_by"] is None
+    assert r["subject"]["round"] is None and r["subject"]["round_by"] == "person", "사람이 고른 '차수 모름' 도 사람이 단 차수다"
     projects = c.get("/insights-api/projects").json()["projects"]
     assert projects == [{"sp_task": KEY, "rounds": {"dv1": 1, "pv1": 1, "unknown": 1}, "total": 3, "latest_at": projects[0]["latest_at"],
                          "risk": 0}]
@@ -630,3 +630,109 @@ def test_중계는_에이전트가_낸_카드_거리를_답을_남길_때_들인
     assert len(rows) == want
     if want:
         assert rows[0]["id"] == f"ins:web:{cid}:r9:default" and rows[0]["status"] == "draft"
+
+
+# ── 반대 검토 11-02 — 재현해 고친 것(context-notes PG-35) ───────────────────────────────────────────────────────────
+def test_남의_초안이_많아도_보이는_카드가_목록에서_밀려나지_않는다(env, monkeypatch):
+    """읽기 창(최근 N장)이 남의 초안까지 세면 보이는 확인 카드가 목록 · 과제에서 사라졌다(반대 검토 6). 창은 읽는 사람의 것과 공유 상태만 센다."""
+    from app.insights import store as S
+    c, st, _s = env
+    monkeypatch.setattr(S, "ROWS_MAX", 20)
+    _relay(st, cid="old")
+    old = "ins:web:old:r1:default"
+    h = _login(c, "me@example.com")
+    assert c.post(f"/insights-api/cards/{old}/confirm", headers=h).status_code == 200
+    for i in range(30):
+        _relay(st, owner="out@example.com", cid=f"z{i:03d}")
+    with st._conn() as con:
+        con.execute("UPDATE insight_cards SET created_at = created_at - 100 WHERE id=?", (old,))
+    _login(c, "peer@example.com")
+    assert _ids(c.get("/insights-api/find")) == [old]
+    assert [p["sp_task"] for p in c.get("/insights-api/projects").json()["projects"]] == [KEY]
+    _login(c, "boss@example.com")
+    body = c.get("/insights-api/projects").json()
+    assert body.get("truncated") is True and "최근" in body["note_rows"], "관리자 창은 남의 초안도 세고, 넘치면 말한다"
+
+
+def test_당기기는_커서_창이_빽빽해도_따라잡는다(store, monkeypatch):
+    """커서보다 600초 앞부터 다시 읽는데 그 창에 쪽 상한(5×200)보다 많은 항목이 있으면 커서가 영영 못 넘어갔다(반대 검토 7). 상한에서 멈춘 다음
+    당기기는 겹침 없이 커서부터 잇는다."""
+    items = [_item(f"j{i:05d}", finished_at=1000.0 + i * 0.05) for i in range(1300)]
+
+    def handler(req):
+        since, lim = float(req.url.params["since"]), int(req.url.params["limit"])
+        hit = [it for it in items if it["finished_at"] >= since]
+        page = hit[:lim]
+        return httpx.Response(200, json={"contract": I.AGENT_CONTRACT, "items": page,
+                                         "next_since": max((it["finished_at"] for it in page), default=since),
+                                         "complete": len(hit) <= lim})
+    app_, s, cli = _sync_app(store, handler)
+    monkeypatch.setattr(I.httpx, "AsyncClient", cli)
+
+    def pull(times: int) -> int:
+        for _ in range(times):
+            monkeypatch.setattr(I, "_SYNC", {"at": 0.0, "lock": None, "loop": None, "last": None})
+            asyncio.run(I.sync_jobs(app_, s, force=True))
+        with store._conn() as con:
+            return con.execute("SELECT COUNT(*) FROM insight_cards").fetchone()[0]
+    assert pull(2) == len(items), "상한에서 멈춘 다음 당기기가 커서부터 잇는다"
+    assert store.meta_get("jobs_partial") == "0"
+    items.extend(_item(f"k{i}", finished_at=2000.0 + i) for i in range(5))
+    assert pull(2) == len(items), "겹쳐 읽는 창이 빽빽해도(상한에서 멈춰도) 그다음 당기기가 새 항목을 들인다"
+
+
+def test_관리자가_잇기로_본_남의_초안_id_도_감사에_남는다(env):
+    c, st, s = env
+    I.ingest_jobs(st, [_item("prev", user="peer%40example.com"),
+                       _item("next", user="boss%40example.com", continues="prev", finished_at=1001.0)])
+    _login(c, "boss@example.com")
+    body = c.get("/insights-api/cards/ins:delib:next:default").json()
+    assert body["continues"] == "ins:delib:prev:default"
+    with closing(sqlite3.connect(s.agent_audit_log_path)) as db:
+        metas = [json.loads(m) for (m,) in db.execute("SELECT meta FROM agent_audit WHERE event='insight_admin_read'").fetchall()]
+    assert any("ins:delib:prev:default" in m["ids"] for m in metas), metas
+    c.get("/insights-api/mine")
+    with closing(sqlite3.connect(s.agent_audit_log_path)) as db:
+        n = db.execute("SELECT COUNT(*) FROM agent_audit WHERE event='insight_admin_read'").fetchone()[0]
+    assert n == 2, "내 카드 목록이 잇는 남의 초안도 감사에 남는다"
+
+
+def test_보이지_않는_카드가_반박하면_반박_줄은_누가인지만_가린다(env):
+    """반박한 카드가 읽는 사람에게 안 보이면 상태만 '반박' 이고 줄은 비어, 숨은 카드가 있다는 것만 드러났다(반대 검토 9). 줄은 남기고 반박한
+    카드만 가린다 — 카드 없이 단 반박과 같은 꼴이다."""
+    c, st, _s = env
+    _relay(st, cid="a")
+    _relay(st, cid="b")
+    a, b = "ins:web:a:r1:default", "ins:web:b:r1:default"
+    h = _login(c, "me@example.com")
+    assert c.post(f"/insights-api/cards/{a}/confirm", headers=h).status_code == 200
+    assert c.post(f"/insights-api/cards/{a}/dispute", json={"by_card": b, "note": "시험 뒤 다시"}, headers=h).status_code == 200
+    _login(c, "peer@example.com")
+    full = c.get(f"/insights-api/cards/{a}").json()
+    assert full["status"] == "disputed" and [(d["by"], d["note"]) for d in full["disputed_by"]] == [(None, "시험 뒤 다시")]
+    listed = c.get("/insights-api/project", params={"sp_task": KEY}).json()["rounds"][0]["cards"][0]
+    assert [(d["by"], d["note"]) for d in listed["disputed_by"]] == [(None, "시험 뒤 다시")]
+
+
+def test_주제_확인은_사람이_단_차수를_지킨다(env, monkeypatch):
+    """기다림 줄 카드에 사람이 단 차수(모름 포함)를 주제 확인이 옛 주제의 차수로 되돌렸다(반대 검토 10)."""
+    c, st, _s = env
+    asked = []
+
+    async def fake_confirm(settings, *, subject, principal, pat, chair_template):
+        asked.append(dict(subject))
+        return {**CONFIRMED, "sp_task": subject["sp_task"], "round": subject.get("round") or "dv2",
+                "round_by": "person" if subject.get("round") else "spec"}, ""
+    monkeypatch.setattr(I, "confirm_async", fake_confirm)
+    _relay(st, subject=CLAIMED)
+    cid = "ins:web:c1:r1:default"
+    h = _login(c, "me@example.com")
+    assert c.post(f"/insights-api/cards/{cid}/round", json={"round": "pv1"}, headers=h).status_code == 200
+    r = c.post(f"/insights-api/cards/{cid}/subject", json={"sp_task": KEY}, headers=h).json()
+    assert asked[-1]["round"] == "pv1" and (r["subject"]["round"], r["subject"]["round_by"]) == ("pv1", "person")
+    _relay(st, subject=CLAIMED, cid="c2")
+    cid2 = "ins:web:c2:r1:default"
+    assert c.post(f"/insights-api/cards/{cid2}/round", json={"round": "unknown"}, headers=h).status_code == 200
+    r = c.post(f"/insights-api/cards/{cid2}/subject", json={"sp_task": KEY}, headers=h).json()
+    assert "round" not in asked[-1] and (r["subject"]["round"], r["subject"]["round_by"]) == (None, "person"), "고른 '모름' 도 지킨다"
+

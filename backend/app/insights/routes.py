@@ -23,6 +23,7 @@ from app.config import Settings, get_settings
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 from app.insights import cards as C
 from app.insights import intake
+from app.insights import store as S
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/insights-api", tags=["insights"])
@@ -103,9 +104,10 @@ def _view(r: dict, v: C.Viewer, *, full: bool = False, links: list | None = None
         out["subject"]["sp_resolved_by"] = (r.get("subject") or {}).get("sp_resolved_by")
     if links is not None:
         vis = seen or set()
+        # 반박 줄은 늘 싣고 반박한 카드가 보이지 않으면 누가인지만 가린다 — 카드 없이 단 반박과 같은 꼴이라 숨은 카드가 있다는 것이 드러나지
+        # 않는다(반대 검토 11-02 의 9 — 줄을 빼면 상태만 '반박' 이고 줄이 비어 숨은 카드가 있다고 말하는 셈이었다).
         out["disputed_by"] = [{"by": lk["from_id"] if lk["from_id"] in vis else None, "note": lk.get("note") or "", "at": lk["at"]}
-                              for lk in links if lk["to_id"] == r["id"] and lk["kind"] == "disputes"
-                              and (not lk["from_id"] or lk["from_id"] in vis)]
+                              for lk in links if lk["to_id"] == r["id"] and lk["kind"] == "disputes"]
         out["disputes"] = [lk["to_id"] for lk in links if lk["from_id"] == r["id"] and lk["kind"] == "disputes" and lk["to_id"] in vis]
     return out
 
@@ -155,15 +157,26 @@ async def _risk_rows(request: Request, settings: Settings, principal: Principal,
     return projects, " · ".join(notes)
 
 
-def _seen_with_continues(st, rows: list[dict], v: C.Viewer, extra=()) -> set:
-    """목록 행들의 id 와, 그 행들이 잇는 앞 카드 · 반박 잇기의 다른 끝(extra) 가운데 읽는 사람이 볼 수 있는 것의 id."""
-    seen = {r["id"] for r in rows}
+def _seen_with_continues(st, rows: list[dict], v: C.Viewer, extra=()) -> tuple[set, list]:
+    """(목록 행들의 id 와, 그 행들이 잇는 앞 카드 · 반박 잇기의 다른 끝(extra) 가운데 읽는 사람이 볼 수 있는 것의 id, 그 가운데 관리자라서만 보인
+    id) — 뒤엣것도 범위 밖 읽기라 감사에 남긴다(반대 검토 11-02 의 8 — 잇기로 남의 초안 id 를 보는 것이 감사 밖이었다)."""
+    seen, admin_seen = {r["id"] for r in rows}, []
     for cid in ({r.get("continues") for r in rows} | set(extra)) - seen - {None}:
         if cid and not cid.startswith("delib:"):
             o = st.get(cid)
-            if o is not None and C.visible(o, v)[0]:
+            ok, only = C.visible(o, v) if o is not None else (False, False)
+            if ok:
                 seen.add(cid)
-    return seen
+                if only:
+                    admin_seen.append(cid)
+    return seen, admin_seen
+
+
+def _rows_for(st, v: C.Viewer, **kw) -> tuple[list[dict], dict]:
+    """읽는 사람의 창 — 관리자가 아니면 그 사람의 것과 공유 상태만 센다(store.rows viewer). 창이 차면 '최근 N장만' 이라고 말한다."""
+    raw = st.rows(viewer=None if v.admin else v.email, **kw)
+    more = {"truncated": True, "note_rows": f"카드가 많아 최근 {S.ROWS_MAX}장만 봤다 — 과제 · 차수로 좁혀 다시 본다"} if len(raw) >= S.ROWS_MAX else {}
+    return raw, more
 
 
 def _bucket(rnd) -> str:
@@ -186,7 +199,8 @@ async def projects(request: Request, q: str = Query("", max_length=200), princip
     """보이는 과제 목록 — 일반 심의 카드(보이는 것만 센다)와 리스크 앱 과제(그 사람 시야)를 SP key 로 모은다. 기다림 줄(waiting)은 과제가 아니다."""
     await _sync(request, settings)
     v = _viewer(request, principal)
-    rows, admin_only = _filter(await asyncio.to_thread(_store(request).rows), v)
+    raw, more = await asyncio.to_thread(_rows_for, _store(request), v)
+    rows, admin_only = _filter(raw, v)
     by: dict = {}
     for r in rows:
         if r["status"] == "waiting" or not r.get("sp_task"):
@@ -205,7 +219,7 @@ async def projects(request: Request, q: str = Query("", max_length=200), princip
     out = sorted((p for p in by.values() if not want or want in p["sp_task"].lower()),
                  key=lambda p: (-p["latest_at"], p["sp_task"]))
     _audit_admin(request, v, admin_only, "projects")
-    return {"projects": out, **({"risk_error": risk_why} if risk_why else {}), "note": NOTE}
+    return {"projects": out, **({"risk_error": risk_why} if risk_why else {}), **more, "note": NOTE}
 
 
 @router.get("/project")
@@ -222,10 +236,12 @@ async def project(request: Request, sp_task: str = Query(..., min_length=1, max_
     await _sync(request, settings)
     v = _viewer(request, principal)
     st = _store(request)
-    rows, admin_only = _filter(await asyncio.to_thread(st.rows, sp_task=sp_task), v)
+    raw, more = await asyncio.to_thread(_rows_for, st, v, sp_task=sp_task)
+    rows, admin_only = _filter(raw, v)
     rows = [r for r in rows if r["status"] != "waiting"]
     links = await asyncio.to_thread(st.links, sorted({r["id"] for r in rows}))
-    seen = await asyncio.to_thread(_seen_with_continues, st, rows, v, [x for lk in links for x in (lk["from_id"], lk["to_id"]) if x])
+    seen, admin_seen = await asyncio.to_thread(_seen_with_continues, st, rows, v,
+                                               [x for lk in links for x in (lk["from_id"], lk["to_id"]) if x])
     risk, risk_why = await _risk_rows(request, settings, principal, {"sp_task": sp_task, "limit": 50})
     cells: dict = {b: {"round": (None if b == C.ROUND_UNKNOWN else b), "cards": [], "risk": []} for b in (*C.STAGES, C.ROUND_UNKNOWN)}
     for r in rows:
@@ -234,8 +250,9 @@ async def project(request: Request, sp_task: str = Query(..., min_length=1, max_
         if rp.get("sp_task") == sp_task:
             cells[_bucket(_risk_round(rp))]["risk"].append(rp)
     order = [b for b in (*C.STAGES, C.ROUND_UNKNOWN) if (not want or b == want) and (cells[b]["cards"] or cells[b]["risk"])]
-    _audit_admin(request, v, admin_only, "project")
-    return {"sp_task": sp_task, "rounds": [cells[b] for b in order], **({"risk_error": risk_why} if risk_why else {}), "note": NOTE}
+    _audit_admin(request, v, admin_only + admin_seen, "project")
+    return {"sp_task": sp_task, "rounds": [cells[b] for b in order], **({"risk_error": risk_why} if risk_why else {}), **more,
+            "note": NOTE}
 
 
 @router.get("/mine")
@@ -245,11 +262,12 @@ async def mine(request: Request, principal: Principal = Depends(_reader), settin
     v = _viewer(request, principal)
     st = _store(request)
     rows = await asyncio.to_thread(st.rows, owner_email=v.email)
-    seen = await asyncio.to_thread(_seen_with_continues, st, rows, v)
+    seen, admin_seen = await asyncio.to_thread(_seen_with_continues, st, rows, v)
     groups: dict = {"waiting": [], "draft": [], "shared": []}
     for r in rows:
         groups["shared" if r["status"] in C.SHARED else r["status"]].append(_view(r, v, seen=seen))
-    return {**groups, "note": NOTE}
+    _audit_admin(request, v, admin_seen, "mine")
+    return {**groups, **({"truncated": True} if len(rows) >= S.ROWS_MAX else {}), "note": NOTE}
 
 
 @router.get("/find")
@@ -269,7 +287,8 @@ async def find(request: Request, sp_task: str = Query("", max_length=200), round
     await _sync(request, settings)
     v = _viewer(request, principal)
     st = _store(request)
-    rows, admin_only = _filter(await asyncio.to_thread(st.rows, sp_task=(sp_task.strip() or None)), v)
+    raw, more = await asyncio.to_thread(_rows_for, st, v, sp_task=(sp_task.strip() or None))
+    rows, admin_only = _filter(raw, v)
     want_q, aid = q.strip().lower(), artifact_id.strip().lower()
     picked: list[dict] = []
     for r in rows:
@@ -286,10 +305,10 @@ async def find(request: Request, sp_task: str = Query("", max_length=200), round
         picked.append(r)
         if len(picked) >= limit:
             break
-    seen = await asyncio.to_thread(_seen_with_continues, st, picked, v)
+    seen, admin_seen = await asyncio.to_thread(_seen_with_continues, st, picked, v)
     out = [_view(r, v, seen=seen) for r in picked]
-    _audit_admin(request, v, [i for i in admin_only if i in {o["id"] for o in out}], "find")
-    return {"items": out, "count": len(out), "note": NOTE}
+    _audit_admin(request, v, [i for i in admin_only if i in {o["id"] for o in out}] + admin_seen, "find")
+    return {"items": out, "count": len(out), **more, "note": NOTE}
 
 
 @router.get("/cards/{cid}")
@@ -303,19 +322,9 @@ async def card(cid: str, request: Request, principal: Principal = Depends(_reade
     if not ok:
         raise AuthError("카드를 찾을 수 없습니다", status_code=404)
     links = await asyncio.to_thread(st.links, [cid])
-    others = {lk["from_id"] for lk in links} | {lk["to_id"] for lk in links}
-    seen = {cid}
-    for oid in others - {cid}:
-        o = await asyncio.to_thread(st.get, oid) if oid else None
-        if o is not None and C.visible(o, v)[0]:
-            seen.add(oid)
-    cont = r.get("continues")
-    if cont and not cont.startswith("delib:"):
-        c = await asyncio.to_thread(st.get, cont)
-        if c is not None and C.visible(c, v)[0]:
-            seen.add(cont)
-    if only:
-        _audit_admin(request, v, [cid], "card")
+    seen, admin_seen = await asyncio.to_thread(_seen_with_continues, st, [r], v,
+                                               [x for lk in links for x in (lk["from_id"], lk["to_id"]) if x])
+    _audit_admin(request, v, ([cid] if only else []) + admin_seen, "card")
     return {**_view(r, v, full=True, links=links, seen=seen), "note": NOTE}
 
 
@@ -374,7 +383,10 @@ async def set_subject(cid: str, body: SubjectIn, request: Request, principal: Pr
     if r["status"] != "waiting":
         raise AuthError("주제를 고칠 수 있는 것은 기다림 줄의 카드다", status_code=409)
     old = r.get("subject") or {}
-    want = {"sp_task": body.sp_task.strip(), "round": (body.round or old.get("round") or None), "text": old.get("text") or None,
+    # 사람이 단 차수(모름 포함 — round_by person)는 지킨다. 종전엔 처음 주제의 차수로 되돌렸다(반대 검토 11-02 의 10).
+    keep = not body.round and r.get("round_by") == "person"
+    rnd = body.round or (r.get("round") if keep else old.get("round")) or None
+    want = {"sp_task": body.sp_task.strip(), "round": rnd, "text": old.get("text") or None,
             "artifacts": [{k: a[k] for k in ("kind", "app", "id", "rev") if a.get(k)} for a in old.get("artifacts") or []
                           if isinstance(a, dict)] or None}
     pat = _risk_pat(request, settings, principal)
@@ -385,6 +397,8 @@ async def set_subject(cid: str, body: SubjectIn, request: Request, principal: Pr
     if rec is None:
         raise AuthError(why, status_code=502 if "닿지" in why or "HTTP 5" in why else 422)
     fields: dict = {"subject": rec, "round": C.norm_round(rec.get("round") or ""), "round_by": rec.get("round_by")}
+    if keep:
+        fields.update(round=r.get("round"), round_by="person")
     if rec["sp_state"] == "confirmed":
         fields.update(status="draft", sp_task=rec["sp_task"])
     out = await _save(request, cid, v, r, **fields)
@@ -398,11 +412,12 @@ class RoundIn(BaseModel):
 
 @router.post("/cards/{cid}/round")
 async def set_round(cid: str, body: RoundIn, request: Request, principal: Principal = Depends(_writer)) -> dict:
-    """차수 달기 — 열한 코드 가운데 하나, 차수 모름은 unknown. 사람이 단 차수다(round_by=person)."""
+    """차수 달기 — 열한 코드 가운데 하나, 차수 모름은 unknown. 사람이 단 차수다(round_by=person — 고른 '모름' 도 사람의 것이라 주제 확인이 되돌리지
+    않는다)."""
     r, v = await _mine_or_404(request, cid, principal)
     raw = body.round.strip()
     if raw.lower() in (C.ROUND_UNKNOWN, "모름"):
-        return await _save(request, cid, v, r, round=None, round_by=None)
+        return await _save(request, cid, v, r, round=None, round_by="person")
     code = C.norm_round(raw)
     if code is None:
         raise AuthError(f"차수 {raw[:40]!r} 는 차수가 아니다 — {' · '.join(C.STAGES)} 가운데 하나 또는 unknown 이다", status_code=422)

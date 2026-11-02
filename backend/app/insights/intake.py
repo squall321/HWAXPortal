@@ -144,8 +144,12 @@ async def sync_jobs(app, settings, *, force: bool = False) -> dict:
             _SYNC["last"] = out
             return out
         cursor = float(await asyncio.to_thread(store.meta_get, "jobs_since") or 0)
-        start, got = max(0.0, cursor - SYNC_OVERLAP_S), 0
+        # 앞 당기기가 쪽 상한에서 멈췄으면(jobs_partial) 겹침 없이 커서부터 잇는다 — 겹침 창 안에 쪽 상한보다 많은 항목이 있으면 매번 같은 앞쪽만
+        # 다시 읽어 커서가 영영 못 넘어갔다(반대 검토 11-02 의 7). 다 따라잡으면 다음은 다시 겹쳐 읽는다(늦게 쓰인 원장을 놓치지 않게).
+        partial = (await asyncio.to_thread(store.meta_get, "jobs_partial")) == "1"
+        start, got = (cursor if partial else max(0.0, cursor - SYNC_OVERLAP_S)), 0
         out: dict = {}
+        done = False
         for _ in range(SYNC_PAGES_MAX):
             try:
                 async with httpx.AsyncClient(timeout=SYNC_TIMEOUT_S) as cli:
@@ -163,8 +167,11 @@ async def sync_jobs(app, settings, *, force: bool = False) -> dict:
             cursor = max(cursor, nxt)
             await asyncio.to_thread(store.meta_set, "jobs_since", repr(cursor))
             if data.get("complete") or nxt <= start:
+                done = True
                 break
             start = nxt
+        if not out.get("error"):
+            await asyncio.to_thread(store.meta_set, "jobs_partial", "0" if done else "1")
         out = {**out, "ingested": got, "since": cursor}
         if out.get("error"):
             logger.warning("과제 인사이트 — MCP 잡 카드를 당기지 못했다: %s", out["error"])
