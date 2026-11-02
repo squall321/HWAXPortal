@@ -899,6 +899,25 @@ def test_시계열_1h_는_표본_24h_는_5분_칸이고_48시간_35일이_지나
     st.close()
 
 
+def test_되돌린_쓰기가_만든_계열_번호는_남기지_않는다(tmp_path):
+    """새 계열의 첫 쓰기가 되돌려지면(디스크 가득 · I/O 오류) series 줄도 사라진다 — 그 번호를 캐시에 남기면 다음 새 계열이 같은 번호를 받아 두 계열이
+    한 번호를 나눠 쓰고 같은 초의 값을 서로 덮는다(반대 검토 11-02 LOW-MED · 재현 store_rollback.py). 캐시는 COMMIT 된 줄만 남긴다."""
+    S = sys.modules["samplestore"]
+    st = S.Store(tmp_path / "x.sqlite")
+    st.conn.execute("CREATE TEMP TRIGGER boom BEFORE INSERT ON raw WHEN NEW.v = -999 BEGIN SELECT RAISE(ABORT, 'disk full (simulated)'); END")
+    st.add("glm-1", 1000, {"running": 1.0, "waiting": -999.0})
+    assert st.error and "disk full" in st.error, "쓰기 실패는 저장소 칸에 보인다"
+    assert st.conn.execute("SELECT COUNT(*) FROM series").fetchone()[0] == 0 and st._sids == {}, "되돌린 계열 번호를 캐시에 남기지 않는다"
+    st.add("chat", 1015, {"kv": 0.5})
+    st.add("glm-1", 1015, {"running": 2.0})
+    assert st.series("chat", "kv", "1h", now=1100)["points"] == [[1015, 0.5]], "다른 계열이 덮지 않는다"
+    assert st.series("glm-1", "running", "1h", now=1100)["points"] == [[1015, 2.0]]
+    rows = st.conn.execute("SELECT id, target, metric FROM series ORDER BY id").fetchall()
+    assert len({i for i, _, _ in rows}) == len(rows) == 2 and st._sids == {(t, m): i for i, t, m in rows}, rows
+    assert st.error is None, "다음 쓰기가 되면 오류 칸이 풀린다"
+    st.close()
+
+
 def test_시계열_창구는_모르는_대상_지표_범위를_거절하고_어림을_표시한다(tmp_path, fakes):
     f = fakes()
     coll = _collector(tmp_path, f"LLM_BASE_URL={f.base}\n")

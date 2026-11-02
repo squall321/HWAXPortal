@@ -32,3 +32,4 @@
 - [x] 반대 검토(M1 · M2, 11-02) — MEDIUM 둘 · LOW 열 · INFO 둘. cae00 절차서는 M2 에서 썼다(server-setup.md). 고침은 아래(OD-26 ~)
   - [x] 결정 번호 — 이 가지의 OD-5 ~ OD-17 을 OD-13 ~ OD-25 로(이용 통계가 main 에서 OD-5 ~ OD-12 를 먼저 썼다)
   - [x] 묶음 주소의 속도 · 분위수 — 같은 서버 프로세스(process_start_time_seconds)의 표본끼리만 · 표지가 없으면 줄면 그 창을 비운다(OD-26)
+  - [x] 되돌린 쓰기의 계열 번호 — 캐시는 COMMIT 된 줄만(OD-27)

@@ -36,6 +36,7 @@ class Store:
         self.path = Path(path)
         self._lock = threading.Lock()
         self._sids: dict[tuple[str, str], int] = {}
+        self._fresh: list[tuple[str, str]] = []      # 이번 쓰기가 새로 만든 계열 — COMMIT 전이다(되돌리면 캐시에서 지운다)
         self._last_maint = 0.0
         self.error: str | None = None
         self.conn = sqlite3.connect(str(self.path), check_same_thread=False, isolation_level=None, timeout=5.0)
@@ -64,6 +65,7 @@ class Store:
             self.conn.execute("INSERT OR IGNORE INTO series(target, metric) VALUES(?, ?)", key)
             sid = self.conn.execute("SELECT id FROM series WHERE target = ? AND metric = ?", key).fetchone()[0]
             self._sids[key] = sid
+            self._fresh.append(key)
         return sid
 
     def add(self, target: str, ts: float, values: dict[str, float | None]) -> None:
@@ -77,6 +79,7 @@ class Store:
                 self.conn.executemany("INSERT OR REPLACE INTO raw(sid, ts, v) VALUES(?, ?, ?)",
                                       [(self._sid(target, m), int(ts), v) for m, v in rows])
                 self.conn.execute("COMMIT")
+                self._fresh.clear()
                 self.error = None
             except sqlite3.Error as exc:
                 self._rollback()
@@ -87,6 +90,10 @@ class Store:
             self.conn.execute("ROLLBACK")
         except sqlite3.Error:
             pass
+        # 되돌린 쓰기가 새로 만든 계열 번호를 캐시에서 지운다 — 남기면 다음 새 계열이 같은 번호를 받아 두 계열이 한 번호를 나눠 쓴다(OD-27)
+        for key in self._fresh:
+            self._sids.pop(key, None)
+        self._fresh.clear()
 
     def maintain(self, now: float, *, force: bool = False) -> None:
         """다 찬 5분 칸을 접고, 48시간 넘은 표본 · 35일 넘은 칸을 지운다. MAINTAIN_EVERY_S 마다 한 번(force 면 곧바로)."""
