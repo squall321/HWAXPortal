@@ -677,6 +677,27 @@ def test_챗_LLM_주소와_복제본은_챗_LLM_키로_나머지는_LLM_키로_�
     assert rep["glm"]["values"]["context_mismatch"]["value"] is False
 
 
+def test_키는_그_키의_주소에만_싣고_루프백_별칭은_같은_주소로_본다(tmp_path, fakes):
+    """대상 주소를 글자 그대로 견주면 챗 LLM 을 localhost 로 적은 대상에 LLM_API_KEY 가 갔다(반대 검토 11-02 · 재현 key_alias.py) — 키를 다른 서버에
+    보낸 것이다. LLM_API_KEY 는 LLM_BASE_URL · LLM_UPSTREAMS, CHAT_LLM_API_KEY 는 CHAT_LLM_BASE_URL · 복제본에만 싣고, 그 밖의 주소에는 싣지 않는다(OD-33)."""
+    chat, other = fakes(key=CHAT_KEY, model="qwen-test"), fakes(key=KEY)
+    coll = _collector(tmp_path, f"LLM_STATUS_TARGETS=QWEN=http://localhost:{chat.port}/v1,OTHER={other.base}\n"
+                                f"CHAT_LLM_BASE_URL=http://127.0.0.1:{chat.port}/v1\nLLM_BASE_URL=http://127.0.0.1:{_free_port()}/v1\n"
+                                f"LLM_API_KEY={KEY}\nCHAT_LLM_API_KEY={CHAT_KEY}\n")
+    assert [(t.id, t.key) for t in coll.cfg.targets] == [("QWEN", "chat"), ("OTHER", None)]
+    coll.poll_all_once(timeout=20)
+    snap = coll.snapshot()
+    assert [a for p, a in chat.seen if p == "/v1/models"] == [f"Bearer {CHAT_KEY}"], "localhost 와 127.0.0.1 은 같은 주소다 — 챗 LLM 키"
+    assert _vals(snap, "QWEN")["models"]["value"][0]["id"] == "qwen-test"
+    assert {a for _, a in other.seen} == {None}, "키를 싣는 주소가 아니면 아무 키도 보내지 않는다(LLM_API_KEY 도)"
+    err = _vals(snap, "OTHER")["models"]["error"]
+    assert "401" in err and "키를 싣지 않는다" in err, err
+    assert C.same_server(C.Addr("http", "localhost", 1), C.Addr("http", "::1", 1)) and \
+        not C.same_server(C.Addr("http", "localhost", 1), C.Addr("https", "127.0.0.1", 1)) and \
+        not C.same_server(C.Addr("http", "localhost", 1), C.Addr("http", "127.0.0.1", 2)) and \
+        not C.same_server(C.Addr("http", "a.example", 1), C.Addr("http", "127.0.0.1", 1))
+
+
 def test_걸린_서버는_다른_대상을_세우지_않고_그_주기는_건너뛴다(tmp_path, fakes, monkeypatch):
     """한 대가 연결은 받고 답하지 않아도 다른 서버는 제 주기에 읽히고, 스냅숏은 곧바로 답한다. 걸린 대상의 다음 주기는 쌓지 않고 건너뛴다."""
     monkeypatch.setattr(C, "READ_S", 1.0)
@@ -925,9 +946,10 @@ def test_기본_대상은_LLM_UPSTREAMS_먼저_없으면_LLM_BASE_URL_그리고_
     assert [(t.id, t.problem) for t in cfg.targets][0] == ("glm", None) and "이미 GLM 로 읽는다" in cfg.targets[1].problem, \
         "같은 서버는 한 번만 — 둘째는 까닭과 함께 남는다"
     assert cfg.router is None and str(cfg.agent) == "127.0.0.1:9009"
-    cfg = C.build_config(C.env_values("LLM_STATUS_TARGETS=GLM-1=http://a.example:8000/v1,Q=http://127.0.0.1:18700/v1\n"
+    cfg = C.build_config(C.env_values("LLM_STATUS_TARGETS=GLM-1=http://a.example:8000/v1,Q=http://127.0.0.1:18700/v1,Z=http://z.example:1/v1\n"
                                       "LLM_UPSTREAMS=http://z.example:1/v1\nCHAT_LLM_BASE_URL=http://127.0.0.1:18700/v1\n"))
-    assert [(t.id, t.key) for t in cfg.targets] == [("GLM-1", "llm"), ("Q", "chat")], "LLM_STATUS_TARGETS 가 있으면 그것만 · 키는 주소로 고른다"
+    assert [(t.id, t.key) for t in cfg.targets] == [("GLM-1", None), ("Q", "chat"), ("Z", "llm")], \
+        "LLM_STATUS_TARGETS 가 있으면 그것만 · 키는 주소로 고르고, 키를 싣는 주소가 아니면 아무 키도 싣지 않는다(OD-33)"
     many = ",".join(f"T{i}=http://127.0.0.1:{20000 + i}/v1" for i in range(C.TARGET_MAX + 2))
     cfg = C.build_config(C.env_values(f"LLM_STATUS_TARGETS={many}\n"))
     assert len(cfg.targets) == C.TARGET_MAX + 2 and all("넘어" in t.problem for t in cfg.targets[C.TARGET_MAX:]), "상한을 넘은 것도 숨기지 않는다"

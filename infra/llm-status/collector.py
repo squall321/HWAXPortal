@@ -12,8 +12,9 @@ update-all `_envfile_value` 와 같다. 주기마다 파일이 바뀌었는지 �
   LLM_STATUS_REPLICA_PORTS  챗 LLM 복제본의 포트(예 `18711-18720`) — 호스트 · 스킴은 CHAT_LLM_BASE_URL 의 것이다.
   LLM_STATUS_REPLICA_MAP    포트 → 노드 짝 파일(줄마다 `<포트> <노드>` 또는 JSON {포트: 노드}). 진짜 자리 · 꼴은 받은 편지함 Q7 의 답이다.
   LLM_STATUS_AGENT_URL      에이전트 서버(기본 http://127.0.0.1:9009). 라우터는 LLM_UPSTREAMS 가 있을 때만 127.0.0.1:LLM_ROUTER_PORT 를 본다.
-  키 — /v1/models 에만 싣는다. CHAT_LLM_BASE_URL 과 같은 호스트:포트와 복제본은 CHAT_LLM_API_KEY, 나머지는 LLM_API_KEY. /health ·
-       /version · /metrics 는 키를 묻지 않는다(vLLM — OD-2). 키는 로그 · 답 · 자식 프로세스 어디에도 싣지 않는다(답을 내기 전에 한 번 더 가린다).
+  키 — /v1/models 에만 싣는다. LLM_API_KEY 는 LLM_BASE_URL · LLM_UPSTREAMS 의 서버에만, CHAT_LLM_API_KEY 는 CHAT_LLM_BASE_URL 과 복제본에만
+       (같은 주소 — 스킴 · 포트가 같고 호스트가 같거나 둘 다 루프백 별칭). 그 밖의 주소에는 싣지 않는다(OD-33). /health · /version · /metrics 는
+       키를 묻지 않는다(vLLM — OD-2). 키는 로그 · 답 · 자식 프로세스 어디에도 싣지 않는다(답을 내기 전에 한 번 더 가린다).
 읽기 — 대상마다 따로 돈다(스레드 하나). 연결 3초 · 읽기 5초 — 한 대가 걸려도 다른 대상은 제 주기에 읽는다. 앞 읽기가 안 끝난 대상은 그 주기를
   건너뛴다(값이 낡음으로 보인다). 15초마다 /health · /version · /metrics, 60초마다 /v1/models.
 값 — 모두 {value, at, source, error, stale, age_s} 다. at 은 마지막으로 제대로 읽은 때, error 는 마지막 시도가 실패한 까닭(또는 값이 없는 까닭).
@@ -311,14 +312,29 @@ def read_replica_map(raw: str) -> tuple[dict[int, str], str | None]:
     return out, None
 
 
+_LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def same_server(a: Addr | None, b: Addr | None) -> bool:
+    """같은 서버의 주소인가 — 스킴 · 포트가 같고 호스트가 같거나 둘 다 루프백 별칭(localhost · 127.0.0.1 · ::1)이다(키를 고를 때 — OD-33)."""
+    if a is None or b is None or a.scheme != b.scheme or a.port != b.port:
+        return False
+    return a.host == b.host or (a.host in _LOOPBACK and b.host in _LOOPBACK)
+
+
 def build_config(vals: dict[str, str]) -> Config:
     """infra/.env 값 → 설정. 틀린 칸도 대상으로 남긴다(problem) — 화면이 '모름 — 까닭' 으로 보인다."""
     problems: list[str] = []
     rows: list[Target] = []
     chat, chat_why = (parse_addr(vals["CHAT_LLM_BASE_URL"], v1=True) if vals.get("CHAT_LLM_BASE_URL") else (None, None))
+    # 키를 싣는 주소 — LLM_API_KEY 는 LLM_BASE_URL · LLM_UPSTREAMS 의 서버에만, CHAT_LLM_API_KEY 는 CHAT_LLM_BASE_URL(과 복제본)에만(OD-33)
+    llm_addrs = [parse_addr(t.rstrip("/"), v1=True)[0]
+                 for t in [vals.get("LLM_BASE_URL", ""), *_SPLIT.split(vals.get("LLM_UPSTREAMS", ""))] if t]
 
-    def key_for(a: Addr | None) -> str:
-        return "chat" if a is not None and chat is not None and a == chat else "llm"
+    def key_for(a: Addr | None) -> str | None:
+        if same_server(a, chat):
+            return "chat"
+        return "llm" if any(same_server(a, b) for b in llm_addrs) else None
 
     if vals.get("LLM_STATUS_TARGETS"):
         for n, tok in enumerate((t for t in _SPLIT.split(vals["LLM_STATUS_TARGETS"]) if t), 1):
@@ -953,9 +969,9 @@ class Collector:
                 st.cell("version", "version").fail(why)
         self._metrics(st, fetch(a, "/metrics"))
         if want_models:
-            key = self.cfg.keys.get(t.key or "llm")
+            key = self.cfg.keys.get(t.key) if t.key else None          # 키를 싣는 주소가 아니면 아무 키도 싣지 않는다(OD-33)
             mo = fetch(a, "/v1/models", headers={"Authorization": f"Bearer {key}"} if key else None)
-            self._models(st, mo, key_name="CHAT_LLM_API_KEY" if t.key == "chat" else "LLM_API_KEY", had_key=bool(key))
+            self._models(st, mo, key_name={"chat": "CHAT_LLM_API_KEY", "llm": "LLM_API_KEY"}.get(t.key or ""), had_key=bool(key))
 
     def _metrics(self, st: TState, m: Resp) -> None:
         now = self.clock()
@@ -999,7 +1015,7 @@ class Collector:
         vals = {"running": g["running"], "waiting": g["waiting"], "kv": g["kv"], **keep}
         self._save(t, now, vals)
 
-    def _models(self, st: TState, r: Resp, *, key_name: str, had_key: bool) -> None:
+    def _models(self, st: TState, r: Resp, *, key_name: str | None, had_key: bool) -> None:
         now = self.clock()
         body = _json(r) if r.status == 200 else None
         data = body.get("data") if isinstance(body, dict) else None
@@ -1018,7 +1034,10 @@ class Collector:
                 st.cell("context", "models").ok(max(lens) if lens else None, now,
                                                 None if lens else "모름 — 모델 목록에 max_model_len 이 없다")
             else:
-                if r.status in (401, 403):
+                if r.status in (401, 403) and key_name is None:
+                    why = (f"HTTP {r.status} — 이 주소에는 키를 싣지 않는다(LLM_BASE_URL · LLM_UPSTREAMS · CHAT_LLM_BASE_URL · 복제본의 주소가 "
+                           "아니다 — 키를 다른 서버에 보내지 않는다)")
+                elif r.status in (401, 403):
                     why = (f"HTTP {r.status} — 키가 맞지 않는다({key_name}, infra/.env)" if had_key
                            else f"HTTP {r.status} — 키가 없다(infra/.env 의 {key_name})")
                 else:
