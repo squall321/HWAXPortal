@@ -37,3 +37,6 @@ os.environ.setdefault("LLM_STATUS_STATE_DIR", tempfile.mkdtemp(prefix="hwax-test
 os.environ.setdefault("LLM_STATUS_ENV_FILE", os.path.join(tempfile.mkdtemp(prefix="hwax-test-llm-status-env-"), "infra.env"))
 # 포털 관리자 화면(LLM · GPU 현황)은 떠 있는 수집기를 부르지 않게 주소를 비운다(꺼짐 — 그 창구를 보는 시험은 Settings 에 주소를 직접 주고 HTTP 대역을 건다).
 os.environ.setdefault("LLM_STATUS_URL", "")
+# 과제 인사이트(docs/project-insight-graph M2) — 인사이트 읽기 창구가 이 박스에 떠 있는 에이전트 서버(backend/.env 의 공유 비밀 · 주소)에서 MCP 잡 카드를
+# 당기지 않게 끈다. 당기기를 보는 시험은 Settings 에 간격 · 주소 · 비밀을 직접 주고 HTTP 대역을 건다(tests/test_insights.py).
+os.environ.setdefault("INSIGHT_SYNC_S", "0")

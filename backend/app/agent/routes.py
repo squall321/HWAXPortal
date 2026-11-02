@@ -53,6 +53,8 @@ from app.agent import pc_upload as _pc
 from app.agent import subject as _subject
 from app.agent import upload as _upload
 from app.agent import wiki_send as _wiki
+from app.insights import cards as _insight_cards
+from app.insights import intake as _insight_intake
 from app.agent import panel as _panel
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
@@ -440,6 +442,10 @@ def _rest_meta(meta: dict | None) -> dict | None:
     return {k: v for k, v in meta.items() if k not in _RELAY_ONLY_META} or None
 
 
+_CONV_SUBJECT_MAX_CHARS = 20000            # 게이트웨이 save_conversation 의 CONV_SUBJECT_MAX_CHARS 와 같다(시험이 견준다)
+_CONV_CHAIR_RE = re.compile(r"[a-z0-9-]{1,40}")
+
+
 class ConvCreate(BaseModel):
     title: str = Field(default="새 대화", max_length=200)
     # risk-review = 리스크 심사 패널 대화(앱 러너가 생성). 저장은 kind TEXT 그대로라 DDL 변경 없다.
@@ -447,6 +453,23 @@ class ConvCreate(BaseModel):
     source: Literal["web", "mcp"] = "web"
     # MCP 심의 등 일괄 생성 — 라운드 발언 전체를 한 번에(왕복 최소화). 비면 빈 대화 생성.
     messages: list[ConvMessageIn] = Field(default_factory=list, max_length=200)
+    # 심의 주제 · 의장 틀(과제 인사이트 — docs/project-insight-graph contracts §5) — Claude 워크플로의 대화 저장(게이트웨이 save_conversation ·
+    # infra/scripts/save-delib-conversation.py)이 싣는다. 저장한 **뒤** 그 사람 PAT 로 에이전트 서버가 다시 풀어 카드로 들인다. 꼴은 그때 에이전트가
+    # 본다 — 여기서 422 로 막으면 몇 시간의 전사가 통째로 떨어진다. 객체가 아니거나 JSON 이 너무 크거나 틀 이름 꼴이 아니면 버린다(없는 것과 같다).
+    subject: dict | None = None
+    chair_template: str | None = None
+
+    @field_validator("subject", mode="before")
+    @classmethod
+    def _subject_loose(cls, v):
+        if not isinstance(v, dict) or len(json.dumps(v, ensure_ascii=False, default=str)) > _CONV_SUBJECT_MAX_CHARS:
+            return None
+        return v
+
+    @field_validator("chair_template", mode="before")
+    @classmethod
+    def _chair_loose(cls, v):
+        return v.strip() if isinstance(v, str) and _CONV_CHAIR_RE.fullmatch(v.strip()) else None
 
 
 def _conv(request: Request):
@@ -624,6 +647,7 @@ def create_conversation(
     request: Request,
     body: ConvCreate,
     principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     try:
         if body.messages:
@@ -638,7 +662,19 @@ def create_conversation(
             )
     except sqlite3.OperationalError as exc:
         raise _store_busy(exc) from exc
-    return {"id": cid}
+    if body.subject is None:
+        return {"id": cid}
+    # 과제 인사이트(contracts §5) — 저장한 뒤에 들인다. 무엇이 실패해도 저장은 그대로이고 답의 insight 가 까닭을 말한다.
+    try:
+        insight = _insight_intake.from_workflow(
+            getattr(request.app.state, "insight_store", None), settings, principal=principal,
+            pat=_chat_user_pat(request.app.state.keystore, settings, principal), cid=cid, kind=body.kind, source=body.source,
+            subject_raw=body.subject, chair_template=body.chair_template,
+            messages=[{"role": m.role, "content": m.content} for m in body.messages])
+    except Exception:  # noqa: BLE001 — 들이기가 저장을 막지 않는다
+        logger.warning("과제 인사이트 — 워크플로 대화 %s 를 들이지 못했다", cid, exc_info=True)
+        insight = {"skipped": "인사이트로 들이지 못했다(포털 오류 — 로그를 본다)"}
+    return {"id": cid, "insight": insight}
 
 
 @router.get("/conversations/{cid}")
@@ -669,6 +705,16 @@ def append_conversation_message(
         raise _store_busy(exc) from exc
     if not ok:
         raise AuthError("conversation not found", status_code=404)
+    if body.role == "assistant":
+        # 큰 워크플로 심의는 200건 넘는 몫(결정문 조각)이 덧붙이기로 온다 — 과제 인사이트 카드가 있으면 주장을 다시 뽑는다(contracts §5)
+        _ist = getattr(request.app.state, "insight_store", None)
+        try:
+            if _ist is not None and _ist.get(_insight_cards.wf_id(cid)) is not None:
+                conv = _conv(request).get(cid, principal.subject)
+                _insight_intake.refresh_workflow_claim(_ist, cid=cid, owner_email=principal.email or "",
+                                                       messages=(conv or {}).get("messages") or [])
+        except Exception:  # noqa: BLE001 — 덧붙이기를 막지 않는다
+            logger.warning("과제 인사이트 — 워크플로 대화 %s 의 주장을 다시 뽑지 못했다", cid, exc_info=True)
     return {"ok": True}
 
 
@@ -3007,6 +3053,7 @@ async def chat(
         # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
         # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).
         store = _conv(request) if body.conversation_id else None
+        ins_store = getattr(request.app.state, "insight_store", None)
         owner = principal.subject
         cid = body.conversation_id
         if store is not None and cid:
@@ -3056,6 +3103,9 @@ async def chat(
         # 에이전트 서버가 확인한 심의 주제(delib kind=subject — docs/project-insight-graph M1) — 답 meta.subject 로 남긴다. 사람 발화는 스트림 전에
         # 남아 확인한 값을 모른다(그림 주소와 같은 까닭). 브라우저가 보낸 delib_opts.subject 는 남기지 않는다 — 확인되지 않은 값이다.
         subject: dict = {}
+        # 엔진이 단마다 낸 과제 인사이트 카드 거리(delib kind=insight — docs/project-insight-graph contracts §1) — 답을 남길 때 원장에 들인다(_save).
+        # 주제가 확인 · 주장일 때만 엔진이 낸다. 리스크 심사 계열은 엔진이 내지 않고 들일 때도 한 번 더 뺀다.
+        insights: list[dict] = []
         run_key = ""                 # 웹 심의의 실행 id(첫 심의 사건의 run_id) — 발언 · 답의 meta.delib_run 으로 남기고 멈춤 창구가 이 중계를 찾는다
         stop_rec: dict | None = None  # _DELIB_RELAYS 에 넣은 이 중계의 기록 — 멈춤 창구가 stop_by 를 적는다
         # 다단 심의(/시뮬심의)의 앞 단 결정문 뒤에 다음 단이 열렸다(엔진의 단 경계 checkpoint · 결정문 뒤의 단 사건 — 화면 mergeDelib 과 같은 판정).
@@ -3145,6 +3195,8 @@ async def chat(
                                     outcome = _delib_outcome_of(data)
                                 elif k == "subject":
                                     subject = _subject.subject_of(data.get("subject")) or subject
+                                elif k == "insight" and len(insights) < 16:
+                                    insights.append({kk: vv for kk, vv in data.items() if kk not in ("kind", "run_id")})
                                 elif k == "evidence":
                                     # 근거 카드는 엔진이 '좌석에 주지 않았다·줄였다·좌석이 유실됐다' 를 알리는 유일한
                                     # 길이다(notice). 종전엔 서버 사본에 남지 않아 다른 기기·새로고침 뒤에는 알림이 사라지고,
@@ -3309,6 +3361,16 @@ async def chat(
                                                                             routine_ptr["state"], reply):
                                     store.append(conversation_id=cid, owner_sub=owner, role="assistant", content=reply,
                                                  meta=(_am or None))
+                            if insights and subject and run_key:
+                                # 과제 인사이트(contracts §5 웹 길) — 답을 남긴 뒤. 들이기가 실패해도 대화 사본은 그대로다.
+                                _do = body.delib_opts
+                                try:
+                                    _insight_intake.from_relay(
+                                        ins_store, owner_email=principal.email or "", owner_sub=owner, cid=cid, run_key=run_key,
+                                        subject=subject, cards=insights, chair_template=getattr(_do, "chair_template", None),
+                                        started_by=getattr(_do, "started_by", None))
+                                except Exception:  # noqa: BLE001
+                                    logger.warning("과제 인사이트 — 웹 심의 %s · %s 의 카드를 들이지 못했다", cid, run_key, exc_info=True)
                         except sqlite3.Error as exc:
                             logger.warning("대화 저장 실패 — %s(잠금 대기 CONV_STORE_BUSY_TIMEOUT_S=%s초), cid=%s · 심의 발언 %d건과 "
                                            "최종 응답 중 일부가 서버 대화에 없다", exc, settings.conv_store_busy_timeout_s, cid,

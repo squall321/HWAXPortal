@@ -53,6 +53,9 @@ features:
   - id: routines
     label: 분석 루틴
     desc: 내 권한의 플랫폼을 순서대로 엮어 두고, 챗 · 개인 Claude 가 그 연쇄로 분석해 보고서를 쓴다. 단계마다 각자 권한 그대로다.
+  - id: insights
+    label: 과제 인사이트
+    desc: 과제(SP 허브 key) · 차수별로 앞선 심의 · 심사의 결정 카드를 본다 — 내 초안을 확인해 같은 소속에 열고, 개인 Claude 는 insight_find 로 찾는다. 보이는 것은 각자의 시야 그대로다(docs/project-insight-graph).
   - id: panels
     label: 앱 패널(MCP Apps)
     desc: 챗에서 앱이 그린 화면(패널)을 연다 — 패널은 그 앱의 도구만 부른다. 박스 손잡이(MCP_APPS_HOST)를 켠 박스에서만 동작한다(파일럿 — docs/request-1027 B-1).

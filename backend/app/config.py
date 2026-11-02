@@ -261,6 +261,9 @@ class Settings(BaseSettings):
     # The portal is a thin proxy + auth gate: real LLM/LangGraph/MCP fan-out lives in the
     # remote Agent Server (URL below). dev/prod swap the URL via routes.env (vLLM split).
     agent_server_url: str = "http://127.0.0.1:9009"  # Agent Server (SSE /chat); 9000 is MinIO here
+    # 과제 인사이트(docs/project-insight-graph contracts §5) — 끝난 MCP 심의 잡의 카드를 에이전트 서버의 공유 비밀 창구(GET /insights/cards)에서
+    # 당겨 들이는 간격(초). 인사이트 읽기 창구가 불릴 때 이만큼 지났으면 한 번 당긴다(PG-9 — 엔진이 밀지 않는다). 0 은 끔(웹 · 워크플로 카드만 든다).
+    insight_sync_s: int = 60
     # 챗 파일 업로드 — 물성 DB 는 정본이라 아무나 못 쓰게 그룹으로 게이트한다(2층: 프론트
     # 숨김 + 백엔드 재검증). 콤마 구분. portal-admin 은 항상 포함, 물성 담당 그룹을 사내
     # AD 그룹명으로 추가하면 된다. 빈 값이면 아무도 업로드 못 한다(안전 기본).
