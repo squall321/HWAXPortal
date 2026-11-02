@@ -11,8 +11,9 @@
   · 읽기 확인 — 두 이름이 이 박스 게이트웨이 /tools-map 에서 정본 백엔드의 것이고 routine_read(게이트웨이가 읽기로 확인한 것)에 있어야 부른다. 아니면
     부르지 않고 까닭을 말한다(object_resolve 는 박스 읽기 목록이 먼저다 — 게이트웨이 read_tools.local.json, PLAN M-R).
   · 행 — 닻과 바로 이어진 이웃을 줄마다 '타입 · key · 이름 · 관계(방향)' 로 줄여 facts.chars 안에(넘치면 '전체 N 중 M'). 어휘표 타입이 아닌 노드
-    (판정 · 기록 · 인사이트)는 싣지 않는다. 사람이 고른 행만 근거가 된다 — 호출 하나에 근거 한 항목(화면 ontoEvidence.ts). 근거의 글과 지문은 포털이
-    줄인 행이지 도구 원문이 아니다.
+    (판정 · 기록 · 인사이트)와 주제 타입(focus)의 다른 노드(앞 · 뒤 과제 — SP 는 이웃 타입 거르기와 상관없이 시작점 타입을 늘 다시 넣어 온다)는
+    싣지 않는다 — 행의 타입은 부를 때 넘긴 타입(types 에서 focus 를 뺀 것)과 같다(PLAN §4.1 · §5.2, OF-28). 사람이 고른 행만 근거가 된다 — 호출
+    하나에 근거 한 항목(화면 ontoEvidence.ts). 근거의 글과 지문은 포털이 줄인 행이지 도구 원문이 아니다.
   · 리스크 심사에는 쓰지 않는다(D-18 — 같은 과제의 앞 판정에 닿는 길을 넓히지 않는다). 창구가 의장 risk-review* 를 422 로 거절한다.
   · 어휘표는 코어 어휘표(backend/config/core_vocab.json)와 박스 덧씌우기(core_vocab.local.json — JSON merge patch, 에이전트 서버 · 게이트웨이와 같은
     규칙)를 읽는다. facts 꼴이 틀리면 기본값으로 돌고 note 에 적는다.
@@ -241,7 +242,8 @@ async def preview(key: str, *, tools_map, call) -> dict:
         return {**base, "calls": calls, "anchor": anchor, "state": "error", "rows": [],
                 "why": f"정본 허브 이웃({nb_tool})을 부르지 못했다 — {_err(exc)}"}
     try:
-        rows = neighbor_rows(nb, obj["id"], set(v["types"]), v["facts"]["chars"])
+        # 행은 부를 때 넘긴 타입만 — SP 가 시작점 타입(focus)을 다시 넣어 온 앞 · 뒤 과제는 고를 행이 아니다(OF-28)
+        rows = neighbor_rows(nb, obj["id"], set(ntypes), v["facts"]["chars"])
     except (TypeError, ValueError, AttributeError) as exc:
         return {**base, "calls": calls, "anchor": anchor, "state": "error", "rows": [],
                 "why": f"정본 허브 이웃({nb_tool})의 답 꼴을 읽지 못했다 — 아무것도 고르지 않는다({_err(exc)})"}

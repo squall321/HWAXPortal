@@ -61,7 +61,8 @@ _N = {"fm": "0195f3c2-0000-7000-8000-000000000001", "model": "0195f3c2-0000-7000
 
 def _neighbors(*, truncated=False) -> dict:
     """SP NeighborhoodOut — focus · nodes · edges · depth · fanout · node_limit · truncated · log_counts. 시작점 노드가 늘 든다. 어휘표에 없는 타입
-    (risk_finding)과 닻과 바로 잇지 않은 노드(far — 이웃의 이웃)는 행이 되지 않는다."""
+    (risk_finding) · 닻과 바로 잇지 않은 노드(far — 이웃의 이웃) · 주제 타입의 다른 노드(prev — 앞 과제, SP 가 시작점 타입을 늘 다시 넣어 온다)는
+    행이 되지 않는다."""
     return {"focus": TASK_ID, "depth": 1, "fanout": 30, "node_limit": 60, "truncated": truncated,
             "log_counts": [{"type_slug": "test_log", "type_label": "시험 기록", "key": "task", "label": "과제", "inverse_label": "", "count": 12}],
             "nodes": [_node(TASK_ID, KEY, KEY, "plm_task", "PLM 과제"),
@@ -141,10 +142,10 @@ def test_확인된_주제_과제가_exact_면_한_걸음_이웃을_어휘표_타
     want_types = [t for t in dict.fromkeys(vocab["types"].values()) if t != "plm_task"]
     assert seen[2]["args"] == {"object_id": TASK_ID, "depth": 1, "types": want_types, "limit": 60}, seen[2]["args"]
     rows = {x["key"]: x for x in b["rows"]}
-    assert set(rows) == {"FM-0012", "SM-A100", "알파 개발_C1"}, "어휘표 타입 · 닻과 바로 이은 것만(판정 · 이웃의 이웃은 아니다)"
+    assert set(rows) == {"FM-0012", "SM-A100"}, "어휘표 타입 · 닻과 바로 이은 것만(판정 · 이웃의 이웃 · 다른 과제는 아니다)"
     assert rows["FM-0012"]["line"] == "고장모드(failure_mode) · FM-0012 · 힌지 크랙 · 이 과제 → 예측함(predicts)"
     assert rows["SM-A100"]["rel"] == "이 과제 ← 과제의 모델(has_task)", "들어오는 관계는 거꿀말로"
-    assert b["total"] == b["shown"] == 3 and b["hub_truncated"] is False
+    assert b["total"] == b["shown"] == 2 and b["hub_truncated"] is False
     assert b["anchor"]["key"] == KEY and b["anchor"]["id"] == TASK_ID and "exact(key)" in b["anchor"]["line"]
     assert b["calls"] == {"resolve": {"tool": RES, "args": seen[1]["args"]}, "neighbors": {"tool": NB, "args": seen[2]["args"]}}
     assert "결정문 · Report Archive 보고서의 근거에 남는다" in b["note"] and "도구 원문이 아니다" in b["note"]
@@ -159,8 +160,19 @@ def test_줄인_글은_chars_안에서_끊고_전체와_보인_수를_말한다(
         nb["edges"].append(_edge(f"x{i}", "predicts", "예측함", "예측됨", TASK_ID, nid))
     state["neighbors"] = nb
     b = go({"sp_task": KEY}).json()
-    assert b["state"] == "ok" and b["total"] == 83 and 0 < b["shown"] < 83 and b["hub_truncated"] is True
+    assert b["state"] == "ok" and b["total"] == 82 and 0 < b["shown"] < 82 and b["hub_truncated"] is True
     assert sum(len(x["line"]) + 1 for x in b["rows"]) <= 4000
+
+
+def test_주제_타입의_다른_노드_앞뒤_과제는_고를_행이_아니다(onto):
+    """이웃 타입 인자는 types 에서 focus 를 뺀 것인데 SP 는 거르기와 상관없이 시작점의 타입을 늘 다시 넣어(StepForge external/StandardPlatform
+    backend/app/modules/graph/routes.py — '시작점의 타입은 거르기와 무관하게 늘 들어간다') 앞 · 뒤 과제(plm_task)가 답에 온다. 행도 focus 를 뺀 타입만이다
+    — 다른 과제를 고를 행으로 내면 주제가 아닌 과제의 key · 이름이 근거로 갈 길이 열린다(PLAN §4.1 · §5.2, 반대 검토 11-02 — OF-28)."""
+    go, seen, _state = onto
+    b = go({"sp_task": KEY}).json()
+    assert b["state"] == "ok" and "plm_task" not in seen[2]["args"]["types"]
+    assert any(n["type_slug"] == "plm_task" and n["id"] != TASK_ID for n in _neighbors()["nodes"]), "시험 전제 — 답에 다른 과제가 있다"
+    assert not [r for r in b["rows"] if r["type"] == "plm_task"], [(r["key"], r["rel"]) for r in b["rows"]]
 
 
 # ── 고르지 않는 길 ───────────────────────────────────────────────────────────────────────────
