@@ -114,23 +114,25 @@ function outcomeFromMeta(raw: unknown): DelibData['outcome'] | undefined {
   };
 }
 
-/** 답 meta.subject → delib.subject — 포털 중계가 에이전트 서버의 확인 사건(delib kind=subject)만 남긴다(docs/project-insight-graph M1).
- *  상태가 셋 가운데 하나가 아니면 없다. */
-function subjectFromMeta(raw: unknown): DelibData['subject'] | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
+/** 서버가 낸 심의 주제(SSE delib kind=subject · 답 meta.subject)를 화면의 꼴로 — 포털 중계는 에이전트 서버의 확인 사건만 답 meta 에 남긴다
+ *  (docs/project-insight-graph M1). 확인 상태가 셋(confirmed · claimed · none) 가운데 하나가 아니면 없다. 실시간 사건(ChatContext mergeDelib)과
+ *  새로고침의 복원이 이 함수 하나를 지난다 — 한쪽만 꼴을 보면 다른 쪽으로 아무 값이나 '확인됐다' 로 그려진다(반대 검토 11-02). 이 파일에 두는 까닭 —
+ *  서버 사본을 되살리는 시험들이 이 파일과 chatStore 만 옮겨 적어 돌린다(다른 모듈을 들이면 그 시험들이 모듈을 못 찾는다). */
+export function subjectFromRaw(raw: unknown): DelibData['subject'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const s = raw as Record<string, unknown>;
   if (s.sp_state !== 'confirmed' && s.sp_state !== 'claimed' && s.sp_state !== 'none') return undefined;
+  const arts = Array.isArray(s.artifacts) ? (s.artifacts as unknown[]) : [];
   return {
     sp_task: typeof s.sp_task === 'string' ? s.sp_task : null,
     sp_state: s.sp_state,
     ...(typeof s.sp_why === 'string' ? { sp_why: s.sp_why } : {}),
     round: typeof s.round === 'string' ? s.round : null,
     text: typeof s.text === 'string' ? s.text : '',
-    artifacts: Array.isArray(s.artifacts)
-      ? (s.artifacts as Record<string, unknown>[])
-          .filter((a) => a && (a.kind === 'mcad' || a.kind === 'ecad' || a.kind === 'cae') && typeof a.id === 'string')
-          .map((a) => ({ kind: a.kind as 'mcad' | 'ecad' | 'cae', id: String(a.id), ...(typeof a.rev === 'string' ? { rev: a.rev } : {}) }))
-      : [],
+    artifacts: arts
+      .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object' && !Array.isArray(a))
+      .filter((a) => (a.kind === 'mcad' || a.kind === 'ecad' || a.kind === 'cae') && typeof a.id === 'string')
+      .map((a) => ({ kind: a.kind as 'mcad' | 'ecad' | 'cae', id: String(a.id), ...(typeof a.rev === 'string' ? { rev: a.rev } : {}) })),
   };
 }
 
@@ -236,7 +238,8 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 그때 결과 카드 · '보고' 단계 · '발표자료로' 단추는 서지 않는다.
       const outcome = outcomeFromMeta((m.meta as { delib_outcome?: unknown } | null)?.delib_outcome);
       // 심의 주제 — 에이전트 서버가 확인한 것(답 meta.subject). 이어하기가 이것을 다시 싣는다(ChatContext continueDeliberation).
-      const subject = subjectFromMeta((m.meta as { subject?: unknown } | null)?.subject);
+      // 답 meta.subject → delib.subject — 포털 중계가 에이전트 서버의 확인 사건(delib kind=subject)만 남긴다(docs/project-insight-graph M1)
+      const subject = subjectFromRaw((m.meta as { subject?: unknown } | null)?.subject);
       out.push({
         id: newId(),
         role: 'assistant',

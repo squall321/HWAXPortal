@@ -14,10 +14,13 @@ from pathlib import Path
 
 import pytest
 
+from tests.test_front_window_payload import _node as _fe_node  # 서버 사본을 되살리는 시험들과 같은 길(conversations.api + chatStore 를 옮겨 적는다)
+
 ROOT = Path(__file__).resolve().parents[2]
 FE = ROOT / "frontend"
 CHAT = FE / "src/components/chat"
 AGENT = ROOT.parent / "HWAXAgentServer" / "delib_subject.py"
+_CONV = ["api/conversations.api.ts", "state/chatStore.ts"]
 
 pytestmark = pytest.mark.skipif(
     not (FE / "node_modules/typescript").exists() or not shutil.which("node"),
@@ -127,6 +130,53 @@ def test_보낼_꼴(js):
         {"sp_task": KEY, "round": "dv1", "text": "메모", "artifacts": [{"kind": "mcad", "id": "019a2b3c4d5e6f7a8b9c0d1", "rev": "1a2b"}]}
     many = js("subjectWire", {"spTask": KEY, "round": "", "text": "가" * 900, "artifacts": [art] * 12})
     assert len(many["text"]) == 500 and len(many["artifacts"]) == 8 and "round" not in many
+
+
+def _from_raw(raw):
+    """대화 복원 모듈의 subjectFromRaw — 서버 사본을 되살리는 다른 시험들과 같은 길(conversations.api + chatStore 를 옮겨 적는다)로 부른다."""
+    return _fe_node(_CONV, "const c = require('./api/conversations.api.js'); out(c.subjectFromRaw(input) ?? null);", raw)
+
+
+@pytest.mark.parametrize("raw", [None, "알파", [], {"sp_task": KEY}, {"sp_task": KEY, "sp_state": "verified"}, {"sp_state": "Confirmed"}])
+def test_서버가_낸_주제의_꼴이_아니면_두지_않는다(raw):
+    """실시간 사건(mergeDelib)과 새로고침의 복원(serverMessagesToLocal)이 같은 함수다 — 확인 상태가 셋 가운데 하나가 아니면 없다."""
+    assert _from_raw(raw) is None
+
+
+def test_서버가_낸_주제는_알려진_칸만_꼴대로_옮긴다():
+    raw = {"sp_task": KEY, "sp_state": "claimed", "sp_why": "까닭", "round": "dv1", "text": 3, "junk": 1, "sp_resolved_by": {"tool": "t"},
+           "artifacts": [{"kind": "ecad", "id": "abcdef0123456789", "rev": "B", "x": 1}, {"kind": "zz", "id": "1"}, "a", {"kind": "cae"}]}
+    assert _from_raw(raw) == {"sp_task": KEY, "sp_state": "claimed", "sp_why": "까닭", "round": "dv1", "text": "",
+                              "artifacts": [{"kind": "ecad", "id": "abcdef0123456789", "rev": "B"}]}, \
+        "모르는 칸 · 꼴이 아닌 설계 자료는 버린다"
+    assert _from_raw({"sp_state": "none", "round": None})["round"] is None
+
+
+def test_새로고침은_답_meta_의_주제를_같은_꼴로만_되살린다():
+    """복원 길(serverMessagesToLocal) — 확인 상태를 지어낸 meta.subject 는 그리지 않는다(반대 검토 11-02 — 종전엔 이 길에 시험이 없었다)."""
+    def server(meta):
+        return [{"role": "user", "content": "/심의 x", "ts": 1},
+                {"role": "persona", "content": "발언", "persona": "mech-a", "round": 1, "ts": 2},
+                {"role": "assistant", "content": "결정문", "ts": 3, "meta": meta}]
+    script = ("const c = require('./api/conversations.api.js');"
+              " out(c.serverMessagesToLocal(input).filter((m) => m.delib).map((m) => m.delib.subject ?? null));")
+    rec = {"sp_task": KEY, "sp_state": "confirmed", "sp_resolved_by": {"tool": "t"}, "round": "dv1", "text": "", "artifacts": []}
+    assert _fe_node(_CONV, script, server({"subject": rec})) == [{"sp_task": KEY, "sp_state": "confirmed", "round": "dv1", "text": "",
+                                                                  "artifacts": []}]
+    assert _fe_node(_CONV, script, server({"subject": {**rec, "sp_state": "verified"}})) == [None]
+    assert _fe_node(_CONV, script, server(None)) == [None], "주제 없는 심의는 종전 그대로"
+
+
+def test_실시간_사건과_새로고침_복원이_같은_꼴_함수를_지난다():
+    """mergeDelib(ChatContext — 화면 부품 파일이라 node 로 못 부른다)이 복원과 같은 subjectFromRaw 를 부르는지 소스로 본다 — 한쪽이 꼴을 안 보면
+    그쪽으로 아무 값이나 '확인됐다' 로 그려진다(반대 검토 11-02 — 종전 mergeDelib 은 객체면 그대로 두었다)."""
+    ctx = (FE / "src/state/ChatContext.tsx").read_text(encoding="utf-8")
+    case = ctx[ctx.index("case 'subject':"):]
+    case = case[:case.index("break;")]
+    assert "subjectFromRaw(e.subject)" in case and " as DelibData" not in case, case
+    assert re.search(r"import \{[^}]*\bsubjectFromRaw\b[^}]*\} from '\.\./api/conversations\.api';", ctx), "복원과 같은 함수를 받는다"
+    conv = (FE / "src/api/conversations.api.ts").read_text(encoding="utf-8")
+    assert "subjectFromRaw((m.meta" in conv and "function subjectFromMeta" not in conv
 
 
 def test_이어하기는_서버가_확인한_주제의_받는_칸만_다시_싣는다(js):

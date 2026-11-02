@@ -20,6 +20,7 @@ import {
   listServerConversations,
   renameServerConversation,
   serverConvToLocal,
+  subjectFromRaw,
   type ConvKind,
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
@@ -288,10 +289,13 @@ function mergeDelib(prev: DelibData | undefined, e: DelibEvent): DelibData {
       // 의장이 결정문을 냈다 — 그 단의 결정문까지는 마무리(요약 · 쉬운 설명 · Report Archive 저장)라 에이전트가 멈추지 않는다(409 finishing).
       d.finishing = true;
       break;
-    case 'subject':
-      // 에이전트 서버가 확인한 심의 주제(docs/project-insight-graph M1) — 브라우저가 보낸 값이 아니라 서버가 다시 푼 결과다. 꼴이 아니면 두지 않는다.
-      if (e.subject && typeof e.subject === 'object' && !Array.isArray(e.subject)) d.subject = e.subject as DelibData['subject'];
+    case 'subject': {
+      // 에이전트 서버가 확인한 심의 주제(docs/project-insight-graph M1) — 브라우저가 보낸 값이 아니라 서버가 다시 푼 결과다. 꼴이 아니면(확인 상태가
+      // 셋 가운데 하나가 아니면) 두지 않는다 — 새로고침의 복원(conversations.api)과 같은 함수다.
+      const subject = subjectFromRaw(e.subject);
+      if (subject) d.subject = subject;
       break;
+    }
   }
   return d;
 }
