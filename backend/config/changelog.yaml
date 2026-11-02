@@ -22,6 +22,20 @@
 
 entries:
   - date: 2026-11-02
+    title: "심의를 시작할 때 과제와 차수를 고를 수 있습니다"
+    tag: 심의
+    items:
+      - "심의 시작 화면과 챗에서 심의로 넘기는 브리프에 '주제' 칸이 생겼습니다. 과제(허브 과제 이름) · 차수(개발 단계 코드 — pre · dv1 ~ dv3 · dvr · pv1 ~ pv3 · pvr · pra · mp) · 그 대화에서 조회한 기구 · 회로 · 해석 자료를 고르면 심의에 붙습니다. 과제를 대상으로 하지 않는 질문은 비워 두면 되고, 그 심의는 어디에도 이어지지 않습니다."
+      - "고른 과제는 서버가 허브 과제 찾기로 다시 확인해 맞을 때만 '확인됨' 으로 보이고, 확인하지 못하면 '확인 안 됨' 과 까닭을 보입니다. 이어하기는 앞 주제를 그대로 씁니다."
+      - "개인 Claude 의 MCP 심의(deliberate_start · deliberate_continue)에도 subject 를 줄 수 있고, deliberate_list 의 subject 로 같은 과제 · 차수의 심의를 찾습니다(본인 · 같은 소속 · 관리자 시야 그대로)."
+  - date: 2026-11-02
+    title: "11-02 내부 — 심의 주제 확인 · 원장 칸"
+    tag: 기술
+    items:
+      - "에이전트 서버 delib_subject — 주제 꼴 검사(칸 넷 · 길이 상한 · 설계 자료 8개까지) · 차수 정규화 · SP 과제 key 는 서버가 스스로 부른 StepForge find_plm_task 결과에서 같은 key 의 살아 있는 행이 꼭 하나일 때만 confirmed(그 밖은 claimed 와 까닭). 심의 잡 원장 · 목록 색인에 subject 칸."
+      - "웹 심의의 주제는 엔진 앞에서 다시 확인해 사건(delib kind=subject)으로만 내고 엔진 지시 · 결정문 · RA 보고서에는 싣지 않습니다(새 LLM 호출 없음). 포털 대화 REST 로 들어온 meta.subject 는 버립니다 — 중계만 적습니다."
+      - "포털 POST /agent/deliberate/subject/search — 허브 과제 찾기를 그 사람 자격으로 게이트웨이에 묻고, 게이트웨이가 닿지 않으면 502 로 답합니다."
+  - date: 2026-11-02
     title: "리스크 심사 좌석이 같은 과제의 앞선 판정을 도구로 보지 못합니다"
     tag: 심의
     items:
