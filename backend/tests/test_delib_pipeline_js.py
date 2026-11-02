@@ -496,3 +496,42 @@ def test_제출_프롬프트의_인자는_앱_도구가_받는_이름이다():
     sent = {ln.strip().split(" = ", 1)[0] for ln in prompt.split("\n") if ln.startswith("  ") and " = " in ln}
     assert {"panel_id", "engine", "turns", "decision_text", "evidence_omitted"} <= sent, sent
     assert sent <= accepts, f"앱 도구가 모르는 인자를 보낸다(말없이 버려진다): {sorted(sent - accepts)}"
+
+
+# ── 리스크 심사 좌석의 D-18 — 보고서 조회 입구 · 이름 호출 안내를 빼고 금지 한 줄을 싣는다(docs/risk-review-redesign D-58) ──────────
+# 이 워크플로의 좌석은 도구 목록 없이 도는 agent() 라 부를 도구를 막을 수 없다 — 프롬프트로만 말한다(강제되는 길은 엔진이다 —
+# hwax-risk-claude.js · deliberate_start). 종전엔 리스크 심사 좌석도 1라운드에 'search_reports/get_reports_digest 부터'(RA_HINT)와
+# 'invoke_tool 로 불러라'(BY_NAME)를 받았다 — 같은 과제의 앞 패널 초안 · 등록부로 가는 길을 일러 준 셈이다.
+_D18 = "[D-18] 같은 과제의 앞 판정에 닿는 도구는 부르지 마라"
+_RA_HINT_HEAD = "과거 보고서 조회는 search_reports/get_reports_digest 부터"
+
+
+def _seat_calls(out: dict) -> list:
+    """세 라운드의 좌석 호출 — 라벨이 r<N>:<좌석 키> 다."""
+    return [c for c in out["calls"] if re.match(r"r\d+:", c["label"])]
+
+
+def test_리스크_심사_좌석은_보고서_조회_입구와_이름_호출_안내_없이_D18_한_줄을_받는다():
+    """모든 라운드 · 모든 좌석(자동으로 앉는 기준선 옹호 지정석 포함)에 금지 한 줄이 실리고, 보고서 조회 입구와 invoke_tool 안내는 없다.
+    보고서 저장 호출은 이름 호출 안내를 그대로 받는다(RA 를 허브에서 꺼 둔 사용자의 저장이 끊기지 않게). 다른 심의의 좌석은 종전대로다."""
+    out = _delib(chairTemplate="risk-review", stopAfterRound=0, rounds=3, groundCards=True, saveReport=True)
+    seats = _seat_calls(out)
+    assert {c["label"].split(":", 1)[0] for c in seats} == {"r1", "r2", "r3"}, [c["label"] for c in seats]
+    assert any(c["label"].endswith(":delib-baseline-defender") for c in seats), "시험 전제 — 지정 반대석이 앉지 않았다"
+    for c in seats:
+        assert _D18 in c["prompt"], c["label"]
+        assert _RA_HINT_HEAD not in c["prompt"] and "invoke_tool" not in c["prompt"], c["label"]
+    saves = [c for c in out["calls"] if c["label"] == "ra-save"]
+    assert saves and all("invoke_tool" in c["prompt"] for c in saves), [c["label"] for c in out["calls"]]
+    plain = _seat_calls(_delib(stopAfterRound=0, rounds=3, groundCards=True))
+    assert plain and all(_D18 not in c["prompt"] and "invoke_tool" in c["prompt"] for c in plain)
+    assert all(_RA_HINT_HEAD in c["prompt"] for c in plain if c["label"].startswith("r1:"))
+
+
+def test_리스크_심사_오케스트레이터의_패널_좌석도_D18_한_줄을_받는다():
+    """hwax-risk-review.js 의 Tier B/C 패널은 이 워크플로를 자식으로 돌린다(chairTemplate risk-review) — 그 좌석도 같다."""
+    out = _risk(_brief([{"source": "scope", "result": "스코프"}]))
+    seats = _seat_calls(out)
+    assert seats, [c["label"] for c in out["calls"]]
+    for c in seats:
+        assert _D18 in c["prompt"] and "invoke_tool" not in c["prompt"] and _RA_HINT_HEAD not in c["prompt"], c["label"]
