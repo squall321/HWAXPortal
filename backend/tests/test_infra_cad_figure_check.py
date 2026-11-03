@@ -60,7 +60,7 @@ LOCATED = {"status": "located", "mcad": {"x": 5.0, "y": 5.0, "z": 1.5, "unit": "
 VIEW = {"rows_total": 3, "panels": [{"not_drawn_count": 0}, {"not_drawn_count": 2}], "highlight": {"unmatched": []}}
 
 
-def _fake(seen, *, locate=LOCATED, batch_waits=1, stackup=None, stackup_waits=1, fig_url=True, sha_ok=True):
+def _fake(seen, *, locate=LOCATED, batch_waits=1, stackup=None, stackup_waits=1, fig_url=True, sha_ok=True, pages=1):
     state = {"batch": 0, "stack": 0, "fig": 0}
 
     async def call(name, args):
@@ -78,13 +78,19 @@ def _fake(seen, *, locate=LOCATED, batch_waits=1, stackup=None, stackup_waits=1,
                 return _R({"ready": False, "progress": 40})
             return _R(VIEW, images=1, extra=[f"그림 저장 — fig_row{args['row']} (jpeg · 90 KB)"])
         if name == "stackup_figure":
+            k = int(args.get("page") or 1)
+            ref = "fig_stack" if pages == 1 else f"fig_stack{k}"
+            body = {"rows_total": 4} if pages == 1 else {"rows_total": 150, "page": {"page": k, "pages": pages, "rows": [60 * (k - 1) + 1, min(60 * k, 150)],
+                                                                                  "next": None if k == pages else f"stackup_figure(page={k + 1})"}}
             if "job_id" in args:
-                state["stack"] += 1
-                if state["stack"] <= stackup_waits:
-                    return _R({"ready": False, "progress": 20})
-                return _R({"rows_total": 4}, images=1, extra=["그림 저장 — fig_stack (jpeg · 80 KB)"])
-            return _R(stackup if stackup is not None else {"rows_total": 4}, images=0 if stackup is not None else 1,
-                      extra=[] if stackup is not None else ["그림 저장 — fig_stack (jpeg · 80 KB)"])
+                if k == 1:
+                    state["stack"] += 1
+                    if state["stack"] <= stackup_waits:
+                        return _R({"ready": False, "progress": 20})
+                return _R(body, images=1, extra=[f"그림 저장 — {ref} (jpeg · 80 KB)"])
+            if stackup is not None and k == 1:
+                return _R(stackup, images=0)
+            return _R(body, images=1, extra=[f"그림 저장 — {ref} (jpeg · 80 KB)"])
         if name == "figure_get":
             sha = hashlib.sha256(BODY).hexdigest() if sha_ok else "0" * 64
             return _R({"ref": args["ref"], "tool": "section_pair_view", "mime": "image/jpeg", "bytes": len(BODY), "sha256": sha,
@@ -160,6 +166,27 @@ def test_stackup_waits_on_the_self_queued_job_and_gets_the_figure(tmp_path):
     direct = [args for name, args in seen if name == "stackup_figure" and "job_id" not in args][0]
     assert direct == {"project_id": "SF-A", "other_project_id": "SF-C", "format": "jpg", "axis_a": "z", "axis_b": "z"}
     assert "fig_stack" in {f["ref"] for f in rep["stages"]["fetch"]["figures"]}
+
+
+def test_stackup_follows_every_page_on_the_direct_path(tmp_path):
+    """(StepForge a77) 줄이 60 넘으면 쪽마다 그림이 따로다 — 끝 쪽까지 따라가 다 받는다(같은 인자에 page 만 바꾼다)."""
+    seen = []
+    rep = _run(_fake(seen, pages=3), _ns(stackup_other="SF-C", axis_a="z", axis_b="z"), tmp_path)
+    s = rep["stages"]["stackup"]
+    assert s["ok"] and s["pages"] == 3 and s["page_failures"] == 0 and s["fig_refs"] == ["fig_stack1", "fig_stack2", "fig_stack3"]
+    calls = [args for name, args in seen if name == "stackup_figure"]
+    assert [c.get("page") for c in calls] == [None, 2, 3] and all(c["axis_a"] == "z" and c["other_project_id"] == "SF-C" for c in calls)
+    assert {"fig_stack1", "fig_stack2", "fig_stack3"} <= {f["ref"] for f in rep["stages"]["fetch"]["figures"]}
+    assert "쪽 3(실패 0)" in chk.summary_text(rep)
+
+
+def test_stackup_pages_of_a_self_queued_job_go_by_job_id(tmp_path):
+    seen = []
+    rep = _run(_fake(seen, stackup={"job": {"job_id": "JS", "kind": "measure"}, "job_call": {}}, stackup_waits=1, pages=2),
+               _ns(stackup_other="SF-C", axis_a="z", axis_b="z", job_wait=60), tmp_path)
+    s = rep["stages"]["stackup"]
+    assert s["ok"] and s["path"] == "job" and s["pages"] == 2 and s["fig_refs"] == ["fig_stack1", "fig_stack2"]
+    assert [args for name, args in seen if name == "stackup_figure" and args.get("page") == 2] == [{"job_id": "JS", "format": "jpg", "page": 2}]
 
 
 def test_stackup_job_not_queued_is_reported_not_waited(tmp_path):

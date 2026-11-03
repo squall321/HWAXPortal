@@ -7,7 +7,7 @@
            1) risk_locate_for_section — 위치를 못 정하면 까닭 · 고칠 곳(fix)을 찍고 멈춘다(변환 등록은 사람이 — 아래 참고).
            2) 평면마다 f1.calls 줄에 견줄 판(--compare)을 더해 section_pair_view(--fold 를 주면 접힌 상태로).
            3) 같은 줄들을 section_batch 로 → section_batch_result 로 줄마다 그림.
-           4) --stackup-other 를 주면 stackup_figure(바로 길 — 예산에서 멈추면 잡을 기다려 job_id 로).
+           4) --stackup-other 를 주면 stackup_figure(바로 길 — 예산에서 멈추면 잡을 기다려 job_id 로, 줄이 많아 쪽이 나뉘면 끝 쪽까지).
            5) 받은 그림마다 figure_get 의 주소로 받아 크기 · sha256 을 맞댄다(개인 Claude 가 PC 로 받는 길과 같다).
            6) --ra-report · --mxwp-doc 을 주었을 때만 figure_to_report · figure_to_doc(쓰기 — 그 보고서 · 문서에 그림이 들어간다).
 
@@ -219,10 +219,22 @@ async def run_check(call: Caller, a: argparse.Namespace, out_dir: Path, log: Cal
         st = {"ok": not s.error and s.images > 0, "path": "direct", "fig_refs": s.fig_refs, "error": s.head if s.error else None,
               "job_not_queued": sd.get("job_not_queued"), "comparable": sd.get("comparable")}
         job = sd.get("job") or {}
+        last = s
         if not st["ok"] and job.get("job_id"):
             got, waited = await wait_ready(lambda: _reply(call, SF, "stackup_figure", {"job_id": job["job_id"], "format": "jpg"}), a.job_wait, POLL_STACKUP_S)
             st.update(path="job", job_id=job["job_id"], waited_s=round(waited, 1), ok=bool(got and not got.error and got.images),
                       fig_refs=(got.fig_refs if got else []), error=(got.head if got and got.error else None))
+            last = got
+        # 쪽 — 줄이 60 넘으면 쪽마다 그림이 따로다(StepForge a77 — 답의 page{page, pages, next}). 끝 쪽까지 따라가 다 받는다.
+        pg = (last.data or {}).get("page") if last and isinstance(last.data, dict) else None
+        if st["ok"] and isinstance(pg, dict) and int(pg.get("pages") or 1) > int(pg.get("page") or 1):
+            base = {"job_id": st["job_id"], "format": "jpg"} if st.get("job_id") else args
+            bad = 0
+            for k in range(int(pg.get("page") or 1) + 1, int(pg["pages"]) + 1):
+                pr = Reply(await call(SF, "stackup_figure", {**base, "page": k}))
+                st["fig_refs"] = st["fig_refs"] + pr.fig_refs
+                bad += int(pr.error or not pr.images)
+            st.update(pages=int(pg["pages"]), page_failures=bad, ok=st["ok"] and not bad)
         st["seconds"] = round(time.time() - t0, 1)
         stages["stackup"] = st
     # 5) 그림 받기
@@ -280,6 +292,7 @@ def summary_text(rep: dict) -> str:
     if "stackup" in st:
         s = st["stackup"]
         lines.append(f"{mark(s['ok'])} 적층 그림 — {s['path']} · {s['seconds']}초" + (f" · 기다림 {s.get('waited_s')}초" if s.get("waited_s") is not None else "")
+                     + (f" · 쪽 {s['pages']}(실패 {s['page_failures']})" if s.get("pages") else "")
                      + (f" · 잡 안 넣음 {str(s['job_not_queued'])[:80]}" if s.get("job_not_queued") else "") + (f" · 오류 {s['error'][:80]}" if s.get("error") else ""))
     if "fetch" in st:
         f = st["fetch"]
