@@ -41,7 +41,10 @@
 
 ## 현장 계획서의 CAD 단면(F1 ~ F3 · F6 — 긴급 11-02)
 - [x] F2 단면 자리 찾기 — 리스크 앱 `risk_locate_for_section` 등 도구 넷 · 스키마 v7(변환 등록부 · `location_json`), HWAXRisk `4d346316` · Drive(HEAXHub) `dist-20261102-233903Z` — 설계 · cae00 몫은 HWAXRisk `docs/f2-locate-for-section.md`, dev 확인 11-02(도구 넷 · v7 · 이관 사본)
-- [ ] F1 · F3 · F6 — StepForge 세션 몫. 판 · 도구 이름 · Drive 판을 받으면 게이트웨이 검색 어휘 · 이 폴더 문서 · F2 → F1 실호출 한 번
+- [x] F1 짝 단면 — StepForge `section_pair_view` · `section_batch_result`(읽기) · 잡 종류 `section_batch`, 그쪽 main `5979a26`(문서 끝 `8a06681`) · Drive(HEAXHub) `dist-20261103-004526Z` — 게이트웨이 tools/list 에 둘 · 경유 실호출에 그림 보관 표지(RF-27)
+- [x] F2 → F1 실호출(dev 11-03) — 답의 `f1` 칸을 그대로 넘기면 거절이던 것을 리스크 앱 `f1.calls` 로 고침(`fc384f4b`(병합 — 코드 `8c4a6d1` · 문서 `742c4d3`)) · 두 평면 그림 · 강조가 두 판에서 맞음(RF-27)
+- [x] 게이트웨이 검색 낱말 — '짝 단면' · '단면 비교' → `section_pair_view`(`1c933629` · 추적 평가 147쌍 그대로, RF-27)
+- [ ] F3 `section_batch` 도구(행 50 · 50 MB 안 — 그쪽 a73) · F6 접힘 변환 · `compare_stackup` 그림 잡(a74, 11-04 ~ 05) — StepForge 세션 몫. 오면 `f1.calls` 줄이 F3 행으로 그대로 들어가는지 한 번
 - [ ] F2 cae00 — ODB 허브 몫 확인(그 문서 6절 — `get_part_detail.side` · bottom 좌표 · `get_net` 핀 · 구멍 쪽 넘김 · 실제 메인 보드로 손 셈) · 외곽 bbox(ODB 허브 OH-04)
 
 ## 하지 않은 것(다음 몫)
