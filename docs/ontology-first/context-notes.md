@@ -269,3 +269,11 @@ object null(또는 id 가 글이 아닌 객체)도 none — '정본 허브에 �
 - 리뷰어가 '괜찮다' 고 한 것(D-18 의 빈 `_orig` · 게이트 · 표지는 챗 로드만 · CALL 줄은 묶은 도구만 · 미리보기의 리스크 422 · 게이트웨이 `onto_first`
   끔의 바이트 동일 · 입구 해석의 두 서비스 일치 · 미리보기의 PAT · CSRF · `confirm_rows`)은 건드리지 않았고 위 전체 시험이 지킨다. 올리기 · 병합 ·
   재기동은 하지 않았다.
+
+**OF-31 올림 · dev 반영(11-02 UTC 밤 — KST 11-03 아침).** 세 리포를 `--no-ff` 로 합쳤다 — 게이트웨이 `5bb79e09`(master 6e005a87 위에 `a91a0ab` · `7209ab2`) · 에이전트 서버 `332f70e3` · 포털 `06860be0` + 이력 `32d03bf6`. 합친 판의 전체 시험은 게이트웨이 895 통과 · 5 건너뜀 rc 0 · 포털 4,784 통과 · 29 건너뜀 · 실패 둘(OF-30 의 그 둘), 에이전트 서버는 합친 트리가 OF-30 뒤 시험한 트리(4,425 통과 · 2 건너뜀)와 같다. 짝 폴더의 게이트웨이 형제 링크는 시험 동안만 합친 판으로 바꿨다가 되돌렸다(형제 계약 시험이 병합 전 main 을 읽으면 붉다).
+- 켜진 것 — 재기동 전 떠 있던 판과 HEAD 사이에 이 병합 말고 코드가 바뀐 커밋은 없었다(게이트웨이 · 에이전트 서버는 이 병합 하나, 포털은 그 밖에 문서 · 이력 · 시험 · `infra/pc-kit` 뿐). 게이트웨이(`services.sh down/up mcp-gateway`) → 에이전트 서버(`./start.sh -d` — 도는 심의 · 루틴 0 을 보고) → 포털(`pnpm build` · 인스턴스 재기동 · `build-all-to-drive.sh portal` → `images-20261102-235509Z`, 올린 뒤 Drive 대조 일치).
+- F0 — `/tools-map` 에 `orig` 21 줄(dev 는 선언 백엔드 · 허브 가족 역할이 없다). 엔진 판정(`_FREE_DENY` · `_free_tool_ok`)을 그 지도에 그대로 대면 원래 이름으로 드는 것은 `aidatahub_semantic_search` · `signalforge_semantic_search` · `heaxstep_forge_list_jobs` · `ste_list_jobs` 넷, 빠지는 것 0. 실제 심의 길 — 에이전트 서버 `/chat` 에 `/심의` 하나를 띄워 '전문가 자유 조회 활성 — 읽기 전용 도구 187종 후보' 줄을 읽고 루프백 `/deliberate/cancel` 로 멈췄다(그 줄 앞에는 LLM 호출이 없다 — 도구 로드 · 거름뿐이라 dev 로컬 vLLM 이 내려가 있어도 읽힌다).
+- 손 시험의 함정 — 그룹으로 맨 `CAEG` 만 실으면 후보가 3종이다. 합성 그룹(`feat:` · `plat:`)은 포털이 권한표로 계산해 싣고 에이전트 서버 · 게이트웨이는 받은 것만 본다. 포털이 관리자에게 싣는 꼴(권한표 키 전부 + `portal-admin`)로 다시 띄워 187 을 읽었다. cae00 에서 같은 손 시험을 할 때도 그 박스 권한표의 키를 싣는다 — 아니면 Q21 의 N 과 견줄 수 없다.
+- 챗 칸 — 에이전트 서버 `/health` 의 `core_vocab.ontology` 는 present · apps 넷(rootdesigndatahub · failuretrace · heax-kooremapper_mcp · heax-step_forge) · entries 0 · dropped 0 · reserve 16 · missing 12. missing 은 dev 에 없는 SP 허브 둘(rootdesigndatahub · failuretrace)의 이름이라 dev 에서는 맞다 — cae00 은 허브 둘이 붙어 비어야 한다(server-setup 3절).
+- 미리보기 — `POST /agent/deliberate/onto-preview` 무인증 401(없는 길은 405 — 길이 섰다), 빌드에 '온톨로지 먼저 보기' 화면 글 · `dist/.build-src` = `HEAD:frontend`. 실제 미리보기는 dev 에 정본 허브가 없어 cae00 몫이다(checklist M4).
+- 날짜 — 이 줄들의 '11-02' 는 dev 박스 시계(UTC)다. 업데이트 이력은 한국 날짜라 KST 11-03 에 쓴 여섯 항목(그림이 보고서까지 · 표 칸 그림 · 이 기능)을 `86caab20` 에서 11-03 으로 고쳤다 — 11-02 팝업을 본 사람에게 뜨지 않던 것.

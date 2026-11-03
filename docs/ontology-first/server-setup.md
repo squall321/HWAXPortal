@@ -1,7 +1,8 @@
 # 온톨로지 먼저 — cae00 에서 사람이 할 일(받기 · 읽기 표지 · 확인 · 재기)
 
 무엇을 왜 바꿨는지는 [PLAN.md](PLAN.md) · [context-notes.md](context-notes.md)(OF-15 부터 — 지은 것), 할 일은 [checklist.md](checklist.md)다. 이 판은 dev 의
-가지 `wt1102/ontology-build`(세 리포)에서 지었고 병합 · 올리기는 이 문서 밖이다. 받는 길은 그대로 `git pull && update-all` 이다.
+가지 `wt1102/ontology-build`(세 리포)에서 지어 11-02 세 리포 main 에 올렸다 — 에이전트 서버 `332f70e3` · 게이트웨이 `5bb79e09` · 포털 `06860be0`
+(화면은 Drive `images-20261102-235509Z`). 받는 길은 그대로 `git pull && update-all` 이다.
 
 ## 1. 무엇이 바뀌나 — 기본값 그대로인 것과 덧씌우기로 켜는 것
 

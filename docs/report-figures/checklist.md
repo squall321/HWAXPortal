@@ -9,7 +9,7 @@
 - [x] `POST /agent/figures/upload` — 에이전트 서버용 올리기만(RF-1)
 - [x] 시험 — 가짜 RA · 자격 · 읽기 전용 거절 · 꼴 · 크기 · sha256 · RA 오류 · 칸을 버린 RA · 동시 호출
 - [x] 계약 시험 — 에이전트 서버의 `report_figures.attach` 를 진짜 포털 앱에 물린다(RF-15)
-- [ ] 포털 전체 시험
+- [x] 포털 전체 시험 — 11-02 병합 판 4,707 통과 · 29 건너뜀 · 실패 둘은 작업 트리에서만 나는 알려진 것(ste doctor · tlscert)
 
 ## 에이전트 서버
 
@@ -18,7 +18,7 @@
 - [x] 심의 보고서(새 보고서 · 이어붙이기)에 잇기 — outcome `figures` · 결정문 끝 안내
 - [x] 잡 원장이 outcome 의 `figures` 를 `report_figures` 로 접고 `deliberate_result` 가 낸다
 - [x] 시험 — 단위 · `/보고서` · 심의(웹 · PAT 없는 잡)
-- [ ] 에이전트 서버 전체 시험
+- [x] 에이전트 서버 전체 시험 — 11-02 4,385 통과 · 2 건너뜀
 
 ## 마무리
 
@@ -39,17 +39,22 @@
 - [x] 반대 검토(사본에서) — 표 칸 배치 · 조용히 사라지는 그림 · Windows 경로 · PAT 새기 · /kit/ 위조 · 경로 넘기 — 변환기 K1 ~ K11 · S1 · S3 · S4 고침, /kit/ 0건(RF-24)
 - [x] 포털 전체 시험(`91652c86` — 4358 통과 · 408 건너뜀 · 실패 둘은 작업 트리에서만 나는 알려진 것 — ste doctor · tlscert) · 게이트웨이 전체 시험(`077d5f8` — 855 통과)
 
+## 현장 계획서의 CAD 단면(F1 ~ F3 · F6 — 긴급 11-02)
+- [x] F2 단면 자리 찾기 — 리스크 앱 `risk_locate_for_section` 등 도구 넷 · 스키마 v7(변환 등록부 · `location_json`), HWAXRisk `4d346316` · Drive(HEAXHub) `dist-20261102-233903Z` — 설계 · cae00 몫은 HWAXRisk `docs/f2-locate-for-section.md`, dev 확인 11-02(도구 넷 · v7 · 이관 사본)
+- [ ] F1 · F3 · F6 — StepForge 세션 몫. 판 · 도구 이름 · Drive 판을 받으면 게이트웨이 검색 어휘 · 이 폴더 문서 · F2 → F1 실호출 한 번
+- [ ] F2 cae00 — ODB 허브 몫 확인(그 문서 6절 — `get_part_detail.side` · bottom 좌표 · `get_net` 핀 · 구멍 쪽 넘김 · 실제 메인 보드로 손 셈) · 외곽 bbox(ODB 허브 OH-04)
+
 ## 하지 않은 것(다음 몫)
 
-- [ ] 반영 — push · 병합 · 재기동(에이전트 서버 · 포털)은 사람 몫이다
-- [ ] 업데이트 이력(`docs/changelog.md`) 항목 — 올리는 세션이 쓴다
-- [ ] CLAUDE.md 문서 표 한 줄 — 올리는 세션이 더한다
+- [x] 반영 — 11-02 올림 · dev 재기동(게이트웨이 `844f91af` · 에이전트 서버 `6a4c6b42` · 포털 `9468bef4`)
+- [x] 업데이트 이력(`docs/changelog.md`) 항목 — `9468bef4`(날짜는 `86caab20` 에서 KST 11-03 으로 — 쓴 때가 한국 날짜로 11-03)
+- [x] CLAUDE.md 문서 표 한 줄 — `8ac1be8c`
 - [ ] `/ai-data-hub/attachments/…` 그림(AIDataHub 첨부)은 아직 싣지 않는다(RF-13)
 - [ ] 분석 루틴의 RA 초안 · 챗에 사람이 올린 그림은 이 길을 타지 않는다(RF-13)
 - [ ] 포털 잠금 밖의 RA 쓰기가 그림 칸을 지우는 경합 — 게이트웨이가 보고서마다 RA 쓰기를 줄 세우거나 RA 가 expected_revision 을(RF-6 · F3)
 - [ ] RA 병합의 곁효과(배치 다시 짓기 · 여러 템플릿 보고서) RA 담당 확인(RF-18)
 - [ ] 에이전트 서버 `vision.IMG_URL_RE` 의 `\b`(조사 앞 그림 주소를 놓친다) — 챗 그림 읽기 쪽 세션 몫(RF-13)
-- [ ] PC 키트 반영 — 포털 · 게이트웨이 push · 병합 · 게이트웨이 재기동(kit_get 이 생긴다 · 변환기 파일은 포털 리포 받기만으로 새 판), 업데이트 이력 항목
+- [x] PC 키트 반영 — 포털 · 게이트웨이 push · 병합 · 게이트웨이 재기동(kit_get 이 생긴다 · 변환기 파일은 포털 리포 받기만으로 새 판), 업데이트 이력 항목 — 게이트웨이 `fe5e14c0` · 포털 `bcdc1cb1` · 이력 `58e6e680`, dev 확인 11-02(kit 으로 받은 변환기가 리포 파일과 같음)
 - [ ] 실제 Windows PC 에서 한 번 — UNC · 드라이브 경로 · cp949 콘솔 · 사내 인증서(PAT 받기) · Word 로 열어 표 칸 그림 보기(RF-20)
 - [ ] 현장 변환기(md2docx_z.py) 정리 · 개인 Claude 지침에 'docx 는 kit_get 의 변환기로' — 사용자 PC 몫
 - [x] MX 백서 문서에 그림 — 게이트웨이 `figure_to_doc`(그 사람 위임 토큰 · upload_image_bytes → insert_image_block) · MX 백서 401 꼴도 토큰 거절 — 11-02
