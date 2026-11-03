@@ -138,6 +138,10 @@
       ⚠ update-all 없이 손으로 `git pull` 만 하면 sf-mcp 가 옛 코드로 남는다. 그 채로 다시 태깅이 병합되면 옛 매처가 'Fold8 Ultra' 를 GZF8 로 풀어, 비는 것이
       아니라 Ultra 글이 빠진 답(틀린 답)이 나온다 — 그때는 sf-mcp 재기동을 꼭 한다(SignalForge `4859b0d` 문서 4절). update-all 4단계는 새 코드로 다시 띄우므로
       이 일이 없다.
+    - **11-04 — dev 에 적용됐다**(사용자가 SignalForge 세션에서 '적용' — 2026-11-03 22:55 UTC, 그쪽 문서 `aab838c`). 쓰기 전에 dry-run 을 다시 돌려(고침 9,603) 적용했고,
+      적용 뒤 dry-run 은 고침 0 이다. 되돌리기 CSV 는 dev 의 SignalForge `crawler/logs/` 에 있다. cae00 은 dev 의 다음 덤프 병합(약 30분 간격)으로 받고 그때 빈 창이
+      닫힌다 — 병합 뒤 그 문서 4절의 수와 5절의 질의, DW-21 · OT-15 로 본다. update-all 로 sf-mcp 가 이미 새 코드면 재기동은 필요 없다. 남은 결정 하나 — 세대 표지
+      없이 쓴 글을 더 가를지는 사용자가 cae00 표본을 본 뒤 정한다.
   - plm-kit 문서의 cae00 몫(받은 뒤 — 그 문서 1 · 3 · 4절) — ① 처음 받기 `cd ~/Projects/SignalForge && bash scripts/plm-sync.sh --full; echo "exit=$?"`(연결 점검을 겸한다 —
     0 정상 · 2 확인 필요(`problems` 를 본다) · 1 멈춤(`error` 가 까닭)) → ② 옛 거울과 건수 대조(그 문서 1절 명령 — 거의 같은 수) → ③ get_ontology 의 plm 이 새 수 ·
     `last_result` ok(그 문서 3절) → ④ 맞으면 옛 거울 파일 `crawler/data/plm/sp_mirror.sqlite` 를 지운다(그 문서 4절 — 쓰기라 사람이 한다). sf-mcp 를 따로 다시 띄울
