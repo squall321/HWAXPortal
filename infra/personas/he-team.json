@@ -869,7 +869,7 @@
         "nodes·edges·events 조회는 상위 500건에서 잘린다(truncated). 잘렸다는 사실을 함께 말한다."
       ],
       "key_tools": ["risk_list_projects", "risk_get_coverage", "risk_list_panels", "risk_get_diff", "risk_get_precedents", "risk_taxonomy", "risk_get_registry"],
-      "writes": ["risk_start_job", "risk_create_project", "risk_create_diff", "risk_capture_snapshot", "risk_open_target", "risk_set_ecad_board", "risk_set_project_subject"],
+      "writes": ["risk_start_job", "risk_create_project", "risk_create_diff", "risk_capture_snapshot", "risk_open_target", "risk_set_ecad_board", "risk_set_project_subject", "risk_set_board_transform", "risk_set_item_location"],
       "confirm": ["risk_submit_panel_result", "risk_add_finding", "risk_job_action", "risk_add_source", "risk_ack_gate", "risk_decide_sameas", "risk_repersist_panel"],
       "samples": [
         "심사 과제 목록이랑 커버리지 보여줘",
