@@ -44,7 +44,8 @@
 - [x] F1 짝 단면 — StepForge `section_pair_view` · `section_batch_result`(읽기) · 잡 종류 `section_batch`, 그쪽 main `5979a26`(문서 끝 `8a06681`) · Drive(HEAXHub) `dist-20261103-004526Z` — 게이트웨이 tools/list 에 둘 · 경유 실호출에 그림 보관 표지(RF-27)
 - [x] F2 → F1 실호출(dev 11-03) — 답의 `f1` 칸을 그대로 넘기면 거절이던 것을 리스크 앱 `f1.calls` 로 고침(`fc384f4b`(병합 — 코드 `8c4a6d1` · 문서 `742c4d3`)) · 두 평면 그림 · 강조가 두 판에서 맞음(RF-27)
 - [x] 게이트웨이 검색 낱말 — '짝 단면' · '단면 비교' → `section_pair_view`(`1c933629` · 추적 평가 147쌍 그대로, RF-27)
-- [ ] F3 `section_batch` 도구(행 50 · 50 MB 안 — 그쪽 a73) · F6 접힘 변환 · `compare_stackup` 그림 잡(a74, 11-04 ~ 05) — StepForge 세션 몫. 오면 `f1.calls` 줄이 F3 행으로 그대로 들어가는지 한 번
+- [x] F3 `section_batch` — 그쪽 main `ed0ca60`(문서 끝 `20b72a7`) · Drive(HEAXHub) `dist-20261103-025507Z`, F2 의 `f1.calls` 줄(견줄 판만 더함)이 그대로 rows 로 들어가 잡 · 그림 둘(dev 11-03, RF-28)
+- [ ] F6 접힘 변환(`fold`) · `compare_stackup` 그림 잡(그쪽 a74, 11-04 ~ 05) — StepForge 세션 몫
 - [ ] F2 cae00 — ODB 허브 몫 확인(그 문서 6절 — `get_part_detail.side` · bottom 좌표 · `get_net` 핀 · 구멍 쪽 넘김 · 실제 메인 보드로 손 셈) · 외곽 bbox(ODB 허브 OH-04)
 
 ## 하지 않은 것(다음 몫)
