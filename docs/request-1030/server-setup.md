@@ -100,6 +100,7 @@
 | 포털 | `a262ee21`(병합 — `7de9d3ae`) — CAD 점검이 적층 그림 쪽을 끝까지 | `infra/scripts/cad-figure-check.py` 의 적층 걸음이 답의 `page` 를 보고 끝 쪽까지 부르고 쪽마다 그림을 받는다(StepForge a77) — `docs/report-figures` RF-33 | 올림 — update-all 로 받는다(재기동 없음). 받은 편지함 Q4 그대로 |
 | 게이트웨이 | `a3ae08b2`(병합 — `f37aa44`) — 쓰기 낱말 `repin`(SP 0.4.72) | SP 의 새 허브 도구 `lineage_repin`(계보 다시 고정 — 되돌릴 길이 없는 사람 판단)이 쓰기로 읽힌다(SP 도구에는 표지가 없어 이름으로 가른다 — `docs/sp-latest` SL-1). 새 읽기 넷(object_explode · object_lineage · graph_reach · relation_proposals)은 루틴 · 좌석 읽기로 열리지 않는다(모르면 막기). 검색 열쇠 '단면 비교' 의 원천 고침 표시를 걷었다(StepForge 설명에 그 말이 들어갔다) | 올림 — update-all 뒤 게이트웨이 재기동 |
 | 포털 | `1dd1bd71`(병합 — `4ce5eb71`) — 허브 운영자의 SP 0.4.72 쓰기(사용자 결정 11-04 `docs/sp-latest` SL-2 · SL-3) | `he-data-coreontology` 의 선택 칸에 바꾸는 도구 마흔둘(confirm 27 · writes 15 — 도구마다 `needs_tool` 이라 허브가 옛 판이면 그 도구만 빠진다) · 운영자 미리보기의 '목록 밖 쓰기' 를 확인 관문과 같은 셈으로(형제 허브의 같은 도구를 거짓 알리지 않는다) · 빠진 도구 알림은 앞 여덟만 | 올림 — update-all 로 받는다(에이전트 서버는 재기동 없이 운영자 정의를 다시 읽는다). 허브 판 · 반영은 `docs/sp-latest/server-setup.md` · 받은 편지함 2026-11-04 |
+| KooRemapper | `225da1b` — SP 받는 쪽을 키트 2026-11-03(서브모듈 `ab41cff` · 0.4.72)으로(그쪽 세션, `docs/sp-latest` SL-5) | 층 1 판 표시 · 시험장 8/8 · §8.1 선 확인표 — 받기 규칙은 10-21 판과 같아 동작은 그대로다(SP 에서 온 연결만 끊고 사람이 이은 것은 둔다) | 올림 — update-all 2단계(`deploy-all-from-drive.sh`)로 코드를 받는다(Drive 판 그대로). 실제 SP 연결 점검은 허브 주소 · `core:read` 토큰 뒤 |
 
 ## 1. update-all 한 번
 

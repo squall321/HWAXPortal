@@ -46,4 +46,11 @@ effectivity · quantity_key · lineage_source)은 카탈로그째 담긴다. 선
 §2-3(관계 종류마다의 매핑)은 그 세션이 사용자에게 묻는 중이다(지금 받는 타입에 선이 없어 답이 와도 코드는 그대로). 시험장 8단계는 자동 모드가 GitHub 에서 받은 키트
 코드(fake_sp.py · compare.py) 실행을 막아 돌리지 못했다 — 사람이 DocForge 리포에서
 `DOCFORGE_SP_KIT_DIR=<SP ab41cff 의 backend/app/modules/coreapi/kit> .venv/bin/python -m pytest -q tests/test_sp_testbed.py` 로 돌린다(거울 57 · 전체 283 통과,
-시험장 둘은 건너뜀). StepForge(a78 — SP 그래프 기능 옮기기와 키트 판) · SignalForge · KooRemapper 는 답을 기다린다.
+시험장 둘은 건너뜀). StepForge(a78 — SP 그래프 기능 옮기기와 키트 판) · SignalForge 는 답을 기다린다.
+- KooRemapper 가 끝냈다(11-03) — main `225da1b`, 서브모듈 `778db2f` → `ab41cff`, 층 1 `KIT_VERSION = "2026-11-03"`(받기 규칙은 10-21 판과 같아 코드는 그대로).
+  선 반영 대조(§6.2 · §9 — 그쪽 `docs/01-plan/features/sp-receive-1103.plan.md`): 끝은 도착 타입으로 찾고 · SP 에서 온 연결만 끊고(사람이 이은 것은 그대로) ·
+  선의 칸은 통째로 바꾸고 · 수량 칸 이름은 박지 않는다. 다른 점 하나 — 그쪽 개정 열쇠와 `revision_of` 선이 SP 과제 key 를 품는다(§9 「연결에 SP key 복사」 꼴,
+  식별자가 바뀌면 같은 줄을 새 key 로 옮기고 시험 15항이 지킨다). §2 는 그쪽 사용자 결정(11-03 권장안) — 관계는 보이기만(읽기 전용) · 선의 뜻은 지금처럼 안 보임 ·
+  개정 열쇠 설계는 그대로. 시험장 8/8 · §8.1 선 확인표(일부러 틀린 단정을 잡는 것 확인) · 백엔드 829 통과, dev API 재기동. Drive 판은 그대로(파이썬 · 시험 · 주석만)이고
+  cae00 은 update-all 2단계(`deploy-all-from-drive.sh` — kooremapper 코드 받기 · 기동)로 들어간다. 실제 SP 연결 점검(그쪽 완료 조건 6)은 허브 주소 · `core:read`
+  토큰이 생긴 뒤다.
