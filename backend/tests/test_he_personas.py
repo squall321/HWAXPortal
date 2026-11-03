@@ -529,13 +529,29 @@ def test_MX_백서_운영자는_위키가_꺼진_박스에서도_멈추지_않�
         assert gone not in text and "upload_image" not in p["writes"], f"http 모드에서 실리지 않는 도구를 댄다 — {gone}"
 
 
-def _onto_map(hubs: tuple[str, ...]) -> dict:
-    """cae00 꼴 — 허브 셋이 같은 도구 이름을 내놓아 게이트웨이가 모두 접두로 낸다(HWAXAgentServer _ONTO_CORE 의 노출 이름)."""
+# SP 0.4.72(11-03) 정본 허브의 바꾸는 도구 중 10-30 일곱 밖의 것 — 운영자 두 목록에 나눴다(사용자 결정 11-03 '규칙대로 전부', docs/sp-latest SL-2).
+# confirm — 되돌릴 길이 없거나 · 사람이 판단하거나 · 일괄이거나 · 정의(스키마)를 바꾸거나 · 모두에게 미치는 설정. writes — 하나씩 잇기 · 고치기 · 저장 · 잡 시작.
+_SP0472_CONFIRM = frozenset({
+    "lineage_repin", "relation_proposal_decide", "relation_remove", "review_decide", "review_undo", "aliases_review",
+    "alias_candidate_apply", "object_restore", "attachment_remove", "job_cancel", "jobs_purge", "bulk_edit", "bulk_edit_undo",
+    "bundle_undo", "objects_import", "relations_import", "ontology_import", "ontology_delete", "ontology_retype",
+    "ontology_rename_option", "ontology_promote", "ontology_restore", "platform_profile_update", "datasource_save", "config_delete",
+    "metric_define", "slide_template_save"})
+_SP0472_WRITES = frozenset({
+    "relation_add", "relation_propose", "relation_update", "object_years", "object_watch", "view_save", "metric_home",
+    "metric_alert_save", "metric_recompute", "insight_manage", "filestore_gc", "export_start", "attachment_upload_prepare",
+    "slide_create", "slide_update"})
+
+
+def _onto_map(hubs: tuple[str, ...], *, sp0472: bool = True) -> dict:
+    """cae00 꼴 — 허브 셋이 같은 도구 이름을 내놓아 게이트웨이가 모두 접두로 낸다(HWAXAgentServer _ONTO_CORE 의 노출 이름).
+    sp0472 가 거짓이면 정본 허브가 10-30 판이다(쓰기는 일곱뿐 — 0.4.72 의 나머지 쓰기가 없다)."""
     core = {"rootdesigndatahub": ("object_resolve", "objects_resolve_many", "objects_list", "objects_summary", "object_get",
                                   "object_fields", "graph_neighbors", "search",
                                   # 쓰기 · 잡(10-30 cae00 /tools-map — docs/request-1030 HP-53)
                                   "object_create", "object_update", "objects_delete", "object_merge", "datasource_sync",
-                                  "bundle_import", "job_apply"),
+                                  "bundle_import", "job_apply",
+                                  *(sorted(_SP0472_CONFIRM | _SP0472_WRITES) if sp0472 else ())),
             "failuretrace": ("object_resolve", "objects_list", "objects_summary", "graph_neighbors"),
             "caegroupdatahub": ("object_resolve", "objects_list", "objects_summary")}
     return {"map": {f"{h}_{t}": h for h in hubs for t in core[h]}, "areas": {}, "area_meta": [],
@@ -765,6 +781,81 @@ def test_HP53_목록_밖_쓰기가_많으면_앞_여덟만_적고_나머지는_�
     assert n < len(extra)
     shown = ", ".join(sorted(extra)[:n])
     assert warns == [f"목록 밖 쓰기 he-calc-thermalshock: 11개 — {shown} 외 {11 - n}개(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)"], warns
+
+
+# ── SP 0.4.72 정본 허브의 쓰기(11-03 사용자 결정 — 규칙대로 전부, docs/sp-latest SL-2 · SL-3) ─────────────────────────────────────
+# 10-30 은 쓰기 일곱만 적고 나머지(relation_* · bulk_edit …)는 cae00 미리보기를 보고 사람이 정하기로 남겼다(docs/request-1030 C-15 ④). 0.4.72 의
+# 바꾸는 도구 마흔둘을 도구마다 needs_tool 로 붙인다 — 필수 칸에 두면 허브가 옛 판인 박스에서 '이 앱에 없는 도구' 로 동기화가 통째로 멈춘다.
+# 확인 관문(에이전트서버 _confirm_lists)은 needs_tool 과 상관없이 선택 칸의 목록을 늘 읽는다.
+def _state_lists(prompt: str) -> tuple[list[str], list[str]]:
+    """운영자 프롬프트의 '## 상태를 바꾸는 도구' 두 줄 → (요청했을 때만, 되돌리기 어렵다)의 이름 목록."""
+    sec = prompt.split("## 상태를 바꾸는 도구\n", 1)[1].split("\n\n", 1)[0].splitlines()
+    pick = lambda head: next((ln.rsplit(" — ", 1)[1].rstrip(".").split(", ") for ln in sec if ln.startswith(head)), [])  # noqa: E731
+    return pick("- 사용자가 그 작업을 요청했을 때만"), pick("- 되돌리기 어렵다")
+
+
+def test_SP0472_허브_쓰기는_도구마다_있을_때만_붙는_칸이다():
+    p = _one("he-data-coreontology")["personas"][0]
+    mine = [o for o in p["optional"] if o["app"] == "rootdesigndatahub"]
+    by_tool = {o["needs_tool"]: o for o in mine}
+    assert len(by_tool) == len(mine) == 42, "도구 하나에 칸 하나 — 칸에 여럿을 묶으면 needs_tool 은 있는데 다른 이름이 없는 판에서 멈춘다"
+    assert set(by_tool) == _SP0472_CONFIRM | _SP0472_WRITES and not _SP0472_CONFIRM & _SP0472_WRITES
+    for t, o in by_tool.items():
+        fld = "confirm" if t in _SP0472_CONFIRM else "writes"
+        assert {k: v for k, v in o.items() if k not in ("app", "needs_tool")} == {fld: [f"rootdesigndatahub_{t}"]}, t
+    names = {n for src in [p, *p["optional"]] for fld in _TOOL_FIELDS for n in src.get(fld) or []}
+    assert not [n for n in names if n.endswith("extension_call")], "확장 부르기는 읽기(GET)에도 쓴다 — 넣으면 확장 조회마다 카드가 선다"
+    gate = _sync()._gate_names(p)
+    assert (_SP0472_CONFIRM | _SP0472_WRITES) <= set(gate), "관문은 접두를 뗀 꼴로도 건다 — 형제 허브(failuretrace_ …)의 같은 도구까지"
+
+
+def test_SP0472_허브가_옛_판이면_빼고_만들고_새_판이면_두_줄에_나눠_싣는다():
+    sync = _sync()
+    one = _one("he-data-coreontology")
+    hubs = ("rootdesigndatahub", "failuretrace", "caegroupdatahub")
+    gone = [f"rootdesigndatahub 의 {o['needs_tool']}" for o in one["personas"][0]["optional"] if o["app"] == "rootdesigndatahub"]
+    notes: list[str] = []
+    (r,), skipped, errors = sync.plan(one, _onto_map(hubs, sp0472=False), notes)
+    assert not errors and not skipped, "10-30 판 허브 — 없는 도구는 빼고 만든다(동기화가 멈추지 않는다)"
+    n = sync.LOOSE_SHOW
+    assert notes == [f"he-data-coreontology: {', '.join(gone[:n])} 외 {len(gone) - n}개 없이 만든다(선택 앱)"], notes
+    ask, sure = _state_lists(r["system_prompt"])
+    assert ask == ["rootdesigndatahub_object_create", "rootdesigndatahub_object_update"] and len(sure) == 5, (ask, sure)
+    notes = []
+    (r,), skipped, errors = sync.plan(one, _onto_map(hubs), notes)
+    assert not errors and not skipped and not notes, (errors, skipped, notes)
+    ask, sure = _state_lists(r["system_prompt"])
+    assert set(ask) == {f"rootdesigndatahub_{t}" for t in _SP0472_WRITES | {"object_create", "object_update"}}, ask
+    assert "rootdesigndatahub_lineage_repin" in sure and set(sure) >= {f"rootdesigndatahub_{t}" for t in _SP0472_CONFIRM}, sure
+    assert len(r["system_prompt"]) <= sync.PROMPT_MAX
+    # 판 사이(제안은 있고 다시 고정은 없다) — 있는 것만 붙는다
+    tm = _onto_map(hubs, sp0472=False)
+    tm["map"]["rootdesigndatahub_relation_propose"] = "rootdesigndatahub"
+    (r,), _s, errors = sync.plan(one, tm)
+    ask, sure = _state_lists(r["system_prompt"])
+    assert not errors and "rootdesigndatahub_relation_propose" in ask and "rootdesigndatahub_lineage_repin" not in sure
+
+
+def test_SP0472_목록_밖_쓰기는_관문과_같은_셈으로_형제_허브를_거짓_알리지_않는다():
+    """관문은 정본 허브 접두로 적은 이름의 꼬리로 형제 허브의 같은 도구(failuretrace_bundle_import)도 건다. 미리보기가 노출 이름 · 접두 별칭만
+    견주면 그것을 '목록 밖' 으로 알렸다(0.4.72 허브 셋이면 99개 중 70개가 거짓 — update-all §7 의 ✗ 줄이 늘 섰다)."""
+    sync = _sync()
+    one = _one("he-data-coreontology")
+    hubs = ("rootdesigndatahub", "failuretrace", "caegroupdatahub")
+    sp = sorted({"object_create", "object_update", "objects_delete", "object_merge", "bundle_import", "job_apply"}
+                | _SP0472_CONFIRM | _SP0472_WRITES)
+    tm = _onto_map(hubs)
+    tm["map"].update({f"{h}_{t}": h for h in hubs for t in sp})
+    tm.update(write=sorted(f"{h}_{t}" for h in hubs for t in sp), routine_read=[])
+    warns: list[str] = []
+    rows, _s, errors = sync.plan(one, tm, None, warns)
+    assert rows and not errors and warns == [], warns
+    # 어느 목록의 꼬리도 아닌 쓰기는 형제 허브 것이어도 알린다
+    tm["map"]["failuretrace_recompute_cache"] = "failuretrace"
+    tm["write"] = [*tm["write"], "failuretrace_recompute_cache"]
+    warns = []
+    sync.plan(one, tm, None, warns)
+    assert warns == ["목록 밖 쓰기 he-data-coreontology: 1개 — failuretrace_recompute_cache(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)"], warns
 
 
 # ── 미리보기 · 반영 본체(main) — 게이트웨이와 AIDataHub 를 흉내 낸다 ─────────────────────────────────────────────

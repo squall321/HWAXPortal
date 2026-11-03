@@ -164,7 +164,9 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
             continue
         p, absent = _with_optional(p, by_app)
         if absent and notes is not None:
-            notes.append(f"{key}: {', '.join(absent)} 없이 만든다(선택 앱)")
+            # 정본 허브는 판마다 도구가 늘어 도구 하나에 선택 칸 하나다(11-03 SP 0.4.72 쓰기 42개) — 옛 판 허브면 수십 개가 빠지니 앞 여덟만 적는다
+            more = f" 외 {len(absent) - LOOSE_SHOW}개" if len(absent) > LOOSE_SHOW else ""
+            notes.append(f"{key}: {', '.join(absent[:LOOSE_SHOW])}{more} 없이 만든다(선택 앱)")
         tools = sorted(t for a in p["apps"] for t in by_app[a])
         # 정본의 이름은 노출 이름이거나 **접두 별칭**(`<앱 키에서 하이픈을 뺀 것>_<이름>`)이면 맞다. 게이트웨이는 지금 붙은 백엔드끼리
         # 이름이 겹칠 때만 접두를 붙여 내놓으므로, 같은 도구의 노출 이름이 **다른 앱이 붙어 있느냐**로 뒤집힌다(ste 가 없는 박스는
@@ -181,12 +183,13 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
         if both:
             errors.append(f"{key}: writes 와 confirm 에 같이 있다 — {', '.join(both)}")
         # 운영자 앱의 쓰기 꼴 도구가 두 목록 어디에도 없다(docs/request-1030 HP-53) — 프롬프트의 '요청했을 때만 · 확인을 받은 뒤' 줄에서
-        # 빠지고, 에이전트서버의 확인 관문(HA-29)이 들어가면 그 관문이 읽을 목록에서도 빠진다. 정본은 노출 이름이나 접두 별칭으로 적으므로
-        # 둘 다 대조한다.
+        # 빠지고, 에이전트서버의 확인 관문(HA-29)이 들어가면 그 관문이 읽을 목록에서도 빠진다. 대조는 관문과 같은 셈이다 — 이름 그대로이거나
+        # '_<이름>' 으로 끝나면 적힌 것이다(_gate_names — 접두 별칭은 접두를 뗀 꼴까지). 노출 이름 · 접두 별칭만 견주면 형제 허브의 같은 도구
+        # (failuretrace_bundle_import — 관문은 정본 허브 접두로 적은 이름의 꼬리로 건다)를 '목록 밖' 으로 거짓 알렸다(11-03, SP 0.4.72 허브 셋이면 99개 중 70개).
         if warns is not None and write is not None:
-            listed = set(p["writes"]) | set(p["confirm"])
-            loose = [t for t in tools if t in write and t not in read_ok and t not in listed
-                     and f"{tool_app[t].replace('-', '')}_{t}" not in listed]
+            gate = _gate_names(p)
+            loose = [t for t in tools if t in write and t not in read_ok
+                     and not any(t.lower() == g or t.lower().endswith("_" + g) for g in gate)]
             if loose:
                 more = f" 외 {len(loose) - LOOSE_SHOW}개" if len(loose) > LOOSE_SHOW else ""
                 warns.append(f"목록 밖 쓰기 {key}: {len(loose)}개 — {', '.join(loose[:LOOSE_SHOW])}{more}"
