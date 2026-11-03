@@ -22,6 +22,20 @@
 
 entries:
   - date: 2026-11-03
+    title: "두 개정의 같은 자리 단면을 한 장으로 — StepForge 짝 단면"
+    tag: 수정
+    items:
+      - "StepForge 에 짝 단면(section_pair_view)이 생겼습니다. 과제 2 ~ 6개(두 개정 등)를 같은 자리에서 잘라 칸마다 정확한 단면 · 같은 파트는 같은 색 · 간극 치수를 그림 한 장과 측정 표로 줍니다. 그림은 '그림 저장 — fig_…' 으로 남아 figure_to_report · figure_to_doc 으로 보고서에 바로 넣습니다."
+      - "리스크 심사의 단면 자리 찾기가 평면마다 그대로 부를 인자(f1.calls)를 줍니다 — 견줄 판의 과제 id 만 더해 짝 단면을 부르면 그 항목 자리의 그림 두 장이 나옵니다(전에는 답의 칸을 그대로 넘기면 짝 단면이 거절했습니다)."
+      - "개인 Claude 의 도구 찾기에서 '짝 단면' · '단면 비교' 로 짝 단면이 맨 앞에 옵니다."
+  - date: 2026-11-03
+    title: "11-03 내부 — F2 → F1 넘김 · 검색 낱말 · StepForge F1"
+    tag: 기술
+    items:
+      - "리스크 앱 risk_locate_for_section 의 답 f1 에 calls(평면마다 projects · point [x, y, z] · axis · window_mm · unit · highlight — offset 없음)와 고친 note · 도구 설명(HWAXRisk fc384f4b(병합 — 코드 8c4a6d1 · 문서 742c4d3), 스키마는 그대로 v7)."
+      - "게이트웨이 search_tuning.json 에 띄어 쓴 열쇠 '짝 단면' · '단면 비교' → section_pair_view(동의어 81 — 추적 평가 147쌍의 순위는 그대로)."
+      - "StepForge(그쪽 세션) main 5979a26 · Drive dist-20261103-004526Z — section_pair_view · section_batch_result(읽기) · 잡 종류 section_batch · REST /api/section-pair-view · /api/section-batch-result."
+  - date: 2026-11-03
     title: "심의를 시작할 때 '온톨로지 먼저 보기' 로 과제의 이웃을 근거로 넣습니다"
     tag: 심의
     items:
