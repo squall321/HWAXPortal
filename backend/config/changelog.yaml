@@ -22,6 +22,18 @@
 
 entries:
   - date: 2026-11-03
+    title: "접힌 상태로 자른 단면 · 적층 비교 그림 — StepForge"
+    tag: 수정
+    items:
+      - "짝 단면 · 짝 단면 묶음에 접힘(fold)을 주면 고른 파트를 힌지 축으로 돌린 접힌 상태에서 자릅니다(그림 제목에 CLOSED STATE). 아무 파트도 가리키지 않으면 접힌 상태라고 하지 않고 거절합니다."
+      - "적층 비교를 그림 한 장으로 받습니다(stackup_figure — 보드마다 한 열 · 짝 지은 층은 같은 색 · 줄마다 두께 · 간극과 차이). 그림은 '그림 저장 — fig_…' 으로 남아 보고서에 바로 넣습니다."
+      - "큰 보드처럼 한 번에 다 못 하면 측정 잡을 저절로 맡기고 잡 번호를 줍니다 — 읽기 전용 토큰 · 루틴 · 심의 좌석도 그림까지 갑니다(사용자 결정 11-03). 같은 부름은 같은 잡입니다."
+  - date: 2026-11-03
+    title: "11-03 내부 — StepForge F6 · 적층 측정 잡"
+    tag: 기술
+    items:
+      - "StepForge(그쪽 세션) main 5366950 · dc7b447 · Drive dist-20261103-073959Z — fold(fold.moved · panels[].fold_moved) · stackup_figure(job_id 또는 project_id + other_project_id) · compare_stackup 의 range_a · range_b · 예산에서 멈추면 job(job_call 그대로 · 파싱 안 된 과제는 job_not_queued) · 읽기 예외(jobs:insert)가 도구 넷 · section_batch 의 status · job_status 안내."
+  - date: 2026-11-03
     title: "여러 자리의 짝 단면을 한 번에 — StepForge 짝 단면 묶음"
     tag: 수정
     items:
