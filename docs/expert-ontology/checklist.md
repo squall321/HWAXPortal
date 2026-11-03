@@ -8,11 +8,12 @@
 - [x] 계획서 · 체크리스트 · 결정 기록 · CLAUDE.md 문서 표 한 줄
 
 ## O0a 범위 탐침(포털 리포 · 읽기 전용 — dev 에서 짓고 cae00 에서 돈다)
-- [ ] `infra/scripts/card-entity-probe.py` — 게이트웨이 경유 읽기만(허브 `objects_list` · `objects_resolve_many`, AIDataHub `list_records` · `get_record` ·
-      `get_record_sections`), 표본 층화 · 사전 · 맞추기 · exact 만 · 수만 내기(카드 글 · 사람 이름을 내지 않는다)
-- [ ] 시험 — 가짜 허브 · 가짜 AIDataHub(exact · candidates · none · 별칭 · 흔한 낱말 · 짧은 이름 · 낱말 경계 · 쪽 넘김 · 쓰기 도구를 부르지 않음)
-- [ ] dev 마른 실행 — 진짜 AIDataHub(읽기) + 허브 없음(그렇다고 말하고 멈춘다)
-- [ ] 받은 편지함 — cae00 에서 돌리는 법 · 답할 것(타입별 연결 비율 · 흔한 낱말 상위 · 별칭 칸 유무 · part 슬러그)
+- [x] `infra/scripts/card-entity-probe.py` — 게이트웨이 경유 읽기만(허브 `objects_list` · `objects_resolve_many`, AIDataHub `list_records` · `get_record` ·
+      `get_record_sections`), 표본 층화 · 사전 · 맞추기 · exact 만 · 수만 내기(카드 글 · 사람 이름을 내지 않는다) — `d9d92bbd`(EO-5)
+- [x] 시험 — 가짜 허브 · 가짜 AIDataHub(exact · candidates · none · 별칭 · 흔한 낱말 · 짧은 이름 · 낱말 경계 · 쪽 넘김 · 쓰기 도구를 부르지 않음) — 23, 변이 넷 붉음
+- [x] dev 마른 실행 — 허브 없음(그렇다고 말하고 끝 2) · 진짜 AIDataHub 카드 8장 + 가짜 허브로 층 · 카드 · 절 · 맞추기(EO-5)
+- [x] 받은 편지함 — [`../cae00-inbox/2026-11-03.md`](../cae00-inbox/2026-11-03.md) Q1 ~ Q3(범위 · 부품 슬러그와 별칭 · 뺄 낱말)
+- [ ] cae00 답 — Q1 ~ Q3(사람)
 
 ## O0b 신호(E-5 B0 와 같은 날)
 - [ ] 추천 위 40명의 객체 묶음으로 A-test 순위를 다시 매기는 갈래 — E-5 B0 실행기(`seat_probe` · `/seat-eval`)에 붙인다
