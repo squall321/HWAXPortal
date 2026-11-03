@@ -46,7 +46,12 @@ effectivity · quantity_key · lineage_source)은 카탈로그째 담긴다. 선
 §2-3(관계 종류마다의 매핑)은 그 세션이 사용자에게 묻는 중이다(지금 받는 타입에 선이 없어 답이 와도 코드는 그대로). 시험장 8단계는 자동 모드가 GitHub 에서 받은 키트
 코드(fake_sp.py · compare.py) 실행을 막아 돌리지 못했다 — 사람이 DocForge 리포에서
 `DOCFORGE_SP_KIT_DIR=<SP ab41cff 의 backend/app/modules/coreapi/kit> .venv/bin/python -m pytest -q tests/test_sp_testbed.py` 로 돌린다(거울 57 · 전체 283 통과,
-시험장 둘은 건너뜀). StepForge(a78 — SP 그래프 기능 옮기기와 키트 판) · SignalForge 는 답을 기다린다.
+시험장 둘은 건너뜀). SignalForge 는 그 세션이 사용자 답 「관계 매핑」(§2-3 — 받는 관계 `plm_derived_from` 을 쓸지, 권장은 지금대로 안 씀)을 기다린다.
+- StepForge 가 끝냈다(a78, 11-04) — main `b9db3d0`(D-661 키트 — 받기 규칙 그대로 · 시험장 8/8 · 「절반 넘게 안 옴」 까닭 글을 §5.5 새 말로 · §8.1 선 확인표 자동 시험) ·
+  `ec721ef`(D-662 그래프 — 새 읽기 셋 `onto_reach` · `onto_explode` · `onto_lineage`, `onto_neighbors` 의 `direction` · 선 `properties`, `onto_walk` rollup 셋, `onto_query` 선 칸 주소 ·
+  `edge` 묶음 · `fields` 상한 10 · 값 20) · `ce478ca`(문서), Drive `dist-20261103-234515Z`(a77 까지 품는다), dev 라이브 도구 183. 그쪽 사용자 결정 넷 — 카탈로그 뜻대로 ·
+  기간 저장 안 함 · 새 도구 셋 · 허브 관계는 전부 방향 있음. 포털 · 에이전트 · 게이트웨이 · 리스크 앱에는 `onto_*` 를 직접 부르는 코드가 없어(모델만 부른다) 상한이 깨는 곳이
+  없다. dev 게이트웨이에 셋 다 읽기(`routine_read`)로 보인다. cae00 확인은 받은 편지함 2026-11-04 Q3.
 - KooRemapper 가 끝냈다(11-03) — main `225da1b`, 서브모듈 `778db2f` → `ab41cff`, 층 1 `KIT_VERSION = "2026-11-03"`(받기 규칙은 10-21 판과 같아 코드는 그대로).
   선 반영 대조(§6.2 · §9 — 그쪽 `docs/01-plan/features/sp-receive-1103.plan.md`): 끝은 도착 타입으로 찾고 · SP 에서 온 연결만 끊고(사람이 이은 것은 그대로) ·
   선의 칸은 통째로 바꾸고 · 수량 칸 이름은 박지 않는다. 다른 점 하나 — 그쪽 개정 열쇠와 `revision_of` 선이 SP 과제 key 를 품는다(§9 「연결에 SP key 복사」 꼴,
