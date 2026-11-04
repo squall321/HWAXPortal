@@ -65,3 +65,8 @@ effectivity · quantity_key · lineage_source)은 카탈로그째 담긴다. 선
   개정 열쇠 설계는 그대로. 시험장 8/8 · §8.1 선 확인표(일부러 틀린 단정을 잡는 것 확인) · 백엔드 829 통과, dev API 재기동. Drive 판은 그대로(파이썬 · 시험 · 주석만)이고
   cae00 은 update-all 2단계(`deploy-all-from-drive.sh` — kooremapper 코드 받기 · 기동)로 들어간다. 실제 SP 연결 점검(그쪽 완료 조건 6)은 허브 주소 · `core:read`
   토큰이 생긴 뒤다.
+
+**SL-6 SP main `d3b5aa1` — 맞출 것 없음(11-04).** 0.4.72(`ab41cff`) 뒤 한 커밋 — 자주검증 입력(svinput) 확장(ADR 0051 — 허브의 온톨로지 타입 위에 얹는 문제점 중심 입력 ·
+열람 화면, 26 파일). MCP 도구는 그대로 110 이고(GUIDE.md 36줄 더함) 키트 `KIT_VERSION` 도 그대로다 — 소비처 · 게이트웨이 · 운영자 목록에 맞출 것이 없다. StepForge 는 a79 에서
+서브모듈을 이 판으로 올렸다(키트 판 그대로 · 시험장 통과). 확장의 자리는 `extension_call` 로 닿는데, 그 도구는 읽기에도 써서 확인 목록에 넣지 않았다(SL-2) — 확장의 쓰기는
+SP 가 관리자 전용으로 막는다(`DESTRUCTIVE_TOOLS`). cae00 허브를 이 판으로 올릴지는 그 화면이 필요할 때 허브 쪽이 정한다.

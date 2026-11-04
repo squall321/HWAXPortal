@@ -71,5 +71,7 @@
 - [ ] 현장 변환기(md2docx_z.py) 정리 · 개인 Claude 지침에 'docx 는 kit_get 의 변환기로' — 사용자 PC 몫
 - [x] MX 백서 문서에 그림 — 게이트웨이 `figure_to_doc`(그 사람 위임 토큰 · upload_image_bytes → insert_image_block) · MX 백서 401 꼴도 토큰 거절 — 11-02
 - [x] dev 끝에서 끝까지(11-02, 사용자 승인 — 시험 신원 figsmoke 가 MX 백서 dev 에 편집자로 저절로 생김) — render_3d → figure_to_doc ok · 개요에 그림 블록 · 같은 그림 다시는 deduped · 블록 둘 지움, 빈 시험 문서 하나는 MX 백서 세션에 지워 달라고 함(도구집에 문서 지우기 없음)
+- [x] 단면 지도 · 타겟 파트 강조 색(StepForge a79 `e4d7bd8` · Drive `dist-20261104-135504Z`, RF-34) — dev 게이트웨이 도구 184 · `section_atlas` 읽기
+- [ ] cae00 — 단면 지도 도구 · 새 반입의 지도 상태(받은 편지함 2026-11-04 Q4)
 - [ ] 후속 — 일회성 세션의 결과 뒤 tools/list 401 로 쓰기 도구가 두 번 도는 틈(RF-26)
 
