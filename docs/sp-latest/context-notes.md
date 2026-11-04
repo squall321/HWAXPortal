@@ -46,7 +46,13 @@ effectivity · quantity_key · lineage_source)은 카탈로그째 담긴다. 선
 §2-3(관계 종류마다의 매핑)은 그 세션이 사용자에게 묻는 중이다(지금 받는 타입에 선이 없어 답이 와도 코드는 그대로). 시험장 8단계는 자동 모드가 GitHub 에서 받은 키트
 코드(fake_sp.py · compare.py) 실행을 막아 돌리지 못했다 — 사람이 DocForge 리포에서
 `DOCFORGE_SP_KIT_DIR=<SP ab41cff 의 backend/app/modules/coreapi/kit> .venv/bin/python -m pytest -q tests/test_sp_testbed.py` 로 돌린다(거울 57 · 전체 283 통과,
-시험장 둘은 건너뜀). SignalForge 는 그 세션이 사용자 답 「관계 매핑」(§2-3 — 받는 관계 `plm_derived_from` 을 쓸지, 권장은 지금대로 안 씀)을 기다린다.
+시험장 둘은 건너뜀).
+- SignalForge 가 끝냈다(11-04) — main `07b3f1a`. 「관계 매핑」(§2-3 — 받는 관계 `plm_derived_from` 을 쓸지)은 사용자가 맡은 탭(7f)을 못 찾아 다른 탭(c6)에서 답했다 —
+  '지금대로 안 쓴다'(선은 사본에 받아만 두고 색인에 안 쓴다 · 키트 판만 올린다). 7f 가 작업 트리에 넣어 둔 키트 파일을 c6 이 그대로 써서 마쳤다. 키트 `crawler/sp_core_kit` =
+  SP `ab41cff` 의 `coreapi/kit`(diff 없음), 판 표시 2026-11-03, §6.2 · §9 는 선을 넣는 코드가 없어 해당 없음(쓰게 되면 §2 물음부터). 시험장 8단계 통과(새 가짜 SP —
+  선에 유효 기간 · effectivity · quantity_key · lineage_source), crawler 1898 · MCP 189 통과(옛 실패 4 그대로). cae00 은 받기 코드가 그대로라 사람 몫이 없다 —
+  update-all 로 받으면 다음 plm-sync 가 새 키트 파일로 돈다.
+- 소비처 넷이 모두 키트 2026-11-03 이다(11-04) — DocForge `ab0861d` · KooRemapper `225da1b` · StepForge `ec721ef` · SignalForge `07b3f1a`.
 - StepForge 가 끝냈다(a78, 11-04) — main `b9db3d0`(D-661 키트 — 받기 규칙 그대로 · 시험장 8/8 · 「절반 넘게 안 옴」 까닭 글을 §5.5 새 말로 · §8.1 선 확인표 자동 시험) ·
   `ec721ef`(D-662 그래프 — 새 읽기 셋 `onto_reach` · `onto_explode` · `onto_lineage`, `onto_neighbors` 의 `direction` · 선 `properties`, `onto_walk` rollup 셋, `onto_query` 선 칸 주소 ·
   `edge` 묶음 · `fields` 상한 10 · 값 20) · `ce478ca`(문서), Drive `dist-20261103-234515Z`(a77 까지 품는다), dev 라이브 도구 183. 그쪽 사용자 결정 넷 — 카탈로그 뜻대로 ·
