@@ -252,7 +252,8 @@ def test_HP26_게이트웨이_설정이_없거나_깨지면_조용히_지나간�
 
 
 # ── HP-35 §2b — AIDH merge 뒤 HE팀 운영자 미리보기 ─────────────────────────────────────────────────────
-_S2B_PERSONA = _region("    # merge 는 updated_at 이 더 새 쪽을 고른다", '이 박스 판 그대로(미리보기)"\n      fi\n    fi\n')
+# 조각 길(docs/aidh-parts-sync)이 생기며 전체 길의 else 밖으로 나왔다 — 어느 길이든 병합이 돈 실행에만(_aidh_mrc 0 · 3).
+_S2B_PERSONA = _region("  # merge 는 updated_at 이 더 새 쪽을 고른다", '이 박스 판 그대로(미리보기)"\n    fi\n  fi\n')
 
 
 def _persona_preview(tmp: Path, mrc: int, out: str, rc: int = 0) -> subprocess.CompletedProcess:

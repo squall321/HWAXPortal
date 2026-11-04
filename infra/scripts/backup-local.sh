@@ -334,13 +334,15 @@ fi
 # ── 세대 보관: 우리 트리(hwax/$BOX/*/daily)만 정리한다. $BACKUP_ROOT 전체를 훑던 종전 방식은
 #    운영자가 손으로 둔 아카이브·무관 잔재(cluster_setup·dpkg.*)까지 지웠다(사전점검).
 #    예외: AIDH merge-from-drive.sh:46 이 update-all 마다 $BACKUP_ROOT/aidh/pre-merge-*.sql.gz(4.4G)를 계속 쓴다 — 그것만 같이 정리.
-hr "세대 정리 (${RETAIN_DAYS}일 초과 삭제 — $ROOT/*/daily + aidh pre-merge)"
+#    조각 길(docs/aidh-parts-sync)은 전체 스냅숏 대신 덮을 줄의 앞 모습 폴더(pre-parts-<시각>)를 남긴다 — 같은 보관 일수로 지운다.
+hr "세대 정리 (${RETAIN_DAYS}일 초과 삭제 — $ROOT/*/daily + aidh pre-merge · pre-parts)"
 for d in "$ROOT"/*/daily; do
   [ -d "$d" ] || continue
   find "$d" -maxdepth 1 -type f \( -name "*.sql.gz" -o -name "*.tar.gz" \) -mtime +"$RETAIN_DAYS" -print -delete 2>/dev/null | sed 's/^/  삭제: /' || true
   find "$d" -maxdepth 1 -type f -name "*.sha256" -mtime +"$RETAIN_DAYS" -delete 2>/dev/null || true
 done
 [ -d "$BACKUP_ROOT/aidh" ] && find "$BACKUP_ROOT/aidh" -maxdepth 1 -type f -name 'pre-merge-*.sql.gz' -mtime +"$RETAIN_DAYS" -print -delete 2>/dev/null | sed 's/^/  삭제: /' || true
+[ -d "$BACKUP_ROOT/aidh" ] && find "$BACKUP_ROOT/aidh" -mindepth 1 -maxdepth 1 -type d -name 'pre-parts-*' -mtime +"$RETAIN_DAYS" -print -exec rm -rf -- {} + 2>/dev/null | sed 's/^/  삭제: /' || true
 
 echo
 du -sh "$ROOT" 2>/dev/null | sed 's/^/  총량: /'

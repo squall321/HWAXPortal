@@ -281,3 +281,26 @@ def test_HP17_crontab_없음은_빼고_못_읽음은_실패로_센다(tree):
     assert r.returncode == 1 and "crontab 을 읽지 못했다" in r.stdout, r.stdout + r.stderr
     _out, got = _secrets_tar(tree)
     assert "portal/infra/.env" in got, "crontab 하나 때문에 나머지 비밀을 담지 않았다"
+
+
+# ── 조각 길의 앞 모습 폴더(docs/aidh-parts-sync) — pre-merge 덤프와 같은 보관 일수로 지운다 ──────
+
+def test_조각_길의_앞_모습_폴더도_보관_일수가_지나면_지운다(tree):
+    aidh = Path(tree["env"]["BACKUP_ROOT"]) / "aidh"
+    old, new = aidh / "pre-parts-20261001-000000", aidh / "pre-parts-20261104-000000"
+    for d in (old, new):
+        d.mkdir(parents=True)
+        (d / "records.before.bin.gz").write_bytes(b"x")
+    keep = aidh / "operator-archive"          # 손으로 둔 폴더 — 이름이 다르면 손대지 않는다
+    keep.mkdir()
+    past = 30 * 86400
+    for path in (old, old / "records.before.bin.gz", keep):
+        st = path.stat()
+        os.utime(path, (st.st_atime - past, st.st_mtime - past))
+    _secrets_tree(tree)
+    tree["ct"].write_text("30 3 * * * backup\n")
+    r = _run(tree, [str(tree["portal"] / "infra/scripts/backup-local.sh"), "secrets"], CT_MODE="ok")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not old.exists() and new.is_dir() and keep.is_dir(), r.stdout
+    assert f"삭제: {old}" in r.stdout, r.stdout
+

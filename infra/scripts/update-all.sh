@@ -1208,10 +1208,43 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
   fi
   # 스택 보장 + 임베딩 모델 확보(sync-from-drive 의 [2]/[2b] 만, restore 는 안 함 = 비파괴)
   ( cd "$AIDH_DIR" && AIDH_SKIP_MODEL=0 ./deploy/apptainer/sync-from-drive.sh --dry-run --skip-git >/dev/null 2>&1 ) || true
+  # 조각 길 먼저(docs/aidh-parts-sync) — dev 가 하루 한 번 낸 조각 목록을 지난번 병합한 목록과 견줘 바뀐 조각만 받아 병합한다. 바뀐 것이
+  # 없으면 여기서 끝이다(전체 덤프는 이름이 매일 바뀌어 바뀐 줄이 없어도 통째로 받아 병합했다 — 한 시간 남짓). 목록이 없거나(4) 받기 ·
+  # 병합이 실패하면 아래 전체 덤프 길로 간다. 3(dev 에만 있는 열)은 전체 길로 가도 같은 3이라 넘기지 않는다 — '병합함' 을 안 적어 다음
+  # 실행이 같은 조각으로 다시 병합한다. 잠깐 끄려면 AIDH_SYNC_MODE=full 로 부른다.
+  _aidh_done=""; _aidh_mrc=""
+  if [ "${AIDH_SYNC_MODE:-}" = full ]; then
+    hwax_skip "AIDH 조각 동기화" "AIDH_SYNC_MODE=full — 전체 덤프 길로만" "AIDH_SYNC_MODE 없이 다시 부른다"
+  elif [ ! -x "$AIDH_DIR/deploy/apptainer/fetch-parts.sh" ]; then
+    hwax_skip "AIDH 조각 동기화" "AIDataHub 에 fetch-parts.sh 가 없다(옛 판) — 전체 덤프 길로" "AIDataHub 를 최신으로(§2 deploy-all 이 받는다)"
+  else
+    _fp_rc=0
+    ( cd "$AIDH_DIR" && ./deploy/apptainer/fetch-parts.sh ) || _fp_rc=$?
+    case "$_fp_rc" in
+      10) _aidh_done=1; ok "AIDH 조각 변화 없음 — merge 생략" ;;
+      0)  _aidh_mrc=0
+          ( cd "$AIDH_DIR" && AIDH_MERGE_PARTS=1 ./deploy/apptainer/merge-from-drive.sh ) || _aidh_mrc=$?
+          case "$_aidh_mrc" in
+            0) _aidh_done=1
+               if ( cd "$AIDH_DIR" && ./deploy/apptainer/fetch-parts.sh --commit ); then
+                 ok "AIDH 조각 merge(바뀐 조각만 — dev 신규 반영 + cae00 데이터 보존)"
+               else
+                 bad "AIDH 조각 merge 는 됐지만 '병합함' 을 못 적었다 — 다음 update-all 이 같은 조각을 다시 병합한다(결과는 같다)"
+               fi ;;
+            3) _aidh_done=1
+               bad "AIDH 조각 merge 는 됐지만 dev 에만 있는 열이 빠졌다(운영 DB 이행이 늦었다) — '병합함' 을 안 적어 다음 update-all 이 같은 조각으로 다시 병합한다(이행 뒤 손으로: cd $AIDH_DIR && AIDH_MERGE_PARTS=1 ./deploy/apptainer/merge-from-drive.sh && ./deploy/apptainer/fetch-parts.sh --commit)" ;;
+            *) bad "AIDH 조각 merge 실패(rc $_aidh_mrc) — 아래 전체 덤프 길로 다시 한다(cae00 데이터는 무손상 · 덮인 줄은 위 rollback-parts.sh 줄로 되돌린다)" ;;
+          esac ;;
+      4)  hwax_skip "AIDH 조각 동기화" "Drive 에 조각 목록이 없다 — 전체 덤프 길로" "dev 에서 AIDataHub deploy/apptainer/parts-to-drive.sh 를 하루 한 번(cron — 전체 덤프 뒤)" ;;
+      *)  bad "AIDH 조각 받기 실패(rc $_fp_rc) — 아래 전체 덤프 길로" ;;
+    esac
+  fi
   LATEST_LINK="$(find "$AIDH_DIR/deploy" -maxdepth 3 -name latest.sql.gz 2>/dev/null | head -1)"
   LATEST_DUMP="$(readlink "$LATEST_LINK" 2>/dev/null || true)"
   MARKER="${LATEST_LINK:+$(dirname "$LATEST_LINK")/.last-merged}"
-  if [ -n "$LATEST_DUMP" ] && [ -n "$MARKER" ] && [ "$(cat "$MARKER" 2>/dev/null)" = "$LATEST_DUMP" ]; then
+  if [ -n "$_aidh_done" ]; then
+    :   # 조각 길이 끝냈다(위 줄)
+  elif [ -n "$LATEST_DUMP" ] && [ -n "$MARKER" ] && [ "$(cat "$MARKER" 2>/dev/null)" = "$LATEST_DUMP" ]; then
     ok "AIDH 덤프 변화 없음($(basename "$LATEST_DUMP")) — merge 생략"
   elif [ ! -x "$AIDH_DIR/deploy/apptainer/merge-from-drive.sh" ]; then
     bad "AIDH merge-from-drive.sh 없음 — 데이터 merge 못 함(cae00 데이터는 무손상)"
@@ -1226,21 +1259,22 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
       3) bad "AIDH 데이터 merge 는 됐지만 dev 에만 있는 열이 빠졌다(운영 DB 이행이 늦었다) — 표식을 안 적어 다음 update-all 이 다시 병합한다(이행 뒤 손으로: cd $AIDH_DIR && ./deploy/apptainer/merge-from-drive.sh)" ;;
       *) bad "AIDH 데이터 merge 실패(rc $_aidh_mrc) — cae00 데이터는 무손상" ;;
     esac
-    # merge 는 updated_at 이 더 새 쪽을 고른다 — dev 에서 나중에 동기화한 HE팀 운영자(he-*)가 이 박스 판(이 박스 게이트웨이의 앱 · 도구로
-    # 만든 것)을 덮을 수 있다(docs/request-1027 HP-35 · AIDataHub 검토 AD-12). 쓰지 않는 미리보기로 어긋남만 알린다 — 고치는 것은 사람이
-    # --apply 로(바뀐 칸만 PATCH 해 이 박스 판이 다시 앞선다). '정본에 없는 he-*'(?) 는 알리기만 하는 줄이라 세지 않는다.
-    if [ "$_aidh_mrc" = 0 ] || [ "$_aidh_mrc" = 3 ]; then
-      _hp_rc=0; _hp_out="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" 2>&1)" || _hp_rc=$?
-      _hp_diff="$(printf '%s\n' "$_hp_out" | grep -E '^  [+~] ' || true)"
-      if [ "$_hp_rc" != 0 ]; then
-        bad "HE팀 운영자 페르소나 미리보기를 못 했다(rc $_hp_rc) — merge 가 이 박스 판을 덮었는지 모른다. 끝난 뒤: python3 infra/scripts/sync-he-personas.py"
-        printf '%s\n' "$_hp_out" | grep -E '^✗' | head -5 | sed 's/^/    /'
-      elif [ -n "$_hp_diff" ]; then
-        bad "HE팀 운영자 페르소나 $(printf '%s\n' "$_hp_diff" | grep -c .)명이 이 박스 판과 다르다(merge 가 dev 판으로 덮었거나 새 운영자) — 끝난 뒤 확인하고: python3 infra/scripts/sync-he-personas.py --apply"
-        printf '%s\n' "$_hp_diff" | head -10 | sed 's/^/  /'
-      else
-        ok "HE팀 운영자 페르소나 — merge 뒤에도 이 박스 판 그대로(미리보기)"
-      fi
+  fi
+  # merge 는 updated_at 이 더 새 쪽을 고른다 — dev 에서 나중에 동기화한 HE팀 운영자(he-*)가 이 박스 판(이 박스 게이트웨이의 앱 · 도구로
+  # 만든 것)을 덮을 수 있다(docs/request-1027 HP-35 · AIDataHub 검토 AD-12). 쓰지 않는 미리보기로 어긋남만 알린다 — 고치는 것은 사람이
+  # --apply 로(바뀐 칸만 PATCH 해 이 박스 판이 다시 앞선다). '정본에 없는 he-*'(?) 는 알리기만 하는 줄이라 세지 않는다. 조각 길 · 전체 길
+  # 어느 쪽이든 병합이 돈 실행에만(바뀐 것이 없어 건너뛴 실행은 말이 없다 — 실행마다의 점검은 끝의 'HE팀 운영자 점검').
+  if [ "$_aidh_mrc" = 0 ] || [ "$_aidh_mrc" = 3 ]; then
+    _hp_rc=0; _hp_out="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" 2>&1)" || _hp_rc=$?
+    _hp_diff="$(printf '%s\n' "$_hp_out" | grep -E '^  [+~] ' || true)"
+    if [ "$_hp_rc" != 0 ]; then
+      bad "HE팀 운영자 페르소나 미리보기를 못 했다(rc $_hp_rc) — merge 가 이 박스 판을 덮었는지 모른다. 끝난 뒤: python3 infra/scripts/sync-he-personas.py"
+      printf '%s\n' "$_hp_out" | grep -E '^✗' | head -5 | sed 's/^/    /'
+    elif [ -n "$_hp_diff" ]; then
+      bad "HE팀 운영자 페르소나 $(printf '%s\n' "$_hp_diff" | grep -c .)명이 이 박스 판과 다르다(merge 가 dev 판으로 덮었거나 새 운영자) — 끝난 뒤 확인하고: python3 infra/scripts/sync-he-personas.py --apply"
+      printf '%s\n' "$_hp_diff" | head -10 | sed 's/^/  /'
+    else
+      ok "HE팀 운영자 페르소나 — merge 뒤에도 이 박스 판 그대로(미리보기)"
     fi
   fi
 else
