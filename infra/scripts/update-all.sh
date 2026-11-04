@@ -3274,7 +3274,8 @@ fi
 # '! ' 는 이 박스 AIDataHub 의 운영자(dev 덤프로 들어온 것 포함)가 모는 앱이 이 게이트웨이에 없다는 줄이다 — 조직도에서 고를 수는 있어도
 # 챗을 보낸 뒤에야 주의가 떴다(DW-12). '목록 밖 쓰기' 는 운영자 앱의 쓰기 꼴 도구가 정본 writes · confirm 어디에도 없다는 줄이다. '읽기를 쓰기로'
 # 는 거꾸로 두 목록이 게이트웨이가 읽기로 확인한 도구를 막는다는 줄이다 — 에이전트 서버의 확인 관문(HA-29)이 그 조회마다 카드를 세운다(C-15).
-# 막지 않는다(⚠).
+# 막지 않는다(⚠). '덧씌우기' 줄은 이 박스의 he-team.local.json(docs/he-team-overlay) — 깨져 버렸으면 ✗(기본 정의로 돈다), 그 밖은 그대로 찍고
+# 합친 정의의 지문을 §7 로 넘겨 에이전트 서버 확인 관문의 지문과 견준다(둘이 다르면 한쪽이 옛 판이거나 아직 다시 읽기 전이다).
 # §3 의 운영자 미리보기(HP-35)는 새 덤프를 병합한 실행에만 돌고 갱신 전 게이트웨이를 본다 — 거기에 두면 덤프가 그대로인 실행은 말이 없다.
 if [ "$TM_OK" = 1 ]; then
   _hpc_rc=0; _hpc="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" --check 2>&1)" || _hpc_rc=$?
@@ -3282,6 +3283,8 @@ if [ "$TM_OK" = 1 ]; then
   _hpc_loose="$(printf '%s\n' "$_hpc" | grep -E '^  · 목록 밖 쓰기 he-' || true)"
   _hpc_readish="$(printf '%s\n' "$_hpc" | grep -E '^  · 읽기를 쓰기로 he-' || true)"
   _hpc_skip="$(printf '%s\n' "$_hpc" | grep -E '^  · (목록 밖 쓰기 점검 건너뜀|AIDataHub 전문가 목록을 못 읽었다)' || true)"
+  _hpc_ovl="$(printf '%s\n' "$_hpc" | grep -E '^  (·|✗) 덧씌우기' | head -1 || true)"
+  HWAX_HE_FP="$(printf '%s\n' "$_hpc_ovl" | grep -oE '지문 [0-9a-f]{12}' | head -1 | cut -d' ' -f2 || true)"
   if [ "$_hpc_rc" != 0 ]; then
     bad "HE팀 운영자 점검을 하지 못했다(rc $_hpc_rc) — python3 infra/scripts/sync-he-personas.py --check 를 손으로 돌려 본다"
   elif [ -z "$_hpc_gone$_hpc_loose$_hpc_readish$_hpc_skip" ]; then
@@ -3292,7 +3295,7 @@ if [ "$TM_OK" = 1 ]; then
     printf '%s\n' "$_hpc_gone" | head -10 | sed 's/^/  /'
   fi
   if [ -n "$_hpc_loose" ]; then
-    bad "HE팀 운영자 $(printf '%s\n' "$_hpc_loose" | grep -c .)명의 앱에 writes · confirm 어디에도 없는 쓰기 도구가 있다 — infra/personas/he-team.json 의 맞는 쪽에 넣는다"
+    bad "HE팀 운영자 $(printf '%s\n' "$_hpc_loose" | grep -c .)명의 앱에 writes · confirm 어디에도 없는 쓰기 도구가 있다 — 이 박스에만 있는 앱이면 infra/personas/he-team.local.json, 두 박스에 다 있으면 he-team.json 의 맞는 쪽에 넣는다(docs/he-team-overlay)"
     printf '%s\n' "$_hpc_loose" | head -10 | sed 's/^/  /'
   fi
   if [ -n "$_hpc_readish" ]; then
@@ -3300,6 +3303,12 @@ if [ "$TM_OK" = 1 ]; then
     printf '%s\n' "$_hpc_readish" | head -10 | sed 's/^/  /'
   fi
   [ -z "$_hpc_skip" ] || printf '%s\n' "$_hpc_skip"
+  case "$_hpc_ovl" in
+    "  ✗ "*) bad "HE팀 운영자 박스 덧씌우기를 버렸다 — 기본 정의로 돈다(확인 관문도 기본 목록만). infra/personas/he-team.local.json 을 고친다(docs/he-team-overlay/server-setup.md)"
+            printf '%s\n' "$_hpc_ovl" | sed 's/^/  /' ;;
+    "") ;;
+    *) printf '%s\n' "$_hpc_ovl" ;;
+  esac
 fi
 
 # 도구 수는 tools/list 의 응답 길이일 뿐이다 — tools/list 는 답하면서 tools/call 은 전부
@@ -3611,7 +3620,7 @@ if [ -n "$AH" ]; then
     _tsb="$(sed -n 's/^TOOL_SCHEMA_BUDGET=//p' "$AGENT_ENV" 2>/dev/null | tail -1 | tr -d '"'"'"' \r')"
   fi
   awk -F'\t' '$1 == "agent-server 재기동 건너뜀" { f = 1 } END { exit !f }' "${HWAX_SKIP_LEDGER:-/dev/null}" 2>/dev/null && _agstale=1
-  AH="$AH" GH="$(gw_health 2>/dev/null || true)" CTSB="$_ctsb" TSB="$_tsb" AGSTALE="$_agstale" python3 - <<'PY' || true
+  AH="$AH" GH="$(gw_health 2>/dev/null || true)" CTSB="$_ctsb" TSB="$_tsb" AGSTALE="$_agstale" HEFP="${HWAX_HE_FP:-}" python3 - <<'PY' || true
 import json, os
 try:
     ah = json.loads(os.environ["AH"]); gh = json.loads(os.environ.get("GH") or "{}")
@@ -3740,7 +3749,22 @@ try:
         if not li.get("loaded"):
             line += " — 운영자 목록을 못 읽었다(%s): 형제 리포 HWAXPortal/infra/personas/he-team.json · CONFIRM_LISTS_PATH 를 본다(바닥 목록만 돈다)" % (
                 li.get("error") or "?")
-        print("  · %s확인 관문: %s" % ("" if li.get("loaded") else "⚠ ", line))
+        # 박스 덧씌우기(docs/he-team-overlay) — 옛 에이전트 서버는 칸이 없어 말하지 않는다. 동기화(§6)의 합친 정의 지문과 다르면 한쪽이 옛 판이다.
+        ov = li.get("overlay")
+        warn = not li.get("loaded")
+        if isinstance(ov, dict):
+            if ov.get("state") == "error":
+                warn = True
+                line += " · 덧씌우기를 버렸다(%s) — 기본 목록만 돈다" % str(ov.get("error") or "?")[:160]
+            elif ov.get("state") == "ok":
+                line += " · 덧씌우기(고침 %s · 더함 %s · 뺌 %s)" % tuple(len(ov.get(k) or []) for k in ("changed", "added", "removed"))
+            else:
+                line += " · 덧씌우기 없음"
+            hefp = os.environ.get("HEFP") or ""
+            if hefp and ov.get("fingerprint") and hefp != ov.get("fingerprint"):
+                warn = True
+                line += " — 지문 %s 가 동기화의 %s 와 다르다(에이전트 서버가 옛 판이거나 아직 다시 읽기 전 — 재기동 · 파일을 본다)" % (ov.get("fingerprint"), hefp)
+        print("  · %s확인 관문: %s" % ("⚠ " if warn else "", line))
 
     def _xhub(xg):
         if not xg.get("on"):

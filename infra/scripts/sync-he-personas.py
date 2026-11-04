@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# HE팀 MCP 운영자 페르소나를 AIDataHub 에 동기화한다 — 정본 infra/personas/he-team.json, 기본은 미리보기
+# HE팀 MCP 운영자 페르소나를 AIDataHub 에 동기화한다 — 정본 infra/personas/he-team.json + 박스 덧씌우기 he-team.local.json, 기본은 미리보기
 """HE팀 페르소나 동기화.
 
   python3 infra/scripts/sync-he-personas.py                 # 미리보기 — 무엇이 바뀌는지만 본다
@@ -24,6 +24,9 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 §6 이 실행마다(재기동 · 재프로비저닝을 마친 게이트웨이로) 불러 ⚠ 로 올린다. --apply 에서 저장 요청이 5xx 면 다시 읽어 저장됐는지 보고,
 저장됐으면 알리고 이어 간다(AIDataHub AD-21).
 
+정의는 git 의 he-team.json 에 이 박스의 덧씌우기 he-team.local.json(gitignore — cae00 이 이 박스에만 있는 앱의 운영자를 고친다)을 합친 것이다
+(docs/he-team-overlay). 미리보기 · --check 는 덧씌우기 줄을 먼저 찍는다 — 없으면 '· 덧씌우기 없음', 깨졌으면 '✗ 덧씌우기 … 를 버렸다'(기본 정의로 돈다).
+
   GATEWAY_HTTP_BASE  기본 http://127.0.0.1:9110
   AIDH_HTTP_BASE     기본 http://127.0.0.1:8001
 """
@@ -39,6 +42,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / "infra" / "personas" / "he-team.json"
+# 기본 정의 + cae00 박스 덧씌우기(he-team.local.json)를 합치는 셈 — 포털 접근 검사와 같은 모듈이다(docs/he-team-overlay).
+sys.path.insert(0, str(SPEC.parent))
+import he_team  # noqa: E402
 GATEWAY = os.environ.get("GATEWAY_HTTP_BASE", "http://127.0.0.1:9110").rstrip("/")
 AIDH = os.environ.get("AIDH_HTTP_BASE", "http://127.0.0.1:8001").rstrip("/")
 ACTOR = "he-team-sync"
@@ -134,9 +140,10 @@ def _with_optional(p: dict, by_app: dict) -> tuple[dict, list[str]]:
 
 
 def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
-         warns: list[str] | None = None) -> tuple[list[dict], list[str], list[str]]:
+         warns: list[str] | None = None, overlaid=frozenset()) -> tuple[list[dict], list[str], list[str]]:
     """정본 + 게이트웨이 → 올릴 페이로드 목록, 건너뛴 사유, 오류. notes 를 주면 선택 앱을 빼고 만든 페르소나를, warns 를 주면
-    writes · confirm 어디에도 없는 쓰기 꼴 도구와 두 목록이 막는 읽기 도구(_warn_readish)를 적는다(막지 않는다)."""
+    writes · confirm 어디에도 없는 쓰기 꼴 도구와 두 목록이 막는 읽기 도구(_warn_readish)를 적는다(막지 않는다). overlaid 는 박스 덧씌우기가
+    고치거나 더한 운영자 키다 — AIDataHub 행의 managed_by 에 덧씌우기도 적어, 그 행을 보고 git 파일만 고치는 일이 없게 한다."""
     tool_app: dict = tmap.get("map") or {}
     areas: dict = tmap.get("areas") or {}
     area_label = {a["area"]: a.get("label") or a["area"] for a in (tmap.get("area_meta") or []) if a.get("area")}
@@ -211,7 +218,8 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
             "data_types": [],
             "response_config": {"persona_kind": "mcp_operator", "mcp_apps": p["apps"],
                                 "key_tools": p["key_tools"],
-                                "managed_by": "HWAXPortal/infra/personas/he-team.json"},
+                                "managed_by": "HWAXPortal/infra/personas/he-team.json"
+                                              + (" + he-team.local.json(이 박스)" if key in overlaid else "")},
         })
     if warns is not None and read_ok:
         _warn_readish(spec, read_ok, warns)
@@ -290,14 +298,15 @@ def main() -> int:
                     help="알림 줄만 찍는다 — 목록 밖 쓰기 · 읽기를 쓰기로 · 운영자 앱이 이 게이트웨이에 없다(update-all §6 이 실행마다 부른다)")
     args = ap.parse_args()
 
-    spec = json.loads(SPEC.read_text(encoding="utf-8"))
+    spec, info = he_team.load(SPEC)
     st, tmap = _http("GET", f"{GATEWAY}/tools-map")
     if st != 200 or not isinstance(tmap, dict) or not tmap.get("map"):
         print(f"✗ 게이트웨이 /tools-map 을 못 읽었다({st}) — {GATEWAY}", file=sys.stderr)
         return 2
     notes: list[str] = []
     warns: list[str] = []
-    rows, skipped, errors = plan(spec, tmap, notes, warns)
+    rows, skipped, errors = plan(spec, tmap, notes, warns, frozenset(info["changed"]) | frozenset(info["added"]))
+    print(he_team.describe(info))
     for s in skipped:
         print(f"  · 건너뜀 {s}")
     for n in notes:
