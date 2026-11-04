@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-import json
+import importlib.util
 import threading
 from pathlib import Path
 
@@ -18,23 +18,36 @@ from app.deps import ensure
 # HE팀 정본 — 페르소나 키 → 모는 게이트웨이 앱. 파일 위치는 리포 루트 기준(박스마다 경로가 다르다).
 _HE_SPEC = Path(__file__).resolve().parents[3] / "infra" / "personas" / "he-team.json"
 _he_lock = threading.Lock()
-_he_cache: dict = {"mtime": None, "apps": {}}
+_he_cache: dict = {"stamp": None, "apps": {}}
+_he_mod = None
+
+
+def _he_team():
+    """기본 정의 + 이 박스의 덧씌우기(he-team.local.json)를 합치는 셈 — 동기화 스크립트와 같은 모듈(infra/personas/he_team.py,
+    docs/he-team-overlay). 덧씌우기로 더한 운영자도 그 앱의 플랫폼 허가를 본다 — 기본만 읽으면 그 운영자는 '일반 전문가' 로 허가 없이 통과한다."""
+    global _he_mod
+    if _he_mod is None:
+        spec = importlib.util.spec_from_file_location("hwax_he_team", _HE_SPEC.with_name("he_team.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _he_mod = mod
+    return _he_mod
 
 
 def he_apps(key: str) -> list[str]:
-    """HE팀 페르소나가 모는 게이트웨이 앱. 정본에 없는 키는 빈 목록(일반 전문가)."""
+    """HE팀 페르소나가 모는 게이트웨이 앱. 정의에 없는 키는 빈 목록(일반 전문가)."""
     if not key.startswith("he-"):
         return []
-    try:
-        mtime = _HE_SPEC.stat().st_mtime
-    except OSError:
+    ht = _he_team()
+    stamp = ht.stamp(_HE_SPEC, ht.LOCAL_PATH)
+    if stamp[0] is None:
         return []
     with _he_lock:
-        if _he_cache["mtime"] != mtime:
-            spec = json.loads(_HE_SPEC.read_text(encoding="utf-8"))
+        if _he_cache["stamp"] != stamp:
+            spec, _info = ht.load(_HE_SPEC, ht.LOCAL_PATH)
             _he_cache["apps"] = {p["key"]: list(p.get("apps") or [])
                                  for p in spec.get("personas") or []}
-            _he_cache["mtime"] = mtime
+            _he_cache["stamp"] = stamp
         return list(_he_cache["apps"].get(key, []))
 
 

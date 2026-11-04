@@ -89,3 +89,7 @@ backend/config/systems.*.yaml
 backend/config/access.local.yaml
 # 코어 어휘표 박스 덧씌우기 — cae00 에서 커밋 없이 고치는 merge patch(게이트웨이 · 에이전트가 읽는다, docs/request-1029 E-7 ②)
 backend/config/core_vocab.local.json
+# HE팀 운영자 박스 덧씌우기 — 이 박스에만 있는 앱의 운영자를 cae00 이 고친다(동기화 · 접근 검사 · 확인 관문이 읽는다, docs/he-team-overlay).
+# 고치기 전 판은 같은 폴더에 he-team.local.<날짜>.json 으로 남긴다(server-setup) — 그것도 박스 파일이다.
+infra/personas/he-team.local.json
+infra/personas/he-team.local.*.json

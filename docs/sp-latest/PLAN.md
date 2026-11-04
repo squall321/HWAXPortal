@@ -21,7 +21,8 @@ ReportArchive 는 뺀다 — 사용자가 다루는 리포가 아니다(10-31 �
 1. `git ls-remote` 로 SP HEAD 를 보고, 바뀌었으면 그 판의 `KIT_VERSION` · `CHANGES.md` · `UPGRADE.md` · MCP 도구 목록(`mcp_server/server.py` 의 `@tool()`)을 읽는다.
 2. 키트가 바뀌었으면 소비처 세션 넷에 맞추기를 보낸다(층 1 `sp_core_pull.py` · 층 2 `01-AI-GUIDE` · 시험장 8단계).
 3. MCP 도구가 늘거나 바뀌었으면 게이트웨이 쓰기 판정으로 새 도구를 가른다. 바꿀 수 있는 도구는 허브 운영자의 writes · confirm 에 **도구마다** `needs_tool` 칸으로
-   붙인다 — 필수 칸에 두면 허브가 옛 판인 박스에서 동기화가 통째로 멈춘다(SL-2).
+   붙인다 — 필수 칸에 두면 허브가 옛 판인 박스에서 동기화가 통째로 멈춘다(SL-2). 허브는 cae00 에만 있으므로 11-04 부터 이 몫은 cae00 이 박스 덧씌우기
+   (`infra/personas/he-team.local.json` — docs/he-team-overlay)에서 그 박스 `/tools-map` 으로 대조해 고친다. dev 는 git 기본값을 더 고치지 않는다.
 4. cae00 허브를 새 판으로 올리는 것은 사람 몫이다([server-setup.md](server-setup.md)). 올린 뒤 운영자 미리보기에 '목록 밖 쓰기' 줄이 없는지 본다.
 
 ## 3. 0.4.72 판(11-03)

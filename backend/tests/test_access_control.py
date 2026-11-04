@@ -427,6 +427,28 @@ def test_HE팀_운영자는_그_플랫폼_허가가_있어야_고르고_보인�
     assert [r["key"] for r in out["pool"]] == ["rel-drop-impact"]
 
 
+
+def test_HE팀_박스_덧씌우기로_더한_운영자도_그_플랫폼_허가를_본다(tmp_path, monkeypatch):
+    """docs/he-team-overlay — cae00 이 he-team.local.json 으로 더한 운영자를 기본 정의만 읽으면 '일반 전문가' 로 허가 없이 통과한다. 뺀 운영자는
+    일반 전문가로 돌아가고(그 앱 도구는 게이트웨이가 따로 거른다), 깨진 덧씌우기는 통째로 버려 기본 정의로 돈다. 고치면 바뀐 시각 · 크기로 다시 읽는다."""
+    from app.auth.errors import AuthError
+
+    pol = _policy()
+    ht = agent_guard._he_team()
+    loc = tmp_path / "he-team.local.json"
+    monkeypatch.setattr(ht, "LOCAL_PATH", loc)
+    base = json.loads((_ROOT / "infra" / "personas" / "he-team.json").read_text(encoding="utf-8"))
+    sf = next(p for p in base["personas"] if p["key"] == "he-cad-stepforge")
+    loc.write_text(json.dumps({"personas": {"he-cad-boxonly": {**sf, "key": "he-cad-boxonly"}}}), encoding="utf-8")
+    assert agent_guard.he_apps("he-cad-boxonly") == sf["apps"]
+    with pytest.raises(AuthError):
+        agent_guard.check_chat(pol, _p("feat:chat", "feat:expert-chat"), thinking=False, pinned_agent="he-cad-boxonly")
+    agent_guard.check_chat(pol, _p("feat:expert-chat", "plat:stepforge"), thinking=False, pinned_agent="he-cad-boxonly")
+    loc.write_text(json.dumps({"personas": {"he-cad-stepforge": None}}), encoding="utf-8")
+    assert agent_guard.he_apps("he-cad-stepforge") == [] and agent_guard.he_apps("he-cad-boxonly") == []
+    loc.write_text("{not json", encoding="utf-8")
+    assert agent_guard.he_apps("he-cad-stepforge") == sf["apps"], "깨진 덧씌우기는 버리고 기본 정의 — 기본 운영자는 그대로 허가를 본다"
+
 def test_업로드는_기능_권한과_목적지_플랫폼이_함께_있어야_한다():
     s = Settings(upload_allowed_groups="", upload_groups_step="")
     assert [

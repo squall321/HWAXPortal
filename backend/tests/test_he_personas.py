@@ -1265,3 +1265,122 @@ def test_HA29_StepForge_인자로_덮어쓰는_도구는_함정_줄이_말한다
     assert rows and not errors and not skipped, (errors, skipped)
     prompt = rows[0]["system_prompt"]
     assert line in prompt and advice in prompt and len(prompt) <= _sync().PROMPT_MAX
+
+
+# ── 박스 덧씌우기(docs/he-team-overlay — 사용자 결정 11-04 HO-1) ────────────────────────────────────────────────────────────
+# git 의 he-team.json 은 기본값이고 cae00 이 he-team.local.json 으로 이 박스에만 있는 앱의 운영자를 더하고 덮고 뺀다. 운영자는 키로 묶은
+# merge patch 다(HO-2 — 목록은 통째로 바뀐다), 깨지면 통째로 버리고 기본으로 돈다(HO-3).
+_HT_PATH = _ROOT / "infra" / "personas" / "he_team.py"
+
+
+def _ht():
+    spec = importlib.util.spec_from_file_location("he_team_under_test", _HT_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_OV_BASE = {"groups": {"cad": "CAD"},
+            "personas": [{"key": "he-cad-a", "apps": ["a"], "writes": ["x"], "can": ["c1"], "extra": {"k": 1, "j": 2}},
+                         {"key": "he-cad-b", "apps": ["b"]}]}
+
+
+def test_덧씌우기는_운영자_키로_묶은_merge_patch_다():
+    ht = _ht()
+    base = json.loads(json.dumps(_OV_BASE))
+    ov = {"_doc": "왜 바꿨나", "groups": {"box": "박스"},
+          "personas": {"he-cad-a": {"writes": ["x", "y"], "extra": {"j": None}}, "he-cad-b": None,
+                       "he-cad-c": {"apps": ["c"]}, "he-cad-gone": None}}
+    merged, diff = ht.apply_overlay(base, ov)
+    assert [p["key"] for p in merged["personas"]] == ["he-cad-a", "he-cad-c"], "기본 차례 그대로 · 뺀 것은 빠지고 · 새 운영자는 뒤에"
+    a = merged["personas"][0]
+    assert a["writes"] == ["x", "y"] and a["can"] == ["c1"], "목록은 통째로 바뀌고 안 적은 칸은 그대로다"
+    assert a["extra"] == {"k": 1}, "객체는 재귀로 합치고 null 은 그 칸을 지운다"
+    assert merged["groups"] == {"cad": "CAD", "box": "박스"} and "_doc" not in merged
+    assert diff == {"changed": ["he-cad-a"], "added": ["he-cad-c"], "removed": ["he-cad-b"], "missing": ["he-cad-gone"]}
+    assert base == _OV_BASE, "기본 정의는 건드리지 않는다"
+
+
+@pytest.mark.parametrize("ov, why", [
+    ([], "객체여야"),
+    ({"persona": {}}, "모르는 칸 persona"),
+    ({"personas": [{"key": "he-cad-a"}]}, "운영자 키로 묶은 객체"),
+    ({"personas": {"he-cad-a": ["x"]}}, "객체이거나 null"),
+    ({"personas": {"he-cad-a": {"key": "he-cad-z"}}}, "키는 바꾸지 않는다"),
+    ({"groups": ["cad"]}, "groups 는"),
+])
+def test_덧씌우기_꼴이_틀리면_ValueError_다(ov, why):
+    with pytest.raises(ValueError, match=why):
+        _ht().apply_overlay(json.loads(json.dumps(_OV_BASE)), ov)
+
+
+def test_덧씌우기를_읽는다_없음_합침_깨짐(tmp_path):
+    ht = _ht()
+    bp, lp = tmp_path / "he-team.json", tmp_path / "he-team.local.json"
+    bp.write_text(json.dumps(_OV_BASE), encoding="utf-8")
+    spec, info = ht.load(bp, lp)
+    assert spec == _OV_BASE and info["overlay"] == "none" and info["fingerprint"] == ht.fingerprint(_OV_BASE)
+    assert ht.describe(info).startswith("  · 덧씌우기 없음 — 기본 정의(he-team.json)만 쓴다"), ht.describe(info)
+    lp.write_text(json.dumps({"_doc": "x", "personas": {"he-cad-b": None, "he-cad-c": {"apps": ["c"]}}}), encoding="utf-8")
+    spec, info = ht.load(bp, lp)
+    assert [p["key"] for p in spec["personas"]] == ["he-cad-a", "he-cad-c"] and info["overlay"] == "ok"
+    assert info["fingerprint"] == ht.fingerprint(spec) != ht.fingerprint(_OV_BASE)
+    assert ht.describe(info) == f"  · 덧씌우기 he-team.local.json — 더함 1(he-cad-c) · 뺌 1(he-cad-b) · 지문 {info['fingerprint']}"
+    for raw, why in (("{not json", "Expecting"), (json.dumps({"personas": []}), "운영자 키로 묶은 객체")):
+        lp.write_text(raw, encoding="utf-8")
+        spec, info = ht.load(bp, lp)
+        assert spec == _OV_BASE and info["overlay"] == "error" and why in info["error"], info
+        assert info["fingerprint"] == ht.fingerprint(_OV_BASE), "버렸으면 기본 정의의 지문이다"
+        assert ht.describe(info).startswith("  ✗ 덧씌우기 he-team.local.json 을 버렸다 — "), ht.describe(info)
+    assert ht.fingerprint({**_OV_BASE, "_doc": "설명"}) == ht.fingerprint(_OV_BASE), "맨 위 _doc 은 지문에 들지 않는다"
+    s1 = ht.stamp(bp, lp)
+    lp.write_text("{}", encoding="utf-8")
+    assert ht.stamp(bp, lp) != s1 and ht.stamp(bp, tmp_path / "없음.json")[1] is None
+
+
+def test_시험은_이_박스의_덧씌우기를_읽지_않는다():
+    """conftest 가 HE_TEAM_LOCAL_PATH 를 없는 자리로 돌린다 — 박스 파일이 정본 시험 · 접근 검사 판정을 박스마다 다르게 만들지 않게."""
+    ht = _ht()
+    assert ht.LOCAL_PATH != ht.BASE_PATH.with_name("he-team.local.json") and not ht.LOCAL_PATH.exists()
+    assert _sync().he_team.LOCAL_PATH == ht.LOCAL_PATH
+
+
+def test_동기화는_덧씌우기를_합쳐_만들고_덧씌우기_줄을_먼저_찍는다(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    st = next(p for p in _load()["personas"] if p["key"] == "he-sim-smarttwin")
+    lp = tmp_path / "he-team.local.json"
+    lp.write_text(json.dumps({"personas": {"he-sim-smarttwin": {"name": "시뮬 운영자(박스)"},
+                                           "he-sim-boxonly": {**st, "key": "he-sim-boxonly", "name": "박스 전용 운영자"}}},
+                             ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(_sync().he_team, "LOCAL_PATH", lp)
+    hub = _FakeHub(mcp_only)
+    rc, out, err = _run_main(monkeypatch, capsys, hub, "--apply")
+    assert rc == 0, err
+    first = out.splitlines()[0]
+    assert first.startswith("  · 덧씌우기 he-team.local.json — 고침 1(he-sim-smarttwin) · 더함 1(he-sim-boxonly) · 지문 "), out
+    assert hub.rows["he-sim-smarttwin"]["name"] == "시뮬 운영자(박스)" and hub.rows["he-sim-boxonly"]["name"] == "박스 전용 운영자"
+    for k in ("he-sim-smarttwin", "he-sim-boxonly"):
+        assert hub.rows[k]["response_config"]["managed_by"].endswith("+ he-team.local.json(이 박스)"), "그 행을 보고 git 파일만 고치지 않게"
+    # 깨진 덧씌우기 — 기본 정의로 만들고 ✗ 줄을 찍는다(--check 도 같다)
+    lp.write_text("{", encoding="utf-8")
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only), "--check")
+    assert rc == 0 and out.splitlines()[0].startswith("  ✗ 덧씌우기 he-team.local.json 을 버렸다 — "), out
+
+
+def test_update_all_6_은_덧씌우기_줄을_올리고_지문을_넘긴다(tmp_path):
+    """깨져 버렸으면 ✗(BAD) · 그 밖은 줄 그대로 — 합친 정의의 지문은 §7 이 에이전트 서버 확인 관문의 지문과 견준다(HWAX_HE_FP)."""
+    ok = "  · 덧씌우기 he-team.local.json — 더함 1(he-data-x) · 지문 0123456789ab\n"
+    assert _s6(tmp_path / "ok", ok) == "OK:HE팀 운영자 — 모는 앱이 다 이 게이트웨이에 있고 목록 밖 쓰기 도구 · 읽기를 막는 목록이 없다\n" + ok
+    none = "  · 덧씌우기 없음 — 기본 정의(he-team.json)만 쓴다(he-team.local.json 이 없다) · 지문 abcdefabcdef\n"
+    assert _s6(tmp_path / "none", none).endswith(none)
+    bad = "  ✗ 덧씌우기 he-team.local.json 을 버렸다 — Expecting value · 기본 정의로 돈다(확인 관문도 기본 목록만) · 지문 abcdefabcdef\n"
+    out = _s6(tmp_path / "bad", bad)
+    assert "BAD:HE팀 운영자 박스 덧씌우기를 버렸다 — 기본 정의로 돈다" in out and "    ✗ 덧씌우기 he-team.local.json 을 버렸다" in out, out
+    # 지문은 §7 로 넘긴다 — 블록 뒤에서 읽어 본다
+    repo = tmp_path / "repo2"
+    (repo / "infra" / "scripts").mkdir(parents=True)
+    (repo / "infra" / "scripts" / "sync-he-personas.py").write_text(f"import sys\nsys.stdout.write({ok!r})\n", encoding="utf-8")
+    script = "\n".join(["set -uo pipefail", 'ok() { :; }', 'bad() { :; }', f"SELF_REPO='{repo}'", "TM_OK=1", _s6_block(),
+                        'echo "FP:${HWAX_HE_FP:-}"'])
+    p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
+    assert p.stdout.strip().endswith("FP:0123456789ab"), p.stdout + p.stderr

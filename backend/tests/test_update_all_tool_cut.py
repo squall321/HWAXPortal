@@ -15,7 +15,7 @@ SRC = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
 
 
 GATE_CALL = ('AH="$AH" GH="$(gw_health 2>/dev/null || true)" CTSB="$_ctsb" TSB="$_tsb" AGSTALE="$_agstale"'
-             ' python3 - <<\'PY\' || true\n')
+             ' HEFP="${HWAX_HE_FP:-}" python3 - <<\'PY\' || true\n')
 # 에이전트 /health 의 창 칸 — cae00 10-30(GLM 풀 300,000 · 챗 Qwen 262,144 · 출력 몫 65,536 → 챗 턴 창 196,608 의 45% = 88,473)과
 # dev(챗 전용 LLM 없음 · 16,384 의 45% = 7,372). 칸 꼴은 에이전트 서버 /health(context_tokens · chat_llm)가 내는 그대로다.
 CAE00 = {"context_tokens": 300000, "chat_llm": {"enabled": True, "ctx_tokens": 262144, "output_reserve": 65536}}
@@ -32,7 +32,7 @@ def _run(ah: dict, gh: dict, **knobs) -> str:
     """knobs — CTSB · TSB(에이전트 서버 .env 의 CHAT_TOOL_SCHEMA_BUDGET · TOOL_SCHEMA_BUDGET) · AGSTALE(이번 실행이 에이전트 서버 재기동을
     미뤘다 — 장부) — 구획이 넘기는 이름이다."""
     # HWAX_SKIP_LEDGER — 이 셸이 update-all 안에서 돌면 진짜 장부에 적는다(꺼진 관문 ○ 줄). 시험이 넘길 때만 쓴다
-    env = {k: v for k, v in os.environ.items() if k not in ("CTSB", "TSB", "AGSTALE", "HWAX_SKIP_LEDGER")}
+    env = {k: v for k, v in os.environ.items() if k not in ("CTSB", "TSB", "AGSTALE", "HWAX_SKIP_LEDGER", "HEFP")}
     r = subprocess.run(["python3", "-c", _gate_py()], capture_output=True, text=True, timeout=30,
                        env={**env, "AH": json.dumps(ah), "GH": json.dumps(gh), **knobs})
     assert r.returncode == 0, r.stderr
@@ -296,6 +296,26 @@ def test_10_30_관문_넷과_접기를_말하고_목록을_못_읽으면_경고�
     # 옛 판(칸 없음)은 말하지 않는다
     assert "관문" not in _run({}, {}) and "접기" not in _run({}, {})
 
+
+
+def test_확인_관문_줄은_운영자_덧씌우기_상태와_지문_대조를_말한다():
+    """docs/he-team-overlay — 에이전트 서버 /health confirm_gate.lists.overlay(없음 · 합침 · 버림)와 §6 동기화가 넘긴 합친 정의 지문(HEFP)을 견준다.
+    버렸거나 지문이 다르면 ⚠ — 확인 관문이 cae00 이 더한 확인 이름 없이 돌거나, 옛 판 · 다시 읽기 전 목록으로 돈다. 옛 판(칸 없음)은 말하지 않는다."""
+    def ah(ov):
+        a = _ah_10_30()
+        if ov is not None:
+            a["confirm_gate"]["lists"]["overlay"] = ov
+        return a
+    head = "· 확인 관문: 목록 잡 24 · 쓰기 90 · 확인 37 · 살아 있는 카드 1 · 아직 센 것 없음"
+    assert f"{head} · 덧씌우기 없음\n" in _run(ah({"state": "none", "fingerprint": "aaaaaaaaaaaa"}), {}, HEFP="aaaaaaaaaaaa")
+    ok = {"state": "ok", "changed": ["he-a"], "added": ["he-b", "he-c"], "removed": [], "fingerprint": "bbbbbbbbbbbb"}
+    out = _run(ah(ok), {}, HEFP="bbbbbbbbbbbb")
+    assert f"  {head} · 덧씌우기(고침 1 · 더함 2 · 뺌 0)\n" in out, out
+    out = _run(ah(ok), {}, HEFP="cccccccccccc")
+    assert "· ⚠ 확인 관문: " in out and "지문 bbbbbbbbbbbb 가 동기화의 cccccccccccc 와 다르다" in out, out
+    out = _run(ah({"state": "error", "error": "Expecting value", "fingerprint": "aaaaaaaaaaaa"}), {})
+    assert "· ⚠ 확인 관문: " in out and "덧씌우기를 버렸다(Expecting value) — 기본 목록만 돈다" in out, out
+    assert "덧씌우기" not in _run(ah(None), {}), "옛 에이전트 서버(칸 없음)는 말하지 않는다"
 
 def test_10_30_손잡이로_끈_관문은_안_켠_기능으로_말하고_장부에_적는다(tmp_path):
     """끈 것은 ○ 와 '켜려면' 으로(사용자 지시 09-25 '안 켠 기능도 로그에' — design-integration 6절). hwax_skip 과 같은 꼴로 찍고 장부에 적어
