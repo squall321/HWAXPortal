@@ -325,3 +325,15 @@
 `section_view` 에 `highlight`(`through` 와 함께만, 기본 꺼짐). dev 게이트웨이에서 `section_atlas` 는 읽기(루틴 · 좌석 읽기로 열림)다. RC 버기(211 파트) 실측 65장 · 249.8초 ·
 17.2 MB · 장마다 치수 8초 상한(27장이 상한에서 멈춰 `skipped_work`) · 한 장 60 파트 상한 · 월드 축만. 포털 점검 스크립트(`cad-figure-check.py`)는 아직 지도를 부르지 않는다 —
 짝 단면 · 묶음 · 접힘 · 적층으로 충분해 걸음을 더하지 않았다(필요해지면 '지도 상태 → 그 부품을 지나는 장' 한 걸음). cae00 확인은 받은 편지함 2026-11-04 Q4.
+
+**RF-35 단면 그림을 CAD 단면도 꼴로 · svg_live 예고(StepForge a80 · 11-05 KST, 그쪽 사용자 11-04 · D-664).** main `562e8de`(SP 서브모듈을 `ab41cff` 로 — SP main 이
+되돌려졌다, `docs/sp-latest` SL-7) · `8e711c4` · `7c71d7a`, Drive `dist-20261105-015533Z`, 라이브 도구 184. 그림만 바뀐다 — 흰 바탕에 그 평면의 재료 면(OCC 교집합 면)을
+파트 색조로 채우고 해칭, 구멍 · 빈 곳은 흰색, 강조 그림은 타겟만 자홍 · 이웃 회색. 3D 뷰 · 적층 그림 · 치수 차트는 어두운 톤 그대로. 짝 단면은 해칭 한 겹으로 256 KB 안(실측
+135 KB). 옛 단면 지도는 status stale(「그림 꼴이 바뀌었다」) · rebuild 호출문. 단면 한 장 시간이 는다(RC 55파트 3.2 → 8.6초 · 지도 65장 249.8 → 399.2초). 포털 점검
+스크립트(`cad-figure-check.py`)는 바꿀 것이 없다(jpg 를 청하고 응답 꼴이 그대로다). a81 예고 — 상호작용 SVG `format="svg_live"`(파트마다 `<g class="part" data-path …>` ·
+마우스를 올린 파트 위에 이름 · 경로 풍선(CSS `:has()` — Chromium 105+), 스크립트 없음, MCP ImageContent `image/svg+xml`). 포털의 답(11-05) — 지금 화면은 그림을
+`<img>` 로 그려 호버가 안 된다(게이트웨이 → 에이전트 서버 `/agent/artifacts/<sha>.svg` → 포털 중계(CSP sandbox) → 마크다운 `<img>`). 1단계는 `*.svg` 를
+`<iframe sandbox="">` 로(페이지 CSP `frame-src 'self'` 가 허용), 2단계(data-path 로 사이드바)는 소독한 인라인 삽입(DOMPurify) — 화면 규칙과 부딪혀 따로. **화면을
+고칠지는 사용자 결정**. `format="svg"` 를 청하는 곳은 포털 · 에이전트 서버 · 게이트웨이 · 리스크 앱에 없다. 보고서(RA) · MX 백서는 SVG 를 받지 않는다(415) — 보고서
+그림은 png · jpg 그대로.
+

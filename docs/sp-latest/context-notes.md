@@ -70,3 +70,7 @@ effectivity · quantity_key · lineage_source)은 카탈로그째 담긴다. 선
 열람 화면, 26 파일). MCP 도구는 그대로 110 이고(GUIDE.md 36줄 더함) 키트 `KIT_VERSION` 도 그대로다 — 소비처 · 게이트웨이 · 운영자 목록에 맞출 것이 없다. StepForge 는 a79 에서
 서브모듈을 이 판으로 올렸다(키트 판 그대로 · 시험장 통과). 확장의 자리는 `extension_call` 로 닿는데, 그 도구는 읽기에도 써서 확인 목록에 넣지 않았다(SL-2) — 확장의 쓰기는
 SP 가 관리자 전용으로 막는다(`DESTRUCTIVE_TOOLS`). cae00 허브를 이 판으로 올릴지는 그 화면이 필요할 때 허브 쪽이 정한다.
+
+**SL-7 SP main 이 `ab41cff`(0.4.72)로 되돌려졌다(11-05).** `d3b5aa1`(SL-6 의 자주검증 입력 확장)은 `ext/jvhub` 갈래로 옮겨졌다(원격 확인 — main `ab41cff` ·
+`ext/jvhub` `d3b5aa1`). StepForge a80 이 서브모듈을 `ab41cff` 로 되돌렸고(그쪽 `562e8de` — DynaForge 도 맞춤), SL-6 의 '서브모듈을 이 판으로 올렸다' 는 그때의
+사실이다. 포털 · 게이트웨이 · 운영자 목록은 처음부터 0.4.72(`ab41cff` · 키트 2026-11-03) 기준이라 맞출 것이 없다.
