@@ -98,7 +98,7 @@ def test_박스_파일의_선언_둘이_읽히고_게이트웨이에는_쓰는_�
     assert set(gw) <= set(pol.gateway_policy()), "선언 키는 늘 권한 행에 있다"
     assert gw["fmea"] == {"platform": "fmea", "label": "FMEA Agent", "desc": "FMEA 분석", "hint": "fmea_…", "prefix": "fmea_",
                           "mcp_url": "http://fmea.test:5190/mcp", "list_auth": "registered:lister@corp.com", "read_tools": [],
-                          "workspace_header": ""}
+                          "workspace_header": "", "request_id": True, "mask_keep_hosts": []}
     blob = json.dumps(gw, ensure_ascii=False)
     assert "발급한 토큰" not in blob and "verify" not in blob, "카드 문구 · 확인 방법은 게이트웨이로 가지 않는다"
 
@@ -144,6 +144,10 @@ def test_gateway_를_빼고_바꿔_쓴_박스_항목은_connect_도_버린다(bo
     ({"owner_feild": "email"}, "모르는 칸"),
     ({"token_prefix": "mnx pat"}, "token_prefix"),
     ({"read_tools": "list_all"}, "read_tools"),
+    ({"request_id": "no"}, "request_id"),
+    ({"mask_keep_hosts": "x"}, "mask_keep_hosts"),
+    ({"mask_keep_hosts": ["8.8.8.8"]}, "mask_keep_hosts"),
+    ({"mask_keep_hosts": ["siren.example"]}, "mask_keep_hosts"),
     ({"issue": 3}, "글자가 아니다"),
     ({"note": "가" * 1001}, "1000자"),
 ], ids=lambda v: json.dumps(v, ensure_ascii=False)[:40] if isinstance(v, dict) else str(v))
@@ -491,3 +495,21 @@ def test_내장_연결의_목록_응답은_한_글자도_바뀌지_않는다(por
     """기존 /auth/connections 는 그대로다 — 새 목록은 새 주소로 낸다(TestScope 시험이 키 집합을 정확히 단언한다)."""
     body = portal.get("/auth/connections").json()
     assert set(body) == {"reportarchive", "testscope", "reportarchive_mode", "testscope_enabled", "testscope_mode"}
+
+
+# ── 새 칸 둘 — 요청 ID · 가림 예외(docs/siren-delib HG-27 · HG-29) ─────────────────────────────────────────────
+def test_request_id_와_mask_keep_hosts_를_읽어_게이트웨이에_넘긴다(box):
+    import ipaddress
+    ip = str(ipaddress.IPv4Address((10 << 24) | (20 << 16) | (30 << 8) | 40))      # 사설 주소는 점 찍은 글자로 적지 않는다
+    pol = _parse(box, _local(matnexus=(_mnx_item(), {**MNX, "request_id": False, "mask_keep_hosts": [ip, ip]})))
+    assert not pol.warnings, pol.warnings
+    c = pol.connections()["matnexus"]
+    assert c.request_id is False and c.mask_keep_hosts == (ip,), "겹친 주소는 하나로"
+    g = pol.gateway_connections()["matnexus"]
+    assert g["request_id"] is False and g["mask_keep_hosts"] == [ip]
+    pol = _parse(box, _local(matnexus=(_mnx_item(), {**MNX, "request_id": None, "mask_keep_hosts": None})))
+    assert pol.connections()["matnexus"].request_id is True and pol.connections()["matnexus"].mask_keep_hosts == (), "빈 값은 기본값"
+    for bad in ([f"{ip}:8080"], ["0" + ip], [ip] * 9 + [str(ipaddress.IPv4Address((10 << 24) | 9))]):
+        pol = _parse(box, _local(matnexus=(_mnx_item(), {**MNX, "mask_keep_hosts": bad})))
+        assert pol.connections() == {} and any("mask_keep_hosts" in w for w in pol.warnings), bad
+

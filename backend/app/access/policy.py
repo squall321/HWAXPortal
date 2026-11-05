@@ -63,6 +63,8 @@ class ConnectSpec:
     read_tools: tuple[str, ...] = ()
     workspace_header: str = ""
     workspace_label: str = ""
+    request_id: bool = True         # 호출마다 X-Request-Id 를 싣는다(docs/siren-delib HG-27 — false 로 끈다)
+    mask_keep_hosts: tuple[str, ...] = ()   # 결과 가림에서 뺄 링크 호스트(사설 IPv4 — docs/siren-delib HG-29)
 
     @property
     def need(self) -> str:
@@ -160,7 +162,8 @@ class Policy:
         싣지 않는다(게이트웨이가 쓰지 않는다). 키는 늘 같은 응답의 gateway_policy() 에 있다(connect 는 그 항목의 gateway: 안에서만 산다)."""
         return {k: {"platform": c.platform_id, "label": c.label, "desc": c.desc, "hint": c.token_hint, "prefix": c.token_prefix,
                     "mcp_url": c.mcp_url, "list_auth": c.list_auth, "read_tools": list(c.read_tools),
-                    "workspace_header": c.workspace_header}
+                    "workspace_header": c.workspace_header, "request_id": c.request_id,
+                    "mask_keep_hosts": list(c.mask_keep_hosts)}
                 for k, c in sorted(self._conns.items())}
 
 
@@ -261,7 +264,8 @@ def _bad_sso_row(row: object, affiliations: dict[str, dict]) -> str | None:
 # 칸과 뜻은 요청서 1-2 표다. 틀린 블록은 **던지지 않고 그 블록만 버린다**(SSO 행과 같은 자세 — 박스 파일의 오타 한 줄이 권한 표 전체를
 # 멈추면 안 된다). 모르는 칸도 버린다 — `owner_feild` 같은 오타가 칸을 조용히 기본값(주인 확인 끔)으로 남기지 않게(EC-D3).
 CONNECT_KEYS = frozenset(("backend", "mcp_url", "token_hint", "token_prefix", "issue", "issue_url", "note", "verify", "verify_url",
-                          "owner_field", "list_auth", "read_tools", "workspace_header", "workspace_label"))
+                          "owner_field", "list_auth", "read_tools", "workspace_header", "workspace_label",
+                          "request_id", "mask_keep_hosts"))
 # 받지 않는 백엔드 키 — 내장 둘(RA · TestScope — 주인 확인이 있는 길을 설정으로 확인 없는 길로 옮기지 못하게)과 게이트웨이 설정의 절 이름.
 CONNECT_RESERVED = frozenset(("reportarchive", "testscope", "_gateway", "rest", "portal", "heax_registry"))
 CONNECT_VERIFY = ("none", "mcp", "url")
@@ -278,6 +282,21 @@ _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _BLOCKED_HEADERS = frozenset(("authorization", "proxy-authorization", "cookie", "host", "accept", "x-csrf-token"))
 _BLOCKED_HEADER_PREFIXES = ("content-", "mcp-", "x-hwax-", "x-heax-")
 _TEXT_MAX = {"token_hint": 64, "issue": 1000, "note": 1000, "workspace_label": 40}
+# 가림 예외 주소(mask_keep_hosts) — 게이트웨이 가림이 가리는 사설 IPv4(10/8 · 172.16/12 · 192.168/16)만 뜻이 있다. 상한은 게이트웨이
+# CONN_KEEP_HOSTS_MAX 와 같다. 주소는 점 찍은 글자로 적지 않는다(추적 파일 사설 주소 가드).
+CONNECT_KEEP_HOSTS_MAX = 8
+_KEEP_NETS = tuple(ipaddress.IPv4Network(n) for n in ((10 << 24, 8), ((172 << 24) | (16 << 16), 12), ((192 << 24) | (168 << 16), 16)))
+
+
+def _keep_host_ok(h: object) -> bool:
+    """가림 예외 주소 하나인가 — 사설 IPv4 글자 그대로(앞자리 0 · 포트 없이)."""
+    if not isinstance(h, str):
+        return False
+    try:
+        ip = ipaddress.IPv4Address(h.strip())
+    except ValueError:
+        return False
+    return str(ip) == h.strip() and any(ip in n for n in _KEEP_NETS)
 
 
 def blocked_header(name: str) -> bool:
@@ -409,13 +428,23 @@ def _parse_connect(d: dict, *, gateway: tuple[str, ...], label: str, desc: str, 
     if texts["workspace_label"] and not header:
         drop("workspace_label 은 workspace_header 와 함께 쓴다")
         return None
+    rid = c.get("request_id")
+    rid = True if rid is None else rid      # 빈 값(`request_id:`)은 다른 칸처럼 기본값이다 — 블록을 버리지 않는다(반대 검토 11-06)
+    if not isinstance(rid, bool):
+        drop("request_id 는 true · false 다(요청 ID 머리글 X-Request-Id 를 실을지)")
+        return None
+    kh = c.get("mask_keep_hosts") or []
+    if not isinstance(kh, list) or len(kh) > CONNECT_KEEP_HOSTS_MAX or not all(_keep_host_ok(h) for h in kh):
+        drop(f"mask_keep_hosts 는 사설 IPv4 주소 글자의 목록이다(포트 없이 · {CONNECT_KEEP_HOSTS_MAX}개까지)")
+        return None
     seen.add(backend)
     return ConnectSpec(backend=backend, mcp_url=texts["mcp_url"], platform_id=pid, label=label, desc=desc,
                        token_hint=texts["token_hint"] or (f"{prefix}…" if prefix else ""), token_prefix=prefix,
                        issue=texts["issue"], issue_url=texts["issue_url"], note=texts["note"], verify=verify,
                        verify_url=texts["verify_url"], owner_field=texts["owner_field"], list_auth=list_auth,
                        read_tools=tuple(dict.fromkeys(t.strip() for t in rt)), workspace_header=header,
-                       workspace_label=(texts["workspace_label"] or ("워크스페이스" if header else "")))
+                       workspace_label=(texts["workspace_label"] or ("워크스페이스" if header else "")),
+                       request_id=rid, mask_keep_hosts=tuple(sorted({h.strip() for h in kh})))
 
 
 def parse_policy(raw: dict) -> Policy:
