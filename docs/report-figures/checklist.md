@@ -82,4 +82,4 @@
 - [x] `Figure.tsx` — SVG 는 원래 크기 iframe(sandbox="") + 변형 · 넓으면 가로 스크롤 · 확대 아이콘만 눌림 / `Lightbox.tsx` — SVG iframe 갈래 · 원본 링크 — 포털 `2ff8d56d`
 - [x] 에이전트 서버 `_stash_image_items` — 내용으로 꼴 · 8 MiB 상한 — `79953ac`(dev 재기동 — 도는 심의 0)
 - [x] 시험(node 로 셈 · 소스 단언 · 에이전트 서버) · 빌드(dev main 체크아웃 — 표식 맞음) · 올리기
-- [ ] Drive 이미지 판(cae00 화면 — `images-to-drive.sh`)
+- [x] Drive 이미지 판(cae00 화면 — `images-to-drive.sh`) — `images-20261105-092549Z`(뷰어 카드와 묶음)
