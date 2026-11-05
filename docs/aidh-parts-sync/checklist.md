@@ -29,3 +29,11 @@
 - [x] dev 실데이터로 내기 한 번(크기 · 시간) · Drive 에 첫 목록 — 264 파일 · 6.4 GiB · 1,719초 + 올리기 708초, 실 Drive 받기 확인(같은 목록 10 · 바뀐 조각만 38 MB · 낡지 않음)
 - [ ] cae00 — server-setup(첫 조각 병합은 조각 전부 — 지금 병합보다 빠르다), update-all 로 받기
 - [x] 업데이트 이력 · CLAUDE.md · 메모리 · 0절 줄(`docs/request-1030/server-setup.md`) · 받은 편지함 2026-11-05
+
+## 자식은 레코드를 이긴 쪽을 따른다(사용자 결정 11-05, AP-16)
+
+- [x] `merge_table` — 자식 표(record_sections · record_attachments · agent_records)는 운영이 더 새로운 레코드의 dev 줄을 덮지도 넣지도 않는다(두 길 모두) · 건너뛴 수를 말한다 — AIDataHub `0a88950`
+- [x] `aidh_parts.py plan` — 자식 조각을 실으면 같은 k 의 레코드 조각도
+- [x] 시험 — 실 PG(두 길이 같은 결과 · 이 박스가 이긴 카드의 절 · 첨부 · 연결은 그대로 · 자식 조각만 바뀌어도 레코드 조각을 싣는다 · 되돌리기) · 대역 · 변이 넷 붉음 · 전체 490
+- [x] 올리기(AIDataHub `918681d`) · 0절 줄 · 업데이트 이력
+

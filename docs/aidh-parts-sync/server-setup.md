@@ -7,7 +7,7 @@
 
 | 리포 | 판 | 무엇 |
 |---|---|---|
-| AIDataHub | `5abff48`(병합 — 앞선 병합 `7e98ad6` · `190ca57` 를 잇는다) | 같은 줄은 다시 쓰지 않기 · `fetch-parts.sh`(낡은 목록이면 5) · `merge-from-drive.sh` 조각 길 · `rollback-parts.sh` |
+| AIDataHub | `918681d`(병합 — 앞선 병합 `7e98ad6` · `190ca57` · `5abff48` 를 잇는다) | 같은 줄은 다시 쓰지 않기 · 자식 표는 레코드를 이긴 쪽 · `fetch-parts.sh`(낡은 목록이면 5) · `merge-from-drive.sh` 조각 길 · `rollback-parts.sh` |
 | 포털 | 0절 표(`docs/request-1030/server-setup.md`)의 같은 줄 | update-all §3 조각 길 먼저 · `backup-local.sh` 가 앞 모습 폴더도 7일 |
 
 둘 다 update-all 이 받는다(§1 포털 · §2 AIDataHub 코드). 조각 자리는 전체 덤프 자리 옆이다 — `AIDH_DRIVE_REMOTE` 가 `<리모트>:AIDataHub/db-dumps` 면
@@ -18,6 +18,8 @@
 - 첫 실행은 '병합함' 표식이 없어 **조각 전부**를 받는다(dev 첫 내기 실측 — 아래 표). 전체 덤프 길보다는 짧다 — 스테이징 색인을 짓지 않고 전체
   스냅숏(`pg_dump`)을 뜨지 않는다. 그 뒤로는 바뀐 조각만이고, 바뀐 것이 없는 날은 목록 하나만 받고 끝난다.
 - 볼 줄 — 첫 실행 `✓ AIDH 조각 merge(바뀐 조각만 — dev 신규 반영 + cae00 데이터 보존)`, 다음부터 대개 `✓ AIDH 조각 변화 없음 — merge 생략`.
+- 절 · 첨부 · 전문가 연결 줄 끝의 `이 박스 판이 이긴 레코드 K건의 줄 N개는 그대로` — 이 박스에서 고친 카드(더 새로움)의 자식은 dev 판으로 덮지 않는다(사용자
+  결정 11-05, AP-16). 전체 덤프 길에도 같다.
 - 디스크
   - 받은 조각 `~/Projects/AIDataHub/deploy/apptainer/backups/parts-cache/files` — 병합을 적으면(`--commit`) 비운다.
   - 덮을 줄의 앞 모습 `/data/backups/aidh/pre-parts-<시각>/` — 첫 병합은 운영 행 거의 전부라 전체 스냅숏만큼 크다. 포털 백업 cron(`backup-local.sh`)이
