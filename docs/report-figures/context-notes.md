@@ -355,3 +355,8 @@ public_url) — 앱 주소 `GET /view/{project_id}/atlas`(text/html · 뷰어 �
 REST `GET /api/projects/{id}/section-atlas` 에 format · viewer, svg_live 는 image_base64. 기본은 png 그대로 — 보고서 · 판독은 지금처럼. 포털 챗은 RF-36 으로 그 SVG 를
 격리 iframe 으로 그린다(호버가 산다). cae00 확인(그쪽 청) — 받은 편지함 2026-11-05 Q4 · Q5.
 
+**RF-38 StepForge 단면 계산을 여러 코어로(11-05 KST, 그쪽 D-667 — main `6f246e8` · `3f2780f`, Drive `dist-20261105-162025Z`, 라이브 9514).** 도구 계약 그대로 — 부르는 쪽(포털
+점검 스크립트 · 챗 · 패널)이 바꿀 것은 없다. section_batch 잡은 줄마다 fork 워커(검출 잡과 같은 워커 예산 · 줄 차례 · 바이트 상한 · 줄의 실패 규칙 그대로, 결과는 직렬과
+그림 바이트까지 같다), 단면 지도 잡은 장마다(운영 RC 211파트 65장 399.2 → 56.1초 — RF-35 의 a80 에서 늘었던 시간이 줄었다), section_view · section_pair_view 한 장은
+파트마다 교선 · 채움을 워커에서(치수 끔 3.8 ~ 4.5배 · 켬 1.0 ~ 1.4배 — 치수는 아직 한 코어). 이 판이 패널 둘(CE-7)을 품는다.
+
