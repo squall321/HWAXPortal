@@ -32,3 +32,13 @@ public_url: "<정문 오리진>/apps/step_forge/view/<과제>/atlas", file, file
 내지 않는다 — 계약이 'result 앞' 이다(패널은 error 앞에도 낸다). StepForge 는 `STEPFORGE_PUBLIC_BASE` 가 있을 때만 `viewer.public_url` 을 채운다 — 없는 박스는 null 이라
 카드가 없다(그래서 그쪽에 `/apps/…` 경로의 `embed_url` 표지를 청했다 — stepforge-request 2절 3). 실제 StepForge 응답(dev)에 대어 단면 지도 주소를 집는 것을 봤다.
 
+**CE-7 StepForge 패널 둘 받음(11-05 — 그쪽 main `0d5cb6a` · `562bcf3`, Drive `dist-20261105-131954Z`, dev 라이브 9513).** `section_atlas` → `ui://step_forge/atlas`(단면 지도 —
+장 목록 · 축 탭 · 장을 svg_live 로 · 호버 · 파트를 누르면 `describe_part` 를 옆칸에), `view_3d` → `ui://step_forge/view3d`(작은 WebGL2 렌더러 — 우리 glb 만 · 궤도 카메라 ·
+호버 이름 · 누르면 describe_part · 찾기 · 숨기기, glb 는 `download_artifact` 의 offset 조각 받기로 — 조각마다 1MB 안). 패널이 부르는 도구는 읽기 넷(section_atlas ·
+describe_part · view_3d · download_artifact)이라 첫 쓰기 확인이 뜨지 않는다. 3D 뷰어도 격리 창에서 돌게 됐다 — CE-2 의 '3D 는 링크' 는 뷰어 카드 길에서만 남는다
+(옛 `/view/<과제>` 는 쿠키 API 그대로). 단면 지도 응답에 `viewer.embed_url` · `embed_from` 이 생겼다(뷰어 카드는 표지로도 뜬다).
+포털 쪽 확인(dev) — 앱 tools/list 의 두 표지 · 자원(text/html;profile=mcp-app 9,997자) · 이름 꼴(dev 게이트웨이는 접두 없이 내고 `hostContext.toolInfo.tool.name` 은
+게이트웨이 이름이라 패널의 '접두 떼어 붙이기' 가 dev 는 빈 접두 · 접두가 붙는 박스는 그 접두 — 포털 허용 목록도 게이트웨이 이름) · 게이트웨이 panel_read 에 읽기 넷 ·
+`ui/resource-teardown` 은 포털이 요청으로 보내고 답을 기다린다 · 패널 세션 상한은 보낸 인자 · 읽은 자원만 센다(결과 바이트는 안 셈). 실제 화면 확인은 로그인이
+필요해 사람 몫이다.
+

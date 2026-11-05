@@ -15,7 +15,9 @@
 
 ## StepForge
 
-- [x] 요청서(패널 꼴 — `ui://` · `_meta.ui.resourceUri` · `embed_url` 표지) · 보내기(11-05 세션 메시지) — 답 대기
+- [x] 요청서(패널 꼴 — `ui://` · `_meta.ui.resourceUri` · `embed_url` 표지) · 보내기(11-05 세션 메시지) — 답 받음: 패널 둘(`0d5cb6a`, CE-7)
+- [x] 포털 호환 확인(dev — 앱 표지 · 자원 · 이름 꼴 · panel_read · teardown · 세션 상한)
+- [ ] 실제 포털 화면에서 두 패널 열기(사람 — 로그인 필요) · cae00 확인(받은 편지함 11-05 Q6)
 
 ## 반영
 
