@@ -21,7 +21,7 @@
 #     실제로 파싱해 보므로, 깨뜨리면 테스트가 잡는다.
 
 entries:
-  - date: 2026-11-05
+  - date: 2026-11-06
     title: "StepForge 단면 그림이 빨라졌습니다"
     tag: 수정
     items:
