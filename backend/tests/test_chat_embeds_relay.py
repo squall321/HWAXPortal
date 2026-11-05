@@ -1,4 +1,4 @@
-# 뷰어 카드 — 포털 중계가 SSE embeds 를 화면에 그대로 넘기고 서버 사본에는 규칙에 맞는 포인터만 meta.embeds 로 남기는지(docs/chat-embeds)
+# 뷰어 카드 — 포털 중계가 SSE embeds 를 화면에 그대로 넘기고 서버 사본에는 규칙에 맞는 포인터만 meta.embeds 로 남기는지 · 패널 손잡이 기본 켬(docs/chat-embeds)
 """사용자 결정 11-05 — 다른 플랫폼이 iframe 으로 보낸 화면을 챗에 띄운다(CE-1). 뷰어 카드는 같은 출처 /apps/<앱>/… 경로만 격리 창으로 — 에이전트 서버가
 도구 결과에서 집어 SSE embeds 로 내고, 중계는 바이트를 그대로 흘리며(화면이 다시 거른다) 서버 사본에는 같은 규칙(app/agent/embeds.py)으로 거른 포인터만
 남긴다. 중계 시험 도구는 test_mcp_apps_panel 의 것을 쓴다."""
@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from app.agent import embeds as E
+from app.config import Settings
 from app.main import app
 from tests.test_mcp_apps_panel import _Turn, _login, _sse, kit  # noqa: F401  (kit 은 픽스처)
 
@@ -71,3 +72,8 @@ def test_규칙에_맞는_것이_없으면_meta_에_칸을_만들지_않는다(k
     h = _login(c, "boss@corp.com")
     _t, msgs = _turn(c, h, [{"url": "/agent/artifacts/x.svg"}])
     assert "embeds" not in ([m for m in msgs if m["role"] == "assistant"][-1]["meta"] or {})
+
+
+def test_패널_손잡이는_기본_켬():
+    """사용자 결정 11-05(CE-1) — 다른 플랫폼이 보낸 ui:// 화면을 챗에 띄운다. 끄기는 박스 MCP_APPS_HOST=0, 켜도 권한 feat:panels 가 있는 사람만."""
+    assert Settings.model_fields["mcp_apps_host"].default is True

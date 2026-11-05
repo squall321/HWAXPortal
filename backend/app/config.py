@@ -343,9 +343,10 @@ class Settings(BaseSettings):
     agent_unary_timeout_s: float = 600.0
     max_concurrent_chats: int = 64                     # SSE connections hold a worker → cap + 429
     # ── 포털 챗의 MCP Apps 패널(docs/request-1027 HA-20 · HP-42 · 사용자 결정 10-31 B-1 ~ B-7 전부 (가)) ──
-    # 박스 손잡이 — 끄면(기본) /agent/panel/* 가 404 이고 챗 중계가 ui_host 를 싣지 않는다(에이전트 서버는 HA-05 그대로). 켜도 권한 feat:panels 가
-    # 있는 사람만 쓴다(파일럿 소속에만 먼저 — access.yaml). 크기 기본값은 SimFlow 의 답(설계 C1 Q-S6 · Q-S7) 전 값이다.
-    mcp_apps_host: bool = False
+    # 박스 손잡이 — 기본 켬(사용자 결정 11-05 — 다른 플랫폼이 iframe 으로 보낸 화면을 챗에 띄운다, docs/chat-embeds CE-1). 끄면(MCP_APPS_HOST=0)
+    # /agent/panel/* 가 404 이고 챗 중계가 ui_host 를 싣지 않는다(에이전트 서버는 HA-05 그대로). 켜도 권한 feat:panels 가 있는 사람만 쓴다
+    # (access.yaml). 크기 기본값은 SimFlow 의 답(설계 C1 Q-S6 · Q-S7) 전 값이다.
+    mcp_apps_host: bool = True
     panel_pat_audience: str = PANEL_AUDIENCE           # 패널 PAT 의 청중 — 게이트웨이 portal.panel_audience 와 같아야 한다(두 리포 계약 시험)
     panel_html_max_bytes: int = 2 * 1024 * 1024        # 패널 HTML(resources/read) 상한 — 넘으면 열지 않는다
     panel_call_max_bytes: int = 4 * 1024 * 1024        # 패널 tools/call 한 번의 인자 상한 — 넘으면 413(파일 올리기 HP-15 로 안내)
