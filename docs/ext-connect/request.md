@@ -123,6 +123,8 @@ platforms:
 | `list_auth` | 아니오(기본 `open`) | `open` 또는 `registered:<포털 이메일>` 이다(1-4) |
 | `read_tools` | 아니오(기본 `[]`) | 읽기 도구의 원래 이름이다. 게이트웨이 `read_tools.json` 목록에 **더해진다**(1-6) |
 | `workspace_header` · `workspace_label` | 아니오 | 부서 같은 값을 실을 헤더 이름과, 카드에 생길 두 번째 칸의 이름이다. 지금 두 앱은 쓰지 않는다. Authorization · Proxy-Authorization · Cookie · Host · Content-* · Accept · Mcp-* · X-CSRF-Token · X-Hwax-* · X-Heax-* 는 받지 않는다(포털과 게이트웨이 둘 다 막는다) |
+| `request_id` | 아니오(기본 `true`) | 호출마다 `X-Request-Id`(새 UUID)를 싣고 게이트웨이 감사 줄 `rid` 에 같은 값을 남긴다. `true` · `false` 만 받는다(11-06 추가 — [docs/siren-delib](../siren-delib/PLAN.md) HG-27) |
+| `mask_keep_hosts` | 아니오(기본 `[]`) | 결과 가림에서 뺄 링크 호스트 — 사설 IPv4 글자만(포트 없이 · 8개까지). 그 주소가 `http(s)://` 바로 뒤에 올 때만 가리지 않는다(11-06 추가 — [docs/siren-delib](../siren-delib/PLAN.md) HG-29). ⚠ 새 칸을 모르는 옛 포털은 블록 통째로 버린다 — 새 판을 받은 뒤 적는다 |
 
 누가 어떻게 읽는지는 아래와 같다.
 
