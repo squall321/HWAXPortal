@@ -346,3 +346,12 @@
 바깥으로 오지 않아 확대는 모서리 아이콘으로 연다. 확대 화면도 같은 iframe(맞춤은 배율로). 바깥 출처 SVG 는 그대로 `<img>`. 인라인 삽입(사이드바 연동)은 하지
 않는다. 덧막이 — 에이전트 서버의 도구 그림 저장(`_stash_image_items`)이 내용으로 꼴을 보고(래스터는 `vision.sniff`, SVG 는 `<svg` 머리) 8 MiB(`VISION_MAX_BYTES`)를
 넘거나 꼴이 아니면 저장하지 않는다(전에는 선언된 `image/*` 면 무엇이든 저장했다).
+
+**RF-37 StepForge a81 받음 — 상호작용 SVG · 지도 HTML 뷰어(11-05 KST, 그쪽 D-665).** main `e13bd08` · `d776e71`, Drive `dist-20261105-045500Z`, 라이브 도구 184(수 그대로).
+`format="svg_live"` 를 section_view(한 장 · 연속 · 강조 · 치수) · section_atlas(남긴 곡선에서 바로) · section_pair_view · section_batch(칸마다 data-project, 폭 · 바이트
+맞춤 없이)가 받고, 응답은 글 블록 하나 + ImageContent(image/svg+xml). 풍선은 맨 위층에 미리 그려 두고 CSS `:has()` 로 띄운다(Chromium 105+ · Firefox 121+ · Safari
+15.4+), 접근성 이름은 묶음의 aria-label, 규칙은 `svg.stepforge-section` 아래. section_atlas 에 `format`(png | svg_live) · `viewer`(true 면 지도 HTML 을 짓고 viewer.route ·
+public_url) — 앱 주소 `GET /view/{project_id}/atlas`(text/html · 뷰어 스크립트 sha256 하나만 허용하는 CSP, 지도나 뷰어가 없으면 404 → `section_atlas(viewer=true)`).
+REST `GET /api/projects/{id}/section-atlas` 에 format · viewer, svg_live 는 image_base64. 기본은 png 그대로 — 보고서 · 판독은 지금처럼. 포털 챗은 RF-36 으로 그 SVG 를
+격리 iframe 으로 그린다(호버가 산다). cae00 확인(그쪽 청) — 받은 편지함 2026-11-05 Q4 · Q5.
+
