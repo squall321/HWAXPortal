@@ -38,6 +38,8 @@ export interface StreamHandlers {
   onConfirm?: (e: ConfirmCard) => void;
   /** MCP Apps 패널(SSE ui_resource, docs/request-1027 HA-20) — 패널 도구를 부른 호출 하나에 하나. 화면이 그 답 안에 패널을 연다. */
   onUiResource?: (e: UiResourceEvent) => void;
+  /** 뷰어 카드(SSE embeds, docs/chat-embeds) — 답 끝에 한 번. items 는 화면이 다시 거른다(chatStore.embedsFromMeta). */
+  onEmbeds?: (e: { items?: unknown }) => void;
   onDone?: () => void;
   /** 프레임이 하나 올 때마다(이벤트 이름) — 서버 heartbeat(`ping`)를 포함한다. 내용이 아니라 '살아 있다' 는 신호다. */
   onSignal?: (event: string) => void;
@@ -113,6 +115,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'ui_resource':
       h.onUiResource?.(payload as UiResourceEvent);
+      break;
+    case 'embeds':
+      h.onEmbeds?.(payload as { items?: unknown });
       break;
     case 'error':
       h.onError?.(payload as ErrorEvent);

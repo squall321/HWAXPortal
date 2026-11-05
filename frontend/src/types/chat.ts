@@ -377,10 +377,22 @@ export interface Message {
   /** MCP Apps 패널 포인터(SSE ui_resource, docs/request-1027 HA-20 · HP-42) — 영속되는 것은 포인터(+작은 입력)뿐이다. 결과 · _meta 는 그 탭에만
    *  있다(B-4 · B-6 (가) — lib/mcpApps 의 live). 새로고침 · 다른 기기에서는 '다시 열기' 카드다. */
   panels?: PanelPointer[];
+  /** 뷰어 카드 포인터(SSE embeds, docs/chat-embeds) — 도구가 준 같은 출처 `/apps/<앱>/…` 화면을 격리 창(sandbox="allow-scripts")으로 띄운다. 영속됨(작다). */
+  embeds?: EmbedPointer[];
+  /** 이 탭에서 받은 뷰어 카드다 — 연 채로 그린다(기록에서 온 카드는 접힌 채). 영속하지 않는다. */
+  embedsLive?: boolean;
   /** '/보고서' 가 만든 RA 보고서(SSE result 의 ra_report · 서버 사본 meta.ra_report) — 이 답 옆에 '발표자료로' 단추가 선다(docs/wda-deck). 영속됨(작다). */
   raReport?: { id: number; title: string };
   /** 이 알림을 남긴 발표자료 잡(서버 사본 meta.deck.job_id) — 같은 알림을 두 번 붙이지 않는 열쇠(docs/wda-deck). */
   deckJob?: string;
+}
+
+/** 뷰어 카드 포인터 — 에이전트 서버가 도구 결과에서 집은 같은 출처 경로(docs/chat-embeds PLAN 1절 — 세 층이 같은 규칙으로 거른다). */
+export interface EmbedPointer {
+  app: string;
+  tool: string;
+  url: string;
+  title: string;
 }
 
 /** 패널 포인터 — 서버 사본은 app · tool · uri · call · title 만 쥔다(포털 panel.pointer_of). input 은 이 브라우저 사본에만, 작을 때만. */

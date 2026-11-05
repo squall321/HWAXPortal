@@ -50,6 +50,7 @@ from app.auth.provider import Principal
 from app.config import Settings, chat_pat_ttl_s, get_settings
 from app.agent import docforge_delivery as _dfd
 from app.agent import onto_preview as _onto_preview
+from app.agent import embeds as _embeds
 from app.agent import pc_upload as _pc
 from app.agent import subject as _subject
 from app.agent import upload as _upload
@@ -3139,6 +3140,7 @@ async def chat(
         user_images: list[str] = []  # 이 발화에 올린 그림의 주소(user_images) — 서버 사본의 답 meta 에 남겨 다른 기기의 이력에도 그림이 실리게
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         panels: list[dict] = []      # 패널(ui_resource) 포인터(app · tool · uri · call · 제목) — 답 meta.panels 로 남긴다. 결과 · 입력 · _meta 는 남기지 않는다(B-4 · B-6)
+        embeds: list[dict] = []      # 뷰어 카드(SSE embeds) 포인터(app · tool · url · 제목) — 같은 규칙으로 걸러 답 meta.embeds 로 남긴다(docs/chat-embeds CE-2)
         cancelled: dict = {}         # 사람이 멈춘 웹 심의의 멈춤 사건(delib kind=cancelled) — 답 meta.delib_cancelled 로 남긴다
         outcome: dict = {}           # 심의 outcome(RA 보고서 번호 · 집계) — 답 meta.delib_outcome 으로 남긴다(docs/wda-deck WD-D12, 새로고침 뒤 단추)
         ra_report: dict = {}         # '/보고서' result 의 ra_report — 답 meta.ra_report 로 남긴다(같은 까닭)
@@ -3252,6 +3254,9 @@ async def chat(
                                 _pp = _panel.pointer_of(data)
                                 if _pp is not None and len(panels) < 16:
                                     panels.append(_pp)
+                            elif evt == "embeds":
+                                # 뷰어 카드 — 바이트는 위 큐로 그대로 흘리고(화면이 다시 거른다) 서버 사본에는 규칙에 맞는 포인터만(docs/chat-embeds PLAN 1절)
+                                embeds[:] = _embeds.pointers(embeds + list(data.get("items") or []))
                             elif evt == "routine" and isinstance(data.get("run_id"), str) and data["run_id"]:
                                 # 분석 루틴(R3-design 3.2 · 3.3) — 대화에는 포인터만 남긴다(정본은 포털 원장, 단계 · 보고서는 화면이 run_id 로 읽는다).
                                 # 실행 id 는 모든 프레임에, 루틴 id · 제목은 plan 에, 실행 상태는 plan · done 에 있다. 마지막 값이 이긴다.
@@ -3377,7 +3382,7 @@ async def chat(
                                 reply = cancelled["message"] = cancelled["message"] or "(심의를 멈췄다)"
                             if reply:
                                 _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
-                                                         ("user_images", user_images), ("panels", panels)) if v}
+                                                         ("user_images", user_images), ("panels", panels), ("embeds", embeds)) if v}
                                 if outcome:     # 심의가 낸 보고서 번호 · 집계 — 새로고침 뒤에도 결과 카드와 '발표자료로' 단추가 선다
                                     _am["delib_outcome"] = outcome
                                 if ra_report:   # '/보고서' 가 만든 보고서 — 그 답 옆에 '발표자료로' 단추가 선다

@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, ConfirmCard, Conversation, DelibData, DelibOpts, Message, PanelPointer, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
+import type { ActivityItem, ConfirmCard, Conversation, DelibData, DelibOpts, EmbedPointer, Message, PanelPointer, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -29,6 +29,8 @@ interface StoredMessage {
   confirm?: ConfirmCard;
   /** MCP Apps 패널 포인터(HA-20) — 포인터와 작은 입력만(결과 · _meta 는 남기지 않는다 — B-4 · B-6). */
   panels?: PanelPointer[];
+  /** 뷰어 카드 포인터(docs/chat-embeds) — 같은 출처 경로 · 제목만. 작다. */
+  embeds?: EmbedPointer[];
   /** '/보고서' 가 만든 RA 보고서 · 발표자료 알림의 잡(docs/wda-deck) — 작다. 없으면 새로고침 뒤 단추가 서버를 다시 읽을 때까지 사라진다. */
   raReport?: { id: number; title: string };
   deckJob?: string;
@@ -89,6 +91,36 @@ export function panelsFromMeta(raw: unknown, keepInput = false): PanelPointer[] 
   return out.length ? out.slice(0, 8) : undefined;
 }
 
+// ── 뷰어 카드 포인터(docs/chat-embeds CE-2) — 같은 출처 /apps/<앱>/… 경로만. 에이전트 서버 · 포털 중계(app/agent/embeds.py)와 같은 규칙이다.
+const EMBED_PATH = /^\/apps\/[a-z0-9][a-z0-9_-]{0,63}\/[A-Za-z0-9._~!$&()*+,;=:@/%-]*(?:\?[A-Za-z0-9._~!$&()*+,;=:@/?%-]*)?$/;
+// 경로를 벗어나는 꼴 — 점 마디 · 겹 빗금 · 인코딩한 점 · 빗금 · 역슬래시(브라우저는 %2e 를 점 마디로 푼다)
+const EMBED_ESCAPE = /(?:^|\/)\.\.?(?:\/|$|\?)|\/\/|%2e|%2f|%5c/i;
+
+/** 격리 창으로 띄울 수 있는 같은 출처 경로인가. */
+export function isEmbedPath(url: unknown): url is string {
+  if (typeof url !== 'string' || !url || url.length > 2048 || !EMBED_PATH.test(url)) return false;
+  return !EMBED_ESCAPE.test(url.split('?', 1)[0].slice(1));
+}
+
+/** 서버 사본(meta.embeds) · SSE embeds 의 items · 브라우저 사본 → 화면 포인터. 규칙 밖은 버리고 같은 주소는 하나, 8개까지. */
+export function embedsFromMeta(raw: unknown): EmbedPointer[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const seen = new Set<string>();
+  const out: EmbedPointer[] = [];
+  for (const p of raw) {
+    if (!p || typeof p !== 'object') continue;
+    const r = p as Record<string, unknown>;
+    if (!isEmbedPath(r.url) || seen.has(r.url)) continue;
+    seen.add(r.url);
+    const app = typeof r.app === 'string' && /^[a-z0-9][a-z0-9_.-]{0,63}$/.test(r.app) ? r.app : r.url.split('/')[2];
+    const tool = typeof r.tool === 'string' ? r.tool.slice(0, 120) : '';
+    const title = (typeof r.title === 'string' && r.title.trim() ? r.title.trim() : `${app} · ${tool}`).slice(0, 120);
+    out.push({ app, tool, url: r.url, title });
+    if (out.length >= 8) break;
+  }
+  return out.length ? out : undefined;
+}
+
 /** 브라우저 사본(localStorage)에 남길 꼴 — 포인터와 작은 입력만. */
 export function storedPanels(list: PanelPointer[] | undefined): PanelPointer[] | undefined {
   if (!list?.length) return undefined;
@@ -143,6 +175,11 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
           ...(() => {
             const panels = panelsFromMeta(m.panels, true);
             return panels ? { panels } : {};
+          })(),
+          // 뷰어 카드(docs/chat-embeds) — 기록에서 온 카드는 접힌 채다(embedsLive 는 남기지 않는다)
+          ...(() => {
+            const embeds = embedsFromMeta(m.embeds);
+            return embeds ? { embeds } : {};
           })(),
         });
       }
@@ -280,6 +317,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ...(m.routine ? { routine: m.routine } : {}),
             ...(m.confirm ? { confirm: m.confirm } : {}),
             ...(m.panels?.length ? { panels: storedPanels(m.panels) } : {}),
+            ...(m.embeds?.length ? { embeds: m.embeds.slice(0, 8) } : {}),
             ...(m.raReport ? { raReport: m.raReport } : {}),
             ...(m.deckJob ? { deckJob: m.deckJob } : {}),
           };

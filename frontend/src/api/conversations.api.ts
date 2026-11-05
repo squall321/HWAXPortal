@@ -1,7 +1,7 @@
 // 서버 대화 저장소 REST 클라이언트 — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본
 import { apiFetch } from './client';
 import type { ActivityItem, Conversation, DelibData, DelibTally, DelibTurn, Message, RoutineState } from '../types/chat';
-import { newId, panelsFromMeta } from '../state/chatStore';
+import { embedsFromMeta, newId, panelsFromMeta } from '../state/chatStore';
 
 export type ConvKind = 'chat' | 'deliberation';
 
@@ -275,6 +275,8 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       const routine = m.role === 'assistant' ? routineFromMeta(m.meta) : undefined;
       // 패널 포인터(HA-20) — 서버 사본은 포인터만 쥔다. 다른 기기 · 새로고침에서는 '다시 열기' 카드로 그린다(입력 · 결과 없이)
       const panels = m.role === 'assistant' ? panelsFromMeta((m.meta as { panels?: unknown } | null)?.panels) : undefined;
+      // 뷰어 카드(docs/chat-embeds) — 포털 중계가 거른 포인터. 다른 기기 · 새로고침에서는 접힌 카드로 그린다
+      const embeds = m.role === 'assistant' ? embedsFromMeta((m.meta as { embeds?: unknown } | null)?.embeds) : undefined;
       // '/보고서' 가 만든 RA 보고서 · 발표자료 알림의 잡(docs/wda-deck) — 단추와 같은 알림을 두 번 붙이지 않는 열쇠
       const raReport = m.role === 'assistant' ? raReportFromMeta((m.meta as { ra_report?: unknown } | null)?.ra_report) : undefined;
       const dj = m.role === 'assistant' ? (m.meta as { deck?: { job_id?: unknown } } | null)?.deck?.job_id : undefined;
@@ -287,6 +289,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
         ...(Array.isArray(act) ? { activity: act } : {}),
         ...(routine ? { routine } : {}),
         ...(panels ? { panels } : {}),
+        ...(embeds ? { embeds } : {}),
         ...(raReport ? { raReport } : {}),
         ...(typeof dj === 'string' && dj ? { deckJob: dj } : {}),
       });

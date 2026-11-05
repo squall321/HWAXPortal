@@ -50,6 +50,7 @@ import {
   saveConversations,
   saveDelibOpts,
   saveDraftPins,
+  embedsFromMeta,
   type DraftPins,
 } from './chatStore';
 
@@ -1167,6 +1168,11 @@ export function ChatProvider({
         onUiResource: (e) => {
           const p = panelPointer(e);
           if (p) patch(cid, botId, (m) => ({ ...m, panels: [...(m.panels ?? []), p].slice(-8) }));
+        },
+        // 뷰어 카드(docs/chat-embeds) — 에이전트 서버가 도구 결과에서 집은 같은 출처 화면. 다시 거르고, 이 탭에서 받은 것이라 연 채로 그린다
+        onEmbeds: (e) => {
+          const list = embedsFromMeta(e?.items);
+          if (list) patch(cid, botId, (m) => ({ ...m, embeds: list, embedsLive: true }));
         },
         // 올린 그림의 서버 주소 — 이 발화(사람 메시지)에 남겨 다음 턴 이력에 싣는다. 썸네일도 이 주소로 바꾼다(data URL 은 버린다).
         onUserImages: (e) =>
