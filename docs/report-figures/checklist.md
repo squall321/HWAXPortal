@@ -75,3 +75,10 @@
 - [ ] cae00 — 단면 지도 도구 · 새 반입의 지도 상태(받은 편지함 2026-11-04 Q4)
 - [ ] 후속 — 일회성 세션의 결과 뒤 tools/list 401 로 쓰기 도구가 두 번 도는 틈(RF-26)
 
+
+## SVG 그림을 격리 iframe 으로(사용자 결정 11-05, RF-36)
+
+- [ ] `renderers/svgFrame.ts` — 같은 출처 `.svg` 판정 · 칸 맞춤 배율 · 확대 무대 맞춤(순수 셈)
+- [ ] `Figure.tsx` — SVG 는 원래 크기 iframe(sandbox="") + 변형 · 넓으면 가로 스크롤 · 확대 아이콘만 눌림 / `Lightbox.tsx` — SVG iframe 갈래 · 원본 링크
+- [ ] 에이전트 서버 `_stash_image_items` — 내용으로 꼴 · 8 MiB 상한
+- [ ] 시험(node 로 셈 · 소스 단언 · 에이전트 서버) · 빌드 · 올리기 · Drive(cae00 화면)

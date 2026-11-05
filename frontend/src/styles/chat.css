@@ -1740,6 +1740,13 @@ body.dock-open .page-wide {
 
 .md-img { display: block; max-width: 100%; border-radius: 0; margin: 0; border: 0; background: #fff; }
 .md-img-err { display: block; font-size: 0.78rem; color: var(--muted); padding: 0.5rem 0; }
+/* 같은 출처 SVG — 격리 iframe 을 원래 크기로 두고 배율로 줄인다(SVG 문서는 자기 크기로 그려져 iframe 에 맞춰 줄지 않는다, docs/report-figures RF-36).
+   상자가 줄인 크기를 잡고 iframe 은 왼쪽 위를 기준으로 줄어든다. */
+.md-svgframe-box { position: relative; display: block; overflow: hidden; }
+.md-svgframe { position: absolute; top: 0; left: 0; display: block; border: 0; transform-origin: 0 0; background: #fff; }
+/* iframe 안의 누름은 바깥으로 오지 않는다 — 확대 아이콘을 늘 보이고 눌리게 한다(호버는 그림 안 풍선에 양보). */
+.md-figure-frame.is-frame { cursor: default; }
+.md-figure-frame.is-frame .md-figure-zoom { opacity: 0.85; pointer-events: auto; cursor: zoom-in; }
 /* 로딩 스켈레톤 — 그림이 늦게 와도 레이아웃이 튀지 않게 자리를 잡아 둔다. */
 .md-img-skel {
   display: block;
@@ -1829,6 +1836,8 @@ body.dock-open .page-wide {
   border-radius: 8px;
   background: #fff;
 }
+/* 확대 화면의 SVG iframe — 원래 크기 그대로 두고 맞춤 · 배율은 변형으로(flex 가 줄이지 않게 flex: none). */
+.lb-svgframe { display: block; flex: none; border: 0; border-radius: 8px; background: #fff; transform-origin: center center; }
 .lb-hint {
   margin: 0;
   padding: 0.45rem 0.8rem 0.7rem;

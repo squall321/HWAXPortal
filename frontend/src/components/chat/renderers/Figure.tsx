@@ -1,6 +1,7 @@
-// 챗 본문 그림 — 캡션·로딩 스켈레톤·가로 스크롤 판정·눌러서 확대(라이트박스)
-import { useCallback, useRef, useState } from 'react';
+// 챗 본문 그림 — 캡션·로딩 스켈레톤·가로 스크롤 판정·눌러서 확대(라이트박스) · 같은 출처 SVG 는 격리 iframe(호버가 산다)
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Lightbox, type LightboxItem } from './Lightbox';
+import { isSvgFrameSrc, svgFrameFit } from './svgFrame';
 
 /** 칼럼 폭 대비 이 배수를 넘으면 '축소'가 아니라 '가로 스크롤'로 둔다.
  *  축소하면 축 라벨·범례가 뭉개져 읽을 수 없다 — 사용자가 보고한 그 증상이다. */
@@ -12,6 +13,7 @@ export function FigureShell({
   item,
   wide,
   note,
+  frame,
   className = '',
   children,
 }: {
@@ -19,6 +21,8 @@ export function FigureShell({
   item: LightboxItem;
   wide?: boolean;
   note?: string;
+  /** 안에 iframe 이 든다 — iframe 안의 누름은 바깥으로 오지 않아 확대는 모서리 아이콘으로 연다. */
+  frame?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -31,7 +35,7 @@ export function FigureShell({
           이 컴포넌트가 쓰이므로 span 이어야 안전하다. */}
       <span className={`md-figure${wide ? ' is-wide' : ''} ${className}`.trim()}>
         <span
-          className="md-figure-frame"
+          className={`md-figure-frame${frame ? ' is-frame' : ''}`}
           role="button"
           tabIndex={0}
           aria-label={`${caption || '그림'} — 눌러서 크게 보기`}
@@ -63,8 +67,17 @@ export function FigureShell({
   );
 }
 
-/** 도구 산출 그래프 등 `![alt](url)` 이미지. */
+/** alt 가 파일명이거나 우리가 붙인 기본 문구면 캡션으로 쓰지 않는다(잡음이 된다). */
+function captionOf(alt: string): string | undefined {
+  return alt && alt !== '이미지' && alt !== '생성된 그래프' && !/^[\w.-]+\.(png|jpe?g|svg|webp)$/i.test(alt) ? alt : undefined;
+}
+
+/** 도구 산출 그래프 등 `![alt](url)` 이미지. 같은 출처 SVG 는 격리 iframe 으로(docs/report-figures RF-36). */
 export function Figure({ src, alt }: { src: string; alt: string }) {
+  return isSvgFrameSrc(src) ? <SvgFrameFigure src={src} alt={alt} /> : <ImgFigure src={src} alt={alt} />;
+}
+
+function ImgFigure({ src, alt }: { src: string; alt: string }) {
   const [state, setState] = useState<'load' | 'ok' | 'err'>('load');
   const [wide, setWide] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
@@ -78,10 +91,7 @@ export function Figure({ src, alt }: { src: string; alt: string }) {
     setState('ok');
   }, []);
 
-  // alt 가 파일명이거나 우리가 붙인 기본 문구면 캡션으로 쓰지 않는다(잡음이 된다).
-  const caption = alt && alt !== '이미지' && alt !== '생성된 그래프' && !/^[\w.-]+\.(png|jpe?g|svg|webp)$/i.test(alt)
-    ? alt
-    : undefined;
+  const caption = captionOf(alt);
 
   if (state === 'err') {
     return <span className="md-img-err">이미지를 불러오지 못했습니다 — {alt || src}</span>;
@@ -109,3 +119,75 @@ export function Figure({ src, alt }: { src: string; alt: string }) {
     </FigureShell>
   );
 }
+
+/** 같은 출처 SVG — 호버(파트 이름 풍선 · 치수)가 SVG 안의 CSS 라 `<img>` 로는 죽는다. `<iframe sandbox="">` 는 스크립트도 같은 출처도 막는다(따로 출처).
+ *  SVG 문서는 자기 width · height 로 그려져 iframe 에 맞춰 줄지 않으므로, 원래 크기의 iframe 을 변형(scale)으로 줄인다 — 호버 판정은 변형을 따른다. */
+function SvgFrameFigure({ src, alt }: { src: string; alt: string }) {
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [err, setErr] = useState(false);
+  const [avail, setAvail] = useState(0);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+
+  // 원래 크기 — iframe 은 안을 들여다볼 수 없어(따로 출처) 같은 주소를 그림으로 한 번 읽어 잰다(브라우저가 캐시한다).
+  useEffect(() => {
+    let live = true;
+    setSize(null);
+    setErr(false);
+    const im = new Image();
+    im.onload = () => live && setSize({ w: im.naturalWidth || 300, h: im.naturalHeight || 150 });
+    im.onerror = () => live && setErr(true);
+    im.src = src;
+    return () => {
+      live = false;
+    };
+  }, [src]);
+
+  // 칼럼 폭 — 껍데기(md-figure-frame)는 내용 폭에 맞추므로(display:table) 블록인 바깥 .md-figure 로 잰다. 창이 바뀌면 다시 잰다.
+  useEffect(() => {
+    const el = wrapRef.current?.closest('.md-figure') as HTMLElement | null;
+    if (!el) return;
+    const measure = () => setAvail(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const caption = captionOf(alt);
+  if (err) {
+    return <span className="md-img-err">이미지를 불러오지 못했습니다 — {alt || src}</span>;
+  }
+  const fit = size ? svgFrameFit(size.w, size.h, avail, WIDE_RATIO) : null;
+  return (
+    <FigureShell
+      caption={caption}
+      wide={fit?.wide}
+      note={fit?.wide ? '가로로 깁니다 — 옆으로 밀거나 크게 보세요' : undefined}
+      item={size ? { kind: 'svgsrc', src, w: size.w, h: size.h, caption: caption || alt } : { kind: 'img', src, caption: caption || alt }}
+      frame
+      className="md-figure-img md-figure-svgframe"
+    >
+      <span ref={wrapRef} className="md-img-scroll">
+        {!(size && fit) && <span className="md-img-skel" aria-hidden="true" />}
+        {size && fit && (
+          <span className="md-svgframe-box" style={{ width: size.w * fit.scale, height: size.h * fit.scale }}>
+            {/* ⚠ sandbox 는 빈 값 그대로 — allow-scripts · allow-same-origin 을 넣지 않는다. 호버는 SVG 안의 CSS 라 스크립트가 필요 없다. */}
+            <iframe
+              className="md-svgframe"
+              sandbox=""
+              src={src}
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              title={alt || '그림'}
+              width={size.w}
+              height={size.h}
+              style={{ transform: `scale(${fit.scale})` }}
+            />
+          </span>
+        )}
+      </span>
+    </FigureShell>
+  );
+}
+
