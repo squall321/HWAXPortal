@@ -143,8 +143,9 @@ def test_조각_병합이_실패하면_전체_덤프_길로_다시_한다(box):
     assert "OK:AIDH 데이터 merge(" in out and box.marker.read_text() == box.dump.name, out
 
 
-@pytest.mark.parametrize("rc,word", [("4", "SKIP:AIDH 조각 동기화 Drive 에 조각 목록이 없다"), ("1", "BAD:AIDH 조각 받기 실패(rc 1)")])
-def test_목록이_없거나_받기가_실패하면_전체_덤프_길(box, rc, word):
+@pytest.mark.parametrize("rc,word", [("4", "SKIP:AIDH 조각 동기화 Drive 에 조각 목록이 없다"), ("1", "BAD:AIDH 조각 받기 실패(rc 1)"),
+                                     ("5", "BAD:AIDH 조각 목록이 전체 덤프보다 하루 넘게 낡았다")])
+def test_목록이_없거나_받기가_실패하거나_낡았으면_전체_덤프_길(box, rc, word):
     out = box.with_parts().run(FAKE_FETCH_RC=rc)
     assert word in out and box.merge_kinds() == ["dump"] and box.marker.read_text() == box.dump.name, out
 

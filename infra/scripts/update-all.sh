@@ -1236,6 +1236,8 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
             *) bad "AIDH 조각 merge 실패(rc $_aidh_mrc) — 아래 전체 덤프 길로 다시 한다(cae00 데이터는 무손상 · 덮인 줄은 위 rollback-parts.sh 줄로 되돌린다)" ;;
           esac ;;
       4)  hwax_skip "AIDH 조각 동기화" "Drive 에 조각 목록이 없다 — 전체 덤프 길로" "dev 에서 AIDataHub deploy/apptainer/parts-to-drive.sh 를 하루 한 번(cron — 전체 덤프 뒤)" ;;
+      # 5 — 목록이 가장 새 전체 덤프보다 하루 넘게 낡았다. 그대로 두면 '바뀐 것 없음' 으로 끝나며 덤프에 든 새 데이터를 받지 않는다(docs/aidh-parts-sync AP-14).
+      5)  bad "AIDH 조각 목록이 전체 덤프보다 하루 넘게 낡았다(dev 의 하루 한 번 내기가 멈췄다 — 위 줄) — 아래 전체 덤프 길로. 받은 편지함으로 알린다" ;;
       *)  bad "AIDH 조각 받기 실패(rc $_fp_rc) — 아래 전체 덤프 길로" ;;
     esac
   fi
