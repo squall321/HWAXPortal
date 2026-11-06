@@ -22,6 +22,11 @@
 
 entries:
   - date: 2026-11-06
+    title: "논문 업로드 중계를 다시 잇습니다"
+    tag: 기술
+    items:
+      - "cae00 PaperIngest 업로드가 Drive 로 가지 않던 까닭을 고쳤습니다 — 송출 스크립트가 rclone 을 dev 경로로 찾던 것을 리포 자리에서 찾게 하고, dev 기록의 대기 항목 셈을 바로잡았습니다. 새 앱 판을 cae00 에 보내고 송출 cron 을 거는 일은 운영 몫입니다."
+  - date: 2026-11-06
     title: "심의 · 리스크 심사에서 SIREN 사례를 봅니다"
     tag: 심의
     items:
