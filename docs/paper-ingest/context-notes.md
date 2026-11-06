@@ -31,7 +31,7 @@ Drive 에서 지움, 이번에 모드를 더했다). 한쪽이 copy 면 루프�
 **PI-5 11-05 커밋 뒤 SIF 를 Drive 로 보내지 않았다.** 앱 리포에 무엇이든 push 하면 cae00 허브는 커밋이 바뀐 것을 보고 SIF 열쇠를 견주는데(앞 판 SIF 는 옛 커밋
 열쇠), 맞지 않으면 짓기를 시도하고 cae00 은 못 지어 그 회차에 앱을 띄우지 않는다. drive-drift(11-06)가 ✗ — Drive `paper-ingest.sif` 는 옛 판(93 MB), dev 는
 `4a6f5c7` 판(186 MB)이었다. 11-05 뒤 cae00 허브가 다시 떴다면 PaperIngest 가 꺼져 있을 수 있다 — 업로드 창구 자체가 없었을 수 있다. 11-06 `e03d6d2` 로 다시
-지었고(dev 새 인스턴스 정상) Drive 에 올리는 것은 사람 몫이다(자동 모드가 막음 — `SLUG=paper-ingest bash ../DocForge/scripts/drive-push-sif.sh`).
+지었고(dev 새 인스턴스 정상) Drive 에는 사용자가 올렸다(자동 모드가 막아 — `SLUG=paper-ingest bash ../DocForge/scripts/drive-push-sif.sh`, `dist-20261106-035741Z` · latest, drive-drift ✓).
 
 **PI-6 절차서의 컨테이너 경로가 틀렸다.** server-setup 은 앱이 컨테이너 안 `/data/appdata/paper_ingest/_inbox` 로 받는다고 적었지만 매니페스트 launch.env 는
 `INBOX_DIR: /data/_inbox` 이고 HEAX 가 컨테이너 `/data` 를 호스트 `<HEAXHub>/var/app_data/paper_ingest` 에 묶는다 — 호스트 경로는 `<app_data>/paper_ingest/_inbox`

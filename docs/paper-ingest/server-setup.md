@@ -9,7 +9,7 @@ cae00 이 앱을 새 SIF 로 받고(0절) 송출 cron 하나만 걸면 업로드
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' --noproxy '*' http://127.0.0.1:4180/apps/paper_ingest/health    # 200 이 아니면 꺼져 있다(허브 Caddy 포트는 박스 값)
-rclone cat <리모트>:HEAXHub/dist/latest/SHA256SUMS | grep paper-ingest                               # dev 가 e03d6d2 판을 올렸는지(판은 0절 표 줄)
+rclone cat <리모트>:HEAXHub/dist/latest/SHA256SUMS | grep paper-ingest                               # e03d6d2 판(dist-20261106-035741Z)이 latest 에 있는지
 cd ~/Projects/HEAXHub && bash deploy/apptainer/dist-from-drive.sh && bash deploy/apptainer/redeploy-app.sh paper-ingest
 ```
 
