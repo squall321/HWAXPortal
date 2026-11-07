@@ -11,6 +11,8 @@
    `/apps/web_design_agents/api/health` 를 부르면 401 이다.
 3. 심의 결과 카드 · `/보고서` 저장 답의 단추는 WDA 의 심의 꼴이 준비된 뒤에만 선다(U-6 — 심의 형식이 설 때까지 숨긴다) — `/api/health` 의 features 에
    `format:delib-16x9` 가 있고 `formats` 에서 그 꼴이 `active` 여야 한다(W-21 · WD-D39 — 11-01 저녁 WDA 로컬 판은 draft, draft 는 숨긴다 — 사용자 결정 WD-D42 · 손잡이 없음). 그 전에는 RA 보내기 알림 자리에서만 선다.
+4. **재배치하면 직결 포트가 바뀐다**(11-07 — 9499 → 9521). 직결로 대조할 때는 매번 `../HEAXHub/var/integration_state/web_design_agents.json` 의 `port` 를
+   다시 읽는다. 포털은 허브 Caddy 경유(`/apps/web_design_agents`)라 포트가 바뀌어도 영향이 없다.
 
 ## 1. 포털 켜기
 
