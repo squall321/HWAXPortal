@@ -117,6 +117,8 @@
 | SignalForge | `90e450b` · `b2cc9e0` · `f44cf73` · `1efb305` · `191ea0f` | 그쪽 cae00 문서 2026-11-07(제품 태깅 정밀화 — 카탈로그 25종 · alembic 0047 · 매처 · `retag_delta` · 품질 보고서 MV 신선도) | 올림(그쪽 세션) — 차례는 그 문서 0 → 4(sf-mcp · worker 새 코드) → 2절 dry-run(읽기) → 받은 편지함 2026-11-07 Q3(사용자에게만) → 사용자 '적용' → dev 적용 → 병합. cae00 은 `--apply` 하지 않는다(3절의 cae00 전용 글만 예외) |
 | KooRemapper(DynaForge) | `752fa2b` · Drive `dist-20261107-083706Z` · 문서 `047ce63` | 11-07 반영분 — StepForge 이월 적용 `apply_carryover_plan` · 기존 결함 넷(절점 옮기기의 TC · RC · 번호 바닥 · `*ELEMENT_MASS` PID 열 · i10 쓰기 관문) · 어휘 0.5 · 바이너리 `15d013ec` | 올림(그쪽 세션) — 확인은 cae00 배포 가이드 「낙하 트윈」 1 · 1-3(받은 편지함 2026-11-07 Q4). 클러스터 전처리 이미지 굽기는 dev 의 sudo(사람) |
 | 게이트웨이 | `290f324`(병합 `2d0ec28`) · `c47e883`(참조 고침) | 읽기 목록 덧씌우기 `override` — StepForge 단면 · 적층 잡 도구 넷을 읽기로(사용자 결정 11-08, `docs/report-figures` RF-39 — 읽기 전용 PAT · 루틴이 측정 잡을 다시 스스로 건다) | 받기만 하면 된다(update-all 이 게이트웨이를 다시 띄운다) — 확인은 받은 편지함 2026-11-07 Q5 |
+| StepForge | `e96e68d`(D-675 · D-677 · D-678) · `d2f3c30`(a89 · 온톨로지 쓰기 · 채우기) · `591d5b5`(셋째 묶음 — 채우기 규칙 뜻 · 덱 리더) · Drive(HEAXHub) `dist-20261107-211528Z` | 단면 전 파트 · 고해상도(짝 단면 그림 8 MiB — 게이트웨이 그림 보관 · 판독 · RA 상한과 맞다) · 잡을 거는 단면 · 적층 도구 넷의 읽기 표지 뗌(포털은 RF-39 로 읽기 유지) · 질량 원장 밀도 기본 켬 · 새 도구 일곱(185 → 192) | 올림(그쪽 세션) — 받기만 하면 된다. 운영 설정 둘(`STEPFORGE_CHAT_CUT` — 그쪽 권함 60,000 · `public_base`)은 사용자가 정한다(그쪽이 사용자에게 말했다) |
+| 포털 | `0671241b` — StepForge 운영자 writes 에 `save_fill_rule`(`docs/request-1030` C-30) | update-all §6 동기화의 '목록 밖 쓰기 he-cad-stepforge: 3개 — onto_define, onto_link, onto_put' 는 **정상**이다(사용자 결정 C-30 — 게이트웨이로는 미리보기뿐이라 목록 밖에 둔다, 고치지 않는다) |
 
 ## 1. update-all 한 번
 
