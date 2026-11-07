@@ -984,8 +984,149 @@ KooSlurm `docs/sso_enable_20261029/icn401_apply_check.md` 그대로. 요점 —
 
 GPU 는 노드마다 챗 LLM 과 함께 쓴다 — **읽기만**(MIG 전환 · GPU 재설정 · 설치 · 렌더 없음). 명령의 정본은 SceneForge `scripts/stcx_viz_readcheck.sh`(f446f96 — 11-07 판.
 f46e835 뒤로 709d715 가 1단계에 파티션 시간 한도 · `scontrol show partition` 을, f446f96 이 2단계 「컨테이너」 칸에 OptiX 두 줄을 더했다)
-— 결과를 텍스트 파일 하나로 모은다. 그 파일을 SceneForge 세션에 넘긴다. SceneForge 리포는 원격이 없어 cae00 에서 git 으로 받을 수 없다 — 스크립트 파일은
-사람이 옮긴다.
+— 결과를 텍스트 파일 하나로 모은다. 그 파일을 SceneForge 세션에 넘긴다. SceneForge 리포는 원격이 없어(생겨도 비공개) cae00 은 git 으로 받지 못한다 —
+아래 블록을 cae00 에서 붙여 넣어 스크립트를 되살린다(SceneForge 회신 `85ec967`, 11-07).
+
+**스크립트 되살리기** — 블록을 통째로 붙여 넣는다. 마지막 줄의 `sha256sum` 이 `a46955bf40b9f8458c17916679a161a0a41744766016fe7e6e66b21187edcb22` 와
+같아야 돌린다 — 다르면 돌리지 말고 사용자를 거쳐 SceneForge 세션에 알린다. 스크립트가 바뀌면 SceneForge 가 커밋 · sha256 과 함께 알리고 이 블록을 바꾼다.
+2단계의 안전 상한(srun 잡 하나 — CPU 1 · 512M · 5분 · `--immediate=120` · gres 없음, 앞뒤 `llmctl.sh status`)이 이 스크립트 한 곳에 있다 — 명령을 떼어 한 줄씩
+돌리지 않는다.
+
+```bash
+cat > stcx_viz_readcheck.sh <<'SCENEFORGE_READCHECK'
+#!/usr/bin/env bash
+# cae00 에서 사람이 돌리는 stcx viz 노드 읽기 전용 점검 — 결과를 텍스트 파일 하나로 모은다(P0)
+#
+# 쓰는 법 (cae00 에서, ssh stcx 가 되는 계정으로)
+#   1단계  bash stcx_viz_readcheck.sh
+#          로그인 노드에서 파티션(시간 한도 · 함께 쓰기 포함) · 노드 · 도는 잡만 본다. 노드에 잡을 걸지 않는다.
+#   2단계  bash stcx_viz_readcheck.sh <viz 파티션> <노드> [S1 이 있는 폴더]
+#          1단계 결과에서 고른 노드에 짧은 읽기 잡 하나를 srun 으로 건다.
+#
+# 하는 일은 읽기뿐이다. MIG 전환 · GPU 재설정 · 렌더 · 설치를 하지 않고, 결과 파일 말고는 아무것도 쓰지 않는다.
+# 2단계 잡은 CPU 1 · 메모리 512M · 5분 상한이고 GPU 를 잡지 않는다(gres 요청 없음) — 같은 노드의 챗 LLM 을 건드리지 않는다.
+# 2단계 앞뒤로 cae00 의 `~/stcx-llm/llmctl.sh status`(있으면)를 남겨 LLM 벌이 그대로인지 같은 파일에서 본다.
+# 나온 파일(stcx_viz_readcheck_*.txt)을 SceneForge 세션에 넘기면 P0 실측표로 정리한다.
+set -u
+
+PART=${1:-}
+NODE=${2:-}
+S1_DIR=${3:-}
+if [[ -n "$PART" && -z "$NODE" ]]; then
+  echo "2단계는 파티션과 노드를 함께 준다: bash $0 <viz 파티션> <노드> [S1 폴더]" >&2
+  exit 2
+fi
+OUT="stcx_viz_readcheck_$(date +%Y%m%d_%H%M%S)${NODE:+_$NODE}.txt"
+
+llm_status() {  # 2단계 앞뒤 — 챗 LLM 벌이 그대로인지(노드별 응답 코드) cae00 에서 본다
+  [[ -n "$NODE" && -x "$HOME/stcx-llm/llmctl.sh" ]] || return 0
+  printf '\n===== 챗 LLM 상태(%s) — llmctl.sh status\n' "$1"
+  "$HOME/stcx-llm/llmctl.sh" status 2>&1
+}
+
+llm_status "점검 전" 2>&1 | tee "$OUT"
+# ssh 는 원격 인자를 한 줄로 이어 붙인다 — 빈 값 · 빈칸이 살아남게 %q 로 감싼다.
+ssh -o BatchMode=yes stcx "bash -s -- $(printf '%q ' "$PART" "$NODE" "$S1_DIR")" <<'REMOTE' 2>&1 | tee -a "$OUT"
+PART=$1; NODE=$2; S1_DIR=$3
+sec() { printf '\n===== %s\n' "$1"; }
+
+sec "로그인 노드"
+hostname; date -Is; sinfo --version
+
+sec "파티션 요약"
+sinfo -s
+
+# 10-30 렌더러가 Cycles(CPU 로도 돈다)로 바뀌어 CPU 파티션도 렌더 자리 후보다 — 낙하 해석(DynaForge)과 노드를 나눠 쓰는지도 여기서 본다
+sec "파티션 — 상태 · 노드당 CPU · 메모리(MB) · 시간 한도 · 노드 수 · gres"
+sinfo -o '%P|%a|%c|%m|%l|%D|%G'
+
+sec "파티션 설정 — 시간 한도 · 함께 쓰기(OverSubscribe) · 기본 · 최대 메모리 · 허용 계정"
+scontrol show partition
+
+sec "노드 · 파티션 · gres · CPU · 메모리(MB) · 빈 메모리(MB) · 상태 · 특성"
+sinfo -N -o '%N|%P|%G|%c|%m|%e|%T|%f'
+
+sec "도는 잡 — 어느 노드에 무엇이 GPU · 메모리를 잡았나(챗 LLM 포함)"
+squeue -t R -o '%i|%u|%j|%P|%N|%b|%C|%m|%M|%l'
+
+sec "챗 LLM sbatch — 파티션 · gres · 메모리 요청 · vLLM 인자(gres 로 GPU 를 받았나)"
+grep -n -E '^#SBATCH|tensor-parallel-size|gpu-memory-utilization' /data2/llm/bin/llm_qwen38_flash_next_node.sbatch
+
+sec "Slurm 설정 — 격리(cgroup) · gres"
+scontrol show config | grep -Ei 'SelectType|GresTypes|ProctrackType|TaskPlugin|JobAcctGatherType|AccountingStorageTRES|DefMemPer|MaxMemPer'
+
+if [[ -z "$NODE" ]]; then
+  sec "1단계 끝 — 위에서 viz 파티션과 노드를 골라 2단계를 돌린다"
+  exit 0
+fi
+
+sec "노드 $NODE (scontrol)"
+scontrol show node "$NODE"
+
+sec "노드 안 — srun -p $PART -w $NODE (CPU 1 · 512M · 5분 · GPU 요청 없음 · 자리가 2분 안에 안 나면 그만둔다)"
+srun -p "$PART" -w "$NODE" -c 1 --mem=512M -t 00:05:00 --immediate=120 -J sceneforge-readcheck bash -s -- "$S1_DIR" <<'ONNODE'
+S1_DIR=$1
+sec() { printf '\n----- %s\n' "$1"; }
+
+sec "호스트 · OS · 커널"
+hostname; grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release; uname -r
+
+sec "드라이버"
+cat /proc/driver/nvidia/version 2>&1
+
+sec "GPU 한 줄 요약 — 에디션 · 드라이버 · VBIOS · 메모리 · MIG · 디스플레이"
+nvidia-smi --query-gpu=index,name,driver_version,vbios_version,memory.total,memory.used,utilization.gpu,mig.mode.current,display_mode,display_active --format=csv 2>&1
+
+sec "GPU 를 쓰는 프로세스(챗 LLM 몫)"
+nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv 2>&1
+
+sec "MIG 프로파일(MIG 가 꺼져 있으면 오류가 정상)"
+nvidia-smi mig -lgip 2>&1
+
+sec "NVENC 세션"
+nvidia-smi encodersessions 2>&1
+
+sec "그래픽 · 영상 라이브러리 — 없으면 Kit RTX · NVENC 가 못 돈다(연산 전용 드라이버)"
+ldconfig -p | grep -E 'libGLX_nvidia|libEGL_nvidia|libnvidia-glvkspirv|libnvidia-encode|libnvcuvid|libvulkan\.so' || echo "(하나도 없음)"
+ls -l /usr/share/vulkan/icd.d /etc/vulkan/icd.d /usr/share/glvnd/egl_vendor.d 2>&1
+
+sec "컨테이너 — --nv 가 OptiX 라이브러리를 묶어 들이는가(없으면 Cycles 가 CUDA 로 그린다)"
+command -v apptainer singularity; apptainer --version 2>&1 || singularity --version 2>&1
+ldconfig -p | grep -E 'libnvoptix|libnvidia-rtcore' || echo "(OptiX 라이브러리 없음)"
+for d in "$(apptainer buildcfg SYSCONFDIR 2>/dev/null)/apptainer" "$(singularity buildcfg SYSCONFDIR 2>/dev/null)/singularity"; do
+  [[ -f "$d/nvliblist.conf" ]] || continue
+  echo "$d/nvliblist.conf"; grep -n -E 'nvoptix|rtcore' "$d/nvliblist.conf" || echo "(OptiX 줄 없음)"
+done
+
+sec "CPU · 메모리 · 큰 메모리 프로세스"
+nproc; free -g; ps -eo pid,user,rss,comm --sort=-rss | head -8
+
+sec "디스크 · 공유 저장소"
+df -hT -x tmpfs -x devtmpfs -x overlay 2>&1
+findmnt -t nfs,nfs4,lustre,gpfs,beegfs,cifs,fuse.glusterfs -o TARGET,SOURCE,FSTYPE 2>&1
+
+sec "S1 폴더 읽기(준 경우만)"
+if [[ -n "$S1_DIR" ]]; then ls -la "$S1_DIR" 2>&1 | head -20; else echo "(안 줌)"; fi
+
+sec "잡 환경 — Slurm 이 준 GPU"
+env | grep -E '^(CUDA_VISIBLE_DEVICES|SLURM_JOB_GPUS|SLURM_STEP_GPUS|NVIDIA_VISIBLE_DEVICES)=' || echo "(GPU 변수 없음 — gres 를 요청하지 않았으니 정상)"
+
+sec "바깥망(Kit 확장 레지스트리 · NGC) — 5초 안에 닿는가"
+timeout 5 curl -sS -o /dev/null -w 'catalog.ngc.nvidia.com HTTP %{http_code}\n' https://catalog.ngc.nvidia.com 2>&1 || echo "닿지 않음(폐쇄망이면 정상)"
+
+sec "GPU 전체 -q(마지막 — 길다)"
+nvidia-smi -q 2>&1
+ONNODE
+echo "[srun rc=$?]"
+REMOTE
+llm_status "점검 뒤" 2>&1 | tee -a "$OUT"
+
+echo "결과: $OUT"
+SCENEFORGE_READCHECK
+sha256sum stcx_viz_readcheck.sh   # a46955bf40b9f8458c17916679a161a0a41744766016fe7e6e66b21187edcb22 (SceneForge f446f96 · 128줄)
+```
+
+돌리기 —
 
 ```
 bash stcx_viz_readcheck.sh                                    # 1단계 — 로그인 노드만, 노드에 잡을 걸지 않는다
@@ -996,11 +1137,8 @@ bash stcx_viz_readcheck.sh <viz 파티션> <노드> <S1 결과 폴더>    # 2단
 - **<S1 결과 폴더>** — S1 은 아직 나오지 않았다(KooD3plotReader 추출기 계약 대기). 둘 자리는 정해졌다 — 각도 run 폴더의 `Output/s1.h5`(KooD3plotReader
   계약 초안 2, 10-30 — `<RESULT_DIR>/output` 아래). 추출기는 아직 운영 이미지에 없다(libhdf5 를 넣은 다음 판 대기). 그러니 지금은 운영 전각도 잡 하나의
   `<RESULT_DIR>/output`(sphere_report.html 이 있는 곳 — 귀환 매니페스트의 `job.result_dir`)로 마운트를 본다.
-- 스크립트를 못 옮기면 한 줄씩 — SceneForge `docs/requests/dynaforge-sceneforge-tasks-reply-2026-10-29.md` 「cae00 명령」 절(sinfo · squeue · 챗 LLM
-  sbatch gres · scontrol config · `scontrol show partition` · `nvidia-smi` · `ldconfig -p` 로 GL/EGL/NVENC/Vulkan 라이브러리 · `apptainer --version` ·
-  `ls -la <폴더>`). 노드 안(srun 잡 안)에서 OptiX 두 줄을 더 본다(SceneForge f446f96, 11-07) —
-  `ldconfig -p | grep -E 'libnvoptix|libnvidia-rtcore'` · `grep -n -E 'nvoptix|rtcore' "$(apptainer buildcfg SYSCONFDIR)/apptainer/nvliblist.conf"`.
-  `apptainer --nv` 는 nvliblist.conf 에 적힌 드라이버 라이브러리만 컨테이너로 묶어 들인다 — OptiX 줄이 없으면 Cycles 가 CUDA 로 그린다(그림은 같고 느리다).
+- 결과 읽기 하나 — 2단계 「컨테이너」 칸에 OptiX 줄이 없으면(`(OptiX 라이브러리 없음)` · `(OptiX 줄 없음)`) Cycles 가 CUDA 로 그린다(그림은 같고 느리다).
+  `apptainer --nv` 는 nvliblist.conf 에 적힌 드라이버 라이브러리만 컨테이너로 묶어 들인다.
 - 제어면 준비로 둘 더 — SceneForge 를 돌릴 cae00 계정에서 `ssh -o BatchMode=yes stcx true && echo ok`(sbatch 낼 길이 비밀번호 없이 열리나, C-13) ·
   `ssh stcx df -h /data2`(렌더 작업자 SIF · 결과 자리 여유 — 자리는 노드 관리자와 정한다).
 - GPU 를 쓰는 시험(T1 · T2)은 SceneForge `docs/research/stcx-gpu-test-plan-2026-10-29.md`(e3371e7) — 읽기 점검 결과가 나온 뒤 챗 LLM 운영과 시간을 잡고.
