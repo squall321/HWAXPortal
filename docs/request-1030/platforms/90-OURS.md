@@ -352,7 +352,7 @@
 
 - **할 일** — DocForge 입력 뿌리에 시험 파일 하나(DW-10 다시 보기).
 - **상태** — 남았다.
-- **무엇을 기다리나** — DocForge 0.3.1 배치. DocForge 는 HH-14 를 main 에서 끝냈고(`e72cbe5` · `ab5547e`), 배치(release · HEAXHub 등록 사본 · SIF · Drive)는 그 세션의 사용자 승인을 기다린다([`../outbound.md`](../outbound.md) 1절 답). 7절도 DW-10 을 'HH-14 뒤' 로 둔다.
+- **무엇을 기다리나** — DocForge 0.3.1 배치. DocForge 는 HH-14 를 main 에서 끝냈고(`e72cbe5` · `ab5547e`), 배치(release · HEAXHub 등록 사본 · SIF · Drive)는 그 세션의 사용자 승인을 기다린다([`../outbound.md`](../outbound.md) 1절 답). 7절도 DW-10 을 'HH-14 뒤' 로 둔다. → **11-07 배치 끝**(release `bd79e79` · Drive `dist-20261107-054425Z`) — 남은 것은 cae00 update-all 과 시험 파일이다(받은 편지함 2026-11-07 Q1).
 
 #### 지금 판에서의 자리
 
@@ -362,7 +362,7 @@
 
 #### 우리 쪽 맞물림
 
-- 체크리스트 3c(포털 — 0.3.1 이 cae00 게이트웨이에 실린 뒤) — `he-doc-docforge` 의 key_tools · can · pitfalls 고침 셋은 DocForge 가 Drive 판 이름을 알린 뒤에 커밋한다(판단 C-8 — 운영자 동기화는 게이트웨이에 없는 도구 이름을 만나면 멈춘다).
+- 체크리스트 3c(포털 — 0.3.1 이 cae00 게이트웨이에 실린 뒤) — `he-doc-docforge` 의 key_tools · can · pitfalls 고침 셋은 DocForge 가 Drive 판 이름을 알린 뒤에 커밋한다(판단 C-8 — 운영자 동기화는 게이트웨이에 없는 도구 이름을 만나면 멈춘다) — 11-07 올림(`33163cd5`).
 - HA-28(에이전트 — 고치는 중) — 상태 조회 도구(docforge_status 포함)는 코드가 기다렸다가 끝났거나 상한에 닿은 결과만 LLM 에 넘긴다. DocForge 답 ② — 도구 오류는 `{ok:false, error, status:403}` 처럼 `status` 가 숫자라, 숫자면 기다리기를 끝낸다.
 - HA-29(에이전트 — 고치는 중) — docforge_convert 는 요청서가 든 잡 시작 도구다. 이번 턴 사람 발화가 변환을 분명히 시키지 않았으면 확인 카드로 멈춘다. DW-10 을 다시 볼 때는 변환을 말로 시킨다.
 

@@ -55,7 +55,8 @@
 
 ## 3c. 받은 답에서 생긴 우리 몫
 
-- [ ] DocForge 0.3.1 이 cae00 게이트웨이에 실린 뒤 `he-doc-docforge` 고침 셋(C-8)
+- [x] DocForge 0.3.1 이 cae00 게이트웨이에 실린 뒤 `he-doc-docforge` 고침 셋(C-8) — 11-07 KST DocForge 가 Drive 판(`dist-20261107-054425Z`)을 알린 뒤 올림
+      (포털 `33163cd5` — key_tools 에 `docforge_list_inputs` · can 맡기기 줄 · pitfalls 경로 줄, dev 게이트웨이 미리보기 이름 오류 0 · 에이전트 서버 시험 254 통과)
 
 ## 4. 합치기 · 검토 · 올리기
 

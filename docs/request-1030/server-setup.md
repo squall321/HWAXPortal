@@ -23,7 +23,7 @@
 | SignalForge | `0e2ac46` · `ec40075` · `f004cd0` | SG-19 · SG-04 주의 칸 | 올림(그쪽 세션) — 차례는 3절 |
 | SignalForge | `404fe42` · `06a506b` · 지금 main `da8f4b6` | 그쪽 cae00 문서 2026-10-31 · 2026-10-31-plm-kit(PLM 거울 받기를 SP 키트 2026-10-21 로) | 올림(그쪽 세션) — **update-all 이 sf-mcp 를 곧바로 다시 띄운다 — 사용자 결정 대기**(3절) |
 | SmartTwinExplorer | `4f5e0e0` | PA-20 | 올림 — Drive staging 번들(3절) |
-| DocForge | `e72cbe5` · `ab5547e`(0.3.1) · `8444575` · `213c411` | HH-14 · HH-03(SP 거울을 실제 공개에) · SP 킷 2026-10-21 | 코드 끝(main `9eb9a52` — `3e4e677` StepForge 수신부에 맞춤 · `b3e1b46` 시험장 회귀 · CLAUDE.md SP 규칙) — 배치는 그 세션의 사용자 승인 대기(release 는 `3ba0f6f` 0.3.0) |
+| DocForge | `e72cbe5` · `ab5547e`(0.3.1) · `8444575` · `213c411` | HH-14 · HH-03(SP 거울을 실제 공개에) · SP 킷 2026-10-21 | 코드 끝(main `9eb9a52` — `3e4e677` StepForge 수신부에 맞춤 · `b3e1b46` 시험장 회귀 · CLAUDE.md SP 규칙) — **0.3.1 배치 끝(11-07 KST)** — release `bd79e79` · HEAXHub 등록 사본 `d35fa89` · Drive `dist-20261107-054425Z`(doc-forge.sif 845M · 열쇠 `dc58ecbb…`) · 포털 C-8 고침 셋 `33163cd5` |
 | KooRemapper | `0c1113f` · `f36270f` · `a3eff43` | KR-23 — 레시피 자동 관문을 MCP 설명에 적음(사용자 결정 그대로) · KR-01 · KR-16 — 과제 검색이 별칭을 대조하고 순위를 매긴 뒤 자른다(행마다 match_kind) | 올림(그쪽 세션) — update-all 하나, 재기동 때 이관 0018 · 화면은 다음 Drive |
 | StepForge | `b2c70f1` · Drive `dist-20261030-135126Z` | ST-12 — 합치기 진행률(경과 시간) · `work_outlook` · owner 가림(+ 온톨로지 그래프 도구 일곱) | 올림(그쪽 세션) — `dist-from-drive.sh` 로 step_forge 교체, 교체 전 도는 잡이 없는지 본다 |
 | StepForge | `a166d2a` · `51c8788` · Drive `dist-20261031-014632Z` | SP 키트 2026-10-21 수신부 · 그래프 따라잡기 · CLAUDE.md SP 규칙(빌드는 main 끝 — `005407Z` 는 코드가 같은 앞 판) | 올림(그쪽 세션) — `dist-from-drive.sh` 로 `014632Z` 를 받는다 |
@@ -161,7 +161,7 @@
     `last_result` ok(그 문서 3절) → ④ 맞으면 옛 거울 파일 `crawler/data/plm/sp_mirror.sqlite` 를 지운다(그 문서 4절 — 쓰기라 사람이 한다). sf-mcp 를 따로 다시 띄울
     일은 없다 — update-all 이 이미 띄웠으면 새 코드가 30초 안에 새 거울을 읽는다.
 - **SmartTwinExplorer(ste — 24대)** — Drive `ApptainerImages:SmartTwinExplorer/staging` 번들(`4f5e0e0`)을 `STE_DEPLOY=1 infra/scripts/deploy-ste.sh` 로 반영한다(MCP `ste-mcp.service` 도 함께 다시 뜬다). DW-12 다시 보기는 게이트웨이 HG-22 가 든 뒤에 한다.
-- **DocForge** — 0.3.1 배치(그 세션의 사용자 승인) 뒤에 한다. 브라우저 `/apps/doc_forge/api/v1/capabilities` 의 version 이 0.3.1 인지, 게이트웨이 `/refresh` 뒤 tools-map 에 `docforge_*` 가 여섯인지 본다. OB-94 시험 파일은 `~/Projects/HEAXHub/var/app_data/doc_forge/inbox/` 에 평문 pptx 하나를 둔다(상자의 파일은 DocForge 가 지우지 않는다 — 운영자가 치운다).
+- **DocForge** — 0.3.1 은 11-07 에 배치됐다(Drive `dist-20261107-054425Z`) — update-all 로 받은 뒤 한다. 브라우저 `/apps/doc_forge/api/v1/capabilities` 의 version 이 0.3.1 인지, 게이트웨이 `/refresh` 뒤 tools-map 에 `docforge_*` 가 여섯인지 본다. OB-94 시험 파일은 `~/Projects/HEAXHub/var/app_data/doc_forge/inbox/` 에 평문 pptx 하나를 둔다(상자의 파일은 DocForge 가 지우지 않는다 — 운영자가 치운다). 운영자 동기화(update-all §6)가 `he-doc-docforge: key_tools 에 이 앱에 없는 도구 — docforge_list_inputs` 로 멈췄으면(그런 줄이 하나라도 있으면 아무것도 쓰지 않는다) 허브가 DocForge 0.3.1 을 띄운 뒤 게이트웨이 `/refresh` 하고 `python3 infra/scripts/sync-he-personas.py --apply` 를 다시 돈다(C-8 — 심의가 돌면 허브 재기동이 미뤄져 이 차례가 생긴다). 결과는 받은 편지함 2026-11-07 Q1.
 - **MX 백서** — 위키가 꺼진 박스라 `mxwp-mcp` `tools/list` 의 `wiki_*` 가 0개여야 한다. MCP 가 API 보다 먼저 떴다면 로그에 '위키 도구를 미루고 다시 본다' 한 줄이 있고 '미뤄 둔 위키 도구 N개를 실었다' 줄은 없어야 맞다.
 
 ## 4. 이번 판 확인(올린 것)
@@ -376,7 +376,7 @@ cd ~/Projects/AIDataHub/deploy/apptainer && ( source ./_common.sh && load_env &&
   본다(받은 편지함 Q8 ①). ② `var/run/backend.rev` 가 그 판인지 본다. ③ 전환 창에 터널 세 포트(16110 · 16120 · 16121)가 답하는지 본다. ④ 파일 넷을
   `integrations/<폴더>/.portal/` 로 복사한다. ⑤ 45초 안에 라우트가 바뀌고 `heax_app_step_forge` 가 내려간다 — 손으로 먼저 멈추지 않는다. ⑥ 확인 다섯 줄 ·
   `provision.env` 의 `KOORM_BASE`. 되돌리기는 파일 넷을 지우는 것이다. 가지 `cutover/prod-1031` 은 합치지 않는다.
-- **DocForge 0.3.1** — 배치(release · HEAXHub 등록 사본 · SIF · Drive)가 그 세션의 사용자 승인을 기다린다. Drive 판이 오면 3절 DocForge 줄과 C-8 고침 셋을 더한다.
+- **DocForge 0.3.1** — 11-07 배치 끝(Drive `dist-20261107-054425Z`). 3절 DocForge 줄을 고치고 C-8 고침 셋을 올렸다(포털 `33163cd5`).
 - **MaterialTwinWeb — 저장소 비공개 전환(사용자 결정 · 그 리포 `4273720` 의 `docs/운영_저장소_비공개전환_적용_20261031.md`)** — 차례를 지킨다. 비공개 뒤에는 익명으로
   그 문서를 못 읽으니 ① 전에 읽어 둔다.
   ① 공개인 동안 이 박스가 지금 판을 먼저 받는다(update-all — 받기가 막혀도 받은 SIF 로 뜬다). ② 사용자가 GitHub 에서 비공개로 돌린다. ③ 이 박스에 그 저장소 하나만
