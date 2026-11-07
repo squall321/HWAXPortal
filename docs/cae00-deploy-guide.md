@@ -860,7 +860,7 @@ stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치�
 
 ## 2026-10-30 반영분 — 낙하 트윈(DynaForge 후처리 반입)
 
-cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `4c40b20` — 11-06 판: §0 7번 · §1-2 끝 문단 · §5-1 을 stcx 후처리 이미지
+cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `047ce63` — 11-07 판: Drive 판 `dist-20261107-083706Z`(`752fa2b`) · §0 · §1 · 새 §1-3 · §8, 그 앞 `4c40b20` — 11-06 판: §0 7번 · §1-2 끝 문단 · §5-1 을 stcx 후처리 이미지
 Post v43 으로, 그 앞 `bd03428` — 10-31 판, Drive 판 `dist-20261031-214338Z`(`57a41bf`) · §0 · §1 · §1-2(새 절 — 끝 문단은 7-1 꾸러미 싣기 `77c10a0` · 어휘 0.4 `bd03428`) · §8 을 고친 판, 그 앞 판 `40d3d55` 는 SP 받는 쪽 전부 `24bca1c`)이고, 명령 · 기대값은
 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
 `docs/01-plan/features/{postprocess-reservation-1028,sphere-risk-map-1029}.plan.md` · 총괄 `drop-twin-1028.checklist.md`, KooSlurm 쪽은 KooSlurm
@@ -870,7 +870,7 @@ Post v43 으로, 그 앞 `bd03428` — 10-31 판, Drive 판 `dist-20261031-21433
 
 ### 0. 순서 — 한 줄씩
 
-1. **cae00** — `git pull && update-all`(update-all §2 가 kooremapper 의 Drive 판 `dist-20261031-214338Z` 를 받는다) → 아래 1 · 1-1 · 1-2.
+1. **cae00** — `git pull && update-all`(update-all §2 가 kooremapper 의 Drive 판 `dist-20261107-083706Z` 를 받는다) → 아래 1 · 1-1 · 1-2 · 1-3.
 2. **icn401** — `git pull && sudo ./dashboard/start_production.sh` → 아래 3(KooSlurm 문서 §2).
 3. **비밀 하나를 두 곳에** — icn401 `HEAX_GATEWAY_SECRET`(backend_5010/.env) = cae00 `KOORM_KOOSLURM_SSO_SECRET`(KooRemapper platform/.env) → 아래 2 · 3-3.
 4. **cae00** — `KOORM_STCX_BACKEND_URL` 확인 → DynaForge 재기동 → 아래 2 확인.
@@ -886,13 +886,13 @@ SSO 켜기는 **이번에 하지 않는다**(아래 7 — 조건이 안 섰다).
 이번 판에 든 것 — 반입 속도(raw_decode `288afb7` · sphere 블록 분리 `c7970dc`) · 후처리 예약 `postprocess`(`4ff9a79` → 위임 창구 `e62f601` · rc 3 경고) ·
 구면 위험도 맵(3D · 허용비 · 상위 N, `f366816`) · 렌더 결과 반입 C-11(`85ba2f0`) · postprocess 의 비운 선택 칸 null 을 없는 칸으로(`07679d7`) ·
 `dev_rev` 를 예약 때 반입 규칙으로(`3574342`) · **변형 뷰어 1단계** — 리포트에 StepForge fe_cad 묶음 붙이기(REST `POST /reports/{id}/cad` · MCP `attach_cad`,
-`aa63e2a`) · 맵에서 각도를 고르면 「형상 보기」(`d37fcbb`) · **SP 받는 쪽 전부**(아래 1-1, `f36270f` · `a3eff43` · `306346d` · `80a862a` · `24bca1c`) · **10-31 반영분**(아래 1-2 — `3929a4e` · `0e9c9da` · `220df28` · `4ada7ba` · `57a41bf`). **마이그레이션 여섯**(0015 · 0016 · 0017 — 모두 null 허용 칸 · 유일 제약, 0018 — 새 표 셋과 null 허용 칸 둘, 0019 — 트리거, 0020 — null 허용 칸 셋(FK 둘 · JSONB 하나), 옛 코드에 영향 없음).
-바이너리는 그대로(`8c7c4f87`).
+`aa63e2a`) · 맵에서 각도를 고르면 「형상 보기」(`d37fcbb`) · **SP 받는 쪽 전부**(아래 1-1, `f36270f` · `a3eff43` · `306346d` · `80a862a` · `24bca1c`) · **10-31 반영분**(아래 1-2 — `3929a4e` · `0e9c9da` · `220df28` · `4ada7ba` · `57a41bf`) · **11-07 반영분**(아래 1-3 — 새 연산 `apply_carryover_plan` · 기존 결함 넷 · 어휘 0.5). **마이그레이션 여섯**(0015 · 0016 · 0017 — 모두 null 허용 칸 · 유일 제약, 0018 — 새 표 셋과 null 허용 칸 둘, 0019 — 트리거, 0020 — null 허용 칸 셋(FK 둘 · JSONB 하나), 옛 코드에 영향 없음).
+바이너리는 이번 판에서 바뀌었다(`15d013ec` — 아래 1-3).
 
 | 확인 | 명령 | 기대값 |
 |---|---|---|
-| 판 | `curl -s http://127.0.0.1:8700/api/health` | `"status":"ok"` · `revision` 이 이번 게시 BUILD_INFO 의 커밋(`57a41bf`) |
-| 소스 | KooRemapper 리포 루트에서 `git log -1 --oneline` | `57a41bf` 이거나 그 뒤 — 위 `revision` 은 Drive 판의 커밋이라 그 뒤에 파이썬만 바뀐 커밋은 여기서만 보인다. 앞이면 null 을 보내는 손님(MCP 직접 호출 — Claude 등)이 비운 선택 칸에서 422 를 받고(포털 R2a 는 칸째 빼고 보내 영향 없음), 틀린 `dev_rev` 가 예약은 되고 잡이 끝난 뒤 반입에서야 실패한다 |
+| 판 | `curl -s http://127.0.0.1:8700/api/health` | `"status":"ok"` · `revision` 이 이번 게시 BUILD_INFO 의 커밋(`752fa2b`) |
+| 소스 | KooRemapper 리포 루트에서 `git log -1 --oneline` | `752fa2b` 이거나 그 뒤 — 위 `revision` 은 Drive 판의 커밋이라 그 뒤에 파이썬만 바뀐 커밋은 여기서만 보인다. 앞이면 null 을 보내는 손님(MCP 직접 호출 — Claude 등)이 비운 선택 칸에서 422 를 받고(포털 R2a 는 칸째 빼고 보내 영향 없음), 틀린 `dev_rev` 가 예약은 되고 잡이 끝난 뒤 반입에서야 실패한다 |
 | 마이그레이션 | KooRemapper 리포 루트에서 `bash platform/infra/scripts/migrate.sh` | 「Running upgrade」 줄 없이 「✓ migrations applied」 = 이미 0020 까지 올라 있다(빠졌으면 이 명령이 그 자리에서 올린다 — 0015 · 0016 · 0017 · 0018 · 0019 · 0020). ★0019 는 **지운 리포트의 개정 선**을 한 번 지운다 — 개정 비교의 「리포트」 수가 지운 리포트만큼 줄 수 있다(정상, 사용자 결정 10-30) |
 | MCP 도구 | 게이트웨이 tools/list 에서 kooremapper 도구 수, 또는 `platform/mcp_server/venv/bin/python platform/mcp_server/smoke.py` | 89개(`attach_render` · `attach_cad` · `ontology_types` · `ontology_find` · `ontology_object` · `attach_cae_package` · `report_cae` · `find_cae_parts` · `find_cae_load_paths` 가 새로 있다) · `MCP SMOKE: PASS` |
 | 화면 | 세션 → 전각도 리포트 펼치기 → 「부품 위치·방향 시각화」 → 보기 「구(3D)」 | 3D 구가 뜬다(three.js 는 묶음 안에 있다 — 망 밖에 안 나간다) · 허용값을 넣으면 「초과 · 경고」 수가 보인다 |
@@ -934,6 +934,30 @@ SP 키트 2026-10-21 판(규칙 16 · 시험장 8단계 자동 시험) 받기 ·
 리포트만 반입되고 잡 `external_ref.ontology.state` 가 `no_field`(옛 작성기) · `absent`(꾸러미 없음)다 — 둘 다 정상이고 경고가 아니다.
 이 싣기(`77c10a0`)와 어휘 0.4 판(0.3 꾸러미도 그대로 받는다, `bd03428`)은 **파이썬 · 데이터만 바뀐 커밋**이라 Drive 판은 그대로다 —
 `update-all` 의 git 갱신으로 들어간다(위 1 「소스」 줄의 `git log -1` 로 본다).
+
+### 1-3. cae00 — 11-07 반영분(StepForge 이월 적용 · 기존 결함 넷 · 어휘 0.5)
+
+바이너리가 바뀐 판이다(`15d013ec` — GLIBC 2.35). 마이그레이션은 그대로(0020). MCP 도구 수도 그대로(89) — 새 연산은 `run_operation` 으로 부른다.
+
+- **새 연산 `apply_carryover_plan`**(사용자 이름 확인 11-07) — StepForge 이월 계획(`plan.json` v1 + `field_<PID>.bin` + `fragment_<PID>.k`)을 그 덱에
+  PID 마다 적용한다. 계약은 KooRemapper `docs/requests/stepforge-carryover-reply-2026-11-07.md`(§5 지었다). 덱 지문이 다르거나 사전 검사에 하나라도
+  걸리면 덱을 쓰지 않고 보고 JSON 에 걸린 것을 모두 적는다.
+- **기존 결함 넷**(모두 회귀 시험으로 잠갔다)
+  - 절점을 옮기는 연산(`update` · `applyfold` · 평행이동)이 옮긴 절점 줄의 **TC · RC(구속) 칸을 지웠다** → 남긴다(`dcb6b74`).
+  - 번호 바닥(`id_floor` · `cad_solid_merge_to_deck`)이 보 · 이산 · 질량 · 안전띠 · 플롯 요소와 리더가 안 읽는 솔리드 · 티쉘 변형의 EID 를 안 셌다 → 센다.
+  - `*ELEMENT_MASS` 의 PID 를 질량 칸의 뒤 절반(25-32열)에서 읽었다 → 33-40열에서.
+  - i10 덱에 조각을 넣으면(`cad_solid_merge_to_deck`) 쓰기 관문이 늘 멈췄다 → 덱 폭으로 대조.
+- **해석 어휘 0.5**(`32cc364`, 파이썬 · 데이터) — 핫스팟 소성 기준 둘과 기준별 값 칸. 0.3 · 0.4 꾸러미도 그대로 받는다.
+
+| 확인 | 어디서 | 기대값 |
+|---|---|---|
+| 새 연산 | 세션 → 연산 목록, 또는 `platform/backend/bin/KooRemapper apply_carryover_plan` | 목록에 있다 · 인자 없이 부르면 사용법이 나온다 |
+| 연산 수 | 시스템 상태의 `operations` | 65(카탈로그 전부 · 외부 연산 둘 포함 — 이번에 하나 늘었다) |
+| 바이너리 | `sha256sum platform/backend/bin/KooRemapper` | `15d013ec…` |
+
+클러스터 전처리 이미지(SmartTwinPreprocessor.sif)의 스테이징 사본도 `15d013ec` 로 바꿨다(KooRemapper `scripts/stage-to-appt313.sh`) — 구워야 클러스터의
+`update` · `applyfold` 등이 TC · RC 를 지킨다. 굽기는 sudo 가 드는 사람 몫이다(KooRemapper `docs/infra/appt313-bake-hook.md` — 빌드 스크립트는 dev 박스의
+`~/serviceApptainers/` 에 있다).
 
 ### 2. cae00 — 후처리 예약(7-1) 설정
 
@@ -1188,7 +1212,7 @@ KooSlurm `docs/sso_enable_20261029/sso_enable_procedure.md`. 켜기 전에 설 �
 
 ### 8. 되돌리기
 
-- **DynaForge** — 아티팩트: `rclone copy ApptainerImages:KooRemapper/dist/dist-<이전 판>/ ApptainerImages:KooRemapper/dist/latest/`(이번 판 바로 앞은 `dist-20261030-142622Z`) 뒤 `update-all`(또는 `dist-from-drive.sh --restart`). 코드: 이전 커밋으로. 마이그레이션 0015 · 0016 · 0017 은 null 허용 칸 · 유일
+- **DynaForge** — 아티팩트: `rclone copy ApptainerImages:KooRemapper/dist/dist-<이전 판>/ ApptainerImages:KooRemapper/dist/latest/`(이번 판 바로 앞은 `dist-20261031-214338Z`) 뒤 `update-all`(또는 `dist-from-drive.sh --restart`). 코드: 이전 커밋으로. 마이그레이션 0015 · 0016 · 0017 은 null 허용 칸 · 유일
   제약, 0018 은 새 표 셋과 null 허용 칸 둘, 0019 는 트리거, 0020 은 null 허용 칸 셋(FK 둘 · JSONB 하나)이라 옛 코드가 그대로 돈다 — 되돌리지 않아도 된다(0019 가 지운 「지운 리포트의 선」 은 되살리지 않는다 —
   리포트가 없다).
 - **KooSlurm** — 그쪽 문서의 되돌리기 절.
