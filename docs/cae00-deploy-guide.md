@@ -860,7 +860,7 @@ stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치�
 
 ## 2026-10-30 반영분 — 낙하 트윈(DynaForge 후처리 반입)
 
-cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `047ce63` — 11-07 판: Drive 판 `dist-20261107-083706Z`(`752fa2b`) · §0 · §1 · 새 §1-3 · §8, 그 앞 `4c40b20` — 11-06 판: §0 7번 · §1-2 끝 문단 · §5-1 을 stcx 후처리 이미지
+cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `4fc290b` — 11-07 판: Drive 판 `dist-20261107-083706Z`(`752fa2b`) · §0 · §1 · 새 §1-3 · §8, `4fc290b` 는 §1 첫 문단을 판마다 갈라 적은 것 — 이 가이드의 1 첫 문단과 뜻이 같다, 그 앞 `4c40b20` — 11-06 판: §0 7번 · §1-2 끝 문단 · §5-1 을 stcx 후처리 이미지
 Post v43 으로, 그 앞 `bd03428` — 10-31 판, Drive 판 `dist-20261031-214338Z`(`57a41bf`) · §0 · §1 · §1-2(새 절 — 끝 문단은 7-1 꾸러미 싣기 `77c10a0` · 어휘 0.4 `bd03428`) · §8 을 고친 판, 그 앞 판 `40d3d55` 는 SP 받는 쪽 전부 `24bca1c`)이고, 명령 · 기대값은
 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
 `docs/01-plan/features/{postprocess-reservation-1028,sphere-risk-map-1029}.plan.md` · 총괄 `drop-twin-1028.checklist.md`, KooSlurm 쪽은 KooSlurm
