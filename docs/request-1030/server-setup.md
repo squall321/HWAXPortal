@@ -22,6 +22,7 @@
 | MX 백서 | `bb0a6a1` · `bd2e79b` | MW-12 · MW-01 | 올림(그쪽 세션) |
 | SignalForge | `0e2ac46` · `ec40075` · `f004cd0` | SG-19 · SG-04 주의 칸 | 올림(그쪽 세션) — 차례는 3절 |
 | SignalForge | `404fe42` · `06a506b` · 지금 main `da8f4b6` | 그쪽 cae00 문서 2026-10-31 · 2026-10-31-plm-kit(PLM 거울 받기를 SP 키트 2026-10-21 로) | 올림(그쪽 세션) — **update-all 이 sf-mcp 를 곧바로 다시 띄운다 — 사용자 결정 대기**(3절) |
+| SignalForge | `90e450b` · `b2cc9e0` · `f44cf73` · `1efb305` · `191ea0f` | 그쪽 cae00 문서 2026-11-07(제품 태깅 정밀화 — 카탈로그 25종 · alembic 0047 · 매처 · `retag_delta` · 품질 보고서 MV 신선도) | 올림(그쪽 세션) — 차례는 그 문서 0 → 4(sf-mcp · worker 새 코드) → 2절 dry-run(읽기) → 받은 편지함 2026-11-07 Q3(사용자에게만) → 사용자 '적용' → dev 적용 → 병합. cae00 은 `--apply` 하지 않는다(3절의 cae00 전용 글만 예외) |
 | SmartTwinExplorer | `4f5e0e0` | PA-20 | 올림 — Drive staging 번들(3절) |
 | DocForge | `e72cbe5` · `ab5547e`(0.3.1) · `8444575` · `213c411` | HH-14 · HH-03(SP 거울을 실제 공개에) · SP 킷 2026-10-21 | 코드 끝(main `9eb9a52` — `3e4e677` StepForge 수신부에 맞춤 · `b3e1b46` 시험장 회귀 · CLAUDE.md SP 규칙) — **0.3.1 배치 끝(11-07 KST)** — release `bd79e79` · HEAXHub 등록 사본 `d35fa89` · Drive `dist-20261107-054425Z`(doc-forge.sif 845M · 열쇠 `dc58ecbb…`) · 포털 C-8 고침 셋 `33163cd5` |
 | KooRemapper | `0c1113f` · `f36270f` · `a3eff43` | KR-23 — 레시피 자동 관문을 MCP 설명에 적음(사용자 결정 그대로) · KR-01 · KR-16 — 과제 검색이 별칭을 대조하고 순위를 매긴 뒤 자른다(행마다 match_kind) | 올림(그쪽 세션) — update-all 하나, 재기동 때 이관 0018 · 화면은 다음 Drive |
