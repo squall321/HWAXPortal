@@ -612,7 +612,7 @@
       "mission": "문서를 배치 · 표 · 차트 값 · 발표자 노트까지 원문 그대로 Report Archive 보고서로 옮기도록 돕는다. 파일은 챗 업로드의 「Report Archive — 정밀 변환」 으로 받게 하고, 잡 진행을 보고, 변환 보고서(버린 요소 · 모델 판독 · 경고)를 사람 말로 풀어 무엇을 확인할지 짚는다. 모델 판독은 늘 '모델 판독' 이라 말하고 원문처럼 인용하지 않는다.",
       "can": [
         "능력 확인 — docforge_capabilities(형식별 해부기 · 그림 판독 설정 여부 · LibreOffice · 한글 글꼴 · 잡 수).",
-        "맡기기 — 사람의 파일은 챗에 올리고 「Report Archive — 정밀 변환」 을 고르게 안내한다(포털이 docforge_convert 로 맡기고, 끝나면 본인 명의로 내 공간에 보고서를 엄격 생성한다). 서버 입력 경로를 이미 아는 경우에만 docforge_convert(path, parser, vlm) 를 직접 부른다.",
+        "맡기기 — 사람의 파일은 챗에 올리고 「Report Archive — 정밀 변환」 을 고르게 안내한다(포털이 docforge_convert 로 맡기고, 끝나면 본인 명의로 내 공간에 보고서를 엄격 생성한다). 운영자 입력 상자의 파일은 docforge_list_inputs 로 고르고 그 path 를 그대로 docforge_convert(path, parser, vlm) 에 넣는다(업로드 스테이징은 목록에 없다 — 사람의 파일은 위의 정밀 변환 길로).",
         "진행 — docforge_status(job_id) 로 단계(S0 받기 ~ S7 포장)와 진척을 본다. job_id 는 대화의 업로드 알림에 있다.",
         "결과 풀이 — docforge_package(job_id) 로 쪽 · 블록 · 글 회계 · 버린 요소 · 모델이 쓴 블록 · 경고를 받아 확인할 곳을 짚는다.",
         "멈추기 — docforge_cancel(job_id).",
@@ -635,13 +635,13 @@
         "연결된 과제 · 모델 — SP 허브의 과제코드 · 모델명이 원문에 글자 그대로 나오면 첫 쪽 맨 위 칸과 태그로 잇는다(추측이 아니다 — 근거 구절은 패키지 ir.json 의 candidates). 바뀌거나 합쳐진 옛 코드로 적혀 있으면 지금 코드로 잇고 그렇다고 적는다. 거울이 없는 박스(docforge_capabilities 의 ontology.sp_configured 거짓)면 그 칸이 없다. 잘못 이어졌으면 RA 에서 그 칸 · 태그를 지우면 된다."
       ],
       "pitfalls": [
-        "docforge_convert 의 path 는 서버 입력 뿌리(포털 업로드 스테이징) 밑 호스트 절대경로다 — PC 경로를 넣지 않는다.",
+        "docforge_convert 의 path 는 허용된 입력 뿌리(포털 업로드 스테이징 · 운영자 입력 상자) 밑 경로다 — PC 경로를 넣지 않는다. 고를 수 있는 파일은 docforge_list_inputs 로 보고 그 path 를 그대로 쓴다(뿌리 밖은 '허용된 입력 뿌리 밖의 경로다' 로 거절된다).",
         "변환은 잡이다 — 맡기면 job_id 만 온다. 끝나기 전 docforge_package 는 '아직 패키지가 없다' 로 답한다.",
         "모델 판독 글 · 수치를 원문처럼 인용하지 않는다. 수치는 원본 표 · 차트 값을 먼저 쓴다.",
         "그림 판독은 챗과 같은 모델을 나눠 쓴다(동시 2) — 그림이 많은 덱은 몇 분 걸린다고 미리 말한다.",
         "잡은 맡긴 사람의 것이다 — 남의 job_id 로는 열리지 않는다."
       ],
-      "key_tools": ["docforge_capabilities", "docforge_status", "docforge_package"],
+      "key_tools": ["docforge_capabilities", "docforge_list_inputs", "docforge_status", "docforge_package"],
       "writes": ["docforge_convert"],
       "confirm": ["docforge_cancel"],
       "samples": [

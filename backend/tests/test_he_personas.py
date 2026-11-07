@@ -467,7 +467,7 @@ def test_DocForge_운영자는_RA_를_선택_앱으로_묶고_변환은_업로�
     만든 보고서를 읽는 RA 도구는 선택 앱(RA 가 없는 박스에서도 운영자는 생긴다). DocForge 가 게이트웨이에 없으면(draft) 건너뛴다."""
     sync = _sync()
     one = _one("he-doc-docforge")
-    df = {"docforge_capabilities", "docforge_convert", "docforge_status", "docforge_package", "docforge_cancel"}
+    df = {"docforge_capabilities", "docforge_list_inputs", "docforge_convert", "docforge_status", "docforge_package", "docforge_cancel"}
     ra = {"get_report_outline", "get_report", "search_reports"}
     base = {"areas": {}, "area_meta": [], "apps": [{"app": "heax-doc_forge", "label": "DocForge"},
                                                    {"app": "reportarchive", "label": "Report Archive"}]}
@@ -479,6 +479,10 @@ def test_DocForge_운영자는_RA_를_선택_앱으로_묶고_변환은_업로�
     assert "「Report Archive — 정밀 변환」" in prompt and "'모델 판독'" in prompt and len(prompt) <= sync.PROMPT_MAX
     writes = prompt.split("## 상태를 바꾸는 도구", 1)[1]
     assert "docforge_convert" in writes and "docforge_cancel" in writes.split("되돌리기 어렵다", 1)[1], "취소는 확인받고 부른다"
+    assert "docforge_list_inputs" in prompt, "입력 상자의 파일은 목록 도구로 고른다(DocForge 0.3.1 HH-14)"
+    _rows, _skipped, old = sync.plan(one, {**base, "map": dict.fromkeys(df - {"docforge_list_inputs"}, "heax-doc_forge")})
+    assert old == ["he-doc-docforge: key_tools 에 이 앱에 없는 도구 — docforge_list_inputs"], \
+        "0.3.0 게이트웨이에서는 동기화가 멈춘다 — 그래서 0.3.1 이 Drive 에 오른 뒤에 고쳤다(docs/request-1030 C-8)"
     notes: list[str] = []
     rows, skipped, errors = sync.plan(one, {**base, "map": dict.fromkeys(df, "heax-doc_forge")}, notes)
     assert not errors and not skipped and notes == ["he-doc-docforge: reportarchive 없이 만든다(선택 앱)"]

@@ -21,6 +21,12 @@
 #     실제로 파싱해 보므로, 깨뜨리면 테스트가 잡는다.
 
 entries:
+  - date: 2026-11-07
+    title: "DocForge 운영자가 입력 상자의 파일을 고를 줄 압니다"
+    tag: 연결
+    items:
+      - "DocForge 0.3.1 의 새 읽기 도구 docforge_list_inputs 를 운영자(he-doc-docforge)에 더했습니다 — 운영자 입력 상자의 파일을 목록으로 보고 그 경로를 그대로 변환에 넣습니다. 올린 파일은 지금처럼 「Report Archive — 정밀 변환」 으로 안내합니다."
+      - "운영자 동기화는 게이트웨이에 없는 도구 이름을 하나라도 만나면 아무것도 쓰지 않아, DocForge 0.3.1 이 Drive 에 오른 뒤에 고쳤습니다 — cae00 은 다음 update-all 에서 둘을 함께 받습니다."
   - date: 2026-11-06
     title: "논문 업로드 중계를 다시 잇습니다"
     tag: 기술
