@@ -22,6 +22,12 @@
 
 entries:
   - date: 2026-11-08
+    title: "StepForge 운영자가 채우기 규칙 저장을 확인받고 부릅니다"
+    tag: 기술
+    items:
+      - "StepForge 의 새 쓰기 도구 save_fill_rule 을 StepForge 운영자(he-cad-stepforge)의 쓰기 목록에 넣었습니다 — 챗에서 시키지 않은 저장은 확인 카드로 멈춥니다."
+      - "온톨로지 정의 · 객체 · 선 도구 셋(onto_define · onto_put · onto_link)은 목록 밖에 둡니다 — 게이트웨이로는 미리보기만 되고 적용은 포털 화면의 신원 길에서만 되므로, 미리보기 요청에 카드를 세우지 않습니다(사용자 결정 11-08)."
+  - date: 2026-11-08
     title: "단면 · 적층 그림 도구를 읽기 토큰 · 분석 루틴에서 다시 부릅니다"
     tag: 기술
     items:

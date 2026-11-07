@@ -193,3 +193,15 @@
 - 나머지 셋(SignalForge · DocForge · StepForge)에도 CLAUDE.md 에 규칙을 넣으라고 전했다. KooRemapper 는 사용자 확인을 받아 이미 넣었다(`9670fc7`).
   세 세션은 피어 전언을 승인으로 쓰지 않으므로, 그쪽 확인 질문에는 사용자가 그 세션에서 답한다.
 
+## C-30 StepForge 온톨로지 쓰기 셋은 운영자 목록 밖에 둔다 — save_fill_rule 만 writes(사용자 결정 11-08)
+
+- StepForge 둘째 착지(그쪽 main `d2f3c30` · 11-07)가 쓰기 도구 넷을 더했다 — `onto_define` · `onto_put` · `onto_link` · `save_fill_rule`. 운영자 동기화가
+  `he-cad-stepforge` 에 '목록 밖 쓰기 4개' 를 알렸다(HP-53 — 목록 밖 쓰기는 writes · confirm 에 넣는 규칙, C-5).
+- 그런데 셋(`onto_define` · `onto_put` · `onto_link`)은 적용(`dry_run=false`)을 포털 신원 길(REST `POST /api/onto-*`)에서만 받는다 — MCP · 게이트웨이 표지 ·
+  헤더 없는 요청은 `identity_refused`. 게이트웨이(챗 · 심의 · 개인 Claude)로는 늘 미리보기뿐이다. writes 에 넣으면 챗 확인 관문(HA-29)이 주문 낱말 없는
+  미리보기 요청('미리 보여줘')마다 카드를 세운다 — 관문은 `dry_run` 같은 미리보기 인자를 따로 보지 않는다.
+- 선택지로 물었고 사용자가 권장안을 골랐다 — 셋은 목록 밖에 둔다(알림 셋은 동기화마다 남는다 — 이 까닭으로 둔 것이다). `save_fill_rule` 은 MCP 로도
+  저장하므로 규칙대로 `writes` 에 넣었다(strong 규칙의 저장은 그쪽이 포털 신원 길로만 받는다). 버린 것 — 셋을 writes 에(미리보기마다 카드) · 게이트웨이
+  읽기 목록 덧씌우기에(RF-39 칸 — 읽기 토큰 · 루틴도 미리보기를 부르게).
+- 셋이 MCP 로도 적용을 받게 바뀌면 이 판단은 다시 본다(그때는 writes — HP-53 그대로).
+

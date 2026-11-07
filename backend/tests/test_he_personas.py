@@ -1227,15 +1227,20 @@ def test_HA29_StepForge_는_되돌리기_어려운_여덟만_confirm_이다():
     confirm = {_native(n, p["apps"]) for n in p["confirm"]}
     writes = {_native(n, p["apps"]) for n in p["writes"]}
     assert confirm == _SF_CONFIRM, sorted(confirm ^ _SF_CONFIRM)
-    assert not writes & confirm and len(writes) == len(p["writes"]) == 33, sorted(writes)
-    assert {"rename_part", "remove_part", "confirm_interfaces", "mesh_size_advice", "shape_op", "record_dimension"} <= writes
+    assert not writes & confirm and len(writes) == len(p["writes"]) == 34, sorted(writes)
+    assert {"rename_part", "remove_part", "confirm_interfaces", "mesh_size_advice", "shape_op", "record_dimension", "save_fill_rule"} <= writes
     # 다른 앱과 겹치는 둘은 접두 별칭이다(dev /tools-map — ste · DynaForge 의 cancel_job, MaterialTwin 의 register_material)
     assert "heaxstep_forge_cancel_job" in p["confirm"] and "heaxstep_forge_register_material" in p["writes"]
 
 
+# 포털 신원 길에서만 적용하는 StepForge 쓰기 셋 — 게이트웨이로는 늘 미리보기라 운영자 목록 밖에 둔다(넣으면 미리보기마다 확인 카드 — docs/request-1030
+# C-30, 사용자 결정 11-08). 이 셋이 MCP 로도 적용을 받게 바뀌면 목록에 넣는다.
+_SF_PORTAL_ONLY = {"onto_define", "onto_put", "onto_link"}
+
+
 def test_HA29_StepForge_가_MODIFY_로_등록한_도구는_모두_writes_confirm_에_있다():
     """StepForge 소스의 MODIFY 도구와 두 목록이 같은지 — 앱이 수정 도구를 더하면 목록에 넣고, 읽기로 바꾸면 목록에서 뺀다(읽기를 막으면 조회마다
-    카드가 선다). 형제 리포가 없는 박스(cae00)에서는 건너뛴다."""
+    카드가 선다). 빠져도 되는 것은 포털 신원 길에서만 적용하는 셋뿐이다(_SF_PORTAL_ONLY — C-30). 형제 리포가 없는 박스(cae00)에서는 건너뛴다."""
     if not _SF_MCP.exists():
         pytest.skip(f"형제 리포 없음: {_SF_MCP}")
     import ast
@@ -1247,7 +1252,8 @@ def test_HA29_StepForge_가_MODIFY_로_등록한_도구는_모두_writes_confirm
     assert len(modify) >= 41, sorted(modify)
     p = _one("he-cad-stepforge")["personas"][0]
     listed = {_native(n, p["apps"]) for n in [*p["writes"], *p["confirm"]]}
-    assert not modify - listed, f"he-cad-stepforge 의 writes · confirm 에 없다 — {sorted(modify - listed)}"
+    assert modify - listed == _SF_PORTAL_ONLY, f"he-cad-stepforge 의 writes · confirm 에 없다 — {sorted(modify - listed - _SF_PORTAL_ONLY)} · " \
+        f"C-30 셋 가운데 MODIFY 에서 빠진 것 — {sorted(_SF_PORTAL_ONLY - modify)}"
     assert not listed - modify, f"StepForge 가 수정 도구로 등록하지 않았다 — {sorted(listed - modify)}"
 
 
