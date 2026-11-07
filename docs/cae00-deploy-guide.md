@@ -982,8 +982,10 @@ KooSlurm `docs/sso_enable_20261029/icn401_apply_check.md` 그대로. 요점 —
 
 ### 5. stcx viz 노드 — 읽기만(SceneForge · S1)
 
-GPU 는 노드마다 챗 LLM 과 함께 쓴다 — **읽기만**(MIG 전환 · GPU 재설정 · 설치 · 렌더 없음). 명령의 정본은 SceneForge `scripts/stcx_viz_readcheck.sh`(f46e835)
-— 결과를 텍스트 파일 하나로 모은다. 그 파일을 SceneForge 세션에 넘긴다.
+GPU 는 노드마다 챗 LLM 과 함께 쓴다 — **읽기만**(MIG 전환 · GPU 재설정 · 설치 · 렌더 없음). 명령의 정본은 SceneForge `scripts/stcx_viz_readcheck.sh`(f446f96 — 11-07 판.
+f46e835 뒤로 709d715 가 1단계에 파티션 시간 한도 · `scontrol show partition` 을, f446f96 이 2단계 「컨테이너」 칸에 OptiX 두 줄을 더했다)
+— 결과를 텍스트 파일 하나로 모은다. 그 파일을 SceneForge 세션에 넘긴다. SceneForge 리포는 원격이 없어 cae00 에서 git 으로 받을 수 없다 — 스크립트 파일은
+사람이 옮긴다.
 
 ```
 bash stcx_viz_readcheck.sh                                    # 1단계 — 로그인 노드만, 노드에 잡을 걸지 않는다
@@ -995,7 +997,10 @@ bash stcx_viz_readcheck.sh <viz 파티션> <노드> <S1 결과 폴더>    # 2단
   계약 초안 2, 10-30 — `<RESULT_DIR>/output` 아래). 추출기는 아직 운영 이미지에 없다(libhdf5 를 넣은 다음 판 대기). 그러니 지금은 운영 전각도 잡 하나의
   `<RESULT_DIR>/output`(sphere_report.html 이 있는 곳 — 귀환 매니페스트의 `job.result_dir`)로 마운트를 본다.
 - 스크립트를 못 옮기면 한 줄씩 — SceneForge `docs/requests/dynaforge-sceneforge-tasks-reply-2026-10-29.md` 「cae00 명령」 절(sinfo · squeue · 챗 LLM
-  sbatch gres · scontrol config · `nvidia-smi` · `ldconfig -p` 로 GL/EGL/NVENC/Vulkan 라이브러리 · `apptainer --version` · `ls -la <폴더>`).
+  sbatch gres · scontrol config · `scontrol show partition` · `nvidia-smi` · `ldconfig -p` 로 GL/EGL/NVENC/Vulkan 라이브러리 · `apptainer --version` ·
+  `ls -la <폴더>`). 노드 안(srun 잡 안)에서 OptiX 두 줄을 더 본다(SceneForge f446f96, 11-07) —
+  `ldconfig -p | grep -E 'libnvoptix|libnvidia-rtcore'` · `grep -n -E 'nvoptix|rtcore' "$(apptainer buildcfg SYSCONFDIR)/apptainer/nvliblist.conf"`.
+  `apptainer --nv` 는 nvliblist.conf 에 적힌 드라이버 라이브러리만 컨테이너로 묶어 들인다 — OptiX 줄이 없으면 Cycles 가 CUDA 로 그린다(그림은 같고 느리다).
 - 제어면 준비로 둘 더 — SceneForge 를 돌릴 cae00 계정에서 `ssh -o BatchMode=yes stcx true && echo ok`(sbatch 낼 길이 비밀번호 없이 열리나, C-13) ·
   `ssh stcx df -h /data2`(렌더 작업자 SIF · 결과 자리 여유 — 자리는 노드 관리자와 정한다).
 - GPU 를 쓰는 시험(T1 · T2)은 SceneForge `docs/research/stcx-gpu-test-plan-2026-10-29.md`(e3371e7) — 읽기 점검 결과가 나온 뒤 챗 LLM 운영과 시간을 잡고.
