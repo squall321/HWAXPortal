@@ -79,3 +79,5 @@ main 병합을 미뤘다 — bash 는 스크립트를 실행하며 읽어, 도�
 여전히 없다(dev 가 지운 절이 운영에 남는 것은 전부터의 다른 빈틈 — 이번 범위 밖). 조각 길은 자식 조각을 실을 때 같은 k 의 레코드 조각도 싣는다 —
 안 바뀐 레코드 조각이어도 그 시각이 있어야 가릴 수 있다(레코드 병합은 시각 조건이라 다시 쓰지 않는다). external_id_map 은 따르지 않는다(내용이 아니라
 찾기 표다).
+
+**AP-17 시점을 쥔 세션만 트랜잭션 안 유휴 상한을 끈다(2026-11-08 KST).** 업데이트 라운드에서 dev 조각 내기(`parts-to-drive.sh`)가 35분째 `records.8 COPY 실패: invalid snapshot identifier` 로 멈췄다. PG 로그가 까닭을 적었다 — 00:26:57 UTC `terminating connection due to idle-in-transaction timeout`. dev PG 의 `idle_in_transaction_session_timeout` 이 30min 이고, 시점을 쥔 세션(`_Snapshot` — `pg_export_snapshot` 뒤 트랜잭션을 연 채 기다린다)은 조각 세션들이 뜨는 동안 트랜잭션 안에서 논다. 11-05 첫 내기는 29분이라 비켜 갔고 이번에는 넘겼다. 고침 — 그 세션만 `SET idle_in_transaction_session_timeout = 0`(AIDataHub `a16716b` · 병합 `6e916cf`). 조각 세션은 바로 COPY 를 하니 놀지 않고, 서버 설정은 그대로 둔다(다른 클라이언트의 잊힌 트랜잭션은 계속 끊겨야 한다). 시험(폐기용 PG) — 1초 상한에서 2.5초 놀린 뒤 조각을 뜬다, 고치기 전 같은 오류로 붉고 고친 뒤 조각 동기화 13 · 병합 17 통과. dev 조각 목록이 11-04 판에서 멈춰 있던 것(매일 cron 이 없다 — 11-05 결정으로 사용자 몫)은 그대로다 — 이번 라운드에 한 번 다시 낸다.
