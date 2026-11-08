@@ -860,7 +860,7 @@ stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치�
 
 ## 2026-10-30 반영분 — 낙하 트윈(DynaForge 후처리 반입)
 
-cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `4fc290b` — 11-07 판: Drive 판 `dist-20261107-083706Z`(`752fa2b`) · §0 · §1 · 새 §1-3 · §8, `4fc290b` 는 §1 첫 문단을 판마다 갈라 적은 것 — 이 가이드의 1 첫 문단과 뜻이 같다, 그 앞 `4c40b20` — 11-06 판: §0 7번 · §1-2 끝 문단 · §5-1 을 stcx 후처리 이미지
+cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `b752b00` — 11-08 판: Drive 판 `dist-20261108-234149Z`(`e6407dc`) · §0 · §1 · 새 §1-4(동작 변화 여덟 · 결과가 바뀌는 고침 넷) · §5-1 을 Post v51 로 · §8, 그 앞 `4fc290b` — 11-07 판: Drive 판 `dist-20261107-083706Z`(`752fa2b`) · §0 · §1 · 새 §1-3 · §8, `4fc290b` 는 §1 첫 문단을 판마다 갈라 적은 것 — 이 가이드의 1 첫 문단과 뜻이 같다, 그 앞 `4c40b20` — 11-06 판: §0 7번 · §1-2 끝 문단 · §5-1 을 stcx 후처리 이미지
 Post v43 으로, 그 앞 `bd03428` — 10-31 판, Drive 판 `dist-20261031-214338Z`(`57a41bf`) · §0 · §1 · §1-2(새 절 — 끝 문단은 7-1 꾸러미 싣기 `77c10a0` · 어휘 0.4 `bd03428`) · §8 을 고친 판, 그 앞 판 `40d3d55` 는 SP 받는 쪽 전부 `24bca1c`)이고, 명령 · 기대값은
 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
 `docs/01-plan/features/{postprocess-reservation-1028,sphere-risk-map-1029}.plan.md` · 총괄 `drop-twin-1028.checklist.md`, KooSlurm 쪽은 KooSlurm
@@ -870,14 +870,14 @@ Post v43 으로, 그 앞 `bd03428` — 10-31 판, Drive 판 `dist-20261031-21433
 
 ### 0. 순서 — 한 줄씩
 
-1. **cae00** — `git pull && update-all`(update-all §2 가 kooremapper 의 Drive 판 `dist-20261107-083706Z` 를 받는다) → 아래 1 · 1-1 · 1-2 · 1-3.
+1. **cae00** — `git pull && update-all`(update-all §2 가 kooremapper 의 Drive 판 `dist-20261108-234149Z` 를 받는다) → 아래 1 · 1-1 · 1-2 · 1-3 · 1-4.
 2. **icn401** — `git pull && sudo ./dashboard/start_production.sh` → 아래 3(KooSlurm 문서 §2).
 3. **비밀 하나를 두 곳에** — icn401 `HEAX_GATEWAY_SECRET`(backend_5010/.env) = cae00 `KOORM_KOOSLURM_SSO_SECRET`(KooRemapper platform/.env) → 아래 2 · 3-3.
 4. **cae00** — `KOORM_STCX_BACKEND_URL` 확인 → DynaForge 재기동 → 아래 2 확인.
 5. 운영의 **첫 실제 전각도 잡** 뒤 → 아래 4.
 6. (사람 · 읽기만) stcx viz 노드 · 게이트웨이 감사 → 아래 5 · 6.
-7. (운영 측) stcx 후처리 이미지 **Post v43**(`eccde7f`) 설치 — 단면 영상 응력 0 프레임 고침(v42 와 같음) · S1 추출 · 해석 온톨로지 꾸러미 → 아래 5-1.
-   꾸러미가 어휘 0.4 라 cae00 의 1번(update-all)을 먼저 하거나 같은 때에 한다.
+7. (운영 측) stcx 후처리 이미지 **Post v51**(`226eca7`) 설치 — 단면 영상 응력 0 프레임 고침(v42 와 같음) · S1 추출 · 해석 온톨로지 꾸러미(어휘 0.5) ·
+   셸 파트 응력 → 아래 5-1. 꾸러미가 어휘 0.5 라 cae00 의 1번(update-all)을 먼저 하거나 같은 때에 한다.
 
 SSO 켜기는 **이번에 하지 않는다**(아래 7 — 조건이 안 섰다).
 
@@ -886,13 +886,13 @@ SSO 켜기는 **이번에 하지 않는다**(아래 7 — 조건이 안 섰다).
 이번 판에 든 것 — 반입 속도(raw_decode `288afb7` · sphere 블록 분리 `c7970dc`) · 후처리 예약 `postprocess`(`4ff9a79` → 위임 창구 `e62f601` · rc 3 경고) ·
 구면 위험도 맵(3D · 허용비 · 상위 N, `f366816`) · 렌더 결과 반입 C-11(`85ba2f0`) · postprocess 의 비운 선택 칸 null 을 없는 칸으로(`07679d7`) ·
 `dev_rev` 를 예약 때 반입 규칙으로(`3574342`) · **변형 뷰어 1단계** — 리포트에 StepForge fe_cad 묶음 붙이기(REST `POST /reports/{id}/cad` · MCP `attach_cad`,
-`aa63e2a`) · 맵에서 각도를 고르면 「형상 보기」(`d37fcbb`) · **SP 받는 쪽 전부**(아래 1-1, `f36270f` · `a3eff43` · `306346d` · `80a862a` · `24bca1c`) · **10-31 반영분**(아래 1-2 — `3929a4e` · `0e9c9da` · `220df28` · `4ada7ba` · `57a41bf`) · **11-07 반영분**(아래 1-3 — 새 연산 `apply_carryover_plan` · 기존 결함 넷 · 어휘 0.5). **마이그레이션 여섯**(0015 · 0016 · 0017 — 모두 null 허용 칸 · 유일 제약, 0018 — 새 표 셋과 null 허용 칸 둘, 0019 — 트리거, 0020 — null 허용 칸 셋(FK 둘 · JSONB 하나), 옛 코드에 영향 없음).
-바이너리는 이번 판에서 바뀌었다(`15d013ec` — 아래 1-3).
+`aa63e2a`) · 맵에서 각도를 고르면 「형상 보기」(`d37fcbb`) · **SP 받는 쪽 전부**(아래 1-1, `f36270f` · `a3eff43` · `306346d` · `80a862a` · `24bca1c`) · **10-31 반영분**(아래 1-2 — `3929a4e` · `0e9c9da` · `220df28` · `4ada7ba` · `57a41bf`) · **11-07 반영분**(아래 1-3 — 새 연산 `apply_carryover_plan` · 기존 결함 넷 · 어휘 0.5) · **11-08 반영분**(아래 1-4 — 안전띠 칸 · 출력 관문 · 이월 판 2 받기 · 기존 결함 묶음). **마이그레이션 여섯**(0015 · 0016 · 0017 — 모두 null 허용 칸 · 유일 제약, 0018 — 새 표 셋과 null 허용 칸 둘, 0019 — 트리거, 0020 — null 허용 칸 셋(FK 둘 · JSONB 하나), 옛 코드에 영향 없음).
+바이너리는 11-07 판에서 바뀌었고(`15d013ec` — 아래 1-3) 11-08 판에서 또 바뀌었다(`c5f74c18` — 아래 1-4).
 
 | 확인 | 명령 | 기대값 |
 |---|---|---|
-| 판 | `curl -s http://127.0.0.1:8700/api/health` | `"status":"ok"` · `revision` 이 이번 게시 BUILD_INFO 의 커밋(`752fa2b`) |
-| 소스 | KooRemapper 리포 루트에서 `git log -1 --oneline` | `752fa2b` 이거나 그 뒤 — 위 `revision` 은 Drive 판의 커밋이라 그 뒤에 파이썬만 바뀐 커밋은 여기서만 보인다. 앞이면 null 을 보내는 손님(MCP 직접 호출 — Claude 등)이 비운 선택 칸에서 422 를 받고(포털 R2a 는 칸째 빼고 보내 영향 없음), 틀린 `dev_rev` 가 예약은 되고 잡이 끝난 뒤 반입에서야 실패한다 |
+| 판 | `curl -s http://127.0.0.1:8700/api/health` | `"status":"ok"` · `revision` 이 이번 게시 BUILD_INFO 의 커밋(`e6407dc`) · `revision_matches_binary` true |
+| 소스 | KooRemapper 리포 루트에서 `git log -1 --oneline` | `e6407dc` 이거나 그 뒤 — 위 `revision` 은 Drive 판의 커밋이라 그 뒤에 파이썬만 바뀐 커밋은 여기서만 보인다. 앞이면 null 을 보내는 손님(MCP 직접 호출 — Claude 등)이 비운 선택 칸에서 422 를 받고(포털 R2a 는 칸째 빼고 보내 영향 없음), 틀린 `dev_rev` 가 예약은 되고 잡이 끝난 뒤 반입에서야 실패한다 |
 | 마이그레이션 | KooRemapper 리포 루트에서 `bash platform/infra/scripts/migrate.sh` | 「Running upgrade」 줄 없이 「✓ migrations applied」 = 이미 0020 까지 올라 있다(빠졌으면 이 명령이 그 자리에서 올린다 — 0015 · 0016 · 0017 · 0018 · 0019 · 0020). ★0019 는 **지운 리포트의 개정 선**을 한 번 지운다 — 개정 비교의 「리포트」 수가 지운 리포트만큼 줄 수 있다(정상, 사용자 결정 10-30) |
 | MCP 도구 | 게이트웨이 tools/list 에서 kooremapper 도구 수, 또는 `platform/mcp_server/venv/bin/python platform/mcp_server/smoke.py` | 89개(`attach_render` · `attach_cad` · `ontology_types` · `ontology_find` · `ontology_object` · `attach_cae_package` · `report_cae` · `find_cae_parts` · `find_cae_load_paths` 가 새로 있다) · `MCP SMOKE: PASS` |
 | 화면 | 세션 → 전각도 리포트 펼치기 → 「부품 위치·방향 시각화」 → 보기 「구(3D)」 | 3D 구가 뜬다(three.js 는 묶음 안에 있다 — 망 밖에 안 나간다) · 허용값을 넣으면 「초과 · 경고」 수가 보인다 |
@@ -930,7 +930,7 @@ SP 키트 2026-10-21 판(규칙 16 · 시험장 8단계 자동 시험) 받기 ·
 
 운영에서 꾸러미가 생기는 것은 꾸러미를 내는 후처리 이미지가 stcx 에 깔린 뒤다 — 그전에는 「없음」 이 정상이다. 후처리 예약(7-1) 반입은
 귀환 매니페스트의 꾸러미(`reports[].ontology`)를 저절로 싣는다. 세 자리가 다 서야 실제로 실린다 — KooSlurm 작성기(`b6a3d75c`, icn401 반영 뒤
-제출한 잡부터) · 리포트 도구가 `-o` HTML 곁에 꾸러미를 쓰는 후처리 이미지(KooD3plotReader (A) — **Post v43** `eccde7f`, 아래 5-1) · 이 판의 DynaForge. 하나라도 없으면
+제출한 잡부터) · 리포트 도구가 `-o` HTML 곁에 꾸러미를 쓰는 후처리 이미지(KooD3plotReader (A) — **Post v43** `eccde7f` 부터, 지금 깔 판은 **v51** `226eca7`, 아래 5-1) · 이 판의 DynaForge. 하나라도 없으면
 리포트만 반입되고 잡 `external_ref.ontology.state` 가 `no_field`(옛 작성기) · `absent`(꾸러미 없음)다 — 둘 다 정상이고 경고가 아니다.
 이 싣기(`77c10a0`)와 어휘 0.4 판(0.3 꾸러미도 그대로 받는다, `bd03428`)은 **파이썬 · 데이터만 바뀐 커밋**이라 Drive 판은 그대로다 —
 `update-all` 의 git 갱신으로 들어간다(위 1 「소스」 줄의 `git log -1` 로 본다).
@@ -953,11 +953,51 @@ SP 키트 2026-10-21 판(규칙 16 · 시험장 8단계 자동 시험) 받기 ·
 |---|---|---|
 | 새 연산 | 세션 → 연산 목록, 또는 `platform/backend/bin/KooRemapper apply_carryover_plan` | 목록에 있다 · 인자 없이 부르면 사용법이 나온다 |
 | 연산 수 | 시스템 상태의 `operations` | 65(카탈로그 전부 · 외부 연산 둘 포함 — 이번에 하나 늘었다) |
-| 바이너리 | `sha256sum platform/backend/bin/KooRemapper` | `15d013ec…` |
+| 바이너리 | `sha256sum platform/backend/bin/KooRemapper` | `15d013ec…`(11-07 판 — 지금 판은 아래 1-4 의 `c5f74c18…`) |
 
 클러스터 전처리 이미지(SmartTwinPreprocessor.sif)의 스테이징 사본도 `15d013ec` 로 바꿨다(KooRemapper `scripts/stage-to-appt313.sh`) — 구워야 클러스터의
 `update` · `applyfold` 등이 TC · RC 를 지킨다. 굽기는 sudo 가 드는 사람 몫이다(KooRemapper `docs/infra/appt313-bake-hook.md` — 빌드 스크립트는 dev 박스의
 `~/serviceApptainers/` 에 있다).
+
+### 1-4. cae00 — 11-08 반영분(안전띠 칸 · 출력 관문 · 이월 판 2 받기 · 기존 결함 묶음)
+바이너리가 바뀐 판이다(`c5f74c18` — GLIBC 2.35). 마이그레이션은 그대로(0020). MCP 도구 수(89) · 연산 수(65)도 그대로다. 백엔드는 러너가 `*.kr_tmp_*`
+임시 파일을 잡 산출로 올리지 않게 된 것 하나다. SP 서브모듈은 `de5ecf5`(v0.4.76 — 키트 판 2026-11-03 그대로, coreapi diff 0).
+- **이월 계획 판 2 받기** — StepForge 이월 계획 version 2(인클루드 닫힘 대조 · 줄마다 덱 자리 · 모프의 새 셸 섹션 · `refused_transform`)를 받는다. 판 1 도
+  그대로 받는다. 인클루드가 있는 덱은 주 덱만 고치고, 고칠 자리가 인클루드에 있으면 목록과 함께 거절한다(사용자 결정).
+- **안전띠 · 보 족 카드 칸** — `*ELEMENT_SEATBELT` 의 N3 · N4(57-72열)와 보 ELBOW 의 MN · WARPAGE 의 SN 을 모든 걷기가 읽는다(cleanup-nodes 가 쓰는 절점을
+  rc 0 으로 지우던 것). 두 가지로 읽히는 줄은 절점을 다 남기고 번호 다시 매기기는 거절한다(사용자 결정).
+- **출력이 입력을 덮지 않는다** — 덱 · 보고를 쓰는 연산 전부가 쓰기 전에 설정 · 모델 · 인클루드 · 다른 입력과 견주고 같으면 rc 1(입력은 그대로).
+- **임시 파일 + 바꿔 넣기** — extract-parts · apply_carryover_plan 은 임시 파일에 쓰고 성공해야 바꿔 넣는다. 쓰기 오류(디스크 참 등)는 확정하지 않는다.
+- **기존 결함 묶음** — 첫 `*END` 앞에만 카드 넣기 · 스칼라 절점 번호 · 재질 번호 셈(열 재질 · `*MAT_ADD_*` · 쌓인 카드) · 섹션 번호 셈(쌓인 카드) ·
+  assemble battery 의 번호 겹침 · tetremesh · unfold 가 셸을 솔리드로 쓰던 것 · hfdamp 재질 읽기 · battery 접촉 카드 · map 이 첫 `*END` 뒤를 읽던 것.
+
+알고 받을 동작 변화(사용자 결정)
+1. boundary · rbe 는 `output` 이 필수다 — 비우면 rc 1(카탈로그가 「비우면 model」 이라 적던 것을 고쳤다).
+2. assemble 밖의 연산은 `output` 이 model · 그 인클루드 · 설정 · 다른 입력과 같은 파일이면 rc 1(assemble 의 문서화된 제자리 쓰기는 그대로).
+3. YAML op 여덟(foldsurface · refshell · stackwrap · linkage-fit · applyfold · section · surfview · stackdiagram)과 battery output · warpage `debug_prefix` 는
+   경로를 YAML 폴더 기준으로 푼다(플랫폼은 YAML 이 세션 폴더라 그대로).
+4. extract-parts · apply_carryover_plan 은 실패 · 거절해도 앞 실행의 출력을 지우지 않는다 — 보고에 `ok` · `output_written`(· 드물게 `output_damaged`).
+5. battery 배치에 `model_types` 가 둘 이상이면 파일 이름에 종류가 든다(`<output>_<type><tier>_phase{n}.k`). 조합 하나라도 실패하면 rc 1.
+6. offset 은 `material_card(s)` 가 없으면 거절한다(rc 1) — 예전엔 없는 MID 를 가리키는 덱을 rc 0 으로 냈다.
+7. extract-parts 는 고른 파트에 칸으로 못 읽는 보 족 줄(공백으로 띄운 줄)이 있으면 거절한다(`unreadable_aux`).
+8. `info --strict` 가 주 덱 + 인클루드의 같은 종류 절점 · 요소 번호 중복을 망가진 카드로 짚는다(연산 동작은 그대로 — 사용자 결정).
+
+해석 결과가 바뀌는 것(고친 결함)
+- battery 덱의 접촉 — PENMAX 가 기본값으로 돌아가고 충격체 접촉(SOFT 1)에 IGNORE 가 실제로 걸린다(예전엔 Card C 가 Card B 자리에 있어 PENMAX 1.0).
+- tetremesh · unfold — 셸 · 두꺼운 셸이 솔리드(부피 0)로 나가던 것이 제 꼴(`*ELEMENT_SHELL` · `*ELEMENT_TSHELL`)로 나간다.
+- hfdamp — `*MAT_ADD_EROSION` 카드를 재질로 읽던 것이 구조 재질을 읽는다.
+- 뒤집은(flip) map → prestress 체인이 재질을 싣는다 — E · nu 없이도 뒤집지 않은 체인처럼 응력을 센다(사용자 결정).
+
+| 확인 | 어디서 | 기대값 |
+|---|---|---|
+| 판 | `curl -s http://127.0.0.1:8700/api/health` | `revision` `e6407dc` · `revision_matches_binary` true |
+| 바이너리 | `sha256sum platform/backend/bin/KooRemapper` | `c5f74c18…` |
+| 연산 수 | 시스템 상태의 `operations` | 65(그대로) |
+| 스모크(dev 실측 11-08) | `mcp_server/deckops_smoke.py` · `mcp_server/allops_smoke.py` | 29/29 · 64/64(외부 잡 하나 건너뜀) |
+
+클러스터 전처리 이미지(SmartTwinPreprocessor.sif)의 스테이징 사본도 `c5f74c18` 로 바꿨다(KooRemapper `scripts/stage-to-appt313.sh`) — 구워야 클러스터의 연산이
+이번 고침을 쓴다. 굽기는 sudo 가 드는 사람 몫이다(KooRemapper `docs/infra/appt313-bake-hook.md` — 빌드 스크립트는 dev 박스의 `~/serviceApptainers/` 에 있다). 다음 판으로 미룬 기존 결함 목록은 KooRemapper
+`docs/01-plan/features/seatbelt-aux-walkers-1107.plan.md` 「다음 판으로 미룬 것」.
 
 ### 2. cae00 — 후처리 예약(7-1) 설정
 
@@ -1167,25 +1207,51 @@ bash stcx_viz_readcheck.sh <viz 파티션> <노드> <S1 결과 폴더>    # 2단
   `ssh stcx df -h /data2`(렌더 작업자 SIF · 결과 자리 여유 — 자리는 노드 관리자와 정한다).
 - GPU 를 쓰는 시험(T1 · T2)은 SceneForge `docs/research/stcx-gpu-test-plan-2026-10-29.md`(e3371e7) — 읽기 점검 결과가 나온 뒤 챗 LLM 운영과 시간을 잡고.
 
-### 5-1. stcx — 후처리 이미지 Post v43(운영 측 설치)
-
-v42 를 건너뛰고 **v43**(KooD3plotReader `eccde7f`, 11-04)을 깐다 — v42 의 고침이 다 들어 있다(`5abbc76` 이 `eccde7f` 의 조상 — 확인).
-
-- 든 것 — 단면 영상 **응력 0 프레임** 고침(K-1 — 운영 영상 24개 중 7개가 오류 없이 응력 0, v42 와 같음) · S1 경량 추출(계약 초안 4) ·
-  리포트 곁의 **해석 온톨로지 꾸러미**(`<출력>/<kind>_report.ontology.json`, 어휘 0.4 — 리포트 도구가 스스로 쓴다) · 전각도 흐름 병렬(`--parallel-runs`).
-- 파일 — Drive `ApptainerImages:SmartTwinPreprocessor/SmartTwinPostprocessor_20261104_v43.tar.gz`(551,323,350 바이트), sha256 헤드리스
-  `94b98c4625302372fcfa50ed6561a618ae2a0c0c255347007a9733943e591a7c` · GUI `a6b95a76…`. dev 헤드 `/opt/apptainers` · `/data/SmartTwinPostprocessor` 가
-  이 판이다(지문 확인). 이 박스에서 stcx 로 밀어 넣는 절차는 없고 **설치는 운영 측 몫**이다. 리포트 잡이 도는 노드 쪽 사본까지 같은 판으로 둔다
+### 5-1. stcx — 후처리 이미지 Post v51(운영 측 설치)
+**v51**(KooD3plotReader `226eca7`, 11-08)을 깐다 — v50(운영에 넘길 판으로 정한 판, KooD3plotReader 사용자 결정 11-08)의 알려진 한계를 푼 판이다.
+v43 · v47 · v50 을 이미 깔았으면 v51 로 바꾸고, 아직이면 v43 ~ v50 을 건너뛴다. 앞 판의 고침이 다 들어 있다(`eccde7f` · `f8f0e22` · `2780f20` 이 `226eca7` 의
+조상 — 확인).
+- 든 것 — v47 까지의 것과 v48 ~ v51 의 것. v43 의 것(단면 영상 **응력 0 프레임** 고침(K-1 — 운영 영상 24개 중 7개가 오류 없이 응력 0, v42 와 같음) · S1 경량 추출(계약 초안 4) ·
+  리포트 곁의 **해석 온톨로지 꾸러미**(`<출력>/<kind>_report.ontology.json` — 리포트 도구가 스스로 쓴다) · 전각도 흐름 병렬(`--parallel-runs`))에 더해
+  - 꾸러미 어휘가 **0.5** 다(`f8f0e22`). 핫스팟을 켠 실행은 기본 기준이 von_mises + plastic_strain 이고(`f218f49`), 소성 핫스팟은
+    `plastic_strain_mean/max` 칸에 실린다.
+  - 셸 · 두꺼운 셸 파트도 응력 · 변형률 값이 생긴다(적분점 층 극값, `cba5cf1`) — 꾸러미의 `cae_part_response` 에도 실린다.
+  - 꾸러미 머리 **warnings**(`07d3e96`) — 캠페인 폴더(test_dir) · 덱 · DropSet 을 못 읽으면 사유를 싣는다(v43 은 같은 경우 경고 없이 덜 찬 꾸러미를 냈다).
+  - 리포트 그림 꾸러미(최대 순간 스냅샷 · 차트 — HTML 「리포트 그림」 탭) · 캠페인 그림 · 영상 바닥 숨김 기본 · 분석기 메모리 안전장치(전 상태를 읽기
+    전에 어림해 넘으면 숫자와 함께 멈춘다).
+  - (v48 ~ v50) 소성역 요약(n_yield · vol_yield)이 ε_p ≤ 1e-6 잡음 요소를 뺀다 — 결과의 `yield_eps_threshold` 는 실제로 쓴 값(max(설정, 1e-6),
+    `9db7f98`) · 리포트 그림의 파트 제목이 사용자 파트 ID 에 붙는다(`d0bc3fb`) · 부하가 높을 때 deep 이 VTK abort(rc 134)로 통째로 죽던 일이
+    없어졌다(그림용 Xvfb `-noreset`, `7bc1f78`) · 파트별 LS-PrePost 단면 2차 패스가 늘 거절되던 결함을 고쳤다(`19e00e2` — v42 ~ v49 산출에는 파트별
+    영상이 없고 갤러리에 「파트별 렌더 패스 실패」 가 남아 있다) · 파트별 단면 영상은 이름에 공통 키워드(기본 BGA, 대소문자 무시)가 든 파트만 찍는다
+    (`6d6838e` — 모든 파트는 `--section-view-per-part`, 키워드는 `--section-view-part-keywords` 또는 YAML `section_view.part_keywords`) ·
+    LS-PrePost 용 Xvfb 를 `-displayfd` 로 띄워 같은 노드의 동시 실행이 화면을 나눠 쓰지 않는다(`63a9594`). 꾸러미 어휘는 0.5 그대로(v47 과 같은 바이트).
+  - (v51) 파트별 LS-PrePost 단면 폴더 이름이 덱 `*PART` 제목에서 지어진다(`part_1_Part1` → `part_1_PCB_FR4` — 키워드가 맞추는 이름과 같은 출처,
+    영문 · 숫자 · `. _ -` 만 남기고 40자에서 자르며 남는 글자가 없거나 덱이 없으면 `Part<id>`) · 키워드에 맞는 파트가 없으면 안내에 그 런의 파트 이름이
+    붙는다(앞 8개 · 외 N개, `7076b19`). 꾸러미 · 어휘 · 분석 수치는 v50 과 같다.
+- 파일 — Drive `ApptainerImages:SmartTwinPreprocessor/SmartTwinPostprocessor_20261108_v51.tar.gz`(575,361,435 바이트), sha256 헤드리스
+  `32997e9b6efb1fdc36737a1f9706a3156bee0a7256a6fe9382135495182ada24`(1,156,505,600 바이트) · GUI `a3f06a56…`. dev 헤드 `/opt/apptainers` ·
+  `/data/SmartTwinPostprocessor` 가 이 판이다(지문 확인 — dev 노드 node001 · 002 는 VM 이 꺼져 있어 아직 v47). 이 박스에서 stcx 로 밀어 넣는 절차는
+  없고 **설치는 운영 측 몫**이다. 리포트 잡이 도는 노드 쪽 사본까지 같은 판으로 둔다
   (헤드와 노드의 판이 다르면 리포트 셸이 경고한다).
-- 설치 뒤 — `apptainer exec <설치한 SmartTwinPostprocessor.sif> head -3 /opt/kood3plot/VERSION` → `Version: eccde7f`.
-- 순서 — 이 판의 꾸러미는 어휘 0.4 다. cae00 DynaForge 가 `bd03428` 이상이어야 받는다(위 0 의 1번 update-all 을 먼저 하거나 같은 때에).
-  늦으면 그 사이 반입된 리포트는 꾸러미 없이 들어온다(리포트는 정상 — 꾸러미는 나중에 리포트 화면 「꾸러미 붙이기」로 붙인다).
+- 설치 뒤 — `apptainer exec <설치한 SmartTwinPostprocessor.sif> head -3 /opt/kood3plot/VERSION` → `Version: 226eca7`.
+- 순서 — 이 판의 꾸러미는 어휘 0.5 다. cae00 DynaForge 가 `32cc364` 이상이어야 받는다(§0 의 1번 update-all 을 먼저 하거나 같은 때에 — `752fa2b` 판이
+  이미 그 뒤다). 늦으면 그 사이 반입된 리포트는 꾸러미 없이 들어오고 잡 `external_ref.ontology.state` 가 `failed`(「받아들이지 않은 어휘 판이다」 — 잡
+  경고 한 줄)다. 리포트는 정상이고, 꾸러미는 나중에 리포트 화면 「꾸러미 붙이기」로 붙인다. 노드 쪽 사본이 아직 옛 판(v46 이하)이면 그 잡의 꾸러미는
+  어휘 0.4 로 오고 그대로 받는다(v47 ~ v49 이면 0.5 — 같다).
 - 운영에서 볼 것 — 전각도 잡 하나 뒤 (1) 단면 영상 마지막 프레임 범례가 `max = 0, at node# 0` 이 아니다 (2) 결과 폴더에
   `<출력>/sphere_report.ontology.json` 이 있다 (3) icn401 반영 뒤 제출한 잡이면 귀환 매니페스트의 `reports[].ontology.present` 가 true 이고,
-  그 잡을 받은 DynaForge 후처리 예약의 `external_ref.ontology.state` 가 `loaded`.
-- 확인한 것 — 배포된 SIF 안에서(`python3 -s`, 캠페인 폴더 읽기 전용으로 묶음) v14 리포트로 꾸러미를 만들어 DynaForge 검사에 넣었다 — 어휘 0.4 ·
-  producer `eccde7f` · 행 94 · 선 115 · 런 20/20 · 경고 0(KooD3plotReader 의 부분충격 확인 — 행 88 · 선 95 · 런 25/25). 캠페인 폴더를 못 읽으면
-  접촉 양쪽 선이 빠진 꾸러미(행 89 · 선 64)가 **경고 없이** 나온다 — 7-1 의 리포트 셸은 `/data` 와 캠페인 폴더를 묶으므로 그 길은 해당하지 않는다.
+  그 잡을 받은 DynaForge 후처리 예약의 `external_ref.ontology.state` 가 `loaded` (4) 그 리포트 화면의 해석 온톨로지 칸에 노란 경고 줄이 없다 — 있으면
+  꾸러미가 캠페인 폴더 · 덱을 못 읽고 지어진 것이다(접촉 양쪽 선 등이 빠진다) (5) 핫스팟을 켠 결과의 `hotspot.criteria` 가 9개 · `yield_eps_threshold`
+  가 1e-6 이상 (6) deep 리포트에 그림이 있다(부하가 높아도 VTK abort 로 빠지지 않는다) (7) 파트별 단면 영상은 이름에 BGA 가 든 파트만 — 없으면
+  갤러리에 「[설정] 파트별 단면: 이름에 BGA 가 든 파트가 없어 만들지 않았다(파트 이름: …)」 가 뜬다(개관 영상은 그대로) · 파트별 영상 폴더 이름이
+  `part_<id>_<덱 파트 제목>` 이다.
+- 확인한 것 — 배포된 v50 SIF 안에서(`python3 -s`, 캠페인 폴더 읽기 전용으로 묶음) v14 리포트로 꾸러미를 만들어 DynaForge 검사(구운 api.sif 안)에
+  넣었다 — 어휘 0.5 · producer `226eca7` · 행 94 · 선 115 · 런 20/20 · 경고 0(v47 · v49 · v50 과 같은 수). 아래는 v47 판으로 잰 기록이다 — v47 도 같은 수였다. 캠페인 폴더를 안 묶으면 행 89 · 선 64 와 함께 머리 경고
+  「test_dir … 를 찾지 못했다 — 덱 · DropSet · S1 정보(재질 · 접촉 · 초기 속도 · 낙하 높이) 없이 지었다」 가 검사 결과로 넘어와 리포트 화면에 보인다.
+  이 판으로 만든 셸 파우치(에어백) 덱 deep 꾸러미도 같은 검사(api.sif 안)를 통과했다 — 행 144 · 선 1 · 런 1/1 · 경고 0. 핫스팟 79(von_mises 56 ·
+  plastic_strain 23 — 소성 핫스팟은 `plastic_strain_mean/max` 만 차고 `stress_*` 는 비었다), 파트 응답 60 이 모두 응력 값을 가진다(셸 포함).
+- 알려진 한계(KooD3plotReader) — 덱 파일 없이 도는 런은 키워드가 d3plot 제목과 맞춰지지만 폴더 이름은 `Part<id>` 다(드물어 기록만 — v50 의 폴더 이름
+  한계는 v51 에서 풀렸다).
 - v42 의 고침 확인 기록(dev 헤드, KooRemapper `7818cbc`)은 그대로다 — 결함을 매번 일으키는 설정(LS-PrePost 예산 20M)을 심어도 정상이고,
   옛 판(Post v41 `282630b`)은 같은 설정에서 0 을 내며 rc 0 으로 끝났다.
 
@@ -1212,7 +1278,7 @@ KooSlurm `docs/sso_enable_20261029/sso_enable_procedure.md`. 켜기 전에 설 �
 
 ### 8. 되돌리기
 
-- **DynaForge** — 아티팩트: `rclone copy ApptainerImages:KooRemapper/dist/dist-<이전 판>/ ApptainerImages:KooRemapper/dist/latest/`(이번 판 바로 앞은 `dist-20261031-214338Z`) 뒤 `update-all`(또는 `dist-from-drive.sh --restart`). 코드: 이전 커밋으로. 마이그레이션 0015 · 0016 · 0017 은 null 허용 칸 · 유일
+- **DynaForge** — 아티팩트: `rclone copy ApptainerImages:KooRemapper/dist/dist-<이전 판>/ ApptainerImages:KooRemapper/dist/latest/`(이번 판 바로 앞은 `dist-20261107-083706Z`) 뒤 `update-all`(또는 `dist-from-drive.sh --restart`). 코드: 이전 커밋으로. 마이그레이션 0015 · 0016 · 0017 은 null 허용 칸 · 유일
   제약, 0018 은 새 표 셋과 null 허용 칸 둘, 0019 는 트리거, 0020 은 null 허용 칸 셋(FK 둘 · JSONB 하나)이라 옛 코드가 그대로 돈다 — 되돌리지 않아도 된다(0019 가 지운 「지운 리포트의 선」 은 되살리지 않는다 —
   리포트가 없다).
 - **KooSlurm** — 그쪽 문서의 되돌리기 절.
