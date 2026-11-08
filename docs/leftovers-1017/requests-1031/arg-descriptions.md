@@ -195,8 +195,8 @@ def risk_similar_projects(project_id: Annotated[str, Field(description=_A_PROJEC
 - **다른 앱이 알아 둘 셋째(권고)** — 반복 인자는 설명 상수를 **공유**하고 '같은 뜻의 인자가 같은 글인지' 를 시험이 지키게 한다. 이 앱은 `laminate`
   하나가 25 도구에 나오고 `delta_T` · `panel` · `load_ratio` · `boundary` 도 겹친다 — 도구마다 따로 적으면 한쪽만 낡는다. 더한 114 개 중 절반 가까이가 재사용으로 끝났다.
   (첫째 함정 — 같은 이름이라도 허용값이 다를 수 있으니 상수에서 읽는다 — 와 함께 본다. 뜻이 같을 때만 공유한다.)
-- Drive — **사용자 몫**이다. 11-07 포털 세션의 올리기를 자동 모드가 막았다(11-06 PaperIngest 와 같다). 점검(`--dry-run` — 원격 목록 대조 · 새 목록에 이 SIF 와
-  `.hash` 줄 · 열쇠 `50e5c120…`)은 통과했다. 명령은 DocForge 리포에서 `SLUG=laminate-analyzer-mcp bash scripts/drive-push-sif.sh` 이다. 그 전에 cae00 이
-  이 커밋을 받으면 허브가 열쇠가 달라 이 앱을 띄우지 않는다. 올린 판 이름은 올린 뒤 여기에 적는다.
+- Drive — 966e967 판은 올리지 않았다(그쪽이 묶음을 더 쌓았다). 11-08 업데이트 라운드에 그 묶음의 마지막 판 `99aee92`(0.28.0 · 도구 43 · 173/173)를
+  포털 세션이 올렸다 — 되돌리기 판 `dist-20261108-024343Z` · 열쇠 `10969e46…`(사용자 지시 '드라이브도 깃도 다 올려라' 뒤 자동 모드가 통과시켰다).
+  게이트웨이 `/tools-map` — tools 43 · args 173 · described 173 · unit_or_range 81 · worst 0.
 
 **B37 남은 것** — §2-4 ThermalShockMCP(도구 둘 · 인자 6) 하나다. 도는 세션이 없어 사용자가 그 세션을 열 때 이 절과 위 함정 둘 · 권고 하나(LaminateAnalyzerMCP 둘째 답)를 넘긴다.

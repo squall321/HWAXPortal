@@ -120,6 +120,9 @@
 | StepForge | `e96e68d`(D-675 · D-677 · D-678) · `d2f3c30`(a89 · 온톨로지 쓰기 · 채우기) · `591d5b5`(셋째 묶음 — 채우기 규칙 뜻 · 덱 리더) · Drive(HEAXHub) `dist-20261107-211528Z` | 단면 전 파트 · 고해상도(짝 단면 그림 8 MiB — 게이트웨이 그림 보관 · 판독 · RA 상한과 맞다) · 잡을 거는 단면 · 적층 도구 넷의 읽기 표지 뗌(포털은 RF-39 로 읽기 유지) · 질량 원장 밀도 기본 켬 · 새 도구 일곱(185 → 192) | 올림(그쪽 세션) — 받기만 하면 된다. 운영 설정 둘(`STEPFORGE_CHAT_CUT` — 그쪽 권함 60,000 · `public_base`)은 사용자가 정한다(그쪽이 사용자에게 말했다) |
 | 포털 | `0671241b` — StepForge 운영자 writes 에 `save_fill_rule`(`docs/request-1030` C-30) | update-all §6 동기화의 '목록 밖 쓰기 he-cad-stepforge: 3개 — onto_define, onto_link, onto_put' 는 **정상**이다(사용자 결정 C-30 — 게이트웨이로는 미리보기뿐이라 목록 밖에 둔다, 고치지 않는다) |
 | AIDataHub | `a16716b`(병합 `6e916cf`) | 조각 스냅숏 — 시점을 쥔 세션이 트랜잭션 안 유휴 상한(30min)에 끊기지 않게(`docs/aidh-parts-sync` AP-17) | dev 내기 쪽 고침이라 이 박스는 받기만 한다(바뀌는 동작 없음). 새 조각 목록이 Drive 에 오르면 update-all §3 이 바뀐 조각만 받는다 |
+| WebDesignAgents | `c5fe4c6`(O-4 총 길이 실측 · dur_plan 결함 — `2ca2f82` · `ba9bb9a`) · Drive(HEAXHub) `dist-20261107-235303Z` | 조립기가 구간 예산(`dur_plan`)을 읽지 않던 결함 고침 — wide-16x9 90 → 78초 · delib-16x9 64 → 72.3초 · short-9x16 60 → 46초, 계약(features · formats)은 그대로 | 받기만 하면 된다 — 받은 편지함 2026-11-08 |
+| StepForge | `ab7977f`(넷째 묶음 — 온톨로지 열쇠 묶어 읽기 · 단면 지시선 번호표 D-682) · main 끝 `919b590` · Drive(HEAXHub) `dist-20261108-001103Z` | 새 도구 · 인자 0, 응답 새 칸(`leaders_*`)만 | 받기만 하면 된다 |
+| LaminateAnalyzerMCP | `99aee92`(0.28.0 — 파괴역학 · 형상 연계 · 전단 좌굴 · FSDT 정확해 · 고정단 다항 기저) · Drive(HEAXHub) `dist-20261108-024343Z` | 도구 38 → 43 · 인자 설명 173/173 · **좌굴 여유가 낮아지는 수치 변화 셋**(받은 편지함 2026-11-08) | 받기만 하면 된다 — 운영 사용자에게 수치 변화를 알린다 |
 
 ## 1. update-all 한 번
 
