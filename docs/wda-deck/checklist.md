@@ -188,5 +188,5 @@
 ## M3 — cae00(사람 몫 — server-setup 은 M1 끝에 쓴다)
 
 - [ ] WDA SIF 가 W-1 ~ W-12 판인지(`/api/health` features) · (U-3 이면) 익명 401
-- [ ] 박스 스위치 `wda_deck_enabled` 켜기 · 포털 재기동
+- [ ] 박스 스위치 `wda_deck_enabled` 켜기 · 포털 재기동 — 11-08 사용자 결정으로 cae00 에서 2절까지(받은 편지함 2026-11-08 Q4, WD-D88 — dev 에는 RA 가 없어 못 한다)
 - [ ] 쓸 사람의 허브 계정(허브 타일 한 번) · 실제 보고서 하나로 확인

@@ -29,6 +29,8 @@
 
 ## 2. 확인
 
+RA 가 있는 박스에서 한다 — dev 는 Report Archive 가 떠 있지 않아 `/보고서` 저장도 단추도 서지 않는다(WD-D88, 11-08). cae00 은 받은 편지함 2026-11-08 Q4.
+
 1. 로그인한 화면에서 `GET /agent/deck/status` — `enabled: true` 여야 한다. 아니면 `reason` 이 까닭이다 — `off`(스위치) · `permission`
    (`plat:webdesign` · `plat:reportarchive`) · `no_base`(WDA 주소) · `unknown`(허브 · WDA 가 답하지 않음 — 그 사람의 허브 계정 · `PORTAL_AUDIENCE`) ·
    `no_owner`(WDA 판이 낡았다 — 0 의 1). `formats.deliberation` 은 WDA 의 `delib-16x9` 가 active 일 때 참이 된다(W-21).
