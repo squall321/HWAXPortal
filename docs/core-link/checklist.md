@@ -23,17 +23,21 @@
 
 - [x] SRC-12 박스 훅 — lib · update-all 인자 · 끝 요약 줄 · `.gitignore` · 폴더 README
 - [x] SRC-12 시험(가지 68826403 — 새 23 · 기존 365 통과) — 빈 폴더(지금과 같음 + ○) · 실패 훅(종료코드 0 + 요약 줄) · 상한 · 바쁨/모름 건너뛰기 · 이름 틀린 훅 · 무시 규칙
-- [ ] SRC-13 서비스 PAT — 모듈(표준 라이브러리만) · `POST/GET /auth/pat/service` · 원장 `issued_by` · 토큰 화면 관리자 칸
-- [ ] SRC-13 시험 — 클레임 꼴 · 관리자만 · CSRF · 수명 상하한 · 회수 · exchange 거절
+- [x] SRC-13 서비스 PAT — 모듈(표준 라이브러리만) · `POST/GET /auth/pat/service` · 원장 `issued_by` · 토큰 화면 관리자 칸(가지 wt1109/core-link-svcpat 494b88cf · 9e58191f)
+- [x] SRC-13 시험 — 클레임 꼴 · 관리자만 · CSRF · 수명 상하한 · 회수 · exchange 거절(새 58 · 전체 4,548 — 실패 2 는 origin 에도 있는 이 박스 탓)
 - [x] SRC-15 `he-team.json` `he-cad-stepforge` can · pitfalls 두 줄 + 운영자 시험(가지 27d751ed)
+- [x] update-all §5 `STEPFORGE_SSO_*` 넘기기 · 드리프트 · ○(가지 f2930226, CK-12)
+- [x] SRC-12 적대 검토 1차 반영(가지 a5ff0f2b, CK-10)
+- [ ] 인증 길 적대 검토 — 게이트웨이 · 에이전트 서버 묶음 · 포털 발급 묶음(도는 중)
+- [ ] StepForge 답 — 위임 비밀 줄 이름 · 서비스 경로 · 훅이 할 일 → 계약 §5 · §6 · update-all 문구 · server-setup 2 · 3 · 5절
 - [ ] 업데이트 이력(changelog) 항목
 
 ## 3. 게이트웨이
 
-- [ ] SRC-14 낱말 셋 + 읽기 목록 둘 + 시험
-- [ ] SRC-13 `_service_scope` · 박스 파일 · 집행 셋(목록 · 호출 · rest_call) · 감사 · `/health` · 계약 시험(포털 모듈 읽기)
-- [ ] SRC-15 `rest_sso.step_forge` · `write_paths` · 단언 발급 · 캐시 · 접힘 검사 · 405 · 403 · provision(`STEPFORGE_SSO_SECRET`) · 가짜 StepForge 시험
-- [ ] `.gitignore` 에 `service_tools.local.json`
+- [x] SRC-14 낱말 셋 + 읽기 목록 둘 + 시험(게이트웨이 가지 wt1109/core-link 3445a4b)
+- [x] SRC-13 `_service_scope` · 박스 파일 · 집행 셋(목록 · 호출 · rest_call) · 감사 · `/health` · 계약 시험(포털 모듈 읽기)(57732f4 · f333a46 · 7c14a63)
+- [x] SRC-15 `rest_sso.step_forge` · `write_paths` · 단언 발급 · 캐시 · 접힘 검사 · 405 · 403 · provision(`STEPFORGE_SSO_SECRET`) · 가짜 StepForge 시험(f7babcc — 전체 1,022 · 계약 포함 1,023)
+- [x] `.gitignore` 에 `service_tools.local.json`
 
 ## 4. 에이전트 서버
 
