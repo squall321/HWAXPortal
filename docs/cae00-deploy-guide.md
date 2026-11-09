@@ -860,7 +860,7 @@ stash 는 받기 전의 `.gitignore` 로 돌아 그 전에 만든 파일을 치�
 
 ## 2026-10-30 반영분 — 낙하 트윈(DynaForge 후처리 반입)
 
-cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `b752b00` — 11-08 판: Drive 판 `dist-20261108-234149Z`(`e6407dc`) · §0 · §1 · 새 §1-4(동작 변화 여덟 · 결과가 바뀌는 고침 넷) · §5-1 을 Post v51 로 · §8, 그 앞 `4fc290b` — 11-07 판: Drive 판 `dist-20261107-083706Z`(`752fa2b`) · §0 · §1 · 새 §1-3 · §8, `4fc290b` 는 §1 첫 문단을 판마다 갈라 적은 것 — 이 가이드의 1 첫 문단과 뜻이 같다, 그 앞 `4c40b20` — 11-06 판: §0 7번 · §1-2 끝 문단 · §5-1 을 stcx 후처리 이미지
+cae00 · icn401(KooSlurm 운영) · stcx 에서 사람이 돌리는 확인이다. 원문은 KooRemapper `docs/requests/hwax-portal-cae00-checks-2026-10-30.md`(origin/main `b42a6d2` — 11-09 판: §1-4 끝 문단에 전처리 이미지 굽기 결과(v135), 그 앞 `b752b00` — 11-08 판: Drive 판 `dist-20261108-234149Z`(`e6407dc`) · §0 · §1 · 새 §1-4(동작 변화 여덟 · 결과가 바뀌는 고침 넷) · §5-1 을 Post v51 로 · §8, 그 앞 `4fc290b` — 11-07 판: Drive 판 `dist-20261107-083706Z`(`752fa2b`) · §0 · §1 · 새 §1-3 · §8, `4fc290b` 는 §1 첫 문단을 판마다 갈라 적은 것 — 이 가이드의 1 첫 문단과 뜻이 같다, 그 앞 `4c40b20` — 11-06 판: §0 7번 · §1-2 끝 문단 · §5-1 을 stcx 후처리 이미지
 Post v43 으로, 그 앞 `bd03428` — 10-31 판, Drive 판 `dist-20261031-214338Z`(`57a41bf`) · §0 · §1 · §1-2(새 절 — 끝 문단은 7-1 꾸러미 싣기 `77c10a0` · 어휘 0.4 `bd03428`) · §8 을 고친 판, 그 앞 판 `40d3d55` 는 SP 받는 쪽 전부 `24bca1c`)이고, 명령 · 기대값은
 그대로 옮겼다. 정본 — DynaForge 쪽 결정 · 계약은 KooRemapper `platform/docs/REQUEST-postprocess-operation.md` §10 ·
 `docs/01-plan/features/{postprocess-reservation-1028,sphere-risk-map-1029}.plan.md` · 총괄 `drop-twin-1028.checklist.md`, KooSlurm 쪽은 KooSlurm
@@ -996,7 +996,11 @@ SP 키트 2026-10-21 판(규칙 16 · 시험장 8단계 자동 시험) 받기 ·
 | 스모크(dev 실측 11-08) | `mcp_server/deckops_smoke.py` · `mcp_server/allops_smoke.py` | 29/29 · 64/64(외부 잡 하나 건너뜀) |
 
 클러스터 전처리 이미지(SmartTwinPreprocessor.sif)의 스테이징 사본도 `c5f74c18` 로 바꿨다(KooRemapper `scripts/stage-to-appt313.sh`) — 구워야 클러스터의 연산이
-이번 고침을 쓴다. 굽기는 sudo 가 드는 사람 몫이다(KooRemapper `docs/infra/appt313-bake-hook.md` — 빌드 스크립트는 dev 박스의 `~/serviceApptainers/` 에 있다). 다음 판으로 미룬 기존 결함 목록은 KooRemapper
+이번 고침을 쓴다. **11-09 00:48 UTC 구웠다** — 구운 SIF `da892a35f730cc134a60a2b6e66fb4542572ae9a4f0fba766c8fdd6b674dd279`(1,615,933,440 B)가 빌드
+자리 · KooSlurm `compute-node-images` · `/opt/apptainers` · Drive `ApptainerImages:SmartTwinPreprocessor/SmartTwinPreprocessor.sif` 넷 다 같고 그 안의
+KooRemapper 가 `c5f74c18` 이다(실측). 같은 굽기의 Drive tar 는 `SmartTwinPreprocessor_20261109_v135.tar.gz`(1,379,306,561 B — pyKooCAE 묶음
+`/opt/SmartTwinPreprocessor` 만 담고 KooRemapper 는 원래 안 든다). v134(11-08 23:01)는 스테이징 앞에 구운 판이라 옛 `15d013ec` 다. dev 계산 노드는
+down 이라 노드 사본은 아직이다 — 살아나면 `deploy_compute_images.sh`. 다음 판으로 미룬 기존 결함 목록은 KooRemapper
 `docs/01-plan/features/seatbelt-aux-walkers-1107.plan.md` 「다음 판으로 미룬 것」.
 
 ### 2. cae00 — 후처리 예약(7-1) 설정
