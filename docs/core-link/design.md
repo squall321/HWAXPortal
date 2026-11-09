@@ -101,10 +101,11 @@ iat · nbf · exp                               ← 수명 1 ~ 365일(0 · 무�
 
 - **설정.** provision 이 만든다.
   - `rest.step-forge` 는 지금 칸(`base` · `inject`)에 둘을 더한다. `"delegate": "step_forge"` 와
-    `"write_paths": ["/api/onto-link", "/api/onto-put", "/api/onto-define"]` 이다. StepForge 가 서비스용 경로(§6)를 알리면 그것도 더한다.
+    `"write_paths": ["/api/onto-link", "/api/onto-put", "/api/onto-define", "/api/onto-fill", "/api/plm-sync"]` 이다. 뒤의 둘은 StepForge 가
+    채우기 잡 · 허브 받기 잡을 거는 고정 경로로 새로 둔 것이다(§6, StepForge 답 11-09).
   - 위임 발급 칸은 `per_user_sso` 와 **따로** 둔다(`rest_sso.step_forge`). 그래야 MCP 길이 지금 공유 세션 그대로다.
     칸은 `{"sso_url", "secret", "client": "gateway", "auth": "heax", "token_header": "X-Heax-Sso-Assertion"}` 다.
-  - 박스 손잡이는 `STEPFORGE_SSO_SECRET` 이다(StepForge 의 `STEPFORGE_GATEWAY_SECRET` 과 같은 값). 주소 `STEPFORGE_SSO_URL` 은 선택이고,
+  - 박스 손잡이는 `STEPFORGE_SSO_SECRET` 이다(StepForge 데이터 폴더 `secrets.env` 의 같은 이름 줄과 같은 값 — §6). 주소 `STEPFORGE_SSO_URL` 은 선택이고,
     기본은 `<HEAX_MCP_BASE>/apps/step_forge/api/auth/sso` 다. 비밀이 비면 칸을 만들지 않는다. 그러면 쓰기는 거절하고 '켜려면' 을 안내한다.
 - **집행.**
   - GET · HEAD 는 지금 그대로다(`inject` — 허브 서비스 토큰).
@@ -136,10 +137,10 @@ iat · nbf · exp                               ← 수명 1 ~ 365일(0 · 무�
 본뜬다. 다른 것은 접두와 서비스 주체 둘이다.
 
 - **발급 `POST /api/auth/sso`.** 허브 Caddy 뒤 `/apps/step_forge/api/auth/sso` 다.
-  - 발급 비밀이 비면 404 다. 비밀 줄은 StepForge 데이터 폴더 `secrets.env` 의 새 줄 `STEPFORGE_SSO_SECRET` 을 제안했다(StepForge 세션 확인
-    중). 기존 `STEPFORGE_GATEWAY_SECRET` 은 허브 `gateway_shared_secret` 과 같은 값이고, 있으면 포털 신원 요청마다 `X-Heax-Gateway-Secret`
-    을 요구한다. 그래서 위임을 켜려고 그 줄을 넣으면 웹 화면 적용이 깨질 수 있다.
-  - `X-Heax-Gateway-Secret` 이 그 값과 같아야 한다(상수 시간 비교). 아니면 403 이다.
+  - 발급 비밀은 StepForge 데이터 폴더 `secrets.env` 의 새 줄 `STEPFORGE_SSO_SECRET` 이다(StepForge 확정 11-09). 비면 404 다. 단언의 HMAC
+    키도 같은 줄이라, 줄을 바꾸면 이미 낸 단언은 바로 무효가 된다. 기존 `STEPFORGE_GATEWAY_SECRET`(허브 `gateway_shared_secret` 과 같은 값 —
+    포털 신원 검증)은 그대로 둔다. 그 줄을 넣으면 포털 신원 요청마다 `X-Heax-Gateway-Secret` 을 요구해 웹 화면 적용이 깨질 수 있어서 따로 둔다.
+  - `X-Heax-Gateway-Secret` 이 `STEPFORGE_SSO_SECRET` 과 같아야 한다(상수 시간 비교). 아니면 403 이다.
   - 주체는 정확히 하나다. 둘 다 있거나 둘 다 없으면 400 이다.
     - `X-Hwax-Delegate-Email` — `@` 가 든 이메일, 소문자로 둔다.
     - `X-Hwax-Delegate-Service` — `^[a-z0-9][a-z0-9-]{0,39}$`.
@@ -152,12 +153,21 @@ iat · nbf · exp                               ← 수명 1 ~ 365일(0 · 무�
     - 사람 단언이 맞으면 그 이메일이 신원이다. 이것으로 R2(`portal_identity_apply`)를 통과한다 — 게이트웨이 표지 머리가 있어도 된다.
       권한은 그 사람의 StepForge 권한 그대로다.
     - 서비스 단언이 맞으면 신원은 `system:<작업>` 이다. StepForge 가 정한 **서비스 허용 작업**만 받는다.
-      - 받는 것은 규칙 단 `onto_link` 적용(출처 `rule`)과 `onto_fill` 잡이다.
-      - `confirm` · `reject` · 규칙 단 아닌 적용 · 정의(`onto_define`) · `onto_put` 은 `identity_refused: service_not_allowed` 다.
-    - 단언이 있는데 틀리거나 만료됐으면 `identity_refused: assertion_invalid` 다. 다른 신원으로 내려가지 않는다.
+      - `POST /api/plm-sync` — 허브 받기(본문 `{"full", "allow_mass_absence", "project_id"?}`). `full: true` 까지 받고
+        `allow_mass_absence: true` 는 막는다 — 멈춘 받기(held)를 넘기는 것은 사람이 허브를 보고 정한다.
+      - `POST /api/onto-link` — 규칙 단만. 줄마다 `rule` 이 실린 link 와 규칙이 지은 선의 unlink 만 받는다.
+      - `POST /api/onto-fill` — 증명(proof) 규칙만(본문은 onto_fill 잡 인자 `{rules, projects, dry_run}`). 자동 확정을 strong 으로 넓힌 규칙은
+        사람만 돌린다.
+      - 그 밖(`confirm` · `reject` · `rule` 없는 link · `onto_put` · `onto_define` · strong 규칙이 든 채우기)은 **403**
+        `identity_refused: service_not_allowed` 다.
+    - 단언이 있는데 틀리거나 만료됐으면 **401** `identity_refused: assertion_invalid` 다. 다른 신원으로 내려가지 않는다. 게이트웨이는 401 · 403
+      을 받으면 그 단언을 버린다(§5). 그 밖의 도구 거절은 지금처럼 400 이다.
+    - 사람 단언은 다섯 경로 다 받는다. `plm-sync` 는 R2 밖이라 신원 없는 요청도 받는다.
   - 단언이 없으면 지금 규칙 그대로다(`gateway_marked` 등).
-- **알려 줄 것.** 서비스 허용 작업의 REST 경로를 포털 세션에 알린다. `onto_fill` 잡을 거는 REST 끝점이 없으면 둔다. 게이트웨이
-  `write_paths` 와 운영 허용 목록 예시에 그대로 쓴다.
+- **알려 준 것(11-09).** 서비스 허용 작업의 REST 경로는 위 셋이다. 운영 허용 목록 예시는 server-setup 3절이다. SRC-03 미리 보기 입구(새 MCP
+  도구 + REST POST)의 이름 · 표지와 응답 꼴은 착지 알림에 싣는다 — 게이트웨이 쓰기 목록 · 운영자 목록 · 허용 목록 예시가 따른다.
+- **정의 판.** 새 관계(`has_role` · `maps_to`)는 씨앗 정의(`stepforge-core.json`)에 든다. 박스에 정의 판(`onto_def_editions`)이 있으면 씨앗이
+  먹지 않는다 — 응답이 그렇다고 말하고 사람이 판을 올린다(D-670).
 - **기록.** 적용 · 잡의 행위자 칸에 이메일 또는 `system:<작업>` 을 남긴다.
 - MCP 길은 그대로 둔다. 신원이 없고 미리 보기만 된다.
 
