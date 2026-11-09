@@ -57,6 +57,10 @@
   flex: 1 1 14rem;
   min-width: 0; /* 기본 min-width:auto 라 390px 에서 줄지 않아 발급 버튼을 밖으로 밀었다 */
 }
+/* 서비스 토큰의 수명(일) 숫자칸은 좁게 — 클래스를 달면 전역 입력칸 꼴(globals.css)을 잃어 꼴로 고른다 */
+.tok-form input[type='number'] {
+  flex: 0 0 6rem;
+}
 
 /* 방금 발급한 토큰 — 이 화면에서만 보인다는 경고 상자 */
 .tok-created {
@@ -169,6 +173,16 @@
 .tok-badge.is-derived {
   border-color: var(--border-strong);
   color: var(--fg-muted);
+}
+/* 서비스 토큰의 만료가 14일 안 — 갈아 끼울 때라 경고색 */
+.tok-badge.is-soon {
+  border-color: var(--warn-border);
+  color: var(--warn);
+}
+/* 서비스 토큰 표 — 작업 이름과 표지는 쪼개지 않는다(390px 에서 'core-/link' · '회수/됨' 으로 갈라졌다) */
+.svc-job,
+.svc-table .tok-badge {
+  white-space: nowrap;
 }
 
 /* 빈 상태 — 다음 행동을 함께 */

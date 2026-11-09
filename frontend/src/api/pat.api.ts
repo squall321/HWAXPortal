@@ -56,3 +56,47 @@ export async function revokePat(jti: string): Promise<void> {
     throw new Error(detailMessage(err.detail, `토큰 폐기 실패 (${res.status})`));
   }
 }
+
+// ── 서비스 토큰(관리자 전용, docs/core-link design §2) — 사람이 아니라 박스 작업 하나(system:<작업>)의 게이트웨이 토큰 ──
+// 회수는 사람 토큰과 같은 revokePat(관리자 회수 → revoked.json)이다.
+export interface ServicePatMeta {
+  jti: string;
+  job: string;
+  note: string;
+  issued_by: string; // 발급한 관리자
+  created_at: number; // unix seconds
+  expires_at: number; // unix seconds
+  revoked: boolean;
+}
+
+export interface ServicePatCreated {
+  token: string; // 평문 JWT — 발급 응답에서 한 번만 노출, 서버·로컬 어디에도 저장하지 않음
+  jti: string;
+  job: string;
+  expires_at: number; // unix seconds
+}
+
+export interface ServicePatCreateBody {
+  job: string; // ^[a-z0-9][a-z0-9-]{0,39}$
+  days: number; // 1..365 — 무기한 없음
+  note?: string; // 200자까지
+}
+
+export async function createServicePat(body: ServicePatCreateBody): Promise<ServicePatCreated> {
+  const res = await apiFetch('/auth/pat/service', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(detailMessage(err.detail, `서비스 토큰 발급 실패 (${res.status})`));
+  }
+  return (await res.json()) as ServicePatCreated;
+}
+
+export async function listServicePats(): Promise<ServicePatMeta[]> {
+  const res = await apiFetch('/auth/pat/service');
+  if (!res.ok) throw new Error(`서비스 토큰 목록을 불러오지 못했습니다 (${res.status})`);
+  return (await res.json()) as ServicePatMeta[];
+}
