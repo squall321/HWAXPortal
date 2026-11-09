@@ -70,7 +70,7 @@ def _hook(root: Path, name: str, body: str) -> Path:
     return p
 
 
-def _run(lay, body: str, *, timeout=60, **env):
+def _run(lay, body: str, *, timeout=60, input=None, **env):
     root, home, tmp = lay
     ledger = tmp / "ledger"
     ledger.write_text("")
@@ -79,7 +79,7 @@ def _run(lay, body: str, *, timeout=60, **env):
     base = {"PATH": os.environ["PATH"], "HOME": str(home), "LANG": "C.UTF-8", "LOG": str(tmp / "ran"),
             # 바쁨 판정이 기본 주소(떠 있는 에이전트 서버)로 가지 않게 늘 닫힌 주소를 기본으로 둔다.
             "HWAX_AGENT_URL": env.pop("HWAX_AGENT_URL", None) or _closed_url()}
-    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=timeout, env={**base, **env})
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=timeout, env={**base, **env}, input=input)
     # update-all 끝은 장부를 지운다(rm -f "$HWAX_SKIP_LEDGER") — 끝을 돌린 시험에는 장부가 없다.
     return (r, (tmp / "ran").read_text().split() if (tmp / "ran").exists() else [],
             ledger.read_text() if ledger.exists() else "")
@@ -122,7 +122,7 @@ def test_모두_끝나면_모두_끝났다_줄(lay):
 def test_훅은_포털_루트에서_입력_없이_돌고_HWAX_UPDATE_FAIL_을_받는다(lay):
     root, _, tmp = lay
     _hook(root, "10-env.local.sh", f'pwd > "{tmp}/pwd"; cat > "{tmp}/stdin"; echo "$HWAX_UPDATE_FAIL" > "{tmp}/fail"\n')
-    r, _, _ = _run(lay, "FAIL=1\n" + _call(lay), timeout=30)
+    r, _, _ = _run(lay, "FAIL=1\n" + _call(lay), timeout=30, input="SHOULD-NOT-REACH\n")
     assert "모두 끝났다" in r.stdout, r.stdout + r.stderr
     assert (tmp / "pwd").read_text().strip() == str(root.resolve())
     assert (tmp / "stdin").read_text() == "", "표준 입력은 비어 있다(훅이 입력을 기다리며 멈추지 않는다)"
@@ -291,6 +291,132 @@ def test_update_all_이_실패한_실행도_훅을_돌리고_종료코드는_그
     r, _, _ = _ua_tail(lay, fail=1)
     assert r.returncode == 1 and (tmp / "fail").read_text().strip() == "1", r.stdout + r.stderr
     assert "박스 훅 1개 — 모두 끝났다" in r.stdout
+
+
+# ── 신호 · 상한 · 환경(적대 검토 1차 반영 — docs/core-link CK-10) ─────────────────────────────────────────
+def test_훅_안의_kill_0_은_update_all_에_닿지_않는다(lay):
+    root = lay[0]
+    _hook(root, "10-k.local.sh", "kill -TERM 0; sleep 1\n")
+    _hook(root, "15-i.local.sh", "kill -INT 0; true\n")
+    _hook(root, "20-n.local.sh", 'echo 20-n >> "$LOG"\n')
+    r, ran, _ = _run(lay, "trap 'echo RUNNER-GOT-TERM' TERM; trap 'echo RUNNER-GOT-INT' INT\n" + _call(lay))
+    assert ran == ["20-n"] and "rc=0" in r.stdout, r.stdout + r.stderr
+    assert "RUNNER-GOT" not in r.stdout + r.stderr and "받음" not in r.stderr, r.stdout + r.stderr
+
+
+def _signal_mid_hook(lay, sig):
+    import signal
+    root, home, tmp = lay
+    _hook(root, "10-slow.local.sh", f'touch "{tmp}/started"; exec sleep 60\n')
+    _hook(root, "20-next.local.sh", 'echo 20-next >> "$LOG"\n')
+    ledger = tmp / "ledger"
+    ledger.write_text("")
+    script = (f'set -uo pipefail\n. "{LEDGER_LIB}"\nHWAX_SKIP_LEDGER="{ledger}"\n. "{LIB}"\n'
+              "trap 'echo ORIG-TRAP' TERM\n" + _call(lay) + "\ntrap -p TERM\n")
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "LANG": "C.UTF-8", "LOG": str(tmp / "ran"),
+           "HWAX_AGENT_URL": _closed_url()}
+    pr = subprocess.Popen(["bash", "-c", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    for _ in range(100):
+        if (tmp / "started").exists():
+            break
+        time.sleep(0.05)
+    t0 = time.monotonic()
+    pr.send_signal(getattr(signal, sig))
+    out, err = pr.communicate(timeout=30)
+    return out, err, time.monotonic() - t0, (tmp / "ran").exists()
+
+
+@pytest.mark.parametrize("sig", ["SIGINT", "SIGTERM"])
+def test_훅_도중_Ctrl_C_나_종료_요청은_그_훅을_끊고_요약을_낸다(lay, sig):
+    out, err, el, next_ran = _signal_mid_hook(lay, sig)
+    name = sig[3:]
+    assert el < 10 and not next_ran, out + err
+    assert f"{name} 받음" in err and f"10-slow.local.sh(중단 — {name})" in out and "남은 1개는 건너뛰었다" in out, out + err
+    assert "rc=0" in out, "끝 요약으로 이어 간다"
+    assert "trap -- 'echo ORIG-TRAP' SIGTERM" in out, "훅이 끝나면 update-all 의 트랩을 되돌린다"
+
+
+def test_TERM_을_삼키는_훅도_상한_뒤에_끝난다(lay):
+    _hook(lay[0], "10-stubborn.local.sh", "trap '' TERM\nexec sleep 60\n")
+    t0 = time.monotonic()
+    r, _, _ = _run(lay, _call(lay), timeout=60, HWAX_HOOK_TIMEOUT_S="1")
+    assert time.monotonic() - t0 < 25 and "10-stubborn.local.sh(상한 1초)" in r.stdout, r.stdout + r.stderr
+
+
+def test_훅이_스스로_낸_124_는_상한이_아니다(lay):
+    _hook(lay[0], "10-own.local.sh", "timeout 1 sleep 5\n")
+    r, _, _ = _run(lay, _call(lay), HWAX_HOOK_TIMEOUT_S="30")
+    assert "10-own.local.sh(rc 124)" in r.stdout and "상한" not in r.stdout, r.stdout
+
+
+def test_상한에_걸린_훅의_자식까지_끝난다(lay):
+    root, _, tmp = lay
+    _hook(root, "10-kids.local.sh", f'sleep 60 & echo $! > "{tmp}/kid"\nexec sleep 60\n')
+    r, _, _ = _run(lay, _call(lay), HWAX_HOOK_TIMEOUT_S="1")
+    pid = int((tmp / "kid").read_text())
+    for _ in range(40):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(pid, 9)
+        pytest.fail("상한이 훅의 자식을 남겼다")
+
+
+def test_update_all_의_조율_변수는_훅에_넘기지_않는다(lay):
+    root, _, tmp = lay
+    _hook(root, "10-env.local.sh",
+          f'echo "${{HWAX_DELIB_PAUSE_BY-unset}} ${{HWAX_UPDATE_ALL_LOCKED-unset}} ${{HWAX_SKIP_LEDGER-unset}} ${{KEEP_ME-unset}}" > "{tmp}/env"\n')
+    body = ("export HWAX_DELIB_PAUSE_BY=update-all HWAX_UPDATE_ALL_LOCKED=/tmp/x.lock:1 HWAX_SKIP_LEDGER KEEP_ME=1\n" + _call(lay))
+    _run(lay, body)
+    assert (tmp / "env").read_text().split() == ["unset", "unset", "unset", "1"]
+
+
+def test_로캘이_달라도_C_차례다(lay):
+    if subprocess.run("locale -a | grep -qix 'en_US.utf8'", shell=True).returncode:
+        pytest.skip("en_US.UTF-8 로캘이 없다")
+    root = lay[0]
+    _hook(root, "a.local.sh", 'echo a >> "$LOG"\n')
+    _hook(root, "B.local.sh", 'echo B >> "$LOG"\n')
+    _, ran, _ = _run(lay, _call(lay), LANG="en_US.UTF-8", LC_ALL="en_US.UTF-8")
+    assert ran == ["B", "a"], ran
+
+
+def test_점으로_시작하는_훅은_돌리지_않고_짚는다(lay):
+    root = lay[0]
+    _hook(root, ".x.local.sh", 'echo x >> "$LOG"\n')
+    _hook(root, "10-a.local.sh", 'echo 10-a >> "$LOG"\n')
+    r, ran, _ = _run(lay, _call(lay))
+    assert ran == ["10-a"] and "돌리지 않는 파일: .x.local.sh" in r.stdout, r.stdout
+
+
+def test_when_idle_카드_대조만_돌아도_일이다(lay):
+    _hook(lay[0], "10-a.local.sh", 'echo 10-a >> "$LOG"\n')
+    a = _Agent(ra=1)
+    try:
+        r, ran, _ = _run(lay, _call(lay), HWAX_HOOKS_WHEN_IDLE="1", HWAX_AGENT_URL=a.url)
+    finally:
+        a.close()
+    assert ran == [] and "카드 대조 1" in r.stdout, r.stdout + r.stderr
+
+
+def test_when_idle_DynaForge_로컬_작업이_돌면_건너뛴다(lay):
+    root, _, tmp = lay
+    _hook(root, "10-a.local.sh", 'echo 10-a >> "$LOG"\n')
+    fake = tmp / "fake-apptainer"
+    fake.write_text("#!/usr/bin/env bash\necho 2\n")
+    fake.chmod(0o755)
+    common = tmp / "work/KooRemapper/platform/infra/scripts/_common.sh"
+    common.parent.mkdir(parents=True)
+    common.write_text(f'APPTAINER="{fake}"; INST_POSTGRES=pg; POSTGRES_USER=u; POSTGRES_PORT=1; POSTGRES_DB=d\n')
+    a = _Agent()
+    try:
+        r, ran, _ = _run(lay, _call(lay), HWAX_HOOKS_WHEN_IDLE="1", HWAX_AGENT_URL=a.url)
+    finally:
+        a.close()
+    assert ran == [] and "DynaForge 2" in r.stdout and "일이 있다" in r.stdout, r.stdout + r.stderr
 
 
 # ── 무시 규칙 ───────────────────────────────────────────────────────────────────────────────────────
