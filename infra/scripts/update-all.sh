@@ -32,6 +32,11 @@
 #                               그 멈춤이 수명(기다림 + 30분)으로 §4 전에 풀렸으면 §4 는 그 사이 시작된 심의를 한 번 더 기다린다. §2 가 SignalForge 를
 #                               미뤘으면 §4 의 signalforge-mcp 도 함께 미룬다. Drive 에서 SignalForge SIF 가 새로 왔으면 SignalForge 는 기다리지 않는다
 #                               (받기가 떠 있는 인스턴스의 이미지를 이미 덮어썼다).
+#   끝) 박스 훅 — infra/hooks/post-update.d/*.local.sh 를 끝 요약 앞에서 이름 차례로 돌린다(git 이 모르는 박스 파일 — docs/core-link SRC-12).
+#     실패는 종료코드에 넣지 않고 끝 요약의 따로 줄 하나로 낸다. 없으면 ○.
+#     ./infra/scripts/update-all.sh --hooks-when-idle   # 심의 · 리스크 카드 대조 · DynaForge · StepForge · DocForge 작업이 있거나
+#                                                       #   셀 수 없으면 훅을 건너뛴다(○)
+#     HWAX_HOOK_TIMEOUT_S=3600   훅 하나의 상한(초). 넘기면 남은 프로세스까지 정리하고 실패로 센다.
 #
 # 순서:
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
@@ -46,6 +51,7 @@
 #   5c) 호출 추적(Phoenix)        — infra/.env 에 CALL_TRACE 가 있으면 받는 쪽(Phoenix)을 띄운다(없으면 ○ · 떠 있으면 내린다 — docs/improvement-1015/call-trace.md)
 #   5d) LLM/GPU 현황 수집기        — infra/.env 에 LLM_STATUS 가 있으면 수집기를 띄운다(없으면 ○ · 떠 있으면 내린다 — docs/ops-dashboard/server-setup.md)
 #   6) 헬스게이트                — 핵심 체인(portal→agent→gateway) 실패 시 exit 1로 크게 알림
+#   끝) 박스 훅                  — infra/hooks/post-update.d/*.local.sh(없으면 ○ · 실패는 종료코드에 안 든다)
 #
 # 1회 준비물(재프로비저닝용 토큰, 없으면 해당 백엔드만 빠짐):
 #   ~/Projects/HWAXMcpGateway/provision.env  (chmod 600, gitignore)
@@ -145,6 +151,8 @@ export HWAX_DELIB_GATE="${HWAX_SKIP_LEDGER}.delib-gate" HWAX_DELIB_PAUSE_BY=upda
 . "$SELF_REPO/infra/scripts/lib/review-drain.sh"
 # LLM 서버 풀(1i · §4 뒤 라우터 내리기 · §6) — LLM_UPSTREAMS 한 줄의 규칙(목록 검사·라우터 주소·사본 바꾸기)은 이 lib 한 곳에 있다.
 . "$SELF_REPO/infra/scripts/lib/llm-pool.sh"
+# 끝의 박스 훅(docs/core-link SRC-12) — infra/hooks/post-update.d/*.local.sh 를 끝맺음 뒤 · ○ 요약 앞에서 돌린다.
+. "$SELF_REPO/infra/scripts/lib/post-update-hooks.sh"
 # 상태판 경보 멈춤 풀기 — 1b2 가 걸었으면. 5b 의 설정 생성이 늘 풀므로(그때 HWAX_BOARD_PAUSED=0) 여기는 5b 전에 멈춘 경로(§ 머리 정지)와
 #   완주 끝의 마지막 확인이다. 실패는 삼킨다 — 시한(60분)이 지나면 상태판의 밀어 넣는 쪽(status-push.py)이 걷어낸다.
 _hwax_board_resume() {
@@ -279,9 +287,11 @@ _reap_step() {  # $1=표식
 # 첫 사용처는 ste(`--with-ste`: 에어갭 클러스터 코드 갱신). 규칙은 infra/scripts/lib/deploy-gate.sh 에
 # 있고 각 단계는 이름만 등록한다 — 새 옵션이 생겨도 여기와 그 단계 한 줄이면 끝난다(docs/ste-cae00 D-13).
 HWAX_WITH="${HWAX_WITH:-}"
+HWAX_HOOKS_WHEN_IDLE="${HWAX_HOOKS_WHEN_IDLE:-0}"   # --hooks-when-idle — 끝의 박스 훅을 일이 없을 때만(docs/core-link SRC-12)
 for _a in "$@"; do
   case "$_a" in
     --with-*) HWAX_WITH="${HWAX_WITH:+$HWAX_WITH }${_a#--with-}" ;;
+    --hooks-when-idle) HWAX_HOOKS_WHEN_IDLE=1 ;;
   esac
 done
 export HWAX_WITH
@@ -3849,12 +3859,17 @@ fi
 _hwax_drain_finish
 _hwax_delib_pause_finish   # §2·§4 가 재기동 앞에서 기다리며 세운 새 심의 멈춤(O1 · A25) — 다시 선 줄이 이제 든다
 _hwax_board_resume      # 1b2 의 경보 멈춤 — 5b 가 이미 풀었으면 아무것도 하지 않는다
+# 박스 훅 — 모든 배포 · 끝맺음 뒤라 훅이 멈춤 깃발 아래서 돌지 않는다. ○ 요약 앞이라 건너뛴 ○ 가 요약에 든다. § 머리(hr)는 부르지 않는다 —
+#   남의 비우기 깃발이 있으면 그 틱이 새 깃발을 세우는데 여기서는 내릴 곳이 없다(docs/core-link CK-6).
+hwax_post_update_hooks "$SELF_REPO"
 hwax_skip_summary
 rm -f "$HWAX_SKIP_LEDGER" ${HWAX_DELIB_GATE:+"$HWAX_DELIB_GATE"}   # 한 번 기다리기의 판정 파일도 함께(머리에서 장부 옆에 정했다)
 # 받은 편지함 — §1 뒤에 찍은 새 글을 끝에서 다시 낸다(수백 줄을 거슬러 오르지 않아도 보이게). 경고가 아니라 경고 수 · 종료코드에 들지 않는다.
 # 다시 낸 뒤에야 그 판을 알린 판으로 적는다 — 끝 요약 앞에서 끊긴 실행은 다음 실행이 다시 알린다(실패로 끝나는 실행도 여기는 지난다).
 [ -z "${INBOX_NOTE:-}" ] || printf '%s' "$INBOX_NOTE"
 _inbox_mark
+# 박스 훅 결과 — 경고 수 · 종료코드에 들지 않는 따로 줄(요청서 SRC-12 '종료 코드에 섞지 않고 요약에 줄 하나로 따로').
+[ -z "${HWAX_HOOKS_NOTE:-}" ] || printf '%s' "$HWAX_HOOKS_NOTE"
 # ⚠ 경고 요약 — 종료코드에는 안 들어가지만 실패 목록처럼 끝에 다시 낸다(위로 거슬러 올라가지 않아도 보이게).
 if [ -n "${WARN_ITEMS:-}" ]; then
   printf '  \033[1;33m⚠\033[0m 경고 %s건 — 아래는 종료코드에 들어가지 않는 비치명 항목이다\n' "$(printf '%s' "$WARN_ITEMS" | grep -c '^  · ' || true)"

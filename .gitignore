@@ -93,3 +93,6 @@ backend/config/core_vocab.local.json
 # 고치기 전 판은 같은 폴더에 he-team.local.<날짜>.json 으로 남긴다(server-setup) — 그것도 박스 파일이다.
 infra/personas/he-team.local.json
 infra/personas/he-team.local.*.json
+# update-all 끝의 박스 훅 — 박스마다 다른 파일이라 git 이 모르게 둔다(docs/core-link SRC-12). 무시하지 않으면 update-all §1 ·
+# deploy-all 의 git stash -u 가 치운다. 같은 폴더의 README.md 는 추적한다.
+infra/hooks/post-update.d/*.local.sh

@@ -188,8 +188,11 @@ def _portal(tmp_path: Path, default_url: str) -> Path:
     repo = tmp_path / "portal"; lib = repo / "infra/scripts/lib"; lib.mkdir(parents=True, exist_ok=True)
     assert REAL in DRAIN_LIB, "lib 의 기본 주소가 바뀌었다 — 하네스가 바꿔 끼울 자리를 다시 찾는다"
     (lib / "review-drain.sh").write_text(DRAIN_LIB.replace(REAL, default_url), encoding="utf-8")
-    for name in ("skip-ledger.sh", "delib-busy.sh", "llm-pool.sh"):   # update-all 머리가 적재하는 lib 전부(llm-pool 은 정의만 — 1i 는 아래에서 뺀다)
+    for name in ("skip-ledger.sh", "delib-busy.sh", "llm-pool.sh", "post-update-hooks.sh"):   # update-all 머리가 적재하는 lib 전부(llm-pool 은 정의만 — 1i 는 아래에서 뺀다)
         (lib / name).write_text((LIBDIR / name).read_text(encoding="utf-8").replace(REAL, default_url), encoding="utf-8")
+    # 끝의 박스 훅(docs/core-link SRC-12)은 훅이 없으면 ○ 한 줄을 더한다 — 이 파일의 ○ 단언은 비우기 몫이라 빈 훅 하나를 둔다.
+    hooks = repo / "infra/hooks/post-update.d"; hooks.mkdir(parents=True, exist_ok=True)
+    (hooks / "00-noop.local.sh").write_text("exit 0\n", encoding="utf-8")
     (repo / "infra/scripts/review-drain.sh").write_text(WRAPPER.replace(REAL, default_url), encoding="utf-8")
     (repo / "infra/scripts/review-drain.sh").chmod(0o755)
     for f in lib.iterdir():
