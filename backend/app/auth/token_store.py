@@ -14,6 +14,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.auth.service_pat import SERVICE_JTI_PREFIX, SERVICE_SUB_PREFIX
 from app.config import Settings
 
 # 원 PAT 하나가 거느릴 수 있는 살아 있는(폐기·만료 아님) 교환 PAT 수(SEC-5). 교환이 옛것을 폐기하지
@@ -38,8 +39,12 @@ class TokenStore:
         )
         # 토큰 교환(`/auth/pat/exchange`)으로 받은 PAT 의 원 jti — 원을 폐기하면 자식도 폐기한다.
         # 돌고 있는 원장에도 칸이 생겨야 한다(새 DB 에만 있으면 읽는 길이 운영에서만 터진다).
-        if "parent_jti" not in {r[1] for r in self._conn.execute("PRAGMA table_info(pat)")}:
-            self._conn.execute("ALTER TABLE pat ADD COLUMN parent_jti TEXT")
+        # issued_by · note — 서비스 PAT(`/auth/pat/service`, docs/core-link design §2)을 낸
+        # 관리자와 메모. 사람 PAT 은 둘 다 비어 있다.
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(pat)")}
+        for col in ("parent_jti", "issued_by", "note"):
+            if col not in cols:
+                self._conn.execute(f"ALTER TABLE pat ADD COLUMN {col} TEXT")
         self._conn.commit()
 
     def mark_jti_once(self, jti: str, exp: int) -> bool:
@@ -56,9 +61,11 @@ class TokenStore:
 
     # ── Portal PAT registry (issue / list / revoke) + published denylist ──────────
     def record_pat(self, *, jti: str, sub: str, email: str | None, name: str,
-                   aud: list[str], scopes: list[str], created: int, exp: int) -> None:
+                   aud: list[str], scopes: list[str], created: int, exp: int,
+                   issued_by: str | None = None, note: str | None = None) -> None:
         with self._lock:
-            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, None)
+            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, None, issued_by,
+                             note)
             self._conn.commit()
 
     def record_exchanged_pat(self, *, parent_jti: str, jti: str, sub: str, email: str | None,
@@ -83,15 +90,18 @@ class TokenStore:
                 return "source_revoked"
             if self._live_children(parent_jti) >= MAX_LIVE_CHILDREN:
                 return "too_many_children"
-            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, parent_jti)
+            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, parent_jti, None,
+                             None)
             self._conn.commit()
             return None
 
-    def _insert_pat(self, jti, sub, email, name, aud, scopes, created, exp, parent_jti) -> None:
+    def _insert_pat(self, jti, sub, email, name, aud, scopes, created, exp, parent_jti, issued_by,
+                    note) -> None:
         self._conn.execute(
             "INSERT INTO pat (jti, sub, email, name, aud, scopes, created, exp, revoked, "
-            "parent_jti) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
-            (jti, sub, email, name, json.dumps(aud), json.dumps(scopes), created, exp, parent_jti),
+            "parent_jti, issued_by, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+            (jti, sub, email, name, json.dumps(aud), json.dumps(scopes), created, exp, parent_jti,
+             issued_by, note),
         )
 
     def live_children(self, parent_jti: str) -> int:
@@ -156,6 +166,22 @@ class TokenStore:
              "parent_jti": r[7]}
             for r in rows
         ]
+
+    def service_pats(self) -> list[dict]:
+        """서비스 PAT(`/auth/pat/service`)의 메타 — 토큰 자체는 절대 아님. 관리자 전용.
+
+        서비스 PAT 은 jti 머리(svc-)와 sub 머리(system:)를 함께 가진 행이다 — 사람 PAT 의
+        jti 는 무작위라 머리 하나로는 가르지 않는다. 살아 있는 것 먼저, 만료가 가까운 것 먼저
+        보인다(갈아 끼울 것부터). 작업 이름은 sub 에서 뗀다."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT jti, sub, note, issued_by, created, exp, revoked FROM pat "
+                "WHERE jti GLOB ? AND sub GLOB ? ORDER BY revoked ASC, exp ASC, created DESC",
+                (f"{SERVICE_JTI_PREFIX}*", f"{SERVICE_SUB_PREFIX}*")).fetchall()
+        return [{"jti": r[0], "job": r[1][len(SERVICE_SUB_PREFIX):], "note": r[2] or "",
+                 "issued_by": r[3] or "", "created_at": r[4], "expires_at": r[5],
+                 "revoked": bool(r[6])}
+                for r in rows]
 
     def revoke_pat(self, jti: str, sub: str | None = None) -> bool:
         """Mark a PAT revoked. sub=None → admin (any owner); else only the owner.

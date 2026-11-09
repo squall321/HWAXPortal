@@ -9,6 +9,10 @@ published (non-expired revoked jtis) at `/auth/pat/revoked.json` for the gateway
 
 토큰 교환(`/auth/pat/exchange`)은 원 PAT 로 같은 사람의 더 좁은 PAT 을 내고, 소비자는 새것을
 받아들인 뒤 옛것을 `/auth/pat/revoke-self` 로 폐기한다(docs/risk-credentials C-11).
+
+서비스 PAT(`/auth/pat/service`)은 관리자가 박스 작업 하나(`system:<작업>`)에 내는
+게이트웨이 전용 토큰이다(docs/core-link design §2 — 클레임은 app/auth/service_pat.py).
+회수는 사람 PAT 과 같은 관리자 회수(`DELETE /auth/pat/{jti}`)와 `revoked.json` 이다.
 """
 
 import logging
@@ -21,13 +25,14 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.access.policy import login_groups
+from app.access.policy import ADMIN_GROUP, login_groups
 from app.auth.errors import AuthError
 from app.auth.pat_verify import pat_principal, verify_pat_claims
 from app.auth.provider import Principal
+from app.auth.service_pat import service_claims
 from app.auth.token_store import MAX_LIVE_CHILDREN
 from app.config import Settings, get_settings
-from app.deps import ensure, entitled, get_current_principal, require_csrf
+from app.deps import ensure, entitled, get_current_principal, require_csrf, require_role
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +82,32 @@ class PatMeta(BaseModel):
 
 class PatCreated(PatMeta):
     token: str  # the JWT — shown ONCE, never stored server-side
+
+
+class ServicePatCreate(BaseModel):
+    """서비스 PAT 발급 본문(docs/core-link design §2).
+
+    job · days 의 꼴은 service_claims 가 본다 — 틀리면 400."""
+    job: str
+    days: int
+    note: str | None = Field(default=None, max_length=200)
+
+
+class ServicePatCreated(BaseModel):
+    token: str        # 이 응답에서 한 번만 보인다 — 서버 어디에도 남기지 않는다
+    jti: str
+    job: str
+    expires_at: int   # epoch 초
+
+
+class ServicePatMeta(BaseModel):
+    jti: str
+    job: str
+    note: str
+    issued_by: str    # 발급한 관리자
+    created_at: int   # epoch 초
+    expires_at: int   # epoch 초
+    revoked: bool
 
 
 def _mint_pat(request: Request, settings: Settings, principal: Principal, *,
@@ -318,6 +349,51 @@ def list_all_pats(
             "truncated": total > len(rows),
             "note": ("만료가 먼 것(오래 사는 토큰)부터 보인다 — 폐기가 필요한 쪽이 먼저다."
                      if total > len(rows) else "")}
+
+
+@router.post("/service", response_model=ServicePatCreated)
+def create_service_pat(
+    body: ServicePatCreate,
+    request: Request,
+    admin: Principal = Depends(require_role(ADMIN_GROUP)),
+    _csrf: None = Depends(require_csrf),
+    settings: Settings = Depends(get_settings),
+) -> ServicePatCreated:
+    """박스 작업 하나(`system:<작업>`)의 서비스 PAT 을 낸다 — 포털 관리자만, 세션 + CSRF
+    (docs/core-link design §2 · CK-4).
+
+    청중이 `mcp-gateway-service` 하나라 포털 챗 · 토큰 교환(pat_chat_audience)은 이 토큰을
+    받지 않는다. 게이트웨이도 박스 파일 `service_tools.local.json` 에 그 작업이 있어야 받는다.
+    토큰은 이 응답에만 실린다."""
+    try:
+        claims = service_claims(iss=settings.jwt_issuer, job=body.job,
+                                now=int(datetime.now(tz=UTC).timestamp()), days=body.days)
+    except ValueError as exc:
+        raise AuthError(str(exc), status_code=400) from exc
+    keystore = request.app.state.keystore
+    token = jwt.encode(claims, keystore.private_pem, algorithm="RS256",
+                       headers={"kid": keystore.active_kid})
+    issued_by = admin.email or admin.subject
+    note = (body.note or "").strip() or None
+    request.app.state.token_store.record_pat(
+        jti=claims["jti"], sub=claims["sub"], email=None, name=claims["pat_name"],
+        aud=claims["aud"], scopes=claims["scopes"], created=claims["iat"], exp=claims["exp"],
+        issued_by=issued_by, note=note,
+    )
+    # 발급을 남긴다 — 사람 PAT 과 같은 까닭(누가 언제 냈나). 메모는 사람이 고른 글이라
+    # %r 로 남긴다(SEC-4).
+    logger.warning("service PAT issued: job=%s by=%s days=%s jti=%s note=%r",
+                   body.job, issued_by, body.days, claims["jti"], note)
+    return ServicePatCreated(token=token, jti=claims["jti"], job=body.job, expires_at=claims["exp"])
+
+
+@router.get("/service", response_model=list[ServicePatMeta])
+def list_service_pats(
+    request: Request,
+    _admin: Principal = Depends(require_role(ADMIN_GROUP)),
+) -> list[ServicePatMeta]:
+    """서비스 PAT 메타 — 관리자 전용. 토큰 값은 싣지 않는다(발급 응답에만 있었다)."""
+    return [ServicePatMeta(**r) for r in request.app.state.token_store.service_pats()]
 
 
 @router.delete("/{jti}")
