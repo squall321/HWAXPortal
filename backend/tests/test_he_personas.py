@@ -1234,7 +1234,8 @@ def test_HA29_StepForge_는_되돌리기_어려운_여덟만_confirm_이다():
 
 
 # 포털 신원 길에서만 적용하는 StepForge 쓰기 셋 — 게이트웨이로는 늘 미리보기라 운영자 목록 밖에 둔다(넣으면 미리보기마다 확인 카드 — docs/request-1030
-# C-30, 사용자 결정 11-08). 이 셋이 MCP 로도 적용을 받게 바뀌면 목록에 넣는다.
+# C-30, 사용자 결정 11-08). 이 셋이 MCP 로도 적용을 받게 바뀌면 목록에 넣는다. 챗의 적용은 rest_call(사람 단언 · 쓰기 메서드는 늘 카드)이라
+# MCP 셋은 여전히 미리보기다(docs/core-link CK-3, 사용자 결정 11-09).
 _SF_PORTAL_ONLY = {"onto_define", "onto_put", "onto_link"}
 
 
