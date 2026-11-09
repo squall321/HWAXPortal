@@ -78,10 +78,19 @@ iat · nbf · exp                               ← 수명 1 ~ 365일(0 · 무�
   - `tools/call` 에서 목록 밖이면 MCP 오류 `forbidden: … service-denied` 와 감사 줄(`mode=refused`)이다.
   - `rest_call` 은 `rest` 항목과 맞을 때만 되고(§5), GET · HEAD 도 목록에 있어야 한다.
   - `invoke_tool` 을 거쳐도 같은 판정이다.
-- **감사.** `caller` 는 `system:<작업>`, `note` 는 `svc:<jti 앞 8자>`, `via` 는 `service` 다.
+- **감사.** `caller` 는 `system:<작업>`, `note` 는 `svc:<jti 의 svc- 뒤 8자>`, `via` 는 `service` 다.
 - **`/health`.** `service_jobs: {"<작업>": {"tools": N, "rest": M}}` 를 낸다. 토큰 · jti 는 싣지 않는다.
-- **알려 둘 것.** 사람별 위임 앱(리스크 · MX 백서 · DynaForge · ste)은 신원이 없어 서비스 계정으로 불린다. RA · TestScope 는 서비스 세션이
-  실제 사람의 토큰이므로 허용 목록에 넣지 않는다. 게이트웨이는 넣으면 기동 로그에 ⚠ 한 줄을 남긴다.
+- **꼴 검사(검토 반영 — CK-11 · CK-13).**
+  - 청중은 정확히 `{"mcp-gateway-service"}` 하나다.
+  - '서비스 토큰이라 주장한다' 의 방아쇠는 purpose · 서비스 청중 · `system:` sub · `service` 범위다. jti 접두 `svc-` 는 꼴 검사에만 쓴다 —
+    사람 PAT jti(`token_urlsafe`)가 그렇게 시작할 수 있다.
+  - resources · prompts 는 내주지 않는다.
+- **막는 백엔드.** 허용 목록에 넣어도 읽을 때 버리고(⚠), 부르면 `service-denied(<까닭>)` 이다.
+  - RA · TestScope(`impersonation`) — 서비스 세션이 실제 사람의 토큰이다.
+  - 신원을 넘기는 백엔드(`IDENTITY_FWD` — dev 는 `hwax-deliberation`, `identity-forward`) — 서비스 호출은 게이트웨이 공유 토큰의 내부 호출과
+    같게 보여, 심의 엔진이 되부르는 지정 도구로 허용 목록을 벗어난다(검토 1차 major).
+- **알려 둘 것.** 사람별 위임 앱(리스크 · MX 백서 · DynaForge · ste)은 신원이 없어 서비스 계정으로 불린다. 넣을지는 운영자가 허용 목록으로
+  정한다.
 
 ## 4. 게이트웨이 — 쓰기 낱말(SRC-14)
 
@@ -105,6 +114,9 @@ iat · nbf · exp                               ← 수명 1 ~ 365일(0 · 무�
     - 신원이 없으면(GW_TOKEN 만, 이메일 없음) **403** 이다.
   - 그 밖의 쓰기 메서드 · 경로는 **405** 다(지금 '쓰기 기본 닫힘' 을 경로까지 좁힌 것).
   - 읽기 전용 토큰 · 루틴은 지금처럼 `rest_call` 쓰기를 막는다.
+  - 403 · 405 는 `rest_call` 결과 JSON 의 `status` 칸이다(MCP 도구라 HTTP 코드가 아니다). 문에서 모르는 작업의 거절만 진짜 HTTP 403 이다.
+  - 맨 `/api/<사이트>/` 프록시는 StepForge 에 GET · HEAD 만 연다. 클라이언트가 보낸 `X-Heax-Sso-Assertion` · `X-Hwax-Delegate-*` 는 넘기지
+    않는다.
 - **운반.**
   - `Authorization: Bearer <허브 서비스 토큰>` 은 Caddy 문을 지나기 위한 것이다.
   - `X-Heax-Sso-Assertion: <단언>` 이 주체다.
@@ -112,8 +124,10 @@ iat · nbf · exp                               ← 수명 1 ~ 365일(0 · 무�
 - **발급 요청.** `POST <sso_url>` 이다. 머리는 `X-Heax-Gateway-Secret`, 주체 하나(`X-Hwax-Delegate-Email: <email>` 또는
   `X-Hwax-Delegate-Service: <작업>`), `X-Heax-Client`, Caddy 용 `Authorization` 이다.
   - 응답은 `{"token": "sfsso_…", "expires_in": N}` 이다.
-  - 주체마다 `expires_in − 60초` 까지 캐시한다.
-  - 받은 단언의 주체(`e` · `s`)가 청한 것과 다르면 발급 실패로 돌린다. `rrsso_` 접힘 검사와 같은 꼴이다.
+  - 단언은 `sfsso_<b64url JSON 객체>.<서명>` 꼴이어야 하고, 주체 키는 `e` · `s` 가운데 정확히 하나가 있어야 하며 청한 것과 같아야 한다.
+    어긋나면 발급 실패이고 캐시하지도 보내지도 않는다(`rrsso_` 접힘 검사와 같은 자세).
+  - 주체마다 `expires_in − 60초` 까지 캐시한다. `expires_in` 이 60 이하거나 없으면 캐시하지 않는다. StepForge 가 쓰기에 401 · 403 으로 답하면
+    그 단언을 버린다(다시 시도하지 않는다).
 - **감사.** 사람이면 `caller` 는 그 이메일, 서비스면 `system:<작업>` 이다. 쓰기 경로 호출은 `note` 에 `rest:POST <경로>` 를 남긴다.
 
 ## 6. StepForge — 단언 발급 · 받기(SRC-15 앱 쪽 · SRC-07)
@@ -122,7 +136,9 @@ iat · nbf · exp                               ← 수명 1 ~ 365일(0 · 무�
 본뜬다. 다른 것은 접두와 서비스 주체 둘이다.
 
 - **발급 `POST /api/auth/sso`.** 허브 Caddy 뒤 `/apps/step_forge/api/auth/sso` 다.
-  - `STEPFORGE_GATEWAY_SECRET` 이 비면 404 다.
+  - 발급 비밀이 비면 404 다. 비밀 줄은 StepForge 데이터 폴더 `secrets.env` 의 새 줄 `STEPFORGE_SSO_SECRET` 을 제안했다(StepForge 세션 확인
+    중). 기존 `STEPFORGE_GATEWAY_SECRET` 은 허브 `gateway_shared_secret` 과 같은 값이고, 있으면 포털 신원 요청마다 `X-Heax-Gateway-Secret`
+    을 요구한다. 그래서 위임을 켜려고 그 줄을 넣으면 웹 화면 적용이 깨질 수 있다.
   - `X-Heax-Gateway-Secret` 이 그 값과 같아야 한다(상수 시간 비교). 아니면 403 이다.
   - 주체는 정확히 하나다. 둘 다 있거나 둘 다 없으면 400 이다.
     - `X-Hwax-Delegate-Email` — `@` 가 든 이메일, 소문자로 둔다.
@@ -148,7 +164,11 @@ iat · nbf · exp                               ← 수명 1 ~ 365일(0 · 무�
 ## 7. 에이전트 서버 · 포털 운영자 정의(SRC-15 챗 쪽)
 
 - **확인 관문(HA-29).** `rest_call` 의 `method` 가 GET · HEAD 가 아니면(대소문자 무시) 운영자 목록과 상관없이 늘 확인 카드다(`confirm`
-  부류). 카드에는 사이트 · 메서드 · 경로와 본문 요약(앞 400자)을 싣는다.
+  부류). 카드는 승인이 실제로 보낼 인자 그대로 그린다(다듬지 않는다). 사이트 · 메서드 · 경로 · query · 본문을 칸마다 JSON 으로 싣고, 칸마다
+  400자에서 자른다. 값 안의 구분자로 칸을 지어낼 수 없다.
+- **챗 밖의 쓰기는 막는다(검토 1차).** 심의 · 리스크 패널의 지정 도구, 좌석 자유 조회, 외부 응답자의 `CALL` 줄이 부르는 `rest_call` 이 쓰기
+  메서드면 엔진이 보내기 전에 거절한다(`rest_write_refused` 경고 · 끝 카드). 확인 카드가 서는 곳은 챗 턴뿐이다. 그래서 챗 모델이 심의에 지정
+  도구로 `rest_call` 을 넣어도 쓰기는 나가지 않는다.
 - StepForge 운영자(`he-cad-stepforge`)를 고른 챗에서 `rest_call` 이 묶여야 한다. 지금 묶이지 않으면 묶는다.
 - **포털 `infra/personas/he-team.json` 의 `he-cad-stepforge`.** `can` · `pitfalls` 에 한 줄씩 더한다.
   - 미리 보기는 MCP `onto_link` · `onto_put` · `onto_define`(`dry_run=true`)로 한다.

@@ -28,7 +28,7 @@
 - [x] SRC-15 `he-team.json` `he-cad-stepforge` can · pitfalls 두 줄 + 운영자 시험(가지 27d751ed)
 - [x] update-all §5 `STEPFORGE_SSO_*` 넘기기 · 드리프트 · ○(가지 f2930226, CK-12)
 - [x] SRC-12 적대 검토 1차 반영(가지 a5ff0f2b, CK-10)
-- [ ] 인증 길 적대 검토 — 게이트웨이 · 에이전트 서버 묶음 · 포털 발급 묶음(도는 중)
+- [x] 인증 길 적대 검토 — 게이트웨이 · 에이전트 서버 묶음 · 포털 발급 묶음 → 고침(게이트웨이 08d14a0 · 에이전트 5cd7527 · 포털 69cba3e6, CK-13)
 - [ ] StepForge 답 — 위임 비밀 줄 이름 · 서비스 경로 · 훅이 할 일 → 계약 §5 · §6 · update-all 문구 · server-setup 2 · 3 · 5절
 - [ ] 업데이트 이력(changelog) 항목
 
