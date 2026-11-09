@@ -21,13 +21,19 @@ function fmtDate(sec: number): string {
   return new Date(sec * 1000).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export default function ServiceTokenPanel() {
+// created · onCreated — 방금 발급한 토큰은 토큰 화면(TokenPage)이 쥔다. 이 칸에 두면 탭을 오갈 때(칸이 내려갔다 다시 뜰 때) 사라졌다.
+export default function ServiceTokenPanel({
+  created,
+  onCreated,
+}: {
+  created: ServicePatCreated | null;
+  onCreated: (got: ServicePatCreated | null) => void;
+}) {
   const [job, setJob] = useState('');
   // 숫자칸의 글 그대로 둔다 — 비운 칸을 숫자로 바꾸면 NaN 이 value 에 들어간다
   const [days, setDays] = useState('90');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState<ServicePatCreated | null>(null);
   const [copied, setCopied] = useState(false);
   const [rows, setRows] = useState<ServicePatMeta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +58,7 @@ export default function ServiceTokenPanel() {
     setError(null);
     try {
       const got = await createServicePat({ job, days: daysN, note: note.trim() || undefined });
-      setCreated(got);
+      onCreated(got);
       setCopied(false);
       setJob('');
       setNote('');
@@ -77,7 +83,7 @@ export default function ServiceTokenPanel() {
     setError(null);
     try {
       await revokePat(r.jti);
-      if (created?.jti === r.jti) setCreated(null); // 방금 발급한 토큰을 회수하면 표시도 지운다
+      if (created?.jti === r.jti) onCreated(null); // 방금 발급한 토큰을 회수하면 표시도 지운다
       refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : '서비스 토큰 회수에 실패했습니다.');

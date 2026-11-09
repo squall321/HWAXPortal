@@ -9,6 +9,8 @@ import importlib.util
 import re
 import sqlite3
 import sys
+import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import jwt
@@ -24,7 +26,7 @@ from app.auth.service_pat import (
     SERVICE_PURPOSE,
     service_claims,
 )
-from app.auth.token_store import TokenStore
+from app.auth.token_store import SERVICE_EXPIRED_KEEP_S, TokenStore
 from app.auth.user_store import UserStore
 from app.config import Settings, get_settings
 from app.main import app
@@ -248,6 +250,15 @@ def test_수명_밖은_400(box, days):
     assert _rows() == []
 
 
+@pytest.mark.parametrize("days", [True, False, "30", " 30 ", 30.0])
+def test_수명은_정수만_받고_바꿔_읽지_않는다(box, days):
+    """느슨한 int 는 true → 1, "30" · 30.0 → 30 으로 바꿔 service_claims 의 검사(bool 거절)를 비켜 간다 — StrictInt 라 422 다."""
+    c, hb = box
+    r = _issue(c, hb, days=days)
+    assert r.status_code == 422, r.text
+    assert _rows() == []
+
+
 @pytest.mark.parametrize("days", [1, 365])
 def test_수명_끝값은_된다(box, days):
     c, hb = box
@@ -319,7 +330,89 @@ def test_서비스_PAT_으로_포털_챗을_부를_수_없다(box):
     assert c.post("/auth/pat/revoke-self", headers={"Authorization": f"Bearer {svc}"}).status_code == 401
 
 
+def test_사람_PAT_발급은_service_범위를_막는다(box):
+    """게이트웨이는 scopes 의 service 를 서비스 토큰이라는 주장으로 읽는다 — 사람 PAT 에 실리면 그 PAT 은 어디서나 401 이 된다."""
+    c, _hb = box
+    hu = _login(c, U)
+    r = c.post("/auth/pat", json={"name": "claude", "scopes": ["read", "service"]}, headers=hu)
+    assert r.status_code == 400, r.text
+    assert "service" in r.json()["detail"]
+    assert c.get("/auth/pat", headers=hu).json() == []
+    ok = c.post("/auth/pat", json={"name": "claude", "scopes": ["read", "services"]}, headers=hu)
+    assert ok.status_code == 200, "글자 그대로 service 만 막는다"
+
+
+def test_교환도_service_범위를_내지_않는다(box):
+    """이 검사 전에 낸 옛 PAT 이 service 를 들고 있어도 그것을 바꿔 받지 못한다(원의 부분집합 검사만으로는 통과한다)."""
+    c, _hb = box
+    now = datetime.now(tz=UTC)
+    exp = now + timedelta(days=10)
+    ks = app.state.keystore
+    old = jwt.encode({"iss": "x", "sub": U, "email": U, "aud": ["mcp-gateway"], "scope": "api",
+                      "scopes": ["read", "service"], "iat": now, "exp": exp, "jti": "legacy-svc"},
+                     ks.private_pem, algorithm="RS256", headers={"kid": ks.active_kid})
+    app.state.token_store.record_pat(jti="legacy-svc", sub=U, email=U, name="old", aud=["mcp-gateway"],
+                                     scopes=["read", "service"], created=int(now.timestamp()),
+                                     exp=int(exp.timestamp()))
+    c.cookies.clear()
+
+    def exchange(scopes):
+        body = {"name": "hwax-risk", "audiences": ["mcp-gateway"], "scopes": scopes, "ttl_days": 1}
+        return c.post("/auth/pat/exchange", json=body, headers={"Authorization": f"Bearer {old}"})
+    for scopes in (["service"], ["read", "service"]):
+        r = exchange(scopes)
+        assert r.status_code == 400, r.text
+        assert r.json()["detail"]["code"] == "bad_scope" and "service" in r.json()["detail"]["message"]
+    assert exchange(["read"]).status_code == 200, "같은 원으로 service 를 빼면 바꿔 받는다"
+
+
 # ── 원장 ──────────────────────────────────────────────────────────────────────
+def test_만료된_서비스_PAT_은_30일_남고_사람_PAT_은_그대로_지운다(tmp_path):
+    """revoked.json 을 낼 때마다 만료 행을 지운다(게이트웨이가 60초마다 당긴다). 서비스 PAT 은 만료 뒤 30일 남겨 관리자 목록에 '만료됨' 이 보이게 하고,
+    사람 PAT 과 폐기 목록의 내용은 종전 그대로다."""
+    ts = TokenStore(Settings(token_store_path=str(tmp_path / "t.sqlite")))
+    now, day = int(time.time()), 86400
+
+    def put(jti, sub, exp, revoked=False):
+        svc = sub.startswith("system:")
+        ts.record_pat(jti=jti, sub=sub, email=None if svc else U, name="n",
+                      aud=[SERVICE_AUDIENCE] if svc else ["mcp-gateway"], scopes=["service"] if svc else ["read"],
+                      created=now - 60 * day, exp=exp)
+        if revoked:
+            assert ts.revoke_pat(jti)
+    put("human-old", U, now - day)
+    put("svc-lucky-human", U, now - day)                                   # 사람 PAT — jti 만 우연히 같은 머리
+    put("svc-recent", "system:a", now - day)
+    put("svc-recent-revoked", "system:b", now - day, revoked=True)
+    put("svc-ancient", "system:c", now - SERVICE_EXPIRED_KEEP_S - day)
+    put("svc-live-revoked", "system:d", now + day, revoked=True)
+    put("human-live-revoked", U, now + day, revoked=True)
+    assert sorted(ts.revoked_jtis()) == ["human-live-revoked", "svc-live-revoked"], "폐기 목록은 살아 있는 것만"
+    left = {r[0] for r in ts._conn.execute("SELECT jti FROM pat")}
+    assert left == {"svc-recent", "svc-recent-revoked", "svc-live-revoked", "human-live-revoked"}
+    assert {m["jti"]: m["revoked"] for m in ts.service_pats()} == {
+        "svc-recent": False, "svc-recent-revoked": True, "svc-live-revoked": True}
+    assert SERVICE_EXPIRED_KEEP_S == 30 * day
+
+
+def test_revoked_json_을_당겨도_만료된_서비스_PAT_은_관리자_목록에_남는다(box, monkeypatch):
+    c, hb = box
+    svc = _issue(c, hb, days=1).json()
+    human = c.post("/auth/pat", json={"name": "claude", "ttl_days": 1}, headers=hb).json()
+    import app.auth.token_store as store_mod
+
+    class _TwoDaysLater(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + timedelta(days=2)
+    monkeypatch.setattr(store_mod, "datetime", _TwoDaysLater)
+    assert not {svc["jti"], human["jti"]} & _revoked(c)                # 이 당김이 만료 행을 지운다
+    listed = c.get("/auth/pat/service").json()
+    assert [m["jti"] for m in listed] == [svc["jti"]]
+    assert listed[0]["expires_at"] < int(_TwoDaysLater.now(UTC).timestamp()), "화면은 이것으로 '만료됨' 을 단다"
+    assert _rows(human["jti"]) == [], "사람 PAT 은 종전대로 지운다"
+
+
 def test_서비스_목록은_jti_머리와_sub_머리를_함께_본다(tmp_path):
     """사람 PAT 의 jti 는 무작위(token_urlsafe)라 svc- 로 시작할 수 있다 — 머리 하나로 가르면 그 사람 토큰이 서비스 목록에 섞인다."""
     ts = TokenStore(Settings(token_store_path=str(tmp_path / "t.sqlite")))

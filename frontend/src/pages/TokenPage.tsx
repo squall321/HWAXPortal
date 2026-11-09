@@ -1,7 +1,14 @@
 // 홈에서 AI 토큰(PAT)을 발급하고 개인 Claude 등록 스니펫을 그 자리에서 복사하는 페이지
 import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { createPat, listPats, revokePat, type PatCreated, type PatMeta } from '../api/pat.api';
+import {
+  createPat,
+  listPats,
+  revokePat,
+  type PatCreated,
+  type PatMeta,
+  type ServicePatCreated,
+} from '../api/pat.api';
 import { fetchMyAccess, type MyAccess } from '../api/access.api';
 import HubAppsPanel from '../components/HubAppsPanel';
 import HubViewPanel from '../components/HubViewPanel';
@@ -98,6 +105,8 @@ export default function TokenPage() {
   const [ttlDays, setTtlDays] = useState(90);
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<PatCreated | null>(null);
+  // 방금 발급한 서비스 토큰 — 사람 토큰(created)처럼 이 화면 상태라 탭을 오가도 남는다
+  const [svcCreated, setSvcCreated] = useState<ServicePatCreated | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pats, setPats] = useState<PatMeta[] | null>(null);
   // 포털 인증서 체인이 공개 루트에 닿지 않는가(자체서명·사내 CA) — 그때만 인증서 안내를 띄운다.
@@ -317,7 +326,7 @@ export default function TokenPage() {
             <ExternalConnectionCards />
           </>
         )}
-        {tab === 'service' && <ServiceTokenPanel />}
+        {tab === 'service' && <ServiceTokenPanel created={svcCreated} onCreated={setSvcCreated} />}
         {tab === 'tokens' && (
           <>
             {error && <ErrorBanner message={error} />}

@@ -114,6 +114,11 @@
   color: var(--fg-muted);
   font-size: var(--fs-13);
 }
+/* 복사 단추는 줄지도 쪼개지지도 않는다 — 긴 이름표(서비스 토큰의 작업 · 만료)에 밀려 390px 에서 '복/사' 로 갈라졌다 */
+.tok-copy-head > button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .tok-copy pre {
   margin: 0;
   padding: var(--sp-3);
