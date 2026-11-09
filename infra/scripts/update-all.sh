@@ -67,8 +67,9 @@
 #                                                    #   <접두>_SEND_PLAT=1 — 위임 호출에 그 사람의 plat: 권한을 서명과 함께(MX 백서 위키, docs/mxwp-wiki P4)
 #     KOORM_SEND_PLAT=1            # DynaForge 위임에 같은 plat: 서명 — 적으면 §5 가 싣는다(빈 값도 '끔'). KooRemapper 가 막기를 올리기 전에는
 #                                  #   적지 않는다 — 빈 자리표시도(docs/followups-1017/requests.md §2 · docs/request-1030/server-setup.md 0절)
-#     STEPFORGE_SSO_SECRET=…       # StepForge 단언 쓰기 — 챗의 온톨로지 적용 · 박스 작업의 규칙 잇기(docs/core-link SRC-15 · SRC-07). StepForge 의
-#                                  #   STEPFORGE_GATEWAY_SECRET 과 같은 값. 주소는 STEPFORGE_SSO_URL(선택 — 기본 <HEAX_MCP_BASE>/apps/step_forge/api/auth/sso)
+#     STEPFORGE_SSO_SECRET=…       # StepForge 단언 쓰기 — 챗의 온톨로지 적용 · 박스 작업의 규칙 잇기(docs/core-link SRC-15 · SRC-07). StepForge 데이터
+#                                  #   폴더 secrets.env 의 STEPFORGE_SSO_SECRET 줄과 같은 값(포털 신원 검증의 STEPFORGE_GATEWAY_SECRET 과는 다르다).
+#                                  #   주소는 STEPFORGE_SSO_URL(선택 — 기본 <HEAX_MCP_BASE>/apps/step_forge/api/auth/sso)
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
@@ -1679,7 +1680,7 @@ fi
 #   (REST POST)과 박스 작업의 규칙 잇기가 '꺼져 있다' 로 거절된다(미리 보기는 된다). 허브가 있는 박스에서만 장부에 남긴다(§5 소싱 전이라 파일에서).
 if [ -n "${HEAX_DIR:-}" ] && [ -n "$GW_DIR" ] && [ -z "${STEPFORGE_SSO_SECRET:-}" ] \
    && [ -z "$(_envfile_value "$GW_DIR/provision.env" STEPFORGE_SSO_SECRET)" ]; then
-  hwax_skip "StepForge 단언 쓰기(챗의 온톨로지 적용 · 박스 작업의 규칙 잇기)" "게이트웨이 provision.env 에 STEPFORGE_SSO_SECRET 이 없어 게이트웨이가 StepForge 쓰기 경로를 열지 않는다(미리 보기만 된다)" "StepForge 의 STEPFORGE_GATEWAY_SECRET 과 같은 값을 HWAXMcpGateway/provision.env 에 STEPFORGE_SSO_SECRET= 로 적고 재실행(§5 가 재프로비저닝한다 — docs/core-link/server-setup.md)"
+  hwax_skip "StepForge 단언 쓰기(챗의 온톨로지 적용 · 박스 작업의 규칙 잇기)" "게이트웨이 provision.env 에 STEPFORGE_SSO_SECRET 이 없어 게이트웨이가 StepForge 쓰기 경로를 열지 않는다(미리 보기만 된다)" "비밀 하나를 StepForge 데이터 폴더 secrets.env 의 STEPFORGE_SSO_SECRET 줄과 HWAXMcpGateway/provision.env 의 STEPFORGE_SSO_SECRET= 에 같은 값으로 적고 재실행(§5 가 재프로비저닝한다 — docs/core-link/server-setup.md 2절)"
 fi
 # ARP(AI Ready Portal) MCP — 주소(ARP_BASE)는 있는데 토큰(ARP_TOKEN)이 없으면 게이트웨이가 arp 를 등재하지 않는다(2026-10-01 부터 인증,
 # docs/change-request-8-10 D-5). 조용히 빠지지 않게 장부에 남긴다 — RA 의 RAT_TOKEN(1e)과 같은 자리다. §5 가 provision.env 를

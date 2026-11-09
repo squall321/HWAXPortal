@@ -28,15 +28,17 @@
 
 ## 2. StepForge 단언 쓰기 켜기(SRC-15 · SRC-07의 운반)
 
-> StepForge 쪽 비밀 줄 이름은 StepForge 세션의 답을 받아 채운다(포털 세션이 제안한 것은 데이터 폴더 `secrets.env` 의 `STEPFORGE_SSO_SECRET`).
-
 1. 비밀 하나를 만든다(`openssl rand -hex 32`). 리포 · 로그 · 채팅에 붙이지 않는다.
 2. 같은 값을 두 곳에 적는다.
-   - StepForge 데이터 폴더의 `secrets.env` — 줄 이름은 위 알림을 따른다.
+   - StepForge 데이터 폴더의 `secrets.env` 에 `STEPFORGE_SSO_SECRET=<값>` 줄을 둔다. 포털 신원 검증의 `STEPFORGE_GATEWAY_SECRET` 은 건드리지
+     않는다 — 그 줄은 허브 `gateway_shared_secret` 과 같은 값이고, 넣으면 웹 화면의 포털 신원 요청마다 `X-Heax-Gateway-Secret` 을 요구한다.
+     이 줄을 바꾸면 이미 낸 단언은 바로 무효가 된다(StepForge 는 같은 줄로 단언을 서명한다).
    - `HWAXMcpGateway/provision.env` 에 `STEPFORGE_SSO_SECRET=<값>` 을 적는다(600). 주소가 기본(`<HEAX_MCP_BASE>/apps/step_forge/api/auth/sso`)과
      다르면 `STEPFORGE_SSO_URL` 도 적는다.
 3. update-all 을 다시 돌린다. §5 가 `StepForge 단언 쓰기 드리프트` 를 찍고 재프로비저닝한다. 끝 요약에서 ○ 가 사라졌는지 본다.
 4. **확인.**
+   - 게이트웨이 `rest_catalog` 의 step-forge 칸에 `write_paths` 다섯(`/api/onto-link` · `/api/onto-put` · `/api/onto-define` ·
+     `/api/onto-fill` · `/api/plm-sync`)이 나오는지 본다.
    - 웹 챗에서 StepForge 운영자를 고르고 시험 과제에 온톨로지 선 하나를 미리 보게 한다(MCP, 쓰기 없음).
    - 이어서 적용을 청한다. 확인 카드가 서는지 본다(`rest_call` · site=step-forge · method=POST · path=/api/onto-link).
    - 승인하면 적용되는지, StepForge 기록의 행위자가 그 사람인지 본다.
@@ -52,17 +54,26 @@
 
    ```json
    {"jobs": {"core-link": {
-       "tools": ["<백엔드>:<원래 이름>"],
-       "rest":  [{"site": "step-forge", "method": "POST", "path": "<StepForge 가 알린 서비스 경로>"}]}}}
+       "tools": [],
+       "rest":  [{"site": "step-forge", "method": "POST", "path": "/api/plm-sync"},
+                 {"site": "step-forge", "method": "POST", "path": "/api/onto-link"},
+                 {"site": "step-forge", "method": "POST", "path": "/api/onto-fill"}]}}}
    ```
 
-   - 무엇을 넣을지는 StepForge · KooRemapper 판이 정한다. 받은 편지함 글에 예시를 싣는다.
-   - RA · TestScope 도구는 넣어도 버려진다. 그쪽 서비스 세션은 실제 사람의 토큰이다.
+   - StepForge 가 서비스 단언으로 받는 것은 이 셋뿐이다.
+     - `plm-sync` — 허브 받기. `full: true` 까지 받는다. `allow_mass_absence: true` 는 403 이다 — 멈춘 받기를 넘기는 것은 사람이 정한다.
+     - `onto-link` — 규칙 단만이다. 줄마다 `rule` 이 실린 link 와 규칙이 지은 선의 unlink 만 받는다.
+     - `onto-fill` — 증명(proof) 규칙만이다.
+   - 그 밖은 StepForge 가 `identity_refused: service_not_allowed`(403)로 막는다.
+   - 앱 안 규칙 잇기(SRC-03 · 05)가 돌면 훅은 `plm-sync` 하나로 충분하다. 나머지 둘은 훅이 규칙 단 선을 바깥에서 직접 이을 때 쓴다.
+   - RA · TestScope 도구와 신원을 넘기는 백엔드(심의)의 도구는 넣어도 버려진다(CK-11 · CK-13).
 3. 게이트웨이 `/health` 의 `service_jobs` 에 `core-link` 와 도구 수가 나오는지 본다. 파일은 다시 띄우지 않아도 읽힌다(mtime).
 4. 회수는 토큰 화면 목록에서 한다. 게이트웨이는 60초 안에 거절한다.
 
 ## 4. 대응표 · 미리 보기 · 적용(BOX-12 ~ 14)
 
+- **정의 판 주의.** StepForge 의 새 관계(`has_role` · `maps_to`)는 씨앗 정의(`stepforge-core.json`)에 든다. 박스에 정의 판(`onto_def_editions`)이
+  이미 있으면 씨앗이 먹지 않는다 — 그때는 응답이 그렇다고 말하고, 사람이 판을 올린다. cae00 은 '4 타입 · 4 관계' 라 판이 없어 보인다.
 - **BOX-12.** StepForge 부품 역할 16 → 코어 `part` 초안을 사용자가 본다. SignalForge 대응표 둘(부품 16 · 증상 32)도 같다. 초안은 받은 편지함
   2026-11-09 Q6 의 코어 어휘로 각 세션이 만든다.
 - **BOX-13.** 플랫폼마다 `--dry-run`(SRC-03 · 05 · 08 · 09)으로 이을 수 · 후보 수 · 못 붙인 수를 표로 만들어 사용자에게 보인다.
@@ -76,8 +87,35 @@
 
 1. `infra/hooks/post-update.d/50-core-link.local.sh` 를 둔다(600). 폴더 README 가 규칙이다 — 이름은 `.local.sh` 로 끝나고, 실패는
    종료코드에 들지 않는다.
-2. 훅이 할 일은 앱 판에 따라 정한다. StepForge 가 받기 뒤 규칙 잇기를 앱 안에서 돌리면(SRC-03 · 05), 훅은 받기를 한 번 걸고 결과를
-   요약하는 정도다. 예시는 받은 편지함 글에 싣는다.
+2. 앱 안 규칙 잇기(SRC-03 · 04 · 05)가 돌면 훅은 StepForge 허브 받기를 한 번 걸고 결과를 요약하면 된다. 예시는 이렇다. 서비스 토큰은
+   600 파일에 두고, 게이트웨이 venv 의 MCP 클라이언트로 `rest_call` 을 부른다(`infra/scripts/mcp-smoke.py` 와 같은 클라이언트).
+
+   ```bash
+   #!/usr/bin/env bash
+   # 코어와 잇기 — StepForge 허브 받기를 걸고 요약 한 줄(서비스 토큰 core-link · docs/core-link server-setup 5절)
+   set -uo pipefail
+   GW="$(cd ../HWAXMcpGateway && pwd)"
+   TOKEN_FILE="$HOME/.config/hwax/core-link.token"          # 600 — 포털 토큰 화면 '서비스 토큰' 에서 받은 값
+   "$GW/.venv/bin/python" - "$TOKEN_FILE" <<'PY'
+   import asyncio, sys
+   from mcp.client.session import ClientSession
+   from mcp.client.streamable_http import streamablehttp_client
+   tok = open(sys.argv[1], encoding="utf-8").read().strip()
+   async def main() -> int:
+       async with streamablehttp_client("http://127.0.0.1:9110/mcp", headers={"Authorization": f"Bearer {tok}"}) as (r, w, _):
+           async with ClientSession(r, w) as s:
+               await s.initialize()
+               res = await s.call_tool("rest_call", {"site": "step-forge", "method": "POST", "path": "/api/plm-sync",
+                                                     "body": {"full": False}})
+               print("  · core-link 훅 —", "".join(getattr(c, "text", "") for c in res.content)[:400])
+               return 1 if res.isError else 0
+   sys.exit(asyncio.run(main()))
+   PY
+   ```
+
+   - 받기가 멈췄으면(held — 절반 넘게 한꺼번에 사라짐) 결과의 `problems` 가 요약 줄에 나온다. 넘길지는 사람이 허브를 보고 정한다
+     (`allow_mass_absence` 는 서비스 토큰으로 못 넘긴다).
+   - 응답이 실패면 훅이 1 로 끝나 끝 요약의 박스 훅 줄에 실패로 나온다(종료코드에는 들지 않는다).
 3. 바쁠 때는 건너뛰려면 `./infra/scripts/update-all.sh --hooks-when-idle` 로 돌린다.
 
 ## 6. 확인(BOX-16)

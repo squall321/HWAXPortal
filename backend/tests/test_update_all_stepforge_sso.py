@@ -94,4 +94,4 @@ def test_허브가_있고_비밀이_없으면_안_켠_줄을_남긴다():
 
 def test_머리_준비물에_적는다():
     head = UA[:UA.index("set -uo pipefail")]
-    assert "STEPFORGE_SSO_SECRET=" in head and "STEPFORGE_GATEWAY_SECRET" in head
+    assert "STEPFORGE_SSO_SECRET=" in head and "secrets.env 의 STEPFORGE_SSO_SECRET" in head, "StepForge 쪽 줄 이름을 같이 적는다"
