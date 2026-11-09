@@ -67,6 +67,8 @@
 #                                                    #   <접두>_SEND_PLAT=1 — 위임 호출에 그 사람의 plat: 권한을 서명과 함께(MX 백서 위키, docs/mxwp-wiki P4)
 #     KOORM_SEND_PLAT=1            # DynaForge 위임에 같은 plat: 서명 — 적으면 §5 가 싣는다(빈 값도 '끔'). KooRemapper 가 막기를 올리기 전에는
 #                                  #   적지 않는다 — 빈 자리표시도(docs/followups-1017/requests.md §2 · docs/request-1030/server-setup.md 0절)
+#     STEPFORGE_SSO_SECRET=…       # StepForge 단언 쓰기 — 챗의 온톨로지 적용 · 박스 작업의 규칙 잇기(docs/core-link SRC-15 · SRC-07). StepForge 의
+#                                  #   STEPFORGE_GATEWAY_SECRET 과 같은 값. 주소는 STEPFORGE_SSO_URL(선택 — 기본 <HEAX_MCP_BASE>/apps/step_forge/api/auth/sso)
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
@@ -1673,6 +1675,12 @@ if [ -n "${TESTSCOPE_MCP_URL:-}" ]; then
 else
   hwax_skip "TestScope MCP 도구" "게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 없어 게이트웨이가 TestScope 를 기대하지 않는다(다른 조직 포털 — 안 쓰는 박스가 보통이다)" "TestScope 를 쓰는 박스는 HWAXMcpGateway/provision.env 에 TESTSCOPE_MCP_URL=<TestScope MCP 주소> 를 적고 재실행(§5 가 재프로비저닝한다)"
 fi
+# StepForge 단언 쓰기(docs/core-link SRC-15 · SRC-07) — 게이트웨이 provision.env 에 STEPFORGE_SSO_SECRET 이 없으면 챗의 StepForge 온톨로지 적용
+#   (REST POST)과 박스 작업의 규칙 잇기가 '꺼져 있다' 로 거절된다(미리 보기는 된다). 허브가 있는 박스에서만 장부에 남긴다(§5 소싱 전이라 파일에서).
+if [ -n "${HEAX_DIR:-}" ] && [ -n "$GW_DIR" ] && [ -z "${STEPFORGE_SSO_SECRET:-}" ] \
+   && [ -z "$(_envfile_value "$GW_DIR/provision.env" STEPFORGE_SSO_SECRET)" ]; then
+  hwax_skip "StepForge 단언 쓰기(챗의 온톨로지 적용 · 박스 작업의 규칙 잇기)" "게이트웨이 provision.env 에 STEPFORGE_SSO_SECRET 이 없어 게이트웨이가 StepForge 쓰기 경로를 열지 않는다(미리 보기만 된다)" "StepForge 의 STEPFORGE_GATEWAY_SECRET 과 같은 값을 HWAXMcpGateway/provision.env 에 STEPFORGE_SSO_SECRET= 로 적고 재실행(§5 가 재프로비저닝한다 — docs/core-link/server-setup.md)"
+fi
 # ARP(AI Ready Portal) MCP — 주소(ARP_BASE)는 있는데 토큰(ARP_TOKEN)이 없으면 게이트웨이가 arp 를 등재하지 않는다(2026-10-01 부터 인증,
 # docs/change-request-8-10 D-5). 조용히 빠지지 않게 장부에 남긴다 — RA 의 RAT_TOKEN(1e)과 같은 자리다. §5 가 provision.env 를
 # 소싱하기 전이라 파일에서 읽는다. 기대 여부 자체는 calc_missing 이 소싱된 값으로 정한다.
@@ -1880,6 +1888,24 @@ PY
 }
 # 일반 앱의 비밀은 이름이 정해져 있지 않아 대입어로 못 넘긴다 — 서브셸 안에서만 export 한다(이 뒤에 뜨는 서비스가 물려받지 않게).
 # 주소가 없어 게이트웨이가 만들지 못하는 일반 앱은 `<키>_sso_nourl` 로 따로 표지한다 — 방아쇠로 삼으면 매 실행 재프로비저닝이 헛돈다.
+# StepForge 단언 쓰기(docs/core-link SRC-15) — provision.env 의 STEPFORGE_SSO_SECRET(· STEPFORGE_SSO_URL)과 게이트웨이 설정의 위임 칸
+#   (heax_registry.rest_sso.step_forge) · REST 칸의 쓰기 경로(rest.step-forge 의 delegate · write_paths)가 맞나. 0 = 맞다 · 1 = 어긋났다.
+#   비밀이 없으면 부르지 않는다 — 게이트웨이는 비밀 없는 실행에서 직전 칸을 잇는다(끄기는 손으로 — docs/core-link server-setup).
+_sf_rest_sso_ok() {  # $1=gateway_config.json
+  SF_S="${STEPFORGE_SSO_SECRET:-}" SF_U="${STEPFORGE_SSO_URL:-}" python3 - "$1" <<'PY' 2>/dev/null
+import json, os, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+c = ((d.get("heax_registry") or {}).get("rest_sso") or {}).get("step_forge") or {}
+site = (d.get("rest") or {}).get("step-forge") or {}
+ok = (c.get("secret") == os.environ["SF_S"] and c.get("sso_url")
+      and (not os.environ["SF_U"] or c.get("sso_url") == os.environ["SF_U"])
+      and site.get("delegate") == "step_forge" and site.get("write_paths"))
+raise SystemExit(0 if ok else 1)
+PY
+}
 _sso_deleg_drift() {  # $1=gateway_config.json → 어긋난 위임(공백 구분, 예: reportarchive_sso). 읽지 못하면 빈 값.
   ( export PER_USER_SSO_APPS KOORM_SEND_PLAT $(_sso_generic_names)
   RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" GEN="$(_sso_generic_pairs)" UNL="$(_sso_generic_unlisted "$1")" python3 - "$1" <<'PY' 2>/dev/null || true
@@ -2119,6 +2145,13 @@ PY
   then
     MISSING="hwax_risk_sso${MISSING:+ $MISSING}"
   fi
+  # StepForge 단언 쓰기도 heax_registry 안의 칸이라 /health 에 안 나온다 — 비밀을 적었는데 칸이 없으면 챗의 온톨로지 적용이 '꺼져 있다' 로
+  #   거절된다(docs/core-link SRC-15).
+  if [ -n "${STEPFORGE_SSO_SECRET:-}" ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+     && ! _sf_rest_sso_ok "$GW_DIR/gateway_config.json"; then
+    echo "  · StepForge 단언 쓰기 드리프트 — provision.env 에 STEPFORGE_SSO_SECRET 이 있는데 게이트웨이 설정에 위임 칸이 없거나 비밀 · 주소 · 쓰기 경로가 다르다"
+    MISSING="step_forge_rest_sso${MISSING:+ $MISSING}"
+  fi
 
   # 키는 있는데 **주소가 틀려서** 계속 죽는 백엔드 — calc_missing 은 '키 없음' 만 본다.
   # ⚠ 2026-09-19 cae00: SignalForge MCP 는 8008 인데 게이트웨이는 8013 을 들고 있어
@@ -2249,6 +2282,7 @@ PY
       #   · ARP_TOKEN — ARP MCP 서비스 토큰(provision.env). 빠뜨리면 토큰을 적어도 arp 가 등재되지 않는데 위 calc_missing 은 기대해, 매 실행 재프로비저닝이 헛돈다.
       #   · STE_SSO_SECRET/STE_*_URL — 없으면 per_user_sso["ste"] 가 안 생겨 ste 도구 호출이 서비스 계정으로 나간다(잡 소유자가 한 명으로 뭉침).
       #   · RA_SSO_* — RA 사람별 위임(docs/sso-delegation). 비면 provision 이 직전 config 를 이어받는다.
+      #   · STEPFORGE_SSO_* — StepForge 단언 쓰기(docs/core-link SRC-15). 비면 provision 이 직전 config 를 이어받는다.
       #   · TESTSCOPE_MCP_URL — TestScope 백엔드 주소(provision.env 에서 읽은 값).
       #   · SMARTTWIN_MCP_URL — SmartTwinMCP 주소(provision.env 에서 읽은 값). 빠뜨리면 게이트웨이가 직전 config 의 기본 주소를 이어받지 않아 백엔드를 뺀다.
       #   · TESTSCOPE_SSO_* — TestScope 사람별 위임(RA 와 같은 두 갈래). 비면 토큰 등록 그대로, provision 이 직전 config 를 이어받는다.
@@ -2272,7 +2306,7 @@ PY
           ARP_BASE="${ARP_BASE:-}" ARP_TOKEN="${ARP_TOKEN:-}" \
           RA_MCP_URL="${RA_MCP_URL:-}" RA_WORKSPACE_SLUG="${RA_WORKSPACE_SLUG:-}" \
           STE_SSO_SECRET="${STE_SSO_SECRET:-}" STE_MCP_URL="${STE_MCP_URL:-}" \
-          STE_SSO_URL="${STE_SSO_URL:-}" \
+          STE_SSO_URL="${STE_SSO_URL:-}" STEPFORGE_SSO_SECRET="${STEPFORGE_SSO_SECRET:-}" STEPFORGE_SSO_URL="${STEPFORGE_SSO_URL:-}" \
           RA_SSO_SECRET="${RA_SSO_SECRET:-}" RA_SSO_URL="${RA_SSO_URL:-}" \
           TESTSCOPE_SSO_SECRET="${TESTSCOPE_SSO_SECRET:-}" TESTSCOPE_SSO_URL="${TESTSCOPE_SSO_URL:-}" \
           TESTSCOPE_MCP_URL="${TESTSCOPE_MCP_URL:-}" SMARTTWIN_MCP_URL="${SMARTTWIN_MCP_URL:-}" PER_USER_SSO_OFF="${_sso_off:-}" \
@@ -2329,6 +2363,9 @@ PY
         # 주소가 없어 만들지 못하는 일반 앱(…_sso_nourl)은 위에서 이미 알렸다 — 재프로비저닝이 고칠 수 없는 것을 '누락' 으로 다시 세지 않는다.
         _sso_left="$(for _k in $_sso_left; do case "$_k" in *_sso_nourl) ;; *) printf '%s ' "$_k" ;; esac; done)"; _sso_left="${_sso_left% }"
         [ -n "$_sso_left" ] && STILL="${STILL:+$STILL }$_sso_left"
+        if [ -n "${STEPFORGE_SSO_SECRET:-}" ] && ! _sf_rest_sso_ok "$GW_DIR/gateway_config.json"; then
+          STILL="${STILL:+$STILL }step_forge_rest_sso(게이트웨이 리포가 rest_sso 를 쓰는 판인지 보라)"
+        fi
         if [ "${_prov_ok:-1}" != 1 ]; then echo "  · provision 실패는 위 ✗ 하나로 계상한다 — 재검증은 참고만: ${STILL:-없음}"
         elif [ -z "$STILL" ]; then ok "재프로비저닝으로 백엔드 정합 완료"
         else fail "재프로비저닝 후에도 누락/어긋남: $STILL (mxwp 토큰 민팅 실패 등 — 위 provision 출력 확인)"; fi
