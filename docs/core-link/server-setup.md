@@ -84,6 +84,12 @@
 - **BOX-12.** StepForge 부품 역할 16 → 코어 `part` 초안을 사용자가 본다. 이번 판부터 대응표는 박스에서 사람이 고친다. 사람 신원(웹 화면 ·
   챗의 사람 단언)의 `onto_link` 로 `maps_to` 선을 잇고 끊으면 사람 선이 코드의 YAML 값을 이긴다. 다음 판의 YAML 도 사람 선을 덮지 않는다. SignalForge 대응표 둘(부품 16 · 증상 32)도 같다. 초안은 받은 편지함
   2026-11-09 Q6 의 코어 어휘로 각 세션이 만든다.
+- **SignalForge 대응표.** SignalForge 리포 `docs/DEPLOY_CAE00_2026-11-10-core-link.md` 를 따른다.
+  - update-all 뒤 cron 의 `plm-sync.sh` 가 `/shared` 를 스스로 바인드해 코어 `part` · `failure_mode` 를 받고 대응표를 짓는다. 재기동은 없고,
+    beat 로 받는 박스만 worker 를 재기동한다.
+  - 먼저 `.env` 의 `SF_SP_CORE_TYPES` 가 셋으로 박혀 있지 않은지 본다(그 문서 1절).
+  - 처음에는 `plm-sync.sh --full` 결과의 `core_link` 를 본다(2절).
+  - 사람 선은 `scripts/core_link.py show · set · none · unset` 으로 넣는다(3절). 표는 리포가 아니라 `crawler/data/plm/core-link/` 에 있다.
 - **BOX-13.** 플랫폼마다 `--dry-run`(SRC-03 · 05 · 08 · 09)으로 이을 수 · 후보 수 · 못 붙인 수를 표로 만들어 사용자에게 보인다.
 - **BOX-14.** 확인한 것만 적용한다. 쓰기 전에 그 앱 DB 를 따로 백업하고 개수가 0 이 아닌지 본다.
 - **Q-3(사용자 결정).** 정확 일치 규칙 잇기는 과제 28 개 모두에 돈다. 사람이 고르는 개정 이름 · 앞 판은 운영자 자신의 과제만 정하고, 남의
