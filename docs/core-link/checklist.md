@@ -17,7 +17,11 @@
 - [x] KooRemapper 세션 — SRC-08(다리 셋 · 정확 일치만) · SRC-09 ~ 11
 - [x] SignalForge 세션 — 대응표 둘(design §9) — 거울이 part · failure_mode 를 거른다 · 코어 어휘는 dev 에 없어 받은 편지함 Q6
 - [x] 세 세션에 보류 알림 — main 은 cae00 update-all 뒤
-- [ ] StepForge 가 알릴 서비스용 REST 경로 받기 → 게이트웨이 `write_paths` · 운영 허용 목록 예시
+- [x] StepForge 가 알릴 서비스용 REST 경로 받기 → 게이트웨이 `write_paths` 다섯(80df26f) · 운영 허용 목록 예시(server-setup 3절) — CK-14
+- [ ] StepForge 착지 알림 — SRC-03 새 도구 이름 · 표지 · 응답 꼴 → 게이트웨이 쓰기 목록 · 운영자 목록 · 허용 목록 예시, 거울이 `part` 를 받는 길(기본값/박스 설정)
+- [ ] 다른 세션 진행(11-10) — StepForge `cl-*` 가지에서 짓는 중 · KooRemapper `corelink-src08-11`(계획 ed38722) · SignalForge `core-link-q2` 틀 끝(3커밋)
+- [ ] 받은 편지함 Q6 답(코어 part · failure_mode · analysis_method — 종류인지 인스턴스인지, 사용자도 모름 11-10) → StepForge SRC-02 · SignalForge 초안
+- [ ] 받은 편지함 Q7 답(운영 사본이 새 판을 받는 길)
 
 ## 2. 포털
 
@@ -29,7 +33,7 @@
 - [x] update-all §5 `STEPFORGE_SSO_*` 넘기기 · 드리프트 · ○(가지 f2930226, CK-12)
 - [x] SRC-12 적대 검토 1차 반영(가지 a5ff0f2b, CK-10)
 - [x] 인증 길 적대 검토 — 게이트웨이 · 에이전트 서버 묶음 · 포털 발급 묶음 → 고침(게이트웨이 08d14a0 · 에이전트 5cd7527 · 포털 69cba3e6, CK-13)
-- [ ] StepForge 답 — 위임 비밀 줄 이름 · 서비스 경로 · 훅이 할 일 → 계약 §5 · §6 · update-all 문구 · server-setup 2 · 3 · 5절
+- [x] StepForge 답 — 위임 비밀 줄 이름 · 서비스 경로 · 훅이 할 일 → 계약 §5 · §6 · update-all 문구 · server-setup 2 · 3 · 5절(fe371d64 · 3dc9f8b9)
 - [ ] 업데이트 이력(changelog) 항목
 
 ## 3. 게이트웨이
