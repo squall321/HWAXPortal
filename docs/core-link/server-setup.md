@@ -75,7 +75,14 @@
 - **정의 판 주의.** StepForge 의 새 관계(`has_role` · `maps_to`)는 씨앗 정의(`stepforge-core.json`)에 든다. 박스에 정의 판(`onto_def_editions`)이
   있어도 씨앗은 **키마다** 먹는다. 같은 이름의 사람 판이 이미 있을 때만 그 키가 막힌다 — 그때는 `ontology_model` 머리의 `seed_held`(무엇 ·
   까닭 · 할 일)가 말한다(StepForge 정정 11-09).
-- **BOX-12.** StepForge 부품 역할 16 → 코어 `part` 초안을 사용자가 본다. SignalForge 대응표 둘(부품 16 · 증상 32)도 같다. 초안은 받은 편지함
+- **StepForge 거울이 코어 `part` 를 받는지.** 코드 기본값으로 받는다 — 배포 설정 `STEPFORGE_SP_TYPES` 가 비어 있으면 카탈로그의 열린 타입
+  전부를 받는다. 이 줄을 따로 적어 두었다면 `part` 를 넣거나 줄을 지운다. 받는 조건은 둘이다.
+  - 데이터 폴더 `secrets.env` 의 `STEPFORGE_SP_TOKEN`(core:read)이 `part` 타입을 볼 수 있어야 한다.
+  - 받기 잡(`plm_sync`)이 한 번 돌아야 한다.
+
+  확인은 받기 잡 결과의 타입 줄이나 `system_capabilities.plm_hub` 에 `part` 가 보이는지다.
+- **BOX-12.** StepForge 부품 역할 16 → 코어 `part` 초안을 사용자가 본다. 이번 판부터 대응표는 박스에서 사람이 고친다. 사람 신원(웹 화면 ·
+  챗의 사람 단언)의 `onto_link` 로 `maps_to` 선을 잇고 끊으면 사람 선이 코드의 YAML 값을 이긴다. 다음 판의 YAML 도 사람 선을 덮지 않는다. SignalForge 대응표 둘(부품 16 · 증상 32)도 같다. 초안은 받은 편지함
   2026-11-09 Q6 의 코어 어휘로 각 세션이 만든다.
 - **BOX-13.** 플랫폼마다 `--dry-run`(SRC-03 · 05 · 08 · 09)으로 이을 수 · 후보 수 · 못 붙인 수를 표로 만들어 사용자에게 보인다.
 - **BOX-14.** 확인한 것만 적용한다. 쓰기 전에 그 앱 DB 를 따로 백업하고 개수가 0 이 아닌지 본다.
