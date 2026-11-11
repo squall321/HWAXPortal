@@ -5,6 +5,7 @@
   python3 infra/scripts/sync-he-personas.py                 # 미리보기 — 무엇이 바뀌는지만 본다
   python3 infra/scripts/sync-he-personas.py --apply         # 반영
   python3 infra/scripts/sync-he-personas.py --show he-calc-laminate   # 한 명의 system_prompt 를 찍는다
+  python3 infra/scripts/sync-he-personas.py --backup <폴더>          # he-* 행 백업 + 운영자가 다 들었나(0 이면 --apply 해도 된다)
 
 게이트웨이 /tools-map(토큰 불필요)으로 앱 도구·영역·라벨을 받아, 정본에 적은 도구 이름을 대조하고
 system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친다. 바뀐 칸만 PATCH 한다 —
@@ -27,6 +28,9 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 정의는 git 의 he-team.json 에 이 박스의 덧씌우기 he-team.local.json(gitignore — cae00 이 이 박스에만 있는 앱의 운영자를 고친다)을 합친 것이다
 (docs/he-team-overlay). 미리보기 · --check 는 덧씌우기 줄을 먼저 찍는다 — 없으면 '· 덧씌우기 없음', 깨졌으면 '✗ 덧씌우기 … 를 버렸다'(기본 정의로 돈다).
 
+--backup 은 update-all §3 이 AIDataHub 병합 뒤 미리보기가 어긋남을 보일 때 --apply 앞에 부른다(docs/request-1111 HP-64) — 병합이 운영자 행을
+dev 판으로 덮어 사람이 백업하고 --apply 하던 일을 그대로 저절로 한다. 이 모드는 게이트웨이를 묻지 않고 AIDataHub 를 읽기만 한다.
+
   GATEWAY_HTTP_BASE  기본 http://127.0.0.1:9110
   AIDH_HTTP_BASE     기본 http://127.0.0.1:8001
 """
@@ -36,6 +40,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -293,15 +298,79 @@ def _report_agents(spec: dict, tmap: dict) -> None:
         print(f"  · AIDataHub 전문가 목록을 못 읽었다({st}) — 정본에 없는 he-* · 운영자 앱 점검을 건너뛴다")
 
 
+def backup(spec: dict, info: dict, out_dir: Path) -> int:
+    """병합 뒤 저절로 되돌리기 앞의 백업 · 확인(update-all §3, docs/request-1111 HP-64 (나)).
+
+    이 박스 AIDataHub 의 전문가 목록에서 agent_type 이 he- 로 시작하는 행을 통째로 out_dir/he-personas-<시각>.json 에 적는다(사람이 손으로 뜨던
+    백업이다 — 11-05 에는 빠졌고 11-09 에는 다른 칸으로 걸러 0건이었다). 그리고 적은 파일을 다시 읽어 합친 정의(he-team.json + 덧씌우기)의
+    운영자가 다 들었는지 센다. 정본에 없는 he-* 도 백업에 넣되 세지 않는다 — 동기화가 손대지 않는 행이다(정본에서 뺐거나 사람이 만든 것).
+
+    0 = 백업했고 운영자가 다 들었다(--apply 해도 된다). 1 = 백업은 적었지만 저절로 반영하면 안 된다 — 0건 · 행이 없는 운영자(새 운영자 ·
+    목록이 덜 왔다) · 덧씌우기가 깨져 기본 정의로 도는 중. 2 = 목록을 못 읽었거나(모름 — '없음' 으로 읽지 않는다) 파일을 못 적었다."""
+    try:
+        st, allrows = _http("GET", f"{AIDH}/api/agents")
+    except (OSError, ValueError) as exc:          # 닿지 않음(URLError) · 시간 초과 · JSON 이 아닌 200
+        st, allrows = type(exc).__name__, None
+    if st != 200 or not isinstance(allrows, list):
+        print(f"  ✗ 백업 못 함 — AIDataHub 전문가 목록을 못 읽었다({st}) · 모름이라 저절로 반영하지 않는다")
+        return 2
+    rows = sorted((a for a in allrows if isinstance(a, dict) and str(a.get("agent_type") or "").startswith("he-")),
+                  key=lambda a: a["agent_type"])
+    path = out_dir / f"he-personas-{time.strftime('%Y%m%d-%H%M%S')}.json"
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        saved = json.loads(path.read_text(encoding="utf-8"))      # 개수는 적은 파일에서 센다
+    except (OSError, ValueError) as exc:
+        try:
+            tmp.unlink()                                          # 반쯤 적힌 사본 — 폴더 자리가 파일이면 이것도 OSError 다
+        except OSError:
+            pass
+        print(f"  ✗ 백업 못 함 — {out_dir} 에 적지 못했다({type(exc).__name__}) · 저절로 반영하지 않는다")
+        return 2
+    ops = [p.get("key") for p in spec["personas"]]
+    have = {a.get("agent_type") for a in saved}
+    missing = [k for k in ops if k not in have]
+    stray = sorted(have - set(ops))
+    head = f"백업 {path} — he-* {len(saved)}건(agent_type 기준)"
+    extra = ""
+    if stray:
+        more = f" 외 {len(stray) - LOOSE_SHOW}개" if len(stray) > LOOSE_SHOW else ""
+        extra = f" · 정본에 없는 he-* {len(stray)}({', '.join(stray[:LOOSE_SHOW])}{more} — 넣되 세지 않는다)"
+    if not saved:
+        print(f"  ✗ {head} · 0건이면 저절로 반영하지 않는다(목록이 비었거나 거르는 칸이 틀렸다)")
+        return 1
+    if info.get("overlay") == "error":
+        print(f"  ✗ {head} · 덧씌우기 {Path(info.get('path') or '').name} 을 버린 정의다({info.get('error')}) — 고칠 때까지 저절로 반영하지 않는다")
+        return 1
+    if missing:
+        more = f" 외 {len(missing) - LOOSE_SHOW}개" if len(missing) > LOOSE_SHOW else ""
+        print(f"  ✗ {head} · 운영자 {len(ops)}명 가운데 {len(ops) - len(missing)}명만 들었다(행이 없는 운영자 "
+              f"{', '.join(missing[:LOOSE_SHOW])}{more}){extra} — 수가 맞지 않아 저절로 반영하지 않는다"
+              "(새 운영자면 확인 뒤 손으로 --apply · 이 박스에 둘 수 없는 운영자면 he-team.local.json 에서 null)")
+        return 1
+    print(f"  · {head} · 운영자 {len(ops)}명 모두 들었다{extra}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="HE팀 MCP 운영자 페르소나를 AIDataHub 에 동기화")
     ap.add_argument("--apply", action="store_true", help="실제로 쓴다(없으면 미리보기)")
     ap.add_argument("--show", metavar="KEY", help="이 페르소나의 system_prompt 를 찍고 끝낸다")
     ap.add_argument("--check", action="store_true",
                     help="알림 줄만 찍는다 — 목록 밖 쓰기 · 읽기를 쓰기로 · 운영자 앱이 이 게이트웨이에 없다(update-all §6 이 실행마다 부른다)")
+    ap.add_argument("--backup", metavar="DIR",
+                    help="이 박스 AIDataHub 의 he-* 행을 DIR 에 백업하고 합친 정의의 운영자가 다 들었는지 본다 — 0 으로 끝나면 --apply 해도 된다"
+                         "(update-all §3 이 병합 뒤 부른다, HP-64)")
     args = ap.parse_args()
+    if args.backup is not None and (args.apply or args.check or args.show or not args.backup.strip()):
+        ap.error("--backup <폴더> 는 따로 부른다 — 0 으로 끝나면 그다음에 --apply")
 
     spec, info = he_team.load(SPEC)
+    if args.backup is not None:
+        return backup(spec, info, Path(args.backup))
     st, tmap = _http("GET", f"{GATEWAY}/tools-map")
     if st != 200 or not isinstance(tmap, dict) or not tmap.get("map"):
         print(f"✗ 게이트웨이 /tools-map 을 못 읽었다({st}) — {GATEWAY}", file=sys.stderr)
