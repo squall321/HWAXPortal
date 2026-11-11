@@ -21,6 +21,31 @@
 #     실제로 파싱해 보므로, 깨뜨리면 테스트가 잡는다.
 
 entries:
+  - date: 2026-11-11
+    title: "챗에서 StepForge 온톨로지를 확인 카드 뒤 적용합니다(StepForge 새 판 뒤)"
+    tag: 챗
+    items:
+      - "StepForge 운영자 챗에서 미리 본 온톨로지 선 · 정의 · 채우기 잡을 rest_call 로 적용하면 확인 카드가 서고, 승인하면 그 사람 명의로 들어갑니다 — StepForge 새 판과 운영 설정(STEPFORGE_SSO_SECRET)이 들어온 뒤부터입니다. MCP 로는 지금처럼 미리 보기만 됩니다."
+      - "쓰기 메서드의 rest_call 은 운영자 목록과 상관없이 늘 확인 카드이고, 카드는 실제로 보낼 인자 그대로 보여 줍니다. 심의 · 리스크 패널의 지정 도구로는 쓰기 rest_call 이 막힙니다."
+      - "update-all 은 게이트웨이 provision.env 의 STEPFORGE_SSO_SECRET 을 재프로비저닝에 넘기고, 비어 있으면 ○ 로 켜는 법을 알립니다(StepForge 쪽 secrets.env 의 같은 이름 줄과 같은 값)."
+  - date: 2026-11-11
+    title: "관리자가 박스 작업용 서비스 토큰을 발급합니다"
+    tag: 기술
+    items:
+      - "토큰 화면에 관리자만 보이는 '서비스 토큰' 탭이 생겼습니다 — 작업 이름(system:<작업>) · 수명 1 ~ 365일 · 메모로 발급하고, 토큰은 한 번만 보입니다. 목록 · 회수도 이 탭에서 하고, 만료된 것은 30일 동안 목록에 남습니다."
+      - "게이트웨이는 이 토큰으로 운영 박스 파일(service_tools.local.json)에 적힌 도구 · REST 경로만 부르게 하고, 감사에 system:<작업> 으로 남깁니다. RA · TestScope · 심의처럼 사람 신원으로 이어지는 곳은 막습니다."
+      - "일반 개인 토큰은 'service' 범위를 청할 수 없습니다 — 그 범위는 서비스 토큰 몫입니다."
+  - date: 2026-11-11
+    title: "update-all 끝에 박스 훅 자리가 생겼습니다"
+    tag: 배포
+    items:
+      - "update-all 이 모든 배포 뒤 끝 요약 앞에서 infra/hooks/post-update.d/*.local.sh 를 이름 차례로 돌립니다 — 훅이 실패해도 종료코드에는 들지 않고 요약에 줄 하나로 따로 나옵니다. 훅이 없으면 ○ 한 줄입니다."
+      - "--hooks-when-idle 을 주면 심의 · 리스크 카드 대조 · DynaForge · StepForge · DocForge 작업이 있거나 셀 수 없을 때 훅을 건너뜁니다. 훅마다 상한(기본 3600초)이 있고, 훅 도중 Ctrl-C 는 그 훅만 끊고 요약을 그대로 냅니다."
+  - date: 2026-11-11
+    title: "게이트웨이의 쓰기 판정이 link · edit · sync 를 알아봅니다"
+    tag: 기술
+    items:
+      - "도구 이름의 쓰기 낱말에 link · edit · sync 를 더했습니다 — link_sp_core · ontology_link · sync_sp_core · bulk_edit 같은 도구가 이제 '목록 밖 쓰기' 로 짚혀 운영자 목록(확인 카드)에 올릴 수 있습니다. ste get_sync_settings 와 DynaForge plan_task_links 는 읽기 목록에 넣어 그대로 읽힙니다."
   - date: 2026-11-08
     title: "AIDataHub 조각 스냅숏이 30분을 넘겨도 끊기지 않습니다"
     tag: 기술
