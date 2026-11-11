@@ -10,7 +10,7 @@ const SHOTS = join(dirname(fileURLToPath(import.meta.url)), '.shots', TIER);
 mkdirSync(SHOTS, { recursive: true });
 
 const ROUTES = ['/', '/apps', '/deliberate', '/procedures', '/procedures/saved', '/procedures/runs', '/procedures/routines', '/procedures/routines/new', '/tokens', '/tokens?tab=apps', '/tokens?tab=connect', '/updates', '/access', '/risk', '/no-such-page',
-  ...(TIER === 'admin' ? ['/admin/users', '/admin/access', '/admin/tool-search'] : [])];
+  ...(TIER === 'admin' ? ['/admin/users', '/admin/access', '/admin/tool-search', '/tokens?tab=service'] : [])];
 
 const ANSWER = [
   '## 열충격 해석 결과 요약', '', 'SED 기준으로 **솔더 조인트 3곳**이 임계값을 넘었습니다.', '',

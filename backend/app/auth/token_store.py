@@ -14,11 +14,19 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.auth.service_pat import SERVICE_JTI_PREFIX, SERVICE_SUB_PREFIX
 from app.config import Settings
 
 # 원 PAT 하나가 거느릴 수 있는 살아 있는(폐기·만료 아님) 교환 PAT 수(SEC-5). 교환이 옛것을 폐기하지
 # 않으므로(C-11) 소비자가 revoke-self 를 빠뜨리면 자식이 쌓인다 — 그 상한이다.
 MAX_LIVE_CHILDREN = 5
+
+# 만료된 서비스 PAT 을 원장에 남겨 두는 기간(초) — 박스 작업이 왜 막히기 시작했는지 관리자가 서비스
+# 토큰 목록의 '만료됨' 으로 보게 한다(docs/core-link). 사람 PAT 은 종전대로 만료되면 지운다.
+SERVICE_EXPIRED_KEEP_S = 30 * 86400
+# 서비스 PAT 행 — jti 머리(svc-)와 sub 머리(system:)를 함께 본다(사람 PAT 의 jti 는 무작위다).
+_SERVICE_ROW = "jti GLOB ? AND sub GLOB ?"
+_SERVICE_ARGS = (f"{SERVICE_JTI_PREFIX}*", f"{SERVICE_SUB_PREFIX}*")
 
 
 class TokenStore:
@@ -38,8 +46,12 @@ class TokenStore:
         )
         # 토큰 교환(`/auth/pat/exchange`)으로 받은 PAT 의 원 jti — 원을 폐기하면 자식도 폐기한다.
         # 돌고 있는 원장에도 칸이 생겨야 한다(새 DB 에만 있으면 읽는 길이 운영에서만 터진다).
-        if "parent_jti" not in {r[1] for r in self._conn.execute("PRAGMA table_info(pat)")}:
-            self._conn.execute("ALTER TABLE pat ADD COLUMN parent_jti TEXT")
+        # issued_by · note — 서비스 PAT(`/auth/pat/service`, docs/core-link design §2)을 낸
+        # 관리자와 메모. 사람 PAT 은 둘 다 비어 있다.
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(pat)")}
+        for col in ("parent_jti", "issued_by", "note"):
+            if col not in cols:
+                self._conn.execute(f"ALTER TABLE pat ADD COLUMN {col} TEXT")
         self._conn.commit()
 
     def mark_jti_once(self, jti: str, exp: int) -> bool:
@@ -56,9 +68,11 @@ class TokenStore:
 
     # ── Portal PAT registry (issue / list / revoke) + published denylist ──────────
     def record_pat(self, *, jti: str, sub: str, email: str | None, name: str,
-                   aud: list[str], scopes: list[str], created: int, exp: int) -> None:
+                   aud: list[str], scopes: list[str], created: int, exp: int,
+                   issued_by: str | None = None, note: str | None = None) -> None:
         with self._lock:
-            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, None)
+            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, None, issued_by,
+                             note)
             self._conn.commit()
 
     def record_exchanged_pat(self, *, parent_jti: str, jti: str, sub: str, email: str | None,
@@ -83,15 +97,18 @@ class TokenStore:
                 return "source_revoked"
             if self._live_children(parent_jti) >= MAX_LIVE_CHILDREN:
                 return "too_many_children"
-            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, parent_jti)
+            self._insert_pat(jti, sub, email, name, aud, scopes, created, exp, parent_jti, None,
+                             None)
             self._conn.commit()
             return None
 
-    def _insert_pat(self, jti, sub, email, name, aud, scopes, created, exp, parent_jti) -> None:
+    def _insert_pat(self, jti, sub, email, name, aud, scopes, created, exp, parent_jti, issued_by,
+                    note) -> None:
         self._conn.execute(
             "INSERT INTO pat (jti, sub, email, name, aud, scopes, created, exp, revoked, "
-            "parent_jti) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
-            (jti, sub, email, name, json.dumps(aud), json.dumps(scopes), created, exp, parent_jti),
+            "parent_jti, issued_by, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+            (jti, sub, email, name, json.dumps(aud), json.dumps(scopes), created, exp, parent_jti,
+             issued_by, note),
         )
 
     def live_children(self, parent_jti: str) -> int:
@@ -157,6 +174,23 @@ class TokenStore:
             for r in rows
         ]
 
+    def service_pats(self) -> list[dict]:
+        """서비스 PAT(`/auth/pat/service`)의 메타 — 토큰 자체는 절대 아님. 관리자 전용.
+
+        서비스 PAT 은 jti 머리(svc-)와 sub 머리(system:)를 함께 가진 행이다 — 사람 PAT 의
+        jti 는 무작위라 머리 하나로는 가르지 않는다. 살아 있는 것 먼저, 만료가 가까운 것 먼저
+        보인다(갈아 끼울 것부터). 만료된 것도 SERVICE_EXPIRED_KEEP_S 동안 남아 보인다.
+        작업 이름은 sub 에서 뗀다."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT jti, sub, note, issued_by, created, exp, revoked FROM pat "
+                f"WHERE {_SERVICE_ROW} ORDER BY revoked ASC, exp ASC, created DESC",
+                _SERVICE_ARGS).fetchall()
+        return [{"jti": r[0], "job": r[1][len(SERVICE_SUB_PREFIX):], "note": r[2] or "",
+                 "issued_by": r[3] or "", "created_at": r[4], "expires_at": r[5],
+                 "revoked": bool(r[6])}
+                for r in rows]
+
     def revoke_pat(self, jti: str, sub: str | None = None) -> bool:
         """Mark a PAT revoked. sub=None → admin (any owner); else only the owner.
 
@@ -195,10 +229,15 @@ class TokenStore:
             return cur.rowcount
 
     def revoked_jtis(self) -> list[str]:
-        """Non-expired revoked jtis — the denylist the REST gateway polls. GCs expired rows."""
+        """Non-expired revoked jtis — the denylist the REST gateway polls. GCs expired rows.
+
+        만료된 서비스 PAT 행은 만료 뒤 SERVICE_EXPIRED_KEEP_S 동안 남긴다(관리자 목록의 '만료됨').
+        폐기 목록에는 종전대로 살아 있는 것만 실린다."""
         now = int(datetime.now(tz=UTC).timestamp())
         with self._lock:
-            self._conn.execute("DELETE FROM pat WHERE exp < ?", (now,))  # opportunistic GC
+            self._conn.execute(  # opportunistic GC
+                f"DELETE FROM pat WHERE exp < ? AND NOT ({_SERVICE_ROW} AND exp >= ?)",
+                (now, *_SERVICE_ARGS, now - SERVICE_EXPIRED_KEEP_S))
             self._conn.commit()
             cur = self._conn.execute(
                 "SELECT jti FROM pat WHERE revoked = 1 AND exp >= ?", (now,)

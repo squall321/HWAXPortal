@@ -9,6 +9,10 @@ published (non-expired revoked jtis) at `/auth/pat/revoked.json` for the gateway
 
 토큰 교환(`/auth/pat/exchange`)은 원 PAT 로 같은 사람의 더 좁은 PAT 을 내고, 소비자는 새것을
 받아들인 뒤 옛것을 `/auth/pat/revoke-self` 로 폐기한다(docs/risk-credentials C-11).
+
+서비스 PAT(`/auth/pat/service`)은 관리자가 박스 작업 하나(`system:<작업>`)에 내는
+게이트웨이 전용 토큰이다(docs/core-link design §2 — 클레임은 app/auth/service_pat.py).
+회수는 사람 PAT 과 같은 관리자 회수(`DELETE /auth/pat/{jti}`)와 `revoked.json` 이다.
 """
 
 import logging
@@ -19,15 +23,16 @@ from datetime import UTC, datetime, timedelta
 import jwt
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
-from app.access.policy import login_groups
+from app.access.policy import ADMIN_GROUP, login_groups
 from app.auth.errors import AuthError
 from app.auth.pat_verify import pat_principal, verify_pat_claims
 from app.auth.provider import Principal
+from app.auth.service_pat import SERVICE_PURPOSE, service_claims
 from app.auth.token_store import MAX_LIVE_CHILDREN
 from app.config import Settings, get_settings
-from app.deps import ensure, entitled, get_current_principal, require_csrf
+from app.deps import ensure, entitled, get_current_principal, require_csrf, require_role
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,13 @@ _SCOPE_RULE = "소문자로 시작하는 영소문자·숫자·_·- 32자 이하
 
 def _bad_scopes(scopes: list[str]) -> int:
     return sum(1 for s in scopes if not _SCOPE_RE.fullmatch(s))
+
+
+# 사람 PAT 에 넣을 수 없는 범위 — service 는 서비스 PAT 의 표지다(app/auth/service_pat.py).
+# 게이트웨이가 scopes 의 service 를 서비스 토큰이라는 주장으로 읽어, 사람 PAT 에 실리면 그 PAT 은
+# 어디서나 401 이 된다(docs/core-link design §2 · §3). 발급 · 교환 둘 다 막는다.
+_RESERVED_SCOPES = frozenset({SERVICE_PURPOSE})
+_RESERVED_RULE = "service 는 서비스 PAT 전용 범위라 사람 PAT 에 넣을 수 없다"
 
 
 class PatCreate(BaseModel):
@@ -77,6 +89,33 @@ class PatMeta(BaseModel):
 
 class PatCreated(PatMeta):
     token: str  # the JWT — shown ONCE, never stored server-side
+
+
+class ServicePatCreate(BaseModel):
+    """서비스 PAT 발급 본문(docs/core-link design §2).
+
+    job · days 의 꼴은 service_claims 가 본다 — 틀리면 400. days 는 StrictInt 다 — 느슨한 int 는
+    true 를 1 로, "30" · 30.0 을 30 으로 바꿔 service_claims 의 검사를 비켜 간다(그런 값은 422)."""
+    job: str
+    days: StrictInt
+    note: str | None = Field(default=None, max_length=200)
+
+
+class ServicePatCreated(BaseModel):
+    token: str        # 이 응답에서 한 번만 보인다 — 서버 어디에도 남기지 않는다
+    jti: str
+    job: str
+    expires_at: int   # epoch 초
+
+
+class ServicePatMeta(BaseModel):
+    jti: str
+    job: str
+    note: str
+    issued_by: str    # 발급한 관리자
+    created_at: int   # epoch 초
+    expires_at: int   # epoch 초
+    revoked: bool
 
 
 def _mint_pat(request: Request, settings: Settings, principal: Principal, *,
@@ -128,6 +167,8 @@ def create_pat(
     if n := _bad_scopes(body.scopes):
         raise AuthError(f"bad_scope — scopes 가운데 {n}개의 형식이 틀렸다({_SCOPE_RULE})",
                         status_code=400)
+    if _RESERVED_SCOPES & set(body.scopes):
+        raise AuthError(f"bad_scope — {_RESERVED_RULE}", status_code=400)
     # ttl_days=0 은 '무기한' 이다. `or` 로 기본값을 채우면 0 이 falsy 라 90일로 둔갑하므로
     # None 과 0 을 반드시 구분한다.
     never = body.ttl_days == 0
@@ -217,6 +258,9 @@ def exchange_pat(
     if n := _bad_scopes(body.scopes):
         raise AuthError(f"scopes 가운데 {n}개의 형식이 틀렸다({_SCOPE_RULE})",
                         status_code=400, code="bad_scope")
+    # 원 PAT 에 service 가 있어도(이 검사 전에 낸 옛 PAT) 바꿔 받지 못한다
+    if _RESERVED_SCOPES & set(body.scopes):
+        raise AuthError(_RESERVED_RULE, status_code=400, code="bad_scope")
     src_scopes = src.get("scopes", ["read", "write"])  # 칸이 없던 옛 PAT 은 /auth/pat 기본값
     if not set(body.scopes) <= set(src_scopes):
         raise AuthError(f"scopes 는 원 PAT 범위({len(src_scopes)}개)의 부분집합이어야 한다 — "
@@ -318,6 +362,51 @@ def list_all_pats(
             "truncated": total > len(rows),
             "note": ("만료가 먼 것(오래 사는 토큰)부터 보인다 — 폐기가 필요한 쪽이 먼저다."
                      if total > len(rows) else "")}
+
+
+@router.post("/service", response_model=ServicePatCreated)
+def create_service_pat(
+    body: ServicePatCreate,
+    request: Request,
+    admin: Principal = Depends(require_role(ADMIN_GROUP)),
+    _csrf: None = Depends(require_csrf),
+    settings: Settings = Depends(get_settings),
+) -> ServicePatCreated:
+    """박스 작업 하나(`system:<작업>`)의 서비스 PAT 을 낸다 — 포털 관리자만, 세션 + CSRF
+    (docs/core-link design §2 · CK-4).
+
+    청중이 `mcp-gateway-service` 하나라 포털 챗 · 토큰 교환(pat_chat_audience)은 이 토큰을
+    받지 않는다. 게이트웨이도 박스 파일 `service_tools.local.json` 에 그 작업이 있어야 받는다.
+    토큰은 이 응답에만 실린다."""
+    try:
+        claims = service_claims(iss=settings.jwt_issuer, job=body.job,
+                                now=int(datetime.now(tz=UTC).timestamp()), days=body.days)
+    except ValueError as exc:
+        raise AuthError(str(exc), status_code=400) from exc
+    keystore = request.app.state.keystore
+    token = jwt.encode(claims, keystore.private_pem, algorithm="RS256",
+                       headers={"kid": keystore.active_kid})
+    issued_by = admin.email or admin.subject
+    note = (body.note or "").strip() or None
+    request.app.state.token_store.record_pat(
+        jti=claims["jti"], sub=claims["sub"], email=None, name=claims["pat_name"],
+        aud=claims["aud"], scopes=claims["scopes"], created=claims["iat"], exp=claims["exp"],
+        issued_by=issued_by, note=note,
+    )
+    # 발급을 남긴다 — 사람 PAT 과 같은 까닭(누가 언제 냈나). 메모는 사람이 고른 글이라
+    # %r 로 남긴다(SEC-4).
+    logger.warning("service PAT issued: job=%s by=%s days=%s jti=%s note=%r",
+                   body.job, issued_by, body.days, claims["jti"], note)
+    return ServicePatCreated(token=token, jti=claims["jti"], job=body.job, expires_at=claims["exp"])
+
+
+@router.get("/service", response_model=list[ServicePatMeta])
+def list_service_pats(
+    request: Request,
+    _admin: Principal = Depends(require_role(ADMIN_GROUP)),
+) -> list[ServicePatMeta]:
+    """서비스 PAT 메타 — 관리자 전용. 토큰 값은 싣지 않는다(발급 응답에만 있었다)."""
+    return [ServicePatMeta(**r) for r in request.app.state.token_store.service_pats()]
 
 
 @router.delete("/{jti}")

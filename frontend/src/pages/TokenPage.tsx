@@ -1,10 +1,18 @@
 // 홈에서 AI 토큰(PAT)을 발급하고 개인 Claude 등록 스니펫을 그 자리에서 복사하는 페이지
 import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { createPat, listPats, revokePat, type PatCreated, type PatMeta } from '../api/pat.api';
+import {
+  createPat,
+  listPats,
+  revokePat,
+  type PatCreated,
+  type PatMeta,
+  type ServicePatCreated,
+} from '../api/pat.api';
 import { fetchMyAccess, type MyAccess } from '../api/access.api';
 import HubAppsPanel from '../components/HubAppsPanel';
 import HubViewPanel from '../components/HubViewPanel';
+import ServiceTokenPanel from '../components/ServiceTokenPanel';
 import { Page, PageHeader } from '../components/ui/Page';
 import { Tabs } from '../components/ui/Tabs';
 import { ErrorBanner } from '../components/common/ErrorBanner';
@@ -12,6 +20,7 @@ import { RaConnectionCard } from '../components/RaConnectionCard';
 import { TestScopeConnectionCard } from '../components/TestScopeConnectionCard';
 import { ExternalConnectionCards } from '../components/ExternalConnectionCards';
 import { useCan } from '../auth/useCan';
+import { useAuth } from '../auth/useAuth';
 import { makeSnippets } from '../lib/setupBat';
 import '../styles/tokenpage.css';
 
@@ -25,8 +34,8 @@ function fmtDate(sec: number): string {
 }
 
 const CERT_URL = `${ORIGIN}/tls/portal.crt`;
-// 탭 — 주소 ?tab= 의 값. 없거나 모르는 값이면 개인 토큰
-const TABS = ['tokens', 'apps', 'connect'] as const;
+// 탭 — 주소 ?tab= 의 값. 없거나 모르는 값이면 개인 토큰. service 는 관리자에게만 있다(아니면 모르는 값과 같다)
+const TABS = ['tokens', 'apps', 'service', 'connect'] as const;
 type Tab = (typeof TABS)[number];
 // 발급 CA 체인 — 리프 대신 이것을 심으면 인증서를 갱신해도 사용자 PC 를 다시 안 만진다.
 const CA_URL = `${ORIGIN}/tls/ca.crt`;
@@ -84,15 +93,20 @@ function CertGuide({ token, open }: { token: string | null; open: boolean }) {
 export default function TokenPage() {
   // 이 페이지는 PAT 발급과 Report Archive 연결을 함께 담는다 — 권한에 맞는 것만 보인다.
   const canToken = useCan()('feat:api-token');
+  // 서비스 토큰 탭(docs/core-link design §2)은 관리자에게만 보인다 — 백엔드가 한 번 더 막는다
+  const { user } = useAuth();
+  const isAdmin = Boolean(user?.groups.includes('portal-admin'));
   const [params, setParams] = useSearchParams();
   const q = params.get('tab');
-  const tab: Tab = TABS.includes(q as Tab) ? (q as Tab) : 'tokens';
+  const tab: Tab = TABS.includes(q as Tab) && (q !== 'service' || isAdmin) ? (q as Tab) : 'tokens';
   const setTab = (t: Tab) => setParams(t === 'tokens' ? {} : { tab: t }, { replace: true });
   const [name, setName] = useState('');
   // 0 = 무기한. 만료로는 안 죽고 폐기로만 죽으므로 기본값으로 두지 않는다.
   const [ttlDays, setTtlDays] = useState(90);
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<PatCreated | null>(null);
+  // 방금 발급한 서비스 토큰 — 사람 토큰(created)처럼 이 화면 상태라 탭을 오가도 남는다
+  const [svcCreated, setSvcCreated] = useState<ServicePatCreated | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pats, setPats] = useState<PatMeta[] | null>(null);
   // 포털 인증서 체인이 공개 루트에 닿지 않는가(자체서명·사내 CA) — 그때만 인증서 안내를 띄운다.
@@ -293,6 +307,8 @@ export default function TokenPage() {
         tabs={[
           { key: 'tokens', label: '개인 토큰', count: live || undefined },
           { key: 'apps', label: '허브에 보일 앱' },
+          // 외부 연결 앞에 둔다 — 화면 점검(e2e/ui.spec.ts)이 End 로 마지막 탭(외부 연결)을 연다
+          ...(isAdmin ? [{ key: 'service' as const, label: '서비스 토큰' }] : []),
           { key: 'connect', label: '외부 연결' },
         ]}
       >
@@ -310,6 +326,7 @@ export default function TokenPage() {
             <ExternalConnectionCards />
           </>
         )}
+        {tab === 'service' && <ServiceTokenPanel created={svcCreated} onCreated={setSvcCreated} />}
         {tab === 'tokens' && (
           <>
             {error && <ErrorBanner message={error} />}
