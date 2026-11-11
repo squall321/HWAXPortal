@@ -11,7 +11,7 @@
 #   돌렸고, 새 데이터가 옛 스키마의 CHECK 에 걸려 app-data 병합이 통째로 실패했다.
 #
 #   ./infra/scripts/drive-drift.sh          # 전부 확인
-#   ./infra/scripts/drive-drift.sh heax     # 지정한 것만 (portal | heax | koorm | mxwp | ste)
+#   ./infra/scripts/drive-drift.sh heax     # 지정한 것만 (portal | heax | koorm | mxwp | ste | aidh)
 #
 # heax 는 넷을 본다 — 앱 SIF 크기 · 지어지지 않은 앱(SIF 가 있어야 하는 앱인데 var/sifs 에 없다, 10-31) · 캐시 열쇠(10-25) · app-data tar 시각.
 #
@@ -23,7 +23,7 @@ PARENT="$(dirname "$SELF_REPO")"
 find_repo() { local n="$1"; for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/claude/$n"; do
   [ -d "$c" ] && { printf '%s' "$c"; return 0; }; done; return 0; }
 
-WANT="${*:-portal heax koorm mxwp ste}"
+WANT="${*:-portal heax koorm mxwp ste aidh}"
 want() { printf '%s\n' $WANT | grep -qx "$1"; }
 command -v rclone >/dev/null 2>&1 || { echo "✗ rclone 없음 — 확인 불가"; exit 2; }
 
@@ -362,6 +362,39 @@ if want ste; then
   fi
 fi
 
+# ── AIDataHub 조각 스냅숏 — Drive 의 마지막 조각 목록(db-parts/manifest-*.json)이 마지막 전체 덤프(aidh-db-*.sql.gz)보다 하루 넘게 낡았는가.
+# cae00 update-all §3 은 그때 조각 길을 버리고 전체 덤프 길로 간다(11 GB 받기 · 스테이징 · 병합 — 11-11 실행 2시간 23분 가운데 약 1시간 30분, AP-14).
+# dev 의 하루 한 번 내기(parts-to-drive.sh)가 멈췄거나 걸리지 않은 것을 cae00 이 돌리기 전에 여기서 먼저 본다(cae00 요청 HP-63 — 11-08 뒤 목록이 끊겼다).
+if want aidh; then
+  D="$(find_repo AIDataHub)"
+  if [ -z "$D" ]; then echo "· AIDataHub 레포 없음 — 건너뜀"; else
+    R="$(env_get AIDH_DRIVE_REMOTE "$D/deploy/apptainer/.env")"; R="${R%/}"
+    P="$(env_get AIDH_PARTS_REMOTE "$D/deploy/apptainer/.env")"; P="${P%/}"
+    [ -n "$P" ] || { [ -n "$R" ] && P="${R%/*}/db-parts"; }      # parts-to-drive.sh 와 같은 유도
+    if [ -z "$R" ]; then echo "· AIDH_DRIVE_REMOTE 미설정 — 건너뜀"; else
+      echo "── AIDataHub 조각 목록 ($P)"
+      dump="$(rclone lsf "$R/" --files-only --include 'aidh-db-*.sql.gz' 2>/dev/null | LC_ALL=C sort | tail -1)"
+      man="$(rclone lsf "$P/" --files-only --include 'manifest-*.json' 2>/dev/null | LC_ALL=C sort | tail -1)"
+      _ts() { local s="${1//[!0-9]/}"; [ "${#s}" -ge 14 ] || return 1
+              date -u -d "${s:0:4}-${s:4:2}-${s:6:2} ${s:8:2}:${s:10:2}:${s:12:2}" +%s 2>/dev/null; }
+      if [ -z "$dump" ]; then
+        echo "  · 전체 덤프 목록을 못 읽었다 — 확인 불가"
+      elif [ -z "$man" ]; then
+        echo "  ✗ 조각 목록이 하나도 없다 — cae00 은 늘 전체 덤프 길로 간다"; DRIFT=1
+      else
+        de="$(_ts "${dump#aidh-db-}")"; me="$(_ts "${man#manifest-}")"
+        if [ -z "$de" ] || [ -z "$me" ]; then
+          echo "  · 이름에서 시각을 못 읽었다($man · $dump) — 확인 불가"
+        elif [ $(( de - me )) -gt 86400 ]; then
+          echo "  ✗ 조각 목록 $man 이 전체 덤프 $dump 보다 $(( (de - me) / 3600 ))시간 낡았다 — dev 의 하루 한 번 내기가 멈췄다"; DRIFT=1
+        else
+          echo "  ✓ 일치($man)"
+        fi
+      fi
+    fi
+  fi
+fi
+
 if [ "$DRIFT" = 1 ]; then
   echo
   echo "→ 올려야 한다 — 구역마다 따로(전체 build-all-to-drive.sh 는 쓰지 않는다: 허브 dist-to-drive 가 되돌림 판을 다섯만 남기고 지우고,"
@@ -372,6 +405,7 @@ if [ "$DRIFT" = 1 ]; then
   echo "    (KooRemapper) cd \$KooRemapper && bash platform/infra/scripts/dist-to-drive.sh"
   echo "    (MX 백서)     cd \$MXWhitePaper && ./infra/scripts/images-to-drive.sh   # web · api · wiki 를 한 묶음으로(그쪽 637a34f 부터)"
   echo "    (ste)         ./infra/scripts/build-all-to-drive.sh ste   # pack-staging + push-to-drive"
+  echo "    (AIDataHub)   cd \$AIDataHub && bash deploy/apptainer/parts-to-drive.sh   # 하루 한 번 예약은 docs/aidh-parts-sync/checklist.md 의 줄"
   exit 1
 fi
 echo "✓ Drive 가 이 박스의 아티팩트와 일치한다"
