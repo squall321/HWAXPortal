@@ -11,7 +11,7 @@
 - [x] HP-64 — update-all §3 끝: he-* 운영자 백업(agent_type) · 개수 확인(0 이거나 다르면 멈춤) · `--apply` · 미리 보기 0 확인, 시험(병합 `c0f454ba` — R11-5)
 - [x] HP-53(다시) — dev 미리 보기로 전체 목록 · writes/confirm/읽기 가르기 · 섞인 둘(docforge · reportarchive)은 git 이 맡는다고 답, 시험(R11-3 — 게이트웨이 읽기 목록 `38ac79f`, dev 대조에 남은 알림은 C-30 셋 · Laminate 둘)
 - [x] 사용자 결정 — SignalForge 알림 · 벡터 증분(cae00 Redis 없음) — 넷 다 권장안(R11-4), SignalForge 세션에 전함
-- [ ] SignalForge 착지 알림 — 커밋 · Drive/SIF · cae00 사람 몫(ollama · bge-m3 · cron) · 문서 경로를 받아 받은 편지함에
+- [x] SignalForge 착지 — main `7137816`(SIF · Drive 없음) · cae00 문서 · 사람 몫 받음, 지표 규칙 다섯도 가림(사용자 결정 — R11-8). 그쪽 문서의 숨김 줄 고침 기다림
 - [x] StepForge 착지 — Drive `dist-20261111-164231Z` · 드리프트 ✓ · 단언 길 대조 · 게이트웨이 안내 문구 고침 `4c56486`(R11-7)
-- [ ] 넘긴 것의 답 — KR-24 받음(R11-6, 고침은 다음 dist) · ST-13 받음(R11-7) · PA-21 · ST-14(오늘 안) · HH-17 기다림
+- [ ] 넘긴 것의 답 — KR-24 받음(R11-6, 고침은 다음 dist) · ST-13 받음(R11-7) · ST-14 받음(R11-9 — 정본 문서 경로 기다림) · PA-21 · HH-17 기다림
 - [ ] 다음 받은 편지함 글 — 이번 요청의 답(HP-63 · HP-64 · HP-53 · HG-30)과 넘긴 것의 답
