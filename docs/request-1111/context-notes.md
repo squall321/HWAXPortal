@@ -151,3 +151,18 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
 - Drive — Laminate 세션이 '포털이 올린다' 고 전했지만 다른 세션 말이라 사용자에게 다시 물었고, 승인을 받아 올렸다(`drive-push-sif.sh` · latest/ ·
   `dist-20261111-211455Z/` · 원격 sha256 일치 · 목록 30줄). Drive 드리프트 전부 ✓.
 
+## R11-12 PA-21 은 (가) — 공유 `/data/SmartTwinSolutions` 와 잡 폴더 사본(사용자 결정 11-12) · ste 묶음은 이번 글에
+
+- 사용자가 ste 세션(06)에서 (가)를 골랐고, 이 세션에서 다시 물어 (가)로 확정했다(권장안). 앞서 이 세션에서 고른 '점검 셋을 보고 정한다'(11-11)를 갈음한다.
+  (가)는 SIF 를 공유 `/data/SmartTwinSolutions/<해석기>/` 에 두고 래퍼는 STE 가 잡 폴더로 복사해 실행하는 길이다. 나중에 `/opt/apps` 를 노드에 내보내도 그대로
+  돌아 되돌릴 일이 없다.
+- 06 이 지었다 — 래퍼 트리를 잡 폴더로 복사(`{app_dir}` · `{lib}` 가 사본을 가리키고 `STE_APPS_RT` 를 내보낸다) · `sif:` 의 `{solutions_dir}` 를 load 에서 푼다 ·
+  가용성에 공유 솔루션 갈래 · radioss D-23. 스테이징에서 헤드 `/opt/apps` 를 숨긴 채(= ste 계산 노드) radioss · koo-sph · condensation · reddish · part-study(cond=1 —
+  KooSolverContainer `d0d0e83` · 브리지 재빌드 뒤)가 끝났다. 시험 190.
+- 사용자가 ste 묶음을 **이번 글에 넣기로** 정했다(다음 글로 미루기를 권했으나 넣는 쪽을 골랐다). cae00 update-all 2c 는 Drive 스테이징이 헤드 마커와 다르면
+  대화형 실행에서 ste 코드를 까므로, 묶음이 Drive 에 오른 뒤에 글을 낸다. 해석기 SIF 설치(사람)와 연막 둘은 글의 ste 절에 싣는다.
+- 2026-11-11 Q1(읽기 셋)은 ste 절의 1단계(있는지 · 소유 · 권한)가 대신한다. 2026-11-08 Q5 의 깔기 절차와 SIF 목록(브리지 `b4d5d253…` 은 낡았다)도 이번 글이 대신한다.
+- 연막 — radioss `KooRadioss/examples/ball_bounce/ball_bounce.k`(ncpu 2 · 수 초) · reddish `KooFEniCS/examples/uv_masked/case.yaml` 원본(1분 30초 · `results.json`
+  의 V1.ok · V2 ≈ 35 mm — `material_sweep` 은 V3 이 거짓 '미달' 로 찍혀 쓰지 않는다). part-study 의 결로 동시 수행(cond=1)은 `scenario.json` 에 openings 가
+  있어야 하고, 방 크기처럼 큰 형상은 `size_min` · `size_max` 를 키운다(기본 0.3 · 1.0 mm 는 부품 크기 — 넘치면 외곽 단계가 제안과 함께 멈춘다).
+
