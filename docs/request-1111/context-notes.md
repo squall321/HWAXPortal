@@ -75,3 +75,27 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
   건너뛰고 결과 줄에 그 수를 붙인다)가 있었다. 끝 알림은 검토 · 배포 뒤에 따로 온다.
 - 2026-11-09 Q3(stcx Post v51) · Q5(전처리 v135 SIF)를 누가 깔지는 그쪽이 사용자에게 묻는다.
 
+## R11-7 StepForge 착지(여섯째 묶음 D-684 + core-link D-685, 11-11) · ST-13 답 · 단언 길 대조
+
+- 판 — Drive `dist-20261111-164231Z/` + `latest/`. `step_forge.sif` 의 **파일 sha256** `00c86554b970…`(dev 허브 사본으로 다시 셈 — 같다), **허브 `.sif.hash`(빌드
+  캐시 열쇠)** `4d981c04f134…`. main 끝 `d2d716cb`(코드 `50b96304`, 뒤는 문서 하나) · SP 서브모듈 `7744159`(0.4.83). 전체 회귀 7345 실패 0. Drive 드리프트 ✓.
+- dev 게이트웨이 `/tools-map` 에 `link_plm_tasks` 가 쓰기로 보인다(StepForge 도구 193). 운영자 writes 에는 HP-53 에서 넣었다(R11-3).
+- 단언 길을 두 리포 코드로 맞대 봤다. 발급 `POST /api/auth/sso` · 머리 `X-Heax-Gateway-Secret` · 주체 머리 `X-Hwax-Delegate-Email` / `X-Hwax-Delegate-Service`
+  (작업 이름 꼴 `^[a-z0-9][a-z0-9-]{0,39}$` — 게이트웨이도 같은 꼴로 받는다) · 답 `{token: sfsso_…, expires_in}` · 쓰기 머리 `X-Heax-Sso-Assertion` 이 맞는다.
+  dev 는 양쪽에 비밀 줄이 없어 발급이 404 다(StepForge 라이브 확인) — 실제 단언 쓰기는 cae00 에서 비밀을 넣은 뒤 처음 돈다.
+- 맞대다 찾은 것 — 게이트웨이 안내 네 곳(거절 글 · provision 의 ○ 줄 · 주석 둘)이 '비밀은 StepForge 의 `STEPFORGE_GATEWAY_SECRET` 과 같은 값' 이라고 옛
+  설계를 적고 있었다. 맞출 값은 StepForge `secrets.env` 의 `STEPFORGE_SSO_SECRET`(발급 비밀이자 HMAC 키 — 포털 신원 검증의 `STEPFORGE_GATEWAY_SECRET` 과
+  따로)이다. 포털 update-all 주석과 server-setup 은 맞게 적혀 있었다. 고치고 시험 둘로 묶었다(게이트웨이 `4c56486` · 전체 1,036 통과 · dev 재기동).
+- 알고 받을 것(받은 편지함에 싣는다).
+  - StepForge 가 193 도구 전부의 입력 스키마에서 pydantic `title` 을 빼고 92 도구의 설명을 줄였다. 그래서 **사람이 기록한 절차 가운데 StepForge 단계가 든
+    것은 다음 실행에서 '스키마가 바뀌었다 — 자동 진행하지 않는다' 로 멈춘다.** 그 단계를 다시 기록해 저장한다. 씨앗에서 들인 절차는 지문이 없어 멈추지
+    않는다(dev 는 StepForge 단계가 든 절차 둘이 다 씨앗이라 0).
+  - 앱 안 자동 실행이 생겼다 — 규칙 단 과제 잇기 · 앞 판 match · 채우기 잡(증명만). 끄기는 StepForge 배포 설정 `STEPFORGE_CORE_LINK=off`.
+  - 서비스 허용은 셋이다(`/api/plm-sync` — `full` 까지 · 규칙 단 `/api/onto-link` · 증명 규칙 `/api/onto-fill`). 서비스 link 줄은 `state: auto|candidate` 가 있어야 한다.
+  - `whoami.access` 에 `sso_person` · `sso_service` · `sso_decided_at`, 잡 행에 `job_status.actor`(이메일 · `system:<작업>`)가 생겼다.
+  - 온톨로지 쓰기 셋(`onto_define` · `onto_put` · `onto_link`)은 여전히 MCP 적용을 받지 않는다(C-30 그대로 — 적용은 REST 다리의 사람 단언).
+- ST-13 답 — 공개 표가 덮지 않은 여덟은 일부러 뺀 것이 아니라 아직 덮지 않은 그림 · 보고 도구다(`carryover_report` · `dimension_chart` · `dimension_view` ·
+  `section_atlas` · `section_batch` · `section_batch_result` · `section_pair_view` · `stackup_figure`). 짐작한 `onto_*` · `list_fill_rules` · `save_fill_rule` 은 이미
+  덮였다(185 / 193). 다음 판에 `system_capabilities.disclosure` 에 빠진 이름 칸을 더하고 여덟을 덮는다.
+- ST-14 — 판마다 DB 이행을 셋 경우로 따로 보낸다(오늘 안). 그 답 전에는 **운영 사본을 옛 판으로 되돌리지 않는다.**
+
