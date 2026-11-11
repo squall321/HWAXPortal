@@ -22,6 +22,13 @@
 
 entries:
   - date: 2026-11-11
+    title: "update-all 이 병합 뒤 HE팀 운영자를 이 박스 판으로 저절로 되돌립니다"
+    tag: 배포
+    items:
+      - "AIDataHub 병합이 HE팀 운영자를 dev 판으로 덮었으면, update-all §3 이 운영자 행을 박스 백업 자리(/data/backups/hwax/<박스>/he-personas/)에 적고 운영자가 다 들었는지 센 뒤 --apply 와 다시 미리보기까지 합니다."
+      - "0건 · 빠진 운영자 · AIDataHub 를 못 읽음 · 덧씌우기가 깨짐 · 새 운영자가 있으면 저절로 반영하지 않고 ⚠ 와 까닭 한 줄로 멈춥니다. 그때만 사람이 --apply 합니다."
+      - "운영자 동기화에 --backup <폴더> 모드가 생겼습니다 — he-* 행을 agent_type 으로 골라 통째로 적고, 0 으로 끝나면 --apply 해도 됩니다."
+  - date: 2026-11-11
     title: "운영자 쓰기 목록에 빠져 있던 도구를 넣었습니다"
     tag: 기술
     items:
