@@ -32,6 +32,11 @@
 #                               그 멈춤이 수명(기다림 + 30분)으로 §4 전에 풀렸으면 §4 는 그 사이 시작된 심의를 한 번 더 기다린다. §2 가 SignalForge 를
 #                               미뤘으면 §4 의 signalforge-mcp 도 함께 미룬다. Drive 에서 SignalForge SIF 가 새로 왔으면 SignalForge 는 기다리지 않는다
 #                               (받기가 떠 있는 인스턴스의 이미지를 이미 덮어썼다).
+#   끝) 박스 훅 — infra/hooks/post-update.d/*.local.sh 를 끝 요약 앞에서 이름 차례로 돌린다(git 이 모르는 박스 파일 — docs/core-link SRC-12).
+#     실패는 종료코드에 넣지 않고 끝 요약의 따로 줄 하나로 낸다. 없으면 ○.
+#     ./infra/scripts/update-all.sh --hooks-when-idle   # 심의 · 리스크 카드 대조 · DynaForge · StepForge · DocForge 작업이 있거나
+#                                                       #   셀 수 없으면 훅을 건너뛴다(○)
+#     HWAX_HOOK_TIMEOUT_S=3600   훅 하나의 상한(초). 넘기면 남은 프로세스까지 정리하고 실패로 센다.
 #
 # 순서:
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
@@ -46,6 +51,7 @@
 #   5c) 호출 추적(Phoenix)        — infra/.env 에 CALL_TRACE 가 있으면 받는 쪽(Phoenix)을 띄운다(없으면 ○ · 떠 있으면 내린다 — docs/improvement-1015/call-trace.md)
 #   5d) LLM/GPU 현황 수집기        — infra/.env 에 LLM_STATUS 가 있으면 수집기를 띄운다(없으면 ○ · 떠 있으면 내린다 — docs/ops-dashboard/server-setup.md)
 #   6) 헬스게이트                — 핵심 체인(portal→agent→gateway) 실패 시 exit 1로 크게 알림
+#   끝) 박스 훅                  — infra/hooks/post-update.d/*.local.sh(없으면 ○ · 실패는 종료코드에 안 든다)
 #
 # 1회 준비물(재프로비저닝용 토큰, 없으면 해당 백엔드만 빠짐):
 #   ~/Projects/HWAXMcpGateway/provision.env  (chmod 600, gitignore)
@@ -61,6 +67,9 @@
 #                                                    #   <접두>_SEND_PLAT=1 — 위임 호출에 그 사람의 plat: 권한을 서명과 함께(MX 백서 위키, docs/mxwp-wiki P4)
 #     KOORM_SEND_PLAT=1            # DynaForge 위임에 같은 plat: 서명 — 적으면 §5 가 싣는다(빈 값도 '끔'). KooRemapper 가 막기를 올리기 전에는
 #                                  #   적지 않는다 — 빈 자리표시도(docs/followups-1017/requests.md §2 · docs/request-1030/server-setup.md 0절)
+#     STEPFORGE_SSO_SECRET=…       # StepForge 단언 쓰기 — 챗의 온톨로지 적용 · 박스 작업의 규칙 잇기(docs/core-link SRC-15 · SRC-07). StepForge 데이터
+#                                  #   폴더 secrets.env 의 STEPFORGE_SSO_SECRET 줄과 같은 값(포털 신원 검증의 STEPFORGE_GATEWAY_SECRET 과는 다르다).
+#                                  #   주소는 STEPFORGE_SSO_URL(선택 — 기본 <HEAX_MCP_BASE>/apps/step_forge/api/auth/sso)
 set -uo pipefail   # -e 없음: 서비스 하나의 실패가 전체를 끊지 않게, 마지막 게이트에서 판정
 # 로컬 헬스체크(127.0.0.1)는 사내망 프록시를 타면 안 된다 — 프록시가 로컬에 못 닿아 curl 000
 # 이 나고 서비스를 죽은 것으로 오판한다. 바깥용 http_proxy(git·rclone)는 그대로 두고 로컬만 우회.
@@ -145,6 +154,8 @@ export HWAX_DELIB_GATE="${HWAX_SKIP_LEDGER}.delib-gate" HWAX_DELIB_PAUSE_BY=upda
 . "$SELF_REPO/infra/scripts/lib/review-drain.sh"
 # LLM 서버 풀(1i · §4 뒤 라우터 내리기 · §6) — LLM_UPSTREAMS 한 줄의 규칙(목록 검사·라우터 주소·사본 바꾸기)은 이 lib 한 곳에 있다.
 . "$SELF_REPO/infra/scripts/lib/llm-pool.sh"
+# 끝의 박스 훅(docs/core-link SRC-12) — infra/hooks/post-update.d/*.local.sh 를 끝맺음 뒤 · ○ 요약 앞에서 돌린다.
+. "$SELF_REPO/infra/scripts/lib/post-update-hooks.sh"
 # 상태판 경보 멈춤 풀기 — 1b2 가 걸었으면. 5b 의 설정 생성이 늘 풀므로(그때 HWAX_BOARD_PAUSED=0) 여기는 5b 전에 멈춘 경로(§ 머리 정지)와
 #   완주 끝의 마지막 확인이다. 실패는 삼킨다 — 시한(60분)이 지나면 상태판의 밀어 넣는 쪽(status-push.py)이 걷어낸다.
 _hwax_board_resume() {
@@ -279,9 +290,11 @@ _reap_step() {  # $1=표식
 # 첫 사용처는 ste(`--with-ste`: 에어갭 클러스터 코드 갱신). 규칙은 infra/scripts/lib/deploy-gate.sh 에
 # 있고 각 단계는 이름만 등록한다 — 새 옵션이 생겨도 여기와 그 단계 한 줄이면 끝난다(docs/ste-cae00 D-13).
 HWAX_WITH="${HWAX_WITH:-}"
+HWAX_HOOKS_WHEN_IDLE="${HWAX_HOOKS_WHEN_IDLE:-0}"   # --hooks-when-idle — 끝의 박스 훅을 일이 없을 때만(docs/core-link SRC-12)
 for _a in "$@"; do
   case "$_a" in
     --with-*) HWAX_WITH="${HWAX_WITH:+$HWAX_WITH }${_a#--with-}" ;;
+    --hooks-when-idle) HWAX_HOOKS_WHEN_IDLE=1 ;;
   esac
 done
 export HWAX_WITH
@@ -1663,6 +1676,12 @@ if [ -n "${TESTSCOPE_MCP_URL:-}" ]; then
 else
   hwax_skip "TestScope MCP 도구" "게이트웨이 provision.env 에 TESTSCOPE_MCP_URL 이 없어 게이트웨이가 TestScope 를 기대하지 않는다(다른 조직 포털 — 안 쓰는 박스가 보통이다)" "TestScope 를 쓰는 박스는 HWAXMcpGateway/provision.env 에 TESTSCOPE_MCP_URL=<TestScope MCP 주소> 를 적고 재실행(§5 가 재프로비저닝한다)"
 fi
+# StepForge 단언 쓰기(docs/core-link SRC-15 · SRC-07) — 게이트웨이 provision.env 에 STEPFORGE_SSO_SECRET 이 없으면 챗의 StepForge 온톨로지 적용
+#   (REST POST)과 박스 작업의 규칙 잇기가 '꺼져 있다' 로 거절된다(미리 보기는 된다). 허브가 있는 박스에서만 장부에 남긴다(§5 소싱 전이라 파일에서).
+if [ -n "${HEAX_DIR:-}" ] && [ -n "$GW_DIR" ] && [ -z "${STEPFORGE_SSO_SECRET:-}" ] \
+   && [ -z "$(_envfile_value "$GW_DIR/provision.env" STEPFORGE_SSO_SECRET)" ]; then
+  hwax_skip "StepForge 단언 쓰기(챗의 온톨로지 적용 · 박스 작업의 규칙 잇기)" "게이트웨이 provision.env 에 STEPFORGE_SSO_SECRET 이 없어 게이트웨이가 StepForge 쓰기 경로를 열지 않는다(미리 보기만 된다)" "비밀 하나를 StepForge 데이터 폴더 secrets.env 의 STEPFORGE_SSO_SECRET 줄과 HWAXMcpGateway/provision.env 의 STEPFORGE_SSO_SECRET= 에 같은 값으로 적고 재실행(§5 가 재프로비저닝한다 — docs/core-link/server-setup.md 2절)"
+fi
 # ARP(AI Ready Portal) MCP — 주소(ARP_BASE)는 있는데 토큰(ARP_TOKEN)이 없으면 게이트웨이가 arp 를 등재하지 않는다(2026-10-01 부터 인증,
 # docs/change-request-8-10 D-5). 조용히 빠지지 않게 장부에 남긴다 — RA 의 RAT_TOKEN(1e)과 같은 자리다. §5 가 provision.env 를
 # 소싱하기 전이라 파일에서 읽는다. 기대 여부 자체는 calc_missing 이 소싱된 값으로 정한다.
@@ -1870,6 +1889,24 @@ PY
 }
 # 일반 앱의 비밀은 이름이 정해져 있지 않아 대입어로 못 넘긴다 — 서브셸 안에서만 export 한다(이 뒤에 뜨는 서비스가 물려받지 않게).
 # 주소가 없어 게이트웨이가 만들지 못하는 일반 앱은 `<키>_sso_nourl` 로 따로 표지한다 — 방아쇠로 삼으면 매 실행 재프로비저닝이 헛돈다.
+# StepForge 단언 쓰기(docs/core-link SRC-15) — provision.env 의 STEPFORGE_SSO_SECRET(· STEPFORGE_SSO_URL)과 게이트웨이 설정의 위임 칸
+#   (heax_registry.rest_sso.step_forge) · REST 칸의 쓰기 경로(rest.step-forge 의 delegate · write_paths)가 맞나. 0 = 맞다 · 1 = 어긋났다.
+#   비밀이 없으면 부르지 않는다 — 게이트웨이는 비밀 없는 실행에서 직전 칸을 잇는다(끄기는 손으로 — docs/core-link server-setup).
+_sf_rest_sso_ok() {  # $1=gateway_config.json
+  SF_S="${STEPFORGE_SSO_SECRET:-}" SF_U="${STEPFORGE_SSO_URL:-}" python3 - "$1" <<'PY' 2>/dev/null
+import json, os, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+c = ((d.get("heax_registry") or {}).get("rest_sso") or {}).get("step_forge") or {}
+site = (d.get("rest") or {}).get("step-forge") or {}
+ok = (c.get("secret") == os.environ["SF_S"] and c.get("sso_url")
+      and (not os.environ["SF_U"] or c.get("sso_url") == os.environ["SF_U"])
+      and site.get("delegate") == "step_forge" and site.get("write_paths"))
+raise SystemExit(0 if ok else 1)
+PY
+}
 _sso_deleg_drift() {  # $1=gateway_config.json → 어긋난 위임(공백 구분, 예: reportarchive_sso). 읽지 못하면 빈 값.
   ( export PER_USER_SSO_APPS KOORM_SEND_PLAT $(_sso_generic_names)
   RA_S="${RA_SSO_SECRET:-}" TS_S="${TESTSCOPE_SSO_SECRET:-}" TS_X="${TESTSCOPE_EXPECTED:-0}" GEN="$(_sso_generic_pairs)" UNL="$(_sso_generic_unlisted "$1")" python3 - "$1" <<'PY' 2>/dev/null || true
@@ -2109,6 +2146,13 @@ PY
   then
     MISSING="hwax_risk_sso${MISSING:+ $MISSING}"
   fi
+  # StepForge 단언 쓰기도 heax_registry 안의 칸이라 /health 에 안 나온다 — 비밀을 적었는데 칸이 없으면 챗의 온톨로지 적용이 '꺼져 있다' 로
+  #   거절된다(docs/core-link SRC-15).
+  if [ -n "${STEPFORGE_SSO_SECRET:-}" ] && [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+     && ! _sf_rest_sso_ok "$GW_DIR/gateway_config.json"; then
+    echo "  · StepForge 단언 쓰기 드리프트 — provision.env 에 STEPFORGE_SSO_SECRET 이 있는데 게이트웨이 설정에 위임 칸이 없거나 비밀 · 주소 · 쓰기 경로가 다르다"
+    MISSING="step_forge_rest_sso${MISSING:+ $MISSING}"
+  fi
 
   # 키는 있는데 **주소가 틀려서** 계속 죽는 백엔드 — calc_missing 은 '키 없음' 만 본다.
   # ⚠ 2026-09-19 cae00: SignalForge MCP 는 8008 인데 게이트웨이는 8013 을 들고 있어
@@ -2239,6 +2283,7 @@ PY
       #   · ARP_TOKEN — ARP MCP 서비스 토큰(provision.env). 빠뜨리면 토큰을 적어도 arp 가 등재되지 않는데 위 calc_missing 은 기대해, 매 실행 재프로비저닝이 헛돈다.
       #   · STE_SSO_SECRET/STE_*_URL — 없으면 per_user_sso["ste"] 가 안 생겨 ste 도구 호출이 서비스 계정으로 나간다(잡 소유자가 한 명으로 뭉침).
       #   · RA_SSO_* — RA 사람별 위임(docs/sso-delegation). 비면 provision 이 직전 config 를 이어받는다.
+      #   · STEPFORGE_SSO_* — StepForge 단언 쓰기(docs/core-link SRC-15). 비면 provision 이 직전 config 를 이어받는다.
       #   · TESTSCOPE_MCP_URL — TestScope 백엔드 주소(provision.env 에서 읽은 값).
       #   · SMARTTWIN_MCP_URL — SmartTwinMCP 주소(provision.env 에서 읽은 값). 빠뜨리면 게이트웨이가 직전 config 의 기본 주소를 이어받지 않아 백엔드를 뺀다.
       #   · TESTSCOPE_SSO_* — TestScope 사람별 위임(RA 와 같은 두 갈래). 비면 토큰 등록 그대로, provision 이 직전 config 를 이어받는다.
@@ -2262,7 +2307,7 @@ PY
           ARP_BASE="${ARP_BASE:-}" ARP_TOKEN="${ARP_TOKEN:-}" \
           RA_MCP_URL="${RA_MCP_URL:-}" RA_WORKSPACE_SLUG="${RA_WORKSPACE_SLUG:-}" \
           STE_SSO_SECRET="${STE_SSO_SECRET:-}" STE_MCP_URL="${STE_MCP_URL:-}" \
-          STE_SSO_URL="${STE_SSO_URL:-}" \
+          STE_SSO_URL="${STE_SSO_URL:-}" STEPFORGE_SSO_SECRET="${STEPFORGE_SSO_SECRET:-}" STEPFORGE_SSO_URL="${STEPFORGE_SSO_URL:-}" \
           RA_SSO_SECRET="${RA_SSO_SECRET:-}" RA_SSO_URL="${RA_SSO_URL:-}" \
           TESTSCOPE_SSO_SECRET="${TESTSCOPE_SSO_SECRET:-}" TESTSCOPE_SSO_URL="${TESTSCOPE_SSO_URL:-}" \
           TESTSCOPE_MCP_URL="${TESTSCOPE_MCP_URL:-}" SMARTTWIN_MCP_URL="${SMARTTWIN_MCP_URL:-}" PER_USER_SSO_OFF="${_sso_off:-}" \
@@ -2319,6 +2364,9 @@ PY
         # 주소가 없어 만들지 못하는 일반 앱(…_sso_nourl)은 위에서 이미 알렸다 — 재프로비저닝이 고칠 수 없는 것을 '누락' 으로 다시 세지 않는다.
         _sso_left="$(for _k in $_sso_left; do case "$_k" in *_sso_nourl) ;; *) printf '%s ' "$_k" ;; esac; done)"; _sso_left="${_sso_left% }"
         [ -n "$_sso_left" ] && STILL="${STILL:+$STILL }$_sso_left"
+        if [ -n "${STEPFORGE_SSO_SECRET:-}" ] && ! _sf_rest_sso_ok "$GW_DIR/gateway_config.json"; then
+          STILL="${STILL:+$STILL }step_forge_rest_sso(게이트웨이 리포가 rest_sso 를 쓰는 판인지 보라)"
+        fi
         if [ "${_prov_ok:-1}" != 1 ]; then echo "  · provision 실패는 위 ✗ 하나로 계상한다 — 재검증은 참고만: ${STILL:-없음}"
         elif [ -z "$STILL" ]; then ok "재프로비저닝으로 백엔드 정합 완료"
         else fail "재프로비저닝 후에도 누락/어긋남: $STILL (mxwp 토큰 민팅 실패 등 — 위 provision 출력 확인)"; fi
@@ -3849,12 +3897,17 @@ fi
 _hwax_drain_finish
 _hwax_delib_pause_finish   # §2·§4 가 재기동 앞에서 기다리며 세운 새 심의 멈춤(O1 · A25) — 다시 선 줄이 이제 든다
 _hwax_board_resume      # 1b2 의 경보 멈춤 — 5b 가 이미 풀었으면 아무것도 하지 않는다
+# 박스 훅 — 모든 배포 · 끝맺음 뒤라 훅이 멈춤 깃발 아래서 돌지 않는다. ○ 요약 앞이라 건너뛴 ○ 가 요약에 든다. § 머리(hr)는 부르지 않는다 —
+#   남의 비우기 깃발이 있으면 그 틱이 새 깃발을 세우는데 여기서는 내릴 곳이 없다(docs/core-link CK-6).
+hwax_post_update_hooks "$SELF_REPO"
 hwax_skip_summary
 rm -f "$HWAX_SKIP_LEDGER" ${HWAX_DELIB_GATE:+"$HWAX_DELIB_GATE"}   # 한 번 기다리기의 판정 파일도 함께(머리에서 장부 옆에 정했다)
 # 받은 편지함 — §1 뒤에 찍은 새 글을 끝에서 다시 낸다(수백 줄을 거슬러 오르지 않아도 보이게). 경고가 아니라 경고 수 · 종료코드에 들지 않는다.
 # 다시 낸 뒤에야 그 판을 알린 판으로 적는다 — 끝 요약 앞에서 끊긴 실행은 다음 실행이 다시 알린다(실패로 끝나는 실행도 여기는 지난다).
 [ -z "${INBOX_NOTE:-}" ] || printf '%s' "$INBOX_NOTE"
 _inbox_mark
+# 박스 훅 결과 — 경고 수 · 종료코드에 들지 않는 따로 줄(요청서 SRC-12 '종료 코드에 섞지 않고 요약에 줄 하나로 따로').
+[ -z "${HWAX_HOOKS_NOTE:-}" ] || printf '%s' "$HWAX_HOOKS_NOTE"
 # ⚠ 경고 요약 — 종료코드에는 안 들어가지만 실패 목록처럼 끝에 다시 낸다(위로 거슬러 올라가지 않아도 보이게).
 if [ -n "${WARN_ITEMS:-}" ]; then
   printf '  \033[1;33m⚠\033[0m 경고 %s건 — 아래는 종료코드에 들어가지 않는 비치명 항목이다\n' "$(printf '%s' "$WARN_ITEMS" | grep -c '^  · ' || true)"
