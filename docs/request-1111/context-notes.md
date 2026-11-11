@@ -130,3 +130,11 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
 - 이 문서 커밋으로 StepForge main 이 `d2d716cb` → `94eaa05b` 가 되어 SIF 빌드 캐시 열쇠가 바뀐다(코드는 같은 `50b96304`). 허브가 다시 짓고 사용자 승인으로 Drive 를
   다시 올린 뒤에 받은 편지함 글을 쓴다 — 그 전에 cae00 이 update-all 하면 허브가 열쇠가 다른 SIF 를 띄우지 않는다.
 
+## R11-10 HH-17 답 — `root_host` 가 null 인 것은 의도다(DocForge 0.3.2 가 안내 한 줄을 붙인다)
+
+- cae00 이 DocForge 에 물은 낮은 물음이다(`docforge_list_inputs` 가 컨테이너 안 경로만 주고 `root_host` 는 null — 그 경로로 convert 는 잘 된다). 사람 결정이 아니다.
+- DocForge 가 답하고 고쳤다(`15d9bfe` · 판 0.3.2 `ae3ca51`). `root_host` 는 박스 값 `DOCFORGE_HOST_DATA_DIR` 이 없으면 null 이 맞고, 목록 응답에 'path 를 그대로
+  convert 에 넘긴다' 는 note 를 붙였다.
+- 0.3.2 는 DocForge main 에 있고 배치(release)는 그쪽 사용자 승인 뒤다(origin/release 는 0.3.1 `bd79e79`). 이번 라운드에 실을지는 사용자가 DocForge 세션에서 정한다 —
+  안 실어도 cae00 은 0.3.1 로 변환이 된다.
+
