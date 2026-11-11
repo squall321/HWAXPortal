@@ -50,6 +50,9 @@
 
 ## 5. 올리기(cae00 update-all 뒤)
 
-- [ ] 업데이트 라운드 — 리포별 끝 확인 · 병합(문서가 해시를 인용하면 --no-ff) · 올림 · Drive(StepForge · KooRemapper · SignalForge · 포털 화면)
-- [ ] dev 반영 · 맞물림 실호출(게이트웨이 ↔ StepForge 단언)
+- [x] cae00 11-08 · 11-09 update-all 끝(사용자 알림 11-11) → 보류 풂(허브 앱 여섯 · ste 고정 · KooRemapper · SignalForge)
+- [x] 병합 · 올림(11-11) — 포털 main 99f42a24 · 4de59fb4(--no-ff) + 이력 a308bfc5, 게이트웨이 master 96d0134, 에이전트 서버 main 32bf3ae, SignalForge 47226ac(그쪽)
+- [x] dev 반영(11-11 11:25 UTC) — 게이트웨이 · 에이전트 서버 · 포털(프론트 빌드 뒤) 재기동, 리스너 시작 > 병합 커밋
+- [ ] 포털 이미지 Drive(images-to-drive — 서비스 토큰 탭 화면) · StepForge Drive(그쪽 · 사용자 확인) · KooRemapper(짓는 중)
+- [ ] 맞물림 실호출(게이트웨이 ↔ StepForge 단언) — dev 에는 STEPFORGE_SSO_SECRET 이 없어 쓰기는 '꺼져 있다' 로 거절된다. StepForge 새 판 뒤 dev 에서 켜 보고 볼지 정한다
 - [ ] 받은 편지함 — BOX-10 ~ 16 차례 · 서비스 토큰 발급 · `service_tools.local.json` 예시 · `STEPFORGE_SSO_SECRET` · 훅 예시 · Q-3 · Q-4 · tools-map 앞뒤 대조
