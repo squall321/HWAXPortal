@@ -165,4 +165,8 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
 - 연막 — radioss `KooRadioss/examples/ball_bounce/ball_bounce.k`(ncpu 2 · 수 초) · reddish `KooFEniCS/examples/uv_masked/case.yaml` 원본(1분 30초 · `results.json`
   의 V1.ok · V2 ≈ 35 mm — `material_sweep` 은 V3 이 거짓 '미달' 로 찍혀 쓰지 않는다). part-study 의 결로 동시 수행(cond=1)은 `scenario.json` 에 openings 가
   있어야 하고, 방 크기처럼 큰 형상은 `size_min` · `size_max` 를 키운다(기본 0.3 · 1.0 mm 는 부품 크기 — 넘치면 외곽 단계가 제안과 함께 멈춘다).
+- 착지(11-12) — ste main `1e53260` · Drive 스테이징 `ste-code.commit` `1e53260eb8ea`(드리프트 ✓) · 묶음 sha256 `e3d6c0faefb5…`(나머지는 그 폴더 `SHA256SUMS`). 스테이징 VM 도
+  같은 판이다. 해석기 SIF 를 깔기 전에 코드가 먼저 깔려도 그 앱들은 '사용 불가' 로 보이고 제출이 거부된다(잡 실패가 아니다 — 06 이 지금 공유 폴더로 판정을 돌려
+  확인). KooSolverContainer 가 브리지 SIF 를 다시 올렸다 — `43a5970992bc…`(382,296,064 B · Drive md5 `8a172b6e…` — dev 에서 다시 읽어 같다). SIF 넷과 꾸러미 셋의
+  sha256 목록, KooFEniCS 꾸러미의 풀린 꼴(`KooFEniCS/` 접두 · SIF 없음)은 받은 편지함 Q12 에 옮긴다. `koo_radioss.sif` 는 이제 솔루션 폴더 한 자리만 쓴다.
 

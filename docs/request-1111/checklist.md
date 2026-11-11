@@ -16,6 +16,6 @@
 - [x] StepForge SIF 다시 올림 — `94eaa05b` · Drive `dist-20261111-204655Z` · 파일 sha256 `319eab5c…` · 열쇠 `ac1b702c…`, 드리프트 ✓(R11-9)
 - [x] Laminate 0.29.0 — 푸시 `e1ffe34` · dev 교체 · Drive `dist-20261111-211455Z`(사용자 승인) · 운영자 대조의 Laminate 알림 0(R11-11)
 - [ ] 넘긴 것의 답 — KR-24 받음(R11-6, 고침은 다음 dist) · ST-13 받음(R11-7) · ST-14 받음(R11-9 — 정본 StepForge `docs/OPS-ROLLBACK.md` `94eaa05b`) · HH-17 받음(R11-10 — DocForge 0.3.2, 배치는 그쪽 사용자 승인) · PA-21 (가) 확정(R11-12 — 사용자 결정 11-12)
-- [ ] ste 묶음(PA-21 (가)) — 06 푸시 · 묶음 · Drive 스테이징, KooSolverContainer 브리지 SIF 다시 올림 · sha 목록, 이번 글에(사용자 결정 11-12)
+- [x] ste 묶음(PA-21 (가)) — main `1e53260` · Drive 스테이징 ✓ · 브리지 SIF `43a5970992bc…` 다시 올림 · sha 목록 받음(R11-12)
 - [ ] DocForge 0.3.2 — release · 허브 재빌드 · Drive(사용자 결정 — 이번 라운드에)
 - [ ] 다음 받은 편지함 글 — 이번 요청의 답(HP-63 · HP-64 · HP-53 · HG-30)과 넘긴 것의 답
