@@ -22,6 +22,18 @@
 
 entries:
   - date: 2026-11-11
+    title: "운영자 쓰기 목록에 빠져 있던 도구를 넣었습니다"
+    tag: 기술
+    items:
+      - "DynaForge · AIDataHub · MX 백서 · WebDesign · SmartTwin · StepForge 운영자의 목록 밖에 있던 쓰기 도구를 writes(이번 말로 시켰을 때만) · confirm(늘 확인 카드)에 나눠 넣었습니다 — 지우기 · 끊기 · 폐기는 늘 확인 카드입니다. StepForge 의 새 도구 link_plm_tasks(PLM 과제 잇기)도 들었습니다."
+      - "Report Archive 쓰기 열여덟은 도구마다 선택 칸으로 넣어, 그 박스의 RA 판에 그 도구가 있을 때만 붙습니다. DocForge 운영자의 RA 쓰기도 같은 꼴입니다. 운영자 동기화 알림은 빠진 선택 앱 이름을 한 번만 적습니다."
+      - "이름은 쓰기 꼴인데 읽기인 RA run_saved_search · 리스크 risk_propose_board_transform 을 게이트웨이 읽기 목록에 넣었고, devlab-checklist 도구는 도구 영역 cad 로 묶었습니다."
+  - date: 2026-11-11
+    title: "드리프트 점검이 AIDataHub 조각 목록도 봅니다"
+    tag: 기술
+    items:
+      - "drive-drift.sh 에 aidh 를 더했습니다(기본 목록에도) — Drive 의 조각 목록이 전체 덤프보다 하루 넘게 낡으면 드리프트로 알리고 다시 올리는 법을 적습니다. cae00 update-all 이 전체 덤프 길(약 1시간 30분)로 가기 전에 dev 에서 먼저 봅니다."
+  - date: 2026-11-11
     title: "챗에서 StepForge 온톨로지를 확인 카드 뒤 적용합니다(StepForge 새 판 뒤)"
     tag: 챗
     items:
