@@ -5,7 +5,17 @@
 ## AIDataHub(dev 내기)
 
 - [x] `parts-to-drive.sh` — 표 · 열 · 조각 규칙, 이진 COPY + gzip 시각 0 + 내용 해시 이름, pre-data 스키마, 목록(JSON), 새 조각만 올리기, 목록 7판 · 안 가리키는 조각 지우기 · 한 시점(AP-4) — AIDataHub `2f6d60b`
-- [ ] dev cron(전체 덤프 뒤) — **사용자 몫**: 넣으려던 줄은 자동 모드 분류기가 막았다(AP-15). 그동안은 낡음 검사(AP-14)가 cae00 을 전체 덤프 길로 돌린다
+- [ ] dev cron(전체 덤프 뒤) — **사용자 몫**: 넣으려던 줄은 자동 모드 분류기가 막았다(AP-15). 그동안은 낡음 검사(AP-14)가 cae00 을 전체 덤프 길로 돌린다.
+  11-11 cae00 이 이 빈 곳을 짚었다(HP-63 — 11-08 뒤 목록이 끊겨 전체 덤프 길 약 1시간 30분). dev 에서 `crontab -e` 로 지금의 전체 덤프 줄
+  (`45 4 * * * … backup-to-drive.sh …  # AIDataHub daily Drive backup`)을 아래 한 줄로 바꾼다. 같은 예약에서 덤프 뒤 조각을 이어 낸다(덤프가 실패해도
+  조각은 돈다 — `;`).
+
+  ```
+  45 4 * * * /bin/bash $HOME/claude/AIDataHub/deploy/apptainer/backup-to-drive.sh >> $HOME/aidh-backup.log 2>&1; /bin/bash $HOME/claude/AIDataHub/deploy/apptainer/parts-to-drive.sh >> $HOME/aidh-parts.log 2>&1  # AIDataHub daily Drive backup + 조각 스냅숏(HP-63)
+  ```
+
+  멈춤은 dev 에서 먼저 드러난다 — `./infra/scripts/drive-drift.sh aidh` 가 조각 목록이 전체 덤프보다 하루 넘게 낡으면 드리프트다(라운드 길의 드리프트 0
+  확인에 든다, 포털 `03bbaeee`).
 
 ## AIDataHub(cae00 받기 · 병합)
 
