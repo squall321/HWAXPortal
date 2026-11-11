@@ -129,6 +129,8 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
   운영이 칠 명령은 받은 편지함에 옮기지 않고 그 문서를 가리킨다.
 - 이 문서 커밋으로 StepForge main 이 `d2d716cb` → `94eaa05b` 가 되어 SIF 빌드 캐시 열쇠가 바뀐다(코드는 같은 `50b96304`). 허브가 다시 짓고 사용자 승인으로 Drive 를
   다시 올린 뒤에 받은 편지함 글을 쓴다 — 그 전에 cae00 이 update-all 하면 허브가 열쇠가 다른 SIF 를 띄우지 않는다.
+- 다시 올렸다(사용자 승인) — Drive `dist-20261111-204655Z/` + `latest/` · main `94eaa05b`. **파일 sha256** `319eab5c127f…` · **허브 `.sif.hash`(빌드 캐시 열쇠)**
+  `ac1b702c6c1f…` — dev 허브 사본으로 둘 다 다시 셈, 같다. 드리프트에서 step_forge 는 풀렸다. StepForge 는 cae00 이 이 판을 받을 때까지 main 에 올리지 않는다.
 
 ## R11-10 HH-17 답 — `root_host` 가 null 인 것은 의도다(DocForge 0.3.2 가 안내 한 줄을 붙인다)
 
