@@ -42,6 +42,7 @@
 #   1) 포털 레포 자체 최신화(이 스크립트가 최신이 되도록) → 새 버전으로 1회 재실행
 #   2) deploy-all-from-drive.sh  — portal·mxwp·heax·signalforge·aidh·kooremapper (코드+Drive 아티팩트+기동+nginx)
 #   3) AIDataHub 데이터 동기화   — dev가 원본. 단 Drive 덤프가 지난 복원분과 같으면 복원 생략
+#                                  병합이 HE팀 운영자(he-*)를 덮었으면 백업 · 개수 확인 뒤 이 박스 판으로 되돌린다(HP-64)
 #   4) update-sites.sh 챗 스택   — mcp-gateway·agent-server·signalforge-mcp 만(2에서 처리된 것 재기동 금지)
 #   5) 게이트웨이 config 정합    — /health backends + config의 heax_registry를 기대 목록과 비교,
 #                                  빠졌으면 provision-config.sh --force 재생성(토큰은 provision.env) 후
@@ -1276,9 +1277,15 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
     esac
   fi
   # merge 는 updated_at 이 더 새 쪽을 고른다 — dev 에서 나중에 동기화한 HE팀 운영자(he-*)가 이 박스 판(이 박스 게이트웨이의 앱 · 도구로
-  # 만든 것)을 덮을 수 있다(docs/request-1027 HP-35 · AIDataHub 검토 AD-12). 쓰지 않는 미리보기로 어긋남만 알린다 — 고치는 것은 사람이
-  # --apply 로(바뀐 칸만 PATCH 해 이 박스 판이 다시 앞선다). '정본에 없는 he-*'(?) 는 알리기만 하는 줄이라 세지 않는다. 조각 길 · 전체 길
-  # 어느 쪽이든 병합이 돈 실행에만(바뀐 것이 없어 건너뛴 실행은 말이 없다 — 실행마다의 점검은 끝의 'HE팀 운영자 점검').
+  # 만든 것)을 덮을 수 있다(docs/request-1027 HP-35 · AIDataHub 검토 AD-12). 먼저 쓰지 않는 미리보기로 어긋남을 본다. '정본에 없는 he-*'(?) 는
+  # 알리기만 하는 줄이라 세지 않는다. 조각 길 · 전체 길 어느 쪽이든 병합이 돈 실행에만(바뀐 것이 없어 건너뛴 실행은 말이 없다 — 실행마다의
+  # 점검은 끝의 'HE팀 운영자 점검').
+  # 어긋나면 사람이 하던 일을 그대로 저절로 한다(docs/request-1111 HP-64 (나) — 실제로 병합마다 덮였다, 11-03 · 11-05 · 11-08 · 11-11 에 2 ~ 5명).
+  # ① he-* 행을 agent_type 으로 박스 백업 자리 BACKUP_ROOT/hwax/<박스>/he-personas(backup-local.sh 와 같은 뿌리 · 박스 이름 — daily/ 밖이라
+  # 세대 정리가 지우지 않는다, 한 벌에 100KB 안팎)에 적고 ② 그 백업에 합친 정의(he-team.json +
+  # he-team.local.json)의 운영자가 다 들었는지 센다 — 0건 · 빠진 운영자 · AIDataHub 를 못 읽음(모름) · 덧씌우기가 깨짐이면 멈추고 ⚠(11-09 의
+  # 0건 백업이 여기서 막힌다) ③ --apply(바뀐 칸만 PATCH — 이 박스 판이 다시 앞선다) ④ 다시 미리보기가 0 인지 본다. 병합 규칙(AIDataHub)은
+  # 그대로다. 게이트웨이는 아직 §4 앞의 것이지만 이 박스 것이라 이 박스 판을 만들기에 충분하다(HP-35 와 같은 판단).
   if [ "$_aidh_mrc" = 0 ] || [ "$_aidh_mrc" = 3 ]; then
     _hp_rc=0; _hp_out="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" 2>&1)" || _hp_rc=$?
     _hp_diff="$(printf '%s\n' "$_hp_out" | grep -E '^  [+~] ' || true)"
@@ -1286,8 +1293,35 @@ if [ -n "$AIDH_DIR" ] && [ -x "$AIDH_DIR/deploy/apptainer/sync-from-drive.sh" ];
       bad "HE팀 운영자 페르소나 미리보기를 못 했다(rc $_hp_rc) — merge 가 이 박스 판을 덮었는지 모른다. 끝난 뒤: python3 infra/scripts/sync-he-personas.py"
       printf '%s\n' "$_hp_out" | grep -E '^✗' | head -5 | sed 's/^/    /'
     elif [ -n "$_hp_diff" ]; then
-      bad "HE팀 운영자 페르소나 $(printf '%s\n' "$_hp_diff" | grep -c .)명이 이 박스 판과 다르다(merge 가 dev 판으로 덮었거나 새 운영자) — 끝난 뒤 확인하고: python3 infra/scripts/sync-he-personas.py --apply"
+      _hp_n="$(printf '%s\n' "$_hp_diff" | grep -c .)"
+      echo "  · HE팀 운영자 페르소나 ${_hp_n}명이 이 박스 판과 다르다(merge 가 dev 판으로 덮었거나 새 운영자) — 백업하고 이 박스 판으로 되돌린다(HP-64)"
       printf '%s\n' "$_hp_diff" | head -10 | sed 's/^/  /'
+      _hp_box="${HWAX_BOX:-$(_ra_envv HWAX_BOX)}"         # backup-local.sh 와 같은 차례 — 환경 > infra/.env > hostname -s
+      _hp_bdir="${BACKUP_ROOT:-/data/backups}/hwax/${_hp_box:-$(hostname -s)}/he-personas"
+      _hp_brc=0; _hp_bout="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" --backup "$_hp_bdir" 2>&1)" || _hp_brc=$?
+      _hp_bline="$(printf '%s\n' "$_hp_bout" | grep -E '^  (·|✗) 백업' || true)"
+      printf '%s\n' "${_hp_bline:-$(printf '%s\n' "$_hp_bout" | tail -3)}" | sed 's/^/  /'   # 백업 자리 · 개수(줄이 없으면 끝 줄 — 뜻밖의 실패)
+      if [ "$_hp_brc" != 0 ]; then
+        bad "HE팀 운영자 페르소나 ${_hp_n}명이 이 박스 판과 다르다 — 백업 확인에서 멈춰(rc $_hp_brc · 위 줄) 저절로 되돌리지 않았다. 확인하고: python3 infra/scripts/sync-he-personas.py --apply"
+      else
+        _hp_arc=0; _hp_aout="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" --apply 2>&1)" || _hp_arc=$?
+        if [ "$_hp_arc" != 0 ]; then
+          bad "HE팀 운영자 페르소나 --apply 가 실패했다(rc $_hp_arc) — 일부만 썼을 수 있다(되돌릴 판은 위 백업 줄). 끝난 뒤 확인하고: python3 infra/scripts/sync-he-personas.py --apply"
+          printf '%s\n' "$_hp_aout" | grep -E '^✗' | head -5 | sed 's/^/    /'
+        else
+          _hp_vrc=0; _hp_vout="$(python3 "$SELF_REPO/infra/scripts/sync-he-personas.py" 2>&1)" || _hp_vrc=$?
+          _hp_vdiff="$(printf '%s\n' "$_hp_vout" | grep -E '^  [+~] ' || true)"
+          if [ "$_hp_vrc" != 0 ]; then
+            bad "HE팀 운영자 페르소나 --apply 뒤 미리보기를 못 했다(rc $_hp_vrc) — 되돌렸는지 모른다. 끝난 뒤: python3 infra/scripts/sync-he-personas.py"
+            printf '%s\n' "$_hp_vout" | grep -E '^✗' | head -5 | sed 's/^/    /'
+          elif [ -n "$_hp_vdiff" ]; then
+            bad "HE팀 운영자 페르소나 $(printf '%s\n' "$_hp_vdiff" | grep -c .)명이 이 박스 판과 다르다(--apply 뒤에도) — 끝난 뒤 확인하고: python3 infra/scripts/sync-he-personas.py --apply"
+            printf '%s\n' "$_hp_vdiff" | head -10 | sed 's/^/  /'
+          else
+            ok "HE팀 운영자 페르소나 ${_hp_n}명을 이 박스 판으로 되돌렸다 — 백업(위 줄) · 개수 확인 · --apply · 다시 미리보기 0"
+          fi
+        fi
+      fi
     else
       ok "HE팀 운영자 페르소나 — merge 뒤에도 이 박스 판 그대로(미리보기)"
     fi

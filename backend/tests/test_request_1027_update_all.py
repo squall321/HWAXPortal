@@ -263,7 +263,10 @@ def _persona_preview(tmp: Path, mrc: int, out: str, rc: int = 0) -> subprocess.C
         "import sys, pathlib\n"
         f"pathlib.Path({str(tmp / 'called')!r}).write_text(' '.join(sys.argv[1:]) or 'preview')\n"
         f"sys.stdout.write({out!r})\nsys.exit({rc})\n", encoding="utf-8")
-    return _run(f'SELF_REPO="{repo}"; _aidh_mrc={mrc}\n{_S2B_PERSONA}', tmp)
+    # 어긋나면 HP-64(docs/request-1111)가 백업 자리를 정하려고 update-all 의 _ra_envv 를 부른다 — 박스 이름은 환경으로 준다.
+    # 이 대역은 어느 모드에도 같은 줄을 내므로 어긋남은 '--apply 뒤에도 다르다' 로 끝난다(HP-64 길은 test_update_all_he_restore.py).
+    return _run(f'SELF_REPO="{repo}"; _aidh_mrc={mrc}\n_ra_envv() {{ :; }}\n{_S2B_PERSONA}', tmp,
+                {"BACKUP_ROOT": str(tmp / "backups"), "HWAX_BOX": "testbox"})
 
 
 def test_HP35_어긋남이_없으면_그대로라고_말한다(tmp_path):
