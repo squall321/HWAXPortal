@@ -123,4 +123,10 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
   지우지 않는다 · 규칙이 이은 과제에 개정을 손대지 않는다 등), 다시 올린 뒤(첫 기동은 `STEPFORGE_CORE_LINK=off` · `link_plm_tasks(dry_run=true)` 로 먼저 본다 ·
   규칙 줄에 남은 개정을 다시 정한다 · 그 기간의 대응 기록에 match 를 다시 건다).
 - 정본은 StepForge 리포 문서로 두기를 청했다(다음 판에서 행에 판 표시를 지으면 지킬 것이 준다 — 한 곳만 고치게). 받은 편지함에는 요약과 그 링크를 싣는다.
+- 정본이 섰다 — StepForge `docs/OPS-ROLLBACK.md`(`94eaa05b`). 처음 답과 달라진 것이 넷이다. 규칙 줄을 찾는 SQL 이 넓어졌고(`decided_at IS NOT NULL` —
+  개정 이름뿐 아니라 앞 판 · 상태 · 메모만 고친 줄도 잡는다), 고치는 호출이 `set_revision(project_id=…, note=<지금과 다른 글>)` 로 못 박혔고, 대응 기록은 유닉스
+  초로 견주며(날짜 글로 견주면 0줄 — 되돌릴 때 `date +%s` 를 적어 둔다), `STEPFORGE_CORE_LINK=off` 는 앱 환경 변수라 켜고 끌 때마다 앱을 다시 띄운다.
+  운영이 칠 명령은 받은 편지함에 옮기지 않고 그 문서를 가리킨다.
+- 이 문서 커밋으로 StepForge main 이 `d2d716cb` → `94eaa05b` 가 되어 SIF 빌드 캐시 열쇠가 바뀐다(코드는 같은 `50b96304`). 허브가 다시 짓고 사용자 승인으로 Drive 를
+  다시 올린 뒤에 받은 편지함 글을 쓴다 — 그 전에 cae00 이 update-all 하면 허브가 열쇠가 다른 SIF 를 띄우지 않는다.
 
