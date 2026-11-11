@@ -14,6 +14,6 @@
 - [x] SignalForge 착지 — main `7137816`(SIF · Drive 없음) · cae00 문서 · 사람 몫 받음, 지표 규칙 다섯도 가림(사용자 결정 — R11-8), 숨김 줄은 그쪽 문서에 들어감(`0a8b5ce`)
 - [x] StepForge 착지 — Drive `dist-20261111-164231Z` · 드리프트 ✓ · 단언 길 대조 · 게이트웨이 안내 문구 고침 `4c56486`(R11-7)
 - [x] StepForge SIF 다시 올림 — `94eaa05b` · Drive `dist-20261111-204655Z` · 파일 sha256 `319eab5c…` · 열쇠 `ac1b702c…`, 드리프트 ✓(R11-9)
-- [ ] Laminate — 푸시됨(`e1ffe34`) · 허브가 새 SIF 를 지음, Drive 올리기(그쪽 사용자 승인) 남음
+- [x] Laminate 0.29.0 — 푸시 `e1ffe34` · dev 교체 · Drive `dist-20261111-211455Z`(사용자 승인) · 운영자 대조의 Laminate 알림 0(R11-11)
 - [ ] 넘긴 것의 답 — KR-24 받음(R11-6, 고침은 다음 dist) · ST-13 받음(R11-7) · ST-14 받음(R11-9 — 정본 StepForge `docs/OPS-ROLLBACK.md` `94eaa05b`) · HH-17 받음(R11-10 — DocForge 0.3.2, 배치는 그쪽 사용자 승인) · PA-21 기다림
 - [ ] 다음 받은 편지함 글 — 이번 요청의 답(HP-63 · HP-64 · HP-53 · HG-30)과 넘긴 것의 답

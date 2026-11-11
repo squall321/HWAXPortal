@@ -140,3 +140,14 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
 - 0.3.2 는 DocForge main 에 있고 배치(release)는 그쪽 사용자 승인 뒤다(origin/release 는 0.3.1 `bd79e79`). 이번 라운드에 실을지는 사용자가 DocForge 세션에서 정한다 —
   안 실어도 cae00 은 0.3.1 로 변환이 된다.
 
+## R11-11 Laminate 0.29.0 착지 — dev 교체 · Drive(사용자 승인) · HP-53 의 마지막 알림 둘이 사라짐
+
+- 판 — main `e1ffe34`(매니페스트 0.29.0) · **파일 sha256** `7579df24b7a8…` · **허브 `.sif.hash`(빌드 캐시 열쇠)** `4cfa220366d5…`(dev 허브 사본으로 둘 다 다시 셈 — 같다).
+  옛 판(되돌리기) 열쇠 `10969e46…` · 파일 sha256 `f58ad89d…`. 도구 43종 전부 `readOnlyHint=true` · `destructiveHint=false` · 수치 변화 없음.
+- dev 교체 — Laminate 세션이 청해 `HEAXHub/deploy/apptainer/redeploy-app.sh laminate-analyzer-mcp` 로 지은 SIF 를 띄웠다(포트 9535 · health 200 · 0.29.0).
+  게이트웨이는 33초 뒤 탐침으로 끊긴 세션을 알아채고 다시 모았다. 그 뒤 `/tools-map` 에서 Laminate 43개가 모두 읽기 확인이고, 운영자 대조의 'he-calc-laminate
+  목록 밖 쓰기 2개' 가 사라졌다. 남은 알림은 StepForge onto_* 셋(C-30 그대로)뿐이다. 앱의 REST 목록(`/api/v1/tools`)에는 표지 칸이 없다 — 표지는 MCP
+  `tools/list` 에서만 본다.
+- Drive — Laminate 세션이 '포털이 올린다' 고 전했지만 다른 세션 말이라 사용자에게 다시 물었고, 승인을 받아 올렸다(`drive-push-sif.sh` · latest/ ·
+  `dist-20261111-211455Z/` · 원격 sha256 일치 · 목록 30줄). Drive 드리프트 전부 ✓.
+
