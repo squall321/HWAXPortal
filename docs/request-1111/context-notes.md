@@ -108,6 +108,8 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
 - 시험 — 병합 통합 14/14 · 발송기 실제 SQL · crawler 2015(실패 4 는 전부터) · MCP 189/189 · dev 실측(화면 그대로 · 증분 85행 4.3초 · 맞춰 보기 12/12).
 - 그쪽이 사용자 몫으로 남긴 하나를 물었다. cae00 운영 모니터링에 꺼 둔 지표 규칙 다섯이 'silent' 로 남는다 — **가린다(결함 급등만)** 를 골랐다(권장안).
   `ALERT_HIDDEN_RULES` 에 운영 알림 넷과 지표 규칙 다섯을 함께 둔다. 나중에 dev 에서 지표 규칙을 켜면 cae00 에서는 그 목록에서 빼야 보인다.
+  그쪽이 문서에 넣었다(`0a8b5ce`) — `ALERT_HIDDEN_RULES=collection_health,ops_status_violation,operations_monitor,backup_fail,anomaly_z_high,negative_rate_spike,new_term_spike,platforms_negative_share,platforms_negative_share_watch`. 앞서 넷만 넣은 박스도 그 줄을 지우고 다시 쓴다.
+  검증은 규칙 목록 · 운영 모니터링 모두 `defect_anomaly` 하나(첫 병합 전이면 비어 있다)다. 그 알림까지 cae00 에 실으려면 `SF_MERGE_ALERT_RULES` 에도 더한다.
 - cae00 사람 몫(받은 편지함에 싣는다) — ollama · bge-m3 확인(`/api/tags` 에 `bge-m3:latest` · 임베딩 길이 1024 · `ollama ps` 의 GPU/CPU), 처음 채우기 한 번
   (GPU 면 약 1.5시간, CPU 면 `embed-new.sh 300` 으로 건/초를 재어 셈한다), cron 한 줄(2시간마다), 끝났는지 `--status` 의 `remaining: 0`.
 
