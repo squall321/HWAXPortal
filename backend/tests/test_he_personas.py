@@ -1227,7 +1227,8 @@ def test_HA29_StepForge_는_되돌리기_어려운_여덟만_confirm_이다():
     confirm = {_native(n, p["apps"]) for n in p["confirm"]}
     writes = {_native(n, p["apps"]) for n in p["writes"]}
     assert confirm == _SF_CONFIRM, sorted(confirm ^ _SF_CONFIRM)
-    assert not writes & confirm and len(writes) == len(p["writes"]) == 34, sorted(writes)
+    # 11-11 link_plm_tasks(SRC-03 — PLM 과제 잇기, dry_run 기본이고 MCP 로도 적용한다)를 writes 에 더해 35(HP-53)
+    assert not writes & confirm and len(writes) == len(p["writes"]) == 35, sorted(writes)
     assert {"rename_part", "remove_part", "confirm_interfaces", "mesh_size_advice", "shape_op", "record_dimension", "save_fill_rule"} <= writes
     # 다른 앱과 겹치는 둘은 접두 별칭이다(dev /tools-map — ste · DynaForge 의 cancel_job, MaterialTwin 의 register_material)
     assert "heaxstep_forge_cancel_job" in p["confirm"] and "heaxstep_forge_register_material" in p["writes"]

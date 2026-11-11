@@ -52,7 +52,7 @@
         "onto_link·onto_put·onto_define 과 채우기 잡(onto_fill)을 MCP 로 적용하면 identity_refused 다. 적용과 후보 확정 · 거절(op confirm·reject)은 rest_call 로만 한다(포털 docs/core-link CK-3)."
       ],
       "key_tools": ["list_projects", "get_project_meta", "measurement_guide", "job_params_guide", "part_info", "find_parts", "inspect_report", "heaxstep_forge_job_status", "heaxstep_forge_list_jobs", "upload_instructions"],
-      "writes": ["intake", "create_project", "run_job", "set_project_meta", "set_part_metadata", "rename_part", "apply_naming_rules", "set_file_transform", "transform_instance", "remove_part", "set_part_rules", "set_joint", "set_interface", "confirm_interfaces", "mesh_size_advice", "remesh_parts", "export_step", "export_sidecar", "export_part_fragment", "extract_surface_to_cad", "build_cavity", "shape_op", "align_image_to_geometry", "region_mask_transfer", "record_part_lineage", "record_dimension", "apply_dimension", "set_risk_verdict", "register_materials", "register_materials_csv", "heaxstep_forge_register_material", "run_recipe", "set_revision", "save_fill_rule"],
+      "writes": ["intake", "create_project", "run_job", "set_project_meta", "set_part_metadata", "rename_part", "apply_naming_rules", "set_file_transform", "transform_instance", "remove_part", "set_part_rules", "set_joint", "set_interface", "confirm_interfaces", "mesh_size_advice", "remesh_parts", "export_step", "export_sidecar", "export_part_fragment", "extract_surface_to_cad", "build_cavity", "shape_op", "align_image_to_geometry", "region_mask_transfer", "record_part_lineage", "record_dimension", "apply_dimension", "set_risk_verdict", "register_materials", "register_materials_csv", "heaxstep_forge_register_material", "run_recipe", "set_revision", "save_fill_rule", "link_plm_tasks"],
       "confirm": ["delete_project", "forget_dimension", "upload_step", "import_archive", "heaxstep_forge_cancel_job", "set_admin", "save_failure_mode", "save_recipe"],
       "samples": [
         "DV2 낙하해석 과제 파트 몇 개고 어디까지 진행됐어?",
@@ -144,7 +144,7 @@
         "제출이 성공해도 라이선스 설정이 틀리면 몇 초 만에 실패한다. 제출 직후 상태·로그를 한 번 확인한다."
       ],
       "key_tools": ["list_recent_jobs", "smarttwinmcp_job_status", "get_job_details", "job_diagnose"],
-      "writes": ["fullangle_drop_simulation", "single_drop_simulation", "smarttwinmcp_submit_job", "submit_lsdyna_job", "job_rerun", "job_postprocess", "job_collect", "catalog_run"],
+      "writes": ["fullangle_drop_simulation", "single_drop_simulation", "smarttwinmcp_submit_job", "submit_lsdyna_job", "job_rerun", "job_postprocess", "job_collect", "catalog_run", "catalog_reload", "recipe_save", "smarttwinmcp_recipe_run"],
       "confirm": ["job_stop"],
       "optional": [{
         "app": "smart-twin-cluster",
@@ -194,8 +194,8 @@
         "report_part_series 는 다운샘플이다 — 원본 점 수와 함께 전한다."
       ],
       "key_tools": ["list_operations", "describe_operation", "run_operation", "heaxkooremapper_mcp_get_job", "list_sessions", "report_facets", "find_reports", "report_summary", "report_worst_cases", "report_part_risk"],
-      "writes": ["create_session", "upload_kfile", "run_operation", "update_session", "ingest_report", "update_report_meta", "attach_report_scenario", "publish_report_to_datahub", "recipe_propose", "heaxkooremapper_mcp_recipe_run"],
-      "confirm": ["delete_session", "delete_file", "delete_report", "heaxkooremapper_mcp_cancel_job", "recipe_register"],
+      "writes": ["create_session", "upload_kfile", "run_operation", "update_session", "ingest_report", "update_report_meta", "attach_report_scenario", "publish_report_to_datahub", "recipe_propose", "heaxkooremapper_mcp_recipe_run", "attach_cad", "attach_cae_package", "attach_render", "confirm_task_alias", "save_result_to_path", "set_report_revision", "upload_local_path"],
+      "confirm": ["delete_session", "delete_file", "delete_report", "heaxkooremapper_mcp_cancel_job", "recipe_register", "remove_task_alias", "unlink_report_revision", "recipe_deprecate"],
       "samples": [
         "이 K파일 재료카드 교체하는 오퍼레이션 뭐 있어?",
         "최근 전각도 낙하 리포트에서 최악 방향 5개 알려줘",
@@ -400,7 +400,7 @@
         "pcb_warpage_surrogate 는 합성 데이터로 학습한 데모다. 절대값을 판정 근거로 쓰지 않는다."
       ],
       "key_tools": ["discover", "list_records", "hybrid_search", "agent_search", "get_record_sections", "data_aggregate", "aidatahub_list_tags", "import_record"],
-      "writes": ["import_record", "convert_file"],
+      "writes": ["import_record", "convert_file", "draft_agent"],
       "confirm": ["create_agent", "patch_agent", "bind_records_to_agent", "create_doc_type"],
       "samples": [
         "HE 팀 CAE manual 문서 목록 보여줘",
@@ -565,6 +565,26 @@
     {
       "key": "he-doc-reportarchive",
       "apps": ["reportarchive"],
+      "optional": [
+        {"app": "reportarchive", "needs_tool": "add_object_alias", "writes": ["reportarchive_add_object_alias"]},
+        {"app": "reportarchive", "needs_tool": "create_embed_bundle", "writes": ["reportarchive_create_embed_bundle"]},
+        {"app": "reportarchive", "needs_tool": "create_html_report", "writes": ["reportarchive_create_html_report"]},
+        {"app": "reportarchive", "needs_tool": "create_object", "writes": ["reportarchive_create_object"]},
+        {"app": "reportarchive", "needs_tool": "create_report_from_format", "writes": ["reportarchive_create_report_from_format"]},
+        {"app": "reportarchive", "needs_tool": "link_objects", "writes": ["reportarchive_link_objects"]},
+        {"app": "reportarchive", "needs_tool": "register_report_format", "writes": ["reportarchive_register_report_format"]},
+        {"app": "reportarchive", "needs_tool": "set_format_bindings", "writes": ["reportarchive_set_format_bindings"]},
+        {"app": "reportarchive", "needs_tool": "sync_data_source", "writes": ["reportarchive_sync_data_source"]},
+        {"app": "reportarchive", "needs_tool": "update_object", "writes": ["reportarchive_update_object"]},
+        {"app": "reportarchive", "needs_tool": "upload_file", "writes": ["reportarchive_upload_file"]},
+        {"app": "reportarchive", "needs_tool": "create_sp_types", "confirm": ["reportarchive_create_sp_types"]},
+        {"app": "reportarchive", "needs_tool": "create_sp_properties", "confirm": ["reportarchive_create_sp_properties"]},
+        {"app": "reportarchive", "needs_tool": "create_sp_relation_types", "confirm": ["reportarchive_create_sp_relation_types"]},
+        {"app": "reportarchive", "needs_tool": "merge_objects", "confirm": ["reportarchive_merge_objects"]},
+        {"app": "reportarchive", "needs_tool": "move_object_taggings", "confirm": ["reportarchive_move_object_taggings"]},
+        {"app": "reportarchive", "needs_tool": "move_objects_to_type", "confirm": ["reportarchive_move_objects_to_type"]},
+        {"app": "reportarchive", "needs_tool": "set_sp_type_mapping", "confirm": ["reportarchive_set_sp_type_mapping"]}
+      ],
       "name": "Report Archive 운영자",
       "summary": "보고서 검색·작성·수정·게시와 해석 런·온톨로지 조회를 Report Archive 도구로 수행하는 HE팀 운영자.",
       "mission": "보고서를 찾고 모아 읽고, 양식·템플릿대로 초안을 쓰고 고치며, 해석 런 결과를 보고서로 잇는다. 게시·삭제처럼 남에게 보이는 변경은 확인받고 한다.",
@@ -671,7 +691,47 @@
             "정밀 변환으로 만든 보고서에서 모델 판독 블록만 짚어 줘"
           ],
           "key_tools": ["get_report_outline", "get_report"]
-        }
+        },
+        {"app": "reportarchive", "needs_tool": "create_report_draft", "writes": ["reportarchive_create_report_draft"]},
+        {"app": "reportarchive", "needs_tool": "create_report_from_preset", "writes": ["reportarchive_create_report_from_preset"]},
+        {"app": "reportarchive", "needs_tool": "create_report_from_run", "writes": ["reportarchive_create_report_from_run"]},
+        {"app": "reportarchive", "needs_tool": "update_report_draft", "writes": ["reportarchive_update_report_draft"]},
+        {"app": "reportarchive", "needs_tool": "append_rows", "writes": ["reportarchive_append_rows"]},
+        {"app": "reportarchive", "needs_tool": "patch_cells", "writes": ["reportarchive_patch_cells"]},
+        {"app": "reportarchive", "needs_tool": "copy_report", "writes": ["reportarchive_copy_report"]},
+        {"app": "reportarchive", "needs_tool": "save_report_as_preset", "writes": ["reportarchive_save_report_as_preset"]},
+        {"app": "reportarchive", "needs_tool": "add_report_tags", "writes": ["reportarchive_add_report_tags"]},
+        {"app": "reportarchive", "needs_tool": "set_report_folders", "writes": ["reportarchive_set_report_folders"]},
+        {"app": "reportarchive", "needs_tool": "link_reports", "writes": ["reportarchive_link_reports"]},
+        {"app": "reportarchive", "needs_tool": "reply_comment", "writes": ["reportarchive_reply_comment"]},
+        {"app": "reportarchive", "needs_tool": "request_composite_item", "writes": ["reportarchive_request_composite_item"]},
+        {"app": "reportarchive", "needs_tool": "upload_from_url", "writes": ["reportarchive_upload_from_url"]},
+        {"app": "reportarchive", "needs_tool": "prepare_upload", "writes": ["reportarchive_prepare_upload"]},
+        {"app": "reportarchive", "needs_tool": "add_object_alias", "writes": ["reportarchive_add_object_alias"]},
+        {"app": "reportarchive", "needs_tool": "create_embed_bundle", "writes": ["reportarchive_create_embed_bundle"]},
+        {"app": "reportarchive", "needs_tool": "create_html_report", "writes": ["reportarchive_create_html_report"]},
+        {"app": "reportarchive", "needs_tool": "create_object", "writes": ["reportarchive_create_object"]},
+        {"app": "reportarchive", "needs_tool": "create_report_from_format", "writes": ["reportarchive_create_report_from_format"]},
+        {"app": "reportarchive", "needs_tool": "link_objects", "writes": ["reportarchive_link_objects"]},
+        {"app": "reportarchive", "needs_tool": "register_report_format", "writes": ["reportarchive_register_report_format"]},
+        {"app": "reportarchive", "needs_tool": "set_format_bindings", "writes": ["reportarchive_set_format_bindings"]},
+        {"app": "reportarchive", "needs_tool": "sync_data_source", "writes": ["reportarchive_sync_data_source"]},
+        {"app": "reportarchive", "needs_tool": "update_object", "writes": ["reportarchive_update_object"]},
+        {"app": "reportarchive", "needs_tool": "upload_file", "writes": ["reportarchive_upload_file"]},
+        {"app": "reportarchive", "needs_tool": "publish_report", "confirm": ["reportarchive_publish_report"]},
+        {"app": "reportarchive", "needs_tool": "request_unpublish", "confirm": ["reportarchive_request_unpublish"]},
+        {"app": "reportarchive", "needs_tool": "restore_version", "confirm": ["reportarchive_restore_version"]},
+        {"app": "reportarchive", "needs_tool": "trash_report", "confirm": ["reportarchive_trash_report"]},
+        {"app": "reportarchive", "needs_tool": "remove_rows", "confirm": ["reportarchive_remove_rows"]},
+        {"app": "reportarchive", "needs_tool": "resolve_thread", "confirm": ["reportarchive_resolve_thread"]},
+        {"app": "reportarchive", "needs_tool": "map_analysis_part", "confirm": ["reportarchive_map_analysis_part"]},
+        {"app": "reportarchive", "needs_tool": "create_sp_types", "confirm": ["reportarchive_create_sp_types"]},
+        {"app": "reportarchive", "needs_tool": "create_sp_properties", "confirm": ["reportarchive_create_sp_properties"]},
+        {"app": "reportarchive", "needs_tool": "create_sp_relation_types", "confirm": ["reportarchive_create_sp_relation_types"]},
+        {"app": "reportarchive", "needs_tool": "merge_objects", "confirm": ["reportarchive_merge_objects"]},
+        {"app": "reportarchive", "needs_tool": "move_object_taggings", "confirm": ["reportarchive_move_object_taggings"]},
+        {"app": "reportarchive", "needs_tool": "move_objects_to_type", "confirm": ["reportarchive_move_objects_to_type"]},
+        {"app": "reportarchive", "needs_tool": "set_sp_type_mapping", "confirm": ["reportarchive_set_sp_type_mapping"]}
       ]
     },
     {
@@ -704,7 +764,7 @@
         "외부 이미지는 upload_image_from_url(공개 주소만), 작은 로컬 이미지만 upload_image_base64(256KB 이하)다."
       ],
       "key_tools": ["search_documents", "get_document_outline", "get_section", "query_rules", "validate_block", "get_related_subgraph"],
-      "writes": ["create_document", "insert_block", "update_block", "move_block", "insert_image_block", "upload_image_from_url", "upload_image_base64", "create_relationship", "extract_relationships"],
+      "writes": ["create_document", "insert_block", "update_block", "move_block", "insert_image_block", "upload_image_from_url", "upload_image_base64", "create_relationship", "extract_relationships", "upload_image_bytes"],
       "confirm": ["delete_block", "delete_relationship"],
       "optional": [{
         "app": "mx-white-paper",
@@ -765,7 +825,7 @@
         "'발표자료로' 단추로 맡긴 잡은 포털이 진행을 보고 끝나면 대화에 받기 링크를 남긴다 — 그 잡의 WDA 번호는 사람에게 보이지 않으니 묻지 않는다."
       ],
       "key_tools": ["meeting_personas", "report_ingest", "report_fragmentize", "meeting_start", "meeting_get_briefing", "meeting_submit_turn", "scenario_build", "render_submit", "render_status"],
-      "writes": ["report_ingest", "report_fragmentize", "meeting_start", "meeting_submit_turn", "meeting_close", "scenario_build", "render_submit", "qa_run", "scenario_patch"],
+      "writes": ["report_ingest", "report_fragmentize", "meeting_start", "meeting_submit_turn", "meeting_close", "scenario_build", "render_submit", "qa_run", "scenario_patch", "approval_record"],
       "confirm": [],
       "samples": [
         "이 보고서로 발표자료 만들어줘",

@@ -130,7 +130,10 @@ def _with_optional(p: dict, by_app: dict) -> tuple[dict, list[str]]:
         app, need = o["app"], o.get("needs_tool")
         names = by_app.get(app) or []
         if app not in by_app or (need and need not in names and f"{app.replace('-', '')}_{need}" not in names):
-            absent.append(f"{app} 의 {need}" if app in by_app else app)
+            # 앱이 통째로 없으면 이름은 한 번만 — 도구마다 칸을 둔 선택 앱(DocForge 의 RA 쓰기 · 11-11 HP-53)이 같은 이름을 수십 번 적지 않게
+            miss = f"{app} 의 {need}" if app in by_app else app
+            if miss not in absent:
+                absent.append(miss)
             continue
         if app not in q["apps"]:
             q["apps"].append(app)
