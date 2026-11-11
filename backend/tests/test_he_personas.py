@@ -1403,8 +1403,9 @@ def test_update_all_6_은_덧씌우기_줄을_올리고_지문을_넘긴다(tmp_
 # 병합이 운영자 행을 매 실행 dev 판으로 덮어 사람이 백업을 뜨고 --apply 했다. 백업이 두 번 빠졌다(11-05 안 뜸 · 11-09 다른 칸으로 걸러 0건).
 # update-all §3 이 --apply 앞에 부른다 — 0 으로 끝날 때만 반영한다(0건 · 빠진 운영자 · 깨진 덧씌우기 = 1, 못 읽음 · 못 적음 = 2).
 def _dev_rows(*drop: str) -> dict:
-    """합친 정의의 운영자 전부를 병합이 dev 판으로 덮은 꼴 — system_prompt 가 dev 판이다."""
-    return {p["key"]: {**_op_row(p["key"], p["apps"]), "system_prompt": "dev 판"} for p in _load()["personas"] if p["key"] not in drop}
+    """합친 정의의 운영자 전부를 병합이 dev 판으로 덮은 꼴 — system_prompt 가 dev 판이다. 이름은 정본 그대로다(he- 로 시작하지 않는다)."""
+    return {p["key"]: {**_op_row(p["key"], p["apps"]), "name": p["name"], "system_prompt": "dev 판"}
+            for p in _load()["personas"] if p["key"] not in drop}
 
 
 def _backups(d: Path) -> list[Path]:
@@ -1413,18 +1414,24 @@ def _backups(d: Path) -> list[Path]:
 
 def test_HP64_백업은_he_행을_agent_type_으로_통째로_적고_운영자가_다_들면_0(monkeypatch, capsys, tmp_path):
     mcp_only, _both = _smarttwin_maps()
+    # 거르는 칸은 agent_type 하나다(11-09 에 다른 칸으로 걸러 0건) — 이름 · 운영자 꼴(persona_kind)로 거르면 아래 미끼에 걸린다
     rows = {**_dev_rows(), "he-calc-legacy": _op_row("he-calc-legacy", ["ghost-app"]),
-            "pcb-warpage": {"agent_type": "pcb-warpage", "name": "x"}, "the-he-x": {"agent_type": "the-he-x", "name": "y"}}
+            "he-manual": {"agent_type": "he-manual", "name": "사람이 만든 것"},                     # 운영자 꼴이 아니어도 he- 면 넣는다
+            "pcb-warpage": {"agent_type": "pcb-warpage", "name": "he-decoy"},                       # 이름이 he- 여도 agent_type 이 아니면 뺀다
+            "the-he-x": {"agent_type": "the-he-x", "name": "y"},
+            "ext-op": {"agent_type": "ext-op", "name": "외부 운영자",
+                       "response_config": {"persona_kind": "mcp_operator", "mcp_apps": ["x"]}}}     # 운영자 꼴이어도 he- 가 아니면 뺀다
     hub = _FakeHub(mcp_only, rows)
     rc, out, err = _run_main(monkeypatch, capsys, hub, "--backup", str(tmp_path / "bk"))
     assert rc == 0 and err == "", (out, err)
     (f,) = _backups(tmp_path / "bk")
     saved = json.loads(f.read_text(encoding="utf-8"))
     keys = [p["key"] for p in _load()["personas"]]
-    assert [r["agent_type"] for r in saved] == sorted([*keys, "he-calc-legacy"]), "he- 로 시작하는 agent_type 만 — 다른 칸으로 거르면 0건이었다(11-09)"
+    assert [r["agent_type"] for r in saved] == sorted([*keys, "he-calc-legacy", "he-manual"]), \
+        "he- 로 시작하는 agent_type 만 — 다른 칸으로 거르면 0건이었다(11-09)"
     assert all(r == rows[r["agent_type"]] for r in saved), "행을 통째로 적는다 — 되돌릴 때 칸이 빠지지 않게"
-    assert out == (f"  · 백업 {f} — he-* {len(keys) + 1}건(agent_type 기준) · 운영자 {len(keys)}명 모두 들었다"
-                   " · 정본에 없는 he-* 1(he-calc-legacy — 넣되 세지 않는다)\n"), out
+    assert out == (f"  · 백업 {f} — he-* {len(keys) + 2}건(agent_type 기준) · 운영자 {len(keys)}명 모두 들었다"
+                   " · 정본에 없는 he-* 2(he-calc-legacy, he-manual — 넣되 세지 않는다)\n"), out
     assert hub.calls == [("GET", "agents")], "목록 하나만 읽는다 — 게이트웨이를 묻지 않고 쓰지도 않는다"
 
 
