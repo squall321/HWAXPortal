@@ -15,6 +15,7 @@ import json
 import os
 import re
 import subprocess
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -1396,3 +1397,129 @@ def test_update_all_6_은_덧씌우기_줄을_올리고_지문을_넘긴다(tmp_
                         'echo "FP:${HWAX_HE_FP:-}"'])
     p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"]})
     assert p.stdout.strip().endswith("FP:0123456789ab"), p.stdout + p.stderr
+
+
+# ── HP-64(docs/request-1111 (나)) — 병합 뒤 저절로 되돌리기 앞의 백업 · 확인(--backup) ──────────────────────────────────────────
+# 병합이 운영자 행을 매 실행 dev 판으로 덮어 사람이 백업을 뜨고 --apply 했다. 백업이 두 번 빠졌다(11-05 안 뜸 · 11-09 다른 칸으로 걸러 0건).
+# update-all §3 이 --apply 앞에 부른다 — 0 으로 끝날 때만 반영한다(0건 · 빠진 운영자 · 깨진 덧씌우기 = 1, 못 읽음 · 못 적음 = 2).
+def _dev_rows(*drop: str) -> dict:
+    """합친 정의의 운영자 전부를 병합이 dev 판으로 덮은 꼴 — system_prompt 가 dev 판이다. 이름은 정본 그대로다(he- 로 시작하지 않는다)."""
+    return {p["key"]: {**_op_row(p["key"], p["apps"]), "name": p["name"], "system_prompt": "dev 판"}
+            for p in _load()["personas"] if p["key"] not in drop}
+
+
+def _backups(d: Path) -> list[Path]:
+    return sorted(d.glob("he-personas-*.json"))
+
+
+def test_HP64_백업은_he_행을_agent_type_으로_통째로_적고_운영자가_다_들면_0(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    # 거르는 칸은 agent_type 하나다(11-09 에 다른 칸으로 걸러 0건) — 이름 · 운영자 꼴(persona_kind)로 거르면 아래 미끼에 걸린다
+    rows = {**_dev_rows(), "he-calc-legacy": _op_row("he-calc-legacy", ["ghost-app"]),
+            "he-manual": {"agent_type": "he-manual", "name": "사람이 만든 것"},                     # 운영자 꼴이 아니어도 he- 면 넣는다
+            "pcb-warpage": {"agent_type": "pcb-warpage", "name": "he-decoy"},                       # 이름이 he- 여도 agent_type 이 아니면 뺀다
+            "the-he-x": {"agent_type": "the-he-x", "name": "y"},
+            "ext-op": {"agent_type": "ext-op", "name": "외부 운영자",
+                       "response_config": {"persona_kind": "mcp_operator", "mcp_apps": ["x"]}}}     # 운영자 꼴이어도 he- 가 아니면 뺀다
+    hub = _FakeHub(mcp_only, rows)
+    rc, out, err = _run_main(monkeypatch, capsys, hub, "--backup", str(tmp_path / "bk"))
+    assert rc == 0 and err == "", (out, err)
+    (f,) = _backups(tmp_path / "bk")
+    saved = json.loads(f.read_text(encoding="utf-8"))
+    keys = [p["key"] for p in _load()["personas"]]
+    assert [r["agent_type"] for r in saved] == sorted([*keys, "he-calc-legacy", "he-manual"]), \
+        "he- 로 시작하는 agent_type 만 — 다른 칸으로 거르면 0건이었다(11-09)"
+    assert all(r == rows[r["agent_type"]] for r in saved), "행을 통째로 적는다 — 되돌릴 때 칸이 빠지지 않게"
+    assert out == (f"  · 백업 {f} — he-* {len(keys) + 2}건(agent_type 기준) · 운영자 {len(keys)}명 모두 들었다"
+                   " · 정본에 없는 he-* 2(he-calc-legacy, he-manual — 넣되 세지 않는다)\n"), out
+    assert hub.calls == [("GET", "agents")], "목록 하나만 읽는다 — 게이트웨이를 묻지 않고 쓰지도 않는다"
+
+
+def test_HP64_0건이면_1_이고_빈_백업을_남긴다(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, {"pcb-warpage": {"agent_type": "pcb-warpage"}}), "--backup", str(tmp_path))
+    (f,) = _backups(tmp_path)
+    assert rc == 1 and json.loads(f.read_text(encoding="utf-8")) == [], out
+    assert out == f"  ✗ 백업 {f} — he-* 0건(agent_type 기준) · 0건이면 저절로 반영하지 않는다(목록이 비었거나 거르는 칸이 틀렸다)\n", out
+
+
+def test_HP64_운영자가_빠지면_1_이고_빠진_운영자를_말한다_수가_우연히_같아도(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    n = len(_load()["personas"])
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, _dev_rows("he-data-arp")), "--backup", str(tmp_path / "a"))
+    assert rc == 1 and f"he-* {n - 1}건(agent_type 기준) · 운영자 {n}명 가운데 {n - 1}명만 들었다(행이 없는 운영자 he-data-arp)" in out, out
+    assert out.startswith("  ✗ 백업 ") and "수가 맞지 않아 저절로 반영하지 않는다" in out and len(_backups(tmp_path / "a")) == 1, \
+        "백업은 남긴다 — 사람이 본다"
+    # 빠진 운영자 하나 + 정본에 없는 he-* 하나 — 수만 견주면 맞아 보인다
+    rows = {**_dev_rows("he-data-arp"), "he-data-arpold": _op_row("he-data-arpold", ["arp"])}
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, rows), "--backup", str(tmp_path / "b"))
+    assert rc == 1 and f"he-* {n}건" in out and "행이 없는 운영자 he-data-arp)" in out and "정본에 없는 he-* 1(he-data-arpold" in out, out
+
+
+def test_HP64_AIDataHub_를_못_읽으면_모름이라_2_이고_백업이_없다(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    bk = tmp_path / "bk"
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, _dev_rows(), list_status=500), "--backup", str(bk))
+    assert rc == 2 and out == "  ✗ 백업 못 함 — AIDataHub 전문가 목록을 못 읽었다(500) · 모름이라 저절로 반영하지 않는다\n", out
+
+    def down(method, url, body=None):
+        raise urllib.error.URLError("connection refused")
+
+    rc, out, _err = _run_main(monkeypatch, capsys, down, "--backup", str(bk))
+    assert rc == 2 and "못 읽었다(URLError)" in out, "닿지 않음을 '없음(0건)' 으로 읽지 않는다"
+    rc, out, _err = _run_main(monkeypatch, capsys, lambda m, u, b=None: (200, {"detail": "x"}), "--backup", str(bk))
+    assert rc == 2 and "못 읽었다(200)" in out, out
+    assert not bk.exists()
+
+
+def test_HP64_백업을_못_적으면_2(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    (tmp_path / "file").write_text("x", encoding="utf-8")
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, _dev_rows()), "--backup", str(tmp_path / "file" / "bk"))
+    assert rc == 2 and out.startswith(f"  ✗ 백업 못 함 — {tmp_path / 'file' / 'bk'} 에 적지 못했다(") and "저절로 반영하지 않는다" in out, out
+
+
+def test_HP64_운영자_수는_덧씌우기를_합친_정의로_세고_깨진_덧씌우기면_1(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    n = len(_load()["personas"])
+    st = next(p for p in _load()["personas"] if p["key"] == "he-sim-smarttwin")
+    lp = tmp_path / "he-team.local.json"
+    lp.write_text(json.dumps({"personas": {"he-sim-boxonly": {**st, "key": "he-sim-boxonly"}, "he-cad-odbhub": None}}), encoding="utf-8")
+    monkeypatch.setattr(_sync().he_team, "LOCAL_PATH", lp)
+    rows = _dev_rows()                              # 이 박스에서 뺀 he-cad-odbhub 는 남아 있고 더한 he-sim-boxonly 는 아직 없다
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, rows), "--backup", str(tmp_path / "a"))
+    assert rc == 1 and "행이 없는 운영자 he-sim-boxonly)" in out and "정본에 없는 he-* 1(he-cad-odbhub" in out, out
+    rows["he-sim-boxonly"] = _op_row("he-sim-boxonly", ["smart-twin-mcp"])
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, rows), "--backup", str(tmp_path / "b"))
+    assert rc == 0 and f"운영자 {n}명 모두 들었다 · 정본에 없는 he-* 1(he-cad-odbhub — 넣되 세지 않는다)" in out, out
+    lp.write_text("{", encoding="utf-8")            # 깨지면 기본 정의로 돈다 — 그 정의로 저절로 쓰면 이 박스의 덧씌우기 몫이 지워진다
+    rc, out, _err = _run_main(monkeypatch, capsys, _FakeHub(mcp_only, rows), "--backup", str(tmp_path / "c"))
+    assert rc == 1 and "덧씌우기 he-team.local.json 을 버린 정의다(" in out and "고칠 때까지 저절로 반영하지 않는다" in out, out
+    assert len(_backups(tmp_path / "c")) == 1
+
+
+def test_HP64_백업이_맞으면_apply_뒤_미리보기가_0이고_백업은_덮이기_전_판이다(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    hub = _FakeHub(mcp_only, _dev_rows())
+    rc, out, _err = _run_main(monkeypatch, capsys, hub)
+    assert rc == 0 and "  ~ he-sim-smarttwin 고친다:" in out, out
+    rc, out, _err = _run_main(monkeypatch, capsys, hub, "--backup", str(tmp_path))
+    assert rc == 0, out
+    rc, out, err = _run_main(monkeypatch, capsys, hub, "--apply")
+    assert rc == 0 and "반영 — 새로 0 · 고침 1" in out, (out, err)
+    rc, out, _err = _run_main(monkeypatch, capsys, hub)
+    assert rc == 0 and not [ln for ln in out.splitlines() if ln.startswith(("  + ", "  ~ "))] and "고침 0" in out, out
+    (f,) = _backups(tmp_path)
+    before = {r["agent_type"]: r for r in json.loads(f.read_text(encoding="utf-8"))}
+    assert before["he-sim-smarttwin"]["system_prompt"] == "dev 판" != hub.rows["he-sim-smarttwin"]["system_prompt"], "되돌릴 판이다"
+
+
+def test_HP64_backup_은_다른_모드와_같이_부르지_않는다(monkeypatch, capsys, tmp_path):
+    mcp_only, _both = _smarttwin_maps()
+    for extra in (["--apply"], ["--check"], ["--show", "he-sim-smarttwin"]):
+        with pytest.raises(SystemExit) as ex:
+            _run_main(monkeypatch, capsys, _FakeHub(mcp_only, _dev_rows()), "--backup", str(tmp_path), *extra)
+        assert ex.value.code == 2, extra
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, capsys, _FakeHub(mcp_only, _dev_rows()), "--backup", " ")
+    assert not _backups(tmp_path), "같이 부르면 백업도 반영도 하지 않는다 — '백업하고 반영' 으로 읽히면 반영이 조용히 빠진다"
