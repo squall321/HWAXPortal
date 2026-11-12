@@ -361,3 +361,18 @@ REST `GET /api/projects/{id}/section-atlas` 에 format · viewer, svg_live 는 i
 파트마다 교선 · 채움을 워커에서(치수 끔 3.8 ~ 4.5배 · 켬 1.0 ~ 1.4배 — 치수는 아직 한 코어). 이 판이 패널 둘(CE-7)을 품는다.
 
 **RF-39 사용자 결정 11-08 KST — RF-29 를 유지한다: StepForge 가 단면 · 적층 잡 도구 넷의 readOnlyHint 를 떼어도 포털은 읽기로 다룬다.** StepForge 운영 감사(그쪽 D-677 S7, 11-07 — main `e96e68d`)가 `section_pair_view` · `section_batch` · `compare_stackup` · `stackup_figure` 의 readOnlyHint 를 뗐다(장부는 안 바꾸지만 잡과 파일을 남긴다 · `allow_job` 기본 true). 게이트웨이는 읽기 전용 PAT 을 '읽기 목록에 있거나 앱 표지가 읽기' 로만 열고, 루틴 울타리는 앱 표지가 '읽기 아님' 이면 목록보다 먼저 닫는다 — 그래서 넷이 읽기 토큰 · 루틴에서 거절됐다. RF-29(측정 잡은 읽기 토큰 · 루틴으로도 스스로)와 RF-30 · RF-32 의 전제를 뒤집은 것이라 선택지로 물었고 사용자가 권장안을 골랐다 — StepForge 표지는 그대로 두고 게이트웨이 `read_tools.json` 에 **override** 칸(앱이 readOnlyHint=False 를 적었어도 포털이 읽기로 다루는 도구 — 사용자 결정으로만)을 두어 넷을 적는다. 읽기 전용 PAT 판정 · 루틴 단계 · 패널 읽기 · 쓰기 분류(tools-map `write` · 검색 감점 · 운영자 알림)가 앱 표지보다 먼저 보고, destructiveHint 와 닫기 목록(deny)은 그대로 이긴다. 클라이언트가 보는 tools/list 표지는 앱이 적은 그대로다(개인 Claude 가 읽기 도구로 오해해 묻지 않고 부르지 않게). 기존 읽기 목록(`tools`)의 뜻은 바꾸지 않았다 — 선언 백엔드의 박스 목록이 앱의 False 를 못 이기는 원칙(ext-connect GW9)도 그대로다. 버린 것 — '잡 없을 때만 읽기'(allow_job=false 일 때만, RF-29 의 '멈추지 않는다' 를 뒤집는다) · '새 분류 그대로'(읽기 토큰 · 루틴이 넷을 아예 못 부른다). 게이트웨이 `290f324`(병합 `2d0ec28`) · 참조 고침 `c47e883` — 앞 둘의 메시지는 번호를 RF-33 으로, 날짜를 dev 박스 UTC 로(11-07) 잘못 적었다(강제 푸시 없이 그대로 둔다). 시험 하나 더 · 사본의 변이 셋이 모두 붉었다 · 전체 940 통과. dev 재기동 뒤 `/tools-map` 에서 넷이 `routine_read` · `panel_read` 에 있고 `write` 에 없다. 영향 조사(읽기 전용 에이전트)에서 바뀌지 않는 것 — 챗 확인 관문(HA-29 — 운영자 목록과 잡 목록만 본다) · 심의 좌석 조회(이름 머리 목록) · 지정 도구 · 리스크 앱(넷을 부르지 않고 `f1.calls` 인자만 짓는다). 남은 틈(옛것) — 리스크 패널 좌석이 `compare_stackup` 으로 측정 잡을 걸 수 있다(`compare_` 머리 · `allow_job` 기본 true — StepForge `QUEUES_JOB` 와 어긋남, 바꾸지 않았다). 같은 날의 다른 변화 — 짝 단면 그림 상한 256KB → 8MiB(StepForge D-675)는 게이트웨이 그림 보관 · 에이전트 판독 8 MiB · RA 25MB 와 맞아 고칠 것이 없다(사람당 보관 1 GiB 라 큰 그림이 쌓이면 오래된 것부터 지워진다).
+
+**RF-40 사용자 결정 11-13 KST — 챗의 단면은 기본으로 호버되는 SVG 로 보이게 한다. StepForge 가 PNG 와 SVG 를 짝으로 돌려주고, 화면은 SVG · 모델 판독 · 보고서는 PNG.**
+사용자가 "기본이 svg 면 안 되겠니" 라고 물었다. 지금은 StepForge 단면 도구 넷(section_view · section_pair_view · section_batch · section_atlas)의 `format` 기본값이
+`png` 이고, `svg_live` 는 모델이 골라야만 온다 — StepForge 운영자 안내문에 svg_live 이야기가 없어 챗에서는 거의 오지 않았다. 챗 화면은 SVG 를 받을 준비가 돼 있다
+(에이전트 서버가 내용으로 `.svg` 를 저장하고 화면이 격리 iframe 으로 그려 호버가 산다 — RF-36). StepForge 기본값만 SVG 로 바꾸면 셋이 깨진다 — 챗 모델은 SVG 를
+못 읽고(그림 판독은 래스터만 — 에이전트 `vision.IMG_URL_RE` 가 png · jpg · gif · webp 만 집는다), 심의 · 리스크 좌석의 판독과 리스크 앱 `f1.calls`, RA 그림 블록 ·
+워드 변환은 래스터를 전제로 한다. 선택지 셋(PNG + SVG 함께 · 챗에서만 SVG 기본 · 그대로) 가운데 사용자가 권장안 **PNG + SVG 함께** 를 골랐다.
+- StepForge — 네 도구에 `format="png+svg_live"` 를 더한다. 한 번 그려 글 블록 + ImageContent(PNG) + ImageContent(SVG)를 짝으로 낸다(여러 장이면 짝마다 차례대로 ·
+  짝을 알아볼 표지). 기본값은 `png` 그대로 — 다른 호출자(심의 · 리스크 · 절차 · 보고서)는 바뀌지 않는다.
+- 에이전트 서버 — 챗 길에서만 인자 기본값(`_CHAT_ARG_DEFAULTS`)으로 `format="png+svg_live"` 를 채운다(모델이 정했으면 그대로). 짝은 같은 줄기 이름으로 저장하고
+  모델에게는 SVG 주소를 답에 넣으라고, PNG 는 판독용(답에 넣지 않는다)이라고 적는다 — 판독은 PNG 를 저절로 집는다. `/보고서` 는 SVG 주소를 짝 PNG 로 바꿔 싣는다.
+- 포털 화면 — 같은 출처 `.svg` 는 이미 호버 iframe 이다(바꿀 것 없음 — SVG 를 못 읽으면 짝 PNG 로 물러서기는 선택).
+- 순서 — StepForge 가 새 값을 지원하기 전에 챗 기본값을 켜면 옛 판이 모르는 값을 받아 실패한다. 그래서 StepForge 착지(일곱째 묶음 뒤 — 판 고정 해제 뒤) → 에이전트
+  서버 기본값 · 짝 처리 → dev 실호출 확인 차례다. 게이트웨이 그림 보관(`figure_to_report`)이 짝을 받으면 PNG 를 고르는지도 그때 본다.
+
