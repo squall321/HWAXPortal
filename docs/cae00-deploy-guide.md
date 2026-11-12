@@ -1001,8 +1001,14 @@ SP 키트 2026-10-21 판(규칙 16 · 시험장 8단계 자동 시험) 받기 ·
 자리 · KooSlurm `compute-node-images` · `/opt/apptainers` · Drive `ApptainerImages:SmartTwinPreprocessor/SmartTwinPreprocessor.sif` 넷 다 같고 그 안의
 KooRemapper 가 `c5f74c18` 이다(실측). 같은 굽기의 Drive tar 는 `SmartTwinPreprocessor_20261109_v135.tar.gz`(1,379,306,561 B — pyKooCAE 묶음
 `/opt/SmartTwinPreprocessor` 만 담고 KooRemapper 는 원래 안 든다). v134(11-08 23:01)는 스테이징 앞에 구운 판이라 옛 `15d013ec` 다. dev 계산 노드는
-down 이라 노드 사본은 아직이다 — 살아나면 `deploy_compute_images.sh`. 다음 판으로 미룬 기존 결함 목록은 KooRemapper
+down 이라 노드 사본은 아직이다 — 살아나면 `deploy_apptainers.sh --image`(11-12 정정 — 아래). 다음 판으로 미룬 기존 결함 목록은 KooRemapper
 `docs/01-plan/features/seatbelt-aux-walkers-1107.plan.md` 「다음 판으로 미룬 것」.
+
+**11-12 정정.** Drive 의 `SmartTwinPreprocessor.sif` 는 11-11 에 **v136** 으로 바뀌었다(pyKooCAE — sha256 `1c973c25dc14…` · 1,615,892,480 B · 안의 KooRemapper
+그대로 `c5f74c18` · KMM 리더 충돌 고침 `41f37642`). 운영에 넘길 판은 v136 이다(사용자 결정 11-12). stcx 드라이버는 NFS 의 `KooChainRun` 을 직접 부르므로
+같은 굽기의 tar(`SmartTwinPreprocessor_20261111_v136.tar.gz`)도 NFS 에 푼다. 노드 사본은 `deploy_compute_images.sh` 가 아니다 — 그 스크립트는 아무도 읽지 않는
+`/opt/apptainers/compute` 에 쓴다. dev 는 `deploy_apptainers.sh --image`, stcx 는 `phase8_containers.sh --image`(크기만 견주니 배포 뒤 sha256 을 본다)다.
+차례 · 확인 값은 받은 편지함 2026-11-12 Q15 다(SmartTwin 파이프라인 개선 — `docs/smarttwin-pipeline/`).
 
 ### 2. cae00 — 후처리 예약(7-1) 설정
 
@@ -1237,7 +1243,8 @@ v43 · v47 · v50 을 이미 깔았으면 v51 로 바꾸고, 아직이면 v43 ~ 
   `32997e9b6efb1fdc36737a1f9706a3156bee0a7256a6fe9382135495182ada24`(1,156,505,600 바이트) · GUI `a3f06a56…`. dev 헤드 `/opt/apptainers` ·
   `/data/SmartTwinPostprocessor` 가 이 판이다(지문 확인 — dev 노드 node001 · 002 는 VM 이 꺼져 있어 아직 v47). 이 박스에서 stcx 로 밀어 넣는 절차는
   없고 **설치는 운영 측 몫**이다. 리포트 잡이 도는 노드 쪽 사본까지 같은 판으로 둔다
-  (헤드와 노드의 판이 다르면 리포트 셸이 경고한다).
+  (헤드와 노드의 판이 다르면 리포트 셸이 경고한다 — 11-12 정정: 그 경고는 `--parallel-runs` 기능 탐침이라 v50 과 v51 을 가리지 못한다. 판은 SIF sha256 과
+  `/opt/kood3plot/VERSION` 으로 본다 — 받은 편지함 2026-11-12 Q15).
 - 설치 뒤 — `apptainer exec <설치한 SmartTwinPostprocessor.sif> head -3 /opt/kood3plot/VERSION` → `Version: 226eca7`.
 - 순서 — 이 판의 꾸러미는 어휘 0.5 다. cae00 DynaForge 가 `32cc364` 이상이어야 받는다(§0 의 1번 update-all 을 먼저 하거나 같은 때에 — `752fa2b` 판이
   이미 그 뒤다). 늦으면 그 사이 반입된 리포트는 꾸러미 없이 들어오고 잡 `external_ref.ontology.state` 가 `failed`(「받아들이지 않은 어휘 판이다」 — 잡
