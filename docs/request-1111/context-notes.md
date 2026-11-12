@@ -170,3 +170,14 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
   확인). KooSolverContainer 가 브리지 SIF 를 다시 올렸다 — `43a5970992bc…`(382,296,064 B · Drive md5 `8a172b6e…` — dev 에서 다시 읽어 같다). SIF 넷과 꾸러미 셋의
   sha256 목록, KooFEniCS 꾸러미의 풀린 꼴(`KooFEniCS/` 접두 · SIF 없음)은 받은 편지함 Q12 에 옮긴다. `koo_radioss.sif` 는 이제 솔루션 폴더 한 자리만 쓴다.
 
+## R11-13 DocForge 0.3.2 착지 · cae00 'update-all 해도 된다' 글(2026-11-12)
+
+- DocForge — 그 세션의 자동 모드가 release 옮기기를 막아 한 번 멈췄다. 막힌 일이라 포털이 대신하지 않았고, 사용자가 그 세션에서 다시 맡겨 이어졌다. release
+  `bfa1977`(0.3.2) · HEAXHub 등록 사본 `d7098ad` · Drive `dist-20261112-014734Z/` · **파일 sha256** `b7410d4e7f34…` · **허브 `.sif.hash`(빌드 캐시 열쇠)**
+  `5ce47fc4f1fb…`(dev 허브 사본으로 둘 다 다시 셈 — 같다). Drive 드리프트 전부 ✓.
+- 받은 편지함 [`../cae00-inbox/2026-11-12.md`](../cae00-inbox/2026-11-12.md) — Q1 ~ Q13(update-all · 새 판 확인 · HE팀 운영자 · StepForge 단언 · 서비스 토큰 ·
+  대응표 · 박스 훅 · 확인 · SignalForge 설정 · 벡터 사람 몫 · 절차 지문 · ste 해석기 깔기 · ste 확인)과 11-11 요청의 답 · 알고 받을 것. 2026-11-11 Q1 과
+  2026-11-08 Q5 에 '이 글이 대신한다' 한 줄을 달았다.
+- 이번 라운드 판을 올린 세션은 모두 cae00 이 받았다고 알려 올 때까지 판을 고정한다(StepForge · Laminate · KooRemapper · SignalForge · ste · KooSolverContainer ·
+  DocForge). 해제는 cae00 의 결과 보고를 받은 뒤 포털이 알린다.
+

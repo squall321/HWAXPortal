@@ -17,5 +17,6 @@
 - [x] Laminate 0.29.0 — 푸시 `e1ffe34` · dev 교체 · Drive `dist-20261111-211455Z`(사용자 승인) · 운영자 대조의 Laminate 알림 0(R11-11)
 - [ ] 넘긴 것의 답 — KR-24 받음(R11-6, 고침은 다음 dist) · ST-13 받음(R11-7) · ST-14 받음(R11-9 — 정본 StepForge `docs/OPS-ROLLBACK.md` `94eaa05b`) · HH-17 받음(R11-10 — DocForge 0.3.2, 배치는 그쪽 사용자 승인) · PA-21 (가) 확정(R11-12 — 사용자 결정 11-12)
 - [x] ste 묶음(PA-21 (가)) — main `1e53260` · Drive 스테이징 ✓ · 브리지 SIF `43a5970992bc…` 다시 올림 · sha 목록 받음(R11-12)
-- [ ] DocForge 0.3.2 — release · 허브 재빌드 · Drive(사용자 결정 — 이번 라운드에)
-- [ ] 다음 받은 편지함 글 — 이번 요청의 답(HP-63 · HP-64 · HP-53 · HG-30)과 넘긴 것의 답
+- [x] DocForge 0.3.2 — release `bfa1977` · Drive `dist-20261112-014734Z` · 드리프트 ✓(R11-13)
+- [x] 다음 받은 편지함 글 — `../cae00-inbox/2026-11-12.md`(update-all 해도 된다 · Q1 ~ Q13 · 11-11 요청의 답, R11-13)
+- [ ] cae00 결과 보고 받기 → 판 고정 해제를 세션들에 알림(StepForge · Laminate · KooRemapper · SignalForge · ste · KooSolverContainer · DocForge)
