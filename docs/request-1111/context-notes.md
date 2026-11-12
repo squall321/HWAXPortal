@@ -181,3 +181,14 @@ cae00 요청 (나)를 그대로 지었다. 새 모드 `sync-he-personas.py --bac
 - 이번 라운드 판을 올린 세션은 모두 cae00 이 받았다고 알려 올 때까지 판을 고정한다(StepForge · Laminate · KooRemapper · SignalForge · ste · KooSolverContainer ·
   DocForge). 해제는 cae00 의 결과 보고를 받은 뒤 포털이 알린다.
 
+## R11-14 MaterialTwinWeb 비공개 전환 — 토큰을 먼저, 받은 편지함 2026-11-12 Q14 로
+
+- MaterialTwin 세션이 순서를 바꾸자고 했다 — ① update-all ② cae00 에 읽기 전용 토큰 ③ 사용자가 비공개로 ④ 확인. 토큰을 먼저 심으면 받기가 끊기는 구간이 없다.
+  전환은 라운드 사이에 넣는다. 동의했다.
+- 그쪽 절차서 §3 의 '허브 비밀 파일 · 허브 관례의 환경변수' 는 없었다 — HEAXHub `integration_fetcher.py` 의 `_run` 은 git 을 `env=` 없이 부르고 토큰을 읽는 자리가
+  없다. HEAXHub 세션과 MaterialTwin 세션이 따로 확인해 같은 결론에 이르렀다. 허브 백엔드 · 워커 · beat 는 apptainer 안이 아니라 호스트에서 start.sh 를 돌린 계정으로
+  뜨므로, 그 계정의 git 자격 도우미(github.com 한정 · 0600 자격 파일)에 넣으면 코드 고침 없이 받는다. 허브 관례(비밀 파일 + GIT_ASKPASS · `_run` 의
+  `GIT_TERMINAL_PROMPT=0`)는 다음 라운드 후보다.
+- cae00 이 아직 이번 글을 받기 전이라 다음 글로 미루지 않고 2026-11-12 에 Q14 로 덧붙였다(0 ~ 2 는 지금 · 3 · 4 는 전환 뒤). 토큰은 사용자가 만들어 건넨다
+  (fine-grained · 이 저장소 하나 · Contents 읽기만 · 만료일). 비공개 전환은 cae00 이 2 를 마친 뒤 사용자가 한다.
+
