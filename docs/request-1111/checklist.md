@@ -20,3 +20,11 @@
 - [x] DocForge 0.3.2 — release `bfa1977` · Drive `dist-20261112-014734Z` · 드리프트 ✓(R11-13)
 - [x] 다음 받은 편지함 글 — `../cae00-inbox/2026-11-12.md`(update-all 해도 된다 · Q1 ~ Q13 · 11-11 요청의 답, R11-13)
 - [ ] cae00 결과 보고 받기 → 판 고정 해제를 세션들에 알림(StepForge · Laminate · KooRemapper · SignalForge · ste · KooSolverContainer · DocForge)
+- [ ] 다음 받은 편지함 글에 실을 것(쌓는 중)
+  - KooRemapper 코어와 잇기(SRC-08 ~ 11 · KR-24 고침) 착지
+  - KooSlurm 이미지 점검 붙여넣기(`cluster/utils/image_version_check.sh` — 보류 풀린 뒤 경로) · 노드 배포 안전(-de)
+  - StepForge 읽기 확인 셋(94eaa05b 수신 뒤 — `ontology_model()` seed_held · `source="hub"` 의 maps_to · 허브 타입 셋 · `name="maps_to"` projection) · 정본 허브 `withheld_relations` 의 maps_to
+  - SmartTwinMCP 를 cae00 게이트웨이에(PA-16 — stcx `:5013` 이 떠 있나 읽기 확인)
+  - 코어 어휘 셋 뽑기 다시 청함(2026-11-09 Q6)
+  - MaterialTwinWeb 전환 뒤 확인(Q14 의 3 · 4) · WDA 사람 로그인 확인(§2 ①②③)
+  - DynaForge API 셋(dropline-1112 — get_job 의 external · find_reports external_job_key · postprocess_versions) 착지 뒤 가이드 §4 · §5-1 의 확인 길 바꾸기
