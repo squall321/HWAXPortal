@@ -23,6 +23,7 @@ import { colorOf, initialOf, shortName } from './personaColor';
 import { StreamPulse } from './StreamPulse';
 import { useWikiEnabled } from './useWikiEnabled';
 import { TextBlock } from './renderers/TextBlock';
+import { splitEvidence } from './evidence';
 import { Figure } from './renderers/Figure';
 import { config } from '../../config';
 
@@ -167,7 +168,7 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
         ) : hasThink ? (
           <ThinkView msg={msg} />
         ) : (
-          msg.text && <TextBlock text={msg.text} cursor={Boolean(msg.streaming)} />
+          msg.text && <AnswerText text={msg.text} streaming={Boolean(msg.streaming)} />
         )}
         {/* MCP Apps 패널(HA-20 · HP-42) — 앱이 그린 화면. 이 탭이 받은 사건이면 바로 열고, 기록에서 온 것은 '다시 열기' 카드다. */}
         {msg.panels && msg.panels.length > 0 && <McpAppPanels panels={msg.panels} />}
@@ -214,6 +215,32 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** 답 본문 — 끝의 근거 블록(실제로 조회한 도구 · 출처 없는 값)은 떼어 접은 칸으로 그린다(대화를 가리지 않게, 사용자 요청 11-12).
+ *  복사 · 저장 · 다음 턴의 출처 판정은 나누지 않은 원문 그대로다 — 여기는 그리기만 바꾼다. */
+function AnswerText({ text, streaming }: { text: string; streaming: boolean }) {
+  const { body, evidence, calls, unsourced } = splitEvidence(text);
+  return (
+    <>
+      <TextBlock text={body} cursor={streaming && !evidence} />
+      {evidence && <EvidenceBlock evidence={evidence} calls={calls} unsourced={unsourced} />}
+    </>
+  );
+}
+
+/** 근거 블록 — 기본은 접는다. 출처 없는 값이 있으면 접힌 줄에 그 건수를 늘 보인다(그대로 인용하면 안 되는 수라 숨기지 않는다). */
+function EvidenceBlock({ evidence, calls, unsourced }: { evidence: string; calls: number; unsourced: number }) {
+  return (
+    <details className={`msg-evidence${unsourced ? ' warn' : ''}`}>
+      <summary>
+        근거 · 조회 {calls}건{unsourced ? ` · ⚠ 출처 없는 값 ${unsourced}건` : ''}
+      </summary>
+      <div className="msg-evidence-body">
+        <TextBlock text={evidence} />
+      </div>
+    </details>
   );
 }
 

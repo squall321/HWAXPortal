@@ -259,6 +259,19 @@ def build_report(title: str, markdown: str, source_note: str) -> bytes:
     return buf.getvalue()
 
 
+# 챗 답 끝의 근거 블록(에이전트 서버 app.py _evidence_block — 표지 _EVIDENCE_MARK)은 정리본 원문에 넣지 않는다. 실제로 조회한 도구 목록은 디버깅 ·
+# 복사에는 쓸모가 있지만 보고서에는 도움이 되지 않는다(사용자 요청 11-12). 화면은 접어 보이고, 복사 · 전문 내보내기는 그대로 싣는다.
+# 표지 글은 포털 시험(test_chat_evidence_fold)이 에이전트 서버 · 화면(frontend evidence.ts)과 맞대 본다.
+EVIDENCE_MARK = "**근거** — 이번 답변이 실제로 조회한 것"
+_EVIDENCE_SPLIT = "\n---\n" + EVIDENCE_MARK
+
+
+def strip_evidence(text: str) -> str:
+    """답 끝의 근거 블록을 뗀다(블록은 늘 맨 끝에 붙는다). 블록이 없으면 그대로."""
+    i = text.rfind(_EVIDENCE_SPLIT)
+    return text[:i].rstrip() if i >= 0 else text
+
+
 def transcript_text(conv: dict[str, Any], limit: int | None = 60_000) -> str:
     """LLM 에 넘길 대화 원문. limit 을 넘는 만큼 뒤를 자르고 원문 길이와 함께 잘랐다는 사실을 남긴다. None 이면 자르지 않는다.
 
@@ -275,6 +288,8 @@ def transcript_text(conv: dict[str, Any], limit: int | None = 60_000) -> str:
             if say:
                 out.append(f"[{t_.get('persona') or '좌석'} R{t_.get('round')}] {say}")
         t = (m.get("text") or "").strip()
+        if m.get("role") == "assistant":
+            t = strip_evidence(t)
         if not t:
             continue
         who = {"user": "질문", "assistant": "응답"}.get(m.get("role"), m.get("role") or "")

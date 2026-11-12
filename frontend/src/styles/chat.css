@@ -469,6 +469,27 @@ ol.md-list li.md-li-d2 {
   color: var(--fg-muted);
   line-height: 1.55;
 }
+/* 근거 블록(실제로 조회한 도구 · 출처 없는 값) — 기본은 접는다, 출처 없는 값이 있으면 접힌 줄이 경고 색이다. 사용자 요청 11-12 */
+.msg-evidence {
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  font-size: 0.82rem;
+}
+.msg-evidence > summary {
+  cursor: pointer;
+  padding: 0.35rem 0.6rem;
+  color: var(--fg-muted);
+  user-select: none;
+}
+.msg-evidence.warn > summary {
+  color: var(--warn);
+}
+.msg-evidence-body {
+  padding: 0.2rem 0.7rem 0.5rem;
+  color: var(--fg-muted);
+}
 .msg-model {
   margin-left: 0.6rem;
   align-self: center;
