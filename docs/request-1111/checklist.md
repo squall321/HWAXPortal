@@ -28,3 +28,4 @@
   - 코어 어휘 셋 뽑기 다시 청함(2026-11-09 Q6)
   - MaterialTwinWeb 전환 뒤 확인(Q14 의 3 · 4) · WDA 사람 로그인 확인(§2 ①②③)
   - DynaForge API 셋(dropline-1112 — get_job 의 external · find_reports external_job_key · postprocess_versions) 착지 뒤 가이드 §4 · §5-1 의 확인 길 바꾸기
+  - StepForge 일곱째 묶음 — 단면 PNG + SVG 짝(RF-40 — 챗 화면 호버 기본, 에이전트 서버는 이미 준비) · ST-15 ~ ST-19(CAD 면 하나가 과제 전체를 막던 것 — 사용자가 그 세션에 붙여 넣음)

@@ -94,8 +94,8 @@
 - [ ] cae00 — update-all 로 받는다(게이트웨이 재기동) · 확인은 받은 편지함 2026-11-07 Q5
 
 ## 챗 단면을 기본 호버 SVG 로 — PNG + SVG 짝(사용자 결정 11-13, RF-40)
-- [ ] StepForge — 네 도구에 `format="png+svg_live"`(글 + PNG + SVG 짝 · 짝 표지 · 기본은 png 그대로) — 요청 보냄, 일곱째 묶음 뒤
-- [ ] 에이전트 서버 — `_CHAT_ARG_DEFAULTS` 에 네 도구 · 짝을 같은 줄기로 저장 · 모델에게 SVG 는 답에, PNG 는 판독용 · `/보고서` 는 짝 PNG 로 — StepForge 착지 뒤
+- [ ] StepForge — 네 도구 + `section_batch_result` 에 `format="png+svg_live"`(글 + PNG → SVG 짝 차례 · 인자 설명에 값 · 기본은 png) — 일곱째 묶음에 넣는 중(D-690)
+- [x] 에이전트 서버 — 챗 기본값(format 인자에 값이 있을 때만) · 짝 저장(단면 도구 다섯) · 모델 안내 · `/보고서` 짝 PNG · 앞 대화 판독 짝 PNG — `3a71e8f`, dev 반영(StepForge 전까지 동작 변화 없음)
 - [ ] 게이트웨이 그림 보관 — 짝이 오면 `figure_to_report` 가 PNG 를 고르는지
 - [ ] dev 실호출 — 챗에서 단면을 부르면 호버 SVG 가 보이고 모델이 그림을 읽는지 · `/보고서` 그림이 PNG 인지
 
