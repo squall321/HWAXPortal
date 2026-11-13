@@ -23,7 +23,26 @@
     "mx": "MX 백서",
     "kooremapper": "KooRemapper",
     "dynaforge": "DynaForge",
-    "he": "HE팀"
+    "he": "HE팀",
+    "flex": "연성·신축·피부부착",
+    "bio": "생체·생화학 센싱",
+    "sens": "활동·환경 센싱",
+    "neuro": "신경·이식형",
+    "glass": "스마트글래스",
+    "watch": "스마트워치",
+    "ring": "스마트링",
+    "ear": "히어러블",
+    "lens": "스마트 콘택트렌즈",
+    "tex": "스마트의류·e-텍스타일",
+    "patch": "스킨패치",
+    "band": "헤드밴드·체결밴드",
+    "ff": "기타 웨어러블 폼팩터",
+    "wmat": "웨어러블 소재·전극",
+    "whap": "웨어러블 햅틱",
+    "wpwr": "웨어러블 전력·에너지",
+    "wmfg": "연성·텍스타일 제조",
+    "wrel": "바디 신뢰성·안전",
+    "wsys": "웨어러블 시스템·데이터"
   },
   "he_group_label": {
     "cad": "설계 데이터(CAD·ECAD)",
@@ -66,6 +85,32 @@
         "sh",
         "mem",
         "sim"
+      ]
+    },
+    {
+      "id": "wear",
+      "root": "knowledge",
+      "label": "웨어러블 HW 지식",
+      "domains": [
+        "flex",
+        "bio",
+        "sens",
+        "neuro",
+        "glass",
+        "watch",
+        "ring",
+        "ear",
+        "lens",
+        "tex",
+        "patch",
+        "band",
+        "ff",
+        "wmat",
+        "whap",
+        "wpwr",
+        "wmfg",
+        "wrel",
+        "wsys"
       ]
     },
     {
