@@ -42,7 +42,22 @@
     "wpwr": "웨어러블 전력·에너지",
     "wmfg": "연성·텍스타일 제조",
     "wrel": "바디 신뢰성·안전",
-    "wsys": "웨어러블 시스템·데이터"
+    "wsys": "웨어러블 시스템·데이터",
+    "hbm": "인체 디지털모델·해석",
+    "tiss": "생체조직 물성",
+    "obsim": "기기-인체 연계 해석",
+    "biom": "생체역학",
+    "thermo": "인체 열생리·쾌적성",
+    "psyp": "심리물리",
+    "hapt": "촉각·햅틱 지각",
+    "aud": "청각 지각·오디올로지",
+    "vis": "시각 지각·시각 인체공학",
+    "vest": "평형·멀미",
+    "ergo": "인체공학·사용성",
+    "anthro": "인체측정·착용 적합성",
+    "nerg": "신경인체공학",
+    "msafe": "피부생리·임상안전",
+    "meas": "체감·쾌적 측정 방법론"
   },
   "he_group_label": {
     "cad": "설계 데이터(CAD·ECAD)",
@@ -111,6 +126,28 @@
         "wmfg",
         "wrel",
         "wsys"
+      ]
+    },
+    {
+      "id": "human",
+      "root": "knowledge",
+      "label": "인체공학·감각 지식",
+      "domains": [
+        "hbm",
+        "tiss",
+        "obsim",
+        "biom",
+        "thermo",
+        "psyp",
+        "hapt",
+        "aud",
+        "vis",
+        "vest",
+        "ergo",
+        "anthro",
+        "nerg",
+        "msafe",
+        "meas"
       ]
     },
     {
