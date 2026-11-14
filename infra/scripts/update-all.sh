@@ -3279,6 +3279,26 @@ HEAX_STATE_DIR="${HEAX_STATE_DIR:-${HEAX_DIR:-$HOME/claude/HEAXHub}/var/integrat
 heax_apps=""
 [ -d "$HEAX_STATE_DIR" ] && heax_apps="$(ls "$HEAX_STATE_DIR"/*.json 2>/dev/null | while read -r f; do basename "$f" .json; done)"
 [ -n "$heax_apps" ] || heax_apps="materialtwin_web voice_recorder"
+# HP-77 — 매니페스트(integrations/<앱> · ext_<앱> · 박스 manifest.local.yaml)가 없는 앱의 상태 파일은 걷어 낸 앱의 잔재다.
+#   ✗ 로 세지 않고(종료코드 1 을 세우던 것) '남은 상태 파일' ⚠ 로 알린다. 이름은 상태 파일이 _ · 폴더가 - 일 수 있어 둘 다 본다.
+_heax_root="$(dirname "$(dirname "$HEAX_STATE_DIR")")"
+_heax_has_manifest() {
+  local a="$1" d="${1//_/-}" m
+  for m in "$_heax_root/integrations/$a" "$_heax_root/integrations/$d" "$_heax_root/integrations/ext_$a" "$_heax_root/integrations/ext_$d" \
+           "$_heax_root/ext_$a" "$_heax_root/ext_$d"; do
+    [ -d "$m" ] && return 0
+  done
+  find "$_heax_root" -maxdepth 3 -name manifest.local.yaml 2>/dev/null | xargs -r grep -qsE "(^|[^a-z0-9_-])($a|$d)([^a-z0-9_-]|\$)" && return 0
+  return 1
+}
+heax_stale=""
+if [ -d "$_heax_root/integrations" ]; then
+  _kept=""
+  for _a in $heax_apps; do
+    if _heax_has_manifest "$_a"; then _kept="$_kept $_a"; else heax_stale="$heax_stale $_a"; fi
+  done
+  heax_apps="${_kept# }"
+fi
 
 # ── 외부 MCP 카탈로그 최신화 ─────────────────────────────────────────────────
 # 앱을 재배포해도 게이트웨이 카탈로그는 재활 주기(기본 60s)가 돌아야 바뀐다. 그 전에
@@ -3534,6 +3554,9 @@ fi
 _title_of() { curl -s -L -m 6 "$1" 2>/dev/null | grep -oiE '<title>[^<]*' | head -1; }
 FALLBACK_TITLES="$(printf '%s\n%s\n' "$(_title_of http://127.0.0.1:4180/)" "$(_title_of http://127.0.0.1:8088/)" | grep -v '^$')"
 
+for _s in $heax_stale; do
+  bad "heax 앱 $_s → 매니페스트가 없는 남은 상태 파일($HEAX_STATE_DIR/$_s.json) — 걷어 낸 앱이면 HEAXHub deploy/apptainer/_deprovision_app.py $_s 로 지운다(HP-77)"
+done
 for app in $heax_apps; do
   # 데모는 참고용이라 실패해도 배포를 막지 않는다. 그 외 앱은 실패를 종료코드로 올린다.
   case "$app" in heax_demo_*) crit=0 ;; *) crit=1 ;; esac
