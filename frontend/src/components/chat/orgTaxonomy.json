@@ -74,6 +74,14 @@
       "label": "전문 지식 에이전트"
     },
     {
+      "id": "wearable",
+      "label": "웨어러블 HW 지식"
+    },
+    {
+      "id": "human",
+      "label": "인체공학·감각 지식"
+    },
+    {
       "id": "platform",
       "label": "플랫폼 에이전트"
     },
@@ -103,14 +111,21 @@
       ]
     },
     {
-      "id": "wear",
-      "root": "knowledge",
-      "label": "웨어러블 HW 지식",
+      "id": "wear-core",
+      "root": "wearable",
+      "label": "코어 기술 — 연성 · 생체 신호 · 센싱 · 신경",
       "domains": [
         "flex",
         "bio",
         "sens",
-        "neuro",
+        "neuro"
+      ]
+    },
+    {
+      "id": "wear-form",
+      "root": "wearable",
+      "label": "기기 형태 — 글래스 · 워치 · 링 · 이어 · 렌즈 · 의류 · 패치 · 밴드",
+      "domains": [
         "glass",
         "watch",
         "ring",
@@ -119,7 +134,14 @@
         "tex",
         "patch",
         "band",
-        "ff",
+        "ff"
+      ]
+    },
+    {
+      "id": "wear-base",
+      "root": "wearable",
+      "label": "공통 기반 — 소재 · 햅틱 · 전력 · 제조 · 신뢰성 · 시스템",
+      "domains": [
         "wmat",
         "whap",
         "wpwr",
@@ -129,23 +151,51 @@
       ]
     },
     {
-      "id": "human",
-      "root": "knowledge",
-      "label": "인체공학·감각 지식",
+      "id": "human-model",
+      "root": "human",
+      "label": "인체 모델 · 조직 물성 · 기기-인체 연계 해석",
       "domains": [
         "hbm",
         "tiss",
-        "obsim",
+        "obsim"
+      ]
+    },
+    {
+      "id": "human-body",
+      "root": "human",
+      "label": "생체역학 · 열생리",
+      "domains": [
         "biom",
-        "thermo",
+        "thermo"
+      ]
+    },
+    {
+      "id": "human-sense",
+      "root": "human",
+      "label": "감각 지각 — 심리물리 · 촉각 · 청각 · 시각 · 평형",
+      "domains": [
         "psyp",
         "hapt",
         "aud",
         "vis",
-        "vest",
+        "vest"
+      ]
+    },
+    {
+      "id": "human-factors",
+      "root": "human",
+      "label": "인간요인 — 사용성 · 인체측정 · 신경인체공학",
+      "domains": [
         "ergo",
         "anthro",
-        "nerg",
+        "nerg"
+      ]
+    },
+    {
+      "id": "human-clinic",
+      "root": "human",
+      "label": "피부 · 임상안전 · 체감 측정",
+      "domains": [
         "msafe",
         "meas"
       ]
