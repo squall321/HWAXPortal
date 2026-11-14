@@ -33,6 +33,10 @@ bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; FAILED=$((FAILED+1)); }
 skip() { printf '  · %s\n' "$*"; SKIPPED=$((SKIPPED+1)); }
 hr() { printf '\n\033[1;36m── %s ─────────────\033[0m\n' "$*"; }
 FAILED=0; SKIPPED=0
+# HP-76 — 이번 실행에서 덤프를 못 뜬(인스턴스 멈춤 · 실패) 대상의 daily. 세대 정리가 그 대상의 마지막 정상 덤프를 지우지 않게 한다.
+HOLD_DIRS=" "
+KEEP_MIN="${KEEP_MIN:-3}"   # 대상마다 날짜와 상관없이 남기는 가장 새 덤프 수
+hold() { HOLD_DIRS="$HOLD_DIRS$1 "; }
 
 # 값이 없으면 반드시 비0 으로 끝나야 한다 — 안 그러면 호출부의 `|| echo 기본값` 폴백이
 # 통째로 죽는다. sed -n 은 '못 찾음'도 정상 종료(0)라, 예전엔 키가 없을 때 인스턴스명으로
@@ -105,12 +109,12 @@ pg_backup() {  # $1=서비스라벨 $2=인스턴스 $3=user $4=port $5=db $6=출
     *) _inst_up=0 ;;
   esac
   if [ "$_inst_up" = "0" ]; then
-    bad "$label: 인스턴스 $inst 미동작 — skip"; return 1
+    bad "$label: 인스턴스 $inst 미동작 — skip"; hold "$dir"; return 1
   fi
   if apptainer exec ${pw:+--env "PGPASSWORD=$pw"} "instance://$inst" pg_dump -h 127.0.0.1 -p "$port" -U "$user" -d "$db" 2>/dev/null | gzip -c > "$out"; then
     [ -s "$out" ] && { sha256sum "$out" | awk '{print $1}' > "$out.sha256"; ok "$label → $(basename "$out") ($(du -h "$out" | cut -f1))"; }  \
-      || { bad "$label: 덤프 0바이트 — 실패"; rm -f "$out"; return 1; }
-  else bad "$label: pg_dump 실패"; rm -f "$out"; return 1; fi
+      || { bad "$label: 덤프 0바이트 — 실패"; rm -f "$out"; hold "$dir"; return 1; }
+  else bad "$label: pg_dump 실패"; rm -f "$out"; hold "$dir"; return 1; fi
 }
 # DATABASE_URL(postgresql+psycopg://user:pw@host:port/db) 조각 — 리터럴 비밀번호를 스크립트에 박지 않기 위함
 url_part() { # $1=url $2=user|pw|port|db
@@ -338,8 +342,17 @@ fi
 hr "세대 정리 (${RETAIN_DAYS}일 초과 삭제 — $ROOT/*/daily + aidh pre-merge · pre-parts)"
 for d in "$ROOT"/*/daily; do
   [ -d "$d" ] || continue
-  find "$d" -maxdepth 1 -type f \( -name "*.sql.gz" -o -name "*.tar.gz" \) -mtime +"$RETAIN_DAYS" -print -delete 2>/dev/null | sed 's/^/  삭제: /' || true
-  find "$d" -maxdepth 1 -type f -name "*.sha256" -mtime +"$RETAIN_DAYS" -delete 2>/dev/null || true
+  # HP-76 — 이번에 덤프를 못 뜬 대상은 정리하지 않는다(멈춰 둔 되돌림용 사본의 마지막 덤프가 사라지던 문제).
+  case "$HOLD_DIRS" in *" $d "*) echo "  · 보존: $d — 이번 실행에서 덤프를 못 떠 정리하지 않는다"; continue ;; esac
+  # 날짜와 상관없이 가장 새 KEEP_MIN 개는 남긴다.
+  keep="$(ls -1t "$d"/*.sql.gz "$d"/*.tar.gz 2>/dev/null | head -n "$KEEP_MIN")"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    printf '%s\n' "$keep" | grep -qxF -- "$f" && continue
+    rm -f -- "$f" && echo "  삭제: $f"
+  done < <(find "$d" -maxdepth 1 -type f \( -name "*.sql.gz" -o -name "*.tar.gz" \) -mtime +"$RETAIN_DAYS" 2>/dev/null)
+  # 짝 파일이 없어진 sha256 만 지운다(남긴 덤프의 sha256 은 그대로).
+  for s in "$d"/*.sha256; do [ -e "$s" ] && [ ! -e "${s%.sha256}" ] && rm -f -- "$s"; done
 done
 [ -d "$BACKUP_ROOT/aidh" ] && find "$BACKUP_ROOT/aidh" -maxdepth 1 -type f -name 'pre-merge-*.sql.gz' -mtime +"$RETAIN_DAYS" -print -delete 2>/dev/null | sed 's/^/  삭제: /' || true
 [ -d "$BACKUP_ROOT/aidh" ] && find "$BACKUP_ROOT/aidh" -mindepth 1 -maxdepth 1 -type d -name 'pre-parts-*' -mtime +"$RETAIN_DAYS" -print -exec rm -rf -- {} + 2>/dev/null | sed 's/^/  삭제: /' || true
