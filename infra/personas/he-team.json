@@ -195,7 +195,7 @@
       ],
       "key_tools": ["list_operations", "describe_operation", "run_operation", "heaxkooremapper_mcp_get_job", "list_sessions", "report_facets", "find_reports", "report_summary", "report_worst_cases", "report_part_risk"],
       "writes": ["create_session", "upload_kfile", "run_operation", "update_session", "ingest_report", "update_report_meta", "attach_report_scenario", "publish_report_to_datahub", "recipe_propose", "heaxkooremapper_mcp_recipe_run", "attach_cad", "attach_cae_package", "attach_render", "confirm_task_alias", "save_result_to_path", "set_report_revision", "upload_local_path"],
-      "confirm": ["delete_session", "delete_file", "delete_report", "heaxkooremapper_mcp_cancel_job", "recipe_register", "remove_task_alias", "unlink_report_revision", "recipe_deprecate"],
+      "confirm": ["delete_session", "delete_file", "delete_report", "heaxkooremapper_mcp_cancel_job", "recipe_register", "remove_task_alias", "unlink_report_revision", "clear_report_unlink", "recipe_deprecate"],
       "samples": [
         "이 K파일 재료카드 교체하는 오퍼레이션 뭐 있어?",
         "최근 전각도 낙하 리포트에서 최악 방향 5개 알려줘",
