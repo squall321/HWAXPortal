@@ -13,7 +13,7 @@
   덤으로 phase8 의 `$SCP_OPTS` 미정의 · set -e 요약 줄 · `--image` 가 --dry-run · --nodes-file 을 무시하던 것도 고침. 지역 시험 62 통과
 - [ ] 2b node001 에서 `--verify-only` 실측 — dev 노드 VM 을 켜야 한다(지금 남은 메모리 31 GB, 30 GB 규칙에 걸림 — 사용자 결정) · 그쪽 사용자 승인
 - [x] 5 KooSlurm(-35) — 읽기 전용 이미지 점검 `cluster/utils/image_version_check.sh`(가지 `feat/dropline-check-e2e` `de55def2` · dev 전 항목 OK) — 다음 라운드 받은 편지함에
-- [x] 3 DynaForge(fd) — 가지 `dropline-1112`(`734e735` API 셋 · `8073ebb` 점검 스크립트 · 절차) — 판 고정 풀린 뒤 main · dev API 재기동
+- [x] 3 DynaForge(fd) — 가지 `dropline-1112`(`734e735` API 셋 · `8073ebb` 점검 스크립트 · 절차) — 판 고정 풀린 뒤 main · dev API 재기동 → 11-15 main 에 합침(`6d4dd78` · `c6fb1eb` · 고침 `8b49d2a`) · Drive `dist-20261115-093042Z` · cae00 은 받은 편지함 2026-11-15
 - [ ] 7 pyKooCAE(굽기 스크립트 — 그쪽 사용자 결정 대기) · KooD3plotReader — 판 이름 산출 · `SHA256SUMS` · 포털에도 알림
 - [ ] 4 포털 절차 씨앗 R2c(가지)
 - [ ] 6 귀환 매니페스트 이미지 출처(3 · 5 뒤)
