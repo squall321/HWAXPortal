@@ -39,3 +39,12 @@ M4 는 아직 짓지 않았고(cae00 M3 실주행 수치 뒤), 이 일이 먼저
 
 **R-9 GW-03 의 cae00 물음(받은 편지함 11-17 Q2 · Q3)은 C4 로 거의 풀렸다.** 원천이 KC-01 매니페스트 → DynaForge 캠페인 적재 상태로 정해져 stcx 월별
 수를 게이트웨이가 셀 일이 없다(Q3 거둠). Q2(좌석이 본 '실적 0' 이 어느 도구였나)는 그 도구의 안내를 고칠 때 쓰려고 남긴다 — 급하지 않다.
+
+**R-10 게이트웨이 가지(wt1117/gw) — 짓고 나서 정한 것.** ① 환경을 적지 않은 박스는 `unknown`(에이전트는 `dev` 로 채웠으나 고쳤다 — 운영 박스가
+적기 전 운영 앱이 dev 로 보이면 요청이 막으려던 오판이다, contracts §5). cae00 은 게이트웨이 `app_keys.local.json` 에 `{"default_env": "prod"}`,
+dev 는 `"dev"` 를 적는다. ② 읽기 전용 PAT 도 닫기 목록(deny)이 맨 먼저 이긴다(R-7 — 종전엔 읽기 전용 PAT 이 deny 를 보지 않았다, 닫는 쪽 변경).
+③ 관리자 보기 `gateway_readonly_allowlist` 는 관리자의 tools/list · 검색에만 보인다(`/tools-map` 수에는 든다). 관리자의 웹 챗 묶음에서도 빼는 일은
+에이전트 서버 `_UNBOUND_TOOLS` 에 더한다(병합 때). ④ 적재 경로 점검(`last_check`)은 메모리에만 — 재기동하면 없다. ⑤ 토큰 종류 낱말은
+`portal_pat` · `app_token` · `sso` — 앱 쪽이 이 낱말을 받는지 확인할 것. ⑥ KooRemapper 의 `/system/capabilities` 는 적재를 말하지 않고 MCP 도구
+`report_upload_instructions` 의 글만 있다(512 MB/파일 · 풀어 2,048 MB · kr_ PAT) · StepForge `upload_instructions` 는 아직 2 GB(포털 nginx 는 10 GB)
+— 두 앱의 구조화된 공식 선언이 오기 전까지 추적 `ingest_routes.json` 의 routes 는 비어 있다(짐작하지 않는다 — 결정 D4).
