@@ -24,9 +24,13 @@
 ## 포털 — 게이트웨이(HWAXMcpGateway — 가지 wt1117/gw)
 - [ ] GW-05 앱 env · 정본 · 옛 키 안내
 - [ ] GW-02 읽기 목록 재기동 없이 · 덧씌우기 · 관리자 보기
-- [ ] GW-01 적재 경로 카탈로그 · 중계 업로드(R-6 울타리)
+- [ ] GW-01 적재 경로 카탈로그 — 게시만(결정 문서 C3 · R-8, 중계 없음) · DynaForge 선언은 그쪽 공식 답(D4) 뒤
 - [ ] GW-04 점검표 문서 · 훑기 보고
-- [ ] GW-03 — cae00 받은 편지함 11-17 Q2 · Q3 답 뒤
+- [ ] GW-03 — DynaForge 캠페인 적재 상태(DF-01)를 읽는다(C4) · DF-01 뒤
+
+## 다른 세션에 보낸 것(11-17 결정 문서)
+- [x] DynaForge(kooremapper-4a) · KooSlurm(-35 · -de) · ReportArchive(-f6 · -e2) · WebDesignAgents(-7e · -88) — 그쪽 몫만
+- [ ] 이 박스에 세션이 없는 곳(MatNexus · SIREN · PLM/failuretrace · SP 사전 주인 · 자주검증 Datahub) — 사용자 몫
 
 ## 마무리
 - [ ] 세 가지 검토(반대 검토) · 전체 회귀 · 병합(--no-ff) · 올림 · dev 재기동 · 허브 SIF(리스크 앱) · 업데이트 이력 · 받은 편지함 · PC 수용 절차(acceptance-pc.md)

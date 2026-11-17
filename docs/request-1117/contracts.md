@@ -40,3 +40,17 @@
 ## 4. 표기 규칙(RK-07) — 앱이 정하고 묶음 · 보고 묶음이 쓴다
 
 - `risk_taxonomy(part="labels")` → 축(grade · type · attention · verdict)마다 `{값: 표시 글}` 과 SP 판정 키. 묶음 · 보고 묶음의 글은 이 표시 글만 쓴다.
+
+## 5. 11-17 결정 문서에서 더한 꼴(D5 · C1 · C2 · C3 · C4)
+
+- **인용 형식(C1 — 플랫폼 공용).** 묶음 · 참조를 내보내는 곳은 `cite: {source_platform, source_kind, source_id, source_version, scope}` 를 함께 싣는다.
+  `source_kind` 목록은 엔진 DL-01 `ref.kind` 와 같다 — `risk_bundle` · `reportarchive_file` · `dynaforge_report` · `stepforge_job`, 리스크 앱 보고 묶음은
+  `risk_report_bundle`. 리스크 앱 id 머리는 근거 묶음 `eb_` · 보고 묶음 `rb_`(id 만으로 둘이 헷갈리지 않게). 형식 초안의 주인은 ReportArchive(RA-02 1단계).
+- **환경 값 이름(D5).** `dev` · `prod` — 게이트웨이 GW-05 가 정하고 DynaForge(DF-15) · 리스크 앱(RK-06 `provenance.dyna.env`)이 따른다. 모르면 `unknown`.
+  옛 앱 키(`dynaforge-prod` 따위)는 게이트웨이 별칭 표로 새 키를 안내한다.
+- **DL-01 차례(C2).** id 가 이미 있는 kind(`reportarchive_file` · `stepforge_job`)와 `risk_bundle`(RK-02 와 같이 짓는다)을 먼저, `dynaforge_report` 는
+  DynaForge DF-01 뒤.
+- **GW-01 은 게시만(C3).** 앱이 선언한 적재 경로 · 토큰 종류 · 크기 상한 · 관문 통과 여부를 카탈로그에 싣는다 — 게이트웨이는 적재를 대신 받거나 계산하지
+  않는다. DynaForge 선언은 그쪽 공식 답(D4) 뒤에 — 그 전에는 비워 둔다(짐작하지 않는다).
+- **GW-03 원천(C4).** KooChainRun KC-01 매니페스트가 DF-01 캠페인 적재로 DynaForge 에 들어간 것을 DynaForge 의 캠페인 적재 상태로 읽는다 — 게이트웨이가
+  stcx · Slurm 에 직접 붙지 않는다. KC-01 매니페스트 한 줄에 해석 방법 키 · 덱 요소 수 칸(제안).
