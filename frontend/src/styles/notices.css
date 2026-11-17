@@ -1,0 +1,179 @@
+/* 머리줄 알림 — 종 단추(안 읽은 수 알약)와 목록 팝오버. 토큰만 쓴다(docs/ui-refresh). 좁은 화면에서는 화면 폭에 맞춰 머리줄 아래에 붙는다. */
+.ntc {
+  position: relative;
+}
+.ntc-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  color: var(--fg-muted);
+}
+.ntc-btn:hover,
+.ntc-btn.is-open {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.ntc-icon {
+  width: 18px;
+  height: 18px;
+}
+.ntc-count {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--fs-12);
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.ntc-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 360px;
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-3);
+  z-index: 60;
+  animation: menu-in 0.12s ease-out;
+}
+.ntc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.ntc-head strong {
+  font-size: var(--fs-14);
+}
+.ntc-act {
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+  line-height: var(--lh-body);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ntc-act:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--surface-3);
+}
+.ntc-act:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ntc-err,
+.ntc-empty {
+  margin: 0;
+  padding: var(--sp-4);
+  font-size: var(--fs-13);
+  color: var(--fg-muted);
+}
+.ntc-err {
+  color: var(--danger);
+}
+.ntc-list {
+  margin: 0;
+  padding: var(--sp-1);
+  list-style: none;
+  overflow-y: auto;
+}
+.ntc-item {
+  position: relative;
+  display: grid;
+  /* 줄어들지 않는 시각 · 원천 id 가 칸을 넓혀 가로 스크롤이 생기지 않게 — 원천 id 가 말줄임으로 준다 */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
+  border-radius: var(--r-md);
+}
+.ntc-item + .ntc-item {
+  margin-top: 2px;
+}
+.ntc-item.is-unread {
+  background: var(--accent-soft);
+}
+/* 안 읽은 줄의 점 — 색만이 아니라 굵기로도 가른다 */
+.ntc-item.is-unread::before {
+  content: '';
+  position: absolute;
+  left: var(--sp-2);
+  top: calc(var(--sp-2) + 7px);
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--accent-fg);
+}
+.ntc-title {
+  font-size: var(--fs-14);
+  line-height: var(--lh-tight);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.ntc-item.is-unread .ntc-title {
+  font-weight: 600;
+}
+.ntc-line {
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+  line-height: var(--lh-body);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.ntc-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: 2px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-12);
+}
+.ntc-meta time {
+  flex: none;
+  white-space: nowrap;
+}
+.ntc-src {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.ntc-gap {
+  flex: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ntc-pop {
+    animation: none;
+  }
+}
+@media (max-width: 599px) {
+  .ntc-pop {
+    position: fixed;
+    top: calc(var(--hdr-h) + 6px);
+    left: var(--sp-4);
+    right: var(--sp-4);
+    width: auto;
+  }
+}
