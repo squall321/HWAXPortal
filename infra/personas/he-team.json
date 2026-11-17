@@ -52,7 +52,7 @@
         "onto_link·onto_put·onto_define 과 채우기 잡(onto_fill)을 MCP 로 적용하면 identity_refused 다. 적용과 후보 확정 · 거절(op confirm·reject)은 rest_call 로만 한다(포털 docs/core-link CK-3)."
       ],
       "key_tools": ["list_projects", "get_project_meta", "measurement_guide", "job_params_guide", "part_info", "find_parts", "inspect_report", "heaxstep_forge_job_status", "heaxstep_forge_list_jobs", "upload_instructions"],
-      "writes": ["intake", "create_project", "run_job", "set_project_meta", "set_part_metadata", "rename_part", "apply_naming_rules", "set_file_transform", "transform_instance", "remove_part", "set_part_rules", "set_joint", "set_interface", "confirm_interfaces", "mesh_size_advice", "remesh_parts", "export_step", "export_sidecar", "export_part_fragment", "extract_surface_to_cad", "build_cavity", "shape_op", "align_image_to_geometry", "region_mask_transfer", "record_part_lineage", "record_dimension", "apply_dimension", "set_risk_verdict", "register_materials", "register_materials_csv", "heaxstep_forge_register_material", "run_recipe", "set_revision", "save_fill_rule", "link_plm_tasks"],
+      "writes": ["intake", "create_project", "run_job", "set_project_meta", "set_part_metadata", "rename_part", "apply_naming_rules", "set_file_transform", "transform_instance", "remove_part", "set_part_rules", "set_joint", "set_interface", "confirm_interfaces", "mesh_size_advice", "remesh_parts", "export_step", "export_sidecar", "export_part_fragment", "extract_surface_to_cad", "build_cavity", "shape_op", "align_image_to_geometry", "region_mask_transfer", "record_part_lineage", "record_dimension", "apply_dimension", "set_risk_verdict", "register_materials", "register_materials_csv", "heaxstep_forge_register_material", "run_recipe", "set_revision", "save_fill_rule", "link_plm_tasks", "save_role_pairs", "job_subscribe"],
       "confirm": ["delete_project", "forget_dimension", "upload_step", "import_archive", "heaxstep_forge_cancel_job", "set_admin", "save_failure_mode", "save_recipe"],
       "samples": [
         "DV2 낙하해석 과제 파트 몇 개고 어디까지 진행됐어?",
@@ -933,8 +933,8 @@
         "meeting_* 도구는 발표자료용 디자인 회의체다. 공학 심의에 쓰지 않는다."
       ],
       "key_tools": ["deliberate_jobs", "deliberate_start", "deliberate_status", "deliberate_result", "deliberate_transcript", "deliberate_continue", "deliberate_list"],
-      "writes": ["deliberate_start", "deliberate_continue"],
-      "confirm": ["deliberate_cancel"],
+      "writes": ["deliberate_start", "deliberate_continue", "deliberate_batch_start"],
+      "confirm": ["deliberate_cancel", "deliberate_batch_stop"],
       "samples": [
         "폴드 힌지 먼지 유입 원인 규명 심의 열어줘",
         "A안·B안 중 어느 쪽이 나은지 안 선택 심의 돌려줘",

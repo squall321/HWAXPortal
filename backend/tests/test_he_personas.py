@@ -385,7 +385,10 @@ def test_본문의_올리기_도구도_부를_수_있는_이름으로_적는다(
 # status=queued) 남의 심의를 접지 못하게 한 뒤에도 안내문은 옛 계약을 말했다 — 그대로면 모델이 줄 선 심의를 실패로 읽고 같은
 # 심의를 다시 시작하고(두 번 줄을 선다), 막히면 남의 심의를 접으라고 사용자에게 권한다(거절된다).
 _DELIB_TOOLS = ("deliberate_jobs", "deliberate_start", "deliberate_status", "deliberate_result", "deliberate_transcript",
-                "deliberate_continue", "deliberate_list", "deliberate_cancel")
+                "deliberate_continue", "deliberate_list", "deliberate_cancel",
+                # 11-17 엔진 DL-01 · DL-02 · DL-04(docs/request-1117) — 묶음 시작 · 상태 · 멈춤, 참조 근거 미리 보기, 원천 대조
+                "deliberate_batch_start", "deliberate_batch_status", "deliberate_batch_stop", "deliberate_resolve_evidence",
+                "deliberate_verify")
 _DELIB_MAP = {"map": dict.fromkeys(_DELIB_TOOLS, "hwax-deliberation"), "areas": {}, "area_meta": [],
               "apps": [{"app": "hwax-deliberation", "label": "HWAX 심의"}]}
 _ENGINE_MCP = _ROOT.parent / "HWAXAgentServer" / "mcp_server.py"
@@ -1229,7 +1232,8 @@ def test_HA29_StepForge_는_되돌리기_어려운_여덟만_confirm_이다():
     writes = {_native(n, p["apps"]) for n in p["writes"]}
     assert confirm == _SF_CONFIRM, sorted(confirm ^ _SF_CONFIRM)
     # 11-11 link_plm_tasks(SRC-03 — PLM 과제 잇기, dry_run 기본이고 MCP 로도 적용한다)를 writes 에 더해 35(HP-53)
-    assert not writes & confirm and len(writes) == len(p["writes"]) == 35, sorted(writes)
+    # 11-18 StepForge D-706 의 MODIFY 둘(save_role_pairs · job_subscribe — 웹훅 등록)을 더해 37(docs/request-1117)
+    assert not writes & confirm and len(writes) == len(p["writes"]) == 37, sorted(writes)
     assert {"rename_part", "remove_part", "confirm_interfaces", "mesh_size_advice", "shape_op", "record_dimension", "save_fill_rule"} <= writes
     # 다른 앱과 겹치는 둘은 접두 별칭이다(dev /tools-map — ste · DynaForge 의 cancel_job, MaterialTwin 의 register_material)
     assert "heaxstep_forge_cancel_job" in p["confirm"] and "heaxstep_forge_register_material" in p["writes"]
