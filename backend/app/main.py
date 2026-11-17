@@ -54,6 +54,8 @@ from app.mail import routes as mail_routes
 from app.mail.service import build_mail_backend
 from app.mcp import routes as mcp_routes
 from app.mcp.registry import McpRegistry
+from app.notices import routes as notice_routes
+from app.notices.store import NoticeStore
 
 settings = get_settings()
 _log = logging.getLogger(__name__)
@@ -139,6 +141,12 @@ async def lifespan(app: FastAPI):
     app.state.agent_audit = AuditLog(settings)
     # 서버 대화 저장소 — MCP 심의/웹 챗/GLM 이어가기가 공유하는 정본(SQLite, 재시작 내구성).
     app.state.conv_store = ConversationStore(settings)
+    # 포털 알림 원장 — 대화 저장소 파일 안의 표 둘(app/notices/store.py 머리 — 새 파일을 레지스트리 · 백업 · 격리에 올리지 않는다). 못 열어도 포털은 뜬다.
+    app.state.notice_store = None
+    try:
+        app.state.notice_store = NoticeStore(settings)
+    except Exception:  # noqa: BLE001
+        _log.error("알림 원장을 열지 못했다 — 알림만 끄고 포털은 계속 뜬다", exc_info=True)
     app.state.agent_semaphore = asyncio.Semaphore(settings.max_concurrent_chats)
     # One shared httpx client for relaying to the Agent Server — pooled keep-alive, not a
     # fresh TCP+TLS per request. connect/write/pool 은 짧게(죽거나 포화한 서버를 실행 전에 알아챈다), read 는
@@ -199,6 +207,8 @@ async def lifespan(app: FastAPI):
     await app.state.agent_client.aclose()
     await app.state.card_review_client.aclose()
     app.state.agent_audit.close()
+    if app.state.notice_store is not None:
+        app.state.notice_store.close()
     if app.state.procedures_runner is not None:
         await app.state.procedures_runner.aclose()
     if app.state.procedures_store is not None:
@@ -267,6 +277,7 @@ app.include_router(agent_routes.router)
 app.include_router(agent_panel.router)
 app.include_router(agent_deck.router)
 app.include_router(agent_figures.router)
+app.include_router(notice_routes.router)
 
 # 절차 — SPA 폴백보다 위. 등록이 실패해도 포털(챗 릴레이)은 뜬다.
 try:

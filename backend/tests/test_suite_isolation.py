@@ -49,6 +49,18 @@ def test_저장소마다_다른_파일이다(opened):
     assert len(set(opened.values())) == len(opened), opened
 
 
+def test_알림_원장은_격리된_대화_저장소_파일_안의_표다():
+    """알림 원장(docs/request-1117 contracts §7)은 새 경로 설정 없이 대화 저장소 파일에 표를 더한다(app/notices/store.py 머리) — 그래서 따로 띄워
+    연 파일이 대화 저장소와 **같고**(위의 '다른 파일' 목록에는 넣지 않는다) 이 박스의 실 저장소가 아님을 본다. 경로가 갈라지면 격리가 빠진다."""
+    with TestClient(app):
+        st = app.state
+        assert st.notice_store is not None, "알림 원장이 뜨지 않았다"
+        got = _db_file(st.notice_store._conn)
+        assert got == _db_file(st.conv_store._conn), got
+        for root in REAL_ROOTS:
+            assert root not in got.parents, f"알림 원장이 실 저장소를 열었다 — {got}"
+
+
 # ── LLM/GPU 현황 수집기(docs/ops-dashboard) — 포털 밖의 호스트 서비스지만 시험이 그 모듈을 부른다 ───────────────────────────────────
 def test_수집기가_여는_저장소와_읽는_설정은_이_박스의_실_자리가_아니다():
     """인자 없이(= 시험이 기본값을 탈 때) 수집기가 여는 sqlite 와 읽는 infra/.env — conftest 가 둘 다 임시 자리로 돌린다. 없으면 수집기 시험
