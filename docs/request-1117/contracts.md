@@ -67,3 +67,12 @@
   StepForge 잡은 `result.job.geo_key`, RA 파일은 null · `scope`: 리스크 묶음은 묶음의 `cite.scope`(없으면 target_key), StepForge 는 `project_id`, RA 는 null.
 - **HTTP 창구(엔진)** — `POST /deliberate/result/decision` · `/deliberate/evidence/resolve` · `/deliberate/batch/{start,status,stop}` · `/deliberate/verify`.
   아직 포털 · 게이트웨이가 이 창구를 중계하지 않는다(MCP 도구로는 닿는다).
+
+## 7. 묶음 끝남 알림(DL-02 — 사용자 결정 R-12 ②)
+
+- **엔진** `POST /deliberate/batch/finished` — 공유 비밀만(사람 PAT 아님 — 포털 서비스가 부른다). 본문 `{since: <epoch 초>, limit?}` → `{batches: [{batch_id,
+  owner(이메일), name, status(done · stopped · failed), finished_at, counts{done, failed, stopped, skipped, not_trustworthy}, notice(한 줄 글)}], next_since}`.
+  끝난 시각 차례 · 같은 since 로 다시 물으면 같은 답(포털이 batch_id 로 한 번만 알린다).
+- **포털** — 백엔드가 이 창구를 주기적으로(기본 60초 — 손잡이) 묻고, 묶음마다 주인에게 알림 한 줄을 남긴다(batch_id 로 한 번만 · 주인이 포털 계정이
+  아니면 남기지 않는다). 알림은 포털 알림 원장(새 표)에 쌓이고, 화면은 머리줄의 알림 표지(안 읽은 수)와 목록으로 보인다. 알림 원장은 다른 기능(WDA ·
+  StepForge 잡 등)도 나중에 쓸 수 있는 일반 꼴(`kind` · 제목 · 한 줄 · 링크)로 둔다.
