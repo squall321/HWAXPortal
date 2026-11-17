@@ -54,6 +54,7 @@ from app.mail import routes as mail_routes
 from app.mail.service import build_mail_backend
 from app.mcp import routes as mcp_routes
 from app.mcp.registry import McpRegistry
+from app.notices import poller as notice_poller
 from app.notices import routes as notice_routes
 from app.notices.store import NoticeStore
 
@@ -200,9 +201,12 @@ async def lifespan(app: FastAPI):
     _tight = _tighten_sqlite(settings)
     if _tight:
         _log.info("sqlite %d개를 0600 으로 맞췄다", len(_tight))
+    # 심의 묶음 끝남 알림 — DELIB_BATCH_NOTICE_S 초마다 에이전트 서버의 끝난 묶음 창구를 묻는 백그라운드 작업(0 이면 띄우지 않는다). 요청을 막지 않는다.
+    app.state.notice_poller = notice_poller.start(app, settings)
 
     yield
     # Shutdown: close the pooled client + the audit sqlite connection.
+    await notice_poller.stop(app.state.notice_poller)     # 원장을 닫기 전에 — 도는 틱이 닫힌 연결에 쓰지 않게
     await agent_panel.close_all()          # 열린 패널의 게이트웨이 MCP 세션 — 게이트웨이는 세션 유휴 만료가 없다
     await app.state.agent_client.aclose()
     await app.state.card_review_client.aclose()

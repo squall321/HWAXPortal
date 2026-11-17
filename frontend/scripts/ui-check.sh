@@ -40,6 +40,7 @@ for tier in $TIERS; do
   D="$TMP/$tier"
   mkdir -p "$D/stage"
   cp "$ROOT/backend/config/routes.env" "$D/routes.env"
+  # DELIB_BATCH_NOTICE_S=0 — 임시 포털이 떠 있는 에이전트 서버를 backend/.env 의 공유 비밀로 묻지 않게(심의 묶음 알림 당기기, docs/request-1117)
   (cd "$ROOT/backend" && exec env AUTH_PROVIDER=mock APP_ENV=dev SERVE_FRONTEND=1 \
       PUBLIC_BASE_URL="http://127.0.0.1:$PORT" FRONTEND_URL="http://127.0.0.1:$PORT" \
       SESSION_SECRET="ui-check-session-secret-not-a-real-one-000000" COOKIE_SECURE=false \
@@ -48,6 +49,7 @@ for tier in $TIERS; do
       USER_STORE_PATH="$D/users.sqlite" TOKEN_STORE_PATH="$D/tok.sqlite" CONV_STORE_PATH="$D/conv.sqlite" \
       PROCEDURES_STORE_PATH="$D/proc.sqlite" AGENT_AUDIT_LOG_PATH="$D/audit.sqlite" JWT_KEYS_DIR="$D/jwt" \
       JWT_AUTOGEN_KEYS=true PROCEDURES_ARTIFACT_ROOT="$D/art" DELIB_ARCHIVE_ROOT="$D/delib" UPLOAD_STAGING_DIR="$D/stage" \
+      DELIB_BATCH_NOTICE_S=0 \
       .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT") >"$D/portal.log" 2>&1 &
   PID=$!
   _up=""

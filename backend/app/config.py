@@ -264,6 +264,10 @@ class Settings(BaseSettings):
     # 과제 인사이트(docs/project-insight-graph contracts §5) — 끝난 MCP 심의 잡의 카드를 에이전트 서버의 공유 비밀 창구(GET /insights/cards)에서
     # 당겨 들이는 간격(초). 인사이트 읽기 창구가 불릴 때 이만큼 지났으면 한 번 당긴다(PG-9 — 엔진이 밀지 않는다). 0 은 끔(웹 · 워크플로 카드만 든다).
     insight_sync_s: int = 60
+    # 심의 묶음 끝남 알림(docs/request-1117 contracts §7 · 사용자 결정 R-12 ②) — 포털 백그라운드 작업이 이 간격(초)마다 에이전트 서버의 공유 비밀 창구
+    # (POST /deliberate/batch/finished)를 물어 끝난 묶음마다 주인에게 포털 알림 한 줄을 남긴다(app/notices). 0 은 끔(창구를 부르지 않고 알림도 새로 안 생긴다 —
+    # 이미 쌓인 알림은 그대로 보인다). 비밀은 위 gateway_shared_token 을 그대로 쓴다 — 비면 부르지 않고 경고만 남긴다.
+    delib_batch_notice_s: int = 60
     # 챗 파일 업로드 — 물성 DB 는 정본이라 아무나 못 쓰게 그룹으로 게이트한다(2층: 프론트
     # 숨김 + 백엔드 재검증). 콤마 구분. portal-admin 은 항상 포함, 물성 담당 그룹을 사내
     # AD 그룹명으로 추가하면 된다. 빈 값이면 아무도 업로드 못 한다(안전 기본).
