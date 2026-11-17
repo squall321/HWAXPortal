@@ -54,3 +54,16 @@
   않는다. DynaForge 선언은 그쪽 공식 답(D4) 뒤에 — 그 전에는 비워 둔다(짐작하지 않는다).
 - **GW-03 원천(C4).** KooChainRun KC-01 매니페스트가 DF-01 캠페인 적재로 DynaForge 에 들어간 것을 DynaForge 의 캠페인 적재 상태로 읽는다 — 게이트웨이가
   stcx · Slurm 에 직접 붙지 않는다. KC-01 매니페스트 한 줄에 해석 방법 키 · 덱 요소 수 칸(제안).
+
+## 6. 엔진 가지(wt1117/dl)가 정한 것 — 짓고 나서 맞춘 꼴
+
+- **표결 칸 이름은 엔진 원장 그대로** — `votes: {tally: {agree, conditional, oppose, abstain, responded, total}, unanimous, by_seat}`(§3 의 한국어
+  칸 이름은 자리 표시였다). 리스크 앱 RK-03 은 이 영문 칸을 읽는다.
+- **열린 kind 셋(C2)** — `risk_bundle` → 게이트웨이 별칭 `heaxhwax_risk_risk_get_evidence_bundle(bundle_id)` · `reportarchive_file` →
+  `reportarchive_download_file(file_id)`(글 파일만 — text/* · JSON · XML · YAML · CSV 이고 UTF-8 로 풀리는 것, 그림 · 이진은 까닭과 함께 뺀다) ·
+  `stepforge_job` → `heaxstep_forge_job_status(job_id, full=true)`(status done 만, 결과와 낡음 표지 — 서버 경로 · 실행기 · 로그 칸은 뺀다).
+  `dynaforge_report` 는 DF-01 뒤 — 지금은 잡을 만들기 전에 'kind not opened yet' 로 거절.
+- **인용(cite) 값** — `source_platform`: `hwax_risk` · `reportarchive` · `step_forge` · `source_version`: 리스크 묶음은 묶음의 `cite.source_version`,
+  StepForge 잡은 `result.job.geo_key`, RA 파일은 null · `scope`: 리스크 묶음은 묶음의 `cite.scope`(없으면 target_key), StepForge 는 `project_id`, RA 는 null.
+- **HTTP 창구(엔진)** — `POST /deliberate/result/decision` · `/deliberate/evidence/resolve` · `/deliberate/batch/{start,status,stop}` · `/deliberate/verify`.
+  아직 포털 · 게이트웨이가 이 창구를 중계하지 않는다(MCP 도구로는 닿는다).
