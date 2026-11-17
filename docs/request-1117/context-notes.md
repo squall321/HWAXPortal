@@ -80,3 +80,11 @@ backend/.env 에 적고 env-sync 는 infra/.env 몫이다. 시험(conftest)과 �
 ⑦ 실패 로그는 까닭이 바뀔 때와 같은 까닭 60번(한 시간)마다 한 줄 · 다시 닿으면 한 줄(포털은 INFO 를 버리므로 둘 다 WARNING). **cae00 이 할 일은 없다** — 기본
 켜짐이고 공유 비밀(GATEWAY_SHARED_TOKEN)은 인사이트 당기기가 이미 쓰는 그 값이다. 끄려면 backend/.env 에 `DELIB_BATCH_NOTICE_S=0` 을 적고 포털만 다시 띄운다.
 엔진(DL-02)이 같이 나가야 한다 — 먼저 나가면 'HTTP 404 — DL-02 전의 판' 경고 한 줄을 남기고 기다린다.
+
+**R-14 사용자 결정 둘(11-17 — 올린 뒤).** ① **StepForge `interference_recheck` 는 읽기로 본다** — 게이트웨이 `read_tools.json` override 에 더했다(게이트웨이
+`master` — 시험 1,084). 검출 간섭을 다시 재기만 하고 장부를 안 바꾸며, 한 호출 상한에 멈추면 측정 잡 한 줄을 건다(StepForge D-706 · `app/kept.py`). RF-29 의
+단면 · 적층 잡 도구 넷과 같은 갈래라 읽기 토큰 · 루틴 단계가 스스로 걸고 확인 카드가 뜨지 않는다. 이름 규칙(`recheck`)은 쓰기로 남겨 둔다 — 덧씌우기를
+걷으면 다시 닫힌다. 웹훅을 바깥으로 보내는 `job_subscribe` 는 그대로 쓰기이고, HE팀 StepForge 운영자 목록은 StepForge 의 MODIFY 집합과 같아야 해서(HA29)
+`interference_recheck` 를 넣지 않은 채 그대로다. ② **dev AXWB 의 죽은 인스턴스를 이 세션이 되살린다** — squashfuse 사고(11-17)로 목록에만 남았던
+`axwb_redis` · `axwb_caddy` 를 그 리포의 `stop.sh` → `start.sh` 로 다시 띄웠다(PONG · caddy admin · `/health` 200). `axwb_postgres` 도 같은 꼴(이미지가 끊겨 새 연결이
+곧바로 비정상 종료 — 떠 있는 postmaster 만 남음)인데, 재기동은 자동 모드가 막아 사용자에게 넘겼다.
