@@ -27,6 +27,7 @@ module.exports = {
         'src/components/ExternalConnectionCards.tsx',
         'src/components/HubAppsPanel.tsx',
         'src/components/ServiceTokenPanel.tsx',
+        'src/components/layout/NoticeBell.tsx',
         // 절차 — 상태에 따라 색이 바뀌는 9곳이 남은 ProceduresPage·RunSteps 는 넣지 않는다
         'src/pages/procedures/BuildView.tsx',
         'src/pages/procedures/ArgsForm.tsx',

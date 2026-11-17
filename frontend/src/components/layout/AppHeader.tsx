@@ -1,4 +1,4 @@
-// 앱 헤더 — [브랜드] 주 메뉴(챗·심의·앱·절차) …… [관리 ▾](관리자) [계정 ▾]. 좁으면 주 메뉴를 시트로 접는다(docs/ui-refresh 단계 2)
+// 앱 헤더 — [브랜드] 주 메뉴(챗·심의·앱·절차) …… [알림] [관리 ▾](관리자) [계정 ▾]. 좁으면 주 메뉴를 시트로 접는다(docs/ui-refresh 단계 2)
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { listSetupRequests, SETUP_CHANGED } from '../../api/setup.api';
@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { BrandMark } from '../ui/BrandMark';
 import { Menu, MenuSep } from '../ui/Menu';
+import { NoticeBell } from './NoticeBell';
 import '../../styles/header.css';
 
 type Item = { to: string; label: string; end?: boolean; badge?: number };
@@ -119,6 +120,7 @@ export function AppHeader() {
       </nav>
 
       <div className="app-right">
+        <NoticeBell />
         {admin.length > 0 && (
           <Menu
             className="hdr-admin"
