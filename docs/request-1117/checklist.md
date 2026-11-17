@@ -25,7 +25,7 @@
 - [x] GW-05 앱 env · 정본 · 옛 키 안내(가지 `fd1f52d` · `ac49fae` · `4aba6cb` — 적지 않은 박스는 unknown, R-10)
 - [x] GW-02 읽기 목록 재기동 없이 · 덧씌우기 · 관리자 보기 · PATCH(`86cef7f`)
 - [x] GW-01 적재 경로 카탈로그 — 게시만(결정 문서 C3 · R-8, 중계 없음 — `d84c700`) · DynaForge 선언은 그쪽 공식 답(D4) 뒤
-- [ ] 게이트웨이 가지 반대 검토 · 병합 · 재기동 · cae00 `app_keys.local.json`(받은 편지함)
+- [x] 게이트웨이 가지 반대 검토(M1 · L1 ~ L9 고침 — `ff54acb` · `7e63cfa` · `7d4d8ed`) · 병합 `4c85945`(합친 판 1,082 통과) · 올림 · dev 재기동(dev 박스 `app_keys.local.json` default_env dev) · cae00 할 일 받은 편지함 11-17
 - [x] GW-04 점검표 문서 · 훑기 보고(`431b2d1`) · D1 항목
 - [ ] GW-03 — DynaForge 캠페인 적재 상태(DF-01)를 읽는다(C4) · DF-01 뒤
 
