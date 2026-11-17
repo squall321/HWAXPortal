@@ -125,6 +125,17 @@ def test_주인이_포털_계정이_아니면_남기지_않고_대소문자_퍼�
     assert out["since"] == 50.0, "꼴이 다른 줄도 커서는 넘긴다(다시 읽어도 같은 줄이다)"
 
 
+def test_꼴이_망가진_줄은_그_줄만_세고_쪽은_멈추지_않는다(box):
+    """셈이 수가 아니거나(알림 글이 빈 줄) 다듬으면 빈 원천 id 인 줄 — 예외로 쪽 전체가 멈추면 커서가 그 줄을 영영 못 넘는다."""
+    app_, s, store = box
+    eng = FakeEngine([{**batch(1, 10), "notice": "", "counts": {"done": "많음", "failed": None}},
+                      {**batch(2, 20), "batch_id": "\x00\x01"}, batch(3, 30)])
+    out = _tick(app_, s, eng)
+    assert "error" not in out and _counts(out) == (2, 0, 0, 1) and out["since"] == 30.0
+    assert store.find(P.KIND, batch(1, 0)["batch_id"])["line"] == "끝남 0 · 건너뜀 0 · 실패 0 · 멈춤 0."
+    assert store.find(P.KIND, batch(3, 0)["batch_id"]) is not None
+
+
 def test_알림_글이_비면_셈으로_한_줄을_짓는다():
     f = P.notice_of({**batch(1, 10), "notice": "", "name": ""})
     assert f["line"] == "끝남 2 · 건너뜀 1 · 실패 0 · 멈춤 0." and f["title"].endswith(batch(1, 0)["batch_id"])

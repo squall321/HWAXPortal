@@ -41,6 +41,13 @@ _HTTP_WHY = {
 }
 
 
+def _int(v) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
 def owner_of(raw) -> str:
     """엔진의 owner → 포털 원장의 이메일 꼴(퍼센트 인코딩을 풀고 소문자 — 엔진 delib_jobs._norm 과 같다)."""
     return unquote(str(raw or "")).strip().lower()
@@ -57,8 +64,8 @@ def notice_of(b) -> dict | None:
     line = str(b.get("notice") or "").strip()
     if not line:
         c = b.get("counts") if isinstance(b.get("counts"), dict) else {}
-        line = (f"끝남 {int(c.get('done') or 0)} · 건너뜀 {int(c.get('skipped') or 0)} · 실패 {int(c.get('failed') or 0)} · "
-                f"멈춤 {int(c.get('stopped') or 0)}.")
+        line = (f"끝남 {_int(c.get('done'))} · 건너뜀 {_int(c.get('skipped'))} · 실패 {_int(c.get('failed'))} · "
+                f"멈춤 {_int(c.get('stopped'))}.")
     fin, now = b.get("finished_at"), time.time()
     at = int(min(float(fin), now)) if isinstance(fin, (int, float)) and not isinstance(fin, bool) and fin > 0 else int(now)
     return {"user_email": owner_of(b.get("owner")), "title": f"{_TITLE[status]} — {name}", "line": line, "source_id": bid.strip(),
@@ -76,7 +83,12 @@ def _write_page(store, users, batches: list) -> dict:
         if "@" not in f["user_email"] or users is None or users.get(f["user_email"]) is None:
             n["no_account"] += 1
             continue
-        n["written" if store.add(kind=KIND, **f) else "already"] += 1
+        try:
+            added = store.add(kind=KIND, **f)
+        except ValueError:      # 다듬고 나니 빈 원천 id 따위 — 한 줄의 꼴 때문에 쪽 전체가 멈춰 커서가 영영 못 넘어가지 않게 그 줄만 센다
+            n["bad"] += 1
+            continue
+        n["written" if added else "already"] += 1
     return n
 
 
