@@ -33,5 +33,11 @@
 - [x] DynaForge(kooremapper-4a) · KooChainRun · stcx(KooSlurm -35 · -de 를 거쳐 pyKooCAE -88 · -53 이 받음 — KC-01 매니페스트는 pyKooCAE `Runner/RunProvenance.py` 몫, KooSlurm 대시보드의 return_manifest 는 다른 파일) · ReportArchive(-f6 · -e2) · WebDesignAgents(-7e · -88) — 그쪽 몫만
 - [ ] 이 박스에 세션이 없는 곳(MatNexus · SIREN · PLM/failuretrace · SP 사전 주인 · 자주검증 Datahub) — 사용자 몫
 
+## StepForge 착지 뒤(갈래 feat-receiver-v1 `3eeea280` · D-706)
+- [x] 게이트웨이 쓰기 동사 subscribe · recheck(`85fcd24` — job_subscribe · interference_recheck 가 표지 없이 와도 루틴 읽기로 안 열림)
+- [ ] HE팀 운영자 `he-cad-stepforge` — writes 에 interference_recheck · save_role_pairs, confirm 에 job_subscribe(착지 뒤 — 없는 이름은 동기화가 멈춘다)
+- [ ] 리스크 앱 RK-06 이 StepForge `stage_code` · `revision` · `copy_stage` · `system_status.env` 를 읽게
+- [ ] cae00 받은 편지함 — `APPTAINERENV_STEPFORGE_ENV=prod`(그 전엔 env null)
+
 ## 마무리
 - [ ] 세 가지 검토(반대 검토) · 전체 회귀 · 병합(--no-ff) · 올림 · dev 재기동 · 허브 SIF(리스크 앱) · 업데이트 이력 · 받은 편지함 · PC 수용 절차(acceptance-pc.md)
