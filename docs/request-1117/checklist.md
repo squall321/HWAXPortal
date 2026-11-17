@@ -29,7 +29,7 @@
 - [ ] GW-03 — DynaForge 캠페인 적재 상태(DF-01)를 읽는다(C4) · DF-01 뒤
 
 ## 다른 세션에 보낸 것(11-17 결정 문서)
-- [x] DynaForge(kooremapper-4a) · KooSlurm(-35 · -de) · ReportArchive(-f6 · -e2) · WebDesignAgents(-7e · -88) — 그쪽 몫만
+- [x] DynaForge(kooremapper-4a) · KooChainRun · stcx(KooSlurm -35 · -de 를 거쳐 pyKooCAE -88 · -53 이 받음 — KC-01 매니페스트는 pyKooCAE `Runner/RunProvenance.py` 몫, KooSlurm 대시보드의 return_manifest 는 다른 파일) · ReportArchive(-f6 · -e2) · WebDesignAgents(-7e · -88) — 그쪽 몫만
 - [ ] 이 박스에 세션이 없는 곳(MatNexus · SIREN · PLM/failuretrace · SP 사전 주인 · 자주검증 Datahub) — 사용자 몫
 
 ## 마무리
