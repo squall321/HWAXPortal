@@ -240,9 +240,10 @@ def test_personas_를_더해도_게이트웨이_검색이_읽는_것은_같다()
 # ── ontology — 온톨로지 먼저(docs/ontology-first PLAN §4 · OF-5 · OF-14 ①④) ─────────────────────────────────────────────────────────────
 # 앱 키 → {tools(원래 이름 — 차례가 웹 챗 고정 몫의 차례), reserve, entry?} 와 심의 미리보기의 facts. 에이전트 서버(onto_links)와 게이트웨이
 # (_onto_entries)가 같은 규칙으로 앱 줄마다 거른다 — 두 쪽이 같은 줄을 받아 같은 입구를 읽는지 여기서 견준다(형제 리포의 실제 코드).
-ONTO_FIELDS = {"_doc", "apps", "facts"}
+ONTO_FIELDS = {"_doc", "apps", "facts", "lookup"}
 ROW_FIELDS = {"tools", "reserve", "entry"}
 FACTS_FIELDS = {"focus", "depth", "limit", "chars"}
+LOOKUP_FIELDS = {"tool", "args", "types"}
 
 
 def _agent_onto_core() -> tuple:
@@ -345,10 +346,48 @@ def test_ontology_게이트웨이와_에이전트_서버가_같은_줄에서_같
 
 
 def test_ontology_를_더해도_입구가_없으면_게이트웨이_검색이_읽는_것은_같다():
-    """게이트웨이 검색은 ontology 에서 입구 쌍(onto_entries)만 읽는다 — 추적 기본값에는 입구가 없어 칸이 있든 없든 읽은 값이 바이트까지 같다(순위 그대로)."""
+    """게이트웨이 검색은 ontology 에서 입구 쌍(onto_entries)만 읽는다 — 추적 기본값에는 입구가 없어 칸이 있든 없든 읽은 값이 바이트까지 같다(순위 그대로).
+    lookup(onto_lookup)은 온톨로지 조회 도구와 search_tools 의 object 인자만 읽는다(PLAN §12 — 인자가 없으면 순위에 들지 않는다)."""
     parse, fns = _gateway_parse()
     d = _load()
     bare = {k: v for k, v in d.items() if k != "ontology"}
-    assert repr(parse(d)) == repr(parse(bare)) and parse(d)["onto_entries"] == frozenset()
-    readers = [k for k, body in fns.items() if '"ontology"' in body and k != "_onto_entries"]
-    assert not readers, f"게이트웨이 {readers} 가 ontology 칸을 _onto_entries 밖에서 읽는다"
+    drop = lambda v: {k: x for k, x in v.items() if k != "onto_lookup"}  # noqa: E731
+    assert repr(drop(parse(d))) == repr(drop(parse(bare))) and parse(d)["onto_entries"] == frozenset()
+    assert parse(bare)["onto_lookup"] == () and parse(d)["onto_facts"] == parse(bare)["onto_facts"] == (60, 4000)
+    readers = [k for k, body in fns.items() if '"ontology"' in body and k not in ("_onto_entries", "_onto_lookup_rows", "_onto_facts")]
+    assert not readers, f"게이트웨이 {readers} 가 ontology 칸을 _onto_entries · _onto_lookup_rows · _onto_facts 밖에서 읽는다"
+
+
+def test_ontology_lookup_꼴():
+    """요청 OL-3 · OF-32 — 앱 줄(apps)이 아니라 옆 칸이다. 키는 게이트웨이 백엔드 키, tool 은 원래 이름, args 의 틀은 네 칸만, types 는 고를 칸(OF-35).
+    허브 가족 형제는 key 로 다시 풀고(UUID 가 허브마다 다르다) 정본 자신은 싣지 않는다(정본 id 는 ontology_lookup 이 이미 준다)."""
+    d = _load()
+    lk = d["ontology"]["lookup"]
+    assert lk and isinstance(lk, dict)
+    for key, row in lk.items():
+        assert re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,79}", key) and key != d["canonical"]["app"], key
+        assert set(row) <= LOOKUP_FIELDS and {"tool", "args"} <= set(row), (key, row)
+        assert re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,120}", row["tool"]) and row["args"], key
+        slots = {m for v in row["args"].values() if isinstance(v, str) for m in re.findall(r"\{([a-z_]+)\}", v)}
+        assert slots and slots <= {"type_slug", "key", "name", "object_id"}, (key, slots)
+        if "types" in row:
+            assert row["types"] and set(row["types"]) <= set(d["types"].values()), (key, row["types"])
+    sib = {k for k, a in d["apps"].items() if a["role"] == "sibling"}
+    assert sib <= set(lk), f"형제 허브 {sorted(sib - set(lk))} 가 lookup 에 없다 — 형제는 key 로 다시 푼다"
+    assert lk["heax-step_forge"]["args"].get("resolve") is True, "StepForge 는 판정(resolve)을 받는다 — 목록 첫 줄을 고르지 않는다(OF-34)"
+
+
+def test_ontology_lookup_은_에이전트_서버가_읽지_않는다():
+    """웹 챗은 lookup 을 보지 않는다(OF-14 ④ · OF-32) — 칸이 있든 없든 에이전트 서버 onto_links.validate 의 읽기가 같다(형제 리포의 실제 코드)."""
+    d = _load()
+    bare = {k: v for k, v in d["ontology"].items() if k != "lookup"}
+    with_lookup, without = _agent_validate([d["ontology"], bare], _family(d))
+    assert with_lookup == without and with_lookup["dropped"] == [], (with_lookup, without)
+
+
+def test_ontology_lookup_을_게이트웨이가_같은_차례로_읽는다():
+    parse, _fns = _gateway_parse()
+    d = _load()
+    rows = parse(d)["onto_lookup"]
+    assert [r[0] for r in rows] == list(d["ontology"]["lookup"]), "어휘표 차례 그대로 · 한 줄도 버리지 않는다"
+    assert all(r[1] == d["ontology"]["lookup"][r[0]]["tool"] and r[2] == d["ontology"]["lookup"][r[0]]["args"] for r in rows)
