@@ -277,3 +277,62 @@ object null(또는 id 가 글이 아닌 객체)도 none — '정본 허브에 �
 - 챗 칸 — 에이전트 서버 `/health` 의 `core_vocab.ontology` 는 present · apps 넷(rootdesigndatahub · failuretrace · heax-kooremapper_mcp · heax-step_forge) · entries 0 · dropped 0 · reserve 16 · missing 12. missing 은 dev 에 없는 SP 허브 둘(rootdesigndatahub · failuretrace)의 이름이라 dev 에서는 맞다 — cae00 은 허브 둘이 붙어 비어야 한다(server-setup 3절).
 - 미리보기 — `POST /agent/deliberate/onto-preview` 무인증 401(없는 길은 405 — 길이 섰다), 빌드에 '온톨로지 먼저 보기' 화면 글 · `dist/.build-src` = `HEAD:frontend`. 실제 미리보기는 dev 에 정본 허브가 없어 cae00 몫이다(checklist M4).
 - 날짜 — 이 줄들의 '11-02' 는 dev 박스 시계(UTC)다. 업데이트 이력은 한국 날짜라 KST 11-03 에 쓴 여섯 항목(그림이 보고서까지 · 표 칸 그림 · 이 기능)을 `86caab20` 에서 11-03 으로 고쳤다 — 11-02 팝업을 본 사람에게 뜨지 않던 것.
+
+## 11-16 요청 OL-1 ~ OL-5 — 개인 Claude 의 온톨로지 조회 도구(11-17 KST, PLAN §12)
+
+**OF-32 lookup 은 `ontology.apps.<앱>.lookup` 이 아니라 `ontology.lookup.<앱>` 이다(요청 OL-3 에서 자리만 바꿈).** 앱 줄은 에이전트 서버
+`onto_links._row_problem` 과 게이트웨이 `_onto_entries` 가 같은 규칙으로 거르고, 모르는 칸이 있으면 **줄째** 버린다. 줄에 `lookup` 을 넣으면 웹 챗 고정
+몫(`reserve`)이 줄과 함께 빠져 OF-14 ④(챗 기본은 바이트 동일)가 깨진다. 받는 칸을 늘리면 두 리포의 거르기를 함께 고쳐야 하고, 형제 `caegroupdatahub` 는
+`apps` 에 줄이 없어 `tools` 없는 줄을 새로 만들어야 했다. 두 읽는 쪽 모두 `ontology` 에서 `apps` 만 읽으므로(`facts` 와 같다) 옆 칸은 고치지 않고 무시된다
+— 요청의 '에이전트 서버는 이 칸을 무시하고 시험으로 묶는다' 를 코드 변경 없이 지킨다. 포털 시험이 칸이 있든 없든 에이전트 서버의 읽기가 같음을 본다.
+
+**OF-33 질문 2 — 타입 고르기는 게이트웨이 코드다.** SP `objects_resolve_many(type_slug, names)` 는 **한 타입**의 이름 여럿을 푼다(SP 사본 778db2f
+`mcp_server/server.py:1386` · `ResolveManyOut`) — 여러 타입을 한 번에 풀 길이 아니다. 그래서 어휘표 `types`(한국어 이름 → slug)로 질의에서 타입을 셋까지
+고르고 타입마다 `object_resolve` 를 함께(병렬) 부른다. 타입이 하나도 안 걸리면 정본 `search`(타입별 건수가 먼저 오는 '어디 있나' 도구)의 답을 후보로 준다 —
+`search` 는 판정을 주지 않으므로 exact 로 읽지 않는다(`ask_user`).
+
+**OF-34 질문 1 — StepForge 는 `"<type>:<key>"` 가 맞고, lookup 은 `onto_search(q=key, type_slug, resolve=true)` 다.** StepForge `onto_neighbors` ·
+`onto_path` · `onto_object` 의 `focus` 가 `"<타입>:<key>"` 이고 예가 `plm_task:<과제 key>` 다(StepForge 27b2132b `app/mcp_server.py` `onto_search` ·
+`onto_neighbors` docstring). `onto_search(resolve=true)` 는 판정(exact · candidates · none 과 까닭 — 빈 타입 · 거울 미수신 · near 짐작)을 주고 식별자를 맨
+먼저 맞추므로 허브 key 로 부르면 그 노드가 정해진다 — 결과의 `node` 를 다른 onto_ 도구의 focus 로 넘긴다. `find_plm_task` 는 과제 하나의 타입만 · 부분
+일치 목록이라(판정 없음) lookup 이 아니다. `onto_object(focus=…)` 로 바로 가지 않은 까닭 — 거울이 그 객체를 아직 안 받았을 때 '없다' 의 까닭을 주는 것이
+resolve 쪽이다.
+
+**OF-35 lookup 의 `types` 는 고를 칸이다 — 없으면 어느 타입이든 싣는다.** 어느 앱이 어느 허브 타입을 받는지는 박스의 동기 설정이고 dev 소스로 증명되지
+않는다(요청의 'DynaForge 코어 35 타입' 은 11-16 cae00 관측). 추적 기본값은 `types` 를 적지 않고, 그 앱이 그 타입을 받지 않았으면 그쪽이 none ·
+`renamed_to` 로 말한다. 박스는 덧씌우기로 좁힌다.
+
+**OF-36 `onto_lookup_first` 는 질의가 앱 이름을 부르면 걸지 않는다 · hint 도 같은 손잡이다.** 요청 OL-2 (a) 그대로 '온톨로지' 낱말에 걸면 앱 이름 질의
+c01 ~ c06 에도 걸려 1위가 그 앱 도구에서 `ontology_lookup` 으로 바뀐다 — 요청의 기준('앱 이름 6 은 5/6 보다 줄지 않는다')과 OF-14 ①(쓰는 플랫폼 안에서
+그 플랫폼의 입구가 먼저 — onto_first)에 어긋난다. 판정은 순위 줄을 지을 때 쓰는 앱 이름 적중(`named_apps`)이다. (c) hint 는 답 글을 바꾸므로 같은
+손잡이에 묶었다 — 끄면 순위만이 아니라 글이 바이트까지 같다(E-7 의 '끄면 그대로' 를 글까지).
+
+**OF-37 `object` 가중치는 이미 질의에 맞은 줄에만 · 손잡이 없이 인자가 있을 때만.** 그 앱의 도구 전부에 더하면 질의와 상관없이 그 앱 도구가 위를 덮는다.
+가중치는 `weights.onto_object`(기본 `onto` 와 같은 값)이고 대상은 `ontology.lookup` 에서 그 타입을 받는 앱과 허브 가족이다. 인자를 주지 않으면 순위가 바이트
+동일이라 손잡이를 따로 두지 않았다. 꼴이 틀린 `object` 는 오류가 아니라 무시하고 `object_ignored` 로 말한다(검색은 막지 않는다).
+
+**OF-38 이름 뽑기는 타입 낱말과 몇 낱말만 뺀다 — 조사를 자르지 않는다.** '온톨로지 · ontology · 조회 · 검색 · 찾기 · lookup · 정본 · 코어' 와 고른 타입의
+이름만 뺀다. 조사를 떼면('크랙을' → '크랙') 조사처럼 끝나는 key 가 잘린다. 도구 설명이 query 에는 이름 · 코드만, 타입은 `type` 으로 주라고 말한다. 남는
+이름이 비면 허브를 부르지 않고 그렇게 말한다.
+
+**OF-39 타입 일부만 거절되면 — exact 는 내되 `incomplete` 로 말한다.** 여러 타입 가운데 하나가 거절(권한 · 불통)되고 다른 하나가 exact 면 그 exact 를 주고
+`refused_types` 와 `incomplete: true` 를 함께 싣는다(거절된 타입에도 같은 이름이 있으면 사실은 후보였을 수 있다). 성공한 것이 모두 none 이면 전체를 `refused`
+로 낸다 — none 이 '없다' 로 읽히지 않게(요청 OL-1 '실패').
+
+**OF-40 시험 기준본 · 고정 장치 — 끈 손잡이의 바이트 동일은 '그 도구가 없던 때' 와 견준다 · 정책 받음 표지.** ① 게이트웨이의 바이트 동일 시험
+(`_search_tools_master` — 고치기 전 원문을 지금 모듈에서 돌린다)은 지금 시야의 로컬 도구를 다 보므로 새 `ontology_lookup` 을 점수에 넣었다(설명에 '고장모드' 가
+있어 '고장모드 목록' 의 match_count 가 하나 늘었다). 기준본은 그 도구가 없던 때의 코드라 기준본이 돌 때만 그 도구를 뺀다 — 지금 코드는 손잡이를 끄면 그 도구를
+순위 줄에 넣지 않는다. ② `_role_catalog` 가 `_ACCESS_POLICY_READY` 를 세우지 않아, dev 박스의 `gateway_config.json` 에서 사람별 위임 백엔드인 DynaForge 가
+`policy_not_ready` 로 숨었다 — 기존 시험 `test_onto_first_를_켜면_…` 이 고치기 전 HEAD(`58e392a`)에서도 dev 에서만 붉었다(깨끗한 HEAD 사본으로 확인).
+고정 장치에 한 줄(정책 받음)을 더해 박스와 상관없게 했다 — 시험의 뜻('POLICY · 접근 정책이 비면 다 열림')을 그대로 둔다.
+
+**OF-41 웹 챗은 `ontology_lookup` 을 묶지 않는다 — 부르기는 막지 않는다(에이전트 서버 `_UNBOUND_TOOLS`).** 챗은 게이트웨이 tools/list 에서 관련도 ·
+예산으로 도구를 묶는다. 새 로컬 도구는 설명에 코어 낱말이 많아 코어 질문 턴에 묶여 챗 기본이 바뀐다(OF-14 ④ · 요청 '웹 챗은 바꾸지 않는다'). 게이트웨이는
+챗 PAT 을 개인 PAT 과 가를 표지(purpose)가 없어 목록에서 뺄 수 없다 — 그래서 에이전트 서버의 묶기 판정(`_bindable`)에서 뺀다(심의 · 루틴 · 카탈로그도 같은
+판정이라 함께 빠진다 — D-18 쪽으로도 닫힌 쪽). `_agent_denied` 에는 넣지 않았다 — 박스가 검색 손잡이를 켜면 챗의 `search_tools` 답에도 첫 줄로 서는데, 그때
+모델이 `invoke_tool` 로 부르면 닿아야 안내가 거짓이 되지 않는다. 손잡이를 켤 때는 웹 챗 16문항도 함께 잰다(server-setup).
+
+**OF-42 OL-5 — 동의어 '온톨로지' · 'ontology' 를 게이트웨이 기본값으로 옮긴다(사용자 결정 11-17, 권장안).** cae00 이 11-16 박스 덧씌우기로 잰 그대로다
+(추적 142 나빠진 쌍 0 · 앱 이름 6 의 1위 0.33 → 0.83 — 요청서 §1). 게이트웨이 `38769b7`(동의어 81 → 83). 기본 순위가 '온톨로지' · 'ontology' 가 든 질의에서
+바뀐다 — dev · 다른 박스도 같다. `noncore_demote` 는 결정 Q-1 대로 박스 몫이다. cae00 은 받은 뒤 덧씌우기에서 두 동의어를 지운다(같은 값이라 남겨도 순위는
+같지만 /health 의 '바뀐 칸' 에 계속 보인다).

@@ -480,3 +480,23 @@ DynaForge 온톨로지는 로그인한 누구나 읽는다(입력 조사). SP �
 - 입구가 될 만한 도구 둘(SignalForge `resolve_product_keyword` · MX 백서 `wiki_entity`)이 후보를 묻지 않고 첫 줄을 고른다(§6.4).
 - 과제 인사이트 M2 의 도구 둘(`insight_find` · `insight_get`)은 이름이 `insight_` 로 시작해 자유 조회 접두에 걸리지 않는 것에 기대어 좌석에서 빠진다(M2 contracts).
   F0 는 그 이름들을 바꾸지 않는다(게이트웨이 로컬 도구라 원래 이름과 노출 이름이 같다).
+
+## 12. 11-16 요청 — 개인 Claude 의 '온톨로지 조회' 도구(OL-1 ~ OL-5)
+
+요청서는 [request-1116.md](request-1116.md)(cae00 세션 11-16). 방향은 §1 (가) 그대로 — 정본이 먼저 · 후보는 묻는다 · 비코어로 보내지 않는다. 웹 챗은
+바꾸지 않는다(OF-14 ④). 결정은 context-notes OF-32 ~ OF-39.
+
+- **OL-1 게이트웨이 로컬 도구 `ontology_lookup`.** 질의(이름 · 코드)를 정본 허브 `object_resolve` 로 풀어 exact · candidates · none 을 그대로 넘기고,
+  exact 면 정본 개체(`type_slug · key · name · object_id`)와 `next`(앱마다 key 를 채운 다음 호출)를 준다. 허브 호출은 `_call_tool_body` 로 — 신원 ·
+  권한 · 숨김 · 읽기 전용 · 감사가 일반 호출과 같다. 타입은 게이트웨이가 어휘표 `types` 로 셋까지 고르고(LLM 없음 — 허브 `objects_resolve_many` 는
+  한 타입의 여러 이름이라 여러 타입을 한 번에 풀지 못한다, OF-33), 타입이 없으면 정본 `search` 결과를 후보로 준다. `neighbors=true` 면 `graph_neighbors`
+  한 걸음을 `ontology.facts` 의 상한으로 접는다. 정본이 닿지 않거나 권한이 없으면 `refused`(none 이 아니다). 읽기 표지 · 읽기 전용 PAT 의 로컬 읽기 ·
+  리스크 좌석에는 들지 않는다(이름이 엔진의 자유 조회 접두에 걸리지 않는다 — D-18).
+- **OL-2 `search_tools`.** 손잡이 `onto_lookup_first`(기본 끔) — 켜면 '온톨로지' · 'ontology' 나 코어 낱말이 든 질의에서, 질의가 앱 이름을 부르지 않았을 때
+  `ontology_lookup` 을 1위에 세우고 답에 `hint` 를 싣는다(앱을 부른 질의는 그 앱의 입구 몫 — onto_first, OF-36). 끄면 순위 · 글이 바이트까지 같다.
+  선택 인자 `object`(`"type_slug:key"`)는 그 타입을 받는 앱(OL-3)과 허브 가족의, 이미 질의에 맞은 줄에 가중치 `onto_object` 를 더한다(OF-37).
+- **OL-3 어휘표 `ontology.lookup`.** 요청의 `ontology.apps.<앱>.lookup` 이 아니라 `apps` 옆 칸이다 — 앱 줄은 두 읽는 쪽이 모르는 칸을 보면 줄째 버려
+  웹 챗 고정 몫이 바뀐다(OF-32). 꼴 `{<백엔드 키>: {tool, args, types?}}` — args 의 `{type_slug}` · `{key}` · `{name}` · `{object_id}` 를 채운다. 추적 기본값은
+  형제 둘(`object_resolve(type_slug, name=key)`) · DynaForge `ontology_object(type_slug, key)` · StepForge `onto_search(q=key, type_slug, resolve=true)`(OF-34).
+- **OL-4** 부록 A 36쌍을 게이트웨이 `tool_search_eval/pairs.jsonl` 에(`onto-*` · `source: "doc"`). 판정은 cae00 `/search-eval` 의 `+onto_lookup_first` 판.
+- **OL-5** 동의어 '온톨로지' · 'ontology' 를 게이트웨이 기본값으로 옮겼다 — 사용자 결정 11-17(OF-42).

@@ -80,3 +80,18 @@ JSON merge patch 라 목록은 통째로 바뀐다 — StepForge 줄은 tools �
 
 [`../cae00-inbox/2026-11-02.md`](../cae00-inbox/2026-11-02.md) Q20 ~ Q22(읽기만)는 그대로 쓴다 — Q20 은 받기 전후 둘 다(F0 의 '정적' 어림 · 이름 지도),
 Q21 은 받은 뒤 다시, Q22 는 미리보기 · 입구를 켠 뒤의 지연 · 크기를 함께 본다.
+
+## 7. 11-16 요청 — 개인 Claude 의 온톨로지 조회(OL-1 ~ OL-4, PLAN §12)
+
+받으면 기본값에서 바뀌는 것은 둘이다 — 게이트웨이 tools/list 에 로컬 도구 `ontology_lookup` 하나가 더 선다(로컬 23 → 24), 개인 Claude 가 부르면 정본
+허브로 푼다. 검색 순위 · 글은 손잡이를 켜기 전까지 바이트까지 같고, 웹 챗은 그 도구를 묶지 않는다(에이전트 서버 재기동 뒤 — OF-41).
+
+1. **받은 뒤 확인.** 개인 Claude 에서 `ontology_lookup(query=<아는 과제 key>, type="plm_task")` → `match: exact` · `next` 에 형제 허브 · DynaForge ·
+   StepForge 가 그 사람에게 보이는 만큼. 읽기 전용 PAT 이면 정본 `object_resolve` 가 읽기 목록 · 표지에 없어 `refused`(read_only) — 2절의 읽기 표지와 같은 일이다.
+2. **잰다.** 박스 평가 파일(요청서 부록 B)이나 `/search-eval` 로 `+onto_lookup_first` 판을 본다. 받아들이는 기준은 요청서 OL-4 — `onto-o01` · `o02` · `o04` ·
+   `o05` 에서 `ontology_lookup` 1위 · 코어 30 의 1위 비율 0.63 초과 · 앱 이름 6(`onto-c*`)의 1위 5/6 이상 · 추적 142 나빠진 쌍 0. 추적 평가셋에 36쌍이
+   들어 있다(`source: doc` · id `onto-*`).
+3. **켠다.** 기준을 넘으면 `search_tuning.local.json` 에 `{"switches": {"onto_lookup_first": true}}` 를 더한다(재기동 없음 · 지우면 되돌아간다). 켜면 웹 챗의
+   `search_tools` 답에도 첫 줄로 서므로 웹 챗 16문항도 함께 잰다(챗은 묶지 않고 invoke_tool 로만 닿는다).
+4. **앱 줄 더하기.** ARP · MatNexus · Report Archive 처럼 키 꼴을 확인한 앱은 `core_vocab.local.json` 의 `ontology.lookup` 에 줄을 더한다 — 꼴은 PLAN §12 ·
+   어휘표 `_doc`, 받는 타입을 좁히려면 `types`. 틀린 줄은 그 줄만 버린다.

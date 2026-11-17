@@ -80,3 +80,15 @@
 - [ ] 리스크 심사 재설계 세션 — 리스크 좌석에 지금도 닿는 온톨로지 읽기 · 지정 도구로 넣을 수 있는 SP 허브 · 위키 · `onto_*`(PLAN §6.1)
 - [ ] SignalForge · MX 백서 세션 — `resolve_product_keyword` · `wiki_entity` 가 exact · candidates · none 을 돌려줄 수 있나
 - [ ] 좌석 조회 안내의 `get_guide` · 챗 상시 핵심의 `semantic_search` — Q20 답 뒤에 정한다
+
+## 11-16 요청 OL-1 ~ OL-5(개인 Claude 의 온톨로지 조회 — PLAN §12)
+- [x] 요청서 저장 · 계획 · 결정(OF-32 ~)
+- [x] OL-3 어휘표 `ontology.lookup` 칸(앱 줄 옆 — OF-32) · `_doc` · 포털 시험(꼴 · 에이전트 서버가 무시 · 게이트웨이가 같은 줄을 읽음)
+- [x] OL-1 게이트웨이 `ontology_lookup` — 타입 고르기 · 세 판정 · next(보이는 앱만) · 이웃 접기 · refused · 읽기 전용 · 시험(게이트웨이 `c75bc05`)
+- [x] OL-2 손잡이 `onto_lookup_first`(기본 끔 — 바이트 동일 · 앱 이름 질의는 그 앱 몫, OF-36) · `object` 가중치 · hint · 시험(`c75bc05`)
+- [x] 웹 챗은 묶지 않음 — 에이전트 서버 `_UNBOUND_TOOLS`(OF-41)
+- [x] OL-4 정답쌍 36(게이트웨이 `8b35e18`)
+- [ ] 전체 시험(게이트웨이 · 포털 · 에이전트 서버 계약) · 올림 · dev 게이트웨이 재기동
+- [x] OL-5 동의어 둘 기본값으로 — 사용자 결정 11-17 옮김(게이트웨이 `38769b7` · OF-42)
+- [x] 받은 편지함 `docs/cae00-inbox/2026-11-17.md` — 질문 1 · 2 의 답 · 켜는 법 · 잴 것 · server-setup 7절
+- [ ] cae00 — `/search-eval` 의 `+onto_lookup_first` 판으로 요청서 기준(o01 · o02 · o04 · o05 1위 · 코어 30 > 0.63 · 앱 6 ≥ 5/6 · 추적 142 나빠진 쌍 0) 확인 뒤 덧씌우기로 켬
