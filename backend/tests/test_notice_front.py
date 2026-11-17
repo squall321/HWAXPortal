@@ -4,10 +4,10 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.test_front_window_payload import _node, pytestmark  # noqa: F401
 
 from app.main import app
 from app.notices.store import safe_link
-from tests.test_front_window_payload import _node, pytestmark  # noqa: F401
 
 _API = ["api/notices.api.ts"]
 _SRC = Path(__file__).resolve().parents[2] / "frontend" / "src"
