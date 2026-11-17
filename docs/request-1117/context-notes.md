@@ -48,3 +48,12 @@ dev 는 `"dev"` 를 적는다. ② 읽기 전용 PAT 도 닫기 목록(deny)이 
 `portal_pat` · `app_token` · `sso` — 앱 쪽이 이 낱말을 받는지 확인할 것. ⑥ KooRemapper 의 `/system/capabilities` 는 적재를 말하지 않고 MCP 도구
 `report_upload_instructions` 의 글만 있다(512 MB/파일 · 풀어 2,048 MB · kr_ PAT) · StepForge `upload_instructions` 는 아직 2 GB(포털 nginx 는 10 GB)
 — 두 앱의 구조화된 공식 선언이 오기 전까지 추적 `ingest_routes.json` 의 routes 는 비어 있다(짐작하지 않는다 — 결정 D4).
+
+**R-11 리스크 앱 가지(wt1117/rk) — 짓고 나서 정한 것(앱 결정 LG-1 ~ LG-10 은 HWAXRisk context-notes).** 스키마 v8 새 표 아홉(판정표 틀 · 층 ·
+판 · 행 · 칸, 근거 묶음, 숫자 · 금지값 · 내보내기 기록) — 모두 대상(`target_key`)에 매달려 반출 · 회수를 따른다. 칸 정의 · facts 틀 · 결정 칸 대응은
+**대상 단위로 판을 매겨 등록하는 데이터**(R-2)이고, 등록 · 한눈 입구로 `risk_ledger_put_template` · `risk_ledger_overview` 를 더했다(도구 39 → 52).
+묶음 id `eb_` · 보고 묶음 `rb_`, cite `source_version` 은 `"v<판>/c<칸 정의 판>"` 꼴. 개인정보 가림 `app/pii.py` 는 메일 · 전화 · 사설 IPv4 · 주민번호 꼴 ·
+표지 붙은 사번만 가린다(사람 이름은 가리지 않는다 — 숫자 · 코드를 망가뜨리지 않는 쪽, HG-21 교훈). RK-06 은 앱이 가진 값만 — StepForge 과제 단계 · 판 이름,
+DynaForge 덱 선언 요소 수 · 겹친 요소 id · 덱 판은 그쪽이 아직 내주지 않아 `unknown`(11-17 두 세션에 칸을 청했다). 판정 SP 키는 요청서의 `VRD-COND`
+말고는 같은 꼴로 정한 자리(`VRD-GO` · `VRD-NOGO` · `VRD-UNDET`, `sp_keys_status: unconfirmed`) — SP 사전 주인(D3)과 맞출 일. MCP 읽기 문은 기존 읽기 도구와
+같이 조직 공개 과제도 연다(REST 는 구성원) — 기존 규칙과 같게 두었다.
