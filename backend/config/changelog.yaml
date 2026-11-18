@@ -21,6 +21,15 @@
 #     실제로 파싱해 보므로, 깨뜨리면 테스트가 잡는다.
 
 entries:
+  - date: 2026-11-18
+    title: "MCP 로 StepForge 파일을 해석 웹(ste)에 바로 넣고, 층 재료의 가스 물성 · 신뢰성 시험 조건을 한 번에 받습니다"
+    tag: 연결
+    items:
+      - "**artifact_to_ste_upload** — StepForge 산출물(STEP · STL 등)을 내 이름으로 해석 웹(ste) 업로드에 서버끼리 옮깁니다. 파일이 대화를 지나지 않아 1 MB 상한이 없고, 받은 파일의 sha256 을 맞대 어긋나면 올리기를 끊습니다. 답의 upload_id 로 ste 잡을 내면 됩니다."
+      - "**gas_transport_lookup** — MaterialTwin 재료 id 마다 확산계수 · 헨리 용해도 · 산소투과도를 기체로 걸러 한 번에 줍니다. 값마다 온도 · 품질 등급 · 출처 · 시료 경고가 붙고, 같은 시료의 값일 때만 P = D·S 로 셈해 셈한 값이라고 표시합니다."
+      - "**reliability_test_conditions** — TestScope 신뢰성 시험의 조건을 단계마다 온도(°C) · 습도(%) · 기간(h) · 횟수로 줍니다. TestScope 토큰을 등록하지 않았으면 등록 안내를 줍니다. 조도는 TestScope 에 조건 칸이 없어 비워 둡니다."
+      - "11-17 디지털워커의 레디쉬 · 결로 연계 시험에서 사람이 셸로 끼어든 곳을 메운 것입니다(요청서 원문 docs/ste-stepforge-1117). StepForge · ste · 브리지 몫은 각 세션에 전달했습니다."
+
   - date: 2026-11-17
     title: "리스크 심사 앱이 판정표를 판으로 두고, 근거 묶음 · 결정 반영 · 숫자 점검 · 보고 묶음을 스스로 만듭니다"
     tag: 심의
