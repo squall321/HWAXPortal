@@ -17,7 +17,9 @@
 - [x] sha256 맞대기 — 다르면 PUT 을 끊는다(ste 가 `.part` 를 지우게 — ste 결함 06 에 알림)
 - [x] 시험 — 가짜 StepForge(접기까지 진짜 꼴) · 가짜 ste 로 조각 셋 · sha 어긋남 · 권한 · 신원 · 413/409/404 · 401 다시 받기
 - [x] 게이트웨이 전체 회귀(1,100 통과 — PT-R1 · PT-R2 포함)
-- [ ] dev 실호출(dev StepForge 산출물 → dev ste 업로드 → 상태로 바이트 확인)
+- [x] 올림 — 게이트웨이 master(`ec91b62` · `6dcef62` · `dd304eb`) · 포털 main · 받은 편지함 11-18 · 업데이트 이력(11-18)
+- [x] dev 게이트웨이 재기동(11-18 04:34 — 새 도구 셋이 `/tools-map` 에 뜸)
+- [ ] dev 실호출(dev StepForge 산출물 → dev ste 업로드 → 상태로 바이트 확인) — 이 세션의 MCP 토큰이 만료돼 새 PAT 를 받은 뒤
 
 ## PT-R1 `material_gas_transport` (P1)
 
