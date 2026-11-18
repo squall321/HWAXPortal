@@ -8,7 +8,7 @@
 - [x] ste 06 답 — 몫 다시 가름 · 토큰 보류 · 스테이징 창구 확인
 - [x] 브리지 답 — 몫 받음 · BR-R1 정정(`STEPFORGE_BASE` 는 이미 읽는다, 폴백 `localhost:9520` 이 문제) · BR-R3 합성 재현은 통과
 - [x] ste 1e53260 묶음 풀기 — 사용자 확인을 06 에 전함
-- [ ] StepForge 답 받기
+- [x] StepForge 답 받기 — D-707(전부 · 두 번에 착지, SS-7)
 - [ ] BR-R3 입력 STEP(잡 3fa9415132b7) · B-2 공동 STEP 표본 — 운영 박스에 있어 사용자가 꺼내야 한다(토폴로지만 있으면 치수를 바꾼 사본도 된다)
 
 ## P-1 `artifact_to_ste_upload` (P0)
@@ -38,7 +38,9 @@
 
 - [x] GW-05 로 env · canonical · aliases 가 이미 있음을 확인
 - [x] HEAXHub 에 서버 목록 `build`(앱 커밋) 칸 청하기(heaxhub-4b, 11-18)
-- [ ] 생기면 `list_tool_apps` 에 싣기
+- [x] HEAXHub 답 — `build: {commit, started_at}`, 모르면 칸째 없음(SS-7)
+- [x] 게이트웨이 받는 쪽 — `629f32c`(올림)
+- [ ] HEAXHub 판이 나오면 dev 실제 목록으로 확인
 
 ## PT-R4 ste 잡 목록 '내 잡' (P2)
 

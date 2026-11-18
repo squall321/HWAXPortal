@@ -49,3 +49,16 @@
 - PT-R2 · P-2 의 "개인 토큰이 없으면 공용 프리셋으로 대신 받을지 묻는다" 에 쓸 공용 조건표가 어디에도 정의돼 있지 않다.
 - 값을 지어내지 않는다. 토큰이 없으면 등록 안내와 "사람에게 시험 조건을 직접 묻는다" 를 답한다. 표가 생기면(누가 어떤 근거로 정하는지와 함께) 그때 잇는다.
 - 조도(lux)는 TestScope 조건 어휘에 없다. 장비 사양에만 있다. 늘 null 과 까닭을 답한다.
+
+## SS-7 (11-18) StepForge · HEAXHub 답
+
+- **StepForge(stepforge-d4) — D-707, 그쪽 사용자 확인.** 전부 하고 두 번에 착지한다. main 은 cae00 이 `dist-20261117-215201Z` 를 받은 뒤에 민다.
+  - 1차: SF-R1 `export_part_step`(산출물 kind `part_step` — `to_ste_upload` 는 안 만든다) · SF-R2 `part_outline_2d` · F-1 `cavity_openings`(조사부터) · F-2(포털 P-1 꼴) · F-8 · F-7 · SF-R6.
+  - 2차: SF-R3 · R4 · R5 · F-3 · F-4 · F-5 · F-6.
+  - P-1 이 기대는 `download_artifact` 조각 칸은 그대로 두고, 바꾸면 먼저 알린다. 조각마다 파일 전체를 다시 읽던 것은 이 판에서 고친다(seek · 파일 sha256 한 번).
+  - 1 MB 상한 없는 REST `GET /api/projects/{id}/artifacts/{kind}/{ref}` 도 이미 있다. 게이트웨이는 사람 명의가 보장되는 MCP 조각 길을 쓴다.
+- **HEAXHub(heaxhub-4b) — 그쪽 사용자 확인.**
+  - 꼴: 서버 줄마다 선택 칸 `build: {commit(7자), started_at(UTC ISO)}`.
+  - 값은 떠 있는 인스턴스의 것이다(런처가 SIF 를 띄울 때 SIF 안 커밋을 적는다). built_at 은 싣지 않는다.
+  - 모르면 칸째 뺀다. 프록시 앱 · 커밋 없는 SIF · 옛 인스턴스가 그렇다.
+  - 게이트웨이 받는 쪽은 `629f32c` 다. 꼴이 맞을 때만 그대로 싣고, 칸이 없으면 줄에도 없다.
