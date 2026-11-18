@@ -19,19 +19,20 @@
 - [x] 게이트웨이 전체 회귀(1,100 통과 — PT-R1 · PT-R2 포함)
 - [x] 올림 — 게이트웨이 master(`ec91b62` · `6dcef62` · `dd304eb`) · 포털 main · 받은 편지함 11-18 · 업데이트 이력(11-18)
 - [x] dev 게이트웨이 재기동(11-18 04:34 — 새 도구 셋이 `/tools-map` 에 뜸)
-- [ ] dev 실호출(dev StepForge 산출물 → dev ste 업로드 → 상태로 바이트 확인) — 이 세션의 MCP 토큰이 만료돼 새 PAT 를 받은 뒤
+- [x] dev 실호출(11-18, 사람 PAT) — STEP 34,347 B(조각 하나)로 새 업로드, 같은 업로드에 glb 2,034,988 B(조각 셋) 더함 · sha256 이 StepForge 디스크 원본과 같음 · ste 파일 목록 둘
 
 ## PT-R1 `material_gas_transport` (P1)
 
 - [x] MaterialTwin 물성 키 · 응답 꼴 조사(실 DB 읽기 전용으로 꼴 확인)
 - [x] 도구 `gas_transport_lookup` · 시험 — 게이트웨이 `6dcef62`(이름은 SS-5)
-- [ ] dev 실호출(dev MaterialTwin 에 O2 값이 있는 재료)
+- [x] dev 실호출(11-18) — D · S · P 셋이 다 있는 재료 둘: 293 K 뿐인 재료는 303.15 K 요청에 그 값과 delta_K 10.15(외삽 안 함), 다른 재료는 같은 온도 값과 시료 경고 · 후보
 
 ## PT-R2 · P-2 시험 조건 → 환경 값 (P1)
 
 - [x] 신뢰성 시험 앱 · 응답 칸 조사(TestScope 소스)
 - [x] 도구 `reliability_test_conditions` · 시험 — 게이트웨이 `dd304eb`(공용 조건표는 SS-6)
-- [ ] cae00 실호출(dev 에 TestScope 없음)
+- [x] dev 실호출 — TestScope 가 없어 '붙어 있지 않다' 로 답함(예상대로)
+- [ ] cae00 실호출(받은 편지함 11-18 2번)
 
 ## PT-R3 · P-3 운영본 표시 (P2)
 
