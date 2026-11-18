@@ -41,7 +41,8 @@
 - [x] HEAXHub 에 서버 목록 `build`(앱 커밋) 칸 청하기(heaxhub-4b, 11-18)
 - [x] HEAXHub 답 — `build: {commit, started_at}`, 모르면 칸째 없음(SS-7)
 - [x] 게이트웨이 받는 쪽 — `629f32c`(올림)
-- [ ] HEAXHub 판이 나오면 dev 실제 목록으로 확인
+- [x] HEAXHub `ec240e1` 올림(사용자 결정 11-18 — 11-12 main 보류를 풀고 `118059b` 와 함께) · dev 허브 백엔드 재기동
+- [x] dev 실제 목록(11-18) — 허브 앱 8개에 build(commit · started_at)가 실린다. step_forge 는 떠 있는 인스턴스보다 디스크 SIF 가 새로워 '모름'으로 비고(의도), kooremapper_mcp 는 프록시라 없다. 허브 밖 백엔드는 출처가 없어 없다
 
 ## PT-R4 ste 잡 목록 '내 잡' (P2)
 

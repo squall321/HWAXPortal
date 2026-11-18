@@ -62,3 +62,11 @@
   - 값은 떠 있는 인스턴스의 것이다(런처가 SIF 를 띄울 때 SIF 안 커밋을 적는다). built_at 은 싣지 않는다.
   - 모르면 칸째 뺀다. 프록시 앱 · 커밋 없는 SIF · 옛 인스턴스가 그렇다.
   - 게이트웨이 받는 쪽은 `629f32c` 다. 꼴이 맞을 때만 그대로 싣고, 칸이 없으면 줄에도 없다.
+
+## SS-8 (11-18) HEAXHub main 보류 해제 · build 칸 dev 확인
+
+- 11-12 에 hwaxportal-a5 가 건 "cae00 update-all 이 끝날 때까지 HEAXHub main 을 `d7098ad` 에서 더 올리지 말 것" 이 풀리지 않은 채 남아 있었다. cae00 은 그 뒤 11-14 · 11-17 에 update-all 을 돌렸다.
+- 사용자 결정으로 보류를 풀고 `118059b`(보류 기록) · `ec240e1`(build 칸)을 함께 올렸다. 보류 줄을 지우는 일은 그 기록의 주인인 heaxhub-4b 몫으로 남겼다.
+- dev 실제 목록에서 허브 앱 8개에 build 가 실렸다. step_forge 는 비었는데, 떠 있는 인스턴스가 뜬 뒤 디스크 SIF 가 새 빌드로 바뀌어 허브가 판을 '모름'으로 둔 것이다.
+  - 즉 dev step_forge 는 디스크보다 옛 판으로 돈다.
+  - 바꾸려면 `HEAXHub/deploy/apptainer/redeploy-app.sh step_forge` 를 쓴다. 운영 중인 앱 재기동이라 사용자가 정한다.
