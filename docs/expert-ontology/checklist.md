@@ -26,3 +26,18 @@
 - [ ] AIDataHub 요청서 — `record_entities` · 짓는 일 · 병합 보호 · 읽기 창구 · `agent_search` 객체 거름
 - [ ] 에이전트 서버 그림자 — 좌석 · 추천 · 띵킹의 객체 신호 로그
 - [ ] 켜기 — 좌석 신호 · 카드 먼저 · '맡은 사람 없음' · '코어 데이터 질문'(박스 스위치 기본 끔)
+
+## 미리 짓기(11-21 — 사용자 결정 EO-6, 계획 6절)
+- [ ] 결정 기록 EO-6 ~ EO-12 · 계획 6절 · CLAUDE.md 문서 표
+- [ ] AIDataHub — 이관(`record_mentions` · `record_entities` · `onto_state`) · 규칙 파일 · `services/onto_svc.py`(낱말 · 뽑기 · 짓기 · 잇기 · 프로필 · 질문 맞추기)
+- [ ] AIDataHub — `api.scripts.onto` · `deploy/apptainer/onto.sh`(build · bind · status · profile)
+- [ ] AIDataHub — `recommend_agents` 의 `onto` 인자(off 면 응답이 그대로) · MCP 창구
+- [ ] AIDataHub — 시험(뽑기 · 잇기 · 프로필 · 추천 셋) · 전체 시험
+- [ ] 에이전트 서버 — `SEAT_ONTO`(기본 끔) · 도구가 인자를 알 때만 · 리스크 심사 제외 · 시험
+- [ ] 포털 — `card-entity-bind.py`(허브 읽기 둘 · exact 만 · 사전 파일 · `onto.sh bind`) · 시험(가짜 허브)
+- [ ] 포털 — `persona-domains-build.py` · 어휘표 `personas.domains` 첫 줄(구조 셈)
+- [ ] dev — 이관 · `onto.sh build` · 수 확인 · 프로필
+- [ ] cae00 절차(`server-setup.md`) · 박스 훅 보기 · 받은 편지함 · 업데이트 이력
+- [ ] 올림(가지 병합 `--no-ff`) · dev 반영
+- [ ] cae00(사람) — 받기 · build · bind · 수 보고 · G-EO 판정 뒤 `SEAT_ONTO`
+
