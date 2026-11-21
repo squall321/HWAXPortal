@@ -57,6 +57,7 @@ from app.agent import upload as _upload
 from app.agent import wiki_send as _wiki
 from app.insights import cards as _insight_cards
 from app.insights import intake as _insight_intake
+from app.procedures import handoff as _procedure_handoff
 from app.agent import panel as _panel
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
@@ -302,6 +303,10 @@ class DelibOpts(BaseModel):
     # 심의 주제(docs/project-insight-graph M1) — 심의 시작의 주제 고르기 · 이어하기가 싣는다. 에이전트 서버가 엔진 앞에서 다시 풀고 확인한 주제를
     # delib 사건(kind=subject)으로 내면 중계가 그것만 답 meta.subject 로 남긴다(브라우저가 보낸 값은 남기지 않는다). 엔진에는 가지 않는다.
     subject: DelibSubject | None = None
+    # 절차 실행 → 심의 다리(docs/procedures W-114) — 실행 상세의 '심의로 넘기기' 가 실행 id 만 싣는다. 근거는 중계가 그 사람의 실행 원장에서 지어
+    # evidence 앞에 싣고(_attach_procedure_run — 40건 · 결과 150,000자 · 인자 1,200자) 이 칸은 비운다. 엔진에는 가지 않는다. 리스크 심사 계열
+    # 의장과 함께 오면 422 다(사용자 결정 11-22 — 리스크 심사의 입구는 리스크 앱 하나다).
+    procedure_run: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{32}$")] | None = None
 
     @field_validator("as_of")
     @classmethod
@@ -961,6 +966,37 @@ async def _engine_takes_as_of(client: httpx.AsyncClient, settings: Settings) -> 
         return r.json().get("delib_as_of") is True
     except (httpx.HTTPError, ValueError, AttributeError):
         return None
+
+
+async def _attach_procedure_run(request: Request, body: "ChatRequest", principal: Principal) -> None:
+    """절차 실행 → 심의 다리(docs/procedures W-114). 실행의 단계 기록을 `[{source, tool, args, result}]` 로 바꿔 사전 근거 앞에 싣는다.
+
+    브라우저는 실행 id 만 보낸다 — 근거를 브라우저가 지어 보내면 원장에서 가려진 값(확인 토큰)이 풀리거나 실패 · 실행 여부 모름 표지가
+    빠져도 서버가 모른다. 그래서 여기서 그 사람의 원장(주인만)을 읽어 짓는다. **일반 심의로만 넘긴다** — 유형은 사람이 고르되 리스크 심사 계열은
+    거절한다(리스크 심사의 입구는 리스크 앱 하나다 — 10-31 A17 · D-18, 사용자 결정 11-22). 화면이 그 유형을 안 보여도 요청은 직접 올 수 있다.
+    거절은 에이전트 서버를 부르기 전이고 대화에 아무것도 남기지 않는다.
+    """
+    do = body.delib_opts
+    ensure(principal, "feat:procedures")
+    if _onto_preview.risk_chair(do.chair_template):
+        raise AuthError("절차 실행은 리스크 심사로 넘기지 않습니다 — 리스크 심사의 입구는 리스크 앱(/risk) 하나입니다. 다른 심의 유형을 고르세요",
+                        status_code=422)
+    if not _is_delib_message(body.message):
+        raise AuthError("절차 실행의 단계 기록은 심의를 여는 발화에만 싣습니다(/심의 …) — 일반 챗 턴은 이 근거를 읽지 않습니다", status_code=422)
+    store = getattr(request.app.state, "procedures_store", None)
+    if store is None:
+        raise AuthError("절차 저장소가 열리지 않았습니다", status_code=503)
+    run = await asyncio.to_thread(store.get_run, do.procedure_run, owner_sub=principal.subject)
+    if run is None:
+        raise AuthError("실행을 찾을 수 없습니다", status_code=404)     # 없는 것과 남의 것은 같은 404 다
+    got = await asyncio.to_thread(_procedure_handoff.evidence_or_refuse, store, run)
+    merged = got["evidence"] + list(do.evidence or [])
+    cap = DelibOpts.model_fields["evidence"].metadata[0].max_length
+    if len(merged) > cap:
+        raise AuthError(f"근거가 {len(merged)}건이라 상한({cap}건)을 넘습니다 — 함께 실은 근거를 줄여 보내세요"
+                        f"(절차 실행의 단계 기록이 {len(got['evidence'])}건입니다)", status_code=422)
+    do.evidence = merged
+    do.procedure_run = None
 
 
 def _relay_ui_host(request: Request, body: "ChatRequest", principal: Principal, settings: Settings) -> bool:
@@ -3051,6 +3087,9 @@ async def chat(
     routine_turn = body.routine is not None
     if routine_turn:
         ensure(principal, "feat:routines")
+    # 절차 실행 → 심의 다리 — 그 사람의 실행 원장에서 근거를 지어 싣는다. 거절(리스크 심사 · 남의 실행 · 도는 실행)은 퍼밋을 잡기 전이다.
+    if body.delib_opts is not None and body.delib_opts.procedure_run:
+        await _attach_procedure_run(request, body, principal)
     relay_ui = _relay_ui_host(request, body, principal, settings)    # 패널 표지를 실을까(HA-20) — 서버 사본의 포인터도 이 턴만 모은다
     sem = _sem(request)
     audit = _audit(request)
