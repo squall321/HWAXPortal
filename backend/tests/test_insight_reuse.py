@@ -416,6 +416,7 @@ def test_읽은_카드를_다_알_때만_id_를_낸다():
     assert C.insight_sources({"card": _derived(["ins:wf:z"], tool="mcp__hwax__insight_get", args="{'id': 'ins:wf:z'}")})[0] == ["ins:wf:z"], \
         "엔진이 사전 인자를 글로 옮긴 꼴도 읽는다"
     for card in (_derived(["x"], tool="insight_find", args='{"sp_task": "알파"}'), _derived(["x"], args='{"id": "남의 글"}'),
+                 _derived(["x"], tool="insight_find", args='{"id": "ins:web:a:r1:default"}'),     # 찾기 도구에 id 를 적어도 카드 하나가 아니다
                  _derived(["x"], args='{"id": "ins:web:a:r1:default", "also": 1}'), {**CARD, "tools": ["insight_get"], "calls": []},
                  _derived(["ins:wf:z"], extra_calls=[{"tool": "find_part", "args": "{}"}] * (C.CALLS_MAX - 1))):
         ids, why = C.insight_sources({"card": card})
