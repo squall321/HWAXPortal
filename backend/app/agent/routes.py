@@ -57,6 +57,7 @@ from app.agent import upload as _upload
 from app.agent import wiki_send as _wiki
 from app.insights import cards as _insight_cards
 from app.insights import intake as _insight_intake
+from app.insights import reuse as _insight_reuse
 from app.agent import panel as _panel
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
@@ -979,7 +980,7 @@ def _relay_ui_host(request: Request, body: "ChatRequest", principal: Principal, 
 async def _relay_stream(
     body: "ChatRequest", principal: Principal, audit: AuditLog,
     settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None, affiliation: str = "",
-    ui_host: bool = False,
+    ui_host: bool = False, insights: dict | None = None,
 ) -> AsyncIterator[bytes]:
     """Relay the remote Agent Server's SSE stream byte-for-byte to the browser.
 
@@ -1062,6 +1063,37 @@ async def _relay_stream(
                                                  "에이전트 서버를 이 판으로 다시 띄운 뒤 보내거나, 심의 옵션의 기준일을 비우고 보낸다."})
             yield sse_event("done", {})
             return
+    # 과제 인사이트 다시 쓰기(docs/project-insight-graph PLAN §7.1 · M3) — 과제를 단 일반 심의의 시작에 같은 (과제, 차수)의 앞선 인사이트를 근거 항목으로
+    # 깐다(app.insights.reuse). 주제가 없거나 · 확인되지 않았거나 · 볼 수 있는 카드가 없으면 payload 는 위에서 지은 그대로다(바이트까지). 실패 · 기한 넘김도
+    # 깔지 않고 심의를 연다 — 깔기가 심의를 막지 않는다. 리스크 심사 계열은 대상이 아니다(D-18 — subject_key 가 가른다, 엔진도 한 번 더 뺀다).
+    _ins_key = (_insight_reuse.subject_key(insights["viewer"], user_pat, payload["delib_opts"])
+                if insights is not None and delib and "delib_opts" in payload else "")
+    if _ins_key:
+        _laid = None
+        try:
+            _tasks = _insight_cards.visible_tasks(
+                await asyncio.to_thread(insights["store"].task_scopes, viewer=insights["viewer"].email), insights["viewer"])
+        except Exception:  # noqa: BLE001
+            logger.warning("과제 인사이트 — 깔 후보를 읽지 못했다(깔지 않고 심의를 연다)", exc_info=True)
+            _tasks = set()
+        if _tasks:
+            yield sse_event("status", {"step": f"과제 「{_ins_key[:80]}」 의 앞선 인사이트를 찾는 중", "tool": None})
+            try:
+                _laid = await asyncio.wait_for(_insight_reuse.lay(
+                    store=insights["store"], settings=settings, principal=principal, viewer=insights["viewer"], pat=user_pat,
+                    opts=payload["delib_opts"], tasks=_tasks, ra_workspace=insights["ra_workspace"],
+                    conversation_id=body.conversation_id), _insight_reuse.LAY_TIMEOUT_S)
+            except Exception as exc:  # noqa: BLE001 — 기한 넘김(TimeoutError) 포함
+                logger.warning("과제 인사이트 — 앞선 인사이트를 깔지 못했다(%s) — 깔지 않고 심의를 연다 sub=%s", type(exc).__name__,
+                               principal.subject, exc_info=not isinstance(exc, TimeoutError))
+        if _laid is not None:
+            if _laid.evidence:
+                payload["delib_opts"] = {**payload["delib_opts"],
+                                         "evidence": [*(payload["delib_opts"].get("evidence") or []), *_laid.evidence]}
+            # 무엇을 어느 심의에 깔았는지 남긴다 — 깐 근거는 그 심의의 산출물로 다시 퍼지고 거둔 뒤에도 거기 남는다(PLAN §6.5)
+            audit.record(principal=principal.subject, event="insight_laid", chat_id=chat_id, status="ok",
+                         meta={"conversation_id": body.conversation_id, "sp_task": _ins_key[:200], "ids": _laid.ids, **_laid.counts})
+            yield sse_event("status", {"step": _laid.notice, "tool": None})
     if delib or routine:
         stream_kw: dict = {}
         idle, knob = client.timeout.read, "AGENT_STREAM_IDLE_TIMEOUT_S"
@@ -3042,6 +3074,23 @@ class _ReleasingStream(StreamingResponse):
                     await _close()
 
 
+def _insight_ctx(request: Request, principal: Principal, affiliation: str) -> dict | None:
+    """심의 시작의 과제 인사이트 깔기(app.insights.reuse)가 쓸 것 — 원장 · 읽는 사람(메일 · 요청마다 원장으로 센 소속 · 지금 권한 그룹, 관리자
+    표지는 주지 않는다 — 범위 밖 읽기로는 깔지 않는다) · 그 사람의 RA 작업 공간을 읽는 함수. 원장이 없으면 None(깔지 않는다)."""
+    store = getattr(request.app.state, "insight_store", None)
+    if store is None:
+        return None
+    email = (principal.email or "").strip().lower()
+    users = getattr(request.app.state, "user_store", None)
+
+    def _ra_workspace() -> str | None:
+        conn = users.get_connection(email=email, service="reportarchive") if users is not None and email else None
+        return (conn or {}).get("workspace") if conn else None
+
+    return {"store": store, "ra_workspace": _ra_workspace,
+            "viewer": _insight_cards.Viewer(email=email, sub=principal.subject, aff=affiliation, groups=frozenset(principal.groups))}
+
+
 @router.post("/chat")
 async def chat(
     request: Request,
@@ -3103,9 +3152,10 @@ async def chat(
         if mode == "echo":
             source = _echo_stream(body.message, principal, audit)
         else:
+            _aff = _wiki.known_affiliation(request)
             source = _relay_stream(body, principal, audit, settings, _agent_client(request),
                                    _chat_user_pat(request.app.state.keystore, settings, principal),
-                                   _wiki.known_affiliation(request), ui_host=relay_ui)
+                                   _aff, ui_host=relay_ui, insights=_insight_ctx(request, principal, _aff))
 
         # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
         # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).

@@ -122,3 +122,44 @@ def test_리스크_심사_좌석의_D18_줄은_과제_인사이트_도구와_주
     plain = _full()
     assert not [c for c in plain["calls"] if "[D-18]" in c["prompt"]]
 
+
+
+# ── M3 — 앞선 과제 인사이트를 근거로(PLAN §7.1) ──────────────────────────────────────────────────────────────────
+_INS_EV = [{"source": "앞선 인사이트 — 검증 대상, 독립 근거 아님", "tool": "insight_get", "args": '{"id": "ins:web:c:r:default"}',
+            "result": "앞선 결론 — 리브를 보강한다"},
+           {"source": "개인 Claude", "tool": "mcp__hwax__insight_find", "result": "찾기 묶음 — 앞선 결론 둘"},
+           {"source": "StepForge", "tool": "find_part", "result": "힌지 2종"}]
+
+
+def test_리스크_심사_워크플로는_과제_인사이트_근거를_좌석에_주지_않고_뺐다고_남긴다():
+    """엔진의 받침(HWAXAgentServer deliberation._resolve_opts)과 같은 거름이다 — 의장이 리스크 심사면 도구 칸이 과제 인사이트인 근거 항목을 뺀다
+    (D-18). 워크플로의 근거 블록은 코드가 짓는다 — 좌석 도구와 달리 지시가 아니라 강제다. 다른 의장은 그대로 싣는다."""
+    out = _full(chairTemplate="risk-review", evidence=_INS_EV, saveConversation=False, saveReport=False)
+    prompts = "\n".join(c["prompt"] for c in out["calls"])
+    assert "앞선 결론" not in prompts and "힌지 2종" in prompts
+    om = [x for x in out["result"]["evidenceOmitted"] if x["source"] == "과제 인사이트 근거 거름"]
+    assert len(om) == 1 and om[0]["count"] == 2 and "D-18" in om[0]["text"] and "앞선 결론" not in om[0]["text"]
+    plain = _full(evidence=_INS_EV, saveConversation=False, saveReport=False)
+    assert "앞선 결론 — 리브를 보강한다" in "\n".join(c["prompt"] for c in plain["calls"])
+    assert not [x for x in plain["result"]["evidenceOmitted"] if x["source"] == "과제 인사이트 근거 거름"]
+
+
+def test_워크플로의_과제_인사이트_이름_규칙은_엔진과_같다():
+    """리스크 심사의 받침은 엔진(HWAXAgentServer deliberation._INSIGHT_EV_TOOL_RE)과 워크플로 두 곳에 있다 — 이름 규칙이 갈리면 한쪽 길로 샌다."""
+    import re
+    js = (Path(__file__).resolve().parents[2] / _DELIB).read_text(encoding="utf-8")
+    m = re.search(r"^const INSIGHT_EV_TOOL_RE = /(.+)/$", js, re.M)
+    assert m, "워크플로의 이름 규칙 줄이 바뀌었다 — 이 시험도 고쳐라"
+    eng = Path(__file__).resolve().parents[3] / "HWAXAgentServer" / "deliberation.py"
+    if not eng.exists():
+        pytest.skip(f"형제 리포 없음: {eng}")
+    src = eng.read_text(encoding="utf-8")
+    e = re.search(r'^_INSIGHT_EV_TOOL_RE = re\.compile\(r"([^"]+)" \+ _INSIGHT_TOOL_HEAD\)$', src, re.M)
+    head = re.search(r'^_INSIGHT_TOOL_HEAD = "([a-z_]+)"$', src, re.M)
+    assert e and head and m.group(1) == e.group(1) + head.group(1)
+
+
+def test_워크플로_머리의_evidence_안내가_앞선_인사이트를_넘기는_법을_말한다():
+    head = (Path(__file__).resolve().parents[2] / _DELIB).read_text(encoding="utf-8").split("export const meta", 1)[0]
+    for want in ("insight_find", "insight_get", "검증 대상, 독립 근거 아님", "plat:", "같은 (과제, 차수)", "리스크 심사"):
+        assert want in head, want

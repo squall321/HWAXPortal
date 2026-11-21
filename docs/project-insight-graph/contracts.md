@@ -1,4 +1,4 @@
-# 과제 인사이트 그래프 — M2 · M2b 계약(11-02)
+# 과제 인사이트 그래프 — M2 · M2b 계약(11-02) · M3 · M4(11-21 ~ 22 — §10)
 
 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md)(M2 는 PG-28 부터) · 할 일 [checklist.md](checklist.md). 이 문서는 에이전트 서버 ·
 포털 · 게이트웨이 · 리스크 앱이 함께 지키는 꼴이다. 칸 이름 · 꼴은 M2 를 짓기 전에 실물(에이전트 `0e63a65` · 포털 `32bd8784` · 게이트웨이
@@ -42,7 +42,7 @@ Claude 워크플로(hwax-deliberate.js) → save_conversation(subject · chair_t
 | `report_id` · `report_url` | 정수 · 글 · null | 그 단의 RA 보고서(없으면 null) |
 | `model` | 글 | 답한 모델 이름(`llm.model_name` · `llm.model`, 외부 응답자는 `external`) |
 | `calls` | `[{ref, tool, app, args, sha256, ok}]` ≤ 60 | 근거 표지 — 좌석 자유 조회(gather_pool) · 호출자 근거(`opts.evidence` 의 `tool` 이 있는 항목) · 지정 도구. `ref = "call:" + sha256(tool · args · 결과 sha256)[:16]`, `args` 는 1,200자까지(엔진 인자 표기 상한), `sha256` 은 엔진이 쥔 결과 글의 지문 — 지정 도구 · 호출자 근거는 받은 글, 좌석 자유 조회는 공용 풀에 실린 몫(좁은 창에서는 앞부분 — 다른 좌석이 본 글)이라 원문 전체의 지문이 아닐 수 있다(앞부분이 같은 두 결과는 표지 하나로 접힌다 — 반대 검토 11-02). `ok` 는 `_delib_tool_result_ok`. 같은 (도구, 인자, 결과)는 하나. 제자리 이어하기는 지정 도구를 다시 부르지 않으므로 그 표지를 재개 자료 `e:pre.ins_calls` 에서 되살린다 |
-| `tools` | 글 목록 | 이 단의 근거에 든 도구 이름 전부 — 위 셋 + 엔진 안의 근거(VOC 환기 · 정량 근거 선주입 · 지식카드 `agent_search`) + 같은 심의의 앞 걸음이 넘긴 것(아래 잇기). 제자리 이어하기는 라운드 전 몫을 재개 자료 `e:pre.ins_tools` 에서 되살린다 |
+| `tools` | 글 목록 | 이 단의 근거에 든 도구 이름 전부 — 위 셋 + 엔진 안의 근거(VOC 환기 · 정량 근거 선주입 · 지식카드 `agent_search`) + 같은 심의의 앞 걸음이 넘긴 것(아래 잇기). 제자리 이어하기는 라운드 전 몫을 재개 자료 `e:pre.ins_tools` 에서 되살린다. `calls` 가 상한(60)에서 끊겨도 이름은 전부 남는다(11-21 — 종전엔 표지에서만 나와 뒤에 선 호출자 근거의 도구가 빠졌다, PG-38) |
 | `apps` · `apps_unknown` | 글 목록 · 글 목록 | `tools` 의 게이트웨이 백엔드 키(`/tools-map` — 엔진의 `_app_of_tools`, 게이트웨이 자체 도구는 `_gateway`)와 앱을 모르는 도구 이름(지도를 못 받은 때는 전부 — 포털이 확인할 때 다시 푼다, §6.2) |
 | `untracked` | 글 목록(차례 고정) | 근거 표지가 없어 범위를 모르는 입력 — `evidence`(도구 없는 호출자 근거 글 · 그림 판독문) · `note`(호출자의 사람 의견 — 챗이 넘긴 보강 글일 수 있다) · `summary`(호출자가 준 앞 회차 요약) · `images`(그림 조각) + 앞 걸음이 넘긴 것. 단 준비가 채운 의견 칸(시험 설계 지시문 · 현황 글)과 다단 심의가 넘긴 앞 단 결정문은 넣지 않는다 — 그 범위는 잇기로 간다 |
 | `refs` | 글 목록 | `rpt:<report_id>`(있으면) + `calls[].ref` |
@@ -154,9 +154,9 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
   `(workflow)` 는 빼고)는 그때 게이트웨이 `/tools-map` 으로 다시 풀어 카드에 적는다 — 지도를 못 받으면 503 이고 초안 그대로다(엔진이 지도를 못 받은 때
   지은 카드가 plat 토큰 없이 열리지 않게). 주인에게 소속이 없으면 `[user:<주인>]` 그대로 `confirmed` 이고 `scope_note` 에 까닭을 단다. MCP 잡의
   `owner_aff` 는 쓰지 않는다. 여전히 앱을 모르는 도구 · 범위를 모르는 입력(`untracked`)이 있으면 같은 소속까지이고 까닭을 단다(PLAN §6.2 '한 칸 다른
-  자리'). **앞선 인사이트를 근거로 쓴 카드**(`tools` · `calls` 에 `insight_*`)는 원래 카드들의 범위를 이어받는 규칙(M3)이 서기 전까지 확인해도
-  `[user:<주인>]` 이고 까닭을 단다 — `insight_*` 는 `_gateway` 라 plat 토큰이 없어, 이어받지 않으면 plat 권한 카드의 결론이 그 권한 없는 같은 소속에
-  열린다(반대 검토 11-02).
+  자리'). **앞선 인사이트를 근거로 쓴 카드**(`tools` · `calls` 에 `insight_*`)는 읽은 카드들의 범위를 이어받는다(M3 — §10.3). 읽은 카드를 다 알 수
+  없으면 확인해도 `[user:<주인>]` 이고 까닭을 단다 — `insight_*` 는 `_gateway` 라 plat 토큰이 없어, 이어받지 않으면 plat 권한 카드의 결론이 그 권한
+  없는 같은 소속에 열린다(반대 검토 11-02).
 - **조직 공개**(`confirmed → org`) — 근거 범위를 다 알 때만이다. 이 판에서는 근거 표지(`calls` · `tools`)가 없고 `apps_unknown` · `untracked` 가 비고
   워크플로가 아닌 카드뿐이다(남의 RA 보고서 · 리포트 같은 근거의 범위를 모른다). 아니면 409 와 까닭. `plat:` 빼기는 짓지 않았다(관리자 몫 — 나중).
 - **그 밖의 쓰기**(세션 + CSRF) — 차수 달기(코드 · `unknown`, 둘 다 `round_by=person` — 고른 '모름' 도 사람의 것이라 주제 확인이 되돌리지 않는다),
@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
 | `GET /insights-api/projects?q=` | 보이는 과제 목록 — `[{sp_task, rounds: {<코드 · unknown>: n}, total, latest_at, risk: n}]`(리스크 앱 과제 수 포함 · 못 읽으면 `risk_error`) |
 | `GET /insights-api/project?sp_task=&round=` | 한 과제 — 차수 칸마다(`rounds: [{round, cards, risk}]`, 차수 모름은 `round: null` 칸) 일반 심의 카드와 리스크 행 |
 | `GET /insights-api/mine` | 내 카드 — `waiting` · `draft` · 그 밖 |
+| `GET /insights-api/review` | 검토 줄(M4 — §10.5) — `{items: [{reasons, say, card}], counts}` |
 | `GET /insights-api/find?sp_task=&round=&q=&artifact_kind=&artifact_id=&limit=` | 게이트웨이 `insight_find` 의 몸 — 보이는 카드의 짧은 행 |
 | `GET /insights-api/cards/{id}` | 카드 하나(못 보면 없는 것과 같은 404) |
 | `POST /insights-api/cards/{id}/confirm` · `/round` · `/claim` · `/widen` · `/dispute` · `/withdraw` · `/subject` | 위 쓰기(세션 + CSRF) |
@@ -233,3 +234,70 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
 - **포털 과제 보기** — 읽는 사람의 PAT 로 게이트웨이 별칭 `heaxhwax_risk_risk_find_projects_by_subject` 를 불러(쪽마다 50, `next_offset` 을 따라 네 쪽까지 —
   더 남으면 '앞 N개만 실었다' 고 말한다) (과제, 차수) 칸에 싣는다. 리스크 권한(`plat:risk`)이 없거나 불통이면 그 칸에 까닭을 보이고 일반 심의 카드는
   그대로 보인다.
+
+## 10. M3 · M4 — 다시 쓰기 · 읽을 때 셈(11-21 ~ 22, 결정 PG-36 ~ PG-43)
+
+### 10.1 깔기 — 웹 일반 심의 시작(포털 `app/insights/reuse.py` · `/agent/chat` 중계)
+
+- **언제** — 메시지가 심의 트리거이고 `delib_opts.subject.sp_task` 가 있고, 리스크 심사 계열(§5)이 아니고, 그 사람에게 `feat:insights` 와 사람
+  PAT 가 있고, 그 과제(옛 key 포함 — §10.4)에 그 사람이 볼 수 있는 카드가 있을 때. 아니면 에이전트 서버로 가는 요청은 종전과 바이트까지 같다.
+- **확인** — 에이전트 `POST /deliberate/subject/confirm`(§3.2)을 그 사람 PAT 로 불러 `sp_state=confirmed` 이고 `sp_task` 가 보낸 것과 같을 때만.
+- **고르기** — 그 과제의 카드 가운데 ① 그 사람에게 보이고(관리자 표지 없이 — §6.1) ② 차수 코드가 이 심의의 차수와 같고 ③ 상태가 `confirmed` ·
+  `disputed` 이고 ④ 범위 토큰이 전부 산출물의 독자 안인 것. 독자 — `save_report=0` 이거나 그 사람의 RA 작업 공간이 개인함(`personal-…`)이고 새
+  보고서면 `{org, aff:<그 사람의 지금 소속>}`, 그 밖(부서 · 조직 작업 공간 · RA 위임(SSO) 연결 · 연결 없음 · `append_to_report_id`)은 `{org}`.
+  이 심의의 차수를 모르면 아무것도 깔지 않는다. 이 대화(`conversation_id`)의 앞 회차가 낳은 웹 카드는 뺀다. 최근 것부터 20장 · 호출자 근거와
+  합쳐 120건 안.
+- **항목** — `delib_opts.evidence` 끝에 덧붙인다. `{key: "ins-<n>", source: "앞선 인사이트 — 검증 대상, 독립 근거 아님", tool: "insight_get",
+  args: '{"id": "<카드 id>"}', result}`. `result` 는 줄마다 — `[앞선 인사이트 — 검증 대상, 독립 근거 아님]` · `출처: <주인> · <날짜 KST> · <들인 길> ·
+  단 <stage> · RA 보고서 #<n> · 카드 <id>` · `상태: 확인 | 반박 있음(+ 주장은 사람이 고쳤다)` · `반박 메모: …`(셋까지) · `판: <설계 자료마다 이 심의의
+  주제와 같은 판 · 다르다 · 없는 설계 자료> · <낡음 표지 — §10.4>` · `표결: …` · `주장:` + 주장 글.
+- **알림 · 감사** — 브라우저에 SSE `status`(도구 없는 진행 줄) 둘 — '과제 「…」 의 앞선 인사이트를 찾는 중'(볼 수 있는 카드가 있어 망을 쓸 때) ·
+  깐 수와 깔지 않은 수(다른 차수 · 차수 모름 · 범위 밖 · 상한 밖 — 볼 수 있는 것만). 근거에는 수를 싣지 않는다. 감사 `insight_laid`
+  `{conversation_id, sp_task, ids, laid, other_round, unknown_round, no_round, out_of_scope, over}`.
+- **실패** — 원장 · 게이트웨이 · 확인 창구 실패 · 60초 넘김은 깔지 않고 심의를 연다(요청은 종전 그대로).
+
+### 10.2 받침 — 리스크 심사(D-18)
+
+- 엔진 `_resolve_opts` — 의장 틀이 `risk-review` 면 `evidence` 항목 가운데 `tool` 이 과제 인사이트 이름(`(?:^|__|[.:/])insight_` — 소문자로 본다)인 것을
+  빼고 `evidence_insight_dropped` 에 센다. 스트림 카드 `delib{kind: "evidence", source: "과제 인사이트 근거 거름", included: false}` 한 장(뺀 수와 까닭).
+- `infra/pipeline/hwax-deliberate.js` — 같은 이름 규칙으로 빼고 반환값 `evidenceOmitted` 에 `{source: "과제 인사이트 근거 거름", count, text}`.
+- 포털 깔기는 리스크 심사 계열을 대상에서 뺀다(§10.1). 지정 도구 · 자유 조회 · CALL 줄은 §8 그대로다.
+
+### 10.3 범위 이어받기 — 확인(`POST /insights-api/cards/{id}/confirm`)
+
+- 앞선 인사이트를 근거로 쓴 카드(`cards.insight_derived`)면 §6.2 의 제 범위에 읽은 카드들의 범위 토큰을 다 더한다(`org` 는 뺀다).
+- 읽은 카드 — `card.calls` 의 인사이트 표지가 **전부** `insight_get` 이고 `args` 가 카드 id 하나(`{"id": "ins:(web|delib|wf):…"}` — JSON 글 또는
+  엔진이 사전을 글로 옮긴 꼴)일 때 그 id 들. 표지가 상한(60)에 찼거나 · 그 꼴이 아닌 인사이트 표지가 있거나 · 표지 없이 도구 이름만 있으면 모른다.
+- 주인만(`[user:<주인>]` + 까닭) — 읽은 카드를 모른다 · 읽은 카드가 원장에 없다 · 거뒀다 · 공유 상태가 아니다 · 범위가 비었다 · 더한 뒤 `aff:` 가
+  하나가 아니다 · `user:` 토큰이 있다.
+
+### 10.4 읽을 때 셈 — 판 표지 · 옛 key(포털 `app/insights/lineage.py`)
+
+- **부르는 도구**(읽는 사람의 PAT · 게이트웨이 호출 전용 별칭) — `heaxstep_forge_get_project_meta({project_id})` ·
+  `heaxstep_forge_onto_object({focus: "plm_task:<key>", history: false})` · `heaxstep_forge_find_plm_task({query, limit: 50, full: true})` ·
+  `heaxhwax_risk_risk_find_projects_by_subject({artifact_kind: "mcad", artifact_id, limit: 5})` ·
+  `heaxhwax_risk_risk_get_diff({diff_id, part: "lines", limit: 20})`.
+- **`stale`**(설계 자료가 있는 카드에만 — 과제 보기 · 카드 하나 · 검토 줄) — `{state, say, items[]}`. `state` — `stale`(기구 CAD 가운데 하나라도
+  낡았을 수 있다) · `current` · `unknown`(못 읽은 것이 있다) · `not_checked`(기구 CAD 가 없다). `items[]` — `{kind, id, rev, state, why?}` 이고 기구
+  CAD 는 `reasons[]`(`newer` 뒤 판이 있다 · `fp_changed` 그때의 내용 지문과 지금이 다르다 · `content_changed` 개정을 정한 뒤 내용이 바뀌었다) ·
+  `next[{project_id, rev_label}]` · `now_rev` · `now_label` 을 싣는다. 지문 견주기는 카드의 `rev` 가 16진 8 ~ 64자일 때만. 한 번에 CAD 과제 12개까지.
+- **`stale.risk_diffs`**(카드 하나 · 뒤 판이 있고 `plat:risk` 가 있을 때) — `[{target_key: "diff:…", mcad_project_id, risk_project{project_id, code,
+  name}, total, by_kind, lines[≤20], truncated} | {…, error}]` 와 `stale.risk_note`(그 비교의 앞 판이 이 카드의 판인지는 확인하지 않았다는 글, 또는
+  못 본 까닭). 뒤 판 둘 · 비교 셋까지.
+- **옛 key** — `GET /project` · `/find` 의 `sp_task` 가 지금 key 일 때 `previous_keys: [...]`(함께 모은 옛 key — 없으면 칸이 없다) · `keys_note`(못
+  읽었거나 뺀 까닭). 옛 key 는 `onto_object` 의 `keys.previous_keys` · `keys.merged_from` 가운데 그 사람에게 보이는 카드가 있고, 풀이에 글자 그대로
+  같은 활성 행이 하나가 **아닌** 것. 카드의 `subject.sp_task` 는 그때의 key 그대로다. 과제 보기의 리스크 행도 옛 key 로 한 번씩 더 묻는다.
+
+### 10.5 같은 결론 · 검토 줄
+
+- **`same`** — `{n, ids}`: 같은 (과제, 차수) 칸에서 주장 글의 견줄 꼴(NFKC · 소문자 · 공백 덩어리 하나)이 같은 다른 카드. 읽는 사람이 볼 수 있는
+  카드끼리만 세고 둘 이상일 때만 싣는다. 과제 보기는 옛 key 를 모은 칸에서, 카드 하나는 그 카드의 key 안에서 센다.
+- **`GET /insights-api/review`** — `{items: [{reasons[], say, card}], counts{}, note}`. 내 카드의 까닭 — `waiting` · `disputed` · `stale` · `draft` ·
+  `round_unknown`(공유 상태이고 차수가 없고 사람이 고른 '모름' 이 아니다), 이 차례로 세운다. 관리자에게는 반박이 달린 남의 카드가
+  `admin_disputed` 로 선다(범위 밖 읽기는 감사 `insight_admin_read` · `where: "review"`). 쓰기 창구는 없다 — 카드의 쓰기는 §6.3 그대로다.
+
+### 10.6 도구 설명
+
+- 에이전트 `deliberate_start` 의 `evidence` 절(`_EVID_DESC`) · 게이트웨이 `insight_find` · 워크플로 `hwax-deliberate.js` 머리가 같은 말을 한다 —
+  카드마다 한 항목(§10.1 의 꼴) · 같은 (과제, 차수) · 범위가 소속 · 조직뿐인 확인 · 반박 카드만(plat 이 붙은 것 · 초안은 아니다) · 리스크 심사에는
+  넘기지 않는다(엔진이 뺀다). 게이트웨이 `insight_get` 은 `stale` · `same` 을 말한다.

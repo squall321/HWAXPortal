@@ -1,0 +1,21 @@
+{
+ "_note": "리스크 앱(HWAXRisk 5d0c4e2)의 MCP 답 꼴 — 실행해 받은 것이 아니라 원문 줄로 맞춘 것이다(risk_find_projects_by_subject 는 backend/app/routes.py 의 subject_projects_payload · _subject_project, risk_get_diff(part=lines) 는 backend/app/brief.py 의 diff_lines). tests/test_insight_lineage.py 가 그 원문에 이 칸들이 있는지 본다. 줄 글은 지어낸 표본이다.",
+ "find_by_mcad": {
+  "caller": "user",
+  "projects": [
+   {"project_id": "prj-0002", "code": "ALPHA-A2", "name": "알파 A2", "stage": "dv1", "round": "dv1", "sp_task": "알파 개발_C2",
+    "my_role": "viewer", "mcp_visibility": "org", "classification": "confidential",
+    "targets": [
+     {"target_key": "diff:d-0102", "kind": "diff", "level": "B", "verdict_candidate": "conditional", "verdict_final": null, "created_at": 1795200000},
+     {"target_key": "snap:s-0200", "kind": "snap", "level": "A", "verdict_candidate": null, "verdict_final": null, "created_at": 1795100000}
+    ],
+    "registry_top": [], "registry_total": 0}
+  ],
+  "total": 1, "truncated": false
+ },
+ "diff_lines": {
+  "diff_id": "d-0102", "part": "lines", "total": 3, "matched": 3, "offset": 0, "returned": 3, "truncated": false,
+  "by_kind": {"geometry": 2, "material": 1}, "irrelevant": 0,
+  "lines": "· [CH-001] rear_cover 두께 0.80 → 0.70 mm\n· [CH-002] hinge_bracket 리브 추가\n· [CH-003] main_frame 재질 AL6061 → AL7075"
+ }
+}

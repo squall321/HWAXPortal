@@ -6,6 +6,8 @@
 - 관리자는 다 보되 범위 밖 읽기를 감사에 한 줄(insight_admin_read) 남긴다.
 - 리스크 심사 행은 베끼지 않는다 — 과제 보기가 읽는 사람의 PAT 로 리스크 앱(risk_find_projects_by_subject)을 불러 같은 (과제, 차수) 칸에 싣는다.
 - 읽기 창구는 MCP 잡 카드를 당겨 들인 뒤 읽는다(intake.sync_jobs — 박스 손잡이 INSIGHT_SYNC_S 초에 한 번).
+- 읽을 때 셈(M4 — lineage) — 설계 판의 뒤 판 표지(stale) · 옛 key 로 남은 카드 모으기 · 같은 결론 묶기(same)는 읽는 사람의 PAT · 시야로 그때
+  셈하고 저장하지 않는다. 검토 줄(/review)은 그 사람이 손댈 카드와 까닭이다.
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ from app.auth.provider import Principal
 from app.config import Settings, get_settings
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 from app.insights import cards as C
-from app.insights import intake
+from app.insights import intake, lineage
 from app.insights import store as S
 
 logger = logging.getLogger(__name__)
@@ -183,6 +185,54 @@ def _bucket(rnd) -> str:
     return rnd if rnd in C.STAGES else C.ROUND_UNKNOWN
 
 
+# ── 읽을 때 셈(M4) — 읽는 사람의 PAT · 시야로 ────────────────────────────────────────────────────────────────────
+_NO_PAT = "사람 자격(PAT)을 만들지 못해"
+
+
+def _caller(request: Request, settings: Settings, principal: Principal):
+    """읽는 사람의 PAT 로 게이트웨이를 부르는 함수 — 사람 자격을 못 만들면 None(서비스 자격으로 내려가지 않는다)."""
+    pat = _risk_pat(request, settings, principal)
+    return lineage.caller(settings, pat) if pat else None
+
+
+async def _family(st, v: C.Viewer, call, key: str) -> tuple[list[str], str]:
+    """(지금 과제 key 에 모을 옛 key 들, 까닭). 그 사람에게 다른 key 의 카드가 보일 때만 이력을 부른다 — 옛 key 가 있어도 그 key 의 카드가 그 사람에게
+    없으면 모을 것이 없다."""
+    have = C.visible_tasks(await asyncio.to_thread(st.task_scopes, viewer=v.email), v) - {key}
+    if not have:
+        return [], ""
+    if call is None:
+        return [], f"{_NO_PAT} 과제 key 의 이력을 읽지 못했다 — 옛 key 로 남은 카드가 있어도 여기 모으지 않았다"
+    return await lineage.old_keys(call, key, have)
+
+
+async def _stales(call, rows: list[dict]) -> dict:
+    """{카드 id: 판 표지} — 설계 자료가 있는 카드만. 기구 CAD 가 있으면 StepForge 개정 줄을 과제마다 한 번 묻는다(저장하지 않는다)."""
+    ids = lineage.mcad_ids(rows)
+    if not ids:
+        revs: dict = {}
+    elif call is None:
+        revs = {i: {"state": "unknown", "why": f"{_NO_PAT} 묻지 않았다"} for i in ids}
+    else:
+        revs = await lineage.mcad_revisions(call, ids)
+    out = {}
+    for r in rows:
+        got = lineage.card_stale(r.get("subject") or {}, revs)
+        if got is not None:
+            out[r["id"]] = got
+    return out
+
+
+def _newest(rows: list[dict]) -> list[dict]:
+    return sorted(rows, key=lambda r: (-int(r.get("created_at") or 0), str(r.get("id"))))
+
+
+def _same(view: dict, same: dict) -> dict:
+    """같은 결론 표지 — 같은 칸에서 정규화한 주장 글이 같은 다른 카드(읽는 사람이 볼 수 있는 것만). 둘 이상일 때만 싣는다."""
+    ids = same.get(view["id"])
+    return {**view, "same": {"n": len(ids) + 1, "ids": ids}} if ids else view
+
+
 def _risk_round(p: dict):
     return C.norm_round(p.get("round") or "") or C.norm_round(p.get("stage") or "")
 
@@ -236,23 +286,44 @@ async def project(request: Request, sp_task: str = Query(..., min_length=1, max_
     await _sync(request, settings)
     v = _viewer(request, principal)
     st = _store(request)
-    raw, more = await asyncio.to_thread(_rows_for, st, v, sp_task=sp_task)
-    rows, admin_only = _filter(raw, v)
+    call = _caller(request, settings, principal)
+    # 옛 key(이름 바뀜 · 합쳐짐)로 남은 카드를 지금 과제에 모은다(PLAN §4.3) — 카드의 key 는 그때의 것을 그대로 보인다
+    old, keys_note = await _family(st, v, call, sp_task)
+    fam = [sp_task, *old]
+    raw, more = [], {}
+    for k in fam:
+        got, m = await asyncio.to_thread(_rows_for, st, v, sp_task=k)
+        raw += got
+        more.update(m)
+    rows, admin_only = _filter(_newest(raw), v)
     rows = [r for r in rows if r["status"] != "waiting"]
     links = await asyncio.to_thread(st.links, sorted({r["id"] for r in rows}))
     seen, admin_seen = await asyncio.to_thread(_seen_with_continues, st, rows, v,
                                                [x for lk in links for x in (lk["from_id"], lk["to_id"]) if x])
-    risk, risk_why = await _risk_rows(request, settings, principal, {"sp_task": sp_task, "limit": 50})
+    risk, risk_whys = [], []
+    for k in fam:
+        got, why = await _risk_rows(request, settings, principal, {"sp_task": k, "limit": 50})
+        risk += got
+        if why and why not in risk_whys:
+            risk_whys.append(why)
+    risk_why = " · ".join(risk_whys)
+    stales = await _stales(call, rows)
     cells: dict = {b: {"round": (None if b == C.ROUND_UNKNOWN else b), "cards": [], "risk": []} for b in (*C.STAGES, C.ROUND_UNKNOWN)}
+    by_cell: dict = {}
     for r in rows:
-        cells[_bucket(r.get("round"))]["cards"].append(_view(r, v, links=links, seen=seen))
+        by_cell.setdefault(_bucket(r.get("round")), []).append(r)
+    for b, cell_rows in by_cell.items():
+        same = C.same_claims(cell_rows)       # 같은 결론 — 이 칸에서 읽는 사람이 볼 수 있는 카드끼리만(합치지 않는다)
+        for r in cell_rows:
+            view = _same(_view(r, v, links=links, seen=seen), same)
+            cells[b]["cards"].append({**view, "stale": stales[r["id"]]} if r["id"] in stales else view)
     for rp in risk:
-        if rp.get("sp_task") == sp_task:
+        if rp.get("sp_task") in fam:
             cells[_bucket(_risk_round(rp))]["risk"].append(rp)
     order = [b for b in (*C.STAGES, C.ROUND_UNKNOWN) if (not want or b == want) and (cells[b]["cards"] or cells[b]["risk"])]
     _audit_admin(request, v, admin_only + admin_seen, "project")
     return {"sp_task": sp_task, "rounds": [cells[b] for b in order], **({"risk_error": risk_why} if risk_why else {}), **more,
-            "note": NOTE}
+            **({"previous_keys": old} if old else {}), **({"keys_note": keys_note} if keys_note else {}), "note": NOTE}
 
 
 @router.get("/mine")
@@ -270,13 +341,74 @@ async def mine(request: Request, principal: Principal = Depends(_reader), settin
     return {**groups, **({"truncated": True} if len(rows) >= S.ROWS_MAX else {}), "note": NOTE}
 
 
+# 검토 줄(PLAN §8 사람 검토) — 까닭의 차례가 줄의 차례다. 글은 화면과 같이 쓴다.
+_REVIEW = {"waiting": "주제 확인을 기다린다 — 허브에서 찾은 과제 행을 고른다",
+           "disputed": "반박이 달렸다 — 주장을 고치거나 거둔다(지우지 않고 둘 다 남는다)",
+           "stale": "설계 판이 바뀌었다 — 결론이 지금 판에도 맞는지 본다",
+           "draft": "초안이다 — 주제 · 차수 · 주장을 보고 확인한다(확인하면 같은 소속에 열린다)",
+           "round_unknown": "차수를 모른다 — 차수를 단다(모르는 것이 맞으면 '모름' 을 고른다)",
+           "admin_disputed": "반박이 달린 남의 카드다 — 관리자는 반박 표시 · 거두기를 할 수 있다"}
+
+
+def _review_reasons(r: dict, stale: dict | None) -> list[str]:
+    out = []
+    if r["status"] == "waiting":
+        out.append("waiting")
+    if r["status"] == "disputed":
+        out.append("disputed")
+    if (stale or {}).get("state") == "stale":
+        out.append("stale")
+    if r["status"] == "draft":
+        out.append("draft")
+    if r["status"] in C.SHARED and r.get("round") not in C.STAGES and r.get("round_by") != "person":
+        out.append("round_unknown")     # 사람이 고른 '차수 모름' 은 손댈 것이 아니다
+    return out
+
+
+@router.get("/review")
+async def review(request: Request, principal: Principal = Depends(_reader), settings: Settings = Depends(get_settings)) -> dict:
+    """검토 줄 — 내가 손댈 내 카드와 까닭(주제 확인 기다림 · 반박 · 설계 판이 바뀜 · 초안 · 차수 모름). 관리자에게는 반박이 달린 남의 카드도 선다
+    (반박 · 거둠은 주인 · 관리자가 한다 — 범위 밖 읽기는 감사에 남는다). 판이 바뀌었는지는 읽을 때 셈한다."""
+    await _sync(request, settings)
+    v = _viewer(request, principal)
+    st = _store(request)
+    mine = await asyncio.to_thread(st.rows, owner_email=v.email)
+    stales = await _stales(_caller(request, settings, principal), [r for r in mine if r["status"] != "waiting"])
+    picked: list[tuple[list, dict]] = []
+    for r in mine:
+        reasons = _review_reasons(r, stales.get(r["id"]))
+        if reasons:
+            picked.append((reasons, r))
+    admin_only: list[str] = []
+    if v.admin:
+        for r in await asyncio.to_thread(st.rows):
+            ok, only = C.visible(r, v)
+            if ok and r["status"] == "disputed" and not C.owner_of(r, v):
+                picked.append((["admin_disputed"], r))
+                if only:
+                    admin_only.append(r["id"])
+    order = list(_REVIEW)
+    picked.sort(key=lambda x: (order.index(x[0][0]), -int(x[1].get("created_at") or 0), x[1]["id"]))
+    seen, admin_seen = await asyncio.to_thread(_seen_with_continues, st, [r for _why, r in picked], v)
+    items, counts = [], {}
+    for reasons, r in picked:
+        view = _view(r, v, seen=seen)
+        if r["id"] in stales:
+            view["stale"] = stales[r["id"]]
+        items.append({"reasons": reasons, "say": " · ".join(_REVIEW[x] for x in reasons), "card": view})
+        for x in reasons:
+            counts[x] = counts.get(x, 0) + 1
+    _audit_admin(request, v, admin_only + admin_seen, "review")
+    return {"items": items, "counts": counts, **({"truncated": True} if len(mine) >= S.ROWS_MAX else {}), "note": NOTE}
+
+
 @router.get("/find")
 async def find(request: Request, sp_task: str = Query("", max_length=200), round: str = Query("", max_length=40),  # noqa: A002
                q: str = Query("", max_length=200), artifact_kind: str = Query("", max_length=8),
                artifact_id: str = Query("", max_length=64), limit: int = Query(20, ge=1, le=FIND_MAX),
                principal: Principal = Depends(_reader), settings: Settings = Depends(get_settings)) -> dict:
-    """게이트웨이 insight_find 의 몸 — 보이는 카드의 짧은 행(기다림 줄은 빼고). 과제 key 는 글자 그대로, 차수는 정확히(unknown 은 차수 모름만),
-    q 는 주장 · 과제 글에 든 말(대소문자 없이), 설계 자료는 (종류, 열쇠)."""
+    """게이트웨이 insight_find 의 몸 — 보이는 카드의 짧은 행(기다림 줄은 빼고). 과제 key 는 글자 그대로(그 과제의 옛 key 로 남은 카드도 모은다 —
+    previous_keys), 차수는 정확히(unknown 은 차수 모름만), q 는 주장 · 과제 글에 든 말(대소문자 없이), 설계 자료는 (종류, 열쇠)."""
     rnd = ""
     if round.strip():
         rnd = C.ROUND_UNKNOWN if round.strip().lower() in (C.ROUND_UNKNOWN, "모름") else (C.norm_round(round) or "")
@@ -287,8 +419,14 @@ async def find(request: Request, sp_task: str = Query("", max_length=200), round
     await _sync(request, settings)
     v = _viewer(request, principal)
     st = _store(request)
-    raw, more = await asyncio.to_thread(_rows_for, st, v, sp_task=(sp_task.strip() or None))
-    rows, admin_only = _filter(raw, v)
+    key = sp_task.strip()
+    old, keys_note = (await _family(st, v, _caller(request, settings, principal), key)) if key else ([], "")
+    raw, more = [], {}
+    for k in ([key, *old] if key else [None]):
+        got, m = await asyncio.to_thread(_rows_for, st, v, sp_task=k)
+        raw += got
+        more.update(m)
+    rows, admin_only = _filter(_newest(raw), v)
     want_q, aid = q.strip().lower(), artifact_id.strip().lower()
     picked: list[dict] = []
     for r in rows:
@@ -308,12 +446,14 @@ async def find(request: Request, sp_task: str = Query("", max_length=200), round
     seen, admin_seen = await asyncio.to_thread(_seen_with_continues, st, picked, v)
     out = [_view(r, v, seen=seen) for r in picked]
     _audit_admin(request, v, [i for i in admin_only if i in {o["id"] for o in out}] + admin_seen, "find")
-    return {"items": out, "count": len(out), **more, "note": NOTE}
+    return {"items": out, "count": len(out), **more, **({"previous_keys": old} if old else {}),
+            **({"keys_note": keys_note} if keys_note else {}), "note": NOTE}
 
 
 @router.get("/cards/{cid}")
 async def card(cid: str, request: Request, principal: Principal = Depends(_reader), settings: Settings = Depends(get_settings)) -> dict:
-    """카드 하나의 전부 — 못 보면 없는 것과 같은 404 다(id 를 넣어 보는 것만으로 남의 카드가 있는지 알 수 없게)."""
+    """카드 하나의 전부 — 못 보면 없는 것과 같은 404 다(id 를 넣어 보는 것만으로 남의 카드가 있는지 알 수 없게). 판 표지(stale)와, 뒤 판이 있으면
+    그 판의 리스크 변경 심사 줄(stale.risk_diffs)을 읽을 때 셈해 싣는다."""
     await _sync(request, settings)
     v = _viewer(request, principal)
     st = _store(request)
@@ -325,7 +465,28 @@ async def card(cid: str, request: Request, principal: Principal = Depends(_reade
     seen, admin_seen = await asyncio.to_thread(_seen_with_continues, st, [r], v,
                                                [x for lk in links for x in (lk["from_id"], lk["to_id"]) if x])
     _audit_admin(request, v, ([cid] if only else []) + admin_seen, "card")
-    return {**_view(r, v, full=True, links=links, seen=seen), "note": NOTE}
+    view = _view(r, v, full=True, links=links, seen=seen)
+    if r["status"] != "waiting" and r.get("sp_task"):
+        # 같은 결론 — 이 카드의 과제 key · 같은 차수 칸에서 볼 수 있는 카드끼리(과제 보기는 옛 key 의 카드까지 모아 센다)
+        peers, _admin = _filter((await asyncio.to_thread(_rows_for, st, v, sp_task=r["sp_task"]))[0], v)
+        view = _same(view, C.same_claims([x for x in peers if x["status"] != "waiting" and _bucket(x.get("round")) == _bucket(r.get("round"))]))
+    call = _caller(request, settings, principal)
+    stale = (await _stales(call, [r])).get(cid)
+    if stale is not None:
+        nxt = lineage.next_ids(stale)
+        if nxt:
+            # 뒤 판의 리스크 변경 심사(PLAN §8) — 읽는 사람의 리스크 앱 시야로. 그 비교의 앞 판이 이 카드의 판인지는 확인하지 않았다고 적는다
+            if RISK_PLAT not in principal.groups:
+                stale["risk_note"] = "리스크 앱 권한(plat:risk)이 없어 뒤 판의 리스크 변경 심사는 보지 않았다"
+            elif call is None:
+                stale["risk_note"] = f"{_NO_PAT} 뒤 판의 리스크 변경 심사는 보지 않았다"
+            else:
+                diffs, why = await lineage.risk_diffs(call, nxt)
+                if diffs:
+                    stale["risk_diffs"] = diffs
+                stale["risk_note"] = lineage.RISK_DIFF_NOTE if diffs else (why or "뒤 판의 CAD 과제를 원천으로 쓰는 리스크 변경 심사가 내 시야에 없다")
+        view["stale"] = stale
+    return {**view, "note": NOTE}
 
 
 # ── 쓰기 — 세션 + CSRF, 주인(일부는 관리자도) ──────────────────────────────────────────────────────────────────────────
@@ -379,18 +540,14 @@ async def confirm(cid: str, request: Request, principal: Principal = Depends(_wr
                   settings: Settings = Depends(get_settings)) -> dict:
     """주인의 확인 — 초안을 같은 소속에 연다. 범위는 [aff:<주인의 지금 포털 원장 소속>] + 근거 앱의 plat 토큰(포털 권한표로 푼다 — 앱을 몰랐던
     도구는 지금 게이트웨이 도구 지도로 다시 푼다). 주인에게 소속이 없으면 확인은 하되 주인만 보고 까닭을 단다(PLAN §6.2 — 더 좁게 막으면 그 선에서
-    멈춘다). MCP 잡이 실은 소속(자칭)은 쓰지 않는다. 앞선 인사이트(insight_*)를 근거로 쓴 카드는 원래 카드들의 범위를 이어받는 규칙(M3) 전까지
-    주인만 본다(반대 검토 11-02 의 3)."""
+    멈춘다). MCP 잡이 실은 소속(자칭)은 쓰지 않는다. 앞선 인사이트(insight_*)를 근거로 쓴 카드는 읽은 카드들의 범위를 다 담는다(M3 — 읽은 카드를
+    모르거나 담을 수 없으면 주인만 본다)."""
     r, v = await _mine_or_404(request, cid, principal)
     if r["status"] != "draft":
         raise AuthError("확인할 수 있는 것은 초안이다" + (" — 주제를 먼저 확인한다(기다림 줄)" if r["status"] == "waiting" else ""),
                         status_code=409)
     card = dict(r.get("card") or {})
     now = int(time.time())
-    if C.insight_derived(r):
-        return await _save(request, cid, v, r, status="confirmed", scope=[f"user:{v.email}"], confirmed_at=now, confirmed_by=v.email,
-                           scope_note="앞선 인사이트(insight_find · insight_get)를 근거로 썼다 — 그 카드들의 보이는 범위를 이어받는 규칙(M3)이 "
-                                      "서기 전까지 주인만 본다")
     got = await _apps_now(settings, card)
     if got is None:
         raise AuthError("근거 도구의 앱을 지금 알 수 없다(게이트웨이 도구 지도에 닿지 못했다) — 범위를 정하지 못해 확인을 미룬다. 잠시 뒤 다시 확인한다",
@@ -413,6 +570,17 @@ async def confirm(cid: str, request: Request, principal: Principal = Depends(_wr
     if card.get("untracked"):
         what = " · ".join(_UNTRACKED_WORDS.get(str(u), str(u)) for u in card["untracked"])
         notes.append(f"범위를 모르는 입력({what})이 있어 같은 소속까지다 — 조직 공개는 열리지 않는다")
+    if C.insight_derived(r):
+        # 앞선 인사이트를 근거로 쓴 카드 — 읽은 카드들의 범위를 다 담는다(PLAN §6.2 최소 범위 · M3). 어느 카드를 읽었는지 모르거나 담을 수 없으면
+        # 주인만 본다(종전 — 반대 검토 11-02 의 3). 읽은 카드는 근거 표지의 insight_get 인자(카드 id)로 안다 — 포털이 깐 항목이 그 꼴이다(reuse).
+        ids, why = C.insight_sources(r)
+        if ids is not None:
+            st = _store(request)
+            scope, why = C.inherit_scope(scope, [await asyncio.to_thread(st.get, i) for i in ids], v.email)
+        else:
+            scope, why = [f"user:{v.email}"], f"{why} — 그 카드들의 범위를 이어받지 못해 주인만 본다"
+        if why:
+            notes.append(why)
     return await _save(request, cid, v, r, status="confirmed", scope=scope, scope_note=" · ".join(notes) or None, confirmed_at=now,
                        confirmed_by=v.email, **fields)
 

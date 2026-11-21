@@ -9,6 +9,13 @@
 //                       문자열이 아니면 JSON 으로 싣는다. 어디에도 본문이 없는 항목은 버린다.
 //                       key(선택, ^[A-Za-z0-9_.-]{1,24}$)를 주면 좌석이 보는 표지가 [e:N|KEY] 가 된다 — 번호 N 은 버려진
 //                       항목을 건너뛰고 매겨지므로, 결정문의 인용을 제 원장과 맞춰 보려면 키를 실어 보낸다.
+//                       앞선 과제 인사이트(docs/project-insight-graph PLAN §7.1) — 과제 심의(subject 를 단 심의)면 호출자가 게이트웨이
+//                       insight_find(sp_task, round)로 같은 (과제, 차수)의 앞선 결정 카드를 찾아 카드마다 한 항목으로 넘긴다 —
+//                       {source:'앞선 인사이트 — 검증 대상, 독립 근거 아님', tool:'insight_get', args:'{"id":"<카드 id>"}', result:
+//                       주장 · 출처 · 상태}. 범위(scope)가 소속(aff:) · 조직(org)뿐인 확인 · 반박 카드만 넘긴다 — plat: 가 붙은 카드 ·
+//                       내 초안 · 다른 차수의 카드는 넘기지 않는다(이 심의의 보고서를 읽는 사람은 플랫폼 권한으로 걸러지지 않는다).
+//                       리스크 심사(chairTemplate risk-review)는 도구 칸이 과제 인사이트(insight_*)인 항목을 좌석에 주지 않고
+//                       evidenceOmitted 에 '과제 인사이트 근거 거름' 으로 남긴다(D-18 — 엔진과 같은 거름).
 //   - options         : 후보/선택지 목록(JSON 문자열 또는 배열)
 //   - personas        : [{key, role, origin?}] 참여 전문 페르소나(호출자가 recommend_agents로 발굴해 전달).
 //                       key 는 전문가 키다 — recommend_agents 가 돌려주는 agent_type 값이고, 그 이름(agent_type)으로 와도 받는다.
@@ -266,7 +273,15 @@ const EV_ITEM_MAX = roomShare(0.09, 2000)   // = 합계 몫(30%)의 30%
 const EV_MAX_ITEMS = EV_BUDGET > 11000 ? 120 : 12
 // 본문·키를 한 번 정해 둔다 — 아래 좌석 블록과 인용 후검증(_citCorpus)이 같은 값을 본다.
 // 들어온 것(_evIn)·본문 있는 것(_evValid)·건수 상한 안의 것(EV)을 따로 쥔다 — 버린 수를 사유별로 세려면 셋이 다 필요하다.
-const _evIn = Array.isArray(A.evidence) ? A.evidence : []
+// 리스크 심사는 과제 인사이트(같은 과제의 앞선 심의 결론)를 호출자 근거로도 받지 않는다(D-18 — HWAXAgentServer deliberation._resolve_opts 의
+// 받침과 같은 거름 · 같은 이름 규칙 _INSIGHT_EV_TOOL_RE). 도구 칸이 insight_ 머리(맨 이름 · mcp__<서버>__<도구> · <앱>.<도구> 꼴)인 항목을 뺀다.
+// 근거 블록은 코드가 짓는다 — 좌석 도구(D18_LINE)와 달리 지시가 아니라 강제다. 글만 베껴 넣은 근거(도구 칸 없음)는 가리지 못한다.
+const INSIGHT_EV_TOOL_RE = /(?:^|__|[.:/])insight_/
+const _evAll = Array.isArray(A.evidence) ? A.evidence : []
+const _evInsight = /^risk-review/i.test(CHAIR_TEMPLATE)
+  ? _evAll.filter(e => e && typeof e === 'object' && typeof e.tool === 'string' && INSIGHT_EV_TOOL_RE.test(e.tool.trim().toLowerCase()))
+  : []
+const _evIn = _evInsight.length ? _evAll.filter(e => !_evInsight.includes(e)) : _evAll
 const _evValid = _evIn
   .map(e => {
     if (!e || typeof e !== 'object' || Array.isArray(e)) return null
@@ -324,6 +339,11 @@ if (EV.length) {
 // source·문구는 엔진의 제외 카드(deliberation.py '사전 근거 …')·잡 원장 evidence_omitted 와 맞춘다 — 리스크 앱이
 // 같은 낱말로 읽는다. text 는 200자 안쪽으로 쓴다(앱 원장 events[] 의 필드 상한 — HWAXRisk routes.EVENT_FIELD_MAX).
 const EV_OMITTED = []
+if (_evInsight.length) {
+  EV_OMITTED.push({ source: '과제 인사이트 근거 거름', count: _evInsight.length,
+    text: `호출자 근거 가운데 과제 인사이트(insight_find · insight_get) ${_evInsight.length}건을 좌석에 주지 않았다 — 리스크 심사 좌석은 같은 ` +
+          `과제의 앞선 심의 결론을 보지 않는다(D-18).` })
+}
 {
   const empty = _evIn.length - _evValid.length
   const over = _evValid.length - EV.length

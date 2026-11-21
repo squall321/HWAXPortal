@@ -30,6 +30,36 @@ export interface InsightCall {
   ok: boolean;
 }
 
+/** 뒤 판의 리스크 변경 심사 줄 — 리스크 앱이 그 사람 시야로 낸 것 그대로다(카드 하나를 열 때만 온다). */
+export interface InsightRiskDiff {
+  target_key: string;
+  mcad_project_id: string;
+  risk_project: { project_id: string; code: string; name: string };
+  total?: number;
+  by_kind?: Record<string, number>;
+  lines?: string[];
+  truncated?: boolean;
+  error?: string;
+}
+
+/** 판 표지 — 읽을 때 셈한 것이다(저장하지 않는다). 기구 CAD 의 뒤 판 · 내용 바뀜만 안다(보드 · 해석은 셈하지 않는다). */
+export interface InsightStale {
+  state: 'stale' | 'current' | 'unknown' | 'not_checked';
+  say: string;
+  items: {
+    kind: string;
+    id: string;
+    rev?: string | null;
+    state: string;
+    why?: string;
+    reasons?: string[];
+    /** 뒤 판(이 CAD 과제를 앞 판으로 가리키는 개정) — 있으면 그 판의 리스크 변경 심사를 물을 수 있다 */
+    next?: { project_id: string; rev_label: string | null }[];
+  }[];
+  risk_diffs?: InsightRiskDiff[];
+  risk_note?: string;
+}
+
 /** 카드 한 장 — 서버가 읽는 사람 기준으로 거른 뒤의 꼴이다(보이지 않는 카드는 오지 않는다). */
 export interface InsightCard {
   id: string;
@@ -65,6 +95,10 @@ export interface InsightCard {
   continues?: string | null;
   disputed_by?: { by: string | null; note: string; at: number }[];
   disputes?: string[];
+  /** 설계 판이 바뀌었나 — 설계 자료가 있는 카드에만 온다(과제 보기 · 카드 하나 · 검토 줄) */
+  stale?: InsightStale;
+  /** 같은 칸에서 주장 글이 같은 다른 카드 — 내가 볼 수 있는 것만 센다(묶어 보일 뿐 합치지 않는다) */
+  same?: { n: number; ids: string[] };
 }
 
 /** 리스크 앱 등록부의 앞 행 — 그 사람이 risk_get_registry 로 받는 행과 같은 문을 지났다(칸 값 · 상태 낱말 그대로). */
@@ -104,6 +138,19 @@ export interface ProjectView {
   /** 창이 차면 — '최근 N장만 봤다' */
   truncated?: boolean;
   note_rows?: string;
+  /** 이 과제의 옛 key(이름 바뀜 · 합쳐짐) — 그 key 로 남은 카드를 함께 모았다 */
+  previous_keys?: string[];
+  keys_note?: string;
+  note: string;
+}
+
+export type ReviewReason = 'waiting' | 'disputed' | 'stale' | 'draft' | 'round_unknown' | 'admin_disputed';
+
+/** 검토 줄 — 내가 손댈 카드와 까닭(관리자에게는 반박이 달린 남의 카드도). */
+export interface ReviewView {
+  items: { reasons: ReviewReason[]; say: string; card: InsightCard }[];
+  counts: Partial<Record<ReviewReason, number>>;
+  truncated?: boolean;
   note: string;
 }
 
@@ -145,6 +192,7 @@ export const fetchProjects = (q = '') =>
 export const fetchProject = (spTask: string) =>
   call<ProjectView>(`/project?${new URLSearchParams({ sp_task: spTask })}`, '과제 보기');
 export const fetchMine = () => call<MineView>('/mine', '내 카드');
+export const fetchReview = () => call<ReviewView>('/review', '검토 줄');
 export const fetchCard = (id: string) => call<InsightCard & { note: string }>(card(id), '카드');
 
 export const confirmCard = (id: string) => post<InsightCard>(`${card(id)}/confirm`, '확인');
