@@ -42,7 +42,7 @@
 ## 3. cae00 에서 돌리는 차례
 
 1. **준비(읽기만)** — 리스크 앱이 `2460cd0` 이상인가 · 에이전트 서버 `EXTERNAL_LLM_ENABLED` · 게이트웨이에 `risk_*` · `review_task_*` 도구가 뜨는가
-   (HWAXRisk `scripts/rr_gateway_check.py` — 소스가 아니라 `tools/list` 로 본다) · 돌릴 사람의 포털 PAT 가 리스크 앱에 등록됐는가 · 상자 점검
+   (HWAXRisk `backend/scripts/rr_gateway_check.py` — 소스가 아니라 `tools/list` 로 본다) · 돌릴 사람의 포털 PAT 가 리스크 앱에 등록됐는가 · 상자 점검
    `infra/scripts/risk-review-inventory.sh`.
    - `EXTERNAL_LLM_ENABLED` 가 꺼져 있으면(기본) `docs/risk-review-redesign/server-setup-m3.md` 8절대로 켠다 — 사람이 하고, 켠 뒤 에이전트 서버 재기동.
    - 돌릴 사람의 리스크 앱 자격 — 앱 화면 설정의 포털 PAT 줄(또는 `GET /api/me`)에서 등록 출처가 게이트웨이 교환이고 청중에 `mcp-gateway` · `step-forge`
