@@ -96,6 +96,11 @@ class FakeHubWDA:
         self.download_fails_big = False                # 받기가 500 과 끝없는 몸을 준다
         self.files = {"pptx": b"PK\x03\x04pptx-bytes", "pdf": b"%PDF-1.7 deck", "docx": b"PK\x03\x04docx", "html": b"<html>x</html>",
                       "mp4": b"\x00\x00\x00\x18ftypmp4"}
+        self.resumed: list[str] = []                   # 재개를 받은 run_id(POST /api/runs/{id}/resume)
+        self.resume_lag = False                        # 옛 WDA — 재개를 받은 직후에도 잠깐 failed 로 보인다(워커가 running 을 적기 전)
+        self.resume_nothing = False                    # 모든 단계의 산출물이 이미 있다 — resumed: false
+        self.resume_refuses = False                    # 원본 보고서가 없다 — 409
+        self.deleted: list[str] = []                   # 지운 run_id(DELETE /api/runs/{id} — W-17)
 
     # ── 가짜를 움직이는 손 ──
     def set_run(self, run_id: str, **kw):
@@ -220,6 +225,41 @@ class FakeHubWDA:
             return None
         return run
 
+    def _resume(self, run: dict) -> httpx.Response:
+        """WDA `POST /api/runs/{id}/resume`(runs.resume_run) — 도는 중이면 409, 원본이 없으면 409, 다시 돌릴 것이 없으면 resumed false.
+        재개하면 실패한 단계부터 다시 돈다 — 만들기의 render 칸이 있으면 빌드 뒤 렌더도 이어진다(W-8 은 재개에도)."""
+        if run["status"] == "running":
+            return self.env(409, message="RuntimeError: 이미 진행 중이다 — 끝나거나 실패한 뒤에 재개하라", code="NOT_BUILT")
+        if self.resume_refuses:
+            return self.env(409, message=f"FileNotFoundError: 원본 보고서가 없다: /data/wda/pipeline/{run['run_id']}/report.raw.json",
+                            code="NOT_BUILT")
+        if self.resume_nothing:
+            return self.env(202, {"run_id": run["run_id"], "resumed": False, "note": "모든 단계의 산출물이 이미 있다 — 다시 돌릴 것이 없다"})
+        self.resumed.append(run["run_id"])
+        start = next((x["stage"] for x in run["stages"] if x["status"] != "done"), "build")
+        for x in run["stages"]:
+            if x["status"] == "failed":
+                x.update(status="pending", error=None)
+        run["render"] = None
+        if not self.resume_lag:
+            run.update(status="running", error=None)
+        return self.env(202, {"run_id": run["run_id"], "resumed": True, "start_from": start})
+
+    def _delete(self, run: dict) -> httpx.Response:
+        """WDA `DELETE /api/runs/{id}`(W-17) — 주인만(남은 _mine 이 404 로 걸렀다), 도는 중이면 409 BUSY, 지운 뒤에는 410."""
+        if "delete" not in self.features:
+            # 지우기가 없는 판 — 그 경로는 GET 만 받는다(Starlette 405, 봉투에 code 없음)
+            return httpx.Response(405, json={"success": False, "data": None, "message": "Method Not Allowed"})
+        busy = run["status"] in ("queued", "running") or (run["render"] or {}).get("status") in ("queued", "building", "rendering")
+        if busy and not run.get("deleted_at"):
+            return self.env(409, message="아직 만드는 중인 실행은 지울 수 없습니다 — 끝난 뒤에 지우세요", code="BUSY")
+        already = bool(run.get("deleted_at"))
+        run["deleted_at"] = run.get("deleted_at") or "2026-11-21T00:00:00+00:00"
+        run["render"] = None
+        self.deleted.append(run["run_id"])
+        return self.env(200, {"run_id": run["run_id"], "deleted": True, "already": already, "removed": ["pipeline", "build", "renders"],
+                              "left": [], "kept_shared": []})
+
     def wda(self, req: httpx.Request, path: str, email: str) -> httpx.Response:
         if path == "/api/health":
             if self.health_down:
@@ -264,8 +304,15 @@ class FakeHubWDA:
             if run is None:
                 return self.env(404, message=f"FileNotFoundError: /data/wda/pipeline/{parts[3]}/run.json", code="NOT_FOUND")
             rest = parts[4:]
+            if not rest and req.method == "DELETE":
+                return self._delete(run)
+            if run.get("deleted_at"):
+                # 지운 실행 — WDA 미들웨어가 410 으로 답한다(W-13 · W-17, 봉투 code NOT_FOUND)
+                return self.env(410, message=f"지워진 실행입니다: {parts[3]}", code="NOT_FOUND")
             if not rest and req.method == "GET":
                 return self.env(200, {k: v for k, v in run.items() if k != "render_opts"})
+            if rest == ["resume"] and req.method == "POST":
+                return self._resume(run)
             if rest == ["render"] and req.method == "POST":
                 if run["status"] != "done":
                     return self.env(409, message="RuntimeError: 빌드 전", code="NOT_BUILT")
@@ -1506,6 +1553,279 @@ def test_감사에는_보고서_본문이_없다(box):
     events = {r[0] for r in rows}
     assert {"deck_create", "deck_finish", "deck_download"} <= events
     assert all("두께 12um" not in (r[2] or "") for r in rows)
+
+
+# ── M2 — 다시 시도(WDA resume) · 지우기(W-17) · PDF 미리보기(CSP sandbox) ───────────────────────────────────────
+def _failed(box, *, stage: int = 2, **kw) -> tuple[str, str]:
+    """WDA 가 단계에서 실패한 잡 — 끝을 적었다(실패 알림 한 건). (잡 id, run_id)"""
+    job = _make(box, **kw).json()["job_id"]
+    rid = next(k for k in box["fake"].runs if k not in getattr(box["fake"], "_seen_runs", set()))
+    box["fake"].set_run(rid, status="failed", error="ValueError: 시나리오 검증 실패")
+    box["fake"].runs[rid]["stages"][stage].update(status="failed", error="ValueError: 시나리오 검증 실패")
+    a = box["c"].post(f"/agent/deck/jobs/{job}/advance").json()
+    assert a["state"] == "failed" and a["noticed"] is True
+    return job, rid
+
+
+def test_실패한_잡을_다시_시도하면_같은_WDA_실행을_재개하고_새_잡으로_따라간다(box):
+    """M2(체크리스트 186행) — '다시 만들기' 는 RA 를 다시 읽어 새 실행을 만든다. '다시 시도' 는 그 실행을 끊긴 단계부터 다시 돌린다
+    (WDA resume) — 보고서를 다시 넘기지 않는다. 포털 잡은 새로 선다(잡 하나 = 시도 하나 = 알림 하나)."""
+    c, fake = box["c"], box["fake"]
+    old, rid = _failed(box)
+    st = c.get(f"/agent/deck/jobs/{old}").json()
+    assert st["state"] == "failed" and st["can_retry"] is True
+    n_ra, n_created = len(fake.ra_auth), len(fake.created)
+    r = c.post(f"/agent/deck/jobs/{old}/retry")
+    assert r.status_code == 200, r.text
+    new = r.json()
+    assert new["created"] is True and new["job_id"] != old and new["state"] == "preparing" and new["can_retry"] is False
+    assert fake.resumed == [rid], "같은 실행을 재개한다"
+    assert len(fake.ra_auth) == n_ra and len(fake.created) == n_created, "RA 를 다시 읽지도, 보고서를 다시 넘기지도 않는다"
+    assert rid not in r.text and "hub.test" not in r.text, "브라우저는 WDA 의 run_id · 주소를 보지 않는다"
+    rec = W.load(box["s"], new["job_id"], "kim@corp.com")
+    assert rec["wda"]["run_id"] == rid and rec["retry_of"] == old and rec["report"] == {"id": 41, "title": "설계 검토"}
+    assert rec["conversation_id"] == box["conv"]["kim@corp.com"]
+    assert c.get(f"/agent/deck/jobs/{old}").json()["can_retry"] is False, "한 잡은 한 번만 다시 시도한다"
+    assert c.post(f"/agent/deck/jobs/{old}/retry").status_code in (200, 409)
+    assert fake.resumed == [rid], "두 번 눌러도 재개는 한 번이다"
+    # 끝까지 — 빌드 뒤 렌더가 이어지고(W-8 은 재개에도) 새 잡의 알림이 그 대화에 따로 남는다
+    fake.built(rid)
+    fake.rendered(rid)
+    a = c.post(f"/agent/deck/jobs/{new['job_id']}/advance").json()
+    assert a["state"] == "done" and [f["kind"] for f in a["files"]] == ["pptx", "pdf"] and a["noticed"] is True
+    texts = [m["content"] for m in _messages(box)]
+    assert len(texts) == 2 and "만들지 못했습니다" in texts[0] and "만들었습니다" in texts[1], "실패 알림 뒤에 새 알림 — 서로 덮지 않는다"
+
+
+def test_다시_시도는_실패한_내_잡에만(box):
+    c, fake = box["c"], box["fake"]
+    done = _finished(box)
+    assert c.get(f"/agent/deck/jobs/{done}").json()["can_retry"] is False
+    assert c.post(f"/agent/deck/jobs/{done}/retry").status_code == 409, "끝난 잡은 다시 시도할 것이 없다"
+    running = _make(box, doc_style="memo").json()["job_id"]
+    assert c.post(f"/agent/deck/jobs/{running}/retry").status_code == 409, "도는 잡"
+    fake._seen_runs = set(fake.runs)
+    failed, _ = _failed(box, doc_style="brief")
+    box["who"]["p"] = LEE
+    assert c.post(f"/agent/deck/jobs/{failed}/retry").status_code == 404, "남의 잡은 없는 것과 같다"
+    assert c.post(f"/agent/deck/jobs/{'0' * 32}/retry").status_code == 404
+    assert fake.resumed == []
+
+
+def test_다시_시도도_쓰기다_권한과_스위치를_본다(box):
+    failed, _ = _failed(box)
+    c = box["c"]
+    box["who"]["p"] = Principal(subject="kim@corp.com", email="kim@corp.com", display_name="김", groups=["plat:webdesign"])
+    assert c.post(f"/agent/deck/jobs/{failed}/retry").status_code == 403
+    assert c.delete(f"/agent/deck/jobs/{failed}").status_code == 403
+    assert c.get(f"/agent/deck/jobs/{failed}/preview").status_code == 403
+    box["who"]["p"] = KIM
+    box["s"].wda_deck_enabled = False
+    for r in (c.post(f"/agent/deck/jobs/{failed}/retry"), c.delete(f"/agent/deck/jobs/{failed}"), c.get(f"/agent/deck/jobs/{failed}/preview")):
+        assert r.status_code == 404, "스위치가 꺼지면 새 창구도 없는 것과 같다"
+    assert box["fake"].resumed == [] and box["fake"].deleted == []
+
+
+@pytest.mark.parametrize("scopes,writes", [(["read"], False), (["chat"], False), (["read", "write"], True)])
+def test_다시_시도와_지우기는_write_범위의_PAT_만(box, monkeypatch, scopes, writes):
+    failed, _ = _failed(box)
+    _real_auth(box, monkeypatch)
+    h = {"Authorization": f"Bearer {_pat(box, scopes)}"}
+    r = box["c"].post(f"/agent/deck/jobs/{failed}/retry", headers=h)
+    d = box["c"].delete(f"/agent/deck/jobs/{failed}", headers=h)
+    assert (r.status_code == 200) is writes and (r.status_code == 403) is (not writes), r.text
+    assert (d.status_code != 403) is writes
+    assert bool(box["fake"].resumed) is writes
+
+
+def test_재개_직후에도_실패로_보이는_옛_WDA_에서도_다시_실패로_닫지_않는다(box, monkeypatch):
+    """옛 WDA 는 재개를 받은 뒤 워커가 running 을 적기 전까지 원장이 failed 로 남는다 — 그 틈에 한 걸음이 오면 방금 다시 맡긴 잡을 실패로
+    닫는다. 다시 시도는 WDA 가 failed 를 벗을 때까지 잠깐 기다렸다가 돌아온다."""
+    c, fake = box["c"], box["fake"]
+    old, rid = _failed(box)
+    fake.resume_lag = True
+    polls = {"n": 0}
+    real_sleep = asyncio.sleep
+
+    async def tick(_s):
+        polls["n"] += 1
+        if polls["n"] == 2:
+            fake.set_run(rid, status="running", error=None)     # 워커가 이제 running 을 적었다
+        await real_sleep(0)
+
+    monkeypatch.setattr(W.asyncio, "sleep", tick)
+    new = c.post(f"/agent/deck/jobs/{old}/retry").json()
+    assert polls["n"] >= 2 and new["state"] == "preparing"
+    assert c.get(f"/agent/deck/jobs/{new['job_id']}").json()["next"] is None, "끝을 적을 차례가 아니다"
+
+
+def test_렌더에서_실패한_잡은_렌더만_다시_맡긴다(box):
+    c, fake = box["c"], box["fake"]
+    job = _make(box).json()["job_id"]
+    rid = _run_id(box)
+    fake.built(rid)
+    fake.runs[rid]["render"].update(status="failed", error="RuntimeError: chromium 이 죽었다")
+    assert c.post(f"/agent/deck/jobs/{job}/advance").json()["state"] == "failed"
+    new = c.post(f"/agent/deck/jobs/{job}/retry").json()
+    assert fake.resumed == [] and ("POST", f"/apps/web_design_agents/api/runs/{rid}/render") in fake.calls, "파이프라인은 끝났다 — 렌더만"
+    assert new["state"] == "rendering"
+    fake.rendered(rid)
+    assert c.post(f"/agent/deck/jobs/{new['job_id']}/advance").json()["state"] == "done"
+
+
+def test_재개할_것이_없거나_WDA_가_거절하면_새_잡을_남기지_않는다(box):
+    c, fake = box["c"], box["fake"]
+    old, rid = _failed(box)
+    before = {r["job_id"] for r in W.records(box["s"])}
+    fake.resume_refuses = True
+    r = c.post(f"/agent/deck/jobs/{old}/retry")
+    assert r.status_code == 409 and "다시 만들기" in r.json()["detail"] and "report.raw.json" not in r.json()["detail"]
+    assert {x["job_id"] for x in W.records(box["s"])} == before, "실패한 다시 시도는 잡을 남기지 않는다"
+    assert c.get(f"/agent/deck/jobs/{old}").json()["can_retry"] is True, "다시 누를 수 있다"
+    fake.resume_refuses, fake.resume_nothing = False, True
+    r = c.post(f"/agent/deck/jobs/{old}/retry")
+    assert r.status_code == 409 and {x["job_id"] for x in W.records(box["s"])} == before
+    fake.resume_nothing = False
+    fake.error_codes = True
+    fake.runs.clear()                                         # WDA 가 그 실행을 모른다(지웠거나 다른 박스)
+    r = c.post(f"/agent/deck/jobs/{old}/retry")
+    assert r.status_code == 404 and "다시 만들기" in r.json()["detail"]
+    assert {x["job_id"] for x in W.records(box["s"])} == before
+
+
+def test_WDA_가_모르는_실행과_주인_확인에_실패한_잡은_다시_시도를_내지_않는다(box):
+    c, fake = box["c"], box["fake"]
+    job = _make(box).json()["job_id"]
+    fake.error_codes = True
+    fake.runs.clear()
+    a = c.post(f"/agent/deck/jobs/{job}/advance").json()
+    assert a["state"] == "failed" and a["can_retry"] is False, "WDA 가 모르는 실행은 재개할 것이 없다 — 다시 만들기뿐이다"
+
+
+def test_다시_시도도_사람당_상한을_본다(box):
+    c, fake = box["c"], box["fake"]
+    old, _ = _failed(box)
+    for style in ("brief", "memo"):
+        assert _make(box, doc_style=style).status_code == 200
+    r = c.post(f"/agent/deck/jobs/{old}/retry")
+    assert r.status_code == 429 and fake.resumed == []
+
+
+def test_끝난_잡의_WDA_사본을_지운다(box):
+    """M2 · W-17 — RA 에서 보고서를 지운 사람이 WDA 의 사본도 지울 수 있게. 포털이 그 사람 이름으로 WDA 에 청하고 기록에 남긴다."""
+    c, fake = box["c"], box["fake"]
+    fake.features.add("delete")
+    assert c.get("/agent/deck/status").json()["delete"] is True
+    job = _finished(box)
+    rid = _run_id(box)
+    assert c.get(f"/agent/deck/jobs/{job}").json().get("deleted") is False
+    r = c.delete(f"/agent/deck/jobs/{job}")
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["deleted"] is True and j["files"] == [] and j["expired"] is True and j["preview"] is None
+    assert fake.deleted == [rid] and fake.pats[-1]["email"] == "kim@corp.com", "그 사람 이름으로 지운다"
+    assert rid not in r.text
+    gone = c.get(f"/agent/deck/jobs/{job}/files/pptx")
+    assert gone.status_code == 404 and "지워졌습니다" in gone.json()["detail"]
+    assert c.get(f"/agent/deck/jobs/{job}/preview").status_code == 404
+    n = len(fake.deleted)
+    again = c.delete(f"/agent/deck/jobs/{job}")
+    assert again.status_code == 200 and again.json()["deleted"] is True and len(fake.deleted) == n, "두 번 눌러도 WDA 를 다시 부르지 않는다"
+    made = _make(box, targets=["pptx", "pdf", "html"])
+    assert made.json()["created"] is True and made.json()["job_id"] != job, "지운 잡은 같은 보고서를 다시 누를 때 돌려주지 않는다"
+    rows = app.state.agent_audit._conn.execute("SELECT event, status FROM agent_audit WHERE event = 'deck_delete'").fetchall()
+    assert ("deck_delete", "ok") in [tuple(r) for r in rows]
+
+
+def test_지우기는_끝난_내_잡에만_WDA_가_지우지_않으면_기록도_그대로(box):
+    c, fake = box["c"], box["fake"]
+    fake.features.add("delete")
+    running = _make(box, doc_style="memo").json()["job_id"]
+    r = c.delete(f"/agent/deck/jobs/{running}")
+    assert r.status_code == 409 and "끝나지 않은" in r.json()["detail"] and fake.deleted == []
+    fake._seen_runs = set(fake.runs)
+    job = _make(box, targets=["pptx"]).json()["job_id"]
+    rid = next(k for k in fake.runs if k not in fake._seen_runs)
+    fake.built(rid)
+    fake.rendered(rid)
+    c.post(f"/agent/deck/jobs/{job}/advance")
+    box["who"]["p"] = LEE
+    assert c.delete(f"/agent/deck/jobs/{job}").status_code == 404, "남의 잡"
+    box["who"]["p"] = KIM
+    fake.runs[rid]["render"]["status"] = "rendering"          # WDA 에서는 아직 굽는 중이다(다른 길로 다시 맡겼다)
+    busy = c.delete(f"/agent/deck/jobs/{job}")
+    assert busy.status_code == 409 and "만드는 중" in busy.json()["detail"]
+    assert c.get(f"/agent/deck/jobs/{job}").json()["deleted"] is False and len(c.get(f"/agent/deck/jobs/{job}").json()["files"]) == 1
+    assert fake.deleted == []
+
+
+def test_지우기가_없는_WDA_판이면_단추를_숨기고_청해도_까닭을_말한다(box):
+    c = box["c"]
+    assert c.get("/agent/deck/status").json()["delete"] is False, "features 에 delete 가 없는 판"
+    job = _finished(box)
+    r = c.delete(f"/agent/deck/jobs/{job}")
+    assert r.status_code == 409 and "지우기를 지원하지 않" in r.json()["detail"]
+    assert c.get(f"/agent/deck/jobs/{job}").json()["deleted"] is False
+
+
+def test_WDA_가_이미_모르는_실행은_지운_것으로_적고_허브의_404_는_아니다(box):
+    c, fake = box["c"], box["fake"]
+    fake.features.add("delete")
+    job = _finished(box)
+    orig = fake.handler
+
+    async def hub404(req):
+        if req.url.host == "hub.test" and req.method == "DELETE":
+            return httpx.Response(404, content=SPA_INDEX, headers={"content-type": "text/html"})
+        return await orig(req)
+
+    fake.handler = hub404                                     # 상자의 _http 는 부를 때마다 fake.handler 를 읽는다
+    r = c.delete(f"/agent/deck/jobs/{job}")
+    del fake.handler
+    assert r.status_code == 502 and c.get(f"/agent/deck/jobs/{job}").json()["deleted"] is False, "허브의 404 는 지웠다는 뜻이 아니다"
+    fake.error_codes = True
+    fake.runs.clear()                                         # WDA 가 봉투로 '모른다' 고 답한다 — 사본이 없다
+    ok = c.delete(f"/agent/deck/jobs/{job}")
+    assert ok.status_code == 200 and ok.json()["deleted"] is True
+
+
+def test_PDF_미리보기는_주인에게만_inline_과_CSP_sandbox_로(box):
+    """M2 — 미리보기는 포털이 중계한다(브라우저는 WDA 를 보지 않는다). 계획서가 정한 방식 — 응답 머리 Content-Security-Policy: sandbox."""
+    c, fake = box["c"], box["fake"]
+    job = _finished(box)
+    j = c.get(f"/agent/deck/jobs/{job}").json()
+    assert j["preview"] == f"/agent/deck/jobs/{job}/preview"
+    r = c.get(j["preview"])
+    assert r.status_code == 200 and r.content == fake.files["pdf"]
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-disposition"].startswith("inline;") and "filename*=UTF-8''%EC%84%A4%EA%B3%84%20%EA%B2%80%ED%86%A0.pdf" in r.headers["content-disposition"]
+    csp = [x.strip() for x in r.headers["content-security-policy"].split(";")]
+    assert "sandbox" in csp and "frame-ancestors 'self'" in csp, "격리는 응답 머리가 한다 — allow-* 는 하나도 없다"
+    assert not any(x.startswith("sandbox ") for x in csp)
+    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["cache-control"] == "private, no-store"
+    # 받기는 종전 그대로 attachment 다
+    assert c.get(f"/agent/deck/jobs/{job}/files/pdf").headers["content-disposition"].startswith("attachment;")
+    box["who"]["p"] = LEE
+    assert c.get(f"/agent/deck/jobs/{job}/preview").status_code == 404, "남의 잡"
+    rows = app.state.agent_audit._conn.execute("SELECT event FROM agent_audit WHERE event = 'deck_preview'").fetchall()
+    assert rows, "미리보기도 감사에 남는다"
+
+
+def test_미리보기는_PDF_를_만든_끝난_잡에만_그리고_PDF_가_아닌_답은_흘리지_않는다(box):
+    c, fake = box["c"], box["fake"]
+    only_ppt = _done_with(box, "pptx")
+    assert c.get(f"/agent/deck/jobs/{only_ppt}").json()["preview"] is None
+    assert c.get(f"/agent/deck/jobs/{only_ppt}/preview").status_code == 404
+    fake._seen_runs = set(fake.runs)
+    job = _make(box, targets=["pdf"], doc_style="memo").json()["job_id"]
+    assert c.get(f"/agent/deck/jobs/{job}/preview").status_code == 404, "아직 끝나지 않았다"
+    rid = next(k for k in fake.runs if k not in fake._seen_runs)
+    fake.built(rid)
+    fake.rendered(rid)
+    c.post(f"/agent/deck/jobs/{job}/advance")
+    fake.files["pdf"] = b"<html><script>alert(1)</script></html>"      # WDA(또는 허브의 대체 응답)가 PDF 가 아닌 것을 준다
+    bad = c.get(f"/agent/deck/jobs/{job}/preview")
+    assert bad.status_code == 502, "앞 바이트가 %PDF 가 아니면 틀 안에 싣지 않는다"
 
 
 # ── 상태 접기(순수) ─────────────────────────────────────────────────────────────────────────────
