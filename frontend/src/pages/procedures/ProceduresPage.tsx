@@ -969,6 +969,9 @@ function RunDetailView() {
   };
 
   const running = watched.state === 'running' || watched.state === 'queued';
+  // 넘기기 단추의 '도는 실행' — 서버(handoff.busy)와 같은 판정이다. 한 단계씩 돌린 실행(판본 없음)은 단계 사이에 queued 로 쉰다 — 그것은 도는
+  // 것이 아니다(그렇게 읽으면 성공한 빈 실행에 단추가 영영 안 뜬다). 절차 실행의 queued 는 실행기를 기다리는 중이다.
+  const busyRun = watched.state === 'running' || (watched.state === 'queued' && !!watched.procedure_version_id);
 
   return (
     <div className="pr-stack">
@@ -1014,7 +1017,7 @@ function RunDetailView() {
               중단
             </button>
           )}
-          {!running && watched.mode === 'live' && can('feat:deliberation') && (
+          {!busyRun && watched.mode === 'live' && can('feat:deliberation') && (
             // 실행 → 심의(W-114). 여기서는 실행 id 만 넘긴다 — 단계 기록은 심의를 열 때 서버가 근거로 싣는다(가려진 값은 가려진 채,
             // 실패 · 실행 여부 모름은 표지와 함께). 화두와 심의 유형은 심의 화면에서 사람이 고른다. 리스크 심사로는 넘기지 않는다(서버가 거절한다).
             <button type="button" className="btn-secondary pr-btn" disabled={busy}
@@ -1031,7 +1034,7 @@ function RunDetailView() {
               심의로 넘기기
             </button>
           )}
-          {!running && watched.mode === 'live' && (
+          {!busyRun && watched.mode === 'live' && (
             // 실행 → 챗(W-115). 단계 요약과 그 조회 근거가 든 내 챗 대화를 만들고 챗 화면으로 간다 — 그 대화는 챗 화면이 주소 상태로 받아
             // 연다(절차 화면은 챗 컨텍스트를 쓰지 않는다 — PLAN §3 의 페이지 스코프).
             <button type="button" className="btn-secondary pr-btn" disabled={busy}

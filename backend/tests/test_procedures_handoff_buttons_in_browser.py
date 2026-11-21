@@ -53,7 +53,8 @@ _STUB = r"""
     ok: state === 'done' ? 1 : 0, error: null, stage: null, duration_ms: 10, result_bytes: state === 'done' ? 20 : null, truncated: 0,
     notes: null, ...extra });
   const RUN = { id: 'r1', state: window.__runState || 'done', stage: null, mode: window.__runMode || 'live', origin: 'replay',
-    title: '열충격 SED 판정', procedure_version_id: 'v1', procedure_id: 'p1', version_no: 1, inputs: {}, started_at: 1, ended_at: 2,
+    title: '열충격 SED 판정', procedure_version_id: window.__empty ? null : 'v1', procedure_id: window.__empty ? null : 'p1',
+    version_no: window.__empty ? null : 1, inputs: {}, started_at: 1, ended_at: 2,
     steps: [step(0, 'find_reports', 'done'), step(1, 'predict_sed', 'unknown', { stage: 'timeout', error: '응답 없음' }),
             step(2, 'add_report_tags', 'pending', { stage: 'gate' })] };
   const HANDOFF = { run_id: '0123456789abcdef0123456789abcdef', title: '열충격 SED 판정', state: 'done', mode: 'live',
@@ -123,6 +124,17 @@ const { chromium } = createRequire(path.join(FE, 'package.json'))('@playwright/t
     page = await open(['feat:procedures', 'feat:deliberation'], () => { window.__runState = 'running'; });
     out.running = { delib: await page.getByRole('button', { name: '심의로 넘기기', exact: true }).count(),
                     chat: await page.getByRole('button', { name: '챗으로 가져가기', exact: true }).count() };
+
+    // 절차 실행의 queued 는 실행기를 기다리는 중(도는 실행) · 한 단계씩 돌린 실행(판본 없음)의 queued 는 단계 사이에 쉬는 중이다
+    page = await open(['feat:procedures', 'feat:deliberation'], () => { window.__runState = 'queued'; });
+    out.queued = { delib: await page.getByRole('button', { name: '심의로 넘기기', exact: true }).count(),
+                   chat: await page.getByRole('button', { name: '챗으로 가져가기', exact: true }).count() };
+    page = await open(['feat:procedures', 'feat:deliberation'], () => { window.__runState = 'queued'; window.__empty = true; });
+    out.emptyResting = { delib: await page.getByRole('button', { name: '심의로 넘기기', exact: true }).count(),
+                         chat: await page.getByRole('button', { name: '챗으로 가져가기', exact: true }).count() };
+    page = await open(['feat:procedures', 'feat:deliberation'], () => { window.__runState = 'running'; window.__empty = true; });
+    out.emptyRunning = { delib: await page.getByRole('button', { name: '심의로 넘기기', exact: true }).count(),
+                         chat: await page.getByRole('button', { name: '챗으로 가져가기', exact: true }).count() };
   } catch (e) { out.failed = String((e && e.stack) || e).slice(0, 1500); }
   finally { await browser.close(); }
   process.stdout.write(JSON.stringify(out));
@@ -167,3 +179,10 @@ def test_넘기기_단추는_넘길_수_있는_실행에만_보인다(seen):
     assert seen["noDelib"] == {"delib": 0, "chat": 1}, "심의 권한이 없으면 심의로 넘기기를 권하지 않는다"
     assert seen["plan"] == {"delib": 0, "chat": 0}, "계획 모드 실행은 부른 단계가 없다"
     assert seen["running"] == {"delib": 0, "chat": 0}, "도는 실행은 넘기지 않는다"
+    assert seen["queued"] == {"delib": 0, "chat": 0}, "실행기를 기다리는 절차 실행도 도는 실행이다"
+
+
+def test_단계_사이에_쉬는_빈_실행에는_넘기기_단추가_보인다(seen):
+    """한 단계씩 돌린 실행은 단계가 끝나면 queued 로 쉰다 — 도는 실행으로 읽으면 성공해도 단추가 영영 안 뜬다(반대 검토 M2)."""
+    assert seen["emptyResting"] == {"delib": 1, "chat": 1}
+    assert seen["emptyRunning"] == {"delib": 0, "chat": 0}, "단계가 도는 동안은 빈 실행도 넘기지 않는다"

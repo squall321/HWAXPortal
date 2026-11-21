@@ -158,3 +158,33 @@ def test_챗으로_가져가는_결과는_줄인_판이고_줄였다고_말한�
     _t, msgs = H.chat_messages(st, st.get_run(rid))
     full = msgs[1]["meta"]["activity"][0]["result_full"]
     assert len(full) <= H.CHAT_RESULT_MAX and "60,000자" in full[-200:], full[-200:]
+
+
+# ── 반대 검토(11-22) 고침과 시험이 안 물던 것 ─────────────────────────────────────────────────
+def test_빈_실행은_단계_사이에_쉬는_것이지_도는_것이_아니다(st):
+    """한 단계씩 돌린 실행(판본 없음)은 단계가 끝나면 queued 로 쉰다(runner `step_once`). 그것을 '도는 실행' 으로 읽으면 성공한 빈 실행은
+    영영 못 넘긴다. 절차 실행의 queued 는 실행기를 기다리는 중이라 도는 것이다."""
+    empty = st.create_run(owner_sub="u1", run_by="u1", inputs={}, origin="manual", mode="live", title="한 단계씩")
+    _step(st, empty, 0, "find_reports", result='{"items": [1]}')
+    assert st.get_run(empty)["state"] == "queued"
+    assert len(H.evidence_or_refuse(st, st.get_run(empty))["evidence"]) == 1
+    H.refuse_unfinished(st.get_run(empty))                       # 던지지 않는다
+    vid = st.create_procedure(owner_sub="u1", spec={"title": "t", "vars": [], "steps": []}, title="t")["version_id"]
+    queued = st.create_run(owner_sub="u1", run_by="u1", procedure_version_id=vid, inputs={}, origin="replay", mode="live")
+    _step(st, queued, 0, "find_reports", result='{"items": [1]}')
+    for rid, state in ((queued, "queued"), (queued, "running"), (empty, "running")):
+        st.set_run_state(rid, state)
+        with pytest.raises(Exception) as ei:
+            H.refuse_unfinished(st.get_run(rid))
+        assert getattr(ei.value, "status_code", None) == 409, (rid == empty, state)
+    for state in ("gated", "failed", "done", "cancelled"):
+        st.set_run_state(queued, state, unless=())
+        H.refuse_unfinished(st.get_run(queued))
+
+
+def test_룰이_아무것도_못_골라_건너뛴_단계는_결과와_표지를_함께_싣는다(st):
+    rid = _run(st)
+    _step(st, rid, 0, "find_parts", result='{"parts": []}')
+    st.finish_step(rid, 0, ok=True, state="skipped", stage="select:none", notes={"select": "룰이 아무것도 못 골랐다 — 건너뛴다"})
+    ev = H.run_evidence(st, st.get_run(rid))["evidence"]
+    assert len(ev) == 1 and ev[0]["result"] == '[건너뛴 단계 — 룰이 아무것도 못 골랐다 — 건너뛴다]\n{"parts": []}', ev
