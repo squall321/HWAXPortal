@@ -28,16 +28,19 @@
 - [ ] 켜기 — 좌석 신호 · 카드 먼저 · '맡은 사람 없음' · '코어 데이터 질문'(박스 스위치 기본 끔)
 
 ## 미리 짓기(11-21 — 사용자 결정 EO-6, 계획 6절)
-- [ ] 결정 기록 EO-6 ~ EO-12 · 계획 6절 · CLAUDE.md 문서 표
-- [ ] AIDataHub — 이관(`record_mentions` · `record_entities` · `onto_state`) · 규칙 파일 · `services/onto_svc.py`(낱말 · 뽑기 · 짓기 · 잇기 · 프로필 · 질문 맞추기)
-- [ ] AIDataHub — `api.scripts.onto` · `deploy/apptainer/onto.sh`(build · bind · status · profile)
-- [ ] AIDataHub — `recommend_agents` 의 `onto` 인자(off 면 응답이 그대로) · MCP 창구
-- [ ] AIDataHub — 시험(뽑기 · 잇기 · 프로필 · 추천 셋) · 전체 시험
-- [ ] 에이전트 서버 — `SEAT_ONTO`(기본 끔) · 도구가 인자를 알 때만 · 리스크 심사 제외 · 시험
-- [ ] 포털 — `card-entity-bind.py`(허브 읽기 둘 · exact 만 · 사전 파일 · `onto.sh bind`) · 시험(가짜 허브)
-- [ ] 포털 — `persona-domains-build.py` · 어휘표 `personas.domains` 첫 줄(구조 셈)
-- [ ] dev — 이관 · `onto.sh build` · 수 확인 · 프로필
-- [ ] cae00 절차(`server-setup.md`) · 박스 훅 보기 · 받은 편지함 · 업데이트 이력
-- [ ] 올림(가지 병합 `--no-ff`) · dev 반영
-- [ ] cae00(사람) — 받기 · build · bind · 수 보고 · G-EO 판정 뒤 `SEAT_ONTO`
-
+- [x] 결정 기록 EO-6 ~ EO-14 · 계획 6절 · CLAUDE.md 문서 표
+- [x] AIDataHub — 이행 0033(`record_mentions` · `record_entities` · `onto_terms` · `onto_state`) · 규칙 파일 · `services/onto_svc.py`(낱말 · 뽑기 · 짓기 · 잇기 · 프로필 ·
+      질문 맞추기 · 전문가 신호) — `8c9506c`
+- [x] AIDataHub — `api.scripts.onto` · `deploy/apptainer/onto.sh`(build · bind · status · profile)
+- [x] AIDataHub — `recommend_agents` 의 `onto` 인자(off 면 응답이 그대로) · MCP 창구
+- [x] AIDataHub — 시험 13(뽑기 · 잇기 · 프로필 · 신호 · 추천 셋 · 명령) · 전체 787 통과(실패 35 는 main 과 같은 목록)
+- [x] dev PostgreSQL 실데이터 — 임시 스키마에서 짓기 · 잇기 · 신호 · 프로필(EO-13)
+- [x] 에이전트 서버 — `SEAT_ONTO`(기본 끔) · 도구가 인자를 알 때만 · 리스크 심사 제외 · 그림자 줄 · 시험 8 · 전체 4,786 통과 — `f5b5dd8`
+- [x] 포털 — `card-entity-bind.py`(허브 읽기 둘 · exact 만 · 사전 파일 0600 · `onto.sh bind`) · 시험 11(가짜 허브 · 가짜 AIDataHub 명령) — `6a7b367c`
+- [x] 포털 — `persona-domains-build.py`(박스 덧씌우기에만) · 시험 5. 추적 어휘표에는 줄을 더하지 않았다(EO-10)
+- [x] cae00 절차 [server-setup.md](server-setup.md) · 박스 훅 보기 · 받은 편지함 `../cae00-inbox/2026-11-21.md` · 업데이트 이력
+- [x] 올림(가지 병합 `--no-ff`) — AIDataHub main `85c3f2f` · 에이전트 서버 · 포털
+- [x] dev — AIDataHub 재기동(이행 0033) · `onto.sh build` 254,668줄 11.8초 · 두 번째 건너뜀 · `persona-domains-build.py` 셈(줄 둘 — 적지 않았다)
+- [ ] dev 에이전트 서버 재기동은 하지 않았다 — 스위치가 기본 끔이라 다음 재기동 때 그대로 들어온다
+- [ ] cae00(사람) — 받기 · build · `--dry-run` · bind · 수 보고 · G-EO 판정 뒤 `SEAT_ONTO`(server-setup 1 ~ 6절)
+- [ ] 미룬 것 — 앉은 전문가의 카드 먼저 보기 · '맡은 사람 없음' · '코어 데이터 질문'(EO-12) · LLM 뽑기(연결 수를 본 뒤 다시 묻는다)
