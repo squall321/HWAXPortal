@@ -330,6 +330,9 @@ MCP 도구(앱 · 도구) · MCP 심의와 RA 초안 · 정문 요청 · 접기 
 없는 칸은 그림 대신 그렇다는 말(pending)을, 접지 못한 원천이 있으면 화면 위에 까닭을 보인다. 칸의 틀(Block · Card · Table)을
 `components/usage/UsageBlocks.tsx` 로 옮겨 새 카드(`UsageFoldCards.tsx`)와 함께 쓴다 — 새 카드를 화면 파일 밖에 두어야 node 에서 따로 그려 볼 수 있다
 (시험 `test_usage_fold_screen` 이 접기 시험의 장면을 백엔드가 실제로 낸 한 판으로 그린다 — 칸 이름이 어긋나면 undefined · NaN 이 글자로 보인다).
+화면 전체는 헤드리스 브라우저에 올려 본다(`test_usage_page_in_browser` — 실제 페이지를 esbuild 로 묶고 fetch 만 그 한 판으로 바꾼다 · 서버 없음). 그 시험에
+`HWAX_USAGE_SHOT=<폴더>` 를 주면 화면과 카드마다의 그림이 남는다 — dev 에서 그 그림으로 봤고(pnpm build 없이), 반 폭 카드에서 열한 칸짜리 앱 표의
+머리글 · 수가 글자마다 꺾여 '앱 · 도구' · '접기 상태' 카드는 격자의 한 줄을 다 쓰게 했다(`.uc-card.is-wide`). 실제 박스의 화면(진짜 수 · 400일)은 보지 못했다.
 RA 초안은 게이트웨이를 지난 `create_report_draft` 의 성공 호출로 센다(챗의 /보고서 · 심의 보고서 · 루틴 · 개인 Claude 가 모두 이 도구로 만든다) — 호출자가
 적히지 않은 초안(엔진이 서비스 자격으로 만든 것)이 dev 에서 100건 가운데 97건이라 '만든 사람' 은 작게 나온다. 화면이 unnamed 로 따로 말한다.
 
