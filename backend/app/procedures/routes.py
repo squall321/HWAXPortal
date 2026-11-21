@@ -26,7 +26,7 @@ import httpx
 import jwt
 import yaml
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from app.access.policy import ADMIN_GROUP
@@ -46,6 +46,7 @@ from app.procedures.models import (
     normalized,
     publish_token_vars,
     schema_fingerprint,
+    ungated_writes,
     validate_spec,
 )
 from app.procedures.runner import STEP_MAX as _STEP_MAX
@@ -118,6 +119,15 @@ def _human_gates(spec: dict) -> list:
     판정이다. 선언만 보면 MUST_GATE 가 나중에 늘었을 때 옛 판본의 계약이 '안 멈춘다' 고 말하는데 실행은 멈춘다."""
     return [st.get("tool") for st in (spec.get("steps") or [])
             if st.get("gate") == "human" or st.get("tool") in MUST_GATE]
+
+
+def _ungated(spec: dict) -> list:
+    """사람 확인 없이 도는 쓰기 · 잡 단계의 도구들 — 저장 검증의 경고와 같은 판정이다(`models.ungated_write`). 꼴이 깨진 옛 판본은 모른다 —
+    빈 목록으로 읽지 않고 그렇다고 적는다(live 를 여는 판정은 `start_run` 이 판본을 다시 읽어 한다)."""
+    try:
+        return ungated_writes(ProcedureSpec.model_validate(spec))
+    except ValidationError:
+        return ["(판본을 읽지 못했다)"]
 
 
 def _owned(request: Request, principal: Principal, run_id: str) -> dict:
@@ -449,14 +459,20 @@ def list_procedures(request: Request, principal: Principal = Depends(_me)) -> di
     return {"procedures": _store(request).list_procedures(owner_sub=principal.subject)}
 
 
+# 목록 한 번에 싣는 절차 수 — 넘치면 말한다(total · truncated). 제목 거름(q)은 저장소가 이 상한보다 먼저 건다.
+CATALOG_MAX = 100
+
+
 @router.get("/catalog")
-def catalog(request: Request, principal: Principal = Depends(_me_any)) -> dict:
+def catalog(request: Request, q: str = Query("", max_length=200), principal: Principal = Depends(_me_any)) -> dict:
     """내가 볼 수 있는 절차를 **도구 계약의 머리**로 — 게이트웨이 `procedure_list` 가 읽는다(W-116). 시야는 화면의 절차 목록과 같다
     (내 것 + 공개한 것 — `list_procedures`). 남의 절차는 `mine: false` 로만 말하고 주인의 주소는 싣지 않는다. 입력 스키마 전부는
-    `/procedures/{id}/tool` 이 낸다."""
+    `/procedures/{id}/tool` 이 낸다. 최근에 고친 것부터 `CATALOG_MAX` 건까지이고 넘쳤으면 `truncated` 다 — `q`(제목에 든 글)로 좁힌다."""
     store = _store(request)
+    want = q.strip() or None
+    total = store.count_procedures(owner_sub=principal.subject, q=want)
     rows = []
-    for p in store.list_procedures(owner_sub=principal.subject):
+    for p in store.list_procedures(owner_sub=principal.subject, limit=CATALOG_MAX, q=want):
         v = store.latest_version_of(p["id"])
         if v is None:
             continue
@@ -466,8 +482,9 @@ def catalog(request: Request, principal: Principal = Depends(_me_any)) -> dict:
             "mine": p["owner_sub"] == principal.subject, "updated_at": p["updated_at"],
             "vars": [{"key": x.get("key"), "label": x.get("label") or x.get("key"), "type": x.get("type") or "string",
                       "required": x.get("required", True) is not False} for x in (spec.get("vars") or [])],
-            "steps": len(spec.get("steps") or []), "human_gates": _human_gates(spec)})
-    return {"count": len(rows), "procedures": rows}
+            "steps": len(spec.get("steps") or []), "human_gates": _human_gates(spec),
+            "ungated_writes": _ungated(spec)})
+    return {"count": len(rows), "total": total, "truncated": total > len(rows), "procedures": rows}
 
 
 @router.post("/procedures", status_code=201, dependencies=[Depends(require_csrf)])
@@ -509,6 +526,9 @@ async def add_version(request: Request, procedure_id: str, body: ProcedureIn,
 class RunIn(BaseModel):
     procedure_id: str | None = None
     version_id: str | None = None
+    # 계약을 본 판 — 주면 지금 돌릴 판과 같을 때만 시작한다(게이트웨이 procedure_get → procedure_run_start 사이에 주인이 새 판을 올렸으면
+    # 본 계약(입력 · 사람 확인 자리 · 확인 없이 도는 쓰기)과 도는 것이 다르다). 비우면 종전대로 최신 판이다.
+    version_no: int | None = Field(default=None, ge=1)
     vars: dict = Field(default_factory=dict)
     mode: str = Field(default="plan", pattern="^(plan|live)$")
     title: str | None = None
@@ -610,6 +630,19 @@ async def start_run(request: Request, body: RunIn,
     # 여기서 안 풀면 적층 정의가 문자열인 채 도구로 가고, 필수 변수가 비면 그 변수를 쓰는
     # 단계에 가서야 터진다 — 그때는 앞 단계가 이미 게이트웨이를 부르고 난 뒤다.
     spec = ProcedureSpec.model_validate(version["spec"]) if version else None
+    if version is not None and body.version_no is not None and body.version_no != version["version_no"]:
+        raise AuthError(f"판이 바뀌었습니다 — 계약을 본 판은 {body.version_no}, 지금 판은 {version['version_no']} 입니다. 계약을 다시 본 뒤 "
+                        "시작하세요", status_code=409)
+    loose = ungated_writes(spec) if spec is not None else []
+    if _bearer(request) and body.mode == "live" and loose:
+        # 승인 창구가 세션만 받는 것은 gate 가 있는 단계만 지킨다. 저장 검증이 경고로만 두는 쓰기 · 잡 부류는 gate 없이 저장돼, 토큰으로 연
+        # live 실행은 그 단계를 사람 확인 없이 끝까지 돈다(반대 검토 M4). 닫힌 쪽으로 — 그런 단계가 하나라도 있으면 토큰으로는 live 를 열지
+        # 않는다. 화면(세션)에서 사람이 '재생' 을 누르는 길은 그대로다. 실행을 만들기 전이라 원장에 남는 것이 없다.
+        names = list(dict.fromkeys(loose))
+        raise AuthError(
+            f"이 절차에는 사람 확인 없이 도는 쓰기 · 잡 단계가 {len(loose)}개 있습니다({', '.join(names[:8])}{' …' if len(names) > 8 else ''}) — "
+            "토큰으로는 live 로 시작하지 않습니다. 사람이 포털 절차 화면에서 시작하거나, plan(계획 모드)으로 무엇을 부를지만 보세요",
+            status_code=409)
     inputs = dict(body.vars)
     if spec is not None:
         try:
@@ -630,7 +663,9 @@ async def start_run(request: Request, body: RunIn,
     _spawn(runner.run(run_id=run_id, spec=spec, principal=principal), f"run {run_id}",
            store=store, run_id=run_id)
     return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}",
-            **({"warnings": notes} if notes else {})}
+            **({"warnings": notes} if notes else {}),
+            # 토큰으로 시작한 쪽(게이트웨이 도구)에는 live 로 못 여는 까닭을 같이 싣는다 — 세션 답의 꼴은 그대로다
+            **({"ungated_writes": loose} if loose and _bearer(request) else {})}
 
 
 class StepIn(BaseModel):
@@ -757,8 +792,13 @@ async def replay_run(request: Request, run_id: str, body: ReplayIn,
 @router.get("/runs/{run_id}")
 def get_run(request: Request, run_id: str, principal: Principal = Depends(_me_any)) -> dict:
     run = _owned(request, principal, run_id)
+    pat = bool(_bearer(request))
     for s in run["steps"]:
         s.pop("result_sha256", None)  # 화면은 본문을 따로 받는다
+        if pat:
+            # 게이트웨이 상태 도구가 옮기는 경고 표식 — 정본은 judge 의 아홉 칸이다(warnings 만 보면 합성 데이터 표식 mock_note 가 빠진다).
+            # 세션 보기의 꼴은 그대로다(화면은 notes 를 직접 읽는다).
+            s["warn_labels"] = J.warn_labels(s.get("notes"))
     return run
 
 
@@ -905,6 +945,9 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
     bad = [v for v in want if v not in allowed]
     if bad:
         raise AuthError(f"보여 준 후보 밖입니다: {bad[:3]}", status_code=422)
+    # 요청 값이 아니라 **맞은 후보의 값**으로 돈다 — 7 과 7.0 은 같은 후보에 맞지만(파이썬은 같다고 본다) 글로 적으면 달라, 요청 값으로 열쇠를
+    # 지으면 같은 대상에 실행이 둘 생긴다(W-113 의 열쇠). 실행의 입력도 후보의 값이다.
+    want = [allowed[allowed.index(v)] for v in want]
 
     version = store.get_version(run["procedure_version_id"])
     if version is None:
@@ -1198,6 +1241,8 @@ def procedure_as_tool(request: Request, procedure_id: str,
         "description": _tool_desc(spec, gates),
         "inputSchema": _d.to_input_schema(spec),
         "version_no": v.get("version_no"),
+        # 사람 확인 없이 도는 쓰기 · 잡 단계 — 하나라도 있으면 토큰(게이트웨이 도구)으로는 live 로 시작하지 못한다(`start_run`)
+        "ungated_writes": _ungated(spec),
         # ⚠ 사람 확인이 걸린 단계는 **계약에 적는다.** 도구처럼 부르는 쪽이 이것을 모르면
         # "왜 안 끝나지" 가 된다 — 멈추는 것이 정상이라는 사실이 계약의 일부다.
         "human_gates": gates,

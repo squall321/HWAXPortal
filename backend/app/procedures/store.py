@@ -249,15 +249,30 @@ class ProceduresStore:
             (v["procedure_id"], sub)).fetchone()
         return v if row else None
 
-    def list_procedures(self, *, owner_sub: str, limit: int = 100) -> list[dict]:
+    def list_procedures(self, *, owner_sub: str, limit: int = 100, q: str | None = None) -> list[dict]:
         """`visibility='all'` 이면 남의 것도 보인다 — 절차는 공유 자산이다(PLAN §1).
 
-        실행은 따라가지 않는다. 실행 결과에는 그 사람 시야의 데이터가 담긴다.
+        실행은 따라가지 않는다. 실행 결과에는 그 사람 시야의 데이터가 담긴다. `q` 를 주면 제목에 그 글이 든 것만(글자 그대로 —
+        `%` · `_` 는 무늬가 아니다) — 상한보다 **먼저** 거른다(뒤에 거르면 상한 밖의 절차는 제목을 정확히 대도 안 보인다).
         """
+        where, args = self._visible(owner_sub, q)
         rows = self._conn().execute(
-            "SELECT * FROM procedures WHERE visibility='all' OR owner_sub=?"
-            " ORDER BY updated_at DESC LIMIT ?", (owner_sub, limit)).fetchall()
+            f"SELECT * FROM procedures WHERE {where} ORDER BY updated_at DESC LIMIT ?", (*args, limit)).fetchall()
         return [dict(r) for r in rows]
+
+    def count_procedures(self, *, owner_sub: str, q: str | None = None) -> int:
+        """그 사람이 볼 수 있는 절차의 수(같은 시야 · 같은 거름) — 목록이 상한에서 끊겼는지를 말하는 데 쓴다."""
+        where, args = self._visible(owner_sub, q)
+        return int(self._conn().execute(f"SELECT COUNT(*) FROM procedures WHERE {where}", args).fetchone()[0])
+
+    @staticmethod
+    def _visible(owner_sub: str, q: str | None) -> tuple[str, tuple]:
+        where, args = "(visibility='all' OR owner_sub=?)", [owner_sub]
+        if q:
+            esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            where += " AND title LIKE ? ESCAPE '\\'"
+            args.append(f"%{esc}%")
+        return where, tuple(args)
 
     # ── 실행 ────────────────────────────────────────────────────────────────
     def create_run(self, *, owner_sub: str, run_by: str | None = None,
