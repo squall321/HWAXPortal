@@ -2068,9 +2068,11 @@ def test_챗으로_가져가기는_주인만_하고_도는_실행은_안_된다(
     assert c.post(f"{PREFIX}/runs/{running}/chat", headers=h).status_code == 409
     assert c.post(f"{PREFIX}/runs/{rid}/chat").status_code == 403, "CSRF 없이는 안 된다(세션 쓰기)"
     boss = _login(c, "boss@corp.com")
+    # 대화 저장소는 시험 묶음이 함께 쓴다(conftest 의 임시 원장) — 비었는지가 아니라 늘지 않았는지를 본다
+    before = c.get("/agent/conversations", headers=boss).json()["total"]
     r = c.post(f"{PREFIX}/runs/{rid}/chat", headers=boss)
     assert r.status_code == 404, (r.status_code, r.text[:200])
-    assert c.get("/agent/conversations", headers=boss).json()["conversations"] == [], "거절한 요청이 대화를 남겼다"
+    assert c.get("/agent/conversations", headers=boss).json()["total"] == before, "거절한 요청이 대화를 남겼다"
 
 
 # ── 게이트웨이의 절차 도구가 타는 길(W-116) — 세션 또는 그 사람의 PAT ──────────────────────────────
@@ -2161,6 +2163,11 @@ def test_절차_실행기의_PAT_로는_실행을_시작하지_못한다(pat_use
     from types import SimpleNamespace
 
     from app.procedures import pat as P
+    from app.procedures.models import ProcedureSpec, Step, validate_spec
+
+    # 닿는 길이 실제로 있다 — 단계의 별칭이 그 도구 이름이 되고 저장 검증도 지난다(백엔드를 게이트웨이의 앱 키와 대조하지 않는다)
+    loop = Step(backend="procedure", tool="run_start", args={"procedure_id": "x", "mode": "live"})
+    assert loop.alias == "procedure_run_start" and validate_spec(ProcedureSpec(title="t", steps=[loop])) == []
 
     c, h, rw, _ro = pat_user
     pid = c.post(f"{PREFIX}/procedures", json={"title": "보고서 태그", "spec": _GATED_SPEC}, headers=h).json()["id"]
@@ -2225,3 +2232,18 @@ def test_세션의_실행_시작은_여전히_CSRF_를_본다(user):
     c, h = user
     assert c.post(f"{PREFIX}/runs", json={}).status_code == 403
     assert c.post(f"{PREFIX}/runs", json={}, headers=h).status_code == 202
+
+
+def test_패널의_포털_쪽_거절_목록에_게이트웨이의_절차_도구_넷이_있다():
+    """패널(MCP Apps)은 게이트웨이 자체 도구를 부르지 못한다 — 게이트웨이가 패널 PAT 에서 로컬 도구를 통째로 막고(_panel_denial), 포털이 먼저
+    한 번 더 막는다(이중 막이 — app/agent/panel.py `_DENY_EXACT`). 이름은 게이트웨이 원문에서 읽는다(형제 리포가 있을 때)."""
+    import re
+
+    from app.agent import panel
+
+    names = {"procedure_list", "procedure_get", "procedure_run_start", "procedure_run_status"}
+    gw = Path(__file__).resolve().parents[2].parent / "HWAXMcpGateway" / "gateway.py"
+    if gw.exists():
+        got = set(re.findall(r'_routine_tool\(\s*"(procedure_[a-z_]+)"', gw.read_text(encoding="utf-8")))
+        assert got == names, f"게이트웨이의 절차 도구 이름이 달라졌다: {sorted(got)}"
+    assert names <= panel._DENY_EXACT, sorted(names - panel._DENY_EXACT)

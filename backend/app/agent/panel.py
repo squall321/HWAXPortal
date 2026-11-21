@@ -76,6 +76,7 @@ _DENY_EXACT = frozenset({
     "invoke_tool", "rest_call", "rest_catalog", "search_tools", "list_tool_apps", "save_conversation", "search_conversations",
     "browse_experts", "use_experts", "verify_answer", "routine_list", "routine_get", "routine_run_start", "routine_call",
     "routine_step_done", "routine_report_submit", "review_task_next", "review_task_read", "review_task_submit",
+    "procedure_list", "procedure_get", "procedure_run_start", "procedure_run_status",      # 절차 도구(게이트웨이 로컬 — docs/procedures W-116)
     "publish_report", "publish_report_to_datahub", "request_unpublish", "trash_report", "restore_version", "job_stop",
     "risk_add_finding", "add_report_tags", "create_report_from_format",
 })
