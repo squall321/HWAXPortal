@@ -5,6 +5,7 @@ import { useCan } from '../../auth/useCan';
 import { config } from '../../config';
 import { useChat } from '../../state/ChatContext';
 import { DECK_DOC_STYLES, DECK_DOC_TARGETS, DECK_HIDDEN_BACKOFF, DECK_TARGETS, deckSettled, deckSize, deckStateText, type DeckReport } from './deck';
+import { DeckTools } from './DeckTools';
 import { forgetDeckStatus, useDeckStatus, useTabVisible } from './useDeckStatus';
 
 // 화면이 진행을 묻는 박자 — WDA 실측 5.5초(11-01)라 3초면 두 번이면 끝난다. 묻기는 포털이 한 번 WDA 에 묻는 가벼운 일이다.
@@ -117,7 +118,7 @@ export function DeckSpot({ report }: { report: DeckReport }) {
             {here ? '' : '(그 대화에서 맡긴 같은 발표자료입니다)'}.
           </p>
         )}
-        {done && job.state === 'done' && job.expired && (
+        {done && job.state === 'done' && job.expired && !job.deleted && (
           <p className="upl-note">파일이 WebDesignAgents 에서 지워졌습니다 — 다시 만들 수 있습니다.</p>
         )}
         {done && job.state === 'done' && job.files.length > 0 && (
@@ -136,6 +137,21 @@ export function DeckSpot({ report }: { report: DeckReport }) {
         )}
         {done && job.state === 'failed' && <div className="upl-err" role="alert">⚠ {job.error || job.step || '까닭을 받지 못했습니다'}</div>}
         {err && <div className="upl-err" role="alert">⚠ {err}</div>}
+        {/* PDF 미리보기 · 다시 시도 · 사본 지우기(M2) — 다시 시도는 새 잡을 돌려준다(이 칸이 그 잡의 진행을 잇는다) */}
+        {done && (
+          <DeckTools
+            job={job}
+            allowed={allowed}
+            onJob={(j, how) => {
+              if (how === 'retry') {
+                errs.current = 0;
+                setPaused(false);
+                setErr('');
+              }
+              setJob(j);
+            }}
+          />
+        )}
         {done && (
           <div className="upl-actions">
             <button type="button" className={job.state === 'failed' || job.expired ? 'upl-go' : undefined} disabled={busy}

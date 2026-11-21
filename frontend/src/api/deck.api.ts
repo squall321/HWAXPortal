@@ -1,4 +1,4 @@
-// 발표자료로 창구(/agent/deck) — 상태 · 만들기 · 진행 · 한 걸음(렌더 맡기기 · 끝 알림) · 내 목록 · 숨기기(docs/wda-deck)
+// 발표자료로 창구(/agent/deck) — 상태 · 만들기 · 진행 · 한 걸음(렌더 맡기기 · 끝 알림) · 내 목록 · 숨기기 · 다시 시도 · 지우기(docs/wda-deck)
 import type { ActivityItem } from '../types/chat';
 import { apiFetch, errorDetail } from './client';
 
@@ -16,6 +16,8 @@ export interface DeckStatus {
   doc_styles: DeckDocStyle[];
   defaults: { targets: DeckTarget[]; doc_style: DeckDocStyle };
   keep_days: number;
+  /** WDA 가 지우기(W-17)를 갖춘 판이다 — 켜진 박스의 답에만 실린다. 없으면 지우기 단추를 내지 않는다. */
+  delete?: boolean;
 }
 
 export interface DeckFile {
@@ -53,6 +55,12 @@ export interface DeckJob {
   files: DeckFile[];
   /** 끝난 잡의 파일이 WDA 에서 지워졌다(받기가 404 · 410) — 링크 대신 '다시 만들기'(WD-D62). */
   expired?: boolean;
+  /** 실패한 잡의 WDA 실행을 끊긴 단계부터 다시 돌릴 수 있다('다시 시도' — 보고서를 다시 넘기지 않는다, M2). */
+  can_retry?: boolean;
+  /** 맡긴 사람이 WDA 의 사본(보고서 본문 · 산출물)을 지웠다(M2 · W-17). */
+  deleted?: boolean;
+  /** PDF 미리보기의 포털 경로(/agent/deck/jobs/<잡>/preview) — 끝난 잡이 PDF 를 만들었고 지워지지 않았을 때만. */
+  preview?: string | null;
   created?: boolean;
   notice?: DeckNotice | null;
   noticed?: boolean;
@@ -109,4 +117,18 @@ export async function deckJobs(): Promise<{ jobs: DeckJob[]; keep_days?: number 
 
 export async function dismissDeck(jobId: string): Promise<void> {
   await apiFetch(`/agent/deck/jobs/${encodeURIComponent(jobId)}/dismiss`, { method: 'POST' }).catch(() => undefined);
+}
+
+/** 실패한 잡을 다시 시도한다 — 같은 WDA 실행을 끊긴 단계부터. 돌아오는 것은 **새 잡**이다(진행 · 끝 알림은 그 잡으로 온다). */
+export async function retryDeck(jobId: string): Promise<DeckJob> {
+  const j = await json<DeckJob>(await apiFetch(`/agent/deck/jobs/${encodeURIComponent(jobId)}/retry`, { method: 'POST' }),
+    '다시 시도를 맡기지 못했습니다');
+  window.dispatchEvent(new Event(DECK_CHANGED));
+  return j;
+}
+
+/** 끝난 잡의 WebDesignAgents 사본(보고서 본문 · 산출물)을 지운다 — 되돌릴 수 없다. 대화의 알림은 남고 받기 링크만 죽는다. */
+export async function deleteDeck(jobId: string): Promise<DeckJob> {
+  return json<DeckJob>(await apiFetch(`/agent/deck/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
+    '사본을 지우지 못했습니다');
 }

@@ -1366,6 +1366,9 @@
   background: var(--surface); color: var(--fg); text-decoration: none; font-size: 13px;
 }
 .deck-file:hover { border-color: var(--accent); }
+/* PDF 미리보기(M2) — 포털이 중계하는 inline PDF. 틀의 바탕은 PDF 보기가 칠한다 */
+.deck-tools { flex-wrap: wrap; }
+.deck-preview { display: block; width: 100%; height: 520px; margin-top: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
 
 /* 심의 목적(Job) 그리드 — DeliberatePage 히어로(얹을 층은 심의 옵션 안으로 옮겼다). method-picker 클래스(.cx-brief-*) 재사용 */
 .cx-jobgroup-wide { width: 100%; margin-top: 10px; text-align: left; }

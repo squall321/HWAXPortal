@@ -13,6 +13,7 @@ import { McpAppPanels } from './McpAppPanel';
 import { EmbedCards } from './EmbedCard';
 import { confirmState, type ConfirmState } from './confirm';
 import { DelibView } from './DelibView';
+import { DeckNoticeTools } from './DeckNoticeTools';
 import { DeckSpot } from './DeckSpot';
 import { deckReportOf } from './deck';
 import { RoutineView } from './RoutineView';
@@ -206,6 +207,8 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
       {/* '/보고서' 저장 답 · RA 보내기 알림의 보고서를 발표자료로(docs/wda-deck) — 심의 결과는 DelibView 가 결과 카드 옆에, 분석 루틴의 RA 초안은
           RoutineView 가 초안 줄 아래에 둔다(초안 번호를 원장과 맞댄다) */}
       {!hasDelib && !msg.routine && deck && <DeckSpot report={deck} />}
+      {/* 발표자료 알림(서버가 남긴 끝 알림 — 새로고침 뒤에도 남는다) 아래의 도구 줄 — 미리보기 · 다시 시도 · 사본 지우기(M2) */}
+      {!msg.streaming && msg.deckJob && <DeckNoticeTools jobId={msg.deckJob} />}
       {!msg.streaming && msg.text && (
         <div className="msg-actions">
           <CopyAction text={msg.text} />
