@@ -58,6 +58,9 @@ def test_같은_칸의_공유_카드만_깔고_나머지는_센다():
         "플랫폼 범위(4)는 그 권한이 없어 보이지도 않는다 · 내 초안(5)만 범위 밖 · 다른 소속(7) · 남의 초안(8) · 기다림(9)은 세지 않는다"
     got, n = X.pick(rows, viewer=_v(groups=("feat:insights", "plat:risk")), round_code="dv1", audience="aff")
     assert len(got) == 2 and n["out_of_scope"] == 2, "플랫폼 권한이 있어 보여도 plat 이 붙은 카드는 깔지 않는다 — 산출물의 독자는 그 권한으로 걸러지지 않는다"
+    odd = [_row(10, owner="me@example.com", status="draft", scope=("org",))]
+    got, n = X.pick(odd, viewer=_v(), round_code="dv1", audience="aff")
+    assert got == [] and n["out_of_scope"] == 1, "범위 토큰이 어떻든 확인 · 반박 상태가 아닌 카드는 깔지 않는다"
 
 
 def test_RA_작업_공간의_범위를_모르면_조직에_연_카드만_깐다():
@@ -408,6 +411,7 @@ def test_읽은_카드를_다_알_때만_id_를_낸다():
     (["aff:CAEG"], [{"status": "confirmed", "scope": ["user:peer@example.com"]}], None),
     (["aff:CAEG"], [{"status": "draft", "scope": ["user:peer@example.com"]}], None),   # 아직 주인만 보는 카드
     (["aff:CAEG"], [{"status": "withdrawn", "scope": []}], None),
+    (["aff:CAEG"], [{"status": "draft", "scope": ["aff:CAEG"]}], None),                # 범위 토큰이 어떻든 공유 상태가 아니면 이어받지 않는다
     (["aff:CAEG"], [None], None),                                                       # 원장에 없는 id
     (["aff:CAEG"], [{"status": "confirmed", "scope": []}], None),
     (["user:me@example.com"], [{"status": "confirmed", "scope": ["org"]}], None),       # 제 범위부터 주인만(소속 없음)
