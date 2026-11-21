@@ -1,12 +1,10 @@
 // 분석 루틴 진행 — 어시스턴트 메시지 안(보고서 글 위)의 단계 칩 · 고를 것 · 이어서 · 멈춤 · 보고서 보기 · RA 초안 올리기. 흐르지 않는 메시지는 화면에 보일 때만 포털 원장에서 다시 읽는다(docs/analysis-routines R3 §6)
-import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { cancelRun, getRun, getRunReport, pickCandidate, type RunView } from '../../api/routines.api';
 import { useCan } from '../../auth/useCan';
 import { routineStopNote } from '../../lib/chatErrors';
 import { useChat } from '../../state/ChatContext';
 import type { Message, RoutineState } from '../../types/chat';
-import { DeckSpot } from './DeckSpot';
-import { deckReportOf } from './deck';
 import { TextBlock } from './renderers/TextBlock';
 import {
   ROUTINE_POLL_MS,
@@ -58,7 +56,9 @@ function useOnScreen(ref: RefObject<HTMLElement>): boolean {
   return inView && tabShown;
 }
 
-export function RoutineView({ msg }: { msg: Message }) {
+/** `raExtra` — RA 초안 줄 아래에 부른 쪽이 끼우는 것(발표자료로 단추 — docs/wda-deck M2). 원장과 맞댄 실행을 넘긴다 — 초안 번호는 원장이 더
+ *  새것이라(끝에 묻는 루틴을 뒤에 올리면 원장에만 있다) 메시지만 보는 부른 쪽은 그 번호를 모른다. 받는 중에는 부르지 않는다. */
+export function RoutineView({ msg, raExtra }: { msg: Message; raExtra?: (rt: RoutineState) => ReactNode }) {
   const base = msg.routine as RoutineState;
   const live = Boolean(msg.streaming);
   const { streaming, resumeRoutine, streamLive } = useChat();
@@ -182,9 +182,6 @@ export function RoutineView({ msg }: { msg: Message }) {
   // run_id 와 upload_ra 를 보내면 에이전트가 routine_report_submit(upload=true) 를 부른다(포털은 저장본을, 게이트웨이는 그 사람 명의 초안을 —
   // 이미 있으면 다시 만들지 않는다). 게이트웨이의 ra_next 는 MCP 클라이언트에게 하는 지시라 화면에 내지 않는다.
   const askRa = allowed && !live && state === 'done' && raAskable(rep) && !hasRa;
-  // 발표자료로(docs/wda-deck M2) — RA 초안 번호는 원장이 더 새것이다(끝에 묻는 루틴을 뒤에 올리면 원장에만 있다). 그래서 메시지가 아니라 원장과
-  // 맞댄 실행(rt)으로 본다 — 이 메시지의 단추는 여기서만 세운다(MessageList 는 루틴 메시지를 건너뛴다).
-  const deckRep = live ? null : deckReportOf({ ...msg, routine: rt });
 
   const resume = () => {
     setErr('');
@@ -414,7 +411,7 @@ export function RoutineView({ msg }: { msg: Message }) {
           )}
         </div>
       )}
-      {deckRep && <DeckSpot report={deckRep} />}
+      {!live && raExtra?.(rt)}
       {err && (
         <p className="rv-err" role="alert">
           {err}
