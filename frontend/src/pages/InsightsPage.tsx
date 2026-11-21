@@ -1,4 +1,4 @@
-// 과제 인사이트 — 과제(SP 허브 key) · 차수마다 앞선 심의 · 심사의 결정 카드와 리스크 심사 행을 보고, 내 초안을 확인 · 고친다(docs/project-insight-graph M2)
+// 과제 인사이트 — 과제(SP 허브 key) · 차수마다 앞선 심의 · 심사의 결정 카드와 리스크 심사 행을 보고, 내 초안을 확인 · 고친다(docs/project-insight-graph M2 · M4)
 import { useCallback, useEffect, useState } from 'react';
 import { Page, PageHeader } from '../components/ui/Page';
 import { Tabs } from '../components/ui/Tabs';
@@ -6,25 +6,29 @@ import { ErrorBanner } from '../components/common/ErrorBanner';
 import {
   confirmCard,
   disputeCard,
+  fetchCard,
   fetchMine,
   fetchProject,
   fetchProjects,
+  fetchReview,
   setCardClaim,
   setCardRound,
   setCardSubject,
   widenCard,
   withdrawCard,
   type InsightCard,
+  type InsightStale,
   type MineView,
   type ProjectRow,
   type ProjectView,
+  type ReviewView,
   type RiskProject,
 } from '../api/insights.api';
 import { searchSubjectTasks, type SubjectTaskRow } from '../api/chat.api';
 import { STAGE_CODES } from '../components/chat/subject';
 import '../styles/insights.css';
 
-type TabKey = 'projects' | 'mine';
+type TabKey = 'projects' | 'mine' | 'review';
 
 const PATH_LABEL: Record<string, string> = { web: '웹 심의', 'mcp-job': 'MCP 심의', 'mcp-workflow': 'Claude 워크플로' };
 const STATUS_LABEL: Record<string, string> = { waiting: '주제 확인 기다림', draft: '초안 — 나만 본다', confirmed: '확인', disputed: '반박 있음' };
@@ -37,6 +41,57 @@ function scopeText(scope: string[]): string {
   return scope
     .map((t) => (t === 'org' ? '조직 전체' : t.startsWith('aff:') ? `소속 ${t.slice(4)}` : t.startsWith('user:') ? '나만' : t.startsWith('plat:') ? `권한 ${t.slice(5)}` : t))
     .join(' · ');
+}
+
+/** 판 표지 — 서버가 읽을 때 셈한 것(기구 CAD 의 뒤 판 · 내용 바뀜). 낡았을 수 있으면 카드를 다시 읽어 뒤 판의 리스크 변경 심사 줄을 편다. */
+function StaleLine({ cardId, stale }: { cardId: string; stale: InsightStale }) {
+  const [full, setFull] = useState<InsightStale | null>(stale.risk_note ? stale : null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const open = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      const c = await fetchCard(cardId);
+      setFull(c.stale ?? { ...stale, risk_note: '판 표지를 다시 읽지 못했다' });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const diffs = full?.risk_diffs ?? [];
+  return (
+    <div className={`ins-stale ins-stale-${stale.state}`}>
+      <p className={stale.state === 'stale' ? 'ins-why' : 'ins-sub'}>
+        판 — {stale.say}
+        {stale.state === 'stale' && !full && (
+          <button type="button" className="btn-secondary ins-inline-btn" disabled={busy} onClick={() => void open()}>
+            뒤 판의 리스크 변경 심사 보기
+          </button>
+        )}
+      </p>
+      {full?.risk_note && <p className="ins-sub">{full.risk_note}</p>}
+      {diffs.map((d) => (
+        <div key={d.target_key} className="ins-risk">
+          <div>
+            <strong>리스크 변경 심사</strong> · {d.risk_project.code || d.risk_project.project_id}
+            {d.risk_project.name ? ` — ${d.risk_project.name}` : ''} · 대상 {d.target_key}
+            {d.error ? ` · 읽지 못했다(${d.error})` : ` · 변경 ${d.total ?? 0}건`}
+          </div>
+          {d.lines && d.lines.length > 0 && (
+            <ul className="ins-risk-list">
+              {d.lines.map((ln, i) => (
+                <li key={i}>{ln}</li>
+              ))}
+              {d.truncated && <li>… 나머지는 리스크 앱에서 본다</li>}
+            </ul>
+          )}
+        </div>
+      ))}
+      {err && <p className="ins-err">{err}</p>}
+    </div>
+  );
 }
 
 /** 카드 한 장 — 주인이면 확인 · 차수 · 주장 · 조직 공개 · 반박 · 거두기를 한다(쓰기는 세션 + CSRF — 서버가 주인인지 다시 본다). */
@@ -79,6 +134,8 @@ function InsightCardView({ card, onChanged }: { card: InsightCard; onChanged: ()
     <article className={`ins-card ins-${card.status}`}>
       <header className="ins-card-head">
         <span className={`ins-chip ins-chip-${card.status}`}>{STATUS_LABEL[card.status] ?? card.status}</span>
+        {card.stale?.state === 'stale' && <span className="ins-chip ins-chip-waiting">판이 바뀜</span>}
+        {card.same && <span className="ins-chip" title="같은 칸에서 주장 글이 같은 카드(내가 볼 수 있는 것만) — 합치지 않는다">같은 결론 {card.same.n}번</span>}
         <span className="ins-meta">
           {PATH_LABEL[card.path] ?? card.path} · {card.stage} · {card.owner}
           {card.mine ? ' (나)' : ''} · {day(card.created_at)}
@@ -120,6 +177,8 @@ function InsightCardView({ card, onChanged }: { card: InsightCard; onChanged: ()
         <p className="ins-why">반박 — {card.disputed_by.map((d) => `${d.by ?? '사람'}${d.note ? `: ${d.note}` : ''}`).join(' / ')}</p>
       )}
       {card.continues && <p className="ins-sub">이어하기 — 앞 카드 {card.continues}</p>}
+      {card.stale && <StaleLine cardId={card.id} stale={card.stale} />}
+      {card.same && <p className="ins-sub">같은 결론의 다른 카드 — {card.same.ids.join(' · ')}</p>}
       {card.mine && card.status !== 'waiting' && (
         <div className="ins-actions">
           {card.status === 'draft' && (
@@ -282,6 +341,10 @@ function ProjectDetail({ spTask }: { spTask: string }) {
   return (
     <section className="ins-project">
       <h2>과제 「{view.sp_task}」</h2>
+      {view.previous_keys && view.previous_keys.length > 0 && (
+        <p className="ins-sub">옛 key 로 남은 카드를 함께 모았다 — {view.previous_keys.map((k) => `「${k}」`).join(' · ')}</p>
+      )}
+      {view.keys_note && <p className="ins-why">{view.keys_note}</p>}
       {view.risk_error && <p className="ins-why">{view.risk_error}</p>}
       {view.note_rows && <p className="ins-why">{view.note_rows}</p>}
       {view.rounds.length === 0 && <p className="ins-meta">내가 볼 수 있는 카드 · 리스크 심사가 없다.</p>}
@@ -400,6 +463,46 @@ function MineTab() {
   );
 }
 
+const REASON_LABEL: Record<string, string> = {
+  waiting: '주제 확인',
+  disputed: '반박',
+  stale: '판이 바뀜',
+  draft: '초안',
+  round_unknown: '차수 모름',
+  admin_disputed: '남의 반박 카드(관리자)',
+};
+
+/** 검토 줄 — 내가 손댈 카드와 까닭. 까닭의 글은 서버가 준다(관리자에게는 반박이 달린 남의 카드도 선다). */
+function ReviewTab() {
+  const [view, setView] = useState<ReviewView | null>(null);
+  const [err, setErr] = useState('');
+  const load = useCallback(() => {
+    setErr('');
+    fetchReview().then(setView, (e: Error) => setErr(e.message));
+  }, []);
+  useEffect(load, [load]);
+  if (err) return <ErrorBanner message={err} />;
+  if (!view) return <p className="ins-meta">읽는 중…</p>;
+  return (
+    <section className="ins-cell">
+      <h3>손댈 카드 {view.items.length}</h3>
+      <p className="ins-meta">
+        주제 확인 · 반박 · 설계 판이 바뀐 것 · 초안 · 차수 모름 차례다. 판이 바뀌었는지는 지금 읽어 셈한 것이다(기구 CAD 의 뒤 판 · 내용 바뀜).
+      </p>
+      {view.items.length === 0 && <p className="ins-meta">손댈 카드가 없다.</p>}
+      {view.items.map((it) => (
+        <div key={it.card.id}>
+          <p className="ins-why">
+            {it.reasons.map((r) => REASON_LABEL[r] ?? r).join(' · ')} — {it.say}
+          </p>
+          <InsightCardView card={it.card} onChanged={load} />
+          {it.card.status === 'waiting' && it.card.mine && <SubjectConfirm card={it.card} onChanged={load} />}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export default function InsightsPage() {
   const [tab, setTab] = useState<TabKey>('projects');
   return (
@@ -409,12 +512,13 @@ export default function InsightsPage() {
         tabs={[
           { key: 'projects', label: '과제' },
           { key: 'mine', label: '내 카드' },
+          { key: 'review', label: '검토 줄' },
         ]}
         value={tab}
         onChange={setTab}
         label="과제 인사이트"
       >
-        {tab === 'projects' ? <ProjectsTab /> : <MineTab />}
+        {tab === 'projects' ? <ProjectsTab /> : tab === 'mine' ? <MineTab /> : <ReviewTab />}
       </Tabs>
     </Page>
   );
