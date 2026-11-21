@@ -203,8 +203,9 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
         {!msg.streaming && msg.confirm && card && <ConfirmCard card={msg.confirm} state={card} />}
         {!msg.streaming && msg.meta?.self_check && <CheckNote check={msg.meta.self_check} />}
       </div>
-      {/* '/보고서' 저장 답 · RA 보내기 알림의 보고서를 발표자료로(docs/wda-deck) — 심의 결과는 DelibView 가 결과 카드 옆에 둔다 */}
-      {!hasDelib && deck && <DeckSpot report={deck} />}
+      {/* '/보고서' 저장 답 · RA 보내기 알림의 보고서를 발표자료로(docs/wda-deck) — 심의 결과는 DelibView 가 결과 카드 옆에, 분석 루틴의 RA 초안은
+          RoutineView 가 초안 줄 아래에 둔다(초안 번호를 원장과 맞댄다) */}
+      {!hasDelib && !msg.routine && deck && <DeckSpot report={deck} />}
       {!msg.streaming && msg.text && (
         <div className="msg-actions">
           <CopyAction text={msg.text} />

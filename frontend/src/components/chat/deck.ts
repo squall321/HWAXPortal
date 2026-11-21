@@ -9,7 +9,8 @@ import type { Message } from '../../types/chat';
 export interface DeckReport {
   id: number;
   title: string;
-  /** deliberation — 심의 결과 카드 · '/보고서' 저장 답(에이전트 서버가 deliberation 템플릿으로 만든다). other — RA 보내기 알림(__import_blank__). */
+  /** deliberation — 심의 결과 카드 · '/보고서' 저장 답 · 분석 루틴의 RA 초안(에이전트 서버 · 게이트웨이가 deliberation 템플릿으로 만든다).
+   *  other — RA 보내기 알림(__import_blank__). */
   template: 'deliberation' | 'other';
 }
 
@@ -25,7 +26,8 @@ function posInt(v: unknown): number | null {
   return null;
 }
 
-/** 이 메시지 옆에 '발표자료로' 단추가 설 보고서 — 심의 결과(delib.outcome) · '/보고서' 답(raReport) · RA 보내기 알림(활동 근거). 없으면 null. */
+/** 이 메시지 옆에 '발표자료로' 단추가 설 보고서 — 심의 결과(delib.outcome) · '/보고서' 답(raReport) · 분석 루틴의 RA 초안
+ *  (routine.report.ra_report_id) · RA 보내기 알림(활동 근거). 없으면 null. */
 export function deckReportOf(msg: Message): DeckReport | null {
   if (msg.role !== 'assistant' || msg.streaming) return null;
   const o = msg.delib?.outcome;
@@ -36,6 +38,13 @@ export function deckReportOf(msg: Message): DeckReport | null {
   if (msg.raReport) {
     const id = posInt(msg.raReport.id);
     if (id) return { id, title: msg.raReport.title ?? '', template: 'deliberation' };
+  }
+  // 분석 루틴의 RA 초안(M2) — 종전 'deliberation' 템플릿으로 올린다(게이트웨이 routine_report_submit). 박스 파일(ra_formats)로 템플릿을 바꾼
+  // 박스에서도 화면은 심의 보고서와 같은 문에 세운다(더 좁은 쪽) — 서버가 RA 에서 읽은 실제 템플릿으로 다시 본다(WD-D29).
+  const rr = msg.routine?.report;
+  if (rr) {
+    const id = posInt(rr.ra_report_id);
+    if (id) return { id, title: msg.routine?.title ?? '', template: 'deliberation' };
   }
   for (const a of msg.activity ?? []) {
     if (a.origin !== 'upload' || !a.tool || !RA_UPLOAD_TOOLS.has(a.tool) || a.ok === false) continue;

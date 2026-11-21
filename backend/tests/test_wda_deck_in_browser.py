@@ -85,6 +85,8 @@ _STUB = r"""
       return json({ url: window.__raOpenUrl || '/report-archive/' });
     }
     if (u === '/auth/refresh') return json({ ok: true });
+    // 분석 루틴의 실행 원장(RoutineView 가 흐르지 않는 메시지를 다시 읽는다) — __runView 가 있을 때만
+    if (u.startsWith('/routines-api/runs/')) return window.__runView ? json(window.__runView) : json({ detail: 'Not Found' }, 404);
     if (u === '/agent/deck/jobs' && method === 'POST') return json(window.__created);
     if (u === '/agent/deck/jobs' && method === 'GET') {
       if (window.__listOff) return json({ detail: 'Not Found' }, 404);
@@ -180,6 +182,46 @@ async function makeJob(page) {
 }
 
 const SCENARIOS = {
+  // 분석 루틴의 RA 초안(M2) — 심의 보고서와 같은 문(심의 꼴이 active 일 때만), 단추는 루틴 칸 안에 하나만. 초안 번호가 원장에만 있는
+  // 메시지(끝에 묻는 루틴을 뒤에 올렸다 · 새로고침 뒤의 포인터)는 원장을 읽은 뒤 선다
+  async routine(browser) {
+    const seedRoutine = (routine) => {
+      const k = 'hwax.chat.u1@corp.example.conversations';
+      const convs = JSON.parse(localStorage.getItem(k));
+      convs[0].messages.push({ role: 'assistant', content: '루틴 보고서 글', ts: 9, routine });
+      localStorage.setItem(k, JSON.stringify(convs));
+    };
+    const WITH = { run_id: 'run-1', title: '굽힘 루틴', state: 'done', steps: [], report: { ra_upload: 'auto', ra_report_id: 91 } };
+    const hidden = await open(browser, { before: `(${seedRoutine})(${JSON.stringify(WITH)})` });
+    const without = await buttons(hidden);
+    const page = await open(browser, { status: STATUS(true), before: `(${seedRoutine})(${JSON.stringify(WITH)})` });
+    const total = await buttons(page);
+    const inRoutine = await page.evaluate(() => document.querySelectorAll('.rv .deck-go').length);
+    const inMsg = await page.evaluate(() => {
+      const rv = document.querySelector('.rv');
+      return rv ? rv.closest('.msg').querySelectorAll('.deck-go').length : -1;
+    });
+    await page.evaluate((q) => { window.__created = q; window.__states = [q]; window.__list = [q]; }, { ...QUEUED, report: { id: 91, title: '굽힘 루틴' } });
+    await page.locator('.rv .deck-go').click();
+    await page.locator('.deck-panel .upl-go').click();
+    await page.getByText('발표자료 만드는 중').first().waitFor();
+    const create = (await calls(page, '/agent/deck/jobs')).find((c) => c.method === 'POST' && c.url === '/agent/deck/jobs');
+    // 원장에만 있는 초안 번호 — 메시지에는 실행 포인터뿐이다
+    const VIEW = { run: { id: 'run-2', routine_id: 'r', version_no: 1, title: '원장 루틴', executor: 'chat', state: 'done', reason: null, calls: 0,
+                          limits: { minutes: 1, calls: 1 }, limit_reached: null, report_ready: true, ra_report_id: 92, ra_error: null },
+                   inputs: {}, purpose: '', steps: [], next_step: null, report: { title: '원장 루틴', sections: [], upload: 'ask' } };
+    const POINTER = { run_id: 'run-2', title: '원장 루틴', state: 'done', steps: [] };
+    const ledger = await open(browser, { status: STATUS(true), ents: ['feat:chat', 'feat:routines', 'plat:webdesign', 'plat:reportarchive'],
+      before: `window.__runView = ${JSON.stringify(VIEW)}; (${seedRoutine})(${JSON.stringify(POINTER)})` });
+    await ledger.waitForFunction(() => document.querySelectorAll('.rv .deck-go').length === 1);
+    await ledger.evaluate((q) => { window.__created = q; window.__states = [q]; window.__list = [q]; }, { ...QUEUED, report: { id: 92, title: '원장 루틴' } });
+    await ledger.locator('.rv .deck-go').click();
+    await ledger.locator('.deck-panel .upl-go').click();
+    await ledger.getByText('발표자료 만드는 중').first().waitFor();
+    const create2 = (await calls(ledger, '/agent/deck/jobs')).find((c) => c.method === 'POST' && c.url === '/agent/deck/jobs');
+    return { without, total, inRoutine, inMsg, create: create && create.body, create2: create2 && create2.body,
+             errors: [...hidden.__errors, ...page.__errors, ...ledger.__errors] };
+  },
   // 심의 꼴이 없는 WDA — '/보고서'(deliberation)는 숨고 RA 보내기 알림은 선다. 꼴이 서면 둘 다
   async spots(browser) {
     const page = await open(browser);
@@ -513,6 +555,16 @@ def test_심의_꼴이_없으면_보고서_저장_답은_숨고_RA_보내기_알
     s = seen("spots")
     assert s["without"] == 1 and "보고서 초안을 만들었습니다" in s["titles"][0], "사용자 결정 U-6 — 심의 형식이 설 때까지 숨긴다"
     assert s["withFormat"] == 2
+
+
+def test_분석_루틴의_RA_초안에도_단추가_서고_심의_보고서와_같은_문에_걸린다(seen):
+    """M2(체크리스트 184행) — 루틴 RA 초안은 deliberation 템플릿이다. 심의 꼴이 active 가 아니면 숨고(U-6 · U-7), 서면 루틴 칸 안에 하나만.
+    초안 번호가 원장에만 있어도(끝에 묻는 루틴 · 새로고침 뒤의 포인터) 원장을 읽은 뒤 선다."""
+    s = seen("routine")
+    assert s["without"] == 1, "심의 꼴이 없으면 루틴 초안의 단추도 숨는다(RA 보내기 알림만 선다)"
+    assert s["total"] == 3 and s["inRoutine"] == 1 and s["inMsg"] == 1, "'/보고서' · RA 알림 · 루틴 — 루틴 메시지에는 단추가 하나뿐이다"
+    assert s["create"] == {"report_id": 91, "conversation_id": "srv-A", "targets": ["pptx", "pdf"], "doc_style": "report"}
+    assert s["create2"]["report_id"] == 92, "원장이 준 초안 번호로 맡긴다"
 
 
 def test_권한이나_스위치가_없으면_단추가_없다(seen):

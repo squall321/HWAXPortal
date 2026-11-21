@@ -40,6 +40,28 @@ def test_RA_보내기_알림은_그_밖의_템플릿이다():
     assert _report(_ra_notice("docforge_convert", {"report_id": "42", "title": "정밀"}))["id"] == 42
 
 
+def _routine(report, **kw) -> dict:
+    return {"id": "r", "role": "assistant", "text": "보고서", **kw,
+            "routine": {"run_id": "run-1", "title": "굽힘 루틴", "state": "done", "steps": [], **({"report": report} if report is not None else {})}}
+
+
+def test_분석_루틴의_RA_초안은_deliberation_템플릿이다():
+    """M2(체크리스트 184행) — 루틴 RA 초안은 종전 'deliberation' 템플릿으로 만든다(게이트웨이 routine_report_submit) — 심의 보고서와 같은 문에 선다."""
+    assert _report(_routine({"ra_upload": "auto", "ra_report_id": 91})) == {"id": 91, "title": "굽힘 루틴", "template": "deliberation"}
+    assert _report(_routine({"ra_upload": "ask", "ra_report_id": "92"}))["id"] == 92, "원장은 번호를 글로도 준다"
+
+
+@pytest.mark.parametrize("msg", [
+    _routine(None),                                                  # 보고서 프레임이 없다(도는 중 · 서버 사본의 포인터만)
+    _routine({"ra_upload": "ask", "ra_report_id": None}),            # 끝에 묻는 루틴 — 아직 올리지 않았다
+    _routine({"ra_upload": "auto", "ra_report_id": "", "ra_error": "RA 토큰이 없다"}),
+    _routine({"ra_upload": "auto", "ra_report_id": 0}),
+    _routine({"ra_upload": "auto", "ra_report_id": 91}, streaming=True),
+])
+def test_RA_초안이_없는_루틴_메시지에는_단추가_서지_않는다(msg):
+    assert _report(msg) is None
+
+
 @pytest.mark.parametrize("msg", [
     {"id": "u", "role": "user", "text": "x", "raReport": {"id": 5, "title": ""}},
     {"id": "s", "role": "assistant", "text": "x", "raReport": {"id": 5, "title": ""}, "streaming": True},

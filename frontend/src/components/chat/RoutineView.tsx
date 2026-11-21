@@ -5,6 +5,8 @@ import { useCan } from '../../auth/useCan';
 import { routineStopNote } from '../../lib/chatErrors';
 import { useChat } from '../../state/ChatContext';
 import type { Message, RoutineState } from '../../types/chat';
+import { DeckSpot } from './DeckSpot';
+import { deckReportOf } from './deck';
 import { TextBlock } from './renderers/TextBlock';
 import {
   ROUTINE_POLL_MS,
@@ -180,6 +182,9 @@ export function RoutineView({ msg }: { msg: Message }) {
   // run_id 와 upload_ra 를 보내면 에이전트가 routine_report_submit(upload=true) 를 부른다(포털은 저장본을, 게이트웨이는 그 사람 명의 초안을 —
   // 이미 있으면 다시 만들지 않는다). 게이트웨이의 ra_next 는 MCP 클라이언트에게 하는 지시라 화면에 내지 않는다.
   const askRa = allowed && !live && state === 'done' && raAskable(rep) && !hasRa;
+  // 발표자료로(docs/wda-deck M2) — RA 초안 번호는 원장이 더 새것이다(끝에 묻는 루틴을 뒤에 올리면 원장에만 있다). 그래서 메시지가 아니라 원장과
+  // 맞댄 실행(rt)으로 본다 — 이 메시지의 단추는 여기서만 세운다(MessageList 는 루틴 메시지를 건너뛴다).
+  const deckRep = live ? null : deckReportOf({ ...msg, routine: rt });
 
   const resume = () => {
     setErr('');
@@ -409,6 +414,7 @@ export function RoutineView({ msg }: { msg: Message }) {
           )}
         </div>
       )}
+      {deckRep && <DeckSpot report={deckRep} />}
       {err && (
         <p className="rv-err" role="alert">
           {err}
