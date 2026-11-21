@@ -21,7 +21,7 @@
 - [ ] SF-5 ↔ ST-7 어느 쪽이 규약 변환을 맡는지(StepForge · 브리지가 정함)
 - [ ] BG-3 큰 파일(100 MB 급) · cavity_step 을 dev 에서 한 번 옮겨 보기
 - [ ] BG-3 · ST-10 업로드에 scenario.json 더하기 — ste 답 뒤 어느 쪽이 짓는지 정함
-- [ ] BG-4 `gas_transport_lookup` — S = P/D 추정(`derived`) · 온도 차 칸
+- [ ] BG-4 `gas_transport_lookup` — S = P/D 추정(`derived`) 지음(게이트웨이 통합 가지 — 같은 시료 · 온도 1 K 안 · O2 일 때만, 올림은 통합 가지와 함께) · 온도 차 칸은 이미 있다(`delta_K`) · 층별 조회는 SF-4 의 material_id 뒤
 - [ ] BG-5 · PT-1 토큰이 없을 때의 답(등록 방법) 확인(받은 편지함 2026-11-22 Q7 — 답 받기) · 공용 프리셋은 사용자에게 다시 묻기(SS-6)
 - [x] PT-2 운영 박스에서 StepForge 줄의 build 가 비는 까닭 — 받은 편지함으로 묻기(`../cae00-inbox/2026-11-22.md` Q6) — 답 받기
 
