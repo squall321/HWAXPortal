@@ -47,6 +47,7 @@ from app.procedures.models import (
 )
 from app.procedures.runner import STEP_MAX as _STEP_MAX
 from app.procedures.runner import RunnerError
+from app.procedures.store import BatchTaken
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/procedures-api", tags=["procedures"])
@@ -851,13 +852,21 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
     base = {k: v for k, v in (run.get("inputs") or {}).items() if k in declared}
 
     batch_id = f"b-{run_id}-{ix}"
-    made = []
-    for val in want:
-        new_id = store.create_run(
+    # 대상마다 실행 하나 — 원장이 (배치, 모드, 대상)을 한 문장으로 잡는다(W-113). 같은 펼치기가 두 번 오면(두 번 누름 · 다시 보냄) 둘째는
+    # 409 이고 아무것도 만들거나 띄우지 않는다 — 종전엔 같은 배치 id 로 실행이 두 벌 생겨 live 면 대상마다 바깥 호출이 두 번 나갔다.
+    # 계획으로 본 뒤 live 로 다시 펼치는 것은 모드가 달라 한 번 더 된다.
+    try:
+        ids = store.create_batch_runs(
             owner_sub=principal.subject, run_by=principal.subject,
-            procedure_version_id=run["procedure_version_id"],
-            inputs={**base, into: val}, origin="batch", mode=body.mode,
-            title=f"{run.get('title') or spec.title} — {val}", batch_id=batch_id)
+            procedure_version_id=run["procedure_version_id"], batch_id=batch_id, mode=body.mode,
+            items=[(val, {**base, into: val}, f"{run.get('title') or spec.title} — {val}") for val in want])
+    except BatchTaken as exc:
+        raise AuthError(
+            f"이미 펼친 대상입니다({body.mode}): {exc.values[:5]}{' …' if len(exc.values) > 5 else ''} — 같은 대상을 두 번 돌리지 "
+            f"않습니다. 배치 표 {batch_id} 에서 그 실행을 보고, 다시 돌리려면 그 실행의 '재개' · '이 값으로 다시 돌리기' 를 쓰세요"
+            "(안 겹치는 대상만 골라 다시 보내면 그것은 펼칩니다)", status_code=409) from None
+    made = []
+    for val, new_id in zip(want, ids):
         # 고른 값이 이미 범위에 있으니 **그 선택 단계 다음부터** 돈다.
         _spawn(runner.run(run_id=new_id, spec=spec, principal=principal, start_at=ix + 1),
                f"batch {new_id}",

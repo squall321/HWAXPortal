@@ -1924,3 +1924,90 @@ def test_즉석_단계는_사람_확인이_필요한_단계를_받지_않는다(
         assert r.status_code == 422, (body, r.status_code, r.text)
         assert "즉석으로 돌릴 수 없습니다" in r.json()["detail"], r.json()
     assert app.state.procedures_store.list_steps(rid) == [], "거른 단계는 기록도 안 남긴다"
+
+
+# ── 펼치기를 두 번 보내도 한 벌만(W-113, 사용자 결정 11-22) ───────────────────────────────────────
+# 펼치기는 새 실행을 만드는 창구라 기다리는 실행을 잡는 `_take`(W-110 · W-112)가 맞지 않았다. 같은 요청이 두 번 가면 같은 배치 id 로 실행이
+# 두 벌 생겼고, live 로 펼치면 대상마다 바깥 호출이 두 번 나갔다. 이제 (배치, 모드, 대상) 열쇠를 원장이 한 문장으로 잡는다 — 둘째는 409 다.
+def test_펼치기를_두_번_보내도_실행은_한_벌이고_바깥_호출은_대상마다_한_번이다(user):
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spec = {"title": "t", "vars": [], "steps": [
+        {"backend": "ra", "tool": "find_parts", "args": {}, "select": {"from": "parts", "save": "name", "as": "part"}},
+        {"backend": "ra", "tool": "register_part", "args": {"part": "{{part}}"}}]}
+    vid = st.create_procedure(owner_sub=me, spec=spec, title="t")["version_id"]
+    rid = st.create_run(owner_sub=me, run_by=me, procedure_version_id=vid, inputs={}, origin="replay", mode="live")
+    st.begin_step(rid, 0, backend="ra", tool="find_parts", args={}, mode="live")
+    st.finish_step(rid, 0, ok=False, state="pending", stage="select:ask", error=None,
+                   notes={"pick_into": "part", "candidates": [{"i": 0, "label": "P1", "value": "PANEL_1"},
+                                                              {"i": 1, "label": "P2", "value": "PANEL_2"}]})
+    st.set_run_state(rid, "gated", stage="step:0")
+    gw = _HeldGateway(["ra_register_part", "ra_find_parts"])
+    started, finished = gw.install(c)
+    first = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={"mode": "live"}, headers=h)
+    second = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={"mode": "live"}, headers=h)
+    gw.release.set()
+    _until(lambda: started and len(finished) == len(started), "펼친 실행들이 끝나기")
+    assert first.status_code == 202 and first.json()["count"] == 2, first.text
+    assert second.status_code == 409, (second.status_code, second.text[:300])
+    detail = second.json()["detail"]
+    assert "이미 펼친" in detail and first.json()["batch_id"] in detail and "PANEL_1" in detail, detail
+    assert len(started) == 2, f"펼친 실행기가 {len(started)}개 떴다(대상은 둘이다)"
+    sent = sorted(a["part"] for n, a in gw.calls if n == "ra_register_part")
+    assert sent == ["PANEL_1", "PANEL_2"], f"바깥 호출이 대상마다 한 번이 아니다: {sent}"
+    rows = st.list_runs(owner_sub=me, batch_id=first.json()["batch_id"])
+    assert sorted(r["inputs"]["part"] for r in rows) == ["PANEL_1", "PANEL_2"], [r["inputs"] for r in rows]
+
+
+def test_펼치기_둘째_요청은_겹치는_대상이_하나라도_있으면_아무것도_만들지_않는다(user):
+    """일부만 겹쳐도 통째로 거절한다 — 새 대상만 골라 만들면 요청 하나가 반만 된 채 202 로 읽힌다. 겹치지 않는 대상만 다시 보내면 된다."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    url = f"{PREFIX}/runs/{rid}/steps/0/fan-out"
+    assert c.post(url, json={"values": ["PANEL_1"], "mode": "plan"}, headers=h).status_code == 202
+    n = len(c.get(f"{PREFIX}/runs", headers=h).json()["runs"])
+    r = c.post(url, json={"mode": "plan"}, headers=h)          # 전부 — PANEL_1 이 겹친다
+    assert r.status_code == 409 and "PANEL_1" in r.json()["detail"] and "PANEL_2" not in r.json()["detail"], r.text
+    assert len(c.get(f"{PREFIX}/runs", headers=h).json()["runs"]) == n, "거절한 요청이 실행을 남겼다"
+    ok = c.post(url, json={"values": ["PANEL_2"], "mode": "plan"}, headers=h)   # 안 겹치는 대상은 그대로 된다
+    assert ok.status_code == 202 and ok.json()["count"] == 1, ok.text
+
+
+def test_계획으로_펼친_뒤_live_로_한_번_더_펼칠_수_있다(user):
+    """기본이 계획 모드다 — 사람이 계획을 보고 live 로 다시 펼친다. 모드가 다르면 다른 요청이다(같은 모드는 한 번)."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    url = f"{PREFIX}/runs/{rid}/steps/0/fan-out"
+    assert c.post(url, json={"mode": "plan"}, headers=h).status_code == 202
+    live = c.post(url, json={"mode": "live"}, headers=h)
+    assert live.status_code == 202 and live.json()["count"] == 2, live.text
+    assert c.post(url, json={"mode": "live"}, headers=h).status_code == 409
+
+
+def test_옛_원장에_펼치기_열쇠_칸이_붙고_옛_배치_실행은_그대로다(tmp_path):
+    """돌던 원장 — `batch_key` 칸은 이관으로 붙고(없던 행은 NULL), 옛 판이 만든 배치 실행은 열쇠가 없어 새 펼치기를 막지 않는다."""
+    import sqlite3
+
+    s = Settings(procedures_store_path=str(tmp_path / "old.sqlite"))
+    old = ProceduresStore(s)
+    old.close()
+    con = sqlite3.connect(str(tmp_path / "old.sqlite"))
+    con.execute("DROP INDEX IF EXISTS ux_runs_batch_key")
+    con.execute("ALTER TABLE runs DROP COLUMN batch_key")
+    con.execute("INSERT INTO runs (id, owner_sub, run_by, inputs_json, origin, mode, state, started_at, batch_id)"
+                " VALUES ('old1','u','u','{}','batch','plan','done',1,'b-x-0')")
+    con.commit()
+    con.close()
+    st = ProceduresStore(s)
+    assert st.get_run("old1")["batch_id"] == "b-x-0"
+    made = st.create_batch_runs(owner_sub="u", procedure_version_id="v", batch_id="b-x-0", mode="plan",
+                                items=[("A", {"part": "A"}, "t — A")])
+    assert len(made) == 1
+    from app.procedures.store import BatchTaken
+
+    with pytest.raises(BatchTaken) as ei:
+        st.create_batch_runs(owner_sub="u", procedure_version_id="v", batch_id="b-x-0", mode="plan",
+                             items=[("B", {"part": "B"}, "t — B"), ("A", {"part": "A"}, "t — A")])
+    assert ei.value.values == ["A"], ei.value.values
+    assert len(st.list_runs(owner_sub="u", batch_id="b-x-0")) == 2, "거절한 묶음의 앞 대상(B)이 남았다 — 한 트랜잭션이 아니다"
