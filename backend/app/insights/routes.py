@@ -379,18 +379,14 @@ async def confirm(cid: str, request: Request, principal: Principal = Depends(_wr
                   settings: Settings = Depends(get_settings)) -> dict:
     """주인의 확인 — 초안을 같은 소속에 연다. 범위는 [aff:<주인의 지금 포털 원장 소속>] + 근거 앱의 plat 토큰(포털 권한표로 푼다 — 앱을 몰랐던
     도구는 지금 게이트웨이 도구 지도로 다시 푼다). 주인에게 소속이 없으면 확인은 하되 주인만 보고 까닭을 단다(PLAN §6.2 — 더 좁게 막으면 그 선에서
-    멈춘다). MCP 잡이 실은 소속(자칭)은 쓰지 않는다. 앞선 인사이트(insight_*)를 근거로 쓴 카드는 원래 카드들의 범위를 이어받는 규칙(M3) 전까지
-    주인만 본다(반대 검토 11-02 의 3)."""
+    멈춘다). MCP 잡이 실은 소속(자칭)은 쓰지 않는다. 앞선 인사이트(insight_*)를 근거로 쓴 카드는 읽은 카드들의 범위를 다 담는다(M3 — 읽은 카드를
+    모르거나 담을 수 없으면 주인만 본다)."""
     r, v = await _mine_or_404(request, cid, principal)
     if r["status"] != "draft":
         raise AuthError("확인할 수 있는 것은 초안이다" + (" — 주제를 먼저 확인한다(기다림 줄)" if r["status"] == "waiting" else ""),
                         status_code=409)
     card = dict(r.get("card") or {})
     now = int(time.time())
-    if C.insight_derived(r):
-        return await _save(request, cid, v, r, status="confirmed", scope=[f"user:{v.email}"], confirmed_at=now, confirmed_by=v.email,
-                           scope_note="앞선 인사이트(insight_find · insight_get)를 근거로 썼다 — 그 카드들의 보이는 범위를 이어받는 규칙(M3)이 "
-                                      "서기 전까지 주인만 본다")
     got = await _apps_now(settings, card)
     if got is None:
         raise AuthError("근거 도구의 앱을 지금 알 수 없다(게이트웨이 도구 지도에 닿지 못했다) — 범위를 정하지 못해 확인을 미룬다. 잠시 뒤 다시 확인한다",
@@ -413,6 +409,17 @@ async def confirm(cid: str, request: Request, principal: Principal = Depends(_wr
     if card.get("untracked"):
         what = " · ".join(_UNTRACKED_WORDS.get(str(u), str(u)) for u in card["untracked"])
         notes.append(f"범위를 모르는 입력({what})이 있어 같은 소속까지다 — 조직 공개는 열리지 않는다")
+    if C.insight_derived(r):
+        # 앞선 인사이트를 근거로 쓴 카드 — 읽은 카드들의 범위를 다 담는다(PLAN §6.2 최소 범위 · M3). 어느 카드를 읽었는지 모르거나 담을 수 없으면
+        # 주인만 본다(종전 — 반대 검토 11-02 의 3). 읽은 카드는 근거 표지의 insight_get 인자(카드 id)로 안다 — 포털이 깐 항목이 그 꼴이다(reuse).
+        ids, why = C.insight_sources(r)
+        if ids is not None:
+            st = _store(request)
+            scope, why = C.inherit_scope(scope, [await asyncio.to_thread(st.get, i) for i in ids], v.email)
+        else:
+            scope, why = [f"user:{v.email}"], f"{why} — 그 카드들의 범위를 이어받지 못해 주인만 본다"
+        if why:
+            notes.append(why)
     return await _save(request, cid, v, r, status="confirmed", scope=scope, scope_note=" · ".join(notes) or None, confirmed_at=now,
                        confirmed_by=v.email, **fields)
 

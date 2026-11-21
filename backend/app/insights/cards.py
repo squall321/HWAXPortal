@@ -173,6 +173,13 @@ def visible(row: dict, v: Viewer) -> tuple[bool, bool]:
     return False, False
 
 
+def visible_tasks(scopes: list[dict], v: Viewer) -> set[str]:
+    """그 사람에게 보이는 카드가 있는 과제 key 들 — store.task_scopes 의 줄을 시야 규칙(visible)으로 거른다. 관리자 표지는 보지 않는다(범위 밖
+    읽기는 과제를 모으거나 근거로 까는 데 쓰지 않는다)."""
+    plain = Viewer(email=v.email, sub=v.sub, aff=v.aff, groups=v.groups, admin=False)
+    return {str(r["sp_task"]) for r in scopes if r.get("sp_task") and visible(r, plain)[0]}
+
+
 def plat_tokens(apps: list, policy) -> list:
     """근거 앱(게이트웨이 백엔드 키) → 범위의 plat 토큰. 포털 권한표(gateway: 칸)로 풀고 plat: 키만 단다 — 표에 없는 백엔드 · 게이트웨이 자체(_gateway)는
     토큰이 없다(권한표의 '표에 없는 백엔드는 공개' 와 같다)."""
@@ -189,13 +196,88 @@ def evidence_known(row: dict) -> bool:
             and not card.get("apps_unknown") and not card.get("untracked"))
 
 
-# 앞선 인사이트를 읽는 게이트웨이 도구(insight_find · insight_get)의 머리 — 그 도구를 근거로 쓴 카드는 원래 카드들의 범위를 이어받아야 하는데(PLAN
-# §6.2 최소 범위) 어느 카드를 읽었는지 표지가 없다. 이어받는 규칙(M3)이 서기 전까지 확인은 주인만 본다(반대 검토 11-02 의 3).
+# 앞선 인사이트를 읽는 게이트웨이 도구(insight_find · insight_get)의 머리 — 그 도구를 근거로 쓴 카드는 원래 카드들의 범위를 이어받는다(PLAN §6.2
+# 최소 범위 · M3 — 아래 insight_sources · inherit_scope). 어느 카드를 읽었는지 모르면 확인해도 주인만 본다(반대 검토 11-02 의 3).
 INSIGHT_TOOL_HEAD = "insight_"
+INSIGHT_GET = "insight_get"
+CALLS_MAX = 60      # 근거 표지 수 상한 — 엔진 deliberation._INSIGHT_CALLS_MAX 와 같다(시험이 견준다). 차면 뒤 표지가 끊겼을 수 있다
+# 호출자가 도구 칸에 적는 꼴(맨 이름 · mcp__<서버>__<도구> · <앱>.<도구> · <앱>:<도구>) — 엔진 deliberation._INSIGHT_EV_TOOL_RE 와 같다(시험이 견준다)
+_INSIGHT_NAME_RE = re.compile(r"(?:^|__|[.:/])" + INSIGHT_TOOL_HEAD)
+_INSIGHT_GET_RE = re.compile(r"(?:^|__|[.:/])" + INSIGHT_GET + "$")
+# 근거 표지의 인자에서 카드 id — JSON 글('{"id": "ins:…"}')과 엔진이 사전을 글로 옮긴 꼴("{'id': 'ins:…'}") 둘 다 읽는다
+_INSIGHT_ID_RE = re.compile(r"""^\s*\{\s*['"]id['"]\s*:\s*(['"])(ins:(?:web|delib|wf):[^'"\\]{1,290})\1\s*\}\s*$""")
+
+
+def insight_tool(name) -> bool:
+    """도구 이름이 과제 인사이트 도구인가(머리 insight_ — 호출자가 적는 여러 꼴)."""
+    return isinstance(name, str) and bool(_INSIGHT_NAME_RE.search(name.strip().lower()))
 
 
 def insight_derived(row: dict) -> bool:
     """앞선 인사이트를 근거로 썼나 — 근거 도구 · 표지에 insight_ 도구가 있다."""
     card = row.get("card") or {}
     names = [*(card.get("tools") or ()), *(c.get("tool") for c in card.get("calls") or () if isinstance(c, dict))]
-    return any(str(n or "").startswith(INSIGHT_TOOL_HEAD) for n in names)
+    return any(insight_tool(n) for n in names)
+
+
+def insight_sources(row: dict) -> tuple[list[str] | None, str]:
+    """앞선 인사이트를 근거로 쓴 카드가 읽은 카드 id 들 — (id 목록, "") 또는 (None, 까닭). 읽은 카드를 **다** 알 때만 목록을 낸다(틀릴 거면 닫힌
+    쪽으로) — 인사이트 표지가 전부 insight_get 이고 인자가 카드 id 하나일 때다. 찾기 결과를 묶음째 넘겼거나(insight_find) · 표지가 상한에서
+    끊겼거나 · 도구 이름만 있고 표지가 없으면(같은 심의의 앞 단이 넘긴 것) 모른다."""
+    card = row.get("card") or {}
+    calls = [c for c in card.get("calls") or () if isinstance(c, dict)]
+    if len(calls) >= CALLS_MAX:
+        return None, f"근거 표지가 상한({CALLS_MAX}건)에 차 읽은 카드를 다 알 수 없다"
+    ids: list[str] = []
+    for c in calls:
+        if not insight_tool(c.get("tool")):
+            continue
+        m = _INSIGHT_ID_RE.match(str(c.get("args") or ""))
+        if m is None or not _INSIGHT_GET_RE.search(str(c.get("tool")).strip().lower()):
+            return None, "앞선 인사이트를 카드 하나씩(insight_get + 카드 id)이 아닌 꼴로 넘겨 어느 카드를 읽었는지 알 수 없다"
+        if m.group(2) not in ids:
+            ids.append(m.group(2))
+    if not ids:
+        return None, "앞선 인사이트를 근거로 썼다는 표지만 있고 어느 카드인지 적힌 근거 표지가 없다"
+    return ids, ""
+
+
+def inherit_scope(base: list, sources: list[dict | None], owner_email: str) -> tuple[list, str]:
+    """앞선 인사이트를 근거로 쓴 카드의 확인 범위 — (범위 토큰, 까닭). base 는 그 카드 제 범위([aff:<주인의 지금 소속>] + 근거 앱의 plat 토큰),
+    sources 는 읽은 카드들의 원장 행이다(없는 id 는 None). PLAN §6.2 최소 범위 — 범위는 기댄 근거들의 범위 토큰을 다 담는다(org 는 그리고에서
+    아무것도 더하지 않는다). 읽은 카드가 없어졌거나 거뒀거나 아직 주인만 보는 것이면, 또는 서로 다른 소속 · 사람이 섞여 만족할 사람이 없으면 넓히지
+    못하고 주인만 본다."""
+    mine = [f"user:{owner_email}"]
+    toks: set = {str(t) for t in base or ()}
+    if not toks or any(t.startswith("user:") for t in toks):
+        return mine, ""          # 제 범위부터 주인만이다(소속 없음) — 부른 쪽이 그 까닭을 단다
+    for r in sources:
+        if r is None or r.get("status") not in SHARED:
+            return mine, "근거로 쓴 앞선 인사이트 가운데 지금은 없거나(거둠) 주인만 보는 카드가 있어 그 범위를 이어받지 못한다 — 주인만 본다"
+        got = {str(t) for t in r.get("scope") or ()}
+        if not got:
+            return mine, "근거로 쓴 앞선 인사이트의 범위를 읽지 못해 주인만 본다"
+        toks |= got
+    toks.discard("org")
+    affs = sorted(t for t in toks if t.startswith("aff:"))
+    if len(affs) != 1 or any(t.startswith("user:") for t in toks):
+        return mine, "근거로 쓴 앞선 인사이트의 범위(소속 · 사람)가 이 카드의 범위와 섞여 함께 볼 수 있는 사람이 없다 — 주인만 본다"
+    return [affs[0], *sorted(t for t in toks if not t.startswith("aff:"))], ""
+
+
+# ── 같은 결론 묶기(PLAN §8 중복) — 같은 (과제, 차수) 칸에서 정규화한 주장 글이 같은 카드. 묶어 보일 뿐 합치지 않는다 ──────────────────────────
+def claim_key(claim) -> str:
+    """주장 글의 견줄 꼴 — NFKC · 소문자 · 공백 덩어리 하나로. 빈 글은 빈 꼴(묶지 않는다)."""
+    if not isinstance(claim, str):
+        return ""
+    return " ".join(_SPACE_RE.sub(" ", unicodedata.normalize("NFKC", claim)).lower().split())
+
+
+def same_claims(rows: list[dict]) -> dict[str, list[str]]:
+    """{카드 id: 같은 결론인 다른 카드 id 들} — 받은 행들(읽는 사람이 볼 수 있는 같은 칸의 카드) 안에서만 센다. 둘 이상일 때만 싣는다."""
+    by: dict[str, list[str]] = {}
+    for r in rows:
+        k = claim_key(r.get("claim"))
+        if k:
+            by.setdefault(k, []).append(r["id"])
+    return {i: [x for x in ids if x != i] for ids in by.values() if len(ids) > 1 for i in ids}

@@ -98,6 +98,22 @@ class InsightStore:
         q = f"SELECT * FROM insight_cards WHERE {' AND '.join(where)} ORDER BY created_at DESC, id LIMIT ?"
         return [_row(r) for r in self._conn().execute(q, (*args, int(limit or ROWS_MAX))).fetchall()]
 
+    def task_scopes(self, *, viewer: str) -> list[dict]:
+        """과제 key 마다의 시야 칸(sp_task · owner_email · status · scope) — 그 사람의 것이거나 공유 상태인 카드만(거둔 것 · 기다림 줄은 뺀다),
+        같은 칸 묶음은 한 줄. 카드 본문을 읽지 않고 '이 사람에게 보이는 카드가 있는 과제' 를 가린다 — 범위 토큰은 부르는 쪽이 거른다
+        (cards.visible_tasks)."""
+        out = []
+        for r in self._conn().execute(
+                "SELECT DISTINCT sp_task, owner_email, status, scope_json FROM insight_cards WHERE sp_task IS NOT NULL"
+                " AND status NOT IN ('withdrawn', 'waiting') AND (owner_email = ? OR status IN ('confirmed', 'disputed'))",
+                (viewer.lower(),)).fetchall():
+            try:
+                scope = json.loads(r["scope_json"] or "[]")
+            except ValueError:
+                scope = []
+            out.append({"sp_task": r["sp_task"], "owner_email": r["owner_email"], "status": r["status"], "scope": scope})
+        return out
+
     def links(self, ids: list[str]) -> list[dict]:
         """그 카드들에 닿는 잇기(반박) — 한쪽 끝이 ids 안에 있는 것."""
         if not ids:

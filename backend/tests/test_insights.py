@@ -732,9 +732,10 @@ def test_도구_지도를_못_받은_때_지은_카드는_확인할_때_다시_�
     assert C.visible(row, _no_plat_viewer())[0] is False
 
 
-def test_앞선_인사이트를_근거로_쓴_카드는_범위를_이어받는_규칙_전까지_주인만_본다(env):
+def test_앞선_인사이트를_근거로_쓴_카드는_읽은_카드를_모르면_주인만_본다(env):
     """insight_find · insight_get 은 게이트웨이 자체 도구(_gateway)라 plat 토큰이 없어, plat:risk 카드를 근거로 지은 카드가 그 권한 없는 같은 소속에
-    열렸다(반대 검토 3). 원래 카드들의 범위를 이어받는 규칙(M3)이 서기 전까지 확인은 주인만 보고 까닭을 단다."""
+    열렸다(반대 검토 3). M3 부터 읽은 카드들의 범위를 이어받는다(tests/test_insight_reuse.py) — 찾기 결과를 묶음째 넘겨(insight_find) 어느 카드를
+    읽었는지 모르는 카드는 여전히 확인해도 주인만 보고 까닭을 단다."""
     c, st, _s = env
     chain = {**CARD, "calls": [{"ref": "call:2", "tool": "insight_find", "app": "_gateway", "args": "{}", "sha256": "1" * 64, "ok": True}],
              "tools": ["insight_find"], "apps": ["_gateway"], "apps_unknown": []}
@@ -742,7 +743,7 @@ def test_앞선_인사이트를_근거로_쓴_카드는_범위를_이어받는_�
     cid = "ins:web:y:r1:default"
     h = _login(c, "me@example.com")
     r = c.post(f"/insights-api/cards/{cid}/confirm", headers=h).json()
-    assert r["status"] == "confirmed" and r["scope"] == ["user:me@example.com"] and "M3" in r["scope_note"]
+    assert r["status"] == "confirmed" and r["scope"] == ["user:me@example.com"] and "이어받지 못해 주인만 본다" in r["scope_note"]
     assert c.post(f"/insights-api/cards/{cid}/widen", json={"to": "org"}, headers=h).status_code == 409
     _login(c, "peer@example.com")
     assert c.get(f"/insights-api/cards/{cid}").status_code == 404
