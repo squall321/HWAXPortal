@@ -514,3 +514,57 @@ def test_단언이_실제_응답_모양에서_돈다(collect):
     v2 = judge(is_error=False, text=_text(other))
     why = summary.asserts[0].check(template.extract(v2.parsed, "kind"))
     assert why and "기대했다" in why, why
+
+
+# ── 결과 귀환 확인(R2d — docs/smarttwin-pipeline 4 · docs/leftovers-1121 L21-8 #11) ─────────────────────────────────
+# DynaForge 응답 꼴은 KooRemapper `platform/backend/tests/test_dropline_1112.py`(11-15 판 6d4dd78)의 것 그대로다.
+_RETURN_JOB = {"id": "job_0f3a9c21", "session_id": "s1", "operation": "postprocess", "args": {}, "status": "succeeded",
+               "error_summary": None, "resolved_cmd": {"report_ids": [4210]},
+               "external": {"kind": "kooslurm_return", "cluster_state": "COMPLETED", "ontology": {"state": "loaded"}}}
+# `external` 의 실제 꼴 넷(DynaForge platform/backend/app/modules/jobs/schemas.py external_summary) — 다 찬 것 · 클러스터를 아직 안 물은 것 ·
+# 꾸러미를 아직 안 다룬 것 · 리포트가 이미 있어 곧바로 끝난 예약 잡(external 자체가 없다).
+_EXTERNAL_SHAPES = [
+    {"kind": "kooslurm_return", "cluster_state": "COMPLETED", "ontology": {"state": "loaded"}},
+    {"kind": "kooslurm_return", "cluster_state": None, "ontology": None},
+    {"kind": "kooslurm_return", "cluster_state": "RUNNING", "ontology": None},
+    None,
+]
+
+
+def test_귀환_확인_씨앗은_읽기만_하고_경고_없이_저장된다():
+    spec = _load("drop-return-check")
+    assert validate_spec(spec) == []
+    assert [s.tool for s in spec.steps] == ["get_job", "find_reports", "report_summary", "system_status"]
+    assert [s.gate for s in spec.steps] == [None] * 4, "전부 읽기다 — 게이트가 없다"
+    assert {s.backend for s in spec.steps} == {"heax-kooremapper_mcp"}
+    assert {v.key for v in spec.vars} == {"postprocess_job_id", "slurm_job_id"}
+
+
+def test_귀환_확인은_리포트를_이름이_아니라_잡_키로_찾는다():
+    """이름은 겹친다 — 후처리 예약이 리포트에 박는 잡 키 `stcx:<Slurm 잡 ID>` 가 정확히 같은 것만(DynaForge find_reports 의 external_job_key)."""
+    spec = _load("drop-return-check")
+    find = spec.steps[1]
+    assert find.args == {"external_job_key": "stcx:{{slurm_job_id}}", "limit": 20}
+    assert template.substitute(find.args, {"slurm_job_id": "12345"})["external_job_key"] == "stcx:12345"
+    assert (find.select.from_, find.select.save, find.select.var) == ("items", "id", "report_id")
+
+
+def test_귀환_확인의_단언과_저장이_실제_응답_모양에서_돈다():
+    spec = _load("drop-return-check")
+    job, summary = spec.steps[0], spec.steps[2]
+    # 멀쩡한 예약 잡이면 `external` 이 어떤 꼴이어도 단언 · 저장이 돈다 — 종전엔 external.* 를 저장해, 클러스터를 아직 안 물었거나 리포트가
+    # 이미 있어 곧바로 끝난 잡에서 save_empty · save_missing 으로 섰다(반대 검토 2026-11-22).
+    for ext in _EXTERNAL_SHAPES:
+        for status in ("succeeded", "running", "failed"):
+            v = judge(is_error=False, text=_text(dict(_RETURN_JOB, external=ext, status=status)))
+            assert [chk.check(template.extract(v.parsed, chk.path)) for chk in job.asserts] == [None], (ext, status)
+            got = {k: template.extract(v.parsed, p) for k, p in job.save.items()}
+            assert got == {"job_status": status} and not any(template.is_empty(x) for x in got.values()), (ext, status)
+    assert not any("external" in p for p in [*job.save.values(), *(c.path for c in job.asserts)]), "external 의 칸은 자주 비어 있다 — save · assert 에 쓰지 않는다"
+    # 제출 잡 자체의 ID 를 넣으면 거기서 선다 — 예약 잡이 아니다
+    other = dict(_RETURN_JOB, operation="fullangle_drop", external={"kind": "stcx_mcp", "cluster_state": None, "ontology": None})
+    why = job.asserts[0].check(template.extract(judge(is_error=False, text=_text(other)).parsed, "operation"))
+    assert why and "후처리 예약 잡이 아니다" in why
+    for kind, ok in (("sphere", True), ("impact", True), ("warpage", False)):
+        got = summary.asserts[0].check(template.extract(judge(is_error=False, text=_text(dict(DF["report_summary"], kind=kind))).parsed, "kind"))
+        assert (got is None) is ok, (kind, got)

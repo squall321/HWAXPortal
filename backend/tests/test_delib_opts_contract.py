@@ -735,3 +735,20 @@ def test_위키에_남기기와_원장의_소속이_엔진_본문에_닿는다(m
     assert codes == [200, 422, 200]
     assert seen[0]["delib_opts"] == {"wiki": 1} and seen[0]["affiliation"] == "CAEG"
     assert seen[1]["affiliation"] == "CAEG" and "delib_opts" not in seen[1], "브라우저가 보낸 소속이 엔진에 닿았다"
+
+
+def test_생각_강도의_낱말이_엔진과_같다():
+    """포털이 받는 `reasoning_effort` 의 낱말과 엔진이 아는 낱말(`_EFFORTS`)이 갈리면 — 포털이 받은 값을 엔진이 '모르는 값' 으로 버리고 서버
+    기본값으로 돌거나(조용히), 엔진이 아는 값을 포털이 422 로 거절한다(T4 — docs/deliberation-quality)."""
+    if not _ENGINE.exists():
+        pytest.skip("형제 리포 HWAXAgentServer 가 이 박스에 없다")
+    import typing
+
+    from app.agent.routes import DelibOpts
+
+    m = re.search(r'^_EFFORTS = \(([^)]*)\)', _ENGINE.read_text(encoding="utf-8"), re.M)
+    assert m, "엔진에서 _EFFORTS 를 못 찾았다 — 이름이 바뀌었으면 이 추출도 고쳐라"
+    engine = set(re.findall(r'"([a-z]+)"', m.group(1)))
+    ann = DelibOpts.model_fields["reasoning_effort"].annotation
+    portal = {v for arg in typing.get_args(ann) for v in typing.get_args(arg)}
+    assert portal == engine and portal, f"포털 {sorted(portal)} · 엔진 {sorted(engine)}"

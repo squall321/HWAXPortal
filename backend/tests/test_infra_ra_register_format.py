@@ -212,3 +212,15 @@ def test_에이전트_서버와_게이트웨이가_같은_기본값과_같은_�
 def test_박스_파일은_추적하지_않는다():
     ig = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "infra/ra-formats.local.json" in ig
+
+
+def test_형식의_이름과_칸_라벨은_손으로_둔_템플릿과_같다():
+    """RA 에 손으로 둔 `deliberation` v1 템플릿(dev RA DB 에서 읽었다 — 2026-11-22)과 이름 · 블록 차례 · 라벨 · props 가 같아야, 스스로 등록한
+    형식으로 바꿔도 보고서가 같은 모습으로 보인다. 고치려면 까닭을 형식 파일의 `_doc` 에 적는다."""
+    assert FMT["name"] == "심의 보고서"
+    assert [(b["id"], b["type"], b.get("props")) for b in FMT["blocks"]] == [
+        ("background", "rich_text", {"label": "심의 주제", "required": True}),
+        ("results", "rich_text", {"label": "심화 논의(2R)"}),
+        ("recommendation", "rich_text", {"label": "의사결정문"}),
+        ("minutes", "rich_text", {"label": "회의록(참여·라운드)"})]
+    assert all("layout" not in b for b in FMT["blocks"]), "배치는 RA 가 차례대로 놓는다(손으로 둔 템플릿도 layout 이 없다)"
