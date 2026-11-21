@@ -3,6 +3,7 @@
 # 계정은 example.com 시험 신원만, 주소는 문서용 예약 대역(TEST-NET)만 쓴다. 원장 · 정문 로그는 모두 임시 폴더에 만들고, 게이트웨이 · 에이전트 서버는
 # HTTP 대역(httpx.MockTransport)이다 — 떠 있는 서비스를 부르지 않는다. 창구의 답은 형제 리포의 실제 셈 모듈로 지어 계약이 어긋나면 붉어진다.
 import asyncio
+import gc
 import gzip
 import importlib.util
 import json
@@ -92,12 +93,16 @@ def _conv(box: Box, cid: str, who: str, ts: int, kind="chat", source="web") -> N
 # ── 표 ─────────────────────────────────────────────────────────────────────────────────────────────────────
 def test_접는_표는_감사_원장_파일_안에_생기고_새_파일을_만들지_않는다(tmp_path):
     box = _box(tmp_path)
+    gc.collect()                                        # 원장을 만든 저장소 객체의 연결을 닫는다 — 전체 회귀에서 벌어지는 차례를 여기서도 만든다
     before = {p.name for p in tmp_path.iterdir()}
     _fold(box)
     names = {r[0] for r in _q(box, "SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"usage_daily", "usage_actor_daily", "usage_fold", "agent_audit", "access_log"} <= names
     grown = {p.name for p in tmp_path.iterdir()} - before
-    assert not {n for n in grown if not n.startswith("audit.sqlite")}, f"감사 원장 밖에 새 파일이 생겼다 — {grown}"
+    # sqlite 의 곁 파일(-wal · -shm · -journal)은 새 저장소가 아니다 — 대화 원장은 WAL 이라, 쥐고 있던 연결이 닫힌 뒤 읽기 전용으로 열면 곁 파일이 다시
+    # 생긴다(M1 의 읽기도 같다 · 떠 있는 포털은 그 연결을 늘 쥐고 있다). 전체 회귀에서만 붉던 까닭이다(11-21 — 연결이 닫히는 때가 달라진다).
+    new = {n for n in grown if not n.startswith("audit.sqlite") and not n.endswith(("-wal", "-shm", "-journal"))}
+    assert not new, f"감사 원장 밖에 새 파일이 생겼다 — {new}"
 
 
 def test_사람_줄_표에는_이메일_날_갈래_수_소속만_있다(tmp_path):
