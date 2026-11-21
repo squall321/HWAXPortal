@@ -19,11 +19,12 @@ export interface UsageRange {
   axis: string[];
 }
 
-/** 칸 하나 — 모든 칸이 rows · note 를 갖고, 원장을 못 읽었으면 error */
+/** 칸 하나 — 모든 칸이 rows · note 를 갖고, 원장을 못 읽었으면 error, 날마다 접어 둔 표가 아직 없으면 pending(M2) */
 export interface Section<R> {
   rows: R[];
   note: string;
   error?: boolean;
+  pending?: boolean;
 }
 
 export interface LoginDay {
@@ -76,7 +77,11 @@ export interface UsageSections {
     oldest_day?: string | null;
   };
   procedure_runs: Section<RunGroup & { origin: string }> & { completion?: Completion };
-  routine_runs: Section<RunGroup & { executor: string }> & { completion?: Completion };
+  routine_runs: Section<RunGroup & { executor: string }> & {
+    completion?: Completion;
+    /** 그 가운데 Report Archive 초안까지 간 실행(M2) */
+    ra_drafts?: number;
+  };
   pats_live: Section<{ kind: string; n: number; owners: number }>;
   pats_weekly: Section<{ week: string; n: Num; personal: number; partial: boolean }>;
   access_requests: Section<{
@@ -89,6 +94,108 @@ export interface UsageSections {
     median_hours: number | null;
   }>;
   connections: Section<{ service: string; n: number; new: number }>;
+  // ── 날마다 접어 둔 표에서 읽는 칸(M2 — docs/ops-dashboard). 원천의 첫 날 전은 null, 접은 적이 없으면 pending ──
+  fold_status: Section<FoldSource>;
+  active_daily: Section<ActiveDay> & { first_day?: string | null; totals?: Totals };
+  active_weekly: Section<{ week: string; people: Num; partial: boolean }>;
+  active_monthly: Section<{ month: string; people: Num; partial: boolean }>;
+  mcp_daily: Section<{ day: string; calls: Num; status_calls: Num; errors: Num; people: Num }> & {
+    first_day?: string | null;
+    totals?: Totals;
+  };
+  mcp_via: Section<McpCount & { via: string; people: number; anon_calls: number }> & {
+    via_since?: string | null;
+  };
+  mcp_apps: Section<
+    McpCount & McpLatency & { app: string; cache: number; big: number; tools: number }
+  >;
+  mcp_tools: Section<
+    McpLatency & {
+      app: string;
+      tool: string;
+      status: boolean;
+      calls: number;
+      errors_app: number;
+      errors_gate: number;
+      error_rate: number | null;
+      cache: number;
+      big: number;
+    }
+  > & { total_tools?: number };
+  mcp_auth: Section<{ reason: string; n: number }>;
+  mcp_personal_weekly: Section<{ week: string; people: Num; partial: boolean }>;
+  delib_jobs: Section<{
+    kind: string;
+    n: number;
+    done: number;
+    states: Record<string, number>;
+    external: number;
+    with_report: number;
+    seats_avg: number | null;
+    rounds_avg: number | null;
+    minutes_avg: number | null;
+  }> & { daily?: Num[]; first_day?: string | null; totals?: Totals };
+  ra_drafts: Section<{ day: string; n: Num }> & {
+    by_via?: { via: string; n: number }[];
+    totals?: Totals;
+  };
+  front_door: Section<{
+    service: string;
+    label: string;
+    requests: number;
+    days: number;
+    people_max: number;
+    daily: Num[];
+  }> & { first_day?: string | null; totals?: Totals };
+  snapshots: Section<{
+    day: string;
+    pats_live: Num;
+    pats_personal: Num;
+    pats_exchanged: Num;
+    connections: Num;
+    accounts_active: Num;
+    pats_issued: Num;
+  }> & { days?: number };
+  conversations_kept: Section<{ kind: string; source: string; n: number }>;
+}
+
+/** 접기 상태 — 원천(포털 원장 · 지금 상태 · 정문 로그 · 게이트웨이 · 에이전트 서버)마다 접은 범위와 마지막 접기의 실패 까닭 */
+export interface FoldSource {
+  source: string;
+  label: string;
+  first_day: string | null;
+  last_day: string | null;
+  closed_through: string | null;
+  days: number;
+  other_list_days: number;
+  attempt_at: number | null;
+  error: string | null;
+}
+
+/** 원천을 가로지른 쓴 사람 — people 은 그날의 서로 다른 계정, 나머지는 갈래마다(한 사람이 여러 갈래에 든다) */
+export interface ActiveDay {
+  day: string;
+  people: Num;
+  login: Num;
+  chat: Num;
+  tile: Num;
+  mcp: Num;
+  delib: Num;
+  nginx: Num;
+}
+
+export interface McpCount {
+  calls: number;
+  status_calls: number;
+  errors_app: number;
+  errors_gate: number;
+  error_rate: number | null;
+}
+
+/** 걸린 시간(ms)의 분위수 — 칸 안 보간 어림이라 화면이 ≈ 를 붙인다. 표본이 없으면 null */
+export interface McpLatency {
+  ms_p50: number | null;
+  ms_p95: number | null;
 }
 
 export interface Completion {

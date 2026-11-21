@@ -1,12 +1,14 @@
-// 이용 통계(관리자 전용) — 포털 안 원장을 읽을 때 센 수와 그 수를 읽는 법(docs/ops-dashboard M1 · 사용자 결정 OD-4)
+// 이용 통계(관리자 전용) — 포털 안 원장을 읽을 때 센 수 · 날마다 접어 둔 표(쓴 사람 · MCP · 심의 · 정문)와 그 수를 읽는 법(docs/ops-dashboard M1 · M2 · 사용자 결정 OD-4)
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Page, PageHeader } from '../../components/ui/Page';
 import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
+import { Block, Card, Table } from '../../components/usage/UsageBlocks';
 import { ColumnChart, Spark, StatTile } from '../../components/usage/UsageCharts';
-import { fetchUsage, type Completion, type Section, type UsageReport } from '../../api/usage.api';
+import { FoldCards, FoldErrors, FoldStatusCard } from '../../components/usage/UsageFoldCards';
+import { fetchUsage, type Completion, type UsageReport } from '../../api/usage.api';
 import { useAuth } from '../../auth/useAuth';
-import { foldLeading, maxOf, pct, perDay, shortDay } from '../../lib/usageChart';
+import { maxOf, monthlyRows, pct, perDay, shortDay } from '../../lib/usageChart';
 import '../../styles/admin.css';
 import '../../styles/usage.css';
 
@@ -54,95 +56,6 @@ function reasonText(r: string): string {
 
 function when(ts: number): string {
   return new Date(ts * 1000).toLocaleString();
-}
-
-/** 칸 하나 — 못 읽었으면 그 까닭, 아니면 내용과 읽는 법(note) */
-function Block({
-  sec,
-  title,
-  children,
-}: {
-  sec?: Section<unknown>;
-  title?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="uc-block">
-      {title && <h3>{title}</h3>}
-      {!sec ? (
-        <p className="adm-hint">서버가 이 칸을 내지 않았다 — 포털이 이 화면보다 옛 판이다.</p>
-      ) : sec.error ? (
-        <p className="adm-err">{sec.note}</p>
-      ) : (
-        <>
-          {children}
-          <p className="uc-note">{sec.note}</p>
-        </>
-      )}
-    </div>
-  );
-}
-
-function Card({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="uc-card" aria-label={title}>
-      <h2>{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Table({
-  head,
-  rows,
-  empty = '이 기간에는 없다.',
-}: {
-  head: string[];
-  rows: ReactNode[][];
-  empty?: string;
-}) {
-  if (!rows.length) return <p className="uc-empty">{empty}</p>;
-  return (
-    <div className="adm-table-wrap">
-      <table className="adm-table">
-        <thead>
-          <tr>
-            {head.map((h, i) => (
-              <th key={h} className={i ? 'adm-num' : undefined}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {r.map((cell, j) => (
-                <td key={j} className={j ? 'adm-num' : undefined}>
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** 달마다 계정 — 원장 전 달은 한 줄로 접는다(400일이면 열 달 넘게 '기록 전' 만 늘어선다) */
-function monthlyRows(
-  rows: { month: string; accounts: number | null; partial: boolean }[],
-): ReactNode[][] {
-  const { span, rest } = foldLeading(
-    rows,
-    (r) => r.accounts == null,
-    (r) => r.month,
-  );
-  return [
-    ...(span ? [[span[0] === span[1] ? span[0] : `${span[0]} ~ ${span[1]}`, '기록 전']] : []),
-    ...rest.map((r) => [`${r.month}${r.partial ? ' (일부만)' : ''}`, r.accounts ?? '기록 전']),
-  ];
 }
 
 /** 실행 묶음(출처 · 실행기)마다 — 실행 · done · 그 밖에 끝남 · 아직 도는 것 · 완주율(끝난 것 가운데 done) */
@@ -193,6 +106,10 @@ export default function UsageStatsPage() {
   const conv = s.conversations;
   const livePats =
     s.pats_live && !s.pats_live.error ? s.pats_live.rows.reduce((a, r) => a + r.n, 0) : null;
+  const active = s.active_daily;
+  const mcp = s.mcp_daily;
+  const delib = s.delib_jobs;
+  const snaps = s.snapshots;
 
   return (
     <Page width="wide">
@@ -252,7 +169,14 @@ export default function UsageStatsPage() {
             )}
           </p>
 
+          <FoldErrors s={s} />
+
           <div className="uc-tiles">
+            <StatTile
+              label="쓴 사람"
+              value={active?.pending ? null : active?.totals?.people}
+              sub="기간 안 서로 다른 계정 · 원천을 가로질러"
+            />
             <StatTile
               label="로그인한 계정"
               value={logins?.totals?.accounts}
@@ -279,9 +203,21 @@ export default function UsageStatsPage() {
               sub={`사람 ${tiles?.totals?.accounts ?? '—'}`}
             />
             <StatTile label="살아 있는 PAT" value={livePats} sub="지금 — 폐기 · 만료 빼고" />
+            <StatTile
+              label="MCP 도구 호출"
+              value={mcp?.pending ? null : mcp?.totals?.calls}
+              sub={`상태 묻기 ${mcp?.totals?.status_calls ?? '—'} 따로 · 부른 사람 ${mcp?.totals?.people ?? '—'}`}
+            />
+            <StatTile
+              label="MCP 심의 잡"
+              value={delib?.pending ? null : delib?.totals?.jobs}
+              sub={`보고서가 붙은 잡 ${delib?.totals?.with_report ?? '—'}`}
+            />
           </div>
 
           <div className="uc-grid2">
+            <FoldCards s={s} axis={axis} />
+
             <Card title="로그인">
               <Block sec={logins}>
                 {logins && (
@@ -389,6 +325,15 @@ export default function UsageStatsPage() {
                   ])}
                 />
               </Block>
+              <Block sec={s.conversations_kept} title="접어 둔 새 대화(지운 대화도 남는다)">
+                <Table
+                  head={['종류 · 출처', '대화']}
+                  rows={(s.conversations_kept?.rows ?? []).map((r) => [
+                    `${KIND[r.kind] ?? r.kind} · ${SOURCE[r.source] ?? r.source}`,
+                    r.n,
+                  ])}
+                />
+              </Block>
             </Card>
 
             <Card title="포털 사건">
@@ -483,6 +428,26 @@ export default function UsageStatsPage() {
                   />
                 )}
               </Block>
+              <Block sec={snaps}>
+                {snaps && (
+                  <ColumnChart
+                    title="날마다 살아 있던 PAT(그날 찍어 둔 수)"
+                    values={snaps.rows.map((r) => r.pats_live)}
+                    labels={snaps.rows.map((r) => r.day)}
+                    unit="개"
+                    height={70}
+                  />
+                )}
+                {snaps && (
+                  <ColumnChart
+                    title="날마다 낸 PAT(접어 둔 수 — 만료로 지워져도 남는다)"
+                    values={snaps.rows.map((r) => r.pats_issued)}
+                    labels={snaps.rows.map((r) => r.day)}
+                    unit="개"
+                    height={70}
+                  />
+                )}
+              </Block>
             </Card>
 
             <Card title="권한 수요">
@@ -507,6 +472,8 @@ export default function UsageStatsPage() {
                 />
               </Block>
             </Card>
+
+            <FoldStatusCard s={s} />
           </div>
         </div>
       )}
