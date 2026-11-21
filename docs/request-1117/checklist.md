@@ -4,22 +4,22 @@
 - [x] 요청서 둘 요약(과제 이름 뺌) · 사용자 결정 셋 · 꼴(contracts) · 결정 R-1 ~ R-4
 
 ## 리스크 앱(HWAXRisk — 가지 wt1117/rk)
-- [ ] v8 표 · RK-01 판정표 칸 정의 · 판 · 층 · 비교 · 내보내기
-- [ ] RK-02 근거 묶음(색인 맨 앞 · 칸별 상한 · 가림 · 엔진 상한 거절 · 지문)
-- [ ] RK-06 provenance(아는 것만 · 모름 · 판 · 개수 불일치 경고)
-- [ ] RK-03 결정 반영 층(결정 JSON · 결정문 글 · 칸 매핑 · 충돌 · 합의/표결 불일치)
-- [ ] RK-04 숫자 원장 · 금지값 점검
-- [ ] RK-07 표기 규칙(labels) · 묶음 · 보고 묶음에 적용
-- [ ] RK-05 보고 묶음(facts 틀 등록 · null 과 까닭)
-- [ ] MCP 도구 · REST · 도구 설명 · 시험 · 전체 회귀 · 반대 검토
+- [x] v8 표 · RK-01 판정표 칸 정의 · 판 · 층 · 비교 · 내보내기 — main 에 있다(HWAXRisk 병합 `91abdb6` · RK-06 `5d0c4e2`, 11-21 커밋 대조 — `docs/leftovers-1121` L21-2)
+- [x] RK-02 근거 묶음(색인 맨 앞 · 칸별 상한 · 가림 · 엔진 상한 거절 · 지문) — main 에 있다(HWAXRisk 병합 `91abdb6` · RK-06 `5d0c4e2`, 11-21 커밋 대조 — `docs/leftovers-1121` L21-2)
+- [x] RK-06 provenance(아는 것만 · 모름 · 판 · 개수 불일치 경고) — main 에 있다(HWAXRisk 병합 `91abdb6` · RK-06 `5d0c4e2`, 11-21 커밋 대조 — `docs/leftovers-1121` L21-2)
+- [x] RK-03 결정 반영 층(결정 JSON · 결정문 글 · 칸 매핑 · 충돌 · 합의/표결 불일치) — main 에 있다(HWAXRisk 병합 `91abdb6` · RK-06 `5d0c4e2`, 11-21 커밋 대조 — `docs/leftovers-1121` L21-2)
+- [x] RK-04 숫자 원장 · 금지값 점검 — main 에 있다(HWAXRisk 병합 `91abdb6` · RK-06 `5d0c4e2`, 11-21 커밋 대조 — `docs/leftovers-1121` L21-2)
+- [x] RK-07 표기 규칙(labels) · 묶음 · 보고 묶음에 적용 — main 에 있다(HWAXRisk 병합 `91abdb6` · RK-06 `5d0c4e2`, 11-21 커밋 대조 — `docs/leftovers-1121` L21-2)
+- [x] RK-05 보고 묶음(facts 틀 등록 · null 과 까닭) — main 에 있다(HWAXRisk 병합 `91abdb6` · RK-06 `5d0c4e2`, 11-21 커밋 대조 — `docs/leftovers-1121` L21-2)
+- [x] MCP 도구 · REST · 도구 설명 · 시험 · 전체 회귀 · 반대 검토 — main 에 있다(HWAXRisk 병합 `91abdb6` · RK-06 `5d0c4e2`, 11-21 커밋 대조 — `docs/leftovers-1121` L21-2)
 - [ ] 병합 · 올림 · SIF(허브) · 화면 요청서(화면 세션 몫)
 
 ## 포털 — 심의 엔진(HWAXAgentServer — 가지 wt1117/dl)
-- [ ] DL-03 구조화 결정 · 합의/표결 대조
-- [ ] DL-01 참조 근거(risk_bundle 먼저 · 확인된 kind 만) · 미리 보기 · 이어하기 재실음
-- [ ] DL-02 묶음 실행(중복 0 · 끝난 것 안 함 · 멈춤 · 재시작 · 좌석 유실 표지 · 끝남 알림)
-- [ ] DL-04 원천 대조(num · id · part · net · 쪽 이음)
-- [ ] DL-05 preset
+- [x] DL-03 구조화 결정 · 합의/표결 대조 — main 에 있다(에이전트 서버 병합 `7da623d`, 11-21 커밋 대조)
+- [x] DL-01 참조 근거(risk_bundle 먼저 · 확인된 kind 만) · 미리 보기 · 이어하기 재실음 — main 에 있다(에이전트 서버 병합 `7da623d`, 11-21 커밋 대조)
+- [x] DL-02 묶음 실행(중복 0 · 끝난 것 안 함 · 멈춤 · 재시작 · 좌석 유실 표지 · 끝남 알림) — main 에 있다(에이전트 서버 병합 `7da623d`, 11-21 커밋 대조)
+- [x] DL-04 원천 대조(num · id · part · net · 쪽 이음) — main 에 있다(에이전트 서버 병합 `7da623d`, 11-21 커밋 대조)
+- [x] DL-05 preset — main 에 있다(에이전트 서버 병합 `7da623d`, 11-21 커밋 대조)
 
 ## 포털 — 게이트웨이(HWAXMcpGateway — 가지 wt1117/gw)
 - [x] GW-05 앱 env · 정본 · 옛 키 안내(가지 `fd1f52d` · `ac49fae` · `4aba6cb` — 적지 않은 박스는 unknown, R-10)

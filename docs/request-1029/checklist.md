@@ -86,7 +86,7 @@
   도구 · '맡은 사람이 없다' 고르기는 그대로다(관문 G0 전)
   - [ ] E5-0 평가셋 A · P · C(`tools/seat_evalset.py` — dev 에서 짓고 Drive 로, D-E5-8) · A-test 봉인 줄을 design-e5 8절에 — 에이전트 서버 몫. 봉인 줄은 8절에
     적었다(10-31 — L2 이름 거름을 고친 뒤 다시 지은 판, C-55). Drive 로 보내기는 남았다
-  - [ ] E5-1 창구 `POST /seat-eval` + 러너 `tools/seat_eval.py`(짝 비교 · McNemar · 갈래 · 판 지문) — 에이전트 서버 몫
+  - [x] E5-1 창구 `POST /seat-eval` + 러너 `tools/seat_eval.py`(짝 비교 · McNemar · 갈래 · 판 지문) — 에이전트 서버 몫 — 지어짐(에이전트 서버 `203adf8`, 병합 `ec83e51` — `/seat-eval` · `tools/seat_eval.py`, 11-21 코드 대조)
   - [ ] E5-2 에이전트 서버 — 박스 파일 `seat_questions`(모으기 기본 꺼짐 `SEAT_QUESTIONS_COLLECT` · 창구 `/seat-questions*` · 다는 사람 `SEAT_QUESTIONS_LABELERS`) — 에이전트 서버 몫
   - [x] E5-2 포털 — 관리자 '전문가 고르기 검토'(`/admin/seat-review`) · 창구 `/auth/admin/seat-review/*`(관리자 · CSRF · 허용 목록 — 순위 · 점수 · 지금 좌석 ·
     표본 질문이 화면에 닿지 않는다) · 지난 날 모으기(대화 저장소 읽기 전용 · 이름 · 메일 · 대화 id 떼기 · 그쪽 스위치가 꺼져 있으면 읽지 않는다) · 계약
@@ -97,7 +97,7 @@
   - [x] E5-4 포털 — 어휘표 `personas` 칸(첫 판은 자기 앱이 있는 지식 전문가 여덟의 앱 덮어쓰기뿐 — 도메인 줄은 비었다, L7 · C-54) · 꼴 시험 · 형제 리포 대조(조직도 ·
     `types` · 게이트웨이 `tool_areas.json` · 에이전트 서버 `persona_links.validate` 가 한 줄도 버리지 않는다) · 게이트웨이 검색이 읽는 값이 같다(시험 + dev
     카탈로그 162질의 실측 — 답이 바이트까지 같고 어휘표 지문만 바뀐다)
-  - [ ] E5-4 에이전트 서버 — 읽기 · 줄마다 검증 · `/health` `core_vocab.personas` · 그림자 기록 — 에이전트 서버 몫
+  - [x] E5-4 에이전트 서버 — 읽기 · 줄마다 검증 · `/health` `core_vocab.personas` · 그림자 기록 — 에이전트 서버 몫 — 지어짐(에이전트 서버 `08a105d`, 병합 `ec83e51` — `persona_links.py` · `/health core_vocab.personas` · 그림자 기록, 11-21 코드 대조)
   - [~] E5-5 · E5-6 · E5-7 — 관문 G0 뒤(사용자 결정 10-31). 도메인 줄(`personas.domains`)은 A-dev 와 도메인 검토로 — 연결을 쓰는 사람은 H 를 보지 않는다(L7)
     - [ ] 도메인 줄을 쓸 때 — `personas.domains` · `no_tools` 가 비지 않게 되면 에이전트 서버 형제 대조(`tests/test_persona_links.py` 의 `test_형제_리포_실파일_대조`)가
       '지식 도메인마다 줄 또는 no_tools' 를 저절로 요구한다(첫 판은 빠진 수만 센다 — C-55). 도메인 줄은 한 판에 빠짐없이 쓰고, 포털
