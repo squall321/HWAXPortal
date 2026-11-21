@@ -184,6 +184,9 @@ class DelibOpts(BaseModel):
     anchor: int | None = Field(default=None, ge=0, le=1)
     chair_bestof: int | None = Field(default=None, ge=1, le=5)
     chair_cite: int | None = Field(default=None, ge=0, le=1)
+    # T7 판정 불가 허용 — 켜면 수렴 라운드 좌석이 '판정 불가' 와 다음에 잴 것을 낼 수 있고, 앉은 좌석의 과반이 그러면 결정문의 결론부가
+    # 측정 계획이 된다(엔진 DELIB_UNDECIDED — 기본 끔, docs/deliberation-quality T7). 화면 토글은 없다 — A/B 러너와 MCP advanced 가 보낸다.
+    undecided: int | None = Field(default=None, ge=0, le=1)
     rounds: int | None = Field(default=None, ge=2, le=8)
     # LLM 호출 **1회**의 제한이다(심의 전체 시간이 아니다). 상한은 엔진 DELIB_TIMEOUT_MAX_S **기본값**·프론트
     # chatStore DELIB_TIMEOUT_MAX_S(보내기 전 클램프·입력칸 max)와 같은 수여야 한다(tests/test_delib_timeout_cap_contract.py).
