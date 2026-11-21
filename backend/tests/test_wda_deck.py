@@ -1626,6 +1626,22 @@ def test_다시_시도도_쓰기다_권한과_스위치를_본다(box):
     assert box["fake"].resumed == [] and box["fake"].deleted == []
 
 
+def test_스위치가_꺼진_박스의_status_는_M2_뒤에도_종전_꼴_그대로다(box):
+    """꺼진 박스(기본)에서는 포털의 답이 달라지지 않는다 — 새 칸(delete)은 켜진 박스의 답에만 싣는다. 권한이 없는 사람의 답도 그대로다."""
+    old_keys = {"enabled", "reason", "formats", "targets", "doc_styles", "defaults", "keep_days"}
+    box["fake"].features.add("delete")
+    assert set(box["c"].get("/agent/deck/status").json()) == old_keys | {"delete"}
+    box["who"]["p"] = Principal(subject="kim@corp.com", email="kim@corp.com", display_name="김", groups=["plat:webdesign"])
+    st = box["c"].get("/agent/deck/status").json()
+    assert set(st) == old_keys and st["reason"] == "permission"
+    box["who"]["p"] = KIM
+    box["s"].wda_deck_enabled = False
+    n = len(box["fake"].calls)
+    st = box["c"].get("/agent/deck/status").json()
+    assert set(st) == old_keys and st["enabled"] is False and st["reason"] == "off"
+    assert len(box["fake"].calls) == n, "꺼진 박스는 WDA 에 묻지 않는다"
+
+
 @pytest.mark.parametrize("scopes,writes", [(["read"], False), (["chat"], False), (["read", "write"], True)])
 def test_다시_시도와_지우기는_write_범위의_PAT_만(box, monkeypatch, scopes, writes):
     failed, _ = _failed(box)
