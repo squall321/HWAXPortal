@@ -144,6 +144,21 @@ def test_리스크_심사_워크플로는_과제_인사이트_근거를_좌석�
     assert not [x for x in plain["result"]["evidenceOmitted"] if x["source"] == "과제 인사이트 근거 거름"]
 
 
+def test_워크플로의_과제_인사이트_이름_규칙은_엔진과_같다():
+    """리스크 심사의 받침은 엔진(HWAXAgentServer deliberation._INSIGHT_EV_TOOL_RE)과 워크플로 두 곳에 있다 — 이름 규칙이 갈리면 한쪽 길로 샌다."""
+    import re
+    js = (Path(__file__).resolve().parents[2] / _DELIB).read_text(encoding="utf-8")
+    m = re.search(r"^const INSIGHT_EV_TOOL_RE = /(.+)/$", js, re.M)
+    assert m, "워크플로의 이름 규칙 줄이 바뀌었다 — 이 시험도 고쳐라"
+    eng = Path(__file__).resolve().parents[3] / "HWAXAgentServer" / "deliberation.py"
+    if not eng.exists():
+        pytest.skip(f"형제 리포 없음: {eng}")
+    src = eng.read_text(encoding="utf-8")
+    e = re.search(r'^_INSIGHT_EV_TOOL_RE = re\.compile\(r"([^"]+)" \+ _INSIGHT_TOOL_HEAD\)$', src, re.M)
+    head = re.search(r'^_INSIGHT_TOOL_HEAD = "([a-z_]+)"$', src, re.M)
+    assert e and head and m.group(1) == e.group(1) + head.group(1)
+
+
 def test_워크플로_머리의_evidence_안내가_앞선_인사이트를_넘기는_법을_말한다():
     head = (Path(__file__).resolve().parents[2] / _DELIB).read_text(encoding="utf-8").split("export const meta", 1)[0]
     for want in ("insight_find", "insight_get", "검증 대상, 독립 근거 아님", "plat:", "같은 (과제, 차수)", "리스크 심사"):
