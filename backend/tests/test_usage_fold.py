@@ -209,6 +209,8 @@ def test_지금_상태는_오늘_날에만_적고_지난_날의_것을_덮지_�
     box.sql("tokens", "INSERT INTO pat (jti, sub, email, name, aud, scopes, created, exp, revoked) VALUES ('p1', 'a@example.com', 'a@example.com', 'n', '[]', '[]', ?, ?, 0)",
             [(t, t + 86400 * 90)])
     box.sql("users", "INSERT INTO connections (email, service, token, created_at) VALUES ('a@example.com', 'reportarchive', 'x', ?)", [(t,)])
+    box.user("b@example.com", created=t, status="disabled")
+    box.sql("users", "UPDATE users SET grants = ? WHERE email = ?", [('["feat:routines", "plat:spdm"]', "a@example.com"), ('["feat:routines"]', "b@example.com")])
     _fold(box, _at(date(2026, 11, 19)))
     box.sql("tokens", "INSERT INTO pat (jti, sub, email, name, aud, scopes, created, exp, revoked) VALUES ('p2', 'a@example.com', 'a@example.com', 'n', '[]', '[]', ?, ?, 0)",
             [(t + 86400, t + 86400 * 90)])
@@ -216,6 +218,8 @@ def test_지금_상태는_오늘_날에만_적고_지난_날의_것을_덮지_�
     got = _daily(box, "snapshot")
     assert (got[("2026-11-19", "pats_live", '{"kind":"personal"}')], got[("2026-11-20", "pats_live", '{"kind":"personal"}')]) == (1, 2)
     assert got[("2026-11-20", "connections", '{"service":"reportarchive"}')] == 1 and got[("2026-11-20", "accounts", '{"status":"active"}')] == 1
+    assert (got[("2026-11-20", "grants", '{"key":"feat:routines"}')], got[("2026-11-20", "grants", '{"key":"plat:spdm"}')]) == (1, 1), \
+        "개별 허가는 쓰는 계정의 것만 센다(정지 계정의 허가는 뺀다)"
     assert {d for d, _m, _x in got} == {"2026-11-19", "2026-11-20"}, "되채우기는 지난 날의 '지금 상태' 를 지어내지 않는다"
 
 

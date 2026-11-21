@@ -895,6 +895,58 @@ def _parse_sse_frame(frame: str) -> tuple[str, dict] | None:
         return None
 
 
+# ── 끝난 턴의 종류 · 답한 모델(docs/ops-dashboard M3 가) ──────────────────────────────────────────────────────────────────────────
+# 이용 통계가 챗 턴을 챗 · 띵킹 · 심의 · 루틴으로 가르고 답한 모델을 세게, 중계가 넘기는 바이트에서 사건 이름(think · delib)과 끝의 meta 프레임
+# (models — 에이전트 서버가 턴 끝에 낸다)만 읽어 chat_done 감사 줄에 싣는다. 본문은 건드리지 않고(바이트 그대로 넘긴다) 글 · 질의는 싣지 않는다.
+_TURN_MODELS_MAX = 8
+_TURN_MODEL_OK = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}")
+
+
+class _TurnProbe:
+    """중계 바이트의 프레임 머리만 본다. 읽다 실패해도 예외를 내지 않는다 — 통계 칸 때문에 답을 끊지 않는다."""
+    MAX_BUF = 4 * 1024 * 1024       # 끝 표지 없이 이보다 길어진 프레임은 버린다(다음 끝 표지까지 건너뛴다) — 중계가 본문을 쌓아 두지 않게
+
+    def __init__(self) -> None:
+        self.buf = b""
+        self.skip = False
+        self.seen: set[str] = set()
+        self.models: list[str] = []
+
+    def feed(self, chunk: bytes) -> None:
+        try:
+            self.buf += chunk
+            while True:
+                i = self.buf.find(b"\n\n")
+                if i < 0:
+                    if len(self.buf) > self.MAX_BUF:
+                        self.buf, self.skip = self.buf[-1:], True      # 끝 글자 하나는 둔다 — 끝 표지가 두 청크에 걸칠 수 있다
+                    return
+                frame, self.buf = self.buf[:i], self.buf[i + 2:]
+                if self.skip:
+                    self.skip = False
+                    continue
+                self._frame(frame)
+        except Exception:  # noqa: BLE001
+            self.buf, self.skip = b"", False
+
+    def _frame(self, frame: bytes) -> None:
+        head, _, rest = frame.partition(b"\n")
+        if not head.startswith(b"event:"):
+            return
+        evt = head[6:].strip()
+        if evt in (b"think", b"delib"):
+            self.seen.add(evt.decode())
+        elif evt == b"meta" and rest.startswith(b"data:"):
+            models = json.loads(rest[5:].decode("utf-8", "replace")).get("models")
+            if isinstance(models, dict):
+                self.models = sorted(m for m in models if isinstance(m, str) and _TURN_MODEL_OK.fullmatch(m))[:_TURN_MODELS_MAX]
+
+    def meta(self, routine: bool) -> dict:
+        """chat_done 감사 줄의 meta — kind(루틴 턴이면 routine, 심의 사건이 흘렀으면 delib, 띵킹 사건이면 think, 아니면 chat)와 models."""
+        kind = "routine" if routine else "delib" if "delib" in self.seen else "think" if "think" in self.seen else "chat"
+        return {"kind": kind, **({"models": self.models} if self.models else {})}
+
+
 def _audit(request: Request) -> AuditLog:
     return request.app.state.agent_audit
 
@@ -1063,6 +1115,7 @@ async def _relay_stream(
         _t = settings.agent_chat_idle_timeout_s
         stream_kw = {"timeout": httpx.Timeout(settings.agent_request_timeout, read=_t if _t > 0 else None)}
         idle, knob = stream_kw["timeout"].read, "AGENT_CHAT_IDLE_TIMEOUT_S"
+    probe = _TurnProbe()
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload, **stream_kw
@@ -1081,6 +1134,7 @@ async def _relay_stream(
                 return
             async for chunk in r.aiter_raw():
                 if chunk:
+                    probe.feed(chunk)
                     yield chunk
     except httpx.ReadTimeout:
         # 침묵 한도(AGENT_STREAM_IDLE_TIMEOUT_S) — 연결은 살아 있는데 에이전트 서버가 그 시간 동안 한 바이트도 안 냈다.
@@ -1113,7 +1167,7 @@ async def _relay_stream(
                                   "message": "agent server unreachable"})
         yield sse_event("done", {})
         return
-    audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok")
+    audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok", meta=probe.meta(routine))
 
 
 @router.get("/artifacts/{name}")

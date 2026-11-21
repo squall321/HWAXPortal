@@ -47,7 +47,7 @@ _ROUTINE_OPEN = ("queued", "running", "waiting")    # 루틴 실행 — interrup
 # 접속 원장의 기간 · 예열 거르기(audit.query_access 의 include_auto=False 와 같은 조건)
 _ACCESS = "ts >= ? AND ts < ? AND (detail IS NULL OR detail != 'primer')"
 # ── 접어 둔 표(M2) — 접는 쪽(app/usage_fold.py)과 함께 쓰는 값 ──
-FOLD_SOURCES = (("portal", "포털 원장(사람 줄 · 새 대화 · 낸 PAT)"), ("snapshot", "지금 상태(오늘의 PAT · 연결 · 계정)"), ("nginx", "정문 접근 로그"),
+FOLD_SOURCES = (("portal", "포털 원장(사람 줄 · 새 대화 · 낸 PAT)"), ("snapshot", "지금 상태(오늘의 PAT · 연결 · 계정 · 허가)"), ("nginx", "정문 접근 로그"),
                 ("gateway", "게이트웨이(MCP 도구 호출)"), ("agent", "에이전트 서버(MCP 심의 잡)"))
 FOLD_NOCOVER = "nocover"                    # 정문 로그가 그날을 덮지 않는다 — 접은 기록만 있고 값은 없다(기록 전과 같다)
 RA_DRAFT_TOOL = "create_report_draft"       # Report Archive 초안을 만드는 도구의 원래 이름 — 성공 호출이 RA 초안 하나다
@@ -295,7 +295,7 @@ def _chat_daily(c: sqlite3.Connection, x: _Ctx) -> dict:
             for d in x.w.axis()]
     t = c.execute(f"SELECT {cols} {where}", args).fetchone()
     return {"rows": rows, "first_day": first, "totals": dict(zip(keys, (v or 0 for v in t), strict=True)),
-            "note": "포털 챗 턴이다(웹 · PAT — 시작 줄). 챗 · 심의 · 띵킹 · 루틴을 가르지 않는다(턴 종류를 적지 않는다 — M3). done 은 끝까지 "
+            "note": "포털 챗 턴이다(웹 · PAT — 시작 줄). 챗 · 심의 · 띵킹 · 루틴을 함께 센다(종류는 아래 '턴 종류' 칸). done 은 끝까지 "
                     "간 턴, errors 는 오류로 끝난 턴이다(동시 상한 거절은 시작 줄 없이 오류만 남는다). chatters 는 그날 턴을 시작한 서로 다른 "
                     "계정이다. " + (f"원장의 첫 줄({first}) 전 날은 null 이다." if first else "원장에 줄이 없다.")}
 
@@ -318,6 +318,39 @@ def _chat_errors(c: sqlite3.Connection, x: _Ctx) -> dict:
     return {"rows": out,
             "note": "챗 오류의 까닭 코드만 센다(상류 응답 본문 · 예외 글은 싣지 않는다). agent_<번호> 는 에이전트 서버가 그 HTTP 상태로 답한 턴, "
                     "unknown 은 까닭 칸이 없는 줄이다."}
+
+
+_TURN_KINDS = ("chat", "think", "delib", "routine")
+_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}")      # 중계가 싣는 모델 이름의 꼴(app/agent/routes.py _TURN_MODEL_OK)
+
+
+def _chat_kinds(c: sqlite3.Connection, x: _Ctx) -> dict:
+    q, a = _not_in(x.ex, "principal")
+    kinds: dict[str, int] = defaultdict(int)
+    models: dict[str, int] = defaultdict(int)
+    unknown, since = 0, None
+    for ts, meta in c.execute(f"SELECT ts, meta FROM agent_audit WHERE ts >= ? AND ts < ? AND event = 'chat_done'{q}",
+                              (x.w.since, x.w.until, *a)):
+        try:
+            m = json.loads(meta) if meta else None
+        except ValueError:
+            m = None
+        kind = m.get("kind") if isinstance(m, dict) else None
+        if kind not in _TURN_KINDS:
+            unknown += 1
+            continue
+        kinds[kind] += 1
+        since = ts if since is None or ts < since else since
+        seen = m.get("models")
+        for name in {n for n in (seen if isinstance(seen, list) else []) if isinstance(n, str) and _MODEL.fullmatch(n)}:
+            models[name] += 1
+    return {"rows": sorted(({"kind": k, "turns": n} for k, n in kinds.items()), key=lambda r: (-r["turns"], r["kind"])),
+            "models": sorted(({"model": k, "turns": n} for k, n in models.items()), key=lambda r: (-r["turns"], r["model"])),
+            "unknown": unknown, "since": kst_day(since) if since is not None else None,
+            "note": "끝까지 간 턴(chat_done)의 종류다 — chat 은 일반 챗, think 는 띵킹(전문가들이 각자 답함), delib 는 웹에서 연 심의, routine 은 "
+                    "분석 루틴이다. 보낸 요청이 아니라 그 턴에 실제로 흐른 사건으로 가른다. models 는 그 턴에 쓰인 모델마다의 턴 수다(한 턴이 "
+                    "모델 여럿을 쓰면 여럿에 든다). unknown 은 종류를 적기 전의 턴이다 — 이 판의 포털이 뜬 뒤 끝난 턴부터 적힌다"
+                    + (f"(기간 안의 첫 줄 {kst_day(since)})." if since is not None else ".") + " 오류로 끝난 턴은 들지 않는다."}
 
 
 def family_of(event: str) -> str:
@@ -886,7 +919,7 @@ def _snapshots(c: sqlite3.Connection, x: _Ctx) -> dict:
         return _pending()
     snap: dict[str, dict] = {}
     for d, metric, dims, v in _fold_rows(c, x, "snapshot"):
-        r = snap.setdefault(d, {"pats_live": 0, "pats_personal": 0, "pats_exchanged": 0, "connections": 0, "accounts_active": 0})
+        r = snap.setdefault(d, {"pats_live": 0, "pats_personal": 0, "pats_exchanged": 0, "connections": 0, "accounts_active": 0, "grants": 0})
         if metric == "pats_live":
             r["pats_live"] += int(v)
             r["pats_personal" if dims.get("kind") == "personal" else "pats_exchanged"] += int(v)
@@ -894,15 +927,18 @@ def _snapshots(c: sqlite3.Connection, x: _Ctx) -> dict:
             r["connections"] += int(v)
         elif metric == "accounts" and dims.get("status") == "active":
             r["accounts_active"] += int(v)
+        elif metric == "grants":
+            r["grants"] += int(v)
     issued: dict[str, int] = defaultdict(int)
     for d, metric, _dims, v in _fold_rows(c, x, "portal"):
         if metric == "pat_issued":
             issued[d] += int(v)
     first = _fold_meta(c, x, "portal")["first"]
-    blank = dict.fromkeys(("pats_live", "pats_personal", "pats_exchanged", "connections", "accounts_active"))
+    blank = dict.fromkeys(("pats_live", "pats_personal", "pats_exchanged", "connections", "accounts_active", "grants"))
     rows = [{"day": d, **(snap.get(d) or blank), "pats_issued": None if first is None or d < first else issued.get(d, 0)} for d in x.w.axis()]
     return {"rows": rows, "days": len(snap),
-            "note": "날마다 찍어 둔 '지금 상태' 다 — 살아 있는 PAT(폐기 · 만료 빼고) · 외부 연결 · 쓰는 계정. 그날 포털이 마지막으로 접은 때의 값이고, "
+            "note": "날마다 찍어 둔 '지금 상태' 다 — 살아 있는 PAT(폐기 · 만료 빼고) · 외부 연결 · 쓰는 계정 · 개별 허가(소속 밖으로 한 사람에게 연 "
+                    "기능 · 플랫폼 키의 수 — 쓰는 계정의 것). 그날 포털이 마지막으로 접은 때의 값이고, "
                     "찍지 못한 날(접기 전 · 포털이 내려가 있던 날)은 null 이다 — 지난 날의 상태는 다시 셀 수 없다. pats_issued 는 그날 낸 PAT 이다 — "
                     "닫힌 날의 수는 그 뒤에 만료로 지워져도 남는다."}
 
@@ -931,6 +967,7 @@ _SECTIONS: tuple[tuple[str, str, Callable[[sqlite3.Connection, _Ctx], dict]], ..
     ("accounts_new", "users", _accounts_new),
     ("tiles", "audit", _tiles),
     ("chat_daily", "audit", _chat_daily),
+    ("chat_kinds", "audit", _chat_kinds),
     ("chat_errors", "audit", _chat_errors),
     ("events", "audit", _events),
     ("conversations", "conv", _conversations),

@@ -44,6 +44,12 @@ const KIND: Record<string, string> = {
   'risk-review': '리스크 심사',
 };
 const SOURCE: Record<string, string> = { web: '웹', mcp: 'MCP' };
+const TURN_KIND: Record<string, string> = {
+  chat: '챗',
+  think: '띵킹',
+  delib: '심의(웹)',
+  routine: '분석 루틴',
+};
 const PAT_KIND: Record<string, string> = {
   personal: '사람이 낸 것',
   exchanged: '교환으로 받은 것',
@@ -277,6 +283,25 @@ export default function UsageStatsPage() {
                   />
                 )}
               </Block>
+              <Block sec={s.chat_kinds} title="끝까지 간 턴의 종류 · 답한 모델">
+                <Table
+                  head={['종류', '턴']}
+                  rows={[
+                    ...(s.chat_kinds?.rows ?? []).map((r) => [
+                      TURN_KIND[r.kind] ?? r.kind,
+                      r.turns,
+                    ]),
+                    ...(s.chat_kinds?.unknown
+                      ? [['종류를 적기 전의 턴', s.chat_kinds.unknown]]
+                      : []),
+                  ]}
+                />
+                <Table
+                  head={['모델', '쓰인 턴']}
+                  rows={(s.chat_kinds?.models ?? []).map((r) => [r.model, r.turns])}
+                  empty="모델이 적힌 턴이 아직 없다."
+                />
+              </Block>
               <Block sec={s.chat_errors} title="오류로 끝난 턴의 까닭">
                 <Table
                   head={['까닭', '턴']}
@@ -470,6 +495,26 @@ export default function UsageStatsPage() {
                   rows={(s.connections?.rows ?? []).map((r) => [r.service, r.n, r.new])}
                   empty="등록된 연결이 없다."
                 />
+              </Block>
+              <Block sec={snaps}>
+                {snaps && (
+                  <ColumnChart
+                    title="날마다 개별 허가 수(그날 찍어 둔 수 — 쓰는 계정의 것)"
+                    values={snaps.rows.map((r) => r.grants)}
+                    labels={snaps.rows.map((r) => r.day)}
+                    unit="건"
+                    height={70}
+                  />
+                )}
+                {snaps && (
+                  <ColumnChart
+                    title="날마다 외부 연결 수(그날 찍어 둔 수)"
+                    values={snaps.rows.map((r) => r.connections)}
+                    labels={snaps.rows.map((r) => r.day)}
+                    unit="개"
+                    height={70}
+                  />
+                )}
               </Block>
             </Card>
 

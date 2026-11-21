@@ -70,6 +70,12 @@ export interface UsageSections {
     first_day?: string | null;
     totals?: Totals;
   };
+  /** 끝까지 간 턴의 종류(chat · think · delib · routine)와 답한 모델 — 종류를 적기 전의 턴은 unknown(M3 가) */
+  chat_kinds: Section<{ kind: string; turns: number }> & {
+    models?: { model: string; turns: number }[];
+    unknown?: number;
+    since?: string | null;
+  };
   chat_errors: Section<{ reason: string; n: number }>;
   events: Section<{ family: string; event: string; status: string; n: number }>;
   conversations: Section<{ day: string; kind: string; source: string; n: number }> & {
@@ -154,6 +160,7 @@ export interface UsageSections {
     pats_exchanged: Num;
     connections: Num;
     accounts_active: Num;
+    grants: Num;
     pats_issued: Num;
   }> & { days?: number };
   conversations_kept: Section<{ kind: string; source: string; n: number }>;

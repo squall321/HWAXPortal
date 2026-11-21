@@ -210,7 +210,7 @@ def test_날마다_찍은_수는_찍은_날만_있고_닫힌_날의_낸_PAT_은_
     rows = _by(_sec(box, "snapshots"), "day")
     assert rows["2026-11-19"]["pats_live"] is None, "찍지 못한 날 — 지난 날의 상태는 지어내지 않는다"
     today = rows["2026-11-20"]
-    assert (today["pats_live"], today["pats_personal"], today["accounts_active"], today["connections"]) == (1, 1, 2, 0)
+    assert (today["pats_live"], today["pats_personal"], today["accounts_active"], today["connections"], today["grants"]) == (1, 1, 2, 0, 0)
     assert (rows["2026-11-17"]["pats_issued"], rows["2026-11-18"]["pats_issued"], rows["2026-11-16"]["pats_issued"]) == (1, 0, None)
     box.sql("tokens", "DELETE FROM pat WHERE jti = ?", [("p1",)])            # 만료 PAT 은 원장에서 지워진다
     box.sql("conv", "DELETE FROM conversations WHERE id = ?", [("c1",)])     # 주인이 대화를 지웠다

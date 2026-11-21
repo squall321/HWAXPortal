@@ -9,7 +9,7 @@
 
 원천(source).
   · portal — 접속 · 감사 원장의 사람 줄(login · chat · tile)과 사라지는 수(날마다 새 대화 · 낸 PAT).
-  · snapshot — 오늘의 '지금 상태'(살아 있는 PAT · 외부 연결 · 계정). 오늘 날에만 적는다 — 지난 날은 다시 셀 수 없다.
+  · snapshot — 오늘의 '지금 상태'(살아 있는 PAT · 외부 연결 · 계정 · 개별 허가). 오늘 날에만 적는다 — 지난 날은 다시 셀 수 없다.
   · nginx — 정문 접근 로그의 서비스별 요청 · 사람(로그인 연결 ID 로 잇는다 — 귀속이지 증명이 아니다).
   · gateway — 게이트웨이 창구 POST /usage-rollup(MCP 도구 호출 · 인증 실패 · 사람별 호출 수 · RA 초안).
   · agent — 에이전트 서버 창구 POST /usage-rollup(MCP 심의 잡).
@@ -252,7 +252,7 @@ def portal_days(settings: Settings, days: list[str], ex: list[str]) -> dict[str,
 
 
 def snapshot_day(settings: Settings, now: float, ex: list[str]) -> DayFold:
-    """오늘의 '지금 상태' — 살아 있는 PAT · 외부 연결 · 계정 상태(뺄 계정은 뺀다). 지난 날의 값은 다시 셀 수 없어 오늘에만 적는다."""
+    """오늘의 '지금 상태' — 살아 있는 PAT · 외부 연결 · 계정 상태 · 개별 허가(뺄 계정은 뺀다). 지난 날의 값은 다시 셀 수 없어 오늘에만 적는다."""
     fold = DayFold()
     q, a = _not_in(ex, "sub", "email")
     with closing(_ro(settings.resolve(settings.token_store_path))) as c:
@@ -266,6 +266,15 @@ def snapshot_day(settings: Settings, now: float, ex: list[str]) -> DayFold:
             fold.rows.append(("connections", {"service": str(svc)[:60]}, n))
         for status, n in c.execute(f"SELECT status, COUNT(*) FROM users WHERE 1=1{q} GROUP BY status", a):
             fold.rows.append(("accounts", {"status": str(status)[:20]}, n))
+        granted: dict[str, int] = defaultdict(int)          # 개별 허가(소속 밖으로 한 사람에게 연 기능 · 플랫폼 키) — 쓰는 계정의 것만
+        for (raw,) in c.execute(f"SELECT grants FROM users WHERE status = 'active'{q}", a):
+            try:
+                keys = json.loads(raw or "[]")
+            except ValueError:
+                continue
+            for k in {str(k) for k in keys} if isinstance(keys, list) else ():
+                granted[k[:80]] += 1
+        fold.rows += [("grants", {"key": k}, n) for k, n in granted.items()]
     return fold
 
 
