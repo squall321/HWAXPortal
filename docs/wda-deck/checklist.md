@@ -25,23 +25,41 @@
 ## M0 — WDA 세션(요청서 §11)
 
 - [x] 요청서를 받고 답했다(11-01, 요청서 §10) — W-1 ~ W-12 는 지금 하나도 없고 **사용자가 직접 시킬 때** 짓는다. 포털은 그 계약대로 지었다(가짜 WDA 로 시험)
-- [ ] W-1 REST 만들기에 `X-Heax-User-Email` 로 owner(본문의 owner 는 믿지 않는다 · `/mcp` 는 정하지 않는다)
-- [ ] W-2 주인 있는 run 의 run 단위 REST 전부 주인만(다른 사람 · 신원 없음 = 404)
-- [ ] W-3 `GET /api/runs` = 내 것 + 주인 없는 것
-- [ ] W-4 MCP 의 run_id · job_id · 경로 도구와 렌더 잡 내려받기는 주인 있는 run 에 닿지 않는다
-- [ ] W-5 주인 있는 새 run id 128비트 무작위 · run_id 꼴 검사
-- [ ] W-6 `/api/health` 에 version · features(`owner` · `render_chain` · `doc_formats` · `skipped_report` · `interrupted`)
-- [ ] W-7 본문 16MB(넘으면 413 TOO_LARGE)
-- [ ] W-8 만들기의 `render` 칸 — 빌드 뒤 이어서 렌더
-- [ ] W-9 `render.requested` · `render.skipped[{target, reason}]`
-- [ ] W-10 오류 봉투에 `code`
-- [ ] W-11 내려받기 머리(attachment · Content-Length · nosniff · HTML 은 `Content-Security-Policy: sandbox`) · 생성 HTML 의 보고서 글 이스케이프
-- [ ] W-12 재기동에 끊긴 실행 · 렌더를 `failed`(interrupted)로
-- [ ] (강하게 권장 — 지금 보존 · 동시 상한이 없다) W-13 보존 기한 · W-14 렌더 동시 상한 · (선택) W-15 Idempotency-Key
+      — **11-21 코드 대조**(L21-8 (나) · WDA `wt1121/deck` 의 `src/wdweb/app.py` · `runs.py` · `src/wdmcp/server.py` · `tests/test_portal_contract.py` 를 읽고
+      그 시험을 돌려 맞췄다 — 아래 W-1 ~ W-15 의 근거 커밋은 WDA `d1f144b`(계약 본체) · `dcca8ab`(프록시 접두 뒤의 주인 검사))
+- [x] W-1 REST 만들기에 `X-Heax-User-Email` 로 owner(본문의 owner 는 믿지 않는다 · `/mcp` 는 정하지 않는다) — WDA `d1f144b`(`create_run` 의
+      `owner=identity(request)` · 202 에 owner · 시험 `test_owner_comes_from_the_header_only`)
+- [x] W-2 주인 있는 run 의 run 단위 REST 전부 주인만(다른 사람 · 신원 없음 = 404) — WDA `d1f144b`(미들웨어 `_ownership_guard` 한 곳) · `dcca8ab`
+      (`--root-path` 뒤에서 통째로 무력하던 것 — `app_path` · 진짜 uvicorn 두 조건 시험)
+- [x] W-3 `GET /api/runs` = 내 것 + 주인 없는 것 — WDA `d1f144b`(`get_runs` · `visible_to`)
+- [x] W-4 MCP 의 run_id · job_id · 경로 도구와 렌더 잡 내려받기는 주인 있는 run 에 닿지 않는다 — WDA `d1f144b`(`_block_owned` 도구 아홉 ·
+      `download_render_job`). **계약 목록 밖의 길이 남아 있다**(11-21 탐침 — `meeting_start(run_id)` · `report_ingest(file · run_id)` · 주인 없는 회의,
+      WD-D94 ② — 결정 대기)
+- [x] W-5 주인 있는 새 run id 128비트 무작위 · run_id 꼴 검사 — WDA `d1f144b`(`new_run_id(owned=True)` · `RUN_ID_RE`)
+- [x] W-6 `/api/health` 에 version · features(`owner` · `render_chain` · `doc_formats` · `skipped_report` · `interrupted`) — WDA `d1f144b`(+ `idempotency` ·
+      `error_codes` · 꼴마다 `format:<id>`) · 11-21 `delete`(W-17) · 비밀이 있는 박스에만 `mcp_owner`(W-18)
+- [x] W-7 본문 16MB(넘으면 413 TOO_LARGE) — WDA `d1f144b`(`MAX_BODY_BYTES`)
+- [x] W-8 만들기의 `render` 칸 — 빌드 뒤 이어서 렌더 — WDA `d1f144b`(`render_request` · 재개에도 이어진다)
+- [x] W-9 `render.requested` · `render.skipped[{target, reason}]` — WDA `d1f144b`
+- [x] W-10 오류 봉투에 `code` — WDA `d1f144b`(`ERROR_CODES` 여섯 · 상태별 기본)
+- [x] W-11 내려받기 머리(attachment · Content-Length · nosniff · HTML 은 `Content-Security-Policy: sandbox`) · 생성 HTML 의 보고서 글 이스케이프 —
+      WDA `d1f144b`(`download_headers` — 렌더 잡 경로에도). 이스케이프는 `src/wdrender/exporter_doc.py` 의 `_html.escape`(제목 · 본문 · 표 · 출처 —
+      코드 읽기로 본 것이고 넣는 자리를 전수로 감사하지는 않았다)
+- [x] W-12 재기동에 끊긴 실행 · 렌더를 `failed`(interrupted)로 — WDA `d1f144b`(`mark_interrupted` — 기동 때)
+- [x] (강하게 권장 — 지금 보존 · 동시 상한이 없다) W-13 보존 기한 · W-14 렌더 동시 상한 · (선택) W-15 Idempotency-Key — WDA `d1f144b`
+      (W-13 은 지었으나 **끈 채**(`WDA_RETENTION_DAYS` 0 — 사용자 결정 11-01) · W-14 `WDA_RENDER_CONCURRENCY` 2 · W-15 같은 키 + 같은 주인이면 같은 run)
 - [x] W-21 심의 보고서 꼴 `delib-16x9` 를 지었다(11-01 저녁 — WDA 로컬 판) — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400
 - [ ] `delib-16x9` 가 active 가 된다(지금 draft — 포털은 active 만, U-7 결정) · 허브 SIF 에 들어온다(P-1 뒤) · 실물 심의 보고서(템플릿 블록이 `content` 키뿐)로 확인 · 쟁점 장면(WDA 의 다음 일)
+      — **11-21 대조** active 는 됐다(WDA `3b7b5d2` · 골든 교체 `3707509`) · 허브 SIF 에 들어왔다(아래 11-07 대조) · 쟁점 장면도 섰다(WDA O-1 — 뼈대 6장면).
+      **남은 하나가 붉다 — 실물 꼴의 심의 보고서를 WDA 가 받지 못한다.** RA `GET /api/reports/{id}` 의 템플릿 보고서는 쪽의 `content` 에 템플릿 블록 id 만
+      있고 `extra_blocks` 가 비어 있는데(ReportArchive `modules/reports/schemas.py` — 블록 정의는 템플릿 스키마에), WDA ingest 는 정의 없는 `content` 키를
+      건너뛰어 `ValueError: 텍스트를 가진 블록이 없다 (블록 0개, 텍스트 0개)` 로 '보고서 읽기' 단계에서 실패한다(11-21 WDA `wt1121/deck` 에서
+      `normalize_report` 에 이 리포 시험의 `DELIB` 꼴을 직접 넣어 재현 — 봉투째도 같다). 심의 결과 카드 · `/보고서` · 분석 루틴 초안 셋이 다 이 꼴이다 —
+      단추가 서도 발표자료는 실패한다(WD-D94 ① — WDA 의 결정 대기, 요청서 4.6-2 의 그 물음)
 - [x] 요청서 §10 의 다섯 물음에 답했다(11-01 — W-1 ~ W-12 없음 · 심의 꼴 안 맞음 · pptx + pdf 나옴 · 5.5초 · 보존 · 동시 상한 없음)
-- [ ] 주인 있는 run 은 `WDA_RA_*` 서비스 자격으로 RA 그림을 받지 않는다
+- [x] 주인 있는 run 은 `WDA_RA_*` 서비스 자격으로 RA 그림을 받지 않는다 — **11-21 지음**(WDA `wt1121/deck` `bca5988` · `66a606c`). 받기를 통째로
+      건너뛰고(로그인도 없다) 원장 `run.assets{service_fetch, total, resolved, skipped[], skipped_count}` · `run.warnings` 에 드러낸다. 주인은 원장에서
+      읽는다(재개도). 주인 없는 run 은 호출 글자까지 종전 그대로(WD-D93)
 - [x] P-1 사용자가 손으로 main push(U-2) → 허브 SIF 재빌드(dev) — WDA 세션은 커밋까지만, push 하지 않는다 → 11-01 밤 뒤집힘 — 사용자가 WDA 세션에 직접 맡겼고 그 세션이 SSH 로 올렸다(`6d6abb6..df446ae`, 역사 그대로 · WD-D85) · 허브 SIF 재빌드 진행(11-01 밤)
 - [x] dev 확인 — `/api/health` features 에 `owner` · 신원 없는 `GET /api/runs` 에 주인 있는 run 이 없다 · 게이트웨이 `tools/list` 로 도구 판을 대조한다
       — **11-07 KST 포털 쪽 대조**(WDA `073d205` — O-2 장면 고침 `3e52773` · SIF 14:35 KST · 직결 9521, 허브 Caddy 도 9521) — health `owner` · `delib-16x9` active ·
@@ -181,12 +199,36 @@
 
 ## M2
 
-- [ ] 분석 루틴 RA 초안 자리(`routine.report.ra_report_id`)
-- [ ] RA 그림 함께 보내기(WDA W-16 뒤 — 포털이 그 사람 명의로 `GET /api/files/{id}`)
-- [ ] 다시 시도(WDA resume) · WDA 지우기(W-17) · PDF 미리보기(CSP sandbox) · MCP 쪽 주인(W-18 · 게이트웨이 `per_user_sso.web_design_agents`)
+- [x] 분석 루틴 RA 초안 자리(`routine.report.ra_report_id`) — **11-21 지음**(포털 `wt1121/deck` `8c7eb85d`). `deckReportOf` 가 그 칸을 읽고 루틴 칸
+      (RoutineView)이 원장과 맞댄 초안 번호로 단추를 세운다 · 심의 보고서와 같은 문(심의 꼴이 active 일 때만 — WD-D89)
+- [ ] RA 그림 함께 보내기(WDA W-16 뒤 — 포털이 그 사람 명의로 `GET /api/files/{id}`) — W-16(파일을 같이 받는 꼴)이 아직 정해지지 않았다
+- [x] 다시 시도(WDA resume) · WDA 지우기(W-17) · PDF 미리보기(CSP sandbox) · MCP 쪽 주인(W-18 · 게이트웨이 `per_user_sso.web_design_agents`)
+      — **11-21 지음**(가지 `wt1121/deck` — 올리지 않음). 갈래마다 아래.
+  - [x] 다시 시도 — 포털 `27aac38d`(`POST /agent/deck/jobs/{job}/retry` — 같은 WDA 실행 · 새 포털 잡) · 화면 `400edfb5` · WDA `19dc123`(재개는 받은
+        자리에서 running). WD-D90
+  - [x] 지우기 — WDA `7664a70`(`DELETE /api/runs/{id}` — 주인만 · 묘비 · 도는 중 409) · 포털 `27aac38d`(`DELETE /agent/deck/jobs/{job}`) · 화면
+        `400edfb5`. WD-D92
+  - [x] PDF 미리보기 — 포털 `27aac38d`(`GET /agent/deck/jobs/{job}/preview` — inline · `Content-Security-Policy: sandbox; frame-ancestors 'self'`) ·
+        화면 `400edfb5`(틀에 sandbox 속성 없음 — Chromium 148 실측). WD-D91
+  - [x] MCP 쪽 주인의 WDA 쪽 — WDA `28d7c69`(`POST /api/auth/sso` · 단언 `wdsso_` · 확인된 주인에게만) · 게이트웨이 설정 예시 · 차례는 문서만
+        (HWAXMcpGateway `a1b6e08` — 코드 변경 없음). WD-D93
+  - [ ] MCP 쪽 주인 켜기 — **사람**(박스의 `secrets.env` · `gateway_config.json` · 게이트웨이 재기동 — server-setup.md 4절). 기본 꺼짐
+- [ ] 화면의 진짜 브라우저 확인 — PDF 미리보기가 Chrome · Edge · Firefox 에서 서는지(이 박스의 Chromium 148 새 헤드리스에서만 재 봤다 — WD-D91)
+
+### M2 를 지으며(11-21 — 포털 `wt1121/deck` · WDA `wt1121/deck` · 게이트웨이 `wt1121/deck`)
+
+- [x] 먼저 실패하는 시험 — 루틴 자리(node 순수 함수) · 포털 창구 열일곱(가짜 WDA 에 재개 · 지우기를 진짜 꼴로) · WDA 그림 넷 · 지우기 열여덟 · 위임 열여섯.
+      브라우저 시나리오 다섯(루틴 칸 · 끝난 잡의 도구 · 지우기 없는 판과 거절 · 다시 시도 · 알림 아래)은 지은 뒤에 쓰고 변이로 붉어지는지 봤다
+- [x] 변이 — WDA 서비스 자격 건너뛰기 둘 · 지우기 여섯(주인 두 겹은 한 겹씩 빼면 한쪽이 막는다 · 둘 다 빼면 실기동 시험까지 붉다) · 위임 열 ·
+      포털 창구 열(주인 · 스위치 · 권한 · 쓰기 범위 · 머리 · 거절을 삼킴) · 화면 일곱(루틴 문 셋 · 스위치 · sandbox 속성 · 지우기 능력 · 미리보기 물음)
+- [x] 회귀 — 수치는 context-notes WD-D95
+- [ ] dev 실주행 — 하지 않았다(dev 에는 RA 가 없다 — WD-D88). cae00 에서 server-setup.md 4절
 
 ## M3 — cae00(사람 몫 — server-setup 은 M1 끝에 쓴다)
 
 - [ ] WDA SIF 가 W-1 ~ W-12 판인지(`/api/health` features) · (U-3 이면) 익명 401
 - [ ] 박스 스위치 `wda_deck_enabled` 켜기 · 포털 재기동 — 11-08 사용자 결정으로 cae00 에서 2절까지(받은 편지함 2026-11-08 Q4, WD-D88 — dev 에는 RA 가 없어 못 한다)
 - [ ] 쓸 사람의 허브 계정(허브 타일 한 번) · 실제 보고서 하나로 확인
+- [ ] (11-21 M2 판을 받은 뒤) WDA SIF 가 M2 판인지(`/api/health` features 에 `delete`) · 끝난 잡에서 PDF 미리보기 · 사본 지우기 · 실패한 잡에서 다시 시도 —
+      server-setup.md 4절
+- [ ] (선택) MCP 쪽 주인 켜기 — WDA `secrets.env` 의 `WDA_GATEWAY_SECRET` · 게이트웨이 `per_user_sso.web_design_agents` · 게이트웨이 재기동
