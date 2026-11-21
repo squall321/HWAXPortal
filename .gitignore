@@ -92,6 +92,8 @@ backend/config/core_vocab.local.json
 # HE팀 운영자 박스 덧씌우기 — 이 박스에만 있는 앱의 운영자를 cae00 이 고친다(동기화 · 접근 검사 · 확인 관문이 읽는다, docs/he-team-overlay).
 # 고치기 전 판은 같은 폴더에 he-team.local.<날짜>.json 으로 남긴다(server-setup) — 그것도 박스 파일이다.
 infra/personas/he-team.local.json
+# RA 에 스스로 등록한 형식의 id · 판(박스 파일 — infra/scripts/ra-register-format.py --use 가 쓴다, docs/leftovers-1121 L21-6)
+infra/ra-formats.local.json
 infra/personas/he-team.local.*.json
 # update-all 끝의 박스 훅 — 박스마다 다른 파일이라 git 이 모르게 둔다(docs/core-link SRC-12). 무시하지 않으면 update-all §1 ·
 # deploy-all 의 git stash -u 가 치운다. 같은 폴더의 README.md 는 추적한다.
