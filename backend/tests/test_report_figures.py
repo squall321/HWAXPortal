@@ -487,7 +487,7 @@ def test_위임_토큰이_거절되면_한_번만_새로_받는다(portal, monke
     assert r.status_code == 200, r.text
     assert minted == ["kim@corp.com"]
     assert [q.headers["authorization"] for q in ra.calls] == ["Bearer stale"] + ["Bearer fresh"] * 4
-    assert all(q.headers.get("x-workspace-slug") == "team-a" for q in ra.calls)
+    assert all("x-workspace-slug" not in q.headers for q in ra.calls), "위임 토큰이면 부서 머리를 싣지 않는다 — RA 가 홈 부서로 정한다"
 
 
 # ── 동시 호출 ───────────────────────────────────────────────────────────────────────────────────────────────────

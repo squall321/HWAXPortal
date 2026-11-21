@@ -77,7 +77,7 @@ _DENY_EXACT = frozenset({
     "browse_experts", "use_experts", "verify_answer", "routine_list", "routine_get", "routine_run_start", "routine_call",
     "routine_step_done", "routine_report_submit", "review_task_next", "review_task_read", "review_task_submit",
     "publish_report", "publish_report_to_datahub", "request_unpublish", "trash_report", "restore_version", "job_stop",
-    "risk_add_finding", "add_report_tags",
+    "risk_add_finding", "add_report_tags", "create_report_from_format",
 })
 _CORR_HEADER = "X-HWAX-Corr"        # 게이트웨이 감사의 corr 칸 — 포털 감사와 같은 호출 id 로 잇는다
 _MCP_PROTOCOL = "2025-06-18"        # structuredContent 가 있는 판

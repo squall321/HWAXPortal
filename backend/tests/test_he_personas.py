@@ -1527,3 +1527,16 @@ def test_HP64_backup_은_다른_모드와_같이_부르지_않는다(monkeypatch
     with pytest.raises(SystemExit):
         _run_main(monkeypatch, capsys, _FakeHub(mcp_only, _dev_rows()), "--backup", " ")
     assert not _backups(tmp_path), "같이 부르면 백업도 반영도 하지 않는다 — '백업하고 반영' 으로 읽히면 반영이 조용히 빠진다"
+
+
+def test_한_호출로_게시하는_RA_도구는_confirm_에만_있다():
+    """Report Archive `create_report_from_format`(v0.180.0)은 양식에 수신 게시판이 묶여 있으면 같은 호출에서 바로 게시한다 — 확인 토큰이 없다.
+    `writes` 에 두면 사람이 '양식으로 올려줘' 라고만 해도 카드 없이 나가 게시까지 된다(에이전트서버 확인 관문 — writes 는 시킨 말이면 통과,
+    confirm 은 늘 카드). 그래서 어느 운영자에서든 confirm 에만 있어야 한다(docs/leftovers-1121 L21-4 B1)."""
+    hits = []
+    for p in _load()["personas"]:
+        for src in [p, *(p.get("optional") or [])]:
+            for fld in ("writes", "confirm"):
+                hits += [(p["key"], fld) for n in src.get(fld) or [] if n.endswith("create_report_from_format")]
+    assert hits, "이 도구를 든 운영자가 없다 — 이름이 바뀌었나(RA mcp_server/server.py)"
+    assert all(fld == "confirm" for _, fld in hits), f"writes 에 남은 곳: {[k for k, fld in hits if fld != 'confirm']}"

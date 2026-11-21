@@ -1526,7 +1526,8 @@ def test_사전검사는_막지_않는다(user):
 
 
 def test_워크스페이스를_안_골랐으면_그것도_말한다(user):
-    """연결만 있고 워크스페이스가 없으면 보고서가 **개인함**에 쌓인다(실사고)."""
+    """연결만 있고 부서를 안 골랐으면 그것도 말한다. RA 의 초안은 늘 작성자 개인 공간에 생기고 부서는 권한 · 게시의 기준이다 — 부서
+    머리가 없으면 RA 가 홈 부서로 정한다(v0.170.0). 종전 글은 '보고서가 개인함에 쌓입니다' 라 RA 모델과 달랐다."""
     c, h = user
     me = c.get("/auth/me", headers=h).json()
     c.app.state.user_store.set_connection(email=me["email"], service="reportarchive",
@@ -1535,7 +1536,8 @@ def test_워크스페이스를_안_골랐으면_그것도_말한다(user):
     w = " ".join(c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "mode": "plan",
                                                 "vars": {"t": "x"}},
                         headers=h).json().get("warnings") or [])
-    assert "워크스페이스를 안 골랐습니다" in w, w
+    assert "부서를 안 골랐습니다" in w and "홈 부서" in w, w
+    assert "개인함에 쌓입니다" not in w, w
 
 
 def test_RA_단계가_없으면_아무_말도_안_한다(user):

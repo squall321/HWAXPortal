@@ -965,10 +965,11 @@ class ProceduresRunner:
         text, other = J.join_content(content)
         # 보내기만 한 값이 응답에 되비쳐 오면 가린다 — pydantic 의 '칸 없음' 오류는 받은 인자를 통째로 싣는다
         text = _redact(text, secret)
-        if st.tool == PREVIEW_TOOL:
-            # 게시 미리보기를 단계로 둔 절차(챗 기록을 편 초안) · 한 단계씩 돌린 미리보기 — 결과 원문에 600초짜리 확인 토큰이
-            # 있다. 판정 · save · 원장에 넣기 전에 가린다. 게시 단계는 이 토큰을 쓰지 않는다(`_publish_gate` 가 따로 받는다).
-            text = _mask_publish_token(text)
+        # 게시 미리보기를 단계로 둔 절차(챗 기록을 편 초안) · 한 단계씩 돌린 미리보기 — 결과 원문에 600초짜리 확인 토큰이 있다. 판정 ·
+        # save · 원장에 넣기 전에 가린다. 게시 단계는 이 토큰을 쓰지 않는다(`_publish_gate` 가 따로 받는다). 도구 이름이 아니라 **칸
+        # 이름**으로 가린다 — Report Archive v0.180.0 부터 `create_report_draft(boards=…)` 의 답에도 같은 토큰이 오고, 접두 별칭
+        # (reportarchive_preview_publish)으로 부른 미리보기도 있다. 그 칸이 없는 결과는 한 글자도 바뀌지 않는다.
+        text = _mask_publish_token(text)
         v = J.judge(is_error=is_error, text=text, raw=st.raw, unwrap=st.unwrap, ok_text=st.ok_text)
 
         # 값 단언 — **save 보다 먼저** 본다. 엉뚱한 대상의 응답에서 값을 뽑아 다음 단계로

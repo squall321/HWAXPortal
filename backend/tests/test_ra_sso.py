@@ -4,7 +4,9 @@
   · 계약 — 헤더 넷(비밀·이메일·퍼센트 인코딩한 이름·client=hwax-portal), RA 봉투(`{success, data:{…}}`) 깊이 찾기.
   · **실패는 None** — 꺼짐(비밀 없음·RA 404)·거부·연결 실패 어느 쪽이든 부르는 쪽이 등록 토큰으로 내려가거나 이유를 말한다.
   · 비밀·토큰은 로그에 안 남는다.
-  · PPT 가져오기 — 위임 토큰을 먼저 쓰고, 부서 헤더는 사람이 고른 조직이 있을 때만 싣는다(없으면 RA 가 홈 부서로 정한다).
+  · PPT 가져오기 — 위임 토큰을 먼저 쓰고, 위임 토큰이면 부서 헤더를 싣지 않는다(RA 가 홈 부서로 정한다 — 사용자 결정 2026-11-21).
+    사람이 고른 조직은 토큰을 직접 등록한 길에서만 싣는다.
+  · 회수 — RA v0.170.0 의 `/api/auth/sso/revoke` 를 client 별로 부른다. 못 받은 까닭은 사람에게 내는 안내에 실린다.
 """
 import logging
 import time
@@ -28,9 +30,11 @@ _REAL_CLIENT = httpx.AsyncClient
 @pytest.fixture(autouse=True)
 def _fresh_cache():
     ra_sso._CACHE.clear()
+    ra_sso._WHY.clear()
     ra_sso._OFF_LOGGED = False
     yield
     ra_sso._CACHE.clear()
+    ra_sso._WHY.clear()
     ra_sso._OFF_LOGGED = False
 
 
@@ -278,6 +282,65 @@ async def _dispatch(monkeypatch, tmp_path, settings, conn=None, created=None):
     return out, calls
 
 
+# ── 못 받은 까닭 · 회수(RA v0.170.0 ~ v0.171.1) ─────────────────────────────────────
+@pytest.mark.anyio
+async def test_못_받은_까닭을_기억하고_받으면_지운다(monkeypatch):
+    _mock_ra(monkeypatch, lambda r: httpx.Response(403))
+    assert await ra_sso.ra_user_token(_settings(), email="Kim@Corp.com") is None
+    assert "HEAX_SSO_ALLOWED_IPS" in ra_sso.why_failed("kim@corp.com") and "비활성" in ra_sso.why_failed("KIM@corp.com")
+    assert ra_sso.why_failed("other@corp.com") == ""
+    _mock_ra(monkeypatch, lambda r: httpx.Response(500))
+    assert await ra_sso.ra_user_token(_settings(), email="kim@corp.com") is None
+    assert "HTTP 500" in ra_sso.why_failed("kim@corp.com")
+    _mock_ra(monkeypatch, _ok())
+    assert await ra_sso.ra_user_token(_settings(), email="kim@corp.com") == TOKEN
+    assert ra_sso.why_failed("kim@corp.com") == ""
+
+
+@pytest.mark.anyio
+async def test_회수는_client_별로_부르고_메모리의_토큰도_잊는다(monkeypatch):
+    ra_sso._CACHE["kim@corp.com"] = ("ra-tok", time.monotonic() + 3600)
+    seen = _mock_ra(monkeypatch, lambda r: httpx.Response(200, json={"ok": True, "revoked": 1}))
+    assert await ra_sso.revoke_for(_settings(), "Kim@Corp.com", clients=("hwax-portal", "gateway")) is True
+    assert "kim@corp.com" not in ra_sso._CACHE
+    assert [(r.method, r.url.path) for r in seen] == [("POST", "/api/auth/sso/revoke")] * 2
+    assert [r.headers["x-heax-client"] for r in seen] == ["hwax-portal", "gateway"]
+    assert {r.headers["x-heax-user-email"] for r in seen} == {"kim@corp.com"}
+    assert {r.headers["x-heax-gateway-secret"] for r in seen} == {SECRET}
+    assert all("x-heax-user-name" not in r.headers for r in seen), "회수는 이메일만 싣는다"
+
+
+@pytest.mark.anyio
+async def test_회수_기본은_포털이_받은_것만이다(monkeypatch):
+    seen = _mock_ra(monkeypatch, lambda r: httpx.Response(200, json={"ok": True, "revoked": 0}))
+    assert await ra_sso.revoke_for(_settings(), "kim@corp.com") is True
+    assert [r.headers["x-heax-client"] for r in seen] == ["hwax-portal"]
+
+
+@pytest.mark.anyio
+async def test_회수_꺼짐과_실패를_가른다(monkeypatch, caplog):
+    ra_sso._CACHE["kim@corp.com"] = ("ra-tok", time.monotonic() + 3600)
+    seen = _mock_ra(monkeypatch, lambda r: httpx.Response(200))
+    assert await ra_sso.revoke_for(_settings(ra_sso_secret=""), "kim@corp.com") is None, "비밀이 없으면 부르지 않는다"
+    assert seen == [] and "kim@corp.com" not in ra_sso._CACHE, "메모리의 토큰은 설정과 무관하게 잊는다"
+
+    _mock_ra(monkeypatch, lambda r: httpx.Response(404))
+    assert await ra_sso.revoke_for(_settings(), "kim@corp.com", clients=("hwax-portal", "gateway")) is None, \
+        "RA 쪽이 위임을 안 켰거나 회수 창구가 없는 옛 판 — 지울 토큰이 없다"
+
+    def one_fails(r):
+        return httpx.Response(200 if r.headers["x-heax-client"] == "hwax-portal" else 401)
+    _mock_ra(monkeypatch, one_fails)
+    with caplog.at_level(logging.WARNING):
+        assert await ra_sso.revoke_for(_settings(), "kim@corp.com", clients=("hwax-portal", "gateway")) is False
+    assert SECRET not in caplog.text
+
+    def refuse(r):
+        raise httpx.ConnectError("refused", request=r)
+    _mock_ra(monkeypatch, refuse)
+    assert await ra_sso.revoke_for(_settings(), "kim@corp.com") is False
+
+
 def _pptx_reqs(seen):
     return [r for r in seen if r.url.path == "/api/imports/pptx"]
 
@@ -295,12 +358,22 @@ async def test_ppt_import_uses_the_delegated_token_and_omits_the_workspace(monke
 
 
 @pytest.mark.anyio
-async def test_ppt_import_prefers_the_delegated_token_but_keeps_a_chosen_workspace(monkeypatch, tmp_path):
+async def test_ppt_import_prefers_the_delegated_token_and_drops_even_a_chosen_workspace(monkeypatch, tmp_path):
+    """위임 토큰이면 연결에 저장된 부서도 싣지 않는다 — RA 가 그 사람의 홈 부서로 정한다(RA v0.170.0, 사용자 결정 2026-11-21).
+    저장된 값은 사람이 토큰을 직접 등록한 길의 것이고, 위임 길에서는 낡으면 403 의 원인이 될 뿐이다."""
     seen = _mock_ra(monkeypatch, _ra_handler())
     await _dispatch(monkeypatch, tmp_path, _settings(), conn={"token": "rat_stored", "workspace": "mx"})
     (imp,) = _pptx_reqs(seen)
     assert imp.headers["Authorization"] == f"Bearer {TOKEN}", "위임이 켜져 있으면 등록 토큰보다 위임이 먼저다"
-    assert imp.headers["X-Workspace-Slug"] == "mx"
+    assert "X-Workspace-Slug" not in imp.headers
+
+
+def test_부서는_위임이_아닐_때만_싣는다():
+    from app.agent.routes import _ra_workspace
+
+    assert _ra_workspace({"workspace": "mx"}, True) == ""
+    assert _ra_workspace({"workspace": "mx"}, False) == "mx"
+    assert _ra_workspace({}, False) == "" and _ra_workspace({"workspace": None}, False) == "" and _ra_workspace(None, False) == ""
 
 
 @pytest.mark.anyio
@@ -327,8 +400,16 @@ async def test_neither_path_says_which_one_to_fix(monkeypatch, tmp_path):
     _mock_ra(monkeypatch, _ra_handler(sso=lambda r: httpx.Response(401)))
     with pytest.raises(AuthError) as on:
         await _dispatch(monkeypatch, tmp_path, _settings(), conn=None)
-    assert on.value.status_code == 502 and "RA 쪽 위임 상태" in on.value.message
+    assert on.value.status_code == 502 and "위임 비밀" in on.value.message, on.value.message
+    assert "메일 주소 꼴" in on.value.message, "RA v0.171.1 부터 401 은 메일 꼴이 아닐 때도 난다 — 둘 다 짚는다"
     assert "외부 연결" not in on.value.message, "위임 모드 화면에는 토큰 붙여넣기가 없다 — 거기로 보내지 않는다"
+    assert SECRET not in on.value.message
+
+    ra_sso._WHY.clear()
+    _mock_ra(monkeypatch, _ra_handler(sso=lambda r: httpx.Response(403)))
+    with pytest.raises(AuthError) as ip:
+        await _dispatch(monkeypatch, tmp_path, _settings(), conn=None)
+    assert ip.value.status_code == 502 and "HEAX_SSO_ALLOWED_IPS" in ip.value.message, ip.value.message
 
     with pytest.raises(AuthError) as off:
         await _dispatch(monkeypatch, tmp_path, _settings(ra_sso_secret=""), conn=None)
